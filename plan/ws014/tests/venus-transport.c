@@ -70,12 +70,16 @@ static unsigned fixture_clock_slow;
 /* Publishes the delayed response only after this clock-sample count is reached. */
 static uint32_t fixture_delayed_completion;
 
+/* Selects the independently advertised optional EDID feature for negotiation coverage. */
+static unsigned fixture_edid;
+
 static void fixture_prepare(struct venus_transport *transport);
 static void fixture_capability(unsigned offset, unsigned next, unsigned length, unsigned type, unsigned bar, uint32_t start, uint32_t bytes);
 static void fixture_complete(void);
 static void fixture_queue(void);
 static void fixture_failures(void);
 static void fixture_async_wait(void);
+static void fixture_edid_feature(void);
 
 /*
  * Reads a bounded byte from the synthetic conventional PCI configuration.
@@ -218,9 +222,9 @@ drv_pci_device_bar(
 		bar->bus_address = 0xf0900000U;
 		bar->size = sizeof(fixture_aperture);
 
-		/* Oversized apertures must never reach the platform fallback mapper. */
+		/* A 512MiB BAR exceeds the current 256MiB driver limit before any platform mapping. */
 		if (fixture_oversized_aperture != 0U)
-			bar->size = 256U * 1024U * 1024U;
+			bar->size = 512U * 1024U * 1024U;
 	}
 
 	/* Succeeded: the parser can validate the entire capability extent. */
@@ -414,8 +418,12 @@ kern_mmio_read32(
 	/* Feature word one advertises VERSION_1; word zero advertises Venus support. */
 	if (address == fixture_registers + 4U) {
 		selector = drv_venus_load32(fixture_registers);
-		if (selector == 0U)
+		if (selector == 0U) {
+			/* The optional EDID bit is separate from the mandatory Venus baseline. */
+			if (fixture_edid != 0U)
+				return 0x1bU;
 			return 0x19U;
+		}
 
 		/* The higher feature word contains the modern protocol requirement. */
 		return 1U;
@@ -586,6 +594,9 @@ kern_logf(
 int
 main(void)
 {
+	/* Optional native metadata is accepted only when the device offers the EDID feature. */
+	fixture_edid_feature();
+
 	/* Checks complete BAR mapping and repeated descriptor/index reuse. */
 	fixture_queue();
 
@@ -624,6 +635,7 @@ fixture_prepare(
 	fixture_clock_frozen = 0U;
 	fixture_clock_slow = 0U;
 	fixture_delayed_completion = 0U;
+	fixture_edid = 0U;
 
 	/* Describes common, notify and device slices plus separate host visibility. */
 	fixture_configuration[0x34U] = 0x40U;
@@ -897,5 +909,33 @@ fixture_async_wait(void)
 	assert(fixture_dma == 0U);
 
 	/* Succeeded: running and stopped clocks both preserve finite safe ownership. */
+	return;
+}
+
+/* Negotiates the optional EDID feature without requiring it from older hosts. */
+static void
+fixture_edid_feature(void)
+{
+	struct venus_transport transport;
+	int error;
+
+	/* An offering host gets precisely the implemented mandatory-plus-EDID feature subset. */
+	fixture_prepare(&transport);
+	fixture_edid = 1U;
+	error = drv_venus_transport_start(&transport, (struct drv_pci_device *)&transport);
+	assert(error == 0);
+	assert(transport.features == 0x1bU);
+	error = drv_venus_transport_stop(&transport);
+	assert(error == 0);
+
+	/* A host without EDID retains the existing required-feature-only negotiation. */
+	fixture_prepare(&transport);
+	error = drv_venus_transport_start(&transport, (struct drv_pci_device *)&transport);
+	assert(error == 0);
+	assert(transport.features == 0x19U);
+	error = drv_venus_transport_stop(&transport);
+	assert(error == 0);
+
+	/* Succeeded: optional discovery neither invents support nor makes it mandatory. */
 	return;
 }

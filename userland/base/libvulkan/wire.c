@@ -16,6 +16,35 @@
 static VkBool32 vulkan_reader_need(struct vulkan_reader *reader, size_t bytes);
 
 /*
+ * Encodes the single internal external-image declaration used by WSI.
+ */
+void
+vulkan_encode_image_external(
+	struct vulkan_writer *writer,
+	const void *chain)
+{
+	const struct vulkan_external_image_info *info;
+
+	/* Public core calls retain an empty native extension chain. */
+	info = chain;
+	if (info == NULL || info->sType != VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO) {
+		vulkan_write_u64(writer, 0U);
+
+		/* Succeeded: ordinary core image creation carries an empty native extension chain. */
+		return;
+	}
+
+	/* No guest pointer or fd representation reaches the renderer. */
+	vulkan_write_u64(writer, 1U);
+	vulkan_write_u32(writer, VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO);
+	vulkan_write_u64(writer, 0U);
+	vulkan_write_u32(writer, info->handle_types);
+
+	/* Succeeded: the renderer receives only the selected external image memory type. */
+	return;
+}
+
+/*
  * Initializes independent storage for one encoded command stream.
  */
 void

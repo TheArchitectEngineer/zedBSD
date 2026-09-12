@@ -14,16 +14,24 @@
 
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 #define WSI_IMAGE_AVAILABLE	0U
 #define WSI_IMAGE_ACQUIRED	1U
 #define WSI_IMAGE_PRESENTING	2U
 #define WSI_COMPLETION_TIMEOUT	10000000000ULL
 
+/* Shared presentation allocations transfer ownership to another Vulkan instance. */
+#define WSI_QUEUE_FAMILY_EXTERNAL 0xfffffffeU
+
 /* One ordinary bound image whose allocation lives with a shared image group. */
 struct wsi_image {
 	VkImage image;
 	VkDeviceMemory memory;
+	VkImage shared_image;
+	VkDeviceMemory shared_memory;
+	void *native_image;
+	VkBool32 shared_presented;
 };
 
 /* Images may be shared by multiple display swapchains until the final release. */
@@ -49,6 +57,7 @@ struct vulkan_swapchain {
 	uint8_t *states;
 	VkFormat format;
 	VkExtent2D extent;
+	VkPresentModeKHR present_mode;
 	VkBuffer readback;
 	VkDeviceMemory readback_memory;
 	void *readback_pixels;
@@ -98,7 +107,8 @@ static VkResult swapchain_now(uint64_t *nanoseconds);
 static VkResult present_prepare(struct wsi_present_job *job, struct VkQueue_T *queue, const VkPresentInfoKHR *info);
 static VkResult present_reserve(struct wsi_present_job *job, const VkPresentInfoKHR *info);
 static VkResult present_record(struct wsi_present_job *job, const VkPresentInfoKHR *info);
-static void present_copy(VkCommandBuffer command, struct vulkan_swapchain *chain, uint32_t index);
+static void present_copy(VkCommandBuffer command, struct vulkan_swapchain *chain, uint32_t index, uint32_t family);
+static void present_copy_shared(VkCommandBuffer command, struct vulkan_swapchain *chain, uint32_t index, uint32_t family);
 static VkResult present_submit(struct wsi_present_job *job, const VkPresentInfoKHR *info);
 static void present_compose(struct wsi_present_job *job, uint32_t index, struct vulkan_wsi_pixels *pixels);
 static VkResult present_native(struct wsi_present_job *job, const VkPresentInfoKHR *info);
@@ -336,6 +346,7 @@ vkAcquireNextImageKHR(
 	uint32_t index;
 	VkResult error;
 	VkBool32 acquired;
+	VkBool32 available;
 
 	/* Core synchronization code owns the actual Vulkan semaphore/fence payloads. */
 	device = vulkan_device(device_handle);
@@ -361,6 +372,15 @@ vkAcquireNextImageKHR(
 		error = swapchain_current(chain);
 		if (error != VK_SUCCESS)
 			return error;
+
+		/* Dispatches only WSI-owned events before taking the acquisition state lock. */
+		if (chain->surface->platform->progress != NULL) {
+			error = chain->surface->platform->progress(chain->lease);
+			if (error != VK_SUCCESS)
+				return error;
+		}
+
+		/* Reserves one application image only after compositor releases have been observed. */
 		pthread_mutex_lock(&swapchain_mutex);
 
 		/* Stops new acquisition after a replacement has retired this swapchain. */
@@ -373,8 +393,13 @@ vkAcquireNextImageKHR(
 		acquired = VK_FALSE;
 		index = chain->cursor;
 		for (offset = 0U; offset < chain->group->count; offset++) {
-			/* Skips an image still owned by rendering or presentation. */
-			if (chain->states[index] != WSI_IMAGE_AVAILABLE) {
+			/* Skips buffers retained by either application rendering or the compositor. */
+			available = VK_TRUE;
+			if (chain->surface->platform->image_available != NULL)
+				available = chain->surface->platform->image_available(chain->group->images[index].native_image);
+
+			/* Both rendering and native presentation must have released this image. */
+			if (chain->states[index] != WSI_IMAGE_AVAILABLE || available == VK_FALSE) {
 				index++;
 
 				/* Wraps the acquisition cursor without changing any image ownership state. */
@@ -607,6 +632,7 @@ swapchain_create(
 	chain->surface = surface;
 	chain->format = info->imageFormat;
 	chain->extent = info->imageExtent;
+	chain->present_mode = info->presentMode;
 
 	/* Retains the instance surface before any native lease can borrow its allocator. */
 	error = vulkan_wsi_surface_retain(surface);
@@ -649,10 +675,13 @@ swapchain_create(
 		chain->group = shared;
 	}
 
-	/* Readback storage is mapped once and reused for every presented frame. */
-	error = swapchain_readback_create(chain);
-	if (error != VK_SUCCESS)
-		goto cleanup;
+	/* Copy-based display adapters retain their existing persistent staging storage. */
+	if (surface->platform->import_image == NULL) {
+		error = swapchain_readback_create(chain);
+		if (error != VK_SUCCESS)
+			goto cleanup;
+	}
+
 	/* Transfers the complete private chain to the publication stage. */
 	*result = chain;
 	chain = NULL;
@@ -678,6 +707,7 @@ swapchain_validate(
 	struct vulkan_surface *surface;
 	VkSurfaceCapabilitiesKHR capabilities;
 	VkSurfaceFormatKHR formats[2];
+	VkPresentModeKHR modes[4];
 	uint32_t count;
 	uint32_t index;
 	VkBool32 matched;
@@ -707,15 +737,45 @@ swapchain_validate(
 	if (capabilities.maxImageCount != 0U && info->minImageCount > capabilities.maxImageCount)
 		return VK_ERROR_INITIALIZATION_FAILED;
 
-	/* Requires the image extent to match the surface mode selected by the application. */
-	if (info->imageExtent.width != capabilities.currentExtent.width ||
-	    info->imageExtent.height != capabilities.currentExtent.height)
+	/* Native export may impose a minimum extent beyond ordinary image creation. */
+	if (info->imageExtent.width < capabilities.minImageExtent.width ||
+	    info->imageExtent.height < capabilities.minImageExtent.height)
 		return VK_ERROR_INITIALIZATION_FAILED;
+
+	/* Renderer and native scanout limits both constrain the maximum image extent. */
+	if (info->imageExtent.width > capabilities.maxImageExtent.width ||
+	    info->imageExtent.height > capabilities.maxImageExtent.height)
+		return VK_ERROR_INITIALIZATION_FAILED;
+
+	/* Direct-display surfaces require their selected mode; window systems choose an extent. */
+	if (capabilities.currentExtent.width != UINT32_MAX) {
+		/* Fixed native dimensions must agree with both coordinates supplied by the application. */
+		if (info->imageExtent.width != capabilities.currentExtent.width ||
+		    info->imageExtent.height != capabilities.currentExtent.height)
+			return VK_ERROR_INITIALIZATION_FAILED;
+	}
 
 	/* Refuses transforms, alpha modes or presentation modes absent from native capabilities. */
 	if (info->preTransform != VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR ||
-	    info->compositeAlpha != VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR ||
-	    info->presentMode != VK_PRESENT_MODE_FIFO_KHR)
+	    info->compositeAlpha != VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR)
+		return VK_ERROR_INITIALIZATION_FAILED;
+
+	/* Selects only modes actually implemented by the native presentation backend. */
+	count = 4U;
+	error = surface->platform->present_modes(surface, device->physical, &count, modes);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Finds the requested mode in the native backend's actual enumeration. */
+	matched = VK_FALSE;
+	for (index = 0U; index < count; index++) {
+		/* A matching native mode authorizes this swapchain's pacing behavior. */
+		if (modes[index] == info->presentMode)
+			matched = VK_TRUE;
+	}
+
+	/* Unadvertised modes cannot be substituted with a different pacing contract. */
+	if (matched == VK_FALSE)
 		return VK_ERROR_INITIALIZATION_FAILED;
 
 	/* Requires every requested image operation to be supported by the presentation backend. */
@@ -940,6 +1000,14 @@ swapchain_group_free(
 			vkDestroyImage((VkDevice)group->device, group->images[index].image, allocator);
 		}
 
+		/* Native buffers were destroyed with the lease before GPU storage is retired. */
+		if (group->images[index].shared_image != VK_NULL_HANDLE)
+			vkDestroyImage((VkDevice)group->device, group->images[index].shared_image, allocator);
+
+		/* The shared allocation outlives its image binding until this final group release. */
+		if (group->images[index].shared_memory != VK_NULL_HANDLE)
+			vkFreeMemory((VkDevice)group->device, group->images[index].shared_memory, allocator);
+
 		/* Releases each image allocation after the image bound to it has retired. */
 		if (group->images[index].memory != VK_NULL_HANDLE)
 			vkFreeMemory((VkDevice)group->device, group->images[index].memory, allocator);
@@ -961,6 +1029,8 @@ swapchain_image_create(
 	struct wsi_image *image)
 {
 	VkImageCreateInfo create;
+	struct gpu_image_descriptor descriptor;
+	int fd;
 	VkMemoryRequirements requirements;
 	struct vulkan_image *private_image;
 	const VkAllocationCallbacks *allocator;
@@ -997,6 +1067,33 @@ swapchain_image_create(
 	error = vkBindImageMemory((VkDevice)chain->device, image->image, image->memory, 0U);
 	if (error != VK_SUCCESS)
 		return error;
+
+	/* GPU sharing uses a separate linear image, copied entirely by Vulkan commands. */
+	if (chain->surface->platform->import_image != NULL) {
+		error = vulkan_wsi_shared_image_create(
+			chain->device,
+			chain->format,
+			chain->extent,
+			allocator,
+			&image->shared_image,
+			&image->shared_memory,
+			&fd,
+			&descriptor);
+		if (error != VK_SUCCESS)
+			return error;
+
+		/* The native backend duplicates the capability and retains its own image owner. */
+		error = chain->surface->platform->import_image(
+			chain->lease,
+			fd,
+			&descriptor,
+			&image->native_image);
+
+		/* Success and failure both end the producer's original exported fd reference. */
+		close(fd);
+		if (error != VK_SUCCESS)
+			return error;
+	}
 
 	/* The standard image handle remains valid but its lifetime belongs to WSI. */
 	private_image = vulkan_image(image->image);
@@ -1508,7 +1605,7 @@ present_record(
 		/* Skips readback commands for targets whose surface was already lost or replaced. */
 		if (job->results[index] != VK_SUCCESS)
 			continue;
-		present_copy(job->command, job->chains[index], info->pImageIndices[index]);
+		present_copy(job->command, job->chains[index], info->pImageIndices[index], job->queue->family);
 	}
 
 	error = vkEndCommandBuffer(job->command);
@@ -1531,11 +1628,18 @@ static void
 present_copy(
 	VkCommandBuffer command,
 	struct vulkan_swapchain *chain,
-	uint32_t index)
+	uint32_t index,
+	uint32_t family)
 {
 	VkImageMemoryBarrier image;
 	VkBufferMemoryBarrier buffer;
 	VkBufferImageCopy copy;
+
+	/* Window-system buffers stay in GPU memory throughout transfer and presentation. */
+	if (chain->surface->platform->import_image != NULL) {
+		present_copy_shared(command, chain, index, family);
+		return;
+	}
 
 	/* Prior available writes become visible to the presentation engine's transfer read. */
 	memset(&image, 0, sizeof(image));
@@ -1613,6 +1717,8 @@ present_submit(
 	const VkPresentInfoKHR *info)
 {
 	VkSubmitInfo submit;
+	struct vulkan_swapchain *chain;
+	uint32_t index;
 	VkResult error;
 
 	/* Mixed acquired software payloads and genuine GPU waits are handled by core. */
@@ -1626,7 +1732,17 @@ present_submit(
 	error = vulkan_queue_submit(job->queue, 1U, &submit, job->fence);
 	if (error != VK_SUCCESS)
 		return error;
+
+	/* Cleanup can no longer restore the transaction's pre-enqueue wait ownership. */
 	job->submitted = VK_TRUE;
+
+	/* External ownership changes only after the native queue accepts the recorded barriers. */
+	for (index = 0U; index < job->count; index++) {
+		/* Only barriers for accepted shared-image targets establish external ownership. */
+		chain = job->chains[index];
+		if (job->results[index] == VK_SUCCESS && chain->surface->platform->import_image != NULL)
+			chain->group->images[info->pImageIndices[index]].shared_presented = VK_TRUE;
+	}
 
 	/* A finite implementation deadline cannot become an infinite QueuePresent call. */
 	error = vulkan_fences_wait(
@@ -1716,17 +1832,26 @@ present_native(
 	VkResult combined;
 	uint32_t index;
 
-	/* The API results array is populated during common transaction cleanup. */
-	(void)info;
+	/* Each native backend contributes to the same post-submission result handling. */
 	combined = VK_SUCCESS;
 	for (index = 0U; index < job->count; index++) {
+		/* Targets rejected before submission never reach their native presentation adapter. */
 		chain = job->chains[index];
 		error = job->results[index];
 		if (error == VK_SUCCESS) {
 			/* A frame identifier belongs to its chain and never substitutes for a fence. */
 			if (chain->frame == UINT64_MAX) {
 				error = swapchain_device_lost(chain->device);
+			} else if (chain->surface->platform->present_image != NULL) {
+				/* Names this GPU image commit without creating a CPU pixel staging view. */
+				chain->frame++;
+				error = chain->surface->platform->present_image(
+					chain->lease,
+					chain->group->images[info->pImageIndices[index]].native_image,
+					chain->present_mode,
+					&chain->sequence);
 			} else {
+				/* Legacy direct display retains its completed-pixel fallback contract. */
 				chain->frame++;
 				memset(&pixels, 0, sizeof(pixels));
 				pixels.pixels = chain->readback_pixels;
@@ -1735,23 +1860,29 @@ present_native(
 				pixels.format = chain->format;
 				pixels.frame = chain->frame;
 
-				/* Uses composed rectangle pixels only when the standard display extension requested them. */
+				/* Composed rectangles apply only to the standard direct-display extension. */
 				if (job->has_display != VK_FALSE)
 					present_compose(job, index, &pixels);
-				error = chain->surface->platform->present(chain->lease,
-				    &pixels, &chain->sequence);
+
+				/* The copied-pixel adapter retains its existing synchronous presentation semantics. */
+				error = chain->surface->platform->present(chain->lease, &pixels, &chain->sequence);
 			}
 		}
 
-		/* After waits were consumed, allocation failure cannot promise unchanged sync state. */
-		if (error == VK_ERROR_OUT_OF_HOST_MEMORY ||
-		    error == VK_ERROR_OUT_OF_DEVICE_MEMORY)
+		/* Consumed waits cannot be rolled back by allocation failure in either backend. */
+		if (error == VK_ERROR_OUT_OF_HOST_MEMORY || error == VK_ERROR_OUT_OF_DEVICE_MEMORY)
 			error = swapchain_device_lost(chain->device);
+
+		/* Keeps each target's result independent while forming the caller-visible summary. */
 		job->results[index] = error;
 		combined = present_combine(combined, error);
 	}
 
-	/* Succeeded targets remain successful even when another target rejects presentation. */
+	/* A failed target retains its combined Vulkan error without changing successful peers. */
+	if (combined < VK_SUCCESS)
+		return combined;
+
+	/* Succeeded: preserves accepted or suboptimal status from every presented target. */
 	return combined;
 }
 
@@ -1874,4 +2005,105 @@ swapchain_device_lost(
 
 	/* A consumed transaction cannot be reported as an unchanged allocation failure. */
 	return VK_ERROR_DEVICE_LOST;
+}
+
+/* Copies a rendered optimal image into exportable linear GPU storage. */
+static void
+present_copy_shared(
+	VkCommandBuffer command,
+	struct vulkan_swapchain *chain,
+	uint32_t index,
+	uint32_t family)
+{
+	VkImageMemoryBarrier barriers[2];
+	VkImageCopy copy;
+
+	/* The acquired destination is no longer in compositor use, so its old contents may retire. */
+	memset(barriers, 0, sizeof(barriers));
+	barriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	barriers[0].srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+	barriers[0].dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+	barriers[0].oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+	barriers[0].newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+	barriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barriers[0].image = chain->group->images[index].image;
+	barriers[0].subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	barriers[0].subresourceRange.levelCount = 1U;
+	barriers[0].subresourceRange.layerCount = 1U;
+
+	/* The separate linear allocation receives the GPU copy without discarding the app image. */
+	barriers[1] = barriers[0];
+	barriers[1].srcAccessMask = 0U;
+	barriers[1].dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+	barriers[1].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	barriers[1].newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+	barriers[1].image = chain->group->images[index].shared_image;
+
+	/* Compositor release precedes reacquisition from an earlier external consumer. */
+	if (chain->group->images[index].shared_presented != VK_FALSE) {
+		barriers[1].oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+		barriers[1].srcQueueFamilyIndex = WSI_QUEUE_FAMILY_EXTERNAL;
+		barriers[1].dstQueueFamilyIndex = family;
+	}
+
+	/* Makes producer reads and shared-allocation writes legal before copying pixels. */
+	vkCmdPipelineBarrier(
+		command,
+		VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+		VK_PIPELINE_STAGE_TRANSFER_BIT,
+		0U,
+		0U,
+		NULL,
+		0U,
+		NULL,
+		2U,
+		barriers);
+
+	/* Every pixel moves on the GPU; no mapped readback allocation exists on this path. */
+	memset(&copy, 0, sizeof(copy));
+	copy.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	copy.srcSubresource.layerCount = 1U;
+	copy.dstSubresource = copy.srcSubresource;
+	copy.extent.width = chain->extent.width;
+	copy.extent.height = chain->extent.height;
+	copy.extent.depth = 1U;
+	vkCmdCopyImage(
+		command,
+		barriers[0].image,
+		VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+		barriers[1].image,
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		1U,
+		&copy);
+
+	/* Presentation observes complete writes only after this submission's fence completes. */
+	barriers[0].srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+	barriers[0].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+	barriers[0].oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+	barriers[0].newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+	/* The shared allocation enters the external consumer's ownership in GENERAL layout. */
+	barriers[1].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+	barriers[1].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+	barriers[1].oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+	barriers[1].newLayout = VK_IMAGE_LAYOUT_GENERAL;
+	barriers[1].srcQueueFamilyIndex = family;
+	barriers[1].dstQueueFamilyIndex = WSI_QUEUE_FAMILY_EXTERNAL;
+
+	/* Completes both layout transitions within the submission's existing fence boundary. */
+	vkCmdPipelineBarrier(
+		command,
+		VK_PIPELINE_STAGE_TRANSFER_BIT,
+		VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+		0U,
+		0U,
+		NULL,
+		0U,
+		NULL,
+		2U,
+		barriers);
+
+	/* Succeeded: GPU commands copy and release the shared presentation allocation. */
+	return;
 }

@@ -20,8 +20,8 @@
 #define VULKAN_MEMORY_PAGE	4096U
 
 /*
- * One native allocation exports at most one persistent renderer blob.
- * Unmap retires the user view, while the blob survives for later map calls.
+ * One native allocation owns at most one exported or imported renderer blob.
+ * A CPU view may retire independently; the allocation retains its blob alias.
  */
 struct memory_allocation {
 	struct vulkan_memory memory;
@@ -30,7 +30,8 @@ struct memory_allocation {
 	size_t view_bytes;
 };
 
-static VkResult memory_export(struct VkDevice_T *device, struct memory_allocation *allocation, uint64_t bytes);
+static VkResult memory_allocate(VkDevice device, const VkMemoryAllocateInfo *info, const VkAllocationCallbacks *allocator, VkBool32 shared, uint32_t imported, VkDeviceMemory *memory);
+static VkResult memory_export(struct VkDevice_T *device, struct memory_allocation *allocation, uint64_t bytes, VkBool32 shared);
 static VkResult memory_unmap(struct VkDevice_T *device, struct memory_allocation *allocation);
 static void memory_native_free(struct VkDevice_T *device, struct vulkan_memory *memory);
 static void memory_lost(struct VkDevice_T *device);
@@ -42,168 +43,70 @@ static VkResult memory_ranges(struct VkDevice_T *device, uint32_t count, const V
 VKAPI_ATTR VkResult VKAPI_CALL
 vkAllocateMemory(
 	VkDevice device,
-	const VkMemoryAllocateInfo *pAllocateInfo,
-	const VkAllocationCallbacks *pAllocator,
-	VkDeviceMemory *pMemory)
+	const VkMemoryAllocateInfo *info,
+	const VkAllocationCallbacks *allocator,
+	VkDeviceMemory *memory)
 {
-	struct VkDevice_T *owner;
-	struct memory_allocation *allocation;
-	struct vulkan_memory *memory;
-	struct vulkan_object *object;
-	struct vulkan_writer writer;
-	struct vulkan_reader reply;
-	VkMemoryPropertyFlags properties;
-	uint64_t native_bytes;
-	uint64_t present;
-	uint64_t identifier;
 	VkResult status;
-	VkResult cleanup;
 
-	/* Invalid or failed allocation never exposes an unowned handle. */
-	if (pMemory == NULL)
-		return VK_ERROR_INITIALIZATION_FAILED;
-	*pMemory = VK_NULL_HANDLE;
-
-	/* Resolve the device before interpreting its advertised memory types. */
-	owner = vulkan_device(device);
-	if (owner == NULL ||
-	    pAllocateInfo == NULL ||
-	    pAllocateInfo->sType != VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO ||
-	    pAllocateInfo->allocationSize == 0 ||
-	    pAllocateInfo->memoryTypeIndex >= owner->physical->memory.memoryTypeCount)
-		return VK_ERROR_INITIALIZATION_FAILED;
-
-	/* A lost renderer namespace cannot accept a new allocation. */
-	status = __atomic_load_n(&owner->object.context->error, __ATOMIC_ACQUIRE);
+	/* Public core allocations do not implicitly acquire WSI export requirements. */
+	status = vulkan_memory_allocate(device, info, allocator, VK_FALSE, memory);
 	if (status != VK_SUCCESS)
 		return status;
 
-	/* CPU-visible allocations reserve whole pages without changing public bounds. */
-	properties = owner->physical->memory.memoryTypes[pAllocateInfo->memoryTypeIndex].propertyFlags;
-	native_bytes = pAllocateInfo->allocationSize;
-	if ((properties & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0) {
-		/* Noncoherent types are filtered from the advertised host-visible set. */
-		if ((properties & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) == 0)
-			return VK_ERROR_FEATURE_NOT_PRESENT;
+	/* Succeeded: the caller owns ordinary core memory without WSI export requirements. */
+	return VK_SUCCESS;
+}
 
-		/* Page rounding must not wrap the renderer allocation size. */
-		if (native_bytes > UINT64_MAX - (VULKAN_MEMORY_PAGE - 1U))
-			return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+/*
+ * Allocates either ordinary core memory or an explicitly exportable WSI image.
+ */
+VkResult
+vulkan_memory_allocate(
+	VkDevice device,
+	const VkMemoryAllocateInfo *info,
+	const VkAllocationCallbacks *allocator,
+	VkBool32 shared,
+	VkDeviceMemory *memory)
+{
+	VkResult error;
 
-		/* Keep both the exported blob and the eventual user view within local limits. */
-		native_bytes = (native_bytes + VULKAN_MEMORY_PAGE - 1U) &
-		    ~(uint64_t)(VULKAN_MEMORY_PAGE - 1U);
-		if (native_bytes > owner->object.context->max_resource_bytes || native_bytes > SIZE_MAX)
-			return VK_ERROR_OUT_OF_DEVICE_MEMORY;
-	}
+	/* Ordinary allocation has no resource identity from another context. */
+	error = memory_allocate(device, info, allocator, shared, 0U, memory);
+	if (error != VK_SUCCESS)
+		return error;
 
-	/* The allocation's effective callbacks also own its command temporaries. */
-	status = vulkan_object_alloc(
-		sizeof(*allocation),
-		sizeof(uint64_t),
-		VULKAN_OBJECT_DEVICE_MEMORY,
-		&owner->object,
-		owner->object.context,
-		pAllocator,
-		VK_SYSTEM_ALLOCATION_SCOPE_OBJECT,
-		&object);
-	if (status != VK_SUCCESS)
-		return status;
+	/* Succeeded: native storage and any requested WSI export belong to this allocation. */
+	return VK_SUCCESS;
+}
 
-	/* Preserve application bounds separately from the page-rounded native size. */
-	allocation = (struct memory_allocation *)object;
-	memory = &allocation->memory;
-	memory->bytes = pAllocateInfo->allocationSize;
-	memory->type_index = pAllocateInfo->memoryTypeIndex;
-	memory->properties = properties;
-	memory->backing_private = allocation;
+/*
+ * Imports a context-attached renderer allocation and consumes its K alias only on success.
+ */
+VkResult
+vulkan_memory_import(
+	struct VkDevice_T *device,
+	const VkMemoryAllocateInfo *info,
+	const VkAllocationCallbacks *allocator,
+	uint32_t resource,
+	uint64_t alias,
+	VkDeviceMemory *memory)
+{
+	struct vulkan_memory *storage;
+	struct memory_allocation *allocation;
+	VkResult error;
 
-	/* Reserve the renderer identity before emitting any creation request. */
-	status = vulkan_object_reserve_id(object);
-	if (status != VK_SUCCESS) {
-		vulkan_object_free(object);
+	/* The existing resource is independently reference-counted by K and the renderer. */
+	error = memory_allocate((VkDevice)device, info, allocator, VK_FALSE, resource, memory);
+	if (error != VK_SUCCESS)
+		return error;
 
-		/* Leave without publishing an allocation the renderer did not accept. */
-		return status;
-	}
+	/* The published allocation now owns the imported K alias until vkFreeMemory. */
+	storage = vulkan_memory(*memory);
+	allocation = storage->backing_private;
+	allocation->blob = alias;
 
-	/* Only protocol values cross the wire; application allocator pointers stay local. */
-	vulkan_writer_init_for_object(&writer, object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkAllocateMemory);
-	vulkan_write_u64(&writer, owner->object.wire_id);
-	vulkan_write_pointer(&writer, pAllocateInfo);
-	vulkan_write_u32(&writer, VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO);
-	vulkan_write_pointer(&writer, NULL);
-	vulkan_write_u64(&writer, native_bytes);
-	vulkan_write_u32(&writer, pAllocateInfo->memoryTypeIndex);
-	vulkan_write_pointer(&writer, NULL);
-	vulkan_write_pointer(&writer, pMemory);
-	vulkan_write_u64(&writer, object->wire_id);
-	status = vulkan_command_execute(object->context, &writer, 24U, &reply, VK_TRUE);
-	vulkan_writer_finish(&writer);
-
-	/* Successful creation must echo exactly the identity reserved by this process. */
-	if (status == VK_SUCCESS) {
-		present = vulkan_read_u64(&reply);
-		identifier = vulkan_read_u64(&reply);
-		if (reply.error != VK_SUCCESS ||
-		    present != 1U ||
-		    identifier != object->wire_id) {
-			memory_lost(owner);
-			status = VK_ERROR_DEVICE_LOST;
-		}
-	}
-
-	/* Retire reply storage before unwinding a failed native allocation. */
-	vulkan_reader_finish(&reply);
-	if (status != VK_SUCCESS) {
-		vulkan_object_free(object);
-
-		/* Leave without publishing an allocation the renderer did not accept. */
-		return status;
-	}
-
-	/* Export once at allocation so later map/unmap cycles reuse the same renderer blob. */
-	if ((properties & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0) {
-		/* Prepare the persistent export before any application can resolve the handle. */
-		status = memory_export(owner, allocation, native_bytes);
-		if (status != VK_SUCCESS) {
-			memory_native_free(owner, memory);
-			vulkan_object_free(object);
-
-			/* Report the export failure after releasing the native allocation. */
-			return status;
-		}
-	}
-
-	/* Publish only after native storage and any required shared blob exist. */
-	status = vulkan_object_publish(object);
-	if (status != VK_SUCCESS) {
-		/* Unpublished storage still owns any blob created during preparation. */
-		if (allocation->blob != 0) {
-			vulkan_context_lock(object->context);
-
-			cleanup = vulkan_resource_destroy(object->context, allocation->blob);
-
-			vulkan_context_unlock(object->context);
-
-			/* Failed blob retirement forbids a later native free in this uncertain namespace. */
-			if (cleanup != VK_SUCCESS) {
-				memory_lost(owner);
-				status = VK_ERROR_DEVICE_LOST;
-			}
-		}
-
-		/* The native allocation can retire after its separate blob is gone. */
-		memory_native_free(owner, memory);
-		vulkan_object_free(object);
-
-		/* Leave without publishing an allocation the renderer did not accept. */
-		return status;
-	}
-
-	/* Succeeded: API bounds describe the requested allocation, including partial pages. */
-	*pMemory = (VkDeviceMemory)(uintptr_t)vulkan_nondispatchable_handle(object);
+	/* Succeeded: the caller may retire the input capability without losing this allocation. */
 	return VK_SUCCESS;
 }
 
@@ -488,15 +391,273 @@ vkGetDeviceMemoryCommitment(
 	return;
 }
 
+/*
+ * Exports an existing WSI allocation as a typed fd with immutable image metadata.
+ */
+VkResult
+vulkan_memory_image_fd(
+	struct VkDevice_T *device,
+	VkDeviceMemory handle,
+	struct gpu_image_descriptor *image,
+	int *fd)
+{
+	struct vulkan_memory *memory;
+	struct memory_allocation *allocation;
+	struct gpu_resource_export request;
+	int status;
+
+	/* Only this device's live allocation may supply a capability. */
+	*fd = -1;
+	memory = vulkan_memory(handle);
+	if (memory == NULL || memory->object.parent != &device->object)
+		return VK_ERROR_INITIALIZATION_FAILED;
+
+	/* Ordinary device-only allocations have no renderer resource to export. */
+	allocation = memory->backing_private;
+	if (allocation->blob == 0)
+		return VK_ERROR_FEATURE_NOT_PRESENT;
+
+	/* K records the descriptor and installs a separately owned close-on-exec fd. */
+	memset(&request, 0, sizeof(request));
+	request.version = GPU_ABI_VERSION;
+	request.size = sizeof(request);
+	request.handle = allocation->blob;
+	request.flags = GPU_HANDLE_CLOEXEC;
+	request.fd = -1;
+	request.image = *image;
+	request.image.allocation_bytes = allocation->view_bytes;
+	request.image.memory_type = memory->type_index;
+
+	/* Publish the capability within the same serialized session as the owning resource. */
+	vulkan_context_lock(device->object.context);
+
+	status = ioctl(device->object.context->fd, GPU_RESOURCE_EXPORT, &request);
+
+	vulkan_context_unlock(device->object.context);
+
+	/* Failed export leaves no caller-owned capability to release. */
+	if (status != 0)
+		return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+
+	/* The caller owns this capability independently of the producer's Vulkan object. */
+	*image = request.image;
+	*fd = request.fd;
+
+	/* Succeeded: immutable metadata describes the allocation held by the new fd. */
+	return VK_SUCCESS;
+}
+
+/* Creates local memory ownership around native allocation, export, or resource import. */
+static VkResult
+memory_allocate(
+	VkDevice device,
+	const VkMemoryAllocateInfo *pAllocateInfo,
+	const VkAllocationCallbacks *pAllocator,
+	VkBool32 shared,
+	uint32_t imported,
+	VkDeviceMemory *pMemory)
+{
+	struct VkDevice_T *owner;
+	struct memory_allocation *allocation;
+	struct vulkan_memory *memory;
+	struct vulkan_object *object;
+	struct vulkan_writer writer;
+	struct vulkan_reader reply;
+	VkMemoryPropertyFlags properties;
+	uint64_t native_bytes;
+	uint64_t extension_present;
+	uint64_t present;
+	uint64_t identifier;
+	VkResult status;
+	VkResult cleanup;
+
+	/* Invalid or failed allocation never exposes an unowned handle. */
+	if (pMemory == NULL)
+		return VK_ERROR_INITIALIZATION_FAILED;
+	*pMemory = VK_NULL_HANDLE;
+
+	/* Resolve the device before interpreting its advertised memory types. */
+	owner = vulkan_device(device);
+	if (owner == NULL ||
+	    pAllocateInfo == NULL ||
+	    pAllocateInfo->sType != VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO ||
+	    pAllocateInfo->allocationSize == 0 ||
+	    pAllocateInfo->memoryTypeIndex >= owner->physical->memory.memoryTypeCount)
+		return VK_ERROR_INITIALIZATION_FAILED;
+
+	/* A lost renderer namespace cannot accept a new allocation. */
+	status = __atomic_load_n(&owner->object.context->error, __ATOMIC_ACQUIRE);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* CPU-visible and shared allocations reserve whole pages without changing public bounds. */
+	properties = owner->physical->memory.memoryTypes[pAllocateInfo->memoryTypeIndex].propertyFlags;
+	native_bytes = pAllocateInfo->allocationSize;
+	if (shared != VK_FALSE || (properties & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0) {
+		/* Noncoherent types are filtered from the advertised host-visible set. */
+		if ((properties & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0 &&
+		    (properties & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) == 0)
+			return VK_ERROR_FEATURE_NOT_PRESENT;
+
+		/* Page rounding must not wrap the renderer allocation size. */
+		if (native_bytes > UINT64_MAX - (VULKAN_MEMORY_PAGE - 1U))
+			return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+
+		/* Keep both the exported blob and the eventual user view within local limits. */
+		native_bytes = (native_bytes + VULKAN_MEMORY_PAGE - 1U) &
+		    ~(uint64_t)(VULKAN_MEMORY_PAGE - 1U);
+		if (native_bytes > owner->object.context->max_resource_bytes || native_bytes > SIZE_MAX)
+			return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+	}
+
+	/* The allocation's effective callbacks also own its command temporaries. */
+	status = vulkan_object_alloc(
+		sizeof(*allocation),
+		sizeof(uint64_t),
+		VULKAN_OBJECT_DEVICE_MEMORY,
+		&owner->object,
+		owner->object.context,
+		pAllocator,
+		VK_SYSTEM_ALLOCATION_SCOPE_OBJECT,
+		&object);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Preserve application bounds separately from the page-rounded native size. */
+	allocation = (struct memory_allocation *)object;
+	memory = &allocation->memory;
+	memory->bytes = pAllocateInfo->allocationSize;
+	memory->type_index = pAllocateInfo->memoryTypeIndex;
+	memory->properties = properties;
+	memory->backing_private = allocation;
+
+	/* Reserve the renderer identity before emitting any creation request. */
+	status = vulkan_object_reserve_id(object);
+	if (status != VK_SUCCESS) {
+		vulkan_object_free(object);
+
+		/* Leave without publishing an allocation the renderer did not accept. */
+		return status;
+	}
+
+	/* Export or import adds one native extension while ordinary allocations keep an empty chain. */
+	extension_present = 0U;
+	if (shared != VK_FALSE) {
+		/* Export declares a renderer-native allocation shareable with another context. */
+		extension_present = 1U;
+	} else if (imported != 0U) {
+		/* Import identifies storage already attached to this independent context. */
+		extension_present = 1U;
+	}
+
+	/* Only protocol values cross the wire; application allocator pointers stay local. */
+	vulkan_writer_init_for_object(&writer, object);
+	vulkan_command_begin(&writer, VULKAN_OPCODE_vkAllocateMemory);
+	vulkan_write_u64(&writer, owner->object.wire_id);
+	vulkan_write_pointer(&writer, pAllocateInfo);
+	vulkan_write_u32(&writer, VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO);
+	vulkan_write_u64(&writer, extension_present);
+
+	/* The resource import takes precedence over allocation export when a resource is supplied. */
+	if (imported != 0U) {
+		/* The renderer imports a resource already attached to this independent context. */
+		vulkan_write_u32(&writer, 1000384002U);
+		vulkan_write_u64(&writer, 0U);
+		vulkan_write_u32(&writer, imported);
+	} else if (shared != VK_FALSE) {
+		/* This renderer-only export type is not a guest dma-buf interface. */
+		vulkan_write_u32(&writer, VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO);
+		vulkan_write_u64(&writer, 0U);
+		vulkan_write_u32(&writer, VULKAN_EXTERNAL_MEMORY_DMABUF);
+	}
+
+	/* Complete the allocation using renderer values and a process-local output identity. */
+	vulkan_write_u64(&writer, native_bytes);
+	vulkan_write_u32(&writer, pAllocateInfo->memoryTypeIndex);
+	vulkan_write_pointer(&writer, NULL);
+	vulkan_write_pointer(&writer, pMemory);
+	vulkan_write_u64(&writer, object->wire_id);
+	status = vulkan_command_execute(object->context, &writer, 24U, &reply, VK_TRUE);
+	vulkan_writer_finish(&writer);
+
+	/* Successful creation must echo exactly the identity reserved by this process. */
+	if (status == VK_SUCCESS) {
+		present = vulkan_read_u64(&reply);
+		identifier = vulkan_read_u64(&reply);
+		if (reply.error != VK_SUCCESS ||
+		    present != 1U ||
+		    identifier != object->wire_id) {
+			memory_lost(owner);
+			status = VK_ERROR_DEVICE_LOST;
+		}
+	}
+
+	/* Retire reply storage before unwinding a failed native allocation. */
+	vulkan_reader_finish(&reply);
+	if (status != VK_SUCCESS) {
+		vulkan_object_free(object);
+
+		/* Leave without publishing an allocation the renderer did not accept. */
+		return status;
+	}
+
+	/* Export once at allocation so later map/unmap cycles reuse the same renderer blob. */
+	if (imported == 0U &&
+	    (shared != VK_FALSE ||
+	     (properties & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0)) {
+		/* Prepare the persistent export before any application can resolve the handle. */
+		status = memory_export(owner, allocation, native_bytes, shared);
+		if (status != VK_SUCCESS) {
+			memory_native_free(owner, memory);
+			vulkan_object_free(object);
+
+			/* Report the export failure after releasing the native allocation. */
+			return status;
+		}
+	}
+
+	/* Publish only after native storage and any required shared blob exist. */
+	status = vulkan_object_publish(object);
+	if (status != VK_SUCCESS) {
+		/* Unpublished storage still owns any blob created during preparation. */
+		if (allocation->blob != 0) {
+			vulkan_context_lock(object->context);
+
+			cleanup = vulkan_resource_destroy(object->context, allocation->blob);
+
+			vulkan_context_unlock(object->context);
+
+			/* Failed blob retirement forbids a later native free in this uncertain namespace. */
+			if (cleanup != VK_SUCCESS) {
+				memory_lost(owner);
+				status = VK_ERROR_DEVICE_LOST;
+			}
+		}
+
+		/* The native allocation can retire after its separate blob is gone. */
+		memory_native_free(owner, memory);
+		vulkan_object_free(object);
+
+		/* Leave without publishing an allocation the renderer did not accept. */
+		return status;
+	}
+
+	/* Succeeded: API bounds describe the requested allocation, including partial pages. */
+	*pMemory = (VkDeviceMemory)(uintptr_t)vulkan_nondispatchable_handle(object);
+	return VK_SUCCESS;
+}
+
 /* Exports one renderer allocation while serializing all native operations on its fd. */
 static VkResult
 memory_export(
 	struct VkDevice_T *device,
 	struct memory_allocation *allocation,
-	uint64_t bytes)
+	uint64_t bytes,
+	VkBool32 shared)
 {
 	struct vulkan_context *context;
 	struct gpu_resource_map request;
+	uint32_t flags;
 	uint32_t resource;
 	VkResult status;
 	VkResult cleanup;
@@ -504,21 +665,36 @@ memory_export(
 
 	/* A physical device must not advertise host visibility without shared mapping. */
 	context = device->object.context;
-	if ((context->capabilities & GPU_CAP_MAPPING) == 0)
+	if (shared == VK_FALSE && (context->capabilities & GPU_CAP_MAPPING) == 0)
 		return VK_ERROR_FEATURE_NOT_PRESENT;
 
-	/* Export and discover the mmap token as one serialized session transaction. */
+	/* CPU mappings need an aperture; WSI sharing instead enables independent context import. */
+	flags = GPU_BLOB_MAPPABLE;
+	if (shared != VK_FALSE)
+		flags = GPU_BLOB_SHAREABLE | GPU_BLOB_CROSS_DEVICE;
+
+	/* Create the persistent export and any mmap token as one serialized session transaction. */
 	vulkan_context_lock(context);
 
-	status = vulkan_resource_blob(
+	status = vulkan_resource_blob_flags(
 		context,
 		bytes,
 		allocation->memory.object.wire_id,
+		flags,
 		&allocation->blob,
 		&resource);
 	if (status != VK_SUCCESS) {
 		vulkan_context_unlock(context);
 		return status;
+	}
+
+	/* GPU-only exports never allocate a user MMIO mapping or read pixels through it. */
+	if (shared != VK_FALSE) {
+		allocation->view_bytes = (size_t)bytes;
+		vulkan_context_unlock(context);
+
+		/* Succeeded: shared GPU storage remains allocation-owned without a CPU view. */
+		return VK_SUCCESS;
 	}
 
 	/* Obtain an opaque session offset; physical and kernel virtual addresses stay private. */

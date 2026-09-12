@@ -16,6 +16,7 @@
 #include <stdint.h>
 #include <pthread.h>
 #include <vulkan/vulkan.h>
+#include <vulkan/vulkan_wayland.h>
 #include "opcodes.h"
 
 /* The pinned renderer reserves ring zero and owns at most sixty-three device timelines. */
@@ -164,10 +165,29 @@ struct vulkan_image {
 	VkBool32 swapchain_owned;
 };
 
+/* Renderer external-storage declaration; never exposed as a guest fd ABI. */
+#define VULKAN_EXTERNAL_MEMORY_DMABUF 0x200U
+
+/* Private WSI creation chain following the pinned Vulkan declaration layout. */
+struct vulkan_external_image_info {
+	VkStructureType sType;
+	const void *pNext;
+	uint32_t handle_types;
+};
+
+struct gpu_image_descriptor;
+
+VkResult vulkan_resource_blob_flags(struct vulkan_context *context, uint64_t bytes, uint64_t blob_id, uint32_t flags, uint64_t *handle, uint32_t *resource_id);
+VkResult vulkan_memory_allocate(VkDevice device, const VkMemoryAllocateInfo *info, const VkAllocationCallbacks *allocator, VkBool32 shared, VkDeviceMemory *memory);
+VkResult vulkan_memory_image_fd(struct VkDevice_T *device, VkDeviceMemory memory, struct gpu_image_descriptor *image, int *fd);
+VkResult vulkan_memory_import(struct VkDevice_T *device, const VkMemoryAllocateInfo *info, const VkAllocationCallbacks *allocator, uint32_t resource, uint64_t alias, VkDeviceMemory *memory);
+void vulkan_encode_image_external(struct vulkan_writer *writer, const void *chain);
+
 /* Instance capabilities are enabled explicitly by VkInstanceCreateInfo. */
 enum vulkan_instance_extension_bits {
 	VULKAN_INSTANCE_SURFACE = 1,
-	VULKAN_INSTANCE_DISPLAY = 2
+	VULKAN_INSTANCE_DISPLAY = 2,
+	VULKAN_INSTANCE_WAYLAND = 4
 };
 
 /* Device capabilities are enabled explicitly by VkDeviceCreateInfo. */

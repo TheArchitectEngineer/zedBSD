@@ -14,4 +14,8 @@
 
 #include "vulkan_core.h"
 
+#ifdef VK_USE_PLATFORM_WAYLAND_KHR
+#include "vulkan_wayland.h"
+#endif
+
 #endif

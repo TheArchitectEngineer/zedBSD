@@ -1,0 +1,326 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Owns linear, exportable presentation images without requiring a CPU mapping.
+ */
+
+#include "wsi-internal.h"
+
+#include <string.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
+
+/*
+ * Creates one shared GPU image using renderer requirements and real row layout.
+ * The returned fd and Vulkan objects have separate, explicit ownership.
+ */
+VkResult
+vulkan_wsi_shared_image_create(
+	struct VkDevice_T *device,
+	VkFormat format,
+	VkExtent2D extent,
+	const VkAllocationCallbacks *allocator,
+	VkImage *image,
+	VkDeviceMemory *memory,
+	int *fd,
+	struct gpu_image_descriptor *descriptor)
+{
+	struct vulkan_external_image_info external;
+	VkImageCreateInfo create;
+	VkMemoryAllocateInfo allocate;
+	VkMemoryRequirements requirements;
+	VkImageSubresource subresource;
+	VkSubresourceLayout layout;
+	VkFormatProperties properties;
+	uint32_t type;
+	VkResult error;
+
+	/* Partial construction never transfers any of the three independent owners. */
+	*image = VK_NULL_HANDLE;
+	*memory = VK_NULL_HANDLE;
+	*fd = -1;
+	memset(descriptor, 0, sizeof(*descriptor));
+
+	/* The native allocation capability must exist before renderer construction starts. */
+	if ((device->object.context->capabilities & GPU_CAP_SHARE) == 0U)
+		return VK_ERROR_FEATURE_NOT_PRESENT;
+
+	/* Linear presentation storage is separate from optimal rendering attachments. */
+	vkGetPhysicalDeviceFormatProperties((VkPhysicalDevice)device->physical, format, &properties);
+	if ((properties.linearTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) == 0U)
+		return VK_ERROR_FORMAT_NOT_SUPPORTED;
+
+	/* Only the renderer sees this external-memory declaration, never a guest dma-buf API. */
+	memset(&external, 0, sizeof(external));
+	external.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO;
+	external.handle_types = VULKAN_EXTERNAL_MEMORY_DMABUF;
+
+	/* One progressive color image supports GPU copies and later renderer sampling. */
+	memset(&create, 0, sizeof(create));
+	create.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	create.pNext = &external;
+	create.imageType = VK_IMAGE_TYPE_2D;
+	create.format = format;
+	create.extent.width = extent.width;
+	create.extent.height = extent.height;
+	create.extent.depth = 1U;
+	create.mipLevels = 1U;
+	create.arrayLayers = 1U;
+	create.samples = VK_SAMPLE_COUNT_1_BIT;
+	create.tiling = VK_IMAGE_TILING_LINEAR;
+	create.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+	    VK_IMAGE_USAGE_SAMPLED_BIT;
+	create.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	create.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	error = vkCreateImage((VkDevice)device, &create, allocator, image);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The allocation satisfies the renderer's actual image alignment and memory set. */
+	memset(&requirements, 0, sizeof(requirements));
+	vkGetImageMemoryRequirements((VkDevice)device, *image, &requirements);
+
+	/* Select the first actual memory type compatible with this image's requirements. */
+	for (type = 0U; type < device->physical->memory.memoryTypeCount; type++) {
+		/* The renderer's compatibility mask determines which allocation type may be bound. */
+		if ((requirements.memoryTypeBits & (1U << type)) != 0U)
+			break;
+	}
+
+	/* No compatible memory type leaves the already-created image on the cleanup path. */
+	if (type == device->physical->memory.memoryTypeCount) {
+		error = VK_ERROR_OUT_OF_DEVICE_MEMORY;
+		goto cleanup;
+	}
+
+	/* The shared allocation remains GPU-only even when its chosen heap also permits host access. */
+	memset(&allocate, 0, sizeof(allocate));
+	allocate.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	allocate.allocationSize = requirements.size;
+	allocate.memoryTypeIndex = type;
+	error = vulkan_memory_allocate((VkDevice)device, &allocate, allocator, VK_TRUE, memory);
+	if (error != VK_SUCCESS)
+		goto cleanup;
+
+	/* Binding completes before any row layout or external capability is published. */
+	error = vkBindImageMemory((VkDevice)device, *image, *memory, 0U);
+	if (error != VK_SUCCESS)
+		goto cleanup;
+
+	/* The only plane, mip level and array layer define the exported image subresource. */
+	memset(&subresource, 0, sizeof(subresource));
+	subresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+
+	/* Layout is queried; packed width is never substituted for renderer row pitch. */
+	memset(&layout, 0, sizeof(layout));
+	vkGetImageSubresourceLayout((VkDevice)device, *image, &subresource, &layout);
+	if (layout.rowPitch > UINT32_MAX || layout.rowPitch < (uint64_t)extent.width * 4U) {
+		error = VK_ERROR_FORMAT_NOT_SUPPORTED;
+		goto cleanup;
+	}
+
+	/* Public metadata describes the complete linear image without exposing renderer pointers. */
+	descriptor->version = GPU_ABI_VERSION;
+	descriptor->size = sizeof(*descriptor);
+	descriptor->width = extent.width;
+	descriptor->height = extent.height;
+	descriptor->format = GPU_PIXEL_RGBA8888;
+
+	/* The alternate supported packed format changes only the declared channel order. */
+	if (format == VK_FORMAT_B8G8R8A8_UNORM)
+		descriptor->format = GPU_PIXEL_BGRA8888;
+
+	/* Renderer layout, rather than application guesses, supplies stride and allocation offset. */
+	descriptor->stride = (uint32_t)layout.rowPitch;
+	descriptor->offset = layout.offset;
+	descriptor->tiling = GPU_IMAGE_LINEAR;
+	descriptor->usage = create.usage;
+	error = vulkan_memory_image_fd(device, *memory, descriptor, fd);
+
+cleanup:
+	/* A failed export retires the bound image before its allocation. */
+	if (error != VK_SUCCESS) {
+		vkDestroyImage((VkDevice)device, *image, allocator);
+
+		/* Allocation failure may have left only the image itself to retire. */
+		if (*memory != VK_NULL_HANDLE)
+			vkFreeMemory((VkDevice)device, *memory, allocator);
+
+		/* Failed construction leaves no local Vulkan owner in either output slot. */
+		*image = VK_NULL_HANDLE;
+		*memory = VK_NULL_HANDLE;
+
+		/* Preserve the construction failure after releasing every partially created owner. */
+		return error;
+	}
+
+	/* Succeeded: the caller separately owns a bound image, its memory and an allocation fd. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Imports the same allocation into another renderer context and binds a compatible image.
+ * The fd remains caller-owned; successful memory creation owns the imported kernel alias.
+ */
+VkResult
+vulkan_wsi_shared_image_import(
+	struct VkDevice_T *device,
+	int fd,
+	const VkAllocationCallbacks *allocator,
+	VkImage *image,
+	VkDeviceMemory *memory,
+	struct gpu_image_descriptor *descriptor)
+{
+	struct gpu_resource_import request;
+	struct vulkan_external_image_info external;
+	VkImageCreateInfo create;
+	VkMemoryAllocateInfo allocate;
+	VkMemoryRequirements requirements;
+	VkImageSubresource subresource;
+	VkSubresourceLayout layout;
+	VkResult error;
+	VkResult cleanup;
+	int status;
+
+	/* Failed construction transfers neither a Vulkan object nor unverified image metadata. */
+	*image = VK_NULL_HANDLE;
+	*memory = VK_NULL_HANDLE;
+	memset(descriptor, 0, sizeof(*descriptor));
+
+	/* The fd is the only image-authority input to the kernel's import operation. */
+	memset(&request, 0, sizeof(request));
+	request.version = GPU_ABI_VERSION;
+	request.size = sizeof(request);
+	request.fd = fd;
+
+	/* K supplies authoritative metadata and checks device identity before creating an alias. */
+	vulkan_context_lock(device->object.context);
+
+	status = ioctl(device->object.context->fd, GPU_RESOURCE_IMPORT, &request);
+
+	vulkan_context_unlock(device->object.context);
+
+	/* Import failure leaves the caller's original fd untouched. */
+	if (status != 0)
+		return VK_ERROR_INVALID_EXTERNAL_HANDLE;
+
+	/* Only the negotiated initial linear four-channel image family is supported. */
+	error = VK_ERROR_FORMAT_NOT_SUPPORTED;
+	if (request.image.tiling != GPU_IMAGE_LINEAR ||
+	    (request.image.format != GPU_PIXEL_RGBA8888 &&
+	     request.image.format != GPU_PIXEL_BGRA8888) ||
+	    request.image.memory_type >= device->physical->memory.memoryTypeCount)
+		goto cleanup;
+
+	/* The receiver creates its own external-compatible image in a separate renderer namespace. */
+	memset(&external, 0, sizeof(external));
+	external.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO;
+	external.handle_types = VULKAN_EXTERNAL_MEMORY_DMABUF;
+
+	/* Geometry and usage exactly reproduce the allocation's immutable exported description. */
+	memset(&create, 0, sizeof(create));
+	create.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	create.pNext = &external;
+	create.imageType = VK_IMAGE_TYPE_2D;
+	create.format = VK_FORMAT_R8G8B8A8_UNORM;
+
+	/* Channel ordering must agree with the original image rather than the receiving process. */
+	if (request.image.format == GPU_PIXEL_BGRA8888)
+		create.format = VK_FORMAT_B8G8R8A8_UNORM;
+
+	/* This independent image object will be bound to the imported allocation below. */
+	create.extent.width = request.image.width;
+	create.extent.height = request.image.height;
+	create.extent.depth = 1U;
+	create.mipLevels = 1U;
+	create.arrayLayers = 1U;
+	create.samples = VK_SAMPLE_COUNT_1_BIT;
+	create.tiling = VK_IMAGE_TILING_LINEAR;
+	create.usage = request.image.usage;
+	create.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	create.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	error = vkCreateImage((VkDevice)device, &create, allocator, image);
+	if (error != VK_SUCCESS)
+		goto cleanup;
+
+	/* Receiving image requirements must permit the already-selected source memory type. */
+	memset(&requirements, 0, sizeof(requirements));
+	vkGetImageMemoryRequirements((VkDevice)device, *image, &requirements);
+
+	/* Only the image's single color subresource participates in this shared allocation. */
+	memset(&subresource, 0, sizeof(subresource));
+	subresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+
+	/* Import never silently changes the memory type, stride or allocation bounds. */
+	memset(&layout, 0, sizeof(layout));
+	vkGetImageSubresourceLayout((VkDevice)device, *image, &subresource, &layout);
+	if ((requirements.memoryTypeBits & (1U << request.image.memory_type)) == 0U ||
+	    requirements.size > request.image.allocation_bytes ||
+	    layout.offset != request.image.offset ||
+	    layout.rowPitch != request.image.stride) {
+		error = VK_ERROR_FORMAT_NOT_SUPPORTED;
+		goto cleanup;
+	}
+
+	/* The renderer imports the attached resource without allocating a replacement pixel store. */
+	memset(&allocate, 0, sizeof(allocate));
+	allocate.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	allocate.allocationSize = request.image.allocation_bytes;
+	allocate.memoryTypeIndex = request.image.memory_type;
+	error = vulkan_memory_import(
+		device,
+		&allocate,
+		allocator,
+		request.resource_id,
+		request.handle,
+		memory);
+	if (error != VK_SUCCESS)
+		goto cleanup;
+
+	/* Successful memory import transfers alias cleanup from this function to vkFreeMemory. */
+	request.handle = 0U;
+	error = vkBindImageMemory((VkDevice)device, *image, *memory, 0U);
+	if (error == VK_SUCCESS)
+		*descriptor = request.image;
+
+cleanup:
+	/* Memory owns an alias only after successful import; other failures retain local rollback. */
+	if (error != VK_SUCCESS) {
+		/* An earlier image-creation failure may have produced no local Vulkan image. */
+		if (*image != VK_NULL_HANDLE)
+			vkDestroyImage((VkDevice)device, *image, allocator);
+
+		/* A published memory object owns its imported alias even when binding subsequently fails. */
+		if (*memory != VK_NULL_HANDLE)
+			vkFreeMemory((VkDevice)device, *memory, allocator);
+
+		/* Neither output may retain a pointer to an object consumed by this cleanup. */
+		*image = VK_NULL_HANDLE;
+		*memory = VK_NULL_HANDLE;
+	}
+
+	/* An alias not transferred to memory remains this function's independent cleanup responsibility. */
+	if (request.handle != 0U) {
+		vulkan_context_lock(device->object.context);
+
+		cleanup = vulkan_resource_destroy(device->object.context, request.handle);
+
+		vulkan_context_unlock(device->object.context);
+
+		/* Uncertain alias retirement overrides the earlier failure with namespace loss. */
+		if (cleanup != VK_SUCCESS)
+			return VK_ERROR_DEVICE_LOST;
+	}
+
+	/* Creation, import or binding errors remain observable after every owned object is retired. */
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Succeeded: a separately owned image and allocation refer to the producer's original GPU storage. */
+	return VK_SUCCESS;
+}

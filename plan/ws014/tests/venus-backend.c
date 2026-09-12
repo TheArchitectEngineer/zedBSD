@@ -22,6 +22,7 @@
 #include <string.h>
 
 #include "../../../src/drivers/gpu/venus/venus.c"
+#include "../../../src/drivers/gpu/venus/share.c"
 
 /* Counts local ownership so quarantine and final retirement are observable. */
 static unsigned fixture_allocations;
@@ -445,7 +446,7 @@ drv_venus_transport_command(
 		field = drv_venus_load32(command + 28U);
 		assert(field == 2U);
 		field = drv_venus_load32(command + 32U);
-		assert(field == GPU_BLOB_MAPPABLE);
+		assert(field == 1U || field == 2U || field == 3U || field == 6U || field == 7U);
 		field = drv_venus_load32(command + 36U);
 		assert(field == 0U);
 		break;
@@ -466,6 +467,23 @@ drv_venus_transport_command(
 		assert(bytes == 48U);
 		field = drv_venus_load32(command + 28U);
 		assert(field == 1U);
+		break;
+	case 0x10dU:
+		/* Native blob scanout names one plane with a complete linear framebuffer. */
+		assert(bytes == 96U);
+		assert(context == 0U);
+		assert(drv_venus_load32(command + 32U) == drv_venus_load32(command + 48U));
+		assert(drv_venus_load32(command + 36U) == drv_venus_load32(command + 52U));
+		assert(drv_venus_load32(command + 56U) == 1U || drv_venus_load32(command + 56U) == 67U);
+		assert(drv_venus_load32(command + 60U) == 0U);
+		assert(drv_venus_load32(command + 64U) >= drv_venus_load32(command + 48U) * 4U);
+		assert(drv_venus_load32(command + 68U) == 0U);
+		assert(drv_venus_load32(command + 72U) == 0U);
+		assert(drv_venus_load32(command + 76U) == 0U);
+		assert(drv_venus_load32(command + 84U) == 0U);
+		assert(drv_venus_load32(command + 88U) == 0U);
+		assert(drv_venus_load32(command + 92U) == 0U);
+		fixture_scanout = drv_venus_load32(command + 44U);
 		break;
 	case 0x103U:
 		assert(bytes == 48U);

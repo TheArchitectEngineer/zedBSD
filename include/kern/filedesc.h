@@ -13,6 +13,7 @@
 #define KERN_KERN_FILEDESC_H
 
 #include <kern/atomic.h>
+#include <kern/fd-object.h>
 #include <kern/lock.h>
 #include <kern/waitq.h>
 
@@ -31,7 +32,7 @@ enum filedesc_slot_state {
 };
 
 struct filedesc_entry {
-	struct file *file;
+	struct fd_object object;
 	unsigned flags;
 	enum filedesc_slot_state state;
 	uint64_t reservation_id;
@@ -192,5 +193,17 @@ filedesc_close_on_exec(
 
 unsigned
 filedesc_count(void);
+
+/*
+ * Generic operations preserve the file-only wrappers above. Install and commit
+ * consume supplied references only on success; get and take return owned refs.
+ * get_file distinguishes an absent descriptor (EBADF) from a handle (EOPNOTSUPP).
+ */
+int filedesc_get_file(struct filedesc *fd, int descriptor, struct file **result);
+int filedesc_get_object_ref(struct filedesc *fd, int descriptor, struct fd_object *result);
+int filedesc_install_object_from(struct filedesc *fd, const struct fd_object *object, unsigned flags, int minimum, int *descriptor);
+int filedesc_install_object_at(struct filedesc *fd, const struct fd_object *object, unsigned flags, int descriptor);
+int filedesc_take_object(struct filedesc *fd, int descriptor, struct fd_object *result);
+int filedesc_commit_objects(struct filedesc_reservation *reservation, struct fd_object *objects, int *descriptors);
 
 #endif

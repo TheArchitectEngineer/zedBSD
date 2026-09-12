@@ -14,19 +14,21 @@
 
 #include <drivers/dma.h>
 #include <drivers/pci.h>
+#include <uapi/gpu.h>
 #include <kern/lock.h>
 #include <stdint.h>
 
-#define VENUS_PAGE_BYTES 4096U
-#define VENUS_RESOURCE_STORAGE 1U
-#define VENUS_RESOURCE_BLOB 2U
+#define VENUS_PAGE_BYTES		4096U
+#define VENUS_RESOURCE_STORAGE		1U
+#define VENUS_RESOURCE_BLOB		2U
 
-#define VENUS_COMMAND_BYTES 65568U
-#define VENUS_RESPONSE_BYTES 4096U
-#define VENUS_QUEUE_SIZE 8U
-#define VENUS_HEADER_BYTES 24U
-#define VENUS_MAX_RESOURCE_BYTES (256U * 1024U * 1024U)
-#define VENUS_MAX_APERTURE_BYTES (256U * 1024U * 1024U)
+#define VENUS_COMMAND_BYTES		65568U
+#define VENUS_RESPONSE_BYTES		4096U
+#define VENUS_QUEUE_SIZE		8U
+#define VENUS_HEADER_BYTES		24U
+#define VENUS_FEATURE_EDID		2U
+#define VENUS_MAX_RESOURCE_BYTES	(256U * 1024U * 1024U)
+#define VENUS_MAX_APERTURE_BYTES	(256U * 1024U * 1024U)
 
 /*
  * One PCI capability window, retained until the device reset completes.
@@ -74,6 +76,8 @@ struct venus_controller;
 struct venus_display_engine;
 struct drv_gpu_display_ops;
 struct gpu_present;
+struct venus_resource;
+struct venus_shared_context;
 
 /* One context owned by a GPU open until its close callback completes. */
 struct venus_session {
@@ -81,14 +85,28 @@ struct venus_session {
 };
 
 /*
- * One session resource, retained on the controller list through uncertain DMA.
+ * One host allocation retained independently from all renderer contexts.
+ * The controller mutex protects references and context memberships. Each
+ * session alias, exported capability, or active scanout contributes one hold.
+ */
+struct venus_share {
+	struct venus_resource *storage;
+	struct venus_shared_context *contexts;
+	struct gpu_image_descriptor image;
+	unsigned references;
+};
+
+/*
+ * One allocation anchor or session alias in the Venus resource namespace.
  *
- * Numeric context identity remains valid after its session wrapper retires.
- * Only acknowledged cleanup or controller reset permits local memory release.
+ * Controller-linked anchors retain DMA and mapping ownership through uncertain
+ * commands. Shared aliases borrow those views and own context memberships.
+ * Only acknowledged cleanup or controller reset permits anchor memory release.
  */
 struct venus_resource {
 	struct venus_resource *next;
 	struct venus_controller *controller;
+	struct venus_share *share;
 	struct drv_dma_buffer backing;
 	struct drv_pci_mapping mapping;
 	uint64_t bytes;
@@ -97,6 +115,7 @@ struct venus_resource {
 	uint32_t context;
 	uint32_t identifier;
 	uint32_t kind;
+	uint32_t blob_flags;
 	uint32_t width;
 	uint32_t height;
 	uint32_t format;
@@ -129,6 +148,12 @@ struct venus_controller {
 };
 
 extern const struct drv_gpu_display_ops drv_venus_display_operations;
+
+extern const struct drv_gpu_share_ops drv_venus_share_operations;
+int drv_venus_resource_request_locked(struct venus_controller *controller, uint32_t command, uint32_t context, uint32_t identifier);
+int drv_venus_share_hold_locked(struct venus_share *share);
+void drv_venus_share_put_locked(struct venus_controller *controller, struct venus_share *share);
+void drv_venus_share_resource_destroy_locked(struct venus_controller *controller, struct venus_session *session, struct venus_resource *resource);
 
 int drv_venus_storage_create_locked(struct venus_controller *controller, struct venus_session *session, uint64_t bytes, struct venus_resource **result);
 int drv_venus_storage_prepare_locked(struct venus_controller *controller, struct venus_resource *resource, const struct gpu_present *request);

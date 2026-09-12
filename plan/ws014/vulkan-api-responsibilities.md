@@ -1,5 +1,7 @@
 # Vulkan APIごとのユーザー空間・GPUドライバ責務案
 
+現行契約は末尾のp006補遺を参照。以前の各Queue・Phaseの記述は当時の履歴として保持する。
+
 更新: 2026-09-12 / WS014 p001の設計資料。実装済み機能一覧でもABI確定版でもない。
 
 ## 対象と出典
@@ -649,3 +651,50 @@ API表の275関数、44callback候補を、今回の有限clientがすべて実�
 ## q308: 標準API実装の独立WSへの分離
 
 [WS030](https://github.com/awemorris/zedBSD/issues/388) がVulkan1.0全137coreとKHR_surface/display/swapchain/display_swapchainの標準library実装を所有する。p005の旧有限wireクライアントは標準APIデモへ訂正するため現在clearを失効した。q307実測とこの275関数資料の履歴は保持する。EGLは今回cancel、Waylandは将来backend。仕様・limits・可視性・FIFOの未達をsymbolの存在で完了としない。
+
+## p006: 標準Wayland WSIと共有allocationの実装（q309）
+
+本節は2026-09-13の現行実装を記録する補遺。前の275関数/44 callback候補とq305/q306/q307/q308の判断履歴を保持する。q308末尾の「Waylandは将来」は当時の計画であり、p006では`VK_KHR_wayland_surface`、最小libwayland-client、zwl、wltestを実装した。実装の存在とp006の最終受入は分け、完了の判定と実画面証拠は[p006](phase006/phase.md)と実行記録を正とする。
+
+現行Uは`/lib/libvulkan.so`へVulkan 1.0全137coreとKHR_surface/display/swapchain/display_swapchainの18関数、Waylandの2関数を提供する157 API構成。loader/ICD相当のguest Venus実装とWSIはこのlibrary内にあり、アプリから独自wireを呼ばない。K側は`drv_gpu_ops` version 4、GPU UAPI version 1。resource/mapping/display/shareの正確な型は`include/drivers/gpu*.h`と`include/uapi/gpu*.h`を正とする。
+
+### 追加したVK_KHR_wayland_surfaceの純粋U/K表
+
+| vk API | U：libvulkan.so側で実装する部分 | K：必要な機能 |
+| --- | --- | --- |
+| `vkCreateWaylandSurfaceKHR` | アプリ所有のwl_display/wl_surfaceを借りてVkSurfaceKHRを作り、WSI専用queueとproxy wrapper、registry/factoryを管理する。アプリqueueとxdg role/configureを変更しない | Wayland接続のAF_UNIX transportを支える。VkSurface専用ioctlは不要。後の共有画像import/presentにGPU capabilityと資源寿命を提供する |
+| `vkGetPhysicalDeviceWaylandPresentationSupportKHR` | queue family、GPU_CAP_SHARE、接続状態と実factory広告を照合する。temporary queueでprobeし、アプリlistenerをdispatchしない | GPU/backend能力を供給。fd import時にtyped capabilityと同一deviceをauthoritativeに検証する。現factoryにdevice identity広告がないためquery単体でmulti-GPU適合を宣言しない |
+
+この2関数と作成recordの宣言はKhronos Vulkan-Headers v1.3.269の`vulkan_wayland.h`、VK_KHR_wayland_surface revision 6を固定して照合した。SHA/URL/licenseは`libc/include/vulkan/API-PROVENANCE.md`を参照。初期275設計関数とは別の補遺で、Vulkan 1.1以降や全拡張を実装したという意味ではない。
+
+### 既存標準APIで具体化した共有画像の責務
+
+| APIまたは処理 | U：現在の実装 | K：現在の支援 |
+| --- | --- | --- |
+| surface capabilities/formats/present modes | opaque/identity、RGBA8/BGRA8、min16/max=min(physicalmax,4096)、FIFOとMAILBOXを返す。removed factory/socket lossをterminalに保持 | native blob export/scanoutの実制約を実行時検証。GPU_CAP_SHARE、device/resourceの実情報を供給 |
+| `vkCreateSwapchainKHR` / `vkDestroySwapchainKHR` | 通常のrender imageと別のexport可能なlinear imageを作り、実memory requirements/row layoutから共有fdを得る。部分失敗とoldSwapchain retirementを回収し、destroyでwl_surfaceを暗黙unmapしない | 共有BLOBの確保、GPU_RESOURCE_EXPORT/IMPORT、typed fdと別context alias、未公開資源のrollback、表示中の強い参照を提供 |
+| `vkAcquireNextImageKHR` | アプリ取得中とcompositor保持中を除外。frame callbackとbuffer.releaseを区別し、release前は再取得しない。NOT_READY/TIMEOUT時にsyncをsignalしない | SCM_RIGHTS/通信と共有allocationの参照を保持。transport応答を画像解放に読み替えない |
+| `vkQueuePresentKHR` | rendering imageからlinear shared imageへGPU copyし、actual queue family→EXTERNAL release、再利用時EXTERNAL→queue acquireを記録。実submit成功時だけownership履歴を更新し、Vulkan GPU完了後にWayland commitする | 検証済みcommand/資源をrendererへ転送し、共有allocationの別context利用とblob scanoutを支援。Vulkan状態やVkハンドルをK汎用fdへ移さない |
+| image/memory export/importの内部処理 | private Venus chainとK資源を使って同一allocationを別contextのVkImage/VkDeviceMemoryへ結び付ける | immutable descriptor、type/rights/device/offset/byte長の検証。exporting openとは独立したshare objectとdestination resourceを保持 |
+
+新しいGPU共有経路は、画素のCPU readbackと再uploadをWSI/compositorの必須処理にしない。GPU内copyは利用する。旧direct-display copy backendと、capture/oracleのreadbackは別経路として維持する。ホスト内部の転送まで観測した根拠なしにzero-copyとは呼ばない。
+
+### UのWSI内部opsとWayland transport
+
+`struct vulkan_wsi_platform_ops`は既存のcapabilities/formats/present_modes/claim/release/present/waitに、surface destructorと`import_image`/`present_image`/`progress`/`image_available`を持つ。これはlibvulkan内のU backend境界であり、Kのdrv_gpu_opsや公開Vulkan APIではない。direct-displayはcompleted CPU pixels、Waylandはnative shared imageとrelease通知を選択する。
+
+`libwayland-client.so`は実AF_UNIX wire、proxy世代、registry/version、SCM_RIGHTS、partial I/O、prepare/read/cancelと独立event queueを実装する。wrapperの子は専用queueを継承する。fdはmarshalで複製し、元fdは直後にcloseできる。受信byteとfd FIFOは独立で、必要rightsが後着なら完全frameを保留する。
+
+独自`zed_gpu_buffer_v1` version 1はdestroy opcode 0、create_buffer opcode 1、署名`nha`。通常のwl_buffer、新fd、64byte gpu_image_descriptorを含むarrayを使い、fdにin-band placeholderはない。WSIとzwlだけが使い、標準アプリはfactoryを直接呼ばない。descriptorはK保存内容と照合し、linux-dmabuf-v1は広告しない。
+
+FIFOのframe完了はpacing、wl_buffer.releaseはallocation再使用可能性であり別物。MAILBOXでもrelease条件は共通。swapchain leaseの破棄はcallback/buffer protocol ownerを退役させるだけで、surface mapping/configureはアプリに残す。表示中のfront allocationはcompositorがreplacement/surface destructionまで保持する。CPU allocation失敗がGPU submitによるwait消費の後に起きた場合はDEVICE_LOSTへ正規化する。
+
+### 現状制限とp004レビュー
+
+初版はamd64、既存QEMU/Venus、同一GPU、linear RGBA8/BGRA8、全画面zwlで検証する。native image extentは16..4096、renderer上限が小さい場合はそちらを優先する。現factoryはdevice identity/format/capability eventを持たず、multi-GPU support queryの正確な照合は後続レビュー項目。K importは別GPUをEXDEVで拒否する。
+
+libwaylandの選択coreはwl_display/registry/callback/region/buffer v1、compositor/surface/output v4、xdg-shell v1。入力、wl_shm、wl_subcompositor、server-created new_id event、汎用server library、一般DEは未対応。公開Vulkan external-memory/fence fd拡張、DRM互換、EGL/GLES、native i915、他GPU間共有も追加していない。
+
+p004では、実装したopsと275関数/44候補の対応、native format/extent/device capabilityの供給元、GPU内画像とcopy fallbackの選択境界、mapping/export/import/scanout参照の寿命を整理する。共有fdはkernel object capabilityであり、Vulkanの論理imageやsession全体の共有ではない点を維持する。新しい機能を思いついたという理由で本Phaseへ複数目標を追加しない。
+
+限定fixture、C/C++・ILP32/LP64 ABI、157 API dispatch、独立source/provenanceと失敗履歴は[Wayland実装引き継ぎ](phase006/wayland-implementation.md)を参照。最終q309-direct-002 / q309-wayland-004の画像oracle、lifecycle/console復帰を受入済み。詳細は[結果](phase006/results.md)を参照する。

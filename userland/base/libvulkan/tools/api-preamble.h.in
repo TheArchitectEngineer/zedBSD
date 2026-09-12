@@ -1,7 +1,7 @@
+/* -*- mode: c; c-file-style: "linux"; tab-width: 8; -*- */
+
 /*
- * zedBSD
- * Copyright (C) 2026 Awe Morris
- *
+ * zedBSD declaration formatting and selection: Copyright (C) 2026 Awe Morris.
  * Registry-derived API declarations: Copyright 2015-2023 The Khronos Group Inc.
  *
  * SPDX-License-Identifier: Apache-2.0
@@ -15,8 +15,8 @@
  * The library advertises only the features and extensions it implements.
  */
 
-#ifndef VULKAN_CORE_H
-#define VULKAN_CORE_H
+#ifndef ZEDBSD_VULKAN_CORE_H
+#define ZEDBSD_VULKAN_CORE_H
 
 #include "vk_platform.h"
 

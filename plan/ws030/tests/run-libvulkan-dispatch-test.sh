@@ -7,6 +7,7 @@ work=$(mktemp -d /tmp/zedbsd-libvulkan-dispatch.XXXXXX)
 trap 'rm -rf "$work"' EXIT HUP INT TERM
 mkdir -p "$work/include"
 ln -s "$repo/libc/include/vulkan" "$work/include/vulkan"
+ln -s "$repo/libc/include/wayland" "$work/include/wayland"
 for mode in ordinary sanitize; do
     extra=
     executable_extra=
@@ -15,12 +16,22 @@ for mode in ordinary sanitize; do
         executable_extra=-no-pie
     fi
     set --
-    for source in objects wire context codec dispatch instance device resources pipeline descriptors commands memory sync queue query wsi wsi-display wsi-swapchain; do
+    for source in client proxy wire event protocol utility; do
+        set -- "$@" "$repo/userland/base/libwayland/$source.c"
+    done
+    timeout 60 cc -std=c89 -D_GNU_SOURCE -Wall -Wextra -Werror $extra \
+        -I"$work/include" -I"$repo/libc/include/wayland" -fPIC -shared "$@" \
+        -Wl,-z,defs -Wl,-soname,libwayland-client.so -pthread \
+        -Wl,--version-script,"$repo/userland/base/libwayland/exports.map" \
+        -o "$work/libwayland-client.so"
+    set --
+    for source in objects wire context codec dispatch instance device resources pipeline descriptors commands memory sync queue query wsi wsi-display wsi-swapchain wsi-image wsi-wayland; do
         set -- "$@" "$repo/userland/base/libvulkan/$source.c"
     done
     timeout 60 cc -std=c89 -D_GNU_SOURCE -Wall -Wextra -Werror $extra \
-        -I"$work/include" -I"$repo/include" -fPIC -shared "$@" \
+        -I"$work/include" -I"$repo/include" -I"$repo/libc/include/wayland" -fPIC -shared "$@" \
         -Wl,-z,defs -Wl,-soname,libvulkan-dispatch.so -pthread \
+        -L"$work" -Wl,-rpath,"$work" -l:libwayland-client.so \
         -o "$work/libvulkan-dispatch.so"
     timeout 30 cc -std=c89 -D_GNU_SOURCE -Wall -Wextra -Werror $extra $executable_extra \
         -I"$work/include" -I"$repo/include" -I"$repo/userland/base/libvulkan" \

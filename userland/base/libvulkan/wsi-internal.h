@@ -13,6 +13,7 @@
 #define VULKAN_WSI_INTERNAL_H
 
 #include "internal.h"
+#include <uapi/gpu.h>
 
 #define VULKAN_WSI_OUTPUT_CONNECTED	1U
 #define VULKAN_WSI_OUTPUT_FIFO		2U
@@ -109,6 +110,10 @@ struct vulkan_wsi_platform_ops {
 	VkResult (*present)(void *, const struct vulkan_wsi_pixels *, uint64_t *);
 	VkResult (*wait)(void *, uint64_t, uint64_t);
 	void (*destroy_surface)(struct vulkan_surface *);
+	VkResult (*import_image)(void *, int, const struct gpu_image_descriptor *, void **);
+	VkResult (*present_image)(void *, void *, VkPresentModeKHR, uint64_t *);
+	VkResult (*progress)(void *);
+	VkBool32 (*image_available)(void *);
 };
 
 /* The direct adapter supplies these after its kernel contract is finalized. */
@@ -124,5 +129,10 @@ VkResult vulkan_wsi_display_snapshot(struct vulkan_display *display, struct vulk
 VkResult vulkan_wsi_display_refresh(struct vulkan_display *display);
 VkResult vulkan_wsi_surface_retain(struct vulkan_surface *surface);
 void vulkan_wsi_surface_release(struct vulkan_surface *surface);
+
+VkResult vulkan_wsi_surface_publish(struct vulkan_surface *surface, VkSurfaceKHR *handle);
+VkResult vulkan_wsi_shared_image_create(struct VkDevice_T *device, VkFormat format, VkExtent2D extent, const VkAllocationCallbacks *allocator, VkImage *image, VkDeviceMemory *memory, int *fd, struct gpu_image_descriptor *descriptor);
+
+VkResult vulkan_wsi_shared_image_import(struct VkDevice_T *device, int fd, const VkAllocationCallbacks *allocator, VkImage *image, VkDeviceMemory *memory, struct gpu_image_descriptor *descriptor);
 
 #endif

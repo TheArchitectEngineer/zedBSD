@@ -13,6 +13,11 @@
 #include <kern/cdev.h>
 #include <kern/cred.h>
 #include <kern/file.h>
+#include <kern/filedesc.h>
+#include <kern/fd-object.h>
+#include <kern/handle.h>
+#include <kern/process.h>
+#include <kern/thread.h>
 #include <kern/kmem.h>
 #include <kern/lock.h>
 #include <kern/poll.h>
@@ -33,7 +38,7 @@
 /*
  * One registered GPU, retained by its owner and every cdev generation.
  *
- *  - The registry lock protects online/sessions.
+ *  - The registry lock protects online, sessions and exported capability counts.
  *  - The lifecycle gate protects the sorted device list and node publication.
  *  - Backend state stays borrowed until unregister succeeds, even when the
  *    node is already hidden.
@@ -47,6 +52,8 @@ struct drv_gpu_device {
 	unsigned number;
 	unsigned online;
 	unsigned sessions;
+	unsigned shares;
+	uint64_t identity;
 };
 
 /*
@@ -77,6 +84,17 @@ struct gpu_resource {
 	volatile unsigned mapping_count;
 	uint64_t mapping_offset;
 	struct drv_gpu_mapping mapping;
+};
+
+/*
+ * One capability retaining an allocation independently from its exporting open.
+ * A kernel handle owns this record; its final release drops the backend share
+ * before releasing the device's withdrawal barrier.
+ */
+struct gpu_shared_resource {
+	struct drv_gpu_device *device;
+	void *object;
+	struct gpu_image_descriptor image;
 };
 
 /*
@@ -159,6 +177,13 @@ static int gpu_map_ioctl(struct gpu_session *session, uintptr_t argument);
 static int gpu_mmap(struct file *file, off_t offset, size_t bytes, uint32_t prot, struct vm_device_mapping **result);
 static void gpu_mapping_release(void *owner);
 static int gpu_display_ioctl(struct gpu_session *session, unsigned long command, uintptr_t argument);
+static int gpu_export_ioctl(struct gpu_session *session, uintptr_t argument);
+static int gpu_import_ioctl(struct gpu_session *session, uintptr_t argument);
+static int gpu_image_validate(struct gpu_resource *resource, const struct gpu_image_descriptor *image);
+static void gpu_shared_release(void *object);
+static int gpu_shared_hold_device(struct drv_gpu_device *device);
+static int gpu_export_install(struct kernel_handle *handle, struct gpu_resource_export *request, uintptr_t argument);
+static const struct kernel_handle_ops *gpu_shared_operations(void);
 
 /*
  * Registers one initialized backend and publishes its character device.
@@ -226,6 +251,14 @@ drv_gpu_register(
 	device->online = 1;
 	refcount_init(&device->references, 1);
 
+	/* Device identities share the non-reusable generation domain with resource handles. */
+	error = gpu_handle_allocate(&device->identity);
+	if (error != 0) {
+		gpu_device_release(device);
+		atomic_store_release(&gpu_lifecycle, 0);
+		return error;
+	}
+
 	/* Publishes immediately, independently of whether devfs is mounted. */
 	error = gpu_publish_node(device);
 	if (error != 0) {
@@ -254,6 +287,7 @@ drv_gpu_unregister(
 	struct drv_gpu_device **position;
 	struct cdev *node;
 	unsigned sessions;
+	unsigned shares;
 	unsigned long irq;
 	int acquired;
 	int error;
@@ -289,6 +323,7 @@ drv_gpu_unregister(
 
 	device->online = 0;
 	sessions = device->sessions;
+	shares = device->shares;
 
 	spin_unlock_irqrestore(&gpu_registry_lock, irq);
 
@@ -310,7 +345,7 @@ drv_gpu_unregister(
 	poll_notify();
 
 	/* The owner must retain backend state until every close has finished. */
-	if (sessions != 0) {
+	if (sessions != 0 || shares != 0) {
 		atomic_store_release(&gpu_lifecycle, 0);
 		return EBUSY;
 	}
@@ -353,7 +388,7 @@ gpu_ops_validate(
 	/* Rejects bits that have no defined framework operation. */
 	if ((ops->capabilities & ~(GPU_CAP_RESOURCE | GPU_CAP_CAPSET |
 	    GPU_CAP_BLOB | GPU_CAP_TRANSFER | GPU_CAP_COMMAND |
-	    GPU_CAP_PRESENT | GPU_CAP_MAPPING | GPU_CAP_DISPLAY)) != 0)
+	    GPU_CAP_PRESENT | GPU_CAP_MAPPING | GPU_CAP_DISPLAY | GPU_CAP_SHARE)) != 0)
 		return EOPNOTSUPP;
 
 	/* Storage allocation must agree with its advertised capability. */
@@ -462,6 +497,25 @@ gpu_ops_validate(
 		if ((ops->capabilities & GPU_CAP_RESOURCE) == 0)
 			return EINVAL;
 	} else if (ops->display != NULL) {
+		return EINVAL;
+	}
+
+	/* Exported allocations need independent release and receiver-context import together. */
+	if ((ops->capabilities & GPU_CAP_SHARE) != 0) {
+		/* Shared resources must originate in a supported blob namespace. */
+		if ((ops->capabilities & GPU_CAP_BLOB) == 0)
+			return EINVAL;
+
+		/* A missing share table cannot preserve exported ownership. */
+		if (ops->share == NULL)
+			return EINVAL;
+
+		/* Every successful export has both terminal cleanup and a defined import operation. */
+		if (ops->share->export_resource == NULL ||
+		    ops->share->release == NULL ||
+		    ops->share->import_resource == NULL)
+			return EINVAL;
+	} else if (ops->share != NULL) {
 		return EINVAL;
 	}
 
@@ -786,6 +840,14 @@ gpu_ioctl(
 	case GPU_COMMAND:
 		/* Submits an independent kernel copy of the backend command stream. */
 		error = gpu_command_ioctl(session, argument);
+		break;
+	case GPU_RESOURCE_EXPORT:
+		/* Exports one allocation capability without granting session-wide authority. */
+		error = gpu_export_ioctl(session, argument);
+		break;
+	case GPU_RESOURCE_IMPORT:
+		/* Imports a typed capability into this independent GPU open. */
+		error = gpu_import_ioctl(session, argument);
 		break;
 	case GPU_RESOURCE_MAP:
 		/* Returns a session-private mmap token without exposing physical addresses. */
@@ -1292,9 +1354,19 @@ gpu_blob_ioctl(
 	if (request.version != GPU_ABI_VERSION || request.size != sizeof(request))
 		return EINVAL;
 
-	/* Mapping is the only supported flag in the first blob contract. */
-	if ((request.flags & ~GPU_BLOB_MAPPABLE) != 0)
+	/* Blob flags select mapping and independent sharing without changing their wire values. */
+	if ((request.flags & ~(GPU_BLOB_MAPPABLE | GPU_BLOB_SHAREABLE | GPU_BLOB_CROSS_DEVICE)) != 0)
 		return EINVAL;
+
+	/* A cross-device renderer export must also be explicitly shareable. */
+	if ((request.flags & GPU_BLOB_CROSS_DEVICE) != 0 &&
+	    (request.flags & GPU_BLOB_SHAREABLE) == 0)
+		return EINVAL;
+
+	/* Sharing flags require the complete backend capability. */
+	if ((request.flags & (GPU_BLOB_SHAREABLE | GPU_BLOB_CROSS_DEVICE)) != 0 &&
+	    (device->ops->capabilities & GPU_CAP_SHARE) == 0)
+		return EOPNOTSUPP;
 
 	/* Allocation outputs must not contain stale handles or backend identities. */
 	if (request.handle != 0 || request.resource_id != 0)
@@ -1967,15 +2039,14 @@ gpu_display_ioctl(
 		    request.mode.operation != GPU_DISPLAY_MODE_VALIDATE)
 			return EINVAL;
 
-		/* Enumeration provides geometry as output, while validation requires a complete input mode. */
+		/* Enumeration provides geometry; validation permits driver frequency selection with refresh zero. */
 		if (request.mode.operation == GPU_DISPLAY_MODE_ENUMERATE) {
 			request.mode.width = 0;
 			request.mode.height = 0;
 			request.mode.refresh_millihz = 0;
 		} else if (request.mode.index != 0 ||
 		    request.mode.width == 0 ||
-		    request.mode.height == 0 ||
-		    request.mode.refresh_millihz == 0) {
+		    request.mode.height == 0) {
 			return EINVAL;
 		}
 
@@ -1983,6 +2054,13 @@ gpu_display_ioctl(
 		error = ops->mode(device->private_data, session->backend, &request.mode);
 		if (error != 0)
 			return error;
+
+		/* A driver-selected validation result must resolve to a complete usable mode. */
+		if (request.mode.operation == GPU_DISPLAY_MODE_VALIDATE &&
+		    (request.mode.width == 0U ||
+		     request.mode.height == 0U ||
+		     request.mode.refresh_millihz == 0U))
+			return EIO;
 		break;
 	case GPU_DISPLAY_CLAIM:
 		/* A failed copyout must not leave a reservation the caller cannot release. */
@@ -2033,7 +2111,8 @@ gpu_display_ioctl(
 		if (request.present.lease == 0 ||
 		    request.present.generation == 0 ||
 		    request.present.sequence != 0 ||
-		    request.present.flags != GPU_DISPLAY_PRESENT_FIFO)
+		    (request.present.flags != GPU_DISPLAY_PRESENT_FIFO &&
+		     request.present.flags != (GPU_DISPLAY_PRESENT_FIFO | GPU_DISPLAY_PRESENT_BLOB)))
 			return EINVAL;
 
 		/* Bounds packed row arithmetic before checking any resource extent. */
@@ -2058,9 +2137,19 @@ gpu_display_ioctl(
 		if (error != 0)
 			return error;
 
-		/* Native presentation may read only live ordinary storage with a valid starting offset. */
-		if (resource->kind != GPU_RESOURCE_STORAGE ||
-		    request.present.offset > resource->bytes)
+		/* Blob presentation consumes only imported or exported allocation resources. */
+		if ((request.present.flags & GPU_DISPLAY_PRESENT_BLOB) != 0) {
+			/* Shared scanout requires allocation ownership in the blob namespace. */
+			if (resource->kind != GPU_RESOURCE_BLOB)
+				return EINVAL;
+		} else {
+			/* Legacy copied presentation keeps its ordinary storage contract. */
+			if (resource->kind != GPU_RESOURCE_STORAGE)
+				return EINVAL;
+		}
+
+		/* An offset is validated before subtracting it from the retained extent. */
+		if (request.present.offset > resource->bytes)
 			return EINVAL;
 
 		/* Bounds the whole image before the backend can read even its first pixel. */
@@ -2106,5 +2195,416 @@ gpu_display_ioctl(
 		return error;
 
 	/* Succeeded: the caller received a complete initialized response for its owned object. */
+	return 0;
+}
+
+/* Returns the immutable type-specific finalizer used by GPU capabilities. */
+static const struct kernel_handle_ops *
+gpu_shared_operations(void)
+{
+	static const struct kernel_handle_ops operations = {
+		gpu_shared_release
+	};
+
+	/* Succeeded: every GPU capability uses the same verified payload contract. */
+	return &operations;
+}
+
+/* Validates the complete linear image extent before an export reaches the backend. */
+static int
+gpu_image_validate(
+	struct gpu_resource *resource,
+	const struct gpu_image_descriptor *image)
+{
+	uint64_t bytes;
+
+	/* The first sharing contract has one fixed public metadata layout. */
+	if (image->version != GPU_ABI_VERSION || image->size != sizeof(*image))
+		return EINVAL;
+
+	/* K supplies the device identity and accepts no reserved metadata. */
+	if (image->device_id != 0U || image->reserved != 0U)
+		return EINVAL;
+
+	/* Shared allocations describe exactly the resource being exported. */
+	if (resource->kind != GPU_RESOURCE_BLOB || image->allocation_bytes != resource->bytes)
+		return EINVAL;
+
+	/* The initial scanout contract accepts complete linear packed-color images. */
+	if (image->tiling != GPU_IMAGE_LINEAR || image->memory_type >= 32U)
+		return EOPNOTSUPP;
+
+	/* Vulkan 1.0 image usages form the supported nonempty description domain. */
+	if (image->usage == 0U || (image->usage & ~255U) != 0U)
+		return EINVAL;
+
+	/* Width multiplication must fit before the row pitch is compared. */
+	if (image->width == 0U ||
+	    image->width > UINT32_MAX / 4U ||
+	    image->height == 0U)
+		return EINVAL;
+
+	/* Only the two published four-byte channel orders have a defined scanout encoding. */
+	if (image->format != GPU_PIXEL_RGBA8888 && image->format != GPU_PIXEL_BGRA8888)
+		return EOPNOTSUPP;
+
+	/* Every visible row and its padding belong to the same aligned allocation. */
+	if (image->stride < image->width * 4U || (image->stride & 3U) != 0U)
+		return EINVAL;
+
+	/* The native single-plane scanout offset is representable in 32 bits. */
+	if (image->offset > UINT32_MAX || image->offset > resource->bytes)
+		return EINVAL;
+
+	/* Bounds the full image only after the offset subtraction is safe. */
+	bytes = (uint64_t)image->stride * image->height;
+	if (bytes > resource->bytes - image->offset)
+		return EINVAL;
+
+	/* Succeeded: no described pixel can address storage outside this allocation. */
+	return 0;
+}
+
+/* Retains backend withdrawal independently from any open session. */
+static int
+gpu_shared_hold_device(
+	struct drv_gpu_device *device)
+{
+	unsigned long irq;
+
+	/* New capabilities cannot escape after device withdrawal starts. */
+	irq = spin_lock_irqsave(&gpu_registry_lock);
+
+	if (device->online == 0U) {
+		spin_unlock_irqrestore(&gpu_registry_lock, irq);
+		return ENODEV;
+	}
+
+	/* Counter exhaustion must not turn live capabilities into a removable device. */
+	if (device->shares == UINT_MAX) {
+		spin_unlock_irqrestore(&gpu_registry_lock, irq);
+		return EOVERFLOW;
+	}
+
+	/* Each capability payload keeps the borrowed backend valid through its finalizer. */
+	device->shares++;
+
+	spin_unlock_irqrestore(&gpu_registry_lock, irq);
+
+	/* Succeeded: unregister must wait for this exported ownership lifetime. */
+	return 0;
+}
+
+/* Releases the backend allocation before dropping the device withdrawal barrier. */
+static void
+gpu_shared_release(
+	void *object)
+{
+	struct gpu_shared_resource *shared;
+	struct drv_gpu_device *device;
+	unsigned long irq;
+
+	/* The handle finalizer owns its payload and may run without an exporting process. */
+	shared = object;
+	device = shared->device;
+
+	/* Failed export acquisition owns no backend reference to release. */
+	if (shared->object != NULL)
+		device->ops->share->release(device->private_data, shared->object);
+
+	/* No payload pointer remains live once the device can be detached. */
+	kern_free(shared);
+
+	/* Zero permits unregister only after the backend finalizer has completely returned. */
+	irq = spin_lock_irqsave(&gpu_registry_lock);
+
+	device->shares--;
+
+	spin_unlock_irqrestore(&gpu_registry_lock, irq);
+
+	/* Succeeded: neither this capability nor its callback borrows the device. */
+	return;
+}
+
+/* Publishes the fd number before committing its reserved table slot. */
+static int
+gpu_export_install(
+	struct kernel_handle *handle,
+	struct gpu_resource_export *request,
+	uintptr_t argument)
+{
+	struct filedesc_reservation reservation;
+	struct fd_object object;
+	struct thread *thread;
+	unsigned flags;
+	int descriptor;
+	int error;
+
+	/* A syscall must have a process-owned descriptor table. */
+	thread = thread_current();
+	if (thread == NULL ||
+	    thread->proc == NULL ||
+	    thread->proc->fd == NULL)
+		return ESRCH;
+
+	/* Public export flags map explicitly to descriptor-local inheritance policy. */
+	flags = 0U;
+	if ((request->flags & GPU_HANDLE_CLOEXEC) != 0U)
+		flags |= FILEDESC_CLOEXEC;
+
+	/* Fork inheritance remains independent from close-on-exec behavior. */
+	if ((request->flags & GPU_HANDLE_CLOFORK) != 0U)
+		flags |= FILEDESC_CLOFORK;
+
+	/* Reservation prevents another thread from closing and reusing a failed export slot. */
+	memset(&reservation, 0, sizeof(reservation));
+	error = filedesc_reserve_many(thread->proc->fd, 1U, flags, &reservation);
+	if (error != 0)
+		return error;
+
+	/* Copy failure withdraws only the reservation, never a later unrelated descriptor. */
+	request->fd = reservation.slots[0];
+	error = copyout(request, argument, sizeof(*request));
+	if (error != 0) {
+		filedesc_abort_reserved(&reservation);
+		return error;
+	}
+
+	/* Successful commit consumes the caller's one owned handle reference. */
+	memset(&object, 0, sizeof(object));
+	object.type = FD_OBJECT_HANDLE;
+	object.data.handle = handle;
+	error = filedesc_commit_objects(&reservation, &object, &descriptor);
+	if (error != 0) {
+		filedesc_abort_reserved(&reservation);
+		return error;
+	}
+
+	/* Succeeded: the published fd owns the capability after a complete output copy. */
+	return 0;
+}
+
+/* Exports one allocation without retaining or exposing its generating GPU session. */
+static int
+gpu_export_ioctl(
+	struct gpu_session *session,
+	uintptr_t argument)
+{
+	struct gpu_resource_export request;
+	struct gpu_shared_resource *shared;
+	struct gpu_resource *resource;
+	struct drv_gpu_device *device;
+	struct kernel_handle *handle;
+	const struct kernel_handle_ops *operations;
+	int error;
+
+	/* Export grants mutation-capable allocation authority and requires a writable source. */
+	if (session->writable == 0U)
+		return EACCES;
+
+	/* No unimplemented sharing callback receives an export request. */
+	device = session->device;
+	if ((device->ops->capabilities & GPU_CAP_SHARE) == 0U)
+		return EOPNOTSUPP;
+
+	/* Snapshot the complete request before resolving its resource identity. */
+	error = copyin(argument, &request, sizeof(request));
+	if (error != 0)
+		return error;
+
+	/* Output fd and public flag bits have a single unambiguous initial form. */
+	if (request.version != GPU_ABI_VERSION ||
+	    request.size != sizeof(request) ||
+	    request.fd != -1 ||
+	    (request.flags & ~(GPU_HANDLE_CLOEXEC | GPU_HANDLE_CLOFORK)) != 0U)
+		return EINVAL;
+
+	/* A globally unique but foreign handle does not grant source ownership. */
+	error = gpu_resource_lookup(session, request.handle, &resource);
+	if (error != 0)
+		return error;
+
+	/* Validate and stamp immutable metadata before the backend retains it. */
+	error = gpu_image_validate(resource, &request.image);
+	if (error != 0)
+		return error;
+
+	/* Allocation metadata is independent from the process-local source handle. */
+	request.image.device_id = device->identity;
+	shared = kern_calloc(1U, sizeof(*shared));
+	if (shared == NULL)
+		return ENOMEM;
+
+	/* Device withdrawal must wait even after the exporting open is gone. */
+	error = gpu_shared_hold_device(device);
+	if (error != 0) {
+		kern_free(shared);
+		return error;
+	}
+
+	/* The payload finalizer now owns the device hold on every remaining path. */
+	shared->device = device;
+	shared->image = request.image;
+	error = device->ops->share->export_resource(
+		device->private_data,
+		session->backend,
+		resource->object,
+		&request.image,
+		&shared->object);
+	if (error != 0) {
+		gpu_shared_release(shared);
+		return error;
+	}
+
+	/* Successful backend acquisition must provide a terminally releasable object. */
+	if (shared->object == NULL) {
+		gpu_shared_release(shared);
+		return EIO;
+	}
+
+	/* A generic typed handle takes the payload only after wrapper allocation succeeds. */
+	operations = gpu_shared_operations();
+	error = handle_create(KERNEL_HANDLE_GPU, operations, shared, &handle);
+	if (error != 0) {
+		gpu_shared_release(shared);
+		return error;
+	}
+
+	/* Installation consumes ownership only after complete copyout and reservation commit. */
+	error = gpu_export_install(handle, &request, argument);
+	if (error != 0) {
+		handle_put(handle);
+		return error;
+	}
+
+	/* Succeeded: userspace owns an independently transferable allocation fd. */
+	return 0;
+}
+
+/* Imports an allocation capability into a separately owned GPU context. */
+static int
+gpu_import_ioctl(
+	struct gpu_session *session,
+	uintptr_t argument)
+{
+	struct gpu_resource_import request;
+	struct gpu_image_descriptor empty;
+	struct gpu_shared_resource *shared;
+	struct gpu_resource *resource;
+	struct drv_gpu_device *device;
+	struct kernel_handle *handle;
+	const struct kernel_handle_ops *operations;
+	void *object;
+	uint32_t resource_id;
+	int different;
+	int error;
+
+	/* Imported resources belong to a writable destination open. */
+	if (session->writable == 0U)
+		return EACCES;
+
+	/* The destination must implement the whole independent sharing contract. */
+	device = session->device;
+	if ((device->ops->capabilities & GPU_CAP_SHARE) == 0U)
+		return EOPNOTSUPP;
+
+	/* The descriptor is the only input beyond the versioned request header. */
+	error = copyin(argument, &request, sizeof(request));
+	if (error != 0)
+		return error;
+
+	/* Reject stale outputs and unknown flags before acquiring a foreign capability. */
+	if (request.version != GPU_ABI_VERSION ||
+	    request.size != sizeof(request) ||
+	    request.fd < 0 ||
+	    request.flags != 0U ||
+	    request.handle != 0U ||
+	    request.resource_id != 0U ||
+	    request.reserved != 0U)
+		return EINVAL;
+
+	/* Never trust receiver-supplied descriptions in place of the exported immutable metadata. */
+	memset(&empty, 0, sizeof(empty));
+	different = memcmp(&request.image, &empty, sizeof(empty));
+	if (different != 0)
+		return EINVAL;
+
+	/* Type-checked lookup returns a strong reference independent from concurrent close. */
+	handle = handle_fd_get(request.fd, KERNEL_HANDLE_GPU);
+	if (handle == NULL)
+		return EINVAL;
+
+	/* The registered type's payload contract must match before any cast is used. */
+	operations = gpu_shared_operations();
+	if (handle->ops != operations) {
+		handle_put(handle);
+		return EINVAL;
+	}
+
+	/* A capability from another GPU cannot name resources in this renderer namespace. */
+	shared = handle->object;
+	if (shared->device != device) {
+		handle_put(handle);
+		return EXDEV;
+	}
+
+	/* Reserve a new session-local identity before acquiring the backend attachment. */
+	error = gpu_resource_reserve(session, shared->image.allocation_bytes, &resource);
+	if (error != 0) {
+		handle_put(handle);
+		return error;
+	}
+
+	/* Import creates its own owned resource without consuming the transferable fd. */
+	object = NULL;
+	resource_id = 0U;
+	error = device->ops->share->import_resource(
+		device->private_data,
+		session->backend,
+		shared->object,
+		&object,
+		&resource_id);
+	if (error != 0) {
+		kern_free(resource);
+		handle_put(handle);
+		return error;
+	}
+
+	/* A complete imported resource needs both cleanup ownership and a native identity. */
+	if (object == NULL || resource_id == 0U) {
+		/* Even malformed successful backend output must release any ownership it created. */
+		if (object != NULL)
+			device->ops->resource_destroy(device->private_data, session->backend, object);
+
+		/* Neither the unpublished slot nor the borrowed capability escapes this failure. */
+		kern_free(resource);
+		handle_put(handle);
+		return EIO;
+	}
+
+	/* The destination's new resource now retains its own allocation lifetime. */
+	request.handle = resource->handle;
+	request.resource_id = resource_id;
+	request.image = shared->image;
+	handle_put(handle);
+
+	/* Failed output copy destroys only the unpublished destination attachment. */
+	error = copyout(&request, argument, sizeof(request));
+	if (error != 0) {
+		device->ops->resource_destroy(device->private_data, session->backend, object);
+		kern_free(resource);
+		return error;
+	}
+
+	/* Publication makes the new handle reachable only through this destination session. */
+	resource->object = object;
+	resource->kind = GPU_RESOURCE_BLOB;
+	resource->next = session->resources;
+	session->resources = resource;
+
+	/* This session's resource count includes each independently owned import. */
+	session->resource_count++;
+
+	/* Succeeded: the caller can bind or present the same allocation in its own context. */
 	return 0;
 }

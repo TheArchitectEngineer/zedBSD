@@ -126,7 +126,7 @@ endif
 AMD64_VENUS_SOURCES :=
 ifeq ($(CONFIG_DRIVER_PCI_VENUS),y)
 AMD64_VENUS_SOURCES += src/drivers/gpu/venus/transport.c \
-	src/drivers/gpu/venus/venus.c src/drivers/gpu/venus/display.c
+	src/drivers/gpu/venus/venus.c src/drivers/gpu/venus/display.c src/drivers/gpu/venus/share.c
 endif
 AMD64_INTEL_WLAN_SOURCES :=
 ifeq ($(CONFIG_DRIVER_PCI_INTEL_AX211),y)
@@ -198,7 +198,7 @@ AMD64_KERNEL_SOURCES := \
 	src/kern/lock.c src/kern/waitq.c \
 	src/kern/process.c src/kern/thread.c src/kern/sched.c \
  src/kern/vmspace.c src/kern/vm-device.c src/kern/vm.c \
-	src/kern/filedesc.c \
+	src/kern/filedesc.c src/kern/handle.c src/kern/fd-object.c \
 	src/kern/record-lock.c \
 	src/kern/pipe.c src/kern/cred.c src/kern/signal.c \
 	src/kern/cwdinfo.c src/kern/elf.c src/kern/exec.c \
@@ -664,7 +664,7 @@ $(BUILD)/bin/$(1): $(AMD64_USER_LIBC_OBJS) \
 	@test -z "$$$$($(NM) -u $$@)" || { $(NM) -u $$@; exit 1; }
 	$(NOCT) --path=tools/build $(AMD64_USER_ELF_CHECK) --machine amd64 $$@
 endef
-$(foreach command,$(filter-out vkdemo,$(USER_BASIC_COMMANDS)),\
+$(foreach command,$(filter-out vkdemo wltest gpu-share-test,$(USER_BASIC_COMMANDS)),\
 	$(eval $(call AMD64_USER_BASIC_COMMAND,$(command))))
 # ELF64 runtime linker and shared libc.
 DYNAMIC_DIR := $(BUILD)/dynamic
@@ -745,20 +745,32 @@ $(DYNAMIC_DIR)/libc.so: $(DYNAMIC_LIBC_OBJS)
 	$(LD) -m elf_x86_64 -shared -soname libc.so --hash-style=both \
  -z now -z relro -z separate-code -z stack-size=0x100000 $^ -o $@
 
+# Wayland client transport is a normal shared dependency of the Vulkan WSI.
+DYNAMIC_WAYLAND_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libwayland-client)
+
+$(DYNAMIC_DIR)/libwayland-client.so: $(DYNAMIC_WAYLAND_OBJS) $(DYNAMIC_DIR)/libc.so \
+	userland/base/libwayland/exports.map tools/build/check-dynamic-elf.py
+	$(LD) -m elf_x86_64 -shared -soname libwayland-client.so --hash-style=both \
+ -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
+ --version-script=userland/base/libwayland/exports.map \
+ $(DYNAMIC_WAYLAND_OBJS) -L$(DYNAMIC_DIR) -l:libc.so -o $@
+	$(PYTHON) tools/build/check-dynamic-elf.py --machine amd64 --role shared-library \
+ --needed libc.so --soname libwayland-client.so $@
+
 # Vulkan is an ordinary shared dependency of the portable base application.
 DYNAMIC_VULKAN_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libvulkan)
 DYNAMIC_VKDEMO_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,vkdemo)
 DYNAMIC_VULKAN_CHECK := tools/build/check-dynamic-elf.py
 
-$(DYNAMIC_DIR)/libvulkan.so: $(DYNAMIC_VULKAN_OBJS) $(DYNAMIC_DIR)/libc.so \
+$(DYNAMIC_DIR)/libvulkan.so: $(DYNAMIC_VULKAN_OBJS) $(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/libwayland-client.so \
 	userland/base/libvulkan/exports.map userland/base/libvulkan/api-commands.tsv \
 	$(DYNAMIC_VULKAN_CHECK)
 	$(LD) -m elf_x86_64 -shared -soname libvulkan.so --hash-style=both \
  -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
  --version-script=userland/base/libvulkan/exports.map \
- $(DYNAMIC_VULKAN_OBJS) -L$(DYNAMIC_DIR) -l:libc.so -o $@
+ $(DYNAMIC_VULKAN_OBJS) -L$(DYNAMIC_DIR) -l:libwayland-client.so -l:libc.so -o $@
 	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role shared-library \
- --needed libc.so --soname libvulkan.so \
+ --needed libwayland-client.so --needed libc.so --soname libvulkan.so \
  --exports-tsv userland/base/libvulkan/api-commands.tsv $@
 
 $(BUILD)/bin/vkdemo: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
@@ -774,6 +786,41 @@ $(BUILD)/bin/vkdemo: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
  -l:libvulkan.so -l:libc.so -o $@
 	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
  --needed libvulkan.so --needed libc.so $@
+
+# The test application imports only standard Wayland and Vulkan entry points.
+DYNAMIC_WLTEST_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,wltest)
+
+$(BUILD)/bin/wltest: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
+	$(DYNAMIC_WLTEST_OBJS) $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libwayland-client.so \
+	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
+	@mkdir -p $(dir $@)
+	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
+ -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
+ -Wl,--dynamic-linker=/lib/ld.so \
+ $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_WLTEST_OBJS) \
+ -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
+ -l:libvulkan.so -l:libwayland-client.so -l:libc.so -o $@
+	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
+ --needed libvulkan.so --needed libwayland-client.so --needed libc.so $@
+
+# This finite fixture links private Vulkan helpers without exporting them from the public DSO.
+$(DYNAMIC_DIR)/obj/plan/ws014/tests/gpu-share-client.o: DYNAMIC_CPPFLAGS += -Iuserland/base/libvulkan
+
+$(BUILD)/bin/gpu-share-test: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
+	$(DYNAMIC_DIR)/obj/plan/ws014/tests/gpu-share-client.o $(DYNAMIC_VULKAN_OBJS) \
+	$(DYNAMIC_DIR)/libwayland-client.so $(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so
+	@mkdir -p $(dir $@)
+	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
+ -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
+ -Wl,--dynamic-linker=/lib/ld.so \
+ $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
+ $(DYNAMIC_DIR)/obj/plan/ws014/tests/gpu-share-client.o $(DYNAMIC_VULKAN_OBJS) \
+ -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
+ -l:libwayland-client.so -l:libc.so -o $@
+	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
+ --needed libwayland-client.so --needed libc.so $@
 
 $(DYNAMIC_DIR)/alt/rpathdep.so: \
 	$(DYNAMIC_DIR)/obj/userland/base/tests/rpathdep.o $(DYNAMIC_DIR)/ld.so

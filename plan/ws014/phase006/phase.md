@@ -3,13 +3,13 @@
 # WS014 p006: kernel handleによるGPUメモリ共有と最小Wayland WSI
 
 <!-- awesome-plan-current:start -->
-Status: planned
+Status: cleared
 Phase disposition: normal
 Parent: [WS014](https://github.com/awemorris/zedBSD/issues/15)
-Queue: none
-Execution: not started
+Queue: q309 finished / q309-i01 cleared
+Execution: completed; final source build, direct and Wayland acceptance verified
 Dependencies: cleared ws014-p002 / p003 / p005 and completed WS030 outputs
-Next: one finite Queue item for this entire Phase; then ws014-p004 final review
+Next: ws014-p004 planning, not queued
 <!-- awesome-plan-current:end -->
 
 Combined ID: `ws014-p006`
@@ -38,7 +38,7 @@ Decision source: current user, 2026-09-13 JST. 「p006を1つ作りましょう�
 | `userland/base/wltest/` | 標準Wayland client APIとVulkan APIを使う試験アプリ。GPU ioctlやVenus wireをアプリへ直接持ち込まない |
 | 既存package/build/sysrootと`plan/ws014/tests/` | library/appのbuild・配置、限定試験と既存private QEMU capture loopへの統合 |
 
-コード配置は新規作成予定であり、作成時点の実装済みファイルを意味しない。ヘッダ・library・protocolの対応範囲を明示し、全Wayland SDK/全拡張対応とは扱わない。サーバ内部の通信部品は必要に応じて共用してよいが、汎用`libwayland-server.so`の公開は完了条件に加えない。
+計画作成時点では新規作成予定だった配置は、q309で実装・検証済み。ヘッダ・library・protocolの対応範囲を明示し、全Wayland SDK/全拡張対応とは扱わない。サーバ内部の通信部品は必要に応じて共用してよいが、汎用`libwayland-server.so`の公開は完了条件に加えない。
 
 ## kernel handleとfdの契約
 
@@ -96,9 +96,9 @@ GPU bufferはzedBSD専用のbuffer factory拡張（名称は実装時に固定�
 
 [Guardrail](https://github.com/awemorris/zedBSD/issues/363)、ローカル`plan/coding-style.md`全文、`plan/master-design-policy.md`、`plan/standards/automation.md`を適用する。ANSI Cの宣言・制御構造、関数/コメント/所有権・既存drv_gpu_opsの動的登録を守る。base systemは独立実装とし、公式protocol/XMLの出典・revision・ライセンスを記録する。恒久的generatorはNoctを使う。対象buildは`make -j16`、変更対象のformat/analysis/限定試験と`git diff --check`を行い、aggregate `make check`は禁止。
 
-追加HAL変更を前提にしない。必要になれば既存承認と区別できる具体差分を先に提示し、適用可能な明示承認後に進める。git add/commit/pushはユーザー担当。現段階の成果は計画のみで、コード・新しいbuild/runtime結果・実装Queueはない。
+追加HAL変更を前提にしない。必要になれば既存承認と区別できる具体差分を先に提示し、適用可能な明示承認後に進める。git add/commit/pushはユーザー担当。計画作成時点の「計画のみ」は履歴。q309の実装・build/runtime受入は末尾の完了記録を参照。
 
-## 設計の根拠と未確定事項
+## 計画作成時点の設計根拠と未確定事項（履歴）
 
 現在のfd/pseudo-file/SCM_RIGHTS、GPUのsession所有、WSIのCPU readback、固定virglrenderer1.1.0のresource importを静的確認した。別contextの実共有・GPU内表示・最小Waylandの実測はまだない。export/import flags・対応allocation条件・最終scanoutの制約を最初のGPU実装で確認し、達成不能な条件が判明した場合は証拠と残件を記録する。
 
@@ -108,3 +108,37 @@ GPU bufferはzedBSD専用のbuffer factory拡張（名称は実装時に固定�
 - [Vulkan外部メモリと同期の区別](https://github.khronos.org/Vulkan-Site/guide/latest/extensions/external.html)
 
 参照日は2026-09-13。採用するprotocol/spec/headerの固定revisionと実装範囲は実装時に記録する。標準APIを公開しても正式CTS認証や全Wayland互換を根拠なく主張しない。
+
+## q309開始: WS014 p006を単一項目で実行（2026-09-13）
+
+ユーザーの「では、実行してください。」により、[p006](https://github.com/awemorris/zedBSD/issues/393)全体をq309-i01として実行する。kernel handle/fd/SCM_RIGHTS、GPU/Venusの別context allocation共有・GPU内表示、VK_KHR_wayland_surface、最小libwayland-client.so・zwl・wltest、限定検証と実QEMU受入を一つのPhase/項目に含める。中核K/driverを先に実装し、通信/WSI/アプリを接続して実測から改善する。p004は含めない。
+
+時間枠は720 active minutes見積、120分ごとに進捗・残件を確認。各command/VMを有限化し、同条件無変更retryは3回まで。達成の保証や無限継続ではなく、未達は証拠と再開条件を残す。全規約を適用し、既存成果/履歴を保持する。HAL追加変更とgit add/commit/pushは許可されたとは解釈しない。private host・image/source転送の承認を維持する。
+
+q309はactive、q309-i01とp006はin-progress、WS014はincomplete。q308 finished・WS030 completed・既存clearanceは維持。新経路でCPU readbackを必須にせず、実GPU allocation共有と同期/寿命/Wayland protocolを確認する。実装成功・Phase受入はまだ記録していない。
+
+## q309 checkpoint001: GPU画像共有とWayland実表示（2026-09-13）
+
+ユーザーの指摘に沿って表示経路を確認した。従来のCPU readback経路もGOPへは書かず、virtio-gpuの2D resource/SET_SCANOUTへ送っていた。p006では共有GPU allocationをSET_SCANOUT_BLOBへ渡し、通常のWayland表示にCPU readback/再uploadを必須としない。表示数・接続・推奨サイズはGET_DISPLAY_INFO、追加モード・nominal refreshは今回追加したGET_EDIDのbase/CTA progressive DTDから取得する。無効/未対応EDID時は既存50Hz、100Hz超・standard/established timing・DisplayID・物理vblank保証は対象外。
+
+K handle/fd/SCM_RIGHTS、GPU共有、最小libwayland-client.so、VK_KHR_wayland_surface、zwl、標準Wayland/Vulkanアプリwltestを実装した。K参照・copyout rollback、GPU export/import/scanout、Wayland byte/fd FIFO・queue・frame/release・swapchainの限定試験は通常とASan/UBSanで通過。公開ABIはi386/amd64 C/C++で固定公式Wayland/Vulkan headerに一致、Vulkan137 core＋20 WSIの157 dispatch/exportを照合した。正式CTSや全Wayland SDK互換は主張しない。
+
+実QEMU10.0.11/virglrenderer1.1.0/Intel ANVのq309-wayland-001は21.257秒でPASS。生成元プロセス終了後、独立receiver contextでimportしたGPU画像をGPU copyし、検証専用readbackの1024画素が一致。wltest→実SCM_RIGHTS→別processのzwl→scanoutではFIFO/MAILBOX各6枚、計12枚の320×240実VNC画像が独立oracleと全画素一致した。各modeのswapchain再作成と通常終了、zwl12frame/cleanup_failed=0も確認した。これは初回実測で、最終ソースの受入ではない。
+
+検証後、WSI破棄によるアプリ所有surfaceの暗黙unmapを除き、zwlの明示unmap/remapを整理。共有extentの照会範囲とexport上限を一致させた。クライアント/コンポジタ異常終了・再起動、可視console復帰、最終限定回帰/build/規約確認を継続中。p006とq309-i01はin-progress、q309 active、WS014 incomplete。p004未queue、WS030 completedと既存clearanceを維持。HAL追加変更なし、git add/commit/pushはユーザー担当。
+
+local/uncommitted証拠: plan/ws014/phase006/checkpoint001.json、plan/ws014/temp/remote/q309-wayland-001/result.json とevidence/。source/doc/imageはGitHub repository未公開であり、本同期はIssue/Projectの計画と結果記録。
+
+## q309完了: GPU handle共有・Wayland WSI・virtio scanout（2026-09-13）
+
+WS014 p006 / q309-i01をcleared、q309をfinishedとする。active Queueなし。WS014はincomplete、p001/p004 planning、p004未queue。WS030 completedと既存Phaseのclearanceを維持し、native i915は別WS029のまま。
+
+kernel_handle/handle_fd_*と共通fd参照・SCM_RIGHTS、GPU/Venusの独立process/context共有、VK_KHR_wayland_surface、最小libwayland-client.so、全画面zwl、標準Wayland/Vulkanアプリwltestを実装した。共有GPU imageはGPU copyと所有権同期を経て別processへ渡り、SET_SCANOUT_BLOB/RESOURCE_FLUSHで表示する。通常の新WSI経路にCPU readbackや再uploadを必須としない。旧copy経路もGOPではなくvirtio 2D scanoutであり、直接表示の互換経路として保持する。
+
+GET_DISPLAY_INFOとGET_EDIDのbase/CTA progressive DTDで表示・モードを列挙。実QEMUでは1280×800、74,994mHz、320×200mmを取得した。custom framebuffer寸法はEDID寸法と独立に扱い、1〜100Hzのguest nominal pacingを検証する。virtioは物理pixel clockを設定しないため、物理vblank同期の保証とは区別する。
+
+最終q309-wayland-004は43.869秒、QEMU exit0でPASS。FIFO/MAILBOX各6枚の320×240実VNC画像、計921,600画素が独立期待値と全画素一致し、12回の表示が実import資源とBLOB scanoutに対応した。生成元終了後の独立renderer import/GPU copyも検証専用readbackの1024画素が一致。swapchain再作成、client中断・再open、compositor通常終了・SIGKILL・再起動、実SURFACE_LOST/cleanup=0、強制終了直後の640×480 console復帰とechoによる画面更新を確認した。
+
+同じ最終kernelのq309-direct-002も42.705秒、QEMU exit0でPASS。標準vkdemoの回転直方体6枚をGPU readback/VNC/独立oracleで照合し、通常終了とSIGINT後の再open、console復帰、表示競合拒否とowner完走を確認した。K/fd/SCM・GPU/EDID・Wayland/WSIの実コード限定fixtureとsanitizer、157 Vulkan dispatch/export、両ABIの公式header照合、Noct再生成、rootfs配置、対象buildと全適用規約を確認した。正式CTSや全Wayland SDK互換は主張しない。
+
+途中のharness起動待ち不足とEDID/custom mode回帰を修正し、失敗証拠と再実行理由を保存した。最終reviewのMSG_PEEK二重put疑義は、rights付きpeekを既存guardが拒否するため到達不能と確認し、本体変更を戻して拒否後の参照寿命を追加検証した。formatterは規約と設定の不一致によりexit1でありPASSとは扱わず、全文確認とdiffcheckを記録した。HAL追加変更なし。ローカル結果はplan/ws014/phase006/results.md、技術資料3件、conformance.mdとfinal-evidence/verification.json、Queue履歴はplan/history/queue-q309.md。これらsource/doc/imageのgit add/commit/pushはユーザーが行う。本同期はGitHub Issues/Projectの計画・受入結果である。

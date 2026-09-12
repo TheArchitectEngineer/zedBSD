@@ -65,7 +65,7 @@ static VkResult display_storage(struct wsi_display_lease *lease, uint64_t bytes)
 const struct vulkan_wsi_platform_ops vulkan_wsi_display_platform = {
 	display_capabilities, display_formats, display_present_modes,
 	display_claim_native, display_release_native, display_present_native,
-	display_wait_native, NULL
+	display_wait_native, NULL, NULL, NULL, NULL, NULL
 };
 
 /*

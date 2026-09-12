@@ -17,12 +17,13 @@ func lines(text) {
 }
 func main(args) {
     if (Array.size(args) != 3) { System.error("usage: maintain-dispatch.noct PUBLIC_HEADER PINNED_PROTOCOL_DEFINES OUTPUT_DIRECTORY"); }
-    var source = lines(FileUtil.readText(args[0]));
-    var banner = "/* -*- mode: c; c-file-style: \"linux\"; tab-width: 8; -*- */\n\n/*\n * zedBSD\n * Copyright (C) 2026 Awe Morris\n *\n * SPDX-License-Identifier: Zlib\n */\n\n";
-    var table = banner + "/* Maintained declaration metadata; see libc/include/vulkan/API-PROVENANCE.md. */\n";
+    var source = lines(FileUtil.readText(args[0]) + FileUtil.readText("libc/include/vulkan/vulkan_wayland.h"));
+    var banner = "/*\n * zedBSD\n * Copyright (C) 2026 Awe Morris\n *\n * SPDX-License-Identifier: Zlib\n */\n\n";
+    var table = banner + "/*\n * Maintained declaration metadata, see libc/include/vulkan/API-PROVENANCE.md.\n */\n\n";
     var manifest = "name\tscope\textension\n"; var extension = "0"; var count = 0;
     for (i in 0..Array.size(source)) {
         var line = trim(source[i]);
+        if (line == "#define VK_KHR_wayland_surface 1") { extension = "VULKAN_INSTANCE_WAYLAND"; }
         if (line == "#define VK_KHR_surface 1") { extension = "VULKAN_INSTANCE_SURFACE"; }
         if (line == "#define VK_KHR_display 1") { extension = "VULKAN_INSTANCE_DISPLAY"; }
         if (line == "#define VK_KHR_swapchain 1") { extension = "VULKAN_DEVICE_SWAPCHAIN"; }
@@ -42,9 +43,9 @@ func main(args) {
         manifest = manifest + name + "\t" + scope + "\t" + extension + "\n";
         count = count + 1;
     }
-    if (count != 155) { System.error("expected 155 public command records, got " + count); }
+    if (count != 157) { System.error("expected 157 public command records, got " + count); }
     var protocol = lines(FileUtil.readText(args[1]));
-    var opcodes = banner + "/*\n * Numeric declarations selected from virglrenderer 1.1.0 Venus protocol.\n * Copyright 2020 Google LLC; SPDX-License-Identifier: MIT.\n * See LICENSE-PROTOCOL for the retained upstream license.\n */\n\n/* Maintained protocol IDs; no renderer implementation is included. */\n#ifndef ZEDBSD_VULKAN_OPCODES_H\n#define ZEDBSD_VULKAN_OPCODES_H\n\n/* Identifies commands in pinned Venus wire-format 1. */\nenum vulkan_opcode {\n";
+    var opcodes = banner + "/*\n * Numeric declarations selected from virglrenderer 1.1.0 Venus protocol.\n * Copyright 2020 Google LLC; SPDX-License-Identifier: MIT.\n * See LICENSE-PROTOCOL for the retained upstream license.\n */\n\n/*\n * Maintained protocol IDs, no renderer implementation is included.\n */\n\n#ifndef VULKAN_OPCODES_H\n#define VULKAN_OPCODES_H\n\n/* Identifies commands in pinned Venus wire-format 1. */\nenum vulkan_opcode {\n";
     var core = 0;
     for (i in 0..Array.size(protocol)) {
         var line = trim(protocol[i]);
@@ -66,5 +67,5 @@ func main(args) {
     FileUtil.writeText(args[2] + "/dispatch-table.inc", table);
     FileUtil.writeText(args[2] + "/api-commands.tsv", manifest);
     FileUtil.writeText(args[2] + "/opcodes.h", opcodes);
-    print("maintained 155 dispatch records and 142 pinned wire identifiers");
+    print("maintained 157 dispatch records and 142 pinned wire identifiers");
 }

@@ -164,3 +164,5 @@
 	{"vkGetDisplayPlaneCapabilitiesKHR", (PFN_vkVoidFunction)vkGetDisplayPlaneCapabilitiesKHR, VULKAN_ENTRY_INSTANCE, VULKAN_INSTANCE_DISPLAY},
 	{"vkCreateDisplayPlaneSurfaceKHR", (PFN_vkVoidFunction)vkCreateDisplayPlaneSurfaceKHR, VULKAN_ENTRY_INSTANCE, VULKAN_INSTANCE_DISPLAY},
 	{"vkCreateSharedSwapchainsKHR", (PFN_vkVoidFunction)vkCreateSharedSwapchainsKHR, VULKAN_ENTRY_DEVICE, VULKAN_DEVICE_DISPLAY_SWAPCHAIN},
+	{"vkCreateWaylandSurfaceKHR", (PFN_vkVoidFunction)vkCreateWaylandSurfaceKHR, VULKAN_ENTRY_INSTANCE, VULKAN_INSTANCE_WAYLAND},
+	{"vkGetPhysicalDeviceWaylandPresentationSupportKHR", (PFN_vkVoidFunction)vkGetPhysicalDeviceWaylandPresentationSupportKHR, VULKAN_ENTRY_INSTANCE, VULKAN_INSTANCE_WAYLAND},

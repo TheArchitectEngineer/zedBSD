@@ -25,7 +25,13 @@
 #define GPU_CAP_COMMAND			16U
 #define GPU_CAP_PRESENT			32U
 #define GPU_CAP_MAPPING			64U
+#define GPU_CAP_SHARE			256U
 #define GPU_BLOB_MAPPABLE		1U
+#define GPU_BLOB_SHAREABLE		2U
+#define GPU_BLOB_CROSS_DEVICE		4U
+#define GPU_IMAGE_LINEAR		1U
+#define GPU_HANDLE_CLOEXEC		1U
+#define GPU_HANDLE_CLOFORK		2U
 #define GPU_COPY_MAX			65536U
 #define GPU_COMMAND_MAX			65536U
 #define GPU_CAPSET_MAX			256U
@@ -43,6 +49,59 @@
 #define GPU_COMMAND			_IOW('G', 7, struct gpu_command)
 #define GPU_PRESENT			_IOW('G', 8, struct gpu_present)
 #define GPU_RESOURCE_MAP		_IOWR('G', 9, struct gpu_resource_map)
+#define GPU_RESOURCE_EXPORT		_IOWR('G', 10, struct gpu_resource_export)
+#define GPU_RESOURCE_IMPORT		_IOWR('G', 11, struct gpu_resource_import)
+
+/*
+ * One immutable linear image description retained with a shared allocation.
+ * Version and size describe this 64-byte record. Device identity is assigned
+ * by K on export; import returns the authoritative stored description.
+ */
+struct gpu_image_descriptor {
+	uint32_t version;
+	uint32_t size;
+	uint32_t width;
+	uint32_t height;
+	uint32_t format;
+	uint32_t stride;
+	uint64_t offset;
+	uint64_t allocation_bytes;
+	uint32_t memory_type;
+	uint32_t usage;
+	uint32_t tiling;
+	uint32_t reserved;
+	uint64_t device_id;
+};
+
+/*
+ * One allocation capability exported without exposing its rendering session.
+ * Input fd is -1 and image.device_id is zero; successful fd installation
+ * follows copyout of the complete output, including the device identity.
+ */
+struct gpu_resource_export {
+	uint32_t version;
+	uint32_t size;
+	uint64_t handle;
+	uint32_t flags;
+	int32_t fd;
+	struct gpu_image_descriptor image;
+};
+
+/*
+ * One capability imported into this open's independent renderer context.
+ * Only version, size and fd are inputs. Success returns an owned resource
+ * handle, its renderer resource identity, and the immutable image metadata.
+ */
+struct gpu_resource_import {
+	uint32_t version;
+	uint32_t size;
+	int32_t fd;
+	uint32_t flags;
+	uint64_t handle;
+	uint32_t resource_id;
+	uint32_t reserved;
+	struct gpu_image_descriptor image;
+};
 
 /*
  * One capability snapshot describing supported operations and allocation limits.
@@ -88,7 +147,7 @@ struct gpu_capset {
 	uint8_t data[GPU_CAPSET_MAX];
 };
 
-/* A mapped backend blob whose handle and protocol resource ID belong to a session. */
+/* One backend allocation whose optional map and independent sharing are selected by flags. */
 struct gpu_blob_create {
 	uint32_t version;
 	uint32_t size;

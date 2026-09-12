@@ -260,10 +260,11 @@ vulkan_context_execute(
  * Exports one native allocation into an unlinked shared file while holding the raw session lock.
  */
 VkResult
-vulkan_resource_blob(
+vulkan_resource_blob_flags(
 	struct vulkan_context *ctx,
 	uint64_t bytes,
 	uint64_t id,
+	uint32_t flags,
 	uint64_t *handle,
 	uint32_t *resource)
 {
@@ -274,6 +275,7 @@ vulkan_resource_blob(
 	/* Blob operations must remain serialized with token query and mapping operations. */
 	locked();
 	assert(ctx == &context);
+	assert(flags == GPU_BLOB_MAPPABLE);
 
 	/* Export failure leaves the native memory owner for the real rollback path to free. */
 	if (fail_blob) {

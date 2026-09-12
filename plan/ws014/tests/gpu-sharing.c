@@ -1,0 +1,444 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Exercises real GPU export/import with real generic handle and descriptor ownership.
+ * The backend models allocation references; Venus protocol ownership is tested separately.
+ */
+
+#define main gpu_framework_unused_main
+#include "gpu-framework.c"
+#undef main
+
+#include <kern/process.h>
+#include <kern/filedesc.h>
+#include <kern/handle.h>
+#include <kern/fd-object.h>
+
+/* One counted allocation remains independent from all source and receiver sessions. */
+struct sharing_memory {
+	unsigned references;
+	struct gpu_image_descriptor image;
+};
+
+/* One backend alias contributes both session accounting and an allocation reference. */
+struct sharing_alias {
+	struct test_session *session;
+	struct sharing_memory *memory;
+};
+
+/* Allocation counts independently reveal premature destruction and leaked exported references. */
+static unsigned shared_allocations;
+
+void gpu_test_set_process(struct process *process);
+static int sharing_blob(void *opaque, void *session, const struct gpu_blob_create *request, void **result, uint32_t *identifier);
+static void sharing_destroy(void *opaque, void *session, void *object);
+static int sharing_export(void *opaque, void *session, void *object, const struct gpu_image_descriptor *image, void **result);
+static void sharing_release(void *opaque, void *object);
+static int sharing_import(void *opaque, void *session, void *object, void **result, uint32_t *identifier);
+static void sharing_drop(struct sharing_memory *memory);
+static void export_prepare(struct gpu_resource_export *request, uint64_t handle);
+static int sharing_ioctl(struct test_file *file, unsigned long command, void *request);
+
+/*
+ * Verifies capability transfer, copyout rollback, device isolation and final cleanup.
+ */
+int
+main(void)
+{
+	struct drv_gpu_ops operations;
+	struct drv_gpu_share_ops sharing;
+	struct drv_gpu_device *device;
+	struct drv_gpu_device *other_device;
+	struct test_backend backend;
+	struct test_backend other_backend;
+	struct test_file source;
+	struct test_file receiver;
+	struct test_file foreign;
+	struct process producer;
+	struct process consumer;
+	struct gpu_blob_create create;
+	struct gpu_resource_export exported;
+	struct gpu_resource_import imported;
+	struct fd_object message;
+	struct kernel_handle *reference;
+	uint64_t imported_handle;
+	unsigned before;
+	unsigned flags;
+	int incoming;
+	int error;
+
+	/* Real descriptor tables provide independent process namespaces. */
+	memset(&producer, 0, sizeof(producer));
+	memset(&consumer, 0, sizeof(consumer));
+	producer.fd = filedesc_create(&producer);
+	assert(producer.fd != NULL);
+	consumer.fd = filedesc_create(&consumer);
+	assert(consumer.fd != NULL);
+	gpu_test_set_process(&producer);
+
+	/* The backend owns a complete dynamic sharing interface with no display or mapping substitute. */
+	memset(&backend, 0, sizeof(backend));
+	memset(&other_backend, 0, sizeof(other_backend));
+	memset(&operations, 0, sizeof(operations));
+	operations.version = DRV_GPU_INTERFACE_VERSION;
+	operations.size = sizeof(operations);
+	operations.capabilities = GPU_CAP_BLOB | GPU_CAP_SHARE;
+	operations.open = backend_open;
+	operations.close = backend_close;
+	operations.get_info = backend_get_info;
+	operations.blob_create = sharing_blob;
+	operations.resource_destroy = sharing_destroy;
+	sharing.export_resource = sharing_export;
+	sharing.release = sharing_release;
+	sharing.import_resource = sharing_import;
+	operations.share = &sharing;
+	error = drv_gpu_register(&operations, &backend, &device);
+	assert(error == 0);
+	error = drv_gpu_register(&operations, &other_backend, &other_device);
+	assert(error == 0);
+	error = open_file(&source, "gpu0", O_RDWR);
+	assert(error == 0);
+	error = open_file(&receiver, "gpu0", O_RDWR);
+	assert(error == 0);
+	error = open_file(&foreign, "gpu1", O_RDWR);
+	assert(error == 0);
+
+	/* Create one source allocation through the actual GPU ioctl dispatcher. */
+	memset(&create, 0, sizeof(create));
+	create.version = GPU_ABI_VERSION;
+	create.size = sizeof(create);
+	create.bytes = 4096U;
+	create.blob_id = 99U;
+	create.flags = GPU_BLOB_SHAREABLE | GPU_BLOB_CROSS_DEVICE;
+	error = sharing_ioctl(&source, GPU_BLOB_CREATE, &create);
+	assert(error == 0);
+	assert(shared_allocations == 1U);
+
+	/* Oversized metadata must be rejected before backend export takes any reference. */
+	export_prepare(&exported, create.handle);
+	exported.image.stride = 256U;
+	error = sharing_ioctl(&source, GPU_RESOURCE_EXPORT, &exported);
+	assert(error == EINVAL);
+
+	/* Export output-copy failure must release its handle and uncommitted descriptor slot. */
+	before = allocations;
+	export_prepare(&exported, create.handle);
+	reject_copyout = 1U;
+	error = sharing_ioctl(&source, GPU_RESOURCE_EXPORT, &exported);
+	assert(error == EFAULT);
+	assert(allocations == before);
+	assert(producer.fd->entries[0].state == FILEDESC_SLOT_FREE);
+
+	/* Wrapper allocation failure also unwinds the backend capability and device hold. */
+	export_prepare(&exported, create.handle);
+	reject_allocation = 2U;
+	error = sharing_ioctl(&source, GPU_RESOURCE_EXPORT, &exported);
+	assert(error == ENOMEM);
+	assert(allocations == before);
+
+	/* A successful export installs one typed capability with descriptor-local close-on-exec. */
+	export_prepare(&exported, create.handle);
+	error = sharing_ioctl(&source, GPU_RESOURCE_EXPORT, &exported);
+	assert(error == 0);
+	assert(exported.fd == 0);
+	assert(exported.image.device_id != 0U);
+	error = filedesc_get_flags(producer.fd, exported.fd, &flags);
+	assert(error == 0);
+	assert(flags == FILEDESC_CLOEXEC);
+	reference = handle_fd_get(exported.fd, KERNEL_HANDLE_GPU);
+	assert(reference != NULL);
+	handle_put(reference);
+
+	/* A queued reference survives sender close before installation below the 32-slot process limit. */
+	error = filedesc_get_object_ref(producer.fd, exported.fd, &message);
+	assert(error == 0);
+	error = filedesc_close(producer.fd, exported.fd);
+	assert(error == 0);
+	close_file(&source);
+	filedesc_destroy(producer.fd);
+	producer.fd = NULL;
+	assert(shared_allocations == 1U);
+	error = filedesc_install_object_from(consumer.fd, &message, FILEDESC_CLOEXEC, 17, &incoming);
+	assert(error == 0);
+	assert(incoming == 17);
+	fd_object_clear(&message);
+	gpu_test_set_process(&consumer);
+
+	/* A capability cannot cross GPU instances even when both use the same backend operations. */
+	memset(&imported, 0, sizeof(imported));
+	imported.version = GPU_ABI_VERSION;
+	imported.size = sizeof(imported);
+	imported.fd = incoming;
+	error = sharing_ioctl(&foreign, GPU_RESOURCE_IMPORT, &imported);
+	assert(error == EXDEV);
+
+	/* Receiver output-copy failure destroys only its unpublished attachment. */
+	before = allocations;
+	reject_copyout = 1U;
+	error = sharing_ioctl(&receiver, GPU_RESOURCE_IMPORT, &imported);
+	assert(error == EFAULT);
+	assert(allocations == before);
+	assert(backend.live == 0U);
+
+	/* The receiver imports after the producing open and process table are both gone. */
+	error = sharing_ioctl(&receiver, GPU_RESOURCE_IMPORT, &imported);
+	assert(error == 0);
+	assert(imported.handle != create.handle);
+	assert(imported.resource_id == 17U);
+	assert(imported.image.device_id == exported.image.device_id);
+	imported_handle = imported.handle;
+
+	/* The imported alias survives closure of the last transferable capability fd. */
+	error = filedesc_close(consumer.fd, incoming);
+	assert(error == 0);
+	assert(shared_allocations == 1U);
+	error = destroy_handle(&receiver, imported_handle);
+	assert(error == 0);
+	assert(shared_allocations == 0U);
+
+	/* Final resource and device cleanup leaves no descriptor, cdev or callback ownership. */
+	close_file(&receiver);
+	close_file(&foreign);
+
+	/* A capability alone keeps its registered backend alive after the last GPU open closes. */
+	error = open_file(&source, "gpu0", O_RDWR);
+	assert(error == 0);
+	create.handle = 0U;
+	create.resource_id = 0U;
+	error = sharing_ioctl(&source, GPU_BLOB_CREATE, &create);
+	assert(error == 0);
+	export_prepare(&exported, create.handle);
+	error = sharing_ioctl(&source, GPU_RESOURCE_EXPORT, &exported);
+	assert(error == 0);
+	close_file(&source);
+	error = drv_gpu_unregister(device);
+	assert(error == EBUSY);
+	assert(shared_allocations == 1U);
+	error = filedesc_close(consumer.fd, exported.fd);
+	assert(error == 0);
+	assert(shared_allocations == 0U);
+	error = drv_gpu_unregister(device);
+	assert(error == 0);
+	error = drv_gpu_unregister(other_device);
+	assert(error == 0);
+	filedesc_destroy(consumer.fd);
+	consumer.fd = NULL;
+	gpu_test_set_process(NULL);
+	assert(allocations == 0U);
+	assert(held_spinlocks == 0U);
+	assert(credential_references == 0U);
+	puts("GPU capability fd: real handle/table transfer, export/import copyout rollback, allocation failure, immutable metadata, GPU isolation, producer exit, capability-only withdrawal barrier and final release PASS");
+
+	/* Succeeded: no whole GPU session was exported or kept alive by the capability. */
+	return 0;
+}
+
+/* Allocates a modeled GPU-only backing and its independently owned session alias. */
+static int
+sharing_blob(
+	void *opaque,
+	void *session,
+	const struct gpu_blob_create *request,
+	void **result,
+	uint32_t *identifier)
+{
+	struct sharing_memory *memory;
+	struct sharing_alias *alias;
+	struct test_session *owner;
+
+	/* The real core supplies the documented allocation request to this bounded peer. */
+	(void)opaque;
+	assert(request->bytes == 4096U);
+	memory = kern_calloc(1U, sizeof(*memory));
+	if (memory == NULL)
+		return ENOMEM;
+
+	/* A failed alias leaves no independent allocation behind. */
+	alias = kern_calloc(1U, sizeof(*alias));
+	if (alias == NULL) {
+		kern_free(memory);
+		return ENOMEM;
+	}
+
+	/* One alias now retains both the source session and allocation accounting. */
+	owner = session;
+	memory->references = 1U;
+	alias->memory = memory;
+	alias->session = owner;
+	owner->live++;
+	owner->backend->live++;
+	shared_allocations++;
+	*result = alias;
+	*identifier = 17U;
+
+	/* Succeeded: ordinary resource destruction consumes this alias. */
+	return 0;
+}
+
+/* Destroys one source or receiver alias while other allocation owners remain independent. */
+static void
+sharing_destroy(
+	void *opaque,
+	void *session,
+	void *object)
+{
+	struct sharing_alias *alias;
+	struct test_session *owner;
+
+	/* The common core must not release a resource through a foreign session. */
+	(void)opaque;
+	alias = object;
+	owner = session;
+	assert(held_spinlocks == 0U);
+	assert(alias->session == owner);
+	owner->live--;
+	owner->backend->live--;
+	sharing_drop(alias->memory);
+	kern_free(alias);
+
+	/* Succeeded: this alias no longer retains its context or allocation. */
+	return;
+}
+
+/* Acquires an allocation reference without retaining the source session. */
+static int
+sharing_export(
+	void *opaque,
+	void *session,
+	void *object,
+	const struct gpu_image_descriptor *image,
+	void **result)
+{
+	struct sharing_alias *alias;
+
+	/* The kernel copied and stamped image metadata before reaching this callback. */
+	(void)opaque;
+	alias = object;
+	assert(alias->session == session);
+	assert(image->device_id != 0U);
+	alias->memory->image = *image;
+	alias->memory->references++;
+	*result = alias->memory;
+
+	/* Succeeded: the returned capability contains no source-session pointer. */
+	return 0;
+}
+
+/* Releases the allocation reference owned by a generic kernel capability. */
+static void
+sharing_release(
+	void *opaque,
+	void *object)
+{
+	/* Final handle release must run outside every descriptor and GPU core spinlock. */
+	(void)opaque;
+	assert(held_spinlocks == 0U);
+	sharing_drop(object);
+
+	/* Succeeded: terminal cleanup is independent from the current process. */
+	return;
+}
+
+/* Creates one receiver alias for a capability's retained allocation. */
+static int
+sharing_import(
+	void *opaque,
+	void *session,
+	void *object,
+	void **result,
+	uint32_t *identifier)
+{
+	struct sharing_alias *alias;
+	struct sharing_memory *memory;
+	struct test_session *owner;
+
+	/* A destination alias can fail without consuming the source capability. */
+	(void)opaque;
+	alias = kern_calloc(1U, sizeof(*alias));
+	if (alias == NULL)
+		return ENOMEM;
+
+	/* Receiver session accounting is separate from the allocation's existing owners. */
+	memory = object;
+	owner = session;
+	alias->session = owner;
+	alias->memory = memory;
+	memory->references++;
+	owner->live++;
+	owner->backend->live++;
+	*result = alias;
+	*identifier = 17U;
+
+	/* Succeeded: the destination now owns an ordinary independently destroyable resource. */
+	return 0;
+}
+
+/* Frees modeled allocation storage only after the last independent owner retires. */
+static void
+sharing_drop(
+	struct sharing_memory *memory)
+{
+	/* Every alias and exported capability contributes exactly one allocation reference. */
+	assert(memory->references != 0U);
+	memory->references--;
+	if (memory->references != 0U)
+		return;
+
+	/* Terminal destruction is observable separately from session cleanup. */
+	shared_allocations--;
+	kern_free(memory);
+
+	/* Succeeded: the final owner released the allocation exactly once. */
+	return;
+}
+
+/* Initializes one valid versioned export request without output identities. */
+static void
+export_prepare(
+	struct gpu_resource_export *request,
+	uint64_t handle)
+{
+	/* The public header and empty fd output precede the immutable image description. */
+	memset(request, 0, sizeof(*request));
+	request->version = GPU_ABI_VERSION;
+	request->size = sizeof(*request);
+	request->handle = handle;
+	request->flags = GPU_HANDLE_CLOEXEC;
+	request->fd = -1;
+	request->image.version = GPU_ABI_VERSION;
+	request->image.size = sizeof(request->image);
+	request->image.width = 32U;
+	request->image.height = 32U;
+	request->image.stride = 128U;
+	request->image.format = GPU_PIXEL_RGBA8888;
+	request->image.allocation_bytes = 4096U;
+	request->image.memory_type = 0U;
+	request->image.usage = 6U;
+	request->image.tiling = GPU_IMAGE_LINEAR;
+
+	/* Succeeded: the real core must supply the fd and device identity. */
+	return;
+}
+
+/* Dispatches a request through the real cdev and GPU session admission path. */
+static int
+sharing_ioctl(
+	struct test_file *file,
+	unsigned long command,
+	void *request)
+{
+	int error;
+
+	/* All ownership and copyout decisions belong to the production GPU dispatcher. */
+	error = cdev_file_ops.ioctl(&file->file, command, (uintptr_t)request);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: this production request completed normally. */
+	return 0;
+}

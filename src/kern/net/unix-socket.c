@@ -54,7 +54,7 @@ struct unix_connection {
 
 struct unix_rights {
 	unsigned count;
-	struct file *files[KERN_MSG_FD_MAX];
+	struct fd_object objects[KERN_MSG_FD_MAX];
 };
 
 struct unix_stream_chunk {
@@ -174,9 +174,7 @@ unix_socket_bound_path_matches(
 }
 
 /*
- * Sends a message with passed file descriptors.
- *
- * The files are owned by the call and closed on every failure.
+ * Sends owned file references through the generic ancillary transport.
  */
 ssize_t
 unix_socket_send_message(
@@ -189,45 +187,37 @@ unix_socket_send_message(
 	struct file **files,
 	unsigned count)
 {
-	struct unix_rights *rights;
+	struct fd_object objects[KERN_MSG_FD_MAX];
 	unsigned index;
 	ssize_t result;
 
-	rights = NULL;
-
-	/* Rejects a socket of another family or too many files. */
-	if (socket == NULL ||
-	    socket->family != AF_UNIX ||
-	    count > KERN_MSG_FD_MAX) {
+	/* An oversized kernel request still releases every reference it supplied. */
+	if (count > KERN_MSG_FD_MAX) {
+		/* No ancillary storage is allocated for a rejected group. */
 		for (index = 0; index < count; index++)
 			(void)file_close(files[index]);
+
+		/* The transport has no capacity for this group. */
 		return -(ssize_t)EOPNOTSUPP;
 	}
 
-	/* Packages the files as rights that travel with the data. */
-	if (count != 0) {
-		rights = kern_calloc(1, sizeof(*rights));
-		if (rights == NULL) {
-			for (index = 0; index < count; index++)
-				(void)file_close(files[index]);
-			return -(ssize_t)ENOMEM;
-		}
-
-		rights->count = count;
-		for (index = 0; index < count; index++)
-			rights->files[index] = files[index];
+	/* The adapter moves existing references without manufacturing new ownership. */
+	for (index = 0; index < count; index++) {
+		objects[index].type = FD_OBJECT_FILE;
+		objects[index].data.file = files[index];
 	}
 
-	result = unix_send_internal(socket, buffer, length, flags, address,
-				  address_length, rights, NULL);
+	/* Generic transport owns the references for every send outcome. */
+	result = unix_socket_send_objects(socket, buffer, length, flags, address, address_length, objects, count);
+	if (result < 0)
+		return result;
 
-	/* Reports the send result. */
+	/* Succeeded: report the bytes accepted by the socket transport. */
 	return result;
 }
 
 /*
- * Sends a message with passed file descriptors, resolving a datagram
- * destination in the caller's directory context.
+ * Sends owned file references using the caller's pathname-resolution context.
  */
 ssize_t
 unix_socket_send_message_at(
@@ -242,36 +232,159 @@ unix_socket_send_message_at(
 	struct file **files,
 	unsigned count)
 {
+	struct fd_object objects[KERN_MSG_FD_MAX];
+	unsigned index;
+	ssize_t result;
+
+	/* Rejected oversized groups still consume their supplied file references. */
+	if (count > KERN_MSG_FD_MAX) {
+		/* Unsent references do not survive a failed transport call. */
+		for (index = 0; index < count; index++)
+			(void)file_close(files[index]);
+
+		/* No ancillary storage supports this oversized group. */
+		return -(ssize_t)EOPNOTSUPP;
+	}
+
+	/* Preserve the existing file-only API over the new typed carrier. */
+	for (index = 0; index < count; index++) {
+		objects[index].type = FD_OBJECT_FILE;
+		objects[index].data.file = files[index];
+	}
+
+	/* The generic transport owns these references even when the peer rejects them. */
+	result = unix_socket_send_objects_at(socket, context, cred, buffer, length, flags, address, address_length, objects, count);
+	if (result < 0)
+		return result;
+
+	/* Succeeded: report the data accepted by the resolved socket. */
+	return result;
+}
+
+/*
+ * Sends a message with typed descriptor references.
+ *
+ * The references are owned by the call and released on every failure.
+ */
+ssize_t
+unix_socket_send_objects(
+	struct socket *socket,
+	const void *buffer,
+	size_t length,
+	int flags,
+	const struct sockaddr *address,
+	socklen_t address_length,
+	struct fd_object *objects,
+	unsigned count)
+{
+	struct unix_rights *rights;
+	unsigned index;
+	ssize_t result;
+
+	/* An empty ancillary group owns no separate record. */
+	rights = NULL;
+
+	/* Invalid transport coordinates still consume every supplied object reference. */
+	if (socket == NULL ||
+	    socket->family != AF_UNIX ||
+	    count > KERN_MSG_FD_MAX) {
+		/* Rejected descriptors never enter a socket queue. */
+		for (index = 0; index < count; index++)
+			(void)fd_object_put(&objects[index]);
+
+		/* This socket cannot transport the requested ancillary group. */
+		return -(ssize_t)EOPNOTSUPP;
+	}
+
+	/* Nonempty ancillary groups need a record whose lifetime follows queued bytes. */
+	if (count != 0) {
+		/* Allocate the record before moving any supplied ownership into it. */
+		rights = kern_calloc(1, sizeof(*rights));
+		if (rights == NULL) {
+			/* Allocation failure must release the still-unmoved input references. */
+			for (index = 0; index < count; index++)
+				(void)fd_object_put(&objects[index]);
+
+			/* No ancillary storage exists to accept the ownership group. */
+			return -(ssize_t)ENOMEM;
+		}
+
+		/* The record now takes every reference and clears its former carrier. */
+		rights->count = count;
+		for (index = 0; index < count; index++) {
+			rights->objects[index] = objects[index];
+			fd_object_clear(&objects[index]);
+		}
+	}
+
+	/* The transport takes the ancillary record on every outcome. */
+	result = unix_send_internal(socket, buffer, length, flags, address, address_length, rights, NULL);
+	if (result < 0)
+		return result;
+
+	/* Succeeded: the returned byte count describes the queued data and its ownership. */
+	return result;
+}
+
+/*
+ * Sends typed descriptor references using the caller's directory context.
+ *
+ * Datagram destination lookup precedes ownership transfer to the peer queue.
+ */
+ssize_t
+unix_socket_send_objects_at(
+	struct socket *socket,
+	struct cwdinfo *context,
+	const struct ucred *cred,
+	const void *buffer,
+	size_t length,
+	int flags,
+	const struct sockaddr *address,
+	socklen_t address_length,
+	struct fd_object *objects,
+	unsigned count)
+{
 	struct unix_rights *rights;
 	struct socket *peer;
 	unsigned index;
 	int error;
 	ssize_t result;
 
+	/* An empty ancillary group owns no separate record. */
 	rights = NULL;
 	peer = NULL;
 
-	/* Rejects a socket of another family or too many files. */
+	/* Invalid transport coordinates still consume every supplied object reference. */
 	if (socket == NULL ||
 	    socket->family != AF_UNIX ||
 	    count > KERN_MSG_FD_MAX) {
+		/* Rejected descriptors never enter a socket queue. */
 		for (index = 0; index < count; index++)
-			(void)file_close(files[index]);
+			(void)fd_object_put(&objects[index]);
+
+		/* This socket cannot transport the requested ancillary group. */
 		return -(ssize_t)EOPNOTSUPP;
 	}
 
-	/* Packages the files as rights that travel with the data. */
+	/* Nonempty ancillary groups need a record whose lifetime follows queued bytes. */
 	if (count != 0) {
+		/* Allocate the record before moving any supplied ownership into it. */
 		rights = kern_calloc(1, sizeof(*rights));
 		if (rights == NULL) {
+			/* Allocation failure must release the still-unmoved input references. */
 			for (index = 0; index < count; index++)
-				(void)file_close(files[index]);
+				(void)fd_object_put(&objects[index]);
+
+			/* No ancillary storage exists to accept the ownership group. */
 			return -(ssize_t)ENOMEM;
 		}
 
+		/* The record now takes every reference and clears its former carrier. */
 		rights->count = count;
-		for (index = 0; index < count; index++)
-			rights->files[index] = files[index];
+		for (index = 0; index < count; index++) {
+			rights->objects[index] = objects[index];
+			fd_object_clear(&objects[index]);
+		}
 	}
 
 	/* Resolves a datagram destination before sending. */
@@ -285,10 +398,12 @@ unix_socket_send_message_at(
 		}
 	}
 
-	result = unix_send_internal(socket, buffer, length, flags, address,
-				  address_length, rights, peer);
+	/* Send consumes the resolved peer and ancillary ownership through its normal transport path. */
+	result = unix_send_internal(socket, buffer, length, flags, address, address_length, rights, peer);
+	if (result < 0)
+		return result;
 
-	/* Reports the send result. */
+	/* Succeeded: the returned byte count describes the accepted data. */
 	return result;
 }
 
@@ -491,25 +606,31 @@ unix_socket_receive_begin(
 		*address_length = actual;
 	}
 
-	/* Hands out as many passed files as the caller can take. */
+	/* Determine how many queued references fit the receiver's descriptor capacity. */
 	if (rights == NULL)
 		delivered = 0;
 	else if (rights->count < file_capacity)
 		delivered = rights->count;
 	else
 		delivered = file_capacity;
+
+	/* Temporary receive references leave queued ownership intact until commit. */
 	for (index = 0; index < delivered; index++) {
-		transaction->files[index] = rights->files[index];
-		file_ref(transaction->files[index]);
+		transaction->objects[index] = rights->objects[index];
+		fd_object_get(&transaction->objects[index]);
 	}
 
+	/* The receiver sees truncation only when actual queued references did not fit. */
 	transaction->file_count = delivered;
-	transaction->control_truncated =
-	    rights != NULL && delivered < rights->count;
+	transaction->control_truncated = 0;
+	if (rights != NULL && delivered < rights->count)
+		transaction->control_truncated = 1;
 
 	/* Reports the full datagram length with MSG_TRUNC, else the copied bytes. */
 	if (datagram && (flags & MSG_TRUNC) != 0)
 		return (ssize_t)packet->length;
+
+	/* Succeeded: the caller owns the temporary transaction for these copied bytes. */
 	return (ssize_t)transaction->copied;
 }
 
@@ -547,15 +668,18 @@ unix_socket_receive_abort(
 
 	spin_unlock_irqrestore(&socket->lock, irq);
 
-	/* Drops the file references that were handed out. */
+	/* Abort releases the temporary references while the socket still owns the queued originals. */
 	for (index = 0; index < transaction->file_count; index++) {
-		if (transaction->files[index] != NULL)
-			(void)file_close(transaction->files[index]);
+		(void)fd_object_put(&transaction->objects[index]);
 	}
 
+	/* The inactive transaction no longer needs its protecting socket reference. */
 	transaction->active = 0;
 	socket_release(socket);
 	poll_notify();
+
+	/* Succeeded: the receive transaction retains no temporary ownership. */
+	return;
 }
 
 /*
@@ -698,12 +822,16 @@ unix_socket_receive_commit(
 		chunk = free_chunks;
 	}
 
-	/* Ownership of the files moved to the descriptor table. */
+	/* The descriptor table already owns the references published by this receive. */
 	for (index = 0; index < transaction->file_count; index++)
-		transaction->files[index] = NULL;
+		fd_object_clear(&transaction->objects[index]);
+	/* The inactive transaction no longer needs its protecting socket reference. */
 	transaction->active = 0;
 	socket_release(socket);
 	poll_notify();
+
+	/* Succeeded: the consumed queue ownership is retired. */
+	return;
 }
 
 /*
@@ -736,21 +864,34 @@ unix_socket_receive_message(
 
 	/* Runs the transaction, committing unless the caller only peeked. */
 	capacity = *file_count;
-	result =
-	    unix_socket_receive_begin(socket, buffer, length, flags, address,
-				      address_length, capacity, &transaction);
+	result = unix_socket_receive_begin(socket, buffer, length, flags, address, address_length, capacity, &transaction);
 	if (result < 0 || !transaction.active)
 		return result;
+
+	/* File-only callers must not accidentally receive an arbitrary handle pointer. */
+	for (index = 0; index < transaction.file_count; index++) {
+		/* Abort leaves both the data and all queued ownership available to recvmsg. */
+		if (transaction.objects[index].type != FD_OBJECT_FILE) {
+			unix_socket_receive_abort(&transaction);
+			return -(ssize_t)EOPNOTSUPP;
+		}
+	}
+
+	/* Transfer the acquired file references to the compatibility caller. */
 	for (index = 0; index < transaction.file_count; index++)
-		files[index] = transaction.files[index];
+		files[index] = transaction.objects[index].data.file;
+
+	/* Publish ancillary counts before settling the packet reservation. */
 	*file_count = transaction.file_count;
 	*control_truncated = transaction.control_truncated;
+
+	/* Peek preserves the queued originals; normal receive consumes them. */
 	if ((flags & MSG_PEEK) != 0)
 		unix_socket_receive_abort(&transaction);
 	else
 		unix_socket_receive_commit(&transaction);
 
-	/* Reports the received length. */
+	/* Succeeded: report the copied message length and acquired file references. */
 	return result;
 }
 
@@ -1039,7 +1180,7 @@ unix_socket_init(
 	return 0;
 }
 
-/* Closes the files of a rights record and frees it. */
+/* Releases every object retained by an ancillary record, then frees the record. */
 static void
 unix_rights_release(
 	void *pointer)
@@ -1052,13 +1193,16 @@ unix_rights_release(
 	if (rights == NULL)
 		return;
 
-	/* Closes each file and frees the record. */
+	/* Each queued reference receives exactly one final record-owned put. */
 	for (index = 0; index < rights->count; index++) {
-		if (rights->files[index] != NULL)
-			(void)file_close(rights->files[index]);
+		(void)fd_object_put(&rights->objects[index]);
 	}
 
+	/* The empty record no longer carries data or descriptor authority. */
 	kern_free(rights);
+
+	/* Succeeded: the ancillary record and its retained objects are retired. */
+	return;
 }
 
 /* Releases unsent rights and reports a send error. */

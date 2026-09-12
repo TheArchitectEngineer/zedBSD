@@ -1,5 +1,7 @@
 # WS014 p002: GPUフレームワークの登録契約
 
+現行契約は末尾のp006補遺を参照。以前の各Queue・Phaseの記述は当時の履歴として保持する。
+
 q305 / q305-i01、2026-09-12。ユーザーが指定した通常のデバイス登録APIへ修正した。
 実装元は `include/drivers/gpu.h`、`include/uapi/gpu.h`、`src/drivers/gpu/gpu.c`。
 q304のPCI専用公開table・登録wrapper・一括publish・固定8台の方式は置き換えた。
@@ -132,3 +134,65 @@ HAL責務変更はこの修正に含まれない。44 callback案は将来機能
 
 q305の検証は全項目PASS。40 GPU、80 cdev、通常・ASan/UBSan、共通層の既存GCC静的解析、ILP32/LP64 ABI、amd64 buildを確認した。
 具体的な手順と対象hashは [Queue q305履歴](../history/queue-q305.md) に記録した。
+
+## p006: 共有allocationと現行ops契約（q309）
+
+本節は2026-09-13の実装を`include/drivers/gpu.h`、`gpu-share.h`、`gpu-display.h`、`include/uapi/gpu*.h`、`include/kern/handle.h`、`fd-object.h`とGPU coreへ照合した記録。q305/p002の登録設計と実績を保持し、p003・WS030からp006までに具体化された現在の境界を示す。単体検証と最終QEMU受入は[p006](phase006/phase.md)の結果で区別する。
+
+### version、登録、resource
+
+| 境界 | 現行値・動作 |
+| --- | --- |
+| K内`struct drv_gpu_ops` | `DRV_GPU_INTERFACE_VERSION = 4`、size厳密一致、reserved=0。基本11 callbackに`resource_map`、任意の`display`/`share` subtableを持つ。古いversionのopsを現在型として解釈しない |
+| U/K固定幅要求 | `GPU_ABI_VERSION = 1`を維持。旧要求layoutを維持し、map、display、export/importを個別の要求として追加 |
+| 登録・解除 | `drv_gpu_register(ops, private_data, **device)` / `drv_gpu_unregister(device)`。同じimmutable opsを複数deviceで共有し、GPU coreはPCI型へ依存しない |
+| unregister待機 | 新規open/ioctlを止めて非公開化した後、sessionまたは独立share参照が残ればEBUSY。呼出側は成功までops/private_dataを保持する。最後のopenが閉じてもexported allocationが残る場合がある |
+| resource table | sessionごとの動的listとopaqueな64bit世代handle。旧固定32 slotは現行ではない。backendの`gpu_info.max_resources`とbyte上限、割当失敗・表現限界で制限する。Venusのmax_resourcesはUINT32_MAX |
+| fd table | 上記GPU resource数とは別に、現Kのprocess fd上限は`KERN_OPEN_MAX = 32`。共有allocationをfdへexportすると通常のfd枠を消費する |
+
+必須のopen/close/get_info、resource_create/destroy、capset/blob、read/write、command、legacy STORAGE presentを維持する。resource_mapは`GPU_CAP_MAPPING`、display subtableは`GPU_CAP_DISPLAY`、share subtableは`GPU_CAP_SHARE`と対応する。coreはcapabilityとcallbackの整合を登録時に確認し、spinlock内でbackend callbackを呼ばない。同じopen descriptionの1 ioctl制限と、別session間のbackend同期責務は維持する。
+
+### 任意opsの実型と所有権
+
+| K interface | 現行の責務 |
+| --- | --- |
+| `resource_map(device, session, object, struct drv_gpu_mapping *view)` | 所有resourceの不変CPU viewを返す。coreがresourceとopen descriptionを実VM mapping/pin中保持する。DEVICE属性はMMIOとcoherent DMA RAMを区別する |
+| `drv_gpu_display_ops` | `query/mode/claim/release/present/wait`の6 callback。display discovery、exclusive lease、完了済みframeの提示、native timingとscanout保持を担当する |
+| `drv_gpu_share_ops.export_resource(device, session, object, const gpu_image_descriptor *, void **shared)` | source session resourceを壊さず、open寿命から独立したbackend shared object参照を1つ返す。失敗では所有権を返さない |
+| `drv_gpu_share_ops.release(device, shared)` | そのexport参照だけを消費するinfallibleな最終回収。coreはbackend shareを落としてからdevice withdrawal barrierを解放する |
+| `drv_gpu_share_ops.import_resource(device, destination_session, shared, void **object, uint32_t *resource_id)` | shared objectを借り、destination sessionに独立して所有されるresourceと非zero renderer identityを返す。後の回収には既存resource_destroyを使う |
+
+`GPU_CAP_SHARE = 256`はBLOB能力とshare 3 callbackが全部揃った場合だけ登録できる。capabilityなしにshare tableだけを置く登録も拒否する。GPUごとのregister/publish専用wrapperは増やしていない。
+
+### kernel object fdと共有UAPI
+
+`kernel_handle`はrefcount、type、release ops、opaque objectを保持する独立wrapper。`handle_create()`成功でpayload所有権と返却1参照を受け持ち、最終`handle_put()`がpayload release後にwrapperを解放する。callerがwrapperを埋め込んで別途freeする契約ではない。
+
+`handle_fd_create(h, flags)`は成功で新しいfd参照を取得し、callerの入力参照は成功・失敗とも残る。返り値はfdまたは負のerrnoで、O_CLOEXEC/O_CLOFORKを受ける。`handle_fd_get(fd, expected_type)`はexact typeの強い参照またはNULLを返す。通常のGPU callbackの成功0/正のerrnoとは返却規約を混同しない。
+
+fd tableとSCM_RIGHTSは`struct fd_object`（NONE/FILE/HANDLE）の共通参照で統合した。単純なstruct copyは参照取得ではなく、get/install/putで所有権を動かす。送信待ちmessageも参照を保持し、受信fd予約・commit/rollback、close/dup/fork/exec/CLOEXEC/CLOFORKと切断の共通経路を使う。kernel pointerをUへ露出せず、inodeや巨大なpseudo-fileをGPU capabilityのために作らない。
+
+| ioctl | 固定要求 | Uの入力とKの出力・検証 |
+| --- | --- | --- |
+| GPU_RESOURCE_EXPORT | `gpu_resource_export` 88byte、`_IOWR('G',10,...)` | source handle、version/size、fd=-1、CLOEXEC/CLOFORK flags、画像descriptor。writable open、同sessionのBLOB、完全な画像範囲を検証し、Kがdevice_idを付与。完全copyoutとfd予約commit後だけfd所有権を公開 |
+| GPU_RESOURCE_IMPORT | `gpu_resource_import` 96byte、`_IOWR('G',11,...)` | version/size/fd以外の出力欄はゼロ。typed handle/opsのpayload契約と同一deviceを確認し、destinationの新しいhandle/resource_idとK保存descriptorを返す。元fdは消費しない。copyout失敗では未公開aliasを回収 |
+
+descriptorは`gpu_image_descriptor` version 1 / 64byte（width/height/format/stride、offset/allocation_bytes、memory_type/usage/tiling、reserved、device_id）。Kのimmutable copyが正であり、receiverが勝手なmetadataをimportへ指定できない。allocation_bytesは対象resource長と一致し、stride>=width×4かつ4byte整列、offsetは32bitで表現可能、stride×heightがallocation内に収まることを検証する。
+
+blob flagsはMAPPABLE=1、SHAREABLE=2、CROSS_DEVICE=4を扱う。CROSS_DEVICEにはSHAREABLEが必要で、共有flagsにはGPU_CAP_SHAREが必要。これはrendererにexport可能なallocationを要求するflagであり、zedBSD側で別GPU間importを許可するという意味ではない。現Kの別device importはEXDEV。
+
+### Venus表示と今回の制限
+
+初版のnative shared scanoutは同一GPU、linear RGBA8/BGRA8、幅・高さ16..4096。resource上限は256MiBで、offset、実row pitch、全row paddingを含む範囲をKで検証する。`GPU_DISPLAY_BLOB` capability flagと`GPU_DISPLAY_PRESENT_BLOB`要求により、受信側sessionへimportした共有blobを既存display lease経路から使う。旧STORAGE presentも維持する。
+
+GPU実行中、転送中、native scanout中の参照はfd数とは別に保持する。producerの元fdやopenが閉じても、必要なconsumer/backend参照が残る間はallocationを生かす。protocol wl_buffer destroyだけで表示中の参照を落とさず、replacementまたはsurface destructionまでcompositorが保持する。
+
+WSI/Waylandの詳細は[実装引き継ぎ](phase006/wayland-implementation.md)を参照する。ホストrenderer内部で必要なLinux dma-buf利用はゲストの公開ABIと分け、ゲストDRM互換やlinux-dmabuf-v1は追加していない。native i915は未実装で、全層zero-copyも主張しない。
+
+### p004へ渡すAPIレビュー事項
+
+- 通常の動的registerとimmutable ops共有を維持し、resource、mapping、display、shareの所有権・capability依存を一つの現行表へ整理する。44候補を未実装のまま必要なく追加しない。
+- SHAREABLE/CROSS_DEVICEというrenderer flagと、同一GPUだけを許可するguest capabilityを明確に区別する。将来backendのexport/import条件を表現する際の不足を検討する。
+- 現在固定のformat/extentと、factoryにdevice/format/capability eventがない制約を整理する。i915や複数GPUへ広げる前に、GPU core/UAPI/WSIのどこが実能力を供給するかを決める。
+- 表示leaseはopen所有、shared allocationはopenから独立という違い、unregister時のshares待機、mapping/GPU/scanout参照の回収順を明文化する。
+- 実測したp006の成立範囲を前提に、後続i915の実装依存を整理する。Wayland SDK全体、EGL/GLES、他GPU間共有、外部fence fdを自動で追加目標にしない。

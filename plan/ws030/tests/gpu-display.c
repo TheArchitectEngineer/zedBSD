@@ -203,7 +203,9 @@ display_test_mode(
 		assert(request->index == 0U);
 		assert(request->width != 0U);
 		assert(request->height != 0U);
-		assert(request->refresh_millihz != 0U);
+		/* The declared default-selection contract resolves zero to this peer's supported frequency. */
+		if (request->refresh_millihz == 0U)
+			request->refresh_millihz = 50000U;
 	}
 
 	/* Succeeded: side-effect-free mode handling did not change the modeled lease owner. */
@@ -404,6 +406,11 @@ display_test_discovery(
 	mode.operation = GPU_DISPLAY_MODE_VALIDATE;
 	error = cdev_file_ops.ioctl(&opened->file, GPU_DISPLAY_MODE, (uintptr_t)&mode);
 	expect_error(error, 0);
+	/* Driver frequency selection passes zero through and returns its actual supported result. */
+	mode.refresh_millihz = 0U;
+	error = cdev_file_ops.ioctl(&opened->file, GPU_DISPLAY_MODE, (uintptr_t)&mode);
+	expect_error(error, 0);
+	assert(mode.refresh_millihz == 50000U);
 	before = display_state.modes;
 	mode.operation = 99U;
 	error = cdev_file_ops.ioctl(&opened->file, GPU_DISPLAY_MODE, (uintptr_t)&mode);

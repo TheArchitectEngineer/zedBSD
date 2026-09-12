@@ -188,6 +188,35 @@ vulkan_resource_blob(
 	uint64_t *handle,
 	uint32_t *resource_id)
 {
+	VkResult error;
+
+	/* Existing transport and coherent allocations retain their mapped contract. */
+	error = vulkan_resource_blob_flags(
+		context,
+		bytes,
+		blob_id,
+		GPU_BLOB_MAPPABLE,
+		handle,
+		resource_id);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Succeeded: the caller owns the same mapped blob contract as existing transport allocations. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Creates an export with the explicitly selected mapping and sharing roles.
+ */
+VkResult
+vulkan_resource_blob_flags(
+	struct vulkan_context *context,
+	uint64_t bytes,
+	uint64_t blob_id,
+	uint32_t flags,
+	uint64_t *handle,
+	uint32_t *resource_id)
+{
 	struct gpu_blob_create request;
 	VkResult error;
 	int status;
@@ -202,7 +231,7 @@ vulkan_resource_blob(
 	request.size = sizeof(request);
 	request.bytes = bytes;
 	request.blob_id = blob_id;
-	request.flags = GPU_BLOB_MAPPABLE;
+	request.flags = flags;
 	status = ioctl(context->fd, GPU_BLOB_CREATE, &request);
 	if (status != 0) {
 		error = vulkan_kernel_error(context, errno);

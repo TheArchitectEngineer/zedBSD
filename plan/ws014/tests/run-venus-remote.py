@@ -67,6 +67,34 @@ PROFILES = {
                                 'plan/ws014/tests/vkdemo-qemu.py',
                                 'plan/ws014/tests/vkdemo_oracle.py',
                                 'plan/ws014/tests/run-vkdemo-remote.py']},
+    'wayland': {'application': 'wltest', 'harness': 'wayland-qemu.py',
+                'modules': {'rfb_client': 'venus_rfb.py', 'transport_harness': 'venus-qemu.py',
+                            'oracle': 'wayland_oracle.py'},
+                'evidence': [name for name in EVIDENCE_FILES if name != 'frame.ppm'] +
+                            [f'frame-{index}.ppm' for index in range(1, 13)] +
+                            [f'oracle-{index}.json' for index in range(1, 13)] +
+                            ['console-return.ppm', 'console-write.ppm', 'console-killed.ppm',
+                             'wayland-observed.log'],
+                'source_directories': ['userland/base/wltest', 'userland/base/zwl',
+                                       'userland/base/tests/gpu-share',
+                                       'userland/base/libwayland', 'libc/include/wayland',
+                                       'userland/base/libvulkan', 'libc/include/vulkan'],
+                'source_files': ['include/kern/handle.h', 'include/kern/fd-object.h',
+                                 'include/kern/filedesc.h', 'include/kern/net/socket.h',
+                                 'libc/include/wayland-client.h', 'libc/include/wayland-client-core.h',
+                                 'libc/include/wayland-client-protocol.h', 'libc/include/wayland-util.h',
+                                 'libc/include/xdg-shell-client-protocol.h',
+                                 'src/kern/handle.c', 'src/kern/fd-object.c', 'src/kern/filedesc.c',
+                                 'src/kern/net/unix-socket.c', 'src/kern/poll.c',
+                                 'include/drivers/gpu-share.h', 'libc/include/errno.h', 'libc/include/stddef.h', 'libc/string.c',
+                                 'plan/ws014/tests/gpu-share-client.c',
+                                 'plan/ws014/tests/wayland-qemu.py',
+                                 'plan/ws014/tests/wayland_oracle.py',
+                                 'plan/ws014/tests/run-wayland-remote.py'],
+                'additional_artifacts': {'vulkan_library': 'dynamic/libvulkan.so',
+                                         'wayland_library': 'dynamic/libwayland-client.so',
+                                         'compositor': 'bin/zwl',
+                                         'sharing_test': 'bin/gpu-share-test'}},
 }
 
 
@@ -282,6 +310,7 @@ def prepare_payload(args, output, report):
     harness = REPO / 'plan/ws014/tests' / profile['harness']
     artifact_paths = {'kernel': kernel, 'application': application,
                       'base_image': image, 'harness': harness}
+    artifact_paths.update({role: build / name for role, name in profile.get('additional_artifacts', {}).items()})
     artifact_paths.update({role: REPO / 'plan/ws014/tests' / name
                            for role, name in profile['modules'].items()})
     report['artifacts'] = {name: {'path': str(path), 'sha256': digest(path),
@@ -396,7 +425,7 @@ def verify_remote_result(args, report, remote):
     elif remote.get('boot_surface_available') is not False:
         raise RuntimeError('remote result does not record firmware surface availability')
     if not args.boot_only:
-        if args.profile == 'vkdemo':
+        if args.profile in ('vkdemo', 'wayland'):
             required += [f'frame-{i}.ppm' for i in range(1, 7)]
             required += [f'oracle-{i}.json' for i in range(1, 7)]
         else:
@@ -406,7 +435,9 @@ def verify_remote_result(args, report, remote):
     if (fetched['guest.log'] != remote.get('guest_log_sha256') or
             fetched['qemu-renderer.log'] != remote.get('renderer_log_sha256')):
         raise RuntimeError('retrieved logs differ from the completed remote capture')
-    if args.profile == 'vkdemo':
+    if args.profile == 'wayland':
+        verify_wayland_result(args, report, remote)
+    elif args.profile == 'vkdemo':
         verify_vkdemo_result(args, report, remote)
     elif not args.boot_only:
         if remote.get('expected') != [args.left, args.right]:
@@ -414,6 +445,50 @@ def verify_remote_result(args, report, remote):
         if fetched['frame.ppm'] != remote.get('frame_sha256'):
             raise RuntimeError('retrieved frame differs from the validated remote pixels')
     return expected_status
+
+
+def verify_wayland_result(args, report, remote):
+    """Verify every fetched fullscreen sample against the independent rectangle specification."""
+    if remote.get('token') != args.token or remote.get('guest_completed') is not True:
+        raise RuntimeError('Wayland process completion does not match this exact attempt')
+    if remote.get('transport_harness_sha256') != report['artifacts']['transport_harness']['sha256']:
+        raise RuntimeError('Wayland run used a different bounded QEMU harness')
+    if remote.get('oracle_sha256') != report['artifacts']['oracle']['sha256']:
+        raise RuntimeError('Wayland run used a different independent oracle')
+    samples = remote.get('samples', [])
+    if len(samples) != 12 or {sample['mode'] for sample in samples} != {'fifo', 'mailbox'}:
+        raise RuntimeError('both Wayland presentation modes require six real captured frames')
+    spec = importlib.util.spec_from_file_location('wayland_oracle', REPO / 'plan/ws014/tests/wayland_oracle.py')
+    oracle = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(oracle)
+    evidence = args.output_root.resolve() / args.attempt / 'evidence'
+    for number, sample in enumerate(samples, 1):
+        filename = f'frame-{number}.ppm'
+        if report['fetched_evidence'].get(filename) != sample['frame_sha256']:
+            raise RuntimeError('Wayland capture hash differs after transfer')
+        checked = oracle.verify(evidence / filename, sample['frame'], sample['width'], sample['height'])
+        if not checked['passed'] or checked != sample['oracle']:
+            raise RuntimeError('Wayland capture disagrees with independent host expectation')
+    if any(remote.get(key) is not True for key in ('shared_gpu_path', 'compositor_stopped', 'independent_renderer_import')):
+        raise RuntimeError('Wayland acceptance lacks shared allocation or compositor lifecycle evidence')
+    if args.lifecycle:
+        lifecycle = remote.get('lifecycle', {})
+        required = ('client_aborted', 'client_reopened', 'compositor_reopened',
+                    'compositor_killed', 'surface_loss', 'after_kill_reopened',
+                    'killed_console_restored', 'console_restored')
+        if any(lifecycle.get(key) is not True for key in required):
+            raise RuntimeError('Wayland acceptance lacks completed process/surface/console recovery')
+        for name, key in [('console-return.ppm', 'console_before_sha256'),
+                          ('console-killed.ppm', 'killed_console_sha256'),
+                          ('console-write.ppm', 'console_after_sha256')]:
+            if report['fetched_evidence'].get(name) != lifecycle.get(key):
+                raise RuntimeError('Wayland console evidence hash differs after transfer')
+        before = oracle.read_ppm(evidence / 'console-return.ppm')
+        after = oracle.read_ppm(evidence / 'console-write.ppm')
+        if oracle.read_ppm(evidence / 'console-killed.ppm')[:2] != (640, 480):
+            raise RuntimeError('fetched SIGKILL capture does not show the native console')
+        if before[:2] != (640, 480) or after[:2] != (640, 480) or before[2] == after[2]:
+            raise RuntimeError('fetched Wayland console captures do not prove visible recovery')
 
 
 def verify_vkdemo_result(args, report, remote):
@@ -486,9 +561,9 @@ def run(args):
               'phase': args.phase, 'frame': args.frame, 'render_server': args.render_server,
               'expected': {'left': args.left, 'right': args.right},
               'wrapper_sha256': digest(__file__), 'remote_created': False}
-    if args.profile == 'vkdemo':
+    if args.profile in ('vkdemo', 'wayland'):
         report.update(profile=args.profile, token=args.token,
-                      profile_wrapper_sha256=digest(REPO / 'plan/ws014/tests/run-vkdemo-remote.py'))
+                      profile_wrapper_sha256=digest(REPO / f'plan/ws014/tests/run-{args.profile}-remote.py'))
     started = time.monotonic()
     write_json(output / 'result.json', report)
     try:
@@ -512,7 +587,7 @@ def run(args):
                    '--console-address', str(report['console']['physical_address']),
                    '--console-size', str(report['console']['bytes']),
                    '--render-server', args.render_server]
-        if args.profile == 'vkdemo':
+        if args.profile in ('vkdemo', 'wayland'):
             command += ['--token', args.token]
             if args.lifecycle:
                 command.append('--lifecycle')
@@ -520,7 +595,7 @@ def run(args):
             command += ['--phase', args.phase, '--frame', str(args.frame)]
         if args.boot_only:
             command.append('--boot-only')
-        elif args.profile != 'vkdemo':
+        elif args.profile not in ('vkdemo', 'wayland'):
             command += ['--left', ','.join(map(str, args.left)),
                         '--right', ','.join(map(str, args.right))]
         report['remote_argv'] = command
@@ -576,7 +651,7 @@ def main(profile='venus'):
     parser.add_argument('--init', default='/bin/sh', help='init path written only into the disposable image')
     parser.add_argument('--skip-build', action='store_true', help='explicitly reuse and record existing artifacts')
     parser.add_argument('--lifecycle', action='store_true', help='also verify SIGINT cleanup and visible console restoration')
-    parser.add_argument('--phase', choices=['2d', 'venus'] if profile == 'venus' else ['vkdemo'],
+    parser.add_argument('--phase', choices=['2d', 'venus'] if profile == 'venus' else [profile],
                         default=profile)
     parser.add_argument('--frame', type=int, default=1 if profile == 'venus' else 0)
     parser.add_argument('--left', type=rgb)
@@ -587,7 +662,7 @@ def main(profile='venus'):
     parser.add_argument('--transfer-timeout', type=int, default=600)
     args = parser.parse_args()
     args.profile = profile
-    if args.lifecycle and profile != 'vkdemo':
+    if args.lifecycle and profile not in ('vkdemo', 'wayland'):
         parser.error('lifecycle verification requires the standard vkdemo profile')
     args.token = 'r' + hashlib.sha256(args.attempt.encode()).hexdigest()[:24]
     if not re.fullmatch(r'[a-z0-9][a-z0-9_.-]{0,63}', args.attempt):
@@ -611,7 +686,7 @@ def main(profile='venus'):
         parser.error('frame must be 0..1000000 and timeout 1..600 seconds')
     if not 1 <= args.build_timeout <= 7200 or not 1 <= args.transfer_timeout <= 1800:
         parser.error('build timeout must be 1..7200 and transfer timeout 1..1800 seconds')
-    if profile == 'vkdemo' and (args.boot_only or args.frame != 0 or args.left is not None or args.right is not None):
+    if profile in ('vkdemo', 'wayland') and (args.boot_only or args.frame != 0 or args.left is not None or args.right is not None):
         parser.error('vkdemo runs exactly six frames; boot-only/frame/left/right overrides are unsupported')
     if profile == 'venus' and not args.boot_only and (args.left is None or args.right is None):
         parser.error('frame acceptance requires independent --left and --right RGB expectations')

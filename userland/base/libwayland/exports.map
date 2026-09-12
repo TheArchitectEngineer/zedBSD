@@ -1,0 +1,8 @@
+{
+	global:
+		wl_*;
+		xdg_*;
+		zed_gpu_buffer_v1_*;
+	local:
+		*;
+};

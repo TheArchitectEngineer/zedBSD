@@ -19,8 +19,9 @@ case "${1:-}" in
     *) echo "usage: $0 [asan|ubsan]" >&2; exit 2 ;;
 esac
 # Intentional word splitting expands the finite compiler-option list above.
-${CC:-cc} $flags -I"$work/include" -I"$repo/userland/base/libvulkan" \
+${CC:-cc} $flags -I"$work/include" -I"$repo/include" -I"$repo/userland/base/libvulkan" \
     "$repo/plan/ws030/tests/wsi-discovery.c" \
+    "$repo/plan/ws030/tests/wsi-direct-only.c" \
     "$repo/userland/base/libvulkan/objects.c" \
     "$repo/userland/base/libvulkan/wsi.c" \
     "$repo/userland/base/libvulkan/wsi-swapchain.c" -o "$work/wsi-discovery"

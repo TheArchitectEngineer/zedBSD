@@ -213,6 +213,8 @@ strerror(int error)
 	case EINVAL: return "Invalid argument";
 	case ENOMEM: return "Not enough memory";
 	case EIO: return "Input/output error";
+	case EPROTO:
+		return "Protocol error";
 	case ENOENT: return "No such file or directory";
 	case EINTR: return "Interrupted system call";
 	case ENOSPC: return "No space left on device";

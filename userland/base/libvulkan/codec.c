@@ -2773,8 +2773,8 @@ vulkan_encode_VkImageCreateInfo(
 	/* Preserves declared field order using explicit protocol widths and nested encoders. */
 	vulkan_write_u32(writer, record->sType);
 
-	/* No advertised core 1.0 extension adds a chain to this record. */
-	vulkan_write_u64(writer, 0);
+	/* WSI may request renderer-exportable image storage through a private chain. */
+	vulkan_encode_image_external(writer, record->pNext);
 
 	/* Preserves declared field order using explicit protocol widths and nested encoders. */
 	vulkan_write_u32(writer, record->flags);

@@ -264,44 +264,51 @@ poll_scan(
 	nfds_t count,
 	int *ready)
 {
-	struct file *file;
+	struct fd_object object;
 	nfds_t i;
 	short revents;
 	int total;
 	int error;
 
+	/* Count only descriptors whose requested or terminal readiness is observable. */
 	total = 0;
-
-	/* Evaluates each descriptor, skipping negative ones. */
 	for (i = 0; i < count; i++) {
+		/* Negative poll entries intentionally carry no descriptor ownership. */
 		revents = 0;
 		fds[i].revents = 0;
 		if (fds[i].fd < 0)
 			continue;
 
 		/* A closed descriptor is ready with POLLNVAL. */
-		file = filedesc_get_ref(process->fd, fds[i].fd);
-		if (file == NULL) {
+		error = filedesc_get_object_ref(process->fd, fds[i].fd, &object);
+		if (error != 0) {
 			fds[i].revents = POLLNVAL;
 			total++;
 			continue;
 		}
 
-		/* Asks the file for its readiness and drops the reference. */
-		error = file_poll(file, fds[i].events, &revents);
-		(void)file_close(file);
+		/* A release-only handle is valid but has no I/O or fence readiness. */
+		error = 0;
+		if (object.type == FD_OBJECT_FILE)
+			error = file_poll(object.data.file, fds[i].events, &revents);
+
+		/* Either object can outlive concurrent close until this scan finishes. */
+		(void)fd_object_put(&object);
 
 		/* A failed query reports the descriptor as ready with POLLERR. */
 		if (error == 0)
 			fds[i].revents = revents;
 		else
 			fds[i].revents = POLLERR;
+
+		/* Valid release-only handles contribute no readiness to this count. */
 		if (fds[i].revents != 0)
 			total++;
 	}
 
+	/* Publish the complete scan after every temporary object reference has been released. */
 	*ready = total;
 
-	/* Reports a completed scan. */
+	/* Succeeded: the caller receives this scan's readiness count. */
 	return 0;
 }

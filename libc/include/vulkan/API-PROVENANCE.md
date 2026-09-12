@@ -34,3 +34,23 @@ maintained header, and run the ABI checks before replacing it. The tool's source
 is maintained in this repository; no upstream generator or marshaler is copied.
 Changing the API-data revision or function set requires reviewing this record,
 the public ABI and the supported runtime scope together.
+
+
+## Wayland declaration addition (q309)
+
+`vulkan_wayland.h` adds the two commands and the creation record of
+`VK_KHR_wayland_surface`, revision 6. The declaration data was checked against
+[Khronos Vulkan-Headers v1.3.269](https://github.com/KhronosGroup/Vulkan-Headers/blob/v1.3.269/include/vulkan/vulkan_wayland.h),
+SHA-256 `3728578b8d6d98f6f3d20672406f869253eeacae8546a9d9577bca5c63a88d12`.
+The declaration license remains Apache-2.0. The platform wrapper includes it
+when `VK_USE_PLATFORM_WAYLAND_KHR` is defined; direct inclusion is also supported.
+
+The core/direct-display selection remains 155 commands; the complete public
+library now contains 157 commands. The independent dispatch maintenance tool
+reads the separate maintained Wayland header in addition to `vulkan_core.h`.
+The extra private external-image/memory chain encoding is implementation code,
+not a public advertisement of external-memory extensions or a guest dma-buf ABI.
+The [official Wayland extension](https://docs.vulkan.org/refpages/latest/refpages/source/VK_KHR_wayland_surface.html)
+requires MAILBOX support as well as the implemented FIFO path. Actual acceptance
+and limitations are recorded with WS014 p006, rather than changing WS030's closed
+historical clearance.

@@ -412,7 +412,7 @@ vkEnumerateInstanceExtensionProperties(
 	uint32_t *pPropertyCount,
 	VkExtensionProperties *pProperties)
 {
-	VkExtensionProperties available[2];
+	VkExtensionProperties available[3];
 	VkResult status;
 
 	/* This library does not impersonate a separately installable validation layer. */
@@ -425,9 +425,11 @@ vkEnumerateInstanceExtensionProperties(
 	available[0].specVersion = VK_KHR_SURFACE_SPEC_VERSION;
 	strcpy(available[1].extensionName, VK_KHR_DISPLAY_EXTENSION_NAME);
 	available[1].specVersion = VK_KHR_DISPLAY_SPEC_VERSION;
+	strcpy(available[2].extensionName, VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME);
+	available[2].specVersion = VK_KHR_WAYLAND_SURFACE_SPEC_VERSION;
 
 	/* Preserves the required partial-array result when caller capacity is smaller. */
-	status = enumerate_extensions(available, 2, pPropertyCount, pProperties);
+	status = enumerate_extensions(available, 3, pPropertyCount, pProperties);
 	if (status != VK_SUCCESS)
 		return status;
 
@@ -545,12 +547,19 @@ instance_extensions(
 			continue;
 		}
 
+		/* Wayland presentation remains local to the guest connection. */
+		match = strcmp(info->ppEnabledExtensionNames[index], VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME);
+		if (match == 0) {
+			bits |= VULKAN_INSTANCE_WAYLAND;
+			continue;
+		}
+
 		/* An unknown requested extension cannot be silently treated as implemented. */
 		return VK_ERROR_EXTENSION_NOT_PRESENT;
 	}
 
-	/* Direct display requires the surface capability in the same instance. */
-	if ((bits & VULKAN_INSTANCE_DISPLAY) && !(bits & VULKAN_INSTANCE_SURFACE))
+	/* Both presentation backends require the surface capability in the same instance. */
+	if ((bits & (VULKAN_INSTANCE_DISPLAY | VULKAN_INSTANCE_WAYLAND)) && !(bits & VULKAN_INSTANCE_SURFACE))
 		return VK_ERROR_EXTENSION_NOT_PRESENT;
 
 	/* Publishes the validated enabled-bit snapshot. */

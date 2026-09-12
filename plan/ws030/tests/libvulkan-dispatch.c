@@ -29,7 +29,8 @@ enum test_extension {
 	TEST_SURFACE,
 	TEST_DISPLAY,
 	TEST_SWAPCHAIN,
-	TEST_DISPLAY_SWAPCHAIN
+	TEST_DISPLAY_SWAPCHAIN,
+	TEST_WAYLAND
 };
 
 /* Vulkan 1.0 defines exactly four commands callable without an instance. */
@@ -69,6 +70,11 @@ static const char *const swapchain_names[] = {
 	"vkAcquireNextImageKHR", "vkQueuePresentKHR"
 };
 
+/* KHR_wayland_surface adds two commands in instance dispatch scope. */
+static const char *const wayland_names[] = {
+	"vkCreateWaylandSurfaceKHR", "vkGetPhysicalDeviceWaylandPresentationSupportKHR"
+};
+
 static VkBool32 name_in(const char *name, const char *const *names, size_t count);
 static enum test_scope classify(const char *name, enum test_extension *extension);
 static void check_entry(void *library, const char *name, enum test_scope scope, enum test_extension extension, struct VkInstance_T *instance, struct VkDevice_T *device, struct VkPhysicalDevice_T *physical);
@@ -77,7 +83,7 @@ static void check_dependencies(struct VkInstance_T *instance, struct VkDevice_T 
 static void check_unknown(struct VkInstance_T *instance, struct VkDevice_T *device);
 
 /*
- * Loads the actual DSO containing all 18 implementation families without opening a GPU.
+ * Loads the actual DSO containing all Vulkan implementation families without opening a GPU.
  */
 int
 main(
@@ -92,12 +98,12 @@ main(
 	void *library;
 	char line[256];
 	char name[128];
-	char seen[155][128];
+	char seen[157][128];
 	char *read_result;
 	const char *error;
 	enum test_scope scope;
 	enum test_extension extension;
-	unsigned counts[5][3];
+	unsigned counts[6][3];
 	unsigned total;
 	unsigned index;
 	int comparison;
@@ -151,7 +157,7 @@ main(
 		/* Duplicate metadata names cannot conceal a missing public command. */
 		result = sscanf(line, "%127s", name);
 		assert(result == 1);
-		assert(total < 155U);
+		assert(total < 157U);
 		for (index = 0U; index < total; index++) {
 			comparison = strcmp(seen[index], name);
 			assert(comparison != 0);
@@ -165,8 +171,8 @@ main(
 		total++;
 	}
 
-	/* The independent domain totals enforce all 137 core and 18 selected extension commands. */
-	assert(total == 155U);
+	/* The independent domain totals enforce all 137 core and 20 selected extension commands. */
+	assert(total == 157U);
 	assert(counts[TEST_CORE][TEST_GLOBAL] == 4U);
 	assert(counts[TEST_CORE][TEST_INSTANCE] == 12U);
 	assert(counts[TEST_CORE][TEST_DEVICE] == 121U);
@@ -174,6 +180,7 @@ main(
 	assert(counts[TEST_DISPLAY][TEST_INSTANCE] == 7U);
 	assert(counts[TEST_SWAPCHAIN][TEST_DEVICE] == 5U);
 	assert(counts[TEST_DISPLAY_SWAPCHAIN][TEST_DEVICE] == 1U);
+	assert(counts[TEST_WAYLAND][TEST_INSTANCE] == 2U);
 	check_dependencies(&instance, &device);
 	check_unknown(&instance, &device);
 	result = fclose(names);
@@ -182,7 +189,7 @@ main(
 	assert(result == 0);
 
 	/* Succeeded: function addresses originate from the actual complete library, with no substituted Vulkan entry point. */
-	puts("libvulkan dispatch: PASS (155 real exports, 137 core, 18 WSI, independent scopes, extension gating)");
+	puts("libvulkan dispatch: PASS (157 real exports, 137 core, 20 WSI, independent scopes, extension gating)");
 	return 0;
 }
 
@@ -239,6 +246,13 @@ classify(
 	found = name_in(name, display_names, sizeof(display_names) / sizeof(display_names[0]));
 	if (found) {
 		*extension = TEST_DISPLAY;
+		return TEST_INSTANCE;
+	}
+
+	/* Wayland native surface creation and support queries require their instance extension. */
+	found = name_in(name, wayland_names, sizeof(wayland_names) / sizeof(wayland_names[0]));
+	if (found) {
+		*extension = TEST_WAYLAND;
 		return TEST_INSTANCE;
 	}
 
@@ -309,6 +323,9 @@ check_entry(
 	case TEST_DISPLAY:
 		required = VULKAN_INSTANCE_DISPLAY;
 		break;
+	case TEST_WAYLAND:
+		required = VULKAN_INSTANCE_WAYLAND;
+		break;
 	case TEST_SWAPCHAIN:
 		required = VULKAN_DEVICE_SWAPCHAIN;
 		break;
@@ -320,8 +337,8 @@ check_entry(
 		break;
 	}
 
-	/* Test every two-bit combination, including support on either physical device independently. */
-	for (instance_mask = 0U; instance_mask < 4U; instance_mask++) {
+	/* Test all three instance bits and both device bits, including independent physical-device support. */
+	for (instance_mask = 0U; instance_mask < 8U; instance_mask++) {
 		instance->enabled_extensions = instance_mask;
 		for (device_mask = 0U; device_mask < 4U; device_mask++) {
 			device->enabled_extensions = device_mask;

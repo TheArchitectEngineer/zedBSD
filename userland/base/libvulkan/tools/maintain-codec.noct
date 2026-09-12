@@ -128,7 +128,11 @@ func emit(records, handles, record, decode) {
         var field = fields[i]; var type = field[0]; var member = field[1]; var pointer = field[2]; var extent = field[3]; var expression = "record->" + member;
         if (pointer || extent != "") { scalars = false; }
         if (pointer && member == "pNext") {
+            if (!decode && name == "VkImageCreateInfo") {
+                output = output + "\n\t/* WSI may request renderer-exportable image storage through a private chain. */\n\tvulkan_encode_image_external(writer, record->pNext);\n";
+            } else {
             output = output + "\n\t/* No advertised core 1.0 extension adds a chain to this record. */\n\tvulkan_write_u64(writer, 0);\n";
+            }
             continue;
         }
         if (pointer) {
@@ -223,9 +227,9 @@ func main(args) {
         if (bracket >= 0) { extent = String.substring(name, bracket + 1, String.charCount(name) - bracket - 2); name = String.substring(name, 0, bracket); }
         Array.push(fields, [type, name, pointer, extent]);
     }
-    var banner = "/* -*- mode: c; c-file-style: \"linux\"; tab-width: 8; -*- */\n\n/*\n * zedBSD\n * Copyright (C) 2026 Awe Morris\n *\n * SPDX-License-Identifier: Zlib\n */\n\n/* Maintained by tools/maintain-codec.noct from declarations and explicit protocol rules. */\n";
+    var banner = "/*\n * zedBSD\n * Copyright (C) 2026 Awe Morris\n *\n * SPDX-License-Identifier: Zlib\n */\n\n/*\n * Maintained by tools/maintain-codec.noct from declarations and explicit protocol rules.\n */\n";
     var source = banner + "\n#include \"internal.h\"\n";
-    var header = banner + "\n#ifndef ZEDBSD_VULKAN_CODEC_H\n#define ZEDBSD_VULKAN_CODEC_H\n\n/* Translates a local opaque handle into its independently owned renderer identity. */\nvoid\nvulkan_encode_handle(\n\tstruct vulkan_writer *writer,\n\tuint64_t handle);\n\n";
+    var header = banner + "\n#ifndef VULKAN_CODEC_H\n#define VULKAN_CODEC_H\n\n/* Translates a local opaque handle into its independently owned renderer identity. */\nvoid\nvulkan_encode_handle(\n\tstruct vulkan_writer *writer,\n\tuint64_t handle);\n\n";
     var decoders = 0;
     for (i in 0..Array.size(records)) {
         var record = records[i]; var name = record[0];

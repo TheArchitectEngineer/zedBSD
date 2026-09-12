@@ -19,10 +19,13 @@ echo "GPU UAPI: ILP32/LP64 sizes, offsets and ioctl encoding PASS"
 cc -std=c11 -O2 -Wall -Wextra -Werror \
     -ffunction-sections -fdata-sections \
     -DKERN_USER_ABI_LP64 -I"$repo/include" -I"$repo/src" \
-    -idirafter "$repo/libc/include" \
+    -I"$repo/libc/include" \
     -include "$repo/libc/include/sys/ioctl.h" \
     "$repo/plan/ws014/tests/gpu-framework.c" \
     "$repo/src/drivers/gpu/gpu.c" "$repo/src/kern/cdev.c" \
+    "$repo/plan/ws014/tests/gpu-test-fd.c" \
+    "$repo/src/kern/handle.c" "$repo/src/kern/fd-object.c" \
+    "$repo/src/kern/filedesc.c" \
     "$repo/src/kern/vm-device.c" \
     "$repo/src/drivers/pci/pci.c" -Wl,--gc-sections \
     -o "$work/ordinary"
@@ -32,10 +35,13 @@ cc -std=c11 -O1 -g -Wall -Wextra -Werror \
     -fsanitize=address,undefined -fno-omit-frame-pointer \
     -ffunction-sections -fdata-sections \
     -DKERN_USER_ABI_LP64 -I"$repo/include" -I"$repo/src" \
-    -idirafter "$repo/libc/include" \
+    -I"$repo/libc/include" \
     -include "$repo/libc/include/sys/ioctl.h" \
     "$repo/plan/ws014/tests/gpu-framework.c" \
     "$repo/src/drivers/gpu/gpu.c" "$repo/src/kern/cdev.c" \
+    "$repo/plan/ws014/tests/gpu-test-fd.c" \
+    "$repo/src/kern/handle.c" "$repo/src/kern/fd-object.c" \
+    "$repo/src/kern/filedesc.c" \
     "$repo/src/kern/vm-device.c" \
     "$repo/src/drivers/pci/pci.c" -Wl,--gc-sections \
     -o "$work/sanitized"

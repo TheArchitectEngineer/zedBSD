@@ -16,9 +16,10 @@
 
 #include <uapi/gpu.h>
 #include <drivers/gpu-display.h>
+#include <drivers/gpu-share.h>
 #include <stdint.h>
 
-#define DRV_GPU_INTERFACE_VERSION	3U
+#define DRV_GPU_INTERFACE_VERSION	4U
 
 #define DRV_GPU_MAPPING_DEVICE 1U
 
@@ -74,6 +75,7 @@ struct drv_gpu_ops {
 	/* Optional display ownership and immutable mapping views retain the same session lifetime. */
 	const struct drv_gpu_display_ops *display;
 	int (*resource_map)(void *, void *, void *, struct drv_gpu_mapping *);
+	const struct drv_gpu_share_ops *share;
 };
 
 /*

@@ -906,6 +906,12 @@ venus_negotiate(
 
 	/* Declines packed rings, indirect descriptors, and unimplemented features. */
 	transport->features = VENUS_REQUIRED_FEATURES;
+
+	/* EDID is optional; negotiation enables real timing discovery only when offered. */
+	if ((low & VENUS_FEATURE_EDID) != 0U)
+		transport->features |= VENUS_FEATURE_EDID;
+
+	/* Publish the exact implemented feature subset before FEATURES_OK. */
 	kern_mmio_write32(common + 8U, 0U);
 	kern_mmio_write32(common + 12U, transport->features);
 	kern_mmio_write32(common + 8U, 1U);

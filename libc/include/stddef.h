@@ -10,7 +10,9 @@
 
 typedef __SIZE_TYPE__ size_t;
 typedef __PTRDIFF_TYPE__ ptrdiff_t;
+#ifndef __cplusplus
 typedef __WCHAR_TYPE__ wchar_t;
+#endif
 typedef union { long long integer; double floating; void *pointer; } max_align_t;
 
 #ifndef NULL

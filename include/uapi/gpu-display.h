@@ -21,11 +21,13 @@
 #define GPU_DISPLAY_FIFO		4U
 #define GPU_DISPLAY_ATOMIC_MODE_PRESENT	8U
 #define GPU_DISPLAY_ACTIVE		16U
+#define GPU_DISPLAY_BLOB		32U
 #define GPU_DISPLAY_FORMAT_BGRA8888	1U
 #define GPU_DISPLAY_FORMAT_RGBA8888	2U
 #define GPU_DISPLAY_MODE_ENUMERATE	0U
 #define GPU_DISPLAY_MODE_VALIDATE	1U
 #define GPU_DISPLAY_PRESENT_FIFO	1U
+#define GPU_DISPLAY_PRESENT_BLOB	2U
 #define GPU_DISPLAY_COUNT_ONLY		UINT32_MAX
 
 #define GPU_DISPLAY_QUERY		_IOWR('G', 24, struct gpu_display_info)
@@ -66,6 +68,8 @@ struct gpu_display_info {
 /*
  * One native mode query or side-effect-free custom mode validation.
  * Enumeration takes index; validation takes width, height and refresh_millihz.
+ * Validation refresh zero asks the driver to return its preferred supported
+ * frequency for those dimensions without selecting an active scanout mode.
  */
 struct gpu_display_mode {
 	uint32_t version;
@@ -107,7 +111,9 @@ struct gpu_display_release {
 /*
  * One whole-frame FIFO presentation from session-owned packed pixel storage.
  * Sequence is input0 and reports completed virtual presentation on success.
- * The backend finishes reading the source storage before this call returns.
+ * Ordinary storage is no longer borrowed when this call returns. BLOB mode
+ * instead retains the shared allocation until a later frame replaces it or
+ * the lease is released; the caller must finish rendering before presenting.
  */
 struct gpu_display_present {
 	uint32_t version;

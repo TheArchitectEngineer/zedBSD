@@ -12,6 +12,7 @@
 #ifndef KERN_KERN_NET_SOCKET_H
 #define KERN_KERN_NET_SOCKET_H
 
+#include <kern/fd-object.h>
 #include <kern/atomic.h>
 #include <kern/lock.h>
 #include <kern/waitq.h>
@@ -109,7 +110,7 @@ struct unix_recv_transaction {
 	unsigned data_truncated;
 	unsigned control_truncated;
 	unsigned active;
-	struct file *files[KERN_MSG_FD_MAX];
+	struct fd_object objects[KERN_MSG_FD_MAX];
 };
 
 struct socket_family_ops {
@@ -161,6 +162,9 @@ int unix_socket_pair_create(int type, int protocol,
 			    const struct kern_peercred *creator,
 			    struct socket **left_result,
 			    struct socket **right_result);
+/* These calls consume owned references on success and failure. */
+ssize_t unix_socket_send_objects(struct socket *socket, const void *buffer, size_t length, int flags, const struct sockaddr *address, socklen_t address_length, struct fd_object *objects, unsigned count);
+ssize_t unix_socket_send_objects_at(struct socket *socket, struct cwdinfo *context, const struct ucred *cred, const void *buffer, size_t length, int flags, const struct sockaddr *address, socklen_t address_length, struct fd_object *objects, unsigned count);
 ssize_t unix_socket_send_message(struct socket *socket, const void *buffer,
 				 size_t length, int flags,
 				 const struct sockaddr *address,

@@ -46,6 +46,13 @@ static unsigned console_create_fail, console_reap_stalled, console_worker_iterat
 /* Counters observe thread creation/reaping and complete fenced display work. */
 static unsigned console_created, console_reaped, console_fenced, console_snapshots;
 
+/* Optional EDID bytes are supplied only by the native timing fixture after feature negotiation. */
+static uint8_t console_edid[1024];
+
+/* The native peer reports this independent bounded EDID payload length. */
+static uint32_t console_edid_bytes;
+
+
 static void console_test_restore(void);
 static void console_test_timeout(void);
 static void console_test_claim(struct venus_controller *controller, void *session, struct gpu_display_claim *claim);
@@ -68,6 +75,26 @@ drv_venus_transport_command(
 	uint32_t flags;
 	uint64_t fence;
 	int error;
+
+	/* Negotiated EDID requests must use native scanout zero and the full fixed virtio response. */
+	command = input;
+	type = drv_venus_load32(command);
+	if (type == 0x10aU) {
+		assert((transport->features & VENUS_FEATURE_EDID) != 0U);
+		assert(bytes == 32U);
+		assert(capacity == 1056U);
+		assert(drv_venus_load32(command + 16U) == 0U);
+		assert(drv_venus_load32(command + 24U) == 0U);
+		assert(drv_venus_load32(command + 28U) == 0U);
+		assert(console_edid_bytes <= sizeof(console_edid));
+		fixture_commands[type]++;
+		memset(output, 0, capacity);
+		drv_venus_store32(output, 0x1104U);
+		drv_venus_store32((uint8_t *)output + 24U, console_edid_bytes);
+		memcpy((uint8_t *)output + 32U, console_edid, console_edid_bytes);
+		*response_bytes = capacity;
+		return 0;
+	}
 
 	/* Native inventory is a complete sixteen-entry protocol response with one connected output. */
 	command = input;
@@ -289,8 +316,11 @@ sched_sleep(
 /*
  * Checks native lease restoration, text redraw, preserved contexts and bounded stop ownership.
  */
+#ifndef VENUS_CONSOLE_ENTRY
+#define VENUS_CONSOLE_ENTRY main
+#endif
 int
-main(
+VENUS_CONSOLE_ENTRY(
 	void)
 {
 	/* Normal release and closing another owner both restore the same controller-owned console. */

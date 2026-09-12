@@ -181,3 +181,22 @@ typedef char gpu_display_claim_command_check[GPU_DISPLAY_CLAIM == 0xc020471aUL ?
 typedef char gpu_display_release_command_check[GPU_DISPLAY_RELEASE == 0x8010471bUL ? 1 : -1];
 typedef char gpu_display_present_command_check[GPU_DISPLAY_PRESENT == 0xc050471cUL ? 1 : -1];
 typedef char gpu_display_wait_command_check[GPU_DISPLAY_WAIT == 0xc038471dUL ? 1 : -1];
+
+/* Shared image metadata has a fixed native-independent 64-byte transport shape. */
+typedef char gpu_image_descriptor_size_check[sizeof(struct gpu_image_descriptor) == 64 ? 1 : -1];
+typedef char gpu_image_descriptor_offset_check[offsetof(struct gpu_image_descriptor, offset) == 24 ? 1 : -1];
+typedef char gpu_image_descriptor_device_check[offsetof(struct gpu_image_descriptor, device_id) == 56 ? 1 : -1];
+
+/* Capability export carries its descriptor number before the complete image metadata. */
+typedef char gpu_resource_export_size_check[sizeof(struct gpu_resource_export) == 88 ? 1 : -1];
+typedef char gpu_resource_export_fd_check[offsetof(struct gpu_resource_export, fd) == 20 ? 1 : -1];
+typedef char gpu_resource_export_image_check[offsetof(struct gpu_resource_export, image) == 24 ? 1 : -1];
+
+/* Capability import returns a destination handle and authoritative metadata without native pointers. */
+typedef char gpu_resource_import_size_check[sizeof(struct gpu_resource_import) == 96 ? 1 : -1];
+typedef char gpu_resource_import_handle_check[offsetof(struct gpu_resource_import, handle) == 16 ? 1 : -1];
+typedef char gpu_resource_import_image_check[offsetof(struct gpu_resource_import, image) == 32 ? 1 : -1];
+
+/* New command encodings remain identical for 32-bit and 64-bit userspace. */
+typedef char gpu_resource_export_command_check[GPU_RESOURCE_EXPORT == 0xc058470aUL ? 1 : -1];
+typedef char gpu_resource_import_command_check[GPU_RESOURCE_IMPORT == 0xc060470bUL ? 1 : -1];

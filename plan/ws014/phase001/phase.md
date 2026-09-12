@@ -220,3 +220,7 @@ p003実行開始（q306）。ユーザー指定のVenus専用driverと実guest V
 <!-- q306-result:start -->
 p003/q306 cleared（2026-09-13）。現行ops v2/UAPI v1と6callback/6ioctlを同じU/K資料へ追記し、このIssueのq306契約コメントへ全文掲載。p001はplanning、次p005→p004は未実行。実測結果は[p003](https://github.com/awemorris/zedBSD/issues/384)。
 <!-- q306-result:end -->
+
+## q309の現行API補遺
+
+p006のGPU共有・標準Wayland WSIを受入済み。初期275API/44 callback候補は設計履歴として保持し、現在の157実API（137core＋20WSI）、drv_gpu_ops v4／GPU UAPI v1とは分ける。新しい2Wayland APIの純粋U/K責務、share/export/import/scanoutの所有権と初期制約をlocal/uncommitted plan/ws014/vulkan-api-responsibilities.mdとgpu-framework.mdへ追記した。詳細実装資料と結果は[p006](https://github.com/awemorris/zedBSD/issues/393)。p001はplanningを維持し、最終整理は未queueの[p004](https://github.com/awemorris/zedBSD/issues/385)へ引き渡す。

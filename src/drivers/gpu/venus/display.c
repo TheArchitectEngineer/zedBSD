@@ -7,7 +7,7 @@
 
 /*
  * Exclusive direct displays with private front/back images and a guest clock.
- * This clock is virtual; it does not claim synchronization to host monitor vblank.
+ * This clock is virtual, it does not claim synchronization to host monitor vblank.
  */
 
 #include "internal.h"
@@ -26,11 +26,23 @@
 #include <string.h>
 
 #define VENUS_DISPLAY_REFRESH		50000U
-#define VENUS_DISPLAY_PERIOD		(KERN_CLOCK_HZ / 50U)
+#define VENUS_DISPLAY_MAX_REFRESH	(KERN_CLOCK_HZ * 1000U)
+#define VENUS_EDID_BYTES		1024U
 #define VENUS_PROTOCOL_SCANOUTS		16U
 #define VENUS_DISPLAY_EXTENT		4096U
 #define VENUS_CONSOLE_POLL_TICKS	(KERN_CLOCK_HZ / 10U)
 #define VENUS_CONSOLE_STOP_TICKS	(15U * KERN_CLOCK_HZ)
+
+/*
+ * One validated progressive EDID timing retained until the next topology query.
+ * The controller mutex protects this dynamically sized per-output list.
+ */
+struct venus_display_timing {
+	struct venus_display_timing *next;
+	uint32_t width;
+	uint32_t height;
+	uint32_t refresh;
+};
 
 /*
  * One protocol scanout, whose private buffers never escape through GPU handles.
@@ -40,6 +52,12 @@ struct venus_display_output {
 	struct venus_session *owner;
 	struct venus_resource *front;
 	struct venus_resource *back;
+	struct venus_share *shared_front;
+	struct venus_display_timing *timings;
+	uint32_t mode_count;
+	uint32_t preferred_refresh;
+	uint32_t physical_width_mm;
+	uint32_t physical_height_mm;
 	uint64_t generation;
 	uint64_t lease;
 	uint64_t sequence;
@@ -89,8 +107,13 @@ static int display_validate_mode(uint32_t width, uint32_t height, uint32_t refre
 static int display_release_output(struct venus_controller *controller, struct venus_display_output *output);
 static int display_prepare(struct venus_controller *controller, struct venus_display_output *output, const struct gpu_display_present *request);
 static int display_frame(struct venus_controller *controller, struct venus_display_output *output, struct venus_resource *source, struct gpu_display_present *request);
+static int display_blob_frame(struct venus_controller *controller, struct venus_display_output *output, struct venus_resource *source, struct gpu_display_present *request);
 static int display_fenced(struct venus_controller *controller, uint8_t *command, uint32_t bytes);
-static int display_next_refresh(struct venus_display_output *output);
+static int display_next_refresh(struct venus_display_output *output, uint32_t refresh);
+static int display_timings_refresh(struct venus_controller *controller, struct venus_display_output *output);
+static int display_edid_parse(struct venus_display_output *output, const uint8_t *edid, uint32_t bytes);
+static int display_edid_timing(struct venus_display_output *output, const uint8_t *descriptor);
+static void display_timings_free(struct venus_display_output *output);
 static int display_status(struct venus_controller *controller, const void *command, uint32_t command_bytes, void *reply, uint32_t reply_bytes, uint32_t expected);
 
 /* Every callback shares the controller's sleepable device mutex. */
@@ -126,6 +149,12 @@ drv_venus_display_close_locked(
 		if (error != 0) {
 			controller->transport.failed = 1U;
 			kern_logf("venus: display %u retained for reset: %d\n", output->identifier, error);
+
+			/* Failed scanout storage remains on the controller list after its software hold retires. */
+			if (output->shared_front != NULL) {
+				drv_venus_share_put_locked(controller, output->shared_front);
+				output->shared_front = NULL;
+			}
 		}
 
 		/* A retired wrapper must never remain in lease arbitration. */
@@ -144,9 +173,15 @@ void
 drv_venus_display_finish(
 	struct venus_controller *controller)
 {
+	uint32_t index;
+
 	/* Controller detach calls this only after checked device reset. */
 	if (controller->display == NULL)
 		return;
+
+	/* Timing metadata owns no hardware reference and retires with its output inventory. */
+	for (index = 0U; index < controller->display->count; index++)
+		display_timings_free(&controller->display->outputs[index]);
 
 	/* Resource pointers are intentionally not dereferenced after reset cleanup. */
 	kern_free(controller->display->outputs);
@@ -468,10 +503,10 @@ display_query(
 	request->display_id = output->identifier;
 	request->generation = output->generation;
 	request->flags = GPU_DISPLAY_VIRTUAL_CLOCK | GPU_DISPLAY_FIFO |
-	    GPU_DISPLAY_ATOMIC_MODE_PRESENT;
+	    GPU_DISPLAY_ATOMIC_MODE_PRESENT | GPU_DISPLAY_BLOB;
 	if (output->connected != 0U)
 		request->flags |= GPU_DISPLAY_CONNECTED;
-	if (output->front != NULL)
+	if (output->front != NULL || output->shared_front != NULL)
 		request->flags |= GPU_DISPLAY_ACTIVE;
 	if (request->index == 0U && controller->primary_scanout != NULL)
 		request->flags |= GPU_DISPLAY_ACTIVE;
@@ -494,7 +529,9 @@ display_query(
 	request->preferred_height = output->preferred_height;
 	request->max_width = VENUS_DISPLAY_EXTENT;
 	request->max_height = VENUS_DISPLAY_EXTENT;
-	request->refresh_millihz = VENUS_DISPLAY_REFRESH;
+	request->refresh_millihz = output->preferred_refresh;
+	request->physical_width_mm = output->physical_width_mm;
+	request->physical_height_mm = output->physical_height_mm;
 	snprintf(request->name, sizeof(request->name), "Venus virtual display %u", request->index);
 	mutex_unlock(&controller->mutex);
 
@@ -502,7 +539,7 @@ display_query(
 	return 0;
 }
 
-/* Enumerates the preferred mode or validates another supported virtual extent. */
+/* Enumerates discovered timings or validates a supported virtual extent and clock. */
 static int
 display_mode(
 	void *device,
@@ -511,43 +548,93 @@ display_mode(
 {
 	struct venus_controller *controller;
 	struct venus_display_output *output;
+	struct venus_display_timing *timing;
+	uint32_t index;
 	int error;
 
-	/* Mode descriptions do not acquire presentation ownership. */
+	/* Mode discovery observes the same topology generation as display ownership. */
 	(void)private_session;
 	controller = device;
 	mutex_lock(&controller->mutex);
+
 	error = display_find(controller, request->display_id, request->generation, &output);
 	if (error != 0) {
 		mutex_unlock(&controller->mutex);
 		return error;
 	}
 
-	/* The host-preferred rectangle is the one advertised enumerated mode. */
+	/* Enumeration always includes the GET_DISPLAY_INFO preferred rectangle first. */
 	if (request->operation == GPU_DISPLAY_MODE_ENUMERATE) {
-		request->count = 1U;
+		request->count = output->mode_count;
 		if (request->index == GPU_DISPLAY_COUNT_ONLY) {
 			mutex_unlock(&controller->mutex);
 			return 0;
 		}
-		if (request->index != 0U) {
+
+		/* Out-of-range ordinals must not return uninitialized timing fields. */
+		if (request->index >= output->mode_count) {
 			mutex_unlock(&controller->mutex);
 			return EINVAL;
 		}
+
+		/* An EDID timing matching the preferred rectangle supplies its actual nominal frequency. */
 		request->width = output->preferred_width;
 		request->height = output->preferred_height;
-		request->refresh_millihz = VENUS_DISPLAY_REFRESH;
+		request->refresh_millihz = output->preferred_refresh;
+		index = 1U;
+		timing = output->timings;
+
+		/* Skip the already enumerated preferred timing and select one remaining actual DTD. */
+		while (timing != NULL && request->index != 0U) {
+			/* The preferred item is present exactly once in the public inventory. */
+			if (timing->width != output->preferred_width ||
+			    timing->height != output->preferred_height ||
+			    timing->refresh != output->preferred_refresh) {
+				/* Every additional ordinal refers to one complete validated EDID timing. */
+				if (index == request->index) {
+					request->width = timing->width;
+					request->height = timing->height;
+					request->refresh_millihz = timing->refresh;
+					break;
+				}
+
+				/* Only distinct public modes consume an ordinal. */
+				index++;
+			}
+
+			/* The list is retained under the controller mutex throughout this query. */
+			timing = timing->next;
+		}
 	} else {
-		/* Custom virtual modes must preserve the documented bounded clock. */
+		/* Zero asks the driver to resolve a native frequency or its documented custom-mode fallback. */
+		if (request->refresh_millihz == 0U) {
+			request->refresh_millihz = VENUS_DISPLAY_REFRESH;
+			timing = output->timings;
+
+			/* The first exact geometry match retains the native EDID preference order. */
+			while (timing != NULL) {
+				/* Never borrow another mode's frequency for an unmatched custom extent. */
+				if (timing->width == request->width && timing->height == request->height) {
+					request->refresh_millihz = timing->refresh;
+					break;
+				}
+
+				/* Absence of a matching native timing preserves custom virtual-mode compatibility. */
+				timing = timing->next;
+			}
+		}
+
+		/* Virtio selects a framebuffer rectangle; an explicit cadence need not describe a physical EDID mode. */
 		error = display_validate_mode(request->width, request->height, request->refresh_millihz);
 		if (error != 0) {
 			mutex_unlock(&controller->mutex);
 			return error;
 		}
 	}
+
 	mutex_unlock(&controller->mutex);
 
-	/* Succeeded: neither enumeration nor validation changed the display mode. */
+	/* Succeeded: timing discovery and validation changed no selected scanout. */
 	return 0;
 }
 
@@ -683,14 +770,24 @@ display_present(
 
 	/* Private storage and session ownership are independently checked in K. */
 	if (source->controller != controller ||
-	    source->context != output->owner->context ||
-	    source->kind != VENUS_RESOURCE_STORAGE) {
+	    source->context != output->owner->context) {
 		mutex_unlock(&controller->mutex);
 		return EINVAL;
 	}
 
-	/* A completed call has consumed its source and no longer borrows userspace. */
-	error = display_frame(controller, output, source, request);
+	/* GPU-only presentation retains shared storage until the next selected frame or release. */
+	if ((request->flags & GPU_DISPLAY_PRESENT_BLOB) != 0U) {
+		error = display_blob_frame(controller, output, source, request);
+	} else {
+		/* The existing copied route still consumes only ordinary guest storage. */
+		if (source->kind != VENUS_RESOURCE_STORAGE) {
+			mutex_unlock(&controller->mutex);
+			return EINVAL;
+		}
+
+		error = display_frame(controller, output, source, request);
+	}
+
 	mutex_unlock(&controller->mutex);
 	if (error != 0)
 		return error;
@@ -735,7 +832,7 @@ display_wait(
 	request->generation = output->generation;
 	mutex_unlock(&controller->mutex);
 
-	/* Succeeded: all earlier sequences have finished reading their source pixels. */
+	/* Succeeded: selection is complete; a current shared blob remains retained for scanout. */
 	return 0;
 }
 
@@ -826,7 +923,13 @@ display_refresh(
 		output->preferred_width = width;
 		output->preferred_height = height;
 		output->connected = connected;
+
+		/* Optional EDID refines this generation without substituting for actual connection state. */
+		error = display_timings_refresh(controller, output);
+		if (error != 0)
+			return error;
 	}
+
 	engine->initialized = 1U;
 
 	/* Succeeded: discovery now reflects one completed native topology query. */
@@ -895,7 +998,7 @@ display_find_lease(
 	return EINVAL;
 }
 
-/* Checks a virtual mode without changing scanout or allocating display buffers. */
+/* Validates independent framebuffer geometry and guest cadence without programming physical timings. */
 static int
 display_validate_mode(
 	uint32_t width,
@@ -904,9 +1007,11 @@ display_validate_mode(
 {
 	uint64_t bytes;
 
-	/* The fixed virtual refresh period is exactly representable by kernel ticks. */
-	if (refresh != VENUS_DISPLAY_REFRESH)
+	/* Nominal refresh above the guest tick rate cannot receive distinct FIFO boundaries. */
+	if (refresh < 1000U || refresh > VENUS_DISPLAY_MAX_REFRESH)
 		return EINVAL;
+
+	/* Scanout selects a bounded resource rectangle independently of the optional EDID inventory. */
 	if (width == 0U ||
 	    height == 0U ||
 	    width > VENUS_DISPLAY_EXTENT ||
@@ -933,7 +1038,7 @@ display_release_output(
 	int error;
 
 	/* A completed disable ends the display's reference to its front image. */
-	if (output->front != NULL) {
+	if (output->front != NULL || output->shared_front != NULL) {
 		memset(command, 0, sizeof(command));
 		drv_venus_header(command, 0x0103U, 0U);
 		drv_venus_store32(command + 40U, output->identifier - 1U);
@@ -947,6 +1052,12 @@ display_release_output(
 			controller->primary_width = 0U;
 			controller->primary_height = 0U;
 		}
+	}
+
+	/* Acknowledged scanout disable makes the shared source reusable by its producer. */
+	if (output->shared_front != NULL) {
+		drv_venus_share_put_locked(controller, output->shared_front);
+		output->shared_front = NULL;
 	}
 
 	/* Each successful release consumes exactly one private resource pointer. */
@@ -1080,7 +1191,7 @@ display_frame(
 		return error;
 
 	/* The queue consumes at most one completed image per virtual refresh tick. */
-	error = display_next_refresh(output);
+	error = display_next_refresh(output, request->refresh_millihz);
 	if (error != 0)
 		return error;
 
@@ -1109,6 +1220,12 @@ display_frame(
 		controller->primary_height = request->height;
 	}
 
+	/* Replacing a blob scanout ends its retained source lifetime after the host acknowledges selection. */
+	if (output->shared_front != NULL) {
+		drv_venus_share_put_locked(controller, output->shared_front);
+		output->shared_front = NULL;
+	}
+
 	/* Completes the whole visible update before reporting a reusable source image. */
 	memset(command, 0, 48U);
 	drv_venus_header(command, 0x0104U, 0U);
@@ -1125,6 +1242,120 @@ display_frame(
 	request->sequence = output->sequence;
 
 	/* Succeeded: the native display owns its private frame, not caller storage. */
+	return 0;
+}
+
+/* Selects a completed shared GPU image without any CPU pixel copy or upload. */
+static int
+display_blob_frame(
+	struct venus_controller *controller,
+	struct venus_display_output *output,
+	struct venus_resource *source,
+	struct gpu_display_present *request)
+{
+	struct venus_share *share;
+	struct venus_share *previous;
+	const struct gpu_image_descriptor *image;
+	uint8_t command[96];
+	uint32_t format;
+	int error;
+
+	/* Only explicitly exported image allocations possess immutable scanout metadata. */
+	if (source->kind != VENUS_RESOURCE_BLOB || source->share == NULL)
+		return EINVAL;
+
+	/* Native mode validation remains identical to the existing FIFO display contract. */
+	error = display_validate_mode(request->width, request->height, request->refresh_millihz);
+	if (error != 0)
+		return error;
+
+	/* The blob bit selects the native image route without enabling unknown presentation modes. */
+	if (request->flags != (GPU_DISPLAY_PRESENT_FIFO | GPU_DISPLAY_PRESENT_BLOB))
+		return EINVAL;
+
+	/* A caller cannot reinterpret an imported allocation beyond its exported image contract. */
+	share = source->share;
+	image = &share->image;
+	if (request->width != image->width ||
+	    request->height != image->height ||
+	    request->stride != image->stride ||
+	    request->offset != image->offset ||
+	    request->format != image->format)
+		return EINVAL;
+
+	/* Sequence exhaustion must leave the previously selected complete image unchanged. */
+	if (output->sequence == UINT64_MAX)
+		return EOVERFLOW;
+
+	/* Scanout keeps an allocation hold independently from all client and compositor aliases. */
+	error = drv_venus_share_hold_locked(share);
+	if (error != 0)
+		return error;
+
+	/* Preserve the same finite guest refresh pacing as ordinary native presentation. */
+	error = display_next_refresh(output, request->refresh_millihz);
+	if (error != 0) {
+		drv_venus_share_put_locked(controller, share);
+		return error;
+	}
+
+	/* Translate the published channel order to virtio's packed scanout image format. */
+	format = 67U;
+	if (image->format == GPU_PIXEL_BGRA8888)
+		format = 1U;
+
+	/* The host imports the retained allocation directly into its GL display path. */
+	memset(command, 0, sizeof(command));
+	drv_venus_header(command, 0x010dU, 0U);
+	drv_venus_store32(command + 32U, image->width);
+	drv_venus_store32(command + 36U, image->height);
+	drv_venus_store32(command + 40U, output->identifier - 1U);
+	drv_venus_store32(command + 44U, share->storage->identifier);
+	drv_venus_store32(command + 48U, image->width);
+	drv_venus_store32(command + 52U, image->height);
+	drv_venus_store32(command + 56U, format);
+	drv_venus_store32(command + 64U, image->stride);
+	drv_venus_store32(command + 80U, (uint32_t)image->offset);
+	error = display_fenced(controller, command, sizeof(command));
+	if (error != 0) {
+		controller->transport.failed = 1U;
+		drv_venus_share_put_locked(controller, share);
+		return error;
+	}
+
+	/* Acknowledged selection transfers the current scanout hold before the old one retires. */
+	previous = output->shared_front;
+	output->shared_front = share;
+	output->current_width = image->width;
+	output->current_height = image->height;
+
+	/* Console/query state follows the real selected blob rather than cached copied buffers. */
+	if (output->identifier == 1U) {
+		controller->primary_scanout = share->storage;
+		controller->primary_width = image->width;
+		controller->primary_height = image->height;
+	}
+
+	/* Previous producers may reuse their allocation only after it leaves the selected scanout. */
+	if (previous != NULL)
+		drv_venus_share_put_locked(controller, previous);
+
+	/* Publish damage for the GPU-resident image without a transfer-to-host command. */
+	memset(command, 0, 48U);
+	drv_venus_header(command, 0x0104U, 0U);
+	drv_venus_store32(command + 32U, image->width);
+	drv_venus_store32(command + 36U, image->height);
+	drv_venus_store32(command + 40U, share->storage->identifier);
+	error = display_fenced(controller, command, 48U);
+	if (error != 0)
+		return error;
+
+	/* Completed presentation advances only after the host consumed the complete visible update. */
+	output->sequence++;
+	output->present_tick = sched_ticks();
+	request->sequence = output->sequence;
+
+	/* Succeeded: scanout retains this GPU allocation until replacement or explicit release. */
 	return 0;
 }
 
@@ -1169,31 +1400,42 @@ display_fenced(
 	return 0;
 }
 
-/* Sleeps to the next guest virtual refresh without masking timer interrupts. */
+/* Sleeps to a rational nominal refresh boundary rounded to the guest clock. */
 static int
 display_next_refresh(
-	struct venus_display_output *output)
+	struct venus_display_output *output,
+	uint32_t refresh)
 {
 	uint64_t now;
+	uint64_t frame;
 	uint64_t target;
+	uint64_t ticks;
 
-	/* Refresh boundaries are fixed in the monotonic kernel tick domain. */
+	/* Mode validation also bounds arithmetic and prevents multiple frames in one guest tick. */
+	if (refresh < 1000U || refresh > VENUS_DISPLAY_MAX_REFRESH)
+		return EINVAL;
+
+	/* Nominal frame phase carries the fractional period instead of rounding every period upward. */
 	now = sched_ticks();
-	if (now > UINT64_MAX - VENUS_DISPLAY_PERIOD)
+	ticks = (uint64_t)KERN_CLOCK_HZ * 1000U;
+	if (now > UINT64_MAX / refresh)
 		return EOVERFLOW;
-	target = now - now % VENUS_DISPLAY_PERIOD + VENUS_DISPLAY_PERIOD;
+	frame = now * refresh / ticks + 1U;
+	if (frame > (UINT64_MAX - (refresh - 1U)) / ticks)
+		return EOVERFLOW;
+	target = (frame * ticks + refresh - 1U) / refresh;
 
-	/* Serialized completed presents cannot reuse this strictly future clock boundary. */
+	/* Completion cannot move backward even when a caller changes its nominal mode. */
 	if (now < output->present_tick)
 		return EIO;
 
-	/* Early wakeups recheck the same finite absolute deadline. */
+	/* Tick quantization preserves average cadence; it makes no host physical-vblank claim. */
 	while (now < target) {
 		sched_sleep(target);
 		now = sched_ticks();
 	}
 
-	/* Succeeded: this completed frame may become the current virtual display image. */
+	/* Succeeded: this frame reached the next distinct guest FIFO boundary. */
 	return 0;
 }
 
@@ -1237,4 +1479,281 @@ display_status(
 
 	/* Succeeded: the caller may inspect the complete expected response. */
 	return 0;
+}
+
+/* Refreshes one output's optional native EDID without making malformed metadata authoritative. */
+static int
+display_timings_refresh(
+	struct venus_controller *controller,
+	struct venus_display_output *output)
+{
+	struct venus_display_timing *timing;
+	uint8_t command[32];
+	uint8_t response[32U + VENUS_EDID_BYTES];
+	uint32_t bytes;
+	int error;
+
+	/* A topology generation must never inherit stale native timings from a previous monitor. */
+	display_timings_free(output);
+	output->mode_count = 1U;
+	output->preferred_refresh = VENUS_DISPLAY_REFRESH;
+	output->physical_width_mm = 0U;
+	output->physical_height_mm = 0U;
+
+	/* Connection comes from GET_DISPLAY_INFO even when the host retains an old EDID blob. */
+	if (output->connected == 0U)
+		return 0;
+
+	/* Hosts without optional EDID retain the ordinary discovered-rectangle fallback. */
+	if ((controller->transport.features & VENUS_FEATURE_EDID) == 0U)
+		return 0;
+
+	/* Virtio addresses EDID by its zero-based native scanout identifier. */
+	memset(command, 0, sizeof(command));
+	drv_venus_header(command, 0x010aU, 0U);
+	drv_venus_store32(command + 24U, output->identifier - 1U);
+	error = display_status(controller, command, sizeof(command), response, sizeof(response), 0x1104U);
+	if (error != 0) {
+		/* An uncertain transport is a device failure, not an optional metadata fallback. */
+		if (controller->transport.failed != 0U)
+			return error;
+
+		/* A definite unsupported EDID response leaves the discovered virtual rectangle usable. */
+		kern_logf("venus: display %u EDID unavailable: %d; using virtual timing\n", output->identifier, error);
+		return 0;
+	}
+
+	/* The returned size bounds every EDID byte before header, extension or checksum access. */
+	bytes = drv_venus_load32(response + 24U);
+	error = display_edid_parse(output, response + 32U, bytes);
+	if (error != 0) {
+		/* Partial allocation never publishes a subset of a failed timing inventory. */
+		display_timings_free(output);
+		output->physical_width_mm = 0U;
+		output->physical_height_mm = 0U;
+		if (error == ENOMEM)
+			return error;
+
+		/* Malformed optional metadata cannot replace the already verified native rectangle. */
+		kern_logf("venus: display %u EDID rejected: %d; using virtual timing\n", output->identifier, error);
+		return 0;
+	}
+
+	/* The first real timing for the host-preferred rectangle supplies its nominal refresh. */
+	timing = output->timings;
+	while (timing != NULL) {
+		/* GET_DISPLAY_INFO retains geometry authority; EDID refines its timing when available. */
+		if (timing->width == output->preferred_width && timing->height == output->preferred_height) {
+			output->preferred_refresh = timing->refresh;
+			break;
+		}
+
+		/* A preferred rectangle without a matching DTD keeps the documented fallback frequency. */
+		timing = timing->next;
+	}
+
+	/* Count each remaining actual timing once after removing the preferred-mode duplicate. */
+	timing = output->timings;
+	while (timing != NULL) {
+		/* Separate frequencies for the same dimensions remain distinct public modes. */
+		if (timing->width != output->preferred_width ||
+		    timing->height != output->preferred_height ||
+		    timing->refresh != output->preferred_refresh)
+			output->mode_count++;
+
+		/* Only controller-owned timing records contribute to enumeration. */
+		timing = timing->next;
+	}
+
+	/* Succeeded: this generation exposes real supported nominal timings and physical dimensions. */
+	return 0;
+}
+
+/* Parses complete checksummed EDID base and CTA detailed timing descriptors. */
+static int
+display_edid_parse(
+	struct venus_display_output *output,
+	const uint8_t *edid,
+	uint32_t bytes)
+{
+	static const uint8_t header[8] = { 0U, 255U, 255U, 255U, 255U, 255U, 255U, 0U };
+	uint32_t blocks;
+	uint32_t block;
+	uint32_t index;
+	uint32_t offset;
+	uint32_t checksum;
+	const uint8_t *extension;
+	int different;
+	int error;
+
+	/* The virtio reply carries at most eight complete 128-byte EDID blocks. */
+	if (bytes < 128U ||
+	    bytes > VENUS_EDID_BYTES ||
+	    (bytes & 127U) != 0U)
+		return EINVAL;
+
+	/* The EDID signature and version distinguish timings from unrelated device data. */
+	different = memcmp(edid, header, sizeof(header));
+	if (different != 0 ||
+	    edid[18] != 1U ||
+	    edid[19] > 4U)
+		return EINVAL;
+
+	/* The extension count may not make a parser walk beyond the host-reported extent. */
+	blocks = (uint32_t)edid[126] + 1U;
+	if (blocks > bytes / 128U)
+		return EINVAL;
+
+	/* Every declared block is authenticated by its EDID checksum before any timing is retained. */
+	for (block = 0U; block < blocks; block++) {
+		checksum = 0U;
+
+		/* The sum includes the checksum byte and wraps in the defined eight-bit domain. */
+		for (index = 0U; index < 128U; index++)
+			checksum += edid[block * 128U + index];
+
+		/* One malformed extension invalidates the entire optional timing inventory. */
+		if ((checksum & 255U) != 0U)
+			return EINVAL;
+	}
+
+	/* Only two nonzero EDID size fields describe physical centimeters rather than an aspect ratio. */
+	if (edid[21] != 0U && edid[22] != 0U) {
+		output->physical_width_mm = (uint32_t)edid[21] * 10U;
+		output->physical_height_mm = (uint32_t)edid[22] * 10U;
+	}
+
+	/* The base block has four fixed descriptor slots, including possible non-timing records. */
+	for (index = 0U; index < 4U; index++) {
+		error = display_edid_timing(output, edid + 54U + index * 18U);
+		if (error != 0)
+			return error;
+	}
+
+	/* CTA extensions carry additional detailed timings after their variable data-block region. */
+	for (block = 1U; block < blocks; block++) {
+		extension = edid + block * 128U;
+
+		/* Other extension formats are not interpreted as CTA timing arrays. */
+		if (extension[0] != 2U)
+			continue;
+
+		/* Offset zero means this CTA block has no detailed timing region. */
+		offset = extension[2];
+		if (offset == 0U)
+			continue;
+
+		/* A DTD may neither overlap the CTA header nor include its checksum byte. */
+		if (offset < 4U || offset > 127U)
+			return EINVAL;
+
+		/* Parse only complete descriptors before the extension checksum. */
+		while (offset + 18U <= 127U) {
+			error = display_edid_timing(output, extension + offset);
+			if (error != 0)
+				return error;
+			offset += 18U;
+		}
+	}
+
+	/* Succeeded: only verified supported progressive detailed timings have been retained. */
+	return 0;
+}
+
+/* Retains one supported progressive detailed timing without fabricating a fixed mode list. */
+static int
+display_edid_timing(
+	struct venus_display_output *output,
+	const uint8_t *descriptor)
+{
+	struct venus_display_timing *timing;
+	struct venus_display_timing **position;
+	uint32_t width;
+	uint32_t height;
+	uint32_t horizontal_blank;
+	uint32_t vertical_blank;
+	uint32_t clock;
+	uint64_t total;
+	uint64_t refresh;
+	int error;
+
+	/* Zero pixel clock identifies a monitor-data descriptor rather than a timing. */
+	clock = (uint32_t)descriptor[0] | ((uint32_t)descriptor[1] << 8);
+	if (clock == 0U)
+		return 0;
+
+	/* Interlaced timings need field-level scanout semantics absent from this progressive contract. */
+	if ((descriptor[17] & 128U) != 0U)
+		return 0;
+
+	/* Twelve-bit active and blanking extents define the complete horizontal timing period. */
+	width = (uint32_t)descriptor[2] | ((uint32_t)(descriptor[4] & 240U) << 4);
+	horizontal_blank = (uint32_t)descriptor[3] | ((uint32_t)(descriptor[4] & 15U) << 8);
+
+	/* Vertical active and blanking extents use their independent high-bit nibbles. */
+	height = (uint32_t)descriptor[5] | ((uint32_t)(descriptor[7] & 240U) << 4);
+	vertical_blank = (uint32_t)descriptor[6] | ((uint32_t)(descriptor[7] & 15U) << 8);
+
+	/* Empty blanking or undersized native images cannot form an implemented scanout timing. */
+	if (width < 16U ||
+	    height < 16U ||
+	    horizontal_blank == 0U ||
+	    vertical_blank == 0U)
+		return 0;
+
+	/* Pixel clock units are 10kHz; division rounds the actual nominal frame rate to millihertz. */
+	total = (uint64_t)(width + horizontal_blank) * (height + vertical_blank);
+	refresh = ((uint64_t)clock * 10000000U + total / 2U) / total;
+	if (refresh < 1000U || refresh > VENUS_DISPLAY_MAX_REFRESH)
+		return 0;
+
+	/* The same geometry and cadence limits govern both discovery and later presentation. */
+	error = display_validate_mode(width, height, (uint32_t)refresh);
+	if (error != 0)
+		return 0;
+
+	/* Repeated DTDs in base and extension blocks describe one public mode. */
+	position = &output->timings;
+	while (*position != NULL) {
+		/* Matching dimensions at a different frequency remain distinct modes. */
+		if ((*position)->width == width &&
+		    (*position)->height == height &&
+		    (*position)->refresh == (uint32_t)refresh)
+			return 0;
+
+		/* Append in native EDID order so the first preferred matching DTD remains stable. */
+		position = &(*position)->next;
+	}
+
+	/* Dynamic records scale with the verified EDID contents instead of a fixed synthetic mode table. */
+	timing = kern_calloc(1U, sizeof(*timing));
+	if (timing == NULL)
+		return ENOMEM;
+
+	/* This controller generation owns every published mode record through its topology refresh. */
+	timing->width = width;
+	timing->height = height;
+	timing->refresh = (uint32_t)refresh;
+	*position = timing;
+
+	/* Succeeded: one complete supported nominal timing is available to discovery and validation. */
+	return 0;
+}
+
+/* Frees one generation's timing inventory without touching any active scanout allocation. */
+static void
+display_timings_free(
+	struct venus_display_output *output)
+{
+	struct venus_display_timing *timing;
+
+	/* Timing descriptions own only metadata and are independent of current display-image lifetime. */
+	while (output->timings != NULL) {
+		timing = output->timings;
+		output->timings = timing->next;
+		kern_free(timing);
+	}
+
+	/* Succeeded: no obsolete EDID timing record survives this output generation. */
+	return;
 }

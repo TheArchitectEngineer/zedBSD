@@ -21,7 +21,7 @@
 #include <limits.h>
 #include <string.h>
 
-#define VENUS_CAPABILITIES	(63U | GPU_CAP_DISPLAY | GPU_CAP_MAPPING)
+#define VENUS_CAPABILITIES	(63U | GPU_CAP_DISPLAY | GPU_CAP_MAPPING | GPU_CAP_SHARE)
 
 static int venus_attach(struct drv_pci_device *device, const struct drv_pci_id *id);
 static int venus_start(struct venus_controller *controller, struct drv_pci_device *device);
@@ -51,6 +51,27 @@ static int venus_blob_initialize(struct venus_controller *controller, struct ven
 static int venus_scanout_disable(struct venus_controller *controller);
 static int venus_storage_initialize(struct venus_controller *controller, struct venus_resource *resource, const struct gpu_present *request);
 static int venus_present_image(struct venus_controller *controller, struct venus_session *session, struct venus_resource *resource, const struct gpu_present *request);
+
+/*
+ * Completes one context attachment transition while the controller mutex is held.
+ */
+int
+drv_venus_resource_request_locked(
+	struct venus_controller *controller,
+	uint32_t command,
+	uint32_t context,
+	uint32_t identifier)
+{
+	int error;
+
+	/* Sharing uses the same checked command path as ordinary resource ownership. */
+	error = venus_resource_request(controller, command, context, identifier);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the host acknowledged this resource membership transition. */
+	return 0;
+}
 
 /*
  * Registers the Venus PCI backend for modern virtio GPU devices.
@@ -305,7 +326,7 @@ venus_publish(
 		venus_resource_create, venus_resource_destroy, venus_get_capset,
 		venus_blob_create, venus_resource_read, venus_resource_write,
 		venus_command, venus_present, &drv_venus_display_operations,
-		venus_resource_map
+		venus_resource_map, &drv_venus_share_operations
 	};
 	struct venus_controller *controller;
 	int error;
@@ -541,6 +562,13 @@ venus_resource_destroy(
 		return;
 	}
 
+	/* Shared aliases retire their context membership while independent holds preserve the allocation. */
+	if (resource->share != NULL) {
+		drv_venus_share_resource_destroy_locked(controller, session, resource);
+		mutex_unlock(&controller->mutex);
+		return;
+	}
+
 	/* Any failure leaves the allocation on the controller's quarantine list. */
 	error = venus_resource_release(controller, resource);
 	if (error != 0) {
@@ -637,9 +665,19 @@ venus_blob_create(
 	*result = NULL;
 	*resource_id = 0U;
 
-	/* Copied resource access requires a host-visible mapping. */
-	if (request->flags != GPU_BLOB_MAPPABLE)
+	/* A blob needs an actual mapping or an explicitly shareable allocation lifetime. */
+	if (request->flags == 0U ||
+	    (request->flags & ~(GPU_BLOB_MAPPABLE | GPU_BLOB_SHAREABLE | GPU_BLOB_CROSS_DEVICE)) != 0U)
 		return EOPNOTSUPP;
+
+	/* Cross-device exports require a transferable host allocation. */
+	if ((request->flags & GPU_BLOB_CROSS_DEVICE) != 0U &&
+	    (request->flags & GPU_BLOB_SHAREABLE) == 0U)
+		return EINVAL;
+
+	/* Reply memory is private to its context and cannot become an image capability. */
+	if (request->blob_id == 0U && request->flags != GPU_BLOB_MAPPABLE)
+		return EINVAL;
 
 	/* Context resources and aperture extents share controller serialization. */
 	mutex_lock(&controller->mutex);
@@ -715,6 +753,12 @@ venus_resource_read(
 		source = resource->mapping.address;
 	}
 
+	/* GPU-only allocations deliberately expose no copied CPU access. */
+	if (source == NULL) {
+		mutex_unlock(&controller->mutex);
+		return EOPNOTSUPP;
+	}
+
 	/* Acquires host writes before taking a fresh volatile snapshot. */
 	kern_io_read_barrier();
 	source += (size_t)offset;
@@ -764,6 +808,12 @@ venus_resource_write(
 		destination = resource->backing.address;
 	} else {
 		destination = resource->mapping.address;
+	}
+
+	/* A shareable GPU-only allocation has no implicit CPU upload view. */
+	if (destination == NULL) {
+		mutex_unlock(&controller->mutex);
+		return EOPNOTSUPP;
 	}
 
 	/* Stores each requested byte before a later command can consume it. */
@@ -1213,17 +1263,20 @@ venus_blob_initialize(
 	uint32_t map_info;
 	int error;
 
-	/* Reserves aperture space before asking the renderer to allocate memory. */
-	error = venus_aperture_reserve(controller, resource);
-	if (error != 0)
-		return error;
+	/* Only CPU-mappable allocations consume the finite host-visible aperture. */
+	resource->blob_flags = request->flags;
+	if ((request->flags & GPU_BLOB_MAPPABLE) != 0U) {
+		error = venus_aperture_reserve(controller, resource);
+		if (error != 0)
+			return error;
+	}
 
 	/* HOST3D blob zero creates reply shared memory; other IDs export Vulkan memory. */
 	memset(command, 0, sizeof(command));
 	drv_venus_header(command, 0x010cU, resource->context);
 	drv_venus_store32(command + 24U, resource->identifier);
 	drv_venus_store32(command + 28U, 2U);
-	drv_venus_store32(command + 32U, 1U);
+	drv_venus_store32(command + 32U, request->flags);
 	drv_venus_store64(command + 40U, request->blob_id);
 	drv_venus_store64(command + 48U, request->bytes);
 	error = venus_control(controller, command, sizeof(command));
@@ -1240,6 +1293,10 @@ venus_blob_initialize(
 
 	/* Context detach must precede unref from this point onward. */
 	resource->attached = 1U;
+
+	/* GPU-only allocations stay on the host without a CPU mapping or readback path. */
+	if ((request->flags & GPU_BLOB_MAPPABLE) == 0U)
+		return 0;
 
 	/* Maps the host allocation into its exclusively reserved aperture extent. */
 	memset(command, 0, 40U);

@@ -83,7 +83,8 @@ static VkSwapchainCreateInfoKHR test_create_info(VkSurfaceKHR surface, uint32_t 
 /* Only this mock adapter replaces the native kernel transport in the fixture. */
 const struct vulkan_wsi_platform_ops vulkan_wsi_display_platform = {
 	native_capabilities, native_formats, native_modes, native_claim,
-	native_release, native_present, native_wait, NULL
+	native_release, native_present, native_wait, NULL,
+	NULL, NULL, NULL, NULL
 };
 
 /* Exercises real WSI implementations using dynamic counts and independent owners. */

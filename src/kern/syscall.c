@@ -1960,7 +1960,7 @@ sys_sendmsg_call(
 	struct socket_file_ref reference;
 	struct sockaddr_storage address;
 	struct sockaddr *destination;
-	struct file *files[KERN_MSG_FD_MAX];
+	struct fd_object objects[KERN_MSG_FD_MAX];
 	int descriptors[KERN_MSG_FD_MAX];
 	void *buffer;
 	void *data;
@@ -2042,13 +2042,13 @@ sys_sendmsg_call(
 		    request.descriptor_count * sizeof(descriptors[0]));
 		if (error != 0)
 			goto fail;
+
+		/* Capture every typed reference while its descriptor slot is still protected. */
 		for (count = 0; count < request.descriptor_count; count++) {
-			files[count] = filedesc_get_ref(current_process()->fd,
-			    descriptors[count]);
-			if (files[count] == NULL) {
-				error = EBADF;
+			/* A failed lookup leaves only the preceding references for shared unwind. */
+			error = filedesc_get_object_ref(process->fd, descriptors[count], &objects[count]);
+			if (error != 0)
 				goto fail;
-			}
 		}
 	}
 
@@ -2058,12 +2058,18 @@ sys_sendmsg_call(
 	else
 		data = "";
 	if (reference.socket->family == AF_UNIX) {
-		result = unix_socket_send_message_at(reference.socket,
-		    process->cwdi, process->cred, data,
-		    (size_t)request.data_length,
-		    (int)socket_file_effective_flags(&reference,
-		    (int)request.flags), destination, request.name_length, files,
-		    count);
+		/* The Unix transport consumes all captured descriptor references on every outcome. */
+		result = unix_socket_send_objects_at(
+			reference.socket,
+			process->cwdi,
+			process->cred,
+			data,
+			(size_t)request.data_length,
+			(int)socket_file_effective_flags(&reference, (int)request.flags),
+			destination,
+			request.name_length,
+			objects,
+			count);
 	} else if (count != 0) {
 		error = EOPNOTSUPP;
 		goto fail;
@@ -2085,7 +2091,7 @@ sys_sendmsg_call(
 /* Closes every descriptor the message had resolved. */
 fail:
 	for (index = 0; index < count; index++)
-		(void)file_close(files[index]);
+		(void)fd_object_put(&objects[index]);
 	kern_free(buffer);
 	result = socket_result(&reference, -error);
 	return result;
@@ -2367,8 +2373,8 @@ sys_recvmsg_call(
 
 	/* Publishes the descriptors and commits or peeks the transaction. */
 	if (transaction.active) {
-		error = filedesc_commit_reserved(&reservation, transaction.files,
-		    descriptors);
+		/* Reserved numbers become live only after every user copy has succeeded. */
+		error = filedesc_commit_objects(&reservation, transaction.objects, descriptors);
 		if (error != 0) {
 			filedesc_abort_reserved(&reservation);
 			unix_socket_receive_abort(&transaction);
@@ -2379,7 +2385,9 @@ sys_recvmsg_call(
 
 		/* The descriptor table owns these references after publication. */
 		for (index = 0; index < transaction.file_count; index++)
-			transaction.files[index] = NULL;
+			fd_object_clear(&transaction.objects[index]);
+
+		/* Only non-peeking receive consumes the queued originals after fd publication. */
 		if ((request.flags & MSG_PEEK) != 0)
 			unix_socket_receive_abort(&transaction);
 		else
@@ -2963,15 +2971,15 @@ sys_fstat_call(
 	struct stat status;
 	int error;
 
+	/* Without a process there is no descriptor namespace to query. */
 	process = current_process();
-	if (process != NULL)
-		file = filedesc_get_ref(process->fd, (int)args[0]);
-	else
-		file = NULL;
-
-	/* Rejects a descriptor that names no open file. */
-	if (file == NULL)
+	if (process == NULL)
 		return -EBADF;
+
+	/* Kernel handles have no filesystem stat identity. */
+	error = filedesc_get_file(process->fd, (int)args[0], &file);
+	if (error != 0)
+		return -error;
 
 	/* Rejects an open file that has no inode to describe. */
 	if (file->f_inode == NULL) {
@@ -3210,9 +3218,11 @@ sys_mmap_call(
 	} else {
 		if ((args[5] & SYSCALL_PAGE_MASK) != 0 || (off_t)args[5] < 0)
 			return -EINVAL;
-		file = filedesc_get_ref(process->fd, (int)args[4]);
-		if (file == NULL)
-			return -EBADF;
+
+		/* Release-only handles expose no direct userspace mapping. */
+		error = filedesc_get_file(process->fd, (int)args[4], &file);
+		if (error != 0)
+			return -error;
 
 		/* Device mappings share a retained backend view, never a file cache. */
 		if (file->f_inode != NULL &&
@@ -3473,23 +3483,27 @@ sys_ioctl_call(
 
 	/* Resolves the descriptor to an open file. */
 	process = current_process();
-	if (process != NULL)
-		file = filedesc_get_ref(process->fd, (int)args[0]);
-	else
-		file = NULL;
+	if (process == NULL)
+		return -EBADF;
 
-	/* Passes the request down to the file. */
-	if (file == NULL)
-		error = EBADF;
-	else
-		error = file_ioctl(file, args[1], args[2]);
+	/* Handles deliberately expose no ioctl entry point of their own. */
+	error = filedesc_get_file(process->fd, (int)args[0], &file);
+	if (error == EOPNOTSUPP)
+		return -ENOTTY;
 
-	if (file != NULL)
-		(void)file_close(file);
+	/* An absent descriptor is distinct from a non-I/O handle. */
+	if (error != 0)
+		return -error;
+
+	/* Only an actual open file description receives this request. */
+	error = file_ioctl(file, args[1], args[2]);
+	(void)file_close(file);
 
 	/* Reports the outcome of the call. */
 	if (error != 0)
 		return -error;
+
+	/* Succeeded: the actual file backend accepted the control request. */
 	return 0;
 }
 
@@ -7668,10 +7682,12 @@ sys_fcntl_call(
 	/* Reports the status flags of the open file. */
 	case F_GETFL:
 
-		/* Records the process that receives this file's signals. */
-		file = filedesc_get_ref(process->fd, (int)args[0]);
-		if (file == NULL)
-			return -EBADF;
+		/* This operation requires an I/O description rather than a release-only handle. */
+		error = filedesc_get_file(process->fd, (int)args[0], &file);
+		if (error != 0)
+			return -error;
+
+		/* Snapshot status while this temporary file reference remains live. */
 		result = file_status_flags_get(file);
 		(void)file_close(file);
 		return result;
@@ -7679,10 +7695,10 @@ sys_fcntl_call(
 	/* Installs the status flags the file allows. */
 	case F_SETFL:
 
-		/* Records the process that receives this file's signals. */
-		file = filedesc_get_ref(process->fd, (int)args[0]);
-		if (file == NULL)
-			return -EBADF;
+		/* This operation requires an I/O description rather than a release-only handle. */
+		error = filedesc_get_file(process->fd, (int)args[0], &file);
+		if (error != 0)
+			return -error;
 
 		/*
 		 * F_GETFL returns the access mode and immutable open flags as
@@ -7696,9 +7712,12 @@ sys_fcntl_call(
 		(void)file_close(file);
 		return 0;
 	case F_GETOWN:
-		file = filedesc_get_ref(process->fd, (int)args[0]);
-		if (file == NULL)
-			return -EBADF;
+		/* Only an open file description owns asynchronous-I/O signal state. */
+		error = filedesc_get_file(process->fd, (int)args[0], &file);
+		if (error != 0)
+			return -error;
+
+		/* The referenced file supplies the signal recipient before temporary ownership ends. */
 		result = atomic_int_load_acquire(&file->f_signal_owner);
 		(void)file_close(file);
 		error = copyout(&result, args[2], sizeof(result));
@@ -7726,10 +7745,12 @@ sys_fcntl_call(
 			return -ESRCH;
 		}
 
-		/* Records the process that receives this file's signals. */
-		file = filedesc_get_ref(process->fd, (int)args[0]);
-		if (file == NULL)
-			return -EBADF;
+		/* This operation requires an I/O description rather than a release-only handle. */
+		error = filedesc_get_file(process->fd, (int)args[0], &file);
+		if (error != 0)
+			return -error;
+
+		/* Publish the validated recipient while the file identity is stable. */
 		atomic_int_store_release(&file->f_signal_owner, owner);
 		(void)file_close(file);
 		return 0;
@@ -7743,9 +7764,13 @@ sys_fcntl_call(
 		error = copyin(args[2], &request, sizeof(request));
 		if (error != 0)
 			return -error;
-		file = filedesc_get_ref(process->fd, (int)args[0]);
-		if (file == NULL)
-			return -EBADF;
+
+		/* Typed lookup rejects non-I/O handles before any filesystem lock operation. */
+		error = filedesc_get_file(process->fd, (int)args[0], &file);
+		if (error != 0)
+			return -error;
+
+		/* Filesystem lock policy runs only for the referenced I/O description. */
 		error = record_lock_fcntl(process, file, command, &request);
 		(void)file_close(file);
 		if (error == 0 &&

@@ -12,10 +12,12 @@
 #ifndef VULKAN_CODEC_H
 #define VULKAN_CODEC_H
 
+/* Translates a local opaque handle into its independently owned renderer identity. */
 void
 vulkan_encode_handle(
 	struct vulkan_writer *writer,
 	uint64_t handle);
+
 
 void
 vulkan_encode_VkExtent2D(

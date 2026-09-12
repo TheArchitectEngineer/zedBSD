@@ -627,7 +627,24 @@ vkCreateDisplayPlaneSurfaceKHR(
 		return error;
 	}
 
-	/* Registers the description for instance-lifetime cleanup. */
+	/* Generic publication also serves window-system surface descriptions. */
+	error = vulkan_wsi_surface_publish(surface, surface_handle);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Succeeded: the instance owns the surface's published native description. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Links a completely initialized and published native surface to its instance.
+ */
+VkResult
+vulkan_wsi_surface_publish(
+	struct vulkan_surface *surface,
+	VkSurfaceKHR *handle)
+{
+	/* Instance teardown discovers every native platform through the same list. */
 	pthread_mutex_lock(&wsi_mutex);
 
 	surface->next = wsi_surfaces;
@@ -635,10 +652,10 @@ vkCreateDisplayPlaneSurfaceKHR(
 
 	pthread_mutex_unlock(&wsi_mutex);
 
-	/* Returns the standard opaque handle only after every ownership link exists. */
-	*surface_handle = (VkSurfaceKHR)vulkan_nondispatchable_handle(object);
+	/* The opaque public identity is usable only after its ownership link exists. */
+	*handle = (VkSurfaceKHR)vulkan_nondispatchable_handle(&surface->object);
 
-	/* Succeeded: no display ownership was acquired by describing this surface. */
+	/* Succeeded: the surface has both its instance owner and public identity. */
 	return VK_SUCCESS;
 }
 
@@ -733,6 +750,11 @@ vkGetPhysicalDeviceSurfaceSupportKHR(
 		if (surface->display_mode->display->physical != physical)
 			return VK_SUCCESS;
 	}
+
+	/* A valid surface remains unsupported on GPUs lacking its native sharing operation. */
+	if (surface->platform->import_image != NULL &&
+	    (physical->object.context->capabilities & GPU_CAP_SHARE) == 0U)
+		return VK_SUCCESS;
 
 	/* Presentation readback requires a queue capable of transfer commands. */
 	queue_flags = physical->queue_families[queue_family].queueFlags;
