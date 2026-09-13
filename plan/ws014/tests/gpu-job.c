@@ -47,6 +47,9 @@ static int job_close_fd;
 /* Retains the receiver open only during the final-close ordering assertion. */
 static struct test_file *job_close_receiver;
 
+/* Selects the receiver fence state expected at the drain boundary of the closing producer. */
+static uint32_t job_close_expect;
+
 static int job_reserve(void *opaque, void *session, uint32_t timeline, struct drv_gpu_completion *completion, void **reservation);
 static int job_commit(void *opaque, void *session, void *reservation, struct drv_gpu_completion *completion);
 static int job_cancel(void *opaque, void *session, void *reservation, struct drv_gpu_completion *completion, unsigned fault);
@@ -270,10 +273,34 @@ main(
 	assert(error == 0);
 	error = job_action(&source, GPU_JOB_COMMIT, request.sequence, 0U);
 	assert(error == 0);
+
+	/* A committed job outlives its producer's final close and still signals its real success. */
 	job_close_fd = created.fd;
+	job_close_expect = GPU_FENCE_PENDING;
 	job_close_receiver = &receiver;
 	close_file(&source);
 	assert(job_drains == 1U);
+	error = fence_state_call(&receiver, GPU_FENCE_QUERY, created.fd, 1U, 0, &state);
+	assert(error == 0 && state.state == GPU_FENCE_SIGNALED);
+	job_close_receiver = NULL;
+	close_file(&receiver);
+
+	/* A reservation the producer never commits is terminal at that producer's close. */
+	error = open_file(&source, "gpu0", O_RDWR);
+	assert(error == 0);
+	error = open_file(&receiver, "gpu0", O_RDWR);
+	assert(error == 0);
+	fence_create_request(&created);
+	error = fence_ioctl(&source, GPU_FENCE_CREATE, &created);
+	assert(error == 0);
+	job_request(&request, created.fd, 1U);
+	error = fence_ioctl(&source, GPU_JOB_RESERVE, &request);
+	assert(error == 0);
+	job_close_fd = created.fd;
+	job_close_expect = GPU_FENCE_ERROR;
+	job_close_receiver = &receiver;
+	close_file(&source);
+	assert(job_drains == 2U);
 	error = fence_state_call(&receiver, GPU_FENCE_QUERY, created.fd, 1U, 0, &state);
 	assert(error == 0 && state.state == GPU_FENCE_ERROR && state.error == ENODEV);
 	job_close_receiver = NULL;
@@ -415,14 +442,16 @@ job_drain(
 	(void)opaque;
 	assert(held_spinlocks == 0U && ((struct test_session *)session)->backend != NULL);
 
-	/* The retained receiver observes logical failure before native cleanup begins. */
+	/* A committed job stays pending across close; only a never-committed reservation is terminal here. */
 	if (job_close_receiver != NULL) {
 		error = fence_state_call(job_close_receiver, GPU_FENCE_QUERY, job_close_fd, 1U, 0, &state);
-		assert(error == 0 && state.state == GPU_FENCE_ERROR && state.error == ENODEV);
+		assert(error == 0 && state.state == job_close_expect);
+		if (job_close_expect == (uint32_t)GPU_FENCE_ERROR)
+			assert(state.error == ENODEV);
 		job_drains++;
 	}
 
-	/* Late success cannot overwrite final-close ERROR, and every callback retires before return. */
+	/* A committed job now publishes its real success; a terminated reservation keeps its error. */
 	for (index = 0U; index < 4U; index++) {
 		if (jobs[index].completion != NULL && jobs[index].session == session)
 			job_deliver(&jobs[index], 0);

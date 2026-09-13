@@ -176,11 +176,6 @@ void drv_gpu_report_session_error(struct drv_gpu_device *device, void *session, 
 void drv_gpu_capacity_changed(struct drv_gpu_device *device);
 
 /*
- * Tests that only the current opening callback remains, with no exported or mapped owner.
- */
-int drv_gpu_recovery_ready(struct drv_gpu_device *device);
-
-/*
  * Registers one initialized device using borrowed operations and private data.
  *
  *  - Every call creates an independent device, even when operations are shared.

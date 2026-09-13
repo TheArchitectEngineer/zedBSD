@@ -7,7 +7,7 @@ Status: planning
 Phase disposition: normal
 Parent: [WS014](https://github.com/awemorris/zedBSD/issues/15)
 Queue: none
-Dependencies: ws014-p009 review4/framework commonization; cleared p008/p007/p006/p005 and completed WS030 outputs
+Dependencies: ws014-p010 supervision consolidation and isolation; cleared p009/p008/p007/p006/p005 and completed WS030 outputs
 <!-- awesome-plan-current:end -->
 
 Combined ID: `ws014-p004`

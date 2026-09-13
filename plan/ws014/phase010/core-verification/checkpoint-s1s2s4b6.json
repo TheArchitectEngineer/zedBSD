@@ -1,0 +1,18 @@
+{
+  "phase": "ws014-p010",
+  "queue": "q313",
+  "checkpoint": "S1/S2/S4-partial/B6 implemented and verified",
+  "observed_utc": "2026-09-14T01:20:00+00:00",
+  "stages_done": ["S1 stop-deadline origin (D1/B3)", "S2 committed-job survives close (D2)", "S4-partial monitor wake limiting", "B6 remove drv_gpu_recovery_ready"],
+  "stages_remaining": ["S3 Venus->framework migration", "S5 session isolation ops v9 (D3/B4/B5)", "real-QEMU acceptance"],
+  "source_sha256": {
+    "src/drivers/gpu/gpu.c": "15c40d6894e1250574295bfaad0d61cb24c35f65657f0eb0fe9d26ad336a605c",
+    "include/drivers/gpu.h": "00a9dede8cca49aeba230c6c94f1d582ed3d46b93ba08130595b0debd17caf19",
+    "plan/ws014/tests/gpu-job.c": "123e22703d67e84f3fe456fa5228df0ba8ba7bc9cfb5197e4ba7728cf0f86430"
+  },
+  "fixtures_pass": ["gpu-supervision", "gpu-job", "gpu-fence", "gpu-fence-close", "gpu-fence-reuse", "gpu-framework", "gpu-sharing", "gpu-topology", "gpu-scanout", "gpu-placement", "handle-fd", "venus-backend", "venus-transport", "gpu-build-selection"],
+  "fixture_modes": ["ordinary", "ASan/UBSan"],
+  "kernel_build": {"config": "plan/ws014/tests/config-wayland-amd64.mk", "target": "vmunix", "result": "amd64 vmunix check: PASS"},
+  "diff_check": "clean",
+  "limitations": "Unit fixtures and one in-tree build only. S3/S5 and real-QEMU acceptance are not done; p010 is not cleared."
+}
