@@ -6,8 +6,11 @@ Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 import argparse
 import importlib.util
 import json
+import os
 from pathlib import Path
 import re
+import select
+import signal
 import sys
 import time
 
@@ -21,6 +24,192 @@ _spec.loader.exec_module(common)
 
 def save(output, report):
     (output / 'result.json').write_text(json.dumps(report, indent=2) + '\n')
+
+
+class RendererPause:
+    """Keep verified pidfds for descendants of this still-identical QEMU."""
+
+    def __init__(self, qemu_pid, executable, report):
+        self.qemu_pid = qemu_pid
+        self.executable = executable.resolve(strict=True)
+        self.report = report
+        self.handles = []
+        self.root_identity = self.identity(qemu_pid)
+
+    @staticmethod
+    def identity(pid):
+        root = Path(f'/proc/{pid}')
+        fields = (root / 'stat').read_text().rsplit(')', 1)[1].split()
+        executable = (root / 'exe').resolve(strict=True)
+        info = (root / 'exe').stat()
+        return (int(fields[19]), int(fields[1]), str(executable), info.st_dev, info.st_ino)
+
+    def owned(self, pid):
+        seen = set()
+        while pid != self.qemu_pid:
+            if pid <= 1 or pid in seen or len(seen) >= 32:
+                return False
+            seen.add(pid)
+            pid = self.identity(pid)[1]
+        return self.identity(self.qemu_pid) == self.root_identity
+
+    @staticmethod
+    def alive(descriptor):
+        poller = select.poll()
+        poller.register(descriptor, select.POLLIN)
+        return not poller.poll(0)
+
+    def descendants(self):
+        pending = [self.qemu_pid]
+        descendants = set()
+        while pending:
+            parent = pending.pop()
+            if not self.owned(parent):
+                raise RuntimeError('disposable QEMU ancestry changed during discovery')
+            for task in Path(f'/proc/{parent}/task').glob('*'):
+                try:
+                    children = (task / 'children').read_text().split()
+                except FileNotFoundError:
+                    continue
+                for child in map(int, children):
+                    if child not in descendants:
+                        descendants.add(child)
+                        pending.append(child)
+            if len(descendants) > 32:
+                raise RuntimeError('unexpectedly large disposable QEMU process tree')
+        return sorted(descendants)
+
+    def pause(self):
+        selected = []
+        identities = {}
+        for pid in self.descendants():
+            try:
+                before = self.identity(pid)
+            except FileNotFoundError:
+                continue
+            if before[2] != str(self.executable):
+                continue
+            descriptor = os.pidfd_open(pid)
+            try:
+                # Bind before rechecking /proc: a departed pidfd is readable even
+                # when its number already names a new process with the same exe.
+                if (not self.alive(descriptor) or self.identity(pid) != before or
+                        not self.owned(pid) or not self.alive(descriptor)):
+                    raise RuntimeError('renderer identity changed while acquiring its pidfd')
+            except BaseException:
+                os.close(descriptor)
+                raise
+            self.handles.append((pid, descriptor, before))
+            identities[str(pid)] = {'starttime': before[0], 'parent': before[1],
+                                    'executable_device': before[3], 'executable_inode': before[4]}
+            selected.append(pid)
+        if len(selected) < 3:
+            raise RuntimeError('recovery test requires the server and two owned context workers')
+        for pid, descriptor, identity in self.handles:
+            if (not self.alive(descriptor) or self.identity(pid) != identity or
+                    not self.owned(pid)):
+                raise RuntimeError('renderer identity changed before suspension')
+            signal.pidfd_send_signal(descriptor, signal.SIGSTOP)
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            states = []
+            for pid, descriptor, identity in self.handles:
+                if not self.alive(descriptor) or self.identity(pid) != identity:
+                    raise RuntimeError('renderer exited or changed identity during suspension')
+                states.append(Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()[0])
+            if all(state in ('T', 't') for state in states):
+                self.report['renderer_pause'] = {'pids': selected, 'qemu_pid': self.qemu_pid,
+                                                 'executable': str(self.executable),
+                                                 'identities': identities,
+                                                 'stopped': True, 'resumed': False}
+                return
+            time.sleep(0.01)
+        raise TimeoutError('owned renderer workers did not enter the stopped state')
+
+    def resume(self):
+        errors = []
+        # A second catchable termination must not interrupt cleanup between two
+        # owned workers. Restore the mask only after every pidfd has been tried.
+        previous_mask = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM, signal.SIGINT})
+        try:
+            handles, self.handles = self.handles, []
+            for pid, descriptor, identity in handles:
+                try:
+                    signal.pidfd_send_signal(descriptor, signal.SIGCONT)
+                except ProcessLookupError:
+                    pass
+                except OSError as error:
+                    errors.append(f'pid {pid}: SIGCONT: {error}')
+                finally:
+                    try:
+                        os.close(descriptor)
+                    except OSError as error:
+                        errors.append(f'pid {pid}: close pidfd: {error}')
+            if 'renderer_pause' in self.report:
+                pause = self.report['renderer_pause']
+                if errors:
+                    pause.setdefault('resume_errors', []).extend(errors)
+                pause['resumed'] = not pause.get('resume_errors')
+        finally:
+            signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
+        if errors:
+            raise RuntimeError('renderer cleanup failed: ' + '; '.join(errors))
+
+
+def exercise_fault(args, qmp, output, debug, vnc_path, process, report):
+    pause = RendererPause(process.pid, args.render_server, report)
+    try:
+        exercise_fault_steps(args, qmp, output, debug, vnc_path, process, report, pause)
+    finally:
+        pause.resume()
+
+
+def exercise_fault_steps(args, qmp, output, debug, vnc_path, process, report, pause):
+    """Run one destructive scenario in a fresh disposable VM, then retire the VM."""
+    baseline = debug.stat().st_size
+    command, expected = {
+        'recovery': ('/bin/gpu-recovery-test --isolated',
+                     'GPURECOVERY PASS timeout=1 peer_failed=1 retirement_gate=1 fresh_roundtrip=4096 decoder=1'),
+        'producer-exit': ('/bin/gpu-fence-test --producer-exit',
+                          'GPUFENCE PRODUCER_EXIT_ERROR PASS'),
+    }[args.fault_test]
+    report.update(token=args.token, fault_test=args.fault_test, commands=[command],
+                  guest_completed=False)
+    qmp.text(command + '\n')
+    deadline = time.monotonic() + args.timeout
+    observed = ''
+    stopped = False
+    resumed = False
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            raise RuntimeError('QEMU exited during the isolated fault test')
+        observed = common.guest_text(debug, baseline) + common.console_text(qmp, output, args)
+        (output / 'wayland-observed.log').write_text(observed)
+        if re.search(r'kernel panic|amd64 fault v=|GPURECOVERY FAIL|GPUFENCE FAIL|Segmentation fault', observed):
+            raise RuntimeError('isolated GPU fault test failed; inspect captured evidence')
+        if args.fault_test == 'recovery' and not stopped and 'GPURECOVERY READY renderer=running' in observed:
+            pause.pause()
+            stopped = True
+            qmp.text('stopped\n')
+        if args.fault_test == 'recovery' and stopped and not resumed and 'GPURECOVERY RESUME renderer=stopped' in observed:
+            pause.resume()
+            resumed = True
+            qmp.text('running\n')
+        match = re.search(re.escape(expected) + r'[\r\n]+[\s\S]*root@[^\r\n]*\$ ', observed)
+        if match:
+            report.update(status='pass', guest_completed=True, fault_marker=expected)
+            if args.fault_test == 'recovery':
+                if not stopped or not resumed:
+                    raise RuntimeError('recovery acceptance lacks the controlled renderer pause/resume')
+                measured = re.search(r'GPURECOVERY TIMEOUT status=(\d+) elapsed_ms=(\d+)', observed)
+                if measured is None or not 9000 <= int(measured[2]) <= 20000:
+                    raise RuntimeError('recovery acceptance lacks the bounded watchdog measurement')
+                report['watchdog_elapsed_ms'] = int(measured[2])
+                report['watchdog_status'] = int(measured[1])
+            save(output, report)
+            return
+        time.sleep(0.05)
+    raise TimeoutError('isolated fault test completion and shell return')
 
 
 def exercise(args, qmp, output, debug, vnc_path, process, report):
@@ -41,9 +230,12 @@ def exercise(args, qmp, output, debug, vnc_path, process, report):
         with (output / 'wayland-observed.log').open('a') as stream:
             stream.write('\n'.join(fresh) + '\n')
         failures = re.findall(r'WLTEST FAILED run=([^ ]+)', value)
-        if (re.search(r'kernel panic|amd64 fault v=|ZWL FAILED|ZWL IMPORT_ERROR', value) or
+        if (re.search(r'kernel panic|amd64 fault v=|ZWL FAILED|ZWL IMPORT_ERROR|GPU SHARE FAILED|GPUFENCE FAIL|GPUADMISSION FAILED|Segmentation fault', value) or
                 any(token != expected_failure for token in failures)):
             raise RuntimeError('guest Wayland/GPU failure; inspect console and renderer logs')
+        fence_exit = re.search(r'/bin/gpu-fence-test[\r\n][\s\S]*root@[^\r\n]*\$ ', value)
+        if fence_exit and re.search(r'GPUFENCE PASS(?:[\r\n]|$)', value) is None:
+            raise RuntimeError('external fence test exited without successful completion')
         return value
 
     def command(value):
@@ -59,10 +251,32 @@ def exercise(args, qmp, output, debug, vnc_path, process, report):
             time.sleep(0.05)
         raise TimeoutError(description)
 
+    command('/bin/gpu-admission-test')
+    wait(r'GPUADMISSION PASS[^\r\n]+', 'same-open concurrent GPU resource lifecycle')
+    report['concurrent_admission'] = True
+    display_notice = wait(r'GPUADMISSION DISPLAY PASS sequence=(\d+) outputs=(\d+) attempts=(\d+) '
+                          r'initial=1 query_preserved=1 acknowledged=1',
+                          'initial display inventory notification and exact acknowledgement')
+    report['display_notifications'] = {'sequence': int(display_notice[1]),
+                                       'outputs': int(display_notice[2]),
+                                       'attempts': int(display_notice[3])}
+
+    command('/bin/gpu-fence-test')
+    wait(r'GPUFENCE PASS(?:[\r\n]|$)', 'standard external fence fd lifetime and GPU signaling')
+    report['external_fence'] = True
+
     command('/bin/gpu-share-test')
     wait(r'GPU SHARE PASS producer-exit SCM_RIGHTS independent-context import GPU-copy pixels=1024',
          'independent renderer import after producer exit')
     report['independent_renderer_import'] = True
+    report['allocation_imports'] = []
+    for option, kind in (('buffer', 1), ('optimal', 2)):
+        command('/bin/gpu-share-test --' + option)
+        marker = wait(r'GPU ALLOCATION PASS kind=' + str(kind) +
+                      r' producer-exit independent-context pixels=1024',
+                      option + ' allocation after independent producer exit')
+        report['allocation_imports'].append({'kind': option, 'marker': marker.group(0)})
+
     def start_compositor():
         old = {int(value) for value in re.findall(r'ZWL READY[^\r\n]*pid=(\d+)', console())}
         command('/bin/zwl --socket=/tmp/wayland-0 --timeout=150 &')
@@ -212,11 +426,13 @@ def exercise(args, qmp, output, debug, vnc_path, process, report):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--render-server', type=Path, required=True)
+    parser.add_argument('--renderer-library-dir', type=Path)
     parser.add_argument('--image', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--token', required=True)
     parser.add_argument('--timeout', type=int, default=180)
     parser.add_argument('--lifecycle', action='store_true')
+    parser.add_argument('--fault-test', choices=['recovery', 'producer-exit'])
     parser.add_argument('--console-address', type=lambda value: int(value, 0), required=True)
     parser.add_argument('--console-size', type=int, default=32768)
     parser.add_argument('--qemu', default='qemu-system-x86_64')
@@ -231,7 +447,9 @@ def main():
     if not 0 <= args.console_address < 1024 ** 3 - args.console_size:
         parser.error('console capture lies outside guest memory')
     args.phase, args.frame, args.boot_only = 'wayland', 0, False
-    return common.run(args, exercise=exercise, harness_path=__file__)
+    if args.fault_test and args.lifecycle:
+        parser.error('fault tests require their own fresh VM without the display lifecycle suite')
+    return common.run(args, exercise=exercise_fault if args.fault_test else exercise, harness_path=__file__)
 
 
 if __name__ == '__main__':

@@ -25,7 +25,7 @@ struct vulkan_queue_transaction {
 	size_t count;
 };
 
-static VkResult queue_enqueue(struct VkQueue_T *queue, uint32_t count, const VkSubmitInfo *submits, const VkBindSparseInfo *binds, VkFence fence, VkBool32 sparse);
+static VkResult queue_enqueue(struct VkQueue_T *queue, uint32_t count, const VkSubmitInfo *submits, const VkBindSparseInfo *binds, VkFence fence, VkBool32 sparse, VkBool32 locked);
 static void queue_write_waits(struct vulkan_writer *writer, struct vulkan_queue_transaction *transaction, uint32_t count, const VkSemaphore *semaphores, const VkPipelineStageFlags *stages, VkBool32 has_stages);
 static void queue_write_signals(struct vulkan_writer *writer, uint32_t count, const VkSemaphore *semaphores);
 static void queue_write_submit(struct vulkan_writer *writer, struct vulkan_queue_transaction *transaction, const VkSubmitInfo *submit);
@@ -72,7 +72,7 @@ vkQueueBindSparse(
 
 	/* Encode valid sparse calls without inventing a device-specific fallback result. */
 	owner = vulkan_queue(queue);
-	status = queue_enqueue(owner, bindInfoCount, NULL, pBindInfo, fence, VK_TRUE);
+	status = queue_enqueue(owner, bindInfoCount, NULL, pBindInfo, fence, VK_TRUE, VK_FALSE);
 	if (status != VK_SUCCESS)
 		return status;
 
@@ -146,11 +146,32 @@ vulkan_queue_submit(
 	VkResult status;
 
 	/* Commit native acceptance and completed acquisition waits together. */
-	status = queue_enqueue(queue, count, submits, NULL, fence, VK_FALSE);
+	status = queue_enqueue(queue, count, submits, NULL, fence, VK_FALSE, VK_FALSE);
 	if (status != VK_SUCCESS)
 		return status;
 
 	/* Succeeded: ownership has passed to the actual GPU queue. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Enqueues work while the caller retains queue ownership through job publication.
+ */
+VkResult
+vulkan_queue_submit_locked(
+	struct VkQueue_T *queue,
+	uint32_t count,
+	const VkSubmitInfo *submits,
+	VkFence fence)
+{
+	VkResult status;
+
+	/* Keep the caller's queue lock while committing native and notification ownership. */
+	status = queue_enqueue(queue, count, submits, NULL, fence, VK_FALSE, VK_TRUE);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the caller may atomically publish its already allocated presentation job. */
 	return VK_SUCCESS;
 }
 
@@ -201,7 +222,8 @@ queue_enqueue(
 	const VkSubmitInfo *submits,
 	const VkBindSparseInfo *binds,
 	VkFence fence,
-	VkBool32 sparse)
+	VkBool32 sparse,
+	VkBool32 locked)
 {
 	struct VkDevice_T *device;
 	struct vulkan_writer writer;
@@ -213,6 +235,7 @@ queue_enqueue(
 	size_t index;
 	uint32_t request;
 	uint32_t waits;
+	VkBool32 accepted;
 
 	/* Count caller waits before locks or wire output so allocation cannot consume state. */
 	device = queue->device;
@@ -251,8 +274,10 @@ queue_enqueue(
 
 	/* Resolve the optional fence before entering the queue-to-device lock order. */
 	completion = vulkan_sync_object((uint64_t)(uintptr_t)fence);
+	vulkan_external_fence_quiesce(completion);
 	vulkan_writer_init_for_object(&writer, &queue->object);
-	pthread_mutex_lock(&queue->mutex);
+	if (!locked)
+		pthread_mutex_lock(&queue->mutex);
 
 	/* Acquire briefly shared binary-payload state only while enqueuing native work. */
 	pthread_mutex_lock(&device->mutex);
@@ -284,8 +309,18 @@ queue_enqueue(
 
 	/* Native fence completion represents all successfully enqueued records. */
 	queue_write_handle(&writer, (uint64_t)(uintptr_t)fence);
+	status = writer.error;
+	if (status == VK_SUCCESS)
+		status = vulkan_external_fence_prepare_locked(device, completion);
+
+	if (status != VK_SUCCESS)
+		writer.error = status;
+
+	accepted = VK_FALSE;
 	status = vulkan_command_execute(device->object.context, &writer, 8, &reader, VK_TRUE);
 	if (status == VK_SUCCESS) {
+		accepted = VK_TRUE;
+
 		/* Software acquisition payloads disappear only after the matching wait is accepted. */
 		for (index = 0; index < transaction.count; index++) {
 			/* Native waits keep their host payload unchanged until GPU execution. */
@@ -294,16 +329,22 @@ queue_enqueue(
 		}
 
 		/* A submitted fence now obtains completion from its native queue payload. */
-		if (completion != NULL)
+		if (completion != NULL) {
 			completion->software_signaled = VK_FALSE;
+			status = vulkan_sync_submit_notification(queue, completion);
+		}
 	}
+
+	/* A preallocated external worker starts only after real native acceptance. */
+	status = vulkan_external_fence_submit_locked(completion, status, accepted);
 
 	/* Record device loss before releasing locally observable sync state. */
 	vulkan_sync_device_error(device, status);
 
 	pthread_mutex_unlock(&device->mutex);
 
-	pthread_mutex_unlock(&queue->mutex);
+	if (!locked)
+		pthread_mutex_unlock(&queue->mutex);
 
 	/* Failed encoding or enqueue leaves every proposed software wait unconsumed. */
 	vulkan_reader_finish(&reader);

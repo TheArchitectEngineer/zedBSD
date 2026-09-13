@@ -12,7 +12,11 @@ flags='-std=c11 -D_GNU_SOURCE -Wall -Wextra -Werror -Wno-missing-field-initializ
 sources='plan/ws014/tests/wayland-wsi-swapchain.c userland/base/libvulkan/objects.c userland/base/libvulkan/wsi.c userland/base/libvulkan/wsi-swapchain.c userland/base/libvulkan/wsi-image.c'
 cc $flags -I"$output/include" -Iuserland/base/libvulkan $sources -o "$output/wayland-swapchain"
 timeout 30 "$output/wayland-swapchain"
+timeout 30 "$output/wayland-swapchain" shared-fence
+timeout 30 "$output/wayland-swapchain" fallback
 cc $flags -I"$output/include" -Iuserland/base/libvulkan \
  -fsanitize=address,undefined -fno-omit-frame-pointer -g \
  $sources -o "$output/wayland-swapchain-asan"
 ASAN_OPTIONS=detect_leaks=1 timeout 30 "$output/wayland-swapchain-asan"
+ASAN_OPTIONS=detect_leaks=1 timeout 30 "$output/wayland-swapchain-asan" shared-fence
+ASAN_OPTIONS=detect_leaks=1 timeout 30 "$output/wayland-swapchain-asan" fallback

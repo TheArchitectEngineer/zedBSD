@@ -18,9 +18,11 @@
 #include <kern/filedesc.h>
 #include <kern/handle.h>
 #include <kern/fd-object.h>
+#include <uapi/gpu-allocation.h>
 
 /* One counted allocation remains independent from all source and receiver sessions. */
 struct sharing_memory {
+	uint64_t pages[1];
 	unsigned references;
 	struct gpu_image_descriptor image;
 };
@@ -43,12 +45,16 @@ static int sharing_import(void *opaque, void *session, void *object, void **resu
 static void sharing_drop(struct sharing_memory *memory);
 static void export_prepare(struct gpu_resource_export *request, uint64_t handle);
 static int sharing_ioctl(struct test_file *file, unsigned long command, void *request);
+static void sharing_allocation_test(struct test_file *source, struct test_file *receiver, struct test_file *foreign, struct process *process);
 
 /*
  * Verifies capability transfer, copyout rollback, device isolation and final cleanup.
  */
+#ifndef GPU_SHARING_ENTRY
+#define GPU_SHARING_ENTRY main
+#endif
 int
-main(void)
+GPU_SHARING_ENTRY(void)
 {
 	struct drv_gpu_ops operations;
 	struct drv_gpu_share_ops sharing;
@@ -85,9 +91,10 @@ main(void)
 	memset(&backend, 0, sizeof(backend));
 	memset(&other_backend, 0, sizeof(other_backend));
 	memset(&operations, 0, sizeof(operations));
+	memset(&sharing, 0, sizeof(sharing));
 	operations.version = DRV_GPU_INTERFACE_VERSION;
 	operations.size = sizeof(operations);
-	operations.capabilities = GPU_CAP_BLOB | GPU_CAP_SHARE;
+	operations.capabilities = GPU_CAP_BLOB | GPU_CAP_SHARE | GPU_CAP_ALLOCATION_SHARE;
 	operations.open = backend_open;
 	operations.close = backend_close;
 	operations.get_info = backend_get_info;
@@ -107,6 +114,9 @@ main(void)
 	assert(error == 0);
 	error = open_file(&foreign, "gpu1", O_RDWR);
 	assert(error == 0);
+
+	/* Allocation-only capabilities exercise the same ownership core without image geometry. */
+	sharing_allocation_test(&source, &receiver, &foreign, &producer);
 
 	/* Create one source allocation through the actual GPU ioctl dispatcher. */
 	memset(&create, 0, sizeof(create));
@@ -320,8 +330,13 @@ sharing_export(
 	(void)opaque;
 	alias = object;
 	assert(alias->session == session);
-	assert(image->device_id != 0U);
-	alias->memory->image = *image;
+	if (image != NULL) {
+		/* Image capabilities carry a validated scanout description; raw allocations do not. */
+		assert(image->device_id != 0U);
+		alias->memory->image = *image;
+	}
+
+	/* Either export retains the allocation without retaining its source namespace. */
 	alias->memory->references++;
 	*result = alias->memory;
 
@@ -394,6 +409,122 @@ sharing_drop(
 	kern_free(memory);
 
 	/* Succeeded: the final owner released the allocation exactly once. */
+	return;
+}
+
+/* Verifies generic sharing without granting the image-only import protocol. */
+static void
+sharing_allocation_test(
+	struct test_file *source,
+	struct test_file *receiver,
+	struct test_file *foreign,
+	struct process *process)
+{
+	struct gpu_blob_create create;
+	struct gpu_allocation_export exported;
+	struct gpu_allocation_import imported;
+	struct gpu_resource_import image;
+	unsigned before;
+	int different;
+	int error;
+
+	/* A raw buffer has no width, height, format or row pitch to invent for export. */
+	memset(&create, 0, sizeof(create));
+	create.version = GPU_ABI_VERSION;
+	create.size = sizeof(create);
+	create.bytes = 4096U;
+	create.blob_id = 98U;
+	create.flags = GPU_BLOB_SHAREABLE | GPU_BLOB_CROSS_DEVICE;
+	error = sharing_ioctl(source, GPU_BLOB_CREATE, &create);
+	assert(error == 0);
+
+	/* The opaque description is immutable per capability and independent from the GPU codec. */
+	memset(&exported, 0, sizeof(exported));
+	exported.version = GPU_ABI_VERSION;
+	exported.size = sizeof(exported);
+	exported.handle = create.handle;
+	exported.flags = GPU_HANDLE_CLOEXEC;
+	exported.fd = -1;
+	exported.allocation.version = GPU_ABI_VERSION;
+	exported.allocation.size = sizeof(exported.allocation);
+	exported.allocation.allocation_bytes = create.bytes;
+	exported.allocation.schema = 0x54455354U;
+	exported.allocation.metadata_bytes = 3U;
+	exported.allocation.metadata[0] = 0x47U;
+	exported.allocation.metadata[1] = 0x50U;
+	exported.allocation.metadata[2] = 0x55U;
+
+	/* Nonzero unused metadata must fail before taking backend ownership. */
+	exported.allocation.metadata[3] = 1U;
+	error = sharing_ioctl(source, GPU_ALLOCATION_EXPORT, &exported);
+	assert(error == EINVAL);
+	exported.allocation.metadata[3] = 0U;
+
+	/* Output failure leaves neither a live fd nor an extra retained allocation reference. */
+	before = allocations;
+	reject_copyout = 1U;
+	error = sharing_ioctl(source, GPU_ALLOCATION_EXPORT, &exported);
+	assert(error == EFAULT);
+	assert(allocations == before);
+	assert(process->fd->entries[0].state == FILEDESC_SLOT_FREE);
+
+	/* Reset output fields after the injected kernel-copy failure and publish the capability. */
+	exported.fd = -1;
+	exported.allocation.device_id = 0U;
+	error = sharing_ioctl(source, GPU_ALLOCATION_EXPORT, &exported);
+	assert(error == 0);
+	assert(exported.allocation.device_id != 0U);
+
+	/* An allocation envelope cannot masquerade as a validated linear display image. */
+	memset(&image, 0, sizeof(image));
+	image.version = GPU_ABI_VERSION;
+	image.size = sizeof(image);
+	image.fd = exported.fd;
+	error = sharing_ioctl(receiver, GPU_RESOURCE_IMPORT, &image);
+	assert(error == EINVAL);
+
+	/* Import accepts only the same GPU even when other devices share the same driver table. */
+	memset(&imported, 0, sizeof(imported));
+	imported.version = GPU_ABI_VERSION;
+	imported.size = sizeof(imported);
+	imported.fd = exported.fd;
+	error = sharing_ioctl(foreign, GPU_ALLOCATION_IMPORT, &imported);
+	assert(error == EXDEV);
+
+	/* Receiver-supplied metadata is rejected instead of replacing the authoritative envelope. */
+	imported.allocation.schema = 1U;
+	error = sharing_ioctl(receiver, GPU_ALLOCATION_IMPORT, &imported);
+	assert(error == EINVAL);
+	imported.allocation.schema = 0U;
+
+	/* Import output failure retires only the new alias and preserves the original capability. */
+	before = allocations;
+	reject_copyout = 1U;
+	error = sharing_ioctl(receiver, GPU_ALLOCATION_IMPORT, &imported);
+	assert(error == EFAULT);
+	assert(allocations == before);
+
+	/* A complete import returns exactly the sender's immutable bytes and a fresh resource id. */
+	error = sharing_ioctl(receiver, GPU_ALLOCATION_IMPORT, &imported);
+	assert(error == 0);
+	assert(imported.handle != create.handle);
+	different = memcmp(&imported.allocation, &exported.allocation, sizeof(imported.allocation));
+	assert(different == 0);
+
+	/* Source destruction and last capability close leave the receiver's alias alive. */
+	error = destroy_handle(source, create.handle);
+	assert(error == 0);
+	error = filedesc_close(process->fd, exported.fd);
+	assert(error == 0);
+	assert(shared_allocations == 1U);
+
+	/* The final receiver destruction retires the actual allocation exactly once. */
+	error = destroy_handle(receiver, imported.handle);
+	assert(error == 0);
+	assert(shared_allocations == 0U);
+	puts("GPU allocation fd: opaque metadata, image-protocol rejection, rollback, same-GPU identity and independent lifetime PASS");
+
+	/* Succeeded: no test allocation or transferable fd remains live. */
 	return;
 }
 

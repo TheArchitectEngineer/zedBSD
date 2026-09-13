@@ -17,7 +17,7 @@ func lines(text) {
 }
 func main(args) {
     if (Array.size(args) != 3) { System.error("usage: maintain-dispatch.noct PUBLIC_HEADER PINNED_PROTOCOL_DEFINES OUTPUT_DIRECTORY"); }
-    var source = lines(FileUtil.readText(args[0]) + FileUtil.readText("libc/include/vulkan/vulkan_wayland.h"));
+    var source = lines(FileUtil.readText(args[0]) + FileUtil.readText("libc/include/vulkan/vulkan_wayland.h") + FileUtil.readText("libc/include/vulkan/vulkan_external.h"));
     var banner = "/*\n * zedBSD\n * Copyright (C) 2026 Awe Morris\n *\n * SPDX-License-Identifier: Zlib\n */\n\n";
     var table = banner + "/*\n * Maintained declaration metadata, see libc/include/vulkan/API-PROVENANCE.md.\n */\n\n";
     var manifest = "name\tscope\textension\n"; var extension = "0"; var count = 0;
@@ -28,6 +28,11 @@ func main(args) {
         if (line == "#define VK_KHR_display 1") { extension = "VULKAN_INSTANCE_DISPLAY"; }
         if (line == "#define VK_KHR_swapchain 1") { extension = "VULKAN_DEVICE_SWAPCHAIN"; }
         if (line == "#define VK_KHR_display_swapchain 1") { extension = "VULKAN_DEVICE_DISPLAY_SWAPCHAIN"; }
+        if (line == "#define VK_KHR_get_physical_device_properties2 1") { extension = "VULKAN_INSTANCE_PROPERTIES2"; }
+        if (line == "#define VK_KHR_external_memory_capabilities 1") { extension = "VULKAN_INSTANCE_EXTERNAL_MEMORY"; }
+        if (line == "#define VK_KHR_external_fence_capabilities 1") { extension = "VULKAN_INSTANCE_EXTERNAL_FENCE"; }
+        if (line == "#define VK_KHR_external_memory_fd 1") { extension = "VULKAN_DEVICE_EXTERNAL_MEMORY_FD"; }
+        if (line == "#define VK_KHR_external_fence_fd 1") { extension = "VULKAN_DEVICE_EXTERNAL_FENCE_FD"; }
         var at = String.indexOf(line, "(VKAPI_PTR *PFN_vk");
         if (at < 0) { continue; }
         var rest = String.substring(line, at + 16, -1);
@@ -43,7 +48,7 @@ func main(args) {
         manifest = manifest + name + "\t" + scope + "\t" + extension + "\n";
         count = count + 1;
     }
-    if (count != 157) { System.error("expected 157 public command records, got " + count); }
+    if (count != 170) { System.error("expected 170 public command records, got " + count); }
     var protocol = lines(FileUtil.readText(args[1]));
     var opcodes = banner + "/*\n * Numeric declarations selected from virglrenderer 1.1.0 Venus protocol.\n * Copyright 2020 Google LLC; SPDX-License-Identifier: MIT.\n * See LICENSE-PROTOCOL for the retained upstream license.\n */\n\n/*\n * Maintained protocol IDs, no renderer implementation is included.\n */\n\n#ifndef VULKAN_OPCODES_H\n#define VULKAN_OPCODES_H\n\n/* Identifies commands in pinned Venus wire-format 1. */\nenum vulkan_opcode {\n";
     var core = 0;
@@ -57,7 +62,7 @@ func main(args) {
         var comma = String.indexOf(number, ",");
         if (comma >= 0) { number = String.substring(number, 0, comma); }
         var id = Int.from(number);
-        if (id <= 136 || name == "vkEnumerateInstanceVersion" || name == "vkGetDeviceQueue2" || name == "vkSetReplyCommandStreamMESA" || name == "vkSeekReplyCommandStreamMESA" || name == "vkExecuteCommandStreamsMESA") {
+        if (id <= 136 || name == "vkEnumerateInstanceVersion" || name == "vkGetDeviceQueue2" || name == "vkSetReplyCommandStreamMESA" || name == "vkSeekReplyCommandStreamMESA" || name == "vkExecuteCommandStreamsMESA" || name == "vkGetPhysicalDeviceProperties2" || name == "vkGetPhysicalDeviceImageFormatProperties2" || name == "vkGetPhysicalDeviceExternalBufferProperties") {
             opcodes = opcodes + "\tVULKAN_OPCODE_" + name + " = " + number + ",\n";
             if (id <= 136) { core = core + 1; }
         }
@@ -67,5 +72,5 @@ func main(args) {
     FileUtil.writeText(args[2] + "/dispatch-table.inc", table);
     FileUtil.writeText(args[2] + "/api-commands.tsv", manifest);
     FileUtil.writeText(args[2] + "/opcodes.h", opcodes);
-    print("maintained 157 dispatch records and 142 pinned wire identifiers");
+    print("maintained 170 dispatch records and 145 pinned wire identifiers");
 }

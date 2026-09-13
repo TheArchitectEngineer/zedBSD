@@ -64,7 +64,7 @@ KERN_OBJS := $(BUILD)/src/kern/entry.o $(BUILD)/src/kern/clock.o \
 	$(BUILD)/src/kern/sched.o \
 	$(BUILD)/src/kern/vmspace.o \
 	$(BUILD)/src/kern/vm.o \
-	$(BUILD)/src/kern/filedesc.o $(BUILD)/src/kern/pipe.o \
+	$(BUILD)/src/kern/filedesc.o $(BUILD)/src/kern/handle.o $(BUILD)/src/kern/fence.o $(BUILD)/src/kern/fd-object.o $(BUILD)/src/kern/pipe.o \
 	$(BUILD)/src/kern/record-lock.o \
 	$(BUILD)/src/kern/cred.o $(BUILD)/src/kern/signal.o \
 	$(KERN_ACL_OBJS) \

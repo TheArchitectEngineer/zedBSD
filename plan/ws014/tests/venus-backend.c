@@ -959,7 +959,10 @@ fixture_timeout_retention(void)
 	uint8_t configuration[16];
 	void *session;
 	void *storage;
+	void *rejected;
 	unsigned context_destroys;
+	unsigned allocations;
+	unsigned context_creates;
 	int error;
 
 	/* Creates owned coherent storage before the simulated timeout. */
@@ -981,6 +984,20 @@ fixture_timeout_retention(void)
 	error = venus_present(&controller, session, storage, &present);
 	assert(error == ETIMEDOUT);
 
+	/* A recovery denial must preserve the live producer and every uncertain native resource. */
+	allocations = fixture_allocations;
+	context_creates = fixture_commands[0x200U];
+	rejected = storage;
+	error = venus_open(&controller, &rejected);
+	assert(error == ENODEV);
+	assert(rejected == NULL);
+	assert(fixture_allocations == allocations);
+	assert(fixture_commands[0x200U] == context_creates);
+	assert(controller.resources != NULL);
+	assert(controller.transport.enabled != 0U);
+	assert(controller.recovering == 0U);
+	assert(fixture_dma == 1U);
+
 	/* Core handle destruction must preserve coherent bytes while DMA is uncertain. */
 	venus_resource_destroy(&controller, session, storage);
 	assert(controller.resources != NULL);
@@ -992,7 +1009,30 @@ fixture_timeout_retention(void)
 	assert(fixture_commands[0x201U] == context_destroys);
 	assert(fixture_dma == 1U);
 
-	/* Models the acknowledged reset barrier required by PCI detach. */
+	/* A denied recovery cannot infer permission merely from the producer wrapper having closed. */
+	allocations = fixture_allocations;
+	rejected = storage;
+	error = venus_open(&controller, &rejected);
+	assert(error == ENODEV);
+	assert(rejected == NULL);
+	assert(fixture_allocations == allocations);
+	assert(fixture_commands[0x200U] == context_creates);
+	assert(controller.resources != NULL);
+	assert(fixture_dma == 1U);
+
+	/* A missing checked-reset acknowledgement cannot authorize quarantine retirement. */
+	fixture_reset_busy = 1U;
+	error = drv_venus_transport_stop(&controller.transport);
+	assert(error == EBUSY);
+	assert(controller.transport.enabled != 0U);
+	assert(controller.resources != NULL);
+	assert(fixture_dma == 1U);
+
+	/* An acknowledged reset ends native access before the existing local-retirement helper. */
+	fixture_reset_busy = 0U;
+	error = drv_venus_transport_stop(&controller.transport);
+	assert(error == 0);
+	assert(controller.transport.enabled == 0U);
 	fixture_drain(&controller);
 	assert(fixture_dma == 0U);
 	assert(controller.resources == NULL);

@@ -1,10 +1,10 @@
 <!-- awesome-plan-current:start -->
 Active Queue: none
-Last Queue: q309 finished; q309-i01 / ws014-p006 cleared
+Last Queue: q310 finished; q310-i01 / ws014-p007 cleared
 WS030: completed (standard Vulkan1.0/direct-display library)
 ws014-p005: cleared (corrected standard API)
-WS014: incomplete; p002/p003/p005/p006 cleared
-Next: p001/p004 planning; p004 and WS029 remain unqueued
+WS014: incomplete; p002/p003/p005/p006/p007 cleared
+Next: p004 final API/standards review planning; p004 and WS029 remain unqueued
 <!-- awesome-plan-current:end -->
 
 # zedBSD master plan
@@ -1338,7 +1338,7 @@ Status: active
 
 ## 現在地
 
-q309 finished、[WS014 p006](https://github.com/awemorris/zedBSD/issues/393)のkernel handle・GPU共有・最小Wayland/native scanoutを受入済み。p004はplanning・未queue、active Queueなし。WS030 completedとp005標準API訂正のclearanceを維持する。EGLは今回cancel、native i915は後段の別WS029。
+q310 finished、[WS014 p007](https://github.com/awemorris/zedBSD/issues/394)のBLOB直接表示・標準fd共有・同期改善を受入済み。p004はplanning・未queue、active Queueなし。WS030 completedとp005標準API訂正のclearanceを維持する。EGLは今回cancel、native i915は後段の別WS029。
 
 2026-09-11に削除したPriority表は復活させない。閉鎖済みWSと既存Focus、他WSの実行保留は変更しない。q308の依存順は全WSのPriority順位ではない。q307旧scopeの受入失効は履歴とし、現在のp005はq308で標準API訂正済み・clearedである。
 
@@ -1360,7 +1360,7 @@ Future Listへ移したWS013・WS015は次節で管理する。完了WSの詳細
 | [WS010](ws010/ws.md) | MG001 | スクリプト・イメージツール | 完了 | q063。 |
 | [WS011](ws011/ws.md) | MG005 | ネットワーク設定コンソール | 完了（ユーザー確認） | commit confirmed完了。VLANキャンセル、bridgeはF-001へ移管。 |
 | [WS012](ws012/ws.md) | MG005 | サービス管理コンソール | 完了 | q018。 |
-| [WS014](https://github.com/awemorris/zedBSD/issues/15) | MG006 | GPU framework / virtio-gpu bring-up | incomplete | p002/p003/p005/p006 cleared。q309 finished、GPU共有/Wayland/scanout受入済み。p001/p004 planning、p004未queue。 |
+| [WS014](https://github.com/awemorris/zedBSD/issues/15) | MG006 | GPU framework / virtio-gpu bring-up | incomplete | p002/p003/p005/p006/p007 cleared。q310 finished、p001/p004 planning、p004未queue。 |
 | [WS016](ws016/ws.md) | MG004 | 実行時swap制御 | 完了 | q021。 |
 | [WS017](ws017/ws.md) | MG006 | LFB描画高速化 | 依存待ち | WS022後にmmap・Xzed高速描画・受け入れ。 |
 | [WS018](ws018/ws.md) | MG008 | カーネル所有権・構成統一 | 完了 | p001〜p020。I/O後続はWS025。 |
@@ -1669,3 +1669,7 @@ GET_DISPLAY_INFOとGET_EDIDのbase/CTA progressive DTDで表示・モードを�
 同じ最終kernelのq309-direct-002も42.705秒、QEMU exit0でPASS。標準vkdemoの回転直方体6枚をGPU readback/VNC/独立oracleで照合し、通常終了とSIGINT後の再open、console復帰、表示競合拒否とowner完走を確認した。K/fd/SCM・GPU/EDID・Wayland/WSIの実コード限定fixtureとsanitizer、157 Vulkan dispatch/export、両ABIの公式header照合、Noct再生成、rootfs配置、対象buildと全適用規約を確認した。正式CTSや全Wayland SDK互換は主張しない。
 
 途中のharness起動待ち不足とEDID/custom mode回帰を修正し、失敗証拠と再実行理由を保存した。最終reviewのMSG_PEEK二重put疑義は、rights付きpeekを既存guardが拒否するため到達不能と確認し、本体変更を戻して拒否後の参照寿命を追加検証した。formatterは規約と設定の不一致によりexit1でありPASSとは扱わず、全文確認とdiffcheckを記録した。HAL追加変更なし。ローカル結果はplan/ws014/phase006/results.md、技術資料3件、conformance.mdとfinal-evidence/verification.json、Queue履歴はplan/history/queue-q309.md。これらsource/doc/imageのgit add/commit/pushはユーザーが行う。本同期はGitHub Issues/Projectの計画・受入結果である。
+
+## q310完了
+
+q310 finished、[WS014 p007](https://github.com/awemorris/zedBSD/issues/394) cleared。BLOB直接表示・標準OPAQUE memory/fence・同期/batch・topology/placementを受入済み。最終APIは170 commands / drv_gpu_ops v6。active Queueなし、p004とWS029は未queue。optimal共有には隔離したpaired renderer差分を使用。source/docのgit公開はユーザー担当。 中間判断と失敗履歴はp007とQueue履歴に保持する。

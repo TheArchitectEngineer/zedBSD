@@ -18,7 +18,7 @@
 #define VKDEMO_HEIGHT	240U
 #define VKDEMO_BYTES	(VKDEMO_WIDTH * VKDEMO_HEIGHT * 4U)
 
-int vkdemo_initialize(uint32_t device_index, int offscreen);
+int vkdemo_initialize(uint32_t device_index, int offscreen, int readback);
 int vkdemo_render(uint32_t milliseconds, uint32_t frame, char digest[65]);
 int vkdemo_write_frame(const char *path);
 int vkdemo_close(void);

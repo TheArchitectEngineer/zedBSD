@@ -32,6 +32,7 @@ struct demo_options {
 	int fixed;
 	int verify;
 	int offscreen;
+	int readback;
 };
 
 /*
@@ -75,7 +76,7 @@ main(
 	if (status != 0) {
 		fprintf(
 			stderr,
-			"usage: vkdemo [--device-index=N] [--offscreen] [--output=PATH] [--token=NAME] [--duration=0..3600 | --time-ms=0..3600000 --hold=0..120 | --verify-session]\n");
+			"usage: vkdemo [--device-index=N] [--offscreen] [--readback] [--output=PATH] [--token=NAME] [--duration=0..3600 | --time-ms=0..3600000 --hold=0..120 | --verify-session]\n");
 		return 2;
 	}
 
@@ -84,7 +85,7 @@ main(
 	fflush(stdout);
 
 	/* Create the Vulkan shaders, texture and retained frame resources. */
-	status = vkdemo_initialize(options.device_index, options.offscreen);
+	status = vkdemo_initialize(options.device_index, options.offscreen, options.readback);
 	if (status != 0)
 		goto out;
 
@@ -269,6 +270,13 @@ parse_arguments(
 			continue;
 		}
 
+		/* Request explicit pixel evidence for an otherwise ordinary display animation. */
+		match = strcmp(argv[index], "--readback");
+		if (match == 0) {
+			options->readback = 1;
+			continue;
+		}
+
 		/* Export the latest completed GPU readback as an explicit diagnostic. */
 		match = strncmp(argv[index], "--output=", 9);
 		if (match == 0) {
@@ -362,6 +370,13 @@ parse_arguments(
 		if (hold_set != 0)
 			return -1;
 	}
+
+	/* Offscreen rendering, image output and checkpoints explicitly require real pixels. */
+	if (options->offscreen != 0 || options->verify != 0)
+		options->readback = 1;
+
+	if (options->output != NULL)
+		options->readback = 1;
 
 	/* Validate the printable identity used by every emitted capture marker. */
 	status = validate_token(options->token);
@@ -528,7 +543,7 @@ draw_frame(
 	const char *presentation;
 	int status;
 
-	/* Use the same Vulkan draw and readback for every mode. */
+	/* Draw through standard Vulkan with readback selected only by diagnostic policy. */
 	status = vkdemo_render(milliseconds, frame, digest);
 	if (status != 0)
 		return -1;
@@ -538,6 +553,13 @@ draw_frame(
 		status = vkdemo_write_frame(options->output);
 		if (status != 0)
 			return -1;
+	}
+
+	/* Ordinary presentation reports acceptance without a fabricated pixel digest. */
+	if (options->readback == 0) {
+		printf("VKDEMO SUBMITTED run=%s mode=%s frame=%u time_ms=%u readback=disabled width=320 height=240\n", options->token, mode, frame, milliseconds);
+		fflush(stdout);
+		return 0;
 	}
 
 	/* Distinguish a display presentation from an intentional offscreen render. */

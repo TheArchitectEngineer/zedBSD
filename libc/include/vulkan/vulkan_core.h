@@ -5676,6 +5676,8 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateSharedSwapchainsKHR(
 
 
 
+#include "vulkan_external.h"
+
 #ifdef __cplusplus
 }
 #endif

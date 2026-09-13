@@ -1,0 +1,246 @@
+{
+  "schema_version": 1,
+  "phase": "WS014 p007",
+  "queue": "q310",
+  "status": "PASS",
+  "started_utc": "2026-09-13T02:17:10.899236+00:00",
+  "finished_utc": "2026-09-13T02:18:27.113576+00:00",
+  "limits": {
+    "maximum_parallel_jobs": 2,
+    "per_job_timeout_seconds": 120,
+    "aggregate_make_check": false
+  },
+  "coverage": {
+    "public_api": "Vulkan 1.0 + selected extensions",
+    "public_commands": 170,
+    "core_commands": 137,
+    "wsi_commands": 20,
+    "external_and_query_commands": 13,
+    "pinned_wire_identifiers": 145,
+    "abi_targets": [
+      "i386-unknown-elf",
+      "x86_64-unknown-elf"
+    ],
+    "abi_structures_unions": 148,
+    "abi_fields": 942,
+    "abi_enum_constants": 2394,
+    "codec_encoders": 100,
+    "codec_decoders": 47,
+    "recording_commands": 44
+  },
+  "source_identity": {
+    "file_count": 140,
+    "canonical_path_sha256_map_hash": "52c624165df6a4eb99f5556a4c87f558daf270b686e9e9291e67cf0215d6ceab",
+    "full_manifest": "plan/ws014/temp/q310-userland-final-20260913/results.json",
+    "manifest_log_sha256": "cbaa154ffe6da7f46439f07611633e095c0898afd69c34fba4fb2ad522863d18",
+    "changed_during_run": []
+  },
+  "pinned_inputs": {
+    "vulkan_core.h": "8cb01233ecf0fac130f0db2fdbbd79b6643f91f65c9afb807978924148798287",
+    "vn_protocol_renderer_defines.h": "ff73828cb8b5b0364d701cc0baea1d99e233410c4eec8f4af4a24616bcd67743"
+  },
+  "generation": [
+    {
+      "path": "libc/include/vulkan/vulkan_core.h",
+      "exact_match": true,
+      "sha256": "8b33d690a1dcf075c67d2f58a6070b67ff1ffbd3c9c985e0651998954a9fc912"
+    },
+    {
+      "path": "libc/include/vulkan/vulkan_external.h",
+      "exact_match": true,
+      "sha256": "241ddecf632ebf9cfdb153c892eb015b21e007996bed2f5409189014f4f9390f"
+    },
+    {
+      "path": "userland/base/libvulkan/dispatch-table.inc",
+      "exact_match": true,
+      "sha256": "4be1c677884a34a113a514561827fecd800f9410f79126206dd8c11b4f61f4e4"
+    },
+    {
+      "path": "userland/base/libvulkan/api-commands.tsv",
+      "exact_match": true,
+      "sha256": "673c9d55fe23b4e3b7cc601f815439d2a3684a58f3ccf218815bbdfc96796b8c"
+    },
+    {
+      "path": "userland/base/libvulkan/opcodes.h",
+      "exact_match": true,
+      "sha256": "d7ec242614923dfc7471315974572471ce2c4c1ed933824ca5c9635e50eee8c6"
+    },
+    {
+      "path": "userland/base/libvulkan/codec.c",
+      "exact_match": true,
+      "sha256": "5d9711caa71235d9b833a0ad36dc43c4c811ab0080e7f2b6ddaae72cdce2da5f"
+    },
+    {
+      "path": "userland/base/libvulkan/codec.h",
+      "exact_match": true,
+      "sha256": "c983b90448811245ee5bb48d76806ea30a21878717d9565721fe75b1eabcc03a"
+    },
+    {
+      "path": "userland/base/libvulkan/commands-generated.inc",
+      "exact_match": true,
+      "sha256": "f540c13834ea06d99a295048f194ae9d13efc38bd9b014ef4b268f6df5428fe4"
+    }
+  ],
+  "checks": [
+    {
+      "name": "gen-api",
+      "status": "PASS",
+      "seconds": 14.004,
+      "command": [
+        "/home/awe/zedBSD/build/NoctLang/build-static/noct",
+        "userland/base/libvulkan/tools/maintain-api.noct",
+        "/tmp/q308-virglrenderer-1.1.0/src/venus/venus-protocol/vulkan_core.h",
+        "/home/awe/zedBSD/plan/ws014/temp/q310-userland-final-20260913/generated/vulkan_core.h"
+      ],
+      "log": "plan/ws014/temp/q310-userland-final-20260913/gen-api.log",
+      "log_sha256": "bebd34a93fe3544b80db8cb4550aab86a20f7a4935a121028f9b56b875483f88"
+    },
+    {
+      "name": "gen-external",
+      "status": "PASS",
+      "seconds": 13.74,
+      "command": [
+        "/home/awe/zedBSD/build/NoctLang/build-static/noct",
+        "userland/base/libvulkan/tools/maintain-external.noct",
+        "/tmp/q308-virglrenderer-1.1.0/src/venus/venus-protocol/vulkan_core.h",
+        "/home/awe/zedBSD/plan/ws014/temp/q310-userland-final-20260913/generated/vulkan_external.h"
+      ],
+      "log": "plan/ws014/temp/q310-userland-final-20260913/gen-external.log",
+      "log_sha256": "bdc6a748664255e279e74b69ccf47dfb15350d28598c4f844eaed1e9b13cd377"
+    },
+    {
+      "name": "gen-dispatch",
+      "status": "PASS",
+      "seconds": 1.774,
+      "command": [
+        "/home/awe/zedBSD/build/NoctLang/build-static/noct",
+        "userland/base/libvulkan/tools/maintain-dispatch.noct",
+        "libc/include/vulkan/vulkan_core.h",
+        "/tmp/q308-virglrenderer-1.1.0/src/venus/venus-protocol/vn_protocol_renderer_defines.h",
+        "/home/awe/zedBSD/plan/ws014/temp/q310-userland-final-20260913/generated"
+      ],
+      "log": "plan/ws014/temp/q310-userland-final-20260913/gen-dispatch.log",
+      "log_sha256": "2a5bd9f41cba581bcdf98853929bd58bee542ee53afa76d80de4724476052c6c"
+    },
+    {
+      "name": "gen-codec",
+      "status": "PASS",
+      "seconds": 1.373,
+      "command": [
+        "/home/awe/zedBSD/build/NoctLang/build-static/noct",
+        "userland/base/libvulkan/tools/maintain-codec.noct",
+        "libc/include/vulkan/vulkan_core.h",
+        "/home/awe/zedBSD/plan/ws014/temp/q310-userland-final-20260913/generated/codec.c",
+        "/home/awe/zedBSD/plan/ws014/temp/q310-userland-final-20260913/generated/codec.h"
+      ],
+      "log": "plan/ws014/temp/q310-userland-final-20260913/gen-codec.log",
+      "log_sha256": "090bab01d83aa3321a06690901b5699b6b53f8fce986b0f095716048311f3f33"
+    },
+    {
+      "name": "gen-commands",
+      "status": "PASS",
+      "seconds": 54.636,
+      "command": [
+        "/home/awe/zedBSD/build/NoctLang/build-static/noct",
+        "userland/base/libvulkan/tools/maintain-commands.noct",
+        "libc/include/vulkan/vulkan_core.h",
+        "/home/awe/zedBSD/plan/ws014/temp/q310-userland-final-20260913/generated/commands-generated.inc"
+      ],
+      "log": "plan/ws014/temp/q310-userland-final-20260913/gen-commands.log",
+      "log_sha256": "a09945217b3a88ffb7d557f3ddf779d4d8d706db18f7bde33001119b7b4b003c"
+    },
+    {
+      "name": "abi",
+      "status": "PASS",
+      "seconds": 2.123,
+      "command": [
+        "sh",
+        "plan/ws030/tests/run-vulkan-abi.sh"
+      ],
+      "log": "plan/ws014/temp/q310-userland-final-20260913/abi.log",
+      "log_sha256": "e2e406fe15f2072b6279b8af2ba8112d5d50640d02caa47d1315fb665a134cfb"
+    },
+    {
+      "name": "dispatch",
+      "status": "PASS",
+      "seconds": 5.309,
+      "command": [
+        "sh",
+        "plan/ws030/tests/run-libvulkan-dispatch-test.sh"
+      ],
+      "log": "plan/ws014/temp/q310-userland-final-20260913/dispatch.log",
+      "log_sha256": "057fd44ca796d10440a13275987c3a40707feb5d781aff8e3469e2b86388863b"
+    },
+    {
+      "name": "context",
+      "status": "PASS",
+      "seconds": 0.48,
+      "command": [
+        "sh",
+        "plan/ws030/tests/run-libvulkan-context.sh"
+      ],
+      "log": "plan/ws014/temp/q310-userland-final-20260913/context.log",
+      "log_sha256": "deebbd2a6a5549d2c0ac3c89d95bb18fc6516a18c163f2cf923f7acae7c38805"
+    },
+    {
+      "name": "commands",
+      "status": "PASS",
+      "seconds": 1.22,
+      "command": [
+        "sh",
+        "plan/ws030/tests/run-libvulkan-commands-test.sh"
+      ],
+      "log": "plan/ws014/temp/q310-userland-final-20260913/commands.log",
+      "log_sha256": "ca56aa9e641b37f7bd88cebafc3a86e5b1bb9c2a8b90b628c58f83f8e638c3c5"
+    },
+    {
+      "name": "external-memory",
+      "status": "PASS",
+      "seconds": 0.547,
+      "command": [
+        "sh",
+        "plan/ws030/tests/run-libvulkan-external-memory.sh"
+      ],
+      "log": "plan/ws014/temp/q310-userland-final-20260913/external-memory.log",
+      "log_sha256": "20fb6ef25272c4c715f3846b195f79cfce20684f8464c0eb8282f3af6d920954"
+    },
+    {
+      "name": "external-fence",
+      "status": "PASS",
+      "seconds": 0.866,
+      "command": [
+        "sh",
+        "plan/ws030/tests/run-libvulkan-external-fence-test.sh"
+      ],
+      "log": "plan/ws014/temp/q310-userland-final-20260913/external-fence.log",
+      "log_sha256": "fa203b731c8d68a0a2219528a041b2b1d68e97d223029e0026de3f2164443183"
+    },
+    {
+      "name": "notify",
+      "status": "PASS",
+      "seconds": 0.85,
+      "command": [
+        "sh",
+        "plan/ws030/tests/run-libvulkan-notify-test.sh"
+      ],
+      "log": "plan/ws014/temp/q310-userland-final-20260913/notify.log",
+      "log_sha256": "211a40e84b074b6164f63c3d6e9ff171ef0933590dbab3fa0d9f5cca957c9fa5"
+    },
+    {
+      "name": "sync",
+      "status": "PASS",
+      "seconds": 0.881,
+      "command": [
+        "sh",
+        "plan/ws030/tests/run-libvulkan-sync-test.sh"
+      ],
+      "log": "plan/ws014/temp/q310-userland-final-20260913/sync.log",
+      "log_sha256": "8efb6be47c84f4ab56c1df0c6226b042a4b8f6accbe7721a0dff63c7cddfb76f"
+    }
+  ],
+  "production_edits": false,
+  "limitations": [
+    "Host fixtures and ABI verification do not replace real QEMU rendering or broad Vulkan conformance acceptance.",
+    "Only the exact input fingerprints recorded here were covered; later source changes require appropriate targeted revalidation."
+  ]
+}

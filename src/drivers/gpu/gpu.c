@@ -10,6 +10,10 @@
  */
 
 #include <drivers/gpu.h>
+#include <drivers/gpu-scanout.h>
+#include <uapi/gpu-allocation.h>
+#include <uapi/gpu-fence.h>
+#include <kern/fence.h>
 #include <kern/cdev.h>
 #include <kern/cred.h>
 #include <kern/file.h>
@@ -25,6 +29,9 @@
 #include <kern/page.h>
 #include <kern/pmem.h>
 #include <kern/vm-device.h>
+#include <kern/clock.h>
+#include <kern/sched.h>
+#include <kern/waitq.h>
 
 #include <errno.h>
 #include <limits.h>
@@ -34,6 +41,7 @@
 #define GPU_DEVICE_BASE		0x00090000U
 #define GPU_RESOURCE_STORAGE	1U
 #define GPU_RESOURCE_BLOB	2U
+#define GPU_RESOURCE_SCANOUT	3U
 
 /*
  * One registered GPU, retained by its owner and every cdev generation.
@@ -53,6 +61,8 @@ struct drv_gpu_device {
 	unsigned online;
 	unsigned sessions;
 	unsigned shares;
+	int error;
+	struct gpu_session *open_sessions;
 	uint64_t identity;
 };
 
@@ -84,6 +94,7 @@ struct gpu_resource {
 	volatile unsigned mapping_count;
 	uint64_t mapping_offset;
 	struct drv_gpu_mapping mapping;
+	struct kernel_handle *scanout_source;
 };
 
 /*
@@ -95,14 +106,37 @@ struct gpu_shared_resource {
 	struct drv_gpu_device *device;
 	void *object;
 	struct gpu_image_descriptor image;
+	struct gpu_allocation_descriptor allocation;
+};
+
+/*
+ * One bounded completion slot embedded in its owning open description.
+ * The registry lock protects state; drain ends backend callbacks before close.
+ * Observers retain a slot until copyout finishes, even after another consumes it.
+ */
+struct drv_gpu_completion {
+	struct gpu_session *session;
+	uint64_t sequence;
+	unsigned listed;
+	unsigned completed;
+	unsigned observers;
+	unsigned consuming;
+	int error;
+};
+
+/* One retained pending producer binding; the registry lock protects every field. */
+struct gpu_fence_binding {
+	struct kernel_handle *handle;
+	uint64_t generation;
+	uint64_t sequence;
 };
 
 /*
  * One open file description shared by dup/fork until its final close.
  *
  *  - Device session ownership keeps backend state alive.
- *  - Busy excludes simultaneous ioctls without holding a core lock across
- *    a backend callback.
+ *  - Busy serializes ordinary ioctls through an interruptible reservation.
+ *  - Completion observers sleep independently, permitting same-fd submission.
  */
 struct gpu_session {
 	struct drv_gpu_device *device;
@@ -113,6 +147,16 @@ struct gpu_session {
 	unsigned writable;
 	unsigned readable;
 	unsigned busy;
+	struct thread *busy_owner;
+	struct gpu_session *next_open;
+	struct wait_queue admission_waitq;
+	struct wait_queue completion_waitq;
+	struct drv_gpu_completion completions[GPU_SUBMIT_MAX];
+	struct gpu_fence_binding fences[GPU_SUBMIT_MAX];
+
+	/* The registry lock protects per-open observation and successful acknowledgement. */
+	uint64_t topology_observed;
+	uint64_t topology_acknowledged;
 };
 
 /*
@@ -162,6 +206,8 @@ static void gpu_session_drop(struct gpu_session *session);
 static int gpu_session_enter(struct gpu_session *session);
 static void gpu_session_leave(struct gpu_session *session);
 static int gpu_info_ioctl(struct gpu_session *session, uintptr_t argument);
+static int gpu_events_snapshot(struct gpu_session *session, uint64_t *sequence);
+static int gpu_events_ioctl(struct gpu_session *session, uintptr_t argument);
 static int gpu_create_ioctl(struct gpu_session *session, uintptr_t argument);
 static int gpu_destroy_ioctl(struct gpu_session *session, uintptr_t argument);
 static int gpu_handle_allocate(uint64_t *handle);
@@ -169,9 +215,27 @@ static int gpu_resource_lookup(struct gpu_session *session, uint64_t handle, str
 static int gpu_resource_reserve(struct gpu_session *session, uint64_t bytes, struct gpu_resource **result);
 static int gpu_user_range(uint64_t address, uint32_t bytes, uintptr_t *pointer);
 static int gpu_capset_ioctl(struct gpu_session *session, uintptr_t argument);
-static int gpu_blob_ioctl(struct gpu_session *session, uintptr_t argument);
+static int gpu_blob_ioctl(struct gpu_session *session, uintptr_t argument, unsigned placed);
 static int gpu_transfer_ioctl(struct gpu_session *session, uintptr_t argument, unsigned writing);
 static int gpu_command_ioctl(struct gpu_session *session, uintptr_t argument);
+static int gpu_submit_ioctl(struct gpu_session *session, uintptr_t argument, uint64_t *sequence);
+static int gpu_wait_ioctl(struct gpu_session *session, uintptr_t argument);
+static int gpu_fence_ioctl(struct gpu_session *session, unsigned long command, uintptr_t argument);
+static int gpu_fence_create_ioctl(struct gpu_session *session, uintptr_t argument);
+static int gpu_fence_bind_ioctl(struct gpu_session *session, uintptr_t argument);
+static int gpu_fence_state_ioctl(struct gpu_session *session, unsigned long command, uintptr_t argument);
+static int gpu_fence_get(struct gpu_session *session, int fd, unsigned foreign, struct kernel_handle **result);
+static int gpu_fence_binding_add(struct gpu_session *session, struct kernel_handle *handle, uint64_t generation, uint64_t sequence);
+static int gpu_fence_binding_end(struct gpu_session *session, struct kernel_handle *handle, uint64_t generation, unsigned release, int status);
+static void gpu_fence_retire(struct gpu_session *session);
+static int gpu_dependency_ioctl(struct gpu_session *session, unsigned long command, uintptr_t argument);
+static int gpu_dependency_wait(struct gpu_session *session, int fd, uint64_t generation, unsigned foreign);
+
+static int gpu_completion_reserve(struct gpu_session *session, uint64_t sequence, struct drv_gpu_completion **result);
+static void gpu_completion_discard(struct drv_gpu_completion *completion);
+static int gpu_completion_observe(struct gpu_session *session, const struct gpu_command_wait *request, struct drv_gpu_completion **result);
+static void gpu_completion_observer_leave(struct drv_gpu_completion *completion, unsigned consume, unsigned reserved);
+static int gpu_completion_deadline(uint64_t timeout, uint64_t *deadline);
 static int gpu_present_ioctl(struct gpu_session *session, uintptr_t argument);
 static int gpu_map_ioctl(struct gpu_session *session, uintptr_t argument);
 static int gpu_mmap(struct file *file, off_t offset, size_t bytes, uint32_t prot, struct vm_device_mapping **result);
@@ -179,11 +243,137 @@ static void gpu_mapping_release(void *owner);
 static int gpu_display_ioctl(struct gpu_session *session, unsigned long command, uintptr_t argument);
 static int gpu_export_ioctl(struct gpu_session *session, uintptr_t argument);
 static int gpu_import_ioctl(struct gpu_session *session, uintptr_t argument);
+static int gpu_allocation_export_ioctl(struct gpu_session *session, uintptr_t argument);
+static int gpu_allocation_import_ioctl(struct gpu_session *session, uintptr_t argument);
+static int gpu_device_query_ioctl(struct gpu_session *session, uintptr_t argument);
+static int gpu_constraints_ioctl(struct gpu_session *session, uintptr_t argument);
+static int gpu_scanout_import(struct gpu_session *session, struct gpu_shared_resource *shared, void **object);
+static int gpu_allocation_validate(struct gpu_resource *resource, const struct gpu_allocation_descriptor *allocation);
 static int gpu_image_validate(struct gpu_resource *resource, const struct gpu_image_descriptor *image);
 static void gpu_shared_release(void *object);
 static int gpu_shared_hold_device(struct drv_gpu_device *device);
-static int gpu_export_install(struct kernel_handle *handle, struct gpu_resource_export *request, uintptr_t argument);
+static int gpu_export_install(struct kernel_handle *handle, void *request, size_t bytes, uint32_t policy, int32_t *fd, uintptr_t argument);
 static const struct kernel_handle_ops *gpu_shared_operations(void);
+
+/*
+ * Publishes exactly one terminal transport result for an accepted command.
+ */
+void
+drv_gpu_complete(
+	struct drv_gpu_completion *completion,
+	int error)
+{
+	struct gpu_fence_binding *binding;
+	unsigned index;
+	unsigned long irq;
+
+	/* A rejected backend submission never supplies a completion obligation. */
+	if (completion == NULL)
+		return;
+
+	/* Publishes the terminal result before waking its stable open description. */
+	irq = spin_lock_irqsave(&gpu_registry_lock);
+
+	if (completion->completed == 0U) {
+		completion->error = error;
+		completion->completed = 1U;
+
+		/* A transport error terminates associated work without claiming GPU execution succeeded. */
+		if (error != 0) {
+			for (index = 0U; index < GPU_SUBMIT_MAX; index++) {
+				binding = &completion->session->fences[index];
+				if (binding->handle != NULL && binding->sequence == completion->sequence)
+					(void)kernel_fence_signal_deferred(binding->handle, binding->generation, completion->session, error);
+			}
+		}
+
+		waitq_wake_all(&completion->session->completion_waitq);
+	}
+
+	spin_unlock_irqrestore(&gpu_registry_lock, irq);
+
+	/* Makes newly readable completion state visible to ordinary poll callers. */
+	poll_notify();
+
+	/* Succeeded: observers may now read the selected transport boundary. */
+	return;
+}
+
+/*
+ * Publishes device loss or checked recovery to retained GPU descriptors.
+ */
+void
+drv_gpu_report_error(
+	struct drv_gpu_device *device,
+	int error)
+{
+	struct gpu_session *session;
+	struct gpu_fence_binding *binding;
+	unsigned index;
+	unsigned long irq;
+
+	/* A transport may fail before its GPU node is published. */
+	if (device == NULL)
+		return;
+
+	/* Wakes both admission and observation when device availability changes. */
+	irq = spin_lock_irqsave(&gpu_registry_lock);
+
+	device->error = error;
+	session = device->open_sessions;
+	while (session != NULL) {
+		/* Device loss terminates every retained producer generation, including pre-submit reservations. */
+		if (error != 0) {
+			for (index = 0U; index < GPU_SUBMIT_MAX; index++) {
+				binding = &session->fences[index];
+				if (binding->handle != NULL)
+					(void)kernel_fence_signal_deferred(binding->handle, binding->generation, session, error);
+			}
+		}
+
+		waitq_wake_all(&session->admission_waitq);
+		waitq_wake_all(&session->completion_waitq);
+		session = session->next_open;
+	}
+
+	spin_unlock_irqrestore(&gpu_registry_lock, irq);
+
+	/* Poll observes loss independently of its requested readiness mask. */
+	poll_notify();
+
+	/* Succeeded: old descriptors see failure and a fresh recovery clears it. */
+	return;
+}
+
+/*
+ * Tests whether a failed backend may rebuild during its sole fresh open.
+ */
+int
+drv_gpu_recovery_ready(
+	struct drv_gpu_device *device)
+{
+	unsigned long irq;
+	int ready;
+
+	/* Recovery is unavailable before GPU registration has established ownership. */
+	if (device == NULL)
+		return 0;
+
+	/* VM device mappings retain their original file and therefore its session count. */
+	ready = 0;
+	irq = spin_lock_irqsave(&gpu_registry_lock);
+
+	if (device->online != 0U &&
+	    device->sessions == 1U &&
+	    device->shares == 0U &&
+	    device->open_sessions == NULL)
+		ready = 1;
+
+	spin_unlock_irqrestore(&gpu_registry_lock, irq);
+
+	/* Succeeded: a true result excludes every old file, mapping and exported allocation. */
+	return ready;
+}
 
 /*
  * Registers one initialized backend and publishes its character device.
@@ -327,6 +517,9 @@ drv_gpu_unregister(
 
 	spin_unlock_irqrestore(&gpu_registry_lock, irq);
 
+	/* Wakes admissions and observers before withdrawal cleanup proceeds. */
+	drv_gpu_report_error(device, ENODEV);
+
 	/* Old inode generations remain retained by the common cdev core. */
 	node = device->node;
 	if (node != NULL) {
@@ -388,7 +581,9 @@ gpu_ops_validate(
 	/* Rejects bits that have no defined framework operation. */
 	if ((ops->capabilities & ~(GPU_CAP_RESOURCE | GPU_CAP_CAPSET |
 	    GPU_CAP_BLOB | GPU_CAP_TRANSFER | GPU_CAP_COMMAND |
-	    GPU_CAP_PRESENT | GPU_CAP_MAPPING | GPU_CAP_DISPLAY | GPU_CAP_SHARE)) != 0)
+	    GPU_CAP_PRESENT | GPU_CAP_MAPPING | GPU_CAP_DISPLAY | GPU_CAP_SHARE |
+	    GPU_CAP_NOTIFICATION | GPU_CAP_ALLOCATION_SHARE | GPU_CAP_FENCE |
+	    GPU_CAP_DISPLAY_EVENTS)) != 0)
 		return EOPNOTSUPP;
 
 	/* Storage allocation must agree with its advertised capability. */
@@ -413,8 +608,13 @@ gpu_ops_validate(
 			return EINVAL;
 	}
 
+	/* A placed allocator extends an existing blob namespace and its ordinary cleanup. */
+	if (ops->blob_create_placed != NULL && (ops->capabilities & GPU_CAP_BLOB) == 0U)
+		return EINVAL;
+
 	/* Every resource type shares one infallible terminal cleanup operation. */
-	if ((ops->capabilities & (GPU_CAP_RESOURCE | GPU_CAP_BLOB)) != 0) {
+	if ((ops->capabilities & (GPU_CAP_RESOURCE | GPU_CAP_BLOB)) != 0 ||
+	    (ops->scanout != NULL && ops->scanout->import_image != NULL)) {
 		/* Every accepted allocation must have a matching final release. */
 		if (ops->resource_destroy == NULL)
 			return EINVAL;
@@ -457,6 +657,19 @@ gpu_ops_validate(
 			return EINVAL;
 	}
 
+	/* Queued completion requires submission and a final-close callback barrier. */
+	if ((ops->capabilities & GPU_CAP_NOTIFICATION) != 0U) {
+		/* An incomplete optional table cannot retain asynchronous callbacks safely. */
+		if (ops->commands == NULL)
+			return EINVAL;
+
+		/* Submission and drain together bound every accepted request lifetime. */
+		if (ops->commands->submit == NULL || ops->commands->drain == NULL)
+			return EINVAL;
+	} else if (ops->commands != NULL) {
+		return EINVAL;
+	}
+
 	/* Presentation requires an explicit backend ownership operation. */
 	if ((ops->capabilities & GPU_CAP_PRESENT) != 0) {
 		/* A presentation callback arbitrates scanout ownership across sessions. */
@@ -493,15 +706,31 @@ gpu_ops_validate(
 		    ops->display->wait == NULL)
 			return EINVAL;
 
-		/* Whole-frame presentation consumes storage allocated by this same backend. */
-		if ((ops->capabilities & GPU_CAP_RESOURCE) == 0)
+		/* A display-only backend may consume imported allocations without creating render storage. */
+		if ((ops->capabilities & GPU_CAP_RESOURCE) == 0 &&
+		    (ops->scanout == NULL || ops->scanout->import_image == NULL))
 			return EINVAL;
 	} else if (ops->display != NULL) {
 		return EINVAL;
 	}
 
+	/* Display event readiness requires an explicitly advertised nonblocking snapshot. */
+	if ((ops->capabilities & GPU_CAP_DISPLAY_EVENTS) != 0U) {
+		/* Events cannot exist without an ordinary display inventory to re-query. */
+		if (ops->display == NULL)
+			return EINVAL;
+
+		/* The snapshot must remain usable while ordinary presentation is waiting. */
+		if (ops->display->events == NULL)
+			return EINVAL;
+	} else if (ops->display != NULL) {
+		/* Hidden callbacks must not contradict the published capability mask. */
+		if (ops->display->events != NULL)
+			return EINVAL;
+	}
+
 	/* Exported allocations need independent release and receiver-context import together. */
-	if ((ops->capabilities & GPU_CAP_SHARE) != 0) {
+	if ((ops->capabilities & (GPU_CAP_SHARE | GPU_CAP_ALLOCATION_SHARE)) != 0) {
 		/* Shared resources must originate in a supported blob namespace. */
 		if ((ops->capabilities & GPU_CAP_BLOB) == 0)
 			return EINVAL;
@@ -517,6 +746,15 @@ gpu_ops_validate(
 			return EINVAL;
 	} else if (ops->share != NULL) {
 		return EINVAL;
+	}
+
+	/* Optional scanout import still requires a complete display lifetime and constraints query. */
+	if (ops->scanout != NULL) {
+		if (ops->scanout->query_device == NULL)
+			return EINVAL;
+		if (ops->scanout->import_image != NULL &&
+		    (!(ops->capabilities & GPU_CAP_DISPLAY) || ops->scanout->constraints == NULL))
+			return EINVAL;
 	}
 
 	/* Succeeded: every advertised operation has its required lifecycle. */
@@ -614,6 +852,10 @@ gpu_open(
 	if (session == NULL)
 		return ENOMEM;
 
+	/* Initializes both independent wait channels before publishing the open. */
+	waitq_init(&session->admission_waitq, "GPU session admission");
+	waitq_init(&session->completion_waitq, "GPU command completion");
+
 	/* Captures write authority from the original open mode. */
 	flags = file_status_flags_get(file);
 	session->device = device;
@@ -668,6 +910,14 @@ gpu_open(
 		return error;
 	}
 
+	/* Links the initialized open so removal and failure wake all its waiters. */
+	irq = spin_lock_irqsave(&gpu_registry_lock);
+
+	session->next_open = device->open_sessions;
+	device->open_sessions = session;
+
+	spin_unlock_irqrestore(&gpu_registry_lock, irq);
+
 	/* Publishes this session only after backend open has succeeded. */
 	file->f_data = session;
 
@@ -693,6 +943,13 @@ gpu_close(
 	file->f_data = NULL;
 	device = session->device;
 
+	/* Producer authority ends now; an uncertain native drain must not delay shared error notification. */
+	gpu_fence_retire(session);
+
+	/* Keep resources and embedded completion storage alive until every native callback has retired. */
+	if (device->ops->commands != NULL)
+		device->ops->commands->drain(device->private_data, session->backend);
+
 	/* Destroys all owned objects while their backend session remains valid. */
 	while (session->resources != NULL) {
 		resource = session->resources;
@@ -701,6 +958,8 @@ gpu_close(
 			device->private_data,
 			session->backend,
 			resource->object);
+		if (resource->scanout_source != NULL)
+			handle_put(resource->scanout_source);
 		kern_free(resource);
 
 		/* Final close consumes the session count after each retained object retires. */
@@ -721,10 +980,28 @@ gpu_session_drop(
 	struct gpu_session *session)
 {
 	struct drv_gpu_device *device;
+	struct gpu_session **position;
 	unsigned long irq;
 
-	/* Frees per-open memory before allowing the final hardware teardown. */
+	/* Removes this open before any failure notification can walk its wait queues. */
 	device = session->device;
+	irq = spin_lock_irqsave(&gpu_registry_lock);
+
+	position = &device->open_sessions;
+	while (*position != NULL) {
+		/* Failed backend opens were never linked into the published-open list. */
+		if (*position == session) {
+			*position = session->next_open;
+			break;
+		}
+
+		/* Advances only over retained opens protected by the registry lock. */
+		position = &(*position)->next_open;
+	}
+
+	spin_unlock_irqrestore(&gpu_registry_lock, irq);
+
+	/* Frees per-open memory while its device still has a withdrawal barrier. */
 	kern_free(session);
 
 	/* Zero tells the owner that every backend close callback has finished. */
@@ -738,30 +1015,56 @@ gpu_session_drop(
 	return;
 }
 
-/* Reserves one ioctl without holding a lock through driver execution. */
+/* Serializes ordinary operations without holding a lock through driver execution. */
 static int
 gpu_session_enter(
 	struct gpu_session *session)
 {
+	struct thread *caller;
+	uint64_t observed;
 	unsigned long irq;
 	int error;
 
-	/* Refuses operations after withdrawal and serializes a shared fd. */
+	/* Waits for the shared handle table while completion observations remain independent. */
 	error = 0;
+	caller = thread_current();
 	irq = spin_lock_irqsave(&gpu_registry_lock);
 
-	if (session->device->online == 0) {
+	/* A recursive kernel callback cannot sleep waiting for its own outer operation. */
+	if (session->busy != 0U && session->busy_owner == caller) {
+		spin_unlock_irqrestore(&gpu_registry_lock, irq);
+		return EBUSY;
+	}
+
+	while (session->busy != 0U && session->device->online != 0U) {
+		observed = waitq_sequence(&session->admission_waitq);
+		error = waitq_sleep(
+			&session->admission_waitq,
+			&gpu_registry_lock,
+			observed,
+			0U,
+			WAITQ_INTERRUPTIBLE);
+		if (error != 0 && error != EAGAIN)
+			break;
+	}
+
+	/* Admission rechecks withdrawal after every wakeup and before reserving the table. */
+	if (error == EAGAIN)
+		error = 0;
+
+	/* Device withdrawal always refuses new resource-table operations. */
+	if (error == 0 && session->device->online == 0U)
 		error = ENODEV;
-	} else if (session->busy != 0) {
-		error = EBUSY;
-	} else {
-		/* Busy protects this session's handle table through the user copy. */
-		session->busy = 1;
+
+	/* Busy now belongs to this operation through backend work and user copyout. */
+	if (error == 0) {
+		session->busy = 1U;
+		session->busy_owner = caller;
 	}
 
 	spin_unlock_irqrestore(&gpu_registry_lock, irq);
 
-	/* Reports a removal or another ioctl retaining the session. */
+	/* Reports interruption or withdrawal without taking the reservation. */
 	if (error != 0)
 		return error;
 
@@ -780,6 +1083,8 @@ gpu_session_leave(
 	irq = spin_lock_irqsave(&gpu_registry_lock);
 
 	session->busy = 0;
+	session->busy_owner = NULL;
+	waitq_wake_all(&session->admission_waitq);
 
 	spin_unlock_irqrestore(&gpu_registry_lock, irq);
 
@@ -801,6 +1106,51 @@ gpu_ioctl(
 	session = file->f_data;
 	if (session == NULL)
 		return ENODEV;
+
+	/* A completion wait must allow another thread on this fd to submit work. */
+	if (command == GPU_COMMAND_WAIT) {
+		error = gpu_wait_ioctl(session, argument);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the selected observation never retained table admission. */
+		return 0;
+	}
+
+	/* Topology observation must remain responsive while this open is presenting. */
+	if (command == GPU_DISPLAY_EVENTS) {
+		error = gpu_events_ioctl(session, argument);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: observation or exact acknowledgement did not retain table admission. */
+		return 0;
+	}
+
+	/* Shared completion state must progress while another thread waits before hardware submission. */
+	if (command == GPU_FENCE_CREATE ||
+	    command == GPU_FENCE_QUERY ||
+	    command == GPU_FENCE_WAIT ||
+	    command == GPU_FENCE_RESET ||
+	    command == GPU_FENCE_SIGNAL ||
+	    command == GPU_FENCE_BIND) {
+		error = gpu_fence_ioctl(session, command, argument);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the independent completion payload operation has finished. */
+		return 0;
+	}
+
+	/* Dependencies are resolved before ordinary session admission can block their producer. */
+	if (command == GPU_COMMAND_SUBMIT_SYNC || command == GPU_DISPLAY_PRESENT_SYNC) {
+		error = gpu_dependency_ioctl(session, command, argument);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the submitted operation retained its exact prerequisite and completion capabilities. */
+		return 0;
+	}
 
 	/* Holds the session table across validation, callbacks, and copyout. */
 	error = gpu_session_enter(session);
@@ -827,7 +1177,11 @@ gpu_ioctl(
 		break;
 	case GPU_BLOB_CREATE:
 		/* Allocates a protocol blob owned by this open description. */
-		error = gpu_blob_ioctl(session, argument);
+		error = gpu_blob_ioctl(session, argument, 0U);
+		break;
+	case GPU_BLOB_CREATE_PLACED:
+		/* Physical conditions must be guaranteed before a blob ownership token is published. */
+		error = gpu_blob_ioctl(session, argument, 1U);
 		break;
 	case GPU_RESOURCE_READ:
 		/* Copies bytes out of a retained resource after checking read authority. */
@@ -836,6 +1190,10 @@ gpu_ioctl(
 	case GPU_RESOURCE_WRITE:
 		/* Copies validated userspace bytes into a retained resource. */
 		error = gpu_transfer_ioctl(session, argument, 1);
+		break;
+	case GPU_COMMAND_SUBMIT:
+		/* Retains bounded independent command bytes and a session completion identity. */
+		error = gpu_submit_ioctl(session, argument, NULL);
 		break;
 	case GPU_COMMAND:
 		/* Submits an independent kernel copy of the backend command stream. */
@@ -848,6 +1206,14 @@ gpu_ioctl(
 	case GPU_RESOURCE_IMPORT:
 		/* Imports a typed capability into this independent GPU open. */
 		error = gpu_import_ioctl(session, argument);
+		break;
+	case GPU_ALLOCATION_EXPORT:
+		/* Exports allocation authority without imposing a linear image layout. */
+		error = gpu_allocation_export_ioctl(session, argument);
+		break;
+	case GPU_ALLOCATION_IMPORT:
+		/* Attaches an allocation and returns its immutable userspace protocol metadata. */
+		error = gpu_allocation_import_ioctl(session, argument);
 		break;
 	case GPU_RESOURCE_MAP:
 		/* Returns a session-private mmap token without exposing physical addresses. */
@@ -862,6 +1228,14 @@ gpu_ioctl(
 		/* Native display requests share validation and access admission. */
 		error = gpu_display_ioctl(session, command, argument);
 		break;
+	case GPU_DEVICE_QUERY:
+		/* Resolves stable node roles without requiring a renderer capset. */
+		error = gpu_device_query_ioctl(session, argument);
+		break;
+	case GPU_DISPLAY_CONSTRAINTS:
+		/* Display allocation requirements precede swapchain path selection. */
+		error = gpu_constraints_ioctl(session, argument);
+		break;
 	case GPU_PRESENT:
 		/* Presents only a complete bounded image in ordinary owned storage. */
 		error = gpu_present_ioctl(session, argument);
@@ -871,6 +1245,10 @@ gpu_ioctl(
 		error = EOPNOTSUPP;
 		break;
 	}
+
+	/* A retained ioctl file keeps the GPU wrapper valid while backend loss is published. */
+	if (error == ENODEV || error == ETIMEDOUT)
+		drv_gpu_report_error(session->device, error);
 
 	/* Frees dispatch ownership on both success and failure. */
 	gpu_session_leave(session);
@@ -883,7 +1261,7 @@ gpu_ioctl(
 	return 0;
 }
 
-/* Reports removal without pretending that rendering events are implemented. */
+/* Reports independent command, display-change and device-loss readiness. */
 static int
 gpu_poll(
 	struct file *file,
@@ -891,16 +1269,17 @@ gpu_poll(
 	short *revents)
 {
 	struct gpu_session *session;
+	struct drv_gpu_completion *completion;
+	unsigned index;
 	unsigned long irq;
-
-	/* Removal is reported regardless of the caller's requested event mask. */
-	(void)events;
+	uint64_t sequence;
+	int error;
 
 	/* A poll result must have storage owned by the VFS caller. */
 	if (revents == NULL)
 		return EINVAL;
 
-	/* Samples online state while the file keeps its session alive. */
+	/* Samples readiness while the file retains its open description. */
 	*revents = 0;
 	session = file->f_data;
 	if (session == NULL) {
@@ -908,15 +1287,175 @@ gpu_poll(
 		return 0;
 	}
 
-	/* Removed GPUs wake their retained descriptors with an error and hangup. */
+	/* Device failure is independent of the caller's selected event mask. */
 	irq = spin_lock_irqsave(&gpu_registry_lock);
 
-	if (session->device->online == 0)
-		*revents = POLLERR | POLLHUP;
+	if (session->device->online == 0U)
+		*revents |= POLLERR | POLLHUP;
+
+	/* A failed but registered GPU can later recover after all old references retire. */
+	if (session->device->error != 0)
+		*revents |= POLLERR;
+
+	/* Readability persists until every terminal record has been consumed. */
+	for (index = 0U; index < GPU_SUBMIT_MAX; index++) {
+		completion = &session->completions[index];
+		if (completion->listed != 0U && completion->completed != 0U) {
+			*revents |= events & (POLLIN | POLLRDNORM);
+			break;
+		}
+	}
 
 	spin_unlock_irqrestore(&gpu_registry_lock, irq);
 
-	/* Succeeded: only removal readiness is exposed by this framework. */
+	/* Only readable display-event opens perform the independent nonblocking snapshot. */
+	if ((events & POLLPRI) != 0 && session->readable != 0U &&
+	    (session->device->ops->capabilities & GPU_CAP_DISPLAY_EVENTS) != 0U) {
+		error = gpu_events_snapshot(session, &sequence);
+		if (error != 0) {
+			*revents |= POLLERR;
+		} else {
+			/* A concurrent ACK may clear only the sequence that its own copyout confirmed. */
+			irq = spin_lock_irqsave(&gpu_registry_lock);
+
+			if (sequence > session->topology_acknowledged)
+				*revents |= POLLPRI;
+
+			spin_unlock_irqrestore(&gpu_registry_lock, irq);
+		}
+	}
+
+	/* Succeeded: each readiness bit retains its own completion or topology meaning. */
+	return 0;
+}
+
+/* Samples driver-owned event state while the retained file excludes backend destruction. */
+static int
+gpu_events_snapshot(
+	struct gpu_session *session,
+	uint64_t *sequence)
+{
+	struct drv_gpu_device *device;
+	unsigned long irq;
+	int error;
+
+	/* Device errors are observed without admitting an ordinary ioctl or calling the backend. */
+	device = session->device;
+	irq = spin_lock_irqsave(&gpu_registry_lock);
+
+	error = device->error;
+	if (device->online == 0U)
+		error = ENODEV;
+
+	spin_unlock_irqrestore(&gpu_registry_lock, irq);
+
+	/* An offline or failed instance cannot yield an authoritative topology snapshot. */
+	if (error != 0)
+		return error;
+
+	/* The immutable callback may take its short IRQ-safe event lock, never a controller mutex. */
+	*sequence = 0U;
+	error = device->ops->display->events(device->private_data, session->backend, sequence);
+	if (error != 0)
+		return error;
+
+	/* Zero would let a fresh open mistake an unqueried inventory for acknowledged state. */
+	if (*sequence == 0U)
+		return EIO;
+
+	/* Succeeded: the backend remains retained even if unregister raced this callback. */
+	return 0;
+}
+
+/* Publishes an event snapshot before committing any exact acknowledgement to this open. */
+static int
+gpu_events_ioctl(
+	struct gpu_session *session,
+	uintptr_t argument)
+{
+	struct gpu_display_events request;
+	uint64_t sequence;
+	uint64_t acknowledged;
+	unsigned long irq;
+	int error;
+
+	/* Event queries cannot expose an unadvertised callback or bypass read authority. */
+	if ((session->device->ops->capabilities & GPU_CAP_DISPLAY_EVENTS) == 0U)
+		return EOPNOTSUPP;
+
+	/* Acknowledging this open's observation does not mutate hardware or require write access. */
+	if (session->readable == 0U)
+		return EACCES;
+
+	/* Every output field is input zero, independent from any previous QUERY reply. */
+	error = copyin(argument, &request, sizeof(request));
+	if (error != 0)
+		return error;
+
+	/* Versioned fixed-width framing must agree before any state is sampled. */
+	if (request.version != GPU_ABI_VERSION || request.size != sizeof(request))
+		return EINVAL;
+
+	/* Unknown flags or reused output fields cannot acquire acknowledgement authority. */
+	if ((request.flags & ~GPU_DISPLAY_EVENT_ACK) != 0U ||
+	    request.events != 0U || request.sequence != 0U || request.reserved != 0U)
+		return EINVAL;
+
+	/* QUERY has no acknowledgement input; ACK always identifies one earlier snapshot. */
+	if (request.flags == 0U) {
+		/* A non-destructive query cannot carry an implicit acknowledgement. */
+		if (request.ack_sequence != 0U)
+			return EINVAL;
+	} else if (request.ack_sequence == 0U) {
+		return EINVAL;
+	}
+
+	/* Driver state is obtained outside the registry lock and ordinary session admission. */
+	error = gpu_events_snapshot(session, &sequence);
+	if (error != 0)
+		return error;
+
+	/* Only a snapshot already returned successfully to this open may be acknowledged. */
+	error = 0;
+	irq = spin_lock_irqsave(&gpu_registry_lock);
+
+	acknowledged = session->topology_acknowledged;
+	if (request.ack_sequence > session->topology_observed || request.ack_sequence > sequence)
+		error = EINVAL;
+
+	spin_unlock_irqrestore(&gpu_registry_lock, irq);
+
+	/* Rejection leaves both the observed sequence and readiness unchanged. */
+	if (error != 0)
+		return error;
+
+	/* The response describes the snapshot after this requested acknowledgement, not future events. */
+	if (request.ack_sequence > acknowledged)
+		acknowledged = request.ack_sequence;
+
+	/* Newer sequence values remain pending even when an older snapshot is acknowledged. */
+	request.sequence = sequence;
+	if (sequence > acknowledged)
+		request.events = GPU_DISPLAY_EVENT_CHANGE;
+
+	/* A failed user copy may have partial bytes but can never consume notification state. */
+	error = copyout(&request, argument, sizeof(request));
+	if (error != 0)
+		return error;
+
+	/* Concurrent queries and acknowledgements monotonically advance their independent cursors. */
+	irq = spin_lock_irqsave(&gpu_registry_lock);
+
+	if (sequence > session->topology_observed)
+		session->topology_observed = sequence;
+
+	/* A racing newer event is never acknowledged through this older exact sequence. */
+	if (request.ack_sequence > session->topology_acknowledged)
+		session->topology_acknowledged = request.ack_sequence;
+
+	spin_unlock_irqrestore(&gpu_registry_lock, irq);
+
+	/* Succeeded: only the successfully returned observation and requested ACK were committed. */
 	return 0;
 }
 
@@ -1069,10 +1608,15 @@ gpu_destroy_ioctl(
 	if (session->writable == 0)
 		return EACCES;
 
-	/* Keeps optional cleanup callbacks paired with their advertised allocator. */
+	/* Imported scanout backing also owns an ordinary destroyable resource. */
 	device = session->device;
-	if ((device->ops->capabilities & (GPU_CAP_RESOURCE | GPU_CAP_BLOB)) == 0)
-		return EOPNOTSUPP;
+	if ((device->ops->capabilities & (GPU_CAP_RESOURCE | GPU_CAP_BLOB)) == 0) {
+		if (device->ops->scanout == NULL)
+			return EOPNOTSUPP;
+
+		if (device->ops->scanout->import_image == NULL)
+			return EOPNOTSUPP;
+	}
 
 	/* Copies the versioned release request without user pointer retention. */
 	error = copyin(argument, &request, sizeof(request));
@@ -1103,6 +1647,8 @@ gpu_destroy_ioctl(
 		device->private_data,
 		session->backend,
 		resource->object);
+	if (resource->scanout_source != NULL)
+		handle_put(resource->scanout_source);
 	*link = resource->next;
 
 	/* The destroyed object no longer consumes the backend's per-session capacity. */
@@ -1327,10 +1873,14 @@ gpu_capset_ioctl(
 static int
 gpu_blob_ioctl(
 	struct gpu_session *session,
-	uintptr_t argument)
+	uintptr_t argument,
+	unsigned placed)
 {
 	struct drv_gpu_device *device;
 	struct gpu_blob_create request;
+	struct gpu_blob_create_placed extended;
+	size_t bytes;
+	unsigned constrained;
 	void *object;
 	uint32_t resource_id;
 	struct gpu_resource *resource;
@@ -1345,14 +1895,44 @@ gpu_blob_ioctl(
 	if ((device->ops->capabilities & GPU_CAP_BLOB) == 0)
 		return EOPNOTSUPP;
 
-	/* Copies the fixed request independently of any mutable caller buffer. */
-	error = copyin(argument, &request, sizeof(request));
+	/* Both layouts share the old prefix while only the new command reads placement conditions. */
+	memset(&extended, 0, sizeof(extended));
+	bytes = sizeof(request);
+	if (placed != 0U)
+		bytes = sizeof(extended);
+
+	/* Copying only the selected request preserves the legacy caller's exact buffer boundary. */
+	error = copyin(argument, &extended, bytes);
 	if (error != 0)
 		return error;
 
-	/* Refuses unknown layouts before reading blob allocation parameters. */
-	if (request.version != GPU_ABI_VERSION || request.size != sizeof(request))
+	/* Refuses unknown layouts before normalizing the legacy backend request. */
+	request = extended.blob;
+	if (request.version != GPU_ABI_VERSION || request.size != bytes)
 		return EINVAL;
+
+	/* The ordinary allocator always receives its unchanged legacy request header. */
+	request.size = sizeof(request);
+
+	/* Unknown physical conditions or nonzero reserved fields cannot reach a backend. */
+	if (extended.placement.reserved != 0U ||
+	    (extended.placement.flags & ~(GPU_PLACEMENT_DMA32 | GPU_PLACEMENT_CONTIGUOUS | GPU_PLACEMENT_COHERENT)) != 0U)
+		return EINVAL;
+
+	/* A physical base alignment is meaningful only when it is a power of two. */
+	if (extended.placement.alignment != 0U &&
+	    (extended.placement.alignment & (extended.placement.alignment - 1U)) != 0U)
+		return EINVAL;
+
+	/* Any nontrivial requirement needs the backend that can inspect or arrange actual backing. */
+	constrained = 0U;
+	if (extended.placement.flags != 0U ||
+	    extended.placement.max_dma_address != 0U || extended.placement.alignment > 1U)
+		constrained = 1U;
+
+	/* Missing physical support is rejected before allocating even a common resource wrapper. */
+	if (constrained != 0U && device->ops->blob_create_placed == NULL)
+		return ENOTSUP;
 
 	/* Blob flags select mapping and independent sharing without changing their wire values. */
 	if ((request.flags & ~(GPU_BLOB_MAPPABLE | GPU_BLOB_SHAREABLE | GPU_BLOB_CROSS_DEVICE)) != 0)
@@ -1365,7 +1945,7 @@ gpu_blob_ioctl(
 
 	/* Sharing flags require the complete backend capability. */
 	if ((request.flags & (GPU_BLOB_SHAREABLE | GPU_BLOB_CROSS_DEVICE)) != 0 &&
-	    (device->ops->capabilities & GPU_CAP_SHARE) == 0)
+	    (device->ops->capabilities & (GPU_CAP_SHARE | GPU_CAP_ALLOCATION_SHARE)) == 0)
 		return EOPNOTSUPP;
 
 	/* Allocation outputs must not contain stale handles or backend identities. */
@@ -1383,12 +1963,26 @@ gpu_blob_ioctl(
 	/* Receives only backend-owned identity, never a kernel or userspace pointer. */
 	object = NULL;
 	resource_id = 0;
-	error = device->ops->blob_create(
-		device->private_data,
-		session->backend,
-		&request,
-		&object,
-		&resource_id);
+	if (constrained != 0U) {
+		/* The placed backend sees the reserved identity and every immutable condition together. */
+		extended.blob.handle = request.handle;
+		error = device->ops->blob_create_placed(
+			device->private_data,
+			session->backend,
+			&extended,
+			&object,
+			&resource_id);
+	} else {
+		/* Unconstrained requests retain exactly the pre-existing allocation behavior. */
+		error = device->ops->blob_create(
+			device->private_data,
+			session->backend,
+			&request,
+			&object,
+			&resource_id);
+	}
+
+	/* Failed callbacks retain no backend object, including a rejected physical allocation. */
 	if (error != 0) {
 		kern_free(resource);
 		return error;
@@ -1409,7 +2003,9 @@ gpu_blob_ioctl(
 
 	/* Rolls the allocation back when userspace cannot receive its ownership token. */
 	request.resource_id = resource_id;
-	error = copyout(&request, argument, sizeof(request));
+	extended.blob = request;
+	extended.blob.size = (uint32_t)bytes;
+	error = copyout(&extended, argument, bytes);
 	if (error != 0) {
 		device->ops->resource_destroy(device->private_data, session->backend, object);
 		kern_free(resource);
@@ -2140,7 +2736,7 @@ gpu_display_ioctl(
 		/* Blob presentation consumes only imported or exported allocation resources. */
 		if ((request.present.flags & GPU_DISPLAY_PRESENT_BLOB) != 0) {
 			/* Shared scanout requires allocation ownership in the blob namespace. */
-			if (resource->kind != GPU_RESOURCE_BLOB)
+			if (resource->kind != GPU_RESOURCE_BLOB && resource->kind != GPU_RESOURCE_SCANOUT)
 				return EINVAL;
 		} else {
 			/* Legacy copied presentation keeps its ordinary storage contract. */
@@ -2203,11 +2799,479 @@ static const struct kernel_handle_ops *
 gpu_shared_operations(void)
 {
 	static const struct kernel_handle_ops operations = {
-		gpu_shared_release
+		gpu_shared_release,
+		NULL
 	};
 
 	/* Succeeded: every GPU capability uses the same verified payload contract. */
 	return &operations;
+}
+
+/* Validates allocation authority without interpreting a userspace image or buffer protocol. */
+static int
+gpu_allocation_validate(
+	struct gpu_resource *resource,
+	const struct gpu_allocation_descriptor *allocation)
+{
+	uint32_t index;
+
+	/* Only the exact versioned metadata envelope has a defined import representation. */
+	if (allocation->version != GPU_ABI_VERSION || allocation->size != sizeof(*allocation))
+		return EINVAL;
+
+	/* The exported capability owns the whole resource; K supplies its device identity. */
+	if (allocation->device_id != 0U ||
+	    resource->kind != GPU_RESOURCE_BLOB ||
+	    allocation->allocation_bytes != resource->bytes)
+		return EINVAL;
+
+	/* A nonzero userspace schema identifies the immutable metadata contract. */
+	if (allocation->schema == 0U || allocation->metadata_bytes > GPU_ALLOCATION_METADATA_MAX)
+		return EINVAL;
+
+	/* Unused bytes cannot carry uninitialized or ambiguous protocol data across the fd. */
+	for (index = allocation->metadata_bytes; index < GPU_ALLOCATION_METADATA_MAX; index++) {
+		/* The entire returned envelope has a deterministic representation. */
+		if (allocation->metadata[index] != 0U)
+			return EINVAL;
+	}
+
+	/* Succeeded: the bounded opaque description grants exactly this allocation's ownership. */
+	return 0;
+}
+
+/* Exports an allocation with userspace metadata independent from native scanout eligibility. */
+static int
+gpu_allocation_export_ioctl(
+	struct gpu_session *session,
+	uintptr_t argument)
+{
+	struct gpu_allocation_export request;
+	struct gpu_shared_resource *shared;
+	struct gpu_resource *resource;
+	struct drv_gpu_device *device;
+	struct kernel_handle *handle;
+	const struct kernel_handle_ops *operations;
+	int error;
+
+	/* Export grants mutable allocation authority and requires a writable source open. */
+	if (session->writable == 0U)
+		return EACCES;
+
+	/* Older image-only sharing backends do not receive a null image contract. */
+	device = session->device;
+	if ((device->ops->capabilities & GPU_CAP_ALLOCATION_SHARE) == 0U)
+		return EOPNOTSUPP;
+
+	/* Snapshot the complete envelope before resolving any resource or userspace metadata. */
+	error = copyin(argument, &request, sizeof(request));
+	if (error != 0)
+		return error;
+
+	/* A new export has no preexisting fd and accepts only explicit inheritance policies. */
+	if (request.version != GPU_ABI_VERSION ||
+	    request.size != sizeof(request) ||
+	    request.fd != -1 ||
+	    (request.flags & ~(GPU_HANDLE_CLOEXEC | GPU_HANDLE_CLOFORK)) != 0U)
+		return EINVAL;
+
+	/* Foreign resource identifiers cannot grant storage from another open. */
+	error = gpu_resource_lookup(session, request.handle, &resource);
+	if (error != 0)
+		return error;
+
+	/* Validate the opaque envelope without imposing display geometry or linear tiling. */
+	error = gpu_allocation_validate(resource, &request.allocation);
+	if (error != 0)
+		return error;
+
+	/* The independent payload carries only the allocation authority and immutable metadata. */
+	shared = kern_calloc(1U, sizeof(*shared));
+	if (shared == NULL)
+		return ENOMEM;
+
+	/* Device withdrawal cannot retire backend state while this capability remains alive. */
+	error = gpu_shared_hold_device(device);
+	if (error != 0) {
+		kern_free(shared);
+		return error;
+	}
+
+	/* From here the payload finalizer owns the device reference on every failure path. */
+	request.allocation.device_id = device->identity;
+	shared->device = device;
+	shared->allocation = request.allocation;
+	error = device->ops->share->export_resource(
+		device->private_data,
+		session->backend,
+		resource->object,
+		NULL,
+		&shared->object);
+	if (error != 0) {
+		gpu_shared_release(shared);
+		return error;
+	}
+
+	/* Successful backend export must return exactly one releasable ownership reference. */
+	if (shared->object == NULL) {
+		gpu_shared_release(shared);
+		return EIO;
+	}
+
+	/* The typed kernel handle consumes the payload only after wrapper allocation succeeds. */
+	operations = gpu_shared_operations();
+	error = handle_create(KERNEL_HANDLE_GPU, operations, shared, &handle);
+	if (error != 0) {
+		gpu_shared_release(shared);
+		return error;
+	}
+
+	/* Copyout and fd reservation commit use the same ownership protocol as image export. */
+	error = gpu_export_install(handle, &request, sizeof(request), request.flags, &request.fd, argument);
+	if (error != 0) {
+		handle_put(handle);
+		return error;
+	}
+
+	/* Succeeded: the installed fd retains allocation ownership independently of its source. */
+	return 0;
+}
+
+/* Imports allocation authority while keeping its opaque userspace description immutable. */
+static int
+gpu_allocation_import_ioctl(
+	struct gpu_session *session,
+	uintptr_t argument)
+{
+	struct gpu_allocation_import request;
+	struct gpu_allocation_descriptor empty;
+	struct gpu_shared_resource *shared;
+	struct gpu_resource *resource;
+	struct drv_gpu_device *device;
+	struct kernel_handle *handle;
+	const struct kernel_handle_ops *operations;
+	void *object;
+	uint32_t resource_id;
+	int different;
+	int error;
+
+	/* Imported allocation ownership requires a writable destination namespace. */
+	if (session->writable == 0U)
+		return EACCES;
+
+	/* Only backends advertising allocation-only sharing can attach this capability. */
+	device = session->device;
+	if ((device->ops->capabilities & GPU_CAP_ALLOCATION_SHARE) == 0U)
+		return EOPNOTSUPP;
+
+	/* The input fd is the sole authority; all resource and metadata fields are outputs. */
+	error = copyin(argument, &request, sizeof(request));
+	if (error != 0)
+		return error;
+
+	/* Reject stale outputs or reserved values before retaining a foreign kernel object. */
+	if (request.version != GPU_ABI_VERSION ||
+	    request.size != sizeof(request) ||
+	    request.fd < 0 ||
+	    request.flags != 0U ||
+	    request.handle != 0U ||
+	    request.resource_id != 0U ||
+	    request.reserved != 0U)
+		return EINVAL;
+
+	/* Receiver-supplied metadata can never replace the stored sender contract. */
+	memset(&empty, 0, sizeof(empty));
+	different = memcmp(&request.allocation, &empty, sizeof(empty));
+	if (different != 0)
+		return EINVAL;
+
+	/* A strong typed reference remains valid across concurrent close of the input fd. */
+	handle = handle_fd_get(request.fd, KERNEL_HANDLE_GPU);
+	if (handle == NULL)
+		return EINVAL;
+
+	/* Verify the payload implementation before dereferencing its private state. */
+	operations = gpu_shared_operations();
+	if (handle->ops != operations) {
+		handle_put(handle);
+		return EINVAL;
+	}
+
+	/* Image capabilities and allocation-only capabilities have distinct immutable envelopes. */
+	shared = handle->object;
+	if (shared->allocation.version == 0U) {
+		handle_put(handle);
+		return EINVAL;
+	}
+
+	/* Renderer exportability does not imply cross-GPU import compatibility. */
+	if (shared->device != device) {
+		handle_put(handle);
+		return EXDEV;
+	}
+
+	/* Reserve a fresh session-local identity before attaching host resource ownership. */
+	error = gpu_resource_reserve(session, shared->allocation.allocation_bytes, &resource);
+	if (error != 0) {
+		handle_put(handle);
+		return error;
+	}
+
+	/* Backend import borrows the capability and returns a separately owned alias. */
+	object = NULL;
+	resource_id = 0U;
+	error = device->ops->share->import_resource(
+		device->private_data,
+		session->backend,
+		shared->object,
+		&object,
+		&resource_id);
+	if (error != 0) {
+		kern_free(resource);
+		handle_put(handle);
+		return error;
+	}
+
+	/* An incomplete success cannot publish a resource that lacks identity or cleanup ownership. */
+	if (object == NULL || resource_id == 0U) {
+		/* A malformed backend result may still have acquired an independently releasable alias. */
+		if (object != NULL)
+			device->ops->resource_destroy(device->private_data, session->backend, object);
+
+		/* Neither the unpublished resource nor the lookup reference escapes this failure. */
+		kern_free(resource);
+		handle_put(handle);
+		return EIO;
+	}
+
+	/* The new backend alias keeps the allocation alive after the lookup reference is released. */
+	request.handle = resource->handle;
+	request.resource_id = resource_id;
+	request.allocation = shared->allocation;
+	handle_put(handle);
+
+	/* A failed output copy retires only this unpublished destination alias. */
+	error = copyout(&request, argument, sizeof(request));
+	if (error != 0) {
+		device->ops->resource_destroy(device->private_data, session->backend, object);
+		kern_free(resource);
+		return error;
+	}
+
+	/* Publish the alias only after the caller has a complete immutable import result. */
+	resource->object = object;
+	resource->kind = GPU_RESOURCE_BLOB;
+	resource->next = session->resources;
+	session->resources = resource;
+
+	/* The session retains each imported allocation until explicit destruction or final close. */
+	session->resource_count++;
+
+	/* Succeeded: this independent context owns the original allocation without a display contract. */
+	return 0;
+}
+
+/* Queries node roles independently of rendering or display ownership. */
+static int
+gpu_device_query_ioctl(
+	struct gpu_session *session,
+	uintptr_t argument)
+{
+	struct gpu_device_info request;
+	struct drv_gpu_device *device;
+	int error;
+
+	/* This read-only query accepts no stale output or private driver data. */
+	error = copyin(argument, &request, sizeof(request));
+	if (error != 0)
+		return error;
+
+	/* Input fields identify the ABI; output fields must start empty. */
+	if (request.version != GPU_ABI_VERSION ||
+	    request.size != sizeof(request) ||
+	    request.device_id != 0U ||
+	    request.companion_id != 0U ||
+	    request.roles != 0U ||
+	    request.flags != 0U ||
+	    request.reserved != 0U)
+		return EINVAL;
+
+	/* Ordinary existing drivers derive roles from the operations they actually implement. */
+	device = session->device;
+	memset(&request, 0, sizeof(request));
+	if (device->ops->scanout != NULL) {
+		error = device->ops->scanout->query_device(
+			device->private_data,
+			session->backend,
+			&request);
+		if (error != 0)
+			return error;
+	} else {
+		if (device->ops->capabilities & GPU_CAP_COMMAND)
+			request.roles |= GPU_DEVICE_RENDER;
+
+		if (device->ops->capabilities & GPU_CAP_DISPLAY)
+			request.roles |= GPU_DEVICE_DISPLAY;
+	}
+
+	/* K owns stable device identity; the companion is only a driver-provided selection hint. */
+	if ((request.roles & ~(GPU_DEVICE_RENDER | GPU_DEVICE_DISPLAY)) != 0U ||
+	    request.flags != 0U ||
+	    request.reserved != 0U)
+		return EIO;
+
+	/* Publishes the backend roles with the core's immutable node identity. */
+	request.version = GPU_ABI_VERSION;
+	request.size = sizeof(request);
+	request.device_id = device->identity;
+	error = copyout(&request, argument, sizeof(request));
+	if (error != 0)
+		return error;
+
+	/* Succeeded: display-only nodes participate in discovery without creating a fake Vulkan GPU. */
+	return 0;
+}
+
+/* Returns display generation constraints before allocation and import route selection. */
+static int
+gpu_constraints_ioctl(
+	struct gpu_session *session,
+	uintptr_t argument)
+{
+	struct gpu_scanout_constraints request;
+	struct drv_gpu_device *device;
+	uint32_t identifier;
+	uint64_t generation;
+	int error;
+
+	/* An unimplemented constraints callback cannot imply arbitrary DMA compatibility. */
+	device = session->device;
+	if (!(device->ops->capabilities & GPU_CAP_DISPLAY) ||
+	    device->ops->scanout == NULL ||
+	    device->ops->scanout->constraints == NULL)
+		return EOPNOTSUPP;
+
+	/* Accepts one existing display generation without caller-provided output. */
+	error = copyin(argument, &request, sizeof(request));
+	if (error != 0)
+		return error;
+
+	/* Nonzero result fields would conceal an incomplete backend response. */
+	if (request.version != GPU_ABI_VERSION ||
+	    request.size != sizeof(request) ||
+	    request.display_id == 0U ||
+	    request.generation == 0U ||
+	    request.flags != 0U ||
+	    request.formats != 0U ||
+	    request.stride_alignment != 0U ||
+	    request.offset_alignment != 0U ||
+	    request.placement != 0U ||
+	    request.max_dma_address != 0U ||
+	    request.reserved != 0U)
+		return EINVAL;
+
+	/* The backend checks the requested generation and supplies only supported routes. */
+	identifier = request.display_id;
+	generation = request.generation;
+	error = device->ops->scanout->constraints(
+		device->private_data,
+		session->backend,
+		&request);
+	if (error != 0)
+		return error;
+
+	/* A backend cannot change the requested generation or invent allocation flags. */
+	if (request.display_id != identifier ||
+	    request.generation != generation ||
+	    request.reserved != 0U ||
+	    (request.flags & ~(GPU_SCANOUT_SHARED | GPU_SCANOUT_COPY | GPU_SCANOUT_FOREIGN)) != 0U ||
+	    (request.placement & ~(GPU_PLACEMENT_DMA32 | GPU_PLACEMENT_CONTIGUOUS | GPU_PLACEMENT_COHERENT)) != 0U)
+		return EIO;
+
+	/* Packed formats are the only image descriptions accepted by the present ABI. */
+	if ((request.formats & ~(GPU_DISPLAY_FORMAT_BGRA8888 | GPU_DISPLAY_FORMAT_RGBA8888)) != 0U)
+		return EIO;
+
+	/* A copy route requires storage allocation and upload before ordinary presentation. */
+	if (request.flags & GPU_SCANOUT_COPY) {
+		if ((device->ops->capabilities & (GPU_CAP_RESOURCE | GPU_CAP_TRANSFER)) !=
+		    (GPU_CAP_RESOURCE | GPU_CAP_TRANSFER))
+			return EIO;
+	}
+
+	/* Nonzero alignments must describe arithmetic that applications can actually satisfy. */
+	if ((request.stride_alignment & (request.stride_alignment - 1U)) != 0U || (request.offset_alignment & (request.offset_alignment - 1U)) != 0U)
+		return EIO;
+
+	/* Foreign sharing requires the driver to validate the original physical backing. */
+	if ((request.flags & GPU_SCANOUT_FOREIGN) &&
+	    (!(request.flags & GPU_SCANOUT_SHARED) ||
+	     device->ops->scanout->import_image == NULL))
+		return EIO;
+
+	/* Publishes constraints only after validating the backend's complete contract. */
+	request.version = GPU_ABI_VERSION;
+	request.size = sizeof(request);
+	error = copyout(&request, argument, sizeof(request));
+	if (error != 0)
+		return error;
+
+	/* Succeeded: this generation's requirements are explicit, without promising every import works. */
+	return 0;
+}
+
+/* Validates foreign physical backing through the destination display driver's native import. */
+static int
+gpu_scanout_import(
+	struct gpu_session *session,
+	struct gpu_shared_resource *shared,
+	void **object)
+{
+	struct drv_gpu_scanout_backing backing;
+	struct drv_gpu_device *device;
+	int error;
+
+	/* No renderer-local resource identifier can establish cross-device DMA reachability. */
+	device = session->device;
+	*object = NULL;
+	if (!(device->ops->capabilities & GPU_CAP_DISPLAY) ||
+	    device->ops->scanout == NULL ||
+	    device->ops->scanout->import_image == NULL ||
+	    shared->device->ops->share == NULL ||
+	    shared->device->ops->share->get_scanout_backing == NULL)
+		return EOPNOTSUPP;
+
+	/* The lookup reference keeps the source anchor and its physical page array alive. */
+	memset(&backing, 0, sizeof(backing));
+	error = shared->device->ops->share->get_scanout_backing(
+		shared->device->private_data,
+		shared->object,
+		&backing);
+	if (error != 0)
+		return error;
+
+	/* Rejects incomplete or overflowing page extents before the driver examines them. */
+	if (backing.pages == NULL ||
+	    backing.page_count == 0U ||
+	    backing.page_bytes == 0U ||
+	    (backing.page_bytes & (backing.page_bytes - 1U)) != 0U ||
+	    backing.bytes < shared->image.allocation_bytes ||
+	    backing.page_count > UINT64_MAX / backing.page_bytes ||
+	    backing.bytes > backing.page_count * backing.page_bytes)
+		return EIO;
+
+	/* Destination DMA/address/cache/format checks decide whether this exact allocation imports. */
+	error = device->ops->scanout->import_image(
+		device->private_data,
+		session->backend,
+		&shared->image,
+		&backing,
+		object);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the core retains the source handle until after native resource destruction. */
+	return 0;
 }
 
 /* Validates the complete linear image extent before an export reaches the backend. */
@@ -2330,7 +3394,10 @@ gpu_shared_release(
 static int
 gpu_export_install(
 	struct kernel_handle *handle,
-	struct gpu_resource_export *request,
+	void *request,
+	size_t bytes,
+	uint32_t policy,
+	int32_t *fd,
 	uintptr_t argument)
 {
 	struct filedesc_reservation reservation;
@@ -2349,11 +3416,11 @@ gpu_export_install(
 
 	/* Public export flags map explicitly to descriptor-local inheritance policy. */
 	flags = 0U;
-	if ((request->flags & GPU_HANDLE_CLOEXEC) != 0U)
+	if ((policy & GPU_HANDLE_CLOEXEC) != 0U)
 		flags |= FILEDESC_CLOEXEC;
 
 	/* Fork inheritance remains independent from close-on-exec behavior. */
-	if ((request->flags & GPU_HANDLE_CLOFORK) != 0U)
+	if ((policy & GPU_HANDLE_CLOFORK) != 0U)
 		flags |= FILEDESC_CLOFORK;
 
 	/* Reservation prevents another thread from closing and reusing a failed export slot. */
@@ -2363,8 +3430,8 @@ gpu_export_install(
 		return error;
 
 	/* Copy failure withdraws only the reservation, never a later unrelated descriptor. */
-	request->fd = reservation.slots[0];
-	error = copyout(request, argument, sizeof(*request));
+	*fd = reservation.slots[0];
+	error = copyout(request, argument, bytes);
 	if (error != 0) {
 		filedesc_abort_reserved(&reservation);
 		return error;
@@ -2471,7 +3538,7 @@ gpu_export_ioctl(
 	}
 
 	/* Installation consumes ownership only after complete copyout and reservation commit. */
-	error = gpu_export_install(handle, &request, argument);
+	error = gpu_export_install(handle, &request, sizeof(request), request.flags, &request.fd, argument);
 	if (error != 0) {
 		handle_put(handle);
 		return error;
@@ -2497,6 +3564,7 @@ gpu_import_ioctl(
 	void *object;
 	uint32_t resource_id;
 	int different;
+	int foreign;
 	int error;
 
 	/* Imported resources belong to a writable destination open. */
@@ -2505,7 +3573,8 @@ gpu_import_ioctl(
 
 	/* The destination must implement the whole independent sharing contract. */
 	device = session->device;
-	if ((device->ops->capabilities & GPU_CAP_SHARE) == 0U)
+	if ((device->ops->capabilities & GPU_CAP_SHARE) == 0U &&
+	    (device->ops->scanout == NULL || device->ops->scanout->import_image == NULL))
 		return EOPNOTSUPP;
 
 	/* The descriptor is the only input beyond the versioned request header. */
@@ -2517,7 +3586,7 @@ gpu_import_ioctl(
 	if (request.version != GPU_ABI_VERSION ||
 	    request.size != sizeof(request) ||
 	    request.fd < 0 ||
-	    request.flags != 0U ||
+	    (request.flags & ~GPU_IMPORT_SCANOUT) != 0U ||
 	    request.handle != 0U ||
 	    request.resource_id != 0U ||
 	    request.reserved != 0U)
@@ -2543,7 +3612,16 @@ gpu_import_ioctl(
 
 	/* A capability from another GPU cannot name resources in this renderer namespace. */
 	shared = handle->object;
-	if (shared->device != device) {
+
+	/* An allocation-only capability cannot acquire a forged linear scanout description. */
+	if (shared->image.version == 0U) {
+		handle_put(handle);
+		return EINVAL;
+	}
+
+	/* Device identity remains authoritative even when another process supplies the descriptor. */
+	foreign = shared->device != device;
+	if (foreign != 0 && !(request.flags & GPU_IMPORT_SCANOUT)) {
 		handle_put(handle);
 		return EXDEV;
 	}
@@ -2558,12 +3636,20 @@ gpu_import_ioctl(
 	/* Import creates its own owned resource without consuming the transferable fd. */
 	object = NULL;
 	resource_id = 0U;
-	error = device->ops->share->import_resource(
-		device->private_data,
-		session->backend,
-		shared->object,
-		&object,
-		&resource_id);
+	if (foreign != 0) {
+		/* Foreign scanout requires explicit backing and destination DMA validation. */
+		error = gpu_scanout_import(session, shared, &object);
+	} else if (device->ops->share != NULL) {
+		/* An ordinary same-device alias remains usable by its native renderer. */
+		error = device->ops->share->import_resource(
+			device->private_data,
+			session->backend,
+			shared->object,
+			&object,
+			&resource_id);
+	} else {
+		error = EOPNOTSUPP;
+	}
 	if (error != 0) {
 		kern_free(resource);
 		handle_put(handle);
@@ -2571,7 +3657,7 @@ gpu_import_ioctl(
 	}
 
 	/* A complete imported resource needs both cleanup ownership and a native identity. */
-	if (object == NULL || resource_id == 0U) {
+	if (object == NULL || (foreign == 0 && resource_id == 0U)) {
 		/* Even malformed successful backend output must release any ownership it created. */
 		if (object != NULL)
 			device->ops->resource_destroy(device->private_data, session->backend, object);
@@ -2586,19 +3672,24 @@ gpu_import_ioctl(
 	request.handle = resource->handle;
 	request.resource_id = resource_id;
 	request.image = shared->image;
-	handle_put(handle);
+	if (foreign != 0)
+		resource->scanout_source = handle;
+	else
+		handle_put(handle);
 
 	/* Failed output copy destroys only the unpublished destination attachment. */
 	error = copyout(&request, argument, sizeof(request));
 	if (error != 0) {
 		device->ops->resource_destroy(device->private_data, session->backend, object);
+		if (resource->scanout_source != NULL)
+			handle_put(resource->scanout_source);
 		kern_free(resource);
 		return error;
 	}
 
 	/* Publication makes the new handle reachable only through this destination session. */
 	resource->object = object;
-	resource->kind = GPU_RESOURCE_BLOB;
+	resource->kind = foreign != 0 ? GPU_RESOURCE_SCANOUT : GPU_RESOURCE_BLOB;
 	resource->next = session->resources;
 	session->resources = resource;
 
@@ -2606,5 +3697,1081 @@ gpu_import_ioctl(
 	session->resource_count++;
 
 	/* Succeeded: the caller can bind or present the same allocation in its own context. */
+	return 0;
+}
+
+/* Retains one command before exposing its sequence or entering the backend. */
+static int
+gpu_submit_ioctl(
+	struct gpu_session *session,
+	uintptr_t argument,
+	uint64_t *sequence)
+{
+	struct gpu_command_submit request;
+	struct drv_gpu_completion *completion;
+	struct drv_gpu_device *device;
+	void *command;
+	uintptr_t pointer;
+	unsigned long irq;
+	int error;
+
+	/* Queued command submission requires write authority and advertised support. */
+	device = session->device;
+	if (session->writable == 0U)
+		return EACCES;
+
+	/* Old backends retain their existing synchronous command contract. */
+	if ((device->ops->capabilities & GPU_CAP_NOTIFICATION) == 0U)
+		return EOPNOTSUPP;
+
+	/* Copies the complete fixed-width request before resolving user memory. */
+	error = copyin(argument, &request, sizeof(request));
+	if (error != 0)
+		return error;
+
+	/* Rejects incompatible framing and caller-supplied output identities. */
+	if (request.version != GPU_ABI_VERSION ||
+	    request.size != sizeof(request) ||
+	    request.reserved != 0U ||
+	    request.sequence != 0U)
+		return EINVAL;
+
+	/* Only explicit context fencing gives the timeline field a meaning. */
+	if ((request.flags & ~GPU_COMMAND_CONTEXT_FENCE) != 0U)
+		return EINVAL;
+
+	/* The renderer has one CPU timeline and at most sixty-three queue timelines. */
+	if (request.timeline >= 64U)
+		return EINVAL;
+
+	/* Ordinary control completion cannot name a renderer queue timeline. */
+	if (request.flags == 0U && request.timeline != 0U)
+		return EINVAL;
+
+	/* Empty byte streams only insert a selected context marker. */
+	if (request.bytes == 0U && request.flags == 0U)
+		return EINVAL;
+
+	/* Empty markers retain no unused user pointer. */
+	if (request.bytes == 0U && request.address != 0U)
+		return EINVAL;
+
+	/* Bounds every independently retained command copy. */
+	if (request.bytes > GPU_COMMAND_MAX)
+		return E2BIG;
+
+	/* Allocates command storage before any completion record becomes visible. */
+	command = NULL;
+	if (request.bytes != 0U) {
+		error = gpu_user_range(request.address, request.bytes, &pointer);
+		if (error != 0)
+			return error;
+
+		/* The backend never receives a mutable userspace command address. */
+		command = kern_malloc(request.bytes);
+		if (command == NULL)
+			return ENOMEM;
+
+		/* Copies the entire bounded stream before publishing any work. */
+		error = copyin(pointer, command, request.bytes);
+		if (error != 0) {
+			kern_free(command);
+			return error;
+		}
+	}
+
+	/* Global identities prevent a foreign open's sequence from aliasing this one. */
+	error = gpu_handle_allocate(&request.sequence);
+	if (error != 0) {
+		kern_free(command);
+		return error;
+	}
+
+	/* Bounded embedded records retain their open through final backend drain. */
+	error = gpu_completion_reserve(session, request.sequence, &completion);
+	if (error != 0) {
+		kern_free(command);
+		return error;
+	}
+
+	/* A dependency wrapper retains the completion even if another thread consumes it immediately. */
+	if (sequence != NULL) {
+		irq = spin_lock_irqsave(&gpu_registry_lock);
+
+		completion->observers++;
+
+		spin_unlock_irqrestore(&gpu_registry_lock, irq);
+	}
+
+	/* A failed output copy must never submit an operation without its observable identity. */
+	error = copyout(&request, argument, sizeof(request));
+	if (error != 0) {
+		gpu_completion_discard(completion);
+		if (sequence != NULL)
+			gpu_completion_observer_leave(completion, 0U, 0U);
+		kern_free(command);
+		return error;
+	}
+
+	/* Success transfers exactly one terminal callback obligation to the backend. */
+	error = device->ops->commands->submit(
+		device->private_data,
+		session->backend,
+		command,
+		request.bytes,
+		request.flags,
+		request.timeline,
+		completion);
+	kern_free(command);
+	if (error != 0) {
+		gpu_completion_discard(completion);
+		if (sequence != NULL)
+			gpu_completion_observer_leave(completion, 0U, 0U);
+		return error;
+	}
+
+	/* Internal dependency wrappers use the trusted accepted identity, never a second user-memory read. */
+	if (sequence != NULL)
+		*sequence = request.sequence;
+
+	/* Succeeded: the independent command and its selected notification are pending. */
+	return 0;
+}
+
+/* Observes one retained completion without taking ordinary session admission. */
+static int
+gpu_wait_ioctl(
+	struct gpu_session *session,
+	uintptr_t argument)
+{
+	struct gpu_command_wait request;
+	struct drv_gpu_completion *completion;
+	unsigned consume;
+	int error;
+
+	/* Completion observation follows the open description's original read authority. */
+	if (session->readable == 0U)
+		return EACCES;
+
+	/* Backends without queued commands cannot own observable sequence records. */
+	if ((session->device->ops->capabilities & GPU_CAP_NOTIFICATION) == 0U)
+		return EOPNOTSUPP;
+
+	/* Copies the fixed-width input before lookup or any possible sleep. */
+	error = copyin(argument, &request, sizeof(request));
+	if (error != 0)
+		return error;
+
+	/* Unknown observation flags cannot silently discard a completion. */
+	if (request.version != GPU_ABI_VERSION ||
+	    request.size != sizeof(request) ||
+	    request.sequence == 0U ||
+	    request.status != 0U ||
+	    (request.flags & ~GPU_WAIT_CONSUME) != 0U)
+		return EINVAL;
+
+	/* Pins the record through a terminal observation and its following user copy. */
+	error = gpu_completion_observe(session, &request, &completion);
+	if (error != 0)
+		return error;
+
+	/* A transport outcome is separate from ioctl validation and Vulkan execution results. */
+	request.status = (uint32_t)completion->error;
+	error = copyout(&request, argument, sizeof(request));
+	consume = 0U;
+	if (error == 0 && (request.flags & GPU_WAIT_CONSUME) != 0U)
+		consume = 1U;
+
+	/* Failed output copy leaves the terminal result readable for a later retry. */
+	gpu_completion_observer_leave(completion, consume, request.flags & GPU_WAIT_CONSUME);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: userspace received the exact terminal transport status. */
+	return 0;
+}
+
+/* Reserves a bounded slot without recycling an identity still held by an observer. */
+static int
+gpu_completion_reserve(
+	struct gpu_session *session,
+	uint64_t sequence,
+	struct drv_gpu_completion **result)
+{
+	struct drv_gpu_completion *completion;
+	unsigned index;
+	unsigned long irq;
+
+	/* Failure leaves no backend callback owner. */
+	*result = NULL;
+	irq = spin_lock_irqsave(&gpu_registry_lock);
+
+	/* Finds only slots whose prior operation and all observers have retired. */
+	for (index = 0U; index < GPU_SUBMIT_MAX; index++) {
+		completion = &session->completions[index];
+		if (completion->sequence != 0U)
+			continue;
+
+		/* Publishes the owning session before a backend may complete immediately. */
+		memset(completion, 0, sizeof(*completion));
+		completion->session = session;
+		completion->sequence = sequence;
+		completion->listed = 1U;
+		*result = completion;
+		break;
+	}
+
+	spin_unlock_irqrestore(&gpu_registry_lock, irq);
+
+	/* Userspace can consume completed records before retrying bounded saturation. */
+	if (*result == NULL)
+		return EAGAIN;
+
+	/* Succeeded: this immutable sequence owns one bounded completion slot. */
+	return 0;
+}
+
+/* Withdraws a record when the backend never accepted its callback obligation. */
+static void
+gpu_completion_discard(
+	struct drv_gpu_completion *completion)
+{
+	unsigned long irq;
+
+	/* Early output publication can race another thread observing the same sequence. */
+	irq = spin_lock_irqsave(&gpu_registry_lock);
+
+	completion->listed = 0U;
+	completion->error = ECANCELED;
+	completion->completed = 1U;
+	waitq_wake_all(&completion->session->completion_waitq);
+
+	/* Existing observers retain the embedded slot until their lookup/copy finishes. */
+	if (completion->observers == 0U)
+		completion->sequence = 0U;
+
+	spin_unlock_irqrestore(&gpu_registry_lock, irq);
+
+	/* Succeeded: no future lookup can confuse rejection with accepted GPU work. */
+	return;
+}
+
+/* Waits for a selected record while another thread may submit through the same fd. */
+static int
+gpu_completion_observe(
+	struct gpu_session *session,
+	const struct gpu_command_wait *request,
+	struct drv_gpu_completion **result)
+{
+	struct drv_gpu_completion *completion;
+	uint64_t deadline;
+	uint64_t observed;
+	unsigned index;
+	unsigned long irq;
+	int error;
+
+	/* Converts timeout before taking the short record lock. */
+	*result = NULL;
+	error = gpu_completion_deadline(request->timeout_ns, &deadline);
+	if (error != 0)
+		return error;
+
+	/* Resolves exactly one still-listed identity within this open. */
+	completion = NULL;
+	irq = spin_lock_irqsave(&gpu_registry_lock);
+
+	for (index = 0U; index < GPU_SUBMIT_MAX; index++) {
+		/* Consumed or rejected records cannot be re-observed by identity. */
+		if (session->completions[index].listed == 0U)
+			continue;
+
+		/* Sequence identities are immutable until every observer has left. */
+		if (session->completions[index].sequence == request->sequence) {
+			completion = &session->completions[index];
+			break;
+		}
+	}
+
+	/* A foreign or already consumed sequence names no pending operation. */
+	if (completion == NULL) {
+		spin_unlock_irqrestore(&gpu_registry_lock, irq);
+		return ENOENT;
+	}
+
+	/* Prevents observer-count overflow before retaining a recyclable slot. */
+	if (completion->observers == UINT_MAX) {
+		spin_unlock_irqrestore(&gpu_registry_lock, irq);
+		return EOVERFLOW;
+	}
+
+	/* Observers pin the record independently from ordinary ioctl admission. */
+	completion->observers++;
+	error = 0;
+	while (completion->completed == 0U) {
+		/* Zero timeout observes readiness without changing request ownership. */
+		if (request->timeout_ns == 0U) {
+			error = EAGAIN;
+			break;
+		}
+
+		/* Withdrawal ends observation even if hardware cleanup is still retained. */
+		if (session->device->online == 0U) {
+			error = ENODEV;
+			break;
+		}
+
+		/* Sequence-based sleeping closes the completion-before-registration race. */
+		observed = waitq_sequence(&session->completion_waitq);
+		error = waitq_sleep(
+			&session->completion_waitq,
+			&gpu_registry_lock,
+			observed,
+			deadline,
+			WAITQ_INTERRUPTIBLE);
+		if (error != 0 && error != EAGAIN)
+			break;
+	}
+
+	/* A wakeup racing registration requires only another terminal-state check. */
+	if (error == EAGAIN && completion->completed != 0U)
+		error = 0;
+
+	/* Reserves terminal consumption through copyout without blocking other submitters. */
+	if (error == 0 && (request->flags & GPU_WAIT_CONSUME) != 0U) {
+		/* A parallel consumer must not retire this result twice. */
+		if (completion->consuming != 0U) {
+			error = EAGAIN;
+		} else {
+			completion->consuming = 1U;
+		}
+	}
+
+	spin_unlock_irqrestore(&gpu_registry_lock, irq);
+
+	/* Interruption and timeout keep the request itself intact. */
+	if (error != 0) {
+		gpu_completion_observer_leave(completion, 0U, 0U);
+		return error;
+	}
+
+	/* Succeeded: the immutable terminal result stays pinned for user copyout. */
+	*result = completion;
+	return 0;
+}
+
+/* Releases an observer and retires a successfully copied terminal result when requested. */
+static void
+gpu_completion_observer_leave(
+	struct drv_gpu_completion *completion,
+	unsigned consume,
+	unsigned reserved)
+{
+	unsigned long irq;
+
+	/* Consuming removes lookup authority before the last observer releases the slot. */
+	irq = spin_lock_irqsave(&gpu_registry_lock);
+
+	if (consume != 0U)
+		completion->listed = 0U;
+
+	/* All observers end their copyout before the sequence can be reused. */
+	if (reserved != 0U)
+		completion->consuming = 0U;
+
+	/* Every observer retains its own slot hold independently from consumption. */
+	completion->observers--;
+	if (completion->listed == 0U && completion->observers == 0U)
+		completion->sequence = 0U;
+
+	spin_unlock_irqrestore(&gpu_registry_lock, irq);
+
+	/* Readiness may have changed after the final terminal record was consumed. */
+	poll_notify();
+
+	/* Succeeded: remaining observers or the terminal queue retain the old record. */
+	return;
+}
+
+/* Converts a relative userspace interval to a checked guest-clock deadline. */
+static int
+gpu_completion_deadline(
+	uint64_t timeout,
+	uint64_t *deadline)
+{
+	uint64_t ticks;
+	uint64_t now;
+	uint64_t quantum;
+
+	/* Zero is query-only and the maximum value requests an unbounded observation. */
+	*deadline = 0U;
+	if (timeout == 0U || timeout == UINT64_MAX)
+		return 0;
+
+	/* Rounds upward so a finite wait never expires before its requested interval. */
+	quantum = KERN_NSEC_PER_SEC / KERN_CLOCK_HZ;
+	ticks = timeout / quantum;
+	if (timeout % quantum != 0U)
+		ticks++;
+
+	/* Deadline addition must not wrap into an unrelated early tick. */
+	now = sched_ticks();
+	if (ticks > UINT64_MAX - now)
+		return EOVERFLOW;
+
+	/* Succeeded: a nonzero absolute deadline bounds the requested observation. */
+	*deadline = now + ticks;
+	return 0;
+}
+
+/* Dispatches pure payload operations without reserving a GPU resource table. */
+static int
+gpu_fence_ioctl(
+	struct gpu_session *session,
+	unsigned long command,
+	uintptr_t argument)
+{
+	int error;
+
+	/* Optional support is authoritative at the registered device boundary. */
+	if ((session->device->ops->capabilities & GPU_CAP_FENCE) == 0U)
+		return EOPNOTSUPP;
+
+	/* Observers need read access; ownership and state changes need write access. */
+	if (command == GPU_FENCE_QUERY || command == GPU_FENCE_WAIT) {
+		if (session->readable == 0U)
+			return EACCES;
+	} else if (session->writable == 0U) {
+		return EACCES;
+	}
+
+	/* Each fixed-width request owns its complete validation and failure cleanup. */
+	if (command == GPU_FENCE_CREATE)
+		error = gpu_fence_create_ioctl(session, argument);
+	else if (command == GPU_FENCE_BIND)
+		error = gpu_fence_bind_ioctl(session, argument);
+	else
+		error = gpu_fence_state_ioctl(session, command, argument);
+
+	/* A rejected payload operation preserves its specific authority or state error. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the selected independent payload operation has finished. */
+	return 0;
+}
+
+/* Creates a generation-one fence and installs its descriptor transactionally. */
+static int
+gpu_fence_create_ioctl(
+	struct gpu_session *session,
+	uintptr_t argument)
+{
+	struct gpu_fence_create request;
+	struct kernel_handle *handle;
+	int error;
+
+	/* Copy the exact creation ABI before allocating any independent ownership. */
+	error = copyin(argument, &request, sizeof(request));
+	if (error != 0)
+		return error;
+
+	/* Unused and output fields cannot encode hidden policy or an existing descriptor. */
+	if (request.version != GPU_ABI_VERSION ||
+	    request.size != sizeof(request) ||
+	    request.fd != -1 ||
+	    request.signaled > 1U ||
+	    request.reserved != 0U ||
+	    request.generation != 0U ||
+	    (request.flags & ~(GPU_HANDLE_CLOEXEC | GPU_HANDLE_CLOFORK)) != 0U)
+		return EINVAL;
+
+	/* The immutable identity outlives the exporting open without retaining its session. */
+	error = kernel_fence_create(session->device->identity, request.signaled, &handle);
+	if (error != 0)
+		return error;
+
+	/* Reservation and successful copyout precede descriptor publication. */
+	request.generation = 1U;
+	error = gpu_export_install(handle, &request, sizeof(request), request.flags, &request.fd, argument);
+	if (error != 0) {
+		handle_put(handle);
+		return error;
+	}
+
+	/* Succeeded: the descriptor table owns the initial payload reference. */
+	return 0;
+}
+
+/* Resolves exact typed authority and optionally enforces renderer device identity. */
+static int
+gpu_fence_get(
+	struct gpu_session *session,
+	int fd,
+	unsigned foreign,
+	struct kernel_handle **result)
+{
+	struct kernel_handle *handle;
+	int error;
+
+	/* Descriptor lookup pins the payload across concurrent close and fd reuse. */
+	*result = NULL;
+	handle = handle_fd_get(fd, KERNEL_HANDLE_FENCE);
+	if (handle == NULL)
+		return EBADF;
+
+	/* Vulkan OPAQUE_FD state access never imports an incompatible GPU's payload. */
+	if (foreign == 0U) {
+		error = kernel_fence_device(handle, session->device->identity);
+		if (error != 0) {
+			handle_put(handle);
+			return error;
+		}
+	}
+
+	*result = handle;
+
+	/* Succeeded: the caller owns one independent capability reference. */
+	return 0;
+}
+
+/* Reads, waits, resets or signals one exact payload generation. */
+static int
+gpu_fence_state_ioctl(
+	struct gpu_session *session,
+	unsigned long command,
+	uintptr_t argument)
+{
+	struct gpu_fence_state request;
+	struct kernel_fence_state state;
+	struct kernel_handle *handle;
+	uint64_t deadline;
+	unsigned immediate;
+	int error;
+
+	/* Fixed-width framing is checked before descriptor lookup. */
+	error = copyin(argument, &request, sizeof(request));
+	if (error != 0)
+		return error;
+
+	/* Only QUERY may select the current generation by supplying zero. */
+	if (request.version != GPU_ABI_VERSION ||
+	    request.size != sizeof(request) ||
+	    request.flags != 0U ||
+	    request.state != 0U ||
+	    request.error < 0)
+		return EINVAL;
+
+	/* State mutation and waiting must name an exact work generation. */
+	if (command != GPU_FENCE_QUERY && request.generation == 0U)
+		return EINVAL;
+
+	/* Only WAIT uses a timeout and only SIGNAL supplies an input error status. */
+	if (command != GPU_FENCE_WAIT && request.timeout_ns != 0U)
+		return EINVAL;
+
+	/* Error observations are output-only for all operations except producer signal. */
+	if (command != GPU_FENCE_SIGNAL && request.error != 0)
+		return EINVAL;
+
+	/* Validate finite deadline arithmetic before resolving payload ownership. */
+	error = gpu_completion_deadline(request.timeout_ns, &deadline);
+	if (error != 0)
+		return error;
+
+	/* The kernel is authoritative for same-device OPAQUE_FD compatibility. */
+	error = gpu_fence_get(session, request.fd, 0U, &handle);
+	if (error != 0)
+		return error;
+
+	/* Zero timeout selects a nonblocking observation of the same retained generation. */
+	immediate = 0U;
+	if (request.timeout_ns == 0U)
+		immediate = 1U;
+
+	/* State operations lock only the independent payload, never a renderer controller. */
+	if (command == GPU_FENCE_QUERY) {
+		error = kernel_fence_query(handle, request.generation, &state);
+	} else if (command == GPU_FENCE_WAIT) {
+		error = kernel_fence_wait(handle, request.generation, deadline, immediate, &state);
+	} else if (command == GPU_FENCE_RESET) {
+		error = kernel_fence_reset(handle, request.generation, &state);
+	} else {
+		/* Possession of an imported fd does not acquire the submitting open's authority. */
+		error = gpu_fence_binding_end(session, handle, request.generation, 0U, request.error);
+		if (error == 0)
+			error = kernel_fence_query(handle, request.generation, &state);
+	}
+
+	/* Payload cleanup cannot invoke a destructor while holding the registry or resource-table lock. */
+	handle_put(handle);
+
+	/* Timeout, interruption and stale generation never consume descriptor ownership. */
+	if (error != 0)
+		return error;
+
+	/* Return an initialized immutable observation rather than echoing output fields. */
+	request.generation = state.generation;
+	request.state = state.state;
+	request.error = state.error;
+	error = copyout(&request, argument, sizeof(request));
+	if (error != 0)
+		return error;
+
+	/* Succeeded: every alias observes the same generation and completion state. */
+	return 0;
+}
+
+/* Acquires or rolls back one producer reservation before native work submission. */
+static int
+gpu_fence_bind_ioctl(
+	struct gpu_session *session,
+	uintptr_t argument)
+{
+	struct gpu_fence_bind request;
+	struct kernel_handle *handle;
+	int error;
+
+	/* Copy the bounded binding ABI before resolving any shared payload. */
+	error = copyin(argument, &request, sizeof(request));
+	if (error != 0)
+		return error;
+
+	/* A rollback never changes the sequence association of accepted work. */
+	if (request.version != GPU_ABI_VERSION ||
+	    request.size != sizeof(request) ||
+	    request.generation == 0U ||
+	    (request.flags & ~GPU_FENCE_BIND_RELEASE) != 0U)
+		return EINVAL;
+
+	/* RELEASE applies only to a pre-submit reservation and supplies no sequence. */
+	if (request.flags != 0U && request.sequence != 0U)
+		return EINVAL;
+
+	/* Binding authority is restricted to the device namespace of this open. */
+	error = gpu_fence_get(session, request.fd, 0U, &handle);
+	if (error != 0)
+		return error;
+
+	/* The session retains an additional reference only after ownership validation succeeds. */
+	if (request.flags == GPU_FENCE_BIND_RELEASE)
+		error = gpu_fence_binding_end(session, handle, request.generation, 1U, 0);
+	else
+		error = gpu_fence_binding_add(session, handle, request.generation, request.sequence);
+
+	/* Payload cleanup cannot invoke a destructor while holding the registry or resource-table lock. */
+	handle_put(handle);
+
+	/* A refused producer reservation never changes the caller's fd ownership. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the requested producer reservation or rollback is complete. */
+	return 0;
+}
+
+/* Reserves bounded session ownership under the same lock used by terminal notification. */
+static int
+gpu_fence_binding_add(
+	struct gpu_session *session,
+	struct kernel_handle *handle,
+	uint64_t generation,
+	uint64_t sequence)
+{
+	struct gpu_fence_binding *binding;
+	struct drv_gpu_completion *completion;
+	unsigned index;
+	unsigned long irq;
+	int error;
+
+	/* Every session owns bounded independent slots for pending shared completion payloads. */
+	binding = NULL;
+	completion = NULL;
+	irq = spin_lock_irqsave(&gpu_registry_lock);
+
+	/* Failed or withdrawn devices cannot acquire new producer authority. */
+	if (session->device->online == 0U || session->device->error != 0) {
+		spin_unlock_irqrestore(&gpu_registry_lock, irq);
+		return ENODEV;
+	}
+
+	/* A notification sequence belongs only to this exact open description. */
+	for (index = 0U; index < GPU_SUBMIT_MAX; index++) {
+		if (session->fences[index].handle == NULL && binding == NULL)
+			binding = &session->fences[index];
+
+		/* Identity is globally unique; only retained listed records may be associated. */
+		if (sequence != 0U &&
+		    session->completions[index].listed != 0U &&
+		    session->completions[index].sequence == sequence)
+			completion = &session->completions[index];
+	}
+
+	/* Unknown or consumed work cannot be used as error propagation authority. */
+	if (sequence != 0U && completion == NULL) {
+		spin_unlock_irqrestore(&gpu_registry_lock, irq);
+		return ENOENT;
+	}
+
+	/* Saturation is explicit and leaves the payload unbound. */
+	if (binding == NULL) {
+		spin_unlock_irqrestore(&gpu_registry_lock, irq);
+		return EAGAIN;
+	}
+
+	/* Lock order is registry then independent fence; global poll notification runs after both are released. */
+	error = kernel_fence_bind(handle, generation, session);
+	if (error != 0) {
+		spin_unlock_irqrestore(&gpu_registry_lock, irq);
+		return error;
+	}
+
+	/* The extra reference retains the payload after the producer closes its exported fd. */
+	handle_get(handle);
+	binding->handle = handle;
+	binding->generation = generation;
+	binding->sequence = sequence;
+
+	/* An already failed transport record is immediately terminal without claiming GPU success. */
+	if (completion != NULL &&
+	    completion->completed != 0U &&
+	    completion->error != 0)
+		(void)kernel_fence_signal_deferred(handle, generation, session, completion->error);
+
+	spin_unlock_irqrestore(&gpu_registry_lock, irq);
+
+	/* Descriptor readiness notification follows release of the GPU registry lock. */
+	poll_notify();
+
+	/* Succeeded: final session close owns any unfinished generation's terminal error. */
+	return 0;
+}
+
+/* Ends only this open's exact producer reservation and drops its independent payload reference. */
+static int
+gpu_fence_binding_end(
+	struct gpu_session *session,
+	struct kernel_handle *handle,
+	uint64_t generation,
+	unsigned release,
+	int status)
+{
+	struct gpu_fence_binding *binding;
+	unsigned index;
+	unsigned long irq;
+	int error;
+
+	/* Shared aliases cannot signal another open's pending work. */
+	binding = NULL;
+	irq = spin_lock_irqsave(&gpu_registry_lock);
+
+	for (index = 0U; index < GPU_SUBMIT_MAX; index++) {
+		if (session->fences[index].handle == handle && session->fences[index].generation == generation) {
+			binding = &session->fences[index];
+			break;
+		}
+	}
+
+	/* A stale or foreign owner has no authority even if its descriptor remains valid. */
+	if (binding == NULL) {
+		spin_unlock_irqrestore(&gpu_registry_lock, irq);
+		return EPERM;
+	}
+
+	/* Explicit rollback is reserved for work that never acquired a notification sequence. */
+	if (release != 0U && binding->sequence != 0U) {
+		spin_unlock_irqrestore(&gpu_registry_lock, irq);
+		return EBUSY;
+	}
+
+	/* Rollback preserves pending state; verified completion publishes success or error. */
+	if (release != 0U)
+		error = kernel_fence_unbind(handle, generation, session);
+	else
+		error = kernel_fence_signal_deferred(handle, generation, session, status);
+
+	/* Keep cleanup ownership when a mismatched or already terminal generation refuses mutation. */
+	if (error != 0) {
+		spin_unlock_irqrestore(&gpu_registry_lock, irq);
+		return error;
+	}
+
+	binding->handle = NULL;
+	binding->generation = 0U;
+	binding->sequence = 0U;
+
+	spin_unlock_irqrestore(&gpu_registry_lock, irq);
+
+	/* Payload cleanup cannot invoke a destructor while holding the registry or resource-table lock. */
+	handle_put(handle);
+
+	/* Descriptor readiness notification follows release of the GPU registry lock. */
+	poll_notify();
+
+	/* Succeeded: the producer no longer retains or controls this generation. */
+	return 0;
+}
+
+/* Ends unfinished producer authority while native callbacks and their session storage remain retained. */
+static void
+gpu_fence_retire(
+	struct gpu_session *session)
+{
+	struct kernel_handle *handle;
+	unsigned index;
+	unsigned long irq;
+
+	/* Final close excludes new ioctls; the registry lock serializes binding retirement with late callbacks. */
+	for (index = 0U; index < GPU_SUBMIT_MAX; index++) {
+		irq = spin_lock_irqsave(&gpu_registry_lock);
+
+		handle = session->fences[index].handle;
+		if (handle != NULL) {
+			(void)kernel_fence_signal_deferred(handle, session->fences[index].generation, session, ENODEV);
+			session->fences[index].handle = NULL;
+		}
+
+		spin_unlock_irqrestore(&gpu_registry_lock, irq);
+
+		/* The last metadata release runs without holding any GPU framework lock. */
+		handle_put(handle);
+	}
+
+	/* Descriptor readiness notification follows release of the GPU registry lock. */
+	poll_notify();
+
+	/* Succeeded: descriptor aliases outlive this session with a terminal state. */
+	return;
+}
+
+/* Waits on an independent capability before reserving any controller or resource-table ownership. */
+static int
+gpu_dependency_wait(
+	struct gpu_session *session,
+	int fd,
+	uint64_t generation,
+	unsigned foreign)
+{
+	struct kernel_handle *handle;
+	struct kernel_fence_state state;
+	int error;
+
+	/* An absent dependency carries neither descriptor nor work-generation authority. */
+	if (fd == -1) {
+		if (generation != 0U)
+			return EINVAL;
+
+		/* Succeeded: no producer dependency precedes this operation. */
+		return 0;
+	}
+
+	/* Every real dependency identifies an exact generation. */
+	if (fd < 0 || generation == 0U)
+		return EINVAL;
+
+	/* A native display may consume a renderer's fence from its approved companion GPU. */
+	error = gpu_fence_get(session, fd, foreign, &handle);
+	if (error != 0)
+		return error;
+
+	/* Ordinary signal delivery can interrupt this indefinite producer wait. */
+	error = kernel_fence_wait(handle, generation, 0U, 0U, &state);
+	/* Payload cleanup cannot invoke a destructor while holding the registry or resource-table lock. */
+	handle_put(handle);
+	if (error != 0)
+		return error;
+
+	/* Failed work is never presented or submitted as if the producer succeeded. */
+	if (state.state == KERNEL_FENCE_ERROR)
+		return state.error;
+
+	/* Succeeded: the exact prerequisite generation completed successfully. */
+	return 0;
+}
+
+/* Coordinates explicit wait and signal capabilities around ordinary GPU submission. */
+static int
+gpu_dependency_ioctl(
+	struct gpu_session *session,
+	unsigned long command,
+	uintptr_t argument)
+{
+	struct gpu_command_submit_sync submit;
+	struct gpu_display_present_sync present;
+	struct kernel_handle *signal;
+	struct gpu_fence_binding *binding;
+	struct drv_gpu_completion *completion;
+	uint64_t wait_generation;
+	uint64_t signal_generation;
+	uint64_t sequence;
+	int wait_fd;
+	int signal_fd;
+	unsigned display;
+	unsigned index;
+	unsigned long irq;
+	int error;
+	int finish;
+
+	/* Both dependency variants require write authority and the core fence contract. */
+	if (session->writable == 0U)
+		return EACCES;
+
+	/* A backend opts into the standard shared completion capability explicitly. */
+	if ((session->device->ops->capabilities & GPU_CAP_FENCE) == 0U)
+		return EOPNOTSUPP;
+
+	/* Snapshot the dependency metadata before any potentially blocking operation. */
+	display = 0U;
+	if (command == GPU_DISPLAY_PRESENT_SYNC)
+		display = 1U;
+
+	/* Decode the exact nested ABI selected by the ioctl number. */
+	if (display != 0U) {
+		error = copyin(argument, &present, sizeof(present));
+		if (error != 0)
+			return error;
+
+		/* The nested display ABI remains unchanged. */
+		if (present.present.version != GPU_ABI_VERSION || present.present.size != sizeof(present.present))
+			return EINVAL;
+
+		/* Only fixed-width capability identifiers survive the pending producer wait. */
+		wait_fd = present.wait_fd;
+		signal_fd = present.signal_fd;
+		wait_generation = present.wait_generation;
+		signal_generation = present.signal_generation;
+	} else {
+		error = copyin(argument, &submit, sizeof(submit));
+		if (error != 0)
+			return error;
+
+		/* The nested command ABI retains its existing sequence and framing contract. */
+		if (submit.command.version != GPU_ABI_VERSION || submit.command.size != sizeof(submit.command))
+			return EINVAL;
+
+		/* Driver callbacks never receive process-local fence descriptor numbers. */
+		wait_fd = submit.wait_fd;
+		signal_fd = submit.signal_fd;
+		wait_generation = submit.wait_generation;
+		signal_generation = submit.signal_generation;
+	}
+
+	/* Reject malformed signal authority before waiting on an unrelated producer. */
+	if ((signal_fd == -1 && signal_generation != 0U) ||
+	    signal_fd < -1 ||
+	    (signal_fd >= 0 && signal_generation == 0U))
+		return EINVAL;
+
+	/* Pin the signal capability before waiting, so concurrent close and fd reuse cannot change its identity. */
+	signal = NULL;
+	if (signal_fd >= 0) {
+		error = gpu_fence_get(session, signal_fd, 0U, &signal);
+		if (error != 0)
+			return error;
+	}
+
+	/* The wait holds neither the renderer controller nor the shared GPU fd admission gate. */
+	error = gpu_dependency_wait(session, wait_fd, wait_generation, display);
+	if (error != 0) {
+		handle_put(signal);
+		return error;
+	}
+
+	/* Retained payload identity remains stable even when its former descriptor number is reused. */
+	if (signal != NULL) {
+		/* Reserve before hardware submission so final close can always terminate accepted work. */
+		error = gpu_fence_binding_add(session, signal, signal_generation, 0U);
+		if (error != 0) {
+			handle_put(signal);
+			return error;
+		}
+	}
+
+	/* Ordinary operations retain the same validated resource-table ownership as their unsynchronized ABI. */
+	error = gpu_session_enter(session);
+	if (error != 0) {
+		if (signal != NULL)
+			(void)gpu_fence_binding_end(session, signal, signal_generation, 1U, 0);
+
+		/* Failure before submission leaves the payload unsignaled and unbound. */
+		handle_put(signal);
+		return error;
+	}
+
+	/* Each original operation still owns its framing, resource and backend validation. */
+	sequence = 0U;
+	if (display != 0U)
+		error = gpu_display_ioctl(session, GPU_DISPLAY_PRESENT, argument);
+	else if (signal != NULL)
+		error = gpu_submit_ioctl(session, argument, &sequence);
+	else
+		error = gpu_submit_ioctl(session, argument, NULL);
+
+	/* Other operations may resume after the backend has finished using this session resource table. */
+	gpu_session_leave(session);
+
+	/* Display success is the existing scanout-selection boundary, not physical panel vblank. */
+	if (signal != NULL && display != 0U) {
+		finish = gpu_fence_binding_end(session, signal, signal_generation, 0U, error);
+		if (error == 0)
+			error = finish;
+	}
+
+	/* A rejected command owns no future notification and may roll back its pre-submit reservation. */
+	if (signal != NULL &&
+	    display == 0U &&
+	    error != 0)
+		(void)gpu_fence_binding_end(session, signal, signal_generation, 1U, 0);
+
+	/* Accepted asynchronous work retains only failure propagation until authoritative U signal. */
+	if (signal != NULL &&
+	    display == 0U &&
+	    error == 0) {
+		irq = spin_lock_irqsave(&gpu_registry_lock);
+
+		/* Locate the exact retained producer binding and wrapper-pinned completion record. */
+		binding = NULL;
+		completion = NULL;
+		for (index = 0U; index < GPU_SUBMIT_MAX; index++) {
+			/* Payload and generation together identify this operation's producer authority. */
+			if (session->fences[index].handle == signal && session->fences[index].generation == signal_generation)
+				binding = &session->fences[index];
+
+			/* A fast callback may have already completed before the submitting syscall returned. */
+			if (session->completions[index].sequence == sequence)
+				completion = &session->completions[index];
+		}
+
+		/* Updating association is atomic with transport error notification. */
+		if (binding != NULL) {
+			binding->sequence = sequence;
+
+			/* Immediate failure is propagated before the wrapper's pinned observation ends. */
+			if (completion != NULL &&
+			    completion->completed != 0U &&
+			    completion->error != 0)
+				(void)kernel_fence_signal_deferred(signal, signal_generation, session, completion->error);
+		}
+
+		spin_unlock_irqrestore(&gpu_registry_lock, irq);
+
+		/* The wrapper hold ends only after its failure association has observed the immutable record. */
+		gpu_completion_observer_leave(completion, 0U, 0U);
+
+		/* Any immediate error is visible to descriptor observers after registry release. */
+		poll_notify();
+	}
+
+	/* The temporary syscall reference ends after accepted work has acquired its own hold. */
+	handle_put(signal);
+
+	/* Device loss remains visible independently of any selected fence payload. */
+	if (error == ENODEV || error == ETIMEDOUT)
+		drv_gpu_report_error(session->device, error);
+
+	/* Failed submission preserves its transport or prerequisite error for the caller. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: accepted work retains its required completion ownership. */
 	return 0;
 }

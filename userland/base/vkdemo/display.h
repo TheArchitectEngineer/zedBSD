@@ -26,7 +26,7 @@ struct vkdemo_display {
 };
 
 VkResult vkdemo_display_open(VkInstance instance, VkPhysicalDevice physical, uint32_t width, uint32_t height, struct vkdemo_display *display);
-VkResult vkdemo_display_create_swapchain(VkPhysicalDevice physical, VkDevice device, uint32_t family, struct vkdemo_display *display);
+VkResult vkdemo_display_create_swapchain(VkPhysicalDevice physical, VkDevice device, uint32_t family, struct vkdemo_display *display, int readback);
 void vkdemo_display_close(VkInstance instance, VkDevice device, struct vkdemo_display *display);
 
 #endif

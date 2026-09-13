@@ -94,12 +94,15 @@ struct venus_display_engine {
 static int display_console_start(struct venus_controller *controller);
 static int display_console_update(struct venus_controller *controller);
 static void display_console_worker(void *argument);
+static int display_device_query(void *device, void *private_session, struct gpu_device_info *request);
+static int display_constraints(void *device, void *private_session, struct gpu_scanout_constraints *request);
 static int display_query(void *device, void *session, struct gpu_display_info *request);
 static int display_mode(void *device, void *session, struct gpu_display_mode *request);
 static int display_claim(void *device, void *session, struct gpu_display_claim *request);
 static int display_release(void *device, void *session, const struct gpu_display_release *request);
 static int display_present(void *device, void *session, void *object, struct gpu_display_present *request);
 static int display_wait(void *device, void *session, struct gpu_display_wait *request);
+static int display_events(void *device, void *session, uint64_t *sequence);
 static int display_refresh(struct venus_controller *controller);
 static int display_find(struct venus_controller *controller, uint32_t identifier, uint64_t generation, struct venus_display_output **result);
 static int display_find_lease(struct venus_controller *controller, struct venus_session *session, uint64_t lease, struct venus_display_output **result);
@@ -109,17 +112,22 @@ static int display_prepare(struct venus_controller *controller, struct venus_dis
 static int display_frame(struct venus_controller *controller, struct venus_display_output *output, struct venus_resource *source, struct gpu_display_present *request);
 static int display_blob_frame(struct venus_controller *controller, struct venus_display_output *output, struct venus_resource *source, struct gpu_display_present *request);
 static int display_fenced(struct venus_controller *controller, uint8_t *command, uint32_t bytes);
-static int display_next_refresh(struct venus_display_output *output, uint32_t refresh);
+static int display_next_refresh(struct venus_controller *controller, struct venus_display_output *output, uint32_t refresh);
 static int display_timings_refresh(struct venus_controller *controller, struct venus_display_output *output);
 static int display_edid_parse(struct venus_display_output *output, const uint8_t *edid, uint32_t bytes);
 static int display_edid_timing(struct venus_display_output *output, const uint8_t *descriptor);
 static void display_timings_free(struct venus_display_output *output);
 static int display_status(struct venus_controller *controller, const void *command, uint32_t command_bytes, void *reply, uint32_t reply_bytes, uint32_t expected);
 
-/* Every callback shares the controller's sleepable device mutex. */
+/* Hardware callbacks share the controller mutex; event snapshots use only the IRQ-safe queue lock. */
 const struct drv_gpu_display_ops drv_venus_display_operations = {
 	display_query, display_mode, display_claim,
-	display_release, display_present, display_wait
+	display_release, display_present, display_wait, display_events
+};
+
+/* Native sharing is supported only within this Venus controller's resource namespace. */
+const struct drv_gpu_scanout_ops drv_venus_scanout_operations = {
+	display_device_query, display_constraints, NULL
 };
 
 /*
@@ -147,7 +155,7 @@ drv_venus_display_close_locked(
 		/* Uncertain hardware references remain controller-owned until reset. */
 		error = display_release_output(controller, output);
 		if (error != 0) {
-			controller->transport.failed = 1U;
+			atomic_raw_store_release(&controller->transport.failed, 1U);
 			kern_logf("venus: display %u retained for reset: %d\n", output->identifier, error);
 
 			/* Failed scanout storage remains on the controller list after its software hold retires. */
@@ -275,6 +283,60 @@ drv_venus_display_legacy_available_locked(
 	return 0;
 }
 
+/* Reports the controller's roles without claiming unrelated devices as companions. */
+static int
+display_device_query(
+	void *device,
+	void *private_session,
+	struct gpu_device_info *request)
+{
+	/* Registration assigns identity; this backend combines rendering and native display. */
+	(void)device;
+	(void)private_session;
+	request->roles = GPU_DEVICE_RENDER | GPU_DEVICE_DISPLAY;
+	request->companion_id = 0U;
+
+	/* Succeeded: there is no unverified cross-controller pairing promise. */
+	return 0;
+}
+
+/* Publishes scanout requirements without treating host Vulkan memory as foreign DMA pages. */
+static int
+display_constraints(
+	void *device,
+	void *private_session,
+	struct gpu_scanout_constraints *request)
+{
+	struct venus_controller *controller;
+	struct venus_display_output *output;
+	int error;
+
+	/* The queried generation must still name this controller's connected output. */
+	(void)private_session;
+	controller = device;
+	mutex_lock(&controller->mutex);
+
+	/* Resolve the exact output generation before using its native ownership or constraints. */
+	error = display_find(controller, request->display_id, request->generation, &output);
+	if (error != 0) {
+		mutex_unlock(&controller->mutex);
+		return error;
+	}
+
+	/* Real blob import validates the source controller; ordinary copied storage also remains valid. */
+	request->flags = GPU_SCANOUT_SHARED | GPU_SCANOUT_COPY;
+	request->formats = GPU_DISPLAY_FORMAT_BGRA8888 | GPU_DISPLAY_FORMAT_RGBA8888;
+	request->stride_alignment = 4U;
+	request->offset_alignment = 4U;
+	request->placement = 0U;
+	request->max_dma_address = 0U;
+
+	mutex_unlock(&controller->mutex);
+
+	/* Succeeded: callers may trial same-controller sharing without CPU address assumptions. */
+	return 0;
+}
+
 /* Creates one controller-owned console worker when the current text backend can snapshot cells. */
 static int
 display_console_start(
@@ -326,6 +388,7 @@ static int
 display_console_update(
 	struct venus_controller *controller)
 {
+	unsigned failed;
 	struct venus_display_engine *engine;
 	struct kern_text_snapshot snapshot;
 	struct gpu_display_present request;
@@ -334,7 +397,8 @@ display_console_update(
 	int error;
 
 	/* Transport failure leaves all display backing quarantined for the existing reset owner. */
-	if (controller->transport.failed != 0U)
+	failed = atomic_raw_load_acquire(&controller->transport.failed);
+	if (failed != 0U)
 		return ENODEV;
 
 	/* A claimed native plane or legacy session has exclusive authority over its displayed image. */
@@ -652,6 +716,8 @@ display_claim(
 	/* All ownership decisions share one controller serialization point. */
 	controller = device;
 	mutex_lock(&controller->mutex);
+
+	/* Resolve the exact output generation before using its native ownership or constraints. */
 	error = display_find(controller, request->display_id, request->generation, &output);
 	if (error != 0) {
 		mutex_unlock(&controller->mutex);
@@ -836,11 +902,42 @@ display_wait(
 	return 0;
 }
 
+/* Samples driver-owned event state without waiting behind rendering or display commands. */
+static int
+display_events(
+	void *device,
+	void *session,
+	uint64_t *sequence)
+{
+	struct venus_controller *controller;
+	unsigned long irq;
+	unsigned overflow;
+
+	(void)session;
+
+	/* The retained open keeps this controller and short event lock alive during poll. */
+	controller = device;
+	irq = spin_lock_irqsave(&controller->transport.queue_lock);
+
+	*sequence = controller->transport.topology_sequence;
+	overflow = controller->transport.topology_overflow;
+
+	spin_unlock_irqrestore(&controller->transport.queue_lock, irq);
+
+	/* A saturated notification stream must never silently acknowledge a later event. */
+	if (overflow != 0U)
+		return EOVERFLOW;
+
+	/* Succeeded: no hardware command or event acknowledgement occurred in this snapshot. */
+	return 0;
+}
+
 /* Refreshes native topology only when first queried or explicitly invalidated. */
 static int
 display_refresh(
 	struct venus_controller *controller)
 {
+	unsigned failed;
 	struct venus_display_engine *engine;
 	struct venus_display_output *output;
 	uint8_t command[24];
@@ -855,7 +952,8 @@ display_refresh(
 	int error;
 
 	/* No cached information can make a failed transport usable again. */
-	if (controller->transport.failed != 0U)
+	failed = atomic_raw_load_acquire(&controller->transport.failed);
+	if (failed != 0U)
 		return ENODEV;
 
 	/* Scanout count is a protocol hardware bound, not a framework allocation limit. */
@@ -890,9 +988,13 @@ display_refresh(
 	if (engine->initialized != 0U && (events & 1U) == 0U)
 		return 0;
 
-	/* Acknowledges the observed event before querying, preserving later new events. */
-	if ((events & 1U) != 0U)
+	/* Publishes before clearing, including when a query outruns delayed MSI-X delivery. */
+	if ((events & 1U) != 0U) {
+		drv_venus_transport_display_changed(&controller->transport);
 		kern_mmio_write32(configuration + 4U, 1U);
+	}
+
+	/* Queries after acknowledgement so later hardware changes remain latched independently. */
 	drv_venus_header(command, 0x0100U, 0U);
 	error = display_status(controller, command, sizeof(command), response, sizeof(response), 0x1101U);
 	if (error != 0)
@@ -974,13 +1076,15 @@ display_find_lease(
 	uint64_t lease,
 	struct venus_display_output **result)
 {
+	unsigned failed;
 	struct venus_display_output *output;
 	uint32_t index;
 
 	/* A missing engine or reserved lease zero cannot describe ownership. */
 	if (controller->display == NULL || lease == 0U)
 		return EINVAL;
-	if (controller->transport.failed != 0U)
+	failed = atomic_raw_load_acquire(&controller->transport.failed);
+	if (failed != 0U)
 		return ENODEV;
 
 	/* A foreign open cannot release, observe or replace another owner's frame. */
@@ -1191,7 +1295,7 @@ display_frame(
 		return error;
 
 	/* The queue consumes at most one completed image per virtual refresh tick. */
-	error = display_next_refresh(output, request->refresh_millihz);
+	error = display_next_refresh(controller, output, request->refresh_millihz);
 	if (error != 0)
 		return error;
 
@@ -1293,7 +1397,7 @@ display_blob_frame(
 		return error;
 
 	/* Preserve the same finite guest refresh pacing as ordinary native presentation. */
-	error = display_next_refresh(output, request->refresh_millihz);
+	error = display_next_refresh(controller, output, request->refresh_millihz);
 	if (error != 0) {
 		drv_venus_share_put_locked(controller, share);
 		return error;
@@ -1318,7 +1422,7 @@ display_blob_frame(
 	drv_venus_store32(command + 80U, (uint32_t)image->offset);
 	error = display_fenced(controller, command, sizeof(command));
 	if (error != 0) {
-		controller->transport.failed = 1U;
+		atomic_raw_store_release(&controller->transport.failed, 1U);
 		drv_venus_share_put_locked(controller, share);
 		return error;
 	}
@@ -1385,14 +1489,14 @@ display_fenced(
 	/* Both the fence flag and its exact identity must survive the device reply. */
 	flags = drv_venus_load32(response + 4U);
 	if ((flags & 1U) == 0U) {
-		controller->transport.failed = 1U;
+		atomic_raw_store_release(&controller->transport.failed, 1U);
 		return EIO;
 	}
 
 	/* A completed fence must name this exact command rather than an earlier display update. */
 	returned_fence = drv_venus_load64(response + 8U);
 	if (returned_fence != fence) {
-		controller->transport.failed = 1U;
+		atomic_raw_store_release(&controller->transport.failed, 1U);
 		return EIO;
 	}
 
@@ -1400,12 +1504,17 @@ display_fenced(
 	return 0;
 }
 
-/* Sleeps to a rational nominal refresh boundary rounded to the guest clock. */
+/* Reaches the nominal refresh boundary without stopping unrelated renderer sessions. */
 static int
 display_next_refresh(
+	struct venus_controller *controller,
 	struct venus_display_output *output,
 	uint32_t refresh)
 {
+	unsigned failed;
+	struct venus_session *owner;
+	uint64_t lease;
+	uint64_t generation;
 	uint64_t now;
 	uint64_t frame;
 	uint64_t target;
@@ -1429,13 +1538,42 @@ display_next_refresh(
 	if (now < output->present_tick)
 		return EIO;
 
-	/* Tick quantization preserves average cadence; it makes no host physical-vblank claim. */
+	/* Active callbacks or the joined console worker keep output storage alive across this wait. */
+	owner = output->owner;
+	lease = output->lease;
+	generation = output->generation;
+
+	/* Other sessions may submit rendering while this output awaits its guest refresh boundary. */
+	mutex_unlock(&controller->mutex);
+
+	/* Tick quantization preserves average cadence without claiming physical host vblank. */
 	while (now < target) {
 		sched_sleep(target);
 		now = sched_ticks();
 	}
 
-	/* Succeeded: this frame reached the next distinct guest FIFO boundary. */
+	/* Revalidate exclusive output authority before allowing the caller to select any image. */
+	mutex_lock(&controller->mutex);
+
+	/* Failed transport cannot authorize scanout after a wait which admitted other sessions. */
+	failed = atomic_raw_load_acquire(&controller->transport.failed);
+	if (failed != 0U)
+		return ENODEV;
+
+	/* A withdrawn or replaced lease cannot inherit this earlier reservation's pacing slot. */
+	if (output->owner != owner ||
+	    output->lease != lease ||
+	    output->generation != generation)
+		return ESTALE;
+
+	/* Console rendering must yield if an application claimed either primary display route. */
+	if (output == &controller->display->console) {
+		/* This worker's private image must never overtake a new application-owned frame. */
+		if (controller->display->outputs[0].owner != NULL || controller->display_owner != NULL)
+			return EBUSY;
+	}
+
+	/* Succeeded: the unchanged owner reached its next distinct guest FIFO boundary. */
 	return 0;
 }
 
@@ -1466,14 +1604,14 @@ display_status(
 
 	/* A malformed success response cannot authorize a local ownership transition. */
 	if (received != reply_bytes) {
-		controller->transport.failed = 1U;
+		atomic_raw_store_release(&controller->transport.failed, 1U);
 		return EIO;
 	}
 
 	/* Interprets the response tag only after its complete required interval was received. */
 	response_type = drv_venus_load32(reply);
 	if (response_type != expected) {
-		controller->transport.failed = 1U;
+		atomic_raw_store_release(&controller->transport.failed, 1U);
 		return EIO;
 	}
 
@@ -1487,6 +1625,7 @@ display_timings_refresh(
 	struct venus_controller *controller,
 	struct venus_display_output *output)
 {
+	unsigned failed;
 	struct venus_display_timing *timing;
 	uint8_t command[32];
 	uint8_t response[32U + VENUS_EDID_BYTES];
@@ -1515,7 +1654,8 @@ display_timings_refresh(
 	error = display_status(controller, command, sizeof(command), response, sizeof(response), 0x1104U);
 	if (error != 0) {
 		/* An uncertain transport is a device failure, not an optional metadata fallback. */
-		if (controller->transport.failed != 0U)
+		failed = atomic_raw_load_acquire(&controller->transport.failed);
+		if (failed != 0U)
 			return error;
 
 		/* A definite unsupported EDID response leaves the discovered virtual rectangle usable. */

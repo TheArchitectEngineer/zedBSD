@@ -2,6 +2,8 @@
 
 過去の範囲・結果。実行許可ではない。
 
+- [queue-q310](queue-q310.md) — finished / ws014-p007 cleared（BLOB直接表示・標準fd・同期改善）
+
 - [queue-q309](queue-q309.md) — finished / ws014-p006 cleared（GPU共有・Wayland・native scanout）
 
 - [queue-q305](queue-q305.md) — finished / ws014-p002 cleared（通常の動的ops登録へ修正）

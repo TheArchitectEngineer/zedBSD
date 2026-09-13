@@ -369,12 +369,24 @@ static void
 edid_cadence(void)
 {
 	struct venus_display_output output;
+	struct venus_controller controller;
+	struct venus_display_engine engine;
 	uint64_t previous;
 	uint64_t step;
 	uint32_t frames;
 	unsigned short_periods;
 	unsigned long_periods;
 	int error;
+
+	/* Pacing has a retained output inventory and enters with the controller callback lock held. */
+	memset(&controller, 0, sizeof(controller));
+	memset(&engine, 0, sizeof(engine));
+	controller.display = &engine;
+	engine.outputs = &output;
+	engine.count = 1U;
+	console_controller = NULL;
+	console_observed_mutex = &controller.mutex;
+	mutex_lock(&controller.mutex);
 
 	/* Sixty nominal frames must occupy one hundred 10ms ticks, not one hundred twenty. */
 	memset(&output, 0, sizeof(output));
@@ -383,7 +395,7 @@ edid_cadence(void)
 	long_periods = 0U;
 	for (frames = 0U; frames < 60U; frames++) {
 		previous = console_ticks;
-		error = display_next_refresh(&output, 60000U);
+		error = display_next_refresh(&controller, &output, 60000U);
 		assert(error == 0);
 		step = console_ticks - previous;
 		assert(step == 1U || step == 2U);
@@ -401,18 +413,29 @@ edid_cadence(void)
 	memset(&output, 0, sizeof(output));
 	console_ticks = 0U;
 	for (frames = 0U; frames < 50U; frames++) {
-		error = display_next_refresh(&output, 50000U);
+		error = display_next_refresh(&controller, &output, 50000U);
 		assert(error == 0);
 		assert(console_ticks == (uint64_t)(frames + 1U) * 2U);
 		output.present_tick = console_ticks;
 	}
 
+	/* Lease replacement while asleep must reject the old presentation after reacquiring controller admission. */
+	console_race_output = &output;
+	error = display_next_refresh(&controller, &output, 50000U);
+	assert(error == ESTALE);
+	assert(console_observed_depth == 1U);
+
 	/* No unsupported high frequency or arithmetic overflow can produce an immediate false completion. */
-	error = display_next_refresh(&output, 100001U);
+	error = display_next_refresh(&controller, &output, 100001U);
 	assert(error == EINVAL);
 	console_ticks = UINT64_MAX;
-	error = display_next_refresh(&output, 60000U);
+	error = display_next_refresh(&controller, &output, 60000U);
 	assert(error == EOVERFLOW);
+
+	/* Every success and failure restores the caller's original lock ownership. */
+	assert(console_observed_depth == 1U);
+	mutex_unlock(&controller.mutex);
+	console_observed_mutex = NULL;
 
 	/* Succeeded: cadence retains nominal phase while acknowledging the guest clock resolution. */
 	return;

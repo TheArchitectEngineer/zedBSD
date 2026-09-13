@@ -18,10 +18,10 @@
 #include <sys/types.h>
 
 /* Bound each connection's wire, descriptor, object and queued-event storage. */
-#define ZWL_WIRE_MAX 65532U
-#define ZWL_RIGHTS_MAX 32U
-#define ZWL_OBJECT_MAX 4096U
-#define ZWL_OUTPUT_MAX 1048576U
+#define ZWL_WIRE_MAX		65532U
+#define ZWL_RIGHTS_MAX		32U
+#define ZWL_OBJECT_MAX		4096U
+#define ZWL_OUTPUT_MAX		1048576U
 
 struct zwl_server;
 struct zwl_client;

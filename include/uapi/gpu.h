@@ -26,6 +26,10 @@
 #define GPU_CAP_PRESENT			32U
 #define GPU_CAP_MAPPING			64U
 #define GPU_CAP_SHARE			256U
+#define GPU_CAP_NOTIFICATION		512U
+#define GPU_COMMAND_CONTEXT_FENCE	1U
+#define GPU_WAIT_CONSUME			1U
+#define GPU_SUBMIT_MAX			64U
 #define GPU_BLOB_MAPPABLE		1U
 #define GPU_BLOB_SHAREABLE		2U
 #define GPU_BLOB_CROSS_DEVICE		4U
@@ -51,6 +55,39 @@
 #define GPU_RESOURCE_MAP		_IOWR('G', 9, struct gpu_resource_map)
 #define GPU_RESOURCE_EXPORT		_IOWR('G', 10, struct gpu_resource_export)
 #define GPU_RESOURCE_IMPORT		_IOWR('G', 11, struct gpu_resource_import)
+#define GPU_COMMAND_SUBMIT		_IOWR('G', 12, struct gpu_command_submit)
+#define GPU_COMMAND_WAIT			_IOWR('G', 13, struct gpu_command_wait)
+
+/*
+ * One independently retained command and its session-owned completion identity.
+ * Context fences select decoder timeline zero or an already bound queue timeline.
+ * Submission success means acceptance; it never substitutes for a Vulkan result.
+ */
+struct gpu_command_submit {
+	uint32_t version;
+	uint32_t size;
+	uint64_t address;
+	uint32_t bytes;
+	uint32_t flags;
+	uint32_t timeline;
+	uint32_t reserved;
+	uint64_t sequence;
+};
+
+/*
+ * One completion observation; status is a positive transport errno or zero.
+ * Zero timeout only observes; UINT64_MAX waits until completion or interruption.
+ * CONSUME retires a terminal record only after its complete output is copied.
+ */
+struct gpu_command_wait {
+	uint32_t version;
+	uint32_t size;
+	uint64_t sequence;
+	uint64_t timeout_ns;
+	uint32_t flags;
+	uint32_t status;
+};
+
 
 /*
  * One immutable linear image description retained with a shared allocation.
@@ -89,8 +126,10 @@ struct gpu_resource_export {
 
 /*
  * One capability imported into this open's independent renderer context.
- * Only version, size and fd are inputs. Success returns an owned resource
- * handle, its renderer resource identity, and the immutable image metadata.
+ * Version, size, fd and flags are inputs. Flags zero selects renderer import;
+ * GPU_IMPORT_SCANOUT selects checked native display import. Success returns
+ * an owned resource handle and immutable image metadata. A native-only import
+ * returns resource_id zero and cannot be used as a renderer resource identity.
  */
 struct gpu_resource_import {
 	uint32_t version;

@@ -6,13 +6,14 @@ LIBVULKAN_SOURCES := userland/base/libvulkan/objects.c \
 	userland/base/libvulkan/wire.c userland/base/libvulkan/context.c \
 	userland/base/libvulkan/codec.c userland/base/libvulkan/dispatch.c \
 	userland/base/libvulkan/instance.c userland/base/libvulkan/device.c \
+	userland/base/libvulkan/external-properties.c userland/base/libvulkan/external-fence.c \
 	userland/base/libvulkan/resources.c userland/base/libvulkan/pipeline.c \
 	userland/base/libvulkan/descriptors.c userland/base/libvulkan/commands.c \
 	userland/base/libvulkan/memory.c userland/base/libvulkan/sync.c \
 	userland/base/libvulkan/queue.c userland/base/libvulkan/query.c \
 	userland/base/libvulkan/wsi.c userland/base/libvulkan/wsi-display.c \
 	userland/base/libvulkan/wsi-swapchain.c userland/base/libvulkan/wsi-wayland.c \
-	userland/base/libvulkan/wsi-image.c
+	userland/base/libvulkan/wsi-image.c userland/base/libvulkan/wsi-display-nodes.c
 
 # The image metadata owns /lib placement; standalone installation honors PREFIX.
 LIBVULKAN_IMAGE_DATA := $(if $(ZEDBSD_TOPLEVEL_BUILD),/lib/libvulkan.so=$(BUILD)/dynamic/libvulkan.so)

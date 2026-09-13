@@ -114,7 +114,7 @@ func main(args) {
                 output = output + "\n\t/* Copies only complete caller elements while the command remains encodable. */\n\tfor (index = 0;\n\t     index < count && writer.error == VK_SUCCESS;\n\t     index++) {\n\t\t/* Uses declared element widths rather than native array padding. */\n" + encodeScalar(handles, records, type, member + "[index]", "\t\t") + "\t}\n";
             }
         }
-        output = output + "\n\t/* Native recording completion is distinct from later GPU execution completion. */\n\tcommand_record_finish(command, &writer);\n\n\t/* Succeeded: the command is recorded or its first error is retained by the command buffer. */\n\treturn;\n}\n";
+        output = output + "\n\t/* Retain this complete command independently of caller pointer lifetimes. */\n\tcommand_record_finish(command, &writer);\n\n\t/* Succeeded: the command is recorded or its first error is retained by the command buffer. */\n\treturn;\n}\n";
         count = count + 1;
     }
     if (count != 44) { System.error("expected forty-four Vulkan 1.0 recording commands, got " + count); }

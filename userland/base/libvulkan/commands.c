@@ -12,13 +12,7 @@
 #include <string.h>
 #include "internal.h"
 
-/* Tracks a command pool's implicit command-buffer lifetime and native queue family. */
-struct vulkan_command_pool {
-	struct vulkan_object object;
-	struct VkDevice_T *device;
-	VkCommandPoolCreateFlags flags;
-	uint32_t family;
-};
+#define VULKAN_RECORDING_BATCH_BYTES (1024U * 1024U)
 
 /* Recording failures remain local until the standard result-bearing end/reset calls. */
 enum vulkan_command_state {
@@ -27,6 +21,15 @@ enum vulkan_command_state {
 	VULKAN_COMMAND_EXECUTABLE,
 	VULKAN_COMMAND_INVALID
 };
+
+/* Tracks a command pool's implicit command-buffer lifetime and native queue family. */
+struct vulkan_command_pool {
+	struct vulkan_object object;
+	struct VkDevice_T *device;
+	VkCommandPoolCreateFlags flags;
+	uint32_t family;
+};
+
 
 static VkBool32 command_record_begin(struct VkCommandBuffer_T *command, struct vulkan_writer *writer, uint32_t opcode);
 static void command_record_finish(struct VkCommandBuffer_T *command, struct vulkan_writer *writer);
@@ -37,6 +40,8 @@ static void command_encode_render_begin(struct vulkan_writer *writer, const VkRe
 static void command_encode_render_clear(struct vulkan_writer *writer, const VkAttachmentDescription *attachment, const VkClearValue *clear);
 static void command_buffers_local_free(uint32_t count, VkCommandBuffer *buffers);
 static void command_buffer_initial(struct VkCommandBuffer_T *command);
+static VkResult command_record_flush(struct VkCommandBuffer_T *command);
+static void command_buffer_release(struct vulkan_object *object);
 
 /*
  * Creates a normal command pool with the requested queue family and allocation flags.
@@ -171,6 +176,10 @@ vkResetCommandPool(
 	/* Resets local recording errors only when the native pool reset actually completed. */
 	child = pool->object.first_child;
 	while (child != NULL) {
+		/* Release-resources drops retained recording capacity only after native reset. */
+		if (flags & VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT)
+			command_buffer_release(child);
+
 		command_buffer_initial((struct VkCommandBuffer_T *)child);
 		child = child->next_sibling;
 	}
@@ -232,6 +241,9 @@ vkAllocateCommandBuffers(
 		command = (struct VkCommandBuffer_T *)object;
 		command->pool = pool;
 		command->level = pAllocateInfo->level;
+		command->object.release_storage = command_buffer_release;
+		command->recording.allocator = command->object.allocator;
+		command->recording.scope = VK_SYSTEM_ALLOCATION_SCOPE_OBJECT;
 		buffers[index] = (VkCommandBuffer)command;
 		status = vulkan_object_reserve_id(object);
 		if (status != VK_SUCCESS)
@@ -372,6 +384,8 @@ vkBeginCommandBuffer(
 
 	/* Primary buffers never dereference their ignored inheritance pointer. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
+	command->recording.bytes = 0;
+	command->recording.error = VK_SUCCESS;
 	begin = *pBeginInfo;
 	begin.pNext = NULL;
 	begin.pInheritanceInfo = NULL;
@@ -429,13 +443,34 @@ vkEndCommandBuffer(
 	VkResult prior;
 	VkResult status;
 
-	/* Finishes native recording even after a local encoding failure so later reset/re-record is valid. */
+	/* Prepares the sole result-bearing record after every deferred void command. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
 	prior = command->error;
 	vulkan_writer_init_for_object(&writer, &command->object);
 	vulkan_command_begin(&writer, VULKAN_OPCODE_vkEndCommandBuffer);
 	vulkan_write_u64(&writer, command->object.wire_id);
-	status = vulkan_command_execute(command->object.context, &writer, 8, &reader, VK_TRUE);
+
+	/* Appends only a complete End record to an otherwise valid recording. */
+	if (prior == VK_SUCCESS) {
+		prior = writer.error;
+		if (prior == VK_SUCCESS) {
+			vulkan_write_bytes(&command->recording, writer.data, writer.bytes);
+			prior = command->recording.error;
+		}
+	}
+
+	/* A failed local record still ends the already-started native recording. */
+	if (prior != VK_SUCCESS) {
+		command->recording.bytes = 0;
+		status = vulkan_command_execute(command->object.context, &writer, 8, &reader, VK_TRUE);
+	} else {
+		/* Only End requested a reply, regardless of the stream's first opcode. */
+		command->recording.opcode = VULKAN_OPCODE_vkEndCommandBuffer;
+		status = vulkan_command_execute(command->object.context, &command->recording, 8, &reader, VK_TRUE);
+	}
+
+	/* Retains capacity for re-recording, never bytes that may already be native. */
+	command->recording.bytes = 0;
 	vulkan_writer_finish(&writer);
 	status = vulkan_reply_finish(command->object.context, &reader, status);
 
@@ -482,6 +517,10 @@ vkResetCommandBuffer(
 	if (status != VK_SUCCESS)
 		return status;
 
+	/* Release-resources returns callback storage only after native reset succeeded. */
+	if (flags & VK_COMMAND_BUFFER_RESET_RELEASE_RESOURCES_BIT)
+		command_buffer_release(&command->object);
+
 	/* Local initial state follows successful native reset rather than preceding it. */
 	command_buffer_initial(command);
 
@@ -511,33 +550,109 @@ command_record_begin(
 
 	/* Each public call owns its own independent command bytes and callback scope. */
 	vulkan_writer_init_for_object(writer, &command->object);
-	vulkan_command_begin(writer, opcode);
+	writer->opcode = opcode;
+	vulkan_write_u32(writer, opcode);
+	vulkan_write_u32(writer, 0);
 	vulkan_write_u64(writer, command->object.wire_id);
 
 	/* Succeeded: typed argument encoders may append to this recording operation. */
 	return VK_TRUE;
 }
 
-/* Executes one native recording call and retains any failure for standard End semantics. */
+/* Retains complete no-reply records and bounds storage at record boundaries. */
 static void
 command_record_finish(
 	struct VkCommandBuffer_T *command,
 	struct vulkan_writer *writer)
 {
 	struct vulkan_reader reader;
+	size_t limit;
 	VkResult status;
 
-	/* Native reply completion proves recording, not execution or presentation completion. */
-	status = vulkan_command_execute(command->object.context, writer, 4, &reader, VK_FALSE);
+	/* Keeps encoding failure local without appending a partial wire record. */
+	status = writer->error;
+	limit = VULKAN_RECORDING_BATCH_BYTES;
+	if (command->object.context->max_resource_bytes != 0) {
+		/* Leave space for the final result-bearing End record. */
+		if (command->object.context->max_resource_bytes < limit)
+			limit = (size_t)command->object.context->max_resource_bytes;
+	}
+
+	/* An unusably small backend cannot retain one complete record and End. */
+	if (limit < 16) {
+		status = VK_ERROR_OUT_OF_DEVICE_MEMORY;
+	} else {
+		limit -= 16;
+	}
+
+	/* Flush a complete prefix before this record would cross the soft limit. */
+	if (status == VK_SUCCESS) {
+		if (writer->bytes > limit || command->recording.bytes > limit - writer->bytes)
+			status = command_record_flush(command);
+	}
+
+	/* A single large record uses the existing external-stream transport intact. */
+	if (status == VK_SUCCESS) {
+		if (writer->bytes > limit) {
+			status = vulkan_context_execute(command->object.context, writer, 0, &reader);
+			status = vulkan_reply_finish(command->object.context, &reader, status);
+		} else {
+			/* The append either preserves every source byte or latches its failure. */
+			vulkan_write_bytes(&command->recording, writer->data, writer->bytes);
+			status = command->recording.error;
+		}
+	}
+
+	/* Application pointer storage is no longer borrowed after this call returns. */
 	vulkan_writer_finish(writer);
-	status = vulkan_reply_finish(command->object.context, &reader, status);
 	if (status != VK_SUCCESS) {
 		command->error = status;
 		command->state = VULKAN_COMMAND_INVALID;
 		return;
 	}
 
-	/* Succeeded: the native buffer contains the complete requested recording operation. */
+	/* Succeeded: recording is owned locally or its complete prefix was decoded. */
+	return;
+}
+
+/* Completes a no-reply recording prefix using only the decoder trailer. */
+static VkResult
+command_record_flush(
+	struct VkCommandBuffer_T *command)
+{
+	struct vulkan_reader reader;
+	VkResult status;
+
+	/* An empty prefix needs neither transport framing nor a completion record. */
+	if (command->recording.bytes == 0)
+		return VK_SUCCESS;
+
+	/* Decode completion permits storage reuse without claiming GPU completion. */
+	status = vulkan_context_execute(command->object.context, &command->recording, 0, &reader);
+	status = vulkan_reply_finish(command->object.context, &reader, status);
+	command->recording.bytes = 0;
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: later records append after this completely decoded prefix. */
+	return VK_SUCCESS;
+}
+
+/* Releases retained bytes through the command's effective destruction policy. */
+static void
+command_buffer_release(
+	struct vulkan_object *object)
+{
+	struct VkCommandBuffer_T *command;
+
+	/* Parent destruction may supply compatible callbacks with new user data. */
+	command = (struct VkCommandBuffer_T *)object;
+	command->recording.allocator = object->allocator;
+	vulkan_writer_finish(&command->recording);
+	command->recording.allocator = object->allocator;
+	command->recording.scope = VK_SYSTEM_ALLOCATION_SCOPE_OBJECT;
+
+	/* Succeeded: no separately allocated recording storage remains owned. */
 	return;
 }
 
@@ -776,6 +891,8 @@ command_buffer_initial(
 	struct VkCommandBuffer_T *command)
 {
 	/* Recording errors belong to the discarded old recording and cannot survive a successful reset. */
+	command->recording.bytes = 0;
+	command->recording.error = VK_SUCCESS;
 	command->error = VK_SUCCESS;
 	command->state = VULKAN_COMMAND_INITIAL;
 

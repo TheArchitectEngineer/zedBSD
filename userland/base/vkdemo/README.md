@@ -28,16 +28,20 @@ and are copied into the target sysroot by its ordinary header installation.
 
 Ordinary animation uses CLOCK_MONOTONIC, starting after resource setup, and
 runs for ten seconds by default. --duration=0 requests continuous animation;
-positive durations accept 1–3600 seconds. Rendering and readback determine the
-frame rate, with a short cooperative pause after each completed frame.
+positive durations accept 1–3600 seconds. GPU rendering and FIFO presentation determine the frame rate, with a short
+cooperative pause after each submitted frame. Ordinary display animation does
+not allocate a readback GPU buffer, issue image-to-buffer copies, map rendered
+pixels, or calculate a frame hash. `--readback` enables those diagnostic steps;
+`--verify-session`, `--output`, and `--offscreen` enable them automatically.
 --time-ms=0..3600000 renders one explicit shader time and retains it for
 --hold=0..120 seconds (default ten).
 
-Each completed display frame emits a VKDEMO PRESENT line to standard output. This is
-also the supported capture interface; continuous use produces continuous frame
-logs, which may be redirected by an ordinary shell. Frame counters advance only
-after real Vulkan completion, readback, and successful presentation. Exit
-completion is reported only after resource cleanup and device close.
+Ordinary display frames emit `VKDEMO SUBMITTED ... readback=disabled`, after
+rendering completes and presentation is accepted. This is not a claim that the
+scanout has finished. Diagnostic display frames emit `VKDEMO PRESENT` after
+readback and presentation drain, and include the real pixel hash used by the
+capture interface. Exit completion is reported only after resource cleanup and
+device close.
 
 ## Exact scene contract
 
@@ -91,8 +95,8 @@ pixels are produced by Vulkan and are never substituted or repaired on the CPU.
 
     /bin/vkdemo --verify-session --token=q307-example
 
-This documented diagnostic mode uses the same initialization, draw, readback,
-presentation, and teardown functions as ordinary animation. One process retains
+This documented diagnostic mode uses the same initialization, shader draw,
+presentation, and teardown functions as ordinary animation, with readback enabled. One process retains
 all resources across six frames:
 
 1. Fixed times 0, 1000, and 2500 milliseconds.
@@ -154,8 +158,11 @@ invalidate operations provide the required visibility. No memory property is
 inferred from a platform device name or a transport capability.
 
 The original texture is uploaded once. Each frame reuses a completed command
-pool and fence, records the draw and image-to-buffer readback, submits, and waits
-up to ten seconds for its Vulkan fence. Direct display waits on an acquire
+pool and fence, records the shader draw, submits, and waits up to ten seconds
+for its Vulkan fence. Diagnostic mode additionally records the image-to-buffer
+copy and host visibility barriers; normal mode transitions directly from color
+attachment rendering to presentation. The sample still serializes reuse of its
+one command buffer; it is not a multiframe pipeline benchmark. Direct display waits on an acquire
 semaphore before color attachment use, transitions the image to
 `PRESENT_SRC_KHR`, and submits presentation with a semaphore dedicated to that
 swapchain image. A presentation semaphore is reused only after its image is
@@ -196,3 +203,12 @@ Focused parser validation:
 
 Its stub deliberately fails before acquiring a GPU; parser success is distinct
 from the real guest rendering and image evidence recorded by the remote loop.
+
+Focused recording-path validation:
+
+    sh plan/ws014/tests/run-vkdemo-recording-test.sh
+
+This executes the real renderer with an independent Vulkan command observer,
+checking that normal frames draw the same cuboid and transition directly to
+presentation without a pixel copy or host-read barrier, while diagnostic and
+offscreen frames retain their GPU readback operations.

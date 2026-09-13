@@ -84,7 +84,7 @@ static VkSwapchainCreateInfoKHR test_create_info(VkSurfaceKHR surface, uint32_t 
 const struct vulkan_wsi_platform_ops vulkan_wsi_display_platform = {
 	native_capabilities, native_formats, native_modes, native_claim,
 	native_release, native_present, native_wait, NULL,
-	NULL, NULL, NULL, NULL
+	NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
 };
 
 /* Exercises real WSI implementations using dynamic counts and independent owners. */
@@ -92,11 +92,13 @@ int
 main(void)
 {
 	VkDisplayKHR displays[40];
+	struct vulkan_context context;
 	VkSurfaceKHR first;
 	VkSurfaceKHR second;
 	unsigned before;
 
 	/* Initializes real common object prefixes without creating a renderer context. */
+	memset(&context, 0, sizeof(context));
 	memset(&instance, 0, sizeof(instance));
 	memset(&physical, 0, sizeof(physical));
 	memset(&device, 0, sizeof(device));
@@ -106,6 +108,8 @@ main(void)
 	physical.instance = &instance;
 	device.object.kind = VULKAN_OBJECT_DEVICE;
 	device.physical = &physical;
+	device.object.context = &context;
+	physical.object.context = &context;
 	queue.object.kind = VULKAN_OBJECT_QUEUE;
 	queue.device = &device;
 	family.queueFlags = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_TRANSFER_BIT;
@@ -118,6 +122,7 @@ main(void)
 	device.queues = queues;
 	device.queue_count = 1U;
 	pthread_mutex_init(&device.mutex, NULL);
+	pthread_mutex_init(&queue.mutex, NULL);
 
 	/* Counts both implicit instance allocations and explicit swapchain callbacks. */
 	memset(&callbacks, 0, sizeof(callbacks));
@@ -144,6 +149,7 @@ main(void)
 	assert(device.object.first_child == NULL);
 	assert(allocations == releases);
 	assert(native_claims == native_releases);
+	pthread_mutex_destroy(&queue.mutex);
 	pthread_mutex_destroy(&device.mutex);
 
 	/* Reports only the mock-backed ownership and dispatch coverage established here. */
@@ -244,7 +250,7 @@ vulkan_wsi_acquire_signal(
 
 /* Records exactly one semaphore-consuming submit for an entire present operation. */
 VkResult
-vulkan_queue_submit(
+vulkan_queue_submit_locked(
 	struct VkQueue_T *target,
 	uint32_t count,
 	const VkSubmitInfo *submit,
@@ -1112,6 +1118,10 @@ test_present(
 	assert(per_chain == VK_SUCCESS);
 	assert(submissions == before + 1U);
 
+	/* Native observations require explicit library-job completion after asynchronous enqueue returns. */
+	error = vulkan_wsi_queue_idle(&queue);
+	assert(error == VK_SUCCESS);
+
 	/* Succeeded: the real WSI recorded, submitted, waited and presented one frame. */
 	return;
 }
@@ -1243,5 +1253,60 @@ test_shared(
 	}
 
 	/* Succeeded: partial creation never leaves a published chain or leaked image group. */
+	return;
+}
+
+/* The mock display inventory owns no native node opens. */
+void
+vulkan_wsi_display_nodes_finish(
+	struct VkInstance_T *owner)
+{
+	/* Discovery production is exercised by the separate native-node fixture. */
+	assert(owner == &instance);
+	return;
+}
+
+/* Reused private WSI fences are reset only after their earlier job has completed or rolled back. */
+VKAPI_ATTR VkResult VKAPI_CALL
+vkResetFences(
+	VkDevice gpu,
+	uint32_t count,
+	const VkFence *fences)
+{
+	assert(gpu == (VkDevice)&device && count == 1U && fences[0] != VK_NULL_HANDLE);
+	return VK_SUCCESS;
+}
+
+/* No copied/native-compositor fixture exports shared fences unless its peer explicitly advertises them. */
+VKAPI_ATTR VkResult VKAPI_CALL
+vkGetFenceFdKHR(
+	VkDevice gpu,
+	const VkFenceGetFdInfoKHR *info,
+	int *fd)
+{
+	(void)gpu;
+	(void)info;
+	(void)fd;
+	assert(0);
+	return VK_ERROR_INVALID_EXTERNAL_HANDLE;
+}
+
+/* The no-shared-fence fixture must never enter a renderer fd query for native synchronization. */
+void
+vulkan_context_lock(
+	struct vulkan_context *context)
+{
+	(void)context;
+	assert(0);
+	return;
+}
+
+/* Complements the forbidden renderer query boundary above. */
+void
+vulkan_context_unlock(
+	struct vulkan_context *context)
+{
+	(void)context;
+	assert(0);
 	return;
 }

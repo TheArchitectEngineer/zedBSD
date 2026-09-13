@@ -1,0 +1,46 @@
+{
+  "status": "pass",
+  "scope": "WS014 p007 placed allocation U fixture supplement",
+  "tests": [
+    {
+      "command": "timeout 120 sh plan/ws030/tests/run-libvulkan-context.sh",
+      "exit_code": 0,
+      "modes": [
+        "normal",
+        "ASan+UBSan"
+      ]
+    },
+    {
+      "command": "timeout 120 sh plan/ws030/tests/run-libvulkan-external-memory.sh",
+      "exit_code": 0,
+      "modes": [
+        "ordinary",
+        "ASan+UBSan"
+      ],
+      "elapsed_seconds": 0.588,
+      "log": "plan/ws014/temp/q310-placement-enotty.log",
+      "log_sha256": "8054e5d697eed49975dfa89a19bae283c70462e693f4b02e81b652d5add15db0",
+      "enotty_case": true
+    }
+  ],
+  "checks": [
+    "legacy G4/40-byte request and initial output ownership preserved",
+    "NULL uses legacy, zero requirements use G33/64-byte request",
+    "numeric flags/max DMA address/alignment and all fixed request offsets",
+    "ENOTSUP and ENOTTY permit FEATURE_NOT_PRESENT fallback without implicit unconstrained retry",
+    "ENOMEM is OUT_OF_DEVICE_MEMORY; native and callback owners roll back",
+    "native allocation rejection never issues placed ioctl",
+    "EIO is DEVICE_LOST, native free suppressed until session retirement; no alias created",
+    "stock DMA and negotiated native OPAQUE public metadata/UUID/import/native extent/lazy mmap tests retained"
+  ],
+  "source_hashes_after_tests": {
+    "plan/ws030/tests/libvulkan-context.c": "e0c414c58a2f25f3898dc308ce9154c2ecf563caeffc3283f8f02bbde51eb73b",
+    "plan/ws030/tests/libvulkan-external-memory.c": "900e4f801d84af7d15143bb84ea75d0d1022d54f75506cef0834480b317251aa",
+    "userland/base/libvulkan/context.c": "f779a89d0c85a2653d93829ad3343dc8abfbf3e95b665b7081951e65c464758a",
+    "userland/base/libvulkan/memory.c": "a1a297654ebdbe8d526e3f395f46642a1ce15b742386bca6cb905714680f629e",
+    "userland/base/libvulkan/internal.h": "b6919e7c3cf6b49e812d1f1ace90dd181f3e342e984a5a58baa47e0bf1a9713f",
+    "include/uapi/gpu-scanout.h": "b3a1bd68912a2c11a55dca9bf9764439ebffc372d1acfbe772d538ae63daff4f",
+    "include/uapi/gpu.h": "c5a158744e2b681e7eb1eef3f1254c5331d00595dac955a8ad61b716c10f4f39"
+  },
+  "enotty_rerun_inputs_unchanged": true
+}

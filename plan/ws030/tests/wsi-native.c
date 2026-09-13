@@ -10,6 +10,10 @@
 #include "wsi-internal.h"
 #include <uapi/gpu.h>
 #include <uapi/gpu-display.h>
+#include <uapi/gpu-scanout.h>
+#include <uapi/gpu-fence.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 #include <assert.h>
 #include <errno.h>
@@ -35,6 +39,16 @@ static uint64_t copied;
 static int injected_error;
 static unsigned allocations;
 static unsigned frees;
+static unsigned opens;
+static unsigned closes;
+static unsigned imports;
+static unsigned alias_destroys;
+static unsigned created_fences;
+static unsigned closed_fences;
+static unsigned synchronized_presents;
+static unsigned fence_resets;
+static uint64_t front_alias;
+static struct gpu_image_descriptor shared_descriptor;
 
 static void *native_allocate(void *user, size_t bytes, size_t alignment, VkSystemAllocationScope scope);
 static void native_free(void *user, void *pointer);
@@ -78,6 +92,7 @@ int
 main(void)
 {
 	struct vulkan_wsi_pixels pixels;
+	struct gpu_placement placement;
 	VkAllocationCallbacks allocator;
 	VkDisplayModeParametersKHR parameters;
 	void *first;
@@ -88,16 +103,21 @@ main(void)
 	uint32_t count;
 	uint32_t index;
 	VkResult error;
+	void *image_a;
+	void *image_b;
 
 	/* All raw requests must serialize with this actual shared context mutex. */
 	memset(&context, 0, sizeof(context));
 	context.fd = 7;
+	strcpy(context.device_path, "/dev/gpu9");
 	pthread_mutex_init(&context.mutex, NULL);
 	device.object.context = &context;
 	device.physical = &physical;
 	physical.object.context = &context;
 	display.physical = &physical;
 	display.output.identifier = 1U;
+	display.output.device_identifier = 77U;
+	strcpy(display.output.device_path, "/dev/gpu9");
 	display.output.generation = 1U;
 	display.output.flags = VULKAN_WSI_OUTPUT_CONNECTED | VULKAN_WSI_OUTPUT_FIFO;
 	display.output.formats = VULKAN_WSI_FORMAT_RGBA;
@@ -130,6 +150,13 @@ main(void)
 	assert(error == VK_SUCCESS && first != second);
 	assert(claims == 1U);
 
+	/* Generation-specific physical conditions pass unchanged to shared-image allocation. */
+	error = vulkan_wsi_display_platform.placement(first, &placement);
+	assert(error == VK_SUCCESS);
+	assert(placement.flags == (GPU_PLACEMENT_DMA32 | GPU_PLACEMENT_COHERENT));
+	assert(placement.max_dma_address == UINT32_MAX && placement.alignment == 0U);
+	assert(placement.reserved == 0U);
+
 	/* Native presentation receives completed Vulkan bytes through bounded copies. */
 	bytes = malloc(640U * 480U * 4U);
 	assert(bytes != NULL);
@@ -140,6 +167,8 @@ main(void)
 	pixels.stride = pixels.extent.width * 4U;
 	pixels.format = VK_FORMAT_R8G8B8A8_UNORM;
 	pixels.frame = 1U;
+	error = vulkan_wsi_display_platform.prepare_copy(first, pixels.format, pixels.extent);
+	assert(error == VK_SUCCESS);
 	error = vulkan_wsi_display_platform.present(first, &pixels, &sequence);
 	assert(error == VK_SUCCESS && sequence == 1U);
 	assert(creates == 1U);
@@ -157,6 +186,8 @@ main(void)
 	pixels.extent = modes[1].parameters.visibleRegion;
 	pixels.stride = pixels.extent.width * 4U;
 	pixels.frame = 2U;
+	error = vulkan_wsi_display_platform.prepare_copy(second, pixels.format, pixels.extent);
+	assert(error == VK_SUCCESS);
 	error = vulkan_wsi_display_platform.present(second, &pixels, &sequence);
 	assert(error == VK_SUCCESS && sequence == 2U);
 	assert(creates == 2U && destroys == 1U);
@@ -164,6 +195,60 @@ main(void)
 	assert(error == VK_SUCCESS);
 	assert(surfaces[1].platform_private == NULL);
 	assert(releases == 1U && destroys == 2U);
+
+	/* The ordinary native BLOB path imports allocation handles into an independent display open. */
+	error = vulkan_wsi_display_platform.claim(&surfaces[1], &device, &second);
+	assert(error == VK_SUCCESS);
+	memset(&shared_descriptor, 0, sizeof(shared_descriptor));
+	shared_descriptor.version = GPU_ABI_VERSION;
+	shared_descriptor.size = sizeof(shared_descriptor);
+	shared_descriptor.width = 640U;
+	shared_descriptor.height = 480U;
+	shared_descriptor.format = GPU_PIXEL_RGBA8888;
+	shared_descriptor.stride = 2560U;
+	shared_descriptor.offset = 128U;
+	shared_descriptor.allocation_bytes = 2560U * 480U + 128U;
+	shared_descriptor.tiling = GPU_IMAGE_LINEAR;
+	shared_descriptor.device_id = 12U;
+	error = vulkan_wsi_display_platform.import_image(second, 17, &shared_descriptor, &image_a);
+	assert(error == VK_SUCCESS);
+	error = vulkan_wsi_display_platform.import_image(second, 17, &shared_descriptor, &image_b);
+	assert(error == VK_SUCCESS);
+	error = vulkan_wsi_display_platform.present_image_sync(second, image_a, VK_PRESENT_MODE_FIFO_KHR, &sequence, 17, 42U);
+	assert(error == VK_SUCCESS);
+	assert(vulkan_wsi_display_platform.image_available(image_a) == VK_FALSE);
+	error = vulkan_wsi_display_platform.wait(second, sequence, 0U);
+	assert(error == VK_SUCCESS);
+	assert(vulkan_wsi_display_platform.image_available(image_a) == VK_FALSE);
+	injected_error = EIO;
+	error = vulkan_wsi_display_platform.present_image_sync(second, image_b, VK_PRESENT_MODE_FIFO_KHR, &sequence, 17, 42U);
+	assert(error == VK_ERROR_DEVICE_LOST);
+	assert(vulkan_wsi_display_platform.image_available(image_a) == VK_FALSE);
+	assert(vulkan_wsi_display_platform.image_available(image_b) == VK_TRUE);
+	injected_error = 0;
+	error = vulkan_wsi_display_platform.present_image_sync(second, image_b, VK_PRESENT_MODE_FIFO_KHR, &sequence, 17, 42U);
+	assert(error == VK_SUCCESS);
+	assert(vulkan_wsi_display_platform.image_available(image_a) == VK_TRUE);
+	assert(vulkan_wsi_display_platform.image_available(image_b) == VK_FALSE);
+	vulkan_wsi_display_platform.destroy_image(image_a);
+	vulkan_wsi_display_platform.destroy_image(image_b);
+	assert(front_alias != 0U && alias_destroys == 2U);
+	error = vulkan_wsi_display_platform.release(second);
+	assert(error == VK_SUCCESS && front_alias == 0U);
+	assert(creates == 2U && destroys == 2U);
+
+	/* Unsupported physical import is a route-selection result; native allocation failure remains an error. */
+	error = vulkan_wsi_display_platform.claim(&surfaces[1], &device, &second);
+	assert(error == VK_SUCCESS);
+	injected_error = ENOTSUP;
+	error = vulkan_wsi_display_platform.import_image(second, 17, &shared_descriptor, &image_a);
+	assert(error == VK_ERROR_FORMAT_NOT_SUPPORTED && image_a == NULL);
+	injected_error = ENOMEM;
+	error = vulkan_wsi_display_platform.import_image(second, 17, &shared_descriptor, &image_a);
+	assert(error == VK_ERROR_OUT_OF_DEVICE_MEMORY && image_a == NULL);
+	injected_error = 0;
+	error = vulkan_wsi_display_platform.release(second);
+	assert(error == VK_SUCCESS);
 
 	/* Native error classification occurs after dropping the shared context mutex. */
 	injected_error = EBUSY;
@@ -178,11 +263,13 @@ main(void)
 	error = vulkan_wsi_display_query(&physical, UINT32_MAX, &count, NULL);
 	assert(error == VK_SUCCESS && count == 1U);
 	assert(allocations == frees);
+	assert(opens == closes);
+	assert(created_fences == closed_fences && synchronized_presents == 2U && fence_resets == 1U);
 	free(bytes);
 	pthread_mutex_destroy(&context.mutex);
 
 	/* Reports native boundary coverage without claiming actual GPU or display execution. */
-	puts("WSI native adapter: context mutex, shared plane/surface lifetime, mode replacement and copied frame PASS");
+	puts("WSI native adapter: independent display admission, fixed copied storage, BLOB import/selection, front retention through wait/failure/alias destruction, foreign import rejection PASS");
 	return 0;
 }
 
@@ -202,14 +289,21 @@ ioctl(
 	struct gpu_resource_destroy *destroy;
 	struct gpu_transfer *transfer;
 	struct gpu_display_info *query;
+	struct gpu_device_info *identity;
+	struct gpu_scanout_constraints *constraints;
+	struct gpu_resource_import *imported;
+	struct gpu_fence_create *created;
+	struct gpu_fence_state *state;
+	struct gpu_display_present_sync *synchronized;
 	const uint8_t *source;
 	uint32_t index;
 	int status;
 
 	/* A raw adapter request must hold the same mutex used by wire and memory paths. */
-	assert(fd == context.fd);
+	assert(fd >= 90 && fd != context.fd);
 	status = pthread_mutex_trylock(&context.mutex);
-	assert(status == EBUSY);
+	assert(status == 0);
+	pthread_mutex_unlock(&context.mutex);
 	va_start(arguments, command);
 	pointer = va_arg(arguments, void *);
 	va_end(arguments);
@@ -220,6 +314,50 @@ ioctl(
 
 	/* Every mock command checks the source or lifetime boundary it represents. */
 	switch (command) {
+	case GPU_GET_INFO:
+		((struct gpu_info *)pointer)->capabilities = GPU_CAP_DISPLAY | GPU_CAP_FENCE;
+		break;
+	case GPU_FENCE_CREATE:
+		created = pointer;
+		assert(created->fd == -1 && created->signaled == 0U);
+		created->fd = 300 + (int)++created_fences;
+		created->generation = 1U;
+		break;
+	case GPU_FENCE_RESET:
+		state = pointer;
+		assert(state->fd > 300 && state->generation != 0U);
+		state->generation++;
+		fence_resets++;
+		break;
+	case GPU_DISPLAY_PRESENT_SYNC:
+		synchronized = pointer;
+		assert(synchronized->wait_fd == 17 && synchronized->wait_generation == 42U);
+		assert(synchronized->signal_fd > 300 && synchronized->signal_generation != 0U);
+		synchronized_presents++;
+		return ioctl(fd, GPU_DISPLAY_PRESENT, &synchronized->present);
+	case GPU_DEVICE_QUERY:
+		identity = pointer;
+		identity->device_id = 77U;
+		identity->roles = GPU_DEVICE_DISPLAY;
+		break;
+	case GPU_DISPLAY_CONSTRAINTS:
+		constraints = pointer;
+		assert(constraints->display_id == 1U && constraints->generation == 1U);
+		constraints->flags = GPU_SCANOUT_SHARED | GPU_SCANOUT_COPY | GPU_SCANOUT_FOREIGN;
+		constraints->formats = GPU_DISPLAY_FORMAT_RGBA8888;
+		constraints->stride_alignment = 4U;
+		constraints->offset_alignment = 4U;
+		constraints->placement = GPU_PLACEMENT_DMA32 | GPU_PLACEMENT_COHERENT;
+		constraints->max_dma_address = UINT32_MAX;
+		break;
+	case GPU_RESOURCE_IMPORT:
+		imported = pointer;
+		assert(imported->flags == GPU_IMPORT_SCANOUT && imported->fd == 17);
+		assert(imported->handle == 0U && imported->resource_id == 0U);
+		imported->handle = 100U + ++imports;
+		imported->resource_id = 0U;
+		imported->image = shared_descriptor;
+		break;
 	case GPU_DISPLAY_CLAIM:
 		claim = pointer;
 		assert(claim->version == GPU_ABI_VERSION);
@@ -230,6 +368,7 @@ ioctl(
 		break;
 	case GPU_DISPLAY_RELEASE:
 		assert(((struct gpu_display_release *)pointer)->lease == 100U);
+		front_alias = 0U;
 		releases++;
 		break;
 	case GPU_RESOURCE_CREATE:
@@ -244,7 +383,10 @@ ioctl(
 	case GPU_RESOURCE_DESTROY:
 		destroy = pointer;
 		assert(destroy->handle != 0U);
-		destroys++;
+		if (destroy->handle >= 100U)
+			alias_destroys++;
+		else
+			destroys++;
 		break;
 	case GPU_RESOURCE_WRITE:
 		transfer = pointer;
@@ -258,7 +400,17 @@ ioctl(
 		break;
 	case GPU_DISPLAY_PRESENT:
 		present = pointer;
-		assert(present->lease == 100U && present->handle == native_storage);
+		assert(present->lease == 100U);
+		if ((present->flags & GPU_DISPLAY_PRESENT_BLOB) != 0U) {
+			assert(present->flags == (GPU_DISPLAY_PRESENT_FIFO | GPU_DISPLAY_PRESENT_BLOB));
+			assert(present->handle >= 100U && present->frame != 0U);
+			assert(present->offset == shared_descriptor.offset && present->stride == shared_descriptor.stride);
+			assert(present->width == shared_descriptor.width && present->height == shared_descriptor.height);
+			front_alias = present->handle;
+			present->sequence = ++presents;
+			break;
+		}
+		assert(present->handle == native_storage);
 		assert(present->flags == GPU_DISPLAY_PRESENT_FIFO);
 		assert(present->refresh_millihz == 50000U);
 		assert((uint64_t)present->stride * present->height == native_bytes);
@@ -372,4 +524,60 @@ native_free(
 
 	/* Succeeded: this local ownership allocation has been returned to its callback. */
 	return;
+}
+
+/* Native display opens must select the display path rather than borrowing a renderer fd. */
+int
+open(
+	const char *path,
+	int flags,
+	...)
+{
+	assert(strcmp(path, "/dev/gpu9") == 0);
+	assert(flags == (O_RDWR | O_CLOEXEC));
+	opens++;
+	return 100 + (int)opens;
+}
+
+/* Every retained native file description closes once after its final plane and alias retire. */
+int
+close(
+	int fd)
+{
+	assert(fd > 100);
+	if (fd > 300)
+		closed_fences++;
+	else
+		closes++;
+	return 0;
+}
+
+/* The adapter fixture substitutes only inventory discovery; its actual node pairing is tested separately. */
+VkResult
+vulkan_wsi_display_node_query(
+	struct VkPhysicalDevice_T *gpu,
+	uint32_t index,
+	uint32_t *count,
+	struct gpu_display_info *request,
+	uint64_t *device_id,
+	char *path)
+{
+	(void)request;
+	(void)device_id;
+	(void)path;
+	assert(gpu == &physical && index == UINT32_MAX);
+	*count = 1U;
+	return VK_SUCCESS;
+}
+
+/* All generation and mode requests use the selected node's independent discovery admission. */
+int
+vulkan_wsi_display_node_ioctl(
+	struct VkPhysicalDevice_T *gpu,
+	const struct vulkan_wsi_output *output,
+	unsigned long command,
+	void *argument)
+{
+	assert(gpu == &physical && output->device_identifier == 77U);
+	return ioctl(90, command, argument);
 }

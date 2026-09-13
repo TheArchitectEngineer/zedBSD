@@ -374,6 +374,7 @@ pthread_create(
 	struct pthread_tcb *tcb;
 	void *stack;
 	void *usable_stack;
+	uintptr_t initial_stack;
 	size_t size = attributes != NULL && attributes->stacksize != 0
 			  ? attributes->stacksize
 			  : THREAD_STACK_SIZE;
@@ -449,9 +450,19 @@ pthread_create(
 		/* Returns the computed result. */
 		return EAGAIN;
 	}
+	/* The kernel enters the trampoline directly, without pushing a C return address. */
+	initial_stack = (uintptr_t)usable_stack + size;
+#if defined(__x86_64__)
+	/* AMD64 C entry requires the caller's aligned stack plus one return-address slot. */
+	initial_stack &= ~(uintptr_t)15U;
+	initial_stack -= sizeof(uintptr_t);
+	*(uintptr_t *)initial_stack = 0U;
+#endif
+
+	/* Starts the trampoline with its architecture's ordinary function-entry stack. */
 	error =
 	    (int)call(KERN_SYS_thread_create, (uintptr_t)thread_trampoline,
-		      (uintptr_t)usable_stack + size, 0,
+		      initial_stack, 0,
 		      (uintptr_t)tcb->runtime_tcb, 0, (uintptr_t)&tcb->tid);
 
 	/* Handles an operation failure. */

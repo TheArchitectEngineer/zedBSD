@@ -20,6 +20,7 @@ binary = sys.argv[1]
 accepted = [
     [],
     ["--duration=0"],
+    ["--readback", "--duration=1"],
     ["--duration=3600"],
     ["--time-ms=0", "--hold=0"],
     ["--time-ms=3600000", "--hold=120"],
@@ -63,6 +64,10 @@ for valid, cases in ((True, accepted), (False, rejected)):
         )
         expected = 1 if valid else 2
         entered = "VKDEMO-CLI-STUB initialize" in result.stdout
+        if valid:
+            readback = any(arg in ("--readback", "--verify-session", "--offscreen") or arg.startswith("--output=") for arg in arguments)
+            if f"readback={int(readback)}" not in result.stdout:
+                raise SystemExit(f"readback policy mismatch: {arguments!r}, {result.stdout!r}")
         if result.returncode != expected or entered != valid:
             raise SystemExit(
                 f"CLI case failed: {arguments!r}, rc={result.returncode}, "

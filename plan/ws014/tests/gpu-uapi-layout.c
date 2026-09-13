@@ -14,8 +14,9 @@
  * These assertions use ANSI C declarations and produce no executable code.
  */
 
-#include <uapi/gpu.h>
 #include <uapi/gpu-display.h>
+#include <uapi/gpu-scanout.h>
+#include <uapi/gpu.h>
 #include <stddef.h>
 
 /* The complete capability response occupies 56 bytes on either data model. */
@@ -200,3 +201,31 @@ typedef char gpu_resource_import_image_check[offsetof(struct gpu_resource_import
 /* New command encodings remain identical for 32-bit and 64-bit userspace. */
 typedef char gpu_resource_export_command_check[GPU_RESOURCE_EXPORT == 0xc058470aUL ? 1 : -1];
 typedef char gpu_resource_import_command_check[GPU_RESOURCE_IMPORT == 0xc060470bUL ? 1 : -1];
+
+/* Shared fence and queued notification records preserve identical ILP32 and LP64 wire layouts. */
+#include <uapi/gpu-fence.h>
+typedef char gpu_submit_size_check[sizeof(struct gpu_command_submit) == 40 ? 1 : -1];
+typedef char gpu_wait_size_check[sizeof(struct gpu_command_wait) == 32 ? 1 : -1];
+typedef char gpu_fence_create_size_check[sizeof(struct gpu_fence_create) == 32 ? 1 : -1];
+typedef char gpu_fence_state_size_check[sizeof(struct gpu_fence_state) == 40 ? 1 : -1];
+typedef char gpu_fence_bind_size_check[sizeof(struct gpu_fence_bind) == 32 ? 1 : -1];
+typedef char gpu_submit_sync_size_check[sizeof(struct gpu_command_submit_sync) == 64 ? 1 : -1];
+typedef char gpu_present_sync_size_check[sizeof(struct gpu_display_present_sync) == 104 ? 1 : -1];
+typedef char gpu_fence_generation_offset_check[offsetof(struct gpu_fence_state, generation) == 16 ? 1 : -1];
+typedef char gpu_submit_sync_command_check[GPU_COMMAND_SUBMIT_SYNC == 0xc0404716UL ? 1 : -1];
+typedef char gpu_present_sync_command_check[GPU_DISPLAY_PRESENT_SYNC == 0xc0684717UL ? 1 : -1];
+
+/* Display-event framing remains identical for both userspace word sizes. */
+typedef char gpu_events_size_check[sizeof(struct gpu_display_events) == 40 ? 1 : -1];
+typedef char gpu_events_sequence_check[offsetof(struct gpu_display_events, sequence) == 16 ? 1 : -1];
+typedef char gpu_events_ack_check[offsetof(struct gpu_display_events, ack_sequence) == 24 ? 1 : -1];
+typedef char gpu_events_reserved_check[offsetof(struct gpu_display_events, reserved) == 32 ? 1 : -1];
+typedef char gpu_events_command_check[GPU_DISPLAY_EVENTS == 0xc0284720UL ? 1 : -1];
+
+/* Explicit placement extends the new command without changing the legacy blob request. */
+typedef char gpu_placement_size_check[sizeof(struct gpu_placement) == 24 ? 1 : -1];
+typedef char gpu_placed_size_check[sizeof(struct gpu_blob_create_placed) == 64 ? 1 : -1];
+typedef char gpu_placed_condition_check[offsetof(struct gpu_blob_create_placed, placement) == 40 ? 1 : -1];
+typedef char gpu_placed_dma_check[offsetof(struct gpu_placement, max_dma_address) == 8 ? 1 : -1];
+typedef char gpu_placed_alignment_check[offsetof(struct gpu_placement, alignment) == 16 ? 1 : -1];
+typedef char gpu_placed_command_check[GPU_BLOB_CREATE_PLACED == 0xc0404721UL ? 1 : -1];

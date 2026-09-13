@@ -20,13 +20,13 @@
 #include "renderer.h"
 #include "shaders.h"
 
-#define TEXTURE_WIDTH 64U
-#define TEXTURE_BYTES (TEXTURE_WIDTH * TEXTURE_WIDTH * 4U)
-#define TEXTURE_OFFSET 4096U
-#define UPLOAD_BYTES (TEXTURE_OFFSET + TEXTURE_BYTES)
-#define VERTEX_COUNT 36U
-#define VERTEX_STRIDE 20U
-#define GPU_WAIT_NS UINT64_C(10000000000)
+#define TEXTURE_WIDTH		64U
+#define TEXTURE_BYTES		(TEXTURE_WIDTH * TEXTURE_WIDTH * 4U)
+#define TEXTURE_OFFSET		4096U
+#define UPLOAD_BYTES		(TEXTURE_OFFSET + TEXTURE_BYTES)
+#define VERTEX_COUNT		36U
+#define VERTEX_STRIDE		20U
+#define GPU_WAIT_NS		UINT64_C(10000000000)
 
 /* One application image retains its allocation until all GPU use has ended. */
 struct demo_image {
@@ -85,6 +85,7 @@ struct demo_renderer {
 	VkResult last_error;
 	const char *last_operation;
 	int offscreen;
+	int readback_enabled;
 	int ready;
 	int has_frame;
 	uint8_t upload[UPLOAD_BYTES];
@@ -145,7 +146,8 @@ static void release_resources(void);
 int
 vkdemo_initialize(
 	uint32_t device_index,
-	int offscreen)
+	int offscreen,
+	int readback)
 {
 	VkFormatProperties properties;
 	int error;
@@ -153,6 +155,9 @@ vkdemo_initialize(
 	/* Keep partial initialization valid for the caller's unconditional close. */
 	memset(&renderer, 0, sizeof(renderer));
 	renderer.offscreen = offscreen;
+	renderer.readback_enabled = readback;
+	if (offscreen != 0)
+		renderer.readback_enabled = 1;
 	renderer.last_operation = "initialization";
 
 	/* Enumerate an ordinary Vulkan physical device and graphics queue. */
@@ -304,15 +309,16 @@ vkdemo_render(
 	if (error != 0)
 		return -1;
 
-	/* Make actual GPU buffer writes visible through standard memory operations. */
-	error = read_pixels();
-	if (error != 0)
-		return -1;
+	/* Only explicit diagnostics read and hash the completed GPU image. */
+	if (renderer.readback_enabled != 0) {
+		error = read_pixels();
+		if (error != 0)
+			return -1;
 
-	/* Identify the unmodified, format-decoded RGB image for independent comparison. */
-	error = hash_pixels(digest);
-	if (error != 0)
-		return -1;
+		error = hash_pixels(digest);
+		if (error != 0)
+			return -1;
+	}
 
 	/* Offscreen mode never pretends that readback alone is display presentation. */
 	if (renderer.offscreen == 0) {
@@ -335,8 +341,19 @@ vkdemo_render(
 		}
 	}
 
+	/* Diagnostic capture waits for asynchronous presentation as well as shader completion. */
+	if (renderer.readback_enabled != 0 && renderer.offscreen == 0) {
+		status = vkQueueWaitIdle(renderer.queue);
+		if (status != VK_SUCCESS) {
+			record_error(status, "vkQueueWaitIdle");
+			return -1;
+		}
+	}
+
 	/* Permit an explicit image export only after a complete successful frame. */
-	renderer.has_frame = 1;
+	renderer.has_frame = 0;
+	if (renderer.readback_enabled != 0)
+		renderer.has_frame = 1;
 
 	/* Succeeded: the shader output is read back and, when requested, presented. */
 	return 0;
@@ -645,7 +662,7 @@ create_context(
 
 	/* Direct-display color targets belong to a real standard swapchain. */
 	if (renderer.offscreen == 0) {
-		status = vkdemo_display_create_swapchain(renderer.physical, renderer.device, renderer.family, &renderer.display);
+		status = vkdemo_display_create_swapchain(renderer.physical, renderer.device, renderer.family, &renderer.display, renderer.readback_enabled);
 		if (status != VK_SUCCESS) {
 			record_error(status, "direct display swapchain");
 			return -1;
@@ -987,13 +1004,17 @@ create_storage(
 	if (error != 0)
 		return -1;
 
-	/* Only Vulkan image-copy commands populate the retained readback buffer. */
-	error = create_buffer(&renderer.readback, VKDEMO_BYTES, VK_BUFFER_USAGE_TRANSFER_DST_BIT);
-	if (error != 0)
-		return -1;
+	/* Diagnostic modes alone own a mapped destination for actual GPU image copies. */
+	if (renderer.readback_enabled != 0) {
+		error = create_buffer(&renderer.readback, VKDEMO_BYTES, VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+		if (error != 0)
+			return -1;
 
-	/* Report application storage sizes without leaking backend resource identities. */
-	printf("VKDEMO STORAGE upload=%u readback=%u access=vkMapMemory\n", UPLOAD_BYTES, VKDEMO_BYTES);
+		printf("VKDEMO STORAGE upload=%u readback=%u access=vkMapMemory\n", UPLOAD_BYTES, VKDEMO_BYTES);
+	} else {
+		printf("VKDEMO STORAGE upload=%u readback=0 access=vkMapMemory\n", UPLOAD_BYTES);
+	}
+
 	fflush(stdout);
 
 	/* Succeeded: all scene storage has ordinary Vulkan ownership and visibility. */
@@ -1171,7 +1192,9 @@ create_render_pass(
 	attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 	attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 	attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	attachments[0].finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+	attachments[0].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	if (renderer.readback_enabled != 0)
+		attachments[0].finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 
 	/* Resolve visibility with fresh depth and discard it after the pass. */
 	attachments[1].format = VK_FORMAT_D32_SFLOAT;
@@ -1223,7 +1246,9 @@ create_render_pass(
 	create.pAttachments = attachments;
 	create.subpassCount = 1;
 	create.pSubpasses = &subpass;
-	create.dependencyCount = 2;
+	create.dependencyCount = 1;
+	if (renderer.readback_enabled != 0)
+		create.dependencyCount = 2;
 	create.pDependencies = dependencies;
 	status = vkCreateRenderPass(renderer.device, &create, NULL, &renderer.render_pass);
 	if (status != VK_SUCCESS) {
@@ -1758,7 +1783,8 @@ record_frame(
 	buffer_barrier(renderer.upload_buffer.buffer, UPLOAD_BYTES, VK_ACCESS_HOST_WRITE_BIT, VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT);
 
 	/* The preceding CPU read finishes before the next transfer overwrites readback. */
-	buffer_barrier(renderer.readback.buffer, VKDEMO_BYTES, VK_ACCESS_HOST_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+	if (renderer.readback_enabled != 0)
+		buffer_barrier(renderer.readback.buffer, VKDEMO_BYTES, VK_ACCESS_HOST_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
 
 	/* Preserve the independently specified opaque dark-blue background. */
 	memset(clears, 0, sizeof(clears));
@@ -1796,6 +1822,13 @@ record_frame(
 	/* Execute twelve textured, depth-tested triangles through both shader stages. */
 	vkCmdDraw(renderer.command, VERTEX_COUNT, 1, 0, 0);
 	vkCmdEndRenderPass(renderer.command);
+
+	/* Normal display transitions directly from color rendering without a readback copy. */
+	color = renderer.targets[renderer.target_index].image;
+	if (renderer.readback_enabled == 0) {
+		image_barrier(color, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, 0, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+		return 0;
+	}
 
 	/* Copy the actual rendered color image after its render-pass dependency. */
 	color = renderer.targets[renderer.target_index].image;

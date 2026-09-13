@@ -27,6 +27,16 @@ struct drv_gpu_display_ops {
 	int (*release)(void *, void *, const struct gpu_display_release *);
 	int (*present)(void *, void *, void *, struct gpu_display_present *);
 	int (*wait)(void *, void *, struct gpu_display_wait *);
+
+	/*
+	 * Optional IRQ-safe sequence snapshot, independent of the controller mutex.
+	 * It neither sleeps, allocates, clears events nor issues hardware commands.
+	 * The file retains the backend session even when unregister makes it offline.
+	 * A driver-owned sequence starts at one and never wraps; overflow is terminal
+	 * EOVERFLOW. Event publication calls poll_notify() outside its short lock,
+	 * without dereferencing a borrowed common registration handle.
+	 */
+	int (*events)(void *, void *, uint64_t *);
 };
 
 #endif

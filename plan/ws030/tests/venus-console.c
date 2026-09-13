@@ -10,17 +10,24 @@
  * Console snapshots and scheduler transitions are modeled at their public boundaries.
  */
 
+#define mutex_lock console_base_mutex_lock
+#define mutex_unlock console_base_mutex_unlock
 #define main venus_backend_unused_main
 #define drv_venus_transport_command console_base_transport
 #include "../../ws014/tests/venus-backend.c"
 #undef drv_venus_transport_command
 #undef main
+#undef mutex_lock
+#undef mutex_unlock
 
 /* Keeps guest scheduler types distinct from the host libc signal namespace. */
 typedef int32_t tid_t;
 #define sigset_t console_kernel_sigset_t
 #include <kern/thread.h>
 #undef sigset_t
+
+void mutex_lock(struct mutex *mutex);
+void mutex_unlock(struct mutex *mutex);
 
 int drv_venus_transport_command(struct venus_transport *transport, const void *input, uint32_t bytes, void *output, uint32_t capacity, uint32_t *response_bytes);
 #include "../../../src/drivers/gpu/venus/display.c"
@@ -36,6 +43,15 @@ static struct venus_controller *console_controller;
 
 /* Scheduler ticks advance only at ordinary sleep boundaries in this deterministic fixture. */
 static uint64_t console_ticks;
+
+/* Optional observation isolates the real display callback's controller lock across its sleep boundary. */
+static struct mutex *console_observed_mutex;
+/* Exactly one observed controller mutex hold may surround each native display callback. */
+static unsigned console_observed_depth;
+
+/* A serial host peer observes the driver's short counter-snapshot spin sections. */
+static struct spinlock *console_observed_spin;
+static struct venus_display_output *console_race_output;
 
 /* Text generation changes the independent BGRA snapshot, making redraw observable. */
 static uint32_t console_generation = 1U;
@@ -57,6 +73,20 @@ static void console_test_restore(void);
 static void console_test_timeout(void);
 static void console_test_claim(struct venus_controller *controller, void *session, struct gpu_display_claim *claim);
 static void console_test_finish(struct venus_controller *controller);
+
+/*
+ * Records configuration invalidation in the serial display peer's retained transport.
+ */
+void
+drv_venus_transport_display_changed(
+	struct venus_transport *transport)
+{
+	/* This peer has no IRQ dispatcher; real interrupt publication has its own fixture. */
+	transport->topology_sequence++;
+
+	/* Succeeded: subsequent display-event snapshots can observe the invalidation. */
+	return;
+}
 
 /*
  * Supplies complete virtual display responses while preserving the existing strict resource peer.
@@ -291,6 +321,16 @@ void
 sched_sleep(
 	uint64_t target)
 {
+	/* A nominal refresh wait cannot retain controller admission against another rendering session. */
+	if (console_observed_mutex != NULL)
+		assert(console_observed_depth == 0U);
+
+	/* A competing owner may retire or replace the lease while the pacing helper is asleep. */
+	if (console_race_output != NULL) {
+		console_race_output->lease++;
+		console_race_output = NULL;
+	}
+
 	/* Display refresh and worker polling must request monotonic future deadlines. */
 	assert(target > console_ticks);
 	console_ticks = target;
@@ -599,5 +639,117 @@ console_test_finish(
 	assert(fixture_dma == 0U);
 
 	/* Succeeded: no controller state survives its stopped worker or ended device accesses. */
+	return;
+}
+
+/* Observes only a selected display controller's admission without changing unrelated fixture peers. */
+void
+mutex_lock(
+	struct mutex *mutex)
+{
+	if (mutex == console_observed_mutex) {
+		assert(console_observed_depth == 0U);
+		console_observed_depth++;
+	}
+	console_base_mutex_lock(mutex);
+	return;
+}
+
+/* The selected callback must return with precisely the lock ownership it had on entry. */
+void
+mutex_unlock(
+	struct mutex *mutex)
+{
+	if (mutex == console_observed_mutex) {
+		assert(console_observed_depth == 1U);
+		console_observed_depth--;
+	}
+	console_base_mutex_unlock(mutex);
+	return;
+}
+
+/* Pacing tests deliberately retain failed transport state instead of inventing recovery authorization. */
+int
+drv_gpu_recovery_ready(
+	struct drv_gpu_device *device)
+{
+	(void)device;
+	return 0;
+}
+
+/* This peer exercises ordinary display callbacks, not recovery or device-wide GPU core notifications. */
+void
+drv_gpu_report_error(
+	struct drv_gpu_device *device,
+	int error)
+{
+	(void)device;
+	assert(error == 0);
+	return;
+}
+
+/* Display cadence does not submit asynchronous rendering commands in this native-only fixture. */
+int
+drv_venus_transport_submit(
+	struct venus_transport *transport,
+	uint32_t context,
+	const void *command,
+	uint32_t bytes,
+	uint32_t flags,
+	uint32_t timeline,
+	struct drv_gpu_completion *completion)
+{
+	(void)transport;
+	(void)context;
+	(void)command;
+	(void)bytes;
+	(void)flags;
+	(void)timeline;
+	(void)completion;
+	assert(0);
+	return EIO;
+}
+
+/* Ordinary display/resource opens have no asynchronous render completion to drain here. */
+void
+drv_venus_transport_drain(
+	struct venus_transport *transport,
+	uint32_t context)
+{
+	(void)transport;
+	(void)context;
+	return;
+}
+
+/*
+ * Models a serial interrupt-masked counter snapshot without inventing concurrent kernel execution.
+ */
+unsigned long
+spin_lock_irqsave(
+	struct spinlock *lock)
+{
+	/* A nested spin hold would expose unexpected blocking or lock recursion in this finite peer. */
+	assert(lock != NULL);
+	assert(console_observed_spin == NULL);
+	console_observed_spin = lock;
+
+	/* Succeeded: the matching restore must consume this exact observed counter lock. */
+	return 1UL;
+}
+
+/*
+ * Restores the independently observed interrupt state after the driver's counter snapshot.
+ */
+void
+spin_unlock_irqrestore(
+	struct spinlock *lock,
+	unsigned long enabled)
+{
+	/* No unlock may target another lock or discard the caller's captured interrupt state. */
+	assert(console_observed_spin == lock);
+	assert(enabled == 1UL);
+	console_observed_spin = NULL;
+
+	/* Succeeded: no counter snapshot remains active across a later sleep or resource retirement. */
 	return;
 }

@@ -1,3 +1,5 @@
+/* -*- mode: c; c-file-style: "linux"; tab-width: 8; -*- */
+
 /*
  * zedBSD
  * Copyright (C) 2026 Awe Morris
@@ -5,9 +7,7 @@
  * SPDX-License-Identifier: Zlib
  */
 
-/*
- * Maintained Vulkan 1.0 recording wrappers, no scene or shader assumptions.
- */
+/* Maintained Vulkan 1.0 recording wrappers; no scene or shader assumptions. */
 
 /*
  * Records vkCmdBindPipeline with the caller's standard parameters and owned object identities.
@@ -32,7 +32,7 @@ vkCmdBindPipeline(
 	vulkan_write_u32(&writer, pipelineBindPoint);
 	vulkan_encode_handle(&writer, (uint64_t)pipeline);
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -81,7 +81,7 @@ vkCmdSetViewport(
 		vulkan_encode_VkViewport(&writer, &pViewports[index]);
 	}
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -130,7 +130,7 @@ vkCmdSetScissor(
 		vulkan_encode_VkRect2D(&writer, &pScissors[index]);
 	}
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -158,7 +158,7 @@ vkCmdSetLineWidth(
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
 	vulkan_write_float(&writer, lineWidth);
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -190,7 +190,7 @@ vkCmdSetDepthBias(
 	vulkan_write_float(&writer, depthBiasClamp);
 	vulkan_write_float(&writer, depthBiasSlopeFactor);
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -233,7 +233,7 @@ vkCmdSetBlendConstants(
 		vulkan_write_float(&writer, blendConstants[index]);
 	}
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -263,7 +263,7 @@ vkCmdSetDepthBounds(
 	vulkan_write_float(&writer, minDepthBounds);
 	vulkan_write_float(&writer, maxDepthBounds);
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -293,7 +293,7 @@ vkCmdSetStencilCompareMask(
 	vulkan_write_u32(&writer, faceMask);
 	vulkan_write_u32(&writer, compareMask);
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -323,7 +323,7 @@ vkCmdSetStencilWriteMask(
 	vulkan_write_u32(&writer, faceMask);
 	vulkan_write_u32(&writer, writeMask);
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -353,7 +353,7 @@ vkCmdSetStencilReference(
 	vulkan_write_u32(&writer, faceMask);
 	vulkan_write_u32(&writer, reference);
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -427,7 +427,7 @@ vkCmdBindDescriptorSets(
 		vulkan_write_u32(&writer, pDynamicOffsets[index]);
 	}
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -459,7 +459,7 @@ vkCmdBindIndexBuffer(
 	vulkan_write_u64(&writer, offset);
 	vulkan_write_u32(&writer, indexType);
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -525,7 +525,7 @@ vkCmdBindVertexBuffers(
 		vulkan_write_u64(&writer, pOffsets[index]);
 	}
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -559,7 +559,7 @@ vkCmdDraw(
 	vulkan_write_u32(&writer, firstVertex);
 	vulkan_write_u32(&writer, firstInstance);
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -595,7 +595,7 @@ vkCmdDrawIndexed(
 	vulkan_write_u32(&writer, vertexOffset);
 	vulkan_write_u32(&writer, firstInstance);
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -629,7 +629,7 @@ vkCmdDrawIndirect(
 	vulkan_write_u32(&writer, drawCount);
 	vulkan_write_u32(&writer, stride);
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -663,7 +663,7 @@ vkCmdDrawIndexedIndirect(
 	vulkan_write_u32(&writer, drawCount);
 	vulkan_write_u32(&writer, stride);
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -695,7 +695,7 @@ vkCmdDispatch(
 	vulkan_write_u32(&writer, groupCountY);
 	vulkan_write_u32(&writer, groupCountZ);
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -725,7 +725,7 @@ vkCmdDispatchIndirect(
 	vulkan_encode_handle(&writer, (uint64_t)buffer);
 	vulkan_write_u64(&writer, offset);
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -776,7 +776,7 @@ vkCmdCopyBuffer(
 		vulkan_encode_VkBufferCopy(&writer, &pRegions[index]);
 	}
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -831,7 +831,7 @@ vkCmdCopyImage(
 		vulkan_encode_VkImageCopy(&writer, &pRegions[index]);
 	}
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -890,7 +890,7 @@ vkCmdBlitImage(
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
 	vulkan_write_u32(&writer, filter);
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -943,7 +943,7 @@ vkCmdCopyBufferToImage(
 		vulkan_encode_VkBufferImageCopy(&writer, &pRegions[index]);
 	}
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -996,7 +996,7 @@ vkCmdCopyImageToBuffer(
 		vulkan_encode_VkBufferImageCopy(&writer, &pRegions[index]);
 	}
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -1039,7 +1039,7 @@ vkCmdUpdateBuffer(
 	vulkan_write_u64(&writer, count);
 	vulkan_write_bytes(&writer, pData, (size_t)count);
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -1073,7 +1073,7 @@ vkCmdFillBuffer(
 	vulkan_write_u64(&writer, size);
 	vulkan_write_u32(&writer, data);
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -1139,7 +1139,7 @@ vkCmdClearColorImage(
 		vulkan_encode_VkImageSubresourceRange(&writer, &pRanges[index]);
 	}
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -1205,7 +1205,7 @@ vkCmdClearDepthStencilImage(
 		vulkan_encode_VkImageSubresourceRange(&writer, &pRanges[index]);
 	}
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -1273,7 +1273,7 @@ vkCmdClearAttachments(
 		vulkan_encode_VkClearRect(&writer, &pRects[index]);
 	}
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -1328,7 +1328,7 @@ vkCmdResolveImage(
 		vulkan_encode_VkImageResolve(&writer, &pRegions[index]);
 	}
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -1358,7 +1358,7 @@ vkCmdSetEvent(
 	vulkan_encode_handle(&writer, (uint64_t)event);
 	vulkan_write_u32(&writer, stageMask);
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -1388,7 +1388,7 @@ vkCmdResetEvent(
 	vulkan_encode_handle(&writer, (uint64_t)event);
 	vulkan_write_u32(&writer, stageMask);
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -1502,7 +1502,7 @@ vkCmdWaitEvents(
 		vulkan_encode_VkImageMemoryBarrier(&writer, &pImageMemoryBarriers[index]);
 	}
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -1597,7 +1597,7 @@ vkCmdPipelineBarrier(
 		vulkan_encode_VkImageMemoryBarrier(&writer, &pImageMemoryBarriers[index]);
 	}
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -1629,7 +1629,7 @@ vkCmdBeginQuery(
 	vulkan_write_u32(&writer, query);
 	vulkan_write_u32(&writer, flags);
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -1659,7 +1659,7 @@ vkCmdEndQuery(
 	vulkan_encode_handle(&writer, (uint64_t)queryPool);
 	vulkan_write_u32(&writer, query);
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -1691,7 +1691,7 @@ vkCmdResetQueryPool(
 	vulkan_write_u32(&writer, firstQuery);
 	vulkan_write_u32(&writer, queryCount);
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -1723,7 +1723,7 @@ vkCmdWriteTimestamp(
 	vulkan_encode_handle(&writer, (uint64_t)queryPool);
 	vulkan_write_u32(&writer, query);
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -1763,7 +1763,7 @@ vkCmdCopyQueryPoolResults(
 	vulkan_write_u64(&writer, stride);
 	vulkan_write_u32(&writer, flags);
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -1808,7 +1808,7 @@ vkCmdPushConstants(
 	vulkan_write_u64(&writer, count);
 	vulkan_write_bytes(&writer, pValues, (size_t)count);
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -1850,7 +1850,7 @@ vkCmdBeginRenderPass(
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
 	vulkan_write_u32(&writer, contents);
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -1878,7 +1878,7 @@ vkCmdNextSubpass(
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
 	vulkan_write_u32(&writer, contents);
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -1902,7 +1902,7 @@ vkCmdEndRenderPass(
 	if (!active)
 		return;
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
@@ -1949,7 +1949,7 @@ vkCmdExecuteCommands(
 		vulkan_encode_handle(&writer, (uint64_t)(uintptr_t)pCommandBuffers[index]);
 	}
 
-	/* Native recording completion is distinct from later GPU execution completion. */
+	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */

@@ -164,6 +164,7 @@ class OracleTests(unittest.TestCase):
     def test_same_process_finite_ack_session_and_done(self):
         # This peer proves sequencing/hash/oracle/ack/DONE plumbing only, not GPU rendering.
         stage = [0]
+        ordinary_captures = [0]
         calls = []
         def send(text):
             calls.append(text)
@@ -173,18 +174,30 @@ class OracleTests(unittest.TestCase):
                 return marker(self.samples[stage[0] - 1])
             if stage[0] == 7:
                 return 'VKDEMO DONE run=fixture frames=6\nroot@zedbsd$ '
-            first = dict(self.samples[3], run='fixture-ordinary', frame=1, sample=1)
-            last = dict(self.samples[4], run='fixture-ordinary', frame=2, sample=2)
-            return ('VKDEMO START run=fixture-ordinary\n' + marker(first) + '\n' + marker(last) +
-                    '\nVKDEMO DONE run=fixture-ordinary frames=2\nroot@zedbsd$ ')
+            count = 2 if ordinary_captures[0] == 0 else 3
+            value = 'VKDEMO START run=fixture-ordinary\n'
+            for frame in range(1, count + 1):
+                value += (f'VKDEMO SUBMITTED run=fixture-ordinary mode=live frame={frame} '
+                          f'time_ms={(frame - 1) * 500} readback=disabled width=320 height=240\n')
+            if ordinary_captures[0] == 2:
+                value += 'VKDEMO DONE run=fixture-ordinary frames=3\nroot@zedbsd$ '
+            return value
         def capture(path, output, timeout):
-            ppm(output, self.images[self.samples[stage[0] - 1]['time_ms']])
+            if output.name.startswith('ordinary-'):
+                # Independently supplied changing pixels: the live enqueue marker
+                # carries no readback hash or promise of an exact displayed frame.
+                ppm(output, self.images[ordinary_captures[0] * 500])
+                ordinary_captures[0] += 1
+            else:
+                ppm(output, self.images[self.samples[stage[0] - 1]['time_ms']])
             return {'fixture_peer': True}
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / 'case' / 'evidence'
             output.mkdir(parents=True)
             debug = output / 'guest.log'
             debug.write_bytes(b'')
+            (output / 'qemu-renderer.log').write_text(
+                '234@1.2:virtio_gpu_cmd_set_scanout_blob id 0, res 0x2a, w 320, h 240, x 0, y 0\n')
             args = SimpleNamespace(token='fixture', timeout=60)
             report = {}
             with mock.patch.object(harness.common, 'console_text', side_effect=console), \
@@ -196,6 +209,8 @@ class OracleTests(unittest.TestCase):
             self.assertEqual(calls[1:7], ['\n'] * 6)
             self.assertEqual(calls[7], '/bin/vkdemo --duration=2 --token=fixture-ordinary\n')
             self.assertTrue(report['ordinary']['completed'])
+            self.assertEqual(len(report['ordinary']['captures']), 2)
+            self.assertTrue(all(item['readback_disabled'] for item in report['ordinary']['samples']))
             self.assertEqual(len(report['samples']), 6)
             self.assertTrue(report['guest_completed'])
             self.assertEqual(json.loads((output / 'result.json').read_text())['status'], 'pass')
@@ -211,6 +226,31 @@ class OracleTests(unittest.TestCase):
             (output / 'frame-1.ppm').write_bytes(changed)
             with self.assertRaises(RuntimeError):
                 wrapper.verify_vkdemo_result(local_args, local, report)
+
+
+class ScanoutTraceTests(unittest.TestCase):
+    def test_blob_request_and_console_mode_are_distinguished(self):
+        data = (b'9@1.0:virtio_gpu_cmd_set_scanout id 0, res 0x1, w 640, h 480, x 0, y 0\n'
+                b'9@2.0:virtio_gpu_cmd_set_scanout_blob id 0, res 0x2a, w 320, h 240, x 0, y 0\n'
+                b'9@3.0:virtio_gpu_cmd_set_scanout_blob id 0, res 0x31, w 320, h 240, x 0, y 0\n')
+        result = harness.common.verify_blob_scanout_trace(data, 320, 240)
+        self.assertEqual(result['blob_requests'], 2)
+        self.assertEqual(result['legacy_requests'], 0)
+        self.assertEqual(result['blob_resources'], [42, 49])
+        self.assertEqual(result['proves'], 'request selection only')
+
+    def test_missing_wrong_extent_and_disabled_blob_requests_fail(self):
+        for data in (b'',
+                     b'virtio_gpu_cmd_set_scanout_blob id 0, res 0x0, w 320, h 240, x 0, y 0\n',
+                     b'virtio_gpu_cmd_set_scanout_blob id 0, res 0x2a, w 640, h 480, x 0, y 0\n'):
+            with self.subTest(data=data), self.assertRaises(RuntimeError):
+                harness.common.verify_blob_scanout_trace(data, 320, 240)
+
+    def test_legacy_application_request_fails_even_with_valid_blob_requests(self):
+        data = (b'virtio_gpu_cmd_set_scanout_blob id 0, res 0x2a, w 320, h 240, x 0, y 0\n'
+                b'virtio_gpu_cmd_set_scanout id 0, res 0x31, w 320, h 240, x 0, y 0\n')
+        with self.assertRaisesRegex(RuntimeError, 'legacy scanout'):
+            harness.common.verify_blob_scanout_trace(data, 320, 240)
 
 
 class WrapperTests(unittest.TestCase):
@@ -253,7 +293,8 @@ class WrapperTests(unittest.TestCase):
     def test_venus_result_identity_and_evidence_gate_is_preserved(self):
         sha = 'a' * 64
         args = SimpleNamespace(profile='venus', phase='venus', frame=1, boot_only=False,
-                               render_server='/server', left=[255, 0, 0], right=[0, 255, 0])
+                               render_server='/server', renderer_library_dir=None, fault_test=None,
+                               left=[255, 0, 0], right=[0, 255, 0])
         local = {'remote_exit_code': 0, 'console': {'physical_address': 1, 'bytes': 32768},
                  'disposable_image': {'sha256': sha},
                  'artifacts': {'harness': {'sha256': sha}, 'rfb_client': {'sha256': sha}},

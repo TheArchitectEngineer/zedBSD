@@ -18,11 +18,13 @@
 /* A kernel subsystem owns the meaning and authority of each payload type. */
 enum kernel_handle_type {
 	KERNEL_HANDLE_GPU = 1,
+	KERNEL_HANDLE_FENCE = 2,
 };
 
 /* Final destruction belongs to the subsystem that supplied the payload. */
 struct kernel_handle_ops {
 	void (*release)(void *object);
+	int (*poll)(void *object, short events, short *revents);
 };
 
 /*

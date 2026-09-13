@@ -25,7 +25,7 @@ for mode in ordinary sanitize; do
         -Wl,--version-script,"$repo/userland/base/libwayland/exports.map" \
         -o "$work/libwayland-client.so"
     set --
-    for source in objects wire context codec dispatch instance device resources pipeline descriptors commands memory sync queue query wsi wsi-display wsi-swapchain wsi-image wsi-wayland; do
+    for source in objects wire context codec dispatch instance device resources pipeline descriptors commands memory sync queue query wsi wsi-display wsi-swapchain wsi-image wsi-wayland wsi-display-nodes external-properties external-fence; do
         set -- "$@" "$repo/userland/base/libvulkan/$source.c"
     done
     timeout 60 cc -std=c89 -D_GNU_SOURCE -Wall -Wextra -Werror $extra \

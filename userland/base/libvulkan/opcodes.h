@@ -158,7 +158,10 @@ enum vulkan_opcode {
 	VULKAN_OPCODE_vkCmdEndRenderPass = 135,
 	VULKAN_OPCODE_vkCmdExecuteCommands = 136,
 	VULKAN_OPCODE_vkEnumerateInstanceVersion = 137,
+	VULKAN_OPCODE_vkGetPhysicalDeviceProperties2 = 148,
+	VULKAN_OPCODE_vkGetPhysicalDeviceImageFormatProperties2 = 150,
 	VULKAN_OPCODE_vkGetDeviceQueue2 = 155,
+	VULKAN_OPCODE_vkGetPhysicalDeviceExternalBufferProperties = 161,
 	VULKAN_OPCODE_vkSetReplyCommandStreamMESA = 178,
 	VULKAN_OPCODE_vkSeekReplyCommandStreamMESA = 179,
 	VULKAN_OPCODE_vkExecuteCommandStreamsMESA = 180

@@ -16,6 +16,7 @@
 
 #include "kern/poll.h"
 #include "kern/file.h"
+#include "kern/handle.h"
 #include "kern/filedesc.h"
 #include "kern/lock.h"
 #include "kern/process.h"
@@ -291,6 +292,10 @@ poll_scan(
 		error = 0;
 		if (object.type == FD_OBJECT_FILE)
 			error = file_poll(object.data.file, fds[i].events, &revents);
+
+		/* Optional typed readiness never gives a handle ordinary file semantics. */
+		if (object.type == FD_OBJECT_HANDLE && object.data.handle->ops->poll != NULL)
+			error = object.data.handle->ops->poll(object.data.handle->object, fds[i].events, &revents);
 
 		/* Either object can outlive concurrent close until this scan finishes. */
 		(void)fd_object_put(&object);

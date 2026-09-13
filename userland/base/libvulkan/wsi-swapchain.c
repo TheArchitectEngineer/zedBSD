@@ -7,11 +7,13 @@
 
 /*
  * Dynamic Vulkan swapchains over ordinary images and a separate native adapter.
- * Presentation uses one semaphore-consuming submission, then completed readback.
+ * Presentation enqueues owned jobs which verify GPU completion before native scanout or explicit copied fallback.
  */
 
 #include "wsi-internal.h"
 
+#include <uapi/gpu-fence.h>
+#include <sys/ioctl.h>
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
@@ -28,6 +30,10 @@
 struct wsi_image {
 	VkImage image;
 	VkDeviceMemory memory;
+};
+
+/* One swapchain owns its scanout destination independently from shared application VkImages. */
+struct wsi_present_image {
 	VkImage shared_image;
 	VkDeviceMemory shared_memory;
 	void *native_image;
@@ -53,6 +59,9 @@ struct vulkan_swapchain {
 	struct vulkan_surface *surface;
 	struct vulkan_swapchain *next;
 	struct wsi_image_group *group;
+	struct wsi_present_image *presentation;
+	uint32_t presentation_count;
+	VkBool32 gpu_present;
 	void *lease;
 	uint8_t *states;
 	VkFormat format;
@@ -65,12 +74,30 @@ struct vulkan_swapchain {
 	uint64_t sequence;
 	uint32_t cursor;
 	VkBool32 retired;
-	VkBool32 presenting;
+	uint32_t pending_jobs;
+	VkResult error;
 };
 
-/* One finite presentation transaction, completely acquired before submission. */
+/* A job borrows its queue worker until the ordered completion path retires it. */
+struct wsi_queue_worker;
+
+/* A queue reuses one private fence per concurrent job instead of starting completion threads per frame. */
+struct wsi_present_fence {
+	struct wsi_present_fence *next;
+	VkFence fence;
+	int fd;
+	VkBool32 shared;
+	VkBool32 busy;
+};
+
+/* One owned presentation transaction outlives its caller until checked GPU and native completion. */
 struct wsi_present_job {
 	struct vulkan_allocator allocator;
+	struct wsi_present_job *next;
+	struct wsi_queue_worker *worker;
+	struct wsi_present_fence *completion;
+	VkPresentInfoKHR info;
+	uint32_t *indices;
 	struct VkQueue_T *queue;
 	struct vulkan_swapchain **chains;
 	VkResult *results;
@@ -81,14 +108,35 @@ struct wsi_present_job {
 	VkCommandPool pool;
 	VkCommandBuffer command;
 	VkFence fence;
+	int fence_fd;
+	uint64_t fence_generation;
 	uint32_t count;
 	VkBool32 submitted;
 	VkBool32 reserved;
 };
 
+/* One logical queue owns an ordered worker whose waits never retain queue or WSI locks. */
+struct wsi_queue_worker {
+	struct wsi_queue_worker *next;
+	struct VkQueue_T *queue;
+	struct wsi_present_job *head;
+	struct wsi_present_job *tail;
+	struct wsi_present_job *current;
+	struct wsi_present_fence *fences;
+	pthread_t thread;
+	VkBool32 stopping;
+};
+
 /* Serializes only WSI linkage and image ownership, never a pending GPU fence. */
 static pthread_mutex_t swapchain_mutex = PTHREAD_MUTEX_INITIALIZER;
+/* Live chains retain their surface and image ownership until all queued jobs have retired. */
 static struct vulkan_swapchain *swapchains;
+
+/* Workers remain linked until their logical device drains and joins them. */
+static struct wsi_queue_worker *workers;
+
+/* Ownership transitions wake workers, idle waiters and swapchain destruction under swapchain_mutex. */
+static pthread_cond_t swapchain_condition = PTHREAD_COND_INITIALIZER;
 
 static struct vulkan_swapchain *swapchain_get(VkSwapchainKHR handle);
 static VkResult swapchain_create(struct VkDevice_T *device, const VkSwapchainCreateInfoKHR *info, const VkAllocationCallbacks *allocator, struct wsi_image_group *shared, struct vulkan_swapchain **result);
@@ -99,6 +147,8 @@ static VkResult swapchain_group_create(struct vulkan_swapchain *chain, const VkS
 static void swapchain_group_free(struct wsi_image_group *group);
 static VkResult swapchain_image_create(struct vulkan_swapchain *chain, const VkSwapchainCreateInfoKHR *info, struct wsi_image *image);
 static VkResult swapchain_readback_create(struct vulkan_swapchain *chain);
+static VkResult swapchain_native_images_create(struct vulkan_swapchain *chain);
+static void swapchain_native_images_free(struct vulkan_swapchain *chain);
 static VkResult swapchain_allocate_memory(struct vulkan_swapchain *chain, const VkMemoryRequirements *requirements, VkMemoryPropertyFlags required, const struct vulkan_allocator *policy, VkDeviceMemory *memory);
 static const VkAllocationCallbacks *swapchain_allocator(const struct vulkan_allocator *allocator);
 static VkBool32 swapchain_compatible(const VkSwapchainCreateInfoKHR *first, const VkSwapchainCreateInfoKHR *second);
@@ -106,15 +156,20 @@ static VkResult swapchain_current(struct vulkan_swapchain *chain);
 static VkResult swapchain_now(uint64_t *nanoseconds);
 static VkResult present_prepare(struct wsi_present_job *job, struct VkQueue_T *queue, const VkPresentInfoKHR *info);
 static VkResult present_reserve(struct wsi_present_job *job, const VkPresentInfoKHR *info);
+static VkResult present_fence_prepare(struct wsi_present_job *job);
 static VkResult present_record(struct wsi_present_job *job, const VkPresentInfoKHR *info);
-static void present_copy(VkCommandBuffer command, struct vulkan_swapchain *chain, uint32_t index, uint32_t family);
-static void present_copy_shared(VkCommandBuffer command, struct vulkan_swapchain *chain, uint32_t index, uint32_t family);
+static void present_copy(VkCommandBuffer command, struct vulkan_swapchain *chain, uint32_t index, uint32_t family, const VkDisplayPresentInfoKHR *display);
+static void present_copy_shared(VkCommandBuffer command, struct vulkan_swapchain *chain, uint32_t index, uint32_t family, const VkDisplayPresentInfoKHR *display);
 static VkResult present_submit(struct wsi_present_job *job, const VkPresentInfoKHR *info);
 static void present_compose(struct wsi_present_job *job, uint32_t index, struct vulkan_wsi_pixels *pixels);
 static VkResult present_native(struct wsi_present_job *job, const VkPresentInfoKHR *info);
 static void present_finish(struct wsi_present_job *job, const VkPresentInfoKHR *info, VkResult error);
 static VkResult present_combine(VkResult first, VkResult second);
 static VkResult swapchain_device_lost(struct VkDevice_T *device);
+static VkResult present_worker_get(struct VkQueue_T *queue, struct wsi_queue_worker **result);
+static void *present_worker_main(void *argument);
+static void present_workers_stop(struct VkDevice_T *device);
+static VkResult present_drain(struct VkDevice_T *device, struct VkQueue_T *queue);
 
 /*
  * Creates an independent swapchain and retires the specified old chain on entry.
@@ -395,8 +450,8 @@ vkAcquireNextImageKHR(
 		for (offset = 0U; offset < chain->group->count; offset++) {
 			/* Skips buffers retained by either application rendering or the compositor. */
 			available = VK_TRUE;
-			if (chain->surface->platform->image_available != NULL)
-				available = chain->surface->platform->image_available(chain->group->images[index].native_image);
+			if (chain->gpu_present != VK_FALSE && chain->surface->platform->image_available != NULL)
+				available = chain->surface->platform->image_available(chain->presentation[index].native_image);
 
 			/* Both rendering and native presentation must have released this image. */
 			if (chain->states[index] != WSI_IMAGE_AVAILABLE || available == VK_FALSE) {
@@ -441,8 +496,11 @@ vkAcquireNextImageKHR(
 
 	/* Only a fully successful acquire advances selection and returns the image index. */
 	pthread_mutex_lock(&swapchain_mutex);
+
 	chain->cursor = (index + 1U) % chain->group->count;
+
 	pthread_mutex_unlock(&swapchain_mutex);
+
 	*result = index;
 
 	/* Succeeded: image contents are reusable and the requested sync objects are signaled. */
@@ -458,41 +516,120 @@ vkQueuePresentKHR(
 	const VkPresentInfoKHR *info)
 {
 	struct VkQueue_T *queue;
-	struct wsi_present_job job;
+	struct wsi_present_job *job;
+	struct wsi_queue_worker *worker;
+	struct vulkan_allocator allocator;
 	VkResult error;
+	VkResult combined;
+	size_t bytes;
+	uint32_t index;
 
-	/* A job retains every transient object until a checked completion or device loss. */
+	/* The library owns every object which may remain live after this API call returns. */
 	queue = vulkan_queue(queue_handle);
 	if (queue == NULL || info == NULL)
 		return VK_ERROR_INITIALIZATION_FAILED;
-	memset(&job, 0, sizeof(job));
-	error = present_prepare(&job, queue, info);
+
+	/* Job allocation precedes acquisition reservation and any semaphore consumption. */
+	allocator = queue->device->object.allocator;
+	job = vulkan_allocate(&allocator, sizeof(*job), sizeof(void *), VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
+	if (job == NULL)
+		return VK_ERROR_OUT_OF_HOST_MEMORY;
+
+	/* Partial preparation remains safe for the common unsubmitted cleanup path. */
+	memset(job, 0, sizeof(*job));
+	job->fence_fd = -1;
+	error = present_prepare(job, queue, info);
 	if (error != VK_SUCCESS)
 		goto cleanup;
 
-	/* Recording and allocations finish before any semaphore wait can be consumed. */
-	error = present_record(&job, info);
-	if (error != VK_SUCCESS)
+	/* Caller arrays and pResults cease to be valid inputs as soon as this call returns. */
+	bytes = (size_t)job->count * sizeof(*job->indices);
+	if (bytes / sizeof(*job->indices) != job->count) {
+		error = VK_ERROR_OUT_OF_HOST_MEMORY;
 		goto cleanup;
-	error = present_submit(&job, info);
+	}
+
+	/* The worker reads only this owned image-index snapshot and already resolved chain pointers. */
+	job->indices = vulkan_allocate(&allocator, bytes, sizeof(void *), VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
+	if (job->indices == NULL) {
+		error = VK_ERROR_OUT_OF_HOST_MEMORY;
+		goto cleanup;
+	}
+
+	/* Native completion never reads an application pNext chain or writes an earlier pResults array. */
+	memcpy(job->indices, info->pImageIndices, bytes);
+	job->info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+	job->info.swapchainCount = job->count;
+	job->info.pImageIndices = job->indices;
+	error = present_worker_get(queue, &worker);
 	if (error != VK_SUCCESS)
 		goto cleanup;
 
-	/* Each native result contributes to both its pResults entry and overall priority. */
-	error = present_native(&job, info);
+	/* Recording and native metadata allocation complete before waits can be consumed. */
+	job->worker = worker;
+	error = present_record(job, info);
+	if (error != VK_SUCCESS)
+		goto cleanup;
+
+	/* Queue submission and worker publication retain one issue order with other queue operations. */
+	pthread_mutex_lock(&queue->mutex);
+
+	error = present_submit(job, info);
+	if (error != VK_SUCCESS) {
+		pthread_mutex_unlock(&queue->mutex);
+		goto cleanup;
+	}
+
+	/* Publish only results known at enqueue time while caller-owned result storage is still valid. */
+	combined = VK_SUCCESS;
+	for (index = 0U; index < job->count; index++) {
+		/* Native asynchronous failures are latched later on the chain, never written into this array. */
+		if (info->pResults != NULL)
+			info->pResults[index] = job->results[index];
+
+		/* Each independently validated target contributes its enqueue status. */
+		combined = present_combine(combined, job->results[index]);
+	}
+
+	/* From this publication onward only the worker may release the owned job. */
+	pthread_mutex_lock(&swapchain_mutex);
+
+	if (worker->tail != NULL)
+		worker->tail->next = job;
+	else
+		worker->head = job;
+	worker->tail = job;
+	pthread_cond_broadcast(&swapchain_condition);
+
+	pthread_mutex_unlock(&swapchain_mutex);
+
+	pthread_mutex_unlock(&queue->mutex);
+
+	/* Publication transfers the entire job to its worker, including all cleanup responsibility. */
+	job = NULL;
+	error = combined;
 
 cleanup:
-	/* Restores unsubmitted acquisition or releases images after an enqueued operation. */
-	present_finish(&job, info, error);
-	if (error != VK_SUCCESS)
+	/* Native acceptance followed by notification failure is terminal, never an ordinary retry. */
+	if (error == VK_ERROR_DEVICE_LOST)
+		error = swapchain_device_lost(queue->device);
+
+	/* Only unpublished jobs remain caller-owned; preparation failure restores acquisition. */
+	if (job != NULL) {
+		present_finish(job, info, error);
+		vulkan_free(&allocator, job);
+	}
+
+	/* Rejected targets or failed enqueue retain their precise public error result. */
+	if (error < VK_SUCCESS)
 		return error;
 
-	/* Succeeded: every native target accepted its completed whole image. */
-	return VK_SUCCESS;
+	/* Succeeded: the library owns the accepted GPU work and ordered native presentation job. */
+	return error;
 }
 
 /*
- * Native presentation calls complete synchronously, so no extra queue work remains.
+ * Drains queue-owned presentation jobs without waiting for the last scanout image to be replaced.
  */
 VkResult
 vulkan_wsi_queue_idle(
@@ -500,17 +637,17 @@ vulkan_wsi_queue_idle(
 {
 	VkResult error;
 
-	/* Public queue idle has already completed ordinary GPU submissions. */
-	error = __atomic_load_n(&queue->device->error, __ATOMIC_ACQUIRE);
+	/* Native request completion is distinct from current front allocation retention. */
+	error = present_drain(queue->device, queue);
 	if (error != VK_SUCCESS)
-		return VK_ERROR_DEVICE_LOST;
+		return error;
 
-	/* Succeeded: every returned native presentation has already consumed its pixels. */
+	/* Succeeded: no worker will issue another native request for earlier work on this queue. */
 	return VK_SUCCESS;
 }
 
 /*
- * Completes the synchronous native presentation side of public device idle.
+ * Drains every presentation producer before public device idle places its GPU completion markers.
  */
 VkResult
 vulkan_wsi_device_idle(
@@ -518,12 +655,12 @@ vulkan_wsi_device_idle(
 {
 	VkResult error;
 
-	/* Public device idle separately waits for every ordinary rendering queue. */
-	error = __atomic_load_n(&device->error, __ATOMIC_ACQUIRE);
+	/* A surviving current scanout is idle even while its allocation remains unavailable for reuse. */
+	error = present_drain(device, NULL);
 	if (error != VK_SUCCESS)
-		return VK_ERROR_DEVICE_LOST;
+		return error;
 
-	/* Succeeded: native FIFO operations retain no asynchronous library pixel reads. */
+	/* Succeeded: every earlier device presentation job has retired its native request work. */
 	return VK_SUCCESS;
 }
 
@@ -535,6 +672,9 @@ vulkan_wsi_device_finish(
 	struct VkDevice_T *device)
 {
 	struct vulkan_swapchain *chain;
+
+	/* Workers must stop borrowing queue, chain and allocator state before core device children retire. */
+	present_workers_stop(device);
 
 	/* Valid applications have already synchronized GPU use before device destruction. */
 	for (;;) {
@@ -675,8 +815,28 @@ swapchain_create(
 		chain->group = shared;
 	}
 
-	/* Copy-based display adapters retain their existing persistent staging storage. */
-	if (surface->platform->import_image == NULL) {
+	/* A complete shared allocation/import trial selects the GPU route exactly once for this chain. */
+	error = VK_ERROR_FORMAT_NOT_SUPPORTED;
+	if (surface->platform->import_image != NULL)
+		error = swapchain_native_images_create(chain);
+	if (error == VK_SUCCESS) {
+		chain->gpu_present = VK_TRUE;
+	} else {
+		/* Only unsupported layout or physical sharing can select copied fallback; failures remain failures. */
+		if ((error != VK_ERROR_FORMAT_NOT_SUPPORTED &&
+		    error != VK_ERROR_FEATURE_NOT_PRESENT) ||
+		    surface->platform->present == NULL)
+			goto cleanup;
+
+		/* Every partial shared image and native alias retires before committing to the copied route. */
+		swapchain_native_images_free(chain);
+		if (surface->platform->prepare_copy != NULL) {
+			error = surface->platform->prepare_copy(chain->lease, chain->format, chain->extent);
+			if (error != VK_SUCCESS)
+				goto cleanup;
+		}
+
+		/* Copied storage belongs exclusively to this fixed fallback route for the chain's lifetime. */
 		error = swapchain_readback_create(chain);
 		if (error != VK_SUCCESS)
 			goto cleanup;
@@ -808,6 +968,7 @@ swapchain_validate(
 	}
 
 	pthread_mutex_unlock(&swapchain_mutex);
+
 	*result = surface;
 
 	/* Succeeded: the requested image contract is supported by this native surface. */
@@ -839,6 +1000,7 @@ swapchain_publish(
 	chain->surface->active = chain;
 	chain->next = swapchains;
 	swapchains = chain;
+
 	pthread_mutex_unlock(&swapchain_mutex);
 
 	/* Succeeded: handle lookup and instance teardown can now observe the same chain. */
@@ -855,8 +1017,13 @@ swapchain_free(
 	VkResult error;
 	VkBool32 final_group;
 
-	/* Removes publication before any allocator callback can observe stale linkage. */
+	/* Pending jobs retain the lease, images and allocator until checked native completion. */
 	pthread_mutex_lock(&swapchain_mutex);
+
+	while (chain->pending_jobs != 0U)
+		pthread_cond_wait(&swapchain_condition, &swapchain_mutex);
+
+	/* Remove publication only after no worker can borrow this chain. */
 	link = &swapchains;
 
 	/* Unlinks only the swapchain whose public lifetime is being retired. */
@@ -878,18 +1045,9 @@ swapchain_free(
 	}
 
 	pthread_mutex_unlock(&swapchain_mutex);
+
 	vulkan_object_unpublish(&chain->object);
 	allocator = swapchain_allocator(&chain->object.allocator);
-
-	/* Native copies have completed before a returned presentation can be destroyed. */
-	if (chain->lease != NULL) {
-		error = chain->surface->platform->release(chain->lease);
-
-		/* Propagates terminal namespace loss to every target affected by the transaction. */
-		if (error == VK_ERROR_DEVICE_LOST)
-			swapchain_device_lost(chain->device);
-		chain->lease = NULL;
-	}
 
 	/* Mapped readback is an ordinary bound Vulkan buffer with a distinct allocation. */
 	if (chain->readback_pixels != NULL)
@@ -902,6 +1060,9 @@ swapchain_free(
 	/* Releases readback memory after its mapped view and bound buffer have retired. */
 	if (chain->readback_memory != VK_NULL_HANDLE)
 		vkFreeMemory((VkDevice)chain->device, chain->readback_memory, allocator);
+
+	/* Independent native destinations retire before their lease or shared application image group. */
+	swapchain_native_images_free(chain);
 
 	/* Shared images retire only when the final surviving swapchain releases them. */
 	if (chain->group != NULL) {
@@ -917,6 +1078,16 @@ swapchain_free(
 		/* Destroys shared images only after all swapchain handles have released their group. */
 		if (final_group != VK_FALSE)
 			swapchain_group_free(chain->group);
+	}
+
+	/* Native image identities retire before the lease which owns their imported namespace. */
+	if (chain->lease != NULL) {
+		error = chain->surface->platform->release(chain->lease);
+
+		/* Propagates terminal namespace loss to every target affected by the transaction. */
+		if (error == VK_ERROR_DEVICE_LOST)
+			swapchain_device_lost(chain->device);
+		chain->lease = NULL;
 	}
 
 	vulkan_free(&chain->object.allocator, chain->states);
@@ -937,8 +1108,8 @@ swapchain_group_create(
 	const VkSwapchainCreateInfoKHR *info)
 {
 	struct wsi_image_group *group;
-	size_t bytes;
 	uint32_t index;
+	size_t bytes;
 	VkResult error;
 
 	/* Multiplication must remain representable on both ILP32 and LP64 hosts. */
@@ -984,8 +1155,8 @@ swapchain_group_free(
 	struct wsi_image_group *group)
 {
 	const VkAllocationCallbacks *allocator;
-	struct vulkan_image *image;
 	uint32_t index;
+	struct vulkan_image *image;
 
 	/* Application image destruction is forbidden, but the owning WSI may retire it. */
 	allocator = swapchain_allocator(&group->allocator);
@@ -999,14 +1170,6 @@ swapchain_group_free(
 				image->swapchain_owned = VK_FALSE;
 			vkDestroyImage((VkDevice)group->device, group->images[index].image, allocator);
 		}
-
-		/* Native buffers were destroyed with the lease before GPU storage is retired. */
-		if (group->images[index].shared_image != VK_NULL_HANDLE)
-			vkDestroyImage((VkDevice)group->device, group->images[index].shared_image, allocator);
-
-		/* The shared allocation outlives its image binding until this final group release. */
-		if (group->images[index].shared_memory != VK_NULL_HANDLE)
-			vkFreeMemory((VkDevice)group->device, group->images[index].shared_memory, allocator);
 
 		/* Releases each image allocation after the image bound to it has retired. */
 		if (group->images[index].memory != VK_NULL_HANDLE)
@@ -1029,8 +1192,6 @@ swapchain_image_create(
 	struct wsi_image *image)
 {
 	VkImageCreateInfo create;
-	struct gpu_image_descriptor descriptor;
-	int fd;
 	VkMemoryRequirements requirements;
 	struct vulkan_image *private_image;
 	const VkAllocationCallbacks *allocator;
@@ -1068,39 +1229,126 @@ swapchain_image_create(
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* GPU sharing uses a separate linear image, copied entirely by Vulkan commands. */
-	if (chain->surface->platform->import_image != NULL) {
-		error = vulkan_wsi_shared_image_create(
-			chain->device,
-			chain->format,
-			chain->extent,
-			allocator,
-			&image->shared_image,
-			&image->shared_memory,
-			&fd,
-			&descriptor);
-		if (error != VK_SUCCESS)
-			return error;
-
-		/* The native backend duplicates the capability and retains its own image owner. */
-		error = chain->surface->platform->import_image(
-			chain->lease,
-			fd,
-			&descriptor,
-			&image->native_image);
-
-		/* Success and failure both end the producer's original exported fd reference. */
-		close(fd);
-		if (error != VK_SUCCESS)
-			return error;
-	}
-
 	/* The standard image handle remains valid but its lifetime belongs to WSI. */
 	private_image = vulkan_image(image->image);
 	private_image->swapchain_owned = VK_TRUE;
 
 	/* Succeeded: rendering uses an ordinary image whose allocation is independently owned. */
 	return VK_SUCCESS;
+}
+
+/* Creates independent GPU scanout images even when application VkImages are shared across chains. */
+static VkResult
+swapchain_native_images_create(
+	struct vulkan_swapchain *chain)
+{
+	struct gpu_image_descriptor descriptor;
+	struct gpu_placement placement;
+	const struct gpu_placement *conditions;
+	VkFormatProperties properties;
+	const VkAllocationCallbacks *allocator;
+	size_t bytes;
+	uint32_t index;
+	VkResult error;
+	int fd;
+
+	/* A renderer without allocation sharing can still serve an explicitly advertised copied display. */
+	if ((chain->device->object.context->capabilities & GPU_CAP_SHARE) == 0U)
+		return VK_ERROR_FORMAT_NOT_SUPPORTED;
+
+	/* Direct-display rectangle presentation requires real GPU blits throughout the fixed shared route. */
+	if (chain->surface->display_mode != NULL) {
+		/* The fixed GPU route must support both optimal-source and linear-destination blits. */
+		vkGetPhysicalDeviceFormatProperties((VkPhysicalDevice)chain->device->physical, chain->format, &properties);
+		if ((properties.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_SRC_BIT) == 0U ||
+		    (properties.linearTilingFeatures & VK_FORMAT_FEATURE_BLIT_DST_BIT) == 0U)
+			return VK_ERROR_FORMAT_NOT_SUPPORTED;
+	}
+
+	/* Direct displays supply physical requirements once; a window-system adapter may omit them. */
+	conditions = NULL;
+	if (chain->surface->platform->placement != NULL) {
+		error = chain->surface->platform->placement(chain->lease, &placement);
+		if (error != VK_SUCCESS)
+			return error;
+		conditions = &placement;
+	}
+
+	/* The exact native image count is bounded by the already validated application image group. */
+	bytes = (size_t)chain->group->count * sizeof(*chain->presentation);
+	if (bytes / sizeof(*chain->presentation) != chain->group->count)
+		return VK_ERROR_OUT_OF_HOST_MEMORY;
+
+	/* Partial construction remains reachable through ordinary swapchain cleanup. */
+	chain->presentation = vulkan_allocate(&chain->object.allocator, bytes, sizeof(void *), VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+	if (chain->presentation == NULL)
+		return VK_ERROR_OUT_OF_HOST_MEMORY;
+
+	/* Each native destination belongs to this chain's lease independently from its public image group. */
+	memset(chain->presentation, 0, bytes);
+	chain->presentation_count = chain->group->count;
+
+	/* Construct one independent native destination for every acquired application image. */
+	allocator = swapchain_allocator(&chain->object.allocator);
+	for (index = 0U; index < chain->presentation_count; index++) {
+		/* GPU image construction publishes real row pitch, offset and an independent allocation capability. */
+		error = vulkan_wsi_shared_image_create(
+			chain->device,
+			chain->format,
+			chain->extent,
+			allocator,
+			conditions,
+			&chain->presentation[index].shared_image,
+			&chain->presentation[index].shared_memory,
+			&fd,
+			&descriptor);
+		if (error != VK_SUCCESS)
+			return error;
+
+		/* The native backend keeps its alias after this producer-owned fd is closed. */
+		error = chain->surface->platform->import_image(chain->lease, fd, &descriptor, &chain->presentation[index].native_image);
+		close(fd);
+		if (error != VK_SUCCESS)
+			return error;
+	}
+
+	/* Succeeded: every acquired application image has its own native GPU-copy destination. */
+	return VK_SUCCESS;
+}
+
+/* Retires every native destination, including rollback before selecting a copied route. */
+static void
+swapchain_native_images_free(
+	struct vulkan_swapchain *chain)
+{
+	const VkAllocationCallbacks *allocator;
+	uint32_t index;
+
+	/* Partial construction leaves zero handles in every slot which did not acquire ownership. */
+	allocator = swapchain_allocator(&chain->object.allocator);
+
+	/* Each chain retires native buffers before releasing its lease or shared application image group. */
+	for (index = 0U; index < chain->presentation_count; index++) {
+		/* Native identities stop referencing the local image before its renderer object is destroyed. */
+		if (chain->presentation[index].native_image != NULL && chain->surface->platform->destroy_image != NULL)
+			chain->surface->platform->destroy_image(chain->presentation[index].native_image);
+
+		/* Partial construction may own an image without a bound allocation. */
+		if (chain->presentation[index].shared_image != VK_NULL_HANDLE)
+			vkDestroyImage((VkDevice)chain->device, chain->presentation[index].shared_image, allocator);
+
+		/* Allocation release follows both native alias retirement and renderer image destruction. */
+		if (chain->presentation[index].shared_memory != VK_NULL_HANDLE)
+			vkFreeMemory((VkDevice)chain->device, chain->presentation[index].shared_memory, allocator);
+	}
+
+	/* No native image pointer survives into lease retirement. */
+	vulkan_free(&chain->object.allocator, chain->presentation);
+	chain->presentation = NULL;
+	chain->presentation_count = 0U;
+
+	/* Succeeded: no chain-owned native allocation or alias remains. */
+	return;
 }
 
 /* Creates one persistently mapped coherent readback allocation per swapchain. */
@@ -1211,6 +1459,8 @@ swapchain_allocate_memory(
 		return VK_ERROR_OUT_OF_DEVICE_MEMORY;
 
 	/* Allocation size is the exact nonzero renderer requirement. */
+
+	/* The transient primary command buffer belongs to this already-created private pool. */
 	memset(&allocate, 0, sizeof(allocate));
 	allocate.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 	allocate.allocationSize = requirements->size;
@@ -1282,6 +1532,11 @@ swapchain_current(
 {
 	VkSurfaceCapabilitiesKHR capabilities;
 	VkResult error;
+
+	/* Asynchronous native loss remains visible even when a later image would otherwise be available. */
+	error = __atomic_load_n(&chain->error, __ATOMIC_ACQUIRE);
+	if (error != VK_SUCCESS)
+		return error;
 
 	/* A lost logical device prevents both native use and acquire signaling. */
 	error = __atomic_load_n(&chain->device->error, __ATOMIC_ACQUIRE);
@@ -1456,8 +1711,8 @@ present_prepare(
 				return VK_ERROR_INITIALIZATION_FAILED;
 		}
 
-		/* All CPU composition allocation finishes before the queue transaction begins. */
-		if (job->has_display != VK_FALSE) {
+		/* Only a copied-pixel adapter requires host composition scratch before submission. */
+		if (job->has_display != VK_FALSE && chain->gpu_present == VK_FALSE) {
 			bytes = (size_t)chain->extent.width * chain->extent.height * 4U;
 			job->composed[index] = vulkan_allocate(
 				&job->allocator,
@@ -1506,63 +1761,61 @@ present_reserve(
 	struct wsi_present_job *job,
 	const VkPresentInfoKHR *info)
 {
-	struct timespec pause;
-	uint64_t started;
-	uint64_t now;
+	struct vulkan_swapchain *chain;
 	uint32_t index;
-	VkBool32 available;
-	VkResult error;
+	VkBool32 copied_busy;
 
-	/* A finite wait preserves QueuePresent's required finite host-call duration. */
-	error = swapchain_now(&started);
-	if (error != VK_SUCCESS)
-		return error;
-	pause.tv_sec = 0;
-	pause.tv_nsec = 1000000L;
+	/* All target images are reserved together, without excluding another image of the same chain. */
+	pthread_mutex_lock(&swapchain_mutex);
+
+	/* Legacy copied adapters own one staging buffer and must finish its earlier reader before reuse. */
 	for (;;) {
-		pthread_mutex_lock(&swapchain_mutex);
-		available = VK_TRUE;
+		copied_busy = VK_FALSE;
 		for (index = 0U; index < job->count; index++) {
-			/* Waits for an earlier queue to finish using this chain private readback storage. */
-			if (job->chains[index]->presenting != VK_FALSE) {
-				available = VK_FALSE;
+			/* GPU-resident adapters have one independent destination per image and need no chain-wide stall. */
+			chain = job->chains[index];
+			if (chain->gpu_present == VK_FALSE && chain->pending_jobs != 0U) {
+				copied_busy = VK_TRUE;
 				break;
 			}
 		}
 
-		/* No subset remains reserved while waiting for another target. */
-		if (available != VK_FALSE) {
-			for (index = 0U; index < job->count; index++) {
-				job->chains[index]->presenting = VK_TRUE;
-				job->chains[index]->states[info->pImageIndices[index]] = WSI_IMAGE_PRESENTING;
-			}
-
-			job->reserved = VK_TRUE;
-			pthread_mutex_unlock(&swapchain_mutex);
+		/* No earlier copied presentation still borrows a staging slot reserved by this job. */
+		if (copied_busy == VK_FALSE)
 			break;
-		}
 
-		pthread_mutex_unlock(&swapchain_mutex);
-
-		/* A stalled earlier native transaction cannot block a later API call forever. */
-		error = swapchain_now(&now);
-		if (error != VK_SUCCESS)
-			return error;
-
-		/* Turns a stalled earlier native transaction into bounded terminal device failure. */
-		if (now - started >= WSI_COMPLETION_TIMEOUT) {
-			error = swapchain_device_lost(job->queue->device);
-			return error;
-		}
-
-		nanosleep(&pause, NULL);
+		/* The worker retains no WSI lock while it completes this finite native operation. */
+		pthread_cond_wait(&swapchain_condition, &swapchain_mutex);
 	}
 
-	/* Succeeded: only this job can record or read each target's private staging buffer. */
+	/* Recheck every application image before publishing the all-or-nothing reservation. */
+	for (index = 0U; index < job->count; index++) {
+		/* Recheck ownership under the publication lock before changing any target. */
+		chain = job->chains[index];
+		if (chain->states[info->pImageIndices[index]] != WSI_IMAGE_ACQUIRED || chain->pending_jobs == UINT32_MAX) {
+			pthread_mutex_unlock(&swapchain_mutex);
+			return VK_ERROR_INITIALIZATION_FAILED;
+		}
+	}
+
+	/* Each image contributes one chain lifetime hold until its job has retired. */
+	for (index = 0U; index < job->count; index++) {
+		chain = job->chains[index];
+		/* This hold keeps the chain, lease and allocation policy alive until native work retires. */
+		chain->pending_jobs++;
+		chain->states[info->pImageIndices[index]] = WSI_IMAGE_PRESENTING;
+	}
+
+	/* Reservation makes cleanup responsible for returning every image and dropping every chain hold. */
+	job->reserved = VK_TRUE;
+
+	pthread_mutex_unlock(&swapchain_mutex);
+
+	/* Succeeded: every image and chain remains owned until enqueue rollback or worker completion. */
 	return VK_SUCCESS;
 }
 
-/* Records one readback transaction for every target without consuming its waits. */
+/* Records private GPU copy or explicit fallback staging without consuming caller waits. */
 static VkResult
 present_record(
 	struct wsi_present_job *job,
@@ -1571,8 +1824,8 @@ present_record(
 	VkCommandPoolCreateInfo pool;
 	VkCommandBufferAllocateInfo allocate;
 	VkCommandBufferBeginInfo begin;
-	VkFenceCreateInfo fence;
 	const VkAllocationCallbacks *allocator;
+	const VkDisplayPresentInfoKHR *display;
 	uint32_t index;
 	VkResult error;
 
@@ -1585,6 +1838,8 @@ present_record(
 	error = vkCreateCommandPool((VkDevice)job->queue->device, &pool, allocator, &job->pool);
 	if (error != VK_SUCCESS)
 		return error;
+
+	/* The transient primary command buffer belongs to this already-created private pool. */
 	memset(&allocate, 0, sizeof(allocate));
 	allocate.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 	allocate.commandPool = job->pool;
@@ -1601,25 +1856,173 @@ present_record(
 	error = vkBeginCommandBuffer(job->command, &begin);
 	if (error != VK_SUCCESS)
 		return error;
+
+	/* Every admitted target records its chosen presentation route within this single submission. */
 	for (index = 0U; index < job->count; index++) {
 		/* Skips readback commands for targets whose surface was already lost or replaced. */
 		if (job->results[index] != VK_SUCCESS)
 			continue;
-		present_copy(job->command, job->chains[index], info->pImageIndices[index], job->queue->family);
+
+		/* Optional display composition remains GPU-resident on both direct and shared-image paths. */
+		display = NULL;
+		if (job->has_display != VK_FALSE)
+			display = &job->display;
+
+		/* Copy and composition preserve the application's optimal image contents. */
+		present_copy(job->command, job->chains[index], info->pImageIndices[index], job->queue->family, display);
 	}
 
+	/* Final recording failure occurs before any semaphore-consuming submit is attempted. */
 	error = vkEndCommandBuffer(job->command);
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* An ordinary Vulkan fence proves readback availability before CPU presentation. */
-	memset(&fence, 0, sizeof(fence));
-	fence.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-	error = vkCreateFence((VkDevice)job->queue->device, &fence, allocator, &job->fence);
+	/* The queue owns reusable private fences whose completion workers survive individual frames. */
+	error = present_fence_prepare(job);
 	if (error != VK_SUCCESS)
 		return error;
 
 	/* Succeeded: all fallible command storage exists before any queue operation. */
+	return VK_SUCCESS;
+}
+
+/* Borrows one queue-owned fence slot and prepares its exact next generation before submission. */
+static VkResult
+present_fence_prepare(
+	struct wsi_present_job *job)
+{
+	struct wsi_present_fence *completion;
+	VkFenceCreateInfo fence;
+	VkExportFenceCreateInfo export;
+	VkFenceGetFdInfoKHR get_fd;
+	struct gpu_fence_state state;
+	const VkAllocationCallbacks *allocator;
+	VkBool32 shared_fence;
+	VkResult error;
+	uint32_t index;
+	int status;
+
+	/* A native adapter can receive this job's exact shared producer generation without borrowing caller state. */
+	shared_fence = VK_FALSE;
+	if ((job->queue->device->object.context->capabilities & GPU_CAP_FENCE) != 0U) {
+		/* One synchronized native target requires a shared producer payload for the whole submission. */
+		for (index = 0U; index < job->count; index++) {
+			/* Copied or protocol-only targets need only the actual native Vulkan fence wait. */
+			if (job->chains[index]->gpu_present != VK_FALSE &&
+			    job->chains[index]->surface->platform->present_image_sync != NULL)
+				shared_fence = VK_TRUE;
+		}
+	}
+
+	/* Only idle slots of the right payload type can be borrowed by a new job. */
+	pthread_mutex_lock(&swapchain_mutex);
+
+	/* Cache reuse is exclusive until the previous job has retired every native request. */
+	for (completion = job->worker->fences; completion != NULL; completion = completion->next) {
+		/* Payload type cannot change while a cached native fence and fd remain alive. */
+		if (completion->busy == VK_FALSE && completion->shared == shared_fence)
+			break;
+	}
+
+	/* Busy transfers this slot to exactly one preparing or accepted job. */
+	if (completion != NULL)
+		completion->busy = VK_TRUE;
+
+	pthread_mutex_unlock(&swapchain_mutex);
+
+	/* New concurrency grows the cache once; allocation callbacks execute outside WSI serialization. */
+	if (completion == NULL) {
+		completion = vulkan_allocate(&job->allocator, sizeof(*completion), sizeof(void *), VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
+		if (completion == NULL)
+			return VK_ERROR_OUT_OF_HOST_MEMORY;
+
+		/* Failed partial initialization remains queue-owned and can be retried or finally destroyed. */
+		memset(completion, 0, sizeof(*completion));
+		completion->fd = -1;
+		completion->shared = shared_fence;
+		completion->busy = VK_TRUE;
+
+		/* The cache retains this candidate even if its later native fence creation fails. */
+		pthread_mutex_lock(&swapchain_mutex);
+
+		completion->next = job->worker->fences;
+		job->worker->fences = completion;
+
+		pthread_mutex_unlock(&swapchain_mutex);
+	}
+
+	/* Every partial initialization is owned by the queue and released by ordinary device teardown. */
+	job->completion = completion;
+	allocator = swapchain_allocator(&job->allocator);
+
+	/* First use constructs native ownership; later uses advance the completed payload generation. */
+	if (completion->fence == VK_NULL_HANDLE) {
+		/* Ordinary Vulkan creation owns the optional shared completion payload and its worker. */
+		memset(&fence, 0, sizeof(fence));
+		fence.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+
+		/* A native shared fence is private WSI storage rather than an application extension dependency. */
+		memset(&export, 0, sizeof(export));
+		export.sType = VK_STRUCTURE_TYPE_EXPORT_FENCE_CREATE_INFO;
+		export.handleTypes = VK_EXTERNAL_FENCE_HANDLE_TYPE_OPAQUE_FD_BIT;
+
+		/* Only native synchronized targets need the transferable private producer capability. */
+		if (shared_fence != VK_FALSE)
+			fence.pNext = &export;
+
+		/* Native fence creation owns all completion resources before any public queue work is accepted. */
+		error = vkCreateFence((VkDevice)job->queue->device, &fence, allocator, &completion->fence);
+	} else {
+		/* A completed or unsubmitted earlier use is reset before its slot can accept a new submission. */
+		error = vkResetFences((VkDevice)job->queue->device, 1U, &completion->fence);
+	}
+
+	/* Failed native creation or reset leaves this cache slot owned but unusable by the current job. */
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The job borrows native fence ownership until its final completion cleanup. */
+	job->fence = completion->fence;
+
+	/* Descriptor duplication and generation capture also finish before any wait semaphore is consumed. */
+	if (shared_fence != VK_FALSE) {
+		/* Descriptor duplication is needed only for a newly created or previously failed cache slot. */
+		if (completion->fd < 0) {
+			/* Exported ownership remains with the reusable queue slot until device teardown. */
+			memset(&get_fd, 0, sizeof(get_fd));
+			get_fd.sType = VK_STRUCTURE_TYPE_FENCE_GET_FD_INFO_KHR;
+			get_fd.fence = job->fence;
+			get_fd.handleType = VK_EXTERNAL_FENCE_HANDLE_TYPE_OPAQUE_FD_BIT;
+			error = vkGetFenceFdKHR((VkDevice)job->queue->device, &get_fd, &completion->fd);
+			if (error != VK_SUCCESS)
+				return error;
+		}
+
+		/* The job borrows the cached fd and never consumes its ownership. */
+		job->fence_fd = completion->fd;
+
+		/* Query reads the actual kernel payload generation, never a guessed renderer fence number. */
+		memset(&state, 0, sizeof(state));
+		state.version = GPU_ABI_VERSION;
+		state.size = sizeof(state);
+		state.fd = job->fence_fd;
+
+		/* Serialize exact generation observation with other renderer-open control requests. */
+		vulkan_context_lock(job->queue->device->object.context);
+
+		status = ioctl(job->queue->device->object.context->fd, GPU_FENCE_QUERY, &state);
+
+		vulkan_context_unlock(job->queue->device->object.context);
+
+		/* A missing payload or zero generation cannot authorize native hardware access. */
+		if (status != 0 || state.generation == 0U)
+			return VK_ERROR_DEVICE_LOST;
+
+		/* Capture the exact reset generation before any queue semaphore may be consumed. */
+		job->fence_generation = state.generation;
+	}
+
+	/* Succeeded: fence and exported descriptor ownership remain with the queue until its final join. */
 	return VK_SUCCESS;
 }
 
@@ -1629,15 +2032,16 @@ present_copy(
 	VkCommandBuffer command,
 	struct vulkan_swapchain *chain,
 	uint32_t index,
-	uint32_t family)
+	uint32_t family,
+	const VkDisplayPresentInfoKHR *display)
 {
 	VkImageMemoryBarrier image;
 	VkBufferMemoryBarrier buffer;
 	VkBufferImageCopy copy;
 
 	/* Window-system buffers stay in GPU memory throughout transfer and presentation. */
-	if (chain->surface->platform->import_image != NULL) {
-		present_copy_shared(command, chain, index, family);
+	if (chain->gpu_present != VK_FALSE) {
+		present_copy_shared(command, chain, index, family, display);
 		return;
 	}
 
@@ -1729,7 +2133,7 @@ present_submit(
 	submit.pWaitDstStageMask = job->stages;
 	submit.commandBufferCount = 1U;
 	submit.pCommandBuffers = &job->command;
-	error = vulkan_queue_submit(job->queue, 1U, &submit, job->fence);
+	error = vulkan_queue_submit_locked(job->queue, 1U, &submit, job->fence);
 	if (error != VK_SUCCESS)
 		return error;
 
@@ -1740,23 +2144,11 @@ present_submit(
 	for (index = 0U; index < job->count; index++) {
 		/* Only barriers for accepted shared-image targets establish external ownership. */
 		chain = job->chains[index];
-		if (job->results[index] == VK_SUCCESS && chain->surface->platform->import_image != NULL)
-			chain->group->images[info->pImageIndices[index]].shared_presented = VK_TRUE;
+		if (job->results[index] == VK_SUCCESS && chain->gpu_present != VK_FALSE)
+			chain->presentation[info->pImageIndices[index]].shared_presented = VK_TRUE;
 	}
 
-	/* A finite implementation deadline cannot become an infinite QueuePresent call. */
-	error = vulkan_fences_wait(
-		job->queue->device,
-		1U,
-		&job->fence,
-		VK_TRUE,
-		WSI_COMPLETION_TIMEOUT);
-	if (error != VK_SUCCESS) {
-		error = swapchain_device_lost(job->queue->device);
-		return error;
-	}
-
-	/* Succeeded: all native presentation reads observe completed Vulkan image data. */
+	/* Succeeded: the ordered worker will wait for actual completion before any native image read. */
 	return VK_SUCCESS;
 }
 
@@ -1789,6 +2181,7 @@ present_compose(
 
 	/* With one opaque plane, all pixels outside the destination rectangle are black. */
 	for (y = 0U; y < chain->extent.height; y++) {
+		/* Every packed pixel outside the eventual destination rectangle starts opaque black. */
 		for (x = 0U; x < chain->extent.width; x++) {
 			offset = ((size_t)y * chain->extent.width + x) * 4U;
 			destination[offset] = 0U;
@@ -1803,6 +2196,8 @@ present_compose(
 		target_y = (uint32_t)target_rect->offset.y + y;
 		source_y = (uint32_t)source_rect->offset.y +
 		    (uint32_t)((uint64_t)y * source_rect->extent.height / target_rect->extent.height);
+
+		/* Scale the source row into the checked destination rectangle with nearest sampling. */
 		for (x = 0U; x < target_rect->extent.width; x++) {
 			target_x = (uint32_t)target_rect->offset.x + x;
 			source_x = (uint32_t)source_rect->offset.x +
@@ -1842,14 +2237,26 @@ present_native(
 			/* A frame identifier belongs to its chain and never substitutes for a fence. */
 			if (chain->frame == UINT64_MAX) {
 				error = swapchain_device_lost(chain->device);
-			} else if (chain->surface->platform->present_image != NULL) {
+			} else if (chain->gpu_present != VK_FALSE) {
 				/* Names this GPU image commit without creating a CPU pixel staging view. */
 				chain->frame++;
-				error = chain->surface->platform->present_image(
-					chain->lease,
-					chain->group->images[info->pImageIndices[index]].native_image,
-					chain->present_mode,
-					&chain->sequence);
+				if (job->fence_fd >= 0 && chain->surface->platform->present_image_sync != NULL) {
+					/* Native K repeats the exact producer dependency check before hardware access. */
+					error = chain->surface->platform->present_image_sync(
+						chain->lease,
+						chain->presentation[info->pImageIndices[index]].native_image,
+						chain->present_mode,
+						&chain->sequence,
+						job->fence_fd,
+						job->fence_generation);
+				} else {
+					/* Wayland retains its protocol: actual producer completion precedes the ordinary commit. */
+					error = chain->surface->platform->present_image(
+						chain->lease,
+						chain->presentation[info->pImageIndices[index]].native_image,
+						chain->present_mode,
+						&chain->sequence);
+				}
 			} else {
 				/* Legacy direct display retains its completed-pixel fallback contract. */
 				chain->frame++;
@@ -1901,11 +2308,9 @@ present_finish(
 	/* No helper may touch the queue when validation failed before it was assigned. */
 	if (job->queue == NULL)
 		return;
-	allocator = swapchain_allocator(&job->allocator);
 
-	/* A completed fence or device loss ends the job's command-buffer lifetime. */
-	if (job->fence != VK_NULL_HANDLE)
-		vkDestroyFence((VkDevice)job->queue->device, job->fence, allocator);
+	/* Transient Vulkan children retire through the same allocation policy that created them. */
+	allocator = swapchain_allocator(&job->allocator);
 
 	/* Destroys transient command storage after presentation completion or namespace loss. */
 	if (job->pool != VK_NULL_HANDLE)
@@ -1913,14 +2318,22 @@ present_finish(
 
 	/* A failed enqueue leaves acquisition unchanged; an enqueued present releases it. */
 	pthread_mutex_lock(&swapchain_mutex);
+
+	/* Cache reuse begins only after GPU completion or terminal device loss has retired this job. */
+	if (job->completion != NULL)
+		job->completion->busy = VK_FALSE;
+
+	/* Each reservation contributes one lifetime hold and one independently acquired public image. */
 	for (index = 0U; index < job->count; index++) {
+		/* Partial preparation may not yet have resolved this target's swapchain. */
 		chain = NULL;
 		if (job->chains != NULL)
 			chain = job->chains[index];
 
 		/* Returns image ownership only for targets reserved by this transaction. */
 		if (chain != NULL && job->reserved != VK_FALSE) {
-			chain->presenting = VK_FALSE;
+			/* Zero permits destruction because no queued native operation still borrows this chain. */
+			chain->pending_jobs--;
 			image = info->pImageIndices[index];
 			chain->states[image] = WSI_IMAGE_ACQUIRED;
 
@@ -1946,8 +2359,12 @@ present_finish(
 
 	pthread_mutex_unlock(&swapchain_mutex);
 
+	/* Wake idle and destruction waiters after all image and chain ownership transitions are visible. */
+	pthread_cond_broadcast(&swapchain_condition);
+
 	/* All application allocation callbacks run after the state mutex is released. */
 	if (job->composed != NULL) {
+		/* Only copied fallback jobs own these separately composed pixel arrays. */
 		for (index = 0U; index < job->count; index++)
 			vulkan_free(&job->allocator, job->composed[index]);
 	}
@@ -1956,6 +2373,7 @@ present_finish(
 	vulkan_free(&job->allocator, job->stages);
 	vulkan_free(&job->allocator, job->results);
 	vulkan_free(&job->allocator, job->chains);
+	vulkan_free(&job->allocator, job->indices);
 
 	/* Succeeded: no transient job object retains a swapchain or caller output array. */
 	return;
@@ -1987,7 +2405,11 @@ present_combine(
 	if (first != VK_SUCCESS)
 		return first;
 
-	/* Succeeded so far, or the second result supplies the remaining failure. */
+	/* The second target retains a failure outside the priority classes above. */
+	if (second < VK_SUCCESS)
+		return second;
+
+	/* Succeeded: neither target contributes a remaining failure. */
 	return second;
 }
 
@@ -2013,10 +2435,14 @@ present_copy_shared(
 	VkCommandBuffer command,
 	struct vulkan_swapchain *chain,
 	uint32_t index,
-	uint32_t family)
+	uint32_t family,
+	const VkDisplayPresentInfoKHR *display)
 {
 	VkImageMemoryBarrier barriers[2];
+	VkImageMemoryBarrier clear_barrier;
 	VkImageCopy copy;
+	VkImageBlit blit;
+	VkClearColorValue clear;
 
 	/* The acquired destination is no longer in compositor use, so its old contents may retire. */
 	memset(barriers, 0, sizeof(barriers));
@@ -2038,10 +2464,10 @@ present_copy_shared(
 	barriers[1].dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 	barriers[1].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	barriers[1].newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-	barriers[1].image = chain->group->images[index].shared_image;
+	barriers[1].image = chain->presentation[index].shared_image;
 
 	/* Compositor release precedes reacquisition from an earlier external consumer. */
-	if (chain->group->images[index].shared_presented != VK_FALSE) {
+	if (chain->presentation[index].shared_presented != VK_FALSE) {
 		barriers[1].oldLayout = VK_IMAGE_LAYOUT_GENERAL;
 		barriers[1].srcQueueFamilyIndex = WSI_QUEUE_FAMILY_EXTERNAL;
 		barriers[1].dstQueueFamilyIndex = family;
@@ -2060,22 +2486,57 @@ present_copy_shared(
 		2U,
 		barriers);
 
-	/* Every pixel moves on the GPU; no mapped readback allocation exists on this path. */
-	memset(&copy, 0, sizeof(copy));
-	copy.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	copy.srcSubresource.layerCount = 1U;
-	copy.dstSubresource = copy.srcSubresource;
-	copy.extent.width = chain->extent.width;
-	copy.extent.height = chain->extent.height;
-	copy.extent.depth = 1U;
-	vkCmdCopyImage(
-		command,
-		barriers[0].image,
-		VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-		barriers[1].image,
-		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-		1U,
-		&copy);
+	/* Display rectangles compose into separate native storage without changing the application image. */
+	if (display != NULL) {
+		/* Uncovered pixels remain opaque black, matching the explicit copied composition path. */
+		memset(&clear, 0, sizeof(clear));
+		clear.float32[3] = 1.0f;
+		vkCmdClearColorImage(command, barriers[1].image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clear, 1U, &barriers[1].subresourceRange);
+
+		/* The destination blit overwrites the completed clear within its selected rectangle. */
+		clear_barrier = barriers[1];
+		clear_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+		clear_barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+		clear_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+		clear_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+		clear_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		clear_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0U, 0U, NULL, 0U, NULL, 1U, &clear_barrier);
+
+		/* Nearest sampling maps the checked source rectangle into the checked native destination. */
+		memset(&blit, 0, sizeof(blit));
+		blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		blit.srcSubresource.layerCount = 1U;
+		blit.dstSubresource = blit.srcSubresource;
+		blit.srcOffsets[0].x = display->srcRect.offset.x;
+		blit.srcOffsets[0].y = display->srcRect.offset.y;
+		blit.srcOffsets[1].x = display->srcRect.offset.x + (int32_t)display->srcRect.extent.width;
+		blit.srcOffsets[1].y = display->srcRect.offset.y + (int32_t)display->srcRect.extent.height;
+		blit.srcOffsets[1].z = 1;
+		blit.dstOffsets[0].x = display->dstRect.offset.x;
+		blit.dstOffsets[0].y = display->dstRect.offset.y;
+		blit.dstOffsets[1].x = display->dstRect.offset.x + (int32_t)display->dstRect.extent.width;
+		blit.dstOffsets[1].y = display->dstRect.offset.y + (int32_t)display->dstRect.extent.height;
+		blit.dstOffsets[1].z = 1;
+		vkCmdBlitImage(command, barriers[0].image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, barriers[1].image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1U, &blit, VK_FILTER_NEAREST);
+	} else {
+		/* Every pixel moves on the GPU; no mapped readback allocation exists on this path. */
+		memset(&copy, 0, sizeof(copy));
+		copy.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		copy.srcSubresource.layerCount = 1U;
+		copy.dstSubresource = copy.srcSubresource;
+		copy.extent.width = chain->extent.width;
+		copy.extent.height = chain->extent.height;
+		copy.extent.depth = 1U;
+		vkCmdCopyImage(
+			command,
+			barriers[0].image,
+			VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+			barriers[1].image,
+			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			1U,
+			&copy);
+	}
 
 	/* Presentation observes complete writes only after this submission's fence completes. */
 	barriers[0].srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
@@ -2105,5 +2566,271 @@ present_copy_shared(
 		barriers);
 
 	/* Succeeded: GPU commands copy and release the shared presentation allocation. */
+	return;
+}
+
+/* Finds or starts the logical queue's independently ordered presentation worker. */
+static VkResult
+present_worker_get(
+	struct VkQueue_T *queue,
+	struct wsi_queue_worker **result)
+{
+	struct wsi_queue_worker *worker;
+	struct wsi_queue_worker *candidate;
+	int status;
+
+	/* Allocation callbacks run before entering the global WSI state lock. */
+	candidate = vulkan_allocate(&queue->device->object.allocator, sizeof(*candidate), sizeof(void *), VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
+	if (candidate == NULL)
+		return VK_ERROR_OUT_OF_HOST_MEMORY;
+
+	/* A candidate owns no queue jobs until thread creation and list publication both succeed. */
+	memset(candidate, 0, sizeof(*candidate));
+	candidate->queue = queue;
+	pthread_mutex_lock(&swapchain_mutex);
+
+	/* Concurrent work on other queues cannot replace this queue's existing ordering domain. */
+	for (worker = workers; worker != NULL; worker = worker->next) {
+		/* Queue identity remains stable until the device has joined every worker. */
+		if (worker->queue == queue)
+			break;
+	}
+
+	/* Reuse a previously started worker without allocating another native thread. */
+	if (worker != NULL) {
+		*result = worker;
+		pthread_mutex_unlock(&swapchain_mutex);
+		vulkan_free(&queue->device->object.allocator, candidate);
+		return VK_SUCCESS;
+	}
+
+	/* The new thread initially waits for this same mutex before inspecting any job. */
+	status = pthread_create(&candidate->thread, NULL, present_worker_main, candidate);
+	if (status != 0) {
+		pthread_mutex_unlock(&swapchain_mutex);
+		vulkan_free(&queue->device->object.allocator, candidate);
+		return VK_ERROR_OUT_OF_HOST_MEMORY;
+	}
+
+	/* Publication keeps the worker discoverable by device drain and teardown. */
+	candidate->next = workers;
+	workers = candidate;
+	*result = candidate;
+
+	pthread_mutex_unlock(&swapchain_mutex);
+
+	/* Succeeded: this queue has an owned worker ready for its next accepted presentation. */
+	return VK_SUCCESS;
+}
+
+/* Waits for real producer completion before submitting each native presentation in queue order. */
+static void *
+present_worker_main(
+	void *argument)
+{
+	struct wsi_queue_worker *worker;
+	struct wsi_present_job *job;
+	struct vulkan_swapchain *chain;
+	struct vulkan_allocator allocator;
+	VkResult error;
+	VkResult native_error;
+	uint32_t index;
+
+	/* The logical device joins this worker before any referenced queue can retire. */
+	worker = argument;
+	for (;;) {
+		/* Idle workers sleep until publication or the device's explicit stop request. */
+		pthread_mutex_lock(&swapchain_mutex);
+
+		/* Empty queues wait without retaining any producer or native admission lock. */
+		while (worker->head == NULL && worker->stopping == VK_FALSE)
+			pthread_cond_wait(&swapchain_condition, &swapchain_mutex);
+
+		/* Teardown waits for all accepted jobs before asking an empty worker to exit. */
+		if (worker->head == NULL && worker->stopping != VK_FALSE) {
+			pthread_mutex_unlock(&swapchain_mutex);
+			break;
+		}
+
+		/* Queue order is fixed at publication; no later job can overtake its predecessor. */
+		job = worker->head;
+		worker->head = job->next;
+
+		/* Empty queued work has no tail, while current continues to pin the accepted job. */
+		if (worker->head == NULL)
+			worker->tail = NULL;
+
+		/* Current remains visible to idle and teardown until every transient owner is retired. */
+		worker->current = job;
+
+		pthread_mutex_unlock(&swapchain_mutex);
+
+		/* Neither transport acceptance nor a context-zero display fence proves producer completion. */
+		error = vulkan_fences_wait(job->queue->device, 1U, &job->fence, VK_TRUE, WSI_COMPLETION_TIMEOUT);
+		if (error != VK_SUCCESS)
+			error = swapchain_device_lost(job->queue->device);
+
+		/* Terminal native loss suppresses later submissions to the same obsolete surface. */
+		for (index = 0U; index < job->count; index++) {
+			/* A late error from earlier work invalidates this chain before any new native selection. */
+			chain = job->chains[index];
+			native_error = __atomic_load_n(&chain->error, __ATOMIC_ACQUIRE);
+			if (native_error != VK_SUCCESS)
+				job->results[index] = native_error;
+		}
+
+		/* The unchanged Wayland v1 contract receives commits only after GPU writes and ownership release finish. */
+		if (error == VK_SUCCESS)
+			error = present_native(job, &job->info);
+
+		/* Native failures belong to future chain operations, never a returned caller output array. */
+		for (index = 0U; index < job->count; index++) {
+			/* Device loss dominates each target's previous per-surface result. */
+			chain = job->chains[index];
+			native_error = job->results[index];
+			if (error == VK_ERROR_DEVICE_LOST)
+				native_error = error;
+
+			/* Success does not clear an earlier terminal asynchronous error. */
+			if (native_error < VK_SUCCESS)
+				__atomic_store_n(&chain->error, native_error, __ATOMIC_RELEASE);
+		}
+
+		/* Completion retires command storage and releases every job-owned image and chain hold. */
+		allocator = job->allocator;
+		present_finish(job, &job->info, error);
+
+		/* A completed current pointer is cleared before device idle may observe an empty queue. */
+		pthread_mutex_lock(&swapchain_mutex);
+
+		worker->current = NULL;
+		pthread_cond_broadcast(&swapchain_condition);
+
+		pthread_mutex_unlock(&swapchain_mutex);
+		vulkan_free(&allocator, job);
+	}
+
+	/* Succeeded: no job or library object remains borrowed by this native worker. */
+	return NULL;
+}
+
+/* Drains accepted native request work without waiting for scanout retention or future frame replacement. */
+static VkResult
+present_drain(
+	struct VkDevice_T *device,
+	struct VkQueue_T *queue)
+{
+	struct wsi_queue_worker *worker;
+	VkBool32 pending;
+	VkResult error;
+
+	/* Workers release this mutex throughout GPU, native display and Wayland waits. */
+	pthread_mutex_lock(&swapchain_mutex);
+
+	for (;;) {
+		/* Device idle includes every queue while queue idle selects only one ordering domain. */
+		pending = VK_FALSE;
+		for (worker = workers; worker != NULL; worker = worker->next) {
+			/* Ignore workers belonging to another logical device or queue. */
+			if (worker->queue->device != device)
+				continue;
+
+			/* Queue idle observes only the specified public ordering domain. */
+			if (queue != NULL && worker->queue != queue)
+				continue;
+
+			/* The current job remains pending until its transient owners have all retired. */
+			if (worker->head != NULL || worker->current != NULL) {
+				pending = VK_TRUE;
+				break;
+			}
+		}
+
+		/* Current front buffers are intentionally absent from this completion condition. */
+		if (pending == VK_FALSE)
+			break;
+
+		/* Completion and device loss both eventually wake this ownership-based drain. */
+		pthread_cond_wait(&swapchain_condition, &swapchain_mutex);
+	}
+
+	pthread_mutex_unlock(&swapchain_mutex);
+
+	/* Only device loss belongs to the public queue/device idle result domain. */
+	error = __atomic_load_n(&device->error, __ATOMIC_ACQUIRE);
+	if (error != VK_SUCCESS)
+		return VK_ERROR_DEVICE_LOST;
+
+	/* Succeeded: no accepted presentation job remains pending in the selected ordering domain. */
+	return VK_SUCCESS;
+}
+
+/* Stops and joins every drained worker before logical-device children can be destroyed. */
+static void
+present_workers_stop(
+	struct VkDevice_T *device)
+{
+	struct wsi_queue_worker *worker;
+	struct wsi_queue_worker **link;
+	struct wsi_present_fence *completion;
+	const VkAllocationCallbacks *allocator;
+	VkResult error;
+	int status;
+
+	/* Even a lost device must let jobs retire their host ownership before thread teardown. */
+	error = present_drain(device, NULL);
+	if (error != VK_SUCCESS)
+		__atomic_store_n(&device->error, error, __ATOMIC_RELEASE);
+
+	/* Each joined worker consumes exactly one device-owned thread and allocation. */
+	for (;;) {
+		pthread_mutex_lock(&swapchain_mutex);
+
+		/* Detach one matching worker while preserving all other device ordering domains. */
+		link = &workers;
+		while (*link != NULL && (*link)->queue->device != device)
+			link = &(*link)->next;
+		worker = *link;
+		if (worker == NULL) {
+			pthread_mutex_unlock(&swapchain_mutex);
+			break;
+		}
+
+		/* An empty stopping worker exits at its next protected wakeup. */
+		*link = worker->next;
+		worker->stopping = VK_TRUE;
+		pthread_cond_broadcast(&swapchain_condition);
+
+		pthread_mutex_unlock(&swapchain_mutex);
+
+		/* Joining precedes freeing the worker or any queue identity its thread could still inspect. */
+		status = pthread_join(worker->thread, NULL);
+		if (status != 0) {
+			__atomic_store_n(&device->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+			return;
+		}
+
+		/* Reusable private completion workers are stopped only after all associated native jobs have drained. */
+		allocator = swapchain_allocator(&device->object.allocator);
+		while (worker->fences != NULL) {
+			/* No accepted job can borrow this cached completion after its owning worker has joined. */
+			completion = worker->fences;
+			worker->fences = completion->next;
+			if (completion->fence != VK_NULL_HANDLE)
+				vkDestroyFence((VkDevice)device, completion->fence, allocator);
+
+			/* The exported capability outlives all native dependencies and retires exactly once here. */
+			if (completion->fd >= 0)
+				close(completion->fd);
+
+			/* The saved device allocation policy owns every dynamically grown completion slot. */
+			vulkan_free(&device->object.allocator, completion);
+		}
+
+		/* Worker storage is unobservable after its thread and cache ownership have retired. */
+		vulkan_free(&device->object.allocator, worker);
+	}
+
+	/* Succeeded: the device owns no background WSI thread or accepted presentation job. */
 	return;
 }

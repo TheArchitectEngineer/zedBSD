@@ -16,7 +16,7 @@
 #include "internal.h"
 
 #define PEER_BUFFERS 128
-#define EXPECTED_BYTES 4096
+#define EXPECTED_BYTES 131072
 
 /* Models native identity and recording state without invoking implementation encoders. */
 struct peer_buffer {
@@ -31,6 +31,18 @@ struct allocation_state {
 	unsigned frees;
 	int fail;
 };
+
+/* Retains independent expectations until the complete recording is transported. */
+struct expected_record {
+	uint32_t opcode;
+	size_t bytes;
+	uint8_t *data;
+};
+
+/* A test-owned queue makes delayed production batching observable. */
+static struct expected_record expected_records[4096];
+static size_t expected_count;
+static size_t expected_cursor;
 
 /* Keeps each expected record independent of production writers and typed codecs. */
 static uint8_t expected[EXPECTED_BYTES];
@@ -57,6 +69,7 @@ static void put_word(uint8_t *bytes, size_t *cursor, uint32_t value);
 static void put_long(uint8_t *bytes, size_t *cursor, uint64_t value);
 static struct peer_buffer *peer_find(uint64_t identity);
 static void expect_begin(uint32_t opcode);
+static void expect_commit(void);
 static void expect_word(uint32_t value);
 static void expect_long(uint64_t value);
 static void expect_zero_words(unsigned count);
@@ -85,6 +98,7 @@ vulkan_context_execute(
 	const uint8_t *bytes;
 	uint8_t *reply;
 	struct peer_buffer *buffer;
+	struct expected_record *record;
 	uint64_t identity;
 	uint64_t present;
 	uint64_t returned[PEER_BUFFERS];
@@ -103,30 +117,51 @@ vulkan_context_execute(
 	if (status != VK_SUCCESS)
 		return status;
 
-	/* Decodes the actual submitted bytes with independent fixed-width peer primitives. */
+	/* Saves the final caller-authored expectation before observing a transported batch. */
+	expect_commit();
 	bytes = writer->data;
 	cursor = 0;
-	opcode = peer_word(bytes, writer->bytes, &cursor);
-	assert(peer_word(bytes, writer->bytes, &cursor) == 1);
 	peer_calls++;
-	reply = calloc(1, capacity);
-	assert(reply != NULL);
-	out = 0;
-	put_word(reply, &out, opcode);
+	reply = NULL;
+	if (capacity != 0) {
+		reply = calloc(1, capacity);
+		assert(reply != NULL);
+	}
 
-	/* Recording requests all begin with one native command-buffer identity. */
-	if (opcode >= 93 && opcode <= 136) {
+	/* Decodes every no-reply recording record before the optional result-bearing End. */
+	out = 0;
+	while (cursor < writer->bytes) {
+		opcode = peer_word(bytes, writer->bytes, &cursor);
+		flags = peer_word(bytes, writer->bytes, &cursor);
+		if (opcode < 93 || opcode > 136)
+			break;
+
+		/* Wire flags and copied payloads are checked independently of implementation writers. */
+		assert(flags == 0);
 		identity = peer_long(bytes, writer->bytes, &cursor);
 		buffer = peer_find(identity);
 		assert(buffer != NULL && buffer->state == 1);
-		assert(expected_pending && expected_opcode == opcode);
-		assert(writer->bytes - cursor == expected_bytes);
-		assert(memcmp(bytes + cursor, expected, expected_bytes) == 0);
-		expected_pending = 0;
+		assert(expected_cursor < expected_count);
+		record = &expected_records[expected_cursor++];
+		assert(record->opcode == opcode);
+		assert(record->bytes <= writer->bytes - cursor);
+		assert(memcmp(bytes + cursor, record->data, record->bytes) == 0);
+		cursor += record->bytes;
+		free(record->data);
+		record->data = NULL;
 		record_seen[opcode - 93]++;
-		vulkan_reader_init(reader, reply, out);
-		return VK_SUCCESS;
+
+		/* A threshold flush has no command reply; its trailer belongs to context.c. */
+		if (cursor == writer->bytes) {
+			vulkan_reader_init(reader, reply, 0);
+			return VK_SUCCESS;
+		}
 	}
+
+	/* Native lifecycle calls are the only records requesting command replies. */
+	assert(flags == 1);
+	assert(capacity >= 4);
+	put_word(reply, &out, opcode);
 
 	/* Implements the pinned numeric lifecycle operations independently of production opcodes. */
 	switch (opcode) {
@@ -365,13 +400,38 @@ static void
 expect_begin(
 	uint32_t opcode)
 {
-	/* No prior expected record may be silently skipped by a wrapper. */
-	assert(!expected_pending);
+	/* Retain the previous expected record until a future batch transports it. */
+	expect_commit();
 	expected_pending = 1;
 	expected_opcode = opcode;
 	expected_bytes = 0;
 
 	/* Succeeded: independent expected arguments can now be appended. */
+	return;
+}
+
+/* Saves one complete expected record without borrowing reusable fixture storage. */
+static void
+expect_commit(
+	void)
+{
+	struct expected_record *record;
+
+	/* Empty expectation state does not create a fake recording request. */
+	if (!expected_pending)
+		return;
+
+	/* Copy exactly the independent bytes before the next expectation overwrites them. */
+	assert(expected_count < sizeof(expected_records) / sizeof(expected_records[0]));
+	record = &expected_records[expected_count++];
+	record->opcode = expected_opcode;
+	record->bytes = expected_bytes;
+	record->data = malloc(expected_bytes + 1);
+	assert(record->data != NULL);
+	memcpy(record->data, expected, expected_bytes);
+	expected_pending = 0;
+
+	/* Succeeded: the peer can compare a later batch against immutable expectations. */
 	return;
 }
 
@@ -1161,11 +1221,8 @@ test_recording(
 	expect_long(510);
 	vkCmdExecuteCommands(buffer, 1, &secondary);
 
-	/* Requires every declared recording entry point to have consumed its expected protocol fixture. */
-	assert(!expected_pending);
-	for (index = 0; index < 44; index++) {
-		assert(record_seen[index] != 0);
-	}
+	/* Deferred recording must not have contacted the native peer yet. */
+	assert(expected_cursor == 0);
 
 	/* Prerequisite handles remain independently owned after command bytes have been copied. */
 	for (index = 0; index < 10; index++) {
@@ -1195,6 +1252,11 @@ test_lifecycle(
 	VkCommandBuffer freed[2];
 	struct vulkan_object *pool_object;
 	struct vulkan_object *cursor;
+	struct vulkan_object update_target;
+	uint32_t update_payload[16384];
+	VkBuffer update_buffer;
+	unsigned word;
+	unsigned batch;
 	VkResult status;
 	unsigned calls;
 	unsigned count;
@@ -1243,9 +1305,70 @@ test_lifecycle(
 	begin.pInheritanceInfo = (const VkCommandBufferInheritanceInfo *)(uintptr_t)1;
 	status = vkBeginCommandBuffer(buffers[0], &begin);
 	assert(status == VK_SUCCESS);
+	calls = peer_calls;
 	test_recording(buffers[0]);
+	assert(peer_calls == calls);
 	status = vkEndCommandBuffer(buffers[0]);
 	assert(status == VK_SUCCESS);
+	assert(peer_calls == calls + 1);
+	assert(expected_cursor == expected_count);
+	for (index = 0; index < 44; index++) {
+		assert(record_seen[index] != 0);
+	}
+
+	/* More than one inline transport payload remains owned until the single result-bearing End. */
+	memset(&update_target, 0, sizeof(update_target));
+	update_target.kind = VULKAN_OBJECT_BUFFER;
+	update_target.wire_id = 501;
+	update_buffer = (VkBuffer)(uintptr_t)&update_target;
+	status = vkBeginCommandBuffer(buffers[2], &begin);
+	assert(status == VK_SUCCESS);
+	calls = peer_calls;
+	for (batch = 0; batch < 3; batch++) {
+		expect_begin(117);
+		expect_long(501);
+		expect_long(batch * sizeof(update_payload));
+		expect_long(sizeof(update_payload));
+		expect_long(sizeof(update_payload));
+		for (word = 0; word < 16384; word++) {
+			update_payload[word] = 0x91000000U + batch * 16384U + word;
+			expect_word(update_payload[word]);
+		}
+
+		vkCmdUpdateBuffer(buffers[2], update_buffer, batch * sizeof(update_payload), sizeof(update_payload), update_payload);
+		memset(update_payload, 0xab, sizeof(update_payload));
+		assert(peer_calls == calls);
+	}
+
+	status = vkEndCommandBuffer(buffers[2]);
+	assert(status == VK_SUCCESS && peer_calls == calls + 1);
+	assert(expected_cursor == expected_count);
+
+	/* A constrained resource budget flushes only complete copied prefixes before End. */
+	context.max_resource_bytes = 69632;
+	status = vkBeginCommandBuffer(buffers[3], &begin);
+	assert(status == VK_SUCCESS);
+	calls = peer_calls;
+	for (batch = 0; batch < 2; batch++) {
+		expect_begin(117);
+		expect_long(501);
+		expect_long(batch * sizeof(update_payload));
+		expect_long(sizeof(update_payload));
+		expect_long(sizeof(update_payload));
+		for (word = 0; word < 16384; word++) {
+			update_payload[word] = 0x32000000U + batch * 16384U + word;
+			expect_word(update_payload[word]);
+		}
+
+		vkCmdUpdateBuffer(buffers[3], update_buffer, batch * sizeof(update_payload), sizeof(update_payload), update_payload);
+		memset(update_payload, 0xcd, sizeof(update_payload));
+		assert(peer_calls == calls + batch);
+	}
+
+	status = vkEndCommandBuffer(buffers[3]);
+	assert(status == VK_SUCCESS && peer_calls == calls + 2);
+	assert(expected_cursor == expected_count);
+	context.max_resource_bytes = 0;
 
 	/* Allocation failure in a void record is retained, later records are skipped, and native End still runs. */
 	status = vkBeginCommandBuffer(buffers[1], &begin);
@@ -1332,7 +1455,7 @@ main(
 {
 	/* Executes all recording wrappers and the full pool/buffer lifecycle without a GPU dependency. */
 	test_lifecycle();
-	puts("libvulkan commands: 44 exact wire records, 97 buffers, ignored fields, recording failure/reset and implicit pool frees PASS");
+	puts("libvulkan commands: 44 exact wire records, >64KiB copied batches, bounded prefix flush, 97 buffers, recording failure/reset and implicit pool frees PASS");
 
 	/* Succeeded: the focused command family gate passed without claiming native GPU conformance. */
 	return 0;

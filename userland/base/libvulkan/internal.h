@@ -23,9 +23,11 @@
 #define VULKAN_QUEUE_TIMELINE_COUNT 64U
 
 struct vulkan_context;
+struct vulkan_transport_storage;
 struct vulkan_instance_context;
 struct vulkan_object;
 struct vulkan_memory;
+struct gpu_placement;
 struct vulkan_image;
 struct vulkan_command_pool;
 struct vulkan_writer;
@@ -81,6 +83,7 @@ struct vulkan_object {
 	struct vulkan_object *first_child;
 	struct vulkan_object *next_sibling;
 	VkBool32 published;
+	void (*release_storage)(struct vulkan_object *object);
 };
 
 /* One local instance can contain a remote instance for each compatible GPU. */
@@ -129,11 +132,24 @@ struct VkQueue_T {
 	pthread_mutex_t mutex;
 };
 
+/* Keeps one encoded command independent of other recording threads. */
+struct vulkan_writer {
+	struct vulkan_allocator allocator;
+	VkSystemAllocationScope scope;
+	uint32_t opcode;
+	uint32_t external_memory_type;
+	uint8_t *data;
+	size_t bytes;
+	size_t capacity;
+	VkResult error;
+};
+
 /* Tracks a command buffer whose storage is owned by its allocating pool. */
 struct VkCommandBuffer_T {
 	struct vulkan_object object;
 	struct vulkan_command_pool *pool;
 	VkCommandBufferLevel level;
+	struct vulkan_writer recording;
 	uint32_t state;
 	VkResult error;
 };
@@ -144,6 +160,7 @@ struct vulkan_memory {
 	VkDeviceSize bytes;
 	uint32_t type_index;
 	VkMemoryPropertyFlags properties;
+	VkExternalMemoryHandleTypeFlags export_types;
 	void *backing_private;
 	void *mapped_base;
 	VkDeviceSize mapped_offset;
@@ -167,6 +184,7 @@ struct vulkan_image {
 
 /* Renderer external-storage declaration; never exposed as a guest fd ABI. */
 #define VULKAN_EXTERNAL_MEMORY_DMABUF 0x200U
+#define VULKAN_EXTERNAL_MEMORY_OPAQUE 0x1U
 
 /* Private WSI creation chain following the pinned Vulkan declaration layout. */
 struct vulkan_external_image_info {
@@ -175,35 +193,44 @@ struct vulkan_external_image_info {
 	uint32_t handle_types;
 };
 
+/* Private buffer storage declaration uses the renderer's external-memory ABI. */
+struct vulkan_external_buffer_info {
+	VkStructureType sType;
+	const void *pNext;
+	uint32_t handle_types;
+};
+
 struct gpu_image_descriptor;
+struct gpu_allocation_descriptor;
 
 VkResult vulkan_resource_blob_flags(struct vulkan_context *context, uint64_t bytes, uint64_t blob_id, uint32_t flags, uint64_t *handle, uint32_t *resource_id);
 VkResult vulkan_memory_allocate(VkDevice device, const VkMemoryAllocateInfo *info, const VkAllocationCallbacks *allocator, VkBool32 shared, VkDeviceMemory *memory);
+VkResult vulkan_memory_allocate_placed(VkDevice device, const VkMemoryAllocateInfo *info, const VkAllocationCallbacks *allocator, const struct gpu_placement *placement, VkDeviceMemory *memory);
 VkResult vulkan_memory_image_fd(struct VkDevice_T *device, VkDeviceMemory memory, struct gpu_image_descriptor *image, int *fd);
+VkResult vulkan_memory_allocation_fd(struct VkDevice_T *device, VkDeviceMemory memory, struct gpu_allocation_descriptor *allocation, int *fd);
 VkResult vulkan_memory_import(struct VkDevice_T *device, const VkMemoryAllocateInfo *info, const VkAllocationCallbacks *allocator, uint32_t resource, uint64_t alias, VkDeviceMemory *memory);
 void vulkan_encode_image_external(struct vulkan_writer *writer, const void *chain);
+void vulkan_encode_buffer_external(struct vulkan_writer *writer, const void *chain);
+VkResult vulkan_physical_identity(struct VkPhysicalDevice_T *physical, VkPhysicalDeviceIDProperties *identity);
 
 /* Instance capabilities are enabled explicitly by VkInstanceCreateInfo. */
 enum vulkan_instance_extension_bits {
 	VULKAN_INSTANCE_SURFACE = 1,
 	VULKAN_INSTANCE_DISPLAY = 2,
-	VULKAN_INSTANCE_WAYLAND = 4
+	VULKAN_INSTANCE_WAYLAND = 4,
+	VULKAN_INSTANCE_PROPERTIES2 = 8,
+	VULKAN_INSTANCE_EXTERNAL_MEMORY = 16,
+	VULKAN_INSTANCE_EXTERNAL_FENCE = 32
 };
 
 /* Device capabilities are enabled explicitly by VkDeviceCreateInfo. */
 enum vulkan_device_extension_bits {
 	VULKAN_DEVICE_SWAPCHAIN = 1,
-	VULKAN_DEVICE_DISPLAY_SWAPCHAIN = 2
-};
-
-/* Keeps one encoded command independent of other recording threads. */
-struct vulkan_writer {
-	struct vulkan_allocator allocator;
-	uint32_t opcode;
-	uint8_t *data;
-	size_t bytes;
-	size_t capacity;
-	VkResult error;
+	VULKAN_DEVICE_DISPLAY_SWAPCHAIN = 2,
+	VULKAN_DEVICE_EXTERNAL_MEMORY = 4,
+	VULKAN_DEVICE_EXTERNAL_MEMORY_FD = 8,
+	VULKAN_DEVICE_EXTERNAL_FENCE = 16,
+	VULKAN_DEVICE_EXTERNAL_FENCE_FD = 32
 };
 
 /* Owns a completed reply after the transport transaction unlocks. */
@@ -215,15 +242,28 @@ struct vulkan_reader {
 	VkResult error;
 };
 
+/* Retains a pending optional queue notification until observation or context close. */
+struct vulkan_notification {
+	struct vulkan_notification *next;
+	uint64_t sequence;
+	unsigned waiters;
+};
+
 /* Serializes a single GPU session without serializing GPU completion waits. */
 struct vulkan_context {
 	int fd;
+	char device_path[262];
+	struct vulkan_transport_storage *storage;
+	struct vulkan_notification *notifications;
+	void *reply_mapping;
+	void *stream_mapping;
 	VkBool32 mutex_ready;
 	pthread_mutex_t mutex;
 	VkResult error;
 	uint64_t queue_timelines;
 	uint32_t wire_version;
 	uint32_t xml_version;
+	uint32_t external_memory_type;
 	uint64_t max_resource_bytes;
 	uint32_t capabilities;
 	uint64_t stream_handle;
@@ -573,6 +613,9 @@ vulkan_read_bytes(
 VkResult
 vulkan_read_result(
 	struct vulkan_reader *reader);
+
+/* The caller owns queue->mutex across submission and presentation publication. */
+VkResult vulkan_queue_submit_locked(struct VkQueue_T *queue, uint32_t count, const VkSubmitInfo *submits, VkFence fence);
 
 #include "codec.h"
 

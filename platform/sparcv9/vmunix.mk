@@ -55,7 +55,7 @@ SPARCV9_KERNEL_SOURCES := \
 	src/kern/lock.c src/kern/waitq.c \
 	src/kern/process.c src/kern/thread.c \
 	src/kern/sched.c src/kern/vmspace.c src/kern/vm-device.c src/kern/vm.c \
- src/kern/filedesc.c src/kern/handle.c src/kern/fd-object.c src/kern/pipe.c \
+ src/kern/filedesc.c src/kern/handle.c src/kern/fence.c src/kern/fd-object.c src/kern/pipe.c \
 	src/kern/record-lock.c \
 	src/kern/cred.c src/kern/signal.c src/kern/cwdinfo.c \
 	src/kern/elf.c src/kern/exec.c \

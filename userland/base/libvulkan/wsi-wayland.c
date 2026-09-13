@@ -82,6 +82,7 @@ static VkResult wayland_import(void *private_lease, int fd, const struct gpu_ima
 static VkResult wayland_present(void *private_lease, void *private_image, VkPresentModeKHR mode, uint64_t *sequence);
 static VkResult wayland_progress(void *private_lease);
 static VkBool32 wayland_available(void *private_image);
+static void wayland_destroy_image(void *private_image);
 static VkResult wayland_dispatch(struct wayland_surface *surface);
 static VkResult wayland_surface_initialize(struct vulkan_surface *surface, const VkWaylandSurfaceCreateInfoKHR *info);
 static void wayland_global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version);
@@ -93,7 +94,7 @@ static void wayland_frame_done(void *data, struct wl_callback *callback, uint32_
 static const struct vulkan_wsi_platform_ops wayland_platform = {
 	wayland_capabilities, wayland_formats, wayland_modes,
 	wayland_claim, wayland_release, NULL, wayland_wait, wayland_destroy,
-	wayland_import, wayland_present, wayland_progress, wayland_available
+	wayland_import, wayland_present, wayland_progress, wayland_available, wayland_destroy_image, NULL, NULL, NULL
 };
 
 /* Registry discovery and buffer ownership are delivered only on the WSI queue. */
@@ -765,6 +766,36 @@ wayland_available(
 
 	/* Succeeded: the compositor no longer retains this image for rendering or scanout. */
 	return VK_TRUE;
+}
+
+/* Retires one buffer protocol identity before its image group releases the native lease. */
+static void
+wayland_destroy_image(
+	void *private_image)
+{
+	struct wayland_image *image;
+	struct wayland_image **link;
+	struct wayland_surface *surface;
+
+	/* The group's surviving lease keeps listener serialization and allocator state alive. */
+	image = private_image;
+	surface = image->lease->surface;
+	pthread_mutex_lock(&surface->mutex);
+
+	/* Remove exactly this group-owned image without touching a replacement chain's buffers. */
+	link = &image->lease->images;
+	while (*link != image)
+		link = &(*link)->next;
+	*link = image->next;
+
+	/* Buffer destruction leaves the application surface mapped and the compositor's allocation alive. */
+	wl_buffer_destroy(image->buffer);
+
+	pthread_mutex_unlock(&surface->mutex);
+	vulkan_free(&surface->surface->object.allocator, image);
+
+	/* Succeeded: no local listener or protocol identity borrows this native image wrapper. */
+	return;
 }
 
 /* Reads only immediately available bytes using Wayland's coordinated multi-reader protocol. */

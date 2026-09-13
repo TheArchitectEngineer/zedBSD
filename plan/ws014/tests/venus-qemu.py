@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -25,6 +26,38 @@ def digest(path):
         for chunk in iter(lambda: stream.read(1048576), b''):
             result.update(chunk)
     return result.hexdigest()
+
+
+def verify_blob_scanout_trace(data, width, height):
+    """Prove BLOB request selection; display pixels and clean completion prove success separately."""
+    pattern = re.compile(r'\b(virtio_gpu_cmd_set_scanout(?:_blob)?) id (\d+), '
+                         r'res 0x([0-9a-fA-F]+), w (\d+), h (\d+), x (\d+), y (\d+)\r?$',
+                         re.MULTILINE)
+    counts = {'virtio_gpu_cmd_set_scanout_blob': 0, 'virtio_gpu_cmd_set_scanout': 0}
+    resources = set()
+    for match in pattern.finditer(data.decode('utf-8', errors='replace')):
+        event, head, resource, frame_width, frame_height, x, y = match.groups()
+        resource = int(resource, 16)
+        if resource == 0 or (int(frame_width), int(frame_height)) != (width, height):
+            continue
+        counts[event] += 1
+        if event == 'virtio_gpu_cmd_set_scanout_blob':
+            resources.add(resource)
+    if counts['virtio_gpu_cmd_set_scanout_blob'] == 0:
+        raise RuntimeError('direct display trace has no nonzero BLOB scanout at the application extent')
+    if counts['virtio_gpu_cmd_set_scanout'] != 0:
+        raise RuntimeError('direct display trace used legacy scanout at the application extent')
+    return {'scope': 'whole direct acceptance run', 'width': width, 'height': height,
+            'blob_requests': counts['virtio_gpu_cmd_set_scanout_blob'],
+            'legacy_requests': counts['virtio_gpu_cmd_set_scanout'],
+            'blob_resources': sorted(resources), 'proves': 'request selection only'}
+
+
+def interrupt_termination(signum, frame):
+    # Convert catchable termination into normal stack unwinding, so a suspended
+    # owned renderer is resumed before the disposable QEMU is retired.
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    raise RuntimeError('harness interrupted by SIGTERM')
 
 
 class QMP:
@@ -149,11 +182,21 @@ def run(args, exercise=None, harness_path=None):
                '-qmp', f'unix:{qmp_path},server=on,wait=off',
                '-vnc', f'unix:{vnc_path}',
                '-monitor', 'none', '-serial', 'none', '-nic', 'none',
-               '-debugcon', f'file:{debug}', '-no-reboot']
+               '-debugcon', f'file:{debug}', '-no-reboot',
+               '-trace', 'enable=virtio_gpu_cmd_set_scanout_blob',
+               '-trace', 'enable=virtio_gpu_cmd_set_scanout']
     environment = os.environ.copy()
     environment['VK_DRIVER_FILES'] = args.icd
     environment['VIRGL_LOG_LEVEL'] = 'debug'
     environment['RENDER_SERVER_EXEC_PATH'] = str(args.render_server)
+    library_directory = getattr(args, 'renderer_library_dir', None)
+    library = None
+    if library_directory is not None:
+        library_directory = library_directory.resolve(strict=True)
+        library = (library_directory / 'libvirglrenderer.so.1').resolve(strict=True)
+        if not library.is_file() or not library_directory.is_dir():
+            raise RuntimeError('selected renderer library directory has no shared library')
+        environment['LD_LIBRARY_PATH'] = str(library_directory)
     if not args.render_server.is_file() or not os.access(args.render_server, os.X_OK):
         raise RuntimeError(f'Venus render server is not executable: {args.render_server}')
     report = {'started': datetime.datetime.now(datetime.timezone.utc).isoformat(),
@@ -168,18 +211,28 @@ def run(args, exercise=None, harness_path=None):
               'rfb_client_sha256': digest(Path(__file__).with_name('venus_rfb.py')),
               'console_address': args.console_address, 'console_size': args.console_size}
     report_path = output / 'result.json'
+    if library is not None:
+        report['renderer_library'] = {'directory': str(library_directory),
+                                      'path': str(library), 'sha256': digest(library)}
+        report['environment']['LD_LIBRARY_PATH'] = str(library_directory)
     report_path.write_text(json.dumps(report, indent=2) + '\n')
     if report['image_sha256'] != report['source_image_sha256']:
         raise RuntimeError('source image changed while copying')
     started = time.monotonic()
     qmp = None
     process = None
+    previous_term = signal.signal(signal.SIGTERM, interrupt_termination)
     try:
         with renderer.open('wb') as log, (output / 'qmp.jsonl').open('w') as qlog:
             process = subprocess.Popen(command, env=environment, stdout=log, stderr=subprocess.STDOUT)
             qmp = QMP(qmp_path, qlog)
             report['pci'] = qmp.call('query-pci')
             report['qemu_version'] = qmp.call('query-version')
+            if library is not None:
+                mappings = Path(f'/proc/{process.pid}/maps').read_text()
+                if str(library) not in mappings:
+                    raise RuntimeError('QEMU did not load the selected isolated renderer library')
+                report['renderer_library']['mapped_by_qemu'] = True
             deadline = time.monotonic() + args.timeout
             while time.monotonic() < deadline:
                 text = guest_text(debug)
@@ -252,9 +305,17 @@ def run(args, exercise=None, harness_path=None):
             report['qemu_exit_code'] = process.wait(timeout=10)
             if report['qemu_exit_code'] != 0:
                 raise RuntimeError('QEMU failed during shutdown')
-    except Exception as error:
+            if library is not None:
+                final_digest = digest(library)
+                report['renderer_library']['final_sha256'] = final_digest
+                if final_digest != report['renderer_library']['sha256']:
+                    raise RuntimeError('selected renderer library changed during the attempt')
+            if digest(args.render_server) != report['render_server_sha256']:
+                raise RuntimeError('selected renderer server changed during the attempt')
+    except (Exception, KeyboardInterrupt) as error:
         report.update(status='fail', error=str(error))
     finally:
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
         if qmp is not None:
             try:
                 qmp.close()
@@ -277,6 +338,7 @@ def run(args, exercise=None, harness_path=None):
         report['guest_log_sha256'] = digest(debug) if debug.exists() else None
         report['renderer_log_sha256'] = digest(renderer)
         report_path.write_text(json.dumps(report, indent=2) + '\n')
+        signal.signal(signal.SIGTERM, previous_term)
     print(json.dumps({k: report.get(k) for k in ['status', 'phase', 'frame', 'elapsed_seconds', 'error']}, indent=2))
     return 0 if report['status'] in ('pass', 'boot-pass') else 1
 
@@ -291,6 +353,7 @@ def rgb(text):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--render-server', type=Path, default=Path('/usr/libexec/virgl_render_server'))
+    parser.add_argument('--renderer-library-dir', type=Path)
     parser.add_argument('--image', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--phase', choices=['2d', 'venus'], default='venus')

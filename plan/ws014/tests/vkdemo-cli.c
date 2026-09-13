@@ -19,10 +19,11 @@
 int
 vkdemo_initialize(
 	uint32_t device_index,
-	int offscreen)
+	int offscreen,
+	int readback)
 {
 	/* Expose accepted options without accessing the selected device. */
-	printf("VKDEMO-CLI-STUB initialize device-index=%u offscreen=%d\n", device_index, offscreen);
+	printf("VKDEMO-CLI-STUB initialize device-index=%u offscreen=%d readback=%d\n", device_index, offscreen, readback);
 	errno = ENODEV;
 
 	/* Refuse initialization so this fixture never claims to render a frame. */

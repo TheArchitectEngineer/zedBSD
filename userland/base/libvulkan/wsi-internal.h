@@ -14,10 +14,13 @@
 
 #include "internal.h"
 #include <uapi/gpu.h>
+#include <uapi/gpu-display.h>
+#include <uapi/gpu-scanout.h>
 
 #define VULKAN_WSI_OUTPUT_CONNECTED	1U
 #define VULKAN_WSI_OUTPUT_FIFO		2U
 #define VULKAN_WSI_OUTPUT_ACTIVE	4U
+#define VULKAN_WSI_OUTPUT_BLOB		8U
 #define VULKAN_WSI_FORMAT_RGBA		1U
 #define VULKAN_WSI_FORMAT_BGRA		2U
 
@@ -30,6 +33,8 @@ struct vulkan_swapchain;
  */
 struct vulkan_wsi_output {
 	uint64_t identifier;
+	uint64_t device_identifier;
+	char device_path[262];
 	uint64_t generation;
 	uint64_t max_frame_bytes;
 	uint32_t flags;
@@ -114,7 +119,15 @@ struct vulkan_wsi_platform_ops {
 	VkResult (*present_image)(void *, void *, VkPresentModeKHR, uint64_t *);
 	VkResult (*progress)(void *);
 	VkBool32 (*image_available)(void *);
+	void (*destroy_image)(void *);
+	VkResult (*prepare_copy)(void *, VkFormat, VkExtent2D);
+	VkResult (*present_image_sync)(void *, void *, VkPresentModeKHR, uint64_t *, int, uint64_t);
+	VkResult (*placement)(void *, struct gpu_placement *);
 };
+
+VkResult vulkan_wsi_display_node_query(struct VkPhysicalDevice_T *physical, uint32_t index, uint32_t *count, struct gpu_display_info *request, uint64_t *device_id, char *path);
+int vulkan_wsi_display_node_ioctl(struct VkPhysicalDevice_T *physical, const struct vulkan_wsi_output *output, unsigned long command, void *argument);
+void vulkan_wsi_display_nodes_finish(struct VkInstance_T *instance);
 
 /* The direct adapter supplies these after its kernel contract is finalized. */
 extern const struct vulkan_wsi_platform_ops vulkan_wsi_display_platform;
@@ -131,7 +144,7 @@ VkResult vulkan_wsi_surface_retain(struct vulkan_surface *surface);
 void vulkan_wsi_surface_release(struct vulkan_surface *surface);
 
 VkResult vulkan_wsi_surface_publish(struct vulkan_surface *surface, VkSurfaceKHR *handle);
-VkResult vulkan_wsi_shared_image_create(struct VkDevice_T *device, VkFormat format, VkExtent2D extent, const VkAllocationCallbacks *allocator, VkImage *image, VkDeviceMemory *memory, int *fd, struct gpu_image_descriptor *descriptor);
+VkResult vulkan_wsi_shared_image_create(struct VkDevice_T *device, VkFormat format, VkExtent2D extent, const VkAllocationCallbacks *allocator, const struct gpu_placement *placement, VkImage *image, VkDeviceMemory *memory, int *fd, struct gpu_image_descriptor *descriptor);
 
 VkResult vulkan_wsi_shared_image_import(struct VkDevice_T *device, int fd, const VkAllocationCallbacks *allocator, VkImage *image, VkDeviceMemory *memory, struct gpu_image_descriptor *descriptor);
 

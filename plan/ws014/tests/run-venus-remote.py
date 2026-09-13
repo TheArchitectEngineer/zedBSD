@@ -34,7 +34,14 @@ EVIDENCE_FILES = ['result.json', 'guest.log', 'qemu-renderer.log', 'qmp.jsonl',
                   'boot.ppm', 'frame.ppm', 'console.log', 'console.bin']
 SOURCE_DIRECTORIES = ['src/drivers/gpu', 'userland/gpu']
 SOURCE_FILES = ['Makefile', 'include/drivers/gpu.h', 'include/drivers/venus.h',
-                'include/uapi/gpu.h', 'src/kern/platform/pcat.c', 'src/hal/amd64/asm.c',
+                'userland/base/libc/pthread.c', 'libc/include/sys/socket.h',
+                'include/kern/fence.h', 'src/kern/fence.c', 'include/uapi/gpu-fence.h',
+                'include/uapi/gpu-scanout.h', 'include/drivers/gpu-scanout.h',
+                'include/kern/handle.h', 'include/kern/fd-object.h',
+                'include/kern/filedesc.h', 'src/kern/handle.c',
+                'src/kern/fd-object.c', 'src/kern/filedesc.c', 'src/kern/poll.c',
+                'include/uapi/gpu.h', 'include/uapi/gpu-allocation.h',
+                'src/kern/platform/pcat.c', 'src/hal/amd64/asm.c',
                 'platform/amd64/vmunix.mk', 'platform/amd64/zedbsd.cfg',
                 'include/hal/hal.h', 'src/hal/amd64/space.c',
                 'include/kern/vm-device.h', 'include/kern/vmspace.h',
@@ -60,7 +67,8 @@ PROFILES = {
                'evidence': [name for name in EVIDENCE_FILES if name != 'frame.ppm'] +
                            [f'frame-{index}.ppm' for index in range(1, 7)] +
                            [f'oracle-{index}.json' for index in range(1, 7)] +
-                           ['console-return.ppm', 'console-write.ppm'],
+                           ['console-return.ppm', 'console-write.ppm',
+                            'ordinary-1.ppm', 'ordinary-2.ppm'],
                'source_directories': ['userland/base/vkdemo', 'userland/base/libvulkan',
                                       'libc/include/vulkan'],
                'source_files': ['userland/base/common/sha256.c', 'userland/base/common/sha256.h',
@@ -77,9 +85,15 @@ PROFILES = {
                              'wayland-observed.log'],
                 'source_directories': ['userland/base/wltest', 'userland/base/zwl',
                                        'userland/base/tests/gpu-share',
+                                       'userland/base/tests/gpu-fence',
+                                       'userland/base/tests/gpu-admission',
+                                       'userland/base/tests/gpu-recovery',
                                        'userland/base/libwayland', 'libc/include/wayland',
                                        'userland/base/libvulkan', 'libc/include/vulkan'],
                 'source_files': ['include/kern/handle.h', 'include/kern/fd-object.h',
+                                 'include/kern/fence.h', 'src/kern/fence.c',
+                                 'include/uapi/gpu-fence.h', 'include/uapi/gpu-scanout.h',
+                                 'include/drivers/gpu-scanout.h',
                                  'include/kern/filedesc.h', 'include/kern/net/socket.h',
                                  'libc/include/wayland-client.h', 'libc/include/wayland-client-core.h',
                                  'libc/include/wayland-client-protocol.h', 'libc/include/wayland-util.h',
@@ -87,14 +101,17 @@ PROFILES = {
                                  'src/kern/handle.c', 'src/kern/fd-object.c', 'src/kern/filedesc.c',
                                  'src/kern/net/unix-socket.c', 'src/kern/poll.c',
                                  'include/drivers/gpu-share.h', 'libc/include/errno.h', 'libc/include/stddef.h', 'libc/string.c',
-                                 'plan/ws014/tests/gpu-share-client.c',
+                                 'userland/base/tests/gpu-share/main.c',
                                  'plan/ws014/tests/wayland-qemu.py',
                                  'plan/ws014/tests/wayland_oracle.py',
                                  'plan/ws014/tests/run-wayland-remote.py'],
                 'additional_artifacts': {'vulkan_library': 'dynamic/libvulkan.so',
                                          'wayland_library': 'dynamic/libwayland-client.so',
                                          'compositor': 'bin/zwl',
-                                         'sharing_test': 'bin/gpu-share-test'}},
+                                         'sharing_test': 'bin/gpu-share-test',
+                                         'fence_test': 'bin/gpu-fence-test',
+                                         'recovery_test': 'bin/gpu-recovery-test',
+                                         'admission_test': 'bin/gpu-admission-test'}},
 }
 
 
@@ -401,6 +418,13 @@ def verify_remote_result(args, report, remote):
         raise RuntimeError('remote attempt did not complete successfully')
     if remote.get('qemu_exit_code') != 0:
         raise RuntimeError('remote QEMU did not exit cleanly')
+    if args.renderer_library_dir is not None:
+        library = remote.get('renderer_library', {})
+        if (library.get('directory') != args.renderer_library_dir.rstrip('/') or
+                library.get('mapped_by_qemu') is not True or
+                library.get('final_sha256') != library.get('sha256') or
+                re.fullmatch(r'[a-f0-9]{64}', library.get('sha256', '')) is None):
+            raise RuntimeError('remote QEMU did not prove the selected isolated renderer identity')
     if remote.get('phase') != args.phase or remote.get('frame') != args.frame:
         raise RuntimeError('remote result belongs to a different phase or frame')
     if (remote.get('console_address') != report['console']['physical_address'] or
@@ -424,7 +448,7 @@ def verify_remote_result(args, report, remote):
         required.append('boot.ppm')
     elif remote.get('boot_surface_available') is not False:
         raise RuntimeError('remote result does not record firmware surface availability')
-    if not args.boot_only:
+    if not args.boot_only and not args.fault_test:
         if args.profile in ('vkdemo', 'wayland'):
             required += [f'frame-{i}.ppm' for i in range(1, 7)]
             required += [f'oracle-{i}.json' for i in range(1, 7)]
@@ -435,7 +459,27 @@ def verify_remote_result(args, report, remote):
     if (fetched['guest.log'] != remote.get('guest_log_sha256') or
             fetched['qemu-renderer.log'] != remote.get('renderer_log_sha256')):
         raise RuntimeError('retrieved logs differ from the completed remote capture')
-    if args.profile == 'wayland':
+    if args.fault_test:
+        if remote.get('transport_harness_sha256') != report['artifacts']['transport_harness']['sha256']:
+            raise RuntimeError('isolated fault run used a different bounded QEMU harness')
+        if (remote.get('token') != args.token or remote.get('fault_test') != args.fault_test or
+                remote.get('guest_completed') is not True):
+            raise RuntimeError('isolated fault result differs from the requested scenario')
+        observed = (args.output_root.resolve() / args.attempt / 'evidence/wayland-observed.log').read_text()
+        expected = {
+            'recovery': 'GPURECOVERY PASS timeout=1 peer_failed=1 retirement_gate=1 fresh_roundtrip=4096 decoder=1',
+            'producer-exit': 'GPUFENCE PRODUCER_EXIT_ERROR PASS',
+        }[args.fault_test]
+        if remote.get('fault_marker') != expected or expected not in observed:
+            raise RuntimeError('isolated fault evidence lacks successful guest assertions')
+        if args.fault_test == 'recovery' and not 9000 <= remote.get('watchdog_elapsed_ms', 0) <= 20000:
+            raise RuntimeError('isolated recovery did not measure the expected watchdog interval')
+        if args.fault_test == 'recovery':
+            pause = remote.get('renderer_pause', {})
+            if (pause.get('stopped') is not True or pause.get('resumed') is not True or
+                    len(pause.get('pids', [])) < 3 or pause.get('qemu_pid') in pause.get('pids', [])):
+                raise RuntimeError('isolated recovery lacks bounded renderer suspension and restoration')
+    elif args.profile == 'wayland':
         verify_wayland_result(args, report, remote)
     elif args.profile == 'vkdemo':
         verify_vkdemo_result(args, report, remote)
@@ -469,8 +513,17 @@ def verify_wayland_result(args, report, remote):
         checked = oracle.verify(evidence / filename, sample['frame'], sample['width'], sample['height'])
         if not checked['passed'] or checked != sample['oracle']:
             raise RuntimeError('Wayland capture disagrees with independent host expectation')
-    if any(remote.get(key) is not True for key in ('shared_gpu_path', 'compositor_stopped', 'independent_renderer_import')):
+    if any(remote.get(key) is not True for key in ('shared_gpu_path', 'compositor_stopped',
+                                                  'independent_renderer_import',
+                                                  'concurrent_admission', 'external_fence')):
         raise RuntimeError('Wayland acceptance lacks shared allocation or compositor lifecycle evidence')
+    imports = remote.get('allocation_imports', [])
+    if len(imports) != 2 or {item.get('kind') for item in imports} != {'buffer', 'optimal'}:
+        raise RuntimeError('Wayland acceptance lacks standard buffer and optimal allocation imports')
+    notifications = remote.get('display_notifications', {})
+    if (notifications.get('sequence', 0) < 1 or notifications.get('outputs') != 1 or
+            not 1 <= notifications.get('attempts', 0) <= 8):
+        raise RuntimeError('Wayland acceptance lacks initial display inventory poll/QUERY/ACK evidence')
     if args.lifecycle:
         lifecycle = remote.get('lifecycle', {})
         required = ('client_aborted', 'client_reopened', 'compositor_reopened',
@@ -503,7 +556,7 @@ def verify_vkdemo_result(args, report, remote):
             ordinary.get('frames') != ordinary_samples[-1]['frame'] or
             any(b['frame'] <= a['frame'] or b['time_ms'] <= a['time_ms']
                 for a, b in zip(ordinary_samples, ordinary_samples[1:])) or
-            len({sample['rgb_sha256'] for sample in ordinary_samples}) < 2):
+            any(sample.get('readback_disabled') is not True for sample in ordinary_samples)):
         raise RuntimeError('ordinary vkdemo run did not prove progress and clean reopening/exit')
     if getattr(args, 'lifecycle', False):
         lifecycle = remote.get('lifecycle', {})
@@ -530,6 +583,25 @@ def verify_vkdemo_result(args, report, remote):
     samples = remote.get('samples', [])
     oracle.verify_sequence(samples)
     evidence = args.output_root.resolve() / args.attempt / 'evidence'
+    captures = ordinary.get('captures', [])
+    if len(captures) != 2:
+        raise RuntimeError('ordinary no-readback run needs two independent display captures')
+    captured_pixels = []
+    for number, capture in enumerate(captures, 1):
+        name = f'ordinary-{number}.ppm'
+        if (capture.get('filename') != name or
+                report['fetched_evidence'].get(name) != capture.get('sha256')):
+            raise RuntimeError('ordinary display capture identity or hash differs after transfer')
+        captured_pixels.append(oracle.read_ppm(evidence / name))
+    if captured_pixels[0] == captured_pixels[1]:
+        raise RuntimeError('ordinary no-readback captures do not show visible motion')
+    transport_spec = importlib.util.spec_from_file_location(
+        'venus_trace_verifier', REPO / 'plan/ws014/tests/venus-qemu.py')
+    transport = importlib.util.module_from_spec(transport_spec)
+    transport_spec.loader.exec_module(transport)
+    scanout = transport.verify_blob_scanout_trace((evidence / 'qemu-renderer.log').read_bytes(), 320, 240)
+    if scanout != remote.get('scanout_trace'):
+        raise RuntimeError('fetched direct scanout selection differs from the completed trace evidence')
     for sample in samples:
         if sample['run'] != args.token:
             raise RuntimeError('remote sample carries a different run token')
@@ -587,6 +659,10 @@ def run(args):
                    '--console-address', str(report['console']['physical_address']),
                    '--console-size', str(report['console']['bytes']),
                    '--render-server', args.render_server]
+        if args.renderer_library_dir is not None:
+            command += ['--renderer-library-dir', args.renderer_library_dir]
+        if args.fault_test is not None:
+            command += ['--fault-test', args.fault_test]
         if args.profile in ('vkdemo', 'wayland'):
             command += ['--token', args.token]
             if args.lifecycle:
@@ -644,6 +720,7 @@ def main(profile='venus'):
     parser.add_argument('--host', default='awe@10.0.10.25')
     parser.add_argument('--remote-root', default='/home/awe/zedbsd-q306-venus')
     parser.add_argument('--render-server', help='remote virgl_render_server; defaults to the isolated dependency')
+    parser.add_argument('--renderer-library-dir', help='isolated remote libvirglrenderer directory for a paired renderer build')
     parser.add_argument('--output-root', type=Path, default=REPO / 'plan/ws014/temp/remote')
     parser.add_argument('--build-directory', type=Path, default=REPO / f'build/{profile}-amd64')
     parser.add_argument('--config', type=Path, default=REPO / f'plan/ws014/tests/config-{profile}-amd64.mk')
@@ -651,6 +728,8 @@ def main(profile='venus'):
     parser.add_argument('--init', default='/bin/sh', help='init path written only into the disposable image')
     parser.add_argument('--skip-build', action='store_true', help='explicitly reuse and record existing artifacts')
     parser.add_argument('--lifecycle', action='store_true', help='also verify SIGINT cleanup and visible console restoration')
+    parser.add_argument('--fault-test', choices=['recovery', 'producer-exit'],
+                        help='run one isolated destructive scenario instead of the Wayland suite')
     parser.add_argument('--phase', choices=['2d', 'venus'] if profile == 'venus' else [profile],
                         default=profile)
     parser.add_argument('--frame', type=int, default=1 if profile == 'venus' else 0)
@@ -662,6 +741,8 @@ def main(profile='venus'):
     parser.add_argument('--transfer-timeout', type=int, default=600)
     args = parser.parse_args()
     args.profile = profile
+    if args.fault_test and (profile != 'wayland' or args.lifecycle):
+        parser.error('fault-test requires the Wayland image and an isolated VM without lifecycle')
     if args.lifecycle and profile not in ('vkdemo', 'wayland'):
         parser.error('lifecycle verification requires the standard vkdemo profile')
     args.token = 'r' + hashlib.sha256(args.attempt.encode()).hexdigest()[:24]
@@ -678,6 +759,10 @@ def main(profile='venus'):
     if (not re.fullmatch(r'/[a-zA-Z0-9_./-]+', args.render_server) or
             '..' in PurePosixPath(args.render_server).parts):
         parser.error('render-server must be one absolute remote executable path')
+    if args.renderer_library_dir is not None:
+        if (not re.fullmatch(r'/home/[a-zA-Z0-9_./-]+', args.renderer_library_dir) or
+                '..' in PurePosixPath(args.renderer_library_dir).parts):
+            parser.error('renderer-library-dir must be an isolated absolute path below a user home')
     if len(str(remote / args.attempt / 'capture/qmp.sock').encode()) >= 104:
         parser.error('remote attempt path is too long for a Unix QMP socket')
     if not re.fullmatch(r'/[a-zA-Z0-9_./-]+', args.init) or '..' in PurePosixPath(args.init).parts:

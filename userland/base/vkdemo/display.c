@@ -125,7 +125,8 @@ vkdemo_display_create_swapchain(
 	VkPhysicalDevice physical,
 	VkDevice device,
 	uint32_t family,
-	struct vkdemo_display *display)
+	struct vkdemo_display *display,
+	int readback)
 {
 	VkSurfaceCapabilitiesKHR capabilities;
 	VkSwapchainCreateInfoKHR create;
@@ -150,7 +151,9 @@ vkdemo_display_create_swapchain(
 		return status;
 
 	/* The image is rendered directly and copied only for independent readback. */
-	usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+	usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+	if (readback != 0)
+		usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 	if ((capabilities.supportedUsageFlags & usage) != usage)
 		return VK_ERROR_FORMAT_NOT_SUPPORTED;
 

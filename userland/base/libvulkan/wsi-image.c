@@ -25,6 +25,7 @@ vulkan_wsi_shared_image_create(
 	VkFormat format,
 	VkExtent2D extent,
 	const VkAllocationCallbacks *allocator,
+	const struct gpu_placement *placement,
 	VkImage *image,
 	VkDeviceMemory *memory,
 	int *fd,
@@ -103,7 +104,7 @@ vulkan_wsi_shared_image_create(
 	allocate.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 	allocate.allocationSize = requirements.size;
 	allocate.memoryTypeIndex = type;
-	error = vulkan_memory_allocate((VkDevice)device, &allocate, allocator, VK_TRUE, memory);
+	error = vulkan_memory_allocate_placed((VkDevice)device, &allocate, allocator, placement, memory);
 	if (error != VK_SUCCESS)
 		goto cleanup;
 

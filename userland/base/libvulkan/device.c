@@ -302,6 +302,28 @@ device_validate(
 			continue;
 		}
 
+		/* Selects typed external allocation and fence handles without host fd leakage. */
+		match = strcmp(info->ppEnabledExtensionNames[index], VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME);
+		if (match == 0) {
+			bits |= VULKAN_DEVICE_EXTERNAL_MEMORY;
+			continue;
+		}
+		match = strcmp(info->ppEnabledExtensionNames[index], VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME);
+		if (match == 0) {
+			bits |= VULKAN_DEVICE_EXTERNAL_MEMORY_FD;
+			continue;
+		}
+		match = strcmp(info->ppEnabledExtensionNames[index], VK_KHR_EXTERNAL_FENCE_EXTENSION_NAME);
+		if (match == 0) {
+			bits |= VULKAN_DEVICE_EXTERNAL_FENCE;
+			continue;
+		}
+		match = strcmp(info->ppEnabledExtensionNames[index], VK_KHR_EXTERNAL_FENCE_FD_EXTENSION_NAME);
+		if (match == 0) {
+			bits |= VULKAN_DEVICE_EXTERNAL_FENCE_FD;
+			continue;
+		}
+
 		/* Does not forward renderer-private extensions as guest capabilities. */
 		return VK_ERROR_EXTENSION_NOT_PRESENT;
 	}
@@ -318,6 +340,16 @@ device_validate(
 	if ((bits & VULKAN_DEVICE_DISPLAY_SWAPCHAIN) &&
 	    (!(bits & VULKAN_DEVICE_SWAPCHAIN) ||
 	     !(physical->instance->enabled_extensions & VULKAN_INSTANCE_DISPLAY)))
+		return VK_ERROR_EXTENSION_NOT_PRESENT;
+
+	/* Vulkan 1.0 external fd extensions retain both their device and instance dependencies. */
+	if ((bits & VULKAN_DEVICE_EXTERNAL_MEMORY_FD) && !(bits & VULKAN_DEVICE_EXTERNAL_MEMORY))
+		return VK_ERROR_EXTENSION_NOT_PRESENT;
+	if ((bits & VULKAN_DEVICE_EXTERNAL_FENCE_FD) && !(bits & VULKAN_DEVICE_EXTERNAL_FENCE))
+		return VK_ERROR_EXTENSION_NOT_PRESENT;
+	if ((bits & VULKAN_DEVICE_EXTERNAL_MEMORY) && !(physical->instance->enabled_extensions & VULKAN_INSTANCE_EXTERNAL_MEMORY))
+		return VK_ERROR_EXTENSION_NOT_PRESENT;
+	if ((bits & VULKAN_DEVICE_EXTERNAL_FENCE) && !(physical->instance->enabled_extensions & VULKAN_INSTANCE_EXTERNAL_FENCE))
 		return VK_ERROR_EXTENSION_NOT_PRESENT;
 
 	/* Counts actual requested queues without imposing a library object-array ceiling. */

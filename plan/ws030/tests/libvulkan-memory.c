@@ -101,6 +101,18 @@ static void release(void *data, void *pointer);
 static void *reallocate(void *data, void *old, size_t bytes, size_t alignment, VkSystemAllocationScope scope);
 static void test_rollback_loss(const VkAllocationCallbacks *callbacks);
 
+/* Core-only memory tests must not acquire a UUID or external allocation implicitly. */
+VkResult
+vulkan_physical_identity(
+	struct VkPhysicalDevice_T *device,
+	VkPhysicalDeviceIDProperties *identity)
+{
+	(void)device;
+	(void)identity;
+	assert(0 && "ordinary core memory unexpectedly queried external UUIDs");
+	return VK_ERROR_DEVICE_LOST;
+}
+
 /*
  * Takes the mock session mutex through the production raw-operation contract.
  */

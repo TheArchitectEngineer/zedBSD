@@ -184,6 +184,12 @@ vulkan_object_free(
 
 	/* Withdraws parent visibility before releasing callback-owned storage. */
 	vulkan_object_unpublish(object);
+
+	/* Retires subtype-owned storage even during implicit parent teardown. */
+	if (object->release_storage != NULL)
+		object->release_storage(object);
+
+	/* Returns the identity through its effective destruction allocation policy. */
 	policy = object->allocator;
 	vulkan_free(&policy, object);
 

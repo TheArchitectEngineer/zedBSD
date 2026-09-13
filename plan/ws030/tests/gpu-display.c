@@ -15,6 +15,10 @@
 #include "../../ws014/tests/gpu-framework.c"
 #undef main
 
+#ifndef GPU_DISPLAY_TEST_ENTRY
+#define GPU_DISPLAY_TEST_ENTRY main
+#endif
+
 /* One exclusive modeled plane retains its open owner until explicit lease release. */
 struct display_test_state {
 	struct test_backend *backend;
@@ -48,7 +52,7 @@ static void display_test_frames(struct test_file *opened, struct test_file *fore
  * Checks native display admission, request normalization, lease ownership and bounded pixel access.
  */
 int
-main(
+GPU_DISPLAY_TEST_ENTRY(
 	void)
 {
 	struct drv_gpu_ops ops;

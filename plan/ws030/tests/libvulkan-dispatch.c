@@ -30,7 +30,12 @@ enum test_extension {
 	TEST_DISPLAY,
 	TEST_SWAPCHAIN,
 	TEST_DISPLAY_SWAPCHAIN,
-	TEST_WAYLAND
+	TEST_WAYLAND,
+	TEST_PROPERTIES2,
+	TEST_EXTERNAL_MEMORY_CAPS,
+	TEST_EXTERNAL_FENCE_CAPS,
+	TEST_EXTERNAL_MEMORY_FD,
+	TEST_EXTERNAL_FENCE_FD
 };
 
 /* Vulkan 1.0 defines exactly four commands callable without an instance. */
@@ -75,6 +80,17 @@ static const char *const wayland_names[] = {
 	"vkCreateWaylandSurfaceKHR", "vkGetPhysicalDeviceWaylandPresentationSupportKHR"
 };
 
+/* These standard extension lists are independent from the generated dispatch table. */
+static const char *const properties2_names[] = {
+	"vkGetPhysicalDeviceFeatures2KHR", "vkGetPhysicalDeviceProperties2KHR",
+	"vkGetPhysicalDeviceFormatProperties2KHR", "vkGetPhysicalDeviceImageFormatProperties2KHR",
+	"vkGetPhysicalDeviceQueueFamilyProperties2KHR", "vkGetPhysicalDeviceMemoryProperties2KHR",
+	"vkGetPhysicalDeviceSparseImageFormatProperties2KHR"
+};
+static const char *const memory_fd_names[] = {"vkGetMemoryFdKHR", "vkGetMemoryFdPropertiesKHR"};
+static const char *const fence_fd_names[] = {"vkGetFenceFdKHR", "vkImportFenceFdKHR"};
+static const unsigned extension_masks[] = {0U, 1U, 2U, 3U, 4U, 8U, 16U, 32U, 63U};
+
 static VkBool32 name_in(const char *name, const char *const *names, size_t count);
 static enum test_scope classify(const char *name, enum test_extension *extension);
 static void check_entry(void *library, const char *name, enum test_scope scope, enum test_extension extension, struct VkInstance_T *instance, struct VkDevice_T *device, struct VkPhysicalDevice_T *physical);
@@ -98,12 +114,12 @@ main(
 	void *library;
 	char line[256];
 	char name[128];
-	char seen[157][128];
+	char seen[170][128];
 	char *read_result;
 	const char *error;
 	enum test_scope scope;
 	enum test_extension extension;
-	unsigned counts[6][3];
+	unsigned counts[11][3];
 	unsigned total;
 	unsigned index;
 	int comparison;
@@ -157,7 +173,7 @@ main(
 		/* Duplicate metadata names cannot conceal a missing public command. */
 		result = sscanf(line, "%127s", name);
 		assert(result == 1);
-		assert(total < 157U);
+		assert(total < 170U);
 		for (index = 0U; index < total; index++) {
 			comparison = strcmp(seen[index], name);
 			assert(comparison != 0);
@@ -172,7 +188,7 @@ main(
 	}
 
 	/* The independent domain totals enforce all 137 core and 20 selected extension commands. */
-	assert(total == 157U);
+	assert(total == 170U);
 	assert(counts[TEST_CORE][TEST_GLOBAL] == 4U);
 	assert(counts[TEST_CORE][TEST_INSTANCE] == 12U);
 	assert(counts[TEST_CORE][TEST_DEVICE] == 121U);
@@ -181,6 +197,11 @@ main(
 	assert(counts[TEST_SWAPCHAIN][TEST_DEVICE] == 5U);
 	assert(counts[TEST_DISPLAY_SWAPCHAIN][TEST_DEVICE] == 1U);
 	assert(counts[TEST_WAYLAND][TEST_INSTANCE] == 2U);
+	assert(counts[TEST_PROPERTIES2][TEST_INSTANCE] == 7U);
+	assert(counts[TEST_EXTERNAL_MEMORY_CAPS][TEST_INSTANCE] == 1U);
+	assert(counts[TEST_EXTERNAL_FENCE_CAPS][TEST_INSTANCE] == 1U);
+	assert(counts[TEST_EXTERNAL_MEMORY_FD][TEST_DEVICE] == 2U);
+	assert(counts[TEST_EXTERNAL_FENCE_FD][TEST_DEVICE] == 2U);
 	check_dependencies(&instance, &device);
 	check_unknown(&instance, &device);
 	result = fclose(names);
@@ -189,7 +210,7 @@ main(
 	assert(result == 0);
 
 	/* Succeeded: function addresses originate from the actual complete library, with no substituted Vulkan entry point. */
-	puts("libvulkan dispatch: PASS (157 real exports, 137 core, 20 WSI, independent scopes, extension gating)");
+	puts("libvulkan dispatch: PASS (170 real exports, 137 core, 20 WSI, 13 external/queries, independent scopes, extension gating)");
 	return 0;
 }
 
@@ -270,6 +291,33 @@ classify(
 		return TEST_DEVICE;
 	}
 
+	/* External capability queries are instance commands; fd import/export are device commands. */
+	found = name_in(name, properties2_names, sizeof(properties2_names) / sizeof(properties2_names[0]));
+	if (found) {
+		*extension = TEST_PROPERTIES2;
+		return TEST_INSTANCE;
+	}
+	comparison = strcmp(name, "vkGetPhysicalDeviceExternalBufferPropertiesKHR");
+	if (comparison == 0) {
+		*extension = TEST_EXTERNAL_MEMORY_CAPS;
+		return TEST_INSTANCE;
+	}
+	comparison = strcmp(name, "vkGetPhysicalDeviceExternalFencePropertiesKHR");
+	if (comparison == 0) {
+		*extension = TEST_EXTERNAL_FENCE_CAPS;
+		return TEST_INSTANCE;
+	}
+	found = name_in(name, memory_fd_names, sizeof(memory_fd_names) / sizeof(memory_fd_names[0]));
+	if (found) {
+		*extension = TEST_EXTERNAL_MEMORY_FD;
+		return TEST_DEVICE;
+	}
+	found = name_in(name, fence_fd_names, sizeof(fence_fd_names) / sizeof(fence_fd_names[0]));
+	if (found) {
+		*extension = TEST_EXTERNAL_FENCE_FD;
+		return TEST_DEVICE;
+	}
+
 	/* Every other enumerated core command has a device, queue or command-buffer first argument. */
 	suffix = strstr(name, "KHR");
 	assert(suffix == NULL);
@@ -296,6 +344,9 @@ check_entry(
 	unsigned device_mask;
 	unsigned support_mask;
 	unsigned supported_index;
+	unsigned instance_index;
+	unsigned device_index;
+	unsigned support_index;
 
 	/* POSIX dlsym supplies the real implementation address without introducing a Vulkan mock. */
 	symbol = dlsym(library, name);
@@ -332,17 +383,35 @@ check_entry(
 	case TEST_DISPLAY_SWAPCHAIN:
 		required = VULKAN_DEVICE_DISPLAY_SWAPCHAIN;
 		break;
+	case TEST_PROPERTIES2:
+		required = VULKAN_INSTANCE_PROPERTIES2;
+		break;
+	case TEST_EXTERNAL_MEMORY_CAPS:
+		required = VULKAN_INSTANCE_EXTERNAL_MEMORY;
+		break;
+	case TEST_EXTERNAL_FENCE_CAPS:
+		required = VULKAN_INSTANCE_EXTERNAL_FENCE;
+		break;
+	case TEST_EXTERNAL_MEMORY_FD:
+		required = VULKAN_DEVICE_EXTERNAL_MEMORY_FD;
+		break;
+	case TEST_EXTERNAL_FENCE_FD:
+		required = VULKAN_DEVICE_EXTERNAL_FENCE_FD;
+		break;
 	default:
 		/* Core commands require no extension capability. */
 		break;
 	}
 
 	/* Test all three instance bits and both device bits, including independent physical-device support. */
-	for (instance_mask = 0U; instance_mask < 8U; instance_mask++) {
+	for (instance_index = 0U; instance_index < sizeof(extension_masks) / sizeof(extension_masks[0]); instance_index++) {
+		instance_mask = extension_masks[instance_index];
 		instance->enabled_extensions = instance_mask;
-		for (device_mask = 0U; device_mask < 4U; device_mask++) {
+		for (device_index = 0U; device_index < sizeof(extension_masks) / sizeof(extension_masks[0]); device_index++) {
+			device_mask = extension_masks[device_index];
 			device->enabled_extensions = device_mask;
-			for (support_mask = 0U; support_mask < 4U; support_mask++) {
+			for (support_index = 0U; support_index < sizeof(extension_masks) / sizeof(extension_masks[0]); support_index++) {
+				support_mask = extension_masks[support_index];
 				for (supported_index = 0U; supported_index < 2U; supported_index++) {
 					physical[0].supported_extensions = 0U;
 					physical[1].supported_extensions = 0U;

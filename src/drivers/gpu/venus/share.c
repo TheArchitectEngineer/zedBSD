@@ -39,7 +39,7 @@ static void share_context_drop(struct venus_controller *controller, struct venus
 
 /* Every registered Venus instance borrows these immutable allocation operations. */
 const struct drv_gpu_share_ops drv_venus_share_operations = {
-	share_export, share_release, share_import
+	share_export, share_release, share_import, NULL
 };
 
 /*
@@ -78,7 +78,7 @@ drv_venus_share_put_locked(
 
 	/* Session membership references must have retired before the allocation's last hold. */
 	if (share->contexts != NULL) {
-		controller->transport.failed = 1U;
+		atomic_raw_store_release(&controller->transport.failed, 1U);
 		kern_logf("venus: shared allocation %u retained with live contexts\n", share->storage->identifier);
 		return;
 	}
@@ -87,7 +87,7 @@ drv_venus_share_put_locked(
 	storage = share->storage;
 	error = drv_venus_resource_release_locked(controller, storage);
 	if (error != 0) {
-		controller->transport.failed = 1U;
+		atomic_raw_store_release(&controller->transport.failed, 1U);
 		kern_logf("venus: shared allocation %u retained for reset: %d\n", storage->identifier, error);
 	}
 
@@ -130,6 +130,7 @@ share_export(
 	const struct gpu_image_descriptor *image,
 	void **result)
 {
+	unsigned failed;
 	struct venus_controller *controller;
 	struct venus_session *session;
 	struct venus_resource *resource;
@@ -146,7 +147,8 @@ share_export(
 	mutex_lock(&controller->mutex);
 
 	/* A failed transport cannot create a new independently usable capability. */
-	if (controller->transport.failed != 0U) {
+	failed = atomic_raw_load_acquire(&controller->transport.failed);
+	if (failed != 0U) {
 		mutex_unlock(&controller->mutex);
 		return ENODEV;
 	}
@@ -159,20 +161,28 @@ share_export(
 		return EINVAL;
 	}
 
-	/* Scanout needs a transferable native dma-buf; private reply or opaque blobs cannot qualify. */
-	if ((resource->blob_flags & (GPU_BLOB_SHAREABLE | GPU_BLOB_CROSS_DEVICE)) !=
-	    (GPU_BLOB_SHAREABLE | GPU_BLOB_CROSS_DEVICE)) {
+	/* External allocations need renderer exportability even when no display layout is requested. */
+	if ((resource->blob_flags & GPU_BLOB_SHAREABLE) == 0U) {
 		mutex_unlock(&controller->mutex);
 		return EOPNOTSUPP;
 	}
 
-	/* Native scanout geometry has a finite extent independent of allocation size. */
-	if (image->width < 16U ||
-	    image->height < 16U ||
-	    image->width > 4096U ||
-	    image->height > 4096U) {
+	/* Native opaque allocations share within this GPU but cannot become DMA scanout images. */
+	if (image != NULL && (resource->blob_flags & GPU_BLOB_CROSS_DEVICE) == 0U) {
 		mutex_unlock(&controller->mutex);
 		return EOPNOTSUPP;
+	}
+
+	/* Allocation-only capabilities impose no linear image or scanout geometry. */
+	if (image != NULL) {
+		/* Native scanout geometry has a finite extent independent of allocation size. */
+		if (image->width < 16U ||
+		    image->height < 16U ||
+		    image->width > 4096U ||
+		    image->height > 4096U) {
+			mutex_unlock(&controller->mutex);
+			return EOPNOTSUPP;
+		}
 	}
 
 	/* The first export separates the retained allocation from its original session wrapper. */
@@ -184,11 +194,18 @@ share_export(
 		}
 	}
 
-	/* A second export cannot reinterpret bytes already shared under an immutable description. */
-	different = memcmp(&resource->share->image, image, sizeof(*image));
-	if (different != 0) {
-		mutex_unlock(&controller->mutex);
-		return EINVAL;
+	/* Display metadata is assigned only by a separately validated image export. */
+	if (image != NULL) {
+		/* The first image capability may describe an allocation already shared without a layout. */
+		if (resource->share->image.version == 0U)
+			resource->share->image = *image;
+
+		/* Later image capabilities must preserve the same native display interpretation. */
+		different = memcmp(&resource->share->image, image, sizeof(*image));
+		if (different != 0) {
+			mutex_unlock(&controller->mutex);
+			return EINVAL;
+		}
 	}
 
 	/* The common capability now acquires its own reference beside the source alias. */
@@ -236,6 +253,7 @@ share_import(
 	void **result,
 	uint32_t *resource_id)
 {
+	unsigned failed;
 	struct venus_controller *controller;
 	struct venus_session *session;
 	struct venus_share *share;
@@ -253,7 +271,8 @@ share_import(
 	mutex_lock(&controller->mutex);
 
 	/* Device withdrawal or a foreign controller cannot create a usable import. */
-	if (controller->transport.failed != 0U || share->storage->controller != controller) {
+	failed = atomic_raw_load_acquire(&controller->transport.failed);
+	if (failed != 0U || share->storage->controller != controller) {
 		mutex_unlock(&controller->mutex);
 		return ENODEV;
 	}
@@ -347,11 +366,14 @@ share_promote(
 	member->context = resource->context;
 	member->references = 1U;
 
-	/* The lifetime record owns the immutable descriptor and the first session membership. */
+	/* The lifetime record owns storage and the first session membership without requiring an image. */
 	share->storage = storage;
 	share->contexts = member;
-	share->image = *image;
 	share->references = 1U;
+
+	/* Only an image export establishes immutable scanout metadata. */
+	if (image != NULL)
+		share->image = *image;
 
 	/* Atomically replace controller ownership while preserving the core's original alias address. */
 	*link = storage;
@@ -400,7 +422,7 @@ share_context_add(
 	/* Acknowledged attach enables VkImportMemoryResourceInfoMESA in this context. */
 	error = drv_venus_resource_request_locked(controller, 0x0202U, context, share->storage->identifier);
 	if (error != 0) {
-		controller->transport.failed = 1U;
+		atomic_raw_store_release(&controller->transport.failed, 1U);
 		kern_free(member);
 		return error;
 	}
@@ -422,6 +444,7 @@ share_context_drop(
 	struct venus_share *share,
 	uint32_t context)
 {
+	unsigned failed;
 	struct venus_shared_context **link;
 	struct venus_shared_context *member;
 	int error;
@@ -433,7 +456,7 @@ share_context_drop(
 
 	/* An internal missing membership cannot justify global host storage release. */
 	if (*link == NULL) {
-		controller->transport.failed = 1U;
+		atomic_raw_store_release(&controller->transport.failed, 1U);
 		return;
 	}
 
@@ -444,10 +467,11 @@ share_context_drop(
 		return;
 
 	/* Unknown command completion leaves numeric hardware state quarantined for reset. */
-	if (controller->transport.failed == 0U) {
+	failed = atomic_raw_load_acquire(&controller->transport.failed);
+	if (failed == 0U) {
 		error = drv_venus_resource_request_locked(controller, 0x0203U, context, share->storage->identifier);
 		if (error != 0)
-			controller->transport.failed = 1U;
+			atomic_raw_store_release(&controller->transport.failed, 1U);
 	}
 
 	/* No live alias remains in this context, even when the failed transport needs reset. */

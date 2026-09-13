@@ -23,7 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Signal handlers only request ordinary event-loop cleanup; they own no GPU state. */
+/* Signal handlers only request ordinary event-loop cleanup, they own no GPU state. */
 static volatile sig_atomic_t stop_requested;
 
 static void stop_service(int signal_number);

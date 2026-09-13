@@ -130,6 +130,8 @@ func emit(records, handles, record, decode) {
         if (pointer && member == "pNext") {
             if (!decode && name == "VkImageCreateInfo") {
                 output = output + "\n\t/* WSI may request renderer-exportable image storage through a private chain. */\n\tvulkan_encode_image_external(writer, record->pNext);\n";
+            } else if (!decode && name == "VkBufferCreateInfo") {
+                output = output + "\n\t/* Allocation sharing may request renderer-exportable buffer storage. */\n\tvulkan_encode_buffer_external(writer, record->pNext);\n";
             } else {
             output = output + "\n\t/* No advertised core 1.0 extension adds a chain to this record. */\n\tvulkan_write_u64(writer, 0);\n";
             }

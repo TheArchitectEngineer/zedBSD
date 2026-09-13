@@ -13,6 +13,7 @@
 
 #include "wsi-internal.h"
 #include <uapi/gpu-display.h>
+#include <uapi/gpu-allocation.h>
 
 #include <sys/socket.h>
 #include <sys/uio.h>
@@ -28,6 +29,9 @@
 #define SHARE_BYTES (SHARE_EDGE * SHARE_EDGE * 4U)
 #define SHARE_TIMEOUT 10000000000ULL
 #define SHARE_EXTERNAL_FAMILY 0xfffffffeU
+#define SHARE_LINEAR 0U
+#define SHARE_BUFFER 1U
+#define SHARE_OPTIMAL 2U
 
 /*
  * One process owns all of these Vulkan objects and an independent renderer context.
@@ -43,12 +47,16 @@ struct share_context {
 	VkCommandBuffer command;
 	VkFence fence;
 	VkImage image;
+	VkBuffer shared_buffer;
 	VkDeviceMemory image_memory;
 	VkBuffer readback;
 	VkDeviceMemory readback_memory;
 	struct gpu_image_descriptor descriptor;
 	const char *operation;
 };
+
+/* The selected CLI scenario is fixed before fork and shared as a value, never as a Vulkan context. */
+static unsigned share_kind;
 
 static int share_displays(void);
 static VkResult share_open(struct share_context *context);
@@ -63,12 +71,17 @@ static void share_barrier(struct share_context *context, VkImageLayout old_layou
 static int share_send_fd(int socket, int descriptor);
 static int share_receive_fd(int socket, int *descriptor);
 static int share_producer(int socket);
+static VkResult share_allocation_object(struct share_context *context, VkMemoryRequirements *requirements);
+static VkResult share_allocation_create(struct share_context *context, int *fd);
+static VkResult share_allocation_import(struct share_context *context, int *fd);
 
 /*
  * Imports and checks pixels only after observing the producing process's exit.
  */
 int
-main(void)
+main(
+	int argc,
+	char **argv)
 {
 	struct share_context context;
 	VkResult result;
@@ -79,6 +92,29 @@ main(void)
 	int descriptor;
 	int child_status;
 	int error;
+	int selected;
+
+	/* The default retains the original linear-image regression; explicit modes test raw allocations. */
+	if (argc == 2) {
+		/* A buffer capability has no image interpretation or native scanout requirement. */
+		selected = strcmp(argv[1], "--buffer");
+		if (selected == 0) {
+			share_kind = SHARE_BUFFER;
+		} else {
+			/* The optimal-image case verifies native tiling through a separate renderer import. */
+			selected = strcmp(argv[1], "--optimal");
+			if (selected != 0) {
+				fprintf(stderr, "usage: gpu-share-test [--buffer|--optimal]\n");
+				return 2;
+			}
+
+			/* Both processes use the same immutable test schema selected before any GPU open. */
+			share_kind = SHARE_OPTIMAL;
+		}
+	} else if (argc != 1) {
+		fprintf(stderr, "usage: gpu-share-test [--buffer|--optimal]\n");
+		return 2;
+	}
 
 	/* Native discovery reports actual QEMU timing metadata before either process creates Vulkan objects. */
 	error = share_displays();
@@ -158,6 +194,7 @@ main(void)
 
 	/* Succeeded: a new process used and released the producer's actual GPU allocation. */
 	puts("GPU SHARE PASS producer-exit SCM_RIGHTS independent-context import GPU-copy pixels=1024 rgba=ff00ffff final-release");
+	printf("GPU ALLOCATION PASS kind=%u producer-exit independent-context pixels=1024\n", share_kind);
 	return 0;
 }
 
@@ -266,6 +303,8 @@ static VkResult
 share_open(
 	struct share_context *context)
 {
+	const char *instance_extensions[2];
+	const char *device_extensions[2];
 	VkApplicationInfo application;
 	VkInstanceCreateInfo instance;
 	VkDeviceQueueCreateInfo queue;
@@ -290,6 +329,12 @@ share_open(
 	memset(&instance, 0, sizeof(instance));
 	instance.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
 	instance.pApplicationInfo = &application;
+	if (share_kind != SHARE_LINEAR) {
+		instance_extensions[0] = VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME;
+		instance_extensions[1] = VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME;
+		instance.enabledExtensionCount = 2U;
+		instance.ppEnabledExtensionNames = instance_extensions;
+	}
 	context->operation = "vkCreateInstance";
 	result = vkCreateInstance(&instance, NULL, &context->instance);
 	if (result != VK_SUCCESS)
@@ -330,11 +375,17 @@ share_open(
 	queue.queueCount = 1U;
 	queue.pQueuePriorities = &priority;
 
-	/* The private helper negotiates host external-memory details without a public guest extension. */
+	/* Standard buffer and optimal-image scenarios explicitly enable the fd extension. */
 	memset(&device, 0, sizeof(device));
 	device.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 	device.queueCreateInfoCount = 1U;
 	device.pQueueCreateInfos = &queue;
+	if (share_kind != SHARE_LINEAR) {
+		device_extensions[0] = VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME;
+		device_extensions[1] = VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME;
+		device.enabledExtensionCount = 2U;
+		device.ppEnabledExtensionNames = device_extensions;
+	}
 	context->operation = "vkCreateDevice";
 	result = vkCreateDevice(context->physical, &device, NULL, &context->device);
 	if (result != VK_SUCCESS)
@@ -403,6 +454,12 @@ share_close(
 			vkFreeMemory(context->device, context->readback_memory, NULL);
 		if (context->image != VK_NULL_HANDLE)
 			vkDestroyImage(context->device, context->image, NULL);
+
+		/* Buffer scenarios bind the same allocation ownership without creating an image. */
+		if (context->shared_buffer != VK_NULL_HANDLE)
+			vkDestroyBuffer(context->device, context->shared_buffer, NULL);
+
+		/* The underlying allocation outlives whichever type of resource was bound to it. */
 		if (context->image_memory != VK_NULL_HANDLE)
 			vkFreeMemory(context->device, context->image_memory, NULL);
 
@@ -491,8 +548,15 @@ share_produce(
 	/* Allocation and image creation use the real WSI helper, not a fixture-created host resource. */
 	extent.width = SHARE_EDGE;
 	extent.height = SHARE_EDGE;
-	context->operation = "vulkan_wsi_shared_image_create";
-	result = vulkan_wsi_shared_image_create(context->device, VK_FORMAT_R8G8B8A8_UNORM, extent, NULL, &context->image, &context->image_memory, descriptor, &context->descriptor);
+	if (share_kind == SHARE_LINEAR) {
+		context->operation = "vulkan_wsi_shared_image_create";
+		result = vulkan_wsi_shared_image_create(context->device, VK_FORMAT_R8G8B8A8_UNORM, extent, NULL, NULL, &context->image, &context->image_memory, descriptor, &context->descriptor);
+	} else {
+		/* The generic capability preserves allocation ownership without a linear display descriptor. */
+		result = share_allocation_create(context, descriptor);
+	}
+
+	/* No GPU writes are recorded for a failed resource or allocation export. */
 	if (result != VK_SUCCESS)
 		return result;
 
@@ -511,7 +575,13 @@ share_produce(
 	range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	range.levelCount = 1U;
 	range.layerCount = 1U;
-	vkCmdClearColorImage(context->command, context->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &color, 1U, &range);
+	if (share_kind == SHARE_BUFFER) {
+		/* The raw byte pattern matches the image oracle on this explicitly amd64 test target. */
+		vkCmdFillBuffer(context->command, context->shared_buffer, 0U, SHARE_BYTES, 0xffff00ffU);
+	} else {
+		/* A renderer image clear proves that optimal storage is interpreted by the actual GPU. */
+		vkCmdClearColorImage(context->command, context->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &color, 1U, &range);
+	}
 
 	/* The next process acquires the same GENERAL-layout external allocation. */
 	share_barrier(context, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL, context->family, SHARE_EXTERNAL_FAMILY, VK_ACCESS_TRANSFER_WRITE_BIT, 0U, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
@@ -530,25 +600,37 @@ share_receive(
 	int *descriptor)
 {
 	VkBufferImageCopy copy;
+	VkBufferCopy buffer_copy;
 	VkBufferMemoryBarrier visible;
 	VkResult result;
 
 	/* This performs CTX_ATTACH, VkImportMemoryResourceInfoMESA, and VkImage binding. */
-	context->operation = "vulkan_wsi_shared_image_import";
-	result = vulkan_wsi_shared_image_import(context->device, *descriptor, NULL, &context->image, &context->image_memory, &context->descriptor);
+	if (share_kind == SHARE_LINEAR) {
+		context->operation = "vulkan_wsi_shared_image_import";
+		result = vulkan_wsi_shared_image_import(context->device, *descriptor, NULL, &context->image, &context->image_memory, &context->descriptor);
+	} else {
+		/* The receiver interprets its negotiated metadata after the kernel attaches the raw allocation. */
+		result = share_allocation_import(context, descriptor);
+	}
+
+	/* Failed imports retain no usable receiver resource. */
 	if (result != VK_SUCCESS)
 		return result;
 
 	/* The renderer alias must remain usable after the final transferable capability closes. */
-	close(*descriptor);
+	if (*descriptor >= 0)
+		close(*descriptor);
 	*descriptor = -1;
 
 	/* Authoritative kernel metadata must describe the producer's exact image. */
 	context->operation = "imported image metadata";
-	if (context->descriptor.width != SHARE_EDGE ||
-	    context->descriptor.height != SHARE_EDGE ||
-	    context->descriptor.format != GPU_PIXEL_RGBA8888)
-		return VK_ERROR_INITIALIZATION_FAILED;
+	if (share_kind == SHARE_LINEAR) {
+		/* The image-specific protocol alone carries authoritative scanout geometry. */
+		if (context->descriptor.width != SHARE_EDGE ||
+		    context->descriptor.height != SHARE_EDGE ||
+		    context->descriptor.format != GPU_PIXEL_RGBA8888)
+			return VK_ERROR_INITIALIZATION_FAILED;
+	}
 
 	/* A separate visible buffer is only the final test oracle, not shared image storage. */
 	result = share_buffer(context);
@@ -568,7 +650,15 @@ share_receive(
 	copy.imageExtent.width = SHARE_EDGE;
 	copy.imageExtent.height = SHARE_EDGE;
 	copy.imageExtent.depth = 1U;
-	vkCmdCopyImageToBuffer(context->command, context->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, context->readback, 1U, &copy);
+	if (share_kind == SHARE_BUFFER) {
+		/* The import supplies source storage; the test allocates only the separate oracle destination. */
+		memset(&buffer_copy, 0, sizeof(buffer_copy));
+		buffer_copy.size = SHARE_BYTES;
+		vkCmdCopyBuffer(context->command, context->shared_buffer, context->readback, 1U, &buffer_copy);
+	} else {
+		/* Native image transfer decodes linear or optimal tiling without any guessed CPU row pitch. */
+		vkCmdCopyImageToBuffer(context->command, context->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, context->readback, 1U, &copy);
+	}
 
 	/* Host visibility follows the completed GPU write rather than coherent-memory assumptions. */
 	memset(&visible, 0, sizeof(visible));
@@ -734,6 +824,23 @@ share_barrier(
 	VkPipelineStageFlags destination_stage)
 {
 	VkImageMemoryBarrier barrier;
+	VkBufferMemoryBarrier buffer;
+
+	/* A buffer transfers external ownership without inventing image layouts or subresources. */
+	if (share_kind == SHARE_BUFFER) {
+		memset(&buffer, 0, sizeof(buffer));
+		buffer.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+		buffer.srcAccessMask = source_access;
+		buffer.dstAccessMask = destination_access;
+		buffer.srcQueueFamilyIndex = source_family;
+		buffer.dstQueueFamilyIndex = destination_family;
+		buffer.buffer = context->shared_buffer;
+		buffer.size = SHARE_BYTES;
+		vkCmdPipelineBarrier(context->command, source_stage, destination_stage, 0U, 0U, NULL, 1U, &buffer, 0U, NULL);
+
+		/* Succeeded: the buffer's actual allocation participates in the external ownership boundary. */
+		return;
+	}
 
 	/* Every transition covers exactly the image's sole color level and layer. */
 	memset(&barrier, 0, sizeof(barrier));
@@ -841,6 +948,248 @@ share_receive_fd(
 
 	/* Succeeded: the receiver owns a capability in its independent descriptor namespace. */
 	return 0;
+}
+
+/* Creates the resource view specified by the test protocol before allocating or importing storage. */
+static VkResult
+share_allocation_object(
+	struct share_context *context,
+	VkMemoryRequirements *requirements)
+{
+	VkExternalMemoryBufferCreateInfo external_buffer;
+	VkExternalMemoryImageCreateInfo external_image;
+	VkPhysicalDeviceExternalBufferInfo buffer_info;
+	VkExternalBufferProperties buffer_properties;
+	VkPhysicalDeviceImageFormatInfo2 image_info;
+	VkPhysicalDeviceExternalImageFormatInfo image_external;
+	VkImageFormatProperties2 image_properties;
+	VkExternalImageFormatProperties image_external_properties;
+	VkBufferCreateInfo buffer;
+	VkImageCreateInfo image;
+	VkResult result;
+
+	/* Resource creation uses the renderer's external-memory compatibility rules. */
+	if (share_kind == SHARE_BUFFER) {
+		memset(&external_buffer, 0, sizeof(external_buffer));
+		external_buffer.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_BUFFER_CREATE_INFO;
+		external_buffer.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+
+		/* Buffer usage and size are fixed in this finite protocol rather than hidden in a row pitch. */
+		memset(&buffer, 0, sizeof(buffer));
+		buffer.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+		buffer.pNext = &external_buffer;
+		buffer.size = SHARE_BYTES;
+		buffer.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+		buffer.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+		/* Standard capability queries must confirm both import and export for this exact usage. */
+		memset(&buffer_info, 0, sizeof(buffer_info));
+		buffer_info.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_BUFFER_INFO;
+		buffer_info.usage = buffer.usage;
+		buffer_info.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+		memset(&buffer_properties, 0, sizeof(buffer_properties));
+		buffer_properties.sType = VK_STRUCTURE_TYPE_EXTERNAL_BUFFER_PROPERTIES;
+		context->operation = "vkGetPhysicalDeviceExternalBufferPropertiesKHR";
+		vkGetPhysicalDeviceExternalBufferPropertiesKHR(context->physical, &buffer_info, &buffer_properties);
+		if ((buffer_properties.externalMemoryProperties.externalMemoryFeatures & (VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT | VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT)) != (VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT | VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT))
+			return VK_ERROR_FEATURE_NOT_PRESENT;
+
+		context->operation = "shared vkCreateBuffer";
+		result = vkCreateBuffer(context->device, &buffer, NULL, &context->shared_buffer);
+		if (result != VK_SUCCESS)
+			return result;
+
+		/* Requirements come from this receiver or producer's actual native buffer view. */
+		vkGetBufferMemoryRequirements(context->device, context->shared_buffer, requirements);
+	} else {
+		memset(&external_image, 0, sizeof(external_image));
+		external_image.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO;
+		external_image.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+
+		/* Optimal tiling remains opaque to the CPU and is reproduced by the independent receiver. */
+		memset(&image, 0, sizeof(image));
+		image.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+		image.pNext = &external_image;
+		image.imageType = VK_IMAGE_TYPE_2D;
+		image.format = VK_FORMAT_R8G8B8A8_UNORM;
+		image.extent.width = SHARE_EDGE;
+		image.extent.height = SHARE_EDGE;
+		image.extent.depth = 1U;
+		image.mipLevels = 1U;
+		image.arrayLayers = 1U;
+		image.samples = VK_SAMPLE_COUNT_1_BIT;
+		image.tiling = VK_IMAGE_TILING_OPTIMAL;
+		image.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+		image.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+		image.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+		/* Optimal-image compatibility comes from the extensible standard format query. */
+		memset(&image_external, 0, sizeof(image_external));
+		image_external.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO;
+		image_external.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+		memset(&image_info, 0, sizeof(image_info));
+		image_info.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2;
+		image_info.pNext = &image_external;
+		image_info.format = image.format;
+		image_info.type = image.imageType;
+		image_info.tiling = image.tiling;
+		image_info.usage = image.usage;
+		memset(&image_external_properties, 0, sizeof(image_external_properties));
+		image_external_properties.sType = VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES;
+		memset(&image_properties, 0, sizeof(image_properties));
+		image_properties.sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2;
+		image_properties.pNext = &image_external_properties;
+		context->operation = "vkGetPhysicalDeviceImageFormatProperties2KHR";
+		result = vkGetPhysicalDeviceImageFormatProperties2KHR(context->physical, &image_info, &image_properties);
+		if (result != VK_SUCCESS)
+			return result;
+		if ((image_external_properties.externalMemoryProperties.externalMemoryFeatures & (VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT | VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT)) != (VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT | VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT))
+			return VK_ERROR_FEATURE_NOT_PRESENT;
+
+		context->operation = "shared optimal vkCreateImage";
+		result = vkCreateImage(context->device, &image, NULL, &context->image);
+		if (result != VK_SUCCESS)
+			return result;
+
+		/* Optimal memory is checked by allocation requirements, never by a fabricated row layout. */
+		vkGetImageMemoryRequirements(context->device, context->image, requirements);
+	}
+
+	/* Succeeded: the resource view exists without allocating a replacement for imported storage. */
+	return VK_SUCCESS;
+}
+
+/* Allocates renderer-exportable buffer or optimal storage and publishes its protocol description. */
+static VkResult
+share_allocation_create(
+	struct share_context *context,
+	int *fd)
+{
+	VkExportMemoryAllocateInfo export;
+	VkMemoryGetFdInfoKHR get_fd;
+	VkMemoryRequirements requirements;
+	VkPhysicalDeviceMemoryProperties properties;
+	VkMemoryAllocateInfo allocate;
+	uint32_t type;
+	VkResult result;
+
+	/* Native creation establishes the real resource's memory compatibility mask. */
+	memset(&requirements, 0, sizeof(requirements));
+	result = share_allocation_object(context, &requirements);
+	if (result != VK_SUCCESS)
+		return result;
+
+	/* Select a compatible memory type from the actual physical device inventory. */
+	vkGetPhysicalDeviceMemoryProperties(context->physical, &properties);
+	if (properties.memoryTypeCount > VK_MAX_MEMORY_TYPES)
+		return VK_ERROR_INITIALIZATION_FAILED;
+
+	/* The test needs GPU ownership, not a CPU-visible heap or mapping. */
+	for (type = 0U; type < properties.memoryTypeCount; type++) {
+		/* Only types supported by this resource may back its shared allocation. */
+		if ((requirements.memoryTypeBits & (1U << type)) != 0U)
+			break;
+	}
+
+	/* An empty compatibility mask cannot be replaced by an arbitrary host memory type. */
+	if (type == properties.memoryTypeCount)
+		return VK_ERROR_FEATURE_NOT_PRESENT;
+
+	/* Explicit shared allocation creates renderer exportability without a guest CPU view. */
+	memset(&allocate, 0, sizeof(allocate));
+	memset(&export, 0, sizeof(export));
+	export.sType = VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO;
+	export.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+	allocate.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	allocate.pNext = &export;
+	allocate.allocationSize = requirements.size;
+	allocate.memoryTypeIndex = type;
+	context->operation = "shared allocation";
+	result = vkAllocateMemory(context->device, &allocate, NULL, &context->image_memory);
+	if (result != VK_SUCCESS)
+		return result;
+
+	/* The resource type determines binding; the exported authority always names the allocation. */
+	context->operation = "shared binding";
+	if (share_kind == SHARE_BUFFER) {
+		result = vkBindBufferMemory(context->device, context->shared_buffer, context->image_memory, 0U);
+	} else {
+		result = vkBindImageMemory(context->device, context->image, context->image_memory, 0U);
+	}
+
+	/* A failed native bind cannot supply a usable cross-process capability. */
+	if (result != VK_SUCCESS)
+		return result;
+
+	/* The public API supplies a reference-bearing fd without exposing any kernel or Venus ABI. */
+	memset(&get_fd, 0, sizeof(get_fd));
+	get_fd.sType = VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR;
+	get_fd.memory = context->image_memory;
+	get_fd.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+	context->operation = "vkGetMemoryFdKHR";
+	result = vkGetMemoryFdKHR(context->device, &get_fd, fd);
+	if (result != VK_SUCCESS)
+		return result;
+
+	/* Succeeded: only the capability and this allocation retain the shared renderer storage. */
+	return VK_SUCCESS;
+}
+
+/* Imports standard opaque allocation ownership using the same negotiated resource recipe. */
+static VkResult
+share_allocation_import(
+	struct share_context *context,
+	int *fd)
+{
+	VkMemoryRequirements requirements;
+	VkPhysicalDeviceMemoryProperties properties;
+	VkMemoryAllocateInfo allocate;
+	VkImportMemoryFdInfoKHR import;
+	VkResult result;
+	uint32_t type;
+
+	/* Independent creation reproduces the fixed test protocol's buffer or optimal-image view. */
+	memset(&requirements, 0, sizeof(requirements));
+	result = share_allocation_object(context, &requirements);
+	if (result != VK_SUCCESS)
+		return result;
+
+	/* The exact same device and recipe select the producer's original allocation size and type. */
+	vkGetPhysicalDeviceMemoryProperties(context->physical, &properties);
+	for (type = 0U; type < properties.memoryTypeCount; type++) {
+		if ((requirements.memoryTypeBits & (1U << type)) != 0U)
+			break;
+	}
+	if (type == properties.memoryTypeCount)
+		return VK_ERROR_FEATURE_NOT_PRESENT;
+
+	/* OPAQUE_FD import validates compatible UUIDs and allocation metadata inside libvulkan. */
+	memset(&import, 0, sizeof(import));
+	import.sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR;
+	import.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+	import.fd = *fd;
+	memset(&allocate, 0, sizeof(allocate));
+	allocate.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	allocate.pNext = &import;
+	allocate.allocationSize = requirements.size;
+	allocate.memoryTypeIndex = type;
+	context->operation = "vkAllocateMemory OPAQUE_FD import";
+	result = vkAllocateMemory(context->device, &allocate, NULL, &context->image_memory);
+	if (result != VK_SUCCESS)
+		return result;
+
+	/* Successful standard import consumes the descriptor even if a later bind fails. */
+	*fd = -1;
+	context->operation = "standard imported binding";
+	if (share_kind == SHARE_BUFFER)
+		result = vkBindBufferMemory(context->device, context->shared_buffer, context->image_memory, 0U);
+	else
+		result = vkBindImageMemory(context->device, context->image, context->image_memory, 0U);
+	if (result != VK_SUCCESS)
+		return result;
+
+	/* Succeeded: a new process owns the original producer allocation through standard Vulkan APIs. */
+	return VK_SUCCESS;
 }
 
 /* Finishes producer rendering and destroys the full source context before process exit. */

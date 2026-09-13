@@ -1,0 +1,34 @@
+{
+  "protocol_only": true,
+  "contexts_created": 0,
+  "results": [
+    {
+      "case": "valid",
+      "pass": true,
+      "reply_hex": "5344425a01000000",
+      "server_exit": 255,
+      "server_stderr": ""
+    },
+    {
+      "case": "wrong_magic",
+      "pass": false,
+      "timeout_seconds": 2,
+      "server_exit": 255,
+      "server_stderr": "virgl_render_server[17049]: failed to dispatch client op 1\n"
+    },
+    {
+      "case": "wrong_flags",
+      "pass": false,
+      "timeout_seconds": 2,
+      "server_exit": 255,
+      "server_stderr": "virgl_render_server[17050]: failed to dispatch client op 1\n"
+    },
+    {
+      "case": "stock_request_size",
+      "pass": true,
+      "reply_hex": "",
+      "server_exit": 255,
+      "server_stderr": "virgl_render_server[17051]: invalid request size 8 for client op 1\n"
+    }
+  ]
+}

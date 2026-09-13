@@ -16,6 +16,8 @@
 #include "internal.h"
 #include <uapi/gpu.h>
 #include <uapi/gpu-display.h>
+#include <uapi/gpu-allocation.h>
+#include <uapi/gpu-fence.h>
 
 static VkResult instance_extensions(const VkInstanceCreateInfo *info, uint64_t *enabled);
 static VkResult instance_add_context(struct VkInstance_T *instance, const VkInstanceCreateInfo *info, const char *path);
@@ -412,7 +414,7 @@ vkEnumerateInstanceExtensionProperties(
 	uint32_t *pPropertyCount,
 	VkExtensionProperties *pProperties)
 {
-	VkExtensionProperties available[3];
+	VkExtensionProperties available[6];
 	VkResult status;
 
 	/* This library does not impersonate a separately installable validation layer. */
@@ -427,9 +429,15 @@ vkEnumerateInstanceExtensionProperties(
 	available[1].specVersion = VK_KHR_DISPLAY_SPEC_VERSION;
 	strcpy(available[2].extensionName, VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME);
 	available[2].specVersion = VK_KHR_WAYLAND_SURFACE_SPEC_VERSION;
+	strcpy(available[3].extensionName, VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
+	available[3].specVersion = VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_SPEC_VERSION;
+	strcpy(available[4].extensionName, VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME);
+	available[4].specVersion = VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_SPEC_VERSION;
+	strcpy(available[5].extensionName, VK_KHR_EXTERNAL_FENCE_CAPABILITIES_EXTENSION_NAME);
+	available[5].specVersion = VK_KHR_EXTERNAL_FENCE_CAPABILITIES_SPEC_VERSION;
 
 	/* Preserves the required partial-array result when caller capacity is smaller. */
-	status = enumerate_extensions(available, 3, pPropertyCount, pProperties);
+	status = enumerate_extensions(available, 6, pPropertyCount, pProperties);
 	if (status != VK_SUCCESS)
 		return status;
 
@@ -448,7 +456,7 @@ vkEnumerateDeviceExtensionProperties(
 	VkExtensionProperties *pProperties)
 {
 	struct VkPhysicalDevice_T *physical;
-	VkExtensionProperties available[2];
+	VkExtensionProperties available[6];
 	uint32_t count;
 	VkResult status;
 
@@ -470,6 +478,28 @@ vkEnumerateDeviceExtensionProperties(
 	if (physical->supported_extensions & VULKAN_DEVICE_DISPLAY_SWAPCHAIN) {
 		strcpy(available[count].extensionName, VK_KHR_DISPLAY_SWAPCHAIN_EXTENSION_NAME);
 		available[count].specVersion = VK_KHR_DISPLAY_SWAPCHAIN_SPEC_VERSION;
+		count++;
+	}
+
+	/* External handles use the kernel's typed fd capability, independently of presentation. */
+	if (physical->supported_extensions & VULKAN_DEVICE_EXTERNAL_MEMORY) {
+		strcpy(available[count].extensionName, VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME);
+		available[count].specVersion = VK_KHR_EXTERNAL_MEMORY_SPEC_VERSION;
+		count++;
+	}
+	if (physical->supported_extensions & VULKAN_DEVICE_EXTERNAL_MEMORY_FD) {
+		strcpy(available[count].extensionName, VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME);
+		available[count].specVersion = VK_KHR_EXTERNAL_MEMORY_FD_SPEC_VERSION;
+		count++;
+	}
+	if (physical->supported_extensions & VULKAN_DEVICE_EXTERNAL_FENCE) {
+		strcpy(available[count].extensionName, VK_KHR_EXTERNAL_FENCE_EXTENSION_NAME);
+		available[count].specVersion = VK_KHR_EXTERNAL_FENCE_SPEC_VERSION;
+		count++;
+	}
+	if (physical->supported_extensions & VULKAN_DEVICE_EXTERNAL_FENCE_FD) {
+		strcpy(available[count].extensionName, VK_KHR_EXTERNAL_FENCE_FD_EXTENSION_NAME);
+		available[count].specVersion = VK_KHR_EXTERNAL_FENCE_FD_SPEC_VERSION;
 		count++;
 	}
 
@@ -554,12 +584,33 @@ instance_extensions(
 			continue;
 		}
 
+		/* Standard capability queries precede any device extension selection. */
+		match = strcmp(info->ppEnabledExtensionNames[index], VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
+		if (match == 0) {
+			bits |= VULKAN_INSTANCE_PROPERTIES2;
+			continue;
+		}
+		match = strcmp(info->ppEnabledExtensionNames[index], VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME);
+		if (match == 0) {
+			bits |= VULKAN_INSTANCE_EXTERNAL_MEMORY;
+			continue;
+		}
+		match = strcmp(info->ppEnabledExtensionNames[index], VK_KHR_EXTERNAL_FENCE_CAPABILITIES_EXTENSION_NAME);
+		if (match == 0) {
+			bits |= VULKAN_INSTANCE_EXTERNAL_FENCE;
+			continue;
+		}
+
 		/* An unknown requested extension cannot be silently treated as implemented. */
 		return VK_ERROR_EXTENSION_NOT_PRESENT;
 	}
 
 	/* Both presentation backends require the surface capability in the same instance. */
 	if ((bits & (VULKAN_INSTANCE_DISPLAY | VULKAN_INSTANCE_WAYLAND)) && !(bits & VULKAN_INSTANCE_SURFACE))
+		return VK_ERROR_EXTENSION_NOT_PRESENT;
+
+	/* Vulkan 1.0 external capabilities depend on the properties2 extension. */
+	if ((bits & (VULKAN_INSTANCE_EXTERNAL_MEMORY | VULKAN_INSTANCE_EXTERNAL_FENCE)) && !(bits & VULKAN_INSTANCE_PROPERTIES2))
 		return VK_ERROR_EXTENSION_NOT_PRESENT;
 
 	/* Publishes the validated enabled-bit snapshot. */
@@ -992,9 +1043,14 @@ physical_load(
 	if (status != VK_SUCCESS)
 		return status;
 
-	/* Local WSI extensions require an actual kernel presentation capability. */
-	if ((physical->object.context->capabilities & (GPU_CAP_DISPLAY | GPU_CAP_RESOURCE | GPU_CAP_TRANSFER)) == (GPU_CAP_DISPLAY | GPU_CAP_RESOURCE | GPU_CAP_TRANSFER))
-		physical->supported_extensions = VULKAN_DEVICE_SWAPCHAIN | VULKAN_DEVICE_DISPLAY_SWAPCHAIN;
+	/* Local WSI can pair a renderer with a separate display node or a Wayland connection. */
+	physical->supported_extensions = VULKAN_DEVICE_SWAPCHAIN | VULKAN_DEVICE_DISPLAY_SWAPCHAIN;
+
+	/* Per-resource format queries determine the actual external memory profiles. */
+	if (physical->object.context->capabilities & GPU_CAP_ALLOCATION_SHARE)
+		physical->supported_extensions |= VULKAN_DEVICE_EXTERNAL_MEMORY | VULKAN_DEVICE_EXTERNAL_MEMORY_FD;
+	if (physical->object.context->capabilities & GPU_CAP_FENCE)
+		physical->supported_extensions |= VULKAN_DEVICE_EXTERNAL_FENCE | VULKAN_DEVICE_EXTERNAL_FENCE_FD;
 
 	/* Succeeded: the snapshot combines real renderer capability and real guest transport support. */
 	return VK_SUCCESS;

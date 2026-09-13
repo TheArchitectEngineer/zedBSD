@@ -14,13 +14,18 @@
  * whole-BAR mapping, queue wrap, malformed completion and reset-safe DMA.
  */
 
+#include <stdint.h>
 #include <assert.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+/* Host process typedefs stay distinct from the guest scheduler namespace. */
+typedef int32_t tid_t;
+#define sigset_t transport_kernel_sigset_t
 #include "../../../src/drivers/gpu/venus/transport.c"
+#undef sigset_t
 
 /* Holds one deterministic PCI configuration image during each scenario. */
 static uint8_t fixture_configuration[256];
@@ -76,10 +81,15 @@ static unsigned fixture_edid;
 static void fixture_prepare(struct venus_transport *transport);
 static void fixture_capability(unsigned offset, unsigned next, unsigned length, unsigned type, unsigned bar, uint32_t start, uint32_t bytes);
 static void fixture_complete(void);
+static void fixture_complete_head(uint16_t head);
+static void fixture_notifications(void);
+static void fixture_display_events(enum drv_pci_irq_type type);
 static void fixture_queue(void);
 static void fixture_failures(void);
 static void fixture_async_wait(void);
 static void fixture_edid_feature(void);
+
+#include "venus-transport-peer.inc"
 
 /*
  * Reads a bounded byte from the synthetic conventional PCI configuration.
@@ -385,8 +395,15 @@ uint8_t
 kern_mmio_read8(
 	const volatile void *address)
 {
-	/* Succeeded: reads the latest device-status byte. */
-	return *(const volatile uint8_t *)address;
+	uint8_t byte;
+
+	/* Reading the Virtio ISR acknowledges this function without clearing device events. */
+	byte = *(const volatile uint8_t *)address;
+	if (address == fixture_registers + 4096U)
+		fixture_registers[4096U] = 0U;
+
+	/* Succeeded: ordinary byte registers retain their existing device state. */
+	return byte;
 }
 
 /*
@@ -606,6 +623,13 @@ main(void)
 	/* Distinguish asynchronously advancing time from a stopped pre-tick clock. */
 	fixture_async_wait();
 
+	/* IRQ completion is independently matched across concurrent renderer timelines. */
+	fixture_notifications();
+
+	/* Display invalidations remain independent from commands under both PCI delivery modes. */
+	fixture_display_events(DRV_PCI_IRQ_INTX);
+	fixture_display_events(DRV_PCI_IRQ_MSIX);
+
 	/* No scenario may leave coherent memory or register mappings live. */
 	assert(fixture_dma == 0U);
 	assert(fixture_maps == 0U);
@@ -636,6 +660,11 @@ fixture_prepare(
 	fixture_clock_slow = 0U;
 	fixture_delayed_completion = 0U;
 	fixture_edid = 0U;
+	fixture_runtime = 0U;
+	fixture_peer_available = 0U;
+	fixture_reports = 0U;
+	fixture_irq_type = DRV_PCI_IRQ_MSIX;
+	fixture_poll_wakes = 0U;
 
 	/* Describes common, notify and device slices plus separate host visibility. */
 	fixture_configuration[0x34U] = 0x40U;
@@ -643,8 +672,9 @@ fixture_prepare(
 	fixture_capability(0x50U, 0x64U, 20U, 2U, 2U, 12288U, 2048U);
 	drv_venus_store32(fixture_configuration + 0x60U, 4U);
 	fixture_capability(0x64U, 0x74U, 16U, 4U, 2U, 8192U, 16U);
-	fixture_capability(0x74U, 0U, 24U, 8U, 4U, 0U, 8192U);
+	fixture_capability(0x74U, 0x8cU, 24U, 8U, 4U, 0U, 8192U);
 	fixture_configuration[0x79U] = 1U;
+	fixture_capability(0x8cU, 0U, 16U, 3U, 2U, 4096U, 1U);
 
 	/* Advertises one usable queue, one scanout and one Venus capability set. */
 	drv_venus_store16(fixture_registers + 24U, 8U);
@@ -685,40 +715,53 @@ fixture_complete(void)
 {
 	struct venus_transport *transport;
 	uint8_t *ring;
-	uint8_t *response;
-	uint32_t type;
-	uint32_t bytes;
-	uint32_t descriptor;
 	uint16_t available;
-	uint16_t used;
-	uint64_t address;
+	uint16_t head;
 
-	/* A dropped request remains device-owned until the transport resets. */
+	/* A dropped chain remains device-owned until completion or checked reset. */
 	if (fixture_drop != 0U)
 		return;
-
-	/* Reads the actual production descriptors after their availability publication. */
 	transport = fixture_transport;
 	ring = transport->ring.address;
 	available = drv_venus_load16(ring + VENUS_RING_AVAILABLE + 2U);
 	assert(available == transport->available);
-	address = drv_venus_load64(ring);
-	assert(address == transport->request.device_address);
-	address = drv_venus_load64(ring + 16U);
-	assert(address == transport->response.device_address);
-	descriptor = drv_venus_load16(ring + 12U);
-	assert(descriptor == 1U);
-	descriptor = drv_venus_load16(ring + 28U);
-	assert(descriptor == 2U);
+	assert(fixture_peer_available != available);
+	head = drv_venus_load16(ring + VENUS_RING_AVAILABLE + 4U + (fixture_peer_available % VENUS_QUEUE_SIZE) * 2U);
+	fixture_peer_available++;
+	fixture_complete_head(head);
+}
 
-	/* Replies to initialization's capability query or a no-data test command. */
-	type = drv_venus_load32(transport->request.address);
-	response = transport->response.address;
+/* Completes a device-owned head independently from its availability order. */
+static void
+fixture_complete_head(
+	uint16_t head)
+{
+	struct venus_transport *transport;
+	struct venus_request *request;
+	uint8_t *ring;
+	uint8_t *response;
+	uint32_t type;
+	uint32_t bytes;
+	uint16_t used;
+
+	/* Only a published descriptor names device-owned request and response storage. */
+	transport = fixture_transport;
+	ring = transport->ring.address;
+	assert(head % 2U == 0U && head < VENUS_QUEUE_SIZE);
+	request = &transport->requests[head / 2U];
+	assert(drv_venus_load64(ring + head * 16U) == request->request.device_address);
+	assert(drv_venus_load64(ring + (head + 1U) * 16U) == request->response.device_address);
+	assert(drv_venus_load16(ring + head * 16U + 12U) == 1U);
+	assert(drv_venus_load16(ring + head * 16U + 14U) == head + 1U);
+	assert(drv_venus_load16(ring + (head + 1U) * 16U + 12U) == 2U);
+
+	/* Fence/context/ring echoes describe the exact submitted chain, never a canned slot zero. */
+	type = drv_venus_load32(request->request.address);
+	response = request->response.address;
 	memset(response, 0, VENUS_RESPONSE_BYTES);
+	memcpy(response + 4U, (uint8_t *)request->request.address + 4U, 20U);
 	bytes = 24U;
 	drv_venus_store32(response, 0x1100U);
-
-	/* Supplies a complete bounded capset descriptor for the required Venus ID. */
 	if (type == 0x108U) {
 		bytes = 40U;
 		drv_venus_store32(response, 0x1102U);
@@ -726,14 +769,13 @@ fixture_complete(void)
 		drv_venus_store32(response + 32U, 32U);
 	}
 
-	/* Publishes the completed descriptor and response length before the used index. */
-	used = transport->used;
-	drv_venus_store32(ring + VENUS_RING_USED + 4U + (used % VENUS_QUEUE_SIZE) * 8U, fixture_bad_descriptor);
+	/* Device used order is independent of the driver's last observed used index. */
+	used = drv_venus_load16(ring + VENUS_RING_USED + 2U);
+	if (fixture_bad_descriptor != 0U)
+		head = 1U;
+	drv_venus_store32(ring + VENUS_RING_USED + 4U + (used % VENUS_QUEUE_SIZE) * 8U, head);
 	drv_venus_store32(ring + VENUS_RING_USED + 8U + (used % VENUS_QUEUE_SIZE) * 8U, bytes);
 	drv_venus_store16(ring + VENUS_RING_USED + 2U, (uint16_t)(used + 1U));
-
-	/* Succeeded: the production poll can observe exactly one completed chain. */
-	return;
 }
 
 /* Checks initialized capability slices and repeated used/available index turnover. */
@@ -752,7 +794,7 @@ fixture_queue(void)
 	error = drv_venus_transport_start(&transport, NULL);
 	assert(error == 0);
 	assert(fixture_maps == 2U);
-	assert(fixture_dma == 3U);
+	assert(fixture_dma == 1U + 2U * VENUS_REQUEST_SLOTS);
 	assert(transport.capset_size == 32U);
 	assert(transport.notify.mapping.address == fixture_registers + 12288U);
 	assert(transport.configuration.mapping.address == fixture_registers + 8192U);
@@ -817,7 +859,7 @@ fixture_failures(void)
 	error = drv_venus_transport_command(&transport, command, sizeof(command), response, sizeof(response), &bytes);
 	assert(error == EIO);
 	assert(transport.failed != 0U);
-	assert(fixture_dma == 3U);
+	assert(fixture_dma == 1U + 2U * VENUS_REQUEST_SLOTS);
 	error = drv_venus_transport_stop(&transport);
 	assert(error == 0);
 
@@ -828,13 +870,13 @@ fixture_failures(void)
 	fixture_drop = 1U;
 	error = drv_venus_transport_command(&transport, command, sizeof(command), response, sizeof(response), &bytes);
 	assert(error == ETIMEDOUT);
-	assert(fixture_dma == 3U);
+	assert(fixture_dma == 1U + 2U * VENUS_REQUEST_SLOTS);
 
-	/* A failed reset cannot release even one of the three coherent allocations. */
+	/* A failed reset cannot release even one of the retained coherent allocations. */
 	fixture_reset_busy = 1U;
 	error = drv_venus_transport_stop(&transport);
 	assert(error == EBUSY);
-	assert(fixture_dma == 3U);
+	assert(fixture_dma == 1U + 2U * VENUS_REQUEST_SLOTS);
 	assert(fixture_maps == 2U);
 
 	/* The eventual acknowledgment permits the same cleanup operation to finish. */
@@ -876,7 +918,7 @@ fixture_async_wait(void)
 	assert(fixture_clock_calls > VENUS_WAIT_POLLS);
 	assert(transport.failed == 0U);
 	assert(transport.available == transport.used);
-	assert(fixture_dma == 3U);
+	assert(fixture_dma == 1U + 2U * VENUS_REQUEST_SLOTS);
 
 	/* Completed asynchronous teardown permits ordinary transport release. */
 	error = drv_venus_transport_stop(&transport);
@@ -892,15 +934,16 @@ fixture_async_wait(void)
 	fixture_clock_calls = 0U;
 	error = drv_venus_transport_command(&transport, command, sizeof(command), response, sizeof(response), &bytes);
 	assert(error == ETIMEDOUT);
-	assert(fixture_clock_calls == VENUS_WAIT_POLLS + 1U);
+	assert(fixture_clock_calls >= VENUS_WAIT_POLLS);
+	assert(fixture_clock_calls < VENUS_WAIT_POLLS + 16U);
 	assert(transport.failed != 0U);
-	assert(fixture_dma == 3U);
+	assert(fixture_dma == 1U + 2U * VENUS_REQUEST_SLOTS);
 
 	/* An unacknowledged reset still cannot free timed-out device-owned DMA. */
 	fixture_reset_busy = 1U;
 	error = drv_venus_transport_stop(&transport);
 	assert(error == EBUSY);
-	assert(fixture_dma == 3U);
+	assert(fixture_dma == 1U + 2U * VENUS_REQUEST_SLOTS);
 
 	/* Only the eventual reset acknowledgment returns the retained allocations. */
 	fixture_reset_busy = 0U;
@@ -937,5 +980,243 @@ fixture_edid_feature(void)
 	assert(error == 0);
 
 	/* Succeeded: optional discovery neither invents support nor makes it mandatory. */
+	return;
+}
+
+/* Exercises actual IRQ draining across independent slots, contexts and fence timelines. */
+static void
+fixture_notifications(void)
+{
+	static const unsigned order[4] = {2U, 3U, 0U, 1U};
+	struct venus_transport transport;
+	struct drv_gpu_completion completions[5];
+	uint64_t fences[4];
+	uint16_t heads[4];
+	uint8_t *packet;
+	uint8_t *ring;
+	unsigned index;
+	unsigned slot;
+	unsigned handled;
+	int error;
+
+	/* Pending asynchronous markers must leave one independent decoder chain available. */
+	fixture_prepare(&transport);
+	error = drv_venus_transport_start(&transport, NULL);
+	assert(error == 0);
+	fixture_drop = 1U;
+	fixture_clock_frozen = 1U;
+	memset(completions, 0, sizeof(completions));
+	for (index = 0U; index < 3U; index++) {
+		error = drv_venus_transport_submit(&transport, 17U + index, NULL, 0U, GPU_COMMAND_CONTEXT_FENCE, index + 1U, &completions[index]);
+		assert(error == 0);
+	}
+	error = drv_venus_transport_submit(&transport, 20U, NULL, 0U, GPU_COMMAND_CONTEXT_FENCE, 4U, &completions[4]);
+	assert(error == EAGAIN);
+	assert(completions[4].calls == 0U);
+	error = drv_venus_transport_submit(&transport, 20U, NULL, 0U, GPU_COMMAND_CONTEXT_FENCE, 0U, &completions[3]);
+	assert(error == 0);
+
+	/* The published ring identifies four distinct chains with FENCE and INFO_RING_IDX. */
+	ring = transport.ring.address;
+	for (index = 0U; index < 4U; index++) {
+		heads[index] = drv_venus_load16(ring + VENUS_RING_AVAILABLE + 4U + ((fixture_peer_available + index) % VENUS_QUEUE_SIZE) * 2U);
+		assert(heads[index] == index * 2U);
+		packet = transport.requests[index].request.address;
+		assert(drv_venus_load32(packet + 4U) == 3U);
+		assert(drv_venus_load32(packet + 16U) == 17U + index);
+		assert(packet[20U] == (index == 3U ? 0U : index + 1U));
+		fences[index] = drv_venus_load64(packet + 8U);
+		assert(fences[index] != 0U);
+		if (index != 0U)
+			assert(fences[index] > fences[index - 1U]);
+		assert(completions[index].calls == 0U);
+	}
+	fixture_peer_available = transport.available;
+
+	/* Host completion order crosses contexts and differs from descriptor publication order. */
+	for (index = 0U; index < 4U; index++) {
+		slot = order[index];
+		fixture_complete_head(heads[slot]);
+		handled = fixture_irq(fixture_irq_argument);
+		assert(handled == 1U);
+		assert(completions[slot].calls == 1U);
+		assert(completions[slot].error == 0);
+	}
+	assert(transport.available == transport.used);
+	handled = fixture_irq(fixture_irq_argument);
+	assert(handled == 1U);
+	for (index = 0U; index < 4U; index++)
+		assert(completions[index].calls == 1U);
+	assert(transport.interrupt_total == 5U);
+
+	/* Ordinary runtime waits sleep and let the IRQ callback publish their response. */
+	fixture_drop = 0U;
+	fixture_runtime = 1U;
+	{
+		uint8_t command[24];
+		uint8_t response[24];
+		uint32_t bytes;
+		drv_venus_header(command, 0x201U, 99U);
+		error = drv_venus_transport_command(&transport, command, sizeof(command), response, sizeof(response), &bytes);
+		assert(error == 0 && bytes == 24U);
+	}
+	assert(transport.sleep_total != 0U);
+	fixture_runtime = 0U;
+	error = drv_venus_transport_stop(&transport);
+	assert(error == 0);
+	assert(fixture_irq == NULL);
+	assert(fixture_dma == 0U);
+	puts("Venus IRQ: out-of-order contexts, exact-once callbacks, fence/ring identity, 3 markers + reserved decoder and runtime sleeping PASS");
+}
+
+/* Exercises topology invalidation without confusing it with command completion. */
+static void
+fixture_display_events(
+	enum drv_pci_irq_type type)
+{
+	struct venus_transport transport;
+	struct drv_gpu_completion completion;
+	uint8_t *ring;
+	uint64_t completed;
+	unsigned long irq;
+	uint16_t head;
+	int handled;
+	int error;
+
+	/* Each PCI mechanism begins with one unacknowledged inventory generation. */
+	fixture_prepare(&transport);
+	fixture_irq_type = type;
+	error = drv_venus_transport_start(&transport, NULL);
+	assert(error == 0);
+	assert(transport.topology_sequence == 1U);
+	assert(transport.topology_overflow == 0U);
+	assert(fixture_poll_wakes == 0U);
+	completed = transport.completed_total;
+
+	/* A pending renderer marker exposes accidental completion caused by a config-only IRQ. */
+	memset(&completion, 0, sizeof(completion));
+	fixture_drop = 1U;
+	fixture_clock_frozen = 1U;
+	error = drv_venus_transport_submit(&transport, 31U, NULL, 0U, GPU_COMMAND_CONTEXT_FENCE, 1U, &completion);
+	assert(error == 0);
+	ring = transport.ring.address;
+	head = drv_venus_load16(ring + VENUS_RING_AVAILABLE + 4U + (fixture_peer_available % VENUS_QUEUE_SIZE) * 2U);
+
+	/* A latched display event without an asserted INTx source belongs to another device. */
+	if (type == DRV_PCI_IRQ_INTX) {
+		drv_venus_store32(fixture_registers + 8192U, 1U);
+		handled = fixture_irq(fixture_irq_argument);
+		assert(handled == 0);
+		assert(transport.interrupt_total == 0U);
+		assert(transport.topology_sequence == 1U);
+		assert(fixture_poll_wakes == 0U);
+		assert(completion.calls == 0U);
+	}
+
+	/* MSI-X discovers a display event even when its shared vector has no ISR bits. */
+	drv_venus_store32(fixture_registers + 8192U, 1U);
+	if (type == DRV_PCI_IRQ_INTX)
+		fixture_registers[4096U] = 2U;
+
+	/* The event wakes inventory observers but cannot satisfy the pending renderer marker. */
+	handled = fixture_irq(fixture_irq_argument);
+	assert(handled == 1);
+	assert(fixture_registers[4096U] == 0U);
+	assert(transport.topology_sequence == 2U);
+	assert(fixture_poll_wakes == 1U);
+	assert(completion.calls == 0U);
+	assert(transport.completed_total == completed);
+
+	/* Clearing the modeled device event leaves an unrelated config bit harmless. */
+	drv_venus_store32(fixture_registers + 8192U, 2U);
+	handled = fixture_irq(fixture_irq_argument);
+	if (type == DRV_PCI_IRQ_INTX) {
+		assert(handled == 0);
+	} else {
+		assert(handled == 1);
+	}
+
+	/* Neither an unrelated event bit nor an idle shared vector invents readiness. */
+	assert(transport.topology_sequence == 2U);
+	assert(fixture_poll_wakes == 1U);
+	assert(completion.calls == 0U);
+
+	/* One IRQ carries both a real used descriptor and the next display invalidation. */
+	fixture_complete_head(head);
+	fixture_peer_available = transport.available;
+	drv_venus_store32(fixture_registers + 8192U, 1U);
+	fixture_registers[4096U] = 3U;
+	if (type == DRV_PCI_IRQ_MSIX)
+		fixture_registers[4096U] = 1U;
+
+	/* Queue retirement and topology readiness each publish exactly their own result. */
+	handled = fixture_irq(fixture_irq_argument);
+	assert(handled == 1);
+	assert(transport.topology_sequence == 3U);
+	assert(fixture_poll_wakes == 2U);
+	assert(completion.calls == 1U);
+	assert(completion.error == 0);
+	assert(transport.completed_total == completed + 1U);
+	assert(transport.available == transport.used);
+
+	/* A duplicate IRQ after device-event acknowledgement cannot retire the marker twice. */
+	drv_venus_store32(fixture_registers + 8192U, 0U);
+	handled = fixture_irq(fixture_irq_argument);
+	if (type == DRV_PCI_IRQ_INTX) {
+		assert(handled == 0);
+	} else {
+		assert(handled == 1);
+	}
+
+	/* The used-ring and inventory generations remain unchanged after idle delivery. */
+	assert(completion.calls == 1U);
+	assert(transport.topology_sequence == 3U);
+	assert(fixture_poll_wakes == 2U);
+
+	/* Place the next generation at the finite boundary without an impractical event loop. */
+	irq = spin_lock_irqsave(&transport.queue_lock);
+
+	transport.topology_sequence = UINT64_MAX - 1U;
+
+	spin_unlock_irqrestore(&transport.queue_lock, irq);
+
+	/* The last representable inventory generation remains valid and wakes observers. */
+	fixture_registers[4096U] = 2U;
+	handled = fixture_irq(fixture_irq_argument);
+	assert(handled == 1);
+	assert(transport.topology_sequence == UINT64_MAX);
+	assert(transport.topology_overflow == 0U);
+	assert(fixture_poll_wakes == 3U);
+
+	/* Another event becomes a persistent error instead of reusing an acknowledged generation. */
+	fixture_registers[4096U] = 2U;
+	handled = fixture_irq(fixture_irq_argument);
+	assert(handled == 1);
+	assert(transport.topology_sequence == UINT64_MAX);
+	assert(transport.topology_overflow == 1U);
+	assert(fixture_poll_wakes == 4U);
+
+	/* Query-side publication uses the same saturated state and the same unlocked wake boundary. */
+	drv_venus_transport_display_changed(&transport);
+	assert(transport.topology_sequence == UINT64_MAX);
+	assert(transport.topology_overflow == 1U);
+	assert(fixture_poll_wakes == 5U);
+	assert(completion.calls == 1U);
+	assert(fixture_reports == 0U);
+
+	/* Completed commands and all IRQ ownership retire normally despite inventory overflow. */
+	error = drv_venus_transport_stop(&transport);
+	assert(error == 0);
+	assert(fixture_irq == NULL);
+	assert(fixture_dma == 0U);
+
+	/* Reports the PCI mechanism whose production handler passed the independent peer. */
+	if (type == DRV_PCI_IRQ_INTX) {
+		puts("Venus topology INTx: read-clear, config-only, queue coexistence, saturation and unlocked poll wake PASS");
+	} else {
+		puts("Venus topology MSI-X: shared vector, config-only, queue coexistence, saturation and unlocked poll wake PASS");
+	}
+
+	/* Succeeded: display changes never substitute for native command completion. */
 	return;
 }

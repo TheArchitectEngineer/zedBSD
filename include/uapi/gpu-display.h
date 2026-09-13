@@ -16,6 +16,9 @@
 #include <sys/ioctl.h>
 
 #define GPU_CAP_DISPLAY			128U
+#define GPU_CAP_DISPLAY_EVENTS		4096U
+#define GPU_DISPLAY_EVENT_CHANGE	1U
+#define GPU_DISPLAY_EVENT_ACK		1U
 #define GPU_DISPLAY_CONNECTED		1U
 #define GPU_DISPLAY_VIRTUAL_CLOCK	2U
 #define GPU_DISPLAY_FIFO		4U
@@ -36,6 +39,27 @@
 #define GPU_DISPLAY_RELEASE		_IOW('G', 27, struct gpu_display_release)
 #define GPU_DISPLAY_PRESENT		_IOWR('G', 28, struct gpu_display_present)
 #define GPU_DISPLAY_WAIT		_IOWR('G', 29, struct gpu_display_wait)
+#define GPU_DISPLAY_EVENTS		_IOWR('G', 32, struct gpu_display_events)
+
+/*
+ * One non-destructive display-change snapshot, with an optional exact acknowledgement.
+ * Query inputs are version and size. ACK additionally sets flags and ack_sequence
+ * to an earlier successfully returned sequence; all output/reserved inputs are zero.
+ * Sequence starts at one, so a new open initially requires a complete display query.
+ * Query, re-enumerate outputs/generations, then ACK that snapshot. Events after it
+ * remain POLLPRI-ready. Copyout failure never acknowledges or records observation.
+ * Acknowledgement belongs to the open description shared by dup and SCM_RIGHTS.
+ * Notifications may coalesce or repeat; sequence is not an output generation.
+ */
+struct gpu_display_events {
+	uint32_t version;
+	uint32_t size;
+	uint32_t flags;
+	uint32_t events;
+	uint64_t sequence;
+	uint64_t ack_sequence;
+	uint64_t reserved;
+};
 
 /*
  * One output snapshot selected by ordinal, with a stable nonzero display ID.

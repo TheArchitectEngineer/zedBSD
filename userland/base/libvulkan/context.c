@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <sys/mman.h>
 #include <unistd.h>
 #include <uapi/gpu.h>
 #include "internal.h"
@@ -21,12 +22,26 @@
 #define VULKAN_REPLY_TRAILER_BYTES 20U
 #define VULKAN_TRANSPORT_TIMEOUT_NS UINT64_C(10000000000)
 #define VULKAN_PROTOCOL_XML_VERSION VK_MAKE_VERSION(1, 3, 269)
+#define VULKAN_VENDOR_CAPSET_BYTES 168U
+#define VULKAN_VENDOR_CAPSET_MAGIC 0x5a424453U
+#define VULKAN_VENDOR_CAPSET_OPAQUE 1U
+
+/* Retains mapped transport backing through growth, rollback and descriptor close. */
+struct vulkan_transport_storage {
+	struct vulkan_transport_storage *next;
+	uint64_t handle;
+	uint32_t resource;
+	size_t bytes;
+	void *mapping;
+};
 
 static VkResult vulkan_kernel_error(struct vulkan_context *context, int error);
 static uint32_t vulkan_load_word(const uint8_t *bytes);
-static VkResult vulkan_context_storage(struct vulkan_context *context, size_t requested, uint64_t *handle, uint32_t *resource, size_t *capacity);
+static VkResult vulkan_context_storage(struct vulkan_context *context, size_t requested, uint64_t *handle, uint32_t *resource, size_t *capacity, void **mapping);
 static VkResult vulkan_context_transaction(struct vulkan_context *context, const struct vulkan_writer *writer, size_t reply_capacity, struct vulkan_reader *reader);
 static VkResult vulkan_context_poll(struct vulkan_context *context);
+static VkResult vulkan_storage_release(struct vulkan_context *context, struct vulkan_transport_storage *storage);
+static VkResult vulkan_decoder_wait(struct vulkan_context *context, uint64_t sequence);
 static VkResult vulkan_clock_read(uint64_t *nanoseconds);
 static void vulkan_encode_reply_stream(struct vulkan_writer *writer, struct vulkan_context *context);
 static void vulkan_encode_reply_trailer(struct vulkan_writer *writer, struct vulkan_context *context);
@@ -46,11 +61,25 @@ vulkan_context_open(
 	VkResult cleanup;
 	uint32_t required;
 	uint32_t timelines;
+	uint32_t vendor_magic;
+	uint32_t vendor_flags;
 	int status;
+	size_t path_bytes;
 
 	/* Makes every acquisition failure safe for the common close path. */
 	memset(context, 0, sizeof(*context));
 	context->fd = -1;
+	context->external_memory_type = VULKAN_EXTERNAL_MEMORY_DMABUF;
+
+	/* Retains the exact selected node for independent display-session opens. */
+	if (path == NULL)
+		return VK_ERROR_INCOMPATIBLE_DRIVER;
+
+	path_bytes = strlen(path);
+	if (path_bytes >= sizeof(context->device_path))
+		return VK_ERROR_INCOMPATIBLE_DRIVER;
+
+	memcpy(context->device_path, path, path_bytes + 1);
 
 	/* Initializes the session lock before publishing any descriptor ownership. */
 	status = pthread_mutex_init(&context->mutex, NULL);
@@ -127,6 +156,17 @@ vulkan_context_open(
 		return VK_ERROR_INCOMPATIBLE_DRIVER;
 	}
 
+	/*
+	 * An exact vendor suffix identifies the paired renderer's raw OPAQUE support.
+	 * Stock, unknown and future capset layouts retain the proven DMA-BUF subset.
+	 */
+	if (capset.bytes == VULKAN_VENDOR_CAPSET_BYTES) {
+		vendor_magic = vulkan_load_word(capset.data + 160);
+		vendor_flags = vulkan_load_word(capset.data + 164);
+		if (vendor_magic == VULKAN_VENDOR_CAPSET_MAGIC && vendor_flags == VULKAN_VENDOR_CAPSET_OPAQUE)
+			context->external_memory_type = VULKAN_EXTERNAL_MEMORY_OPAQUE;
+	}
+
 	/* Succeeded: the caller owns one compatible session with no fixed reply allocation. */
 	return VK_SUCCESS;
 }
@@ -138,12 +178,40 @@ VkResult
 vulkan_context_close(
 	struct vulkan_context *context)
 {
+	struct vulkan_transport_storage *storage;
+	struct vulkan_notification *notification;
 	int descriptor;
 	int status;
 	VkResult error;
 
 	/* Retains the first release failure while still returning all local ownership. */
 	error = VK_SUCCESS;
+
+	/* Device views retain backing independently of the session descriptor. */
+	while (context->storage != NULL) {
+		storage = context->storage;
+		context->storage = storage->next;
+
+		/* Retire every view before descriptor teardown reclaims transport resources. */
+		if (storage->mapping != NULL) {
+			status = munmap(storage->mapping, storage->bytes);
+			if (status != 0)
+				error = VK_ERROR_DEVICE_LOST;
+		}
+
+		free(storage);
+	}
+
+	/* Pending kernel notifications are reclaimed by the following session close. */
+	while (context->notifications != NULL) {
+		notification = context->notifications;
+		context->notifications = notification->next;
+		free(notification);
+	}
+
+	/* Mappings are no longer published once their ownership ledger is consumed. */
+	context->reply_mapping = NULL;
+	context->stream_mapping = NULL;
 	if (context->fd >= 0) {
 		/* Consumes descriptor ownership before the OS may reuse its number. */
 		descriptor = context->fd;
@@ -466,49 +534,154 @@ vulkan_load_word(
 	return word;
 }
 
-/* Grows shared transport storage only after an earlier transaction completed. */
+/* Grows mapped storage without discarding a usable allocation on preflight failure. */
 static VkResult
 vulkan_context_storage(
 	struct vulkan_context *context,
 	size_t requested,
 	uint64_t *handle,
 	uint32_t *resource,
-	size_t *capacity)
+	size_t *capacity,
+	void **mapping)
 {
+	struct vulkan_transport_storage *storage;
+	struct vulkan_transport_storage *old;
+	struct gpu_resource_map request;
 	size_t bytes;
-	uint64_t new_handle;
-	uint32_t new_resource;
 	VkResult error;
 	VkResult cleanup;
+	int status;
+	int saved_error;
 
-	/* Reuses a complete existing resource without changing its renderer identity. */
-	if (requested <= *capacity)
+	/* Reuse the mapped identity only while its complete view remains valid. */
+	if (requested <= *capacity && *mapping != NULL)
 		return VK_SUCCESS;
 
-	/* Refuses overflow when rounding the new transport extent to a page. */
+	/* Page rounding must not turn an enormous response into a small allocation. */
 	if (requested > SIZE_MAX - 4095)
 		return VK_ERROR_OUT_OF_HOST_MEMORY;
 
-	/* Rounds storage without imposing a fixed command or response limit. */
 	bytes = (requested + 4095) & ~(size_t)4095;
-	error = vulkan_resource_blob(context, bytes, 0, &new_handle, &new_resource);
-	if (error != VK_SUCCESS)
-		return error;
 
-	/* Releases old storage only after the replacement allocation succeeded. */
-	error = vulkan_resource_destroy(context, *handle);
+	/* Acquire local cleanup storage before any kernel resource can exist. */
+	storage = calloc(1, sizeof(*storage));
+	if (storage == NULL)
+		return VK_ERROR_OUT_OF_HOST_MEMORY;
+
+	storage->bytes = bytes;
+	error = vulkan_resource_blob(context, bytes, 0, &storage->handle, &storage->resource);
 	if (error != VK_SUCCESS) {
-		cleanup = vulkan_resource_destroy(context, new_handle);
-		(void)cleanup;
+		free(storage);
 		return error;
 	}
 
-	/* Publishes all ownership fields together inside the context transaction lock. */
-	*handle = new_handle;
-	*resource = new_resource;
-	*capacity = bytes;
+	/* The context retains even resources whose later mapping or rollback fails. */
+	storage->next = context->storage;
+	context->storage = storage;
+	memset(&request, 0, sizeof(request));
+	request.version = GPU_ABI_VERSION;
+	request.size = sizeof(request);
+	request.handle = storage->handle;
+	status = ioctl(context->fd, GPU_RESOURCE_MAP, &request);
+	if (status != 0) {
+		saved_error = errno;
+		cleanup = vulkan_storage_release(context, storage);
+		if (cleanup != VK_SUCCESS)
+			return cleanup;
 
-	/* Succeeded: future commands may reuse the larger shared transport resource. */
+		error = vulkan_kernel_error(context, saved_error);
+		return error;
+	}
+
+	/* Only opaque page-aligned offsets for this exact backing are accepted. */
+	if (request.offset == 0 ||
+	    request.offset > INT64_MAX ||
+	    (request.offset & 4095U) != 0 ||
+	    request.bytes != bytes) {
+		cleanup = vulkan_storage_release(context, storage);
+		(void)cleanup;
+		__atomic_store_n(&context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+		return VK_ERROR_DEVICE_LOST;
+	}
+
+	/* The existing GPU mapping contract supplies a coherent device-memory view. */
+	storage->mapping = mmap(NULL, bytes, PROT_READ | PROT_WRITE, MAP_SHARED, context->fd, (off_t)request.offset);
+	if (storage->mapping == MAP_FAILED) {
+		saved_error = errno;
+		storage->mapping = NULL;
+		cleanup = vulkan_storage_release(context, storage);
+		if (cleanup != VK_SUCCESS)
+			return cleanup;
+
+		error = vulkan_kernel_error(context, saved_error);
+		return error;
+	}
+
+	/* Retire an earlier view only after its complete replacement is mapped. */
+	old = context->storage;
+	while (old != NULL) {
+		if (old->handle == *handle)
+			break;
+
+		old = old->next;
+	}
+
+	if (old != NULL) {
+		error = vulkan_storage_release(context, old);
+		if (error != VK_SUCCESS) {
+			cleanup = vulkan_storage_release(context, storage);
+			(void)cleanup;
+			__atomic_store_n(&context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+			return VK_ERROR_DEVICE_LOST;
+		}
+	}
+
+	/* Publish the complete new identity and view under the context mutex. */
+	*handle = storage->handle;
+	*resource = storage->resource;
+	*capacity = storage->bytes;
+	*mapping = storage->mapping;
+
+	/* Succeeded: later transactions reuse this mapped transport resource. */
+	return VK_SUCCESS;
+}
+
+/* Retires a mapped resource while keeping failed cleanup visible to context close. */
+static VkResult
+vulkan_storage_release(
+	struct vulkan_context *context,
+	struct vulkan_transport_storage *storage)
+{
+	struct vulkan_transport_storage **link;
+	VkResult error;
+	int status;
+
+	/* A mapped view must release its backing pin before resource destruction. */
+	if (storage->mapping != NULL) {
+		status = munmap(storage->mapping, storage->bytes);
+		if (status != 0) {
+			__atomic_store_n(&context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+			return VK_ERROR_DEVICE_LOST;
+		}
+
+		storage->mapping = NULL;
+	}
+
+	/* Failed kernel destruction leaves the resource on the context cleanup ledger. */
+	error = vulkan_resource_destroy(context, storage->handle);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Remove the exact owned ledger entry after both view and resource are gone. */
+	for (link = &context->storage; *link != NULL; link = &(*link)->next) {
+		if (*link == storage) {
+			*link = storage->next;
+			free(storage);
+			break;
+		}
+	}
+
+	/* Succeeded: no mapped or resource ownership survives this record. */
 	return VK_SUCCESS;
 }
 
@@ -522,7 +695,8 @@ vulkan_context_transaction(
 {
 	struct vulkan_writer command;
 	struct gpu_command request;
-	uint8_t trailer[VULKAN_REPLY_TRAILER_BYTES];
+	struct gpu_command_submit submission;
+	uint64_t sequence;
 	uint8_t *response;
 	size_t storage_bytes;
 	VkResult error;
@@ -551,20 +725,14 @@ vulkan_context_transaction(
 	vulkan_reader_init(reader, response, reply_capacity);
 	reader->allocator = writer->allocator;
 	storage_bytes = reply_capacity + VULKAN_REPLY_TRAILER_BYTES;
-	error = vulkan_context_storage(context, storage_bytes, &context->reply_handle, &context->reply_resource, &context->reply_capacity);
+	error = vulkan_context_storage(context, storage_bytes, &context->reply_handle, &context->reply_resource, &context->reply_capacity, &context->reply_mapping);
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* Clears all readable bytes so an absent output cannot expose a previous reply. */
-	error = vulkan_resource_copy(context, context->reply_handle, 0, response, reply_capacity, VK_TRUE);
-	if (error != VK_SUCCESS)
-		return error;
-
-	/* Clears the final completion store independently of response-body capacity. */
-	memset(trailer, 0, sizeof(trailer));
-	error = vulkan_resource_copy(context, context->reply_handle, context->reply_capacity - sizeof(trailer), trailer, sizeof(trailer), VK_TRUE);
-	if (error != VK_SUCCESS)
-		return error;
+	/* Clear the caller span and completion store through the coherent owned view. */
+	memset(context->reply_mapping, 0, reply_capacity);
+	memset((uint8_t *)context->reply_mapping + context->reply_capacity - VULKAN_REPLY_TRAILER_BYTES, 0, VULKAN_REPLY_TRAILER_BYTES);
+	__atomic_thread_fence(__ATOMIC_RELEASE);
 
 	/* Encodes small transport framing around the caller's independent command. */
 	vulkan_writer_init(&command);
@@ -573,18 +741,15 @@ vulkan_context_transaction(
 
 	/* Sends large commands through shared storage rather than truncating an ioctl. */
 	if (writer->bytes > GPU_COMMAND_MAX - 128) {
-		error = vulkan_context_storage(context, writer->bytes, &context->stream_handle, &context->stream_resource, &context->stream_capacity);
+		error = vulkan_context_storage(context, writer->bytes, &context->stream_handle, &context->stream_resource, &context->stream_capacity, &context->stream_mapping);
 		if (error != VK_SUCCESS) {
 			vulkan_writer_finish(&command);
 			return error;
 		}
 
-		/* Copies the complete large stream before referencing it from the control command. */
-		error = vulkan_resource_copy(context, context->stream_handle, 0, writer->data, writer->bytes, VK_TRUE);
-		if (error != VK_SUCCESS) {
-			vulkan_writer_finish(&command);
-			return error;
-		}
+		/* Publish every source byte before the renderer can decode the external stream. */
+		memcpy(context->stream_mapping, writer->data, writer->bytes);
+		__atomic_thread_fence(__ATOMIC_RELEASE);
 
 		/* References one immutable stream with no nested execution or dependencies. */
 		vulkan_encode_external_stream(&command, context, writer->bytes);
@@ -607,13 +772,29 @@ vulkan_context_transaction(
 		return VK_ERROR_OUT_OF_HOST_MEMORY;
 	}
 
-	/* Submits initialized framing without treating virtqueue receipt as decoder completion. */
-	memset(&request, 0, sizeof(request));
-	request.version = GPU_ABI_VERSION;
-	request.size = sizeof(request);
-	request.address = (uintptr_t)command.data;
-	request.bytes = (uint32_t)command.bytes;
-	status = ioctl(context->fd, GPU_COMMAND, &request);
+	/* Request decoder-timeline notification when the kernel advertises it. */
+	sequence = 0;
+	if (context->capabilities & GPU_CAP_NOTIFICATION) {
+		memset(&submission, 0, sizeof(submission));
+		submission.version = GPU_ABI_VERSION;
+		submission.size = sizeof(submission);
+		submission.address = (uintptr_t)command.data;
+		submission.bytes = (uint32_t)command.bytes;
+		submission.flags = GPU_COMMAND_CONTEXT_FENCE;
+		submission.timeline = 0;
+		status = ioctl(context->fd, GPU_COMMAND_SUBMIT, &submission);
+		sequence = submission.sequence;
+	} else {
+		/* An older backend retains decoder-trailer observation without notifications. */
+		memset(&request, 0, sizeof(request));
+		request.version = GPU_ABI_VERSION;
+		request.size = sizeof(request);
+		request.address = (uintptr_t)command.data;
+		request.bytes = (uint32_t)command.bytes;
+		status = ioctl(context->fd, GPU_COMMAND, &request);
+	}
+
+	/* Submission acceptance alone never proves either reply or GPU completion. */
 	if (status != 0) {
 		error = vulkan_kernel_error(context, errno);
 		vulkan_writer_finish(&command);
@@ -623,19 +804,22 @@ vulkan_context_transaction(
 	/* Releases local command bytes after the kernel copied the complete stream. */
 	vulkan_writer_finish(&command);
 
-	/* Waits for an independently validated trailer before fetching caller output. */
-	error = vulkan_context_poll(context);
+	/* A decoder notification wakes the waiter before the reply trailer is validated. */
+	error = VK_SUCCESS;
+	if (context->capabilities & GPU_CAP_NOTIFICATION)
+		error = vulkan_decoder_wait(context, sequence);
+
+	/* Notification is supplementary evidence; only a valid trailer authorizes reply use. */
+	if (error == VK_SUCCESS)
+		error = vulkan_context_poll(context);
 	if (error != VK_SUCCESS) {
 		__atomic_store_n(&context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
 		return VK_ERROR_DEVICE_LOST;
 	}
 
-	/* Reads the reply after completion, never from an earlier polling snapshot. */
-	error = vulkan_resource_copy(context, context->reply_handle, 0, response, reply_capacity, VK_FALSE);
-	if (error != VK_SUCCESS) {
-		__atomic_store_n(&context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
-		return VK_ERROR_DEVICE_LOST;
-	}
+	/* Keep reader storage independent of a later transaction reusing the shared view. */
+	__atomic_thread_fence(__ATOMIC_ACQUIRE);
+	memcpy(response, context->reply_mapping, reply_capacity);
 
 	/* Succeeded: reader storage contains the complete response from this command. */
 	return VK_SUCCESS;
@@ -647,6 +831,9 @@ vulkan_context_poll(
 	struct vulkan_context *context)
 {
 	uint8_t trailer[VULKAN_REPLY_TRAILER_BYTES];
+	volatile uint32_t *mapped;
+	uint32_t sample;
+	unsigned index;
 	struct timespec pause;
 	uint64_t started;
 	uint64_t now;
@@ -669,9 +856,17 @@ vulkan_context_poll(
 	observed = started;
 	stagnant_polls = 0;
 	while (1) {
-		error = vulkan_resource_copy(context, context->reply_handle, context->reply_capacity - sizeof(trailer), trailer, sizeof(trailer), VK_FALSE);
-		if (error != VK_SUCCESS)
-			return error;
+		/* Read fresh aligned device words without atomic read-modify-write operations. */
+		mapped = (volatile uint32_t *)((uint8_t *)context->reply_mapping + context->reply_capacity - sizeof(trailer));
+		sample = mapped[4];
+		memcpy(trailer + 16, &sample, sizeof(sample));
+		__atomic_thread_fence(__ATOMIC_ACQUIRE);
+
+		/* The final store publishes the earlier trailer fields in decoder order. */
+		for (index = 0; index < 4U; index++) {
+			sample = mapped[index];
+			memcpy(trailer + index * 4U, &sample, sizeof(sample));
+		}
 
 		/* A compatible final store indicates the renderer reached its trailer command. */
 		version = vulkan_load_word(trailer + 16);
@@ -685,6 +880,10 @@ vulkan_context_poll(
 			    result == 0 && present_low == 1 && present_high == 0)
 				break;
 		}
+
+		/* A completed decoder fence must have published the complete trailer already. */
+		if (context->capabilities & GPU_CAP_NOTIFICATION)
+			return VK_ERROR_DEVICE_LOST;
 
 		/* Refuses a stopped or backwards monotonic deadline source. */
 		error = vulkan_clock_read(&now);
@@ -723,6 +922,63 @@ vulkan_context_poll(
 
 	/* Succeeded: the complete trailer proves this command stream was decoded. */
 	return VK_SUCCESS;
+}
+
+/* Waits for one decoder notification with a finite interruption-aware deadline. */
+static VkResult
+vulkan_decoder_wait(
+	struct vulkan_context *context,
+	uint64_t sequence)
+{
+	struct gpu_command_wait wait;
+	uint64_t started;
+	uint64_t now;
+	uint64_t elapsed;
+	VkResult error;
+	int status;
+
+	/* Zero can never name an accepted kernel completion record. */
+	if (sequence == 0)
+		return VK_ERROR_DEVICE_LOST;
+
+	/* Interruptions count against the same decoder watchdog rather than restarting it. */
+	error = vulkan_clock_read(&started);
+	if (error != VK_SUCCESS)
+		return error;
+
+	elapsed = 0;
+	while (elapsed < VULKAN_TRANSPORT_TIMEOUT_NS) {
+		memset(&wait, 0, sizeof(wait));
+		wait.version = GPU_ABI_VERSION;
+		wait.size = sizeof(wait);
+		wait.sequence = sequence;
+		wait.timeout_ns = VULKAN_TRANSPORT_TIMEOUT_NS - elapsed;
+		wait.flags = GPU_WAIT_CONSUME;
+		status = ioctl(context->fd, GPU_COMMAND_WAIT, &wait);
+		if (status == 0) {
+			/* Transport success and renderer Vulkan results occupy different domains. */
+			if (wait.status != 0)
+				return VK_ERROR_DEVICE_LOST;
+
+			return VK_SUCCESS;
+		}
+
+		/* Only an interruption may resume waiting for this same unconsumed record. */
+		if (errno != EINTR)
+			return VK_ERROR_DEVICE_LOST;
+
+		error = vulkan_clock_read(&now);
+		if (error != VK_SUCCESS)
+			return error;
+
+		if (now < started)
+			return VK_ERROR_DEVICE_LOST;
+
+		elapsed = now - started;
+	}
+
+	/* Failed: the transport watchdog never turns into an indefinite GPU wait. */
+	return VK_ERROR_DEVICE_LOST;
 }
 
 /* Reads a monotonic timestamp without leaking native time representation into wire data. */

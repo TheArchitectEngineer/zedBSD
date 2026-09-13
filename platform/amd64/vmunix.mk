@@ -198,7 +198,7 @@ AMD64_KERNEL_SOURCES := \
 	src/kern/lock.c src/kern/waitq.c \
 	src/kern/process.c src/kern/thread.c src/kern/sched.c \
  src/kern/vmspace.c src/kern/vm-device.c src/kern/vm.c \
-	src/kern/filedesc.c src/kern/handle.c src/kern/fd-object.c \
+	src/kern/filedesc.c src/kern/handle.c src/kern/fence.c src/kern/fd-object.c \
 	src/kern/record-lock.c \
 	src/kern/pipe.c src/kern/cred.c src/kern/signal.c \
 	src/kern/cwdinfo.c src/kern/elf.c src/kern/exec.c \
@@ -664,7 +664,7 @@ $(BUILD)/bin/$(1): $(AMD64_USER_LIBC_OBJS) \
 	@test -z "$$$$($(NM) -u $$@)" || { $(NM) -u $$@; exit 1; }
 	$(NOCT) --path=tools/build $(AMD64_USER_ELF_CHECK) --machine amd64 $$@
 endef
-$(foreach command,$(filter-out vkdemo wltest gpu-share-test,$(USER_BASIC_COMMANDS)),\
+$(foreach command,$(filter-out vkdemo wltest gpu-share-test gpu-fence-test,$(USER_BASIC_COMMANDS)),\
 	$(eval $(call AMD64_USER_BASIC_COMMAND,$(command))))
 # ELF64 runtime linker and shared libc.
 DYNAMIC_DIR := $(BUILD)/dynamic
@@ -804,11 +804,27 @@ $(BUILD)/bin/wltest: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
  --needed libvulkan.so --needed libwayland-client.so --needed libc.so $@
 
+# The external-fence test uses only the installed standard Vulkan shared library.
+$(BUILD)/bin/gpu-fence-test: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
+	$(DYNAMIC_DIR)/obj/userland/base/tests/gpu-fence/main.o \
+	$(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so
+	@mkdir -p $(dir $@)
+	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
+ -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
+ -Wl,--dynamic-linker=/lib/ld.so \
+ $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
+ $(DYNAMIC_DIR)/obj/userland/base/tests/gpu-fence/main.o \
+ -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
+ -l:libvulkan.so -l:libc.so -o $@
+	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
+ --needed libvulkan.so --needed libc.so $@
+
 # This finite fixture links private Vulkan helpers without exporting them from the public DSO.
-$(DYNAMIC_DIR)/obj/plan/ws014/tests/gpu-share-client.o: DYNAMIC_CPPFLAGS += -Iuserland/base/libvulkan
+$(DYNAMIC_DIR)/obj/userland/base/tests/gpu-share/main.o: DYNAMIC_CPPFLAGS += -Iuserland/base/libvulkan
 
 $(BUILD)/bin/gpu-share-test: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
-	$(DYNAMIC_DIR)/obj/plan/ws014/tests/gpu-share-client.o $(DYNAMIC_VULKAN_OBJS) \
+	$(DYNAMIC_DIR)/obj/userland/base/tests/gpu-share/main.o $(DYNAMIC_VULKAN_OBJS) \
 	$(DYNAMIC_DIR)/libwayland-client.so $(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
@@ -816,7 +832,7 @@ $(BUILD)/bin/gpu-share-test: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
- $(DYNAMIC_DIR)/obj/plan/ws014/tests/gpu-share-client.o $(DYNAMIC_VULKAN_OBJS) \
+ $(DYNAMIC_DIR)/obj/userland/base/tests/gpu-share/main.o $(DYNAMIC_VULKAN_OBJS) \
  -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
  -l:libwayland-client.so -l:libc.so -o $@
 	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \

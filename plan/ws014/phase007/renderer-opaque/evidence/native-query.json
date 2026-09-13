@@ -1,0 +1,110 @@
+{
+  "host": "awe@10.0.10.25",
+  "capture": "Values transcribed from successful direct native Vulkan tool outputs; no guest or renderer emulation.",
+  "device": {
+    "name": "Intel(R) Iris(R) Xe Graphics (ADL GT2)",
+    "vendor_id": 32902,
+    "device_id": 18088,
+    "api_version": 4211006,
+    "driver_version": 104865798
+  },
+  "image_queries": [
+    {
+      "format": 37,
+      "tiling": 0,
+      "usage": 3,
+      "handle_type": 512,
+      "result": -11,
+      "external_features": 0,
+      "compatible": 0,
+      "export_from_imported": 0
+    },
+    {
+      "format": 37,
+      "tiling": 1,
+      "usage": 3,
+      "handle_type": 512,
+      "result": 0,
+      "external_features": 6,
+      "compatible": 513,
+      "export_from_imported": 513,
+      "max_extent": [
+        16384,
+        16384,
+        1
+      ],
+      "max_mips": 15,
+      "max_layers": 2048,
+      "sample_counts": 1,
+      "max_resource_bytes": 17592186044416
+    },
+    {
+      "format": 37,
+      "tiling": 0,
+      "usage": 3,
+      "handle_type": 1,
+      "result": 0,
+      "external_features": 6,
+      "compatible": 1,
+      "export_from_imported": 1,
+      "max_extent": [
+        16384,
+        16384,
+        1
+      ],
+      "max_mips": 15,
+      "max_layers": 2048,
+      "sample_counts": 31,
+      "max_resource_bytes": 17592186044416
+    },
+    {
+      "format": 44,
+      "tiling": 0,
+      "usage": 3,
+      "handle_type": 512,
+      "result": -11,
+      "external_features": 0,
+      "compatible": 0,
+      "export_from_imported": 0
+    }
+  ],
+  "memory_types": [
+    {
+      "type": 0,
+      "flags": 1,
+      "heap": 0
+    },
+    {
+      "type": 1,
+      "flags": 7,
+      "heap": 0
+    },
+    {
+      "type": 2,
+      "flags": 15,
+      "heap": 0
+    },
+    {
+      "type": 3,
+      "flags": 33,
+      "heap": 0
+    },
+    {
+      "type": 4,
+      "flags": 1,
+      "heap": 0
+    },
+    {
+      "type": 5,
+      "flags": 7,
+      "heap": 0
+    },
+    {
+      "type": 6,
+      "flags": 15,
+      "heap": 0
+    }
+  ],
+  "dedicated_only_observed": false,
+  "software_renderer_used_for_acceptance": false
+}

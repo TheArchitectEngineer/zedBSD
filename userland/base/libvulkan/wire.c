@@ -16,6 +16,47 @@
 static VkBool32 vulkan_reader_need(struct vulkan_reader *reader, size_t bytes);
 
 /*
+ * Encodes an internal external-buffer declaration for allocation sharing.
+ */
+void
+vulkan_encode_buffer_external(
+	struct vulkan_writer *writer,
+	const void *chain)
+{
+	const VkBaseInStructure *next;
+	struct vulkan_external_buffer_info value;
+	const struct vulkan_external_buffer_info *info;
+	uint32_t types;
+
+	/* Ordinary public core buffers carry no internal external-memory declaration. */
+	next = chain;
+	while (next != NULL && next->sType != VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_BUFFER_CREATE_INFO)
+		next = next->pNext;
+	if (next == NULL) {
+		vulkan_write_u64(writer, 0U);
+
+		/* Succeeded: ordinary core buffer creation keeps an empty native chain. */
+		return;
+	}
+
+	/* Public and private declarations share the registry layout, without C type aliasing. */
+	memcpy(&value, next, sizeof(value));
+	info = &value;
+
+	/* The renderer sees only its memory handle type, never a guest descriptor or pointer. */
+	vulkan_write_u64(writer, 1U);
+	vulkan_write_u32(writer, VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_BUFFER_CREATE_INFO);
+	vulkan_write_u64(writer, 0U);
+	types = info->handle_types;
+	if (types == VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT)
+		types = writer->external_memory_type;
+	vulkan_write_u32(writer, types);
+
+	/* Succeeded: native buffer creation permits the selected shared allocation. */
+	return;
+}
+
+/*
  * Encodes the single internal external-image declaration used by WSI.
  */
 void
@@ -23,22 +64,34 @@ vulkan_encode_image_external(
 	struct vulkan_writer *writer,
 	const void *chain)
 {
+	const VkBaseInStructure *next;
+	struct vulkan_external_image_info value;
 	const struct vulkan_external_image_info *info;
+	uint32_t types;
 
 	/* Public core calls retain an empty native extension chain. */
-	info = chain;
-	if (info == NULL || info->sType != VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO) {
+	next = chain;
+	while (next != NULL && next->sType != VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO)
+		next = next->pNext;
+	if (next == NULL) {
 		vulkan_write_u64(writer, 0U);
 
 		/* Succeeded: ordinary core image creation carries an empty native extension chain. */
 		return;
 	}
 
+	/* The registry-compatible declaration is copied before interpreting its native handle types. */
+	memcpy(&value, next, sizeof(value));
+	info = &value;
+
 	/* No guest pointer or fd representation reaches the renderer. */
 	vulkan_write_u64(writer, 1U);
 	vulkan_write_u32(writer, VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO);
 	vulkan_write_u64(writer, 0U);
-	vulkan_write_u32(writer, info->handle_types);
+	types = info->handle_types;
+	if (types == VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT)
+		types = writer->external_memory_type;
+	vulkan_write_u32(writer, types);
 
 	/* Succeeded: the renderer receives only the selected external image memory type. */
 	return;
@@ -53,6 +106,7 @@ vulkan_writer_init(
 {
 	/* Starts with no allocation so empty writers always have cheap cleanup. */
 	memset(writer, 0, sizeof(*writer));
+	writer->external_memory_type = VULKAN_EXTERNAL_MEMORY_DMABUF;
 
 	/* Succeeded: the writer can grow as command parameters are encoded. */
 	return;
@@ -124,7 +178,7 @@ vulkan_writer_reserve(
 
 	/* Preserves existing bytes if the host cannot provide more storage. */
 	if (writer->allocator.has_callbacks) {
-		storage = writer->allocator.callbacks.pfnAllocation(writer->allocator.callbacks.pUserData, capacity, 16, VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
+		storage = writer->allocator.callbacks.pfnAllocation(writer->allocator.callbacks.pUserData, capacity, 16, writer->scope);
 		if (storage != NULL) {
 			/* Retains encoded bytes before returning the previous callback allocation. */
 			if (writer->bytes != 0)
@@ -596,8 +650,13 @@ vulkan_writer_init_for_object(
 	vulkan_writer_init(writer);
 
 	/* Uses object, pool, device, or instance policy already resolved at creation. */
-	if (object != NULL)
+	if (object != NULL) {
 		writer->allocator = object->allocator;
+
+		/* The public OPAQUE declaration uses only this renderer's negotiated native type. */
+		if (object->context != NULL)
+			writer->external_memory_type = object->context->external_memory_type;
+	}
 
 	/* Succeeded: subsequent transport allocations share this command policy. */
 	return;

@@ -16,7 +16,7 @@ func lines(text) {
 }
 func main(args) {
     if (Array.size(args) != 2) { System.error("usage: vulkan-abi-source.noct MAINTAINED_HEADER OUTPUT_C"); }
-    var input = lines(FileUtil.readText(args[0])); var record = ""; var enumRecord = false;
+    var input = lines(FileUtil.readText(args[0]) + FileUtil.readText("libc/include/vulkan/vulkan_external.h")); var record = ""; var enumRecord = false;
     var types = 0; var fields = 0; var constants = 0;
     var output = "/* Independent compiled ABI measurements for the maintained Vulkan declarations. */\n#include <stddef.h>\n#include <vulkan/vulkan.h>\n\n/* Retains every measured ABI value in a relocation-free object section. */\nconst unsigned long vulkan_abi[] = {\n\tsizeof(void *),\n\tsizeof(VkInstance),\n\tsizeof(VkBuffer),\n\tsizeof(VkDeviceSize),\n";
     for (i in 0..Array.size(input)) {

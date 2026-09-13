@@ -17,6 +17,7 @@ for mode in normal sanitized; do
         -pthread $sanitize -I"$work/include" -I"$root/include" \
         -Dopen=vulkan_test_open -Dclose=vulkan_test_close -Dioctl=vulkan_test_ioctl \
         -Dclock_gettime=vulkan_test_clock_gettime -Dnanosleep=vulkan_test_nanosleep \
+        -Dmmap=vulkan_test_mmap -Dmunmap=vulkan_test_munmap \
         -c "$root/userland/base/libvulkan/context.c" -o "$work/context.o"
     "$cc" -std=c89 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror -pedantic \
         -pthread $sanitize -I"$work/include" -I"$root/include" \

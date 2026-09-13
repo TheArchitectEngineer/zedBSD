@@ -752,7 +752,7 @@ vkGetPhysicalDeviceSurfaceSupportKHR(
 	}
 
 	/* A valid surface remains unsupported on GPUs lacking its native sharing operation. */
-	if (surface->platform->import_image != NULL &&
+	if (surface->platform->import_image != NULL && surface->platform->present == NULL &&
 	    (physical->object.context->capabilities & GPU_CAP_SHARE) == 0U)
 		return VK_SUCCESS;
 
@@ -938,6 +938,7 @@ vulkan_wsi_display_refresh(
 {
 	struct vulkan_wsi_output output;
 	uint64_t identifier;
+	uint64_t device_identifier;
 	uint32_t count;
 	uint32_t observed_count;
 	uint32_t index;
@@ -952,6 +953,7 @@ vulkan_wsi_display_refresh(
 	pthread_mutex_lock(&wsi_mutex);
 
 	identifier = display->output.identifier;
+	device_identifier = display->output.device_identifier;
 
 	pthread_mutex_unlock(&wsi_mutex);
 
@@ -966,7 +968,7 @@ vulkan_wsi_display_refresh(
 			return VK_ERROR_SURFACE_LOST_KHR;
 
 		/* Other outputs must not overwrite the retained display identity. */
-		if (output.identifier != identifier)
+		if (output.identifier != identifier || output.device_identifier != device_identifier)
 			continue;
 
 		/* Publishes one coherent capability snapshot while retaining the original name. */
@@ -1095,6 +1097,9 @@ vulkan_wsi_instance_finish(
 		wsi_display_free(display);
 	}
 
+	/* Cached native discovery opens retire after every instance-owned display identity. */
+	vulkan_wsi_display_nodes_finish(instance);
+
 	/* Succeeded: this instance leaves no WSI-owned native identities behind. */
 	return;
 }
@@ -1182,7 +1187,8 @@ wsi_display_get(
 	display = wsi_displays;
 	while (display != NULL) {
 		/* Both physical ownership and stable native identity must match. */
-		if (display->physical == physical && display->output.identifier == output->identifier)
+		if (display->physical == physical && display->output.identifier == output->identifier &&
+		    display->output.device_identifier == output->device_identifier)
 			break;
 
 		/* Advances without comparing mutable names or mode dimensions. */

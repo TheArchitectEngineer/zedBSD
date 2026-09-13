@@ -22,6 +22,8 @@ _spec.loader.exec_module(common)
 MARKER = re.compile(r'VKDEMO PRESENT run=([a-z0-9-]{1,64}) mode=(fixed|live) '
                     r'sample=(\d+) frame=(\d+) time_ms=(\d+) '
                     r'rgb_sha256=([0-9a-f]{64}) width=(\d+) height=(\d+)')
+SUBMITTED = re.compile(r'VKDEMO SUBMITTED run=([a-z0-9-]{1,64}) mode=(fixed|live) '
+                       r'frame=(\d+) time_ms=(\d+) readback=disabled width=(\d+) height=(\d+)')
 
 
 def parse_marker(text, token, frame):
@@ -47,40 +49,73 @@ def parse_marker(text, token, frame):
     return result
 
 
-def ordinary_run(args, qmp, output, report, console, deadline):
+def ordinary_run(args, qmp, output, report, console, deadline, vnc_path=None, capture=False):
     token = args.token + '-ordinary'
     command = f'/bin/vkdemo --duration=2 --token={token}\n'
     result = {'token': token, 'guest_command': command.rstrip(), 'start_seen': False,
-              'samples': [], 'completed': False}
+              'samples': [], 'captures': [], 'completed': False}
     report['ordinary'] = result
     qmp.text(command)
     observed = {}
+    next_capture_at = 0.0
+    previous_rgb = None
+    captured_after = 0
+    if capture and vnc_path is None:
+        raise ValueError('ordinary display captures require the owned VM VNC socket')
     done = re.compile(r'VKDEMO DONE run=' + re.escape(token) + r' frames=(\d+)')
     start = re.compile(r'VKDEMO START run=' + re.escape(token) + r'(?:[ \r\n]|$)')
     while time.monotonic() < deadline:
         text = console()
         result['start_seen'] = result['start_seen'] or bool(start.search(text))
-        for match in MARKER.finditer(text):
-            run, mode, sample, frame, at, sha, width, height = match.groups()
+        for match in SUBMITTED.finditer(text):
+            run, mode, frame, at, width, height = match.groups()
             if run != token:
                 continue
-            sample, frame, at, width, height = map(int, (sample, frame, at, width, height))
-            if (mode != 'live' or sample != frame or not 1 <= frame <= 4096 or
+            frame, at, width, height = map(int, (frame, at, width, height))
+            if (mode != 'live' or not 1 <= frame <= 4096 or
                     not 0 <= at <= 3600000 or (width, height) != (320, 240)):
                 raise ValueError('ordinary run has an invalid live marker')
-            value = {'frame': frame, 'time_ms': at, 'rgb_sha256': sha}
+            value = {'frame': frame, 'time_ms': at, 'readback_disabled': True}
             if frame in observed and observed[frame] != value:
                 raise ValueError('ordinary run has conflicting markers for one frame')
             observed[frame] = value
         result['samples'] = [observed[key] for key in sorted(observed)]
         finished = done.search(text)
+        # Ordinary submission is asynchronous: sample actual VNC pixels without
+        # equating enqueue metadata to an exact displayed frame or reading GPU memory.
+        latest = max(observed, default=0)
+        now = time.monotonic()
+        if (capture and not finished and len(result['captures']) < 2 and
+                len(observed) >= 2 and latest > captured_after and now >= next_capture_at):
+            shot = output / f"ordinary-{len(result['captures']) + 1}.ppm"
+            remaining = deadline - now
+            if remaining <= 0:
+                raise TimeoutError('ordinary VNC capture exceeded the finite VM deadline')
+            info = capture_rfb(vnc_path, shot, min(2, remaining))
+            next_capture_at = time.monotonic() + 0.15
+            try:
+                pixels = oracle.read_ppm(shot)
+            except ValueError:
+                # A mode transition may still expose the console; require the actual
+                # 320x240 application extent before publishing any capture evidence.
+                pixels = None
+            if pixels is not None and pixels != previous_rgb:
+                result['captures'].append({'filename': shot.name, 'sha256': common.digest(shot),
+                                           'capture': info,
+                                           'rgb_sha256': hashlib.sha256(pixels).hexdigest(),
+                                           'observed_after_submit': latest})
+                previous_rgb = pixels
+                captured_after = latest
+                save_report(output, report)
         if finished and re.search(r'root@[^\r\n]*\$ ', text[finished.end():]):
             count = int(finished.group(1))
             samples = result['samples']
             if (not result['start_seen'] or len(samples) < 2 or count != samples[-1]['frame'] or
                     any(b['time_ms'] <= a['time_ms'] for a, b in zip(samples, samples[1:])) or
-                    len({value['rgb_sha256'] for value in samples}) < 2):
+                    any(match.group(1) == token for match in MARKER.finditer(text))):
                 raise RuntimeError('ordinary run did not prove progressing frames and clean completion')
+            if capture and len(result['captures']) != 2:
+                raise RuntimeError('ordinary run did not expose two distinct 320x240 VNC frames')
             result.update(completed=True, frames=count,
                           first_time_ms=samples[0]['time_ms'], last_time_ms=samples[-1]['time_ms'])
             return
@@ -108,7 +143,7 @@ def display_competition(args, qmp, output, debug, process, report, deadline):
     qmp.text(f'/bin/vkdemo --duration=12 --token={owner} &\n')
     while time.monotonic() < deadline:
         value = text()
-        if re.search(r'VKDEMO PRESENT run=' + re.escape(owner) + ' ', value):
+        if re.search(r'VKDEMO SUBMITTED run=' + re.escape(owner) + ' ', value):
             break
         time.sleep(0.05)
     else:
@@ -174,7 +209,7 @@ def lifecycle_run(args, qmp, output, debug_path, vnc_path, process, report, cons
     try:
         args.token = saved_token + '-after-abort'
         reopened = {}
-        ordinary_run(args, qmp, output, reopened, console, deadline)
+        ordinary_run(args, qmp, output, reopened, console, deadline, capture=False)
         result['reopen'] = reopened['ordinary']
         result['reopened'] = True
     finally:
@@ -270,9 +305,12 @@ def exercise(args, qmp, output, debug, vnc_path, process, report):
         where = text.find(done)
         if where >= 0 and re.search(r'root@[^\r\n]*\$ ', text[where + len(done):]):
             report['guest_completed'] = True
-            ordinary_run(args, qmp, output, report, console, deadline)
+            ordinary_run(args, qmp, output, report, console, deadline, vnc_path=vnc_path, capture=True)
             if getattr(args, 'lifecycle', False):
                 lifecycle_run(args, qmp, output, debug, vnc_path, process, report, console, deadline)
+            # QEMU traces requests before backend validation; pixels and DONE above remain mandatory.
+            report['scanout_trace'] = common.verify_blob_scanout_trace(
+                (output / 'qemu-renderer.log').read_bytes(), 320, 240)
             report['status'] = 'pass'
             save_report(output, report)
             return
@@ -283,6 +321,7 @@ def exercise(args, qmp, output, debug, vnc_path, process, report):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--render-server', type=Path, required=True)
+    parser.add_argument('--renderer-library-dir', type=Path)
     parser.add_argument('--image', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--token', required=True)

@@ -4,7 +4,7 @@
 Status: planning
 Phase disposition: normal
 Implementation Queue: none for this design Phase
-Standard Vulkan library: [ws030](https://github.com/awemorris/zedBSD/issues/388) under q308; direct-display selected, EGL canceled
+Standard Vulkan library: [ws030](https://github.com/awemorris/zedBSD/issues/388) completed in q308; p007 adds standard external fd; direct-display selected, EGL canceled
 <!-- awesome-plan-current:end -->
 
 # WS014 Phase 001: virtio-gpu / Vulkan表示APIの設計
@@ -224,3 +224,7 @@ p003/q306 cleared（2026-09-13）。現行ops v2/UAPI v1と6callback/6ioctlを�
 ## q309の現行API補遺
 
 p006のGPU共有・標準Wayland WSIを受入済み。初期275API/44 callback候補は設計履歴として保持し、現在の157実API（137core＋20WSI）、drv_gpu_ops v4／GPU UAPI v1とは分ける。新しい2Wayland APIの純粋U/K責務、share/export/import/scanoutの所有権と初期制約をlocal/uncommitted plan/ws014/vulkan-api-responsibilities.mdとgpu-framework.mdへ追記した。詳細実装資料と結果は[p006](https://github.com/awemorris/zedBSD/issues/393)。p001はplanningを維持し、最終整理は未queueの[p004](https://github.com/awemorris/zedBSD/issues/385)へ引き渡す。
+
+## q310最終引継ぎ
+
+q310 finished、[WS014 p007](https://github.com/awemorris/zedBSD/issues/394) cleared。BLOB直接表示・標準OPAQUE memory/fence・同期/batch・topology/placementを受入済み。最終APIは170 commands / drv_gpu_ops v6。active Queueなし、p004とWS029は未queue。optimal共有には隔離したpaired renderer差分を使用。source/docのgit公開はユーザー担当。

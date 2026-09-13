@@ -14,6 +14,11 @@
 #include <kern/clock.h>
 #include <kern/device-io.h>
 #include <kern/klog.h>
+#include <kern/kmem.h>
+#include <kern/poll.h>
+#include <kern/sched.h>
+#include <kern/thread.h>
+#include <drivers/gpu.h>
 
 #include <errno.h>
 #include <limits.h>
@@ -34,6 +39,50 @@ static int venus_negotiate(struct venus_transport *transport);
 static int venus_queue_start(struct venus_transport *transport);
 static int venus_capset_find(struct venus_transport *transport);
 static int venus_response_error(uint32_t type);
+static int venus_interrupt_start(struct venus_transport *transport);
+static int venus_interrupt_stop(struct venus_transport *transport);
+static int venus_interrupt(void *argument);
+static int venus_worker_start(struct venus_transport *transport);
+static int venus_worker_stop(struct venus_transport *transport);
+static void venus_worker(void *argument);
+static int venus_request_post(struct venus_transport *transport, const void *command, uint32_t bytes, unsigned queue_marker, struct drv_gpu_completion *completion, struct venus_request **result);
+static int venus_request_wait(struct venus_transport *transport, struct venus_request *request);
+static int venus_queue_wait_locked(struct venus_transport *transport, uint64_t deadline, unsigned flags, unsigned long *irq);
+static unsigned venus_queue_collect(struct venus_transport *transport);
+static void venus_queue_notify(struct venus_transport *transport);
+static int venus_request_validate(struct venus_request *request, uint32_t bytes);
+static int venus_wait_expired(uint64_t started);
+
+
+/*
+ * Publishes an inventory invalidation without borrowing a common GPU registration.
+ *
+ * Both IRQ delivery and a query that clears a pending configuration event call
+ * this helper. Duplicate invalidations are harmless; no hardware event may be
+ * cleared before its software sequence is visible to every independently open fd.
+ */
+void
+drv_venus_transport_display_changed(
+	struct venus_transport *transport)
+{
+	unsigned long irq;
+
+	/* Saturation is a persistent error rather than reuse of an acknowledged sequence. */
+	irq = spin_lock_irqsave(&transport->queue_lock);
+
+	if (transport->topology_sequence == UINT64_MAX)
+		transport->topology_overflow = 1U;
+	else
+		transport->topology_sequence++;
+
+	spin_unlock_irqrestore(&transport->queue_lock, irq);
+
+	/* Pollers may re-enter the backend only after its event lock is released. */
+	poll_notify();
+
+	/* Succeeded: transport ownership, independent from sessions, bounds IRQ access. */
+	return;
+}
 
 /*
  * Starts one modern PCI transport while retaining every partial acquisition.
@@ -44,6 +93,19 @@ drv_venus_transport_start(
 	struct drv_pci_device *device)
 {
 	int error;
+
+	/* Initializes ownership channels before an interrupt or partial teardown can run. */
+	spin_init(&transport->queue_lock, LOCK_RANK_DEVICE, "Venus control queue");
+	waitq_init(&transport->queue_waitq, "Venus control queue");
+	error = mutex_init(&transport->worker_lock, LOCK_RANK_DEVICE, "Venus watchdog start");
+	if (error != 0)
+		return error;
+
+	/* The initialized flag permits partial teardown to use both wait channels. */
+	transport->initialized = 1U;
+	transport->next_fence = 1U;
+	transport->topology_sequence = 1U;
+	transport->topology_overflow = 0U;
 
 	/* Records the parent before any failed step can require rollback. */
 	transport->pci = device;
@@ -91,6 +153,12 @@ drv_venus_transport_start(
 	if (error != 0)
 		return error;
 
+	/* INTx acknowledges only this function's read-to-clear Virtio interrupt status. */
+	transport->stage = "map-isr";
+	error = venus_map_window(transport, &transport->isr, 1U);
+	if (error != 0)
+		return error;
+
 	/* Removes any firmware queue ownership before writing new addresses. */
 	transport->stage = "reset";
 	error = venus_reset(transport);
@@ -112,6 +180,12 @@ drv_venus_transport_start(
 	/* Allocates the persistent control queue and its two DMA directions. */
 	transport->stage = "allocate-control-queue";
 	error = venus_queue_start(transport);
+	if (error != 0)
+		return error;
+
+	/* Establishes a checked PCI interrupt source before enabling device work. */
+	transport->stage = "control-interrupt";
+	error = venus_interrupt_start(transport);
 	if (error != 0)
 		return error;
 
@@ -145,6 +219,11 @@ drv_venus_transport_stop(
 	unsigned index;
 	int error;
 
+	/* No watchdog may inspect queue storage after hardware and mappings retire. */
+	error = venus_worker_stop(transport);
+	if (error != 0)
+		return error;
+
 	/* A mapped common window permits a checked virtual-device reset. */
 	if (transport->common.mapping.address != NULL) {
 		/* Reset completion ends all access to the old queue and backing. */
@@ -153,6 +232,11 @@ drv_venus_transport_stop(
 			return error;
 	}
 
+	/* Checked IRQ removal retains mappings while any dispatch is still in flight. */
+	error = venus_interrupt_stop(transport);
+	if (error != 0)
+		return error;
+
 	/* Removes bus-master permission before any DMA allocation can retire. */
 	if (transport->saved != 0) {
 		error = drv_pci_device_set_bus_master(transport->pci, false);
@@ -160,18 +244,21 @@ drv_venus_transport_stop(
 			return error;
 	}
 
-	/* Releases the response buffer only after device ownership has ended. */
-	if (transport->response.address != NULL) {
-		drv_dma_free_coherent(transport->dma, &transport->response);
-		if (transport->response.address != NULL)
-			return EBUSY;
-	}
+	/* Releases each independently retained DMA direction only after reset and IRQ drain. */
+	for (index = 0U; index < VENUS_REQUEST_SLOTS; index++) {
+		/* Completed reset is the ownership barrier for every writable response. */
+		if (transport->requests[index].response.address != NULL) {
+			drv_dma_free_coherent(transport->dma, &transport->requests[index].response);
+			if (transport->requests[index].response.address != NULL)
+				return EBUSY;
+		}
 
-	/* Releases the request bytes after the same reset barrier. */
-	if (transport->request.address != NULL) {
-		drv_dma_free_coherent(transport->dma, &transport->request);
-		if (transport->request.address != NULL)
-			return EBUSY;
+		/* Request bytes remain pinned even when their original caller timed out. */
+		if (transport->requests[index].request.address != NULL) {
+			drv_dma_free_coherent(transport->dma, &transport->requests[index].request);
+			if (transport->requests[index].request.address != NULL)
+				return EBUSY;
+		}
 	}
 
 	/* The descriptor ring is last because it names the other allocations. */
@@ -200,6 +287,7 @@ drv_venus_transport_stop(
 	/* Invalidates borrowed capability views after their containing BARs retire. */
 	memset(&transport->configuration.mapping, 0, sizeof(transport->configuration.mapping));
 	memset(&transport->notify.mapping, 0, sizeof(transport->notify.mapping));
+	memset(&transport->isr.mapping, 0, sizeof(transport->isr.mapping));
 	memset(&transport->common.mapping, 0, sizeof(transport->common.mapping));
 
 	/* Restores the saved command state only after all allocations retire. */
@@ -228,7 +316,7 @@ drv_venus_transport_stop(
 }
 
 /*
- * Exchanges one serialized control request without promising Vulkan completion.
+ * Exchanges one bounded control request using its independent DMA chain.
  */
 int
 drv_venus_transport_command(
@@ -239,23 +327,9 @@ drv_venus_transport_command(
 	uint32_t capacity,
 	uint32_t *response_bytes)
 {
-	uint8_t *ring;
-	uint8_t *reply;
-	uint64_t started;
-	uint64_t last_observed;
-	uint64_t now;
-	uint64_t notify_byte;
-	uint32_t length;
-	uint32_t descriptor;
-	uint32_t type;
-	unsigned stalled_polls;
-	uint16_t completed;
-	uint16_t published;
+	struct venus_request *request;
+	unsigned long irq;
 	int error;
-
-	/* An uncertain completion keeps persistent DMA quarantined until reset. */
-	if (transport->failed != 0 || transport->enabled == 0)
-		return ENODEV;
 
 	/* Requires complete bounded command and reply storage from the caller. */
 	if (command == NULL || response_bytes == NULL)
@@ -267,136 +341,225 @@ drv_venus_transport_command(
 
 	/* Reply storage must be representable before the queue is touched. */
 	if (capacity > VENUS_RESPONSE_BYTES ||
-	    (capacity != 0 && response == NULL))
+	    (capacity != 0U && response == NULL))
 		return EINVAL;
 
-	/* Copies transient input into storage retained through any timeout. */
-	*response_bytes = 0;
-	memcpy(transport->request.address, command, command_bytes);
-	memset(transport->response.address, 0, VENUS_RESPONSE_BYTES);
-	ring = transport->ring.address;
-	reply = transport->response.address;
-
-	/* Descriptor zero contains device-readable command bytes and chains once. */
-	drv_venus_store64(ring, transport->request.device_address);
-	drv_venus_store32(ring + 8U, command_bytes);
-	drv_venus_store16(ring + 12U, 1U);
-	drv_venus_store16(ring + 14U, 1U);
-
-	/* Descriptor one receives the device-written control response. */
-	drv_venus_store64(ring + 16U, transport->response.device_address);
-	drv_venus_store32(ring + 24U, VENUS_RESPONSE_BYTES);
-	drv_venus_store16(ring + 28U, 2U);
-	drv_venus_store16(ring + 30U, 0U);
-
-	/* Publishes the chain only after all command and descriptor writes. */
-	drv_venus_store16(
-		ring + VENUS_RING_AVAILABLE + 4U + (transport->available % VENUS_QUEUE_SIZE) * 2U,
-		0U);
-	kern_io_write_barrier();
-	transport->available++;
-	published = transport->available;
-#if __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__
-	/* Publishes the aligned index as one indivisible little-endian store. */
-	published = __builtin_bswap16(published);
-#endif
-	__atomic_store_n(
-		(uint16_t *)(ring + VENUS_RING_AVAILABLE + 2U),
-		published,
-		__ATOMIC_RELEASE);
-	kern_io_barrier();
-
-	/* Notifies the selected control queue through its validated doorbell. */
-	notify_byte = (uint64_t)transport->notify_offset * transport->notify_multiplier;
-	kern_mmio_write16((uint8_t *)transport->notify.mapping.address + (size_t)notify_byte, 0U);
-
-	/* Bound elapsed time while allowing asynchronous host teardown to finish. */
-	started = clock_milliseconds(NULL);
-	last_observed = started;
-	now = started;
-	stalled_polls = 0U;
-	while (stalled_polls < VENUS_WAIT_POLLS) {
-		/* Acquires the used index before reading its descriptor and response. */
-		completed = __atomic_load_n(
-			(uint16_t *)(ring + VENUS_RING_USED + 2U),
-			__ATOMIC_ACQUIRE);
-#if __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__
-		/* The used index is published atomically in little-endian wire order. */
-		completed = __builtin_bswap16(completed);
-#endif
-		if (completed != transport->used)
-			break;
-
-		/* A progressing clock makes the elapsed deadline authoritative. */
-		now = clock_milliseconds(NULL);
-		if (now != last_observed) {
-			/* Restart only the fallback that guards a stopped or pre-tick clock. */
-			last_observed = now;
-			stalled_polls = 0U;
-		} else {
-			/* Consecutive unchanged samples remain finite before ticks are active. */
-			stalled_polls++;
-		}
-
-		/* Unsigned elapsed time also refuses a clock that moved behind its start. */
-		if (now - started >= VENUS_WAIT_MILLISECONDS)
-			break;
-
-		/* Prevents a polling load from being folded into a cached result. */
-		kern_compiler_barrier();
-	}
-
-	/* A missing completion prohibits reuse or release of queue memory. */
-	if (completed == transport->used) {
-		transport->failed = 1;
-		type = drv_venus_load32(transport->request.address);
-		kern_logf(
-			"venus: control queue timeout command=%x elapsed=%llu ms stalled_polls=%u; DMA retained for reset\n",
-			type,
-			(unsigned long long)(now - started),
-			stalled_polls);
-		return ETIMEDOUT;
-	}
-
-	/* Only the single submitted chain may have completed on this queue. */
-	if ((uint16_t)(completed - transport->used) != 1U) {
-		transport->failed = 1;
-		return EIO;
-	}
-
-	/* Reads device-owned response metadata after its completion publication. */
-	kern_io_read_barrier();
-	descriptor = drv_venus_load32(
-		ring + VENUS_RING_USED + 4U + (transport->used % VENUS_QUEUE_SIZE) * 8U);
-	length = drv_venus_load32(
-		ring + VENUS_RING_USED + 8U + (transport->used % VENUS_QUEUE_SIZE) * 8U);
-	transport->used = completed;
-
-	/* Rejects malformed DMA lengths before reading response bytes. */
-	if (descriptor != 0U ||
-	    length < VENUS_HEADER_BYTES ||
-	    length > VENUS_RESPONSE_BYTES) {
-		transport->failed = 1;
-		return EIO;
-	}
-
-	/* Converts protocol errors without confusing them with transport timeout. */
-	type = drv_venus_load32(reply);
-	error = venus_response_error(type);
+	/* Posts a stable DMA copy without retaining transient caller storage. */
+	*response_bytes = 0U;
+	error = venus_request_post(transport, command, command_bytes, 0U, NULL, &request);
 	if (error != 0)
 		return error;
 
-	/* Reports truncation without copying beyond the caller's reply array. */
-	*response_bytes = length;
-	if (length > capacity)
-		return EMSGSIZE;
+	/* Runtime completion sleeps on IRQ state; only early idle-thread discovery polls. */
+	error = venus_request_wait(transport, request);
+	if (error != 0)
+		return error;
 
-	/* Returns only bytes covered by the completed writable descriptor. */
-	if (length != 0)
-		memcpy(response, reply, length);
+	/* Copies only the validated completed response before releasing its slot. */
+	irq = spin_lock_irqsave(&transport->queue_lock);
 
-	/* Succeeded: QEMU consumed the command, not necessarily the Vulkan work. */
+	error = request->error;
+	*response_bytes = request->bytes;
+	if (error == 0 && request->bytes > capacity)
+		error = EMSGSIZE;
+
+	/* Device completion makes these exact bytes immutable for the original caller. */
+	if (error == 0 && request->bytes != 0U)
+		memcpy(response, request->response.address, request->bytes);
+
+	/* Checked used completion permits reuse; uncertain DMA stays quarantined. */
+	if (request->state == VENUS_SLOT_COMPLETE)
+		request->state = VENUS_SLOT_FREE;
+
+	/* Slot availability is independent of a particular session's completion ledger. */
+	waitq_wake_all(&transport->queue_waitq);
+
+	spin_unlock_irqrestore(&transport->queue_lock, irq);
+
+	/* Reports a protocol refusal or response truncation without inventing GPU success. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: QEMU acknowledged this control operation, not arbitrary Vulkan work. */
 	return 0;
+}
+
+/*
+ * Submits an independent Venus stream with an optional context-timeline marker.
+ */
+int
+drv_venus_transport_submit(
+	struct venus_transport *transport,
+	uint32_t context,
+	const void *command,
+	uint32_t bytes,
+	uint32_t flags,
+	uint32_t timeline,
+	struct drv_gpu_completion *completion)
+{
+	struct venus_request *request;
+	uint8_t *packet;
+	unsigned queue_marker;
+	int error;
+
+	/* Only accepted asynchronous work may retain a common completion obligation. */
+	if (completion == NULL || bytes > GPU_COMMAND_MAX)
+		return EINVAL;
+
+	/* The watchdog handles a missing IRQ even if userspace never waits explicitly. */
+	error = venus_worker_start(transport);
+	if (error != 0)
+		return error;
+
+	/* Builds the protocol wrapper before entering the short DMA publication lock. */
+	packet = kern_calloc(1U, (size_t)bytes + 32U);
+	if (packet == NULL)
+		return ENOMEM;
+
+	/* The independent open chooses the renderer namespace, never userspace header bytes. */
+	drv_venus_header(packet, 0x0207U, context);
+	drv_venus_store32(packet + 24U, bytes);
+	if (bytes != 0U)
+		memcpy(packet + 32U, command, bytes);
+
+	/* Context fencing requires both protocol flags; FENCE alone names the legacy GL path. */
+	queue_marker = 0U;
+	if ((flags & GPU_COMMAND_CONTEXT_FENCE) != 0U) {
+		drv_venus_store32(packet + 4U, 3U);
+		packet[20U] = (uint8_t)timeline;
+
+		/* Queue markers cannot consume the descriptor reserved for future decoder work. */
+		if (timeline != 0U)
+			queue_marker = 1U;
+	}
+
+	/* A successful post owns its own copy before the wrapper is freed. */
+	error = venus_request_post(
+		transport,
+		packet,
+		bytes + 32U,
+		queue_marker,
+		completion,
+		&request);
+	kern_free(packet);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the callback will publish the selected transport boundary exactly once. */
+	return 0;
+}
+
+/*
+ * Ends every accepted callback before an independent renderer session closes.
+ */
+void
+drv_venus_transport_drain(
+	struct venus_transport *transport,
+	uint32_t context)
+{
+	struct venus_request *request;
+	uint64_t deadline;
+	unsigned index;
+	unsigned pending;
+	unsigned long irq;
+	int error;
+
+	/* Final close may wait for IRQ callbacks but never frees host-owned DMA early. */
+	deadline = sched_ticks() + KERN_CLOCK_HZ * 10U;
+	irq = spin_lock_irqsave(&transport->queue_lock);
+
+	while (1) {
+		/* Pending includes a callback currently publishing outside the transport lock. */
+		pending = 0U;
+		for (index = 0U; index < VENUS_REQUEST_SLOTS; index++) {
+			request = &transport->requests[index];
+			if (request->context == context && request->completion != NULL)
+				pending++;
+		}
+
+		/* No IRQ or worker retains this session's embedded completion records. */
+		if (pending == 0U)
+			break;
+
+		/* The caller owns no controller lock while draining asynchronous requests. */
+		error = venus_queue_wait_locked(transport, deadline, 0U, &irq);
+		if (error == ETIMEDOUT) {
+			spin_unlock_irqrestore(&transport->queue_lock, irq);
+			drv_venus_transport_fail(transport, ETIMEDOUT);
+			irq = spin_lock_irqsave(&transport->queue_lock);
+		}
+	}
+
+	spin_unlock_irqrestore(&transport->queue_lock, irq);
+
+	/* Succeeded: final close can retire common and backend session storage. */
+	return;
+}
+
+/*
+ * Quarantines uncertain DMA and publishes terminal failure without early reuse.
+ */
+void
+drv_venus_transport_fail(
+	struct venus_transport *transport,
+	int error)
+{
+	unsigned failed;
+	struct venus_request *request;
+	unsigned index;
+	unsigned first;
+	unsigned callbacks;
+	unsigned long irq;
+
+	/* An uninitialized attach has no queue or callback state to publish. */
+	if (transport->initialized == 0U) {
+		atomic_raw_store_release(&transport->failed, 1U);
+		return;
+	}
+
+	/* Failure prevents new publication before waking any existing request owner. */
+	first = 0U;
+	callbacks = 0U;
+	irq = spin_lock_irqsave(&transport->queue_lock);
+
+	failed = atomic_raw_load_acquire(&transport->failed);
+	if (failed == 0U)
+		first = 1U;
+
+	/* Every posted chain remains unavailable until checked reset ends device ownership. */
+	atomic_raw_store_release(&transport->failed, 1U);
+	for (index = 0U; index < VENUS_REQUEST_SLOTS; index++) {
+		request = &transport->requests[index];
+		if (request->completion != NULL)
+			callbacks++;
+
+		/* Only device-owned chains require uncertain-DMA quarantine. */
+		if (request->state != VENUS_SLOT_POSTED)
+			continue;
+
+		/* A terminal user result does not authorize releasing possibly active DMA. */
+		request->state = VENUS_SLOT_QUARANTINED;
+		request->error = error;
+	}
+
+	/* Every waiter rechecks failure or its exact stable request state. */
+	waitq_wake_all(&transport->queue_waitq);
+
+	spin_unlock_irqrestore(&transport->queue_lock, irq);
+
+	/* Common notifications acquire their own short lock outside the queue lock. */
+	if (callbacks != 0U)
+		drv_gpu_report_error(transport->gpu, error);
+
+	/* Callback pointers retain their sessions and GPU wrapper through the preceding fault report. */
+	venus_queue_notify(transport);
+
+	/* A single diagnostic identifies retained DMA without repeatedly logging observers. */
+	if (first != 0U)
+		kern_logf("venus: transport failed error=%d; DMA retained for checked reset\n", error);
+
+	/* Succeeded: user observation is terminal while hardware ownership remains safe. */
+	return;
 }
 
 /*
@@ -633,6 +796,9 @@ venus_capability(
 	case 2U:
 		window = &transport->notify;
 		break;
+	case 3U:
+		window = &transport->isr;
+		break;
 	case 4U:
 		window = &transport->configuration;
 		break;
@@ -864,7 +1030,7 @@ venus_reset(
 
 	/* Failed reset leaves queue memory and backend resources quarantined. */
 	if (status != 0U) {
-		transport->failed = 1;
+		atomic_raw_store_release(&transport->failed, 1U);
 		return EBUSY;
 	}
 
@@ -938,6 +1104,7 @@ venus_queue_start(
 	uint64_t address;
 	uint64_t notify_byte;
 	uint16_t maximum;
+	unsigned index;
 	int error;
 
 	/* Selects control queue zero and checks its advertised descriptor capacity. */
@@ -952,28 +1119,31 @@ venus_queue_start(
 	if (error != 0)
 		return error;
 
-	/* Zeroes initial indices and requests polling without queue interrupts. */
+	/* Zeroes initial indices and enables normal used-ring interrupt notification. */
 	ring = transport->ring.address;
 	memset(ring, 0, 4096U);
-	drv_venus_store16(ring + VENUS_RING_AVAILABLE, 1U);
+	drv_venus_store16(ring + VENUS_RING_AVAILABLE, 0U);
 
-	/* The request survives host consumption delays and any finite timeout. */
-	error = drv_dma_alloc_coherent(
-		transport->dma,
-		VENUS_COMMAND_BYTES,
-		4096U,
-		&transport->request);
-	if (error != 0)
-		return error;
+	/* Every descriptor pair owns independent persistent command and reply bytes. */
+	for (index = 0U; index < VENUS_REQUEST_SLOTS; index++) {
+		/* Request storage remains retained if a later allocation or host operation fails. */
+		error = drv_dma_alloc_coherent(
+			transport->dma,
+			VENUS_COMMAND_BYTES,
+			4096U,
+			&transport->requests[index].request);
+		if (error != 0)
+			return error;
 
-	/* The response remains owned until reset or matching used-ring completion. */
-	error = drv_dma_alloc_coherent(
-		transport->dma,
-		VENUS_RESPONSE_BYTES,
-		4096U,
-		&transport->response);
-	if (error != 0)
-		return error;
+		/* Response allocation is checked before constructing the next independent pair. */
+		error = drv_dma_alloc_coherent(
+			transport->dma,
+			VENUS_RESPONSE_BYTES,
+			4096U,
+			&transport->requests[index].response);
+		if (error != 0)
+			return error;
+	}
 
 	/* Selects the negotiated queue shape without MSI or event-index features. */
 	kern_mmio_write16(common + 24U, VENUS_QUEUE_SIZE);
@@ -1086,4 +1256,758 @@ venus_response_error(
 
 	/* Succeeded: the response belongs to the defined success range. */
 	return 0;
+}
+
+/* Posts one persistent two-descriptor chain while preserving a control-only reserve. */
+static int
+venus_request_post(
+	struct venus_transport *transport,
+	const void *command,
+	uint32_t bytes,
+	unsigned queue_marker,
+	struct drv_gpu_completion *completion,
+	struct venus_request **result)
+{
+	unsigned failed;
+	struct venus_request *request;
+	uint8_t *ring;
+	uint8_t *descriptor;
+	uint64_t started;
+	uint64_t deadline;
+	uint64_t notify_byte;
+	unsigned index;
+	unsigned limit;
+	unsigned long irq;
+	uint16_t head;
+	uint16_t published;
+	int expired;
+	int error;
+
+	/* The reserved final chain can always carry the command that unblocks queued GPU work. */
+	*result = NULL;
+	limit = VENUS_REQUEST_SLOTS;
+	if (queue_marker != 0U)
+		limit--;
+
+	/* Bounds queue-space admission independently from later device execution. */
+	started = clock_milliseconds(NULL);
+	deadline = sched_ticks() + KERN_CLOCK_HZ * 10U;
+	irq = spin_lock_irqsave(&transport->queue_lock);
+
+	while (1) {
+		/* Failed or stopping hardware cannot acquire fresh command ownership. */
+		failed = atomic_raw_load_acquire(&transport->failed);
+		if (failed != 0U || transport->enabled == 0U || transport->stopping != 0U) {
+			spin_unlock_irqrestore(&transport->queue_lock, irq);
+			return ENODEV;
+		}
+
+		/* Reserves only a chain whose prior callback and DMA ownership have ended. */
+		request = NULL;
+		for (index = 0U; index < limit; index++) {
+			if (transport->requests[index].state == VENUS_SLOT_FREE) {
+				request = &transport->requests[index];
+				break;
+			}
+		}
+
+		/* Found storage remains protected until the complete descriptor chain is published. */
+		if (request != NULL)
+			break;
+
+		/* Optional GPU notification must never block future work that makes its fence runnable. */
+		if (queue_marker != 0U) {
+			spin_unlock_irqrestore(&transport->queue_lock, irq);
+			return EAGAIN;
+		}
+
+		/* Ordinary control traffic sleeps until an IRQ releases one of the bounded slots. */
+		error = venus_queue_wait_locked(transport, deadline, WAITQ_INTERRUPTIBLE, &irq);
+		if (error != 0 && error != EAGAIN) {
+			spin_unlock_irqrestore(&transport->queue_lock, irq);
+			return error;
+		}
+
+		/* The idle-thread fallback also observes the finite queue-space deadline. */
+		expired = venus_wait_expired(started);
+		if (expired != 0) {
+			spin_unlock_irqrestore(&transport->queue_lock, irq);
+			return ETIMEDOUT;
+		}
+	}
+
+	/* Fenced identities never wrap into a still-observable renderer timeline value. */
+	request->flags = drv_venus_load32((const uint8_t *)command + 4U);
+	request->fence = drv_venus_load64((const uint8_t *)command + 8U);
+	if ((request->flags & 1U) != 0U && request->fence == 0U) {
+		/* Context-marker allocation owns a global transport sequence until checked reset. */
+		if (transport->next_fence == 0U) {
+			spin_unlock_irqrestore(&transport->queue_lock, irq);
+			return EOVERFLOW;
+		}
+
+		/* Zero after the last allocation permanently refuses further marker reuse. */
+		request->fence = transport->next_fence++;
+	}
+
+	/* Copies bounded bytes while the queue lock excludes descriptor publication races. */
+	memcpy(request->request.address, command, bytes);
+	memset(request->response.address, 0, VENUS_RESPONSE_BYTES);
+	drv_venus_store64((uint8_t *)request->request.address + 8U, request->fence);
+	request->context = drv_venus_load32((const uint8_t *)command + 16U);
+	request->completion = completion;
+	request->notifying = 0U;
+	request->bytes = 0U;
+	request->error = 0;
+	request->started_ms = clock_milliseconds(NULL);
+	request->state = VENUS_SLOT_POSTED;
+
+	/* Each slot owns an even readable descriptor followed by one writable response. */
+	ring = transport->ring.address;
+	head = (uint16_t)(index * 2U);
+	descriptor = ring + head * 16U;
+	drv_venus_store64(descriptor, request->request.device_address);
+	drv_venus_store32(descriptor + 8U, bytes);
+	drv_venus_store16(descriptor + 12U, 1U);
+	drv_venus_store16(descriptor + 14U, head + 1U);
+
+	/* The response descriptor is not reused before its matching used entry is consumed. */
+	descriptor += 16U;
+	drv_venus_store64(descriptor, request->response.device_address);
+	drv_venus_store32(descriptor + 8U, VENUS_RESPONSE_BYTES);
+	drv_venus_store16(descriptor + 12U, 2U);
+	drv_venus_store16(descriptor + 14U, 0U);
+
+	/* Publishes the chain only after all request and descriptor stores are visible. */
+	drv_venus_store16(
+		ring + VENUS_RING_AVAILABLE + 4U + (transport->available % VENUS_QUEUE_SIZE) * 2U,
+		head);
+	kern_io_write_barrier();
+	transport->available++;
+	published = transport->available;
+#if __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__
+	/* The aligned avail index is published once in little-endian wire order. */
+	published = __builtin_bswap16(published);
+#endif
+	__atomic_store_n((uint16_t *)(ring + VENUS_RING_AVAILABLE + 2U), published, __ATOMIC_RELEASE);
+	kern_io_barrier();
+
+	/* Rings the validated control doorbell after transferring DMA ownership to the device. */
+	notify_byte = (uint64_t)transport->notify_offset * transport->notify_multiplier;
+	kern_mmio_write16((uint8_t *)transport->notify.mapping.address + (size_t)notify_byte, 0U);
+	transport->submitted_total++;
+	*result = request;
+	waitq_wake_all(&transport->queue_waitq);
+
+	spin_unlock_irqrestore(&transport->queue_lock, irq);
+
+	/* Succeeded: only this request's matching used completion may release its DMA chain. */
+	return 0;
+}
+
+/* Waits for a synchronous request without spinning in an ordinary runtime thread. */
+static int
+venus_request_wait(
+	struct venus_transport *transport,
+	struct venus_request *request)
+{
+	uint64_t deadline;
+	uint64_t last;
+	uint64_t now;
+	unsigned stalled;
+	unsigned long irq;
+	int error;
+
+	/* A finite hardware deadline also bounds synchronous context/resource teardown. */
+	deadline = sched_ticks() + KERN_CLOCK_HZ * 10U;
+	last = clock_milliseconds(NULL);
+	stalled = 0U;
+	error = 0;
+	irq = spin_lock_irqsave(&transport->queue_lock);
+
+	while (request->state == VENUS_SLOT_POSTED) {
+		/* The normal path sleeps; the boot idle fallback drains without trapping IRQs disabled. */
+		error = venus_queue_wait_locked(transport, deadline, 0U, &irq);
+		if (error != 0 && error != EAGAIN)
+			break;
+
+		/* A stopped early clock cannot turn capability discovery into an unbounded spin. */
+		now = clock_milliseconds(NULL);
+		if (now == last) {
+			stalled++;
+		} else {
+			last = now;
+			stalled = 0U;
+		}
+
+		/* Deadline expiry never reuses a chain still owned by the device. */
+		if (now - request->started_ms >= VENUS_WAIT_MILLISECONDS || stalled >= VENUS_WAIT_POLLS) {
+			error = ETIMEDOUT;
+			break;
+		}
+	}
+
+	/* A callback-free synchronous slot may have been failed by the shared watchdog. */
+	if (request->state == VENUS_SLOT_QUARANTINED)
+		error = request->error;
+
+	/* A registration race that already completed the command needs no further sleep. */
+	if (error == EAGAIN && request->state == VENUS_SLOT_COMPLETE)
+		error = 0;
+
+	spin_unlock_irqrestore(&transport->queue_lock, irq);
+
+	/* Every missing response closes submission and wakes all other retained requests. */
+	if (error != 0) {
+		drv_venus_transport_fail(transport, error);
+		return error;
+	}
+
+	/* Succeeded: the matching response remains owned by the synchronous caller. */
+	return 0;
+}
+
+/* Sleeps on queue state while keeping the early idle-thread discovery path finite. */
+static int
+venus_queue_wait_locked(
+	struct venus_transport *transport,
+	uint64_t deadline,
+	unsigned flags,
+	unsigned long *irq)
+{
+	struct thread *thread;
+	uint64_t observed;
+	unsigned collected;
+	int error;
+
+	/* Ordinary threads register their sleep atomically with the completion condition. */
+	thread = thread_current();
+	if (thread != NULL && (thread->flags & THREAD_FLAG_IDLE) == 0U) {
+		observed = waitq_sequence(&transport->queue_waitq);
+		transport->sleep_total++;
+		error = waitq_sleep(&transport->queue_waitq, &transport->queue_lock, observed, deadline, flags);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the caller rechecks its own condition after this wakeup. */
+		return 0;
+	}
+
+	/* Idle discovery cannot sleep with the only runnable CPU retaining disabled interrupts. */
+	spin_unlock_irqrestore(&transport->queue_lock, *irq);
+	collected = venus_queue_collect(transport);
+	if (collected == UINT_MAX)
+		drv_venus_transport_fail(transport, EIO);
+
+	/* Completion publication happens outside the transport lock even before normal scheduling. */
+	venus_queue_notify(transport);
+	kern_compiler_barrier();
+	*irq = spin_lock_irqsave(&transport->queue_lock);
+
+	/* Succeeded: the caller's own clock and stalled-clock bounds control this boot-only retry. */
+	return 0;
+}
+
+/* Consumes bounded used entries while matching independent descriptor ownership. */
+static unsigned
+venus_queue_collect(
+	struct venus_transport *transport)
+{
+	unsigned failed;
+	struct venus_request *request;
+	uint8_t *ring;
+	uint16_t published;
+	uint32_t head;
+	uint32_t bytes;
+	unsigned count;
+	unsigned long irq;
+	int error;
+
+	/* Queue storage remains mapped until checked IRQ removal has drained every handler. */
+	count = 0U;
+	irq = spin_lock_irqsave(&transport->queue_lock);
+
+	failed = atomic_raw_load_acquire(&transport->failed);
+	if (transport->ring.address == NULL || failed != 0U) {
+		spin_unlock_irqrestore(&transport->queue_lock, irq);
+		return 0U;
+	}
+
+	/* Acquire publication before reading any response bytes written by the device. */
+	ring = transport->ring.address;
+	published = __atomic_load_n((uint16_t *)(ring + VENUS_RING_USED + 2U), __ATOMIC_ACQUIRE);
+#if __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__
+	/* The aligned used index is one little-endian device publication. */
+	published = __builtin_bswap16(published);
+#endif
+
+	/* A device cannot return more simultaneously owned chains than the queue contains. */
+	if ((uint16_t)(published - transport->used) > VENUS_REQUEST_SLOTS) {
+		spin_unlock_irqrestore(&transport->queue_lock, irq);
+		return UINT_MAX;
+	}
+
+	/* Out-of-order contexts are legal; each used head selects its exact retained slot. */
+	while (transport->used != published) {
+		kern_io_read_barrier();
+		head = drv_venus_load32(ring + VENUS_RING_USED + 4U + (transport->used % VENUS_QUEUE_SIZE) * 8U);
+		bytes = drv_venus_load32(ring + VENUS_RING_USED + 8U + (transport->used % VENUS_QUEUE_SIZE) * 8U);
+
+		/* Odd, out-of-range and already retired descriptor heads cannot release another request. */
+		if (head >= VENUS_QUEUE_SIZE || (head & 1U) != 0U) {
+			spin_unlock_irqrestore(&transport->queue_lock, irq);
+			return UINT_MAX;
+		}
+
+		/* Only a currently posted chain authorizes consumption of its response. */
+		request = &transport->requests[head / 2U];
+		if (request->state != VENUS_SLOT_POSTED) {
+			spin_unlock_irqrestore(&transport->queue_lock, irq);
+			return UINT_MAX;
+		}
+
+		/* Bounds and fence identity are checked before any caller sees completed bytes. */
+		error = venus_request_validate(request, bytes);
+		request->bytes = bytes;
+		request->error = error;
+		request->state = VENUS_SLOT_COMPLETE;
+		transport->used++;
+		transport->completed_total++;
+		count++;
+
+		/* Malformed protocol completion invalidates all still-posted ownership. */
+		if (error == EIO) {
+			spin_unlock_irqrestore(&transport->queue_lock, irq);
+			return UINT_MAX;
+		}
+	}
+
+	/* All waiters examine their own request, so one IRQ may retire several contexts. */
+	if (count != 0U)
+		waitq_wake_all(&transport->queue_waitq);
+
+	spin_unlock_irqrestore(&transport->queue_lock, irq);
+
+	/* Succeeded: the count describes exact chains consumed by this bounded drain. */
+	return count;
+}
+
+/* Publishes asynchronous results while retaining callback storage through final-close drain. */
+static void
+venus_queue_notify(
+	struct venus_transport *transport)
+{
+	struct venus_request *request;
+	struct drv_gpu_completion *completion;
+	unsigned index;
+	unsigned long irq;
+	int error;
+
+	/* Each independent chain can owe at most one common terminal publication. */
+	for (index = 0U; index < VENUS_REQUEST_SLOTS; index++) {
+		irq = spin_lock_irqsave(&transport->queue_lock);
+
+		request = &transport->requests[index];
+		if (request->completion == NULL ||
+		    request->state == VENUS_SLOT_POSTED ||
+		    request->notifying != 0U) {
+			spin_unlock_irqrestore(&transport->queue_lock, irq);
+			continue;
+		}
+
+		/* The pointer remains in the slot while the callback executes outside this lock. */
+		request->notifying = 1U;
+		completion = request->completion;
+		error = request->error;
+
+		spin_unlock_irqrestore(&transport->queue_lock, irq);
+
+		/* Common publication may wake close, which still sees the retained callback pointer. */
+		drv_gpu_complete(completion, error);
+
+		/* Matching used completion permits reuse only after callback publication has returned. */
+		irq = spin_lock_irqsave(&transport->queue_lock);
+
+		request->completion = NULL;
+		request->notifying = 0U;
+		if (request->state == VENUS_SLOT_COMPLETE)
+			request->state = VENUS_SLOT_FREE;
+
+		/* Quarantined DMA remains unavailable even though userspace has a terminal result. */
+		waitq_wake_all(&transport->queue_waitq);
+
+		spin_unlock_irqrestore(&transport->queue_lock, irq);
+	}
+
+	/* Succeeded: all claimable terminal callbacks have been published exactly once. */
+	return;
+}
+
+/* Validates the complete response and only the fence fields QEMU actually echoes. */
+static int
+venus_request_validate(
+	struct venus_request *request,
+	uint32_t bytes)
+{
+	uint8_t *response;
+	uint32_t flags;
+	uint32_t context;
+	uint32_t type;
+	uint64_t fence;
+	int error;
+
+	/* Device-controlled lengths cannot authorize a read beyond the response allocation. */
+	if (bytes < VENUS_HEADER_BYTES || bytes > VENUS_RESPONSE_BYTES)
+		return EIO;
+
+	/* QEMU echoes FENCE, fence_id and ctx_id, but not INFO_RING_IDX or ring_idx. */
+	response = request->response.address;
+	if ((request->flags & 1U) != 0U) {
+		flags = drv_venus_load32(response + 4U);
+		fence = drv_venus_load64(response + 8U);
+		context = drv_venus_load32(response + 16U);
+		if ((flags & 1U) == 0U || fence != request->fence || context != request->context)
+			return EIO;
+	}
+
+	/* A defined protocol refusal remains distinct from malformed completion or timeout. */
+	type = drv_venus_load32(response);
+	error = venus_response_error(type);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the complete reply belongs to this exact submitted control request. */
+	return 0;
+}
+
+/* Checks the finite elapsed bound without treating a backward clock as fresh time. */
+static int
+venus_wait_expired(
+	uint64_t started)
+{
+	uint64_t now;
+
+	/* Unsigned elapsed arithmetic also refuses a clock that moved behind its start. */
+	now = clock_milliseconds(NULL);
+	if (now - started >= VENUS_WAIT_MILLISECONDS)
+		return 1;
+
+	/* Succeeded: this request remains within its finite transport deadline. */
+	return 0;
+}
+
+/* Establishes one modern MSI-X vector or the device's shared INTx source. */
+static int
+venus_interrupt_start(
+	struct venus_transport *transport)
+{
+	uint8_t *common;
+	uint16_t vector;
+	unsigned count;
+	int error;
+
+	/* PCI owns capability selection, platform routing and interrupt resource allocation. */
+	count = 0U;
+	error = drv_pci_device_allocate_irqs(
+		transport->pci,
+		DRV_PCI_IRQ_ALLOW_MSIX | DRV_PCI_IRQ_ALLOW_INTX,
+		1U,
+		1U,
+		&transport->interrupt,
+		&count);
+	if (error != 0)
+		return error;
+
+	/* A partial allocation remains recorded for checked attach rollback. */
+	transport->interrupt_count = count;
+	if (count != 1U)
+		return EIO;
+
+	/* Registration precedes DRIVER_OK and any device-owned descriptor processing. */
+	error = drv_pci_device_establish_irq(
+		transport->pci,
+		&transport->interrupt,
+		venus_interrupt,
+		transport,
+		"venus",
+		&transport->interrupt_cookie);
+	if (error != 0)
+		return error;
+
+	/* MSI-X table indices are distinct from CPU interrupt vectors. */
+	common = transport->common.mapping.address;
+	if (transport->interrupt.type == DRV_PCI_IRQ_MSIX) {
+		vector = (uint16_t)transport->interrupt.index;
+		kern_mmio_write16(common + 16U, vector);
+		kern_mmio_write16(common + 22U, 0U);
+		kern_mmio_write16(common + 26U, vector);
+
+		/* Readback refuses a device that did not accept the selected config vector. */
+		vector = kern_mmio_read16(common + 16U);
+		if (vector == 0xffffU)
+			return EIO;
+
+		/* The control queue must independently accept its shared MSI-X table entry. */
+		vector = kern_mmio_read16(common + 26U);
+		if (vector == 0xffffU)
+			return EIO;
+	}
+
+	/* The selected source is part of runtime evidence, not a claim of Vulkan completion. */
+	kern_logf("venus: control IRQ type=%u vector=%u slots=%u\n",
+		(unsigned)transport->interrupt.type,
+		transport->interrupt.vector,
+		VENUS_REQUEST_SLOTS);
+
+	/* Succeeded: the enabled queue may now notify this retained transport owner. */
+	return 0;
+}
+
+/* Removes IRQ dispatch before releasing any transport register or DMA mapping. */
+static int
+venus_interrupt_stop(
+	struct venus_transport *transport)
+{
+	int error;
+
+	/* Checked removal leaves the cookie and all handler storage intact while dispatch drains. */
+	if (transport->interrupt_cookie != NULL) {
+		error = drv_pci_device_disestablish_irq_checked(transport->pci, transport->interrupt_cookie);
+		if (error != 0)
+			return error;
+
+		/* A null cookie now proves no interrupt callback can access the transport. */
+		transport->interrupt_cookie = NULL;
+	}
+
+	/* PCI vector ownership retires only after handler detachment succeeded. */
+	if (transport->interrupt_count != 0U) {
+		drv_pci_device_free_irqs(transport->pci, &transport->interrupt, transport->interrupt_count);
+		transport->interrupt_count = 0U;
+	}
+
+	/* Succeeded: later teardown can safely release the handler's borrowed mappings. */
+	return 0;
+}
+
+/* Acknowledges this Virtio source and publishes bounded control completions. */
+static int
+venus_interrupt(
+	void *argument)
+{
+	struct venus_transport *transport;
+	unsigned collected;
+	unsigned long irq;
+	uint8_t status;
+
+	/* INTx ownership is decided only by this function's read-to-clear status byte. */
+	transport = argument;
+	status = kern_mmio_read8(transport->isr.mapping.address);
+	if (transport->interrupt.type == DRV_PCI_IRQ_INTX && status == 0U)
+		return 0;
+
+	/* Counts actual driver IRQ dispatches independently from command submissions. */
+	irq = spin_lock_irqsave(&transport->queue_lock);
+
+	transport->interrupt_total++;
+
+	spin_unlock_irqrestore(&transport->queue_lock, irq);
+
+	/* Config IRQs and a shared MSI-X vector expose display invalidation independently of work. */
+	if ((status & 2U) != 0U) {
+		drv_venus_transport_display_changed(transport);
+	} else if (transport->interrupt.type == DRV_PCI_IRQ_MSIX) {
+		/* MSI-X need not populate ISR bits, so sample its still-latched device event. */
+		status = (uint8_t)kern_mmio_read32(transport->configuration.mapping.address);
+		if ((status & 1U) != 0U)
+			drv_venus_transport_display_changed(transport);
+	}
+
+	/* A single interrupt may retire several independent contexts in any used-ring order. */
+	collected = venus_queue_collect(transport);
+	if (collected == UINT_MAX)
+		drv_venus_transport_fail(transport, EIO);
+
+	/* Completion callbacks run outside the transport lock and never acquire its controller mutex. */
+	venus_queue_notify(transport);
+
+	/* Succeeded: this MSI-X vector or asserted INTx source belongs to the device. */
+	return 1;
+}
+
+/* Starts one deadline worker when the first runtime asynchronous command is submitted. */
+static int
+venus_worker_start(
+	struct venus_transport *transport)
+{
+	struct thread *worker;
+	int error;
+
+	/* A separate start gate cannot block controller commands during a GPU fence wait. */
+	mutex_lock(&transport->worker_lock);
+
+	if (transport->worker != NULL) {
+		mutex_unlock(&transport->worker_lock);
+		return 0;
+	}
+
+	/* A teardown request cannot create a new worker after its stop barrier. */
+	if (transport->stopping != 0U) {
+		mutex_unlock(&transport->worker_lock);
+		return ENODEV;
+	}
+
+	/* The worker sleeps on deadline changes rather than polling device memory. */
+	error = kthread_create(venus_worker, transport, SCHED_PRIORITY_DEFAULT, &worker);
+	if (error != 0) {
+		mutex_unlock(&transport->worker_lock);
+		return error;
+	}
+
+	/* Publication precedes scheduling so final teardown can always find its owner. */
+	transport->worker = worker;
+	thread_start(worker);
+
+	mutex_unlock(&transport->worker_lock);
+
+	/* Succeeded: accepted async commands have a bounded failure owner even without userspace waits. */
+	return 0;
+}
+
+/* Stops and reaps the watchdog before reset teardown can release its request array. */
+static int
+venus_worker_stop(
+	struct venus_transport *transport)
+{
+	struct thread *worker;
+	uint64_t deadline;
+	uint64_t now;
+	unsigned long irq;
+	int error;
+
+	/* An early attach failure may precede initialization of the wait channels. */
+	if (transport->initialized == 0U)
+		return 0;
+
+	/* Stops the worker and wakes an otherwise indefinite empty-queue sleep. */
+	mutex_lock(&transport->worker_lock);
+
+	irq = spin_lock_irqsave(&transport->queue_lock);
+
+	transport->stopping = 1U;
+	worker = transport->worker;
+	waitq_wake_all(&transport->queue_waitq);
+
+	spin_unlock_irqrestore(&transport->queue_lock, irq);
+
+	/* Boot-only use may never have created an asynchronous deadline worker. */
+	if (worker == NULL) {
+		mutex_unlock(&transport->worker_lock);
+		return 0;
+	}
+
+	/* The retained thread must exit before mappings and locks can be destroyed or reset. */
+	now = sched_ticks();
+	if (now > UINT64_MAX - KERN_CLOCK_HZ * 15U) {
+		mutex_unlock(&transport->worker_lock);
+		return EOVERFLOW;
+	}
+
+	/* A successful thread_wait consumes the creator's retained thread reference. */
+	deadline = now + KERN_CLOCK_HZ * 15U;
+	while (1) {
+		error = thread_wait(worker, NULL);
+		if (error == 0)
+			break;
+
+		/* Only a still-running thread permits a bounded reap retry. */
+		if (error != EBUSY) {
+			mutex_unlock(&transport->worker_lock);
+			return error;
+		}
+
+		/* Retains worker and mappings rather than freeing a stalled callback owner. */
+		now = sched_ticks();
+		if (now >= deadline) {
+			mutex_unlock(&transport->worker_lock);
+			return ETIMEDOUT;
+		}
+
+		/* Lets the woken worker finish its final condition check and exit. */
+		sched_sleep(now + 1U);
+	}
+
+	/* Null now proves the thread no longer retains transport storage. */
+	transport->worker = NULL;
+
+	mutex_unlock(&transport->worker_lock);
+
+	/* Succeeded: no watchdog callback can inspect the transport during teardown. */
+	return 0;
+}
+
+/* Sleeps until a pending command's deadline or a queue state transition. */
+static void
+venus_worker(
+	void *argument)
+{
+	struct venus_transport *transport;
+	struct venus_request *request;
+	uint64_t now;
+	uint64_t remaining;
+	uint64_t shortest;
+	uint64_t deadline;
+	uint64_t observed;
+	unsigned index;
+	unsigned expired;
+	unsigned long irq;
+
+	/* The PCI transport explicitly stops and reaps this worker before releasing its state. */
+	transport = argument;
+	irq = spin_lock_irqsave(&transport->queue_lock);
+
+	while (transport->stopping == 0U) {
+		/* Finds only device-owned requests; completed records no longer need a hardware deadline. */
+		now = clock_milliseconds(NULL);
+		shortest = UINT64_MAX;
+		expired = 0U;
+		for (index = 0U; index < VENUS_REQUEST_SLOTS; index++) {
+			request = &transport->requests[index];
+			if (request->state != VENUS_SLOT_POSTED)
+				continue;
+
+			/* A stalled host cannot retain all GPU waiters beyond the finite transport bound. */
+			if (now - request->started_ms >= VENUS_WAIT_MILLISECONDS) {
+				expired = 1U;
+				break;
+			}
+
+			/* The earliest request owns the next watchdog wakeup. */
+			remaining = VENUS_WAIT_MILLISECONDS - (now - request->started_ms);
+			if (remaining < shortest)
+				shortest = remaining;
+		}
+
+		/* Failure publication can wake common waiters and therefore runs outside the queue lock. */
+		if (expired != 0U) {
+			spin_unlock_irqrestore(&transport->queue_lock, irq);
+			drv_venus_transport_fail(transport, ETIMEDOUT);
+			irq = spin_lock_irqsave(&transport->queue_lock);
+			continue;
+		}
+
+		/* An empty queue sleeps indefinitely until publication or teardown changes its sequence. */
+		deadline = 0U;
+		if (shortest != UINT64_MAX)
+			deadline = sched_ticks() + (shortest * KERN_CLOCK_HZ + 999U) / 1000U;
+
+		/* Lost-wakeup-safe waiting sends no recurring hardware or renderer traffic. */
+		observed = waitq_sequence(&transport->queue_waitq);
+		(void)waitq_sleep(&transport->queue_waitq, &transport->queue_lock, observed, deadline, 0U);
+	}
+
+	spin_unlock_irqrestore(&transport->queue_lock, irq);
+
+	/* Succeeded: the thread trampoline publishes exit for checked teardown to reap. */
+	return;
 }

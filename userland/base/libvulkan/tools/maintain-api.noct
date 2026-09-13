@@ -88,7 +88,7 @@ func main(args) {
     }
     if (coreCount != 137 || wsiCount != 18 || prototypes != 155) { fail("wrong declaration set: " + coreCount + " core and " + wsiCount + " WSI"); }
     var preamble = FileUtil.readText("userland/base/libvulkan/tools/api-preamble.h.in");
-    var output = preamble + "\n" + body + "\n#ifdef __cplusplus\n}\n#endif\n\n#endif\n";
+    var output = preamble + "\n" + body + "\n#include \"vulkan_external.h\"\n\n#ifdef __cplusplus\n}\n#endif\n\n#endif\n";
     FileUtil.writeText(args[1], output);
     print("maintained 137 Vulkan 1.0 core and 18 WSI declarations");
 }

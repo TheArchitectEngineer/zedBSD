@@ -22,6 +22,9 @@
 /* One host caller selects the process namespace used by actual handle_fd functions. */
 static struct thread gpu_test_thread;
 
+/* A selected test schedules one controlled interleaving at the actual production wait boundary. */
+int (*gpu_test_wait_hook)(struct wait_queue *, struct spinlock *, uint64_t, uint64_t, unsigned);
+
 /*
  * Selects a process between completed test operations.
  */
@@ -112,6 +115,14 @@ waitq_sleep(
 	uint64_t deadline,
 	unsigned flags)
 {
+	int error;
+
+	/* Only explicitly selected race scenarios supply scheduler progress at this real sleep boundary. */
+	if (gpu_test_wait_hook != NULL) {
+		error = gpu_test_wait_hook(queue, lock, observed, deadline, flags);
+		return error;
+	}
+
 	/* The GPU test does not use sleeping descriptor operations to fake progress. */
 	(void)queue;
 	(void)lock;
@@ -133,4 +144,14 @@ record_lock_release_process_inode(
 	(void)process;
 	(void)inode;
 	abort();
+}
+
+/*
+ * Supplies the fixed clock used by ownership tests that never enter a timed wait.
+ */
+uint64_t
+sched_ticks(void)
+{
+	/* Succeeded: the sequential fixture never advances a scheduler deadline. */
+	return 1U;
 }

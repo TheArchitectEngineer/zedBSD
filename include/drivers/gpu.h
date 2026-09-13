@@ -1,5 +1,3 @@
-/* -*- mode: c; c-file-style: "linux"; tab-width: 8; -*- */
-
 /*
  * zedBSD
  * Copyright (C) 2026 Awe Morris
@@ -17,13 +15,24 @@
 #include <uapi/gpu.h>
 #include <drivers/gpu-display.h>
 #include <drivers/gpu-share.h>
+#include <drivers/gpu-scanout.h>
 #include <stdint.h>
 
-#define DRV_GPU_INTERFACE_VERSION	4U
-
-#define DRV_GPU_MAPPING_DEVICE 1U
+#define DRV_GPU_INTERFACE_VERSION	6U
+#define DRV_GPU_MAPPING_DEVICE		1U
 
 struct drv_gpu_device;
+struct drv_gpu_completion;
+
+/*
+ * Optional queued commands retain a common completion until exactly one finish.
+ * Submit failure retains no completion. Drain ends every accepted callback before
+ * the backend session closes, including when uncertain DMA remains quarantined.
+ */
+struct drv_gpu_command_ops {
+	int (*submit)(void *, void *, const void *, uint32_t, uint32_t, uint32_t, struct drv_gpu_completion *);
+	void (*drain)(void *, void *);
+};
 
 /*
  * An immutable CPU view borrowed from one retained resource. The GPU core
@@ -42,7 +51,8 @@ struct drv_gpu_mapping {
  *
  *  - No callback runs under a core spinlock.
  *  - Distinct sessions may execute concurrently, a single session
- *    admits one ioctl at a time.
+ *    admits one ordinary ioctl at a time; completion/event snapshots bypass
+ *    admission and may run concurrently with any ordinary callback.
  *  - Open failure must unwind its own state.
  *  - Resource and blob allocation failures must unwind their own state.
  *  - Optional capabilities require their complete callback pair or operation.
@@ -72,11 +82,37 @@ struct drv_gpu_ops {
 	int (*resource_write)(void *, void *, void *, uint64_t, const void *, uint32_t);
 	int (*command)(void *, void *, const void *, uint32_t);
 	int (*present)(void *, void *, void *, const struct gpu_present *);
+	int (*resource_map)(void *, void *, void *, struct drv_gpu_mapping *);
+
+	/*
+	 * Optional physical placement allocator validates actual backing before success.
+	 * It must satisfy every condition or unwind its own allocations and return
+	 * ENOTSUP. Native renderer IDs, BAR addresses and requested flags alone do
+	 * not prove physical placement, contiguity or cache coherence.
+	 */
+	int (*blob_create_placed)(void *, void *, const struct gpu_blob_create_placed *, void **, uint32_t *);
+
 	/* Optional display ownership and immutable mapping views retain the same session lifetime. */
 	const struct drv_gpu_display_ops *display;
-	int (*resource_map)(void *, void *, void *, struct drv_gpu_mapping *);
 	const struct drv_gpu_share_ops *share;
+	const struct drv_gpu_command_ops *commands;
+	const struct drv_gpu_scanout_ops *scanout;
 };
+
+/*
+ * Finishes one accepted request from an interrupt or ordinary driver context.
+ */
+void drv_gpu_complete(struct drv_gpu_completion *completion, int error);
+
+/*
+ * Publishes a device-wide failure, or zero after a checked fresh-session recovery.
+ */
+void drv_gpu_report_error(struct drv_gpu_device *device, int error);
+
+/*
+ * Tests that only the current opening callback remains, with no exported or mapped owner.
+ */
+int drv_gpu_recovery_ready(struct drv_gpu_device *device);
 
 /*
  * Registers one initialized device using borrowed operations and private data.
