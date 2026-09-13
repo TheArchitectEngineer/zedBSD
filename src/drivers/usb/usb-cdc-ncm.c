@@ -5,6 +5,8 @@
  * SPDX-License-Identifier: Zlib
  */
 
+/* XXX: Need coding style fitting. */
+
 /*
  * USB CDC NCM NTH16/NDP16 wire codec
  */

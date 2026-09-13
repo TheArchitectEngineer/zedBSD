@@ -5,6 +5,8 @@
  * SPDX-License-Identifier: Zlib
  */
 
+/* XXX: Need coding style fitting. */
+
 /*
  * Integrated USB CDC ECM network driver
  */
@@ -157,7 +159,8 @@ static const struct net_device_ops ecm_net_ops = {
 	.transmit = ecm_transmit,
 	.poll_receive =
 	ecm_poll_receive,
-	.release = ecm_release};
+	.release = ecm_release
+};
 
 static const struct drv_usb_id ecm_ids[] = {
 	{

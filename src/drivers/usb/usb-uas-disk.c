@@ -5,6 +5,8 @@
  * SPDX-License-Identifier: Zlib
  */
 
+/* XXX: Need coding style fitting. */
+
 /*
  * USB Attached SCSI disk class, independent of Bulk-Only Transport.
  */
@@ -31,8 +33,10 @@ struct uas_media {
 	int write_protected;
 };
 
-/* Interface owns this object until disk retirement and checked URB stop.
- * lock serializes commands; control_lock serializes detach/quiesce. */
+/*
+ * Interface owns this object until disk retirement and checked URB stop.
+ * lock serializes commands; control_lock serializes detach/quiesce.
+ */
 struct uas_disk {
 	struct drv_usb_device *device;
 	struct drv_usb_endpoint *pipes[4];
@@ -65,8 +69,7 @@ static int uas_ioctl(struct disk *, unsigned long, void *);
 static int uas_probe(struct uas_disk *, struct uas_media *, int);
 static int uas_reset_recover(struct uas_disk *);
 static int uas_publish_media(struct uas_disk *, const struct uas_media *);
-static int uas_command(struct uas_disk *, const void *, size_t, void *, size_t,
-    enum drv_usb_uas_direction, struct drv_usb_uas_result *, struct drv_usb_scsi_sense *);
+static int uas_command(struct uas_disk *, const void *, size_t, void *, size_t, enum drv_usb_uas_direction, struct drv_usb_uas_result *, struct drv_usb_scsi_sense *);
 static int uas_control_step(struct uas_disk *);
 static int uas_media_transport_recover(struct uas_disk *);
 static void uas_control_worker(void *);
@@ -78,8 +81,10 @@ static const struct drv_usb_id uas_ids[] = {
 	{ .match_flags = DRV_USB_ID_IF_CLASS | DRV_USB_ID_IF_SUBCLASS | DRV_USB_ID_IF_PROTOCOL,
 	  .interface_class = 8, .interface_subclass = 6, .interface_protocol = 0x62 }
 };
+
 /* Published only after capacity and persistence policy have been established. */
 static const struct disk_ops uas_disk_ops = { .submit = uas_submit, .ioctl = uas_ioctl };
+
 /* Registry retains this static class table for the life of the USB subsystem. */
 static struct drv_usb_driver uas_driver = {
 	.name = "usb-uas", .ids = uas_ids, .id_count = 1,
@@ -93,16 +98,23 @@ drv_usb_uas_driver_register(void)
 }
 
 static uint32_t
-uas_be32(const uint8_t *p)
+uas_be32(
+	const uint8_t *p)
 {
 	return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
 	    ((uint32_t)p[2] << 8) | p[3];
 }
 
 static int
-uas_command(struct uas_disk *owner, const void *cdb, size_t cdb_length,
-    void *buffer, size_t length, enum drv_usb_uas_direction direction,
-    struct drv_usb_uas_result *result, struct drv_usb_scsi_sense *sense)
+uas_command(
+	struct uas_disk *owner,
+	const void *cdb,
+	size_t cdb_length,
+	void *buffer,
+	size_t length,
+	enum drv_usb_uas_direction direction,
+	struct drv_usb_uas_result *result,
+	struct drv_usb_scsi_sense *sense)
 {
 	struct drv_usb_scsi_sense decoded;
 	enum drv_usb_scsi_recovery action;
@@ -146,7 +158,10 @@ uas_command(struct uas_disk *owner, const void *cdb, size_t cdb_length,
 }
 
 static int
-uas_probe(struct uas_disk *owner, struct uas_media *media, int recovering)
+uas_probe(
+	struct uas_disk *owner,
+	struct uas_media *media,
+	int recovering)
 {
 	uint8_t inquiry_cdb[6] = { 0x12, 0, 0, 0, 36, 0 };
 	uint8_t ready_cdb[6] = { 0 };

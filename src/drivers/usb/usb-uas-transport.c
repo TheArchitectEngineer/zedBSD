@@ -5,6 +5,8 @@
  * SPDX-License-Identifier: Zlib
  */
 
+/* XXX: Need coding style fitting. */
+
 /*
  * USB Attached SCSI serialized command and endpoint owner.
  */
@@ -225,6 +227,7 @@ drv_usb_uas_transport_recover(struct drv_usb_uas_transport *transport,
 	if (transport->super_speed)
 		return EOPNOTSUPP;
 	transport->recovery_attempted = 1;
+
 	/* First retire every host reference; cancellation alone proves nothing. */
 	for (i = 0; i < 4; i++) {
 		if (transport->urbs[i] == NULL)

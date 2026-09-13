@@ -5,6 +5,8 @@
  * SPDX-License-Identifier: Zlib
  */
 
+/* XXX: Need coding style fitting. */
+
 /*
  * USB Human Interface Device input driver
  */
@@ -25,67 +27,67 @@
 #include <string.h>
 #include "kern/klog.h"
 
-#define HID_ITEM_TYPE_MAIN 0U
-#define HID_ITEM_TYPE_GLOBAL 1U
-#define HID_ITEM_TYPE_LOCAL 2U
+#define HID_ITEM_TYPE_MAIN		0U
+#define HID_ITEM_TYPE_GLOBAL		1U
+#define HID_ITEM_TYPE_LOCAL		2U
 
-#define HID_MAIN_INPUT 8U
-#define HID_MAIN_OUTPUT 9U
-#define HID_MAIN_COLLECTION 10U
-#define HID_MAIN_FEATURE 11U
-#define HID_MAIN_END_COLLECTION 12U
+#define HID_MAIN_INPUT			8U
+#define HID_MAIN_OUTPUT			9U
+#define HID_MAIN_COLLECTION		10U
+#define HID_MAIN_FEATURE		11U
+#define HID_MAIN_END_COLLECTION		12U
 
-#define HID_GLOBAL_USAGE_PAGE 0U
-#define HID_GLOBAL_LOGICAL_MINIMUM 1U
-#define HID_GLOBAL_LOGICAL_MAXIMUM 2U
-#define HID_GLOBAL_REPORT_SIZE 7U
-#define HID_GLOBAL_REPORT_ID 8U
-#define HID_GLOBAL_REPORT_COUNT 9U
-#define HID_GLOBAL_PUSH 10U
-#define HID_GLOBAL_POP 11U
+#define HID_GLOBAL_USAGE_PAGE		0U
+#define HID_GLOBAL_LOGICAL_MINIMUM	1U
+#define HID_GLOBAL_LOGICAL_MAXIMUM	2U
+#define HID_GLOBAL_REPORT_SIZE		7U
+#define HID_GLOBAL_REPORT_ID		8U
+#define HID_GLOBAL_REPORT_COUNT		9U
+#define HID_GLOBAL_PUSH			10U
+#define HID_GLOBAL_POP			11U
 
-#define HID_LOCAL_USAGE 0U
-#define HID_LOCAL_USAGE_MINIMUM 1U
-#define HID_LOCAL_USAGE_MAXIMUM 2U
-#define HID_LOCAL_DELIMITER 10U
+#define HID_LOCAL_USAGE			0U
+#define HID_LOCAL_USAGE_MINIMUM		1U
+#define HID_LOCAL_USAGE_MAXIMUM		2U
+#define HID_LOCAL_DELIMITER		10U
 
-#define HID_INPUT_CONSTANT 0x01U
-#define HID_INPUT_VARIABLE 0x02U
-#define HID_INPUT_RELATIVE 0x04U
-#define HID_INPUT_SUPPORTED_FLAGS 0x07U
+#define HID_INPUT_CONSTANT		0x01U
+#define HID_INPUT_VARIABLE		0x02U
+#define HID_INPUT_RELATIVE		0x04U
+#define HID_INPUT_SUPPORTED_FLAGS	0x07U
 
-#define HID_USAGE_PAGE_GENERIC_DESKTOP 0x01U
-#define HID_USAGE_PAGE_KEYBOARD 0x07U
-#define HID_USAGE_PAGE_BUTTON 0x09U
+#define HID_USAGE_PAGE_GENERIC_DESKTOP	0x01U
+#define HID_USAGE_PAGE_KEYBOARD		0x07U
+#define HID_USAGE_PAGE_BUTTON		0x09U
 
-#define HID_USAGE_X 0x30U
-#define HID_USAGE_Y 0x31U
-#define HID_USAGE_WHEEL 0x38U
-#define HID_USAGE_KEYBOARD_ERROR_MIN 0x01U
-#define HID_USAGE_KEYBOARD_ERROR_MAX 0x03U
+#define HID_USAGE_X			0x30U
+#define HID_USAGE_Y			0x31U
+#define HID_USAGE_WHEEL			0x38U
+#define HID_USAGE_KEYBOARD_ERROR_MIN	0x01U
+#define HID_USAGE_KEYBOARD_ERROR_MAX	0x03U
 
-#define HID_FIELD_KEY 1U
-#define HID_FIELD_AXIS 2U
-#define HID_FIELD_KEYBOARD_ARRAY 3U
+#define HID_FIELD_KEY			1U
+#define HID_FIELD_AXIS			2U
+#define HID_FIELD_KEYBOARD_ARRAY	3U
 
-#define HID_LAYOUT_PROFILE_DESCRIPTOR 0U
-#define HID_LAYOUT_PROFILE_BOOT_KEYBOARD 1U
-#define HID_LAYOUT_PROFILE_BOOT_MOUSE 2U
+#define HID_LAYOUT_PROFILE_DESCRIPTOR		0U
+#define HID_LAYOUT_PROFILE_BOOT_KEYBOARD	1U
+#define HID_LAYOUT_PROFILE_BOOT_MOUSE		2U
 
-#define USB_HID_CLASS 0x03U
-#define USB_HID_DESCRIPTOR 0x21U
-#define USB_HID_REPORT_DESCRIPTOR 0x22U
-#define USB_REQUEST_GET_DESCRIPTOR 0x06U
-#define USB_HID_REQUEST_SET_PROTOCOL 0x0bU
-#define USB_HID_PROTOCOL_REPORT 1U
-#define USB_HID_CONTROL_TIMEOUT_MS 1000U
-#define USB_HID_DRAIN_TIMEOUT_MS 5000U
+#define USB_HID_CLASS			0x03U
+#define USB_HID_DESCRIPTOR		0x21U
+#define USB_HID_REPORT_DESCRIPTOR	0x22U
+#define USB_REQUEST_GET_DESCRIPTOR	0x06U
+#define USB_HID_REQUEST_SET_PROTOCOL	0x0bU
+#define USB_HID_PROTOCOL_REPORT		1U
+#define USB_HID_CONTROL_TIMEOUT_MS	1000U
+#define USB_HID_DRAIN_TIMEOUT_MS	5000U
 
 /* drv_input_device_register() accepts at most 63 bytes plus NUL. */
-#define USB_HID_TEXT_MAX 64U
-#define USB_HID_ERROR_MARKERS 16U
-#define USB_HID_WORK_ARM (1U << 0)
-#define USB_HID_WORK_COMPLETE (1U << 1)
+#define USB_HID_TEXT_MAX		64U
+#define USB_HID_ERROR_MARKERS		16U
+#define USB_HID_WORK_ARM		(1U << 0)
+#define USB_HID_WORK_COMPLETE		(1U << 1)
 
 struct hid_report_field {
 	uint32_t bit_offset;
@@ -202,30 +204,10 @@ static unsigned usb_hid_registered;
 /*
  * Forward declaration
  */
-
 static uint16_t usb_hid_le16(const uint8_t *bytes);
-
 static int usb_hid_attach(struct drv_usb_interface *interface, const struct drv_usb_id *id);
 static int usb_hid_detach(struct drv_usb_interface *interface, unsigned flags);
 static int usb_hid_match(struct drv_usb_interface *interface, const struct drv_usb_id *id);
-
-/* Device operation and registration tables. */
-static const struct drv_usb_id usb_hid_ids[] = {
-	{
-		.match_flags = DRV_USB_ID_IF_CLASS,
-		.interface_class = USB_HID_CLASS
-	}
-};
-
-static struct drv_usb_driver usb_hid_driver = {
-	.name = "usb-hid",
-	.ids = usb_hid_ids,
-	.id_count = sizeof(usb_hid_ids) / sizeof(usb_hid_ids[0]),
-	.match = usb_hid_match,
-	.attach = usb_hid_attach,
-	.detach = usb_hid_detach
-};
-
 static int usb_hid_report_descriptor_length(struct drv_usb_interface *interface, size_t *result);
 static int usb_hid_endpoint_capacity(struct drv_usb_interface *interface, struct drv_usb_endpoint *endpoint, size_t *result);
 static int usb_hid_find_endpoint(struct drv_usb_interface *interface, struct drv_usb_endpoint **result);
@@ -3407,3 +3389,19 @@ usb_hid_le16(
 /*
  * USB HID
  */
+
+static const struct drv_usb_id usb_hid_ids[] = {
+	{
+		.match_flags = DRV_USB_ID_IF_CLASS,
+		.interface_class = USB_HID_CLASS
+	}
+};
+
+static struct drv_usb_driver usb_hid_driver = {
+	.name = "usb-hid",
+	.ids = usb_hid_ids,
+	.id_count = sizeof(usb_hid_ids) / sizeof(usb_hid_ids[0]),
+	.match = usb_hid_match,
+	.attach = usb_hid_attach,
+	.detach = usb_hid_detach
+};

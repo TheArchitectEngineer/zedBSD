@@ -5,6 +5,8 @@
  * SPDX-License-Identifier: Zlib
  */
 
+/* XXX: Need coding style fitting. */
+
 /*
  * Test: USB HID interrupt checkpoint
  */
@@ -19,12 +21,12 @@
 #include "kern/klog.h"
 #include "kern/kmem.h"
 
-#define USB_HID_CLASS 0x03U
-#define CHECKPOINT_DRAIN_TIMEOUT_MS 5000U
-#define CHECKPOINT_MARKER_LIMIT 16U
-#define CHECKPOINT_DETACH_MARKER_LIMIT 4U
-#define CHECKPOINT_WORK_ARM (1U << 0)
-#define CHECKPOINT_WORK_COMPLETE (1U << 1)
+#define USB_HID_CLASS			0x03U
+#define CHECKPOINT_DRAIN_TIMEOUT_MS	5000U
+#define CHECKPOINT_MARKER_LIMIT		16U
+#define CHECKPOINT_DETACH_MARKER_LIMIT	4U
+#define CHECKPOINT_WORK_ARM		(1U << 0)
+#define CHECKPOINT_WORK_COMPLETE	(1U << 1)
 
 struct usb_hid_checkpoint {
 	struct drv_usb_interface *interface;
@@ -76,7 +78,8 @@ static struct drv_usb_driver checkpoint_driver = {
 	.ids = checkpoint_ids,
 	.id_count = sizeof(checkpoint_ids) / sizeof(checkpoint_ids[0]),
 	.attach = checkpoint_attach,
-	.detach = checkpoint_detach};
+	.detach = checkpoint_detach
+};
 
 /*
  * Implements the drv usb hid checkpoint driver register operation.
