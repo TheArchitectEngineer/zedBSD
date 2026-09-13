@@ -1,0 +1,18 @@
+{
+  "syntax": {
+    "command": "cc -std=c11 -D_GNU_SOURCE -Wall -Wextra -Werror -Wdeclaration-after-statement -pthread -I/tmp/q311-wsi-cache-final/include -Iuserland/base/libvulkan -fsyntax-only external-fence.c sync.c queue.c context.c device.c wsi-swapchain.c",
+    "result": "PASS; host front-end with actual Vulkan and GPU headers"
+  },
+  "analyzer": {
+    "command": "clang --analyze -std=c11 -D_GNU_SOURCE -Wall -Wextra -Werror -Wdeclaration-after-statement -pthread -I/tmp/q311-wsi-cache-final/include -Iuserland/base/libvulkan -Xanalyzer -analyzer-output=text external-fence.c sync.c queue.c wsi-swapchain.c",
+    "warnings": 4,
+    "classification": [
+      "sync_create failure may return SUCCESS only under an opaque-callee assumption that contradicts real wire.c vulkan_reply_finish; three output-initialization warnings share this path",
+      "sync_notification_poll receives NULL only under invalid Vulkan fenceCount=0; valid vkWaitForFences requires fenceCount>0"
+    ],
+    "log": "analyzer.log",
+    "scope": "No warning-free whole-program or CTS claim; surrounding unchanged code inspected, not altered solely to silence analyzer"
+  },
+  "style": "plan/coding-style.md full text read; changed production portions reviewed against section14; no HAL or public Vulkan ABI added",
+  "diffcheck": 0
+}

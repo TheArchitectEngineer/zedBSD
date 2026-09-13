@@ -1,0 +1,15 @@
+{
+  "command": [
+    "make",
+    "-j16",
+    "BUILD=build/vkdemo-amd64",
+    "ZEDBSD_CONFIG=plan/ws014/tests/config-wayland-amd64.mk",
+    "ARCH_IMAGE_DIR=build/vkdemo-amd64/arch-images",
+    "DATA_IMAGE=build/vkdemo-amd64/data.img",
+    "SWAP_IMAGE=build/vkdemo-amd64/swapfile",
+    "disk-image"
+  ],
+  "exit_code": 0,
+  "elapsed_seconds": 4.863,
+  "acceptance": "initial integration only; sources under active development"
+}

@@ -160,7 +160,7 @@ GPU_SHARING_ENTRY(void)
 	error = filedesc_get_flags(producer.fd, exported.fd, &flags);
 	assert(error == 0);
 	assert(flags == FILEDESC_CLOEXEC);
-	reference = handle_fd_get(exported.fd, KERNEL_HANDLE_GPU);
+	reference = handle_fd_get(exported.fd, KERNEL_HANDLE_DRIVER);
 	assert(reference != NULL);
 	handle_put(reference);
 

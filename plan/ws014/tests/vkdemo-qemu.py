@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import re
 import sys
@@ -49,12 +50,21 @@ def parse_marker(text, token, frame):
     return result
 
 
-def ordinary_run(args, qmp, output, report, console, deadline, vnc_path=None, capture=False):
+def process_cpu_sample(process):
+    """Sample this owned Linux QEMU's aggregate thread CPU time, excluding renderer children."""
+    fields = Path(f'/proc/{process.pid}/stat').read_text().rsplit(')', 1)[1].split()
+    return {'pid': process.pid, 'start_ticks': int(fields[19]),
+            'cpu_ticks': int(fields[11]) + int(fields[12]),
+            'ticks_per_second': os.sysconf('SC_CLK_TCK'), 'monotonic': time.monotonic()}
+
+
+def ordinary_run(args, qmp, output, report, console, deadline, vnc_path=None, capture=False, process=None):
     token = args.token + '-ordinary'
     command = f'/bin/vkdemo --duration=2 --token={token}\n'
     result = {'token': token, 'guest_command': command.rstrip(), 'start_seen': False,
               'samples': [], 'captures': [], 'completed': False}
     report['ordinary'] = result
+    cpu_before = process_cpu_sample(process) if process is not None else None
     qmp.text(command)
     observed = {}
     next_capture_at = 0.0
@@ -118,6 +128,17 @@ def ordinary_run(args, qmp, output, report, console, deadline, vnc_path=None, ca
                 raise RuntimeError('ordinary run did not expose two distinct 320x240 VNC frames')
             result.update(completed=True, frames=count,
                           first_time_ms=samples[0]['time_ms'], last_time_ms=samples[-1]['time_ms'])
+            if cpu_before is not None:
+                cpu_after = process_cpu_sample(process)
+                if cpu_after['start_ticks'] != cpu_before['start_ticks']:
+                    raise RuntimeError('owned QEMU identity changed during CPU measurement')
+                seconds = (cpu_after['cpu_ticks'] - cpu_before['cpu_ticks']) / cpu_before['ticks_per_second']
+                wall = cpu_after['monotonic'] - cpu_before['monotonic']
+                result['host_qemu_cpu'] = {
+                    'before': cpu_before, 'after': cpu_after, 'cpu_seconds': seconds,
+                    'wall_seconds': wall, 'cpu_seconds_per_frame': seconds / count,
+                    'percent_of_one_cpu': 100 * seconds / wall,
+                    'scope': 'QEMU process including vCPU threads; excludes renderer children and capture client; command through returned prompt'}
             return
         time.sleep(0.05)
     raise TimeoutError('ordinary vkdemo START, live progress, DONE and returned shell prompt')
@@ -209,7 +230,7 @@ def lifecycle_run(args, qmp, output, debug_path, vnc_path, process, report, cons
     try:
         args.token = saved_token + '-after-abort'
         reopened = {}
-        ordinary_run(args, qmp, output, reopened, console, deadline, capture=False)
+        ordinary_run(args, qmp, output, reopened, console, deadline, capture=False, process=process)
         result['reopen'] = reopened['ordinary']
         result['reopened'] = True
     finally:
@@ -305,7 +326,7 @@ def exercise(args, qmp, output, debug, vnc_path, process, report):
         where = text.find(done)
         if where >= 0 and re.search(r'root@[^\r\n]*\$ ', text[where + len(done):]):
             report['guest_completed'] = True
-            ordinary_run(args, qmp, output, report, console, deadline, vnc_path=vnc_path, capture=True)
+            ordinary_run(args, qmp, output, report, console, deadline, vnc_path=vnc_path, capture=True, process=process)
             if getattr(args, 'lifecycle', False):
                 lifecycle_run(args, qmp, output, debug, vnc_path, process, report, console, deadline)
             # QEMU traces requests before backend validation; pixels and DONE above remain mandatory.

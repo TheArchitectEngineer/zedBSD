@@ -1,0 +1,69 @@
+{
+  "phase": "ws014-p008",
+  "queue": "q311",
+  "recorded_utc": "2026-09-13T08:55:19.412897+00:00",
+  "production_frozen": true,
+  "target_syntax": {
+    "command": "clang --target=x86_64-unknown-zedbsd -ffreestanding -std=gnu11 -fsyntax-only -Wall -Wextra -Werror -Wdeclaration-after-statement -Ilibc/include -Iinclude src/drivers/gpu/venus/transport.c",
+    "pass": true
+  },
+  "fixture": {
+    "command": "timeout 120 sh plan/ws014/tests/run-venus-transport-test.sh",
+    "ordinary": true,
+    "asan_ubsan": true,
+    "log": "fixture.log",
+    "cases": [
+      "exact strict capability and refusal",
+      "8/32/64 descriptor negotiation",
+      "28 reservations plus four CPU0 chains",
+      "commit without allocation",
+      "32 reverse-order IRQ completions and 16-bit wrap",
+      "definite rollback with no callback",
+      "reserved producer autonomous deadline and quarantine",
+      "posted fault versus invalid rollback",
+      "device fault with zero callbacks",
+      "wrapper withdrawal during retained fault notification",
+      "failure before GPU wrapper publication",
+      "existing malformed response/reset/topology/wait regressions"
+    ]
+  },
+  "source_sha256": {
+    "src/drivers/gpu/venus/transport.c": "14a8c1ef14e3c692e74b7e3cf20b50afda9c1b1c650afe6a8e5b319c030abc25",
+    "src/drivers/gpu/venus/internal.h": "3a1b0fb134890b5e2d39950621f67512ebdc15e3e013a649adf9533559226b8f",
+    "plan/ws014/tests/venus-transport.c": "90df902d686d9b8cfca0bd5175cbc36c7e84b4c4be8842b10b15986d6786b55b",
+    "plan/ws014/tests/venus-transport-peer.inc": "47585c4b4fba4c9b0d103f1eca905e5323146afb2e4392863371637d99e633f7",
+    "plan/ws014/tests/run-venus-transport-test.sh": "d005e4a59f5fa95e1347ca27fde5c111f030fa585bc0b908b91c1925c23609f8"
+  },
+  "console_review": {
+    "source": [
+      "src/kern/text-display.c",
+      "src/drivers/gpu/venus/display.c"
+    ],
+    "finding": "No ownership/lock-order/lost-wake defect identified; rank comment clarification sent to root and applied by root.",
+    "scope": [
+      "registry 137 -> condition 140 -> scheduler 200",
+      "synchronous unobserve before storage retirement",
+      "primary output ownership only",
+      "worker retained across claim/release",
+      "observe-before-render and sequence-checked sleep",
+      "stop wake then reap outside controller mutex"
+    ]
+  },
+  "limitations": [
+    "Synthetic PCI/device peer; actual host semantic fixtures recorded separately.",
+    "No claims of CTS or sparse physical hardware acceptance.",
+    "No HAL changes, aggregate make check, git commit or host system installation."
+  ],
+  "wsi_review": {
+    "finding": "No new blocking defect identified in A5/A6 read-only review.",
+    "source": "userland/base/libvulkan/wsi-swapchain.c",
+    "scope": [
+      "state observation and monotonic condition registration share swapchain_mutex",
+      "native release busy publication precedes wake; progress runs outside state mutex",
+      "per-concurrent-job exclusive cache slot with reset-enabled pool/cb",
+      "partial allocation cache ownership and unsubmitted acquisition rollback",
+      "accepted uncertainty becomes device loss; native access precedes slot reuse",
+      "drain and worker join precede cached command/fence destruction"
+    ]
+  }
+}

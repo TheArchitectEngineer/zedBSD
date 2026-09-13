@@ -31,6 +31,7 @@ struct gpu_placement;
 struct vulkan_image;
 struct vulkan_command_pool;
 struct vulkan_writer;
+struct vulkan_queue_fence;
 struct vulkan_reader;
 
 /* Internal kinds are independent of later-core VkObjectType declarations. */
@@ -129,6 +130,7 @@ struct VkQueue_T {
 	uint32_t family;
 	uint32_t index;
 	uint32_t timeline_index;
+	struct vulkan_queue_fence *private_fences;
 	pthread_mutex_t mutex;
 };
 
@@ -242,7 +244,7 @@ struct vulkan_reader {
 	VkResult error;
 };
 
-/* Retains a pending optional queue notification until observation or context close. */
+/* Retains one supervised job until terminal observation or context close. */
 struct vulkan_notification {
 	struct vulkan_notification *next;
 	uint64_t sequence;
@@ -264,6 +266,7 @@ struct vulkan_context {
 	uint32_t wire_version;
 	uint32_t xml_version;
 	uint32_t external_memory_type;
+	VkBool32 strict_queue;
 	uint64_t max_resource_bytes;
 	uint32_t capabilities;
 	uint64_t stream_handle;
@@ -615,6 +618,7 @@ vulkan_read_result(
 	struct vulkan_reader *reader);
 
 /* The caller owns queue->mutex across submission and presentation publication. */
+void vulkan_queue_finish(struct VkQueue_T *queue);
 VkResult vulkan_queue_submit_locked(struct VkQueue_T *queue, uint32_t count, const VkSubmitInfo *submits, VkFence fence);
 
 #include "codec.h"

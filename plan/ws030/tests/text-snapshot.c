@@ -217,6 +217,51 @@ spin_unlock_irqrestore(
 }
 
 /*
+ * Snapshot tests register no notification consumers, so no destination lock is reachable.
+ */
+void
+spin_lock(
+	struct spinlock *lock)
+{
+	/* Unexpected notification work would mix the independent snapshot and observer fixtures. */
+	(void)lock;
+	assert(0);
+
+	/* Succeeded: the assertion above diagnoses an unintended notification consumer. */
+	return;
+}
+
+/*
+ * A notification destination is absent throughout this rasterization fixture.
+ */
+void
+spin_unlock(
+	struct spinlock *lock)
+{
+	/* No subscriber lock can have been acquired by the snapshot-only workload. */
+	(void)lock;
+	assert(0);
+
+	/* Succeeded: any accidental subscription was diagnosed at its lock boundary. */
+	return;
+}
+
+/*
+ * Dedicated notification tests exercise wake delivery separately from pixel snapshots.
+ */
+void
+waitq_wake_all(
+	struct wait_queue *queue)
+{
+	/* This fixture never publishes a wake destination to the real text dispatcher. */
+	(void)queue;
+	assert(0);
+
+	/* Succeeded: snapshot rendering introduced no hidden notification consumer. */
+	return;
+}
+
+/*
  * Maps the known legacy VGA aperture for the actual fallback attach path.
  */
 int

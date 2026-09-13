@@ -7,7 +7,7 @@ Status: planning
 Phase disposition: normal
 Parent: [WS014](https://github.com/awemorris/zedBSD/issues/15)
 Queue: none
-Dependencies: cleared ws014-p007 final GPU improvements; cleared p006/p005 and completed WS030 outputs
+Dependencies: cleared ws014-p008/p007/p006/p005; completed WS030 and accepted p002/p003 outputs
 <!-- awesome-plan-current:end -->
 
 Combined ID: `ws014-p004`
@@ -15,11 +15,11 @@ Primary Milestone: MG006
 
 ## 目標・依存
 
-p002/p003/p005/p006/p007で修正された最終ソースとU/K・callback・PCI連携資料を照合し、WS014の受け入れを確認する。p003の描画基盤に加え、p005のテクスチャ付き3D shader描画とp006のkernel handle・GPU共有・最小Wayland WSIの必要出力が成立してから行う。
+p002/p003/p005/p006/p007/p008で修正された最終ソースとU/K・callback・PCI連携資料を照合し、WS014の受け入れを確認する。p003の描画基盤に加え、p005のテクスチャ付き3D shader描画とp006のkernel handle・GPU共有・最小Wayland WSIの必要出力が成立してから行う。
 
 ## 手順・受け入れ
 
-適用するcoding-style.md/Guardrail全文を読み、変更範囲の規約・層分け・所有権・参照寿命・エラー経路をレビューして残る問題を解決する。公開するversion/feature、必須/任意callback、未対応機能を整理する。p003/p005/p006/p007の最終ソースでのbuild・実画面取得ループ証拠を確認し、修正によって必要な限定回帰だけを行う。変更がない場合は既存の有効な検証を無意味に繰り返さない。
+適用するcoding-style.md/Guardrail全文を読み、変更範囲の規約・層分け・所有権・参照寿命・エラー経路をレビューして残る問題を解決する。公開するversion/feature、必須/任意callback、未対応機能を整理する。p003/p005/p006/p007/p008の最終ソースでのbuild・実画面取得ループ証拠を確認し、修正によって必要な限定回帰だけを行う。変更がない場合は既存の有効な検証を無意味に繰り返さない。
 
 ## 引き渡し
 
@@ -111,3 +111,31 @@ q310 checkpoint 02: paired OPAQUE rendererでstandard buffer/optimal/fence、Way
 ## q310最終引継ぎ
 
 q310 finished、[WS014 p007](https://github.com/awemorris/zedBSD/issues/394) cleared。BLOB直接表示・標準OPAQUE memory/fence・同期/batch・topology/placementを受入済み。最終APIは170 commands / drv_gpu_ops v6。active Queueなし、p004とWS029は未queue。optimal共有には隔離したpaired renderer差分を使用。source/docのgit公開はユーザー担当。
+
+## q311開始: GPU完了責任・fence所属と描画資源の改善（2026-09-13）
+
+ユーザーがレビュー回答を承認し、独立Phaseの作成・実行を指示した。[WS014 p008](https://github.com/awemorris/zedBSD/issues/395)を単一項目q311-i01で実行する。p007/q310のcleared/finishedを保持し、p008 → p004 planning/未queue → 別WS029 native i915の順とする。
+
+A1の局所表示エラー分離、A3のGPUドライバによるfence終端、A4のqueue容量、A5のacquire待機、A6の同時進行slot別pool/cb再利用、A7のexternal worker撤去・console通知、A2/A8の検証補強を含む。fenceはdrv_gpuフレームワークへ移し、kernには不透明handle/fd/refcount/poll/SCM_RIGHTSを残す。共通DRIVER分類＋ops識別とGPU組込時だけのbuildを用いる。
+
+isolated paired rendererのSTRICT_QUEUE能力を合意し、実GPU成功だけを正常retireへ流す。失敗はsticky化して後続まとめretireを抑止し、K watchdogでERROR終端する。native投入前の予約も期限管理し、U停止による未監督仕事を残さない。通常BLOB表示と標準OPAQUE_FDを維持する。
+
+720 active minutes見積・120分レビュー、有限fixture/build/VMで完了まで進める。HAL追加変更・一般Wayland・native i915・git add/commit/pushは含めない。既存private host/転送とGitHub同期の承認を使用する。開始時点で新実装や検証成功は主張しない。詳細はp008本文と承認回答コメント、local plan/ws014/phase008/に残す。
+
+
+## q311完了: GPU完了責任・driver fence・描画資源改善（2026-09-13）
+
+WS014 p008 / q311-i01をcleared、q311をfinishedとする。active Queueなし。p007/q310の受入を保持し、WS014はincomplete、p001/p004はplanning、p004と別WS029 native i915は未queueのまま。
+
+承認回答A1–A8とfence所属を実装した。fenceはdrv_gpuフレームワークへ移し、kernは不透明handle/fd/refcount/poll/SCM_RIGHTSを保持する。6platformでGPU共通層＋fenceをbackend選択時だけbuildし、GPUなしamd64実ELFでGPU symbol/object不在とgeneric handle/fd残存を確認した。
+
+native投稿前のGPU_JOB予約から独立watchdogが監督し、strict paired rendererの実submission VkFence成功でKがexact generationを終端する。U-only/未commitのpendingをK内部で無期限に待たない。slotは最大64descriptor/32chain（28job＋4control）、外部fenceごとのworkerを撤去。acquireはmonotonic condition、present pool/cbは同時slotごとに再利用し、consoleは文字・所有権変更で起床する。局所表示エラーと全device故障も分離した。
+
+最終5VMは同じkernel/base imageでPASS/QEMU exit0: direct-002 41.345秒、wayland-002 46.011秒、producer-stop-004 14.117秒、producer-exit-002 4.214秒、recovery-002 13.823秒。直接/Waylandの通常BLOB表示・独立画像oracle・複数process・再open/consoleを確認。SIGSTOP中fdを開いたproducerは9970msでDEVICE_LOST、renderer停止は10000msで故障通知後にchecked reset・新context往復を確認した。
+
+K/U/transport/host/consoleの限定normal・sanitizer、170API/両ABI/Noct8file、対象build・規約・独立レビューを完了。U回収競合2件は修正前FAIL→修正後PASS。static analyzerの4警告は実callee/有効入力の前提と照合して記録し、全警告0とは扱わない。初期のbuild/harness失敗も保持する。
+
+新libvulkanのVkDevice作成にはSTRICT_QUEUE対応のisolated paired rendererが必要。stock/旧pairは初期化で拒否する。host system packageとHALの追加変更なし。通常2秒sceneはp007再測定13frameからp00815frameだが、QEMU CPU時間は0.36秒から0.48秒の単発観測で、CPU削減や速度倍率は主張しない。一般Wayland/Toolkit、任意GPU間DMA、native i915、CTSは未受入。source/doc/patchのgit add/commit/pushはユーザー担当。
+
+
+受入記録: [p008結果コメント](https://github.com/awemorris/zedBSD/issues/395#issuecomment-5652374702)。local/uncommittedの資料は plan/ws014/phase008/、Queue履歴は plan/history/queue-q311.md。

@@ -16,9 +16,10 @@
 #include <drivers/gpu-display.h>
 #include <drivers/gpu-share.h>
 #include <drivers/gpu-scanout.h>
+
 #include <stdint.h>
 
-#define DRV_GPU_INTERFACE_VERSION	6U
+#define DRV_GPU_INTERFACE_VERSION	7U
 #define DRV_GPU_MAPPING_DEVICE		1U
 
 struct drv_gpu_device;
@@ -32,6 +33,20 @@ struct drv_gpu_completion;
 struct drv_gpu_command_ops {
 	int (*submit)(void *, void *, const void *, uint32_t, uint32_t, uint32_t, struct drv_gpu_completion *);
 	void (*drain)(void *, void *);
+};
+
+/*
+ * One supervised reservation retains a callback before userspace submits native
+ * work. Reserve owns marker storage and a finite producer deadline. Commit uses
+ * that storage without allocation; normal cancel removes the callback before
+ * returning success. Fault cancellation terminates uncertain work with ERROR.
+ * Each action verifies both the reservation token and original completion.
+ * The ordinary command drain also retires every accepted job callback.
+ */
+struct drv_gpu_job_ops {
+	int (*reserve)(void *, void *, uint32_t, struct drv_gpu_completion *, void **);
+	int (*commit)(void *, void *, void *, struct drv_gpu_completion *);
+	int (*cancel)(void *, void *, void *, struct drv_gpu_completion *, unsigned);
 };
 
 /*
@@ -97,7 +112,19 @@ struct drv_gpu_ops {
 	const struct drv_gpu_share_ops *share;
 	const struct drv_gpu_command_ops *commands;
 	const struct drv_gpu_scanout_ops *scanout;
+	const struct drv_gpu_job_ops *jobs;
 };
+
+/*
+ * Retains a wrapper protected by an existing reference or its publisher's lock.
+ * The reference preserves the wrapper, not the backend's separate hardware life.
+ */
+void drv_gpu_retain(struct drv_gpu_device *device);
+
+/*
+ * Releases one retained wrapper without invoking backend operations.
+ */
+void drv_gpu_release(struct drv_gpu_device *device);
 
 /*
  * Finishes one accepted request from an interrupt or ordinary driver context.

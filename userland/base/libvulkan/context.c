@@ -25,6 +25,7 @@
 #define VULKAN_VENDOR_CAPSET_BYTES 168U
 #define VULKAN_VENDOR_CAPSET_MAGIC 0x5a424453U
 #define VULKAN_VENDOR_CAPSET_OPAQUE 1U
+#define VULKAN_VENDOR_CAPSET_STRICT_QUEUE 2U
 
 /* Retains mapped transport backing through growth, rollback and descriptor close. */
 struct vulkan_transport_storage {
@@ -163,8 +164,16 @@ vulkan_context_open(
 	if (capset.bytes == VULKAN_VENDOR_CAPSET_BYTES) {
 		vendor_magic = vulkan_load_word(capset.data + 160);
 		vendor_flags = vulkan_load_word(capset.data + 164);
-		if (vendor_magic == VULKAN_VENDOR_CAPSET_MAGIC && vendor_flags == VULKAN_VENDOR_CAPSET_OPAQUE)
-			context->external_memory_type = VULKAN_EXTERNAL_MEMORY_OPAQUE;
+		if (vendor_magic == VULKAN_VENDOR_CAPSET_MAGIC) {
+			/* Only known exact paired contracts may select native OPAQUE allocation sharing. */
+			if (vendor_flags == VULKAN_VENDOR_CAPSET_OPAQUE ||
+			    vendor_flags == (VULKAN_VENDOR_CAPSET_OPAQUE | VULKAN_VENDOR_CAPSET_STRICT_QUEUE))
+				context->external_memory_type = VULKAN_EXTERNAL_MEMORY_OPAQUE;
+
+			/* Device creation additionally requires success-only completion of its exact native fence. */
+			if (vendor_flags == (VULKAN_VENDOR_CAPSET_OPAQUE | VULKAN_VENDOR_CAPSET_STRICT_QUEUE))
+				context->strict_queue = VK_TRUE;
+		}
 	}
 
 	/* Succeeded: the caller owns one compatible session with no fixed reply allocation. */

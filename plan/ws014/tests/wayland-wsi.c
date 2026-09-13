@@ -719,3 +719,14 @@ application_done(
 	/* Succeeded: WSI private dispatch never invoked this application callback. */
 	return;
 }
+
+/*
+ * Provides the native-release wake boundary while the dedicated swapchain fixture verifies notifications.
+ */
+void
+vulkan_wsi_image_notify(
+	void)
+{
+	/* Succeeded: the separate real swapchain fixture verifies condition registration and wake ownership. */
+	return;
+}

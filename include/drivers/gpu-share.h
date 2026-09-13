@@ -32,6 +32,7 @@ struct drv_gpu_share_ops {
 	int (*export_resource)(void *, void *, void *, const struct gpu_image_descriptor *, void **);
 	void (*release)(void *, void *);
 	int (*import_resource)(void *, void *, void *, void **, uint32_t *);
+
 	/* Optional physical view remains borrowed while the exported object lives. */
 	int (*get_scanout_backing)(void *, void *, struct drv_gpu_scanout_backing *);
 };

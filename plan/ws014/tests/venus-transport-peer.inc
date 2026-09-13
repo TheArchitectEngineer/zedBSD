@@ -39,6 +39,7 @@ kern_calloc(
 	void *allocation;
 
 	/* Leaves allocation failure visible to the production caller. */
+	fixture_calloc_calls++;
 	allocation = calloc(count, bytes);
 	if (allocation == NULL)
 		return NULL;
@@ -159,6 +160,13 @@ waitq_sleep(
 	unsigned flags)
 {
 	int handled;
+
+	/* A directly exercised autonomous timeout leaves all job records terminal before exiting. */
+	if (fixture_watchdog_stop != 0U) {
+		assert(fixture_transport->failed != 0U);
+		fixture_transport->stopping = 1U;
+		return 0;
+	}
 
 	/* Delivery occurs only after the caller releases queue ownership. */
 	(void)queue;
@@ -344,9 +352,18 @@ drv_gpu_report_error(
 	struct drv_gpu_device *device,
 	int error)
 {
-	(void)device;
+	assert(device == (struct drv_gpu_device *)&fixture_gpu_references);
+	assert(fixture_gpu_references != 0U);
+	assert(fixture_transport->queue_lock.owner_valid == 0U);
 	assert(error != 0);
 	fixture_reports++;
+
+	/* The callback may withdraw publication only because failure retained its own live snapshot. */
+	if (fixture_withdraw_report != 0U) {
+		fixture_withdraw_report = 0U;
+		drv_venus_transport_set_gpu(fixture_transport, NULL);
+		assert(fixture_gpu_references == 1U);
+	}
 }
 
 /*
@@ -362,4 +379,23 @@ poll_notify(
 
 	/* Succeeded: the current notification is visible to the fixture observer. */
 	return;
+}
+
+/* Retains one explicit publication or independent fault-snapshot reference. */
+void
+drv_gpu_retain(
+	struct drv_gpu_device *device)
+{
+	assert(device == (struct drv_gpu_device *)&fixture_gpu_references);
+	fixture_gpu_references++;
+}
+
+/* Releases only a reference previously acquired by the production transport. */
+void
+drv_gpu_release(
+	struct drv_gpu_device *device)
+{
+	assert(device == (struct drv_gpu_device *)&fixture_gpu_references);
+	assert(fixture_gpu_references != 0U);
+	fixture_gpu_references--;
 }

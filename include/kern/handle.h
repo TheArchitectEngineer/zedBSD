@@ -15,10 +15,9 @@
 #include <kern/atomic.h>
 #include <stdint.h>
 
-/* A kernel subsystem owns the meaning and authority of each payload type. */
+/* Driver implementations own payload identity; generic descriptors only classify the wrapper. */
 enum kernel_handle_type {
-	KERNEL_HANDLE_GPU = 1,
-	KERNEL_HANDLE_FENCE = 2,
+	KERNEL_HANDLE_DRIVER = 1,
 };
 
 /* Final destruction belongs to the subsystem that supplied the payload. */

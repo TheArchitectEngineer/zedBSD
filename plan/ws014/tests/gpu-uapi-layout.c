@@ -17,6 +17,7 @@
 #include <uapi/gpu-display.h>
 #include <uapi/gpu-scanout.h>
 #include <uapi/gpu.h>
+#include <uapi/gpu-job.h>
 #include <stddef.h>
 
 /* The complete capability response occupies 56 bytes on either data model. */
@@ -229,3 +230,12 @@ typedef char gpu_placed_condition_check[offsetof(struct gpu_blob_create_placed, 
 typedef char gpu_placed_dma_check[offsetof(struct gpu_placement, max_dma_address) == 8 ? 1 : -1];
 typedef char gpu_placed_alignment_check[offsetof(struct gpu_placement, alignment) == 16 ? 1 : -1];
 typedef char gpu_placed_command_check[GPU_BLOB_CREATE_PLACED == 0xc0404721UL ? 1 : -1];
+
+/* Strict work reservations retain identical generation and sequence fields on both ABIs. */
+typedef char gpu_job_reserve_size_check[sizeof(struct gpu_job_reserve) == 40 ? 1 : -1];
+typedef char gpu_job_reserve_generation_check[offsetof(struct gpu_job_reserve, generation) == 16 ? 1 : -1];
+typedef char gpu_job_reserve_sequence_check[offsetof(struct gpu_job_reserve, sequence) == 32 ? 1 : -1];
+typedef char gpu_job_action_size_check[sizeof(struct gpu_job_action) == 24 ? 1 : -1];
+typedef char gpu_job_reserve_command_check[GPU_JOB_RESERVE == 0xc0284722UL ? 1 : -1];
+typedef char gpu_job_commit_command_check[GPU_JOB_COMMIT == 0x80184723UL ? 1 : -1];
+typedef char gpu_job_cancel_command_check[GPU_JOB_CANCEL == 0x80184724UL ? 1 : -1];

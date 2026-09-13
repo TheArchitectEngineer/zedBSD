@@ -16,7 +16,7 @@
 #include "internal.h"
 
 #define PEER_BUFFERS 128
-#define EXPECTED_BYTES 131072
+#define EXPECTED_BYTES 2097152
 
 /* Models native identity and recording state without invoking implementation encoders. */
 struct peer_buffer {
@@ -1253,6 +1253,9 @@ test_lifecycle(
 	struct vulkan_object *pool_object;
 	struct vulkan_object *cursor;
 	struct vulkan_object update_target;
+	struct vulkan_object copy_target;
+	VkBufferCopy *large_copies;
+	VkBuffer copy_buffer;
 	uint32_t update_payload[16384];
 	VkBuffer update_buffer;
 	unsigned word;
@@ -1265,6 +1268,11 @@ test_lifecycle(
 	/* Sets up one real local device context and a counted independent application allocator. */
 	memset(&device, 0, sizeof(device));
 	memset(&context, 0, sizeof(context));
+#ifdef COMMANDS_REAL_CONTEXT
+	/* The combined variant owns a real mapped transport session through every recording. */
+	status = vulkan_context_open(&context, "/dev/gpu-test");
+	assert(status == VK_SUCCESS);
+#endif
 	memset(&allocation, 0, sizeof(allocation));
 	memset(&callbacks, 0, sizeof(callbacks));
 	callbacks.pUserData = &allocation;
@@ -1368,7 +1376,73 @@ test_lifecycle(
 	status = vkEndCommandBuffer(buffers[3]);
 	assert(status == VK_SUCCESS && peer_calls == calls + 2);
 	assert(expected_cursor == expected_count);
-	context.max_resource_bytes = 0;
+	context.max_resource_bytes = 4U * 1024U * 1024U;
+
+	/* End leaves an old opcode, but explicit Reset and repeated prefix flush remain no-reply records. */
+	status = vkResetCommandBuffer(buffers[3], 0);
+	assert(status == VK_SUCCESS);
+	context.max_resource_bytes = 69632;
+	status = vkBeginCommandBuffer(buffers[3], &begin);
+	assert(status == VK_SUCCESS);
+	calls = peer_calls;
+
+	/* Two legal 64KiB updates force a complete prefix flush on the same re-recorded buffer. */
+	for (batch = 0; batch < 2; batch++) {
+		expect_begin(117);
+		expect_long(501);
+		expect_long(batch * sizeof(update_payload));
+		expect_long(sizeof(update_payload));
+		expect_long(sizeof(update_payload));
+
+		/* The expected byte stream owns distinct values for this second recording generation. */
+		for (word = 0; word < 16384; word++) {
+			update_payload[word] = 0x53000000U + batch * 16384U + word;
+			expect_word(update_payload[word]);
+		}
+
+		vkCmdUpdateBuffer(buffers[3], update_buffer, batch * sizeof(update_payload), sizeof(update_payload), update_payload);
+	}
+
+	/* End validates its own reply after the earlier no-reply prefix was already consumed. */
+	status = vkEndCommandBuffer(buffers[3]);
+	assert(status == VK_SUCCESS && peer_calls == calls + 2);
+	assert(expected_cursor == expected_count);
+	context.max_resource_bytes = 4U * 1024U * 1024U;
+
+	/* A legal large copy record exceeds the production one-MiB batch limit without invalid UpdateBuffer input. */
+	large_copies = calloc(48000, sizeof(*large_copies));
+	assert(large_copies != NULL);
+	memset(&copy_target, 0, sizeof(copy_target));
+	copy_target.kind = VULKAN_OBJECT_BUFFER;
+	copy_target.wire_id = 502;
+	copy_buffer = (VkBuffer)(uintptr_t)&copy_target;
+	status = vkBeginCommandBuffer(buffers[3], &begin);
+	assert(status == VK_SUCCESS);
+	calls = peer_calls;
+	expect_begin(112);
+	expect_long(501);
+	expect_long(502);
+	expect_word(48000);
+	expect_long(48000);
+
+	/* Distinct source and destination buffers contain 48000 aligned, nonoverlapping copy ranges. */
+	for (index = 0; index < 48000; index++) {
+		large_copies[index].srcOffset = (VkDeviceSize)index * 4;
+		large_copies[index].dstOffset = (VkDeviceSize)index * 4;
+		large_copies[index].size = 4;
+		expect_long(large_copies[index].srcOffset);
+		expect_long(large_copies[index].dstOffset);
+		expect_long(large_copies[index].size);
+	}
+
+	/* The oversized complete record uses the existing zero-capacity context path immediately. */
+	vkCmdCopyBuffer(buffers[3], update_buffer, copy_buffer, 48000, large_copies);
+	free(large_copies);
+	assert(peer_calls == calls + 1);
+	assert(expected_cursor == expected_count);
+	status = vkEndCommandBuffer(buffers[3]);
+	assert(status == VK_SUCCESS && peer_calls == calls + 2);
+	assert(context.error == VK_SUCCESS);
 
 	/* Allocation failure in a void record is retained, later records are skipped, and native End still runs. */
 	status = vkBeginCommandBuffer(buffers[1], &begin);
@@ -1441,6 +1515,11 @@ test_lifecycle(
 	assert(peer_pool == 0);
 	assert(device.object.first_child == NULL);
 	assert(allocation.allocations == allocation.frees);
+#ifdef COMMANDS_REAL_CONTEXT
+	/* Real shared mappings and all retained transport allocations retire at session close. */
+	status = vulkan_context_close(&context);
+	assert(status == VK_SUCCESS);
+#endif
 
 	/* Succeeded: native and callback ownership remain balanced across every tested lifecycle transition. */
 	return;

@@ -25,6 +25,14 @@ struct vulkan_queue_transaction {
 	size_t count;
 };
 
+/* A queue retains one native fence per concurrent fence-less submission until device teardown. */
+struct vulkan_queue_fence {
+	struct vulkan_queue_fence *next;
+	VkFence fence;
+	VkBool32 busy;
+};
+
+static VkResult queue_private_fence(struct VkQueue_T *queue, struct vulkan_queue_fence **result);
 static VkResult queue_enqueue(struct VkQueue_T *queue, uint32_t count, const VkSubmitInfo *submits, const VkBindSparseInfo *binds, VkFence fence, VkBool32 sparse, VkBool32 locked);
 static void queue_write_waits(struct vulkan_writer *writer, struct vulkan_queue_transaction *transaction, uint32_t count, const VkSemaphore *semaphores, const VkPipelineStageFlags *stages, VkBool32 has_stages);
 static void queue_write_signals(struct vulkan_writer *writer, uint32_t count, const VkSemaphore *semaphores);
@@ -193,7 +201,7 @@ vulkan_queue_idle(
 	if (status != VK_SUCCESS)
 		return status;
 
-	/* An empty submit fence covers all earlier work on the same native queue. */
+	/* The strict queue marker FIFO retires this job after all earlier committed jobs, including sparse work. */
 	status = vulkan_queue_submit(queue, 0, NULL, fence);
 	if (status != VK_SUCCESS) {
 		vkDestroyFence((VkDevice)queue->device, fence, NULL);
@@ -214,6 +222,33 @@ vulkan_queue_idle(
 	return VK_SUCCESS;
 }
 
+/*
+ * Releases cached native fences after the device has drained its accepted work.
+ */
+void
+vulkan_queue_finish(
+	struct VkQueue_T *queue)
+{
+	struct vulkan_queue_fence *slot;
+
+	/* Device destruction is externally synchronized with every queue operation. */
+	while (queue->private_fences != NULL) {
+		/* Removes cache publication before callbacks may release its final native object. */
+		slot = queue->private_fences;
+		queue->private_fences = slot->next;
+
+		/* Fence destruction waits for the strict host marker's final native access. */
+		if (slot->fence != VK_NULL_HANDLE)
+			vkDestroyFence((VkDevice)queue->device, slot->fence, NULL);
+
+		/* The queue's device allocation policy owns every cache slot. */
+		vulkan_free(&queue->device->object.allocator, slot);
+	}
+
+	/* Succeeded: the queue owns no hidden native fence or cache allocation. */
+	return;
+}
+
 /* Commit proposed software waits only after one complete native enqueue succeeds. */
 static VkResult
 queue_enqueue(
@@ -230,6 +265,8 @@ queue_enqueue(
 	struct vulkan_reader reader;
 	struct vulkan_queue_transaction transaction;
 	struct vulkan_sync *completion;
+	struct vulkan_notification *reservation;
+	struct vulkan_queue_fence *private_fence;
 	VkResult status;
 	size_t capacity;
 	size_t index;
@@ -274,10 +311,31 @@ queue_enqueue(
 
 	/* Resolve the optional fence before entering the queue-to-device lock order. */
 	completion = vulkan_sync_object((uint64_t)(uintptr_t)fence);
-	vulkan_external_fence_quiesce(completion);
-	vulkan_writer_init_for_object(&writer, &queue->object);
+	vulkan_sync_quiesce(completion);
+	/* A caller-owned queue lock remains held across WSI recording and submission. */
+	private_fence = NULL;
+	reservation = NULL;
 	if (!locked)
 		pthread_mutex_lock(&queue->mutex);
+
+	/* A fence-less public submit still requires one exact native GPU completion proof. */
+	if (fence == VK_NULL_HANDLE) {
+		status = queue_private_fence(queue, &private_fence);
+		if (status != VK_SUCCESS) {
+			/* This path consumes only the queue lock acquired by this invocation. */
+			if (!locked)
+				pthread_mutex_unlock(&queue->mutex);
+			vulkan_free(&device->object.allocator, transaction.waits);
+			return status;
+		}
+
+		/* The private proof is encoded exactly where a public submission fence would be. */
+		fence = private_fence->fence;
+		completion = vulkan_sync_object((uint64_t)(uintptr_t)fence);
+	}
+
+	/* Initializes command ownership only after the complete native proof exists. */
+	vulkan_writer_init_for_object(&writer, &queue->object);
 
 	/* Acquire briefly shared binary-payload state only while enqueuing native work. */
 	pthread_mutex_lock(&device->mutex);
@@ -311,11 +369,13 @@ queue_enqueue(
 	queue_write_handle(&writer, (uint64_t)(uintptr_t)fence);
 	status = writer.error;
 	if (status == VK_SUCCESS)
-		status = vulkan_external_fence_prepare_locked(device, completion);
+		status = vulkan_sync_job_reserve(queue, completion, &reservation);
 
+	/* A reservation failure leaves native encoding inert and all caller waits unconsumed. */
 	if (status != VK_SUCCESS)
 		writer.error = status;
 
+	/* Native acceptance is established only by this transaction's decoded VkResult. */
 	accepted = VK_FALSE;
 	status = vulkan_command_execute(device->object.context, &writer, 8, &reader, VK_TRUE);
 	if (status == VK_SUCCESS) {
@@ -328,15 +388,18 @@ queue_enqueue(
 				transaction.waits[index].sync->software_signaled = VK_FALSE;
 		}
 
-		/* A submitted fence now obtains completion from its native queue payload. */
-		if (completion != NULL) {
-			completion->software_signaled = VK_FALSE;
-			status = vulkan_sync_submit_notification(queue, completion);
-		}
+		/* Native acceptance replaces any earlier synchronous acquisition payload. */
+		completion->software_signaled = VK_FALSE;
 	}
 
-	/* A preallocated external worker starts only after real native acceptance. */
-	status = vulkan_external_fence_submit_locked(completion, status, accepted);
+	/* Commits the already reserved marker or rolls back only definite native nonacceptance. */
+	status = vulkan_sync_job_finish(queue, completion, reservation, status, accepted);
+
+	/* An unsubmitted private proof may be reused; terminal loss leaves it owned for teardown. */
+	if (private_fence != NULL &&
+	    accepted == VK_FALSE &&
+	    status != VK_ERROR_DEVICE_LOST)
+		private_fence->busy = VK_FALSE;
 
 	/* Record device loss before releasing locally observable sync state. */
 	vulkan_sync_device_error(device, status);
@@ -622,4 +685,72 @@ queue_write_handle(
 
 	/* Succeeded: null remains zero and ordinary handles use reserved wire identities. */
 	return;
+}
+
+/* Borrows a completed native fence without overwriting another inflight job's proof. */
+static VkResult
+queue_private_fence(
+	struct VkQueue_T *queue,
+	struct vulkan_queue_fence **result)
+{
+	struct vulkan_queue_fence *slot;
+	struct vulkan_sync *sync;
+	VkFenceCreateInfo create;
+	VkResult status;
+
+	/* Queue serialization protects cache ownership; completion observation uses no device wait lock. */
+	slot = queue->private_fences;
+	while (slot != NULL) {
+		/* An unsubmitted or partially initialized slot is immediately reusable. */
+		if (slot->busy == VK_FALSE)
+			break;
+
+		/* Only a terminal strict marker permits native reset and reuse of this slot. */
+		sync = vulkan_sync_object((uint64_t)(uintptr_t)slot->fence);
+		status = vulkan_sync_job_status(sync, 0);
+		if (status < 0)
+			return status;
+
+		/* A pending GPU job remains exclusive while another slot is considered. */
+		if (status == VK_SUCCESS) {
+			slot->busy = VK_FALSE;
+			break;
+		}
+
+		/* Another pending identity remains owned while the search considers later slots. */
+		slot = slot->next;
+	}
+
+	/* Actual concurrency grows the cache, while rejected retries reuse its inactive slot. */
+	if (slot == NULL) {
+		slot = vulkan_allocate(&queue->device->object.allocator, sizeof(*slot), sizeof(void *), VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
+		if (slot == NULL)
+			return VK_ERROR_OUT_OF_HOST_MEMORY;
+
+		/* Queue ownership retains every partial native creation for retry or final teardown. */
+		memset(slot, 0, sizeof(*slot));
+		slot->next = queue->private_fences;
+		queue->private_fences = slot;
+	}
+
+	/* First use creates a native fence; subsequent completed uses reset the same identity. */
+	if (slot->fence == VK_NULL_HANDLE) {
+		memset(&create, 0, sizeof(create));
+		create.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+		status = vkCreateFence((VkDevice)queue->device, &create, NULL, &slot->fence);
+		if (status != VK_SUCCESS)
+			return status;
+	} else {
+		/* Exact marker retirement already permits this native identity's next generation. */
+		status = vkResetFences((VkDevice)queue->device, 1U, &slot->fence);
+		if (status != VK_SUCCESS)
+			return status;
+	}
+
+	/* The selected slot remains exclusive until its exact job reaches a terminal state. */
+	slot->busy = VK_TRUE;
+	*result = slot;
+
+	/* Succeeded: the public fence-less submission has an independently retained native proof. */
+	return VK_SUCCESS;
 }

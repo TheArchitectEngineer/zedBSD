@@ -18,6 +18,8 @@
 #include <stddef.h>
 
 #include "kern/text-display.h"
+#include <kern/lock.h>
+#include <kern/waitq.h>
 
 /* The published backend is immutable and outlives every atomic reader. */
 static const struct kern_text_ops *text_ops;
@@ -28,7 +30,16 @@ static const struct kern_text_ops *text_ops;
  */
 static uint32_t text_generation;
 
+/* Notification links retire under this lock before their caller-owned storage disappears. */
+static struct spinlock text_observer_lock = {
+	{ 0U }, LOCK_RANK_CONSOLE_TEXT, "text observers", 0U, 0U
+};
+
+/* Only active snapshot consumers subscribe, so graphics ownership need not wake them. */
+static struct kern_text_observer *text_observers;
+
 static const struct kern_text_ops *ops(void);
+static void text_changed(void);
 
 /*
  * Publishes one board's character output.
@@ -41,7 +52,7 @@ kern_text_register(
 	__atomic_store_n(&text_ops, ops, __ATOMIC_RELEASE);
 
 	/* Snapshot consumers must repaint even when the replacement backend kept the same text. */
-	__atomic_add_fetch(&text_generation, 1U, __ATOMIC_RELEASE);
+	text_changed();
 
 	/* Succeeded: readers can observe the new immutable backend and its redraw generation. */
 	return;
@@ -95,7 +106,7 @@ kern_text_putc(
 		table->putc(character);
 
 		/* Publishes the appended character and updated cursor to snapshot consumers. */
-		__atomic_add_fetch(&text_generation, 1U, __ATOMIC_RELEASE);
+		text_changed();
 	}
 
 	/* Succeeded: the available backend completed its text operation. */
@@ -120,7 +131,7 @@ kern_text_write(
 		table->write(row, column, attribute, utf8);
 
 		/* Publishes the replaced text span to snapshot consumers. */
-		__atomic_add_fetch(&text_generation, 1U, __ATOMIC_RELEASE);
+		text_changed();
 	}
 
 	/* Succeeded: the available backend completed its text operation. */
@@ -142,7 +153,7 @@ kern_text_clear(
 		table->clear();
 
 		/* Publishes the cleared retained grid to snapshot consumers. */
-		__atomic_add_fetch(&text_generation, 1U, __ATOMIC_RELEASE);
+		text_changed();
 	}
 
 	/* Succeeded: the available backend completed its text operation. */
@@ -167,7 +178,7 @@ kern_text_set_cursor(
 
 	/* Retains the backend's cursor convention while notifying snapshot consumers. */
 	placement = table->set_cursor(row, column);
-	__atomic_add_fetch(&text_generation, 1U, __ATOMIC_RELEASE);
+	text_changed();
 
 	/* Succeeded: reports the backend's placement answer. */
 	return placement;
@@ -213,7 +224,7 @@ kern_text_show_cursor(
 		table->show_cursor(visible);
 
 		/* Publishes the changed cursor visibility to snapshot consumers. */
-		__atomic_add_fetch(&text_generation, 1U, __ATOMIC_RELEASE);
+		text_changed();
 	}
 
 	/* Succeeded: the available backend completed its text operation. */
@@ -235,7 +246,7 @@ kern_text_update_cursor(
 		table->update_cursor();
 
 		/* Publishes the completed cursor repaint to snapshot consumers. */
-		__atomic_add_fetch(&text_generation, 1U, __ATOMIC_RELEASE);
+		text_changed();
 	}
 
 	/* Succeeded: the available backend completed its text operation. */
@@ -257,7 +268,7 @@ kern_text_suspend(
 		table->suspend();
 
 		/* Publishes the backend's suspended rendering state to snapshot consumers. */
-		__atomic_add_fetch(&text_generation, 1U, __ATOMIC_RELEASE);
+		text_changed();
 	}
 
 	/* Succeeded: the available backend completed its text operation. */
@@ -279,7 +290,7 @@ kern_text_resume(
 		table->resume();
 
 		/* Publishes the resumed retained text to snapshot consumers. */
-		__atomic_add_fetch(&text_generation, 1U, __ATOMIC_RELEASE);
+		text_changed();
 	}
 
 	/* Succeeded: the available backend completed its text operation. */
@@ -334,10 +345,119 @@ kern_text_generation(
 	return generation;
 }
 
+/*
+ * Publishes a caller-owned wake destination without transferring its lifetime.
+ */
+int
+kern_text_observe(
+	struct kern_text_observer *observer,
+	struct spinlock *lock,
+	struct wait_queue *queue)
+{
+	struct kern_text_observer *entry;
+	unsigned long irq;
+
+	/* A notification must own a complete condition lock and queue pair. */
+	if (observer == NULL ||
+	    lock == NULL ||
+	    queue == NULL)
+		return EINVAL;
+
+	/* Reject reverse lock ordering before an interrupt can encounter the destination. */
+	if (lock->rank <= LOCK_RANK_CONSOLE_TEXT || lock->rank >= LOCK_RANK_SCHEDULER)
+		return EINVAL;
+
+	/* The registry lock serializes duplicate registration with mutation and removal. */
+	irq = spin_lock_irqsave(&text_observer_lock);
+
+	/* An already linked object cannot be repurposed while notifications reference it. */
+	for (entry = text_observers; entry != NULL; entry = entry->next) {
+		/* Each caller-owned link may occur in the registry at most once. */
+		if (entry == observer) {
+			spin_unlock_irqrestore(&text_observer_lock, irq);
+			return EBUSY;
+		}
+	}
+
+	/* Publish the complete destination before releasing the registry lock. */
+	observer->lock = lock;
+	observer->queue = queue;
+	observer->next = text_observers;
+	text_observers = observer;
+
+	spin_unlock_irqrestore(&text_observer_lock, irq);
+
+	/* Succeeded: subsequent text changes notify this destination until removal. */
+	return 0;
+}
+
+/*
+ * Ends a notification lifetime before its owner can retire the condition queue.
+ */
+void
+kern_text_unobserve(
+	struct kern_text_observer *observer)
+{
+	struct kern_text_observer **link;
+	unsigned long irq;
+
+	/* A missing subscription owns no notification lifetime. */
+	if (observer == NULL)
+		return;
+
+	/* Taking the registry lock also waits for any earlier complete wake operation. */
+	irq = spin_lock_irqsave(&text_observer_lock);
+
+	/* Unlink by identity so repeated removal never dereferences retired destinations. */
+	for (link = &text_observers; *link != NULL; link = &(*link)->next) {
+		/* Only this exact link loses its registered wake destination. */
+		if (*link == observer) {
+			*link = observer->next;
+			observer->next = NULL;
+			observer->lock = NULL;
+			observer->queue = NULL;
+			break;
+		}
+	}
+
+	spin_unlock_irqrestore(&text_observer_lock, irq);
+
+	/* Succeeded: no notification can access the caller-owned link after return. */
+	return;
+}
+
 /* Reads the published table, or NULL before any board registers. */
 static const struct kern_text_ops *
 ops(void)
 {
 	/* Pairs with the release in the register path. */
 	return __atomic_load_n(&text_ops, __ATOMIC_ACQUIRE);
+}
+
+/* Publishes retained text before waking only the consumers currently displaying it. */
+static void
+text_changed(
+	void)
+{
+	struct kern_text_observer *observer;
+	unsigned long irq;
+
+	/* Text backend locks have already been released before this notification boundary. */
+	__atomic_add_fetch(&text_generation, 1U, __ATOMIC_RELEASE);
+	irq = spin_lock_irqsave(&text_observer_lock);
+
+	/* Holding the registry excludes removal until every destination wake has finished. */
+	for (observer = text_observers; observer != NULL; observer = observer->next) {
+		/* The subscriber lock serializes sleep registration with this IRQ-safe notification. */
+		spin_lock(observer->lock);
+
+		waitq_wake_all(observer->queue);
+
+		spin_unlock(observer->lock);
+	}
+
+	spin_unlock_irqrestore(&text_observer_lock, irq);
+
+	/* Succeeded: each subscribed consumer can observe this text generation. */
+	return;
 }

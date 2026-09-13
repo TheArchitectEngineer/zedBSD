@@ -1,0 +1,4 @@
+text snapshot: PASS (actual generic + PCAT, exact BGRA glyphs/cursor, guarded MMIO, restoration, generation, fallback)
+ordinary: PASS
+text snapshot: PASS (actual generic + PCAT, exact BGRA glyphs/cursor, guarded MMIO, restoration, generation, fallback)
+sanitize: PASS

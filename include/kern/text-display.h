@@ -26,6 +26,23 @@
 #include <stddef.h>
 #include <stdint.h>
 
+struct spinlock;
+struct wait_queue;
+
+/*
+ * A caller-owned notification link for retained text changes.
+ *
+ * The condition lock and wait queue remain live until unobserve returns.
+ * The lock is a leaf above LOCK_RANK_CONSOLE_TEXT and below the scheduler.
+ * Register and unregister without holding that lock. Notifications take it
+ * with interrupts disabled and only wake the queue, never call a driver.
+ */
+struct kern_text_observer {
+	struct kern_text_observer *next;
+	struct spinlock *lock;
+	struct wait_queue *queue;
+};
+
 /* Light grey on black, the default text attribute on every board. */
 #define KERN_TEXT_ATTRIB_NORMAL	0x07U
 
@@ -114,5 +131,23 @@ int kern_text_snapshot(struct kern_text_snapshot *snapshot);
 
 /* Changes after completed text mutations; consumers compare successive observations. */
 uint32_t kern_text_generation(void);
+
+/*
+ * Subscribes an initialized caller-owned condition queue to text mutations.
+ * Read the generation after registration to include earlier text changes.
+ */
+int
+kern_text_observe(
+	struct kern_text_observer *observer,
+	struct spinlock *lock,
+	struct wait_queue *queue);
+
+/*
+ * Removes a subscription and waits for every in-flight wake to finish.
+ * Repeated removal is harmless, and the caller may then free the link.
+ */
+void
+kern_text_unobserve(
+	struct kern_text_observer *observer);
 
 #endif

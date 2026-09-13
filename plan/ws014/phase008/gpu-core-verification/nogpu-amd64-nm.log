@@ -1,0 +1,11 @@
+GPU/core/fence/Venus symbols: 0
+GPU object files: 0
+Generic fd/handle defined symbols:
+ffffffff80270cfe T fd_object_clear
+ffffffff80270c7d T fd_object_get
+ffffffff80270ca8 T fd_object_put
+ffffffff80270c58 T fd_object_valid
+ffffffff80270897 T filedesc_commit_objects
+ffffffff80270bf7 T handle_get
+ffffffff80270c13 T handle_put
+PASS

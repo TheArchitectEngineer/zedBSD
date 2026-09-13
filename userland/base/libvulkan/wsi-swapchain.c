@@ -12,6 +12,7 @@
 
 #include "wsi-internal.h"
 
+#include <errno.h>
 #include <uapi/gpu-fence.h>
 #include <sys/ioctl.h>
 #include <string.h>
@@ -22,6 +23,7 @@
 #define WSI_IMAGE_ACQUIRED	1U
 #define WSI_IMAGE_PRESENTING	2U
 #define WSI_COMPLETION_TIMEOUT	10000000000ULL
+#define WSI_PROGRESS_INTERVAL	10000000ULL
 
 /* Shared presentation allocations transfer ownership to another Vulkan instance. */
 #define WSI_QUEUE_FAMILY_EXTERNAL 0xfffffffeU
@@ -81,9 +83,11 @@ struct vulkan_swapchain {
 /* A job borrows its queue worker until the ordered completion path retires it. */
 struct wsi_queue_worker;
 
-/* A queue reuses one private fence per concurrent job instead of starting completion threads per frame. */
+/* One concurrent job borrows cached command storage and a fence until GPU and native use retire. */
 struct wsi_present_fence {
 	struct wsi_present_fence *next;
+	VkCommandPool pool;
+	VkCommandBuffer command;
 	VkFence fence;
 	int fd;
 	VkBool32 shared;
@@ -170,6 +174,24 @@ static VkResult present_worker_get(struct VkQueue_T *queue, struct wsi_queue_wor
 static void *present_worker_main(void *argument);
 static void present_workers_stop(struct VkDevice_T *device);
 static VkResult present_drain(struct VkDevice_T *device, struct VkQueue_T *queue);
+
+/*
+ * Wakes acquisition after a native adapter releases image ownership.
+ */
+void
+vulkan_wsi_image_notify(
+	void)
+{
+	/* Serializes notification with the last image-state observation before sleep. */
+	pthread_mutex_lock(&swapchain_mutex);
+
+	pthread_cond_broadcast(&swapchain_condition);
+
+	pthread_mutex_unlock(&swapchain_mutex);
+
+	/* Succeeded: every waiting acquirer will observe the adapter's published state. */
+	return;
+}
 
 /*
  * Creates an independent swapchain and retires the specified old chain on entry.
@@ -394,116 +416,165 @@ vkAcquireNextImageKHR(
 {
 	struct VkDevice_T *device;
 	struct vulkan_swapchain *chain;
-	struct timespec pause;
+	struct timespec deadline;
 	uint64_t started;
 	uint64_t now;
+	uint64_t remaining;
+	uint64_t delay;
 	uint32_t offset;
 	uint32_t index;
 	VkResult error;
 	VkBool32 acquired;
 	VkBool32 available;
+	int status;
 
-	/* Core synchronization code owns the actual Vulkan semaphore/fence payloads. */
+	/* Resolves the owner before either image or completion state can change. */
 	device = vulkan_device(device_handle);
 	chain = swapchain_get(handle);
 	if (chain == NULL || result == NULL)
 		return VK_ERROR_INITIALIZATION_FAILED;
 
-	/* Prevents another logical device from acquiring or enumerating this swapchain. */
+	/* Refuses acquisition through another logical device. */
 	if (chain->device != device)
 		return VK_ERROR_INITIALIZATION_FAILED;
 
-	/* Requires an acquire completion primitive before handing image ownership to the application. */
+	/* Requires an acquire completion primitive before transferring image ownership. */
 	if (semaphore == VK_NULL_HANDLE && fence == VK_NULL_HANDLE)
 		return VK_ERROR_INITIALIZATION_FAILED;
+
+	/* Measures the whole operation in the caller's monotonic timeout domain. */
 	error = swapchain_now(&started);
 	if (error != VK_SUCCESS)
 		return error;
-	pause.tv_sec = 0;
-	pause.tv_nsec = 1000000L;
 
-	/* A finite timeout never consumes an image or signals either synchronization object. */
+	/* Rechecks surface progress after each ownership notification or finite progress interval. */
 	for (;;) {
+		/* Preserves asynchronous device and surface errors before choosing an image. */
 		error = swapchain_current(chain);
 		if (error != VK_SUCCESS)
 			return error;
 
-		/* Dispatches only WSI-owned events before taking the acquisition state lock. */
+		/* Dispatches WSI-owned socket events without retaining the image-state mutex. */
 		if (chain->surface->platform->progress != NULL) {
 			error = chain->surface->platform->progress(chain->lease);
 			if (error != VK_SUCCESS)
 				return error;
 		}
 
-		/* Reserves one application image only after compositor releases have been observed. */
+		/* Keeps the image-state observation and condition registration indivisible. */
 		pthread_mutex_lock(&swapchain_mutex);
 
-		/* Stops new acquisition after a replacement has retired this swapchain. */
+		/* A replacement retires acquisition even if its own creation later fails. */
 		if (chain->retired != VK_FALSE) {
 			pthread_mutex_unlock(&swapchain_mutex);
 			return VK_ERROR_OUT_OF_DATE_KHR;
 		}
 
-		/* Round-robin ownership does not impose an application presentation order. */
+		/* Selects a reusable image without imposing an application presentation order. */
 		acquired = VK_FALSE;
 		index = chain->cursor;
 		for (offset = 0U; offset < chain->group->count; offset++) {
-			/* Skips buffers retained by either application rendering or the compositor. */
+			/* Compositor retention is independent of the producer's image-state entry. */
 			available = VK_TRUE;
 			if (chain->gpu_present != VK_FALSE && chain->surface->platform->image_available != NULL)
 				available = chain->surface->platform->image_available(chain->presentation[index].native_image);
 
-			/* Both rendering and native presentation must have released this image. */
+			/* Skips images still borrowed by application rendering or native presentation. */
 			if (chain->states[index] != WSI_IMAGE_AVAILABLE || available == VK_FALSE) {
 				index++;
 
-				/* Wraps the acquisition cursor without changing any image ownership state. */
+				/* Wraps the cursor without changing ownership. */
 				if (index == chain->group->count)
 					index = 0U;
+
+				/* A retained image contributes no ownership to this acquisition attempt. */
 				continue;
 			}
 
+			/* Acquisition excludes competing callers before completion signaling begins. */
 			chain->states[index] = WSI_IMAGE_ACQUIRED;
 			acquired = VK_TRUE;
 			break;
 		}
 
-		pthread_mutex_unlock(&swapchain_mutex);
-		if (acquired != VK_FALSE)
+		/* Leaves serialization before signaling the acquired image's public sync objects. */
+		if (acquired != VK_FALSE) {
+			pthread_mutex_unlock(&swapchain_mutex);
 			break;
+		}
 
-		/* Standard timeout zero reports immediate unavailability without sleeping. */
-		if (timeout == 0U)
+		/* Timeout zero performs one observation without registering a sleep. */
+		if (timeout == 0U) {
+			pthread_mutex_unlock(&swapchain_mutex);
 			return VK_NOT_READY;
-		error = swapchain_now(&now);
-		if (error != VK_SUCCESS)
-			return error;
+		}
 
-		/* Ends a finite acquire wait only after its monotonic deadline expires. */
-		if (timeout != UINT64_MAX && now - started >= timeout)
-			return VK_TIMEOUT;
-		nanosleep(&pause, NULL);
+		/* Limits each wait so unread Wayland events and device loss still make progress. */
+		error = swapchain_now(&now);
+		if (error != VK_SUCCESS) {
+			pthread_mutex_unlock(&swapchain_mutex);
+			return error;
+		}
+
+		/* A finite caller deadline takes priority over the protocol progress interval. */
+		delay = WSI_PROGRESS_INTERVAL;
+		if (timeout != UINT64_MAX) {
+			/* Includes native capability and socket processing in the original deadline. */
+			if (now - started >= timeout) {
+				pthread_mutex_unlock(&swapchain_mutex);
+				return VK_TIMEOUT;
+			}
+
+			/* Never deliberately sleeps beyond the remaining requested duration. */
+			remaining = timeout - (now - started);
+			if (remaining < delay)
+				delay = remaining;
+		}
+
+		/* Converts the bounded absolute deadline without overflowing nanosecond arithmetic. */
+		deadline.tv_sec = (time_t)(now / 1000000000ULL);
+		deadline.tv_nsec = (long)(now % 1000000000ULL + delay);
+		if (deadline.tv_nsec >= 1000000000L) {
+			deadline.tv_sec++;
+			deadline.tv_nsec -= 1000000000L;
+		}
+
+		/* Atomically releases image serialization while monotonic time or an event wakes this caller. */
+		status = pthread_cond_clockwait(&swapchain_condition, &swapchain_mutex, CLOCK_MONOTONIC, &deadline);
+
+		pthread_mutex_unlock(&swapchain_mutex);
+
+		/* Spurious notifications and elapsed progress intervals both require another observation. */
+		if (status != 0 &&
+		    status != ETIMEDOUT &&
+		    status != EINTR)
+			return VK_ERROR_DEVICE_LOST;
 	}
 
-	/* Software-complete acquire payloads avoid deadlocking behind unrelated queue work. */
+	/* Software-complete acquisition does not wait behind unrelated GPU work. */
 	error = vulkan_wsi_acquire_signal(device, semaphore, fence);
 	if (error != VK_SUCCESS) {
+		/* Failed signaling restores image ownership before waking another acquirer. */
 		pthread_mutex_lock(&swapchain_mutex);
+
 		chain->states[index] = WSI_IMAGE_AVAILABLE;
+		pthread_cond_broadcast(&swapchain_condition);
+
 		pthread_mutex_unlock(&swapchain_mutex);
+
+		/* Failure: the public completion primitive acquired no reusable image. */
 		return error;
 	}
 
-	/* Only a fully successful acquire advances selection and returns the image index. */
+	/* Advances selection only after the public completion primitive was signaled. */
 	pthread_mutex_lock(&swapchain_mutex);
 
 	chain->cursor = (index + 1U) % chain->group->count;
 
 	pthread_mutex_unlock(&swapchain_mutex);
 
+	/* Succeeded: the caller owns this reusable image and its signaled completion primitive. */
 	*result = index;
-
-	/* Succeeded: image contents are reusable and the requested sync objects are signaled. */
 	return VK_SUCCESS;
 }
 
@@ -744,7 +815,9 @@ swapchain_create(
 		if (old->device != device || old->surface != surface)
 			return VK_ERROR_INITIALIZATION_FAILED;
 		pthread_mutex_lock(&swapchain_mutex);
+
 		old->retired = VK_TRUE;
+		pthread_cond_broadcast(&swapchain_condition);
 
 		/* Removes the retired swapchain from the surface active slot. */
 		if (old->surface->active == old)
@@ -1542,6 +1615,12 @@ swapchain_current(
 	error = __atomic_load_n(&chain->device->error, __ATOMIC_ACQUIRE);
 	if (error != VK_SUCCESS)
 		return VK_ERROR_DEVICE_LOST;
+
+	/* A failed renderer context remains terminal even before another entrypoint updates its device. */
+	error = __atomic_load_n(&chain->device->object.context->error, __ATOMIC_ACQUIRE);
+	if (error != VK_SUCCESS)
+		return VK_ERROR_DEVICE_LOST;
+
 	/* Revalidates the selected native mode without altering acquisition ownership. */
 	error = chain->surface->platform->capabilities(
 		chain->surface,
@@ -1829,25 +1908,39 @@ present_record(
 	uint32_t index;
 	VkResult error;
 
-	/* A transient pool belongs to the actual presenting queue family. */
-	allocator = swapchain_allocator(&job->allocator);
-	memset(&pool, 0, sizeof(pool));
-	pool.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-	pool.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
-	pool.queueFamilyIndex = job->queue->family;
-	error = vkCreateCommandPool((VkDevice)job->queue->device, &pool, allocator, &job->pool);
+	/* Reserves one independent slot before recording can overwrite cached command state. */
+	error = present_fence_prepare(job);
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* The transient primary command buffer belongs to this already-created private pool. */
-	memset(&allocate, 0, sizeof(allocate));
-	allocate.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	allocate.commandPool = job->pool;
-	allocate.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	allocate.commandBufferCount = 1U;
-	error = vkAllocateCommandBuffers((VkDevice)job->queue->device, &allocate, &job->command);
-	if (error != VK_SUCCESS)
-		return error;
+	/* A completed slot keeps command storage in its actual queue family. */
+	allocator = swapchain_allocator(&job->allocator);
+	if (job->completion->pool == VK_NULL_HANDLE) {
+		/* Begin may implicitly reset this private buffer only after the slot retires. */
+		memset(&pool, 0, sizeof(pool));
+		pool.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+		pool.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+		pool.queueFamilyIndex = job->queue->family;
+		error = vkCreateCommandPool((VkDevice)job->queue->device, &pool, allocator, &job->completion->pool);
+		if (error != VK_SUCCESS)
+			return error;
+	}
+
+	/* A failed first allocation leaves its pool cached for the next ordinary retry. */
+	if (job->completion->command == VK_NULL_HANDLE) {
+		memset(&allocate, 0, sizeof(allocate));
+		allocate.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+		allocate.commandPool = job->completion->pool;
+		allocate.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+		allocate.commandBufferCount = 1U;
+		error = vkAllocateCommandBuffers((VkDevice)job->queue->device, &allocate, &job->completion->command);
+		if (error != VK_SUCCESS)
+			return error;
+	}
+
+	/* The job borrows these identities until both GPU and native presentation use have retired. */
+	job->pool = job->completion->pool;
+	job->command = job->completion->command;
 
 	/* The whole command buffer is ready before the one submission consumes waits. */
 	memset(&begin, 0, sizeof(begin));
@@ -1877,11 +1970,6 @@ present_record(
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* The queue owns reusable private fences whose completion workers survive individual frames. */
-	error = present_fence_prepare(job);
-	if (error != VK_SUCCESS)
-		return error;
-
 	/* Succeeded: all fallible command storage exists before any queue operation. */
 	return VK_SUCCESS;
 }
@@ -1907,9 +1995,8 @@ present_fence_prepare(
 	if ((job->queue->device->object.context->capabilities & GPU_CAP_FENCE) != 0U) {
 		/* One synchronized native target requires a shared producer payload for the whole submission. */
 		for (index = 0U; index < job->count; index++) {
-			/* Copied or protocol-only targets need only the actual native Vulkan fence wait. */
-			if (job->chains[index]->gpu_present != VK_FALSE &&
-			    job->chains[index]->surface->platform->present_image_sync != NULL)
+			/* Wayland and direct GPU images both use the same authoritative kernel completion payload. */
+			if (job->chains[index]->gpu_present != VK_FALSE)
 				shared_fence = VK_TRUE;
 		}
 	}
@@ -1957,7 +2044,7 @@ present_fence_prepare(
 
 	/* First use constructs native ownership; later uses advance the completed payload generation. */
 	if (completion->fence == VK_NULL_HANDLE) {
-		/* Ordinary Vulkan creation owns the optional shared completion payload and its worker. */
+		/* Ordinary Vulkan creation owns the optional shared completion payload. */
 		memset(&fence, 0, sizeof(fence));
 		fence.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
 
@@ -2301,20 +2388,12 @@ present_finish(
 	VkResult error)
 {
 	struct vulkan_swapchain *chain;
-	const VkAllocationCallbacks *allocator;
 	uint32_t index;
 	uint32_t image;
 
 	/* No helper may touch the queue when validation failed before it was assigned. */
 	if (job->queue == NULL)
 		return;
-
-	/* Transient Vulkan children retire through the same allocation policy that created them. */
-	allocator = swapchain_allocator(&job->allocator);
-
-	/* Destroys transient command storage after presentation completion or namespace loss. */
-	if (job->pool != VK_NULL_HANDLE)
-		vkDestroyCommandPool((VkDevice)job->queue->device, job->pool, allocator);
 
 	/* A failed enqueue leaves acquisition unchanged; an enqueued present releases it. */
 	pthread_mutex_lock(&swapchain_mutex);
@@ -2810,12 +2889,18 @@ present_workers_stop(
 			return;
 		}
 
-		/* Reusable private completion workers are stopped only after all associated native jobs have drained. */
+		/* Cached native resources retire only after all associated jobs and their worker have drained. */
 		allocator = swapchain_allocator(&device->object.allocator);
 		while (worker->fences != NULL) {
 			/* No accepted job can borrow this cached completion after its owning worker has joined. */
 			completion = worker->fences;
 			worker->fences = completion->next;
+
+			/* No pending command buffer may outlive the worker that retained this pool. */
+			if (completion->pool != VK_NULL_HANDLE)
+				vkDestroyCommandPool((VkDevice)device, completion->pool, allocator);
+
+			/* The fence remains alive until all command storage and marker accesses have retired. */
 			if (completion->fence != VK_NULL_HANDLE)
 				vkDestroyFence((VkDevice)device, completion->fence, allocator);
 

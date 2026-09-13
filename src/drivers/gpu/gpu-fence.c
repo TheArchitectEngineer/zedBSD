@@ -11,7 +11,7 @@
  * observe that same payload without acquiring the producer's GPU session.
  */
 
-#include <kern/fence.h>
+#include <drivers/gpu-fence.h>
 #include <kern/kmem.h>
 #include <kern/lock.h>
 #include <kern/poll.h>
@@ -20,32 +20,34 @@
 #include <stddef.h>
 
 /* One independently retained payload; its lock protects generation, owner and state. */
-struct kernel_fence {
+struct drv_gpu_fence {
 	struct spinlock lock;
 	struct wait_queue waitq;
 	uint64_t device;
 	uint64_t generation;
 	void *owner;
 	uint32_t state;
+	unsigned admitted;
 	int error;
 };
 
 static void fence_release(void *object);
 static int fence_poll(void *object, short events, short *revents);
 static const struct kernel_handle_ops *fence_operations(void);
-static int fence_resolve(struct kernel_handle *handle, struct kernel_fence **result);
-static void fence_snapshot(struct kernel_fence *fence, struct kernel_fence_state *state);
+static int fence_resolve(struct kernel_handle *handle, struct drv_gpu_fence **result);
+static int fence_wait(struct kernel_handle *handle, uint64_t generation, uint64_t deadline, unsigned immediate, unsigned work, struct drv_gpu_fence_state *state);
+static void fence_snapshot(struct drv_gpu_fence *fence, struct drv_gpu_fence_state *state);
 
 /*
  * Allocates one payload whose initial reference can be transferred into an fd.
  */
 int
-kernel_fence_create(
+drv_gpu_fence_create(
 	uint64_t device,
 	unsigned signaled,
 	struct kernel_handle **result)
 {
-	struct kernel_fence *fence;
+	struct drv_gpu_fence *fence;
 	const struct kernel_handle_ops *operations;
 	int error;
 
@@ -64,18 +66,18 @@ kernel_fence_create(
 		return ENOMEM;
 
 	/* Payload state is private until handle creation succeeds. */
-	spin_init(&fence->lock, LOCK_RANK_DEVICE, "kernel fence");
-	waitq_init(&fence->waitq, "kernel fence");
+	spin_init(&fence->lock, LOCK_RANK_DEVICE, "GPU fence");
+	waitq_init(&fence->waitq, "GPU fence");
 	fence->device = device;
 	fence->generation = 1U;
 
 	/* Creation may begin with no pending producer work. */
 	if (signaled != 0U)
-		fence->state = KERNEL_FENCE_SIGNALED;
+		fence->state = DRV_GPU_FENCE_SIGNALED;
 
 	/* A failed wrapper allocation leaves payload cleanup with this caller. */
 	operations = fence_operations();
-	error = handle_create(KERNEL_HANDLE_FENCE, operations, fence, result);
+	error = handle_create(KERNEL_HANDLE_DRIVER, operations, fence, result);
 	if (error != 0) {
 		kern_free(fence);
 		return error;
@@ -89,11 +91,11 @@ kernel_fence_create(
  * Enforces an immutable device namespace without borrowing the originating open.
  */
 int
-kernel_fence_device(
+drv_gpu_fence_device(
 	struct kernel_handle *handle,
 	uint64_t device)
 {
-	struct kernel_fence *fence;
+	struct drv_gpu_fence *fence;
 	int error;
 
 	/* Typed authority is required before interpreting the payload. */
@@ -113,12 +115,12 @@ kernel_fence_device(
  * Reads one atomic observation, optionally requiring a particular generation.
  */
 int
-kernel_fence_query(
+drv_gpu_fence_query(
 	struct kernel_handle *handle,
 	uint64_t generation,
-	struct kernel_fence_state *state)
+	struct drv_gpu_fence_state *state)
 {
-	struct kernel_fence *fence;
+	struct drv_gpu_fence *fence;
 	unsigned long irq;
 	int error;
 
@@ -149,61 +151,44 @@ kernel_fence_query(
 }
 
 /*
- * Waits for terminal state with the generation condition and sleep registration locked together.
+ * Observes one generation without requiring a submitted GPU producer.
  */
 int
-kernel_fence_wait(
+drv_gpu_fence_wait(
 	struct kernel_handle *handle,
 	uint64_t generation,
 	uint64_t deadline,
 	unsigned immediate,
-	struct kernel_fence_state *state)
+	struct drv_gpu_fence_state *state)
 {
-	struct kernel_fence *fence;
-	uint64_t observed;
-	unsigned long irq;
 	int error;
 
-	/* Waiting on an unspecified generation could silently follow a reset. */
-	if (generation == 0U || state == NULL)
-		return EINVAL;
-
-	/* Resolve only typed kernel payload authority. */
-	error = fence_resolve(handle, &fence);
+	/* CPU observation permits unsubmitted payloads and honors its own deadline. */
+	error = fence_wait(handle, generation, deadline, immediate, 0U, state);
 	if (error != 0)
 		return error;
 
-	/* A reset, signal or failure wakes the same condition channel. */
-	irq = spin_lock_irqsave(&fence->lock);
+	/* Succeeded: the exact generation reached a terminal state. */
+	return 0;
+}
 
-	while (generation == fence->generation && fence->state == KERNEL_FENCE_PENDING) {
-		/* An immediate observation does not consume or alter pending work. */
-		if (immediate != 0U) {
-			spin_unlock_irqrestore(&fence->lock, irq);
-			return EAGAIN;
-		}
+/*
+ * Waits only for work whose driver has accepted autonomous completion responsibility.
+ */
+int
+drv_gpu_fence_wait_work(
+	struct kernel_handle *handle,
+	uint64_t generation,
+	struct drv_gpu_fence_state *state)
+{
+	int error;
 
-		/* Registration and owner signal cannot cross without changing the observed sequence. */
-		observed = waitq_sequence(&fence->waitq);
-		error = waitq_sleep(&fence->waitq, &fence->lock, observed, deadline, WAITQ_INTERRUPTIBLE);
-		if (error != 0 && error != EAGAIN) {
-			spin_unlock_irqrestore(&fence->lock, irq);
-			return error;
-		}
-	}
+	/* The producer deadline owns failure detection; unadmitted work is refused immediately. */
+	error = fence_wait(handle, generation, 0U, 0U, 1U, state);
+	if (error != 0)
+		return error;
 
-	/* A concurrent reset invalidates this observer's original work identity. */
-	if (generation != fence->generation) {
-		spin_unlock_irqrestore(&fence->lock, irq);
-		return ESTALE;
-	}
-
-	/* Return fields belong to the one generation protected by this critical section. */
-	fence_snapshot(fence, state);
-
-	spin_unlock_irqrestore(&fence->lock, irq);
-
-	/* Succeeded: terminal error remains distinct from successful completion. */
+	/* Succeeded: the accepted GPU dependency reached a terminal state. */
 	return 0;
 }
 
@@ -211,12 +196,12 @@ kernel_fence_wait(
  * Starts a new unsignaled generation only when no pending producer owns the old one.
  */
 int
-kernel_fence_reset(
+drv_gpu_fence_reset(
 	struct kernel_handle *handle,
 	uint64_t generation,
-	struct kernel_fence_state *state)
+	struct drv_gpu_fence_state *state)
 {
-	struct kernel_fence *fence;
+	struct drv_gpu_fence *fence;
 	unsigned long irq;
 	int error;
 
@@ -251,7 +236,8 @@ kernel_fence_reset(
 
 	/* Publish one new pending state and wake old-generation observers. */
 	fence->generation++;
-	fence->state = KERNEL_FENCE_PENDING;
+	fence->state = DRV_GPU_FENCE_PENDING;
+	fence->admitted = 0U;
 	fence->error = 0;
 	fence_snapshot(fence, state);
 	waitq_wake_all(&fence->waitq);
@@ -269,12 +255,12 @@ kernel_fence_reset(
  * Reserves one producer's authority before native work is accepted.
  */
 int
-kernel_fence_bind(
+drv_gpu_fence_bind(
 	struct kernel_handle *handle,
 	uint64_t generation,
 	void *owner)
 {
-	struct kernel_fence *fence;
+	struct drv_gpu_fence *fence;
 	unsigned long irq;
 	int error;
 
@@ -296,13 +282,14 @@ kernel_fence_bind(
 	}
 
 	/* An already terminal payload requires explicit reset before reuse. */
-	if (fence->state != KERNEL_FENCE_PENDING || fence->owner != NULL) {
+	if (fence->state != DRV_GPU_FENCE_PENDING || fence->owner != NULL) {
 		spin_unlock_irqrestore(&fence->lock, irq);
 		return EBUSY;
 	}
 
 	/* The retained producer owns this generation until rollback or terminal completion. */
 	fence->owner = owner;
+	fence->admitted = 0U;
 
 	spin_unlock_irqrestore(&fence->lock, irq);
 
@@ -311,15 +298,62 @@ kernel_fence_bind(
 }
 
 /*
- * Cancels a proven unaccepted submission without manufacturing an error visible to aliases.
+ * Admits a reserved generation after its driver accepts the GPU completion obligation.
  */
 int
-kernel_fence_unbind(
+drv_gpu_fence_admit(
 	struct kernel_handle *handle,
 	uint64_t generation,
 	void *owner)
 {
-	struct kernel_fence *fence;
+	struct drv_gpu_fence *fence;
+	unsigned long irq;
+	int error;
+
+	/* Admission cannot manufacture producer authority for an arbitrary descriptor. */
+	error = fence_resolve(handle, &fence);
+	if (error != 0)
+		return error;
+
+	/* The exact reserved generation becomes eligible atomically with waiter observation. */
+	irq = spin_lock_irqsave(&fence->lock);
+
+	if (fence->generation != generation) {
+		spin_unlock_irqrestore(&fence->lock, irq);
+		return ESTALE;
+	}
+
+	/* Only the retained producer may commit its still-pending reservation. */
+	if (owner == NULL || fence->owner != owner) {
+		spin_unlock_irqrestore(&fence->lock, irq);
+		return EPERM;
+	}
+
+	/* A completed reservation must never reopen a previous completion obligation. */
+	if (fence->state != DRV_GPU_FENCE_PENDING) {
+		spin_unlock_irqrestore(&fence->lock, irq);
+		return EINVAL;
+	}
+
+	/* Driver completion, expiry or final close now guarantees a terminal outcome. */
+	fence->admitted = 1U;
+
+	spin_unlock_irqrestore(&fence->lock, irq);
+
+	/* Succeeded: kernel dependency waits may follow this generation. */
+	return 0;
+}
+
+/*
+ * Cancels a proven unaccepted submission without manufacturing an error visible to aliases.
+ */
+int
+drv_gpu_fence_unbind(
+	struct kernel_handle *handle,
+	uint64_t generation,
+	void *owner)
+{
+	struct drv_gpu_fence *fence;
 	unsigned long irq;
 	int error;
 
@@ -344,6 +378,7 @@ kernel_fence_unbind(
 
 	/* No accepted work remains associated with the canceled reservation. */
 	fence->owner = NULL;
+	fence->admitted = 0U;
 
 	spin_unlock_irqrestore(&fence->lock, irq);
 
@@ -355,7 +390,7 @@ kernel_fence_unbind(
  * Publishes verified completion and then wakes process poll observers without a caller-owned registry lock.
  */
 int
-kernel_fence_signal(
+drv_gpu_fence_signal(
 	struct kernel_handle *handle,
 	uint64_t generation,
 	void *owner,
@@ -364,7 +399,7 @@ kernel_fence_signal(
 	int error;
 
 	/* Payload state and waiter registration change together before global readiness notification. */
-	error = kernel_fence_signal_deferred(handle, generation, owner, status);
+	error = drv_gpu_fence_signal_deferred(handle, generation, owner, status);
 	if (error != 0)
 		return error;
 
@@ -379,13 +414,13 @@ kernel_fence_signal(
  * Publishes verified success or terminal error, releasing the bound producer's authority.
  */
 int
-kernel_fence_signal_deferred(
+drv_gpu_fence_signal_deferred(
 	struct kernel_handle *handle,
 	uint64_t generation,
 	void *owner,
 	int status)
 {
-	struct kernel_fence *fence;
+	struct drv_gpu_fence *fence;
 	unsigned long irq;
 	int error;
 
@@ -413,18 +448,83 @@ kernel_fence_signal_deferred(
 	}
 
 	/* Error notification remains terminal without being represented as successful execution. */
-	fence->state = KERNEL_FENCE_SIGNALED;
+	fence->state = DRV_GPU_FENCE_SIGNALED;
 	if (status != 0)
-		fence->state = KERNEL_FENCE_ERROR;
+		fence->state = DRV_GPU_FENCE_ERROR;
 
 	/* Clearing owner permits the next explicit reset after all observers see the terminal state. */
 	fence->error = status;
 	fence->owner = NULL;
+	fence->admitted = 0U;
 	waitq_wake_all(&fence->waitq);
 
 	spin_unlock_irqrestore(&fence->lock, irq);
 
 	/* Succeeded: every descriptor alias observes the same terminal result. */
+	return 0;
+}
+
+/* Observes one exact generation while its admission condition and sleep registration remain atomic. */
+static int
+fence_wait(
+	struct kernel_handle *handle,
+	uint64_t generation,
+	uint64_t deadline,
+	unsigned immediate,
+	unsigned work,
+	struct drv_gpu_fence_state *state)
+{
+	struct drv_gpu_fence *fence;
+	uint64_t observed;
+	unsigned long irq;
+	int error;
+
+	/* Waiting on an unspecified generation could silently follow a reset. */
+	if (generation == 0U || state == NULL)
+		return EINVAL;
+
+	/* Resolve only typed kernel payload authority. */
+	error = fence_resolve(handle, &fence);
+	if (error != 0)
+		return error;
+
+	/* A reset, signal or failure wakes the same condition channel. */
+	irq = spin_lock_irqsave(&fence->lock);
+
+	while (generation == fence->generation && fence->state == DRV_GPU_FENCE_PENDING) {
+		/* A kernel dependency cannot wait for userspace to publish or signal future work. */
+		if (work != 0U && fence->admitted == 0U) {
+			spin_unlock_irqrestore(&fence->lock, irq);
+			return EAGAIN;
+		}
+
+		/* An immediate observation does not consume or alter pending work. */
+		if (immediate != 0U) {
+			spin_unlock_irqrestore(&fence->lock, irq);
+			return EAGAIN;
+		}
+
+		/* Registration and owner signal cannot cross without changing the observed sequence. */
+		observed = waitq_sequence(&fence->waitq);
+		error = waitq_sleep(&fence->waitq, &fence->lock, observed, deadline, WAITQ_INTERRUPTIBLE);
+		if (error != 0 && error != EAGAIN) {
+			spin_unlock_irqrestore(&fence->lock, irq);
+			return error;
+		}
+	}
+
+	/* A concurrent reset invalidates this observer's original work identity. */
+	if (generation != fence->generation) {
+		spin_unlock_irqrestore(&fence->lock, irq);
+		return ESTALE;
+	}
+
+	/* Return fields belong to the one generation protected by this critical section. */
+	fence_snapshot(fence, state);
+
+	spin_unlock_irqrestore(&fence->lock, irq);
+
+	/* Succeeded: terminal error remains distinct from successful completion. */
 	return 0;
 }
 
@@ -447,7 +547,7 @@ fence_poll(
 	short events,
 	short *revents)
 {
-	struct kernel_fence *fence;
+	struct drv_gpu_fence *fence;
 	unsigned long irq;
 	short result;
 
@@ -456,11 +556,11 @@ fence_poll(
 	result = 0;
 	irq = spin_lock_irqsave(&fence->lock);
 
-	if (fence->state != KERNEL_FENCE_PENDING)
+	if (fence->state != DRV_GPU_FENCE_PENDING)
 		result = events & (POLLIN | POLLRDNORM);
 
 	/* Terminal failure is visible even when the caller requests no ordinary input bits. */
-	if (fence->state == KERNEL_FENCE_ERROR)
+	if (fence->state == DRV_GPU_FENCE_ERROR)
 		result |= POLLERR;
 
 	spin_unlock_irqrestore(&fence->lock, irq);
@@ -490,12 +590,12 @@ fence_operations(
 static int
 fence_resolve(
 	struct kernel_handle *handle,
-	struct kernel_fence **result)
+	struct drv_gpu_fence **result)
 {
 	const struct kernel_handle_ops *operations;
 
 	/* A matching numeric tag alone is not sufficient authority to interpret memory. */
-	if (handle == NULL || handle->type != KERNEL_HANDLE_FENCE)
+	if (handle == NULL || handle->type != KERNEL_HANDLE_DRIVER)
 		return EINVAL;
 
 	/* Only handles created by this subsystem carry this payload layout. */
@@ -513,8 +613,8 @@ fence_resolve(
 /* Copies state while the caller holds the payload lock. */
 static void
 fence_snapshot(
-	struct kernel_fence *fence,
-	struct kernel_fence_state *state)
+	struct drv_gpu_fence *fence,
+	struct drv_gpu_fence_state *state)
 {
 	/* One observation never combines fields from separate generations. */
 	state->generation = fence->generation;

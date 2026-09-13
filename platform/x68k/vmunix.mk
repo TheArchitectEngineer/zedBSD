@@ -118,14 +118,14 @@ X68K_KERNEL_SOURCES := \
 	src/kern/buf.c src/kern/cache.c src/kern/readahead.c src/kern/writeback.c src/kern/io.c src/kern/sysctl.c src/kern/resource.c \
  src/kern/poll.c src/kern/usync.c \
 	src/kern/process.c src/kern/thread.c src/kern/sched.c src/kern/vmspace.c src/kern/vm-device.c \
-	src/kern/vm.c src/kern/filedesc.c src/kern/handle.c src/kern/fence.c src/kern/fd-object.c \
+	src/kern/vm.c src/kern/filedesc.c src/kern/handle.c src/kern/fd-object.c \
 	src/kern/record-lock.c src/kern/pipe.c src/kern/cred.c \
 	src/kern/acl.c src/kern/quota.c src/kern/signal.c \
 	src/kern/cwdinfo.c \
 	src/kern/elf.c src/kern/exec.c src/kern/user-probe.c \
 	src/kern/syscall.c src/kern/uaccess.c src/kern/cdev.c src/kern/devfs.c \
 	src/drivers/generic/console.c src/drivers/generic/input.c \
-	src/drivers/gpu/gpu.c \
+	$(KERN_GPU_SOURCES) \
 	src/kern/locale-record.c \
 	src/kern/tty.c \
  src/drivers/generic/system-device.c src/drivers/generic/memory-device.c src/kern/shutdown.c \

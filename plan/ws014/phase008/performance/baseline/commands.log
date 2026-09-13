@@ -1,0 +1,33 @@
+["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "awe@10.0.10.25", "sha256sum /home/awe/zedbsd-q306-venus/q310-direct-004/boot.img"]
+772af12d68ed7f20956ec2e1e8fd03c61c92ec20cece96b254302f64595f5bee  /home/awe/zedbsd-q306-venus/q310-direct-004/boot.img
+
+exit=0
+["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "awe@10.0.10.25", "mkdir /home/awe/zedbsd-q306-venus/q311-baseline-measure-001"]
+
+exit=0
+["scp", "-o", "BatchMode=yes", "/home/awe/zedBSD/plan/ws014/tests/vkdemo-qemu.py", "awe@10.0.10.25:/home/awe/zedbsd-q306-venus/q311-baseline-measure-001/vkdemo-qemu.py"]
+
+exit=0
+["scp", "-o", "BatchMode=yes", "/home/awe/zedBSD/plan/ws014/tests/venus-qemu.py", "awe@10.0.10.25:/home/awe/zedbsd-q306-venus/q311-baseline-measure-001/venus-qemu.py"]
+
+exit=0
+["scp", "-o", "BatchMode=yes", "/home/awe/zedBSD/plan/ws014/tests/venus_rfb.py", "awe@10.0.10.25:/home/awe/zedbsd-q306-venus/q311-baseline-measure-001/venus_rfb.py"]
+
+exit=0
+["scp", "-o", "BatchMode=yes", "/home/awe/zedBSD/plan/ws014/tests/vkdemo_oracle.py", "awe@10.0.10.25:/home/awe/zedbsd-q306-venus/q311-baseline-measure-001/vkdemo_oracle.py"]
+
+exit=0
+["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "awe@10.0.10.25", "timeout --signal=TERM --kill-after=15s 540 python3 /home/awe/zedbsd-q306-venus/q311-baseline-measure-001/vkdemo-qemu.py --image /home/awe/zedbsd-q306-venus/q310-direct-004/boot.img --output /home/awe/zedbsd-q306-venus/q311-baseline-measure-001/capture --timeout 180 --console-address 6647696 --console-size 32768 --render-server /home/awe/zedbsd-q306-venus/dependencies/q310-opaque/install/libexec/virgl_render_server --renderer-library-dir /home/awe/zedbsd-q306-venus/dependencies/q310-opaque/install/lib/x86_64-linux-gnu --token q311-baseline-cpu"]
+{
+  "status": "pass",
+  "phase": "vkdemo",
+  "frame": 0,
+  "elapsed_seconds": 15.844,
+  "error": null
+}
+
+exit=0
+["scp", "-r", "-o", "BatchMode=yes", "awe@10.0.10.25:/home/awe/zedbsd-q306-venus/q311-baseline-measure-001/capture", "/home/awe/zedBSD/plan/ws014/phase008/performance/baseline"]
+scp: download "/home/awe/zedbsd-q306-venus/q311-baseline-measure-001/capture/vnc.sock": not a regular file
+
+exit=0

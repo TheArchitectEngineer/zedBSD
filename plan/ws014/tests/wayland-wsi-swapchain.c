@@ -10,6 +10,11 @@
  * independent renderer fixture. The real Wayland peer is tested separately.
  */
 
+#define vkCreateCommandPool legacy_create_pool
+#define vkDestroyCommandPool legacy_destroy_pool
+#define vkAllocateCommandBuffers legacy_allocate_commands
+#define vkBeginCommandBuffer legacy_begin_command
+#define vulkan_queue_submit_locked legacy_queue_submit
 #define vkCreateFence legacy_create_fence
 #define vkDestroyFence legacy_destroy_fence
 #define vkResetFences legacy_reset_fences
@@ -20,6 +25,11 @@
 #define vulkan_fences_wait legacy_fences_wait
 #define vkCmdPipelineBarrier legacy_pipeline_barrier
 #include "../../ws030/tests/wsi-discovery.c"
+#undef vkCreateCommandPool
+#undef vkDestroyCommandPool
+#undef vkAllocateCommandBuffers
+#undef vkBeginCommandBuffer
+#undef vulkan_queue_submit_locked
 #undef vkCmdPipelineBarrier
 #undef main
 #undef vkCreateFence
@@ -52,6 +62,37 @@ struct shared_test_lease {
 
 /* Counts actual GPU-copy records and native presentations in this finite fixture. */
 static unsigned gpu_copies;
+
+/* Records independent command identities and pending ownership across cache reuse. */
+static VkCommandBuffer cached_commands[8];
+/* Associates each cached command with the exact fence accepted by the native peer; fence_mutex protects use. */
+static VkFence command_fences[8];
+/* Tracks native ownership until the producer gate proves completion; fence_mutex protects transitions. */
+static unsigned command_pending[8];
+/* Counts immutable command identities created during the finite cache case. */
+static unsigned command_count;
+/* Counts successful private-pool creation to distinguish concurrency from per-frame churn. */
+static unsigned pool_creations;
+/* Counts exact device-teardown pool destruction after worker join. */
+static unsigned pool_destroys;
+/* Counts Begin transactions while fence_mutex checks that no pending buffer is reset. */
+static unsigned command_begins;
+
+/* Observes actual monotonic condition registration and notification wakeups. */
+static unsigned acquire_waits;
+/* Counts real successful condition wakeups; the acquiring thread owns increments until join. */
+static unsigned acquire_wakes;
+/* Publishes condition registration under fence_mutex for the independent notifier. */
+static unsigned acquire_registered;
+/* Publishes one native image index atomically from the notifier to acquisition progress. */
+static int notified_release = -1;
+/* Retains the live swapchain borrowed by the finite acquiring thread until join. */
+static VkSwapchainKHR probe_chain;
+/* Retains the image selected by the acquiring thread for its joining observer. */
+static uint32_t probe_index;
+/* Retains the acquiring thread result until pthread_join synchronizes observation. */
+static VkResult probe_result;
+
 /* Counts scaled GPU image operations after their independently checked opaque clear. */
 static unsigned gpu_blits;
 /* Counts opaque black GPU clears for the finite rectangle-composition oracle. */
@@ -133,6 +174,8 @@ static unsigned placement_attempts;
 /* An independently selected allocator refusal distinguishes unsupported backing from OOM. */
 static VkResult placement_failure;
 
+int __real_pthread_cond_clockwait(pthread_cond_t *condition, pthread_mutex_t *mutex, clockid_t clock, const struct timespec *deadline);
+static void *acquire_probe(void *argument);
 static void test_fallback(struct vulkan_surface *surface, VkSurfaceKHR surface_handle);
 static VkResult fallback_prepare(void *private_lease, VkFormat format, VkExtent2D extent);
 static VkResult fallback_placement(void *private_lease, struct gpu_placement *placement);
@@ -185,6 +228,7 @@ main(
 	unsigned signals_before;
 	unsigned submits_before;
 	pthread_t idle_thread;
+	pthread_t acquire_thread;
 	struct timespec pause;
 	VkDisplayPresentInfoKHR rectangles;
 	int status;
@@ -332,11 +376,26 @@ main(
 	assert(status == 0);
 	assert(native_presents == 3);
 	assert(cached_count == 3U);
+	assert(pool_creations == 3U && command_count == 3U && pool_destroys == 0U);
+	assert(command_begins == 4U);
 
 	/* Shared payloads add fd/generation validation without changing the number of cache slots. */
 	if (shared_fence_test != 0)
 		assert(exported_fences == 3U && synchronized_frames == 3U);
 	assert(per_chain == VK_ERROR_UNKNOWN);
+
+	/* A local surface failure cannot poison the renderer and does not authorize image reuse. */
+	surface_lost = 1;
+	error = vkAcquireNextImageKHR((VkDevice)&device, chain, 0, VK_NULL_HANDLE, (VkFence)1, &unused);
+	assert(error == VK_ERROR_SURFACE_LOST_KHR);
+	assert(device.error == VK_SUCCESS && context.error == VK_SUCCESS);
+	surface_lost = 0;
+
+	/* Another renderer operation may publish context loss before this device field is updated. */
+	context.error = VK_ERROR_DEVICE_LOST;
+	error = vkAcquireNextImageKHR((VkDevice)&device, chain, 0, VK_NULL_HANDLE, (VkFence)1, &unused);
+	assert(error == VK_ERROR_DEVICE_LOST && device.error == VK_SUCCESS);
+	context.error = VK_SUCCESS;
 
 	/* Presented state alone is insufficient while the compositor retains every image. */
 	signals_before = acquire_signals;
@@ -352,11 +411,23 @@ main(
 	assert(error == VK_NOT_READY);
 	assert(acquire_signals == signals_before);
 
-	/* One compositor release permits exactly that image to be reacquired and rewritten. */
-	release_index = 1;
-	error = vkAcquireNextImageKHR((VkDevice)&device, chain, 0, VK_NULL_HANDLE, (VkFence)1, &unused);
-	assert(error == VK_SUCCESS);
-	assert(unused == 1);
+	/* A registered monotonic waiter must wake on the real condition notification. */
+	probe_chain = chain;
+	probe_result = VK_NOT_READY;
+	acquire_registered = 0U;
+	status = pthread_create(&acquire_thread, NULL, acquire_probe, NULL);
+	assert(status == 0);
+	pthread_mutex_lock(&fence_mutex);
+	while (acquire_registered == 0U)
+		pthread_cond_wait(&fence_condition, &fence_mutex);
+	pthread_mutex_unlock(&fence_mutex);
+	__atomic_store_n(&notified_release, 1, __ATOMIC_RELEASE);
+	vulkan_wsi_image_notify();
+	status = pthread_join(acquire_thread, NULL);
+	assert(status == 0);
+	assert(probe_result == VK_SUCCESS && probe_index == 1U);
+	assert(acquire_waits >= 2U && acquire_wakes != 0U);
+	unused = probe_index;
 	assert(acquire_signals == signals_before + 1);
 	expected_shared_layout = VK_IMAGE_LAYOUT_GENERAL;
 	present.pImageIndices = &unused;
@@ -376,6 +447,7 @@ main(
 	assert(external_acquires == 1);
 	assert(copies == 0);
 	assert(gpu_copies == 4);
+	assert(pool_creations == 3U && command_count == 3U && command_begins == 5U);
 	assert(gpu_blits == 1 && gpu_clears == 1);
 	assert(external_releases == 5);
 
@@ -398,12 +470,19 @@ main(
 	assert(error == VK_ERROR_DEVICE_LOST);
 	assert(device.error == VK_ERROR_DEVICE_LOST);
 	assert(context.error == VK_ERROR_DEVICE_LOST);
+
+	/* A context-only terminal error must survive otherwise healthy native capabilities. */
+	device.error = VK_SUCCESS;
+	error = vkAcquireNextImageKHR((VkDevice)&device, chain, 0, VK_NULL_HANDLE, (VkFence)1, &unused);
+	assert(error == VK_ERROR_DEVICE_LOST);
+	device.error = VK_ERROR_DEVICE_LOST;
 	vkDestroySwapchainKHR((VkDevice)&device, chain, &callbacks);
 	assert(imported_images == destroyed_images);
 	vkDestroySurfaceKHR((VkInstance)&instance, surface_handle, &callbacks);
 	vulkan_wsi_device_finish(&device);
 	vulkan_wsi_instance_finish(&instance);
 	assert(allocations == releases);
+	assert(pool_destroys == pool_creations && pool_creations == 3U);
 	assert(device.object.first_child == NULL);
 	pthread_mutex_destroy(&device.mutex);
 	pthread_mutex_destroy(&queue.mutex);
@@ -413,8 +492,9 @@ main(
 	/* Shared payloads add fd/generation validation without changing the number of cache slots. */
 	if (shared_fence_test != 0) {
 		assert(exported_fences == 3U && synchronized_frames == 5U);
+
 		/* Locate the independently modeled capability corresponding to the borrowed production identity. */
-	for (index = 0U; index < cached_count; index++) {
+		for (index = 0U; index < cached_count; index++) {
 			/* Reused private fence descriptors survive jobs and close only with device teardown. */
 			status = fcntl(cached_fds[index], F_GETFD);
 			assert(status == -1 && errno == EBADF);
@@ -665,6 +745,7 @@ vulkan_fences_wait(
 	uint64_t timeout)
 {
 	struct timespec deadline;
+	unsigned index;
 	int status;
 
 	assert(gpu == &device && count == 1U && fences[0] != VK_NULL_HANDLE && all != VK_FALSE);
@@ -679,6 +760,12 @@ vulkan_fences_wait(
 		/* Only the test's explicit completion release may finish this producer wait successfully. */
 		status = pthread_cond_timedwait(&fence_condition, &fence_mutex, &deadline);
 		assert(status == 0);
+	}
+
+	/* Each native fence releases only the command identity accepted with that fence. */
+	for (index = 0U; index < command_count; index++) {
+		if (command_fences[index] == fences[0])
+			command_pending[index] = 0U;
 	}
 
 	pthread_mutex_unlock(&fence_mutex);
@@ -895,6 +982,166 @@ vkDestroyFence(
 	return;
 }
 
+/*
+ * Counts actual command-pool creation and verifies per-buffer implicit reset permission.
+ */
+VKAPI_ATTR VkResult VKAPI_CALL
+vkCreateCommandPool(
+	VkDevice gpu,
+	const VkCommandPoolCreateInfo *info,
+	const VkAllocationCallbacks *allocator,
+	VkCommandPool *result)
+{
+	VkResult error;
+
+	/* Cached recordings require reset permission in their independently owned pool. */
+	assert(info->flags == (VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT));
+	error = legacy_create_pool(gpu, info, allocator, result);
+	if (error != VK_SUCCESS)
+		return error;
+	pool_creations++;
+
+	/* Succeeded: another in-flight slot owns its own pool. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Checks that pool teardown cannot retire a command still owned by an accepted submission.
+ */
+VKAPI_ATTR void VKAPI_CALL
+vkDestroyCommandPool(
+	VkDevice gpu,
+	VkCommandPool pool,
+	const VkAllocationCallbacks *allocator)
+{
+	struct test_pool *object;
+	unsigned index;
+
+	/* Device teardown follows completed or terminal job ownership. */
+	object = (struct test_pool *)vulkan_nondispatchable_object((uint64_t)pool);
+	for (index = 0U; index < command_count; index++) {
+		if ((VkCommandBuffer)object->command == cached_commands[index])
+			assert(command_pending[index] == 0U);
+	}
+
+	pool_destroys++;
+	legacy_destroy_pool(gpu, pool, allocator);
+
+	/* Succeeded: every cached pool is reclaimed exactly once. */
+	return;
+}
+
+/*
+ * Records actual command-buffer identities independently from production cache metadata.
+ */
+VKAPI_ATTR VkResult VKAPI_CALL
+vkAllocateCommandBuffers(
+	VkDevice gpu,
+	const VkCommandBufferAllocateInfo *info,
+	VkCommandBuffer *result)
+{
+	VkResult error;
+
+	/* This fixture's finite concurrency leaves room for every independent allocation. */
+	assert(command_count < 8U);
+	error = legacy_allocate_commands(gpu, info, result);
+	if (error != VK_SUCCESS)
+		return error;
+	cached_commands[command_count++] = *result;
+
+	/* Succeeded: later Begin calls can be checked against pending native ownership. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Rejects implicit reset of a command buffer whose actual submitted fence remains pending.
+ */
+VKAPI_ATTR VkResult VKAPI_CALL
+vkBeginCommandBuffer(
+	VkCommandBuffer command,
+	const VkCommandBufferBeginInfo *info)
+{
+	VkResult error;
+	unsigned index;
+
+	/* The producer gate protects the independent native-use oracle. */
+	pthread_mutex_lock(&fence_mutex);
+	for (index = 0U; index < command_count; index++) {
+		if (command == cached_commands[index])
+			break;
+	}
+
+	assert(index < command_count && command_pending[index] == 0U);
+	command_begins++;
+	pthread_mutex_unlock(&fence_mutex);
+	error = legacy_begin_command(command, info);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Succeeded: this cached command is no longer in flight. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Associates an accepted command with its exact independently observed native fence.
+ */
+VkResult
+vulkan_queue_submit_locked(
+	struct VkQueue_T *target,
+	uint32_t count,
+	const VkSubmitInfo *submit,
+	VkFence fence)
+{
+	VkResult error;
+	unsigned index;
+
+	/* A rejected native submission cannot acquire command ownership. */
+	error = legacy_queue_submit(target, count, submit, fence);
+	if (error != VK_SUCCESS)
+		return error;
+	pthread_mutex_lock(&fence_mutex);
+	for (index = 0U; index < command_count; index++) {
+		if (submit->pCommandBuffers[0] == cached_commands[index])
+			break;
+	}
+
+	assert(index < command_count && command_pending[index] == 0U);
+	command_pending[index] = 1U;
+	command_fences[index] = fence;
+	pthread_mutex_unlock(&fence_mutex);
+
+	/* Succeeded: only this fence's completion permits another Begin. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Observes the production condition clock and delegates to the real host condition wait.
+ */
+int
+__wrap_pthread_cond_clockwait(
+	pthread_cond_t *condition,
+	pthread_mutex_t *mutex,
+	clockid_t clock,
+	const struct timespec *deadline)
+{
+	int status;
+
+	/* Every acquisition deadline uses monotonic time with a normalized nanosecond field. */
+	assert(clock == CLOCK_MONOTONIC);
+	assert(deadline->tv_nsec >= 0 && deadline->tv_nsec < 1000000000L);
+	pthread_mutex_lock(&fence_mutex);
+	acquire_waits++;
+	acquire_registered = 1U;
+	pthread_cond_broadcast(&fence_condition);
+	pthread_mutex_unlock(&fence_mutex);
+	status = __real_pthread_cond_clockwait(condition, mutex, clock, deadline);
+	if (status == 0)
+		acquire_wakes++;
+
+	/* Succeeded: the production caller receives the real timed-wait result. */
+	return status;
+}
+
 /* Allocates an independent native lease for each actual swapchain object. */
 static VkResult
 shared_claim(
@@ -1013,6 +1260,10 @@ shared_progress(
 	/* A failed compositor prevents acquisition even if an image was otherwise free. */
 	if (surface_lost)
 		return VK_ERROR_SURFACE_LOST_KHR;
+
+	/* Consumes the independent notification's publication before checking native ownership. */
+	if (__atomic_load_n(&notified_release, __ATOMIC_ACQUIRE) != -1)
+		release_index = __atomic_exchange_n(&notified_release, -1, __ATOMIC_ACQ_REL);
 
 	/* Releases exactly one requested native image, preserving all others. */
 	lease = private_lease;
@@ -1272,4 +1523,19 @@ fallback_prepare(
 
 	/* Succeeded: no later presentation is allowed to allocate or renegotiate native storage. */
 	return VK_SUCCESS;
+}
+
+/*
+ * Waits for one compositor release without imposing a timing-sensitive sleep oracle.
+ */
+static void *
+acquire_probe(
+	void *argument)
+{
+	/* A finite one-second caller timeout bounds any lost-wakeup defect. */
+	(void)argument;
+	probe_result = vkAcquireNextImageKHR((VkDevice)&device, probe_chain, UINT64_C(1000000000), VK_NULL_HANDLE, (VkFence)1, &probe_index);
+
+	/* Succeeded: the joining caller checks the exact result and image identity. */
+	return NULL;
 }

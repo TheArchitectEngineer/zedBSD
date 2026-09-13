@@ -35,12 +35,13 @@ EVIDENCE_FILES = ['result.json', 'guest.log', 'qemu-renderer.log', 'qmp.jsonl',
 SOURCE_DIRECTORIES = ['src/drivers/gpu', 'userland/gpu']
 SOURCE_FILES = ['Makefile', 'include/drivers/gpu.h', 'include/drivers/venus.h',
                 'userland/base/libc/pthread.c', 'libc/include/sys/socket.h',
-                'include/kern/fence.h', 'src/kern/fence.c', 'include/uapi/gpu-fence.h',
+                'include/drivers/gpu-fence.h', 'src/drivers/gpu/gpu-fence.c', 'include/uapi/gpu-fence.h',
                 'include/uapi/gpu-scanout.h', 'include/drivers/gpu-scanout.h',
                 'include/kern/handle.h', 'include/kern/fd-object.h',
                 'include/kern/filedesc.h', 'src/kern/handle.c',
                 'src/kern/fd-object.c', 'src/kern/filedesc.c', 'src/kern/poll.c',
                 'include/uapi/gpu.h', 'include/uapi/gpu-allocation.h',
+                'include/uapi/gpu-job.h',
                 'src/kern/platform/pcat.c', 'src/hal/amd64/asm.c',
                 'platform/amd64/vmunix.mk', 'platform/amd64/zedbsd.cfg',
                 'include/hal/hal.h', 'src/hal/amd64/space.c',
@@ -91,7 +92,7 @@ PROFILES = {
                                        'userland/base/libwayland', 'libc/include/wayland',
                                        'userland/base/libvulkan', 'libc/include/vulkan'],
                 'source_files': ['include/kern/handle.h', 'include/kern/fd-object.h',
-                                 'include/kern/fence.h', 'src/kern/fence.c',
+                                 'include/drivers/gpu-fence.h', 'src/drivers/gpu/gpu-fence.c',
                                  'include/uapi/gpu-fence.h', 'include/uapi/gpu-scanout.h',
                                  'include/drivers/gpu-scanout.h',
                                  'include/kern/filedesc.h', 'include/kern/net/socket.h',
@@ -469,11 +470,17 @@ def verify_remote_result(args, report, remote):
         expected = {
             'recovery': 'GPURECOVERY PASS timeout=1 peer_failed=1 retirement_gate=1 fresh_roundtrip=4096 decoder=1',
             'producer-exit': 'GPUFENCE PRODUCER_EXIT_ERROR PASS',
+            'producer-stop': 'GPUFENCE PRODUCER_STOP_ERROR PASS',
         }[args.fault_test]
         if remote.get('fault_marker') != expected or expected not in observed:
             raise RuntimeError('isolated fault evidence lacks successful guest assertions')
         if args.fault_test == 'recovery' and not 9000 <= remote.get('watchdog_elapsed_ms', 0) <= 20000:
             raise RuntimeError('isolated recovery did not measure the expected watchdog interval')
+        if args.fault_test == 'producer-stop':
+            if (remote.get('producer_stopped') is not True or
+                    'GPUFENCE PRODUCER_STOPPED pending=1 fd_live=1' not in observed or
+                    not 9000 <= remote.get('watchdog_elapsed_ms', 0) <= 20000):
+                raise RuntimeError('producer-stop lacks stopped-process proof and autonomous terminal timing')
         if args.fault_test == 'recovery':
             pause = remote.get('renderer_pause', {})
             if (pause.get('stopped') is not True or pause.get('resumed') is not True or
@@ -728,7 +735,7 @@ def main(profile='venus'):
     parser.add_argument('--init', default='/bin/sh', help='init path written only into the disposable image')
     parser.add_argument('--skip-build', action='store_true', help='explicitly reuse and record existing artifacts')
     parser.add_argument('--lifecycle', action='store_true', help='also verify SIGINT cleanup and visible console restoration')
-    parser.add_argument('--fault-test', choices=['recovery', 'producer-exit'],
+    parser.add_argument('--fault-test', choices=['recovery', 'producer-exit', 'producer-stop'],
                         help='run one isolated destructive scenario instead of the Wayland suite')
     parser.add_argument('--phase', choices=['2d', 'venus'] if profile == 'venus' else [profile],
                         default=profile)

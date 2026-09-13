@@ -11,7 +11,7 @@ trap 'rm -rf "$work"' EXIT HUP INT TERM
 # Use the actual Vulkan ABI headers with host libc and pthread implementations.
 mkdir "$work/include"
 ln -s "$repo/libc/include/vulkan" "$work/include/vulkan"
-flags="-std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror -Wdeclaration-after-statement -pthread -ffunction-sections -fdata-sections -Wl,--gc-sections"
+flags="-std=c11 -D_GNU_SOURCE -Wall -Wextra -Werror -Wdeclaration-after-statement -pthread -ffunction-sections -fdata-sections -Wl,--gc-sections"
 case "${1:-}" in
     "") ;;
     asan) flags="$flags -fsanitize=address -fno-omit-frame-pointer -g" ;;

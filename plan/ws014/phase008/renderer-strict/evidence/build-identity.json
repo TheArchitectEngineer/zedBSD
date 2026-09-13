@@ -1,0 +1,28 @@
+{
+  "source": {
+    "server/render_client.c": "e65967ed853321385b4fc821f982b1725b277d46fe94da92a5906db98d6e729f",
+    "server/render_context.c": "33b0fa13d84fdf091aa2f88df4dffc8bd72491611ff5ed2c8aa567ecad1a07cd",
+    "server/render_protocol.h": "0658d25f10a8613ede516a190baebcd5b67c04f636b640a11125131030855a2e",
+    "server/render_state.c": "8ecfd81b83565782655ca5d4af3fefda7d96cccf2ba3ded7d4519d613f4d80c9",
+    "server/render_state.h": "37ace8491369610085fee66dcfca38f7d7e0a476934a6bfd39a7a47c68a8b127",
+    "src/proxy/proxy_client.c": "b11c80cccae2ef176185405151f72d89732428b9e5791044d3709d55b3ff1a44",
+    "src/proxy/proxy_client.h": "50b12778dd808692d3a8e958287b59499ecf9fac24e13a1c3c24bc6ba427ee52",
+    "src/proxy/proxy_context.c": "b17250637668883eab2c8ca710a77f203605ef4011b6fe8eee2517054497af3d",
+    "src/proxy/proxy_renderer.c": "59ec7db1684bbd908f80eb39bd98e2403b5cfc11e6f50707fd762d9769055efc",
+    "src/venus/vkr_context.c": "9d2236bc35c58d7bbf2f1a3ec49558c61d5931f1f4b3f006b813a141e725cb8e",
+    "src/venus/vkr_context.h": "115f07dff25fce9050c7d8e8905d4740caf7364221231ad68dec40f69cda7c57",
+    "src/venus/vkr_device.c": "ed6be25f08eb40fe7008a5309ee83ddd5edad594cb573fe2294aee3adf7c84cf",
+    "src/venus/vkr_device_memory.c": "63fa567b212d7fa8a9d2df564a5b715c5ffdd2cbf3a81ace114ed6b18064b495",
+    "src/venus/vkr_queue.c": "86479511f909999642c739ff6112bf9ff562e758a3a2cdcfa59dfcc940a37dd6",
+    "src/venus/vkr_queue.h": "26117a1e5c930e8247e8e3fb253af863a9b9b2195b71c74e2f5556c671226dd2",
+    "src/venus/vkr_renderer.c": "7599cdd1c75ecd685cc1c3a31077a83c806736b696101380806b0525afd6c032",
+    "src/venus/vkr_renderer.h": "3f041f4b9c982257a17eaf5b023e1f6ef5b165919c5def116da6b146393fed4e",
+    "src/venus_hw.h": "faedfd5978aaf102f1e640b6cd8150c4048c5df3dd2a8e192ae5e67dfa47a6e5"
+  },
+  "artifacts": {
+    "install/lib/x86_64-linux-gnu/libvirglrenderer.so.1.9.0": "05c7499c9fab287f9692ac37f169b12b5bcdd98fd553f42bca5a9afeef8cda86",
+    "install/libexec/virgl_render_server": "f668a5262335790cf7b78ab0b732391bc790e8835dd27f2b2cbfcad561ddd80f"
+  },
+  "source_matches": true,
+  "artifact_matches": true
+}

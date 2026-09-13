@@ -44,6 +44,8 @@ static int notifications = 1;
 static uint64_t notification_sequence;
 static int fail_mapping;
 static int malformed_notification;
+/* Selects independent cut-channel, wrong-opcode and native-result response cases. */
+static unsigned response_fault;
 static unsigned trailer_reads;
 static unsigned sleeps;
 static unsigned closes;
@@ -60,6 +62,9 @@ static int exported_stream_seen;
 static uint32_t advertised_bytes = 156;
 static uint32_t advertised_magic = 0x5a424453U;
 static uint32_t advertised_flags = 1;
+
+/* An optional independent command peer lets the combined fixture exercise actual context framing. */
+static void (*context_command_peer)(const uint8_t *bytes, size_t count, uint8_t *reply, size_t capacity);
 
 int vulkan_test_open(const char *path, int flags, ...);
 int vulkan_test_close(int fd);
@@ -262,6 +267,13 @@ vulkan_test_ioctl(
 		assert(wait->flags == GPU_WAIT_CONSUME);
 		assert(wait->timeout_ns > 0 && wait->timeout_ns <= UINT64_C(10000000000));
 		notification_waits++;
+
+		/* A cut completion channel cannot authorize reuse of prior reply bytes. */
+		if (response_fault == 1U) {
+			errno = EPIPE;
+			return -1;
+		}
+
 		if (withhold_reply) {
 			errno = ETIMEDOUT;
 			return -1;
@@ -562,7 +574,10 @@ submit_peer(
 	assert(application_bytes >= 12);
 	pending_opcode = word_at(application);
 	pending_payload = word_at(application + 8);
-	if (application_bytes > GPU_COMMAND_MAX) {
+	if (context_command_peer != NULL) {
+		/* The combined fixture decodes the complete transported Vulkan stream independently. */
+		context_command_peer(application, application_bytes, reply_storage->data, reply_storage->bytes - 20);
+	} else if (application_bytes > GPU_COMMAND_MAX) {
 		/* Verifies the final large input byte also reached the shared kernel resource. */
 		assert(application[application_bytes - 1] == 0xa5);
 	}
@@ -593,9 +608,24 @@ complete_peer(
 	uint8_t *tail;
 
 	/* Produces the application response before the final decoder-completion store. */
-	store_word(reply_storage->data, pending_opcode);
-	store_word(reply_storage->data + 4, 0);
-	store_word(reply_storage->data + 8, pending_payload);
+	if (context_command_peer == NULL) {
+		/* Ordinary transport cases supply a minimal independent application response. */
+		store_word(reply_storage->data, pending_opcode);
+		store_word(reply_storage->data + 4, 0);
+		store_word(reply_storage->data + 8, pending_payload);
+	}
+
+	/* Corrupt application framing independently from the otherwise valid completion trailer. */
+	if (response_fault == 2U)
+		store_word(reply_storage->data, pending_opcode + 1U);
+
+	/* A valid native failure remains distinguishable from transport and framing failure. */
+	if (response_fault == 3U)
+		store_word(reply_storage->data + 4, (uint32_t)VK_ERROR_DEVICE_LOST);
+
+	if (response_fault == 4U)
+		store_word(reply_storage->data + 4, (uint32_t)VK_ERROR_OUT_OF_DEVICE_MEMORY);
+
 	tail = reply_storage->data + reply_storage->bytes - 20;
 	store_word(tail, 137);
 	store_word(tail + 4, 0);
@@ -621,6 +651,7 @@ test_context(
 	VkResult error;
 	uint32_t payload;
 	unsigned before;
+	unsigned variant;
 
 	/* Rejects incompatible protocol data while consuming its descriptor once. */
 	incompatible_wire = 1;
@@ -721,6 +752,43 @@ test_context(
 	assert(map_calls == unmap_calls);
 	assert(transfer_calls == 0);
 
+	/* Channel, opcode and native-result failures retain their distinct terminal or retryable contract. */
+	malformed_notification = 0;
+	for (variant = 1U; variant <= 4U; variant++) {
+		error = vulkan_context_open(&context, "/dev/gpu-test");
+		assert(error == VK_SUCCESS);
+		vulkan_writer_init(&writer);
+		vulkan_command_begin(&writer, 42);
+		vulkan_write_u32(&writer, 17);
+		response_fault = variant;
+		before = requests;
+		error = vulkan_command_execute(&context, &writer, 12, &first, VK_TRUE);
+		assert(requests == before + 1U);
+
+		/* Only a definite native allocation refusal permits another ordinary transaction. */
+		if (variant == 4U) {
+			assert(error == VK_ERROR_OUT_OF_DEVICE_MEMORY && context.error == VK_SUCCESS);
+		} else {
+			assert(error == VK_ERROR_DEVICE_LOST && context.error == VK_ERROR_DEVICE_LOST);
+		}
+
+		vulkan_reader_finish(&first);
+		response_fault = 0U;
+		error = vulkan_command_execute(&context, &writer, 12, &first, VK_TRUE);
+		if (variant == 4U) {
+			assert(error == VK_SUCCESS && requests == before + 2U);
+		} else {
+			assert(error == VK_ERROR_DEVICE_LOST && requests == before + 1U);
+		}
+
+		vulkan_reader_finish(&first);
+		vulkan_writer_finish(&writer);
+		error = vulkan_context_close(&context);
+		assert(error == VK_SUCCESS);
+	}
+
+	assert(map_calls == unmap_calls && transfer_calls == 0);
+
 	/* Succeeded: every submitted or failed transaction released its local and session ownership. */
 	return;
 }
@@ -769,10 +837,11 @@ test_vendor_capset(
 		status = vulkan_context_open(&context, "/dev/gpu-test");
 		assert(status == VK_SUCCESS);
 		expected = 0x200U;
-		if (index == 8)
+		if (index == 6 || index == 8)
 			expected = 1U;
 
 		assert(context.external_memory_type == expected);
+		assert(context.strict_queue == (index == 6));
 		test_external_types(&context, expected);
 		status = vulkan_context_close(&context);
 		assert(status == VK_SUCCESS);

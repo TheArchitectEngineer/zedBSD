@@ -12,7 +12,7 @@
 #include <kern/process.h>
 #include <kern/filedesc.h>
 #include <kern/handle.h>
-#include <kern/fence.h>
+#include <drivers/gpu-fence.h>
 #include <uapi/gpu-fence.h>
 
 /* One backend completion remains owned until explicit delivery or the matching session drain. */
@@ -172,7 +172,7 @@ main(void)
 	assert(error == 0 && state.state == GPU_FENCE_ERROR && state.error == ENODEV);
 
 	/* The payload outlives final GPU close and stays independently queryable by a retained handle. */
-	handle = handle_fd_get(created.fd, KERNEL_HANDLE_FENCE);
+	handle = handle_fd_get(created.fd, KERNEL_HANDLE_DRIVER);
 	assert(handle != NULL);
 	close_file(&receiver);
 	close_file(&foreign);

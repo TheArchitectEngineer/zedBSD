@@ -7,7 +7,7 @@ trap 'rm -rf "$work"' EXIT HUP INT TERM
 mkdir -p "$work/include"
 ln -s "$repo/libc/include/vulkan" "$work/include/vulkan"
 
-cc -std=c89 -Wall -Wextra -Werror -D_POSIX_C_SOURCE=200809L \
+cc -std=c89 -Wall -Wextra -Werror -D_POSIX_C_SOURCE=200809L -Dioctl=sync_base_ioctl \
     -I"$work/include" -I"$repo/include" -I"$repo/userland/base/libvulkan" \
     "$repo/userland/base/libvulkan/objects.c" \
     "$repo/userland/base/libvulkan/wire.c" \
@@ -19,7 +19,7 @@ cc -std=c89 -Wall -Wextra -Werror -D_POSIX_C_SOURCE=200809L \
     -pthread -o "$work/sync-test"
 timeout 20 "$work/sync-test"
 
-cc -std=c89 -Wall -Wextra -Werror -D_POSIX_C_SOURCE=200809L \
+cc -std=c89 -Wall -Wextra -Werror -D_POSIX_C_SOURCE=200809L -Dioctl=sync_base_ioctl \
     -fsanitize=address,undefined -fno-omit-frame-pointer -g \
     -I"$work/include" -I"$repo/include" -I"$repo/userland/base/libvulkan" \
     "$repo/userland/base/libvulkan/objects.c" \

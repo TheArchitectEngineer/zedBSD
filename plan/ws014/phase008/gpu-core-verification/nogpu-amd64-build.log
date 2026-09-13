@@ -1,0 +1,5 @@
+timeout 600 make -j16 ZEDBSD_CONFIG=plan/ws014/temp/q311-nogpu-amd64/config.mk BUILD=build/q311-nogpu-amd64 vmunix
+exit_code=0
+full_log=plan/ws014/temp/q311-nogpu-amd64/build.log
+244 build log lines
+amd64 vmunix check: PASS

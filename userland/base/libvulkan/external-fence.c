@@ -6,7 +6,7 @@
  */
 
 /*
- * Shares OPAQUE_FD fence payloads while native fences prove GPU completion.
+ * Shares OPAQUE_FD payloads whose admitted GPU work is completed by the kernel.
  */
 
 #include <errno.h>
@@ -19,26 +19,14 @@
 
 /* One externally synchronized fence retains both permanent and temporary references. */
 struct vulkan_external_fence {
-	struct vulkan_sync *sync;
-	struct VkDevice_T *device;
-	pthread_mutex_t mutex;
-	pthread_cond_t condition;
-	pthread_t worker;
 	int permanent;
 	int temporary;
-	int job_fd;
-	uint64_t job_generation;
-	VkBool32 bound;
-	VkBool32 busy;
-	VkBool32 stopping;
 };
 
 static VkResult external_enable(struct VkDevice_T *device, struct vulkan_sync *sync, VkBool32 signaled);
 static int external_active(struct vulkan_external_fence *external);
 static VkResult external_query(struct VkDevice_T *device, int fd, struct gpu_fence_state *state);
 static VkResult external_errno(int error);
-static VkResult external_signal(struct vulkan_external_fence *external, VkResult status);
-static void *external_worker(void *argument);
 
 /*
  * Reports only the reference-bearing handle implemented by this kernel device.
@@ -146,9 +134,9 @@ vkImportFenceFdKHR(
 	if (status != VK_SUCCESS)
 		return status;
 
-	/* An earlier worker finishes its bookkeeping before a new payload can replace its fd. */
+	/* A previous native marker must stop borrowing this fence before import replaces its payload. */
 	sync = vulkan_sync_object((uint64_t)(uintptr_t)pImportFenceFdInfo->fence);
-	vulkan_external_fence_quiesce(sync);
+	vulkan_sync_quiesce(sync);
 	pthread_mutex_lock(&owner->mutex);
 
 	status = vulkan_sync_device_status_locked(owner);
@@ -361,38 +349,38 @@ vulkan_external_fence_reset_locked(
 }
 
 /*
- * Reserves shared completion ownership before the native queue can accept work.
+ * Prepares the exact shared generation before the kernel reserves its GPU job.
  */
 VkResult
 vulkan_external_fence_prepare_locked(
 	struct VkDevice_T *device,
-	struct vulkan_sync *sync)
+	struct vulkan_sync *sync,
+	int *fd,
+	uint64_t *generation)
 {
-	struct vulkan_external_fence *external;
 	struct gpu_fence_state state;
-	struct gpu_fence_bind bind;
 	struct vulkan_writer writer;
 	struct vulkan_reader reader;
 	VkResult status;
 	int descriptor;
-	int error;
 
-	/* All ordinary fences retain their original native-only submission path. */
+	/* Ordinary fences use the same supervised job without an exported payload. */
+	*fd = -1;
+	*generation = 0;
 	if (sync == NULL || sync->external == NULL)
 		return VK_SUCCESS;
 
-	/* Another alias may have reset the shared generation while this native fence stayed signaled. */
-	external = sync->external;
-	descriptor = external_active(external);
+	/* Samples the authoritative payload rather than a possibly stale local native fence. */
+	descriptor = external_active(sync->external);
 	status = external_query(device, descriptor, &state);
 	if (status != VK_SUCCESS)
 		return VK_ERROR_DEVICE_LOST;
 
-	/* Native submission may claim only a currently unsignaled shared generation. */
+	/* Only an unsignaled generation may be associated with a new native submission. */
 	if (state.state != GPU_FENCE_PENDING)
 		return VK_ERROR_DEVICE_LOST;
 
-	/* Reset only this process's completion proof; the shared payload remains unsignaled. */
+	/* An imported alias may have reset the shared payload without resetting this native object. */
 	vulkan_writer_init_for_object(&writer, &sync->object);
 	vulkan_command_begin(&writer, VULKAN_OPCODE_vkResetFences);
 	vulkan_write_u64(&writer, device->object.wire_id);
@@ -405,86 +393,9 @@ vulkan_external_fence_prepare_locked(
 	if (status != VK_SUCCESS)
 		return status;
 
-	/* Kernel ownership survives sender process death without claiming successful execution. */
-	memset(&bind, 0, sizeof(bind));
-	bind.version = GPU_ABI_VERSION;
-	bind.size = sizeof(bind);
-	bind.fd = descriptor;
-	bind.generation = state.generation;
-	error = ioctl(device->object.context->fd, GPU_FENCE_BIND, &bind);
-	if (error != 0) {
-		status = external_errno(errno);
-		if (status == VK_ERROR_INVALID_EXTERNAL_HANDLE)
-			status = VK_ERROR_DEVICE_LOST;
-
-		return status;
-	}
-
-	/* No allocation or thread creation remains after this pending ownership is published. */
-	external->job_fd = descriptor;
-	external->job_generation = state.generation;
-	external->bound = VK_TRUE;
-
-	/* Succeeded: submit can now either publish its worker job or release its reservation. */
-	return VK_SUCCESS;
-}
-
-/*
- * Publishes accepted native work or rolls back an unused shared reservation.
- */
-VkResult
-vulkan_external_fence_submit_locked(
-	struct vulkan_sync *sync,
-	VkResult status,
-	VkBool32 accepted)
-{
-	struct vulkan_external_fence *external;
-	struct gpu_fence_bind bind;
-	VkResult completion;
-	int error;
-
-	/* A failure before shared preparation owns no reservation to undo. */
-	if (sync == NULL || sync->external == NULL)
-		return status;
-
-	/* A preparation refusal has no owner reservation to release or signal. */
-	external = sync->external;
-	if (!external->bound)
-		return status;
-
-	/* Native rejection leaves the same pending payload visible to imported aliases. */
-	if (!accepted && status != VK_ERROR_DEVICE_LOST) {
-		memset(&bind, 0, sizeof(bind));
-		bind.version = GPU_ABI_VERSION;
-		bind.size = sizeof(bind);
-		bind.fd = external->job_fd;
-		bind.generation = external->job_generation;
-		bind.flags = GPU_FENCE_BIND_RELEASE;
-		error = ioctl(external->device->object.context->fd, GPU_FENCE_BIND, &bind);
-		external->bound = VK_FALSE;
-		if (error != 0)
-			return VK_ERROR_DEVICE_LOST;
-
-		/* Preserve the original native rejection after its unused reservation is released. */
-		return status;
-	}
-
-	/* A lost transport after acceptance terminates shared waiters with an explicit error. */
-	if (status != VK_SUCCESS) {
-		completion = external_signal(external, status);
-		(void)completion;
-		return status;
-	}
-
-	/* The worker exists already and can start only after the native submission was accepted. */
-	pthread_mutex_lock(&external->mutex);
-
-	external->busy = VK_TRUE;
-	pthread_cond_broadcast(&external->condition);
-
-	pthread_mutex_unlock(&external->mutex);
-
-	/* Succeeded: only the worker's actual native fence observation may signal the payload. */
+	/* Succeeded: JOB_RESERVE can pin this exact descriptor generation before native acceptance. */
+	*fd = descriptor;
+	*generation = state.generation;
 	return VK_SUCCESS;
 }
 
@@ -496,22 +407,44 @@ vulkan_external_fence_acquire_locked(
 	struct VkDevice_T *device,
 	struct vulkan_sync *sync)
 {
+	struct gpu_fence_state state;
+	struct gpu_fence_bind bind;
 	VkResult status;
+	int descriptor;
+	int error;
 
-	/* An ordinary acquisition still uses its existing software completion payload. */
+	/* Ordinary acquisition retains its immediately completed software payload. */
 	if (sync == NULL || sync->external == NULL)
 		return VK_SUCCESS;
 
-	/* The same owner/generation protocol covers verified non-queue completion. */
-	status = vulkan_external_fence_prepare_locked(device, sync);
+	/* Image availability was already verified; no future producer execution is required. */
+	descriptor = external_active(sync->external);
+	status = external_query(device, descriptor, &state);
 	if (status != VK_SUCCESS)
-		return status;
+		return VK_ERROR_DEVICE_LOST;
 
-	status = external_signal(sync->external, VK_SUCCESS);
-	if (status != VK_SUCCESS)
-		return status;
+	/* An acquire cannot overwrite an earlier terminal shared payload without reset. */
+	if (state.state != GPU_FENCE_PENDING)
+		return VK_ERROR_DEVICE_LOST;
 
-	/* Succeeded: every imported alias can observe this completed acquisition. */
+	/* Binds only this synchronous operation, which is ineligible for pending GPU dependency waits. */
+	memset(&bind, 0, sizeof(bind));
+	bind.version = GPU_ABI_VERSION;
+	bind.size = sizeof(bind);
+	bind.fd = descriptor;
+	bind.generation = state.generation;
+	error = ioctl(device->object.context->fd, GPU_FENCE_BIND, &bind);
+	if (error != 0)
+		return VK_ERROR_DEVICE_LOST;
+
+	/* Signals the completed acquisition before returning image ownership to the application. */
+	state.state = 0;
+	state.error = 0;
+	error = ioctl(device->object.context->fd, GPU_FENCE_SIGNAL, &state);
+	if (error != 0)
+		return VK_ERROR_DEVICE_LOST;
+
+	/* Succeeded: imported aliases can immediately observe that the image is available. */
 	return VK_SUCCESS;
 }
 
@@ -532,34 +465,7 @@ vulkan_external_fence_descriptor(
 }
 
 /*
- * Lets completed work release its local job before reset, import or destruction.
- */
-void
-vulkan_external_fence_quiesce(
-	struct vulkan_sync *sync)
-{
-	struct vulkan_external_fence *external;
-
-	/* Nonexported ordinary fences own no worker. */
-	if (sync == NULL || sync->external == NULL)
-		return;
-
-	/* Keeps reset and import behind the worker owning this fence's current native identity. */
-	external = sync->external;
-	pthread_mutex_lock(&external->mutex);
-
-	/* No device or queue mutex is held while the worker proves native completion. */
-	while (external->busy)
-		pthread_cond_wait(&external->condition, &external->mutex);
-
-	pthread_mutex_unlock(&external->mutex);
-
-	/* Succeeded: the active fd and native identity may now be replaced safely. */
-	return;
-}
-
-/*
- * Joins the reusable worker before closing its permanent and temporary references.
+ * Releases permanent and temporary references after native marker use has retired.
  */
 void
 vulkan_external_fence_finish(
@@ -567,38 +473,28 @@ vulkan_external_fence_finish(
 {
 	struct vulkan_external_fence *external;
 
-	/* Partial creation and ordinary fences have no shared worker ownership. */
+	/* Partial creation and ordinary fences own no exported descriptors. */
 	external = sync->external;
 	if (external == NULL)
 		return;
 
-	/* Finish the last accepted job before asking its reusable worker to exit. */
-	vulkan_external_fence_quiesce(sync);
+	/* Waits only for this process's admitted job, never for an unsubmitted imported payload. */
+	vulkan_sync_quiesce(sync);
 
-	/* Publishes terminal worker ownership while its condition mutex is held. */
-	pthread_mutex_lock(&external->mutex);
-
-	external->stopping = VK_TRUE;
-	pthread_cond_broadcast(&external->condition);
-
-	pthread_mutex_unlock(&external->mutex);
-
-	/* Thread exit precedes fd retirement and application allocator release. */
-	pthread_join(external->worker, NULL);
+	/* Temporary imports retain separate ownership until their final local retirement. */
 	if (external->temporary >= 0)
 		close(external->temporary);
 
+	/* Retires the permanent reference and the exact allocator-owned wrapper. */
 	close(external->permanent);
-	pthread_cond_destroy(&external->condition);
-	pthread_mutex_destroy(&external->mutex);
 	vulkan_free(&sync->object.allocator, external);
 	sync->external = NULL;
 
-	/* Succeeded: exported descriptors elsewhere retain their independent kernel references. */
+	/* Succeeded: other processes retain their independently owned exported references. */
 	return;
 }
 
-/* Allocates every fallible worker resource before a caller can submit the shared fence. */
+/* Allocates only the wrapper and kernel payload needed for reference-bearing export. */
 static VkResult
 external_enable(
 	struct VkDevice_T *device,
@@ -610,35 +506,17 @@ external_enable(
 	VkResult status;
 	int error;
 
-	/* Preserve the fence's effective object allocation callbacks. */
+	/* Preserves the fence's effective object allocation callbacks. */
 	external = vulkan_allocate(&sync->object.allocator, sizeof(*external), sizeof(uint64_t), VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
 	if (external == NULL)
 		return VK_ERROR_OUT_OF_HOST_MEMORY;
 
-	/* Invalid descriptor sentinels make each later initialization failure independently safe. */
+	/* Invalid descriptors distinguish partial construction from acquired references. */
 	memset(external, 0, sizeof(*external));
-	external->sync = sync;
-	external->device = device;
 	external->permanent = -1;
 	external->temporary = -1;
-	external->job_fd = -1;
 
-	/* Initialize worker publication before any thread can observe this object. */
-	error = pthread_mutex_init(&external->mutex, NULL);
-	if (error != 0) {
-		vulkan_free(&sync->object.allocator, external);
-		return VK_ERROR_OUT_OF_HOST_MEMORY;
-	}
-
-	/* The condition separates idle worker existence from accepted native work. */
-	error = pthread_cond_init(&external->condition, NULL);
-	if (error != 0) {
-		pthread_mutex_destroy(&external->mutex);
-		vulkan_free(&sync->object.allocator, external);
-		return VK_ERROR_OUT_OF_HOST_MEMORY;
-	}
-
-	/* A private close-on-exec kernel reference backs the permanent Vulkan payload. */
+	/* Initial signaling is a synchronous creation property, independent of queue work. */
 	memset(&create, 0, sizeof(create));
 	create.version = GPU_ABI_VERSION;
 	create.size = sizeof(create);
@@ -648,25 +526,15 @@ external_enable(
 	error = ioctl(device->object.context->fd, GPU_FENCE_CREATE, &create);
 	if (error != 0) {
 		status = external_errno(errno);
-		pthread_cond_destroy(&external->condition);
-		pthread_mutex_destroy(&external->mutex);
 		vulkan_free(&sync->object.allocator, external);
 		return status;
 	}
 
-	/* The newly created worker initially sleeps and cannot access a native submission. */
+	/* Publishes the complete payload without creating any completion thread. */
 	external->permanent = create.fd;
-	error = pthread_create(&external->worker, NULL, external_worker, external);
-	if (error != 0) {
-		close(external->permanent);
-		pthread_cond_destroy(&external->condition);
-		pthread_mutex_destroy(&external->mutex);
-		vulkan_free(&sync->object.allocator, external);
-		return VK_ERROR_OUT_OF_HOST_MEMORY;
-	}
-
-	/* Succeeded: this fence owns all resources needed to signal a later accepted submission. */
 	sync->external = external;
+
+	/* Succeeded: the kernel owns completion of later admitted GPU work. */
 	return VK_SUCCESS;
 }
 
@@ -716,85 +584,4 @@ external_errno(
 
 	/* Succeeded: preserve the external-handle failure category for unsupported references. */
 	return VK_ERROR_INVALID_EXTERNAL_HANDLE;
-}
-
-/* Completes exactly the binding reserved for this worker's accepted native submission. */
-static VkResult
-external_signal(
-	struct vulkan_external_fence *external,
-	VkResult status)
-{
-	struct gpu_fence_state signal;
-	int error;
-
-	/* Only native success, or completed acquisition, may carry error zero to the kernel. */
-	memset(&signal, 0, sizeof(signal));
-	signal.version = GPU_ABI_VERSION;
-	signal.size = sizeof(signal);
-	signal.fd = external->job_fd;
-	signal.generation = external->job_generation;
-	if (status != VK_SUCCESS)
-		signal.error = EIO;
-
-	error = ioctl(external->device->object.context->fd, GPU_FENCE_SIGNAL, &signal);
-	external->bound = VK_FALSE;
-	if (error != 0)
-		return VK_ERROR_DEVICE_LOST;
-
-	/* Succeeded: pending kernel ownership retired with a verified terminal result. */
-	return VK_SUCCESS;
-}
-
-/* Proves actual native completion before publishing one generation to all imported aliases. */
-static void *
-external_worker(
-	void *argument)
-{
-	struct vulkan_external_fence *external;
-	VkResult status;
-	VkResult completion;
-
-	/* This reusable thread belongs exclusively to one external-capable fence object. */
-	external = argument;
-
-	/* Retains publication ownership until a submitter supplies one accepted native job. */
-	pthread_mutex_lock(&external->mutex);
-
-	/* Idle workers own no Vulkan mutex and wait until native acceptance publishes a job. */
-	for (;;) {
-		/* Spurious wakes never manufacture a new native submission. */
-		while (!external->busy && !external->stopping)
-			pthread_cond_wait(&external->condition, &external->mutex);
-
-		/* Fence teardown starts only after its final accepted job has retired. */
-		if (external->stopping)
-			break;
-
-		pthread_mutex_unlock(&external->mutex);
-
-		/* GPU and kernel waits execute without retaining the worker's publication mutex. */
-		status = vulkan_sync_wait_native(external->device, external->sync);
-		completion = external_signal(external, status);
-		if (completion != VK_SUCCESS)
-			status = completion;
-
-		/* Device loss remains visible even if a later application query sees a local payload. */
-		pthread_mutex_lock(&external->device->mutex);
-
-		vulkan_sync_device_error(external->device, status);
-
-		pthread_mutex_unlock(&external->device->mutex);
-
-		/* Publishes job retirement before reset/import/destruction can replace its identity. */
-		pthread_mutex_lock(&external->mutex);
-
-		/* Reset/import/destruction may replace the native identity only after this point. */
-		external->busy = VK_FALSE;
-		pthread_cond_broadcast(&external->condition);
-	}
-
-	pthread_mutex_unlock(&external->mutex);
-
-	/* Succeeded: the owning fence can now reclaim worker state and descriptor references. */
-	return NULL;
 }

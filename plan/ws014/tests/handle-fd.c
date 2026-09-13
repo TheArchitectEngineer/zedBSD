@@ -547,7 +547,7 @@ new_handle(
 
 	/* Successful creation transfers only payload destruction responsibility. */
 	payload->releases = 0;
-	error = handle_create(KERNEL_HANDLE_GPU, &payload_ops, payload, &handle);
+	error = handle_create(KERNEL_HANDLE_DRIVER, &payload_ops, payload, &handle);
 	assert(error == 0);
 
 	/* Succeeded: the caller owns the initial handle reference. */
@@ -589,7 +589,7 @@ test_lifecycle(
 	assert(descriptor == 0);
 	assert(refcount_load(&handle->refcnt) == 2);
 	handle_put(handle);
-	assert(handle_fd_get(descriptor, KERNEL_HANDLE_GPU + 1U) == NULL);
+	assert(handle_fd_get(descriptor, KERNEL_HANDLE_DRIVER + 1U) == NULL);
 	assert(filedesc_get_ref(process.fd, descriptor) == NULL);
 	assert(filedesc_take(process.fd, descriptor, &file_result) == EBADF);
 	assert(filedesc_get_file(process.fd, descriptor, &file_result) == EOPNOTSUPP);
@@ -615,13 +615,13 @@ test_lifecycle(
 	assert(fd_object_put(&object) == 0);
 
 	/* A lookup reference survives both descriptor close and descriptor-number reuse. */
-	held = handle_fd_get(descriptor, KERNEL_HANDLE_GPU);
+	held = handle_fd_get(descriptor, KERNEL_HANDLE_DRIVER);
 	assert(held != NULL);
 	assert(filedesc_close(process.fd, descriptor) == 0);
 	memset(&file, 0, sizeof(file));
 	refcount_init(&file.f_refs, 1);
 	assert(filedesc_install_at(process.fd, &file, descriptor) == 0);
-	assert(handle_fd_get(descriptor, KERNEL_HANDLE_GPU) == NULL);
+	assert(handle_fd_get(descriptor, KERNEL_HANDLE_DRIVER) == NULL);
 	assert(payload.releases == 0);
 
 	/* Replacing a file with a handle releases only the displaced file reference. */
@@ -709,7 +709,7 @@ test_reservations(
 	/* Wrapper allocation failure leaves the payload entirely caller-owned. */
 	payload.releases = 0;
 	fail_allocation = 1;
-	assert(handle_create(KERNEL_HANDLE_GPU, &payload_ops, &payload, &handle) == ENOMEM);
+	assert(handle_create(KERNEL_HANDLE_DRIVER, &payload_ops, &payload, &handle) == ENOMEM);
 	assert(handle == NULL);
 	assert(payload.releases == 0);
 }
@@ -799,7 +799,7 @@ test_ancillary(
 	assert(filedesc_commit_objects(&reservation, transaction.objects, &imported) == 0);
 	unix_socket_receive_commit(&transaction);
 	caller_thread.proc = &receiver;
-	received = handle_fd_get(imported, KERNEL_HANDLE_GPU);
+	received = handle_fd_get(imported, KERNEL_HANDLE_DRIVER);
 	assert(received != NULL);
 	assert(received->object == &payload);
 	assert(filedesc_close(receiver.fd, imported) == 0);

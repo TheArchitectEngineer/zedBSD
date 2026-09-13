@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "internal.h"
+#include <uapi/gpu-job.h>
 
 static VkResult device_validate(struct VkPhysicalDevice_T *physical, const VkDeviceCreateInfo *info, uint64_t *extensions, uint32_t *queues);
 static VkResult device_create_remote(struct VkDevice_T *device, const VkDeviceCreateInfo *info);
@@ -195,6 +196,7 @@ vkDestroyDevice(
 	const VkAllocationCallbacks *pAllocator)
 {
 	struct VkDevice_T *owner;
+	uint32_t index;
 
 	/* Null device destruction has no local or remote lifetime to consume. */
 	owner = vulkan_device(device);
@@ -209,6 +211,12 @@ vkDestroyDevice(
 
 	/* Releases internal WSI resources while the native device can still service their destruction. */
 	vulkan_wsi_device_finish(owner);
+
+	/* Retires hidden native submission fences while their device can still destroy them. */
+	for (index = 0; index < owner->queue_count; index++)
+		vulkan_queue_finish(owner->queues[index]);
+
+	/* Consumes the native device only after every private completion reference has retired. */
 	device_destroy_remote(owner);
 	device_finish(owner);
 
@@ -265,6 +273,11 @@ device_validate(
 	uint32_t index;
 	uint32_t earlier;
 	int match;
+
+	/* Refuses native device creation when accepted work cannot have authoritative kernel completion. */
+	if (physical->object.context->strict_queue == VK_FALSE ||
+	    (physical->object.context->capabilities & GPU_CAP_JOB) == 0)
+		return VK_ERROR_INITIALIZATION_FAILED;
 
 	/* No unavailable legacy device layer can be silently enabled. */
 	if (info->enabledLayerCount != 0)

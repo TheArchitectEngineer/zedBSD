@@ -52,8 +52,9 @@ enum lock_rank {
 	LOCK_RANK_DISK = 130,
 	LOCK_RANK_TTY = 135,
 	/*
-	 * The text console is a leaf: /dev/console and tty enter it while
-	 * holding their own locks, and it enters nothing.
+	 * Console and tty owners enter the retained-text backend at this rank.
+	 * The backend releases its lock before the separate observer registry
+	 * uses this rank to wake higher-ranked condition queues and the scheduler.
 	 */
 	LOCK_RANK_CONSOLE_TEXT = 137,
 	LOCK_RANK_POLL = 140,

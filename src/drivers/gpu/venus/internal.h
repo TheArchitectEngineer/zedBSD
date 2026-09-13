@@ -25,12 +25,13 @@
 
 #define VENUS_COMMAND_BYTES		65568U
 #define VENUS_RESPONSE_BYTES		4096U
-#define VENUS_QUEUE_SIZE		8U
-#define VENUS_REQUEST_SLOTS		4U
+#define VENUS_QUEUE_SIZE		64U
+#define VENUS_REQUEST_SLOTS		32U
 #define VENUS_SLOT_FREE			0U
 #define VENUS_SLOT_POSTED		1U
 #define VENUS_SLOT_COMPLETE		2U
 #define VENUS_SLOT_QUARANTINED		3U
+#define VENUS_SLOT_RESERVED		4U
 #define VENUS_HEADER_BYTES		24U
 #define VENUS_FEATURE_EDID		2U
 #define VENUS_MAX_RESOURCE_BYTES	(256U * 1024U * 1024U)
@@ -106,6 +107,11 @@ struct venus_transport {
 	uint64_t sleep_total;
 	uint32_t notify_multiplier;
 	uint32_t capset_size;
+
+	/* Negotiated descriptor capacity and strict native-fence proof remain immutable until reset. */
+	unsigned slot_count;
+	uint16_t queue_size;
+	unsigned strict_queue;
 	uint32_t features;
 	uint16_t available;
 	uint16_t used;
@@ -207,12 +213,17 @@ int drv_venus_resource_release_locked(struct venus_controller *controller, struc
 void drv_venus_display_close_locked(struct venus_controller *controller, struct venus_session *session);
 void drv_venus_display_finish(struct venus_controller *controller);
 int drv_venus_display_stop(struct venus_controller *controller);
+void drv_venus_display_console_changed_locked(struct venus_controller *controller);
 int drv_venus_display_legacy_available_locked(struct venus_controller *controller);
 int drv_venus_transport_start(struct venus_transport *transport, struct drv_pci_device *device);
 int drv_venus_transport_stop(struct venus_transport *transport);
 int drv_venus_transport_command(struct venus_transport *transport, const void *command, uint32_t command_bytes, void *response, uint32_t capacity, uint32_t *response_bytes);
 int drv_venus_transport_submit(struct venus_transport *transport, uint32_t context, const void *command, uint32_t bytes, uint32_t flags, uint32_t timeline, struct drv_gpu_completion *completion);
 void drv_venus_transport_drain(struct venus_transport *transport, uint32_t context);
+void drv_venus_transport_set_gpu(struct venus_transport *transport, struct drv_gpu_device *gpu);
+int drv_venus_transport_job_reserve(struct venus_transport *transport, uint32_t context, uint32_t timeline, struct drv_gpu_completion *completion, void **reservation);
+int drv_venus_transport_job_commit(struct venus_transport *transport, void *reservation, struct drv_gpu_completion *completion);
+int drv_venus_transport_job_cancel(struct venus_transport *transport, void *reservation, struct drv_gpu_completion *completion, unsigned fault);
 void drv_venus_transport_fail(struct venus_transport *transport, int error);
 void drv_venus_transport_display_changed(struct venus_transport *transport);
 void drv_venus_header(void *buffer, uint32_t command, uint32_t context);

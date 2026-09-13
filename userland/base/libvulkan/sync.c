@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <poll.h>
 #include <uapi/gpu.h>
+#include <uapi/gpu-job.h>
 #include "sync-internal.h"
 
 #define VULKAN_SYNC_POLL_NS UINT64_C(1000000)
@@ -50,7 +51,7 @@ vkCreateFence(
 	if (status != VK_SUCCESS)
 		return status;
 
-	/* Complete exportable kernel payload and worker ownership before exposing this fence. */
+	/* Completes exported reference ownership before exposing this fence. */
 	status = vulkan_external_fence_create(owner, sync, pCreateInfo);
 	if (status != VK_SUCCESS) {
 		sync_destroy(owner, sync, VULKAN_OPCODE_vkDestroyFence, pAllocator);
@@ -105,10 +106,11 @@ vkResetFences(
 	/* Encode every native fence even if its active payload came from acquisition. */
 	owner = vulkan_device(device);
 
-	/* Worker completion cannot be joined while retaining the device mutex it needs. */
+	/* Native marker retirement must precede resetting any submitted native fence. */
 	for (index = 0; index < fenceCount; index++) {
+		/* Public handles resolve to the process-local proof borrowed by the host marker. */
 		sync = vulkan_sync_object((uint64_t)(uintptr_t)pFences[index]);
-		vulkan_external_fence_quiesce(sync);
+		vulkan_sync_quiesce(sync);
 	}
 
 	vulkan_writer_init_for_object(&writer, &owner->object);
@@ -392,7 +394,7 @@ vulkan_wsi_acquire_signal(
 	/* Resolve optional ordinary synchronization objects before taking ownership. */
 	acquire_semaphore = vulkan_sync_object((uint64_t)(uintptr_t)semaphore);
 	acquire_fence = vulkan_sync_object((uint64_t)(uintptr_t)fence);
-	vulkan_external_fence_quiesce(acquire_fence);
+	vulkan_sync_quiesce(acquire_fence);
 	pthread_mutex_lock(&device->mutex);
 
 	status = vulkan_sync_device_status_locked(device);
@@ -420,91 +422,175 @@ vulkan_wsi_acquire_signal(
 }
 
 /*
- * Adds an optional exact-queue completion wake after successful native submission.
+ * Reserves all completion ownership before the native queue can accept work.
  */
 VkResult
-vulkan_sync_submit_notification(
+vulkan_sync_job_reserve(
 	struct VkQueue_T *queue,
-	struct vulkan_sync *sync)
+	struct vulkan_sync *sync,
+	struct vulkan_notification **reserved)
 {
 	struct vulkan_context *context;
 	struct vulkan_notification *notification;
-	struct vulkan_notification *cursor;
-	struct gpu_command_submit submit;
+	struct gpu_job_reserve request;
 	VkResult status;
+	uint64_t generation;
 	unsigned retired;
-	unsigned count;
+	int descriptor;
 	int error;
 	int saved_error;
 
-	/* Notifications optimize observation and never replace the native fence payload. */
+	/* A failed reservation cannot leave a caller with partially published job storage. */
+	*reserved = NULL;
 	context = queue->device->object.context;
-	sync->notification = 0;
-	if ((context->capabilities & GPU_CAP_NOTIFICATION) == 0)
-		return VK_SUCCESS;
+	if ((context->capabilities & GPU_CAP_JOB) == 0)
+		return VK_ERROR_DEVICE_LOST;
 
-	/* All marker creation is serialized with decoder transactions on this session. */
+	/* The shared payload and its native proof are prepared before binding a supervised job. */
+	status = vulkan_external_fence_prepare_locked(queue->device, sync, &descriptor, &generation);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Local bookkeeping must exist before any native submission or kernel reservation. */
+	notification = calloc(1, sizeof(*notification));
+	if (notification == NULL)
+		return VK_ERROR_OUT_OF_HOST_MEMORY;
+
+	/* Reclaims only previously terminal jobs before reserving another bounded kernel slot. */
 	pthread_mutex_lock(&context->mutex);
 
 	status = sync_notifications_reap(context, &retired);
 	if (status != VK_SUCCESS) {
 		pthread_mutex_unlock(&context->mutex);
+		free(notification);
 		return status;
 	}
 
-	/* Reserve one kernel record for the decoder that permits future submissions. */
-	count = 0;
-	for (cursor = context->notifications; cursor != NULL; cursor = cursor->next)
-		count++;
-
-	if (count >= GPU_SUBMIT_MAX - 1U) {
-		pthread_mutex_unlock(&context->mutex);
-		return VK_SUCCESS;
-	}
-
-	/* Optional observation storage must never turn accepted GPU work into an OOM failure. */
-	notification = calloc(1, sizeof(*notification));
-	if (notification == NULL) {
-		pthread_mutex_unlock(&context->mutex);
-		return VK_SUCCESS;
-	}
-
-	/* Queue ownership keeps this marker before every later submission to the same queue. */
-	memset(&submit, 0, sizeof(submit));
-	submit.version = GPU_ABI_VERSION;
-	submit.size = sizeof(submit);
-	submit.flags = GPU_COMMAND_CONTEXT_FENCE;
-	submit.timeline = queue->timeline_index;
-	error = ioctl(context->fd, GPU_COMMAND_SUBMIT, &submit);
+	/* One reservation pins both the exact generation and all later marker publication resources. */
+	memset(&request, 0, sizeof(request));
+	request.version = GPU_ABI_VERSION;
+	request.size = sizeof(request);
+	request.fd = descriptor;
+	request.generation = generation;
+	request.timeline = queue->timeline_index;
+	error = ioctl(context->fd, GPU_JOB_RESERVE, &request);
 	saved_error = errno;
 	if (error != 0) {
-		free(notification);
 		pthread_mutex_unlock(&context->mutex);
+		free(notification);
 
-		/* Saturation must not wait for work that a future valid submission will unblock. */
+		/* Saturation refuses unaccepted work without consuming caller synchronization. */
 		if (saved_error == EAGAIN || saved_error == ENOMEM)
-			return VK_SUCCESS;
+			return VK_ERROR_OUT_OF_DEVICE_MEMORY;
 
+		/* A negotiated backend that cannot reserve its promised contract is unusable. */
 		__atomic_store_n(&context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
 		return VK_ERROR_DEVICE_LOST;
 	}
 
-	/* A successful kernel acceptance always supplies a nonzero lifetime identity. */
-	if (submit.sequence == 0) {
-		free(notification);
+	/* A successful reservation must have an observable, nonzero lifetime identity. */
+	if (request.sequence == 0) {
 		pthread_mutex_unlock(&context->mutex);
+		free(notification);
 		__atomic_store_n(&context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
 		return VK_ERROR_DEVICE_LOST;
 	}
 
-	notification->sequence = submit.sequence;
+	/* The transaction pin prevents another observer from reclaiming a reserved job before commit. */
+	notification->sequence = request.sequence;
+	notification->waiters = 1;
 	notification->next = context->notifications;
 	context->notifications = notification;
-	sync->notification = submit.sequence;
+	sync->notification = request.sequence;
+	*reserved = notification;
 
 	pthread_mutex_unlock(&context->mutex);
 
-	/* Succeeded: this optional wake belongs to the submitted fence's current payload. */
+	/* Succeeded: producer supervision remains active even if userspace now stops. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Commits accepted work or cancels only a definite native refusal.
+ */
+VkResult
+vulkan_sync_job_finish(
+	struct VkQueue_T *queue,
+	struct vulkan_sync *sync,
+	struct vulkan_notification *reserved,
+	VkResult native_status,
+	VkBool32 accepted)
+{
+	struct vulkan_context *context;
+	struct vulkan_notification **link;
+	struct gpu_job_action action;
+	unsigned long operation;
+	VkBool32 canceled;
+	int error;
+
+	/* Encoding and reservation errors leave no kernel transaction to finish. */
+	if (reserved == NULL)
+		return native_status;
+
+	/* Native success publishes only the marker resources already held by the kernel. */
+	context = queue->device->object.context;
+	memset(&action, 0, sizeof(action));
+	action.version = GPU_ABI_VERSION;
+	action.size = sizeof(action);
+	action.sequence = reserved->sequence;
+	operation = GPU_JOB_COMMIT;
+	canceled = VK_FALSE;
+	if (native_status != VK_SUCCESS || accepted == VK_FALSE) {
+		/* Native device loss or uncertain acceptance must retain quarantine and terminal ERROR. */
+		operation = GPU_JOB_CANCEL;
+		if (accepted != VK_FALSE ||
+		    (native_status != VK_ERROR_OUT_OF_HOST_MEMORY && native_status != VK_ERROR_OUT_OF_DEVICE_MEMORY)) {
+			action.flags = GPU_JOB_CANCEL_FAULT;
+			native_status = VK_ERROR_DEVICE_LOST;
+		} else {
+			/* A definite rejection permits reservation rollback without signaling the payload. */
+			canceled = VK_TRUE;
+		}
+	}
+
+	/* The transaction retains its ledger entry until the exact kernel decision is known. */
+	pthread_mutex_lock(&context->mutex);
+
+	error = ioctl(context->fd, operation, &action);
+	if (error != 0) {
+		/* Failure after native acceptance is terminal, never an ordinary retryable reservation. */
+		reserved->waiters--;
+		__atomic_store_n(&context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+		pthread_mutex_unlock(&context->mutex);
+		return VK_ERROR_DEVICE_LOST;
+	}
+
+	/* A canceled unsubmitted job owns no kernel record and leaves the original payload pending. */
+	if (canceled != VK_FALSE) {
+		link = &context->notifications;
+
+		/* Removes only the transaction-owned entry whose kernel reservation was canceled. */
+		while (*link != NULL && *link != reserved)
+			link = &(*link)->next;
+
+		/* The transaction pin guarantees that no other observer could have removed this entry. */
+		if (*link == reserved)
+			*link = reserved->next;
+
+		sync->notification = 0;
+		free(reserved);
+	} else {
+		/* Committed or faulted jobs remain owned until terminal WAIT consumption or context close. */
+		reserved->waiters--;
+	}
+
+	pthread_mutex_unlock(&context->mutex);
+
+	/* Preserves the original native failure after completing its ownership transition. */
+	if (native_status != VK_SUCCESS)
+		return native_status;
+
+	/* Succeeded: the kernel owns every accepted job's completion independently of userspace. */
 	return VK_SUCCESS;
 }
 
@@ -714,47 +800,133 @@ vulkan_sync_pause(
 }
 
 /*
- * Waits for the private native fence without consulting its shared kernel payload.
+ * Observes the exact supervised job without issuing another native status command.
  */
 VkResult
-vulkan_sync_wait_native(
-	struct VkDevice_T *device,
-	struct vulkan_sync *sync)
+vulkan_sync_job_status(
+	struct vulkan_sync *sync,
+	uint64_t timeout_ns)
 {
+	struct vulkan_context *context;
+	struct vulkan_notification *notification;
+	struct gpu_command_wait wait;
 	VkResult status;
 	uint64_t sequence;
+	unsigned retired;
+	int error;
+	int saved_error;
 
-	/* Only the renderer's actual fence status can authorize a shared successful signal. */
-	for (;;) {
-		pthread_mutex_lock(&device->mutex);
+	/* Unsubmitted and synchronously acquired fences have no native marker borrowing their identity. */
+	sequence = sync->notification;
+	if (sequence == 0)
+		return VK_SUCCESS;
 
-		status = vulkan_sync_device_status_locked(device);
-		if (status == VK_SUCCESS)
-			status = vulkan_sync_status_locked(device, sync, VULKAN_OPCODE_vkGetFenceStatus);
+	/* Device loss remains terminal even after its failing record has already been consumed. */
+	context = sync->object.context;
+	status = __atomic_load_n(&context->error, __ATOMIC_ACQUIRE);
+	if (status != VK_SUCCESS)
+		return status;
 
-		sequence = sync->notification;
+	/* A consumed ledger entry is terminal; pending entries cannot be reclaimed by a reaper. */
+	pthread_mutex_lock(&context->mutex);
 
-		pthread_mutex_unlock(&device->mutex);
+	/* Another reaper may publish loss between the initial sample and this lock acquisition. */
+	status = __atomic_load_n(&context->error, __ATOMIC_ACQUIRE);
+	if (status == VK_SUCCESS)
+		status = sync_notifications_reap(context, &retired);
 
-		if (status == VK_SUCCESS)
-			break;
+	/* The protected ledger snapshot cannot precede the terminal error just sampled. */
+	notification = context->notifications;
 
-		if (status != VK_NOT_READY)
-			return status;
+	/* Searches only while the context owns every ledger pointer. */
+	while (notification != NULL && notification->sequence != sequence)
+		notification = notification->next;
 
-		/* Exact queue completion wakes have no device, queue or context lock held. */
-		if (sequence != 0) {
-			status = sync_notification_wait(device->object.context, sequence, UINT64_MAX);
-		} else {
-			status = vulkan_sync_pause(VULKAN_SYNC_POLL_NS);
+	pthread_mutex_unlock(&context->mutex);
+
+	/* Reaping preserves device failure even when it consumes the failing record. */
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* A previously consumed terminal marker no longer accesses its native fence. */
+	if (notification == NULL)
+		return VK_SUCCESS;
+
+	/* Exact nonconsuming WAIT permits independent CPU and exported-payload observers. */
+	memset(&wait, 0, sizeof(wait));
+	wait.version = GPU_ABI_VERSION;
+	wait.size = sizeof(wait);
+	wait.sequence = sequence;
+	wait.timeout_ns = timeout_ns;
+	error = ioctl(context->fd, GPU_COMMAND_WAIT, &wait);
+	saved_error = errno;
+	if (error != 0) {
+		/* Another reaper may consume this now-terminal record after the local snapshot. */
+		if (saved_error == ENOENT) {
+			/* A reaper publishes terminal failure under the same lock as its consuming WAIT. */
+			pthread_mutex_lock(&context->mutex);
+
+			status = __atomic_load_n(&context->error, __ATOMIC_ACQUIRE);
+
+			pthread_mutex_unlock(&context->mutex);
+
+			/* Consuming a failed marker cannot turn its final native use into success. */
+			if (status != VK_SUCCESS)
+				return status;
+
+			/* Succeeded: another observer already consumed this terminal marker. */
+			return VK_SUCCESS;
 		}
 
-		if (status < 0)
-			return status;
+		/* A deadline or interruption leaves the accepted job and its generation intact. */
+		if (saved_error == EAGAIN || saved_error == ETIMEDOUT || saved_error == EINTR)
+			return VK_NOT_READY;
+
+		/* A failed completion channel cannot prove that the native object is reusable. */
+		__atomic_store_n(&context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+		return VK_ERROR_DEVICE_LOST;
 	}
 
-	/* Succeeded: the native payload, not notification retirement, proved successful GPU work. */
+	/* Driver failure is terminal and cannot be promoted to successful native completion. */
+	if (wait.status != 0) {
+		__atomic_store_n(&context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+		return VK_ERROR_DEVICE_LOST;
+	}
+
+	/* Succeeded: the strict host marker has ended every access to this native fence. */
 	return VK_SUCCESS;
+}
+
+/*
+ * Retires native marker use before reset, import or fence destruction.
+ */
+void
+vulkan_sync_quiesce(
+	struct vulkan_sync *sync)
+{
+	struct VkDevice_T *device;
+	VkResult status;
+
+	/* Null synchronization handles own no native marker lifetime. */
+	if (sync == NULL)
+		return;
+
+	/* Waits for this process's accepted job without retaining queue, device or context locks. */
+	for (;;) {
+		/* An interrupted observation retains the same native lifetime until terminal completion. */
+		status = vulkan_sync_job_status(sync, UINT64_MAX);
+		if (status != VK_NOT_READY)
+			break;
+	}
+
+	/* A failed producer remains lost after its old native identity is retired locally. */
+	if (status != VK_SUCCESS) {
+		device = (struct VkDevice_T *)sync->object.parent;
+		__atomic_store_n(&device->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+	}
+
+	/* Succeeded: no healthy pending marker may still borrow this native fence. */
+	return;
 }
 
 /* Observes native payloads while retaining any-wait notification ownership. */
@@ -917,7 +1089,7 @@ sync_fences_wait(
 		} else if (!all && !missing) {
 			status = sync_notification_poll(device->object.context, delay, descriptors, descriptor_count);
 		} else {
-			/* Optional marker saturation retains the original nonblocking status fallback. */
+			/* A never-submitted ordinary fence has no admitted K job and needs bounded native observation. */
 			if (delay > VULKAN_SYNC_POLL_NS)
 				delay = VULKAN_SYNC_POLL_NS;
 
@@ -933,7 +1105,7 @@ sync_fences_wait(
 	return VK_SUCCESS;
 }
 
-/* Reclaims completed kernel records without interpreting them as Vulkan results. */
+/* Reclaims strict records and publishes terminal failure before releasing the ledger lock. */
 static VkResult
 sync_notifications_reap(
 	struct vulkan_context *context,
@@ -971,7 +1143,7 @@ sync_notifications_reap(
 			return VK_ERROR_DEVICE_LOST;
 		}
 
-		/* Once consumed, a missing local sequence means observe its actual fence again. */
+		/* Missing local sequences represent terminal completion ordered with context error publication. */
 		*link = notification->next;
 		free(notification);
 		(*retired)++;
@@ -1286,8 +1458,8 @@ sync_destroy(
 	if (sync == NULL)
 		return;
 
-	/* Join before native destruction because the worker still proves completion on this fence. */
-	vulkan_external_fence_quiesce(sync);
+	/* Retires the strict host marker before native destruction can invalidate its borrowed fence. */
+	vulkan_sync_quiesce(sync);
 
 	/* Keep native destruction and software payload retirement in one transaction. */
 	vulkan_writer_init_for_object(&writer, &sync->object);

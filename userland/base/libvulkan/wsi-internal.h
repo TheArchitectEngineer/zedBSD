@@ -130,6 +130,9 @@ int vulkan_wsi_display_node_ioctl(struct VkPhysicalDevice_T *physical, const str
 void vulkan_wsi_display_nodes_finish(struct VkInstance_T *instance);
 
 /* The direct adapter supplies these after its kernel contract is finalized. */
+/* Native ownership changes wake image acquisition without dispatching application events. */
+void vulkan_wsi_image_notify(void);
+
 extern const struct vulkan_wsi_platform_ops vulkan_wsi_display_platform;
 
 VkResult vulkan_wsi_display_query(struct VkPhysicalDevice_T *physical, uint32_t index, uint32_t *count, struct vulkan_wsi_output *output);

@@ -11,6 +11,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -59,13 +60,13 @@ static int send_fence(int socket, struct fence_test_context *context, VkFence fe
 static int receive_fence(int socket, struct fence_test_context *context, VkFence fence, VkFenceImportFlags flags);
 static int parent_test(int socket);
 static int child_test(int socket);
-static int exit_producer(int socket);
-static int exit_consumer(int socket);
+static int exit_producer(int socket, int stop);
+static int exit_consumer(int socket, pid_t stopped_producer);
 static int test_clock(uint64_t *nanoseconds);
 static int check_result(VkResult actual, VkResult expected, const char *operation);
 
 /*
- * Runs ordinary lifetime checks, or one isolated producer-exit fault scenario.
+ * Runs ordinary lifetime checks or one isolated producer-lifetime fault scenario.
  */
 int
 main(
@@ -74,6 +75,7 @@ main(
 {
 	int sockets[2];
 	int producer_exit;
+	int producer_stop;
 	int error;
 	int status;
 	int child_status;
@@ -82,12 +84,21 @@ main(
 
 	/* The destructive context-loss scenario is explicit and runs last in a disposable VM. */
 	producer_exit = 0;
+	producer_stop = 0;
 	if (argc == 2) {
 		error = strcmp(argv[1], "--producer-exit");
-		if (error != 0)
-			return 2;
+		if (error == 0) {
+			producer_exit = 1;
+		} else {
+			/* SIGSTOP leaves the producer fd open while every userspace thread is suspended. */
+			error = strcmp(argv[1], "--producer-stop");
+			if (error != 0)
+				return 2;
 
-		producer_exit = 1;
+			/* Both explicit modes use one event-blocked job in a disposable VM. */
+			producer_exit = 1;
+			producer_stop = 1;
+		}
 	} else if (argc != 1) {
 		return 2;
 	}
@@ -115,7 +126,7 @@ main(
 		test_role = "child";
 		close(sockets[0]);
 		if (producer_exit) {
-			status = exit_producer(sockets[1]);
+			status = exit_producer(sockets[1], producer_stop);
 		} else {
 			status = child_test(sockets[1]);
 		}
@@ -129,14 +140,26 @@ main(
 	test_role = "parent";
 	close(sockets[1]);
 	if (producer_exit) {
-		status = exit_consumer(sockets[0]);
+		/* The stop scenario requires waitpid proof before observing the still-live shared payload. */
+		if (producer_stop != 0)
+			status = exit_consumer(sockets[0], child);
+		else
+			status = exit_consumer(sockets[0], 0);
 	} else {
 		status = parent_test(sockets[0]);
 	}
 
 	close(sockets[0]);
+
+	/* A failed stop scenario must not strand a stopped child before the final bounded harness cleanup. */
+	if (producer_stop != 0 && status != 0)
+		(void)kill(child, SIGKILL);
+
+	/* No success marker precedes the final child exit status. */
 	waited = waitpid(child, &child_status, 0);
-	if (waited != child || !WIFEXITED(child_status) || WEXITSTATUS(child_status) != 0) {
+	if (waited != child ||
+	    !WIFEXITED(child_status) ||
+	    WEXITSTATUS(child_status) != 0) {
 		test_failure(__LINE__);
 		return 1;
 	}
@@ -146,11 +169,16 @@ main(
 		return 1;
 	}
 
-	/* Succeeded: no marker precedes peer acceptance and ordinary resource cleanup. */
+	/* Publish ordinary acceptance only after peer completion and resource cleanup. */
 	puts("GPUFENCE PASS");
-	if (producer_exit)
+
+	/* A fault scenario has its own marker so the host cannot accept ordinary coverage in its place. */
+	if (producer_stop != 0)
+		puts("GPUFENCE PRODUCER_STOP_ERROR PASS");
+	else if (producer_exit)
 		puts("GPUFENCE PRODUCER_EXIT_ERROR PASS");
 
+	/* Succeeded: both processes completed the requested ordinary or isolated fault scenario. */
 	return 0;
 }
 
@@ -950,12 +978,14 @@ child_test(
 	return 0;
 }
 
-/* Leaves accepted event-blocked native work pending when this process exits without Vulkan cleanup. */
+/* Leaves accepted event-blocked GPU work pending across producer suspension or exit. */
 static int
 exit_producer(
-	int socket)
+	int socket,
+	int stop)
 {
 	struct fence_test_context context;
+	pid_t producer;
 	int error;
 
 	/* This isolated fault scenario tests owner-session death rather than successful GPU completion. */
@@ -995,20 +1025,33 @@ exit_producer(
 		return 1;
 	}
 
+	/* Stop every userspace thread with the fd live and accepted GPU work still waiting on its event. */
+	if (stop != 0) {
+		test_stage = "producer SIGSTOP";
+		producer = getpid();
+		error = kill(producer, SIGSTOP);
+		if (error != 0) {
+			test_failure(__LINE__);
+			return 1;
+		}
+	}
+
+	/* The parent resumes a stopped producer only after its independently imported fence is terminal. */
 	error = receive_byte(socket, 'X');
 	if (error != 0) {
 		test_failure(__LINE__);
 		return 1;
 	}
 
-	/* Succeeded: main uses _exit so final GPU-session close must terminate the shared binding. */
+	/* Succeeded: main retires process references; a stopped producer's job is already driver-terminal. */
 	return 0;
 }
 
-/* Requires an error terminal result after the accepted producer disappears. */
+/* Requires a terminal error after accepted work loses its running userspace producer. */
 static int
 exit_consumer(
-	int socket)
+	int socket,
+	pid_t stopped_producer)
 {
 	struct fence_test_context context;
 	VkResult status;
@@ -1016,6 +1059,8 @@ exit_consumer(
 	uint64_t finished;
 	uint64_t elapsed;
 	int saved_error;
+	int process_status;
+	pid_t waited;
 	int error;
 
 	/* The receiver's device and descriptor references remain alive through producer death. */
@@ -1052,10 +1097,27 @@ exit_consumer(
 		return 1;
 	}
 
-	error = send_byte(socket, 'X');
-	if (error != 0) {
-		test_failure(__LINE__);
-		return 1;
+	/* A stopped producer must be observed in the stopped state before the fence wait begins. */
+	if (stopped_producer > 0) {
+		test_stage = "waitpid producer stopped";
+		waited = waitpid(stopped_producer, &process_status, WUNTRACED);
+		if (waited != stopped_producer ||
+		    !WIFSTOPPED(process_status) ||
+		    WSTOPSIG(process_status) != SIGSTOP) {
+			test_failure(__LINE__);
+			return 1;
+		}
+
+		/* This marker certifies that final close and a running userspace worker cannot signal the fd. */
+		puts("GPUFENCE PRODUCER_STOPPED pending=1 fd_live=1");
+		fflush(stdout);
+	} else {
+		/* The original exit scenario still ends the producer before checking terminal error. */
+		error = send_byte(socket, 'X');
+		if (error != 0) {
+			test_failure(__LINE__);
+			return 1;
+		}
 	}
 
 	/* Process teardown and its outstanding transport work have a separate finite test budget. */
@@ -1080,8 +1142,11 @@ exit_consumer(
 	}
 
 	elapsed = (finished - started) / UINT64_C(1000000);
-	printf("GPUFENCE PRODUCER_EXIT_WAIT result=%d elapsed_ms=%llu budget_ms=30000\n",
-	    status, (unsigned long long)elapsed);
+	printf(
+		"GPUFENCE PRODUCER_%s_WAIT result=%d elapsed_ms=%llu budget_ms=30000\n",
+		stopped_producer > 0 ? "STOP" : "EXIT",
+		status,
+		(unsigned long long)elapsed);
 	fflush(stdout);
 	errno = saved_error;
 	test_stage = "vkWaitForFences";
@@ -1089,6 +1154,36 @@ exit_consumer(
 	if (error != 0) {
 		test_failure(__LINE__);
 		return 1;
+	}
+
+	/* A live stopped producer must be supervised by the driver's deadline, independently from U execution. */
+	if (stopped_producer > 0) {
+		/* Device loss must follow the finite watchdog instead of a fabricated immediate completion. */
+		if (elapsed < 9000U || elapsed > 20000U) {
+			test_failure(__LINE__);
+			return 1;
+		}
+
+		/* No process exit or spontaneous continue may explain the observed fence terminal state. */
+		waited = waitpid(stopped_producer, &process_status, WNOHANG | WCONTINUED);
+		if (waited != 0) {
+			test_failure(__LINE__);
+			return 1;
+		}
+
+		/* Resume only after terminal observation so the child can leave its process-owned descriptors. */
+		error = kill(stopped_producer, SIGCONT);
+		if (error != 0) {
+			test_failure(__LINE__);
+			return 1;
+		}
+
+		/* The existing acknowledgment makes final process exit and waitpid part of acceptance. */
+		error = send_byte(socket, 'X');
+		if (error != 0) {
+			test_failure(__LINE__);
+			return 1;
+		}
 	}
 
 	/* This deliberate lost-context case ends by process exit; its VM is discarded after evidence. */

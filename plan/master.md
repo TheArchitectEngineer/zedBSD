@@ -1,10 +1,9 @@
 <!-- awesome-plan-current:start -->
 Active Queue: none
-Last Queue: q310 finished; q310-i01 / ws014-p007 cleared
-WS030: completed (standard Vulkan1.0/direct-display library)
-ws014-p005: cleared (corrected standard API)
-WS014: incomplete; p002/p003/p005/p006/p007 cleared
-Next: p004 final API/standards review planning; p004 and WS029 remain unqueued
+Last Queue: q311 finished; ws014-p008 cleared
+WS014: incomplete; p002/p003/p005/p006/p007/p008 cleared
+WS030: completed; ws014-p005 standard API cleared
+Next: p004 planning, not queued; native i915 remains separate WS029
 <!-- awesome-plan-current:end -->
 
 # zedBSD master plan
@@ -1338,7 +1337,7 @@ Status: active
 
 ## 現在地
 
-q310 finished、[WS014 p007](https://github.com/awemorris/zedBSD/issues/394)のBLOB直接表示・標準fd共有・同期改善を受入済み。p004はplanning・未queue、active Queueなし。WS030 completedとp005標準API訂正のclearanceを維持する。EGLは今回cancel、native i915は後段の別WS029。
+q310/p007の受入を保持し、[WS014 p008](https://github.com/awemorris/zedBSD/issues/395)をq311-i01でcleared。q311 finished、active Queueなし。p004はplanning・未queue。WS030 completedとp005標準API訂正のclearanceを維持する。EGLは今回cancel、native i915は後段の別WS029。
 
 2026-09-11に削除したPriority表は復活させない。閉鎖済みWSと既存Focus、他WSの実行保留は変更しない。q308の依存順は全WSのPriority順位ではない。q307旧scopeの受入失効は履歴とし、現在のp005はq308で標準API訂正済み・clearedである。
 
@@ -1360,7 +1359,7 @@ Future Listへ移したWS013・WS015は次節で管理する。完了WSの詳細
 | [WS010](ws010/ws.md) | MG001 | スクリプト・イメージツール | 完了 | q063。 |
 | [WS011](ws011/ws.md) | MG005 | ネットワーク設定コンソール | 完了（ユーザー確認） | commit confirmed完了。VLANキャンセル、bridgeはF-001へ移管。 |
 | [WS012](ws012/ws.md) | MG005 | サービス管理コンソール | 完了 | q018。 |
-| [WS014](https://github.com/awemorris/zedBSD/issues/15) | MG006 | GPU framework / virtio-gpu bring-up | incomplete | p002/p003/p005/p006/p007 cleared。q310 finished、p001/p004 planning、p004未queue。 |
+| [WS014](https://github.com/awemorris/zedBSD/issues/15) | MG006 | GPU framework / virtio-gpu bring-up | incomplete | p002/p003/p005/p006/p007/p008 cleared。q311 finished、active Queueなし。p004 planning・未queue。 |
 | [WS016](ws016/ws.md) | MG004 | 実行時swap制御 | 完了 | q021。 |
 | [WS017](ws017/ws.md) | MG006 | LFB描画高速化 | 依存待ち | WS022後にmmap・Xzed高速描画・受け入れ。 |
 | [WS018](ws018/ws.md) | MG008 | カーネル所有権・構成統一 | 完了 | p001〜p020。I/O後続はWS025。 |
@@ -1673,3 +1672,31 @@ GET_DISPLAY_INFOとGET_EDIDのbase/CTA progressive DTDで表示・モードを�
 ## q310完了
 
 q310 finished、[WS014 p007](https://github.com/awemorris/zedBSD/issues/394) cleared。BLOB直接表示・標準OPAQUE memory/fence・同期/batch・topology/placementを受入済み。最終APIは170 commands / drv_gpu_ops v6。active Queueなし、p004とWS029は未queue。optimal共有には隔離したpaired renderer差分を使用。source/docのgit公開はユーザー担当。 中間判断と失敗履歴はp007とQueue履歴に保持する。
+
+## q311開始: GPU完了責任・fence所属と描画資源の改善（2026-09-13）
+
+ユーザーがレビュー回答を承認し、独立Phaseの作成・実行を指示した。[WS014 p008](https://github.com/awemorris/zedBSD/issues/395)を単一項目q311-i01で実行する。p007/q310のcleared/finishedを保持し、p008 → p004 planning/未queue → 別WS029 native i915の順とする。
+
+A1の局所表示エラー分離、A3のGPUドライバによるfence終端、A4のqueue容量、A5のacquire待機、A6の同時進行slot別pool/cb再利用、A7のexternal worker撤去・console通知、A2/A8の検証補強を含む。fenceはdrv_gpuフレームワークへ移し、kernには不透明handle/fd/refcount/poll/SCM_RIGHTSを残す。共通DRIVER分類＋ops識別とGPU組込時だけのbuildを用いる。
+
+isolated paired rendererのSTRICT_QUEUE能力を合意し、実GPU成功だけを正常retireへ流す。失敗はsticky化して後続まとめretireを抑止し、K watchdogでERROR終端する。native投入前の予約も期限管理し、U停止による未監督仕事を残さない。通常BLOB表示と標準OPAQUE_FDを維持する。
+
+720 active minutes見積・120分レビュー、有限fixture/build/VMで完了まで進める。HAL追加変更・一般Wayland・native i915・git add/commit/pushは含めない。既存private host/転送とGitHub同期の承認を使用する。開始時点で新実装や検証成功は主張しない。詳細はp008本文と承認回答コメント、local plan/ws014/phase008/に残す。
+
+
+## q311完了: GPU完了責任・driver fence・描画資源改善（2026-09-13）
+
+WS014 p008 / q311-i01をcleared、q311をfinishedとする。active Queueなし。p007/q310の受入を保持し、WS014はincomplete、p001/p004はplanning、p004と別WS029 native i915は未queueのまま。
+
+承認回答A1–A8とfence所属を実装した。fenceはdrv_gpuフレームワークへ移し、kernは不透明handle/fd/refcount/poll/SCM_RIGHTSを保持する。6platformでGPU共通層＋fenceをbackend選択時だけbuildし、GPUなしamd64実ELFでGPU symbol/object不在とgeneric handle/fd残存を確認した。
+
+native投稿前のGPU_JOB予約から独立watchdogが監督し、strict paired rendererの実submission VkFence成功でKがexact generationを終端する。U-only/未commitのpendingをK内部で無期限に待たない。slotは最大64descriptor/32chain（28job＋4control）、外部fenceごとのworkerを撤去。acquireはmonotonic condition、present pool/cbは同時slotごとに再利用し、consoleは文字・所有権変更で起床する。局所表示エラーと全device故障も分離した。
+
+最終5VMは同じkernel/base imageでPASS/QEMU exit0: direct-002 41.345秒、wayland-002 46.011秒、producer-stop-004 14.117秒、producer-exit-002 4.214秒、recovery-002 13.823秒。直接/Waylandの通常BLOB表示・独立画像oracle・複数process・再open/consoleを確認。SIGSTOP中fdを開いたproducerは9970msでDEVICE_LOST、renderer停止は10000msで故障通知後にchecked reset・新context往復を確認した。
+
+K/U/transport/host/consoleの限定normal・sanitizer、170API/両ABI/Noct8file、対象build・規約・独立レビューを完了。U回収競合2件は修正前FAIL→修正後PASS。static analyzerの4警告は実callee/有効入力の前提と照合して記録し、全警告0とは扱わない。初期のbuild/harness失敗も保持する。
+
+新libvulkanのVkDevice作成にはSTRICT_QUEUE対応のisolated paired rendererが必要。stock/旧pairは初期化で拒否する。host system packageとHALの追加変更なし。通常2秒sceneはp007再測定13frameからp00815frameだが、QEMU CPU時間は0.36秒から0.48秒の単発観測で、CPU削減や速度倍率は主張しない。一般Wayland/Toolkit、任意GPU間DMA、native i915、CTSは未受入。source/doc/patchのgit add/commit/pushはユーザー担当。
+
+
+受入記録: [p008結果コメント](https://github.com/awemorris/zedBSD/issues/395#issuecomment-5652374702)。local/uncommittedの資料は plan/ws014/phase008/、Queue履歴は plan/history/queue-q311.md。

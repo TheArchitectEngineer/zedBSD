@@ -14,6 +14,7 @@
 #include <drivers/gpu.h>
 #include <uapi/gpu-allocation.h>
 #include <uapi/gpu-fence.h>
+#include <uapi/gpu-job.h>
 #include <drivers/venus.h>
 #include <kern/device-io.h>
 #include <kern/kmem.h>
@@ -23,7 +24,7 @@
 #include <limits.h>
 #include <string.h>
 
-#define VENUS_CAPABILITIES	(63U | GPU_CAP_DISPLAY | GPU_CAP_MAPPING | GPU_CAP_SHARE | GPU_CAP_NOTIFICATION | GPU_CAP_ALLOCATION_SHARE | GPU_CAP_FENCE | GPU_CAP_DISPLAY_EVENTS)
+#define VENUS_CAPABILITIES	(63U | GPU_CAP_DISPLAY | GPU_CAP_MAPPING | GPU_CAP_SHARE | GPU_CAP_NOTIFICATION | GPU_CAP_ALLOCATION_SHARE | GPU_CAP_FENCE | GPU_CAP_DISPLAY_EVENTS | GPU_CAP_JOB)
 
 static int venus_attach(struct drv_pci_device *device, const struct drv_pci_id *id);
 static int venus_start(struct venus_controller *controller, struct drv_pci_device *device);
@@ -42,6 +43,9 @@ static int venus_resource_write(void *device, void *private_session, void *objec
 static int venus_command(void *device, void *private_session, const void *buffer, uint32_t bytes);
 static int venus_command_submit(void *device, void *private_session, const void *buffer, uint32_t bytes, uint32_t flags, uint32_t timeline, struct drv_gpu_completion *completion);
 static void venus_command_drain(void *device, void *private_session);
+static int venus_job_reserve(void *device, void *private_session, uint32_t timeline, struct drv_gpu_completion *completion, void **reservation);
+static int venus_job_commit(void *device, void *private_session, void *reservation, struct drv_gpu_completion *completion);
+static int venus_job_cancel(void *device, void *private_session, void *reservation, struct drv_gpu_completion *completion, unsigned fault);
 static int venus_recover(struct venus_controller *controller);
 static int venus_present(void *device, void *private_session, void *object, const struct gpu_present *request);
 static int venus_resource_map(void *device, void *private_session, void *object, struct drv_gpu_mapping *mapping);
@@ -128,7 +132,7 @@ drv_venus_storage_create_locked(
 	if (error != 0) {
 		cleanup = venus_resource_retire(controller, resource);
 		if (cleanup != 0)
-			atomic_raw_store_release(&controller->transport.failed, 1U);
+			drv_venus_transport_fail(&controller->transport, EIO);
 		return error;
 	}
 
@@ -328,14 +332,34 @@ venus_publish(
 	static const struct drv_gpu_command_ops commands = {
 		venus_command_submit, venus_command_drain
 	};
+	static const struct drv_gpu_job_ops jobs = {
+		venus_job_reserve,
+		venus_job_commit,
+		venus_job_cancel
+	};
 	static const struct drv_gpu_ops operations = {
-		DRV_GPU_INTERFACE_VERSION, sizeof(struct drv_gpu_ops),
-		VENUS_CAPABILITIES, 0U, venus_open, venus_close, venus_get_info,
-		venus_resource_create, venus_resource_destroy, venus_get_capset,
-		venus_blob_create, venus_resource_read, venus_resource_write,
-		venus_command, venus_present, &drv_venus_display_operations,
-		venus_resource_map, &drv_venus_share_operations, &commands,
-		&drv_venus_scanout_operations, NULL
+		DRV_GPU_INTERFACE_VERSION,
+		sizeof(struct drv_gpu_ops),
+		VENUS_CAPABILITIES,
+		0U,
+		venus_open,
+		venus_close,
+		venus_get_info,
+		venus_resource_create,
+		venus_resource_destroy,
+		venus_get_capset,
+		venus_blob_create,
+		venus_resource_read,
+		venus_resource_write,
+		venus_command,
+		venus_present,
+		venus_resource_map,
+		NULL,
+		&drv_venus_display_operations,
+		&drv_venus_share_operations,
+		&commands,
+		&drv_venus_scanout_operations,
+		&jobs
 	};
 	struct venus_controller *controller;
 	int error;
@@ -349,8 +373,8 @@ venus_publish(
 	if (error != 0)
 		return error;
 
-	/* Pending command callbacks retain this GPU wrapper through their session drain. */
-	controller->transport.gpu = controller->gpu;
+	/* IRQ and watchdog fault reports own a wrapper reference even without live sessions. */
+	drv_venus_transport_set_gpu(&controller->transport, controller->gpu);
 
 	/* Identifies the actual backend without claiming a rendered frame. */
 	kern_logf("venus: registered modern PCI Vulkan capset 4\n");
@@ -383,7 +407,7 @@ venus_unpublish(
 
 	/* Successful unregister consumes the core handle permanently. */
 	controller->gpu = NULL;
-	controller->transport.gpu = NULL;
+	drv_venus_transport_set_gpu(&controller->transport, NULL);
 
 	/* Succeeded: PCI may now reset and detach the private hardware state. */
 	return 0;
@@ -512,10 +536,11 @@ venus_close(
 	if (controller->display_owner == session) {
 		error = venus_scanout_disable(controller);
 		if (error != 0)
-			atomic_raw_store_release(&controller->transport.failed, 1U);
+			drv_venus_transport_fail(&controller->transport, EIO);
 
 		/* A dead session cannot retain a pointer in display arbitration. */
 		controller->display_owner = NULL;
+		drv_venus_display_console_changed_locked(controller);
 	}
 
 	/* An uncertain command stream is retained intact for controller reset. */
@@ -524,7 +549,7 @@ venus_close(
 		drv_venus_header(command, 0x0201U, session->context);
 		error = venus_control(controller, command, sizeof(command));
 		if (error != 0)
-			atomic_raw_store_release(&controller->transport.failed, 1U);
+			drv_venus_transport_fail(&controller->transport, EIO);
 	}
 
 	mutex_unlock(&controller->mutex);
@@ -562,15 +587,22 @@ venus_get_info(
 	void *private_session,
 	struct gpu_info *info)
 {
-	/* Capabilities and resource limits are immutable for each registration. */
-	(void)device;
+	struct venus_controller *controller;
+
 	(void)private_session;
+
+	/* Legacy rendering and capability queries remain available without strict queue completion. */
+	controller = device;
 	info->capabilities = VENUS_CAPABILITIES;
+	if (controller->transport.strict_queue == 0U)
+		info->capabilities &= ~GPU_CAP_JOB;
+
+	/* Limits describe the retained controller rather than the current renderer session. */
 	info->max_resources = UINT32_MAX;
 	info->max_resource_bytes = VENUS_MAX_RESOURCE_BYTES;
 	memcpy(info->driver_name, "venus", sizeof("venus"));
 
-	/* Succeeded: the caller can select supported operations and limits. */
+	/* Succeeded: the caller can select only the completion contract negotiated with this host. */
 	return 0;
 }
 
@@ -647,7 +679,7 @@ venus_resource_destroy(
 	/* Any failure leaves the allocation on the controller's quarantine list. */
 	error = venus_resource_release(controller, resource);
 	if (error != 0) {
-		atomic_raw_store_release(&controller->transport.failed, 1U);
+		drv_venus_transport_fail(&controller->transport, EIO);
 		kern_logf("venus: resource %u retained for reset: %d\n", resource->identifier, error);
 	}
 
@@ -774,7 +806,7 @@ venus_blob_create(
 	if (error != 0) {
 		cleanup = venus_resource_release(controller, resource);
 		if (cleanup != 0)
-			atomic_raw_store_release(&controller->transport.failed, 1U);
+			drv_venus_transport_fail(&controller->transport, EIO);
 		mutex_unlock(&controller->mutex);
 		return error;
 	}
@@ -995,6 +1027,82 @@ venus_command_submit(
 	return 0;
 }
 
+/* Reserves backend marker storage before userspace can submit associated native work. */
+static int
+venus_job_reserve(
+	void *device,
+	void *private_session,
+	uint32_t timeline,
+	struct drv_gpu_completion *completion,
+	void **reservation)
+{
+	struct venus_controller *controller;
+	struct venus_session *session;
+	int error;
+
+	/* The framework's retained open supplies the immutable context identity. */
+	controller = device;
+	session = private_session;
+	error = drv_venus_transport_job_reserve(
+		&controller->transport,
+		session->context,
+		timeline,
+		completion,
+		reservation);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the transport watchdog owns this reservation before native submission. */
+	return 0;
+}
+
+/* Publishes a preallocated marker for native work whose reply reported success. */
+static int
+venus_job_commit(
+	void *device,
+	void *private_session,
+	void *reservation,
+	struct drv_gpu_completion *completion)
+{
+	struct venus_controller *controller;
+	int error;
+
+	(void)private_session;
+
+	/* Token and completion identity reject a stale slot after timeout or concurrent completion. */
+	controller = device;
+	error = drv_venus_transport_job_commit(&controller->transport, reservation, completion);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: only authoritative host completion or failure can finish this marker. */
+	return 0;
+}
+
+/* Releases proven nonacceptance or reports uncertain work as a transport fault. */
+static int
+venus_job_cancel(
+	void *device,
+	void *private_session,
+	void *reservation,
+	struct drv_gpu_completion *completion,
+	unsigned fault)
+{
+	struct venus_controller *controller;
+	int error;
+
+	(void)private_session;
+
+	/* Cancellation validates the exact reservation before changing callback ownership. */
+	controller = device;
+	error = drv_venus_transport_job_cancel(&controller->transport, reservation, completion, fault);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: rollback ended publication authority or fault handling retained uncertain DMA. */
+	return 0;
+}
+
 /* Ends every queued callback before common storage and renderer context retirement. */
 static void
 venus_command_drain(
@@ -1048,17 +1156,18 @@ venus_recover(
 	controller->primary_width = 0U;
 	controller->primary_height = 0U;
 	controller->display_owner = NULL;
+	drv_venus_display_console_changed_locked(controller);
 
 	/* Fresh queue locks, descriptors and mappings never alias an old externally retained generation. */
 	memset(&controller->transport, 0, sizeof(controller->transport));
 	error = drv_venus_transport_start(&controller->transport, pci);
 	if (error != 0) {
-		atomic_raw_store_release(&controller->transport.failed, 1U);
+		drv_venus_transport_fail(&controller->transport, EIO);
 		return error;
 	}
 
 	/* Only a successful fresh transport clears loss on the still-registered GPU node. */
-	controller->transport.gpu = controller->gpu;
+	drv_venus_transport_set_gpu(&controller->transport, controller->gpu);
 	drv_gpu_report_error(controller->gpu, 0);
 	kern_logf("venus: recovered after all prior sessions, mappings and shared handles retired\n");
 
@@ -1179,7 +1288,7 @@ venus_control(
 	/* A wrong success type cannot prove this state transition completed. */
 	type = drv_venus_load32(response);
 	if (response_bytes != sizeof(response) || type != 0x1100U) {
-		atomic_raw_store_release(&controller->transport.failed, 1U);
+		drv_venus_transport_fail(&controller->transport, EIO);
 		return EIO;
 	}
 
@@ -1730,6 +1839,7 @@ venus_present_image(
 	controller->primary_width = request->width;
 	controller->primary_height = request->height;
 	controller->display_owner = session;
+	drv_venus_display_console_changed_locked(controller);
 
 	/* Requests a display update of the newly selected complete rectangle. */
 	memset(command, 0, 48U);

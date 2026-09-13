@@ -25,7 +25,7 @@ struct kernel_payload {
 	uint64_t native;
 };
 
-/* The separate kernel lock and condition serialize worker signaling with public host waiting. */
+/* The independent kernel peer serializes payload observations and strict job completion. */
 static pthread_mutex_t kernel_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t kernel_condition = PTHREAD_COND_INITIALIZER;
 static struct kernel_payload payloads[32];
@@ -38,6 +38,13 @@ static unsigned rollbacks;
 static int reject_bind;
 static int stale_wait;
 
+/* Kernel job reservations retain payload references independently of descriptor close or reuse. */
+static struct kernel_payload *job_payloads[512];
+/* Exportable fence creation must never request a guest completion thread. */
+static unsigned worker_creations;
+
+int fence_test_thread_create(pthread_t *thread, const pthread_attr_t *attributes, void *(*entry)(void *), void *argument);
+static void kernel_jobs_progress(void);
 int fence_test_ioctl(int fd, unsigned long operation, ...);
 int fence_test_fcntl(int fd, int command, ...);
 int fence_test_close(int fd);
@@ -45,6 +52,27 @@ int fence_test_poll(struct pollfd *fds, nfds_t count, int timeout);
 static int kernel_operation(unsigned long operation, void *argument);
 static int export_fd(struct VkDevice_T *device, VkFence fence);
 static void import_fd(struct VkDevice_T *device, VkFence fence, int fd, VkFenceImportFlags flags);
+
+/*
+ * Rejects and counts any attempted per-fence worker creation.
+ */
+int
+fence_test_thread_create(
+	pthread_t *thread,
+	const pthread_attr_t *attributes,
+	void *(*entry)(void *),
+	void *argument)
+{
+	/* No supported external-fence operation requires another userspace signaler. */
+	(void)thread;
+	(void)attributes;
+	(void)entry;
+	(void)argument;
+	worker_creations++;
+
+	/* A regression cannot pass merely because a host pthread happened to start. */
+	return EAGAIN;
+}
 
 int
 fence_test_ioctl(int fd, unsigned long operation, ...)
@@ -69,9 +97,43 @@ kernel_operation(unsigned long operation, void *argument)
 	struct gpu_fence_create *create;
 	struct gpu_fence_state *state;
 	struct gpu_fence_bind *bind;
+	struct gpu_job_reserve *reserve;
+	unsigned job_index;
+	struct timespec end;
 	struct kernel_payload *payload;
 	struct timespec deadline;
 	int error;
+
+	/* Reservation pins the shared payload before native work can be accepted. */
+	if (operation == GPU_JOB_RESERVE) {
+		reserve = argument;
+		test_job_reject = reject_bind;
+		error = sync_base_ioctl(61, operation, argument);
+		if (error != 0)
+			return error;
+
+		/* Native-only jobs need no transferable payload reference. */
+		if (reserve->fd >= 0) {
+			payload = descriptors[reserve->fd];
+			assert(payload != NULL && !payload->bound);
+			assert(payload->state == GPU_FENCE_PENDING && payload->generation == reserve->generation);
+			job_index = (unsigned)(reserve->sequence - 1001);
+			job_payloads[job_index] = payload;
+			payload->references++;
+			payload->bound = 2;
+		}
+		return 0;
+	}
+
+	/* Strict host progress publishes success or error without any native status worker. */
+	if (operation == GPU_JOB_COMMIT || operation == GPU_JOB_CANCEL || operation == GPU_COMMAND_WAIT) {
+		error = sync_base_ioctl(61, operation, argument);
+		kernel_jobs_progress();
+		return error;
+	}
+
+	/* Payload queries observe independently completed kernel jobs before returning their state. */
+	kernel_jobs_progress();
 
 	if (operation == GPU_FENCE_CREATE) {
 		create = argument;
@@ -174,15 +236,28 @@ kernel_operation(unsigned long operation, void *argument)
 		return -1;
 	}
 
-	clock_gettime(CLOCK_REALTIME, &deadline);
-	deadline.tv_sec += 2;
+	clock_gettime(CLOCK_REALTIME, &end);
+	end.tv_sec += 2;
+
+	/* The fixture's host GPU oracle advances without production user threads. */
 	while (payload->state == GPU_FENCE_PENDING) {
-		kernel_waits++;
-		error = pthread_cond_timedwait(&kernel_condition, &kernel_mutex, &deadline);
-		if (error != 0) {
+		clock_gettime(CLOCK_REALTIME, &deadline);
+		if (deadline.tv_sec >= end.tv_sec) {
 			errno = ETIMEDOUT;
 			return -1;
 		}
+
+		/* Short condition intervals allow independent native event and alias operations. */
+		deadline.tv_nsec += 1000000;
+		if (deadline.tv_nsec >= 1000000000L) {
+			deadline.tv_sec++;
+			deadline.tv_nsec -= 1000000000L;
+		}
+
+		kernel_waits++;
+		error = pthread_cond_timedwait(&kernel_condition, &kernel_mutex, &deadline);
+		assert(error == 0 || error == ETIMEDOUT);
+		kernel_jobs_progress();
 	}
 
 	state->state = payload->state;
@@ -311,7 +386,8 @@ main(void)
 	memset(&device, 0, sizeof(device));
 	memset(&queue, 0, sizeof(queue));
 	context.fd = 61;
-	context.capabilities = GPU_CAP_FENCE;
+	context.capabilities = GPU_CAP_FENCE | GPU_CAP_JOB;
+	queue.timeline_index = 1;
 	device.object.context = &context;
 	device.object.wire_id = 1000;
 	queue.object.context = &context;
@@ -395,7 +471,7 @@ main(void)
 	reject_bind = 1;
 	submits = peer.calls[18];
 	status = vkQueueSubmit((VkQueue)&queue, 0, NULL, source);
-	assert(status == VK_ERROR_OUT_OF_HOST_MEMORY && peer.calls[18] == submits);
+	assert(status == VK_ERROR_OUT_OF_DEVICE_MEMORY && peer.calls[18] == submits);
 	reject_bind = 0;
 
 	/* Invalid import leaves ownership with the application and preserves the existing payload. */
@@ -414,8 +490,7 @@ main(void)
 	/* A renderer DEVICE_LOST wake must publish kernel ERROR, never a successful shared fence. */
 	status = vkResetFences((VkDevice)&device, 1, &alias);
 	assert(status == VK_SUCCESS);
-	peer.fail_opcode = 38;
-	peer.fail_result = VK_ERROR_DEVICE_LOST;
+	test_job_error = EIO;
 	status = vkQueueSubmit((VkQueue)&queue, 0, NULL, source);
 	assert(status == VK_SUCCESS);
 	status = vkWaitForFences((VkDevice)&device, 1, &alias, VK_TRUE, UINT64_C(2000000000));
@@ -428,6 +503,7 @@ main(void)
 	vkDestroyFence((VkDevice)&device, alias, NULL);
 	vkDestroyFence((VkDevice)&device, temporary, NULL);
 	assert(shared->references == 1 && descriptors[retained] == shared);
+	assert(worker_creations == 0);
 	fence_test_close(retained);
 	for (index = 0; index < payload_count; index++)
 		assert(payloads[index].references == 0 && !payloads[index].bound);
@@ -437,4 +513,49 @@ main(void)
 	pthread_mutex_destroy(&context.mutex);
 	puts("libvulkan external fence: references, aliases, temporary restore, actual native signal, lazy reset, bind/native failure rollback, native DEVICE_LOST error signal PASS");
 	return 0;
+}
+
+/* Publishes only exact job results, then drops the reservation's independent strong reference. */
+static void
+kernel_jobs_progress(
+	void)
+{
+	struct sync_test_job *job;
+	struct kernel_payload *payload;
+	unsigned index;
+
+	/* Each kernel reservation can retire its payload hold exactly once. */
+	for (index = 0; index < test_job_count; index++) {
+		payload = job_payloads[index];
+		if (payload == NULL)
+			continue;
+
+		/* Descriptor reuse cannot replace the object pinned when the generation was reserved. */
+		job = &test_jobs[index];
+		test_job_observe(job);
+		if (!job->terminal && !job->consumed)
+			continue;
+
+		/* Native rejection leaves pending state and its generation unchanged. */
+		assert(payload->generation == job->generation && payload->bound == 2);
+		if (!job->terminal) {
+			rollbacks++;
+		} else if (job->error != 0) {
+			payload->state = GPU_FENCE_ERROR;
+		} else {
+			/* Success requires the actual native fence named by this submission. */
+			assert(job->native != 0 && peer.objects[job->native].signaled);
+			payload->state = GPU_FENCE_SIGNALED;
+			signals++;
+		}
+
+		/* Kernel completion releases its own strong hold after publishing the terminal payload. */
+		payload->bound = 0;
+		payload->references--;
+		job_payloads[index] = NULL;
+		pthread_cond_broadcast(&kernel_condition);
+	}
+
+	/* Succeeded: no userspace completion worker was needed to update shared payloads. */
+	return;
 }

@@ -1,0 +1,2 @@
+race-test: /home/awe/zedBSD/plan/ws030/tests/libvulkan-job-race.c:131: main: Assertion `status == VK_ERROR_DEVICE_LOST' failed.
+Aborted

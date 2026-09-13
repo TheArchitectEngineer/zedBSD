@@ -1,0 +1,240 @@
+{
+  "argv": [
+    "qemu-system-x86_64",
+    "-machine",
+    "pc,accel=kvm,memory-backend=memory",
+    "-cpu",
+    "host",
+    "-m",
+    "1024",
+    "-smp",
+    "2",
+    "-object",
+    "memory-backend-memfd,id=memory,size=1G,share=on",
+    "-drive",
+    "if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd",
+    "-drive",
+    "if=pflash,format=raw,file=/home/awe/zedbsd-q306-venus/q311-producer-stop-004/capture/OVMF_VARS.fd",
+    "-drive",
+    "file=/home/awe/zedbsd-q306-venus/q311-producer-stop-004/capture/guest.img,format=raw,if=ide,index=0",
+    "-vga",
+    "none",
+    "-device",
+    "virtio-vga-gl,id=venus,venus=on,blob=on,hostmem=256M,max_outputs=1",
+    "-display",
+    "egl-headless,rendernode=/dev/dri/renderD128",
+    "-qmp",
+    "unix:/home/awe/zedbsd-q306-venus/q311-producer-stop-004/capture/qmp.sock,server=on,wait=off",
+    "-vnc",
+    "unix:/home/awe/zedbsd-q306-venus/q311-producer-stop-004/capture/vnc.sock",
+    "-monitor",
+    "none",
+    "-serial",
+    "none",
+    "-nic",
+    "none",
+    "-debugcon",
+    "file:/home/awe/zedbsd-q306-venus/q311-producer-stop-004/capture/guest.log",
+    "-no-reboot",
+    "-trace",
+    "enable=virtio_gpu_cmd_set_scanout_blob",
+    "-trace",
+    "enable=virtio_gpu_cmd_set_scanout"
+  ],
+  "boot_surface_available": true,
+  "capture_method": "QEMU egl-headless readback via VNC Unix RAW",
+  "commands": [
+    "/bin/gpu-fence-test --producer-stop"
+  ],
+  "console_address": 6655904,
+  "console_size": 32768,
+  "elapsed_seconds": 14.117,
+  "environment": {
+    "LD_LIBRARY_PATH": "/home/awe/zedbsd-q306-venus/dependencies/q311-strict/install/lib/x86_64-linux-gnu",
+    "RENDER_SERVER_EXEC_PATH": "/home/awe/zedbsd-q306-venus/dependencies/q311-strict/install/libexec/virgl_render_server",
+    "VIRGL_LOG_LEVEL": "debug",
+    "VK_DRIVER_FILES": "/usr/share/vulkan/icd.d/intel_icd.json"
+  },
+  "fault_marker": "GPUFENCE PRODUCER_STOP_ERROR PASS",
+  "fault_test": "producer-stop",
+  "firmware_sha256": "624e06de18b4fa535e90db7160d00d3d07d206422b89999bf1e27d920264e4e0",
+  "frame": 0,
+  "guest_completed": true,
+  "guest_log_sha256": "15dcad05827336f9ab1e4fdf4d4940a434ee0a3ad906db0898287ac2bc5c5573",
+  "harness_sha256": "a0c681c113c08a3be97aadd1f0612f608aa8caacf652a5d57b17a7d2c7f4749e",
+  "image_sha256": "3813d2dbabb0afd0782df3975e9213076ca4ecce56a3a76aa478aa91d711f4be",
+  "pci": [
+    {
+      "bus": 0,
+      "devices": [
+        {
+          "bus": 0,
+          "class_info": {
+            "class": 1536,
+            "desc": "Host bridge"
+          },
+          "function": 0,
+          "id": {
+            "device": 4663,
+            "subsystem": 4352,
+            "subsystem-vendor": 6900,
+            "vendor": 32902
+          },
+          "irq_pin": 0,
+          "qdev_id": "",
+          "regions": [],
+          "slot": 0
+        },
+        {
+          "bus": 0,
+          "class_info": {
+            "class": 1537,
+            "desc": "ISA bridge"
+          },
+          "function": 0,
+          "id": {
+            "device": 28672,
+            "subsystem": 4352,
+            "subsystem-vendor": 6900,
+            "vendor": 32902
+          },
+          "irq_pin": 0,
+          "qdev_id": "",
+          "regions": [],
+          "slot": 1
+        },
+        {
+          "bus": 0,
+          "class_info": {
+            "class": 257,
+            "desc": "IDE controller"
+          },
+          "function": 1,
+          "id": {
+            "device": 28688,
+            "subsystem": 4352,
+            "subsystem-vendor": 6900,
+            "vendor": 32902
+          },
+          "irq_pin": 0,
+          "qdev_id": "",
+          "regions": [
+            {
+              "address": -1,
+              "bar": 4,
+              "size": 16,
+              "type": "io"
+            }
+          ],
+          "slot": 1
+        },
+        {
+          "bus": 0,
+          "class_info": {
+            "class": 1664,
+            "desc": "Bridge"
+          },
+          "function": 3,
+          "id": {
+            "device": 28947,
+            "subsystem": 4352,
+            "subsystem-vendor": 6900,
+            "vendor": 32902
+          },
+          "irq": 0,
+          "irq_pin": 1,
+          "qdev_id": "",
+          "regions": [],
+          "slot": 1
+        },
+        {
+          "bus": 0,
+          "class_info": {
+            "class": 768,
+            "desc": "VGA controller"
+          },
+          "function": 0,
+          "id": {
+            "device": 4176,
+            "subsystem": 4352,
+            "subsystem-vendor": 6900,
+            "vendor": 6900
+          },
+          "irq": 0,
+          "irq_pin": 1,
+          "qdev_id": "venus",
+          "regions": [
+            {
+              "address": -1,
+              "bar": 0,
+              "mem_type_64": false,
+              "prefetch": true,
+              "size": 8388608,
+              "type": "memory"
+            },
+            {
+              "address": -1,
+              "bar": 1,
+              "mem_type_64": false,
+              "prefetch": false,
+              "size": 4096,
+              "type": "memory"
+            },
+            {
+              "address": -1,
+              "bar": 2,
+              "mem_type_64": true,
+              "prefetch": true,
+              "size": 16384,
+              "type": "memory"
+            },
+            {
+              "address": -1,
+              "bar": 4,
+              "mem_type_64": true,
+              "prefetch": true,
+              "size": 268435456,
+              "type": "memory"
+            },
+            {
+              "address": -1,
+              "bar": 6,
+              "mem_type_64": false,
+              "prefetch": false,
+              "size": 65536,
+              "type": "memory"
+            }
+          ],
+          "slot": 2
+        }
+      ]
+    }
+  ],
+  "phase": "wayland",
+  "producer_stopped": true,
+  "qemu_exit_code": 0,
+  "qemu_version": {
+    "package": "Debian 1:10.0.11+ds-0+deb13u1",
+    "qemu": {
+      "major": 10,
+      "micro": 11,
+      "minor": 0
+    }
+  },
+  "render_server_sha256": "f668a5262335790cf7b78ab0b732391bc790e8835dd27f2b2cbfcad561ddd80f",
+  "renderer_library": {
+    "directory": "/home/awe/zedbsd-q306-venus/dependencies/q311-strict/install/lib/x86_64-linux-gnu",
+    "final_sha256": "05c7499c9fab287f9692ac37f169b12b5bcdd98fd553f42bca5a9afeef8cda86",
+    "mapped_by_qemu": true,
+    "path": "/home/awe/zedbsd-q306-venus/dependencies/q311-strict/install/lib/x86_64-linux-gnu/libvirglrenderer.so.1.9.0",
+    "sha256": "05c7499c9fab287f9692ac37f169b12b5bcdd98fd553f42bca5a9afeef8cda86"
+  },
+  "renderer_log_sha256": "6a8c3a1a4feb3cc7535bc5efd3a36fa190c9c2c58eb228643d3b33831e2ac174",
+  "rfb_client_sha256": "e8e829cb010da6b9e15275e2c43dd01cdb11994da9f05f944c85ebbd9e5043f6",
+  "source_image_sha256": "3813d2dbabb0afd0782df3975e9213076ca4ecce56a3a76aa478aa91d711f4be",
+  "started": "2026-09-13T09:03:21.251946+00:00",
+  "status": "pass",
+  "token": "r052bfb30b9912427a2107b2d",
+  "transport_harness_sha256": "ab6a6cc29915725fbfaa7cc62d4569b2974c31e5aad5a97a03641b829afad170",
+  "watchdog_elapsed_ms": 9970
+}

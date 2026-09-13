@@ -360,7 +360,7 @@ main(
 	assert(byte == 'S');
 	assert(receive_request.descriptor_count == 1);
 	assert(delivered == 1);
-	received = handle_fd_get(delivered, KERNEL_HANDLE_GPU);
+	received = handle_fd_get(delivered, KERNEL_HANDLE_DRIVER);
 	assert(received != NULL);
 	assert(received->object == &payload);
 	handle_put(received);

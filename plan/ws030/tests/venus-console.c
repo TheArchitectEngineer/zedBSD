@@ -35,7 +35,7 @@ int drv_venus_transport_command(struct venus_transport *transport, const void *i
 /* One fake kernel thread is owned from create until its successful explicit reap. */
 static struct thread console_thread;
 
-/* The worker entry remains callable so the real polling loop can be exercised finitely. */
+/* The worker entry remains callable so the real notification loop can be exercised finitely. */
 static void (*console_entry)(void *);
 
 /* The current controller survives every modeled thread and transport access. */
@@ -56,6 +56,18 @@ static struct venus_display_output *console_race_output;
 /* Text generation changes the independent BGRA snapshot, making redraw observable. */
 static uint32_t console_generation = 1U;
 
+/* The text peer owns no callback, only the currently armed condition destination. */
+static struct kern_text_observer *console_subscription;
+
+/* These counters distinguish genuine change notifications from periodic worker wakeups. */
+static unsigned console_idle_waits;
+
+/* Changed condition sequences count sleep refusals instead of lost text updates. */
+static unsigned console_early_wakes;
+
+/* One mutation during rasterization exercises the worker's observe-before-render handshake. */
+static unsigned console_snapshot_change;
+
 /* These controls select finite thread allocation, stop and active-loop outcomes. */
 static unsigned console_create_fail, console_reap_stalled, console_worker_iterations;
 
@@ -73,6 +85,7 @@ static void console_test_restore(void);
 static void console_test_timeout(void);
 static void console_test_claim(struct venus_controller *controller, void *session, struct gpu_display_claim *claim);
 static void console_test_finish(struct venus_controller *controller);
+static void console_text_changed(void);
 
 /*
  * Records configuration invalidation in the serial display peer's retained transport.
@@ -221,6 +234,12 @@ kern_text_snapshot(
 		snapshot->pixels[index] = (console_generation << 16) | (index & 255U);
 	console_snapshots++;
 
+	/* A writer can update retained text after the worker sampled its target generation. */
+	if (console_snapshot_change != 0U) {
+		console_snapshot_change = 0U;
+		console_text_changed();
+	}
+
 	/* Succeeded: changing the text generation changes real source and scanout backing bytes. */
 	return 0;
 }
@@ -335,13 +354,6 @@ sched_sleep(
 	assert(target > console_ticks);
 	console_ticks = target;
 
-	/* A selected number of worker iterations makes the real loop return at its next stop check. */
-	if (console_worker_iterations != 0U) {
-		console_worker_iterations--;
-		if (console_worker_iterations == 0U)
-			console_controller->display->console_stopping = 1U;
-	}
-
 	/* Stop-and-reap cannot advance a deliberately stalled worker until the fixture releases it. */
 	if (console_controller != NULL &&
 	    console_controller->display->console_stopping != 0U &&
@@ -377,6 +389,141 @@ VENUS_CONSOLE_ENTRY(
 
 	/* Succeeded: no modeled worker, native resource or controller allocation remains live. */
 	return 0;
+}
+
+/*
+ * Initializes a finite console notification condition without changing transport synchronization.
+ */
+void
+spin_init(
+	struct spinlock *lock,
+	enum lock_rank rank,
+	const char *name)
+{
+	/* No observed interrupt-side section may span construction of a new condition. */
+	assert(console_observed_spin == NULL);
+	memset(lock, 0, sizeof(*lock));
+	lock->rank = rank;
+	lock->name = name;
+
+	/* Succeeded: the production worker may now share this leaf lock with notifications. */
+	return;
+}
+
+/*
+ * Establishes the first change sequence for the modeled console condition.
+ */
+void
+waitq_init(
+	struct wait_queue *queue,
+	const char *name)
+{
+	/* The fixture has no live scheduler tokens, but retains the actual sequence handshake. */
+	memset(queue, 0, sizeof(*queue));
+	queue->sequence = 1U;
+	queue->name = name;
+
+	/* Succeeded: later mutation and ownership notifications advance from a known baseline. */
+	return;
+}
+
+/*
+ * Observes the notification sequence at the worker's real condition boundary.
+ */
+uint64_t
+waitq_sequence(
+	const struct wait_queue *queue)
+{
+	/* Snapshotting a condition must retain its leaf lock until the observation is complete. */
+	assert(console_observed_spin != NULL);
+
+	/* Succeeded: the production worker will compare this observation before registering sleep. */
+	return queue->sequence;
+}
+
+/*
+ * Publishes an ownership, stop or text change under the shared leaf lock.
+ */
+void
+waitq_wake_all(
+	struct wait_queue *queue)
+{
+	/* Unlocked wakeups could race actual kernel sleep registration even in a serial test. */
+	assert(console_observed_spin != NULL);
+	queue->sequence++;
+
+	/* Succeeded: a worker holding an earlier observation cannot sleep through this change. */
+	return;
+}
+
+/*
+ * Models a bounded test action at the real worker's indefinite condition sleep.
+ */
+int
+waitq_sleep(
+	struct wait_queue *queue,
+	struct spinlock *lock,
+	uint64_t observed,
+	uint64_t deadline,
+	unsigned flags)
+{
+	/* Every idle console wait must release controller admission and carry no periodic deadline. */
+	assert(console_observed_spin == lock);
+	assert(console_observed_depth == 0U);
+	assert(deadline == 0U && flags == 0U);
+
+	/* A notification during snapshot/rendering must reject sleep instead of being lost. */
+	if (queue->sequence != observed) {
+		console_early_wakes++;
+		return EAGAIN;
+	}
+
+	/* The finite test requests exit instead of leaving its modeled kernel worker asleep forever. */
+	console_idle_waits++;
+	assert(console_worker_iterations != 0U);
+	console_worker_iterations--;
+	if (console_worker_iterations == 0U)
+		console_controller->display->console_stopping = 1U;
+
+	/* Succeeded: the next production-loop iteration observes the explicit stop predicate. */
+	return 0;
+}
+
+/*
+ * Publishes the production console's condition to the modeled text mutation source.
+ */
+int
+kern_text_observe(
+	struct kern_text_observer *observer,
+	struct spinlock *lock,
+	struct wait_queue *queue)
+{
+	/* Registration must never invert the leaf condition lock and text registry ordering. */
+	assert(console_observed_spin == NULL);
+	assert(console_subscription == NULL);
+	assert(lock->rank == LOCK_RANK_POLL);
+	observer->lock = lock;
+	observer->queue = queue;
+	console_subscription = observer;
+
+	/* Succeeded: only subsequent text mutations may wake this active console. */
+	return 0;
+}
+
+/*
+ * Ends text notification before primary ownership or controller retirement.
+ */
+void
+kern_text_unobserve(
+	struct kern_text_observer *observer)
+{
+	/* Removing a subscription while holding its destination lock would deadlock a real writer. */
+	assert(console_observed_spin == NULL);
+	if (console_subscription == observer)
+		console_subscription = NULL;
+
+	/* Succeeded: the serial text peer can no longer reference the caller-owned condition. */
+	return;
 }
 
 /* Claims the first native plane using its current independently discovered generation. */
@@ -446,6 +593,18 @@ console_test_restore(
 
 	/* A valid native claim blocks both a foreign open and every console update. */
 	console_test_claim(&controller, first, &claim);
+	assert(console_subscription == NULL);
+	assert(controller.display->console_observing == 0U);
+
+	/* A parked claimed console has no periodic timer and receives no text wakeups. */
+	console_worker_iterations = 1U;
+	console_entry(&controller);
+	assert(console_idle_waits == 1U);
+	controller.display->console_stopping = 0U;
+	console_text_changed();
+	assert(console_subscription == NULL);
+
+	/* Another open still cannot bypass the primary owner's display lease. */
 	foreign_claim = claim;
 	foreign_claim.lease = 0U;
 	error = display_claim(&controller, second, &foreign_claim);
@@ -484,6 +643,10 @@ console_test_restore(
 	/* Explicit release retires application-owned private display frames before restoring text. */
 	error = display_release(&controller, first, &release);
 	assert(error == 0);
+	assert(console_subscription == &controller.display->console_observer);
+	assert(controller.display->console_observing == 1U);
+
+	/* The newly armed worker restores retained text even without another mutation. */
 	error = display_console_update(&controller);
 	assert(error == 0);
 	console_front = controller.display->console.front;
@@ -507,7 +670,7 @@ console_test_restore(
 	assert(console_fenced == commands && console_snapshots == snapshots);
 
 	/* A later shell write updates actual displayed bytes without any Vulkan or application activity. */
-	console_generation++;
+	console_text_changed();
 	error = display_console_update(&controller);
 	assert(error == 0);
 	console_front = controller.display->console.front;
@@ -517,7 +680,8 @@ console_test_restore(
 	/* Native ownership suppresses changed text until close consumes that session's lease. */
 	console_test_claim(&controller, second, &claim);
 	generation = controller.display->console_generation;
-	console_generation++;
+	console_text_changed();
+	assert(console_subscription == NULL);
 	error = display_console_update(&controller);
 	assert(error == 0);
 	assert(controller.display->console_generation == generation);
@@ -558,14 +722,19 @@ console_test_restore(
 	assert(controller.display->console.front->context == 0U);
 	assert(controller.resources != NULL);
 
-	/* Runs the actual worker loop for one finite pass, then observes its ordinary stop boundary. */
+	/* A change inside rendering must force another pass before the worker may sleep. */
+	console_text_changed();
+	console_snapshot_change = 1U;
 	console_worker_iterations = 1U;
 	console_entry(&controller);
+	assert(console_early_wakes != 0U);
+	assert(controller.display->console_generation == console_generation);
 	assert(controller.display->console_stopping != 0U);
 	console_thread.state = THREAD_ZOMBIE;
 	error = drv_venus_display_stop(&controller);
 	assert(error == 0);
 	assert(controller.display->console_worker == NULL);
+	assert(console_subscription == NULL);
 	console_test_finish(&controller);
 
 	/* Succeeded: every application and console owner retired in the intended order. */
@@ -632,6 +801,7 @@ console_test_finish(
 {
 	/* The explicit worker barrier precedes the same reset-boundary cleanup as PCI detach. */
 	assert(controller->display->console_worker == NULL);
+	assert(console_subscription == NULL);
 	fixture_drain(controller);
 	drv_venus_display_finish(controller);
 	console_controller = NULL;
@@ -751,5 +921,28 @@ spin_unlock_irqrestore(
 	console_observed_spin = NULL;
 
 	/* Succeeded: no counter snapshot remains active across a later sleep or resource retirement. */
+	return;
+}
+
+/* Notifies changed retained text only while the console is an active snapshot consumer. */
+static void
+console_text_changed(
+	void)
+{
+	unsigned long irq;
+
+	/* Graphics ownership still retains text generations without scheduling the console worker. */
+	console_generation++;
+	if (console_subscription == NULL)
+		return;
+
+	/* The actual text notification fixture separately checks registry and concurrent unlink lifetime. */
+	irq = spin_lock_irqsave(console_subscription->lock);
+
+	waitq_wake_all(console_subscription->queue);
+
+	spin_unlock_irqrestore(console_subscription->lock, irq);
+
+	/* Succeeded: the worker's next sequence comparison observes this completed text update. */
 	return;
 }

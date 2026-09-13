@@ -15,6 +15,7 @@
 #include "internal.h"
 #include <uapi/gpu.h>
 #include <uapi/gpu-display.h>
+#include <uapi/gpu-job.h>
 
 #include <assert.h>
 #include <dirent.h>
@@ -185,7 +186,8 @@ vulkan_context_open(
 	peer->node = node;
 	context->fd = (int)node;
 	context->capabilities = GPU_CAP_RESOURCE | GPU_CAP_CAPSET | GPU_CAP_BLOB |
-	    GPU_CAP_TRANSFER | GPU_CAP_COMMAND | GPU_CAP_MAPPING | GPU_CAP_PRESENT;
+	    GPU_CAP_TRANSFER | GPU_CAP_COMMAND | GPU_CAP_MAPPING | GPU_CAP_PRESENT | GPU_CAP_JOB;
+	context->strict_queue = VK_TRUE;
 	if (node == 17U)
 		context->capabilities |= GPU_CAP_DISPLAY;
 	opened++;
@@ -246,6 +248,20 @@ vulkan_wsi_device_finish(
 	assert(device->object.context != NULL);
 
 	/* Succeeded: ordinary native device destruction can proceed. */
+	return;
+}
+
+/*
+ * Verifies that discovery-only queue teardown has no private submitted fence cache.
+ */
+void
+vulkan_queue_finish(
+	struct VkQueue_T *queue)
+{
+	/* This fixture does not submit work or allocate hidden native completion objects. */
+	assert(queue->private_fences == NULL);
+
+	/* Succeeded: device discovery created no hidden queue ownership. */
 	return;
 }
 
@@ -1064,10 +1080,10 @@ discovery_check_physical(
 		assert(queues[1].queueFlags & VK_QUEUE_GRAPHICS_BIT);
 	}
 
-	/* Legacy copied presentation cannot substitute for the new native FIFO and display ownership API. */
+	/* Either renderer may pair with an independently opened native display node. */
 	count = 2U;
 	error = vkEnumerateDeviceExtensionProperties(physical[0], NULL, &count, extensions);
-	assert(error == VK_SUCCESS && count == 0U);
+	assert(error == VK_SUCCESS && count == 2U);
 	count = 1U;
 	error = vkEnumerateDeviceExtensionProperties(physical[1], NULL, &count, extensions);
 	assert(error == VK_INCOMPLETE && count == 1U);
@@ -1154,14 +1170,29 @@ discovery_check_devices(
 	context = vulkan_physical_device(physical[1])->object.context;
 	assert(context->queue_timelines == 0U);
 
+	/* Old paired hosts and kernels cannot create a device without authoritative queue completion. */
+	before = submissions;
+	context->strict_queue = VK_FALSE;
+	device = VK_NULL_HANDLE;
+	error = vkCreateDevice(physical[1], &info, allocator, &device);
+	assert(error == VK_ERROR_INITIALIZATION_FAILED && device == VK_NULL_HANDLE);
+	context->strict_queue = VK_TRUE;
+	context->capabilities &= ~GPU_CAP_JOB;
+	error = vkCreateDevice(physical[1], &info, allocator, &device);
+	assert(error == VK_ERROR_INITIALIZATION_FAILED && device == VK_NULL_HANDLE);
+	context->capabilities |= GPU_CAP_JOB;
+	assert(submissions == before && context->queue_timelines == 0U);
+
 	/* Unsupported features and local extensions fail before native device creation. */
 	before = submissions;
 	features.wideLines = VK_TRUE;
 	error = vkCreateDevice(physical[1], &info, allocator, &device);
 	assert(error == VK_ERROR_FEATURE_NOT_PRESENT);
 	features.wideLines = VK_FALSE;
+	extensions[0] = "VK_TEST_unsupported";
 	error = vkCreateDevice(physical[0], &info, allocator, &device);
 	assert(error == VK_ERROR_EXTENSION_NOT_PRESENT);
+	extensions[0] = VK_KHR_SWAPCHAIN_EXTENSION_NAME;
 	assert(submissions == before);
 	info.enabledExtensionCount = 0U;
 
@@ -1291,7 +1322,7 @@ static void
 discovery_check_extensions(
 	void)
 {
-	VkExtensionProperties properties[2];
+	VkExtensionProperties properties[6];
 	VkApplicationInfo application;
 	VkInstanceCreateInfo info;
 	VkInstance instance;
@@ -1300,16 +1331,16 @@ discovery_check_extensions(
 	unsigned before;
 	VkResult error;
 
-	/* The implementation advertises precisely the two selected standard instance extensions. */
+	/* Enumerates the six existing instance extensions without changing their published order. */
 	count = 0U;
 	error = vkEnumerateInstanceExtensionProperties(NULL, &count, NULL);
-	assert(error == VK_SUCCESS && count == 2U);
+	assert(error == VK_SUCCESS && count == 6U);
 	count = 1U;
 	error = vkEnumerateInstanceExtensionProperties(NULL, &count, properties);
 	assert(error == VK_INCOMPLETE && count == 1U);
-	count = 2U;
+	count = 6U;
 	error = vkEnumerateInstanceExtensionProperties(NULL, &count, properties);
-	assert(error == VK_SUCCESS && count == 2U);
+	assert(error == VK_SUCCESS && count == 6U);
 	assert(strcmp(properties[0].extensionName, VK_KHR_SURFACE_EXTENSION_NAME) == 0);
 	assert(strcmp(properties[1].extensionName, VK_KHR_DISPLAY_EXTENSION_NAME) == 0);
 	error = vkEnumerateInstanceExtensionProperties("missing-layer", &count, properties);

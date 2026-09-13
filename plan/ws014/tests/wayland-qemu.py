@@ -172,6 +172,8 @@ def exercise_fault_steps(args, qmp, output, debug, vnc_path, process, report, pa
                      'GPURECOVERY PASS timeout=1 peer_failed=1 retirement_gate=1 fresh_roundtrip=4096 decoder=1'),
         'producer-exit': ('/bin/gpu-fence-test --producer-exit',
                           'GPUFENCE PRODUCER_EXIT_ERROR PASS'),
+        'producer-stop': ('/bin/gpu-fence-test --producer-stop',
+                          'GPUFENCE PRODUCER_STOP_ERROR PASS'),
     }[args.fault_test]
     report.update(token=args.token, fault_test=args.fault_test, commands=[command],
                   guest_completed=False)
@@ -198,6 +200,14 @@ def exercise_fault_steps(args, qmp, output, debug, vnc_path, process, report, pa
         match = re.search(re.escape(expected) + r'[\r\n]+[\s\S]*root@[^\r\n]*\$ ', observed)
         if match:
             report.update(status='pass', guest_completed=True, fault_marker=expected)
+            if args.fault_test == 'producer-stop':
+                if 'GPUFENCE PRODUCER_STOPPED pending=1 fd_live=1' not in observed:
+                    raise RuntimeError('producer stop acceptance lacks pending work and live stopped process')
+                measured = re.search(r'GPUFENCE PRODUCER_STOP_WAIT result=(-?\d+) elapsed_ms=(\d+)', observed)
+                if measured is None or int(measured[1]) != -4 or not 9000 <= int(measured[2]) <= 20000:
+                    raise RuntimeError('producer stop acceptance lacks finite DEVICE_LOST watchdog result')
+                report['watchdog_elapsed_ms'] = int(measured[2])
+                report['producer_stopped'] = True
             if args.fault_test == 'recovery':
                 if not stopped or not resumed:
                     raise RuntimeError('recovery acceptance lacks the controlled renderer pause/resume')
@@ -432,7 +442,7 @@ def main():
     parser.add_argument('--token', required=True)
     parser.add_argument('--timeout', type=int, default=180)
     parser.add_argument('--lifecycle', action='store_true')
-    parser.add_argument('--fault-test', choices=['recovery', 'producer-exit'])
+    parser.add_argument('--fault-test', choices=['recovery', 'producer-exit', 'producer-stop'])
     parser.add_argument('--console-address', type=lambda value: int(value, 0), required=True)
     parser.add_argument('--console-size', type=int, default=32768)
     parser.add_argument('--qemu', default='qemu-system-x86_64')

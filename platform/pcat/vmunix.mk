@@ -46,7 +46,7 @@ KERN_OBJS := $(BUILD)/src/kern/entry.o $(BUILD)/src/kern/clock.o \
 	$(BUILD)/src/kern/sched.o \
 	$(BUILD)/src/kern/vmspace.o \
 	$(BUILD)/src/kern/vm.o \
-	$(BUILD)/src/kern/filedesc.o $(BUILD)/src/kern/handle.o $(BUILD)/src/kern/fence.o $(BUILD)/src/kern/fd-object.o \
+	$(BUILD)/src/kern/filedesc.o $(BUILD)/src/kern/handle.o $(BUILD)/src/kern/fd-object.o \
 	$(BUILD)/src/kern/record-lock.o \
 	$(BUILD)/src/kern/pipe.o $(BUILD)/src/kern/cred.o \
 	$(KERN_ACL_OBJS) \
@@ -60,7 +60,7 @@ KERN_OBJS := $(BUILD)/src/kern/entry.o $(BUILD)/src/kern/clock.o \
 	$(BUILD)/src/kern/text-display.o \
 	$(BUILD)/src/drivers/generic/console.o \
 	$(BUILD)/src/drivers/generic/input.o \
-	$(BUILD)/src/drivers/gpu/gpu.o \
+	$(KERN_GPU_OBJS) \
 	$(BUILD)/src/kern/locale-record.o \
 	$(BUILD)/src/kern/tty.o \
 	$(BUILD)/src/drivers/generic/system-device.o $(BUILD)/src/drivers/generic/memory-device.o $(BUILD)/src/kern/shutdown.o \

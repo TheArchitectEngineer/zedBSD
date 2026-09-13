@@ -397,6 +397,100 @@ drv_venus_store64(
 }
 
 /*
+ * Refuses jobs outside this synchronous protocol peer's modeled behavior.
+ */
+int
+drv_venus_transport_job_reserve(
+	struct venus_transport *transport,
+	uint32_t context,
+	uint32_t timeline,
+	struct drv_gpu_completion *completion,
+	void **reservation)
+{
+	/* Real reservation, publication and watchdog semantics have a separate fixture. */
+	(void)transport;
+	(void)context;
+	(void)timeline;
+	(void)completion;
+	*reservation = NULL;
+
+	/* Failed: this host peer accepts no asynchronous callback ownership. */
+	return EOPNOTSUPP;
+}
+
+/*
+ * Rejects committing a token that this peer could never have reserved.
+ */
+int
+drv_venus_transport_job_commit(
+	struct venus_transport *transport,
+	void *reservation,
+	struct drv_gpu_completion *completion)
+{
+	/* The synchronous peer owns no pending reservation tokens. */
+	(void)transport;
+	(void)reservation;
+	(void)completion;
+
+	/* Failed: no callback or marker was accepted. */
+	return EINVAL;
+}
+
+/*
+ * Rejects cancellation when no asynchronous callback ownership exists.
+ */
+int
+drv_venus_transport_job_cancel(
+	struct venus_transport *transport,
+	void *reservation,
+	struct drv_gpu_completion *completion,
+	unsigned fault)
+{
+	/* The synchronous peer owns no pending reservation tokens. */
+	(void)transport;
+	(void)reservation;
+	(void)completion;
+	(void)fault;
+
+	/* Failed: callers cannot fabricate a reservation lifetime. */
+	return EINVAL;
+}
+
+/*
+ * Keeps registration identity visible across the backend publication lifecycle.
+ */
+void
+drv_venus_transport_set_gpu(
+	struct venus_transport *transport,
+	struct drv_gpu_device *device)
+{
+	/* The real registry lifetime is tested with the real GPU core separately. */
+	assert(device == NULL ||
+	       (device == (struct drv_gpu_device *)&fixture_registration &&
+	        fixture_registration != 0U));
+	transport->gpu = device;
+
+	/* Succeeded: the peer reflects the current published controller identity. */
+	return;
+}
+
+/*
+ * Retains failed transport ownership for the backend's checked-reset assertions.
+ */
+void
+drv_venus_transport_fail(
+	struct venus_transport *transport,
+	int error)
+{
+	/* This peer models quarantine; real GPU registry propagation belongs to the core fixture. */
+	assert(error != 0);
+	atomic_raw_store_release(&transport->failed, 1U);
+
+	/* Succeeded: backend cleanup must preserve uncertain allocations until reset. */
+	return;
+}
+
+/*
  * Responds as a strict bounded peer to the actual backend control payloads.
  */
 int

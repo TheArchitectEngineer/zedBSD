@@ -14,6 +14,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <stdarg.h>
+#include <uapi/gpu-job.h>
 #include "sync-internal.h"
 
 #define TEST_NATIVE_OBJECTS 256U
@@ -56,6 +58,31 @@ struct event_producer {
 	VkEvent event;
 };
 
+/* One fixture-owned kernel record tracks the exact native fence chosen at commit. */
+struct sync_test_job {
+	uint64_t sequence;
+	uint64_t native;
+	uint64_t generation;
+	int fd;
+	int committed;
+	int terminal;
+	int consumed;
+	int error;
+};
+
+/* The independent ioctl peer retains each bounded job until its terminal record is consumed. */
+static struct sync_test_job test_jobs[512];
+/* Serial test admission allocates monotonically increasing identities within this process. */
+static unsigned test_job_count;
+/* The native decoder publishes only the most recent accepted nonnull fence for marker commit. */
+static uint64_t test_native_fence;
+/* Targeted cases inject resource pressure before the native submission can be accepted. */
+static int test_job_reject;
+/* Targeted cases model authoritative host failure independently of public fence status queries. */
+static int test_job_error;
+
+int sync_base_ioctl(int fd, unsigned long operation, ...);
+static void test_job_observe(struct sync_test_job *job);
 static void expect(uint64_t actual, uint64_t expected, const char *meaning);
 static void expect_status(VkResult actual, VkResult expected, const char *meaning);
 static void expect_wire(struct vulkan_reader *request, size_t bytes);
@@ -72,6 +99,147 @@ static void test_events_and_waits(VkDevice device, VkQueue queue);
 static void test_queries(VkDevice device);
 static void test_sparse(VkDevice device, VkQueue queue);
 static void test_context_loss(void);
+static void test_private_cache(struct VkQueue_T *queue);
+
+/*
+ * Models preaccepted reservation and exact native-fence completion independently of production state.
+ */
+int
+sync_base_ioctl(
+	int fd,
+	unsigned long operation,
+	...)
+{
+	struct gpu_job_reserve *reserve;
+	struct gpu_job_action *action;
+	struct gpu_command_wait *wait;
+	struct sync_test_job *job;
+	struct timespec pause;
+	struct timespec started;
+	struct timespec now;
+	uint64_t elapsed;
+	uint64_t sequence;
+	va_list arguments;
+	void *argument;
+	unsigned index;
+
+	/* The ordinary fixture owns one private synthetic open description. */
+	(void)fd;
+	va_start(arguments, operation);
+	argument = va_arg(arguments, void *);
+	va_end(arguments);
+
+	/* Reservation validates the complete input shape before native execution. */
+	if (operation == GPU_JOB_RESERVE) {
+		reserve = argument;
+		expect(reserve->version, 1, "job ABI version");
+		expect(reserve->size, 40, "job reserve ABI size");
+		expect(reserve->flags, 0, "job reserve flags");
+		expect(reserve->reserved, 0, "job reserve padding");
+		expect(reserve->sequence, 0, "job reserve output initialized");
+		expect(reserve->timeline, 1, "job exact queue timeline");
+
+		/* Capacity refusal leaves both native work and shared signaling untouched. */
+		if (test_job_reject) {
+			errno = ENOMEM;
+			return -1;
+		}
+
+		/* Every reserved marker has storage before the native call occurs. */
+		expect(test_job_count < 512, 1, "bounded fixture job count");
+		job = &test_jobs[test_job_count++];
+		memset(job, 0, sizeof(*job));
+		job->sequence = 1000U + test_job_count;
+		job->fd = reserve->fd;
+		job->generation = reserve->generation;
+		reserve->sequence = job->sequence;
+		return 0;
+	}
+
+	/* Both action and WAIT place their immutable sequence at byte offset eight. */
+	action = argument;
+	sequence = action->sequence;
+	job = NULL;
+
+	/* Consumed and canceled entries cannot be mistaken for another reused sequence. */
+	for (index = 0; index < test_job_count; index++) {
+		if (test_jobs[index].sequence == sequence && !test_jobs[index].consumed)
+			job = &test_jobs[index];
+	}
+
+	/* Only a previously reserved live identity may be committed or observed. */
+	if (job == NULL) {
+		errno = ENOENT;
+		return -1;
+	}
+
+	/* Commit captures the exact accepted native fence without allocating another queue job. */
+	if (operation == GPU_JOB_COMMIT) {
+		expect(action->size, 24, "job action ABI size");
+		expect(action->flags, 0, "job commit flags");
+		expect(action->reserved, 0, "job action padding");
+		expect(job->committed, 0, "one commit per reservation");
+		expect(test_native_fence != 0, 1, "accepted work always has a native fence");
+		job->native = test_native_fence;
+		job->committed = 1;
+		job->error = test_job_error;
+		test_job_observe(job);
+		return 0;
+	}
+
+	/* Definite native refusal cancels without signaling; uncertainty becomes terminal failure. */
+	if (operation == GPU_JOB_CANCEL) {
+		expect(job->committed, 0, "cancel precedes committed work");
+		if (action->flags == GPU_JOB_CANCEL_FAULT) {
+			job->terminal = 1;
+			job->error = EIO;
+		} else {
+			expect(action->flags, 0, "ordinary cancellation flags");
+			job->consumed = 1;
+		}
+		return 0;
+	}
+
+	/* WAIT never manufactures completion from notification arrival alone. */
+	expect(operation, GPU_COMMAND_WAIT, "exact job completion ioctl");
+	wait = argument;
+	clock_gettime(CLOCK_MONOTONIC, &started);
+
+	/* A finite peer models host GPU progress independently of native GetFenceStatus calls. */
+	for (;;) {
+		test_job_observe(job);
+		if (job->terminal)
+			break;
+
+		/* Nonblocking observation preserves pending ownership. */
+		if (wait->timeout_ns == 0) {
+			errno = EAGAIN;
+			return -1;
+		}
+
+		/* Counts only monotonic elapsed time against the caller's requested deadline. */
+		clock_gettime(CLOCK_MONOTONIC, &now);
+		elapsed = (uint64_t)(now.tv_sec - started.tv_sec) * 1000000000ULL;
+		elapsed += now.tv_nsec - started.tv_nsec;
+		if (wait->timeout_ns != UINT64_MAX && elapsed >= wait->timeout_ns) {
+			errno = ETIMEDOUT;
+			return -1;
+		}
+
+		/* Lets the independently running native event producer release its work. */
+		pause.tv_sec = 0;
+		pause.tv_nsec = 1000000;
+		nanosleep(&pause, NULL);
+	}
+
+	/* Terminal observation optionally consumes just this kernel-owned record. */
+	wait->status = job->error;
+	if ((wait->flags & GPU_WAIT_CONSUME) != 0)
+		job->consumed = 1;
+
+	/* Succeeded: the exact job has completed without altering its public native fence. */
+	return 0;
+}
 
 /*
  * Runs independent native-peer state transitions through the production API family.
@@ -91,11 +259,15 @@ main(
 	memset(&context, 0, sizeof(context));
 	memset(&device, 0, sizeof(device));
 	memset(&queue, 0, sizeof(queue));
+	context.fd = 61;
+	context.capabilities = GPU_CAP_JOB | GPU_CAP_NOTIFICATION;
+	pthread_mutex_init(&context.mutex, NULL);
 	device.object.context = &context;
 	device.object.wire_id = 1000;
 	queue.object.context = &context;
 	queue.object.wire_id = 1001;
 	queue.device = &device;
+	queue.timeline_index = 1;
 	queues[0] = &queue;
 	device.queues = queues;
 	device.queue_count = 1;
@@ -108,6 +280,7 @@ main(
 	test_sparse((VkDevice)&device, (VkQueue)&queue);
 	test_events_and_waits((VkDevice)&device, (VkQueue)&queue);
 	test_queries((VkDevice)&device);
+	test_private_cache(&queue);
 
 	/* Public device-idle must use ordinary fence completion, never the fatal host opcode. */
 	status = vkDeviceWaitIdle((VkDevice)&device);
@@ -118,6 +291,10 @@ main(
 
 	/* Loss in one family must invalidate other families and completed software payloads. */
 	test_context_loss();
+
+	/* Cached private fences are device-owned and retire before the fixture namespace closes. */
+	vulkan_queue_finish(&queue);
+	pthread_mutex_destroy(&context.mutex);
 
 	/* Every created native object and every callback allocation must be released. */
 	for (index = 0; index < TEST_NATIVE_OBJECTS; index++) {
@@ -503,6 +680,10 @@ native_submit(
 
 	/* A native enqueue failure must not signal the fence or consume local payloads. */
 	identifier = vulkan_read_u64(request);
+	test_native_fence = 0;
+	if (status == VK_SUCCESS)
+		test_native_fence = identifier;
+
 	if (identifier != 0) {
 		/* Completed mock work signals immediately unless an event deliberately blocks it. */
 		if (status == VK_SUCCESS) {
@@ -1189,5 +1370,94 @@ test_context_loss(void)
 	}
 
 	/* Succeeded: both terminal failures propagate across families before any local success shortcut. */
+	return;
+}
+
+/* Observes actual mock GPU completion while never issuing a Vulkan status command. */
+static void
+test_job_observe(
+	struct sync_test_job *job)
+{
+	/* An uncommitted reservation has no native completion proof. */
+	if (!job->committed || job->terminal)
+		return;
+
+	/* Host failure is terminal ERROR and cannot be disguised as a successful retire. */
+	if (job->error != 0) {
+		job->terminal = 1;
+		return;
+	}
+
+	/* Native event progress controls actual fence completion independently of public queries. */
+	pthread_mutex_lock(&peer_mutex);
+
+	if (peer.objects[job->native].pending && !peer.event_blocked) {
+		peer.objects[job->native].pending = 0;
+		peer.objects[job->native].signaled = 1;
+	}
+
+	if (peer.objects[job->native].signaled)
+		job->terminal = 1;
+
+	pthread_mutex_unlock(&peer_mutex);
+
+	/* Succeeded: only completed native work can make this strict marker terminal. */
+	return;
+}
+
+/* Verifies exact native fence retention and reuse for public fence-less submissions. */
+static void
+test_private_cache(
+	struct VkQueue_T *queue)
+{
+	uint64_t native[3];
+	uint64_t current;
+	unsigned index;
+	unsigned queries;
+	unsigned creations;
+	unsigned selected;
+	VkResult status;
+
+	/* Existing jobs finish before the test starts three independently blocked submissions. */
+	status = vkQueueWaitIdle((VkQueue)queue);
+	expect_status(status, VK_SUCCESS, "pre-cache queue drain");
+	peer.event_blocked = 1;
+	queries = peer.calls[38];
+
+	/* Every accepted fence-less submit has a different nonnull proof while all remain pending. */
+	for (index = 0U; index < 3U; index++) {
+		status = vkQueueSubmit((VkQueue)queue, 0U, NULL, VK_NULL_HANDLE);
+		expect_status(status, VK_SUCCESS, "fence-less supervised submission");
+		native[index] = test_jobs[test_job_count - 1U].native;
+		expect(native[index] != 0U, 1U, "nonnull private native fence");
+		expect(peer.objects[native[index]].pending, 1U, "private native fence stays pending");
+	}
+
+	expect(native[0] != native[1] && native[0] != native[2] && native[1] != native[2], 1U,
+	    "in-flight private fence identities never overlap");
+	expect(peer.calls[38], queries, "private cache never polls native GetFenceStatus");
+
+	/* Complete the native work before observing steady-state private-cache reuse. */
+	peer.event_blocked = 0;
+	status = vkQueueWaitIdle((VkQueue)queue);
+	expect_status(status, VK_SUCCESS, "private native work drains");
+	creations = peer.calls[35];
+	queries = peer.calls[38];
+
+	/* Repeated completed submissions reuse actual retained identities without new native allocations. */
+	for (index = 0U; index < 20U; index++) {
+		status = vkQueueSubmit((VkQueue)queue, 0U, NULL, VK_NULL_HANDLE);
+		expect_status(status, VK_SUCCESS, "completed private fence reuse");
+		current = test_jobs[test_job_count - 1U].native;
+		selected = 0U;
+		if (current == native[0] || current == native[1] || current == native[2])
+			selected = 1U;
+		expect(selected, 1U, "retained native identity is reused");
+	}
+
+	expect(peer.calls[35], creations, "private cache makes no steady-state VkCreateFence calls");
+	expect(peer.calls[38], queries, "kernel completion replaces private native-status polling");
+
+	/* Succeeded: hidden fences remain exact, bounded by concurrency and reusable only after completion. */
 	return;
 }

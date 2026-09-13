@@ -78,7 +78,7 @@ drv_venus_share_put_locked(
 
 	/* Session membership references must have retired before the allocation's last hold. */
 	if (share->contexts != NULL) {
-		atomic_raw_store_release(&controller->transport.failed, 1U);
+		drv_venus_transport_fail(&controller->transport, EIO);
 		kern_logf("venus: shared allocation %u retained with live contexts\n", share->storage->identifier);
 		return;
 	}
@@ -87,7 +87,7 @@ drv_venus_share_put_locked(
 	storage = share->storage;
 	error = drv_venus_resource_release_locked(controller, storage);
 	if (error != 0) {
-		atomic_raw_store_release(&controller->transport.failed, 1U);
+		drv_venus_transport_fail(&controller->transport, error);
 		kern_logf("venus: shared allocation %u retained for reset: %d\n", storage->identifier, error);
 	}
 
@@ -422,7 +422,7 @@ share_context_add(
 	/* Acknowledged attach enables VkImportMemoryResourceInfoMESA in this context. */
 	error = drv_venus_resource_request_locked(controller, 0x0202U, context, share->storage->identifier);
 	if (error != 0) {
-		atomic_raw_store_release(&controller->transport.failed, 1U);
+		drv_venus_transport_fail(&controller->transport, error);
 		kern_free(member);
 		return error;
 	}
@@ -456,7 +456,7 @@ share_context_drop(
 
 	/* An internal missing membership cannot justify global host storage release. */
 	if (*link == NULL) {
-		atomic_raw_store_release(&controller->transport.failed, 1U);
+		drv_venus_transport_fail(&controller->transport, EIO);
 		return;
 	}
 
@@ -471,7 +471,7 @@ share_context_drop(
 	if (failed == 0U) {
 		error = drv_venus_resource_request_locked(controller, 0x0203U, context, share->storage->identifier);
 		if (error != 0)
-			atomic_raw_store_release(&controller->transport.failed, 1U);
+			drv_venus_transport_fail(&controller->transport, error);
 	}
 
 	/* No live alias remains in this context, even when the failed transport needs reset. */

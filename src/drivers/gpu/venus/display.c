@@ -30,7 +30,6 @@
 #define VENUS_EDID_BYTES		1024U
 #define VENUS_PROTOCOL_SCANOUTS		16U
 #define VENUS_DISPLAY_EXTENT		4096U
-#define VENUS_CONSOLE_POLL_TICKS	(KERN_CLOCK_HZ / 10U)
 #define VENUS_CONSOLE_STOP_TICKS	(15U * KERN_CLOCK_HZ)
 
 /*
@@ -86,8 +85,12 @@ struct venus_display_engine {
 	struct venus_session console_session;
 	struct venus_resource *console_source;
 	struct thread *console_worker;
+	struct spinlock console_lock;
+	struct wait_queue console_waiters;
+	struct kern_text_observer console_observer;
 	uint32_t console_generation;
 	unsigned console_active;
+	unsigned console_observing;
 	volatile unsigned console_stopping;
 };
 
@@ -155,7 +158,7 @@ drv_venus_display_close_locked(
 		/* Uncertain hardware references remain controller-owned until reset. */
 		error = display_release_output(controller, output);
 		if (error != 0) {
-			atomic_raw_store_release(&controller->transport.failed, 1U);
+			drv_venus_transport_fail(&controller->transport, error);
 			kern_logf("venus: display %u retained for reset: %d\n", output->identifier, error);
 
 			/* Failed scanout storage remains on the controller list after its software hold retires. */
@@ -168,6 +171,10 @@ drv_venus_display_close_locked(
 		/* A retired wrapper must never remain in lease arbitration. */
 		output->owner = NULL;
 		output->lease = 0U;
+
+		/* Primary owner loss releases the sleeping console even after failed scanout retirement. */
+		if (output->identifier == 1U)
+			drv_venus_display_console_changed_locked(controller);
 	}
 
 	/* Succeeded: no display record refers to the closing session. */
@@ -209,6 +216,7 @@ drv_venus_display_stop(
 {
 	struct venus_display_engine *engine;
 	struct thread *worker;
+	unsigned long irq;
 	uint64_t deadline;
 	uint64_t now;
 	int error;
@@ -225,6 +233,18 @@ drv_venus_display_stop(
 
 	/* The stop request prevents new work after any already-running finite transport call. */
 	__atomic_store_n(&engine->console_stopping, 1U, __ATOMIC_RELEASE);
+
+	/* Unlink first so text writers cannot access the queue after its controller retires. */
+	kern_text_unobserve(&engine->console_observer);
+	engine->console_observing = 0U;
+	irq = spin_lock_irqsave(&engine->console_lock);
+
+	/* The stop predicate and sequence handoff also cover a worker about to register its sleep. */
+	waitq_wake_all(&engine->console_waiters);
+
+	spin_unlock_irqrestore(&engine->console_lock, irq);
+
+	/* Only the reap loop uses a deadline, the parked console itself has no periodic wake. */
 	now = sched_ticks();
 	if (now > UINT64_MAX - VENUS_CONSOLE_STOP_TICKS)
 		return EOVERFLOW;
@@ -281,6 +301,77 @@ drv_venus_display_legacy_available_locked(
 
 	/* Succeeded: legacy arbitration may now inspect its own session owner. */
 	return 0;
+}
+
+/*
+ * Reconfigures primary-console notifications after native or legacy ownership changes.
+ * The caller holds the controller mutex, and never joins the worker from this path.
+ */
+void
+drv_venus_display_console_changed_locked(
+	struct venus_controller *controller)
+{
+	struct venus_display_engine *engine;
+	unsigned long irq;
+	unsigned stopping;
+	int owned;
+	int error;
+
+	/* Controllers without a console worker own no subscription or initialized condition queue. */
+	engine = controller->display;
+	if (engine == NULL)
+		return;
+
+	/* Snapshot support and the first primary claim create this lifetime lazily. */
+	if (engine->console_worker == NULL)
+		return;
+
+	/* Only scanout zero can hide this console, another output's owner is unrelated. */
+	owned = 0;
+	if (controller->display_owner != NULL)
+		owned = 1;
+
+	/* An empty inventory has no primary output available for retained text. */
+	if (engine->count == 0U)
+		owned = 1;
+	else if (engine->outputs[0].owner != NULL)
+		owned = 1;
+
+	/* Teardown must not allow a racing ownership release to rearm text notifications. */
+	stopping = __atomic_load_n(&engine->console_stopping, __ATOMIC_ACQUIRE);
+	if (stopping != 0U)
+		owned = 1;
+
+	/* Unsubscribe outside the leaf condition lock to preserve registry-to-condition lock order. */
+	if (owned != 0 && engine->console_observing != 0U) {
+		kern_text_unobserve(&engine->console_observer);
+		engine->console_observing = 0U;
+	}
+
+	/* Registration precedes the worker's generation check, covering text written during ownership. */
+	if (owned == 0 && engine->console_observing == 0U) {
+		error = kern_text_observe(
+			&engine->console_observer,
+			&engine->console_lock,
+			&engine->console_waiters);
+		if (error != 0) {
+			kern_logf("venus: console notification unavailable: %d\n", error);
+			return;
+		}
+
+		/* The controller mutex protects subscription ownership from another lease callback. */
+		engine->console_observing = 1U;
+	}
+
+	/* Ownership changes use the same sequence as text changes and the detach stop request. */
+	irq = spin_lock_irqsave(&engine->console_lock);
+
+	waitq_wake_all(&engine->console_waiters);
+
+	spin_unlock_irqrestore(&engine->console_lock, irq);
+
+	/* Succeeded: the reusable worker can recheck the primary ownership predicate. */
+	return;
 }
 
 /* Reports the controller's roles without claiming unrelated devices as companions. */
@@ -367,6 +458,12 @@ display_console_start(
 	engine->console.identifier = 1U;
 	engine->console.owner = &engine->console_session;
 	engine->console_stopping = 0U;
+
+	/* The leaf wake lock is shared only by text notification, ownership changes and worker sleep. */
+	spin_init(&engine->console_lock, LOCK_RANK_POLL, "Venus console wake");
+	waitq_init(&engine->console_waiters, "Venus console changes");
+
+	/* No notification can reference this engine until the worker pointer is published. */
 	error = kthread_create(
 		display_console_worker,
 		controller,
@@ -489,17 +586,29 @@ display_console_worker(
 	void *argument)
 {
 	struct venus_controller *controller;
-	uint64_t now;
+	struct venus_display_engine *engine;
+	unsigned long irq;
+	uint64_t observed;
 	unsigned stopping;
 	int previous_error;
 	int error;
 
 	/* The PCI controller outlives this worker through its explicit stop-and-reap barrier. */
 	controller = argument;
+	engine = controller->display;
 	previous_error = 0;
+
+	/* Each pass consumes ownership or text changes and then parks without a timer. */
 	while (1) {
-		/* Stop is independent from the controller mutex so detach can request it during a command wait. */
-		stopping = __atomic_load_n(&controller->display->console_stopping, __ATOMIC_ACQUIRE);
+		/* Observe before checking text or ownership so a change during rendering cannot be lost. */
+		irq = spin_lock_irqsave(&engine->console_lock);
+
+		observed = waitq_sequence(&engine->console_waiters);
+		stopping = __atomic_load_n(&engine->console_stopping, __ATOMIC_ACQUIRE);
+
+		spin_unlock_irqrestore(&engine->console_lock, irq);
+
+		/* Stop is independent from the controller mutex and interrupts a parked worker. */
 		if (stopping != 0U)
 			break;
 
@@ -517,13 +626,15 @@ display_console_worker(
 		/* The next pass logs only a new failure, while success permits a later recurrence report. */
 		previous_error = error;
 
-		/* Polling uses a sleepable bounded interval and sends no GPU traffic for unchanged text. */
-		now = sched_ticks();
-		if (now > UINT64_MAX - VENUS_CONSOLE_POLL_TICKS)
-			break;
+		/* Wait registration shares the leaf lock with every possible notification source. */
+		irq = spin_lock_irqsave(&engine->console_lock);
 
-		/* Console mutations remain observable through the generation sampled after this finite wait. */
-		sched_sleep(now + VENUS_CONSOLE_POLL_TICKS);
+		/* A stop after the earlier snapshot must never become an uninterruptible idle sleep. */
+		stopping = __atomic_load_n(&engine->console_stopping, __ATOMIC_ACQUIRE);
+		if (stopping == 0U)
+			(void)waitq_sleep(&engine->console_waiters, &engine->console_lock, observed, 0U, 0U);
+
+		spin_unlock_irqrestore(&engine->console_lock, irq);
 	}
 
 	/* Succeeded: the kernel thread trampoline will publish exit for the detach owner to reap. */
@@ -760,6 +871,11 @@ display_claim(
 	output->sequence = 0U;
 	output->present_tick = 0U;
 	request->lease = output->lease;
+
+	/* Text changes while the primary is claimed must not wake a worker to contend for this mutex. */
+	if (output->identifier == 1U)
+		drv_venus_display_console_changed_locked(controller);
+
 	mutex_unlock(&controller->mutex);
 
 	/* Succeeded: later mode changes and presentations require this lease. */
@@ -831,7 +947,7 @@ display_present(
 	}
 	if (output->connected == 0U) {
 		mutex_unlock(&controller->mutex);
-		return ENODEV;
+		return ENXIO;
 	}
 
 	/* Private storage and session ownership are independently checked in K. */
@@ -1059,7 +1175,7 @@ display_find(
 	if (generation != output->generation)
 		return ESTALE;
 	if (output->connected == 0U)
-		return ENODEV;
+		return ENXIO;
 
 	/* A checked output remains stable while the controller mutex is held. */
 	*result = output;
@@ -1186,8 +1302,12 @@ display_release_output(
 	output->current_height = 0U;
 
 	/* The primary scanout needs its retained console even when no new text was written. */
-	if (output->identifier == 1U)
+	if (output->identifier == 1U) {
 		controller->display->console_active = 0U;
+
+		/* Release wakes the parked console even when retained text has not changed. */
+		drv_venus_display_console_changed_locked(controller);
+	}
 
 	/* Succeeded: no scanout or private image retains this lease. */
 	return 0;
@@ -1422,7 +1542,7 @@ display_blob_frame(
 	drv_venus_store32(command + 80U, (uint32_t)image->offset);
 	error = display_fenced(controller, command, sizeof(command));
 	if (error != 0) {
-		atomic_raw_store_release(&controller->transport.failed, 1U);
+		drv_venus_transport_fail(&controller->transport, error);
 		drv_venus_share_put_locked(controller, share);
 		return error;
 	}
@@ -1489,14 +1609,14 @@ display_fenced(
 	/* Both the fence flag and its exact identity must survive the device reply. */
 	flags = drv_venus_load32(response + 4U);
 	if ((flags & 1U) == 0U) {
-		atomic_raw_store_release(&controller->transport.failed, 1U);
+		drv_venus_transport_fail(&controller->transport, EIO);
 		return EIO;
 	}
 
 	/* A completed fence must name this exact command rather than an earlier display update. */
 	returned_fence = drv_venus_load64(response + 8U);
 	if (returned_fence != fence) {
-		atomic_raw_store_release(&controller->transport.failed, 1U);
+		drv_venus_transport_fail(&controller->transport, EIO);
 		return EIO;
 	}
 
@@ -1604,14 +1724,14 @@ display_status(
 
 	/* A malformed success response cannot authorize a local ownership transition. */
 	if (received != reply_bytes) {
-		atomic_raw_store_release(&controller->transport.failed, 1U);
+		drv_venus_transport_fail(&controller->transport, EIO);
 		return EIO;
 	}
 
 	/* Interprets the response tag only after its complete required interval was received. */
 	response_type = drv_venus_load32(reply);
 	if (response_type != expected) {
-		atomic_raw_store_release(&controller->transport.failed, 1U);
+		drv_venus_transport_fail(&controller->transport, EIO);
 		return EIO;
 	}
 

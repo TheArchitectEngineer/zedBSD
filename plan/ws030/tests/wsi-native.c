@@ -250,6 +250,16 @@ main(void)
 	error = vulkan_wsi_display_platform.release(second);
 	assert(error == VK_SUCCESS);
 
+	/* Connector loss and stale topology affect this surface without poisoning the renderer. */
+	injected_error = ENXIO;
+	error = vulkan_wsi_display_platform.claim(&surfaces[1], &device, &second);
+	assert(error == VK_ERROR_SURFACE_LOST_KHR);
+	assert(device.error == VK_SUCCESS && context.error == VK_SUCCESS);
+	injected_error = ESTALE;
+	error = vulkan_wsi_display_platform.claim(&surfaces[1], &device, &second);
+	assert(error == VK_ERROR_OUT_OF_DATE_KHR);
+	assert(device.error == VK_SUCCESS && context.error == VK_SUCCESS);
+
 	/* Native error classification occurs after dropping the shared context mutex. */
 	injected_error = EBUSY;
 	error = vulkan_wsi_display_platform.claim(&surfaces[1], &device, &second);

@@ -24,7 +24,7 @@ cc -std=c11 -O2 -Wall -Wextra -Werror \
     "$repo/plan/ws014/tests/gpu-framework.c" \
     "$repo/src/drivers/gpu/gpu.c" "$repo/src/kern/cdev.c" \
     "$repo/plan/ws014/tests/gpu-test-fd.c" \
-    "$repo/src/kern/handle.c" "$repo/src/kern/fence.c" "$repo/src/kern/fd-object.c" \
+    "$repo/src/kern/handle.c" "$repo/src/drivers/gpu/gpu-fence.c" "$repo/src/kern/fd-object.c" \
     "$repo/src/kern/filedesc.c" \
     "$repo/src/kern/vm-device.c" \
     "$repo/src/drivers/pci/pci.c" -Wl,--gc-sections \
@@ -40,7 +40,7 @@ cc -std=c11 -O1 -g -Wall -Wextra -Werror \
     "$repo/plan/ws014/tests/gpu-framework.c" \
     "$repo/src/drivers/gpu/gpu.c" "$repo/src/kern/cdev.c" \
     "$repo/plan/ws014/tests/gpu-test-fd.c" \
-    "$repo/src/kern/handle.c" "$repo/src/kern/fence.c" "$repo/src/kern/fd-object.c" \
+    "$repo/src/kern/handle.c" "$repo/src/drivers/gpu/gpu-fence.c" "$repo/src/kern/fd-object.c" \
     "$repo/src/kern/filedesc.c" \
     "$repo/src/kern/vm-device.c" \
     "$repo/src/drivers/pci/pci.c" -Wl,--gc-sections \

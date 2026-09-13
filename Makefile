@@ -527,6 +527,15 @@ KERN_QUOTA_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(KERN_QUOTA_SOURCES))
 KERN_BOOT_SOURCES := src/kern/boot.c
 KERN_BOOT_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(KERN_BOOT_SOURCES))
 
+# GPU synchronization belongs to the framework selected by its hardware backends.
+# Add future GPU backends to this dependency list; generic fd support stays in kern.
+KERN_GPU_BACKENDS := $(CONFIG_DRIVER_PCI_VENUS)
+KERN_GPU_SOURCES :=
+ifneq ($(filter y,$(KERN_GPU_BACKENDS)),)
+KERN_GPU_SOURCES := src/drivers/gpu/gpu.c src/drivers/gpu/gpu-fence.c
+endif
+KERN_GPU_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(KERN_GPU_SOURCES))
+
 # ----------------------------------------------------------------------
 # Generic compile rules. Per-object flag overrides use target-specific
 # variables; header dependencies come from -MMD.

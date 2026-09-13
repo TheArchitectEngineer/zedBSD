@@ -13,6 +13,7 @@
 #include <stdarg.h>
 #include <poll.h>
 #include <uapi/gpu.h>
+#include <uapi/gpu-job.h>
 
 /* Kernel wake identities are separate from actual native fence state. */
 struct test_notification {
@@ -20,6 +21,7 @@ struct test_notification {
 	uint64_t fence;
 	int complete;
 	int consumed;
+	int error;
 };
 
 /* The fixture owns notification state for this one serial acceptance process. */
@@ -46,7 +48,8 @@ sync_test_ioctl(
 	unsigned long operation,
 	...)
 {
-	struct gpu_command_submit *submit;
+	struct gpu_job_reserve *reserve;
+	struct gpu_job_action *action;
 	struct gpu_command_wait *wait;
 	struct test_notification *notice;
 	struct timespec pause;
@@ -59,10 +62,12 @@ sync_test_ioctl(
 	va_start(arguments, operation);
 	argument = va_arg(arguments, void *);
 	va_end(arguments);
-	if (operation == GPU_COMMAND_SUBMIT) {
-		submit = argument;
-		assert(submit->bytes == 0 && submit->address == 0);
-		assert(submit->timeline == 1 && submit->flags == GPU_COMMAND_CONTEXT_FENCE);
+	/* Admission occurs before native work and cannot silently omit its completion record. */
+	if (operation == GPU_JOB_RESERVE) {
+		reserve = argument;
+		assert(reserve->fd == -1 && reserve->generation == 0);
+		assert(reserve->timeline == 1 && reserve->flags == 0);
+		assert(reserve->sequence == 0 && reserve->reserved == 0);
 		if (saturate) {
 			errno = EAGAIN;
 			return -1;
@@ -71,8 +76,29 @@ sync_test_ioctl(
 		assert(notice_count < 32);
 		notice = &notices[notice_count++];
 		notice->sequence = 100 + notice_count;
-		notice->fence = next_fence;
-		submit->sequence = notice->sequence;
+		reserve->sequence = notice->sequence;
+		return 0;
+	}
+
+	/* Commit consumes the exact successful native fence selected by the queue submission. */
+	if (operation == GPU_JOB_COMMIT || operation == GPU_JOB_CANCEL) {
+		action = argument;
+		notice = NULL;
+		for (index = 0; index < notice_count; index++) {
+			if (notices[index].sequence == action->sequence && !notices[index].consumed)
+				notice = &notices[index];
+		}
+
+		assert(notice != NULL);
+		if (operation == GPU_JOB_COMMIT) {
+			assert(test_native_fence == next_fence && test_native_fence != 0);
+			notice->fence = test_native_fence;
+		} else if (action->flags == GPU_JOB_CANCEL_FAULT) {
+			notice->complete = 1;
+			notice->error = EIO;
+		} else {
+			notice->consumed = 1;
+		}
 		return 0;
 	}
 
@@ -110,8 +136,7 @@ sync_test_ioctl(
 		/* A retirement wake can coexist with a native DEVICE_LOST result. */
 		notice->complete = 1;
 		if (renderer_loss) {
-			peer.fail_opcode = 38;
-			peer.fail_result = VK_ERROR_DEVICE_LOST;
+			notice->error = EIO;
 			peer.objects[notice->fence].pending = 0;
 			peer.objects[notice->fence].signaled = 1;
 		} else {
@@ -120,7 +145,7 @@ sync_test_ioctl(
 		}
 	}
 
-	wait->status = 0;
+	wait->status = notice->error;
 	if (wait->flags & GPU_WAIT_CONSUME)
 		notice->consumed = 1;
 	return 0;
@@ -150,11 +175,9 @@ sync_test_poll(
 	peer.objects[notice->fence].signaled = 1;
 	/* Another submitter reaps notifications between observation and poll completion. */
 	memset(&additional, 0, sizeof(additional));
-	pthread_mutex_lock(&test_queue->mutex);
-	pthread_mutex_lock(&test_queue->device->mutex);
-	status = vulkan_sync_submit_notification(test_queue, &additional);
-	pthread_mutex_unlock(&test_queue->device->mutex);
-	pthread_mutex_unlock(&test_queue->mutex);
+	additional.object.context = test_queue->device->object.context;
+	additional.notification = notice->sequence;
+	status = vulkan_sync_job_status(&additional, 0);
 	assert(status == VK_SUCCESS);
 	assert(!notice->consumed);
 	fds[0].revents = POLLIN;
@@ -183,7 +206,7 @@ main(
 	memset(&device, 0, sizeof(device));
 	memset(&queue, 0, sizeof(queue));
 	context.fd = 61;
-	context.capabilities = GPU_CAP_NOTIFICATION;
+	context.capabilities = GPU_CAP_NOTIFICATION | GPU_CAP_JOB;
 	device.object.context = &context;
 	device.object.wire_id = 1000;
 	queue.device = &device;
@@ -237,13 +260,13 @@ main(
 	assert(status == VK_SUCCESS);
 	saturate = 1;
 	status = vkQueueSubmit((VkQueue)&queue, 0, NULL, fences[0]);
-	assert(status == VK_SUCCESS && vulkan_sync_object((uint64_t)fences[0])->notification == 0);
+	assert(status == VK_ERROR_OUT_OF_DEVICE_MEMORY && vulkan_sync_object((uint64_t)fences[0])->notification == 0);
 	peer.event_blocked = 0;
 	status = vkWaitForFences((VkDevice)&device, 1, fences, VK_TRUE, 0);
-	assert(status == VK_SUCCESS);
+	assert(status == VK_TIMEOUT);
 	saturate = 0;
 
-	/* A kernel wake cannot override a failing actual Vulkan fence observation. */
+	/* Authoritative kernel failure cannot be converted into successful native completion. */
 	status = vkResetFences((VkDevice)&device, 1, fences);
 	assert(status == VK_SUCCESS);
 	peer.event_blocked = 1;
@@ -266,7 +289,7 @@ main(
 	pthread_mutex_destroy(&queue.mutex);
 	pthread_mutex_destroy(&device.mutex);
 	pthread_mutex_destroy(&context.mutex);
-	puts("libvulkan notifications: exact/all/any wake, timeout retention, saturated marker fallback, unlocked wait and native DEVICE_LOST PASS");
+	puts("libvulkan notifications: exact/all/any wake, timeout retention, preaccepted saturation refusal, unlocked wait and native DEVICE_LOST PASS");
 	return 0;
 }
 

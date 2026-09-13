@@ -1,0 +1,53 @@
+{
+  "scope": "WS014 p008 q311 GPU framework / driver-owned fence / backend integration",
+  "source_fixed": true,
+  "target_syntax": "PASS x86_64-unknown-zedbsd C89, existing inline/restrict headers use compatibility defines",
+  "uapi_layout": [
+    "ILP32 PASS",
+    "LP64 PASS"
+  ],
+  "build_selection": {
+    "platforms": [
+      "amd64",
+      "rpi4",
+      "i386",
+      "pc98",
+      "sun4u",
+      "x68k"
+    ],
+    "Venus_y_and_n": "PASS 12 actual make-expanded object lists",
+    "limit": "One actual amd64 kernel build plus six-platform make expansion; no six-architecture binary builds claimed",
+    "log": "q311-build-selection-001.log",
+    "actual_amd64_nogpu": "PASS nogpu-amd64.json; kernel built and nm has no GPU/core/fence/Venus symbols, generic fd/handle present"
+  },
+  "suites": {
+    "GPU framework": "normal + ASan/UBSan PASS q311-run-gpu-framework-test.sh.log",
+    "legacy GPU fence": "normal + ASan/UBSan PASS q311-run-gpu-fence-test.sh.log",
+    "driver-owned fence payload": "normal + ASan/UBSan PASS q311-gpu-fence-payload-final.log",
+    "strict GPU jobs": "normal + ASan/UBSan PASS q311-gpu-job-final.log",
+    "fd reuse during admitted dependency": "normal + ASan/UBSan PASS q311-gpu-reuse-001.log",
+    "final-close before drain": "normal + ASan/UBSan PASS q311-gpu-fence-close-final.log",
+    "Venus backend": "normal + ASan/UBSan PASS q311-venus-backend-001.log",
+    "Venus sharing after explicit fail": "normal + ASan/UBSan PASS q311-venus-sharing-final.log",
+    "Venus EDID": "normal + ASan/UBSan PASS q311-venus-edid-001.log"
+  },
+  "fixture_limit": "Real GPU, cdev, fd, fence implementations; deterministic host completion/scheduler peers. No host VkFence semantics or real concurrent kernel scheduling claimed by these fixtures.",
+  "independent_review": "U/K transaction ownership consistent. WAIT ENOENT / reaper error-publication race was reported to the userspace owner; root tracks its correction.",
+  "durable_record_utc": "2026-09-13T08:52:04.729312+00:00",
+  "final_kernel_regressions": {
+    "result": "PASS",
+    "record": "final-k-regressions.json",
+    "suites": [
+      "gpu-sharing",
+      "handle-fd",
+      "gpu-topology",
+      "gpu-scanout",
+      "gpu-placement"
+    ],
+    "modes": [
+      "ordinary",
+      "ASan/UBSan"
+    ],
+    "source_unchanged": true
+  }
+}

@@ -1013,6 +1013,9 @@ wayland_buffer_release(
 	image = data;
 	__atomic_store_n(&image->busy, VK_FALSE, __ATOMIC_RELEASE);
 
+	/* Wakes acquirers after publishing that no compositor still borrows this image. */
+	vulkan_wsi_image_notify();
+
 	/* Succeeded: a later acquire may hand this image back to the producer. */
 	return;
 }

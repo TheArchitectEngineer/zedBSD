@@ -1,0 +1,8 @@
+Installing src/libvirglrenderer.so.1.9.0 to /home/awe/zedbsd-q306-venus/dependencies/q311-strict/install/lib/x86_64-linux-gnu
+Installing vtest/virgl_test_server to /home/awe/zedbsd-q306-venus/dependencies/q311-strict/install/bin
+Installing server/virgl_render_server to /home/awe/zedbsd-q306-venus/dependencies/q311-strict/install/libexec
+Installing /home/awe/zedbsd-q306-venus/dependencies/q311-strict/source/src/virglrenderer.h to /home/awe/zedbsd-q306-venus/dependencies/q311-strict/install/include/virgl
+Installing /home/awe/zedbsd-q306-venus/dependencies/q311-strict/build/meson-private/virglrenderer.pc to /home/awe/zedbsd-q306-venus/dependencies/q311-strict/install/lib/x86_64-linux-gnu/pkgconfig
+Installing /home/awe/zedbsd-q306-venus/dependencies/q311-strict/build/src/virgl-version.h to /home/awe/zedbsd-q306-venus/dependencies/q311-strict/install/include/virgl
+Installing symlink pointing to libvirglrenderer.so.1.9.0 to /home/awe/zedbsd-q306-venus/dependencies/q311-strict/install/lib/x86_64-linux-gnu/libvirglrenderer.so.1
+Installing symlink pointing to libvirglrenderer.so.1 to /home/awe/zedbsd-q306-venus/dependencies/q311-strict/install/lib/x86_64-linux-gnu/libvirglrenderer.so
