@@ -8,7 +8,7 @@ Phase disposition: normal
 Parent: [WS014](https://github.com/awemorris/zedBSD/issues/15)
 Queue: q312 finished / q312-i01 cleared (whole Phase)
 Dependencies: cleared ws014-p008; accepted p007/p006/p005 and completed WS030
-Next: ws014-p010 in-progress (q313) → ws014-p004 planning; native i915 stays separate WS029
+Next: ws014-p010 cleared (q313) → ws014-p004 planning; native i915 stays separate WS029
 Execution: review4 R1-R6 and GPU framework consolidation accepted
 <!-- awesome-plan-current:end -->
 

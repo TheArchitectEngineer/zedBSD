@@ -1,4 +1,4 @@
-<!-- awesome-plan project=zedbsd record=queue -->
+<!-- archived Queue cycle q313; standing Board remains issue #362 -->
 
 # Queue q313: GPU監督の共通化仕上げと局所隔離
 

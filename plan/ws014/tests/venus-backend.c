@@ -31,7 +31,9 @@ static unsigned quiesce_calls;
 static unsigned quiesce_ready;
 static unsigned quiesce_idle_pending;
 static unsigned quiesce_idle_calls;
-static struct venus_session *quiesce_observed_session;
+
+/* Counts per-context transport isolations requested by the backend under test. */
+static unsigned isolate_calls;
 
 
 
@@ -71,6 +73,7 @@ static void fixture_blobs(void);
 static void fixture_timeout_retention(void);
 static void fixture_local_stop(void);
 static void fixture_backend_quiesce_proposal(void);
+static void fixture_backend_isolation(void);
 static void fixture_controller(struct venus_controller *controller, uint8_t *configuration);
 static void fixture_drain(struct venus_controller *controller);
 
@@ -498,6 +501,18 @@ drv_venus_transport_quiesce(
 	return 0;
 }
 
+/* Records one per-context quarantine without any device access in the synchronous peer. */
+int
+drv_venus_transport_isolate(
+	struct venus_transport *transport,
+	uint32_t context,
+	int error)
+{
+	assert(transport != NULL && context != 0U && error != 0);
+	isolate_calls++;
+	return 0;
+}
+
 /* Models no native work in the synchronous ownership peer. */
 int
 drv_venus_transport_idle(
@@ -586,8 +601,6 @@ drv_venus_transport_command(
 	context = drv_venus_load32(command + 16U);
 	assert(type < 0x300U);
 	fixture_commands[type]++;
-	if (type == 0x207U && quiesce_observed_session != NULL)
-		assert(quiesce_observed_session->native_commands_submitted == 1U);
 
 	/* Injects uncertainty before the host acknowledgment, preserving driver DMA. */
 	if (type == fixture_timeout) {
@@ -832,6 +845,7 @@ main(void)
 	/* Common stop blocks only the selected context and leaves context destruction to close. */
 	fixture_local_stop();
 	fixture_backend_quiesce_proposal();
+	fixture_backend_isolation();
 
 	/* Checks failure retention until a device reset ends uncertain ownership. */
 	fixture_timeout_retention();
@@ -1158,13 +1172,20 @@ fixture_local_stop(
 
 	/* The optional stop handshake does not send CTX_DESTROY or wait on a controller mutex. */
 	destroyed = fixture_commands[0x201U];
+	controller.transport.quiesce = 1U;
+	quiesce_ready = 1U;
+	quiesce_idle_pending = 0U;
 	error = venus_stop_begin(&controller, first, ETIMEDOUT);
 	assert(error == 0);
 	error = venus_stop_poll(&controller, first);
 	assert(error == 0);
 	assert(fixture_commands[0x201U] == destroyed);
 	assert(controller.transport.failed == 0U);
-	assert(venus_job_capacity(&controller, first, 3U, &available) == ENODEV);
+	controller.transport.quiesce = 0U;
+
+	/* Admission after local loss belongs to the core; the backend snapshot itself stays honest. */
+	error = venus_job_capacity(&controller, first, 3U, &available);
+	assert(error == 0 && available == 3U);
 	error = venus_job_capacity(&controller, second, 3U, &available);
 	assert(error == 0 && available == 3U);
 
@@ -1297,73 +1318,100 @@ fixture_backend_quiesce_proposal(
 	void *private_session;
 	int error;
 
-	/* A context with no native stream can close on an old host, but still needs its descriptor barrier. */
+	/* The core skips contexts without native work; the backend itself always demands the host proof. */
 	fixture_controller(&controller, configuration);
 	assert(venus_open(&controller, &private_session) == 0);
 	session = private_session;
-	assert(session->native_commands_submitted == 0U);
 	quiesce_calls = 0U;
 	quiesce_idle_calls = 0U;
 	quiesce_idle_pending = 0U;
-	assert(venus_stop_begin(&controller, session, EIO) == 0);
-	assert(venus_stop_poll(&controller, session) == 0);
-	assert(quiesce_calls == 0U && quiesce_idle_calls == 2U);
-	assert(quiesce_calls == 0U && controller.transport.failed == 0U);
+	assert(venus_stop_poll(&controller, session) == EINVAL);
+	assert(venus_stop_begin(&controller, session, EIO) == ENOTSUP);
+	assert(quiesce_calls == 1U && session->quiesced == 0U);
+	assert(controller.transport.failed == 0U);
 	venus_close(&controller, session);
 
-	/* A clean context with an unused reservation still requires an actual host ACK. */
+	/* A quiescence-capable host confirms stop only through its actual ACK and descriptor retirement. */
 	assert(venus_open(&controller, &private_session) == 0);
 	session = private_session;
 	controller.transport.quiesce = 1U;
+	quiesce_calls = 0U;
 	quiesce_ready = 0U;
 	quiesce_idle_pending = 1U;
 	assert(venus_stop_begin(&controller, session, EIO) == 0);
 	assert(quiesce_calls == 1U && session->quiesced == 0U);
 	assert(venus_stop_poll(&controller, session) == EAGAIN);
 	quiesce_ready = 1U;
-	quiesce_idle_pending = 0U;
-	assert(venus_stop_poll(&controller, session) == 0);
-	venus_close(&controller, session);
-	controller.transport.quiesce = 0U;
-
-	/* Invalid stream length never reaches the host and cannot create native ownership. */
-	assert(venus_open(&controller, &private_session) == 0);
-	session = private_session;
-	memset(raw, 0, sizeof(raw));
-	assert(venus_command(&controller, session, raw, 3U) == EINVAL);
-	assert(session->native_commands_submitted == 0U);
-
-	/* The native possibility is visible inside the host send, before completion or copyout exists. */
-	quiesce_observed_session = session;
-	assert(venus_command(&controller, session, raw, sizeof(raw)) == 0);
-	assert(session->native_commands_submitted == 1U);
-	quiesce_observed_session = NULL;
-	assert(venus_stop_begin(&controller, session, EIO) == ENOTSUP);
-	assert(session->quiesced == 0U);
-	venus_close(&controller, session);
-
-	/* An uncertain failed native send retains dirty ownership and cannot take the empty shortcut. */
-	assert(venus_open(&controller, &private_session) == 0);
-	session = private_session;
-	quiesce_observed_session = session;
-	fixture_timeout = 0x207U;
-	error = venus_command(&controller, session, raw, sizeof(raw));
-	assert(error == ETIMEDOUT);
-	assert(session->native_commands_submitted == 1U);
-	quiesce_observed_session = NULL;
-	controller.transport.failed = 0U;
-	controller.transport.quiesce = 1U;
-	quiesce_ready = 0U;
-	assert(venus_stop_begin(&controller, session, EIO) == 0);
-	assert(venus_stop_poll(&controller, session) == EAGAIN);
-	assert(session->quiesced == 0U);
-	quiesce_ready = 1U;
-	quiesce_idle_pending = 1U;
 	assert(venus_stop_poll(&controller, session) == EAGAIN);
 	assert(session->quiesced == 1U);
 	quiesce_idle_pending = 0U;
 	assert(venus_stop_poll(&controller, session) == 0);
 	venus_close(&controller, session);
+	controller.transport.quiesce = 0U;
+
+	/* Invalid stream length never reaches the host; accepted and uncertain sends need no backend flag. */
+	assert(venus_open(&controller, &private_session) == 0);
+	session = private_session;
+	memset(raw, 0, sizeof(raw));
+	assert(venus_command(&controller, session, raw, 3U) == EINVAL);
+	assert(venus_command(&controller, session, raw, sizeof(raw)) == 0);
+	fixture_timeout = 0x207U;
+	error = venus_command(&controller, session, raw, sizeof(raw));
+	assert(error == ETIMEDOUT);
+	controller.transport.failed = 0U;
+	controller.transport.quiesce = 1U;
+	quiesce_ready = 1U;
+	quiesce_idle_pending = 0U;
+	assert(venus_stop_begin(&controller, session, EIO) == 0);
+	assert(venus_stop_poll(&controller, session) == 0);
+	venus_close(&controller, session);
+	controller.transport.quiesce = 0U;
 	assert(fixture_allocations == 0U && fixture_dma == 0U);
-	puts("QUIESCE backend metadata-only/sticky-before-send/unknown-send/old-host refusal/two independent barriers PASS");
+	puts("QUIESCE backend: old-host refusal, host ACK and descriptor retirement as two barriers, admission owned by the core PASS");
+}
+
+/* Checks that a quarantined context retains its storage and sends no further host commands. */
+static void
+fixture_backend_isolation(
+	void)
+{
+	struct venus_controller controller;
+	struct venus_session *session;
+	struct gpu_resource_create allocation;
+	uint8_t configuration[16];
+	void *private_session;
+	void *storage;
+	unsigned destroys;
+	unsigned unrefs;
+	int error;
+
+	/* One context owns one coherent allocation before its stop becomes unconfirmable. */
+	fixture_controller(&controller, configuration);
+	assert(venus_open(&controller, &private_session) == 0);
+	session = private_session;
+	memset(&allocation, 0, sizeof(allocation));
+	allocation.bytes = 4096U;
+	error = venus_resource_create(&controller, session, &allocation, &storage);
+	assert(error == 0 && fixture_dma == 1U);
+
+	/* Isolation quarantines the transport chains and marks the wrapper, without failing the transport. */
+	destroys = fixture_commands[0x201U];
+	unrefs = fixture_commands[0x102U];
+	assert(venus_isolate(&controller, session) == 0);
+	assert(isolate_calls == 1U && session->quarantined == 1U);
+	assert(controller.transport.failed == 0U);
+
+	/* Destroy and close send nothing to a worker that may never answer; the allocation stays retained. */
+	venus_resource_destroy(&controller, session, storage);
+	assert(controller.resources != NULL && fixture_dma == 1U);
+	assert(fixture_commands[0x102U] == unrefs);
+	venus_close(&controller, session);
+	assert(fixture_commands[0x201U] == destroys);
+
+	/* Checked reset retires the quarantined allocation through the existing local-retirement helper. */
+	assert(drv_venus_transport_stop(&controller.transport) == 0);
+	fixture_drain(&controller);
+	assert(fixture_dma == 0U && controller.resources == NULL);
+	assert(fixture_allocations == 0U);
+	puts("ISOLATE backend: quarantined context keeps its allocation, sends no destroy/close traffic, retires at reset PASS");
 }

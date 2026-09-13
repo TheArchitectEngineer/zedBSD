@@ -3,10 +3,11 @@
 # WS014 p010: GPU監督の共通化仕上げと局所隔離
 
 <!-- awesome-plan-current:start -->
-Status: in-progress
+Status: cleared
 Phase disposition: normal
 Parent: [WS014](https://github.com/awemorris/zedBSD/issues/15)
-Queue: q313 active / q313-i01 in-progress (whole Phase)
+Queue: q313 finished / q313-i01 cleared (whole Phase)
+Execution: self-review D1-D4/B3-B6, Venus-to-framework migration and per-context isolation accepted
 Dependencies: cleared ws014-p009; accepted p008/p007/p006/p005 and completed WS030
 Next: ws014-p004 planning, not queued; native i915 stays separate WS029
 <!-- awesome-plan-current:end -->
@@ -60,3 +61,15 @@ Guardrailとplan/coding-style.md全文に従う。HAL追加変更なし。UAPI l
 S1（停止期限の起点をstop_begin実呼出しへ、D1/B3）、S2（close時のcommit済みjob監督継続、D2）、S4部分（monitor起床の限定）、B6（`drv_gpu_recovery_ready`除去）を実装した。実productionコードを含むGPU core fixture 14種を通常＋ASan/UBSanでPASS、`config-wayland-amd64.mk`の実kernel build（`amd64 vmunix check: PASS`）と`git diff --check`を確認した。gpu-jobにcommitted-job-survives-close（fence SIGNALED）と未commit予約のclose終端の2 sub-caseを追加した。詳細と失敗履歴は[results.md](results.md)、証拠は[core-verification/checkpoint-s1s2s4b6.json](core-verification/checkpoint-s1s2s4b6.json)。
 
 残り: S3（Venus→framework移管）、S5（session隔離・ops版9、D3/B4/B5）、実QEMU受入。p010はin-progressのままclearedにしない。source/patchのgit add/commit/pushはユーザーが行う。
+
+## q313完了: GPU監督の共通化仕上げと局所隔離（2026-09-14）
+
+WS014 p010 / q313-i01をcleared、q313をfinishedとする。active Queueなし。p009/q312の受入を保持し、WS014はincomplete、p001/p004はplanning、p004と別WS029 native i915は未queueのまま。
+
+S1: 停止期限の起点を`stop_begin`実呼出しへ移し、実行期限内のjobが残る間は停止しない。S2: graceful closeはcommit済みjobを終端せず実結果をfenceへ公開する。S3: native仕事の有無判定、fault cancel後のsession失敗、RESERVED回収、admission拒否、control期限定数を共通層へ移した。S4/B6: monitor起床の限定と`drv_gpu_recovery_ready`除去。S5: `recovery->isolate`（ops版9）で停止未確認contextをsession隔離し、device全体は継続、idle時のchecked resetで回収。libvulkanは自contextのPOLLERRだけでdevice lossをlatchする。UAPI/HALは不変。
+
+最終10VMは同一最終sourceの2 build（既定policy・短縮policy）でPASS/QEMU exit0: exit-delayed-003 19.698秒（producer終了後にconsumer fenceが14750 msでSUCCESS）、exit-hang-006 28.178秒（8000 msでDEVICE_LOST、context隔離、peer継続、idle openでreset回収と通常試験PASS）、producer-exit-002 24.447秒（hostの実結果を公開）、direct-002 41.796秒、wayland-002 47.258秒、submit-load-002 10.886秒、completion-delay-002 25.213秒、context-timeout-002 25.296秒、producer-stop-002 19.341秒、recovery-002 13.926秒。限定fixture（GPU core 10種、Venus 5種、libvulkan 5種、build selection）を通常＋sanitizerでPASS。失敗履歴（exit-hang-001のU側latch、exit-hang-004のreset中open拒否、producer-exit-001の旧期待値）を保持し、初回成功とは扱わない。
+
+隔離で失った容量はidle時のresetまで戻らず自動escalationは無い。隔離contextの表示状態はresetまで残る。closeはcommit済みjobの退役まで待つ。git add/commit/pushはユーザー担当。GitHub Issues/Project（q312完了、q313開始・完了）の公開は自動承認レビューで保留され、outbox/draftsに記録している。
+
+受入記録: local `plan/ws014/phase010/results.md`、`runtime-verification/summary.json`、`gpu-supervision-contract.md`。

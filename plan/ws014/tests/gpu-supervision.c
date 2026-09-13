@@ -39,13 +39,22 @@ static unsigned raw_quarantined;
 /* A selected worker allocation error exercises common close-time fallback. */
 extern int gpu_test_thread_error;
 
+/* Counts opaque raw streams accepted by the bounded peer; they create native ownership without a callback. */
+static unsigned raw_commands;
+
+/* Counts per-context isolations; each ends the isolated context's callbacks without a device fault. */
+static unsigned isolations;
+
 static int capacity_snapshot(void *opaque, void *session, uint32_t domain, unsigned *available);
 static int supervised_reserve(void *opaque, void *session, uint32_t domain, struct drv_gpu_completion *completion, void **reservation);
 static int local_begin(void *opaque, void *session, int error);
 static int local_poll(void *opaque, void *session);
 static void global_fault(void *opaque, int error);
 static int checked_reset(void *opaque);
+static int local_isolate(void *opaque, void *session);
 static void supervised_close(void *opaque, void *session);
+static int raw_command(void *opaque, void *session, const void *buffer, uint32_t bytes);
+static void raw_submit(struct test_file *file);
 static int raw_interleave(struct wait_queue *queue, struct spinlock *lock, uint64_t observed, uint64_t deadline, unsigned flags);
 static int capacity_call(struct test_file *file, unsigned flags, uint64_t observed, uint64_t timeout, struct gpu_job_capacity *result);
 static int capacity_interleave(struct wait_queue *queue, struct spinlock *lock, uint64_t observed, uint64_t deadline, unsigned flags);
@@ -112,10 +121,11 @@ main(
 	memset(&operations, 0, sizeof(operations));
 	operations.version = DRV_GPU_INTERFACE_VERSION;
 	operations.size = sizeof(operations);
-	operations.capabilities = GPU_CAP_JOB | GPU_CAP_JOB_CAPACITY | GPU_CAP_NOTIFICATION | GPU_CAP_FENCE;
+	operations.capabilities = GPU_CAP_JOB | GPU_CAP_JOB_CAPACITY | GPU_CAP_NOTIFICATION | GPU_CAP_FENCE | GPU_CAP_COMMAND;
 	operations.open = backend_open;
 	operations.close = supervised_close;
 	operations.get_info = backend_get_info;
+	operations.command = raw_command;
 	operations.commands = &commands;
 	operations.jobs = &job_operations;
 	operations.recovery = &recovery;
@@ -129,7 +139,7 @@ main(
 	assert(error == EINVAL && job_device == NULL);
 
 	/* Restore the complete supervised backend after testing the non-JOB contract. */
-	operations.capabilities = GPU_CAP_JOB | GPU_CAP_JOB_CAPACITY | GPU_CAP_NOTIFICATION | GPU_CAP_FENCE;
+	operations.capabilities = GPU_CAP_JOB | GPU_CAP_JOB_CAPACITY | GPU_CAP_NOTIFICATION | GPU_CAP_FENCE | GPU_CAP_COMMAND;
 	operations.jobs = &job_operations;
 	operations.commands = &commands;
 	recovery.fault = global_fault;
@@ -318,7 +328,64 @@ main(
 	deliver_session(&first, 0);
 	error = job_observe(&first, first_sequence, 1U, &status);
 	assert(error == 0 && status == 0);
+
+	/* An unconfirmed stop isolates only the failing context once the backend can quarantine per context. */
+	recovery.isolate = local_isolate;
+	error = open_file(&second, "gpu0", O_RDWR);
+	assert(error == 0);
+	peer = second.file.f_data;
+	second_sequence = submit_job(&second, 0U);
+	gpu_test_ticks += 10U * KERN_CLOCK_HZ;
+	(void)gpu_monitor_step(job_device);
+	assert(peer->error == ETIMEDOUT && isolations == 0U);
+	gpu_test_ticks += 10U * KERN_CLOCK_HZ;
+	(void)gpu_monitor_step(job_device);
+	assert(isolations == 1U && global_faults == 1U && job_device->error == 0);
+	assert(peer->stop_state == GPU_STOP_QUARANTINED && job_device->quarantined == 1U);
+	error = job_observe(&second, second_sequence, 1U, &status);
+	assert(error == 0 && status == ETIMEDOUT);
+
+	/* The healthy peer keeps submitting while the isolated context is retained. */
+	first_sequence = submit_job(&first, 1U);
+	deliver_session(&first, 0);
+	error = job_observe(&first, first_sequence, 1U, &status);
+	assert(error == 0 && status == 0);
+
+	/* A fresh open with no other owner reclaims the quarantined capacity through checked reset. */
+	close_file(&second);
 	close_file(&first);
+	error = open_file(&first, "gpu0", O_RDWR);
+	assert(error == 0 && checked_resets == 3U);
+	assert(job_device->quarantined == 0U && job_device->error == 0);
+
+	/* An expired reservation on a proven-idle context is withdrawn by the common layer through cancel. */
+	owner = first.file.f_data;
+	second_sequence = submit_job(&first, 0U);
+	gpu_test_ticks += 10U * KERN_CLOCK_HZ;
+	(void)gpu_monitor_step(job_device);
+	assert(owner->error == ETIMEDOUT && job_device->error == 0);
+	(void)gpu_monitor_step(job_device);
+	assert(owner->stop_state == GPU_STOP_FINISHED && global_faults == 1U);
+	for (index = 0U; index < 4U; index++)
+		assert(jobs[index].completion == NULL);
+	error = job_observe(&first, second_sequence, 1U, &status);
+	assert(error == 0 && status == ETIMEDOUT);
+	close_file(&first);
+	error = drv_gpu_unregister(job_device);
+	assert(error == 0);
+
+	/* A context that never reached the GPU closes without any backend stop handshake. */
+	error = drv_gpu_register(&operations, &backend, &job_device);
+	assert(error == 0);
+	error = open_file(&first, "gpu0", O_RDWR);
+	assert(error == 0);
+	raw_session = NULL;
+	before = local_starts;
+	close_file(&first);
+	assert(local_starts == before && job_device->error == 0);
+
+	/* The withdrawn previous device armed one quarantine; this close added none. */
+	assert(global_faults == 2U);
 	error = drv_gpu_unregister(job_device);
 	assert(error == 0);
 
@@ -331,6 +398,7 @@ main(
 	raw_session = owner->backend;
 	raw_released = 0U;
 	raw_quarantined = 0U;
+	raw_submit(&first);
 	gpu_test_wait_hook = raw_interleave;
 	close_file(&first);
 	gpu_test_wait_hook = NULL;
@@ -348,6 +416,7 @@ main(
 	raw_session = owner->backend;
 	raw_released = 0U;
 	raw_quarantined = 0U;
+	raw_submit(&first);
 	gpu_test_thread_error = ENOMEM;
 	close_file(&first);
 	gpu_test_thread_error = 0;
@@ -375,7 +444,7 @@ main(
 	filedesc_destroy(process.fd);
 	gpu_test_set_process(NULL);
 	assert(allocations == 0U && held_spinlocks == 0U);
-	puts("GPU supervision: foreign capacity, 64-record self-reap, observer pin, backend domain, 10s/60s policy, local drain, late callback, global fallback and reset gate PASS");
+	puts("GPU supervision: foreign capacity, 64-record self-reap, observer pin, backend domain, 10s/60s policy, local drain, late callback, global fallback, reset gate, per-context isolation, idle reset reclaim, reservation reclaim and metadata-only close PASS");
 
 	/* Succeeded: all production ownership retired at explicitly observed boundaries. */
 	return 0;
@@ -470,9 +539,11 @@ local_poll(
 	if (raw_session == session && raw_released == 0U)
 		return EAGAIN;
 
-	/* Strict peer jobs remain individually retained until their actual completion. */
+	/* Published peer jobs remain retained until actual completion; unpublished reservations do not block idle. */
 	for (index = 0U; index < 4U; index++) {
-		if (jobs[index].session == session && jobs[index].completion != NULL)
+		if (jobs[index].session == session &&
+		    jobs[index].completion != NULL &&
+		    jobs[index].committed != 0U)
 			return EAGAIN;
 	}
 
@@ -496,6 +567,30 @@ global_fault(
 
 	/* Succeeded: no retained peer callback can arrive after this barrier. */
 	return;
+}
+
+/* Quarantines one context of the bounded peer, ending its callbacks with the context's error. */
+static int
+local_isolate(
+	void *opaque,
+	void *session)
+{
+	unsigned index;
+
+	(void)opaque;
+
+	/* Isolation is a driver callback outside every common spinlock. */
+	assert(held_spinlocks == 0U);
+	isolations++;
+
+	/* Each retained callback of this context alone publishes its terminal error. */
+	for (index = 0U; index < 4U; index++) {
+		if (jobs[index].session == session && jobs[index].completion != NULL)
+			job_deliver(&jobs[index], EIO);
+	}
+
+	/* Succeeded: peers keep their callbacks while this context is quarantined. */
+	return 0;
 }
 
 /* Confirms that common retirement excluded every old open before hardware reinitialization. */
@@ -681,6 +776,49 @@ supervised_close(
 	backend_close(opaque, session);
 
 	/* Succeeded: native ownership ended before the context wrapper was destroyed. */
+	return;
+}
+
+/* Accepts one opaque stream; the bounded peer keeps no callback for it. */
+static int
+raw_command(
+	void *opaque,
+	void *session,
+	const void *buffer,
+	uint32_t bytes)
+{
+	(void)opaque;
+	(void)session;
+	(void)buffer;
+
+	/* The actual common core copies the stream before this synchronous receipt. */
+	assert(held_spinlocks == 0U && bytes == 4U);
+	raw_commands++;
+
+	/* Succeeded: raw native ownership now exists without any completion record. */
+	return 0;
+}
+
+/* Sends one minimal opaque stream through the public command request. */
+static void
+raw_submit(
+	struct test_file *file)
+{
+	struct gpu_command request;
+	uint32_t stream;
+	int error;
+
+	/* The stream bytes only need to exist; the peer never interprets them. */
+	stream = 0U;
+	memset(&request, 0, sizeof(request));
+	request.version = GPU_ABI_VERSION;
+	request.size = sizeof(request);
+	request.address = (uint64_t)(uintptr_t)&stream;
+	request.bytes = sizeof(stream);
+	error = fence_ioctl(file, GPU_COMMAND, &request);
+	assert(error == 0);
+
+	/* Succeeded: the core recorded native ownership for the final stop proof. */
 	return;
 }
 

@@ -182,6 +182,43 @@ drv_venus_display_close_locked(
 }
 
 /*
+ * Drops a quarantined open's lease records without any host traffic.
+ *
+ * Its scanout hardware state remains whatever the isolated context left until
+ * checked reset; only the arbitration pointers and the console gate change.
+ */
+void
+drv_venus_display_forget_locked(
+	struct venus_controller *controller,
+	struct venus_session *session)
+{
+	struct venus_display_output *output;
+	uint32_t index;
+
+	/* Opens which never touched display state have no display cleanup. */
+	if (controller->display == NULL)
+		return;
+
+	/* A quarantined worker may never answer, so no release command is sent for its outputs. */
+	for (index = 0U; index < controller->display->count; index++) {
+		output = &controller->display->outputs[index];
+		if (output->owner != session)
+			continue;
+
+		/* The record leaves arbitration; its retained backing is retired by reset. */
+		output->owner = NULL;
+		output->lease = 0U;
+
+		/* Primary owner loss releases the sleeping console gate. */
+		if (output->identifier == 1U)
+			drv_venus_display_console_changed_locked(controller);
+	}
+
+	/* Succeeded: no display record refers to the quarantined session. */
+	return;
+}
+
+/*
  * Frees metadata after transport reset has already retired every resource.
  */
 void

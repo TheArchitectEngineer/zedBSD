@@ -29,6 +29,7 @@ static VkResult sync_notification_poll(struct vulkan_context *context, uint64_t 
 static void sync_release_storage(struct vulkan_object *object);
 static VkResult sync_fences_wait(struct VkDevice_T *device, uint32_t count, const VkFence *fences, VkBool32 all, uint64_t timeout_ns, struct vulkan_notification **pins, struct pollfd *descriptors);
 static void sync_notifications_unpin(struct vulkan_context *context, uint32_t count, struct vulkan_notification **pins);
+static VkBool32 sync_context_lost(struct vulkan_context *context);
 
 /*
  * Creates a fence with the application's requested initial native state.
@@ -737,6 +738,7 @@ vulkan_fences_wait(
 	struct pollfd *descriptors;
 	size_t descriptor_count;
 	VkResult status;
+	VkBool32 lost;
 
 	/* Any-wait pins keep another observer from consuming its level-triggered wake. */
 	pins = NULL;
@@ -767,13 +769,20 @@ vulkan_fences_wait(
 	free(pins);
 	free(descriptors);
 
-	/* A terminal shared dependency invalidates later local-success observations too. */
+	/*
+	 * A terminal shared payload reports the producer's loss to this waiter, but
+	 * only this device's own context loss invalidates its later observations.
+	 * An imported fence whose foreign producer died leaves this device usable.
+	 */
 	if (status == VK_ERROR_DEVICE_LOST) {
-		pthread_mutex_lock(&device->mutex);
+		lost = sync_context_lost(device->object.context);
+		if (lost != VK_FALSE) {
+			pthread_mutex_lock(&device->mutex);
 
-		vulkan_sync_device_error(device, status);
+			vulkan_sync_device_error(device, status);
 
-		pthread_mutex_unlock(&device->mutex);
+			pthread_mutex_unlock(&device->mutex);
+		}
 	}
 
 	if (status != VK_SUCCESS)
@@ -781,6 +790,30 @@ vulkan_fences_wait(
 
 	/* Succeeded: the requested payload condition was observed without losing a wake. */
 	return VK_SUCCESS;
+}
+
+/* Reports whether the kernel already publishes loss for this device's own context. */
+static VkBool32
+sync_context_lost(
+	struct vulkan_context *context)
+{
+	struct pollfd descriptor;
+	int ready;
+
+	/* POLLERR is the kernel's sticky local or device loss for exactly this open. */
+	descriptor.fd = context->fd;
+	descriptor.events = 0;
+	descriptor.revents = 0;
+	ready = poll(&descriptor, 1, 0);
+	if (ready < 0)
+		return VK_TRUE;
+
+	/* A descriptor the kernel can no longer serve is treated as lost. */
+	if ((descriptor.revents & (POLLERR | POLLHUP | POLLNVAL)) != 0)
+		return VK_TRUE;
+
+	/* Succeeded: this context is healthy; the observed loss belongs to a foreign producer. */
+	return VK_FALSE;
 }
 
 /*

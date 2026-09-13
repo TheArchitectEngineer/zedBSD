@@ -101,6 +101,7 @@ static unsigned fixture_capacity_available;
 static unsigned fixture_callback_idle_context;
 
 static void fixture_quiesce_proposal(void);
+static void fixture_isolation(void);
 static void fixture_prepare(struct venus_transport *transport);
 static void fixture_capability(unsigned offset, unsigned next, unsigned length, unsigned type, unsigned bar, uint32_t start, uint32_t bytes);
 static void fixture_complete(void);
@@ -639,6 +640,7 @@ main(void)
 {
 	/* Strict completion requires the exact paired profile rather than a guessed suffix. */
 	fixture_quiesce_proposal();
+	fixture_isolation();
 	fixture_strict_capability();
 	fixture_jobs();
 	fixture_job_failures();
@@ -1537,7 +1539,7 @@ fixture_job_failures(
 	assert(completion.calls == 0U);
 	assert(transport.failed == 0U);
 	assert(transport.requests[0].state == VENUS_SLOT_RESERVED);
-	assert(drv_venus_transport_idle(&transport, 17U) == EAGAIN);
+	assert(drv_venus_transport_idle(&transport, 17U) == 0);
 	assert(drv_venus_transport_idle(&transport, 18U) == 0);
 	transport.stopping = 0U;
 	fixture_watchdog_stop = 0U;
@@ -1683,14 +1685,18 @@ fixture_quiesce_proposal(
 			assert(completions[1].calls == 1U && completions[1].error != 0);
 		} else {
 			assert(error == 0 && quiesced == 1U && pending == NULL);
-			assert(completions[0].calls == 1U && completions[0].error == ENODEV);
-			assert(completions[1].calls == 0U);
+			assert(completions[0].calls == 0U && completions[1].calls == 0U);
 			assert(drv_venus_transport_idle(&transport, 17U) == EAGAIN);
 
 			/* Native idle alone cannot recycle a previously posted DMA descriptor or its callback. */
 			fixture_complete_head(2U);
 			assert(fixture_irq(fixture_irq_argument) == 1U);
 			assert(completions[1].calls == 1U && completions[1].error == 0);
+
+			/* An unpublished reservation no longer blocks idle; the core withdraws it through cancel. */
+			assert(drv_venus_transport_idle(&transport, 17U) == 0);
+			assert(drv_venus_transport_job_cancel(&transport, reserved, &completions[0], 0U) == 0);
+			assert(completions[0].calls == 0U);
 			assert(drv_venus_transport_idle(&transport, 17U) == 0);
 		}
 		fixture_drop = 0U;
@@ -1725,4 +1731,75 @@ fixture_quiesce_proposal(
 	assert(fixture_dma == 0U && fixture_maps == 0U);
 
 	puts("QUIESCE guest exact48B/old-profile refusal/NODATA24B/retained posted DMA/full capacity/no false ACK PASS");
+}
+
+/* Checks per-context quarantine, peer continuation, late chain reclaim and local supervised refusal. */
+static void
+fixture_isolation(
+	void)
+{
+	struct venus_transport transport;
+	struct venus_request *refused;
+	struct drv_gpu_completion completions[4];
+	void *reserved;
+	void *posted;
+	void *peer;
+	void *marker;
+	unsigned available;
+
+	/* Two contexts share the strict transport; only one of them becomes unconfirmable. */
+	fixture_prepare(&transport);
+	drv_venus_store16(fixture_registers + 24U, 64U);
+	fixture_capset_bytes = 168U;
+	fixture_vendor_magic = 0x5a424453U;
+	fixture_vendor_flags = 7U;
+	assert(drv_venus_transport_start(&transport, NULL) == 0);
+	fixture_drop = 1U;
+	fixture_clock_frozen = 1U;
+	memset(completions, 0, sizeof(completions));
+	assert(drv_venus_transport_job_reserve(&transport, 17U, 3U, &completions[0], &reserved) == 0);
+	assert(drv_venus_transport_job_reserve(&transport, 17U, 3U, &completions[1], &posted) == 0);
+	assert(drv_venus_transport_job_commit(&transport, posted, &completions[1]) == 0);
+	assert(drv_venus_transport_job_reserve(&transport, 18U, 3U, &completions[2], &peer) == 0);
+	assert(drv_venus_transport_job_commit(&transport, peer, &completions[2]) == 0);
+
+	/* Isolation needs a real context and error, ends only context 17's callbacks, and keeps the transport alive. */
+	assert(drv_venus_transport_isolate(&transport, 0U, EIO) == EINVAL);
+	assert(drv_venus_transport_isolate(&transport, 17U, 0) == EINVAL);
+	assert(drv_venus_transport_isolate(&transport, 17U, EIO) == 0);
+	assert(completions[0].calls == 1U && completions[0].error == EIO);
+	assert(completions[1].calls == 1U && completions[1].error == EIO);
+	assert(completions[2].calls == 0U && transport.failed == 0U);
+	assert(transport.requests[0].state == VENUS_SLOT_QUARANTINED);
+	assert(transport.requests[1].state == VENUS_SLOT_QUARANTINED);
+	assert(drv_venus_transport_capacity(&transport, 3U, &available) == 0 && available == 25U);
+
+	/* The peer context completes normally while the quarantined chains stay device-owned. */
+	fixture_complete_head(4U);
+	assert(fixture_irq(fixture_irq_argument) == 1U);
+	assert(completions[2].calls == 1U && completions[2].error == 0);
+	assert(transport.failed == 0U);
+
+	/* A late return of the quarantined posted chain frees its slot without any further callback. */
+	fixture_complete_head(2U);
+	assert(fixture_irq(fixture_irq_argument) == 1U);
+	assert(transport.failed == 0U);
+	assert(transport.requests[1].state == VENUS_SLOT_FREE);
+	assert(transport.requests[0].state == VENUS_SLOT_QUARANTINED);
+	assert(completions[1].calls == 1U);
+	assert(drv_venus_transport_capacity(&transport, 3U, &available) == 0 && available == 27U);
+
+	/* A defined host refusal of a supervised marker retires that marker alone. */
+	assert(drv_venus_transport_job_reserve(&transport, 19U, 3U, &completions[3], &marker) == 0);
+	assert(drv_venus_transport_job_commit(&transport, marker, &completions[3]) == 0);
+	refused = marker;
+	fixture_complete_head((uint16_t)((unsigned)(refused - transport.requests) * 2U));
+	drv_venus_store32(refused->response.address, 0x1204U);
+	assert(fixture_irq(fixture_irq_argument) == 1U);
+	assert(completions[3].calls == 1U && completions[3].error == EINVAL);
+	assert(transport.failed == 0U);
+	fixture_drop = 0U;
+	assert(drv_venus_transport_stop(&transport) == 0);
+	assert(fixture_dma == 0U && fixture_maps == 0U);
+	puts("ISOLATE transport: per-context quarantine, peer continuation, late chain reclaim, local supervised refusal PASS");
 }

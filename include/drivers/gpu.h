@@ -19,7 +19,7 @@
 
 #include <stdint.h>
 
-#define DRV_GPU_INTERFACE_VERSION	8U
+#define DRV_GPU_INTERFACE_VERSION	9U
 #define DRV_GPU_MAPPING_DEVICE		1U
 
 struct drv_gpu_device;
@@ -42,6 +42,9 @@ struct drv_gpu_command_ops {
  * cancel removes the callback before
  * returning success. Fault cancellation terminates uncertain work with ERROR.
  * Each action verifies both the reservation token and original completion.
+ * The core publishes the session loss after a successful fault cancellation;
+ * the backend only retains the uncertain callback. After a proven stop the
+ * core withdraws every unpublished reservation with a normal cancel.
  * The ordinary command drain also retires every accepted job callback.
  */
 struct drv_gpu_job_ops {
@@ -53,21 +56,33 @@ struct drv_gpu_job_ops {
 
 /*
  * Optional hardware recovery preserves uncertain resources until actual access
- * has stopped. Begin and poll never block waiting for native work. Poll returns
- * EAGAIN while pending, and zero only after native access, descriptors and every
- * callback for the session have retired. Other errors require device-wide fault.
+ * has stopped. Begin and poll never block waiting for native work. The core calls
+ * begin only for a context that may have reached the GPU or still retains a
+ * backend callback. Poll returns EAGAIN while pending, and zero only after native
+ * access has stopped and every posted descriptor and callback for the session has
+ * retired; unpublished reservations may remain, and the core then withdraws them
+ * through cancel. Other errors require device-wide fault.
  * Fault is required whenever this table exists. It is idempotent, stops new
  * publication and arms every destroy/close path to retain uncertain DMA before
  * publishing device loss. It cannot silently release backing or claim that
  * hardware has stopped. Callback drain remains a separate lifetime barrier.
  * Reset runs only after every old external owner has
  * retired and returns zero only after checked hardware reinitialization.
+ * Optional isolate quarantines one context whose stop could not be confirmed:
+ * it ends every callback of that context with an error, keeps the context's
+ * descriptors and allocations device-owned until checked reset, and refuses
+ * further host traffic for it, while every other context continues. After a
+ * successful isolate the core still calls resource_destroy and close for that
+ * session, and the backend must retire them without hardware access. Failure
+ * or absence of isolate escalates to the device-wide fault. Isolated capacity
+ * is reclaimed when a fresh open with no other owner performs checked reset.
  */
 struct drv_gpu_recovery_ops {
 	int (*stop_begin)(void *, void *, int);
 	int (*stop_poll)(void *, void *);
 	void (*fault)(void *, int);
 	int (*reset)(void *);
+	int (*isolate)(void *, void *);
 };
 
 /*

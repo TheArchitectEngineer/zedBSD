@@ -118,6 +118,9 @@ struct venus_transport {
 	uint16_t available;
 	uint16_t used;
 	uint16_t notify_offset;
+
+	/* A late chain return from an isolated context freed a slot outside callback publication. */
+	unsigned reclaimed;
 	unsigned saved;
 	unsigned enabled;
 	volatile unsigned failed;
@@ -134,10 +137,14 @@ struct venus_shared_context;
 /* One context owned by a GPU open until its close callback completes. */
 struct venus_session {
 	uint32_t context;
+
+	/* Records that the core requested a stop; it validates stop polls and is not an admission barrier. */
 	volatile unsigned stopping;
-	volatile unsigned native_commands_submitted;
 	struct venus_request *stop_request;
 	unsigned quiesced;
+
+	/* Set by isolation; destroy and close then retain host state for checked reset without traffic. */
+	unsigned quarantined;
 };
 
 /*
@@ -234,6 +241,8 @@ int drv_venus_transport_capacity(struct venus_transport *transport, uint32_t tim
 int drv_venus_transport_idle(struct venus_transport *transport, uint32_t context);
 int drv_venus_transport_quiesce(struct venus_transport *transport, uint32_t context, struct venus_request **request, unsigned *quiesced);
 void drv_venus_transport_fail(struct venus_transport *transport, int error);
+int drv_venus_transport_isolate(struct venus_transport *transport, uint32_t context, int error);
+void drv_venus_display_forget_locked(struct venus_controller *controller, struct venus_session *session);
 void drv_venus_transport_display_changed(struct venus_transport *transport);
 void drv_venus_header(void *buffer, uint32_t command, uint32_t context);
 uint16_t drv_venus_load16(const volatile void *buffer);

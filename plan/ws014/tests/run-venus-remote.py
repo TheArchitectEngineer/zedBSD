@@ -473,12 +473,14 @@ def verify_remote_result(args, report, remote):
             'context-timeout': 'GPUFENCE CONTEXT_TIMEOUT PASS',
             'submit-load': 'GPUFENCE SUBMIT_LOAD PASS processes=2 rounds=3 submits=576 verified_bytes=25165824 verified_submits=576',
             'recovery': 'GPURECOVERY PASS timeout=1 peer_failed=1 retirement_gate=1 fresh_roundtrip=4096 decoder=1',
-            'producer-exit': 'GPUFENCE PRODUCER_EXIT_ERROR PASS',
+            'producer-exit': 'GPUFENCE PRODUCER_EXIT_REAL_RESULT PASS',
             'producer-stop': 'GPUFENCE PRODUCER_STOP_ERROR PASS',
+            'producer-exit-delayed': 'GPUFENCE PRODUCER_EXIT_DELAYED PASS',
+            'producer-exit-hang': 'GPUFENCE PRODUCER_EXIT_HANG PASS',
         }[args.fault_test]
         if remote.get('fault_marker') != expected or expected not in observed:
             raise RuntimeError('isolated fault evidence lacks successful guest assertions')
-        if args.fault_test in ('submit-load', 'completion-delay', 'context-timeout', 'producer-stop'):
+        if args.fault_test in ('submit-load', 'completion-delay', 'context-timeout', 'producer-stop', 'producer-exit-delayed'):
             load_spec = importlib.util.spec_from_file_location(
                 'submit_load_harness', REPO / 'plan/ws014/tests/wayland-qemu.py')
             load_harness = importlib.util.module_from_spec(load_spec)
@@ -504,6 +506,15 @@ def verify_remote_result(args, report, remote):
                     'GPUFENCE PRODUCER_STOPPED pending=1 fd_live=1' not in observed or
                     not 7000 <= remote.get('watchdog_elapsed_ms', 0) <= 13000):
                 raise RuntimeError('producer-stop lacks stopped-process proof and autonomous terminal timing')
+        if args.fault_test == 'producer-exit':
+            outcome = remote.get('producer_exit', {})
+            if outcome.get('result') not in (0, -4) or not 1000 <= outcome.get('elapsed_ms', 0) <= 75000:
+                raise RuntimeError('producer-exit lacks a recorded real job result within the deadline budget')
+        if args.fault_test == 'producer-exit-hang':
+            if (remote.get('isolation_peer') is not True or
+                    not 7000 <= remote.get('watchdog_elapsed_ms', 0) <= 13000 or
+                    not isinstance(remote.get('reclaim'), dict)):
+                raise RuntimeError('producer-exit-hang lacks isolation proof, deadline timing and a recorded reclaim run')
         if args.fault_test == 'recovery':
             pause = remote.get('renderer_pause', {})
             if (pause.get('stopped') is not True or pause.get('resumed') is not True or
@@ -758,7 +769,7 @@ def main(profile='venus'):
     parser.add_argument('--init', default='/bin/sh', help='init path written only into the disposable image')
     parser.add_argument('--skip-build', action='store_true', help='explicitly reuse and record existing artifacts')
     parser.add_argument('--lifecycle', action='store_true', help='also verify SIGINT cleanup and visible console restoration')
-    parser.add_argument('--fault-test', choices=['recovery', 'producer-exit', 'producer-stop', 'submit-load', 'completion-delay', 'context-timeout'],
+    parser.add_argument('--fault-test', choices=['recovery', 'producer-exit', 'producer-stop', 'submit-load', 'completion-delay', 'context-timeout', 'producer-exit-delayed', 'producer-exit-hang'],
                         help='run one isolated fault or submit-load regression instead of the Wayland suite')
     parser.add_argument('--phase', choices=['2d', 'venus'] if profile == 'venus' else [profile],
                         default=profile)

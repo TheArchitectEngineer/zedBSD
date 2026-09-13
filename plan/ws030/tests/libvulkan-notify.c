@@ -204,6 +204,12 @@ sync_test_poll(
 	struct vulkan_sync additional;
 	VkResult status;
 
+	/* A nonblocking probe only samples this context's own health; the peer stays healthy. */
+	if (timeout == 0) {
+		fds[0].revents = 0;
+		return 0;
+	}
+
 	/* No producer lock may span a kernel completion wait. */
 	assert_wait_unlocked();
 	assert(count == 1 && fds[0].fd == 61 && (fds[0].events & POLLIN));

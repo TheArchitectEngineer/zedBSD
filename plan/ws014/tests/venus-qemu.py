@@ -189,7 +189,7 @@ def run(args, exercise=None, harness_path=None):
     environment['VK_DRIVER_FILES'] = args.icd
     environment['VIRGL_LOG_LEVEL'] = 'debug'
     environment['RENDER_SERVER_EXEC_PATH'] = str(args.render_server)
-    if getattr(args, 'fault_test', None) in ('completion-delay', 'context-timeout', 'producer-stop'):
+    if getattr(args, 'fault_test', None) in ('completion-delay', 'context-timeout', 'producer-stop', 'producer-exit-delayed'):
         environment['Q312_COMPLETION_GATE'] = str(output / 'completion.gate')
     library_directory = getattr(args, 'renderer_library_dir', None)
     library = None

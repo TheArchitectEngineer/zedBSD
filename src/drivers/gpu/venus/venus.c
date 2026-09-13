@@ -51,6 +51,7 @@ static int venus_stop_begin(void *device, void *private_session, int error);
 static int venus_stop_poll(void *device, void *private_session);
 static void venus_fault(void *device, int error);
 static int venus_reset_device(void *device);
+static int venus_isolate(void *device, void *private_session);
 static int venus_recover(struct venus_controller *controller);
 static int venus_present(void *device, void *private_session, void *object, const struct gpu_present *request);
 static int venus_resource_map(void *device, void *private_session, void *object, struct drv_gpu_mapping *mapping);
@@ -347,7 +348,8 @@ venus_publish(
 		venus_stop_begin,
 		venus_stop_poll,
 		venus_fault,
-		venus_reset_device
+		venus_reset_device,
+		venus_isolate
 	};
 	static const struct drv_gpu_ops operations = {
 		DRV_GPU_INTERFACE_VERSION,
@@ -512,6 +514,24 @@ venus_close(
 	controller = device;
 	session = private_session;
 
+	/* A quarantined context sends nothing to a host worker that may never answer; reset retires it. */
+	if (session->quarantined != 0U) {
+		mutex_lock(&controller->mutex);
+
+		drv_venus_display_forget_locked(controller, session);
+		if (controller->display_owner == session) {
+			controller->display_owner = NULL;
+			drv_venus_display_console_changed_locked(controller);
+		}
+
+		mutex_unlock(&controller->mutex);
+
+		/* The numeric context and its retained resources stay controller-owned until checked reset. */
+		kern_logf("venus: context=%u closed while quarantined\n", session->context);
+		kern_free(session);
+		return;
+	}
+
 	/* Serializes display withdrawal and context teardown with other sessions. */
 	mutex_lock(&controller->mutex);
 
@@ -651,6 +671,12 @@ venus_resource_destroy(
 
 	/* Refuses an internal ownership mismatch without touching foreign DMA. */
 	if (resource->controller != controller || resource->context != session->context) {
+		mutex_unlock(&controller->mutex);
+		return;
+	}
+
+	/* A quarantined context retains every allocation on the controller list until checked reset. */
+	if (session->quarantined != 0U) {
 		mutex_unlock(&controller->mutex);
 		return;
 	}
@@ -934,17 +960,11 @@ venus_command(
 	struct venus_controller *controller;
 	struct venus_session *session;
 	uint8_t *command;
-	unsigned stopping;
 	int error;
 
 	/* The stream format and Vulkan completion protocol remain in userspace. */
 	controller = device;
 	session = private_session;
-
-	/* Common stop excludes active operations before publishing this permanent admission barrier. */
-	stopping = atomic_raw_load_acquire(&session->stopping);
-	if (stopping != 0U)
-		return ENODEV;
 
 	/* Defends transport capacity independently of the checked UAPI caller. */
 	if (bytes == 0U ||
@@ -966,9 +986,7 @@ venus_command(
 	/* Serializes the single request slot while allowing timer interrupts. */
 	mutex_lock(&controller->mutex);
 
-	/* A rejected or uncertain send must never be mistaken for a metadata-only context. */
-	atomic_raw_store_release(&session->native_commands_submitted, 1U);
-
+	/* Sends the context-scoped stream through the serialized control path. */
 	error = venus_control(controller, command, bytes + 32U);
 	if (error != 0) {
 		mutex_unlock(&controller->mutex);
@@ -998,7 +1016,6 @@ venus_command_submit(
 {
 	struct venus_controller *controller;
 	struct venus_session *session;
-	unsigned stopping;
 	int error;
 
 	/* Venus commands are four-byte aligned even though the common stream remains opaque. */
@@ -1009,13 +1026,7 @@ venus_command_submit(
 	controller = device;
 	session = private_session;
 
-	/* Common stop excludes active operations before publishing this permanent admission barrier. */
-	stopping = atomic_raw_load_acquire(&session->stopping);
-	if (stopping != 0U)
-		return ENODEV;
-
-	/* Publish possible native ownership before the opaque stream can reach the renderer. */
-	atomic_raw_store_release(&session->native_commands_submitted, 1U);
+	/* The transport posts the opaque stream under its own queue lock. */
 	error = drv_venus_transport_submit(
 		&controller->transport,
 		session->context,
@@ -1042,17 +1053,13 @@ venus_job_reserve(
 {
 	struct venus_controller *controller;
 	struct venus_session *session;
-	unsigned stopping;
 	int error;
 
 	/* The framework's retained open supplies the immutable context identity. */
 	controller = device;
 	session = private_session;
 
-	/* Common stop excludes active operations before publishing this permanent admission barrier. */
-	stopping = atomic_raw_load_acquire(&session->stopping);
-	if (stopping != 0U)
-		return ENODEV;
+	/* The transport reserves one descriptor pair without waiting. */
 	error = drv_venus_transport_job_reserve(
 		&controller->transport,
 		session->context,
@@ -1099,21 +1106,17 @@ venus_job_cancel(
 	unsigned fault)
 {
 	struct venus_controller *controller;
-	struct venus_session *session;
 	int error;
+
+	(void)private_session;
 
 	/* Cancellation validates the exact reservation before changing callback ownership. */
 	controller = device;
-	session = private_session;
 	error = drv_venus_transport_job_cancel(&controller->transport, reservation, completion, fault);
 	if (error != 0)
 		return error;
 
-	/* Native uncertainty loses this context first; common policy controls stop and escalation. */
-	if (fault != 0U)
-		drv_gpu_report_session_error(controller->gpu, session, EIO);
-
-	/* Succeeded: rollback ended publication authority or fault handling retained uncertain DMA. */
+	/* Succeeded: rollback ended publication authority, or fault handling retained uncertain DMA for the core to publish. */
 	return 0;
 }
 
@@ -1126,16 +1129,12 @@ venus_job_capacity(
 	unsigned *available)
 {
 	struct venus_controller *controller;
-	struct venus_session *session;
-	unsigned stopping;
 	int error;
+
+	(void)private_session;
 
 	/* Immutable context ownership is retained by the common operation. */
 	controller = device;
-	session = private_session;
-	stopping = atomic_raw_load_acquire(&session->stopping);
-	if (stopping != 0U)
-		return ENODEV;
 
 	/* The backend validates queue domains and reserves its own control fraction. */
 	error = drv_venus_transport_capacity(&controller->transport, timeline, available);
@@ -1155,31 +1154,17 @@ venus_stop_begin(
 {
 	struct venus_controller *controller;
 	struct venus_session *session;
-	unsigned submitted;
 	int status;
 
 	/* This callback never takes a sleeping lock or pretends to cancel native GPU execution. */
 	controller = device;
 	(void)error;
 	session = private_session;
+
+	/* The flag only validates later stop polls; the core already refuses new admission. */
 	atomic_raw_store_release(&session->stopping, 1U);
 
-	/* Exact absence of any native stream makes metadata-only close safe even on older hosts. */
-	submitted = atomic_raw_load_acquire(&session->native_commands_submitted);
-	if (submitted == 0U) {
-		/* An unused reservation still owns a callback and requires the normal stop handshake. */
-		status = drv_venus_transport_idle(&controller->transport, session->context);
-		if (status == 0) {
-			session->quiesced = 1U;
-			return 0;
-		}
-
-		/* Only unresolved ownership may proceed to an asynchronous native stop proof. */
-		if (status != EAGAIN)
-			return status;
-	}
-
-	/* Admission closure precedes the host-wide proof of all native work in this context. */
+	/* The core skips contexts that never reached the GPU, so every remaining stop needs the host-wide proof. */
 	status = drv_venus_transport_quiesce(
 		&controller->transport,
 		session->context,
@@ -1244,6 +1229,33 @@ venus_fault(
 
 	/* Succeeded: uncertain device-owned storage remains held for checked reset. */
 	return;
+}
+
+/* Quarantines one context's chains and callbacks while every other context continues. */
+static int
+venus_isolate(
+	void *device,
+	void *private_session)
+{
+	struct venus_controller *controller;
+	struct venus_session *session;
+	int error;
+
+	/* The core retains both wrappers; the transition needs only the transport queue lock. */
+	controller = device;
+	session = private_session;
+
+	/* Every posted or reserved chain of this context stays device-owned until it returns or reset. */
+	error = drv_venus_transport_isolate(&controller->transport, session->context, EIO);
+	if (error != 0)
+		return error;
+
+	/* Later destroy and close callbacks skip host traffic for this context. */
+	session->quarantined = 1U;
+	kern_logf("venus: context=%u quarantined; descriptors and resources retained for reset\n", session->context);
+
+	/* Succeeded: peers keep their descriptors while this context's uncertain work is retained. */
+	return 0;
 }
 
 /* Performs checked backend reset only after the common external-owner gate succeeds. */

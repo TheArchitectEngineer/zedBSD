@@ -26,7 +26,10 @@
 
 #define VENUS_RING_AVAILABLE		1024U
 #define VENUS_RING_USED			1280U
-#define VENUS_WAIT_MILLISECONDS		10000U
+#ifndef CONFIG_GPU_CONTROL_MS
+#define CONFIG_GPU_CONTROL_MS		10000U
+#endif
+#define VENUS_WAIT_MILLISECONDS		CONFIG_GPU_CONTROL_MS
 #define VENUS_WAIT_POLLS		50000000U
 #define VENUS_REQUIRED_FEATURES		0x19U
 #define VENUS_VENDOR_CAPSET_BYTES	168U
@@ -457,10 +460,14 @@ drv_venus_transport_idle(
 		return ENODEV;
 	}
 
-	/* Unpublished reservations may already have native work and cannot prove quiescence. */
+	/* The host-wide quiescence proof precedes this snapshot of posted descriptors and callbacks. */
 	for (index = 0U; index < transport->slot_count; index++) {
 		request = &transport->requests[index];
 		if (request->context != context)
+			continue;
+
+		/* An unpublished reservation holds no native work after quiescence; the core withdraws it through cancel. */
+		if (request->state == VENUS_SLOT_RESERVED)
 			continue;
 
 		/* Both descriptor return and the callback's final access must have completed. */
@@ -551,23 +558,11 @@ drv_venus_transport_quiesce(
 		*pending = NULL;
 		*quiesced = 1U;
 
-		/* Unpublished reservations have no host descriptor; native idle ends their uncertainty. */
-		for (index = 0U; index < transport->slot_count; index++) {
-			request = &transport->requests[index];
-
-			/* Posted descriptors keep their independent device ownership until actual return. */
-			if (request->context == context && request->state == VENUS_SLOT_RESERVED) {
-				request->state = VENUS_SLOT_COMPLETE;
-				request->error = ENODEV;
-			}
-		}
-
 		waitq_wake_all(&transport->queue_waitq);
 
 		spin_unlock_irqrestore(&transport->queue_lock, irq);
 
-		/* Callback retirement and common wakeups never inherit the transport lock. */
-		venus_queue_notify(transport);
+		/* The returned control descriptor is capacity again; the core withdraws unpublished reservations itself. */
 		venus_capacity_changed(transport);
 
 		/* Succeeded: native idle proves even work without a published job marker has ended. */
@@ -1101,6 +1096,59 @@ drv_venus_transport_fail(
 
 	/* Succeeded: user observation is terminal while hardware ownership remains safe. */
 	return;
+}
+
+/*
+ * Quarantines one context's chains and ends their callbacks while the transport continues.
+ */
+int
+drv_venus_transport_isolate(
+	struct venus_transport *transport,
+	uint32_t context,
+	int error)
+{
+	struct venus_request *request;
+	unsigned failed;
+	unsigned index;
+	unsigned long irq;
+
+	/* Context zero is global control, and a quarantine needs a real terminal error. */
+	if (context == 0U || error == 0)
+		return EINVAL;
+
+	/* A failed or stopped transport already quarantined everything; the core escalates instead. */
+	irq = spin_lock_irqsave(&transport->queue_lock);
+
+	failed = atomic_raw_load_acquire(&transport->failed);
+	if (failed != 0U || transport->enabled == 0U) {
+		spin_unlock_irqrestore(&transport->queue_lock, irq);
+		return ENODEV;
+	}
+
+	/* Posted and reserved chains of this context keep their storage until the device returns them or reset. */
+	for (index = 0U; index < transport->slot_count; index++) {
+		request = &transport->requests[index];
+		if (request->context != context)
+			continue;
+
+		/* Free and completed chains owe nothing; only live device ownership is quarantined. */
+		if (request->state != VENUS_SLOT_POSTED && request->state != VENUS_SLOT_RESERVED)
+			continue;
+
+		/* The retained callback publishes the context's terminal error while the slot stays owned. */
+		request->state = VENUS_SLOT_QUARANTINED;
+		request->error = error;
+	}
+
+	waitq_wake_all(&transport->queue_waitq);
+
+	spin_unlock_irqrestore(&transport->queue_lock, irq);
+
+	/* Callback publication runs outside the queue lock, exactly as after a device-wide fault. */
+	venus_queue_notify(transport);
+
+	/* Succeeded: this context owns no live callback while its DMA remains retained. */
+	return 0;
 }
 
 /*
@@ -1897,7 +1945,7 @@ venus_request_post(
 
 	/* Bounds queue-space admission independently from later device execution. */
 	started = clock_milliseconds(NULL);
-	deadline = sched_ticks() + KERN_CLOCK_HZ * 10U;
+	deadline = sched_ticks() + KERN_CLOCK_HZ * VENUS_WAIT_MILLISECONDS / 1000U;
 	irq = spin_lock_irqsave(&transport->queue_lock);
 
 	while (1) {
@@ -2049,7 +2097,7 @@ venus_request_wait(
 	int error;
 
 	/* A finite hardware deadline also bounds synchronous context/resource teardown. */
-	deadline = sched_ticks() + KERN_CLOCK_HZ * 10U;
+	deadline = sched_ticks() + KERN_CLOCK_HZ * VENUS_WAIT_MILLISECONDS / 1000U;
 	last = clock_milliseconds(NULL);
 	stalled = 0U;
 	error = 0;
@@ -2189,8 +2237,27 @@ venus_queue_collect(
 			return UINT_MAX;
 		}
 
-		/* Only a currently posted chain authorizes consumption of its response. */
+		/* A late return from an isolated context ends device ownership of that chain. */
 		request = &transport->requests[head / 2U];
+		if (request->state == VENUS_SLOT_QUARANTINED) {
+			/* A callback still owed publication retires through ordinary completion; otherwise nobody reads the reply. */
+			if (request->completion != NULL) {
+				request->state = VENUS_SLOT_COMPLETE;
+			} else {
+				request->state = VENUS_SLOT_FREE;
+				request->context = 0U;
+				request->supervised = 0U;
+				transport->reclaimed = 1U;
+			}
+
+			/* The device has released the chain either way. */
+			transport->used++;
+			transport->completed_total++;
+			count++;
+			continue;
+		}
+
+		/* Only a currently posted chain authorizes consumption of its response. */
 		if (request->state != VENUS_SLOT_POSTED) {
 			spin_unlock_irqrestore(&transport->queue_lock, irq);
 			return UINT_MAX;
@@ -2205,8 +2272,8 @@ venus_queue_collect(
 		transport->completed_total++;
 		count++;
 
-		/* A refused strict marker cannot prove its accepted native work has stopped. */
-		if (error == EIO || (request->supervised != 0U && error != 0)) {
+		/* A malformed or misattributed reply proves protocol corruption; a defined refusal retires only its own request. */
+		if (error == EIO) {
 			spin_unlock_irqrestore(&transport->queue_lock, irq);
 			return UINT_MAX;
 		}
@@ -2274,6 +2341,16 @@ venus_queue_notify(
 
 		spin_unlock_irqrestore(&transport->queue_lock, irq);
 	}
+
+	/* A chain returned late by an isolated context became free without any callback. */
+	irq = spin_lock_irqsave(&transport->queue_lock);
+
+	if (transport->reclaimed != 0U) {
+		transport->reclaimed = 0U;
+		freed = 1U;
+	}
+
+	spin_unlock_irqrestore(&transport->queue_lock, irq);
 
 	/* Only final callback retirement makes a completed chain available to common waiters. */
 	if (freed != 0U)

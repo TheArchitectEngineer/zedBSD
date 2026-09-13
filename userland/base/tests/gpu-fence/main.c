@@ -83,8 +83,9 @@ static int send_fence(int socket, struct fence_test_context *context, VkFence fe
 static int receive_fence(int socket, struct fence_test_context *context, VkFence fence, VkFenceImportFlags flags);
 static int parent_test(int socket);
 static int child_test(int socket);
-static int exit_producer(int socket, int stop);
-static int exit_consumer(int socket, pid_t stopped_producer);
+static int exit_producer(int socket, int stop, int delayed);
+static int exit_consumer(int socket, pid_t stopped_producer, int delayed, int hang);
+static int consumer_work(struct fence_test_context *context);
 static int test_clock(uint64_t *nanoseconds);
 static int check_result(VkResult actual, VkResult expected, const char *operation);
 
@@ -99,6 +100,8 @@ main(
 	int sockets[2];
 	int producer_exit;
 	int producer_stop;
+	int producer_delayed;
+	int producer_hang;
 	int submit_load;
 	int completion_delay;
 	int context_timeout;
@@ -111,6 +114,8 @@ main(
 	/* Explicit modes select either normal concurrent work or one isolated lifetime regression. */
 	producer_exit = 0;
 	producer_stop = 0;
+	producer_delayed = 0;
+	producer_hang = 0;
 	submit_load = 0;
 	completion_delay = 0;
 	context_timeout = 0;
@@ -124,6 +129,20 @@ main(
 		if (error == 0) {
 			producer_exit = 1;
 			producer_stop = 1;
+		}
+
+		/* An exited producer's committed finite job, delayed by the host, must still complete for its consumer. */
+		error = strcmp(argv[1], "--producer-exit-delayed");
+		if (error == 0) {
+			producer_exit = 1;
+			producer_delayed = 1;
+		}
+
+		/* An exited producer's hung job must fail by deadline and isolate only that context. */
+		error = strcmp(argv[1], "--producer-exit-hang");
+		if (error == 0) {
+			producer_exit = 1;
+			producer_hang = 1;
 		}
 
 		/* This finite workload uses ordinary public API calls across independent processes. */
@@ -181,7 +200,7 @@ main(
 		} else if (submit_load != 0) {
 			status = load_process(sockets[1]);
 		} else if (producer_exit) {
-			status = exit_producer(sockets[1], producer_stop);
+			status = exit_producer(sockets[1], producer_stop, producer_delayed);
 		} else {
 			status = child_test(sockets[1]);
 		}
@@ -202,9 +221,9 @@ main(
 	} else if (producer_exit) {
 		/* The stop scenario requires waitpid proof before observing the still-live shared payload. */
 		if (producer_stop != 0)
-			status = exit_consumer(sockets[0], child);
+			status = exit_consumer(sockets[0], child, 0, 0);
 		else
-			status = exit_consumer(sockets[0], 0);
+			status = exit_consumer(sockets[0], 0, producer_delayed, producer_hang);
 	} else {
 		status = parent_test(sockets[0]);
 	}
@@ -237,8 +256,12 @@ main(
 	/* A fault scenario has its own marker so the host cannot accept ordinary coverage in its place. */
 	if (producer_stop != 0)
 		puts("GPUFENCE PRODUCER_STOP_ERROR PASS");
+	else if (producer_delayed != 0)
+		puts("GPUFENCE PRODUCER_EXIT_DELAYED PASS");
+	else if (producer_hang != 0)
+		puts("GPUFENCE PRODUCER_EXIT_HANG PASS");
 	else if (producer_exit)
-		puts("GPUFENCE PRODUCER_EXIT_ERROR PASS");
+		puts("GPUFENCE PRODUCER_EXIT_REAL_RESULT PASS");
 	else if (submit_load != 0)
 		puts("GPUFENCE SUBMIT_LOAD PASS processes=2 rounds=3 submits=576 verified_bytes=25165824 verified_submits=576");
 
@@ -1930,17 +1953,24 @@ child_test(
 	return 0;
 }
 
-/* Retains accepted GPU work across deterministic producer suspension or isolated exit. */
+/* Sends the shared payload, submits, and leaves with a finite, delayed, or hung job outstanding. */
 static int
 exit_producer(
 	int socket,
-	int stop)
+	int stop,
+	int delayed)
 {
 	struct fence_test_context context;
 	pid_t producer;
+	int gated;
 	int error;
 
-	/* This isolated fault scenario tests owner-session death rather than successful GPU completion. */
+	/* Suspension and delayed completion use valid finite work; only the plain or hung exit retains an unsignaled event. */
+	gated = 0;
+	if (stop != 0 || delayed != 0)
+		gated = 1;
+
+	/* This isolated fault scenario tests owner-session loss rather than a successful GPU completion of its own. */
 	error = context_create(&context);
 	if (error != 0) {
 		test_failure(__LINE__);
@@ -1953,8 +1983,8 @@ exit_producer(
 		return 1;
 	}
 
-	/* Suspension uses valid finite work; only the separate exit fault retains an unsignaled event. */
-	if (stop != 0) {
+	/* Gated scenarios record finite work the host can complete; the others wait on an event nobody sets. */
+	if (gated != 0) {
 		error = create_work(&context, 0);
 	} else {
 		error = create_work(&context, 1);
@@ -1974,7 +2004,7 @@ exit_producer(
 	}
 
 	/* Only the parent can permit submission after the isolated host gate exists. */
-	if (stop != 0) {
+	if (gated != 0) {
 		error = receive_byte(socket, 'G');
 		if (error != 0) {
 			test_failure(__LINE__);
@@ -1982,7 +2012,7 @@ exit_producer(
 		}
 	}
 
-	/* A successful native transaction is independently supervised before userspace stops. */
+	/* A successful native transaction is independently supervised before userspace stops or exits. */
 	error = submit_work(&context);
 	if (error != 0) {
 		test_failure(__LINE__);
@@ -2007,32 +2037,44 @@ exit_producer(
 		}
 	}
 
-	/* The parent resumes a stopped producer only after its independently imported fence is terminal. */
+	/* The parent releases the producer only after it has armed its own observation. */
 	error = receive_byte(socket, 'X');
 	if (error != 0) {
 		test_failure(__LINE__);
 		return 1;
 	}
 
-	/* Succeeded: main retires process references; a stopped producer's job is already driver-terminal. */
+	/* Succeeded: process exit now retires the descriptors; the kernel alone supervises the outstanding job. */
 	return 0;
 }
 
-/* Requires a terminal error after accepted work loses its running userspace producer. */
+/* Observes the imported payload after its producer stops, exits with a finite job, or exits with a hung job. */
 static int
 exit_consumer(
 	int socket,
-	pid_t stopped_producer)
+	pid_t stopped_producer,
+	int delayed,
+	int hang)
 {
 	struct fence_test_context context;
+	struct timespec interval;
 	VkResult status;
+	VkResult expected;
+	const char *label;
 	uint64_t started;
 	uint64_t finished;
+	uint64_t now;
 	uint64_t elapsed;
+	int gated;
 	int saved_error;
 	int process_status;
 	pid_t waited;
 	int error;
+
+	/* The stop and delayed scenarios hand the host exactly one native success to hold. */
+	gated = 0;
+	if (stopped_producer > 0 || delayed != 0)
+		gated = 1;
 
 	/* The receiver's device and descriptor references remain alive through producer death. */
 	error = context_create(&context);
@@ -2047,6 +2089,21 @@ exit_consumer(
 		return 1;
 	}
 
+	/* The consumer's own finite work later proves that its device survived the producer's loss. */
+	if (stopped_producer <= 0) {
+		error = create_work_sized(&context, 0, FENCE_LOAD_BYTES, 1U, 1);
+		if (error != 0) {
+			test_failure(__LINE__);
+			return 1;
+		}
+
+		error = create_fence(&context, VK_FALSE, VK_FALSE, &context.private_fence);
+		if (error != 0) {
+			test_failure(__LINE__);
+			return 1;
+		}
+	}
+
 	error = receive_fence(socket, &context, context.shared, 0);
 	if (error != 0) {
 		test_failure(__LINE__);
@@ -2054,7 +2111,7 @@ exit_consumer(
 	}
 
 	/* Arm the host's one-shot native-success delay before allowing this sole producer to submit. */
-	if (stopped_producer > 0) {
+	if (gated != 0) {
 		error = delay_gate("GPUFENCE DELAY_READY", "armed\n");
 		if (error != 0) {
 			test_failure(__LINE__);
@@ -2076,8 +2133,8 @@ exit_consumer(
 		return 1;
 	}
 
-	/* The host must identify this actual native-success callback before stopped-state acceptance. */
-	if (stopped_producer > 0) {
+	/* The host must identify this actual native-success callback before the producer is released. */
+	if (gated != 0) {
 		error = delay_gate("GPUFENCE DELAY_SUBMITTED", "running\n");
 		if (error != 0) {
 			test_failure(__LINE__);
@@ -2085,7 +2142,7 @@ exit_consumer(
 		}
 	}
 
-	/* The imported generation remains pending while its authoritative callback is held. */
+	/* The imported generation remains pending while its authoritative callback is held or hung. */
 	test_stage = "vkGetFenceStatus";
 	status = vkGetFenceStatus(context.device, context.shared);
 	test_vulkan_result = status;
@@ -2110,7 +2167,7 @@ exit_consumer(
 		puts("GPUFENCE PRODUCER_STOPPED pending=1 fd_live=1");
 		fflush(stdout);
 	} else {
-		/* The original exit scenario still ends the producer before checking terminal error. */
+		/* Every exit scenario ends the producer process before observing the terminal state. */
 		error = send_byte(socket, 'X');
 		if (error != 0) {
 			test_failure(__LINE__);
@@ -2139,19 +2196,65 @@ exit_consumer(
 		return 1;
 	}
 
+	/* Each scenario publishes its own label so the host verifier cannot confuse them. */
+	label = "EXIT";
+	if (stopped_producer > 0)
+		label = "STOP";
+	if (delayed != 0)
+		label = "EXIT_DELAYED";
+	if (hang != 0)
+		label = "EXIT_HANG";
+
 	elapsed = (finished - started) / UINT64_C(1000000);
 	printf(
 		"GPUFENCE PRODUCER_%s_WAIT result=%d elapsed_ms=%llu budget_ms=120000\n",
-		stopped_producer > 0 ? "STOP" : "EXIT",
+		label,
 		status,
 		(unsigned long long)elapsed);
 	fflush(stdout);
 	errno = saved_error;
 	test_stage = "vkWaitForFences";
-	error = check_result(status, VK_ERROR_DEVICE_LOST, "producer lifetime fault is error, never fabricated success");
+
+	/*
+	 * A committed job outlives its producer and publishes its real result: the
+	 * delayed finite job succeeds, the hung job fails at the execution deadline,
+	 * and the stopped producer's job fails at that same deadline. A plain exit
+	 * with an event nobody sets ends however the host actually ends it, success
+	 * or deadline loss, but never as an error fabricated at producer close.
+	 */
+	expected = VK_ERROR_DEVICE_LOST;
+	if (delayed != 0)
+		expected = VK_SUCCESS;
+	if (stopped_producer <= 0 && delayed == 0 && hang == 0 && status == VK_SUCCESS)
+		expected = VK_SUCCESS;
+	error = check_result(status, expected, "producer lifetime outcome is the job's real result, never fabricated");
 	if (error != 0) {
 		test_failure(__LINE__);
 		return 1;
+	}
+
+	/* A plain exit can only end through the host's own completion or the sixty-second deadline. */
+	if (stopped_producer <= 0 && delayed == 0 && hang == 0) {
+		if (elapsed < 1000U || elapsed > 75000U) {
+			test_failure(__LINE__);
+			return 1;
+		}
+	}
+
+	/* The delayed success must arrive with the host's fifteen-second notification, not immediately at exit. */
+	if (delayed != 0) {
+		if (elapsed < 14000U || elapsed > 30000U) {
+			test_failure(__LINE__);
+			return 1;
+		}
+	}
+
+	/* The hung job must fail by the isolated eight-second execution deadline, not by producer exit. */
+	if (hang != 0) {
+		if (elapsed < 7000U || elapsed > 13000U) {
+			test_failure(__LINE__);
+			return 1;
+		}
 	}
 
 	/* A live stopped producer must be supervised by the common execution deadline, independently from U. */
@@ -2184,7 +2287,96 @@ exit_consumer(
 		}
 	}
 
+	/* The ten-second stop interval must also elapse before peer survival says anything about isolation. */
+	if (hang != 0) {
+		interval.tv_sec = 0;
+		interval.tv_nsec = 100000000L;
+		for (;;) {
+			error = test_clock(&now);
+			if (error != 0) {
+				test_failure(__LINE__);
+				return 1;
+			}
+
+			/* Twenty-two seconds covers the eight-second deadline plus the ten-second stop interval. */
+			if (now - started >= UINT64_C(22000000000))
+				break;
+
+			error = nanosleep(&interval, NULL);
+			if (error != 0) {
+				test_failure(__LINE__);
+				return 1;
+			}
+		}
+	}
+
+	/* The consumer's own device must still execute real work after the producer's loss. */
+	if (stopped_producer <= 0) {
+		error = consumer_work(&context);
+		if (error != 0) {
+			test_failure(__LINE__);
+			return 1;
+		}
+
+		error = test_clock(&now);
+		if (error != 0) {
+			test_failure(__LINE__);
+			return 1;
+		}
+
+		/* The marker names which property was proven: continuation or survival of isolation. */
+		if (hang != 0) {
+			printf("GPUFENCE ISOLATION_PEER_OK elapsed_ms=%llu verified_bytes=%u\n", (unsigned long long)((now - started) / UINT64_C(1000000)), FENCE_LOAD_BYTES);
+		} else {
+			printf("GPUFENCE PEER_CONTINUES elapsed_ms=%llu verified_bytes=%u\n", (unsigned long long)((now - started) / UINT64_C(1000000)), FENCE_LOAD_BYTES);
+		}
+		fflush(stdout);
+	}
+
 	/* This deliberate lost-context case ends by process exit; its VM is discarded after evidence. */
+	return 0;
+}
+
+/* Executes and verifies one finite transfer on the consumer's own device with its private fence. */
+static int
+consumer_work(
+	struct fence_test_context *context)
+{
+	VkSubmitInfo submit;
+	VkResult status;
+	int error;
+
+	/* A previous pattern cannot satisfy this round's result check. */
+	error = load_clear(context);
+	if (error != 0)
+		return error;
+
+	/* The private fence belongs to this device alone and never to the producer's shared payload. */
+	memset(&submit, 0, sizeof(submit));
+	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submit.commandBufferCount = 1;
+	submit.pCommandBuffers = &context->command;
+	test_stage = "consumer vkQueueSubmit";
+	status = vkQueueSubmit(context->queue, 1, &submit, context->private_fence);
+	test_vulkan_result = status;
+	error = check_result(status, VK_SUCCESS, "independent consumer submit after producer loss");
+	if (error != 0)
+		return error;
+
+	/* Completion is tied to the real native queue and its authoritative callback. */
+	test_stage = "consumer vkWaitForFences";
+	status = vkWaitForFences(context->device, 1U, &context->private_fence, VK_TRUE, FENCE_TEST_WAIT);
+	test_vulkan_result = status;
+	error = check_result(status, VK_SUCCESS, "independent consumer completion after producer loss");
+	if (error != 0)
+		return error;
+
+	/* Verify the actual transfer result after the successful completion. */
+	error = load_verify(context);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the consumer's device executed and completed real work. */
 	return 0;
 }
 

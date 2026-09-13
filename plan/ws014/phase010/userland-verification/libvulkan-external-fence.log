@@ -1,0 +1,2 @@
+libvulkan external fence: references, aliases, temporary restore, actual native signal, lazy reset, bind/native failure rollback, native DEVICE_LOST error signal PASS
+libvulkan external fence: references, aliases, temporary restore, actual native signal, lazy reset, bind/native failure rollback, native DEVICE_LOST error signal PASS

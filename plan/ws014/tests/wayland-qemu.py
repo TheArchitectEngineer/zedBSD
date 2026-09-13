@@ -203,9 +203,13 @@ def exercise_fault_steps(args, qmp, output, debug, vnc_path, process, report, pa
         'recovery': ('/bin/gpu-recovery-test --isolated',
                      'GPURECOVERY PASS timeout=1 peer_failed=1 retirement_gate=1 fresh_roundtrip=4096 decoder=1'),
         'producer-exit': ('/bin/gpu-fence-test --producer-exit',
-                          'GPUFENCE PRODUCER_EXIT_ERROR PASS'),
+                          'GPUFENCE PRODUCER_EXIT_REAL_RESULT PASS'),
         'producer-stop': ('/bin/gpu-fence-test --producer-stop',
                           'GPUFENCE PRODUCER_STOP_ERROR PASS'),
+        'producer-exit-delayed': ('/bin/gpu-fence-test --producer-exit-delayed',
+                                  'GPUFENCE PRODUCER_EXIT_DELAYED PASS'),
+        'producer-exit-hang': ('/bin/gpu-fence-test --producer-exit-hang',
+                               'GPUFENCE PRODUCER_EXIT_HANG PASS'),
     }[args.fault_test]
     report.update(token=args.token, fault_test=args.fault_test, commands=[command],
                   guest_completed=False)
@@ -219,7 +223,7 @@ def exercise_fault_steps(args, qmp, output, debug, vnc_path, process, report, pa
     resumed = False
     gate_armed = False
     peer_started = False
-    delayed = args.fault_test in ('completion-delay', 'context-timeout', 'producer-stop')
+    delayed = args.fault_test in ('completion-delay', 'context-timeout', 'producer-stop', 'producer-exit-delayed')
     while time.monotonic() < deadline:
         if process.poll() is not None:
             raise RuntimeError('QEMU exited during the isolated fault test')
@@ -285,6 +289,20 @@ def exercise_fault_steps(args, qmp, output, debug, vnc_path, process, report, pa
                     raise RuntimeError('producer stop acceptance lacks finite DEVICE_LOST watchdog result')
                 report['watchdog_elapsed_ms'] = int(measured[2])
                 report['producer_stopped'] = True
+            if args.fault_test == 'producer-exit':
+                measured = re.search(r'GPUFENCE PRODUCER_EXIT_WAIT result=(-?\d+) elapsed_ms=(\d+)', observed)
+                if measured is None or int(measured[1]) not in (0, -4) or 'GPUFENCE PEER_CONTINUES' not in observed:
+                    raise RuntimeError('producer exit lacks the real job result and consumer continuation')
+                report['producer_exit'] = dict(result=int(measured[1]), elapsed_ms=int(measured[2]))
+            if args.fault_test == 'producer-exit-hang':
+                measured = re.search(r'GPUFENCE PRODUCER_EXIT_HANG_WAIT result=(-?\d+) elapsed_ms=(\d+)', observed)
+                if measured is None or int(measured[1]) != -4 or not 7000 <= int(measured[2]) <= 13000:
+                    raise RuntimeError('producer exit hang lacks the configured execution-deadline DEVICE_LOST')
+                if 'GPUFENCE ISOLATION_PEER_OK' not in observed or 'quarantined' not in observed:
+                    raise RuntimeError('producer exit hang lacks peer continuation after per-context isolation')
+                report['watchdog_elapsed_ms'] = int(measured[2])
+                report['isolation_peer'] = True
+                report['reclaim'] = exercise_reclaim(args, qmp, output, debug, process)
             if args.fault_test == 'recovery':
                 if not stopped or not resumed:
                     raise RuntimeError('recovery acceptance lacks the controlled renderer pause/resume')
@@ -297,6 +315,26 @@ def exercise_fault_steps(args, qmp, output, debug, vnc_path, process, report, pa
             return
         time.sleep(0.05)
     raise TimeoutError('isolated fault test completion and shell return')
+
+
+def exercise_reclaim(args, qmp, output, debug, process):
+    """Run the ordinary fence test after isolation; its fresh open must reclaim through checked reset."""
+    earlier = (common.guest_text(debug, 0) + common.console_text(qmp, output, args)).count('GPUFENCE PASS')
+    qmp.text('/bin/gpu-fence-test\n')
+    deadline = time.monotonic() + 90
+    observed = ''
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            return dict(status='fail', reason='QEMU exited during the reclaim run')
+        observed = common.guest_text(debug, 0) + common.console_text(qmp, output, args)
+        (output / 'wayland-reclaim.log').write_text(observed)
+        if observed.count('GPUFENCE PASS') > earlier and re.search(r'GPUFENCE PASS[\r\n]+[\s\S]*root@[^\r\n]*\$ ', observed):
+            return dict(status='pass', checked_reset='recovered after all prior sessions' in observed)
+        if re.search(r'GPUFENCE FAIL|kernel panic|amd64 fault v=', observed):
+            return dict(status='fail', reason='ordinary fence test failed after isolation',
+                        checked_reset='recovered after all prior sessions' in observed)
+        time.sleep(0.05)
+    return dict(status='fail', reason='ordinary fence test did not finish after isolation')
 
 
 def verify_completion_delay(observed, renderer_text, mode):
@@ -316,6 +354,16 @@ def verify_completion_delay(observed, renderer_text, mode):
         return dict(pid=int(acquired[0][0]), context=int(acquired[0][1]), fence=int(acquired[0][2]),
                     native_result='SUCCESS', notification_delay_ms=int(released[0][3]),
                     producer_result=result, producer_elapsed_ms=elapsed, producer_stopped=True)
+    if mode == 'producer-exit-delayed':
+        observations = set(re.findall(r'GPUFENCE PRODUCER_EXIT_DELAYED_WAIT result=(-?\d+) elapsed_ms=(\d+)', observed))
+        if len(observations) != 1 or 'GPUFENCE PEER_CONTINUES' not in observed:
+            raise RuntimeError('delayed producer-exit lacks one consumer wait result and consumer continuation')
+        result, elapsed = map(int, next(iter(observations)))
+        if result != 0 or not 14000 <= elapsed <= 30000:
+            raise RuntimeError('committed job of an exited producer did not signal success with the delayed completion')
+        return dict(pid=int(acquired[0][0]), context=int(acquired[0][1]), fence=int(acquired[0][2]),
+                    native_result='SUCCESS', notification_delay_ms=int(released[0][3]),
+                    consumer_result=result, consumer_elapsed_ms=elapsed, producer_exited=True)
     results = set(re.findall(r'GPUFENCE DELAY_RESULT result=(-?\d+) expected=(-?\d+) elapsed_ms=(\d+)', observed))
     peers = set(re.findall(r'GPUFENCE DELAY_PEER_PASS completed=(\d+) elapsed_ms=(\d+) after_close=1 verified_bytes=(\d+)', observed))
     if len(results) != 1 or len(peers) != 1:
@@ -582,7 +630,7 @@ def main():
     parser.add_argument('--token', required=True)
     parser.add_argument('--timeout', type=int, default=180)
     parser.add_argument('--lifecycle', action='store_true')
-    parser.add_argument('--fault-test', choices=['recovery', 'producer-exit', 'producer-stop', 'submit-load', 'completion-delay', 'context-timeout'])
+    parser.add_argument('--fault-test', choices=['recovery', 'producer-exit', 'producer-stop', 'submit-load', 'completion-delay', 'context-timeout', 'producer-exit-delayed', 'producer-exit-hang'])
     parser.add_argument('--console-address', type=lambda value: int(value, 0), required=True)
     parser.add_argument('--console-size', type=int, default=32768)
     parser.add_argument('--qemu', default='qemu-system-x86_64')
