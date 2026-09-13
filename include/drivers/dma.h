@@ -7,10 +7,6 @@
 
 /*
  * Generic device DMA mapping interface
- *
- * This interface was designed with reference to the DMA mapping APIs of
- * Linux, FreeBSD, NetBSD, and OpenBSD.  It is an independent zedBSD
- * interface; no source code from those kernels is included in this file.
  */
 
 #ifndef KERN_DRIVERS_DMA_H

@@ -1,6 +1,12 @@
 /*
- * zedBSD disk-label driver schemes.
- * Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * disk-label driver schemes.
  */
 
 #ifndef KERN_DRIVERS_DISKLABEL_H

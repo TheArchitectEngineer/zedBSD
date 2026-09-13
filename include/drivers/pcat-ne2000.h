@@ -8,6 +8,7 @@
 /*
  * PC/AT ISA NE2000 Ethernet driver
  */
+
 #ifndef KERN_DRIVERS_PCAT_NE2000_H
 #define KERN_DRIVERS_PCAT_NE2000_H
 

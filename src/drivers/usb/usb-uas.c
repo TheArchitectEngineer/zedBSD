@@ -1,7 +1,12 @@
 /*
- * USB Attached SCSI descriptor and high-speed command protocol.
+ * zedBSD
  * Copyright (C) 2026 Awe Morris
+ *
  * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * USB Attached SCSI descriptor and high-speed command protocol.
  */
 
 #include <drivers/usb-uas.h>
@@ -16,14 +21,21 @@ struct uas_endpoint_description {
 };
 
 static unsigned uas_le16(const uint8_t *bytes);
-static int uas_decode_alternate(const uint8_t *bytes, size_t length,
-    enum drv_usb_uas_profile profile, struct drv_usb_uas_capabilities *result);
+static int uas_decode_alternate(const uint8_t *bytes, size_t length, enum drv_usb_uas_profile profile, struct drv_usb_uas_capabilities *result);
 
-/* Encode the fixed Command IU without depending on host packing/endian order. */
+/*
+ * Encode the fixed Command IU without depending on host packing/endian order.
+ */
 int
-drv_usb_uas_command_begin(struct drv_usb_uas_command *command,
-    uint16_t tag, unsigned lun, const void *cdb, size_t cdb_length,
-    enum drv_usb_uas_direction direction, size_t expected, uint8_t wire[32])
+drv_usb_uas_command_begin(
+	struct drv_usb_uas_command *command,
+	uint16_t tag,
+	unsigned lun,
+	const void *cdb,
+	size_t cdb_length,
+	enum drv_usb_uas_direction direction,
+	size_t expected,
+	uint8_t wire[32])
 {
 	if (command == NULL || wire == NULL || cdb == NULL)
 		return EINVAL;

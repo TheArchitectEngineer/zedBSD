@@ -1,7 +1,14 @@
 /*
- * USB Attached SCSI disk class, independent of Bulk-Only Transport.
- * Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
  */
+
+/*
+ * USB Attached SCSI disk class, independent of Bulk-Only Transport.
+ */
+
 #include <drivers/usb.h>
 #include <drivers/usb-uas.h>
 #include <drivers/usb-storage-scsi.h>

@@ -1,7 +1,12 @@
 /*
- * PCI NVMe controller driver
+ * zedBSD
  * Copyright (C) 2026 Awe Morris
+ *
  * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * NVMe controller driver
  */
 
 #ifndef KERN_DRIVERS_PCI_NVME_H

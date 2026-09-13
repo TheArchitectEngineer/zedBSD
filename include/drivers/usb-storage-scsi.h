@@ -1,8 +1,14 @@
 /*
- * USB storage SCSI response helpers
+ * zedBSD
  * Copyright (C) 2026 Awe Morris
+ *
  * SPDX-License-Identifier: Zlib
  */
+
+/*
+ * USB storage SCSI response helpers
+ */
+
 #ifndef KERN_DRIVERS_USB_STORAGE_SCSI_H
 #define KERN_DRIVERS_USB_STORAGE_SCSI_H
 
@@ -26,9 +32,11 @@ enum drv_usb_scsi_recovery {
 	DRV_USB_SCSI_RECOVERY_FAILED
 };
 
-/* Classifies current attention; the command owner separately authorizes retry.
+/*
+ * Classifies current attention; the command owner separately authorizes retry.
  * ASC/ASCQ assignments: https://www.t10.org/lists/asc-num.txt
- * Deferred sense never authorizes resetting/reconfiguring the current command. */
+ * Deferred sense never authorizes resetting/reconfiguring the current command.
+ */
 static __inline enum drv_usb_scsi_recovery
 drv_usb_scsi_recovery_action(
 	const struct drv_usb_scsi_sense *sense)

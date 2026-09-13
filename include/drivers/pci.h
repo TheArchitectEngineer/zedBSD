@@ -9,8 +9,7 @@
  * Generic PCI bus and built-in driver interface
  *
  * This interface was designed with reference to the PCI driver APIs of
- * Linux, FreeBSD, NetBSD, and OpenBSD.  It is an independent zedBSD
- * interface; no source code from those kernels is included in this file.
+ * Linux, FreeBSD, NetBSD, and OpenBSD.
  */
 
 #ifndef KERN_DRIVERS_PCI_H
@@ -22,7 +21,7 @@
 
 #include <drivers/dma.h>
 
-#define DRV_PCI_ANY_ID	((uint16_t)0xffffU)
+#define DRV_PCI_ANY_ID		((uint16_t)0xffffU)
 
 #define DRV_PCI_MAP_READ	(1U << 0)
 #define DRV_PCI_MAP_WRITE	(1U << 1)

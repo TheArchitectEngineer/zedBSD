@@ -1,8 +1,14 @@
 /*
- * PCI xHCI control-transfer and enumeration arithmetic
+ * zedBSD
  * Copyright (C) 2026 Awe Morris
+ *
  * SPDX-License-Identifier: Zlib
  */
+
+/*
+ * PCI xHCI control-transfer and enumeration arithmetic
+ */
+
 #ifndef KERN_DRIVERS_PCI_XHCI_CONTROL_H
 #define KERN_DRIVERS_PCI_XHCI_CONTROL_H
 

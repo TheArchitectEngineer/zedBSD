@@ -14,6 +14,7 @@
 #ifndef DRIVERS_VENUS_H
 #define DRIVERS_VENUS_H
 
-int drv_venus_pci_driver_register(void);
+int
+drv_venus_pci_driver_register(void);
 
 #endif

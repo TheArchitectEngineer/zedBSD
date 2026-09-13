@@ -21,24 +21,24 @@ struct zed_locale_record {
 
 static struct zed_locale_record c_locale = {"C", 0};
 static struct zed_locale_record utf8_locale = {"C.UTF-8", 1};
+
 static const int key_categories[KERN_LOCALE_KEY_COUNT] = {
     [KERN_LOCALE_KEY_INVALID] = -1,
-#define KERN_LOCALE_CATEGORY(name, category, keyword, c_value, utf8_value)   \
-	[KERN_LOCALE_KEY_##name] = category,
+#define KERN_LOCALE_CATEGORY(name, category, keyword, c_value, utf8_value)	[KERN_LOCALE_KEY_##name] = category,
     KERN_LOCALE_KEYS(KERN_LOCALE_CATEGORY)
 #undef KERN_LOCALE_CATEGORY
 };
+
 static const char *const c_values[KERN_LOCALE_KEY_COUNT] = {
     [KERN_LOCALE_KEY_INVALID] = "",
-#define KERN_LOCALE_C_VALUE(name, category, keyword, c_value, utf8_value)    \
-	[KERN_LOCALE_KEY_##name] = c_value,
+#define KERN_LOCALE_C_VALUE(name, category, keyword, c_value, utf8_value)	[KERN_LOCALE_KEY_##name] = c_value,
     KERN_LOCALE_KEYS(KERN_LOCALE_C_VALUE)
 #undef KERN_LOCALE_C_VALUE
 };
+
 static const char *const utf8_values[KERN_LOCALE_KEY_COUNT] = {
     [KERN_LOCALE_KEY_INVALID] = "",
-#define KERN_LOCALE_UTF8_VALUE(name, category, keyword, c_value, utf8_value) \
-	[KERN_LOCALE_KEY_##name] = utf8_value,
+#define KERN_LOCALE_UTF8_VALUE(name, category, keyword, c_value, utf8_value)	[KERN_LOCALE_KEY_##name] = utf8_value,
     KERN_LOCALE_KEYS(KERN_LOCALE_UTF8_VALUE)
 #undef KERN_LOCALE_UTF8_VALUE
 };

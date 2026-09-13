@@ -13,6 +13,7 @@
 
 int
 drv_pci_uhci_driver_register(void);
+
 void
 drv_pci_uhci_probe_roots(void);
 

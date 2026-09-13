@@ -1,8 +1,14 @@
 /*
- * PCI xHCI capability arithmetic
+ * zedBSD
  * Copyright (C) 2026 Awe Morris
+ *
  * SPDX-License-Identifier: Zlib
  */
+
+/*
+ * PCI xHCI capability arithmetic
+ */
+
 #ifndef KERN_DRIVERS_PCI_XHCI_CAPABILITY_H
 #define KERN_DRIVERS_PCI_XHCI_CAPABILITY_H
 

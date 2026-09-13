@@ -1,9 +1,12 @@
-/* -*- mode: c; c-basic-offset: 8; indent-tabs-mode: t; tab-width: 8 -*- */
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
 
 /*
- * zedBSD Intel AX211 PCI driver
- * Copyright (C) 2026 Awe Morris
- * SPDX-License-Identifier: Zlib
+ * Intel AX211 PCI driver
  */
 
 #ifndef KERN_DRIVERS_PCI_INTEL_AX211_H

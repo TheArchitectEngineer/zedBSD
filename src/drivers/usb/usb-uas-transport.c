@@ -1,24 +1,30 @@
 /*
- * USB Attached SCSI serialized command and endpoint owner.
- * Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
  */
+
+/*
+ * USB Attached SCSI serialized command and endpoint owner.
+ */
+
 #include <drivers/usb.h>
 #include <drivers/usb-uas.h>
 #include <kern/sched.h>
 #include <errno.h>
 #include <string.h>
 
-static int uas_stream_submit(struct drv_usb_uas_transport *, unsigned, unsigned,
-    void *, size_t);
-static int uas_super_transfer(struct drv_usb_uas_transport *, struct drv_usb_uas_command *,
-    uint8_t *, void *, size_t);
-static int uas_transfer(struct drv_usb_uas_transport *transport, unsigned pipe,
-    void *buffer, size_t length, size_t *actual);
+static int uas_stream_submit(struct drv_usb_uas_transport *, unsigned, unsigned, void *, size_t);
+static int uas_super_transfer(struct drv_usb_uas_transport *, struct drv_usb_uas_command *, uint8_t *, void *, size_t);
+static int uas_transfer(struct drv_usb_uas_transport *transport, unsigned pipe, void *buffer, size_t length, size_t *actual);
 
 int
-drv_usb_uas_transport_init(struct drv_usb_uas_transport *transport,
-    struct drv_usb_device *device, struct drv_usb_endpoint *pipes[4],
-    size_t capacity)
+drv_usb_uas_transport_init(
+	struct drv_usb_uas_transport *transport,
+	struct drv_usb_device *device,
+	struct drv_usb_endpoint *pipes[4],
+	size_t capacity)
 {
 	const struct drv_usb_endpoint_descriptor *descriptor;
 	unsigned i;
@@ -101,10 +107,16 @@ fail:
 }
 
 int
-drv_usb_uas_transport_execute(struct drv_usb_uas_transport *transport,
-    unsigned lun, const void *cdb, size_t cdb_length,
-    enum drv_usb_uas_direction direction, void *buffer, size_t length,
-    unsigned timeout_ms, struct drv_usb_uas_result *result)
+drv_usb_uas_transport_execute(
+	struct drv_usb_uas_transport *transport,
+	unsigned lun,
+	const void *cdb,
+	size_t cdb_length,
+	enum drv_usb_uas_direction direction,
+	void *buffer,
+	size_t length,
+	unsigned timeout_ms,
+	struct drv_usb_uas_result *result)
 {
 	struct drv_usb_uas_command command;
 	uint8_t wire[32];

@@ -7,7 +7,7 @@
 
 /*
  * Resettable completion payloads retained by descriptors and pending kernel work.
- * The producer owns authority to signal a bound generation; consumers retain and
+ * The producer owns authority to signal a bound generation, consumers retain and
  * observe that same payload without acquiring the producer's GPU session.
  */
 

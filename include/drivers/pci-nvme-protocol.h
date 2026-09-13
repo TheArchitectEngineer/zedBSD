@@ -1,8 +1,14 @@
 /*
- * PCI NVMe register, queue, and Identify arithmetic
+ * zedBSD
  * Copyright (C) 2026 Awe Morris
+ *
  * SPDX-License-Identifier: Zlib
  */
+
+/*
+ * NVMe register, queue, and Identify arithmetic
+ */
+
 #ifndef KERN_DRIVERS_PCI_NVME_PROTOCOL_H
 #define KERN_DRIVERS_PCI_NVME_PROTOCOL_H
 

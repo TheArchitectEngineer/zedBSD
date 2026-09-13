@@ -1,8 +1,14 @@
 /*
- * USB Mass Storage Bulk-Only Transport response helpers
+ * zedBSD
  * Copyright (C) 2026 Awe Morris
+ *
  * SPDX-License-Identifier: Zlib
  */
+
+/*
+ * USB Mass Storage Bulk-Only Transport response helpers
+ */
+
 #ifndef KERN_DRIVERS_USB_STORAGE_BOT_H
 #define KERN_DRIVERS_USB_STORAGE_BOT_H
 
