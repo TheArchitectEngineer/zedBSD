@@ -799,10 +799,11 @@ test_vendor_capset(
 	void)
 {
 	struct vulkan_context context;
-	uint32_t lengths[9];
-	uint32_t magics[9];
-	uint32_t flags[9];
+	uint32_t lengths[13];
+	uint32_t magics[13];
+	uint32_t flags[13];
 	uint32_t expected;
+	VkBool32 expected_strict;
 	unsigned index;
 	VkResult status;
 
@@ -816,9 +817,13 @@ test_vendor_capset(
 	lengths[6] = 168;
 	lengths[7] = 172;
 	lengths[8] = 168;
+	lengths[9] = 168;
+	lengths[10] = 168;
+	lengths[11] = 168;
+	lengths[12] = 168;
 
 	/* Assigns the independent protocol magic and exact supported feature bit. */
-	for (index = 0; index < 9; index++) {
+	for (index = 0; index < 13; index++) {
 		magics[index] = 0x5a424453U;
 		flags[index] = 1;
 	}
@@ -828,20 +833,32 @@ test_vendor_capset(
 	flags[4] = 0;
 	flags[5] = 2;
 	flags[6] = 3;
+	flags[9] = 7;
+	flags[10] = 5;
+	flags[11] = 15;
+	flags[12] = 4;
 
 	/* Each open independently chooses a profile from its actual returned capset extent. */
-	for (index = 0; index < 9; index++) {
+	for (index = 0; index < 13; index++) {
 		advertised_bytes = lengths[index];
 		advertised_magic = magics[index];
 		advertised_flags = flags[index];
 		status = vulkan_context_open(&context, "/dev/gpu-test");
 		assert(status == VK_SUCCESS);
 		expected = 0x200U;
-		if (index == 6 || index == 8)
+		if (index == 6 || index == 8 || index == 9)
 			expected = 1U;
 
 		assert(context.external_memory_type == expected);
-		assert(context.strict_queue == (index == 6));
+		/* QUIESCE augments strict completion without making incomplete or unknown flag sets valid. */
+		expected_strict = VK_FALSE;
+		if (index == 6 || index == 9)
+			expected_strict = VK_TRUE;
+
+		assert(context.strict_queue == expected_strict);
+
+		/* Older known OPAQUE/STRICT layouts remain recognizable without becoming usable for native creation. */
+		assert(context.native_quiescence == (index == 9 ? VK_TRUE : VK_FALSE));
 		test_external_types(&context, expected);
 		status = vulkan_context_close(&context);
 		assert(status == VK_SUCCESS);

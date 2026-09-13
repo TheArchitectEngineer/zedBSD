@@ -239,3 +239,35 @@ typedef char gpu_job_action_size_check[sizeof(struct gpu_job_action) == 24 ? 1 :
 typedef char gpu_job_reserve_command_check[GPU_JOB_RESERVE == 0xc0284722UL ? 1 : -1];
 typedef char gpu_job_commit_command_check[GPU_JOB_COMMIT == 0x80184723UL ? 1 : -1];
 typedef char gpu_job_cancel_command_check[GPU_JOB_CANCEL == 0x80184724UL ? 1 : -1];
+
+/* Capacity query and wait share a pointer-free 48-byte request on both process ABIs. */
+typedef char gpu_capacity_size_check[sizeof(struct gpu_job_capacity) == 48 ? 1 : -1];
+
+/* Backend domain remains a fixed 32-bit selector before the time interval. */
+typedef char gpu_capacity_domain_check[offsetof(struct gpu_job_capacity, domain) == 12 ? 1 : -1];
+
+/* Timeouts remain nanoseconds with identical alignment for 32-bit callers. */
+typedef char gpu_capacity_timeout_check[offsetof(struct gpu_job_capacity, timeout_ns) == 16 ? 1 : -1];
+
+/* The observed generation precedes the returned snapshot without pointer padding. */
+typedef char gpu_capacity_observed_check[offsetof(struct gpu_job_capacity, observed_sequence) == 24 ? 1 : -1];
+
+/* The returned generation preserves its full identity on both process word sizes. */
+typedef char gpu_capacity_sequence_check[offsetof(struct gpu_job_capacity, sequence) == 32 ? 1 : -1];
+
+/* Availability is an advisory 32-bit result rather than a consumed credit. */
+typedef char gpu_capacity_available_check[offsetof(struct gpu_job_capacity, available) == 40 ? 1 : -1];
+
+/* Capacity command thirty-seven carries the complete versioned request. */
+typedef char gpu_capacity_command_check[GPU_JOB_CAPACITY == 0xc0304725UL ? 1 : -1];
+
+/* Policy query has a fixed 40-byte body independent from kernel pointer size. */
+typedef char gpu_policy_size_check[sizeof(struct gpu_job_policy) == 40 ? 1 : -1];
+
+/* Reservation, execution and stop each retain a complete 64-bit interval. */
+typedef char gpu_policy_reservation_check[offsetof(struct gpu_job_policy, reservation_timeout_ns) == 8 ? 1 : -1];
+typedef char gpu_policy_execution_check[offsetof(struct gpu_job_policy, execution_timeout_ns) == 16 ? 1 : -1];
+typedef char gpu_policy_stop_check[offsetof(struct gpu_job_policy, stop_timeout_ns) == 24 ? 1 : -1];
+
+/* Policy command thirty-eight cannot alias the capacity operation or an earlier ioctl. */
+typedef char gpu_policy_command_check[GPU_JOB_POLICY == 0xc0284726UL ? 1 : -1];

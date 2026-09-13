@@ -32,5 +32,5 @@ ${CC:-cc} $flags -I"$work/include" -I"$repo/include" \
     -I"$repo/userland/base/libvulkan" \
     "$repo/plan/ws030/tests/wsi-native.c" \
     "$repo/userland/base/libvulkan/objects.c" \
-    "$repo/userland/base/libvulkan/wsi-display.c" -o "$work/wsi-native"
+    "$repo/userland/base/libvulkan/wsi-display.c" -Wl,--wrap=poll -o "$work/wsi-native"
 timeout 30 "$work/wsi-native"

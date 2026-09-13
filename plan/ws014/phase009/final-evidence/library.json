@@ -1,0 +1,6 @@
+{
+  "status": "PASS",
+  "public_api_exports": 170,
+  "soname": "libvulkan.so",
+  "sha256": "1a277b6b9565bce22607d021948d3353a7a2fcfb7a0040c5609ed014973abe08"
+}

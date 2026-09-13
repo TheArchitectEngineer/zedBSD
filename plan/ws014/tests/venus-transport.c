@@ -86,7 +86,7 @@ static uint32_t fixture_vendor_flags;
 /* Counts allocations to prove that committing retained jobs cannot allocate new storage. */
 static unsigned fixture_calloc_calls;
 
-/* Ends one directly invoked watchdog after its finite reserved-job failure has been published. */
+/* Ends one directly invoked worker after either a control fault or a healthy idle snapshot. */
 static unsigned fixture_watchdog_stop;
 
 /* Models only references owned by transport publication and fault snapshots. */
@@ -95,6 +95,12 @@ static unsigned fixture_gpu_references;
 /* Withdraws publication during the unlocked fault callback to exercise its retained snapshot. */
 static unsigned fixture_withdraw_report;
 
+/* Counts real-capacity publication after backend storage retirement. */
+static unsigned fixture_capacity_wakes;
+static unsigned fixture_capacity_available;
+static unsigned fixture_callback_idle_context;
+
+static void fixture_quiesce_proposal(void);
 static void fixture_prepare(struct venus_transport *transport);
 static void fixture_capability(unsigned offset, unsigned next, unsigned length, unsigned type, unsigned bar, uint32_t start, uint32_t bytes);
 static void fixture_complete(void);
@@ -632,6 +638,7 @@ int
 main(void)
 {
 	/* Strict completion requires the exact paired profile rather than a guessed suffix. */
+	fixture_quiesce_proposal();
 	fixture_strict_capability();
 	fixture_jobs();
 	fixture_job_failures();
@@ -691,6 +698,9 @@ fixture_prepare(
 	fixture_calloc_calls = 0U;
 	fixture_watchdog_stop = 0U;
 	fixture_withdraw_report = 0U;
+	fixture_capacity_wakes = 0U;
+	fixture_capacity_available = 0U;
+	fixture_callback_idle_context = 0U;
 	assert(fixture_gpu_references == 0U);
 	fixture_runtime = 0U;
 	fixture_peer_available = 0U;
@@ -1285,7 +1295,7 @@ fixture_strict_capability(
 		assert(fixture_dma == 9U);
 		memset(&completion, 0, sizeof(completion));
 		error = drv_venus_transport_job_reserve(&transport, 17U, 3U, &completion, &reservation);
-		if (index == 0U) {
+		if (index == 0U || index == 3U) {
 			assert(transport.strict_queue == 1U);
 			assert(error == 0);
 			error = drv_venus_transport_job_cancel(&transport, reservation, &completion, 0U);
@@ -1330,6 +1340,7 @@ fixture_jobs(
 	unsigned allocations;
 	unsigned index;
 	unsigned handled;
+	unsigned capacity;
 	uint16_t available;
 	int error;
 
@@ -1350,6 +1361,16 @@ fixture_jobs(
 	assert(64U * 16U <= 1024U);
 	assert(1024U + 6U + 64U * 2U <= 1280U);
 	assert(1280U + 6U + 64U * 8U <= 4096U);
+
+	/* Backend capacity is a nonblocking snapshot with backend-owned domain validation. */
+	drv_venus_transport_set_gpu(&transport, (struct drv_gpu_device *)&fixture_gpu_references);
+	error = drv_venus_transport_capacity(&transport, 3U, &capacity);
+	assert(error == 0 && capacity == 28U);
+	error = drv_venus_transport_capacity(&transport, 0U, &capacity);
+	assert(error == EINVAL);
+	error = drv_venus_transport_capacity(&transport, 64U, &capacity);
+	assert(error == EINVAL);
+	assert(fixture_capacity_wakes == 0U);
 
 	/* Advance a drained ring near its 16-bit rollover without inventing device-owned entries. */
 	fixture_drop = 1U;
@@ -1377,6 +1398,11 @@ fixture_jobs(
 	assert(reservations[28] == NULL);
 	assert(completions[32].calls == 0U);
 
+	/* Unpublished reservations consume real storage but emit no false capacity wake. */
+	error = drv_venus_transport_capacity(&transport, 3U, &capacity);
+	assert(error == 0 && capacity == 0U);
+	assert(fixture_capacity_wakes == 0U);
+
 	/* Four CPU0 commands remain admissible even while every GPU-job slot is retained. */
 	for (index = 28U; index < 32U; index++) {
 		error = drv_venus_transport_submit(&transport, 17U + index, NULL, 0U, GPU_COMMAND_CONTEXT_FENCE, 0U, &completions[index]);
@@ -1402,12 +1428,16 @@ fixture_jobs(
 
 	/* Out-of-order host completion crosses every context and the wrapping used index. */
 	for (index = 32U; index != 0U; index--) {
+		fixture_callback_idle_context = 17U + index - 1U;
 		fixture_complete_head((uint16_t)((index - 1U) * 2U));
 		handled = fixture_irq(fixture_irq_argument);
 		assert(handled == 1U);
 		assert(completions[index - 1U].calls == 1U);
 		assert(completions[index - 1U].error == 0);
 	}
+	fixture_callback_idle_context = 0U;
+	assert(fixture_capacity_wakes == 32U);
+	assert(fixture_capacity_available == 28U);
 	assert(transport.used == 26U);
 	assert(transport.used == transport.available);
 	assert(fixture_calloc_calls == allocations);
@@ -1491,7 +1521,7 @@ fixture_job_failures(
 	assert(error == 0);
 	assert(fixture_gpu_references == 0U);
 
-	/* A producer that never commits is still terminated by the actual autonomous watchdog. */
+	/* Backend supervision never applies the old ten-second policy to common-managed jobs. */
 	fixture_prepare(&transport);
 	fixture_capset_bytes = 168U;
 	fixture_vendor_magic = 0x5a424453U;
@@ -1501,21 +1531,29 @@ fixture_job_failures(
 	memset(&completion, 0, sizeof(completion));
 	error = drv_venus_transport_job_reserve(&transport, 17U, 1U, &completion, &reservation);
 	assert(error == 0);
-	fixture_clock += 10001U;
-	fixture_watchdog_stop = 1U;
+	fixture_clock += 60001U;
+	fixture_watchdog_stop = 2U;
 	venus_worker(&transport);
-	assert(completion.calls == 1U);
-	assert(completion.error == ETIMEDOUT);
-	assert(transport.failed != 0U);
-	assert(transport.requests[0].state == VENUS_SLOT_QUARANTINED);
-	assert(fixture_dma == 9U);
+	assert(completion.calls == 0U);
+	assert(transport.failed == 0U);
+	assert(transport.requests[0].state == VENUS_SLOT_RESERVED);
+	assert(drv_venus_transport_idle(&transport, 17U) == EAGAIN);
+	assert(drv_venus_transport_idle(&transport, 18U) == 0);
+	transport.stopping = 0U;
 	fixture_watchdog_stop = 0U;
+
+	/* Reserved native uncertainty stays retained until the common stop deadline escalates. */
+	drv_venus_transport_fail(&transport, ETIMEDOUT);
+	assert(completion.calls == 1U && completion.error == ETIMEDOUT);
+	assert(transport.requests[0].state == VENUS_SLOT_QUARANTINED);
+	assert(drv_venus_transport_idle(&transport, 17U) == ENODEV);
+	assert(fixture_dma == 9U);
 	error = drv_venus_transport_job_commit(&transport, reservation, &completion);
 	assert(error == ESTALE);
 	error = drv_venus_transport_stop(&transport);
 	assert(error == 0);
 
-	/* Fault cancellation after actual publication quarantines DMA instead of rolling it back. */
+	/* A token-validated fault retains backing while common policy requests local stop. */
 	fixture_prepare(&transport);
 	fixture_capset_bytes = 168U;
 	fixture_vendor_magic = 0x5a424453U;
@@ -1533,16 +1571,158 @@ fixture_job_failures(
 	assert(error == ESTALE);
 	error = drv_venus_transport_job_cancel(&transport, reservation, &completion, 1U);
 	assert(error == 0);
-	assert(completion.calls == 1U);
-	assert(completion.error == EIO);
-	assert(transport.requests[0].state == VENUS_SLOT_QUARANTINED);
+	assert(completion.calls == 0U);
+	assert(transport.failed == 0U);
+	assert(transport.requests[0].state == VENUS_SLOT_POSTED);
+	assert(drv_venus_transport_idle(&transport, 17U) == EAGAIN);
+
+	/* Actual completion can retire a logically failed context without faulting its peers. */
+	fixture_clock += 15000U;
+	fixture_watchdog_stop = 2U;
+	venus_worker(&transport);
+	assert(transport.failed == 0U);
+	transport.stopping = 0U;
+	fixture_watchdog_stop = 0U;
+	fixture_peer_available = transport.available;
+	fixture_complete_head(0U);
+	assert(fixture_irq(fixture_irq_argument) == 1U);
+	assert(completion.calls == 1U && completion.error == 0);
+	assert(drv_venus_transport_idle(&transport, 17U) == 0);
+	assert(transport.failed == 0U);
 	fixture_drop = 0U;
 	error = drv_venus_transport_stop(&transport);
 	assert(error == 0);
 
 	/* Report autonomous fault ownership and registration lifetime boundaries. */
-	puts("Venus job faults: rollback, reserved deadline, posted fault, empty callback, withdrawn/late GPU PASS");
+	puts("Venus job policy: capacity, common deadlines, late retirement, unknown reserved, isolated idle and global quarantine PASS");
 
 	/* Succeeded: missing producer progress and uncertain work never became successful completion. */
 	return;
+}
+/* Checks exact stop wire fields and separates native proof from old descriptor retirement. */
+static void
+fixture_quiesce_proposal(
+	void)
+{
+	struct venus_transport transport;
+	struct venus_request *pending;
+	struct drv_gpu_completion completions[32];
+	void *occupied[28];
+	void *reserved;
+	void *posted;
+	uint8_t *packet;
+	uint8_t *ring;
+	unsigned quiesced;
+	unsigned bad;
+	unsigned slot;
+	unsigned available;
+	int error;
+
+	/* Old profiles must refuse native quiescence without reserving or posting a command. */
+	fixture_prepare(&transport);
+	fixture_capset_bytes = 168U;
+	fixture_vendor_magic = 0x5a424453U;
+	fixture_vendor_flags = 3U;
+	assert(drv_venus_transport_start(&transport, NULL) == 0);
+	pending = NULL;
+	quiesced = 0U;
+	available = transport.available;
+	assert(drv_venus_transport_quiesce(&transport, 17U, &pending, &quiesced) == ENOTSUP);
+	assert(pending == NULL && quiesced == 0U && transport.available == available);
+	assert(drv_venus_transport_stop(&transport) == 0);
+
+	/* An independently successful response of another type or length is still not a stop ACK. */
+	for (bad = 0U; bad < 3U; bad++) {
+		fixture_prepare(&transport);
+		drv_venus_store16(fixture_registers + 24U, 64U);
+		fixture_capset_bytes = 168U;
+		fixture_vendor_magic = 0x5a424453U;
+		fixture_vendor_flags = 7U;
+		assert(drv_venus_transport_start(&transport, NULL) == 0);
+		assert(transport.strict_queue == 1U && transport.quiesce == 1U);
+		fixture_drop = 1U;
+		fixture_clock_frozen = 1U;
+		memset(completions, 0, sizeof(completions));
+		assert(drv_venus_transport_job_reserve(&transport, 17U, 3U, &completions[0], &reserved) == 0);
+		assert(drv_venus_transport_job_reserve(&transport, 17U, 3U, &completions[1], &posted) == 0);
+		assert(drv_venus_transport_job_commit(&transport, posted, &completions[1]) == 0);
+
+		/* Posting one stop command is nonblocking and does not end either existing owner. */
+		pending = NULL;
+		quiesced = 0U;
+		assert(drv_venus_transport_quiesce(&transport, 17U, &pending, &quiesced) == EAGAIN);
+		assert(pending != NULL && pending->supervised == 1U && pending->completion == NULL);
+		slot = (unsigned)(pending - transport.requests);
+		packet = pending->request.address;
+		ring = transport.ring.address;
+		assert(drv_venus_load32(ring + slot * 32U + 8U) == 48U);
+		assert(drv_venus_load32(packet) == 0x0207U);
+		assert(drv_venus_load32(packet + 4U) == 3U);
+		assert(drv_venus_load64(packet + 8U) != 0U);
+		assert(drv_venus_load32(packet + 16U) == 17U && packet[20U] == 0U);
+		assert(drv_venus_load32(packet + 24U) == 16U);
+		assert(drv_venus_load32(packet + 32U) == 0x5a425351U);
+		assert(drv_venus_load32(packet + 36U) == 1U);
+		assert(drv_venus_load64(packet + 40U) == 0U);
+		assert(completions[0].calls == 0U && completions[1].calls == 0U);
+		assert(drv_venus_transport_quiesce(&transport, 17U, &pending, &quiesced) == EAGAIN);
+
+		/* The PCI peer returns the exact stop descriptor, independently from older native work. */
+		fixture_complete_head((uint16_t)(slot * 2U));
+		if (bad == 1U)
+			drv_venus_store32(pending->response.address, 0x1103U);
+		if (bad == 2U)
+			drv_venus_store32(ring + 1280U + 8U + (transport.used % transport.queue_size) * 8U, 25U);
+		assert(fixture_irq(fixture_irq_argument) == 1U);
+		error = drv_venus_transport_quiesce(&transport, 17U, &pending, &quiesced);
+		if (bad != 0U) {
+			assert(error == EIO && quiesced == 0U && pending != NULL);
+			assert(completions[0].calls == 0U && completions[1].calls == 0U);
+			drv_venus_transport_fail(&transport, EIO);
+			assert(completions[0].calls == 1U && completions[0].error != 0);
+			assert(completions[1].calls == 1U && completions[1].error != 0);
+		} else {
+			assert(error == 0 && quiesced == 1U && pending == NULL);
+			assert(completions[0].calls == 1U && completions[0].error == ENODEV);
+			assert(completions[1].calls == 0U);
+			assert(drv_venus_transport_idle(&transport, 17U) == EAGAIN);
+
+			/* Native idle alone cannot recycle a previously posted DMA descriptor or its callback. */
+			fixture_complete_head(2U);
+			assert(fixture_irq(fixture_irq_argument) == 1U);
+			assert(completions[1].calls == 1U && completions[1].error == 0);
+			assert(drv_venus_transport_idle(&transport, 17U) == 0);
+		}
+		fixture_drop = 0U;
+		assert(drv_venus_transport_stop(&transport) == 0);
+		assert(fixture_dma == 0U && fixture_maps == 0U);
+	}
+
+	/* Full control storage returns immediately and never overwrites another context's descriptor. */
+	fixture_prepare(&transport);
+	drv_venus_store16(fixture_registers + 24U, 64U);
+	fixture_capset_bytes = 168U;
+	fixture_vendor_magic = 0x5a424453U;
+	fixture_vendor_flags = 7U;
+	assert(drv_venus_transport_start(&transport, NULL) == 0);
+	fixture_drop = 1U;
+	fixture_clock_frozen = 1U;
+	memset(completions, 0, sizeof(completions));
+	for (slot = 0U; slot < 28U; slot++) {
+		assert(drv_venus_transport_job_reserve(&transport, 80U, 3U, &completions[slot], &occupied[slot]) == 0);
+	}
+	for (slot = 28U; slot < 32U; slot++) {
+		assert(drv_venus_transport_submit(&transport, 80U, NULL, 0U, GPU_COMMAND_CONTEXT_FENCE, 0U, &completions[slot]) == 0);
+	}
+	pending = NULL;
+	quiesced = 0U;
+	available = transport.available;
+	assert(drv_venus_transport_quiesce(&transport, 17U, &pending, &quiesced) == EAGAIN);
+	assert(pending == NULL && quiesced == 0U && transport.available == available);
+	drv_venus_transport_fail(&transport, EIO);
+	fixture_drop = 0U;
+	assert(drv_venus_transport_stop(&transport) == 0);
+	assert(fixture_dma == 0U && fixture_maps == 0U);
+
+	puts("QUIESCE guest exact48B/old-profile refusal/NODATA24B/retained posted DMA/full capacity/no false ACK PASS");
 }

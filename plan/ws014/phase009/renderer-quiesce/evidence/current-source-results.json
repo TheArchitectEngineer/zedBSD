@@ -1,0 +1,48 @@
+{
+  "scope": "existing normal runners against applied production sources; mock PCI/native/text only",
+  "checks": [
+    {
+      "name": "transport",
+      "command": "timeout 120 sh plan/ws014/tests/run-venus-transport-test.sh",
+      "profiles": [
+        "ordinary",
+        "ASan+UBSan"
+      ],
+      "pass": true,
+      "log": "current-transport.log"
+    },
+    {
+      "name": "backend",
+      "command": "timeout 120 sh plan/ws014/tests/run-venus-backend-test.sh",
+      "profiles": [
+        "ordinary",
+        "ASan+UBSan"
+      ],
+      "pass": true,
+      "log": "current-backend.log"
+    },
+    {
+      "name": "console",
+      "command": "timeout 120 sh plan/ws030/tests/run-venus-console-test.sh",
+      "profiles": [
+        "ordinary",
+        "ASan+UBSan"
+      ],
+      "pass": true,
+      "log": "current-console.log"
+    }
+  ],
+  "source_sha256": {
+    "src/drivers/gpu/venus/transport.c": "3bed4d95f39b735d345839b47e17c320abbee36d87ef5f5daff8a248c7e8282e",
+    "src/drivers/gpu/venus/venus.c": "b5e76d7428540357614533b2bdab164a32d38ff99966331c3a16e35cf117e1cb",
+    "src/drivers/gpu/venus/internal.h": "dd242284e696f805761aecdd3c0a15848539385ce35c5a43ad8e62b165589aaf",
+    "src/drivers/gpu/venus/display.c": "bc9c96834eb4e9c57c7b3c1870474353c02fe033983d834c186eefb6cd9b6e12",
+    "src/drivers/gpu/venus/share.c": "852b68d3fe8c4ef289eccdf063fe116cdb0e009e8232367786882146569311f2",
+    "plan/ws014/tests/venus-transport.c": "ed239b9c7f019f10ad9222a3a0dabccc8f935d29f9b827d24506e699c8f177d5",
+    "plan/ws014/tests/venus-backend.c": "af1b08489550b291d38fd540d9c03f8e852885bcb77dd9422f2d3509366a9413",
+    "plan/ws014/tests/venus-backend-linked.c": "ecd4e12125b8ddbb66015208724abaf0b313fff24b0963fababdbcdaf3e69138",
+    "plan/ws030/tests/venus-console.c": "482d678e5caec3e463c2cce4e2e0ba4230385026be6e90f70cdd9bdbab8468fd"
+  },
+  "fixture_style_finalization": "after PASS moved only public helper/forward declaration into canonical order and removed repeated license headers; host warning-as-error syntax PASS",
+  "pass": true
+}

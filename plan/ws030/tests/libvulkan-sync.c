@@ -31,6 +31,7 @@ struct native_object {
 struct mock_state {
 	struct native_object objects[TEST_NATIVE_OBJECTS];
 	uint32_t calls[64];
+	uint32_t last_reset_count;
 	uint32_t waits;
 	uint64_t wait_ids[16];
 	uint32_t wait_stages[16];
@@ -110,6 +111,7 @@ sync_base_ioctl(
 	unsigned long operation,
 	...)
 {
+	struct gpu_job_capacity *capacity;
 	struct gpu_job_reserve *reserve;
 	struct gpu_job_action *action;
 	struct gpu_command_wait *wait;
@@ -128,6 +130,23 @@ sync_base_ioctl(
 	va_start(arguments, operation);
 	argument = va_arg(arguments, void *);
 	va_end(arguments);
+
+	/* The ordinary peer has capacity; dedicated notification tests provide real pressure transitions. */
+	if (operation == GPU_JOB_CAPACITY) {
+		capacity = argument;
+		expect(capacity->version, GPU_ABI_VERSION, "capacity ABI version");
+		expect(capacity->size, 48U, "capacity ABI size");
+		expect(capacity->domain, 1U, "capacity queue domain");
+		expect(capacity->reserved, 0U, "capacity reserved input");
+		expect(capacity->sequence, 0U, "capacity output starts empty");
+		expect(capacity->available, 0U, "capacity output availability starts empty");
+		expect(capacity->flags, GPU_JOB_CAPACITY_QUERY, "ordinary peer never requires a capacity wait");
+		expect(capacity->observed_sequence, 0U, "query has no old observation");
+		expect(capacity->timeout_ns, 0U, "query never blocks");
+		capacity->sequence = 1U;
+		capacity->available = 1U;
+		return 0;
+	}
 
 	/* Reservation validates the complete input shape before native execution. */
 	if (operation == GPU_JOB_RESERVE) {
@@ -393,6 +412,7 @@ vulkan_context_execute(
 		count = vulkan_read_u32(&request);
 		identity = vulkan_read_u64(&request);
 		expect(identity, count, "reset fence cardinality");
+		peer.last_reset_count = count;
 		for (index = 0; index < count; index++) {
 			identifier = vulkan_read_u64(&request);
 			peer.objects[identifier].signaled = 0;
@@ -1416,6 +1436,7 @@ test_private_cache(
 	unsigned queries;
 	unsigned creations;
 	unsigned selected;
+	unsigned resets;
 	VkResult status;
 
 	/* Existing jobs finish before the test starts three independently blocked submissions. */
@@ -1443,6 +1464,7 @@ test_private_cache(
 	expect_status(status, VK_SUCCESS, "private native work drains");
 	creations = peer.calls[35];
 	queries = peer.calls[38];
+	resets = peer.calls[37];
 
 	/* Repeated completed submissions reuse actual retained identities without new native allocations. */
 	for (index = 0U; index < 20U; index++) {
@@ -1453,10 +1475,19 @@ test_private_cache(
 		if (current == native[0] || current == native[1] || current == native[2])
 			selected = 1U;
 		expect(selected, 1U, "retained native identity is reused");
+
+		/* Three independently retired proofs should fund three new submissions with one reset request. */
+		if (index < 3U) {
+			expect(peer.calls[37], resets + 1U, "three cached identities share one native reset transaction");
+			expect(peer.last_reset_count, 3U, "the reset batch contains all three terminal proofs");
+		}
 	}
 
 	expect(peer.calls[35], creations, "private cache makes no steady-state VkCreateFence calls");
 	expect(peer.calls[38], queries, "kernel completion replaces private native-status polling");
+
+	/* This measurement attributes savings to the private-fence path rather than an explicit-fence demo. */
+	printf("libvulkan private fence batch: terminal=3 reset_transactions=1 ready_reuses=3 steady_submits=20 new_fences=%u reset_transactions_total=%u\n", peer.calls[35] - creations, peer.calls[37] - resets);
 
 	/* Succeeded: hidden fences remain exact, bounded by concurrency and reusable only after completion. */
 	return;

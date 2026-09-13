@@ -1,0 +1,4 @@
+PASS job consume race: ENOENT waits for reaper ERROR publication, both observers DEVICE_LOST
+PASS job consume race: ENOENT waits for reaper ERROR publication, both observers DEVICE_LOST
+PASS job consume race: ENOENT waits for reaper ERROR publication, both observers DEVICE_LOST
+PASS job consume race: ENOENT waits for reaper ERROR publication, both observers DEVICE_LOST

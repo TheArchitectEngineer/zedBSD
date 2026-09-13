@@ -51,6 +51,9 @@ static int job_reserve(void *opaque, void *session, uint32_t timeline, struct dr
 static int job_commit(void *opaque, void *session, void *reservation, struct drv_gpu_completion *completion);
 static int job_cancel(void *opaque, void *session, void *reservation, struct drv_gpu_completion *completion, unsigned fault);
 static void job_drain(void *opaque, void *session);
+static void job_fault(void *opaque, int error);
+static int job_stop_begin(void *opaque, void *session, int error);
+static int job_stop_poll(void *opaque, void *session);
 static void job_request(struct gpu_job_reserve *request, int fd, uint64_t generation);
 static int job_action(struct test_file *file, unsigned long command, uint64_t sequence, unsigned flags);
 static int job_observe(struct test_file *file, uint64_t sequence, unsigned consume, int *status);
@@ -67,6 +70,7 @@ main(
 	struct drv_gpu_ops operations;
 	struct drv_gpu_command_ops commands;
 	struct drv_gpu_job_ops job_operations;
+	struct drv_gpu_recovery_ops recovery;
 	struct test_backend backend;
 	struct test_file source;
 	struct test_file receiver;
@@ -99,9 +103,16 @@ main(
 	commands.drain = job_drain;
 
 	/* Strict reservations have explicit publish and nonacceptance operations. */
+	memset(&job_operations, 0, sizeof(job_operations));
 	job_operations.reserve = job_reserve;
 	job_operations.commit = job_commit;
 	job_operations.cancel = job_cancel;
+
+	/* Uncertain hardware work has an explicit device-wide quarantine operation. */
+	memset(&recovery, 0, sizeof(recovery));
+	recovery.fault = job_fault;
+	recovery.stop_begin = job_stop_begin;
+	recovery.stop_poll = job_stop_poll;
 
 	/* Registration validates the complete immutable operation table. */
 	memset(&operations, 0, sizeof(operations));
@@ -115,6 +126,7 @@ main(
 	operations.resource_destroy = backend_destroy;
 	operations.commands = &commands;
 	operations.jobs = &job_operations;
+	operations.recovery = &recovery;
 	error = drv_gpu_register(&operations, &backend, &job_device);
 	assert(error == 0);
 	error = open_file(&source, "gpu0", O_RDWR);
@@ -237,8 +249,19 @@ main(
 	error = job_observe(&source, request.sequence, 1U, &status);
 	assert(error == 0 && status == EIO);
 
-	/* Checked recovery belongs to the backend; this fixture explicitly clears its modeled fault. */
+	/* Old descriptors remain failed even after all their callbacks have retired. */
+	job_request(&request, -1, 0U);
+	error = fence_ioctl(&source, GPU_JOB_RESERVE, &request);
+	assert(error == EIO);
+
+	/* Checked recovery cannot reuse a lost context; every old open retires first. */
+	close_file(&source);
+	close_file(&receiver);
 	drv_gpu_report_error(job_device, 0);
+	error = open_file(&source, "gpu0", O_RDWR);
+	assert(error == 0);
+	error = open_file(&receiver, "gpu0", O_RDWR);
+	assert(error == 0);
 	fence_create_request(&created);
 	error = fence_ioctl(&source, GPU_FENCE_CREATE, &created);
 	assert(error == 0);
@@ -494,4 +517,71 @@ job_deliver(
 
 	/* Succeeded: the backend owns no further completion obligation for this token. */
 	return;
+}
+
+/* Ends every peer callback while retaining the real framework's terminal error. */
+static void
+job_fault(
+	void *opaque,
+	int error)
+{
+	unsigned index;
+
+	(void)opaque;
+
+	/* A failed transport first publishes loss to every retained descriptor. */
+	drv_gpu_report_error(job_device, error);
+
+	/* Real callbacks still retire individually before their common slots can be reused. */
+	for (index = 0U; index < 4U; index++) {
+		if (jobs[index].completion != NULL)
+			job_deliver(&jobs[index], error);
+	}
+
+	/* Succeeded: this bounded peer no longer owns native callback storage. */
+	return;
+}
+
+/* Begins stop only after the common layer excludes new native publication. */
+static int
+job_stop_begin(
+	void *opaque,
+	void *session,
+	int error)
+{
+	(void)opaque;
+	(void)session;
+
+	/* This peer has no native work outside its explicitly retained job and command slots. */
+	assert(held_spinlocks == 0U && error != 0);
+
+	/* Succeeded: retained peer ownership can now establish quiescence. */
+	return 0;
+}
+
+/* Confirms that the bounded peer retains no native job or command callback. */
+static int
+job_stop_poll(
+	void *opaque,
+	void *session)
+{
+	unsigned index;
+
+	(void)opaque;
+
+	/* No callback may claim stop while a strict job still owns native work. */
+	assert(held_spinlocks == 0U);
+	for (index = 0U; index < 4U; index++) {
+		if (jobs[index].completion != NULL && jobs[index].session == session)
+			return EAGAIN;
+	}
+
+	/* Ordinary notifications retain the same context until actual completion. */
+	for (index = 0U; index < GPU_SUBMIT_MAX; index++) {
+		if (pending[index].completion != NULL && pending[index].session == session)
+			return EAGAIN;
+	}
+
+	/* Succeeded: the peer has no further native access to this context. */
+	return 0;
 }

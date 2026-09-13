@@ -1,0 +1,79 @@
+{
+  "scope": "temporary proposed guest source; mocked PCI/native peers; existing regressions retained",
+  "source_sha256": {
+    "src/drivers/gpu/venus/venus.c": "d56a45b0360d7859e497dc0943d1da1d82a11b3ba6d61df44be756aae5f06640",
+    "src/drivers/gpu/venus/transport.c": "79ee56ada079b9fcf0eb5a9cb0417aefc0aa2087fd060ca0962348a2bf6c76fb",
+    "src/drivers/gpu/venus/internal.h": "dd242284e696f805761aecdd3c0a15848539385ce35c5a43ad8e62b165589aaf"
+  },
+  "results": [
+    {
+      "case": "transport",
+      "profile": "ordinary",
+      "pass": true,
+      "compile": {
+        "pass": true,
+        "exit": 0,
+        "seconds": 0.5659305109875277,
+        "log": "/tmp/q312-quiesce-guest-evidence/transport-ordinary.compile.log"
+      },
+      "run": {
+        "pass": true,
+        "exit": 0,
+        "seconds": 0.917275749030523,
+        "log": "/tmp/q312-quiesce-guest-evidence/transport-ordinary.run.log"
+      }
+    },
+    {
+      "case": "transport",
+      "profile": "sanitized",
+      "pass": true,
+      "compile": {
+        "pass": true,
+        "exit": 0,
+        "seconds": 0.9196468139998615,
+        "log": "/tmp/q312-quiesce-guest-evidence/transport-sanitized.compile.log"
+      },
+      "run": {
+        "pass": true,
+        "exit": 0,
+        "seconds": 3.626798161014449,
+        "log": "/tmp/q312-quiesce-guest-evidence/transport-sanitized.run.log"
+      }
+    },
+    {
+      "case": "backend",
+      "profile": "ordinary",
+      "pass": true,
+      "compile": {
+        "pass": true,
+        "exit": 0,
+        "seconds": 0.6669505700119771,
+        "log": "/tmp/q312-quiesce-guest-evidence/backend-ordinary.compile.log"
+      },
+      "run": {
+        "pass": true,
+        "exit": 0,
+        "seconds": 0.0016222989652305841,
+        "log": "/tmp/q312-quiesce-guest-evidence/backend-ordinary.run.log"
+      }
+    },
+    {
+      "case": "backend",
+      "profile": "sanitized",
+      "pass": true,
+      "compile": {
+        "pass": true,
+        "exit": 0,
+        "seconds": 1.1686608299496584,
+        "log": "/tmp/q312-quiesce-guest-evidence/backend-sanitized.compile.log"
+      },
+      "run": {
+        "pass": true,
+        "exit": 0,
+        "seconds": 0.016924538009334356,
+        "log": "/tmp/q312-quiesce-guest-evidence/backend-sanitized.run.log"
+      }
+    }
+  ],
+  "pass": true
+}

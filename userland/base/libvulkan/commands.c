@@ -127,7 +127,7 @@ vkDestroyCommandPool(
 	/* Native pool destruction consumes its native command buffers in the same operation. */
 	status = vulkan_object_destroy_remote(owner, &pool->object, VULKAN_OPCODE_vkDestroyCommandPool);
 	if (status != VK_SUCCESS)
-		__atomic_store_n(&pool->object.context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+		vulkan_context_error(pool->object.context, VK_ERROR_DEVICE_LOST);
 
 	/* The application's external pool synchronization makes this child traversal exclusive. */
 	while (pool->object.first_child != NULL) {
@@ -352,7 +352,7 @@ vkFreeCommandBuffers(
 	vulkan_writer_finish(&writer);
 	status = vulkan_reply_finish(owner->object.context, &reader, status);
 	if (status != VK_SUCCESS)
-		__atomic_store_n(&owner->object.context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+		vulkan_context_error(owner->object.context, VK_ERROR_DEVICE_LOST);
 
 	/* Releases only the requested local objects after native consumption or terminal session loss. */
 	for (index = 0; index < commandBufferCount; index++) {

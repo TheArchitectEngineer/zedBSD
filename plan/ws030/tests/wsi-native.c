@@ -13,6 +13,7 @@
 #include <uapi/gpu-scanout.h>
 #include <uapi/gpu-fence.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <unistd.h>
 
 #include <assert.h>
@@ -49,6 +50,25 @@ static unsigned synchronized_presents;
 static unsigned fence_resets;
 static uint64_t front_alias;
 static struct gpu_image_descriptor shared_descriptor;
+
+/* Event generations and acknowledgement are modeled independently from the native output generation. */
+static uint64_t event_sequence = 1;
+/* Only a successful exact ACK advances this open-owned level. */
+static uint64_t event_ack;
+/* The last successful QUERY limits the sequence a caller may acknowledge. */
+static uint64_t event_observed;
+/* Counts successful observation transactions independently from acknowledgement. */
+static unsigned event_queries;
+/* Counts native inventory refreshes before exact acknowledgement. */
+static unsigned event_inventories;
+/* Counts only acknowledged snapshots. */
+static unsigned event_acks;
+/* Injects one later physical change during an earlier inventory transaction. */
+static int event_during_inventory;
+/* Selects renderer error readiness independently of native output state. */
+static short renderer_events;
+/* Selects an independent display node error without poisoning its paired renderer. */
+static short display_events;
 
 static void *native_allocate(void *user, size_t bytes, size_t alignment, VkSystemAllocationScope scope);
 static void native_free(void *user, void *pointer);
@@ -149,6 +169,44 @@ main(void)
 	error = vulkan_wsi_display_platform.claim(&surfaces[1], &device, &second);
 	assert(error == VK_SUCCESS && first != second);
 	assert(claims == 1U);
+
+	/* Direct progress acknowledges only the inventory snapshot observed on its independent open. */
+	assert(vulkan_wsi_display_platform.wait_descriptor(first) > 100);
+	error = vulkan_wsi_display_platform.progress(first);
+	assert(error == VK_SUCCESS && event_queries == 1 && event_acks == 1 && event_ack == 1);
+	event_sequence++;
+	event_during_inventory = 1;
+	error = vulkan_wsi_display_platform.progress(first);
+	assert(error == VK_SUCCESS && event_ack == 2 && event_sequence == 3);
+	error = vulkan_wsi_display_platform.progress(first);
+	assert(error == VK_SUCCESS && event_ack == 3 && event_queries == 3 && event_acks == 3);
+	error = vulkan_wsi_display_platform.progress(first);
+	assert(error == VK_SUCCESS && event_queries == 3);
+
+	/* Failed QUERY does not clear readiness or invent acknowledgement of an unobserved event. */
+	event_sequence++;
+	injected_error = EFAULT;
+	error = vulkan_wsi_display_platform.progress(first);
+	assert(error == VK_ERROR_SURFACE_LOST_KHR && event_ack == 3 && event_queries == 3);
+	assert(context.error == VK_SUCCESS && device.error == VK_SUCCESS);
+	injected_error = 0;
+	error = vulkan_wsi_display_platform.progress(first);
+	assert(error == VK_SUCCESS && event_ack == 4);
+
+	/* An independent display node failure preserves the rendering namespace. */
+	display_events = POLLERR;
+	error = vulkan_wsi_display_platform.progress(first);
+	assert(error == VK_ERROR_SURFACE_LOST_KHR && context.error == VK_SUCCESS);
+	display_events = 0;
+
+	/* Renderer failure dominates output loss and is published before any later acquisition can succeed. */
+	renderer_events = POLLERR;
+	display_events = POLLERR;
+	error = vulkan_wsi_display_platform.progress(first);
+	assert(error == VK_ERROR_DEVICE_LOST && context.error == VK_ERROR_DEVICE_LOST);
+	renderer_events = 0;
+	display_events = 0;
+	context.error = VK_SUCCESS;
 
 	/* Generation-specific physical conditions pass unchanged to shared-image allocation. */
 	error = vulkan_wsi_display_platform.placement(first, &placement);
@@ -279,8 +337,30 @@ main(void)
 	pthread_mutex_destroy(&context.mutex);
 
 	/* Reports native boundary coverage without claiming actual GPU or display execution. */
-	puts("WSI native adapter: independent display admission, fixed copied storage, BLOB import/selection, front retention through wait/failure/alias destruction, foreign import rejection PASS");
+	puts("WSI native adapter: independent display admission, fixed copied storage, BLOB import/selection, front retention through wait/failure/alias destruction, foreign import rejection, fd error domains and topology QUERY/inventory/exact ACK PASS");
 	return 0;
+}
+
+/*
+ * Reports independently selected level-triggered native events without ordinary completion readiness.
+ */
+int
+__wrap_poll(
+	struct pollfd *descriptors,
+	nfds_t count,
+	int timeout)
+{
+	/* Native progress observes renderer faults separately from display topology and display-node loss. */
+	assert(count == 2 && timeout == 0);
+	assert(descriptors[0].fd == context.fd && descriptors[0].events == 0);
+	assert(descriptors[1].fd > 100 && descriptors[1].events == POLLPRI);
+	descriptors[0].revents = renderer_events;
+	descriptors[1].revents = display_events;
+	if (event_sequence != event_ack)
+		descriptors[1].revents |= POLLPRI;
+
+	/* Succeeded: pending inventory remains level-ready until the exact successful ACK. */
+	return 1;
 }
 
 /* Supplies a controlled ioctl implementation and verifies admission serialization. */
@@ -305,6 +385,7 @@ ioctl(
 	struct gpu_fence_create *created;
 	struct gpu_fence_state *state;
 	struct gpu_display_present_sync *synchronized;
+	struct gpu_display_events *events;
 	const uint8_t *source;
 	uint32_t index;
 	int status;
@@ -324,6 +405,22 @@ ioctl(
 
 	/* Every mock command checks the source or lifetime boundary it represents. */
 	switch (command) {
+	case GPU_DISPLAY_EVENTS:
+		events = pointer;
+		assert(events->version == GPU_ABI_VERSION && events->size == 40);
+		assert(events->sequence == 0 && events->events == 0 && events->reserved == 0);
+		if (events->flags == 0) {
+			assert(events->ack_sequence == 0);
+			event_observed = event_sequence;
+			events->sequence = event_sequence;
+			event_queries++;
+		} else {
+			assert(events->flags == GPU_DISPLAY_EVENT_ACK);
+			assert(events->ack_sequence == event_observed && event_inventories >= event_queries);
+			event_ack = events->ack_sequence;
+			event_acks++;
+		}
+		break;
 	case GPU_GET_INFO:
 		((struct gpu_info *)pointer)->capabilities = GPU_CAP_DISPLAY | GPU_CAP_FENCE;
 		break;
@@ -455,6 +552,13 @@ vulkan_wsi_display_refresh(
 {
 	/* Only the initialized physical output belongs to this finite test model. */
 	assert(value == &display);
+
+	/* A concurrent physical notification cannot be swallowed by acknowledgement of the earlier snapshot. */
+	event_inventories++;
+	if (event_during_inventory != 0) {
+		event_sequence++;
+		event_during_inventory = 0;
+	}
 
 	/* Succeeded: no native topology event occurred. */
 	return VK_SUCCESS;

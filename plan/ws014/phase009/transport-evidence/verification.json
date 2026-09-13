@@ -1,0 +1,23 @@
+{
+  "source_sha256": {
+    "src/drivers/gpu/venus/transport.c": "84221e7a2dcea52e701675fdad2e9b654a052e053dc5593e506a1f22bde6cc22",
+    "src/drivers/gpu/venus/venus.c": "217b2eb5c0920c115aa6ba91b6392a500c0b887eb23a0a867628e71838a7325a",
+    "src/drivers/gpu/venus/internal.h": "af1147207ce7300049b06c3ed07cd8b37cb4396683aee3891a8e69d4335ba728",
+    "plan/ws014/tests/venus-transport.c": "943a5ca8dbe68d077e65fd15263916825ddf50edb2f42c3c2142b7bd5db17050",
+    "plan/ws014/tests/venus-transport-peer.inc": "87deff2684372efbddc18b15087cdc1c309ff87d2507c2c22ea8afba606e1a01",
+    "plan/ws014/tests/venus-backend.c": "a585204c6523fdc1c6a839a5562ca796f9893db6c954406de811b32570db8bf5"
+  },
+  "transport": {
+    "normal": "PASS",
+    "asan_ubsan": "PASS",
+    "command": "timeout 120 plan/ws014/tests/run-venus-transport-test.sh"
+  },
+  "backend": {
+    "normal": "PASS",
+    "asan_ubsan": "PASS",
+    "command": "timeout 120 plan/ws014/tests/run-venus-backend-test.sh"
+  },
+  "target_syntax": "transport.c + venus.c x86_64-unknown-zedbsd -Wall -Wextra -Werror -Wdeclaration-after-statement PASS",
+  "runtime_capability_regression": "q312-submit-load-001 failed initialization; new bit16384 omitted; fixed registration plus strict/non-strict query and independent 24576 mask test; root q312-submit-load-002 PASS",
+  "limits": "deterministic driver peers; actual VM results are recorded separately by root"
+}

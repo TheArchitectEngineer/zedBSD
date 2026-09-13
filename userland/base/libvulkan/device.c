@@ -276,7 +276,8 @@ device_validate(
 
 	/* Refuses native device creation when accepted work cannot have authoritative kernel completion. */
 	if (physical->object.context->strict_queue == VK_FALSE ||
-	    (physical->object.context->capabilities & GPU_CAP_JOB) == 0)
+	    physical->object.context->native_quiescence == VK_FALSE ||
+	    (physical->object.context->capabilities & (GPU_CAP_JOB | GPU_CAP_JOB_CAPACITY)) != (GPU_CAP_JOB | GPU_CAP_JOB_CAPACITY))
 		return VK_ERROR_INITIALIZATION_FAILED;
 
 	/* No unavailable legacy device layer can be silently enabled. */
@@ -524,7 +525,7 @@ device_destroy_remote(
 
 	/* Never reuse queue timelines while an unconsumed native device could still own them. */
 	if (status != VK_SUCCESS)
-		__atomic_store_n(&device->object.context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+		vulkan_context_error(device->object.context, VK_ERROR_DEVICE_LOST);
 
 	/* Succeeded: the native device was consumed or the whole session is terminally lost. */
 	return;

@@ -161,9 +161,12 @@ waitq_sleep(
 {
 	int handled;
 
-	/* A directly exercised autonomous timeout leaves all job records terminal before exiting. */
+	/* Healthy managed jobs have no backend deadline; only ordinary transport failure is local. */
 	if (fixture_watchdog_stop != 0U) {
-		assert(fixture_transport->failed != 0U);
+		if (fixture_watchdog_stop == 1U)
+			assert(fixture_transport->failed != 0U);
+		else
+			assert(fixture_transport->failed == 0U && deadline == 0U);
 		fixture_transport->stopping = 1U;
 		return 0;
 	}
@@ -344,6 +347,25 @@ drv_gpu_complete(
 	assert(completion->calls == 0U);
 	completion->calls++;
 	completion->error = error;
+
+	/* Native completion alone does not end the callback storage lifetime. */
+	if (fixture_callback_idle_context != 0U)
+		assert(drv_venus_transport_idle(fixture_transport, fixture_callback_idle_context) == EAGAIN);
+}
+
+/* Observes actual storage retirement without inheriting backend locks. */
+void
+drv_gpu_capacity_changed(
+	struct drv_gpu_device *device)
+{
+	int error;
+
+	assert(device == (struct drv_gpu_device *)&fixture_gpu_references);
+	assert(fixture_gpu_references != 0U);
+	assert(fixture_transport->queue_lock.owner_valid == 0U);
+	fixture_capacity_wakes++;
+	error = drv_venus_transport_capacity(fixture_transport, 3U, &fixture_capacity_available);
+	assert(error == 0 || error == ENODEV || error == ENOTSUP);
 }
 
 /* Counts terminal failures exposed to the common GPU subsystem. */

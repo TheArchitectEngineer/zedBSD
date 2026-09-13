@@ -9,7 +9,7 @@ Parent: [WS014](https://github.com/awemorris/zedBSD/issues/15)
 Queue: q311 finished / q311-i01 cleared (whole Phase)
 Execution: approved review A1-A8 and driver fence ownership accepted
 Dependencies: cleared ws014-p007; accepted p002/p003/p005/p006 and completed WS030
-Next: ws014-p004 planning, not queued; native i915 stays separate WS029
+Next: ws014-p009 in-progress (q312) → ws014-p004 planning; native i915 stays separate WS029
 <!-- awesome-plan-current:end -->
 
 Combined ID: `ws014-p008`
@@ -74,3 +74,19 @@ K/U/transport/host/consoleの限定normal・sanitizer、170API/両ABI/Noct8file�
 
 
 受入記録: [p008結果コメント](https://github.com/awemorris/zedBSD/issues/395#issuecomment-5652374702)。local/uncommittedの資料は plan/ws014/phase008/、Queue履歴は plan/history/queue-q311.md。
+
+## review4への対応案（2026-09-13）
+
+[レビュー回答と提案の全文](https://github.com/awemorris/zedBSD/issues/395#issuecomment-5652742665)を記録した。照合対象はユーザーcommit `cca12445`。R1は一時的容量不足とOOMを分け、Uの完了回収を止めない二段階admission＋device全体の容量通知を提案する。R3は予約/control/GPU実行の期限分離と、停止確認・DMA/descriptor退役を含むcontext単位の障害処理を提案する。R4はdirect acquireの通知接続、R5はprivate fence一括resetを専用負荷で測定、R6は内部寿命待ちとvalid usageを区別する。
+
+R2のstock互換は能力別に実証してから有効化し、当面strictを維持する案。Vulkanはdevice loss時のfence SUCCESSを許すが、stockの非TIMEOUT retire/切断をそのまま資源再利用の証明にはしない。独自rendererの配布負担を記録した。
+
+これは対応方針の提案であり、新実装・新試験の受入ではない。p008 cleared / q311 finished、WS014 incomplete、p004 planning/未queueを維持する。新Phase・Queueの作成と実行は行わず、既存BLOB表示・GPU framework所属fence・テストドライバ範囲を維持する。回答書はローカル `plan/ws014/gpu-stack-review4-response.md`（今回未commit）。git add/commit/pushはユーザー担当。
+
+## q312開始: GPUレビュー対応とフレームワーク共通化（2026-09-13）
+
+ユーザー指示により[WS014 p009](https://github.com/awemorris/zedBSD/issues/396)をq312-i01の単一Phaseとして実行する。承認範囲は[review4回答](https://github.com/awemorris/zedBSD/issues/395#issuecomment-5652742665)とGPU共通化の協議。job/fenceの状態・容量待機・期限・session故障と参照保持をdrv_gpuへ寄せ、backendは実資源の予約・投稿・完了と停止/DMA退役確認を担う。R1のU排他と容量通知、R3の期限/障害範囲、R4のdirectAcquire通知、R5のprivate fence reset再利用・測定、R6の寿命を改善する。
+
+R2はstrictを当面維持し、stock互換の能力と退役条件を限定検証する。安全性が成立しなければstrictと具体的な不足・制約を記録する。context停止も能力と実確認が前提で、停止不能時はquarantine/全体resetを維持する。通常BLOB表示・GPU内共有・標準APIとzwl/libwaylandのテストドライバ範囲を保持する。
+
+p008/q311のcleared/finishedを保持し、順序はp009 → p004 planning/未queue → 別WS029。720 active minutes見積・120分レビュー、有限fixture/build/VMで実装・受入する。追加HALや一般DE/native i915、git add/commit/push、system package/GDM/VFIO変更は含めない。private host/転送・隔離依存build・GitHub同期は既存承認を使用する。開始時点では新実装・試験の成功は主張しない。

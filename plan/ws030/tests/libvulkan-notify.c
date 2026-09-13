@@ -29,6 +29,10 @@ static struct test_notification notices[32];
 static unsigned notice_count;
 static unsigned blocking_waits;
 static unsigned poll_waits;
+/* Count only actual admission sleeps, with every producer mutex released. */
+static unsigned capacity_waits;
+/* One internal WSI-like producer submits while another caller retains a prepared private proof. */
+static int capacity_nested;
 static uint64_t next_fence;
 static int saturate;
 static int hold;
@@ -48,6 +52,7 @@ sync_test_ioctl(
 	unsigned long operation,
 	...)
 {
+	struct gpu_job_capacity *capacity;
 	struct gpu_job_reserve *reserve;
 	struct gpu_job_action *action;
 	struct gpu_command_wait *wait;
@@ -56,12 +61,45 @@ sync_test_ioctl(
 	va_list arguments;
 	void *argument;
 	unsigned index;
+	VkResult nested_status;
 
 	/* Kernel operations use the existing session without application object addresses. */
 	assert(fd == 61);
 	va_start(arguments, operation);
 	argument = va_arg(arguments, void *);
 	va_end(arguments);
+	/* Capacity changes are distinct from completed-but-unconsumed command notification levels. */
+	if (operation == GPU_JOB_CAPACITY) {
+		capacity = argument;
+		assert(capacity->version == GPU_ABI_VERSION && capacity->size == 48U);
+		assert(capacity->domain == 1U && capacity->reserved == 0U);
+		assert(capacity->available == 0U && capacity->sequence == 0U);
+		if (capacity->flags == GPU_JOB_CAPACITY_QUERY) {
+			assert(capacity->observed_sequence == 0U && capacity->timeout_ns == 0U);
+			capacity->sequence = 1U + capacity_waits;
+			capacity->available = saturate == 0;
+			return 0;
+		}
+
+		/* The retry cannot retain locks needed by a different producer or the completion reaper. */
+		assert(capacity->flags == 0U && saturate != 0);
+		assert(capacity->observed_sequence == 1U + capacity_waits);
+		assert(capacity->timeout_ns == UINT64_C(250000000));
+		assert_wait_unlocked();
+		capacity_waits++;
+		saturate = 0;
+
+		/* This represents a library-owned producer, not invalid parallel application use of one queue. */
+		if (capacity_nested != 0) {
+			capacity_nested = 0;
+			nested_status = vulkan_queue_submit(test_queue, 0U, NULL, VK_NULL_HANDLE);
+			assert(nested_status == VK_SUCCESS);
+		}
+		capacity->sequence = 1U + capacity_waits;
+		capacity->available = 1U;
+		return 0;
+	}
+
 	/* Admission occurs before native work and cannot silently omit its completion record. */
 	if (operation == GPU_JOB_RESERVE) {
 		reserve = argument;
@@ -91,7 +129,9 @@ sync_test_ioctl(
 
 		assert(notice != NULL);
 		if (operation == GPU_JOB_COMMIT) {
-			assert(test_native_fence == next_fence && test_native_fence != 0);
+			assert(test_native_fence != 0);
+			if (next_fence != 0U)
+				assert(test_native_fence == next_fence);
 			notice->fence = test_native_fence;
 		} else if (action->flags == GPU_JOB_CANCEL_FAULT) {
 			notice->complete = 1;
@@ -200,6 +240,8 @@ main(
 	VkResult status;
 	unsigned before;
 	unsigned index;
+	unsigned creations;
+	unsigned first_notice;
 
 	/* Provide surrounding ordinary ownership while production creates both fences. */
 	memset(&context, 0, sizeof(context));
@@ -259,12 +301,36 @@ main(
 	status = vkResetFences((VkDevice)&device, 1, fences);
 	assert(status == VK_SUCCESS);
 	saturate = 1;
+	next_fence = vulkan_sync_object((uint64_t)fences[0])->object.wire_id;
 	status = vkQueueSubmit((VkQueue)&queue, 0, NULL, fences[0]);
-	assert(status == VK_ERROR_OUT_OF_DEVICE_MEMORY && vulkan_sync_object((uint64_t)fences[0])->notification == 0);
+	assert(status == VK_SUCCESS && vulkan_sync_object((uint64_t)fences[0])->notification != 0);
+	assert(capacity_waits == 1U && saturate == 0);
 	peer.event_blocked = 0;
-	status = vkWaitForFences((VkDevice)&device, 1, fences, VK_TRUE, 0);
-	assert(status == VK_TIMEOUT);
+	status = vkWaitForFences((VkDevice)&device, 1, fences, VK_TRUE, UINT64_MAX);
+	assert(status == VK_SUCCESS);
 	saturate = 0;
+
+	/* A prepared private proof remains owned while an internal producer uses the temporarily unlocked queue. */
+	peer.event_blocked = 1;
+	next_fence = 0U;
+	saturate = 1;
+	capacity_nested = 1;
+	creations = peer.calls[35];
+	before = capacity_waits;
+	first_notice = notice_count;
+	status = vkQueueSubmit((VkQueue)&queue, 0U, NULL, VK_NULL_HANDLE);
+	assert(status == VK_SUCCESS && capacity_waits == before + 1U);
+	assert(capacity_nested == 0 && notice_count == first_notice + 2U);
+	assert(notices[first_notice].fence != notices[first_notice + 1U].fence);
+	assert(peer.objects[notices[first_notice].fence].pending != 0U);
+	assert(peer.objects[notices[first_notice + 1U].fence].pending != 0U);
+	assert(peer.calls[35] == creations + 2U);
+
+	/* The resumed outer attempt reuses its own proof instead of allocating another after the wait. */
+	peer.event_blocked = 0;
+	status = vkQueueWaitIdle((VkQueue)&queue);
+	assert(status == VK_SUCCESS);
+	puts("libvulkan admission: preparing_hold=1 internal_competitor=1 distinct_proofs=2 retry_extra_creates=0 PASS");
 
 	/* Authoritative kernel failure cannot be converted into successful native completion. */
 	status = vkResetFences((VkDevice)&device, 1, fences);
@@ -280,6 +346,7 @@ main(
 	/* Consume local ownership even after terminal renderer namespace loss. */
 	vkDestroyFence((VkDevice)&device, fences[0], NULL);
 	vkDestroyFence((VkDevice)&device, fences[1], NULL);
+	vulkan_queue_finish(&queue);
 	while (context.notifications != NULL) {
 		notification = context.notifications;
 		context.notifications = notification->next;
@@ -289,7 +356,7 @@ main(
 	pthread_mutex_destroy(&queue.mutex);
 	pthread_mutex_destroy(&device.mutex);
 	pthread_mutex_destroy(&context.mutex);
-	puts("libvulkan notifications: exact/all/any wake, timeout retention, preaccepted saturation refusal, unlocked wait and native DEVICE_LOST PASS");
+	puts("libvulkan notifications: exact/all/any wake, timeout retention, unlocked capacity retry, unlocked wait and native DEVICE_LOST PASS");
 	return 0;
 }
 

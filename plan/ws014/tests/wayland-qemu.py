@@ -79,6 +79,34 @@ class RendererPause:
                 raise RuntimeError('unexpectedly large disposable QEMU process tree')
         return sorted(descendants)
 
+    def sample_cpu(self, samples):
+        """Observe only this VM's QEMU and renderer processes; never signal them."""
+        try:
+            candidates = [self.qemu_pid] + self.descendants()
+        except (FileNotFoundError, ProcessLookupError):
+            return
+        for pid in candidates:
+            try:
+                before = self.identity(pid)
+                if pid != self.qemu_pid and before[2] != str(self.executable):
+                    continue
+                fields = Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()
+                if (self.identity(pid) != before or not self.owned(pid) or
+                        int(fields[19]) != before[0]):
+                    continue
+            except (FileNotFoundError, ProcessLookupError):
+                continue
+            key = f'{pid}:{before[0]}'
+            current = {'pid': pid, 'starttime': before[0],
+                       'kind': 'qemu' if pid == self.qemu_pid else 'renderer',
+                       'executable': before[2], 'user_ticks': int(fields[11]),
+                       'system_ticks': int(fields[12])}
+            if key not in samples:
+                samples[key] = dict(current, first_user_ticks=current['user_ticks'],
+                                    first_system_ticks=current['system_ticks'], observations=0)
+            samples[key].update(current)
+            samples[key]['observations'] += 1
+
     def pause(self):
         selected = []
         identities = {}
@@ -165,9 +193,13 @@ def exercise_fault(args, qmp, output, debug, vnc_path, process, report):
 
 
 def exercise_fault_steps(args, qmp, output, debug, vnc_path, process, report, pause):
-    """Run one destructive scenario in a fresh disposable VM, then retire the VM."""
+    """Run one isolated regression in a fresh disposable VM, then retire the VM."""
     baseline = debug.stat().st_size
     command, expected = {
+        'completion-delay': ('/bin/gpu-fence-test --completion-delay', 'GPUFENCE COMPLETION_DELAY PASS'),
+        'context-timeout': ('/bin/gpu-fence-test --context-timeout', 'GPUFENCE CONTEXT_TIMEOUT PASS'),
+        'submit-load': ('/bin/gpu-fence-test --submit-load',
+                        'GPUFENCE SUBMIT_LOAD PASS processes=2 rounds=3 submits=576 verified_bytes=25165824 verified_submits=576'),
         'recovery': ('/bin/gpu-recovery-test --isolated',
                      'GPURECOVERY PASS timeout=1 peer_failed=1 retirement_gate=1 fresh_roundtrip=4096 decoder=1'),
         'producer-exit': ('/bin/gpu-fence-test --producer-exit',
@@ -177,14 +209,22 @@ def exercise_fault_steps(args, qmp, output, debug, vnc_path, process, report, pa
     }[args.fault_test]
     report.update(token=args.token, fault_test=args.fault_test, commands=[command],
                   guest_completed=False)
+    cpu_samples = {}
+    if args.fault_test == 'submit-load':
+        pause.sample_cpu(cpu_samples)
     qmp.text(command + '\n')
     deadline = time.monotonic() + args.timeout
     observed = ''
     stopped = False
     resumed = False
+    gate_armed = False
+    peer_started = False
+    delayed = args.fault_test in ('completion-delay', 'context-timeout', 'producer-stop')
     while time.monotonic() < deadline:
         if process.poll() is not None:
             raise RuntimeError('QEMU exited during the isolated fault test')
+        if args.fault_test == 'submit-load':
+            pause.sample_cpu(cpu_samples)
         observed = common.guest_text(debug, baseline) + common.console_text(qmp, output, args)
         (output / 'wayland-observed.log').write_text(observed)
         if re.search(r'kernel panic|amd64 fault v=|GPURECOVERY FAIL|GPUFENCE FAIL|Segmentation fault', observed):
@@ -197,14 +237,51 @@ def exercise_fault_steps(args, qmp, output, debug, vnc_path, process, report, pa
             pause.resume()
             resumed = True
             qmp.text('running\n')
+        if delayed and not gate_armed and 'GPUFENCE DELAY_READY' in observed:
+            gate = output / 'completion.gate'
+            if report.get('environment', {}).get('Q312_COMPLETION_GATE') != str(gate):
+                raise RuntimeError('completion delay gate differs from the isolated renderer environment')
+            with gate.open('x') as stream:
+                stream.write('one native SUCCESS callback\n')
+            gate_armed = True
+            qmp.text('armed\n')
+        if delayed and gate_armed and not peer_started and 'GPUFENCE DELAY_SUBMITTED' in observed:
+            renderer_text = (output / 'qemu-renderer.log').read_text(errors='replace')
+            acquired = re.search(r'Q312_COMPLETION_DELAY acquired pid=(\d+) context=(\d+) fence=(\d+) native=SUCCESS duration_ms=15000', renderer_text)
+            if acquired is not None:
+                pid = int(acquired[1])
+                if not pause.owned(pid) or pause.identity(pid)[2] != str(args.render_server.resolve()):
+                    raise RuntimeError('delay marker is not from this disposable QEMU renderer')
+                report['delay_renderer'] = dict(pid=pid, context=int(acquired[2]), fence=int(acquired[3]))
+                peer_started = True
+                qmp.text('running\n')
         match = re.search(re.escape(expected) + r'[\r\n]+[\s\S]*root@[^\r\n]*\$ ', observed)
+        if match and delayed:
+            renderer_text = (output / 'qemu-renderer.log').read_text(errors='replace')
+            if 'Q312_COMPLETION_DELAY released ' not in renderer_text:
+                time.sleep(0.05)
+                continue
         if match:
             report.update(status='pass', guest_completed=True, fault_marker=expected)
+            if delayed:
+                if not gate_armed or not peer_started:
+                    raise RuntimeError('completion delay lacks the two explicit submission handshakes')
+                renderer_text = (output / 'qemu-renderer.log').read_text(errors='replace')
+                report['completion_delay'] = verify_completion_delay(observed, renderer_text, args.fault_test)
+            if args.fault_test == 'submit-load':
+                report['load_samples'] = verify_submit_load(observed)
+                report['host_cpu_samples'] = {
+                    'ticks_per_second': os.sysconf('SC_CLK_TCK'),
+                    'processes': list(cpu_samples.values()),
+                    'scope': 'QEMU delta covers the whole test; renderer counters are sampled lifetime lower bounds.',
+                    'limitations': '50ms loop plus QMP work; exited workers may lose their last interval; short workers may be missed. Includes initialization/cleanup, not per-round GPU time.'}
+                if not any(item['kind'] == 'renderer' for item in cpu_samples.values()):
+                    raise RuntimeError('submit load lacks separately observed host renderer CPU counters')
             if args.fault_test == 'producer-stop':
                 if 'GPUFENCE PRODUCER_STOPPED pending=1 fd_live=1' not in observed:
                     raise RuntimeError('producer stop acceptance lacks pending work and live stopped process')
                 measured = re.search(r'GPUFENCE PRODUCER_STOP_WAIT result=(-?\d+) elapsed_ms=(\d+)', observed)
-                if measured is None or int(measured[1]) != -4 or not 9000 <= int(measured[2]) <= 20000:
+                if measured is None or int(measured[1]) != -4 or not 7000 <= int(measured[2]) <= 13000:
                     raise RuntimeError('producer stop acceptance lacks finite DEVICE_LOST watchdog result')
                 report['watchdog_elapsed_ms'] = int(measured[2])
                 report['producer_stopped'] = True
@@ -220,6 +297,69 @@ def exercise_fault_steps(args, qmp, output, debug, vnc_path, process, report, pa
             return
         time.sleep(0.05)
     raise TimeoutError('isolated fault test completion and shell return')
+
+
+def verify_completion_delay(observed, renderer_text, mode):
+    """Distinguish real native success, delayed notification, and independent GPU progress."""
+    acquired = re.findall(r'Q312_COMPLETION_DELAY acquired pid=(\d+) context=(\d+) fence=(\d+) native=SUCCESS duration_ms=15000', renderer_text)
+    released = re.findall(r'Q312_COMPLETION_DELAY released pid=(\d+) context=(\d+) fence=(\d+) elapsed_ms=(\d+)', renderer_text)
+    if (len(acquired) != 1 or len(released) != 1 or acquired[0] != released[0][:3] or
+            not 15000 <= int(released[0][3]) <= 25000 or 'Q312_COMPLETION_DELAY failed' in renderer_text):
+        raise RuntimeError('isolated renderer did not delay exactly one actual native-success notification')
+    if mode == 'producer-stop':
+        observations = set(re.findall(r'GPUFENCE PRODUCER_STOP_WAIT result=(-?\d+) elapsed_ms=(\d+)', observed))
+        if len(observations) != 1 or 'GPUFENCE PRODUCER_STOPPED pending=1 fd_live=1' not in observed:
+            raise RuntimeError('delayed producer-stop lacks one stopped live producer and terminal observation')
+        result, elapsed = map(int, next(iter(observations)))
+        if result != -4 or not 7000 <= elapsed <= 13000:
+            raise RuntimeError('stopped producer did not reach the configured 8-second job error')
+        return dict(pid=int(acquired[0][0]), context=int(acquired[0][1]), fence=int(acquired[0][2]),
+                    native_result='SUCCESS', notification_delay_ms=int(released[0][3]),
+                    producer_result=result, producer_elapsed_ms=elapsed, producer_stopped=True)
+    results = set(re.findall(r'GPUFENCE DELAY_RESULT result=(-?\d+) expected=(-?\d+) elapsed_ms=(\d+)', observed))
+    peers = set(re.findall(r'GPUFENCE DELAY_PEER_PASS completed=(\d+) elapsed_ms=(\d+) after_close=1 verified_bytes=(\d+)', observed))
+    if len(results) != 1 or len(peers) != 1:
+        raise RuntimeError('completion delay lacks one producer result and independent peer cleanup proof')
+    result, expected, elapsed = map(int, next(iter(results)))
+    completed, peer_elapsed, verified = map(int, next(iter(peers)))
+    wanted = -4 if mode == 'context-timeout' else 0
+    lower, upper = (7000, 13000) if wanted == -4 else (14000, 30000)
+    if result != wanted or expected != wanted or not lower <= elapsed <= upper:
+        raise RuntimeError('delayed job disagrees with the selected common supervision policy')
+    if completed < 10 or peer_elapsed < 20000 or verified != 4194304:
+        raise RuntimeError('independent GPU work did not continue beyond delayed retirement and producer close')
+    return dict(pid=int(acquired[0][0]), context=int(acquired[0][1]), fence=int(acquired[0][2]),
+                native_result='SUCCESS', notification_delay_ms=int(released[0][3]),
+                producer_result=result, producer_elapsed_ms=elapsed,
+                peer_completed=completed, peer_elapsed_ms=peer_elapsed, peer_after_close=True,
+                peer_verified_bytes=verified)
+
+
+def verify_submit_load(observed):
+    """Require both independent devices, all measured rounds, and newly verified GPU bytes."""
+    expression = (r'GPUFENCE LOAD role=(parent|child) round=([012]) mode=(null|explicit) '
+                  r'submits=(\d+) bytes=(\d+) repeats=(\d+) elapsed_ms=(\d+) verified_bytes=(\d+) '
+                  r'user_cpu_us=(\d+) system_cpu_us=(\d+) verified_submits=(\d+)')
+    samples = {}
+    for match in re.finditer(expression, observed):
+        role, round_text, mode, submits, size, repeats, elapsed, verified, user_cpu, system_cpu, proofs = match.groups()
+        round_index = int(round_text)
+        sample = dict(role=role, round=round_index, mode=mode, submits=int(submits),
+                      bytes=int(size), repeats=int(repeats), elapsed_ms=int(elapsed),
+                      verified_bytes=int(verified), user_cpu_us=int(user_cpu), system_cpu_us=int(system_cpu),
+                      verified_submits=int(proofs))
+        if (mode != ('explicit' if round_index == 1 else 'null') or
+                sample['submits'] != 96 or sample['bytes'] != 4194304 or
+                sample['repeats'] != 32 or sample['verified_bytes'] != 4194304 or
+                sample['verified_submits'] != 96 or sample['elapsed_ms'] <= 0):
+            raise RuntimeError('submit load used a different workload or failed byte verification')
+        key = role, round_index
+        if key in samples and samples[key] != sample:
+            raise RuntimeError('submit load has conflicting evidence for one measured round')
+        samples[key] = sample
+    if set(samples) != {(role, index) for role in ('parent', 'child') for index in range(3)}:
+        raise RuntimeError('submit load lacks all three completed rounds from both processes')
+    return [samples[key] for key in sorted(samples)]
 
 
 def exercise(args, qmp, output, debug, vnc_path, process, report):
@@ -442,7 +582,7 @@ def main():
     parser.add_argument('--token', required=True)
     parser.add_argument('--timeout', type=int, default=180)
     parser.add_argument('--lifecycle', action='store_true')
-    parser.add_argument('--fault-test', choices=['recovery', 'producer-exit', 'producer-stop'])
+    parser.add_argument('--fault-test', choices=['recovery', 'producer-exit', 'producer-stop', 'submit-load', 'completion-delay', 'context-timeout'])
     parser.add_argument('--console-address', type=lambda value: int(value, 0), required=True)
     parser.add_argument('--console-size', type=int, default=32768)
     parser.add_argument('--qemu', default='qemu-system-x86_64')

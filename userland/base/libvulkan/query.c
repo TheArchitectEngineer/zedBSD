@@ -112,7 +112,7 @@ vkCreateQueryPool(
 
 	/* Share malformed creation with every later local synchronization observer. */
 	if (status == VK_ERROR_DEVICE_LOST)
-		__atomic_store_n(&owner->object.context->error, status, __ATOMIC_RELEASE);
+		vulkan_context_error(owner->object.context, status);
 
 	/* Native creation already succeeded, so ordinary destruction owns rollback. */
 	vulkan_reader_finish(&reader);
@@ -348,13 +348,13 @@ query_fetch(
 
 	/* A truncated or mismatched array is transport loss, not unavailable GPU work. */
 	if (returned != bytes) {
-		__atomic_store_n(&device->object.context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+		vulkan_context_error(device->object.context, VK_ERROR_DEVICE_LOST);
 		return VK_ERROR_DEVICE_LOST;
 	}
 
 	/* Checked scalar reads leave cursor within bytes; verify the complete raw payload. */
 	if (bytes > reader->bytes - reader->cursor) {
-		__atomic_store_n(&device->object.context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+		vulkan_context_error(device->object.context, VK_ERROR_DEVICE_LOST);
 		return VK_ERROR_DEVICE_LOST;
 	}
 

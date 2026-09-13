@@ -193,7 +193,7 @@ static VkResult shared_present_sync(void *private_lease, void *private_image, Vk
 static const struct vulkan_wsi_platform_ops shared_platform = {
 	native_capabilities, native_formats, native_modes,
 	shared_claim, shared_release, NULL, native_wait, NULL,
-	shared_import, shared_present, shared_progress, shared_available, shared_destroy_image, NULL, shared_present_sync, NULL
+	shared_import, shared_present, shared_progress, shared_available, shared_destroy_image, NULL, shared_present_sync, NULL, NULL
 };
 
 /* Supplies both routes so real swapchain creation must choose and retain one. */
@@ -201,14 +201,18 @@ static const struct vulkan_wsi_platform_ops fallback_platform = {
 	native_capabilities, native_formats, native_modes,
 	shared_claim, shared_release, native_present, native_wait, NULL,
 	shared_import, shared_present, shared_progress, shared_available,
-	shared_destroy_image, fallback_prepare, shared_present_sync, fallback_placement
+	shared_destroy_image, fallback_prepare, shared_present_sync, fallback_placement, NULL
 };
+
+#ifndef WSI_SHARED_ENTRY
+#define WSI_SHARED_ENTRY main
+#endif
 
 /*
  * Verifies real shared-image acquisition, external barriers and failure rollback.
  */
 int
-main(
+WSI_SHARED_ENTRY(
 	int argc,
 	char **argv)
 {

@@ -1,0 +1,333 @@
+userland/base/libvulkan/queue.c:355:12: warning: 2nd function call argument is an uninitialized value [core.CallAndMessage]
+  355 |                 status = vulkan_sync_capacity_wait(queue, capacity_sequence);
+      |                          ^
+userland/base/libvulkan/queue.c:191:11: note: Calling 'queue_enqueue'
+  191 |         status = queue_enqueue(queue, count, submits, NULL, fence, VK_FALSE, VK_TRUE);
+      |                  ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+userland/base/libvulkan/queue.c:284:2: note: 'capacity_sequence' declared without an initial value
+  284 |         uint64_t capacity_sequence;
+      |         ^~~~~~~~~~~~~~~~~~~~~~~~~~
+userland/base/libvulkan/queue.c:291:20: note: Assuming 'request' is >= 'count'
+  291 |         for (request = 0; request < count; request++) {
+      |                           ^~~~~~~~~~~~~~~
+userland/base/libvulkan/queue.c:291:2: note: Loop condition is false. Execution continues on line 308
+  291 |         for (request = 0; request < count; request++) {
+      |         ^
+userland/base/libvulkan/queue.c:309:6: note: 'capacity' is equal to 0
+  309 |         if (capacity != 0) {
+      |             ^~~~~~~~
+userland/base/libvulkan/queue.c:309:2: note: Taking false branch
+  309 |         if (capacity != 0) {
+      |         ^
+userland/base/libvulkan/queue.c:332:6: note: 'locked' is not equal to VK_FALSE
+  332 |         if (locked == VK_FALSE)
+      |             ^~~~~~
+userland/base/libvulkan/queue.c:332:2: note: Taking false branch
+  332 |         if (locked == VK_FALSE)
+      |         ^
+userland/base/libvulkan/queue.c:336:6: note: Assuming 'fence' is not equal to VK_NULL_HANDLE
+  336 |         if (fence == VK_NULL_HANDLE) {
+      |             ^~~~~~~~~~~~~~~~~~~~~~~
+userland/base/libvulkan/queue.c:336:2: note: Taking false branch
+  336 |         if (fence == VK_NULL_HANDLE) {
+      |         ^
+userland/base/libvulkan/queue.c:345:2: note: Loop condition is true.  Entering loop body
+  345 |         while (status == VK_SUCCESS) {
+      |         ^
+userland/base/libvulkan/queue.c:348:12: note: Calling 'queue_attempt'
+  348 |                 status = queue_attempt(queue, count, submits, binds, fence, sparse, &transaction, completion, &accepted, &capacity_sequence, &prepared);
+      |                          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+userland/base/libvulkan/queue.c:416:6: note: 'sparse' is equal to VK_FALSE
+  416 |         if (sparse != VK_FALSE) {
+      |             ^~~~~~
+userland/base/libvulkan/queue.c:416:2: note: Taking false branch
+  416 |         if (sparse != VK_FALSE) {
+      |         ^
+userland/base/libvulkan/queue.c:424:6: note: Assuming 'status' is equal to VK_SUCCESS
+  424 |         if (status != VK_SUCCESS)
+      |             ^~~~~~~~~~~~~~~~~~~~
+userland/base/libvulkan/queue.c:424:2: note: Taking false branch
+  424 |         if (status != VK_SUCCESS)
+      |         ^
+userland/base/libvulkan/queue.c:431:2: note: Loop condition is false. Execution continues on line 441
+  431 |         for (request = 0; request < count; request++) {
+      |         ^
+userland/base/libvulkan/queue.c:443:6: note: Assuming 'status' is not equal to VK_SUCCESS
+  443 |         if (status == VK_SUCCESS)
+      |             ^~~~~~~~~~~~~~~~~~~~
+userland/base/libvulkan/queue.c:443:2: note: Taking false branch
+  443 |         if (status == VK_SUCCESS)
+      |         ^
+userland/base/libvulkan/queue.c:447:6: note: 'status' is not equal to VK_SUCCESS
+  447 |         if (status != VK_SUCCESS)
+      |             ^~~~~~
+userland/base/libvulkan/queue.c:447:2: note: Taking true branch
+  447 |         if (status != VK_SUCCESS)
+      |         ^
+userland/base/libvulkan/queue.c:452:6: note: Assuming 'status' is not equal to VK_SUCCESS
+  452 |         if (status == VK_SUCCESS) {
+      |             ^~~~~~~~~~~~~~~~~~~~
+userland/base/libvulkan/queue.c:452:2: note: Taking false branch
+  452 |         if (status == VK_SUCCESS) {
+      |         ^
+userland/base/libvulkan/queue.c:475:6: note: Assuming 'status' is not equal to VK_SUCCESS
+  475 |         if (status != VK_SUCCESS)
+      |             ^~~~~~~~~~~~~~~~~~~~
+userland/base/libvulkan/queue.c:475:2: note: Taking true branch
+  475 |         if (status != VK_SUCCESS)
+      |         ^
+userland/base/libvulkan/queue.c:476:3: note: Returning without writing to '*capacity_sequence'
+  476 |                 return status;
+      |                 ^
+userland/base/libvulkan/queue.c:348:12: note: Returning from 'queue_attempt'
+  348 |                 status = queue_attempt(queue, count, submits, binds, fence, sparse, &transaction, completion, &accepted, &capacity_sequence, &prepared);
+      |                          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+userland/base/libvulkan/queue.c:349:7: note: Assuming 'status' is equal to VK_NOT_READY
+  349 |                 if (status != VK_NOT_READY)
+      |                     ^~~~~~~~~~~~~~~~~~~~~~
+userland/base/libvulkan/queue.c:349:3: note: Taking false branch
+  349 |                 if (status != VK_NOT_READY)
+      |                 ^
+userland/base/libvulkan/queue.c:355:12: note: 2nd function call argument is an uninitialized value
+  355 |                 status = vulkan_sync_capacity_wait(queue, capacity_sequence);
+      |                          ^                                ~~~~~~~~~~~~~~~~~
+1 warning generated.
+userland/base/libvulkan/sync.c:55:11: warning: 2nd function call argument is an uninitialized value [core.CallAndMessage]
+   55 |         status = vulkan_external_fence_create(owner, sync, pCreateInfo);
+      |                  ^                                   ~~~~
+userland/base/libvulkan/sync.c:44:2: note: 'sync' declared without an initial value
+   44 |         struct vulkan_sync *sync;
+      |         ^~~~~~~~~~~~~~~~~~~~~~~~
+userland/base/libvulkan/sync.c:50:11: note: Calling 'sync_create'
+   50 |         status = sync_create(owner, VULKAN_OBJECT_FENCE, VULKAN_OPCODE_vkCreateFence, VULKAN_OPCODE_vkDestroyFence, VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, pCreateInfo->flags, pAllocator, &sync);
+      |                  ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+userland/base/libvulkan/sync.c:1501:6: note: Assuming 'status' is equal to VK_SUCCESS
+ 1501 |         if (status != VK_SUCCESS)
+      |             ^~~~~~~~~~~~~~~~~~~~
+userland/base/libvulkan/sync.c:1501:2: note: Taking false branch
+ 1501 |         if (status != VK_SUCCESS)
+      |         ^
+userland/base/libvulkan/sync.c:1509:6: note: Assuming 'status' is equal to VK_SUCCESS
+ 1509 |         if (status != VK_SUCCESS) {
+      |             ^~~~~~~~~~~~~~~~~~~~
+userland/base/libvulkan/sync.c:1509:2: note: Taking false branch
+ 1509 |         if (status != VK_SUCCESS) {
+      |         ^
+userland/base/libvulkan/sync.c:1526:6: note: Assuming 'status' is not equal to VK_SUCCESS
+ 1526 |         if (status != VK_SUCCESS) {
+      |             ^~~~~~~~~~~~~~~~~~~~
+userland/base/libvulkan/sync.c:1526:2: note: Taking true branch
+ 1526 |         if (status != VK_SUCCESS) {
+      |         ^
+userland/base/libvulkan/sync.c:1530:3: note: Returning without writing to '*result'
+ 1530 |                 return status;
+      |                 ^
+userland/base/libvulkan/sync.c:50:11: note: Returning from 'sync_create'
+   50 |         status = sync_create(owner, VULKAN_OBJECT_FENCE, VULKAN_OPCODE_vkCreateFence, VULKAN_OPCODE_vkDestroyFence, VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, pCreateInfo->flags, pAllocator, &sync);
+      |                  ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+userland/base/libvulkan/sync.c:51:6: note: Assuming 'status' is equal to VK_SUCCESS
+   51 |         if (status != VK_SUCCESS)
+      |             ^~~~~~~~~~~~~~~~~~~~
+userland/base/libvulkan/sync.c:51:2: note: Taking false branch
+   51 |         if (status != VK_SUCCESS)
+      |         ^
+userland/base/libvulkan/sync.c:55:11: note: 2nd function call argument is an uninitialized value
+   55 |         status = vulkan_external_fence_create(owner, sync, pCreateInfo);
+      |                  ^                                   ~~~~
+userland/base/libvulkan/sync.c:246:11: warning: 1st function call argument is an uninitialized value [core.CallAndMessage]
+  246 |         handle = vulkan_nondispatchable_handle(&sync->object);
+      |                  ^                             ~~~~~~~~~~~~~
+userland/base/libvulkan/sync.c:235:2: note: 'sync' declared without an initial value
+  235 |         struct vulkan_sync *sync;
+      |         ^~~~~~~~~~~~~~~~~~~~~~~~
+userland/base/libvulkan/sync.c:241:11: note: Calling 'sync_create'
+  241 |         status = sync_create(owner, VULKAN_OBJECT_SEMAPHORE, VULKAN_OPCODE_vkCreateSemaphore, VULKAN_OPCODE_vkDestroySemaphore, VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, pCreateInfo->flags, pAllocator, &sync);
+      |                  ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+userland/base/libvulkan/sync.c:1501:6: note: Assuming 'status' is equal to VK_SUCCESS
+ 1501 |         if (status != VK_SUCCESS)
+      |             ^~~~~~~~~~~~~~~~~~~~
+userland/base/libvulkan/sync.c:1501:2: note: Taking false branch
+ 1501 |         if (status != VK_SUCCESS)
+      |         ^
+userland/base/libvulkan/sync.c:1509:6: note: Assuming 'status' is equal to VK_SUCCESS
+ 1509 |         if (status != VK_SUCCESS) {
+      |             ^~~~~~~~~~~~~~~~~~~~
+userland/base/libvulkan/sync.c:1509:2: note: Taking false branch
+ 1509 |         if (status != VK_SUCCESS) {
+      |         ^
+userland/base/libvulkan/sync.c:1526:6: note: Assuming 'status' is not equal to VK_SUCCESS
+ 1526 |         if (status != VK_SUCCESS) {
+      |             ^~~~~~~~~~~~~~~~~~~~
+userland/base/libvulkan/sync.c:1526:2: note: Taking true branch
+ 1526 |         if (status != VK_SUCCESS) {
+      |         ^
+userland/base/libvulkan/sync.c:1530:3: note: Returning without writing to '*result'
+ 1530 |                 return status;
+      |                 ^
+userland/base/libvulkan/sync.c:241:11: note: Returning from 'sync_create'
+  241 |         status = sync_create(owner, VULKAN_OBJECT_SEMAPHORE, VULKAN_OPCODE_vkCreateSemaphore, VULKAN_OPCODE_vkDestroySemaphore, VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, pCreateInfo->flags, pAllocator, &sync);
+      |                  ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+userland/base/libvulkan/sync.c:242:6: note: Assuming 'status' is equal to VK_SUCCESS
+  242 |         if (status != VK_SUCCESS)
+      |             ^~~~~~~~~~~~~~~~~~~~
+userland/base/libvulkan/sync.c:242:2: note: Taking false branch
+  242 |         if (status != VK_SUCCESS)
+      |         ^
+userland/base/libvulkan/sync.c:246:11: note: 1st function call argument is an uninitialized value
+  246 |         handle = vulkan_nondispatchable_handle(&sync->object);
+      |                  ^                             ~~~~~~~~~~~~~
+userland/base/libvulkan/sync.c:296:11: warning: 1st function call argument is an uninitialized value [core.CallAndMessage]
+  296 |         handle = vulkan_nondispatchable_handle(&sync->object);
+      |                  ^                             ~~~~~~~~~~~~~
+userland/base/libvulkan/sync.c:285:2: note: 'sync' declared without an initial value
+  285 |         struct vulkan_sync *sync;
+      |         ^~~~~~~~~~~~~~~~~~~~~~~~
+userland/base/libvulkan/sync.c:291:11: note: Calling 'sync_create'
+  291 |         status = sync_create(owner, VULKAN_OBJECT_EVENT, VULKAN_OPCODE_vkCreateEvent, VULKAN_OPCODE_vkDestroyEvent, VK_STRUCTURE_TYPE_EVENT_CREATE_INFO, pCreateInfo->flags, pAllocator, &sync);
+      |                  ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+userland/base/libvulkan/sync.c:1501:6: note: Assuming 'status' is equal to VK_SUCCESS
+ 1501 |         if (status != VK_SUCCESS)
+      |             ^~~~~~~~~~~~~~~~~~~~
+userland/base/libvulkan/sync.c:1501:2: note: Taking false branch
+ 1501 |         if (status != VK_SUCCESS)
+      |         ^
+userland/base/libvulkan/sync.c:1509:6: note: Assuming 'status' is equal to VK_SUCCESS
+ 1509 |         if (status != VK_SUCCESS) {
+      |             ^~~~~~~~~~~~~~~~~~~~
+userland/base/libvulkan/sync.c:1509:2: note: Taking false branch
+ 1509 |         if (status != VK_SUCCESS) {
+      |         ^
+userland/base/libvulkan/sync.c:1526:6: note: Assuming 'status' is not equal to VK_SUCCESS
+ 1526 |         if (status != VK_SUCCESS) {
+      |             ^~~~~~~~~~~~~~~~~~~~
+userland/base/libvulkan/sync.c:1526:2: note: Taking true branch
+ 1526 |         if (status != VK_SUCCESS) {
+      |         ^
+userland/base/libvulkan/sync.c:1530:3: note: Returning without writing to '*result'
+ 1530 |                 return status;
+      |                 ^
+userland/base/libvulkan/sync.c:291:11: note: Returning from 'sync_create'
+  291 |         status = sync_create(owner, VULKAN_OBJECT_EVENT, VULKAN_OPCODE_vkCreateEvent, VULKAN_OPCODE_vkDestroyEvent, VK_STRUCTURE_TYPE_EVENT_CREATE_INFO, pCreateInfo->flags, pAllocator, &sync);
+      |                  ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+userland/base/libvulkan/sync.c:292:6: note: Assuming 'status' is equal to VK_SUCCESS
+  292 |         if (status != VK_SUCCESS)
+      |             ^~~~~~~~~~~~~~~~~~~~
+userland/base/libvulkan/sync.c:292:2: note: Taking false branch
+  292 |         if (status != VK_SUCCESS)
+      |         ^
+userland/base/libvulkan/sync.c:296:11: note: 1st function call argument is an uninitialized value
+  296 |         handle = vulkan_nondispatchable_handle(&sync->object);
+      |                  ^                             ~~~~~~~~~~~~~
+userland/base/libvulkan/sync.c:1424:2: warning: Null pointer passed to 1st parameter expecting 'nonnull' [core.NonNullParamChecker]
+ 1424 |         memset(&descriptors[0], 0, sizeof(descriptors[0]));
+      |         ^
+userland/base/libvulkan/sync.c:216:11: note: Calling 'vulkan_fences_wait'
+  216 |         status = vulkan_fences_wait(owner, fenceCount, pFences, waitAll, timeout);
+      |                  ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+userland/base/libvulkan/sync.c:740:2: note: Null pointer value stored to 'descriptors'
+  740 |         descriptors = NULL;
+      |         ^~~~~~~~~~~~~~~~~~
+userland/base/libvulkan/sync.c:741:6: note: Assuming 'all' is 0
+  741 |         if (!all && count != 0) {
+      |             ^~~~
+userland/base/libvulkan/sync.c:741:6: note: Left side of '&&' is true
+userland/base/libvulkan/sync.c:741:14: note: Assuming 'count' is equal to 0
+  741 |         if (!all && count != 0) {
+      |                     ^~~~~~~~~~
+userland/base/libvulkan/sync.c:741:2: note: Taking false branch
+  741 |         if (!all && count != 0) {
+      |         ^
+userland/base/libvulkan/sync.c:762:74: note: Passing null pointer value via 7th parameter 'descriptors'
+  762 |         status = sync_fences_wait(device, count, fences, all, timeout_ns, pins, descriptors);
+      |                                                                                 ^~~~~~~~~~~
+userland/base/libvulkan/sync.c:762:11: note: Calling 'sync_fences_wait'
+  762 |         status = sync_fences_wait(device, count, fences, all, timeout_ns, pins, descriptors);
+      |                  ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+userland/base/libvulkan/sync.c:1092:6: note: 'status' is equal to VK_SUCCESS
+ 1092 |         if (status != VK_SUCCESS)
+      |             ^~~~~~
+userland/base/libvulkan/sync.c:1092:2: note: Taking false branch
+ 1092 |         if (status != VK_SUCCESS)
+      |         ^
+userland/base/libvulkan/sync.c:1096:2: note: Loop condition is true.  Entering loop body
+ 1096 |         for (;;) {
+      |         ^
+userland/base/libvulkan/sync.c:1107:3: note: Loop condition is false. Execution continues on line 1179
+ 1107 |                 for (index = 0; index < count; index++) {
+      |                 ^
+userland/base/libvulkan/sync.c:1179:7: note: 'all' is 0
+ 1179 |                 if (all) {
+      |                     ^~~
+userland/base/libvulkan/sync.c:1179:3: note: Taking false branch
+ 1179 |                 if (all) {
+      |                 ^
+userland/base/libvulkan/sync.c:1185:8: note: 'completed' is equal to 0
+ 1185 |                         if (completed != 0)
+      |                             ^~~~~~~~~
+userland/base/libvulkan/sync.c:1185:4: note: Taking false branch
+ 1185 |                         if (completed != 0)
+      |                         ^
+userland/base/libvulkan/sync.c:1190:7: note: Assuming 'timeout_ns' is not equal to 0
+ 1190 |                 if (timeout_ns == 0)
+      |                     ^~~~~~~~~~~~~~~
+userland/base/libvulkan/sync.c:1190:3: note: Taking false branch
+ 1190 |                 if (timeout_ns == 0)
+      |                 ^
+userland/base/libvulkan/sync.c:1195:7: note: Assuming 'timeout_ns' is equal to UINT64_MAX
+ 1195 |                 if (timeout_ns != UINT64_MAX) {
+      |                     ^~~~~~~~~~~~~~~~~~~~~~~~
+userland/base/libvulkan/sync.c:1195:3: note: Taking false branch
+ 1195 |                 if (timeout_ns != UINT64_MAX) {
+      |                 ^
+userland/base/libvulkan/sync.c:1211:7: note: 'all' is 0
+ 1211 |                 if (all && first_external != NULL) {
+      |                     ^~~
+userland/base/libvulkan/sync.c:1211:11: note: Left side of '&&' is false
+ 1211 |                 if (all && first_external != NULL) {
+      |                         ^
+userland/base/libvulkan/sync.c:1213:14: note: 'all' is 0
+ 1213 |                 } else if (all && first_sequence != 0) {
+      |                            ^~~
+userland/base/libvulkan/sync.c:1213:18: note: Left side of '&&' is false
+ 1213 |                 } else if (all && first_sequence != 0) {
+      |                                ^
+userland/base/libvulkan/sync.c:1215:15: note: 'all' is 0
+ 1215 |                 } else if (!all && !missing) {
+      |                             ^~~
+userland/base/libvulkan/sync.c:1215:14: note: Left side of '&&' is true
+ 1215 |                 } else if (!all && !missing) {
+      |                            ^
+userland/base/libvulkan/sync.c:1215:23: note: 'missing' is 0
+ 1215 |                 } else if (!all && !missing) {
+      |                                     ^~~~~~~
+userland/base/libvulkan/sync.c:1215:10: note: Taking true branch
+ 1215 |                 } else if (!all && !missing) {
+      |                        ^
+userland/base/libvulkan/sync.c:1216:67: note: Passing null pointer value via 3rd parameter 'descriptors'
+ 1216 |                         status = sync_notification_poll(device->object.context, delay, descriptors, descriptor_count);
+      |                                                                                        ^~~~~~~~~~~
+userland/base/libvulkan/sync.c:1216:13: note: Calling 'sync_notification_poll'
+ 1216 |                         status = sync_notification_poll(device->object.context, delay, descriptors, descriptor_count);
+      |                                  ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+userland/base/libvulkan/sync.c:1404:6: note: Assuming 'status' is equal to VK_SUCCESS
+ 1404 |         if (status != VK_SUCCESS)
+      |             ^~~~~~~~~~~~~~~~~~~~
+userland/base/libvulkan/sync.c:1404:2: note: Taking false branch
+ 1404 |         if (status != VK_SUCCESS)
+      |         ^
+userland/base/libvulkan/sync.c:1408:6: note: Assuming 'retired' is equal to 0
+ 1408 |         if (retired != 0)
+      |             ^~~~~~~~~~~~
+userland/base/libvulkan/sync.c:1408:2: note: Taking false branch
+ 1408 |         if (retired != 0)
+      |         ^
+userland/base/libvulkan/sync.c:1413:6: note: 'timeout_ns' is equal to UINT64_MAX
+ 1413 |         if (timeout_ns != UINT64_MAX) {
+      |             ^~~~~~~~~~
+userland/base/libvulkan/sync.c:1413:2: note: Taking false branch
+ 1413 |         if (timeout_ns != UINT64_MAX) {
+      |         ^
+userland/base/libvulkan/sync.c:1424:2: note: Null pointer passed to 1st parameter expecting 'nonnull'
+ 1424 |         memset(&descriptors[0], 0, sizeof(descriptors[0]));
+      |         ^      ~~~~~~~~~~~~~~~
+4 warnings generated.

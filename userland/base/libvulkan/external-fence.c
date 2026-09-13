@@ -356,7 +356,8 @@ vulkan_external_fence_prepare_locked(
 	struct VkDevice_T *device,
 	struct vulkan_sync *sync,
 	int *fd,
-	uint64_t *generation)
+	uint64_t *generation,
+	VkBool32 prepare_native)
 {
 	struct gpu_fence_state state;
 	struct vulkan_writer writer;
@@ -379,6 +380,13 @@ vulkan_external_fence_prepare_locked(
 	/* Only an unsignaled generation may be associated with a new native submission. */
 	if (state.state != GPU_FENCE_PENDING)
 		return VK_ERROR_DEVICE_LOST;
+
+	/* A capacity retry keeps the already prepared native identity while revalidating its shared generation. */
+	if (prepare_native == VK_FALSE) {
+		*fd = descriptor;
+		*generation = state.generation;
+		return VK_SUCCESS;
+	}
 
 	/* An imported alias may have reset the shared payload without resetting this native object. */
 	vulkan_writer_init_for_object(&writer, &sync->object);

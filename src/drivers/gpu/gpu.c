@@ -44,12 +44,34 @@
 #define GPU_RESOURCE_BLOB	2U
 #define GPU_RESOURCE_SCANOUT	3U
 
+#ifndef CONFIG_GPU_JOB_RESERVATION_MS
+#define CONFIG_GPU_JOB_RESERVATION_MS 10000U
+#endif
+#ifndef CONFIG_GPU_JOB_EXECUTION_MS
+#define CONFIG_GPU_JOB_EXECUTION_MS 60000U
+#endif
+#ifndef CONFIG_GPU_JOB_STOP_MS
+#define CONFIG_GPU_JOB_STOP_MS 10000U
+#endif
+
+#if CONFIG_GPU_JOB_RESERVATION_MS < 1 || CONFIG_GPU_JOB_EXECUTION_MS < 1 || CONFIG_GPU_JOB_STOP_MS < 1
+#error GPU supervision intervals must be finite positive milliseconds
+#endif
+
 /* One supervised job advances once from a producer reservation to terminal observation. */
 enum gpu_job_state {
 	GPU_JOB_NONE,
 	GPU_JOB_RESERVED,
 	GPU_JOB_COMMITTED,
 	GPU_JOB_FINISHED
+};
+
+/* One failed session advances from requested stop to confirmed retirement. */
+enum gpu_stop_state {
+	GPU_STOP_NONE,
+	GPU_STOP_REQUESTED,
+	GPU_STOP_PENDING,
+	GPU_STOP_FINISHED
 };
 
 /*
@@ -71,8 +93,18 @@ struct drv_gpu_device {
 	unsigned sessions;
 	unsigned shares;
 	int error;
+	uint64_t fault_epoch;
+	unsigned fault_epoch_overflow;
 	struct gpu_session *open_sessions;
 	uint64_t identity;
+	uint64_t capacity_sequence;
+	unsigned capacity_overflow;
+	unsigned recovering;
+	struct wait_queue capacity_waitq;
+	struct wait_queue monitor_waitq;
+	struct mutex monitor_lock;
+	struct thread *monitor;
+	unsigned monitor_stopping;
 };
 
 /*
@@ -133,6 +165,9 @@ struct drv_gpu_completion {
 	unsigned job_action;
 	enum gpu_job_state job_state;
 	void *job_reservation;
+	uint64_t job_deadline;
+	unsigned backend_owned;
+	unsigned unpublished;
 	int error;
 };
 
@@ -162,6 +197,12 @@ struct gpu_session {
 	unsigned busy;
 	struct thread *busy_owner;
 	struct gpu_session *next_open;
+	int error;
+	unsigned closing;
+	unsigned monitor_pins;
+	enum gpu_stop_state stop_state;
+	uint64_t stop_deadline;
+	uint64_t stop_poll_deadline;
 	struct wait_queue admission_waitq;
 	struct wait_queue completion_waitq;
 	struct drv_gpu_completion completions[GPU_SUBMIT_MAX];
@@ -233,6 +274,18 @@ static int gpu_transfer_ioctl(struct gpu_session *session, uintptr_t argument, u
 static int gpu_command_ioctl(struct gpu_session *session, uintptr_t argument);
 static int gpu_submit_ioctl(struct gpu_session *session, uintptr_t argument, uint64_t *sequence);
 static int gpu_job_reserve_ioctl(struct gpu_session *session, uintptr_t argument);
+static int gpu_capacity_ioctl(struct gpu_session *session, uintptr_t argument);
+static int gpu_policy_ioctl(struct gpu_session *session, uintptr_t argument);
+static void gpu_capacity_changed_locked(struct drv_gpu_device *device);
+static int gpu_session_error_locked(struct gpu_session *session);
+static void gpu_session_fail_locked(struct gpu_session *session, int error);
+static uint64_t gpu_monitor_deadline(uint64_t milliseconds);
+static int gpu_monitor_start(struct drv_gpu_device *device);
+static int gpu_monitor_stop(struct drv_gpu_device *device);
+static void gpu_monitor(void *argument);
+static uint64_t gpu_monitor_step(struct drv_gpu_device *device);
+static void gpu_monitor_close(struct gpu_session *session);
+static int gpu_recover_open(struct drv_gpu_device *device);
 static int gpu_job_action_ioctl(struct gpu_session *session, unsigned long command, uintptr_t argument);
 static int gpu_job_bind(struct gpu_session *session, struct drv_gpu_completion *completion, struct kernel_handle *handle, uint64_t generation);
 static void gpu_job_unbind(struct gpu_session *session, uint64_t sequence);
@@ -311,7 +364,7 @@ drv_gpu_release(
 }
 
 /*
- * Publishes one terminal result and completes admitted GPU work autonomously.
+ * Publishes one backend retirement without overwriting an earlier logical error.
  */
 void
 drv_gpu_complete(
@@ -324,64 +377,74 @@ drv_gpu_complete(
 	unsigned index;
 	unsigned long irq;
 
-	/* A rejected backend submission never supplies a completion obligation. */
+	/* A refused backend submission has no completion obligation. */
 	if (completion == NULL)
 		return;
 
-	/* Publishes terminal records and exact fence generations under the same registry lock. */
+	/* Terminal observation and actual backend retirement have distinct ownership. */
 	retired_count = 0U;
 	irq = spin_lock_irqsave(&gpu_registry_lock);
 
+	/* Only the first terminal result may define this generation's public status. */
 	if (completion->completed == 0U) {
-		/* Reservation expiry may fail before commit, but cannot prove successful GPU execution. */
+		/* A reservation without admission cannot prove successful GPU execution. */
 		if (completion->job_state == GPU_JOB_RESERVED && error == 0)
 			error = EIO;
 
-		/* Ordinary notification still reports transport progress without claiming GPU success. */
+		/* Ordinary notifications still distinguish receipt from GPU job success. */
 		completion->error = error;
 		completion->completed = 1U;
 
-		/* Terminal jobs cannot be recommitted even while their result remains observable. */
+		/* A supervised generation cannot return to reservation after terminal publication. */
 		if (completion->job_state != GPU_JOB_NONE)
 			completion->job_state = GPU_JOB_FINISHED;
+	}
 
-		/* Only the accepted job's exact sequence may signal its retained generation. */
-		for (index = 0U; index < GPU_SUBMIT_MAX; index++) {
-			binding = &completion->session->fences[index];
-			if (binding->handle == NULL || binding->sequence != completion->sequence)
-				continue;
+	/* A late success cannot erase a timeout, while actual callback retirement releases its pin. */
+	completion->backend_owned = 0U;
+	completion->job_deadline = 0U;
 
-			/* Legacy transport notifications propagate errors while autonomous jobs also prove success. */
-			if (binding->job != 0U || error != 0) {
-				(void)drv_gpu_fence_signal_deferred(
-					binding->handle,
-					binding->generation,
-					completion->session,
-					error);
-			}
+	/* Exact sequence ownership joins shared fence lifetime to native completion. */
+	for (index = 0U; index < GPU_SUBMIT_MAX; index++) {
+		binding = &completion->session->fences[index];
+		if (binding->handle == NULL || binding->sequence != completion->sequence)
+			continue;
 
-			/* A job's terminal callback ends its producer hold even after an earlier global error. */
-			if (binding->job != 0U) {
-				retired[retired_count] = binding->handle;
-				retired_count++;
-				memset(binding, 0, sizeof(*binding));
-			}
+		/* Legacy notifications propagate failures; supervised jobs can also prove success. */
+		if (binding->job != 0U || completion->error != 0) {
+			(void)drv_gpu_fence_signal_deferred(
+				binding->handle,
+				binding->generation,
+				completion->session,
+				completion->error);
 		}
 
-		/* Sequence waiters observe the same immutable status as imported payload aliases. */
-		waitq_wake_all(&completion->session->completion_waitq);
+		/* Logical error retained this hold until the backend stopped using its completion. */
+		if (binding->job != 0U) {
+			retired[retired_count] = binding->handle;
+			retired_count++;
+			memset(binding, 0, sizeof(*binding));
+		}
 	}
+
+	/* Consumed logical errors can reclaim their record only after native callback retirement. */
+	if (completion->listed == 0U && completion->observers == 0U)
+		completion->sequence = 0U;
+
+	/* Reclamation waiters wake even when they must consume a newly terminal record first. */
+	waitq_wake_all(&completion->session->completion_waitq);
+	gpu_capacity_changed_locked(completion->session->device);
 
 	spin_unlock_irqrestore(&gpu_registry_lock, irq);
 
-	/* Payload destruction follows release of every binding pointer from the registry. */
+	/* Payload finalizers run only after their binding pointers have left the registry. */
 	for (index = 0U; index < retired_count; index++)
 		handle_put(retired[index]);
 
-	/* Makes terminal sequence and fence readiness visible to ordinary poll callers. */
+	/* Descriptor and imported-fence observers receive the same terminal state. */
 	poll_notify();
 
-	/* Succeeded: this backend callback has fulfilled its one completion obligation. */
+	/* Succeeded: actual backend retirement ended this callback's ownership. */
 	return;
 }
 
@@ -405,11 +468,29 @@ drv_gpu_report_error(
 	/* Wakes both admission and observation when device availability changes. */
 	irq = spin_lock_irqsave(&gpu_registry_lock);
 
+	/* Every new nonzero report is distinct, even when its errno equals the previous fault. */
+	if (error != 0) {
+		/* Saturation stays explicit because a reused epoch cannot protect checked reset. */
+		if (device->fault_epoch == UINT64_MAX) {
+			device->fault_epoch_overflow = 1U;
+		} else {
+			device->fault_epoch++;
+		}
+	}
+
+	/* Publish the new device state before waking capacity and every retained open. */
 	device->error = error;
+	gpu_capacity_changed_locked(device);
+
+	/* Each open keeps its own sticky loss and exact producer-generation ownership. */
 	session = device->open_sessions;
 	while (session != NULL) {
 		/* Device loss terminates every retained producer generation, including pre-submit reservations. */
 		if (error != 0) {
+			gpu_session_fail_locked(session, error);
+			session->stop_state = GPU_STOP_FINISHED;
+
+			/* Existing shared aliases observe the same retained error generation. */
 			for (index = 0U; index < GPU_SUBMIT_MAX; index++) {
 				binding = &session->fences[index];
 				if (binding->handle != NULL)
@@ -417,6 +498,7 @@ drv_gpu_report_error(
 			}
 		}
 
+		/* Wake this open before advancing to the next retained session. */
 		waitq_wake_all(&session->admission_waitq);
 		waitq_wake_all(&session->completion_waitq);
 		session = session->next_open;
@@ -525,7 +607,18 @@ drv_gpu_register(
 	device->private_data = private_data;
 	device->number = number;
 	device->online = 1;
+	device->capacity_sequence = 1U;
+	waitq_init(&device->capacity_waitq, "GPU submission capacity");
+	waitq_init(&device->monitor_waitq, "GPU job supervision");
 	refcount_init(&device->references, 1);
+
+	/* A failed monitor gate cannot publish a partially initialized device. */
+	error = mutex_init(&device->monitor_lock, LOCK_RANK_DEVICE, "GPU monitor lifetime");
+	if (error != 0) {
+		gpu_device_release(device);
+		atomic_store_release(&gpu_lifecycle, 0);
+		return error;
+	}
 
 	/* Device identities share the non-reusable generation domain with resource handles. */
 	error = gpu_handle_allocate(&device->identity);
@@ -603,7 +696,11 @@ drv_gpu_unregister(
 
 	spin_unlock_irqrestore(&gpu_registry_lock, irq);
 
-	/* Wakes admissions and observers before withdrawal cleanup proceeds. */
+	/* Withdrawal arms DMA retention before publishing permission for global-error teardown. */
+	if (device->ops->recovery != NULL)
+		device->ops->recovery->fault(device->private_data, ENODEV);
+
+	/* Wakes admissions and observers after the backend has established safe quarantine. */
 	drv_gpu_report_error(device, ENODEV);
 
 	/* Old inode generations remain retained by the common cdev core. */
@@ -629,6 +726,13 @@ drv_gpu_unregister(
 		return EBUSY;
 	}
 
+	/* Ends the common worker before borrowed backend state can disappear. */
+	error = gpu_monitor_stop(device);
+	if (error != 0) {
+		atomic_store_release(&gpu_lifecycle, 0);
+		return error;
+	}
+
 	/* Releases registration ownership and makes this number reusable. */
 	*position = device->next;
 	device->next = NULL;
@@ -637,6 +741,70 @@ drv_gpu_unregister(
 
 	/* Succeeded: the owner may free its operations and private state. */
 	return 0;
+}
+
+/*
+ * Publishes one session's loss while independent contexts remain available.
+ */
+void
+drv_gpu_report_session_error(
+	struct drv_gpu_device *device,
+	void *backend,
+	int error)
+{
+	struct gpu_session *session;
+	unsigned long irq;
+
+	/* A missing publication or success cannot create a sticky local failure. */
+	if (device == NULL || error == 0)
+		return;
+
+	/* Backend lifetime ownership makes its private pointer an exact live-session key. */
+	irq = spin_lock_irqsave(&gpu_registry_lock);
+
+	session = device->open_sessions;
+	while (session != NULL) {
+		/* Only the originating context loses new submission authority. */
+		if (session->backend == backend) {
+			gpu_session_fail_locked(session, error);
+			break;
+		}
+
+		/* Each linked session is retained until final backend teardown completes. */
+		session = session->next_open;
+	}
+
+	spin_unlock_irqrestore(&gpu_registry_lock, irq);
+
+	/* External fence aliases and this GPU descriptor observe the same local loss. */
+	poll_notify();
+
+	/* Succeeded: logical error is visible without claiming that DMA has stopped. */
+	return;
+}
+
+/*
+ * Announces backend capacity after the final descriptor or reservation release.
+ */
+void
+drv_gpu_capacity_changed(
+	struct drv_gpu_device *device)
+{
+	unsigned long irq;
+
+	/* Early transport initialization may precede framework registration. */
+	if (device == NULL)
+		return;
+
+	/* The common condition joins backend release with per-open record retirement. */
+	irq = spin_lock_irqsave(&gpu_registry_lock);
+
+	gpu_capacity_changed_locked(device);
+
+	spin_unlock_irqrestore(&gpu_registry_lock, irq);
+
+	/* Succeeded: capacity waiters may recheck both independently owned limits. */
+	return;
 }
 
 /* Validates callback pairs and capabilities before device registration. */
@@ -669,7 +837,7 @@ gpu_ops_validate(
 	    GPU_CAP_BLOB | GPU_CAP_TRANSFER | GPU_CAP_COMMAND |
 	    GPU_CAP_PRESENT | GPU_CAP_MAPPING | GPU_CAP_DISPLAY | GPU_CAP_SHARE |
 	    GPU_CAP_NOTIFICATION | GPU_CAP_ALLOCATION_SHARE | GPU_CAP_FENCE |
-	    GPU_CAP_DISPLAY_EVENTS | GPU_CAP_JOB)) != 0)
+	    GPU_CAP_DISPLAY_EVENTS | GPU_CAP_JOB | GPU_CAP_JOB_CAPACITY)) != 0)
 		return EOPNOTSUPP;
 
 	/* Supervised jobs require reservation, publication, cancellation and callback drain together. */
@@ -686,6 +854,35 @@ gpu_ops_validate(
 	} else {
 		/* Unadvertised callbacks must not manufacture hidden submission authority. */
 		if (ops->jobs != NULL)
+			return EINVAL;
+	}
+
+	/* Capacity snapshots must accompany an advertised supervised job interface. */
+	if ((ops->capabilities & GPU_CAP_JOB_CAPACITY) != 0U) {
+		/* Both layers must describe actual reservable storage without sleeping. */
+		if (ops->jobs == NULL || ops->jobs->capacity == NULL)
+			return EINVAL;
+	}
+
+	/* Every supervised backend can quarantine work whose safe stop is unknown. */
+	if ((ops->capabilities & GPU_CAP_JOB) != 0U) {
+		/* A missing fault operation cannot implement finite supervision safely. */
+		if (ops->recovery == NULL || ops->recovery->fault == NULL)
+			return EINVAL;
+	}
+
+	/* Optional local stopping requires both nonblocking stages. */
+	if (ops->recovery != NULL) {
+		/* Raw-command close also needs quarantine when supervision or local stop fails. */
+		if (ops->recovery->fault == NULL)
+			return EINVAL;
+
+		/* A begin without a confirmation operation cannot prove retirement. */
+		if (ops->recovery->stop_begin != NULL && ops->recovery->stop_poll == NULL)
+			return EINVAL;
+
+		/* A confirmation without stopping new native work is insufficient. */
+		if (ops->recovery->stop_poll != NULL && ops->recovery->stop_begin == NULL)
 			return EINVAL;
 	}
 
@@ -990,6 +1187,13 @@ gpu_open(
 		return error;
 	}
 
+	/* A checked recovery may rebuild hardware only after old owners have retired. */
+	error = gpu_recover_open(device);
+	if (error != 0) {
+		gpu_session_drop(session);
+		return error;
+	}
+
 	/* Opens backend state without any core lock held. */
 	error = device->ops->open(device->private_data, &session->backend);
 	if (error != 0) {
@@ -1036,6 +1240,7 @@ gpu_close(
 	struct gpu_session *session;
 	struct drv_gpu_device *device;
 	struct gpu_resource *resource;
+	int error;
 
 	/* An unsuccessful open leaves no session for final-close cleanup. */
 	session = file->f_data;
@@ -1046,12 +1251,28 @@ gpu_close(
 	file->f_data = NULL;
 	device = session->device;
 
+	/* Pending callbacks retain their common supervisor throughout final-close drain. */
+	drv_gpu_report_session_error(device, session->backend, ENODEV);
+
 	/* Producer authority ends now; an uncertain native drain must not delay shared error notification. */
 	gpu_fence_retire(session);
+
+	/* Raw native commands also require a supervisor before asynchronous stop begins. */
+	if (device->ops->recovery != NULL) {
+		error = gpu_monitor_start(device);
+		if (error != 0) {
+			/* Failed supervisor allocation cannot authorize uncertain resource destruction. */
+			device->ops->recovery->fault(device->private_data, error);
+			drv_gpu_report_error(device, error);
+		}
+	}
 
 	/* Keep resources and embedded completion storage alive until every native callback has retired. */
 	if (device->ops->commands != NULL)
 		device->ops->commands->drain(device->private_data, session->backend);
+
+	/* No monitor callback may inspect the backend while terminal objects are destroyed. */
+	gpu_monitor_close(session);
 
 	/* Destroys all owned objects while their backend session remains valid. */
 	while (session->resources != NULL) {
@@ -1139,7 +1360,10 @@ gpu_session_enter(
 		return EBUSY;
 	}
 
-	while (session->busy != 0U && session->device->online != 0U) {
+	while (session->busy != 0U &&
+	    session->device->online != 0U &&
+	    session->device->error == 0 &&
+	    session->error == 0) {
 		observed = waitq_sequence(&session->admission_waitq);
 		error = waitq_sleep(
 			&session->admission_waitq,
@@ -1158,6 +1382,10 @@ gpu_session_enter(
 	/* Device withdrawal always refuses new resource-table operations. */
 	if (error == 0 && session->device->online == 0U)
 		error = ENODEV;
+
+	/* Local device loss rejects new work without contaminating independent opens. */
+	if (error == 0)
+		error = gpu_session_error_locked(session);
 
 	/* Busy now belongs to this operation through backend work and user copyout. */
 	if (error == 0) {
@@ -1188,6 +1416,7 @@ gpu_session_leave(
 	session->busy = 0;
 	session->busy_owner = NULL;
 	waitq_wake_all(&session->admission_waitq);
+	waitq_wake_all(&session->device->monitor_waitq);
 
 	spin_unlock_irqrestore(&gpu_registry_lock, irq);
 
@@ -1209,6 +1438,26 @@ gpu_ioctl(
 	session = file->f_data;
 	if (session == NULL)
 		return ENODEV;
+
+	/* Capacity and policy observation never own ordinary resource-table admission. */
+	if (command == GPU_JOB_CAPACITY) {
+		error = gpu_capacity_ioctl(session, argument);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the caller may reclaim and retry without an accepted job. */
+		return 0;
+	}
+
+	/* Supervision policy remains inspectable independently from renderer health. */
+	if (command == GPU_JOB_POLICY) {
+		error = gpu_policy_ioctl(session, argument);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: effective finite policy intervals were returned. */
+		return 0;
+	}
 
 	/* Job reservations leave the resource table available for their native submission. */
 	if (command == GPU_JOB_RESERVE) {
@@ -1413,7 +1662,7 @@ gpu_poll(
 		*revents |= POLLERR | POLLHUP;
 
 	/* A failed but registered GPU can later recover after all old references retire. */
-	if (session->device->error != 0)
+	if (session->device->error != 0 || session->error != 0)
 		*revents |= POLLERR;
 
 	/* Readability persists until every terminal record has been consumed. */
@@ -1462,7 +1711,7 @@ gpu_events_snapshot(
 	device = session->device;
 	irq = spin_lock_irqsave(&gpu_registry_lock);
 
-	error = device->error;
+	error = gpu_session_error_locked(session);
 	if (device->online == 0U)
 		error = ENODEV;
 
@@ -3847,18 +4096,22 @@ gpu_job_reserve_ioctl(
 	if (error != 0)
 		return error;
 
-	/* CPU decoder completion cannot substitute for a queue's native fence. */
+	/* The common header carries a backend-defined execution domain without hardware-specific limits. */
 	if (request.version != GPU_ABI_VERSION ||
 	    request.size != sizeof(request) ||
 	    request.flags != 0U || request.reserved != 0U ||
-	    request.sequence != 0U || request.timeline == 0U ||
-	    request.timeline >= 64U || request.fd < -1)
+	    request.sequence != 0U || request.fd < -1)
 		return EINVAL;
 
 	/* An omitted payload has no generation; a supplied payload must identify one. */
 	if ((request.fd == -1 && request.generation != 0U) ||
 	    (request.fd != -1 && request.generation == 0U))
 		return EINVAL;
+
+	/* Autonomous policy supervision must exist before native submission becomes possible. */
+	error = gpu_monitor_start(device);
+	if (error != 0)
+		return error;
 
 	/* A strong reference covers concurrent descriptor close and payload retirement. */
 	handle = NULL;
@@ -3888,6 +4141,9 @@ gpu_job_reserve_ioctl(
 	completion->observers++;
 	completion->job_action = 1U;
 	completion->job_state = GPU_JOB_RESERVED;
+	completion->job_deadline = gpu_monitor_deadline(CONFIG_GPU_JOB_RESERVATION_MS);
+	completion->backend_owned = 1U;
+	waitq_wake_all(&device->monitor_waitq);
 
 	spin_unlock_irqrestore(&gpu_registry_lock, irq);
 
@@ -3913,6 +4169,7 @@ gpu_job_reserve_ioctl(
 		irq = spin_lock_irqsave(&gpu_registry_lock);
 
 		completion->job_reservation = reservation;
+		completion->unpublished = 0U;
 
 		spin_unlock_irqrestore(&gpu_registry_lock, irq);
 	}
@@ -3921,6 +4178,7 @@ gpu_job_reserve_ioctl(
 	irq = spin_lock_irqsave(&gpu_registry_lock);
 
 	completion->job_action = 0U;
+	waitq_wake_all(&session->device->monitor_waitq);
 
 	spin_unlock_irqrestore(&gpu_registry_lock, irq);
 
@@ -4013,6 +4271,7 @@ gpu_job_action_ioctl(
 		if (error == 0 && fault == 0U) {
 			gpu_job_unbind(session, request.sequence);
 			gpu_completion_discard(completion);
+			drv_gpu_capacity_changed(device);
 		}
 	}
 
@@ -4020,6 +4279,7 @@ gpu_job_action_ioctl(
 	irq = spin_lock_irqsave(&gpu_registry_lock);
 
 	completion->job_action = 0U;
+	waitq_wake_all(&session->device->monitor_waitq);
 
 	spin_unlock_irqrestore(&gpu_registry_lock, irq);
 
@@ -4048,7 +4308,9 @@ gpu_job_bind(
 	/* The registry serializes device health and exact producer-generation ownership. */
 	irq = spin_lock_irqsave(&gpu_registry_lock);
 
-	if (session->device->online == 0U || session->device->error != 0) {
+	if (session->device->online == 0U ||
+	    session->device->error != 0 ||
+	    session->error != 0) {
 		spin_unlock_irqrestore(&gpu_registry_lock, irq);
 		return ENODEV;
 	}
@@ -4158,8 +4420,11 @@ gpu_job_admit(
 	}
 
 	/* Expiry or another terminal callback cannot be reclassified as accepted success. */
-	if (completion == NULL || completion->completed != 0U ||
-	    completion->job_state != GPU_JOB_RESERVED || session->device->error != 0 ||
+	if (completion == NULL ||
+	    completion->completed != 0U ||
+	    completion->job_state != GPU_JOB_RESERVED ||
+	    session->device->error != 0 ||
+	    session->error != 0 ||
 	    session->device->online == 0U) {
 		spin_unlock_irqrestore(&gpu_registry_lock, irq);
 		return ENODEV;
@@ -4179,8 +4444,11 @@ gpu_job_admit(
 	}
 
 	/* Admission is irreversible except through a terminal error once native work may exist. */
-	if (error == 0)
+	if (error == 0) {
 		completion->job_state = GPU_JOB_COMMITTED;
+		completion->job_deadline = gpu_monitor_deadline(CONFIG_GPU_JOB_EXECUTION_MS);
+		waitq_wake_all(&session->device->monitor_waitq);
+	}
 
 	spin_unlock_irqrestore(&gpu_registry_lock, irq);
 
@@ -4295,11 +4563,7 @@ gpu_submit_ioctl(
 	if ((request.flags & ~GPU_COMMAND_CONTEXT_FENCE) != 0U)
 		return EINVAL;
 
-	/* The renderer has one CPU timeline and at most sixty-three queue timelines. */
-	if (request.timeline >= 64U)
-		return EINVAL;
-
-	/* Ordinary control completion cannot name a renderer queue timeline. */
+	/* Without an explicit completion-domain flag, the unused selector remains zero. */
 	if (request.flags == 0U && request.timeline != 0U)
 		return EINVAL;
 
@@ -4362,8 +4626,38 @@ gpu_submit_ioctl(
 	error = copyout(&request, argument, sizeof(request));
 	if (error != 0) {
 		gpu_completion_discard(completion);
+
+		/* The dependency wrapper retains its own observer independently from the public record. */
 		if (sequence != NULL)
 			gpu_completion_observer_leave(completion, 0U, 0U);
+
+		/* No native owner received the staged command bytes. */
+		kern_free(command);
+		return error;
+	}
+
+	/* Pins publication against a concurrent consumer and a local stop request. */
+	irq = spin_lock_irqsave(&gpu_registry_lock);
+
+	error = gpu_session_error_locked(session);
+	if (error == 0) {
+		completion->backend_owned = 1U;
+		completion->unpublished = 0U;
+		completion->job_action = 1U;
+		completion->observers++;
+	}
+
+	spin_unlock_irqrestore(&gpu_registry_lock, irq);
+
+	/* A local failure preceding publication must not submit untracked work afterward. */
+	if (error != 0) {
+		gpu_completion_discard(completion);
+
+		/* The dependency wrapper retains its own observer independently from the public record. */
+		if (sequence != NULL)
+			gpu_completion_observer_leave(completion, 0U, 0U);
+
+		/* No native owner received the staged command bytes. */
 		kern_free(command);
 		return error;
 	}
@@ -4378,12 +4672,30 @@ gpu_submit_ioctl(
 		request.timeline,
 		completion);
 	kern_free(command);
+
+	/* Local stop waits until the native submission callback has returned. */
+	irq = spin_lock_irqsave(&gpu_registry_lock);
+
+	completion->job_action = 0U;
+	waitq_wake_all(&device->monitor_waitq);
+
+	spin_unlock_irqrestore(&gpu_registry_lock, irq);
+
+	/* Refusal retains no callback and withdraws the publication pin separately. */
 	if (error != 0) {
 		gpu_completion_discard(completion);
+		gpu_completion_observer_leave(completion, 0U, 0U);
+
+		/* A dependency caller may own one additional setup observer. */
 		if (sequence != NULL)
 			gpu_completion_observer_leave(completion, 0U, 0U);
+
+		/* Failure retains no callback or publication observer. */
 		return error;
 	}
+
+	/* The accepted backend or result ledger now retains the publication independently. */
+	gpu_completion_observer_leave(completion, 0U, 0U);
 
 	/* Internal dependency wrappers use the trusted accepted identity, never a second user-memory read. */
 	if (sequence != NULL)
@@ -4456,10 +4768,18 @@ gpu_completion_reserve(
 	struct drv_gpu_completion *completion;
 	unsigned index;
 	unsigned long irq;
+	int error;
 
 	/* Failure leaves no backend callback owner. */
 	*result = NULL;
 	irq = spin_lock_irqsave(&gpu_registry_lock);
+
+	/* Failed opens cannot acquire a new completion owner while stop is pending. */
+	error = gpu_session_error_locked(session);
+	if (error != 0) {
+		spin_unlock_irqrestore(&gpu_registry_lock, irq);
+		return error;
+	}
 
 	/* Finds only slots whose prior operation and all observers have retired. */
 	for (index = 0U; index < GPU_SUBMIT_MAX; index++) {
@@ -4472,6 +4792,7 @@ gpu_completion_reserve(
 		completion->session = session;
 		completion->sequence = sequence;
 		completion->listed = 1U;
+		completion->unpublished = 1U;
 		*result = completion;
 		break;
 	}
@@ -4497,6 +4818,9 @@ gpu_completion_discard(
 	irq = spin_lock_irqsave(&gpu_registry_lock);
 
 	completion->listed = 0U;
+	completion->unpublished = 1U;
+	completion->backend_owned = 0U;
+	completion->job_deadline = 0U;
 	completion->error = ECANCELED;
 	completion->completed = 1U;
 	waitq_wake_all(&completion->session->completion_waitq);
@@ -4635,8 +4959,15 @@ gpu_completion_observer_leave(
 
 	/* Every observer retains its own slot hold independently from consumption. */
 	completion->observers--;
-	if (completion->listed == 0U && completion->observers == 0U)
+	if (completion->listed == 0U &&
+	    completion->observers == 0U &&
+	    completion->backend_owned == 0U) {
 		completion->sequence = 0U;
+
+		/* Failed try-reserve rollback must not wake its own retry on every refusal. */
+		if (completion->unpublished == 0U)
+			gpu_capacity_changed_locked(completion->session->device);
+	}
 
 	spin_unlock_irqrestore(&gpu_registry_lock, irq);
 
@@ -5331,5 +5662,784 @@ gpu_dependency_ioctl(
 		return error;
 
 	/* Succeeded: accepted work retains its required completion ownership. */
+	return 0;
+}
+
+/* Advances capacity observation without wrapping into an earlier caller's snapshot. */
+static void
+gpu_capacity_changed_locked(
+	struct drv_gpu_device *device)
+{
+	/* Exhaustion stays explicit instead of creating a missed wake through aliasing. */
+	if (device->capacity_sequence == UINT64_MAX) {
+		device->capacity_overflow = 1U;
+	} else {
+		device->capacity_sequence++;
+	}
+
+	/* Capacity and graceful stop both depend on actual callback retirement. */
+	waitq_wake_all(&device->capacity_waitq);
+	waitq_wake_all(&device->monitor_waitq);
+
+	/* Succeeded: no observer can mistake this transition for its old condition. */
+	return;
+}
+
+/* Returns the current open's health under the common registry lock. */
+static int
+gpu_session_error_locked(
+	struct gpu_session *session)
+{
+	/* Withdrawal invalidates every backend operation even on a healthy context. */
+	if (session->device->online == 0U)
+		return ENODEV;
+
+	/* Transport loss affects all opens; local loss affects only this one. */
+	if (session->device->error != 0)
+		return session->device->error;
+
+	/* A fresh open is the only way to obtain a new context after local loss. */
+	if (session->error != 0)
+		return session->error;
+
+	/* Succeeded: this open may admit new operations. */
+	return 0;
+}
+
+/* Publishes local terminal errors while preserving every backend callback hold. */
+static void
+gpu_session_fail_locked(
+	struct gpu_session *session,
+	int error)
+{
+	struct drv_gpu_completion *completion;
+	struct gpu_fence_binding *binding;
+	unsigned index;
+
+	/* The first failure fixes the context's public result and stop interval. */
+	if (session->error == 0) {
+		session->error = error;
+		session->stop_state = GPU_STOP_REQUESTED;
+		session->stop_deadline = gpu_monitor_deadline(CONFIG_GPU_JOB_STOP_MS);
+	}
+
+	/* Logical completion cannot release storage still reachable by native callbacks. */
+	for (index = 0U; index < GPU_SUBMIT_MAX; index++) {
+		completion = &session->completions[index];
+		if (completion->sequence == 0U ||
+		    completion->completed != 0U ||
+		    completion->backend_owned == 0U)
+			continue;
+
+		/* The failed generation becomes observable even before native work retires. */
+		completion->completed = 1U;
+		completion->error = session->error;
+		completion->job_deadline = 0U;
+
+		/* Terminal supervision cannot be recommitted while native ownership is retained. */
+		if (completion->job_state != GPU_JOB_NONE)
+			completion->job_state = GPU_JOB_FINISHED;
+	}
+
+	/* Imported aliases retain their payload, while its producer authority ends now. */
+	for (index = 0U; index < GPU_SUBMIT_MAX; index++) {
+		binding = &session->fences[index];
+		if (binding->handle == NULL)
+			continue;
+
+		/* Deferred publication avoids invoking the poll registry under this lock. */
+		(void)drv_gpu_fence_signal_deferred(
+			binding->handle,
+			binding->generation,
+			session,
+			session->error);
+	}
+
+	/* Admission, record observers and reclamation loops all see the same error. */
+	waitq_wake_all(&session->admission_waitq);
+	waitq_wake_all(&session->completion_waitq);
+	gpu_capacity_changed_locked(session->device);
+
+	/* Succeeded: only backend retirement can now end the retained DMA ownership. */
+	return;
+}
+
+/* Converts a finite administrator interval to a saturating monotonic deadline. */
+static uint64_t
+gpu_monitor_deadline(
+	uint64_t milliseconds)
+{
+	uint64_t ticks;
+	uint64_t now;
+
+	/* Round upward so clock granularity cannot shorten the selected policy. */
+	ticks = milliseconds * KERN_CLOCK_HZ / 1000U;
+	if (milliseconds * KERN_CLOCK_HZ % 1000U != 0U)
+		ticks++;
+
+	/* Configuration always remains finite, including near clock exhaustion. */
+	now = sched_ticks();
+	if (now > UINT64_MAX - ticks)
+		return UINT64_MAX;
+
+	/* Succeeded: this absolute deadline is independent from userspace scheduling. */
+	return now + ticks;
+}
+
+/* Starts the common supervisor before the first native reservation is returned. */
+static int
+gpu_monitor_start(
+	struct drv_gpu_device *device)
+{
+	struct thread *worker;
+	int error;
+
+	/* Serializes worker creation with teardown without holding the registry lock. */
+	mutex_lock(&device->monitor_lock);
+
+	/* One worker supervises all sessions belonging to this registered device. */
+	if (device->monitor != NULL) {
+		mutex_unlock(&device->monitor_lock);
+		return 0;
+	}
+
+	/* A withdrawn worker cannot be restarted against disappearing backend state. */
+	if (device->monitor_stopping != 0U) {
+		mutex_unlock(&device->monitor_lock);
+		return ENODEV;
+	}
+
+	/* Native work cannot precede successful allocation of its deadline owner. */
+	error = kthread_create(gpu_monitor, device, SCHED_PRIORITY_DEFAULT, &worker);
+	if (error != 0) {
+		mutex_unlock(&device->monitor_lock);
+		return error;
+	}
+
+	/* Registration keeps the device alive until this worker is explicitly reaped. */
+	device->monitor = worker;
+	thread_start(worker);
+
+	mutex_unlock(&device->monitor_lock);
+
+	/* Succeeded: future GPU work has an autonomous finite supervisor. */
+	return 0;
+}
+
+/* Reaps the common supervisor before unregister releases borrowed backend state. */
+static int
+gpu_monitor_stop(
+	struct drv_gpu_device *device)
+{
+	struct thread *worker;
+	uint64_t deadline;
+	uint64_t now;
+	unsigned long irq;
+	int error;
+
+	/* Creation cannot race the transition to permanent teardown. */
+	mutex_lock(&device->monitor_lock);
+
+	/* Every sleeping monitor sees withdrawal before its worker storage can retire. */
+	irq = spin_lock_irqsave(&gpu_registry_lock);
+
+	device->monitor_stopping = 1U;
+	waitq_wake_all(&device->monitor_waitq);
+
+	spin_unlock_irqrestore(&gpu_registry_lock, irq);
+
+	/* Devices which never submitted native work have no thread to reap. */
+	worker = device->monitor;
+	if (worker == NULL) {
+		mutex_unlock(&device->monitor_lock);
+		return 0;
+	}
+
+	/* A stalled owner remains retained instead of freeing its borrowed backend. */
+	deadline = gpu_monitor_deadline(15000U);
+	while (1) {
+		error = thread_wait(worker, NULL);
+		if (error == 0)
+			break;
+
+		/* Only a still-running worker permits a finite teardown retry. */
+		if (error != EBUSY) {
+			mutex_unlock(&device->monitor_lock);
+			return error;
+		}
+
+		/* Failure leaves the registration and thread references available for retry. */
+		now = sched_ticks();
+		if (now >= deadline) {
+			mutex_unlock(&device->monitor_lock);
+			return ETIMEDOUT;
+		}
+
+		/* Lets the woken worker leave its final condition check. */
+		sched_sleep(now + 1U);
+	}
+
+	/* Successful reap consumes the creator's retained thread reference. */
+	device->monitor = NULL;
+
+	mutex_unlock(&device->monitor_lock);
+
+	/* Succeeded: no supervisor can call the withdrawn backend again. */
+	return 0;
+}
+
+/* Sleeps until a job deadline, stop confirmation, or actual resource transition. */
+static void
+gpu_monitor(
+	void *argument)
+{
+	struct drv_gpu_device *device;
+	uint64_t observed;
+	uint64_t deadline;
+	unsigned stopping;
+	unsigned long irq;
+
+	/* Registration and the explicit reap barrier retain this device wrapper. */
+	device = argument;
+	while (1) {
+		/* Snapshot precedes all unlocked callbacks so their wakeups cannot be lost. */
+		irq = spin_lock_irqsave(&gpu_registry_lock);
+
+		stopping = device->monitor_stopping;
+		observed = waitq_sequence(&device->monitor_waitq);
+
+		spin_unlock_irqrestore(&gpu_registry_lock, irq);
+
+		/* Unregister owns the only transition which permanently stops the worker. */
+		if (stopping != 0U)
+			break;
+
+		/* Driver stop operations execute without any common spinlock held. */
+		deadline = gpu_monitor_step(device);
+
+		/* Recheck the same sequence while registering the atomic sleep. */
+		irq = spin_lock_irqsave(&gpu_registry_lock);
+
+		if (device->monitor_stopping == 0U) {
+			(void)waitq_sleep(
+				&device->monitor_waitq,
+				&gpu_registry_lock,
+				observed,
+				deadline,
+				0U);
+		}
+
+		spin_unlock_irqrestore(&gpu_registry_lock, irq);
+	}
+
+	/* Succeeded: the thread trampoline publishes exit for the unregister reaper. */
+	return;
+}
+
+/* Performs one nonblocking deadline or context-stop action under retained ownership. */
+static uint64_t
+gpu_monitor_step(
+	struct drv_gpu_device *device)
+{
+	struct gpu_session *session;
+	struct gpu_session *selected;
+	struct drv_gpu_completion *completion;
+	const struct drv_gpu_recovery_ops *recovery;
+	uint64_t now;
+	uint64_t deadline;
+	uint64_t candidate;
+	unsigned action;
+	unsigned notified;
+	unsigned busy;
+	unsigned index;
+	unsigned long irq;
+	int error;
+
+	/* No driver callback may retain an unpinned session outside this scan. */
+	now = sched_ticks();
+	deadline = 0U;
+	selected = NULL;
+	action = 0U;
+	notified = 0U;
+	recovery = device->ops->recovery;
+	irq = spin_lock_irqsave(&gpu_registry_lock);
+
+	/* All sessions contribute their earliest independent policy deadline. */
+	session = device->open_sessions;
+	while (session != NULL) {
+		/* Final resource teardown excludes new supervisor callbacks. */
+		if (session->closing != 0U ||
+		    device->error != 0 ||
+		    session->monitor_pins != 0U) {
+			session = session->next_open;
+			continue;
+		}
+
+		/* Deadline publication never claims that a timed-out backend stopped accessing memory. */
+		for (index = 0U; index < GPU_SUBMIT_MAX; index++) {
+			completion = &session->completions[index];
+			candidate = completion->job_deadline;
+			if (candidate == 0U || completion->completed != 0U)
+				continue;
+
+			/* First expiry fixes this session's error and starts its independent stop interval. */
+			if (candidate <= now) {
+				gpu_session_fail_locked(session, ETIMEDOUT);
+				notified = 1U;
+				break;
+			}
+
+			/* The nearest deadline controls the next idle wake. */
+			if (deadline == 0U || candidate < deadline)
+				deadline = candidate;
+		}
+
+		/* Healthy and already quiescent contexts require no stop polling. */
+		if (session->stop_state == GPU_STOP_NONE || session->stop_state == GPU_STOP_FINISHED) {
+			session = session->next_open;
+			continue;
+		}
+
+		/* Failure to prove local retirement escalates without releasing uncertain resources. */
+		if (recovery == NULL ||
+		    recovery->stop_begin == NULL ||
+		    now >= session->stop_deadline) {
+			selected = session;
+			action = 3U;
+			break;
+		}
+
+		/* The stop deadline remains active while already-admitted ioctls leave their callbacks. */
+		if (deadline == 0U || session->stop_deadline < deadline)
+			deadline = session->stop_deadline;
+
+		/* A stop operation cannot race native publication or ordinary resource-table mutation. */
+		busy = session->busy;
+		for (index = 0U; index < GPU_SUBMIT_MAX; index++) {
+			if (session->completions[index].job_action != 0U)
+				busy = 1U;
+		}
+
+		/* Existing operations wake the monitor as they release their admission. */
+		if (busy != 0U) {
+			session = session->next_open;
+			continue;
+		}
+
+		/* The first nonblocking stage prevents subsequent native acceptance. */
+		if (session->stop_state == GPU_STOP_REQUESTED) {
+			selected = session;
+			action = 1U;
+			break;
+		}
+
+		/* Stop queries are periodic only during a finite active retirement interval. */
+		if (session->stop_poll_deadline <= now) {
+			selected = session;
+			action = 2U;
+			break;
+		}
+
+		/* An earlier backend notification may wake this same condition sooner. */
+		if (deadline == 0U || session->stop_poll_deadline < deadline)
+			deadline = session->stop_poll_deadline;
+
+		/* The next open remains independently schedulable through local failure. */
+		session = session->next_open;
+	}
+
+	/* The close barrier retains private backend state through this unlocked action. */
+	if (selected != NULL)
+		selected->monitor_pins++;
+
+	spin_unlock_irqrestore(&gpu_registry_lock, irq);
+
+	/* Fence and descriptor pollers must observe deadline errors even without a callback. */
+	if (selected != NULL || notified != 0U)
+		poll_notify();
+
+	/* An empty or healthy scan sleeps until its nearest deadline or a state change. */
+	if (selected == NULL)
+		return deadline;
+
+	/* Only a driver confirmation can establish actual context retirement. */
+	error = 0;
+	if (action == 1U) {
+		error = recovery->stop_begin(device->private_data, selected->backend, selected->error);
+	} else if (action == 2U) {
+		error = recovery->stop_poll(device->private_data, selected->backend);
+	} else {
+		/* Whole-device fault retains every uncertain descriptor and backing allocation. */
+		if (recovery != NULL && recovery->fault != NULL)
+			recovery->fault(device->private_data, selected->error);
+
+		/* Fault has armed teardown-time retention before public global error becomes visible. */
+		drv_gpu_report_error(device, selected->error);
+	}
+
+	/* A failed stop contract cannot turn an unconfirmed context into reusable storage. */
+	if (error != 0 && error != EAGAIN) {
+		recovery->fault(device->private_data, error);
+		drv_gpu_report_error(device, error);
+	}
+
+	/* State publication and the final pin release happen before close may destroy the backend. */
+	irq = spin_lock_irqsave(&gpu_registry_lock);
+
+	if (device->error != 0 || action == 3U) {
+		selected->stop_state = GPU_STOP_FINISHED;
+	} else if (action == 2U && error == 0) {
+		selected->stop_state = GPU_STOP_FINISHED;
+	} else {
+		selected->stop_state = GPU_STOP_PENDING;
+
+		/* A completed begin can confirm an already idle context immediately. */
+		if (action == 1U && error == 0) {
+			selected->stop_poll_deadline = sched_ticks();
+		} else {
+			selected->stop_poll_deadline = gpu_monitor_deadline(100U);
+		}
+	}
+
+	/* The worker will rescan every session before sleeping after this transition. */
+	selected->monitor_pins--;
+	waitq_wake_all(&device->monitor_waitq);
+
+	spin_unlock_irqrestore(&gpu_registry_lock, irq);
+
+	/* Succeeded: another scan will select the next job or finite stop deadline. */
+	return 0U;
+}
+
+/* Confirms native retirement before ending supervisor borrowing and resource lifetime. */
+static void
+gpu_monitor_close(
+	struct gpu_session *session)
+{
+	struct drv_gpu_device *device;
+	uint64_t observed;
+	uint64_t deadline;
+	unsigned finished;
+	unsigned long irq;
+
+	/* An optional backend stop contract covers raw native work as well as recorded jobs. */
+	device = session->device;
+	while (device->ops->recovery != NULL) {
+		/* Observe before helping the common policy so synchronous acknowledgements cannot be lost. */
+		irq = spin_lock_irqsave(&gpu_registry_lock);
+
+		observed = waitq_sequence(&device->monitor_waitq);
+		finished = 0U;
+		if (device->error != 0 || session->stop_state == GPU_STOP_FINISHED)
+			finished = 1U;
+
+		spin_unlock_irqrestore(&gpu_registry_lock, irq);
+
+		/* Logical completion alone is insufficient; stop acknowledgement or quarantine is required. */
+		if (finished != 0U)
+			break;
+
+		/* Close uses the same policy as the worker, with pins excluding duplicate stop callbacks. */
+		deadline = gpu_monitor_step(device);
+
+		/* Retains all resources while asynchronous native stop remains unconfirmed. */
+		irq = spin_lock_irqsave(&gpu_registry_lock);
+
+		if (device->error == 0 && session->stop_state != GPU_STOP_FINISHED) {
+			(void)waitq_sleep(
+				&device->monitor_waitq,
+				&gpu_registry_lock,
+				observed,
+				deadline,
+				0U);
+		}
+
+		spin_unlock_irqrestore(&gpu_registry_lock, irq);
+	}
+
+	/* No new scan may borrow private state once final teardown has begun. */
+	irq = spin_lock_irqsave(&gpu_registry_lock);
+
+	session->closing = 1U;
+	waitq_wake_all(&device->monitor_waitq);
+
+	/* Nonblocking backend callbacks finish before their close-time lifetime owner leaves. */
+	while (session->monitor_pins != 0U) {
+		observed = waitq_sequence(&device->monitor_waitq);
+		(void)waitq_sleep(
+			&device->monitor_waitq,
+			&gpu_registry_lock,
+			observed,
+			0U,
+			0U);
+	}
+
+	spin_unlock_irqrestore(&gpu_registry_lock, irq);
+
+	/* Succeeded: proven native retirement permits the existing resource and backend close order. */
+	return;
+}
+
+/* Invokes optional checked reset only for the sole fresh open without old external owners. */
+static int
+gpu_recover_open(
+	struct drv_gpu_device *device)
+{
+	uint64_t fault_epoch;
+	unsigned recover;
+	unsigned long irq;
+	int error;
+
+	/* Recovery authority is distinct from logical error observation. */
+	recover = 0U;
+	irq = spin_lock_irqsave(&gpu_registry_lock);
+
+	error = device->error;
+	fault_epoch = device->fault_epoch;
+	if (device->recovering != 0U || device->online == 0U) {
+		error = ENODEV;
+	} else if (error != 0 &&
+	    device->sessions == 1U &&
+	    device->shares == 0U &&
+	    device->open_sessions == NULL &&
+	    device->ops->recovery != NULL &&
+	    device->ops->recovery->reset != NULL) {
+		device->recovering = 1U;
+		recover = 1U;
+	}
+
+	spin_unlock_irqrestore(&gpu_registry_lock, irq);
+
+	/* Healthy opens need no hardware transition, and retained old owners prevent recovery. */
+	if (recover == 0U) {
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the existing hardware instance can create a fresh context. */
+		return 0;
+	}
+
+	/* The backend must prove IRQ, descriptor and DMA retirement before reconstructing hardware. */
+	error = device->ops->recovery->reset(device->private_data);
+
+	/* Only checked success clears device loss; old Vulkan objects are never revived. */
+	irq = spin_lock_irqsave(&gpu_registry_lock);
+
+	device->recovering = 0U;
+
+	/* Only the successful reset result can be compared with its original fault epoch. */
+	if (error == 0) {
+		/* A restart-time IRQ fault must not be overwritten by an earlier reset success. */
+		if (device->fault_epoch != fault_epoch || device->fault_epoch_overflow != 0U) {
+			error = device->error;
+
+			/* Epoch exhaustion cannot certify a safe transition even after a separate clear. */
+			if (error == 0)
+				error = EIO;
+		} else {
+			device->error = 0;
+		}
+	}
+
+	gpu_capacity_changed_locked(device);
+
+	spin_unlock_irqrestore(&gpu_registry_lock, irq);
+
+	/* Failed reset leaves the original device fault visible for a later explicit retry. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: all future opens refer to a newly checked hardware generation. */
+	return 0;
+}
+
+/* Waits for a relevant capacity transition without owning submission or table admission. */
+static int
+gpu_capacity_ioctl(
+	struct gpu_session *session,
+	uintptr_t argument)
+{
+	struct gpu_job_capacity request;
+	struct drv_gpu_device *device;
+	uint64_t deadline;
+	uint64_t observed;
+	unsigned available;
+	unsigned records;
+	unsigned index;
+	unsigned ready;
+	unsigned long irq;
+	int error;
+
+	/* A capacity contract needs the backend's nonblocking domain-aware snapshot. */
+	device = session->device;
+	if ((device->ops->capabilities & GPU_CAP_JOB_CAPACITY) == 0U)
+		return EOPNOTSUPP;
+
+	/* Fixed-width framing keeps both process ABIs independent from pointer size. */
+	error = copyin(argument, &request, sizeof(request));
+	if (error != 0)
+		return error;
+
+	/* Only the documented query flag may alter the wait operation. */
+	if (request.version != GPU_ABI_VERSION ||
+	    request.size != sizeof(request) ||
+	    (request.flags & ~GPU_JOB_CAPACITY_QUERY) != 0U ||
+	    request.sequence != 0U ||
+	    request.available != 0U ||
+	    request.reserved != 0U)
+		return EINVAL;
+
+	/* A snapshot has no previous observation or requested sleep interval. */
+	if (request.flags != 0U) {
+		if (request.observed_sequence != 0U || request.timeout_ns != 0U)
+			return EINVAL;
+	} else if (request.observed_sequence == 0U) {
+		return EINVAL;
+	}
+
+	/* Time arithmetic is validated before borrowing any backend operation. */
+	error = gpu_completion_deadline(request.timeout_ns, &deadline);
+	if (error != 0)
+		return error;
+
+	/* Both backend capacity and common record retirement can change independently. */
+	while (1) {
+		/* Snapshot first so release between backend observation and sleep is visible. */
+		irq = spin_lock_irqsave(&gpu_registry_lock);
+
+		error = gpu_session_error_locked(session);
+		observed = waitq_sequence(&device->capacity_waitq);
+
+		spin_unlock_irqrestore(&gpu_registry_lock, irq);
+
+		/* A failed context never waits for space it can no longer use. */
+		if (error != 0)
+			return error;
+
+		/* The backend validates its queue domain without holding a common spinlock. */
+		available = 0U;
+		error = device->ops->jobs->capacity(device->private_data, session->backend, request.domain, &available);
+		if (error != 0)
+			return error;
+
+		/* Record capacity is sampled together with the sequence used by atomic sleep. */
+		irq = spin_lock_irqsave(&gpu_registry_lock);
+
+		error = gpu_session_error_locked(session);
+
+		/* A saturated observation sequence cannot authorize an aliased wait token. */
+		if (device->capacity_overflow != 0U)
+			error = EOVERFLOW;
+
+		/* Future snapshots cannot be fabricated to suppress a real transition. */
+		if (request.observed_sequence > device->capacity_sequence)
+			error = EINVAL;
+
+		/* A consumed result cannot be reused while a backend or observer still owns it. */
+		records = 0U;
+		for (index = 0U; index < GPU_SUBMIT_MAX; index++) {
+			if (session->completions[index].sequence == 0U)
+				records++;
+		}
+
+		/* Existing terminal levels do not repeatedly wake pinned-record retries. */
+		ready = 0U;
+		if (request.flags != 0U) {
+			ready = 1U;
+		} else if (request.observed_sequence != device->capacity_sequence) {
+			ready = 1U;
+		} else if (records != 0U && available != 0U) {
+			ready = 1U;
+		}
+
+		/* A failed condition never changes caller ownership or reserves native work. */
+		if (error != 0) {
+			spin_unlock_irqrestore(&gpu_registry_lock, irq);
+			return error;
+		}
+
+		/* The returned sequence lets the next reclaim-and-reserve attempt register a new wait. */
+		if (ready != 0U) {
+			request.sequence = device->capacity_sequence;
+
+			/* Availability remains advisory because another caller can reserve first. */
+			if (records != 0U && available != 0U)
+				request.available = 1U;
+
+			spin_unlock_irqrestore(&gpu_registry_lock, irq);
+
+			/* The output snapshot no longer needs either capacity owner locked. */
+			break;
+		}
+
+		/* Zero timeout observes pressure without entering a kernel wait. */
+		if (request.timeout_ns == 0U) {
+			spin_unlock_irqrestore(&gpu_registry_lock, irq);
+			return EAGAIN;
+		}
+
+		/* Atomic sequence comparison closes both backend-release and common-reap races. */
+		error = waitq_sleep(
+			&device->capacity_waitq,
+			&gpu_registry_lock,
+			observed,
+			deadline,
+			WAITQ_INTERRUPTIBLE);
+
+		spin_unlock_irqrestore(&gpu_registry_lock, irq);
+
+		/* A changed condition is rechecked; interruption and timeout leave native work unaccepted. */
+		if (error != 0 && error != EAGAIN)
+			return error;
+	}
+
+	/* Observation does not consume capacity, even when the output copy fails. */
+	error = copyout(&request, argument, sizeof(request));
+	if (error != 0)
+		return error;
+
+	/* Succeeded: userspace may reclaim and retry the ordinary nonblocking reservation. */
+	return 0;
+}
+
+/* Returns the immutable finite administrator policy independently from client wait timeouts. */
+static int
+gpu_policy_ioctl(
+	struct gpu_session *session,
+	uintptr_t argument)
+{
+	struct gpu_job_policy request;
+	int error;
+
+	/* Only supervised backends expose the common GPU job policy. */
+	if ((session->device->ops->capabilities & GPU_CAP_JOB) == 0U)
+		return EOPNOTSUPP;
+
+	/* Every output field begins at zero, with no hidden setter semantics. */
+	error = copyin(argument, &request, sizeof(request));
+	if (error != 0)
+		return error;
+
+	/* The effective policy cannot be changed through a process descriptor. */
+	if (request.version != GPU_ABI_VERSION ||
+	    request.size != sizeof(request) ||
+	    request.reservation_timeout_ns != 0U ||
+	    request.execution_timeout_ns != 0U ||
+	    request.stop_timeout_ns != 0U ||
+	    request.flags != 0U ||
+	    request.reserved != 0U)
+		return EINVAL;
+
+	/* Public nanoseconds describe the configured minimum before clock rounding. */
+	request.reservation_timeout_ns = (uint64_t)CONFIG_GPU_JOB_RESERVATION_MS * 1000000U;
+	request.execution_timeout_ns = (uint64_t)CONFIG_GPU_JOB_EXECUTION_MS * 1000000U;
+	request.stop_timeout_ns = (uint64_t)CONFIG_GPU_JOB_STOP_MS * 1000000U;
+
+	/* A failed copy leaves policy and every reservation unchanged. */
+	error = copyout(&request, argument, sizeof(request));
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the client can distinguish admission time from supervised GPU time. */
 	return 0;
 }

@@ -1,0 +1,4 @@
+Missing target sysroot: /home/awe/zedBSD/build/amd64/sysroot
+Run 'make toolchain' before building a target image.
+make: *** [Makefile:721: zedbsd-target-toolchain-ready] Error 1
+make: *** Waiting for unfinished jobs....

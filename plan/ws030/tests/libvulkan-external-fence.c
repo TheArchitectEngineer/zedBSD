@@ -125,6 +125,10 @@ kernel_operation(unsigned long operation, void *argument)
 		return 0;
 	}
 
+	/* The shared admission query uses the same independent capacity model as ordinary sync tests. */
+	if (operation == GPU_JOB_CAPACITY)
+		return sync_base_ioctl(61, operation, argument);
+
 	/* Strict host progress publishes success or error without any native status worker. */
 	if (operation == GPU_JOB_COMMIT || operation == GPU_JOB_CANCEL || operation == GPU_COMMAND_WAIT) {
 		error = sync_base_ioctl(61, operation, argument);

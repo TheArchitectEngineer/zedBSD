@@ -1,0 +1,19 @@
+{
+  "prefix": "/home/awe/zedbsd-q306-venus/dependencies/q312-quiesce-delay",
+  "flags": 7,
+  "worker": "process",
+  "delay_fixture": true,
+  "source_sha256": {
+    "src/venus_hw.h": "7e4d596ca86a6574afe8cafa3d6b6aab4e83beac58e0dd5895bd9c93cff065ab",
+    "src/venus/vkr_context.h": "fb84e596919a1536d114f56ae19c48963fe193e4122f51d5be41f75f596ac7f9",
+    "src/venus/vkr_context.c": "11b742cf9589053ce062f3da608b1fe19df4e9c83927fdbdcbd32fb1e27a186f"
+  },
+  "queue_source_sha256": "72b4c7d8d994017bbea550dc27d350cbc1e7692e302e8b9bfa5943f7b7de2368",
+  "library": "/home/awe/zedbsd-q306-venus/dependencies/q312-quiesce-delay/install/lib/x86_64-linux-gnu/libvirglrenderer.so.1",
+  "library_sha256": "32d152dd251711b6f7a956abc199c81fcb59fa9ece263af7b773d78f36c7340f",
+  "server": "/home/awe/zedbsd-q306-venus/dependencies/q312-quiesce-delay/install/libexec/virgl_render_server",
+  "server_sha256": "e250106ba75f5592799697616012375af3946440d96cf9b719720eee0ba88444",
+  "license_sha256": "3b32caf16e2402c2aff2b716858713f3e1feded85c25e71bf829816ee5009402",
+  "pass": true,
+  "system_packages_display_vfio_physical_reset_modified": false
+}

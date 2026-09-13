@@ -60,7 +60,7 @@
 
 /*
  * One independently retained command and its session-owned completion identity.
- * Context fences select decoder timeline zero or an already bound queue timeline.
+ * Context fences select a backend-defined completion domain.
  * Submission success means acceptance; it never substitutes for a Vulkan result.
  */
 struct gpu_command_submit {

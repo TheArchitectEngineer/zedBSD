@@ -422,19 +422,126 @@ vulkan_wsi_acquire_signal(
 }
 
 /*
+ * Samples capacity before reclamation and one nonblocking admission attempt.
+ */
+VkResult
+vulkan_sync_capacity_query(
+	struct VkQueue_T *queue,
+	uint64_t *sequence)
+{
+	struct vulkan_context *context;
+	struct gpu_job_capacity request;
+	VkResult status;
+	int error;
+
+	/* Local failure must not be hidden by an otherwise healthy kernel snapshot. */
+	context = queue->device->object.context;
+	status = __atomic_load_n(&queue->device->error, __ATOMIC_ACQUIRE);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Context loss may be published by an unrelated API family. */
+	status = __atomic_load_n(&context->error, __ATOMIC_ACQUIRE);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* The domain is validated by the backend even when capacity is shared globally. */
+	memset(&request, 0, sizeof(request));
+	request.version = GPU_ABI_VERSION;
+	request.size = sizeof(request);
+	request.flags = GPU_JOB_CAPACITY_QUERY;
+	request.domain = queue->timeline_index;
+	error = ioctl(context->fd, GPU_JOB_CAPACITY, &request);
+	if (error != 0) {
+		vulkan_context_error(context, VK_ERROR_DEVICE_LOST);
+		return VK_ERROR_DEVICE_LOST;
+	}
+
+	/* A zero identity cannot protect the observation-to-sleep boundary. */
+	if (request.sequence == 0) {
+		vulkan_context_error(context, VK_ERROR_DEVICE_LOST);
+		return VK_ERROR_DEVICE_LOST;
+	}
+
+	/* Succeeded: subsequent reap and reserve occur after this exact observation. */
+	*sequence = request.sequence;
+	return VK_SUCCESS;
+}
+
+/*
+ * Waits for admission changes without retaining queue, device or context locks.
+ */
+VkResult
+vulkan_sync_capacity_wait(
+	struct VkQueue_T *queue,
+	uint64_t sequence)
+{
+	struct vulkan_context *context;
+	struct gpu_job_capacity request;
+	VkResult status;
+	int error;
+	int saved_error;
+
+	/* Finite intervals also observe library-local loss when the kernel remains healthy. */
+	context = queue->device->object.context;
+	status = __atomic_load_n(&queue->device->error, __ATOMIC_ACQUIRE);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* A producer cannot retry work against a previously lost renderer namespace. */
+	status = __atomic_load_n(&context->error, __ATOMIC_ACQUIRE);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Kernel notification wakes immediately; the interval is only a local-error backstop. */
+	memset(&request, 0, sizeof(request));
+	request.version = GPU_ABI_VERSION;
+	request.size = sizeof(request);
+	request.domain = queue->timeline_index;
+	request.observed_sequence = sequence;
+	request.timeout_ns = UINT64_C(250000000);
+	error = ioctl(context->fd, GPU_JOB_CAPACITY, &request);
+	saved_error = errno;
+	if (error != 0) {
+		/* Signals and the finite local-error interval leave the native request unaccepted. */
+		if (saved_error == EINTR)
+			return VK_SUCCESS;
+
+		/* A local observation interval expiring does not consume admission or imply allocation failure. */
+		if (saved_error == ETIMEDOUT)
+			return VK_SUCCESS;
+
+		/* A raced capacity observation asks for another snapshot and ordinary reservation attempt. */
+		if (saved_error == EAGAIN)
+			return VK_SUCCESS;
+
+		/* Other failures invalidate the negotiated capacity contract. */
+		vulkan_context_error(context, VK_ERROR_DEVICE_LOST);
+		return VK_ERROR_DEVICE_LOST;
+	}
+
+	/* Succeeded: the caller must reacquire its locks, revalidate and attempt admission again. */
+	return VK_SUCCESS;
+}
+
+/*
  * Reserves all completion ownership before the native queue can accept work.
  */
 VkResult
 vulkan_sync_job_reserve(
 	struct VkQueue_T *queue,
 	struct vulkan_sync *sync,
-	struct vulkan_notification **reserved)
+	struct vulkan_notification **reserved,
+	uint64_t *capacity_sequence,
+	VkBool32 *prepared)
 {
 	struct vulkan_context *context;
 	struct vulkan_notification *notification;
 	struct gpu_job_reserve request;
 	VkResult status;
+	VkBool32 prepare_native;
 	uint64_t generation;
+	uint64_t observed_sequence;
 	unsigned retired;
 	int descriptor;
 	int error;
@@ -447,14 +554,29 @@ vulkan_sync_job_reserve(
 		return VK_ERROR_DEVICE_LOST;
 
 	/* The shared payload and its native proof are prepared before binding a supervised job. */
-	status = vulkan_external_fence_prepare_locked(queue->device, sync, &descriptor, &generation);
+	prepare_native = VK_FALSE;
+	if (*prepared == VK_FALSE)
+		prepare_native = VK_TRUE;
+
+	/* Shared generation validation runs on every attempt while native reset runs only once. */
+	status = vulkan_external_fence_prepare_locked(queue->device, sync, &descriptor, &generation, prepare_native);
 	if (status != VK_SUCCESS)
 		return status;
+
+	/* Later capacity retries revalidate the shared generation without repeating native preparation. */
+	*prepared = VK_TRUE;
 
 	/* Local bookkeeping must exist before any native submission or kernel reservation. */
 	notification = calloc(1, sizeof(*notification));
 	if (notification == NULL)
 		return VK_ERROR_OUT_OF_HOST_MEMORY;
+
+	/* Native preparation precedes this snapshot so its own CPU0 completion cannot spuriously wake admission. */
+	status = vulkan_sync_capacity_query(queue, &observed_sequence);
+	if (status != VK_SUCCESS) {
+		free(notification);
+		return status;
+	}
 
 	/* Reclaims only previously terminal jobs before reserving another bounded kernel slot. */
 	pthread_mutex_lock(&context->mutex);
@@ -479,12 +601,18 @@ vulkan_sync_job_reserve(
 		pthread_mutex_unlock(&context->mutex);
 		free(notification);
 
-		/* Saturation refuses unaccepted work without consuming caller synchronization. */
-		if (saved_error == EAGAIN || saved_error == ENOMEM)
+		/* Backpressure asks the caller to release producer locks before waiting for capacity. */
+		if (saved_error == EAGAIN) {
+			*capacity_sequence = observed_sequence;
+			return VK_NOT_READY;
+		}
+
+		/* Actual allocation failure remains distinct from temporarily occupied job slots. */
+		if (saved_error == ENOMEM)
 			return VK_ERROR_OUT_OF_DEVICE_MEMORY;
 
 		/* A negotiated backend that cannot reserve its promised contract is unusable. */
-		__atomic_store_n(&context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+		vulkan_context_error(context, VK_ERROR_DEVICE_LOST);
 		return VK_ERROR_DEVICE_LOST;
 	}
 
@@ -492,7 +620,7 @@ vulkan_sync_job_reserve(
 	if (request.sequence == 0) {
 		pthread_mutex_unlock(&context->mutex);
 		free(notification);
-		__atomic_store_n(&context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+		vulkan_context_error(context, VK_ERROR_DEVICE_LOST);
 		return VK_ERROR_DEVICE_LOST;
 	}
 
@@ -560,7 +688,7 @@ vulkan_sync_job_finish(
 	if (error != 0) {
 		/* Failure after native acceptance is terminal, never an ordinary retryable reservation. */
 		reserved->waiters--;
-		__atomic_store_n(&context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+		vulkan_context_error(context, VK_ERROR_DEVICE_LOST);
 		pthread_mutex_unlock(&context->mutex);
 		return VK_ERROR_DEVICE_LOST;
 	}
@@ -681,8 +809,9 @@ vulkan_sync_device_status_locked(
 	VkResult status;
 
 	/* Device-local loss and transport loss both invalidate subsequent completion. */
-	if (device->error != VK_SUCCESS)
-		return device->error;
+	status = __atomic_load_n(&device->error, __ATOMIC_ACQUIRE);
+	if (status != VK_SUCCESS)
+		return status;
 
 	/* Other API families publish context failure without taking this device mutex. */
 	status = __atomic_load_n(&device->object.context->error, __ATOMIC_ACQUIRE);
@@ -734,8 +863,8 @@ vulkan_sync_device_error(
 {
 	/* Host allocation pressure does not by itself invalidate the Vulkan device. */
 	if (status == VK_ERROR_DEVICE_LOST) {
-		device->error = status;
-		__atomic_store_n(&device->object.context->error, status, __ATOMIC_RELEASE);
+		vulkan_device_error(device, status);
+		vulkan_context_error(device->object.context, status);
 	}
 
 	/* Succeeded: device-loss state remains sticky for all sync observers. */
@@ -883,13 +1012,13 @@ vulkan_sync_job_status(
 			return VK_NOT_READY;
 
 		/* A failed completion channel cannot prove that the native object is reusable. */
-		__atomic_store_n(&context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+		vulkan_context_error(context, VK_ERROR_DEVICE_LOST);
 		return VK_ERROR_DEVICE_LOST;
 	}
 
 	/* Driver failure is terminal and cannot be promoted to successful native completion. */
 	if (wait.status != 0) {
-		__atomic_store_n(&context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+		vulkan_context_error(context, VK_ERROR_DEVICE_LOST);
 		return VK_ERROR_DEVICE_LOST;
 	}
 
@@ -922,7 +1051,7 @@ vulkan_sync_quiesce(
 	/* A failed producer remains lost after its old native identity is retired locally. */
 	if (status != VK_SUCCESS) {
 		device = (struct VkDevice_T *)sync->object.parent;
-		__atomic_store_n(&device->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+		vulkan_device_error(device, VK_ERROR_DEVICE_LOST);
 	}
 
 	/* Succeeded: no healthy pending marker may still borrow this native fence. */
@@ -1139,7 +1268,7 @@ sync_notifications_reap(
 				continue;
 			}
 
-			__atomic_store_n(&context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+			vulkan_context_error(context, VK_ERROR_DEVICE_LOST);
 			return VK_ERROR_DEVICE_LOST;
 		}
 
@@ -1148,7 +1277,7 @@ sync_notifications_reap(
 		free(notification);
 		(*retired)++;
 		if (wait.status != 0) {
-			__atomic_store_n(&context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+			vulkan_context_error(context, VK_ERROR_DEVICE_LOST);
 			return VK_ERROR_DEVICE_LOST;
 		}
 	}
@@ -1239,13 +1368,13 @@ sync_notification_wait(
 		if (saved_error == ETIMEDOUT || saved_error == EAGAIN)
 			return VK_TIMEOUT;
 
-		__atomic_store_n(&context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+		vulkan_context_error(context, VK_ERROR_DEVICE_LOST);
 		return VK_ERROR_DEVICE_LOST;
 	}
 
 	/* A transport fault invalidates the context, independently of renderer fence payloads. */
 	if (wait.status != 0) {
-		__atomic_store_n(&context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+		vulkan_context_error(context, VK_ERROR_DEVICE_LOST);
 		return VK_ERROR_DEVICE_LOST;
 	}
 
@@ -1313,7 +1442,7 @@ sync_notification_poll(
 	/* An error on any requested dependency invalidates the corresponding fence wait. */
 	for (index = 0; index < count; index++) {
 		if (descriptors[index].revents & (POLLERR | POLLHUP | POLLNVAL)) {
-			__atomic_store_n(&context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+			vulkan_context_error(context, VK_ERROR_DEVICE_LOST);
 			return VK_ERROR_DEVICE_LOST;
 		}
 	}
@@ -1420,7 +1549,7 @@ sync_create(
 
 	/* Protocol loss is shared so no software completion can mask malformed creation. */
 	if (status == VK_ERROR_DEVICE_LOST)
-		__atomic_store_n(&device->object.context->error, status, __ATOMIC_RELEASE);
+		vulkan_context_error(device->object.context, status);
 
 	/* Native ownership already exists; use its normal destruction for rollback. */
 	vulkan_reader_finish(&reader);

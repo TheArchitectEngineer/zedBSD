@@ -1165,8 +1165,8 @@ pipeline_lost(
 	struct VkDevice_T *device)
 {
 	/* Uncertain or malformed native object ownership cannot be treated as a local retry. */
-	__atomic_store_n(&device->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
-	__atomic_store_n(&device->object.context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+	vulkan_device_error(device, VK_ERROR_DEVICE_LOST);
+	vulkan_context_error(device->object.context, VK_ERROR_DEVICE_LOST);
 
 	/* The caller must report a terminal error rather than expose a foreign native handle. */
 	return VK_ERROR_DEVICE_LOST;

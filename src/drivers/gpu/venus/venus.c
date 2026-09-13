@@ -24,7 +24,7 @@
 #include <limits.h>
 #include <string.h>
 
-#define VENUS_CAPABILITIES	(63U | GPU_CAP_DISPLAY | GPU_CAP_MAPPING | GPU_CAP_SHARE | GPU_CAP_NOTIFICATION | GPU_CAP_ALLOCATION_SHARE | GPU_CAP_FENCE | GPU_CAP_DISPLAY_EVENTS | GPU_CAP_JOB)
+#define VENUS_CAPABILITIES	(63U | GPU_CAP_DISPLAY | GPU_CAP_MAPPING | GPU_CAP_SHARE | GPU_CAP_NOTIFICATION | GPU_CAP_ALLOCATION_SHARE | GPU_CAP_FENCE | GPU_CAP_DISPLAY_EVENTS | GPU_CAP_JOB | GPU_CAP_JOB_CAPACITY)
 
 static int venus_attach(struct drv_pci_device *device, const struct drv_pci_id *id);
 static int venus_start(struct venus_controller *controller, struct drv_pci_device *device);
@@ -46,6 +46,11 @@ static void venus_command_drain(void *device, void *private_session);
 static int venus_job_reserve(void *device, void *private_session, uint32_t timeline, struct drv_gpu_completion *completion, void **reservation);
 static int venus_job_commit(void *device, void *private_session, void *reservation, struct drv_gpu_completion *completion);
 static int venus_job_cancel(void *device, void *private_session, void *reservation, struct drv_gpu_completion *completion, unsigned fault);
+static int venus_job_capacity(void *device, void *private_session, uint32_t timeline, unsigned *available);
+static int venus_stop_begin(void *device, void *private_session, int error);
+static int venus_stop_poll(void *device, void *private_session);
+static void venus_fault(void *device, int error);
+static int venus_reset_device(void *device);
 static int venus_recover(struct venus_controller *controller);
 static int venus_present(void *device, void *private_session, void *object, const struct gpu_present *request);
 static int venus_resource_map(void *device, void *private_session, void *object, struct drv_gpu_mapping *mapping);
@@ -335,7 +340,14 @@ venus_publish(
 	static const struct drv_gpu_job_ops jobs = {
 		venus_job_reserve,
 		venus_job_commit,
-		venus_job_cancel
+		venus_job_cancel,
+		venus_job_capacity
+	};
+	static const struct drv_gpu_recovery_ops recovery = {
+		venus_stop_begin,
+		venus_stop_poll,
+		venus_fault,
+		venus_reset_device
 	};
 	static const struct drv_gpu_ops operations = {
 		DRV_GPU_INTERFACE_VERSION,
@@ -359,7 +371,8 @@ venus_publish(
 		&drv_venus_share_operations,
 		&commands,
 		&drv_venus_scanout_operations,
-		&jobs
+		&jobs,
+		&recovery
 	};
 	struct venus_controller *controller;
 	int error;
@@ -434,41 +447,14 @@ venus_open(
 	if (session == NULL)
 		return ENOMEM;
 
-	/* Serializes fresh-open recovery with context identity assignment. */
+	/* Common admission owns recovery; an open only allocates on an already healthy transport. */
 	mutex_lock(&controller->mutex);
 
-	/* Another fresh open cannot enter while the console and transport are being rebuilt. */
-	if (controller->recovering != 0U) {
+	failed = atomic_raw_load_acquire(&controller->transport.failed);
+	if (failed != 0U) {
 		mutex_unlock(&controller->mutex);
 		kern_free(session);
 		return ENODEV;
-	}
-
-	/* A failed transport recovers only after all old external owners have retired. */
-	failed = atomic_raw_load_acquire(&controller->transport.failed);
-	if (failed != 0U) {
-		error = drv_gpu_recovery_ready(controller->gpu);
-		if (error == 0) {
-			mutex_unlock(&controller->mutex);
-			kern_free(session);
-			return ENODEV;
-		}
-
-		/* Console stop may need the controller mutex, so recovery owns a separate admission flag. */
-		controller->recovering = 1U;
-
-		mutex_unlock(&controller->mutex);
-
-		error = venus_recover(controller);
-
-		mutex_lock(&controller->mutex);
-
-		controller->recovering = 0U;
-		if (error != 0) {
-			mutex_unlock(&controller->mutex);
-			kern_free(session);
-			return error;
-		}
 	}
 
 
@@ -595,7 +581,7 @@ venus_get_info(
 	controller = device;
 	info->capabilities = VENUS_CAPABILITIES;
 	if (controller->transport.strict_queue == 0U)
-		info->capabilities &= ~GPU_CAP_JOB;
+		info->capabilities &= ~(GPU_CAP_JOB | GPU_CAP_JOB_CAPACITY);
 
 	/* Limits describe the retained controller rather than the current renderer session. */
 	info->max_resources = UINT32_MAX;
@@ -948,11 +934,17 @@ venus_command(
 	struct venus_controller *controller;
 	struct venus_session *session;
 	uint8_t *command;
+	unsigned stopping;
 	int error;
 
 	/* The stream format and Vulkan completion protocol remain in userspace. */
 	controller = device;
 	session = private_session;
+
+	/* Common stop excludes active operations before publishing this permanent admission barrier. */
+	stopping = atomic_raw_load_acquire(&session->stopping);
+	if (stopping != 0U)
+		return ENODEV;
 
 	/* Defends transport capacity independently of the checked UAPI caller. */
 	if (bytes == 0U ||
@@ -973,6 +965,9 @@ venus_command(
 
 	/* Serializes the single request slot while allowing timer interrupts. */
 	mutex_lock(&controller->mutex);
+
+	/* A rejected or uncertain send must never be mistaken for a metadata-only context. */
+	atomic_raw_store_release(&session->native_commands_submitted, 1U);
 
 	error = venus_control(controller, command, bytes + 32U);
 	if (error != 0) {
@@ -1003,6 +998,7 @@ venus_command_submit(
 {
 	struct venus_controller *controller;
 	struct venus_session *session;
+	unsigned stopping;
 	int error;
 
 	/* Venus commands are four-byte aligned even though the common stream remains opaque. */
@@ -1012,6 +1008,14 @@ venus_command_submit(
 	/* The core file lifetime retains this session while the transport copies its immutable context. */
 	controller = device;
 	session = private_session;
+
+	/* Common stop excludes active operations before publishing this permanent admission barrier. */
+	stopping = atomic_raw_load_acquire(&session->stopping);
+	if (stopping != 0U)
+		return ENODEV;
+
+	/* Publish possible native ownership before the opaque stream can reach the renderer. */
+	atomic_raw_store_release(&session->native_commands_submitted, 1U);
 	error = drv_venus_transport_submit(
 		&controller->transport,
 		session->context,
@@ -1038,11 +1042,17 @@ venus_job_reserve(
 {
 	struct venus_controller *controller;
 	struct venus_session *session;
+	unsigned stopping;
 	int error;
 
 	/* The framework's retained open supplies the immutable context identity. */
 	controller = device;
 	session = private_session;
+
+	/* Common stop excludes active operations before publishing this permanent admission barrier. */
+	stopping = atomic_raw_load_acquire(&session->stopping);
+	if (stopping != 0U)
+		return ENODEV;
 	error = drv_venus_transport_job_reserve(
 		&controller->transport,
 		session->context,
@@ -1052,7 +1062,7 @@ venus_job_reserve(
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the transport watchdog owns this reservation before native submission. */
+	/* Succeeded: common policy owns supervision while the backend retains exact marker storage. */
 	return 0;
 }
 
@@ -1089,17 +1099,168 @@ venus_job_cancel(
 	unsigned fault)
 {
 	struct venus_controller *controller;
+	struct venus_session *session;
 	int error;
-
-	(void)private_session;
 
 	/* Cancellation validates the exact reservation before changing callback ownership. */
 	controller = device;
+	session = private_session;
 	error = drv_venus_transport_job_cancel(&controller->transport, reservation, completion, fault);
 	if (error != 0)
 		return error;
 
+	/* Native uncertainty loses this context first; common policy controls stop and escalation. */
+	if (fault != 0U)
+		drv_gpu_report_session_error(controller->gpu, session, EIO);
+
 	/* Succeeded: rollback ended publication authority or fault handling retained uncertain DMA. */
+	return 0;
+}
+
+/* Reports actual marker storage without waiting or applying common admission policy. */
+static int
+venus_job_capacity(
+	void *device,
+	void *private_session,
+	uint32_t timeline,
+	unsigned *available)
+{
+	struct venus_controller *controller;
+	struct venus_session *session;
+	unsigned stopping;
+	int error;
+
+	/* Immutable context ownership is retained by the common operation. */
+	controller = device;
+	session = private_session;
+	stopping = atomic_raw_load_acquire(&session->stopping);
+	if (stopping != 0U)
+		return ENODEV;
+
+	/* The backend validates queue domains and reserves its own control fraction. */
+	error = drv_venus_transport_capacity(&controller->transport, timeline, available);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caller can register a common wait against this capacity snapshot. */
+	return 0;
+}
+
+/* Closes one session's native admission after common policy has drained active entry points. */
+static int
+venus_stop_begin(
+	void *device,
+	void *private_session,
+	int error)
+{
+	struct venus_controller *controller;
+	struct venus_session *session;
+	unsigned submitted;
+	int status;
+
+	/* This callback never takes a sleeping lock or pretends to cancel native GPU execution. */
+	controller = device;
+	(void)error;
+	session = private_session;
+	atomic_raw_store_release(&session->stopping, 1U);
+
+	/* Exact absence of any native stream makes metadata-only close safe even on older hosts. */
+	submitted = atomic_raw_load_acquire(&session->native_commands_submitted);
+	if (submitted == 0U) {
+		/* An unused reservation still owns a callback and requires the normal stop handshake. */
+		status = drv_venus_transport_idle(&controller->transport, session->context);
+		if (status == 0) {
+			session->quiesced = 1U;
+			return 0;
+		}
+
+		/* Only unresolved ownership may proceed to an asynchronous native stop proof. */
+		if (status != EAGAIN)
+			return status;
+	}
+
+	/* Admission closure precedes the host-wide proof of all native work in this context. */
+	status = drv_venus_transport_quiesce(
+		&controller->transport,
+		session->context,
+		&session->stop_request,
+		&session->quiesced);
+	if (status != 0 && status != EAGAIN)
+		return status;
+
+	/* Succeeded: the common poll stage observes or retries the nonblocking stop request. */
+	return 0;
+}
+
+/* Checks actual completion while retaining every unresolved native and DMA owner. */
+static int
+venus_stop_poll(
+	void *device,
+	void *private_session)
+{
+	struct venus_controller *controller;
+	struct venus_session *session;
+	unsigned stopping;
+	int error;
+
+	/* Common ownership preserves both wrappers through this nonblocking snapshot. */
+	controller = device;
+	session = private_session;
+	stopping = atomic_raw_load_acquire(&session->stopping);
+	if (stopping == 0U)
+		return EINVAL;
+
+	/* Native idle covers raw submissions; CPU0 receipt alone is never an acknowledgement. */
+	if (session->quiesced == 0U) {
+		error = drv_venus_transport_quiesce(
+			&controller->transport,
+			session->context,
+			&session->stop_request,
+			&session->quiesced);
+		if (error != 0)
+			return error;
+	}
+
+	/* Every old posted descriptor and callback must also retire before backend cleanup. */
+	error = drv_venus_transport_idle(&controller->transport, session->context);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: close may destroy the context after shared resource membership is released. */
+	return 0;
+}
+
+/* Quarantines the complete physical transport when common policy cannot prove local retirement. */
+static void
+venus_fault(
+	void *device,
+	int error)
+{
+	struct venus_controller *controller;
+
+	/* The transport reports the same sticky fault and releases callbacks outside its queue lock. */
+	controller = device;
+	drv_venus_transport_fail(&controller->transport, error);
+
+	/* Succeeded: uncertain device-owned storage remains held for checked reset. */
+	return;
+}
+
+/* Performs checked backend reset only after the common external-owner gate succeeds. */
+static int
+venus_reset_device(
+	void *device)
+{
+	struct venus_controller *controller;
+	int error;
+
+	/* Common next-open admission serializes reset and excludes all retired generations. */
+	controller = device;
+	error = venus_recover(controller);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: only the common owner may clear the public sticky device fault. */
 	return 0;
 }
 
@@ -1166,9 +1327,8 @@ venus_recover(
 		return error;
 	}
 
-	/* Only a successful fresh transport clears loss on the still-registered GPU node. */
+	/* The common reset caller clears loss only after this checked rebuild returns success. */
 	drv_venus_transport_set_gpu(&controller->transport, controller->gpu);
-	drv_gpu_report_error(controller->gpu, 0);
 	kern_logf("venus: recovered after all prior sessions, mappings and shared handles retired\n");
 
 	/* Succeeded: a new open may create its own renderer context; old Vulkan objects never revive. */

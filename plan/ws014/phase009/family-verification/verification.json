@@ -1,0 +1,143 @@
+{
+  "phase": "ws014-p009",
+  "status": "PASS",
+  "checks": [
+    {
+      "name": "run-libvulkan-memory.sh",
+      "argv": [
+        "sh",
+        "plan/ws030/tests/run-libvulkan-memory.sh"
+      ],
+      "exit_code": 0,
+      "seconds": 0.667,
+      "log": "plan/ws014/phase009/family-verification/libvulkan-memory.log",
+      "sha256": "2d48d581d6f8a83970c2168af47a94e0d9253fca105682acba82b7253298481d"
+    },
+    {
+      "name": "run-libvulkan-resources-test.sh",
+      "argv": [
+        "sh",
+        "plan/ws030/tests/run-libvulkan-resources-test.sh"
+      ],
+      "exit_code": 0,
+      "seconds": 1.519,
+      "log": "plan/ws014/phase009/family-verification/libvulkan-resources-test.log",
+      "sha256": "7ff83c39699680e6ab768e2fdd84e4ef192c3ca50255f675462b29216031bf52"
+    },
+    {
+      "name": "run-libvulkan-descriptors-test.sh",
+      "argv": [
+        "sh",
+        "plan/ws030/tests/run-libvulkan-descriptors-test.sh"
+      ],
+      "exit_code": 0,
+      "seconds": 1.418,
+      "log": "plan/ws014/phase009/family-verification/libvulkan-descriptors-test.log",
+      "sha256": "2faf1fc8170aff77b377dda1383553f1c6db1b4f18397b91945c2bc72558b61b"
+    },
+    {
+      "name": "run-libvulkan-external-memory.sh",
+      "argv": [
+        "sh",
+        "plan/ws030/tests/run-libvulkan-external-memory.sh"
+      ],
+      "exit_code": 0,
+      "seconds": 0.766,
+      "log": "plan/ws014/phase009/family-verification/libvulkan-external-memory.log",
+      "sha256": "8054e5d697eed49975dfa89a19bae283c70462e693f4b02e81b652d5add15db0"
+    },
+    {
+      "name": "run-libvulkan-foundation.sh",
+      "argv": [
+        "sh",
+        "plan/ws030/tests/run-libvulkan-foundation.sh"
+      ],
+      "exit_code": 0,
+      "seconds": 0.415,
+      "log": "plan/ws014/phase009/family-verification/libvulkan-foundation.log",
+      "sha256": "51f0c2934724487f1ff8120d2ad41349346daffeb3a64dc2de5091a29e3e5c88"
+    },
+    {
+      "name": "run-libvulkan-pipeline-test.sh",
+      "argv": [
+        "sh",
+        "plan/ws030/tests/run-libvulkan-pipeline-test.sh"
+      ],
+      "exit_code": 0,
+      "seconds": 1.317,
+      "log": "plan/ws014/phase009/family-verification/libvulkan-pipeline-test.log",
+      "sha256": "1b6073f62ea036a0dea4e99c926ef15c24b9f69cfdbafa3f1af3feba5684efbc"
+    },
+    {
+      "name": "run-libvulkan-commands-test.sh",
+      "argv": [
+        "sh",
+        "plan/ws030/tests/run-libvulkan-commands-test.sh"
+      ],
+      "exit_code": 0,
+      "seconds": 1.367,
+      "log": "plan/ws014/phase009/family-verification/libvulkan-commands-test.log",
+      "sha256": "ca56aa9e641b37f7bd88cebafc3a86e5b1bb9c2a8b90b628c58f83f8e638c3c5"
+    }
+  ],
+  "sources_before": {
+    "userland/base/libvulkan/context.c": "dedb3fac1c33dedb0696b6e4463432c911ce951c756a0a1bca9de0a20c918c3e",
+    "userland/base/libvulkan/dispatch.c": "9959c89d6fed3032e195a9e881288548b0c7c258fe65512869315cfa3e74a934",
+    "userland/base/libvulkan/wire.c": "c22157b171fc211895c8288a244d2aa070961b45ddb981cb2bafd291722ca25f",
+    "userland/base/libvulkan/external-properties.c": "1c29f0a8a2d781fff5df7ccddf5d3a77b850dd24259c9e22aedd5080251b70a9",
+    "userland/base/libvulkan/queue.c": "bd7296d21d067c4804b1571c4db540a03392c9c0ceb76d00ad086f184c3057c7",
+    "userland/base/libvulkan/memory.c": "d3a2b3ab28304222e55d3e172097c2f3702bd4dcfd60e51d35a82eada0b22fd0",
+    "userland/base/libvulkan/codec.c": "5d9711caa71235d9b833a0ad36dc43c4c811ab0080e7f2b6ddaae72cdce2da5f",
+    "userland/base/libvulkan/device.c": "8dcf901740fff38a5828a563d7b228bd77f8ec58660c39cf6cc786be17255012",
+    "userland/base/libvulkan/descriptors.c": "9e7955b746ff2c1c3244efa5059e4115cfafec02c75c4e269b21cd20dc21ee1f",
+    "userland/base/libvulkan/resources.c": "b3ada8dcfb6a68625c16d866809dbffb42c961ae11f11cb038ca85d25be0882b",
+    "userland/base/libvulkan/commands.c": "0490f97296bec1bce78d108412444a15cfe0185a1d7dce3fdfbc65143bfce129",
+    "userland/base/libvulkan/external-fence.c": "40919309ab95fac4460b05a92572e6fbd5bb0a923b2b4c2766a58392b010612f",
+    "userland/base/libvulkan/objects.c": "3dff86cafef833294de59143f716125e60d0b219669ca1d730d68728312b0f69",
+    "userland/base/libvulkan/wsi-display-nodes.c": "269fd16815c738c5b03bbb4684aab0973ee513661b7b0625fd39744f2eed1cab",
+    "userland/base/libvulkan/query.c": "1182e95488799f422006469d4af8411516394b8bc35cecf4f5aa612ffbe2c3a1",
+    "userland/base/libvulkan/sync.c": "21af2adbcbaccf01c7b8c77c585b7bd68f4ba4d9930839243452d1ce2efb7546",
+    "userland/base/libvulkan/wsi.c": "115cba6e2e91a0fe933ad2a6256eb2ad19b03ca617454ccf00dcc548fa852724",
+    "userland/base/libvulkan/pipeline.c": "54408e6a20cd2a2b5a4e1e2ae933245fff74c20447e375d71984d7f59b758fff",
+    "userland/base/libvulkan/instance.c": "5b5700e55e8c9588c53524e7bfce9a2b3c861ec5984ac57620706c071a8147f9",
+    "userland/base/libvulkan/wsi-image.c": "b7e146b1384584c5665ccb8c2375049e3938184be1f11f95e65c1897c89dd168",
+    "userland/base/libvulkan/wsi-swapchain.c": "485f96144b1bcbb7733315aade2c95917630d703a60cecaa3260efcb3a902f94",
+    "userland/base/libvulkan/wsi-display.c": "59ca5f306cc8c8468ea42ce7d2b7490b64141468594e7987b9ea811b746839af",
+    "userland/base/libvulkan/wsi-wayland.c": "736e8a6c7a484795900a6697380af81afed851b03e821c3142b41285410d7eee",
+    "userland/base/libvulkan/opcodes.h": "d7ec242614923dfc7471315974572471ce2c4c1ed933824ca5c9635e50eee8c6",
+    "userland/base/libvulkan/codec.h": "c983b90448811245ee5bb48d76806ea30a21878717d9565721fe75b1eabcc03a",
+    "userland/base/libvulkan/sync-internal.h": "d7ca08a4ff5364d16cc93a35ca68c2e02eea4bd2f3316d98dc34aa5ede4803c2",
+    "userland/base/libvulkan/wsi-internal.h": "e286a0d5fe2850a984cac5b0ae13be1aae57aa8cd63d7ee72e3aeb8f7076881e",
+    "userland/base/libvulkan/internal.h": "ea50c5634168062b9611b037e8faa09ae3b95ed60fdc89e26b4498aaf9c02c12"
+  },
+  "sources_after": {
+    "userland/base/libvulkan/context.c": "dedb3fac1c33dedb0696b6e4463432c911ce951c756a0a1bca9de0a20c918c3e",
+    "userland/base/libvulkan/dispatch.c": "9959c89d6fed3032e195a9e881288548b0c7c258fe65512869315cfa3e74a934",
+    "userland/base/libvulkan/wire.c": "c22157b171fc211895c8288a244d2aa070961b45ddb981cb2bafd291722ca25f",
+    "userland/base/libvulkan/external-properties.c": "1c29f0a8a2d781fff5df7ccddf5d3a77b850dd24259c9e22aedd5080251b70a9",
+    "userland/base/libvulkan/queue.c": "bd7296d21d067c4804b1571c4db540a03392c9c0ceb76d00ad086f184c3057c7",
+    "userland/base/libvulkan/memory.c": "d3a2b3ab28304222e55d3e172097c2f3702bd4dcfd60e51d35a82eada0b22fd0",
+    "userland/base/libvulkan/codec.c": "5d9711caa71235d9b833a0ad36dc43c4c811ab0080e7f2b6ddaae72cdce2da5f",
+    "userland/base/libvulkan/device.c": "8dcf901740fff38a5828a563d7b228bd77f8ec58660c39cf6cc786be17255012",
+    "userland/base/libvulkan/descriptors.c": "9e7955b746ff2c1c3244efa5059e4115cfafec02c75c4e269b21cd20dc21ee1f",
+    "userland/base/libvulkan/resources.c": "b3ada8dcfb6a68625c16d866809dbffb42c961ae11f11cb038ca85d25be0882b",
+    "userland/base/libvulkan/commands.c": "0490f97296bec1bce78d108412444a15cfe0185a1d7dce3fdfbc65143bfce129",
+    "userland/base/libvulkan/external-fence.c": "40919309ab95fac4460b05a92572e6fbd5bb0a923b2b4c2766a58392b010612f",
+    "userland/base/libvulkan/objects.c": "3dff86cafef833294de59143f716125e60d0b219669ca1d730d68728312b0f69",
+    "userland/base/libvulkan/wsi-display-nodes.c": "269fd16815c738c5b03bbb4684aab0973ee513661b7b0625fd39744f2eed1cab",
+    "userland/base/libvulkan/query.c": "1182e95488799f422006469d4af8411516394b8bc35cecf4f5aa612ffbe2c3a1",
+    "userland/base/libvulkan/sync.c": "21af2adbcbaccf01c7b8c77c585b7bd68f4ba4d9930839243452d1ce2efb7546",
+    "userland/base/libvulkan/wsi.c": "115cba6e2e91a0fe933ad2a6256eb2ad19b03ca617454ccf00dcc548fa852724",
+    "userland/base/libvulkan/pipeline.c": "54408e6a20cd2a2b5a4e1e2ae933245fff74c20447e375d71984d7f59b758fff",
+    "userland/base/libvulkan/instance.c": "5b5700e55e8c9588c53524e7bfce9a2b3c861ec5984ac57620706c071a8147f9",
+    "userland/base/libvulkan/wsi-image.c": "b7e146b1384584c5665ccb8c2375049e3938184be1f11f95e65c1897c89dd168",
+    "userland/base/libvulkan/wsi-swapchain.c": "485f96144b1bcbb7733315aade2c95917630d703a60cecaa3260efcb3a902f94",
+    "userland/base/libvulkan/wsi-display.c": "59ca5f306cc8c8468ea42ce7d2b7490b64141468594e7987b9ea811b746839af",
+    "userland/base/libvulkan/wsi-wayland.c": "736e8a6c7a484795900a6697380af81afed851b03e821c3142b41285410d7eee",
+    "userland/base/libvulkan/opcodes.h": "d7ec242614923dfc7471315974572471ce2c4c1ed933824ca5c9635e50eee8c6",
+    "userland/base/libvulkan/codec.h": "c983b90448811245ee5bb48d76806ea30a21878717d9565721fe75b1eabcc03a",
+    "userland/base/libvulkan/sync-internal.h": "d7ca08a4ff5364d16cc93a35ca68c2e02eea4bd2f3316d98dc34aa5ede4803c2",
+    "userland/base/libvulkan/wsi-internal.h": "e286a0d5fe2850a984cac5b0ae13be1aae57aa8cd63d7ee72e3aeb8f7076881e",
+    "userland/base/libvulkan/internal.h": "ea50c5634168062b9611b037e8faa09ae3b95ed60fdc89e26b4498aaf9c02c12"
+  }
+}

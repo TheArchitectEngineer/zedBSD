@@ -251,6 +251,22 @@ struct vulkan_notification {
 	unsigned waiters;
 };
 
+/* One blocked operation owns independent error and image-transition wake storage. */
+struct vulkan_wake {
+	struct vulkan_wake *next;
+	struct VkDevice_T *device;
+	struct vulkan_context *context;
+	int read_fd;
+	int write_fd;
+};
+
+VkResult vulkan_wake_create(struct vulkan_wake *wake, struct VkDevice_T *device);
+void vulkan_wake_destroy(struct vulkan_wake *wake);
+void vulkan_wake_notify(struct VkDevice_T *device, struct vulkan_context *context);
+void vulkan_wake_drain(struct vulkan_wake *wake);
+void vulkan_context_error(struct vulkan_context *context, VkResult error);
+void vulkan_device_error(struct VkDevice_T *device, VkResult error);
+
 /* Serializes a single GPU session without serializing GPU completion waits. */
 struct vulkan_context {
 	int fd;
@@ -267,6 +283,7 @@ struct vulkan_context {
 	uint32_t xml_version;
 	uint32_t external_memory_type;
 	VkBool32 strict_queue;
+	VkBool32 native_quiescence;
 	uint64_t max_resource_bytes;
 	uint32_t capabilities;
 	uint64_t stream_handle;

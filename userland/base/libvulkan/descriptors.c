@@ -169,7 +169,7 @@ vkDestroyDescriptorSetLayout(
 	/* A failed void destruction leaves uncertain native state owned by terminal context cleanup. */
 	status = vulkan_object_destroy_remote(owner, object, VULKAN_OPCODE_vkDestroyDescriptorSetLayout);
 	if (status != VK_SUCCESS)
-		__atomic_store_n(&owner->object.context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+		vulkan_context_error(owner->object.context, VK_ERROR_DEVICE_LOST);
 
 	/* The public destroy consumes local storage even when the native namespace is lost. */
 	vulkan_object_free_with_allocator(object, pAllocator);
@@ -272,7 +272,7 @@ vkDestroyDescriptorPool(
 	/* A failed native destroy cannot leave apparently usable local handles into an uncertain pool. */
 	status = vulkan_object_destroy_remote(owner, &pool->object, VULKAN_OPCODE_vkDestroyDescriptorPool);
 	if (status != VK_SUCCESS)
-		__atomic_store_n(&owner->object.context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+		vulkan_context_error(owner->object.context, VK_ERROR_DEVICE_LOST);
 
 	/* Consume local sets through the compatible allocator supplied at destruction. */
 	descriptor_pool_clear(pool, pAllocator);

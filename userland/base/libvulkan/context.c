@@ -26,6 +26,7 @@
 #define VULKAN_VENDOR_CAPSET_MAGIC 0x5a424453U
 #define VULKAN_VENDOR_CAPSET_OPAQUE 1U
 #define VULKAN_VENDOR_CAPSET_STRICT_QUEUE 2U
+#define VULKAN_VENDOR_CAPSET_QUIESCE 4U
 
 /* Retains mapped transport backing through growth, rollback and descriptor close. */
 struct vulkan_transport_storage {
@@ -167,12 +168,20 @@ vulkan_context_open(
 		if (vendor_magic == VULKAN_VENDOR_CAPSET_MAGIC) {
 			/* Only known exact paired contracts may select native OPAQUE allocation sharing. */
 			if (vendor_flags == VULKAN_VENDOR_CAPSET_OPAQUE ||
-			    vendor_flags == (VULKAN_VENDOR_CAPSET_OPAQUE | VULKAN_VENDOR_CAPSET_STRICT_QUEUE))
+			    vendor_flags == (VULKAN_VENDOR_CAPSET_OPAQUE | VULKAN_VENDOR_CAPSET_STRICT_QUEUE) ||
+			    vendor_flags == (VULKAN_VENDOR_CAPSET_OPAQUE | VULKAN_VENDOR_CAPSET_STRICT_QUEUE | VULKAN_VENDOR_CAPSET_QUIESCE)) {
 				context->external_memory_type = VULKAN_EXTERNAL_MEMORY_OPAQUE;
+			}
 
 			/* Device creation additionally requires success-only completion of its exact native fence. */
-			if (vendor_flags == (VULKAN_VENDOR_CAPSET_OPAQUE | VULKAN_VENDOR_CAPSET_STRICT_QUEUE))
+			if (vendor_flags == (VULKAN_VENDOR_CAPSET_OPAQUE | VULKAN_VENDOR_CAPSET_STRICT_QUEUE) ||
+			    vendor_flags == (VULKAN_VENDOR_CAPSET_OPAQUE | VULKAN_VENDOR_CAPSET_STRICT_QUEUE | VULKAN_VENDOR_CAPSET_QUIESCE)) {
 				context->strict_queue = VK_TRUE;
+			}
+
+			/* Only this exact profile can retire raw native work without failing unrelated sessions. */
+			if (vendor_flags == (VULKAN_VENDOR_CAPSET_OPAQUE | VULKAN_VENDOR_CAPSET_STRICT_QUEUE | VULKAN_VENDOR_CAPSET_QUIESCE))
+				context->native_quiescence = VK_TRUE;
 		}
 	}
 
@@ -317,7 +326,7 @@ vulkan_resource_blob_flags(
 
 	/* Refuses missing identities without exposing a bogus handle to another subsystem. */
 	if (request.handle == 0 || request.resource_id == 0) {
-		__atomic_store_n(&context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+		vulkan_context_error(context, VK_ERROR_DEVICE_LOST);
 		return VK_ERROR_DEVICE_LOST;
 	}
 
@@ -520,7 +529,7 @@ vulkan_kernel_error(
 		return VK_ERROR_OUT_OF_DEVICE_MEMORY;
 
 	/* Marks uncertain transport ownership as lost for every device sharing this context. */
-	__atomic_store_n(&context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+	vulkan_context_error(context, VK_ERROR_DEVICE_LOST);
 
 	/* Succeeded: reports the terminal session failure consistently to all callers. */
 	return VK_ERROR_DEVICE_LOST;
@@ -609,7 +618,7 @@ vulkan_context_storage(
 	    request.bytes != bytes) {
 		cleanup = vulkan_storage_release(context, storage);
 		(void)cleanup;
-		__atomic_store_n(&context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+		vulkan_context_error(context, VK_ERROR_DEVICE_LOST);
 		return VK_ERROR_DEVICE_LOST;
 	}
 
@@ -640,7 +649,7 @@ vulkan_context_storage(
 		if (error != VK_SUCCESS) {
 			cleanup = vulkan_storage_release(context, storage);
 			(void)cleanup;
-			__atomic_store_n(&context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+			vulkan_context_error(context, VK_ERROR_DEVICE_LOST);
 			return VK_ERROR_DEVICE_LOST;
 		}
 	}
@@ -669,7 +678,7 @@ vulkan_storage_release(
 	if (storage->mapping != NULL) {
 		status = munmap(storage->mapping, storage->bytes);
 		if (status != 0) {
-			__atomic_store_n(&context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+			vulkan_context_error(context, VK_ERROR_DEVICE_LOST);
 			return VK_ERROR_DEVICE_LOST;
 		}
 
@@ -822,7 +831,7 @@ vulkan_context_transaction(
 	if (error == VK_SUCCESS)
 		error = vulkan_context_poll(context);
 	if (error != VK_SUCCESS) {
-		__atomic_store_n(&context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+		vulkan_context_error(context, VK_ERROR_DEVICE_LOST);
 		return VK_ERROR_DEVICE_LOST;
 	}
 
@@ -901,7 +910,7 @@ vulkan_context_poll(
 
 		/* Quarantines the session when decoder completion exceeds its real deadline. */
 		if (now < started || now - started >= VULKAN_TRANSPORT_TIMEOUT_NS) {
-			__atomic_store_n(&context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+			vulkan_context_error(context, VK_ERROR_DEVICE_LOST);
 			return VK_ERROR_DEVICE_LOST;
 		}
 
@@ -915,7 +924,7 @@ vulkan_context_poll(
 
 		/* Refuses to keep polling forever when the deadline clock is broken. */
 		if (stagnant_polls >= 10000) {
-			__atomic_store_n(&context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+			vulkan_context_error(context, VK_ERROR_DEVICE_LOST);
 			return VK_ERROR_DEVICE_LOST;
 		}
 
@@ -924,7 +933,7 @@ vulkan_context_poll(
 		pause.tv_nsec = 1000000;
 		status = nanosleep(&pause, NULL);
 		if (status != 0 && errno != EINTR) {
-			__atomic_store_n(&context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+			vulkan_context_error(context, VK_ERROR_DEVICE_LOST);
 			return VK_ERROR_DEVICE_LOST;
 		}
 	}

@@ -26,6 +26,7 @@ main(void)
 	struct drv_gpu_ops operations;
 	struct drv_gpu_command_ops commands;
 	struct drv_gpu_job_ops job_operations;
+	struct drv_gpu_recovery_ops recovery;
 	struct gpu_job_reserve job;
 	struct drv_gpu_device *device;
 	struct test_backend backend;
@@ -49,6 +50,7 @@ main(void)
 	memset(&operations, 0, sizeof(operations));
 	commands.submit = fence_submit;
 	commands.drain = job_drain;
+	memset(&job_operations, 0, sizeof(job_operations));
 	job_operations.reserve = job_reserve;
 	job_operations.commit = job_commit;
 	job_operations.cancel = job_cancel;
@@ -60,6 +62,13 @@ main(void)
 	operations.get_info = backend_get_info;
 	operations.commands = &commands;
 	operations.jobs = &job_operations;
+
+	/* The peer proves native retirement through its exact retained job and command slots. */
+	memset(&recovery, 0, sizeof(recovery));
+	recovery.fault = job_fault;
+	recovery.stop_begin = job_stop_begin;
+	recovery.stop_poll = job_stop_poll;
+	operations.recovery = &recovery;
 	error = drv_gpu_register(&operations, &backend, &device);
 	assert(error == 0);
 	job_device = device;

@@ -32,6 +32,7 @@
 #define VENUS_VENDOR_CAPSET_BYTES	168U
 #define VENUS_VENDOR_CAPSET_MAGIC	0x5a424453U
 #define VENUS_VENDOR_STRICT_FLAGS	3U
+#define VENUS_VENDOR_QUIESCE_FLAGS	7U
 
 static int venus_capabilities(struct venus_transport *transport);
 static int venus_capability(struct venus_transport *transport, unsigned offset, unsigned length, unsigned type);
@@ -55,6 +56,7 @@ static int venus_request_wait(struct venus_transport *transport, struct venus_re
 static int venus_queue_wait_locked(struct venus_transport *transport, uint64_t deadline, unsigned flags, unsigned long *irq);
 static unsigned venus_queue_collect(struct venus_transport *transport);
 static void venus_queue_notify(struct venus_transport *transport);
+static void venus_capacity_changed(struct venus_transport *transport);
 static int venus_request_validate(struct venus_request *request, uint32_t bytes);
 static int venus_wait_expired(uint64_t started);
 
@@ -155,7 +157,6 @@ drv_venus_transport_job_reserve(
 	unsigned index;
 	unsigned failed;
 	unsigned long irq;
-	int error;
 
 	/* A strict marker needs one stable callback and a nonzero registered queue domain. */
 	if (completion == NULL || reservation == NULL)
@@ -173,11 +174,6 @@ drv_venus_transport_job_reserve(
 	/* Stock and earlier paired hosts do not promise successful native-fence completion. */
 	if (transport->strict_queue == 0U)
 		return ENOTSUP;
-
-	/* Start autonomous supervision before native work can follow the returned reservation. */
-	error = venus_worker_start(transport);
-	if (error != 0)
-		return error;
 
 	/* Keep independent capacity for the decoder command that can unblock pending GPU work. */
 	control = transport->slot_count / 8U;
@@ -238,17 +234,18 @@ drv_venus_transport_job_reserve(
 	/* A reused response cannot satisfy validation before this marker completes. */
 	memset(request->response.address, 0, VENUS_RESPONSE_BYTES);
 
-	/* The producer deadline includes the interval before the native reply and commit. */
+	/* Common job policy owns the producer and execution deadlines for this retained slot. */
 	request->context = context;
 	request->flags = 3U;
 	request->completion = completion;
 	request->notifying = 0U;
 	request->bytes = 0U;
 	request->error = 0;
-	request->started_ms = clock_milliseconds(NULL);
+	request->started_ms = 0U;
+	request->supervised = 1U;
 	request->state = VENUS_SLOT_RESERVED;
 
-	/* The returned token and autonomous wake publish the same supervised ownership interval. */
+	/* The common owner receives the exact reserved storage before publishing native work. */
 	*reservation = request;
 	waitq_wake_all(&transport->queue_waitq);
 
@@ -271,7 +268,6 @@ drv_venus_transport_job_commit(
 	unsigned index;
 	unsigned failed;
 	unsigned long irq;
-	int expired;
 
 	/* Both identities belong to the same common job and must remain present. */
 	if (reservation == NULL || completion == NULL)
@@ -305,14 +301,6 @@ drv_venus_transport_job_commit(
 	    transport->stopping != 0U) {
 		spin_unlock_irqrestore(&transport->queue_lock, irq);
 		return ENODEV;
-	}
-
-	/* A producer stalled before commit has already exhausted this job's ownership budget. */
-	expired = venus_wait_expired(request->started_ms);
-	if (expired != 0) {
-		spin_unlock_irqrestore(&transport->queue_lock, irq);
-		drv_venus_transport_fail(transport, ETIMEDOUT);
-		return ETIMEDOUT;
 	}
 
 	/* Everything fallible was reserved before native work, so publication cannot need new capacity. */
@@ -371,10 +359,9 @@ drv_venus_transport_job_cancel(
 		return ESTALE;
 	}
 
-	/* Uncertain native acceptance requires failure and retained backing until checked reset. */
+	/* Common session policy must supervise uncertainty without losing this callback or backing. */
 	if (fault != 0U) {
 		spin_unlock_irqrestore(&transport->queue_lock, irq);
-		drv_venus_transport_fail(transport, EIO);
 		return 0;
 	}
 
@@ -386,8 +373,253 @@ drv_venus_transport_job_cancel(
 
 	spin_unlock_irqrestore(&transport->queue_lock, irq);
 
+	/* Common capacity waiters observe only storage whose ownership actually ended. */
+	venus_capacity_changed(transport);
+
 	/* Succeeded: rollback removed this reservation without inventing a successful fence. */
 	return 0;
+}
+
+/*
+ * Returns immediately with the backend capacity for one supported queue domain.
+ */
+int
+drv_venus_transport_capacity(
+	struct venus_transport *transport,
+	uint32_t timeline,
+	unsigned *available)
+{
+	unsigned control;
+	unsigned limit;
+	unsigned index;
+	unsigned failed;
+	unsigned long irq;
+
+	/* A snapshot cannot expose capacity for a decoder or unsupported host profile. */
+	if (available == NULL || timeline == 0U || timeline >= 64U)
+		return EINVAL;
+
+	/* Refused snapshots carry no usable capacity. */
+	*available = 0U;
+	if (transport->strict_queue == 0U)
+		return ENOTSUP;
+
+	/* The same reserved control fraction constrains actual admission and observation. */
+	control = transport->slot_count / 8U;
+	if (control == 0U)
+		control = 1U;
+	limit = transport->slot_count - control;
+
+	/* State inspection never waits for a descriptor or submits a renderer command. */
+	irq = spin_lock_irqsave(&transport->queue_lock);
+
+	failed = atomic_raw_load_acquire(&transport->failed);
+	if (failed != 0U || transport->enabled == 0U || transport->stopping != 0U) {
+		spin_unlock_irqrestore(&transport->queue_lock, irq);
+		return ENODEV;
+	}
+
+	/* A completed callback still owns its chain until its final publication returns. */
+	for (index = 0U; index < limit; index++) {
+		if (transport->requests[index].state == VENUS_SLOT_FREE)
+			(*available)++;
+	}
+
+	spin_unlock_irqrestore(&transport->queue_lock, irq);
+
+	/* Succeeded: common policy may combine this snapshot with its per-open ledger. */
+	return 0;
+}
+
+/*
+ * Confirms actual context retirement after common policy has closed admission.
+ */
+int
+drv_venus_transport_idle(
+	struct venus_transport *transport,
+	uint32_t context)
+{
+	struct venus_request *request;
+	unsigned failed;
+	unsigned index;
+	unsigned long irq;
+
+	/* Context zero is global control and cannot be isolated as one renderer session. */
+	if (context == 0U)
+		return EINVAL;
+
+	/* The caller excludes further session operations before asking for this snapshot. */
+	irq = spin_lock_irqsave(&transport->queue_lock);
+
+	failed = atomic_raw_load_acquire(&transport->failed);
+	if (failed != 0U) {
+		spin_unlock_irqrestore(&transport->queue_lock, irq);
+		return ENODEV;
+	}
+
+	/* Unpublished reservations may already have native work and cannot prove quiescence. */
+	for (index = 0U; index < transport->slot_count; index++) {
+		request = &transport->requests[index];
+		if (request->context != context)
+			continue;
+
+		/* Both descriptor return and the callback's final access must have completed. */
+		if (request->state != VENUS_SLOT_FREE || request->completion != NULL) {
+			spin_unlock_irqrestore(&transport->queue_lock, irq);
+			return EAGAIN;
+		}
+	}
+
+	spin_unlock_irqrestore(&transport->queue_lock, irq);
+
+	/* Succeeded: every supervised native job and target-context DMA chain has retired. */
+	return 0;
+}
+
+/*
+ * Posts or observes a host-verified, context-wide native quiescence barrier.
+ */
+int
+drv_venus_transport_quiesce(
+	struct venus_transport *transport,
+	uint32_t context,
+	struct venus_request **pending,
+	unsigned *quiesced)
+{
+	struct venus_request *request;
+	uint8_t *packet;
+	uint32_t response_type;
+	unsigned index;
+	unsigned failed;
+	unsigned long irq;
+
+	/* Old strict hosts cannot prove completion of untracked native submissions. */
+	if (transport->quiesce == 0U)
+		return ENOTSUP;
+
+	/* Only retained per-session storage may own this asynchronous control operation. */
+	if (context == 0U ||
+	    pending == NULL ||
+	    quiesced == NULL)
+		return EINVAL;
+
+	/* A previous verified ACK never requires another native idle operation. */
+	if (*quiesced != 0U)
+		return 0;
+
+	/* A stopped session owns these fields and cannot publish concurrent raw work. */
+	irq = spin_lock_irqsave(&transport->queue_lock);
+
+	failed = atomic_raw_load_acquire(&transport->failed);
+	if (failed != 0U ||
+	    transport->enabled == 0U ||
+	    transport->stopping != 0U) {
+		spin_unlock_irqrestore(&transport->queue_lock, irq);
+		return ENODEV;
+	}
+
+	/* An actual fenced response is the only authority to finish this stop operation. */
+	request = *pending;
+	if (request != NULL) {
+		/* Until the device returns this owner, neither proof nor descriptor may be consumed. */
+		if (request->state != VENUS_SLOT_COMPLETE) {
+			spin_unlock_irqrestore(&transport->queue_lock, irq);
+			return EAGAIN;
+		}
+
+		/* The matching native idle proof excludes response refusal and unrelated context IDs. */
+		if (request->error != 0 || request->context != context) {
+			spin_unlock_irqrestore(&transport->queue_lock, irq);
+			return EIO;
+		}
+
+		/* A longer successful response belongs to another operation, not this stop proof. */
+		if (request->bytes != VENUS_HEADER_BYTES) {
+			spin_unlock_irqrestore(&transport->queue_lock, irq);
+			return EIO;
+		}
+
+		/* Only OK_NODATA acknowledges completion of this exact fenced control request. */
+		response_type = drv_venus_load32(request->response.address);
+		if (response_type != 0x1100U) {
+			spin_unlock_irqrestore(&transport->queue_lock, irq);
+			return EIO;
+		}
+
+		/* Release the returned control descriptor only after recording its actual proof. */
+		request->state = VENUS_SLOT_FREE;
+		*pending = NULL;
+		*quiesced = 1U;
+
+		/* Unpublished reservations have no host descriptor; native idle ends their uncertainty. */
+		for (index = 0U; index < transport->slot_count; index++) {
+			request = &transport->requests[index];
+
+			/* Posted descriptors keep their independent device ownership until actual return. */
+			if (request->context == context && request->state == VENUS_SLOT_RESERVED) {
+				request->state = VENUS_SLOT_COMPLETE;
+				request->error = ENODEV;
+			}
+		}
+
+		waitq_wake_all(&transport->queue_waitq);
+
+		spin_unlock_irqrestore(&transport->queue_lock, irq);
+
+		/* Callback retirement and common wakeups never inherit the transport lock. */
+		venus_queue_notify(transport);
+		venus_capacity_changed(transport);
+
+		/* Succeeded: native idle proves even work without a published job marker has ended. */
+		return 0;
+	}
+
+	/* Stop admission never waits while common policy is servicing independent sessions. */
+	for (index = 0U; index < transport->slot_count; index++) {
+		if (transport->requests[index].state == VENUS_SLOT_FREE)
+			break;
+	}
+
+	/* Full control storage is retryable and cannot overwrite an unrelated session's owner. */
+	if (index == transport->slot_count) {
+		spin_unlock_irqrestore(&transport->queue_lock, irq);
+		return EAGAIN;
+	}
+
+	/* Exhausted identities never wrap into a previously acknowledged control request. */
+	if (transport->next_fence == 0U) {
+		spin_unlock_irqrestore(&transport->queue_lock, irq);
+		return EOVERFLOW;
+	}
+
+	/* Exact private framing cannot be mistaken for a standard Venus opcode stream. */
+	request = &transport->requests[index];
+	packet = request->request.address;
+	memset(packet, 0, 48U);
+	drv_venus_header(packet, 0x0207U, context);
+	drv_venus_store32(packet + 4U, 3U);
+	request->fence = transport->next_fence++;
+	drv_venus_store64(packet + 8U, request->fence);
+	drv_venus_store32(packet + 24U, 16U);
+	drv_venus_store32(packet + 32U, 0x5a425351U);
+	drv_venus_store32(packet + 36U, 1U);
+	memset(request->response.address, 0, VENUS_RESPONSE_BYTES);
+	request->context = context;
+	request->flags = 3U;
+	request->completion = NULL;
+	request->notifying = 0U;
+	request->bytes = 0U;
+	request->error = 0;
+	request->started_ms = 0U;
+	request->supervised = 1U;
+	request->state = VENUS_SLOT_POSTED;
+	*pending = request;
+	venus_request_publish_locked(transport, request, index, 48U);
+
+	spin_unlock_irqrestore(&transport->queue_lock, irq);
+
+	/* Pending: common stop policy bounds this independently from ordinary control traffic. */
+	return EAGAIN;
 }
 
 /*
@@ -686,6 +918,9 @@ drv_venus_transport_command(
 
 	spin_unlock_irqrestore(&transport->queue_lock, irq);
 
+	/* The synchronous owner has released the actual descriptor pair before waking policy. */
+	venus_capacity_changed(transport);
+
 	/* Reports a protocol refusal or response truncation without inventing GPU success. */
 	if (error != 0)
 		return error;
@@ -768,14 +1003,11 @@ drv_venus_transport_drain(
 	uint32_t context)
 {
 	struct venus_request *request;
-	uint64_t deadline;
 	unsigned index;
 	unsigned pending;
 	unsigned long irq;
-	int error;
 
-	/* Final close may wait for IRQ callbacks but never frees host-owned DMA early. */
-	deadline = sched_ticks() + KERN_CLOCK_HZ * 10U;
+	/* Common supervision remains active through close and bounds uncertain managed jobs. */
 	irq = spin_lock_irqsave(&transport->queue_lock);
 
 	while (1) {
@@ -792,12 +1024,7 @@ drv_venus_transport_drain(
 			break;
 
 		/* The caller owns no controller lock while draining asynchronous requests. */
-		error = venus_queue_wait_locked(transport, deadline, 0U, &irq);
-		if (error == ETIMEDOUT) {
-			spin_unlock_irqrestore(&transport->queue_lock, irq);
-			drv_venus_transport_fail(transport, ETIMEDOUT);
-			irq = spin_lock_irqsave(&transport->queue_lock);
-		}
+		(void)venus_queue_wait_locked(transport, 0U, 0U, &irq);
 	}
 
 	spin_unlock_irqrestore(&transport->queue_lock, irq);
@@ -1579,6 +1806,7 @@ venus_strict_queue_find(
 
 	/* Unknown and stock capability layouts preserve discovery without claiming strict completion. */
 	transport->strict_queue = 0U;
+	transport->quiesce = 0U;
 	if (transport->capset_size != VENUS_VENDOR_CAPSET_BYTES)
 		return 0;
 
@@ -1604,8 +1832,12 @@ venus_strict_queue_find(
 	/* Only the acknowledged paired profile proves native-fence success and safe failed retirement. */
 	magic = drv_venus_load32(response + VENUS_HEADER_BYTES + 160U);
 	flags = drv_venus_load32(response + VENUS_HEADER_BYTES + 164U);
-	if (magic == VENUS_VENDOR_CAPSET_MAGIC && flags == VENUS_VENDOR_STRICT_FLAGS)
+	if (magic == VENUS_VENDOR_CAPSET_MAGIC &&
+	    (flags == VENUS_VENDOR_STRICT_FLAGS || flags == VENUS_VENDOR_QUIESCE_FLAGS)) {
 		transport->strict_queue = 1U;
+		if (flags == VENUS_VENDOR_QUIESCE_FLAGS)
+			transport->quiesce = 1U;
+	}
 
 	/* Succeeded: legacy discovery remains usable when strict jobs are unavailable. */
 	return 0;
@@ -1736,6 +1968,7 @@ venus_request_post(
 	request->bytes = 0U;
 	request->error = 0;
 	request->started_ms = clock_milliseconds(NULL);
+	request->supervised = 0U;
 	request->state = VENUS_SLOT_POSTED;
 
 	/* Publication reuses the capacity retained by this request's admitted owner. */
@@ -1972,8 +2205,8 @@ venus_queue_collect(
 		transport->completed_total++;
 		count++;
 
-		/* Malformed protocol completion invalidates all still-posted ownership. */
-		if (error == EIO) {
+		/* A refused strict marker cannot prove its accepted native work has stopped. */
+		if (error == EIO || (request->supervised != 0U && error != 0)) {
 			spin_unlock_irqrestore(&transport->queue_lock, irq);
 			return UINT_MAX;
 		}
@@ -1997,8 +2230,11 @@ venus_queue_notify(
 	struct venus_request *request;
 	struct drv_gpu_completion *completion;
 	unsigned index;
+	unsigned freed;
 	unsigned long irq;
 	int error;
+
+	freed = 0U;
 
 	/* Each independent chain can owe at most one common terminal publication. */
 	for (index = 0U; index < transport->slot_count; index++) {
@@ -2028,8 +2264,10 @@ venus_queue_notify(
 
 		request->completion = NULL;
 		request->notifying = 0U;
-		if (request->state == VENUS_SLOT_COMPLETE)
+		if (request->state == VENUS_SLOT_COMPLETE) {
 			request->state = VENUS_SLOT_FREE;
+			freed = 1U;
+		}
 
 		/* Quarantined DMA remains unavailable even though userspace has a terminal result. */
 		waitq_wake_all(&transport->queue_waitq);
@@ -2037,7 +2275,38 @@ venus_queue_notify(
 		spin_unlock_irqrestore(&transport->queue_lock, irq);
 	}
 
+	/* Only final callback retirement makes a completed chain available to common waiters. */
+	if (freed != 0U)
+		venus_capacity_changed(transport);
+
 	/* Succeeded: all claimable terminal callbacks have been published exactly once. */
+	return;
+}
+
+/* Notifies common capacity waiters through an independently retained publication. */
+static void
+venus_capacity_changed(
+	struct venus_transport *transport)
+{
+	struct drv_gpu_device *gpu;
+	unsigned long irq;
+
+	/* Publisher withdrawal cannot race the callback's final access to its wrapper. */
+	irq = spin_lock_irqsave(&transport->queue_lock);
+
+	gpu = transport->gpu;
+	if (gpu != NULL)
+		drv_gpu_retain(gpu);
+
+	spin_unlock_irqrestore(&transport->queue_lock, irq);
+
+	/* Common policy can re-enter the backend snapshot without inheriting the queue lock. */
+	if (gpu != NULL) {
+		drv_gpu_capacity_changed(gpu);
+		drv_gpu_release(gpu);
+	}
+
+	/* Succeeded: actual storage changes are visible independently from ledger consumption. */
 	return;
 }
 
@@ -2365,13 +2634,13 @@ venus_worker(
 	irq = spin_lock_irqsave(&transport->queue_lock);
 
 	while (transport->stopping == 0U) {
-		/* Reserved producers and posted commands both own a deadline; completed records do not. */
+		/* Common policy owns jobs; this worker supervises only ordinary transport commands. */
 		now = clock_milliseconds(NULL);
 		shortest = UINT64_MAX;
 		expired = 0U;
 		for (index = 0U; index < transport->slot_count; index++) {
 			request = &transport->requests[index];
-			if (request->state != VENUS_SLOT_POSTED && request->state != VENUS_SLOT_RESERVED)
+			if (request->state != VENUS_SLOT_POSTED || request->supervised != 0U)
 				continue;
 
 			/* A stalled host cannot retain all GPU waiters beyond the finite transport bound. */

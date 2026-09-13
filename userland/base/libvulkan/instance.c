@@ -18,6 +18,7 @@
 #include <uapi/gpu-display.h>
 #include <uapi/gpu-allocation.h>
 #include <uapi/gpu-fence.h>
+#include <uapi/gpu-job.h>
 
 static VkResult instance_extensions(const VkInstanceCreateInfo *info, uint64_t *enabled);
 static VkResult instance_add_context(struct VkInstance_T *instance, const VkInstanceCreateInfo *info, const char *path);
@@ -647,6 +648,19 @@ instance_add_context(
 		    status == VK_ERROR_DEVICE_LOST)
 			return VK_SUCCESS;
 		return status;
+	}
+
+	/* Excludes an older recognized profile before any native instance or transport storage exists. */
+	if (context->strict_queue == VK_FALSE ||
+	    context->native_quiescence == VK_FALSE ||
+	    (context->capabilities & (GPU_CAP_JOB | GPU_CAP_JOB_CAPACITY)) != (GPU_CAP_JOB | GPU_CAP_JOB_CAPACITY)) {
+		cleanup = vulkan_context_close(context);
+		vulkan_free(&instance->object.allocator, context);
+		if (cleanup != VK_SUCCESS)
+			return cleanup;
+
+		/* Succeeded: compatible nodes remain discoverable, including an empty supported inventory. */
+		return VK_SUCCESS;
 	}
 
 	/* Keeps each remote instance identity separate from the public composite instance. */

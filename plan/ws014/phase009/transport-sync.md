@@ -1,0 +1,40 @@
+# p009: 共通job管理とVenusの実退役
+
+jobの予約・実行期限、sessionの論理ERROR、容量待機、停止期限、resetの許可条件をdrv_gpuへ移した。Venusは実descriptorのtry-reserve/publish、strict native fenceの完了、実FREE通知、対象contextの退役確認、device全体のtransport故障とchecked resetを担う。内部opsはv8、従来のUAPI要求layoutは維持する。
+
+## 管理責任と容量
+
+| 境界 | 実装上の責任 |
+| --- | --- |
+| reserve | Venusはcontext非0、domain1–63、strict profileを検査し、descriptor pairとcallbackを非待機で確保する。commonが予約期限を管理する |
+| commit | 保持済みtoken＋expected completionを照合し、追加確保なしでmarkerを公開する。commonがCOMMIT時からのGPU実行期限を管理する |
+| capacity | backendは実FREEのsnapshotだけを返す。commonはopenの64recordとdevice共通容量、観測sequence、終了/割込みを合わせて待つ |
+| actual release | 通常cancel、同期応答のcopy終了、非同期callbackから戻った後にcapacity_changedを通知する。GPU完了callback中はslotを再利用しない |
+| deadline | common管理slotはVenusの10秒control workerから除外する。ordinary controlの有限監督は保持する |
+| fault cancel | token検証後、slot/callbackを保持してsession errorを報告する。未投稿を確実に否定できるCANCEL0だけ即返却する |
+
+最大64descriptor/32chain、GPU28＋control4の配置はp008のまま。縮小されたqueueでも1/8・最低1chainをcontrol用に残す。単なるIRQでcapacityを通知せず、実FREEに変わった場合に限る。通知はqueue_lock外で実行し、published GPU wrapperは独立retainによりunpublishとの競合から守る。
+
+GPU_CAP_JOB8192とGPU_CAP_JOB_CAPACITY16384をstrict時に両方広告する。stock/opaque-only/未知profileでは両方を隠し、legacy displayと能力照会を維持する。既知strict3はKでJOB/CAPACITYを広告するが、Uはquiescenceを持つexact7だけを利用可能とする。初回実VMは新bitの追加漏れでVkDevice初期化が失敗した。登録とget_infoの両方を修正し、実get_infoに対する独立数値mask24576のfixtureを追加した。rootの再実行submit-load-002はPASS。
+
+## 局所停止と共有寿命
+
+commonはsessionをsticky ERRORにして新規受付を止め、開始済みordinary ioctlとjob actionが退出した後でstop_beginを呼ぶ。Venusはsession admissionをatomicに閉じ、非待機のprivate quiescence命令を投稿する。共通workerはnative idle待ちを行わず、stop_pollで後続確認する。
+
+exact168byte/magic0x5a424453/flags7の新paired hostは、そのcontextのinline decoderとnonzero markerの新規受付を閉じ、専用threadで全native VkDeviceのDeviceWaitIdleを実行する。管理GPU_JOBの無いraw opaque仕事も対象になる。全device SUCCESSと既存queue callbackの最終access終了を確認した後だけCPU0 fenced応答を返す。DEVICE_LOST/OOM、decoder ring存在、renderer断は停止ACKにしない。後続CPU0 fenceも保留し、受信順watermarkとmutexで偽ACKを防ぐ。QEMUのCTX_DESTROY受付は停止証明には使わない。
+
+Guestはmatching fence/contextに加えexact24byte/OK_NODATAの応答だけを停止ACKとして採用する。このACK後に未投稿RESERVEDをERRORで退役できるが、すでに投稿されたdescriptorは実返却とcallback終了を別途要求する。stop用control ownerは常時予約creditではないので、全slot使用中はEAGAINで再試行し、共通stop期限の範囲内に確認できなければglobal faultとDMA quarantineへ進む。
+
+native streamを送出する前にsticky dirtyを立て、送出失敗/不明でも消さない。能力照会だけのopenなど、dirty0かつ全descriptor/callback退役済みの場合だけ実native仕事無しを証明してACKを省略する。native streamを出さずにjob予約だけ行った場合もownerが残るためhost ACKを要求する。旧flags3は既知profileとして解析可能だが、現在libvulkanはnative instanceを作る前にflags7を必須とする。旧raw/dirty contextをpeer維持したまま閉じる保証はなく、停止証明なしならglobal quarantineとなる。
+
+新isolated rendererはprocess workerを固定する。worker joinはnative/context/callback storageの寿命を守るが、thread modeの共通mutexを保持した無期限joinによる他contextへの影響は保証範囲外である。永久pendingを強制cancelできるというAPIは作らず、共通停止期限と旧session/mapping/共有handleの退役gateを通じてchecked resetへ進む。
+
+論理ERROR後の遅い成功callbackはcommonのERRORを上書きせず、backend callback pinだけを退役する。UもDEVICE_LOSTを観測後にnative Destroy/Resetを送らず、借用native fenceをbackend closeまで残す。CTX_DESTROYは停止ACKとして利用せず、共有resource membership退役後の既存closeで送る。他contextのalias/scanoutが持つallocation refを消さない。
+
+## 検証と現状
+
+`transport-evidence/verification.json`は対象hashと限定commandを保存する。transport/backendの通常・ASan/UBSanとamd64 target syntaxはPASS。実transport peerでは60秒超のRESERVEDをbackendが勝手に期限切れにしないこと、15秒遅いPOSTED完了、未知予約の保持、別context idle、callback実行中のidle拒否、実capacity通知、全32chain逆順IRQ、旧reset/quarantine等を確認した。common policy自体と実VMは別fixture/evidenceを参照する。
+
+固定stock実コードでの情報欠落はstock-compat/README.md。strictを維持し、ordinary描画が常に失敗する・DEVICE_LOST時SUCCESSがそれだけでVulkan違反であるとは記述しない。実native完了後の15秒通知遅延はrenderer-delay/README.mdの独立試験機構であり、production hostや実GPU計算時間の証拠と混同しない。新quiescence契約はrenderer-quiesce/README.md、hashと8profileのlocal意味証拠は同directoryのproposal.json/evidenceを参照する。
+
+追加HAL、host system package、git add/commit/push、Phase/Queue状態編集は本担当変更に含めない。最終実VMとGitHub同期は同Phase結果を正本とする。

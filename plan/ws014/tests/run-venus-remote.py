@@ -33,7 +33,8 @@ SSH_OPTIONS = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10',
 EVIDENCE_FILES = ['result.json', 'guest.log', 'qemu-renderer.log', 'qmp.jsonl',
                   'boot.ppm', 'frame.ppm', 'console.log', 'console.bin']
 SOURCE_DIRECTORIES = ['src/drivers/gpu', 'userland/gpu']
-SOURCE_FILES = ['Makefile', 'include/drivers/gpu.h', 'include/drivers/venus.h',
+SOURCE_FILES = ['Makefile', 'config/kernel-options.list',
+                'plan/ws014/tests/config-wayland-amd64.mk', 'include/drivers/gpu.h', 'include/drivers/venus.h',
                 'userland/base/libc/pthread.c', 'libc/include/sys/socket.h',
                 'include/drivers/gpu-fence.h', 'src/drivers/gpu/gpu-fence.c', 'include/uapi/gpu-fence.h',
                 'include/uapi/gpu-scanout.h', 'include/drivers/gpu-scanout.h',
@@ -468,18 +469,40 @@ def verify_remote_result(args, report, remote):
             raise RuntimeError('isolated fault result differs from the requested scenario')
         observed = (args.output_root.resolve() / args.attempt / 'evidence/wayland-observed.log').read_text()
         expected = {
+            'completion-delay': 'GPUFENCE COMPLETION_DELAY PASS',
+            'context-timeout': 'GPUFENCE CONTEXT_TIMEOUT PASS',
+            'submit-load': 'GPUFENCE SUBMIT_LOAD PASS processes=2 rounds=3 submits=576 verified_bytes=25165824 verified_submits=576',
             'recovery': 'GPURECOVERY PASS timeout=1 peer_failed=1 retirement_gate=1 fresh_roundtrip=4096 decoder=1',
             'producer-exit': 'GPUFENCE PRODUCER_EXIT_ERROR PASS',
             'producer-stop': 'GPUFENCE PRODUCER_STOP_ERROR PASS',
         }[args.fault_test]
         if remote.get('fault_marker') != expected or expected not in observed:
             raise RuntimeError('isolated fault evidence lacks successful guest assertions')
+        if args.fault_test in ('submit-load', 'completion-delay', 'context-timeout', 'producer-stop'):
+            load_spec = importlib.util.spec_from_file_location(
+                'submit_load_harness', REPO / 'plan/ws014/tests/wayland-qemu.py')
+            load_harness = importlib.util.module_from_spec(load_spec)
+            load_spec.loader.exec_module(load_harness)
+            if args.fault_test == 'submit-load':
+                if remote.get('load_samples') != load_harness.verify_submit_load(observed):
+                    raise RuntimeError('submit load report differs from the captured per-round measurements')
+                cpu = remote.get('host_cpu_samples', {})
+                if (not isinstance(cpu.get('ticks_per_second'), int) or cpu['ticks_per_second'] <= 0 or
+                        {item.get('kind') for item in cpu.get('processes', [])} != {'qemu', 'renderer'}):
+                    raise RuntimeError('submit load lacks separate QEMU and renderer CPU observations')
+            else:
+                renderer_text = (args.output_root.resolve() / args.attempt / 'evidence/qemu-renderer.log').read_text(errors='replace')
+                delay = load_harness.verify_completion_delay(observed, renderer_text, args.fault_test)
+                if remote.get('completion_delay') != delay or remote.get('test_renderer_delay') is not True:
+                    raise RuntimeError('completion-delay report differs from actual guest and renderer observations')
+                if remote.get('delay_renderer') != {key: delay[key] for key in ('pid', 'context', 'fence')}:
+                    raise RuntimeError('delayed callback did not retain the verified owned renderer identity')
         if args.fault_test == 'recovery' and not 9000 <= remote.get('watchdog_elapsed_ms', 0) <= 20000:
             raise RuntimeError('isolated recovery did not measure the expected watchdog interval')
         if args.fault_test == 'producer-stop':
             if (remote.get('producer_stopped') is not True or
                     'GPUFENCE PRODUCER_STOPPED pending=1 fd_live=1' not in observed or
-                    not 9000 <= remote.get('watchdog_elapsed_ms', 0) <= 20000):
+                    not 7000 <= remote.get('watchdog_elapsed_ms', 0) <= 13000):
                 raise RuntimeError('producer-stop lacks stopped-process proof and autonomous terminal timing')
         if args.fault_test == 'recovery':
             pause = remote.get('renderer_pause', {})
@@ -735,8 +758,8 @@ def main(profile='venus'):
     parser.add_argument('--init', default='/bin/sh', help='init path written only into the disposable image')
     parser.add_argument('--skip-build', action='store_true', help='explicitly reuse and record existing artifacts')
     parser.add_argument('--lifecycle', action='store_true', help='also verify SIGINT cleanup and visible console restoration')
-    parser.add_argument('--fault-test', choices=['recovery', 'producer-exit', 'producer-stop'],
-                        help='run one isolated destructive scenario instead of the Wayland suite')
+    parser.add_argument('--fault-test', choices=['recovery', 'producer-exit', 'producer-stop', 'submit-load', 'completion-delay', 'context-timeout'],
+                        help='run one isolated fault or submit-load regression instead of the Wayland suite')
     parser.add_argument('--phase', choices=['2d', 'venus'] if profile == 'venus' else [profile],
                         default=profile)
     parser.add_argument('--frame', type=int, default=1 if profile == 'venus' else 0)

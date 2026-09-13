@@ -1,0 +1,156 @@
+{
+  "phase": "ws014-p009",
+  "status": "PASS",
+  "checks": [
+    {
+      "name": "gen-api",
+      "command": [
+        "/home/awe/zedBSD/build/NoctLang/build-static/noct",
+        "userland/base/libvulkan/tools/maintain-api.noct",
+        "/tmp/q308-virglrenderer-1.1.0/src/venus/venus-protocol/vulkan_core.h",
+        "/home/awe/zedBSD/plan/ws014/temp/q312-api-generated/vulkan_core.h"
+      ],
+      "exit_code": 0,
+      "seconds": 15.463,
+      "log": "plan/ws014/phase009/api-verification/gen-api.log",
+      "sha256": "bebd34a93fe3544b80db8cb4550aab86a20f7a4935a121028f9b56b875483f88"
+    },
+    {
+      "name": "gen-external",
+      "command": [
+        "/home/awe/zedBSD/build/NoctLang/build-static/noct",
+        "userland/base/libvulkan/tools/maintain-external.noct",
+        "/tmp/q308-virglrenderer-1.1.0/src/venus/venus-protocol/vulkan_core.h",
+        "/home/awe/zedBSD/plan/ws014/temp/q312-api-generated/vulkan_external.h"
+      ],
+      "exit_code": 0,
+      "seconds": 15.211,
+      "log": "plan/ws014/phase009/api-verification/gen-external.log",
+      "sha256": "bdc6a748664255e279e74b69ccf47dfb15350d28598c4f844eaed1e9b13cd377"
+    },
+    {
+      "name": "gen-dispatch",
+      "command": [
+        "/home/awe/zedBSD/build/NoctLang/build-static/noct",
+        "userland/base/libvulkan/tools/maintain-dispatch.noct",
+        "libc/include/vulkan/vulkan_core.h",
+        "/tmp/q308-virglrenderer-1.1.0/src/venus/venus-protocol/vn_protocol_renderer_defines.h",
+        "/home/awe/zedBSD/plan/ws014/temp/q312-api-generated"
+      ],
+      "exit_code": 0,
+      "seconds": 2.021,
+      "log": "plan/ws014/phase009/api-verification/gen-dispatch.log",
+      "sha256": "2a5bd9f41cba581bcdf98853929bd58bee542ee53afa76d80de4724476052c6c"
+    },
+    {
+      "name": "gen-codec",
+      "command": [
+        "/home/awe/zedBSD/build/NoctLang/build-static/noct",
+        "userland/base/libvulkan/tools/maintain-codec.noct",
+        "libc/include/vulkan/vulkan_core.h",
+        "/home/awe/zedBSD/plan/ws014/temp/q312-api-generated/codec.c",
+        "/home/awe/zedBSD/plan/ws014/temp/q312-api-generated/codec.h"
+      ],
+      "exit_code": 0,
+      "seconds": 1.519,
+      "log": "plan/ws014/phase009/api-verification/gen-codec.log",
+      "sha256": "090bab01d83aa3321a06690901b5699b6b53f8fce986b0f095716048311f3f33"
+    },
+    {
+      "name": "gen-commands",
+      "command": [
+        "/home/awe/zedBSD/build/NoctLang/build-static/noct",
+        "userland/base/libvulkan/tools/maintain-commands.noct",
+        "libc/include/vulkan/vulkan_core.h",
+        "/home/awe/zedBSD/plan/ws014/temp/q312-api-generated/commands-generated.inc"
+      ],
+      "exit_code": 0,
+      "seconds": 56.946,
+      "log": "plan/ws014/phase009/api-verification/gen-commands.log",
+      "sha256": "a09945217b3a88ffb7d557f3ddf779d4d8d706db18f7bde33001119b7b4b003c"
+    },
+    {
+      "name": "abi",
+      "command": [
+        "sh",
+        "plan/ws030/tests/run-vulkan-abi.sh"
+      ],
+      "exit_code": 0,
+      "seconds": 2.471,
+      "log": "plan/ws014/phase009/api-verification/abi.log",
+      "sha256": "e2e406fe15f2072b6279b8af2ba8112d5d50640d02caa47d1315fb665a134cfb"
+    },
+    {
+      "name": "dispatch",
+      "command": [
+        "sh",
+        "plan/ws030/tests/run-libvulkan-dispatch-test.sh"
+      ],
+      "exit_code": 0,
+      "seconds": 5.63,
+      "log": "plan/ws014/phase009/api-verification/dispatch.log",
+      "sha256": "057fd44ca796d10440a13275987c3a40707feb5d781aff8e3469e2b86388863b"
+    }
+  ],
+  "generation": [
+    {
+      "path": "libc/include/vulkan/vulkan_core.h",
+      "match": true,
+      "sha256": "8b33d690a1dcf075c67d2f58a6070b67ff1ffbd3c9c985e0651998954a9fc912"
+    },
+    {
+      "path": "libc/include/vulkan/vulkan_external.h",
+      "match": true,
+      "sha256": "241ddecf632ebf9cfdb153c892eb015b21e007996bed2f5409189014f4f9390f"
+    },
+    {
+      "path": "userland/base/libvulkan/dispatch-table.inc",
+      "match": true,
+      "sha256": "4be1c677884a34a113a514561827fecd800f9410f79126206dd8c11b4f61f4e4"
+    },
+    {
+      "path": "userland/base/libvulkan/api-commands.tsv",
+      "match": true,
+      "sha256": "673c9d55fe23b4e3b7cc601f815439d2a3684a58f3ccf218815bbdfc96796b8c"
+    },
+    {
+      "path": "userland/base/libvulkan/opcodes.h",
+      "match": true,
+      "sha256": "d7ec242614923dfc7471315974572471ce2c4c1ed933824ca5c9635e50eee8c6"
+    },
+    {
+      "path": "userland/base/libvulkan/codec.c",
+      "match": true,
+      "sha256": "5d9711caa71235d9b833a0ad36dc43c4c811ab0080e7f2b6ddaae72cdce2da5f"
+    },
+    {
+      "path": "userland/base/libvulkan/codec.h",
+      "match": true,
+      "sha256": "c983b90448811245ee5bb48d76806ea30a21878717d9565721fe75b1eabcc03a"
+    },
+    {
+      "path": "userland/base/libvulkan/commands-generated.inc",
+      "match": true,
+      "sha256": "f540c13834ea06d99a295048f194ae9d13efc38bd9b014ef4b268f6df5428fe4"
+    }
+  ],
+  "coverage": {
+    "public_api": "Vulkan 1.0 + selected extensions",
+    "public_commands": 170,
+    "core_commands": 137,
+    "wsi_commands": 20,
+    "external_and_query_commands": 13,
+    "pinned_wire_identifiers": 145,
+    "abi_targets": [
+      "i386-unknown-elf",
+      "x86_64-unknown-elf"
+    ],
+    "abi_structures_unions": 148,
+    "abi_fields": 942,
+    "abi_enum_constants": 2394,
+    "codec_encoders": 100,
+    "codec_decoders": 47,
+    "recording_commands": 44
+  },
+  "generated_artifacts": "plan/ws014/temp/q312-api-generated"
+}

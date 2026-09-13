@@ -2,10 +2,10 @@
 
 <!-- awesome-plan-current:start -->
 Status: incomplete
-Implementation Queue: none
+Implementation Queue: q312 / q312-i01 / ws014-p009 in-progress
 Last verified Phases: p002/p003/p005/p006/p007/p008
 Last Queue: q311 finished
-Next: p004 planning, not queued; p001 decisions retained
+Next: p009 → p004 planning, not queued; p001 decisions retained
 <!-- awesome-plan-current:end -->
 
 # WS014: virtio-gpu bring-up
@@ -43,7 +43,8 @@ i915実機対応、GLES2実装、デスクトップ全体の移植はこの単�
 | ws014-p006 | [kernel handle・GPU共有・最小Wayland](https://github.com/awemorris/zedBSD/issues/393) | cleared | q309でK handle/GPU共有/最小Wayland実装、最終direct002・Wayland004受入。p004へ引渡し |
 | ws014-p007 | [GPUレビュー・BLOB直接表示・同期と性能](https://github.com/awemorris/zedBSD/issues/394) | cleared | q310 finished。BLOB直接表示・標準fd・同期/転送・topology/配置と実QEMU受入済み |
 | ws014-p008 | [GPU完了責任・fence所属と描画資源](https://github.com/awemorris/zedBSD/issues/395) | cleared | q311-i01 finished、承認回答A1–A8＋fence所属の改善を受入 |
-| ws014-p004 | [ws014-p004](https://github.com/awemorris/zedBSD/issues/385) | planning | p008後の最終API整理・規約全文確認 |
+| ws014-p009 | [GPUレビュー対応とフレームワーク共通化](https://github.com/awemorris/zedBSD/issues/396) | in-progress | q312-i01、R1–R6とGPU共通の待機/期限/所有権、backend停止契約・WSI改善と受入 |
+| ws014-p004 | [ws014-p004](https://github.com/awemorris/zedBSD/issues/385) | planning | p009後の最終API整理・規約全文確認 |
 
 ## 制約・再開点
 
@@ -461,3 +462,19 @@ K/U/transport/host/consoleの限定normal・sanitizer、170API/両ABI/Noct8file�
 
 
 受入記録: [p008結果コメント](https://github.com/awemorris/zedBSD/issues/395#issuecomment-5652374702)。local/uncommittedの資料は plan/ws014/phase008/、Queue履歴は plan/history/queue-q311.md。
+
+## review4への対応案（2026-09-13）
+
+[レビュー回答と提案の全文](https://github.com/awemorris/zedBSD/issues/395#issuecomment-5652742665)を記録した。照合対象はユーザーcommit `cca12445`。R1は一時的容量不足とOOMを分け、Uの完了回収を止めない二段階admission＋device全体の容量通知を提案する。R3は予約/control/GPU実行の期限分離と、停止確認・DMA/descriptor退役を含むcontext単位の障害処理を提案する。R4はdirect acquireの通知接続、R5はprivate fence一括resetを専用負荷で測定、R6は内部寿命待ちとvalid usageを区別する。
+
+R2のstock互換は能力別に実証してから有効化し、当面strictを維持する案。Vulkanはdevice loss時のfence SUCCESSを許すが、stockの非TIMEOUT retire/切断をそのまま資源再利用の証明にはしない。独自rendererの配布負担を記録した。
+
+これは対応方針の提案であり、新実装・新試験の受入ではない。p008 cleared / q311 finished、WS014 incomplete、p004 planning/未queueを維持する。新Phase・Queueの作成と実行は行わず、既存BLOB表示・GPU framework所属fence・テストドライバ範囲を維持する。回答書はローカル `plan/ws014/gpu-stack-review4-response.md`（今回未commit）。git add/commit/pushはユーザー担当。
+
+## q312開始: GPUレビュー対応とフレームワーク共通化（2026-09-13）
+
+ユーザー指示により[WS014 p009](https://github.com/awemorris/zedBSD/issues/396)をq312-i01の単一Phaseとして実行する。承認範囲は[review4回答](https://github.com/awemorris/zedBSD/issues/395#issuecomment-5652742665)とGPU共通化の協議。job/fenceの状態・容量待機・期限・session故障と参照保持をdrv_gpuへ寄せ、backendは実資源の予約・投稿・完了と停止/DMA退役確認を担う。R1のU排他と容量通知、R3の期限/障害範囲、R4のdirectAcquire通知、R5のprivate fence reset再利用・測定、R6の寿命を改善する。
+
+R2はstrictを当面維持し、stock互換の能力と退役条件を限定検証する。安全性が成立しなければstrictと具体的な不足・制約を記録する。context停止も能力と実確認が前提で、停止不能時はquarantine/全体resetを維持する。通常BLOB表示・GPU内共有・標準APIとzwl/libwaylandのテストドライバ範囲を保持する。
+
+p008/q311のcleared/finishedを保持し、順序はp009 → p004 planning/未queue → 別WS029。720 active minutes見積・120分レビュー、有限fixture/build/VMで実装・受入する。追加HALや一般DE/native i915、git add/commit/push、system package/GDM/VFIO変更は含めない。private host/転送・隔離依存build・GitHub同期は既存承認を使用する。開始時点では新実装・試験の成功は主張しない。

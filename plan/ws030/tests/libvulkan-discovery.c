@@ -65,6 +65,9 @@ static unsigned allocation_attempt, fail_allocation, fail_queue, bad_physical_ec
 /* Queue capability controls alter only the second GPU during bounded incompatibility scenarios. */
 static unsigned native_family_count, native_zero_queue;
 
+/* Known older renderer profiles can coexist with current independent nodes. */
+static unsigned missing_quiescence;
+
 /* Callback accounting verifies instance inheritance and compatible destruction policies. */
 static unsigned allocated, freed, destruction_frees;
 
@@ -93,6 +96,7 @@ static void discovery_check_devices(VkPhysicalDevice *physical, const VkAllocati
 static void discovery_check_failures(const VkAllocationCallbacks *allocator);
 static void discovery_check_extensions(void);
 static void discovery_check_queue_incompatibility(const VkAllocationCallbacks *allocator);
+static void discovery_check_profiles(const VkAllocationCallbacks *allocator);
 
 /*
  * Starts one bounded ordinary /dev enumeration without touching host device nodes.
@@ -186,8 +190,14 @@ vulkan_context_open(
 	peer->node = node;
 	context->fd = (int)node;
 	context->capabilities = GPU_CAP_RESOURCE | GPU_CAP_CAPSET | GPU_CAP_BLOB |
-	    GPU_CAP_TRANSFER | GPU_CAP_COMMAND | GPU_CAP_MAPPING | GPU_CAP_PRESENT | GPU_CAP_JOB;
+	    GPU_CAP_TRANSFER | GPU_CAP_COMMAND | GPU_CAP_MAPPING | GPU_CAP_PRESENT | GPU_CAP_JOB | GPU_CAP_JOB_CAPACITY;
 	context->strict_queue = VK_TRUE;
+	context->native_quiescence = VK_TRUE;
+	if ((node == 0U && (missing_quiescence & 1U) != 0U) ||
+	    (node == 17U && (missing_quiescence & 2U) != 0U))
+		context->native_quiescence = VK_FALSE;
+
+	/* Display capability belongs to the second node independently of its renderer profile. */
 	if (node == 17U)
 		context->capabilities |= GPU_CAP_DISPLAY;
 	opened++;
@@ -308,6 +318,9 @@ vulkan_context_execute(
 		return VK_ERROR_OUT_OF_HOST_MEMORY;
 	}
 
+	/* Even instance discovery must not send native work to a known unsupported renderer profile. */
+	assert(context->native_quiescence == VK_TRUE);
+
 	/* Only admitted transactions can create modeled native object ownership. */
 	submissions++;
 	cursor.data = command->data;
@@ -397,6 +410,9 @@ main(
 	assert(opened == closed);
 	assert(native_devices == 0U);
 	assert(allocated == freed);
+
+	/* Older recognized profiles remain unavailable without poisoning another compatible GPU. */
+	discovery_check_profiles(&allocator);
 
 	/* An unusable queue inventory must hide only its own GPU namespace. */
 	discovery_check_queue_incompatibility(&allocator);
@@ -1177,10 +1193,22 @@ discovery_check_devices(
 	error = vkCreateDevice(physical[1], &info, allocator, &device);
 	assert(error == VK_ERROR_INITIALIZATION_FAILED && device == VK_NULL_HANDLE);
 	context->strict_queue = VK_TRUE;
+
+	/* Recognized old STRICT without native stop cannot initialize an independently safe device. */
+	context->native_quiescence = VK_FALSE;
+	error = vkCreateDevice(physical[1], &info, allocator, &device);
+	assert(error == VK_ERROR_INITIALIZATION_FAILED && device == VK_NULL_HANDLE);
+	context->native_quiescence = VK_TRUE;
 	context->capabilities &= ~GPU_CAP_JOB;
 	error = vkCreateDevice(physical[1], &info, allocator, &device);
 	assert(error == VK_ERROR_INITIALIZATION_FAILED && device == VK_NULL_HANDLE);
 	context->capabilities |= GPU_CAP_JOB;
+
+	/* Capacity waiting is part of this library's admission contract, even on a strict completion backend. */
+	context->capabilities &= ~GPU_CAP_JOB_CAPACITY;
+	error = vkCreateDevice(physical[1], &info, allocator, &device);
+	assert(error == VK_ERROR_INITIALIZATION_FAILED && device == VK_NULL_HANDLE);
+	context->capabilities |= GPU_CAP_JOB_CAPACITY;
 	assert(submissions == before && context->queue_timelines == 0U);
 
 	/* Unsupported features and local extensions fail before native device creation. */
@@ -1423,5 +1451,52 @@ discovery_check_queue_incompatibility(
 	native_zero_queue = 0U;
 
 	/* Succeeded: unsupported queue shape never disables another compatible GPU. */
+	return;
+}
+
+/* Filters old renderer nodes before native discovery while preserving other supported namespaces. */
+static void
+discovery_check_profiles(
+	const VkAllocationCallbacks *allocator)
+{
+	VkInstance instance;
+	VkPhysicalDevice physical;
+	uint32_t count;
+	unsigned scenario;
+	unsigned before;
+	VkResult error;
+
+	/* Either old node can be skipped, and an all-old inventory uses existing zero-device semantics. */
+	for (scenario = 1U; scenario <= 3U; scenario++) {
+		missing_quiescence = scenario;
+		before = submissions;
+		instance = discovery_create_instance(allocator);
+		count = 1U;
+		physical = VK_NULL_HANDLE;
+		error = vkEnumeratePhysicalDevices(instance, &count, &physical);
+		assert(error == VK_SUCCESS);
+
+		/* No native command or transport allocation is needed when every recognized node is too old. */
+		if (scenario == 3U) {
+			assert(count == 0U && physical == VK_NULL_HANDLE);
+			assert(submissions == before);
+		} else {
+			assert(count == 1U && physical != VK_NULL_HANDLE);
+			if (scenario == 1U)
+				assert(vulkan_physical_device(physical)->object.context->fd == 17);
+			else
+				assert(vulkan_physical_device(physical)->object.context->fd == 0);
+		}
+
+		/* Both skipped metadata opens and supported native namespaces retain exact close ownership. */
+		vkDestroyInstance(instance, allocator);
+		assert(opened == closed && native_devices == 0U);
+		assert(allocated == freed);
+	}
+
+	/* Later scenarios retain the ordinary two-device inventory. */
+	missing_quiescence = 0U;
+
+	/* Succeeded: an unsupported profile cannot create native state or disable a supported neighbor. */
 	return;
 }

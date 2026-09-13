@@ -1,0 +1,2 @@
+ASSERT /home/awe/zedBSD/plan/ws014/tests/gpu-supervision.c:598: raw_released != 0U || raw_quarantined != 0U
+Aborted

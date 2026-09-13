@@ -1,0 +1,328 @@
+--- a/src/drivers/gpu/venus/transport.c
++++ b/src/drivers/gpu/venus/transport.c
+@@ -477,6 +477,152 @@
+ }
+ 
+ /*
++ * Posts or observes a host-verified, context-wide native quiescence barrier.
++ */
++int
++drv_venus_transport_quiesce(
++	struct venus_transport *transport,
++	uint32_t context,
++	struct venus_request **pending,
++	unsigned *quiesced)
++{
++	struct venus_request *request;
++	uint8_t *packet;
++	uint32_t response_type;
++	unsigned index;
++	unsigned failed;
++	unsigned long irq;
++
++	/* Old strict hosts cannot prove completion of untracked native submissions. */
++	if (transport->quiesce == 0U)
++		return ENOTSUP;
++
++	/* Only retained per-session storage may own this asynchronous control operation. */
++	if (context == 0U ||
++	    pending == NULL ||
++	    quiesced == NULL)
++		return EINVAL;
++
++	/* A previous verified ACK never requires another native idle operation. */
++	if (*quiesced != 0U)
++		return 0;
++
++	/* A stopped session owns these fields and cannot publish concurrent raw work. */
++	irq = spin_lock_irqsave(&transport->queue_lock);
++
++	failed = atomic_raw_load_acquire(&transport->failed);
++	if (failed != 0U ||
++	    transport->enabled == 0U ||
++	    transport->stopping != 0U) {
++		spin_unlock_irqrestore(&transport->queue_lock, irq);
++		return ENODEV;
++	}
++
++	/* An actual fenced response is the only authority to finish this stop operation. */
++	request = *pending;
++	if (request != NULL) {
++		/* Until the device returns this owner, neither proof nor descriptor may be consumed. */
++		if (request->state != VENUS_SLOT_COMPLETE) {
++			spin_unlock_irqrestore(&transport->queue_lock, irq);
++			return EAGAIN;
++		}
++
++		/* The matching native idle proof excludes response refusal and unrelated context IDs. */
++		if (request->error != 0 || request->context != context) {
++			spin_unlock_irqrestore(&transport->queue_lock, irq);
++			return EIO;
++		}
++
++		/* A longer successful response belongs to another operation, not this stop proof. */
++		if (request->bytes != VENUS_HEADER_BYTES) {
++			spin_unlock_irqrestore(&transport->queue_lock, irq);
++			return EIO;
++		}
++
++		/* Only OK_NODATA acknowledges completion of this exact fenced control request. */
++		response_type = drv_venus_load32(request->response.address);
++		if (response_type != 0x1100U) {
++			spin_unlock_irqrestore(&transport->queue_lock, irq);
++			return EIO;
++		}
++
++		/* Release the returned control descriptor only after recording its actual proof. */
++		request->state = VENUS_SLOT_FREE;
++		*pending = NULL;
++		*quiesced = 1U;
++
++		/* Unpublished reservations have no host descriptor; native idle ends their uncertainty. */
++		for (index = 0U; index < transport->slot_count; index++) {
++			request = &transport->requests[index];
++
++			/* Posted descriptors keep their independent device ownership until actual return. */
++			if (request->context == context && request->state == VENUS_SLOT_RESERVED) {
++				request->state = VENUS_SLOT_COMPLETE;
++				request->error = ENODEV;
++			}
++		}
++
++		waitq_wake_all(&transport->queue_waitq);
++
++		spin_unlock_irqrestore(&transport->queue_lock, irq);
++
++		/* Callback retirement and common wakeups never inherit the transport lock. */
++		venus_queue_notify(transport);
++		venus_capacity_changed(transport);
++
++		/* Succeeded: native idle proves even work without a published job marker has ended. */
++		return 0;
++	}
++
++	/* Stop admission never waits while common policy is servicing independent sessions. */
++	for (index = 0U; index < transport->slot_count; index++) {
++		if (transport->requests[index].state == VENUS_SLOT_FREE)
++			break;
++	}
++
++	/* Full control storage is retryable and cannot overwrite an unrelated session's owner. */
++	if (index == transport->slot_count) {
++		spin_unlock_irqrestore(&transport->queue_lock, irq);
++		return EAGAIN;
++	}
++
++	/* Exhausted identities never wrap into a previously acknowledged control request. */
++	if (transport->next_fence == 0U) {
++		spin_unlock_irqrestore(&transport->queue_lock, irq);
++		return EOVERFLOW;
++	}
++
++	/* Exact private framing cannot be mistaken for a standard Venus opcode stream. */
++	request = &transport->requests[index];
++	packet = request->request.address;
++	memset(packet, 0, 48U);
++	drv_venus_header(packet, 0x0207U, context);
++	drv_venus_store32(packet + 4U, 3U);
++	request->fence = transport->next_fence++;
++	drv_venus_store64(packet + 8U, request->fence);
++	drv_venus_store32(packet + 24U, 16U);
++	drv_venus_store32(packet + 32U, 0x5a425351U);
++	drv_venus_store32(packet + 36U, 1U);
++	memset(request->response.address, 0, VENUS_RESPONSE_BYTES);
++	request->context = context;
++	request->flags = 3U;
++	request->completion = NULL;
++	request->notifying = 0U;
++	request->bytes = 0U;
++	request->error = 0;
++	request->started_ms = 0U;
++	request->supervised = 1U;
++	request->state = VENUS_SLOT_POSTED;
++	*pending = request;
++	venus_request_publish_locked(transport, request, index, 48U);
++
++	spin_unlock_irqrestore(&transport->queue_lock, irq);
++
++	/* Pending: common stop policy bounds this independently from ordinary control traffic. */
++	return EAGAIN;
++}
++
++/*
+  * Starts one modern PCI transport while retaining every partial acquisition.
+  */
+ int
+@@ -1660,6 +1806,7 @@
+ 
+ 	/* Unknown and stock capability layouts preserve discovery without claiming strict completion. */
+ 	transport->strict_queue = 0U;
++	transport->quiesce = 0U;
+ 	if (transport->capset_size != VENUS_VENDOR_CAPSET_BYTES)
+ 		return 0;
+ 
+@@ -1685,8 +1832,12 @@
+ 	/* Only the acknowledged paired profile proves native-fence success and safe failed retirement. */
+ 	magic = drv_venus_load32(response + VENUS_HEADER_BYTES + 160U);
+ 	flags = drv_venus_load32(response + VENUS_HEADER_BYTES + 164U);
+-	if (magic == VENUS_VENDOR_CAPSET_MAGIC && flags == VENUS_VENDOR_STRICT_FLAGS)
++	if (magic == VENUS_VENDOR_CAPSET_MAGIC &&
++	    (flags == VENUS_VENDOR_STRICT_FLAGS || flags == VENUS_VENDOR_QUIESCE_FLAGS)) {
+ 		transport->strict_queue = 1U;
++		if (flags == VENUS_VENDOR_QUIESCE_FLAGS)
++			transport->quiesce = 1U;
++	}
+ 
+ 	/* Succeeded: legacy discovery remains usable when strict jobs are unavailable. */
+ 	return 0;
+--- a/src/drivers/gpu/venus/venus.c
++++ b/src/drivers/gpu/venus/venus.c
+@@ -934,6 +934,7 @@
+ 	struct venus_controller *controller;
+ 	struct venus_session *session;
+ 	uint8_t *command;
++	unsigned stopping;
+ 	int error;
+ 
+ 	/* The stream format and Vulkan completion protocol remain in userspace. */
+@@ -941,7 +942,8 @@
+ 	session = private_session;
+ 
+ 	/* Common stop excludes active operations before publishing this permanent admission barrier. */
+-	if (atomic_raw_load_acquire(&session->stopping) != 0U)
++	stopping = atomic_raw_load_acquire(&session->stopping);
++	if (stopping != 0U)
+ 		return ENODEV;
+ 
+ 	/* Defends transport capacity independently of the checked UAPI caller. */
+@@ -963,6 +965,9 @@
+ 
+ 	/* Serializes the single request slot while allowing timer interrupts. */
+ 	mutex_lock(&controller->mutex);
++
++	/* A rejected or uncertain send must never be mistaken for a metadata-only context. */
++	atomic_raw_store_release(&session->native_commands_submitted, 1U);
+ 
+ 	error = venus_control(controller, command, bytes + 32U);
+ 	if (error != 0) {
+@@ -993,6 +998,7 @@
+ {
+ 	struct venus_controller *controller;
+ 	struct venus_session *session;
++	unsigned stopping;
+ 	int error;
+ 
+ 	/* Venus commands are four-byte aligned even though the common stream remains opaque. */
+@@ -1004,8 +1010,12 @@
+ 	session = private_session;
+ 
+ 	/* Common stop excludes active operations before publishing this permanent admission barrier. */
+-	if (atomic_raw_load_acquire(&session->stopping) != 0U)
++	stopping = atomic_raw_load_acquire(&session->stopping);
++	if (stopping != 0U)
+ 		return ENODEV;
++
++	/* Publish possible native ownership before the opaque stream can reach the renderer. */
++	atomic_raw_store_release(&session->native_commands_submitted, 1U);
+ 	error = drv_venus_transport_submit(
+ 		&controller->transport,
+ 		session->context,
+@@ -1032,6 +1042,7 @@
+ {
+ 	struct venus_controller *controller;
+ 	struct venus_session *session;
++	unsigned stopping;
+ 	int error;
+ 
+ 	/* The framework's retained open supplies the immutable context identity. */
+@@ -1039,7 +1050,8 @@
+ 	session = private_session;
+ 
+ 	/* Common stop excludes active operations before publishing this permanent admission barrier. */
+-	if (atomic_raw_load_acquire(&session->stopping) != 0U)
++	stopping = atomic_raw_load_acquire(&session->stopping);
++	if (stopping != 0U)
+ 		return ENODEV;
+ 	error = drv_venus_transport_job_reserve(
+ 		&controller->transport,
+@@ -1141,15 +1153,42 @@
+ 	void *private_session,
+ 	int error)
+ {
++	struct venus_controller *controller;
+ 	struct venus_session *session;
++	unsigned submitted;
++	int status;
+ 
+ 	/* This callback never takes a sleeping lock or pretends to cancel native GPU execution. */
+-	(void)device;
++	controller = device;
+ 	(void)error;
+ 	session = private_session;
+ 	atomic_raw_store_release(&session->stopping, 1U);
+ 
+-	/* Succeeded: later stop snapshots cannot be followed by newly admitted native work. */
++	/* Exact absence of any native stream makes metadata-only close safe even on older hosts. */
++	submitted = atomic_raw_load_acquire(&session->native_commands_submitted);
++	if (submitted == 0U) {
++		/* An unused reservation still owns a callback and requires the normal stop handshake. */
++		status = drv_venus_transport_idle(&controller->transport, session->context);
++		if (status == 0) {
++			session->quiesced = 1U;
++			return 0;
++		}
++
++		/* Only unresolved ownership may proceed to an asynchronous native stop proof. */
++		if (status != EAGAIN)
++			return status;
++	}
++
++	/* Admission closure precedes the host-wide proof of all native work in this context. */
++	status = drv_venus_transport_quiesce(
++		&controller->transport,
++		session->context,
++		&session->stop_request,
++		&session->quiesced);
++	if (status != 0 && status != EAGAIN)
++		return status;
++
++	/* Succeeded: the common poll stage observes or retries the nonblocking stop request. */
+ 	return 0;
+ }
+ 
+@@ -1171,12 +1210,23 @@
+ 	if (stopping == 0U)
+ 		return EINVAL;
+ 
+-	/* Strict callbacks prove actual native completion; uncommitted reservations cannot do so. */
++	/* Native idle covers raw submissions; CPU0 receipt alone is never an acknowledgement. */
++	if (session->quiesced == 0U) {
++		error = drv_venus_transport_quiesce(
++			&controller->transport,
++			session->context,
++			&session->stop_request,
++			&session->quiesced);
++		if (error != 0)
++			return error;
++	}
++
++	/* Every old posted descriptor and callback must also retire before backend cleanup. */
+ 	error = drv_venus_transport_idle(&controller->transport, session->context);
+ 	if (error != 0)
+ 		return error;
+ 
+-	/* Context destruction remains in close, after shared resource membership is released. */
++	/* Succeeded: close may destroy the context after shared resource membership is released. */
+ 	return 0;
+ }
+ 
+--- a/src/drivers/gpu/venus/internal.h
++++ b/src/drivers/gpu/venus/internal.h
+@@ -135,6 +135,7 @@
+ struct venus_session {
+ 	uint32_t context;
+ 	volatile unsigned stopping;
++	volatile unsigned native_commands_submitted;
+ 	struct venus_request *stop_request;
+ 	unsigned quiesced;
+ };

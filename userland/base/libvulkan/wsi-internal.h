@@ -123,6 +123,7 @@ struct vulkan_wsi_platform_ops {
 	VkResult (*prepare_copy)(void *, VkFormat, VkExtent2D);
 	VkResult (*present_image_sync)(void *, void *, VkPresentModeKHR, uint64_t *, int, uint64_t);
 	VkResult (*placement)(void *, struct gpu_placement *);
+	int (*wait_descriptor)(void *);
 };
 
 VkResult vulkan_wsi_display_node_query(struct VkPhysicalDevice_T *physical, uint32_t index, uint32_t *count, struct gpu_display_info *request, uint64_t *device_id, char *path);

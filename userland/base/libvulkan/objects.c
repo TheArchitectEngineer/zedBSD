@@ -9,6 +9,13 @@
  * Owns local Vulkan identities without imposing a fixed object count.
  */
 
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
+#include <errno.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
 #include "internal.h"
@@ -18,6 +25,11 @@ static pthread_mutex_t vulkan_registry_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 /* Reserves zero for NULL and never recycles a renderer identity in this process. */
 static uint64_t vulkan_next_wire_id = 1;
+
+/* Publishers never enter renderer or WSI locks while this independent registry is held. */
+static pthread_mutex_t vulkan_wake_mutex = PTHREAD_MUTEX_INITIALIZER;
+/* Live blocked calls remain linked under vulkan_wake_mutex until publication ownership ends. */
+static struct vulkan_wake *vulkan_wakes;
 
 static void vulkan_registry_lock(void);
 static void vulkan_registry_unlock(void);
@@ -519,6 +531,181 @@ vulkan_object_destroy_remote(
 
 	/* Succeeded: local cleanup may release the object's remaining host storage. */
 	return VK_SUCCESS;
+}
+
+/*
+ * Registers one private event fd before a caller observes its wait predicates.
+ */
+VkResult
+vulkan_wake_create(
+	struct vulkan_wake *wake,
+	struct VkDevice_T *device)
+{
+	int descriptors[2];
+	int error;
+
+	/* Both ends are private, nonblocking and absent from subsequently executed programs. */
+	memset(wake, 0, sizeof(*wake));
+	wake->read_fd = -1;
+	wake->write_fd = -1;
+	error = pipe2(descriptors, O_CLOEXEC | O_NONBLOCK);
+	if (error != 0)
+		return VK_ERROR_OUT_OF_HOST_MEMORY;
+
+	/* Registration precedes the mandatory fresh error and image-ownership observation. */
+	wake->device = device;
+	wake->context = device->object.context;
+	wake->read_fd = descriptors[0];
+	wake->write_fd = descriptors[1];
+	pthread_mutex_lock(&vulkan_wake_mutex);
+
+	wake->next = vulkan_wakes;
+	vulkan_wakes = wake;
+
+	pthread_mutex_unlock(&vulkan_wake_mutex);
+
+	/* Succeeded: later matching publications cannot lose this waiter's wake. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Retires an event fd only after every concurrent publisher has stopped borrowing it.
+ */
+void
+vulkan_wake_destroy(
+	struct vulkan_wake *wake)
+{
+	struct vulkan_wake **link;
+
+	/* Partial creation owns no registry entry or operating-system descriptor. */
+	if (wake->read_fd < 0)
+		return;
+
+	/* Registry exclusion prevents a publisher from writing a subsequently reused fd number. */
+	pthread_mutex_lock(&vulkan_wake_mutex);
+
+	/* Locate this exact retained caller while every publisher is excluded. */
+	link = &vulkan_wakes;
+	while (*link != NULL && *link != wake)
+		link = &(*link)->next;
+
+	/* Every successfully created waiter is removed exactly once. */
+	if (*link == wake)
+		*link = wake->next;
+
+	pthread_mutex_unlock(&vulkan_wake_mutex);
+
+	/* Descriptor retirement occurs after publication ownership has ended. */
+	close(wake->write_fd);
+	close(wake->read_fd);
+	wake->write_fd = -1;
+	wake->read_fd = -1;
+
+	/* Succeeded: no later notification can access the caller's retired waiter. */
+	return;
+}
+
+/*
+ * Arms each matching waiter independently without acquiring renderer or WSI locks.
+ */
+void
+vulkan_wake_notify(
+	struct VkDevice_T *device,
+	struct vulkan_context *context)
+{
+	struct vulkan_wake *wake;
+	unsigned char token;
+	ssize_t bytes;
+	int saved_error;
+
+	/* One full pipe is already armed, so notification never waits for a reader. */
+	saved_error = errno;
+	token = 1;
+	pthread_mutex_lock(&vulkan_wake_mutex);
+
+	/* Each waiter owns its own token; another consumer cannot steal its notification. */
+	for (wake = vulkan_wakes; wake != NULL; wake = wake->next) {
+		/* A device-local error does not invalidate another logical device on the same context. */
+		if (device != NULL && wake->device != device)
+			continue;
+
+		/* A renderer error reaches all devices borrowing that exact context. */
+		if (context != NULL && wake->context != context)
+			continue;
+
+		/* Only signal interruption warrants retry; EAGAIN already represents an armed event. */
+		do {
+			bytes = write(wake->write_fd, &token, sizeof(token));
+		} while (bytes < 0 && errno == EINTR);
+	}
+
+	pthread_mutex_unlock(&vulkan_wake_mutex);
+
+	/* Notification is an internal publication and must preserve the surrounding API error observation. */
+	errno = saved_error;
+
+	/* Succeeded: no callback or secondary ownership lock was entered by publication. */
+	return;
+}
+
+/*
+ * Clears earlier tokens before the caller rechecks its protected state and errors.
+ */
+void
+vulkan_wake_drain(
+	struct vulkan_wake *wake)
+{
+	unsigned char buffer[64];
+	ssize_t bytes;
+
+	/* Nonblocking reads consume only past publications, never a future state change. */
+	for (;;) {
+		bytes = read(wake->read_fd, buffer, sizeof(buffer));
+		if (bytes > 0)
+			continue;
+
+		/* Interrupted reads leave the token ownership unchanged. */
+		if (bytes < 0 && errno == EINTR)
+			continue;
+
+		/* An empty pipe completes this drain without waiting for another publication. */
+		break;
+	}
+
+	/* Succeeded: the following predicate observation is newer than every drained token. */
+	return;
+}
+
+/*
+ * Publishes renderer failure before waking all devices that share its namespace.
+ */
+void
+vulkan_context_error(
+	struct vulkan_context *context,
+	VkResult error)
+{
+	/* Release publication pairs with the waiter's post-drain error observation. */
+	__atomic_store_n(&context->error, error, __ATOMIC_RELEASE);
+	vulkan_wake_notify(NULL, context);
+
+	/* Succeeded: both existing and subsequently registered waiters observe failure. */
+	return;
+}
+
+/*
+ * Publishes a logical-device error without broadening it to an unrelated context.
+ */
+void
+vulkan_device_error(
+	struct VkDevice_T *device,
+	VkResult error)
+{
+	/* The original failure domain remains separate from renderer namespace loss. */
+	__atomic_store_n(&device->error, error, __ATOMIC_RELEASE);
+	vulkan_wake_notify(device, NULL);
+
+	/* Succeeded: every existing device waiter has an independently retained wake. */
+	return;
 }
 
 /* Serializes registry invariants that have no application-visible failure mode. */

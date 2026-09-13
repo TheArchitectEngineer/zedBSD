@@ -1,0 +1,20 @@
+{
+  "purpose": "TEST ARTIFACT ONLY; delivery delay after actual native VkFence success",
+  "baseline": "p008 q311-strict pair, unchanged production dependency",
+  "patch": "strict-native-completion-delay.patch",
+  "patch_sha256": "333295a1c9e5408cf4e00d274c9651d8a4a86b51d6091f46e08efdc4b94b51c5",
+  "source_file": "src/venus/vkr_queue.c",
+  "source_after_sha256": "72b4c7d8d994017bbea550dc27d350cbc1e7692e302e8b9bfa5943f7b7de2368",
+  "remote_prefix": "/home/awe/zedbsd-q306-venus/dependencies/q312-delay/install",
+  "library_sha256": "400ff7c90154e70a9b692717f7fbdb3050c0cd09f14908e2b1e3ea5069e2db4f",
+  "server_sha256": "df6f1aa7140766ac4292f2517c08f3a949397284473d7ca2a7049e452d7f612f",
+  "build": "Meson release, Venus, process workers, egl; ninja -j2; existing private Python Meson environment",
+  "build_attempts": [
+    "setup succeeded; first ninja failed before C compile because PYTHONPATH absent in generator children",
+    "ninja with PYTHONPATH succeeded all 90 steps; install --no-rebuild succeeded"
+  ],
+  "system_changes": false,
+  "native_execution_delay_claim": false,
+  "native_success_before_delay": true,
+  "runtime_acceptance": "owned by parent integration evidence; this manifest records build and exact artifacts"
+}

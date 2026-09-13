@@ -19,7 +19,7 @@
 
 #include <stdint.h>
 
-#define DRV_GPU_INTERFACE_VERSION	7U
+#define DRV_GPU_INTERFACE_VERSION	8U
 #define DRV_GPU_MAPPING_DEVICE		1U
 
 struct drv_gpu_device;
@@ -37,8 +37,9 @@ struct drv_gpu_command_ops {
 
 /*
  * One supervised reservation retains a callback before userspace submits native
- * work. Reserve owns marker storage and a finite producer deadline. Commit uses
- * that storage without allocation; normal cancel removes the callback before
+ * work. Reserve owns backend storage while the framework supervises producer
+ * and execution deadlines. Commit uses that storage without allocation; normal
+ * cancel removes the callback before
  * returning success. Fault cancellation terminates uncertain work with ERROR.
  * Each action verifies both the reservation token and original completion.
  * The ordinary command drain also retires every accepted job callback.
@@ -47,6 +48,26 @@ struct drv_gpu_job_ops {
 	int (*reserve)(void *, void *, uint32_t, struct drv_gpu_completion *, void **);
 	int (*commit)(void *, void *, void *, struct drv_gpu_completion *);
 	int (*cancel)(void *, void *, void *, struct drv_gpu_completion *, unsigned);
+	int (*capacity)(void *, void *, uint32_t, unsigned *);
+};
+
+/*
+ * Optional hardware recovery preserves uncertain resources until actual access
+ * has stopped. Begin and poll never block waiting for native work. Poll returns
+ * EAGAIN while pending, and zero only after native access, descriptors and every
+ * callback for the session have retired. Other errors require device-wide fault.
+ * Fault is required whenever this table exists. It is idempotent, stops new
+ * publication and arms every destroy/close path to retain uncertain DMA before
+ * publishing device loss. It cannot silently release backing or claim that
+ * hardware has stopped. Callback drain remains a separate lifetime barrier.
+ * Reset runs only after every old external owner has
+ * retired and returns zero only after checked hardware reinitialization.
+ */
+struct drv_gpu_recovery_ops {
+	int (*stop_begin)(void *, void *, int);
+	int (*stop_poll)(void *, void *);
+	void (*fault)(void *, int);
+	int (*reset)(void *);
 };
 
 /*
@@ -113,6 +134,7 @@ struct drv_gpu_ops {
 	const struct drv_gpu_command_ops *commands;
 	const struct drv_gpu_scanout_ops *scanout;
 	const struct drv_gpu_job_ops *jobs;
+	const struct drv_gpu_recovery_ops *recovery;
 };
 
 /*
@@ -132,9 +154,26 @@ void drv_gpu_release(struct drv_gpu_device *device);
 void drv_gpu_complete(struct drv_gpu_completion *completion, int error);
 
 /*
- * Publishes a device-wide failure, or zero after a checked fresh-session recovery.
+ * Publishes a device-wide failure after the backend has armed quarantine.
+ *
+ * Before a nonzero report, new hardware publication must be stopped and every
+ * resource destroy/close path must retain uncertain native or DMA ownership.
+ * The core may begin logical teardown after publication, while callback drain
+ * and checked hardware reset remain separate barriers. This is not a request
+ * to stop hardware; use report_session_error for an unconfirmed local loss.
+ * Zero is reserved for checked fresh-session recovery with no older owner.
  */
 void drv_gpu_report_error(struct drv_gpu_device *device, int error);
+
+/*
+ * Publishes one retained backend session's failure without failing other opens.
+ */
+void drv_gpu_report_session_error(struct drv_gpu_device *device, void *session, int error);
+
+/*
+ * Announces actual backend capacity release after dropping its resource lock.
+ */
+void drv_gpu_capacity_changed(struct drv_gpu_device *device);
 
 /*
  * Tests that only the current opening callback remains, with no exported or mapped owner.

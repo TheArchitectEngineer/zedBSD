@@ -189,6 +189,8 @@ def run(args, exercise=None, harness_path=None):
     environment['VK_DRIVER_FILES'] = args.icd
     environment['VIRGL_LOG_LEVEL'] = 'debug'
     environment['RENDER_SERVER_EXEC_PATH'] = str(args.render_server)
+    if getattr(args, 'fault_test', None) in ('completion-delay', 'context-timeout', 'producer-stop'):
+        environment['Q312_COMPLETION_GATE'] = str(output / 'completion.gate')
     library_directory = getattr(args, 'renderer_library_dir', None)
     library = None
     if library_directory is not None:
@@ -210,6 +212,9 @@ def run(args, exercise=None, harness_path=None):
               'capture_method': 'QEMU egl-headless readback via VNC Unix RAW',
               'rfb_client_sha256': digest(Path(__file__).with_name('venus_rfb.py')),
               'console_address': args.console_address, 'console_size': args.console_size}
+    if 'Q312_COMPLETION_GATE' in environment:
+        report['environment']['Q312_COMPLETION_GATE'] = environment['Q312_COMPLETION_GATE']
+        report['test_renderer_delay'] = True
     report_path = output / 'result.json'
     if library is not None:
         report['renderer_library'] = {'directory': str(library_directory),

@@ -1,0 +1,74 @@
+{
+  "phase": "ws014-p009",
+  "status": "PASS",
+  "checks": [
+    {
+      "name": "sync",
+      "argv": [
+        "sh",
+        "plan/ws030/tests/run-libvulkan-sync-test.sh"
+      ],
+      "exit_code": 0,
+      "seconds": 1.117,
+      "log": "plan/ws014/phase009/submission-verification/sync.log",
+      "sha256": "a3b72cea5ace36d11f3ab2d0c48500f5d85233f9b9e8f2de76859d7bd3599540"
+    },
+    {
+      "name": "notify",
+      "argv": [
+        "sh",
+        "plan/ws030/tests/run-libvulkan-notify-test.sh"
+      ],
+      "exit_code": 0,
+      "seconds": 1.117,
+      "log": "plan/ws014/phase009/submission-verification/notify.log",
+      "sha256": "7fcbd283d8e532a27fe77664e76170ad7119a6db8f15a1a95e19dcb5af9ebd64"
+    },
+    {
+      "name": "external-fence",
+      "argv": [
+        "sh",
+        "plan/ws030/tests/run-libvulkan-external-fence-test.sh"
+      ],
+      "exit_code": 0,
+      "seconds": 1.117,
+      "log": "plan/ws014/phase009/submission-verification/external-fence.log",
+      "sha256": "fa203b731c8d68a0a2219528a041b2b1d68e97d223029e0026de3f2164443183"
+    }
+  ],
+  "sources_before": {
+    "userland/base/libvulkan/objects.c": "e2b20e1ac1516a6fa38d3ae27b2a2ee5457cabd3f81bfb74ff5bf11d7539253e",
+    "userland/base/libvulkan/wire.c": "c22157b171fc211895c8288a244d2aa070961b45ddb981cb2bafd291722ca25f",
+    "userland/base/libvulkan/sync.c": "21af2adbcbaccf01c7b8c77c585b7bd68f4ba4d9930839243452d1ce2efb7546",
+    "userland/base/libvulkan/external-fence.c": "40919309ab95fac4460b05a92572e6fbd5bb0a923b2b4c2766a58392b010612f",
+    "userland/base/libvulkan/queue.c": "bd7296d21d067c4804b1571c4db540a03392c9c0ceb76d00ad086f184c3057c7",
+    "userland/base/libvulkan/query.c": "1182e95488799f422006469d4af8411516394b8bc35cecf4f5aa612ffbe2c3a1",
+    "userland/base/libvulkan/internal.h": "ea50c5634168062b9611b037e8faa09ae3b95ed60fdc89e26b4498aaf9c02c12",
+    "userland/base/libvulkan/sync-internal.h": "d7ca08a4ff5364d16cc93a35ca68c2e02eea4bd2f3316d98dc34aa5ede4803c2",
+    "userland/base/libvulkan/opcodes.h": "d7ec242614923dfc7471315974572471ce2c4c1ed933824ca5c9635e50eee8c6",
+    "include/uapi/gpu.h": "8b553223d0165bca92f8640b739257dba831c9a3a4464e922eefe96bf4597b71",
+    "include/uapi/gpu-job.h": "9000c4aa40be85fab5d863ac6b2cd80cabf9f8573de6969e3e379b0dce0e026c",
+    "include/uapi/gpu-fence.h": "dbca57a370bb9b33d69cfe2af4e9112465d9d4bc58061f2412aae77357fcedca",
+    "plan/ws030/tests/libvulkan-sync.c": "6cae49655d82dd6d5ef6085095982825d0f8a9580052a22a1e18b3a667445618",
+    "plan/ws030/tests/libvulkan-notify.c": "50d0ca83b58e58c47aca8ccdd43b3e4756a754c0ac0495697060f61c9e07fee7",
+    "plan/ws030/tests/libvulkan-external-fence.c": "8bec5828d61c7767d3312ca314671d37026b42821820ddb47616f1f164c8a47d"
+  },
+  "sources_after": {
+    "userland/base/libvulkan/objects.c": "e2b20e1ac1516a6fa38d3ae27b2a2ee5457cabd3f81bfb74ff5bf11d7539253e",
+    "userland/base/libvulkan/wire.c": "c22157b171fc211895c8288a244d2aa070961b45ddb981cb2bafd291722ca25f",
+    "userland/base/libvulkan/sync.c": "21af2adbcbaccf01c7b8c77c585b7bd68f4ba4d9930839243452d1ce2efb7546",
+    "userland/base/libvulkan/external-fence.c": "40919309ab95fac4460b05a92572e6fbd5bb0a923b2b4c2766a58392b010612f",
+    "userland/base/libvulkan/queue.c": "bd7296d21d067c4804b1571c4db540a03392c9c0ceb76d00ad086f184c3057c7",
+    "userland/base/libvulkan/query.c": "1182e95488799f422006469d4af8411516394b8bc35cecf4f5aa612ffbe2c3a1",
+    "userland/base/libvulkan/internal.h": "ea50c5634168062b9611b037e8faa09ae3b95ed60fdc89e26b4498aaf9c02c12",
+    "userland/base/libvulkan/sync-internal.h": "d7ca08a4ff5364d16cc93a35ca68c2e02eea4bd2f3316d98dc34aa5ede4803c2",
+    "userland/base/libvulkan/opcodes.h": "d7ec242614923dfc7471315974572471ce2c4c1ed933824ca5c9635e50eee8c6",
+    "include/uapi/gpu.h": "8b553223d0165bca92f8640b739257dba831c9a3a4464e922eefe96bf4597b71",
+    "include/uapi/gpu-job.h": "9000c4aa40be85fab5d863ac6b2cd80cabf9f8573de6969e3e379b0dce0e026c",
+    "include/uapi/gpu-fence.h": "dbca57a370bb9b33d69cfe2af4e9112465d9d4bc58061f2412aae77357fcedca",
+    "plan/ws030/tests/libvulkan-sync.c": "6cae49655d82dd6d5ef6085095982825d0f8a9580052a22a1e18b3a667445618",
+    "plan/ws030/tests/libvulkan-notify.c": "50d0ca83b58e58c47aca8ccdd43b3e4756a754c0ac0495697060f61c9e07fee7",
+    "plan/ws030/tests/libvulkan-external-fence.c": "8bec5828d61c7767d3312ca314671d37026b42821820ddb47616f1f164c8a47d"
+  },
+  "normal_and_address_undefined_sanitizers": true
+}

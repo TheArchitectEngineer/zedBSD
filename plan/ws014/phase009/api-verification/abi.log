@@ -1,0 +1,3 @@
+ABI measurements: 148 structures/unions, 942 fields, 2394 enum constants
+Vulkan ABI i386-unknown-elf: exact layouts and constants PASS
+Vulkan ABI x86_64-unknown-elf: exact layouts and constants PASS

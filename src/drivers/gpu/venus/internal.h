@@ -62,6 +62,7 @@ struct venus_request {
 	uint32_t flags;
 	uint32_t bytes;
 	unsigned state;
+	unsigned supervised;
 	unsigned notifying;
 	int error;
 };
@@ -112,6 +113,7 @@ struct venus_transport {
 	unsigned slot_count;
 	uint16_t queue_size;
 	unsigned strict_queue;
+	unsigned quiesce;
 	uint32_t features;
 	uint16_t available;
 	uint16_t used;
@@ -132,6 +134,10 @@ struct venus_shared_context;
 /* One context owned by a GPU open until its close callback completes. */
 struct venus_session {
 	uint32_t context;
+	volatile unsigned stopping;
+	volatile unsigned native_commands_submitted;
+	struct venus_request *stop_request;
+	unsigned quiesced;
 };
 
 /*
@@ -224,6 +230,9 @@ void drv_venus_transport_set_gpu(struct venus_transport *transport, struct drv_g
 int drv_venus_transport_job_reserve(struct venus_transport *transport, uint32_t context, uint32_t timeline, struct drv_gpu_completion *completion, void **reservation);
 int drv_venus_transport_job_commit(struct venus_transport *transport, void *reservation, struct drv_gpu_completion *completion);
 int drv_venus_transport_job_cancel(struct venus_transport *transport, void *reservation, struct drv_gpu_completion *completion, unsigned fault);
+int drv_venus_transport_capacity(struct venus_transport *transport, uint32_t timeline, unsigned *available);
+int drv_venus_transport_idle(struct venus_transport *transport, uint32_t context);
+int drv_venus_transport_quiesce(struct venus_transport *transport, uint32_t context, struct venus_request **request, unsigned *quiesced);
 void drv_venus_transport_fail(struct venus_transport *transport, int error);
 void drv_venus_transport_display_changed(struct venus_transport *transport);
 void drv_venus_header(void *buffer, uint32_t command, uint32_t context);

@@ -1,0 +1,2 @@
+ASSERT /home/awe/zedBSD/plan/ws014/tests/gpu-supervision.c:348: error == EBUSY && raw_quarantined == 1U
+Aborted

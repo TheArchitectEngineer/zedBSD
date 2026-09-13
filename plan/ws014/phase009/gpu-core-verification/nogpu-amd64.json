@@ -1,0 +1,21 @@
+{
+  "status": "PASS",
+  "observed_utc": "2026-09-13T11:38:44.486492+00:00",
+  "command": "timeout 600 make -j16 ZEDBSD_CONFIG=plan/ws014/phase009/gpu-core-verification/config-nogpu-amd64.mk BUILD=build/q312-nogpu-amd64 vmunix",
+  "build_exit": 0,
+  "build_log": "/tmp/q312-nogpu-build-001.log",
+  "elf": "build/q312-nogpu-amd64/vmunix",
+  "elf_bytes": 1025616,
+  "elf_sha256": "cdb215d31100466965ad8cbcbe68f24065f2ef53495e279ceb978472d705a089",
+  "config_sha256": "dd28b50312a677f886878f846ea38273075c33eafd3065d33782d65e4cd7035a",
+  "forbidden_gpu_symbols": [],
+  "forbidden_gpu_objects": [],
+  "generic_symbols_present": [
+    "handle_get",
+    "handle_put",
+    "fd_object_get",
+    "fd_object_put",
+    "filedesc_commit_objects"
+  ],
+  "scope": "Actual amd64 kernel build only; six-platform y/n make input selection is separate."
+}

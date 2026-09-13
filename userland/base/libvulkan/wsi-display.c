@@ -18,6 +18,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
@@ -82,6 +83,11 @@ static struct wsi_display_connection *display_connections;
 /* Serializes native claims and scanout ownership without holding renderer wire locks. */
 static pthread_mutex_t display_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+/* Event observation never waits behind native presentation or renderer admission. */
+static pthread_mutex_t display_event_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+static VkResult display_progress(void *private_lease);
+static int display_wait_descriptor(void *private_lease);
 static VkResult display_capabilities(struct vulkan_surface *surface, struct VkPhysicalDevice_T *physical, VkSurfaceCapabilitiesKHR *capabilities);
 static VkResult display_formats(struct vulkan_surface *surface, struct VkPhysicalDevice_T *physical, uint32_t *count, VkSurfaceFormatKHR *formats);
 static VkResult display_present_modes(struct vulkan_surface *surface, struct VkPhysicalDevice_T *physical, uint32_t *count, VkPresentModeKHR *modes);
@@ -107,7 +113,7 @@ const struct vulkan_wsi_platform_ops vulkan_wsi_display_platform = {
 	display_capabilities, display_formats, display_present_modes,
 	display_claim_native, display_release_native, display_present_native,
 	display_wait_native, NULL, display_import_image, display_present_image,
-	NULL, display_image_available, display_destroy_image, display_prepare_copy, display_present_image_sync, display_placement
+	display_progress, display_image_available, display_destroy_image, display_prepare_copy, display_present_image_sync, display_placement, display_wait_descriptor
 };
 
 /*
@@ -1062,7 +1068,7 @@ display_destroy_image(
 	/* Native destruction consumes only this alias, never the kernel's separate scanout reference. */
 	status = ioctl(image->connection->fd, GPU_RESOURCE_DESTROY, &request);
 	if (status != 0)
-		__atomic_store_n(&image->connection->device->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+		vulkan_device_error(image->connection->device, VK_ERROR_DEVICE_LOST);
 
 	pthread_mutex_unlock(&display_mutex);
 
@@ -1485,5 +1491,105 @@ display_constraints_query(
 		return VK_ERROR_INITIALIZATION_FAILED;
 
 	/* Succeeded: allocation and import may now be attempted against a concrete native contract. */
+	return VK_SUCCESS;
+}
+
+/* Returns the lease-owned native fd whose errors and topology can wake acquisition. */
+static int
+display_wait_descriptor(
+	void *private_lease)
+{
+	struct wsi_display_lease *lease;
+
+	/* Valid acquisition retains its swapchain and therefore this independent display connection. */
+	lease = private_lease;
+
+	/* Succeeded: callers borrow the fd only while the native lease remains alive. */
+	return lease->plane->connection->fd;
+}
+
+/* Observes native error domains and acknowledges only an inventoried topology snapshot. */
+static VkResult
+display_progress(
+	void *private_lease)
+{
+	struct wsi_display_lease *lease;
+	struct vulkan_context *context;
+	struct gpu_display_events request;
+	struct pollfd descriptors[2];
+	uint64_t sequence;
+	VkResult error;
+	int status;
+
+	/* Error readiness is independent of ordinary completion records retained by other observers. */
+	lease = private_lease;
+	context = lease->device->object.context;
+	memset(descriptors, 0, sizeof(descriptors));
+	descriptors[0].fd = context->fd;
+	descriptors[1].fd = lease->plane->connection->fd;
+	descriptors[1].events = POLLPRI;
+	status = poll(descriptors, 2, 0);
+	if (status < 0) {
+		/* Interruption merely asks the acquisition loop to observe its predicates again. */
+		if (errno == EINTR)
+			return VK_SUCCESS;
+
+		/* A failed observation cannot establish that the renderer is still usable. */
+		vulkan_context_error(context, VK_ERROR_DEVICE_LOST);
+		return VK_ERROR_DEVICE_LOST;
+	}
+
+	/* Renderer namespace failure dominates a simultaneous lost output on that device. */
+	if ((descriptors[0].revents & (POLLERR | POLLHUP | POLLNVAL)) != 0) {
+		vulkan_context_error(context, VK_ERROR_DEVICE_LOST);
+		return VK_ERROR_DEVICE_LOST;
+	}
+
+	/* An independent display node may disappear while the renderer remains usable. */
+	if ((descriptors[1].revents & (POLLERR | POLLHUP | POLLNVAL)) != 0)
+		return VK_ERROR_SURFACE_LOST_KHR;
+
+	/* Ordinary POLLIN records do not trigger repeated reaping or unrelated busy polling here. */
+	if ((descriptors[1].revents & POLLPRI) == 0)
+		return VK_SUCCESS;
+
+	/* Topology serialization never waits for a presentation holding display_mutex. */
+	pthread_mutex_lock(&display_event_mutex);
+
+	/* QUERY records the exact observation which the following inventory is allowed to acknowledge. */
+	memset(&request, 0, sizeof(request));
+	request.version = GPU_ABI_VERSION;
+	request.size = sizeof(request);
+	status = ioctl(lease->plane->connection->fd, GPU_DISPLAY_EVENTS, &request);
+	if (status != 0) {
+		error = display_error(errno);
+		pthread_mutex_unlock(&display_event_mutex);
+		return error;
+	}
+
+	/* Inventory refresh checks the saved surface generation before any acknowledgement. */
+	sequence = request.sequence;
+	error = display_validate_surface(lease->surface, lease->device->physical);
+	if (error != VK_SUCCESS) {
+		pthread_mutex_unlock(&display_event_mutex);
+		return error;
+	}
+
+	/* Events arriving during inventory remain ready because ACK names only the earlier snapshot. */
+	memset(&request, 0, sizeof(request));
+	request.version = GPU_ABI_VERSION;
+	request.size = sizeof(request);
+	request.flags = GPU_DISPLAY_EVENT_ACK;
+	request.ack_sequence = sequence;
+	status = ioctl(lease->plane->connection->fd, GPU_DISPLAY_EVENTS, &request);
+	if (status != 0) {
+		error = display_error(errno);
+		pthread_mutex_unlock(&display_event_mutex);
+		return error;
+	}
+
+	pthread_mutex_unlock(&display_event_mutex);
+
+	/* Succeeded: this open no longer repeatedly wakes for the acknowledged inventory. */
 	return VK_SUCCESS;
 }

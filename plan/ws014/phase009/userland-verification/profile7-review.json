@@ -1,0 +1,18 @@
+{
+  "scope": "Exact7 early node filtering and device backstop; metadata parser recognizes old exact3 without using it",
+  "syntax": "PASS",
+  "diff_check": "PASS",
+  "style": "Changed statements reviewed against full coding style: C89 declarations, purpose/ownership/branch/return comments and cleanup order; no new log mechanism or public API",
+  "semantics": "Old nodes are skipped before native instance/transport allocation; mixed usable nodes survive; all unsupported yields existing successful instance with zero physical devices; device validation independently refuses missing native quiescence",
+  "test_results": "profile7.json",
+  "backend_dependency": "Information-only GPU opens must be proven free of native commands by the independently reviewed backend change before claiming harmless old-profile close",
+  "hashes": {
+    "userland/base/libvulkan/context.c": "d531cce21a7532b138cb7f299dd84652ea31acbd256015fd915d0b105759a625",
+    "userland/base/libvulkan/instance.c": "519fd20353d22c6345d0b60877357676957cf6e9e0be9d462af02f02cf2a8d4e",
+    "userland/base/libvulkan/device.c": "9c637beacf345f99620b2a8c7b3f0df495e6b0af0efb8679f90981b9f616c6e5",
+    "userland/base/libvulkan/internal.h": "73cb5a602fa16834378809b80f8a3e16b60ec6775456d7740c8cae735cb12c76",
+    "plan/ws030/tests/libvulkan-context.c": "93096a64b955ececdfb36e4b374850c21befde18cc98d9c80ef6519982cd6ca7",
+    "plan/ws030/tests/libvulkan-discovery.c": "b17d4f9a0fb9a1504db015c031bc1e1748a3a2ea7a6c04e1429d1b29ca51e47a",
+    "plan/ws014/phase009/userland-sync-wsi.md": "03cbddbdfaf2d90f7bcc687651fd1f42a8fce258f674251fd5bc12bcbc0ffaf6"
+  }
+}

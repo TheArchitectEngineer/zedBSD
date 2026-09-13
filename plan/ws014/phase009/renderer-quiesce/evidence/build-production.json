@@ -1,0 +1,19 @@
+{
+  "prefix": "/home/awe/zedbsd-q306-venus/dependencies/q312-quiesce",
+  "flags": 7,
+  "worker": "process",
+  "delay_fixture": false,
+  "source_sha256": {
+    "src/venus_hw.h": "7e4d596ca86a6574afe8cafa3d6b6aab4e83beac58e0dd5895bd9c93cff065ab",
+    "src/venus/vkr_context.h": "fb84e596919a1536d114f56ae19c48963fe193e4122f51d5be41f75f596ac7f9",
+    "src/venus/vkr_context.c": "11b742cf9589053ce062f3da608b1fe19df4e9c83927fdbdcbd32fb1e27a186f"
+  },
+  "queue_source_sha256": "86479511f909999642c739ff6112bf9ff562e758a3a2cdcfa59dfcc940a37dd6",
+  "library": "/home/awe/zedbsd-q306-venus/dependencies/q312-quiesce/install/lib/x86_64-linux-gnu/libvirglrenderer.so.1",
+  "library_sha256": "38447deeaac67a7c9ff4613115a49b2d60a10acda6c073f2d4c73d0af718fbd4",
+  "server": "/home/awe/zedbsd-q306-venus/dependencies/q312-quiesce/install/libexec/virgl_render_server",
+  "server_sha256": "745bef59c17c88975ee567c0ae8c2c689b5b06fca79171d121227d0f5f5f84c2",
+  "license_sha256": "3b32caf16e2402c2aff2b716858713f3e1feded85c25e71bf829816ee5009402",
+  "pass": true,
+  "system_packages_display_vfio_physical_reset_modified": false
+}

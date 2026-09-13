@@ -1,0 +1,2 @@
+Direct Acquire: immediate acquisition creates zero fds, pre-wait release, finite deadline, distinct waiter tokens, context error, GPU fd HUP and descriptor retirement PASS
+Direct Acquire: immediate acquisition creates zero fds, pre-wait release, finite deadline, distinct waiter tokens, context error, GPU fd HUP and descriptor retirement PASS

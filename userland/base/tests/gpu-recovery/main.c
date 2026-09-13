@@ -218,7 +218,7 @@ recovery_run(
 		return -1;
 	}
 
-	/* Copied access to an old mapped blob must stop before touching any stale host aperture. */
+	/* Copied access preserves the same sticky timeout without touching any stale host aperture. */
 	memset(&transfer, 0, sizeof(transfer));
 	transfer.version = GPU_ABI_VERSION;
 	transfer.size = sizeof(transfer);
@@ -227,7 +227,7 @@ recovery_run(
 	transfer.bytes = sizeof(byte);
 	result = ioctl(test->peer, GPU_RESOURCE_READ, &transfer);
 	error = errno;
-	if (result != -1 || error != ENODEV) {
+	if (result != -1 || error != (int)wait.status) {
 		recovery_failure("peer resource rejected", result, error);
 		return -1;
 	}
@@ -249,8 +249,8 @@ recovery_run(
 		return -1;
 	}
 
-	/* The old-session barrier reports the failed device rather than admitting a replacement context. */
-	if (error != ENODEV) {
+	/* This still-online device preserves its original timeout while the old peer excludes reset. */
+	if (error != (int)wait.status) {
 		recovery_failure("retirement gate errno", refused, error);
 		return -1;
 	}

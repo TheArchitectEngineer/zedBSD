@@ -1,0 +1,2 @@
+PASS Wayland WSI: factory probe, extent bounds, private queue, fd import, frame/release distinction, FIFO wait, MAILBOX, replacement, preserved mapping, OOM, terminal surface loss, allocator errno and teardown
+PASS Wayland WSI: factory probe, extent bounds, private queue, fd import, frame/release distinction, FIFO wait, MAILBOX, replacement, preserved mapping, OOM, terminal surface loss, allocator errno and teardown

@@ -611,7 +611,7 @@ vulkan_command_execute(
 	if (reader->error != VK_SUCCESS) {
 		/* A truncated opcode cannot belong to a usable subsequent transaction. */
 		if (context != NULL)
-			__atomic_store_n(&context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+			vulkan_context_error(context, VK_ERROR_DEVICE_LOST);
 		return reader->error;
 	}
 
@@ -619,7 +619,7 @@ vulkan_command_execute(
 	if (opcode != writer->opcode) {
 		reader->error = VK_ERROR_DEVICE_LOST;
 		if (context != NULL)
-			__atomic_store_n(&context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+			vulkan_context_error(context, VK_ERROR_DEVICE_LOST);
 		return reader->error;
 	}
 
@@ -629,7 +629,7 @@ vulkan_command_execute(
 		if (error != VK_SUCCESS) {
 			/* Native loss and malformed result words invalidate every local session shortcut. */
 			if (error == VK_ERROR_DEVICE_LOST && context != NULL)
-				__atomic_store_n(&context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+				vulkan_context_error(context, VK_ERROR_DEVICE_LOST);
 			return error;
 		}
 	}
@@ -736,7 +736,7 @@ vulkan_reply_finish(
 
 	/* Rejects later local shortcuts after the renderer namespace became unreliable. */
 	if (status == VK_ERROR_DEVICE_LOST && context != NULL)
-		__atomic_store_n(&context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+		vulkan_context_error(context, VK_ERROR_DEVICE_LOST);
 
 	/* Releases only this independently owned transaction response. */
 	vulkan_reader_finish(reader);

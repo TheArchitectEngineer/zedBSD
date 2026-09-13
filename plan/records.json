@@ -1978,6 +1978,13 @@
       "url": "https://github.com/awemorris/zedBSD/issues/395",
       "node_id": "I_kwDOT3uw488AAAABRDBJnw",
       "kind": "Phase"
+    },
+    "ws014-p009": {
+      "path": "plan/ws014/phase009/phase.md",
+      "number": 396,
+      "url": "https://github.com/awemorris/zedBSD/issues/396",
+      "node_id": "I_kwDOT3uw488AAAABRDncuA",
+      "kind": "Phase"
     }
   }
 }

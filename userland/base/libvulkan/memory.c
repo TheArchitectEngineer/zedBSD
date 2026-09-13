@@ -1270,8 +1270,8 @@ memory_lost(
 	struct VkDevice_T *device)
 {
 	/* Every family shares the context error, including calls using another device handle. */
-	__atomic_store_n(&device->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
-	__atomic_store_n(&device->object.context->error, VK_ERROR_DEVICE_LOST, __ATOMIC_RELEASE);
+	vulkan_device_error(device, VK_ERROR_DEVICE_LOST);
+	vulkan_context_error(device->object.context, VK_ERROR_DEVICE_LOST);
 
 	/* Succeeded: future calls cannot continue a damaged renderer namespace. */
 	return;
