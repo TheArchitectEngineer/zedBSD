@@ -1,4 +1,4 @@
-<!-- awesome-plan project=zedbsd record=queue -->
+<!-- archived Queue cycle q312; standing Board remains issue #362 -->
 
 # Queue q312: GPUレビュー対応とフレームワーク共通化
 

@@ -2,10 +2,10 @@
 
 <!-- awesome-plan-current:start -->
 Status: incomplete
-Implementation Queue: q312 / q312-i01 / ws014-p009 in-progress
-Last verified Phases: p002/p003/p005/p006/p007/p008
-Last Queue: q311 finished
-Next: p009 → p004 planning, not queued; p001 decisions retained
+Implementation Queue: none
+Last verified Phases: p002/p003/p005/p006/p007/p008/p009
+Last Queue: q312 finished
+Next: p004 planning, not queued; p001 decisions retained
 <!-- awesome-plan-current:end -->
 
 # WS014: virtio-gpu bring-up
@@ -43,7 +43,7 @@ i915実機対応、GLES2実装、デスクトップ全体の移植はこの単�
 | ws014-p006 | [kernel handle・GPU共有・最小Wayland](https://github.com/awemorris/zedBSD/issues/393) | cleared | q309でK handle/GPU共有/最小Wayland実装、最終direct002・Wayland004受入。p004へ引渡し |
 | ws014-p007 | [GPUレビュー・BLOB直接表示・同期と性能](https://github.com/awemorris/zedBSD/issues/394) | cleared | q310 finished。BLOB直接表示・標準fd・同期/転送・topology/配置と実QEMU受入済み |
 | ws014-p008 | [GPU完了責任・fence所属と描画資源](https://github.com/awemorris/zedBSD/issues/395) | cleared | q311-i01 finished、承認回答A1–A8＋fence所属の改善を受入 |
-| ws014-p009 | [GPUレビュー対応とフレームワーク共通化](https://github.com/awemorris/zedBSD/issues/396) | in-progress | q312-i01、R1–R6とGPU共通の待機/期限/所有権、backend停止契約・WSI改善と受入 |
+| ws014-p009 | [GPUレビュー対応とフレームワーク共通化](https://github.com/awemorris/zedBSD/issues/396) | cleared | q312-i01、R1–R6とGPU共通の待機/期限/所有権、backend停止契約・WSI改善と受入 |
 | ws014-p004 | [ws014-p004](https://github.com/awemorris/zedBSD/issues/385) | planning | p009後の最終API整理・規約全文確認 |
 
 ## 制約・再開点
@@ -478,3 +478,16 @@ R2のstock互換は能力別に実証してから有効化し、当面strictを�
 R2はstrictを当面維持し、stock互換の能力と退役条件を限定検証する。安全性が成立しなければstrictと具体的な不足・制約を記録する。context停止も能力と実確認が前提で、停止不能時はquarantine/全体resetを維持する。通常BLOB表示・GPU内共有・標準APIとzwl/libwaylandのテストドライバ範囲を保持する。
 
 p008/q311のcleared/finishedを保持し、順序はp009 → p004 planning/未queue → 別WS029。720 active minutes見積・120分レビュー、有限fixture/build/VMで実装・受入する。追加HALや一般DE/native i915、git add/commit/push、system package/GDM/VFIO変更は含めない。private host/転送・隔離依存build・GitHub同期は既存承認を使用する。開始時点では新実装・試験の成功は主張しない。
+
+
+## q312完了: GPUレビュー対応とフレームワーク共通化（2026-09-13）
+
+WS014 p009 / q312-i01をcleared、q312をfinishedとする。active Queueなし。p008/q311の受入を保持し、WS014はincomplete、p001/p004はplanning、p004と別WS029 native i915は未queueのまま。
+
+R1: 容量不足をOOMにせず、`GPU_JOB_CAPACITY` QUERY/WAIT（ioctl 37）と`GPU_JOB_POLICY`（38）を追加。libvulkanはnative準備→QUERY→回収→非待機RESERVEとし、EAGAINではqueue/device/context mutexを外して待つ。R3: 予約10秒・実行60秒・停止10秒をmake/menuconfigの設定と実効値照会にし、session単位のsticky errorと`drv_gpu_recovery_ops`（stop_begin/stop_poll/fault/reset）でcontext単位の停止確認を導入。Venusはflags7のquiescence契約（全native VkDeviceWaitIdleを確認したCPU0 ACK）を持つisolated pairで実停止を証明し、確認不能なら従来のquarantine/全体resetへ進む。R4: direct acquireは画像返却・故障・topologyをwaiter固有pipeと`ppoll`で待ち、10 ms周期起床を除いた。R5: terminal private fenceを最大64本ずつ一括resetしREADYを再利用。R2はstrict（flags7）維持、stock 1.1.0の情報欠落をstock-compat/で記録。fenceとjob監督はdrv_gpu内に保持し、汎用kernへの追加なし。
+
+最終8VMは同一最終artifactでPASS/QEMU exit0: direct-003 41.935秒、wayland-002 47.342秒、submit-load-005 11.833秒（2process 576 submit、OOM 0）、completion-delay-003 25.316秒（15秒遅延完了、peer継続）、context-timeout-003 25.138秒（短縮期限でDEVICE_LOST、peer継続）、producer-stop-002 19.438秒（SIGSTOP中に7770 msで終端）、producer-exit-002 4.165秒、recovery-002 14.051秒（10000 ms watchdog後checked reset）。限定fixture（K 12 suite、U 10+5 job、transport/host/console）、170 API/両ABI/Noct、6platform×GPU有無のbuild入力、GPUなしamd64実ELF、規約確認を完了。失敗履歴（submit-load-001の能力bit漏れ、producer-stop-001の旧期待値、recovery-001のerrno期待値）を保持し、初回成功とは扱わない。
+
+新libvulkanのVkDevice作成にはflags7（OPAQUE+STRICT+QUIESCE）のisolated paired rendererが必要で、stock/旧pairは初期化で拒否する。実行期限60秒は正当な長時間computeにも適用される。任意GPU間DMA、native i915、一般Wayland/toolkit、CTSは未受入。HAL・host system package・git add/commit/pushは行っていない。
+
+受入記録: local `plan/ws014/phase009/results.md`、`runtime-verification/summary.json`。GitHub Issues/Projectへの同期はユーザー確認後に行う。

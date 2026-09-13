@@ -3,12 +3,13 @@
 # WS014 p009: GPUレビュー対応とフレームワーク共通化
 
 <!-- awesome-plan-current:start -->
-Status: in-progress
+Status: cleared
 Phase disposition: normal
 Parent: [WS014](https://github.com/awemorris/zedBSD/issues/15)
-Queue: q312 active / q312-i01 in-progress (whole Phase)
+Queue: q312 finished / q312-i01 cleared (whole Phase)
 Dependencies: cleared ws014-p008; accepted p007/p006/p005 and completed WS030
 Next: ws014-p004 planning, not queued; native i915 stays separate WS029
+Execution: review4 R1-R6 and GPU framework consolidation accepted
 <!-- awesome-plan-current:end -->
 
 Combined ID: `ws014-p009`
@@ -53,3 +54,16 @@ GPU期限はCOMMITからの単調時刻とし、予約期限もnative投稿前�
 q312-i01の一項目/単一Phase。720 active minutes見積、120分ごとに残件と成果を点検。fixture120秒、build/transfer1200秒、VM180秒を基本に有限化し、試験設計上長いjob試験は明示した有限VM期限を使う。同条件無変更retryは3回まで。p004や別WS029を自動実行しない。
 
 Guardrailとplan/coding-style.md全文に従う。HAL追加変更は個別の具体許可が必要。通常BLOB/GPU内共有と標準API、承認済みzwl/libwaylandのテストドライバ範囲を維持する。一般DE/toolkit/native i915/guest DRM/dma-buf/汎用kern fenceは追加しない。既存private hostとimage/source転送、isolated host依存build、GitHub同期の承認を使用。system package/GDM/VFIO/reboot、git add/commit/push、aggregate make checkは含めない。
+
+
+## q312完了: GPUレビュー対応とフレームワーク共通化（2026-09-13）
+
+WS014 p009 / q312-i01をcleared、q312をfinishedとする。active Queueなし。p008/q311の受入を保持し、WS014はincomplete、p001/p004はplanning、p004と別WS029 native i915は未queueのまま。
+
+R1: 容量不足をOOMにせず、`GPU_JOB_CAPACITY` QUERY/WAIT（ioctl 37）と`GPU_JOB_POLICY`（38）を追加。libvulkanはnative準備→QUERY→回収→非待機RESERVEとし、EAGAINではqueue/device/context mutexを外して待つ。R3: 予約10秒・実行60秒・停止10秒をmake/menuconfigの設定と実効値照会にし、session単位のsticky errorと`drv_gpu_recovery_ops`（stop_begin/stop_poll/fault/reset）でcontext単位の停止確認を導入。Venusはflags7のquiescence契約（全native VkDeviceWaitIdleを確認したCPU0 ACK）を持つisolated pairで実停止を証明し、確認不能なら従来のquarantine/全体resetへ進む。R4: direct acquireは画像返却・故障・topologyをwaiter固有pipeと`ppoll`で待ち、10 ms周期起床を除いた。R5: terminal private fenceを最大64本ずつ一括resetしREADYを再利用。R2はstrict（flags7）維持、stock 1.1.0の情報欠落をstock-compat/で記録。fenceとjob監督はdrv_gpu内に保持し、汎用kernへの追加なし。
+
+最終8VMは同一最終artifactでPASS/QEMU exit0: direct-003 41.935秒、wayland-002 47.342秒、submit-load-005 11.833秒（2process 576 submit、OOM 0）、completion-delay-003 25.316秒（15秒遅延完了、peer継続）、context-timeout-003 25.138秒（短縮期限でDEVICE_LOST、peer継続）、producer-stop-002 19.438秒（SIGSTOP中に7770 msで終端）、producer-exit-002 4.165秒、recovery-002 14.051秒（10000 ms watchdog後checked reset）。限定fixture（K 12 suite、U 10+5 job、transport/host/console）、170 API/両ABI/Noct、6platform×GPU有無のbuild入力、GPUなしamd64実ELF、規約確認を完了。失敗履歴（submit-load-001の能力bit漏れ、producer-stop-001の旧期待値、recovery-001のerrno期待値）を保持し、初回成功とは扱わない。
+
+新libvulkanのVkDevice作成にはflags7（OPAQUE+STRICT+QUIESCE）のisolated paired rendererが必要で、stock/旧pairは初期化で拒否する。実行期限60秒は正当な長時間computeにも適用される。任意GPU間DMA、native i915、一般Wayland/toolkit、CTSは未受入。HAL・host system package・git add/commit/pushは行っていない。
+
+受入記録: local `plan/ws014/phase009/results.md`、`runtime-verification/summary.json`。GitHub Issues/Projectへの同期はユーザー確認後に行う。

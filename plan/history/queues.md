@@ -2,6 +2,10 @@
 
 過去の範囲・結果。実行許可ではない。
 
+- [queue-q312](queue-q312.md) — finished / ws014-p009 cleared（GPUレビュー対応・容量待機・context停止・フレームワーク共通化）
+
+- [queue-q311](queue-q311.md) — finished / ws014-p008 cleared（GPU完了責任・driver fence・描画資源改善）
+
 - [queue-q310](queue-q310.md) — finished / ws014-p007 cleared（BLOB直接表示・標準fd・同期改善）
 
 - [queue-q309](queue-q309.md) — finished / ws014-p006 cleared（GPU共有・Wayland・native scanout）

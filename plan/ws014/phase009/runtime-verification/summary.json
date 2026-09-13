@@ -1,0 +1,1933 @@
+{
+  "phase": "ws014-p009",
+  "queue": "q312",
+  "generated_at": "2026-09-13T13:19:03.016113+00:00",
+  "git_commit": "f62dc6354a9d8ebcd66fa64d1c37333c3216b07e",
+  "note": "Final acceptance set on the final artifacts. build/vkdemo-amd64 uses config-wayland-amd64.mk with the default policy (reservation 10 s, execution 60 s, stop 10 s). build/q312-context-amd64 uses config-wayland-context-timeout-amd64.mk with a shortened execution timeout so the context deadline fires during the 15 s delayed completion. producer-stop, context-timeout and completion-delay use the q312-quiesce-delay fixture pair; every other attempt uses the production q312-quiesce pair. Measurements are single finite runs, not throughput claims.",
+  "context_timeout_config": "# Isolated context containment regression with a shorter execution deadline.\n# Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib\ninclude $(dir $(lastword $(MAKEFILE_LIST)))config-wayland-amd64.mk\nCONFIG_GPU_JOB_EXECUTION_MS := 8000\nCONFIG_GPU_JOB_STOP_MS := 10000\n",
+  "current_artifacts": {
+    "build/vkdemo-amd64/vmunix": "32f1d647f780e8eabb976e4600cd04c649f9fa37ea0101064797d39d2e8a5c29",
+    "build/vkdemo-amd64/hdd-image.img": "732b50ab9c5f48eb171748289cbc7d17bb43f9ae60e9aa157307f5304bf7424d",
+    "build/vkdemo-amd64/dynamic/libvulkan.so": "1a277b6b9565bce22607d021948d3353a7a2fcfb7a0040c5609ed014973abe08",
+    "build/q312-context-amd64/vmunix": "20310954db9597dc5d37f038e4104b9cf386dc218395fc610d4b2ce288878042",
+    "build/q312-context-amd64/hdd-image.img": "28f96b5381ddb24dd12242c9637d7d877386bf0345fcfc18bbbf884a6a98a4da",
+    "build/q312-context-amd64/dynamic/libvulkan.so": "1a277b6b9565bce22607d021948d3353a7a2fcfb7a0040c5609ed014973abe08"
+  },
+  "final_attempts": [
+    {
+      "attempt": "q312-direct-003",
+      "status": "pass",
+      "remote_status": "pass",
+      "guest_completed": true,
+      "vm_elapsed_seconds": 41.935,
+      "total_elapsed_seconds": 53.276,
+      "qemu_exit_code": 0,
+      "started": "2026-09-13T13:10:51.654936+00:00",
+      "git_commit": "f62dc6354a9d8ebcd66fa64d1c37333c3216b07e",
+      "build_directory": "/home/awe/zedBSD/build/vkdemo-amd64",
+      "config": "/home/awe/zedBSD/plan/ws014/tests/config-wayland-amd64.mk",
+      "kernel_sha256": "32f1d647f780e8eabb976e4600cd04c649f9fa37ea0101064797d39d2e8a5c29",
+      "base_image_sha256": "732b50ab9c5f48eb171748289cbc7d17bb43f9ae60e9aa157307f5304bf7424d",
+      "libvulkan_sha256": null,
+      "render_server": "/home/awe/zedbsd-q306-venus/dependencies/q312-quiesce/install/libexec/virgl_render_server",
+      "render_server_sha256": "745bef59c17c88975ee567c0ae8c2c689b5b06fca79171d121227d0f5f5f84c2",
+      "renderer_library_sha256": "38447deeaac67a7c9ff4613115a49b2d60a10acda6c073f2d4c73d0af718fbd4",
+      "renderer_mapped_by_qemu": true,
+      "fault_test": null,
+      "fault_marker": null,
+      "lifecycle": {
+        "abnormal_exit": true,
+        "console_after": {
+          "desktop_resizes": 0,
+          "framebuffer_updates": 1,
+          "height": 480,
+          "initial_geometry": [
+            640,
+            480
+          ],
+          "initial_pixel_format": "2018000100ff00ff00ff100800000000",
+          "last_rectangles": 0,
+          "method": "rfb-raw-unix",
+          "pixel_format": {
+            "big_endian": false,
+            "bits_per_pixel": 32,
+            "blue_shift": 0,
+            "depth": 24,
+            "green_shift": 8,
+            "red_shift": 16
+          },
+          "pixels": 307200,
+          "raw_bytes": 1228800,
+          "rectangles": 1,
+          "server_name": "QEMU",
+          "server_version": "RFB 003.008",
+          "sha256": "b83d4b8d21dc52b7422e0e0fbb4bb200c0c382c1c1b2f1e2ce476f9fca994936",
+          "width": 640
+        },
+        "console_after_sha256": "b83d4b8d21dc52b7422e0e0fbb4bb200c0c382c1c1b2f1e2ce476f9fca994936",
+        "console_before": {
+          "desktop_resizes": 0,
+          "framebuffer_updates": 1,
+          "height": 480,
+          "initial_geometry": [
+            640,
+            480
+          ],
+          "initial_pixel_format": "2018000100ff00ff00ff100800000000",
+          "last_rectangles": 0,
+          "method": "rfb-raw-unix",
+          "pixel_format": {
+            "big_endian": false,
+            "bits_per_pixel": 32,
+            "blue_shift": 0,
+            "depth": 24,
+            "green_shift": 8,
+            "red_shift": 16
+          },
+          "pixels": 307200,
+          "raw_bytes": 1228800,
+          "rectangles": 1,
+          "server_name": "QEMU",
+          "server_version": "RFB 003.008",
+          "sha256": "6c1a4613527d4ce1836f4218f1e416c1be8c1e6edf8a28dc744e5750cfda369e",
+          "width": 640
+        },
+        "console_before_sha256": "6c1a4613527d4ce1836f4218f1e416c1be8c1e6edf8a28dc744e5750cfda369e",
+        "console_restored": true,
+        "held_frame": {
+          "frame": 1,
+          "height": 240,
+          "mode": "fixed",
+          "rgb_sha256": "7523debe5f925b33c94af8b0a306d6bcf62c78d520a9091d42d53ba032b105ff",
+          "run": "r66e4d8dccfdd8dce028c5f33-abort",
+          "sample": 1,
+          "time_ms": 0,
+          "width": 320
+        },
+        "reopen": {
+          "captures": [],
+          "completed": true,
+          "first_time_ms": 0,
+          "frames": 15,
+          "guest_command": "/bin/vkdemo --duration=2 --token=r66e4d8dccfdd8dce028c5f33-after-abort-ordinary",
+          "host_qemu_cpu": {
+            "after": {
+              "cpu_ticks": 481,
+              "monotonic": 91513.46968278,
+              "pid": 35909,
+              "start_ticks": 9148841,
+              "ticks_per_second": 100
+            },
+            "before": {
+              "cpu_ticks": 432,
+              "monotonic": 91507.570855828,
+              "pid": 35909,
+              "start_ticks": 9148841,
+              "ticks_per_second": 100
+            },
+            "cpu_seconds": 0.49,
+            "cpu_seconds_per_frame": 0.03266666666666666,
+            "percent_of_one_cpu": 8.306736305147021,
+            "scope": "QEMU process including vCPU threads; excludes renderer children and capture client; command through returned prompt",
+            "wall_seconds": 5.898826952005038
+          },
+          "last_time_ms": 1870,
+          "samples": [
+            {
+              "frame": 1,
+              "readback_disabled": true,
+              "time_ms": 0
+            },
+            {
+              "frame": 2,
+              "readback_disabled": true,
+              "time_ms": 150
+            },
+            {
+              "frame": 3,
+              "readback_disabled": true,
+              "time_ms": 280
+            },
+            {
+              "frame": 4,
+              "readback_disabled": true,
+              "time_ms": 410
+            },
+            {
+              "frame": 5,
+              "readback_disabled": true,
+              "time_ms": 550
+            },
+            {
+              "frame": 6,
+              "readback_disabled": true,
+              "time_ms": 680
+            },
+            {
+              "frame": 7,
+              "readback_disabled": true,
+              "time_ms": 810
+            },
+            {
+              "frame": 8,
+              "readback_disabled": true,
+              "time_ms": 950
+            },
+            {
+              "frame": 9,
+              "readback_disabled": true,
+              "time_ms": 1080
+            },
+            {
+              "frame": 10,
+              "readback_disabled": true,
+              "time_ms": 1210
+            },
+            {
+              "frame": 11,
+              "readback_disabled": true,
+              "time_ms": 1350
+            },
+            {
+              "frame": 12,
+              "readback_disabled": true,
+              "time_ms": 1480
+            },
+            {
+              "frame": 13,
+              "readback_disabled": true,
+              "time_ms": 1610
+            },
+            {
+              "frame": 14,
+              "readback_disabled": true,
+              "time_ms": 1740
+            },
+            {
+              "frame": 15,
+              "readback_disabled": true,
+              "time_ms": 1870
+            }
+          ],
+          "start_seen": true,
+          "token": "r66e4d8dccfdd8dce028c5f33-after-abort-ordinary"
+        },
+        "reopened": true
+      },
+      "watchdog_elapsed_ms": null,
+      "watchdog_status": null,
+      "completion_delay": null,
+      "error": null,
+      "frames": 6,
+      "sequence": {
+        "distinct_frames_per_mode": 3,
+        "fixed_times_ms": [
+          0,
+          1000,
+          2500
+        ],
+        "frames": 6,
+        "live_times_ms": [
+          0,
+          640,
+          1270
+        ],
+        "same_process": true
+      },
+      "scanout_trace": {
+        "blob_requests": 126,
+        "blob_resources": [
+          3,
+          4,
+          5,
+          13,
+          14,
+          15,
+          19,
+          26,
+          27,
+          28,
+          32,
+          33,
+          34
+        ],
+        "height": 240,
+        "legacy_requests": 0,
+        "proves": "request selection only",
+        "scope": "whole direct acceptance run",
+        "width": 320
+      },
+      "competition": {
+        "contender": "r66e4d8dccfdd8dce028c5f33-contender",
+        "error": "VK_ERROR_NATIVE_WINDOW_IN_USE_KHR",
+        "owner": "r66e4d8dccfdd8dce028c5f33-owner",
+        "owner_completed": true,
+        "owner_frames": 90,
+        "rejected": true
+      }
+    },
+    {
+      "attempt": "q312-wayland-002",
+      "status": "pass",
+      "remote_status": "pass",
+      "guest_completed": true,
+      "vm_elapsed_seconds": 47.342,
+      "total_elapsed_seconds": 58.506,
+      "qemu_exit_code": 0,
+      "started": "2026-09-13T13:12:05.884813+00:00",
+      "git_commit": "f62dc6354a9d8ebcd66fa64d1c37333c3216b07e",
+      "build_directory": "/home/awe/zedBSD/build/vkdemo-amd64",
+      "config": "/home/awe/zedBSD/plan/ws014/tests/config-wayland-amd64.mk",
+      "kernel_sha256": "32f1d647f780e8eabb976e4600cd04c649f9fa37ea0101064797d39d2e8a5c29",
+      "base_image_sha256": "732b50ab9c5f48eb171748289cbc7d17bb43f9ae60e9aa157307f5304bf7424d",
+      "libvulkan_sha256": "1a277b6b9565bce22607d021948d3353a7a2fcfb7a0040c5609ed014973abe08",
+      "render_server": "/home/awe/zedbsd-q306-venus/dependencies/q312-quiesce/install/libexec/virgl_render_server",
+      "render_server_sha256": "745bef59c17c88975ee567c0ae8c2c689b5b06fca79171d121227d0f5f5f84c2",
+      "renderer_library_sha256": "38447deeaac67a7c9ff4613115a49b2d60a10acda6c073f2d4c73d0af718fbd4",
+      "renderer_mapped_by_qemu": true,
+      "fault_test": null,
+      "fault_marker": null,
+      "lifecycle": {
+        "after_kill_reopened": true,
+        "after_kill_token": "r79e8346e7c47a3db56f61906-after-kill",
+        "client_aborted": true,
+        "client_reopen_token": "r79e8346e7c47a3db56f61906-after-abort",
+        "client_reopened": true,
+        "compositor_killed": true,
+        "compositor_reopened": true,
+        "console_after_sha256": "77450d64e294483a6f40df54b8d9e44923a89e9707b48c5c1f43f559b8112c79",
+        "console_before_sha256": "a4ef231e9c0c2b14082ef76ec550d6c575b33ef09e786c0776ab02941af205da",
+        "console_restored": true,
+        "killed_console_restored": true,
+        "killed_console_sha256": "672376221d33c0db5e06d6c78a98114ccb79b493f346123832ec62168789830c",
+        "surface_loss": true,
+        "surface_loss_marker": "WLTEST FAILED run=r79e8346e7c47a3db56f61906-lost api=vkAcquireNextImageKHR result=-1000000000 cleanup=0 errno=44 frames=2"
+      },
+      "watchdog_elapsed_ms": null,
+      "watchdog_status": null,
+      "completion_delay": null,
+      "error": null,
+      "fifo_completed": true,
+      "mailbox_completed": true,
+      "concurrent_admission": true,
+      "allocation_imports": [
+        {
+          "kind": "buffer",
+          "marker": "GPU ALLOCATION PASS kind=1 producer-exit independent-context pixels=1024"
+        },
+        {
+          "kind": "optimal",
+          "marker": "GPU ALLOCATION PASS kind=2 producer-exit independent-context pixels=1024"
+        }
+      ],
+      "external_fence": true,
+      "display_notifications": {
+        "attempts": 1,
+        "outputs": 1,
+        "sequence": 1
+      },
+      "independent_renderer_import": true,
+      "shared_gpu_path": true,
+      "compositor_stopped": true
+    },
+    {
+      "attempt": "q312-submit-load-005",
+      "status": "pass",
+      "remote_status": "pass",
+      "guest_completed": true,
+      "vm_elapsed_seconds": 11.833,
+      "total_elapsed_seconds": 18.44,
+      "qemu_exit_code": 0,
+      "started": "2026-09-13T13:13:04.687598+00:00",
+      "git_commit": "f62dc6354a9d8ebcd66fa64d1c37333c3216b07e",
+      "build_directory": "/home/awe/zedBSD/build/vkdemo-amd64",
+      "config": "/home/awe/zedBSD/plan/ws014/tests/config-wayland-amd64.mk",
+      "kernel_sha256": "32f1d647f780e8eabb976e4600cd04c649f9fa37ea0101064797d39d2e8a5c29",
+      "base_image_sha256": "732b50ab9c5f48eb171748289cbc7d17bb43f9ae60e9aa157307f5304bf7424d",
+      "libvulkan_sha256": "1a277b6b9565bce22607d021948d3353a7a2fcfb7a0040c5609ed014973abe08",
+      "render_server": "/home/awe/zedbsd-q306-venus/dependencies/q312-quiesce/install/libexec/virgl_render_server",
+      "render_server_sha256": "745bef59c17c88975ee567c0ae8c2c689b5b06fca79171d121227d0f5f5f84c2",
+      "renderer_library_sha256": "38447deeaac67a7c9ff4613115a49b2d60a10acda6c073f2d4c73d0af718fbd4",
+      "renderer_mapped_by_qemu": true,
+      "fault_test": "submit-load",
+      "fault_marker": "GPUFENCE SUBMIT_LOAD PASS processes=2 rounds=3 submits=576 verified_bytes=25165824 verified_submits=576",
+      "lifecycle": null,
+      "watchdog_elapsed_ms": null,
+      "watchdog_status": null,
+      "completion_delay": null,
+      "error": null,
+      "load_samples_by_mode": {
+        "null": {
+          "rounds": 4,
+          "submits": 384,
+          "elapsed_ms": 5330,
+          "user_cpu_us": 30000,
+          "system_cpu_us": 400000,
+          "verified_bytes": 16777216,
+          "verified_submits": 384
+        },
+        "explicit": {
+          "rounds": 2,
+          "submits": 192,
+          "elapsed_ms": 2500,
+          "user_cpu_us": 0,
+          "system_cpu_us": 0,
+          "verified_bytes": 8388608,
+          "verified_submits": 192
+        }
+      },
+      "load_samples": [
+        {
+          "bytes": 4194304,
+          "elapsed_ms": 1410,
+          "mode": "null",
+          "repeats": 32,
+          "role": "child",
+          "round": 0,
+          "submits": 96,
+          "system_cpu_us": 120000,
+          "user_cpu_us": 0,
+          "verified_bytes": 4194304,
+          "verified_submits": 96
+        },
+        {
+          "bytes": 4194304,
+          "elapsed_ms": 1250,
+          "mode": "explicit",
+          "repeats": 32,
+          "role": "child",
+          "round": 1,
+          "submits": 96,
+          "system_cpu_us": 0,
+          "user_cpu_us": 0,
+          "verified_bytes": 4194304,
+          "verified_submits": 96
+        },
+        {
+          "bytes": 4194304,
+          "elapsed_ms": 1250,
+          "mode": "null",
+          "repeats": 32,
+          "role": "child",
+          "round": 2,
+          "submits": 96,
+          "system_cpu_us": 130000,
+          "user_cpu_us": 20000,
+          "verified_bytes": 4194304,
+          "verified_submits": 96
+        },
+        {
+          "bytes": 4194304,
+          "elapsed_ms": 1420,
+          "mode": "null",
+          "repeats": 32,
+          "role": "parent",
+          "round": 0,
+          "submits": 96,
+          "system_cpu_us": 110000,
+          "user_cpu_us": 10000,
+          "verified_bytes": 4194304,
+          "verified_submits": 96
+        },
+        {
+          "bytes": 4194304,
+          "elapsed_ms": 1250,
+          "mode": "explicit",
+          "repeats": 32,
+          "role": "parent",
+          "round": 1,
+          "submits": 96,
+          "system_cpu_us": 0,
+          "user_cpu_us": 0,
+          "verified_bytes": 4194304,
+          "verified_submits": 96
+        },
+        {
+          "bytes": 4194304,
+          "elapsed_ms": 1250,
+          "mode": "null",
+          "repeats": 32,
+          "role": "parent",
+          "round": 2,
+          "submits": 96,
+          "system_cpu_us": 40000,
+          "user_cpu_us": 0,
+          "verified_bytes": 4194304,
+          "verified_submits": 96
+        }
+      ],
+      "host_cpu": {
+        "ticks_per_second": 100,
+        "processes": [
+          {
+            "kind": "qemu",
+            "pid": 37027,
+            "observations": 161,
+            "delta_user_ticks": 130,
+            "delta_system_ticks": 65
+          },
+          {
+            "kind": "renderer",
+            "pid": 37048,
+            "observations": 161,
+            "delta_user_ticks": 0,
+            "delta_system_ticks": 0
+          },
+          {
+            "kind": "renderer",
+            "pid": 37049,
+            "observations": 151,
+            "delta_user_ticks": 4,
+            "delta_system_ticks": 6
+          },
+          {
+            "kind": "renderer",
+            "pid": 37050,
+            "observations": 149,
+            "delta_user_ticks": 4,
+            "delta_system_ticks": 8
+          }
+        ],
+        "scope": "QEMU delta covers the whole test; renderer counters are sampled lifetime lower bounds.",
+        "limitations": "50ms loop plus QMP work; exited workers may lose their last interval; short workers may be missed. Includes initialization/cleanup, not per-round GPU time."
+      }
+    },
+    {
+      "attempt": "q312-completion-delay-003",
+      "status": "pass",
+      "remote_status": "pass",
+      "guest_completed": true,
+      "vm_elapsed_seconds": 25.316,
+      "total_elapsed_seconds": 32.72,
+      "qemu_exit_code": 0,
+      "started": "2026-09-13T13:13:23.939226+00:00",
+      "git_commit": "f62dc6354a9d8ebcd66fa64d1c37333c3216b07e",
+      "build_directory": "/home/awe/zedBSD/build/vkdemo-amd64",
+      "config": "/home/awe/zedBSD/plan/ws014/tests/config-wayland-amd64.mk",
+      "kernel_sha256": "32f1d647f780e8eabb976e4600cd04c649f9fa37ea0101064797d39d2e8a5c29",
+      "base_image_sha256": "732b50ab9c5f48eb171748289cbc7d17bb43f9ae60e9aa157307f5304bf7424d",
+      "libvulkan_sha256": "1a277b6b9565bce22607d021948d3353a7a2fcfb7a0040c5609ed014973abe08",
+      "render_server": "/home/awe/zedbsd-q306-venus/dependencies/q312-quiesce-delay/install/libexec/virgl_render_server",
+      "render_server_sha256": "e250106ba75f5592799697616012375af3946440d96cf9b719720eee0ba88444",
+      "renderer_library_sha256": "32d152dd251711b6f7a956abc199c81fcb59fa9ece263af7b773d78f36c7340f",
+      "renderer_mapped_by_qemu": true,
+      "fault_test": "completion-delay",
+      "fault_marker": "GPUFENCE COMPLETION_DELAY PASS",
+      "lifecycle": null,
+      "watchdog_elapsed_ms": null,
+      "watchdog_status": null,
+      "completion_delay": {
+        "context": 2,
+        "fence": 1,
+        "native_result": "SUCCESS",
+        "notification_delay_ms": 15000,
+        "peer_after_close": true,
+        "peer_completed": 127,
+        "peer_elapsed_ms": 20150,
+        "peer_verified_bytes": 4194304,
+        "pid": 37305,
+        "producer_elapsed_ms": 15000,
+        "producer_result": 0
+      },
+      "error": null
+    },
+    {
+      "attempt": "q312-producer-exit-002",
+      "status": "pass",
+      "remote_status": "pass",
+      "guest_completed": true,
+      "vm_elapsed_seconds": 4.165,
+      "total_elapsed_seconds": 10.641,
+      "qemu_exit_code": 0,
+      "started": "2026-09-13T13:13:55.650220+00:00",
+      "git_commit": "f62dc6354a9d8ebcd66fa64d1c37333c3216b07e",
+      "build_directory": "/home/awe/zedBSD/build/vkdemo-amd64",
+      "config": "/home/awe/zedBSD/plan/ws014/tests/config-wayland-amd64.mk",
+      "kernel_sha256": "32f1d647f780e8eabb976e4600cd04c649f9fa37ea0101064797d39d2e8a5c29",
+      "base_image_sha256": "732b50ab9c5f48eb171748289cbc7d17bb43f9ae60e9aa157307f5304bf7424d",
+      "libvulkan_sha256": "1a277b6b9565bce22607d021948d3353a7a2fcfb7a0040c5609ed014973abe08",
+      "render_server": "/home/awe/zedbsd-q306-venus/dependencies/q312-quiesce/install/libexec/virgl_render_server",
+      "render_server_sha256": "745bef59c17c88975ee567c0ae8c2c689b5b06fca79171d121227d0f5f5f84c2",
+      "renderer_library_sha256": "38447deeaac67a7c9ff4613115a49b2d60a10acda6c073f2d4c73d0af718fbd4",
+      "renderer_mapped_by_qemu": true,
+      "fault_test": "producer-exit",
+      "fault_marker": "GPUFENCE PRODUCER_EXIT_ERROR PASS",
+      "lifecycle": null,
+      "watchdog_elapsed_ms": null,
+      "watchdog_status": null,
+      "completion_delay": null,
+      "error": null
+    },
+    {
+      "attempt": "q312-recovery-002",
+      "status": "pass",
+      "remote_status": "pass",
+      "guest_completed": true,
+      "vm_elapsed_seconds": 14.051,
+      "total_elapsed_seconds": 21.464,
+      "qemu_exit_code": 0,
+      "started": "2026-09-13T12:40:33.540835+00:00",
+      "git_commit": "cca124456908acdb39512bc5d339e1a6f0e61a7e",
+      "build_directory": "/home/awe/zedBSD/build/vkdemo-amd64",
+      "config": "/home/awe/zedBSD/plan/ws014/tests/config-wayland-amd64.mk",
+      "kernel_sha256": "32f1d647f780e8eabb976e4600cd04c649f9fa37ea0101064797d39d2e8a5c29",
+      "base_image_sha256": "732b50ab9c5f48eb171748289cbc7d17bb43f9ae60e9aa157307f5304bf7424d",
+      "libvulkan_sha256": "1a277b6b9565bce22607d021948d3353a7a2fcfb7a0040c5609ed014973abe08",
+      "render_server": "/home/awe/zedbsd-q306-venus/dependencies/q312-quiesce/install/libexec/virgl_render_server",
+      "render_server_sha256": "745bef59c17c88975ee567c0ae8c2c689b5b06fca79171d121227d0f5f5f84c2",
+      "renderer_library_sha256": "38447deeaac67a7c9ff4613115a49b2d60a10acda6c073f2d4c73d0af718fbd4",
+      "renderer_mapped_by_qemu": true,
+      "fault_test": "recovery",
+      "fault_marker": "GPURECOVERY PASS timeout=1 peer_failed=1 retirement_gate=1 fresh_roundtrip=4096 decoder=1",
+      "lifecycle": null,
+      "watchdog_elapsed_ms": 10000,
+      "watchdog_status": 42,
+      "completion_delay": null,
+      "error": null
+    },
+    {
+      "attempt": "q312-producer-stop-002",
+      "status": "pass",
+      "remote_status": "pass",
+      "guest_completed": true,
+      "vm_elapsed_seconds": 19.438,
+      "total_elapsed_seconds": 27.28,
+      "qemu_exit_code": 0,
+      "started": "2026-09-13T12:40:06.689298+00:00",
+      "git_commit": "cca124456908acdb39512bc5d339e1a6f0e61a7e",
+      "build_directory": "/home/awe/zedBSD/build/q312-context-amd64",
+      "config": "/home/awe/zedBSD/plan/ws014/tests/config-wayland-context-timeout-amd64.mk",
+      "kernel_sha256": "20310954db9597dc5d37f038e4104b9cf386dc218395fc610d4b2ce288878042",
+      "base_image_sha256": "28f96b5381ddb24dd12242c9637d7d877386bf0345fcfc18bbbf884a6a98a4da",
+      "libvulkan_sha256": "1a277b6b9565bce22607d021948d3353a7a2fcfb7a0040c5609ed014973abe08",
+      "render_server": "/home/awe/zedbsd-q306-venus/dependencies/q312-quiesce-delay/install/libexec/virgl_render_server",
+      "render_server_sha256": "e250106ba75f5592799697616012375af3946440d96cf9b719720eee0ba88444",
+      "renderer_library_sha256": "32d152dd251711b6f7a956abc199c81fcb59fa9ece263af7b773d78f36c7340f",
+      "renderer_mapped_by_qemu": true,
+      "fault_test": "producer-stop",
+      "fault_marker": "GPUFENCE PRODUCER_STOP_ERROR PASS",
+      "lifecycle": null,
+      "watchdog_elapsed_ms": 7770,
+      "watchdog_status": null,
+      "completion_delay": {
+        "context": 2,
+        "fence": 1,
+        "native_result": "SUCCESS",
+        "notification_delay_ms": 15000,
+        "pid": 35343,
+        "producer_elapsed_ms": 7770,
+        "producer_result": -4,
+        "producer_stopped": true
+      },
+      "error": null
+    },
+    {
+      "attempt": "q312-context-timeout-003",
+      "status": "pass",
+      "remote_status": "pass",
+      "guest_completed": true,
+      "vm_elapsed_seconds": 25.138,
+      "total_elapsed_seconds": 31.552,
+      "qemu_exit_code": 0,
+      "started": "2026-09-13T13:15:07.856279+00:00",
+      "git_commit": "f62dc6354a9d8ebcd66fa64d1c37333c3216b07e",
+      "build_directory": "/home/awe/zedBSD/build/q312-context-amd64",
+      "config": "/home/awe/zedBSD/plan/ws014/tests/config-wayland-context-timeout-amd64.mk",
+      "kernel_sha256": "20310954db9597dc5d37f038e4104b9cf386dc218395fc610d4b2ce288878042",
+      "base_image_sha256": "28f96b5381ddb24dd12242c9637d7d877386bf0345fcfc18bbbf884a6a98a4da",
+      "libvulkan_sha256": "1a277b6b9565bce22607d021948d3353a7a2fcfb7a0040c5609ed014973abe08",
+      "render_server": "/home/awe/zedbsd-q306-venus/dependencies/q312-quiesce-delay/install/libexec/virgl_render_server",
+      "render_server_sha256": "e250106ba75f5592799697616012375af3946440d96cf9b719720eee0ba88444",
+      "renderer_library_sha256": "32d152dd251711b6f7a956abc199c81fcb59fa9ece263af7b773d78f36c7340f",
+      "renderer_mapped_by_qemu": true,
+      "fault_test": "context-timeout",
+      "fault_marker": "GPUFENCE CONTEXT_TIMEOUT PASS",
+      "lifecycle": null,
+      "watchdog_elapsed_ms": null,
+      "watchdog_status": null,
+      "completion_delay": {
+        "context": 2,
+        "fence": 1,
+        "native_result": "SUCCESS",
+        "notification_delay_ms": 15000,
+        "peer_after_close": true,
+        "peer_completed": 126,
+        "peer_elapsed_ms": 20070,
+        "peer_verified_bytes": 4194304,
+        "pid": 37805,
+        "producer_elapsed_ms": 8030,
+        "producer_result": -4
+      },
+      "error": null
+    }
+  ],
+  "history_attempts": [
+    {
+      "attempt": "q312-submit-load-001",
+      "status": "fail",
+      "remote_status": "fail",
+      "guest_completed": false,
+      "vm_elapsed_seconds": 3.857,
+      "total_elapsed_seconds": 11.437,
+      "qemu_exit_code": 0,
+      "started": "2026-09-13T11:16:35.901094+00:00",
+      "git_commit": "cca124456908acdb39512bc5d339e1a6f0e61a7e",
+      "build_directory": "/home/awe/zedBSD/build/vkdemo-amd64",
+      "config": "/home/awe/zedBSD/plan/ws014/tests/config-wayland-amd64.mk",
+      "kernel_sha256": "3f393eb4fabd6bb8ef8875d677a7c0114d9b326c965edbc65ebbf7a505600672",
+      "base_image_sha256": "8c4d6970d96cf9dd8bc723bba342f5cecadafabe0f0ce98f0dd8c7e8f763744a",
+      "libvulkan_sha256": "be939045f592e7ee7e2fb4f161170824022e73405d98b8095457e0c16885d3d2",
+      "render_server": "/home/awe/zedbsd-q306-venus/dependencies/q311-strict/install/libexec/virgl_render_server",
+      "render_server_sha256": "f668a5262335790cf7b78ab0b732391bc790e8835dd27f2b2cbfcad561ddd80f",
+      "renderer_library_sha256": "05c7499c9fab287f9692ac37f169b12b5bcdd98fd553f42bca5a9afeef8cda86",
+      "renderer_mapped_by_qemu": true,
+      "fault_test": "submit-load",
+      "fault_marker": null,
+      "lifecycle": null,
+      "watchdog_elapsed_ms": null,
+      "watchdog_status": null,
+      "completion_delay": null,
+      "error": "remote attempt did not complete successfully"
+    },
+    {
+      "attempt": "q312-submit-load-002",
+      "status": "pass",
+      "remote_status": "pass",
+      "guest_completed": true,
+      "vm_elapsed_seconds": 9.799,
+      "total_elapsed_seconds": 17.2,
+      "qemu_exit_code": 0,
+      "started": "2026-09-13T11:20:14.084438+00:00",
+      "git_commit": "cca124456908acdb39512bc5d339e1a6f0e61a7e",
+      "build_directory": "/home/awe/zedBSD/build/vkdemo-amd64",
+      "config": "/home/awe/zedBSD/plan/ws014/tests/config-wayland-amd64.mk",
+      "kernel_sha256": "1dc87fd40be374bfc8b9c1f33fc35eb5235a4ba2614277d8dbddf3922a2ebf6e",
+      "base_image_sha256": "1f5f77c18198aa173a89ceab857e10890c23db044bb9a608bcc9d37245f16050",
+      "libvulkan_sha256": "824b9e2508db270cd3651044945c2886401005a2e8fe2c0da2ae50a84fce6ed2",
+      "render_server": "/home/awe/zedbsd-q306-venus/dependencies/q311-strict/install/libexec/virgl_render_server",
+      "render_server_sha256": "f668a5262335790cf7b78ab0b732391bc790e8835dd27f2b2cbfcad561ddd80f",
+      "renderer_library_sha256": "05c7499c9fab287f9692ac37f169b12b5bcdd98fd553f42bca5a9afeef8cda86",
+      "renderer_mapped_by_qemu": true,
+      "fault_test": "submit-load",
+      "fault_marker": "GPUFENCE SUBMIT_LOAD PASS processes=2 rounds=3 submits=576 verified_bytes=25165824",
+      "lifecycle": null,
+      "watchdog_elapsed_ms": null,
+      "watchdog_status": null,
+      "completion_delay": null,
+      "error": null,
+      "load_samples_by_mode": {
+        "null": {
+          "rounds": 4,
+          "submits": 384,
+          "elapsed_ms": 5520,
+          "user_cpu_us": 0,
+          "system_cpu_us": 0,
+          "verified_bytes": 16777216,
+          "verified_submits": 0
+        },
+        "explicit": {
+          "rounds": 2,
+          "submits": 192,
+          "elapsed_ms": 2480,
+          "user_cpu_us": 0,
+          "system_cpu_us": 0,
+          "verified_bytes": 8388608,
+          "verified_submits": 0
+        }
+      },
+      "load_samples": [
+        {
+          "bytes": 4194304,
+          "elapsed_ms": 1510,
+          "mode": "null",
+          "repeats": 32,
+          "role": "child",
+          "round": 0,
+          "submits": 96,
+          "verified_bytes": 4194304
+        },
+        {
+          "bytes": 4194304,
+          "elapsed_ms": 1240,
+          "mode": "explicit",
+          "repeats": 32,
+          "role": "child",
+          "round": 1,
+          "submits": 96,
+          "verified_bytes": 4194304
+        },
+        {
+          "bytes": 4194304,
+          "elapsed_ms": 1250,
+          "mode": "null",
+          "repeats": 32,
+          "role": "child",
+          "round": 2,
+          "submits": 96,
+          "verified_bytes": 4194304
+        },
+        {
+          "bytes": 4194304,
+          "elapsed_ms": 1510,
+          "mode": "null",
+          "repeats": 32,
+          "role": "parent",
+          "round": 0,
+          "submits": 96,
+          "verified_bytes": 4194304
+        },
+        {
+          "bytes": 4194304,
+          "elapsed_ms": 1240,
+          "mode": "explicit",
+          "repeats": 32,
+          "role": "parent",
+          "round": 1,
+          "submits": 96,
+          "verified_bytes": 4194304
+        },
+        {
+          "bytes": 4194304,
+          "elapsed_ms": 1250,
+          "mode": "null",
+          "repeats": 32,
+          "role": "parent",
+          "round": 2,
+          "submits": 96,
+          "verified_bytes": 4194304
+        }
+      ]
+    },
+    {
+      "attempt": "q312-submit-load-003",
+      "status": "pass",
+      "remote_status": "pass",
+      "guest_completed": true,
+      "vm_elapsed_seconds": 12.367,
+      "total_elapsed_seconds": 19.078,
+      "qemu_exit_code": 0,
+      "started": "2026-09-13T12:24:13.287766+00:00",
+      "git_commit": "cca124456908acdb39512bc5d339e1a6f0e61a7e",
+      "build_directory": "/home/awe/zedBSD/build/vkdemo-amd64",
+      "config": "/home/awe/zedBSD/plan/ws014/tests/config-wayland-amd64.mk",
+      "kernel_sha256": "32f1d647f780e8eabb976e4600cd04c649f9fa37ea0101064797d39d2e8a5c29",
+      "base_image_sha256": "6ba07fd45bad9b8c5955818ae77e03f1ec1795ebd48ff00c0b56e399167128ca",
+      "libvulkan_sha256": "1a277b6b9565bce22607d021948d3353a7a2fcfb7a0040c5609ed014973abe08",
+      "render_server": "/home/awe/zedbsd-q306-venus/dependencies/q312-quiesce/install/libexec/virgl_render_server",
+      "render_server_sha256": "745bef59c17c88975ee567c0ae8c2c689b5b06fca79171d121227d0f5f5f84c2",
+      "renderer_library_sha256": "38447deeaac67a7c9ff4613115a49b2d60a10acda6c073f2d4c73d0af718fbd4",
+      "renderer_mapped_by_qemu": true,
+      "fault_test": "submit-load",
+      "fault_marker": "GPUFENCE SUBMIT_LOAD PASS processes=2 rounds=3 submits=576 verified_bytes=25165824 verified_submits=576",
+      "lifecycle": null,
+      "watchdog_elapsed_ms": null,
+      "watchdog_status": null,
+      "completion_delay": null,
+      "error": null,
+      "load_samples_by_mode": {
+        "null": {
+          "rounds": 4,
+          "submits": 384,
+          "elapsed_ms": 5120,
+          "user_cpu_us": 80000,
+          "system_cpu_us": 460000,
+          "verified_bytes": 16777216,
+          "verified_submits": 384
+        },
+        "explicit": {
+          "rounds": 2,
+          "submits": 192,
+          "elapsed_ms": 2450,
+          "user_cpu_us": 20000,
+          "system_cpu_us": 270000,
+          "verified_bytes": 8388608,
+          "verified_submits": 192
+        }
+      },
+      "load_samples": [
+        {
+          "bytes": 4194304,
+          "elapsed_ms": 1300,
+          "mode": "null",
+          "repeats": 32,
+          "role": "child",
+          "round": 0,
+          "submits": 96,
+          "system_cpu_us": 110000,
+          "user_cpu_us": 30000,
+          "verified_bytes": 4194304,
+          "verified_submits": 96
+        },
+        {
+          "bytes": 4194304,
+          "elapsed_ms": 1220,
+          "mode": "explicit",
+          "repeats": 32,
+          "role": "child",
+          "round": 1,
+          "submits": 96,
+          "system_cpu_us": 0,
+          "user_cpu_us": 0,
+          "verified_bytes": 4194304,
+          "verified_submits": 96
+        },
+        {
+          "bytes": 4194304,
+          "elapsed_ms": 1260,
+          "mode": "null",
+          "repeats": 32,
+          "role": "child",
+          "round": 2,
+          "submits": 96,
+          "system_cpu_us": 150000,
+          "user_cpu_us": 0,
+          "verified_bytes": 4194304,
+          "verified_submits": 96
+        },
+        {
+          "bytes": 4194304,
+          "elapsed_ms": 1300,
+          "mode": "null",
+          "repeats": 32,
+          "role": "parent",
+          "round": 0,
+          "submits": 96,
+          "system_cpu_us": 150000,
+          "user_cpu_us": 30000,
+          "verified_bytes": 4194304,
+          "verified_submits": 96
+        },
+        {
+          "bytes": 4194304,
+          "elapsed_ms": 1230,
+          "mode": "explicit",
+          "repeats": 32,
+          "role": "parent",
+          "round": 1,
+          "submits": 96,
+          "system_cpu_us": 270000,
+          "user_cpu_us": 20000,
+          "verified_bytes": 4194304,
+          "verified_submits": 96
+        },
+        {
+          "bytes": 4194304,
+          "elapsed_ms": 1260,
+          "mode": "null",
+          "repeats": 32,
+          "role": "parent",
+          "round": 2,
+          "submits": 96,
+          "system_cpu_us": 50000,
+          "user_cpu_us": 20000,
+          "verified_bytes": 4194304,
+          "verified_submits": 96
+        }
+      ],
+      "host_cpu": {
+        "ticks_per_second": 100,
+        "processes": [
+          {
+            "kind": "qemu",
+            "pid": 32312,
+            "observations": 166,
+            "delta_user_ticks": 140,
+            "delta_system_ticks": 76
+          },
+          {
+            "kind": "renderer",
+            "pid": 32333,
+            "observations": 166,
+            "delta_user_ticks": 0,
+            "delta_system_ticks": 0
+          },
+          {
+            "kind": "renderer",
+            "pid": 32334,
+            "observations": 153,
+            "delta_user_ticks": 3,
+            "delta_system_ticks": 7
+          },
+          {
+            "kind": "renderer",
+            "pid": 32335,
+            "observations": 151,
+            "delta_user_ticks": 1,
+            "delta_system_ticks": 12
+          }
+        ],
+        "scope": "QEMU delta covers the whole test; renderer counters are sampled lifetime lower bounds.",
+        "limitations": "50ms loop plus QMP work; exited workers may lose their last interval; short workers may be missed. Includes initialization/cleanup, not per-round GPU time."
+      }
+    },
+    {
+      "attempt": "q312-submit-load-004",
+      "status": "pass",
+      "remote_status": "pass",
+      "guest_completed": true,
+      "vm_elapsed_seconds": 12.799,
+      "total_elapsed_seconds": 19.253,
+      "qemu_exit_code": 0,
+      "started": "2026-09-13T12:29:39.544384+00:00",
+      "git_commit": "cca124456908acdb39512bc5d339e1a6f0e61a7e",
+      "build_directory": "/home/awe/zedBSD/build/vkdemo-amd64",
+      "config": "/home/awe/zedBSD/plan/ws014/tests/config-wayland-amd64.mk",
+      "kernel_sha256": "32f1d647f780e8eabb976e4600cd04c649f9fa37ea0101064797d39d2e8a5c29",
+      "base_image_sha256": "6ba07fd45bad9b8c5955818ae77e03f1ec1795ebd48ff00c0b56e399167128ca",
+      "libvulkan_sha256": "1a277b6b9565bce22607d021948d3353a7a2fcfb7a0040c5609ed014973abe08",
+      "render_server": "/home/awe/zedbsd-q306-venus/dependencies/q312-quiesce/install/libexec/virgl_render_server",
+      "render_server_sha256": "745bef59c17c88975ee567c0ae8c2c689b5b06fca79171d121227d0f5f5f84c2",
+      "renderer_library_sha256": "38447deeaac67a7c9ff4613115a49b2d60a10acda6c073f2d4c73d0af718fbd4",
+      "renderer_mapped_by_qemu": true,
+      "fault_test": "submit-load",
+      "fault_marker": "GPUFENCE SUBMIT_LOAD PASS processes=2 rounds=3 submits=576 verified_bytes=25165824 verified_submits=576",
+      "lifecycle": null,
+      "watchdog_elapsed_ms": null,
+      "watchdog_status": null,
+      "completion_delay": null,
+      "error": null,
+      "load_samples_by_mode": {
+        "null": {
+          "rounds": 4,
+          "submits": 384,
+          "elapsed_ms": 5070,
+          "user_cpu_us": 30000,
+          "system_cpu_us": 420000,
+          "verified_bytes": 16777216,
+          "verified_submits": 384
+        },
+        "explicit": {
+          "rounds": 2,
+          "submits": 192,
+          "elapsed_ms": 2500,
+          "user_cpu_us": 0,
+          "system_cpu_us": 0,
+          "verified_bytes": 8388608,
+          "verified_submits": 192
+        }
+      },
+      "load_samples": [
+        {
+          "bytes": 4194304,
+          "elapsed_ms": 1290,
+          "mode": "null",
+          "repeats": 32,
+          "role": "child",
+          "round": 0,
+          "submits": 96,
+          "system_cpu_us": 120000,
+          "user_cpu_us": 0,
+          "verified_bytes": 4194304,
+          "verified_submits": 96
+        },
+        {
+          "bytes": 4194304,
+          "elapsed_ms": 1250,
+          "mode": "explicit",
+          "repeats": 32,
+          "role": "child",
+          "round": 1,
+          "submits": 96,
+          "system_cpu_us": 0,
+          "user_cpu_us": 0,
+          "verified_bytes": 4194304,
+          "verified_submits": 96
+        },
+        {
+          "bytes": 4194304,
+          "elapsed_ms": 1240,
+          "mode": "null",
+          "repeats": 32,
+          "role": "child",
+          "round": 2,
+          "submits": 96,
+          "system_cpu_us": 60000,
+          "user_cpu_us": 0,
+          "verified_bytes": 4194304,
+          "verified_submits": 96
+        },
+        {
+          "bytes": 4194304,
+          "elapsed_ms": 1290,
+          "mode": "null",
+          "repeats": 32,
+          "role": "parent",
+          "round": 0,
+          "submits": 96,
+          "system_cpu_us": 130000,
+          "user_cpu_us": 30000,
+          "verified_bytes": 4194304,
+          "verified_submits": 96
+        },
+        {
+          "bytes": 4194304,
+          "elapsed_ms": 1250,
+          "mode": "explicit",
+          "repeats": 32,
+          "role": "parent",
+          "round": 1,
+          "submits": 96,
+          "system_cpu_us": 0,
+          "user_cpu_us": 0,
+          "verified_bytes": 4194304,
+          "verified_submits": 96
+        },
+        {
+          "bytes": 4194304,
+          "elapsed_ms": 1250,
+          "mode": "null",
+          "repeats": 32,
+          "role": "parent",
+          "round": 2,
+          "submits": 96,
+          "system_cpu_us": 110000,
+          "user_cpu_us": 0,
+          "verified_bytes": 4194304,
+          "verified_submits": 96
+        }
+      ],
+      "host_cpu": {
+        "ticks_per_second": 100,
+        "processes": [
+          {
+            "kind": "qemu",
+            "pid": 34261,
+            "observations": 175,
+            "delta_user_ticks": 147,
+            "delta_system_ticks": 68
+          },
+          {
+            "kind": "renderer",
+            "pid": 34281,
+            "observations": 175,
+            "delta_user_ticks": 0,
+            "delta_system_ticks": 0
+          },
+          {
+            "kind": "renderer",
+            "pid": 34282,
+            "observations": 164,
+            "delta_user_ticks": 3,
+            "delta_system_ticks": 9
+          },
+          {
+            "kind": "renderer",
+            "pid": 34283,
+            "observations": 162,
+            "delta_user_ticks": 5,
+            "delta_system_ticks": 9
+          }
+        ],
+        "scope": "QEMU delta covers the whole test; renderer counters are sampled lifetime lower bounds.",
+        "limitations": "50ms loop plus QMP work; exited workers may lose their last interval; short workers may be missed. Includes initialization/cleanup, not per-round GPU time."
+      }
+    },
+    {
+      "attempt": "q312-completion-delay-001",
+      "status": "pass",
+      "remote_status": "pass",
+      "guest_completed": true,
+      "vm_elapsed_seconds": 25.205,
+      "total_elapsed_seconds": 31.784,
+      "qemu_exit_code": 0,
+      "started": "2026-09-13T11:20:54.450997+00:00",
+      "git_commit": "cca124456908acdb39512bc5d339e1a6f0e61a7e",
+      "build_directory": "/home/awe/zedBSD/build/vkdemo-amd64",
+      "config": "/home/awe/zedBSD/plan/ws014/tests/config-wayland-amd64.mk",
+      "kernel_sha256": "1dc87fd40be374bfc8b9c1f33fc35eb5235a4ba2614277d8dbddf3922a2ebf6e",
+      "base_image_sha256": "1f5f77c18198aa173a89ceab857e10890c23db044bb9a608bcc9d37245f16050",
+      "libvulkan_sha256": "824b9e2508db270cd3651044945c2886401005a2e8fe2c0da2ae50a84fce6ed2",
+      "render_server": "/home/awe/zedbsd-q306-venus/dependencies/q312-delay/install/libexec/virgl_render_server",
+      "render_server_sha256": "df6f1aa7140766ac4292f2517c08f3a949397284473d7ca2a7049e452d7f612f",
+      "renderer_library_sha256": "400ff7c90154e70a9b692717f7fbdb3050c0cd09f14908e2b1e3ea5069e2db4f",
+      "renderer_mapped_by_qemu": true,
+      "fault_test": "completion-delay",
+      "fault_marker": "GPUFENCE COMPLETION_DELAY PASS",
+      "lifecycle": null,
+      "watchdog_elapsed_ms": null,
+      "watchdog_status": null,
+      "completion_delay": {
+        "context": 1,
+        "fence": 1,
+        "native_result": "SUCCESS",
+        "notification_delay_ms": 15000,
+        "peer_after_close": true,
+        "peer_completed": 127,
+        "peer_elapsed_ms": 20070,
+        "peer_verified_bytes": 4194304,
+        "pid": 29914,
+        "producer_elapsed_ms": 15000,
+        "producer_result": 0
+      },
+      "error": null
+    },
+    {
+      "attempt": "q312-completion-delay-002",
+      "status": "pass",
+      "remote_status": "pass",
+      "guest_completed": true,
+      "vm_elapsed_seconds": 25.388,
+      "total_elapsed_seconds": 31.836,
+      "qemu_exit_code": 0,
+      "started": "2026-09-13T12:28:35.627938+00:00",
+      "git_commit": "cca124456908acdb39512bc5d339e1a6f0e61a7e",
+      "build_directory": "/home/awe/zedBSD/build/vkdemo-amd64",
+      "config": "/home/awe/zedBSD/plan/ws014/tests/config-wayland-amd64.mk",
+      "kernel_sha256": "32f1d647f780e8eabb976e4600cd04c649f9fa37ea0101064797d39d2e8a5c29",
+      "base_image_sha256": "6ba07fd45bad9b8c5955818ae77e03f1ec1795ebd48ff00c0b56e399167128ca",
+      "libvulkan_sha256": "1a277b6b9565bce22607d021948d3353a7a2fcfb7a0040c5609ed014973abe08",
+      "render_server": "/home/awe/zedbsd-q306-venus/dependencies/q312-quiesce-delay/install/libexec/virgl_render_server",
+      "render_server_sha256": "e250106ba75f5592799697616012375af3946440d96cf9b719720eee0ba88444",
+      "renderer_library_sha256": "32d152dd251711b6f7a956abc199c81fcb59fa9ece263af7b773d78f36c7340f",
+      "renderer_mapped_by_qemu": true,
+      "fault_test": "completion-delay",
+      "fault_marker": "GPUFENCE COMPLETION_DELAY PASS",
+      "lifecycle": null,
+      "watchdog_elapsed_ms": null,
+      "watchdog_status": null,
+      "completion_delay": {
+        "context": 2,
+        "fence": 1,
+        "native_result": "SUCCESS",
+        "notification_delay_ms": 15000,
+        "peer_after_close": true,
+        "peer_completed": 126,
+        "peer_elapsed_ms": 20010,
+        "peer_verified_bytes": 4194304,
+        "pid": 33777,
+        "producer_elapsed_ms": 15010,
+        "producer_result": 0
+      },
+      "error": null
+    },
+    {
+      "attempt": "q312-direct-001",
+      "status": "pass",
+      "remote_status": "pass",
+      "guest_completed": true,
+      "vm_elapsed_seconds": 41.526,
+      "total_elapsed_seconds": 54.141,
+      "qemu_exit_code": 0,
+      "started": "2026-09-13T11:21:45.868489+00:00",
+      "git_commit": "cca124456908acdb39512bc5d339e1a6f0e61a7e",
+      "build_directory": "/home/awe/zedBSD/build/vkdemo-amd64",
+      "config": "/home/awe/zedBSD/plan/ws014/tests/config-wayland-amd64.mk",
+      "kernel_sha256": "1dc87fd40be374bfc8b9c1f33fc35eb5235a4ba2614277d8dbddf3922a2ebf6e",
+      "base_image_sha256": "9a05225b4ad7e14b51978d73f8d71833e1b9631ea5c226dab3ed4a55559aae74",
+      "libvulkan_sha256": null,
+      "render_server": "/home/awe/zedbsd-q306-venus/dependencies/q311-strict/install/libexec/virgl_render_server",
+      "render_server_sha256": "f668a5262335790cf7b78ab0b732391bc790e8835dd27f2b2cbfcad561ddd80f",
+      "renderer_library_sha256": "05c7499c9fab287f9692ac37f169b12b5bcdd98fd553f42bca5a9afeef8cda86",
+      "renderer_mapped_by_qemu": true,
+      "fault_test": null,
+      "fault_marker": null,
+      "lifecycle": {
+        "abnormal_exit": true,
+        "console_after": {
+          "desktop_resizes": 0,
+          "framebuffer_updates": 1,
+          "height": 480,
+          "initial_geometry": [
+            640,
+            480
+          ],
+          "initial_pixel_format": "2018000100ff00ff00ff100800000000",
+          "last_rectangles": 0,
+          "method": "rfb-raw-unix",
+          "pixel_format": {
+            "big_endian": false,
+            "bits_per_pixel": 32,
+            "blue_shift": 0,
+            "depth": 24,
+            "green_shift": 8,
+            "red_shift": 16
+          },
+          "pixels": 307200,
+          "raw_bytes": 1228800,
+          "rectangles": 1,
+          "server_name": "QEMU",
+          "server_version": "RFB 003.008",
+          "sha256": "49804f4a73d623cddfbff7c0ba80bed5754b30c0bec07deb45b1a36f61ac6fb4",
+          "width": 640
+        },
+        "console_after_sha256": "49804f4a73d623cddfbff7c0ba80bed5754b30c0bec07deb45b1a36f61ac6fb4",
+        "console_before": {
+          "desktop_resizes": 0,
+          "framebuffer_updates": 1,
+          "height": 480,
+          "initial_geometry": [
+            640,
+            480
+          ],
+          "initial_pixel_format": "2018000100ff00ff00ff100800000000",
+          "last_rectangles": 0,
+          "method": "rfb-raw-unix",
+          "pixel_format": {
+            "big_endian": false,
+            "bits_per_pixel": 32,
+            "blue_shift": 0,
+            "depth": 24,
+            "green_shift": 8,
+            "red_shift": 16
+          },
+          "pixels": 307200,
+          "raw_bytes": 1228800,
+          "rectangles": 1,
+          "server_name": "QEMU",
+          "server_version": "RFB 003.008",
+          "sha256": "8473491f7b2d59d74441e035fab8392300ab286f5f1c35fea71f32b2d4ee2227",
+          "width": 640
+        },
+        "console_before_sha256": "8473491f7b2d59d74441e035fab8392300ab286f5f1c35fea71f32b2d4ee2227",
+        "console_restored": true,
+        "held_frame": {
+          "frame": 1,
+          "height": 240,
+          "mode": "fixed",
+          "rgb_sha256": "7523debe5f925b33c94af8b0a306d6bcf62c78d520a9091d42d53ba032b105ff",
+          "run": "r13cfe2304c881cf1dfa1ba9f-abort",
+          "sample": 1,
+          "time_ms": 0,
+          "width": 320
+        },
+        "reopen": {
+          "captures": [],
+          "completed": true,
+          "first_time_ms": 0,
+          "frames": 15,
+          "guest_command": "/bin/vkdemo --duration=2 --token=r13cfe2304c881cf1dfa1ba9f-after-abort-ordinary",
+          "host_qemu_cpu": {
+            "after": {
+              "cpu_ticks": 453,
+              "monotonic": 84967.315523384,
+              "pid": 30142,
+              "start_ticks": 8494263,
+              "ticks_per_second": 100
+            },
+            "before": {
+              "cpu_ticks": 407,
+              "monotonic": 84961.510778771,
+              "pid": 30142,
+              "start_ticks": 8494263,
+              "ticks_per_second": 100
+            },
+            "cpu_seconds": 0.46,
+            "cpu_seconds_per_frame": 0.03066666666666667,
+            "percent_of_one_cpu": 7.924551908284747,
+            "scope": "QEMU process including vCPU threads; excludes renderer children and capture client; command through returned prompt",
+            "wall_seconds": 5.80474461299309
+          },
+          "last_time_ms": 1880,
+          "samples": [
+            {
+              "frame": 1,
+              "readback_disabled": true,
+              "time_ms": 0
+            },
+            {
+              "frame": 2,
+              "readback_disabled": true,
+              "time_ms": 150
+            },
+            {
+              "frame": 3,
+              "readback_disabled": true,
+              "time_ms": 280
+            },
+            {
+              "frame": 4,
+              "readback_disabled": true,
+              "time_ms": 410
+            },
+            {
+              "frame": 5,
+              "readback_disabled": true,
+              "time_ms": 550
+            },
+            {
+              "frame": 6,
+              "readback_disabled": true,
+              "time_ms": 680
+            },
+            {
+              "frame": 7,
+              "readback_disabled": true,
+              "time_ms": 810
+            },
+            {
+              "frame": 8,
+              "readback_disabled": true,
+              "time_ms": 950
+            },
+            {
+              "frame": 9,
+              "readback_disabled": true,
+              "time_ms": 1080
+            },
+            {
+              "frame": 10,
+              "readback_disabled": true,
+              "time_ms": 1210
+            },
+            {
+              "frame": 11,
+              "readback_disabled": true,
+              "time_ms": 1350
+            },
+            {
+              "frame": 12,
+              "readback_disabled": true,
+              "time_ms": 1480
+            },
+            {
+              "frame": 13,
+              "readback_disabled": true,
+              "time_ms": 1610
+            },
+            {
+              "frame": 14,
+              "readback_disabled": true,
+              "time_ms": 1750
+            },
+            {
+              "frame": 15,
+              "readback_disabled": true,
+              "time_ms": 1880
+            }
+          ],
+          "start_seen": true,
+          "token": "r13cfe2304c881cf1dfa1ba9f-after-abort-ordinary"
+        },
+        "reopened": true
+      },
+      "watchdog_elapsed_ms": null,
+      "watchdog_status": null,
+      "completion_delay": null,
+      "error": null,
+      "frames": 6,
+      "sequence": {
+        "distinct_frames_per_mode": 3,
+        "fixed_times_ms": [
+          0,
+          1000,
+          2500
+        ],
+        "frames": 6,
+        "live_times_ms": [
+          0,
+          660,
+          1320
+        ],
+        "same_process": true
+      },
+      "scanout_trace": {
+        "blob_requests": 126,
+        "blob_resources": [
+          3,
+          4,
+          5,
+          13,
+          14,
+          15,
+          19,
+          26,
+          27,
+          28,
+          32,
+          33,
+          34
+        ],
+        "height": 240,
+        "legacy_requests": 0,
+        "proves": "request selection only",
+        "scope": "whole direct acceptance run",
+        "width": 320
+      },
+      "competition": {
+        "contender": "r13cfe2304c881cf1dfa1ba9f-contender",
+        "error": "VK_ERROR_NATIVE_WINDOW_IN_USE_KHR",
+        "owner": "r13cfe2304c881cf1dfa1ba9f-owner",
+        "owner_completed": true,
+        "owner_frames": 90,
+        "rejected": true
+      }
+    },
+    {
+      "attempt": "q312-direct-002",
+      "status": "pass",
+      "remote_status": "pass",
+      "guest_completed": true,
+      "vm_elapsed_seconds": 41.951,
+      "total_elapsed_seconds": 53.815,
+      "qemu_exit_code": 0,
+      "started": "2026-09-13T12:25:23.391911+00:00",
+      "git_commit": "cca124456908acdb39512bc5d339e1a6f0e61a7e",
+      "build_directory": "/home/awe/zedBSD/build/vkdemo-amd64",
+      "config": "/home/awe/zedBSD/plan/ws014/tests/config-wayland-amd64.mk",
+      "kernel_sha256": "32f1d647f780e8eabb976e4600cd04c649f9fa37ea0101064797d39d2e8a5c29",
+      "base_image_sha256": "6ba07fd45bad9b8c5955818ae77e03f1ec1795ebd48ff00c0b56e399167128ca",
+      "libvulkan_sha256": null,
+      "render_server": "/home/awe/zedbsd-q306-venus/dependencies/q312-quiesce/install/libexec/virgl_render_server",
+      "render_server_sha256": "745bef59c17c88975ee567c0ae8c2c689b5b06fca79171d121227d0f5f5f84c2",
+      "renderer_library_sha256": "38447deeaac67a7c9ff4613115a49b2d60a10acda6c073f2d4c73d0af718fbd4",
+      "renderer_mapped_by_qemu": true,
+      "fault_test": null,
+      "fault_marker": null,
+      "lifecycle": {
+        "abnormal_exit": true,
+        "console_after": {
+          "desktop_resizes": 0,
+          "framebuffer_updates": 1,
+          "height": 480,
+          "initial_geometry": [
+            640,
+            480
+          ],
+          "initial_pixel_format": "2018000100ff00ff00ff100800000000",
+          "last_rectangles": 0,
+          "method": "rfb-raw-unix",
+          "pixel_format": {
+            "big_endian": false,
+            "bits_per_pixel": 32,
+            "blue_shift": 0,
+            "depth": 24,
+            "green_shift": 8,
+            "red_shift": 16
+          },
+          "pixels": 307200,
+          "raw_bytes": 1228800,
+          "rectangles": 1,
+          "server_name": "QEMU",
+          "server_version": "RFB 003.008",
+          "sha256": "e5e11cf4a1c771555bc0f2721dc77c4fb8f8ba8041e377b03734abacb9ae13a8",
+          "width": 640
+        },
+        "console_after_sha256": "e5e11cf4a1c771555bc0f2721dc77c4fb8f8ba8041e377b03734abacb9ae13a8",
+        "console_before": {
+          "desktop_resizes": 0,
+          "framebuffer_updates": 1,
+          "height": 480,
+          "initial_geometry": [
+            640,
+            480
+          ],
+          "initial_pixel_format": "2018000100ff00ff00ff100800000000",
+          "last_rectangles": 0,
+          "method": "rfb-raw-unix",
+          "pixel_format": {
+            "big_endian": false,
+            "bits_per_pixel": 32,
+            "blue_shift": 0,
+            "depth": 24,
+            "green_shift": 8,
+            "red_shift": 16
+          },
+          "pixels": 307200,
+          "raw_bytes": 1228800,
+          "rectangles": 1,
+          "server_name": "QEMU",
+          "server_version": "RFB 003.008",
+          "sha256": "91cb3056776bcf5e1cd676b4605a2115f8064915237fa3a2ca9f283d76b9ec7d",
+          "width": 640
+        },
+        "console_before_sha256": "91cb3056776bcf5e1cd676b4605a2115f8064915237fa3a2ca9f283d76b9ec7d",
+        "console_restored": true,
+        "held_frame": {
+          "frame": 1,
+          "height": 240,
+          "mode": "fixed",
+          "rgb_sha256": "7523debe5f925b33c94af8b0a306d6bcf62c78d520a9091d42d53ba032b105ff",
+          "run": "r66485bc346d6d737cfadc302-abort",
+          "sample": 1,
+          "time_ms": 0,
+          "width": 320
+        },
+        "reopen": {
+          "captures": [],
+          "completed": true,
+          "first_time_ms": 0,
+          "frames": 15,
+          "guest_command": "/bin/vkdemo --duration=2 --token=r66485bc346d6d737cfadc302-after-abort-ordinary",
+          "host_qemu_cpu": {
+            "after": {
+              "cpu_ticks": 473,
+              "monotonic": 88785.261811052,
+              "pid": 32613,
+              "start_ticks": 8876016,
+              "ticks_per_second": 100
+            },
+            "before": {
+              "cpu_ticks": 428,
+              "monotonic": 88779.329857418,
+              "pid": 32613,
+              "start_ticks": 8876016,
+              "ticks_per_second": 100
+            },
+            "cpu_seconds": 0.45,
+            "cpu_seconds_per_frame": 0.030000000000000002,
+            "percent_of_one_cpu": 7.5860336706007,
+            "scope": "QEMU process including vCPU threads; excludes renderer children and capture client; command through returned prompt",
+            "wall_seconds": 5.931953634004458
+          },
+          "last_time_ms": 1880,
+          "samples": [
+            {
+              "frame": 1,
+              "readback_disabled": true,
+              "time_ms": 0
+            },
+            {
+              "frame": 2,
+              "readback_disabled": true,
+              "time_ms": 150
+            },
+            {
+              "frame": 3,
+              "readback_disabled": true,
+              "time_ms": 280
+            },
+            {
+              "frame": 4,
+              "readback_disabled": true,
+              "time_ms": 420
+            },
+            {
+              "frame": 5,
+              "readback_disabled": true,
+              "time_ms": 550
+            },
+            {
+              "frame": 6,
+              "readback_disabled": true,
+              "time_ms": 680
+            },
+            {
+              "frame": 7,
+              "readback_disabled": true,
+              "time_ms": 820
+            },
+            {
+              "frame": 8,
+              "readback_disabled": true,
+              "time_ms": 950
+            },
+            {
+              "frame": 9,
+              "readback_disabled": true,
+              "time_ms": 1080
+            },
+            {
+              "frame": 10,
+              "readback_disabled": true,
+              "time_ms": 1220
+            },
+            {
+              "frame": 11,
+              "readback_disabled": true,
+              "time_ms": 1350
+            },
+            {
+              "frame": 12,
+              "readback_disabled": true,
+              "time_ms": 1480
+            },
+            {
+              "frame": 13,
+              "readback_disabled": true,
+              "time_ms": 1620
+            },
+            {
+              "frame": 14,
+              "readback_disabled": true,
+              "time_ms": 1750
+            },
+            {
+              "frame": 15,
+              "readback_disabled": true,
+              "time_ms": 1880
+            }
+          ],
+          "start_seen": true,
+          "token": "r66485bc346d6d737cfadc302-after-abort-ordinary"
+        },
+        "reopened": true
+      },
+      "watchdog_elapsed_ms": null,
+      "watchdog_status": null,
+      "completion_delay": null,
+      "error": null,
+      "frames": 6,
+      "sequence": {
+        "distinct_frames_per_mode": 3,
+        "fixed_times_ms": [
+          0,
+          1000,
+          2500
+        ],
+        "frames": 6,
+        "live_times_ms": [
+          0,
+          640,
+          1270
+        ],
+        "same_process": true
+      },
+      "scanout_trace": {
+        "blob_requests": 126,
+        "blob_resources": [
+          3,
+          4,
+          5,
+          13,
+          14,
+          15,
+          19,
+          26,
+          27,
+          28,
+          32,
+          33,
+          34
+        ],
+        "height": 240,
+        "legacy_requests": 0,
+        "proves": "request selection only",
+        "scope": "whole direct acceptance run",
+        "width": 320
+      },
+      "competition": {
+        "contender": "r66485bc346d6d737cfadc302-contender",
+        "error": "VK_ERROR_NATIVE_WINDOW_IN_USE_KHR",
+        "owner": "r66485bc346d6d737cfadc302-owner",
+        "owner_completed": true,
+        "owner_frames": 90,
+        "rejected": true
+      }
+    },
+    {
+      "attempt": "q312-context-timeout-001",
+      "status": "pass",
+      "remote_status": "pass",
+      "guest_completed": true,
+      "vm_elapsed_seconds": 25.374,
+      "total_elapsed_seconds": 32.554,
+      "qemu_exit_code": 0,
+      "started": "2026-09-13T11:23:42.996670+00:00",
+      "git_commit": "cca124456908acdb39512bc5d339e1a6f0e61a7e",
+      "build_directory": "/home/awe/zedBSD/build/q312-context-amd64",
+      "config": "/home/awe/zedBSD/plan/ws014/tests/config-wayland-context-timeout-amd64.mk",
+      "kernel_sha256": "f06d1d40cab24b23ef348830b37ea763dd3f8149cc0c89160992faec4f170882",
+      "base_image_sha256": "4a0d88f1b14a49ec094d44a518b44e85051b90a39b6268200959dc6433d1e40f",
+      "libvulkan_sha256": "8b9f1c28b0a203e454af99bd0ef9905a103110528d2b7421845de0a5c817f4dc",
+      "render_server": "/home/awe/zedbsd-q306-venus/dependencies/q312-delay/install/libexec/virgl_render_server",
+      "render_server_sha256": "df6f1aa7140766ac4292f2517c08f3a949397284473d7ca2a7049e452d7f612f",
+      "renderer_library_sha256": "400ff7c90154e70a9b692717f7fbdb3050c0cd09f14908e2b1e3ea5069e2db4f",
+      "renderer_mapped_by_qemu": true,
+      "fault_test": "context-timeout",
+      "fault_marker": "GPUFENCE CONTEXT_TIMEOUT PASS",
+      "lifecycle": null,
+      "watchdog_elapsed_ms": null,
+      "watchdog_status": null,
+      "completion_delay": {
+        "context": 2,
+        "fence": 1,
+        "native_result": "SUCCESS",
+        "notification_delay_ms": 15000,
+        "peer_after_close": true,
+        "peer_completed": 127,
+        "peer_elapsed_ms": 20140,
+        "peer_verified_bytes": 4194304,
+        "pid": 30626,
+        "producer_elapsed_ms": 8020,
+        "producer_result": -4
+      },
+      "error": null
+    },
+    {
+      "attempt": "q312-context-timeout-002",
+      "status": "pass",
+      "remote_status": "pass",
+      "guest_completed": true,
+      "vm_elapsed_seconds": 25.329,
+      "total_elapsed_seconds": 31.936,
+      "qemu_exit_code": 0,
+      "started": "2026-09-13T12:29:07.635002+00:00",
+      "git_commit": "cca124456908acdb39512bc5d339e1a6f0e61a7e",
+      "build_directory": "/home/awe/zedBSD/build/q312-context-amd64",
+      "config": "/home/awe/zedBSD/plan/ws014/tests/config-wayland-context-timeout-amd64.mk",
+      "kernel_sha256": "20310954db9597dc5d37f038e4104b9cf386dc218395fc610d4b2ce288878042",
+      "base_image_sha256": "fb0572acfc1222608293c7a9361b3064a6568e7dfdae9f68159bb5c3301f13e6",
+      "libvulkan_sha256": "1a277b6b9565bce22607d021948d3353a7a2fcfb7a0040c5609ed014973abe08",
+      "render_server": "/home/awe/zedbsd-q306-venus/dependencies/q312-quiesce-delay/install/libexec/virgl_render_server",
+      "render_server_sha256": "e250106ba75f5592799697616012375af3946440d96cf9b719720eee0ba88444",
+      "renderer_library_sha256": "32d152dd251711b6f7a956abc199c81fcb59fa9ece263af7b773d78f36c7340f",
+      "renderer_mapped_by_qemu": true,
+      "fault_test": "context-timeout",
+      "fault_marker": "GPUFENCE CONTEXT_TIMEOUT PASS",
+      "lifecycle": null,
+      "watchdog_elapsed_ms": null,
+      "watchdog_status": null,
+      "completion_delay": {
+        "context": 2,
+        "fence": 1,
+        "native_result": "SUCCESS",
+        "notification_delay_ms": 15000,
+        "peer_after_close": true,
+        "peer_completed": 126,
+        "peer_elapsed_ms": 20050,
+        "peer_verified_bytes": 4194304,
+        "pid": 34028,
+        "producer_elapsed_ms": 8030,
+        "producer_result": -4
+      },
+      "error": null
+    },
+    {
+      "attempt": "q312-wayland-001",
+      "status": "pass",
+      "remote_status": "pass",
+      "guest_completed": true,
+      "vm_elapsed_seconds": 47.509,
+      "total_elapsed_seconds": 59.024,
+      "qemu_exit_code": 0,
+      "started": "2026-09-13T12:27:36.684319+00:00",
+      "git_commit": "cca124456908acdb39512bc5d339e1a6f0e61a7e",
+      "build_directory": "/home/awe/zedBSD/build/vkdemo-amd64",
+      "config": "/home/awe/zedBSD/plan/ws014/tests/config-wayland-amd64.mk",
+      "kernel_sha256": "32f1d647f780e8eabb976e4600cd04c649f9fa37ea0101064797d39d2e8a5c29",
+      "base_image_sha256": "6ba07fd45bad9b8c5955818ae77e03f1ec1795ebd48ff00c0b56e399167128ca",
+      "libvulkan_sha256": "1a277b6b9565bce22607d021948d3353a7a2fcfb7a0040c5609ed014973abe08",
+      "render_server": "/home/awe/zedbsd-q306-venus/dependencies/q312-quiesce/install/libexec/virgl_render_server",
+      "render_server_sha256": "745bef59c17c88975ee567c0ae8c2c689b5b06fca79171d121227d0f5f5f84c2",
+      "renderer_library_sha256": "38447deeaac67a7c9ff4613115a49b2d60a10acda6c073f2d4c73d0af718fbd4",
+      "renderer_mapped_by_qemu": true,
+      "fault_test": null,
+      "fault_marker": null,
+      "lifecycle": {
+        "after_kill_reopened": true,
+        "after_kill_token": "r29df32c408e37add95fcdc55-after-kill",
+        "client_aborted": true,
+        "client_reopen_token": "r29df32c408e37add95fcdc55-after-abort",
+        "client_reopened": true,
+        "compositor_killed": true,
+        "compositor_reopened": true,
+        "console_after_sha256": "d082b6284246ad8061d495911a7fb980c7d4d30f7077fe5a6cb3846294d22204",
+        "console_before_sha256": "c59c26ac6e1741902a9e3d86ebf78458d787f9a15b0075b1607ab92a89b2f9fd",
+        "console_restored": true,
+        "killed_console_restored": true,
+        "killed_console_sha256": "d88e1601211ed5975376638bdd223156de6905c58d6205c8bd4a2e5a233680f2",
+        "surface_loss": true,
+        "surface_loss_marker": "WLTEST FAILED run=r29df32c408e37add95fcdc55-lost api=vkAcquireNextImageKHR result=-1000000000 cleanup=0 errno=44 frames=2"
+      },
+      "watchdog_elapsed_ms": null,
+      "watchdog_status": null,
+      "completion_delay": null,
+      "error": null,
+      "fifo_completed": true,
+      "mailbox_completed": true,
+      "concurrent_admission": true,
+      "allocation_imports": [
+        {
+          "kind": "buffer",
+          "marker": "GPU ALLOCATION PASS kind=1 producer-exit independent-context pixels=1024"
+        },
+        {
+          "kind": "optimal",
+          "marker": "GPU ALLOCATION PASS kind=2 producer-exit independent-context pixels=1024"
+        }
+      ],
+      "external_fence": true,
+      "display_notifications": {
+        "attempts": 1,
+        "outputs": 1,
+        "sequence": 1
+      },
+      "independent_renderer_import": true,
+      "shared_gpu_path": true,
+      "compositor_stopped": true
+    },
+    {
+      "attempt": "q312-producer-stop-001",
+      "status": "fail",
+      "remote_status": "fail",
+      "guest_completed": false,
+      "vm_elapsed_seconds": 24.291,
+      "total_elapsed_seconds": 30.84,
+      "qemu_exit_code": 0,
+      "started": "2026-09-13T12:29:58.987453+00:00",
+      "git_commit": "cca124456908acdb39512bc5d339e1a6f0e61a7e",
+      "build_directory": "/home/awe/zedBSD/build/vkdemo-amd64",
+      "config": "/home/awe/zedBSD/plan/ws014/tests/config-wayland-amd64.mk",
+      "kernel_sha256": "32f1d647f780e8eabb976e4600cd04c649f9fa37ea0101064797d39d2e8a5c29",
+      "base_image_sha256": "6ba07fd45bad9b8c5955818ae77e03f1ec1795ebd48ff00c0b56e399167128ca",
+      "libvulkan_sha256": "1a277b6b9565bce22607d021948d3353a7a2fcfb7a0040c5609ed014973abe08",
+      "render_server": "/home/awe/zedbsd-q306-venus/dependencies/q312-quiesce/install/libexec/virgl_render_server",
+      "render_server_sha256": "745bef59c17c88975ee567c0ae8c2c689b5b06fca79171d121227d0f5f5f84c2",
+      "renderer_library_sha256": "38447deeaac67a7c9ff4613115a49b2d60a10acda6c073f2d4c73d0af718fbd4",
+      "renderer_mapped_by_qemu": true,
+      "fault_test": "producer-stop",
+      "fault_marker": null,
+      "lifecycle": null,
+      "watchdog_elapsed_ms": null,
+      "watchdog_status": null,
+      "completion_delay": null,
+      "error": "remote attempt did not complete successfully"
+    },
+    {
+      "attempt": "q312-producer-exit-001",
+      "status": "pass",
+      "remote_status": "pass",
+      "guest_completed": true,
+      "vm_elapsed_seconds": 4.471,
+      "total_elapsed_seconds": 11.454,
+      "qemu_exit_code": 0,
+      "started": "2026-09-13T12:36:36.620678+00:00",
+      "git_commit": "cca124456908acdb39512bc5d339e1a6f0e61a7e",
+      "build_directory": "/home/awe/zedBSD/build/vkdemo-amd64",
+      "config": "/home/awe/zedBSD/plan/ws014/tests/config-wayland-amd64.mk",
+      "kernel_sha256": "32f1d647f780e8eabb976e4600cd04c649f9fa37ea0101064797d39d2e8a5c29",
+      "base_image_sha256": "6ba07fd45bad9b8c5955818ae77e03f1ec1795ebd48ff00c0b56e399167128ca",
+      "libvulkan_sha256": "1a277b6b9565bce22607d021948d3353a7a2fcfb7a0040c5609ed014973abe08",
+      "render_server": "/home/awe/zedbsd-q306-venus/dependencies/q312-quiesce/install/libexec/virgl_render_server",
+      "render_server_sha256": "745bef59c17c88975ee567c0ae8c2c689b5b06fca79171d121227d0f5f5f84c2",
+      "renderer_library_sha256": "38447deeaac67a7c9ff4613115a49b2d60a10acda6c073f2d4c73d0af718fbd4",
+      "renderer_mapped_by_qemu": true,
+      "fault_test": "producer-exit",
+      "fault_marker": "GPUFENCE PRODUCER_EXIT_ERROR PASS",
+      "lifecycle": null,
+      "watchdog_elapsed_ms": null,
+      "watchdog_status": null,
+      "completion_delay": null,
+      "error": null
+    },
+    {
+      "attempt": "q312-recovery-001",
+      "status": "fail",
+      "remote_status": "fail",
+      "guest_completed": false,
+      "vm_elapsed_seconds": 13.626,
+      "total_elapsed_seconds": 21.214,
+      "qemu_exit_code": 0,
+      "started": "2026-09-13T12:36:48.686375+00:00",
+      "git_commit": "cca124456908acdb39512bc5d339e1a6f0e61a7e",
+      "build_directory": "/home/awe/zedBSD/build/vkdemo-amd64",
+      "config": "/home/awe/zedBSD/plan/ws014/tests/config-wayland-amd64.mk",
+      "kernel_sha256": "32f1d647f780e8eabb976e4600cd04c649f9fa37ea0101064797d39d2e8a5c29",
+      "base_image_sha256": "6ba07fd45bad9b8c5955818ae77e03f1ec1795ebd48ff00c0b56e399167128ca",
+      "libvulkan_sha256": "1a277b6b9565bce22607d021948d3353a7a2fcfb7a0040c5609ed014973abe08",
+      "render_server": "/home/awe/zedbsd-q306-venus/dependencies/q312-quiesce/install/libexec/virgl_render_server",
+      "render_server_sha256": "745bef59c17c88975ee567c0ae8c2c689b5b06fca79171d121227d0f5f5f84c2",
+      "renderer_library_sha256": "38447deeaac67a7c9ff4613115a49b2d60a10acda6c073f2d4c73d0af718fbd4",
+      "renderer_mapped_by_qemu": true,
+      "fault_test": "recovery",
+      "fault_marker": null,
+      "lifecycle": null,
+      "watchdog_elapsed_ms": null,
+      "watchdog_status": null,
+      "completion_delay": null,
+      "error": "remote attempt did not complete successfully"
+    }
+  ],
+  "all_final_pass": true,
+  "final_artifacts_consistent": true
+}
