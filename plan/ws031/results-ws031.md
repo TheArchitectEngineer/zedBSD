@@ -244,3 +244,44 @@ decode。加えて render pass(82)/framebuffer(80)、queue submit(18)→RCS0、w
 ### 残（三角形へ）
 render pass(82)/framebuffer(80) decode（render target 結線）、queue submit(18)→RCS0
 （実行部 selftest 済み）、wsi flip。パイプライン・記録・リソース・同期・transport は完了。
+
+## p011 増分D (2026-09-15): queue submit → RCS0（実行結線・すんなり動作）
+
+- i915_vk_queue_submit を WS029 request 経路に結線（i915_submit_stream と同型）:
+  RCS0 engine、各 command buffer につき drv_i915_request_alloc(engine, session->gpu, ...)、
+  request->context = session->gpu->contexts[RCS0]、request->batch = cmdbuf batch GEM、
+  request->batch_va = batch->va、queue → kick。**seqno は kick(emit) 時に採番**されるため
+  最後の request->seqno を kick 後に読み fence を arm（当初 alloc 直後に読み 0→即 signaled の
+  バグを修正）。
+- vkQueueSubmit(18) decode を cmdbuf に実装（VkSubmitInfo: waits/cmdBuffers/signals + fence を
+  厳密 decode）。cmd.c の routing に opcode 18 → COMMAND_BUFFER を追加。cmdbuf.c に sync.h/
+  device-io.h を追加。
+- fixture: cmdbuf-test に sync.c を取り込み、記録済み cb0 を wire で QueueSubmit → reply success、
+  fence が RCS0 breadcrumb に arm され、completed_seqno を進めると retire することを検証。
+  全 host fixtures PASS（plain+ASan/UBSan）、kernel build warning 0。
+- 変更: vk/cmdbuf.c、vk/cmd.c、tests/i915-vk-cmdbuf-test.c。HAL/UAPI 変更なし。
+
+### 実行経路が完成
+res/sync/pipe(compiler)/cmdbuf(record+submit)/transport が揃い、**実 Vulkan コマンドから
+GEN batch を組み RCS0 で実行、fence で完了検出**まで executor 上で成立。
+残（可視の三角形）: render pass(82)/framebuffer(80) + vkCmdBeginRenderPass(133) decode で
+render target を結線、wsi flip で表示。
+
+## p011 分かれ道の評価 (2026-09-15): render target emit がハードウェア反復の境界
+
+host 検証可能な executor は完成（res/sync/pipe+compiler/cmdbuf record+submit/transport）。
+残るは render pass(82)/framebuffer(80)/vkCmdBeginRenderPass(133) と、その核である
+**render target の GEN emit**（cmd_begin_render_pass が color attachment の
+RENDER_SURFACE_STATE・binding table・3DSTATE_PS_BLEND/WM・clear を batch へ出す処理。現状 no-op）。
+
+**評価**: 
+- decode（render pass/framebuffer/BeginRenderPass のオブジェクト化）は tractable だが large。
+- しかし**有効な render target を bind せずに draw を実行すると GPU が faultする**ため、
+  emit なしでは「無害な実行」もできない。→ render target emit が gating。
+- render target emit は Gen12 の正確な state 生成で、**実機のフィードバックなしに blind で
+  書くと当たらない可能性が高い**（ユーザーの言う「かなり苦労して修正」side）。
+
+**方針（ユーザー指示「だめなら uncleared」に従う）**: render target emit ＋ scanout(wsi flip)
+を **p011 増分E = 実機反復フェーズ**として切り出す。まず現 executor をビッグバンで実機に載せ、
+selftest 通過後に「単色 clear のみの最小 render pass」から emit を実機フィードバックで詰める。
+ここまでの decode/submit は全て host 済みなので、実機では render target state だけを反復対象にできる。

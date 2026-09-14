@@ -18,11 +18,13 @@
 #include "cmdbuf.h"
 #include "pipe.h"
 #include "cmd.h"
+#include "sync.h"
 
 #include "../internal.h"
 
 #include <kern/kmem.h>
 #include <kern/pmem.h>
+#include <kern/device-io.h>
 
 #include <errno.h>
 
@@ -522,6 +524,80 @@ i915_vk_cmdbuf_record_end_render_pass(
 	return 0;
 }
 
+/*
+ * vkQueueSubmit: [queue][submitCount][count][count x VkSubmitInfo][fence].
+ * Each VkSubmitInfo is [sType][pNext][waits][cmdCount][count][cmds][signals].
+ * The recorded batches run on RCS0 and the fence is armed to the last breadcrumb.
+ */
+static int
+i915_vk_cmdbuf_queue_submit(
+	struct i915_vk_session *session,
+	struct i915_vk_reader *reader,
+	struct i915_vk_writer *reply)
+{
+	struct i915_vk_cmdbuf *cmdbufs[I915_VK_CMDBUF_ALLOC_MAX];
+	struct i915_vk_cmdbuf *cmdbuf;
+	struct i915_vk_fence *fence;
+	uint64_t submit_count;
+	uint64_t submit;
+	uint64_t element;
+	uint64_t buffers;
+	i915_vk_handle fence_handle;
+	i915_vk_handle handle;
+	uint32_t waits;
+	uint32_t signals;
+	uint32_t total;
+	int error;
+
+	(void)i915_vk_read_handle(reader);		/* queue */
+	(void)i915_vk_read_u32(reader);			/* submitCount */
+	submit_count = i915_vk_read_u64(reader);
+	if (reader->error != 0 || submit_count > 8U)
+		return EINVAL;
+
+	total = 0U;
+	for (submit = 0U; submit < submit_count; submit++) {
+		(void)i915_vk_read_u32(reader);		/* sType */
+		(void)i915_vk_read_u64(reader);		/* pNext present */
+
+		/* Wait semaphores: count, then handles, then per-wait stage masks. */
+		waits = i915_vk_read_u32(reader);
+		(void)i915_vk_read_u64(reader);
+		for (element = 0U; element < waits; element++)
+			(void)i915_vk_read_u64(reader);
+		(void)i915_vk_read_u64(reader);
+		for (element = 0U; element < waits; element++)
+			(void)i915_vk_read_u32(reader);
+
+		/* Command buffers: each names a recorded batch to run. */
+		(void)i915_vk_read_u32(reader);		/* commandBufferCount */
+		buffers = i915_vk_read_u64(reader);
+		if (reader->error != 0 || buffers > I915_VK_CMDBUF_ALLOC_MAX)
+			return EINVAL;
+		for (element = 0U; element < buffers; element++) {
+			handle = i915_vk_read_handle(reader);
+			cmdbuf = i915_vk_obj_lookup(session->vk, I915_VK_OBJ_COMMAND_BUFFER, handle);
+			if (cmdbuf != NULL && total < I915_VK_CMDBUF_ALLOC_MAX)
+				cmdbufs[total++] = cmdbuf;
+		}
+
+		/* Signal semaphores: single-queue serial order needs no hardware wait. */
+		signals = i915_vk_read_u32(reader);
+		(void)i915_vk_read_u64(reader);
+		for (element = 0U; element < signals; element++)
+			(void)i915_vk_read_u64(reader);
+	}
+
+	fence_handle = i915_vk_read_handle(reader);	/* fence */
+	if (reader->error != 0)
+		return EINVAL;
+	fence = i915_vk_obj_lookup(session->vk, I915_VK_OBJ_FENCE, fence_handle);
+
+	error = i915_vk_queue_submit(session, cmdbufs, total, fence);
+	i915_vk_reply_u32(reply, i915_vk_cmdbuf_result(error));
+	return 0;
+}
+
 /* Routes command pool/buffer, vkCmd* and queue submit opcodes. */
 int
 i915_vk_cmdbuf_dispatch(
@@ -547,6 +623,8 @@ i915_vk_cmdbuf_dispatch(
 		return i915_vk_cmdbuf_allocate(session, reader, reply);
 	case 89U:	/* vkFreeCommandBuffers */
 		return i915_vk_cmdbuf_free(session, reader, reply);
+	case 18U:	/* vkQueueSubmit */
+		return i915_vk_cmdbuf_queue_submit(session, reader, reply);
 	case 90U:	/* vkBeginCommandBuffer */
 		return i915_vk_cmdbuf_begin_command(session, reader, reply);
 	case 91U:	/* vkEndCommandBuffer */
@@ -706,16 +784,54 @@ i915_vk_queue_submit(
 	uint32_t count,
 	struct i915_vk_fence *fence)
 {
-	/*
-	 * The recorded batches run on the WS029 RCS0 request path and the fence is
-	 * armed with the submission's seqno.  That path is completed on hardware;
-	 * the recording above is what this phase fixes.
-	 */
-	(void)session;
-	(void)cmdbufs;
-	(void)count;
-	(void)fence;
-	return 0;
+	struct i915_device *device;
+	struct i915_session *gpu;
+	struct i915_engine *engine;
+	struct i915_request *request;
+	unsigned long irq;
+	uint32_t index;
+	uint32_t last_seqno;
+	int error;
+
+	/* Nothing to run still counts as an accepted, immediately complete submit. */
+	if (count == 0U)
+		return 0;
+
+	device = session->vk->i915;
+	gpu = session->gpu;
+	engine = &device->engines[I915_ENGINE_RCS0];
+
+	/* Publish every recorded batch dword before the engine can parse it. */
+	kern_io_write_barrier();
+
+	request = NULL;
+	last_seqno = 0U;
+	error = 0;
+	irq = spin_lock_irqsave(&device->irq_lock);
+
+	/* Each command buffer runs its own batch in the session's RCS0 context. */
+	for (index = 0U; index < count; index++) {
+		error = drv_i915_request_alloc(engine, gpu, NULL, &request);
+		if (error != 0)
+			break;
+		request->context = &gpu->contexts[engine->index];
+		request->batch = cmdbufs[index]->batch.object;
+		request->batch_va = cmdbufs[index]->batch.object->va;
+		drv_i915_request_queue(engine, request);
+	}
+
+	/* A fence is armed to the last accepted breadcrumb so waits observe completion. */
+	if (error == 0) {
+		drv_i915_request_kick(engine);
+
+		/* The seqno is assigned when kick emits the request into the ring. */
+		last_seqno = request != NULL ? request->seqno : 0U;
+		if (fence != NULL)
+			(void)i915_vk_fence_arm(fence, I915_ENGINE_RCS0, last_seqno);
+	}
+
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+	return error;
 }
 
 /* Appends one dword to the batch, latching overflow. */

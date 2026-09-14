@@ -380,7 +380,9 @@ i915_vk_route(
 	if (opcode >= 80U && opcode <= 84U)
 		return I915_VK_OBJ_PIPELINE;
 
-	/* Command pools, command buffers and every vkCmd* belong to cmdbuf. */
+	/* Command pools, command buffers, every vkCmd* and queue submit are cmdbuf's. */
+	if (opcode == 18U)		/* vkQueueSubmit */
+		return I915_VK_OBJ_COMMAND_BUFFER;
 	if (opcode >= 85U && opcode <= 136U)
 		return I915_VK_OBJ_COMMAND_BUFFER;
 

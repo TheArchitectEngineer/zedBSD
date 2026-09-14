@@ -29,6 +29,7 @@
 #include "../../../src/drivers/gpu/i915/vk/eu.c"
 #include "../../../src/drivers/gpu/i915/vk/compile.c"
 #include "../../../src/drivers/gpu/i915/vk/pipe.c"
+#include "../../../src/drivers/gpu/i915/vk/sync.c"
 #include "../../../src/drivers/gpu/i915/vk/cmdbuf.c"
 
 static int fixture_pci_token;
@@ -37,9 +38,6 @@ static int fixture_pci_token;
 /* The modules outside pipe/cmdbuf are not exercised here. */
 int
 i915_vk_res_dispatch(struct i915_vk_session *s, uint32_t o, struct i915_vk_reader *r, struct i915_vk_writer *w)
-{ (void)s; (void)o; (void)r; (void)w; return EINVAL; }
-int
-i915_vk_sync_dispatch(struct i915_vk_session *s, uint32_t o, struct i915_vk_reader *r, struct i915_vk_writer *w)
 { (void)s; (void)o; (void)r; (void)w; return EINVAL; }
 int
 i915_vk_wsi_dispatch(struct i915_vk_session *s, uint32_t o, struct i915_vk_reader *r, struct i915_vk_writer *w)
@@ -279,6 +277,40 @@ test_lifecycle(void)
 		i915_vk_obj_remove(&vk, I915_VK_OBJ_PIPELINE, ph);
 		i915_vk_pipeline_destroy(pipeline);
 		printf("i915 vk cmdbuf wire recording ok\n");
+	}
+
+	/* Submit the recorded cb0 on RCS0 and arm a fence (the fixture never runs it). */
+	{
+		struct i915_vk_fence *fence;
+		const uint64_t fence_h = 0xF00ULL;
+		int rc;
+
+		rc = i915_vk_fence_create(&session, 0, &fence);
+		assert(rc == 0);
+		rc = i915_vk_obj_insert(&vk, I915_VK_OBJ_FENCE, fence_h, fence);
+		assert(rc == 0);
+
+		wire_len = 0;
+		w32(18U); w32(1U);		/* opcode, reply flag */
+		w64(0xD0U);			/* queue */
+		w32(1U); w64(1U);		/* submitCount */
+		w32(4U); w64(0U);		/* VkSubmitInfo sType, pNext */
+		w32(0U); w64(0U); w64(0U);	/* waits: none */
+		w32(1U); w64(1U); w64(cb0);	/* one command buffer */
+		w32(0U); w64(0U);		/* signals: none */
+		w64(fence_h);			/* fence */
+		assert(run_command(&session, reply, sizeof(reply)) == 8U);
+		assert(rd32(reply, 0U) == 18U);
+		assert(rd32(reply, 4U) == 0U);	/* VK_SUCCESS */
+
+		/* The fence is armed to the RCS0 breadcrumb; advancing it retires the fence. */
+		assert(i915_vk_fence_status(fence) == EBUSY);
+		device->engines[I915_ENGINE_RCS0].completed_seqno = 0xffffffU;
+		assert(i915_vk_fence_status(fence) == 0);
+
+		i915_vk_obj_remove(&vk, I915_VK_OBJ_FENCE, fence_h);
+		i915_vk_fence_destroy(fence);
+		printf("i915 vk cmdbuf queue submit ok\n");
 	}
 
 	/* vkFreeCommandBuffers releases both buffers. */
