@@ -285,3 +285,25 @@ RENDER_SURFACE_STATE・binding table・3DSTATE_PS_BLEND/WM・clear を batch へ
 を **p011 増分E = 実機反復フェーズ**として切り出す。まず現 executor をビッグバンで実機に載せ、
 selftest 通過後に「単色 clear のみの最小 render pass」から emit を実機フィードバックで詰める。
 ここまでの decode/submit は全て host 済みなので、実機では render target state だけを反復対象にできる。
+
+## p011 増分E-1 (2026-09-15): 単色clear 実機成功（ファウンデーション疎通）
+
+BCS0 の XY_FAST_COLOR_BLT で GGTT... PPGTT-mapped buffer を単色塗りし、CPU 読み戻しで
+全ピクセル一致を実機検証。selftest 同型の割込み待ちで完了検出。
+
+    i915: clear selftest color=0xffff0000 px[0]=0xffff0000 px[mid]=0xffff0000 px[last]=0xffff0000 seqno=2/2
+    i915: clear selftest passed (solid color fill on bcs0)
+
+### 実機フィードバックで判明した Gen12 の3点（ユーザー提案のバイト識別パターン診断で特定）
+1. Gen12 ADL-P BCS0 は**レガシー XY_COLOR_BLT を実行しても書かない**（seqno は完了）。
+   → **XY_FAST_COLOR_BLT（opcode 0x44, gen120.xml, 11 dwords, 4-dword fill color）**を使う。
+2. **BCS0 kernel context は engine->kernel_vm(PPGTT)** を使う。GGTT offset は解決しない。
+   → buffer を drv_i915_gem_bind_vm(&engine->kernel_vm,obj) し、object->va(PPGTT) で address。
+   （selftest の MI_STORE は MI_USE_GGTT 明示なので GGTT で動いていた）
+3. **Destination Pitch フィールドは 0-based（実バイト − 1）**。W*4 を入れると 1 行 +1 byte ずれ、
+   行が進むごとにバイトシフト（byte-distinct fill で確定）。W*4-1 で全行整列。
+
+### 意義
+GPU が実機で単色サーフェスを生成できることを検証。これは render path のファウンデーション。
+2D 塗り（BCS）は確立。次段: 3D(RCS0) render target への clear/描画、その後 scanout(表示)。
+変更: selftest.c（drv_i915_clear_selftest 追加）、i915.c（selftest 段で呼出）。HAL/UAPI 変更なし。

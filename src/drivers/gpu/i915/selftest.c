@@ -26,6 +26,8 @@
 #include <kern/irq.h>
 #include <kern/klog.h>
 
+#include <string.h>
+
 #include <errno.h>
 
 #include "linux/i915-commands.inc"
@@ -119,4 +121,114 @@ drv_i915_selftest(
 	device->selftest_passed = 1U;
 	kern_logf("i915: selftest passed (bcs0 store and user interrupt)\n");
 	return 0;
+}
+
+/* The clear check fills a small buffer with one color and reads it back. */
+#define I915_CLEAR_WIDTH	32U
+#define I915_CLEAR_HEIGHT	32U
+#define I915_CLEAR_COLOR	0xffff0000U	/* opaque red, ARGB8888 */
+
+/*
+ * Foundation clear: the copy engine fills a GGTT-mapped color buffer with one
+ * solid color via XY_COLOR_BLT.  The CPU reads the pages back to prove the GPU
+ * produced the color end to end.  This is the smoke test the render path builds on.
+ */
+int
+drv_i915_clear_selftest(
+	struct i915_device *device)
+{
+	struct i915_engine *engine;
+	struct i915_request *request;
+	struct i915_gem_object *object;
+	volatile uint32_t *pixels;
+	uint64_t iteration;
+	uint32_t pixel_count;
+	uint32_t bytes;
+	unsigned pages;
+	unsigned long irq;
+	bool prior_enabled;
+	int error;
+
+	engine = &device->engines[I915_ENGINE_BCS0];
+	pixel_count = I915_CLEAR_WIDTH * I915_CLEAR_HEIGHT;
+	bytes = pixel_count * 4U;
+	pages = (bytes + 4095U) / 4096U;
+
+	error = drv_i915_gem_create(device, (uint64_t)pages * 4096U, &object);
+	if (error != 0)
+		return error;
+
+	/* The blit runs in the copy engine's kernel context, so bind into its PPGTT. */
+	error = drv_i915_gem_bind_vm(&engine->kernel_vm, object);
+	if (error != 0) {
+		drv_i915_gem_destroy(device, object);
+		return error;
+	}
+
+	/* Start from zero so an incomplete fill cannot pass the check. */
+	pixels = kern_pmem_to_kernel(object->run.paddr);
+	memset((void *)pixels, 0, bytes);
+	kern_io_write_barrier();
+
+	irq = spin_lock_irqsave(&device->irq_lock);
+	error = drv_i915_request_alloc(engine, NULL, NULL, &request);
+	if (error != 0) {
+		spin_unlock_irqrestore(&device->irq_lock, irq);
+		drv_i915_gem_unbind_vm(object);
+		drv_i915_gem_destroy(device, object);
+		return error;
+	}
+	request->context = &engine->kernel_context;
+	/*
+	 * Gen12 XY_FAST_COLOR_BLT (opcode 0x44), 11 dwords: destination pitch is
+	 * zero-based (bytes - 1), MOCS uncached, and the fill color spans 4 dwords.
+	 */
+	request->extra[0] = (2U << 29) | (0x44U << 22) | (2U << 19) | (11U - 2U);
+	request->extra[1] = ((I915_CLEAR_WIDTH * 4U) - 1U) | (I915_MOCS_UNCACHED_INDEX << 21);
+	request->extra[2] = 0U;				/* X1,Y1 */
+	request->extra[3] = (I915_CLEAR_HEIGHT << 16) | I915_CLEAR_WIDTH;	/* X2,Y2 */
+	request->extra[4] = (uint32_t)object->va;	/* dest address low (PPGTT) */
+	request->extra[5] = (uint32_t)(object->va >> 32);	/* dest address high */
+	request->extra[6] = 0U;				/* dest X/Y offset */
+	request->extra[7] = I915_CLEAR_COLOR;
+	request->extra[8] = I915_CLEAR_COLOR;
+	request->extra[9] = I915_CLEAR_COLOR;
+	request->extra[10] = I915_CLEAR_COLOR;
+	request->extra_count = 11U;
+	drv_i915_request_queue(engine, request);
+	drv_i915_request_kick(engine);
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+
+	/* Bring-up runs with delivery off; enable it for the completion wait. */
+	prior_enabled = kern_irq_disable();
+	kern_irq_enable();
+	for (iteration = 0U; iteration < I915_SELFTEST_POLL_BOUND; iteration++) {
+		kern_io_read_barrier();
+		if (engine->completed_seqno == request->seqno)
+			break;
+	}
+	if (!prior_enabled)
+		(void)kern_irq_disable();
+
+	/* The corners and centre must all carry the fill color. */
+	kern_io_read_barrier();
+	kern_logf("i915: clear selftest color=0x%08x px[0]=0x%08x px[mid]=0x%08x px[last]=0x%08x seqno=%u/%u\n",
+		I915_CLEAR_COLOR, pixels[0], pixels[pixel_count / 2U], pixels[pixel_count - 1U],
+		engine->completed_seqno, request->seqno);
+
+	error = EIO;
+	if (engine->completed_seqno == request->seqno &&
+	    pixels[0] == I915_CLEAR_COLOR &&
+	    pixels[pixel_count / 2U] == I915_CLEAR_COLOR &&
+	    pixels[pixel_count - 1U] == I915_CLEAR_COLOR)
+		error = 0;
+
+	if (error == 0)
+		kern_logf("i915: clear selftest passed (solid color fill on bcs0)\n");
+	else
+		kern_logf("i915: clear selftest FAILED\n");
+
+	drv_i915_gem_unbind_vm(object);
+	drv_i915_gem_destroy(device, object);
+	return error;
 }
