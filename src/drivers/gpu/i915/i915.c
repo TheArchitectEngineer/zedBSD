@@ -1056,6 +1056,50 @@ i915_resource_map(
 }
 
 /* Reports the executor capset so libvulkan accepts the node as a backend. */
+/*
+ * Resolves the reply target a Vulkan command stream selects up front.  The
+ * stream opens with vkSetReplyCommandStreamMESA (opcode 178) naming a session
+ * blob by resource id; its kernel alias is where the executor writes replies,
+ * since the submit ioctl returns none inline.  A stream without it replies
+ * nowhere.
+ */
+static void *
+i915_vk_command_reply(
+	struct i915_session *session,
+	const void *buffer,
+	uint32_t bytes,
+	size_t *capacity)
+{
+	const uint8_t *stream;
+	struct i915_gem_object *object;
+	uint32_t opcode;
+	uint32_t resource_id;
+	uint64_t offset;
+
+	*capacity = 0U;
+	stream = buffer;
+
+	/* The selector is a fixed 36-byte record: [178][flag][present][id][off][cap]. */
+	if (bytes < 36U)
+		return NULL;
+	memcpy(&opcode, stream, 4U);
+	if (opcode != 178U)
+		return NULL;
+	memcpy(&resource_id, stream + 16U, 4U);
+	memcpy(&offset, stream + 20U, 8U);
+
+	/* The named blob is one of the session's resources, keyed by its slot. */
+	for (object = session->objects; object != NULL; object = object->session_next) {
+		if (object->slot != resource_id)
+			continue;
+		if (offset >= object->bytes)
+			return NULL;
+		*capacity = (size_t)(object->bytes - offset);
+		return (uint8_t *)kern_pmem_to_kernel(object->run.paddr) + offset;
+	}
+	return NULL;
+}
+
 static int
 i915_get_capset(
 	void *opaque,
@@ -1104,8 +1148,14 @@ i915_command(
 	if (session->vk != NULL) {
 		if (bytes >= 4U) {
 			memcpy(&magic, buffer, 4U);
-			if (magic != I915_STREAM_MAGIC)
-				return drv_i915_vk_command(session->vk, buffer, bytes, NULL, NULL);
+			if (magic != I915_STREAM_MAGIC) {
+				void *reply_base;
+				size_t reply_bytes;
+
+				reply_base = i915_vk_command_reply(session, buffer, bytes, &reply_bytes);
+				return drv_i915_vk_command(session->vk, buffer, bytes,
+					reply_base, reply_base != NULL ? &reply_bytes : NULL);
+			}
 		}
 	}
 
@@ -1151,7 +1201,12 @@ i915_command_submit(
 		if (bytes >= 4U) {
 			memcpy(&magic, buffer, 4U);
 			if (magic != I915_STREAM_MAGIC) {
-				error = drv_i915_vk_command(session->vk, buffer, bytes, NULL, NULL);
+				void *reply_base;
+				size_t reply_bytes;
+
+				reply_base = i915_vk_command_reply(session, buffer, bytes, &reply_bytes);
+				error = drv_i915_vk_command(session->vk, buffer, bytes,
+					reply_base, reply_base != NULL ? &reply_bytes : NULL);
 				if (error != 0)
 					return error;
 				drv_gpu_complete(completion, 0);

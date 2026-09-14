@@ -118,3 +118,60 @@ GPU execution + completion interrupt proven on a cold Alder Lake-P IGD.
   内で追加。全 host fixtures PASS（plain+ASan/UBSan）、kernel build warning 0。
 - 残: cmdbuf(pool/buffer/record/draw/renderpass)、pipe(shader/pipeline)、queue submit(18)、
   reply transport(178/180)。
+
+## p011 増分B (2026-09-15): cmdbuf command-buffer lifecycle + 記録モデルの発見
+
+- cmdbuf_dispatch に vkCreateCommandPool(85)/vkDestroyCommandPool(86)/
+  vkResetCommandPool(87)/vkAllocateCommandBuffers(88)/vkFreeCommandBuffers(89)/
+  vkBeginCommandBuffer(90) を実装。command buffer は 64KB の GEM batch buffer を
+  session PPGTT に bind して確保（memory_alloc と同じ経路）。cmdbuf.c に cmd.h/
+  ../internal.h/kmem/pmem を追加。
+- **重要な発見**: vkCmd*（93-136）と vkEndCommandBuffer(91) は top-level stream には
+  来ない。libvulkan は command->recording にローカルに積み、submit 時に
+  **vkExecuteCommandStreamsMESA(180)** で別 resource として実行させる（commands.c 実測）。
+  よって描画記録は 178/180 の command-stream transport が前提。これは p011 の増分順を
+  規定する（下記）。
+- AllocateCommandBuffers の reply は [op][result][count][ids...]（実測 reply_capacity
+  count*8+16 と一致）。
+- fixture i915-vk-cmdbuf-test.c を heavyweight 化（full i915 stack + cmd.c + pipe.c）。
+  従来の記録テスト（ローカル batch）＋新 lifecycle テスト（wire 経由）を単一 attach で。
+  全 host fixtures PASS（plain+ASan/UBSan）、kernel build warning 0。
+- 変更: vk/cmdbuf.c、tests/i915-vk-cmdbuf-test.c。HAL/UAPI 変更なし。
+
+### 増分順（記録モデル発見を反映）
+- 次(B2): reply/command-stream transport（vkSetReplyCommandStreamMESA 178 /
+  vkExecuteCommandStreamsMESA 180 を executor で解釈、i915.c command 経路の
+  NULL reply を実 reply resource へ結線）。これで実 libvulkan の往復と vkCmd* 記録が動く。
+- その後: pipe(shader/pipeline decode + compiler 結線)、queue submit(18) を RCS0 request
+  経路へ結線（実行部は selftest 済み）、wsi flip → 三角形。
+
+## p011 増分B2 (2026-09-15): reply/command-stream transport（178/179）+ 設計判断
+
+### 設計判断（ユーザー提起「なぜ MESA 拡張？不要では？」への回答）
+drv_gpu UAPI の command/submit op（include/drivers/gpu.h L131/L134）は **reply out 引数を
+持たない fire-and-forget**（L111-112）。よって ioctl からインライン reply を返せず、reply は
+**別リソース**に書く必要がある → 178/179（reply-stream）は Venus の飾りではなく本 UAPI では
+**必須**。一方 180（ExecuteCommandStreamsMESA＝記録の間接再生）は不要にできる：EndCommandBuffer
+を top-level にして記録ストリームをそこで送り、executor がコマンドバッファ専用 batch を一度組む
+方が native で綺麗（submit は組み済み batch を参照するだけ・別 API のまま）。→ 178/179 は実装、
+180 は後段の libvulkan リファクタで回避。
+
+### 実装（executor 側 = cmd.c、resolution = i915.c）
+- cmd.c: vkSetReplyCommandStreamMESA(178)＝reply cursor を 0 に、vkSeekReplyCommandStreamMESA(179)
+  ＝cursor を seek（完了トレーラ位置へ）、vkEnumerateInstanceVersion(137)＝トレーラ完了プローブ
+  `[opcode][result=0][present=1][0][version≥1.1.0]`（20B, version を最後に publish）。cmd.c は i915
+  内部型に依存せず軽量を維持。
+- i915.c: `i915_vk_command_reply()` が先頭 178 セレクタを解析し resource_id(=object->slot) を
+  session->objects から解決 → blob の kernel alias を reply バッファとして drv_i915_vk_command へ渡す
+  （同期 command 経路・非同期 submit 経路の両方）。
+- vk.c: reply 書き込み後に kern_io_write_barrier() で publish（libvulkan の acquire ポーリングに対応）。
+- fixture: resdispatch に end-to-end 追加（実 blob を reply resource にし、178 解決＋AllocateMemory
+  reply が offset 0、完了トレーラが末尾 -20 に landing することを検証）。cmd-test の 137 を 20B
+  トレーラ框に更新。全 host fixtures PASS（plain+ASan/UBSan）、kernel build warning 0。
+- 変更: vk/cmd.c、vk/vk.c、i915.c、tests/{cmd,resdispatch}-test.c。**HAL 変更なし。UAPI 変更なし**
+  （既存 178/179/137 の wire を解釈しただけ）。
+
+### 次
+libvulkan リファクタ（EndCommandBuffer を top-level 化して 180 を回避、記録ストリームを executor が
+batch へ decode）→ pipe(shader/pipeline decode + compiler 結線)→ queue submit(18) を RCS0 request
+経路へ→ wsi flip。三角形へ。

@@ -388,7 +388,50 @@ i915_vk_route(
 	return I915_VK_OBJ_NONE;
 }
 
-/* Handles the instance, device, queue and version commands cmd owns. */
+/*
+ * vkSetReplyCommandStreamMESA: [present][resource][offset][capacity].  Points
+ * the reply writer at the named session resource so command replies land in the
+ * shared region libvulkan reads back (the submit ioctl returns no inline reply).
+ */
+static int
+i915_vk_cmd_set_reply(
+	struct i915_vk_reader *reader,
+	struct i915_vk_writer *reply)
+{
+	(void)i915_vk_read_u64(reader);			/* present */
+	(void)i915_vk_read_u32(reader);			/* resource */
+	(void)i915_vk_read_u64(reader);			/* offset */
+	(void)i915_vk_read_u64(reader);			/* capacity */
+	if (reader->error != 0)
+		return EINVAL;
+
+	/* The i915 command path already targeted the writer; the cursor restarts. */
+	reply->offset = 0U;
+	return 0;
+}
+
+/*
+ * vkSeekReplyCommandStreamMESA: [offset].  Moves the reply cursor so the
+ * following version probe writes the completion trailer at its fixed position.
+ */
+static int
+i915_vk_cmd_seek_reply(
+	struct i915_vk_reader *reader,
+	struct i915_vk_writer *reply)
+{
+	uint64_t offset;
+
+	offset = i915_vk_read_u64(reader);
+	if (reader->error != 0)
+		return EINVAL;
+	if (offset > reply->size)
+		return EINVAL;
+
+	reply->offset = offset;
+	return 0;
+}
+
+/* Handles the transport and reflective commands cmd owns directly. */
 static int
 i915_vk_cmd_builtin(
 	struct i915_vk_session *session,
@@ -396,17 +439,27 @@ i915_vk_cmd_builtin(
 	struct i915_vk_reader *reader,
 	struct i915_vk_writer *reply)
 {
-	/* The parameters are not consumed yet for the builtin reflective set. */
-	(void)session;
-	(void)reader;
+	/* The reply-stream transport selects and seeks the shared reply resource. */
+	if (opcode == 178U)
+		return i915_vk_cmd_set_reply(reader, reply);
+	if (opcode == 179U)
+		return i915_vk_cmd_seek_reply(reader, reply);
 
-	/* vkEnumerateInstanceVersion reports the version the executor speaks. */
+	/*
+	 * vkEnumerateInstanceVersion reports the version and doubles as the trailer
+	 * completion probe: [result][pApiVersion present][apiVersion], the version
+	 * word published last.
+	 */
 	if (opcode == 137U) {
-		i915_vk_reply_u32(reply, 0U);				/* VK_SUCCESS */
-		i915_vk_reply_u32(reply, (1U << 22) | (1U << 12));	/* apiVersion */
+		(void)i915_vk_read_u64(reader);			/* pApiVersion present */
+		i915_vk_reply_u32(reply, 0U);			/* VK_SUCCESS */
+		i915_vk_reply_u64(reply, 1U);			/* pApiVersion present */
+		i915_vk_reply_u32(reply, (1U << 22) | (1U << 12));	/* apiVersion 1.1.0 */
 		return 0;
 	}
 
 	/* Remaining builtin commands are accepted without a reply for now. */
+	(void)session;
+	(void)reader;
 	return 0;
 }

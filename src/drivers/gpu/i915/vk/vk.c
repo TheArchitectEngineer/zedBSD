@@ -16,6 +16,7 @@
 #include "cmd.h"
 
 #include <kern/kmem.h>
+#include <kern/device-io.h>
 
 #include <errno.h>
 #include <string.h>
@@ -144,6 +145,12 @@ drv_i915_vk_command(
 	/* A reply that overflowed the caller's buffer is a protocol error. */
 	if (writer.error != 0)
 		return EMSGSIZE;
+
+	/*
+	 * Reply bytes were written into the shared resource the stream selected; a
+	 * write barrier publishes them before the completion trailer libvulkan polls.
+	 */
+	kern_io_write_barrier();
 
 	/* The caller learns how many reply bytes the commands produced. */
 	if (reply_bytes != NULL)

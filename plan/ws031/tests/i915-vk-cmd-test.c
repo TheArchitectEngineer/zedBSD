@@ -39,6 +39,8 @@ kern_free(void *pointer)
 }
 
 /* The executor under test. */
+void kern_io_write_barrier(void) { }
+
 #include "../../../src/drivers/gpu/i915/vk/cmd.c"
 #include "../../../src/drivers/gpu/i915/vk/vk.c"
 
@@ -128,7 +130,7 @@ static void
 test_reader_writer(void)
 {
 	uint8_t buffer[24];
-	uint8_t reply[16];
+	uint8_t reply[32];
 	struct i915_vk_reader reader;
 	struct i915_vk_writer writer;
 	uint32_t word;
@@ -169,8 +171,8 @@ test_routing(void)
 	struct i915_vk_writer writer;
 	static const uint32_t opcodes[12] = {21U, 50U, 70U, 59U, 65U, 82U, 85U, 106U, 133U, 35U, 40U, 47U};
 	static const int modules[12] = {1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4};
-	uint8_t command[8];
-	uint8_t reply[16];
+	uint8_t command[16];
+	uint8_t reply[32];
 	unsigned index;
 	int error;
 
@@ -191,18 +193,25 @@ test_routing(void)
 		assert(routed_opcode == opcodes[index]);
 	}
 
-	/* The builtin version command is handled by cmd and writes a framed reply. */
+	/*
+	 * The builtin version command doubles as the reply-stream completion probe:
+	 * its request carries a pApiVersion present word and its reply is the fixed
+	 * 20-byte trailer [opcode][result][present][apiVersion].
+	 */
 	routed_module = 0;
 	put_command(command, 137U);
-	reader.base = command; reader.size = 8U; reader.offset = 0U; reader.error = 0;
+	memset(command + 8, 0, 8);
+	command[8] = 1U;		/* pApiVersion present */
+	reader.base = command; reader.size = 16U; reader.offset = 0U; reader.error = 0;
 	writer.base = reply; writer.size = sizeof(reply); writer.offset = 0U; writer.error = 0;
 	error = i915_vk_cmd_dispatch(&session, &reader, &writer);
 	assert(error == 0);
 	assert(routed_module == 0);
-	/* Reply framing: echoed opcode, VkResult, then the apiVersion payload. */
-	assert(writer.offset == 12U);
-	assert((uint32_t)reply[0] == 137U);
-	assert(reply[4] == 0U);
+	assert(writer.offset == 20U);
+	assert((uint32_t)reply[0] == 137U);		/* echoed opcode */
+	assert(reply[4] == 0U);				/* VK_SUCCESS */
+	assert(reply[8] == 1U);				/* present low */
+	assert(reply[12] == 0U);			/* present high */
 }
 
 static void

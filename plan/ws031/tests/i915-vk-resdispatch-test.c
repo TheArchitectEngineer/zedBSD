@@ -271,6 +271,84 @@ test_resources(void)
 	assert(run_command(&session, reply, sizeof(reply)) == 4U);
 	assert(i915_vk_obj_lookup(&vk, I915_VK_OBJ_MEMORY, mem) == NULL);
 
+	/*
+	 * Reply transport: a real blob backs the shared reply resource, the i915
+	 * path resolves the vkSetReplyCommandStreamMESA selector to its kernel
+	 * alias, and the executor writes a command reply plus the completion trailer.
+	 */
+	{
+		struct gpu_blob_create breq;
+		struct i915_vk_reader reader;
+		struct i915_vk_writer writer;
+		struct i915_vk_memory *mem;
+		void *blob;
+		void *resolved;
+		uint8_t *blob_va;
+		uint32_t resource_id;
+		size_t cap;
+		size_t seek;
+		const uint64_t mh = 0x777ULL;
+
+		memset(&breq, 0, sizeof(breq));
+		breq.flags = GPU_BLOB_MAPPABLE;
+		breq.bytes = 4096U;
+		breq.handle = 0x1234U;
+		error = i915_blob_create(device, gpu_session, &breq, &blob, &resource_id);
+		assert(error == 0);
+		blob_va = kern_pmem_to_kernel(((struct i915_gem_object *)blob)->run.paddr);
+		assert(blob_va != NULL);
+		seek = 4096U - 20U;
+
+		/* i915 resolves the 178 selector to the blob's kernel alias. */
+		wire_len = 0;
+		w32(178U); w32(0U); w64(1U); w32(resource_id); w64(0U); w64(seek);
+		resolved = i915_vk_command_reply((struct i915_session *)gpu_session, wire, (uint32_t)wire_len, &cap);
+		assert(resolved == blob_va);
+		assert(cap == 4096U);
+
+		/* The whole transaction: select, allocate, seek, then the version trailer. */
+		memset(blob_va, 0, 4096U);
+		wire_len = 0;
+		w32(178U); w32(0U); w64(1U); w32(resource_id); w64(0U); w64(seek);
+		w32(21U); w32(1U); w64(0xD0U); w64(1U); w32(5U); w64(0U);
+		w64(4096U); w32(0U); w64(0U); w64(1U); w64(mh);
+		w32(179U); w32(0U); w64(seek);
+		w32(137U); w32(1U); w64(1U);
+
+		reader.base = wire;
+		reader.size = wire_len;
+		reader.offset = 0U;
+		reader.error = 0;
+		writer.base = blob_va;		/* i915 targets this before the executor runs */
+		writer.size = 4096U;
+		writer.offset = 0U;
+		writer.error = 0;
+		while (reader.offset < reader.size) {
+			error = i915_vk_cmd_dispatch(&session, &reader, &writer);
+			assert(error == 0);
+		}
+		assert(writer.error == 0);
+
+		/* The vkAllocateMemory reply sits at the head of the resource. */
+		assert(rd32(blob_va, 0U) == 21U);
+		assert(rd32(blob_va, 4U) == 0U);
+		assert(rd64(blob_va, 8U) == 1U);
+		assert(rd64(blob_va, 16U) == mh);
+
+		/* The completion trailer sits at the fixed tail position. */
+		assert(rd32(blob_va, seek) == 137U);
+		assert(rd32(blob_va, seek + 4U) == 0U);
+		assert(rd64(blob_va, seek + 8U) == 1U);
+		assert(rd32(blob_va, seek + 16U) >= ((1U << 22) | (1U << 12)));
+
+		/* Release the memory the transaction created before the table is torn down. */
+		mem = i915_vk_obj_lookup(&vk, I915_VK_OBJ_MEMORY, mh);
+		assert(mem != NULL);
+		i915_vk_obj_remove(&vk, I915_VK_OBJ_MEMORY, mh);
+		i915_vk_memory_free(mem);
+		printf("res-dispatch: reply transport ok\n");
+	}
+
 	i915_vk_object_table_destroy(vk.objects);
 	fixture_gpu_ops->close(device, gpu_session);
 	printf("res-dispatch: memory/buffer/image create/bind/destroy ok\n");
