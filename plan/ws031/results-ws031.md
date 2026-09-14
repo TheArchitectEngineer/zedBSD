@@ -201,3 +201,46 @@ recording 全体を vulkan_command_execute で送る**（commands.c 実測）。
 BeginRenderPass(133) decode＋render target 結線（renderpass/framebuffer=pipe 80-84）、
 pipe（shader module 59・pipeline 65＋SPIR-V→GEN コンパイラ結線）、queue submit(18)→RCS0
 （実行部 selftest 済み）→ wsi flip。
+
+## p011 増分C1 (2026-09-15): pipe shader module decode
+
+- pipe_dispatch に vkCreateShaderModule(59)/vkDestroyShaderModule(60) を実装。
+  VkShaderModuleCreateInfo [sType][pNext][flags][codeSize][word count][words...] を
+  decode し、SPIR-V を shader module オブジェクト（code+words）として保持。pipeline 生成時に
+  stage 付きでコンパイルする素材。reply=create 24B / destroy 4B。
+- コンパイラ本体（spirv_parse→compile→shader_binary）は実装・host 済み。ここは wire→保持の結線。
+- fixture: pipe-test に cmd.c + module stub を追加し、CreateShaderModule/Destroy の wire 経路
+  （SPIR-V 3 words の往復と object table 保持）を検証。全 host fixtures PASS（plain+ASan/UBSan）、
+  kernel build warning 0。pipe.c は i915 内部型非依存（kmem のみ）で軽量維持。
+- 変更: vk/pipe.c、tests/i915-vk-pipe-test.c。HAL/UAPI 変更なし。
+
+### 残（三角形へ・最大の decode）
+vkCreateGraphicsPipelines(65)＝VkGraphicsPipelineCreateInfo（stages→shader module 参照して
+compile、vertex input/input assembly/viewport/raster/multisample/depth-stencil/color-blend/
+layout/renderpass/subpass）の巨大 decode。essential を使い残りは byte 整列のため各 sub-struct を
+decode。加えて render pass(82)/framebuffer(80)、queue submit(18)→RCS0、wsi flip。
+
+## p011 増分C2 (2026-09-15): vkCreateGraphicsPipelines decode + compiler 結線（最大の decode）
+
+- pipe_dispatch に vkCreateGraphicsPipelines(65)/vkDestroyPipeline(67) を実装。
+  VkGraphicsPipelineCreateInfo の全 sub-struct（stages/vertex-input/input-assembly/
+  tessellation/viewport/rasterization/multisample/depth-stencil/color-blend/dynamic/
+  layout/renderpass/subpass/base）を libvulkan codec.c と厳密一致で decode。
+  **発見: decode は uniform**（各 optional state は presence u64 → あれば実体）なので
+  encoder の rasterize/color/depth 条件を再現不要。各 state は正確な byte layout で消費
+  （array 要素幅・interleaved scalar・string の 4byte padding を厳密に）。
+- 抽出: 各 stage の module handle + stage bit、input assembly の topology。
+- **コンパイラ結線**: 各 stage の shader module SPIR-V を spirv_parse→i915_vk_compile で
+  GEN へ、GEN code を session PPGTT に bind した GEM buffer に配置し、その GPU va を
+  vs_kernel/fs_kernel に。i915_vk_pipeline_create でパイプライン構築。pipeline が code GEM を
+  所有し destroy で解放（pipe struct に session/vs_code/fs_code 追加）。pipe.c は heavyweight化
+  （../internal.h + GEM）。
+- fixture: pipe-test を heavyweight 化し、**実 vkdemo シェーダ（cuboid.vert/frag.spv）**で
+  ShaderModule 2つ → GraphicsPipeline を wire で作成し、reply・object table・vs_kernel/
+  fs_kernel/code GEM・topology を検証。全 host fixtures PASS（plain+ASan/UBSan）、
+  kernel build warning 0。cmdbuf-test に compiler include を追加。
+- 変更: vk/pipe.c、tests/i915-vk-{pipe,cmdbuf}-test.c。HAL/UAPI 変更なし。
+
+### 残（三角形へ）
+render pass(82)/framebuffer(80) decode（render target 結線）、queue submit(18)→RCS0
+（実行部 selftest 済み）、wsi flip。パイプライン・記録・リソース・同期・transport は完了。

@@ -25,6 +25,9 @@
 #include "../../../src/drivers/gpu/i915/request.c"
 #include "../../../src/drivers/gpu/i915/i915.c"
 #include "../../../src/drivers/gpu/i915/vk/cmd.c"
+#include "../../../src/drivers/gpu/i915/vk/spirv.c"
+#include "../../../src/drivers/gpu/i915/vk/eu.c"
+#include "../../../src/drivers/gpu/i915/vk/compile.c"
 #include "../../../src/drivers/gpu/i915/vk/pipe.c"
 #include "../../../src/drivers/gpu/i915/vk/cmdbuf.c"
 
