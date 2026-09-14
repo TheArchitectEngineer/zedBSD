@@ -323,12 +323,21 @@ i915_vk_cmd_dispatch(
 {
 	enum i915_vk_object_kind route;
 	uint32_t opcode;
+	uint32_t reply_requested;
 
-	/* The header is the opcode and a reply-request flag the executor ignores. */
+	/* The header is the opcode and a reply-request flag. */
 	opcode = i915_vk_read_u32(reader);
-	(void)i915_vk_read_u32(reader);
+	reply_requested = i915_vk_read_u32(reader);
 	if (reader->error != 0)
 		return EINVAL;
+
+	/*
+	 * A reply-requested command opens its reply with the echoed opcode; the
+	 * owning module then appends the VkResult and any output parameters, so
+	 * the reply reads back as libvulkan expects (opcode, result, payload).
+	 */
+	if (reply_requested != 0)
+		i915_vk_reply_u32(reply, opcode);
 
 	/* The opcode range selects the owning module; NONE means cmd handles it. */
 	route = i915_vk_route(opcode);
@@ -393,8 +402,8 @@ i915_vk_cmd_builtin(
 
 	/* vkEnumerateInstanceVersion reports the version the executor speaks. */
 	if (opcode == 137U) {
-		i915_vk_reply_u32(reply, (1U << 22) | (1U << 12));
-		i915_vk_reply_u32(reply, 0U);
+		i915_vk_reply_u32(reply, 0U);				/* VK_SUCCESS */
+		i915_vk_reply_u32(reply, (1U << 22) | (1U << 12));	/* apiVersion */
 		return 0;
 	}
 

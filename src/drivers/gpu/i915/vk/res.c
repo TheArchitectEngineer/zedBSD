@@ -543,6 +543,111 @@ i915_vk_dset_update(
 	return 0;
 }
 
+/* Maps a driver errno to the VkResult the reply carries to libvulkan. */
+static uint32_t
+i915_vk_result(
+	int error)
+{
+	/* Success and the two allocation failures are the results this module raises. */
+	if (error == 0)
+		return 0U;			/* VK_SUCCESS */
+	if (error == ENOMEM)
+		return (uint32_t)(-2);		/* VK_ERROR_OUT_OF_DEVICE_MEMORY */
+	return (uint32_t)(-3);			/* VK_ERROR_INITIALIZATION_FAILED */
+}
+
+/*
+ * vkAllocateMemory: [device][pAllocateInfo present][sType][ext present(+ext)]
+ * [allocationSize][memoryTypeIndex][pAllocator present][pMemory present]
+ * [memory wire_id].  The reply is result then, on success, present and identity.
+ */
+static int
+i915_vk_res_allocate_memory(
+	struct i915_vk_session *session,
+	struct i915_vk_reader *reader,
+	struct i915_vk_writer *reply)
+{
+	struct i915_vk_memory *memory;
+	uint64_t allocation_size;
+	uint64_t extension_present;
+	i915_vk_handle mem_handle;
+	uint32_t stype;
+	uint32_t memory_type_index;
+	int error;
+
+	(void)i915_vk_read_handle(reader);		/* device */
+	(void)i915_vk_read_u64(reader);			/* pAllocateInfo present */
+	stype = i915_vk_read_u32(reader);		/* VkStructureType */
+	extension_present = i915_vk_read_u64(reader);
+	if (extension_present != 0U) {
+		/* Export/import chains carry one native extension the executor skips. */
+		(void)i915_vk_read_u32(reader);		/* extension sType */
+		(void)i915_vk_read_u64(reader);		/* extension pNext present */
+		(void)i915_vk_read_u32(reader);		/* extension value */
+	}
+	allocation_size = i915_vk_read_u64(reader);
+	memory_type_index = i915_vk_read_u32(reader);
+	(void)i915_vk_read_u64(reader);			/* pAllocator present */
+	(void)i915_vk_read_u64(reader);			/* pMemory present */
+	mem_handle = i915_vk_read_handle(reader);
+	if (reader->error != 0)
+		return EINVAL;
+
+	/* VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO is the only accepted head. */
+	if (stype != 5U)
+		return EINVAL;
+
+	/* The memory type index selects host visibility on real parts; not yet used. */
+	(void)memory_type_index;
+
+	/* Allocate the backing object and bind the wire identity to it. */
+	error = i915_vk_memory_alloc(session, allocation_size, 0U, &memory);
+	if (error == 0) {
+		error = i915_vk_obj_insert(session->vk, I915_VK_OBJ_MEMORY, mem_handle, memory);
+		if (error != 0)
+			i915_vk_memory_free(memory);
+	}
+
+	/* The reply is the result and, on success, the echoed allocation identity. */
+	i915_vk_reply_u32(reply, i915_vk_result(error));
+	if (error == 0) {
+		i915_vk_reply_u64(reply, 1U);		/* present */
+		i915_vk_reply_u64(reply, mem_handle);	/* identifier */
+	}
+	return 0;
+}
+
+/*
+ * vkFreeMemory: [device][memory][pAllocator present].  It returns void, so the
+ * reply is the echoed opcode alone.
+ */
+static int
+i915_vk_res_free_memory(
+	struct i915_vk_session *session,
+	struct i915_vk_reader *reader,
+	struct i915_vk_writer *reply)
+{
+	struct i915_vk_memory *memory;
+	i915_vk_handle mem_handle;
+
+	(void)i915_vk_read_handle(reader);		/* device */
+	mem_handle = i915_vk_read_handle(reader);
+	(void)i915_vk_read_u64(reader);			/* pAllocator present */
+	if (reader->error != 0)
+		return EINVAL;
+
+	/* An unknown handle frees nothing; the wire may retire it more than once. */
+	memory = i915_vk_obj_lookup(session->vk, I915_VK_OBJ_MEMORY, mem_handle);
+	if (memory != NULL) {
+		i915_vk_obj_remove(session->vk, I915_VK_OBJ_MEMORY, mem_handle);
+		i915_vk_memory_free(memory);
+	}
+
+	/* vkFreeMemory returns void; no result or payload follows the echoed opcode. */
+	(void)reply;
+	return 0;
+}
+
 /* Routes the resource opcodes; the command decode grows with integration. */
 int
 i915_vk_res_dispatch(
@@ -552,14 +657,16 @@ i915_vk_res_dispatch(
 	struct i915_vk_writer *reply)
 {
 	/*
-	 * The resource creation commands carry full Venus-encoded VkXxxCreateInfo
-	 * structures; their precise decode is completed against libvulkan at
-	 * integration (p011).  Until then the object lifetime is exercised through
-	 * the module functions above and the drv_gpu blob path.
+	 * Memory is the first resource family wired end to end (p011 increment A0);
+	 * buffers, images, samplers and descriptors follow in the later increments
+	 * and use the module functions above.
 	 */
-	(void)session;
-	(void)opcode;
-	(void)reader;
-	(void)reply;
-	return EINVAL;
+	switch (opcode) {
+	case 21U:	/* vkAllocateMemory */
+		return i915_vk_res_allocate_memory(session, reader, reply);
+	case 22U:	/* vkFreeMemory */
+		return i915_vk_res_free_memory(session, reader, reply);
+	default:
+		return EINVAL;
+	}
 }

@@ -29,3 +29,66 @@ libvulkan が drv_gpu UAPI へ送る Vulkan コマンドを、ホスト（QEMU/V
 
 ## 制限・ビッグバンテスト（実機で確定）
 実機ネイティブでの増分A（三角形）→B（texture+depth）→C（vkdemo）描画。EU の SWSB 依存・3-source/send operand・message descriptor、compile の GRF 規約、pipe の fixed-function fields、cmdbuf の RCS0 submission 実配線、wsi の display register programming、res_dispatch 等の Venus 精密 decode。値・encoding は Mesa 転記で配置は正、semantics は実機反復で確定する（テープアウト後ビッグバン方式）。
+
+## Big-bang hardware bring-up: completion-interrupt fix (verified on real IGD)
+
+Test: Dell Latitude 5330, Alder Lake-P Iris Xe (8086:46a8 rev 0c), via QEMU
+VFIO PCI passthrough on 10.0.10.25 (boot-time vfio-pci binding). Selftest
+built in with CONFIG_DRIVER_PCI_I915_SELFTEST=y.
+
+### Symptom
+Driver attached and the BCS0 selftest submission executed (marker
+0xdeadbeef stored, breadcrumb seqno stored: seqno_hw=1), but the completion
+interrupt was never taken (total=0), so the request never retired and attach
+stopped at the selftest.
+
+### Diagnosis (in order)
+1. seqno_hw=1 proved the engine ran the whole ring including MI_USER_INTERRUPT
+   (not a ring/parse problem).
+2. GT register read-back at the stall: GEN11_GFX_MSTR_IRQ=0x80000000|GT_DW(0),
+   GEN11_GT_INTR_DW(0) bit set, master enable set -> the interrupt propagated
+   all the way to the top-level master register and sat *pending*. The GT
+   interrupt configuration was fully correct.
+3. Both MSI and INTx failed identically -> the loss was upstream of PCI
+   delivery, i.e. the CPU never took the pending interrupt.
+4. kern_irq_disable() read-back: interrupts were DISABLED at selftest time.
+   Device bring-up runs with processor interrupts masked, so the pending
+   completion interrupt could never be delivered while the wait spun.
+
+### Root cause
+Not VFIO, not MSI, not GT config. Attach/bring-up runs with CPU interrupts
+disabled; the selftest waited for an interrupt-driven retirement that could
+never fire in that context. This is real hardware behaviour, independent of
+passthrough; the earlier bare-metal "pass" never compiled the selftest in and
+the non-selftest attach path published the node without waiting on any
+interrupt, so the defect was latent.
+
+### Fix (src/drivers/gpu/i915/selftest.c only)
+Around the completion wait: save the caller state with kern_irq_disable(),
+kern_irq_enable() for the duration of the wait, restore afterwards. Success is
+now keyed on engine->completed_seqno == request->seqno (interrupt-driven
+retirement) plus the marker store. No HAL/UAPI change.
+
+Reverted dead ends: engine.c RING_IMR write (ineffective; ~GT_RENDER_USER_INTERRUPT
+would have wrongly masked context-switch/error sources) and all temporary
+diagnostics in i915.c/irq.c.
+
+### Result (real hardware, passthrough)
+    i915: selftest passed (bcs0 store and user interrupt)
+    i915: registered native GPU node (storage, native streams, jobs)
+
+GPU execution + completion interrupt proven on a cold Alder Lake-P IGD.
+
+## p011 増分A0 (2026-09-15): reply framing + res memory decode
+
+- cmd_dispatch に reply framing 規約を実装: reply-request flag 時に echoed opcode
+  を書き、各 _dispatch が [VkResult][payload] を append（void コマンドは echo のみ）。
+- res_dispatch に vkAllocateMemory(21)/vkFreeMemory(22) の wire decode を実装。
+  memory_alloc + object table 登録、reply=[opcode][result][present][identifier]。
+- 新 host fixture i915-vk-resdispatch-test.c: libvulkan と同一エンコードの stream を
+  cmd_dispatch に流し、object table と reply framing を検証。plain + ASan/UBSan PASS。
+- 既存 host fixtures 全 PASS（cmd の 137 framing 期待値を 12B に更新、res-test は
+  cmd.c 依存を追加してリンク解決）。i915+vk kernel build warning 0。
+- 変更: vk/cmd.c, vk/res.c, tests/i915-vk-{cmd,res,resdispatch}-test.c。HAL/UAPI 変更なし。
+- 次: 残 res コマンド（vkCreateBuffer/BindBufferMemory/vkCreateImage/BindImageMemory/
+  sampler/descriptor）→ 増分B、その後 pipe/cmdbuf/sync/wsi decode と reply transport(178/180)。

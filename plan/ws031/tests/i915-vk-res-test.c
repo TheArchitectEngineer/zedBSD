@@ -21,7 +21,33 @@
 #include "../../../src/drivers/gpu/i915/lrc.c"
 #include "../../../src/drivers/gpu/i915/request.c"
 #include "../../../src/drivers/gpu/i915/i915.c"
+#include "../../../src/drivers/gpu/i915/vk/cmd.c"
 #include "../../../src/drivers/gpu/i915/vk/res.c"
+
+/* The other modules are not exercised here; routing never reaches them. */
+int
+i915_vk_pipe_dispatch(struct i915_vk_session *s, uint32_t op, struct i915_vk_reader *r, struct i915_vk_writer *w)
+{
+	(void)s; (void)op; (void)r; (void)w; return EINVAL;
+}
+
+int
+i915_vk_cmdbuf_dispatch(struct i915_vk_session *s, uint32_t op, struct i915_vk_reader *r, struct i915_vk_writer *w)
+{
+	(void)s; (void)op; (void)r; (void)w; return EINVAL;
+}
+
+int
+i915_vk_sync_dispatch(struct i915_vk_session *s, uint32_t op, struct i915_vk_reader *r, struct i915_vk_writer *w)
+{
+	(void)s; (void)op; (void)r; (void)w; return EINVAL;
+}
+
+int
+i915_vk_wsi_dispatch(struct i915_vk_session *s, uint32_t op, struct i915_vk_reader *r, struct i915_vk_writer *w)
+{
+	(void)s; (void)op; (void)r; (void)w; return EINVAL;
+}
 
 static int fixture_pci_token;
 #define fixture_pci_device	((struct drv_pci_device *)&fixture_pci_token)

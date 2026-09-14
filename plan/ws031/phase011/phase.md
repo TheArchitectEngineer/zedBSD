@@ -36,3 +36,42 @@
 
 ## 実機テスト手順の確立（2026-09-15）
 ユーザー指示により、10.0.10.25 で i915/xe を起動時 blacklist し IGD を vfio-pci へ boot-time バインドする手順を確立（[vfio-passthrough-procedure.md](../tests/vfio-passthrough-procedure.md)）。再起動後 lsmod に i915/xe なし・IGD は vfio-pci・単独 IOMMU グループを確認。QEMU パススルー（rombar=0）が VFIO 初期化に成功。実行時 unbind の間欠性を排除。ビッグバンテストはこの状態の上で zedBSD i915+vk image を直接パススルー起動して行う。
+
+## 設計修正（2026-09-15）: per-command decode と reply transport が p011 の実体
+
+ビッグバン診断中に判明: p002–p010 で各モジュール関数は実装済みだが、
+`res/pipe/cmdbuf/sync/wsi` の `_dispatch`（Venus wire → モジュール関数の
+デコード）は EINVAL スタブのまま「integration で完成」と先送りされていた。
+さらに i915.c の command 経路は `drv_i915_vk_command(vk, buf, bytes, NULL, NULL)`
+で reply を捨てており、reply が libvulkan に返らない。よって p011 は「結線」
+ではなく **decode + reply transport の実装**が実体。該当は p011 内で行う
+（各モジュール .c に decode を足すのは p011 の結線作業と見なす。内部アルゴリズム
+は変更しない）。
+
+### libvulkan wire 形式（実測: userland/base/libvulkan、Venus wire-format 1）
+- command: `command_begin` が u32 opcode, u32 flag(=1, reply要求) を書く。以後、各
+  引数を LE で append。handle=u64 wire_id、pointer=u64 presence(0/1)、struct は
+  sType(u32)+ext-present(u64)+[ext...]+fields の順。
+- 例 vkAllocateMemory(21): [dev u64][pAllocateInfo present u64][sType=5 u32]
+  [ext_present u64][(ext時: u32 type,u64 next,u32 val)][allocationSize u64]
+  [memoryTypeIndex u32][pAllocator present u64=0][pMemory present u64=1]
+  [memory wire_id u64]。reply(24B)= present u64 + identifier u64（＝新 wire_id）。
+- reply レイアウト（command_execute が読む順）: [u32 opcode echo][u32 VkResult]
+  [payload...]。reply-request flag=1 のコマンドのみ reply を書く。
+
+### reply transport（MESA 拡張、実測 context.c/wire.c）
+- libvulkan は各 transaction を vkSetReplyCommandStreamMESA(178) 等の reply-stream
+  framing で包み、reply 用の別 resource（context->reply_resource, GPU_BLOB/RESOURCE_MAP）
+  に executor が reply を書く。完了は reply trailer で検出。
+- 実装方針: 178/180 を executor で解釈し、指定 reply resource + offset を session に
+  記録。`drv_i915_vk_command` の reply 出力をその resource mapping へ書く（i915.c の
+  NULL,NULL を実 reply バッファに差し替え）。framing [opcode echo][result] は
+  cmd_dispatch が共通に付与（flag=1 時）、payload は各 _dispatch が append、result は
+  モジュール errno→VkResult を backpatch。
+
+### 実装増分（改訂）
+- A0: reply framing 規約を cmd_dispatch に実装 + res_dispatch の memory/buffer/image。
+  host fixture（wire encode→dispatch→object 生成 + reply 照合）で検証。
+- A1: reply transport（178/180 + drv_gpu reply resource）を結線し、実 libvulkan の
+  1コマンド往復を実機で確認。
+- A→B→C: 既定どおり三角形→texture/depth→vkdemo。

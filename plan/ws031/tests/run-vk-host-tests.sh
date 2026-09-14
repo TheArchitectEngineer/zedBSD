@@ -7,7 +7,7 @@ repo=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
 work=$(mktemp -d "${TMPDIR:-/tmp}/ws031-vk-host.XXXXXX")
 trap "rm -rf -- \"$work\"" EXIT HUP INT TERM
 compiler=${CC:-cc}
-tests=${1:-"cmd spirv res sync eu compile pipe cmdbuf"}
+tests=${1:-"cmd spirv res resdispatch sync eu compile pipe cmdbuf"}
 base="-std=gnu11 -Wall -Wextra -Werror -Wdeclaration-after-statement -DKERN_USER_ABI_LP64 -DVK_REPO=\"$repo\" -I$repo/include -I$repo -idirafter $repo/libc/include"
 
 for name in $tests; do

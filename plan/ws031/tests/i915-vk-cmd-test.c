@@ -191,7 +191,7 @@ test_routing(void)
 		assert(routed_opcode == opcodes[index]);
 	}
 
-	/* The builtin version command is handled by cmd and writes a reply. */
+	/* The builtin version command is handled by cmd and writes a framed reply. */
 	routed_module = 0;
 	put_command(command, 137U);
 	reader.base = command; reader.size = 8U; reader.offset = 0U; reader.error = 0;
@@ -199,7 +199,10 @@ test_routing(void)
 	error = i915_vk_cmd_dispatch(&session, &reader, &writer);
 	assert(error == 0);
 	assert(routed_module == 0);
-	assert(writer.offset == 8U);
+	/* Reply framing: echoed opcode, VkResult, then the apiVersion payload. */
+	assert(writer.offset == 12U);
+	assert((uint32_t)reply[0] == 137U);
+	assert(reply[4] == 0U);
 }
 
 static void
