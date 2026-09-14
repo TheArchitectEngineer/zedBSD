@@ -260,6 +260,26 @@ static int key_already_present(const struct hid_report_input *input, uint16_t co
 static int append_value(struct hid_report_input *input, uint16_t type, uint16_t code, int32_t value);
 
 /*
+ * USB HID
+ */
+
+static const struct drv_usb_id usb_hid_ids[] = {
+	{
+		.match_flags = DRV_USB_ID_IF_CLASS,
+		.interface_class = USB_HID_CLASS
+	}
+};
+
+static struct drv_usb_driver usb_hid_driver = {
+	.name = "usb-hid",
+	.ids = usb_hid_ids,
+	.id_count = sizeof(usb_hid_ids) / sizeof(usb_hid_ids[0]),
+	.match = usb_hid_match,
+	.attach = usb_hid_attach,
+	.detach = usb_hid_detach
+};
+
+/*
  * Registers this driver with the USB subsystem.
  */
 int
@@ -3385,23 +3405,3 @@ usb_hid_le16(
 	/* Returns the computed result. */
 	return (uint16_t)bytes[0] | (uint16_t)((uint16_t)bytes[1] << 8U);
 }
-
-/*
- * USB HID
- */
-
-static const struct drv_usb_id usb_hid_ids[] = {
-	{
-		.match_flags = DRV_USB_ID_IF_CLASS,
-		.interface_class = USB_HID_CLASS
-	}
-};
-
-static struct drv_usb_driver usb_hid_driver = {
-	.name = "usb-hid",
-	.ids = usb_hid_ids,
-	.id_count = sizeof(usb_hid_ids) / sizeof(usb_hid_ids[0]),
-	.match = usb_hid_match,
-	.attach = usb_hid_attach,
-	.detach = usb_hid_detach
-};
