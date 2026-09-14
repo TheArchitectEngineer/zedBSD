@@ -223,6 +223,61 @@ test_lifecycle(void)
 	assert(rd32(reply, 0U) == 90U);
 	assert(rd32(reply, 4U) == 0U);
 
+	/* Record a draw into cb0 through the wire and check the emitted batch. */
+	{
+		struct i915_vk_shader_binary vs;
+		struct i915_vk_shader_binary fs;
+		struct i915_vk_pipeline_info info;
+		struct i915_vk_pipeline *pipeline;
+		const uint64_t ph = 0xB00ULL;
+
+		memset(&vs, 0, sizeof(vs));
+		memset(&fs, 0, sizeof(fs));
+		vs.grf_used = 24U;
+		fs.grf_used = 20U;
+		memset(&info, 0, sizeof(info));
+		info.vs = &vs;
+		info.fs = &fs;
+		info.vs_kernel = 0x00100000ULL;
+		info.fs_kernel = 0x00200000ULL;
+		error = i915_vk_pipeline_create(NULL, &info, &pipeline);
+		assert(error == 0);
+		error = i915_vk_obj_insert(&vk, I915_VK_OBJ_PIPELINE, ph, pipeline);
+		assert(error == 0);
+
+		/* vkCmdBindPipeline(cb0, GRAPHICS, ph) records with no reply. */
+		wire_len = 0;
+		w32(93U); w32(0U); w64(cb0); w32(0U); w64(ph);
+		assert(run_command(&session, reply, sizeof(reply)) == 0U);
+
+		/* vkCmdBindVertexBuffers(cb0, 0, 1, {buf}, {0}) is consumed. */
+		wire_len = 0;
+		w32(105U); w32(0U); w64(cb0); w32(0U); w32(1U); w64(1U); w64(0x200ULL); w64(1U); w64(0U);
+		assert(run_command(&session, reply, sizeof(reply)) == 0U);
+
+		/* vkCmdDraw(cb0, 3, 1, 0, 0) records the pipeline state and one primitive. */
+		wire_len = 0;
+		w32(106U); w32(0U); w64(cb0); w32(3U); w32(1U); w32(0U); w32(0U);
+		assert(run_command(&session, reply, sizeof(reply)) == 0U);
+
+		/* vkEndCommandBuffer(cb0) terminates the batch and returns a result. */
+		wire_len = 0;
+		w32(91U); w32(1U); w64(cb0);
+		assert(run_command(&session, reply, sizeof(reply)) == 8U);
+		assert(rd32(reply, 0U) == 91U);
+		assert(rd32(reply, 4U) == 0U);
+
+		/* The recorded batch carries the pipeline state, the primitive and the end. */
+		assert(find_command(cb->batch.map, cb->batch.cursor, GEN12_CMD_3DSTATE_VS) >= 0);
+		assert(find_command(cb->batch.map, cb->batch.cursor, GEN12_CMD_3DSTATE_PS) >= 0);
+		assert(find_command(cb->batch.map, cb->batch.cursor, GEN12_CMD_3DPRIMITIVE) >= 0);
+		assert(cb->batch.map[cb->batch.cursor - 1U] == GEN12_MI_BATCH_BUFFER_END);
+
+		i915_vk_obj_remove(&vk, I915_VK_OBJ_PIPELINE, ph);
+		i915_vk_pipeline_destroy(pipeline);
+		printf("i915 vk cmdbuf wire recording ok\n");
+	}
+
 	/* vkFreeCommandBuffers releases both buffers. */
 	wire_len = 0;
 	w32(89U); w32(1U); w64(0xD0U); w64(pool); w32(2U); w64(2U); w64(cb0); w64(cb1);

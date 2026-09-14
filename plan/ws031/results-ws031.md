@@ -175,3 +175,29 @@ drv_gpu UAPI の command/submit op（include/drivers/gpu.h L131/L134）は **rep
 libvulkan リファクタ（EndCommandBuffer を top-level 化して 180 を回避、記録ストリームを executor が
 batch へ decode）→ pipe(shader/pipeline decode + compiler 結線)→ queue submit(18) を RCS0 request
 経路へ→ wsi flip。三角形へ。
+
+## p011 増分B3 (2026-09-15): cmdbuf 記録 decode（libvulkan リファクタ不要と判明）
+
+### 発見：EndCommandBuffer は既に top-level で記録を送っている
+libvulkan は vkCmd* を command->recording にバッファし、**vkEndCommandBuffer で
+recording 全体を vulkan_command_execute で送る**（commands.c 実測）。executor は
+それを [178][vkCmd*...][91 End][179][137] として受け、各 vkCmd* を top-level コマンド
+（先頭に commandBuffer wire_id）として decode すればよい。180 は大 recording 溢れ時のみ。
+→ **libvulkan リファクタ不要**。ユーザー直感どおりの形が既存実装。
+
+### 実装（cmdbuf.c）
+- vkEndCommandBuffer(91)＝recording stream 唯一の reply 持ち：batch 終端＋[91][result]。
+- vkCmdBindPipeline(93)/vkCmdDraw(106)/vkCmdBindVertexBuffers(105)/vkCmdEndRenderPass(135)
+  ＝reply なし記録。各 handler が commandBuffer wire_id を lookup し、モジュール記録関数
+  （cmd_bind_pipeline/cmd_draw 等）で batch へ GEN 追加。
+- begin_command(90) を VkCommandBufferBeginInfo 全消費に修正（[178][90][179][137] の整列を保証、
+  primary のみ）。
+- fixture: cmdbuf-test に wire 記録経路を追加（pipeline 生成→Begin/BindPipeline/BindVertexBuffers/
+  Draw/End を wire で流し、batch に 3DSTATE_VS/PS・3DPRIMITIVE・MI_BATCH_BUFFER_END が landing）。
+  全 host fixtures PASS（plain+ASan/UBSan）、kernel build warning 0。
+- 変更: vk/cmdbuf.c、tests/i915-vk-cmdbuf-test.c。HAL/UAPI 変更なし。
+
+### 残（三角形へ）
+BeginRenderPass(133) decode＋render target 結線（renderpass/framebuffer=pipe 80-84）、
+pipe（shader module 59・pipeline 65＋SPIR-V→GEN コンパイラ結線）、queue submit(18)→RCS0
+（実行部 selftest 済み）→ wsi flip。

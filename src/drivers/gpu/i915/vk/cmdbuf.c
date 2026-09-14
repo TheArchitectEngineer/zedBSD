@@ -342,13 +342,18 @@ i915_vk_cmdbuf_begin_command(
 {
 	struct i915_vk_cmdbuf *cmdbuf;
 	i915_vk_handle handle;
+	uint64_t inheritance;
 	int error;
 
 	handle = i915_vk_read_handle(reader);		/* command buffer */
-	if (reader->error != 0)
+	(void)i915_vk_read_u64(reader);			/* pBeginInfo present */
+	(void)i915_vk_read_u32(reader);			/* sType */
+	(void)i915_vk_read_u64(reader);			/* pNext present */
+	(void)i915_vk_read_u32(reader);			/* flags */
+	inheritance = i915_vk_read_u64(reader);		/* pInheritanceInfo count */
+	if (reader->error != 0 || inheritance != 0U)	/* primary command buffers only */
 		return EINVAL;
 
-	/* The remaining VkCommandBufferBeginInfo fields do not affect the batch. */
 	cmdbuf = i915_vk_obj_lookup(session->vk, I915_VK_OBJ_COMMAND_BUFFER, handle);
 	if (cmdbuf == NULL)
 		error = EINVAL;
@@ -356,6 +361,164 @@ i915_vk_cmdbuf_begin_command(
 		error = i915_vk_cmdbuf_begin(cmdbuf);
 
 	i915_vk_reply_u32(reply, i915_vk_cmdbuf_result(error));
+	return 0;
+}
+
+/* The most vertex-buffer bindings one record decodes. */
+#define I915_VK_CMDBUF_BIND_MAX		64U
+
+/*
+ * vkEndCommandBuffer: [command buffer].  Terminates the batch and, as the one
+ * reply-bearing record in a recording stream, returns the VkResult.
+ */
+static int
+i915_vk_cmdbuf_end_command(
+	struct i915_vk_session *session,
+	struct i915_vk_reader *reader,
+	struct i915_vk_writer *reply)
+{
+	struct i915_vk_cmdbuf *cmdbuf;
+	i915_vk_handle handle;
+	int error;
+
+	handle = i915_vk_read_handle(reader);		/* command buffer */
+	if (reader->error != 0)
+		return EINVAL;
+
+	cmdbuf = i915_vk_obj_lookup(session->vk, I915_VK_OBJ_COMMAND_BUFFER, handle);
+	if (cmdbuf == NULL)
+		error = EINVAL;
+	else
+		error = i915_vk_cmdbuf_end(cmdbuf);
+
+	i915_vk_reply_u32(reply, i915_vk_cmdbuf_result(error));
+	return 0;
+}
+
+/*
+ * vkCmdBindPipeline: [command buffer][bindPoint][pipeline].  A recording command
+ * carries no reply; it records the pipeline the following draws use.
+ */
+static int
+i915_vk_cmdbuf_record_bind_pipeline(
+	struct i915_vk_session *session,
+	struct i915_vk_reader *reader,
+	struct i915_vk_writer *reply)
+{
+	struct i915_vk_cmdbuf *cmdbuf;
+	struct i915_vk_pipeline *pipeline;
+	i915_vk_handle cmd_handle;
+	i915_vk_handle pipeline_handle;
+
+	cmd_handle = i915_vk_read_handle(reader);
+	(void)i915_vk_read_u32(reader);			/* pipelineBindPoint */
+	pipeline_handle = i915_vk_read_handle(reader);
+	if (reader->error != 0)
+		return EINVAL;
+
+	cmdbuf = i915_vk_obj_lookup(session->vk, I915_VK_OBJ_COMMAND_BUFFER, cmd_handle);
+	pipeline = i915_vk_obj_lookup(session->vk, I915_VK_OBJ_PIPELINE, pipeline_handle);
+	if (cmdbuf != NULL && pipeline != NULL)
+		(void)i915_vk_cmd_bind_pipeline(cmdbuf, pipeline);
+
+	(void)reply;
+	return 0;
+}
+
+/*
+ * vkCmdBindVertexBuffers: [command buffer][firstBinding][bindingCount]
+ * [count][count x buffer][count][count x offset].  The fetch state lands later;
+ * the record is consumed to keep the stream aligned.
+ */
+static int
+i915_vk_cmdbuf_record_bind_vertex(
+	struct i915_vk_session *session,
+	struct i915_vk_reader *reader,
+	struct i915_vk_writer *reply)
+{
+	struct i915_vk_cmdbuf *cmdbuf;
+	uint64_t count;
+	uint64_t index;
+	i915_vk_handle handle;
+
+	handle = i915_vk_read_handle(reader);
+	(void)i915_vk_read_u32(reader);			/* firstBinding */
+	(void)i915_vk_read_u32(reader);			/* bindingCount */
+	count = i915_vk_read_u64(reader);		/* buffer count */
+	if (reader->error != 0 || count > I915_VK_CMDBUF_BIND_MAX)
+		return EINVAL;
+	for (index = 0U; index < count; index++)
+		(void)i915_vk_read_handle(reader);	/* pBuffers */
+	count = i915_vk_read_u64(reader);		/* offset count */
+	if (reader->error != 0 || count > I915_VK_CMDBUF_BIND_MAX)
+		return EINVAL;
+	for (index = 0U; index < count; index++)
+		(void)i915_vk_read_u64(reader);		/* pOffsets */
+	if (reader->error != 0)
+		return EINVAL;
+
+	cmdbuf = i915_vk_obj_lookup(session->vk, I915_VK_OBJ_COMMAND_BUFFER, handle);
+	if (cmdbuf != NULL)
+		(void)i915_vk_cmd_bind_vertex_buffers(cmdbuf, 0U, 0U, NULL, NULL);
+
+	(void)reply;
+	return 0;
+}
+
+/*
+ * vkCmdDraw: [command buffer][vertexCount][instanceCount][firstVertex]
+ * [firstInstance].  Records the bound pipeline state and one 3DPRIMITIVE.
+ */
+static int
+i915_vk_cmdbuf_record_draw(
+	struct i915_vk_session *session,
+	struct i915_vk_reader *reader,
+	struct i915_vk_writer *reply)
+{
+	struct i915_vk_cmdbuf *cmdbuf;
+	i915_vk_handle handle;
+	uint32_t vertex_count;
+	uint32_t instance_count;
+	uint32_t first_vertex;
+	uint32_t first_instance;
+
+	handle = i915_vk_read_handle(reader);
+	vertex_count = i915_vk_read_u32(reader);
+	instance_count = i915_vk_read_u32(reader);
+	first_vertex = i915_vk_read_u32(reader);
+	first_instance = i915_vk_read_u32(reader);
+	if (reader->error != 0)
+		return EINVAL;
+
+	cmdbuf = i915_vk_obj_lookup(session->vk, I915_VK_OBJ_COMMAND_BUFFER, handle);
+	if (cmdbuf != NULL)
+		(void)i915_vk_cmd_draw(cmdbuf, vertex_count, instance_count, first_vertex, first_instance);
+
+	(void)reply;
+	return 0;
+}
+
+/*
+ * vkCmdEndRenderPass: [command buffer].  A recording command with no reply.
+ */
+static int
+i915_vk_cmdbuf_record_end_render_pass(
+	struct i915_vk_session *session,
+	struct i915_vk_reader *reader,
+	struct i915_vk_writer *reply)
+{
+	struct i915_vk_cmdbuf *cmdbuf;
+	i915_vk_handle handle;
+
+	handle = i915_vk_read_handle(reader);
+	if (reader->error != 0)
+		return EINVAL;
+
+	cmdbuf = i915_vk_obj_lookup(session->vk, I915_VK_OBJ_COMMAND_BUFFER, handle);
+	if (cmdbuf != NULL)
+		(void)i915_vk_cmd_end_render_pass(cmdbuf);
+
+	(void)reply;
 	return 0;
 }
 
@@ -386,6 +549,16 @@ i915_vk_cmdbuf_dispatch(
 		return i915_vk_cmdbuf_free(session, reader, reply);
 	case 90U:	/* vkBeginCommandBuffer */
 		return i915_vk_cmdbuf_begin_command(session, reader, reply);
+	case 91U:	/* vkEndCommandBuffer */
+		return i915_vk_cmdbuf_end_command(session, reader, reply);
+	case 93U:	/* vkCmdBindPipeline */
+		return i915_vk_cmdbuf_record_bind_pipeline(session, reader, reply);
+	case 105U:	/* vkCmdBindVertexBuffers */
+		return i915_vk_cmdbuf_record_bind_vertex(session, reader, reply);
+	case 106U:	/* vkCmdDraw */
+		return i915_vk_cmdbuf_record_draw(session, reader, reply);
+	case 135U:	/* vkCmdEndRenderPass */
+		return i915_vk_cmdbuf_record_end_render_pass(session, reader, reply);
 	default:
 		return EINVAL;
 	}
