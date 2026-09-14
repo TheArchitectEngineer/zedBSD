@@ -39,3 +39,6 @@ modeset は eDP 1 枚に限定（PLL/DDI/transcoder/pipe/plane の最小シー�
 
 ## 見積・制限
 300 分。eDP 1 枚・単一 plane・preferred mode 固定。多出力・hotplug・DP MST は対象外。modeset の実機検証はユーザーのネイティブ起動が必要。
+
+## 完了（build-passing 基準）
+`vk/display.c`（display_init/mode/flip/fini、既定 mode 1920x1080、register sequence はビッグバン）、`vk/wsi.c`（swapchain＝res image リング、acquire round-robin、present＝fence wait＋display_flip、B8G8R8A8_UNORM）。kernel build PASS（link）、`i915_vk_device` に display mode フィールド追加。register programming（PLL/DDI/transcoder/pipe/plane）と実 scanout はビッグバンテスト。

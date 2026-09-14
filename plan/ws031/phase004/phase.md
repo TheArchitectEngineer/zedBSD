@@ -33,3 +33,6 @@ SPIR-V header 検査、`OpEntryPoint`/`OpName`/decoration（location/binding/set
 
 ## 見積・制限
 240 分。in-kernel、float 演算を parser では行わない（定数は bit で保持）。制御流れ・拡張命令は対象外（増分C で必要分のみ追加）。
+
+## 完了（host 検証済み）
+`vk/spirv.c` 実装。SPIR-V header 検証、宣言 pass（型/decoration/interface 変数/定数/pointer storage）、body pass（access-chain/load/store を input/output/push 参照へ解決、算術/extinst sin/cos/rsq/sample/compose/extract を IR へ）。gl_PerVertex は Location 無しで builtin 判別。fixture `i915-vk-spirv-test.c` が vkdemo の cuboid.vert/frag.spv を parse し interface（vert: in vec3@0/vec2@1、out vec2@0；frag: in vec2@0、out vec4@0、sampler set0/binding0）と命令種を照合、garbage 拒否、リーク無し。通常＋ASan/UBSan PASS。SPIR-V opcode は Khronos 公開仕様由来。

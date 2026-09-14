@@ -33,3 +33,6 @@
 
 ## 見積・制限
 360 分。増分は段階受け入れ。あるモジュールの不足が判明したら該当 Phase を uncleared で差し戻し、設計 doc を更新してから再実装する（本 WS の運用方針）。
+
+## 実機テスト手順の確立（2026-09-15）
+ユーザー指示により、10.0.10.25 で i915/xe を起動時 blacklist し IGD を vfio-pci へ boot-time バインドする手順を確立（[vfio-passthrough-procedure.md](../tests/vfio-passthrough-procedure.md)）。再起動後 lsmod に i915/xe なし・IGD は vfio-pci・単独 IOMMU グループを確認。QEMU パススルー（rombar=0）が VFIO 初期化に成功。実行時 unbind の間欠性を排除。ビッグバンテストはこの状態の上で zedBSD i915+vk image を直接パススルー起動して行う。

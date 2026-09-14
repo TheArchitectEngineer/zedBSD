@@ -100,6 +100,11 @@ struct i915_vk_device {
 	struct i915_vk_object_table *objects;
 	uint32_t capset[I915_VK_CAPSET_WORDS];
 	uint32_t capset_bytes;
+
+	/* The active display mode, filled by the WSI display path. */
+	uint32_t display_width;
+	uint32_t display_height;
+	uint32_t display_stride;
 };
 
 /*

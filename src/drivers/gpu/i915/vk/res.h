@@ -16,6 +16,35 @@
 
 #include "vk-internal.h"
 
+/* Creation parameters for an image: dimensions, format and tiling. */
+struct i915_vk_image_info {
+	uint32_t width;
+	uint32_t height;
+	uint32_t format;
+	uint32_t tiling;
+};
+
+/* Creation parameters for a sampler. */
+struct i915_vk_sampler_info {
+	uint32_t min_filter;
+	uint32_t mag_filter;
+	uint32_t address_mode;
+};
+
+/* One descriptor set layout binding: its number and descriptor type. */
+struct i915_vk_dsl_binding {
+	uint32_t binding;
+	uint32_t type;
+};
+
+/* One descriptor set update: the binding and the image view and sampler. */
+struct i915_vk_write_dset {
+	uint32_t binding;
+	uint32_t type;
+	struct i915_vk_image_view *view;
+	struct i915_vk_sampler *sampler;
+};
+
 /* Routes memory/buffer/image/sampler/descriptor opcodes. */
 int
 i915_vk_res_dispatch(

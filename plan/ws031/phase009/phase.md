@@ -32,3 +32,6 @@ fence を engine の retire（HWSP seqno）に紐付け、`retire_waitq` で wai
 
 ## 見積・制限
 180 分。単一 queue 直列前提。timeline semaphore と複雑な query は増分C/後続。
+
+## 完了（host 検証済み）
+`vk/sync.c` 実装。fence を engine `completed_seqno` に接続（arm(engine,target)→wrap-safe 比較で signaled）、status/wait（retire_waitq、timeout=0 は poll）/reset、semaphore/query lifetime。fixture `i915-vk-sync-test.c` が実 WS029 device の engine seqno を進めて fence の signaled 遷移・poll timeout・reset を検証、通常＋ASan/UBSan PASS。sync_dispatch の Venus command 精密 decode は p011。

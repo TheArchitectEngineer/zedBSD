@@ -243,3 +243,9 @@ p002 着手時に判明: WS029 の i915 backend は libvulkan が要求する `g
 - top が次の drv_gpu op 実装（`drv_i915_vk_*`）を供給する: `get_capset`（Venus 互換 capset、libvulkan の 156B 閾値を満たす）、`blob_create`（Vulkan の memory/blob を GEM object へ）、`resource_map`（host-visible の CPU view）、`command`（wire を decoder へ）、`present`（wsi、p010）。
 - `src/drivers/gpu/i915/i915.c` の `i915_publish` の ops テーブルにこれらを配線し、`I915_CAPABILITIES` に `GPU_CAP_CAPSET|GPU_CAP_BLOB|GPU_CAP_MAPPING` を足す。これは**定義された core 統合面**（arbitrary な core 改変ではない）。native stream client（gpu-i915-test）は既存経路のまま（command の内容で vk/native を判別、または capset 照会の有無で判定）。
 - この配線は p002 が行う（承認済み core hook として本 doc に明記）。3D 有効化 hook（lrc/engine）は従来どおり p007/p008。
+
+---
+
+## 補遺B: 実行方式の変更（ビッグバンテスト、2026-09-15 ユーザー指示）
+
+phase 完了条件を **build 通過**（kernel build ＋該当 host fixture PASS）に変更する。実機描画検証は後回しにし、全 phase をビルド通過で先に進め、実機が VFIO で完全に空く手順を確立してから **ビッグバンテスト**（増分A/B/C を一括で実機確認）を行う。これはテープアウト前にビルドを固め、実機到着後に一括 bring-up する現場の常道。encoding の正しさは (1) Mesa からの出典付き転記、(2) 可能な限り**プリプロセッサ展開（gcc -E/-dM や小 TU 実行）で数値を確定**、(3) host fixture での dword 照合、で担保する。EU エンコードは現行 Mesa がリファクタ済みのため、**git 履歴の古いタグの表形式 brw_inst.h（FC/FF ビット位置）を出典として使う**。

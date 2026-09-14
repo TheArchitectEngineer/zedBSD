@@ -17,6 +17,17 @@
 
 #include "vk-internal.h"
 
+/* The shaders and fixed-function state a graphics pipeline is built from.  The
+   kernel fields are the GPU addresses where the shader code has been placed. */
+struct i915_vk_pipeline_info {
+	struct i915_vk_shader_binary *vs;
+	struct i915_vk_shader_binary *fs;
+	uint64_t vs_kernel;
+	uint64_t fs_kernel;
+	uint32_t topology;
+	uint32_t color_format;
+};
+
 /* Routes pipeline/shader-module/render-pass/framebuffer opcodes. */
 int
 i915_vk_pipe_dispatch(

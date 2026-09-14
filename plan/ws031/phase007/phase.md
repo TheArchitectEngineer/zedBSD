@@ -36,3 +36,7 @@ compile の shader binary と固定機能状態から、draw 時に発行する 
 
 ## 見積・制限
 360 分。増分A は VF＋VS＋PS＋RT の最小。depth/blend/sampler pointer は増分B/C。RCS 3D hook の core 差分は最小・既存挙動不変。
+
+## 完了（build-passing 基準、host 検証済み）
+`vk/pipe.c`＋`vk/linux/3dstate-gen12.inc`（gen120.xml の 3DSTATE command opcode/length を転記）。pipeline_create（VS/FS binary の kernel VA・GRF 保持）、pipeline_emit（3DSTATE_VS 0x7810＋kernel ptr＋GRF、3DSTATE_PS 0x7820）、pipe_emit_base（PIPELINE_SELECT 3D、STATE_BASE_ADDRESS）。fixture が batch 内の command header と kernel pointer/GRF を照合、通常＋ASan/UBSan PASS。
+補正待ち: URB/VF/SBE/WM/depth/viewport 等の fixed-function fields、STATE_BASE の実 address。command 列と shader pointer は確定、fields は実機で補正。

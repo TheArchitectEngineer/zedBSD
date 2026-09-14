@@ -24,19 +24,17 @@ struct i915_vk_urb_slot {
 	uint32_t urb_offset;
 };
 
-/* A compiled shader: GEN code plus the layout a draw needs. */
+/* A compiled shader: GEN code words plus the layout a draw needs.  The caller
+   places the code words into a GEM object before the shader runs. */
 struct i915_vk_shader_binary {
-	struct i915_vk_memory *code;
+	uint32_t *code;
 	uint32_t code_bytes;
 	uint32_t entry_offset;
 	enum i915_vk_stage stage;
 	uint32_t grf_used;
 	uint32_t simd;
 	uint32_t thread_count;
-	struct i915_vk_urb_slot *urb;
-	uint32_t urb_count;
-	uint32_t *bindings;
-	uint32_t binding_count;
+	uint32_t sampler_count;
 };
 
 /* Compiles one shader IR to a GEN binary. */

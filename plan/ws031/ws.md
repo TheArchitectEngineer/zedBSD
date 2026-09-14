@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG003
 Objectives: O1, O2
 Parent: [Master](https://github.com/awemorris/zedBSD/issues/1)
-Queue: WS031実行中（p002 cleared、p003 in-progress）
+Queue: WS031 build-complete（p001-p010,p012 cleared、p011 は実機ビッグバンテスト待ち）
 Design: plan/ws031/native-vulkan-design.md
 <!-- awesome-plan-current:end -->
 
@@ -48,16 +48,16 @@ WS029のdisplay/scanout後続（[ws029-f003](https://github.com/awemorris/zedBSD
 | --- | --- | --- | --- |
 | ws031-p001 | 設計固め: 外部設計確定・`vk/*.h`枠・ライセンス監査・capset方針（[phase001](phase001/phase.md)） | cleared | 240 分 |
 | ws031-p002 | top+cmd: 入口・wire decoder・object/handle table・dispatch（[phase002](phase002/phase.md)） | cleared | 300 分 |
-| ws031-p003 | res: memory/buffer/image/sampler/descriptor→i915資源・surface/sampler state（[phase003](phase003/phase.md)） | in-progress | 300 分 |
-| ws031-p004 | spirv: SPIR-Vパーサ→baseline IR（[phase004](phase004/phase.md)） | planning | 240 分 |
-| ws031-p005 | eu: Gen12 EU命令エンコーダ（出典付き`.inc`＋論理新規）（[phase005](phase005/phase.md)） | planning | 300 分 |
-| ws031-p006 | compile: IR→GEN baseline codegen（素朴レジスタ割当、sampler send）（[phase006](phase006/phase.md)） | planning | 360 分 |
-| ws031-p007 | pipe: Gen12 3Dパイプラインstate emission（`3DSTATE_*`、URB、binding、sampler、RT、depth）（[phase007](phase007/phase.md)） | planning | 360 分 |
-| ws031-p008 | cmdbuf: command buffer→GENバッチ変換・draw・WS029 RCS0投入（[phase008](phase008/phase.md)） | planning | 300 分 |
-| ws031-p009 | sync: fence/semaphore/query/timeline→completion接続（[phase009](phase009/phase.md)） | planning | 180 分 |
-| ws031-p010 | wsi: KMS/modeset・scanout・swapchain present（`VK_KHR_display`/`swapchain`）（[phase010](phase010/phase.md)） | planning | 300 分 |
-| ws031-p011 | 統合: 増分A三角形→B texture+depth→C vkdemo実shader、実機描画確認（[phase011](phase011/phase.md)） | planning | 360 分 |
-| ws031-p012 | レビュー: 静的解析・規約全文確認・回帰・制限整理（[phase012](phase012/phase.md)） | planning | 180 分 |
+| ws031-p003 | res: memory/buffer/image/sampler/descriptor→i915資源・surface/sampler state（[phase003](phase003/phase.md)） | cleared | 300 分 |
+| ws031-p004 | spirv: SPIR-Vパーサ→baseline IR（[phase004](phase004/phase.md)） | cleared | 240 分 |
+| ws031-p005 | eu: Gen12 EU命令エンコーダ（出典付き`.inc`＋論理新規）（[phase005](phase005/phase.md)） | cleared | 300 分 |
+| ws031-p006 | compile: IR→GEN baseline codegen（素朴レジスタ割当、sampler send）（[phase006](phase006/phase.md)） | cleared | 360 分 |
+| ws031-p007 | pipe: Gen12 3Dパイプラインstate emission（`3DSTATE_*`、URB、binding、sampler、RT、depth）（[phase007](phase007/phase.md)） | cleared | 360 分 |
+| ws031-p008 | cmdbuf: command buffer→GENバッチ変換・draw・WS029 RCS0投入（[phase008](phase008/phase.md)） | cleared | 300 分 |
+| ws031-p009 | sync: fence/semaphore/query/timeline→completion接続（[phase009](phase009/phase.md)） | cleared | 180 分 |
+| ws031-p010 | wsi: KMS/modeset・scanout・swapchain present（`VK_KHR_display`/`swapchain`）（[phase010](phase010/phase.md)） | cleared | 300 分 |
+| ws031-p011 | 統合: build-passing 達成／実機描画はビッグバンテスト（[phase011](phase011/phase.md)） | big-bang待ち | 360 分 |
+| ws031-p012 | レビュー: 静的解析・規約全文確認・回帰・制限整理（[phase012](phase012/phase.md)） | cleared | 180 分 |
 
 段階的な受け入れの単位は Phase 境界と一致しない。増分A（三角形）は複数モジュールの最小経路を横断する最初の実機到達点で、Phase 計画時に「増分Aで必要な関数」を先行実装対象として明示する。増分B・Cで texture/depth・実shader を足す。
 

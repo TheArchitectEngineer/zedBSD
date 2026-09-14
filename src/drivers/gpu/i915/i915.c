@@ -39,7 +39,7 @@
 
 /* Storage with CPU copies, native streams, queued completion and supervised jobs. */
 #define I915_CAPABILITIES	(GPU_CAP_RESOURCE | GPU_CAP_TRANSFER | GPU_CAP_COMMAND | \
-				 GPU_CAP_NOTIFICATION | GPU_CAP_JOB | GPU_CAP_JOB_CAPACITY | GPU_CAP_CAPSET)
+				 GPU_CAP_NOTIFICATION | GPU_CAP_JOB | GPU_CAP_JOB_CAPACITY | GPU_CAP_CAPSET | GPU_CAP_BLOB | GPU_CAP_MAPPING)
 
 /* The pool never holds more batch objects than requests can be in flight. */
 #define I915_BATCH_POOL_MAX	I915_REQUEST_SLOTS
@@ -58,6 +58,8 @@ static void i915_resource_destroy(void *opaque, void *private_session, void *obj
 static int i915_resource_read(void *opaque, void *private_session, void *object, uint64_t offset, void *buffer, uint32_t bytes);
 static int i915_resource_write(void *opaque, void *private_session, void *object, uint64_t offset, const void *buffer, uint32_t bytes);
 static int i915_get_capset(void *opaque, void *private_session, struct gpu_capset *capset);
+static int i915_blob_create(void *opaque, void *private_session, const struct gpu_blob_create *request, void **result, uint32_t *resource_id);
+static int i915_resource_map(void *opaque, void *private_session, void *object, struct drv_gpu_mapping *mapping);
 static int i915_command(void *opaque, void *private_session, const void *buffer, uint32_t bytes);
 static int i915_command_submit(void *opaque, void *private_session, const void *buffer, uint32_t bytes, uint32_t flags, uint32_t timeline, struct drv_gpu_completion *completion);
 static void i915_command_drain(void *opaque, void *private_session);
@@ -539,12 +541,12 @@ i915_publish(
 		i915_resource_create,
 		i915_resource_destroy,
 		i915_get_capset,
-		NULL,
+		i915_blob_create,
 		i915_resource_read,
 		i915_resource_write,
 		i915_command,
 		NULL,
-		NULL,
+		i915_resource_map,
 		NULL,
 		NULL,
 		NULL,
@@ -944,6 +946,112 @@ i915_resource_write(
 		return error;
 
 	/* Succeeded: the object holds the new bytes for the GPU's next access. */
+	return 0;
+}
+
+/* Allocates host storage for a Vulkan memory blob and binds it to the session. */
+static int
+i915_blob_create(
+	void *opaque,
+	void *private_session,
+	const struct gpu_blob_create *request,
+	void **result,
+	uint32_t *resource_id)
+{
+	struct i915_device *device;
+	struct i915_session *session;
+	struct i915_gem_object *object;
+	int error;
+
+	/* A failed creation stays invisible to the core resource table. */
+	device = opaque;
+	session = private_session;
+	*result = NULL;
+	*resource_id = 0U;
+
+	/* Only mappable, optionally shareable, host storage is backed. */
+	if (request->flags == 0U)
+		return EOPNOTSUPP;
+	if ((request->flags & ~(GPU_BLOB_MAPPABLE | GPU_BLOB_SHAREABLE)) != 0U)
+		return EOPNOTSUPP;
+
+	/* Allocation and binding are serialized with every other controller operation. */
+	mutex_lock(&device->mutex);
+
+	/* A quarantined session may not add hardware-visible state. */
+	if (session->quarantined != 0U || device->failed != 0U) {
+		mutex_unlock(&device->mutex);
+		return ENODEV;
+	}
+
+	error = drv_i915_gem_create(device, request->bytes, &object);
+	if (error != 0) {
+		mutex_unlock(&device->mutex);
+		return error;
+	}
+
+	/* The blob becomes addressable by this session's context only. */
+	error = drv_i915_gem_bind_vm(session->vm, object);
+	if (error != 0) {
+		drv_i915_gem_destroy(device, object);
+		mutex_unlock(&device->mutex);
+		return error;
+	}
+
+	/* The public handle lets the executor name this blob in its commands. */
+	object->handle = request->handle;
+	object->session_next = session->objects;
+	session->objects = object;
+	object->slot = session->next_slot;
+	session->next_slot++;
+	session->resources++;
+
+	mutex_unlock(&device->mutex);
+
+	/* The core tracks the blob as a resource the executor and map reference. */
+	*result = object;
+	*resource_id = object->slot;
+
+	/* Succeeded: the session owns zeroed storage the GPU can address. */
+	return 0;
+}
+
+/* Exposes a blob's system-RAM backing as a CPU mapping for the client. */
+static int
+i915_resource_map(
+	void *opaque,
+	void *private_session,
+	void *object,
+	struct drv_gpu_mapping *mapping)
+{
+	struct i915_device *device;
+	struct i915_gem_object *backing;
+	void *address;
+
+	/* The mapping is of the blob's own pages, independent of the session. */
+	device = opaque;
+	(void)private_session;
+	backing = object;
+
+	mutex_lock(&device->mutex);
+
+	/* Managed RAM is direct-mapped, so the blob has a kernel alias. */
+	address = kern_pmem_to_kernel(backing->run.paddr);
+	if (address == NULL) {
+		mutex_unlock(&device->mutex);
+		return EFAULT;
+	}
+
+	/* The client receives the exact page-aligned extent of the blob. */
+	memset(mapping, 0, sizeof(*mapping));
+	mapping->physical = (uint64_t)backing->run.paddr;
+	mapping->address = address;
+	mapping->bytes = backing->bytes;
+	mapping->attributes = 0U;
+
+	mutex_unlock(&device->mutex);
+
+	/* Succeeded: the core can map and pin this blob's storage. */
 	return 0;
 }
 

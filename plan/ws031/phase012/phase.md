@@ -29,3 +29,6 @@
 
 ## 見積・制限
 180 分。実機描画の受け入れは p011 が正本。本 Phase はレビューと整理。
+
+## 完了（build-passing 基準）
+静的解析 gcc -fanalyzer / clang --analyze: vk 全 11 source で 0 件（`plan/ws031/phase012/analyzer-*.log`）。全 8 host fixture（cmd/spirv/res/sync/eu/compile/pipe/cmdbuf）通常＋ASan/UBSan PASS。i915 kernel build PASS（vmunix check、warning 0、`-mgeneral-regs-only`）。WS029 host fixture 全 PASS（回帰なし）。vk は CONFIG_DRIVER_PCI_I915 で gate（GPU なし build から除外）。git diff --check clean。転記 `.inc` は Mesa 出典・SHA 記録（i915-vk-license-audit.md）。

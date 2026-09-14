@@ -710,7 +710,7 @@ test_lifecycle(void)
 	memset(&info, 0, sizeof(info));
 	error = fixture_gpu_ops->get_info(fixture_gpu_private, session, &info);
 	assert(error == 0);
-	assert(info.capabilities == (GPU_CAP_RESOURCE | GPU_CAP_TRANSFER | GPU_CAP_COMMAND | GPU_CAP_NOTIFICATION | GPU_CAP_JOB | GPU_CAP_JOB_CAPACITY | GPU_CAP_CAPSET));
+	assert(info.capabilities == (GPU_CAP_RESOURCE | GPU_CAP_TRANSFER | GPU_CAP_COMMAND | GPU_CAP_NOTIFICATION | GPU_CAP_JOB | GPU_CAP_JOB_CAPACITY | GPU_CAP_CAPSET | GPU_CAP_BLOB | GPU_CAP_MAPPING));
 	assert(info.max_resource_bytes == I915_MAX_RESOURCE_BYTES);
 	assert(strcmp(info.driver_name, "i915") == 0);
 	assert(((struct i915_session *)session)->identifier == 1U);

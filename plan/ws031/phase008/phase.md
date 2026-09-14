@@ -34,3 +34,7 @@ render pass begin で RT/depth を bind し clear（blit か 3D clear）、bind 
 
 ## 見積・制限
 300 分。単一 RCS0・直列。増分A は 1 draw（三角形）＋clear。複数 draw/render pass・index draw は増分で。
+
+## 完了（build-passing 基準、host 検証済み）
+`vk/cmdbuf.c` 実装。command buffer が batch へ記録: begin/end（MI_BATCH_BUFFER_END）、bind_pipeline、draw（pipe_emit_base＋pipeline_emit＋3DPRIMITIVE 0x7B00＋vertex/instance/start params）、bind_vertex/descriptor/push/render_pass は構造記録。fixture が pipeline なし draw 拒否・3DSTATE_VS/PS・3DPRIMITIVE params・BATCH_BUFFER_END を照合、通常＋ASan/UBSan PASS。
+補正待ち: queue_submit の WS029 RCS0 request 実配線＋fence arm、render pass clear、vertex fetch/binding table pointer。command 列は確定、実行は実機（ビッグバン）で。

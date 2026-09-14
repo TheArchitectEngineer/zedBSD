@@ -35,3 +35,7 @@ SSA 値→GRF の素朴割当（値ごとに 1 GRF、足りなければ増やす
 
 ## 見積・制限
 360 分。最適化なし・SIMD8・spill 最小。増分A（定数 FS）→B（sample）→C（math/push）の順で対応命令を広げる。
+
+## 完了（build-passing 基準、host 検証済み）
+`vk/compile.c` 実装。SSA値→GRF 素朴割当（値ごとに 1 GRF、16 から）、IR op を eu emit へ 1 対 1 lower（load_input/push/store_output は mov、fadd/fsub→add、fmul/dot→mul、mad、sin/cos/rsq→math、sample→send、compose/extract→mov）、末尾に output 送信＋EOT の send。binary は encode 済み word を保持（caller が GEM 配置）。fixture が vkdemo frag/vert を parse→compile し非空 binary・SEND 終端・MATH(vert) を照合、通常＋ASan/UBSan PASS。
+補正待ち: payload/push/output の GRF 規約、message descriptor、SWSB、negate（fsub）、dot の多成分。値は Mesa 転記で配置は正、semantics は実機で確定。

@@ -39,3 +39,7 @@ Gen12（Xe-LP）の EU 命令を byte 列へ encode する low-level emitter。�
 
 ## 見積・制限
 300 分。SIMD8 固定、compaction 無し。命令集合は vkdemo に必要な最小から始め、増分で追加。
+
+## 完了（build-passing 基準、field 照合済み）
+`vk/eu.c`＋`vk/linux/eu-encoding-gen12.inc`（mesa-23.1.0 の表形式 brw_inst.h 12+ 列、brw_eu.c opcode_descs、brw_reg_type.c を転記、監査記録あり）。Gen12 128-bit 命令を 4 word で encode。mov(97)/add(64)/mul(65)/math(56)/nop(96)、SIMD8、dst/src0/src1 の reg file(2bit split)/type(F=9)/reg_nr/subreg/region、immediate(last word)。fixture が opcode/exec_size/dst・src reg_nr/is_imm/imm/math func の bit 配置を照合、通常＋ASan/UBSan PASS。
+補正待ち（ビッグバンテスト）: 3-source(mad) と send の operand/descriptor、SWSB 依存 scoreboard。値は Mesa 転記なので配置は正、semantics は実機で確定。
