@@ -369,6 +369,9 @@ i915_start(
 	error = drv_i915_rcs_selftest(device);
 	if (error != 0)
 		return error;
+	error = drv_i915_rt_selftest(device);
+	if (error != 0)
+		return error;
 #endif
 
 	/* The native Vulkan executor attaches once execution is proven. */

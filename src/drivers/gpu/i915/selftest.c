@@ -31,6 +31,7 @@
 #include <errno.h>
 
 #include "linux/i915-commands.inc"
+#include "vk/linux/3dstate-gen12.inc"
 
 /* The marker the copy engine must write. */
 #define I915_SELFTEST_MARKER		0xdeadbeefU
@@ -304,6 +305,107 @@ drv_i915_rcs_selftest(
 
 	error = (engine->completed_seqno == request->seqno && marker[0] == I915_RCS_MARKER) ? 0 : EIO;
 	kern_logf("i915: rcs selftest %s\n", error == 0 ? "passed (render engine executes)" : "FAILED");
+
+	drv_i915_gem_unbind_vm(object);
+	drv_i915_gem_destroy(device, object);
+	return error;
+}
+
+/* STATE_BASE_ADDRESS parse check: a marker after it proves the 22-dword command
+ * is well formed (the parser reaches the store) before real heaps are attached. */
+int
+drv_i915_rt_selftest(
+	struct i915_device *device)
+{
+	struct i915_engine *engine;
+	struct i915_request *request;
+	struct i915_gem_object *object;
+	volatile uint32_t *marker;
+	uint64_t iteration;
+	unsigned long irq;
+	bool prior_enabled;
+	uint32_t mocs;
+	unsigned n;
+	int error;
+
+	engine = &device->engines[I915_ENGINE_RCS0];
+	mocs = I915_MOCS_UNCACHED_INDEX;
+	(void)mocs;
+
+	error = drv_i915_gem_create(device, 4096U, &object);
+	if (error != 0)
+		return error;
+	error = drv_i915_gem_bind_vm(&engine->kernel_vm, object);
+	if (error != 0) {
+		drv_i915_gem_destroy(device, object);
+		return error;
+	}
+	marker = kern_pmem_to_kernel(object->run.paddr);
+	marker[0] = 0U;
+	kern_io_write_barrier();
+
+	irq = spin_lock_irqsave(&device->irq_lock);
+	error = drv_i915_request_alloc(engine, NULL, NULL, &request);
+	if (error != 0) {
+		spin_unlock_irqrestore(&device->irq_lock, irq);
+		drv_i915_gem_unbind_vm(object);
+		drv_i915_gem_destroy(device, object);
+		return error;
+	}
+	request->context = &engine->kernel_context;
+
+	n = 0U;
+	/* PIPELINE_SELECT: 3D pipeline. */
+	request->extra[n++] = (0x6104U << 16) | GEN12_PIPELINE_SELECT_3D;
+	/* STATE_BASE_ADDRESS, 22 dwords; bases null with modify+MOCS, sizes maxed. */
+	request->extra[n++] = (0x6101U << 16) | (22U - 2U);	/* DW0 header */
+	request->extra[n++] = 0U;			/* DW1 general base lo */
+	request->extra[n++] = 0U;				/* DW2 general base hi */
+	request->extra[n++] = 0U;			/* DW3 stateless data port MOCS */
+	request->extra[n++] = 0U;			/* DW4 surface base lo */
+	request->extra[n++] = 0U;				/* DW5 surface base hi */
+	request->extra[n++] = 0U;			/* DW6 dynamic base lo */
+	request->extra[n++] = 0U;				/* DW7 dynamic base hi */
+	request->extra[n++] = 0U;			/* DW8 indirect base lo */
+	request->extra[n++] = 0U;				/* DW9 indirect base hi */
+	request->extra[n++] = 0U;			/* DW10 instruction base lo */
+	request->extra[n++] = 0U;				/* DW11 instruction base hi */
+	request->extra[n++] = 0U;		/* DW12 general size */
+	request->extra[n++] = 0U;		/* DW13 dynamic size */
+	request->extra[n++] = 0U;		/* DW14 indirect size */
+	request->extra[n++] = 0U;			/* DW15 instruction size */
+	request->extra[n++] = 0U;			/* DW16 bindless surface lo */
+	request->extra[n++] = 0U;				/* DW17 bindless surface hi */
+	request->extra[n++] = 0U;			/* DW18 bindless surface size */
+	request->extra[n++] = 0U;			/* DW19 bindless sampler lo */
+	request->extra[n++] = 0U;				/* DW20 bindless sampler hi */
+	request->extra[n++] = 0U;			/* DW21 bindless sampler size */
+	/* MI_STORE marker proves the parser reached here. */
+	request->extra[n++] = MI_STORE_DWORD_IMM_GEN4;
+	request->extra[n++] = (uint32_t)object->va;
+	request->extra[n++] = (uint32_t)(object->va >> 32);
+	request->extra[n++] = 0x5ba5eba5U;
+	request->extra_count = n;
+
+	drv_i915_request_queue(engine, request);
+	drv_i915_request_kick(engine);
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+
+	prior_enabled = kern_irq_disable();
+	kern_irq_enable();
+	for (iteration = 0U; iteration < I915_SELFTEST_POLL_BOUND; iteration++) {
+		kern_io_read_barrier();
+		if (engine->completed_seqno == request->seqno)
+			break;
+	}
+	if (!prior_enabled)
+		(void)kern_irq_disable();
+
+	kern_io_read_barrier();
+	kern_logf("i915: rt sba selftest marker=0x%08x seqno=%u/%u\n",
+		marker[0], engine->completed_seqno, request->seqno);
+	error = (engine->completed_seqno == request->seqno && marker[0] == 0x5ba5eba5U) ? 0 : EIO;
+	kern_logf("i915: rt sba selftest %s\n", error == 0 ? "passed (STATE_BASE_ADDRESS parses)" : "FAILED");
 
 	drv_i915_gem_unbind_vm(object);
 	drv_i915_gem_destroy(device, object);

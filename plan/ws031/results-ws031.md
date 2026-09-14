@@ -322,3 +322,24 @@ RCS0 kernel context(PPGTT) で MI_STORE marker を書き、PIPE_CONTROL breadcru
 3DSTATE_BINDING_TABLE_POINTERS_PS + binding table、3DSTATE_{VS,PS,SF,CLIP,WM,VIEWPORT,...}、
 定数色を出す PS、3DPRIMITIVE(全画面 rect)。実機フィードバックで段階的に。
 その後 scanout(表示)、三角形、shader OP 拡張、texture。
+
+## p011 増分E-3 (2026-09-15): 3D パイプライン土台（PIPELINE_SELECT + STATE_BASE_ADDRESS）実機確認
+
+RCS0 で PIPELINE_SELECT(3D) + STATE_BASE_ADDRESS(22 dw) + MI_STORE marker を実行:
+
+    i915: rt sba selftest marker=0x5ba5eba5 seqno=2/2
+    i915: rt sba selftest passed (STATE_BASE_ADDRESS parses)
+
+### 判明
+- STATE_BASE_ADDRESS の 22-dword 長は正しい（parser が marker に到達＝完走）。
+- PIPELINE_SELECT(3D) は request 経路で動く。
+- **落とし穴**: 各 base を「null address + modify enable + max size」にすると GPU がアドレス0に
+  ヒープを張ろうとして fault→ハング（seqno 未完）。→ 未使用 base は modify=0、使う base は実
+  アドレス(PPGTT va)を modify=1 で指す。
+
+### 次段（3D render target draw の残り、実機反復）
+実 heap（surface state / dynamic state / instruction）を STATE_BASE_ADDRESS に結線 →
+RENDER_SURFACE_STATE(color RT) + binding table + 3DSTATE_BINDING_TABLE_POINTERS_PS →
+定数色 PS カーネル(compile or 手書き GEN) + 3DSTATE_{VS,PS,PS_EXTRA,SBE,WM,PS_BLEND,SF,CLIP,
+RASTER,MULTISAMPLE,VIEWPORT} + DRAWING_RECTANGLE → 頂点(RECTLIST) → 3DPRIMITIVE →
+RT 読み戻しで単色確認。gen110/gen120.xml から順次転記。
