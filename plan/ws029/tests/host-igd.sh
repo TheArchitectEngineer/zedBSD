@@ -46,8 +46,17 @@ PY
 }
 
 dri_users() {
-	# Lists DRM users other than systemd and logind, which hold card0 permanently.
-	fuser -v /dev/dri/* 2>&1 | awk 'NR > 1 && $NF != "systemd" && $NF != "systemd-logind" && $NF != "COMMAND"'
+	# Prints the DRM users other than systemd/logind, which hold card0 permanently.
+	pids=$(for node in /dev/dri/card* /dev/dri/renderD*; do
+		[ -e "$node" ] || continue
+		fuser "$node" 2>/dev/null
+	done)
+	for pid in $pids; do
+		comm=$(cat "/proc/$pid/comm" 2>/dev/null || echo gone)
+		if [ "$comm" != "systemd" ] && [ "$comm" != "systemd-logind" ] && [ "$comm" != "gone" ]; then
+			echo "$pid:$comm"
+		fi
+	done
 }
 
 wait_for() {
@@ -65,19 +74,48 @@ wait_for() {
 }
 
 attach() {
-	# The DRM-user check is only meaningful when fuser exists; refuse to guess.
-	if ! command -v fuser >/dev/null 2>&1 || ! command -v timeout >/dev/null 2>&1; then
-		echo "host-igd: fuser and timeout are required" >&2
+	# The DRM-user check is only meaningful when these tools exist; refuse to guess.
+	if ! command -v fuser >/dev/null 2>&1 || ! command -v timeout >/dev/null 2>&1 || ! command -v loginctl >/dev/null 2>&1; then
+		echo "host-igd: fuser, timeout and loginctl are required" >&2
 		exit 10
 	fi
 
-	# The display manager and every DRM user must be gone before i915 lets go.
-	systemctl stop gdm
-	if ! wait_for 15 'test -z "$(fuser -v /dev/dri/* 2>&1 | awk '"'"'NR > 1 && $NF != "systemd" && $NF != "systemd-logind" && $NF != "COMMAND"'"'"')"'; then
-		echo "host-igd: /dev/dri still in use after stopping gdm:" >&2
-		dri_users >&2 || true
+	# The display manager stops and is masked so nothing restarts it during the attempt.
+	systemctl stop gdm || true
+	systemctl mask gdm >/dev/null 2>&1 || true
+
+	# The display manager must actually reach the inactive state before proceeding.
+	if ! wait_for 20 'test "$(systemctl is-active gdm)" != active'; then
+		echo "host-igd: gdm did not become inactive after stop" >&2
+		systemctl unmask gdm >/dev/null 2>&1 || true
 		exit 2
 	fi
+
+	# The already-running graphical (Wayland) session keeps the GPU busy; end it forcibly.
+	# Only seat0 sessions are terminated, so this SSH session (no seat) is untouched.
+	loginctl terminate-seat seat0 >/dev/null 2>&1 || true
+	for session in $(loginctl list-sessions --no-legend 2>/dev/null | awk '$4 == "seat0" {print $1}'); do
+		loginctl terminate-session "$session" >/dev/null 2>&1 || true
+	done
+
+	# Wait until no graphical session remains on seat0.
+	if ! wait_for 20 'test -z "$(loginctl list-sessions --no-legend 2>/dev/null | awk '"'"'$4 == "seat0" {print $1}'"'"')"'; then
+		echo "host-igd: a seat0 session is still present after termination" >&2
+		loginctl list-sessions --no-legend >&2 || true
+		systemctl unmask gdm >/dev/null 2>&1 || true
+		exit 2
+	fi
+
+	# Wait until the device is free of every non-logind user, then let the buffers drain.
+	if ! wait_for 30 'test -z "$(sh '"$0"' dri-users)"'; then
+		echo "host-igd: /dev/dri still in use after stopping gdm and ending seat0:" >&2
+		dri_users >&2 || true
+		systemctl unmask gdm >/dev/null 2>&1 || true
+		exit 2
+	fi
+
+	# A short settle lets the GPU finish any in-flight work the compositor left before unbind.
+	sleep 2
 
 	modprobe vfio-pci
 
@@ -128,6 +166,8 @@ restore() {
 		exit 8
 	fi
 
+	# Unmasking and restarting the display manager brings the graphical session back.
+	systemctl unmask gdm >/dev/null 2>&1 || true
 	systemctl start gdm
 	sleep 15
 	if [ "$(systemctl is-active gdm)" != "active" ]; then
@@ -142,5 +182,6 @@ case $action in
 	status) status ;;
 	attach) attach ;;
 	restore) restore ;;
-	*) echo "usage: host-igd.sh status|attach|restore" >&2; exit 1 ;;
+	dri-users) dri_users ;;
+	*) echo "usage: host-igd.sh status|attach|restore|dri-users" >&2; exit 1 ;;
 esac

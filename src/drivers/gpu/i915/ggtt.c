@@ -21,12 +21,16 @@
 #include <kern/device-io.h>
 #include <kern/klog.h>
 #include <kern/kmem.h>
+#include <kern/platform.h>
 
 #include <errno.h>
 #include <string.h>
 
+#include "bootloader/include/amd64-handoff.h"
+
 static int i915_ggtt_probe(struct i915_device *device);
 static int i915_ggtt_scratch_start(struct i915_device *device);
+static void i915_ggtt_boot_scanout(struct i915_device *device, unsigned *first_page, unsigned *page_count);
 static void i915_ggtt_write_pte(struct i915_device *device, unsigned index, uint64_t pte);
 static void i915_ggtt_flush(struct i915_device *device);
 static unsigned i915_ggtt_bit_test(const struct i915_ggtt *ggtt, unsigned index);
@@ -39,6 +43,9 @@ int
 drv_i915_ggtt_start(
 	struct i915_device *device)
 {
+	unsigned scanout_start;
+	unsigned scanout_pages;
+	unsigned scanout_end;
 	unsigned index;
 	int error;
 
@@ -65,10 +72,30 @@ drv_i915_ggtt_start(
 	for (index = 0U; index < I915_GGTT_RESERVED_PAGES; index++)
 		i915_ggtt_bit_set(&device->ggtt, index, 1U);
 
-	/* Every entry points at scratch before any engine can read the table. */
+	/*
+	 * On a native boot the firmware is still scanning the display out of the
+	 * GGTT.  Those entries are held back from the scratch fill and reserved so
+	 * the console stays readable and no allocation overwrites the framebuffer.
+	 */
+	device->stage = "ggtt-scanout";
+	i915_ggtt_boot_scanout(device, &scanout_start, &scanout_pages);
+	scanout_end = scanout_start + scanout_pages;
+	for (index = scanout_start; index < scanout_end; index++)
+		i915_ggtt_bit_set(&device->ggtt, index, 1U);
+	if (scanout_pages != 0U)
+		kern_logf("i915: preserving %u GGTT scanout pages from page %u\n",
+			scanout_pages, scanout_start);
+
+	/* Every entry outside the preserved scanout points at scratch before any engine reads the table. */
 	device->stage = "ggtt-fill";
-	for (index = 0U; index < device->ggtt.entries; index++)
+	for (index = 0U; index < device->ggtt.entries; index++) {
+		/* The firmware framebuffer's own entries are left untouched so scanout survives. */
+		if (index >= scanout_start &&
+		    index < scanout_end)
+			continue;
+
 		i915_ggtt_write_pte(device, index, device->ggtt.scratch_pte);
+	}
 
 	/* The flush makes the whole table visible to the GPU translation caches. */
 	i915_ggtt_flush(device);
@@ -345,6 +372,70 @@ i915_ggtt_scratch_start(
 
 	/* Succeeded: every cleared entry can point at this page. */
 	return 0;
+}
+
+/* Reports the GGTT page range the boot firmware is scanning the display out of. */
+static void
+i915_ggtt_boot_scanout(
+	struct i915_device *device,
+	unsigned *first_page,
+	unsigned *page_count)
+{
+	const struct zbl6_framebuffer *framebuffer;
+	struct drv_pci_bar aperture;
+	uint64_t offset;
+	uint64_t last;
+	unsigned start;
+	unsigned pages;
+	int error;
+
+	/* Nothing is preserved unless every check below identifies a mapped framebuffer. */
+	*first_page = 0U;
+	*page_count = 0U;
+
+	/* The boot handoff names the framebuffer the firmware left the display scanning. */
+	framebuffer = kern_boot_handoff("pcat.framebuffer");
+	if (framebuffer == NULL || framebuffer->size == 0U)
+		return;
+
+	/* The display reads the framebuffer through the GMADR aperture that BAR2 exposes. */
+	error = drv_pci_device_bar(device->pci, GEN4_GMADR_BAR, &aperture);
+	if (error != 0)
+		return;
+
+	/* A framebuffer below the aperture is not addressed through the GGTT at all. */
+	if (framebuffer->physical_base < aperture.bus_address) {
+		kern_logf("i915: boot framebuffer 0x%llx below GMADR 0x%llx; scanout not preserved\n",
+			(unsigned long long)framebuffer->physical_base,
+			(unsigned long long)aperture.bus_address);
+		return;
+	}
+
+	/* A framebuffer past the aperture end likewise has no GGTT entries to keep. */
+	offset = framebuffer->physical_base - aperture.bus_address;
+	if (offset >= aperture.size) {
+		kern_logf("i915: boot framebuffer offset 0x%llx past GMADR size 0x%llx; scanout not preserved\n",
+			(unsigned long long)offset,
+			(unsigned long long)aperture.size);
+		return;
+	}
+
+	/* The aperture offset equals the GGTT offset, so it selects the entries to keep. */
+	last = offset + framebuffer->size - 1U;
+	if (last >= aperture.size)
+		last = aperture.size - 1U;
+	start = (unsigned)(offset / I915_PAGE_BYTES);
+	pages = (unsigned)(last / I915_PAGE_BYTES) - start + 1U;
+
+	/* A firmware value is clamped to the table so the range can never walk past it. */
+	if (start >= device->ggtt.entries)
+		return;
+	if (start + pages > device->ggtt.entries)
+		pages = device->ggtt.entries - start;
+
+	/* Succeeded: the caller keeps and reserves this range during the scratch fill. */
+	*first_page = start;
+	*page_count = pages;
 }
 
 /* Stores one entry into the mapped page table window. */

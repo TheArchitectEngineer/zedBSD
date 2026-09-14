@@ -20,6 +20,7 @@
 
 #include <drivers/gpu.h>
 #include <drivers/i915.h>
+#include "vk/vk.h"
 #include <uapi/gpu.h>
 #include <uapi/gpu-job.h>
 #include <kern/device-io.h>
@@ -38,7 +39,7 @@
 
 /* Storage with CPU copies, native streams, queued completion and supervised jobs. */
 #define I915_CAPABILITIES	(GPU_CAP_RESOURCE | GPU_CAP_TRANSFER | GPU_CAP_COMMAND | \
-				 GPU_CAP_NOTIFICATION | GPU_CAP_JOB | GPU_CAP_JOB_CAPACITY)
+				 GPU_CAP_NOTIFICATION | GPU_CAP_JOB | GPU_CAP_JOB_CAPACITY | GPU_CAP_CAPSET)
 
 /* The pool never holds more batch objects than requests can be in flight. */
 #define I915_BATCH_POOL_MAX	I915_REQUEST_SLOTS
@@ -56,6 +57,7 @@ static int i915_resource_create(void *opaque, void *private_session, const struc
 static void i915_resource_destroy(void *opaque, void *private_session, void *object);
 static int i915_resource_read(void *opaque, void *private_session, void *object, uint64_t offset, void *buffer, uint32_t bytes);
 static int i915_resource_write(void *opaque, void *private_session, void *object, uint64_t offset, const void *buffer, uint32_t bytes);
+static int i915_get_capset(void *opaque, void *private_session, struct gpu_capset *capset);
 static int i915_command(void *opaque, void *private_session, const void *buffer, uint32_t bytes);
 static int i915_command_submit(void *opaque, void *private_session, const void *buffer, uint32_t bytes, uint32_t flags, uint32_t timeline, struct drv_gpu_completion *completion);
 static void i915_command_drain(void *opaque, void *private_session);
@@ -361,6 +363,12 @@ i915_start(
 		return error;
 #endif
 
+	/* The native Vulkan executor attaches once execution is proven. */
+	device->stage = "vk";
+	error = drv_i915_vk_attach(device, &device->vk);
+	if (error != 0)
+		return error;
+
 	/* PCI publishes the GPU node after attach and withdraws it before detach. */
 	device->stage = "gpu-publication";
 	error = drv_pci_device_set_service(device->pci, &service, device);
@@ -379,6 +387,10 @@ i915_stop(
 	struct i915_gem_object *object;
 	struct i915_ppgtt *vm;
 	int error;
+
+	/* The Vulkan executor releases its software state before hardware teardown. */
+	drv_i915_vk_detach(device->vk);
+	device->vk = NULL;
 
 	/* Interrupts stop before any state they touch is released. */
 	error = drv_i915_irq_stop(device);
@@ -526,7 +538,7 @@ i915_publish(
 		i915_get_info,
 		i915_resource_create,
 		i915_resource_destroy,
-		NULL,
+		i915_get_capset,
 		NULL,
 		i915_resource_read,
 		i915_resource_write,
@@ -662,6 +674,19 @@ i915_open(
 		}
 	}
 
+	/* The executor session wraps this session address space and lifetime. */
+	if (device->vk != NULL) {
+		error = drv_i915_vk_open(device->vk, session, &session->vk);
+		if (error != 0) {
+			i915_session_contexts_destroy(device, session);
+			drv_i915_ppgtt_destroy(session->vm);
+			mutex_unlock(&device->mutex);
+			kern_free(session->vm);
+			kern_free(session);
+			return error;
+		}
+	}
+
 	mutex_unlock(&device->mutex);
 
 	*result = session;
@@ -682,6 +707,12 @@ i915_close(
 
 	device = opaque;
 	session = private_session;
+
+	/* The executor session is software state, released first. */
+	if (session->vk != NULL) {
+		drv_i915_vk_close(session->vk);
+		session->vk = NULL;
+	}
 
 	/* The address space is released after every object left it. */
 	mutex_lock(&device->mutex);
@@ -916,6 +947,35 @@ i915_resource_write(
 	return 0;
 }
 
+/* Reports the executor capset so libvulkan accepts the node as a backend. */
+static int
+i915_get_capset(
+	void *opaque,
+	void *private_session,
+	struct gpu_capset *capset)
+{
+	struct i915_device *device;
+
+	/* The capset belongs to the device executor, not to any session. */
+	(void)private_session;
+	device = opaque;
+
+	/* A device without the executor reports no capset. */
+	if (device->vk == NULL)
+		return ENOTSUP;
+
+	/* The reply must fit the requested capacity. */
+	if (device->vk->capset_bytes > capset->capacity)
+		return EINVAL;
+
+	/* The executor speaks one capset the client reads before it opens. */
+	capset->bytes = device->vk->capset_bytes;
+	memcpy(capset->data, device->vk->capset, device->vk->capset_bytes);
+
+	/* Succeeded: the client can open the node as a Vulkan backend. */
+	return 0;
+}
+
 /* Accepts a synchronous native stream; receipt does not wait for execution. */
 static int
 i915_command(
@@ -926,10 +986,20 @@ i915_command(
 {
 	struct i915_device *device;
 	struct i915_session *session;
+	uint32_t magic;
 	int error;
 
 	device = opaque;
 	session = private_session;
+
+	/* A stream that is not a native batch is a Vulkan command for the executor. */
+	if (session->vk != NULL) {
+		if (bytes >= 4U) {
+			memcpy(&magic, buffer, 4U);
+			if (magic != I915_STREAM_MAGIC)
+				return drv_i915_vk_command(session->vk, buffer, bytes, NULL, NULL);
+		}
+	}
 
 	/* The stream is validated, copied and queued under the controller mutex. */
 	mutex_lock(&device->mutex);
@@ -959,6 +1029,7 @@ i915_command_submit(
 {
 	struct i915_device *device;
 	struct i915_session *session;
+	uint32_t magic;
 	int error;
 
 	/* Every accepted submission owes exactly one completion. */
@@ -966,6 +1037,20 @@ i915_command_submit(
 	session = private_session;
 	if (completion == NULL)
 		return EINVAL;
+
+	/* A non-native stream is a Vulkan command; it completes as it decodes. */
+	if (session->vk != NULL) {
+		if (bytes >= 4U) {
+			memcpy(&magic, buffer, 4U);
+			if (magic != I915_STREAM_MAGIC) {
+				error = drv_i915_vk_command(session->vk, buffer, bytes, NULL, NULL);
+				if (error != 0)
+					return error;
+				drv_gpu_complete(completion, 0);
+				return 0;
+			}
+		}
+	}
 
 	/* Streams and markers share the serialized submission path. */
 	mutex_lock(&device->mutex);

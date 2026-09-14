@@ -132,6 +132,7 @@ AMD64_I915_SOURCES :=
 ifeq ($(CONFIG_DRIVER_PCI_I915),y)
 AMD64_I915_SOURCES += src/drivers/gpu/i915/i915.c src/drivers/gpu/i915/uncore.c \
 	src/drivers/gpu/i915/ggtt.c src/drivers/gpu/i915/ppgtt.c src/drivers/gpu/i915/gem.c src/drivers/gpu/i915/irq.c src/drivers/gpu/i915/engine.c src/drivers/gpu/i915/lrc.c src/drivers/gpu/i915/request.c
+AMD64_I915_SOURCES += src/drivers/gpu/i915/vk/vk.c src/drivers/gpu/i915/vk/cmd.c src/drivers/gpu/i915/vk/res.c src/drivers/gpu/i915/vk/pipe.c src/drivers/gpu/i915/vk/cmdbuf.c src/drivers/gpu/i915/vk/sync.c src/drivers/gpu/i915/vk/wsi.c
 ifeq ($(CONFIG_DRIVER_PCI_I915_SELFTEST),y)
 AMD64_I915_SOURCES += src/drivers/gpu/i915/selftest.c
 endif

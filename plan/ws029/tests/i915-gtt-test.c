@@ -18,6 +18,7 @@
 static uint64_t entry(unsigned index);
 static uint64_t *table(hal_physaddr_t physical);
 static void test_start(void);
+static void test_scanout_preserved(void);
 static void test_allocator(void);
 static void test_insert_clear(void);
 static void test_probe_failures(void);
@@ -29,6 +30,7 @@ int
 main(void)
 {
 	test_start();
+	test_scanout_preserved();
 	test_allocator();
 	test_insert_clear();
 	test_probe_failures();
@@ -250,6 +252,74 @@ test_start(void)
 	assert(device.ggtt.bitmap == NULL);
 	assert(fixture_pool_live == 0U);
 	assert(device.ggtt.entries == 0U);
+}
+
+/* The firmware framebuffer's GGTT entries survive the fill and are reserved from allocation. */
+static void
+test_scanout_preserved(void)
+{
+	struct i915_device device;
+	uint64_t aperture_base;
+	uint64_t fb_offset;
+	uint64_t fb_size;
+	uint64_t sentinel;
+	unsigned fb_start;
+	unsigned fb_pages;
+	unsigned fb_end;
+	unsigned index;
+	uint32_t run;
+	uint32_t after;
+	int error;
+
+	fixture_reset();
+
+	/* A 256 MiB aperture at a plausible bus address holds the framebuffer 8 MiB in. */
+	aperture_base = 0x4000000000ULL;
+	fb_offset = 0x800000ULL;
+	fb_size = 0x400000ULL;
+	fixture_gmadr_base = aperture_base;
+	fixture_gmadr_size = 256ULL * 1024ULL * 1024ULL;
+	fixture_framebuffer.physical_base = aperture_base + fb_offset;
+	fixture_framebuffer.size = fb_size;
+	fixture_framebuffer.width = 1024U;
+	fixture_framebuffer.height = 768U;
+	fixture_framebuffer.stride = 4096U;
+	fixture_framebuffer_present = 1U;
+
+	fixture_device(&device);
+
+	/* The firmware leaves a recognizable present PTE in each framebuffer page entry. */
+	fb_start = (unsigned)(fb_offset / I915_PAGE_BYTES);
+	fb_pages = (unsigned)(fb_size / I915_PAGE_BYTES);
+	fb_end = fb_start + fb_pages;
+	sentinel = 0x123456000ULL | GEN8_PAGE_PRESENT;
+	for (index = fb_start; index < fb_end; index++)
+		kern_mmio_write64(fixture_gtt + (size_t)index * 8U, sentinel);
+
+	error = drv_i915_ggtt_start(&device);
+	assert(error == 0);
+
+	/* The framebuffer's own entries are left exactly as the firmware wrote them. */
+	assert(entry(fb_start) == sentinel);
+	assert(entry(fb_start + fb_pages - 1U) == sentinel);
+
+	/* The entries bracketing the range are scratch, so only the framebuffer was spared. */
+	assert(entry(fb_start - 1U) == device.ggtt.scratch_pte);
+	assert(entry(fb_end) == device.ggtt.scratch_pte);
+
+	/* Filling the space up to the framebuffer forces the next page past the reserved range. */
+	error = drv_i915_ggtt_alloc(&device, fb_start - I915_GGTT_RESERVED_PAGES, &run);
+	assert(error == 0);
+	assert(run == I915_GGTT_RESERVED_PAGES * I915_PAGE_BYTES);
+	error = drv_i915_ggtt_alloc(&device, 1U, &after);
+	assert(error == 0);
+	assert(after == fb_end * I915_PAGE_BYTES);
+
+	/* The allocations are returned so stop finds no live mapping. */
+	drv_i915_ggtt_free(&device, run, fb_start - I915_GGTT_RESERVED_PAGES);
+	drv_i915_ggtt_free(&device, after, 1U);
+	drv_i915_ggtt_stop(&device);
+	assert(device.ggtt.allocated_pages == 0U);
 }
 
 /* The allocator skips the reserved pages, packs runs and refuses what does not fit. */

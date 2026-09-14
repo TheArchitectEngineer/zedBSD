@@ -30,7 +30,10 @@
 #include <kern/device-io.h>
 #include <kern/klog.h>
 #include <kern/kmem.h>
+#include <kern/platform.h>
 #include <kern/sched.h>
+
+#include "bootloader/include/amd64-handoff.h"
 
 /* BAR0 is 16 MiB on the target: registers below, the GTT table above. */
 #define FIXTURE_BAR0_BYTES	(16U * 1024U * 1024U)
@@ -51,6 +54,14 @@ static unsigned fixture_pool_live;
 
 /* The PCI configuration word carrying the GGTT size field. */
 static uint16_t fixture_gmch_control;
+
+/* The GMADR aperture BAR the scanout preservation reads; a zero base means no BAR2. */
+static uint64_t fixture_gmadr_base;
+static uint64_t fixture_gmadr_size;
+
+/* The boot framebuffer handoff, returned only when the test marks one present. */
+static struct zbl6_framebuffer fixture_framebuffer;
+static unsigned fixture_framebuffer_present;
 
 /* Makes forcewake acknowledgments or the reset bit stay pending. */
 static unsigned fixture_forcewake_stuck;
@@ -134,6 +145,10 @@ fixture_reset(void)
 	fixture_pool_next = 0U;
 	fixture_pool_live = 0U;
 	fixture_gmch_control = (uint16_t)(3U << BDW_GMCH_GGMS_SHIFT);
+	fixture_gmadr_base = 0U;
+	fixture_gmadr_size = 0U;
+	memset(&fixture_framebuffer, 0, sizeof(fixture_framebuffer));
+	fixture_framebuffer_present = 0U;
 	fixture_forcewake_stuck = 0U;
 	fixture_reset_stuck = 0U;
 	fixture_flushes = 0U;
@@ -925,7 +940,8 @@ drv_pci_device_config_read16(
 }
 
 /*
- * Describes BAR0 as a 16 MiB 64-bit memory BAR.
+ * Describes BAR0 as a 16 MiB 64-bit memory BAR, and BAR2 as the GMADR aperture
+ * when a test has configured one for the scanout preservation path.
  */
 int
 drv_pci_device_bar(
@@ -934,14 +950,44 @@ drv_pci_device_bar(
 	struct drv_pci_bar *bar)
 {
 	(void)device;
-	if (index != GEN4_GTTMMADR_BAR)
-		return EINVAL;
-	memset(bar, 0, sizeof(*bar));
-	bar->index = index;
-	bar->type = DRV_PCI_BAR_MEMORY64;
-	bar->bus_address = 0x6054000000ULL;
-	bar->size = FIXTURE_BAR0_BYTES;
-	return 0;
+
+	/* BAR0 carries the register and GTT halves the rest of the driver maps. */
+	if (index == GEN4_GTTMMADR_BAR) {
+		memset(bar, 0, sizeof(*bar));
+		bar->index = index;
+		bar->type = DRV_PCI_BAR_MEMORY64;
+		bar->bus_address = 0x6054000000ULL;
+		bar->size = FIXTURE_BAR0_BYTES;
+		return 0;
+	}
+
+	/* BAR2 is the display aperture; a zero size means the test left it absent. */
+	if (index == GEN4_GMADR_BAR && fixture_gmadr_size != 0U) {
+		memset(bar, 0, sizeof(*bar));
+		bar->index = index;
+		bar->type = DRV_PCI_BAR_MEMORY64;
+		bar->bus_address = fixture_gmadr_base;
+		bar->size = fixture_gmadr_size;
+		return 0;
+	}
+
+	return EINVAL;
+}
+
+/*
+ * Returns the boot framebuffer handoff only for the name the driver asks for
+ * and only when a test has populated one.
+ */
+void *
+kern_boot_handoff(
+	const char *name)
+{
+	assert(name != NULL);
+	if (strcmp(name, "pcat.framebuffer") != 0)
+		return NULL;
+	if (fixture_framebuffer_present == 0U)
+		return NULL;
+	return &fixture_framebuffer;
 }
 
 int
@@ -1253,4 +1299,48 @@ fixture_device(
 	device->regs.size = FIXTURE_REGS_BYTES;
 	device->regs.type = DRV_PCI_BAR_MEMORY64;
 	spin_init(&device->irq_lock, LOCK_RANK_DEVICE, "fixture");
+}
+
+/*
+ * WS031 integration: i915.c attaches the native Vulkan executor. These stubs
+ * keep the WS029 native-stream fixtures linking without pulling the executor.
+ */
+int
+drv_i915_vk_attach(struct i915_device *device, struct i915_vk_device **out)
+{
+	(void)device;
+	*out = NULL;
+	return 0;
+}
+
+void
+drv_i915_vk_detach(struct i915_vk_device *vk)
+{
+	(void)vk;
+}
+
+int
+drv_i915_vk_open(struct i915_vk_device *vk, struct i915_session *gpu, struct i915_vk_session **out)
+{
+	(void)vk;
+	(void)gpu;
+	*out = NULL;
+	return 0;
+}
+
+void
+drv_i915_vk_close(struct i915_vk_session *session)
+{
+	(void)session;
+}
+
+int
+drv_i915_vk_command(struct i915_vk_session *session, const void *wire, size_t bytes, void *reply, size_t *reply_bytes)
+{
+	(void)session;
+	(void)wire;
+	(void)bytes;
+	(void)reply;
+	(void)reply_bytes;
+	return 0;
 }

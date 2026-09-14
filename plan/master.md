@@ -31,7 +31,7 @@ Objectives → Milestone Goals → WS → Phase → Queue試行/結果を対応�
 | **MG003：対象機へ導入して単独起動できる** | O2, O4 | 合意した機種・媒体でインストール後の単独起動・ログインを確認できる。実機とQEMUの証拠を区別する。 | [ws003](https://github.com/awemorris/zedBSD/issues/4), [ws004](https://github.com/awemorris/zedBSD/issues/5), [ws019](https://github.com/awemorris/zedBSD/issues/20), [ws020](https://github.com/awemorris/zedBSD/issues/21), [WS028](https://github.com/awemorris/zedBSD/issues/382) |
 | **MG004：データを保持しメモリ/ストレージを実用的に使える** | O1, O2 | 永続化、低メモリ時の進行、媒体世代、既定構成の性能を合意した用途で確認できる。 | [ws016](https://github.com/awemorris/zedBSD/issues/17), [ws024](https://github.com/awemorris/zedBSD/issues/25), [ws025](https://github.com/awemorris/zedBSD/issues/26) |
 | **MG005：シンプルで一貫したネットワーク/サービス管理を利用できる** | O1, O2, O3 | networkd/netconf/serviceの責務・設定・操作が一貫し、永続化と失敗後の復旧を確認できる。 | [ws002](https://github.com/awemorris/zedBSD/issues/3), [ws005](https://github.com/awemorris/zedBSD/issues/6), [ws011](https://github.com/awemorris/zedBSD/issues/12), [ws012](https://github.com/awemorris/zedBSD/issues/13) |
-| **MG006：グラフィカルな操作環境を利用できる** | O2 | 入力・描画・ウィンドウ・端末・GUIツールの一連の操作を合意した環境で確認できる。 | [ws006](https://github.com/awemorris/zedBSD/issues/7), [ws007](https://github.com/awemorris/zedBSD/issues/8), [ws008](https://github.com/awemorris/zedBSD/issues/9), [ws014](https://github.com/awemorris/zedBSD/issues/15), [ws017](https://github.com/awemorris/zedBSD/issues/18), [ws005](ws005/ws.md), [WS030](https://github.com/awemorris/zedBSD/issues/388) |
+| **MG006：グラフィカルな操作環境を利用できる** | O2 | 入力・描画・ウィンドウ・端末・GUIツールの一連の操作を合意した環境で確認できる。 | [ws006](https://github.com/awemorris/zedBSD/issues/7), [ws007](https://github.com/awemorris/zedBSD/issues/8), [ws008](https://github.com/awemorris/zedBSD/issues/9), [ws014](https://github.com/awemorris/zedBSD/issues/15), [ws017](https://github.com/awemorris/zedBSD/issues/18), [ws005](ws005/ws.md), [WS030](https://github.com/awemorris/zedBSD/issues/388), [WS031](ws031/ws.md) |
 | **MG007：用途別の独自ディストリビューションを構成・配布できる** | O1, O2 | 第三者が用途別に構成し独自ブランドでビルド・配布できる。Linux/Android代替の対象用途・機能/品質基準を具体化し実証する。 | [ws013](https://github.com/awemorris/zedBSD/issues/14), [ws015](https://github.com/awemorris/zedBSD/issues/16) |
 | **MG008：最小HALの移植契約を公開し異なる機種で実証できる** | O4 | 32bit/64bitのHAL契約・移植手順と異種/レトロ機での実証を公開し、移植者が必要な実装を判断できる。 | [ws018](https://github.com/awemorris/zedBSD/issues/19), [ws027](https://github.com/awemorris/zedBSD/issues/374) |
 | **MG009：AI活用OSS開発の経験を検証可能な知見として公開できる** | O5 | 設計権限・レビュー・変更追跡・失敗からの回復について事例と根拠を公開し、知見と未解決の問いを整理する。 | 未割当：成果を担う作業の具体化が必要 |
@@ -1375,6 +1375,7 @@ Future Listへ移したWS013・WS015は次節で管理する。完了WSの詳細
 | [WS028](https://github.com/awemorris/zedBSD/issues/382) | MG003 | インストーラ実機動作 | planning | 4機種の実機受け入れ。NVMe未動作と設定/組込み仮説を切り分ける。 |
 | [WS029](https://github.com/awemorris/zedBSD/issues/386) | MG006 | i915ネイティブGPU | planning | p001–p007作成、q314 prepared（未開始）。対象Latitude 5330 ADL-P、VFIO passthrough test loop。 |
 | [WS030](https://github.com/awemorris/zedBSD/issues/388) | MG006 | 標準Vulkan1.0・直接表示library | completed | q308全5件cleared。137core＋18 WSI、実描画・終了・console/所有権を確認。 |
+| [WS031](ws031/ws.md) | MG006 | i915ネイティブVulkan実行器 | planning | p001–p012作成（計画）。libvulkanのVulkanコマンドをi915 driver内でGENへ変換、in-kernel SPIR-V→GEN baseline compiler、KMS/WSI。到達点は実機native vkdemo。 |
 
 ## Future List(やりたいことリスト)
 

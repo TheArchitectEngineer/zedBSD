@@ -1,0 +1,19 @@
+{
+  "workspace": "ws031",
+  "authorization": "current user: 「OKです。設計に変更が必要なことがわかったときには、phaseをunclearedにしていったん作業をやめ、関連phaseやWSの設計を修正した上で、再度phaseを実行するようにしましょう。…では、WSの完了をゴールにして、実行をお願いします。」",
+  "authorized": [
+    "WS031 の実装実行（WS完了をゴール）",
+    "phase = 1 モジュールの委譲実装、確定インタフェースを満たす",
+    "設計変更が必要と判明した phase は uncleared にして停止→関連 phase/WS の設計を修正（新 phase にはせず一言記す）→再実行"
+  ],
+  "constraints": [
+    "HAL/hal.h 変更は別承認",
+    "UAPI（include/drivers/gpu.h の layout/ioctl）不変を既定、必要時は事前提示",
+    "WS029 core は §6 の許可関数のみ呼ぶ。3D 有効化・入口結線の core hook は該当 phase 計画で差分提示し承認後",
+    "Mesa 参照は転記直前に MIT 監査、非 MIT に触れたら停止",
+    "aggregate make check 禁止、対象 build は make -j16",
+    "source/doc の git add/commit/push はユーザー、GitHub 同期は別指示",
+    "実機ネイティブ起動の目視確認はユーザーが行う"
+  ],
+  "date": "2026-09-14"
+}

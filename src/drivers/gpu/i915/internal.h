@@ -116,6 +116,8 @@
 
 struct i915_device;
 struct i915_session;
+struct i915_vk_device;
+struct i915_vk_session;
 struct i915_engine;
 struct drv_gpu_completion;
 
@@ -325,6 +327,9 @@ struct i915_device {
 	uint32_t last_error[I915_ENGINE_COUNT];
 
 	struct drv_gpu_device *gpu;
+
+	/* The native Vulkan executor, attached after execution works. */
+	struct i915_vk_device *vk;
 	unsigned failed;
 	unsigned selftest_passed;
 };
@@ -338,6 +343,7 @@ struct i915_device {
  */
 struct i915_session {
 	struct i915_device *device;
+	struct i915_vk_session *vk;
 	uint32_t identifier;
 	struct i915_ppgtt *vm;
 	struct i915_context contexts[I915_ENGINE_COUNT];

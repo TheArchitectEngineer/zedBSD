@@ -73,6 +73,19 @@ drv_i915_engines_start(
 
 	device->forcewake_held = 1U;
 
+	/*
+	 * A device handed over by VFIO may still be mid-operation from the host
+	 * driver. A full graphics reset with forcewake held brings every engine
+	 * to a known idle state before the first register is programmed, which
+	 * the reset issued before forcewake during attach cannot guarantee.
+	 */
+	error = drv_i915_gt_reset(device);
+	if (error != 0) {
+		(void)drv_i915_forcewake_put(device, I915_FORCEWAKE_ALL);
+		device->forcewake_held = 0U;
+		return error;
+	}
+
 	/* Cache policy tables are global and are programmed once. */
 	i915_mocs_init(device);
 
