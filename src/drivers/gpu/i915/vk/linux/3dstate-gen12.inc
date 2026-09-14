@@ -35,7 +35,16 @@
 #define GEN12_PIPELINE_SELECT_DWORDS		1U
 #define GEN12_STATE_BASE_ADDRESS_DWORDS		22U
 
-/* PIPELINE_SELECT: the 3D pipeline is selection value 0. */
+/*
+ * PIPELINE_SELECT: the 3D pipeline is selection value 0.  Gen12 applies the
+ * selection only when its mask bits (15:8) cover it, and Mesa also masks in
+ * and sets the media sampler DOP clock gate (gen12 mask 0x13, bit 4).
+ */
 #define GEN12_PIPELINE_SELECT_3D		0U
+#define GEN12_PIPELINE_SELECT_MASK		(0x13U << 8)
+#define GEN12_PIPELINE_SELECT_MEDIA_DOP_GATE	(1U << 4)
+#define GEN12_PIPELINE_SELECT_DWORD(pipeline)	\
+	((GEN12_CMD_PIPELINE_SELECT << 16) | GEN12_PIPELINE_SELECT_MASK | \
+	 GEN12_PIPELINE_SELECT_MEDIA_DOP_GATE | (pipeline))
 
 #endif /* I915_VK_3DSTATE_GEN12_INC */

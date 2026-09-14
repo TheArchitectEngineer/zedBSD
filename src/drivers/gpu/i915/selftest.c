@@ -356,7 +356,7 @@ drv_i915_rt_selftest(
 
 	n = 0U;
 	/* PIPELINE_SELECT: 3D pipeline. */
-	request->extra[n++] = (0x6104U << 16) | GEN12_PIPELINE_SELECT_3D;
+	request->extra[n++] = GEN12_PIPELINE_SELECT_DWORD(GEN12_PIPELINE_SELECT_3D);
 	/* STATE_BASE_ADDRESS, 22 dwords; bases null with modify+MOCS, sizes maxed. */
 	request->extra[n++] = (0x6101U << 16) | (22U - 2U);	/* DW0 header */
 	request->extra[n++] = 0U;			/* DW1 general base lo */
@@ -409,5 +409,292 @@ drv_i915_rt_selftest(
 
 	drv_i915_gem_unbind_vm(object);
 	drv_i915_gem_destroy(device, object);
+	return error;
+}
+
+/*
+ * Render-target draw (built incrementally on hardware).  Step 1 validates that
+ * STATE_BASE_ADDRESS with real heap addresses does not fault: a marker after it
+ * must land.  Later steps add the surface state, pipeline state and primitive.
+ */
+/* Evicts one cache line so a later read observes memory, not a stale CPU line. */
+static void
+i915_selftest_clflush(volatile const void *address)
+{
+#if defined(__x86_64__) || defined(__i386__)
+	__asm__ volatile("mfence; clflush (%0); mfence" : : "r"(address) : "memory");
+#else
+	(void)address;
+#endif
+}
+
+/* Writes back and invalidates every CPU cache line; page tables then live in memory. */
+static void
+i915_selftest_wbinvd(void)
+{
+#if defined(__x86_64__) || defined(__i386__)
+	__asm__ volatile("wbinvd" : : : "memory");
+#endif
+}
+
+static uint32_t
+i915_sba_lo(uint64_t base, uint32_t mocs)
+{
+	if (base == 0U)
+		return 0U;
+	return 1U | (mocs << 4) | ((uint32_t)base & 0xfffff000U);
+}
+
+static uint32_t
+i915_sba_hi(uint64_t base)
+{
+	if (base == 0U)
+		return 0U;
+	return (uint32_t)(base >> 32);
+}
+
+/*
+ * One run: the 3D commands execute from a batch buffer in the kernel PPGTT.
+ *
+ * Commands placed directly in the ring run in the global GTT, so any
+ * STATE_BASE_ADDRESS there names GGTT offsets (that is how Linux's golden
+ * render state batch works).  The executor's batches live in the PPGTT, and
+ * so does this one, so the heap bases below are PPGTT addresses.
+ * Markers land before and after STATE_BASE_ADDRESS; the command streamer
+ * state is dumped on failure.
+ */
+static int
+i915_draw_sba_run(
+	struct i915_device *device,
+	const char *name,
+	struct i915_gem_object *rt,
+	struct i915_gem_object *probe,
+	uint64_t surface,
+	uint64_t dynamic,
+	uint64_t instruction,
+	unsigned flush)
+{
+	struct i915_engine *engine;
+	struct i915_request *request;
+	struct i915_gem_object *batch;
+	volatile uint32_t *rt_cpu;
+	volatile uint32_t *probe_cpu;
+	uint32_t *cmds;
+	uint64_t iteration;
+	unsigned long irq;
+	bool prior_enabled;
+	uint32_t mocs;
+	uint32_t hwsp;
+	unsigned n;
+	unsigned line;
+	int error;
+
+	engine = &device->engines[I915_ENGINE_RCS0];
+	mocs = I915_MOCS_UNCACHED_INDEX;
+	rt_cpu = kern_pmem_to_kernel(rt->run.paddr);
+	if (probe == NULL)
+		probe = rt;
+	probe_cpu = kern_pmem_to_kernel(probe->run.paddr);
+	rt_cpu[0] = 0U;
+	probe_cpu[1] = 0U;
+	engine->status[I915_GEM_HWS_SCRATCH] = 0U;
+	kern_io_write_barrier();
+	i915_selftest_clflush(&rt_cpu[0]);
+
+	/* The batch is one page in the kernel PPGTT, like the executor's command buffers. */
+	if (drv_i915_gem_create(device, 4096U, &batch) != 0)
+		return ENOMEM;
+	if (drv_i915_gem_bind_vm(&engine->kernel_vm, batch) != 0) {
+		drv_i915_gem_destroy(device, batch);
+		return ENOMEM;
+	}
+	cmds = kern_pmem_to_kernel(batch->run.paddr);
+
+	n = 0U;
+	/* Marker A lands before any 3D state changes, in the probed page. */
+	cmds[n++] = MI_STORE_DWORD_IMM_GEN4;
+	cmds[n++] = (uint32_t)(probe->va + 4U);
+	cmds[n++] = (uint32_t)((probe->va + 4U) >> 32);
+	cmds[n++] = 0xa5a50001U;
+	/* Gen12: a stalling flush precedes PIPELINE_SELECT and STATE_BASE_ADDRESS. */
+	cmds[n++] = GFX_OP_PIPE_CONTROL(6);
+	cmds[n++] = PIPE_CONTROL_CS_STALL | PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH | PIPE_CONTROL_DEPTH_CACHE_FLUSH | PIPE_CONTROL_DC_FLUSH_ENABLE | PIPE_CONTROL_FLUSH_ENABLE;
+	cmds[n++] = 0U;
+	cmds[n++] = 0U;
+	cmds[n++] = 0U;
+	cmds[n++] = 0U;
+	/* PIPELINE_SELECT 3D: Gen12 needs the mask bits (0x13) and the media sampler DOP gate. */
+	cmds[n++] = GEN12_PIPELINE_SELECT_DWORD(GEN12_PIPELINE_SELECT_3D);
+	/* STATE_BASE_ADDRESS with the selected bases real; the rest untouched. */
+	cmds[n++] = (0x6101U << 16) | (22U - 2U);
+	cmds[n++] = 0U;					/* general lo (no modify) */
+	cmds[n++] = 0U;					/* general hi */
+	cmds[n++] = (mocs << 16);			/* stateless MOCS */
+	cmds[n++] = i915_sba_lo(surface, mocs);
+	cmds[n++] = i915_sba_hi(surface);
+	cmds[n++] = i915_sba_lo(dynamic, mocs);
+	cmds[n++] = i915_sba_hi(dynamic);
+	cmds[n++] = 0U;					/* indirect lo (no modify) */
+	cmds[n++] = 0U;					/* indirect hi */
+	cmds[n++] = i915_sba_lo(instruction, mocs);
+	cmds[n++] = i915_sba_hi(instruction);
+	cmds[n++] = 0U;					/* general size (no modify) */
+	cmds[n++] = dynamic != 0U ? (1U | (0xfffffU << 12)) : 0U;	/* dynamic size */
+	cmds[n++] = 0U;					/* indirect size (no modify) */
+	cmds[n++] = instruction != 0U ? (1U | (0xfffffU << 12)) : 0U;	/* instruction size */
+	cmds[n++] = 0U;					/* bindless surface lo (no modify) */
+	cmds[n++] = 0U;					/* bindless surface hi */
+	cmds[n++] = 0U;					/* bindless surface size */
+	cmds[n++] = 0U;					/* bindless sampler lo (no modify) */
+	cmds[n++] = 0U;					/* bindless sampler hi */
+	cmds[n++] = 0U;					/* bindless sampler size */
+	/* Invalidate state caches so the new bases take effect. */
+	cmds[n++] = GFX_OP_PIPE_CONTROL(6);
+	cmds[n++] = PIPE_CONTROL_CS_STALL | PIPE_CONTROL_STATE_CACHE_INVALIDATE | PIPE_CONTROL_CONST_CACHE_INVALIDATE | PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE | PIPE_CONTROL_INSTRUCTION_CACHE_INVALIDATE;
+	cmds[n++] = 0U;
+	cmds[n++] = 0U;
+	cmds[n++] = 0U;
+	cmds[n++] = 0U;
+	/* Marker B proves the pipeline passed STATE_BASE_ADDRESS and writes still land. */
+	cmds[n++] = MI_STORE_DWORD_IMM_GEN4;
+	cmds[n++] = (uint32_t)rt->va;
+	cmds[n++] = (uint32_t)(rt->va >> 32);
+	cmds[n++] = 0xd7a3f00dU;
+	/* Marker C takes the GGTT path so the two address spaces can be told apart. */
+	cmds[n++] = MI_STORE_DWORD_IMM_GEN4 | MI_USE_GGTT;
+	cmds[n++] = engine->hwsp->ggtt_offset + I915_GEM_HWS_SCRATCH * 4U;
+	cmds[n++] = 0U;
+	cmds[n++] = 0xc0ffee03U;
+	cmds[n++] = MI_BATCH_BUFFER_END;
+	cmds[n++] = MI_NOOP;
+
+	/* The batch page is pushed out of the CPU caches before the engine fetches it. */
+	kern_io_write_barrier();
+	for (line = 0U; line < n * 4U; line += 64U)
+		i915_selftest_clflush((const uint8_t *)cmds + line);
+	if (flush != 0U)
+		i915_selftest_wbinvd();
+
+	irq = spin_lock_irqsave(&device->irq_lock);
+	error = drv_i915_request_alloc(engine, NULL, NULL, &request);
+	if (error != 0) {
+		spin_unlock_irqrestore(&device->irq_lock, irq);
+		drv_i915_gem_unbind_vm(batch);
+		drv_i915_gem_destroy(device, batch);
+		return error;
+	}
+	request->context = &engine->kernel_context;
+	request->extra_count = 0U;
+	request->batch = batch;
+	request->batch_va = batch->va;
+
+	drv_i915_request_queue(engine, request);
+	drv_i915_request_kick(engine);
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+
+	prior_enabled = kern_irq_disable();
+	kern_irq_enable();
+	for (iteration = 0U; iteration < I915_SELFTEST_POLL_BOUND; iteration++) {
+		kern_io_read_barrier();
+		if (engine->completed_seqno == request->seqno)
+			break;
+	}
+	if (!prior_enabled)
+		(void)kern_irq_disable();
+
+	kern_io_read_barrier();
+	hwsp = engine->status[I915_GEM_HWS_SEQNO];
+	kern_logf("i915: sba %s batch=0x%llx probe=0x%llx surf=0x%llx dyn=0x%llx insn=0x%llx\n", name,
+		(unsigned long long)batch->va, (unsigned long long)probe->va,
+		(unsigned long long)surface, (unsigned long long)dynamic, (unsigned long long)instruction);
+	kern_logf("i915: sba %s markerA=0x%08x markerB=0x%08x markerC=0x%08x hwsp=%u completed=%u seqno=%u\n",
+		name, probe_cpu[1], rt_cpu[0], engine->status[I915_GEM_HWS_SCRATCH], hwsp, engine->completed_seqno, request->seqno);
+	error = (engine->completed_seqno == request->seqno && rt_cpu[0] == 0xd7a3f00dU) ? 0 : EIO;
+	if (error != 0) {
+		kern_logf("i915: rcs0 head=0x%08x tail=0x%08x start=0x%08x ctl=0x%08x mi_mode=0x%08x acthd=0x%08x%08x\n",
+			drv_i915_read32(device, RING_HEAD(engine->base)),
+			drv_i915_read32(device, RING_TAIL(engine->base)),
+			drv_i915_read32(device, RING_START(engine->base)),
+			drv_i915_read32(device, RING_CTL(engine->base)),
+			drv_i915_read32(device, RING_MI_MODE(engine->base)),
+			drv_i915_read32(device, RING_ACTHD_UDW(engine->base)),
+			drv_i915_read32(device, RING_ACTHD(engine->base)));
+		kern_logf("i915: rcs0 ipeir=0x%08x ipehr=0x%08x instdone=0x%08x esr=0x%08x eir=0x%08x fault=0x%08x elsp=0x%08x%08x\n",
+			drv_i915_read32(device, engine->base + 0x64U),
+			drv_i915_read32(device, RING_IPEHR(engine->base)),
+			drv_i915_read32(device, RING_INSTDONE(engine->base)),
+			drv_i915_read32(device, RING_ESR(engine->base)),
+			drv_i915_read32(device, RING_EIR(engine->base)),
+			drv_i915_read32(device, 0xcec4U),
+			drv_i915_read32(device, RING_EXECLIST_STATUS_HI(engine->base)),
+			drv_i915_read32(device, RING_EXECLIST_STATUS_LO(engine->base)));
+	}
+
+	/* A hung batch is still released: the space is never reused within the boot. */
+	drv_i915_gem_unbind_vm(batch);
+	drv_i915_gem_destroy(device, batch);
+	return error;
+}
+
+int
+drv_i915_draw_selftest(
+	struct i915_device *device)
+{
+	struct i915_engine *engine;
+	struct i915_gem_object *rt;
+	struct i915_gem_object *surface;
+	struct i915_gem_object *dynamic;
+	struct i915_gem_object *instruction;
+	int error;
+
+	engine = &device->engines[I915_ENGINE_RCS0];
+
+	/* One page each: render target and the three state heaps. */
+	if (drv_i915_gem_create(device, 4096U, &rt) != 0)
+		return EIO;
+	if (drv_i915_gem_create(device, 4096U, &surface) != 0)
+		return EIO;
+	if (drv_i915_gem_create(device, 4096U, &dynamic) != 0)
+		return EIO;
+	if (drv_i915_gem_create(device, 4096U, &instruction) != 0)
+		return EIO;
+	/* Bound in reverse creation order: the VA order then opposes the physical order. */
+	if (drv_i915_gem_bind_vm(&engine->kernel_vm, instruction) != 0 ||
+	    drv_i915_gem_bind_vm(&engine->kernel_vm, dynamic) != 0 ||
+	    drv_i915_gem_bind_vm(&engine->kernel_vm, surface) != 0 ||
+	    drv_i915_gem_bind_vm(&engine->kernel_vm, rt) != 0)
+		return EIO;
+	kern_logf("i915: draw step1 heaps surf=0x%llx dyn=0x%llx insn=0x%llx rt=0x%llx\n",
+		(unsigned long long)surface->va, (unsigned long long)dynamic->va,
+		(unsigned long long)instruction->va, (unsigned long long)rt->va);
+	kern_logf("i915: draw step1 ptes rt=0x%llx surf=0x%llx dyn=0x%llx insn=0x%llx (paddr rt=0x%llx dyn=0x%llx)\n",
+		(unsigned long long)drv_i915_ppgtt_lookup(&engine->kernel_vm, rt->va),
+		(unsigned long long)drv_i915_ppgtt_lookup(&engine->kernel_vm, surface->va),
+		(unsigned long long)drv_i915_ppgtt_lookup(&engine->kernel_vm, dynamic->va),
+		(unsigned long long)drv_i915_ppgtt_lookup(&engine->kernel_vm, instruction->va),
+		(unsigned long long)rt->run.paddr, (unsigned long long)dynamic->run.paddr);
+
+	/* Every variant runs even after a failure: the trailing no-op shows whether the engine survived. */
+	error = 0;
+	if (i915_draw_sba_run(device, "none", rt, NULL, 0ULL, 0ULL, 0ULL, 0U) != 0)
+		error = EIO;
+	if (i915_draw_sba_run(device, "surf<-surf", rt, NULL, surface->va, 0ULL, 0ULL, 0U) != 0)
+		error = EIO;
+	if (i915_draw_sba_run(device, "dyn<-dyn", rt, NULL, 0ULL, dynamic->va, 0ULL, 0U) != 0)
+		error = EIO;
+	if (i915_draw_sba_run(device, "all", rt, NULL, surface->va, dynamic->va, instruction->va, 0U) != 0)
+		error = EIO;
+	if (i915_draw_sba_run(device, "none", rt, NULL, 0ULL, 0ULL, 0ULL, 0U) != 0)
+		error = EIO;
+	kern_logf("i915: draw step1 %s\n", error == 0 ? "passed (real-heap SBA parses)" : "FAILED");
+
+	drv_i915_gem_unbind_vm(rt);
+	drv_i915_gem_unbind_vm(surface);
+	drv_i915_gem_unbind_vm(dynamic);
+	drv_i915_gem_unbind_vm(instruction);
+	drv_i915_gem_destroy(device, rt);
+	drv_i915_gem_destroy(device, surface);
+	drv_i915_gem_destroy(device, dynamic);
+	drv_i915_gem_destroy(device, instruction);
 	return error;
 }

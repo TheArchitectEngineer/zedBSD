@@ -653,8 +653,8 @@ i915_vk_pipe_emit_base(
 {
 	(void)session;
 
-	/* PIPELINE_SELECT is a single dword selecting the 3D pipeline. */
-	i915_vk_batch_emit(batch, (GEN12_CMD_PIPELINE_SELECT << 16) | GEN12_PIPELINE_SELECT_3D);
+	/* PIPELINE_SELECT is a single dword; without its mask bits Gen12 ignores it. */
+	i915_vk_batch_emit(batch, GEN12_PIPELINE_SELECT_DWORD(GEN12_PIPELINE_SELECT_3D));
 
 	/* STATE_BASE_ADDRESS anchors the heaps; the addresses land at bring-up. */
 	i915_vk_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_STATE_BASE_ADDRESS, GEN12_STATE_BASE_ADDRESS_DWORDS));
