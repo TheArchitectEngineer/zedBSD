@@ -343,3 +343,18 @@ RENDER_SURFACE_STATE(color RT) + binding table + 3DSTATE_BINDING_TABLE_POINTERS_
 定数色 PS カーネル(compile or 手書き GEN) + 3DSTATE_{VS,PS,PS_EXTRA,SBE,WM,PS_BLEND,SF,CLIP,
 RASTER,MULTISAMPLE,VIEWPORT} + DRAWING_RECTANGLE → 頂点(RECTLIST) → 3DPRIMITIVE →
 RT 読み戻しで単色確認。gen110/gen120.xml から順次転記。
+
+## p011 増分E-4 (2026-09-15): render target draw 用シェーダ確立（最難関ブロッカー解消）
+
+ツールチェーン（glslc）が無い環境で、i915 SPIR-V パーサが受理する**最小 SPIR-V を手組み**し、
+i915 コンパイラで実 GEN カーネルを生成：
+- passthrough VS（input loc0 vec4 → gl_Position builtin）：48B GEN, grf 17
+- 定数色 PS（out loc0 = vec4(1,0,0,1)）：48B GEN, grf 18
+
+パーサの要点: Output 変数で Location 無し = builtin(gl_Position)。OpCompositeConstruct/OpStore/
+OpLoad/OpConstant で最小構成。生成器と .spv は plan/ws031/shaders/ に保存。
+
+これで render target draw のシェーダ（VS/PS）が揃った。draw の残ピース: 実 heap を
+STATE_BASE_ADDRESS に結線、RENDER_SURFACE_STATE(RT)+binding table、3DSTATE 群(VS/PS/PS_EXTRA/
+SBE/WM/PS_BLEND/SF/CLIP/RASTER/MULTISAMPLE/VIEWPORT/DRAWING_RECTANGLE/BINDING_TABLE_POINTERS_PS)、
+頂点(RECTLIST)、3DPRIMITIVE → RT 読み戻し。シェーダは runtime で spirv_parse+compile して命令ヒープへ。
