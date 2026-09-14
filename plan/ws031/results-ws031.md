@@ -307,3 +307,18 @@ BCS0 の XY_FAST_COLOR_BLT で GGTT... PPGTT-mapped buffer を単色塗りし、
 GPU が実機で単色サーフェスを生成できることを検証。これは render path のファウンデーション。
 2D 塗り（BCS）は確立。次段: 3D(RCS0) render target への clear/描画、その後 scanout(表示)。
 変更: selftest.c（drv_i915_clear_selftest 追加）、i915.c（selftest 段で呼出）。HAL/UAPI 変更なし。
+
+## p011 増分E-2 (2026-09-15): RCS0 実行 実機確認
+
+    i915: rcs selftest marker=0xcafef00d seqno=1/1
+    i915: rcs selftest passed (render engine executes)
+
+RCS0 kernel context(PPGTT) で MI_STORE marker を書き、PIPE_CONTROL breadcrumb ＋ 割込みで
+完了検出。**queue_submit が使う RCS0 request 経路が実機で健全**。BCS0(clear)/RCS0(exec) 両輪確立。
+変更: selftest.c(drv_i915_rcs_selftest)、i915.c(呼出)。
+
+### 次: RCS0 render target clear（3D state 反復）
+必要な Gen12 3D state: STATE_BASE_ADDRESS(実 heap 番地)、RENDER_SURFACE_STATE(color RT)、
+3DSTATE_BINDING_TABLE_POINTERS_PS + binding table、3DSTATE_{VS,PS,SF,CLIP,WM,VIEWPORT,...}、
+定数色を出す PS、3DPRIMITIVE(全画面 rect)。実機フィードバックで段階的に。
+その後 scanout(表示)、三角形、shader OP 拡張、texture。

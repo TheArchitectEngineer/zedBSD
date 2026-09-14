@@ -232,3 +232,80 @@ drv_i915_clear_selftest(
 	drv_i915_gem_destroy(device, object);
 	return error;
 }
+
+/* The RCS0 marker proves the render engine runs a request in its PPGTT context. */
+#define I915_RCS_MARKER		0xcafef00dU
+
+/*
+ * RCS0 execution check: the render engine stores a marker through its kernel
+ * context's PPGTT and raises the completion interrupt.  This is the foundation
+ * the render-target clear and the draw path build on.
+ */
+int
+drv_i915_rcs_selftest(
+	struct i915_device *device)
+{
+	struct i915_engine *engine;
+	struct i915_request *request;
+	struct i915_gem_object *object;
+	volatile uint32_t *marker;
+	uint64_t iteration;
+	unsigned long irq;
+	bool prior_enabled;
+	int error;
+
+	engine = &device->engines[I915_ENGINE_RCS0];
+
+	error = drv_i915_gem_create(device, 4096U, &object);
+	if (error != 0)
+		return error;
+	error = drv_i915_gem_bind_vm(&engine->kernel_vm, object);
+	if (error != 0) {
+		drv_i915_gem_destroy(device, object);
+		return error;
+	}
+
+	marker = kern_pmem_to_kernel(object->run.paddr);
+	marker[0] = 0U;
+	kern_io_write_barrier();
+
+	irq = spin_lock_irqsave(&device->irq_lock);
+	error = drv_i915_request_alloc(engine, NULL, NULL, &request);
+	if (error != 0) {
+		spin_unlock_irqrestore(&device->irq_lock, irq);
+		drv_i915_gem_unbind_vm(object);
+		drv_i915_gem_destroy(device, object);
+		return error;
+	}
+	request->context = &engine->kernel_context;
+	/* One store through the render engine's PPGTT (no GGTT flag). */
+	request->extra[0] = MI_STORE_DWORD_IMM_GEN4;
+	request->extra[1] = (uint32_t)object->va;
+	request->extra[2] = (uint32_t)(object->va >> 32);
+	request->extra[3] = I915_RCS_MARKER;
+	request->extra_count = 4U;
+	drv_i915_request_queue(engine, request);
+	drv_i915_request_kick(engine);
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+
+	prior_enabled = kern_irq_disable();
+	kern_irq_enable();
+	for (iteration = 0U; iteration < I915_SELFTEST_POLL_BOUND; iteration++) {
+		kern_io_read_barrier();
+		if (engine->completed_seqno == request->seqno)
+			break;
+	}
+	if (!prior_enabled)
+		(void)kern_irq_disable();
+
+	kern_io_read_barrier();
+	kern_logf("i915: rcs selftest marker=0x%08x seqno=%u/%u\n",
+		marker[0], engine->completed_seqno, request->seqno);
+
+	error = (engine->completed_seqno == request->seqno && marker[0] == I915_RCS_MARKER) ? 0 : EIO;
+	kern_logf("i915: rcs selftest %s\n", error == 0 ? "passed (render engine executes)" : "FAILED");
+
+	drv_i915_gem_unbind_vm(object);
+	drv_i915_gem_destroy(device, object);
+	return error;
+}

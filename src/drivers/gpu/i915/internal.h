@@ -434,6 +434,7 @@ void drv_i915_request_complete_list(struct i915_engine *engine, struct i915_requ
 /* selftest.c: attach-time smoke test of BCS0 when the build enables it. */
 int drv_i915_selftest(struct i915_device *device);
 int drv_i915_clear_selftest(struct i915_device *device);
+int drv_i915_rcs_selftest(struct i915_device *device);
 
 /* i915.c: native stream validation, exposed for the host fixture. */
 int drv_i915_stream_parse(const void *buffer, uint32_t bytes, struct i915_stream *stream);
