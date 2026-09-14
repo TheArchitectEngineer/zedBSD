@@ -16,6 +16,7 @@
 
 #include "vk-internal.h"
 #include "sync.h"
+#include "cmd.h"
 
 #include "../internal.h"
 
@@ -181,7 +182,147 @@ i915_vk_fence_ready_locked(
 	return 0;
 }
 
-/* Routes fence/semaphore/event/query opcodes; precise decode lands at integration. */
+/*
+ * vkCreateFence: [device][pCreateInfo present][sType][pNext present][flags]
+ * [pAllocator present][pFence present][fence wire_id].  The reply is result
+ * then, on success, present and identity.
+ */
+static int
+i915_vk_sync_create_fence(
+	struct i915_vk_session *session,
+	struct i915_vk_reader *reader,
+	struct i915_vk_writer *reply)
+{
+	struct i915_vk_fence *fence;
+	i915_vk_handle handle;
+	uint32_t stype;
+	uint32_t flags;
+	int error;
+
+	(void)i915_vk_read_handle(reader);		/* device */
+	(void)i915_vk_read_u64(reader);			/* pCreateInfo present */
+	stype = i915_vk_read_u32(reader);		/* VkStructureType */
+	(void)i915_vk_read_u64(reader);			/* pNext present */
+	flags = i915_vk_read_u32(reader);
+	(void)i915_vk_read_u64(reader);			/* pAllocator present */
+	(void)i915_vk_read_u64(reader);			/* pFence present */
+	handle = i915_vk_read_handle(reader);
+	if (reader->error != 0)
+		return EINVAL;
+
+	/* VK_STRUCTURE_TYPE_FENCE_CREATE_INFO is the only accepted head. */
+	if (stype != 8U)
+		return EINVAL;
+
+	/* VK_FENCE_CREATE_SIGNALED_BIT starts the fence already signaled. */
+	error = i915_vk_fence_create(session, (int)(flags & 1U), &fence);
+	if (error == 0) {
+		error = i915_vk_obj_insert(session->vk, I915_VK_OBJ_FENCE, handle, fence);
+		if (error != 0)
+			i915_vk_fence_destroy(fence);
+	}
+
+	i915_vk_reply_u32(reply, error == 0 ? 0U : (uint32_t)(-3));
+	if (error == 0) {
+		i915_vk_reply_u64(reply, 1U);		/* present */
+		i915_vk_reply_u64(reply, handle);	/* identifier */
+	}
+	return 0;
+}
+
+/*
+ * vkDestroyFence: [device][fence][pAllocator present].  It returns void, so the
+ * reply is the echoed opcode alone.
+ */
+static int
+i915_vk_sync_destroy_fence(
+	struct i915_vk_session *session,
+	struct i915_vk_reader *reader,
+	struct i915_vk_writer *reply)
+{
+	struct i915_vk_fence *fence;
+	i915_vk_handle handle;
+
+	(void)i915_vk_read_handle(reader);		/* device */
+	handle = i915_vk_read_handle(reader);
+	(void)i915_vk_read_u64(reader);			/* pAllocator present */
+	if (reader->error != 0)
+		return EINVAL;
+
+	fence = i915_vk_obj_lookup(session->vk, I915_VK_OBJ_FENCE, handle);
+	if (fence != NULL) {
+		i915_vk_obj_remove(session->vk, I915_VK_OBJ_FENCE, handle);
+		i915_vk_fence_destroy(fence);
+	}
+
+	(void)reply;
+	return 0;
+}
+
+/*
+ * vkResetFences: [device][fenceCount][count][count x fence].  The reply is the
+ * VkResult alone.
+ */
+static int
+i915_vk_sync_reset_fences(
+	struct i915_vk_session *session,
+	struct i915_vk_reader *reader,
+	struct i915_vk_writer *reply)
+{
+	struct i915_vk_fence *fence;
+	uint64_t count;
+	uint64_t index;
+	i915_vk_handle handle;
+
+	(void)i915_vk_read_handle(reader);		/* device */
+	(void)i915_vk_read_u32(reader);			/* fenceCount */
+	count = i915_vk_read_u64(reader);		/* payload count */
+	if (reader->error != 0 || count > 64U)
+		return EINVAL;
+
+	for (index = 0U; index < count; index++) {
+		handle = i915_vk_read_handle(reader);
+		fence = i915_vk_obj_lookup(session->vk, I915_VK_OBJ_FENCE, handle);
+		if (fence != NULL)
+			(void)i915_vk_fence_reset(fence);
+	}
+	if (reader->error != 0)
+		return EINVAL;
+
+	i915_vk_reply_u32(reply, 0U);			/* VK_SUCCESS */
+	return 0;
+}
+
+/*
+ * vkGetFenceStatus: [device][fence].  The reply is the status VkResult:
+ * VK_SUCCESS when signaled, VK_NOT_READY otherwise.
+ */
+static int
+i915_vk_sync_fence_status(
+	struct i915_vk_session *session,
+	struct i915_vk_reader *reader,
+	struct i915_vk_writer *reply)
+{
+	struct i915_vk_fence *fence;
+	i915_vk_handle handle;
+
+	(void)i915_vk_read_handle(reader);		/* device */
+	handle = i915_vk_read_handle(reader);
+	if (reader->error != 0)
+		return EINVAL;
+
+	fence = i915_vk_obj_lookup(session->vk, I915_VK_OBJ_FENCE, handle);
+	if (fence == NULL) {
+		i915_vk_reply_u32(reply, (uint32_t)(-3));	/* VK_ERROR_INITIALIZATION_FAILED */
+		return 0;
+	}
+
+	/* fence_status reports 0 when signaled and EBUSY when not yet ready. */
+	i915_vk_reply_u32(reply, i915_vk_fence_status(fence) == 0 ? 0U : 1U);
+	return 0;
+}
+
+/* Routes fence, semaphore, event and query opcodes to their handlers. */
 int
 i915_vk_sync_dispatch(
 	struct i915_vk_session *session,
@@ -189,11 +330,23 @@ i915_vk_sync_dispatch(
 	struct i915_vk_reader *reader,
 	struct i915_vk_writer *reply)
 {
-	(void)session;
-	(void)opcode;
-	(void)reader;
-	(void)reply;
-	return EINVAL;
+	/*
+	 * Fences are wired for submit-completion signalling (p011 increment A);
+	 * vkWaitForFences is a client-side poll of vkGetFenceStatus and never
+	 * reaches the executor.  Semaphores, events and queries follow.
+	 */
+	switch (opcode) {
+	case 35U:	/* vkCreateFence */
+		return i915_vk_sync_create_fence(session, reader, reply);
+	case 36U:	/* vkDestroyFence */
+		return i915_vk_sync_destroy_fence(session, reader, reply);
+	case 37U:	/* vkResetFences */
+		return i915_vk_sync_reset_fences(session, reader, reply);
+	case 38U:	/* vkGetFenceStatus */
+		return i915_vk_sync_fence_status(session, reader, reply);
+	default:
+		return EINVAL;
+	}
 }
 
 /* Creates a semaphore. */

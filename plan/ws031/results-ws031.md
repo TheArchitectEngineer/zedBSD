@@ -92,3 +92,29 @@ GPU execution + completion interrupt proven on a cold Alder Lake-P IGD.
 - 変更: vk/cmd.c, vk/res.c, tests/i915-vk-{cmd,res,resdispatch}-test.c。HAL/UAPI 変更なし。
 - 次: 残 res コマンド（vkCreateBuffer/BindBufferMemory/vkCreateImage/BindImageMemory/
   sampler/descriptor）→ 増分B、その後 pipe/cmdbuf/sync/wsi decode と reply transport(178/180)。
+
+## p011 増分A 続き (2026-09-15): res buffer/image decode
+
+- res_dispatch を拡張: vkCreateBuffer(50)/vkDestroyBuffer(51)/vkBindBufferMemory(28)、
+  vkCreateImage(54)/vkDestroyImage(55)/vkBindImageMemory(29) の wire decode を実装。
+  VkBufferCreateInfo / VkImageCreateInfo / VkExtent3D / *_external(pNext) を libvulkan
+  codec.c と同一順で decode。destroy/bind は kind＋関数ラッパで共有。
+- create の reply = [opcode][result][present][identifier]（24B）、bind = [opcode][result]
+  （8B）、destroy/free = [opcode]（4B）。libvulkan の reply_capacity と一致。
+- fixture i915-vk-resdispatch-test.c を memory/buffer/image の create/bind/destroy 全経路に
+  拡張（単一 attach に統合し LeakSanitizer clean）。全 host fixtures PASS（plain+ASan/UBSan）、
+  i915+vk kernel build warning 0。
+- 次: sync(fence 35-39)/pipe(shader・pipeline)/cmdbuf(pool・record・draw・renderpass)、
+  queue submit(18)、reply transport(178/180)。三角形へ。
+
+## p011 増分A 続き (2026-09-15): sync fence decode
+
+- sync_dispatch に vkCreateFence(35)/vkDestroyFence(36)/vkResetFences(37)/
+  vkGetFenceStatus(38) の wire decode を実装（sync.c に cmd.h 追加）。
+- vkWaitForFences(39) は libvulkan 側で vkGetFenceStatus のポーリングとして実装される
+  ため executor には来ない（sync.c 実測）。GetFenceStatus の reply は status VkResult
+  （signaled→VK_SUCCESS, else→VK_NOT_READY=1）。
+- fixture: i915-vk-sync-test.c に fence decode 経路（create/status/destroy）を単一 attach
+  内で追加。全 host fixtures PASS（plain+ASan/UBSan）、kernel build warning 0。
+- 残: cmdbuf(pool/buffer/record/draw/renderpass)、pipe(shader/pipeline)、queue submit(18)、
+  reply transport(178/180)。

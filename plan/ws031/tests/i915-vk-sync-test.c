@@ -21,7 +21,41 @@
 #include "../../../src/drivers/gpu/i915/lrc.c"
 #include "../../../src/drivers/gpu/i915/request.c"
 #include "../../../src/drivers/gpu/i915/i915.c"
+#include "../../../src/drivers/gpu/i915/vk/cmd.c"
 #include "../../../src/drivers/gpu/i915/vk/sync.c"
+
+/* The other modules are not exercised here; routing never reaches them. */
+int
+i915_vk_res_dispatch(struct i915_vk_session *x, uint32_t o, struct i915_vk_reader *r, struct i915_vk_writer *w)
+{ (void)x; (void)o; (void)r; (void)w; return EINVAL; }
+int
+i915_vk_pipe_dispatch(struct i915_vk_session *x, uint32_t o, struct i915_vk_reader *r, struct i915_vk_writer *w)
+{ (void)x; (void)o; (void)r; (void)w; return EINVAL; }
+int
+i915_vk_cmdbuf_dispatch(struct i915_vk_session *x, uint32_t o, struct i915_vk_reader *r, struct i915_vk_writer *w)
+{ (void)x; (void)o; (void)r; (void)w; return EINVAL; }
+int
+i915_vk_wsi_dispatch(struct i915_vk_session *x, uint32_t o, struct i915_vk_reader *r, struct i915_vk_writer *w)
+{ (void)x; (void)o; (void)r; (void)w; return EINVAL; }
+
+/* A little-endian encoder mirroring the libvulkan wire writer. */
+static uint8_t wire[256];
+static size_t wire_len;
+static void w32(uint32_t v) { wire[wire_len++] = (uint8_t)v; wire[wire_len++] = (uint8_t)(v >> 8); wire[wire_len++] = (uint8_t)(v >> 16); wire[wire_len++] = (uint8_t)(v >> 24); }
+static void w64(uint64_t v) { w32((uint32_t)v); w32((uint32_t)(v >> 32)); }
+static uint32_t rd32(const uint8_t *b, size_t o) { return (uint32_t)b[o] | ((uint32_t)b[o + 1] << 8) | ((uint32_t)b[o + 2] << 16) | ((uint32_t)b[o + 3] << 24); }
+static size_t run_command(struct i915_vk_session *session, uint8_t *reply, size_t reply_size)
+{
+	struct i915_vk_reader reader;
+	struct i915_vk_writer writer;
+	int error;
+	reader.base = wire; reader.size = wire_len; reader.offset = 0U; reader.error = 0;
+	writer.base = reply; writer.size = reply_size; writer.offset = 0U; writer.error = 0;
+	error = i915_vk_cmd_dispatch(session, &reader, &writer);
+	assert(error == 0);
+	assert(writer.error == 0);
+	return writer.offset;
+}
 
 static int fixture_pci_token;
 #define fixture_pci_device	((struct drv_pci_device *)&fixture_pci_token)
@@ -52,6 +86,8 @@ test_fence(void)
 	struct i915_vk_semaphore *semaphore;
 	struct i915_vk_query_pool *pool;
 	void *gpu_session;
+	uint8_t reply[64];
+	const uint64_t fh = 0x55ULL;
 	int error;
 
 	fixture_reset();
@@ -101,6 +137,34 @@ test_fence(void)
 	assert(error == 0);
 	i915_vk_query_pool_destroy(pool);
 
+	/* The wire decode: create a fence, read its status, then destroy it. */
+	error = i915_vk_object_table_create(&vk.objects);
+	assert(error == 0);
+
+	/* vkCreateFence, unsignaled: [device][present][sType 8][pNext][flags 0]
+	 * [pAllocator][pFence][fence]. */
+	wire_len = 0;
+	w32(35U); w32(1U); w64(0xD0U); w64(1U); w32(8U); w64(0U); w32(0U);
+	w64(0U); w64(1U); w64(fh);
+	assert(run_command(&session, reply, sizeof(reply)) == 24U);
+	assert(rd32(reply, 0U) == 35U);
+	assert(rd32(reply, 4U) == 0U);
+	assert(i915_vk_obj_lookup(&vk, I915_VK_OBJ_FENCE, fh) != NULL);
+
+	/* vkGetFenceStatus on an unarmed fence reports VK_NOT_READY (1). */
+	wire_len = 0;
+	w32(38U); w32(1U); w64(0xD0U); w64(fh);
+	assert(run_command(&session, reply, sizeof(reply)) == 8U);
+	assert(rd32(reply, 0U) == 38U);
+	assert(rd32(reply, 4U) == 1U);
+
+	/* vkDestroyFence removes it from the table. */
+	wire_len = 0;
+	w32(36U); w32(1U); w64(0xD0U); w64(fh); w64(0U);
+	assert(run_command(&session, reply, sizeof(reply)) == 4U);
+	assert(i915_vk_obj_lookup(&vk, I915_VK_OBJ_FENCE, fh) == NULL);
+
+	i915_vk_object_table_destroy(vk.objects);
 	fixture_gpu_ops->close(device, gpu_session);
 }
 

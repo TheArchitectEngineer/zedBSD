@@ -548,12 +548,57 @@ static uint32_t
 i915_vk_result(
 	int error)
 {
-	/* Success and the two allocation failures are the results this module raises. */
+	/* Success and the failures this module raises are the results it carries. */
 	if (error == 0)
 		return 0U;			/* VK_SUCCESS */
 	if (error == ENOMEM)
 		return (uint32_t)(-2);		/* VK_ERROR_OUT_OF_DEVICE_MEMORY */
 	return (uint32_t)(-3);			/* VK_ERROR_INITIALIZATION_FAILED */
+}
+
+/* Object destructors, wrapped to a common shape for the shared destroy decode. */
+static void
+i915_vk_res_free_memory_obj(void *object)
+{
+	i915_vk_memory_free(object);
+}
+
+static void
+i915_vk_res_destroy_buffer_obj(void *object)
+{
+	i915_vk_buffer_destroy(object);
+}
+
+static void
+i915_vk_res_destroy_image_obj(void *object)
+{
+	i915_vk_image_destroy(object);
+}
+
+/* Buffer and image binders, wrapped to a common shape for the shared bind decode. */
+static int
+i915_vk_res_bind_buffer_obj(void *resource, struct i915_vk_memory *memory, uint64_t offset)
+{
+	return i915_vk_buffer_bind(resource, memory, offset);
+}
+
+static int
+i915_vk_res_bind_image_obj(void *resource, struct i915_vk_memory *memory, uint64_t offset)
+{
+	return i915_vk_image_bind(resource, memory, offset);
+}
+
+/* Skips the one native extension a create/allocate chain may carry (present flag set). */
+static void
+i915_vk_res_skip_extension(
+	struct i915_vk_reader *reader,
+	uint64_t present)
+{
+	if (present != 0U) {
+		(void)i915_vk_read_u32(reader);		/* extension sType */
+		(void)i915_vk_read_u64(reader);		/* extension pNext present */
+		(void)i915_vk_read_u32(reader);		/* extension value */
+	}
 }
 
 /*
@@ -569,7 +614,6 @@ i915_vk_res_allocate_memory(
 {
 	struct i915_vk_memory *memory;
 	uint64_t allocation_size;
-	uint64_t extension_present;
 	i915_vk_handle mem_handle;
 	uint32_t stype;
 	uint32_t memory_type_index;
@@ -578,13 +622,7 @@ i915_vk_res_allocate_memory(
 	(void)i915_vk_read_handle(reader);		/* device */
 	(void)i915_vk_read_u64(reader);			/* pAllocateInfo present */
 	stype = i915_vk_read_u32(reader);		/* VkStructureType */
-	extension_present = i915_vk_read_u64(reader);
-	if (extension_present != 0U) {
-		/* Export/import chains carry one native extension the executor skips. */
-		(void)i915_vk_read_u32(reader);		/* extension sType */
-		(void)i915_vk_read_u64(reader);		/* extension pNext present */
-		(void)i915_vk_read_u32(reader);		/* extension value */
-	}
+	i915_vk_res_skip_extension(reader, i915_vk_read_u64(reader));
 	allocation_size = i915_vk_read_u64(reader);
 	memory_type_index = i915_vk_read_u32(reader);
 	(void)i915_vk_read_u64(reader);			/* pAllocator present */
@@ -600,7 +638,6 @@ i915_vk_res_allocate_memory(
 	/* The memory type index selects host visibility on real parts; not yet used. */
 	(void)memory_type_index;
 
-	/* Allocate the backing object and bind the wire identity to it. */
 	error = i915_vk_memory_alloc(session, allocation_size, 0U, &memory);
 	if (error == 0) {
 		error = i915_vk_obj_insert(session->vk, I915_VK_OBJ_MEMORY, mem_handle, memory);
@@ -608,7 +645,6 @@ i915_vk_res_allocate_memory(
 			i915_vk_memory_free(memory);
 	}
 
-	/* The reply is the result and, on success, the echoed allocation identity. */
 	i915_vk_reply_u32(reply, i915_vk_result(error));
 	if (error == 0) {
 		i915_vk_reply_u64(reply, 1U);		/* present */
@@ -618,32 +654,205 @@ i915_vk_res_allocate_memory(
 }
 
 /*
- * vkFreeMemory: [device][memory][pAllocator present].  It returns void, so the
- * reply is the echoed opcode alone.
+ * vkCreateBuffer: [device][pCreateInfo present] VkBufferCreateInfo
+ * [pAllocator present][pBuffer present][buffer wire_id].  VkBufferCreateInfo is
+ * [sType][ext present(+ext)][flags][size][usage][sharingMode][qfiCount][count]
+ * [count x qfi].  The reply is result then, on success, present and identity.
  */
 static int
-i915_vk_res_free_memory(
+i915_vk_res_create_buffer(
 	struct i915_vk_session *session,
 	struct i915_vk_reader *reader,
 	struct i915_vk_writer *reply)
 {
-	struct i915_vk_memory *memory;
-	i915_vk_handle mem_handle;
+	struct i915_vk_buffer *buffer;
+	uint64_t size;
+	uint64_t queue_family_count;
+	uint64_t index;
+	i915_vk_handle buffer_handle;
+	uint32_t stype;
+	uint32_t usage;
+	int error;
 
 	(void)i915_vk_read_handle(reader);		/* device */
-	mem_handle = i915_vk_read_handle(reader);
+	(void)i915_vk_read_u64(reader);			/* pCreateInfo present */
+	stype = i915_vk_read_u32(reader);		/* VkStructureType */
+	i915_vk_res_skip_extension(reader, i915_vk_read_u64(reader));
+	(void)i915_vk_read_u32(reader);			/* flags */
+	size = i915_vk_read_u64(reader);
+	usage = i915_vk_read_u32(reader);
+	(void)i915_vk_read_u32(reader);			/* sharingMode */
+	(void)i915_vk_read_u32(reader);			/* queueFamilyIndexCount */
+	queue_family_count = i915_vk_read_u64(reader);
+	for (index = 0U; index < queue_family_count; index++)
+		(void)i915_vk_read_u32(reader);		/* pQueueFamilyIndices */
+	(void)i915_vk_read_u64(reader);			/* pAllocator present */
+	(void)i915_vk_read_u64(reader);			/* pBuffer present */
+	buffer_handle = i915_vk_read_handle(reader);
+	if (reader->error != 0)
+		return EINVAL;
+
+	/* VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO is the only accepted head. */
+	if (stype != 12U)
+		return EINVAL;
+
+	error = i915_vk_buffer_create(session, size, usage, &buffer);
+	if (error == 0) {
+		error = i915_vk_obj_insert(session->vk, I915_VK_OBJ_BUFFER, buffer_handle, buffer);
+		if (error != 0)
+			i915_vk_buffer_destroy(buffer);
+	}
+
+	i915_vk_reply_u32(reply, i915_vk_result(error));
+	if (error == 0) {
+		i915_vk_reply_u64(reply, 1U);
+		i915_vk_reply_u64(reply, buffer_handle);
+	}
+	return 0;
+}
+
+/*
+ * vkCreateImage: [device][pCreateInfo present] VkImageCreateInfo
+ * [pAllocator present][pImage present][image wire_id].  VkImageCreateInfo is
+ * [sType][ext present(+ext)][flags][imageType][format][extent w,h,d][mipLevels]
+ * [arrayLayers][samples][tiling][usage][sharingMode][qfiCount][count][count x qfi]
+ * [initialLayout].  The reply is result then, on success, present and identity.
+ */
+static int
+i915_vk_res_create_image(
+	struct i915_vk_session *session,
+	struct i915_vk_reader *reader,
+	struct i915_vk_writer *reply)
+{
+	struct i915_vk_image_info info;
+	struct i915_vk_image *image;
+	uint64_t queue_family_count;
+	uint64_t index;
+	i915_vk_handle image_handle;
+	uint32_t stype;
+	uint32_t width;
+	uint32_t height;
+	uint32_t format;
+	uint32_t tiling;
+	int error;
+
+	(void)i915_vk_read_handle(reader);		/* device */
+	(void)i915_vk_read_u64(reader);			/* pCreateInfo present */
+	stype = i915_vk_read_u32(reader);		/* VkStructureType */
+	i915_vk_res_skip_extension(reader, i915_vk_read_u64(reader));
+	(void)i915_vk_read_u32(reader);			/* flags */
+	(void)i915_vk_read_u32(reader);			/* imageType */
+	format = i915_vk_read_u32(reader);
+	width = i915_vk_read_u32(reader);		/* extent.width */
+	height = i915_vk_read_u32(reader);		/* extent.height */
+	(void)i915_vk_read_u32(reader);			/* extent.depth */
+	(void)i915_vk_read_u32(reader);			/* mipLevels */
+	(void)i915_vk_read_u32(reader);			/* arrayLayers */
+	(void)i915_vk_read_u32(reader);			/* samples */
+	tiling = i915_vk_read_u32(reader);
+	(void)i915_vk_read_u32(reader);			/* usage */
+	(void)i915_vk_read_u32(reader);			/* sharingMode */
+	(void)i915_vk_read_u32(reader);			/* queueFamilyIndexCount */
+	queue_family_count = i915_vk_read_u64(reader);
+	for (index = 0U; index < queue_family_count; index++)
+		(void)i915_vk_read_u32(reader);		/* pQueueFamilyIndices */
+	(void)i915_vk_read_u32(reader);			/* initialLayout */
+	(void)i915_vk_read_u64(reader);			/* pAllocator present */
+	(void)i915_vk_read_u64(reader);			/* pImage present */
+	image_handle = i915_vk_read_handle(reader);
+	if (reader->error != 0)
+		return EINVAL;
+
+	/* VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO is the only accepted head. */
+	if (stype != 14U)
+		return EINVAL;
+
+	info.width = width;
+	info.height = height;
+	info.format = format;
+	info.tiling = tiling;
+	error = i915_vk_image_create(session, &info, &image);
+	if (error == 0) {
+		error = i915_vk_obj_insert(session->vk, I915_VK_OBJ_IMAGE, image_handle, image);
+		if (error != 0)
+			i915_vk_image_destroy(image);
+	}
+
+	i915_vk_reply_u32(reply, i915_vk_result(error));
+	if (error == 0) {
+		i915_vk_reply_u64(reply, 1U);
+		i915_vk_reply_u64(reply, image_handle);
+	}
+	return 0;
+}
+
+/*
+ * vkBindBufferMemory/vkBindImageMemory: [device][resource][memory][offset].
+ * The reply is the VkResult alone.
+ */
+static int
+i915_vk_res_bind(
+	struct i915_vk_session *session,
+	enum i915_vk_object_kind resource_kind,
+	int (*bind)(void *, struct i915_vk_memory *, uint64_t),
+	struct i915_vk_reader *reader,
+	struct i915_vk_writer *reply)
+{
+	struct i915_vk_memory *memory;
+	void *resource;
+	uint64_t offset;
+	i915_vk_handle resource_handle;
+	i915_vk_handle memory_handle;
+	int error;
+
+	(void)i915_vk_read_handle(reader);		/* device */
+	resource_handle = i915_vk_read_handle(reader);
+	memory_handle = i915_vk_read_handle(reader);
+	offset = i915_vk_read_u64(reader);
+	if (reader->error != 0)
+		return EINVAL;
+
+	/* Both objects must already exist in the session's table to bind. */
+	resource = i915_vk_obj_lookup(session->vk, resource_kind, resource_handle);
+	memory = i915_vk_obj_lookup(session->vk, I915_VK_OBJ_MEMORY, memory_handle);
+	if (resource == NULL || memory == NULL)
+		error = EINVAL;
+	else
+		error = bind(resource, memory, offset);
+
+	i915_vk_reply_u32(reply, i915_vk_result(error));
+	return 0;
+}
+
+/*
+ * vkFreeMemory/vkDestroyBuffer/vkDestroyImage: [device][object][pAllocator present].
+ * These return void, so the reply is the echoed opcode alone.
+ */
+static int
+i915_vk_res_destroy(
+	struct i915_vk_session *session,
+	enum i915_vk_object_kind kind,
+	void (*destroy)(void *),
+	struct i915_vk_reader *reader,
+	struct i915_vk_writer *reply)
+{
+	void *object;
+	i915_vk_handle handle;
+
+	(void)i915_vk_read_handle(reader);		/* device */
+	handle = i915_vk_read_handle(reader);
 	(void)i915_vk_read_u64(reader);			/* pAllocator present */
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* An unknown handle frees nothing; the wire may retire it more than once. */
-	memory = i915_vk_obj_lookup(session->vk, I915_VK_OBJ_MEMORY, mem_handle);
-	if (memory != NULL) {
-		i915_vk_obj_remove(session->vk, I915_VK_OBJ_MEMORY, mem_handle);
-		i915_vk_memory_free(memory);
+	/* An unknown handle destroys nothing; the wire may retire it more than once. */
+	object = i915_vk_obj_lookup(session->vk, kind, handle);
+	if (object != NULL) {
+		i915_vk_obj_remove(session->vk, kind, handle);
+		destroy(object);
 	}
 
-	/* vkFreeMemory returns void; no result or payload follows the echoed opcode. */
+	/* A void command has no result or payload beyond the echoed opcode. */
 	(void)reply;
 	return 0;
 }
@@ -657,15 +866,31 @@ i915_vk_res_dispatch(
 	struct i915_vk_writer *reply)
 {
 	/*
-	 * Memory is the first resource family wired end to end (p011 increment A0);
-	 * buffers, images, samplers and descriptors follow in the later increments
-	 * and use the module functions above.
+	 * Memory, buffers and images are wired end to end (p011 increment A);
+	 * samplers and descriptors follow and use the module functions above.
 	 */
 	switch (opcode) {
 	case 21U:	/* vkAllocateMemory */
 		return i915_vk_res_allocate_memory(session, reader, reply);
 	case 22U:	/* vkFreeMemory */
-		return i915_vk_res_free_memory(session, reader, reply);
+		return i915_vk_res_destroy(session, I915_VK_OBJ_MEMORY,
+			i915_vk_res_free_memory_obj, reader, reply);
+	case 28U:	/* vkBindBufferMemory */
+		return i915_vk_res_bind(session, I915_VK_OBJ_BUFFER,
+			i915_vk_res_bind_buffer_obj, reader, reply);
+	case 29U:	/* vkBindImageMemory */
+		return i915_vk_res_bind(session, I915_VK_OBJ_IMAGE,
+			i915_vk_res_bind_image_obj, reader, reply);
+	case 50U:	/* vkCreateBuffer */
+		return i915_vk_res_create_buffer(session, reader, reply);
+	case 51U:	/* vkDestroyBuffer */
+		return i915_vk_res_destroy(session, I915_VK_OBJ_BUFFER,
+			i915_vk_res_destroy_buffer_obj, reader, reply);
+	case 54U:	/* vkCreateImage */
+		return i915_vk_res_create_image(session, reader, reply);
+	case 55U:	/* vkDestroyImage */
+		return i915_vk_res_destroy(session, I915_VK_OBJ_IMAGE,
+			i915_vk_res_destroy_image_obj, reader, reply);
 	default:
 		return EINVAL;
 	}
