@@ -40,6 +40,9 @@
 #if CONFIG_DRIVER_PCI_VENUS
 #include <drivers/venus.h>
 #endif
+#if CONFIG_DRIVER_PCI_I915
+#include <drivers/i915.h>
+#endif
 #if CONFIG_DRIVER_USB_STORAGE
 #include "drivers/usb-storage.h"
 #include <drivers/usb-uas.h>
@@ -99,6 +102,9 @@ kern_platform_init(
 #endif
 #if CONFIG_DRIVER_PCI_VENUS
 	int venus_error;
+#endif
+#if CONFIG_DRIVER_PCI_I915
+	int i915_error;
 #endif
 
 	count = 0;
@@ -174,6 +180,13 @@ kern_platform_init(
 	venus_error = drv_venus_pci_driver_register();
 	if (venus_error != 0)
 		kern_logf("pci: Venus driver registration failed (%d)\n", venus_error);
+
+#endif
+#if CONFIG_DRIVER_PCI_I915
+	/* Binds the native Intel GPU through the same PCI lifecycle. */
+	i915_error = drv_i915_pci_driver_register();
+	if (i915_error != 0)
+		kern_logf("pci: i915 driver registration failed (%d)\n", i915_error);
 
 #endif
 #if CONFIG_DRIVER_PCI_INTEL_AX211

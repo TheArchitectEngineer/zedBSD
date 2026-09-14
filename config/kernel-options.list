@@ -5,3 +5,4 @@ CONFIG_GPU_JOB_RESERVATION_MS|choice|GPU producer reservation timeout|*|10000|10
 CONFIG_GPU_JOB_EXECUTION_MS|choice|GPU execution timeout|*|60000|10000:10 seconds,60000:60 seconds,300000:5 minutes
 CONFIG_GPU_JOB_STOP_MS|choice|GPU context stop timeout|*|10000|1000:1 second,10000:10 seconds,30000:30 seconds
 CONFIG_GPU_CONTROL_MS|choice|GPU control request timeout|*|10000|1000:1 second,10000:10 seconds,30000:30 seconds
+CONFIG_DRIVER_PCI_I915_SELFTEST|bool|i915 attach-time selftest (experimental)|amd64|n|

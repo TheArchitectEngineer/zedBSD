@@ -66,4 +66,4 @@ R1: 容量不足をOOMにせず、`GPU_JOB_CAPACITY` QUERY/WAIT（ioctl 37）と
 
 新libvulkanのVkDevice作成にはflags7（OPAQUE+STRICT+QUIESCE）のisolated paired rendererが必要で、stock/旧pairは初期化で拒否する。実行期限60秒は正当な長時間computeにも適用される。任意GPU間DMA、native i915、一般Wayland/toolkit、CTSは未受入。HAL・host system package・git add/commit/pushは行っていない。
 
-受入記録: local `plan/ws014/phase009/results.md`、`runtime-verification/summary.json`。GitHub Issues/Projectへの同期はユーザー確認後に行う。
+受入記録: local `plan/ws014/phase009/results.md`、`runtime-verification/summary.json`。受入記録: [p009結果コメント](https://github.com/awemorris/zedBSD/issues/396#issuecomment-5655170913)。

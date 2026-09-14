@@ -128,6 +128,14 @@ ifeq ($(CONFIG_DRIVER_PCI_VENUS),y)
 AMD64_VENUS_SOURCES += src/drivers/gpu/venus/transport.c \
 	src/drivers/gpu/venus/venus.c src/drivers/gpu/venus/display.c src/drivers/gpu/venus/share.c
 endif
+AMD64_I915_SOURCES :=
+ifeq ($(CONFIG_DRIVER_PCI_I915),y)
+AMD64_I915_SOURCES += src/drivers/gpu/i915/i915.c src/drivers/gpu/i915/uncore.c \
+	src/drivers/gpu/i915/ggtt.c src/drivers/gpu/i915/ppgtt.c src/drivers/gpu/i915/gem.c src/drivers/gpu/i915/irq.c src/drivers/gpu/i915/engine.c src/drivers/gpu/i915/lrc.c src/drivers/gpu/i915/request.c
+ifeq ($(CONFIG_DRIVER_PCI_I915_SELFTEST),y)
+AMD64_I915_SOURCES += src/drivers/gpu/i915/selftest.c
+endif
+endif
 AMD64_INTEL_WLAN_SOURCES :=
 ifeq ($(CONFIG_DRIVER_PCI_INTEL_AX211),y)
 AMD64_INTEL_WLAN_SOURCES += src/drivers/wifi/intel-ax211/intel-ax211.c \
@@ -186,6 +194,7 @@ AMD64_KERNEL_SOURCES := \
 	$(AMD64_USB_CLASS_SOURCES) \
 	$(AMD64_NVME_SOURCES) \
 	$(AMD64_VENUS_SOURCES) \
+	$(AMD64_I915_SOURCES) \
 	$(AMD64_INTEL_WLAN_SOURCES) \
 	src/drivers/platform/pcat/pcat-ide.c src/drivers/ethernet/dp8390.c \
 	src/drivers/isa/ne2000.c src/drivers/platform/pcat/ps2-8042.c \

@@ -1,6 +1,6 @@
 <!-- awesome-plan-current:start -->
 Policy: current
-Active Queue: none; q313 finished / ws014-p010 cleared; no new HAL change
+Active Queue: none; q314 finished; no new HAL change
 HAL: every new source change requires prior specific user approval
 q306 approval: exact eight amd64 MMIO accessors only; applied and verified
 q308 approval: exact device-mapping patch e6ec9e6c2deda41b840fa6f10846438d091f3a20ce782b9251b7979ac7591c8d; applied and verified

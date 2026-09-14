@@ -44,7 +44,7 @@ i915実機対応、GLES2実装、デスクトップ全体の移植はこの単�
 | ws014-p007 | [GPUレビュー・BLOB直接表示・同期と性能](https://github.com/awemorris/zedBSD/issues/394) | cleared | q310 finished。BLOB直接表示・標準fd・同期/転送・topology/配置と実QEMU受入済み |
 | ws014-p008 | [GPU完了責任・fence所属と描画資源](https://github.com/awemorris/zedBSD/issues/395) | cleared | q311-i01 finished、承認回答A1–A8＋fence所属の改善を受入 |
 | ws014-p009 | [GPUレビュー対応とフレームワーク共通化](https://github.com/awemorris/zedBSD/issues/396) | cleared | q312-i01、R1–R6とGPU共通の待機/期限/所有権、backend停止契約・WSI改善と受入 |
-| ws014-p010 | [GPU監督の共通化仕上げと局所隔離](phase010/phase.md) | cleared | q313-i01、self-review D1–D4/B3–B6とVenus→framework移管、session隔離、実QEMU受入 |
+| ws014-p010 | [GPU監督の共通化仕上げと局所隔離](https://github.com/awemorris/zedBSD/issues/397) | cleared | q313-i01、self-review D1–D4/B3–B6とVenus→framework移管、session隔離、実QEMU受入 |
 | ws014-p004 | [ws014-p004](https://github.com/awemorris/zedBSD/issues/385) | planning | p010後の最終API整理・規約全文確認 |
 
 ## 制約・再開点
@@ -491,11 +491,11 @@ R1: 容量不足をOOMにせず、`GPU_JOB_CAPACITY` QUERY/WAIT（ioctl 37）と
 
 新libvulkanのVkDevice作成にはflags7（OPAQUE+STRICT+QUIESCE）のisolated paired rendererが必要で、stock/旧pairは初期化で拒否する。実行期限60秒は正当な長時間computeにも適用される。任意GPU間DMA、native i915、一般Wayland/toolkit、CTSは未受入。HAL・host system package・git add/commit/pushは行っていない。
 
-受入記録: local `plan/ws014/phase009/results.md`、`runtime-verification/summary.json`。GitHub Issues/Projectへの同期はユーザー確認後に行う。
+受入記録: local `plan/ws014/phase009/results.md`、`runtime-verification/summary.json`。受入記録: [p009結果コメント](https://github.com/awemorris/zedBSD/issues/396#issuecomment-5655170913)。
 
 ## q313開始: GPU監督の共通化仕上げと局所隔離（2026-09-14）
 
-ユーザー指示により[WS014 p010](plan/ws014/phase010/phase.md)をq313-i01の単一Phaseとして実行する。前提はp009の自己レビュー（plan/ws014/gpu-stack-review5.md、SHA256 `05435c48bdfd9168184fc026a1a628ba5d392c91522fa0556b9ed662fa2a200c`）と、その後のframework側実装可否・Venusから移せる処理の回答。S1 停止期限の起点をstop_begin実呼出しへ（D1/B3）、S2 close時のcommit済みjob監督継続（D2）、S3 停止shortcut・fault cancel後のsession失敗・RESERVED回収・停止flag・control期限定数のframework移管、S4 monitor起床の限定とrecovery_ready除去（D4/B6）、S5 停止未確認contextのsession隔離とidle時reset回収（D3/B4/B5）の順に、各段階を限定fixtureで固定してから進める。
+ユーザー指示により[WS014 p010](https://github.com/awemorris/zedBSD/issues/397)をq313-i01の単一Phaseとして実行する。前提はp009の自己レビュー（plan/ws014/gpu-stack-review5.md、SHA256 `05435c48bdfd9168184fc026a1a628ba5d392c91522fa0556b9ed662fa2a200c`）と、その後のframework側実装可否・Venusから移せる処理の回答。S1 停止期限の起点をstop_begin実呼出しへ（D1/B3）、S2 close時のcommit済みjob監督継続（D2）、S3 停止shortcut・fault cancel後のsession失敗・RESERVED回収・停止flag・control期限定数のframework移管、S4 monitor起床の限定とrecovery_ready除去（D4/B6）、S5 停止未確認contextのsession隔離とidle時reset回収（D3/B4/B5）の順に、各段階を限定fixtureで固定してから進める。
 
 既存UAPIのlayout/ioctl番号/sizeは変えず、内部opsは版9へ進める。実QEMUは既存7件の回帰に加え、producer-exit-delayed（既定policyで15秒jobを持つproducer終了後にconsumer fenceが成功）とproducer-exit-hang（event待ちjobで実行期限DEVICE_LOST、他sessionの継続、idle時のreset回収）を新設し、producer-exitは実行期限ERRORへ期待値を更新する。
 
@@ -509,6 +509,6 @@ S1: 停止期限の起点を`stop_begin`実呼出しへ移し、実行期限内�
 
 最終10VMは同一最終sourceの2 build（既定policy・短縮policy）でPASS/QEMU exit0: exit-delayed-003 19.698秒（producer終了後にconsumer fenceが14750 msでSUCCESS）、exit-hang-006 28.178秒（8000 msでDEVICE_LOST、context隔離、peer継続、idle openでreset回収と通常試験PASS）、producer-exit-002 24.447秒（hostの実結果を公開）、direct-002 41.796秒、wayland-002 47.258秒、submit-load-002 10.886秒、completion-delay-002 25.213秒、context-timeout-002 25.296秒、producer-stop-002 19.341秒、recovery-002 13.926秒。限定fixture（GPU core 10種、Venus 5種、libvulkan 5種、build selection）を通常＋sanitizerでPASS。失敗履歴（exit-hang-001のU側latch、exit-hang-004のreset中open拒否、producer-exit-001の旧期待値）を保持し、初回成功とは扱わない。
 
-隔離で失った容量はidle時のresetまで戻らず自動escalationは無い。隔離contextの表示状態はresetまで残る。closeはcommit済みjobの退役まで待つ。git add/commit/pushはユーザー担当。GitHub Issues/Project（q312完了、q313開始・完了）の公開は自動承認レビューで保留され、outbox/draftsに記録している。
+隔離で失った容量はidle時のresetまで戻らず自動escalationは無い。隔離contextの表示状態はresetまで残る。closeはcommit済みjobの退役まで待つ。git add/commit/pushはユーザー担当。受入記録: [p010結果コメント](https://github.com/awemorris/zedBSD/issues/397#issuecomment-5655171051)。
 
 受入記録: local `plan/ws014/phase010/results.md`、`runtime-verification/summary.json`、`gpu-supervision-contract.md`。

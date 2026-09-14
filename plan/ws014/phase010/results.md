@@ -1,6 +1,6 @@
 # WS014 p010 結果: GPU監督の共通化仕上げと局所隔離（q313）
 
-状態: 完了。2026-09-14に最終artifactで10VMの実QEMU受入を通過し、q313-i01 / p010をclearedとする。GitHub Issues/Projectへのq312完了・q313開始・q313完了の公開は自動承認レビューで保留中（[start summary](../../.sync/drafts/q313-start/summary.md)）。source/patch/資料のgit add/commit/pushはユーザーが行う。
+状態: 完了。2026-09-14に最終artifactで10VMの実QEMU受入を通過し、q313-i01 / p010をclearedとする。GitHub Issues/Projectへ同期済み（[p010結果コメント](https://github.com/awemorris/zedBSD/issues/397#issuecomment-5655171051)）。source/patch/資料のgit add/commit/pushはユーザーが行う。
 
 前提はp009自己レビュー [gpu-stack-review5.md](../gpu-stack-review5.md)。契約の差分は [gpu-supervision-contract.md](gpu-supervision-contract.md)、段階は [phase.md](phase.md)。
 
