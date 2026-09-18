@@ -2914,3 +2914,147 @@ attach end: STOPPED (i915_driver_probe complete) err=0、teardown 正常（reset
 少数の反復、同一 context の次 request、新しい context での C1 → その後、修正済み命令列による PS 描画を独立した試験として。いずれも実機 EU／描画試験なので明示解除後。PASS 経路の HWSP 記録行の追加。legacy と parity の初期化は混在させない。
 台帳E-60〜E-99。GPU=vfio-pci維持, 10ms tick/HAL非変更維持, drm非blacklist, attach先行維持。git commit/push なし。
 （注）E-98 で挙げた `e97-e98-changes.patch` は同 base の `e97-e99-changes.patch` に置き換えた（内容は上位互換）。
+
+## p011 増分E-100 (2026-09-18): **専門家指示 7-A — C1 の反復・同一 context の次 request・新しい context → 実機で 6/6 PASS**
+
+### 実装（試験 harness のみ。初期化経路・HAL は不変）
+- `eu_test.c` を純粋な抽出で整理: `eu_build_request()`（i915_request_create → init breadcrumb → bb_start → request_add、初回と反復で同一コード）、`eu_park()`（kernel context への切替）、`eu_log_record()`（**PASS 経路でも HWSP 生値・CSB・context 識別を 1 行で記録** ＝E-99 の残件）、`eu_hang_dump_reset()`。
+- `parity_eu_test_repeat(same_ctx=3, new_ctx=2)`: 初回 PASS かつ park 済みのときだけ実行。各 round で marker と読み戻し領域を初期化 → 同じ batch object（PIPELINE_SELECT 検査と batch hash を再確認）→ request → 提出 → 完了待ち → marker／読み戻し／HWSP 生値を記録 → park。**最初に合格しなかった round で停止、ハング後は追加提出なし**（record → dump → reset）。context A は初回と同じ context・同じ timeline（seqno 4, 6, 8）、context B は新規 `intel_context_create` 相当＋新規 timeline（seqno 2, 4）。VM・batch・shared page は共通。
+- GPU-free: EU 有効 clean build `build/eu-e100` で ktest 373/0（反復経路は実 GPU 専用のため GPU-free の新規 check は無し。抽出した request 組立ては初回経路と共用で、初回 PASS が回帰確認）。
+
+### 実機結果（chaos、参照条件は E-99 と同一。1 起動）
+image: vmunix 5fe21213… / hdd-image b079b326… / BOOTX64 57f8eab6…、flags `-DCONFIG_DRIVER_PCI_I915_PARITY=1 -DPARITY_EU_TEST=1`。ログ `~/bigbang/run-parity-hw-e100-eu.log`（写し `handover/increment-results/e100-run-parity-hw-eu.log`）。
+```
+EU-TEST record(completed): rq seqno expected=2 hwsp_observed=2 initial_breadcrumb_seen=1 request_seqno_reached=1 | ctx lrca=fffb9119 desc=00000020:fffb9119 ring_emit=0xe0 | csb_head=9 last_csb=00008000:03ff8000
+EU-TEST fixture: batch_hash=5dfb47d3c10b0560 fixture_hash=444e3a7a4e9c1abd（E-99 と同一）  pipeline_select rc=0 3d=1@6 gpgpu=1@261 bad=0
+EU-TEST PASS: completed=1 parked=1 polls=17 | ready=c0ffee10 eu=c0ffee02 done=c0ffee20 cs=c0ffee30 idd_rb_ok=1 kernel_rb_ok=1
+EU-REPEAT round=1 ctx=A lrca=fffb9119 seqno=4 hwsp_observed=4 pass=1 polls=7 | 全 marker 一致 | ring 0xe0→0x1c0
+EU-REPEAT round=2 ctx=A lrca=fffb9119 seqno=6 hwsp_observed=6 pass=1 polls=7 | 全 marker 一致 | ring 0x1c0→0x2a0
+EU-REPEAT round=3 ctx=A lrca=fffb9119 seqno=8 hwsp_observed=8 pass=1 polls=7 | 全 marker 一致 | ring 0x2a0→0x380
+EU-REPEAT round=4 ctx=B lrca=fffcb119 seqno=2 hwsp_observed=2 pass=1 polls=9 | 全 marker 一致 | ring 0x0→0xe0
+EU-REPEAT round=5 ctx=B lrca=fffcb119 seqno=4 hwsp_observed=4 pass=1 polls=7 | 全 marker 一致 | ring 0xe0→0x1c0
+EU-REPEAT PASS: rounds=5 passed=5 wedged=0 | gt irq: user=12 ctx_switch=24 error=0
+attach end: STOPPED (i915_driver_probe complete) err=0、teardown 正常（reset なし）、ktest 373/0、runner-result probe=COMPLETE cleanup=1
+```
+- 各 round とも marker 4 種（READY／EU／DONE／CS）が期待値、IDD／kernel の PPGTT 読み戻し一致、**HWSP 生値＝当該 request の seqno**、CSB で context complete、park 完了。提出 bytes は E-99 の artifact `zedbsd-parity-c1-e99` と同一 hash。
+- これで「累積修正版の parity 経路の C1」は 2 起動・計 7 回（E-99 1 回＋E-100 6 回）で全て完了。context の保存→再提出（A の 2 回目以降は HW が保存した image からの復帰）と、新規 context（default_state 継承からの初回）の両方を含む。
+
+### 評価
+- parity 経路に EU 陽性基準が確立した（コード＝`e97-e100-changes.patch`、起動条件、提出 bytes、ページ表 walk、結果の一組）。
+- 引き続き「PIPELINE_SELECT が全期間の唯一原因」とは書かない（E-99 の評価を維持）。
+- 未実施: 修正済み命令列による PS 描画（独立した試験、要明示解除）。parity 経路には 3D 描画 batch の投入手段がまだ無い（big-bang `selftest.c` の draw batch は legacy 初期化側）。legacy と parity の初期化は混在させない。
+
+### 残(次)
+PS 描画の独立試験: parity 経路に draw 用の試験 harness（C1 と同じ request 形、RT／VB／state を kernel vm の新規 range に置く）を用意 → GPU-free で最終語の固定参照検査 → 実機 1 回（要解除）。
+台帳E-60〜E-100。GPU=vfio-pci維持, 10ms tick/HAL非変更維持, drm非blacklist, attach先行維持。git commit/push なし。
+
+## p011 増分E-101 (2026-09-18): **専門家指示 7-A 後段 — 修正済み命令列による PS 描画の独立試験 → 実機 PASS（PS 実行、render target 1024/1024 画素が期待色）**
+
+### 実装（試験 harness のみ。初期化経路・HAL は不変、legacy 初期化とは混在させない）
+- `src/drivers/gpu/i915/draw_fixture.h`（新規）＋ `selftest.c` の薄い wrapper 3 本: big-bang の draw fixture（`i915_draw_build_batch()` の命令列、RENDER_SURFACE_STATE／binding table、CC／BLEND／CC_VIEWPORT／CPS、実コンパイラ製の const-colour PS（SIMD8＋SIMD16、A64 marker store 付き）、EOT carpet、RECTLIST 頂点）を **GPU VA だけで** 組み立てる。fixture の命令列・state bytes は big-bang と同一関数から生成（変更は E-98 の PIPELINE_SELECT 定数修正のみ）。`_Static_assert` で header の定数と fixture の実定数を照合。`selftest.c` を parity 構成でもビルド対象に追加（`vmunix.mk`。legacy の selftest 本体は呼ばれない＝parity は通常 attach を止めている）。
+- **移さなかったもの**（legacy 初期化側の処置であり、parity では正本の WA 表／MOCS／context 初期化が担う）: `i915_draw_apply_engine_workarounds()` の MMIO 直書き、ring への追加命令（`request->extra[]` の PIPELINE_SELECT 等）、vm／GGTT の scratch page への EOT 敷き詰め、各 object の clflush、統計カウンタの SRM request。
+- `parity_draw_test_run()`（`eu_test.c`、ビルドフラグ `PARITY_DRAW_TEST` 既定 0、EU 試験とは排他＝**C1 を先に流さない独立起動**）: kernel vm に新規 range 3 頁（state page 0x100400000／batch 0x100401000／RT 0x100402000。state page の VA は PS が marker を絶対アドレス 0x100400c10 に書くため固定）→ 提出 object から PIPELINE_SELECT を読んで検査（3D が 1 個、GPGPU 0 個、0x6104／想定外 0x6904 が 0 個。不成立なら提出しない）→ C1 と同じ request 形（新規 context＝default_state 継承、execbuf 形 request、`eu_build_request()` 共用）→ 2 s → marker 3 種＋PS marker＋RT 全画素を照合。ハング時は context が HW 上にある間に統計レジスタ（IA_VERTICES〜PS_INVOCATION）を MMIO で読んでから record → dump → reset。
+- GPU-free ktest +3（固定参照語）: `DRAW-BATCH`（dword 6 が 0x69041310、SBA ヘッダ 0x61010014、3DPRIMITIVE RECTLIST が 1 個、BB_END）／`DRAW-PIPESEL`（旧語 0x61041310 は拒否）／`DRAW-STATE`（binding table→surface state→RT VA、PS kernel と A64 marker アドレス、marker 初期値）。**376/0**。
+
+### 実機結果（chaos、参照条件は E-99/E-100 と同一、1 起動 1 提出）
+image: draw 有効 clean build `build/draw-e101` vmunix 4d89ae7e… / hdd-image 3be87128… / BOOTX64 57f8eab6…、flags `-DCONFIG_DRIVER_PCI_I915_PARITY=1 -DPARITY_DRAW_TEST=1`。ログ `~/bigbang/run-parity-hw-e101-draw.log`（写し `handover/increment-results/e101-run-parity-hw-draw.log`）。
+```
+DRAW-TEST fixture: batch_hash=241f478201bb3a81 state_hash=26a08d52909ca9a4 batch_dwords=353 mocs=6 pdp0_matches_top=1
+  | pipeline_select (read from the submitted object): rc=0 3d=1@6 gpgpu=0 bad=0
+DRAW-TEST walk[0..2] levels=4 leaf=0x100327000/0x100328000/0x100329000 present=1 rw=1 pat=0 scr=0
+EU-TEST record(completed): rq seqno expected=2 hwsp_observed=2 initial_breadcrumb_seen=1 request_seqno_reached=1 | lrca=fffb9119 | last_csb=00008000:03ff8000
+DRAW-TEST PASS: completed=1 parked=1 timed_out=0 wedged=0 polls=17
+  | before=a5a50001 middraw=c5c50003 after=d7a3f00d ps_marker=c0ffee01
+  | pixels match=1024/1024 first=ffff0000 mid=ffff0000 last=ffff0000 expected=ffff0000
+attach end: STOPPED (i915_driver_probe complete) err=0、teardown 正常（reset なし）、ktest 376/0、runner-result probe=COMPLETE cleanup=1
+```
+- CS marker 3 種（SBA 後／3DPRIMITIVE 直前／描画後 flush の後）、**PS 自身が A64 store で書く marker（0xc0ffee01）**、**RT 32×32 の全 1024 画素が 0xffff0000（不透明赤、BGRA）**、request 完了（HWSP 生値 2＝seqno、CSB で context complete）、park 完了。
+- 提出 bytes: batch 1412 bytes sha256 `d41d1413…`、state page 4096 bytes sha256 `fe546190…`（実行後に読んだ頁＝marker 4 語は GPU が書いた値）。`handover/increment-results/e101-draw-{batch.hex,batch.bin,state.bin,manifest.txt}`。
+
+### 評価
+- **確認できたこと**: 累積修正版の parity 経路で、3D パイプラインの PS dispatch・RT 書込み・request 完了が成立した。WS031 の発端だった「PS を有効にした描画のハング」（E-7〜E-13）と同じ fixture（同一関数が生成する命令列と state、PS kernel も同じ）で、違いは (a) PIPELINE_SELECT の 1 語（0x61041310→0x69041310）、(b) 初期化が legacy big-bang ではなく Linux-parity、(c) legacy 側の処置（上の「移さなかったもの」）が無いこと、(d) request 形が execbuf 形、(e) batch／RT の VA 配置（state page の 0x100400000 は同じ）。
+- **書かないこと**: 「PIPELINE_SELECT の誤りが big-bang 期の PS ハングの唯一原因だった」。今回の成功は (a)〜(e) が同時に違う条件でのもので、legacy 初期化＋修正語での描画は試していない（legacy と parity を混ぜない方針のため、試す予定もない）。0x6104 語の実ハードウェア上の副作用も未確認のまま。
+- big-bang 期の切り分け結論（E-7〜E-30: 「EU 共通故障」「Mesa 全一致でも不変」等）は、**不正な語を含む命令列の上での観測**として保持し、原因の除外判断としては使わない。
+
+### 提出物
+`e97-e101-changes.patch`（base 2bf790a4: `.inc`／eu_test／probe／ktest／gt_mem／selftest.c wrapper／vmunix.mk＋新規 `draw_fixture.h`）、`e101-draw-*`、`e101-run-parity-hw-draw.log`、`report-e101-ps-draw-pass.md`、`tools/eu_artifact.py`（`extract-draw` 追加）。
+
+### 残(次・要指示)
+(1) 描画の反復／同一 context の次 draw／新 context（C1 の E-100 と同じ形）、(2) C1→draw の混在順（compute と 3D の切替を同一 context／別 context で）、(3) その先は parity 残作業（GEM／DRM object model の要部分、runtime PM、device 公開）へ。いずれも専門家の評価後。
+台帳E-60〜E-101。GPU=vfio-pci維持, 10ms tick/HAL非変更維持, drm非blacklist, attach先行維持。git commit/push なし。
+
+## p011 増分E-102 (2026-09-18): **R1 — PS 描画の反復と compute↔3D 切替を 1 起動で確認 → 実機 12/12 PASS**（専門家: E-100/E-101 受入、R1→T1→T2→T3→整理の順）
+
+### 基準の固定
+E-101 の成功 artifact（`e101-draw-*`、完全 SHA-256 は `e101-draw-manifest.txt`、差分 `e97-e101-changes.patch`、ビルド条件は台帳 E-101）を変更前の基準として保持。GPU-free に回帰 pin を追加（R1 の image より後、T1 のビルドから有効）: **PIN-C1**（C1 batch 322 dword、FNV 5dfb47d3c10b0560＝E-99 実機 PASS の bytes）、**PIN-DRAW**（単色 draw batch 353 dword、FNV 241f478201bb3a81＝E-101 実機 PASS の bytes）。大規模なファイル移動・改名・共通化はしていない。
+
+### 実装（試験 harness のみ。初期化・HAL 不変）
+- `parity_r1_test_run()`（`eu_test.c`、フラグ `PARITY_R1_TEST` 既定 0。単独 EU 試験・単独 draw 試験の排他フラグは保存し、R1 は明示的な別モード）。1 回の P0〜P7 の後、同じ request 基盤で順に 12 提出。混在用の特別な MMIO 修復や追加の初期化 batch は無し（パイプライン選択と state 発行は各 fixture 自身の batch が行う）。
+- 計画: context A 新規→draw×4／context B 新規→draw×2／context C 新規→draw→C1→draw（同一 context）／A で C1→B で draw→A で C1（別 context 間の切替）。
+- VA: state/shared 0x100400000（draw の state 頁と C1 の shared 頁は同じ VA。**前 request の完了と park を確認してから** CPU が頁全体をその回の fixture に書き換える＝PS kernel と CS kernel が同じ VA に入れ替わる）、C1 batch 0x100401000、RT 0x100402000、draw batch 0x100403000（batch bytes は自身の VA に依存しない。2 本とも最初に 1 回だけ生成し、毎回 hash と PIPELINE_SELECT を再確認）。
+- 各 draw の前に RT を **0x5a5a5a5a で初期化**（期待色でも 0 でもない値）し、state 頁を書き直して marker も初期値へ。判定は E-101 と同じ（CS marker 3 種、PS marker、1024 画素、HWSP 生値＝seqno、park、timeout/wedged/reset なし）＋ `stale`（初期値のまま残った画素数）を記録。最初の失敗で追加提出を止める。
+- `eu_build_request()` に batch VA 引数を追加（既存 3 呼出しは従来値）。
+
+### 1 回目の実機起動（harness の資源上限、GPU 要因ではない）
+step 1〜4（A の draw×4）PASS の後、context B の生成で `gt_mem: object pool exhausted (64 slots)` → -ENOMEM。**提出前の停止でハングではない**（wedged=0、teardown 正常、ktest 376/0）。`PARITY_GT_MAX_OBJECTS` 64→128（適合層の帳簿上限）。あわせて別 context 切替は A/B を再利用する形にした（新規 context は 3 個）。ログ `e102-run-parity-hw-r1-attempt1-pool-exhausted.log`。
+
+### 実機結果（2 回目、chaos、参照条件は E-99〜E-101 と同一、1 起動 12 提出）
+image: `build/r1-e102b` vmunix 8164e787… / hdd-image 9920e974… / BOOTX64 57f8eab6…、flags `-DCONFIG_DRIVER_PCI_I915_PARITY=1 -DPARITY_R1_TEST=1`、GPU-free 376/0。ログ `handover/increment-results/e102-run-parity-hw-r1.log`。
+```
+R1 fixture: c1_batch_hash=5dfb47d3c10b0560 (322 dw @0x100401000) draw_batch_hash=241f478201bb3a81 (353 dw @0x100403000) state@0x100400000 rt@0x100402000 mocs=6
+step  ctx kind  lrca      seqno hwsp  結果
+ 1-4  A   draw  fffb9119  2,4,6,8     各回 before/middraw/after/PS marker 一致、pixels 1024/1024、stale=0
+ 5-6  B   draw  fffcb119  2,4         同上
+ 7    C   draw  fffdd119  2           同上
+ 8    C   c1    fffdd119  4           ready/eu=c0ffee02/done/cs 一致、idd_rb_ok=1 kernel_rb_ok=1
+ 9    C   draw  fffdd119  6           同上（C1 の直後、同一 context で 3D へ戻る）
+10    A   c1    fffb9119  10          一致
+11    B   draw  fffcb119  6           一致
+12    A   c1    fffb9119  12          一致
+R1 PASS: steps=12/12 passed=12 wedged=0 polls=164 | gt irq: user=24 ctx_switch=48 error=0
+attach end: STOPPED (i915_driver_probe complete)、teardown 正常（reset なし）、ktest 376/0
+```
+- 全 step で HWSP 生値＝seqno、park 完了。draw の state 頁 hash は毎回 26a08d52909ca9a4（＝E-101 の提出時 hash）、C1 の shared 頁 hash は毎回 15405cb541347915。batch hash は E-99／E-101 の実機 PASS bytes と同一。
+- compute→3D、3D→compute の両方向を、同一 context 内と別 context 間で確認。同じ VA の kernel を入れ替えても前回の kernel／画像が残っていただけの成功ではない（RT 初期化＋stale=0、marker 再初期化）。
+
+### 残(次)
+T1（texture fixture、GPU-free）→ T2（テクスチャ描画 1 回、独立起動。R1・T1 が通れば再承認不要）。
+台帳E-60〜E-102。GPU=vfio-pci維持, 10ms tick/HAL非変更維持, drm非blacklist, attach先行維持。git commit/push なし。
+
+## p011 増分E-103 (2026-09-18): **T1（texture fixture）＋T2（最初のテクスチャ描画）→ 実機 PASS。テクスチャ付きオフスクリーン描画成功**（1 回目は generator の誤りで全画素 texel(0,0)、修正後の 2 回目で 1024/1024 一致）
+
+### T1: fixture（仕様は専門家提案どおり）
+- 形状は既存 RECTLIST、RT は既存 32×32 B8G8R8A8_UNORM 1 sample。入力 texture は 8×8、2D、R8G8B8A8_UNORM、1 mip、linear、aux 圧縮なし。sampling は nearest／明示 LOD 0／clamp-to-edge、sRGB 変換・blend なし。提出経路は現行 parity（新規 context、default_state 継承、execbuf 形 request）。
+- **生成元**: `plan/ws031/handover/tools/reftex.c`（固定 Mesa tree @ab691a1c 内でビルドする zedBSD 側の NIR builder プログラム）。1 本の generator から (a) PS（`brw_compile_fs`）と prog_data、(b) texture layout と RENDER_SURFACE_STATE（`isl_surf_init`／`isl_surf_fill_state`、linear 要求が通り row_pitch 32／size 256／alignment 1）、(c) SAMPLER_STATE と、単色 draw から変わる packet 語（3DSTATE_PS DW3／DW7、3DSTATE_PS_EXTRA DW1、3DSTATE_SAMPLER_STATE_POINTERS_PS）を genxml gen120 の packer で出力 → `src/drivers/gpu/i915/tex_fixture_gen.inc`（冒頭に generator・入力 revision・PS の sha256、SPDX MIT）。値は単色 PS から固定コピーしていない。
+- **PS**: `uv = (floor(gl_FragCoord.xy) + 0.5) / 32; colour = txl(texture BTI 1, sampler 0, uv, lod 0); RT0(BTI 0) = colour`、単色 PS と同じ A64 entry marker（0xc0ffee01→0x100400c10）を保持。逆アセンブル（`e103-texfix-ps-disasm.txt`）で `add(16) r2:uw r1.4…`（subspan 座標から画素 X/Y を導出）、`send.smpl … sample_lz … bti(1) using sampler index 0`、`sendc.render … rt_write last_rt bti(0)` を確認。prog_data: size 640（SIMD8 @0、SIMD16 @320）、grf_start8=4、num_varying=0、**uses_src_depth=1／uses_src_w=1**、push/scratch 0、barycentric 0。
+- **batch**: `i915_draw_build_batch()` に任意引数 `tex`（NULL なら単色 draw と byte 同一＝PIN-DRAW で保証）。textured batch = 単色 draw batch ＋ `3DSTATE_SAMPLER_STATE_POINTERS_PS(896)` の 2 dword、変更 dword は 3 個だけ: 3DSTATE_PS DW3=0x08080000（sampler count 1／binding table 2、BLORP と同じ）、DW7=0x00040000（GRF start 4）、3DSTATE_PS_EXTRA DW1=0x81800004（valid｜UAV｜source depth｜source W）。dispatch は従来どおり SIMD8 のみ（KSP0=+1024）。
+- **state 頁**: 単色 fixture の state ＋ BT[1]=128 → texture の RSS（isl 生成、address を VA で patch）、SAMPLER_STATE @+896（dynamic heap）、sampling PS @+1024（640 B、後ろは EOT carpet）。重なり・alignment・サイズは `_Static_assert` で検査（PS が kernel offset〜頂点 data に収まる、RSS が surface heap 内で 64 整列、sampler が CPS の後ろで 32 整列）。新 object は texture 1 頁（VA 0x100404000、生成 RSS の placeholder と同値）。
+- **テスト画像と期待値**: texel(u,v): R=16+32u, G=16+32v, B=16+32((u+3v)&7), A=255（位置識別・非対称）。memory は RGBA 順、(v*8+u)*4。原点は左上、y は下向き、行 0 が memory 先頭。pixel centre は半整数（PS 側 +0.5）。`expected(x,y) = texel(x/4, y/4)` を B,G,R,A の little-endian dword に pack（入力 format・出力 format・CPU byte 列を分けて定義。E-101 の 0xffff0000 からの推測はしていない）。variant 1（更新・binding 切替用）も定義済み。
+- **GPU-free +5（381/0）**: PIN-C1／PIN-DRAW（実機 PASS bytes の hash pin）、TEX-BATCH（上記の差分が「2 dword 追加＋3 dword 変更」だけ）、TEX-STATE（BT／RSS 語／sampler 語／**PS 640 bytes の FNV を generator の生 .bin から host で計算した値と照合**＝.inc 転記の独立検査）、TEX-EXPECT（期待値の固定点、非対称性）。
+
+### T2: 実機（C1 も単色 draw も先に流さない独立起動、1 提出）
+条件は E-99〜E-102 と同一。texture 頁は画像 256 B の後ろを guard（0xa5）で埋め、RT は 0x5a5a5a5a で初期化（期待画像で先埋めしない、CPU コピーによる代替なし）。
+
+**1 回目**（vmunix 14bf212f…、ログ `e103-run-parity-hw-tex-attempt1-uv0.log`）: request 完了・PS marker 着地・sampler 動作・reset なし、しかし **pixels 16/1024、全 1024 画素が 0xff101010＝texel(0,0)**（first_bad=(4,0) expected ff301030）。原因は **generator の誤り**: PS を `load_pixel_coord` 直書きで作ったため、brw は「FRAG_COORD（か input）を読む shader にだけ画素 X/Y の導出コードを出す」（`brw_compile_fs.cpp`: `brw_emit_interpolation_setup()` の呼出し条件）ので導出が無く、kernel は未書込みレジスタ（r4）を座標として読んだ＝UV が常に 0 付近。逆アセンブルに `add … r1.4` が無いことでも確認。非対称パターンでなければ見逃していた。**修正**: front-end 形（`gl_FragCoord`）に戻し、compiler が要求する payload（source depth／W、GRF start 4）を genxml で pack して state へ反映。GPU 側の設定を推測で足したものは無い。
+
+**2 回目**（EU/draw と同じ clean build 手順 `build/tex-e103b`、vmunix 48bb8b71… / hdd-image 2e5113fb… / BOOTX64 57f8eab6…、flags `-DCONFIG_DRIVER_PCI_I915_PARITY=1 -DPARITY_TEX_TEST=1`、GPU-free 381/0、ログ `e103-run-parity-hw-tex.log`）:
+```
+TEX-TEST fixture: batch_hash=b6d8a3b470c3e1de state_hash=c9d58cc3cc87e581 tex_hash=385d0fc6fb33d425 batch_dwords=355 mocs=6 pdp0_matches_top=1 | pipeline_select rc=0 3d=1@6 gpgpu=0 bad=0
+EU-TEST record(completed): rq seqno expected=2 hwsp_observed=2 request_seqno_reached=1 | lrca=fffb9119 | last_csb=00008000:03ff8000
+TEX-TEST PASS: completed=1 parked=1 timed_out=0 wedged=0 polls=17 | before=a5a50001 middraw=c5c50003 after=d7a3f00d ps_marker=c0ffee01
+  | pixels match=1024/1024 stale=0 | texture changed_bytes=0 guard_bad_bytes=0 | rq seqno=2 krq seqno=4
+attach end: STOPPED (i915_driver_probe complete)、teardown 正常（reset なし）、ktest 381/0、runner-result probe=COMPLETE cleanup=1
+```
+- **sampler を使う PS が実行され、入力パターンに対応する 1024 画素がすべて一致、request 完了、guard 無傷、reset なしで終了** ＝「テクスチャ付きオフスクリーン描画成功」。kernel 内の比較に加え、ログから抽出した RT を host 側で独立に計算した期待画像と照合して 1024/1024（`tools/eu_artifact.py extract-tex`）。目視用 `e103-tex-rt.png`（R が右へ、G が下へ増える 8×8 パターン）。
+- 提出 bytes（完全 SHA-256 は `e103-tex-manifest.txt`）: batch 1420 B `d853b63d…`、state 4096 B `ded3157b…`（実行後の頁）、texture 256 B `899e10ea…`、RT 4096 B `cccce0a2…`。
+- 未確認のまま（広げない）: bilinear、mip、頂点 UV の補間、sRGB、圧縮、実モニタ表示。
+
+### 出典記録
+`plan/ws031/provenance-ledger.md` を新設（区分: コピー／改変／生成物／独立実装、元 project・path・revision、元の license、未監査の明記）。今回の新規: `tex_fixture_gen.inc`（生成物、Mesa @ab691a1c MIT）、`tools/reftex.c`（独立実装）、`draw_fixture.h`・harness（独立実装）、`.inc` の PIPELINE_SELECT 定数（改変、Linux `gt/intel_gpu_commands.h` SPDX MIT／Mesa genxml MIT）。DMC firmware は driver source と別管理（全文・配布条件は未監査と明記）。
+
+### 提出物
+`e97-e103-changes.patch`（base 2bf790a4）、`e103-tex-{batch.hex,batch.bin,state.bin,texture.bin,rt.bin,rt.ppm,expected.ppm,manifest.txt}`、`e103-tex-rt.png`、`e103-texfix-{ps.bin,ps-disasm.txt,generator-manifest.txt}`、`e103-run-parity-hw-tex.log`、`e103-run-parity-hw-tex-attempt1-uv0.log`、`tools/reftex.c`、`tools/eu_artifact.py`（extract-tex）、`tools/ppm2png.py`。
+
+### 残(次)
+T3: 同じ texture object の内容更新（完了待ち→CPU 更新→次の提出）、texture A/B の binding 切替、同一 context の再描画、新規 context で同じ fixture を 1 起動にまとめる。その後、著作権・ライセンス整理と動作を変えないリファクタ。
+台帳E-60〜E-103。GPU=vfio-pci維持, 10ms tick/HAL非変更維持, drm非blacklist, attach先行維持。git commit/push なし。

@@ -58,6 +58,27 @@ struct spinlock;
 #define PARITY_EU_TEST 0
 #endif
 
+/* The real-hardware 3D draw (PS) test: its own build flag, its own boot (no C1 before it). */
+#ifndef PARITY_DRAW_TEST
+#define PARITY_DRAW_TEST 0
+#endif
+#define PARITY_DRAW_RT_VA  0x100402000ull
+
+/*
+ * R1 (E-102): draw repeats and compute<->3D switching in ONE boot, after one
+ * P0..P7, on the same request path.  Its own mode; the single EU test and the
+ * single draw test stay as they are and are not run in this mode.
+ */
+#ifndef PARITY_R1_TEST
+#define PARITY_R1_TEST 0
+#endif
+#define PARITY_R1_DRAW_BATCH_VA  0x100403000ull
+
+/* T2 (E-103): the first textured draw; its own mode, its own boot (nothing submitted before it). */
+#ifndef PARITY_TEX_TEST
+#define PARITY_TEX_TEST 0
+#endif
+
 #define PARITY_EU_PASS   1
 #define PARITY_EU_HANG   2
 #define PARITY_EU_ERROR  3
@@ -77,6 +98,24 @@ struct parity_eu_pipesel_check {
 int parity_eu_batch_check_pipeline_select(const uint32_t *cmds, unsigned n,
 	struct parity_eu_pipesel_check *out);
 
+/*
+ * Follow-up rounds after the first PASS (E-100): the same C1 bytes again on
+ * the same context (the next requests of its timeline), then on a new context.
+ * Stops at the first round that does not pass; nothing is submitted after a hang.
+ */
+#define PARITY_EU_ROUNDS_MAX 8
+struct parity_eu_round {
+	char ctx;                       /* 'A' = the first context, 'B' = a new one */
+	int rc;
+	int completed, parked, pass;
+	uint32_t seqno, hwsp_observed;
+	uint32_t ready, eu, done, cs;
+	int idd_rb_ok, kernel_rb_ok;
+	unsigned polls;
+	uint32_t lrca, ring_head, ring_tail;
+	uint32_t csb_hi, csb_lo;
+};
+
 struct parity_eu_test {
 	unsigned engine_idx;
 	struct parity_gt_context ce;
@@ -90,6 +129,14 @@ struct parity_eu_test {
 
 	struct parity_gt_request rq;
 	struct parity_gt_request krq;
+
+	/* follow-up rounds */
+	struct parity_gt_context ce2;
+	struct parity_gt_object *tl_page2;
+	uint32_t tl_seqno2;
+	struct parity_gt_request rrq;
+	struct parity_eu_round round[PARITY_EU_ROUNDS_MAX];
+	unsigned n_rounds, rounds_passed;
 	int submitted, completed, parked, timed_out, wedged;
 	unsigned polls;
 
@@ -137,6 +184,101 @@ struct parity_mcr_probe {
 	int lock_rc;
 };
 
+/*
+ * The big-bang RECTLIST draw (draw_fixture.h: same command list and state
+ * bytes, PIPELINE_SELECT fixed) submitted the way the C1 request is: a new
+ * context of the kernel vm, execbuf-shaped request, state page at
+ * 0x100400000, batch at 0x100401000, render target at 0x100402000.
+ */
+struct parity_draw_test {
+	struct parity_eu_test t;          /* context, request, objects (shared = state page), hang record */
+	struct parity_gt_object *rt;
+	uint32_t mocs;
+	uint64_t state_hash;
+	uint32_t marker_before, marker_middraw, marker_after, ps_marker;
+	uint32_t px_first, px_mid, px_last;
+	unsigned px_match, px_total;
+	uint32_t stats_live[6];           /* hang only: live MMIO read before the reset */
+	int stats_valid;
+};
+
+int parity_draw_test_run(struct parity_draw_test *d, struct parity_gt_engines *es,
+	struct parity_gt_ppgtt *vm, struct parity_gt_mem *gm, struct osdep_mmio *m,
+	struct spinlock *uncore_lock, unsigned timeout_ms);
+void parity_draw_test_release(struct parity_draw_test *d, struct parity_gt_mem *gm);
+
+/* One 3D select, no GPGPU select, no 0x6104/unknown-0x6904 word: 0, else -EINVAL. */
+int parity_draw_batch_check_pipeline_select(const uint32_t *cmds, unsigned n,
+	struct parity_eu_pipesel_check *out);
+
+/*
+ * The textured RECTLIST draw (draw_fixture.h T1): state page 0x100400000, batch
+ * 0x100401000, render target 0x100402000, texture 0x100404000, submitted the way
+ * the C1 and single-colour draw requests are.
+ */
+#define PARITY_TEX_GUARD_BYTE 0xa5u
+struct parity_tex_test {
+	struct parity_eu_test t;
+	struct parity_gt_object *rt;
+	struct parity_gt_object *tex;
+	uint32_t mocs;
+	uint64_t state_hash, tex_hash;
+	uint32_t marker_before, marker_middraw, marker_after, ps_marker;
+	unsigned px_match, px_stale, px_total;
+	int first_bad_x, first_bad_y;
+	uint32_t first_bad_expected, first_bad_observed;
+	unsigned tex_changed_bytes;       /* texel bytes that differ from what the CPU wrote */
+	unsigned guard_bad_bytes;         /* guard bytes after the 256-byte image that changed */
+	uint32_t stats_live[6];
+	int stats_valid;
+};
+
+int parity_tex_test_run(struct parity_tex_test *x, struct parity_gt_engines *es,
+	struct parity_gt_ppgtt *vm, struct parity_gt_mem *gm, struct osdep_mmio *m,
+	struct spinlock *uncore_lock, unsigned timeout_ms);
+void parity_tex_test_release(struct parity_tex_test *x, struct parity_gt_mem *gm);
+
+#define PARITY_R1_CTX_MAX    5
+#define PARITY_R1_STEPS_MAX  16
+struct parity_r1_ctx {
+	struct parity_gt_context ce;
+	struct parity_gt_object *tl_page;
+	uint32_t seqno;
+	int created;
+};
+struct parity_r1_step {
+	char ctx;                         /* 'A'.. */
+	char kind;                        /* 'D' = draw (3D), 'C' = C1 (compute) */
+	int rc, completed, parked, pass;
+	uint32_t lrca, seqno, hwsp_observed;
+	unsigned polls;
+	uint64_t batch_hash, state_hash;  /* as submitted (before the request) */
+	/* draw */
+	uint32_t before, middraw, after, ps_marker;
+	unsigned px_match, px_stale;      /* px_stale = pixels still holding the pre-fill */
+	uint32_t px_first, px_last;
+	/* C1 */
+	uint32_t ready, eu, done, cs;
+	int idd_rb_ok, kernel_rb_ok;
+};
+struct parity_r1_test {
+	struct parity_eu_test t;          /* shared page, C1 batch, polls, hang record */
+	struct parity_gt_object *rt;
+	struct parity_gt_object *dbatch;
+	unsigned dbatch_dwords;
+	uint32_t mocs;
+	uint64_t c1_batch_hash, draw_batch_hash;
+	struct parity_gt_request rq;
+	struct parity_r1_ctx ctx[PARITY_R1_CTX_MAX];
+	struct parity_r1_step step[PARITY_R1_STEPS_MAX];
+	unsigned n_steps, n_planned, passed;
+};
+
+int parity_r1_test_run(struct parity_r1_test *r, struct parity_gt_engines *es,
+	struct parity_gt_ppgtt *vm, struct parity_gt_mem *gm, const struct parity_sseu *sseu,
+	struct osdep_mmio *m, struct spinlock *uncore_lock, unsigned timeout_ms);
+void parity_r1_test_release(struct parity_r1_test *r, struct parity_gt_mem *gm);
+
 struct parity_wa_list;
 struct parity_sseu;
 /* Steered reads of the three engine WA registers the SRM verify skips (E-94). */
@@ -151,6 +293,15 @@ int parity_eu_test_run(struct parity_eu_test *t, struct parity_gt_engines *es,
 	struct parity_gt_ppgtt *vm, struct parity_gt_mem *gm,
 	const struct parity_sseu *sseu, struct osdep_mmio *m,
 	struct spinlock *uncore_lock, unsigned timeout_ms);
+
+/*
+ * Only after parity_eu_test_run() returned PASS: `same_ctx` more requests on
+ * the first context, then `new_ctx` requests on a newly created context.
+ * Returns 0 when every round passed.
+ */
+int parity_eu_test_repeat(struct parity_eu_test *t, struct parity_gt_engines *es,
+	struct parity_gt_ppgtt *vm, struct parity_gt_mem *gm, struct osdep_mmio *m,
+	struct spinlock *uncore_lock, unsigned timeout_ms, unsigned same_ctx, unsigned new_ctx);
 
 void parity_eu_test_release(struct parity_eu_test *t, struct parity_gt_mem *gm);
 

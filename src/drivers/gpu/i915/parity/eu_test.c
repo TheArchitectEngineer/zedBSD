@@ -14,6 +14,7 @@
 #include "reset.h"
 #include "wait.h"
 #include "eu_test.h"
+#include "../draw_fixture.h"
 #include "osdep/mmio.h"
 
 /* C1: SIMD8, unconditional send.hdc1 a64_untyped_write of 0xc0ffee02, then send.ts EOT. */
@@ -289,6 +290,131 @@ wait_retired(struct parity_eu_test *t, struct parity_gt_engine *ge,
 	return -ETIMEDOUT;
 }
 
+/*
+ * One execbuf-shaped request for the C1 batch: i915_request_create ->
+ * gen8_emit_init_breadcrumb -> gen8_emit_bb_start -> i915_request_add.
+ */
+static int
+eu_build_request(struct parity_eu_test *t, struct parity_gt_request *rq,
+	struct parity_gt_context *ce, struct parity_gt_object *tl_page, uint32_t seqno,
+	uint64_t batch_va)
+{
+	uint32_t *cs;
+	int rc;
+
+	/* i915_request_create(): has_initial_breadcrumb, seqno += 2. */
+	rc = parity_request_create(rq, ce, seqno,
+		(uint32_t)tl_page->ggtt_offset, (volatile uint32_t *)tl_page->cpu);
+	if (rc != 0)
+		return fail(t, rc, "i915_request_create");
+
+	/* gen8_emit_init_breadcrumb() */
+	cs = parity_ring_begin(rq, 6u);
+	if (cs == 0)
+		return fail(t, rq->error, "emit_init_breadcrumb");
+	*cs++ = MI_STORE_DWORD_IMM_GEN4 | MI_USE_GGTT;
+	*cs++ = rq->hwsp_ggtt;
+	*cs++ = 0u;
+	*cs++ = rq->seqno - 1u;
+	*cs++ = PARITY_MI_NOOP;
+	*cs++ = PARITY_MI_ARB_CHECK;
+	parity_ring_advance(rq, cs);
+
+	/* gen8_emit_bb_start(): arbitration on around a PPGTT batch start. */
+	cs = parity_ring_begin(rq, 6u);
+	if (cs == 0)
+		return fail(t, rq->error, "emit_bb_start");
+	*cs++ = PARITY_MI_ARB_ON_OFF | PARITY_MI_ARB_ENABLE;
+	*cs++ = MI_BATCH_BUFFER_START_GEN8 | (1u << 8);
+	*cs++ = (uint32_t)batch_va;
+	*cs++ = (uint32_t)(batch_va >> 32);
+	*cs++ = PARITY_MI_ARB_ON_OFF;   /* MI_ARB_DISABLE */
+	*cs++ = PARITY_MI_NOOP;
+	parity_ring_advance(rq, cs);
+
+	rc = parity_request_add(rq);
+	if (rc != 0)
+		return fail(t, rc, "i915_request_add");
+	return 0;
+}
+
+static int
+eu_park(struct parity_eu_test *t, struct parity_gt_engines *es, struct parity_gt_engine *ge,
+	struct parity_execlists *el, struct osdep_mmio *m, unsigned timeout_ms)
+{
+	int parked = 0;
+	int rc;
+
+	/* intel_context_unpin / engine park: switch to the kernel context. */
+	if (el->wakeref_serial != el->serial) {
+		uint32_t kseq = ++es->kernel_tl_seqno[t->engine_idx];
+
+		rc = parity_request_create(&t->krq, &es->kernel_ce[t->engine_idx], kseq,
+			(uint32_t)ge->hwsp_ggtt + PARITY_I915_GEM_HWS_SEQNO_ADDR,
+			&ge->hwsp[PARITY_I915_GEM_HWS_SEQNO_ADDR / 4u]);
+		if (rc == 0)
+			rc = parity_request_add(&t->krq);
+		el->wakeref_serial = el->serial + 1u;
+		if (rc == 0)
+			rc = parity_execlists_submit(ge, el, m, &t->krq);
+		if (rc == 0)
+			rc = wait_retired(t, ge, el, &t->krq, m, timeout_ms);
+		if (rc == 0)
+			parked = 1;
+		else
+			(void)fail(t, rc, "switch_to_kernel_context");
+	} else {
+		parked = 1;
+	}
+	return parked;
+}
+
+static void
+eu_log_record(struct parity_eu_test *t, struct parity_gt_engine *ge, struct parity_execlists *el,
+	struct parity_gt_request *rq, struct parity_gt_context *ce, const char *path)
+{
+	t->hwsp_seqno_observed = *rq->hwsp_cpu;
+	t->ctx_ccid_hi = (uint32_t)(ce->lrc_desc >> 32);
+	t->ctx_ccid_lo = (uint32_t)ce->lrc_desc;
+	t->time_base_fault = (t->err == -EIO && t->err_where != 0 &&
+		t->err_where[0] == 't') ? 1 : 0;
+	kern_logf("i915: parity EU-TEST record(%s): rq seqno expected=%u hwsp_observed=%u "
+		"initial_breadcrumb_seen=%d request_seqno_reached=%d | ctx sw_id=%u tag=%d lrca=%08x desc=%08x:%08x "
+		"state_ggtt=0x%llx ring_ggtt=0x%llx ring_emit=0x%x | csb_head=%u last_csb=%08x:%08x | time_base_fault=%d\n",
+		path, rq->seqno, t->hwsp_seqno_observed,
+		(int32_t)(t->hwsp_seqno_observed - (rq->seqno - 1u)) >= 0,
+		(int32_t)(t->hwsp_seqno_observed - rq->seqno) >= 0,
+		ce->sw_id, ce->tag, ce->lrca, t->ctx_ccid_hi, t->ctx_ccid_lo,
+		(unsigned long long)ce->state->ggtt_offset,
+		(unsigned long long)ce->ring.ggtt_offset, ce->ring.emit,
+		ge->csb_head, el->last_csb_hi, el->last_csb_lo, t->time_base_fault);
+}
+
+/* Dump, then reset the engines like intel_gt_set_wedged.  Nothing is submitted afterwards. */
+static void
+eu_hang_dump_reset(struct parity_eu_test *t, struct parity_gt_engines *es,
+	struct parity_gt_engine *ge, struct parity_execlists *el, struct osdep_mmio *m,
+	struct spinlock *uncore_lock)
+{
+	unsigned i;
+
+	parity_engine_dump(ge, el, m, "eu-test");
+	kern_logf("i915: parity EU-TEST hang: ipehr=%08x acthd=%08x:%08x instdone=%08x fault(0xcec4)=%08x "
+		"row_instdone(0xe164,raw)=%08x eu_dis(0x9134)=%08x slice_ack(0x804c)=%08x "
+		"ss01_eu_ack(0x805c)=%08x ss23_eu_ack(0x8060)=%08x\n",
+		osdep_mmio_read32(m, ge->info->mmio_base + 0x68u),
+		osdep_mmio_read32(m, ge->info->mmio_base + 0x5cu),
+		osdep_mmio_read32(m, ge->info->mmio_base + 0x74u),
+		osdep_mmio_read32(m, ge->info->mmio_base + 0x6cu),
+		osdep_mmio_read32(m, 0xcec4u), osdep_mmio_read32(m, 0xe164u),
+		osdep_mmio_read32(m, 0x9134u), osdep_mmio_read32(m, 0x804cu),
+		osdep_mmio_read32(m, 0x805cu), osdep_mmio_read32(m, 0x8060u));
+	for (i = 0u; i < es->n; i++)
+		parity_execlists_reset_prepare(&es->ge[i], m);
+	(void)parity_gt_reset_all(uncore_lock, m, 2000u);
+	t->wedged = 1;
+}
+
 int
 parity_eu_test_run(struct parity_eu_test *t, struct parity_gt_engines *es,
 	struct parity_gt_ppgtt *vm, struct parity_gt_mem *gm,
@@ -300,7 +426,6 @@ parity_eu_test_run(struct parity_eu_test *t, struct parity_gt_engines *es,
 	volatile uint32_t *page;
 	uint64_t dma;
 	unsigned i, bit;
-	uint32_t *cs;
 	int rc;
 
 	if (t == 0 || es == 0 || vm == 0 || gm == 0 || sseu == 0 || m == 0)
@@ -388,38 +513,9 @@ parity_eu_test_run(struct parity_eu_test *t, struct parity_gt_engines *es,
 
 	/* i915_request_create(): has_initial_breadcrumb, seqno += 2. */
 	t->tl_seqno = 2u;
-	rc = parity_request_create(&t->rq, &t->ce, t->tl_seqno,
-		(uint32_t)t->tl_page->ggtt_offset, (volatile uint32_t *)t->tl_page->cpu);
+	rc = eu_build_request(t, &t->rq, &t->ce, t->tl_page, t->tl_seqno, PARITY_EU_BATCH_VA);
 	if (rc != 0)
-		return fail(t, rc, "i915_request_create");
-
-	/* gen8_emit_init_breadcrumb() */
-	cs = parity_ring_begin(&t->rq, 6u);
-	if (cs == 0)
-		return fail(t, t->rq.error, "emit_init_breadcrumb");
-	*cs++ = MI_STORE_DWORD_IMM_GEN4 | MI_USE_GGTT;
-	*cs++ = t->rq.hwsp_ggtt;
-	*cs++ = 0u;
-	*cs++ = t->rq.seqno - 1u;
-	*cs++ = PARITY_MI_NOOP;
-	*cs++ = PARITY_MI_ARB_CHECK;
-	parity_ring_advance(&t->rq, cs);
-
-	/* gen8_emit_bb_start(): arbitration on around a PPGTT batch start. */
-	cs = parity_ring_begin(&t->rq, 6u);
-	if (cs == 0)
-		return fail(t, t->rq.error, "emit_bb_start");
-	*cs++ = PARITY_MI_ARB_ON_OFF | PARITY_MI_ARB_ENABLE;
-	*cs++ = MI_BATCH_BUFFER_START_GEN8 | (1u << 8);
-	*cs++ = (uint32_t)PARITY_EU_BATCH_VA;
-	*cs++ = (uint32_t)(PARITY_EU_BATCH_VA >> 32);
-	*cs++ = PARITY_MI_ARB_ON_OFF;   /* MI_ARB_DISABLE */
-	*cs++ = PARITY_MI_NOOP;
-	parity_ring_advance(&t->rq, cs);
-
-	rc = parity_request_add(&t->rq);
-	if (rc != 0)
-		return fail(t, rc, "i915_request_add");
+		return rc;
 
 	/*
 	 * Immediately before submission: what the GPU will walk for the batch,
@@ -475,27 +571,8 @@ parity_eu_test_run(struct parity_eu_test *t, struct parity_gt_engines *es,
 	}
 
 	if (t->completed) {
-		/* intel_context_unpin / engine park: switch to the kernel context. */
-		if (el->wakeref_serial != el->serial) {
-			uint32_t kseq = ++es->kernel_tl_seqno[t->engine_idx];
-
-			rc = parity_request_create(&t->krq, &es->kernel_ce[t->engine_idx], kseq,
-				(uint32_t)ge->hwsp_ggtt + PARITY_I915_GEM_HWS_SEQNO_ADDR,
-				&ge->hwsp[PARITY_I915_GEM_HWS_SEQNO_ADDR / 4u]);
-			if (rc == 0)
-				rc = parity_request_add(&t->krq);
-			el->wakeref_serial = el->serial + 1u;
-			if (rc == 0)
-				rc = parity_execlists_submit(ge, el, m, &t->krq);
-			if (rc == 0)
-				rc = wait_retired(t, ge, el, &t->krq, m, timeout_ms);
-			if (rc == 0)
-				t->parked = 1;
-			else
-				(void)fail(t, rc, "switch_to_kernel_context");
-		} else {
-			t->parked = 1;
-		}
+		eu_log_record(t, ge, el, &t->rq, &t->ce, "completed");
+		t->parked = eu_park(t, es, ge, el, m, timeout_ms);
 		t->outcome = (t->eu == PARITY_EU_STORE_TAG && t->cs == PARITY_EU_CS_TAG &&
 			t->done == PARITY_EU_DONE_TAG) ? PARITY_EU_PASS : PARITY_EU_ERROR;
 		if (t->outcome == PARITY_EU_ERROR && t->err == 0)
@@ -506,36 +583,154 @@ parity_eu_test_run(struct parity_eu_test *t, struct parity_gt_engines *es,
 	/* Hang (or an error): record, dump, then reset the engines like intel_gt_set_wedged. */
 	if (t->timed_out)
 		t->outcome = PARITY_EU_HANG;
-	t->hwsp_seqno_observed = *t->rq.hwsp_cpu;
-	t->ctx_ccid_hi = (uint32_t)(t->ce.lrc_desc >> 32);
-	t->ctx_ccid_lo = (uint32_t)t->ce.lrc_desc;
-	t->time_base_fault = (t->err == -EIO && t->err_where != 0 &&
-		t->err_where[0] == 't') ? 1 : 0;
-	kern_logf("i915: parity EU-TEST record: rq seqno expected=%u hwsp_observed=%u "
-		"initial_breadcrumb_seen=%d | ctx sw_id=%u tag=%d lrca=%08x desc=%08x:%08x "
-		"state_ggtt=0x%llx ring_ggtt=0x%llx | csb_head=%u last_csb=%08x:%08x | time_base_fault=%d\n",
-		t->rq.seqno, t->hwsp_seqno_observed,
-		(int32_t)(t->hwsp_seqno_observed - (t->rq.seqno - 1u)) >= 0,
-		t->ce.sw_id, t->ce.tag, t->ce.lrca, t->ctx_ccid_hi, t->ctx_ccid_lo,
-		(unsigned long long)t->ce.state->ggtt_offset,
-		(unsigned long long)t->ce.ring.ggtt_offset,
-		ge->csb_head, el->last_csb_hi, el->last_csb_lo, t->time_base_fault);
-	parity_engine_dump(ge, el, m, "eu-test");
-	kern_logf("i915: parity EU-TEST hang: ipehr=%08x acthd=%08x:%08x instdone=%08x fault(0xcec4)=%08x "
-		"row_instdone(0xe164,raw)=%08x eu_dis(0x9134)=%08x slice_ack(0x804c)=%08x "
-		"ss01_eu_ack(0x805c)=%08x ss23_eu_ack(0x8060)=%08x\n",
-		osdep_mmio_read32(m, ge->info->mmio_base + 0x68u),
-		osdep_mmio_read32(m, ge->info->mmio_base + 0x5cu),
-		osdep_mmio_read32(m, ge->info->mmio_base + 0x74u),
-		osdep_mmio_read32(m, ge->info->mmio_base + 0x6cu),
-		osdep_mmio_read32(m, 0xcec4u), osdep_mmio_read32(m, 0xe164u),
-		osdep_mmio_read32(m, 0x9134u), osdep_mmio_read32(m, 0x804cu),
-		osdep_mmio_read32(m, 0x805cu), osdep_mmio_read32(m, 0x8060u));
-	for (i = 0u; i < es->n; i++)
-		parity_execlists_reset_prepare(&es->ge[i], m);
-	(void)parity_gt_reset_all(uncore_lock, m, 2000u);
-	t->wedged = 1;
+	eu_log_record(t, ge, el, &t->rq, &t->ce, "hang");
+	eu_hang_dump_reset(t, es, ge, el, m, uncore_lock);
 	return t->err != 0 ? t->err : -ETIMEDOUT;
+}
+
+/* Markers back to the "not written" pattern, readback areas cleared. */
+static void
+eu_reset_markers(struct parity_eu_test *t)
+{
+	volatile uint32_t *page = (volatile uint32_t *)t->shared->cpu;
+	unsigned i;
+
+	page[PARITY_EU_READY_OFF / 4u] = 0xdead0000u;
+	page[PARITY_EU_EU_OFF / 4u] = 0xdead0000u;
+	page[PARITY_EU_DONE_OFF / 4u] = 0xdead0000u;
+	page[PARITY_EU_CS_OFF / 4u] = 0xdead0000u;
+	for (i = 0u; i < 8u; i++)
+		page[PARITY_EU_IDD_RB_OFF / 4u + i] = 0u;
+	for (i = 0u; i < PARITY_EU_KERNEL_DWORDS; i++)
+		page[PARITY_EU_KERNEL_RB_OFF / 4u + i] = 0u;
+}
+
+int
+parity_eu_test_repeat(struct parity_eu_test *t, struct parity_gt_engines *es,
+	struct parity_gt_ppgtt *vm, struct parity_gt_mem *gm, struct osdep_mmio *m,
+	struct spinlock *uncore_lock, unsigned timeout_ms, unsigned same_ctx, unsigned new_ctx)
+{
+	struct parity_gt_engine *ge;
+	struct parity_execlists *el;
+	volatile uint32_t *page;
+	unsigned total, r, i;
+	int rc;
+
+	if (t == 0 || es == 0 || vm == 0 || gm == 0 || m == 0)
+		return -EINVAL;
+	if (t->outcome != PARITY_EU_PASS || t->wedged || !t->parked)
+		return -EINVAL;
+	total = same_ctx + new_ctx;
+	if (total > PARITY_EU_ROUNDS_MAX)
+		return -EINVAL;
+	ge = &es->ge[t->engine_idx];
+	el = &es->el[t->engine_idx];
+	page = (volatile uint32_t *)t->shared->cpu;
+
+	/* The submitted batch object must still hold the verified words. */
+	if (parity_eu_batch_check_pipeline_select((const uint32_t *)t->batch->cpu,
+	    t->batch_dwords, 0) != 0 ||
+	    fnv1a64(t->batch->cpu, (size_t)t->batch_dwords * 4u, 0xcbf29ce484222325ull) != t->batch_hash)
+		return fail(t, -EINVAL, "repeat: batch changed");
+
+	for (r = 0u; r < total; r++) {
+		struct parity_eu_round *rd = &t->round[r];
+		struct parity_gt_context *ce;
+		struct parity_gt_object *tl;
+		unsigned polls0 = t->polls;
+
+		memset(rd, 0, sizeof(*rd));
+		t->n_rounds = r + 1u;
+		if (r < same_ctx) {
+			rd->ctx = 'A';
+			ce = &t->ce;
+			tl = t->tl_page;
+			t->tl_seqno += 2u;
+			rd->seqno = t->tl_seqno;
+		} else {
+			rd->ctx = 'B';
+			if (!t->ce2.allocated) {
+				/* intel_context_create(engine) again: a new context, a new timeline. */
+				rc = parity_lrc_alloc(&t->ce2, ge, vm, gm, 4096u, 0u);
+				if (rc != 0) {
+					rd->rc = rc;
+					return fail(t, rc, "repeat: intel_context_create");
+				}
+				t->tl_page2 = parity_gt_object_create(gm, 4096u);
+				if (t->tl_page2 == 0) {
+					rd->rc = -ENOMEM;
+					return fail(t, -ENOMEM, "repeat: intel_timeline_create");
+				}
+				rc = parity_gt_ggtt_bind(gm, t->tl_page2);
+				if (rc != 0) {
+					rd->rc = rc;
+					return fail(t, rc, "repeat: intel_timeline_pin");
+				}
+				parity_lrc_init_state(&t->ce2);
+				(void)parity_lrc_update_regs(&t->ce2, t->ce2.ring.tail);
+				t->tl_seqno2 = 0u;
+			}
+			ce = &t->ce2;
+			tl = t->tl_page2;
+			t->tl_seqno2 += 2u;
+			rd->seqno = t->tl_seqno2;
+		}
+
+		eu_reset_markers(t);
+		rc = eu_build_request(t, &t->rrq, ce, tl, rd->seqno, PARITY_EU_BATCH_VA);
+		if (rc != 0) {
+			rd->rc = rc;
+			return rc;
+		}
+		rc = parity_execlists_submit(ge, el, m, &t->rrq);
+		if (rc != 0) {
+			rd->rc = rc;
+			return fail(t, rc, "repeat: execlists_submit");
+		}
+		rc = wait_retired(t, ge, el, &t->rrq, m, timeout_ms);
+		rd->rc = rc;
+		rd->completed = rc == 0;
+		rd->polls = t->polls - polls0;
+		rd->hwsp_observed = *t->rrq.hwsp_cpu;
+		rd->ready = page[PARITY_EU_READY_OFF / 4u];
+		rd->eu = page[PARITY_EU_EU_OFF / 4u];
+		rd->done = page[PARITY_EU_DONE_OFF / 4u];
+		rd->cs = page[PARITY_EU_CS_OFF / 4u];
+		rd->idd_rb_ok = 1;
+		rd->kernel_rb_ok = 1;
+		for (i = 0u; i < 8u; i++)
+			if (page[PARITY_EU_IDD_RB_OFF / 4u + i] != page[PARITY_EU_IDD_OFFSET / 4u + i])
+				rd->idd_rb_ok = 0;
+		for (i = 0u; i < PARITY_EU_KERNEL_DWORDS; i++)
+			if (page[PARITY_EU_KERNEL_RB_OFF / 4u + i] != eu_marker_cs[i])
+				rd->kernel_rb_ok = 0;
+		rd->lrca = ce->lrca;
+		rd->ring_head = t->rrq.head;
+		rd->ring_tail = t->rrq.tail;
+		rd->csb_hi = el->last_csb_hi;
+		rd->csb_lo = el->last_csb_lo;
+
+		if (!rd->completed) {
+			if (rc == -ETIMEDOUT) {
+				t->timed_out = 1;
+				t->outcome = PARITY_EU_HANG;
+			} else {
+				(void)fail(t, rc, "repeat: i915_request_wait");
+			}
+			eu_log_record(t, ge, el, &t->rrq, ce, "repeat-hang");
+			eu_hang_dump_reset(t, es, ge, el, m, uncore_lock);
+			return rc;
+		}
+		rd->parked = eu_park(t, es, ge, el, m, timeout_ms);
+		rd->pass = rd->parked && rd->ready == PARITY_EU_READY_TAG &&
+			rd->eu == PARITY_EU_STORE_TAG && rd->done == PARITY_EU_DONE_TAG &&
+			rd->cs == PARITY_EU_CS_TAG && rd->idd_rb_ok && rd->kernel_rb_ok &&
+			rd->hwsp_observed == rd->seqno;
+		if (!rd->pass)
+			return fail(t, -EIO, "repeat: markers");
+		t->rounds_passed++;
+	}
+	return 0;
 }
 
 void
@@ -549,6 +744,12 @@ parity_eu_test_release(struct parity_eu_test *t, struct parity_gt_mem *gm)
 	}
 	if (t->ce.allocated)
 		parity_lrc_release(&t->ce, gm);
+	if (t->tl_page2 != 0) {
+		parity_gt_object_destroy(gm, t->tl_page2);
+		t->tl_page2 = 0;
+	}
+	if (t->ce2.allocated)
+		parity_lrc_release(&t->ce2, gm);
 	if (t->batch != 0) {
 		parity_gt_object_destroy(gm, t->batch);
 		t->batch = 0;
@@ -558,6 +759,634 @@ parity_eu_test_release(struct parity_eu_test *t, struct parity_gt_mem *gm)
 		t->shared = 0;
 	}
 	/* The PPGTT tables of the range stay with the vm (freed with it). */
+}
+
+/* ---------------- the 3D draw (PS) test ---------------- */
+
+_Static_assert(PARITY_EU_SHARED_VA == I915_DRAW_FIXTURE_STATE_VA,
+	"the PS stores its marker at the absolute address 0x100400c10");
+
+int
+parity_draw_batch_check_pipeline_select(const uint32_t *cmds, unsigned n,
+	struct parity_eu_pipesel_check *out)
+{
+	struct parity_eu_pipesel_check c;
+
+	(void)parity_eu_batch_check_pipeline_select(cmds, n, &c);
+	if (out != 0)
+		*out = c;
+	return (c.n_3d == 1u && c.n_gpgpu == 0u && c.n_bad == 0u) ? 0 : -EINVAL;
+}
+
+int
+parity_draw_test_run(struct parity_draw_test *d, struct parity_gt_engines *es,
+	struct parity_gt_ppgtt *vm, struct parity_gt_mem *gm, struct osdep_mmio *m,
+	struct spinlock *uncore_lock, unsigned timeout_ms)
+{
+	static const uint64_t va[3] = { PARITY_EU_SHARED_VA, PARITY_EU_BATCH_VA, PARITY_DRAW_RT_VA };
+	static const uint32_t stat_reg[6] = { 0x2310u, 0x2318u, 0x2320u, 0x2338u, 0x2340u, 0x2348u };
+	struct parity_eu_test *t;
+	struct parity_gt_engine *ge;
+	struct parity_execlists *el;
+	struct parity_gt_object *obj[3];
+	volatile uint32_t *mk;
+	volatile uint32_t *px;
+	uint64_t dma;
+	unsigned i;
+	int rc;
+
+	if (d == 0 || es == 0 || vm == 0 || gm == 0 || m == 0)
+		return -EINVAL;
+	memset(d, 0, sizeof(*d));
+	t = &d->t;
+
+	for (i = 0u; i < es->n; i++)
+		if (es->ge[i].info->class == PARITY_RENDER_CLASS)
+			break;
+	if (i == es->n)
+		return fail(t, -ENODEV, "no render engine");
+	t->engine_idx = i;
+	ge = &es->ge[i];
+	el = &es->el[i];
+
+	/* State page, batch, render target: three user objects softpinned into the kernel vm. */
+	t->shared = parity_gt_object_create(gm, 4096u);
+	t->batch = parity_gt_object_create(gm, 4096u);
+	d->rt = parity_gt_object_create(gm, 4096u);
+	if (t->shared == 0 || t->batch == 0 || d->rt == 0)
+		return fail(t, -ENOMEM, "gem_create");
+	obj[0] = t->shared; obj[1] = t->batch; obj[2] = d->rt;
+	rc = parity_gt_ppgtt_alloc_range(gm, vm, PARITY_EU_SHARED_VA, 3u * 4096u);
+	if (rc != 0)
+		return fail(t, rc, "allocate_va_range");
+	for (i = 0u; i < 3u && rc == 0; i++) {
+		rc = parity_gt_object_page_dma(obj[i], 0u, &dma);
+		if (rc == 0)
+			rc = parity_gt_ppgtt_insert_page(vm, dma, va[i], 0u /* I915_CACHE_LLC -> PAT 0 */);
+	}
+	if (rc != 0)
+		return fail(t, rc, "ppgtt_insert");
+
+	/* The big-bang fixture bytes, unchanged. */
+	d->mocs = drv_i915_draw_fixture_mocs();
+	memset(d->rt->cpu, 0, 4096u);
+	drv_i915_draw_fixture_write_state(t->shared->cpu, PARITY_DRAW_RT_VA, d->mocs);
+	t->batch_dwords = drv_i915_draw_fixture_build_batch((uint32_t *)t->batch->cpu, 1024u,
+		PARITY_EU_SHARED_VA, d->mocs);
+	if (t->batch_dwords == 0u || t->batch_dwords >= 1024u)
+		return fail(t, -ENOSPC, "build_batch");
+	/* Read the words back from the object that is submitted; never submit a bad select. */
+	t->pipesel_rc = parity_draw_batch_check_pipeline_select((const uint32_t *)t->batch->cpu,
+		t->batch_dwords, &t->pipesel);
+	if (t->pipesel_rc != 0)
+		return fail(t, t->pipesel_rc, "pipeline_select_verify");
+	t->batch_hash = fnv1a64(t->batch->cpu, (size_t)t->batch_dwords * 4u, 0xcbf29ce484222325ull);
+	d->state_hash = fnv1a64(t->shared->cpu, 4096u, 0xcbf29ce484222325ull);
+
+	/* intel_context_create(engine) on the kernel vm; it inherits engine->default_state. */
+	rc = parity_lrc_alloc(&t->ce, ge, vm, gm, 4096u, 0u);
+	if (rc != 0)
+		return fail(t, rc, "intel_context_create");
+	t->tl_page = parity_gt_object_create(gm, 4096u);
+	if (t->tl_page == 0)
+		return fail(t, -ENOMEM, "intel_timeline_create");
+	rc = parity_gt_ggtt_bind(gm, t->tl_page);
+	if (rc != 0)
+		return fail(t, rc, "intel_timeline_pin");
+	parity_lrc_init_state(&t->ce);
+	(void)parity_lrc_update_regs(&t->ce, t->ce.ring.tail);
+
+	t->tl_seqno = 2u;
+	rc = eu_build_request(t, &t->rq, &t->ce, t->tl_page, t->tl_seqno, PARITY_EU_BATCH_VA);
+	if (rc != 0)
+		return rc;
+
+	{
+		uint64_t pdp0 = ((uint64_t)t->ce.lrc_reg_state[PARITY_CTX_PDP0_UDW] << 32) |
+			t->ce.lrc_reg_state[PARITY_CTX_PDP0_LDW];
+
+		t->pdp0_matches_top = pdp0 == vm->top_pd_dma;
+		for (i = 0u; i < 3u; i++)
+			(void)parity_gt_ppgtt_walk(vm, va[i], &t->walk[i]);
+		t->walks = 3u;
+	}
+
+	rc = parity_execlists_submit(ge, el, m, &t->rq);
+	if (rc != 0)
+		return fail(t, rc, "execlists_submit");
+	t->submitted = 1;
+
+	rc = wait_retired(t, ge, el, &t->rq, m, timeout_ms);
+	if (rc == 0)
+		t->completed = 1;
+	else if (rc == -ETIMEDOUT)
+		t->timed_out = 1;
+	else
+		(void)fail(t, rc, "i915_request_wait");
+
+	mk = (volatile uint32_t *)t->shared->cpu + I915_DRAW_FIXTURE_MARKER_OFFSET / 4u;
+	d->marker_before = mk[0];
+	d->marker_after = mk[1];
+	d->marker_middraw = mk[2];
+	d->ps_marker = mk[4];
+	px = (volatile uint32_t *)d->rt->cpu;
+	d->px_total = I915_DRAW_FIXTURE_WIDTH * I915_DRAW_FIXTURE_HEIGHT;
+	for (i = 0u; i < d->px_total; i++)
+		if (px[i] == I915_DRAW_FIXTURE_EXPECTED_PIXEL)
+			d->px_match++;
+	d->px_first = px[0];
+	d->px_mid = px[d->px_total / 2u];
+	d->px_last = px[d->px_total - 1u];
+
+	if (t->completed) {
+		eu_log_record(t, ge, el, &t->rq, &t->ce, "completed");
+		t->parked = eu_park(t, es, ge, el, m, timeout_ms);
+		t->outcome = (d->marker_before == I915_DRAW_FIXTURE_MARKER_BEFORE &&
+			d->marker_middraw == I915_DRAW_FIXTURE_MARKER_MIDDRAW &&
+			d->marker_after == I915_DRAW_FIXTURE_MARKER_AFTER &&
+			d->px_match == d->px_total) ? PARITY_EU_PASS : PARITY_EU_ERROR;
+		if (t->outcome == PARITY_EU_ERROR && t->err == 0)
+			(void)fail(t, -EIO, "markers/pixels");
+		return t->err;
+	}
+
+	if (t->timed_out)
+		t->outcome = PARITY_EU_HANG;
+	/* The context is still on the hardware: the pipeline statistics are live. */
+	for (i = 0u; i < 6u; i++)
+		d->stats_live[i] = osdep_mmio_read32(m, stat_reg[i]);
+	d->stats_valid = 1;
+	eu_log_record(t, ge, el, &t->rq, &t->ce, "hang");
+	eu_hang_dump_reset(t, es, ge, el, m, uncore_lock);
+	return t->err != 0 ? t->err : -ETIMEDOUT;
+}
+
+void
+parity_draw_test_release(struct parity_draw_test *d, struct parity_gt_mem *gm)
+{
+	if (d == 0 || gm == 0)
+		return;
+	if (d->rt != 0) {
+		parity_gt_object_destroy(gm, d->rt);
+		d->rt = 0;
+	}
+	parity_eu_test_release(&d->t, gm);
+}
+
+/* ---------------- T2: the first textured draw ---------------- */
+
+#define TEX_RT_PREFILL 0x5a5a5a5au
+
+int
+parity_tex_test_run(struct parity_tex_test *x, struct parity_gt_engines *es,
+	struct parity_gt_ppgtt *vm, struct parity_gt_mem *gm, struct osdep_mmio *m,
+	struct spinlock *uncore_lock, unsigned timeout_ms)
+{
+	static const uint64_t va[4] = { PARITY_EU_SHARED_VA, PARITY_EU_BATCH_VA,
+		PARITY_DRAW_RT_VA, I915_TEX_FIXTURE_TEX_VA };
+	static const uint32_t stat_reg[6] = { 0x2310u, 0x2318u, 0x2320u, 0x2338u, 0x2340u, 0x2348u };
+	static uint8_t pattern[I915_TEX_FIXTURE_TEX_BYTES];
+	struct parity_eu_test *t;
+	struct parity_gt_engine *ge;
+	struct parity_execlists *el;
+	struct parity_gt_object *obj[4];
+	volatile uint32_t *mk;
+	volatile uint32_t *px;
+	volatile uint8_t *tb;
+	uint64_t dma;
+	unsigned i;
+	int rc;
+
+	if (x == 0 || es == 0 || vm == 0 || gm == 0 || m == 0)
+		return -EINVAL;
+	memset(x, 0, sizeof(*x));
+	t = &x->t;
+	x->first_bad_x = -1;
+	x->first_bad_y = -1;
+
+	for (i = 0u; i < es->n; i++)
+		if (es->ge[i].info->class == PARITY_RENDER_CLASS)
+			break;
+	if (i == es->n)
+		return fail(t, -ENODEV, "no render engine");
+	t->engine_idx = i;
+	ge = &es->ge[i];
+	el = &es->el[i];
+
+	t->shared = parity_gt_object_create(gm, 4096u);
+	t->batch = parity_gt_object_create(gm, 4096u);
+	x->rt = parity_gt_object_create(gm, 4096u);
+	x->tex = parity_gt_object_create(gm, 4096u);
+	if (t->shared == 0 || t->batch == 0 || x->rt == 0 || x->tex == 0)
+		return fail(t, -ENOMEM, "gem_create");
+	obj[0] = t->shared; obj[1] = t->batch; obj[2] = x->rt; obj[3] = x->tex;
+	/* 0x100400000..0x100404fff; the page at 0x100403000 stays unmapped (scratch). */
+	rc = parity_gt_ppgtt_alloc_range(gm, vm, PARITY_EU_SHARED_VA, 5u * 4096u);
+	if (rc != 0)
+		return fail(t, rc, "allocate_va_range");
+	for (i = 0u; i < 4u && rc == 0; i++) {
+		rc = parity_gt_object_page_dma(obj[i], 0u, &dma);
+		if (rc == 0)
+			rc = parity_gt_ppgtt_insert_page(vm, dma, va[i], 0u);
+	}
+	if (rc != 0)
+		return fail(t, rc, "ppgtt_insert");
+
+	/* CPU uploads: the texture image (+ guard), the state page, the batch; RT pre-filled. */
+	x->mocs = drv_i915_draw_fixture_mocs();
+	drv_i915_tex_fixture_pattern(pattern, 0u);
+	tb = (volatile uint8_t *)x->tex->cpu;
+	for (i = 0u; i < 4096u; i++)
+		tb[i] = i < I915_TEX_FIXTURE_TEX_BYTES ? pattern[i] : (uint8_t)PARITY_TEX_GUARD_BYTE;
+	px = (volatile uint32_t *)x->rt->cpu;
+	x->px_total = I915_DRAW_FIXTURE_WIDTH * I915_DRAW_FIXTURE_HEIGHT;
+	for (i = 0u; i < x->px_total; i++)
+		px[i] = TEX_RT_PREFILL;
+	drv_i915_tex_fixture_write_state(t->shared->cpu, PARITY_DRAW_RT_VA, I915_TEX_FIXTURE_TEX_VA, x->mocs);
+	t->batch_dwords = drv_i915_tex_fixture_build_batch((uint32_t *)t->batch->cpu, 1024u,
+		PARITY_EU_SHARED_VA, x->mocs);
+	if (t->batch_dwords == 0u || t->batch_dwords >= 1024u)
+		return fail(t, -ENOSPC, "build_batch");
+	t->pipesel_rc = parity_draw_batch_check_pipeline_select((const uint32_t *)t->batch->cpu,
+		t->batch_dwords, &t->pipesel);
+	if (t->pipesel_rc != 0)
+		return fail(t, t->pipesel_rc, "pipeline_select_verify");
+	t->batch_hash = fnv1a64(t->batch->cpu, (size_t)t->batch_dwords * 4u, 0xcbf29ce484222325ull);
+	x->state_hash = fnv1a64(t->shared->cpu, 4096u, 0xcbf29ce484222325ull);
+	x->tex_hash = fnv1a64(x->tex->cpu, 4096u, 0xcbf29ce484222325ull);
+
+	rc = parity_lrc_alloc(&t->ce, ge, vm, gm, 4096u, 0u);
+	if (rc != 0)
+		return fail(t, rc, "intel_context_create");
+	t->tl_page = parity_gt_object_create(gm, 4096u);
+	if (t->tl_page == 0)
+		return fail(t, -ENOMEM, "intel_timeline_create");
+	rc = parity_gt_ggtt_bind(gm, t->tl_page);
+	if (rc != 0)
+		return fail(t, rc, "intel_timeline_pin");
+	parity_lrc_init_state(&t->ce);
+	(void)parity_lrc_update_regs(&t->ce, t->ce.ring.tail);
+
+	t->tl_seqno = 2u;
+	rc = eu_build_request(t, &t->rq, &t->ce, t->tl_page, t->tl_seqno, PARITY_EU_BATCH_VA);
+	if (rc != 0)
+		return rc;
+	{
+		uint64_t pdp0 = ((uint64_t)t->ce.lrc_reg_state[PARITY_CTX_PDP0_UDW] << 32) |
+			t->ce.lrc_reg_state[PARITY_CTX_PDP0_LDW];
+
+		t->pdp0_matches_top = pdp0 == vm->top_pd_dma;
+		for (i = 0u; i < 4u; i++)
+			(void)parity_gt_ppgtt_walk(vm, va[i], &t->walk[i]);
+		t->walks = 4u;
+	}
+
+	rc = parity_execlists_submit(ge, el, m, &t->rq);
+	if (rc != 0)
+		return fail(t, rc, "execlists_submit");
+	t->submitted = 1;
+	rc = wait_retired(t, ge, el, &t->rq, m, timeout_ms);
+	if (rc == 0)
+		t->completed = 1;
+	else if (rc == -ETIMEDOUT)
+		t->timed_out = 1;
+	else
+		(void)fail(t, rc, "i915_request_wait");
+
+	mk = (volatile uint32_t *)t->shared->cpu + I915_DRAW_FIXTURE_MARKER_OFFSET / 4u;
+	x->marker_before = mk[0];
+	x->marker_after = mk[1];
+	x->marker_middraw = mk[2];
+	x->ps_marker = mk[4];
+	for (i = 0u; i < x->px_total; i++) {
+		unsigned xx = i % I915_DRAW_FIXTURE_WIDTH, yy = i / I915_DRAW_FIXTURE_WIDTH;
+		uint32_t want = drv_i915_tex_fixture_expected_pixel(pattern, xx, yy);
+		uint32_t got = px[i];
+
+		if (got == want) {
+			x->px_match++;
+		} else {
+			if (got == TEX_RT_PREFILL)
+				x->px_stale++;
+			if (x->first_bad_x < 0) {
+				x->first_bad_x = (int)xx;
+				x->first_bad_y = (int)yy;
+				x->first_bad_expected = want;
+				x->first_bad_observed = got;
+			}
+		}
+	}
+	for (i = 0u; i < 4096u; i++) {
+		uint8_t want = i < I915_TEX_FIXTURE_TEX_BYTES ? pattern[i] : (uint8_t)PARITY_TEX_GUARD_BYTE;
+
+		if (tb[i] != want) {
+			if (i < I915_TEX_FIXTURE_TEX_BYTES)
+				x->tex_changed_bytes++;
+			else
+				x->guard_bad_bytes++;
+		}
+	}
+
+	if (t->completed) {
+		eu_log_record(t, ge, el, &t->rq, &t->ce, "completed");
+		t->parked = eu_park(t, es, ge, el, m, timeout_ms);
+		t->outcome = (t->parked && x->marker_before == I915_DRAW_FIXTURE_MARKER_BEFORE &&
+			x->marker_middraw == I915_DRAW_FIXTURE_MARKER_MIDDRAW &&
+			x->marker_after == I915_DRAW_FIXTURE_MARKER_AFTER &&
+			x->ps_marker == I915_DRAW_FIXTURE_PS_MARKER &&
+			x->px_match == x->px_total && x->tex_changed_bytes == 0u &&
+			x->guard_bad_bytes == 0u) ? PARITY_EU_PASS : PARITY_EU_ERROR;
+		if (t->outcome == PARITY_EU_ERROR && t->err == 0)
+			(void)fail(t, -EIO, "markers/pixels/guard");
+		return t->err;
+	}
+
+	if (t->timed_out)
+		t->outcome = PARITY_EU_HANG;
+	for (i = 0u; i < 6u; i++)
+		x->stats_live[i] = osdep_mmio_read32(m, stat_reg[i]);
+	x->stats_valid = 1;
+	eu_log_record(t, ge, el, &t->rq, &t->ce, "hang");
+	eu_hang_dump_reset(t, es, ge, el, m, uncore_lock);
+	return t->err != 0 ? t->err : -ETIMEDOUT;
+}
+
+void
+parity_tex_test_release(struct parity_tex_test *x, struct parity_gt_mem *gm)
+{
+	if (x == 0 || gm == 0)
+		return;
+	if (x->rt != 0) {
+		parity_gt_object_destroy(gm, x->rt);
+		x->rt = 0;
+	}
+	if (x->tex != 0) {
+		parity_gt_object_destroy(gm, x->tex);
+		x->tex = 0;
+	}
+	parity_eu_test_release(&x->t, gm);
+}
+
+/* ---------------- R1: draw repeats and compute<->3D switching ---------------- */
+
+#define R1_RT_PREFILL 0x5a5a5a5au      /* not the expected pixel, not zero */
+
+/* The C1 fixture in the shared page, exactly what parity_eu_test_run() writes. */
+static void
+r1_write_c1_state(void *page_cpu)
+{
+	volatile uint32_t *page = (volatile uint32_t *)page_cpu;
+	volatile uint32_t *idd = page + PARITY_EU_IDD_OFFSET / 4u;
+
+	memset(page_cpu, 0, 4096u);
+	memcpy((char *)page_cpu + PARITY_EU_KSP_OFFSET, eu_marker_cs, sizeof(eu_marker_cs));
+	idd[0] = PARITY_EU_KSP_OFFSET;
+	idd[1] = 0u; idd[2] = 1u << 20; idd[3] = 0u;
+	idd[4] = 0u; idd[5] = 0u; idd[6] = 1u; idd[7] = 0u;
+	page[PARITY_EU_READY_OFF / 4u] = 0xdead0000u;
+	page[PARITY_EU_EU_OFF / 4u] = 0xdead0000u;
+	page[PARITY_EU_DONE_OFF / 4u] = 0xdead0000u;
+	page[PARITY_EU_CS_OFF / 4u] = 0xdead0000u;
+}
+
+int
+parity_r1_test_run(struct parity_r1_test *r, struct parity_gt_engines *es,
+	struct parity_gt_ppgtt *vm, struct parity_gt_mem *gm, const struct parity_sseu *sseu,
+	struct osdep_mmio *m, struct spinlock *uncore_lock, unsigned timeout_ms)
+{
+	/*
+	 * A: new context, draw x4.  B: new context, draw x2.
+	 * C: new context, draw -> C1 -> draw (same context).
+	 * Then switching between contexts: A: C1, B: draw, A: C1.  (A and B are
+	 * reused: the 1 MiB GGTT of this port has no room for five RCS contexts
+	 * next to the 512 KiB migrate ring.)
+	 */
+	static const char plan_ctx[]  = "AAAABBCCCABA";
+	static const char plan_kind[] = "DDDDDDDCDCDC";
+	static const uint64_t va[4] = { PARITY_EU_SHARED_VA, PARITY_EU_BATCH_VA,
+		PARITY_DRAW_RT_VA, PARITY_R1_DRAW_BATCH_VA };
+	struct parity_eu_test *t;
+	struct parity_gt_engine *ge;
+	struct parity_execlists *el;
+	struct parity_gt_object *obj[4];
+	volatile uint32_t *page;
+	volatile uint32_t *px;
+	uint64_t dma;
+	unsigned i, bit, s, c1_dwords;
+	int rc;
+
+	if (r == 0 || es == 0 || vm == 0 || gm == 0 || sseu == 0 || m == 0)
+		return -EINVAL;
+	memset(r, 0, sizeof(*r));
+	t = &r->t;
+	r->n_planned = (unsigned)(sizeof(plan_ctx) - 1u);
+
+	for (i = 0u; i < es->n; i++)
+		if (es->ge[i].info->class == PARITY_RENDER_CLASS)
+			break;
+	if (i == es->n)
+		return fail(t, -ENODEV, "no render engine");
+	t->engine_idx = i;
+	ge = &es->ge[i];
+	el = &es->el[i];
+	for (bit = 0u; bit < 16u; bit++)
+		if ((sseu->subslice_mask >> bit) & 1u)
+			t->dss_count++;
+	if (t->dss_count == 0u)
+		return fail(t, -EINVAL, "no subslice");
+	t->max_threads = 112u * t->dss_count - 1u;
+
+	t->shared = parity_gt_object_create(gm, 4096u);
+	t->batch = parity_gt_object_create(gm, 4096u);
+	r->rt = parity_gt_object_create(gm, 4096u);
+	r->dbatch = parity_gt_object_create(gm, 4096u);
+	if (t->shared == 0 || t->batch == 0 || r->rt == 0 || r->dbatch == 0)
+		return fail(t, -ENOMEM, "gem_create");
+	obj[0] = t->shared; obj[1] = t->batch; obj[2] = r->rt; obj[3] = r->dbatch;
+	rc = parity_gt_ppgtt_alloc_range(gm, vm, PARITY_EU_SHARED_VA, 4u * 4096u);
+	if (rc != 0)
+		return fail(t, rc, "allocate_va_range");
+	for (i = 0u; i < 4u && rc == 0; i++) {
+		rc = parity_gt_object_page_dma(obj[i], 0u, &dma);
+		if (rc == 0)
+			rc = parity_gt_ppgtt_insert_page(vm, dma, va[i], 0u);
+	}
+	if (rc != 0)
+		return fail(t, rc, "ppgtt_insert");
+
+	/* Both batches are built once; their bytes do not depend on their own VA. */
+	r->mocs = drv_i915_draw_fixture_mocs();
+	c1_dwords = parity_eu_test_build_batch((uint32_t *)t->batch->cpu, 1024u,
+		PARITY_EU_SHARED_VA, PARITY_EU_SHARED_VA, t->max_threads);
+	r->dbatch_dwords = drv_i915_draw_fixture_build_batch((uint32_t *)r->dbatch->cpu, 1024u,
+		PARITY_EU_SHARED_VA, r->mocs);
+	if (c1_dwords == 0u || r->dbatch_dwords == 0u || r->dbatch_dwords >= 1024u)
+		return fail(t, -ENOSPC, "build_batch");
+	t->batch_dwords = c1_dwords;
+	if (parity_eu_batch_check_pipeline_select((const uint32_t *)t->batch->cpu, c1_dwords, 0) != 0 ||
+	    parity_draw_batch_check_pipeline_select((const uint32_t *)r->dbatch->cpu,
+	    r->dbatch_dwords, 0) != 0)
+		return fail(t, -EINVAL, "pipeline_select_verify");
+	r->c1_batch_hash = fnv1a64(t->batch->cpu, (size_t)c1_dwords * 4u, 0xcbf29ce484222325ull);
+	r->draw_batch_hash = fnv1a64(r->dbatch->cpu, (size_t)r->dbatch_dwords * 4u, 0xcbf29ce484222325ull);
+
+	page = (volatile uint32_t *)t->shared->cpu;
+	px = (volatile uint32_t *)r->rt->cpu;
+
+	for (s = 0u; s < r->n_planned; s++) {
+		struct parity_r1_step *st = &r->step[s];
+		struct parity_r1_ctx *cx = &r->ctx[(unsigned)(plan_ctx[s] - 'A')];
+		int draw = plan_kind[s] == 'D';
+		unsigned polls0 = t->polls;
+		uint64_t h;
+
+		memset(st, 0, sizeof(*st));
+		r->n_steps = s + 1u;
+		st->ctx = plan_ctx[s];
+		st->kind = plan_kind[s];
+
+		if (!cx->created) {
+			/* intel_context_create(engine): a new context and a new timeline. */
+			rc = parity_lrc_alloc(&cx->ce, ge, vm, gm, 4096u, 0u);
+			if (rc == 0) {
+				cx->created = 1;
+				cx->tl_page = parity_gt_object_create(gm, 4096u);
+				rc = cx->tl_page != 0 ? parity_gt_ggtt_bind(gm, cx->tl_page) : -ENOMEM;
+			}
+			if (rc != 0) {
+				st->rc = rc;
+				return fail(t, rc, "r1: intel_context_create");
+			}
+			parity_lrc_init_state(&cx->ce);
+			(void)parity_lrc_update_regs(&cx->ce, cx->ce.ring.tail);
+		}
+
+		/*
+		 * The previous request has completed and parked, so the CPU may now
+		 * rewrite what it referenced: the whole fixture page for this kind,
+		 * and the render target with a pattern that is not the expected one.
+		 */
+		if (draw) {
+			drv_i915_draw_fixture_write_state(t->shared->cpu, PARITY_DRAW_RT_VA, r->mocs);
+			for (i = 0u; i < 1024u; i++)
+				px[i] = R1_RT_PREFILL;
+		} else {
+			r1_write_c1_state(t->shared->cpu);
+		}
+		st->state_hash = fnv1a64(t->shared->cpu, 4096u, 0xcbf29ce484222325ull);
+		h = draw ? fnv1a64(r->dbatch->cpu, (size_t)r->dbatch_dwords * 4u, 0xcbf29ce484222325ull)
+			 : fnv1a64(t->batch->cpu, (size_t)c1_dwords * 4u, 0xcbf29ce484222325ull);
+		st->batch_hash = h;
+		if (h != (draw ? r->draw_batch_hash : r->c1_batch_hash)) {
+			st->rc = -EINVAL;
+			return fail(t, -EINVAL, "r1: batch changed");
+		}
+
+		cx->seqno += 2u;
+		st->seqno = cx->seqno;
+		st->lrca = cx->ce.lrca;
+		rc = eu_build_request(t, &r->rq, &cx->ce, cx->tl_page, cx->seqno,
+			draw ? PARITY_R1_DRAW_BATCH_VA : PARITY_EU_BATCH_VA);
+		if (rc == 0) {
+			rc = parity_execlists_submit(ge, el, m, &r->rq);
+			if (rc != 0)
+				(void)fail(t, rc, "r1: execlists_submit");
+		}
+		if (rc != 0) {
+			st->rc = rc;
+			return rc;
+		}
+		rc = wait_retired(t, ge, el, &r->rq, m, timeout_ms);
+		st->rc = rc;
+		st->completed = rc == 0;
+		st->polls = t->polls - polls0;
+		st->hwsp_observed = *r->rq.hwsp_cpu;
+		st->lrca = cx->ce.lrca;
+
+		if (draw) {
+			volatile uint32_t *mk = page + I915_DRAW_FIXTURE_MARKER_OFFSET / 4u;
+
+			st->before = mk[0]; st->after = mk[1]; st->middraw = mk[2]; st->ps_marker = mk[4];
+			for (i = 0u; i < 1024u; i++) {
+				if (px[i] == I915_DRAW_FIXTURE_EXPECTED_PIXEL)
+					st->px_match++;
+				else if (px[i] == R1_RT_PREFILL)
+					st->px_stale++;
+			}
+			st->px_first = px[0];
+			st->px_last = px[1023];
+		} else {
+			st->ready = page[PARITY_EU_READY_OFF / 4u];
+			st->eu = page[PARITY_EU_EU_OFF / 4u];
+			st->done = page[PARITY_EU_DONE_OFF / 4u];
+			st->cs = page[PARITY_EU_CS_OFF / 4u];
+			st->idd_rb_ok = 1;
+			st->kernel_rb_ok = 1;
+			for (i = 0u; i < 8u; i++)
+				if (page[PARITY_EU_IDD_RB_OFF / 4u + i] != page[PARITY_EU_IDD_OFFSET / 4u + i])
+					st->idd_rb_ok = 0;
+			for (i = 0u; i < PARITY_EU_KERNEL_DWORDS; i++)
+				if (page[PARITY_EU_KERNEL_RB_OFF / 4u + i] != eu_marker_cs[i])
+					st->kernel_rb_ok = 0;
+		}
+
+		if (!st->completed) {
+			if (rc == -ETIMEDOUT) {
+				t->timed_out = 1;
+				t->outcome = PARITY_EU_HANG;
+			} else {
+				(void)fail(t, rc, "r1: i915_request_wait");
+			}
+			eu_log_record(t, ge, el, &r->rq, &cx->ce, "r1-hang");
+			eu_hang_dump_reset(t, es, ge, el, m, uncore_lock);
+			return rc;
+		}
+		st->parked = eu_park(t, es, ge, el, m, timeout_ms);
+		if (draw)
+			st->pass = st->parked && st->hwsp_observed == st->seqno &&
+				st->before == I915_DRAW_FIXTURE_MARKER_BEFORE &&
+				st->middraw == I915_DRAW_FIXTURE_MARKER_MIDDRAW &&
+				st->after == I915_DRAW_FIXTURE_MARKER_AFTER &&
+				st->ps_marker == I915_DRAW_FIXTURE_PS_MARKER && st->px_match == 1024u;
+		else
+			st->pass = st->parked && st->hwsp_observed == st->seqno &&
+				st->ready == PARITY_EU_READY_TAG && st->eu == PARITY_EU_STORE_TAG &&
+				st->done == PARITY_EU_DONE_TAG && st->cs == PARITY_EU_CS_TAG &&
+				st->idd_rb_ok && st->kernel_rb_ok;
+		if (!st->pass) {
+			t->outcome = PARITY_EU_ERROR;
+			return fail(t, -EIO, "r1: markers/pixels");
+		}
+		r->passed++;
+	}
+	t->outcome = PARITY_EU_PASS;
+	return 0;
+}
+
+void
+parity_r1_test_release(struct parity_r1_test *r, struct parity_gt_mem *gm)
+{
+	unsigned i;
+
+	if (r == 0 || gm == 0)
+		return;
+	for (i = 0u; i < PARITY_R1_CTX_MAX; i++) {
+		if (r->ctx[i].tl_page != 0) {
+			parity_gt_object_destroy(gm, r->ctx[i].tl_page);
+			r->ctx[i].tl_page = 0;
+		}
+		if (r->ctx[i].created && r->ctx[i].ce.allocated)
+			parity_lrc_release(&r->ctx[i].ce, gm);
+	}
+	if (r->rt != 0) {
+		parity_gt_object_destroy(gm, r->rt);
+		r->rt = 0;
+	}
+	if (r->dbatch != 0) {
+		parity_gt_object_destroy(gm, r->dbatch);
+		r->dbatch = 0;
+	}
+	parity_eu_test_release(&r->t, gm);
 }
 
 /* ---------------- MCR workaround readback (intel_gt_mcr_read per DSS) ---------------- */

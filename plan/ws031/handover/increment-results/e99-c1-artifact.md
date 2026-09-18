@@ -3,7 +3,7 @@
 | 項目 | 値 |
 |---|---|
 | artifact ID | `zedbsd-parity-c1-e99` |
-| 生成元 | zedBSD 作業ツリー（HEAD e298eabe + 未コミット差分 = `e97-e99-changes.patch`）、`src/drivers/gpu/i915/parity/eu_test.c` `parity_eu_test_build_batch()` と同ファイルの `eu_marker_cs[]`／IDD 設定 |
+| 生成元 | zedBSD 作業ツリー（HEAD e298eabe + 未コミット差分 = `e97-e103-changes.patch`）、`src/drivers/gpu/i915/parity/eu_test.c` `parity_eu_test_build_batch()` と同ファイルの `eu_marker_cs[]`／IDD 設定 |
 | image | vmunix sha256 `96274bf33473669aee57bc46aa72b5c918b061482fe83d2b0a3a7e984703e24f`、hdd-image `1a5f7878db284b018f832d18e16afe1e7a7bf60c0fe6a305a68d09ea152e6017`、BOOTX64.EFI `57f8eab693354e318aa694753bb7ecedc246efba38943b9fb2259de0f0c60f4f` |
 | build | clean、`BUILD=build/eu-e99 CONFIG_DRIVER_PCI_I915_PARITY=y ZEDBSD_TEST_CPPFLAGS=-DPARITY_EU_TEST=1` |
 | 対象 GPU | Gen12.0 LP、ADL-P 8086:46a8（VFIO）、RCS0、execlists |

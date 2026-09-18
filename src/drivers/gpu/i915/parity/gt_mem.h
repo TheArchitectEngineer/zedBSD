@@ -51,7 +51,7 @@ struct osdep_mmio;
 #define PARITY_GT_GGTT_WORDS     (PARITY_GT_GGTT_PAGES / 32u)
 
 /* Object pool: HWSP/ring/LRC per engine, plus scratch and the ppgtt pages. */
-#define PARITY_GT_MAX_OBJECTS    64u
+#define PARITY_GT_MAX_OBJECTS    128u   /* E-102: 64 ran out with the R1 harness (4 user objects + 3 contexts) */
 
 /* gen12 ppgtt page-table entry bits (intel_gtt.h). */
 #define PARITY_GEN8_PAGE_PRESENT_B  (((uint64_t)1) << 0)

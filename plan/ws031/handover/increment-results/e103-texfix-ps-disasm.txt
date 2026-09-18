@@ -1,0 +1,46 @@
+(W)     add (16)                  r2:uw         r1.4<1;4,0>:uw    0x11001010:v
+(W)     mov (1)                   f1:uw         r1.14<0>:uw
+        mov (8)                   r11           0xc0ffee01
+(W)     sync.nop (1)                            null                              {@3}
+        mov (8)                   r1:uw         r2.4<8;4,1>:uw
+        mov (8)                   r0:uw         r2<8;4,1>:uw
+(W)     mov (8)                   r3.1<2>:f     0x00000001:f
+        mov (8)                   r6:f          r1:uw                             {Compacted,@3}
+        mov (8)                   r5:f          r0:uw                             {Compacted,@3}
+(W)     mov (8)                   r3<2>:f       0x00400c10:f                      {@3}
+        add (8)                   r8:f          r6:f              0x3f000000:f    {Compacted,@3}
+        add (8)                   r7:f          r5:f              0x3f000000:f    {Compacted,@3}
+(W)     sync.nop (1)                            null                              {@3}
+        mov (8)                   r9.1<2>:d     r3.1<0>:d
+        mul (8)                   r13:f         r8:f              0x3d000000:f    {Compacted,@3}
+        mul (8)                   r12:f         r7:f              0x3d000000:f    {Compacted,@3}
+        mov (8)                   r9<2>:d       r3<0>:d                           {@3}
+        send.smpl (8)             r124    r12    r13     0x00000040  0x02438001   {@2,$0}  // wr:1+1, rd:4; sample_lz:u,v,r,ai (8) bti(1) using sampler index 0
+(f1.0)  send.hdc1 (8)             null    r9     r11     0x00000040  0x04066EFD   {@1,$1}  // wr:2+1, rd:0; a64_untyped_write:x simd8 (8) flat+0x0
+(W)     sync.nop (1)                            null                              {$0.dst}
+        sendc.render (8)          null    r124   null    0x00000000  0x08031400   {EOT,@1}  // wr:4+0, rd:0; simd8 rt_write last_rt (8) bti(0)
+        illegal (1)
+        illegal (1)
+(W)     add (32)                  r2:uw         r1.4<1;4,0>:uw    0x11001010:v
+(W)     mov (1)                   f1:uw         r1.14<0>:uw
+        mov (16)                  r22           0xc0ffee01
+(W)     sync.nop (1)                            null                              {@3}
+        mov (16)                  r1:uw         r2.4<8;4,1>:uw
+        mov (16)                  r0:uw         r2<8;4,1>:uw
+(W)     mov (8)                   r4.1<2>:f     0x00000001:f
+        mov (16)                  r8:f          r1:uw                             {Compacted,@3}
+        mov (16)                  r6:f          r0:uw                             {Compacted,@3}
+(W)     mov (8)                   r4<2>:f       0x00400c10:f                      {@3}
+        add (16)                  r12:f         r8:f              0x3f000000:f    {Compacted,@3}
+        add (16)                  r10:f         r6:f              0x3f000000:f    {Compacted,@3}
+(W)     sync.nop (1)                            null                              {@3}
+        mov (8)                   r18.1<2>:d    r4.1<0>:d
+        mov (8|M8)                r20.1<2>:d    r4.1<0>:d
+        mul (16)                  r16:f         r12:f             0x3d000000:f    {Compacted,@4}
+        mul (16)                  r14:f         r10:f             0x3d000000:f    {Compacted,@4}
+        mov (8)                   r18<2>:d      r4<0>:d                           {@4}
+        mov (8|M8)                r20<2>:d      r4<0>:d                           {@4}
+        send.smpl (16)            r120    r14    r16     0x00000080  0x04858001   {@3,$0}  // wr:2+2, rd:8; sample_lz:u,v,r,ai (16) bti(1) using sampler index 0
+(f1.0)  send.hdc1 (16)            null    r18    r22     0x00000080  0x08065EFD   {@1,$1}  // wr:4+2, rd:0; a64_untyped_write:x simd16 (16) flat+0x0
+(W)     sync.nop (1)                            null                              {$0.dst}
+        sendc.render (16)         null    r120   null    0x00000000  0x10031000   {EOT,@1}  // wr:8+0, rd:0; simd16 rt_write last_rt (16) bti(0)

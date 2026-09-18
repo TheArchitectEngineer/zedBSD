@@ -33,6 +33,7 @@
 #include "linux/i915-commands.inc"
 #include "vk/linux/3dstate-gen12.inc"
 #include "linux/i915-workarounds.inc"
+#include "draw_fixture.h"
 
 /* The marker the copy engine must write. */
 #define I915_SELFTEST_MARKER		0xdeadbeefU
@@ -862,10 +863,19 @@ i915_draw_emit_urb(
  * divide.  The pixel shader is left invalid in this step: the statistics
  * counters still report whether the rectangle reached the pixel dispatcher.
  */
+/* What the textured draw changes in the command list (NULL = the single-colour draw, byte for byte). */
+struct i915_draw_tex_opts {
+	uint32_t ps_dw3;		/* sampler count / binding table entry count */
+	uint32_t ps_dw7;		/* dispatch GRF start (from the compiler's prog_data) */
+	uint32_t ps_extra_dw1;		/* valid, UAV, source depth / W as the compiler requires */
+	uint32_t ssp_dw0, ssp_dw1;	/* 3DSTATE_SAMPLER_STATE_POINTERS_PS */
+};
+
 static void
 i915_draw_emit_raster_state(
 	struct i915_draw_batch *batch,
-	unsigned pixel_shader_valid)
+	unsigned pixel_shader_valid,
+	const struct i915_draw_tex_opts *tex)
 {
 	uint32_t index;
 
@@ -915,14 +925,15 @@ i915_draw_emit_raster_state(
 			break;
 		case 3U:
 			/* One binding table entry for the render target (BLORP sets this). */
-			i915_draw_emit(batch, 1U << 18);
+			i915_draw_emit(batch, tex != NULL ? tex->ps_dw3 : (1U << 18));
 			break;
 		case 6U:
 			i915_draw_emit(batch, ((GEN12_MAX_THREADS_PER_PSD - 1U) << 23) |
 				(pixel_shader_valid != 0U ? 1U : 0U));
 			break;
 		case 7U:
-			i915_draw_emit(batch, pixel_shader_valid != 0U ? (2U << 16) : 0U);
+			i915_draw_emit(batch, tex != NULL ? tex->ps_dw7 :
+				(pixel_shader_valid != 0U ? (2U << 16) : 0U));
 			break;
 		default:
 			i915_draw_emit(batch, 0U);
@@ -931,7 +942,8 @@ i915_draw_emit_raster_state(
 	}
 
 	i915_draw_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_PS_EXTRA, GEN12_3DSTATE_PS_EXTRA_DWORDS));
-	i915_draw_emit(batch, pixel_shader_valid != 0U ? ((1U << 31) | (1U << 2)) : 0U);	/* PixelShaderValid | HasUAV (marker store) */
+	i915_draw_emit(batch, tex != NULL ? tex->ps_extra_dw1 :
+		(pixel_shader_valid != 0U ? ((1U << 31) | (1U << 2)) : 0U));	/* PixelShaderValid | HasUAV (marker store) */
 
 	/* The target is writeable so the colour pipe is not short-circuited. */
 	i915_draw_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_PS_BLEND, GEN12_3DSTATE_PS_BLEND_DWORDS));
@@ -982,7 +994,8 @@ i915_draw_build_batch(
 	const struct i915_gem_object *instruction,
 	const struct i915_gem_object *vb,
 	uint32_t mocs,
-	unsigned pixel_shader_valid)
+	unsigned pixel_shader_valid,
+	const struct i915_draw_tex_opts *tex)
 {
 	struct i915_draw_batch batch;
 	uint32_t index;
@@ -1115,8 +1128,14 @@ i915_draw_build_batch(
 	i915_draw_emit_disabled(&batch, GEN12_CMD_3DSTATE_PRIMITIVE_REPLICATION,
 		GEN12_3DSTATE_PRIMITIVE_REPLICATION_DWORDS);
 
-	i915_draw_emit_raster_state(&batch, pixel_shader_valid);
+	i915_draw_emit_raster_state(&batch, pixel_shader_valid, tex);
 	i915_draw_emit_depth_state(&batch);
+
+	/* The textured draw names its sampler state (dynamic heap) before the binding table. */
+	if (tex != NULL) {
+		i915_draw_emit(&batch, tex->ssp_dw0);
+		i915_draw_emit(&batch, tex->ssp_dw1);
+	}
 
 	/* The pixel shader's one binding table entry names the render target. */
 	i915_draw_emit(&batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_BINDING_TABLE_POINTERS_PS,
@@ -1160,6 +1179,150 @@ i915_draw_build_batch(
 	i915_draw_emit(&batch, MI_NOOP);
 
 	return batch.count;
+}
+
+/* ---- WS031 parity draw harness: the same fixture, addressed by VA only ---- */
+
+_Static_assert(I915_DRAW_FIXTURE_WIDTH == I915_DRAW_WIDTH &&
+	I915_DRAW_FIXTURE_HEIGHT == I915_DRAW_HEIGHT &&
+	I915_DRAW_FIXTURE_MARKER_OFFSET == I915_DRAW_MARKER_OFFSET &&
+	I915_DRAW_FIXTURE_MARKER_BEFORE == I915_DRAW_MARKER_BEFORE &&
+	I915_DRAW_FIXTURE_MARKER_AFTER == I915_DRAW_MARKER_AFTER &&
+	I915_DRAW_FIXTURE_MARKER_MIDDRAW == I915_DRAW_MARKER_MIDDRAW &&
+	I915_DRAW_FIXTURE_EXPECTED_PIXEL == I915_DRAW_EXPECTED_PIXEL &&
+	I915_DRAW_FIXTURE_PS_OFFSET == I915_DRAW_PS_KERNEL_OFFSET &&
+	I915_DRAW_FIXTURE_PS_BYTES == sizeof(i915_draw_const_color_ps),
+	"draw_fixture.h must describe this fixture");
+
+void
+drv_i915_draw_fixture_write_state(void *state_page, uint64_t rt_va, uint32_t mocs)
+{
+	memset(state_page, 0, 4096U);
+	i915_draw_write_surface_state(state_page, rt_va, mocs);
+	i915_draw_write_dynamic_state(state_page);
+	memcpy((uint8_t *)state_page + I915_DRAW_PS_KERNEL_OFFSET, i915_draw_const_color_ps,
+		sizeof(i915_draw_const_color_ps));
+	i915_draw_fill_eot(state_page,
+		I915_DRAW_PS_KERNEL_OFFSET + sizeof(i915_draw_const_color_ps),
+		I915_DRAW_POSITION_OFFSET - I915_DRAW_PS_KERNEL_OFFSET - sizeof(i915_draw_const_color_ps));
+	i915_draw_write_vertices(state_page, 0x42000000U, 0x42000000U);
+}
+
+unsigned
+drv_i915_draw_fixture_build_batch(uint32_t *cmds, unsigned capacity, uint64_t state_va, uint32_t mocs)
+{
+	static struct i915_gem_object state;   /* only ->va is read by the builder */
+
+	memset(&state, 0, sizeof(state));
+	state.va = state_va;
+	return i915_draw_build_batch(cmds, capacity, &state, &state, &state, &state, mocs, 1U, NULL);
+}
+
+/* ---- T1: the textured draw (generated shader / surface / sampler words) ---- */
+
+#include "tex_fixture_gen.inc"
+
+_Static_assert(TEXFIX_PS_BYTES <= I915_DRAW_POSITION_OFFSET - I915_DRAW_PS_KERNEL_OFFSET,
+	"the sampling PS must fit between the kernel offset and the vertex data");
+/*
+ * What the rest of the batch assumes about the kernel.  The payload layout (GRF
+ * start, source depth / W) is NOT assumed: it is taken from the generated
+ * 3DSTATE_PS DW7 and 3DSTATE_PS_EXTRA words.
+ */
+_Static_assert(TEXFIX_PS_DISPATCH_8 == 1U && TEXFIX_PS_NUM_VARYING == 0U &&
+	TEXFIX_PS_USES_POS_OFFSET == 0U && TEXFIX_PS_TOTAL_SCRATCH == 0U && TEXFIX_PS_PUSH_SIZE0 == 0U,
+	"this batch dispatches the SIMD8 kernel at offset 0 and provides no varyings, position offsets, scratch or push constants");
+_Static_assert(TEXFIX_3DSTATE_PS_EXTRA_DW0 == 0x784f0000U &&
+	(TEXFIX_3DSTATE_PS_DW7 >> 16) == TEXFIX_PS_GRF_START_8,
+	"generated packet words must be the 3DSTATE_PS_EXTRA this batch emits and carry the SIMD8 GRF start");
+_Static_assert(TEXFIX_TEX_VA_PLACEHOLDER == I915_TEX_FIXTURE_TEX_VA &&
+	TEXFIX_TEX_WIDTH == I915_TEX_FIXTURE_TEX_W && TEXFIX_TEX_HEIGHT == I915_TEX_FIXTURE_TEX_H &&
+	TEXFIX_TEX_SIZE == I915_TEX_FIXTURE_TEX_BYTES && TEXFIX_TEX_ROW_PITCH == 4U * I915_TEX_FIXTURE_TEX_W &&
+	TEXFIX_SAMPLER_OFFSET == I915_TEX_FIXTURE_SAMPLER_OFFSET,
+	"draw_fixture.h must describe the generated texture fixture");
+_Static_assert(I915_TEX_FIXTURE_TEX_RSS_OFFSET >= I915_DRAW_SURFACE_STATE_OFFSET + 64U &&
+	I915_TEX_FIXTURE_TEX_RSS_OFFSET + 64U <= I915_DRAW_COLOR_CALC_OFFSET &&
+	I915_TEX_FIXTURE_SAMPLER_OFFSET >= I915_DRAW_CPS_STATE_OFFSET + GEN12_CPS_STATE_DWORDS * 4U &&
+	I915_TEX_FIXTURE_SAMPLER_OFFSET + sizeof(texfix_sampler) <= I915_DRAW_PS_KERNEL_OFFSET &&
+	(I915_TEX_FIXTURE_SAMPLER_OFFSET & 31U) == 0U && (I915_TEX_FIXTURE_TEX_RSS_OFFSET & 63U) == 0U,
+	"the added states must not overlap the existing ones and must keep their alignment");
+
+void
+drv_i915_tex_fixture_write_state(void *state_page, uint64_t rt_va, uint64_t tex_va, uint32_t mocs)
+{
+	uint32_t *heap = state_page;
+	uint32_t *rss = &heap[I915_TEX_FIXTURE_TEX_RSS_OFFSET / 4U];
+
+	drv_i915_draw_fixture_write_state(state_page, rt_va, mocs);
+
+	/* The sampling PS replaces the single-colour one; the EOT carpet follows it. */
+	memset((uint8_t *)state_page + I915_DRAW_PS_KERNEL_OFFSET, 0,
+		I915_DRAW_POSITION_OFFSET - I915_DRAW_PS_KERNEL_OFFSET);
+	memcpy((uint8_t *)state_page + I915_DRAW_PS_KERNEL_OFFSET, texfix_ps, TEXFIX_PS_BYTES);
+	i915_draw_fill_eot(state_page, I915_DRAW_PS_KERNEL_OFFSET + TEXFIX_PS_BYTES,
+		I915_DRAW_POSITION_OFFSET - I915_DRAW_PS_KERNEL_OFFSET - TEXFIX_PS_BYTES);
+
+	/* Binding table entry 1 -> the texture's surface state (isl), its address patched in. */
+	heap[I915_DRAW_BINDING_TABLE_OFFSET / 4U + 1U] = I915_TEX_FIXTURE_TEX_RSS_OFFSET;
+	memcpy(rss, texfix_tex_rss, sizeof(texfix_tex_rss));
+	rss[8] = (uint32_t)tex_va;
+	rss[9] = (uint32_t)(tex_va >> 32);
+	(void)mocs;	/* the generated surface state already carries MOCS 6 (checked by the caller's test) */
+
+	memcpy(&heap[I915_TEX_FIXTURE_SAMPLER_OFFSET / 4U], texfix_sampler, sizeof(texfix_sampler));
+}
+
+unsigned
+drv_i915_tex_fixture_build_batch(uint32_t *cmds, unsigned capacity, uint64_t state_va, uint32_t mocs)
+{
+	static const struct i915_draw_tex_opts tex = {
+		TEXFIX_3DSTATE_PS_DW3, TEXFIX_3DSTATE_PS_DW7, TEXFIX_3DSTATE_PS_EXTRA_DW1,
+		TEXFIX_SAMPLER_POINTERS_PS_DW0, TEXFIX_SAMPLER_POINTERS_PS_DW1,
+	};
+	static struct i915_gem_object state;
+
+	memset(&state, 0, sizeof(state));
+	state.va = state_va;
+	return i915_draw_build_batch(cmds, capacity, &state, &state, &state, &state, mocs, 1U, &tex);
+}
+
+void
+drv_i915_tex_fixture_pattern(uint8_t *rgba, unsigned variant)
+{
+	unsigned u, v;
+
+	for (v = 0U; v < I915_TEX_FIXTURE_TEX_H; v++) {
+		for (u = 0U; u < I915_TEX_FIXTURE_TEX_W; u++) {
+			uint8_t *t = &rgba[(v * I915_TEX_FIXTURE_TEX_W + u) * 4U];
+
+			if (variant == 0U) {
+				t[0] = (uint8_t)(16U + 32U * u);
+				t[1] = (uint8_t)(16U + 32U * v);
+				t[2] = (uint8_t)(16U + 32U * ((u + 3U * v) & 7U));
+			} else {
+				t[0] = (uint8_t)(239U - 32U * v);
+				t[1] = (uint8_t)(16U + 32U * u);
+				t[2] = (uint8_t)(16U + 32U * ((3U * u + v) & 7U));
+			}
+			t[3] = 255U;
+		}
+	}
+}
+
+uint32_t
+drv_i915_tex_fixture_expected_pixel(const uint8_t *rgba, unsigned x, unsigned y)
+{
+	/* nearest, uv = (pixel + 0.5) / 32 over an 8x8 texture: texel = pixel / 4. */
+	const uint8_t *t = &rgba[((y / 4U) * I915_TEX_FIXTURE_TEX_W + (x / 4U)) * 4U];
+
+	/* B8G8R8A8_UNORM in memory is B,G,R,A; read as a little-endian dword. */
+	return (uint32_t)t[2] | ((uint32_t)t[1] << 8) | ((uint32_t)t[0] << 16) | ((uint32_t)t[3] << 24);
+}
+
+uint32_t
+drv_i915_draw_fixture_mocs(void)
+{
+	return GEN12_MOCS(I915_MOCS_UNCACHED_INDEX);
 }
 
 /*
@@ -2050,7 +2213,7 @@ drv_i915_draw_selftest(
 		return EIO;
 	cmds = kern_pmem_to_kernel(batch->run.paddr);
 	dwords = i915_draw_build_batch(cmds, 1024U, surface, dynamic, instruction, vb,
-		GEN12_MOCS(I915_MOCS_UNCACHED_INDEX), 1U);
+		GEN12_MOCS(I915_MOCS_UNCACHED_INDEX), 1U, NULL);
 
 	/* Every heap and the batch are pushed out of the CPU caches before submission. */
 	{

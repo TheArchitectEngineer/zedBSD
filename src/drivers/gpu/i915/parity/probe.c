@@ -160,6 +160,12 @@ drv_i915_parity_attach(struct i915_device *device, enum parity_stage stop_after,
 	static struct parity_driver_probe dprobe;
 	static struct parity_eu_test eutest;
 	int eutest_inited = 0;
+	static struct parity_draw_test drawtest;
+	int drawtest_inited = 0;
+	static struct parity_r1_test r1test;
+	int r1test_inited = 0;
+	static struct parity_tex_test textest;
+	int textest_inited = 0;
 	int gtvwa_inited = 0;
 	int gtmig_inited = 0;
 	int pxp_inited = 0;
@@ -1687,7 +1693,232 @@ p6_fw_out:
 	 * way, as an execbuf-shaped request on a fresh context.  Like a user
 	 * submission after driver load: GT wakeref = forcewake all around it.
 	 */
-	if (PARITY_EU_TEST) {
+	if (PARITY_TEX_TEST) {
+		static const int tfwd[5] = { OSDEP_FW_RENDER, OSDEP_FW_GT,
+			OSDEP_FW_MEDIA_VDBOX0, OSDEP_FW_MEDIA_VDBOX2, OSDEP_FW_MEDIA_VEBOX0 };
+		unsigned held = 0u, wi;
+		int frc = 0;
+
+		while (held < 5u && (frc = osdep_fw_get(&mmio, tfwd[held])) == 0)
+			held++;
+		if (held == 5u) {
+			unsigned u0 = irqdev.gt_user_intr, c0 = irqdev.gt_ctx_switch_intr;
+			unsigned e0 = irqdev.gt_error_intr;
+			const struct parity_eu_test *tt = &textest.t;
+
+			rc = parity_tex_test_run(&textest, &gteng, &gtpp, &gtmem, &mmio, &uncore_lock, 2000u);
+			textest_inited = 1;
+			kern_logf("i915: parity TEX-TEST fixture: build PARITY_TEX_TEST=%d batch_hash=%016llx state_hash=%016llx "
+				"tex_hash=%016llx batch_dwords=%u mocs=%u pdp0_matches_top=%d | pipeline_select (read from the "
+				"submitted object): rc=%d 3d=%u@%u gpgpu=%u bad=%u\n",
+				PARITY_TEX_TEST, (unsigned long long)tt->batch_hash,
+				(unsigned long long)textest.state_hash, (unsigned long long)textest.tex_hash,
+				tt->batch_dwords, textest.mocs, tt->pdp0_matches_top, tt->pipesel_rc,
+				tt->pipesel.n_3d, tt->pipesel.idx_3d, tt->pipesel.n_gpgpu, tt->pipesel.n_bad);
+			for (wi = 0u; wi < tt->walks; wi++) {
+				const struct parity_gt_ppgtt_walk *w = &tt->walk[wi];
+
+				kern_logf("i915: parity TEX-TEST walk[%u] va=0x%llx levels=%d leaf=0x%llx present=%d rw=%d pat=%u scr=%d\n",
+					wi, (unsigned long long)w->va, w->levels, (unsigned long long)w->leaf_dma,
+					w->leaf_present, w->leaf_rw, w->leaf_pat, w->scratch[3]);
+			}
+			if (tt->batch != 0 && tt->batch_dwords != 0u) {
+				const uint32_t *bd = (const uint32_t *)tt->batch->cpu;
+
+				for (wi = 0u; wi < tt->batch_dwords; wi += 8u)
+					kern_logf("i915: parity TEX-TEST batch[%03u]: %08x %08x %08x %08x %08x %08x %08x %08x\n",
+						wi, bd[wi], bd[wi + 1u], bd[wi + 2u], bd[wi + 3u], bd[wi + 4u],
+						bd[wi + 5u], bd[wi + 6u], bd[wi + 7u]);
+			}
+			if (tt->shared != 0) {
+				const uint32_t *sp = (const uint32_t *)tt->shared->cpu;
+
+				for (wi = 0u; wi < 1024u; wi += 8u) {
+					if ((sp[wi] | sp[wi + 1u] | sp[wi + 2u] | sp[wi + 3u] | sp[wi + 4u] |
+					     sp[wi + 5u] | sp[wi + 6u] | sp[wi + 7u]) == 0u)
+						continue;
+					kern_logf("i915: parity TEX-TEST state[%04u]: %08x %08x %08x %08x %08x %08x %08x %08x\n",
+						wi, sp[wi], sp[wi + 1u], sp[wi + 2u], sp[wi + 3u], sp[wi + 4u],
+						sp[wi + 5u], sp[wi + 6u], sp[wi + 7u]);
+				}
+			}
+			if (textest.tex != 0) {
+				const uint32_t *tp = (const uint32_t *)textest.tex->cpu;
+
+				for (wi = 0u; wi < 64u; wi += 8u)
+					kern_logf("i915: parity TEX-TEST tex[%02u]: %08x %08x %08x %08x %08x %08x %08x %08x\n",
+						wi, tp[wi], tp[wi + 1u], tp[wi + 2u], tp[wi + 3u], tp[wi + 4u],
+						tp[wi + 5u], tp[wi + 6u], tp[wi + 7u]);
+			}
+			if (textest.rt != 0) {
+				const uint32_t *rp = (const uint32_t *)textest.rt->cpu;
+
+				for (wi = 0u; wi < 1024u; wi += 8u)
+					kern_logf("i915: parity TEX-TEST rt[%04u]: %08x %08x %08x %08x %08x %08x %08x %08x\n",
+						wi, rp[wi], rp[wi + 1u], rp[wi + 2u], rp[wi + 3u], rp[wi + 4u],
+						rp[wi + 5u], rp[wi + 6u], rp[wi + 7u]);
+			}
+			if (textest.stats_valid)
+				kern_logf("i915: parity TEX-TEST stats(live, before reset): ia_vertices=%u ia_primitives=%u "
+					"vs_invocations=%u cl_invocations=%u cl_primitives=%u ps_invocations=%u\n",
+					textest.stats_live[0], textest.stats_live[1], textest.stats_live[2],
+					textest.stats_live[3], textest.stats_live[4], textest.stats_live[5]);
+			kern_logf("i915: parity TEX-TEST %s: rc=%d where=%s engine=%s batch_dwords=%u submitted=%d completed=%d "
+				"parked=%d timed_out=%d wedged=%d polls=%u | before=%08x middraw=%08x after=%08x ps_marker=%08x | "
+				"pixels match=%u/%u stale=%u first_bad=(%d,%d) expected=%08x observed=%08x | texture changed_bytes=%u "
+				"guard_bad_bytes=%u | rq seqno=%u krq seqno=%u | gt irq: user=%u ctx_switch=%u error=%u\n",
+				tt->outcome == PARITY_EU_PASS ? "PASS" :
+				tt->outcome == PARITY_EU_HANG ? "HANG" : "ERROR",
+				rc, tt->err_where != 0 ? tt->err_where : "-",
+				gteng.ge[tt->engine_idx].info->name, tt->batch_dwords, tt->submitted,
+				tt->completed, tt->parked, tt->timed_out, tt->wedged, tt->polls,
+				textest.marker_before, textest.marker_middraw, textest.marker_after,
+				textest.ps_marker, textest.px_match, textest.px_total, textest.px_stale,
+				textest.first_bad_x, textest.first_bad_y, textest.first_bad_expected,
+				textest.first_bad_observed, textest.tex_changed_bytes, textest.guard_bad_bytes,
+				tt->rq.seqno, tt->krq.seqno, irqdev.gt_user_intr - u0,
+				irqdev.gt_ctx_switch_intr - c0, irqdev.gt_error_intr - e0);
+		} else {
+			kern_logf("i915: parity TEX-TEST not run: forcewake failed rc=%d\n", frc);
+		}
+		while (held-- > 0u)
+			osdep_fw_put(&mmio, tfwd[held]);
+	}
+
+	if (PARITY_R1_TEST && !PARITY_TEX_TEST) {
+		static const int rfwd[5] = { OSDEP_FW_RENDER, OSDEP_FW_GT,
+			OSDEP_FW_MEDIA_VDBOX0, OSDEP_FW_MEDIA_VDBOX2, OSDEP_FW_MEDIA_VEBOX0 };
+		unsigned held = 0u, wi;
+		int frc = 0;
+
+		while (held < 5u && (frc = osdep_fw_get(&mmio, rfwd[held])) == 0)
+			held++;
+		if (held == 5u) {
+			unsigned u0 = irqdev.gt_user_intr, c0 = irqdev.gt_ctx_switch_intr;
+			unsigned e0 = irqdev.gt_error_intr;
+
+			rc = parity_r1_test_run(&r1test, &gteng, &gtpp, &gtmem, &gtmmio.sseu, &mmio,
+				&uncore_lock, 2000u);
+			r1test_inited = 1;
+			kern_logf("i915: parity R1 fixture: build PARITY_R1_TEST=%d c1_batch_hash=%016llx (dwords=%u @0x%llx) "
+				"draw_batch_hash=%016llx (dwords=%u @0x%llx) state@0x%llx rt@0x%llx mocs=%u\n",
+				PARITY_R1_TEST, (unsigned long long)r1test.c1_batch_hash, r1test.t.batch_dwords,
+				(unsigned long long)PARITY_EU_BATCH_VA, (unsigned long long)r1test.draw_batch_hash,
+				r1test.dbatch_dwords, (unsigned long long)PARITY_R1_DRAW_BATCH_VA,
+				(unsigned long long)PARITY_EU_SHARED_VA, (unsigned long long)PARITY_DRAW_RT_VA,
+				r1test.mocs);
+			for (wi = 0u; wi < r1test.n_steps; wi++) {
+				const struct parity_r1_step *st = &r1test.step[wi];
+
+				if (st->kind == 'D')
+					kern_logf("i915: parity R1 step=%u ctx=%c kind=draw lrca=%08x seqno=%u hwsp_observed=%u rc=%d "
+						"completed=%d parked=%d pass=%d polls=%u state_hash=%016llx | before=%08x middraw=%08x "
+						"after=%08x ps_marker=%08x | pixels match=%u/1024 stale=%u first=%08x last=%08x\n",
+						wi + 1u, st->ctx, st->lrca, st->seqno, st->hwsp_observed, st->rc,
+						st->completed, st->parked, st->pass, st->polls,
+						(unsigned long long)st->state_hash, st->before, st->middraw, st->after,
+						st->ps_marker, st->px_match, st->px_stale, st->px_first, st->px_last);
+				else
+					kern_logf("i915: parity R1 step=%u ctx=%c kind=c1 lrca=%08x seqno=%u hwsp_observed=%u rc=%d "
+						"completed=%d parked=%d pass=%d polls=%u state_hash=%016llx | ready=%08x eu=%08x "
+						"done=%08x cs=%08x idd_rb_ok=%d kernel_rb_ok=%d\n",
+						wi + 1u, st->ctx, st->lrca, st->seqno, st->hwsp_observed, st->rc,
+						st->completed, st->parked, st->pass, st->polls,
+						(unsigned long long)st->state_hash, st->ready, st->eu, st->done, st->cs,
+						st->idd_rb_ok, st->kernel_rb_ok);
+			}
+			kern_logf("i915: parity R1 %s: rc=%d where=%s steps=%u/%u passed=%u wedged=%d polls=%u | "
+				"gt irq: user=%u ctx_switch=%u error=%u\n",
+				(rc == 0 && r1test.passed == r1test.n_planned) ? "PASS" :
+				r1test.t.wedged ? "HANG" : "ERROR",
+				rc, r1test.t.err_where != 0 ? r1test.t.err_where : "-", r1test.n_steps,
+				r1test.n_planned, r1test.passed, r1test.t.wedged, r1test.t.polls,
+				irqdev.gt_user_intr - u0, irqdev.gt_ctx_switch_intr - c0,
+				irqdev.gt_error_intr - e0);
+		} else {
+			kern_logf("i915: parity R1 not run: forcewake failed rc=%d\n", frc);
+		}
+		while (held-- > 0u)
+			osdep_fw_put(&mmio, rfwd[held]);
+	}
+
+	if (PARITY_DRAW_TEST && !PARITY_R1_TEST && !PARITY_TEX_TEST) {
+		static const int dfwd[5] = { OSDEP_FW_RENDER, OSDEP_FW_GT,
+			OSDEP_FW_MEDIA_VDBOX0, OSDEP_FW_MEDIA_VDBOX2, OSDEP_FW_MEDIA_VEBOX0 };
+		unsigned held = 0u, wi;
+		int frc = 0;
+
+		while (held < 5u && (frc = osdep_fw_get(&mmio, dfwd[held])) == 0)
+			held++;
+		if (held == 5u) {
+			unsigned u0 = irqdev.gt_user_intr, c0 = irqdev.gt_ctx_switch_intr;
+			unsigned e0 = irqdev.gt_error_intr;
+			const struct parity_eu_test *dt = &drawtest.t;
+
+			rc = parity_draw_test_run(&drawtest, &gteng, &gtpp, &gtmem, &mmio, &uncore_lock, 2000u);
+			drawtest_inited = 1;
+			kern_logf("i915: parity DRAW-TEST fixture: build PARITY_DRAW_TEST=%d batch_hash=%016llx "
+				"state_hash=%016llx batch_dwords=%u mocs=%u pdp0_matches_top=%d | pipeline_select "
+				"(read from the submitted object): rc=%d 3d=%u@%u gpgpu=%u bad=%u@%u bad_word=%08x\n",
+				PARITY_DRAW_TEST, (unsigned long long)dt->batch_hash,
+				(unsigned long long)drawtest.state_hash, dt->batch_dwords, drawtest.mocs,
+				dt->pdp0_matches_top, dt->pipesel_rc, dt->pipesel.n_3d, dt->pipesel.idx_3d,
+				dt->pipesel.n_gpgpu, dt->pipesel.n_bad, dt->pipesel.idx_bad, dt->pipesel.bad_word);
+			for (wi = 0u; wi < dt->walks; wi++) {
+				const struct parity_gt_ppgtt_walk *w = &dt->walk[wi];
+
+				kern_logf("i915: parity DRAW-TEST walk[%u] levels=%d leaf=0x%llx present=%d rw=%d pat=%u scr=%d\n",
+					wi, w->levels, (unsigned long long)w->leaf_dma, w->leaf_present,
+					w->leaf_rw, w->leaf_pat, w->scratch[3]);
+			}
+			if (dt->batch != 0 && dt->batch_dwords != 0u) {
+				const uint32_t *bd = (const uint32_t *)dt->batch->cpu;
+
+				for (wi = 0u; wi < dt->batch_dwords; wi += 8u)
+					kern_logf("i915: parity DRAW-TEST batch[%03u]: %08x %08x %08x %08x %08x %08x %08x %08x\n",
+						wi, bd[wi], bd[wi + 1u], bd[wi + 2u], bd[wi + 3u], bd[wi + 4u],
+						bd[wi + 5u], bd[wi + 6u], bd[wi + 7u]);
+			}
+			if (dt->shared != 0) {
+				const uint32_t *sp = (const uint32_t *)dt->shared->cpu;
+
+				/* The state page as the GPU saw it (rows that are all zero are skipped). */
+				for (wi = 0u; wi < 1024u; wi += 8u) {
+					if ((sp[wi] | sp[wi + 1u] | sp[wi + 2u] | sp[wi + 3u] | sp[wi + 4u] |
+					     sp[wi + 5u] | sp[wi + 6u] | sp[wi + 7u]) == 0u)
+						continue;
+					kern_logf("i915: parity DRAW-TEST state[%04u]: %08x %08x %08x %08x %08x %08x %08x %08x\n",
+						wi, sp[wi], sp[wi + 1u], sp[wi + 2u], sp[wi + 3u], sp[wi + 4u],
+						sp[wi + 5u], sp[wi + 6u], sp[wi + 7u]);
+				}
+			}
+			if (drawtest.stats_valid)
+				kern_logf("i915: parity DRAW-TEST stats(live, before reset): ia_vertices=%u ia_primitives=%u "
+					"vs_invocations=%u cl_invocations=%u cl_primitives=%u ps_invocations=%u\n",
+					drawtest.stats_live[0], drawtest.stats_live[1], drawtest.stats_live[2],
+					drawtest.stats_live[3], drawtest.stats_live[4], drawtest.stats_live[5]);
+			kern_logf("i915: parity DRAW-TEST %s: rc=%d where=%s engine=%s batch_dwords=%u submitted=%d "
+				"completed=%d parked=%d timed_out=%d wedged=%d polls=%u | before=%08x middraw=%08x after=%08x "
+				"ps_marker=%08x | pixels match=%u/%u first=%08x mid=%08x last=%08x expected=%08x | "
+				"rq seqno=%u krq seqno=%u | gt irq: user=%u ctx_switch=%u error=%u\n",
+				dt->outcome == PARITY_EU_PASS ? "PASS" :
+				dt->outcome == PARITY_EU_HANG ? "HANG" : "ERROR",
+				rc, dt->err_where != 0 ? dt->err_where : "-",
+				gteng.ge[dt->engine_idx].info->name, dt->batch_dwords, dt->submitted,
+				dt->completed, dt->parked, dt->timed_out, dt->wedged, dt->polls,
+				drawtest.marker_before, drawtest.marker_middraw, drawtest.marker_after,
+				drawtest.ps_marker, drawtest.px_match, drawtest.px_total, drawtest.px_first,
+				drawtest.px_mid, drawtest.px_last, 0xffff0000u, dt->rq.seqno, dt->krq.seqno,
+				irqdev.gt_user_intr - u0, irqdev.gt_ctx_switch_intr - c0,
+				irqdev.gt_error_intr - e0);
+		} else {
+			kern_logf("i915: parity DRAW-TEST not run: forcewake failed rc=%d\n", frc);
+		}
+		while (held-- > 0u)
+			osdep_fw_put(&mmio, dfwd[held]);
+	}
+
+	if (PARITY_EU_TEST && !PARITY_DRAW_TEST && !PARITY_R1_TEST && !PARITY_TEX_TEST) {
 		static const int fwd[5] = { OSDEP_FW_RENDER, OSDEP_FW_GT,
 			OSDEP_FW_MEDIA_VDBOX0, OSDEP_FW_MEDIA_VDBOX2, OSDEP_FW_MEDIA_VEBOX0 };
 		unsigned ti, held = 0u, k;
@@ -1793,6 +2024,31 @@ p6_fw_out:
 					eutest.kernel_rb[k + 3], eutest.kernel_rb[k + 4], eutest.kernel_rb[k + 5],
 					eutest.kernel_rb[k + 6], eutest.kernel_rb[k + 7], eutest.kernel_rb[k + 8],
 					eutest.kernel_rb[k + 9], eutest.kernel_rb[k + 10], eutest.kernel_rb[k + 11]);
+			/* E-100: the same C1 again -- 3 more on this context, then 2 on a new context. */
+			if (eutest.outcome == PARITY_EU_PASS) {
+				int rrc = parity_eu_test_repeat(&eutest, &gteng, &gtpp, &gtmem, &mmio,
+					&uncore_lock, 2000u, 3u, 2u);
+
+				for (wi = 0u; wi < eutest.n_rounds; wi++) {
+					const struct parity_eu_round *rd = &eutest.round[wi];
+
+					kern_logf("i915: parity EU-REPEAT round=%u ctx=%c lrca=%08x seqno=%u hwsp_observed=%u "
+						"rc=%d completed=%d parked=%d pass=%d polls=%u | ready=%08x eu=%08x done=%08x cs=%08x "
+						"idd_rb_ok=%d kernel_rb_ok=%d | ring head=0x%x tail=0x%x last_csb=%08x:%08x\n",
+						wi + 1u, rd->ctx, rd->lrca, rd->seqno, rd->hwsp_observed, rd->rc,
+						rd->completed, rd->parked, rd->pass, rd->polls, rd->ready, rd->eu,
+						rd->done, rd->cs, rd->idd_rb_ok, rd->kernel_rb_ok, rd->ring_head,
+						rd->ring_tail, rd->csb_hi, rd->csb_lo);
+				}
+				kern_logf("i915: parity EU-REPEAT %s: rc=%d where=%s rounds=%u passed=%u (same-context 3 + new-context 2) "
+					"wedged=%d | gt irq: user=%u ctx_switch=%u error=%u\n",
+					(rrc == 0 && eutest.rounds_passed == 5u) ? "PASS" :
+					eutest.wedged ? "HANG" : "ERROR",
+					rrc, eutest.err_where != 0 ? eutest.err_where : "-",
+					eutest.n_rounds, eutest.rounds_passed, eutest.wedged,
+					irqdev.gt_user_intr - u0, irqdev.gt_ctx_switch_intr - c0,
+					irqdev.gt_error_intr - e0);
+			}
 			(void)ti;
 		} else {
 			kern_logf("i915: parity EU-TEST not run: forcewake failed rc=%d\n", frc);
@@ -1854,6 +2110,12 @@ teardown:
 	}
 	if (eutest_inited)
 		parity_eu_test_release(&eutest, &gtmem);
+	if (drawtest_inited)
+		parity_draw_test_release(&drawtest, &gtmem);
+	if (r1test_inited)
+		parity_r1_test_release(&r1test, &gtmem);
+	if (textest_inited)
+		parity_tex_test_release(&textest, &gtmem);
 	if (gtmig_inited)
 		parity_intel_migrate_fini(&gtmig, &gtmem);
 	if (gtvwa_inited)

@@ -43,6 +43,7 @@
 #include "pxp.h"
 #include "driver_probe.h"
 #include "eu_test.h"
+#include "../draw_fixture.h"
 #include "gt_init.h"
 #include <drivers/dma.h>
 #include "display_nogem.h"
@@ -4965,6 +4966,131 @@ parity_sync_ktest(void)
 						pc.n_3d == 0u && pc.n_gpgpu == 0u,
 						"eu: EU-PIPESEL 0x61041310/0x61041312 (the GPGPU_CSR_BASE_ADDRESS header) are rejected as Gen12 PIPELINE_SELECT");
 				}
+			}
+
+
+			/* ====== DRAW fixture: the big-bang RECTLIST batch, fixed reference words ====== */
+			{
+				static uint32_t dcmds[1024];
+				static uint32_t dbad[1024];
+				static uint32_t dstate[1024];
+				struct parity_eu_pipesel_check pc;
+				uint32_t mocs = drv_i915_draw_fixture_mocs();
+				unsigned n = drv_i915_draw_fixture_build_batch(dcmds, 1024u, I915_DRAW_FIXTURE_STATE_VA, mocs);
+				unsigned k, prim = 0u, nprim = 0u;
+				int prc = parity_draw_batch_check_pipeline_select(dcmds, n, &pc);
+
+				for (k = 0u; k + 6u < n; k++)
+					if (dcmds[k] == 0x7b000005u && dcmds[k + 1u] == 15u && dcmds[k + 2u] == 3u &&
+					    dcmds[k + 4u] == 1u) {
+						prim = k;
+						nprim++;
+					}
+				KCHECK(n > 64u && n < 1024u && mocs == 6u && prc == 0 && pc.n_3d == 1u && pc.idx_3d == 6u &&
+					dcmds[6] == 0x69041310u && dcmds[7] == 0x61010014u && pc.n_gpgpu == 0u &&
+					pc.n_bad == 0u && nprim == 1u && prim > pc.idx_3d &&
+					dcmds[n - 2u] == PARITY_MI_BATCH_BUFFER_END,
+					"draw: DRAW-BATCH PIPE_CONTROL, PIPELINE_SELECT(3D)=0x69041310 at dword 6, SBA, one 3DPRIMITIVE RECTLIST(3 vertices, 1 instance), BB_END");
+				for (k = 0u; k < n; k++)
+					dbad[k] = dcmds[k];
+				dbad[6] ^= 0x08000000u;      /* the pre-E-98 word */
+				prc = parity_draw_batch_check_pipeline_select(dbad, n, &pc);
+				KCHECK(dbad[6] == 0x61041310u && prc != 0 && pc.n_bad == 1u && pc.n_3d == 0u,
+					"draw: DRAW-PIPESEL 0x61041310 (the GPGPU_CSR_BASE_ADDRESS header) is rejected as Gen12 PIPELINE_SELECT");
+				drv_i915_draw_fixture_write_state(dstate, 0x100402000ull, mocs);
+				KCHECK(dstate[0] == 64u && dstate[64u / 4u + 8u] == 0x00402000u && dstate[64u / 4u + 9u] == 1u &&
+					dstate[I915_DRAW_FIXTURE_PS_OFFSET / 4u] == 0x80000061u &&
+					dstate[I915_DRAW_FIXTURE_PS_OFFSET / 4u + 7u] == I915_DRAW_FIXTURE_PS_MARKER &&
+					dstate[I915_DRAW_FIXTURE_PS_OFFSET / 4u + 31u] == 0x00400c10u &&
+					dstate[I915_DRAW_FIXTURE_MARKER_OFFSET / 4u] == 0u,
+					"draw: DRAW-STATE binding table -> surface state -> RT VA 0x100402000, PS kernel at +1024 with its A64 marker store to 0x100400c10, markers clear");
+			}
+
+
+			/* ====== regression pins: the bytes that PASSED on hardware (E-99 / E-101) ====== */
+			{
+				static uint32_t pc1[1024];
+				static uint32_t pdr[1024];
+				unsigned n1 = parity_eu_test_build_batch(pc1, 1024u, PARITY_EU_SHARED_VA,
+					PARITY_EU_SHARED_VA, 559u);
+				unsigned n2 = drv_i915_draw_fixture_build_batch(pdr, 1024u, I915_DRAW_FIXTURE_STATE_VA, 6u);
+				uint64_t h1 = 0xcbf29ce484222325ull, h2 = 0xcbf29ce484222325ull;
+				unsigned k;
+
+				for (k = 0u; k < n1 * 4u; k++) { h1 ^= ((const uint8_t *)pc1)[k]; h1 *= 0x100000001b3ull; }
+				for (k = 0u; k < n2 * 4u; k++) { h2 ^= ((const uint8_t *)pdr)[k]; h2 *= 0x100000001b3ull; }
+				KCHECK(n1 == 322u && h1 == 0x5dfb47d3c10b0560ull,
+					"pin: PIN-C1 the C1 batch is byte-identical to the one that passed on hardware (E-99: 322 dwords, FNV 5dfb47d3c10b0560)");
+				KCHECK(n2 == 353u && h2 == 0x241f478201bb3a81ull,
+					"pin: PIN-DRAW the single-colour draw batch is byte-identical to the one that passed on hardware (E-101: 353 dwords, FNV 241f478201bb3a81)");
+			}
+
+			/* ====== TEX fixture (T1): generated shader/surface/sampler, fixed reference words ====== */
+			{
+				static uint32_t tcmds[1024];
+				static uint32_t dcmds2[1024];
+				static uint32_t tstate[1024];
+				static uint8_t pat0[256], pat1[256];
+				struct parity_eu_pipesel_check pc;
+				unsigned nt = drv_i915_tex_fixture_build_batch(tcmds, 1024u, I915_DRAW_FIXTURE_STATE_VA, 6u);
+				unsigned nd = drv_i915_draw_fixture_build_batch(dcmds2, 1024u, I915_DRAW_FIXTURE_STATE_VA, 6u);
+				unsigned k, j, ndiff = 0u, ssp = 0u, nssp = 0u, ps = 0u, psx = 0u;
+				int prc = parity_draw_batch_check_pipeline_select(tcmds, nt, &pc);
+				unsigned asym = 0u, x, y;
+				uint64_t psh = 0u;
+
+				for (k = 0u; k + 1u < nt; k++) {
+					if (tcmds[k] == 0x782f0000u && tcmds[k + 1u] == 896u) { ssp = k; nssp++; }
+					if (tcmds[k] == 0x7820000au) ps = k;
+					if (tcmds[k] == 0x784f0000u) psx = k;
+				}
+				/* The textured batch = the draw batch + one 2-dword packet, and one changed dword. */
+				for (k = 0u, j = 0u; k < nt && j < nd; k++) {
+					if (k == ssp || k == ssp + 1u)
+						continue;
+					if (tcmds[k] != dcmds2[j])
+						ndiff++;
+					j++;
+				}
+				KCHECK(nt == nd + 2u && prc == 0 && pc.n_3d == 1u && tcmds[6] == 0x69041310u && nssp == 1u &&
+					ps != 0u && tcmds[ps + 1u] == 1024u && tcmds[ps + 3u] == 0x08080000u &&
+					tcmds[ps + 7u] == (4u << 16) && psx != 0u && tcmds[psx + 1u] == 0x81800004u &&
+					ndiff == 3u,
+					"tex: TEX-BATCH = the single-colour draw batch + 3DSTATE_SAMPLER_STATE_POINTERS_PS(896), and exactly three changed dwords: 3DSTATE_PS DW3 (sampler count 1 / binding table 2), DW7 (GRF start 4), 3DSTATE_PS_EXTRA DW1 (valid|UAV|source depth|source W) as the compiler's prog_data requires");
+
+				drv_i915_tex_fixture_write_state(tstate, 0x100402000ull, I915_TEX_FIXTURE_TEX_VA, 6u);
+				{
+					/* The 640 kernel bytes in the state page against the FNV-1a of the generator's raw
+					 * reftex_ps.bin (computed on the host, not from the .inc this kernel was built with). */
+					const uint8_t *pb = (const uint8_t *)tstate + I915_DRAW_FIXTURE_PS_OFFSET;
+
+					psh = 0xcbf29ce484222325ull;
+					for (k = 0u; k < 640u; k++) { psh ^= pb[k]; psh *= 0x100000001b3ull; }
+				}
+				KCHECK(tstate[0] == 64u && tstate[1] == 128u &&
+					tstate[16u + 8u] == 0x00402000u && tstate[16u + 9u] == 1u &&
+					tstate[32u] == 0x231d4000u && (tstate[32u + 1u] >> 24) == 0x86u &&
+					tstate[32u + 2u] == 0x00070007u && tstate[32u + 3u] == 31u &&
+					tstate[32u + 8u] == 0x00404000u && tstate[32u + 9u] == 1u &&
+					tstate[896u / 4u] == 0x10000000u && tstate[896u / 4u + 3u] == 0x92u &&
+					psh == 0x20ff9c926f6324c1ull && tstate[768] == 0u,
+					"tex: TEX-STATE BT[0]->RT state, BT[1]->texture state (2D R8G8B8A8_UNORM 8x8, pitch 32, MOCS 6, VA 0x100404000), SAMPLER_STATE nearest/clamp at +896, sampling PS at +1024, markers clear");
+
+				drv_i915_tex_fixture_pattern(pat0, 0u);
+				drv_i915_tex_fixture_pattern(pat1, 1u);
+				for (y = 0u; y < 32u; y++)
+					for (x = 0u; x < 32u; x++)
+						if (drv_i915_tex_fixture_expected_pixel(pat0, x, y) !=
+						    drv_i915_tex_fixture_expected_pixel(pat0, y, x))
+							asym++;
+				/* texel (1,0) = R48 G16 B48 A255 -> B8G8R8A8 dword 0xff301030; texel (0,1) = R16 G48 B112. */
+				KCHECK(drv_i915_tex_fixture_expected_pixel(pat0, 0u, 0u) == 0xff101010u &&
+					drv_i915_tex_fixture_expected_pixel(pat0, 4u, 0u) == 0xff301030u &&
+					drv_i915_tex_fixture_expected_pixel(pat0, 7u, 3u) == 0xff301030u &&
+					drv_i915_tex_fixture_expected_pixel(pat0, 0u, 4u) == 0xff103070u &&
+					drv_i915_tex_fixture_expected_pixel(pat0, 31u, 31u) == 0xfff0f090u &&
+					asym > 512u && memcmp(pat0, pat1, 256u) != 0,
+					"tex: TEX-EXPECT expected(x,y) = texel(x/4, y/4) packed B,G,R,A; origin upper-left; the pattern identifies position and is not symmetric in x/y");
 			}
 
 
