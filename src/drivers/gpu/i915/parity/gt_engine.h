@@ -83,6 +83,10 @@ struct parity_gt_object;
 struct parity_gt_engine {
 	struct parity_engine *info;      /* the P6-0 engine object */
 
+	/* engine->default_state: the image __engines_record_defaults() saved;
+	 * every context created afterwards starts from it (lrc_init_state). */
+	struct parity_gt_object *default_state;
+
 	/* init_status_page() */
 	struct parity_gt_object *status_page;
 	volatile uint32_t *hwsp;         /* CPU view of the status page */

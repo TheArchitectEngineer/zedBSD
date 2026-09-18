@@ -274,10 +274,22 @@ parity_lrc_init_regs(struct parity_gt_context *ce, int inhibit)
 void
 parity_lrc_init_state(struct parity_gt_context *ce)
 {
-	int inhibit = 1;   /* engine->default_state is NULL until P6-c4 records it */
+	int inhibit = 1;   /* engine->default_state is NULL until P6-c4b records it */
 
 	if (ce == 0 || !ce->allocated)
 		return;
+
+	/* shmem_read(engine->default_state, 0, state, engine->context_size). */
+	if (ce->ge->default_state != 0 && ce->ge->default_state->cpu != 0) {
+		uint32_t n = ce->ge->info->context_size;
+
+		if (n > ce->ge->default_state->bytes)
+			n = ce->ge->default_state->bytes;
+		if (n > ce->state_bytes)
+			n = ce->state_bytes;
+		memcpy(ce->state->cpu, ce->ge->default_state->cpu, n);
+		inhibit = 0;   /* CONTEXT_VALID_BIT */
+	}
 
 	/* Clear the ppHWSP (including the per-context counters). */
 	memset(ce->state->cpu, 0, 4096u);

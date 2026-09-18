@@ -42,6 +42,7 @@
 #include "gt_migrate.h"
 #include "pxp.h"
 #include "driver_probe.h"
+#include "eu_test.h"
 #include "gt_init.h"
 #include <drivers/dma.h>
 #include "display_nogem.h"
@@ -4579,6 +4580,32 @@ parity_sync_ktest(void)
 					memcmp(dd.default_state[0]->cpu, dd.ce[0].state->cpu,
 						dd.ce[0].state_bytes) == 0,
 					"p6c4: P6C4B-DEFAULT the whole switched-out image is copied as engine->default_state");
+				/* ---- P6C4B-INHERIT: a later context starts from that image ---- */
+				{
+					static struct parity_gt_context ice;
+					uint32_t want[4];
+					uint32_t *img = (uint32_t *)dd.default_state[0]->cpu;
+
+					img[4096u / 4u + 0x40u] = 0x12345678u;   /* a mark in the engine state */
+					e0->default_state = dd.default_state[0];
+					rc = parity_lrc_alloc(&ice, e0, &pp, &gm, 4096u, 0u);
+					want[0] = want[1] = want[2] = want[3] = 0u;
+					if (rc == 0) {
+						parity_lrc_init_state(&ice);
+						(void)parity_lrc_update_regs(&ice, 0u);
+						want[0] = ice.lrc_reg_state[0x40u];
+						want[1] = ice.lrc_reg_state[PARITY_CTX_CONTEXT_CONTROL];
+						want[2] = ((uint32_t *)ice.state->cpu)[0];        /* ppHWSP cleared */
+						want[3] = ice.lrc_reg_state[PARITY_CTX_RING_START];
+					}
+					KCHECK(rc == 0 && want[0] == 0x12345678u && (want[1] & 1u) == 0u &&
+						want[2] == 0u && want[3] == (uint32_t)ice.ring.ggtt_offset,
+						"p6c4: P6C4B-INHERIT lrc_init_state copies engine->default_state, clears the ppHWSP, and does not inhibit the restore");
+					if (rc == 0)
+						parity_lrc_release(&ice, &gm);
+					e0->default_state = 0;
+				}
+
 				parity_engines_defaults_release(&dd, &gm);
 
 				/* ---- P6C4B-WEDGE: nothing lands -> -ETIME -> wedge ---- */
@@ -4734,15 +4761,15 @@ parity_sync_ktest(void)
 							const uint64_t *pt0 = (const uint64_t *)t[2].obj->cpu;
 							const uint64_t *win = (const uint64_t *)t[10].obj->cpu;
 
-							tree_ok = pml4[0] == parity_gen8_pde_encode(t[0].dma) &&
+							tree_ok = pml4[0] == parity_gen8_pde_encode_cached(t[0].dma) &&
 								pml4[1] == mg.vm.scratch_encode[3] &&
-								pdp[0] == parity_gen8_pde_encode(t[1].dma) &&
+								pdp[0] == parity_gen8_pde_encode_cached(t[1].dma) &&
 								pdp[1] == mg.vm.scratch_encode[2] &&
 								pd[9] == mg.vm.scratch_encode[1] &&
 								pt0[0] == mg.vm.scratch_encode[0] &&
 								pt0[511] == mg.vm.scratch_encode[0];
 							for (k = 0u; k < 9u; k++)
-								if (pd[k] != parity_gen8_pde_encode(t[2u + k].dma))
+								if (pd[k] != parity_gen8_pde_encode_cached(t[2u + k].dma))
 									tree_ok = 0;
 							/* insert_pte(): PT k of the windows sits at 16M + 4K * k, uncached. */
 							for (k = 0u; k < 8u; k++)
@@ -4753,7 +4780,7 @@ parity_sync_ktest(void)
 								window_ok = 0;
 						}
 						KCHECK(tree_ok && pts_ok,
-							"p6c6: P6C6-VM allocate_va_range(0, 16M + 32K): PDP, PD, nine PTs, scratch elsewhere");
+							"p6c6: P6C6-VM allocate_va_range(0, 16M + 32K): PDP, PD, nine PTs (cached PDEs), scratch elsewhere");
 						KCHECK(window_ok && mg.pte_window == 2ull * PARITY_MIGRATE_CHUNK_SZ &&
 							mg.exposed_pts == 8u && mg.window_bytes == 16ull << 20,
 							"p6c6: P6C6-PTE the PTE window maps the eight window page tables themselves");
@@ -4894,6 +4921,32 @@ parity_sync_ktest(void)
 					KCHECK(0, "p7: P7-PXP intel_engines_init with a VCS failed");
 				}
 				dg.num_engines = 1u;
+			}
+
+
+			/* ====== EU test batch: the L-C1 words ====== */
+			{
+				static uint32_t cmds[1024];
+				unsigned n = parity_eu_test_build_batch(cmds, 1024u, PARITY_EU_SHARED_VA,
+					PARITY_EU_SHARED_VA, 559u);
+				unsigned k, walker = 0u, sba = 0u, sel3d = 0u, selgpgpu = 0u, midl = 0u, vfe = 0u;
+
+				for (k = 0u; k + 14u < n; k++) {
+					if (cmds[k] == 0x7105000du && cmds[k + 7u] == 1u && cmds[k + 10u] == 1u &&
+					    cmds[k + 12u] == 1u && cmds[k + 13u] == 1u && cmds[k + 14u] == 0xffffffffu)
+						walker = k;
+					if (cmds[k] == 0x61010014u && cmds[k + 3u] == (6u << 16) &&
+					    cmds[k + 4u] == (1u | (6u << 4) | 0x00400000u) && cmds[k + 5u] == 1u &&
+					    cmds[k + 10u] == (1u | (4u << 4) | 0x00400000u) && cmds[k + 11u] == 1u)
+						sba = k;
+					if (cmds[k] == 0x61041310u) sel3d = k;
+					if (cmds[k] == 0x61041312u) selgpgpu = k;
+					if (cmds[k] == 0x70020002u && cmds[k + 2u] == 32u && cmds[k + 3u] == 896u) midl = k;
+					if (cmds[k] == 0x70000007u && cmds[k + 3u] == ((559u << 16) | (2u << 8))) vfe = k;
+				}
+				KCHECK(n > 0u && n < 1024u && sel3d < sba && sba < selgpgpu && selgpgpu < vfe &&
+					vfe < midl && midl < walker && cmds[n - 2u] == PARITY_MI_BATCH_BUFFER_END,
+					"eu: EU-BATCH 3D select, SBA (stateless MOCS 6, instruction base @0x100400000), GPGPU select, VFE(559), MIDL(896), walker(1x1x1 SIMD8), BB_END");
 			}
 
 			parity_gt_ppgtt_destroy(&gm, &pp);

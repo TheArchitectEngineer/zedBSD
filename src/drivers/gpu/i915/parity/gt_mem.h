@@ -159,6 +159,8 @@ int parity_gt_ppgtt_insert_page(struct parity_gt_ppgtt *pp, uint64_t dma,
 /* --- encoders (exposed so the tests compare against the reference values) --- */
 uint64_t parity_gen12_ppgtt_pte_encode(uint64_t dma, unsigned pat_index);
 uint64_t parity_gen8_pde_encode(uint64_t dma);
+/* gen8_pde_encode(addr, I915_CACHE_LLC): PPAT_CACHED_PDE, what set_pd_entry() uses. */
+uint64_t parity_gen8_pde_encode_cached(uint64_t dma);
 
 /* --- pool / GGTT window --- */
 int parity_gt_mem_init(struct parity_gt_mem *gm, struct drv_dma_device *dma,

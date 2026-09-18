@@ -78,3 +78,13 @@ Mesaを参照するファイルは、実装前にライセンス（MIT系）を�
 ## p002 完了: top+cmd（2026-09-14）
 
 native 実行器の入口・コマンドフレームワーク・drv_gpu 統合を実装・検証。`vk/cmd.c`（object table、LE wire reader/writer、opcode レンジ routing、builtin）、`vk/vk.c`（attach/detach/open/close、capset、command 入口、errno）、モジュール dispatch stub（p003+ で置換）。kernel 統合: `internal.h` に `i915_device.vk`/`i915_session.vk`、`i915.c` で vk attach/detach、`i915_open/close` で vk session、drv_gpu ops に `get_capset` 配線＋`GPU_CAP_CAPSET`、`i915_command`/`i915_command_submit` で native magic 0x31394958 を見て非 native を vk 実行器へ routing（submit は同期完了）。`vmunix.mk` に vk 7 source。検証: vk cmd host fixture（通常＋ASan/UBSan）PASS、i915 kernel build PASS（vmunix check、warning 0、FPU 不使用制約クリア）、WS029 host fixture 全 PASS（fixture に vk stub と capability assert 更新＝WS031 統合の最小変更）。残: libvulkan の完全 open には `GPU_CAP_BLOB|MAPPING` と blob_create/resource_map が必要で、これは res（p003）が memory/blob と共に提供。per-command handler は各モジュール Phase で肉付け。
+
+## 引き継ぎ（2026-09-18）: Gen12 EU スレッド実行ハングの調査を専門家へ
+
+p011 の実機ビッグバンで残った **EU スレッド実行ハング**（PS/compute 共通、Linux i915 では同一 GPU・同一バイトで完走）について、Linux 6.8.12 の通常初期化を parity 経路として完走させた上でも同一署名で再現した（台帳 E-97）。原因特定と問題箇所の修正を新規の専門家に引き継ぐ。**着手に必要な情報はすべて [handover/README.md](handover/README.md) にまとめてある**（問題定義・署名・除外済み事項・残る候補・コード地図・ビルドと QEMU 起動パラメータ・ログの読み方・再現手順・資料索引・規約）。
+
+- 時系列の全記録: [results-ws031.md](results-ws031.md)（E-16〜E-30 が big-bang 期の EU 調査、E-31〜E-97 が parity 移植と EU 試験）
+- 前任専門家の指示書と進捗報告: [handover/expert-reports/](handover/expert-reports/)
+- 設計メモ・増分結果・生成ツール・Linux 陽性対照 VM 資材: [handover/notes/](handover/notes/), [handover/increment-results/](handover/increment-results/), [handover/tools/](handover/tools/), [handover/linuxvm/](handover/linuxvm/)
+
+修正後は元の担当（Claude）に戻し、parity の残作業（DRM object model 要の部分、runtime suspend/resume、描画）を継続する。git add/commit/push はユーザ。

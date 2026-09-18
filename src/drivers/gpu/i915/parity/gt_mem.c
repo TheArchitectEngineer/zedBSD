@@ -50,6 +50,13 @@ parity_gen8_pde_encode(uint64_t dma)
 		PARITY_PPAT_UNCACHED;
 }
 
+uint64_t
+parity_gen8_pde_encode_cached(uint64_t dma)
+{
+	/* PPAT_CACHED_PDE is 0: WB LLC. */
+	return dma | PARITY_GEN8_PAGE_PRESENT_B | PARITY_GEN8_PAGE_RW_B;
+}
+
 /* --- the pool and the GGTT window ---------------------------------------- */
 
 int
@@ -600,8 +607,8 @@ alloc_level(struct parity_gt_mem *gm, struct parity_gt_ppgtt *pp,
 			t->lvl = lvl;
 			t->dma = dma;
 			pp->n_tables++;
-			/* set_pd_entry(): gen8_pde_encode(px_dma(pt), I915_CACHE_LLC) */
-			((uint64_t *)pd->cpu)[idx] = parity_gen8_pde_encode(dma);
+			/* set_pd_entry(): gen8_pde_encode(px_dma(pt), I915_CACHE_LLC) = cached */
+			((uint64_t *)pd->cpu)[idx] = parity_gen8_pde_encode_cached(dma);
 		}
 		if (lvl != 0) {
 			rc = alloc_level(gm, pp, t->obj, start, end, lvl);

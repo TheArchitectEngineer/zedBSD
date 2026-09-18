@@ -36,6 +36,7 @@
 #include "gt_migrate.h"
 #include "pxp.h"
 #include "driver_probe.h"
+#include "eu_test.h"
 #include "reset.h"
 #include "backend_sync.h"
 #include "reset.h"
@@ -157,6 +158,8 @@ drv_i915_parity_attach(struct i915_device *device, enum parity_stage stop_after,
 	static struct parity_gt_migrate gtmig;
 	static struct parity_pxp pxp;
 	static struct parity_driver_probe dprobe;
+	static struct parity_eu_test eutest;
+	int eutest_inited = 0;
 	int gtvwa_inited = 0;
 	int gtmig_inited = 0;
 	int pxp_inited = 0;
@@ -1498,6 +1501,9 @@ drv_i915_parity_attach(struct i915_device *device, enum parity_stage stop_after,
 			goto p6_fw_out;
 		}
 		res.last_completed = "__engines_record_defaults";
+		/* engine->default_state: every later context starts from it. */
+		for (ei = 0u; ei < gteng.n; ei++)
+			gteng.ge[ei].default_state = gtdef.default_state[ei];
 
 		/*
 		 * __engines_verify_workarounds() (a permanent diagnostic here; the
@@ -1674,6 +1680,66 @@ p6_fw_out:
 	}
 	res.last_completed = "i915_driver_register";
 
+	/*
+	 * ====================== real-hardware EU test (once) ======================
+	 * Explicitly released: the compute positive control (GPGPU_WALKER, one
+	 * SIMD8 thread, unconditional A64 store) on the GT initialised the Linux
+	 * way, as an execbuf-shaped request on a fresh context.  Like a user
+	 * submission after driver load: GT wakeref = forcewake all around it.
+	 */
+	if (PARITY_EU_TEST) {
+		static const int fwd[5] = { OSDEP_FW_RENDER, OSDEP_FW_GT,
+			OSDEP_FW_MEDIA_VDBOX0, OSDEP_FW_MEDIA_VDBOX2, OSDEP_FW_MEDIA_VEBOX0 };
+		unsigned ti, held = 0u, k;
+		int frc = 0;
+
+		while (held < 5u && (frc = osdep_fw_get(&mmio, fwd[held])) == 0)
+			held++;
+		if (held == 5u) {
+			unsigned u0 = irqdev.gt_user_intr, c0 = irqdev.gt_ctx_switch_intr;
+			unsigned e0 = irqdev.gt_error_intr;
+
+			rc = parity_eu_test_run(&eutest, &gteng, &gtpp, &gtmem, &gtmmio.sseu,
+				&mmio, &uncore_lock, 2000u);
+			eutest_inited = 1;
+			kern_logf("i915: parity EU-TEST %s: rc=%d where=%s engine=%s dss=%u max_threads=%u "
+				"batch_dwords=%u submitted=%d completed=%d parked=%d timed_out=%d wedged=%d "
+				"polls=%u | ready=%08x eu=%08x done=%08x cs=%08x idd_rb_ok=%d kernel_rb_ok=%d "
+				"| rq seqno=%u krq seqno=%u | gt irq: user=%u ctx_switch=%u error=%u\n",
+				eutest.outcome == PARITY_EU_PASS ? "PASS" :
+				eutest.outcome == PARITY_EU_HANG ? "HANG" : "ERROR",
+				rc, eutest.err_where != 0 ? eutest.err_where : "-",
+				gteng.ge[eutest.engine_idx].info->name, eutest.dss_count,
+				eutest.max_threads, eutest.batch_dwords, eutest.submitted,
+				eutest.completed, eutest.parked, eutest.timed_out, eutest.wedged,
+				eutest.polls, eutest.ready, eutest.eu, eutest.done, eutest.cs,
+				eutest.idd_rb_ok, eutest.kernel_rb_ok, eutest.rq.seqno, eutest.krq.seqno,
+				irqdev.gt_user_intr - u0, irqdev.gt_ctx_switch_intr - c0,
+				irqdev.gt_error_intr - e0);
+			kern_logf("i915: parity EU-TEST ctx: CTX_CTRL=%08x RING_CTL=%08x PDP0=%08x:%08x "
+				"ring ggtt=0x%llx state ggtt=0x%llx | idd_rb=%08x %08x %08x %08x %08x %08x %08x %08x\n",
+				eutest.ce.lrc_reg_state != 0 ? eutest.ce.lrc_reg_state[PARITY_CTX_CONTEXT_CONTROL] : 0u,
+				eutest.ce.lrc_reg_state != 0 ? eutest.ce.lrc_reg_state[PARITY_CTX_RING_CTL] : 0u,
+				eutest.ce.lrc_reg_state != 0 ? eutest.ce.lrc_reg_state[PARITY_CTX_PDP0_UDW] : 0u,
+				eutest.ce.lrc_reg_state != 0 ? eutest.ce.lrc_reg_state[PARITY_CTX_PDP0_LDW] : 0u,
+				(unsigned long long)eutest.ce.ring.ggtt_offset,
+				eutest.ce.state != 0 ? (unsigned long long)eutest.ce.state->ggtt_offset : 0ull,
+				eutest.idd_rb[0], eutest.idd_rb[1], eutest.idd_rb[2], eutest.idd_rb[3],
+				eutest.idd_rb[4], eutest.idd_rb[5], eutest.idd_rb[6], eutest.idd_rb[7]);
+			for (k = 0u; k < 36u; k += 12u)
+				kern_logf("i915: parity EU-TEST kernel_rb[%u..]: %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x\n",
+					k, eutest.kernel_rb[k], eutest.kernel_rb[k + 1], eutest.kernel_rb[k + 2],
+					eutest.kernel_rb[k + 3], eutest.kernel_rb[k + 4], eutest.kernel_rb[k + 5],
+					eutest.kernel_rb[k + 6], eutest.kernel_rb[k + 7], eutest.kernel_rb[k + 8],
+					eutest.kernel_rb[k + 9], eutest.kernel_rb[k + 10], eutest.kernel_rb[k + 11]);
+			(void)ti;
+		} else {
+			kern_logf("i915: parity EU-TEST not run: forcewake failed rc=%d\n", frc);
+		}
+		while (held-- > 0u)
+			osdep_fw_put(&mmio, fwd[held]);
+	}
+
 	/* i915_driver_probe() returns 0: the driver is loaded. */
 	res.outcome = PARITY_STOPPED;
 	res.where = "i915_driver_probe complete";
@@ -1725,12 +1791,19 @@ teardown:
 		while (held-- > 0u)
 			osdep_fw_put(&mmio, fwd[held]);
 	}
+	if (eutest_inited)
+		parity_eu_test_release(&eutest, &gtmem);
 	if (gtmig_inited)
 		parity_intel_migrate_fini(&gtmig, &gtmem);
 	if (gtvwa_inited)
 		parity_engines_verify_wa_release(&gtvwa, &gtmem);
-	if (gtdef_inited)
+	if (gtdef_inited) {
+		unsigned di;
+
+		for (di = 0u; di < gteng.n; di++)
+			gteng.ge[di].default_state = 0;
 		parity_engines_defaults_release(&gtdef, &gtmem);
+	}
 	if (gteng_inited) {
 		parity_intel_engines_release(&gteng, &gtmem);
 		kern_logf("i915: parity teardown: engines released (status pages, kernel contexts)\n");

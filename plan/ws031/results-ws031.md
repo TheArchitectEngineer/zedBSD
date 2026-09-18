@@ -2792,3 +2792,35 @@ ktest: 365 checks, 0 failures（GPU-free / 実機とも）
 ### 残(次)
 **Linux 通常初期化（i915_driver_probe）の parity 移植はここで完走**。残るのは (a) DRM object model が要る部分（active crtc がある場合の initial_commit、connector 検出・hotplug 処理本体、fbdev）、(b) runtime suspend/resume、(c) 実機 EU 試験（要・明示解除）。次の方針は判断事項。
 台帳E-60〜E-96。GPU=vfio-pci維持, 10ms tick/HAL非変更維持, drm非blacklist, attach先行維持。git commit/push なし。
+
+## p011 増分E-97 (2026-09-18): **実機 EU 試験（明示解除・1 回）— HANG。parity で Linux 通常初期化を完走させた GT 上でも、compute 陽性対照（C1）は big-bang 時代と同一署名で停止**
+
+### 実機結果（GPU 渡し, chaos, vmunix 94a75d4d, ログ `~/bigbang/run-parity-hw-e97-eu.log`）
+```
+EU-TEST HANG: rc=-ETIMEDOUT engine=rcs0 dss=5 max_threads=559 batch_dwords=322 submitted=1 completed=0 timed_out=1 wedged=1 polls=40000(2 s)
+  ready=c0ffee10 eu=dead0000 done=dead0000 cs=dead0000 idd_rb_ok=1 kernel_rb_ok=1 | gt irq: user=0 ctx_switch=1 error=0
+EU-TEST hang: ipehr=70040000 acthd=1:004014c0 instdone=ffdeffff fault=0 row_instdone(raw)=8610e87f eu_dis=0 slice_ack=3 ss01_eu_ack=3 ss23_eu_ack=3
+rcs0 dump(eu-test): HEAD=80 TAIL=d8 START=fffc9000 ACTHD=1:004014c0 IPEHR=70040000 ESR=0 EIR=0 | EXECLIST_STATUS=20:3098 submits=5 promotes=5 completes=4 errors=0
+EU-TEST ctx: CTX_CTRL=00090008 RING_CTL=1 PDP0=1:00213000 | idd_rb=00000400 0 00100000 0 0 0 1 0 | kernel_rb = C1 の 36 dword と完全一致
+teardown 正常（engines reset rc=0, objects live=0）。attach end: outcome=STOPPED where=i915_driver_probe complete。
+※EU ビルドでは ktest が完走していない（新規 P6C4B-INHERIT 試験を `parity_engines_defaults_release` の後に挿入したため、解放済み default_state を参照して停止＝試験側の誤り。「lines=367」をチェック数と読み違えた）。EU 試験自体は probe 側で先に完了しているので結果には影響しない。挿入位置を直した後の ktest は GPU-free/実機とも 367/0（vmunix 6882fb9a、EU 試験は PARITY_EU_TEST=0 で不実行、probe=COMPLETE）。
+```
+- **署名は E-16〜E-30 と同一**：READY marker 着地（CS は walker 直前まで実行）→ GPGPU_WALKER 投入 → EU スレッドが完了せず、後続 MEDIA_STATE_FLUSH（IPEHR=0x70040000）で CS 停止。row_instdone=0x8610e87f（EU not-done）、GPU fault 無し、EU 電源 ack 3・eu_dis 0。
+- **今回の条件（前回までと違う点）**：(1) P0〜P7 を Linux 6.8.12 正本どおりに初期化した GT（WA 表は SRM で実機検証済み、MOCS/PAT/RC6/RPS/execlists/golden context/indirect-ctx BB/record_defaults）。(2) context は `__engines_record_defaults` が保存した **engine->default_state を継承**（CTX_CTRL=0x00090008=restore inhibit 無し、`lrc_init_state` 正本どおり）。(3) request は execbuf 形（request_alloc の invalidate → `gen8_emit_init_breadcrumb` → `gen8_emit_bb_start`(ARB on, PPGTT batch, ARB off) → fini breadcrumb）。(4) forcewake 全ドメイン保持、driver_register 後（wells 8→2・DC6 武装後）。(5) batch/kernel/IDD/VA は Linux で完走実証済み L-C1 と同一バイト（CS 経由の IDD/kernel 読み戻しも一致＝PPGTT 写像健全）。
+- **結論**：Linux 通常初期化の parity 移植（execlists）では EU ハングは解消しない。移植済み・検証済みの要素は単独原因から除外。
+
+### 実装（試験用）
+- `eu_test.{c,h}`：big-bang の C1 バッチ（322 dw、readback 込み）を transcribe、`parity_gt_ppgtt_alloc_range/insert_page` で shared@0x100400000・batch@0x100401000 を kernel vm に写像（PAT 0）、新規 context（engine->default_state 継承）＋専用 timeline、execbuf 形 request、2 s ポーリング、HANG 時は engine dump＋EU 電源レジスタ＋reset_prepare/`gt_reset_all`（wedge）。`PARITY_EU_TEST`（既定 0）で明示ビルド時のみ実行。
+- `gt_engine.h`/`gt_lrc.c`：**engine->default_state を導入し `lrc_init_state` が継承**（正本 shmem_read＋CONTEXT_VALID、inhibit 解除）。record_defaults 後に配線、teardown で解除。migrate/pxp の pinned context も以後これを継承（正本どおり）。
+- ktest +2（P6C4B-INHERIT、EU-BATCH 語順）: 365→367/0（INHERIT の挿入位置を直した後）。
+- **試験後に見つけた自分の移植誤り（E-95）**：`alloc_range` の実表 PDE を `PPAT_UNCACHED` で符号化していた。正本 `set_pd_entry` は `gen8_pde_encode(..., I915_CACHE_LLC)`＝`PPAT_CACHED_PDE(0)`（UNCACHED は scratch 塔のみ）。→ `parity_gen8_pde_encode_cached` で修正、P6C6-VM 期待値更新。**修正後の EU 再試験は未実施**（要・指示）。今回の EU 試験は uncached PDE の PPGTT で走った（CS 経由の読み戻しは一致しており写像自体は有効）。
+
+### 残る差分候補（Linux 陽性対照 E-23/E-25＝同一 GPU・execlists との差）
+1. **MCR（multicast）レジスタの実効値**：ROW_CHICKEN2/4・SAMPLER_MODE・L3SQC 等の EU 向け WA は CS の SRM では検証不能（正本も除外）。steering 付き MMIO 読み戻しで確認可（安価）。
+2. **PDE キャッシュ属性**（上記、修正済み・未再試験）。
+3. parity が「適応／N/A」と記録した箇所：GGTT/WC 窓は big-bang 資産（P2）、割込み駆動 retire は無く CSB ポーリング、`intel_pxp_init_hw`（Linux は mei_pxp bind で KCR init/irq が走る）、runtime PM、hwconfig（GuC 前提）。
+4. 初期化以外：Linux は同じ GPU を Linux ブート後（i915 通常ロード）に使用。zedBSD は OVMF＋FLR 後。fuse/クロック/電源状態の差はレジスタ全量 diff（E-27 は GLOBAL 一致・MCR 一部）でしか詰められない。
+
+### 残(次)
+判断事項：(a) PDE 修正で EU 再試験 1 回、(b) MCR 実効値監査（steered read）、(c) 停止時の EU/TDL/GAM 状態の追加採取（専門家指定レジスタ）、(d) GuC submission 移植（Linux 既定だが陽性対照は execlists）。
+台帳E-60〜E-97。GPU=vfio-pci維持, 10ms tick/HAL非変更維持, drm非blacklist, attach先行維持。git commit/push なし。
