@@ -37,6 +37,7 @@
 #include "pxp.h"
 #include "driver_probe.h"
 #include "eu_test.h"
+#include "../draw_fixture.h"
 #include "reset.h"
 #include "backend_sync.h"
 #include "reset.h"
@@ -166,6 +167,8 @@ drv_i915_parity_attach(struct i915_device *device, enum parity_stage stop_after,
 	int r1test_inited = 0;
 	static struct parity_tex_test textest;
 	int textest_inited = 0;
+	static struct parity_t3_test t3test;
+	int t3test_inited = 0;
 	int gtvwa_inited = 0;
 	int gtmig_inited = 0;
 	int pxp_inited = 0;
@@ -1693,7 +1696,98 @@ p6_fw_out:
 	 * way, as an execbuf-shaped request on a fresh context.  Like a user
 	 * submission after driver load: GT wakeref = forcewake all around it.
 	 */
-	if (PARITY_TEX_TEST) {
+	if (PARITY_T3_TEST) {
+		static const int t3fwd[5] = { OSDEP_FW_RENDER, OSDEP_FW_GT,
+			OSDEP_FW_MEDIA_VDBOX0, OSDEP_FW_MEDIA_VDBOX2, OSDEP_FW_MEDIA_VEBOX0 };
+		unsigned held = 0u, wi;
+		int frc = 0;
+
+		while (held < 5u && (frc = osdep_fw_get(&mmio, t3fwd[held])) == 0)
+			held++;
+		if (held == 5u) {
+			unsigned u0 = irqdev.gt_user_intr, c0 = irqdev.gt_ctx_switch_intr;
+			unsigned e0 = irqdev.gt_error_intr;
+
+			rc = parity_t3_test_run(&t3test, &gteng, &gtpp, &gtmem, &mmio, &uncore_lock, 2000u);
+			t3test_inited = 1;
+			kern_logf("i915: parity T3 fixture: build PARITY_T3_TEST=%d batch_hash=%016llx batch_dwords=%u mocs=%u "
+				"state@0x%llx batch@0x%llx rt@0x%llx texA@0x%llx texB@0x%llx | pipeline_select rc=%d 3d=%u gpgpu=%u bad=%u\n",
+				PARITY_T3_TEST, (unsigned long long)t3test.t.batch_hash, t3test.t.batch_dwords,
+				t3test.mocs, (unsigned long long)PARITY_EU_SHARED_VA,
+				(unsigned long long)PARITY_EU_BATCH_VA, (unsigned long long)PARITY_DRAW_RT_VA,
+				(unsigned long long)I915_TEX_FIXTURE_TEX_VA, (unsigned long long)I915_TEX_FIXTURE_TEX_B_VA,
+				t3test.t.pipesel_rc, t3test.t.pipesel.n_3d, t3test.t.pipesel.n_gpgpu,
+				t3test.t.pipesel.n_bad);
+			for (wi = 0u; wi < t3test.n_steps; wi++) {
+				const struct parity_t3_step *st = &t3test.step[wi];
+
+				kern_logf("i915: parity T3 step=%u ctx=%c bind=%c upload=%c:%d expect_variant=%d lrca=%08x seqno=%u "
+					"hwsp_observed=%u rc=%d completed=%d parked=%d pass=%d polls=%u | markers=%08x %08x %08x ps=%08x | "
+					"pixels match=%u/1024 stale=%u first_bad=(%d,%d) expected=%08x observed=%08x | tex changed=%u "
+					"guard_bad=%u | state_hash=%016llx rt_hash=%016llx texA_hash=%016llx texB_hash=%016llx\n",
+					wi + 1u, st->ctx, st->bind, st->upload, st->upload_variant, st->expect_variant,
+					st->lrca, st->seqno, st->hwsp_observed, st->rc, st->completed, st->parked,
+					st->pass, st->polls, st->before, st->middraw, st->after, st->ps_marker,
+					st->px_match, st->px_stale, st->first_bad_x, st->first_bad_y,
+					st->first_bad_expected, st->first_bad_observed, st->tex_changed_bytes,
+					st->guard_bad_bytes, (unsigned long long)st->state_hash,
+					(unsigned long long)st->rt_hash, (unsigned long long)st->tex_a_hash,
+					(unsigned long long)st->tex_b_hash);
+			}
+			/* The last step's objects, in the TEX-TEST dump format (tools/eu_artifact.py). */
+			if (t3test.t.batch != 0 && t3test.t.batch_dwords != 0u) {
+				const uint32_t *bd = (const uint32_t *)t3test.t.batch->cpu;
+
+				for (wi = 0u; wi < t3test.t.batch_dwords; wi += 8u)
+					kern_logf("i915: parity T3-LAST batch[%03u]: %08x %08x %08x %08x %08x %08x %08x %08x\n",
+						wi, bd[wi], bd[wi + 1u], bd[wi + 2u], bd[wi + 3u], bd[wi + 4u],
+						bd[wi + 5u], bd[wi + 6u], bd[wi + 7u]);
+			}
+			if (t3test.t.shared != 0) {
+				const uint32_t *sp = (const uint32_t *)t3test.t.shared->cpu;
+
+				for (wi = 0u; wi < 1024u; wi += 8u) {
+					if ((sp[wi] | sp[wi + 1u] | sp[wi + 2u] | sp[wi + 3u] | sp[wi + 4u] |
+					     sp[wi + 5u] | sp[wi + 6u] | sp[wi + 7u]) == 0u)
+						continue;
+					kern_logf("i915: parity T3-LAST state[%04u]: %08x %08x %08x %08x %08x %08x %08x %08x\n",
+						wi, sp[wi], sp[wi + 1u], sp[wi + 2u], sp[wi + 3u], sp[wi + 4u],
+						sp[wi + 5u], sp[wi + 6u], sp[wi + 7u]);
+				}
+			}
+			if (t3test.tex_b != 0) {
+				const uint32_t *tp = (const uint32_t *)t3test.tex_b->cpu;
+
+				for (wi = 0u; wi < 64u; wi += 8u)
+					kern_logf("i915: parity T3-LAST tex[%02u]: %08x %08x %08x %08x %08x %08x %08x %08x\n",
+						wi, tp[wi], tp[wi + 1u], tp[wi + 2u], tp[wi + 3u], tp[wi + 4u],
+						tp[wi + 5u], tp[wi + 6u], tp[wi + 7u]);
+			}
+			if (t3test.rt != 0) {
+				const uint32_t *rp = (const uint32_t *)t3test.rt->cpu;
+
+				for (wi = 0u; wi < 1024u; wi += 8u)
+					kern_logf("i915: parity T3-LAST rt[%04u]: %08x %08x %08x %08x %08x %08x %08x %08x\n",
+						wi, rp[wi], rp[wi + 1u], rp[wi + 2u], rp[wi + 3u], rp[wi + 4u],
+						rp[wi + 5u], rp[wi + 6u], rp[wi + 7u]);
+			}
+			kern_logf("i915: parity T3-LAST fixture: batch_dwords=%u\n", t3test.t.batch_dwords);
+			kern_logf("i915: parity T3 %s: rc=%d where=%s steps=%u/%u passed=%u wedged=%d polls=%u | "
+				"gt irq: user=%u ctx_switch=%u error=%u\n",
+				(rc == 0 && t3test.passed == t3test.n_planned) ? "PASS" :
+				t3test.t.wedged ? "HANG" : "ERROR",
+				rc, t3test.t.err_where != 0 ? t3test.t.err_where : "-", t3test.n_steps,
+				t3test.n_planned, t3test.passed, t3test.t.wedged, t3test.t.polls,
+				irqdev.gt_user_intr - u0, irqdev.gt_ctx_switch_intr - c0,
+				irqdev.gt_error_intr - e0);
+		} else {
+			kern_logf("i915: parity T3 not run: forcewake failed rc=%d\n", frc);
+		}
+		while (held-- > 0u)
+			osdep_fw_put(&mmio, t3fwd[held]);
+	}
+
+	if (PARITY_TEX_TEST && !PARITY_T3_TEST) {
 		static const int tfwd[5] = { OSDEP_FW_RENDER, OSDEP_FW_GT,
 			OSDEP_FW_MEDIA_VDBOX0, OSDEP_FW_MEDIA_VDBOX2, OSDEP_FW_MEDIA_VEBOX0 };
 		unsigned held = 0u, wi;
@@ -1785,7 +1879,7 @@ p6_fw_out:
 			osdep_fw_put(&mmio, tfwd[held]);
 	}
 
-	if (PARITY_R1_TEST && !PARITY_TEX_TEST) {
+	if (PARITY_R1_TEST && !PARITY_TEX_TEST && !PARITY_T3_TEST) {
 		static const int rfwd[5] = { OSDEP_FW_RENDER, OSDEP_FW_GT,
 			OSDEP_FW_MEDIA_VDBOX0, OSDEP_FW_MEDIA_VDBOX2, OSDEP_FW_MEDIA_VEBOX0 };
 		unsigned held = 0u, wi;
@@ -1842,7 +1936,7 @@ p6_fw_out:
 			osdep_fw_put(&mmio, rfwd[held]);
 	}
 
-	if (PARITY_DRAW_TEST && !PARITY_R1_TEST && !PARITY_TEX_TEST) {
+	if (PARITY_DRAW_TEST && !PARITY_R1_TEST && !PARITY_TEX_TEST && !PARITY_T3_TEST) {
 		static const int dfwd[5] = { OSDEP_FW_RENDER, OSDEP_FW_GT,
 			OSDEP_FW_MEDIA_VDBOX0, OSDEP_FW_MEDIA_VDBOX2, OSDEP_FW_MEDIA_VEBOX0 };
 		unsigned held = 0u, wi;
@@ -1918,7 +2012,7 @@ p6_fw_out:
 			osdep_fw_put(&mmio, dfwd[held]);
 	}
 
-	if (PARITY_EU_TEST && !PARITY_DRAW_TEST && !PARITY_R1_TEST && !PARITY_TEX_TEST) {
+	if (PARITY_EU_TEST && !PARITY_DRAW_TEST && !PARITY_R1_TEST && !PARITY_TEX_TEST && !PARITY_T3_TEST) {
 		static const int fwd[5] = { OSDEP_FW_RENDER, OSDEP_FW_GT,
 			OSDEP_FW_MEDIA_VDBOX0, OSDEP_FW_MEDIA_VDBOX2, OSDEP_FW_MEDIA_VEBOX0 };
 		unsigned ti, held = 0u, k;
@@ -2116,6 +2210,8 @@ teardown:
 		parity_r1_test_release(&r1test, &gtmem);
 	if (textest_inited)
 		parity_tex_test_release(&textest, &gtmem);
+	if (t3test_inited)
+		parity_t3_test_release(&t3test, &gtmem);
 	if (gtmig_inited)
 		parity_intel_migrate_fini(&gtmig, &gtmem);
 	if (gtvwa_inited)

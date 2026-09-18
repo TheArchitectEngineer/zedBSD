@@ -58,9 +58,22 @@ unsigned drv_i915_tex_fixture_build_batch(uint32_t *cmds, unsigned capacity,
  * Test image, RGBA bytes in memory order, texel (u,v) at rgba[(v*8+u)*4]:
  *   variant 0: R=16+32u G=16+32v B=16+32((u+3v)&7) A=255   (position-identifying, asymmetric)
  *   variant 1: R=239-32v G=16+32u B=16+32((3u+v)&7) A=255  (for update / binding switches)
+ *   variant 2: R=240-32u G=240-32v B=16+32((u^v)&7) A=255  (a third, again distinct, image)
  */
+#define I915_TEX_FIXTURE_VARIANTS 3u
 void drv_i915_tex_fixture_pattern(uint8_t *rgba, unsigned variant);
 /* What the B8G8R8A8 render target reads back as (little-endian dword) at pixel (x,y). */
 uint32_t drv_i915_tex_fixture_expected_pixel(const uint8_t *rgba, unsigned x, unsigned y);
+
+/*
+ * ---- T3: two texture objects and a binding switch ----
+ * Texture A keeps its surface state at +128, texture B gets one at +192; binding
+ * table entry 1 names the one that is bound.  Nothing else in the state page or
+ * in the batch changes between the two bindings.
+ */
+#define I915_TEX_FIXTURE_TEX_B_VA         0x100405000ull
+#define I915_TEX_FIXTURE_TEX_B_RSS_OFFSET 192u
+void drv_i915_tex_fixture_write_state_ab(void *state_page, uint64_t rt_va, uint64_t tex_a_va,
+	uint64_t tex_b_va, unsigned bind_b, uint32_t mocs);
 
 #endif /* I915_DRAW_FIXTURE_H */

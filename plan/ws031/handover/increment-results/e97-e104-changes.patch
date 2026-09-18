@@ -16,10 +16,10 @@ index f9c80579..a34c2ecc 100644
  endif
 diff --git a/src/drivers/gpu/i915/parity/eu_test.c b/src/drivers/gpu/i915/parity/eu_test.c
 new file mode 100644
-index 00000000..2fdd4040
+index 00000000..cd638b9e
 --- /dev/null
 +++ b/src/drivers/gpu/i915/parity/eu_test.c
-@@ -0,0 +1,1479 @@
+@@ -0,0 +1,1747 @@
 +/*
 + * WS031 Linux-parity — the one-shot real-hardware EU test.
 + * See eu_test.h.
@@ -1149,6 +1149,274 @@ index 00000000..2fdd4040
 +	parity_eu_test_release(&x->t, gm);
 +}
 +
++/* ---------------- T3: texture update, binding switch, redraw, new context ---------------- */
++
++static void
++t3_upload(struct parity_gt_object *tex, const uint8_t *pattern)
++{
++	volatile uint8_t *tb = (volatile uint8_t *)tex->cpu;
++	unsigned i;
++
++	for (i = 0u; i < 4096u; i++)
++		tb[i] = i < I915_TEX_FIXTURE_TEX_BYTES ? pattern[i] : (uint8_t)PARITY_TEX_GUARD_BYTE;
++}
++
++static unsigned
++t3_tex_diff(struct parity_gt_object *tex, const uint8_t *pattern, unsigned *guard_bad)
++{
++	volatile uint8_t *tb = (volatile uint8_t *)tex->cpu;
++	unsigned i, changed = 0u;
++
++	for (i = 0u; i < 4096u; i++) {
++		uint8_t want = i < I915_TEX_FIXTURE_TEX_BYTES ? pattern[i] : (uint8_t)PARITY_TEX_GUARD_BYTE;
++
++		if (tb[i] != want) {
++			if (i < I915_TEX_FIXTURE_TEX_BYTES)
++				changed++;
++			else
++				(*guard_bad)++;
++		}
++	}
++	return changed;
++}
++
++int
++parity_t3_test_run(struct parity_t3_test *x, struct parity_gt_engines *es,
++	struct parity_gt_ppgtt *vm, struct parity_gt_mem *gm, struct osdep_mmio *m,
++	struct spinlock *uncore_lock, unsigned timeout_ms)
++{
++	/*
++	 * Context A (new):  1 bind A (image 0)            = the T2 draw
++	 *                   2 update A := image 1, bind A  content update of the same object
++	 *                   3 bind B (image 0)            binding switch (A now holds image 1)
++	 *                   4 bind A                      switch back
++	 *                   5 bind A                      plain redraw
++	 * Context B (new):  6 bind A   7 bind B           the same fixture on a new context
++	 *                   8 update B := image 2, bind B
++	 * Context A again:  9 bind B (image 2)            an older context after another one ran
++	 */
++	static const struct { char ctx, bind, upload; int variant; } plan[] = {
++		{ 'A', 'A', '-', 0 }, { 'A', 'A', 'A', 1 }, { 'A', 'B', '-', 0 }, { 'A', 'A', '-', 0 },
++		{ 'A', 'A', '-', 0 }, { 'B', 'A', '-', 0 }, { 'B', 'B', '-', 0 }, { 'B', 'B', 'B', 2 },
++		{ 'A', 'B', '-', 0 },
++	};
++	static const uint64_t va[5] = { PARITY_EU_SHARED_VA, PARITY_EU_BATCH_VA, PARITY_DRAW_RT_VA,
++		I915_TEX_FIXTURE_TEX_VA, I915_TEX_FIXTURE_TEX_B_VA };
++	static uint8_t pat[I915_TEX_FIXTURE_VARIANTS][I915_TEX_FIXTURE_TEX_BYTES];
++	struct parity_eu_test *t;
++	struct parity_gt_engine *ge;
++	struct parity_execlists *el;
++	struct parity_gt_object *obj[5];
++	volatile uint32_t *px;
++	uint64_t dma;
++	unsigned i, s;
++	int rc;
++
++	if (x == 0 || es == 0 || vm == 0 || gm == 0 || m == 0)
++		return -EINVAL;
++	memset(x, 0, sizeof(*x));
++	t = &x->t;
++	x->n_planned = (unsigned)(sizeof(plan) / sizeof(plan[0]));
++
++	for (i = 0u; i < es->n; i++)
++		if (es->ge[i].info->class == PARITY_RENDER_CLASS)
++			break;
++	if (i == es->n)
++		return fail(t, -ENODEV, "no render engine");
++	t->engine_idx = i;
++	ge = &es->ge[i];
++	el = &es->el[i];
++
++	t->shared = parity_gt_object_create(gm, 4096u);
++	t->batch = parity_gt_object_create(gm, 4096u);
++	x->rt = parity_gt_object_create(gm, 4096u);
++	x->tex_a = parity_gt_object_create(gm, 4096u);
++	x->tex_b = parity_gt_object_create(gm, 4096u);
++	if (t->shared == 0 || t->batch == 0 || x->rt == 0 || x->tex_a == 0 || x->tex_b == 0)
++		return fail(t, -ENOMEM, "gem_create");
++	obj[0] = t->shared; obj[1] = t->batch; obj[2] = x->rt; obj[3] = x->tex_a; obj[4] = x->tex_b;
++	/* 0x100400000..0x100405fff; 0x100403000 stays unmapped (scratch). */
++	rc = parity_gt_ppgtt_alloc_range(gm, vm, PARITY_EU_SHARED_VA, 6u * 4096u);
++	if (rc != 0)
++		return fail(t, rc, "allocate_va_range");
++	for (i = 0u; i < 5u && rc == 0; i++) {
++		rc = parity_gt_object_page_dma(obj[i], 0u, &dma);
++		if (rc == 0)
++			rc = parity_gt_ppgtt_insert_page(vm, dma, va[i], 0u);
++	}
++	if (rc != 0)
++		return fail(t, rc, "ppgtt_insert");
++
++	x->mocs = drv_i915_draw_fixture_mocs();
++	for (i = 0u; i < I915_TEX_FIXTURE_VARIANTS; i++)
++		drv_i915_tex_fixture_pattern(pat[i], i);
++	t3_upload(x->tex_a, pat[0]);
++	t3_upload(x->tex_b, pat[0]);
++	x->content[0] = 0;
++	x->content[1] = 0;
++
++	/* One batch for every step: it names no texture (the binding table does). */
++	t->batch_dwords = drv_i915_tex_fixture_build_batch((uint32_t *)t->batch->cpu, 1024u,
++		PARITY_EU_SHARED_VA, x->mocs);
++	if (t->batch_dwords == 0u || t->batch_dwords >= 1024u)
++		return fail(t, -ENOSPC, "build_batch");
++	t->pipesel_rc = parity_draw_batch_check_pipeline_select((const uint32_t *)t->batch->cpu,
++		t->batch_dwords, &t->pipesel);
++	if (t->pipesel_rc != 0)
++		return fail(t, t->pipesel_rc, "pipeline_select_verify");
++	t->batch_hash = fnv1a64(t->batch->cpu, (size_t)t->batch_dwords * 4u, 0xcbf29ce484222325ull);
++
++	px = (volatile uint32_t *)x->rt->cpu;
++
++	for (s = 0u; s < x->n_planned; s++) {
++		struct parity_t3_step *st = &x->step[s];
++		struct parity_r1_ctx *cx = &x->ctx[(unsigned)(plan[s].ctx - 'A')];
++		unsigned bind_b = plan[s].bind == 'B';
++		unsigned polls0 = t->polls;
++		volatile uint32_t *mk;
++		const uint8_t *want_img;
++
++		memset(st, 0, sizeof(*st));
++		x->n_steps = s + 1u;
++		st->ctx = plan[s].ctx;
++		st->bind = plan[s].bind;
++		st->upload = plan[s].upload;
++		st->upload_variant = plan[s].variant;
++		st->first_bad_x = -1;
++		st->first_bad_y = -1;
++
++		if (!cx->created) {
++			rc = parity_lrc_alloc(&cx->ce, ge, vm, gm, 4096u, 0u);
++			if (rc == 0) {
++				cx->created = 1;
++				cx->tl_page = parity_gt_object_create(gm, 4096u);
++				rc = cx->tl_page != 0 ? parity_gt_ggtt_bind(gm, cx->tl_page) : -ENOMEM;
++			}
++			if (rc != 0) {
++				st->rc = rc;
++				return fail(t, rc, "t3: intel_context_create");
++			}
++			parity_lrc_init_state(&cx->ce);
++			(void)parity_lrc_update_regs(&cx->ce, cx->ce.ring.tail);
++		}
++
++		/*
++		 * The previous request has completed and parked: only now does the CPU
++		 * touch what it referenced.  Upload (if this step has one), then the
++		 * state page with the binding of this step, then the RT pre-fill.
++		 */
++		if (plan[s].upload == 'A') {
++			t3_upload(x->tex_a, pat[plan[s].variant]);
++			x->content[0] = plan[s].variant;
++		} else if (plan[s].upload == 'B') {
++			t3_upload(x->tex_b, pat[plan[s].variant]);
++			x->content[1] = plan[s].variant;
++		}
++		st->expect_variant = x->content[bind_b];
++		want_img = pat[st->expect_variant];
++		drv_i915_tex_fixture_write_state_ab(t->shared->cpu, PARITY_DRAW_RT_VA,
++			I915_TEX_FIXTURE_TEX_VA, I915_TEX_FIXTURE_TEX_B_VA, bind_b, x->mocs);
++		for (i = 0u; i < 1024u; i++)
++			px[i] = TEX_RT_PREFILL;
++		st->state_hash = fnv1a64(t->shared->cpu, 4096u, 0xcbf29ce484222325ull);
++		st->tex_a_hash = fnv1a64(x->tex_a->cpu, I915_TEX_FIXTURE_TEX_BYTES, 0xcbf29ce484222325ull);
++		st->tex_b_hash = fnv1a64(x->tex_b->cpu, I915_TEX_FIXTURE_TEX_BYTES, 0xcbf29ce484222325ull);
++		if (fnv1a64(t->batch->cpu, (size_t)t->batch_dwords * 4u, 0xcbf29ce484222325ull) != t->batch_hash) {
++			st->rc = -EINVAL;
++			return fail(t, -EINVAL, "t3: batch changed");
++		}
++
++		cx->seqno += 2u;
++		st->seqno = cx->seqno;
++		rc = eu_build_request(t, &x->rq, &cx->ce, cx->tl_page, cx->seqno, PARITY_EU_BATCH_VA);
++		if (rc == 0) {
++			rc = parity_execlists_submit(ge, el, m, &x->rq);
++			if (rc != 0)
++				(void)fail(t, rc, "t3: execlists_submit");
++		}
++		if (rc != 0) {
++			st->rc = rc;
++			return rc;
++		}
++		rc = wait_retired(t, ge, el, &x->rq, m, timeout_ms);
++		st->rc = rc;
++		st->completed = rc == 0;
++		st->polls = t->polls - polls0;
++		st->hwsp_observed = *x->rq.hwsp_cpu;
++		st->lrca = cx->ce.lrca;
++
++		mk = (volatile uint32_t *)t->shared->cpu + I915_DRAW_FIXTURE_MARKER_OFFSET / 4u;
++		st->before = mk[0]; st->after = mk[1]; st->middraw = mk[2]; st->ps_marker = mk[4];
++		for (i = 0u; i < 1024u; i++) {
++			uint32_t want = drv_i915_tex_fixture_expected_pixel(want_img, i % 32u, i / 32u);
++			uint32_t got = px[i];
++
++			if (got == want) {
++				st->px_match++;
++			} else {
++				if (got == TEX_RT_PREFILL)
++					st->px_stale++;
++				if (st->first_bad_x < 0) {
++					st->first_bad_x = (int)(i % 32u);
++					st->first_bad_y = (int)(i / 32u);
++					st->first_bad_expected = want;
++					st->first_bad_observed = got;
++				}
++			}
++		}
++		st->rt_hash = fnv1a64(x->rt->cpu, 4096u, 0xcbf29ce484222325ull);
++		st->tex_changed_bytes = t3_tex_diff(x->tex_a, pat[x->content[0]], &st->guard_bad_bytes) +
++			t3_tex_diff(x->tex_b, pat[x->content[1]], &st->guard_bad_bytes);
++
++		if (!st->completed) {
++			if (rc == -ETIMEDOUT) {
++				t->timed_out = 1;
++				t->outcome = PARITY_EU_HANG;
++			} else {
++				(void)fail(t, rc, "t3: i915_request_wait");
++			}
++			eu_log_record(t, ge, el, &x->rq, &cx->ce, "t3-hang");
++			eu_hang_dump_reset(t, es, ge, el, m, uncore_lock);
++			return rc;
++		}
++		st->parked = eu_park(t, es, ge, el, m, timeout_ms);
++		st->pass = st->parked && st->hwsp_observed == st->seqno &&
++			st->before == I915_DRAW_FIXTURE_MARKER_BEFORE &&
++			st->middraw == I915_DRAW_FIXTURE_MARKER_MIDDRAW &&
++			st->after == I915_DRAW_FIXTURE_MARKER_AFTER &&
++			st->ps_marker == I915_DRAW_FIXTURE_PS_MARKER && st->px_match == 1024u &&
++			st->tex_changed_bytes == 0u && st->guard_bad_bytes == 0u;
++		if (!st->pass) {
++			t->outcome = PARITY_EU_ERROR;
++			return fail(t, -EIO, "t3: markers/pixels/guard");
++		}
++		x->passed++;
++	}
++	t->outcome = PARITY_EU_PASS;
++	return 0;
++}
++
++void
++parity_t3_test_release(struct parity_t3_test *x, struct parity_gt_mem *gm)
++{
++	unsigned i;
++
++	if (x == 0 || gm == 0)
++		return;
++	for (i = 0u; i < 2u; i++) {
++		if (x->ctx[i].tl_page != 0) {
++			parity_gt_object_destroy(gm, x->ctx[i].tl_page);
++			x->ctx[i].tl_page = 0;
++		}
++		if (x->ctx[i].created && x->ctx[i].ce.allocated)
++			parity_lrc_release(&x->ctx[i].ce, gm);
++	}
++	if (x->rt != 0) { parity_gt_object_destroy(gm, x->rt); x->rt = 0; }
++	if (x->tex_a != 0) { parity_gt_object_destroy(gm, x->tex_a); x->tex_a = 0; }
++	if (x->tex_b != 0) { parity_gt_object_destroy(gm, x->tex_b); x->tex_b = 0; }
++	parity_eu_test_release(&x->t, gm);
++}
++
 +/* ---------------- R1: draw repeats and compute<->3D switching ---------------- */
 +
 +#define R1_RT_PREFILL 0x5a5a5a5au      /* not the expected pixel, not zero */
@@ -1501,10 +1769,10 @@ index 00000000..2fdd4040
 +}
 diff --git a/src/drivers/gpu/i915/parity/eu_test.h b/src/drivers/gpu/i915/parity/eu_test.h
 new file mode 100644
-index 00000000..fe4e61eb
+index 00000000..5a258411
 --- /dev/null
 +++ b/src/drivers/gpu/i915/parity/eu_test.h
-@@ -0,0 +1,308 @@
+@@ -0,0 +1,346 @@
 +/*
 + * WS031 Linux-parity — the one-shot real-hardware EU test (explicitly released).
 + *
@@ -1584,6 +1852,11 @@ index 00000000..fe4e61eb
 +/* T2 (E-103): the first textured draw; its own mode, its own boot (nothing submitted before it). */
 +#ifndef PARITY_TEX_TEST
 +#define PARITY_TEX_TEST 0
++#endif
++
++/* T3 (E-104): texture update, binding switch, redraw on the same and on a new context; one boot. */
++#ifndef PARITY_T3_TEST
++#define PARITY_T3_TEST 0
 +#endif
 +
 +#define PARITY_EU_PASS   1
@@ -1785,6 +2058,39 @@ index 00000000..fe4e61eb
 +	struct parity_gt_ppgtt *vm, struct parity_gt_mem *gm, const struct parity_sseu *sseu,
 +	struct osdep_mmio *m, struct spinlock *uncore_lock, unsigned timeout_ms);
 +void parity_r1_test_release(struct parity_r1_test *r, struct parity_gt_mem *gm);
++
++#define PARITY_T3_STEPS_MAX 12
++struct parity_t3_step {
++	char ctx;                         /* 'A' / 'B' */
++	char bind;                        /* which texture binding table entry 1 names */
++	char upload;                      /* texture the CPU rewrote before this step, or '-' */
++	int upload_variant;
++	int expect_variant;               /* the image the bound texture holds */
++	int rc, completed, parked, pass;
++	uint32_t lrca, seqno, hwsp_observed;
++	unsigned polls;
++	uint64_t state_hash, rt_hash, tex_a_hash, tex_b_hash;
++	uint32_t before, middraw, after, ps_marker;
++	unsigned px_match, px_stale;
++	int first_bad_x, first_bad_y;
++	uint32_t first_bad_expected, first_bad_observed;
++	unsigned tex_changed_bytes, guard_bad_bytes;   /* over both textures */
++};
++struct parity_t3_test {
++	struct parity_eu_test t;
++	struct parity_gt_object *rt, *tex_a, *tex_b;
++	uint32_t mocs;
++	struct parity_gt_request rq;
++	struct parity_r1_ctx ctx[2];
++	int content[2];                   /* the variant each texture currently holds */
++	struct parity_t3_step step[PARITY_T3_STEPS_MAX];
++	unsigned n_steps, n_planned, passed;
++};
++
++int parity_t3_test_run(struct parity_t3_test *x, struct parity_gt_engines *es,
++	struct parity_gt_ppgtt *vm, struct parity_gt_mem *gm, struct osdep_mmio *m,
++	struct spinlock *uncore_lock, unsigned timeout_ms);
++void parity_t3_test_release(struct parity_t3_test *x, struct parity_gt_mem *gm);
 +
 +struct parity_wa_list;
 +struct parity_sseu;
@@ -2043,7 +2349,7 @@ index ae5bea22..8e297f62 100644
  /* --- pool / GGTT window --- */
  int parity_gt_mem_init(struct parity_gt_mem *gm, struct drv_dma_device *dma,
 diff --git a/src/drivers/gpu/i915/parity/ktest.c b/src/drivers/gpu/i915/parity/ktest.c
-index abf46f0c..d7d54a2e 100644
+index abf46f0c..58847878 100644
 --- a/src/drivers/gpu/i915/parity/ktest.c
 +++ b/src/drivers/gpu/i915/parity/ktest.c
 @@ -42,6 +42,8 @@
@@ -2116,7 +2422,7 @@ index abf46f0c..d7d54a2e 100644
  						KCHECK(window_ok && mg.pte_window == 2ull * PARITY_MIGRATE_CHUNK_SZ &&
  							mg.exposed_pts == 8u && mg.window_bytes == 16ull << 20,
  							"p6c6: P6C6-PTE the PTE window maps the eight window page tables themselves");
-@@ -4896,6 +4924,222 @@ parity_sync_ktest(void)
+@@ -4896,6 +4924,252 @@ parity_sync_ktest(void)
  				dg.num_engines = 1u;
  			}
  
@@ -2290,6 +2596,36 @@ index abf46f0c..d7d54a2e 100644
 +			}
 +
 +
++			/* ====== TEX A/B (T3): binding switch and the three images ====== */
++			{
++				static uint32_t sa[1024], sb[1024];
++				static uint8_t p0[256], p1[256], p2[256];
++				unsigned k, ndiff = 0u;
++
++				drv_i915_tex_fixture_write_state_ab(sa, 0x100402000ull, I915_TEX_FIXTURE_TEX_VA,
++					I915_TEX_FIXTURE_TEX_B_VA, 0u, 6u);
++				drv_i915_tex_fixture_write_state_ab(sb, 0x100402000ull, I915_TEX_FIXTURE_TEX_VA,
++					I915_TEX_FIXTURE_TEX_B_VA, 1u, 6u);
++				for (k = 0u; k < 1024u; k++)
++					if (sa[k] != sb[k])
++						ndiff++;
++				KCHECK(sa[1] == 128u && sb[1] == 192u && ndiff == 1u &&
++					sa[32u + 8u] == 0x00404000u && sa[48u + 8u] == 0x00405000u && sa[48u + 9u] == 1u &&
++					sa[48u] == sa[32u] && sa[48u + 1u] == sa[32u + 1u] && sa[48u + 3u] == 31u,
++					"tex: TEX-AB binding A vs B differs in exactly one dword (binding table entry 1: 128 vs 192); texture B's surface state names 0x100405000");
++				drv_i915_tex_fixture_pattern(p0, 0u);
++				drv_i915_tex_fixture_pattern(p1, 1u);
++				drv_i915_tex_fixture_pattern(p2, 2u);
++				/* variant 1 texel(0,0) = R239 G16 B16; variant 2 texel(0,0) = R240 G240 B16, texel(7,7) = R16 G16 B16. */
++				KCHECK(drv_i915_tex_fixture_expected_pixel(p1, 0u, 0u) == 0xffef1010u &&
++					drv_i915_tex_fixture_expected_pixel(p1, 4u, 0u) == 0xffef3070u &&
++					drv_i915_tex_fixture_expected_pixel(p2, 0u, 0u) == 0xfff0f010u &&
++					drv_i915_tex_fixture_expected_pixel(p2, 31u, 31u) == 0xff101010u &&
++					memcmp(p0, p1, 256u) != 0 && memcmp(p0, p2, 256u) != 0 && memcmp(p1, p2, 256u) != 0,
++					"tex: TEX-VARIANTS the three test images are distinct and have the documented texels");
++			}
++
++
 +			/* ====== EU page tables: what the GPU walks, read from the tables ====== */
 +			{
 +				static struct parity_gt_ppgtt tpp;
@@ -2340,18 +2676,19 @@ index abf46f0c..d7d54a2e 100644
  			parity_gt_mem_fini(&gm);
  			KCHECK(gm.objects_live == 0u && gm.allocated_pages == 0u &&
 diff --git a/src/drivers/gpu/i915/parity/probe.c b/src/drivers/gpu/i915/parity/probe.c
-index 7df834b4..88e078a5 100644
+index 7df834b4..88e0148d 100644
 --- a/src/drivers/gpu/i915/parity/probe.c
 +++ b/src/drivers/gpu/i915/parity/probe.c
-@@ -36,6 +36,7 @@
+@@ -36,6 +36,8 @@
  #include "gt_migrate.h"
  #include "pxp.h"
  #include "driver_probe.h"
 +#include "eu_test.h"
++#include "../draw_fixture.h"
  #include "reset.h"
  #include "backend_sync.h"
  #include "reset.h"
-@@ -157,6 +158,14 @@ drv_i915_parity_attach(struct i915_device *device, enum parity_stage stop_after,
+@@ -157,6 +159,16 @@ drv_i915_parity_attach(struct i915_device *device, enum parity_stage stop_after,
  	static struct parity_gt_migrate gtmig;
  	static struct parity_pxp pxp;
  	static struct parity_driver_probe dprobe;
@@ -2363,10 +2700,12 @@ index 7df834b4..88e078a5 100644
 +	int r1test_inited = 0;
 +	static struct parity_tex_test textest;
 +	int textest_inited = 0;
++	static struct parity_t3_test t3test;
++	int t3test_inited = 0;
  	int gtvwa_inited = 0;
  	int gtmig_inited = 0;
  	int pxp_inited = 0;
-@@ -1498,6 +1507,9 @@ drv_i915_parity_attach(struct i915_device *device, enum parity_stage stop_after,
+@@ -1498,6 +1510,9 @@ drv_i915_parity_attach(struct i915_device *device, enum parity_stage stop_after,
  			goto p6_fw_out;
  		}
  		res.last_completed = "__engines_record_defaults";
@@ -2376,7 +2715,7 @@ index 7df834b4..88e078a5 100644
  
  		/*
  		 * __engines_verify_workarounds() (a permanent diagnostic here; the
-@@ -1674,6 +1686,377 @@ p6_fw_out:
+@@ -1674,6 +1689,468 @@ p6_fw_out:
  	}
  	res.last_completed = "i915_driver_register";
  
@@ -2387,7 +2726,98 @@ index 7df834b4..88e078a5 100644
 +	 * way, as an execbuf-shaped request on a fresh context.  Like a user
 +	 * submission after driver load: GT wakeref = forcewake all around it.
 +	 */
-+	if (PARITY_TEX_TEST) {
++	if (PARITY_T3_TEST) {
++		static const int t3fwd[5] = { OSDEP_FW_RENDER, OSDEP_FW_GT,
++			OSDEP_FW_MEDIA_VDBOX0, OSDEP_FW_MEDIA_VDBOX2, OSDEP_FW_MEDIA_VEBOX0 };
++		unsigned held = 0u, wi;
++		int frc = 0;
++
++		while (held < 5u && (frc = osdep_fw_get(&mmio, t3fwd[held])) == 0)
++			held++;
++		if (held == 5u) {
++			unsigned u0 = irqdev.gt_user_intr, c0 = irqdev.gt_ctx_switch_intr;
++			unsigned e0 = irqdev.gt_error_intr;
++
++			rc = parity_t3_test_run(&t3test, &gteng, &gtpp, &gtmem, &mmio, &uncore_lock, 2000u);
++			t3test_inited = 1;
++			kern_logf("i915: parity T3 fixture: build PARITY_T3_TEST=%d batch_hash=%016llx batch_dwords=%u mocs=%u "
++				"state@0x%llx batch@0x%llx rt@0x%llx texA@0x%llx texB@0x%llx | pipeline_select rc=%d 3d=%u gpgpu=%u bad=%u\n",
++				PARITY_T3_TEST, (unsigned long long)t3test.t.batch_hash, t3test.t.batch_dwords,
++				t3test.mocs, (unsigned long long)PARITY_EU_SHARED_VA,
++				(unsigned long long)PARITY_EU_BATCH_VA, (unsigned long long)PARITY_DRAW_RT_VA,
++				(unsigned long long)I915_TEX_FIXTURE_TEX_VA, (unsigned long long)I915_TEX_FIXTURE_TEX_B_VA,
++				t3test.t.pipesel_rc, t3test.t.pipesel.n_3d, t3test.t.pipesel.n_gpgpu,
++				t3test.t.pipesel.n_bad);
++			for (wi = 0u; wi < t3test.n_steps; wi++) {
++				const struct parity_t3_step *st = &t3test.step[wi];
++
++				kern_logf("i915: parity T3 step=%u ctx=%c bind=%c upload=%c:%d expect_variant=%d lrca=%08x seqno=%u "
++					"hwsp_observed=%u rc=%d completed=%d parked=%d pass=%d polls=%u | markers=%08x %08x %08x ps=%08x | "
++					"pixels match=%u/1024 stale=%u first_bad=(%d,%d) expected=%08x observed=%08x | tex changed=%u "
++					"guard_bad=%u | state_hash=%016llx rt_hash=%016llx texA_hash=%016llx texB_hash=%016llx\n",
++					wi + 1u, st->ctx, st->bind, st->upload, st->upload_variant, st->expect_variant,
++					st->lrca, st->seqno, st->hwsp_observed, st->rc, st->completed, st->parked,
++					st->pass, st->polls, st->before, st->middraw, st->after, st->ps_marker,
++					st->px_match, st->px_stale, st->first_bad_x, st->first_bad_y,
++					st->first_bad_expected, st->first_bad_observed, st->tex_changed_bytes,
++					st->guard_bad_bytes, (unsigned long long)st->state_hash,
++					(unsigned long long)st->rt_hash, (unsigned long long)st->tex_a_hash,
++					(unsigned long long)st->tex_b_hash);
++			}
++			/* The last step's objects, in the TEX-TEST dump format (tools/eu_artifact.py). */
++			if (t3test.t.batch != 0 && t3test.t.batch_dwords != 0u) {
++				const uint32_t *bd = (const uint32_t *)t3test.t.batch->cpu;
++
++				for (wi = 0u; wi < t3test.t.batch_dwords; wi += 8u)
++					kern_logf("i915: parity T3-LAST batch[%03u]: %08x %08x %08x %08x %08x %08x %08x %08x\n",
++						wi, bd[wi], bd[wi + 1u], bd[wi + 2u], bd[wi + 3u], bd[wi + 4u],
++						bd[wi + 5u], bd[wi + 6u], bd[wi + 7u]);
++			}
++			if (t3test.t.shared != 0) {
++				const uint32_t *sp = (const uint32_t *)t3test.t.shared->cpu;
++
++				for (wi = 0u; wi < 1024u; wi += 8u) {
++					if ((sp[wi] | sp[wi + 1u] | sp[wi + 2u] | sp[wi + 3u] | sp[wi + 4u] |
++					     sp[wi + 5u] | sp[wi + 6u] | sp[wi + 7u]) == 0u)
++						continue;
++					kern_logf("i915: parity T3-LAST state[%04u]: %08x %08x %08x %08x %08x %08x %08x %08x\n",
++						wi, sp[wi], sp[wi + 1u], sp[wi + 2u], sp[wi + 3u], sp[wi + 4u],
++						sp[wi + 5u], sp[wi + 6u], sp[wi + 7u]);
++				}
++			}
++			if (t3test.tex_b != 0) {
++				const uint32_t *tp = (const uint32_t *)t3test.tex_b->cpu;
++
++				for (wi = 0u; wi < 64u; wi += 8u)
++					kern_logf("i915: parity T3-LAST tex[%02u]: %08x %08x %08x %08x %08x %08x %08x %08x\n",
++						wi, tp[wi], tp[wi + 1u], tp[wi + 2u], tp[wi + 3u], tp[wi + 4u],
++						tp[wi + 5u], tp[wi + 6u], tp[wi + 7u]);
++			}
++			if (t3test.rt != 0) {
++				const uint32_t *rp = (const uint32_t *)t3test.rt->cpu;
++
++				for (wi = 0u; wi < 1024u; wi += 8u)
++					kern_logf("i915: parity T3-LAST rt[%04u]: %08x %08x %08x %08x %08x %08x %08x %08x\n",
++						wi, rp[wi], rp[wi + 1u], rp[wi + 2u], rp[wi + 3u], rp[wi + 4u],
++						rp[wi + 5u], rp[wi + 6u], rp[wi + 7u]);
++			}
++			kern_logf("i915: parity T3-LAST fixture: batch_dwords=%u\n", t3test.t.batch_dwords);
++			kern_logf("i915: parity T3 %s: rc=%d where=%s steps=%u/%u passed=%u wedged=%d polls=%u | "
++				"gt irq: user=%u ctx_switch=%u error=%u\n",
++				(rc == 0 && t3test.passed == t3test.n_planned) ? "PASS" :
++				t3test.t.wedged ? "HANG" : "ERROR",
++				rc, t3test.t.err_where != 0 ? t3test.t.err_where : "-", t3test.n_steps,
++				t3test.n_planned, t3test.passed, t3test.t.wedged, t3test.t.polls,
++				irqdev.gt_user_intr - u0, irqdev.gt_ctx_switch_intr - c0,
++				irqdev.gt_error_intr - e0);
++		} else {
++			kern_logf("i915: parity T3 not run: forcewake failed rc=%d\n", frc);
++		}
++		while (held-- > 0u)
++			osdep_fw_put(&mmio, t3fwd[held]);
++	}
++
++	if (PARITY_TEX_TEST && !PARITY_T3_TEST) {
 +		static const int tfwd[5] = { OSDEP_FW_RENDER, OSDEP_FW_GT,
 +			OSDEP_FW_MEDIA_VDBOX0, OSDEP_FW_MEDIA_VDBOX2, OSDEP_FW_MEDIA_VEBOX0 };
 +		unsigned held = 0u, wi;
@@ -2479,7 +2909,7 @@ index 7df834b4..88e078a5 100644
 +			osdep_fw_put(&mmio, tfwd[held]);
 +	}
 +
-+	if (PARITY_R1_TEST && !PARITY_TEX_TEST) {
++	if (PARITY_R1_TEST && !PARITY_TEX_TEST && !PARITY_T3_TEST) {
 +		static const int rfwd[5] = { OSDEP_FW_RENDER, OSDEP_FW_GT,
 +			OSDEP_FW_MEDIA_VDBOX0, OSDEP_FW_MEDIA_VDBOX2, OSDEP_FW_MEDIA_VEBOX0 };
 +		unsigned held = 0u, wi;
@@ -2536,7 +2966,7 @@ index 7df834b4..88e078a5 100644
 +			osdep_fw_put(&mmio, rfwd[held]);
 +	}
 +
-+	if (PARITY_DRAW_TEST && !PARITY_R1_TEST && !PARITY_TEX_TEST) {
++	if (PARITY_DRAW_TEST && !PARITY_R1_TEST && !PARITY_TEX_TEST && !PARITY_T3_TEST) {
 +		static const int dfwd[5] = { OSDEP_FW_RENDER, OSDEP_FW_GT,
 +			OSDEP_FW_MEDIA_VDBOX0, OSDEP_FW_MEDIA_VDBOX2, OSDEP_FW_MEDIA_VEBOX0 };
 +		unsigned held = 0u, wi;
@@ -2612,7 +3042,7 @@ index 7df834b4..88e078a5 100644
 +			osdep_fw_put(&mmio, dfwd[held]);
 +	}
 +
-+	if (PARITY_EU_TEST && !PARITY_DRAW_TEST && !PARITY_R1_TEST && !PARITY_TEX_TEST) {
++	if (PARITY_EU_TEST && !PARITY_DRAW_TEST && !PARITY_R1_TEST && !PARITY_TEX_TEST && !PARITY_T3_TEST) {
 +		static const int fwd[5] = { OSDEP_FW_RENDER, OSDEP_FW_GT,
 +			OSDEP_FW_MEDIA_VDBOX0, OSDEP_FW_MEDIA_VDBOX2, OSDEP_FW_MEDIA_VEBOX0 };
 +		unsigned ti, held = 0u, k;
@@ -2754,7 +3184,7 @@ index 7df834b4..88e078a5 100644
  	/* i915_driver_probe() returns 0: the driver is loaded. */
  	res.outcome = PARITY_STOPPED;
  	res.where = "i915_driver_probe complete";
-@@ -1725,12 +2108,25 @@ teardown:
+@@ -1725,12 +2202,27 @@ teardown:
  		while (held-- > 0u)
  			osdep_fw_put(&mmio, fwd[held]);
  	}
@@ -2766,6 +3196,8 @@ index 7df834b4..88e078a5 100644
 +		parity_r1_test_release(&r1test, &gtmem);
 +	if (textest_inited)
 +		parity_tex_test_release(&textest, &gtmem);
++	if (t3test_inited)
++		parity_t3_test_release(&t3test, &gtmem);
  	if (gtmig_inited)
  		parity_intel_migrate_fini(&gtmig, &gtmem);
  	if (gtvwa_inited)
@@ -2782,7 +3214,7 @@ index 7df834b4..88e078a5 100644
  		parity_intel_engines_release(&gteng, &gtmem);
  		kern_logf("i915: parity teardown: engines released (status pages, kernel contexts)\n");
 diff --git a/src/drivers/gpu/i915/selftest.c b/src/drivers/gpu/i915/selftest.c
-index b13f7985..703e1f09 100644
+index b13f7985..9b1dbe7f 100644
 --- a/src/drivers/gpu/i915/selftest.c
 +++ b/src/drivers/gpu/i915/selftest.c
 @@ -33,6 +33,7 @@
@@ -2869,7 +3301,7 @@ index b13f7985..703e1f09 100644
  	/* The pixel shader's one binding table entry names the render target. */
  	i915_draw_emit(&batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_BINDING_TABLE_POINTERS_PS,
  		GEN12_3DSTATE_POINTERS_DWORDS));
-@@ -1162,6 +1181,150 @@ i915_draw_build_batch(
+@@ -1162,6 +1181,174 @@ i915_draw_build_batch(
  	return batch.count;
  }
  
@@ -2964,6 +3396,26 @@ index b13f7985..703e1f09 100644
 +	memcpy(&heap[I915_TEX_FIXTURE_SAMPLER_OFFSET / 4U], texfix_sampler, sizeof(texfix_sampler));
 +}
 +
++_Static_assert(I915_TEX_FIXTURE_TEX_B_RSS_OFFSET >= I915_TEX_FIXTURE_TEX_RSS_OFFSET + 64U &&
++	I915_TEX_FIXTURE_TEX_B_RSS_OFFSET + 64U <= I915_DRAW_COLOR_CALC_OFFSET &&
++	(I915_TEX_FIXTURE_TEX_B_RSS_OFFSET & 63U) == 0U,
++	"texture B's surface state must sit in the surface heap, 64-byte aligned, after texture A's");
++
++void
++drv_i915_tex_fixture_write_state_ab(void *state_page, uint64_t rt_va, uint64_t tex_a_va,
++	uint64_t tex_b_va, unsigned bind_b, uint32_t mocs)
++{
++	uint32_t *heap = state_page;
++	uint32_t *rss_b = &heap[I915_TEX_FIXTURE_TEX_B_RSS_OFFSET / 4U];
++
++	drv_i915_tex_fixture_write_state(state_page, rt_va, tex_a_va, mocs);
++	memcpy(rss_b, texfix_tex_rss, sizeof(texfix_tex_rss));
++	rss_b[8] = (uint32_t)tex_b_va;
++	rss_b[9] = (uint32_t)(tex_b_va >> 32);
++	heap[I915_DRAW_BINDING_TABLE_OFFSET / 4U + 1U] = bind_b != 0U ?
++		I915_TEX_FIXTURE_TEX_B_RSS_OFFSET : I915_TEX_FIXTURE_TEX_RSS_OFFSET;
++}
++
 +unsigned
 +drv_i915_tex_fixture_build_batch(uint32_t *cmds, unsigned capacity, uint64_t state_va, uint32_t mocs)
 +{
@@ -2991,10 +3443,14 @@ index b13f7985..703e1f09 100644
 +				t[0] = (uint8_t)(16U + 32U * u);
 +				t[1] = (uint8_t)(16U + 32U * v);
 +				t[2] = (uint8_t)(16U + 32U * ((u + 3U * v) & 7U));
-+			} else {
++			} else if (variant == 1U) {
 +				t[0] = (uint8_t)(239U - 32U * v);
 +				t[1] = (uint8_t)(16U + 32U * u);
 +				t[2] = (uint8_t)(16U + 32U * ((3U * u + v) & 7U));
++			} else {
++				t[0] = (uint8_t)(240U - 32U * u);
++				t[1] = (uint8_t)(240U - 32U * v);
++				t[2] = (uint8_t)(16U + 32U * ((u ^ v) & 7U));
 +			}
 +			t[3] = 255U;
 +		}
@@ -3020,7 +3476,7 @@ index b13f7985..703e1f09 100644
  /*
   * Runs one request that only copies the pipeline statistics counters to memory.
   *
-@@ -2050,7 +2213,7 @@ drv_i915_draw_selftest(
+@@ -2050,7 +2237,7 @@ drv_i915_draw_selftest(
  		return EIO;
  	cmds = kern_pmem_to_kernel(batch->run.paddr);
  	dwords = i915_draw_build_batch(cmds, 1024U, surface, dynamic, instruction, vb,
@@ -3063,9 +3519,12 @@ index 64452af5..3896facb 100644
  
  
  /*
+diff --git a/src/drivers/gpu/i915/draw_fixture.h b/src/drivers/gpu/i915/draw_fixture.h
+new file mode 100644
+index 00000000..702a47c6
 --- /dev/null
 +++ b/src/drivers/gpu/i915/draw_fixture.h
-@@ -0,0 +1,66 @@
+@@ -0,0 +1,79 @@
 +/*
 + * The big-bang 3D draw fixture (selftest.c), addressable by GPU VA only, so the
 + * WS031 Linux-parity path can submit the SAME command list and state bytes
@@ -3126,12 +3585,28 @@ index 64452af5..3896facb 100644
 + * Test image, RGBA bytes in memory order, texel (u,v) at rgba[(v*8+u)*4]:
 + *   variant 0: R=16+32u G=16+32v B=16+32((u+3v)&7) A=255   (position-identifying, asymmetric)
 + *   variant 1: R=239-32v G=16+32u B=16+32((3u+v)&7) A=255  (for update / binding switches)
++ *   variant 2: R=240-32u G=240-32v B=16+32((u^v)&7) A=255  (a third, again distinct, image)
 + */
++#define I915_TEX_FIXTURE_VARIANTS 3u
 +void drv_i915_tex_fixture_pattern(uint8_t *rgba, unsigned variant);
 +/* What the B8G8R8A8 render target reads back as (little-endian dword) at pixel (x,y). */
 +uint32_t drv_i915_tex_fixture_expected_pixel(const uint8_t *rgba, unsigned x, unsigned y);
 +
++/*
++ * ---- T3: two texture objects and a binding switch ----
++ * Texture A keeps its surface state at +128, texture B gets one at +192; binding
++ * table entry 1 names the one that is bound.  Nothing else in the state page or
++ * in the batch changes between the two bindings.
++ */
++#define I915_TEX_FIXTURE_TEX_B_VA         0x100405000ull
++#define I915_TEX_FIXTURE_TEX_B_RSS_OFFSET 192u
++void drv_i915_tex_fixture_write_state_ab(void *state_page, uint64_t rt_va, uint64_t tex_a_va,
++	uint64_t tex_b_va, unsigned bind_b, uint32_t mocs);
++
 +#endif /* I915_DRAW_FIXTURE_H */
+diff --git a/src/drivers/gpu/i915/tex_fixture_gen.inc b/src/drivers/gpu/i915/tex_fixture_gen.inc
+new file mode 100644
+index 00000000..89b271d3
 --- /dev/null
 +++ b/src/drivers/gpu/i915/tex_fixture_gen.inc
 @@ -0,0 +1,95 @@

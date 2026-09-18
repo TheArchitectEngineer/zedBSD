@@ -1127,6 +1127,274 @@ parity_tex_test_release(struct parity_tex_test *x, struct parity_gt_mem *gm)
 	parity_eu_test_release(&x->t, gm);
 }
 
+/* ---------------- T3: texture update, binding switch, redraw, new context ---------------- */
+
+static void
+t3_upload(struct parity_gt_object *tex, const uint8_t *pattern)
+{
+	volatile uint8_t *tb = (volatile uint8_t *)tex->cpu;
+	unsigned i;
+
+	for (i = 0u; i < 4096u; i++)
+		tb[i] = i < I915_TEX_FIXTURE_TEX_BYTES ? pattern[i] : (uint8_t)PARITY_TEX_GUARD_BYTE;
+}
+
+static unsigned
+t3_tex_diff(struct parity_gt_object *tex, const uint8_t *pattern, unsigned *guard_bad)
+{
+	volatile uint8_t *tb = (volatile uint8_t *)tex->cpu;
+	unsigned i, changed = 0u;
+
+	for (i = 0u; i < 4096u; i++) {
+		uint8_t want = i < I915_TEX_FIXTURE_TEX_BYTES ? pattern[i] : (uint8_t)PARITY_TEX_GUARD_BYTE;
+
+		if (tb[i] != want) {
+			if (i < I915_TEX_FIXTURE_TEX_BYTES)
+				changed++;
+			else
+				(*guard_bad)++;
+		}
+	}
+	return changed;
+}
+
+int
+parity_t3_test_run(struct parity_t3_test *x, struct parity_gt_engines *es,
+	struct parity_gt_ppgtt *vm, struct parity_gt_mem *gm, struct osdep_mmio *m,
+	struct spinlock *uncore_lock, unsigned timeout_ms)
+{
+	/*
+	 * Context A (new):  1 bind A (image 0)            = the T2 draw
+	 *                   2 update A := image 1, bind A  content update of the same object
+	 *                   3 bind B (image 0)            binding switch (A now holds image 1)
+	 *                   4 bind A                      switch back
+	 *                   5 bind A                      plain redraw
+	 * Context B (new):  6 bind A   7 bind B           the same fixture on a new context
+	 *                   8 update B := image 2, bind B
+	 * Context A again:  9 bind B (image 2)            an older context after another one ran
+	 */
+	static const struct { char ctx, bind, upload; int variant; } plan[] = {
+		{ 'A', 'A', '-', 0 }, { 'A', 'A', 'A', 1 }, { 'A', 'B', '-', 0 }, { 'A', 'A', '-', 0 },
+		{ 'A', 'A', '-', 0 }, { 'B', 'A', '-', 0 }, { 'B', 'B', '-', 0 }, { 'B', 'B', 'B', 2 },
+		{ 'A', 'B', '-', 0 },
+	};
+	static const uint64_t va[5] = { PARITY_EU_SHARED_VA, PARITY_EU_BATCH_VA, PARITY_DRAW_RT_VA,
+		I915_TEX_FIXTURE_TEX_VA, I915_TEX_FIXTURE_TEX_B_VA };
+	static uint8_t pat[I915_TEX_FIXTURE_VARIANTS][I915_TEX_FIXTURE_TEX_BYTES];
+	struct parity_eu_test *t;
+	struct parity_gt_engine *ge;
+	struct parity_execlists *el;
+	struct parity_gt_object *obj[5];
+	volatile uint32_t *px;
+	uint64_t dma;
+	unsigned i, s;
+	int rc;
+
+	if (x == 0 || es == 0 || vm == 0 || gm == 0 || m == 0)
+		return -EINVAL;
+	memset(x, 0, sizeof(*x));
+	t = &x->t;
+	x->n_planned = (unsigned)(sizeof(plan) / sizeof(plan[0]));
+
+	for (i = 0u; i < es->n; i++)
+		if (es->ge[i].info->class == PARITY_RENDER_CLASS)
+			break;
+	if (i == es->n)
+		return fail(t, -ENODEV, "no render engine");
+	t->engine_idx = i;
+	ge = &es->ge[i];
+	el = &es->el[i];
+
+	t->shared = parity_gt_object_create(gm, 4096u);
+	t->batch = parity_gt_object_create(gm, 4096u);
+	x->rt = parity_gt_object_create(gm, 4096u);
+	x->tex_a = parity_gt_object_create(gm, 4096u);
+	x->tex_b = parity_gt_object_create(gm, 4096u);
+	if (t->shared == 0 || t->batch == 0 || x->rt == 0 || x->tex_a == 0 || x->tex_b == 0)
+		return fail(t, -ENOMEM, "gem_create");
+	obj[0] = t->shared; obj[1] = t->batch; obj[2] = x->rt; obj[3] = x->tex_a; obj[4] = x->tex_b;
+	/* 0x100400000..0x100405fff; 0x100403000 stays unmapped (scratch). */
+	rc = parity_gt_ppgtt_alloc_range(gm, vm, PARITY_EU_SHARED_VA, 6u * 4096u);
+	if (rc != 0)
+		return fail(t, rc, "allocate_va_range");
+	for (i = 0u; i < 5u && rc == 0; i++) {
+		rc = parity_gt_object_page_dma(obj[i], 0u, &dma);
+		if (rc == 0)
+			rc = parity_gt_ppgtt_insert_page(vm, dma, va[i], 0u);
+	}
+	if (rc != 0)
+		return fail(t, rc, "ppgtt_insert");
+
+	x->mocs = drv_i915_draw_fixture_mocs();
+	for (i = 0u; i < I915_TEX_FIXTURE_VARIANTS; i++)
+		drv_i915_tex_fixture_pattern(pat[i], i);
+	t3_upload(x->tex_a, pat[0]);
+	t3_upload(x->tex_b, pat[0]);
+	x->content[0] = 0;
+	x->content[1] = 0;
+
+	/* One batch for every step: it names no texture (the binding table does). */
+	t->batch_dwords = drv_i915_tex_fixture_build_batch((uint32_t *)t->batch->cpu, 1024u,
+		PARITY_EU_SHARED_VA, x->mocs);
+	if (t->batch_dwords == 0u || t->batch_dwords >= 1024u)
+		return fail(t, -ENOSPC, "build_batch");
+	t->pipesel_rc = parity_draw_batch_check_pipeline_select((const uint32_t *)t->batch->cpu,
+		t->batch_dwords, &t->pipesel);
+	if (t->pipesel_rc != 0)
+		return fail(t, t->pipesel_rc, "pipeline_select_verify");
+	t->batch_hash = fnv1a64(t->batch->cpu, (size_t)t->batch_dwords * 4u, 0xcbf29ce484222325ull);
+
+	px = (volatile uint32_t *)x->rt->cpu;
+
+	for (s = 0u; s < x->n_planned; s++) {
+		struct parity_t3_step *st = &x->step[s];
+		struct parity_r1_ctx *cx = &x->ctx[(unsigned)(plan[s].ctx - 'A')];
+		unsigned bind_b = plan[s].bind == 'B';
+		unsigned polls0 = t->polls;
+		volatile uint32_t *mk;
+		const uint8_t *want_img;
+
+		memset(st, 0, sizeof(*st));
+		x->n_steps = s + 1u;
+		st->ctx = plan[s].ctx;
+		st->bind = plan[s].bind;
+		st->upload = plan[s].upload;
+		st->upload_variant = plan[s].variant;
+		st->first_bad_x = -1;
+		st->first_bad_y = -1;
+
+		if (!cx->created) {
+			rc = parity_lrc_alloc(&cx->ce, ge, vm, gm, 4096u, 0u);
+			if (rc == 0) {
+				cx->created = 1;
+				cx->tl_page = parity_gt_object_create(gm, 4096u);
+				rc = cx->tl_page != 0 ? parity_gt_ggtt_bind(gm, cx->tl_page) : -ENOMEM;
+			}
+			if (rc != 0) {
+				st->rc = rc;
+				return fail(t, rc, "t3: intel_context_create");
+			}
+			parity_lrc_init_state(&cx->ce);
+			(void)parity_lrc_update_regs(&cx->ce, cx->ce.ring.tail);
+		}
+
+		/*
+		 * The previous request has completed and parked: only now does the CPU
+		 * touch what it referenced.  Upload (if this step has one), then the
+		 * state page with the binding of this step, then the RT pre-fill.
+		 */
+		if (plan[s].upload == 'A') {
+			t3_upload(x->tex_a, pat[plan[s].variant]);
+			x->content[0] = plan[s].variant;
+		} else if (plan[s].upload == 'B') {
+			t3_upload(x->tex_b, pat[plan[s].variant]);
+			x->content[1] = plan[s].variant;
+		}
+		st->expect_variant = x->content[bind_b];
+		want_img = pat[st->expect_variant];
+		drv_i915_tex_fixture_write_state_ab(t->shared->cpu, PARITY_DRAW_RT_VA,
+			I915_TEX_FIXTURE_TEX_VA, I915_TEX_FIXTURE_TEX_B_VA, bind_b, x->mocs);
+		for (i = 0u; i < 1024u; i++)
+			px[i] = TEX_RT_PREFILL;
+		st->state_hash = fnv1a64(t->shared->cpu, 4096u, 0xcbf29ce484222325ull);
+		st->tex_a_hash = fnv1a64(x->tex_a->cpu, I915_TEX_FIXTURE_TEX_BYTES, 0xcbf29ce484222325ull);
+		st->tex_b_hash = fnv1a64(x->tex_b->cpu, I915_TEX_FIXTURE_TEX_BYTES, 0xcbf29ce484222325ull);
+		if (fnv1a64(t->batch->cpu, (size_t)t->batch_dwords * 4u, 0xcbf29ce484222325ull) != t->batch_hash) {
+			st->rc = -EINVAL;
+			return fail(t, -EINVAL, "t3: batch changed");
+		}
+
+		cx->seqno += 2u;
+		st->seqno = cx->seqno;
+		rc = eu_build_request(t, &x->rq, &cx->ce, cx->tl_page, cx->seqno, PARITY_EU_BATCH_VA);
+		if (rc == 0) {
+			rc = parity_execlists_submit(ge, el, m, &x->rq);
+			if (rc != 0)
+				(void)fail(t, rc, "t3: execlists_submit");
+		}
+		if (rc != 0) {
+			st->rc = rc;
+			return rc;
+		}
+		rc = wait_retired(t, ge, el, &x->rq, m, timeout_ms);
+		st->rc = rc;
+		st->completed = rc == 0;
+		st->polls = t->polls - polls0;
+		st->hwsp_observed = *x->rq.hwsp_cpu;
+		st->lrca = cx->ce.lrca;
+
+		mk = (volatile uint32_t *)t->shared->cpu + I915_DRAW_FIXTURE_MARKER_OFFSET / 4u;
+		st->before = mk[0]; st->after = mk[1]; st->middraw = mk[2]; st->ps_marker = mk[4];
+		for (i = 0u; i < 1024u; i++) {
+			uint32_t want = drv_i915_tex_fixture_expected_pixel(want_img, i % 32u, i / 32u);
+			uint32_t got = px[i];
+
+			if (got == want) {
+				st->px_match++;
+			} else {
+				if (got == TEX_RT_PREFILL)
+					st->px_stale++;
+				if (st->first_bad_x < 0) {
+					st->first_bad_x = (int)(i % 32u);
+					st->first_bad_y = (int)(i / 32u);
+					st->first_bad_expected = want;
+					st->first_bad_observed = got;
+				}
+			}
+		}
+		st->rt_hash = fnv1a64(x->rt->cpu, 4096u, 0xcbf29ce484222325ull);
+		st->tex_changed_bytes = t3_tex_diff(x->tex_a, pat[x->content[0]], &st->guard_bad_bytes) +
+			t3_tex_diff(x->tex_b, pat[x->content[1]], &st->guard_bad_bytes);
+
+		if (!st->completed) {
+			if (rc == -ETIMEDOUT) {
+				t->timed_out = 1;
+				t->outcome = PARITY_EU_HANG;
+			} else {
+				(void)fail(t, rc, "t3: i915_request_wait");
+			}
+			eu_log_record(t, ge, el, &x->rq, &cx->ce, "t3-hang");
+			eu_hang_dump_reset(t, es, ge, el, m, uncore_lock);
+			return rc;
+		}
+		st->parked = eu_park(t, es, ge, el, m, timeout_ms);
+		st->pass = st->parked && st->hwsp_observed == st->seqno &&
+			st->before == I915_DRAW_FIXTURE_MARKER_BEFORE &&
+			st->middraw == I915_DRAW_FIXTURE_MARKER_MIDDRAW &&
+			st->after == I915_DRAW_FIXTURE_MARKER_AFTER &&
+			st->ps_marker == I915_DRAW_FIXTURE_PS_MARKER && st->px_match == 1024u &&
+			st->tex_changed_bytes == 0u && st->guard_bad_bytes == 0u;
+		if (!st->pass) {
+			t->outcome = PARITY_EU_ERROR;
+			return fail(t, -EIO, "t3: markers/pixels/guard");
+		}
+		x->passed++;
+	}
+	t->outcome = PARITY_EU_PASS;
+	return 0;
+}
+
+void
+parity_t3_test_release(struct parity_t3_test *x, struct parity_gt_mem *gm)
+{
+	unsigned i;
+
+	if (x == 0 || gm == 0)
+		return;
+	for (i = 0u; i < 2u; i++) {
+		if (x->ctx[i].tl_page != 0) {
+			parity_gt_object_destroy(gm, x->ctx[i].tl_page);
+			x->ctx[i].tl_page = 0;
+		}
+		if (x->ctx[i].created && x->ctx[i].ce.allocated)
+			parity_lrc_release(&x->ctx[i].ce, gm);
+	}
+	if (x->rt != 0) { parity_gt_object_destroy(gm, x->rt); x->rt = 0; }
+	if (x->tex_a != 0) { parity_gt_object_destroy(gm, x->tex_a); x->tex_a = 0; }
+	if (x->tex_b != 0) { parity_gt_object_destroy(gm, x->tex_b); x->tex_b = 0; }
+	parity_eu_test_release(&x->t, gm);
+}
+
 /* ---------------- R1: draw repeats and compute<->3D switching ---------------- */
 
 #define R1_RT_PREFILL 0x5a5a5a5au      /* not the expected pixel, not zero */

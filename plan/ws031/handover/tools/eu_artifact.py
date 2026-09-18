@@ -94,8 +94,10 @@ def tex_pattern(variant=0):
             o = (v * 8 + u) * 4
             if variant == 0:
                 out[o:o + 4] = bytes((16 + 32 * u, 16 + 32 * v, 16 + 32 * ((u + 3 * v) & 7), 255))
-            else:
+            elif variant == 1:
                 out[o:o + 4] = bytes((239 - 32 * v, 16 + 32 * u, 16 + 32 * ((3 * u + v) & 7), 255))
+            else:
+                out[o:o + 4] = bytes((240 - 32 * u, 240 - 32 * v, 16 + 32 * ((u ^ v) & 7), 255))
     return bytes(out)
 
 def tex_expected(pattern):
@@ -162,6 +164,35 @@ def extract_tex(log, prefix, tag="TEX-TEST", variant=0):
     open(prefix + "-manifest.txt", "w").write("\n".join(out) + "\n")
     print("\n".join(out))
 
+def fnv1a64(data):
+    h = 0xcbf29ce484222325
+    for b in data:
+        h = ((h ^ b) * 0x100000001b3) & 0xffffffffffffffff
+    return h
+
+def verify_t3(log):
+    """Every T3 step: the render-target hash in the log against the hash of the expected image
+    computed here (independently of the kernel), and the texture hashes against the images."""
+    exp_rt = {v: fnv1a64(struct.pack("<1024I", *tex_expected(tex_pattern(v)))) for v in range(3)}
+    exp_tex = {fnv1a64(tex_pattern(v)): v for v in range(3)}
+    ok = n = 0
+    for line in open(log, errors="replace"):
+        m = re.search(r"T3 step=(\d+) ctx=(\w) bind=(\w) upload=(\S+) expect_variant=(\d+) .*pass=(\d) .*"
+                      r"rt_hash=(\w+) texA_hash=(\w+) texB_hash=(\w+)", line)
+        if not m:
+            continue
+        n += 1
+        step, ctx, bind, upload, ev, passed, rth, ah, bh = m.groups()
+        ev = int(ev)
+        a, b = exp_tex.get(int(ah, 16)), exp_tex.get(int(bh, 16))
+        bound = a if bind == "A" else b
+        good = int(rth, 16) == exp_rt[ev] and bound == ev and passed == "1"
+        ok += good
+        print("step %s ctx=%s bind=%s upload=%-4s texA=image%s texB=image%s expected=image%d rt_hash %s -> %s" % (
+            step, ctx, bind, upload, a, b, ev, "matches host" if int(rth, 16) == exp_rt[ev] else "DIFFERS",
+            "OK" if good else "BAD"))
+    print("T3 host verification: %d/%d steps" % (ok, n))
+
 def diff(a, b):
     wa, wb = words_from_hex(a), words_from_hex(b)
     print("old dwords=%d new dwords=%d" % (len(wa), len(wb)))
@@ -184,6 +215,10 @@ if __name__ == "__main__":
         extract_draw(sys.argv[2], sys.argv[3])
     elif len(sys.argv) == 4 and sys.argv[1] == "extract-tex":
         extract_tex(sys.argv[2], sys.argv[3])
+    elif len(sys.argv) == 5 and sys.argv[1] == "extract-t3-last":
+        extract_tex(sys.argv[2], sys.argv[3], tag="T3-LAST", variant=int(sys.argv[4]))
+    elif len(sys.argv) == 3 and sys.argv[1] == "verify-t3":
+        verify_t3(sys.argv[2])
     elif len(sys.argv) == 4 and sys.argv[1] == "diff":
         diff(sys.argv[2], sys.argv[3])
     else:

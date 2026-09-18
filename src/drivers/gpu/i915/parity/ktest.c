@@ -5094,6 +5094,36 @@ parity_sync_ktest(void)
 			}
 
 
+			/* ====== TEX A/B (T3): binding switch and the three images ====== */
+			{
+				static uint32_t sa[1024], sb[1024];
+				static uint8_t p0[256], p1[256], p2[256];
+				unsigned k, ndiff = 0u;
+
+				drv_i915_tex_fixture_write_state_ab(sa, 0x100402000ull, I915_TEX_FIXTURE_TEX_VA,
+					I915_TEX_FIXTURE_TEX_B_VA, 0u, 6u);
+				drv_i915_tex_fixture_write_state_ab(sb, 0x100402000ull, I915_TEX_FIXTURE_TEX_VA,
+					I915_TEX_FIXTURE_TEX_B_VA, 1u, 6u);
+				for (k = 0u; k < 1024u; k++)
+					if (sa[k] != sb[k])
+						ndiff++;
+				KCHECK(sa[1] == 128u && sb[1] == 192u && ndiff == 1u &&
+					sa[32u + 8u] == 0x00404000u && sa[48u + 8u] == 0x00405000u && sa[48u + 9u] == 1u &&
+					sa[48u] == sa[32u] && sa[48u + 1u] == sa[32u + 1u] && sa[48u + 3u] == 31u,
+					"tex: TEX-AB binding A vs B differs in exactly one dword (binding table entry 1: 128 vs 192); texture B's surface state names 0x100405000");
+				drv_i915_tex_fixture_pattern(p0, 0u);
+				drv_i915_tex_fixture_pattern(p1, 1u);
+				drv_i915_tex_fixture_pattern(p2, 2u);
+				/* variant 1 texel(0,0) = R239 G16 B16; variant 2 texel(0,0) = R240 G240 B16, texel(7,7) = R16 G16 B16. */
+				KCHECK(drv_i915_tex_fixture_expected_pixel(p1, 0u, 0u) == 0xffef1010u &&
+					drv_i915_tex_fixture_expected_pixel(p1, 4u, 0u) == 0xffef3070u &&
+					drv_i915_tex_fixture_expected_pixel(p2, 0u, 0u) == 0xfff0f010u &&
+					drv_i915_tex_fixture_expected_pixel(p2, 31u, 31u) == 0xff101010u &&
+					memcmp(p0, p1, 256u) != 0 && memcmp(p0, p2, 256u) != 0 && memcmp(p1, p2, 256u) != 0,
+					"tex: TEX-VARIANTS the three test images are distinct and have the documented texels");
+			}
+
+
 			/* ====== EU page tables: what the GPU walks, read from the tables ====== */
 			{
 				static struct parity_gt_ppgtt tpp;

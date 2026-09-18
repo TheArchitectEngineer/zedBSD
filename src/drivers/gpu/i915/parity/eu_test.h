@@ -79,6 +79,11 @@ struct spinlock;
 #define PARITY_TEX_TEST 0
 #endif
 
+/* T3 (E-104): texture update, binding switch, redraw on the same and on a new context; one boot. */
+#ifndef PARITY_T3_TEST
+#define PARITY_T3_TEST 0
+#endif
+
 #define PARITY_EU_PASS   1
 #define PARITY_EU_HANG   2
 #define PARITY_EU_ERROR  3
@@ -278,6 +283,39 @@ int parity_r1_test_run(struct parity_r1_test *r, struct parity_gt_engines *es,
 	struct parity_gt_ppgtt *vm, struct parity_gt_mem *gm, const struct parity_sseu *sseu,
 	struct osdep_mmio *m, struct spinlock *uncore_lock, unsigned timeout_ms);
 void parity_r1_test_release(struct parity_r1_test *r, struct parity_gt_mem *gm);
+
+#define PARITY_T3_STEPS_MAX 12
+struct parity_t3_step {
+	char ctx;                         /* 'A' / 'B' */
+	char bind;                        /* which texture binding table entry 1 names */
+	char upload;                      /* texture the CPU rewrote before this step, or '-' */
+	int upload_variant;
+	int expect_variant;               /* the image the bound texture holds */
+	int rc, completed, parked, pass;
+	uint32_t lrca, seqno, hwsp_observed;
+	unsigned polls;
+	uint64_t state_hash, rt_hash, tex_a_hash, tex_b_hash;
+	uint32_t before, middraw, after, ps_marker;
+	unsigned px_match, px_stale;
+	int first_bad_x, first_bad_y;
+	uint32_t first_bad_expected, first_bad_observed;
+	unsigned tex_changed_bytes, guard_bad_bytes;   /* over both textures */
+};
+struct parity_t3_test {
+	struct parity_eu_test t;
+	struct parity_gt_object *rt, *tex_a, *tex_b;
+	uint32_t mocs;
+	struct parity_gt_request rq;
+	struct parity_r1_ctx ctx[2];
+	int content[2];                   /* the variant each texture currently holds */
+	struct parity_t3_step step[PARITY_T3_STEPS_MAX];
+	unsigned n_steps, n_planned, passed;
+};
+
+int parity_t3_test_run(struct parity_t3_test *x, struct parity_gt_engines *es,
+	struct parity_gt_ppgtt *vm, struct parity_gt_mem *gm, struct osdep_mmio *m,
+	struct spinlock *uncore_lock, unsigned timeout_ms);
+void parity_t3_test_release(struct parity_t3_test *x, struct parity_gt_mem *gm);
 
 struct parity_wa_list;
 struct parity_sseu;

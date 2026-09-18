@@ -1272,6 +1272,26 @@ drv_i915_tex_fixture_write_state(void *state_page, uint64_t rt_va, uint64_t tex_
 	memcpy(&heap[I915_TEX_FIXTURE_SAMPLER_OFFSET / 4U], texfix_sampler, sizeof(texfix_sampler));
 }
 
+_Static_assert(I915_TEX_FIXTURE_TEX_B_RSS_OFFSET >= I915_TEX_FIXTURE_TEX_RSS_OFFSET + 64U &&
+	I915_TEX_FIXTURE_TEX_B_RSS_OFFSET + 64U <= I915_DRAW_COLOR_CALC_OFFSET &&
+	(I915_TEX_FIXTURE_TEX_B_RSS_OFFSET & 63U) == 0U,
+	"texture B's surface state must sit in the surface heap, 64-byte aligned, after texture A's");
+
+void
+drv_i915_tex_fixture_write_state_ab(void *state_page, uint64_t rt_va, uint64_t tex_a_va,
+	uint64_t tex_b_va, unsigned bind_b, uint32_t mocs)
+{
+	uint32_t *heap = state_page;
+	uint32_t *rss_b = &heap[I915_TEX_FIXTURE_TEX_B_RSS_OFFSET / 4U];
+
+	drv_i915_tex_fixture_write_state(state_page, rt_va, tex_a_va, mocs);
+	memcpy(rss_b, texfix_tex_rss, sizeof(texfix_tex_rss));
+	rss_b[8] = (uint32_t)tex_b_va;
+	rss_b[9] = (uint32_t)(tex_b_va >> 32);
+	heap[I915_DRAW_BINDING_TABLE_OFFSET / 4U + 1U] = bind_b != 0U ?
+		I915_TEX_FIXTURE_TEX_B_RSS_OFFSET : I915_TEX_FIXTURE_TEX_RSS_OFFSET;
+}
+
 unsigned
 drv_i915_tex_fixture_build_batch(uint32_t *cmds, unsigned capacity, uint64_t state_va, uint32_t mocs)
 {
@@ -1299,10 +1319,14 @@ drv_i915_tex_fixture_pattern(uint8_t *rgba, unsigned variant)
 				t[0] = (uint8_t)(16U + 32U * u);
 				t[1] = (uint8_t)(16U + 32U * v);
 				t[2] = (uint8_t)(16U + 32U * ((u + 3U * v) & 7U));
-			} else {
+			} else if (variant == 1U) {
 				t[0] = (uint8_t)(239U - 32U * v);
 				t[1] = (uint8_t)(16U + 32U * u);
 				t[2] = (uint8_t)(16U + 32U * ((3U * u + v) & 7U));
+			} else {
+				t[0] = (uint8_t)(240U - 32U * u);
+				t[1] = (uint8_t)(240U - 32U * v);
+				t[2] = (uint8_t)(16U + 32U * ((u ^ v) & 7U));
 			}
 			t[3] = 255U;
 		}

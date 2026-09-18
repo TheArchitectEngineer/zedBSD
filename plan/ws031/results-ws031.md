@@ -3058,3 +3058,45 @@ attach end: STOPPED (i915_driver_probe complete)、teardown 正常（reset な�
 ### 残(次)
 T3: 同じ texture object の内容更新（完了待ち→CPU 更新→次の提出）、texture A/B の binding 切替、同一 context の再描画、新規 context で同じ fixture を 1 起動にまとめる。その後、著作権・ライセンス整理と動作を変えないリファクタ。
 台帳E-60〜E-103。GPU=vfio-pci維持, 10ms tick/HAL非変更維持, drm非blacklist, attach先行維持。git commit/push なし。
+
+## p011 増分E-104 (2026-09-18): **T3 — texture の内容更新・binding 切替・同一／新規 context の再描画 → 実機 9/9 PASS。リファクタ開始用の回帰基準がそろった**
+
+### 実装（試験 harness と fixture の追加のみ。初期化・HAL 不変）
+- fixture: texture B（VA 0x100405000）の RENDER_SURFACE_STATE を surface heap +192 に追加（A は +128 のまま）。**binding の切替は binding table entry 1 の 1 dword（128↔192）だけ**で、batch と state 頁の他の bytes は不変（`drv_i915_tex_fixture_write_state_ab()`、GPU-free `TEX-AB` で「差は 1 dword」を検査）。テスト画像は 3 種（variant 0/1/2、いずれも位置識別・非対称、`TEX-VARIANTS` で固定点を検査）。
+- `parity_t3_test_run()`（フラグ `PARITY_T3_TEST`、他の試験モードと排他）。batch は 1 本を全 step で使い回し（texture を名指ししないため）、毎回 hash を再確認。各 step の前に **前 request の完了と park を確認 → CPU が texture を更新（ある場合）→ state 頁を書き直し → RT を 0x5a5a5a5a で初期化 → 提出**。GPU 実行中の CPU 書換えは試していない。各 step で marker 3 種、PS marker、1024 画素、HWSP 生値、park、両 texture の内容と guard（CPU が書いた値のまま）を検査。最初の失敗で追加提出を止める。
+- GPU-free 383/0（+2: TEX-AB、TEX-VARIANTS）。
+
+### 実機結果（chaos、参照条件は従来と同一、1 起動 9 提出）
+image: `build/t3-e104` vmunix f9731b24… / hdd-image d2b6599d… / BOOTX64 57f8eab6…、flags `-DCONFIG_DRIVER_PCI_I915_PARITY=1 -DPARITY_T3_TEST=1`。ログ `handover/increment-results/e104-run-parity-hw-t3.log`。
+```
+T3 fixture: batch_hash=b6d8a3b470c3e1de (355 dw ＝E-103 の提出 batch と同一) state@0x100400000 batch@0x100401000 rt@0x100402000 texA@0x100404000 texB@0x100405000
+step ctx bind upload  期待画像  seqno/hwsp  結果
+ 1   A   A    -       image0    2/2     1024/1024（＝T2 の描画）
+ 2   A   A    A:=1    image1    4/4     1024/1024  同じ object の内容更新を次の draw が読む
+ 3   A   B    -       image0    6/6     1024/1024  binding 切替（A は image1 のまま）
+ 4   A   A    -       image1    8/8     1024/1024  切替を戻す（古い binding を使い続けない）
+ 5   A   A    -       image1    10/10   1024/1024  同一 context の再描画
+ 6   B   A    -       image1    2/2     1024/1024  新規 context で同じ fixture
+ 7   B   B    -       image0    4/4     1024/1024
+ 8   B   B    B:=2    image2    6/6     1024/1024  B の内容更新
+ 9   A   B    -       image2    12/12   1024/1024  別 context が走った後の旧 context
+T3 PASS: steps=9/9 passed=9 wedged=0 polls=123 | gt irq: user=18 ctx_switch=36 error=0
+attach end: STOPPED (i915_driver_probe complete)、teardown 正常（reset なし）、ktest 383/0、runner-result probe=COMPLETE cleanup=1
+```
+- 全 step で stale=0、texture の変更 0 bytes、guard 破損 0 bytes。state 頁 hash は binding A で a3483d031b86a404、binding B で 160d7483ee5e7cc4 の 2 値だけ。
+- **host 側の独立検証**（`tools/eu_artifact.py verify-t3`）: 各 step の RT hash を、host で計算した期待画像の hash と照合 → 9/9。texture A/B の hash から「どの画像を保持しているか」も host で同定し、bind された texture の画像と期待画像の一致を確認。最終 step の実 bytes は `e104-t3-last-*`（batch sha256 d853b63d… は E-103 と同一、RT は host 期待画像と 1024/1024）、目視用 `e104-t3-last-rt.png`。
+
+### リファクタ開始条件（専門家の 6 項目）の充足
+| 条件 | 根拠 |
+|---|---|
+| C1 回帰が通る | E-99、E-100（6/6）、E-102（step 8/10/12） |
+| 単色 PS 回帰が通る | E-101、E-102（draw 9 回） |
+| compute↔3D 切替が通る | E-102（同一 context 内・別 context 間、両方向） |
+| テクスチャの初回描画が通る | E-103 |
+| 内容更新・binding 切替・context 再利用が通る | E-104 |
+| 正常終了と資源回収が成立する | 各回 teardown 正常、reset なし、ktest 完走、runner-result cleanup=1 |
+回帰基準の一覧（モード、ビルドフラグ、合格行、pin した hash、artifact）は `plan/ws031/regression-baseline.md`。
+
+### 残(次)
+機能追加をここで止め、(第1段) 出典・表示・生成物の整理（`provenance-ledger.md`＋`license-inventory.md` が入力。parity/ 107 ファイルは SPDX／copyright 行が無い＝方針の決定が必要）→ (第2段) 本番 driver と試験・生成ツールの分離 → (第3段) 重複削減と所有権の明確化。各段とも回帰基準で「入力同一なら command/state 同一・出力同一・寿命同一」を確認。bilinear は小さな追加試験として別枠。
+台帳E-60〜E-104。GPU=vfio-pci維持, 10ms tick/HAL非変更維持, drm非blacklist, attach先行維持。git commit/push なし。

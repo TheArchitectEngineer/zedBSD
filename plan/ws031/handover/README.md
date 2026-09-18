@@ -2,7 +2,7 @@
 
 作成 2026-09-18。対象は **zedBSD の i915 ドライバ（Linux-parity 経路）で、GPU に dispatch した EU スレッドが完了しない問題**です。この文書だけで作業に着手できるよう、問題の定義・現在地・除外済み事項・再現手順（QEMU 起動パラメータ込み）・コード地図・参照資料の索引をまとめています。ホスト名や IP、ユーザ名は意図的に書いていません。
 
-- 実装台帳（時系列の全記録）: [`../results-ws031.md`](../results-ws031.md) — 増分 **E-16〜E-30**（big-bang 期の EU 調査）と **E-31〜E-103**（Linux-parity 移植）が本件。**E-102 で描画反復と compute↔3D 切替 12/12 PASS、E-103 でテクスチャ付きオフスクリーン描画が実機 PASS。****E-101 で修正済み命令列による PS 描画も実機 PASS（1024/1024 画素）。****E-98 で PIPELINE_SELECT の符号化誤り（0x6104、正は 0x6904）を発見、E-99 で修正版の C1 が実機 PASS（累積修正版で EU 実行・書込み・request 完了を確認）、E-100 で反復・同一 context の次 request・新 context も 6/6 PASS。§2.5 参照。**
+- 実装台帳（時系列の全記録）: [`../results-ws031.md`](../results-ws031.md) — 増分 **E-16〜E-30**（big-bang 期の EU 調査）と **E-31〜E-104**（Linux-parity 移植）が本件。**E-104 で texture 更新・binding 切替・context 再利用 9/9 PASS。リファクタ前の回帰基準は [`../regression-baseline.md`](../regression-baseline.md)。****E-102 で描画反復と compute↔3D 切替 12/12 PASS、E-103 でテクスチャ付きオフスクリーン描画が実機 PASS。****E-101 で修正済み命令列による PS 描画も実機 PASS（1024/1024 画素）。****E-98 で PIPELINE_SELECT の符号化誤り（0x6104、正は 0x6904）を発見、E-99 で修正版の C1 が実機 PASS（累積修正版で EU 実行・書込み・request 完了を確認）、E-100 で反復・同一 context の次 request・新 context も 6/6 PASS。§2.5 参照。**
 - 前任専門家の指示書: [`expert-reports/`](expert-reports/)（`gen12-ps-hang-report1..29.md`）と、それに対する進捗報告 `report_35..53.md` / `ws031-report-30..34.md`。
 - 設計メモ: [`notes/`](notes/)。増分ごとの結果メモ: [`increment-results/`](increment-results/)。生成ツール: [`tools/`](tools/)。Linux 陽性対照 VM の資材: [`linuxvm/`](linuxvm/)。
 
@@ -65,7 +65,8 @@ E-98 の再停止後、実際に提出した batch（`increment-results/e98-batc
 - **E-102（R1）**: 1 回の P0〜P7 の後、12 提出を順に実行（`PARITY_R1_TEST=1`）: context A draw×4／B draw×2／C draw→C1→draw／A C1→B draw→A C1。全 step で marker・1024 画素（RT は毎回 0x5a5a5a5a で初期化）・HWSP 生値・park が成立、reset なし。draw の state 頁と C1 の shared 頁は同じ VA で、完了・park 後に CPU が頁全体を書き換える。
 - **E-103（T1＋T2）**: 8×8 R8G8B8A8_UNORM texture を nearest／LOD 0／clamp で 32×32 RT へ描く fixture。PS・prog_data・texture layout・RSS・SAMPLER_STATE・変更 packet 語はすべて `tools/reftex.c`（固定 Mesa @ab691a1c: brw_compile_fs＋isl＋genxml gen120）が生成 → `src/drivers/gpu/i915/tex_fixture_gen.inc`。独立起動（`PARITY_TEX_TEST=1`）で **1024/1024 画素一致、texture・guard 無変更、request 完了、reset なし**。1 回目は generator の誤り（画素座標の内部命令を直書き → compiler が X/Y 導出コードを出さず UV が常に 0）で全画素 texel(0,0)。front-end 形（gl_FragCoord）に直し、compiler が要求する source depth／W・GRF start 4 を state に反映して合格。
 - 回帰 pin（GPU-free）: C1 batch FNV 5dfb47d3c10b0560、単色 draw batch FNV 241f478201bb3a81（実機 PASS bytes）。出典台帳 `../provenance-ledger.md`。
-- 次は T3（texture 更新、binding 切替、同一／新規 context の再描画）、その後に著作権・ライセンス整理と動作を変えないリファクタ。
+- **E-104（T3）**: `PARITY_T3_TEST=1`、1 起動 9 提出。texture A の内容更新、A↔B の binding 切替（binding table entry 1 の 1 dword だけが変わる）、同一 context の再描画、新規 context、別 context 後の旧 context。全 step 1024/1024、texture・guard 無変更、host 独立検証 9/9（`tools/eu_artifact.py verify-t3`）。vmunix f9731b24、ktest 383/0。
+- ここで機能追加を止め、著作権・ライセンス整理（入力: `../provenance-ledger.md`、`../license-inventory.md`）と動作を変えないリファクタへ。基準は `../regression-baseline.md`。
 
 ## 3. 現在地（コードの状態）
 
@@ -187,7 +188,7 @@ big-bang 期の自作ドライバ（`src/drivers/gpu/i915/*.c`、`selftest.c` �
 
 ## 10. 参照資料の索引
 
-- 台帳 [`../results-ws031.md`](../results-ws031.md)：E-5/E-6（3D パイプラインが実機で走る）、E-7〜E-13（PS ハング精密切り分け）、E-14〜E-18（compute 陽性対照 → EU 共通故障）、E-19〜E-21（indirect ctx WA）、E-22〜E-25（Linux 陽性対照）、E-26〜E-30（基盤監査・レジスタ diff・golden context）、E-31〜E-34（parity 方針・適合層）、E-38〜E-59（P0〜P2）、E-60〜E-90（時間基盤・DRM・P3〜P5）、E-91〜E-92（P6 GT・record_defaults 成功）、E-93（カーネル配置）、E-94〜E-96（verify_wa・migrate・P7）、E-97（EU 試験 HANG）、E-98（PDE 修正版再試験 HANG・MCR 読み戻し・PIPELINE_SELECT 誤り発見）、E-99（修正版 C1 実機 PASS）、E-100（C1 反復・次 request・新 context 6/6 PASS）、E-101（PS 描画 PASS）、E-102（描画反復・compute↔3D 切替）、E-103（テクスチャ描画 PASS）。
+- 台帳 [`../results-ws031.md`](../results-ws031.md)：E-5/E-6（3D パイプラインが実機で走る）、E-7〜E-13（PS ハング精密切り分け）、E-14〜E-18（compute 陽性対照 → EU 共通故障）、E-19〜E-21（indirect ctx WA）、E-22〜E-25（Linux 陽性対照）、E-26〜E-30（基盤監査・レジスタ diff・golden context）、E-31〜E-34（parity 方針・適合層）、E-38〜E-59（P0〜P2）、E-60〜E-90（時間基盤・DRM・P3〜P5）、E-91〜E-92（P6 GT・record_defaults 成功）、E-93（カーネル配置）、E-94〜E-96（verify_wa・migrate・P7）、E-97（EU 試験 HANG）、E-98（PDE 修正版再試験 HANG・MCR 読み戻し・PIPELINE_SELECT 誤り発見）、E-99（修正版 C1 実機 PASS）、E-100（C1 反復・次 request・新 context 6/6 PASS）、E-101（PS 描画 PASS）、E-102（描画反復・compute↔3D 切替）、E-103（テクスチャ描画 PASS）、E-104（T3 9/9 PASS、回帰基準の固定）。
 - 移植台帳 [`../linux-parity/ledger.md`](../linux-parity/ledger.md)：正本 revision の固定、関数単位の状態語（PORTED/VERIFIED/NOT_TAKEN）と根拠。
 - 前任専門家の指示書 [`expert-reports/gen12-ps-hang-report*.md`](expert-reports/)（1〜29）と進捗報告 `report_35..53.md`、`ws031-report-30..34.md`。**E-31 以降の方針（Linux-parity 移植）は report 30〜34 と gen12-ps-hang-report27〜29 に経緯がある。**
 - 設計メモ [`notes/`](notes/)：`compute-control-design.md`（C1 の全 DW）、`roadmap-to-eu-test.md`（P3→EU 試験の工程）、`plan-p5-nogem.md`、`plan-p6-gem-gt-init.md`、`hal-h-proposed-diff.md`。
