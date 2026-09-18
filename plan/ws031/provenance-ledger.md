@@ -93,3 +93,82 @@
 | 置き場所 | 区分 | 扱い |
 |---|---|---|
 | `parity/dp/dp_fixture_latitude5330.h`（DPCD 0x000／0x100／0x700 各 256 byte、EDID 128 byte の C 配列。generator `tools/gen_dp_fixture.py`、各 sha256 を記載） | 生成物（`display-ref/` の byte 写し）。対象機の panel（AUO B133HAN）から Linux i915 経由で読んだデータ | GPU-free 試験の入力と、実機取得値の**照合**にだけ使う（実 AUX 応答の代用にはしない）。**ライセンスと配布可否は未監査** |
+
+## 7. E-109（2026-09-19）: LCD-A 計算の取り込み、async power put、EU の negate bit
+
+固定参照の追加: `linux-reference/drm-v6.8.12/` に `drm_edid.h`（sha256 `e61def12761bc325265437b33e91a7c0cc99ef3f7c60a4265eadb112ff66759a`）と `drm_dp_helper.h`（`1969846dd3fdb5d7511319caf5f8e8481eacecad610fa429669450b9e5775b73`）。5 file の hash は同 directory の `SHA256SUMS`。`tools/check_generated.sh` が再生成して `src/` と byte 比較する（生成物の手編集・generator の未再実行・参照の変化を検出）。
+
+### 7.1 参照由来（元の表示を保持、`src/drivers/gpu/i915/parity/lcd/`、generator `tools/port_lcd_calc.py`、manifest `port_lcd_calc.manifest.json`）
+| zedBSD 側 | 区分 | 元 | 元の copyright／license | 備考 |
+|---|---|---|---|---|
+| `drm_edid_mode_port.c` | 生成物（keep-list: EDID_QUIRK_* の bit 定義、`drm_mode_do_interlace_quirk`、`drm_mode_detailed`） | upstream v6.8.12 `drivers/gpu/drm/drm_edid.c` | 複数の copyright 行＋MIT permission notice（原文保持。§6.1 の `drm_edid_port.c` と同じ元 file） | |
+| `edid_ref_types.h` | 生成物（構造体と bit 定義の text 抽出） | upstream v6.8.12 `include/drm/drm_edid.h` | 元 file 冒頭の copyright＋MIT permission notice をそのまま先頭に保持 | EDID block の layout |
+| `intel_link_port.c` | 生成物（keep-list） | Linux 6.8.12 `display/intel_dp.c`（5 関数）、`display/intel_display.c`（3 関数）、upstream v6.8.12 `drm_dp_helper.[ch]`（2 関数） | 先頭に `intel_dp.c` の表示（Copyright © 2008 Intel Corporation＋MIT permission notice、author 行）を保持。`intel_display.c` 分は MIT permission notice／Copyright © 2006-2007 Intel Corporation、`drm_dp_helper` 分は Keith Packard の HPND 系 notice（§6.1）で、**同一 file に 3 つの元が混在**することを生成 header に明記 | `drm_dp_helper` 由来 2 関数の notice 本文は同 file に無く参照だけ → **次の再生成で元ごとに file を分ける**（回帰済み source を変えないため今回は据置き）。**未監査** |
+| `intel_dpll_port.c` | 生成物（keep-list: `skl_wrpll_params`、DP combo PLL 表 2 本、`ehl_combo_pll_div_frac_wa_needed`、`icl_calc_dp_combo_pll`、`icl_calc_dpll_state`） | Linux 6.8.12 `display/intel_dpll_mgr.c` | Copyright © 2006-2016 Intel Corporation＋MIT permission notice（原文保持） | |
+| `lcd_ref_types.h` | 生成物（`struct intel_link_m_n`、`struct intel_dpll_hw_state`、M/N と DPLL_CFGCR の field macro の text 抽出） | `display/intel_display_types.h`、`display/intel_dpll_mgr.h`、`i915_reg.h` | 各元 file の MIT permission notice／Copyright Intel Corporation（抽出 file には出所を記載。**file ごとの表示の突合せは未監査**） | |
+
+### 7.2 改変・独立実装
+| ファイル／範囲 | 区分 | 元 | 備考 |
+|---|---|---|---|
+| `parity/power_domains.c` の async put 一式（`grab_async_put_ref`、`put_async`、`async_work`、`flush_work[_sync]`、`verify_async_put_domains_state`、domain use count） | **改変**（正本の関数構造と順序に沿って zedBSD の型へ書き直した手移植。既存 `power_domains.c` と同じ流儀） | Linux 6.8.12 `display/intel_display_power.c` | 元は `SPDX-License-Identifier: MIT`、Copyright © 2019 Intel Corporation。`power_domains.c` 自体の出典表示は既存 file の整理対象（§2「改変／独立実装が混在」）に含める |
+| `parity/backend_delayed.{c,h}`、`backend_sync.c` の `parity_kcancel_work`／`parity_kwork_is_pending` | 独立実装 | — | Linux の delayed_work の**契約**（queue／cancel／cancel_sync／flush の区別）に合わせた zedBSD 実装。`kernel/workqueue.c`（GPL-2.0-only）の本文は参照していない |
+| `parity/lcd/lcd_compat.h`、`parity_lcd_calc.{h,c}`、`parity_edid_mode_glue.inc`、`parity_dpll_glue.inc`、`parity/dp/edp_sync_ktest.c`、`plan/ws031/tests/lcd-host-test.c` | 独立実装 | — | EDID 1.4 の colour depth 欄の解釈は VESA E-EDID 1.4 の field 定義による。比較先の数値は `display-ref/`（対象機で Linux が設定した値） |
+| `vk/linux/eu-encoding-gen12.inc` の `EU_SRC0_NEGATE_BIT`=45、`EU_SRC1_NEGATE_BIT`=121 | 改変（定数 2 個の転記） | Mesa main @ab691a1c `src/intel/compiler/gen/xe.json`（SRC0_NEGATE [45]、SRC1_NEGATE [121]） | Mesa `src/intel`: MIT。値の照合であって本文の複製ではない |
+
+## 8. E-110（2026-09-19）: LCD 生成物の source 別分割、register 書込み関数、scanout、scalar IR
+
+固定参照の追加: `linux-reference/drm-v6.8.12/drm_modes.c`（hash は同 directory の `SHA256SUMS`。`check_generated.sh` が検査）。
+
+### 8.1 参照由来（`src/drivers/gpu/i915/parity/lcd/`、generator `tools/port_lcd_calc.py`）
+§7.1 の `intel_link_port.c` は 3 つの元が 1 file に混在していた。**E-110 で source file ごとに分割**し、各生成 file が中身の text の表示だけを持つようにした。
+| zedBSD 側 | 区分 | 元 | 元の copyright／license | 備考 |
+|---|---|---|---|---|
+| `intel_link_port.c` | 生成物（keep-list 5 関数: `intel_dp_link_symbol_size`／`_symbol_clock`／`intel_dp_link_required`／`intel_dp_effective_data_rate`／`intel_dp_max_data_rate`） | Linux 6.8.12 `display/intel_dp.c` のみ | 元 file 冒頭の表示を原文保持 | §7.1 の同名 file を置換 |
+| `intel_display_port.c` | 生成物（`intel_reduce_m_n_ratio`、`compute_m_n`、`intel_link_compute_m_n`、`intel_set_m_n`、`intel_cpu_transcoder_set_m1_n1`、`intel_set_transcoder_timings`、`intel_set_pipe_src_size`） | Linux 6.8.12 `display/intel_display.c` | 元 file 冒頭の表示を原文保持 | register 書込みは `lcd_compat.h` の emit hook 経由。末尾で `parity_display_emit_glue.inc`（zedBSD）を include |
+| `drm_dp_bw_port.c` | 生成物（`drm_dp_bw_channel_coding_efficiency`、inline `drm_dp_is_uhbr_rate`） | upstream v6.8.12 `drm_dp_helper.c`／`drm_dp_helper.h` | Keith Packard の HPND 系 notice（§6.1 と同じ。原文保持、**未監査**） | `static inline` → external の 1 置換を header に記録 |
+| `drm_modes_port.c` | 生成物（`drm_mode_set_crtcinfo`） | upstream v6.8.12 `drivers/gpu/drm/drm_modes.c` | 元 file 冒頭の複数 copyright 行＋permission notice を原文保持（**未監査**） | EXPORT_SYMBOL 行を除去 |
+| `lcd_trans_regs.h` | 生成物（`enum transcoder`、transcoder timing／PIPE_DATA・LINK M/N／TRANS_SET_CONTEXT_LATENCY の定義の text 抽出） | `display/intel_display_limits.h`（SPDX MIT）、`i915_reg.h`（MIT permission notice） | 抽出 file には出所を記載、完全な表示は `intel_display_port.c` 側 | |
+
+### 8.2 独立実装
+| ファイル／範囲 | 区分 | 備考 |
+|---|---|---|
+| `parity/gt_mem.{c,h}` の表示用窓（`parity_gt_display_*`、`parity_gt_ggtt_read_pte`） | 独立実装 | 数値の根拠（256 KiB 整列 = `intel_linear_alignment`、guard 168 = VT-d guard、max stride、linear は DPT 不使用 = `intel_fb_modifier_uses_dpt`）は正本の関数を**読んで得た値**で、本文の複製ではない。出所は `scanout.h` の comment に記載 |
+| `parity/lcd/scanout.{c,h}`、`scanout_ktest.{c,h}`、`lcd_pattern.{c,h}`、`lcd_hw_check.{c,h}`、`parity_display_emit_glue.inc`、`plan/ws031/tests/lcd-pattern-host.c` | 独立実装 | |
+| `vk/spirv.c`（全面書直し）、`vk/spirv.h`、`vk/compile.c`、`vk/eu.{c,h}` の `i915_vk_eu_grf_scalar`、`plan/ws031/tests/i915-vk-lower-test.c` | 独立実装 | SPIR-V の opcode／enumerant 番号は Khronos の公開仕様（SPIR-V 1.0 §3、GLSL.std.450）。Mesa の compiler 本文は参照していない。新しい hardware 定数の追加なし（region の `<0;1,0>` は既存 `.inc` の `EU_VSTRIDE_0`／`EU_WIDTH_1`／`EU_HSTRIDE_0`） |
+
+## 9. E-111（2026-09-19）: cpu transcoder の呼出し元、DDI／VRR の writer
+
+固定参照の追加（`drm-v6.8.12/`、hash は `SHA256SUMS`）: `drm_connector.h`、`drm_fourcc.h`、`drm_blend.h`、`drm_color_mgmt.h`、`uapi_drm_mode.h`（kernel.org stable v6.8.12、無改変）。
+
+| zedBSD 側（`parity/lcd/`） | 区分 | 元 | 元の copyright／license | 備考 |
+|---|---|---|---|---|
+| `intel_ddi_port.c` | 生成物（keep-list 7 関数） | Linux 6.8.12 `display/intel_ddi.c` | 元 file 冒頭の表示を原文保持 | 末尾で `parity_ddi_emit_glue.inc`（zedBSD）を include |
+| `intel_vrr_port.c` | 生成物（2 関数） | `display/intel_vrr.c` | 元 file 冒頭の表示（SPDX MIT＋Copyright 行）を原文保持 | |
+| `intel_display_port.c`（追加分 7 関数） | 生成物 | `display/intel_display.c` | §8.1 と同じ | |
+| `intel_link_port.c`（追加分 2 関数） | 生成物 | `display/intel_dp.c` | §8.1 と同じ | |
+| `lcd_ddi_types.h`、`lcd_ref_inlines.h`、`lcd_ddi_regs.h` | 生成物（enum／inline／register 定義の text 抽出） | `display/intel_display_limits.h`、`display/intel_display.h`、`display/intel_display_types.h`、`i915_reg.h` | MIT／Copyright Intel Corporation（抽出 file には出所を記載、完全な表示は `intel_ddi_port.c`／`intel_display_port.c` 側。**file ごとの突合せは未監査**） | |
+| `lcd_dp_msa.h` | 生成物（DP_MSA_MISC_* の text 抽出） | upstream v6.8.12 `include/drm/display/drm_dp.h` | 元 file 冒頭の notice を先頭に原文保持（未監査） | |
+| `lcd_drm_colorspace.h` | 生成物（enum drm_colorspace） | upstream v6.8.12 `include/drm/drm_connector.h` | 元 file 冒頭の notice（Copyright (c) 2016 Intel Corporation＋permission notice）を先頭に原文保持（未監査） | |
+| `parity_ddi_emit_glue.inc`、`lcd_compat.h` の追加分（`drm_atomic_crtc_needs_modeset` の 1 行、encoder／digital port の member、rmw hook） | 独立実装 | — | `drm_atomic_crtc_needs_modeset` は drm_atomic.h の契約（3 つの flag の OR）を自前で記述 | |
+
+## 10. E-112（2026-09-19）: universal plane の語
+
+固定参照の追加: `drm-v6.8.12/i915_drm.h`（kernel.org stable v6.8.12 `include/uapi/drm/i915_drm.h`、無改変、hash は `SHA256SUMS`）。
+
+| zedBSD 側（`parity/lcd/`） | 区分 | 元 | 元の copyright／license | 備考 |
+|---|---|---|---|---|
+| `skl_plane_port.c` | 生成物（keep-list 27 関数） | Linux 6.8.12 `display/skl_universal_plane.c` | 元 file 冒頭の表示（SPDX MIT＋Copyright 行）を原文保持 | 末尾で `parity_plane_emit_glue.inc`（zedBSD）を include |
+| `lcd_plane_regs.h`、`lcd_plane_types.h` | 生成物（text 抽出） | `i915_reg.h`、`display/intel_display_limits.h` | MIT／Copyright Intel Corporation（抽出 file に出所、完全な表示は `intel_ddi_port.c`／`skl_plane_port.c` 側。未監査） | |
+| `lcd_psr_selfetch_regs.h` | 生成物（text 抽出） | `display/intel_psr_regs.h` | 元 file 冒頭の表示を先頭に原文保持 | |
+| `lcd_i915_colorkey.h` | 生成物（構造体 1＋define 2 の text 抽出） | upstream v6.8.12 `include/uapi/drm/i915_drm.h` | 元 file 冒頭の notice（Copyright 2003 Tungsten Graphics＋permission notice）を先頭に原文保持（未監査） | |
+| `lcd_drm_fourcc.h` | 生成物（**file 全体**、`#include "drm.h"` の 1 行だけ除去） | upstream v6.8.12 `include/uapi/drm/drm_fourcc.h` | 元 file の notice がそのまま先頭に残る（Copyright 2011 Intel Corporation＋permission notice） | 置換は manifest の `substitutions` に記録 |
+| `lcd_drm_plane_defs.h` | 生成物（3 file からの text 抽出） | upstream v6.8.12 `include/drm/drm_blend.h`、`include/uapi/drm/drm_mode.h`、`include/drm/drm_color_mgmt.h` | **3 つの元が 1 file に混在**。各元の notice は固定参照 directory に無改変で保持し、抽出 file には出所と hash を記載。file 分割と notice の転記は次の再生成で行う（**未監査・要整理**） | DRM_MODE_BLEND_*、ROTATE／REFLECT、colour enum、`drm_rotation_90_or_270` |
+| `lcd_plane_compat.h`、`parity_plane_emit_glue.inc`、`parity_lcd_calc.c` の step 記録 | 独立実装 | — | — | |
+
+## 11. E-113（2026-09-19）: enable 列の呼出し元
+
+| zedBSD 側（`parity/lcd/`） | 区分 | 元 | 備考 |
+|---|---|---|---|
+| `intel_display_port.c`（追加: `hsw_crtc_enable`） | 生成物 | Linux 6.8.12 `display/intel_display.c` | notice は §8.1 と同じ |
+| `intel_ddi_port.c`（追加 7 関数: `intel_ddi_config_transcoder_func`、`tgl_ddi_pre_enable_dp`、`intel_ddi_pre_enable_dp`、`intel_ddi_pre_enable`、`intel_enable_ddi_dp`、`intel_enable_ddi`、`intel_ddi_pre_pll_enable`） | 生成物 | `display/intel_ddi.c` | notice は §9 と同じ |
+| `lcd_seq_compat.h`、glue の dispatcher（`intel_encoders_*`）と hook の束ね | 独立実装 | — | callee の**名前**だけを step として記録（本文は取り込んでいない）。hook の対応は `intel_ddi_init()` の代入を読んで合わせた |

@@ -19,6 +19,7 @@
 #include "drm_device.h"
 #include "bios.h"
 #include "dp/parity_dp_kernel.h"
+#include "lcd/lcd_hw_check.h"
 #include "vga.h"
 #include "power_domains.h"
 #include "cdclk.h"
@@ -144,6 +145,7 @@ drv_i915_parity_attach(struct i915_device *device, enum parity_stage stop_after,
 	static struct parity_pmdemand pmdemand;
 	static struct parity_cdclk_dev cdclk;
 	static struct parity_pw_ctx pwc;
+	static struct parity_edp_device edp_dev;    /* the resident panel: outlives setup_outputs, released in teardown */
 	static struct parity_display_core dcore;
 	static struct parity_dmc_dev dmc_dev;
 	static struct parity_display_state dstate;
@@ -1223,6 +1225,10 @@ drv_i915_parity_attach(struct i915_device *device, enum parity_stage stop_after,
 	{
 		unsigned ei;
 
+		/* the eDP connector is built HERE, inside intel_ddi_init, as the reference does */
+		parity_edp_device_prepare(&edp_dev, &mmio, &power_domains, &pwc, &vbt_state);
+		nogem.dp_connector_init = parity_edp_device_init_connector;
+		nogem.dp_connector_ctx = &edp_dev;
 		parity_intel_setup_outputs(&nogem, (int)display_ver,
 			(1u << 0) | (1u << 1) | (1u << 3) | (1u << 4) |
 			(1u << 5) | (1u << 6),   /* ADL-P port_mask: A,B,TC1..TC4 */
@@ -1700,11 +1706,15 @@ p6_fw_out:
 	/*
 	 * Display test configuration: one real AUX acquisition from the eDP panel (PPS /
 	 * VDD, DPCD, EDID) and its stop path.  No GPU submission happens in this mode.
-	 * Position differs from the reference, which does this inside intel_setup_outputs()
-	 * (intel_edp_init_connector); it moves there with the resident device.
+	 * The acquisition itself now happens in intel_setup_outputs() (the reference's place);
+	 * this only examines the resident panel and exercises the delayed VDD-off.
 	 */
-	if (PARITY_AUX_TEST)
-		(void)parity_edp_aux_test_run(&mmio, &power_domains, &pwc, &vbt_state);
+	if (PARITY_AUX_TEST) {
+		(void)parity_edp_aux_test_run(&edp_dev);
+		/* the scanout buffer next to the live GT resources; nothing is scanned out yet */
+		if (gtmem_inited)
+			(void)parity_lcd_scanout_hw_check(&gtmem);
+	}
 
 	if (PARITY_T3_TEST || PARITY_BL_TEST) {
 		const char *t3tag = PARITY_BL_TEST ? "BL" : "T3";
@@ -2249,6 +2259,8 @@ teardown:
 			"(pte_writes=%u live=%u)\n", gtmem.pte_writes, gtmem.objects_live);
 	}
 	if (nogem_inited) {
+		/* encoder destroy: intel_pps_vdd_off_sync() + the power layer's flush, before the records go */
+		parity_edp_device_fini(&edp_dev);
 		parity_intel_display_nogem_fini(&nogem);
 		kern_logf("i915: parity teardown: display-nogem fini (crtc/plane/dpll records released)\n");
 	}

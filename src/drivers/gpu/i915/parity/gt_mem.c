@@ -98,8 +98,16 @@ parity_gt_mem_fini(struct parity_gt_mem *gm)
 		return;
 	/* Release in reverse: unbind first so no live PTE names a freed page. */
 	for (i = PARITY_GT_MAX_OBJECTS; i-- > 0u; ) {
-		if (gm->objects[i].in_use)
-			parity_gt_object_destroy(gm, &gm->objects[i]);
+		if (!gm->objects[i].in_use)
+			continue;
+		if (gm->objects[i].keep) {
+			/* the display could not be shown to have stopped reading it: leaking is the safe side */
+			gm->kept_objects++;
+			kern_logf("i915: parity gt_mem: object at GGTT 0x%llx (%u pages) NOT released: still owned by the display\n",
+				(unsigned long long)gm->objects[i].ggtt_offset, gm->objects[i].pages);
+			continue;
+		}
+		parity_gt_object_destroy(gm, &gm->objects[i]);
 	}
 	gm->inited = 0;
 }
@@ -189,7 +197,9 @@ parity_gt_object_destroy(struct parity_gt_mem *gm, struct parity_gt_object *o)
 {
 	if (gm == 0 || o == 0 || !o->in_use)
 		return;
-	if (o->bound)
+	if (o->bound && o->display)
+		parity_gt_display_unbind(gm, o);
+	else if (o->bound)
 		parity_gt_ggtt_unbind(gm, o);
 	if (o->vec != 0)
 		(void)drv_dma_vector_free(o->vec);
@@ -371,6 +381,10 @@ parity_gt_ggtt_unbind(struct parity_gt_mem *gm, struct parity_gt_object *o)
 
 	if (gm == 0 || o == 0 || !o->bound)
 		return;
+	if (o->display) {
+		parity_gt_display_unbind(gm, o);
+		return;
+	}
 	first = o->ggtt_page - gm->window_first;
 	for (p = 0u; p < o->pages; p++)
 		ggtt_write_pte(gm, o->ggtt_page + p, gm->scratch_pte);
@@ -379,6 +393,165 @@ parity_gt_ggtt_unbind(struct parity_gt_mem *gm, struct parity_gt_object *o)
 		window_set(gm, first + p, 0);
 	gm->allocated_pages -= o->pages;
 	o->bound = 0;
+	o->ggtt_page = 0u;
+	o->ggtt_offset = 0u;
+}
+
+/* --- display window -------------------------------------------------------- */
+
+uint64_t
+parity_gt_ggtt_read_pte(const struct parity_gt_mem *gm, unsigned index)
+{
+	if (gm == 0 || index >= gm->entries)
+		return 0;
+	/* the same access width the writes use: the PTE table is a 64-bit register window */
+	return kern_mmio_read64((volatile void *)(gm->table + (size_t)index * 8u));
+}
+
+int
+parity_gt_display_window_init(struct parity_gt_mem *gm, unsigned pages)
+{
+	unsigned i;
+
+	if (gm == 0 || !gm->inited || pages == 0u || pages > PARITY_GT_DISPLAY_PAGES ||
+	    (pages % 32u) != 0u)
+		return -EINVAL;
+	if (gm->display_pages != 0u)
+		return -EBUSY;
+	/* below the GT window, and never reaching the bottom of the table */
+	if (gm->window_first <= pages)
+		return -ENOSPC;
+	gm->display_first = gm->window_first - pages;
+	gm->display_pages = pages;
+	for (i = 0u; i < PARITY_GT_DISPLAY_WORDS; i++)
+		gm->display_bitmap[i] = 0u;
+	gm->display_allocated_pages = 0u;
+	return 0;
+}
+
+static int
+display_bit(const struct parity_gt_mem *gm, unsigned page)
+{
+	return (int)((gm->display_bitmap[page / 32u] >> (page % 32u)) & 1u);
+}
+
+static void
+display_set(struct parity_gt_mem *gm, unsigned first, unsigned pages, int used)
+{
+	unsigned i;
+
+	for (i = first; i < first + pages; i++) {
+		if (used)
+			gm->display_bitmap[i / 32u] |= (uint32_t)1u << (i % 32u);
+		else
+			gm->display_bitmap[i / 32u] &= ~((uint32_t)1u << (i % 32u));
+	}
+}
+
+int
+parity_gt_display_bind(struct parity_gt_mem *gm, struct parity_gt_object *o,
+	unsigned align_pages, unsigned guard_pages)
+{
+	unsigned start = 0u, p, span;
+	int rc;
+
+	if (gm == 0 || !gm->inited || o == 0 || !o->in_use || gm->display_pages == 0u ||
+	    align_pages == 0u || (align_pages & (align_pages - 1u)) != 0u)
+		return -EINVAL;
+	if (o->bound)
+		return -EBUSY;
+	span = guard_pages + o->pages + guard_pages;
+	if (span > gm->display_pages)
+		return -ENOSPC;
+
+	/*
+	 * First fit for [guard | object | guard] with the OBJECT's absolute GGTT page
+	 * aligned -- the alignment is a property of the address the plane is given,
+	 * not of the window-relative index.
+	 */
+	{
+		unsigned obj_abs = (gm->display_first + guard_pages + align_pages - 1u) & ~(align_pages - 1u);
+		int found = 0;
+
+		for (; obj_abs + o->pages + guard_pages <= gm->display_first + gm->display_pages;
+		     obj_abs += align_pages) {
+			unsigned i, clash = 0u;
+
+			start = obj_abs - guard_pages - gm->display_first;
+			for (i = start; i < start + span; i++) {
+				if (display_bit(gm, i)) {
+					clash = 1u;
+					break;
+				}
+			}
+			if (!clash) {
+				found = 1;
+				break;
+			}
+		}
+		if (!found) {
+			gm->ggtt_alloc_fail++;
+			return -ENOSPC;
+		}
+	}
+
+	/* encode every page BEFORE touching a PTE: a buffer that cannot be mapped changes nothing */
+	for (p = 0u; p < o->pages; p++) {
+		uint64_t dma = 0, pte = 0;
+
+		rc = parity_gt_object_page_dma(o, p, &dma);
+		if (rc != 0)
+			return rc;
+		if (!parity_ggtt_pte_encode(osdep_dma_addr(dma), (uint64_t)PARITY_GT_PAGE_BYTES,
+				gm->dma_mask, &pte))
+			return -ERANGE;
+	}
+
+	display_set(gm, start, span, 1);
+	gm->display_allocated_pages += span;
+	for (p = 0u; p < guard_pages; p++) {
+		ggtt_write_pte(gm, gm->display_first + start + p, gm->scratch_pte);
+		ggtt_write_pte(gm, gm->display_first + start + guard_pages + o->pages + p, gm->scratch_pte);
+		gm->display_pte_writes += 2u;
+	}
+	for (p = 0u; p < o->pages; p++) {
+		uint64_t dma = 0, pte = 0;
+
+		(void)parity_gt_object_page_dma(o, p, &dma);
+		(void)parity_ggtt_pte_encode(osdep_dma_addr(dma), (uint64_t)PARITY_GT_PAGE_BYTES,
+			gm->dma_mask, &pte);
+		ggtt_write_pte(gm, gm->display_first + start + guard_pages + p, pte);
+		gm->display_pte_writes++;
+	}
+	parity_gt_ggtt_flush(gm);
+
+	o->ggtt_page = gm->display_first + start + guard_pages;
+	o->ggtt_offset = (uint64_t)o->ggtt_page * PARITY_GT_PAGE_BYTES;
+	o->display = 1;
+	o->display_guard = guard_pages;
+	o->bound = 1;
+	return 0;
+}
+
+void
+parity_gt_display_unbind(struct parity_gt_mem *gm, struct parity_gt_object *o)
+{
+	unsigned first, span, p;
+
+	if (gm == 0 || o == 0 || !o->bound || !o->display)
+		return;
+	first = o->ggtt_page - o->display_guard - gm->display_first;
+	span = o->display_guard + o->pages + o->display_guard;
+	for (p = 0u; p < o->pages; p++) {
+		ggtt_write_pte(gm, o->ggtt_page + p, gm->scratch_pte);
+		gm->display_pte_writes++;
+	}
+	parity_gt_ggtt_flush(gm);
+	display_set(gm, first, span, 0);
+	gm->display_allocated_pages -= span;
+	o->bound = 0;
+	o->display = 0;
+	o->display_guard = 0u;
 	o->ggtt_page = 0u;
 	o->ggtt_offset = 0u;
 }

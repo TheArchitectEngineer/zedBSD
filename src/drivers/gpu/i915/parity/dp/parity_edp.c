@@ -65,8 +65,8 @@ void parity_dp_sleep_us(unsigned us)
 
 	if (env == 0)
 		return;
-	env->sleeps++;
-	env->slept_us += us;
+	(void)__atomic_add_fetch(&env->sleeps, 1u, __ATOMIC_SEQ_CST);      /* the worker thread sleeps too */
+	(void)__atomic_add_fetch(&env->slept_us, (uint64_t)us, __ATOMIC_SEQ_CST);
 	env->sleep_us(env->ctx, us);
 }
 
@@ -92,7 +92,7 @@ intel_wakeref_t parity_dp_power_get(struct drm_i915_private *i915, int domain)
 		parity_vbt_log(PARITY_VBT_LOG_ERR, "display power get failed\n");
 		return -1;
 	}
-	env->power_refs[power_slot(domain)]++;
+	(void)__atomic_add_fetch(&env->power_refs[power_slot(domain)], 1, __ATOMIC_SEQ_CST);
 	return 1;
 }
 
@@ -107,8 +107,64 @@ void parity_dp_power_put(struct drm_i915_private *i915, int domain, intel_wakere
 		parity_vbt_log(PARITY_VBT_LOG_ERR, "display power put without a reference\n");
 		return;
 	}
-	env->power_refs[power_slot(domain)]--;
+	(void)__atomic_sub_fetch(&env->power_refs[power_slot(domain)], 1, __ATOMIC_SEQ_CST);
 	env->power_put(env->ctx, domain);
+}
+
+void parity_dp_power_put_async(struct drm_i915_private *i915, int domain, intel_wakeref_t wakeref)
+{
+	struct parity_dp_env *env = i915->dp_env;
+
+	if (wakeref <= 0)
+		return;
+	if (env->power_refs[power_slot(domain)] <= 0) {
+		env->power_put_underflows++;
+		parity_vbt_log(PARITY_VBT_LOG_ERR, "display power put_async without a reference\n");
+		return;
+	}
+	/* ownership moves to the power layer here (parked, grabbed back by a get, or released later) */
+	(void)__atomic_sub_fetch(&env->power_refs[power_slot(domain)], 1, __ATOMIC_SEQ_CST);
+	(void)__atomic_add_fetch(&env->async_puts, 1u, __ATOMIC_SEQ_CST);
+	env->power_put_async(env->ctx, domain);
+}
+
+void parity_dp_mutex_lock(struct parity_dp_mutex *m, const char *name)
+{
+	if (m->env != 0)
+		m->env->lock(m->env->ctx, m->id);       /* blocks: the real exclusion */
+	if (m->held) {
+		if (m->env != 0)
+			m->env->lock_errors++;
+		parity_vbt_log(PARITY_VBT_LOG_ERR, "mutex %s: taken while marked held\n", name);
+	}
+	m->held = 1;
+	m->acquisitions++;
+}
+
+void parity_dp_mutex_unlock(struct parity_dp_mutex *m, const char *name)
+{
+	if (!m->held) {
+		if (m->env != 0)
+			m->env->lock_errors++;
+		parity_vbt_log(PARITY_VBT_LOG_ERR, "mutex %s: unlock while free\n", name);
+	}
+	m->held = 0;
+	if (m->env != 0)
+		m->env->unlock(m->env->ctx, m->id);
+}
+
+bool parity_dp_delayed_queue(struct delayed_work *dw, unsigned long delay_ms)
+{
+	struct parity_dp_env *env = parity_dp_env_current();
+
+	return env != 0 && env->delayed_queue(env->ctx, dw->slot, (unsigned)delay_ms) != 0;
+}
+
+bool parity_dp_delayed_cancel(struct delayed_work *dw, int sync)
+{
+	struct parity_dp_env *env = parity_dp_env_current();
+
+	return env != 0 && env->delayed_cancel(env->ctx, dw->slot, sync) != 0;
 }
 
 /* ---- helpers ---- */
@@ -136,7 +192,7 @@ static void snapshot_ownership(struct parity_edp_result *res)
 	res->vdd_wanted = intel_dp->pps.want_panel_vdd;
 	res->vdd_on_hw = (intel_de_read(dev_priv, PP_CONTROL(idx)) & EDP_FORCE_VDD) != 0;
 	res->vdd_wakeref_held = intel_dp->pps.vdd_wakeref != 0;
-	res->vdd_work_pending = intel_dp->pps.panel_vdd_work.pending;
+	res->vdd_work_pending = edp.env->delayed_pending(edp.env->ctx, PARITY_DP_WORK_VDD_OFF);
 	res->power_refs_core = edp.env->power_refs[0];
 	res->power_refs_aux = edp.env->power_refs[1];
 	res->power_get_failures = edp.env->power_get_failures;
@@ -192,12 +248,16 @@ int parity_edp_begin(struct parity_dp_env *env, const struct parity_edp_config *
 	env->power_refs[0] = env->power_refs[1] = 0;
 	env->power_get_failures = env->power_put_underflows = 0;
 	env->sleeps = 0;
+	env->lock_errors = 0;
+	env->async_puts = 0;
 	env->slept_us = 0;
 	edp.t0_ms = env->now_ms(env->ctx);
 
 	edp.i915.dp_env = env;
 	edp.i915.display.pps.mmio_base = PCH_PPS_BASE;      /* intel_pps_setup(): HAS_PCH_SPLIT */
 	mutex_init(&edp.i915.display.pps.mutex);
+	edp.i915.display.pps.mutex.env = env;
+	edp.i915.display.pps.mutex.id = PARITY_DP_LOCK_PPS;
 	edp.i915.display_runtime.rawclk_freq = cfg->rawclk_khz;
 	edp.dig_port.i915 = &edp.i915;
 	edp.dig_port.base.base.dev = &edp.i915.drm;
@@ -212,6 +272,8 @@ int parity_edp_begin(struct parity_dp_env *env, const struct parity_edp_config *
 	edp.connector.panel.vbt.backlight.controller = -1;  /* intel_panel_init_alloc() */
 	apply_panel_vbt(cfg);
 	parity_intel_dp_aux_init(intel_dp);
+	intel_dp->aux.hw_mutex.env = env;
+	intel_dp->aux.hw_mutex.id = PARITY_DP_LOCK_AUX;
 
 	read_pps_regs(&res->before);
 
@@ -280,18 +342,20 @@ int parity_edp_init_late(const struct parity_edp_config *final_cfg, struct parit
 	return 0;
 }
 
-int parity_edp_run_due_work(struct parity_edp_result *res)
+void parity_edp_work_run(int which)
 {
 	struct delayed_work *dw = &edp.dig_port.dp.pps.panel_vdd_work;
 
-	if (!edp.live || !dw->pending || parity_dp_now_ms() < dw->due_ms)
-		return 0;
-	dw->pending = 0;
-	dw->ran++;
+	/* a body that was already dequeued when the eDP ended finds nothing live */
+	if (!edp.live || which != PARITY_DP_WORK_VDD_OFF || dw->fn == 0)
+		return;
 	dw->fn(&dw->work);
-	if (res != 0)
+}
+
+void parity_edp_snapshot(struct parity_edp_result *res)
+{
+	if (edp.live && res != 0)
 		snapshot_ownership(res);
-	return 1;
 }
 
 int parity_edp_end(struct parity_edp_result *res)
@@ -304,10 +368,10 @@ int parity_edp_end(struct parity_edp_result *res)
 	/* intel_dp_encoder_flush_work() / shutdown: cancel the worker, force VDD off, return the reference */
 	intel_pps_vdd_off_sync(intel_dp);
 
-	clean = !intel_dp->pps.panel_vdd_work.pending && intel_dp->pps.vdd_wakeref == 0 &&
+	clean = !edp.env->delayed_pending(edp.env->ctx, PARITY_DP_WORK_VDD_OFF) && intel_dp->pps.vdd_wakeref == 0 &&
 		edp.env->power_refs[0] == 0 && edp.env->power_refs[1] == 0 &&
 		!edp.i915.display.pps.mutex.held && !intel_dp->aux.hw_mutex.held &&
-		edp.env->power_put_underflows == 0;
+		edp.env->power_put_underflows == 0 && edp.env->lock_errors == 0;
 	if (res != 0) {
 		read_pps_regs(&res->after_end);
 		snapshot_ownership(res);

@@ -18,8 +18,11 @@
 #define PARITY_DP_COMPAT_H
 
 /* struct drm_i915_private is shared with the VBT port's compat header; the DP side adds members. */
+struct parity_dp_env;
+/* a lock of the env (PARITY_DP_LOCK_*); `held` serves the reference's lockdep assertions */
+struct parity_dp_mutex { int held; unsigned acquisitions; struct parity_dp_env *env; int id; };
 #define PARITY_I915_EXTRA_DISPLAY_MEMBERS \
-	struct { struct parity_dp_mutex_s { int held; unsigned acquisitions; } mutex; u32 mmio_base; } pps;
+	struct { struct parity_dp_mutex mutex; unsigned mmio_base; } pps;
 #define PARITY_I915_EXTRA_MEMBERS \
 	struct parity_dp_env *dp_env; \
 	struct { u32 rawclk_freq; } display_runtime; \
@@ -170,56 +173,39 @@ intel_wakeref_t parity_dp_power_get(struct drm_i915_private *i915, int domain);
 void parity_dp_power_put(struct drm_i915_private *i915, int domain, intel_wakeref_t wakeref);
 #define intel_display_power_get(i915, d) parity_dp_power_get(i915, d)
 #define intel_display_power_put(i915, d, w) parity_dp_power_put(i915, d, w)
-/* the reference drops the AUX reference 100 ms later from a worker; here it is dropped at once */
-#define intel_display_power_put_async(i915, d, w) parity_dp_power_put(i915, d, w)
+void parity_dp_power_put_async(struct drm_i915_private *i915, int domain, intel_wakeref_t wakeref);
+#define intel_display_power_put_async(i915, d, w) parity_dp_power_put_async(i915, d, w)
 
 /*
- * The PPS / AUX mutexes.  Everything runs on the attaching thread today (the
- * delayed VDD-off worker is driven explicitly, see below), so this is an
- * ownership ASSERTION, not mutual exclusion; it becomes a kernel mutex when the
- * device turns resident and a real worker exists.
+ * The PPS mutex and the AUX hardware mutex: the env's real locks.  The order is the
+ * reference's own (its helpers are unmodified): intel_pps_lock() takes the DISPLAY_CORE power
+ * reference, then the PPS mutex; power references taken inside (VDD) nest under it; the AUX
+ * hardware mutex of drm_dp_dpcd_access() is outermost around a transfer.
  */
-struct mutex_parity { int held; unsigned acquisitions; };
-#define mutex_lock(m) do { if ((m)->held) parity_vbt_log(PARITY_VBT_LOG_ERR, "mutex %s: recursive lock\n", #m); (m)->held = 1; (m)->acquisitions++; } while (0)
-#define mutex_unlock(m) do { if (!(m)->held) parity_vbt_log(PARITY_VBT_LOG_ERR, "mutex %s: unlock while free\n", #m); (m)->held = 0; } while (0)
+void parity_dp_mutex_lock(struct parity_dp_mutex *m, const char *name);
+void parity_dp_mutex_unlock(struct parity_dp_mutex *m, const char *name);
+#define mutex_lock(m) parity_dp_mutex_lock((m), #m)
+#define mutex_unlock(m) parity_dp_mutex_unlock((m), #m)
 #define mutex_init(m) do { (m)->held = 0; (m)->acquisitions = 0; } while (0)
 
 /*
- * Delayed work: the contract of INIT_DELAYED_WORK / queue / cancel.  Queuing
- * records the deadline; parity_dp_run_due_work() runs it once due.  There is
- * no timer behind it yet: a stop path must cancel-sync (the reference's
- * intel_pps_vdd_off_sync does) and that is what the eDP teardown calls.
+ * Delayed work: the contract of INIT_DELAYED_WORK / queue / cancel / cancel_sync, carried
+ * by the env's backend (a timer + worker thread on the real GPU, the model's clock in the
+ * GPU-free tests).  The body runs through parity_edp_work_run().
  */
 struct work_struct { int unused; };
 struct delayed_work {
 	struct work_struct work;
 	void (*fn)(struct work_struct *);
-	int pending;
-	u64 due_ms;
-	unsigned queued, cancelled, ran;
+	int slot;                               /* PARITY_DP_WORK_* */
 };
 #define to_delayed_work(w) container_of(w, struct delayed_work, work)
 #define INIT_DELAYED_WORK(dw, func) do { memset((dw), 0, sizeof(*(dw))); (dw)->fn = (func); } while (0)
-static inline bool cancel_delayed_work(struct delayed_work *dw)
-{
-	bool was = dw->pending != 0;
-
-	if (was)
-		dw->cancelled++;
-	dw->pending = 0;
-	return was;
-}
-#define cancel_delayed_work_sync(dw) cancel_delayed_work(dw)
-static inline bool queue_delayed_work(void *wq, struct delayed_work *dw, unsigned long delay)
-{
-	(void)wq;
-	if (dw->pending)
-		return false;
-	dw->pending = 1;
-	dw->due_ms = parity_dp_now_ms() + delay;
-	dw->queued++;
-	return true;
-}
+bool parity_dp_delayed_cancel(struct delayed_work *dw, int sync);
+bool parity_dp_delayed_queue(struct delayed_work *dw, unsigned long delay_ms);
+#define cancel_delayed_work(dw) parity_dp_delayed_cancel((dw), 0)
+#define cancel_delayed_work_sync(dw) parity_dp_delayed_cancel((dw), 1)
+#define queue_delayed_work(wq, dw, delay) parity_dp_delayed_queue((dw), (delay))
 
 /* CPU latency QoS: no CPU idle states are entered while the attaching thread polls */
 struct pm_qos_request { int unused; };
@@ -258,7 +244,7 @@ struct drm_dp_aux {
 	const char *name;
 	struct i2c_adapter ddc;
 	struct drm_device *drm_dev;
-	struct mutex_parity hw_mutex;
+	struct parity_dp_mutex hw_mutex;
 	ssize_t (*transfer)(struct drm_dp_aux *aux, struct drm_dp_aux_msg *msg);
 	unsigned i2c_nack_count;
 	unsigned i2c_defer_count;

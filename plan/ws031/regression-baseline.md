@@ -37,11 +37,21 @@
 
 | flag | 内容 | 合格行 |
 |---|---|---|
-| `-DPARITY_AUX_TEST=1`（明示 VBT も要求する） | eDP の PPS 初期化 → VDD → 実 AUX で DPCD／EDID → late init → 停止（VDD off、参照返却） | `AUX-TEST verdict: PASS (acquire=0 late=0 end=0 dpcd_match=1 edp_dpcd_match=1 edid_match=1 wells_balanced=1)` と `runner-result … probe=COMPLETE … cleanup=1` |
+| `-DPARITY_AUX_TEST=1`（明示 VBT も要求する） | E-109 以降: eDP 取得は `setup_outputs` 内（常駐）。診断 = 保持結果の照合＋LCD-A 照合＋遅延 VDD-off の自動実行＋期限前の再取得＋予約を残したまま停止 | `AUX-TEST verdict: PASS (resident=1 dpcd_match=1 edp_dpcd_match=1 edid_match=1 lcd_a_match=1 auto_off=1 reacquire_kept=1 reacquire_off=1 …)`、`edp fini: end_rc=0 vdd_hw=0 … refs core=0 aux=0 lock_errors=0 … state_errors=0 use_count_errors=0`、`runner-result … probe=COMPLETE … cleanup=1`（E-108 の合格行は `acquire=0 late=0 end=0 … wells_balanced=1`） |
+| `-DPARITY_TEX_TEST=1 -DPARITY_VBT_EXPLICIT=1`（組合せ確認、E-109） | 明示 VBT＋常駐 eDP のまま textured draw（表示 worker と GT 投入の並行） | TEX の合格行＋`edp fini` 行 |
+| `-DPARITY_AUX_TEST=1`（E-110 で追加された後半） | AUX 診断の後に scanout 確認: 表示用窓の確保 → 1920×1080 XRGB8888 を 256 KiB 整列で pin → pattern（id 110）を CPU で描画 → PTE 2025＋guard 168 と内容を読戻し → 解放して scratch へ復帰。**表示 engine の register には触れない** | `SCANOUT-TEST verdict: PASS (unpin=0 destroy=0 ptes_back_to_scratch_bad=0 display_pages_in_use=0 gt_window_ptes_changed=0 …)`、`SCANOUT-TEST check: pte_bad=0/2025 guard_bad=0/168 … fnv=ce63f20b23f91f85 (pinned ce63f20b23f91f85) readback_bad=0` |
+
+**E-110 の現ソース回帰（2026-09-19）**: **8/8 PASS**。EU-REPEAT rounds=5 passed=5／DRAW 1024/1024／R1 12/12／TEX 1024/1024／T3 9/9／BL 4/4／明示 VBT×TEX 1024/1024（`edp fini` refs core=0 aux=0 lock_errors=0、VDD-off worker fired=1）／AUX-TEST PASS＋SCANOUT-TEST PASS。全て ktest 449/0、`probe=COMPLETE cleanup=1`、`DC state mismatch` 0 件、P1 reset 周りの既知行（workaround lost 1、MODE_IDLE timeout 3）は E-109 と同数（`handover/increment-results/e110-run-parity-hw-*.log`、道具 `handover/tools/sweep_e110.sh`）。GPU-free ktest は **449 checks**（E-110 で +16: `scanout:` 15、`lcd: LCD-A-WORDS` 1）。host 試験: `run-lcd-host-test.sh` 25/0、`run-vk-host-tests.sh` **10 fixture**（+`lower`）、`lcd-pattern-host.c`（pattern の hash 固定）。
+
+**E-111（2026-09-19）**: `-DPARITY_AUX_TEST=1` の `lcd_a_match` は cpu transcoder 17 操作と DDI 語（`TRANS_DDI_FUNC_CTL` = 0x8a210002）も含む。GPU-free ktest **451 checks**、`run-lcd-host-test.sh` 42/0。実機 `e111-run-parity-hw-aux.log`（AUX／SCANOUT とも PASS）。他 7 モードは E-110 の sweep が最新（E-111 の変更は `parity/lcd`・`parity/dp` の計算と log だけ）。
+
+**E-112（2026-09-19）**: `SCANOUT-TEST verdict` の合格条件に「実 buffer に対する plane 語が Linux dump と一致」（`SCANOUT-TEST plane words … match=1`）を追加。GPU-free ktest **452 checks**、`run-lcd-host-test.sh` 56/0。実機 `e112-run-parity-hw-aux.log`。
+
+**E-113（2026-09-19）**: GPU-free ktest **453 checks**（+1 `LCD-A-ENABLE-SEQ`）、`run-lcd-host-test.sh` 67/0。実機 `e113-run-parity-hw-aux.log`（AUX／SCANOUT PASS）。
 
 **E-108 の現ソース回帰（2026-09-19）**: 6 モード（EU／DRAW／R1／TEX／T3／BL）を同一ソースで 6/6 PASS（`handover/increment-results/e108-run-parity-hw-*.log`、道具 `sweep` は台帳 E-108 §5）。
 
-GPU-free ktest は 407 checks（E-107 で +8 = VBT、E-108 で +14 = eDP）。host 試験: `plan/ws031/tests/vbt-host-test.c`（19/0）、`sh plan/ws031/tests/run-dp-host-test.sh`（63/0）、`sh plan/ws031/tests/run-vk-host-tests.sh`（9 fixture）。
+GPU-free ktest は 433 checks（E-109 で +26: `dwork:` 7、`pw-async:` 8、`edp-sync:` 8、`lcd:` 3。実 thread を使うので約 8 秒長い）。以前は 407 checks（E-107 で +8 = VBT、E-108 で +14 = eDP）。host 試験: `plan/ws031/tests/vbt-host-test.c`（19/0）、`sh plan/ws031/tests/run-dp-host-test.sh`（63/0）、`sh plan/ws031/tests/run-vk-host-tests.sh`（9 fixture）。
 
 ## 2. pin した入力（FNV-1a 64、提出 object から計算）
 

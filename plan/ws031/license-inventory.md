@@ -19,11 +19,13 @@
 | `src/drivers/gpu/i915/linux/i915-workarounds.inc` | 138 | Zlib | Copyright (C) 2026 Awe Morris | 4 | 5 | - | yes |
 | `src/drivers/gpu/i915/lrc.c` | 537 | Zlib | Copyright (C) 2026 Awe Morris | 2 | 0 | - | yes |
 | `src/drivers/gpu/i915/parity/backend.h` | 42 | - | - | 0 | 0 | - | yes |
+| `src/drivers/gpu/i915/parity/backend_delayed.c` | 237 | - | - | 0 | 0 | - | NEW |
+| `src/drivers/gpu/i915/parity/backend_delayed.h` | 61 | - | - | 0 | 0 | - | NEW |
 | `src/drivers/gpu/i915/parity/backend_dma.c` | 47 | - | - | 0 | 0 | - | yes |
 | `src/drivers/gpu/i915/parity/backend_mmio.c` | 159 | - | - | 0 | 0 | yes | yes |
 | `src/drivers/gpu/i915/parity/backend_pci.c` | 139 | - | - | 0 | 0 | - | yes |
-| `src/drivers/gpu/i915/parity/backend_sync.c` | 264 | - | - | 0 | 0 | - | yes |
-| `src/drivers/gpu/i915/parity/backend_sync.h` | 81 | - | - | 0 | 0 | - | yes |
+| `src/drivers/gpu/i915/parity/backend_sync.c` | 286 | - | - | 0 | 0 | - | yes |
+| `src/drivers/gpu/i915/parity/backend_sync.h` | 85 | - | - | 0 | 0 | - | yes |
 | `src/drivers/gpu/i915/parity/bios.c` | 507 | - | - | 1 | 0 | - | yes |
 | `src/drivers/gpu/i915/parity/bios.h` | 96 | - | - | 1 | 0 | - | yes |
 | `src/drivers/gpu/i915/parity/cdclk.c` | 522 | - | - | 4 | 0 | - | yes |
@@ -32,35 +34,36 @@
 | `src/drivers/gpu/i915/parity/combo_phy.h` | 40 | - | - | 0 | 0 | - | yes |
 | `src/drivers/gpu/i915/parity/display_core.c` | 397 | - | - | 1 | 0 | - | yes |
 | `src/drivers/gpu/i915/parity/display_core.h` | 60 | - | - | 0 | 0 | - | yes |
-| `src/drivers/gpu/i915/parity/display_nogem.c` | 1532 | - | - | 7 | 0 | - | yes |
-| `src/drivers/gpu/i915/parity/display_nogem.h` | 357 | - | - | 0 | 0 | - | yes |
+| `src/drivers/gpu/i915/parity/display_nogem.c` | 1553 | - | - | 7 | 0 | - | yes |
+| `src/drivers/gpu/i915/parity/display_nogem.h` | 368 | - | - | 0 | 0 | - | yes |
 | `src/drivers/gpu/i915/parity/display_state.c` | 861 | - | - | 9 | 0 | - | yes |
 | `src/drivers/gpu/i915/parity/display_state.h` | 293 | - | - | 1 | 0 | - | yes |
 | `src/drivers/gpu/i915/parity/dmc.c` | 629 | - | - | 3 | 0 | - | yes |
 | `src/drivers/gpu/i915/parity/dmc.h` | 142 | - | - | 1 | 0 | - | yes |
-| `src/drivers/gpu/i915/parity/dp/dp_compat.h` | 337 | - | - | 8 | 0 | - | NEW |
-| `src/drivers/gpu/i915/parity/dp/dp_fake_hw.c` | 364 | - | - | 0 | 0 | - | NEW |
-| `src/drivers/gpu/i915/parity/dp/dp_fake_hw.h` | 77 | - | - | 0 | 0 | - | NEW |
-| `src/drivers/gpu/i915/parity/dp/dp_fixture_latitude5330.h` | 85 | - | - | 0 | 0 | - | NEW |
-| `src/drivers/gpu/i915/parity/dp/dp_ref_types.h` | 54 | - | Copyright Intel Corporation; the full | 3 | 0 | yes | NEW |
-| `src/drivers/gpu/i915/parity/dp/drm_dp.h` | 1746 | - | Copyright © 2008 Keith Packard | 1 | 0 | - | NEW |
-| `src/drivers/gpu/i915/parity/dp/drm_dp_helper_port.c` | 653 | - | Copyright © 2009 Keith Packard | 2 | 0 | yes | NEW |
-| `src/drivers/gpu/i915/parity/dp/drm_edid_port.c` | 158 | - | Copyright (c) 2006 Luc Verhaegen (quirks list); Copyright (c) 2007-2008 Intel Corporation | 1 | 0 | yes | NEW |
-| `src/drivers/gpu/i915/parity/dp/edp_ktest.c` | 144 | - | - | 0 | 0 | - | NEW |
-| `src/drivers/gpu/i915/parity/dp/edp_ktest.h` | 9 | - | - | 0 | 0 | - | NEW |
-| `src/drivers/gpu/i915/parity/dp/intel_dp_aux.h` | 32 | MIT | Copyright © 2020-2021 Intel Corporation | 2 | 0 | - | NEW |
-| `src/drivers/gpu/i915/parity/dp/intel_dp_aux_port.c` | 511 | MIT | Copyright © 2020-2021 Intel Corporation | 4 | 0 | yes | NEW |
-| `src/drivers/gpu/i915/parity/dp/intel_dp_aux_regs.h` | 103 | MIT | Copyright © 2023 Intel Corporation | 3 | 0 | - | NEW |
-| `src/drivers/gpu/i915/parity/dp/intel_pps.h` | 61 | MIT | Copyright © 2020 Intel Corporation | 3 | 0 | - | NEW |
-| `src/drivers/gpu/i915/parity/dp/intel_pps_port.c` | 1289 | MIT | Copyright © 2020 Intel Corporation | 4 | 0 | yes | NEW |
-| `src/drivers/gpu/i915/parity/dp/intel_pps_regs.h` | 85 | MIT | Copyright © 2023 Intel Corporation | 3 | 0 | - | NEW |
-| `src/drivers/gpu/i915/parity/dp/parity_dp_aux_glue.inc` | 22 | - | - | 1 | 0 | - | NEW |
-| `src/drivers/gpu/i915/parity/dp/parity_dp_kernel.c` | 244 | - | - | 0 | 0 | - | NEW |
-| `src/drivers/gpu/i915/parity/dp/parity_dp_kernel.h` | 38 | - | - | 0 | 0 | - | NEW |
-| `src/drivers/gpu/i915/parity/dp/parity_drm_dp_glue.inc` | 15 | - | - | 0 | 0 | - | NEW |
-| `src/drivers/gpu/i915/parity/dp/parity_drm_edid_glue.inc` | 54 | - | - | 0 | 0 | - | NEW |
-| `src/drivers/gpu/i915/parity/dp/parity_edp.c` | 329 | - | - | 1 | 0 | - | NEW |
-| `src/drivers/gpu/i915/parity/dp/parity_edp.h` | 143 | - | - | 2 | 0 | - | NEW |
+| `src/drivers/gpu/i915/parity/dp/dp_compat.h` | 323 | - | - | 8 | 0 | - | yes |
+| `src/drivers/gpu/i915/parity/dp/dp_fake_hw.c` | 481 | - | - | 0 | 0 | - | yes |
+| `src/drivers/gpu/i915/parity/dp/dp_fake_hw.h` | 91 | - | - | 0 | 0 | - | yes |
+| `src/drivers/gpu/i915/parity/dp/dp_fixture_latitude5330.h` | 85 | - | - | 0 | 0 | - | yes |
+| `src/drivers/gpu/i915/parity/dp/dp_ref_types.h` | 54 | - | Copyright Intel Corporation; the full | 3 | 0 | yes | yes |
+| `src/drivers/gpu/i915/parity/dp/drm_dp.h` | 1746 | - | Copyright © 2008 Keith Packard | 1 | 0 | - | yes |
+| `src/drivers/gpu/i915/parity/dp/drm_dp_helper_port.c` | 653 | - | Copyright © 2009 Keith Packard | 2 | 0 | yes | yes |
+| `src/drivers/gpu/i915/parity/dp/drm_edid_port.c` | 158 | - | Copyright (c) 2006 Luc Verhaegen (quirks list); Copyright (c) 2007-2008 Intel Corporation | 1 | 0 | yes | yes |
+| `src/drivers/gpu/i915/parity/dp/edp_ktest.c` | 174 | - | - | 0 | 0 | - | yes |
+| `src/drivers/gpu/i915/parity/dp/edp_ktest.h` | 11 | - | - | 0 | 0 | - | yes |
+| `src/drivers/gpu/i915/parity/dp/edp_sync_ktest.c` | 312 | - | - | 0 | 0 | - | NEW |
+| `src/drivers/gpu/i915/parity/dp/intel_dp_aux.h` | 32 | MIT | Copyright © 2020-2021 Intel Corporation | 2 | 0 | - | yes |
+| `src/drivers/gpu/i915/parity/dp/intel_dp_aux_port.c` | 511 | MIT | Copyright © 2020-2021 Intel Corporation | 4 | 0 | yes | yes |
+| `src/drivers/gpu/i915/parity/dp/intel_dp_aux_regs.h` | 103 | MIT | Copyright © 2023 Intel Corporation | 3 | 0 | - | yes |
+| `src/drivers/gpu/i915/parity/dp/intel_pps.h` | 61 | MIT | Copyright © 2020 Intel Corporation | 3 | 0 | - | yes |
+| `src/drivers/gpu/i915/parity/dp/intel_pps_port.c` | 1289 | MIT | Copyright © 2020 Intel Corporation | 4 | 0 | yes | yes |
+| `src/drivers/gpu/i915/parity/dp/intel_pps_regs.h` | 85 | MIT | Copyright © 2023 Intel Corporation | 3 | 0 | - | yes |
+| `src/drivers/gpu/i915/parity/dp/parity_dp_aux_glue.inc` | 22 | - | - | 1 | 0 | - | yes |
+| `src/drivers/gpu/i915/parity/dp/parity_dp_kernel.c` | 590 | - | - | 0 | 0 | - | yes |
+| `src/drivers/gpu/i915/parity/dp/parity_dp_kernel.h` | 89 | - | - | 0 | 0 | - | yes |
+| `src/drivers/gpu/i915/parity/dp/parity_drm_dp_glue.inc` | 15 | - | - | 0 | 0 | - | yes |
+| `src/drivers/gpu/i915/parity/dp/parity_drm_edid_glue.inc` | 54 | - | - | 0 | 0 | - | yes |
+| `src/drivers/gpu/i915/parity/dp/parity_edp.c` | 393 | - | - | 1 | 0 | - | yes |
+| `src/drivers/gpu/i915/parity/dp/parity_edp.h` | 171 | - | - | 2 | 0 | - | yes |
 | `src/drivers/gpu/i915/parity/dram_bw.c` | 301 | - | - | 1 | 0 | - | yes |
 | `src/drivers/gpu/i915/parity/dram_bw.h` | 90 | - | - | 0 | 0 | - | yes |
 | `src/drivers/gpu/i915/parity/driver_probe.c` | 397 | - | - | 2 | 0 | - | yes |
@@ -70,7 +73,7 @@
 | `src/drivers/gpu/i915/parity/eu_test.c` | 1794 | - | - | 0 | 1 | - | yes |
 | `src/drivers/gpu/i915/parity/eu_test.h` | 359 | - | - | 2 | 0 | - | yes |
 | `src/drivers/gpu/i915/parity/firmware_adlp_dmc.c` | 4952 | - | - | 0 | 0 | yes | yes |
-| `src/drivers/gpu/i915/parity/firmware_vbt_dell_latitude_5330.c` | 559 | - | - | 0 | 0 | yes | NEW |
+| `src/drivers/gpu/i915/parity/firmware_vbt_dell_latitude_5330.c` | 559 | - | - | 0 | 0 | yes | yes |
 | `src/drivers/gpu/i915/parity/gt_defaults.c` | 316 | - | - | 0 | 0 | - | yes |
 | `src/drivers/gpu/i915/parity/gt_defaults.h` | 98 | - | - | 0 | 0 | - | yes |
 | `src/drivers/gpu/i915/parity/gt_engine.c` | 337 | - | - | 0 | 0 | - | yes |
@@ -98,8 +101,18 @@
 | `src/drivers/gpu/i915/parity/gt_wa_adlp.c` | 340 | - | - | 0 | 0 | - | yes |
 | `src/drivers/gpu/i915/parity/irq.c` | 937 | - | - | 8 | 0 | - | yes |
 | `src/drivers/gpu/i915/parity/irq.h` | 164 | - | - | 1 | 0 | - | yes |
-| `src/drivers/gpu/i915/parity/ktest.c` | 5328 | - | - | 0 | 0 | - | yes |
+| `src/drivers/gpu/i915/parity/ktest.c` | 5437 | - | - | 0 | 0 | - | yes |
 | `src/drivers/gpu/i915/parity/ktest.h` | 16 | - | - | 0 | 0 | - | yes |
+| `src/drivers/gpu/i915/parity/lcd/drm_edid_mode_port.c` | 215 | - | Copyright (c) 2006 Luc Verhaegen (quirks list); Copyright (c) 2007-2008 Intel Corporation | 1 | 0 | yes | NEW |
+| `src/drivers/gpu/i915/parity/lcd/edid_ref_types.h` | 264 | - | Copyright © 2007-2008 Intel Corporation | 0 | 0 | yes | NEW |
+| `src/drivers/gpu/i915/parity/lcd/intel_dpll_port.c` | 174 | - | Copyright © 2006-2016 Intel Corporation | 2 | 0 | yes | NEW |
+| `src/drivers/gpu/i915/parity/lcd/intel_link_port.c` | 235 | - | Copyright © 2008 Intel Corporation; Copyright Intel Corporation): intel_reduce_m_n_ratio, compute_m_n, | 4 | 0 | yes | NEW |
+| `src/drivers/gpu/i915/parity/lcd/lcd_compat.h` | 137 | - | - | 2 | 0 | - | NEW |
+| `src/drivers/gpu/i915/parity/lcd/lcd_ref_types.h` | 82 | - | Copyright Intel Corporation; the full notices are kept in intel_link_port.c and | 5 | 0 | yes | NEW |
+| `src/drivers/gpu/i915/parity/lcd/parity_dpll_glue.inc` | 35 | - | - | 1 | 0 | - | NEW |
+| `src/drivers/gpu/i915/parity/lcd/parity_edid_mode_glue.inc` | 61 | - | - | 0 | 0 | - | NEW |
+| `src/drivers/gpu/i915/parity/lcd/parity_lcd_calc.c` | 122 | - | - | 0 | 0 | - | NEW |
+| `src/drivers/gpu/i915/parity/lcd/parity_lcd_calc.h` | 60 | - | - | 0 | 0 | - | NEW |
 | `src/drivers/gpu/i915/parity/osdep/address_types.h` | 50 | - | - | 0 | 0 | - | yes |
 | `src/drivers/gpu/i915/parity/osdep/dma.c` | 271 | - | - | 0 | 0 | - | yes |
 | `src/drivers/gpu/i915/parity/osdep/dma.h` | 175 | - | - | 0 | 0 | - | yes |
@@ -120,9 +133,9 @@
 | `src/drivers/gpu/i915/parity/pch.h` | 87 | - | - | 1 | 0 | - | yes |
 | `src/drivers/gpu/i915/parity/pcode.c` | 197 | - | - | 2 | 0 | - | yes |
 | `src/drivers/gpu/i915/parity/pcode.h` | 42 | - | - | 1 | 0 | - | yes |
-| `src/drivers/gpu/i915/parity/power_domains.c` | 753 | - | - | 2 | 0 | - | yes |
-| `src/drivers/gpu/i915/parity/power_domains.h` | 221 | - | - | 0 | 0 | - | yes |
-| `src/drivers/gpu/i915/parity/probe.c` | 2340 | - | - | 0 | 0 | - | yes |
+| `src/drivers/gpu/i915/parity/power_domains.c` | 1032 | - | - | 3 | 0 | - | yes |
+| `src/drivers/gpu/i915/parity/power_domains.h` | 259 | - | - | 0 | 0 | - | yes |
+| `src/drivers/gpu/i915/parity/probe.c` | 2347 | - | - | 0 | 0 | - | yes |
 | `src/drivers/gpu/i915/parity/pte.c` | 45 | - | - | 0 | 0 | - | yes |
 | `src/drivers/gpu/i915/parity/pte.h` | 36 | - | - | 0 | 0 | - | yes |
 | `src/drivers/gpu/i915/parity/pxp.c` | 91 | - | - | 0 | 0 | - | yes |
@@ -145,13 +158,13 @@
 | `src/drivers/gpu/i915/parity/tests/sync_contract_test.c` | 229 | - | - | 0 | 0 | - | yes |
 | `src/drivers/gpu/i915/parity/timer_calc.c` | 62 | - | - | 0 | 0 | - | yes |
 | `src/drivers/gpu/i915/parity/timer_calc.h` | 48 | - | - | 0 | 0 | - | yes |
-| `src/drivers/gpu/i915/parity/vbt/intel_bios.h` | 292 | - | Copyright © 2016-2019 Intel Corporation | 3 | 0 | - | NEW |
-| `src/drivers/gpu/i915/parity/vbt/intel_bios_port.c` | 2615 | - | Copyright © 2006 Intel Corporation | 3 | 0 | yes | NEW |
-| `src/drivers/gpu/i915/parity/vbt/intel_vbt_defs.h` | 1070 | - | Copyright © 2006-2016 Intel Corporation | 7 | 0 | - | NEW |
-| `src/drivers/gpu/i915/parity/vbt/parity_vbt.h` | 106 | - | - | 1 | 0 | - | NEW |
-| `src/drivers/gpu/i915/parity/vbt/parity_vbt_glue.inc` | 274 | - | - | 1 | 0 | - | NEW |
-| `src/drivers/gpu/i915/parity/vbt/vbt_compat.h` | 314 | - | - | 8 | 0 | yes | NEW |
-| `src/drivers/gpu/i915/parity/vbt/vbt_ref_types.h` | 216 | - | Copyright Intel Corporation; see the notice in intel_bios_port.c) by | 8 | 0 | yes | NEW |
+| `src/drivers/gpu/i915/parity/vbt/intel_bios.h` | 292 | - | Copyright © 2016-2019 Intel Corporation | 3 | 0 | - | yes |
+| `src/drivers/gpu/i915/parity/vbt/intel_bios_port.c` | 2615 | - | Copyright © 2006 Intel Corporation | 3 | 0 | yes | yes |
+| `src/drivers/gpu/i915/parity/vbt/intel_vbt_defs.h` | 1070 | - | Copyright © 2006-2016 Intel Corporation | 7 | 0 | - | yes |
+| `src/drivers/gpu/i915/parity/vbt/parity_vbt.h` | 106 | - | - | 1 | 0 | - | yes |
+| `src/drivers/gpu/i915/parity/vbt/parity_vbt_glue.inc` | 274 | - | - | 1 | 0 | - | yes |
+| `src/drivers/gpu/i915/parity/vbt/vbt_compat.h` | 314 | - | - | 8 | 0 | yes | yes |
+| `src/drivers/gpu/i915/parity/vbt/vbt_ref_types.h` | 216 | - | Copyright Intel Corporation; see the notice in intel_bios_port.c) by | 8 | 0 | yes | yes |
 | `src/drivers/gpu/i915/parity/vga.c` | 222 | - | - | 0 | 0 | - | yes |
 | `src/drivers/gpu/i915/parity/vga.h` | 79 | - | - | 1 | 0 | - | yes |
 | `src/drivers/gpu/i915/parity/wait.c` | 265 | - | - | 0 | 0 | - | yes |
@@ -165,21 +178,21 @@
 | `src/drivers/gpu/i915/vk/cmd.h` | 136 | Zlib | Copyright (C) 2026 Awe Morris | 0 | 0 | - | yes |
 | `src/drivers/gpu/i915/vk/cmdbuf.c` | 853 | Zlib | Copyright (C) 2026 Awe Morris | 0 | 0 | - | yes |
 | `src/drivers/gpu/i915/vk/cmdbuf.h` | 92 | Zlib | Copyright (C) 2026 Awe Morris | 0 | 0 | - | yes |
-| `src/drivers/gpu/i915/vk/compile.c` | 232 | Zlib | Copyright (C) 2026 Awe Morris | 0 | 0 | - | yes |
+| `src/drivers/gpu/i915/vk/compile.c` | 257 | Zlib | Copyright (C) 2026 Awe Morris | 0 | 0 | - | yes |
 | `src/drivers/gpu/i915/vk/compile.h` | 53 | Zlib | Copyright (C) 2026 Awe Morris | 0 | 0 | - | yes |
 | `src/drivers/gpu/i915/vk/display.c` | 69 | Zlib | Copyright (C) 2026 Awe Morris | 0 | 0 | - | yes |
 | `src/drivers/gpu/i915/vk/display.h` | 45 | Zlib | Copyright (C) 2026 Awe Morris | 0 | 0 | - | yes |
-| `src/drivers/gpu/i915/vk/eu.c` | 409 | Zlib | Copyright (C) 2026 Awe Morris | 0 | 2 | - | yes |
-| `src/drivers/gpu/i915/vk/eu.h` | 136 | Zlib | Copyright (C) 2026 Awe Morris | 0 | 0 | - | yes |
+| `src/drivers/gpu/i915/vk/eu.c` | 420 | Zlib | Copyright (C) 2026 Awe Morris | 0 | 2 | - | yes |
+| `src/drivers/gpu/i915/vk/eu.h` | 142 | Zlib | Copyright (C) 2026 Awe Morris | 0 | 0 | - | yes |
 | `src/drivers/gpu/i915/vk/linux/3dstate-gen12.inc` | 310 | - | - | 2 | 15 | - | yes |
-| `src/drivers/gpu/i915/vk/linux/eu-encoding-gen12.inc` | 121 | - | - | 0 | 3 | - | yes |
+| `src/drivers/gpu/i915/vk/linux/eu-encoding-gen12.inc` | 125 | - | - | 0 | 4 | - | yes |
 | `src/drivers/gpu/i915/vk/linux/surface-state-gen12.inc` | 57 | - | - | 0 | 3 | - | yes |
-| `src/drivers/gpu/i915/vk/pipe.c` | 693 | Zlib | Copyright (C) 2026 Awe Morris | 0 | 0 | - | yes |
+| `src/drivers/gpu/i915/vk/pipe.c` | 695 | Zlib | Copyright (C) 2026 Awe Morris | 0 | 0 | - | yes |
 | `src/drivers/gpu/i915/vk/pipe.h` | 63 | Zlib | Copyright (C) 2026 Awe Morris | 0 | 0 | - | yes |
 | `src/drivers/gpu/i915/vk/res.c` | 898 | Zlib | Copyright (C) 2026 Awe Morris | 0 | 2 | - | yes |
 | `src/drivers/gpu/i915/vk/res.h` | 190 | Zlib | Copyright (C) 2026 Awe Morris | 0 | 0 | - | yes |
-| `src/drivers/gpu/i915/vk/spirv.c` | 523 | Zlib | Copyright (C) 2026 Awe Morris | 0 | 0 | - | yes |
-| `src/drivers/gpu/i915/vk/spirv.h` | 92 | Zlib | Copyright (C) 2026 Awe Morris | 0 | 0 | - | yes |
+| `src/drivers/gpu/i915/vk/spirv.c` | 610 | Zlib | Copyright (C) 2026 Awe Morris | 0 | 0 | - | yes |
+| `src/drivers/gpu/i915/vk/spirv.h` | 112 | Zlib | Copyright (C) 2026 Awe Morris | 0 | 0 | - | yes |
 | `src/drivers/gpu/i915/vk/sync.c` | 411 | Zlib | Copyright (C) 2026 Awe Morris | 0 | 0 | - | yes |
 | `src/drivers/gpu/i915/vk/sync.h` | 81 | Zlib | Copyright (C) 2026 Awe Morris | 0 | 0 | - | yes |
 | `src/drivers/gpu/i915/vk/vk-internal.h` | 160 | Zlib | Copyright (C) 2026 Awe Morris | 0 | 0 | - | yes |
@@ -188,4 +201,4 @@
 | `src/drivers/gpu/i915/vk/wsi.c` | 173 | Zlib | Copyright (C) 2026 Awe Morris | 0 | 0 | - | yes |
 | `src/drivers/gpu/i915/vk/wsi.h` | 51 | Zlib | Copyright (C) 2026 Awe Morris | 0 | 0 | - | yes |
 
-183 files, 65483 lines. SPDX tag present: 47. Copyright line present: 54. Marked generated: 18.
+196 files, 68762 lines. SPDX tag present: 47. Copyright line present: 59. Marked generated: 23.

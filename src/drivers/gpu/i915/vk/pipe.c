@@ -68,6 +68,8 @@ i915_vk_pipe_result(
 		return 0U;			/* VK_SUCCESS */
 	if (error == ENOMEM)
 		return (uint32_t)(-2);		/* VK_ERROR_OUT_OF_DEVICE_MEMORY */
+	if (error == ENOTSUP)
+		return (uint32_t)(-8);		/* VK_ERROR_FEATURE_NOT_PRESENT: a shader this compiler cannot lower */
 	return (uint32_t)(-3);			/* VK_ERROR_INITIALIZATION_FAILED */
 }
 

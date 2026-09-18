@@ -50,6 +50,17 @@ struct osdep_mmio;
 #define PARITY_GT_GGTT_PAGES     256u                        /* 1 MiB */
 #define PARITY_GT_GGTT_WORDS     (PARITY_GT_GGTT_PAGES / 32u)
 
+/*
+ * The DISPLAY window: GGTT space for scanout buffers, directly BELOW the GT window and
+ * managed separately from it (own bitmap, own placement rules), so growing the display
+ * side never moves or re-initialises a ring, context image, status page or scratch page.
+ * It is claimed explicitly (parity_gt_display_window_init) -- never as a side effect of
+ * parity_gt_mem_init -- and only the PTEs of an allocation (its guards and its pages) are
+ * ever written.  32 MiB: two full-HD XRGB8888 buffers with 256 KiB alignment and guards.
+ */
+#define PARITY_GT_DISPLAY_PAGES  8192u
+#define PARITY_GT_DISPLAY_WORDS  (PARITY_GT_DISPLAY_PAGES / 32u)
+
 /* Object pool: HWSP/ring/LRC per engine, plus scratch and the ppgtt pages. */
 #define PARITY_GT_MAX_OBJECTS    128u   /* E-102: 64 ran out with the R1 harness (4 user objects + 3 contexts) */
 
@@ -87,6 +98,9 @@ struct parity_gt_object {
 	uint32_t bytes;
 	unsigned pages;
 	unsigned ggtt_page;         /* first page index in the GGTT table */
+	int display;                /* bound in the display window (not the GT window) */
+	unsigned display_guard;     /* scratch-filled guard pages on EACH side */
+	int keep;                   /* never destroyed by parity_gt_mem_fini: the display may still read it */
 	uint64_t ggtt_offset;       /* the GPU VA the engine uses; valid when bound */
 	int bound;
 	int in_use;
@@ -106,6 +120,14 @@ struct parity_gt_mem {
 	unsigned window_pages;
 	uint32_t bitmap[PARITY_GT_GGTT_WORDS];
 	unsigned allocated_pages;
+
+	/* the display window (valid when display_pages != 0) */
+	unsigned display_first;
+	unsigned display_pages;
+	uint32_t display_bitmap[PARITY_GT_DISPLAY_WORDS];
+	unsigned display_allocated_pages;
+	unsigned display_pte_writes;
+	unsigned kept_objects;          /* objects fini had to leave alone (see `keep`) */
 
 	struct parity_gt_object objects[PARITY_GT_MAX_OBJECTS];
 	unsigned objects_live;
@@ -206,6 +228,20 @@ int parity_gt_object_page_dma(const struct parity_gt_object *o, unsigned page, u
 int parity_gt_ggtt_bind(struct parity_gt_mem *gm, struct parity_gt_object *o);
 void parity_gt_ggtt_unbind(struct parity_gt_mem *gm, struct parity_gt_object *o);
 void parity_gt_ggtt_flush(struct parity_gt_mem *gm);
+
+/* --- display window --- */
+/* Claims `pages` directly below the GT window.  -ENOSPC when the GGTT is too small. */
+int parity_gt_display_window_init(struct parity_gt_mem *gm, unsigned pages);
+/*
+ * Binds `o` in the display window with its first page aligned to `align_pages` (a power
+ * of two) and `guard_pages` of scratch reserved and written on each side.  The object's
+ * pages must all encode (DMA range); nothing stays bound or reserved on failure.
+ */
+int parity_gt_display_bind(struct parity_gt_mem *gm, struct parity_gt_object *o,
+	unsigned align_pages, unsigned guard_pages);
+void parity_gt_display_unbind(struct parity_gt_mem *gm, struct parity_gt_object *o);
+/* Reads one PTE slot back (tests / diagnostics). */
+uint64_t parity_gt_ggtt_read_pte(const struct parity_gt_mem *gm, unsigned index);
 
 /* --- the two things intel_gt_init() asks for before the engines --- */
 int parity_gt_init_scratch(struct parity_gt_mem *gm, struct parity_gt_object **out);

@@ -48,6 +48,10 @@
 #define EU_SRC0_IS_IMM_BIT		46
 #define EU_SRC0_REG_FILE_HI_BIT		46
 #define EU_SRC0_REG_FILE_LO_BIT		66
+/* source modifiers: Mesa main @ab691a1c src/intel/compiler/gen/xe.json SRC0_ABS [44] SRC0_NEGATE [45],
+   SRC1_ABS [120] SRC1_NEGATE [121] */
+#define EU_SRC0_NEGATE_BIT		45
+#define EU_SRC1_NEGATE_BIT		121
 #define EU_SRC0_REG_TYPE_HI		43
 #define EU_SRC0_REG_TYPE_LO		40
 #define EU_SRC0_SUBREG_HI		71

@@ -814,6 +814,24 @@ intel_ddi_init(struct parity_display_nogem *d, int display_ver, unsigned port_ma
 	 */
 	e->clk_funcs = e->is_tc ? PARITY_DDI_CLK_ICL_TC : PARITY_DDI_CLK_ICL_COMBO;
 	e->in_use = 1;
+
+	/*
+	 * if (init_dp) intel_ddi_init_dp_connector(): for the eDP port this is where the
+	 * reference powers the panel logic, reads DPCD / EDID and settles the PPS delays.
+	 * A failure takes the reference's `goto err`: the encoder does not survive.
+	 */
+	if (init_dp && d->dp_connector_init != 0) {
+		int crc = d->dp_connector_init(d->dp_connector_ctx, port);
+
+		if (crc == 0) {
+			d->edp_port = port;
+		} else if (crc < 0) {
+			d->edp_init_rc = crc;
+			e->in_use = 0;
+			d->num_encoders--;
+			ddi_skip(d, port, PARITY_DDI_SKIP_EDP_INIT_FAILED);
+		}
+	}
 }
 
 void
@@ -826,6 +844,9 @@ parity_intel_setup_outputs(struct parity_display_nogem *d, int display_ver,
 	(void)m;
 
 	/* intel_pps_unlock_regs_wa(): HAS_DDI -> returns immediately. */
+
+	d->edp_port = -1;
+	d->edp_init_rc = 0;
 
 	/* HAS_DDI(ADL-P) is true. */
 	d->crt_present = parity_intel_ddi_crt_present(display_ver);

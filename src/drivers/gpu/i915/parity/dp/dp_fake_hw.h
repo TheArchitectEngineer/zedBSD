@@ -53,9 +53,19 @@ struct dp_fake_hw {
 	struct { uint8_t fault; uint8_t param; } script[DP_FAKE_SCRIPT_MAX];
 	unsigned script_len, script_pos;
 	int fault_every_i2c_read;          /* != 0: that fault on EVERY I2C read (persistent corruption etc.) */
-	/* power domains */
+	/* power domains: refs_* are the references the hardware side sees; a reference put
+	 * asynchronously stays counted while it is parked (100 ms), like the real power layer */
 	int refs_core, refs_aux;
 	int fail_power_get;
+	int parked[2];
+	uint64_t parked_due_us[2];
+	unsigned async_parked, async_grabbed, async_released;
+	/* locks (PARITY_DP_LOCK_*) and the delayed work (PARITY_DP_WORK_*) */
+	int lock_held[2];
+	unsigned lock_acquisitions[2], lock_errors;
+	int work_pending;
+	uint64_t work_due_us;
+	unsigned work_queued, work_cancelled, work_cancel_syncs, work_ran;
 	/* observations */
 	unsigned aux_transactions, aux_native_reads, aux_native_writes, aux_i2c_reads, aux_i2c_writes;
 	unsigned aux_without_sink_power;   /* transaction attempted while neither VDD nor panel power was on */
@@ -72,5 +82,9 @@ void dp_fake_init(struct dp_fake_hw *hw, const uint8_t *dpcd_000, const uint8_t 
 	const uint8_t *dpcd_700, const uint8_t *edid, unsigned edid_size);
 void dp_fake_script(struct dp_fake_hw *hw, unsigned n, const uint8_t *faults, const uint8_t *params);
 void dp_fake_bind_env(struct dp_fake_hw *hw, struct parity_dp_env *env);
+/* the model's timer + worker: runs what is due at the model's current time; returns how many ran */
+unsigned dp_fake_run_due(struct dp_fake_hw *hw);
+/* intel_display_power_flush_work(): release every parked reference now */
+void dp_fake_flush_async(struct dp_fake_hw *hw);
 
 #endif /* PARITY_DP_FAKE_HW_H */

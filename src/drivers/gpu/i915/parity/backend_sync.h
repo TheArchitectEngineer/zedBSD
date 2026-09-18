@@ -66,6 +66,10 @@ void parity_kwork_init(struct parity_kwork *w, void (*fn)(void *), void *ctx);
 int  parity_kworkqueue_create(struct parity_kworkqueue *wq, const char *name);
 /* Enqueue.  1 = newly queued, 0 = already pending.  A RUNNING work may re-queue. */
 int  parity_kqueue_work(struct parity_kworkqueue *wq, struct parity_kwork *w);
+/* cancel_work(): remove if pending; does NOT wait for a running callback.  1 if it had been pending. */
+int  parity_kcancel_work(struct parity_kworkqueue *wq, struct parity_kwork *w);
+/* 1 while the work sits in the queue (a RUNNING work that re-queued itself counts) */
+int  parity_kwork_is_pending(struct parity_kworkqueue *wq, struct parity_kwork *w);
 /* Remove if pending AND wait until it is not running.  Returns 1 if it had been pending. */
 int  parity_kcancel_work_sync(struct parity_kworkqueue *wq, struct parity_kwork *w, uint64_t deadline);
 /*

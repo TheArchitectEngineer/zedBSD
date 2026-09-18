@@ -3274,3 +3274,218 @@ attach end … i915_driver_probe complete err=0、ktest 407/0、runner-result pr
 ### 残(次)
 常駐デバイスの寿命管理（VDD-off worker と async put を worker／timer へ、mutex を実体へ、eDP 取得を `intel_setup_outputs` の正位置へ）→ EDID から mode、backlight 設定（`cnp_pwm_funcs`、rawclk readout）→ full-HD の scanout object（GGTT 窓の拡張、表示用 pin）→ LCD-A（計算した状態の検証）→ LCD-B。
 台帳E-60〜E-108。GPU=vfio-pci維持, 10ms tick/HAL非変更維持, execlists, 累積修正保持。git commit/push なし。
+
+## p011 増分E-109 (2026-09-19): **eDP を常駐動作へ接続（実 mutex・tick sleep・遅延 worker・async put・正本の probe 位置）→ 実機 PASS**、LCD-A 第 1 片（mode／link／M/N／DPLL が Linux 値と一致、実機の実 AUX データでも一致）、SPIR-V の空成功撤去と FSUB の誤 lower 是正、GPU job 完了契約の対応表（専門家の助言: E-108 の単一 thread 向け適応を常駐化と同じ単位で閉じる／LCD 計算を並行／compiler の「未対応」と「誤動作」を分ける）
+
+### 0. 現在地の区分（表示できた、ではない）
+確認済み = 明示 VBT の採用と panel 設定の構築／PPS 設定・VDD・実 AUX による DPCD／EDID 取得／**通常 thread と worker が並行する常駐動作での取得・自動 off・再取得・停止**（本増分）／LCD-A の第 1 片の**計算**。
+未実行 = main link の設定と training、panel power、backlight、scanout。DPCD 0x100/0x101 = 0x0a/0x02 は読出し値として保存するだけで、zedBSD が link を設定した証拠にはしない（DPCD へは未書込み、`PP_STATUS` は終始 0）。
+
+### 1. E-108 の五つの適応を一単位で解消
+| # | E-108 の適応 | E-109 |
+|---|---|---|
+| 1 | PPS／AUX の mutex は所有の表明 | env に `lock/unlock` hook。kernel は `struct mutex` 2 本（PPS、AUX hw）。**取得順は正本の helper 境界のまま**（生成 text は無変更）: `intel_pps_lock` = DISPLAY_CORE 電源参照 → PPS mutex、unlock は mutex → 参照返却。VDD の AUX 参照は PPS mutex の内側で power-domain lock を取る（PPS→pd の入れ子、逆順は無い）。AUX hw mutex は `drm_dp_dpcd_access` の transfer 全体の外側。wrapper ごとの独自 lock や巨大 lock は作っていない。`held` は正本の lockdep 表明用に残し、食い違いは `lock_errors` に数える |
+| 2 | sleep は busy-wait | `parity_dp_kernel_sleep_us`: 2 tick 以上は wait queue＋tick 期限で**譲る**（既存 10 ms tick が遅れて起こす）、残り 2 tick 未満と元々短い待ちだけ短い bounded delay。要求値と retry 回数は正本 text のまま（env の backend だけ変更）。実機: 200 ms の power-up 待ち = tick 190.2 ms＋短い待ち 9.8 ms。HAL・timer は無変更 |
+| 3 | 遅延 VDD-off は timer 未接続 | 新規 `parity/backend_delayed.{c,h}`（共有基盤）: timer thread が wait queue で最も早い期限まで眠り（timer IRQ 内では何もしない）、期限到来で**共有 worker**（`parity_kworkqueue`）へ渡す。状態 = IDLE→ARMED（待機中）→PENDING→RUNNING を区別（worker を 3 秒眠らせる実装ではない）。`queue`（武装中／pending なら 0）、`cancel`（実行中の body を待たない）、`cancel_sync`（待つ）、`flush` を別契約として実装。**遅延 off = power_cycle_delay×5 = 3000 ms**（600 ms の power-cycle 待ちとは別。正本 text のまま）。再取得は `cancel_delayed_work`、停止は PPS mutex 取得**前**の `cancel_delayed_work_sync`（正本の順序） |
+| 3' | async put は即時 put | `power_domains.c` に正本 `intel_display_power.c` の async put を移植（手移植、既存 file と同じ流儀）: domain ごとの use count、`async_put_domains[0/1]`、`async_put_wakeref`、`next_delay`、**次の get が parked 参照を取り戻す**（`grab_async_put_ref`、HW 変更なし）、work body、requeue、`flush_work`／`flush_work_sync`、状態検証。get／put は `pd->lock` で直列化（worker と並行するため）。`init` が新 state を 0 で初期化 |
+| 4 | device と panel 状態の寿命 | `struct parity_edp_device`（`parity_dp_kernel.h`）が lock・thread・env・設定・**通常初期化の結果**（DPCD、EDID、PPS delay、LCD-A）を持ち、呼出し元が戻っても残る。成功時は保持して後続へ、失敗時は `out_vdd_off` 済みで object だけ解放、driver 停止時に `parity_edp_device_fini`（end → `flush_work_sync` → thread 停止）。診断は**同じ connector を再初期化せず**、保持された結果を読む。device は非公開のまま（`/dev/gpuN` への公開や Vulkan capability とは無関係） |
+| 5 | 実行位置が P7 後 | `display_nogem.c` の `intel_ddi_init` に DP connector 段の hook（`dp_connector_init`）。eDP 取得は **`intel_setup_outputs()` 内**で走る。失敗は正本の `goto err` と同じく encoder を落とす（`PARITY_DDI_SKIP_EDP_INIT_FAILED`）。実 VBT に eDP child がある機体でだけ thread を起こす（既定 child には eDP が無いので、明示 VBT なしの構成は従来どおり） |
+
+接続部分の diff: `handover/increment-results/e109-resident-connection.diff`（17 file、2410 行）。
+
+### 2. 常駐化の試験
+**host**（register model、ASan/UBSan）72/0（+9）: lock が env 経由で再帰・取り残し無し／transfer ごとの AUX 参照は async put で、VDD が別の参照を持つ間は「最後の 1 本」にならない／2999 ms では走らず 3000 ms で走る／期限前の再取得で古い予約は無効、新しい予約は最後の利用から 3 s／停止は同期取消で PPS lock の外。全失敗試験の合格条件を「**DP 層が何も持っていない**＋ power 層へ移した参照は flush 後 0」に変更（常駐中に正当に保持する参照があるので、あらゆる中間時点で全参照 0 は求めない）。
+**kernel ktest 433/0（+26）、実 thread・実 tick**:
+- `dwork:` 7 件 — 2 回目の queue は拒否／50 ms より前に走らない／cancel 済みは走らない／cancel+queue で期限が移る／**plain cancel は実行中 body を待たず、cancel_sync は終了後に戻る**／flush は期限を待たず今走らせて待つ／thread 停止。
+- `pw-async:` 8 件 — PARK（well on のまま 100 ms で queue）／GRAB（HW 変更なしで取り戻し work を取消）／RELEASE／SECOND（2 本目は第 2 mask、queue は増えない）／REQUEUE（遅延値つき）／FLUSH（sync）／EMPTY／NOT-LAST。
+- `edp-sync:` 8 件（kernel env の実 mutex＋timer＋worker で register model を駆動）— 保持／**自動 off**（誰も駆動せず約 1 s 後に worker が PPS lock を取り VDD off＋参照返却）／**再取得**（古い期限を過ぎても VDD on）→ 新予約が自動で発火／**待機中の停止**／**実行中の停止**（body が VDD-off 書込みの途中で PPS lock 保持中に end: deadlock なし、二重 off なし、終了後 access なし）／end 後に走った body は何も触らない。
+- `lcd:` 3 件（§3）。
+**実機**（`build/aux-e109b` vmunix 56c9f92e… / hdd 8c3331ab…、`-DPARITY_AUX_TEST=1`、ログ `e109b-run-parity-hw-aux-resident-lcda.log`。先行の `aux-e109` も同結果）— 正しい probe 位置・実 mutex・実遅延 worker の**新構成**での確認（E-108 の P7 後取得の三回目ではない）:
+```
+edp init_connector (in setup_outputs): vbt_source=3 port=A aux_ch=0 … well_refs=7
+edp acquire: rc=0 … elapsed_ms=390 | sleeps: tick=1 (190260 us) short=1 (9740 us)
+edp late: … KEPT: vdd_hw=1 vdd_wakeref=1 off_reserved=1 (in 3000 ms) refs core=0 aux=1 well_refs=10
+P5b setup_outputs: vbt_children=4 ddi_init=4 encoders=4 skipped=0
+AUX-TEST auto-off: reserved_ms=3000 waited_here_ms=800 vdd_hw=0 vdd_wakeref=0 worker_ran=0->1 timer_fired=1 refs core=0 aux=0 well_refs=0
+AUX-TEST re-acquire: reads_ok=1 dpcd=11 0a kept_past_old_deadline=1 new_off_after_ms=1250 cancelled(timer/queue)=3/0 worker_ran=2
+AUX-TEST verdict: PASS (resident=1 dpcd_match=1 edp_dpcd_match=1 edid_match=1 lcd_a_match=1 auto_off=1 reacquire_kept=1 reacquire_off=1)
+edp fini: end_rc=0 vdd_hw=0 vdd_wakeref=0 off_reserved=0 refs core=0 aux=0 lock_errors=0 | vdd-off work armed=7 fired=2 ran=2 cancelled(timer/queue)=5/0 | async put: puts=24 parked=0 grabs=0 … state_errors=0 use_count_errors=0
+runner-result probe=COMPLETE cleanup=1、ktest 433/0
+```
+参照の所有者の移動: transfer の AUX 参照 → async put（VDD が別の 1 本を持つので parked にならず通常 put）／VDD の AUX 参照 → worker または停止経路が返す／停止時 = 予約 1 本を同期取消 → VDD off → `flush_work_sync`。DC_off の再取得経路（P7 後）は「DC state mismatch」0 件（E-108 の修正の回帰入力として AUX 試験に残る）。
+
+### 3. LCD-A 第 1 片: 計算結果（何も書き込まない）
+`tools/port_lcd_calc.py` が生成（`parity/lcd/`）: `drm_mode_detailed`／`drm_mode_do_interlace_quirk`（drm_edid.c）、EDID 構造体（drm_edid.h の text 抽出）、`intel_dp_link_required`／`intel_dp_max_data_rate`／`intel_dp_effective_data_rate`／`intel_dp_link_symbol_*`（intel_dp.c）、`intel_link_compute_m_n`／`compute_m_n`／`intel_reduce_m_n_ratio`（intel_display.c）、`icl_calc_dp_combo_pll`＋DP combo PLL 表 2 本＋`icl_calc_dpll_state`＋`ehl_combo_pll_div_frac_wa_needed`（intel_dpll_mgr.c）。
+| 項目 | 計算値（実機の実 AUX データから） | 比較先（Linux が同じ機体で設定） |
+|---|---|---|
+| mode | 1920×1080、140800 kHz、h 1920/1936/1952/2080、v 1080/1083/1097/1128、sync +−、6 bpc | transcoder A の timing、eDP-1 60.01 Hz 一致 |
+| bpp | 18（sink 6 bpc、VBT 18 bpp の小さい方） | DDI func ctl の 6 bpc 一致 |
+| link | HBR 270000 kHz × 2 lane（`use_max_params`）、必要 316800／可用 540000 kBps | DDI A x2 HBR 一致 |
+| M/N | TU 64、data 0x4b17e4/0x800000、link 273406/524288 | `PIPE_DATA_M1`=0x7e4b17e4、`N1`=0x800000、`LINK_M1/N1` 一致 |
+| DPLL | ref 38400 kHz（CDCLK readout、`icl_update_dpll_ref_clks` と同じ出所）、CFGCR0=0x00e001a5、CFGCR1=0x88 | DPLL0 一致（Display WA #22010492432 の DCO fraction 半減込み） |
+host 20/0。期待値の訂正 1 件（可用帯域を私が 432000 と誤算。独立計算 2 lane×2.7 Gbit/s×8/10÷8 = 540000 で確定）。拒否: RBR×1 は −ENOSPC、未知の rate code／lane 3／**eDP 1.4 sink（rate table 未移植）**／detailed timing 無し／sync 幅 0 は −EINVAL（近似しない）。
+**明記**: rate／lane の選択は正本の一般探索（`intel_dp_compute_link_config`）を移植せず、eDP<1.4 の `use_max_params` 規則だけを適用し、正本の帯域関数で検算している。EDID quirk 表は未移植（quirks=0）。
+**LCD-A の残り**: DDI buffer translation／voltage swing、transcoder timing register 語、plane＋scanout layout、CDCLK・帯域・DBUF／watermark の必要条件、enable／disable の状態列。**scanout object（GGTT 窓拡張、既存 ring／LRC／HWSP／scratch との重複検査、一枚の確保・pin・回収）は未着手**（次増分の先頭）。
+
+### 4. generator 方式の補強
+- `port_lcd_calc.py` は manifest を出す（元 source・生成物の sha256、取り込んだ部品名、置換の適用件数）。部品が**ちょうど 1 回**見つからなければ生成失敗（今回 2 件、私の想定件数の誤りをこれが止めた）。
+- `tools/check_generated.sh`: 3 generator＋fixture generator を scratch へ再生成して `src/` と byte 比較、DRM 参照 5 file を `SHA256SUMS` で検査 → **26 file 全部 same**（生成後の手編集なし）。
+- 削除した関数の区分: 対象 LCD の経路で不要（VLV/CHV、pre-DDI、他世代の AUX、SDVO、TV/LVDS）／**今後必要だが未接続**（PSR、DSC、MIPI、`intel_pps_backlight_power`、`intel_pps_reset_all`、AUX ch の encoder 間調停、AUX 完了割り込み、eDP 1.4 rate table、link config 探索）。
+- 「解析できた出力」と「enable できる出力」は別: VBT から TC1／TC2／HDMI も encoder として認識されるが、enable 経路を持つのは無し（eDP も AUX まで）。
+
+### 5. Vulkan 側（GPU 不使用）
+- **SPIR-V**: function body 内の「実行意味を持つが lower しない」命令は parse 失敗（`ENOTSUP`＋診断 record: opcode・word 位置・理由）。debug／注釈／構造（OpLine、OpNoLine、OpLabel、OpReturn、OpNop、Function storage の OpVariable 宣言）は無視してよいものとして区別。解決できない pointer 経由の load／store、input の component access、3 要素以上の composite、Sin/Cos/InverseSqrt 以外の ExtInst も拒否。malformed は従来どおり `EINVAL`（別物）。→ **vkdemo の vertex shader は拒否される**（opcode 62 @word 403「store through a pointer that is not an output (Function storage?)」）。fragment shader は従来どおり通る。
+- **誤動作の是正（未対応とは別扱い）**: `FSUB` は ADD として lower されていた → **ADD＋第 2 source の negate**（Gen12 bit 121。src0 は bit 45。出所 Mesa @ab691a1c `gen/xe.json`）。試験は operand の register 番号と modifier を検査（5−2 と 2−5 を区別できる形。「SUB という命令があること」を条件にしていない）。`DOT`→MUL、`COMPOSE`／`EXTRACT`→第 1 source の MOV は**別の演算**だったので `ENOTSUP` で拒否（vector lowering は VK-2）。未知の IR op は黙って落とさず拒否。push constant の先頭以外も拒否。
+- pipeline 作成: `ENOTSUP` → `VK_ERROR_FEATURE_NOT_PRESENT`（−8）。実 vkdemo VS での拒否を試験（reply は opcode＋VkResult の 8 byte、pipeline object 無し、GEM object 数が前後で同じ）。wire 形式の成功 case は lower できる module で確認。
+- 従来の host 試験 3 本は「vkdemo VS が通る」ことを assert していた（＝空成功を合格条件にしていた）ので書き換えた。VK host fixture 9 本 PASS（通常＋ASan/UBSan）。
+- **GPU job 完了契約の対応表** `handover/notes/gpu-job-completion-contract.md`: core は未完了／成功／失敗／取消を区別済みで、**失敗時も待機者は ioctl 0＋`status=正の errno` で戻る**（fence は error つき signal、資源は reset まで保持）。通常 cancel は callback を外して完了を作らない（fence は unsignal のまま unbind）。libvulkan は 0 以外の status を全部 `VK_ERROR_DEVICE_LOST` に畳む。E-107 の私の要約「fence は成功時だけ完了」は「**成功通知は実完了時だけ**」の意味に訂正。i915（legacy 側）の不足: `GPU_CAP_FENCE` 無し／capset 156 byte／**VK executor の仕事に completion が付かず、`i915_command_submit` は decode 時点で成功通知**（GPU 完了の証明は batch を持たない marker request だけ、engine をまたぐ順序保証なし）／`RETAINED` の退役経路。**STRICT_QUEUE／QUIESCE の意味を定める文書は libvulkan の comment 2 文だけで、168 byte capset を書く側が tree に無い** → flags を立てる前にプロジェクト側で意味を確定する必要（レビュー事項）。opcode 180 は「初回 vkdemo では使わない見込み」のまま（実 stream 未採取、実証済みではない）。
+
+### 6. 回帰
+常駐 eDP・power-domain の lock 化・共有 worker を入れた**同一ソース**で、受入済み 6 モード＋組合せ 1 本を clean build → GPU-free ktest（各 433/0）→ 実機 1 回ずつ（PASS 行が出なければ以後投入しない方式）: **7/7 PASS**。EU-REPEAT rounds=5 passed=5／DRAW 1024/1024／R1 12/12／TEX 1024/1024・changed_bytes=0・guard_bad_bytes=0／T3 9/9／BL 4/4、全て `probe=COMPLETE cleanup=1`、`DC state mismatch` 0 件。**6 モードは明示 VBT なし**（既定 child に eDP が無いので eDP の thread は起動しない＝従来と同じ構成）。**組合せ `texvbt`（`-DPARITY_TEX_TEST=1 -DPARITY_VBT_EXPLICIT=1`）**: 明示 VBT 採用 → `setup_outputs` 内で eDP 取得・LCD-A 一致 → 常駐のまま textured draw PASS（1024/1024）→ その間に遅延 VDD-off worker が自分で発火（`armed=1 fired=1 ran=1`）→ `edp fini: end_rc=0 … refs core=0 aux=0 lock_errors=0 state_errors=0`。表示側 worker と GT 投入が並行しても双方正常。vmunix: eu 8a0a0e31…、draw 0ffcbc25…、r1 31af0c18…、tex fd1c8136…、t3 5736c565…、bl 5b7eacb2…、texvbt 2ea16af9…。ログ `handover/increment-results/e109-run-parity-hw-{eu,draw,r1,tex,t3,bl,texvbt}.log`、道具 `handover/tools/sweep_e109.sh`。作業 tree は未 commit（base f4dba354＋累積 patch `e97-e109-changes.patch`）。
+
+### 提出物
+`parity/backend_delayed.{c,h}`、`parity/backend_sync.{c,h}`（`parity_kcancel_work`、`parity_kwork_is_pending`）、`parity/power_domains.{c,h}`、`parity/display_nogem.{c,h}`、`parity/probe.c`、`parity/ktest.c`、`parity/dp/*`（env 拡張、`parity_dp_kernel.*`、`edp_sync_ktest.c`）、`parity/lcd/*`、`vk/{spirv.c,spirv.h,compile.c,eu.c,eu.h,pipe.c}`、`vk/linux/eu-encoding-gen12.inc`、tests（`dp-host-test.c`、`lcd-host-test.c`、`run-lcd-host-test.sh`、`i915-vk-{spirv,compile,pipe}-test.c`）、tools（`port_lcd_calc.py`、`check_generated.sh`、`sweep_e109.sh`、`capture_lcd.ps1`）、参照 `drm-v6.8.12/{drm_edid.h,drm_dp_helper.h,SHA256SUMS}`、notes `gpu-job-completion-contract.md`、`increment-results/e109*`。
+
+### 残(次)
+scanout object（GGTT 窓拡張＋重複検査、確保・pin・回収）→ LCD-A の残り（DDI buf trans、transcoder／plane 語、CDCLK／DBUF／WM 条件、enable／disable 列）→ backlight（`cnp_pwm_funcs`、rawclk readout）→ LCD-B（CPU の非対称既知パターン、失敗時と正常終了時の表示停止・buffer 解放まで実装してから実機。buffer 読戻し＋レジスタ／link 状態＋**写真**を一組）。
+台帳E-60〜E-109。GPU=vfio-pci維持, 10ms tick/HAL非変更維持, execlists, 累積修正保持。git commit/push なし。
+
+## p011 増分E-110 (2026-09-19): **scanout object（GGTT の表示用窓・256 KiB 整列・guard・確保／pin／解放）→ 実機 PASS**、LCD-A 第 2 片（transcoder／M-N／PIPESRC の語を正本 writer から生成、13 語が Linux の dump と一致）、ordinary sleep を `kern_usleep_range` へ統一、LCD-B 用 pattern と撮影経路、capability 契約のレビュー資料、**SPIR-V 基礎 lowering（scalar IR。出荷版 `-O0` の vkdemo VS／FS が通常経路で lowering＋EU 生成まで通過、GPU 検証は 0 件）**（専門家の助言: scanout → LCD-A の残り → 点灯と安全停止を一体で LCD-B／sleep は採用済み helper へ／capability は実装前にレビュー／compiler の基礎 lowering は LCD と並行して今から）
+
+### 0. 現在地の区分（表示できた、ではない）
+確認済み = E-109 まで＋**表示用 buffer を GGTT へ置いて CPU から書き、PTE と内容を読み戻し、解放して元へ戻す**（実機）／LCD-A の transcoder 系 13 語の**計算**。
+未実行 = register への表示設定の書込み、DPLL／DDI／link training、panel power、backlight、plane 有効化。scanout 試験は表示 engine のどの register にも触れていない（GGTT PTE と system memory だけ）。
+
+### 1. scanout object
+**仕様**（正本の該当関数から。値は試験の期待値であって入力ではない）: XRGB8888（fourcc `XR24`）／LINEAR／1920×1080／rotation 0／scaling・圧縮なし。cpp 4 — **link の 18 bpp とは無関係に memory 像は 32 bit**。pitch = 1920×4 = 7680（64 byte 整列）、`PLANE_STRIDE` 単位 = pitch/64 = **120**（Linux の dump `0x70188 = 0x78` と一致）。size 8,294,400 = 2025 page。surf の GGTT 整列 = **256 KiB**（`intel_linear_alignment`: Gen9+ の linear）。max stride 131072（ver ≥ 13）。linear は DPT を使わない（`intel_fb_modifier_uses_dpt`）。前後に scratch PTE の guard 168 page（VT-d の guard。VFIO guest からは host の VT-d が見えないので常に適用）。
+**配置**: `gt_mem` に表示用の窓を新設 — `PARITY_GT_DISPLAY_PAGES 8192`（32 MiB）を GT 窓（256 page）の直下に、独立の bitmap で。`parity_gt_display_window_init` が明示的に確保するまで存在しない（既存の 6 モードは呼ばないので従来と同じ GGTT 使用）。bind は**全 page を encode してから** PTE を書く（途中失敗で半分だけ書かれた状態を作らない）。無関係な PTE の一括初期化も、生きている GT object の移動もしない。
+**記録を分けた項目**: backing（coherent DMA 8 MiB）／CPU mapping／GGTT 範囲／整列／pitch・height・format・modifier／surf／pin の所有者（状態 NONE→ALLOCATED→PINNED→IN_USE、異常時 ABANDONED）。
+**解放の規則**: IN_USE（表示が読んでいる可能性がある）の buffer は `unpin`／`destroy` が拒否する。表示停止を確認できないまま driver が止まる場合は `abandon` — object に `keep` を立て、`parity_gt_mem_fini` は **解放せず log に残す**（「cleanup=1」を偽装しない）。
+**試験**: ktest `scanout:` 15 件（正常な確保→pin→publish→begin→end→unpin→destroy／既存 GT object と共存し GT 窓の PTE が不変／窓が足りないとき何も書かずに失敗／IN_USE の解放拒否／abandon 後に fini が保持／整列と guard）。GPU-free ktest **449/0**（E-109 は 433。+15 scanout、+1 LCD-A-WORDS）。
+**実機**（`e110-run-parity-hw-aux-scanout.log`、sweep の `aux` でも再確認）:
+```
+SCANOUT-TEST window: rc=0 ggtt_entries=1048576 gt_window=[1048320,+256) display_window=[1040128,+8192) gt_pages_in_use=185 objects_live=52
+SCANOUT-TEST buffer: format=XR24 modifier=linear 1920x1080 cpp=4 pitch=7680 (stride units 120) size=8294400 pages=2025 align=0x40000 guard=168 | pin rc=0 surf=0xfdfc0000 ggtt_page=1040320 contiguous=1
+SCANOUT-TEST check: pte_bad=0/2025 guard_bad=0/168 gt_window_ptes_changed=0 | pattern id=110 fnv=ce63f20b23f91f85 (pinned ce63f20b23f91f85) readback_bad=0 publishes=2
+SCANOUT-TEST verdict: PASS (unpin=0 destroy=0 ptes_back_to_scratch_bad=0 display_pages_in_use=0 gt_window_ptes_changed=0 display_pte_writes=4386)
+```
+PTE の読戻しは書込みと同じ幅（`kern_mmio_read64`）。GT 窓の 256 PTE は試験の前後で 1 個も変わらない。
+
+### 2. LCD-A 第 2 片: transcoder／M-N／PIPESRC の語
+正本の**書込み関数そのもの**（`intel_cpu_transcoder_set_m1_n1`、`intel_set_transcoder_timings`、`intel_set_pipe_src_size`、`intel_set_m_n`）を生成 file に入れ、`intel_de_write` を emit hook へ向けて語の列を得る（同じ text が試験では語の表を、後で実機では MMIO を埋める）。eDP は pipe A／TRANSCODER_A（ADL-P に TRANSCODER_EDP は無い）。**13 語が正本の書込み順で Linux の dump（`display-ref/regs-selected.txt`）と全一致**: 0x60030=0x7e4b17e4、0x60034=0x00800000、0x60040=0x00042bfe、0x60044=0x00080000（LINK_N が最後 = 正本の注記どおり）、0x6007c=0、0x60028=0、0x60000=0x081f077f、0x60004=0x081f077f、0x60008=0x079f078f、0x6000c=0x04670437、0x60010=0x04670000、0x60014=0x0448043a、0x6001c=0x077f0437。host（lcd 25/0）・ktest（LCD-A-WORDS）・実機（実 AUX の EDID から計算、`lcd_a_match=1`、log は "(computed; NOT written)"）。
+generator は **source file ごとに生成 file を分けた**（`intel_link_port.c`＝intel_dp.c、`intel_display_port.c`＝intel_display.c、`drm_dp_bw_port.c`、`drm_modes_port.c`、`intel_dpll_port.c`、`lcd_trans_regs.h`）— 各 file が中身の text の notice だけを持つ。`check_generated.sh`: 全 file 再生成一致＋DRM 参照の SHA256 一致。
+
+### 3. ordinary sleep の統一
+`parity_dp_kernel_sleep_us` を採用済みの `kern_usleep_range(us, us)`（絶対期限 1 個、tick＋waitq、遅れて起きるのは可、busy の残りなし）へ接続。E-109 の「2 tick 未満は短い bounded delay」を撤去。udelay 相当と atomic な poll は無変更。実機: 200 ms の power-up 待ち = **tick 200.3 ms、short=0**（E-109 は tick 190.2＋短い待ち 9.8）。HAL・timer 無変更。
+
+### 4. LCD-B の準備（点灯はしていない）
+- `parity/lcd/lcd_pattern.{c,h}`: CPU だけで描く非対称の既知 pattern（白枠 16 px、四隅 = 赤／緑／青／黄、中央左に白い「F」、7 segment 3 桁の試験番号、上に grey ramp、下に 8 色 bar、背景 0x00102040）。純関数。1920×1080 id 110 の FNV-1a 64 = `ce63f20b23f91f85` を host で固定し、実機の読戻しと一致。
+- 撮影: Windows host の camera が対象機の LCD を向いている（ユーザー設置）。`tools/capture_lcd.ps1`（WinRT MediaCapture、2560×1440）で取得できることを確認。LCD-B の証拠 = buffer 読戻し＋register／link 状態／error log＋**写真**。
+
+### 5. capability 契約のレビュー資料（コード変更なし）
+`handover/notes/vk-capset-contract-review.md`: capset 168 byte の形式と libvulkan の検査の対応、STRICT_QUEUE（順序の単位／受付と完了／複数 request への展開／失敗時の後続）と QUIESCE（範囲／返却時の保証／hang 時／`RETAINED`）で**決めてもらう項目**を表にした。意味が確定するまで vendor suffix も flags も立てない。legacy の decode 時点成功は parity へ持ち込まない。
+
+### 6. SPIR-V 基礎 lowering（LCD と並行、host のみ）
+**方式**: IR を scalar 化（IR の値 1 個 = float 1 個 = SIMD8 の GRF 1 本）。成分を並べ替えるだけの命令（CompositeConstruct／CompositeExtract／VectorShuffle／成分 AccessChain／local の Store・Load）は **IR を出さず**、parser が「どの scalar がどの成分か」を名前づけするだけ。Function storage の local は memory にせず成分単位の store→load forwarding（basic block 1 個が前提。分岐は拒否、未 store 成分の load は拒否）。compiler の register は「定義から最後の読み手まで」（直線 SSA）。
+**状態の三段階**（`handover/notes/vk-lowering-status.md` に項目別の使用箇所・受理条件・状態・小試験）:
+- lowering済み = IR を interpreter で実行し、**独立に書いた式**と比較（`plan/ws031/tests/i915-vk-lower-test.c`、新規）。偶然一致しない入力: local に 5 を store→load→2 で上書き→load で (5, 2, 5−2=3, 2−5=−3)／(1,2,4,8) の 4 成分を個別に抽出・逆順・shuffle・vec2＋scalar＋scalar／local の 1 成分だけ上書き／dot((1,2,3,4),(5,6,7,8))=70、negate −70、70−5=65 と 5−70=−65。
+- EU生成済み = **生成された EU word を bit field から decode し 8 channel で実行する model** が同じ独立式と一致（`i915-vk-compile-test.c`）。operand の位置、negate、push constant の scalar region（push register の残り 7 float に junk を置いて vector 読みを検出）、register の再利用時期の誤りが落ちる。
+- GPU検証済み = **0 件**。payload／出力 staging／SEND の descriptor は hardware 未検証の仮規約（`compile.c` の header に明記）。compiler 出力は一度も GPU で走っていない。
+**結果**: 出荷版のままの `cuboid.vert.spv`（glslc `-O0`。簡略化・再生成・hash 置換なし）が通常経路で 50 IR 命令・44 値 → 51 EU 命令、値 register r16〜r23。lowering は 4 頂点×3 時刻、EU model は 8 頂点同時で `gl_Position` 4 成分＋`texture_coordinate` 2 成分が GLSL 原式と一致（各成分ちょうど 1 回の store、属性に無い入力成分は読まない）。FS は u・v の順と set／binding を擬似 texture で確認。
+**拒否は維持**（一括許可なし）: 分岐・call・FDiv・比較・変換、動的 index、initializer つき local、struct／array の local、未解釈の decoration（Flat、Component、ArrayStride …）、未解釈の module-level 命令（OpTypeMatrix、OpConstantComposite、Spec 定数 …）。decoration は「解釈する／名前を挙げて無視（RelaxedPrecision）／それ以外は拒否」の明示表。pipeline 作成の拒否試験は「出荷版 VS の最初の OpFMul を OpFDiv に変えた妥当な module」で継続（VkResult −8、残留 object なし）。
+**同時に直した誤実装**: `i915_vk_eu_mad` は operand を encode していなかった → IR から FMAD を削除し encoder は呼ばれたら buffer を error に。parser は IR 配列が一杯のとき黙って命令を捨てていた → 容量を body 命令数から算出、超過は error。旧 IR の DOT／COMPOSE／EXTRACT／swizzle は廃止。
+VK host fixture **10 本 PASS**（通常＋ASan/UBSan。+1 = lower）。kernel build（-Werror）通過。**この compiler 変更は sweep の build 完了後に適用**したので、§7 の回帰 image には入っていない（vk/ は parity 経路から呼ばれない。次の sweep で同一ソースになる）。
+
+### 7. 回帰
+scanout／表示用窓／sleep 統一／LCD-A 語を入れた**同一ソース**で、受入済み 6 モード＋明示 VBT×textured draw＋AUX/scanout を clean build → GPU-free ktest（各 449/0）→ 実機 1 回ずつ: ****8/8 PASS**。EU-REPEAT rounds=5 passed=5／DRAW 1024/1024／R1 12/12／TEX 1024/1024／T3 9/9／BL 4/4／明示 VBT×TEX 1024/1024（`edp fini` refs core=0 aux=0 lock_errors=0、VDD-off worker fired=1）／AUX-TEST PASS＋SCANOUT-TEST PASS。全て ktest 449/0、`probe=COMPLETE cleanup=1`、`DC state mismatch` 0 件、P1 reset 周りの既知行（workaround lost 1、MODE_IDLE timeout 3）は E-109 と同数**。
+
+### 提出物
+`parity/gt_mem.{c,h}`（表示用窓）、`parity/lcd/{scanout,scanout_ktest,lcd_pattern,lcd_hw_check}.{c,h}`、`parity/lcd/*_port.c`（source ごとに分割）、`parity/lcd/{lcd_compat.h,parity_lcd_calc.{c,h},parity_display_emit_glue.inc,lcd_trans_regs.h}`、`parity/dp/parity_dp_kernel.{c,h}`（sleep、LCD-A 語）、`parity/dp/edp_ktest.c`、`parity/probe.c`、`parity/ktest.c`、`platform/amd64/vmunix.mk`、`vk/{spirv.c,spirv.h,compile.c,eu.c,eu.h}`、tests（`lcd-host-test.c`、`lcd-pattern-host.c`、`i915-vk-lower-test.c`、`i915-vk-{spirv,compile,pipe}-test.c`、`run-vk-host-tests.sh`）、`handover/tools/{port_lcd_calc.py,check_generated.sh,sweep_e110.sh,capture_lcd.ps1,vk-e110/*}`、`handover/notes/{vk-capset-contract-review.md,vk-lowering-status.md,vkdemo-dependency-table.md}`、`handover/increment-results/{e110-run-parity-hw-*.log,e97-e113-changes.patch（E-113 で更新。以前の版は置換。DRM 参照 header を含むので大きい）,report-e110-scanout-lowering.md}`。
+
+### 残(次)
+LCD-A の残り（plane 語 = `skl_plane_ctl`／`glk_plane_color_ctl`／stride・size・surf を scanout の layout から、`TRANS_DDI_FUNC_CTL`／`TRANSCONF`／`DDI_BUF_CTL`／MSA、DDI buf trans と signal level、DPCLKA／DPLL enable 列、CDCLK／帯域／DBUF／WM の条件、enable／disable の状態列と前提条件表）→ backlight（`cnp_pwm_funcs`、rawclk readout）→ link training（CR／EQ／symbol lock／alignment を成功の証拠として記録）→ fake 試験 3 系統 → LCD-B 実機 1 回（写真つき）。compiler は SEND の descriptor（出典つき転記）→ 3D state との突合せ → 初の GPU 実行試験。
+台帳E-60〜E-110。GPU=vfio-pci維持, 10ms tick/HAL非変更維持, execlists, 累積修正保持。git commit/push なし。
+
+## p011 増分E-111 (2026-09-19): **LCD-A 第 3 片 — 正本の呼出し元 `hsw_configure_cpu_transcoder` ごと取り込み（writer 間の順序も正本由来に）、DDI 側の語（TRANS_MSA_MISC／TRANS_DDI_FUNC_CTL[2]／DDI_BUF_CTL の値）。`TRANS_DDI_FUNC_CTL` = 0x8a210002 が Linux の dump と一致（host／ktest／実機）**。未書込み
+
+### 0. 現在地の区分
+確認済み = E-110 まで＋cpu transcoder 設定 17 操作と DDI 側 3 語＋DDI_BUF_CTL 値の**計算**。未実行 = これらの書込み、DPLL／PHY／link training、panel power、backlight、plane。今回の実機で増えた hardware 操作は **DDI_BUF_CTL_A の読出し 1 回だけ**（`saved_port_bits` を正本と同じ作り方で得るため。書込みなし）。
+
+### 1. E-110 の記述の訂正
+E-110 §2 は「13 語が正本の書込み順」と書いたが、正本由来だったのは**各 writer の内部の順序**で、3 つの writer を並べた順（M/N → timings → PIPESRC）は私の glue の順だった。正本では `hsw_configure_cpu_transcoder()` が M/N → timings → VRR → TRANS_MULT → frame start delay → TRANSCONF を行い、PIPESRC はその関数の外で `hsw_crtc_enable()` が書く（**E-112 後の訂正: 当初ここに「その後に書く」と記したのは未確認の記述で誤り。正本 `hsw_crtc_enable` の順は `intel_set_pipe_src_size`（PIPESRC）→ `bdw_set_pipe_misc` → `hsw_configure_cpu_transcoder`、つまり PIPESRC が先**）。今回、呼出し元の関数そのものを生成 file に入れ、writer 間の順序も正本の text から得るようにした（`parity_lcd_emit_cpu_transcoder`）。旧 API（13 語）は値の照合用に残し、「enable 列の中の位置は表さない」という注記は元のまま。
+
+### 2. 取り込み（generator `port_lcd_calc.py`、全て正本 text、手入力なし）
+- `intel_display_port.c` に追加: `hsw_configure_cpu_transcoder`（呼出し元）、`hsw_set_transconf`、`hsw_set_frame_start_delay`、`intel_cpu_transcoder_set_m2_n2`／`_has_m2_n2`、`intel_phy_is_tc`、`intel_port_to_phy`。
+- 新規 `intel_ddi_port.c`（intel_ddi.c）: `ddi_buf_phy_link_rate`、`intel_ddi_init_dp_buf_reg`、`intel_ddi_set_dp_msa`、`bdw_trans_port_sync_master_select`、`intel_ddi_transcoder_func_reg_val_get`、`intel_ddi_enable_transcoder_func`、`hsw_chicken_trans_reg`。
+- 新規 `intel_vrr_port.c`（intel_vrr.c）: `trans_vrr_ctl`、`intel_vrr_set_transcoder_timings`。`intel_link_port.c` に `intel_dp_is_uhbr`、`intel_dp_needs_vsc_sdp`。
+- text 抽出 header: `lcd_ddi_types.h`（enum port／phy／intel_output_type／intel_output_format）、`lcd_ref_inlines.h`（`intel_crtc_has_type`／`_has_dp_encoder`／`_needs_modeset`、`transcoder_is_dsi`）、`lcd_ddi_regs.h`（TRANS_MULT、TRANS_VRR_*、TRANSCONF、CHICKEN_TRANS、TRANS_DDI_FUNC_CTL[2]、DDI_BUF_CTL、TRANS_MSA_MISC）、`lcd_dp_msa.h`（drm_dp.h の DP_MSA_MISC_*、元 file の notice つき）、`lcd_drm_colorspace.h`（drm_connector.h の enum drm_colorspace、同）。
+- 旧 compat の `#define intel_crtc_has_type(state, type) (0)` を撤去し、正本の inline（`output_types & BIT(type)`）に置換 — eDP は `BIT(INTEL_OUTPUT_EDP)` を立てた state で DP SST の分岐へ入る。
+- emit hook に read-modify-write（`intel_de_rmw`）と posting read を追加。rmw は「clear する bit／set する bit」を記録し、結果の語は hardware 次第なので値としては持たない。
+- 固定参照の追加（kernel.org stable v6.8.12、`drm-v6.8.12/SHA256SUMS` に登録）: `drm_connector.h`（今回使用）、`drm_fourcc.h`／`drm_blend.h`／`drm_color_mgmt.h`／`uapi_drm_mode.h`（次の plane 片で使用）。
+
+### 3. 結果
+`hsw_configure_cpu_transcoder`（pipe A／TRANSCODER_A）の 17 操作、正本の順:
+M/N 4 語（LINK_N 最後、display ver 13 は M2/N2 なし）→ timings 8 語（E-110 と同値、Linux dump と一致）→ `rmw 0x420c0 set=0x80000000`（CHICKEN_TRANS_A の PIPE_VBLANK_WITH_DELAY、ver 12〜13）→ `0x60420 = 0`（TRANS_VRR_CTL、flipline なし）→ `0x6002c = 0`（TRANS_MULT = pixel_multiplier−1）→ `rmw 0x420c0 clear=0x18000000 set=0`（frame start delay = 1−1）→ `0x70008 = 0`（TRANSCONF: progressive、**modeset 中は enable bit なし**。dump の 0xc0000000 は後の `intel_enable_transcoder` の enable＋state）。PIPESRC は含まれない。
+DDI 側: `0x60410 = 0x00000001`（MSA: sync clock、6 bpc、RGB、VSC SDP なし）→ `0x60404 = 0`（CTL2、port sync なし）→ **`0x60400 = 0x8a210002` = Linux dump**（enable｜TGL+ の DDI A 選択｜DP SST｜6 bpc｜+HSync｜x2）。DDI_BUF_CTL の値 = 0x00000002、+enable = **0x80000002 = Linux dump**。
+比較先が無い語（dump に readout が無い）: CHICKEN_TRANS、TRANS_VRR_CTL、TRANS_MULT、MSA — 正本 text からの導出値で、試験の期待値は field 定義から独立に書いた。Linux guest での追加採取の候補。
+host `run-lcd-host-test.sh` **42/0**（+17: 順序、rmw の mask、transcoder B の CHICKEN_TRANS_B が等間隔でないこと、port B／8 bpc／4 lane／負極性で全 field が動くこと、lane reversal の保持、Type-C port の拒否）。ktest **451/0**（+2）。実機（`e111-run-parity-hw-aux.log`）: 実 AUX の EDID／DPCD から同じ語、`AUX-TEST verdict: PASS … lcd_a_match=1`（DDI 語と 17 操作を含む判定）、`SCANOUT-TEST verdict: PASS`、`edp fini` refs 0。**DDI_BUF_CTL_A の現在値 = 0x00000080（idle、disable、reversal なし）** = この guest では port が駆動されていない状態の実測。
+host 試験は UBSan の shift-base だけ無効化（正本 text の `(1 << 31)`。kernel と同じ wrapping 前提）。`check_generated.sh` 全一致。
+
+### 提出物
+`parity/lcd/{intel_ddi_port.c,intel_vrr_port.c,lcd_ddi_types.h,lcd_ref_inlines.h,lcd_ddi_regs.h,lcd_dp_msa.h,lcd_drm_colorspace.h}`（生成）、`intel_display_port.c`／`intel_link_port.c`（再生成）、`lcd_compat.h`、`parity_lcd_calc.{c,h}`、`parity_display_emit_glue.inc`、`parity_ddi_emit_glue.inc`（新規）、`parity/dp/{parity_dp_kernel.c,parity_dp_kernel.h,edp_ktest.c}`、`vmunix.mk`、tests（`lcd-host-test.c`、`run-lcd-host-test.sh`）、tools（`port_lcd_calc.py`、`check_generated.sh`）、`drm-v6.8.12/`（5 file＋SHA256SUMS＋README）、`increment-results/e111-run-parity-hw-aux.log`。
+
+### 残(次)
+plane 語（`skl_universal_plane.c`: `skl_plane_ctl`〔ADL-P の `PLANE_CTL_ARB_SLOTS` WA〕、`glk_plane_color_ctl`、`icl_plane_update_noarm／arm`。比較先 dump: PLANE_CTL 0x94000000、STRIDE 0x78、SIZE 0x0437077f、COLOR_CTL 0x2000）→ `hsw_crtc_enable`／`intel_ddi` の enable 列を呼出し元ごと取り込み、未移植の callee を「名前つき step」として記録 → 前提条件表 → DPLL enable／DPCLKA／combo PHY signal level → WM／DBUF（`skl_watermark.c`、大）→ backlight → link training → fake 試験 → LCD-B。
+台帳E-60〜E-111。GPU=vfio-pci維持, 10ms tick/HAL非変更維持, execlists, 累積修正保持。git commit/push なし。
+
+## p011 増分E-112 (2026-09-19): **LCD-A 第 4 片 — universal plane の語を正本の writer（`icl_plane_update_noarm／arm`）から生成。PLANE_CTL 0x94000000／STRIDE 0x78／SIZE 0x0437077f／COLOR_CTL 0x2000 が Linux の dump と一致（host／ktest／実機の実 scanout buffer）**。未書込み。watermark は未移植で「名前つき step」として列に残る
+
+### 0. 現在地の区分
+確認済み = E-111 まで＋plane 1 枚（primary、linear XRGB8888、全画面、rotation 0）の 12 語の**計算**。未実行 = 書込み全部、watermark／DDB、DPLL／PHY／training、panel power、backlight。今回の実機で増えた hardware 操作は**無い**（計算と log だけ）。
+
+### 1. 取り込み（generator、手入力なし）
+- 新規 `skl_plane_port.c`（skl_universal_plane.c、27 関数）: `skl_plane_ctl`＋format／tiling／rotate／flip／alpha／**`adlp_plane_ctl_arb_slots`（Wa_22012358565: ADL-P は cpp 4 で ARB_SLOTS(1) = bit 28）**、`glk_plane_color_ctl`＋alpha、`skl_plane_stride`／`_stride_mult`、`skl_surf_address`／`skl_plane_surf`、`skl_plane_aux_dist`、key 3 種、`icl_is_hdr_plane`、sel-fetch 3 種、writer `icl_plane_update_noarm`／`icl_plane_update_arm`。
+- text 抽出: `lcd_plane_regs.h`（i915_reg.h の Skylake+ plane register block 全体）、`lcd_psr_selfetch_regs.h`（intel_psr_regs.h）、`lcd_plane_types.h`（enum plane_id）、`lcd_i915_colorkey.h`（uapi i915_drm.h の colorkey 構造体と flag 2 個、元 notice つき）、`lcd_drm_fourcc.h`（drm_fourcc.h **全体**、`#include "drm.h"` の 1 行だけ除去を manifest に記録）、`lcd_drm_plane_defs.h`（drm_blend.h／uapi drm_mode.h／drm_color_mgmt.h から blend mode・rotation bit・colour enum）。固定参照に `i915_drm.h` を追加（SHA256SUMS 登録）。
+- 手書き `lcd_plane_compat.h`: plane／fb／plane state の member、`_MMIO_PLANE` 等の address 算術。**この片の範囲 = linear・単一 colour plane**に固定した helper（`is_surface_linear`、`intel_fb_uses_dpt` = 0、`skl_main_to_aux_plane` = 0 など）は名前を挙げて header に列挙し、範囲外（他 format、tiled modifier、sprite plane、64 の倍数でない pitch、4 KiB 非整列の surf）は **glue が正本 code を走らせる前に拒否**する。
+- **未移植の callee は「名前つき step」**: emit hook に `step(name)` を追加。`skl_write_plane_wm`（watermark）、`skl_program_plane_scaler`、`icl_program_input_csc`、`icl_plane_csc_load_black` は、正本が呼ぶ位置で語の列に step として記録される（黙って消さない）。今回の列には `skl_write_plane_wm` が PLANE_COLOR_CTL の直後・arm の前に出る。
+- `plane_state->ctl`／`color_ctl` の計算を呼ぶ 2 行は正本では `skl_plane_check()` 内（未取り込み、glue に出典を記載）。src／dst／alpha／blend mode などの state は atomic check の結果相当を glue で与えている（値と根拠は glue の comment）。
+
+### 2. 結果（pipe A／plane 1、実 scanout buffer: pitch 7680、surf 0xfdfc0000）
+正本の順: `0x70188 = 0x78`（STRIDE）→ `0x7018c = 0`（POS）→ `0x70190 = 0x0437077f`（SIZE）→ KEYVAL 0／KEYMSK 0／`KEYMAX = 0xff000000`（plane alpha 0xff）→ `0x701a4 = 0`（OFFSET）→ `0x701c0 = 0`（AUX_DIST。ADL-P は flat CCS でないので書く）→ `0x701c8 = 0`（CUS_CTL。primary は HDR plane）→ `0x701cc = 0x2000`（COLOR_CTL: plane gamma disable、alpha なし）→ **step `skl_write_plane_wm`** → `0x70180 = 0x94000000`（PLANE_CTL）→ `0x7019c = surf`（PLANE_SURF が最後 = update を arm）。
+**Linux dump と一致**: PLANE_CTL 0x94000000、STRIDE 0x78、SIZE 0x0437077f、POS 0、COLOR_CTL 0x2000（SURF は Linux 側 0x00180000 = 向こうの buffer）。dump の `0x70240 = 0x80004010`（PLANE_WM）と `0x7027c = 0x0fdb0000`（PLANE_BUF_CFG）は watermark／DDB の比較先として残してある（未移植）。
+host `run-lcd-host-test.sh` **56/0**（+14）、ktest **452/0**（+1 `LCD-A-PLANE-WORDS`）、実機 `e112-run-parity-hw-aux.log`: `SCANOUT-TEST plane words (computed; NOT written): … match=1`、`SCANOUT-TEST verdict: PASS`（plane 語の一致を合格条件に追加）、`AUX-TEST verdict: PASS`、`edp fini` refs 0。`check_generated.sh` 全一致。
+
+### 提出物
+`parity/lcd/{skl_plane_port.c,lcd_plane_regs.h,lcd_psr_selfetch_regs.h,lcd_plane_types.h,lcd_i915_colorkey.h,lcd_drm_fourcc.h,lcd_drm_plane_defs.h}`（生成）、`lcd_plane_compat.h`・`parity_plane_emit_glue.inc`（新規、zedBSD）、`lcd_compat.h`、`parity_lcd_calc.{c,h}`（`parity_lcd_emit_plane`、step 記録）、`lcd_hw_check.c`、`dp/edp_ktest.c`、`vmunix.mk`、tests、tools（`port_lcd_calc.py`、`check_generated.sh`、`lcd-e112/`）、`drm-v6.8.12/i915_drm.h`、`increment-results/e112-run-parity-hw-aux.log`。
+
+### 残(次)
+enable 列を呼出し元ごと（`hsw_crtc_enable`、`intel_ddi_pre_enable_dp`／`tgl_ddi_pre_enable_dp`、`intel_enable_ddi_dp`、disable 側）— 未移植 callee は step として記録し、そこから前提条件表を作る → DPLL enable（`combo_pll_enable`）／DPCLKA／combo PHY signal level（`icl_combo_phy_set_signal_levels`、buf trans 表）→ watermark／DDB（`skl_watermark.c`。比較先 0x80004010／0x0fdb0000）→ backlight → link training → fake 試験 3 系統 → LCD-B 実機 1 回（写真）。
+台帳E-60〜E-112。GPU=vfio-pci維持, 10ms tick/HAL非変更維持, execlists, 累積修正保持。git commit/push なし。
+
+### E-112 追記（2026-09-19）: E-111 の記述の訂正
+E-111 §1 と E-111 追補報告に「PIPESRC は `hsw_configure_cpu_transcoder` の**後**に `hsw_crtc_enable` が書く」と記したが、正本 `hsw_crtc_enable` を読んで確認したところ**逆**だった: `intel_encoders_pre_pll_enable` → `intel_enable_shared_dpll` → `intel_encoders_pre_enable` → `intel_dsc_enable` → `intel_uncompressed_joiner_enable` → **`intel_set_pipe_src_size`（PIPESRC）→ `bdw_set_pipe_misc` → `hsw_configure_cpu_transcoder`** → pfit → colour LUT／commit → `hsw_set_linetime_wm` → `icl_set_pipe_chicken` → `intel_initial_watermarks` → `intel_encoders_enable`。生成物・語の値・試験の合否には影響しない（`parity_lcd_emit_cpu_transcoder` の列に PIPESRC が無いという事実は正しい）が、順序についての私の説明が未確認の記憶に基づいていた。host 試験の説明文、E-111 本文、memory を訂正した。**関数間の順序は、呼出し元を取り込んで列から読むまで記述しない**（次の増分で `hsw_crtc_enable` と DDI の enable 列を呼出し元ごと取り込む理由でもある）。
+
+## p011 増分E-113 (2026-09-19): **LCD-A 第 5 片 — modeset の enable 列を正本の呼出し元（`hsw_crtc_enable`＋DDI の pre_pll_enable／pre_enable／enable 連鎖）から機械的に取得。67 項目 = register 操作 22＋未移植の名前つき step 45**。未書込み。E-111 の順序誤記はこの列で確定的に訂正
+
+### 0. 現在地の区分
+確認済み = E-112 まで＋enable 列の**順序**（正本 text 由来）と、その中で既に計算できる 22 操作の値。未実行 = 書込み全部と step 45 個の中身。今回の実機で増えた hardware 操作は無い。
+
+### 1. 方式
+- 生成 file に呼出し元を追加: `intel_display_port.c` に `hsw_crtc_enable`、`intel_ddi_port.c` に `tgl_ddi_pre_enable_dp`／`intel_ddi_pre_enable_dp`／`intel_ddi_pre_enable`／`intel_enable_ddi_dp`／`intel_enable_ddi`／`intel_ddi_pre_pll_enable`／`intel_ddi_config_transcoder_func`。
+- 手書き `lcd_seq_compat.h`: 未移植の callee（step 定義 56 個）を 1 個ずつ「名前つき step」に定義（取られない分岐の callee も compile に必要なので定義してある。定義が無ければ compile できない = 黙って消えない）。encoder の hook は `intel_ddi_init()` と同じ対応（`enable = intel_enable_ddi`、`pre_pll_enable = intel_ddi_pre_pll_enable`、`pre_enable = intel_ddi_pre_enable`、`set_signal_levels` = combo PHY 用）で束ね、`intel_encoders_*()` は encoder 1 個用の dispatcher（zedBSD、列には `>` つき step として出る）。
+- API `parity_lcd_emit_enable_sequence()`、`parity_lcd_words_step()`。語の表の容量 32→96。
+
+### 2. 得られた列の要点（全体は `handover/notes/lcd-enable-sequence.md`）
+`intel_dmc_enable_pipe` → **pre_pll_enable**（`main_link_aux_power_domain_get`）→ `intel_enable_shared_dpll` → **pre_enable**: underrun reporting → `intel_dp_set_link_params` →（DDI_BUF_CTL 値の準備）→ **`intel_pps_on`** → `intel_ddi_enable_clock` → DDI IO power → `icl_program_mg_dp_mode` → transcoder clock → **`TRANS_DDI_FUNC_CTL` = 0x0a210002（enable bit なしで構成）** → signal levels → lane power up → MSO → sink を D0 → protocol converter／decompression／FEC ready／FRL／PCON → **`intel_dp_start_link_train` → `intel_dp_stop_link_train`** → FEC → DSC PPS → **`TRANS_MSA_MISC`** ‖ `intel_dsc_enable` → joiner → **PIPESRC** → `bdw_set_pipe_misc` → **cpu transcoder 17 操作（M/N … TRANSCONF）** → pfit → colour LUT／commit → linetime WM → pipe chicken → `intel_initial_watermarks` → **enable**: `TRANS_DDI_FUNC_CTL2` → **`TRANS_DDI_FUNC_CTL` = 0x8a210002（= Linux dump）** → audio → **`intel_enable_transcoder`** → FEC status → `intel_crtc_vblank_on` → privacy screen → **`intel_edp_backlight_on`** → infoframes → port sync → HDCP。
+この列から確定したこと（host 試験 11 件が検査）: panel power は DDI clock より前／signal level は training より前／TRANS_DDI_FUNC_CTL は **2 回**書かれる（training 前に enable なしで構成、encoder enable で enable）／MSA は training の後で pre_enable の内側／**PIPESRC は pre_enable の後、pipe misc と cpu transcoder の前**（E-111 の私の記述は逆だった）／backlight は transcoder on と vblank on の後で最後尾近く／Type-C・HDMI・big joiner・pre-TGL・DP 2.0 の分岐は取られない。
+host `run-lcd-host-test.sh` **67/0**（+11）、ktest **453/0**（+1 `LCD-A-ENABLE-SEQ`）、実機 `e113-run-parity-hw-aux.log`: AUX-TEST／SCANOUT-TEST とも PASS、`edp fini` refs 0（enable 列は計算のみで log には出していない）。`check_generated.sh` 全一致。
+
+### 3. step 45 個の扱い（次の作業の入口）
+表の右端は今は「parity 側に同名関数があるか」の機械検索だけ（`intel_pps_on` のみ該当 = E-108 の生成物）。**各 step が対象機で必要か／何もしない分岐か／既存の parity 実装（別名）で足りるかは、callee を読んで 1 個ずつ埋める**（記憶で埋めない）。LCD-B に向けて中身が要る見込みの大物: `intel_enable_shared_dpll`（combo PLL enable）、`intel_ddi_enable_clock`（DPCLKA）、signal levels（combo PHY＋buf trans 表）、`intel_ddi_power_up_lanes`、link training、`intel_enable_transcoder`、`intel_initial_watermarks`＋plane の `skl_write_plane_wm`、`intel_edp_backlight_on`、`bdw_set_pipe_misc`、`icl_set_pipe_chicken`。disable 列（`hsw_crtc_disable`、`intel_ddi_post_disable` ほか）は同じ方式で次に取り込む。
+
+### 提出物
+`parity/lcd/{intel_display_port.c,intel_ddi_port.c}`（再生成）、`lcd_seq_compat.h`（新規）、`lcd_compat.h`、`parity_lcd_calc.{c,h}`、`parity_display_emit_glue.inc`、`parity_ddi_emit_glue.inc`、`dp/edp_ktest.c`、tests（`lcd-host-test.c`）、tools（`port_lcd_calc.py`、`lcd-e113/{patch_e113.py,patch_tests_e113.py,gen_seq_table.py}`）、`handover/notes/lcd-enable-sequence.md`、`increment-results/e113-run-parity-hw-aux.log`。
+
+### 残(次)
+disable 列の取り込み → step ごとの前提条件表（callee を読んで埋める）→ 中身の移植を列の順に: shared DPLL enable → DDI clock → signal levels／lane power → link training → transcoder enable → watermark／DDB → backlight。各段は fake 試験（正常 enable→disable／途中失敗／enable 後の停止）を先に作る → LCD-B 実機 1 回（写真）。
+台帳E-60〜E-113。GPU=vfio-pci維持, 10ms tick/HAL非変更維持, execlists, 累積修正保持。git commit/push なし。

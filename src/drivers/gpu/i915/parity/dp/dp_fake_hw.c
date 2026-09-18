@@ -328,14 +328,125 @@ static uint64_t fake_now_ms(void *ctx)
 static int fake_power_get(void *ctx, int domain)
 {
 	struct dp_fake_hw *hw = ctx;
+	int slot = domain == 0 ? 0 : 1;
 
 	if (hw->fail_power_get)
 		return -5;
-	if (domain == 0)
+	if (hw->parked[slot]) {            /* grab the parked reference back: no hardware change */
+		hw->parked[slot] = 0;
+		hw->async_grabbed++;
+		return 0;
+	}
+	if (slot == 0)
 		hw->refs_core++;
 	else
 		hw->refs_aux++;
 	return 0;
+}
+
+static void fake_power_put_async(void *ctx, int domain)
+{
+	struct dp_fake_hw *hw = ctx;
+	int slot = domain == 0 ? 0 : 1;
+	int *refs = slot == 0 ? &hw->refs_core : &hw->refs_aux;
+
+	if (*refs > 1) {                   /* not the last one: an ordinary put */
+		(*refs)--;
+		return;
+	}
+	hw->parked[slot] = 1;
+	hw->parked_due_us[slot] = hw->now_us + 100000u;
+	hw->async_parked++;
+}
+
+static void fake_lock(void *ctx, int which)
+{
+	struct dp_fake_hw *hw = ctx;
+
+	if (hw->lock_held[which])
+		hw->lock_errors++;             /* a real mutex would deadlock here */
+	hw->lock_held[which] = 1;
+	hw->lock_acquisitions[which]++;
+}
+
+static void fake_unlock(void *ctx, int which)
+{
+	struct dp_fake_hw *hw = ctx;
+
+	if (!hw->lock_held[which])
+		hw->lock_errors++;
+	hw->lock_held[which] = 0;
+}
+
+static int fake_delayed_queue(void *ctx, int which, unsigned delay_ms)
+{
+	struct dp_fake_hw *hw = ctx;
+
+	(void)which;
+	if (hw->work_pending)
+		return 0;
+	hw->work_pending = 1;
+	hw->work_due_us = hw->now_us + (uint64_t)delay_ms * 1000u;
+	hw->work_queued++;
+	return 1;
+}
+
+static int fake_delayed_cancel(void *ctx, int which, int sync)
+{
+	struct dp_fake_hw *hw = ctx;
+	int was = hw->work_pending;
+
+	(void)which;
+	if (sync) {
+		hw->work_cancel_syncs++;
+		if (hw->lock_held[PARITY_DP_LOCK_PPS])
+			hw->lock_errors++;         /* cancel_sync under the lock the body takes = deadlock */
+	}
+	if (was)
+		hw->work_cancelled++;
+	hw->work_pending = 0;
+	return was;
+}
+
+static int fake_delayed_pending(void *ctx, int which)
+{
+	(void)which;
+	return ((struct dp_fake_hw *)ctx)->work_pending;
+}
+
+static void release_parked(struct dp_fake_hw *hw, unsigned slot)
+{
+	hw->parked[slot] = 0;
+	if (slot == 0)
+		hw->refs_core--;
+	else
+		hw->refs_aux--;
+	hw->async_released++;
+}
+
+unsigned dp_fake_run_due(struct dp_fake_hw *hw)
+{
+	unsigned ran = 0, slot;
+
+	if (hw->work_pending && hw->now_us >= hw->work_due_us) {
+		hw->work_pending = 0;
+		hw->work_ran++;
+		parity_edp_work_run(PARITY_DP_WORK_VDD_OFF);
+		ran++;
+	}
+	for (slot = 0; slot < 2u; slot++)
+		if (hw->parked[slot] && hw->now_us >= hw->parked_due_us[slot])
+			release_parked(hw, slot);
+	return ran;
+}
+
+void dp_fake_flush_async(struct dp_fake_hw *hw)
+{
+	unsigned slot;
+
+	for (slot = 0; slot < 2u; slot++)
+		if (hw->parked[slot])
+			release_parked(hw, slot);
 }
 
 static void fake_power_put(void *ctx, int domain)
@@ -359,5 +470,11 @@ void dp_fake_bind_env(struct dp_fake_hw *hw, struct parity_dp_env *env)
 	env->now_ms = fake_now_ms;
 	env->power_get = fake_power_get;
 	env->power_put = fake_power_put;
+	env->power_put_async = fake_power_put_async;
+	env->lock = fake_lock;
+	env->unlock = fake_unlock;
+	env->delayed_queue = fake_delayed_queue;
+	env->delayed_cancel = fake_delayed_cancel;
+	env->delayed_pending = fake_delayed_pending;
 	stuck_until_us = 0;
 }

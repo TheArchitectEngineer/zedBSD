@@ -201,6 +201,28 @@ parity_kqueue_work(struct parity_kworkqueue *wq, struct parity_kwork *w)
 }
 
 int
+parity_kcancel_work(struct parity_kworkqueue *wq, struct parity_kwork *w)
+{
+	int was_pending;
+
+	spin_lock(&wq->lock);
+	was_pending = kwq_remove_pending(wq, w);
+	spin_unlock(&wq->lock);
+	return was_pending;
+}
+
+int
+parity_kwork_is_pending(struct parity_kworkqueue *wq, struct parity_kwork *w)
+{
+	int pending;
+
+	spin_lock(&wq->lock);
+	pending = w->queued;
+	spin_unlock(&wq->lock);
+	return pending;
+}
+
+int
 parity_kcancel_work_sync(struct parity_kworkqueue *wq, struct parity_kwork *w, uint64_t deadline)
 {
 	int was_pending;

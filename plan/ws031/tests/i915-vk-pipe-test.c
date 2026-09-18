@@ -166,6 +166,50 @@ encode_stage(uint32_t stage, uint64_t module)
 	w64(0U);				/* pSpecializationInfo present */
 }
 
+/* vkCreateGraphicsPipelines for one pipeline referencing both stages. */
+static void
+encode_pipeline_create(uint64_t vs_handle, uint64_t fs_handle, uint64_t pipe_handle)
+{
+	wire_len = 0;
+	w32(65U); w32(1U);			/* opcode, reply flag */
+	w64(0xD0U);				/* device */
+	w64(0U);				/* pipeline cache */
+	w32(1U);				/* count */
+	w64(1U);				/* count */
+	/* VkGraphicsPipelineCreateInfo */
+	w32(28U);				/* sType */
+	w64(0U);				/* pNext present */
+	w32(0U);				/* flags */
+	w32(2U);				/* stageCount */
+	w64(2U);				/* stageCount */
+	encode_stage(0x1U, vs_handle);		/* vertex */
+	encode_stage(0x10U, fs_handle);		/* fragment */
+	w64(0U);				/* vertex input absent */
+	w64(1U);				/* input assembly present */
+	w32(20U); w64(0U); w32(0U); w32(3U); w32(0U);	/* sType,pNext,flags,topology=TRIANGLE_LIST,primRestart */
+	w64(0U);				/* tessellation absent */
+	w64(0U);				/* viewport absent */
+	w64(1U);				/* rasterization present (always) */
+	{
+		int word;
+		for (word = 0; word < 14; word++)
+			w32(0U);		/* rasterization state, discard disabled */
+	}
+	w64(0U);				/* multisample absent */
+	w64(0U);				/* depth-stencil absent */
+	w64(0U);				/* color blend absent */
+	w64(0U);				/* dynamic absent */
+	w64(0U);				/* layout */
+	w64(0U);				/* renderPass */
+	w32(0U);				/* subpass */
+	w64(0U);				/* base pipeline */
+	w32(0U);				/* base index */
+	/* Output identities follow the batch. */
+	w64(0U);				/* reserved */
+	w64(1U);				/* identity count */
+	w64(pipe_handle);				/* pipeline wire id */
+}
+
 static void
 test_graphics_pipeline(void)
 {
@@ -220,51 +264,53 @@ test_graphics_pipeline(void)
 		assert(i915_vk_obj_lookup(&vk, I915_VK_OBJ_SHADER_MODULE, mh) == NULL);
 	}
 
-	/* Both stages are stored as shader modules first. */
+	/*
+	 * A VALID vertex shader with an instruction the kernel compiler does not lower: the shipped
+	 * vkdemo shader with its first OpFMul (133) turned into OpFDiv (136, same operands).
+	 * Creating a pipeline with it must fail as a whole -- a defined VkResult, no pipeline
+	 * object, no code buffer left behind -- instead of producing a pipeline around a shader
+	 * that is not the application's.
+	 */
+	{
+		const uint64_t bad_vs_h = 0xD10ULL, bad_fs_h = 0xD11ULL, bad_pipe_h = 0xE10ULL;
+		unsigned live_before;
+		uint32_t *bad_vs = malloc(vs_words * sizeof(*bad_vs));
+		size_t at;
+
+		assert(bad_vs != NULL);
+		memcpy(bad_vs, vs, vs_words * sizeof(*bad_vs));
+		for (at = 5U; at < vs_words && (bad_vs[at] & 0xFFFFU) != 133U; at += bad_vs[at] >> 16)
+			assert((bad_vs[at] >> 16) != 0U);
+		assert(at < vs_words);
+		bad_vs[at] = (bad_vs[at] & 0xFFFF0000U) | 136U;
+		encode_shader_module(bad_vs, vs_words, bad_vs_h);
+		free(bad_vs);
+		assert(run_command(&session, reply, sizeof(reply)) == 24U);
+		encode_shader_module(fs, fs_words, bad_fs_h);
+		assert(run_command(&session, reply, sizeof(reply)) == 24U);
+		live_before = device->object_count;
+		encode_pipeline_create(bad_vs_h, bad_fs_h, bad_pipe_h);
+		assert(run_command(&session, reply, sizeof(reply)) == 8U);	/* opcode + VkResult only */
+		assert(rd32(reply, 0U) == 65U);
+		assert(rd32(reply, 4U) == (uint32_t)(-8));		/* VK_ERROR_FEATURE_NOT_PRESENT */
+		assert(i915_vk_obj_lookup(&vk, I915_VK_OBJ_PIPELINE, bad_pipe_h) == NULL);
+		assert(device->object_count == live_before);		/* nothing placed for the half-built pipeline */
+		wire_len = 0;
+		w32(60U); w32(1U); w64(0xD0U); w64(bad_vs_h); w64(0U);
+		assert(run_command(&session, reply, sizeof(reply)) == 4U);
+		wire_len = 0;
+		w32(60U); w32(1U); w64(0xD0U); w64(bad_fs_h); w64(0U);
+		assert(run_command(&session, reply, sizeof(reply)) == 4U);
+		printf("i915 vk pipe: vertex shader with an unlowered instruction refused as VK_ERROR_FEATURE_NOT_PRESENT, nothing left behind\n");
+	}
+
+	/* The wire format of a successful creation, with the shipped vkdemo shaders. */
 	encode_shader_module(vs, vs_words, vs_h);
 	assert(run_command(&session, reply, sizeof(reply)) == 24U);
 	encode_shader_module(fs, fs_words, fs_h);
 	assert(run_command(&session, reply, sizeof(reply)) == 24U);
 
-	/* vkCreateGraphicsPipelines for one pipeline referencing both stages. */
-	wire_len = 0;
-	w32(65U); w32(1U);			/* opcode, reply flag */
-	w64(0xD0U);				/* device */
-	w64(0U);				/* pipeline cache */
-	w32(1U);				/* count */
-	w64(1U);				/* count */
-	/* VkGraphicsPipelineCreateInfo */
-	w32(28U);				/* sType */
-	w64(0U);				/* pNext present */
-	w32(0U);				/* flags */
-	w32(2U);				/* stageCount */
-	w64(2U);				/* stageCount */
-	encode_stage(0x1U, vs_h);		/* vertex */
-	encode_stage(0x10U, fs_h);		/* fragment */
-	w64(0U);				/* vertex input absent */
-	w64(1U);				/* input assembly present */
-	w32(20U); w64(0U); w32(0U); w32(3U); w32(0U);	/* sType,pNext,flags,topology=TRIANGLE_LIST,primRestart */
-	w64(0U);				/* tessellation absent */
-	w64(0U);				/* viewport absent */
-	w64(1U);				/* rasterization present (always) */
-	{
-		int word;
-		for (word = 0; word < 14; word++)
-			w32(0U);		/* rasterization state, discard disabled */
-	}
-	w64(0U);				/* multisample absent */
-	w64(0U);				/* depth-stencil absent */
-	w64(0U);				/* color blend absent */
-	w64(0U);				/* dynamic absent */
-	w64(0U);				/* layout */
-	w64(0U);				/* renderPass */
-	w32(0U);				/* subpass */
-	w64(0U);				/* base pipeline */
-	w32(0U);				/* base index */
-	/* Output identities follow the batch. */
-	w64(0U);				/* reserved */
-	w64(1U);				/* identity count */
-	w64(pipe_h);				/* pipeline wire id */
+	encode_pipeline_create(vs_h, fs_h, pipe_h);
 
 	assert(run_command(&session, reply, sizeof(reply)) == 24U);
 	assert(rd32(reply, 0U) == 65U);		/* echoed opcode */

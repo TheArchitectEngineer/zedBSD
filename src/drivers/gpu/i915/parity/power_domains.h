@@ -123,6 +123,31 @@ struct parity_power_domains {
 
 	int map_initialized;
 	int initialized;
+
+	/* domain_use_count[]: references per DOMAIN (the wells count separately) */
+	unsigned domain_use_count[PARITY_PW_DOMAIN_NUM];
+
+	/*
+	 * intel_display_power_put_async(): a last reference that is put asynchronously is
+	 * parked in async_put_domains[0] and released by the delayed work; while that work
+	 * is outstanding further ones collect in [1] and the work re-queues itself for
+	 * them.  A get of a parked domain takes the reference back without touching the
+	 * hardware.  async_put_wakeref marks "the work owns parked references".
+	 */
+	struct parity_pw_domain_mask async_put_domains[2];
+	int async_put_wakeref;
+	int async_put_next_delay;
+	const struct parity_pw_async_ops *async_ops;   /* NULL: put_async puts at once */
+	void *async_ctx;
+	struct parity_pw_ctx *async_pwc;              /* the context the delayed work uses */
+	unsigned async_puts, async_parked, async_grabs, async_work_runs, async_work_empty;
+	unsigned async_released, async_requeues, async_flushes, async_state_errors, use_count_errors;
+};
+
+/* the delayed work behind put_async; supplied by the embedder (real timer + worker, or a test) */
+struct parity_pw_async_ops {
+	int (*queue)(void *ctx, int delay_ms);    /* queue_delayed_work(): 1 newly queued */
+	int (*cancel)(void *ctx, int sync);       /* cancel_delayed_work[_sync]() */
 };
 
 /* intel_power_domains_init(): sanitize options + build the power-well map. */
@@ -196,6 +221,19 @@ int  parity_display_power_get(struct parity_power_domains *pd,
 	enum parity_power_domain d, struct parity_pw_ctx *c);
 void parity_display_power_put(struct parity_power_domains *pd,
 	enum parity_power_domain d, struct parity_pw_ctx *c);
+
+/*
+ * intel_display_power_put_async() and friends.  `delay_ms` < 0 means the reference's
+ * default of 100 ms.  parity_display_power_async_work() is the body of the delayed
+ * work; flush releases everything parked now; flush_sync also waits for a running work.
+ */
+void parity_display_power_async_bind(struct parity_power_domains *pd,
+	const struct parity_pw_async_ops *ops, void *ctx, struct parity_pw_ctx *pwc);
+void parity_display_power_put_async(struct parity_power_domains *pd,
+	enum parity_power_domain d, struct parity_pw_ctx *c, int delay_ms);
+void parity_display_power_async_work(struct parity_power_domains *pd);
+void parity_display_power_flush_work(struct parity_power_domains *pd);
+void parity_display_power_flush_work_sync(struct parity_power_domains *pd);
 
 /*
  * __intel_display_power_is_enabled(): a domain counts as enabled when every one

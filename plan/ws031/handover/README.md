@@ -76,6 +76,43 @@ E-98 の再停止後、実際に提出した batch（`increment-results/e98-batc
 - まだ正本どおりでない点は台帳 E-108 §1 に列挙（実行位置、遅延 VDD-off worker が timer 未接続、mutex は所有の表明、async put は即時）。常駐デバイス化で解消する。
 - E-108 で `parity_dc_off_enable()` を正本どおり `gen9_set_dc_state()` 経由に修正（P7 後に DC_off を取る最初の経路で誤診断が出た）。
 
+### 2.8 E-109: eDP の常駐動作、LCD-A 第 1 片、shader compiler の拒否
+
+- eDP 取得は `intel_setup_outputs()` の位置（`display_nogem.c` の `dp_connector_init` hook）。結果と lock／thread は `struct parity_edp_device`（`parity/dp/parity_dp_kernel.h`）が保持し、teardown の `parity_edp_device_fini` が同期取消 → VDD off → power 層 flush → thread 停止。
+- 共有基盤: `parity/backend_delayed.{c,h}`（delayed work: tick で起きる timer thread → 共有 worker、cancel／cancel_sync／flush は別契約）、`power_domains.c` の async put（parked 参照を次の get が取り戻す）。get／put は `pd->lock` で直列化。
+- sleep: 2 tick 以上は wait queue で譲り、残りだけ短い bounded delay（`parity_dp_kernel_sleep_us`）。HAL・timer は無変更。
+- 試験: host `run-dp-host-test.sh` 72/0、`run-lcd-host-test.sh` 20/0、ktest 433/0（`dwork:`／`pw-async:`／`edp-sync:` は実 thread・実 tick）。実機 `-DPARITY_AUX_TEST=1`: 合格行 `AUX-TEST verdict: PASS (resident=1 … lcd_a_match=1 auto_off=1 reacquire_kept=1 reacquire_off=1 …)` と `edp fini: end_rc=0 … refs core=0 aux=0 lock_errors=0 …`。
+- LCD-A 第 1 片（`parity/lcd/`、計算のみ）: mode／bpp／link／M/N／DPLL が対象機の Linux 値と一致。残りは台帳 E-109 §3。
+- 生成物の検査: `sh plan/ws031/handover/tools/check_generated.sh`（再生成して byte 比較）。
+- shader compiler（`vk/spirv.c`、`compile.c`）は lower できない命令を `ENOTSUP` で拒否する。**vkdemo の vertex shader は今は拒否される**（正しい状態。VK-2 で vector lowering を実装）。完了契約の対応表 `notes/gpu-job-completion-contract.md`。
+- LCD の撮影: Windows 側 `C:\Work\qemu-work\tools\capture_lcd.ps1 <out.jpg>`（`handover/tools/` に写しあり）。
+
+### 2.9 E-110: scanout object、LCD-A の語、shader compiler の基礎 lowering
+
+- 表示用 buffer: `parity/lcd/scanout.{c,h}`（状態 NONE→ALLOCATED→PINNED→IN_USE／ABANDONED）。GGTT は `gt_mem` の**表示用窓**（`PARITY_GT_DISPLAY_PAGES`、GT 窓の直下、`parity_gt_display_window_init` を呼んだ構成だけ）。IN_USE の buffer は解放できない。表示停止を確認できないときは `abandon` → `gt_mem_fini` が解放せず log に残す。
+- LCD-A の語: `parity_lcd_emit_transcoder()` が正本の writer（生成 file `intel_display_port.c`）を emit hook 経由で走らせ 13 語を返す（未書込み）。生成 file は source ごとに分割済み。
+- sleep: `parity_dp_kernel_sleep_us` = `kern_usleep_range`（busy の残りなし）。
+- 実機 `-DPARITY_AUX_TEST=1` は AUX 診断＋scanout 確認の 2 verdict（`AUX-TEST verdict: PASS`、`SCANOUT-TEST verdict: PASS`）。ktest 449/0。
+- LCD-B 用: `parity/lcd/lcd_pattern.{c,h}`（hash 固定）、撮影 `tools/capture_lcd.ps1`。
+- shader compiler: `vk/spirv.c` は **scalar IR**（値 1 個 = float 1 個。vector の構築／抽出／shuffle／local の store・load は IR を出さない）。出荷版 `-O0` の vkdemo VS／FS が lowering＋EU 生成まで通る。**GPU 検証は 0 件**で、payload／出力／SEND descriptor は未検証の仮規約。項目別の状態は `notes/vk-lowering-status.md`。host 試験 `run-vk-host-tests.sh`（10 fixture、`lower` が IR interpreter、`compile` が EU word の model）。
+- capability（STRICT_QUEUE／QUIESCE／capset 168 byte）は `notes/vk-capset-contract-review.md` のレビュー待ち。決定まで flags を立てない。
+
+### 2.10 E-111: cpu transcoder の呼出し元と DDI の語
+
+- `parity_lcd_emit_cpu_transcoder()` = 正本の `hsw_configure_cpu_transcoder` をそのまま走らせた 17 操作（write と rmw を区別）。`parity_lcd_emit_ddi()` = MSA／TRANS_DDI_FUNC_CTL[2] と DDI_BUF_CTL の値。どちらも未書込み。E-110 の 13 語 API は値の照合用（writer 間の順序は表さない）。
+- 方針: **writer だけでなく呼出し元も正本 text から取り込む**（順序を自前の glue に持たない）。次は `hsw_crtc_enable`／DDI enable 列を同じ方式で、未移植の callee は名前つき step として記録する。
+- 比較先: `display-ref/regs-selected.txt`。dump に無い語（CHICKEN_TRANS、TRANS_VRR_CTL、TRANS_MULT、MSA）は Linux guest での追加採取候補。
+
+### 2.11 E-112: plane の語と「名前つき step」
+
+- `parity_lcd_emit_plane()` = 正本の `icl_plane_update_noarm／arm` を走らせた列（primary／linear XRGB8888／全画面だけ。範囲外は glue が拒否）。実機の `SCANOUT-TEST` が実 buffer の pitch／surf で計算し Linux dump と照合する。
+- 未移植の callee（今は `skl_write_plane_wm` ほか 3 種）は emit hook の `step(name)` で**列の中のその位置に記録**される。enable 列を呼出し元ごと取り込むときも同じ仕組みで「どこが未実装か」を列から読めるようにする。
+
+### 2.12 E-113: enable 列
+
+- `parity_lcd_emit_enable_sequence()` = 正本の `hsw_crtc_enable` と DDI の enable 連鎖を走らせた列（67 項目）。表は `notes/lcd-enable-sequence.md`（`tools/lcd-e113/gen_seq_table.py` で再生成）。
+- 未移植の callee は `parity/lcd/lcd_seq_compat.h` の step。**callee を移植したら、その define を消して実物を生成 file に足す** — 列のその位置が register 操作に置き換わる。step の要否は callee を読んで判断する（記憶で書かない）。
+
 ## 3. 現在地（コードの状態）
 
 - parity 経路は `CONFIG_DRIVER_PCI_I915_PARITY=y` でビルドしたときだけ有効（`src/drivers/gpu/i915/i915.c` の `#if CONFIG_DRIVER_PCI_I915_PARITY` で通常 attach を止め、runner に登録）。GPU は **公開されない診断経路**（`/dev/gpu0` は出ない）。

@@ -23,6 +23,7 @@
 #include "drm_device.h"
 #include "bios.h"
 #include "dp/edp_ktest.h"
+#include "lcd/scanout_ktest.h"
 #include "vga.h"
 #include "power_domains.h"
 #include "combo_phy.h"
@@ -82,6 +83,40 @@ edp_ktest_check(int ok, const char *msg)
 {
 	KCHECK(ok, msg);
 }
+
+/* a recording stand-in for the delayed work behind intel_display_power_put_async() */
+static struct {
+	int queued;
+	int last_delay;
+	unsigned queue_calls, cancel_calls, cancel_sync_calls;
+} g_pd_async;
+
+static int
+pd_async_test_queue(void *ctx, int delay_ms)
+{
+	(void)ctx;
+	g_pd_async.queue_calls++;
+	if (g_pd_async.queued)
+		return 0;
+	g_pd_async.queued = 1;
+	g_pd_async.last_delay = delay_ms;
+	return 1;
+}
+
+static int
+pd_async_test_cancel(void *ctx, int sync)
+{
+	int was = g_pd_async.queued;
+
+	(void)ctx;
+	g_pd_async.cancel_calls++;
+	if (sync)
+		g_pd_async.cancel_sync_calls++;
+	g_pd_async.queued = 0;
+	return was;
+}
+
+static const struct parity_pw_async_ops pd_async_test_ops = { pd_async_test_queue, pd_async_test_cancel };
 
 static uint64_t
 deadline_ms(unsigned ms)
@@ -717,6 +752,77 @@ time_test_read(void *cx, uint64_t *counter, uint64_t *freq)
 	return 1;
 }
 
+/* intel_display_power_put_async(): park, grab back, delayed release, flush (own frame on purpose) */
+static void __attribute__((noinline))
+pd_async_checks(struct parity_power_domains *pdc, struct parity_pw_ctx *cx, struct fake_mmio_state *f)
+{
+	/* ---- intel_display_power_put_async(): park, grab back, delayed release, flush ---- */
+	{
+		const unsigned req_bit = (0x2u << 10);
+		int rc;
+
+		g_pd_async.queued = 0; g_pd_async.queue_calls = 0u; g_pd_async.cancel_calls = 0u;
+		g_pd_async.cancel_sync_calls = 0u;
+		parity_display_power_async_bind(pdc, &pd_async_test_ops, 0, cx);
+
+		(void)parity_display_power_get(pdc, PARITY_PW_DOMAIN_PIPE_A, cx);
+		parity_display_power_put_async(pdc, PARITY_PW_DOMAIN_PIPE_A, cx, -1);
+		KCHECK(pdc->power_wells[4].refcount == 1u && (f->pw_hsw_req & req_bit) != 0u &&
+			pdc->domain_use_count[PARITY_PW_DOMAIN_PIPE_A] == 1u && pdc->async_put_wakeref == 1 &&
+			g_pd_async.queued == 1 && g_pd_async.last_delay == 100 && pdc->async_parked == 1u,
+			"pw-async: ASYNC-PARK the last reference is parked, not dropped: well still on, work queued for the default 100 ms");
+
+		rc = parity_display_power_get(pdc, PARITY_PW_DOMAIN_PIPE_A, cx);
+		KCHECK(rc == 0 && pdc->power_wells[4].refcount == 1u && pdc->async_grabs == 1u &&
+			pdc->async_put_wakeref == 0 && g_pd_async.queued == 0 &&
+			pdc->domain_use_count[PARITY_PW_DOMAIN_PIPE_A] == 1u,
+			"pw-async: ASYNC-GRAB the next get takes the parked reference back: no hardware change, work cancelled");
+
+		parity_display_power_put_async(pdc, PARITY_PW_DOMAIN_PIPE_A, cx, -1);
+		g_pd_async.queued = 0;                       /* the timer fired: the body runs */
+		parity_display_power_async_work(pdc);
+		KCHECK(pdc->power_wells[4].refcount == 0u && (f->pw_hsw_req & req_bit) == 0u &&
+			pdc->domain_use_count[PARITY_PW_DOMAIN_PIPE_A] == 0u && pdc->async_put_wakeref == 0 &&
+			pdc->async_released == 1u,
+			"pw-async: ASYNC-RELEASE the delayed work drops the parked reference: well off");
+
+		/* a second domain put while the work is outstanding collects in the second mask */
+		(void)parity_display_power_get(pdc, PARITY_PW_DOMAIN_PIPE_A, cx);
+		(void)parity_display_power_get(pdc, PARITY_PW_DOMAIN_PIPE_PANEL_FITTER_A, cx);
+		parity_display_power_put_async(pdc, PARITY_PW_DOMAIN_PIPE_A, cx, -1);
+		parity_display_power_put_async(pdc, PARITY_PW_DOMAIN_PIPE_PANEL_FITTER_A, cx, 250);
+		KCHECK(pdc->power_wells[4].refcount == 2u && pdc->async_put_next_delay == 250 &&
+			g_pd_async.queue_calls == 3u,
+			"pw-async: ASYNC-SECOND a put while the work is outstanding waits in the second mask (no second queue)");
+		g_pd_async.queued = 0;
+		parity_display_power_async_work(pdc);
+		KCHECK(pdc->power_wells[4].refcount == 1u && pdc->async_requeues == 1u && g_pd_async.queued == 1 &&
+			g_pd_async.last_delay == 250 && pdc->async_put_wakeref == 1,
+			"pw-async: ASYNC-REQUEUE the work releases the first mask and re-queues itself for the second, with its delay");
+
+		parity_display_power_flush_work_sync(pdc);
+		KCHECK(pdc->power_wells[4].refcount == 0u && (f->pw_hsw_req & req_bit) == 0u &&
+			pdc->async_put_wakeref == 0 && g_pd_async.cancel_sync_calls == 1u,
+			"pw-async: ASYNC-FLUSH flush releases everything parked now and syncs the work");
+
+		/* a work body that finds nothing (everything was grabbed / flushed) does nothing */
+		parity_display_power_async_work(pdc);
+		KCHECK(pdc->async_work_empty == 1u && pdc->power_wells[4].refcount == 0u &&
+			pdc->async_state_errors == 0u && pdc->use_count_errors == 0u,
+			"pw-async: ASYNC-EMPTY a late work body finds nothing; no state or use-count error in the whole sequence");
+
+		/* not the last reference: an ordinary put, nothing parked */
+		(void)parity_display_power_get(pdc, PARITY_PW_DOMAIN_PIPE_A, cx);
+		(void)parity_display_power_get(pdc, PARITY_PW_DOMAIN_PIPE_A, cx);
+		parity_display_power_put_async(pdc, PARITY_PW_DOMAIN_PIPE_A, cx, -1);
+		KCHECK(pdc->domain_use_count[PARITY_PW_DOMAIN_PIPE_A] == 1u && pdc->async_put_wakeref == 0 &&
+			pdc->power_wells[4].refcount == 1u,
+			"pw-async: ASYNC-NOT-LAST with another holder the async put is an ordinary put");
+		parity_display_power_put(pdc, PARITY_PW_DOMAIN_PIPE_A, cx);
+		parity_display_power_async_bind(pdc, 0, 0, 0);
+	}
+}
+
 int
 parity_sync_ktest(void)
 {
@@ -1271,6 +1377,8 @@ parity_sync_ktest(void)
 
 	/* --- eDP first stage: PPS / VDD ownership, AUX, DPCD, EDID on the register model (GPU-free) --- */
 	parity_edp_ktest(edp_ktest_check);
+	/* real threads / locks / ticks: delayed work, and the eDP stage running on it */
+	parity_edp_sync_ktest(edp_ktest_check);
 
 	/* --- intel_vga_register decode + power-domain map + pmdemand (GPU-free) --- */
 	{
@@ -1503,6 +1611,8 @@ parity_sync_ktest(void)
 		KCHECK(pdc.power_wells[4].refcount == 1u, "pw: putting one sharer keeps PW_A enabled");
 		parity_display_power_put(&pdc, PARITY_PW_DOMAIN_PIPE_A, &cx);
 		KCHECK(pdc.power_wells[4].refcount == 0u, "pw: putting the last sharer disables PW_A");
+
+		pd_async_checks(&pdc, &cx, &f);
 
 		/* disable tolerates another requester (BIOS): STATE stays; no wait hang. */
 		fake_mmio_open(&m, &f);
@@ -1847,7 +1957,7 @@ parity_sync_ktest(void)
 		static struct osdep_mmio m;   /* large: keep off the 16 KiB stack */
 		struct mutex tsb;
 		struct osdep_trace *tr = &ktest_trace_pool[0];   /* 32 KiB ring: shared static, never on the stack */
-		struct parity_power_domains pd;
+		static struct parity_power_domains pd;   /* large: keep off the stack */
 		struct parity_cdclk_dev cd;
 		struct parity_pw_ctx pwc;
 		struct parity_display_core dc;
@@ -2104,7 +2214,7 @@ parity_sync_ktest(void)
 	{
 		static struct fake_mmio_state f;   /* large: keep off the 16 KiB stack */
 		static struct osdep_mmio m;   /* large: keep off the 16 KiB stack */
-		struct parity_power_domains pd;
+		static struct parity_power_domains pd;   /* large: keep off the stack */
 		struct parity_pw_ctx pwc;
 		struct osdep_trace *tr = &ktest_trace_pool[0];   /* 32 KiB ring: shared static, never on the stack */
 		int pw1, rc;
@@ -4112,6 +4222,9 @@ parity_sync_ktest(void)
 			KCHECK(rc == 0 && sc != 0 && sc->bytes == PARITY_GT_PAGE_BYTES &&
 				sc->pages == 1u && sc->bound == 1,
 				"p6c0: P6C0-SCRATCH the gt scratch page is 4 KiB and pinned in the GGTT");
+
+			/* ---- scanout buffer: display window, aligned + guarded pin, coexistence, lifetime ---- */
+			parity_scanout_ktest(edp_ktest_check, c0_dma, c0_mask);
 
 
 			/* ======== P6-c1: engine setup for execlists submission ======== */

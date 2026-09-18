@@ -289,6 +289,23 @@ parity_intel_power_domains_init(struct parity_power_domains *pd,
 
 	(void)mutex_init(&pd->lock, LOCK_RANK_DEVICE, "parity-power-domains");
 	pd->async_put_work_inited = 1;   /* INIT_DELAYED_WORK(async_put_work) */
+	{
+		unsigned d;
+
+		/* the use counts and the async-put state start empty whatever the caller's memory held */
+		for (d = 0u; d < PARITY_PW_DOMAIN_NUM; d++)
+			pd->domain_use_count[d] = 0u;
+		pd->async_put_domains[0].bits[0] = pd->async_put_domains[0].bits[1] = 0u;
+		pd->async_put_domains[1].bits[0] = pd->async_put_domains[1].bits[1] = 0u;
+		pd->async_put_wakeref = 0;
+		pd->async_put_next_delay = 0;
+		pd->async_ops = 0;
+		pd->async_ctx = 0;
+		pd->async_pwc = 0;
+		pd->async_puts = pd->async_parked = pd->async_grabs = pd->async_work_runs = pd->async_work_empty = 0u;
+		pd->async_released = pd->async_requeues = pd->async_flushes = 0u;
+		pd->async_state_errors = pd->use_count_errors = 0u;
+	}
 	pd->map_initialized = 0;
 	pd->num_power_wells = 0u;
 
@@ -647,12 +664,99 @@ parity_display_power_is_enabled(struct parity_power_domains *pd,
 	return 1;
 }
 
-int
-parity_display_power_get(struct parity_power_domains *pd,
-	enum parity_power_domain d, struct parity_pw_ctx *c)
+/* ---- async put bookkeeping (intel_display_power.c) ---- */
+static int
+mask_test(const struct parity_pw_domain_mask *m, unsigned d)
+{
+	return (m->bits[d >> 6] >> (d & 63u)) & 1u;
+}
+
+static void
+mask_set(struct parity_pw_domain_mask *m, unsigned d)
+{
+	m->bits[d >> 6] |= (uint64_t)1u << (d & 63u);
+}
+
+static void
+mask_clear(struct parity_pw_domain_mask *m, unsigned d)
+{
+	m->bits[d >> 6] &= ~((uint64_t)1u << (d & 63u));
+}
+
+static int
+mask_empty(const struct parity_pw_domain_mask *m)
+{
+	return m->bits[0] == 0u && m->bits[1] == 0u;
+}
+
+/* verify_async_put_domains_state(): the two masks are disjoint, the wakeref flag matches
+ * "something is parked", and every parked domain holds exactly one reference. */
+static void
+verify_async_put_domains_state(struct parity_power_domains *pd)
+{
+	unsigned d;
+	int err = 0;
+
+	if ((pd->async_put_domains[0].bits[0] & pd->async_put_domains[1].bits[0]) != 0u ||
+	    (pd->async_put_domains[0].bits[1] & pd->async_put_domains[1].bits[1]) != 0u)
+		err = 1;
+	if ((pd->async_put_wakeref != 0) !=
+	    !(mask_empty(&pd->async_put_domains[0]) && mask_empty(&pd->async_put_domains[1])))
+		err = 1;
+	for (d = 0u; d < PARITY_PW_DOMAIN_NUM; d++)
+		if ((mask_test(&pd->async_put_domains[0], d) || mask_test(&pd->async_put_domains[1], d)) &&
+		    pd->domain_use_count[d] != 1u)
+			err = 1;
+	if (err) {
+		pd->async_state_errors++;
+		kern_logf("i915: parity power: async put state inconsistent (wakeref=%d [0]=%016llx:%016llx "
+			"[1]=%016llx:%016llx)\n", pd->async_put_wakeref,
+			(unsigned long long)pd->async_put_domains[0].bits[1],
+			(unsigned long long)pd->async_put_domains[0].bits[0],
+			(unsigned long long)pd->async_put_domains[1].bits[1],
+			(unsigned long long)pd->async_put_domains[1].bits[0]);
+	}
+}
+
+/* cancel_async_put_work() */
+static void
+cancel_async_put_work(struct parity_power_domains *pd, int sync)
+{
+	if (pd->async_ops != 0)
+		(void)pd->async_ops->cancel(pd->async_ctx, sync);
+	pd->async_put_next_delay = 0;
+}
+
+/* intel_display_power_grab_async_put_ref(): 1 when the get took a parked reference back */
+static int
+grab_async_put_ref(struct parity_power_domains *pd, unsigned d)
+{
+	int ret = 0;
+
+	if (!mask_test(&pd->async_put_domains[0], d) && !mask_test(&pd->async_put_domains[1], d))
+		goto out_verify;
+	mask_clear(&pd->async_put_domains[0], d);
+	mask_clear(&pd->async_put_domains[1], d);
+	ret = 1;
+	pd->async_grabs++;
+	if (!mask_empty(&pd->async_put_domains[0]) || !mask_empty(&pd->async_put_domains[1]))
+		goto out_verify;
+	cancel_async_put_work(pd, 0);
+	pd->async_put_wakeref = 0;
+out_verify:
+	verify_async_put_domains_state(pd);
+	return ret;
+}
+
+/* __intel_display_power_get_domain(), with pd->lock held */
+static int
+get_domain_locked(struct parity_power_domains *pd, enum parity_power_domain d, struct parity_pw_ctx *c)
 {
 	uint64_t wells = parity_power_domain_wells(pd, d);
 	unsigned i;
+
+	if (grab_async_put_ref(pd, (unsigned)d))
+		return 0;
 
 	/* Get the domain's wells in ascending (reference enabling) order. */
 	for (i = 0u; i < pd->num_power_wells; i++) {
@@ -668,20 +772,195 @@ parity_display_power_get(struct parity_power_domains *pd,
 			return -1;
 		}
 	}
+	pd->domain_use_count[d]++;
 	return 0;
+}
+
+/* __intel_display_power_put_domain(), with pd->lock held */
+static void
+put_domain_locked(struct parity_power_domains *pd, enum parity_power_domain d, struct parity_pw_ctx *c)
+{
+	uint64_t wells = parity_power_domain_wells(pd, d);
+	unsigned i = pd->num_power_wells;
+
+	if (pd->domain_use_count[d] == 0u) {
+		pd->use_count_errors++;
+		kern_logf("i915: parity power: use count on domain %u is already zero\n", (unsigned)d);
+	} else {
+		pd->domain_use_count[d]--;
+	}
+	if (mask_test(&pd->async_put_domains[0], (unsigned)d) || mask_test(&pd->async_put_domains[1], (unsigned)d)) {
+		pd->async_state_errors++;
+		kern_logf("i915: parity power: async disabling of domain %u is pending\n", (unsigned)d);
+	}
+
+	/* Put the domain's wells in reverse order. */
+	while (i-- > 0u)
+		if (wells & ((uint64_t)1u << i))
+			parity_power_well_put(&pd->power_wells[i], c);
+}
+
+int
+parity_display_power_get(struct parity_power_domains *pd,
+	enum parity_power_domain d, struct parity_pw_ctx *c)
+{
+	int rc;
+
+	mutex_lock(&pd->lock);
+	rc = get_domain_locked(pd, d, c);
+	mutex_unlock(&pd->lock);
+	return rc;
 }
 
 void
 parity_display_power_put(struct parity_power_domains *pd,
 	enum parity_power_domain d, struct parity_pw_ctx *c)
 {
-	uint64_t wells = parity_power_domain_wells(pd, d);
-	unsigned i = pd->num_power_wells;
+	mutex_lock(&pd->lock);
+	put_domain_locked(pd, d, c);
+	mutex_unlock(&pd->lock);
+}
 
-	/* Put the domain's wells in reverse order. */
-	while (i-- > 0u)
-		if (wells & ((uint64_t)1u << i))
-			parity_power_well_put(&pd->power_wells[i], c);
+void
+parity_display_power_async_bind(struct parity_power_domains *pd,
+	const struct parity_pw_async_ops *ops, void *ctx, struct parity_pw_ctx *pwc)
+{
+	mutex_lock(&pd->lock);
+	pd->async_ops = ops;
+	pd->async_ctx = ctx;
+	pd->async_pwc = pwc;
+	mutex_unlock(&pd->lock);
+}
+
+/* queue_async_put_domains_work() */
+static void
+queue_async_put_domains_work(struct parity_power_domains *pd, int delay_ms)
+{
+	if (pd->async_put_wakeref != 0)
+		pd->async_state_errors++;
+	pd->async_put_wakeref = 1;
+	if (!pd->async_ops->queue(pd->async_ctx, delay_ms)) {
+		pd->async_state_errors++;
+		kern_logf("i915: parity power: async put work was already queued\n");
+	}
+}
+
+/* release_async_put_domains() */
+static void
+release_async_put_domains(struct parity_power_domains *pd, const struct parity_pw_domain_mask *mask)
+{
+	struct parity_pw_domain_mask m = *mask;   /* `mask` may be one of the two being cleared */
+	unsigned d;
+
+	for (d = 0u; d < PARITY_PW_DOMAIN_NUM; d++) {
+		if (!mask_test(&m, d))
+			continue;
+		/* Clear before put, so the put's sanity check is happy. */
+		mask_clear(&pd->async_put_domains[0], d);
+		mask_clear(&pd->async_put_domains[1], d);
+		put_domain_locked(pd, (enum parity_power_domain)d, pd->async_pwc);
+		pd->async_released++;
+	}
+}
+
+/* __intel_display_power_put_async() */
+void
+parity_display_power_put_async(struct parity_power_domains *pd,
+	enum parity_power_domain d, struct parity_pw_ctx *c, int delay_ms)
+{
+	delay_ms = delay_ms >= 0 ? delay_ms : 100;
+
+	mutex_lock(&pd->lock);
+	pd->async_puts++;
+	if (pd->async_ops == 0 || pd->domain_use_count[d] > 1u) {
+		/* not the last reference (or no delayed work to hand it to): an ordinary put */
+		put_domain_locked(pd, d, c);
+		goto out_verify;
+	}
+	if (pd->domain_use_count[d] != 1u)
+		pd->use_count_errors++;
+
+	/* Let a pending work requeue itself or queue a new one. */
+	pd->async_parked++;
+	if (pd->async_put_wakeref != 0) {
+		mask_set(&pd->async_put_domains[1], (unsigned)d);
+		if (delay_ms > pd->async_put_next_delay)
+			pd->async_put_next_delay = delay_ms;
+	} else {
+		mask_set(&pd->async_put_domains[0], (unsigned)d);
+		queue_async_put_domains_work(pd, delay_ms);
+	}
+out_verify:
+	verify_async_put_domains_state(pd);
+	mutex_unlock(&pd->lock);
+}
+
+/* intel_display_power_put_async_work() */
+void
+parity_display_power_async_work(struct parity_power_domains *pd)
+{
+	mutex_lock(&pd->lock);
+	pd->async_work_runs++;
+
+	/* Bail out if all the parked references were grabbed by later gets or a flush. */
+	if (pd->async_put_wakeref == 0) {
+		pd->async_work_empty++;
+		goto out_verify;
+	}
+	pd->async_put_wakeref = 0;
+
+	release_async_put_domains(pd, &pd->async_put_domains[0]);
+
+	/* Requeue the work if more domains were async put meanwhile. */
+	if (!mask_empty(&pd->async_put_domains[1])) {
+		pd->async_put_domains[0] = pd->async_put_domains[1];
+		pd->async_put_domains[1].bits[0] = pd->async_put_domains[1].bits[1] = 0u;
+		pd->async_requeues++;
+		queue_async_put_domains_work(pd, pd->async_put_next_delay);
+		pd->async_put_next_delay = 0;
+	} else {
+		/* Cancel the work that got queued after this one got dequeued. */
+		cancel_async_put_work(pd, 0);
+	}
+out_verify:
+	verify_async_put_domains_state(pd);
+	mutex_unlock(&pd->lock);
+}
+
+/* intel_display_power_flush_work() */
+void
+parity_display_power_flush_work(struct parity_power_domains *pd)
+{
+	struct parity_pw_domain_mask all;
+
+	mutex_lock(&pd->lock);
+	pd->async_flushes++;
+	if (pd->async_put_wakeref == 0)
+		goto out_verify;
+	pd->async_put_wakeref = 0;
+	all.bits[0] = pd->async_put_domains[0].bits[0] | pd->async_put_domains[1].bits[0];
+	all.bits[1] = pd->async_put_domains[0].bits[1] | pd->async_put_domains[1].bits[1];
+	release_async_put_domains(pd, &all);
+	cancel_async_put_work(pd, 0);
+out_verify:
+	verify_async_put_domains_state(pd);
+	mutex_unlock(&pd->lock);
+}
+
+/* intel_display_power_flush_work_sync(): also guarantees the work body is not running */
+void
+parity_display_power_flush_work_sync(struct parity_power_domains *pd)
+{
+	parity_display_power_flush_work(pd);
+	/* outside pd->lock: the work body takes it */
+	if (pd->async_ops != 0)
+		(void)pd->async_ops->cancel(pd->async_ctx, 1);
+	mutex_lock(&pd->lock);
+	pd->async_put_next_delay = 0;
+	verify_async_put_domains_state(pd);
+	if (pd->async_put_wakeref != 0)
+		pd->async_state_errors++;
+	mutex_unlock(&pd->lock);
 }
 
 void

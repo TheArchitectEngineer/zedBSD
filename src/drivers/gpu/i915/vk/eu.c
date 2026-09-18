@@ -85,6 +85,34 @@ i915_vk_eu_grf(
 	return reg;
 }
 
+/* Names one float of a general register, replicated to every channel. */
+struct i915_vk_eu_reg
+i915_vk_eu_grf_scalar(
+	uint32_t nr,
+	uint32_t subnr)
+{
+	struct i915_vk_eu_reg reg;
+
+	memset(&reg, 0, sizeof(reg));
+	reg.file = EU_FILE_GRF;
+	reg.nr = nr;
+	reg.subnr = subnr;
+	reg.type = EU_TYPE_F;
+	reg.vstride = EU_VSTRIDE_0;
+	reg.width = EU_WIDTH_1;
+	reg.hstride = EU_HSTRIDE_0;
+	return reg;
+}
+
+/* The same register read negated. */
+struct i915_vk_eu_reg
+i915_vk_eu_negate(
+	struct i915_vk_eu_reg reg)
+{
+	reg.negate = reg.negate ^ 1U;
+	return reg;
+}
+
 /* Names a 32-bit float immediate operand. */
 struct i915_vk_eu_reg
 i915_vk_eu_imm_f(
@@ -173,10 +201,14 @@ i915_vk_eu_mad(
 {
 	uint32_t *inst;
 
-	/* The three-source align1 operand layout differs and is completed on hardware. */
+	/*
+	 * The three-source operand layout is not encoded.  An instruction without its operands
+	 * is a different instruction, so the buffer is poisoned: no caller can ship it by accident.
+	 */
 	(void)src0;
 	(void)src1;
 	(void)src2;
+	buffer->error = 1;
 
 	inst = i915_vk_eu_reserve(buffer);
 	if (inst == NULL)
@@ -351,6 +383,7 @@ i915_vk_eu_src0(
 	i915_vk_eu_set(inst, EU_SRC0_HSTRIDE_HI, EU_SRC0_HSTRIDE_LO, reg.hstride);
 	i915_vk_eu_set(inst, EU_SRC0_WIDTH_HI, EU_SRC0_WIDTH_LO, reg.width);
 	i915_vk_eu_set(inst, EU_SRC0_VSTRIDE_HI, EU_SRC0_VSTRIDE_LO, reg.vstride);
+	i915_vk_eu_bit(inst, EU_SRC0_NEGATE_BIT, reg.negate & 1U);
 }
 
 /* Encodes source one, whether a register or an immediate. */
@@ -373,6 +406,7 @@ i915_vk_eu_src1(
 	i915_vk_eu_set(inst, EU_SRC1_HSTRIDE_HI, EU_SRC1_HSTRIDE_LO, reg.hstride);
 	i915_vk_eu_set(inst, EU_SRC1_WIDTH_HI, EU_SRC1_WIDTH_LO, reg.width);
 	i915_vk_eu_set(inst, EU_SRC1_VSTRIDE_HI, EU_SRC1_VSTRIDE_LO, reg.vstride);
+	i915_vk_eu_bit(inst, EU_SRC1_NEGATE_BIT, reg.negate & 1U);
 }
 
 /* Writes value into the inclusive bit range [high:low] of the instruction. */

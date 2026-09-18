@@ -1,0 +1,237 @@
+{
+ "generator": "port_lcd_calc.py",
+ "kept": {
+  "display/intel_ddi.c": [
+   "ddi_buf_phy_link_rate",
+   "intel_ddi_init_dp_buf_reg",
+   "intel_ddi_set_dp_msa",
+   "bdw_trans_port_sync_master_select",
+   "intel_ddi_transcoder_func_reg_val_get",
+   "intel_ddi_enable_transcoder_func",
+   "intel_ddi_config_transcoder_func",
+   "hsw_chicken_trans_reg",
+   "tgl_ddi_pre_enable_dp",
+   "intel_ddi_pre_enable_dp",
+   "intel_ddi_pre_enable",
+   "intel_enable_ddi_dp",
+   "intel_enable_ddi",
+   "intel_ddi_pre_pll_enable"
+  ],
+  "display/intel_display.c": [
+   "intel_phy_is_tc",
+   "intel_port_to_phy",
+   "intel_reduce_m_n_ratio",
+   "compute_m_n",
+   "intel_link_compute_m_n",
+   "intel_set_m_n",
+   "intel_cpu_transcoder_has_m2_n2",
+   "intel_cpu_transcoder_set_m1_n1",
+   "intel_cpu_transcoder_set_m2_n2",
+   "intel_set_transcoder_timings",
+   "intel_set_pipe_src_size",
+   "hsw_set_frame_start_delay",
+   "hsw_set_transconf",
+   "hsw_configure_cpu_transcoder",
+   "hsw_crtc_enable"
+  ],
+  "display/intel_display.h": [
+   "enum phy",
+   "transcoder_is_dsi"
+  ],
+  "display/intel_display_limits.h": [
+   "enum transcoder",
+   "enum port",
+   "enum plane_id"
+  ],
+  "display/intel_display_types.h": [
+   "struct intel_link_m_n",
+   "enum intel_output_type",
+   "enum intel_output_format",
+   "intel_crtc_has_type",
+   "intel_crtc_has_dp_encoder",
+   "intel_crtc_needs_modeset"
+  ],
+  "display/intel_dp.c": [
+   "intel_dp_is_uhbr",
+   "intel_dp_link_symbol_size",
+   "intel_dp_link_symbol_clock",
+   "intel_dp_link_required",
+   "intel_dp_effective_data_rate",
+   "intel_dp_max_data_rate",
+   "intel_dp_needs_vsc_sdp"
+  ],
+  "display/intel_dpll_mgr.c": [
+   "struct skl_wrpll_params",
+   "ehl_combo_pll_div_frac_wa_needed",
+   "struct icl_combo_pll_params",
+   "icl_dp_combo_pll_24MHz_values",
+   "icl_dp_combo_pll_19_2MHz_values",
+   "icl_calc_dp_combo_pll",
+   "icl_calc_dpll_state"
+  ],
+  "display/intel_dpll_mgr.h": [
+   "struct intel_dpll_hw_state"
+  ],
+  "display/intel_psr_regs.h": [
+   "PLANE_SEL_FETCH_*"
+  ],
+  "display/intel_vrr.c": [
+   "trans_vrr_ctl",
+   "intel_vrr_set_transcoder_timings"
+  ],
+  "display/skl_universal_plane.c": [
+   "icl_hdr_plane_mask",
+   "icl_is_hdr_plane",
+   "skl_plane_stride_mult",
+   "skl_plane_stride",
+   "skl_plane_ctl_format",
+   "skl_plane_ctl_alpha",
+   "glk_plane_color_ctl_alpha",
+   "skl_plane_ctl_tiling",
+   "skl_plane_ctl_rotate",
+   "icl_plane_ctl_flip",
+   "adlp_plane_ctl_arb_slots",
+   "skl_plane_ctl_crtc",
+   "skl_plane_ctl",
+   "glk_plane_color_ctl_crtc",
+   "glk_plane_color_ctl",
+   "skl_surf_address",
+   "skl_plane_surf",
+   "skl_plane_aux_dist",
+   "skl_plane_keyval",
+   "skl_plane_keymsk",
+   "skl_plane_keymax",
+   "icl_plane_color_plane",
+   "icl_plane_update_sel_fetch_noarm",
+   "icl_plane_update_noarm",
+   "icl_plane_disable_sel_fetch_arm",
+   "icl_plane_update_sel_fetch_arm",
+   "icl_plane_update_arm"
+  ],
+  "drm_blend.h": [
+   "DRM_MODE_BLEND_*",
+   "drm_rotation_90_or_270"
+  ],
+  "drm_color_mgmt.h": [
+   "enum drm_color_encoding",
+   "enum drm_color_range"
+  ],
+  "drm_connector.h": [
+   "enum drm_colorspace"
+  ],
+  "drm_dp.h": [
+   "DP_MSA_MISC_*"
+  ],
+  "drm_dp_helper.c": [
+   "drm_dp_bw_channel_coding_efficiency"
+  ],
+  "drm_dp_helper.h": [
+   "drm_dp_is_uhbr_rate"
+  ],
+  "drm_edid.c": [
+   "EDID_QUIRK_* bits",
+   "drm_mode_do_interlace_quirk",
+   "drm_mode_detailed"
+  ],
+  "drm_edid.h": [
+   "struct est_timings",
+   "EDID_TIMING_* masks",
+   "struct std_timing",
+   "DRM_EDID_PT_* bits",
+   "detailed_pixel_timing .. detailed_non_pixel",
+   "struct detailed_timing",
+   "struct edid",
+   "DRM_EDID_* feature / input bits"
+  ],
+  "drm_modes.c": [
+   "drm_mode_set_crtcinfo"
+  ],
+  "i915_drm.h": [
+   "I915_SET_COLORKEY_*",
+   "struct drm_intel_sprite_colorkey"
+  ],
+  "i915_reg.h": [
+   "transcoder timing registers",
+   "PIPE_DATA/LINK M/N registers",
+   "TRANS_SET_CONTEXT_LATENCY",
+   "M/N limits",
+   "DPLL_CFGCR / DIV0 fields",
+   "_TRANS_MULT_A",
+   "TRANS_MULT",
+   "TRANS_VRR_* registers",
+   "TRANSCONF bits",
+   "TRANSCONF",
+   "CHICKEN_TRANS",
+   "TRANS_DDI_FUNC_CTL / CTL2",
+   "DDI_BUF_CTL",
+   "TRANS_MSA_MISC",
+   "Skylake+ plane register block"
+  ],
+  "uapi drm_mode.h": [
+   "DRM_MODE_ROTATE_* / REFLECT_*",
+   "DRM_MODE_ROTATE_MASK",
+   "DRM_MODE_REFLECT_MASK"
+  ]
+ },
+ "outputs": {
+  "drm_dp_bw_port.c": "7433ee39abf6e977bf583b9c6f91b20698ed2f497f87c66ba84b92dcc82af7fa",
+  "drm_edid_mode_port.c": "71681a7207b3a5be6c943e246a037e66dc54e4fe15e058e39ddf0188743e1713",
+  "drm_modes_port.c": "54abc11445b8c8cb82b897e0786d01b80c622b13cba2485458ce1fbb473871fd",
+  "edid_ref_types.h": "6914403ab60d4dce990ef3c6007b0176b7785428cb7801aef76572d8842cfeab",
+  "intel_ddi_port.c": "94a62ee426922bf6186cb30ea5e10e7f0645eed8cacce06badcfa930a158149e",
+  "intel_display_port.c": "9292368d5212392aec8a09e564a1588179ba27832b6519d2a66e0102312e21b9",
+  "intel_dpll_port.c": "3595c8d464dc39692bea558706b28a6bb8a7f7b87637d0cdbae850de3fdbc94e",
+  "intel_link_port.c": "88c996acaada143567e6803fe33f0d1ec8d60989b1a5ff2fd55205f5f69ce8ca",
+  "intel_vrr_port.c": "70b40610d688b3b8498af5908d2f31c53ca8c0aa3fe109d7ab09fcb0caf88ac6",
+  "lcd_ddi_regs.h": "5f4eb3401349de81bb1d9bda952d2d0bdd5e2012a8fbe217f2cf8e9b9d053f94",
+  "lcd_ddi_types.h": "7a0e8c3865818a057c7015f92db5e5dc2196f39cb7d22caf9157b0ebb0ef951f",
+  "lcd_dp_msa.h": "67cbfae4cd30feeadfce7f69165a010514cad6c63c57c6605bc50aecd2e3552d",
+  "lcd_drm_colorspace.h": "31b7a85aa9b1b18b0a96660a18976af04bc2c8803ece90ba05e65cfdc49a9db1",
+  "lcd_drm_fourcc.h": "648daf8a9b7ccc38b8c22a1fae4b56cae3b7c1d3203b87ef63dad7b3ca8bba9f",
+  "lcd_drm_plane_defs.h": "b269cfd9287ba0e47e3715e3a45e8946bf23599b01098ed4627b1a13022a9da5",
+  "lcd_i915_colorkey.h": "54b6da04e9911fd6c3a59e69ff13b573524e975b49b96edc597f2ce164624ad3",
+  "lcd_plane_regs.h": "04fb1f4ca137e969bce518cab7cae0b85b2a49baf69ed1b5b708e863660e72ec",
+  "lcd_plane_types.h": "71da31d1361999ee1115343c3c795fc1b96cfb36dfd2566108561b9e7c79adae",
+  "lcd_psr_selfetch_regs.h": "eecfe427e07f4ce9af19390fd3913f1dcf99a2e6829b705c6138c38cd8b460f0",
+  "lcd_ref_inlines.h": "ed36c370b1a091496f94836c267581f6e4778e204694173e34ecf62a9b69c133",
+  "lcd_ref_types.h": "7d3a3e8fb9ad10bf3c56e5ef280b61217899e8c84a2d2076b714fc4aee924252",
+  "lcd_trans_regs.h": "d3f417aada15c03d39f1edaf743759cf630d743d48a1d0e06d6ab3bf87811778",
+  "skl_plane_port.c": "bf28b054b7a6ef1de1a7ba781f8c3667fc4caad9b35e38a088e8c61f2b56950c"
+ },
+ "sources": {
+  "drm_blend.h": "46a47b37fcb9dbb1da3f98d58db0075d21b1a0cde21290c5d627d4ace05f044f",
+  "drm_color_mgmt.h": "6332adb2c833e3a6ac6a7b1083446eb1e2964c3e2b7f40014309a067f0b8ee5e",
+  "drm_connector.h": "1eb905598bb46d733afe49917276689bfbef7284f3395ffa72131d4ef14c4ce3",
+  "drm_dp.h": "306a1a47ba001c417baa3dab1f3a58c7e5de3c7a0537d26806a130603b599c5f",
+  "drm_dp_helper.c": "030568524ac5db3fbd09725df196b22a430ec18fc1432dbb952298ce7c791a73",
+  "drm_dp_helper.h": "1969846dd3fdb5d7511319caf5f8e8481eacecad610fa429669450b9e5775b73",
+  "drm_edid.c": "a01138078180d234149ac4403839a99b9c85232955a9830ad5552637cd8661a7",
+  "drm_edid.h": "e61def12761bc325265437b33e91a7c0cc99ef3f7c60a4265eadb112ff66759a",
+  "drm_fourcc.h": "a9607fd835647f6feae3633bbb4ca00bb15e7ff229c9df18fdc0f19a820c61fe",
+  "drm_modes.c": "e3a32332f5eb4f8a40c7df278bcfc9fd3b21468f2c94aa0470cb1176c94680ef",
+  "i915_drm.h": "37fe8b9995b560a5a30209fc06ae41127fc7aaf68477164bed7d054638b3dfb3",
+  "i915_reg.h": "82d048e09a8472af07e7d3e9db146cd849988a10d8836e64116ff26a6e6b3ed3",
+  "intel_ddi.c": "6a40473be6b095d154b6d81ecd90b7a3ec3d9f4f5c3b96d0680b3f5a56d57f23",
+  "intel_display.c": "f64a3b7c302986237b0c6c936be6f31a8736c04ac2dc5a2f5cab6c5307f9dee9",
+  "intel_display.h": "dde8fd52907f640d35a5a490a85103a9430f1144d2a3b78c6a24041c884996e0",
+  "intel_display_limits.h": "d8049c6ede79939d31462d7da810dd6afeeb9efc5a20f612e25450254c3140e1",
+  "intel_display_types.h": "647773fcee0c549791a50b9c6a4cde175c11005497689e9d6d4bbd2db8d38db4",
+  "intel_dp.c": "36ff6ee288d212c55875f14c14d065e7df32d764eaa62bc6773190941db9f9ce",
+  "intel_dpll_mgr.c": "bc90f5855afccb4ef1c18f07b284c90fb67e27df96cf9d22545768d14abc7b00",
+  "intel_dpll_mgr.h": "baaf9883fe61287a68e697bb7c9978ca566fcbf64178c0c6c2cac57699bc5c9f",
+  "intel_psr_regs.h": "630cd23c657051e61808036fbf663fc161f916cb1f8cee1c92b725177dbf36a7",
+  "intel_vrr.c": "03f4500bc7cbcd488c3ec0a69478effb494268d4f9bb4b888c5ea07318d7773e",
+  "skl_universal_plane.c": "a286317da480cb543d55dfb43558884f192a6f6e09de00066c1f8b07a14a8228",
+  "uapi_drm_mode.h": "6f1e99012854f40c59e62ba9ab031aa6e0f7354f41f25d0a9d23e6dfc6bd370b"
+ },
+ "substitutions": [
+  {
+   "applied": 1,
+   "what": "drm_dp_is_uhbr_rate: static inline -> external"
+  },
+  {
+   "applied": 1,
+   "what": "drm_fourcc.h: #include \"drm.h\" dropped"
+  }
+ ]
+}

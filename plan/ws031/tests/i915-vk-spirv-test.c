@@ -77,37 +77,91 @@ count_op(const struct i915_vk_shader_ir *ir, enum i915_vk_ir_op op)
 	return found;
 }
 
+/*
+ * The vkdemo vertex shader (glslc -O0, as shipped) keeps its intermediate values in
+ * Function-storage variables and uses float constants, OpFNegate, component access and
+ * 3/4-element composites.  It parses now; what the IR COMPUTES is checked by the lowering
+ * fixture (i915-vk-lower-test.c), here only the interface and the shape of the stream.
+ */
 static void
 test_vertex(void)
 {
 	uint32_t *code;
 	size_t words;
 	struct i915_vk_shader_ir *ir;
+	struct i915_vk_spirv_diag diag;
 	int error;
 
 	code = load_spv("cuboid.vert.spv", &words);
-	error = i915_vk_spirv_parse(code, words, I915_VK_STAGE_VERTEX, &ir);
-	assert(error == 0);
-
-	/* The vertex shader takes a vec3 position and a vec2 texture coordinate. */
+	error = i915_vk_spirv_parse_diag(code, words, I915_VK_STAGE_VERTEX, &ir, &diag);
+	if (error != 0)
+		printf("  vkdemo VS refused: opcode %u at word %u: %s\n", diag.opcode, diag.word_offset, diag.reason);
+	assert(error == 0 && ir != NULL);
 	assert(ir->stage == I915_VK_STAGE_VERTEX);
-	assert(ir->input_count == 2U);
+	assert(ir->input_count == 2U && ir->output_count == 1U && ir->uniform_count == 0U);
 	assert(ir->inputs[0].location == 0U && ir->inputs[0].components == 3U);
 	assert(ir->inputs[1].location == 1U && ir->inputs[1].components == 2U);
-
-	/* Its only located output is the passed-through texture coordinate. */
-	assert(ir->output_count == 1U);
 	assert(ir->outputs[0].location == 0U && ir->outputs[0].components == 2U);
-
-	/* The rotation uses transcendentals and the position is read and written. */
-	assert(count_op(ir, I915_VK_IR_SIN) >= 2U);
-	assert(count_op(ir, I915_VK_IR_COS) >= 2U);
-	assert(count_op(ir, I915_VK_IR_LOAD_INPUT) >= 1U);
-	assert(count_op(ir, I915_VK_IR_STORE_OUTPUT) >= 1U);
-	assert(count_op(ir, I915_VK_IR_LOAD_PUSH) >= 1U);
-
+	assert(ir->push_bytes == 4U);                                   /* one float: animation.seconds */
+	assert(count_op(ir, I915_VK_IR_SIN) == 2U && count_op(ir, I915_VK_IR_COS) == 2U);
+	assert(count_op(ir, I915_VK_IR_FNEG) == 1U);                    /* -sy; the -1.6 is a constant */
+	assert(count_op(ir, I915_VK_IR_LOAD_PUSH) == 2U);               /* seconds is read twice */
+	assert(count_op(ir, I915_VK_IR_STORE_OUTPUT) == 6U);            /* gl_Position 4 + texture_coordinate 2 */
 	i915_vk_spirv_free(ir);
 	free(code);
+}
+
+/* a minimal module: header, OpFunction, one body instruction, OpFunctionEnd */
+static int
+parse_body_instruction(const uint32_t *inst, unsigned inst_words, struct i915_vk_spirv_diag *diag)
+{
+	uint32_t module[32];
+	struct i915_vk_shader_ir *ir;
+	unsigned n = 0U, i;
+	int error;
+
+	module[n++] = 0x07230203U; module[n++] = 0x00010000U; module[n++] = 0U; module[n++] = 16U; module[n++] = 0U;
+	module[n++] = (5U << 16) | 54U; module[n++] = 1U; module[n++] = 2U; module[n++] = 0U; module[n++] = 3U;   /* OpFunction */
+	module[n++] = (2U << 16) | 248U; module[n++] = 4U;                                                        /* OpLabel */
+	for (i = 0U; i < inst_words; i++)
+		module[n++] = inst[i];
+	module[n++] = (1U << 16) | 253U;                                                                          /* OpReturn */
+	module[n++] = (1U << 16) | 56U;                                                                           /* OpFunctionEnd */
+	error = i915_vk_spirv_parse_diag(module, n, I915_VK_STAGE_VERTEX, &ir, diag);
+	if (error == 0)
+		i915_vk_spirv_free(ir);
+	else
+		assert(ir == NULL);
+	return error;
+}
+
+static void
+test_body_classification(void)
+{
+	struct i915_vk_spirv_diag diag;
+	/* OpLine (debug): file id 5, line 1, column 1 -- no execution semantics */
+	static const uint32_t op_line[4] = { (4U << 16) | 8U, 5U, 1U, 1U };
+	/* OpFNegate %6 = -%7, where %7 is not a float value (nothing defines it): refused, not skipped */
+	static const uint32_t op_fnegate[4] = { (4U << 16) | 127U, 1U, 6U, 7U };
+	/* OpFDiv: never lowered */
+	static const uint32_t op_fdiv[5] = { (5U << 16) | 136U, 1U, 6U, 7U, 8U };
+	/* OpBranch: control flow */
+	static const uint32_t op_branch[2] = { (2U << 16) | 249U, 4U };
+	/* OpFunctionCall */
+	static const uint32_t op_call[4] = { (4U << 16) | 57U, 1U, 6U, 7U };
+	/* an instruction whose length runs past the module */
+	static const uint32_t op_overrun[1] = { (9U << 16) | 129U };
+	/* OpExtInst with an instruction other than Sin/Cos/InverseSqrt (Tan = 15) */
+	static const uint32_t op_tan[6] = { (6U << 16) | 12U, 1U, 6U, 9U, 15U, 7U };
+
+	assert(parse_body_instruction(op_line, 4U, &diag) == 0);
+	assert(parse_body_instruction(op_fnegate, 4U, &diag) == ENOTSUP && diag.opcode == 127U);
+	assert(parse_body_instruction(op_fdiv, 5U, &diag) == ENOTSUP && diag.opcode == 136U);
+	assert(parse_body_instruction(op_branch, 2U, &diag) == ENOTSUP && diag.opcode == 249U);
+	assert(parse_body_instruction(op_call, 4U, &diag) == ENOTSUP && diag.opcode == 57U);
+	assert(parse_body_instruction(op_tan, 6U, &diag) == ENOTSUP && diag.opcode == 12U);
+	/* malformed stays EINVAL: a different thing from "valid but not lowered" */
+	assert(parse_body_instruction(op_overrun, 1U, &diag) == EINVAL);
 }
 
 static void
@@ -155,6 +209,7 @@ int
 main(void)
 {
 	test_vertex();
+	test_body_classification();
 	test_fragment();
 	test_rejects_garbage();
 	assert(fixture_live == 0U);

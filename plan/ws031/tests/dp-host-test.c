@@ -65,8 +65,14 @@ static void script1(unsigned n, unsigned fault, unsigned param)
 /* everything the stage may own is back: the pass criterion of every failure test */
 static int released(const char *what)
 {
-	int ok = hw.refs_core == 0 && hw.refs_aux == 0 && (hw.pp_control & 8u) == 0 &&
-		res.vdd_wakeref_held == 0 && res.vdd_work_pending == 0 && res.power_put_underflows == 0;
+	int ok;
+
+	/* the DP layer must own nothing; what it put asynchronously is the power layer's until flushed */
+	ok = env.power_refs[0] == 0 && env.power_refs[1] == 0 && (hw.pp_control & 8u) == 0 &&
+		res.vdd_wakeref_held == 0 && res.vdd_work_pending == 0 && res.power_put_underflows == 0 &&
+		hw.lock_held[0] == 0 && hw.lock_held[1] == 0 && hw.lock_errors == 0 && env.lock_errors == 0;
+	dp_fake_flush_async(&hw);
+	ok = ok && hw.refs_core == 0 && hw.refs_aux == 0;
 
 	if (!ok)
 		printf("  [%s] refs core=%d aux=%d pp_control=0x%x wakeref=%d work=%d underflow=%u\n", what,
@@ -113,6 +119,10 @@ int main(int argc, char **argv)
 	CHECK(res.power_refs_aux == 1 && res.power_refs_core == 0 && hw.refs_aux == 1 && hw.refs_core == 0,
 	      "exactly the VDD's AUX reference is held between transfers");
 	CHECK(hw.vdd_on_events == 1, "VDD was switched on once (kept on across the transfers)");
+	CHECK(env.async_puts != 0 && hw.async_parked == 0,
+	      "each transfer put its own AUX reference asynchronously, never as the last one (VDD holds another)");
+	CHECK(hw.lock_acquisitions[PARITY_DP_LOCK_PPS] != 0 && hw.lock_acquisitions[PARITY_DP_LOCK_AUX] != 0 &&
+	      hw.lock_errors == 0 && env.lock_errors == 0, "PPS and AUX locks go through the env: no recursion, none left held");
 	CHECK(hw.aux_without_sink_power == 0 && hw.aux_without_aux_power == 0 && hw.aux_without_core_power == 0 &&
 	      hw.pp_writes_without_core_power == 0, "no AUX transfer or PP write without its power");
 	CHECK(hw.unknown_reg_reads == 0 && hw.unknown_reg_writes == 0, "no register outside PPS0 / AUX A / SOUTH_* touched");
@@ -131,12 +141,14 @@ int main(int argc, char **argv)
 	rc = parity_edp_init_late(&cfg, &res);
 	CHECK(rc == 0 && res.stage == PARITY_EDP_STAGE_LATE && res.vdd_work_pending == 1 && res.vdd_on_hw == 1,
 	      "init_late: delayed VDD-off scheduled, VDD still on");
-	CHECK(parity_edp_run_due_work(&res) == 0 && res.vdd_on_hw == 1, "the worker does not run before it is due");
+	CHECK(dp_fake_run_due(&hw) == 0 && (hw.pp_control & 8u) != 0, "the worker does not run before it is due");
 	hw.now_us += 2999u * 1000u;
-	CHECK(parity_edp_run_due_work(&res) == 0, "... not at 2999 ms (5 x the 600 ms power-cycle delay)");
+	CHECK(dp_fake_run_due(&hw) == 0, "... not at 2999 ms (5 x the 600 ms power-cycle delay, NOT the 600 ms itself)");
 	hw.now_us += 2u * 1000u;
-	CHECK(parity_edp_run_due_work(&res) == 1 && res.vdd_on_hw == 0 && res.vdd_wakeref_held == 0 &&
-	      res.power_refs_aux == 0, "due: the worker forces VDD off and returns the AUX reference");
+	CHECK(dp_fake_run_due(&hw) == 1, "due at 3000 ms: the worker body runs");
+	parity_edp_snapshot(&res);
+	CHECK(res.vdd_on_hw == 0 && res.vdd_wakeref_held == 0 && res.power_refs_aux == 0 && hw.refs_aux == 0,
+	      "the worker forced VDD off and returned the AUX reference of the VDD (an ordinary put)");
 	/* an AUX read after that takes VDD again on its own and hands it to the delayed worker */
 	{
 		uint8_t b[2];
@@ -144,10 +156,29 @@ int main(int argc, char **argv)
 
 		CHECK(n == 2 && b[0] == 0x11 && hw.vdd_on_events == 2, "a later AUX read turns VDD on again by itself");
 		CHECK(env.slept_us >= 800000u, "... after the power-cycle wait (T12) and the power-up delay");
+		parity_edp_snapshot(&res);
+		CHECK(res.vdd_work_pending == 1 && res.vdd_on_hw == 1 && res.vdd_wanted == 0,
+		      "... and hands VDD to a fresh delayed off (not initializing any more)");
+		CHECK(hw.async_parked == 0, "the AUX reference of the transfer was not the last one (VDD still holds one)");
+		/* re-acquisition before the deadline: the old reservation must not drop the VDD in use */
+		hw.now_us += 2000u * 1000u;
+		n = parity_edp_dpcd_read(0x000, b, 2);
+		CHECK(n == 2 && hw.work_cancelled >= 1 && hw.vdd_on_events == 2,
+		      "a read 2 s later cancels the reservation and re-uses the VDD that is still on");
+		hw.now_us += 1500u * 1000u;               /* 3.5 s after the FIRST reservation */
+		CHECK(dp_fake_run_due(&hw) == 0 && (hw.pp_control & 8u) != 0,
+		      "the old deadline passing does nothing: the new reservation counts from the last use");
+		hw.now_us += 1600u * 1000u;
+		CHECK(dp_fake_run_due(&hw) >= 1 && (hw.pp_control & 8u) == 0, "... and the new one fires 3 s after the last use");
+		n = parity_edp_dpcd_read(0x000, b, 2);
+		parity_edp_snapshot(&res);
+		CHECK(n == 2 && res.vdd_on_hw == 1 && res.vdd_work_pending == 1, "VDD on again, off reserved");
 	}
+	/* the stop below happens while the off is still reserved (timer-wait side of the stop race) */
 	end = parity_edp_end(&res);
 	CHECK(end == 0 && released("normal"), "end: worker cancelled, VDD off, every reference returned");
-	CHECK(hw.vdd_off_events == 2, "VDD off twice (worker, end)");
+	CHECK(hw.vdd_off_events == 3 && hw.work_cancel_syncs >= 1,
+	      "VDD off three times (worker, worker, end); end cancelled synchronously and outside the PPS lock");
 	CHECK(parity_edp_end(&res) == -22, "end without a live eDP is refused");
 
 	/* ---- 2. end straight after the acquisition (no late init) ---- */

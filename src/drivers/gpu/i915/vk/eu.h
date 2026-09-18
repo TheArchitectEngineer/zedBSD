@@ -35,6 +35,7 @@ struct i915_vk_eu_reg {
 	uint32_t width;
 	uint32_t hstride;
 	uint32_t immediate;
+	uint32_t negate;	/* source modifier: the operand is read as -value */
 };
 
 /* ALU and math function selectors. */
@@ -77,6 +78,15 @@ struct i915_vk_eu_reg
 i915_vk_eu_grf(
 	uint32_t nr);
 
+/*
+ * One float at byte `subnr` of a register, replicated to every channel (region <0;1,0>):
+ * how a value that is the same for the whole dispatch, such as a push constant, is read.
+ */
+struct i915_vk_eu_reg
+i915_vk_eu_grf_scalar(
+	uint32_t nr,
+	uint32_t subnr);
+
 struct i915_vk_eu_reg
 i915_vk_eu_imm_f(
 	uint32_t bits);
@@ -84,6 +94,11 @@ i915_vk_eu_imm_f(
 struct i915_vk_eu_reg
 i915_vk_eu_null(
 	void);
+
+/* The same register read negated (a source modifier; not valid for a destination or an immediate). */
+struct i915_vk_eu_reg
+i915_vk_eu_negate(
+	struct i915_vk_eu_reg reg);
 
 /* Instruction emitters (SIMD8 by default). */
 void

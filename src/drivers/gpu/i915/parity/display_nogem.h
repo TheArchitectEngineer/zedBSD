@@ -79,7 +79,8 @@ enum parity_ddi_skip {
 	PARITY_DDI_SKIP_PORT_IN_USE,
 	PARITY_DDI_SKIP_DSI,
 	PARITY_DDI_SKIP_HTI,
-	PARITY_DDI_SKIP_NOT_DVI_HDMI_DP
+	PARITY_DDI_SKIP_NOT_DVI_HDMI_DP,
+	PARITY_DDI_SKIP_EDP_INIT_FAILED     /* intel_ddi_init_dp_connector() failed: the encoder is dropped */
 };
 
 /* Which clock vtable intel_ddi_init() selected. */
@@ -230,6 +231,16 @@ struct parity_display_nogem {
 	unsigned num_ddi_skips;
 	int crt_present;
 	int outputs_done;
+	/*
+	 * intel_ddi_init() -> intel_ddi_init_dp_connector() -> intel_dp_init_connector() ->
+	 * intel_edp_init_connector(), for a DP-capable encoder: 1 = not an eDP port (nothing
+	 * done), 0 = eDP initialised and KEPT by the hook's owner, < 0 = failed (the reference
+	 * then frees the encoder).  NULL = no connector construction (the pre-E-109 behaviour).
+	 */
+	int (*dp_connector_init)(void *ctx, int port);
+	void *dp_connector_ctx;
+	int edp_port;                       /* port whose eDP connector is live, or -1 */
+	int edp_init_rc;
 
 	/* intel_modeset_readout_hw_state (P5-c) */
 	unsigned active_pipes;          /* cdclk_state/dbuf_state->active_pipes */

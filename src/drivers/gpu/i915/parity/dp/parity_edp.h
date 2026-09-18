@@ -29,13 +29,34 @@ struct parity_dp_env {
 	uint64_t (*now_ms)(void *ctx);                  /* monotonic */
 	int (*power_get)(void *ctx, int domain);        /* enum parity_power_domain value; 0 = ok */
 	void (*power_put)(void *ctx, int domain);
+	/* intel_display_power_put_async(): the reference leaves the DP layer now; the power layer
+	 * parks it, hands it back to the next get of that domain, or releases it ~100 ms later */
+	void (*power_put_async)(void *ctx, int domain);
+	/* the PPS mutex and the AUX hardware mutex (PARITY_DP_LOCK_*): real mutual exclusion */
+	void (*lock)(void *ctx, int which);
+	void (*unlock)(void *ctx, int which);
+	/*
+	 * delayed work (PARITY_DP_WORK_*): queue = 1 when newly queued (0: already pending);
+	 * cancel = 1 when it was pending; with sync != 0 it also waits until the work body is
+	 * not running -- the caller then must not hold a lock the body takes.  The backend runs
+	 * the body by calling parity_edp_work_run(which) from a context that may sleep.
+	 */
+	int (*delayed_queue)(void *ctx, int which, unsigned delay_ms);
+	int (*delayed_cancel)(void *ctx, int which, int sync);
+	int (*delayed_pending)(void *ctx, int which);
 	/* bookkeeping kept by the DP layer (read by the tests and the run log) */
 	int power_refs[2];                              /* [0] DISPLAY_CORE, [1] the AUX domain */
 	unsigned power_get_failures;
 	unsigned power_put_underflows;
 	unsigned sleeps;
 	uint64_t slept_us;
+	unsigned lock_errors;                           /* recursion / unlock of a free lock */
+	unsigned async_puts;
 };
+
+#define PARITY_DP_LOCK_PPS 0
+#define PARITY_DP_LOCK_AUX 1
+#define PARITY_DP_WORK_VDD_OFF 0        /* edp_panel_vdd_work */
 
 #define PARITY_EDP_MAX_EDID_BLOCKS 4u
 
@@ -126,8 +147,15 @@ int parity_edp_begin(struct parity_dp_env *env, const struct parity_edp_config *
  */
 int parity_edp_init_late(const struct parity_edp_config *final_cfg, struct parity_edp_result *res);
 
-/* Runs the delayed VDD-off worker if it is pending and due.  Returns 1 when it ran. */
-int parity_edp_run_due_work(struct parity_edp_result *res);
+/*
+ * The body of a delayed work, called by the env's backend (worker thread, or the register
+ * model's clock) when the work is due.  PARITY_DP_WORK_VDD_OFF = edp_panel_vdd_work():
+ * takes the PPS lock, and forces VDD off unless someone wants it again by then.
+ */
+void parity_edp_work_run(int which);
+
+/* Refreshes the ownership fields of `res` (VDD, worker, references) from the live eDP. */
+void parity_edp_snapshot(struct parity_edp_result *res);
 
 /*
  * Stop: intel_pps_vdd_off_sync() (cancels the delayed worker, forces VDD off,

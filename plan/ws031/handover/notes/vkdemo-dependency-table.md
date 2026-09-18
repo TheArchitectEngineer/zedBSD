@@ -58,6 +58,8 @@ kernel の parser（`vk/spirv.c`）が扱うもの: 宣言 15／71（Location・
 fragment shader の opcode は全部認識される。`compile.c` の header は register 規約を「実機 bring-up で詰める baseline」と書いており、E-103 で確定した値（PS DW3／DW7／PS_EXTRA、GRF start など prog_data 由来）とは未照合。
 → VK-2 の範囲: (a) 下ろせない命令を拒否、(b) `-O0` の local 変数（store→load forwarding か、shader を `-O` で再生成するかの選択。後者は shader 側の変更なので要判断）、(c) 即値・negate・swizzle・3〜4 要素 compose・FSUB、(d) E-103／E-105 で確定した parity の 3D state との突合せ。
 
+**E-110 更新（2026-09-19）**: 上の表の (a)(b)(c) は実装済み。parser は scalar IR へ書き直し、出荷版 `-O0` の VS／FS が通常経路で lowering＋EU 生成まで通る（shader の再生成はしていない）。項目別の使用箇所・受理条件・状態（拒否／lowering済み／EU生成済み／GPU検証済み = 0 件）・小試験は `vk-lowering-status.md`。(d) の 3D state との突合せと message descriptor は未着手。
+
 ## 3. 呼出しごとの分類
 
 非 recording の command は全部 flag = 1（reply 要求）。generic create の reply = `[opcode][VkResult][present u64 = 1][wire id u64 = client が選んだ id]`（これ以外の形は DEVICE_LOST 扱い、`objects.c:458-497`）。generic destroy = `[opcode]` のみ。
