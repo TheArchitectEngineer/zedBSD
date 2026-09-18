@@ -487,7 +487,32 @@ parity_power_well_disable(struct parity_power_well *w, struct parity_pw_ctx *c)
 		return 0;
 	}
 	if (w->ops == PARITY_PW_OPS_DC_OFF) {
-		w->hw_enabled = 0;
+		/* gen9_dc_off_power_well_disable() */
+		c->dc_off_disable_calls++;
+		if (c->dmc_has_payload) {
+			switch (c->target_dc_state) {
+			case PARITY_DC_STATE_EN_DC3CO:
+				/* tgl_enable_dc3co() */
+				parity_gen9_set_dc_state(c, PARITY_DC_STATE_EN_DC3CO);
+				break;
+			case PARITY_DC_STATE_EN_UPTO_DC6:
+				/* skl_enable_dc6(): assert_can_enable_dc6 (warnings only) */
+				if ((osdep_mmio_raw_read32(c->mmio, 0x48400u) & (0x80000000u | (0x1fu << 24))) ==
+				    (0x80000000u | (1u << 24)))
+					kern_logf("i915: parity DC6: utility pin enabled in PWM mode\n");
+				if (osdep_mmio_raw_read32(c->mmio, 0x45504u) & PARITY_DC_STATE_EN_UPTO_DC6)
+					kern_logf("i915: parity DC6 already programmed to be enabled\n");
+				parity_gen9_set_dc_state(c, PARITY_DC_STATE_EN_UPTO_DC6);
+				break;
+			case PARITY_DC_STATE_EN_UPTO_DC5:
+				/* gen9_enable_dc5(): Wa Display #1183 is DISPLAY_VER 9 only */
+				parity_gen9_set_dc_state(c, PARITY_DC_STATE_EN_UPTO_DC5);
+				break;
+			default:
+				break;
+			}
+		}
+		w->hw_enabled = parity_power_well_is_enabled(w, c);
 		return 0;
 	}
 
@@ -519,8 +544,14 @@ parity_power_well_is_enabled(struct parity_power_well *w, struct parity_pw_ctx *
 
 	if (w->ops == PARITY_PW_OPS_ALWAYS_ON)
 		return 1;
-	if (w->ops == PARITY_PW_OPS_DC_OFF)
-		return (w->hw_enabled == 1) ? 1 : 0;   /* DC-off state (its own ops) */
+	if (w->ops == PARITY_PW_OPS_DC_OFF) {
+		/* gen9_dc_off_power_well_enabled(): no DC5/DC6 (and DC3CO) state set. */
+		uint32_t dmask = PARITY_DC_STATE_EN_UPTO_DC5 | PARITY_DC_STATE_EN_UPTO_DC6;
+
+		if (c->allowed_dc_mask & PARITY_DC_STATE_EN_DC3CO)
+			dmask |= PARITY_DC_STATE_EN_DC3CO;
+		return ((osdep_mmio_raw_read32(c->mmio, 0x45504u) & dmask) == 0u) ? 1 : 0;
+	}
 	reg = pw_driver_reg(w->ops);
 	/* ADL-P hsw_power_well_enabled(): enabled iff BOTH driver REQ and STATE. */
 	mask = pw_req(w->hsw_idx) | pw_state(w->hsw_idx);
@@ -659,4 +690,63 @@ parity_intel_pmdemand_init_early(struct parity_pmdemand *pm)
 	(void)mutex_init(&pm->lock, LOCK_RANK_DEVICE, "parity-pmdemand");
 	waitq_init(&pm->waitqueue, "parity-pmdemand");
 	pm->early_initialized = 1;
+}
+
+/* gen9_dc_mask() */
+static uint32_t
+gen9_dc_mask(int display_ver)
+{
+	uint32_t mask = PARITY_DC_STATE_EN_UPTO_DC5;
+
+	if (display_ver >= 12)
+		mask |= PARITY_DC_STATE_EN_DC3CO | PARITY_DC_STATE_EN_UPTO_DC6 |
+			PARITY_DC_STATE_EN_DC9;
+	else if (display_ver == 11)
+		mask |= PARITY_DC_STATE_EN_UPTO_DC6 | PARITY_DC_STATE_EN_DC9;
+	else
+		mask |= PARITY_DC_STATE_EN_UPTO_DC6;
+	return mask;
+}
+
+/* gen9_write_dc_state(): the DMC may keep returning the old value. */
+static void
+gen9_write_dc_state(struct parity_pw_ctx *c, uint32_t state)
+{
+	unsigned rewrites = 0u, rereads = 0u;
+	uint32_t v;
+
+	osdep_mmio_raw_write32(c->mmio, 0x45504u, state);
+	c->dc_state_writes++;
+	do {
+		v = osdep_mmio_raw_read32(c->mmio, 0x45504u);
+		if (v != state) {
+			osdep_mmio_raw_write32(c->mmio, 0x45504u, state);
+			rewrites++;
+			rereads = 0u;
+		} else if (rereads++ > 5u) {
+			break;
+		}
+	} while (rewrites < 100u);
+	c->dc_state_rewrites += rewrites;
+	if (v != state)
+		kern_logf("i915: parity Writing dc state to 0x%x failed, now 0x%x\n", state, v);
+}
+
+void
+parity_gen9_set_dc_state(struct parity_pw_ctx *c, uint32_t state)
+{
+	uint32_t val, mask;
+
+	if ((state & ~c->allowed_dc_mask) != 0u)
+		state &= c->allowed_dc_mask;   /* drm_WARN_ON_ONCE in the reference */
+	val = osdep_mmio_raw_read32(c->mmio, 0x45504u);
+	mask = gen9_dc_mask(c->display_ver);
+	/* "Check if DMC is ignoring our DC state requests" */
+	if ((val & mask) != c->dc_state)
+		kern_logf("i915: parity DC state mismatch (0x%x -> 0x%x)\n",
+			c->dc_state, val & mask);
+	val &= ~mask;
+	val |= state;
+	gen9_write_dc_state(c, val);
+	c->dc_state = val & mask;
 }

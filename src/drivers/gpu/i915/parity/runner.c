@@ -24,7 +24,7 @@
 #include "runner.h"
 
 enum runner_test_status { RUN_TEST_NOT_RUN = 0, RUN_TEST_PASS, RUN_TEST_FAIL };
-enum runner_probe_status { RUN_PROBE_NOT_RUN = 0, RUN_PROBE_STOPPED_AT_P2, RUN_PROBE_BLOCKED, RUN_PROBE_FAILED };
+enum runner_probe_status { RUN_PROBE_NOT_RUN = 0, RUN_PROBE_COMPLETE, RUN_PROBE_BLOCKED, RUN_PROBE_FAILED };
 
 struct parity_runner_result {
 	int selftest_status;              /* enum runner_test_status */
@@ -63,7 +63,7 @@ static const char *
 probe_status_name(int s)
 {
 	switch (s) {
-	case RUN_PROBE_STOPPED_AT_P2: return "STOPPED_AT_P2";
+	case RUN_PROBE_COMPLETE: return "COMPLETE";
 	case RUN_PROBE_BLOCKED:       return "BLOCKED";
 	case RUN_PROBE_FAILED:        return "FAILED";
 	default:                      return "NOT_RUN";
@@ -108,7 +108,7 @@ runner_thread(void *arg)
 		res.cleanup_done = 1;   /* parity_attach always tears down before returning */
 		res.last_completed_op = pr.last_completed;   /* last COMPLETED op, not the frontier */
 		switch (pr.outcome) {
-		case PARITY_STOPPED: res.probe_status = RUN_PROBE_STOPPED_AT_P2; break;
+		case PARITY_STOPPED: res.probe_status = RUN_PROBE_COMPLETE; break;
 		case PARITY_BLOCKED: res.probe_status = RUN_PROBE_BLOCKED; res.blocked_or_failed_op = pr.where; break;
 		default:             res.probe_status = RUN_PROBE_FAILED; res.blocked_or_failed_op = pr.where; break;
 		}

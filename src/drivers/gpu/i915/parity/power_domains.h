@@ -167,7 +167,18 @@ struct parity_pw_ctx {
 	unsigned dc_off_cdclk_readouts;
 	unsigned dc_off_dbuf_asserts;
 	unsigned dc_off_combo_inits;
+	/* DC_off power-well DISABLE (gen9_dc_off_power_well_disable): enables the
+	 * target DC state, but only once the DMC firmware payload is loaded. */
+	int display_ver;               /* gen9_dc_mask() */
+	int dmc_has_payload;           /* intel_dmc_has_payload() */
+	uint32_t dc_state;             /* display.dmc.dc_state: what we last wrote */
+	unsigned dc_off_disable_calls;
+	unsigned dc_state_writes;
+	unsigned dc_state_rewrites;
 };
+
+/* gen9_set_dc_state(): the masked DC_STATE_EN write with its stick check. */
+void parity_gen9_set_dc_state(struct parity_pw_ctx *c, uint32_t state);
 
 /* Low-level ops (drive HW); separate from the refcount get/put. */
 int  parity_power_well_enable(struct parity_power_well *w, struct parity_pw_ctx *c);

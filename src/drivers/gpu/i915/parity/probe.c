@@ -34,6 +34,8 @@
 #include "gt_defaults.h"
 #include "gt_verify_wa.h"
 #include "gt_migrate.h"
+#include "pxp.h"
+#include "driver_probe.h"
 #include "reset.h"
 #include "backend_sync.h"
 #include "reset.h"
@@ -153,8 +155,12 @@ drv_i915_parity_attach(struct i915_device *device, enum parity_stage stop_after,
 	static struct parity_gt_defaults gtdef;
 	static struct parity_gt_verify_wa gtvwa;
 	static struct parity_gt_migrate gtmig;
+	static struct parity_pxp pxp;
+	static struct parity_driver_probe dprobe;
 	int gtvwa_inited = 0;
 	int gtmig_inited = 0;
+	int pxp_inited = 0;
+	int opregion_present = 0;
 	int gteng_resumed = 0;
 	int gtdef_inited = 0;
 	struct parity_gt_object *gt_scratch = 0;
@@ -599,6 +605,7 @@ drv_i915_parity_attach(struct i915_device *device, enum parity_stage stop_after,
 		uint32_t asls = osdep_pci_read32(&pci, 0xFCu);
 
 		kern_logf("i915: parity P2 opregion: ASLS=0x%08x\n", asls);
+		opregion_present = asls != 0u;
 		if (asls == 0u) {
 			osdep_trace_emit(&trace, PARITY_STAGE_P2, OSDEP_TR_NOTE, "intel_opregion_absent", 0u, 0u);
 			/* ASLS==0: no OpRegion, hence no OpRegion VBT (opregion_vbt_present stays 0). */
@@ -846,6 +853,7 @@ drv_i915_parity_attach(struct i915_device *device, enum parity_stage stop_after,
 		parity_intel_dmc_init(&dmc_dev, &dmc_wq, &mmio, &power_domains, &pwc,
 			(int)display_ver, sc, ss, 0 /* default path */);
 		dmc_inited = 1;
+		pwc.display_ver = (int)display_ver;
 		kern_logf("i915: parity P3 intel_dmc_init: revid=0x%x step=%c%c DMC load queued (path=%s, work_submitted=%d)\n",
 			(unsigned)drev, sc, ss, dmc_dev.fw_path, dmc_dev.work_submitted);
 		res.last_completed = "intel_dmc_init";
@@ -1576,16 +1584,121 @@ p6_fw_out:
 
 	/*
 	 * intel_gt_init() is complete.  i915_gem_init() ends with
-	 * intel_engines_driver_register() (uabi names and the engine list) and
-	 * i915_driver_probe() goes on to intel_pxp_init() and
-	 * intel_display_driver_probe().  Not wired yet.
+	 * intel_engines_driver_register(): uabi class/instance names and the
+	 * engine rb-tree for userspace -- bookkeeping with no HW side.
 	 */
-	osdep_trace_emit(&trace, PARITY_STAGE_P3, OSDEP_TR_UNIMPL,
-		"intel_engines_driver_register", 0u, 0u);
-	res.outcome = PARITY_BLOCKED;
-	res.where = "intel_engines_driver_register";
+	res.last_completed = "i915_gem_init";
+
+	/*
+	 * ============================== P7 ==============================
+	 * i915_driver_probe() after i915_gem_init(): intel_pxp_init(),
+	 * intel_display_driver_probe(), i915_driver_register().
+	 */
+
+	/* intel_pxp_init(): full feature on ADL-P (has_pxp, VDBOX, mei-pxp path). */
+	rc = parity_intel_pxp_init(&pxp, &gteng, &gtpp, &gtmem, 1 /* has_pxp */);
+	pxp_inited = 1;
+	kern_logf("i915: parity P7 pxp_init: rc=%d where=%s full=%d engine=%s kcr_base=0x%x "
+		"ce ring=%u state=%u ggtt=0x%llx hwsp=0x%x stream_cmd=%d component_added=%d "
+		"(KCR init + irq enable wait for the mei-pxp bind: none here)\n",
+		rc, pxp.err_where != 0 ? pxp.err_where : "-", pxp.full_feature,
+		pxp.has_engine ? gteng.ge[pxp.engine_idx].info->name : "-", pxp.kcr_base,
+		pxp.ce.ring.size, pxp.ce.state_bytes,
+		pxp.ce.state != 0 ? (unsigned long long)pxp.ce.state->ggtt_offset : 0ull,
+		pxp.hwsp_ggtt, pxp.stream_cmd != 0, pxp.component_added);
+	/* "if (ret && ret != -ENODEV) drm_dbg(pxp init failed)": never fatal. */
+	res.last_completed = "intel_pxp_init";
+
+	/* The DMC payload gates the DC_off well's disable (DC6 entry) below. */
+	pwc.dmc_has_payload = dmc_inited ? parity_dmc_has_payload(&dmc_dev.dmc) : 0;
+
+	/* intel_display_driver_probe() */
+	rc = parity_intel_display_driver_probe(&dprobe, &mmio, &nogem, &power_domains,
+		&pwc, (int)display_ver, pch.type, 1 /* display_irqs_enabled */,
+		irqdev.irqs_enabled);
+	kern_logf("i915: parity P7 display_driver_probe: rc=%d active_crtcs=%u initial_commit=%d%s "
+		"overlay=%d fbdev=%d ipc_enabled=%d\n",
+		rc, dprobe.active_crtcs, dprobe.initial_commit_rc,
+		dprobe.initial_commit_unimplemented ? " (DRM atomic commit unimplemented)" : "",
+		dprobe.overlay, dprobe.fbdev, dprobe.ipc_enabled);
+	kern_logf("i915: parity P7 hpd_init: encoders=%u pins=%d,%d setups=%u skipped=%d | de: enabled=0x%x "
+		"hotplug=0x%x IMR=0x%08x TC_CTL=0x%08x TBT_CTL=0x%08x | pch: enabled=0x%x hotplug=0x%x "
+		"SHPD_FILTER=0x%x SDEIMR=0x%08x%s SHOTPLUG_DDI=0x%08x SHOTPLUG_TC=0x%08x | poll: works=%u "
+		"core_gets=%u\n",
+		dprobe.hp.n_encoders, dprobe.hp.encoder_pin[0], dprobe.hp.encoder_pin[1],
+		dprobe.hp.irq_setups, dprobe.hp.irq_setup_skipped, dprobe.hp.de_enabled_irqs,
+		dprobe.hp.de_hotplug_irqs, dprobe.hp.de_hpd_imr, dprobe.hp.tc_ctl, dprobe.hp.tbt_ctl,
+		dprobe.hp.pch_enabled_irqs, dprobe.hp.pch_hotplug_irqs, dprobe.hp.shpd_filter,
+		dprobe.hp.sdeimr, dprobe.hp.sdeimr_skipped ? "(not written: irqs off)" : "",
+		dprobe.hp.shotplug_ddi, dprobe.hp.shotplug_tc, dprobe.hp.poll_init_works,
+		dprobe.hp.poll_core_gets);
+	if (dprobe.initial_commit_unimplemented) {
+		osdep_trace_emit(&trace, PARITY_STAGE_P3, OSDEP_TR_UNIMPL,
+			"intel_initial_commit", dprobe.active_crtcs, 0u);
+		res.outcome = PARITY_BLOCKED;
+		res.where = "intel_initial_commit";
+		goto teardown;
+	}
+	res.last_completed = "intel_display_driver_probe";
+
+	/* i915_driver_register() */
+	if (opregion_present) {
+		osdep_trace_emit(&trace, PARITY_STAGE_P3, OSDEP_TR_UNIMPL,
+			"intel_opregion_register", 0u, 0u);
+		res.outcome = PARITY_BLOCKED;
+		res.where = "intel_opregion_register";
+		goto teardown;
+	}
+	parity_i915_driver_register(&dprobe, &dcore, &probe_pm, opregion_present);
+	kern_logf("i915: parity P7 driver_register: na_registrations=%u opregion=%d kms_poll=%d | "
+		"power_domains_enable: wells_on %u -> %u dc_state=0x%x verify_mismatches=%u | "
+		"runtime_pm_enable: probe usage=%d active=%d (autosuspend not armed: "
+		"intel_runtime_suspend unimplemented)\n",
+		dprobe.na_registrations, dprobe.opregion_registered, dprobe.hp.kms_poll_inited,
+		dprobe.wells_on_before, dprobe.wells_on_after, (unsigned)dprobe.dc_state_after,
+		dprobe.verify_mismatches, dprobe.rpm_usage_after, osdep_rpm_active(&probe_pm));
+	{
+		unsigned wi;
+
+		for (wi = 0u; wi < power_domains.num_power_wells; wi++) {
+			struct parity_power_well *w = &power_domains.power_wells[wi];
+
+			if (w->refcount != 0u || parity_power_well_is_enabled(w, &pwc))
+				kern_logf("i915: parity P7 well %s: refcount=%u hw_enabled=%d\n",
+					w->name, w->refcount, parity_power_well_is_enabled(w, &pwc));
+		}
+		kern_logf("i915: parity P7 DC_STATE_EN=0x%08x DC_off disable_calls=%u dc_state_writes=%u "
+			"rewrites=%u dmc_has_payload=%d\n",
+			osdep_mmio_read32(&mmio, 0x45504u), pwc.dc_off_disable_calls,
+			pwc.dc_state_writes, pwc.dc_state_rewrites, pwc.dmc_has_payload);
+	}
+	res.last_completed = "i915_driver_register";
+
+	/* i915_driver_probe() returns 0: the driver is loaded. */
+	res.outcome = PARITY_STOPPED;
+	res.where = "i915_driver_probe complete";
 
 teardown:
+	/*
+	 * i915_driver_remove() -> i915_driver_unregister(): runtime PM back to
+	 * the core, the INIT power reference taken again (DC states off, wells
+	 * on), display unregister, intel_pxp_fini.
+	 */
+	if (dprobe.registered) {
+		unsigned wi, won = 0u;
+
+		parity_i915_driver_unregister(&dprobe, &dcore, &probe_pm);
+		for (wi = 0u; wi < power_domains.num_power_wells; wi++)
+			if (parity_power_well_is_enabled(&power_domains.power_wells[wi], &pwc))
+				won++;
+		kern_logf("i915: parity teardown: driver_unregister (rpm usage=%d, INIT reference "
+			"re-taken: wells_on=%u DC_STATE_EN=0x%08x)\n",
+			osdep_rpm_usage(&probe_pm), won, osdep_mmio_read32(&mmio, 0x45504u));
+	}
+	if (pxp_inited) {
+		parity_intel_pxp_fini(&pxp, &gtmem);
+		kern_logf("i915: parity teardown: intel_pxp_fini (VCS context + stream page released)\n");
+	}
 	/*
 	 * Stopping the diagnostic here stands for driver removal:
 	 * intel_gt_driver_remove -> intel_gt_suspend_late -> gt_sanitize(false),

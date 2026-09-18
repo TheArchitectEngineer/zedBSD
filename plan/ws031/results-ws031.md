@@ -2755,3 +2755,40 @@ ktest: 354 checks, 0 failures（GPU-free / 実機とも）
 ### 残(次)
 P7 = i915_driver_probe の続き: `intel_pxp_init`(ADL-P: PXP 対応 GT の有無で -ENODEV 相当か要正本確認) → `intel_display_driver_probe`(GEM 後の表示: intel_display_driver_probe → modeset 初期化・出力・fbdev 等) → `i915_driver_register`。実機 EU 試験は要・明示解除。
 台帳E-60〜E-95。GPU=vfio-pci維持, 10ms tick/HAL非変更維持, drm非blacklist, attach先行維持。git commit/push なし。
+
+## p011 増分E-96 (2026-09-18): **P7 完成 — `i915_driver_probe` を最後まで実行（intel_pxp_init → intel_display_driver_probe → i915_driver_register）。実機で `outcome=STOPPED where="i915_driver_probe complete"`＝Linux 通常初期化の全経路を parity で踏破**。ktest 365/0
+
+### 実機結果（GPU 渡し, chaos, vmunix 397e6386, ログ `~/bigbang/run-parity-hw-e96.log`）
+```
+P7 pxp_init: rc=0 full=1 engine=vcs0 kcr_base=0x32000 ce ring=4096 state=16384 ggtt=0xfffb4000 hwsp=0xfff19180 stream_cmd=1 component_added=1
+P7 display_driver_probe: rc=0 active_crtcs=0 initial_commit=0 overlay=0 fbdev=0 ipc_enabled=1
+P7 hpd_init: encoders=2 pins=4,5 | de: enabled=0 hotplug=0 IMR=0xffffffff TC_CTL=0 TBT_CTL=0 | pch: enabled=0x30000 hotplug=0x30000 SHPD_FILTER=0xf8 SDEIMR=0x3f043f07 SHOTPLUG_DDI=0x88 SHOTPLUG_TC=0 | poll: works=1 core_gets=1
+P7 driver_register: opregion=0 kms_poll=1 | power_domains_enable: wells_on 8 -> 2 dc_state=0x2 verify_mismatches=0 | runtime_pm_enable: probe usage=0 active=1
+P7 well always_on / PW_1: refcount=0 hw_enabled=1      (残り 2 本＝正本どおり: PW_1 は always_on・所属 domain 無し)
+P7 DC_STATE_EN=0x00000002 DC_off disable_calls=1 dc_state_writes=1 rewrites=0 dmc_has_payload=1
+teardown: driver_unregister (rpm usage=1, INIT reference re-taken: wells_on=8 DC_STATE_EN=0x00000000)
+attach end: reached=P3 outcome=STOPPED where=i915_driver_probe complete err=0
+ktest: 365 checks, 0 failures（GPU-free / 実機とも）
+```
+- **intel_power_domains_enable が INIT 参照を手放し、8 本点いていた well が 2 本（always_on, PW_1）に減り、最後に DC_off well が落ちて DC6 が武装**（DC_STATE_EN=0x2、DMC payload あり）。teardown の `intel_power_domains_disable` で INIT を取り直すと 8 本に戻り DC_STATE_EN=0。verify_state 不一致 0。
+- hotplug: エンコーダは port A/B（pin 4/5）→ 正本 `gen11_hpd_irq_setup`: DE 側は TC ピン無しで IMR 不変・TC/TBT CTL クリア、PCH(ADP>TGP) 側は SHPD_FILTER_CNT=0x0F8、SDEIMR の bit16/17 をアンマスク、SHOTPLUG_CTL_DDI=0x88（A/B の HPD enable）、TC は 0。
+- pxp: ADL-P は has_pxp・VDBOX あり・media GT 無し → full feature。vcs0 に 4 KiB ring の pinned context（HWS_PXP=0x180）と streaming page。KCR/irq の HW 初期化は mei-pxp component の bind で走る（ここには無い）。
+- IPC: DISP_ARB_CTL2.IPC 有効化。initial_commit: active crtc 0 → 空コミット（正本と同値）。
+
+### 実装
+- `pxp.{c,h}`（P7-0）: `find_gt_for_required_protected_content`→`pxp_init_full`（session mgmt / `create_vcs_context` / `intel_pxp_tee_component_init` の alloc_streaming_command）。fini は destroy_vcs_context。
+- `driver_probe.{c,h}`（P7-a/b）: `intel_ddi_hpd_pin`（default / tgl / xelpd）、`intel_hpd_init_pins`（hpd_gen11 / hpd_icp）、`intel_hpd_init`→`gen11_hpd_irq_setup`＋`icp_hpd_irq_setup`（`intel_uncore_rmw` 意味論＝変化時のみ書込、`ibx_display_interrupt_update` は intel_irqs_enabled 時のみ）、`intel_hpd_poll_disable`（poll_init_work を inline、DISPLAY_CORE get/put）、`skl_watermark_ipc_init`、`intel_initial_commit`（active crtc 0 の形）、`intel_power_domains_enable`（INIT put＋verify_state）、`intel_runtime_pm_enable`（probe 参照 put）、`i915_driver_register` の N/A 一覧、remove 側 `intel_runtime_pm_disable`/`intel_power_domains_disable`/display unregister。
+- `power_domains.{c,h}`: **DC_off well の disable を正本化**＝`gen9_dc_off_power_well_disable`（DMC payload 必須 → target により `tgl_enable_dc3co`/`skl_enable_dc6`（assert は警告）/`gen9_enable_dc5`）＋`gen9_set_dc_state`（allowed mask、`gen9_dc_mask`、DMC 無視検出、`gen9_write_dc_state` の再書込ループ）。`is_enabled(DC_off)` を HW 読取り（`gen9_dc_off_power_well_enabled`）に。pw_ctx に display_ver / dmc_has_payload / dc_state を追加。
+- runner: 完走時の表示を `STOPPED_AT_P2` → `COMPLETE` に。
+- ktest +11（P7-HPD-PIN/SETUP/NOIRQ/NODISP、P7-IPC、P7-DC6-NODMC/DC6/DC6-OFF、P7-PXP-NONE/PXP/PXP-FINI）。P5D-WELL は DC_off の HW 読取り化に合わせ DMC payload 付きで数え直し（正本どおり DC_off も落ちる）。354→365/0。
+- **記録した適応**: DRM object model 無し（initial_commit は active crtc 0 の形のみ、connector の polled 設定と drm_kms_helper_poll は簿記のみ）、userspace 向け登録（drm_dev/debugfs/sysfs/pmu/perf/hwmon/audio component/fbdev/acpi video/dsm/switcheroo）は N/A 記録、poll_init_work は inline、runtime PM は参照を落とすが autosuspend は武装しない（intel_runtime_suspend 未移植）、verify_state は DEBUG_RUNTIME_PM 相当の well 半分のみ。
+
+### 正本で確定した事実
+- `intel_display_driver_probe`: initial_commit → overlay(gen2-4) → fbdev_init → hpd_init → hpd_poll_disable → skl_watermark_ipc_init。`intel_hpd_irq_setup` は `display_irqs_enabled && funcs.hotplug`。
+- `intel_power_domains_verify_state` は CONFIG_DRM_I915_DEBUG_RUNTIME_PM 下のみ実体。
+- `intel_runtime_pm_enable` は autosuspend 10 s＋`pm_runtime_put_autosuspend`（probe 参照）。remove は `pm_runtime_get_sync` で戻す。
+- ADL-P: has_pxp=1（GEN12_FEATURES）、mei-pxp 経路。KCR init は component bind 時。
+
+### 残(次)
+**Linux 通常初期化（i915_driver_probe）の parity 移植はここで完走**。残るのは (a) DRM object model が要る部分（active crtc がある場合の initial_commit、connector 検出・hotplug 処理本体、fbdev）、(b) runtime suspend/resume、(c) 実機 EU 試験（要・明示解除）。次の方針は判断事項。
+台帳E-60〜E-96。GPU=vfio-pci維持, 10ms tick/HAL非変更維持, drm非blacklist, attach先行維持。git commit/push なし。

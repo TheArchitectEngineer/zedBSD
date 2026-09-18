@@ -40,6 +40,8 @@
 #include "gt_defaults.h"
 #include "gt_verify_wa.h"
 #include "gt_migrate.h"
+#include "pxp.h"
+#include "driver_probe.h"
 #include "gt_init.h"
 #include <drivers/dma.h>
 #include "display_nogem.h"
@@ -3326,13 +3328,23 @@ parity_sync_ktest(void)
 				struct parity_display_nogem q;
 				unsigned before = 0u, after = 0u;
 
+				/*
+				 * The DC_off well's disable (P7) enables the target DC state
+				 * only with a DMC payload; give the sanitize one so that well
+				 * can actually turn off too.  Counts use the same fresh
+				 * is_enabled() read the sanitize uses.
+				 */
+				rpwc.display_ver = 13;
+				rpwc.dmc_has_payload = 1;
+				rpwc.allowed_dc_mask = rpd.allowed_dc_mask;
+				rpwc.target_dc_state = rpd.target_dc_state;
 				for (k = 0u; k < rpd.num_power_wells; k++)
-					if (rpd.power_wells[k].hw_enabled == 1) before++;
+					if (parity_power_well_is_enabled(&rpd.power_wells[k], &rpwc)) before++;
 				for (i = 0u; i < sizeof(q); i++) ((char *)&q)[i] = 0;
 				parity_intel_modeset_sanitize_hw_state(&q, 13, 13, 0u, &m,
 					&rpd, &rpwc);
 				for (k = 0u; k < rpd.num_power_wells; k++)
-					if (rpd.power_wells[k].hw_enabled == 1) after++;
+					if (parity_power_well_is_enabled(&rpd.power_wells[k], &rpwc)) after++;
 				KCHECK(before > 0u && q.wells_disabled + after == before,
 					"p5d: P5D-WELL every unreferenced non-always-on well that reads "
 					"back enabled is disabled");
@@ -4762,6 +4774,126 @@ parity_sync_ktest(void)
 					KCHECK(gm.objects_live == live0 && gm.allocated_pages == pages0,
 						"p6c6: P6C6-LEAK nothing is left behind");
 				}
+			}
+
+
+			/* ====== P7: hotplug irq setup, IPC, DC_off disable (DC6), PXP ====== */
+			{
+				static struct parity_hotplug hp;
+				static struct parity_pxp px;
+				struct parity_power_well dcw;
+				struct parity_pw_ctx dcc;
+				unsigned i7;
+
+				/* ---- P7-HPD-PIN: intel_ddi_init()'s hpd pin per port ---- */
+				KCHECK(parity_intel_ddi_hpd_pin(13, 0) == PARITY_HPD_PORT_A &&
+					parity_intel_ddi_hpd_pin(13, 1) == PARITY_HPD_PORT_B &&
+					parity_intel_ddi_hpd_pin(13, 3) == PARITY_HPD_PORT_TC1 &&
+					parity_intel_ddi_hpd_pin(13, 7) == PARITY_HPD_PORT_D &&
+					parity_intel_ddi_hpd_pin(12, 3) == PARITY_HPD_PORT_TC1,
+					"p7: P7-HPD-PIN DDI A/B default pins, TC1+ from PORT_TC1 (ver 12+), D/E from PORT_D_XELPD (ver 13)");
+
+				/* ---- P7-HPD-SETUP: gen11 + icp registers for encoders on A and B ---- */
+				for (i7 = 0u; i7 < sizeof(hp); i7++)
+					((char *)&hp)[i7] = 0;
+				hp.encoder_pin[0] = PARITY_HPD_PORT_A;
+				hp.encoder_pin[1] = PARITY_HPD_PORT_B;
+				hp.n_encoders = 2u;
+				fake_mmio_open(&em, &ef);
+				fake_gen_set(&ef, PARITY_SHOTPLUG_CTL_DDI, 0x8888u);
+				fake_gen_set(&ef, PARITY_SHOTPLUG_CTL_TC, 0x00888888u);
+				fake_gen_set(&ef, PARITY_GEN11_TC_HOTPLUG_CTL, 0x00888888u);
+				fake_gen_set(&ef, PARITY_GEN11_TBT_HOTPLUG_CTL, 0x00888888u);
+				fake_gen_set(&ef, PARITY_SDEIMR, 0xffffffffu);
+				fake_gen_set(&ef, PARITY_GEN11_DE_HPD_IMR, 0xffffffffu);
+				ef.wt_n = 0u;
+				parity_intel_hpd_init(&hp, &em, 13, PARITY_PCH_ADP, 1, 1);
+				KCHECK(hp.irq_setups == 1u && hp.state[PARITY_HPD_PORT_A] == PARITY_HPD_ENABLED &&
+					hp.de_hotplug_irqs == 0u && hp.de_enabled_irqs == 0u &&
+					hp.pch_hotplug_irqs == 0x30000u && hp.pch_enabled_irqs == 0x30000u &&
+					fake_gen_get(&ef, PARITY_SHOTPLUG_CTL_DDI) == 0x88u &&
+					fake_gen_get(&ef, PARITY_SHOTPLUG_CTL_TC) == 0u &&
+					fake_gen_get(&ef, PARITY_GEN11_TC_HOTPLUG_CTL) == 0u &&
+					fake_gen_get(&ef, PARITY_GEN11_TBT_HOTPLUG_CTL) == 0u &&
+					fake_gen_get(&ef, PARITY_SDEIMR) == 0xfffcffffu &&
+					fake_wt_find(&ef, PARITY_SHPD_FILTER_CNT, PARITY_SHPD_FILTER_CNT_250, 0xffffffffu) >= 0 &&
+					fake_wt_find(&ef, PARITY_GEN11_DE_HPD_IMR, 0u, 0u) < 0 &&
+					hp.sdeimr_skipped == 0,
+					"p7: P7-HPD-SETUP DDI A/B enabled in SHOTPLUG_CTL_DDI, TC/TBT cleared, SDEIMR unmasks A/B, filter 250, DE HPD IMR untouched");
+
+				/* ---- P7-HPD-NOIRQ: SDEIMR is not written before intel_irq_install ---- */
+				fake_gen_set(&ef, PARITY_SDEIMR, 0xffffffffu);
+				ef.wt_n = 0u;
+				parity_intel_hpd_init(&hp, &em, 13, PARITY_PCH_ADP, 1, 0);
+				KCHECK(hp.sdeimr_skipped == 1 && fake_gen_get(&ef, PARITY_SDEIMR) == 0xffffffffu &&
+					fake_wt_find(&ef, PARITY_SDEIMR, 0u, 0u) < 0,
+					"p7: P7-HPD-NOIRQ ibx_display_interrupt_update() refuses while intel_irqs_enabled() is false");
+				parity_intel_hpd_init(&hp, &em, 13, PARITY_PCH_ADP, 0, 1);
+				KCHECK(hp.irq_setup_skipped == 1,
+					"p7: P7-HPD-NODISP hpd_irq_setup needs display_irqs_enabled");
+
+				/* ---- P7-IPC: DISP_ARB_CTL2.DISP_IPC_ENABLE ---- */
+				fake_gen_set(&ef, PARITY_DISP_ARB_CTL2, 0u);
+				KCHECK(parity_skl_watermark_ipc_init(&em, 1, 1) == 1 &&
+					fake_gen_get(&ef, PARITY_DISP_ARB_CTL2) == PARITY_DISP_IPC_ENABLE &&
+					parity_skl_watermark_ipc_init(&em, 0, 1) == 0,
+					"p7: P7-IPC skl_watermark_ipc_init sets DISP_IPC_ENABLE only with HAS_IPC");
+
+				/* ---- P7-DC6: the DC_off well's disable enables the target DC state ---- */
+				for (i7 = 0u; i7 < sizeof(dcw); i7++) ((char *)&dcw)[i7] = 0;
+				for (i7 = 0u; i7 < sizeof(dcc); i7++) ((char *)&dcc)[i7] = 0;
+				dcw.name = "DC_off"; dcw.ops = PARITY_PW_OPS_DC_OFF;
+				dcc.mmio = &em; dcc.display_ver = 13;
+				dcc.allowed_dc_mask = 0x4000000au; dcc.target_dc_state = PARITY_DC_STATE_EN_UPTO_DC6;
+				fake_gen_set(&ef, 0x45504u, 0u);
+				dcc.dmc_has_payload = 0;
+				(void)parity_power_well_disable(&dcw, &dcc);
+				KCHECK(fake_gen_get(&ef, 0x45504u) == 0u && dcc.dc_state_writes == 0u &&
+					dcw.hw_enabled == 1,
+					"p7: P7-DC6-NODMC without a DMC payload no DC state is enabled and the well stays on");
+				dcc.dmc_has_payload = 1;
+				(void)parity_power_well_disable(&dcw, &dcc);
+				KCHECK(fake_gen_get(&ef, 0x45504u) == PARITY_DC_STATE_EN_UPTO_DC6 &&
+					dcc.dc_state == PARITY_DC_STATE_EN_UPTO_DC6 && dcc.dc_state_writes == 1u &&
+					dcw.hw_enabled == 0 && parity_power_well_is_enabled(&dcw, &dcc) == 0,
+					"p7: P7-DC6 skl_enable_dc6: DC_STATE_EN gets UPTO_DC6, the well reads as off");
+				dcw.hw_enabled = 0;
+				(void)parity_power_well_enable(&dcw, &dcc);
+				KCHECK((fake_gen_get(&ef, 0x45504u) & 0x40000003u) == 0u &&
+					parity_power_well_is_enabled(&dcw, &dcc) == 1,
+					"p7: P7-DC6-OFF enabling the well again clears the DC states");
+
+				/* ---- P7-PXP: pinned VCS context on the GT vm ---- */
+				dg.engines[1].id = PARITY_VCS0;
+				dg.engines[1].class = PARITY_VIDEO_DECODE_CLASS;
+				dg.engines[1].instance = 0;
+				dg.engines[1].mmio_base = 0x1c0000u;
+				dg.engines[1].context_size = 2u * 4096u;
+				dg.engines[1].name = "vcs0";
+				dg.num_engines = 2u;
+				fake_mmio_open(&em, &ef);
+				rc = parity_intel_engines_init(&des, &dg, &gm, &pp);
+				if (rc == 0) {
+					unsigned live1 = gm.objects_live;
+
+					rc = parity_intel_pxp_init(&px, &des, &pp, &gm, 0);
+					KCHECK(rc == -ENODEV && !px.inited,
+						"p7: P7-PXP-NONE without has_pxp there is no PXP GT");
+					rc = parity_intel_pxp_init(&px, &des, &pp, &gm, 1);
+					KCHECK(rc == 0 && px.inited && px.full_feature && px.engine_idx == 1u &&
+						px.kcr_base == 0x32000u && px.ce.allocated && px.ce.ring.size == 4096u &&
+						px.ce.vm == &pp && px.stream_cmd != 0 && px.component_added &&
+						px.hwsp_ggtt == (uint32_t)des.ge[1].hwsp_ggtt + 0x180u &&
+						px.hwsp_cpu == &des.ge[1].hwsp[0x60u],
+						"p7: P7-PXP pxp_init_full: a pinned 4 KiB context on the first VCS, HWS_PXP timeline, streaming page");
+					parity_intel_pxp_fini(&px, &gm);
+					KCHECK(gm.objects_live == live1 && !px.inited && px.stream_cmd == 0,
+						"p7: P7-PXP-FINI destroy_vcs_context + streaming page released");
+					parity_intel_engines_release(&des, &gm);
+				} else {
+					KCHECK(0, "p7: P7-PXP intel_engines_init with a VCS failed");
+				}
+				dg.num_engines = 1u;
 			}
 
 			parity_gt_ppgtt_destroy(&gm, &pp);
