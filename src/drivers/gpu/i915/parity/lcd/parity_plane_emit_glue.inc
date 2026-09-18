@@ -71,3 +71,69 @@ int parity_plane_emit(struct parity_lcd_emit *emit, int pipe, int plane_id, u32 
 	icl_plane_update_arm(&plane, &crtc_state, &plane_state);
 	return 0;
 }
+
+#include "lcd_seq_compat.h"
+#include "lcd_modeset_compat.h"
+#include "lcd_dp_compat.h"
+#include "lcd_plane_compat.h"
+#include "parity_lcd_modeset_int.h"
+
+/*
+ * The plane of the modeset object.  _prepare fills the framebuffer / plane state exactly as
+ * parity_plane_emit() above does (same checks, same refusals) and computes ctl / color_ctl with the
+ * reference's functions; _update runs icl_plane_update_noarm() then icl_plane_update_arm() (the
+ * PLANE_SURF write arms the update: from then on the buffer may be scanned out); _disable runs
+ * icl_plane_disable_arm().
+ */
+int parity_lcd_ms_plane_prepare(struct parity_lcd_modeset *ms, u32 fourcc, u64 modifier, u32 width, u32 height,
+	u32 pitch, u32 surf_ggtt_offset)
+{
+	static const struct drm_format_info xrgb8888 = {
+		.format = DRM_FORMAT_XRGB8888, .num_planes = 1, .cpp = { 4, 0, 0, 0 }, .has_alpha = false, .is_yuv = false,
+	};
+
+	if (fourcc != DRM_FORMAT_XRGB8888 || modifier != DRM_FORMAT_MOD_LINEAR)
+		return -EINVAL;
+	if (width == 0u || height == 0u || width > 8192u || height > 8192u || pitch < width * 4u || (pitch % 64u) != 0u ||
+	    (surf_ggtt_offset & 0xfffu) != 0u)
+		return -EINVAL;
+	memset(&ms->plane, 0, sizeof(ms->plane));
+	memset(&ms->plane_state, 0, sizeof(ms->plane_state));
+	memset(&ms->fb, 0, sizeof(ms->fb));
+	ms->plane.base.dev = &ms->i915.drm;
+	ms->plane.id = PLANE_PRIMARY;
+	ms->plane.pipe = ms->crtc.pipe;
+	ms->fb.dev = &ms->i915.drm;
+	ms->fb.format = &xrgb8888;
+	ms->fb.modifier = modifier;
+	ms->plane_state.uapi.plane = &ms->plane.base;
+	ms->plane_state.uapi.src.x2 = (int)(width << 16);
+	ms->plane_state.uapi.src.y2 = (int)(height << 16);
+	ms->plane_state.uapi.dst.x2 = (int)width;
+	ms->plane_state.uapi.dst.y2 = (int)height;
+	ms->plane_state.hw.fb = &ms->fb;
+	ms->plane_state.hw.rotation = DRM_MODE_ROTATE_0;
+	ms->plane_state.hw.alpha = 0xffff;
+	ms->plane_state.hw.pixel_blend_mode = DRM_MODE_BLEND_PREMULTI;
+	ms->plane_state.hw.color_encoding = DRM_COLOR_YCBCR_BT709;
+	ms->plane_state.hw.color_range = DRM_COLOR_YCBCR_LIMITED_RANGE;
+	ms->plane_state.view.color_plane[0].scanout_stride = pitch;
+	ms->plane_state.view.color_plane[0].mapping_stride = pitch;
+	ms->plane_state.scaler_id = -1;
+	ms->plane_state.ggtt_offset = surf_ggtt_offset;
+	ms->plane_state.ctl = skl_plane_ctl(&ms->crtc_state, &ms->plane_state);
+	ms->plane_state.color_ctl = glk_plane_color_ctl(&ms->crtc_state, &ms->plane_state);
+	return 0;
+}
+
+void parity_lcd_ms_plane_update(struct parity_lcd_modeset *ms)
+{
+	icl_plane_update_noarm(&ms->plane, &ms->crtc_state, &ms->plane_state);
+	ms->plane_armed = 1;                    /* set BEFORE the arming write: from here the buffer is not ours alone */
+	icl_plane_update_arm(&ms->plane, &ms->crtc_state, &ms->plane_state);
+}
+
+void parity_lcd_ms_plane_disable(struct parity_lcd_modeset *ms)
+{
+	icl_plane_disable_arm(&ms->plane, &ms->crtc_state);
+}

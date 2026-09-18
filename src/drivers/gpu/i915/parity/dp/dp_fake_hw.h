@@ -76,6 +76,9 @@ struct dp_fake_hw {
 	unsigned unknown_reg_reads, unknown_reg_writes;
 	uint32_t last_unknown_reg;
 	unsigned wait_timeouts;
+	/* told about every native DPCD write after it is stored (the sink's link-training behaviour lives with the owner) */
+	void (*on_dpcd_write)(void *ctx, unsigned addr, unsigned len);
+	void *on_dpcd_write_ctx;
 };
 
 void dp_fake_init(struct dp_fake_hw *hw, const uint8_t *dpcd_000, const uint8_t *dpcd_100,

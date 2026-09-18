@@ -22,6 +22,29 @@ int parity_display_emit_transcoder(struct parity_lcd_emit *emit, const struct dr
 
 static unsigned lcd_notes;
 
+static unsigned lcd_errors;
+static void (*lcd_error_hook)(void *ctx, const char *what);
+static void *lcd_error_ctx;
+
+void parity_lcd_error(const char *what)
+{
+	lcd_errors++;
+	if (lcd_error_hook != 0)
+		lcd_error_hook(lcd_error_ctx, what);
+}
+
+unsigned parity_lcd_errors(void)
+{
+	return lcd_errors;
+}
+
+void parity_lcd_error_bind(void (*hook)(void *ctx, const char *what), void *ctx)
+{
+	lcd_error_hook = hook;
+	lcd_error_ctx = ctx;
+	lcd_errors = 0u;
+}
+
 void parity_lcd_note(const char *fmt)
 {
 	(void)fmt;
@@ -131,13 +154,13 @@ static void record_write(void *ctx, u32 reg, u32 value)
 	out->n++;
 }
 
-static void record_rmw(void *ctx, u32 reg, u32 clear, u32 set)
+static u32 record_rmw(void *ctx, u32 reg, u32 clear, u32 set)
 {
 	struct parity_lcd_words *out = ctx;
 
 	if (out->n >= PARITY_LCD_MAX_REGWRITES) {
 		out->overflow++;
-		return;
+		return 0u;
 	}
 	out->w[out->n].reg = reg;
 	out->w[out->n].value = set;
@@ -145,6 +168,7 @@ static void record_rmw(void *ctx, u32 reg, u32 clear, u32 set)
 	out->w[out->n].rmw = 1u;
 	out->w[out->n].step = 0;
 	out->n++;
+	return 0u;
 }
 
 static void record_step(void *ctx, const char *name)
@@ -191,36 +215,6 @@ int parity_lcd_words_step(const struct parity_lcd_words *w, const char *name, un
 		if (w->w[i].step != 0 && strcmp(w->w[i].step, name) == 0)
 			return (int)i;
 	return -1;
-}
-
-static void state_to_mode(const struct parity_lcd_state *s, struct drm_display_mode *mode, struct intel_link_m_n *m_n);
-int parity_display_emit_crtc_enable(struct parity_lcd_emit *emit, const struct drm_display_mode *mode,
-	const struct intel_link_m_n *m_n, int port, int pipe, int cpu_transcoder, int port_clock, int lanes, int pipe_bpp,
-	int src_w, int src_h, u32 saved_port_bits);
-
-int parity_lcd_emit_enable_sequence(const struct parity_lcd_state *s, int port, int pipe, int cpu_transcoder,
-	uint32_t src_width, uint32_t src_height, uint32_t saved_port_bits, struct parity_lcd_words *out)
-{
-	struct parity_lcd_emit emit;
-	struct drm_display_mode mode;
-	struct intel_link_m_n m_n;
-	int rc;
-
-	if (s == 0 || out == 0 || port < 0 || port > 1 || pipe < 0 || pipe > 3 || cpu_transcoder < 0 || cpu_transcoder > 3 ||
-	    src_width == 0u || src_height == 0u)
-		return -EINVAL;
-	memset(out, 0, sizeof(*out));
-	memset(&emit, 0, sizeof(emit));
-	state_to_mode(s, &mode, &m_n);
-	emit.ctx = out;
-	emit.write32 = record_write;
-	emit.rmw32 = record_rmw;
-	emit.step = record_step;
-	rc = parity_display_emit_crtc_enable(&emit, &mode, &m_n, port, pipe, cpu_transcoder, s->link.rate_khz, s->link.lanes,
-		s->link.bpp, (int)src_width, (int)src_height, saved_port_bits);
-	if (rc == 0 && out->overflow != 0u)
-		rc = -EINVAL;
-	return rc;
 }
 
 unsigned parity_lcd_words_find(const struct parity_lcd_words *w, uint32_t reg, uint32_t *value)

@@ -24,6 +24,7 @@
 #include "bios.h"
 #include "dp/edp_ktest.h"
 #include "lcd/scanout_ktest.h"
+#include "lcd/lcd_modeset_ktest.h"
 #include "vga.h"
 #include "power_domains.h"
 #include "combo_phy.h"
@@ -1379,6 +1380,8 @@ parity_sync_ktest(void)
 	parity_edp_ktest(edp_ktest_check);
 	/* real threads / locks / ticks: delayed work, and the eDP stage running on it */
 	parity_edp_sync_ktest(edp_ktest_check);
+	/* the one-screen LCD modeset on the register / sink models (needs no live eDP: it brings its own up and down) */
+	parity_lcd_modeset_ktest(edp_ktest_check);
 
 	/* --- intel_vga_register decode + power-domain map + pmdemand (GPU-free) --- */
 	{

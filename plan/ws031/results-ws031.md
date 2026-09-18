@@ -3489,3 +3489,60 @@ host `run-lcd-host-test.sh` **67/0**（+11）、ktest **453/0**（+1 `LCD-A-ENAB
 ### 残(次)
 disable 列の取り込み → step ごとの前提条件表（callee を読んで埋める）→ 中身の移植を列の順に: shared DPLL enable → DDI clock → signal levels／lane power → link training → transcoder enable → watermark／DDB → backlight。各段は fake 試験（正常 enable→disable／途中失敗／enable 後の停止）を先に作る → LCD-B 実機 1 回（写真）。
 台帳E-60〜E-113。GPU=vfio-pci維持, 10ms tick/HAL非変更維持, execlists, 累積修正保持。git commit/push なし。
+
+## p011 増分E-114 (2026-09-19): **LCD 主線 — enable／disable 経路の step を実本体へ接続し、同じ state と buffer で「準備 → enable → plane 更新 → frame 進行 → plane 停止 → disable → 回収」が register／sink model 上で一続きに通過（host 統合試験 45/0）。経路上の未移植 step は 45 → 10**。実機への書込みはまだ 0 件（専門家の助言: 区切りを「関数の完成」から「一枚表示して安全に停止する経路の完成」へ）
+
+### 0. 現在地の区分
+確認済み（model 上）= PLL enable → panel power → DDI clock → transcoder clock → PHY signal level → lane power → MSO → source OUI／sink D0 → **link training（実 AUX 経路の code が sink model と対話、CR→EQ→idle→normal）** → MSA → PIPESRC → PIPEMISC → cpu transcoder → linetime／pipe chicken → TRANS_DDI_FUNC → transcoder enable → PPS backlight、plane noarm／arm、disable 側の全列、回収。**未実行 = 実機**。未移植で経路に残る step 10 個 = backlight PWM 2、colour 3、watermark 2（initial＋plane）、vblank on/off 2、underrun reporting 1。commit 外側（CRTC power domain／DC_OFF／CDCLK／DBUF）も未接続。
+
+### 1. 構成（recorder を「手順再生器」にしない）
+同じ正本由来の呼出し元・callee・state が、`parity/lcd/parity_lcd_ops.h` の hook（register／wait／sleep／DPCD／panel power／power domain／lock／error）経由で 3 backend 上で走る: register＋sink model（`lcd_fake_hw.c`）、実 GPU（次増分の kernel binding）、その上に重ねる recorder（`parity_lcd_trace.c` = 実行 log。再生はしない）。
+- **一つの modeset object**（`parity_lcd_modeset_int.h`: i915／crtc／crtc_state／atomic state／dig_port／intel_dp／connector／shared DPLL／plane／fb）。enable が残したもの（`intel_dp->DP`、wakeref、PLL の active mask、`link_trained`、`crtc->active`、plane armed）を disable がそのまま見る。診断は同じ実体から読む。公開面は plain C の `parity_lcd_modeset.h`（prepare／enable／plane_update／plane_disable／disable／status）。
+- **panel power と DPCD は常駐 eDP（parity/dp）が実行**: `parity_edp_panel_op`（正本の `intel_pps_on/off/vdd_on/backlight_on/off`）、`parity_edp_dpcd_write`、`parity_edp_read_dpcd_caps`。PPS を作り直していない。
+- E-113 の recorder 専用 API（`parity_lcd_emit_enable_sequence`）は撤去。順序の検査は統合実行の trace に対して行う。
+
+### 2. 正本から取り込んだ本体（generator を表駆動化: `tools/port_lcd_modeset.json`）
+- `intel_dpll_mgr.c`: `intel_enable/disable_shared_dpll`、`combo_pll_enable/disable`、`icl_pll_power_enable`、`icl_dpll_write`、`icl_pll_enable/disable`、`adlp_cmtg_clock_gating_wa`。
+- `intel_ddi.c`: DDI clock（`icl_ddi_combo_enable/disable_clock`）、`main_link_aux_power_domain_get/put`、transcoder clock、`icl_combo_phy_set_signal_levels`＋`icl_ddi_combo_vswing_program`＋`intel_ddi_dp_level`、`intel_ddi_power_up_lanes`、`intel_ddi_mso_configure`（MSO 不使用でも splitter bit を clear する RMW が出る）、training hook 3 種（`prepare_link_retrain`／`set_link_train`／`set_idle_link_train`）、`intel_wait_ddi_buf_idle/active`、voltage／pre-emphasis max、disable 側（`intel_disable_ddi[_dp]`、`intel_ddi_post_disable[_dp]`、`intel_ddi_post_pll_disable`、`intel_ddi_disable_transcoder_func`、`disable_ddi_buf`、`intel_ddi_disable_fec`）。
+- `intel_ddi_buf_trans.c`（ADL-P combo の表と選択関数）、`intel_combo_phy.c`（lane power）、`intel_dp_link_training.c`（128b/132b 以外の全関数 45 個）、`drm_dp_helper.c`（link status／adjust request／delay／LTTPR の 24 関数）、`intel_dp.c`（`intel_dp_set_power`、`intel_edp_init_source_oui`、`intel_dp_set_link_params`、`intel_dp_compute_rate`、`intel_edp_backlight_on/off`、`intel_dp_set_infoframes` ほか）、`intel_display.c`（`intel_enable/disable_transcoder`、`bdw_set_pipe_misc`、`icl_set_pipe_chicken`、`hsw_set_linetime_wm`、`intel_wait_for_pipe_off`、**`hsw_crtc_disable`**）、`intel_vblank.c`（scanline 進行待ち）、`intel_dmc.c`（`intel_dmc_enable/disable_pipe`。firmware は再 load せず、load 済み id の mask を受け取る）、`skl_universal_plane.c` に `icl_plane_disable_arm`。
+- register 定義は **macro closure**（root macro＋同じ header 内で参照する macro を file 順に抽出）。root は compile error から `tools/lcd-e114/find_missing.py` が自動追加。static 関数の前方宣言は生成（keep-list を呼出し順にしなくてよい）。`check_generated.sh` は generator の全出力（63 file）を比較。
+
+### 3. step の分類（表の「同名関数なし」を残り作業数にしない）
+| 区分 | 件 | 内容 |
+|---|---|---|
+| 既存本体へ接続 | 3 系 | PPS（`intel_pps_on/off/vdd_on/backlight_*` → 常駐 eDP）、DPCD／AUX（常駐 eDP の `drm_dp_dpcd_*`）、power domain（ops → 次増分で `power_domains.c`） |
+| 正本の本体を取り込み | 上記 §2 | |
+| **対象条件で早期 return → GUARD**（正本の条件を保持。成立しなければ error で、黙って通さない） | 21 | Type-C（`icl_program_mg_dp_mode`、`intel_tc_port_link_cancel_reset_work`）、DPCD<1.3／非 branch（`intel_dp_configure_protocol_converter`）、DSC off（5 関数）、FEC off（3）、big joiner、PCON（2）、panel fitter（2）、DP 2.0（audio SDP split）、port sync、HDCP 要求なし、PSR off、SDP 無効（`intel_write_dp_sdp`）、VRR off（`intel_dp_sink_set_msa_timing_par_ignore_state` は本体ごと取り込み） |
+| 対象機に該当しない quirk | 1 | `QUIRK_INCREASE_DDI_DISABLED_TIME` は PCI 0x3184／0x3185 だけ |
+| **未解決（経路に step として残る）** | 10 | backlight PWM、colour、watermark／DDB、vblank on/off、underrun reporting |
+link training の **fallback は未移植**: 正本が要求した時点で error（"FALLBACK requested"）を記録し、別 rate／lane を裏で試さない。`intel_dp_stop_link_train` が立てる `link_trained` は成功の証拠にせず、enable 後に **sink の DPCD 0x202〜 を読み** CR／EQ／symbol lock／alignment を判定する。
+
+### 4. 統合試験（host、ASan/UBSan）`plan/ws031/tests/lcd-modeset-host-test.c` 45/0
+- **A 正常**: prepare は何も触らない → enable 成功（sink が 0x77／align 1 を報告、`intel_dp->DP` = 0x80000002、DDI_BUF_CTL／TRANS_DDI_FUNC_CTL／**TRANS_CLK_SEL_A 0x10000000**／DPLL0 enable 0xcc…／CFGCR0・1／TRANSCONF が Linux dump と一致）→ 順序（PLL lock < panel power < DDI clock < training < PIPESRC < M/N < transcoder enable < PPS backlight）→ plane arm 1 回（PLANE_CTL 0x94000000、**今回の buffer の GGTT 位置**）→ frame counter 進行 → plane 停止（modeset 自身は buffer を解放可能と宣言しない）→ disable → 読戻し（pipe off／DDI idle／PLL off／clock gate／func off／sink D3／panel off）→ PLL・DDI IO・AUX 参照返却 → eDP 終了後に保有 0。model が数える順序違反 0。
+- **B 前半失敗**: PLL unlock → 最初の error がそれ、enable は成功扱いにならない、`link_trained` flag は立つ（証拠に使わない理由）、disable が取得済み分を返す。CR 不成立 → fallback 要求を error として記録、正本どおり pipe は有効化される（黒画面）ので disable が必要、返却確認。sink が swing 2／pre-emphasis 1 を要求 → 実行時に応答から決まる。
+- **C plane arm 後の異常**: pipe が止まらない → 正本の wait が error、disable は成功扱いにならない、**buffer は「表示中の可能性あり」のまま**、新しい modeset は −16 で拒否。
+- 範囲外（Type-C port、tiled fb、hook の欠けた backend）は何も触る前に −22。
+既存 host: lcd 56/0（E-113 の recorder 列検査 11 件は統合試験へ移した）、dp 72/0。kernel build（-Werror）通過。
+
+### 残(次) = E-115
+残り step 10 個の接続（watermark／DDB と colour は本体取り込み、backlight は `cnp_*`＋rawclk、vblank／underrun は正本を読んで区分）→ commit 外側（CRTC power domain、DC_OFF、CDCLK 確認、DBUF）→ kernel binding（`parity_lcd_kernel.c`: MMIO／常駐 eDP／`power_domains.c`／実 mutex）→ GPU-free ktest（実 scanout object と結合、IN_USE／abandon）→ 実機前判定 → **LCD-B 実機 1 回**（buffer 読戻し＋register／link 状態＋写真、停止と回収）。
+台帳E-60〜E-114。GPU=vfio-pci維持, 10ms tick/HAL非変更維持, execlists, 累積修正保持。git commit/push なし。
+
+## p011 増分E-115 前半 (2026-09-19): **経路上の未解決 step 10 → 1**（残り = plane の watermark／DDB `skl_write_plane_wm` だけ。enable 列は step 0）。backlight PWM・colour・DMC pipe・infoframes を本体接続、3 個は正本を読んで「接続しない」と決定し理由つきで log に残す
+
+| 対象 | 扱い | 根拠／結果 |
+|---|---|---|
+| `intel_backlight_enable/disable`（PWM） | 本体取り込み `intel_backlight_port.c`（PWM 層 `intel_pwm_*`＋`cnp_*`＋`bxt_set/get_backlight`＋VBT 由来の max／min 計算 26 関数）。`intel_backlight_setup` 相当は glue（正本の `cnp_pwm_funcs`／`pwm_bl_funcs` の member 対応を明記、setup は PWM register の読出しだけ） | **19.2 MHz ÷ 200 Hz（VBT）= 96000 = 0x17700 = Linux の BLC_PWM_PCH_CTL2 dump と一致**、duty = max、enable。disable で duty 0／PWM off。PPS 側の backlight bit は従来どおり常駐 eDP |
+| `intel_color_load_luts／commit_noarm／commit_arm` | 本体取り込み `intel_color_port.c`（`icl_gamma_mode`、`icl_csc_mode`、`icl_load_luts`、`icl_load_csc_matrix`、`icl_color_commit_noarm/arm`、dispatcher 3）。hook は正本の `tgl_color_funcs`（display ver ≥ 12）。LUT／CTM なしの state では loader は GUARD | SKL_BOTTOM_COLOR = 0、GAMMA_MODE = 0（8 bit、post-CSC gamma 無効 = 素通し）、PIPE_CSC_MODE = 0 を**書く**（「色管理を使わない」= 無操作ではない） |
+| `intel_dmc_enable/disable_pipe` | 本体取り込み `intel_dmc_port.c`。firmware は再 load せず、load 済み id の mask を cfg で受け取る（`has_dmc_id_fw`） | PIPEDMC_CONTROL(pipe) の rmw |
+| `intel_dp_set_infoframes` | 本体取り込み（DIP_CTL の enable bit を落とす write が出る）。`intel_write_dp_sdp` は GUARD（`infoframes.enable` == 0） | |
+| `intel_dp_sink_set_msa_timing_par_ignore_state` | 本体取り込み（`vrr.enable` false で return） | |
+| `intel_initial_watermarks` | **正本で無操作**: `display.funcs.wm->initial_watermarks` を呼ぶだけで、`skl_wm_funcs`（ver 9+）はそれを設定しない。watermark は plane 更新（`skl_write_plane_wm`）が書く | |
+| `intel_set_cpu_fifo_underrun_reporting` | **接続しないと決定**: ICL_PIPESTATUS の sticky bit clear＋underrun 割込みの unmask = エラー報告機能。表示割込みは未配線。LCD-B では観測区間の後に PIPESTATUS を試験側で読んで記録する | log に `(decided)` として位置つきで残る |
+| `intel_crtc_vblank_on/off` | **接続しないと決定**: DRM core の software vblank 管理（`drm_crtc_vblank_on/off`）で register 操作なし。frame の進行は frame counter／scanline で観測 | 同上 |
+| quirk 全般 | 対象外: `intel_quirks[]` に PCI device 0x46a8 の entry は無い（0x0046〜0x3185）。DMI quirk も別機種 | `intel_has_quirk` = 0 |
+
+host 統合試験 **47/0**（+2: PWM backlight の値と停止）。trace の集計: enable 137 操作（write 48／rmw 47／wait 3、**step 0**、decided 2）、plane＋disable 47 操作（step 2 = `skl_write_plane_wm` ×2）。lcd 56/0、dp 72/0、kernel build（-Werror）通過、`check_generated.sh` 全一致。
+**残り**: (1) watermark／DDB — 入力（`wm_skl_latency[]`、DBUF slice、CDCLK）は既に parity の通常初期化が保持している。`skl_watermark.c` の計算部を取り込み、比較先は Linux dump の PLANE_WM 0x80004010／PLANE_BUF_CFG 0x0fdb0000。(2) commit 外側（CRTC power domain、DC_OFF、CDCLK 確認、DBUF）。(3) kernel binding → GPU-free ktest（実 scanout object）→ 実機前判定 → LCD-B。
+
+**E-115 前半の追記（同日）**: 統合経路を GPU-free の kernel 試験にも入れた（`parity/lcd/lcd_modeset_ktest.c`、8 件: A 正常の準備／enable／順序／plane／plane 停止／disable／回収、C pipe が止まらない → buffer 保護と次の modeset の拒否）。ktest **460/0**（453 から recorder 列検査 1 件を外し +8）。共通部（`parity_edp.c` に bridge 3 関数、`dp_fake_hw` に hook、`lcd_compat.h`）を変更したので実機の AUX／scanout モードを 1 回: `AUX-TEST verdict: PASS`、`SCANOUT-TEST verdict: PASS`、`edp fini` refs 0（`e115-run-parity-hw-aux.log`）。表示 register への書込みは引き続き 0 件。

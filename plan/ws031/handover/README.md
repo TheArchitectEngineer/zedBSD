@@ -113,6 +113,13 @@ E-98 の再停止後、実際に提出した batch（`increment-results/e98-batc
 - `parity_lcd_emit_enable_sequence()` = 正本の `hsw_crtc_enable` と DDI の enable 連鎖を走らせた列（67 項目）。表は `notes/lcd-enable-sequence.md`（`tools/lcd-e113/gen_seq_table.py` で再生成）。
 - 未移植の callee は `parity/lcd/lcd_seq_compat.h` の step。**callee を移植したら、その define を消して実物を生成 file に足す** — 列のその位置が register 操作に置き換わる。step の要否は callee を読んで判断する（記憶で書かない）。
 
+### 2.13 E-114: 一枚表示の経路（modeset object、ops、統合試験）
+
+- 入口 = `parity/lcd/parity_lcd_modeset.h`。正本の `hsw_crtc_enable`／`hsw_crtc_disable`／plane writer が **一つの object** の上で走る。外界は `parity_lcd_ops.h` の hook（model = `lcd_fake_hw.c`、log = `parity_lcd_trace.c`、実機 binding は次増分）。panel power と DPCD は常駐 eDP（`parity_edp_panel_op` ほか）。
+- 生成は表駆動: `tools/port_lcd_modeset.json`（追加関数、新規生成 file、macro closure の root）。不足 symbol は `tools/lcd-e114/find_missing.py` → generator 再実行を繰り返して埋める。
+- 未移植 callee: 早期 return が成立するものは `lcd_seq_compat.h` の **GUARD**（不成立なら error）、それ以外は step（trace に残る）。**step が経路に残っている間は実機で点灯試験をしない**。
+- 試験: `sh plan/ws031/tests/run-lcd-modeset-host-test.sh`（A 正常／B 前半失敗／C arm 後の異常）。
+
 ## 3. 現在地（コードの状態）
 
 - parity 経路は `CONFIG_DRIVER_PCI_I915_PARITY=y` でビルドしたときだけ有効（`src/drivers/gpu/i915/i915.c` の `#if CONFIG_DRIVER_PCI_I915_PARITY` で通常 attach を止め、runner に登録）。GPU は **公開されない診断経路**（`/dev/gpu0` は出ない）。

@@ -1,5 +1,8 @@
 # eDP modeset の enable 列（正本の呼出し元から機械的に得た列）
 
+> **E-115 追記（2026-09-19）**: この表は E-113 時点（recorder だけで呼出し元を走らせた列、未移植 step 45）の記録です。E-114／E-115 で step の大半を実本体へ接続し、順序は **register／sink model 上の統合実行の trace** から読む方式に変えました（recorder 専用 API は撤去）。現在の列 = `handover/increment-results/e115-lcd-modeset-host-trace.txt`（enable 137 操作・step 0、plane＋disable 47 操作・残り step は `skl_write_plane_wm` だけ）。step の区分（本体接続／GUARD／決定済み／未解決）は台帳 E-114 §3・E-115 前半の表。
+
+
 WS031 E-113（2026-09-19）。対象 = ADL-P、eDP／DP SST、combo PHY の port A、pipe A／TRANSCODER_A、1920×1080、HBR×2、18 bpp。path は `agent-1:~/zedBSD/` 基点。
 
 ## これは何か

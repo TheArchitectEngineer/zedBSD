@@ -48,63 +48,79 @@ int parity_ddi_emit(struct parity_lcd_emit *emit, const struct drm_display_mode 
 	return 0;
 }
 
-/* ---- the enable sequence: one encoder, hooks bound as intel_ddi_init() binds them ---- */
-static struct intel_digital_port seq_dig_port;
-static struct drm_connector_state seq_conn_state;
-
-struct drm_i915_private *parity_lcd_seq_dp_i915(const struct intel_dp *intel_dp)
-{
-	return to_i915(container_of(intel_dp, struct intel_digital_port, dp)->base.base.dev);
-}
+#include "lcd_seq_compat.h"
+#include "lcd_modeset_compat.h"
+#include "lcd_dp_compat.h"
+#include "lcd_plane_compat.h"
+#include "parity_lcd_modeset_int.h"
 
 /*
- * encoder->set_signal_levels: intel_ddi_init() picks icl_combo_phy_set_signal_levels for a combo PHY on
- * display version >= 12.  Not ported: a named step.
+ * ---- the one encoder of the modeset object: hooks bound as intel_ddi_init() / intel_ddi_init_dp_connector()
+ * bind them for a combo-PHY DDI on display version 12+ (reference: intel_ddi.c, the `encoder->... =` and
+ * `dig_port->dp.... =` assignments; buffer translations: intel_ddi_buf_trans_init()).
  */
-static void seq_set_signal_levels(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state)
-{
-	PARITY_LCD_STEP(to_i915(encoder->base.dev), "encoder->set_signal_levels (icl_combo_phy_set_signal_levels)");
-}
+static struct parity_lcd_modeset *ddi_ms;
 
-struct intel_encoder *parity_ddi_seq_encoder(struct drm_i915_private *i915, int port, u32 saved_port_bits)
+void parity_lcd_ms_bind_encoder(struct parity_lcd_modeset *ms)
 {
-	if (port < 0 || port > 1)               /* combo PHY ports only */
-		return 0;
-	memset(&seq_dig_port, 0, sizeof(seq_dig_port));
-	memset(&seq_conn_state, 0, sizeof(seq_conn_state));
-	seq_dig_port.base.base.dev = &i915->drm;
-	seq_dig_port.base.port = (enum port)port;
-	seq_dig_port.saved_port_bits = saved_port_bits;
-	seq_dig_port.base.enable = intel_enable_ddi;
-	seq_dig_port.base.pre_pll_enable = intel_ddi_pre_pll_enable;
-	seq_dig_port.base.pre_enable = intel_ddi_pre_enable;
-	seq_dig_port.base.set_signal_levels = seq_set_signal_levels;
-	seq_conn_state.colorspace = DRM_MODE_COLORIMETRY_DEFAULT;
-	return &seq_dig_port.base;
+	struct intel_encoder *encoder = &ms->dig_port.base;
+	struct intel_dp *intel_dp = &ms->dig_port.dp;
+
+	ddi_ms = ms;
+	encoder->enable = intel_enable_ddi;
+	encoder->pre_pll_enable = intel_ddi_pre_pll_enable;
+	encoder->pre_enable = intel_ddi_pre_enable;
+	encoder->disable = intel_disable_ddi;
+	encoder->post_disable = intel_ddi_post_disable;
+	encoder->post_pll_disable = intel_ddi_post_pll_disable;
+	encoder->enable_clock = icl_ddi_combo_enable_clock;
+	encoder->disable_clock = icl_ddi_combo_disable_clock;
+	encoder->set_signal_levels = icl_combo_phy_set_signal_levels;
+	parity_lcd_ms_bind_buf_trans(encoder);
+	intel_dp->prepare_link_retrain = intel_ddi_prepare_link_retrain;
+	intel_dp->set_link_train = intel_ddi_set_link_train;
+	intel_dp->set_idle_link_train = intel_ddi_set_idle_link_train;
+	intel_dp->voltage_max = intel_ddi_dp_voltage_max;
+	intel_dp->preemph_max = intel_ddi_dp_preemph_max;
 }
 
 /*
  * The reference's intel_encoders_*() walk the atomic state's connectors and call the hook of each encoder
- * on this crtc.  Here there is exactly one encoder; the dispatcher itself is recorded as a step so the
- * list shows where hsw_crtc_enable() hands over to the encoder.
+ * on the crtc.  Here there is exactly one encoder.  A hook sees the state the reference would hand it:
+ * the new crtc state on the way up, the old one on the way down.
  */
+#define DDI_MS_DISPATCH(hook, crtc_state_ptr) do { \
+	struct intel_encoder *encoder__ = &ddi_ms->dig_port.base; \
+	if (encoder__->hook) \
+		encoder__->hook(state, encoder__, (crtc_state_ptr), &ddi_ms->conn_state); \
+} while (0)
+
 void intel_encoders_pre_pll_enable(struct intel_atomic_state *state, struct intel_crtc *crtc)
 {
-	PARITY_LCD_STEP(to_i915(crtc->base.dev), "> intel_encoders_pre_pll_enable");
-	if (seq_dig_port.base.pre_pll_enable)
-		seq_dig_port.base.pre_pll_enable(state, &seq_dig_port.base, state->crtc_state, &seq_conn_state);
+	DDI_MS_DISPATCH(pre_pll_enable, state->crtc_state);
 }
 
 void intel_encoders_pre_enable(struct intel_atomic_state *state, struct intel_crtc *crtc)
 {
-	PARITY_LCD_STEP(to_i915(crtc->base.dev), "> intel_encoders_pre_enable");
-	if (seq_dig_port.base.pre_enable)
-		seq_dig_port.base.pre_enable(state, &seq_dig_port.base, state->crtc_state, &seq_conn_state);
+	DDI_MS_DISPATCH(pre_enable, state->crtc_state);
 }
 
 void intel_encoders_enable(struct intel_atomic_state *state, struct intel_crtc *crtc)
 {
-	PARITY_LCD_STEP(to_i915(crtc->base.dev), "> intel_encoders_enable");
-	if (seq_dig_port.base.enable)
-		seq_dig_port.base.enable(state, &seq_dig_port.base, state->crtc_state, &seq_conn_state);
+	DDI_MS_DISPATCH(enable, state->crtc_state);
+}
+
+void intel_encoders_disable(struct intel_atomic_state *state, struct intel_crtc *crtc)
+{
+	DDI_MS_DISPATCH(disable, state->old_crtc_state);
+}
+
+void intel_encoders_post_disable(struct intel_atomic_state *state, struct intel_crtc *crtc)
+{
+	DDI_MS_DISPATCH(post_disable, state->old_crtc_state);
+}
+
+void intel_encoders_post_pll_disable(struct intel_atomic_state *state, struct intel_crtc *crtc)
+{
+	DDI_MS_DISPATCH(post_pll_disable, state->old_crtc_state);
 }

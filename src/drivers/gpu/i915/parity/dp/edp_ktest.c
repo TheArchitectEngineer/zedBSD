@@ -190,24 +190,6 @@ void parity_edp_ktest(parity_edp_ktest_check check)
 					pw.w[pw.n - 1u].reg == 0x7019cu && pw.w[pw.n - 2u].reg == 0x70180u,
 					"lcd: LCD-A-PLANE-WORDS PLANE_CTL / STRIDE / SIZE / COLOR_CTL / SURF equal Linux's dump, PLANE_SURF last");
 			}
-			{
-				static struct parity_lcd_words sq;
-				int pps, clk, lvl, train, msa_ok, src_ok, en, bl;
-				uint32_t msa = 0u, src = 0u;
-
-				rc = parity_lcd_emit_enable_sequence(&lcd, 0, 0, 0, 1920u, 1080u, 0u, &sq);
-				pps = parity_lcd_words_step(&sq, "intel_pps_on", 0u);
-				clk = parity_lcd_words_step(&sq, "intel_ddi_enable_clock", 0u);
-				lvl = parity_lcd_words_step(&sq, "encoder->set_signal_levels (icl_combo_phy_set_signal_levels)", 0u);
-				train = parity_lcd_words_step(&sq, "intel_dp_start_link_train", 0u);
-				en = parity_lcd_words_step(&sq, "intel_enable_transcoder", 0u);
-				bl = parity_lcd_words_step(&sq, "intel_edp_backlight_on", 0u);
-				msa_ok = parity_lcd_words_find(&sq, 0x60410u, &msa) == 1u && msa == 1u;
-				src_ok = parity_lcd_words_find(&sq, 0x6001cu, &src) == 1u && src == 0x077f0437u;
-				check(rc == 0 && sq.n == 67u && sq.overflow == 0u && pps >= 0 && pps < clk && clk < lvl && lvl < train && train < en && en < bl &&
-					msa_ok && src_ok,
-					"lcd: LCD-A-ENABLE-SEQ the reference callers give 67 entries: panel power < DDI clock < signal levels < training < transcoder on < backlight");
-			}
 			rc = parity_lcd_emit_ddi(&lcd, 0, 0, 0, 0u, &dw, &buf);
 			check(rc == 0 && dw.n == 3u && dw.w[0].reg == 0x60410u && dw.w[0].value == 1u && dw.w[1].reg == 0x60404u &&
 				parity_lcd_words_find(&dw, 0x60400u, &func) == 1u && func == 0x8a210002u && buf == 0x00000002u,

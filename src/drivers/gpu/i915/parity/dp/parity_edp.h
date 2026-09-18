@@ -167,4 +167,16 @@ int parity_edp_end(struct parity_edp_result *res);
 /* A raw AUX read for tests and diagnostics (live eDP only): drm_dp_dpcd_read(). */
 long parity_edp_dpcd_read(unsigned offset, uint8_t *buf, size_t size);
 
+/*
+ * The modeset side (parity/lcd) drives the panel through the live eDP -- the reference's own
+ * intel_pps_*() and drm_dp_dpcd_*() run here, with their locks, waits and references.
+ * `op` = enum parity_lcd_panel_op (parity/lcd/parity_lcd_ops.h).  0, or -EINVAL without a live eDP /
+ * for an unknown op.  The PPS functions return nothing: their effect is read back by the caller
+ * (parity_edp_snapshot, PP_STATUS).
+ */
+int parity_edp_panel_op(int op);
+long parity_edp_dpcd_write(unsigned offset, const uint8_t *buf, size_t size);
+/* drm_dp_read_dpcd_caps() on the live AUX channel: 0, or a negative errno */
+int parity_edp_read_dpcd_caps(uint8_t dpcd[15]);
+
 #endif /* PARITY_EDP_H */

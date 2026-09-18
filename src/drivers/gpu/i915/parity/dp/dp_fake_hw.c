@@ -184,6 +184,8 @@ static void aux_transaction(struct dp_fake_hw *hw, uint32_t cfg)
 			for (i = 0; i < len && 4u + i < size; i++)
 				if (addr + i < sizeof(hw->dpcd))
 					hw->dpcd[addr + i] = msg[4u + i];
+			if (hw->on_dpcd_write != 0)
+				hw->on_dpcd_write(hw->on_dpcd_write_ctx, addr, len);
 		}
 	} else if (is_read) {
 		hw->aux_i2c_reads++;

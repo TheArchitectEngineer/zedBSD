@@ -43,6 +43,28 @@
 #include "lcd_trans_regs.h"
 #include "lcd_ddi_regs.h"
 #include "lcd_seq_compat.h"
+#include "lcd_modeset_compat.h"
+
+/* zedBSD: forward declarations of the static functions of this file (generated; the keep-list is not in call order) */
+static void
+intel_reduce_m_n_ratio(u32 *num, u32 *den);
+static void compute_m_n(u32 *ret_m, u32 *ret_n,
+			u32 m, u32 n, u32 constant_n);
+static void intel_set_transcoder_timings(const struct intel_crtc_state *crtc_state);
+static void intel_set_pipe_src_size(const struct intel_crtc_state *crtc_state);
+static void hsw_set_frame_start_delay(const struct intel_crtc_state *crtc_state);
+static void hsw_set_transconf(const struct intel_crtc_state *crtc_state);
+static void hsw_configure_cpu_transcoder(const struct intel_crtc_state *crtc_state);
+static void hsw_crtc_enable(struct intel_atomic_state *state,
+			    struct intel_crtc *crtc);
+static bool is_hdr_mode(const struct intel_crtc_state *crtc_state);
+static void
+intel_wait_for_pipe_off(const struct intel_crtc_state *old_crtc_state);
+static void bdw_set_pipe_misc(const struct intel_crtc_state *crtc_state);
+static void icl_set_pipe_chicken(const struct intel_crtc_state *crtc_state);
+static void hsw_set_linetime_wm(const struct intel_crtc_state *crtc_state);
+static void hsw_crtc_disable(struct intel_atomic_state *state,
+			     struct intel_crtc *crtc);
 
 /* Prefer intel_encoder_is_tc() */
 bool intel_phy_is_tc(struct drm_i915_private *dev_priv, enum phy phy)
@@ -443,6 +465,294 @@ static void hsw_crtc_enable(struct intel_atomic_state *state,
 
 		intel_crtc_wait_for_next_vblank(wa_crtc);
 		intel_crtc_wait_for_next_vblank(wa_crtc);
+	}
+}
+
+static bool is_hdr_mode(const struct intel_crtc_state *crtc_state)
+{
+	return (crtc_state->active_planes &
+		~(icl_hdr_plane_mask() | BIT(PLANE_CURSOR))) == 0;
+}
+
+/* Prefer intel_encoder_is_combo() */
+bool intel_phy_is_combo(struct drm_i915_private *dev_priv, enum phy phy)
+{
+	if (phy == PHY_NONE)
+		return false;
+	else if (IS_ALDERLAKE_S(dev_priv))
+		return phy <= PHY_E;
+	else if (IS_DG1(dev_priv) || IS_ROCKETLAKE(dev_priv))
+		return phy <= PHY_D;
+	else if (IS_JASPERLAKE(dev_priv) || IS_ELKHARTLAKE(dev_priv))
+		return phy <= PHY_C;
+	else if (IS_ALDERLAKE_P(dev_priv) || IS_DISPLAY_VER(dev_priv, 11, 12))
+		return phy <= PHY_B;
+	else
+		/*
+		 * DG2 outputs labelled as "combo PHY" in the bspec use
+		 * SNPS PHYs with completely different programming,
+		 * hence we always return false here.
+		 */
+		return false;
+}
+
+enum intel_display_power_domain
+intel_aux_power_domain(struct intel_digital_port *dig_port)
+{
+	struct drm_i915_private *i915 = to_i915(dig_port->base.base.dev);
+
+	if (intel_tc_port_in_tbt_alt_mode(dig_port))
+		return intel_display_power_tbt_aux_domain(i915, dig_port->aux_ch);
+
+	return intel_display_power_legacy_aux_domain(i915, dig_port->aux_ch);
+}
+
+static void
+intel_wait_for_pipe_off(const struct intel_crtc_state *old_crtc_state)
+{
+	struct intel_crtc *crtc = to_intel_crtc(old_crtc_state->uapi.crtc);
+	struct drm_i915_private *dev_priv = to_i915(crtc->base.dev);
+
+	if (DISPLAY_VER(dev_priv) >= 4) {
+		enum transcoder cpu_transcoder = old_crtc_state->cpu_transcoder;
+
+		/* Wait for the Pipe State to go off */
+		if (intel_de_wait_for_clear(dev_priv, TRANSCONF(cpu_transcoder),
+					    TRANSCONF_STATE_ENABLE, 100))
+			drm_WARN(&dev_priv->drm, 1, "pipe_off wait timed out\n");
+	} else {
+		intel_wait_for_pipe_scanline_stopped(crtc);
+	}
+}
+
+void intel_enable_transcoder(const struct intel_crtc_state *new_crtc_state)
+{
+	struct intel_crtc *crtc = to_intel_crtc(new_crtc_state->uapi.crtc);
+	struct drm_i915_private *dev_priv = to_i915(crtc->base.dev);
+	enum transcoder cpu_transcoder = new_crtc_state->cpu_transcoder;
+	enum pipe pipe = crtc->pipe;
+	u32 val;
+
+	drm_dbg_kms(&dev_priv->drm, "enabling pipe %c\n", pipe_name(pipe));
+
+	assert_planes_disabled(crtc);
+
+	/*
+	 * A pipe without a PLL won't actually be able to drive bits from
+	 * a plane.  On ILK+ the pipe PLLs are integrated, so we don't
+	 * need the check.
+	 */
+	if (HAS_GMCH(dev_priv)) {
+		if (intel_crtc_has_type(new_crtc_state, INTEL_OUTPUT_DSI))
+			assert_dsi_pll_enabled(dev_priv);
+		else
+			assert_pll_enabled(dev_priv, pipe);
+	} else {
+		if (new_crtc_state->has_pch_encoder) {
+			/* if driving the PCH, we need FDI enabled */
+			assert_fdi_rx_pll_enabled(dev_priv,
+						  intel_crtc_pch_transcoder(crtc));
+			assert_fdi_tx_pll_enabled(dev_priv,
+						  (enum pipe) cpu_transcoder);
+		}
+		/* FIXME: assert CPU port conditions for SNB+ */
+	}
+
+	/* Wa_22012358565:adl-p */
+	if (DISPLAY_VER(dev_priv) == 13)
+		intel_de_rmw(dev_priv, PIPE_ARB_CTL(pipe),
+			     0, PIPE_ARB_USE_PROG_SLOTS);
+
+	val = intel_de_read(dev_priv, TRANSCONF(cpu_transcoder));
+	if (val & TRANSCONF_ENABLE) {
+		/* we keep both pipes enabled on 830 */
+		drm_WARN_ON(&dev_priv->drm, !IS_I830(dev_priv));
+		return;
+	}
+
+	intel_de_write(dev_priv, TRANSCONF(cpu_transcoder),
+		       val | TRANSCONF_ENABLE);
+	intel_de_posting_read(dev_priv, TRANSCONF(cpu_transcoder));
+
+	/*
+	 * Until the pipe starts PIPEDSL reads will return a stale value,
+	 * which causes an apparent vblank timestamp jump when PIPEDSL
+	 * resets to its proper value. That also messes up the frame count
+	 * when it's derived from the timestamps. So let's wait for the
+	 * pipe to start properly before we call drm_crtc_vblank_on()
+	 */
+	if (intel_crtc_max_vblank_count(new_crtc_state) == 0)
+		intel_wait_for_pipe_scanline_moving(crtc);
+}
+
+void intel_disable_transcoder(const struct intel_crtc_state *old_crtc_state)
+{
+	struct intel_crtc *crtc = to_intel_crtc(old_crtc_state->uapi.crtc);
+	struct drm_i915_private *dev_priv = to_i915(crtc->base.dev);
+	enum transcoder cpu_transcoder = old_crtc_state->cpu_transcoder;
+	enum pipe pipe = crtc->pipe;
+	u32 val;
+
+	drm_dbg_kms(&dev_priv->drm, "disabling pipe %c\n", pipe_name(pipe));
+
+	/*
+	 * Make sure planes won't keep trying to pump pixels to us,
+	 * or we might hang the display.
+	 */
+	assert_planes_disabled(crtc);
+
+	val = intel_de_read(dev_priv, TRANSCONF(cpu_transcoder));
+	if ((val & TRANSCONF_ENABLE) == 0)
+		return;
+
+	/*
+	 * Double wide has implications for planes
+	 * so best keep it disabled when not needed.
+	 */
+	if (old_crtc_state->double_wide)
+		val &= ~TRANSCONF_DOUBLE_WIDE;
+
+	/* Don't disable pipe or pipe PLLs if needed */
+	if (!IS_I830(dev_priv))
+		val &= ~TRANSCONF_ENABLE;
+
+	intel_de_write(dev_priv, TRANSCONF(cpu_transcoder), val);
+
+	if (DISPLAY_VER(dev_priv) >= 12)
+		intel_de_rmw(dev_priv, hsw_chicken_trans_reg(dev_priv, cpu_transcoder),
+			     FECSTALL_DIS_DPTSTREAM_DPTTG, 0);
+
+	if ((val & TRANSCONF_ENABLE) == 0)
+		intel_wait_for_pipe_off(old_crtc_state);
+}
+
+static void bdw_set_pipe_misc(const struct intel_crtc_state *crtc_state)
+{
+	struct intel_crtc *crtc = to_intel_crtc(crtc_state->uapi.crtc);
+	struct drm_i915_private *dev_priv = to_i915(crtc->base.dev);
+	u32 val = 0;
+
+	switch (crtc_state->pipe_bpp) {
+	case 18:
+		val |= PIPE_MISC_BPC_6;
+		break;
+	case 24:
+		val |= PIPE_MISC_BPC_8;
+		break;
+	case 30:
+		val |= PIPE_MISC_BPC_10;
+		break;
+	case 36:
+		/* Port output 12BPC defined for ADLP+ */
+		if (DISPLAY_VER(dev_priv) >= 13)
+			val |= PIPE_MISC_BPC_12_ADLP;
+		break;
+	default:
+		MISSING_CASE(crtc_state->pipe_bpp);
+		break;
+	}
+
+	if (crtc_state->dither)
+		val |= PIPE_MISC_DITHER_ENABLE | PIPE_MISC_DITHER_TYPE_SP;
+
+	if (crtc_state->output_format == INTEL_OUTPUT_FORMAT_YCBCR420 ||
+	    crtc_state->output_format == INTEL_OUTPUT_FORMAT_YCBCR444)
+		val |= PIPE_MISC_OUTPUT_COLORSPACE_YUV;
+
+	if (crtc_state->output_format == INTEL_OUTPUT_FORMAT_YCBCR420)
+		val |= PIPE_MISC_YUV420_ENABLE |
+			PIPE_MISC_YUV420_MODE_FULL_BLEND;
+
+	if (DISPLAY_VER(dev_priv) >= 11 && is_hdr_mode(crtc_state))
+		val |= PIPE_MISC_HDR_MODE_PRECISION;
+
+	if (DISPLAY_VER(dev_priv) >= 12)
+		val |= PIPE_MISC_PIXEL_ROUNDING_TRUNC;
+
+	/* allow PSR with sprite enabled */
+	if (IS_BROADWELL(dev_priv))
+		val |= PIPE_MISC_PSR_MASK_SPRITE_ENABLE;
+
+	intel_de_write(dev_priv, PIPE_MISC(crtc->pipe), val);
+}
+
+static void icl_set_pipe_chicken(const struct intel_crtc_state *crtc_state)
+{
+	struct intel_crtc *crtc = to_intel_crtc(crtc_state->uapi.crtc);
+	struct drm_i915_private *dev_priv = to_i915(crtc->base.dev);
+	enum pipe pipe = crtc->pipe;
+	u32 tmp;
+
+	tmp = intel_de_read(dev_priv, PIPE_CHICKEN(pipe));
+
+	/*
+	 * Display WA #1153: icl
+	 * enable hardware to bypass the alpha math
+	 * and rounding for per-pixel values 00 and 0xff
+	 */
+	tmp |= PER_PIXEL_ALPHA_BYPASS_EN;
+	/*
+	 * Display WA # 1605353570: icl
+	 * Set the pixel rounding bit to 1 for allowing
+	 * passthrough of Frame buffer pixels unmodified
+	 * across pipe
+	 */
+	tmp |= PIXEL_ROUNDING_TRUNC_FB_PASSTHRU;
+
+	/*
+	 * Underrun recovery must always be disabled on display 13+.
+	 * DG2 chicken bit meaning is inverted compared to other platforms.
+	 */
+	if (IS_DG2(dev_priv))
+		tmp &= ~UNDERRUN_RECOVERY_ENABLE_DG2;
+	else if (DISPLAY_VER(dev_priv) >= 13)
+		tmp |= UNDERRUN_RECOVERY_DISABLE_ADLP;
+
+	/* Wa_14010547955:dg2 */
+	if (IS_DG2(dev_priv))
+		tmp |= DG2_RENDER_CCSTAG_4_3_EN;
+
+	intel_de_write(dev_priv, PIPE_CHICKEN(pipe), tmp);
+}
+
+static void hsw_set_linetime_wm(const struct intel_crtc_state *crtc_state)
+{
+	struct intel_crtc *crtc = to_intel_crtc(crtc_state->uapi.crtc);
+	struct drm_i915_private *dev_priv = to_i915(crtc->base.dev);
+
+	intel_de_write(dev_priv, WM_LINETIME(crtc->pipe),
+		       HSW_LINETIME(crtc_state->linetime) |
+		       HSW_IPS_LINETIME(crtc_state->ips_linetime));
+}
+
+static void hsw_crtc_disable(struct intel_atomic_state *state,
+			     struct intel_crtc *crtc)
+{
+	const struct intel_crtc_state *old_crtc_state =
+		intel_atomic_get_old_crtc_state(state, crtc);
+	struct drm_i915_private *i915 = to_i915(crtc->base.dev);
+
+	/*
+	 * FIXME collapse everything to one hook.
+	 * Need care with mst->ddi interactions.
+	 */
+	if (!intel_crtc_is_bigjoiner_slave(old_crtc_state)) {
+		intel_encoders_disable(state, crtc);
+		intel_encoders_post_disable(state, crtc);
+	}
+
+	intel_disable_shared_dpll(old_crtc_state);
+
+	if (!intel_crtc_is_bigjoiner_slave(old_crtc_state)) {
+		struct intel_crtc *slave_crtc;
+
+		intel_encoders_post_pll_disable(state, crtc);
+
+		intel_dmc_disable_pipe(i915, crtc->pipe);
+
+		for_each_intel_crtc_in_pipe_mask(&i915->drm, slave_crtc,
+						 intel_crtc_bigjoiner_slave_pipes(old_crtc_state))
+			intel_dmc_disable_pipe(i915, slave_crtc->pipe);
 	}
 }
 

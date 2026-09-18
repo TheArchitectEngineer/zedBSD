@@ -25,6 +25,7 @@ void parity_intel_dp_aux_init(struct intel_dp *intel_dp);
 int parity_drm_edid_read(struct i2c_adapter *ddc, u8 *buf, unsigned max_blocks, unsigned *extensions);
 ssize_t drm_dp_dpcd_read(struct drm_dp_aux *aux, unsigned int offset, void *buffer, size_t size);
 int drm_dp_read_dpcd_caps(struct drm_dp_aux *aux, u8 dpcd[DP_RECEIVER_CAP_SIZE]);
+ssize_t drm_dp_dpcd_write(struct drm_dp_aux *aux, unsigned int offset, void *buffer, size_t size);
 
 static struct {
 	int live;
@@ -389,4 +390,36 @@ long parity_edp_dpcd_read(unsigned offset, uint8_t *buf, size_t size)
 	if (!edp.live)
 		return -EINVAL;
 	return drm_dp_dpcd_read(&edp.dig_port.dp.aux, offset, buf, size);
+}
+
+long parity_edp_dpcd_write(unsigned offset, const uint8_t *buf, size_t size)
+{
+	if (!edp.live)
+		return -EINVAL;
+	return drm_dp_dpcd_write(&edp.dig_port.dp.aux, offset, (void *)buf, size);
+}
+
+int parity_edp_read_dpcd_caps(uint8_t dpcd[15])
+{
+	if (!edp.live)
+		return -EINVAL;
+	return drm_dp_read_dpcd_caps(&edp.dig_port.dp.aux, dpcd);
+}
+
+/* enum parity_lcd_panel_op, kept numerically in step with parity/lcd/parity_lcd_ops.h (checked by the tests) */
+int parity_edp_panel_op(int op)
+{
+	struct intel_dp *intel_dp = &edp.dig_port.dp;
+
+	if (!edp.live)
+		return -EINVAL;
+	switch (op) {
+	case 0: intel_pps_on(intel_dp); return 0;
+	case 1: intel_pps_off(intel_dp); return 0;
+	case 2: intel_pps_vdd_on(intel_dp); return 0;
+	case 3: intel_pps_vdd_off_sync(intel_dp); return 0;
+	case 4: intel_pps_backlight_on(intel_dp); return 0;
+	case 5: intel_pps_backlight_off(intel_dp); return 0;
+	default: return -EINVAL;
+	}
 }

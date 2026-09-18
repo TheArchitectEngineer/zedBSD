@@ -22,7 +22,9 @@ typedef uint64_t __u64;
 #define _PLANE(plane, a, b) _PICK_EVEN(plane, a, b)
 #define _MMIO_PIPE(pipe, a, b) _MMIO(_PIPE(pipe, a, b))
 #define _MMIO_PLANE(plane, a, b) _MMIO(_PLANE(plane, a, b))
+#ifndef intel_de_write_fw
 #define intel_de_write_fw(i915, r, v) intel_de_write(i915, r, v)
+#endif
 #define lower_32_bits(n) ((u32)((n) & 0xffffffffu))
 #define upper_32_bits(n) ((u32)(((u64)(n)) >> 32))
 #define HAS_FLAT_CCS(i915) 0                          /* discrete (DG2+) only */

@@ -29,10 +29,8 @@ python3 $T/port_dp_aux_pps.py $R/ubu-i915-src/display $R/drm-v6.8.12 "$W/dp" > /
 compare dp "$W/dp" $S/dp intel_dp_aux_port.c intel_pps_port.c drm_dp_helper_port.c drm_edid_port.c \
 	intel_dp_aux_regs.h intel_pps_regs.h intel_pps.h intel_dp_aux.h drm_dp.h dp_ref_types.h
 python3 $T/port_lcd_calc.py $R/ubu-i915-src $R/drm-v6.8.12 "$W/lcd" > /dev/null
-compare lcd "$W/lcd" $S/lcd drm_edid_mode_port.c edid_ref_types.h intel_link_port.c intel_dpll_port.c \
-	intel_display_port.c drm_dp_bw_port.c drm_modes_port.c lcd_trans_regs.h lcd_ref_types.h port_lcd_calc.manifest.json \
-	intel_ddi_port.c intel_vrr_port.c lcd_ddi_types.h lcd_ref_inlines.h lcd_ddi_regs.h lcd_dp_msa.h lcd_drm_colorspace.h \
-	skl_plane_port.c lcd_plane_types.h lcd_i915_colorkey.h lcd_plane_regs.h lcd_psr_selfetch_regs.h lcd_drm_fourcc.h lcd_drm_plane_defs.h
+# every file the LCD generator writes (the list grows with tools/port_lcd_modeset.json)
+compare lcd "$W/lcd" $S/lcd $(ls "$W/lcd")
 python3 $T/gen_dp_fixture.py plan/ws031/display-ref "$W/dp_fixture.h" > /dev/null
 if cmp -s "$W/dp_fixture.h" $S/dp/dp_fixture_latitude5330.h; then echo "same      dp/dp_fixture_latitude5330.h"; else echo "DIFFERENT dp/dp_fixture_latitude5330.h"; rc=1; fi
 

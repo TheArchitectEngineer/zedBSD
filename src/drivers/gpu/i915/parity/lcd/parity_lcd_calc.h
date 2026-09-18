@@ -102,19 +102,12 @@ int parity_lcd_emit_ddi(const struct parity_lcd_state *s, int port, int pipe, in
 int parity_lcd_emit_plane(int pipe, int plane_id, uint32_t fourcc, uint64_t modifier, uint32_t width,
 	uint32_t height, uint32_t pitch, uint32_t surf_ggtt_offset, struct parity_lcd_words *out);
 
-/*
- * The modeset ENABLE sequence for an eDP / DP SST output on a combo-PHY `port`, as the reference's own
- * callers issue it: hsw_crtc_enable() -> encoder pre_pll_enable / shared DPLL / encoder pre_enable
- * (tgl_ddi_pre_enable_dp: panel power, clocks, signal levels, link training, ...; then MSA) -> pipe
- * source, cpu transcoder, colour, watermarks -> encoder enable (transcoder function, transcoder on,
- * backlight).  Ported callees contribute their register operations; every callee that is not ported
- * appears as a named step at its position.  The list is a SEQUENCE DESCRIPTION: nothing is written.
- */
-int parity_lcd_emit_enable_sequence(const struct parity_lcd_state *s, int port, int pipe, int cpu_transcoder,
-	uint32_t src_width, uint32_t src_height, uint32_t saved_port_bits, struct parity_lcd_words *out);
-
 /* index of the first entry that is the named step `name` at or after `from`, or -1 */
 int parity_lcd_words_step(const struct parity_lcd_words *w, const char *name, unsigned from);
+
+/* drm_err / WARN lines of the reference text since the last bind; the hook sees each one as it happens */
+unsigned parity_lcd_errors(void);
+void parity_lcd_error_bind(void (*hook)(void *ctx, const char *what), void *ctx);
 
 /* how many plain writes to `reg` the list holds; the last one's value in *value */
 unsigned parity_lcd_words_find(const struct parity_lcd_words *w, uint32_t reg, uint32_t *value);
