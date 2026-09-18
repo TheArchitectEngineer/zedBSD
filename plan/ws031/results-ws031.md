@@ -2726,3 +2726,32 @@ ktest (post-attach): 347 checks, 0 failures   (GPU-free も 347/0)
 ### 残(次)
 intel_gt_init の残り: `intel_uc_init_late`(GuC 無効→無)、**`intel_migrate_init`**(migrate 用 context: pinned_context → intel_engine_create_pinned_context, ring 256 KiB? 要正本再導出)、その後 i915_gem_init の続き(P7)。
 台帳E-60〜E-94。GPU=vfio-pci維持, 10ms tick/HAL非変更維持, drm非blacklist, attach先行維持。git commit/push なし。
+
+## p011 増分E-95 (2026-09-18): **P6-c6 `intel_migrate_init` 実機成功 → intel_gt_init の GPU 側処理を完走**。frontier=`intel_engines_driver_register`（uabi 名付け・エンジン一覧＝簿記のみ）→ i915_driver_probe の次段（intel_pxp_init / intel_display_driver_probe = P7）
+
+### 実機結果（GPU 渡し, chaos, vmunix dd421997, ログ `~/bigbang/run-parity-hw-e95.log`）
+```
+P6c verify_workarounds: rc=0 polls=23 timed_out=0 error=0
+P6c migrate_init: rc=0 engine=bcs0 tables=11 windows=16777216 pte_window=0x1000000 exposed_pts=8 ring=524288 state=16384 | ggtt ring=0xfff34000 state=0xfff30000 hwsp=0xfff13108 | lrc PDP0=00000001:00291000 RING_CTL=0007f001 top_pd=0x100291000
+teardown: engines stopped and reset (rc=0) → objects released (pte_writes=444 live=0) → … → PM released (usage=0)
+attach end: reached=P3 outcome=BLOCKED where=intel_engines_driver_register err=0
+ktest: 354 checks, 0 failures（GPU-free / 実機とも）
+```
+- migrate ppgtt: PML4[0]→PDP→PD→PT×9（[0,16 MiB) の 8 枚＋PTE 窓 [16 MiB, +32 KiB) の 1 枚）。PTE 窓の先頭 8 エントリは窓自身の PT 8 枚を PAT 3（UC）で写像（正本 `insert_pte`）。
+- 512 KiB ring と 16 KiB state を GGTT 上端窓に pin、LRC の PDP0 = migrate top_pd の DMA(0x1_0029_1000)、RING_CTL=(512K−4K)|VALID。timeline はエンジン HWSP の 0x108（HWS_MIGRATE）。**投入は無し**（正本も init では投入しない）。
+- 全 GT object が teardown で解放（live=0）。
+
+### 実装
+- `gt_migrate.{c,h}`: `first_copy_engine`(class COPY の先頭=bcs0) → `parity_gt_ppgtt_create` → sz=2·CHUNK_SZ(8 MiB)、d.offset=base+sz、sz += (sz>>12)·8 → `alloc_range(0, sz)` → `foreach_pt([0,d.offset))` で `insert_page(dma(pt), d.offset, PAT_NONE)` → `intel_engine_create_pinned_context(bcs0, vm, SZ_512K, HWS_MIGRATE)` = lrc_alloc + init_state + update_regs。fini は unpin/put + vm 解放。戻り値は正本どおり init 失敗でも致命にしない。
+- `gt_mem.{c,h}` 拡張: `parity_gt_ppgtt_alloc_range`(= `__gen8_ppgtt_alloc`: `gen8_pd_range`/`gen8_pt_count` の index 計算、新表は下位 scratch encode で充填、親エントリ = `gen8_pde_encode`)、`parity_gt_ppgtt_foreach_pt`(= `__gen8_ppgtt_foreach`、葉 PT ごとに昇順)、`parity_gt_ppgtt_insert_page`(= `gen8_ppgtt_insert_entry`)。表は `tables[16]`（親・index・level・DMA を保持）、destroy で逆順解放。
+- **記録した適応**: DMA ベクタ上限 `DRV_DMA_VECTOR_MAX_SIZE`=64 KiB のため、64 KiB 超の object は `drv_dma_alloc_coherent`（i915 DMA device の max_segment_size は UINT_MAX）1 本で確保（`contiguous`）。page DMA = base + offset。汎用層は変更なし。stash の事前確保/ww lock は固定プールからの逐次確保に置換。
+- GPU-free ktest +7（P6C6-INIT/ENGINE/VM/PTE/CTX/FINI/LEAK）: 表の木構造(PDP/PD/PT×9・scratch 充填)、PTE 窓の 8 エントリ、pinned ctx（512 KiB ring contiguous、PDP0=top_pd、RING_CTL、HWSP 0x108、seqno 0）、解放漏れ無し。338→347→354/0。
+
+### 正本で確定した事実
+- `intel_gt_init` は `__engines_verify_workarounds` 後 `intel_uc_init_late`(GuC 無しで無処理)→`intel_migrate_init`(戻り値未検査)→`out_fw`。以降 `i915_gem_init` は `intel_engines_driver_register` のみ（uabi class/instance 名付け、rb-tree）。
+- migrate vm の窓は HAS_64K_PAGES 無し(ADL-P)の古典配置 [0,8M) src / [8M,16M) dst / [16M,16M+32K) PTE。CHUNK_SZ=8 MiB（"~1ms at 8GiB/s preemption delay"）。
+- pinned context: CONTEXT_BARRIER_BIT、timeline = engine status page の offset（has_initial_breadcrumb=false）、`intel_context_pin` で lrc_init_state（CONTEXT_INIT）。
+
+### 残(次)
+P7 = i915_driver_probe の続き: `intel_pxp_init`(ADL-P: PXP 対応 GT の有無で -ENODEV 相当か要正本確認) → `intel_display_driver_probe`(GEM 後の表示: intel_display_driver_probe → modeset 初期化・出力・fbdev 等) → `i915_driver_register`。実機 EU 試験は要・明示解除。
+台帳E-60〜E-95。GPU=vfio-pci維持, 10ms tick/HAL非変更維持, drm非blacklist, attach先行維持。git commit/push なし。

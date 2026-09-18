@@ -36,6 +36,7 @@
 #define PARITY_GT_MEM_H
 
 #include <stdint.h>
+#include <drivers/dma.h>
 #include "osdep/dma.h"
 
 struct drv_dma_device;
@@ -75,6 +76,13 @@ struct osdep_mmio;
  */
 struct parity_gt_object {
 	struct drv_dma_vector *vec;
+	/*
+	 * ADAPTATION: the DMA vector caps at DRV_DMA_VECTOR_MAX_SIZE (64 KiB);
+	 * a larger object (the 512 KiB migrate ring) is one coherent
+	 * allocation instead.  Either way the pages are page aligned.
+	 */
+	struct drv_dma_buffer big;
+	int contiguous;
 	void *cpu;                  /* CPU-contiguous view of the backing pages */
 	uint32_t bytes;
 	unsigned pages;
@@ -110,7 +118,17 @@ struct parity_gt_mem {
 	int inited;
 };
 
-/* i915_ppgtt for the kernel context: scratch tower plus the top directory. */
+/* A page table allocated below the top directory (allocate_va_range). */
+#define PARITY_PPGTT_MAX_TABLES  16u
+struct parity_gt_ppgtt_table {
+	struct parity_gt_object *obj;
+	struct parity_gt_object *parent;   /* the directory holding its entry */
+	unsigned idx;                      /* entry index in the parent */
+	int lvl;                           /* 2 = PDP, 1 = PD, 0 = PT */
+	uint64_t dma;
+};
+
+/* i915_ppgtt: scratch tower, the top directory, and any allocated tables. */
 struct parity_gt_ppgtt {
 	struct parity_gt_object *scratch[PARITY_PPGTT_TOP + 1];
 	uint64_t scratch_encode[PARITY_PPGTT_TOP + 1];
@@ -119,7 +137,24 @@ struct parity_gt_ppgtt {
 	unsigned top_count;
 	int top;
 	int inited;
+
+	struct parity_gt_ppgtt_table tables[PARITY_PPGTT_MAX_TABLES];
+	unsigned n_tables;
 };
+
+/* gen8_ppgtt_alloc(): page tables for [start, start + length), scratch-filled. */
+int parity_gt_ppgtt_alloc_range(struct parity_gt_mem *gm, struct parity_gt_ppgtt *pp,
+	uint64_t start, uint64_t length);
+
+/* gen8_ppgtt_foreach(): every PT (leaf table) of the range, ascending. */
+typedef void (*parity_gt_ppgtt_pt_fn)(struct parity_gt_ppgtt *pp,
+	struct parity_gt_object *pt, uint64_t pt_dma, void *data);
+int parity_gt_ppgtt_foreach_pt(struct parity_gt_ppgtt *pp, uint64_t start,
+	uint64_t length, parity_gt_ppgtt_pt_fn fn, void *data);
+
+/* gen8_ppgtt_insert_entry(): one PTE at offset; the tables must exist. */
+int parity_gt_ppgtt_insert_page(struct parity_gt_ppgtt *pp, uint64_t dma,
+	uint64_t offset, unsigned pat_index);
 
 /* --- encoders (exposed so the tests compare against the reference values) --- */
 uint64_t parity_gen12_ppgtt_pte_encode(uint64_t dma, unsigned pat_index);

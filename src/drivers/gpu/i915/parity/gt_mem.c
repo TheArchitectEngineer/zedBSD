@@ -126,20 +126,39 @@ parity_gt_object_create(struct parity_gt_mem *gm, uint32_t bytes)
 		return 0;
 	}
 
-	rc = drv_dma_vector_create(gm->dma, (size_t)bytes, &o->vec);
-	if (rc != 0) {
-		gm->obj_alloc_fail++;
-		kern_logf("i915: parity gt_mem: backing pages for %u bytes failed rc=%d\n",
-			bytes, rc);
-		o->vec = 0;
-		return 0;
-	}
-	o->cpu = drv_dma_vector_address(o->vec);
-	if (o->cpu == 0) {
-		(void)drv_dma_vector_free(o->vec);
-		o->vec = 0;
-		gm->obj_alloc_fail++;
-		return 0;
+	o->contiguous = 0;
+	o->vec = 0;
+	if (bytes > DRV_DMA_VECTOR_MAX_SIZE) {
+		/* Above the vector cap: one coherent, page-aligned allocation. */
+		rc = drv_dma_alloc_coherent(gm->dma, (size_t)bytes,
+			PARITY_GT_PAGE_BYTES, &o->big);
+		if (rc != 0 || o->big.address == 0 ||
+		    (o->big.device_address & (PARITY_GT_PAGE_BYTES - 1u)) != 0u) {
+			if (rc == 0)
+				drv_dma_free_coherent(gm->dma, &o->big);
+			gm->obj_alloc_fail++;
+			kern_logf("i915: parity gt_mem: coherent backing for %u bytes failed rc=%d\n",
+				bytes, rc);
+			return 0;
+		}
+		o->contiguous = 1;
+		o->cpu = o->big.address;
+	} else {
+		rc = drv_dma_vector_create(gm->dma, (size_t)bytes, &o->vec);
+		if (rc != 0) {
+			gm->obj_alloc_fail++;
+			kern_logf("i915: parity gt_mem: backing pages for %u bytes failed rc=%d\n",
+				bytes, rc);
+			o->vec = 0;
+			return 0;
+		}
+		o->cpu = drv_dma_vector_address(o->vec);
+		if (o->cpu == 0) {
+			(void)drv_dma_vector_free(o->vec);
+			o->vec = 0;
+			gm->obj_alloc_fail++;
+			return 0;
+		}
 	}
 
 	/*
@@ -167,6 +186,9 @@ parity_gt_object_destroy(struct parity_gt_mem *gm, struct parity_gt_object *o)
 		parity_gt_ggtt_unbind(gm, o);
 	if (o->vec != 0)
 		(void)drv_dma_vector_free(o->vec);
+	if (o->contiguous)
+		drv_dma_free_coherent(gm->dma, &o->big);
+	o->contiguous = 0;
 	o->vec = 0;
 	o->cpu = 0;
 	o->bytes = 0u;
@@ -188,6 +210,10 @@ parity_gt_object_page_dma(const struct parity_gt_object *o, unsigned page,
 		return -EINVAL;
 
 	want = (uint64_t)page * PARITY_GT_PAGE_BYTES;
+	if (o->contiguous) {
+		*dma_out = o->big.device_address + want;
+		return 0;
+	}
 	segs = drv_dma_vector_count(o->vec);
 	for (i = 0u; i < segs; i++) {
 		struct drv_dma_segment seg;
@@ -479,6 +505,12 @@ parity_gt_ppgtt_destroy(struct parity_gt_mem *gm, struct parity_gt_ppgtt *pp)
 
 	if (gm == 0 || pp == 0)
 		return;
+	for (i = pp->n_tables; i-- > 0u; ) {
+		if (pp->tables[i].obj != 0)
+			parity_gt_object_destroy(gm, pp->tables[i].obj);
+		pp->tables[i].obj = 0;
+	}
+	pp->n_tables = 0u;
 	if (pp->top_pd != 0) {
 		parity_gt_object_destroy(gm, pp->top_pd);
 		pp->top_pd = 0;
@@ -491,4 +523,168 @@ parity_gt_ppgtt_destroy(struct parity_gt_mem *gm, struct parity_gt_ppgtt *pp)
 	}
 	pp->top_pd_dma = 0;
 	pp->inited = 0;
+}
+
+/* ---------------- allocate_va_range / foreach / insert_page ---------------- */
+
+/*
+ * gen8_ppgtt.c index helpers, on PTE indices (address >> 12): each level of
+ * the 4-level tree indexes with 9 bits, level 0 being the PT.
+ */
+static unsigned
+pd_range(uint64_t start, uint64_t end, int lvl, unsigned *idx)
+{
+	const unsigned shift = (unsigned)lvl * 9u;
+	const uint64_t mask = ~(uint64_t)0 << ((unsigned)(lvl + 1) * 9u);
+
+	end += (~mask) >> 9;
+	*idx = (unsigned)((start >> shift) & 511u);
+	if (((start ^ end) & mask) != 0u)
+		return 512u - *idx;
+	return (unsigned)((end >> shift) & 511u) - *idx;
+}
+
+static unsigned
+pt_count(uint64_t start, uint64_t end)
+{
+	if (((start ^ end) >> 9) != 0u)
+		return 512u - (unsigned)(start & 511u);
+	return (unsigned)(end - start);
+}
+
+static struct parity_gt_ppgtt_table *
+child_of(struct parity_gt_ppgtt *pp, const struct parity_gt_object *parent, unsigned idx)
+{
+	unsigned i;
+
+	for (i = 0u; i < pp->n_tables; i++)
+		if (pp->tables[i].parent == parent && pp->tables[i].idx == idx)
+			return &pp->tables[i];
+	return 0;
+}
+
+/* __gen8_ppgtt_alloc(): `lvl` is the level of `pd`'s entries' targets + 1. */
+static int
+alloc_level(struct parity_gt_mem *gm, struct parity_gt_ppgtt *pp,
+	struct parity_gt_object *pd, uint64_t *start, uint64_t end, int lvl)
+{
+	unsigned idx, len;
+	int rc;
+
+	len = pd_range(*start, end, lvl--, &idx);
+	do {
+		struct parity_gt_ppgtt_table *t = child_of(pp, pd, idx);
+
+		if (t == 0) {
+			uint64_t dma = 0;
+
+			/* "allocating new tree": a page of the level below's scratch. */
+			if (pp->n_tables == PARITY_PPGTT_MAX_TABLES)
+				return -ENOSPC;
+			t = &pp->tables[pp->n_tables];
+			t->obj = parity_gt_object_create(gm, PARITY_GT_PAGE_BYTES);
+			if (t->obj == 0)
+				return -ENOMEM;
+			fill_px(t->obj, pp->scratch_encode[lvl], PARITY_GT_PTES_PER_PAGE);
+			rc = parity_gt_object_page_dma(t->obj, 0u, &dma);
+			if (rc == 0 && !parity_dma_in_range(dma, (uint64_t)PARITY_GT_PAGE_BYTES,
+					gm->dma_mask))
+				rc = -ERANGE;
+			if (rc != 0) {
+				parity_gt_object_destroy(gm, t->obj);
+				t->obj = 0;
+				return rc;
+			}
+			t->parent = pd;
+			t->idx = idx;
+			t->lvl = lvl;
+			t->dma = dma;
+			pp->n_tables++;
+			/* set_pd_entry(): gen8_pde_encode(px_dma(pt), I915_CACHE_LLC) */
+			((uint64_t *)pd->cpu)[idx] = parity_gen8_pde_encode(dma);
+		}
+		if (lvl != 0) {
+			rc = alloc_level(gm, pp, t->obj, start, end, lvl);
+			if (rc != 0)
+				return rc;
+		} else {
+			*start += pt_count(*start, end);
+		}
+	} while (idx++, --len);
+	return 0;
+}
+
+int
+parity_gt_ppgtt_alloc_range(struct parity_gt_mem *gm, struct parity_gt_ppgtt *pp,
+	uint64_t start, uint64_t length)
+{
+	if (gm == 0 || pp == 0 || !pp->inited || length == 0u ||
+	    ((start | length) & (PARITY_GT_PAGE_BYTES - 1u)) != 0u ||
+	    start + length < start || (start + length) >> 48 != 0u)
+		return -EINVAL;
+	start >>= 12;
+	length >>= 12;
+	return alloc_level(gm, pp, pp->top_pd, &start, start + length, pp->top);
+}
+
+/* __gen8_ppgtt_foreach() */
+static int
+foreach_level(struct parity_gt_ppgtt *pp, struct parity_gt_object *pd,
+	uint64_t *start, uint64_t end, int lvl, parity_gt_ppgtt_pt_fn fn, void *data)
+{
+	unsigned idx, len;
+	int rc;
+
+	len = pd_range(*start, end, lvl--, &idx);
+	do {
+		struct parity_gt_ppgtt_table *t = child_of(pp, pd, idx);
+
+		if (t == 0)
+			return -ENOENT;   /* the reference walks only allocated ranges */
+		if (lvl != 0) {
+			rc = foreach_level(pp, t->obj, start, end, lvl, fn, data);
+			if (rc != 0)
+				return rc;
+		} else {
+			fn(pp, t->obj, t->dma, data);
+			*start += pt_count(*start, end);
+		}
+	} while (idx++, --len);
+	return 0;
+}
+
+int
+parity_gt_ppgtt_foreach_pt(struct parity_gt_ppgtt *pp, uint64_t start,
+	uint64_t length, parity_gt_ppgtt_pt_fn fn, void *data)
+{
+	if (pp == 0 || !pp->inited || fn == 0 || length == 0u ||
+	    ((start | length) & (PARITY_GT_PAGE_BYTES - 1u)) != 0u)
+		return -EINVAL;
+	start >>= 12;
+	length >>= 12;
+	return foreach_level(pp, pp->top_pd, &start, start + length, pp->top, fn, data);
+}
+
+int
+parity_gt_ppgtt_insert_page(struct parity_gt_ppgtt *pp, uint64_t dma,
+	uint64_t offset, unsigned pat_index)
+{
+	struct parity_gt_object *table;
+	struct parity_gt_ppgtt_table *t;
+	uint64_t idx;
+	int lvl;
+
+	if (pp == 0 || !pp->inited || (offset & (PARITY_GT_PAGE_BYTES - 1u)) != 0u)
+		return -EINVAL;
+	idx = offset >> 12;
+	table = pp->top_pd;
+	for (lvl = pp->top; lvl > 0; lvl--) {
+		t = child_of(pp, table, (unsigned)((idx >> ((unsigned)lvl * 9u)) & 511u));
+		if (t == 0)
+			return -ENOENT;
+		table = t->obj;
+	}
+	((uint64_t *)table->cpu)[idx & 511u] =
+		parity_gen12_ppgtt_pte_encode(dma, pat_index);
+	return 0;
 }

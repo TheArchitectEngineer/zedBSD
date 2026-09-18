@@ -39,6 +39,7 @@
 #include "gt_resume.h"
 #include "gt_defaults.h"
 #include "gt_verify_wa.h"
+#include "gt_migrate.h"
 #include "gt_init.h"
 #include <drivers/dma.h>
 #include "display_nogem.h"
@@ -4684,6 +4685,82 @@ parity_sync_ktest(void)
 						"p6c5: P6C5-EMPTY an engine without workarounds submits nothing");
 					parity_engines_verify_wa_release(&vw, &gm);
 					parity_intel_engines_release(&des, &gm);
+				}
+			}
+
+
+			/* ====== P6-c6: intel_migrate_init ====== */
+			{
+				static struct parity_gt_migrate mg;
+				unsigned live0 = gm.objects_live, pages0 = gm.allocated_pages;
+
+				rc = parity_intel_engines_init(&des, &dg, &gm, &pp);
+				KCHECK(rc == 0, "p6c6: P6C6-INIT intel_engines_init for the migrate run");
+				if (rc == 0) {
+					unsigned live1 = gm.objects_live;
+
+					rc = parity_intel_migrate_init(&mg, &des, &gm);
+					KCHECK(rc == 0 && mg.inited && mg.has_engine && mg.engine_idx == 0u &&
+						mg.err == 0,
+						"p6c6: P6C6-ENGINE the first copy engine (bcs0) owns the migrate context");
+					if (rc == 0) {
+						const uint64_t *pml4 = (const uint64_t *)mg.vm.top_pd->cpu;
+						const struct parity_gt_ppgtt_table *t = mg.vm.tables;
+						int tree_ok = mg.vm.n_tables == 11u &&
+							t[0].lvl == 2 && t[0].parent == mg.vm.top_pd && t[0].idx == 0u &&
+							t[1].lvl == 1 && t[1].parent == t[0].obj && t[1].idx == 0u;
+						int pts_ok = 1, window_ok = 1;
+						unsigned k;
+
+						for (k = 0u; k < 9u && tree_ok; k++)
+							if (t[2u + k].lvl != 0 || t[2u + k].parent != t[1].obj ||
+							    t[2u + k].idx != k)
+								pts_ok = 0;
+						if (tree_ok && pts_ok) {
+							const uint64_t *pdp = (const uint64_t *)t[0].obj->cpu;
+							const uint64_t *pd = (const uint64_t *)t[1].obj->cpu;
+							const uint64_t *pt0 = (const uint64_t *)t[2].obj->cpu;
+							const uint64_t *win = (const uint64_t *)t[10].obj->cpu;
+
+							tree_ok = pml4[0] == parity_gen8_pde_encode(t[0].dma) &&
+								pml4[1] == mg.vm.scratch_encode[3] &&
+								pdp[0] == parity_gen8_pde_encode(t[1].dma) &&
+								pdp[1] == mg.vm.scratch_encode[2] &&
+								pd[9] == mg.vm.scratch_encode[1] &&
+								pt0[0] == mg.vm.scratch_encode[0] &&
+								pt0[511] == mg.vm.scratch_encode[0];
+							for (k = 0u; k < 9u; k++)
+								if (pd[k] != parity_gen8_pde_encode(t[2u + k].dma))
+									tree_ok = 0;
+							/* insert_pte(): PT k of the windows sits at 16M + 4K * k, uncached. */
+							for (k = 0u; k < 8u; k++)
+								if (win[k] != parity_gen12_ppgtt_pte_encode(t[2u + k].dma,
+								    PARITY_PAT_INDEX_CACHE_NONE))
+									window_ok = 0;
+							if (win[8] != mg.vm.scratch_encode[0])
+								window_ok = 0;
+						}
+						KCHECK(tree_ok && pts_ok,
+							"p6c6: P6C6-VM allocate_va_range(0, 16M + 32K): PDP, PD, nine PTs, scratch elsewhere");
+						KCHECK(window_ok && mg.pte_window == 2ull * PARITY_MIGRATE_CHUNK_SZ &&
+							mg.exposed_pts == 8u && mg.window_bytes == 16ull << 20,
+							"p6c6: P6C6-PTE the PTE window maps the eight window page tables themselves");
+						KCHECK(mg.ce.allocated && mg.ce.ring.size == PARITY_MIGRATE_RING_BYTES &&
+							mg.ce.ring.obj != 0 && mg.ce.ring.obj->bound && mg.ce.ring.obj->contiguous &&
+							mg.ce.state != 0 && mg.ce.state->bound && mg.ce.vm == &mg.vm &&
+							mg.ce.lrc_reg_state[PARITY_CTX_PDP0_LDW] == (uint32_t)mg.vm.top_pd_dma &&
+							mg.ce.lrc_reg_state[PARITY_CTX_PDP0_UDW] == (uint32_t)(mg.vm.top_pd_dma >> 32) &&
+							mg.ce.lrc_reg_state[PARITY_CTX_RING_CTL] == ((PARITY_MIGRATE_RING_BYTES - 4096u) | 1u) &&
+							mg.hwsp_ggtt == (uint32_t)des.ge[0].hwsp_ggtt + 0x108u &&
+							mg.hwsp_cpu == &des.ge[0].hwsp[0x42u] && mg.tl_seqno == 0u,
+							"p6c6: P6C6-CTX a pinned 512 KiB-ring context on the migrate vm, timeline at HWS_MIGRATE");
+					}
+					parity_intel_migrate_fini(&mg, &gm);
+					KCHECK(gm.objects_live == live1 && mg.inited == 0 && mg.vm.n_tables == 0u,
+						"p6c6: P6C6-FINI the pinned context and the whole migrate vm are released");
+					parity_intel_engines_release(&des, &gm);
+					KCHECK(gm.objects_live == live0 && gm.allocated_pages == pages0,
+						"p6c6: P6C6-LEAK nothing is left behind");
 				}
 			}
 

@@ -33,6 +33,7 @@
 #include "gt_resume.h"
 #include "gt_defaults.h"
 #include "gt_verify_wa.h"
+#include "gt_migrate.h"
 #include "reset.h"
 #include "backend_sync.h"
 #include "reset.h"
@@ -151,7 +152,9 @@ drv_i915_parity_attach(struct i915_device *device, enum parity_stage stop_after,
 	static struct parity_gt_engines gteng;
 	static struct parity_gt_defaults gtdef;
 	static struct parity_gt_verify_wa gtvwa;
+	static struct parity_gt_migrate gtmig;
 	int gtvwa_inited = 0;
+	int gtmig_inited = 0;
 	int gteng_resumed = 0;
 	int gtdef_inited = 0;
 	struct parity_gt_object *gt_scratch = 0;
@@ -1533,6 +1536,34 @@ drv_i915_parity_attach(struct i915_device *device, enum parity_stage stop_after,
 		}
 		res.last_completed = "__engines_verify_workarounds";
 
+		/*
+		 * intel_uc_init_late(): nothing without GuC.  intel_migrate_init():
+		 * the migrate ppgtt (two 8 MiB windows + the PTE window that maps
+		 * the windows' own page tables) and a pinned 512 KiB-ring context
+		 * on the first copy engine.  Its return is not checked by the
+		 * reference; nothing is submitted.
+		 */
+		rc = parity_intel_migrate_init(&gtmig, &gteng, &gtmem);
+		gtmig_inited = 1;
+		kern_logf("i915: parity P6c migrate_init: rc=%d where=%s engine=%s tables=%u "
+			"windows=%llu pte_window=0x%llx exposed_pts=%u ring=%u state=%u | ggtt "
+			"ring=0x%llx state=0x%llx hwsp=0x%x | lrc PDP0=%08x:%08x RING_CTL=%08x "
+			"top_pd=0x%llx\n",
+			rc, gtmig.err_where != 0 ? gtmig.err_where : "-",
+			gtmig.has_engine ? gteng.ge[gtmig.engine_idx].info->name : "-",
+			gtmig.vm.n_tables, (unsigned long long)gtmig.window_bytes,
+			(unsigned long long)gtmig.pte_window, gtmig.exposed_pts,
+			gtmig.ce.ring.size, gtmig.ce.state_bytes,
+			(unsigned long long)gtmig.ce.ring.ggtt_offset,
+			gtmig.ce.state != 0 ? (unsigned long long)gtmig.ce.state->ggtt_offset : 0ull,
+			gtmig.hwsp_ggtt,
+			gtmig.ce.lrc_reg_state != 0 ? gtmig.ce.lrc_reg_state[PARITY_CTX_PDP0_UDW] : 0u,
+			gtmig.ce.lrc_reg_state != 0 ? gtmig.ce.lrc_reg_state[PARITY_CTX_PDP0_LDW] : 0u,
+			gtmig.ce.lrc_reg_state != 0 ? gtmig.ce.lrc_reg_state[PARITY_CTX_RING_CTL] : 0u,
+			(unsigned long long)gtmig.vm.top_pd_dma);
+		if (rc == 0)
+			res.last_completed = "intel_migrate_init";
+
 p6_fw_out:
 		osdep_fw_put(&mmio, OSDEP_FW_MEDIA_VEBOX0);
 		osdep_fw_put(&mmio, OSDEP_FW_MEDIA_VDBOX2);
@@ -1544,13 +1575,15 @@ p6_fw_out:
 	}
 
 	/*
-	 * intel_gt_init() continues with intel_uc_init_late() (nothing without
-	 * GuC) and intel_migrate_init(): the migration context.  Not wired yet.
+	 * intel_gt_init() is complete.  i915_gem_init() ends with
+	 * intel_engines_driver_register() (uabi names and the engine list) and
+	 * i915_driver_probe() goes on to intel_pxp_init() and
+	 * intel_display_driver_probe().  Not wired yet.
 	 */
 	osdep_trace_emit(&trace, PARITY_STAGE_P3, OSDEP_TR_UNIMPL,
-		"intel_migrate_init", 0u, 0u);
+		"intel_engines_driver_register", 0u, 0u);
 	res.outcome = PARITY_BLOCKED;
-	res.where = "intel_migrate_init";
+	res.where = "intel_engines_driver_register";
 
 teardown:
 	/*
@@ -1579,6 +1612,8 @@ teardown:
 		while (held-- > 0u)
 			osdep_fw_put(&mmio, fwd[held]);
 	}
+	if (gtmig_inited)
+		parity_intel_migrate_fini(&gtmig, &gtmem);
 	if (gtvwa_inited)
 		parity_engines_verify_wa_release(&gtvwa, &gtmem);
 	if (gtdef_inited)
