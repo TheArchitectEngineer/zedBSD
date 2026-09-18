@@ -32,6 +32,7 @@
 #include "gt_mem.h"
 #include "gt_resume.h"
 #include "gt_defaults.h"
+#include "gt_verify_wa.h"
 #include "reset.h"
 #include "backend_sync.h"
 #include "reset.h"
@@ -149,6 +150,8 @@ drv_i915_parity_attach(struct i915_device *device, enum parity_stage stop_after,
 	static struct parity_gt_ppgtt gtpp;
 	static struct parity_gt_engines gteng;
 	static struct parity_gt_defaults gtdef;
+	static struct parity_gt_verify_wa gtvwa;
+	int gtvwa_inited = 0;
 	int gteng_resumed = 0;
 	int gtdef_inited = 0;
 	struct parity_gt_object *gt_scratch = 0;
@@ -1485,6 +1488,51 @@ drv_i915_parity_attach(struct i915_device *device, enum parity_stage stop_after,
 		}
 		res.last_completed = "__engines_record_defaults";
 
+		/*
+		 * __engines_verify_workarounds() (a permanent diagnostic here; the
+		 * reference compiles it under DEBUG_GEM): per engine an SRM request
+		 * on the kernel context stores every engine workaround register to
+		 * memory, and the stored values are compared with the list.  The
+		 * first request of this port that makes the GPU read registers.
+		 */
+		{
+			unsigned u0 = irqdev.gt_user_intr, c0 = irqdev.gt_ctx_switch_intr;
+			unsigned e0 = irqdev.gt_engine_intrs, r0 = irqdev.gt_error_intr;
+
+			rc = parity_engines_verify_workarounds(&gtvwa, &gteng, &gtinit, &gtmem,
+				&mmio, 200u);
+			gtvwa_inited = 1;
+			kern_logf("i915: parity P6c verify_workarounds: rc=%d where=%s polls=%u "
+				"timed_out=%d | gt irq during: user=%u ctx_switch=%u engine=%u error=%u\n",
+				rc, gtvwa.err_where != 0 ? gtvwa.err_where : "-", gtvwa.polls,
+				gtvwa.timed_out,
+				irqdev.gt_user_intr - u0, irqdev.gt_ctx_switch_intr - c0,
+				irqdev.gt_engine_intrs - e0, irqdev.gt_error_intr - r0);
+		}
+		for (ei = 0u; ei < gteng.n; ei++) {
+			struct parity_execlists *el = &gteng.el[ei];
+
+			kern_logf("i915: parity P6c %s verify_wa: state=%d list=%u emitted=%u "
+				"mcr_skipped=%u verified=%u mismatched=%u not_verifiable=%u err=%d "
+				"rq_seqno=%u krq_seqno=%u hwsp_seqno=%u | el submits=%u promotes=%u "
+				"completes=%u errors=%u serial=%u wakeref_serial=%u ring_emit=%u\n",
+				gteng.ge[ei].info->name, gtvwa.state[ei], gtvwa.list_count[ei],
+				gtvwa.emitted[ei], gtvwa.mcr_skipped[ei], gtvwa.verified[ei],
+				gtvwa.mismatched[ei], gtvwa.not_verifiable[ei], gtvwa.engine_err[ei],
+				gtvwa.rq[ei].seqno, gtvwa.krq[ei].seqno,
+				gteng.ge[ei].hwsp[PARITY_I915_GEM_HWS_SEQNO_ADDR / 4u],
+				el->submits, el->promotes, el->completes, el->csb_errors,
+				el->serial, el->wakeref_serial, gteng.kernel_ce[ei].ring.emit);
+			if (rc != 0)
+				parity_engine_dump(&gteng.ge[ei], el, &mmio, "verify_wa");
+		}
+		if (rc != 0) {
+			res.outcome = PARITY_FAILED; res.error = rc;
+			res.where = gtvwa.err_where != 0 ? gtvwa.err_where : "__engines_verify_workarounds";
+			goto p6_fw_out;
+		}
+		res.last_completed = "__engines_verify_workarounds";
+
 p6_fw_out:
 		osdep_fw_put(&mmio, OSDEP_FW_MEDIA_VEBOX0);
 		osdep_fw_put(&mmio, OSDEP_FW_MEDIA_VDBOX2);
@@ -1496,14 +1544,13 @@ p6_fw_out:
 	}
 
 	/*
-	 * The next reference step is __engines_verify_workarounds() (approved as
-	 * a permanent diagnostic): an SRM request per engine on the kernel
-	 * context.  Not wired yet.
+	 * intel_gt_init() continues with intel_uc_init_late() (nothing without
+	 * GuC) and intel_migrate_init(): the migration context.  Not wired yet.
 	 */
 	osdep_trace_emit(&trace, PARITY_STAGE_P3, OSDEP_TR_UNIMPL,
-		"__engines_verify_workarounds", 0u, 0u);
+		"intel_migrate_init", 0u, 0u);
 	res.outcome = PARITY_BLOCKED;
-	res.where = "__engines_verify_workarounds";
+	res.where = "intel_migrate_init";
 
 teardown:
 	/*
@@ -1532,6 +1579,8 @@ teardown:
 		while (held-- > 0u)
 			osdep_fw_put(&mmio, fwd[held]);
 	}
+	if (gtvwa_inited)
+		parity_engines_verify_wa_release(&gtvwa, &gtmem);
 	if (gtdef_inited)
 		parity_engines_defaults_release(&gtdef, &gtmem);
 	if (gteng_inited) {

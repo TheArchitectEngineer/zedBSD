@@ -38,6 +38,7 @@
 #include "gt_submit.h"
 #include "gt_resume.h"
 #include "gt_defaults.h"
+#include "gt_verify_wa.h"
 #include "gt_init.h"
 #include <drivers/dma.h>
 #include "display_nogem.h"
@@ -4578,6 +4579,112 @@ parity_sync_ktest(void)
 				parity_intel_engines_release(&des, &gm);
 			} else {
 				KCHECK(0, "p6c4: P6C4B-INIT intel_engines_init failed on the simulated engine");
+			}
+
+
+			/* ====== P6-c5: __engines_verify_workarounds, HW simulated ====== */
+			{
+				static struct parity_gt_verify_wa vw;
+				struct parity_wa_list *wl = &dgi.engine_wa[0];
+				const uint64_t csb_promote = ((uint64_t)(0x7ffu << 15) << 32) | ((1u << 15) | 1u);
+				const uint64_t csb_complete = ((uint64_t)(1u << 15) << 32) | (0x7ffu << 15);
+
+				wl->count = 0u; wl->overflow = 0u; wl->name = "bcs0";
+				parity_wa_masked_en(wl, 0x2209cu, 0x8u, 0, "t: masked");            /* [0] */
+				parity_wa_write_or(wl, 0x22050u, 0x100u, 0, "t: plain");            /* [1] */
+				parity_wa_write_or(wl, 0xb134u, 0x1u, 1, "t: in an MCR range");    /* [2]: not via CS */
+				parity_wa_add_no_verify(wl, 0x22060u, 0u, 0x5u, 0, "t: no verify"); /* [3] */
+				fake_mmio_open(&em, &ef);
+				rc = parity_intel_engines_init(&des, &dg, &gm, &pp);
+				KCHECK(rc == 0, "p6c5: P6C5-INIT intel_engines_init for the verify run");
+				if (rc == 0) {
+					struct parity_gt_engine *e0 = &des.ge[0];
+					const uint32_t *ring = des.kernel_ce[0].ring.vaddr;
+					volatile uint32_t *results;
+					uint32_t sg;
+					unsigned k, e;
+					int found[4] = { 0, 0, 0, 0 };
+					int busy;
+
+					parity_execlists_reset_csb_pointers(e0, &em);
+					ef.wt_n = 0u;
+					rc = parity_engine_verify_wa_submit(&vw, 0u, &des, wl, &gm, &em);
+					sg = vw.scratch[0] != 0 ? (uint32_t)vw.scratch[0]->ggtt_offset : 0u;
+					for (k = 0u; k + 3u < des.kernel_ce[0].ring.size / 4u; k++) {
+						if (ring[k] != (PARITY_MI_STORE_REGISTER_MEM_GEN8 |
+						    PARITY_MI_SRM_LRM_GLOBAL_GTT) || ring[k + 3u] != 0u)
+							continue;
+						for (e = 0u; e < 4u; e++)
+							if (ring[k + 1u] == wl->list[e].reg &&
+							    ring[k + 2u] == sg + 4u * e)
+								found[e] = 1;
+					}
+					KCHECK(rc == 0 && vw.state[0] == PARITY_VWA_SRM &&
+						vw.rq[0].ce == &des.kernel_ce[0] && vw.emitted[0] == 3u &&
+						vw.mcr_skipped[0] == 1u && vw.scratch[0] != 0 &&
+						vw.scratch[0]->bound == 1 &&
+						found[0] && found[1] && !found[2] && found[3] &&
+						fake_wt_find(&ef, 0x22550u, 1u, 0xffffffffu) >= 0,
+						"p6c5: P6C5-SRM one SRM per non-MCR entry to scratch + 4 * list index, on the kernel context, submitted");
+
+					busy = parity_engine_verify_wa_poll(&vw, 0u, &des, &em);
+					KCHECK(busy && vw.state[0] == PARITY_VWA_SRM,
+						"p6c5: P6C5-WAIT nothing happens until the breadcrumb lands and the CSB reports");
+
+					/* The engine stores the registers and completes. */
+					results = (volatile uint32_t *)vw.scratch[0]->cpu;
+					results[0] = 0x00000008u;     /* masked: low bits carry the value */
+					results[1] = 0x00000100u;
+					results[3] = 0x00000000u;     /* no-verify: never compared */
+					e0->hwsp[0x40u] = vw.rq[0].seqno;
+					e0->csb_status[0] = csb_promote;
+					e0->csb_status[1] = csb_complete;
+					*e0->csb_write = 1u;
+					busy = parity_engine_verify_wa_poll(&vw, 0u, &des, &em);
+					rc = parity_wa_list_check(&vw, 0u, wl, "load");
+					KCHECK(!busy && vw.state[0] == PARITY_VWA_DONE && rc == 0 &&
+						vw.verified[0] == 2u && vw.not_verifiable[0] == 1u &&
+						vw.mismatched[0] == 0u,
+						"p6c5: P6C5-VERIFY stored values are compared as (cur ^ set) & read; MCR and read-mask-0 entries are not");
+
+					results[1] = 0x00000000u;
+					rc = parity_wa_list_check(&vw, 0u, wl, "load");
+					KCHECK(rc == -ENXIO && vw.mismatched[0] == 1u && vw.verified[0] == 1u,
+						"p6c5: P6C5-LOST a lost workaround is -ENXIO and is counted");
+
+					ef.wt_n = 0u;
+					rc = parity_engine_verify_wa_park(&vw, 0u, &des, &em);
+					KCHECK(rc == 0 && vw.state[0] == PARITY_VWA_SWITCH &&
+						vw.krq[0].seqno == vw.rq[0].seqno + 1u &&
+						des.el[0].wakeref_serial == des.el[0].serial &&
+						fake_wt_find(&ef, 0x22550u, 1u, 0xffffffffu) >= 0,
+						"p6c5: P6C5-PARK pm_put parks the engine: a kernel-context switch request is submitted");
+
+					e0->hwsp[0x40u] = vw.krq[0].seqno;
+					e0->csb_status[2] = csb_promote;
+					e0->csb_status[3] = csb_complete;
+					*e0->csb_write = 3u;
+					busy = parity_engine_verify_wa_poll(&vw, 0u, &des, &em);
+					KCHECK(!busy && vw.state[0] == PARITY_VWA_PARKED,
+						"p6c5: P6C5-IDLE the engine is idle once the switch request retires too");
+					parity_engines_verify_wa_release(&vw, &gm);
+
+					/* The whole thing with nothing answering: -ETIME, reported -EIO. */
+					rc = parity_engines_verify_workarounds(&vw, &des, &dgi, &gm, &em, 1u);
+					KCHECK(rc == -EIO && vw.timed_out == 1 && vw.engine_err[0] == -ETIME &&
+						vw.state[0] == PARITY_VWA_SRM && vw.krq[0].seqno == 0u,
+						"p6c5: P6C5-TIME an unanswered SRM request is -ETIME -> -EIO; no park switch is queued behind it");
+					parity_engines_verify_wa_release(&vw, &gm);
+
+					/* if (!wal->count) return 0: no request, no scratch, no park. */
+					wl->count = 0u;
+					rc = parity_engines_verify_workarounds(&vw, &des, &dgi, &gm, &em, 1u);
+					KCHECK(rc == 0 && vw.state[0] == PARITY_VWA_IDLE && vw.scratch[0] == 0 &&
+						vw.polls == 0u,
+						"p6c5: P6C5-EMPTY an engine without workarounds submits nothing");
+					parity_engines_verify_wa_release(&vw, &gm);
+					parity_intel_engines_release(&des, &gm);
+				}
 			}
 
 			parity_gt_ppgtt_destroy(&gm, &pp);

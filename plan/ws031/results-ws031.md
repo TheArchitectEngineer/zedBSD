@@ -2695,3 +2695,34 @@ ktest (post-attach): 338 checks, 0 failures
 ### 残(次)
 E-92 の残と同じ: `__engines_verify_workarounds`（SRM request、着手前に一言）→ P7。OSDEP_DMA_MAX_MAPPINGS 32 は上限解消により 256 へ戻せる（次の像成長時に）。
 台帳E-60〜E-93。GPU=vfio-pci維持, 10ms tick/HAL インタフェース非変更維持（HAL 内部の配置機構のみ変更）, drm非blacklist, attach先行維持。git commit/push なし。
+
+## p011 増分E-94 (2026-09-18): **P6-c5 `__engines_verify_workarounds` 実機成功** — GPU が SRM でエンジン WA レジスタをメモリへ書き、全件一致（rcs0 5/5、他 4 エンジン 1/1、MCR 域 3 件は正本どおり CS 経路から除外）。frontier=`intel_migrate_init`
+
+### 実機結果（GPU 渡し, chaos, vmunix 7084d425, ログ `~/bigbang/run-parity-hw-e94.log`）
+```
+P6c record_defaults: rc=0 polls=9 timed_out=0 wedged=0
+P6c verify_workarounds: rc=0 where=- polls=23 timed_out=0 | gt irq during: user=9 ctx_switch=11 engine=13 error=0
+P6c rcs0 verify_wa: state=PARKED list=8 emitted=5 mcr_skipped=3 verified=5 mismatched=0 not_verifiable=0 err=0 rq_seqno=2 krq_seqno=3 hwsp_seqno=3 | el submits=4 promotes=4 completes=4 errors=0 serial=5 wakeref_serial=5 ring_emit=608
+P6c bcs0/vcs0/vcs2/vecs0 verify_wa: state=PARKED list=1 emitted=1 verified=1 mismatched=0 | submits=4 completes=4 errors=0 ring_emit=400
+attach end: reached=P3 outcome=BLOCKED where=intel_migrate_init err=0
+ktest (post-attach): 347 checks, 0 failures   (GPU-free も 347/0)
+```
+- rcs0 の 8 件: RING_CMD_CCTL(fake)、Wa_1606700617(CS_DEBUG_MODE1)、Wa_14010919138(FF_THREAD_MODE)ほか 5 件を SRM で読み戻し全一致。GEN8_ROW_CHICKEN2/GEN10_SAMPLER_MODE/GEN9_ROW_CHICKEN4 の 3 件は 0xde80–0xe8ff の MCR 域＝正本 `mcr_range()` どおり CS 経路では検証しない。
+- XCS 4 本は RING_CMD_CCTL のみ（正本 xcs_engine_wa_init は ADL-P に該当なし）。
+- 各エンジン SRM request(seqno 2)→ park 切替(seqno 3) の 2 投入、CSB promote/complete 各 4（record_defaults の 2 組を含む累計）、エラー 0。kernel ring 消費 rcs0 608 B / XCS 400 B（4 KiB、wrap なし）。
+
+### 実装（`gt_verify_wa.{c,h}`、正本 gt/intel_gt.c + gt/intel_workarounds.c 6.8.12）
+- `parity_gen12_mcr_range()` = `mcr_ranges_gen12[]`(0x8150–815f, 0x9520–955f, 0xb100–b3ff, 0xde80–e8ff, 0x24a00–24a7f)。
+- `parity_wa_list_srm()` = `wa_list_srm()`: `MI_STORE_REGISTER_MEM_GEN8|MI_SRM_LRM_GLOBAL_GTT`(0x12400002) / reg / scratch+4·**リスト index**(欠番込み) / 0、MCR 域は発行しない。
+- `parity_wa_list_check()` = `wa_verify()`: `((cur ^ set) & read) != 0` で -ENXIO、read mask 0(NO_VERIFY) は常に合格、正本と同文言でログ。
+- `parity_engine_verify_wa_submit()` = `engine_wa_list_verify()` 前半: `count==0` なら何も投入しない / scratch 1 頁を GGTT 上端窓へ pin / **engine->kernel_context** に request(request_alloc の invalidate flush)→SRM→breadcrumb→ELSQ 投入。
+- `parity_engine_verify_wa_park()` = `intel_engine_pm_put()` → `switch_to_kernel_context()`(wakeref_serial==serial なら投入なし)。
+- `parity_engines_verify_workarounds()`: エンジン毎に submit→`i915_request_wait(HZ/5)`→verify→park を正本順で直列、最後に `intel_gt_wait_for_idle`。何か失敗すれば -EIO(正本の `err = -EIO` と同じ集約)。probe.c では FAILED → teardown(reset)。
+- ETIME はこの errno 集合に無いため `ETIME=ETIMEDOUT` を gt_verify_wa.h で定義（正本の -ETIME 表記を保つ）。
+- 記録した適応: 待ちは CSB/HWSP ポーリング(≥200 ms)、park 切替は SRM request の CSB 完了後に投入(1 in-flight)、タイムアウトしたエンジンには park を投入しない、結果頁は固定プールの object。
+- GPU-free ktest +9（P6C5-INIT/SRM/WAIT/VERIFY/LOST/PARK/IDLE/TIME/EMPTY）: 発行語(SRM・reg・scratch+4i・0)の位置、MCR 除外、read mask 0 除外、-ENXIO、park 投入、-ETIME→-EIO、空リスト無投入。
+- 正本で確定: verify は CONFIG_DRM_I915_DEBUG_GEM 下のみコンパイル（ここでは常時診断、承認②）。失敗時は intel_gt_init の err_gt(__intel_gt_disable)。SRM の宛先は vma+4*i の i がリスト index（count でない）。
+
+### 残(次)
+intel_gt_init の残り: `intel_uc_init_late`(GuC 無効→無)、**`intel_migrate_init`**(migrate 用 context: pinned_context → intel_engine_create_pinned_context, ring 256 KiB? 要正本再導出)、その後 i915_gem_init の続き(P7)。
+台帳E-60〜E-94。GPU=vfio-pci維持, 10ms tick/HAL非変更維持, drm非blacklist, attach先行維持。git commit/push なし。
