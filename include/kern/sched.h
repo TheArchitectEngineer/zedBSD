@@ -81,6 +81,19 @@ sched_switch(void);
 void
 sched_yield(void);
 
+/*
+ * Disable/enable preemption on the current CPU (nesting).  While disabled the
+ * scheduler tick defers the context switch; enable runs any deferred resched.
+ */
+void
+kern_preempt_disable(void);
+void
+kern_preempt_enable(void);
+
+/* Test-only: current CPU's kern_preempt_disable() nesting depth. */
+unsigned
+sched_test_preempt_count(void);
+
 void
 sched_wait_task(void);
 

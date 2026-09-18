@@ -86,6 +86,22 @@ drv_i915_engines_start(
 		return error;
 	}
 
+	/* Wa: program the Gen12 private PAT (Linux tgl_setup_private_ppat).  VFIO
+	 * passthrough leaves 0x4800..0x481c in the host's state, so PTE PAT index 0
+	 * may not select write-back until set here; without it the EU's cached
+	 * instruction/data access can hang while the CS's UC access still works. */
+	{
+		static const uint32_t pat[8] = { 3U, 1U, 2U, 0U, 3U, 3U, 3U, 3U };
+		unsigned pi;
+		kern_logf("i915: pat default 0x4800=0x%08x 0x480c=0x%08x\n",
+			drv_i915_read32(device, 0x4800U), drv_i915_read32(device, 0x480cU));
+		for (pi = 0U; pi < 8U; pi++)
+			drv_i915_write32(device, 0x4800U + pi * 4U, pat[pi]);
+		kern_io_write_barrier();
+		kern_logf("i915: pat set 0x4800=0x%08x 0x480c=0x%08x\n",
+			drv_i915_read32(device, 0x4800U), drv_i915_read32(device, 0x480cU));
+	}
+
 	/* Cache policy tables are global and are programmed once. */
 	i915_mocs_init(device);
 

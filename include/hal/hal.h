@@ -354,6 +354,55 @@ hal_irq_unregister_msi(
 	int mapped_irq);
 
 /*
+ * Allocate the vector, architecture routing, and message for a message-signalled
+ * IRQ WITHOUT attaching a driver handler.  Does NOT touch the PCI capability's MSI
+ * Enable.  Until it returns HAL_OK it publishes no usable resource to the caller.
+ * The allocated vector reaches a valid IRQ descriptor: an arrival while no handler
+ * is attached is masked and acknowledged (irqchip ack/EOI), never dispatched
+ * through a NULL handler.  mapped_addr is the MSI message DESTINATION address (not
+ * a RAM CPU-physical address, nor a DMA address for a GPU page table).
+ */
+int
+hal_irq_alloc_msi(
+	const char *source,
+	int *mapped_irq,
+	paddr_t *mapped_addr,
+	uint32_t *mapped_event);
+
+/*
+ * Attach a driver handler to a vector previously allocated by hal_irq_alloc_msi.
+ * The handler and its argument must be fully initialised before this call.
+ */
+int
+hal_irq_attach_msi(
+	int mapped_irq,
+	hal_irq_handler_t handler,
+	void *handler_arg);
+
+/*
+ * Detach the driver handler from an hal_irq_alloc_msi vector.  On HAL_OK the
+ * handler will not be called again and any invocation already started on any CPU
+ * has finished, so the caller may free handler state.  It waits for the handler
+ * EXECUTION only, not for work/timers the handler itself queued.  Call from a
+ * sleepable context; never from IRQ context or from the handler being detached.
+ */
+int
+hal_irq_detach_msi_sync(
+	int mapped_irq,
+	hal_irq_handler_t handler,
+	void *handler_arg);
+
+/*
+ * Free a vector allocated by hal_irq_alloc_msi.  Its handler must be detached and
+ * the caller must already have STOPPED THE SOURCE (a detached handler does not stop
+ * the device from sending MSIs).  Synchronises with remaining vector/routing/pending
+ * processing before the vector may be reused.
+ */
+int
+hal_irq_free_msi(
+	int mapped_irq);
+
+/*
  * Send EOI to the IRQ controller.
  */
 void
@@ -487,6 +536,12 @@ typedef void *hal_space_t;
 #define HAL_SPACE_NOCACHE		(8)
 #define HAL_SPACE_WRITETHRU		(16)
 #define HAL_SPACE_DEVICE		(32)
+/*
+ * Request a write-combining mapping.  Unsupported or conflicting requests must not
+ * be silently accepted; any compatibility fallback is selected explicitly by the
+ * caller (e.g. the Linux-parity ioremap layer), not by the HAL.
+ */
+#define HAL_SPACE_WC			(64)
 
 #define HAL_SPACE_PAGE_PRESENT		0x01U
 #define HAL_SPACE_PAGE_ACCESSED		0x02U

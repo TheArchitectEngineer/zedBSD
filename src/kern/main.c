@@ -15,6 +15,7 @@
  */
 
 #include "hal/hal.h"
+#include <drivers/i915-parity.h>
 #include "kern/kernel.h"
 #include "kern/vfs.h"
 #include "kern/init.h"
@@ -173,6 +174,12 @@ boot_start(
 	}
 
 	/* Mounts the root filesystem from the published boot devices. */
+#if CONFIG_DRIVER_PCI_I915_PARITY
+	/* Scheduler + timer are up and platform devices are discovered here; start
+	 * the deferred Linux-parity runner (managed thread) before VFS, so it runs
+	 * even on a minimal image whose VFS mount has no storage.  Does not wait. */
+	drv_i915_parity_runner_start();
+#endif
 	kern_logf("boot: VFS initialization\n");
 	error = kern_vfs_init(h, platform_devices, platform_device_count);
 	if (error != 0) {

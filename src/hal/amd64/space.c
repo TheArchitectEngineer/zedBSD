@@ -254,13 +254,19 @@ hal_space_map_device(
 	if ((attr & HAL_SPACE_EXEC) != 0 ||
 	    (attr & (HAL_SPACE_READ | HAL_SPACE_WRITE)) == 0 ||
 	    (attr & ~(HAL_SPACE_READ | HAL_SPACE_WRITE | HAL_SPACE_NOCACHE |
-	    HAL_SPACE_WRITETHRU | HAL_SPACE_DEVICE)) != 0) {
+	    HAL_SPACE_WRITETHRU | HAL_SPACE_DEVICE | HAL_SPACE_WC)) != 0) {
 		return HAL_ERR_INVALID;
 	}
 
 	/* The shared device aliases have one cache policy on this port. */
 	if ((attr & HAL_SPACE_WRITETHRU) != 0)
 		return HAL_ERR_UNSUPPORTED;
+
+	/* Write-combining is a distinct cache policy and excludes the others. */
+	if ((attr & HAL_SPACE_WC) != 0 &&
+	    (attr & (HAL_SPACE_NOCACHE | HAL_SPACE_WRITETHRU |
+	    HAL_SPACE_DEVICE)) != 0)
+		return HAL_ERR_INVALID;
 
 	/* Bounds the entire extent within the CPU physical-address width. */
 	if (paddr > acpi_physical_max || size - 1U > acpi_physical_max - paddr)
@@ -2521,8 +2527,13 @@ device_window_map(
 			return HAL_ERR_INVALID;
 	}
 
-	/* Normalizes cache policy to the permanent uncached device aliases. */
-	attributes = (attr & (HAL_SPACE_READ | HAL_SPACE_WRITE)) | HAL_SPACE_DEVICE;
+	/* Normalizes cache policy: write-combining is preserved, else uncached. */
+	if ((attr & HAL_SPACE_WC) != 0)
+		attributes = (attr & (HAL_SPACE_READ | HAL_SPACE_WRITE)) |
+		    HAL_SPACE_WC;
+	else
+		attributes = (attr & (HAL_SPACE_READ | HAL_SPACE_WRITE)) |
+		    HAL_SPACE_DEVICE;
 
 	/* Allocates ownership metadata before disabling interrupts for publication. */
 	mapping = kernel_alloc(sizeof(*mapping));
@@ -2626,7 +2637,12 @@ device_window_populate(
 	int error;
 
 	/* Device pages remain supervisor-only and non-global for full TLB retirement. */
-	flags = AMD64_PTE_PRESENT | AMD64_PTE_NOCACHE | AMD64_PTE_NX;
+	flags = AMD64_PTE_PRESENT | AMD64_PTE_NX;
+	if ((mapping->attributes & HAL_SPACE_WC) != 0)
+		/* PAT index 4 selects write-combining with PCD and PWT clear. */
+		flags |= AMD64_PTE_PAT_4K;
+	else
+		flags |= AMD64_PTE_NOCACHE;
 	if ((mapping->attributes & HAL_SPACE_WRITE) != 0)
 		flags |= AMD64_PTE_WRITE;
 

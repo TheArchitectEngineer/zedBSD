@@ -192,4 +192,104 @@
 #define GEN12_CMD_3DSTATE_VF_INSTANCING		0x7849U
 #define GEN12_3DSTATE_VF_INSTANCING_DWORDS	3U
 
+/*
+ * A disabled depth buffer is still a typed one: Mesa's isl always pairs
+ * SURFTYPE_NULL with D32_FLOAT, because format zero names a depth-stencil
+ * format and makes the depth unit expect a stencil buffer that is not there.
+ */
+#define GEN12_DEPTH_FORMAT_D32_FLOAT		1U
+
+/* 3DSTATE_SBE attribute component format: all four channels active. */
+#define GEN12_ACF_XYZW				3U
+
+/* Fragments that reached the depth test, whether or not a shader ran. */
+#define GEN12_REG_PS_DEPTH_COUNT		0x2350U
+
+/*
+ * Every MOCS field carries the cache-table index shifted left by one; bit zero
+ * of the field is reserved.  Mesa's isl programs Tiger Lake the same way
+ * (internal = 2 << 1, uncached = 3 << 1), and the table in i915-mocs.inc gives
+ * index 2 as write-back and index 3 as uncached.  Writing a raw index selects
+ * the entry one bit to the right, and entries 0 and 1 are reserved.
+ */
+#define GEN12_MOCS(index)			((index) << 1)
+
+/*
+ * 3DSTATE_RASTER cull modes.  Zero means cull both faces, so a rasterizer left
+ * at its zeroed default discards every primitive; both BLORP and anv name
+ * CULLMODE_NONE explicitly for that reason.
+ */
+#define GEN12_CULLMODE_BOTH			0U
+#define GEN12_CULLMODE_NONE			1U
+#define GEN12_CULLMODE_FRONT			2U
+#define GEN12_CULLMODE_BACK			3U
+
+/*
+ * State Mesa's anv programs once per render context before any draw: the
+ * depth-clear override packet cleared, sample positions, depth bounds and
+ * the other stages' binding table pointers.  A context that skips them runs
+ * with whatever the hardware or a previous owner left behind.
+ */
+#define GEN12_CMD_3DSTATE_WM_HZ_OP		0x7852U
+#define GEN12_CMD_3DSTATE_AA_LINE_PARAMETERS	0x790AU
+#define GEN12_CMD_3DSTATE_WM_CHROMAKEY		0x784CU
+#define GEN12_CMD_3DSTATE_SAMPLE_PATTERN	0x791CU
+#define GEN12_CMD_3DSTATE_DEPTH_BOUNDS		0x7871U
+#define GEN12_CMD_3DSTATE_POLY_STIPPLE_OFFSET	0x7906U
+#define GEN12_CMD_3DSTATE_LINE_STIPPLE		0x7908U
+#define GEN12_CMD_3DSTATE_BINDING_TABLE_POINTERS_VS	0x7826U
+#define GEN12_CMD_3DSTATE_BINDING_TABLE_POINTERS_HS	0x7827U
+#define GEN12_CMD_3DSTATE_BINDING_TABLE_POINTERS_DS	0x7828U
+#define GEN12_CMD_3DSTATE_BINDING_TABLE_POINTERS_GS	0x7829U
+
+#define GEN12_3DSTATE_WM_HZ_OP_DWORDS		5U
+#define GEN12_3DSTATE_AA_LINE_PARAMETERS_DWORDS	3U
+#define GEN12_3DSTATE_WM_CHROMAKEY_DWORDS	2U
+#define GEN12_3DSTATE_SAMPLE_PATTERN_DWORDS	9U
+#define GEN12_3DSTATE_DEPTH_BOUNDS_DWORDS	4U
+#define GEN12_3DSTATE_POLY_STIPPLE_OFFSET_DWORDS	2U
+#define GEN12_3DSTATE_LINE_STIPPLE_DWORDS	3U
+
+/* 3DSTATE_SAMPLE_PATTERN dword 8: the single sample sits at the pixel centre (u0.4 0.5). */
+#define GEN12_SAMPLE_PATTERN_1X_CENTRE		((8U << 20) | (8U << 16))
+
+/*
+ * Instruction fetches fill the per-subslice instruction cache through the L3,
+ * so the instruction base needs a write-back entry; Mesa's isl names index 2
+ * ("internal") for it on Tiger Lake and never an uncached one.
+ */
+#define I915_MOCS_WRITEBACK_INDEX		2U
+
+/*
+ * Push constants.  Every Mesa path programs a 3DSTATE_CONSTANT_* for each
+ * stage before its first draw even with nothing to push, and gives the pixel
+ * stage the whole 32 KiB push constant region when it is the only user.
+ */
+#define GEN12_CMD_3DSTATE_CONSTANT_VS		0x7815U
+#define GEN12_CMD_3DSTATE_CONSTANT_GS		0x7816U
+#define GEN12_CMD_3DSTATE_CONSTANT_PS		0x7817U
+#define GEN12_CMD_3DSTATE_CONSTANT_HS		0x7819U
+#define GEN12_CMD_3DSTATE_CONSTANT_DS		0x781AU
+#define GEN12_3DSTATE_CONSTANT_DWORDS		11U
+#define GEN12_PUSH_CONSTANT_KB			32U
+
+/* VERTEX_BUFFER_STATE: vertex fetches stay in the L3 on this generation. */
+#define GEN12_VERTEX_BUFFER_L3_BYPASS_DISABLE	(1U << 25)
+
+/*
+ * Coarse pixel shading state is fetched through a pointer relative to the
+ * dynamic state base; anv points it at a disabled CPS_STATE at device
+ * initialisation.  The binding table pool is disabled the same way, since
+ * anv found that state leaking in from other contexts.
+ */
+#define GEN12_CMD_3DSTATE_CPS_POINTERS		0x7822U
+#define GEN12_CPS_STATE_DWORDS			8U
+
+#define GEN12_CMD_3DSTATE_BINDING_TABLE_POOL_ALLOC	0x7919U
+#define GEN12_3DSTATE_BINDING_TABLE_POOL_ALLOC_DWORDS	4U
+
+/* PIPE_CONTROL dw1 bit 1: stall the command streamer until the pixel scoreboard is idle. */
+#define PIPE_CONTROL_STALL_AT_SCOREBOARD	(1U << 1)
+#define PIPE_CONTROL_DEPTH_STALL_ENABLE		(1U << 13)
+
 #endif /* I915_VK_3DSTATE_GEN12_INC */

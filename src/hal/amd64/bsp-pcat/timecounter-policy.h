@@ -28,7 +28,8 @@ enum amd64_tsc_frequency_policy_result {
 enum amd64_timecounter_source {
 	AMD64_TIMECOUNTER_SOURCE_NONE = 0,
 	AMD64_TIMECOUNTER_SOURCE_CPUID15,
-	AMD64_TIMECOUNTER_SOURCE_PIT
+	AMD64_TIMECOUNTER_SOURCE_PIT,
+	AMD64_TIMECOUNTER_SOURCE_KVM
 };
 
 struct amd64_tsc_cpuid_frequency_input {
@@ -89,6 +90,8 @@ bool amd64_timecounter_read_state_publish(
 	struct amd64_timecounter_read_state *state, uint64_t frequency_hz);
 void amd64_timecounter_read_state_disable(
 	struct amd64_timecounter_read_state *state);
+uint64_t amd64_timecounter_monotonic_max(volatile uint64_t *slot, uint64_t raw);
+void amd64_timecounter_cas_selftest(void);
 bool amd64_timecounter_read_guarded(
 	struct amd64_timecounter_read_state *state,
 	amd64_timecounter_sample_fn sample, void *context,

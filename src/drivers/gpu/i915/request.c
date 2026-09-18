@@ -50,7 +50,7 @@
 					 PIPE_CONTROL_DEPTH_STALL)
 
 /* The largest command sequence one request emits: prologue, extras, batch start, breadcrumb. */
-#define I915_REQUEST_RING_DWORDS	(16U + I915_REQUEST_MAX_DWORDS + 6U + 16U)
+#define I915_REQUEST_RING_DWORDS	(28U + I915_REQUEST_MAX_DWORDS + 6U + 16U)
 
 static unsigned i915_request_emit(struct i915_request *request, uint32_t *dwords);
 static unsigned i915_request_emit_prologue(struct i915_request *request, uint32_t *dwords);
@@ -375,28 +375,46 @@ i915_request_emit_prologue(
 	unsigned count;
 
 	count = 0U;
-	dwords[count] = I915_PREPARSER_DISABLE;
-	count++;
 
-	/* Copy engines invalidate through a flush; the render engine through a pipe control. */
 	if (request->context->engine->class == I915_CLASS_COPY) {
-		dwords[count] = (MI_FLUSH_DW + 1U) | MI_FLUSH_DW_STORE_INDEX | MI_FLUSH_DW_OP_STOREDW | MI_INVALIDATE_TLB;
-		dwords[count + 1U] = LRC_PPHWSP_SCRATCH_ADDR;
-		dwords[count + 2U] = 0U;
-		dwords[count + 3U] = 0U;
-		count += 4U;
-	} else {
-		dwords[count] = GFX_OP_PIPE_CONTROL(6);
-		dwords[count + 1U] = I915_RCS_INVALIDATE_FLAGS;
-		dwords[count + 2U] = LRC_PPHWSP_SCRATCH_ADDR;
-		dwords[count + 3U] = 0U;
-		dwords[count + 4U] = 0U;
-		dwords[count + 5U] = 0U;
-		count += 6U;
+		dwords[count++] = I915_PREPARSER_DISABLE;
+		dwords[count++] = (MI_FLUSH_DW + 1U) | MI_FLUSH_DW_STORE_INDEX | MI_FLUSH_DW_OP_STOREDW | MI_INVALIDATE_TLB;
+		dwords[count++] = LRC_PPHWSP_SCRATCH_ADDR;
+		dwords[count++] = 0U;
+		dwords[count++] = 0U;
+		dwords[count++] = I915_PREPARSER_ENABLE;
+		return count;
 	}
 
-	dwords[count] = I915_PREPARSER_ENABLE;
-	count++;
+	/*
+	 * Gen12 RCS EMIT_INVALIDATE (Linux gen12_emit_flush_rcs): a stalling flush,
+	 * then the cache/TLB invalidate wrapped in a pre-parser disable so the parser
+	 * cannot prefetch through the stale pages, then the CCS AUX invalidate and a
+	 * register poll that waits for it to retire.  The invalidate-only prologue that
+	 * preceded this omitted the pre-flush and the AUX handling.
+	 */
+	dwords[count++] = 0x7a000204U;		/* PIPE_CONTROL(6) | HDC pipeline flush */
+	dwords[count++] = 0x103070a1U;		/* CS_STALL|RT/DEPTH/DC flush|depth stall|store-index|QW write */
+	dwords[count++] = LRC_PPHWSP_SCRATCH_ADDR;
+	dwords[count++] = 0U;
+	dwords[count++] = 0U;
+	dwords[count++] = 0U;
+	dwords[count++] = I915_PREPARSER_DISABLE;
+	dwords[count++] = 0x7a000004U;		/* PIPE_CONTROL(6): invalidate */
+	dwords[count++] = 0x20344c1cU;		/* command/TLB/instruction/state/const/tex/VF invalidate | CS_STALL | store-index | QW write */
+	dwords[count++] = LRC_PPHWSP_SCRATCH_ADDR;
+	dwords[count++] = 0U;
+	dwords[count++] = 0U;
+	dwords[count++] = 0U;
+	dwords[count++] = 0x11020001U;		/* MI_LOAD_REGISTER_IMM(1) | MMIO remap */
+	dwords[count++] = 0x00004208U;		/* GEN12_CCS_AUX_INV (RCS0) */
+	dwords[count++] = 0x00000001U;
+	dwords[count++] = 0x0e01c003U;		/* MI_SEMAPHORE_WAIT: register poll, wait for == 0 */
+	dwords[count++] = 0U;
+	dwords[count++] = 0x00004208U;		/* GEN12_CCS_AUX_INV */
+	dwords[count++] = 0U;
+	dwords[count++] = 0U;
+	dwords[count++] = I915_PREPARSER_ENABLE;
 
 	return count;
 }

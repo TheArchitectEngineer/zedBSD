@@ -492,6 +492,63 @@ hal_irq_unregister_msi(
 }
 
 /*
+ * Reports that split-allocation MSI is unavailable on i386.
+ */
+int
+hal_irq_alloc_msi(
+	const char *source,
+	int *mapped_irq,
+	paddr_t *mapped_addr,
+	uint32_t *mapped_event)
+{
+	UNUSED_PARAMETER(source);
+	UNUSED_PARAMETER(mapped_irq);
+	UNUSED_PARAMETER(mapped_addr);
+	UNUSED_PARAMETER(mapped_event);
+
+	/* Reports the fixed absence of an i386 MSI implementation. */
+	return HAL_ERR_UNSUPPORTED;
+}
+
+int
+hal_irq_attach_msi(
+	int mapped_irq,
+	hal_irq_handler_t handler,
+	void *handler_arg)
+{
+	UNUSED_PARAMETER(mapped_irq);
+	UNUSED_PARAMETER(handler);
+	UNUSED_PARAMETER(handler_arg);
+
+	/* Reports the fixed absence of an i386 MSI implementation. */
+	return HAL_ERR_UNSUPPORTED;
+}
+
+int
+hal_irq_detach_msi_sync(
+	int mapped_irq,
+	hal_irq_handler_t handler,
+	void *handler_arg)
+{
+	UNUSED_PARAMETER(mapped_irq);
+	UNUSED_PARAMETER(handler);
+	UNUSED_PARAMETER(handler_arg);
+
+	/* Reports the fixed absence of an i386 MSI implementation. */
+	return HAL_ERR_UNSUPPORTED;
+}
+
+int
+hal_irq_free_msi(
+	int mapped_irq)
+{
+	UNUSED_PARAMETER(mapped_irq);
+
+	/* Reports the fixed absence of an i386 MSI implementation. */
+	return HAL_ERR_UNSUPPORTED;
+}
+
+/*
  * Selects APIC routing when multiprocessor topology is available.
  */
 int

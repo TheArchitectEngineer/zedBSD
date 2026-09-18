@@ -22,6 +22,8 @@
 #include "kern/process-timer.h"
 #include "kern/sched.h"
 #include "kern/usync.h"
+#include "kern/waitq.h"
+#include "kern/lock.h"
 
 #include <errno.h>
 #include <hal/hal.h>
@@ -69,6 +71,51 @@ kern_clock_init(
 	}
 }
 
+#if CONFIG_DRIVER_PCI_I915_PARITY
+/* Diagnostic one-shot timer-IRQ hook (see kern_diag_oneshot_arm). */
+static void (*diag_oneshot_fn)(unsigned, void *);
+static void *diag_oneshot_arg;
+static unsigned diag_oneshot_avoid_cpu;
+static unsigned diag_oneshot_require_cpu;
+static atomic_uint_t diag_oneshot_armed;
+
+void
+kern_diag_oneshot_arm(void (*fn)(unsigned, void *), void *arg, unsigned avoid_cpu,
+	unsigned require_cpu)
+{
+	diag_oneshot_fn = fn;
+	diag_oneshot_arg = arg;
+	diag_oneshot_avoid_cpu = avoid_cpu;
+	diag_oneshot_require_cpu = require_cpu;
+	atomic_store_release(&diag_oneshot_armed, 1U);
+}
+
+void
+kern_diag_oneshot_disarm(void)
+{
+	atomic_store_release(&diag_oneshot_armed, 0U);
+}
+
+static void
+diag_oneshot_fire(unsigned cpu)
+{
+	/* Acquire-load publishes fn/arg/avoid_cpu written before the arming release. */
+	if (atomic_load_acquire(&diag_oneshot_armed) == 0U)
+		return;
+	if (diag_oneshot_require_cpu != 0xffffffffu && cpu != diag_oneshot_require_cpu)
+		return;
+	if (diag_oneshot_avoid_cpu != 0xffffffffu && cpu == diag_oneshot_avoid_cpu)
+		return;
+	{
+		unsigned expected = 1U;
+		if (!atomic_compare_exchange(&diag_oneshot_armed, &expected, 0U))
+			return;   /* another CPU claimed it first */
+	}
+	if (diag_oneshot_fn != 0)
+		diag_oneshot_fn(cpu, diag_oneshot_arg);
+}
+#endif
+
 /*
  * Handles the periodic timer interrupt on one CPU.
  *
@@ -94,6 +141,10 @@ kernel_timer_handler(
 		process_timer_tick(now);
 
 	sched_clock_cpu(cpu, now);
+
+#if CONFIG_DRIVER_PCI_I915_PARITY
+	diag_oneshot_fire((unsigned)cpu);
+#endif
 }
 
 /*
@@ -604,4 +655,50 @@ realtime_write_end(
 	/* Marks the offset as stable again and releases the writer. */
 	(void)atomic_raw_fetch_add_relaxed(&realtime_sequence, 1U);
 	atomic_store_release(&realtime_writer, 0);
+}
+
+void
+kern_usleep_range(unsigned min_us, unsigned max_us)
+{
+	/*
+	 * Yielding sleep-range on the EXISTING 10ms periodic tick (no HAL change,
+	 * no high-resolution one-shot).  The minimum-wait deadline is computed ONCE
+	 * from the monotonic counter (earliest = base + min_us); a wake re-checks
+	 * that SAME deadline and never extends it.  Whenever the deadline is not yet
+	 * reached we register on a private wait queue with the NEXT scheduler tick as
+	 * its deadline and yield the CPU (waitq_sleep -> sched_sleep_locked), so
+	 * another thread on this CPU runs; on wake we re-read the monotonic counter
+	 * and only return once at least min_us has elapsed.  This is coarse: the
+	 * actual wake is at 10ms tick granularity and may be LATER than [min,max_us]
+	 * -- callers (PCODE re-request, register slow polls) MUST re-check their
+	 * condition after the sleep, which they do.  waitq_sleep removes the wait
+	 * token on return, so no timer state outlives this frame.
+	 */
+	uint64_t base = 0, freq = 0, now = 0, nfreq = 0, earliest;
+	struct wait_queue wq;
+	struct spinlock lk;
+
+	(void)max_us;   /* upper bound is advisory; the 10ms tick coarsens the wake */
+	if (!kern_rtc_read_counter(&base, &freq) || freq == 0u)
+		return;
+	earliest = base + ((uint64_t)min_us * freq) / 1000000u;
+
+	waitq_init(&wq, "usleep_range");
+	spin_init(&lk, LOCK_RANK_USYNC, "usleep_range");
+
+	for (;;) {
+		uint64_t seq;
+
+		if (!kern_rtc_read_counter(&now, &nfreq) || nfreq != freq)
+			return;   /* time-base fault: propagate (do not spin on a broken source) */
+		if ((int64_t)(now - earliest) >= 0)
+			return;   /* min_us has elapsed */
+
+		/* Not yet elapsed: wait for the next tick via the existing wait queue. */
+		spin_lock(&lk);
+		seq = waitq_sequence(&wq);
+		(void)waitq_sleep(&wq, &lk, seq, sched_ticks() + 1u, 0u);
+		spin_unlock(&lk);
+		/* woken (tick expiry or early): the loop re-checks the SAME earliest. */
+	}
 }

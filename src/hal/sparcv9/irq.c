@@ -126,3 +126,40 @@ hal_irq_unregister_msi(int mapped_irq)
 	(void)mapped_irq;
 	return HAL_ERR_UNSUPPORTED;
 }
+
+int
+hal_irq_alloc_msi(const char *source, int *mapped_irq,
+	paddr_t *mapped_addr, uint32_t *mapped_event)
+{
+	(void)source;
+	(void)mapped_irq;
+	(void)mapped_addr;
+	(void)mapped_event;
+	return HAL_ERR_UNSUPPORTED;
+}
+
+int
+hal_irq_attach_msi(int mapped_irq, hal_irq_handler_t handler, void *handler_arg)
+{
+	(void)mapped_irq;
+	(void)handler;
+	(void)handler_arg;
+	return HAL_ERR_UNSUPPORTED;
+}
+
+int
+hal_irq_detach_msi_sync(int mapped_irq, hal_irq_handler_t handler,
+	void *handler_arg)
+{
+	(void)mapped_irq;
+	(void)handler;
+	(void)handler_arg;
+	return HAL_ERR_UNSUPPORTED;
+}
+
+int
+hal_irq_free_msi(int mapped_irq)
+{
+	(void)mapped_irq;
+	return HAL_ERR_UNSUPPORTED;
+}

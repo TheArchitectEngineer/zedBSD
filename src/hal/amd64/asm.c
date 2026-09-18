@@ -12,6 +12,8 @@
  */
 
 #include "asm.h"
+#include "defs.h"
+#include <hal/hal.h>
 
 /*
  * Disables maskable interrupts on the current CPU.
@@ -294,6 +296,79 @@ asm_write_msr(
 }
 
 /*
+ * Programs IA32_PAT so page-attribute index 4 selects write-combining, following
+ * the Intel SDM sequence for changing a memory-type MSR on a running CPU (the
+ * cache_disable/cache_enable framework the reference cache_cpu_init() uses):
+ * interrupts are held off, global pages are disabled, the CPU enters no-fill
+ * cache mode (CR0.CD=1, NW=0) with caches and TLBs flushed, MTRRs are disabled
+ * across the update while their contents are preserved, IA32_PAT is written,
+ * MTRRs are re-enabled, caches and TLBs are flushed again, and CR0/CR4/EFLAGS
+ * are restored.  Indices 0-3 and 5-7 keep their reset types (WB/WT/UC-/UC).
+ */
+static void
+amd64_pat_configure(void)
+{
+	uint64_t flags;
+	uint64_t cr0, cr0_save;
+	uint64_t cr4, cr4_save;
+	uint64_t cr3;
+	uint64_t mtrr_def = 0;
+	uint32_t eax, ebx, ecx, edx;
+	int have_mtrr;
+
+	/* CPUID.01H:EDX.MTRR[bit 12] gates the DEF_TYPE MSR access below. */
+	eax = 1U;
+	__asm__ volatile("cpuid" : "+a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx));
+	have_mtrr = (edx >> 12) & 1U;
+
+	/* Save and disable interrupts across the memory-type update. */
+	__asm__ volatile("pushfq; popq %0" : "=r"(flags));
+	__asm__ volatile("cli");
+
+	/* Disable global pages so a CR3 reload flushes every TLB entry. */
+	__asm__ volatile("movq %%cr4,%0" : "=r"(cr4));
+	cr4_save = cr4;
+	cr4 &= ~(uint64_t)(1U << 7);   /* CR4.PGE = 0 */
+	__asm__ volatile("movq %0,%%cr4" : : "r"(cr4) : "memory");
+
+	/* Enter no-fill cache mode (CR0.CD=1, NW=0); flush caches and TLBs. */
+	__asm__ volatile("movq %%cr0,%0" : "=r"(cr0));
+	cr0_save = cr0;
+	cr0 = (cr0 | ((uint64_t)1 << 30)) & ~((uint64_t)1 << 29);
+	__asm__ volatile("movq %0,%%cr0" : : "r"(cr0) : "memory");
+	__asm__ volatile("wbinvd" : : : "memory");
+	__asm__ volatile("movq %%cr3,%0; movq %0,%%cr3" : "=&r"(cr3) : : "memory");
+
+	/* Disable MTRRs during the update, preserving their contents. */
+	if (have_mtrr) {
+		mtrr_def = asm_read_msr(AMD64_MSR_IA32_MTRR_DEF_TYPE);
+		asm_write_msr(AMD64_MSR_IA32_MTRR_DEF_TYPE, mtrr_def & ~((uint64_t)1 << 11));
+	}
+
+	/* Program IA32_PAT: index 4 = WC (0x01), others at their reset types. */
+	asm_write_msr(AMD64_MSR_IA32_PAT, 0x0007040100070406ULL);
+
+	/* Re-enable MTRRs with the original definition. */
+	if (have_mtrr)
+		asm_write_msr(AMD64_MSR_IA32_MTRR_DEF_TYPE, mtrr_def);
+
+	/* Flush caches and TLBs before leaving no-fill mode. */
+	__asm__ volatile("wbinvd" : : : "memory");
+	__asm__ volatile("movq %%cr3,%0; movq %0,%%cr3" : "=&r"(cr3) : : "memory");
+
+	/* Exit no-fill cache mode and restore CR4 (re-enables PGE if it was set). */
+	__asm__ volatile("movq %0,%%cr0" : : "r"(cr0_save) : "memory");
+	__asm__ volatile("movq %0,%%cr4" : : "r"(cr4_save) : "memory");
+
+	/* Restore the saved interrupt state. */
+	__asm__ volatile("pushq %0; popfq" : : "r"(flags) : "cc", "memory");
+
+	/* Verify the new PAT took effect; a mismatch is fatal this early. */
+	if (asm_read_msr(AMD64_MSR_IA32_PAT) != 0x0007040100070406ULL)
+		HAL_FATAL("IA32_PAT write-combining programming failed");
+}
+
+/*
  * Enables the amd64 floating-point and SSE execution environment.
  */
 void
@@ -302,6 +377,9 @@ amd64_cpu_init(
 {
 	uint64_t cr0;
 	uint64_t cr4;
+
+	/* Program IA32_PAT (index 4 = WC) using the full cache-safe sequence. */
+	amd64_pat_configure();
 
 	/* Enables native floating-point execution and exception reporting. */
 	__asm__ volatile("movq %%cr0,%0" : "=r"(cr0));

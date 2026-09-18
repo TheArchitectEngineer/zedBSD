@@ -19,6 +19,7 @@
  */
 
 #include "internal.h"
+#include "linux/i915-workarounds.inc"
 
 #include <kern/device-io.h>
 #include <kern/klog.h>
@@ -40,6 +41,7 @@
 /* Every unmapped status-buffer entry reads as all ones until the engine writes it. */
 #define I915_CSB_UNWRITTEN		0xffffffffffffffffULL
 
+static uint32_t i915_lrc_render_power_state(struct i915_device *device);
 static unsigned i915_lrc_set_offsets(uint32_t *regs, const uint8_t *data, uint32_t base);
 static void i915_lrc_init_regs(struct i915_context *context, struct i915_engine *engine);
 static uint64_t i915_lrc_csb_read(struct i915_engine *engine, unsigned index);
@@ -428,9 +430,35 @@ i915_lrc_init_regs(
 	regs[CTX_RING_TAIL] = 0U;
 	regs[CTX_RING_CTL] = RING_CTL_SIZE(I915_RING_BYTES) | RING_VALID;
 
-	/* Render power state stays at the hardware default for the first bring-up. */
+	/*
+	 * Render contexts request full slice enablement.  Left at zero, render
+	 * power gating can keep every execution unit powered down: fixed-function
+	 * stages run, but the first pixel or vertex thread never dispatches and
+	 * the pipeline stalls forever.
+	 */
 	if (engine->class == I915_CLASS_RENDER)
-		regs[CTX_R_PWR_CLK_STATE] = 0U;
+		regs[CTX_R_PWR_CLK_STATE] = i915_lrc_render_power_state(engine->device);
+}
+
+/* Builds the render power request from the slice fuse, as intel_sseu_make_rpcs does. */
+static uint32_t
+i915_lrc_render_power_state(
+	struct i915_device *device)
+{
+	uint32_t slices;
+	uint32_t enabled;
+
+	/* One bit per slice; every Gen12 part this driver targets has exactly one. */
+	enabled = drv_i915_read32(device, GEN11_GT_SLICE_ENABLE) & GEN11_GT_S_ENA_MASK;
+	slices = 0U;
+	while (enabled != 0U) {
+		slices += enabled & 1U;
+		enabled >>= 1;
+	}
+	if (slices == 0U)
+		slices = 1U;
+
+	return GEN12_RPCS_SLICES(slices);
 }
 
 /* Reads one status-buffer entry, falling back to the register mirror when unwritten. */

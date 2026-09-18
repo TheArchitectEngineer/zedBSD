@@ -11,6 +11,7 @@
  * Pure policy for the amd64 PC/AT boot-local timecounter.
  */
 
+#include <hal/hal.h>
 #include "timecounter-policy.h"
 
 #define CPUID_TSC_RATIO_LEAF  0x00000015U
@@ -139,7 +140,8 @@ amd64_timecounter_metadata_compatible(
 	    bsp == NULL || ap == NULL ||
 	    !frequency_input_equal(&bsp->frequency, &ap->frequency) ||
 	    !ap->frequency.tsc_supported ||
-	    !ap->frequency.invariant_tsc_supported ||
+	    (source != AMD64_TIMECOUNTER_SOURCE_PIT &&
+	     !ap->frequency.invariant_tsc_supported) ||
 	    bsp->tsc_adjust_supported != ap->tsc_adjust_supported ||
 	    (bsp->tsc_adjust_supported && bsp->tsc_adjust != ap->tsc_adjust))
 		return false;
@@ -307,6 +309,54 @@ amd64_timecounter_read_state_disable(
 }
 
 /*
+ * Monotonic-max publish: advance *slot toward raw, never below the published
+ * maximum.  Returns the value the caller should use -- raw when it advanced the
+ * shared maximum, else the clamped published maximum.  This is the ACTUAL helper
+ * the guarded reader uses; a concurrent later-but-smaller sample can never push
+ * the shared value backwards (the compare-exchange retries on a reload).
+ */
+uint64_t
+amd64_timecounter_monotonic_max(volatile uint64_t *slot, uint64_t raw)
+{
+	uint64_t last = __atomic_load_n(slot, __ATOMIC_RELAXED);
+
+	for (;;) {
+		if (raw > last) {
+			if (__atomic_compare_exchange_n(slot, &last, raw, 0,
+			    __ATOMIC_RELAXED, __ATOMIC_RELAXED))
+				return raw;   /* advanced the shared maximum */
+			continue;         /* last reloaded; re-evaluate */
+		}
+		return last;          /* clamp to the published maximum */
+	}
+}
+
+/*
+ * Boot self-test for the monotonic-max update: publishing 120 then 110 must keep
+ * the shared maximum at 120 (no regression); publishing 110 then 120 advances it.
+ */
+void
+amd64_timecounter_cas_selftest(void)
+{
+	uint64_t slot;
+	uint64_t r1, r2;
+	int ok1, ok2;
+
+	slot = 0U;
+	r1 = amd64_timecounter_monotonic_max(&slot, 120U);
+	r2 = amd64_timecounter_monotonic_max(&slot, 110U);
+	ok1 = (r1 == 120U && r2 == 120U && slot == 120U);
+
+	slot = 0U;
+	(void)amd64_timecounter_monotonic_max(&slot, 110U);
+	r2 = amd64_timecounter_monotonic_max(&slot, 120U);
+	ok2 = (r2 == 120U && slot == 120U);
+
+	hal_printf("A64 TIMECOUNTER CAS-SELFTEST 120-then-110=%s 110-then-120=%s\n",
+	    ok1 ? "PASS" : "FAIL", ok2 ? "PASS" : "FAIL");
+}
+
+/*
  * Samples a published timecounter while enforcing global monotonicity.
  */
 bool
@@ -346,21 +396,40 @@ amd64_timecounter_read_guarded(
 	if (__atomic_load_n(&state->available, __ATOMIC_ACQUIRE) != 0U) {
 		raw = sample(context);
 
-		/* Permanently disables the source if monotonicity regresses. */
-		if (raw < __atomic_load_n(
-		    &state->last_sample,
-		    __ATOMIC_RELAXED)) {
-			__atomic_store_n(
-				&state->available,
-				0U,
-				__ATOMIC_RELEASE);
-		} else {
-			/* Publishes the accepted sample before releasing the lock. */
+		/*
+		 * Under KVM the per-vCPU TSCs can skew by a small amount, so a
+		 * cross-CPU sample may step slightly backwards.  Clamp to the last
+		 * (monotonic) value instead of permanently disabling the source,
+		 * matching the reference TSC clocksource's last-value guard; the
+		 * first regression is logged once for diagnosis.
+		 */
+		{
+			/*
+			 * This sample-and-update runs under state->lock (a global exchange
+			 * lock the HAL wrapper enters with interrupts disabled), so it is
+			 * already serialized and IRQ-safe.  The compare-exchange loop also
+			 * makes "advance to the maximum" correct on its own: a concurrent
+			 * later-but-smaller sample can never push the shared value backwards
+			 * (a plain compare-then-store could, if the outer lock were removed).
+			 */
+			uint64_t before = raw;
+
+			raw = amd64_timecounter_monotonic_max(&state->last_sample, raw);
+			if (raw > before) {
+				/* The published maximum refused a backwards step. */
+				static uint32_t regress_logged;
+
+				if (__atomic_exchange_n(&regress_logged, 1U,
+				    __ATOMIC_RELAXED) == 0U)
+					hal_printf("A64 TIMECOUNTER REGRESS raw=%u:%u "
+					    "last=%u:%u backstep=%u hz=%u:%u\n",
+					    (unsigned)(before >> 32), (unsigned)before,
+					    (unsigned)(raw >> 32), (unsigned)raw,
+					    (unsigned)(raw - before),
+					    (unsigned)(state->frequency_hz >> 32),
+					    (unsigned)state->frequency_hz);
+			}
 			frequency = state->frequency_hz;
-			__atomic_store_n(
-				&state->last_sample,
-				raw,
-				__ATOMIC_RELAXED);
 			result = 1;
 		}
 	}

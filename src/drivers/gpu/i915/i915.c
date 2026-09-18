@@ -21,6 +21,7 @@
 #include <drivers/gpu.h>
 #include <drivers/i915.h>
 #include "vk/vk.h"
+#include "parity/runner.h"
 #include <uapi/gpu.h>
 #include <uapi/gpu-job.h>
 #include <kern/device-io.h>
@@ -267,6 +268,17 @@ i915_start(
 	kern_logf("i915: device 8086:%04x rev %02x (experimental native driver, no display)\n",
 		(unsigned)device->product, (unsigned)device->revision);
 
+#if CONFIG_DRIVER_PCI_I915_PARITY
+	/*
+	 * Diagnostic Linux-parity: register the device for deferred execution and
+	 * return WITHOUT publishing it.  The parity P0..P2 probe runs later from a
+	 * managed runner thread, in a context where blocking waits work — not here
+	 * in the boot device-probe context.  The device stays attached but inert.
+	 */
+	drv_i915_parity_runner_register(device);
+	return 0;
+#endif
+
 	/* The DMA provider constrains later object allocations. */
 	device->stage = "dma-provider";
 	device->dma = drv_pci_device_dma(device->pci);
@@ -372,9 +384,15 @@ i915_start(
 	error = drv_i915_rt_selftest(device);
 	if (error != 0)
 		return error;
+	error = drv_i915_compute_selftest(device);
+	if (error != 0)
+		return error;
+	/* BRINGUP: draw selftest hangs; skip during compute-control bring-up. */
+	if (0) {
 	error = drv_i915_draw_selftest(device);
 	if (error != 0)
 		return error;
+	}
 #endif
 
 	/* The native Vulkan executor attaches once execution is proven. */

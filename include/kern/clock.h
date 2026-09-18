@@ -112,4 +112,22 @@ kern_cpu_notify_probe(void);
  */
 bool kern_rtc_read_counter(uint64_t *counter, uint64_t *frequency_hz);
 
+/*
+ * Short high-resolution wait for at least `min_us` microseconds (bounded busy
+ * delay off the monotonic counter).  A true yielding hrtimer-backed sleep-range
+ * is a pending HAL item; this serves the microsecond-scale waits (usleep_range).
+ */
+void kern_usleep_range(unsigned min_us, unsigned max_us);
+
+#if CONFIG_DRIVER_PCI_I915_PARITY
+/*
+ * Diagnostic one-shot hook (parity build only): the next timer IRQ on a CPU
+ * other than avoid_cpu invokes fn(cpu, arg) exactly once, then disarms.  Firing
+ * off the arming CPU keeps a same-CPU waiter from deadlocking on the callback.
+ */
+void kern_diag_oneshot_arm(void (*fn)(unsigned cpu, void *arg), void *arg,
+	unsigned avoid_cpu, unsigned require_cpu);  /* 0xffffffff = don't care */
+void kern_diag_oneshot_disarm(void);
+#endif
+
 #endif

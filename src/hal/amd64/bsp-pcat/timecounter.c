@@ -77,6 +77,44 @@ amd64_timecounter_sample_serialized(
 }
 
 /*
+ * KVM exposes the virtual TSC frequency even when CPUID leaf 0x15 is absent and
+ * the invariant-TSC bit is masked (as under QEMU -cpu host).  The hypervisor
+ * signature is at leaf 0x40000000 and the TSC frequency (kHz) is EAX of leaf
+ * 0x40000010.  KVM guarantees a stable virtual TSC, so this frequency is a
+ * usable timecounter candidate; the runtime guard still clamps small cross-CPU
+ * skew to keep the counter monotonic.
+ */
+static int
+amd64_kvm_present(void)
+{
+	uint32_t eax, ebx, ecx, edx;
+
+	eax = 0x40000000U;
+	__asm__ volatile("cpuid" : "+a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx));
+	/* "KVMKVMKVM\0\0\0" in EBX/ECX/EDX. */
+	return (ebx == 0x4B4D564BU && ecx == 0x564B4D56U && edx == 0x0000004DU) ? 1 : 0;
+}
+
+/*
+ * Reads the KVM paravirtual clock feature bits (CPUID 0x40000001 EAX).  The KVM
+ * signature (leaf 0x40000000) alone is NOT a stability guarantee; the clock
+ * behaviour is described by these feature bits:
+ *   bit0  = KVM_FEATURE_CLOCKSOURCE      (MSR_KVM_SYSTEM_TIME)
+ *   bit3  = KVM_FEATURE_CLOCKSOURCE2     (MSR_KVM_SYSTEM_TIME_NEW, pvclock)
+ *   bit24 = KVM_FEATURE_CLOCKSOURCE_STABLE_BIT
+ * bit24 by itself does not license trusting the raw TSC unconditionally.
+ */
+static uint32_t
+amd64_kvm_clock_features(void)
+{
+	uint32_t eax, ebx, ecx, edx;
+
+	eax = 0x40000001U;
+	__asm__ volatile("cpuid" : "+a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx));
+	return eax;
+}
+
+/*
  * Prepares the BSP timecounter candidate.
  */
 enum amd64_tsc_frequency_policy_result
@@ -108,6 +146,32 @@ amd64_timecounter_bsp_prepare(
 	} else if (result == AMD64_TSC_FREQUENCY_NEEDS_PIT) {
 		candidate_source = AMD64_TIMECOUNTER_SOURCE_PIT;
 	}
+
+	/*
+	 * Under KVM the invariant-TSC CPUID bit is masked (QEMU -cpu host) and
+	 * CPUID 0x15 / 0x40000010 are absent, so no CPUID candidate is ready.  We
+	 * do NOT trust the raw TSC merely because the KVM signature is present:
+	 * we record the 0x40000001 clock feature bits, then fall back to the PIT
+	 * calibration path (a validated backend -- cross-CPU checked) for the TSC
+	 * frequency.  A pvclock backend (per kvmclock.c/pvclock.c) is the correct
+	 * path when CLOCKSOURCE2 is available and is TODO; source stays "pit"
+	 * (a PIT-calibrated TSC), never reported as pvclock-derived.
+	 */
+	if (!candidate_valid && candidate_source == AMD64_TIMECOUNTER_SOURCE_NONE &&
+	    amd64_kvm_present()) {
+		uint32_t feat = amd64_kvm_clock_features();
+
+		candidate_source = AMD64_TIMECOUNTER_SOURCE_PIT;
+		result = AMD64_TSC_FREQUENCY_NEEDS_PIT;
+		hal_printf("A64 TIMECOUNTER KVM clock-features 0x40000001 eax=0x%x "
+		    "clocksource=%u clocksource2=%u stable_bit=%u -> PIT-calibrated TSC "
+		    "(pvclock backend TODO)\n", feat,
+		    (feat & 0x1U) ? 1U : 0U, (feat & 0x8U) ? 1U : 0U,
+		    (feat & 0x01000000U) ? 1U : 0U);
+	}
+
+	/* Close the CAS monotonic-max verification (unit B, test 1). */
+	amd64_timecounter_cas_selftest();
 
 	/* Reports the complete architectural candidate metadata. */
 	hal_printf(
@@ -486,6 +550,8 @@ amd64_timecounter_complete_boot_validation(
 		source = "cpuid15";
 	else if (candidate_source == AMD64_TIMECOUNTER_SOURCE_PIT)
 		source = "pit";
+	else if (candidate_source == AMD64_TIMECOUNTER_SOURCE_KVM)
+		source = "kvm";
 	else
 		source = "none";
 

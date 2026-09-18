@@ -768,6 +768,172 @@ hal_irq_unregister_msi(
 	return HAL_OK;
 }
 
+/*
+ * Allocates one message-signaled interrupt vector, routing, and message WITHOUT
+ * attaching a driver handler.  Leaves the record unattached (mode NONE): an
+ * arrival is masked and acknowledged by irq_handler()'s no-consumer path, never
+ * dispatched through a NULL handler.
+ */
+int
+hal_irq_alloc_msi(
+	const char *source,
+	int *mapped_irq,
+	paddr_t *mapped_address,
+	uint32_t *mapped_event)
+{
+	struct irq_service_info *service;
+	bool enabled;
+	int irq;
+
+	/* Parses the canonical source before validating output arguments. */
+	if (!amd64_msi_source_valid(source) ||
+	    mapped_irq == NULL ||
+	    mapped_address == NULL ||
+	    mapped_event == NULL)
+		return HAL_ERR_INVALID;
+
+	/* Claims the first unused MSI service record, unattached. */
+	for (irq = IRQ_MSI_BASE; irq <= IRQ_LOGICAL_MAX; irq++) {
+		service = &irq_service[irq];
+		enabled = service_lock(service);
+
+		/* Reserves the vector without publishing any callback ownership. */
+		if (!service->allocated &&
+		    service->mode == IRQ_MODE_NONE &&
+		    !service->removing) {
+			service->allocated = 1;
+			service->msi = 1;
+			service->masked = 0;
+			service->mode = IRQ_MODE_NONE;
+			service->handler = NULL;
+			service->argument = NULL;
+			service_unlock(service, enabled);
+
+			/* Returns the BSP-targeted MSI message and logical IRQ. */
+			*mapped_irq = irq;
+			*mapped_address = (paddr_t)(0xfee00000U |
+			    (amd64_smp_apic_id(0) << 12));
+			*mapped_event = AMD64_VECTOR_MSI_BASE +
+			    (uint32_t)(irq - IRQ_MSI_BASE);
+			return HAL_OK;
+		}
+		service_unlock(service, enabled);
+	}
+
+	/* Reports exhaustion of the architecture MSI vector range. */
+	return HAL_ERR_NOMEM;
+}
+
+/*
+ * Attaches a driver handler to a vector previously allocated by
+ * hal_irq_alloc_msi.  The record must still be unattached.
+ */
+int
+hal_irq_attach_msi(
+	int mapped_irq,
+	hal_irq_handler_t handler,
+	void *handler_arg)
+{
+	struct irq_service_info *service;
+	bool enabled;
+
+	/* Requires an MSI vector and an initialised handler. */
+	if (!is_msi_irq(mapped_irq) || handler == NULL)
+		return HAL_ERR_INVALID;
+
+	/* Requires an allocated, still-unattached MSI record. */
+	service = &irq_service[mapped_irq];
+	enabled = service_lock(service);
+	if (!service->allocated || !service->msi ||
+	    service->removing || service->handler != NULL) {
+		service_unlock(service, enabled);
+		return HAL_ERR_STATE;
+	}
+	service_unlock(service, enabled);
+
+	/* Publishes the real-time callback (mode NONE -> REALTIME). */
+	return irq_set_handler(mapped_irq, handler, handler_arg);
+}
+
+/*
+ * Detaches the driver handler from an hal_irq_alloc_msi vector, draining any
+ * in-flight invocation on every CPU, while KEEPING the vector allocated.
+ */
+int
+hal_irq_detach_msi_sync(
+	int mapped_irq,
+	hal_irq_handler_t handler,
+	void *handler_arg)
+{
+	struct irq_service_info *service;
+	bool enabled;
+	int error;
+
+	/* Requires an MSI vector from the allocation range. */
+	if (!is_msi_irq(mapped_irq))
+		return HAL_ERR_INVALID;
+
+	/* Requires the exact live registration to detach. */
+	service = &irq_service[mapped_irq];
+	enabled = service_lock(service);
+	if (!service->allocated || !service->msi || service->removing ||
+	    service->handler != handler || service->argument != handler_arg) {
+		service_unlock(service, enabled);
+		return HAL_ERR_INVALID;
+	}
+	service->removing = 1;
+	service_unlock(service, enabled);
+
+	/* Drains every active delivery and clears the callback ownership. */
+	error = irq_set_handler(mapped_irq, NULL, NULL);
+
+	/* Restores the record to an allocated-but-unattached state. */
+	enabled = service_lock(service);
+	service->removing = 0;
+	service_unlock(service, enabled);
+	return error;
+}
+
+/*
+ * Frees a vector allocated by hal_irq_alloc_msi.  The handler must already be
+ * detached and the caller must already have stopped the source.
+ */
+int
+hal_irq_free_msi(
+	int mapped_irq)
+{
+	struct irq_service_info *service;
+	bool enabled;
+
+	/* Requires an MSI vector from the allocation range. */
+	if (!is_msi_irq(mapped_irq))
+		return HAL_ERR_INVALID;
+
+	/* Requires a live MSI allocation. */
+	service = &irq_service[mapped_irq];
+	enabled = service_lock(service);
+	if (!service->allocated || !service->msi) {
+		service_unlock(service, enabled);
+		return HAL_ERR_INVALID;
+	}
+
+	/* Requires the handler detached and drained before reuse. */
+	if (service->handler != NULL ||
+	    __atomic_load_n(&service->in_handler, __ATOMIC_ACQUIRE) != 0U ||
+	    __atomic_load_n(&service->in_flight, __ATOMIC_ACQUIRE) != 0U) {
+		service_unlock(service, enabled);
+		return HAL_ERR_STATE;
+	}
+
+	/* Returns the drained record to the MSI allocation pool. */
+	service->allocated = 0;
+	service->msi = 0;
+	service->masked = 1;
+	service->mode = IRQ_MODE_NONE;
+	service_unlock(service, enabled);
+	return HAL_OK;
+}
+
 /* Reports whether a logical IRQ lies in the supported range. */
 static int
 valid_irq(

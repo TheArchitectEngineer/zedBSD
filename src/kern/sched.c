@@ -42,6 +42,7 @@ struct sched_cpu {
 	struct thread *retired;
 	unsigned need_resched;
 	unsigned online;
+	unsigned preempt_count;   /* kern_preempt_disable() nesting depth */
 };
 
 static struct sched_cpu *scheduler_cpus;
@@ -366,6 +367,57 @@ sched_switch(
  * Gives up the CPU to the next runnable thread, requeueing the current one.
  */
 void
+kern_preempt_disable(void)
+{
+	struct sched_cpu *cpu;
+	unsigned long irq;
+
+	cpu = sched_cpu_state(hal_cpu_current());
+	if (cpu == NULL)
+		return;
+	irq = spin_lock_irqsave(&cpu->lock);
+	cpu->preempt_count++;
+	spin_unlock_irqrestore(&cpu->lock, irq);
+}
+
+void
+kern_preempt_enable(void)
+{
+	struct sched_cpu *cpu;
+	unsigned long irq;
+	int yield = 0;
+
+	cpu = sched_cpu_state(hal_cpu_current());
+	if (cpu == NULL)
+		return;
+	irq = spin_lock_irqsave(&cpu->lock);
+	if (cpu->preempt_count > 0u)
+		cpu->preempt_count--;
+	if (cpu->preempt_count == 0u && cpu->need_resched != 0u)
+		yield = 1;
+	spin_unlock_irqrestore(&cpu->lock, irq);
+	if (yield)
+		sched_yield();
+}
+
+/* Test-only: read the current CPU's preempt nesting depth. */
+unsigned
+sched_test_preempt_count(void)
+{
+	struct sched_cpu *cpu;
+	unsigned long irq;
+	unsigned n;
+
+	cpu = sched_cpu_state(hal_cpu_current());
+	if (cpu == NULL)
+		return 0u;
+	irq = spin_lock_irqsave(&cpu->lock);
+	n = cpu->preempt_count;
+	spin_unlock_irqrestore(&cpu->lock, irq);
+	return n;
+}
+
+void
 sched_yield(
 	void)
 {
@@ -580,6 +632,12 @@ sched_clock_cpu(
 		}
 	}
 
+	/* Honour kern_preempt_disable(): defer the switch while preemption is off. */
+	if (preempt && cpu->preempt_count != 0u) {
+		cpu->need_resched = 1;
+		preempt = 0;
+	}
+
 	spin_unlock_irqrestore(&cpu->lock, irq);
 
 	/* Applies the CPU limit and sends the expired interval timer signals. */
@@ -778,7 +836,11 @@ sched_sleep(
 /*
  * Sleeps the current thread, releasing a condition lock while it sleeps.
  *
- * The lock is held again on return.
+ * The lock is held again on return, and the caller's interrupt state is
+ * restored: the context switch preserves RFLAGS, so without this a thread
+ * would resume with interrupts disabled and keep running that way until its
+ * next sleep -- on the BSP that starves the global tick (kernel_ticks) and
+ * every tick-deadline sleep in the system.
  */
 void
 sched_sleep_locked(
@@ -787,10 +849,11 @@ sched_sleep_locked(
 {
 	struct thread *thread;
 	struct sched_cpu *cpu;
+	bool enabled;
 
 	thread = curthread;
 
-	(void)hal_irq_disable();
+	enabled = hal_irq_disable();
 
 	/* Only a thread on its own CPU can sleep, and it needs a lock. */
 	if (thread == NULL ||
@@ -809,6 +872,8 @@ sched_sleep_locked(
 	spin_unlock(&cpu->lock);
 	switch_without_enqueue();
 	spin_lock(condition_lock);
+	if (enabled)
+		hal_irq_enable();
 }
 
 /*
@@ -825,10 +890,11 @@ sched_sleep_locked_interruptible(
 {
 	struct thread *thread;
 	struct sched_cpu *cpu;
+	bool enabled;
 
 	thread = curthread;
 
-	(void)hal_irq_disable();
+	enabled = hal_irq_disable();
 
 	/* Only a thread on its own CPU can sleep, and it needs a lock. */
 	if (thread == NULL ||
@@ -847,6 +913,8 @@ sched_sleep_locked_interruptible(
 	if (atomic_u64_load_acquire(&thread->interrupt_generation) !=
 	    observed_generation) {
 		spin_unlock(&cpu->lock);
+		if (enabled)
+			hal_irq_enable();
 		return 1;
 	}
 
@@ -859,6 +927,8 @@ sched_sleep_locked_interruptible(
 	spin_unlock(&cpu->lock);
 	switch_without_enqueue();
 	spin_lock(condition_lock);
+	if (enabled)
+		hal_irq_enable();
 
 	/* Reports a completed sleep. */
 	return 0;
@@ -876,10 +946,11 @@ sched_sleep_locked_notify(
 {
 	struct thread *thread;
 	struct sched_cpu *cpu;
+	bool enabled;
 
 	thread = curthread;
 
-	(void)hal_irq_disable();
+	enabled = hal_irq_disable();
 
 	/* Only a thread on its own CPU can sleep, and it needs a lock and notifier. */
 	if (thread == NULL ||
@@ -908,6 +979,8 @@ sched_sleep_locked_notify(
 	notify(argument);
 	switch_without_enqueue();
 	spin_lock(condition_lock);
+	if (enabled)
+		hal_irq_enable();
 }
 
 /*

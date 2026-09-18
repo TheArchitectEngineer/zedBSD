@@ -437,6 +437,7 @@ int drv_i915_clear_selftest(struct i915_device *device);
 int drv_i915_rcs_selftest(struct i915_device *device);
 int drv_i915_rt_selftest(struct i915_device *device);
 int drv_i915_draw_selftest(struct i915_device *device);
+int drv_i915_compute_selftest(struct i915_device *device);
 
 /* i915.c: native stream validation, exposed for the host fixture. */
 int drv_i915_stream_parse(const void *buffer, uint32_t bytes, struct i915_stream *stream);

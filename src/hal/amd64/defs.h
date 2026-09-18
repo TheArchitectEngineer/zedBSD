@@ -47,7 +47,13 @@
 #define AMD64_PTE_GLOBAL       0x100
 #define AMD64_PTE_NX           0x8000000000000000
 #define AMD64_PTE_ADDR_MASK    0x000ffffffffff000
+/* Page-attribute-table selector bit for a 4 KiB leaf (bit 7 at PT level). */
+#define AMD64_PTE_PAT_4K       0x080
+/* IA32_PAT index programmed to write-combining by amd64_cpu_init(). */
+#define AMD64_PAT_INDEX_WC     4
 
+#define AMD64_MSR_IA32_PAT     0x00000277U
+#define AMD64_MSR_IA32_MTRR_DEF_TYPE 0x000002ffU
 #define AMD64_MSR_FS_BASE      0xc0000100U
 #define AMD64_MSR_GS_BASE      0xc0000101U
 

@@ -76,7 +76,8 @@ AMD64_CPPFLAGS += $(ZEDBSD_CONFIG_CPPFLAGS)
 AMD64_CFLAGS := -m64 -mcmodel=kernel -mno-red-zone -mgeneral-regs-only \
 	-ffreestanding -fno-pic -fno-pie -fno-stack-protector \
 	-fno-asynchronous-unwind-tables -fno-unwind-tables \
-	-ffunction-sections -fdata-sections -Os -Wall -Wextra -Werror
+	-ffunction-sections -fdata-sections -Os -Wall -Wextra -Werror \
+	-Wframe-larger-than=8192
 AMD64_KERNEL_LIBC_CFLAGS := $(filter-out -mgeneral-regs-only,$(AMD64_CFLAGS))
 
 AMD64_HAL_SOURCES := src/hal/x86/rtc.c src/hal/x86/boot-parameters.c \
@@ -133,6 +134,9 @@ ifeq ($(CONFIG_DRIVER_PCI_I915),y)
 AMD64_I915_SOURCES += src/drivers/gpu/i915/i915.c src/drivers/gpu/i915/uncore.c \
 	src/drivers/gpu/i915/ggtt.c src/drivers/gpu/i915/ppgtt.c src/drivers/gpu/i915/gem.c src/drivers/gpu/i915/irq.c src/drivers/gpu/i915/engine.c src/drivers/gpu/i915/lrc.c src/drivers/gpu/i915/request.c
 AMD64_I915_SOURCES += src/drivers/gpu/i915/vk/vk.c src/drivers/gpu/i915/vk/cmd.c src/drivers/gpu/i915/vk/res.c src/drivers/gpu/i915/vk/pipe.c src/drivers/gpu/i915/vk/cmdbuf.c src/drivers/gpu/i915/vk/sync.c src/drivers/gpu/i915/vk/wsi.c src/drivers/gpu/i915/vk/display.c src/drivers/gpu/i915/vk/spirv.c src/drivers/gpu/i915/vk/eu.c src/drivers/gpu/i915/vk/compile.c
+AMD64_I915_SOURCES += src/drivers/gpu/i915/parity/osdep/trace.c src/drivers/gpu/i915/parity/osdep/dma.c src/drivers/gpu/i915/parity/osdep/mmio.c src/drivers/gpu/i915/parity/osdep/pci.c src/drivers/gpu/i915/parity/osdep/sync.c src/drivers/gpu/i915/parity/osdep/runtime_pm.c
+AMD64_I915_SOURCES += src/drivers/gpu/i915/parity/backend_pci.c src/drivers/gpu/i915/parity/backend_mmio.c src/drivers/gpu/i915/parity/backend_dma.c src/drivers/gpu/i915/parity/probe.c src/drivers/gpu/i915/parity/pte.c src/drivers/gpu/i915/parity/ktest.c src/drivers/gpu/i915/parity/backend_sync.c src/drivers/gpu/i915/parity/runner.c
+AMD64_I915_SOURCES += src/drivers/gpu/i915/parity/pcode.c src/drivers/gpu/i915/parity/dram_bw.c src/drivers/gpu/i915/parity/reset.c src/drivers/gpu/i915/parity/wait.c src/drivers/gpu/i915/parity/drm_device.c src/drivers/gpu/i915/parity/bios.c src/drivers/gpu/i915/parity/vga.c src/drivers/gpu/i915/parity/power_domains.c src/drivers/gpu/i915/parity/combo_phy.c src/drivers/gpu/i915/parity/cdclk.c src/drivers/gpu/i915/parity/display_core.c src/drivers/gpu/i915/parity/timer_calc.c src/drivers/gpu/i915/parity/firmware_adlp_dmc.c src/drivers/gpu/i915/parity/osdep/firmware.c src/drivers/gpu/i915/parity/dmc.c src/drivers/gpu/i915/parity/display_state.c src/drivers/gpu/i915/parity/pch.c src/drivers/gpu/i915/parity/irq.c src/drivers/gpu/i915/parity/display_nogem.c src/drivers/gpu/i915/parity/gt_mem.c src/drivers/gpu/i915/parity/gt_engine.c src/drivers/gpu/i915/parity/gt_lrc.c src/drivers/gpu/i915/parity/gt_request.c src/drivers/gpu/i915/parity/gt_submit.c src/drivers/gpu/i915/parity/gt_resume.c src/drivers/gpu/i915/parity/gt_defaults.c src/drivers/gpu/i915/parity/gt_mmio.c src/drivers/gpu/i915/parity/gt_init_base.c src/drivers/gpu/i915/parity/gt_wa_adlp.c
 ifeq ($(CONFIG_DRIVER_PCI_I915_SELFTEST),y)
 AMD64_I915_SOURCES += src/drivers/gpu/i915/selftest.c
 endif
