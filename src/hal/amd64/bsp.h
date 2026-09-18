@@ -29,6 +29,7 @@ bsp_mem_probe(void);
 
 int bsp_boot_allocation(uint32_t index, uint64_t *base, uint64_t *size);
 uint32_t bsp_memory_source(void);
+int bsp_kernel_placement(uint64_t *start, uint64_t *end);
 int bsp_mem_attributes(uint32_t index, uint64_t *attributes);
 
 uint32_t

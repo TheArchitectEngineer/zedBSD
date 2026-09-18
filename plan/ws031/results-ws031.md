@@ -2668,3 +2668,30 @@ ktest (post-attach): 338 checks, 0 failures
 ### 残(次)
 **`__engines_verify_workarounds`**（判断②で常時診断として承認済）：kernel context 上で各エンジンの WA レジスタを **SRM でメモリへストアする request** を投入し、GPU から見た値を照合する（null request ではない GPU 実行）→ P7 前半 → 実機 EU 試験（要・明示解除）。
 台帳E-60〜E-92。GPU=vfio-pci維持, 10ms tick/HAL非変更維持, drm非blacklist, attach先行維持。
+
+## p011 増分E-93 (2026-09-18): **カーネル物理配置を可変化（ローダ＋HAL）**。像の物理 8 MiB 上限（E-92 項 6）を恒久解消。既定は従来どおり 2 MiB、塞がっていれば 1 GiB 未満の最下位 2 MiB 整列空きへ再配置。実機 GPU 渡しで再配置版・従来版とも E-92 と同一結果
+
+### 結果（chaos, vmunix 528a49d9, BOOTX64.EFI 25088 B）
+| 構成 | ローダ | HAL | 結果 |
+|---|---|---|---|
+| 既定（`kernel_phys` 無し）GPU-free | `KERN LOAD 0x200000` | `link=200000-7d0000 load=200000-7d0000 (as linked)` | ktest 338/0 |
+| 既定 GPU 実機 | 同上 | 同上 | record_defaults rc=0 polls=9 error=0 → BLOCKED=verify_workarounds、ktest 338/0（E-92 と同一） |
+| 再配置強制 `kernel_phys=0x2000000` GPU-free | `KERN LOAD 0x2000000` | `load=2000000-25d0000 (relocated by the loader)` + `shadow 200000-800000 reserved` | ktest 338/0 |
+| 再配置強制 GPU 実機 | 同上 | 同上 | record_defaults rc=0 polls=9 error=0 → BLOCKED=verify_workarounds、ktest 338/0 |
+| BIOS ローダ（SeaBIOS, TCG） | 常に 2 MiB | `(as linked)` → PAGING PASS → IRQ READY | ktest は TCG の実時間タイムアウトで FAIL 多数（配置と無関係、KVM では未計測） |
+- ホストテスト: 新規 `plan/ws031/tests/kernel-placement-host.c`（ELF 計画/再基底化/HAL 規則）PASS（ASan/UBSan も）、ws025 `memory-handoff-host` PASS（再配置受理・不整列/超過/窓外の拒否を追加）。ws003 `x86-parameter-handoff-test` は変更前から `ZEDBSD_*`→`KERN_*` 改名でビルド不能（本件と無関係、未修正）。
+
+### 設計（`bootloader/include/amd64-kernel-image.h` に契約を集約）
+- 仮想アドレスは固定（-mcmodel=kernel の上位 2 GiB 制約）。**物理だけ可変**: `physical = virtual − LINK_VIRT_BASE − LINK_PHYS_START + kernel_phys_start`。handoff 形式は不変（`kernel_phys_start/end` が「実際の配置」を意味するようになっただけ）。旧ローダ（常に 2 MiB）とも相互運用。
+- 定数: LINK_PHYS_START=2 MiB、PHYS_ALIGN=2 MiB（ローダの大ページ写像のため）、PHYS_LIMIT=1 GiB（bootstrap 窓）、MAX_BYTES=16 MiB（space.c の W^X 葉表 8 枚＝vmunix.ld の ASSERT と同値）。
+- **ローダ** (`elf64.c`: plan は link_* と physical_* を分離、`zbl_elf64_place()` で再基底化 / `bootx64.c`: `place_kernel()`): (1) リンク位置へ AllocateAddress、(2) 失敗なら GetMemoryMap を取り EfiConventionalMemory の中で 2 MiB 整列・≥2 MiB・<1 GiB・像が収まる最下位候補へ（候補拒否は 8 回まで再試行）、(3) 全滅なら 1 GiB 未満の記述子を `A64 KERN MAP t=.. start +pages` で列挙して `Place kernel: EFI_NOT_FOUND`。bootstrap ページ表はリンク範囲のスロットだけを配置先へ向ける（非再配置時は恒等のまま）。`zedbsd.cfg` の `kernel_phys=auto|link|0x…` で方針を固定可能（実機で切り分け用）。
+- **HAL** (`image.c` 新設): `prekern_amd64_image_init()` をコンソール初期化直後に置き、リンク範囲と配置を検証（整列/上限/サイズ一致/USABLE・BOOT_RECLAIM 内に完全包含）して `A64 KERNEL link=… load=…` を出力、失敗時は理由と 1 GiB 未満の範囲表を出して FATAL。`amd64_image_to_phys()`・W^X 窓（スロットはリンク座標、PTE 物理は +delta）・ダイレクトマップの text/rodata 境界・legacy alias・不変条件・page.c の予約 4 箇所・boot.c/handoff-validation.c の固定値検査を全て image 幾何経由に置換。`zbl6_kernel_placement_valid()` を純粋関数として共有。
+- **shadow**: 再配置時、リンク物理範囲は bootstrap 窓から見えなくなる（窓の VA は像自身を示す）。早期ページ表ページはその窓経由で書かれるため、shadow を早期ビットマップ・範囲アロケータ・boot 回収から恒久予約（≤16 MiB、今 6 MiB）。`ram_allocate` に「早期表ページが像/shadow に載ったら FATAL」の防護を追加。
+
+### 途中で見つけて直したもの
+1. **shadow の幅**（初版で再配置版が CR3 切替後にトリプルフォルト）: ローダは 2 MiB スロット単位で向け替えるため、像末尾〜スロット末尾（0x7d0000–0x800000）も配置先直後を指す。像サイズ分だけの予約では、その余りから取った早期表ページが窓越しに配置先直後（0x25d0000〜）へ書かれ、ダイレクトマップ表が壊れた（`-d int`: PF CR2=DIRECT+0x100000 in `amd64_ram_lookup`）。→ shadow を 2 MiB 境界に丸めて予約。
+2. boot.c の `total_memory < 4 MiB` 検査（像 6 MiB で無意味）を image_init の「配置が報告 RAM 内」検査に置換。
+
+### 残(次)
+E-92 の残と同じ: `__engines_verify_workarounds`（SRM request、着手前に一言）→ P7。OSDEP_DMA_MAX_MAPPINGS 32 は上限解消により 256 へ戻せる（次の像成長時に）。
+台帳E-60〜E-93。GPU=vfio-pci維持, 10ms tick/HAL インタフェース非変更維持（HAL 内部の配置機構のみ変更）, drm非blacklist, attach先行維持。git commit/push なし。

@@ -48,6 +48,11 @@ static struct zbl6_memory_range_v6 boot_memory_range[MAX_BOOT_MEMORY_RANGES];
 static uint32_t boot_memory_range_count;
 static struct zbl6_memory_handoff boot_memory;
 static struct zbl6_boot_allocation boot_allocations[ZBL6_MAX_BOOT_ALLOCATIONS];
+
+/* The kernel placement the loader reported, when its handoff form carries one. */
+static uint64_t boot_kernel_phys_start;
+static uint64_t boot_kernel_phys_end;
+static int boot_kernel_placement_known;
 static struct boot_handoff kernel_handoff;
 static uint64_t total_memory;
 static uint8_t boot_font[PCAT_BOOT_FONT_GLYPHS][PCAT_BOOT_FONT_HEIGHT];
@@ -121,6 +126,9 @@ prekern_bsp_boot_init(
 	v6 = form == ZBL6_HANDOFF_FORM_V6_BIOS ||
 	    form == ZBL6_HANDOFF_FORM_V6_UEFI || form == ZBL6_HANDOFF_FORM_V7_UEFI;
 	hal_memset(&boot_memory, 0, sizeof(boot_memory));
+	boot_kernel_phys_start = 0;
+	boot_kernel_phys_end = 0;
+	boot_kernel_placement_known = 0;
 	if (form == ZBL6_HANDOFF_FORM_V7_UEFI) {
 		struct boot_provenance provenance;
 
@@ -230,9 +238,8 @@ prekern_bsp_boot_init(
 		    raw_v2->memory_range_count >
 		    (0x40000000ULL - raw_v2->memory_ranges) /
 		    (v6 ? sizeof(struct zbl6_memory_range_v6) : sizeof(struct zbl6_memory_range)) ||
-		    raw_v2->kernel_phys_start != 0x00200000ULL ||
-		    raw_v2->kernel_phys_end <= raw_v2->kernel_phys_start ||
-		    raw_v2->kernel_phys_end > 0x01200000ULL ||
+		    !zbl6_kernel_placement_valid(raw_v2->kernel_phys_start,
+		    raw_v2->kernel_phys_end) ||
 		    (raw_v2->bootstrap_cr3 & 0xfffU) != 0 ||
 		    raw_v2->bootstrap_cr3 >= 0x40000000ULL ||
 		    raw_v2->rsdp == 0)
@@ -250,6 +257,9 @@ prekern_bsp_boot_init(
 
 		/* Preserves the common UEFI handoff and optional extensions. */
 		boot_info_v2 = *raw_v2;
+		boot_kernel_phys_start = raw_v2->kernel_phys_start;
+		boot_kernel_phys_end = raw_v2->kernel_phys_end;
+		boot_kernel_placement_known = 1;
 		if (framebuffer_version) {
 			accept_framebuffer(
 				raw_v3->framebuffer_base,
@@ -331,9 +341,8 @@ prekern_bsp_boot_init(
 		}
 	}
 
-	/* Requires enough memory for the loaded kernel and initial services. */
-	if (total_memory < 0x00400000ULL)
-		HAL_FATAL("too little amd64 memory");
+	/* Whether the loaded image lies inside that memory is checked with the
+	 * placement itself by prekern_amd64_image_init(). */
 
 	/* Validates and preserves the optional low-memory VGA font. */
 	boot_font_valid = font->magic == VGA_FONT_MAGIC &&
@@ -668,6 +677,9 @@ accept_memory(const struct zbl6_memory_handoff *memory, uint32_t source)
 	    (size_t)memory->allocation_count * sizeof(boot_allocations[0]));
 	if (!zbl6_memory_contents_valid(&boot_memory, boot_memory_range, boot_allocations))
 		HAL_FATAL("invalid amd64 v6 memory ownership");
+	boot_kernel_phys_start = memory->kernel_phys_start;
+	boot_kernel_phys_end = memory->kernel_phys_end;
+	boot_kernel_placement_known = 1;
 	boot_memory_range_count = memory->range_count;
 	total_memory = 0;
 	for (i = 0; i < boot_memory_range_count; i++) {
@@ -675,6 +687,17 @@ accept_memory(const struct zbl6_memory_handoff *memory, uint32_t source)
 		if (boot_memory_range[i].type == ZBL6_MEMORY_USABLE && end > total_memory)
 			total_memory = end;
 	}
+}
+
+/* Reports the loader's kernel placement; legacy forms carry none (linked). */
+int
+bsp_kernel_placement(uint64_t *start, uint64_t *end)
+{
+	if (!boot_kernel_placement_known || start == NULL || end == NULL)
+		return 0;
+	*start = boot_kernel_phys_start;
+	*end = boot_kernel_phys_end;
+	return 1;
 }
 
 /* Reports the memory-map source, with zero denoting legacy geometry. */

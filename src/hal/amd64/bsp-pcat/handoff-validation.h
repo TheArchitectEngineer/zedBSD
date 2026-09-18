@@ -17,6 +17,9 @@
 #include <stdint.h>
 #include "bootloader/include/amd64-handoff.h"
 
+/* Any home the loaders may choose for the image (amd64-kernel-image.h). */
+int zbl6_kernel_placement_valid(uint64_t kernel_phys_start, uint64_t kernel_phys_end);
+
 /* Validates pointed-to copies after the envelope's low-address bounds check. */
 int zbl6_memory_envelope_valid(const struct zbl6_memory_handoff *memory, uint32_t source);
 int zbl6_memory_contents_valid(const struct zbl6_memory_handoff *memory,

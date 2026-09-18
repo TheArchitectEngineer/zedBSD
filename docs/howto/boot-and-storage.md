@@ -216,6 +216,28 @@ creates the native swap file, and configures startup swap activation. This path
 installs a UEFI loader; it does not provision a new BIOS boot chain. Use the
 firmware's target-disk boot entry or select `EFI/BOOT/BOOTX64.EFI` manually.
 
+#### Kernel image placement (amd64 UEFI)
+
+`vmunix` is linked for physical 2 MiB, but firmware may already own memory
+there (OVMF keeps its own data from 8 MiB, so a kernel image larger than about
+6 MiB no longer fits). The UEFI loader therefore places the image at the linked
+address when that is free and otherwise at the lowest 2 MiB-aligned run of
+conventional memory below 1 GiB that holds it; the HAL maps the fixed virtual
+range onto whichever physical range was used. The loader prints
+`A64 KERN LINK`, `A64 KERN SIZE` and `A64 KERN LOAD` (plus `A64 KERN
+RELOCATED` when moved), and the HAL prints `A64 KERNEL link=... load=...`.
+The optional `kernel_phys=` line in `zedbsd.cfg` controls the choice:
+
+| Value | Effect |
+|---|---|
+| `auto` (default) | linked address first, otherwise the lowest free aligned run |
+| `link` | linked address only; fails with `Place kernel` when it is busy (the historical behaviour) |
+| `0x...` | that 2 MiB-aligned physical address only, e.g. `kernel_phys=0x2000000` to exercise relocation |
+
+When placement fails the loader lists the firmware memory descriptors below
+1 GiB (`A64 KERN MAP t=<type> <start> +<pages>`). The BIOS loader always
+loads at the linked address and ignores this setting.
+
 ### PC98 FAT installation
 
 PC98 is detected from `uname -a`. Use two IDE HDDs: the installation source

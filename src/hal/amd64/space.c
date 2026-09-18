@@ -24,6 +24,7 @@
 #include "framebuffer-map.h"
 #include "smp.h"
 #include "space.h"
+#include "image.h"
 
 #define AMD64_USER_LIMIT 0x0000800000000000ULL
 
@@ -366,15 +367,21 @@ amd64_device_map(
 
 /*
  * Converts only linker-owned image addresses, independently of RAM aliases.
+ * The image may live at a physical address other than the one it was linked
+ * for; the conversion follows the placement the loader reported.
  */
 uintptr_t
 amd64_image_to_phys(
 	const void *address)
 {
+	const struct amd64_kernel_image *img;
+
 	if ((uintptr_t)address < (uintptr_t)__kernel_virt_start ||
 	    (uintptr_t)address >= (uintptr_t)__kernel_virt_end)
 		return UINTPTR_MAX;
-	return (uintptr_t)address - (uintptr_t)AMD64_IMAGE_BASE;
+	img = amd64_kernel_image();
+	return (uintptr_t)address - (uintptr_t)img->virt_start +
+	    (uintptr_t)img->phys_start;
 }
 
 /* Reports actual mapped RAM bytes rather than the virtual window's span. */
@@ -403,8 +410,10 @@ prekern_amd64_space_init(
 	void)
 {
 	const struct zbl6_framebuffer *framebuffer;
+	const struct amd64_kernel_image *img;
 	uintptr_t kernel_start;
 	uintptr_t kernel_end;
+	uintptr_t delta;
 	uintptr_t base;
 	uintptr_t physical;
 	unsigned index;
@@ -417,10 +426,16 @@ prekern_amd64_space_init(
 	uintptr_t cr0;
 	uintptr_t cr4;
 
-	/* Reads the firmware display and linker-defined kernel extent. */
+	/*
+	 * Reads the firmware display and the kernel extent.  The window slots
+	 * follow the linked extent (the virtual layout is fixed); the pages they
+	 * map follow the placement, `delta` bytes away.
+	 */
 	framebuffer = hal_get_arch_handoff("pcat.framebuffer");
-	kernel_start = (uintptr_t)__kernel_phys_start;
-	kernel_end = (uintptr_t)__kernel_phys_end;
+	img = amd64_kernel_image();
+	kernel_start = (uintptr_t)img->link_phys_start;
+	kernel_end = (uintptr_t)img->link_phys_end;
+	delta = (uintptr_t)img->phys_start - kernel_start;
 
 	/* Initializes the address-space registry. */
 	space_registry_lock = 0;
@@ -444,7 +459,7 @@ prekern_amd64_space_init(
 	first_chunk = (unsigned)(kernel_start / 0x200000U);
 	chunks = (unsigned)((kernel_end + 0x1fffffU) / 0x200000U) -
 	    first_chunk;
-	if (chunks == 0 || chunks > 8)
+	if (chunks == 0 || chunks > sizeof(system_kernel_pt) / sizeof(system_kernel_pt[0]))
 		HAL_FATAL("amd64 kernel W^X window exceeded");
 
 	/* Replaces kernel large pages with per-page W^X mappings. */
@@ -469,8 +484,8 @@ prekern_amd64_space_init(
 				flags |= AMD64_PTE_WRITE;
 			}
 
-			/* Publishes this kernel page with its selected permissions. */
-			system_kernel_pt[chunk][index] = physical | flags;
+			/* Publishes this kernel page, at its placed home, with its permissions. */
+			system_kernel_pt[chunk][index] = (physical + delta) | flags;
 		}
 
 		/* Links the populated kernel leaf table into the direct map. */
@@ -2181,6 +2196,10 @@ ram_allocate(void *context, uint64_t *physical, uint64_t **table)
 		    (unsigned long long)ram_builder.mapped_bytes, ram_active);
 		return 0;
 	}
+	/* Before the direct map the page is reached through the bootstrap
+	 * window, where the image's linked range shows the image itself. */
+	if (!ram_active && amd64_kernel_image_owns(*physical))
+		HAL_FATAL("amd64 early table page aliases the kernel image");
 	*table = (void *)((ram_active ? (uintptr_t)AMD64_DIRECT_BASE :
 	    (uintptr_t)AMD64_IMAGE_BASE) + *physical);
 	hal_memset(*table, 0, PAGE_SIZE);
@@ -2231,10 +2250,11 @@ build_ram_map(const struct zbl6_framebuffer *framebuffer)
 		system_pml4[index] = physical | AMD64_PTE_PRESENT | AMD64_PTE_WRITE;
 		ram_builder.table_pages++;
 	}
-	boundaries[0] = (uintptr_t)__kernel_text_phys_start;
-	boundaries[1] = (uintptr_t)__kernel_text_phys_end;
-	boundaries[2] = (uintptr_t)__kernel_rodata_phys_start;
-	boundaries[3] = (uintptr_t)__kernel_rodata_phys_end;
+	/* The direct map aliases the placed pages, so W^X follows the placement. */
+	boundaries[0] = (uintptr_t)amd64_kernel_image()->text_phys_start;
+	boundaries[1] = (uintptr_t)amd64_kernel_image()->text_phys_end;
+	boundaries[2] = (uintptr_t)amd64_kernel_image()->rodata_phys_start;
+	boundaries[3] = (uintptr_t)amd64_kernel_image()->rodata_phys_end;
 	boundaries[4] = 0xa0000U;
 	boundaries[5] = 0x100000U;
 	boundaries[6] = framebuffer == NULL ? 0 : framebuffer->physical_base & ~4095ULL;
@@ -2302,13 +2322,15 @@ map_legacy_image_alias(void)
 	enum amd64_ram_result result;
 
 	/* Preserves the same text/rodata W^X aliases used by typed RAM ranges. */
-	for (physical = (uintptr_t)__kernel_phys_start;
-	     physical < (uintptr_t)__kernel_phys_end; physical += PAGE_SIZE) {
+	const struct amd64_kernel_image *img = amd64_kernel_image();
+
+	for (physical = (uintptr_t)img->phys_start;
+	     physical < (uintptr_t)img->phys_end; physical += PAGE_SIZE) {
 		if (amd64_ram_lookup(&ram_builder, physical, &entry))
 			continue;
 		flags = AMD64_PTE_NX | AMD64_PTE_GLOBAL;
-		if (!(physical >= (uintptr_t)__kernel_text_phys_start && physical < (uintptr_t)__kernel_text_phys_end) &&
-		    !(physical >= (uintptr_t)__kernel_rodata_phys_start && physical < (uintptr_t)__kernel_rodata_phys_end))
+		if (!(physical >= (uintptr_t)img->text_phys_start && physical < (uintptr_t)img->text_phys_end) &&
+		    !(physical >= (uintptr_t)img->rodata_phys_start && physical < (uintptr_t)img->rodata_phys_end))
 			flags |= AMD64_PTE_WRITE;
 		result = amd64_ram_map(&ram_builder, physical, PAGE_SIZE, flags);
 		if (result != AMD64_RAM_OK)
@@ -2366,11 +2388,15 @@ verify_ram_map(void)
 	    amd64_direct_to_phys(system_pml4) != UINTPTR_MAX ||
 	    amd64_image_to_phys(system_pml4) != system_cr3)
 		HAL_FATAL("amd64 RAM/image conversion invariant failed");
-	if (!amd64_ram_lookup(&ram_builder, (uintptr_t)__kernel_text_phys_start, &entry) ||
+	if (!amd64_ram_lookup(&ram_builder, (uintptr_t)amd64_kernel_image()->text_phys_start, &entry) ||
 	    (entry & AMD64_PTE_WRITE) != 0 || (entry & AMD64_PTE_NX) == 0 ||
-	    !amd64_ram_lookup(&ram_builder, (uintptr_t)__kernel_rodata_phys_start, &entry) ||
+	    !amd64_ram_lookup(&ram_builder, (uintptr_t)amd64_kernel_image()->rodata_phys_start, &entry) ||
 	    (entry & AMD64_PTE_WRITE) != 0 || (entry & AMD64_PTE_NX) == 0)
 		HAL_FATAL("amd64 RAM alias permission invariant failed");
+	/* The placed text must be what the CPU executes through the image window. */
+	if (amd64_image_to_phys(__kernel_virt_start) != amd64_kernel_image()->phys_start ||
+	    amd64_image_to_phys(__kernel_virt_end - 1) != amd64_kernel_image()->phys_end - 1)
+		HAL_FATAL("amd64 image placement invariant failed");
 	for (boundary = 1ULL << 30; boundary <= (1ULL << 32); boundary <<= 2) {
 		for (index = 0; index < bsp_mem_range_count(); index++) {
 			if (!bsp_mem_range(index, &base, &size, &type) || type != ZBL6_MEMORY_USABLE)

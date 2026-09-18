@@ -85,7 +85,7 @@ AMD64_HAL_SOURCES := src/hal/x86/rtc.c src/hal/x86/boot-parameters.c \
 	src/hal/amd64/asm.c src/hal/amd64/lib.c \
 	src/hal/amd64/page.c src/hal/amd64/pmem-range.c \
 	src/hal/amd64/ram-map.c src/hal/amd64/framebuffer-map.c \
-	src/hal/amd64/space.c \
+	src/hal/amd64/space.c src/hal/amd64/image.c \
 	src/hal/amd64/acpi-window.c src/hal/amd64/cmain.c \
 	src/hal/amd64/descriptor.c src/hal/amd64/int.c src/hal/amd64/irq.c \
 	src/hal/amd64/msi-source.c \
@@ -418,6 +418,7 @@ $(BUILD)/uefi/bootx64.o: $(UEFI_LOADER)/bootx64.c \
 	$(UEFI_LOADER)/volume-discovery.h \
 	$(UEFI_LOADER)/zedbsd-config.h \
 	bootloader/include/amd64-handoff.h \
+	bootloader/include/amd64-kernel-image.h \
 	bootloader/include/boot-parameter-handoff.h \
 	include/boot/parameter-handoff.h include/boot/parameters.h
 	@mkdir -p $(dir $@)
@@ -446,7 +447,8 @@ $(BUILD)/uefi/zedbsd-config.o: $(UEFI_LOADER)/zedbsd-config.c \
 	@mkdir -p $(dir $@)
 	$(EFI_CC) $(EFI_CFLAGS) -c $< -o $@
 
-$(BUILD)/uefi/elf64.o: $(UEFI_LOADER)/elf64.c $(UEFI_LOADER)/elf64.h
+$(BUILD)/uefi/elf64.o: $(UEFI_LOADER)/elf64.c $(UEFI_LOADER)/elf64.h \
+	bootloader/include/amd64-kernel-image.h
 	@mkdir -p $(dir $@)
 	$(EFI_CC) $(EFI_CFLAGS) -c $< -o $@
 

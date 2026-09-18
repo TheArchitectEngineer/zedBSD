@@ -71,6 +71,20 @@ int main(void)
 	ranges[0] = (struct zbl6_memory_range_v6){0, 0x800000, ZBL6_MEMORY_USABLE, 0, 1};
 	assert(zbl6_memory_envelope_valid(&memory, ZBL6_MEMORY_SOURCE_BIOS_E820));
 	assert(zbl6_memory_contents_valid(&memory, ranges, allocations));
+	/* A relocated image: any 2 MiB-aligned home in the bootstrap window. */
+	memory.kernel_phys_start = 0x2000000; memory.kernel_phys_end = 0x2200000;
+	allocations[0].base = 0x2000000;
+	assert(zbl6_memory_envelope_valid(&memory, ZBL6_MEMORY_SOURCE_BIOS_E820));
+	assert(zbl6_memory_contents_valid(&memory, ranges, allocations));
+	memory.kernel_phys_start = 0x2100000; memory.kernel_phys_end = 0x2300000;
+	assert(!zbl6_memory_envelope_valid(&memory, ZBL6_MEMORY_SOURCE_BIOS_E820));
+	memory.kernel_phys_start = 0x2000000; memory.kernel_phys_end = 0x2000000 + 0x1001000;
+	assert(!zbl6_memory_envelope_valid(&memory, ZBL6_MEMORY_SOURCE_BIOS_E820));
+	memory.kernel_phys_start = 0x3fe00000; memory.kernel_phys_end = 0x40001000;
+	assert(!zbl6_memory_envelope_valid(&memory, ZBL6_MEMORY_SOURCE_BIOS_E820));
+	memory.kernel_phys_start = 0x200000; memory.kernel_phys_end = 0x400000;
+	allocations[0].base = 0x200000;
+	assert(zbl6_memory_contents_valid(&memory, ranges, allocations));
 	memory.ranges = (1ULL << 30) - 8;
 	assert(!zbl6_memory_envelope_valid(&memory, ZBL6_MEMORY_SOURCE_BIOS_E820));
 	memory.ranges = 0x11000;

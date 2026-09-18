@@ -15,6 +15,7 @@
 #include "defs.h"
 #include "asm.h"
 #include "space.h"
+#include "image.h"
 #include "pmem-range.h"
 #include "bsp.h"
 #include "bootloader/include/amd64-handoff.h"
@@ -24,9 +25,6 @@
 #define BIT_GET(n)     (page_bitmap[(n) >> 5] & (1U << ((n) & 31U)))
 #define BIT_SET(n)     (page_bitmap[(n) >> 5] |= (1U << ((n) & 31U)))
 #define BIT_CLEAR(n)   (page_bitmap[(n) >> 5] &= ~(1U << ((n) & 31U)))
-
-extern char __kernel_phys_start[];
-extern char __kernel_phys_end[];
 
 static uint32_t page_bitmap[BITMAP_WORDS];
 static uint32_t reserved_bitmap[BITMAP_WORDS];
@@ -144,11 +142,15 @@ prekern_amd64_page_init(
 			release_usable_range(base, size);
 	}
 
-	/* Reserves firmware space and the loaded kernel image. */
+	/* Reserves firmware space, the loaded kernel image and, behind a
+	 * relocated image, the linked range that the bootstrap window no
+	 * longer reaches (early table pages are used through that window). */
 	reserve_range(0, 0x00100000U);
-	reserve_range(
-		(uintptr_t)__kernel_phys_start,
-		(size_t)(__kernel_phys_end - __kernel_phys_start));
+	reserve_range((uintptr_t)amd64_kernel_image()->phys_start,
+	    (size_t)(amd64_kernel_image()->phys_end - amd64_kernel_image()->phys_start));
+	if (amd64_kernel_image()->relocated)
+		reserve_range((uintptr_t)amd64_kernel_image()->shadow_start,
+		    (size_t)(amd64_kernel_image()->shadow_end - amd64_kernel_image()->shadow_start));
 	for (index = 0; bsp_boot_allocation(index, &base, &size); index++)
 		reserve_range((uintptr_t)base, (size_t)size);
 
@@ -713,8 +715,11 @@ prekern_amd64_range_page_init(void)
 		ram_extent_count++;
 	}
 	reserve_managed(0, 0x100000U);
-	reserve_managed((uintptr_t)__kernel_phys_start,
-	    (uintptr_t)__kernel_phys_end - (uintptr_t)__kernel_phys_start);
+	reserve_managed(amd64_kernel_image()->phys_start,
+	    amd64_kernel_image()->phys_end - amd64_kernel_image()->phys_start);
+	if (amd64_kernel_image()->relocated)
+		reserve_managed(amd64_kernel_image()->shadow_start,
+		    amd64_kernel_image()->shadow_end - amd64_kernel_image()->shadow_start);
 	for (index = 0; bsp_boot_allocation(index, &base, &size); index++)
 		reserve_managed(base, size);
 	for (index = 0; amd64_early_reservation(index, &base, &size); index++)
@@ -768,8 +773,12 @@ early_metadata(uint64_t size)
 			candidate = (candidate + PAGE_SIZE - 1U) & ~(uint64_t)(PAGE_SIZE - 1U);
 			while (candidate < end && size <= end - candidate) {
 				collision_end = candidate;
-				if (candidate < (uintptr_t)__kernel_phys_end && candidate + size > (uintptr_t)__kernel_phys_start)
-					collision_end = (uintptr_t)__kernel_phys_end;
+				if (candidate < amd64_kernel_image()->phys_end && candidate + size > amd64_kernel_image()->phys_start)
+					collision_end = amd64_kernel_image()->phys_end;
+				if (amd64_kernel_image()->relocated &&
+				    candidate < amd64_kernel_image()->shadow_end && candidate + size > amd64_kernel_image()->shadow_start &&
+				    collision_end < amd64_kernel_image()->shadow_end)
+					collision_end = amd64_kernel_image()->shadow_end;
 				if (framebuffer != NULL && candidate < framebuffer->physical_base + framebuffer->size &&
 				    candidate + size > framebuffer->physical_base)
 					collision_end = framebuffer->physical_base + framebuffer->size;
@@ -966,8 +975,7 @@ boot_page_retained(uint64_t physical)
 	uint32_t lifetime;
 	const struct zbl6_framebuffer *framebuffer;
 
-	if (physical < 0x100000U ||
-	    (physical >= (uintptr_t)__kernel_phys_start && physical < (uintptr_t)__kernel_phys_end) ||
+	if (physical < 0x100000U || amd64_kernel_image_owns(physical) ||
 	    amd64_acpi_page_reserved(physical))
 		return 1;
 	framebuffer = hal_get_arch_handoff("pcat.framebuffer");

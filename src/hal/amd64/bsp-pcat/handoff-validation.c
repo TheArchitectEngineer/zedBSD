@@ -15,6 +15,7 @@
 
 #include "handoff-validation.h"
 #include "bootloader/include/amd64-handoff.h"
+#include "bootloader/include/amd64-kernel-image.h"
 
 #define ZBL6_BOOTSTRAP_LIMIT (1ULL << 30)
 #define ZBL6_PAGE_SIZE 4096U
@@ -23,6 +24,21 @@ static int low_array_valid(uint64_t base, uint32_t count, uint32_t stride);
 static int allocation_covers(const struct zbl6_memory_handoff *memory,
     const struct zbl6_boot_allocation *allocations, uint64_t base,
     uint64_t size, uint32_t owner);
+
+/*
+ * A loader may place the image at its linked address or at any 2 MiB-aligned
+ * address inside the bootstrap window; the image itself is bounded by the W^X
+ * window.  The exact size is checked against the linked image by the HAL.
+ */
+int
+zbl6_kernel_placement_valid(uint64_t kernel_phys_start, uint64_t kernel_phys_end)
+{
+	return kernel_phys_start >= AMD64_KERNEL_LINK_PHYS_START &&
+	    (kernel_phys_start & (AMD64_KERNEL_PHYS_ALIGN - 1U)) == 0 &&
+	    kernel_phys_end > kernel_phys_start &&
+	    kernel_phys_end - kernel_phys_start <= AMD64_KERNEL_MAX_BYTES &&
+	    kernel_phys_end <= AMD64_KERNEL_PHYS_LIMIT;
+}
 
 /* Bounds pointers before the consumer dereferences firmware-owned arrays. */
 int
@@ -41,9 +57,7 @@ zbl6_memory_envelope_valid(const struct zbl6_memory_handoff *memory, uint32_t so
 		return 0;
 	if (memory->bootstrap_cr3 == 0 || memory->bootstrap_cr3 >= ZBL6_BOOTSTRAP_LIMIT ||
 	    (memory->bootstrap_cr3 & (ZBL6_PAGE_SIZE - 1U)) != 0 ||
-	    memory->kernel_phys_start != 0x200000U ||
-	    memory->kernel_phys_end <= memory->kernel_phys_start ||
-	    memory->kernel_phys_end > 0x1200000U)
+	    !zbl6_kernel_placement_valid(memory->kernel_phys_start, memory->kernel_phys_end))
 		return 0;
 	return 1;
 }

@@ -70,6 +70,7 @@ SECTIONS
 	       "ELF64 load address must be sector aligned")
 	ASSERT(__kernel_phys_end < 0x40000000,
 	       "amd64 bootstrap kernel exceeds the initial one-GiB map")
-	ASSERT(__kernel_phys_end <= 0x01200000,
-	       "amd64 kernel exceeds the static W^X page-table window")
+	/* Same literal as AMD64_KERNEL_MAX_BYTES (bootloader/include/amd64-kernel-image.h). */
+	ASSERT(__kernel_phys_end - __kernel_phys_start <= 0x01000000,
+	       "amd64 kernel exceeds AMD64_KERNEL_MAX_BYTES (8 W^X leaf tables)")
 }

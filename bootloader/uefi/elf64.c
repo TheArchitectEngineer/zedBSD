@@ -1,14 +1,16 @@
 /* Restricted ELF64 validation shared by the UEFI loader. */
 /* Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib */
 #include "elf64.h"
+#include "bootloader/include/amd64-kernel-image.h"
 
 #define PT_LOAD 1U
 #define PF_X    1U
 #define EM_X86_64 62U
 #define ET_EXEC 2U
-#define AMD64_IMAGE_BASE 0xffffffff80000000ULL
-#define KERNEL_PHYS_START 0x00200000ULL
-#define KERNEL_PHYS_LIMIT 0x01200000ULL
+
+/* The image must be linked inside [link start, link start + max bytes). */
+#define KERNEL_LINK_PHYS_LIMIT \
+	(AMD64_KERNEL_LINK_PHYS_START + AMD64_KERNEL_MAX_BYTES)
 
 struct elf64_header {
 	uint8_t ident[16];
@@ -61,8 +63,8 @@ zbl_elf64_plan(const void *buffer, uint64_t file_size_limit,
 	    ZBL_ELF_HEADER_BYTES - header->phoff)
 		return 0;
 	plan->entry = header->entry;
-	plan->physical_start = UINT64_MAX;
-	plan->physical_end = 0;
+	plan->link_physical_start = UINT64_MAX;
+	plan->link_physical_end = 0;
 	plan->segment_count = 0;
 	for (index = 0; index < header->phnum; index++) {
 		const struct elf64_program_header *ph =
@@ -75,10 +77,10 @@ zbl_elf64_plan(const void *buffer, uint64_t file_size_limit,
 			continue;
 		if (plan->segment_count == ZBL_ELF_MAX_SEGMENTS ||
 		    ph->filesz > ph->memsz || ph->memsz == 0 ||
-		    ph->paddr < KERNEL_PHYS_START ||
-		    ph->paddr >= KERNEL_PHYS_LIMIT ||
-		    ph->memsz > KERNEL_PHYS_LIMIT - ph->paddr ||
-		    ph->vaddr != AMD64_IMAGE_BASE + ph->paddr ||
+		    ph->paddr < AMD64_KERNEL_LINK_PHYS_START ||
+		    ph->paddr >= KERNEL_LINK_PHYS_LIMIT ||
+		    ph->memsz > KERNEL_LINK_PHYS_LIMIT - ph->paddr ||
+		    ph->vaddr != AMD64_KERNEL_LINK_VIRT_BASE + ph->paddr ||
 		    (ph->paddr & 0xfffU) != 0 || ph->align < 0x1000U ||
 		    (ph->align & (ph->align - 1U)) != 0 ||
 		    ph->offset > file_size_limit ||
@@ -95,14 +97,51 @@ zbl_elf64_plan(const void *buffer, uint64_t file_size_limit,
 		segment->file_size = ph->filesz;
 		segment->memory_size = ph->memsz;
 		segment->flags = ph->flags;
-		if (ph->paddr < plan->physical_start)
-			plan->physical_start = ph->paddr;
-		if (end > plan->physical_end)
-			plan->physical_end = end;
+		if (ph->paddr < plan->link_physical_start)
+			plan->link_physical_start = ph->paddr;
+		if (end > plan->link_physical_end)
+			plan->link_physical_end = end;
 		if ((ph->flags & PF_X) != 0 && header->entry >= ph->vaddr &&
 		    header->entry < ph->vaddr + ph->memsz)
 			entry_is_executable = 1;
 	}
+	plan->physical_start = plan->link_physical_start;
+	plan->physical_end = plan->link_physical_end;
 	return plan->segment_count != 0 && entry_is_executable &&
-	    plan->physical_start == KERNEL_PHYS_START;
+	    plan->link_physical_start == AMD64_KERNEL_LINK_PHYS_START;
+}
+
+/*
+ * Rebases the load extent and every segment onto load_base.  The virtual
+ * addresses and the entry are untouched: the kernel is not relocatable, the
+ * loader maps its linked virtual range onto the chosen physical range.
+ */
+int
+zbl_elf64_place(struct zbl_elf64_plan *plan, uint64_t load_base)
+{
+	uint64_t bytes;
+	uint64_t delta;
+	uint32_t index;
+
+	if (plan == 0 || plan->segment_count == 0 ||
+	    plan->link_physical_start != AMD64_KERNEL_LINK_PHYS_START ||
+	    plan->link_physical_end <= plan->link_physical_start)
+		return 0;
+	bytes = plan->link_physical_end - plan->link_physical_start;
+	if ((load_base & (AMD64_KERNEL_PHYS_ALIGN - 1U)) != 0 ||
+	    load_base < AMD64_KERNEL_LINK_PHYS_START ||
+	    load_base > AMD64_KERNEL_PHYS_LIMIT ||
+	    bytes > AMD64_KERNEL_PHYS_LIMIT - load_base)
+		return 0;
+	delta = load_base - plan->link_physical_start;
+	plan->physical_start = load_base;
+	plan->physical_end = load_base + bytes;
+	for (index = 0; index < plan->segment_count; index++) {
+		struct zbl_elf64_segment *segment = &plan->segment[index];
+
+		/* Recovers the linked address from the virtual one, then rebases. */
+		segment->physical = segment->virtual_address -
+		    AMD64_KERNEL_LINK_VIRT_BASE + delta;
+	}
+	return 1;
 }

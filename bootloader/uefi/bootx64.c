@@ -8,6 +8,8 @@
 #include "volume-discovery.h"
 #include "zedbsd-config.h"
 #include "bootloader/include/amd64-handoff.h"
+#include "bootloader/include/amd64-kernel-image.h"
+#include "bootloader/include/boot-parameter-handoff.h"
 
 #define PAGE_SIZE 4096ULL
 #define LOW_BLOCK_PAGES 16U
@@ -31,6 +33,10 @@
 #define BOOT_ALLOCATIONS_OFFSET 0xa000U
 #define FRAMEBUFFER_PD_OFFSET 0x9000U
 #define TRANSITION_STACK_TOP 0x10000U
+
+/* Kernel placement: candidates retried and map lines printed on failure. */
+#define KERNEL_PLACE_ATTEMPTS 8U
+#define KERNEL_MAP_DUMP_LIMIT 48U
 
 #define PTE_PRESENT 0x001ULL
 #define PTE_WRITE 0x002ULL
@@ -882,6 +888,305 @@ framebuffer_from_gop(EFI_GRAPHICS_OUTPUT_PROTOCOL *gop,
 	return 1;
 }
 
+/*
+ * Where the kernel image goes.  The default ("auto") is the linked address
+ * when the firmware still has it free, otherwise the lowest 2 MiB-aligned run
+ * of conventional memory below one GiB that holds the whole image.  The
+ * kernel_phys= boot parameter overrides it: "link" insists on the linked
+ * address (the historical behaviour), "auto" is the default, and a
+ * hexadecimal address places the image there or fails.
+ */
+struct kernel_placement_policy {
+	int link_only;
+	uint64_t fixed;
+};
+
+static int
+token_is(const char *text, size_t length, const char *literal)
+{
+	size_t index;
+
+	for (index = 0; index < length; index++)
+		if (literal[index] == 0 || text[index] != literal[index])
+			return 0;
+	return literal[length] == 0;
+}
+
+/* Parses at most one optional kernel_phys token from bounded parameter text. */
+static int
+kernel_placement_parse(const char *text, size_t length,
+    struct kernel_placement_policy *policy)
+{
+	static const char prefix[] = "kernel_phys=";
+	size_t prefix_length = sizeof(prefix) - 1U;
+	size_t position;
+	size_t start;
+	size_t end;
+	uint64_t value;
+	unsigned digit;
+	char byte;
+	int found;
+
+	policy->link_only = 0;
+	policy->fixed = 0;
+	if (text == 0 || length > KERN_BOOT_PARAMETERS_TEXT_MAX ||
+	    text[length] != '\0')
+		return -1;
+	position = 0;
+	found = 0;
+	while (position < length) {
+		start = position;
+		while (position < length && text[position] != ' ') {
+			if ((unsigned char)text[position] < 33 ||
+			    (unsigned char)text[position] > 126)
+				return -1;
+			position++;
+		}
+		end = position;
+		if (position < length)
+			position++;
+		if (end - start <= prefix_length ||
+		    !token_is(text + start, prefix_length, prefix))
+			continue;
+		if (found)
+			return -1;
+		found = 1;
+		start += prefix_length;
+		if (token_is(text + start, end - start, "auto"))
+			continue;
+		if (token_is(text + start, end - start, "link")) {
+			policy->link_only = 1;
+			continue;
+		}
+		/* An explicit home: 0x followed by up to 16 hexadecimal digits. */
+		if (end - start < 3U || end - start > 18U || text[start] != '0' ||
+		    (text[start + 1] != 'x' && text[start + 1] != 'X'))
+			return -1;
+		value = 0;
+		for (start += 2U; start < end; start++) {
+			byte = text[start];
+			if (byte >= '0' && byte <= '9')
+				digit = (unsigned)(byte - '0');
+			else if (byte >= 'a' && byte <= 'f')
+				digit = (unsigned)(byte - 'a') + 10U;
+			else if (byte >= 'A' && byte <= 'F')
+				digit = (unsigned)(byte - 'A') + 10U;
+			else
+				return -1;
+			value = (value << 4) | digit;
+		}
+		if (value == 0 || (value & (AMD64_KERNEL_PHYS_ALIGN - 1U)) != 0 ||
+		    value < AMD64_KERNEL_LINK_PHYS_START ||
+		    value >= AMD64_KERNEL_PHYS_LIMIT)
+			return -1;
+		policy->fixed = value;
+	}
+	return found;
+}
+
+/* Prints one firmware descriptor as "type start pages" for placement diagnosis. */
+static void
+console_map_entry(struct loader_context *context,
+    const EFI_MEMORY_DESCRIPTOR *descriptor)
+{
+	static const char digits[] = "0123456789abcdef";
+	static const char label[] = "A64 KERN MAP t=";
+	char message[64];
+	UINTN used = 0;
+	UINTN index;
+	uint64_t values[2];
+	unsigned value;
+	int shift;
+
+	for (index = 0; label[index] != 0; index++)
+		message[used++] = label[index];
+	message[used++] = digits[(descriptor->Type >> 4) & 15U];
+	message[used++] = digits[descriptor->Type & 15U];
+	values[0] = descriptor->PhysicalStart;
+	values[1] = descriptor->NumberOfPages;
+	for (value = 0; value < 2; value++) {
+		message[used++] = ' ';
+		if (value == 1)
+			message[used++] = '+';
+		for (shift = 44; shift >= 0; shift -= 4)
+			message[used++] = digits[(values[value] >> shift) & 15U];
+	}
+	message[used++] = '\n';
+	message[used] = 0;
+	console_ascii(context, message);
+}
+
+/* Reports the firmware map below the bootstrap window when placement fails. */
+static void
+console_kernel_map(struct loader_context *context,
+    const EFI_MEMORY_DESCRIPTOR *map, UINTN map_size, UINTN descriptor_size)
+{
+	UINTN offset;
+	unsigned printed = 0;
+
+	for (offset = 0; offset + descriptor_size <= map_size;
+	     offset += descriptor_size) {
+		const EFI_MEMORY_DESCRIPTOR *descriptor =
+		    (const void *)((const uint8_t *)map + offset);
+
+		if (descriptor->PhysicalStart >= AMD64_KERNEL_PHYS_LIMIT)
+			continue;
+		if (printed++ == KERNEL_MAP_DUMP_LIMIT) {
+			console_ascii(context, "A64 KERN MAP ...\n");
+			break;
+		}
+		console_map_entry(context, descriptor);
+	}
+}
+
+/* Owns exactly the requested pages at the requested address, or nothing. */
+static EFI_STATUS
+allocate_kernel_at(EFI_BOOT_SERVICES *boot, EFI_PHYSICAL_ADDRESS wanted,
+    UINTN pages)
+{
+	EFI_PHYSICAL_ADDRESS address = wanted;
+	EFI_STATUS status;
+
+	status = boot->AllocatePages(AllocateAddress, EfiLoaderData, pages,
+	    &address);
+	if (EFI_ERROR(status))
+		return status;
+	if (address != wanted) {
+		(void)boot->FreePages(address, pages);
+		return EFI_LOAD_ERROR;
+	}
+	return EFI_SUCCESS;
+}
+
+/*
+ * Allocates the physical home of the kernel image and rebases the plan onto
+ * it.  On success *address owns `pages` pages; on failure nothing is owned.
+ */
+static EFI_STATUS
+place_kernel(struct loader_context *context, struct zbl_elf64_plan *plan,
+    const struct kernel_placement_policy *policy,
+    EFI_PHYSICAL_ADDRESS *address, UINTN pages)
+{
+	EFI_BOOT_SERVICES *boot = context->boot;
+	EFI_MEMORY_DESCRIPTOR *map = 0;
+	EFI_STATUS status;
+	UINTN map_size;
+	UINTN map_key;
+	UINTN descriptor_size;
+	UINTN capacity;
+	UINTN offset;
+	UINTN best_offset;
+	UINTN skipped[KERNEL_PLACE_ATTEMPTS];
+	UINT32 descriptor_version;
+	uint64_t bytes = (uint64_t)pages * PAGE_SIZE;
+	uint64_t wanted;
+	uint64_t best;
+	uint64_t start;
+	uint64_t end;
+	unsigned attempt;
+	unsigned skip;
+	unsigned skip_count;
+
+	console_hex64(context, "A64 KERN LINK ", plan->link_physical_start);
+	console_hex64(context, "A64 KERN SIZE ",
+	    plan->link_physical_end - plan->link_physical_start);
+
+	/* The linked address (or an explicit one) is tried first. */
+	wanted = policy->fixed != 0 ? policy->fixed : plan->link_physical_start;
+	status = allocate_kernel_at(boot, wanted, pages);
+	if (!EFI_ERROR(status)) {
+		if (!zbl_elf64_place(plan, wanted)) {
+			(void)boot->FreePages(wanted, pages);
+			return EFI_LOAD_ERROR;
+		}
+		*address = wanted;
+		console_hex64(context, "A64 KERN LOAD ", wanted);
+		return EFI_SUCCESS;
+	}
+	console_status(context, policy->fixed != 0 ?
+	    "Allocate kernel at kernel_phys" : "Allocate kernel at linked address",
+	    status);
+	if (policy->fixed != 0 || policy->link_only)
+		return status;
+
+	/* Otherwise the lowest aligned run of conventional memory is used. */
+	map_size = 0;
+	status = boot->GetMemoryMap(&map_size, 0, &map_key, &descriptor_size,
+	    &descriptor_version);
+	if (status != EFI_BUFFER_TOO_SMALL || descriptor_size == 0 ||
+	    map_size > UINTPTR_MAX - descriptor_size * 8U)
+		return EFI_ERROR(status) ? status : EFI_LOAD_ERROR;
+	capacity = map_size + descriptor_size * 8U;
+	status = boot->AllocatePool(EfiLoaderData, capacity, (void **)&map);
+	if (EFI_ERROR(status))
+		return status;
+	map_size = capacity;
+	status = boot->GetMemoryMap(&map_size, map, &map_key, &descriptor_size,
+	    &descriptor_version);
+	if (EFI_ERROR(status)) {
+		(void)boot->FreePool(map);
+		return status;
+	}
+	skip_count = 0;
+	for (attempt = 0; attempt < KERNEL_PLACE_ATTEMPTS; attempt++) {
+		best = UINT64_MAX;
+		best_offset = 0;
+		for (offset = 0; offset + descriptor_size <= map_size;
+		     offset += descriptor_size) {
+			const EFI_MEMORY_DESCRIPTOR *descriptor =
+			    (const void *)((const uint8_t *)map + offset);
+			int busy = 0;
+
+			if (descriptor->Type != EfiConventionalMemory)
+				continue;
+			for (skip = 0; skip < skip_count; skip++)
+				if (skipped[skip] == offset)
+					busy = 1;
+			if (busy)
+				continue;
+			start = descriptor->PhysicalStart;
+			if (descriptor->NumberOfPages >
+			    (UINT64_MAX - start) / PAGE_SIZE)
+				continue;
+			end = start + descriptor->NumberOfPages * PAGE_SIZE;
+			if (end > AMD64_KERNEL_PHYS_LIMIT)
+				end = AMD64_KERNEL_PHYS_LIMIT;
+			if (start < AMD64_KERNEL_LINK_PHYS_START)
+				start = AMD64_KERNEL_LINK_PHYS_START;
+			start = (start + AMD64_KERNEL_PHYS_ALIGN - 1U) &
+			    ~(AMD64_KERNEL_PHYS_ALIGN - 1U);
+			if (start >= end || end - start < bytes)
+				continue;
+			if (start < best) {
+				best = start;
+				best_offset = offset;
+			}
+		}
+		if (best == UINT64_MAX)
+			break;
+		status = allocate_kernel_at(boot, best, pages);
+		if (!EFI_ERROR(status)) {
+			(void)boot->FreePool(map);
+			if (!zbl_elf64_place(plan, best)) {
+				(void)boot->FreePages(best, pages);
+				return EFI_LOAD_ERROR;
+			}
+			*address = best;
+			console_hex64(context, "A64 KERN LOAD ", best);
+			console_ascii(context,
+			    "A64 KERN RELOCATED away from the linked address\n");
+			return EFI_SUCCESS;
+		}
+		console_hex64(context, "A64 KERN candidate refused ", best);
+		skipped[skip_count++] = best_offset;
+	}
+	console_ascii(context,
+	    "A64 KERN no free 2 MiB-aligned run below 1 GiB holds the image\n");
+	console_kernel_map(context, map, map_size, descriptor_size);
+	(void)boot->FreePool(map);
+	return EFI_NOT_FOUND;
+}
+
 static void
 build_bootstrap(uint64_t low_base, const struct zbl_elf64_plan *plan,
 		const struct zbl6_framebuffer *framebuffer,
@@ -903,6 +1208,8 @@ build_bootstrap(uint64_t low_base, const struct zbl_elf64_plan *plan,
 	UINTN transition_size =
 	    (UINTN)(zbl_transition_end - zbl_transition_start);
 	unsigned index;
+	unsigned first_slot;
+	unsigned slot_count;
 	uint64_t framebuffer_aligned;
 	unsigned framebuffer_pages;
 
@@ -924,6 +1231,20 @@ build_bootstrap(uint64_t low_base, const struct zbl_elf64_plan *plan,
 		low_pd[index] = entry;
 		high_pd[index] = entry;
 	}
+	/*
+	 * The slots of the linked virtual range show the image's actual home.
+	 * Both extents are 2 MiB aligned, so whole large pages move; with the
+	 * linked placement this rewrites the identity entries unchanged.
+	 */
+	first_slot = (unsigned)(plan->link_physical_start / 0x200000ULL);
+	slot_count = (unsigned)((plan->link_physical_end + 0x1fffffULL) /
+	    0x200000ULL) - first_slot;
+	if (first_slot + slot_count > 512U)
+		halt();
+	for (index = 0; index < slot_count; index++)
+		high_pd[first_slot + index] =
+		    (plan->physical_start + (uint64_t)index * 0x200000ULL) |
+		    PTE_PRESENT | PTE_WRITE | PTE_LARGE;
 	if (framebuffer_mapping == 0)
 		halt();
 	framebuffer_aligned = framebuffer_mapping->aligned_base;
@@ -978,6 +1299,7 @@ efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system)
 	static struct zbl_uefi_zedbsd_config configuration;
 	static CHAR16 kernel_file_path[KERNEL_PATH_CHAR16_STORAGE];
 	struct zbl_elf64_plan plan;
+	struct kernel_placement_policy placement;
 	EFI_PHYSICAL_ADDRESS kernel_address, low_address;
 	UINTN kernel_pages, map_size, map_capacity, map_key;
 	UINTN descriptor_size;
@@ -1063,17 +1385,19 @@ efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system)
 		fail_kernel_load(&context, &discovered, kernel,
 		    "Validate ELF64", EFI_LOAD_ERROR, 0U, 0U, 0);
 
-	kernel_address = plan.physical_start;
-	kernel_pages =
-	    (UINTN)((plan.physical_end - plan.physical_start + PAGE_SIZE - 1U) /
-		    PAGE_SIZE);
-	status = boot->AllocatePages(AllocateAddress, EfiLoaderData,
-				     kernel_pages, &kernel_address);
-	if (EFI_ERROR(status) || kernel_address != plan.physical_start)
+	if (kernel_placement_parse(configuration.parameter_record.text,
+	    configuration.parameter_record.length, &placement) < 0)
 		fail_kernel_load(&context, &discovered, kernel,
-		    "Allocate kernel",
-		    EFI_ERROR(status) ? status : EFI_LOAD_ERROR,
-		    kernel_address, kernel_pages, !EFI_ERROR(status));
+		    "Parse kernel_phys", EFI_INVALID_PARAMETER, 0U, 0U, 0);
+	kernel_pages =
+	    (UINTN)((plan.link_physical_end - plan.link_physical_start +
+		    PAGE_SIZE - 1U) / PAGE_SIZE);
+	kernel_address = 0;
+	status = place_kernel(&context, &plan, &placement, &kernel_address,
+	    kernel_pages);
+	if (EFI_ERROR(status))
+		fail_kernel_load(&context, &discovered, kernel,
+		    "Place kernel", status, 0U, 0U, 0);
 	kernel_pages_allocated = 1;
 	byte_zero((void *)(uintptr_t)kernel_address,
 		  kernel_pages * (UINTN)PAGE_SIZE);

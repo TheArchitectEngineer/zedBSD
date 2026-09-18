@@ -15,6 +15,7 @@
 #include "asm.h"
 #include "bsp.h"
 #include "space.h"
+#include "image.h"
 #include "descriptor.h"
 #include "irq.h"
 #include "clock.h"
@@ -48,6 +49,9 @@ prekern_amd64_cmain(
 
 	hal_puts("\nzedBSD amd64 HAL\n");
 	hal_puts("A64 ENTRY PASS\n");
+
+	/* Fixes where the image is before anything converts its addresses. */
+	prekern_amd64_image_init();
 
 	/* Establishes kernel paging and address-space management. */
 	prekern_amd64_page_init();
