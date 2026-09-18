@@ -10,3 +10,6 @@ plan/ws*/temp/
 
 # Awesome Plan local cache, write-back journal and conflicts
 /plan/.sync/
+
+# Temp
+plan/ws031/mesa-refs/

@@ -16,7 +16,13 @@
 #define I915_VK_3DSTATE_GEN12_INC
 
 /* Command opcodes (high sixteen bits of the header dword). */
-#define GEN12_CMD_PIPELINE_SELECT		0x6104U
+/*
+ * PIPELINE_SELECT is CommandType 3 / CommandSubType 1 / Opcode 1 / SubOpcode 4
+ * = 0x6904xxxx (Linux gt/intel_gpu_commands.h PIPELINE_SELECT, gen7_renderstate
+ * literal 0x69040000, genxml).  0x6104 (SubType 0) was a transcription error:
+ * the GPU never switched pipelines for any batch that used it (WS031 E-98).
+ */
+#define GEN12_CMD_PIPELINE_SELECT		0x6904U
 #define GEN12_CMD_STATE_BASE_ADDRESS		0x6101U
 #define GEN12_CMD_3DSTATE_VS			0x7810U
 #define GEN12_CMD_3DSTATE_PS			0x7820U
@@ -46,6 +52,14 @@
 #define GEN12_PIPELINE_SELECT_DWORD(pipeline)	\
 	((GEN12_CMD_PIPELINE_SELECT << 16) | GEN12_PIPELINE_SELECT_MASK | \
 	 GEN12_PIPELINE_SELECT_MEDIA_DOP_GATE | (pipeline))
+/*
+ * Fixed reference words (not derived from the macros above): 0x6104xxxx is the
+ * header of GPGPU_CSR_BASE_ADDRESS (SubType 0, 3 dwords), a different command.
+ */
+_Static_assert(GEN12_PIPELINE_SELECT_DWORD(0U) == 0x69041310U,
+	"Gen12 PIPELINE_SELECT(3D) must be 0x69041310");
+_Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
+	"Gen12 PIPELINE_SELECT(GPGPU) must be 0x69041312");
 
 
 /*

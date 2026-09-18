@@ -2,7 +2,7 @@
 
 作成 2026-09-18。対象は **zedBSD の i915 ドライバ（Linux-parity 経路）で、GPU に dispatch した EU スレッドが完了しない問題**です。この文書だけで作業に着手できるよう、問題の定義・現在地・除外済み事項・再現手順（QEMU 起動パラメータ込み）・コード地図・参照資料の索引をまとめています。ホスト名や IP、ユーザ名は意図的に書いていません。
 
-- 実装台帳（時系列の全記録）: [`../results-ws031.md`](../results-ws031.md) — 増分 **E-16〜E-30**（big-bang 期の EU 調査）と **E-31〜E-97**（Linux-parity 移植）が本件。
+- 実装台帳（時系列の全記録）: [`../results-ws031.md`](../results-ws031.md) — 増分 **E-16〜E-30**（big-bang 期の EU 調査）と **E-31〜E-99**（Linux-parity 移植）が本件。**E-98 で PIPELINE_SELECT の符号化誤り（0x6104、正は 0x6904）を発見、E-99 で修正版の C1 が実機 PASS（累積修正版で EU 実行・書込み・request 完了を確認）。§2.5 参照。**
 - 前任専門家の指示書: [`expert-reports/`](expert-reports/)（`gen12-ps-hang-report1..29.md`）と、それに対する進捗報告 `report_35..53.md` / `ws031-report-30..34.md`。
 - 設計メモ: [`notes/`](notes/)。増分ごとの結果メモ: [`increment-results/`](increment-results/)。生成ツール: [`tools/`](tools/)。Linux 陽性対照 VM の資材: [`linuxvm/`](linuxvm/)。
 
@@ -45,18 +45,23 @@ EU-TEST HANG: engine=rcs0 dss=5 max_threads=559 batch_dwords=322 timed_out=1 (2 
 | GT/engine/context WA 表、MOCS、RC6/RPS、PAT、SSEU/RPCS、execlists/CSB、record_defaults | parity で正本どおり実装・実機検証（E-91〜E-96；WA は SRM で読み戻し一致 E-94）した上で同一ハング（E-97） |
 
 ### 2.4 残っている差分候補（着手順の提案）
-1. **MCR（multicast）レジスタの実効値**：`GEN8_ROW_CHICKEN2(0xe4f0)`, `GEN9_ROW_CHICKEN4(0xe48c)`, `GEN10_SAMPLER_MODE(0xe18c)`, `L3SQC`, `0x9xxx` 台など EU 向け WA は、CS の SRM では検証できません（正本も除外）。parity の MCR 書込み（`osdep/mmio.c` の multicast 経路）が全 DSS に着地しているかを **steering 付き MMIO 読み戻し**で確認するのが最も安価です。E-27 の diff は GLOBAL 中心で MCR は一部です。
-2. **PDE のキャッシュ属性**：E-95 で入れた `parity_gt_ppgtt_alloc_range` の実ページ表 PDE が `PPAT_UNCACHED` になっていた（正本 `set_pd_entry` は `I915_CACHE_LLC`＝`PPAT_CACHED_PDE`）。**修正済み（E-97 末尾）だが、修正後の EU 再試験は未実施**。E-97 の試験はこの uncached PDE で走った。
+1. **MCR（multicast）レジスタの実効値**（E-98 で 3 件を steered 読み戻し済み：ROW_CHICKEN2/ROW_CHICKEN4 は全 DSS 一致、SAMPLER_MODE bit15 は全 DSS で 0 だが E-27 の Linux 読み値も 0x3020 で差ではない）：`GEN8_ROW_CHICKEN2(0xe4f4)`, `GEN9_ROW_CHICKEN4(0xe48c)`, `GEN10_SAMPLER_MODE(0xe18c)`, `L3SQC`, `0x9xxx` 台など EU 向け WA は、CS の SRM では検証できません（正本も除外）。parity の MCR 書込み（`osdep/mmio.c` の multicast 経路）が全 DSS に着地しているかを **steering 付き MMIO 読み戻し**で確認するのが最も安価です。E-27 の diff は GLOBAL 中心で MCR は一部です。
+2. **PDE のキャッシュ属性**：E-95 で入れた `parity_gt_ppgtt_alloc_range` の実ページ表 PDE が `PPAT_UNCACHED` になっていた（正本 `set_pd_entry` は `I915_CACHE_LLC`＝`PPAT_CACHED_PDE`）。修正済み。**E-98 で修正版（実表 walk で cached リンクを確認、表書込後の clflush 公開も追加）を実機で再試験 → 同一署名で HANG**。
 3. parity が「適応／N/A」と記録した箇所：GGTT/WC 窓は big-bang 資産（P2）、retire は CSB ポーリング（割込み駆動でない）、`intel_pxp_init_hw`（Linux では mei_pxp の bind で KCR init/irq が走る）、runtime PM（autosuspend 非武装）、hwconfig（GuC 前提）。各増分の「記録した適応」節（台帳）に列挙。
 4. 初期化以外の条件差：Linux 陽性対照は Linux ブート後の GPU、zedBSD は OVMF＋（ホスト側 FLR）後。fuse／クロック／電源状態の差はレジスタ全量 diff でしか詰められない。
 5. **停止時の EU/TDL/GAM 状態の採取**：`row_instdone=0x8610e87f` の各ビットの意味付け（EU not-done）以上の分解ができていない。専門家指定のレジスタがあれば `eu_test.c` の hang dump に追加できる。
 6. GuC submission の移植（Linux 既定）は、陽性対照が execlists で通っているため優先度は低い。
 
+### 2.5 E-98 で見つかった提出 bytes の差 → E-99 で修正版 C1 が実機 PASS
+E-98 の再停止後、実際に提出した batch（`increment-results/e98-batch-as-submitted.hex`）を Linux で完走した replay（`linuxvm/linux-c2-replay.c`）と語単位で比べたところ、**PIPELINE_SELECT の dword が違った**：zedBSD は `0x61041310`／`0x61041312`（`vk/linux/3dstate-gen12.inc` の `GEN12_CMD_PIPELINE_SELECT 0x6104`）、Linux/replay は `0x69041310`／`0x69041312`（`gt/intel_gpu_commands.h` `PIPELINE_SELECT = (3<<29)|(1<<27)|(1<<24)|(4<<16)`）。0x6104 は「効かない PIPELINE_SELECT」ではなく、Gen12LP では **別命令 GPGPU_CSR_BASE_ADDRESS（SubType 0、3 dword）のヘッダ**で、かつ長さ・予約 bit も通常と一致しない不正な語。zedBSD の全 batch（big-bang の draw/C0〜C3/golden、parity の eu_test）がこの語を使っていた。**正しいパイプライン切替は保証できず、実際のパイプライン状態と副作用は未確認**（「3D のままだっただけ」とは言わない）。E-25 の「同一バイト」報告と、そこから導いた「batch／dispatch state は原因から除外」は撤回。
+
+**E-99: 修正版（`.inc`／`eu_test.c` を 0x6904、提出 object から読む事前検査、固定参照語による独立試験）で同条件の C1 を 1 回 → 実機 PASS**（READY/EU/DONE/CS 全 marker、request 完了、reset なし、ktest 373/0、vmunix 96274bf3）。E-98 提出 batch との差は dword 6 と 261 の 2 語（XOR 0x08000000）のみ。記録は「累積修正版で EU 完了を確認」（PDE／clflush／default_state 継承の寄与は分離していない）。成果物: `increment-results/e99-c1-artifact.md`（SHA-256、VA、意図的な差）、`e99-c1-*.bin/.hex`、`e99-run-parity-hw-eu.log`、抽出・差分ツール `tools/eu_artifact.py`。PS 描画（3DPRIMITIVE）にも同じ不正語が入っていたので、修正済み命令列での PS 試験は独立に行う（未実施）。
+
 ## 3. 現在地（コードの状態）
 
 - parity 経路は `CONFIG_DRIVER_PCI_I915_PARITY=y` でビルドしたときだけ有効（`src/drivers/gpu/i915/i915.c` の `#if CONFIG_DRIVER_PCI_I915_PARITY` で通常 attach を止め、runner に登録）。GPU は **公開されない診断経路**（`/dev/gpu0` は出ない）。
 - runner（`parity/runner.c`）：起動後の readiness で 1 スレッドを起動し、GPU があれば **attach（probe P0〜P7）→ teardown → ktest**、無ければ ktest のみ。結果は `runner-result:` 行。
-- 実機で `attach end: outcome=STOPPED where="i915_driver_probe complete"`、`runner-result: probe=COMPLETE`、`ktest 367 checks, 0 failures`（vmunix 6882fb9a、E-97 末尾）。
+- 実機で `attach end: outcome=STOPPED where="i915_driver_probe complete"`、`runner-result: probe=COMPLETE`、`ktest 373 checks, 0 failures`、EU 有効ビルドでは `EU-TEST PASS`（E-99、EU 有効 clean build vmunix 96274bf3）。
 - EU 試験は `PARITY_EU_TEST=1` を定義したビルドでのみ実行（既定 0）。
 - git は未コミット（ユーザ管理）。作業ツリーは build host の `~/zedBSD`。
 
@@ -172,7 +177,7 @@ big-bang 期の自作ドライバ（`src/drivers/gpu/i915/*.c`、`selftest.c` �
 
 ## 10. 参照資料の索引
 
-- 台帳 [`../results-ws031.md`](../results-ws031.md)：E-5/E-6（3D パイプラインが実機で走る）、E-7〜E-13（PS ハング精密切り分け）、E-14〜E-18（compute 陽性対照 → EU 共通故障）、E-19〜E-21（indirect ctx WA）、E-22〜E-25（Linux 陽性対照）、E-26〜E-30（基盤監査・レジスタ diff・golden context）、E-31〜E-34（parity 方針・適合層）、E-38〜E-59（P0〜P2）、E-60〜E-90（時間基盤・DRM・P3〜P5）、E-91〜E-92（P6 GT・record_defaults 成功）、E-93（カーネル配置）、E-94〜E-96（verify_wa・migrate・P7）、E-97（EU 試験 HANG）。
+- 台帳 [`../results-ws031.md`](../results-ws031.md)：E-5/E-6（3D パイプラインが実機で走る）、E-7〜E-13（PS ハング精密切り分け）、E-14〜E-18（compute 陽性対照 → EU 共通故障）、E-19〜E-21（indirect ctx WA）、E-22〜E-25（Linux 陽性対照）、E-26〜E-30（基盤監査・レジスタ diff・golden context）、E-31〜E-34（parity 方針・適合層）、E-38〜E-59（P0〜P2）、E-60〜E-90（時間基盤・DRM・P3〜P5）、E-91〜E-92（P6 GT・record_defaults 成功）、E-93（カーネル配置）、E-94〜E-96（verify_wa・migrate・P7）、E-97（EU 試験 HANG）、E-98（PDE 修正版再試験 HANG・MCR 読み戻し・PIPELINE_SELECT 誤り発見）、E-99（修正版 C1 実機 PASS）。
 - 移植台帳 [`../linux-parity/ledger.md`](../linux-parity/ledger.md)：正本 revision の固定、関数単位の状態語（PORTED/VERIFIED/NOT_TAKEN）と根拠。
 - 前任専門家の指示書 [`expert-reports/gen12-ps-hang-report*.md`](expert-reports/)（1〜29）と進捗報告 `report_35..53.md`、`ws031-report-30..34.md`。**E-31 以降の方針（Linux-parity 移植）は report 30〜34 と gen12-ps-hang-report27〜29 に経緯がある。**
 - 設計メモ [`notes/`](notes/)：`compute-control-design.md`（C1 の全 DW）、`roadmap-to-eu-test.md`（P3→EU 試験の工程）、`plan-p5-nogem.md`、`plan-p6-gem-gt-init.md`、`hal-h-proposed-diff.md`。
@@ -183,7 +188,7 @@ big-bang 期の自作ドライバ（`src/drivers/gpu/i915/*.c`、`selftest.c` �
 
 ## 11. 引き渡し時点の未確定・注意
 
-- E-97 の EU 試験は PDE が uncached の PPGTT で走った（§2.4-2）。修正版での再試験は未実施。
+- E-99: PIPELINE_SELECT 修正版で C1 実機 PASS。次は反復／同一 context の次 request／新 context の C1、その後に修正済み命令列での PS 描画（いずれも明示解除ごと）。PASS 経路の HWSP 生値の記録行は未追加。
 - `intel_power_domains_verify_state` は well 側の照合のみ（domain use-count は未追跡）。
 - `intel_initial_commit` は active crtc 0 の形のみ実装（本機は active pipe 0）。
 - ktest は GPU-free で走るが、実機起動時も attach 後に実行される（ktest 中のログは fake 経路のもの。`BIOS left unused DC_off …` 等は fake の P5-d 試験）。

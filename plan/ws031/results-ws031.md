@@ -2824,3 +2824,93 @@ teardown 正常（engines reset rc=0, objects live=0）。attach end: outcome=ST
 ### 残(次)
 判断事項：(a) PDE 修正で EU 再試験 1 回、(b) MCR 実効値監査（steered read）、(c) 停止時の EU/TDL/GAM 状態の追加採取（専門家指定レジスタ）、(d) GuC submission 移植（Linux 既定だが陽性対照は execlists）。
 台帳E-60〜E-97。GPU=vfio-pci維持, 10ms tick/HAL非変更維持, drm非blacklist, attach先行維持。git commit/push なし。
+
+## p011 増分E-98 (2026-09-18): **専門家指示（第 1 作業〜第 6 節）**— PDE 修正の実表反映確認＋公開契約、EU 有効 clean build、MCR 3 件の steered 読み戻し、同じ C1 を 1 回再実行 → **HANG（署名同一）**。続く「提出 bytes の Linux 比較」で **PIPELINE_SELECT の符号化誤り（0x6104、正は 0x6904）** を発見・修正（実機再試験は未実施・要指示）
+
+### 再試験結果（GPU 渡し, chaos, EU 有効 clean build `build/eu-e98`: vmunix c1b35d79 / hdd-image df9a039b / BOOTX64 57f8eab6、flags `-DCONFIG_DRIVER_PCI_I915_PARITY=1 -DPARITY_EU_TEST=1`、ログ `~/bigbang/run-parity-hw-e98-eu.log`）
+```
+（同起動の前段）P6c record_defaults rc=0 / verify_workarounds rc=0（rcs0 5/5、MCR 3 件除外）/ migrate_init rc=0 / P7 driver_register wells 8->2 dc_state=0x2
+MCR-PROBE summary: entries=15 mismatches=5 lock_rc=0 subslice_mask=0x1f
+  0xe4f4 GEN8_ROW_CHICKEN2 : instance 0..4 raw=0xffff4100 expected_set=0x41004100 read_mask=0x4100 → 一致
+  0xe48c GEN9_ROW_CHICKEN4 : instance 0..4 raw=0xffff0200 expected_set=0x02000200 read_mask=0x0200 → 一致
+  0xe18c GEN10_SAMPLER_MODE: instance 0..4 raw=0x00003020 expected_set=0x80008000 read_mask=0x8000 → **bit15(ENABLE_SMALLPL, Wa_1406941453) が全 DSS で 0**
+  selector before/after = 0x80000000（multicast 維持、復元確認）
+EU-TEST fixture: batch_hash=0352794be1ff8fe0 fixture_hash=444e3a7a4e9c1abd batch_dwords=322 pdp0_matches_top=1
+EU-TEST walk（提出直前、PDP0=0x100213000 から読んだ実表）: batch/IDD/kernel/EU marker/done marker の 5 VA すべて levels=4、
+  PML4[0]=0x100329003 → PDP[4]=0x10032a003 → PD[2]=0x10032b003 → PT[n]=…003（present rw pat=0、PWT/PCD 無し＝PPAT_CACHED_PDE）、
+  leaf: batch=0x100328000, shared=0x100327000（child は全て本 vm の表として認識、scratch 無し）
+EU-TEST record: rq seqno expected=2 hwsp_observed=1 initial_breadcrumb_seen=1 | ctx sw_id=0 tag=0 lrca=fffb9119 desc=00000020:fffb9119 | csb_head=8 last_csb=03ff8000:00008001 | time_base_fault=0
+EU-TEST hang: ipehr=70040000 acthd=1:004014c0 instdone=ffdeffff fault=0 row_instdone=8610e87f eu_dis=0 slice/ss01/ss23 ack=3/3/3
+EU-TEST HANG: timed_out=1 wedged=1 polls=40000 | ready=c0ffee10 eu=dead0000 done=dead0000 cs=dead0000 idd_rb_ok=1 kernel_rb_ok=1
+attach end: STOPPED (i915_driver_probe complete)、teardown 正常、ktest 371/0（GPU-free 同 image でも 371/0）
+```
+- **表現**（専門家是正に従う）: CS 側の実行（initial breadcrumb 着地、READY 着地、IDD/kernel の PPGTT 読み戻し一致）は確認できたが、EU の期待書込みと request の正常完了は未確認。停止署名は E-97 と同じ。「初期化要素を原因から除外」とは言わない。
+- MCR: ROW_CHICKEN2/4 は全 DSS で期待 bit が立っている。SAMPLER_MODE bit15 は全 DSS で 0。ただし **E-27 で動作 Linux から読んだ同レジスタも 0x3020（bit15=0）** であり、Linux との差ではない（Linux も DEBUG_GEM 無しで未検証。この bit がこの stepping で読み戻せない／保持されない可能性。今回は上書きせず記録のみ＝指示どおり）。
+
+### 第 1 作業（PDE 修正の反映と公開契約）
+- 2.1: `parity_gen8_pde_encode_cached`（実表リンク＝PRESENT|RW、PPAT_CACHED_PDE=0）と scratch 塔（PPAT_UNCACHED）を分離維持。GPU-free 試験 +3（`EU-PT`: 実表リンク 3 段の属性と child DMA 一致／leaf PTE の DMA 上位 bit 保持・PAT 0・VA 非混入／割当範囲内未挿入頁= scratch[0](PAT 3)、未割当領域=scratch PDP encode(UNCACHED)）。
+- 2.2: 正本の公開契約を対応付け: `fill_page_dma`→`fill_px` 後 clflush(4 KiB)、`write_dma_entry`→PD エントリ書込後 clflush(8 B)、`gen8_ppgtt_insert_entry`→PTE 書込後 clflush(8 B)（`parity_gt_clflush`: mfence; clflush×n; mfence）。DMA coherent memory は `kern_pmem` の WB ダイレクトマップで、これまで表の clflush は無かった（GPU の表ウォークは CPU キャッシュを snoop しない）。request 側の invalidate は既存（request_alloc の EMIT_INVALIDATE）。
+- 2.3: 新規 VM ではなく既存 kernel vm に新規 range（P0〜P7 を通常実行した後の新規 context）。提出直前に PDP0 から実表を読む `parity_gt_ppgtt_walk` を追加し 5 VA を記録（上記）。
+
+### 第 3〜5 節
+- EU 有効 image を clean build（別 BUILD dir）し、GPU-free で ktest 完走（371/0）を確認してから同一 image を実機へ。hash/flags は上記。採取バッファ（MCR probe）は static。
+- MCR 読み戻し: `intel_gt_mcr_read` 相当（osdep MCR lock → 0xfdc 読→slice/subslice 設定（multicast bit 維持）→読→復元→再読）。forcewake は EU 試験と同じ全保持。
+- C1 再実行: E-97 と同じ位置（driver_register 後）、forcewake 全保持、2 s、同一 batch 語（hash 記録）。
+
+### 第 6 節（再停止 → 提出 bytes の Linux 比較）で見つかったこと
+**PIPELINE_SELECT の符号化が誤っていた。** zedBSD の `src/drivers/gpu/i915/vk/linux/3dstate-gen12.inc` は `GEN12_CMD_PIPELINE_SELECT 0x6104`（CommandSubType 0）で、実 batch の dword は `0x61041310`(3D)／`0x61041312`(GPGPU)。正本 Linux `gt/intel_gpu_commands.h` の `PIPELINE_SELECT = (3<<29)|(1<<27)|(1<<24)|(4<<16)` = **0x69040000**、genxml gen125 も CommandSubType=1/Opcode=1/SubOpcode=4、E-15 の設計メモも `0x69041312`。**Linux で完走した replay（linux-c2-replay.c）は 0x6904 を使っており、zedBSD 側の全 batch（big-bang の draw／C0〜C3／golden、parity の eu_test）は 0x6104 だった。** すなわち zedBSD の batch では GPGPU パイプラインへの切替が一度も発行されておらず（3D 既定のまま MEDIA_VFE_STATE/GPGPU_WALKER を投入）、これは E-25 の「同一バイト」報告の誤り（`.inc` 定数からの転記を「同一」と扱っていた）。
+- 修正: `.inc` を 0x6904 に（出典コメント付き）、`eu_test.c` と ktest 期待値も。clean build（EU=1、hash は下記）で GPU-free ktest 完走を確認。**実機での C1 再実行は未実施（明示解除待ち）**。
+- なお replay とのその他の差: batch VA（replay 0x100600000 / zedBSD 0x100401000）、zedBSD 側の IDD/kernel 読み戻し copy（44 × MI_COPY_MEM_MEM、診断追加分）。固定 fixture（SBA/VFE/MIDL/walker/marker/PC）は replay と同語。実提出 bytes は `handover/increment-results/e98-batch-as-submitted.hex`。
+- PS 描画（3DPRIMITIVE）側の停止は 3D 既定モードで起きているため、この誤りだけでは説明できない可能性がある（compute 側は説明し得る）。判断は再試験後。
+
+### 提出物
+- diff: `plan/ws031/handover/increment-results/e97-e98-changes.patch`（PDE 符号化・公開 clflush・walk・default_state 継承・INHERIT 試験修正・eu_test・MCR probe・PIPELINE_SELECT 修正）。
+- 実データ: `e98-batch-as-submitted.hex`（322 dword）、上記 walk/MCR/record 行（ログ `run-parity-hw-e98-eu.log`）。
+
+### 残(次・要指示)
+PIPELINE_SELECT 修正版（EU 有効 clean build vmunix b7de2a71 / hdd-image 861593e2 / flags -DCONFIG_DRIVER_PCI_I915_PARITY=1 -DPARITY_EU_TEST=1、GPU-free ktest 371/0）で同じ C1 を 1 回再実行するか。成功しても「累積修正版で EU 完了を確認」と記録し、PS 経路は別途。
+台帳E-60〜E-98。GPU=vfio-pci維持, 10ms tick/HAL非変更維持, drm非blacklist, attach先行維持。git commit/push なし。
+
+## p011 増分E-99 (2026-09-18): **専門家指示（PIPELINE_SELECT 修正版で C1 を 1 回）→ 実機 PASS。累積修正版の parity 経路で、対象 C1 の EU 実行・書込み・request 完了を確認**
+
+### 再試験前の確認（指示 5.1 の三項目のみ）
+- A（最終命令語）: `parity_eu_batch_check_pipeline_select()` を追加。batch を**提出 object に書いた後にその object から読み**、固定参照語 0x69041310（3D）が 1 個、0x69041312（GPGPU）が 1 個、順序 3D→GPGPU、かつ 0x6104 ヘッダ（GPGPU_CSR_BASE_ADDRESS、C1 は発行しない）や想定外の 0x6904 語が 0 個であることを確認。不成立なら `pipeline_select_verify` で**提出せず**終了。実機ログ: `rc=0 3d=1@6 gpgpu=1@261 bad=0`。
+- B（同じ誤定義を使う生産側）: PIPELINE_SELECT を生成するのは `vk/linux/3dstate-gen12.inc` の `GEN12_PIPELINE_SELECT_DWORD`（利用: big-bang `selftest.c` 4 箇所、`vk/pipe.c` 1 箇所）と parity `eu_test.c` の `PIPELINE_SELECT_DWORD` の 2 定義のみ。どちらも 0x6904。0x6104 の無条件置換はしていない（他に 0x6104 を使う箇所は無く、STATE_BASE_ADDRESS 等 SubType 0 の COMMON 命令は不変）。生成済み配列・直書きの PIPELINE_SELECT は無し。
+- C（独立試験）: `.inc` に `_Static_assert(GEN12_PIPELINE_SELECT_DWORD(0U)==0x69041310U)`／`(2U)==0x69041312U`（マクロ由来でない固定値）。ktest `EU-PIPESEL` +2: emitter 出力が固定参照語と一致／bit 27 を戻した旧語 0x61041310・0x61041312 を入れた batch は検査で**拒否**される。GPU-free 373/0。
+
+### 実機結果（chaos、GPU 渡し、参照条件 4 GiB/4 vCPU/host-phys-bits-limit=39、execlists、parity 単独・attach 先行、driver_register 後、forcewake 全保持、2 s、10 ms tick、HAL 不変）
+image: EU 有効 clean build `build/eu-e99` vmunix 96274bf3… / hdd-image 1a5f7878… / BOOTX64 57f8eab6…、flags `-DCONFIG_DRIVER_PCI_I915_PARITY=1 -DPARITY_EU_TEST=1`。ログ `~/bigbang/run-parity-hw-e99-eu.log`（写し `handover/increment-results/e99-run-parity-hw-eu.log`）。通常起動 P0〜P7 → 今回の起動で default_state 生成 → 新規 EU 用 context（kernel vm に新規 range、E-98 と同じ）→ C1 を 1 回。
+```
+MCR-PROBE summary: entries=15 mismatches=5（SAMPLER_MODE bit15、E-98 と同じ・Linux 読み値と同じ）
+EU-TEST fixture: batch_hash=5dfb47d3c10b0560 fixture_hash=444e3a7a4e9c1abd batch_dwords=322 pdp0_matches_top=1
+EU-TEST pipeline_select (read from the submitted object): rc=0 3d=1@6 gpgpu=1@261 bad=0
+EU-TEST walk: 5 VA levels=4、PML4[0]=…329003 → PDP[4]=…32a003 → PD[2]=…32b003 → PT=…003 pat=0（E-98 と同形）
+EU-TEST PASS: rc=0 submitted=1 completed=1 parked=1 timed_out=0 wedged=0 polls=16
+  | ready=c0ffee10 eu=c0ffee02 done=c0ffee20 cs=c0ffee30 idd_rb_ok=1 kernel_rb_ok=1
+  | rq seqno=2 krq seqno=4 | gt irq: user=2 ctx_switch=4 error=0
+EU-TEST ctx: CTX_CTRL=ffff0008 RING_CTL=00000001 PDP0=00000001:00213000
+attach end: STOPPED (i915_driver_probe complete) err=0、teardown 正常（reset なし）、ktest 373/0、runner-result probe=COMPLETE cleanup=1
+```
+- request 完了の根拠: `completed=1` は `wait_retired()`＝「HWSP の seqno が rq の seqno（2）へ到達」かつ「CSB 処理で当該 context が complete（active/pending なし）」の両成立。続く kernel context への park request（seqno 4）も同じ条件で完了。polls=16（50 µs 刻み）。**PASS 経路では HWSP の生値を 1 行に出していない**（HANG 経路の `EU-TEST record` のみ）。次の増分で PASS 経路にも同じ記録行を足す（今回は試験済み binary と作業ツリーを一致させるため未変更）。
+- E-98 提出 batch との全差分（`tools/eu_artifact.py diff`）: **dword 6（byte 0x18）61041310→69041310、dword 261（byte 0x414）61041312→69041312、どちらも XOR 0x08000000。それ以外の差なし**（batch VA、診断 copy、順序、長さ不変。shared page 側 fixture hash も同値）。
+
+### 評価（専門家の二段階に従う）
+- 確認できたこと: **累積修正版（PDE cached リンク＋表の clflush 公開＋default_state 継承＋execbuf 形 request＋正しい PIPELINE_SELECT）の parity 経路で、C1 の EU 実行・A64 store・後続 marker・request 完了が成立した。** E-98（HANG）との入力差は上記 2 語のみ、実行基盤側の差は検査コードとログの追加のみ。
+- 書かないこと: 「PIPELINE_SELECT だけが全期間・全症状の唯一原因だった」。PDE／公開処理／context 等を保持した条件での成功であり、個別の必要性は分離していない。
+- **E-98 記述の是正**: 「GPGPU への切替が一度も発行されず、3D 既定のまま投入していた」は不正確。正しくは「対象 batch の PIPELINE_SELECT 予定位置に、別の命令識別部（Type 3/SubType 0/Opcode 1/SubOpcode 4 = Gen12LP では 3 dword の GPGPU_CSR_BASE_ADDRESS のヘッダ）を持つ、長さ・予約 bit も通常と一致しない不正な語が存在した。正しいパイプライン切替はその命令列からは保証できず、実際のパイプライン状態と副作用は未確認」。
+- **過去判断の撤回**: 「同一入力が Linux で成功・zedBSD で失敗したので batch／dispatch state は原因から除外」（E-25 由来）は撤回。比較していたのは「Linux 基盤＋正しい命令列」対「zedBSD 基盤＋異なる命令列」だった。C0 完走も「GPGPU 初期化が全て正しい」証明ではない。保持するもの: Linux 陽性結果（E-23/E-25）、当時の zedBSD ハング観測、DMC／request／context 保存／SRM／ページ表等の個別実測。
+- PS 描画: 今回の修正が PS にも効く可能性と、別の不具合が残る可能性の両方がある（3D を選ぶ位置にも同じ不正語が入っていた）。C1 成功後の独立試験として、修正済み命令列で確認する。
+
+### 同一性管理（指示 8）
+- `handover/increment-results/e99-c1-artifact.md`: artifact ID `zedbsd-parity-c1-e99`、生成元、対象 GPU 世代、VA、batch／kernel／IDD の byte 数と SHA-256、意図的な差（Linux replay 比: batch VA、診断 copy）、実機結果。生 binary `e99-c1-{batch,idd,kernel}.bin`、`e99-c1-batch.hex`。
+- `handover/tools/eu_artifact.py`: ログから提出 bytes を抽出（hex＋bin＋SHA-256）／2 batch の全 dword 差分（index、byte offset、旧値、新値、XOR）。
+- 実装側の定義は 2 箇所（big-bang `.inc`、parity `eu_test.c`）のまま、試験側の期待値は固定語（実装マクロから生成しない）。
+- 未実施（今回は分岐 A のため不要）: Linux 側 L-REF／L-ZED-EXACT。Gen12.0 定義による C1 全命令の意味層検査（ヘッダ／長さ／予約 bit）は次の増分の候補。
+
+### 提出物
+`e97-e99-changes.patch`（base 2bf790a4、`.inc`／eu_test／probe／ktest／gt_mem ほか）、`e99-c1-artifact.md`、`e99-c1-batch.{hex,bin}`、`e99-c1-{idd,kernel}.bin`、`e99-c1-manifest.txt`、`e98-batch-as-submitted.hex`（修正前）、`e99-run-parity-hw-eu.log`、`report-e99-c1-pass.md`。
+
+### 残(次・専門家指示 7-A)
+少数の反復、同一 context の次 request、新しい context での C1 → その後、修正済み命令列による PS 描画を独立した試験として。いずれも実機 EU／描画試験なので明示解除後。PASS 経路の HWSP 記録行の追加。legacy と parity の初期化は混在させない。
+台帳E-60〜E-99。GPU=vfio-pci維持, 10ms tick/HAL非変更維持, drm非blacklist, attach先行維持。git commit/push なし。
+（注）E-98 で挙げた `e97-e98-changes.patch` は同 base の `e97-e99-changes.patch` に置き換えた（内容は上位互換）。

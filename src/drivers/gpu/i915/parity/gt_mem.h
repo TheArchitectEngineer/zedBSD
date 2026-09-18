@@ -156,6 +156,34 @@ int parity_gt_ppgtt_foreach_pt(struct parity_gt_ppgtt *pp, uint64_t start,
 int parity_gt_ppgtt_insert_page(struct parity_gt_ppgtt *pp, uint64_t dma,
 	uint64_t offset, unsigned pat_index);
 
+/*
+ * The publish contract of a page-table write (write_dma_entry / fill_page_dma /
+ * gen8_ppgtt_insert_entry in the reference): the GPU's table walker does not
+ * snoop the CPU caches, so every written entry is clflushed.
+ */
+void parity_gt_clflush(const volatile void *address, size_t bytes);
+
+/*
+ * What the GPU would actually walk for one GPU VA, read from the SUBMITTED
+ * tables (not from what the builders returned): the raw 64-bit entry at every
+ * level, the child table it names, and the leaf.
+ */
+struct parity_gt_ppgtt_walk {
+	uint64_t va;
+	uint64_t top_dma;            /* what PDP0 of the context must hold */
+	unsigned idx[4];             /* PML4, PDP, PD, PT indices */
+	uint64_t raw[4];             /* raw entries, top first */
+	uint64_t child_dma[3];       /* address bits of raw[0..2] */
+	int child_known[3];          /* the child is one of this vm's tables */
+	int scratch[4];              /* the entry equals the scratch encode of that level */
+	int levels;                  /* entries read (4 = reached the PTE) */
+	uint64_t leaf_dma;
+	int leaf_present, leaf_rw;
+	unsigned leaf_pat;           /* PAT index from PAT0/1/2 bits */
+};
+int parity_gt_ppgtt_walk(struct parity_gt_ppgtt *pp, uint64_t va,
+	struct parity_gt_ppgtt_walk *w);
+
 /* --- encoders (exposed so the tests compare against the reference values) --- */
 uint64_t parity_gen12_ppgtt_pte_encode(uint64_t dma, unsigned pat_index);
 uint64_t parity_gen8_pde_encode(uint64_t dma);

@@ -1698,10 +1698,71 @@ p6_fw_out:
 		if (held == 5u) {
 			unsigned u0 = irqdev.gt_user_intr, c0 = irqdev.gt_ctx_switch_intr;
 			unsigned e0 = irqdev.gt_error_intr;
+			static struct parity_mcr_probe mcrp;   /* off the 16 KiB stack */
+			unsigned wi;
+
+			/* MCR readback: post-init, pre-submission, RCS engine list. */
+			(void)parity_mcr_probe_wa(&mcrp, &mmio, &gtinit.engine_wa[0], &gtmmio.sseu);
+			for (wi = 0u; wi < mcrp.n; wi++)
+				kern_logf("i915: parity MCR-PROBE phase=pre-eu reg=0x%05x group=%u instance=%u "
+					"raw=0x%08x expected_set=0x%08x read_mask=0x%08x masked_mismatch=0x%08x "
+					"selector_before=0x%08x selector_after=0x%08x listed=%d\n",
+					mcrp.e[wi].reg, mcrp.e[wi].group, mcrp.e[wi].instance, mcrp.e[wi].raw,
+					mcrp.e[wi].expected_set, mcrp.e[wi].read_mask, mcrp.e[wi].masked_mismatch,
+					mcrp.e[wi].selector_before, mcrp.e[wi].selector_after, mcrp.e[wi].listed);
+			kern_logf("i915: parity MCR-PROBE summary: entries=%u mismatches=%u lock_rc=%d "
+				"subslice_mask=0x%x\n", mcrp.n, mcrp.mismatches, mcrp.lock_rc,
+				gtmmio.sseu.subslice_mask);
 
 			rc = parity_eu_test_run(&eutest, &gteng, &gtpp, &gtmem, &gtmmio.sseu,
 				&mmio, &uncore_lock, 2000u);
 			eutest_inited = 1;
+			kern_logf("i915: parity EU-TEST fixture: build PARITY_EU_TEST=%d batch_hash=%016llx "
+				"fixture_hash=%016llx batch_dwords=%u pdp0_matches_top=%d\n",
+				PARITY_EU_TEST, (unsigned long long)eutest.batch_hash,
+				(unsigned long long)eutest.fixture_hash, eutest.batch_dwords,
+				eutest.pdp0_matches_top);
+			for (wi = 0u; wi < eutest.walks; wi++) {
+				const struct parity_gt_ppgtt_walk *w = &eutest.walk[wi];
+
+				kern_logf("i915: parity EU-TEST walk va=0x%llx top=0x%llx levels=%d | "
+					"PML4[%u]=%016llx child=0x%llx known=%d scr=%d | PDP[%u]=%016llx child=0x%llx "
+					"known=%d scr=%d | PD[%u]=%016llx child=0x%llx known=%d scr=%d | "
+					"PT[%u]=%016llx leaf=0x%llx present=%d rw=%d pat=%u scr=%d\n",
+					(unsigned long long)w->va, (unsigned long long)w->top_dma, w->levels,
+					w->idx[0], (unsigned long long)w->raw[0], (unsigned long long)w->child_dma[0],
+					w->child_known[0], w->scratch[0],
+					w->idx[1], (unsigned long long)w->raw[1], (unsigned long long)w->child_dma[1],
+					w->child_known[1], w->scratch[1],
+					w->idx[2], (unsigned long long)w->raw[2], (unsigned long long)w->child_dma[2],
+					w->child_known[2], w->scratch[2],
+					w->idx[3], (unsigned long long)w->raw[3], (unsigned long long)w->leaf_dma,
+					w->leaf_present, w->leaf_rw, w->leaf_pat, w->scratch[3]);
+			}
+			kern_logf("i915: parity EU-TEST pipeline_select (read from the submitted object): rc=%d "
+				"3d=%u@%u gpgpu=%u@%u bad=%u@%u bad_word=%08x\n",
+				eutest.pipesel_rc, eutest.pipesel.n_3d, eutest.pipesel.idx_3d,
+				eutest.pipesel.n_gpgpu, eutest.pipesel.idx_gpgpu, eutest.pipesel.n_bad,
+				eutest.pipesel.idx_bad, eutest.pipesel.bad_word);
+			if (eutest.shared != 0) {
+				const uint32_t *sp = (const uint32_t *)eutest.shared->cpu;
+				unsigned fk;
+
+				kern_logf("i915: parity EU-TEST fixture-idd[@%u]: %08x %08x %08x %08x %08x %08x %08x %08x\n",
+					PARITY_EU_IDD_OFFSET, sp[224], sp[225], sp[226], sp[227], sp[228], sp[229], sp[230], sp[231]);
+				for (fk = 0u; fk < PARITY_EU_KERNEL_DWORDS; fk += 6u)
+					kern_logf("i915: parity EU-TEST fixture-kernel[%02u]: %08x %08x %08x %08x %08x %08x\n",
+						fk, sp[256u + fk], sp[257u + fk], sp[258u + fk], sp[259u + fk],
+						sp[260u + fk], sp[261u + fk]);
+			}
+			if (eutest.batch != 0 && eutest.batch_dwords != 0u) {
+				const uint32_t *bd = (const uint32_t *)eutest.batch->cpu;
+
+				for (wi = 0u; wi < eutest.batch_dwords; wi += 8u)
+					kern_logf("i915: parity EU-TEST batch[%03u]: %08x %08x %08x %08x %08x %08x %08x %08x\n",
+						wi, bd[wi], bd[wi + 1], bd[wi + 2], bd[wi + 3], bd[wi + 4], bd[wi + 5],
+						bd[wi + 6], bd[wi + 7]);
+			}
 			kern_logf("i915: parity EU-TEST %s: rc=%d where=%s engine=%s dss=%u max_threads=%u "
 				"batch_dwords=%u submitted=%d completed=%d parked=%d timed_out=%d wedged=%d "
 				"polls=%u | ready=%08x eu=%08x done=%08x cs=%08x idd_rb_ok=%d kernel_rb_ok=%d "

@@ -4939,14 +4939,79 @@ parity_sync_ktest(void)
 					    cmds[k + 4u] == (1u | (6u << 4) | 0x00400000u) && cmds[k + 5u] == 1u &&
 					    cmds[k + 10u] == (1u | (4u << 4) | 0x00400000u) && cmds[k + 11u] == 1u)
 						sba = k;
-					if (cmds[k] == 0x61041310u) sel3d = k;
-					if (cmds[k] == 0x61041312u) selgpgpu = k;
+					if (cmds[k] == 0x69041310u) sel3d = k;   /* PIPELINE_SELECT(3D), Linux encoding */
+					if (cmds[k] == 0x69041312u) selgpgpu = k;
 					if (cmds[k] == 0x70020002u && cmds[k + 2u] == 32u && cmds[k + 3u] == 896u) midl = k;
 					if (cmds[k] == 0x70000007u && cmds[k + 3u] == ((559u << 16) | (2u << 8))) vfe = k;
 				}
 				KCHECK(n > 0u && n < 1024u && sel3d < sba && sba < selgpgpu && selgpgpu < vfe &&
 					vfe < midl && midl < walker && cmds[n - 2u] == PARITY_MI_BATCH_BUFFER_END,
 					"eu: EU-BATCH 3D select, SBA (stateless MOCS 6, instruction base @0x100400000), GPGPU select, VFE(559), MIDL(896), walker(1x1x1 SIMD8), BB_END");
+				{
+					/* Fixed reference words, independent of the emitter's macro. */
+					struct parity_eu_pipesel_check pc;
+					static uint32_t bad[1024];
+					int prc = parity_eu_batch_check_pipeline_select(cmds, n, &pc);
+
+					KCHECK(prc == 0 && pc.n_3d == 1u && pc.n_gpgpu == 1u && pc.n_bad == 0u &&
+						cmds[pc.idx_3d] == 0x69041310u && cmds[pc.idx_gpgpu] == 0x69041312u,
+						"eu: EU-PIPESEL the emitter's words are exactly 0x69041310 (3D) then 0x69041312 (GPGPU), Type3/SubType1/Op1/SubOp4");
+					for (k = 0u; k < n; k++)
+						bad[k] = cmds[k];
+					bad[pc.idx_3d] ^= 0x08000000u;      /* back to the pre-E-98 words */
+					bad[pc.idx_gpgpu] ^= 0x08000000u;
+					prc = parity_eu_batch_check_pipeline_select(bad, n, &pc);
+					KCHECK(bad[pc.idx_bad] == 0x61041310u && prc != 0 && pc.n_bad == 2u &&
+						pc.n_3d == 0u && pc.n_gpgpu == 0u,
+						"eu: EU-PIPESEL 0x61041310/0x61041312 (the GPGPU_CSR_BASE_ADDRESS header) are rejected as Gen12 PIPELINE_SELECT");
+				}
+			}
+
+
+			/* ====== EU page tables: what the GPU walks, read from the tables ====== */
+			{
+				static struct parity_gt_ppgtt tpp;
+				struct parity_gt_ppgtt_walk w;
+				const uint64_t dma_fake = 0x0000001234560000ull;   /* bit 32+ preserved */
+				const uint64_t addr_mask = 0x0000fffffffff000ull;
+				int rc2;
+
+				rc2 = parity_gt_ppgtt_create(&gm, &tpp);
+				if (rc2 == 0)
+					rc2 = parity_gt_ppgtt_alloc_range(&gm, &tpp, PARITY_EU_SHARED_VA, 2u * 4096u);
+				if (rc2 == 0)
+					rc2 = parity_gt_ppgtt_insert_page(&tpp, dma_fake, PARITY_EU_SHARED_VA, 0u);
+				if (rc2 == 0)
+					rc2 = parity_gt_ppgtt_walk(&tpp, PARITY_EU_SHARED_VA, &w);
+				KCHECK(rc2 == 0 && w.levels == 4 && w.top_dma == tpp.top_pd_dma &&
+					w.idx[0] == 0u && w.idx[1] == 4u && w.idx[2] == 2u && w.idx[3] == 0u &&
+					w.child_known[0] && w.child_known[1] && w.child_known[2] &&
+					(w.raw[0] & ~addr_mask) == (PARITY_GEN8_PAGE_PRESENT_B | PARITY_GEN8_PAGE_RW_B) &&
+					(w.raw[1] & ~addr_mask) == (PARITY_GEN8_PAGE_PRESENT_B | PARITY_GEN8_PAGE_RW_B) &&
+					(w.raw[2] & ~addr_mask) == (PARITY_GEN8_PAGE_PRESENT_B | PARITY_GEN8_PAGE_RW_B) &&
+					w.child_dma[0] == tpp.tables[0].dma && w.child_dma[1] == tpp.tables[1].dma &&
+					w.child_dma[2] == tpp.tables[2].dma,
+					"eu: EU-PT real page-table links are PRESENT|RW with PPAT_CACHED_PDE (no PWT/PCD), naming the child DMA addresses");
+				KCHECK(rc2 == 0 && w.leaf_present && w.leaf_rw && w.leaf_pat == 0u &&
+					w.leaf_dma == dma_fake && (w.raw[3] & ~addr_mask) == 0x3ull &&
+					(w.raw[3] & addr_mask) != (PARITY_EU_SHARED_VA & addr_mask),
+					"eu: EU-PT the leaf PTE carries the DMA address (bits above 32 kept), PAT 0, PRESENT|RW, not the GPU VA");
+				if (rc2 == 0) {
+					struct parity_gt_ppgtt_walk w2;
+
+					/* The neighbouring, never-inserted page reads the scratch PTE. */
+					rc2 = parity_gt_ppgtt_walk(&tpp, PARITY_EU_SHARED_VA + 4096u, &w2);
+					KCHECK(rc2 == 0 && w2.levels == 4 && w2.scratch[3] && w2.leaf_present && w2.leaf_pat == 3u &&
+						w2.leaf_dma == (tpp.scratch_encode[0] & addr_mask),
+						"eu: EU-PT an unmapped page inside an allocated range points at scratch[0] (uncached data page)");
+					/* An unallocated region reads the scratch tower at the first level. */
+					rc2 = parity_gt_ppgtt_walk(&tpp, 0x0000008000000000ull, &w2);   /* PML4 index 1: never allocated */
+					KCHECK(rc2 == 0 && w2.levels == 1 && w2.scratch[0] && !w2.child_known[0] &&
+						w2.raw[0] == tpp.scratch_encode[3] &&
+						(w2.raw[0] & ~addr_mask) == (PARITY_GEN8_PAGE_PRESENT_B | PARITY_GEN8_PAGE_RW_B | PARITY_PPAT_UNCACHED),
+						"eu: EU-PT an unallocated region reads the scratch PDP encode (PPAT_UNCACHED, reference gen8_init_scratch)");
+				}
+				parity_gt_ppgtt_destroy(&gm, &tpp);
 			}
 
 			parity_gt_ppgtt_destroy(&gm, &pp);

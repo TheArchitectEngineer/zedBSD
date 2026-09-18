@@ -7,6 +7,7 @@
 #include <errno.h>
 #include <string.h>
 #include "gt_mmio.h"
+#include "gt_init.h"
 #include "gt_resume.h"
 #include "gt_submit.h"
 #include "gt_defaults.h"
@@ -33,7 +34,8 @@ static const uint32_t eu_marker_cs[PARITY_EU_KERNEL_DWORDS] = {
 #define MI_USE_GGTT               (1u << 22)
 #define MI_BATCH_BUFFER_START_GEN8 ((0x31u << 23) | 1u)
 #define MI_COPY_MEM_MEM_PPGTT     0x17000003u
-#define PIPELINE_SELECT_DWORD(p)  ((0x6104u << 16) | (0x13u << 8) | (1u << 4) | (p))
+/* (3<<29)|(1<<27)|(1<<24)|(4<<16) = 0x69040000: Linux PIPELINE_SELECT (E-98 fix, was 0x6104). */
+#define PIPELINE_SELECT_DWORD(p)  ((0x6904u << 16) | (0x13u << 8) | (1u << 4) | (p))
 #define STATE_BASE_ADDRESS_HDR    ((0x6101u << 16) | (22u - 2u))
 #define GEN12_MOCS(index)         ((index) << 1)
 #define MOCS_UNCACHED_INDEX       3u
@@ -210,6 +212,44 @@ parity_eu_test_build_batch(uint32_t *cmds, unsigned capacity,
 	return b.overflow ? 0u : b.count;
 }
 
+int
+parity_eu_batch_check_pipeline_select(const uint32_t *cmds, unsigned n,
+	struct parity_eu_pipesel_check *out)
+{
+	struct parity_eu_pipesel_check c;
+	unsigned k;
+
+	memset(&c, 0, sizeof(c));
+	for (k = 0u; k < n; k++) {
+		uint32_t dw = cmds[k];
+
+		if (dw == 0x69041310u) {            /* fixed reference: 3D */
+			if (c.n_3d++ == 0u) c.idx_3d = k;
+		} else if (dw == 0x69041312u) {     /* fixed reference: GPGPU */
+			if (c.n_gpgpu++ == 0u) c.idx_gpgpu = k;
+		} else if ((dw >> 16) == 0x6104u || (dw >> 16) == 0x6904u) {
+			if (c.n_bad++ == 0u) { c.idx_bad = k; c.bad_word = dw; }
+		}
+	}
+	if (out != 0)
+		*out = c;
+	return (c.n_3d == 1u && c.n_gpgpu == 1u && c.n_bad == 0u &&
+		c.idx_3d < c.idx_gpgpu) ? 0 : -EINVAL;
+}
+
+static uint64_t
+fnv1a64(const void *data, size_t bytes, uint64_t h)
+{
+	const uint8_t *p = data;
+	size_t i;
+
+	for (i = 0u; i < bytes; i++) {
+		h ^= p[i];
+		h *= 0x100000001b3ull;
+	}
+	return h;
+}
+
 static int
 fail(struct parity_eu_test *t, int rc, const char *where)
 {
@@ -322,6 +362,16 @@ parity_eu_test_run(struct parity_eu_test *t, struct parity_gt_engines *es,
 		PARITY_EU_SHARED_VA, PARITY_EU_SHARED_VA, t->max_threads);
 	if (t->batch_dwords == 0u)
 		return fail(t, -ENOSPC, "build_batch");
+	/* Read the words back from the object that is submitted; never submit a bad select. */
+	t->pipesel_rc = parity_eu_batch_check_pipeline_select((const uint32_t *)t->batch->cpu,
+		t->batch_dwords, &t->pipesel);
+	if (t->pipesel_rc != 0)
+		return fail(t, t->pipesel_rc, "pipeline_select_verify");
+	/* The fixture as submitted: batch dwords, and IDD..kernel of the shared page. */
+	t->batch_hash = fnv1a64(t->batch->cpu, (size_t)t->batch_dwords * 4u, 0xcbf29ce484222325ull);
+	t->fixture_hash = fnv1a64((const char *)t->shared->cpu + PARITY_EU_IDD_OFFSET,
+		(PARITY_EU_KSP_OFFSET - PARITY_EU_IDD_OFFSET) + sizeof(eu_marker_cs),
+		0xcbf29ce484222325ull);
 
 	/* intel_context_create(engine) on the kernel vm; it inherits engine->default_state. */
 	rc = parity_lrc_alloc(&t->ce, ge, vm, gm, 4096u, 0u);
@@ -370,6 +420,27 @@ parity_eu_test_run(struct parity_eu_test *t, struct parity_gt_engines *es,
 	rc = parity_request_add(&t->rq);
 	if (rc != 0)
 		return fail(t, rc, "i915_request_add");
+
+	/*
+	 * Immediately before submission: what the GPU will walk for the batch,
+	 * the IDD, the kernel, the EU store target and the done marker, read
+	 * from the tables PDP0 of this context names.
+	 */
+	{
+		static const uint32_t off[5] = { 0u, PARITY_EU_IDD_OFFSET, PARITY_EU_KSP_OFFSET,
+			PARITY_EU_EU_OFF, PARITY_EU_DONE_OFF };
+		uint64_t pdp0 = ((uint64_t)t->ce.lrc_reg_state[PARITY_CTX_PDP0_UDW] << 32) |
+			t->ce.lrc_reg_state[PARITY_CTX_PDP0_LDW];
+
+		t->pdp0_matches_top = pdp0 == vm->top_pd_dma;
+		for (i = 0u; i < 5u; i++) {
+			uint64_t va = (i == 0u) ? PARITY_EU_BATCH_VA : PARITY_EU_SHARED_VA + off[i];
+
+			(void)parity_gt_ppgtt_walk(vm, va, &t->walk[i]);
+		}
+		t->walks = 5u;
+	}
+
 	rc = parity_execlists_submit(ge, el, m, &t->rq);
 	if (rc != 0)
 		return fail(t, rc, "execlists_submit");
@@ -432,9 +503,23 @@ parity_eu_test_run(struct parity_eu_test *t, struct parity_gt_engines *es,
 		return t->err;
 	}
 
-	/* Hang (or an error): dump, then reset the engines like intel_gt_set_wedged. */
+	/* Hang (or an error): record, dump, then reset the engines like intel_gt_set_wedged. */
 	if (t->timed_out)
 		t->outcome = PARITY_EU_HANG;
+	t->hwsp_seqno_observed = *t->rq.hwsp_cpu;
+	t->ctx_ccid_hi = (uint32_t)(t->ce.lrc_desc >> 32);
+	t->ctx_ccid_lo = (uint32_t)t->ce.lrc_desc;
+	t->time_base_fault = (t->err == -EIO && t->err_where != 0 &&
+		t->err_where[0] == 't') ? 1 : 0;
+	kern_logf("i915: parity EU-TEST record: rq seqno expected=%u hwsp_observed=%u "
+		"initial_breadcrumb_seen=%d | ctx sw_id=%u tag=%d lrca=%08x desc=%08x:%08x "
+		"state_ggtt=0x%llx ring_ggtt=0x%llx | csb_head=%u last_csb=%08x:%08x | time_base_fault=%d\n",
+		t->rq.seqno, t->hwsp_seqno_observed,
+		(int32_t)(t->hwsp_seqno_observed - (t->rq.seqno - 1u)) >= 0,
+		t->ce.sw_id, t->ce.tag, t->ce.lrca, t->ctx_ccid_hi, t->ctx_ccid_lo,
+		(unsigned long long)t->ce.state->ggtt_offset,
+		(unsigned long long)t->ce.ring.ggtt_offset,
+		ge->csb_head, el->last_csb_hi, el->last_csb_lo, t->time_base_fault);
 	parity_engine_dump(ge, el, m, "eu-test");
 	kern_logf("i915: parity EU-TEST hang: ipehr=%08x acthd=%08x:%08x instdone=%08x fault(0xcec4)=%08x "
 		"row_instdone(0xe164,raw)=%08x eu_dis(0x9134)=%08x slice_ack(0x804c)=%08x "
@@ -473,4 +558,93 @@ parity_eu_test_release(struct parity_eu_test *t, struct parity_gt_mem *gm)
 		t->shared = 0;
 	}
 	/* The PPGTT tables of the range stay with the vm (freed with it). */
+}
+
+/* ---------------- MCR workaround readback (intel_gt_mcr_read per DSS) ---------------- */
+
+#define GEN8_MCR_SELECTOR        0x0fdcu
+#define GEN11_MCR_SLICE_MASK     0x78000000u
+#define GEN11_MCR_SUBSLICE_MASK  0x07000000u
+#define GEN11_MCR_SLICE(s)       ((((uint32_t)(s)) & 0xfu) << 27)
+#define GEN11_MCR_SUBSLICE(ss)   ((((uint32_t)(ss)) & 0x7u) << 24)
+
+/* The three RCS workaround registers the CS-side verify cannot read (E-94). */
+static const uint32_t mcr_probe_regs[3] = { 0xe4f4u, 0xe18cu, 0xe48cu };
+/* GEN8_ROW_CHICKEN2, GEN10_SAMPLER_MODE, GEN9_ROW_CHICKEN4 */
+
+/*
+ * rw_with_mcr_steering_fw(FW_REG_READ) for GRAPHICS_VER 11..12.5x: keep the
+ * multicast bit (Wa_22013088509), set slice/subslice, read, restore the old
+ * selector.  Forcewake (RENDER for 0xe000.., and the selector itself) must
+ * already be held by the caller; the MCR lock is the exclusive section.
+ */
+static uint32_t
+mcr_read_steered(struct osdep_mmio *m, uint32_t reg, unsigned group, unsigned instance,
+	uint32_t *sel_before, uint32_t *sel_after)
+{
+	uint32_t mcr_mask = GEN11_MCR_SLICE_MASK | GEN11_MCR_SUBSLICE_MASK;
+	uint32_t old, mcr, val;
+
+	old = osdep_mmio_raw_read32(m, GEN8_MCR_SELECTOR);
+	mcr = (old & ~mcr_mask) | GEN11_MCR_SLICE(group) | GEN11_MCR_SUBSLICE(instance);
+	osdep_mmio_raw_write32(m, GEN8_MCR_SELECTOR, mcr);
+	val = osdep_mmio_raw_read32(m, reg);
+	osdep_mmio_raw_write32(m, GEN8_MCR_SELECTOR, old);
+	*sel_before = old;
+	*sel_after = osdep_mmio_raw_read32(m, GEN8_MCR_SELECTOR);
+	return val;
+}
+
+int
+parity_mcr_probe_wa(struct parity_mcr_probe *pr, struct osdep_mmio *m,
+	const struct parity_wa_list *wal, const struct parity_sseu *sseu)
+{
+	unsigned r, ss, k;
+	int rc;
+
+	if (pr == 0 || m == 0 || wal == 0 || sseu == 0)
+		return -EINVAL;
+	memset(pr, 0, sizeof(*pr));
+	rc = osdep_mcr_lock(m, 0u);
+	pr->lock_rc = rc;
+	if (rc != 0)
+		return rc;
+	for (r = 0u; r < 3u; r++) {
+		uint32_t reg = mcr_probe_regs[r];
+		uint32_t set = 0u, mask = 0u;
+		int listed = 0;
+
+		/* The workaround list's expectation for this register (merged entries). */
+		for (k = 0u; k < wal->count; k++) {
+			if (wal->list[k].reg != reg)
+				continue;
+			listed = 1;
+			set |= wal->list[k].set;
+			mask |= wal->list[k].read_mask;
+		}
+		/* group = the first enabled slice; every enabled subslice (DSS) of it. */
+		for (ss = 0u; ss < 8u; ss++) {
+			struct parity_mcr_probe_entry *e;
+
+			if (((sseu->subslice_mask >> ss) & 1u) == 0u)
+				continue;
+			if (pr->n == PARITY_MCR_PROBE_MAX)
+				break;
+			e = &pr->e[pr->n++];
+			e->reg = reg;
+			e->group = 0u;
+			e->instance = ss;
+			e->listed = listed;
+			e->expected_set = set;
+			e->read_mask = mask;
+			e->raw = mcr_read_steered(m, reg, 0u, ss, &e->selector_before,
+				&e->selector_after);
+			/* wa_verify(): (cur ^ set) & read; masked registers compare the low bits. */
+			e->masked_mismatch = listed ? ((e->raw ^ set) & mask) : 0u;
+			if (e->masked_mismatch != 0u)
+				pr->mismatches++;
+		}
+	}
+	osdep_mcr_unlock(m);
+	return 0;
 }

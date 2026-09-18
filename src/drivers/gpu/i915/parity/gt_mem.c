@@ -413,6 +413,23 @@ parity_gt_init_scratch(struct parity_gt_mem *gm, struct parity_gt_object **out)
 /* --- the kernel ppgtt ----------------------------------------------------- */
 
 /* fill_px(): every entry of one page holds the same encoded address. */
+void
+parity_gt_clflush(const volatile void *address, size_t bytes)
+{
+#if defined(__x86_64__) || defined(__i386__)
+	const volatile char *p = (const volatile char *)((uintptr_t)address & ~(uintptr_t)63u);
+	const volatile char *end = (const volatile char *)address + bytes;
+
+	__asm__ volatile("mfence" : : : "memory");
+	for (; p < end; p += 64)
+		__asm__ volatile("clflush (%0)" : : "r"(p) : "memory");
+	__asm__ volatile("mfence" : : : "memory");
+#else
+	(void)address; (void)bytes;
+#endif
+}
+
+/* fill_page_dma(): memset64 + drm_clflush_virt_range(vaddr, PAGE_SIZE). */
 static void
 fill_px(struct parity_gt_object *o, uint64_t value, unsigned count)
 {
@@ -421,6 +438,7 @@ fill_px(struct parity_gt_object *o, uint64_t value, unsigned count)
 
 	for (i = 0u; i < count; i++)
 		p[i] = value;
+	parity_gt_clflush(o->cpu, PARITY_GT_PAGE_BYTES);
 }
 
 int
@@ -607,8 +625,9 @@ alloc_level(struct parity_gt_mem *gm, struct parity_gt_ppgtt *pp,
 			t->lvl = lvl;
 			t->dma = dma;
 			pp->n_tables++;
-			/* set_pd_entry(): gen8_pde_encode(px_dma(pt), I915_CACHE_LLC) = cached */
+			/* set_pd_entry() -> write_dma_entry(): the entry, then clflush it. */
 			((uint64_t *)pd->cpu)[idx] = parity_gen8_pde_encode_cached(dma);
+			parity_gt_clflush(&((uint64_t *)pd->cpu)[idx], sizeof(uint64_t));
 		}
 		if (lvl != 0) {
 			rc = alloc_level(gm, pp, t->obj, start, end, lvl);
@@ -693,5 +712,69 @@ parity_gt_ppgtt_insert_page(struct parity_gt_ppgtt *pp, uint64_t dma,
 	}
 	((uint64_t *)table->cpu)[idx & 511u] =
 		parity_gen12_ppgtt_pte_encode(dma, pat_index);
+	/* gen8_ppgtt_insert_entry(): drm_clflush_virt_range(&vaddr[idx], 8). */
+	parity_gt_clflush(&((uint64_t *)table->cpu)[idx & 511u], sizeof(uint64_t));
+	return 0;
+}
+
+#define PTE_ADDR_MASK   0x0000fffffffff000ull
+
+static struct parity_gt_ppgtt_table *
+table_by_dma(struct parity_gt_ppgtt *pp, uint64_t dma)
+{
+	unsigned i;
+
+	for (i = 0u; i < pp->n_tables; i++)
+		if (pp->tables[i].dma == dma)
+			return &pp->tables[i];
+	return 0;
+}
+
+int
+parity_gt_ppgtt_walk(struct parity_gt_ppgtt *pp, uint64_t va,
+	struct parity_gt_ppgtt_walk *w)
+{
+	struct parity_gt_object *table;
+	uint64_t idx;
+	int lvl, level;
+
+	if (pp == 0 || !pp->inited || w == 0)
+		return -EINVAL;
+	memset(w, 0, sizeof(*w));
+	w->va = va;
+	w->top_dma = pp->top_pd_dma;
+	idx = va >> 12;
+	table = pp->top_pd;
+	for (lvl = pp->top, level = 0; lvl >= 0; lvl--, level++) {
+		unsigned i = (unsigned)((idx >> ((unsigned)lvl * 9u)) & 511u);
+		uint64_t raw;
+
+		w->idx[level] = i;
+		/* Read the entry the walker would read: the table as submitted. */
+		parity_gt_clflush(&((uint64_t *)table->cpu)[i], sizeof(uint64_t));
+		raw = ((volatile uint64_t *)table->cpu)[i];
+		w->raw[level] = raw;
+		w->levels = level + 1;
+		w->scratch[level] = (lvl > 0) ? (raw == pp->scratch_encode[lvl]) :
+			(raw == pp->scratch_encode[0]);
+		if (lvl == 0) {
+			w->leaf_dma = raw & PTE_ADDR_MASK;
+			w->leaf_present = (raw & PARITY_GEN8_PAGE_PRESENT_B) != 0u;
+			w->leaf_rw = (raw & PARITY_GEN8_PAGE_RW_B) != 0u;
+			w->leaf_pat = ((raw & PARITY_GEN12_PTE_PAT0) ? 1u : 0u) |
+				((raw & PARITY_GEN12_PTE_PAT1) ? 2u : 0u) |
+				((raw & PARITY_GEN12_PTE_PAT2) ? 4u : 0u);
+			break;
+		}
+		w->child_dma[level] = raw & PTE_ADDR_MASK;
+		{
+			struct parity_gt_ppgtt_table *t = table_by_dma(pp, w->child_dma[level]);
+
+			if (t == 0)
+				break;   /* scratch or foreign: the walk ends here */
+			w->child_known[level] = 1;
+			table = t->obj;
+		}
+	}
 	return 0;
 }

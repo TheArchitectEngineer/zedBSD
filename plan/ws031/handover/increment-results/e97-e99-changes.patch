@@ -1,0 +1,1437 @@
+diff --git a/platform/amd64/vmunix.mk b/platform/amd64/vmunix.mk
+index f9c80579..1a431d21 100644
+--- a/platform/amd64/vmunix.mk
++++ b/platform/amd64/vmunix.mk
+@@ -136,7 +136,7 @@ AMD64_I915_SOURCES += src/drivers/gpu/i915/i915.c src/drivers/gpu/i915/uncore.c
+ AMD64_I915_SOURCES += src/drivers/gpu/i915/vk/vk.c src/drivers/gpu/i915/vk/cmd.c src/drivers/gpu/i915/vk/res.c src/drivers/gpu/i915/vk/pipe.c src/drivers/gpu/i915/vk/cmdbuf.c src/drivers/gpu/i915/vk/sync.c src/drivers/gpu/i915/vk/wsi.c src/drivers/gpu/i915/vk/display.c src/drivers/gpu/i915/vk/spirv.c src/drivers/gpu/i915/vk/eu.c src/drivers/gpu/i915/vk/compile.c
+ AMD64_I915_SOURCES += src/drivers/gpu/i915/parity/osdep/trace.c src/drivers/gpu/i915/parity/osdep/dma.c src/drivers/gpu/i915/parity/osdep/mmio.c src/drivers/gpu/i915/parity/osdep/pci.c src/drivers/gpu/i915/parity/osdep/sync.c src/drivers/gpu/i915/parity/osdep/runtime_pm.c
+ AMD64_I915_SOURCES += src/drivers/gpu/i915/parity/backend_pci.c src/drivers/gpu/i915/parity/backend_mmio.c src/drivers/gpu/i915/parity/backend_dma.c src/drivers/gpu/i915/parity/probe.c src/drivers/gpu/i915/parity/pte.c src/drivers/gpu/i915/parity/ktest.c src/drivers/gpu/i915/parity/backend_sync.c src/drivers/gpu/i915/parity/runner.c
+-AMD64_I915_SOURCES += src/drivers/gpu/i915/parity/pcode.c src/drivers/gpu/i915/parity/dram_bw.c src/drivers/gpu/i915/parity/reset.c src/drivers/gpu/i915/parity/wait.c src/drivers/gpu/i915/parity/drm_device.c src/drivers/gpu/i915/parity/bios.c src/drivers/gpu/i915/parity/vga.c src/drivers/gpu/i915/parity/power_domains.c src/drivers/gpu/i915/parity/combo_phy.c src/drivers/gpu/i915/parity/cdclk.c src/drivers/gpu/i915/parity/display_core.c src/drivers/gpu/i915/parity/timer_calc.c src/drivers/gpu/i915/parity/firmware_adlp_dmc.c src/drivers/gpu/i915/parity/osdep/firmware.c src/drivers/gpu/i915/parity/dmc.c src/drivers/gpu/i915/parity/display_state.c src/drivers/gpu/i915/parity/pch.c src/drivers/gpu/i915/parity/irq.c src/drivers/gpu/i915/parity/display_nogem.c src/drivers/gpu/i915/parity/gt_mem.c src/drivers/gpu/i915/parity/gt_engine.c src/drivers/gpu/i915/parity/gt_lrc.c src/drivers/gpu/i915/parity/gt_request.c src/drivers/gpu/i915/parity/gt_submit.c src/drivers/gpu/i915/parity/gt_resume.c src/drivers/gpu/i915/parity/gt_defaults.c src/drivers/gpu/i915/parity/gt_verify_wa.c src/drivers/gpu/i915/parity/gt_migrate.c src/drivers/gpu/i915/parity/pxp.c src/drivers/gpu/i915/parity/driver_probe.c src/drivers/gpu/i915/parity/gt_mmio.c src/drivers/gpu/i915/parity/gt_init_base.c src/drivers/gpu/i915/parity/gt_wa_adlp.c
++AMD64_I915_SOURCES += src/drivers/gpu/i915/parity/pcode.c src/drivers/gpu/i915/parity/dram_bw.c src/drivers/gpu/i915/parity/reset.c src/drivers/gpu/i915/parity/wait.c src/drivers/gpu/i915/parity/drm_device.c src/drivers/gpu/i915/parity/bios.c src/drivers/gpu/i915/parity/vga.c src/drivers/gpu/i915/parity/power_domains.c src/drivers/gpu/i915/parity/combo_phy.c src/drivers/gpu/i915/parity/cdclk.c src/drivers/gpu/i915/parity/display_core.c src/drivers/gpu/i915/parity/timer_calc.c src/drivers/gpu/i915/parity/firmware_adlp_dmc.c src/drivers/gpu/i915/parity/osdep/firmware.c src/drivers/gpu/i915/parity/dmc.c src/drivers/gpu/i915/parity/display_state.c src/drivers/gpu/i915/parity/pch.c src/drivers/gpu/i915/parity/irq.c src/drivers/gpu/i915/parity/display_nogem.c src/drivers/gpu/i915/parity/gt_mem.c src/drivers/gpu/i915/parity/gt_engine.c src/drivers/gpu/i915/parity/gt_lrc.c src/drivers/gpu/i915/parity/gt_request.c src/drivers/gpu/i915/parity/gt_submit.c src/drivers/gpu/i915/parity/gt_resume.c src/drivers/gpu/i915/parity/gt_defaults.c src/drivers/gpu/i915/parity/gt_verify_wa.c src/drivers/gpu/i915/parity/gt_migrate.c src/drivers/gpu/i915/parity/pxp.c src/drivers/gpu/i915/parity/driver_probe.c src/drivers/gpu/i915/parity/eu_test.c src/drivers/gpu/i915/parity/gt_mmio.c src/drivers/gpu/i915/parity/gt_init_base.c src/drivers/gpu/i915/parity/gt_wa_adlp.c
+ ifeq ($(CONFIG_DRIVER_PCI_I915_SELFTEST),y)
+ AMD64_I915_SOURCES += src/drivers/gpu/i915/selftest.c
+ endif
+diff --git a/src/drivers/gpu/i915/parity/eu_test.c b/src/drivers/gpu/i915/parity/eu_test.c
+new file mode 100644
+index 00000000..9f0576e8
+--- /dev/null
++++ b/src/drivers/gpu/i915/parity/eu_test.c
+@@ -0,0 +1,650 @@
++/*
++ * WS031 Linux-parity — the one-shot real-hardware EU test.
++ * See eu_test.h.
++ */
++#include "../internal.h"
++#include <kern/klog.h>
++#include <errno.h>
++#include <string.h>
++#include "gt_mmio.h"
++#include "gt_init.h"
++#include "gt_resume.h"
++#include "gt_submit.h"
++#include "gt_defaults.h"
++#include "reset.h"
++#include "wait.h"
++#include "eu_test.h"
++#include "osdep/mmio.h"
++
++/* C1: SIMD8, unconditional send.hdc1 a64_untyped_write of 0xc0ffee02, then send.ts EOT. */
++static const uint32_t eu_marker_cs[PARITY_EU_KERNEL_DWORDS] = {
++	0x00030061u, 0x05054220u, 0x00000000u, 0xc0ffee02u,
++	0x80030061u, 0x7f050220u, 0x00460005u, 0x00000000u,
++	0x80030061u, 0x01264aa0u, 0x00000000u, 0x00000001u,
++	0x80030161u, 0x01064aa0u, 0x00000000u, 0x00400c20u,
++	0x80000101u, 0x00000000u, 0x00000000u, 0x00000000u,
++	0x00030061u, 0x03260660u, 0x00000124u, 0x00000000u,
++	0x00030161u, 0x03060660u, 0x00000104u, 0x00000000u,
++	0x00039031u, 0x00000000u, 0xcdfa0314u, 0x019a050cu,
++	0x80030131u, 0x00000004u, 0x70007f0cu, 0x00000000u,
++};
++
++/* Commands (linux/i915-commands.inc, vk/linux/3dstate-gen12.inc). */
++#define MI_STORE_DWORD_IMM_GEN4   ((0x20u << 23) | 2u)
++#define MI_USE_GGTT               (1u << 22)
++#define MI_BATCH_BUFFER_START_GEN8 ((0x31u << 23) | 1u)
++#define MI_COPY_MEM_MEM_PPGTT     0x17000003u
++/* (3<<29)|(1<<27)|(1<<24)|(4<<16) = 0x69040000: Linux PIPELINE_SELECT (E-98 fix, was 0x6104). */
++#define PIPELINE_SELECT_DWORD(p)  ((0x6904u << 16) | (0x13u << 8) | (1u << 4) | (p))
++#define STATE_BASE_ADDRESS_HDR    ((0x6101u << 16) | (22u - 2u))
++#define GEN12_MOCS(index)         ((index) << 1)
++#define MOCS_UNCACHED_INDEX       3u
++#define MOCS_WRITEBACK_INDEX      2u
++#define PC_STALL_AT_SCOREBOARD    (1u << 1)
++
++struct eu_batch { uint32_t *cmds; unsigned count, capacity; int overflow; };
++
++static void
++emit(struct eu_batch *b, uint32_t dw)
++{
++	if (b->count < b->capacity)
++		b->cmds[b->count] = dw;
++	else
++		b->overflow = 1;
++	b->count++;
++}
++
++/* i915_draw_emit_pipe_control(): the RT flush also asks for the HDC pipeline flush. */
++static void
++emit_pc(struct eu_batch *b, uint32_t flags)
++{
++	unsigned i;
++
++	emit(b, PARITY_GFX_OP_PIPE_CONTROL(6) |
++		((flags & PARITY_PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH) != 0u ?
++		PARITY_PIPE_CONTROL0_HDC_PIPELINE_FLUSH : 0u));
++	emit(b, flags);
++	for (i = 0u; i < 4u; i++)
++		emit(b, 0u);
++}
++
++static void
++emit_marker(struct eu_batch *b, uint64_t va, uint32_t value)
++{
++	emit(b, MI_STORE_DWORD_IMM_GEN4);
++	emit(b, (uint32_t)va);
++	emit(b, (uint32_t)(va >> 32));
++	emit(b, value);
++}
++
++static void
++emit_copy(struct eu_batch *b, uint64_t dst, uint64_t src)
++{
++	emit(b, MI_COPY_MEM_MEM_PPGTT);
++	emit(b, (uint32_t)dst);
++	emit(b, (uint32_t)(dst >> 32));
++	emit(b, (uint32_t)src);
++	emit(b, (uint32_t)(src >> 32));
++}
++
++static void
++emit_sba(struct eu_batch *b, uint64_t shared, uint64_t inst_base, uint32_t mocs)
++{
++	emit(b, STATE_BASE_ADDRESS_HDR);
++	emit(b, 1u | (mocs << 4));                                  /* general: base 0, modify */
++	emit(b, 0u);
++	emit(b, mocs << 16);                                        /* stateless data-port MOCS */
++	emit(b, 1u | (mocs << 4) | ((uint32_t)shared & 0xfffff000u)); /* surface state base */
++	emit(b, (uint32_t)(shared >> 32));
++	emit(b, 1u | (mocs << 4) | ((uint32_t)shared & 0xfffff000u)); /* dynamic state base */
++	emit(b, (uint32_t)(shared >> 32));
++	emit(b, 1u | (mocs << 4));                                  /* indirect: base 0 */
++	emit(b, 0u);
++	emit(b, 1u | (GEN12_MOCS(MOCS_WRITEBACK_INDEX) << 4) |
++		((uint32_t)inst_base & 0xfffff000u));               /* instruction base */
++	emit(b, (uint32_t)(inst_base >> 32));
++	emit(b, 1u | (0xfffffu << 12));                             /* general size */
++	emit(b, 1u | (0xfffffu << 12));                             /* dynamic size */
++	emit(b, 1u | (0xfffffu << 12));                             /* indirect size */
++	emit(b, 1u | (0xfffffu << 12));                             /* instruction size */
++	emit(b, 1u | (mocs << 4) | ((uint32_t)shared & 0xfffff000u)); /* bindless surface */
++	emit(b, (uint32_t)(shared >> 32));
++	emit(b, (4096u / 64u - 1u) << 12);
++	emit(b, 1u | (mocs << 4));                                  /* bindless sampler */
++	emit(b, 0u);
++	emit(b, 0u);
++}
++
++unsigned
++parity_eu_test_build_batch(uint32_t *cmds, unsigned capacity,
++	uint64_t shared_va, uint64_t inst_base, uint32_t max_threads)
++{
++	struct eu_batch b;
++	uint32_t mocs = GEN12_MOCS(MOCS_UNCACHED_INDEX);
++	uint64_t done_va = shared_va + PARITY_EU_DONE_OFF;
++	unsigned i;
++
++	b.cmds = cmds; b.count = 0u; b.capacity = capacity; b.overflow = 0;
++
++	/* Establish 3D mode (SBA is applied in 3D: Wa_1607854226 covers ADL). */
++	emit_pc(&b, PARITY_PIPE_CONTROL_CS_STALL |
++		PARITY_PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH | PARITY_PIPE_CONTROL_DEPTH_CACHE_FLUSH |
++		PARITY_PIPE_CONTROL_DC_FLUSH_ENABLE | PARITY_PIPE_CONTROL_FLUSH_ENABLE);
++	emit(&b, PIPELINE_SELECT_DWORD(0u));                         /* 3D */
++	emit_sba(&b, shared_va, inst_base, mocs);
++	emit_pc(&b, PARITY_PIPE_CONTROL_CS_STALL |
++		PARITY_PIPE_CONTROL_STATE_CACHE_INVALIDATE | PARITY_PIPE_CONTROL_CONST_CACHE_INVALIDATE |
++		PARITY_PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE | PARITY_PIPE_CONTROL_INSTRUCTION_CACHE_INVALIDATE);
++
++	/* The GPU reads the IDD and the kernel back through this context's PPGTT. */
++	for (i = 0u; i < 8u; i++)
++		emit_copy(&b, shared_va + PARITY_EU_IDD_RB_OFF + i * 4u,
++			shared_va + PARITY_EU_IDD_OFFSET + i * 4u);
++	for (i = 0u; i < PARITY_EU_KERNEL_DWORDS; i++)
++		emit_copy(&b, shared_va + PARITY_EU_KERNEL_RB_OFF + i * 4u,
++			inst_base + PARITY_EU_KSP_OFFSET + i * 4u);
++
++	/* 3D -> GPGPU: stalling flush (RT flush pulls in the HDC pipeline flush). */
++	emit_pc(&b, PARITY_PIPE_CONTROL_CS_STALL |
++		PARITY_PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH | PARITY_PIPE_CONTROL_DEPTH_CACHE_FLUSH);
++	emit(&b, PIPELINE_SELECT_DWORD(2u));                         /* GPGPU */
++	emit_pc(&b, PARITY_PIPE_CONTROL_CS_STALL | PC_STALL_AT_SCOREBOARD);
++
++	/* MEDIA_VFE_STATE (9 dwords). */
++	emit(&b, 0x70000007u);
++	emit(&b, 0u);
++	emit(&b, 0u);
++	emit(&b, (max_threads << 16) | (2u << 8));
++	emit(&b, 0u);
++	emit(&b, 2u << 16);
++	emit(&b, 0u);
++	emit(&b, 0u);
++	emit(&b, 0u);
++
++	/* MEDIA_STATE_FLUSH before MIDL clears temporary interface-descriptor storage. */
++	emit(&b, 0x70040000u);
++	emit(&b, 0u);
++
++	/* MEDIA_INTERFACE_DESCRIPTOR_LOAD (4 dwords): 32-byte IDD at the dynamic offset. */
++	emit(&b, 0x70020002u);
++	emit(&b, 0u);
++	emit(&b, 32u);
++	emit(&b, PARITY_EU_IDD_OFFSET);
++
++	emit_marker(&b, shared_va + PARITY_EU_READY_OFF, PARITY_EU_READY_TAG);
++
++	/* GPGPU_WALKER: one SIMD8 thread group of one thread. */
++	emit(&b, 0x7105000du);
++	emit(&b, 0u);          /* interface descriptor offset */
++	emit(&b, 0u);          /* indirect data length */
++	emit(&b, 0u);          /* indirect data start */
++	emit(&b, 0u);          /* thread counters + SIMD8 */
++	emit(&b, 0u);          /* thread group id starting X */
++	emit(&b, 0u);
++	emit(&b, 1u);          /* X dimension */
++	emit(&b, 0u);          /* starting Y */
++	emit(&b, 0u);
++	emit(&b, 1u);          /* Y dimension */
++	emit(&b, 0u);          /* starting Z */
++	emit(&b, 1u);          /* Z dimension */
++	emit(&b, 0x1u);        /* right execution mask */
++	emit(&b, 0xffffffffu); /* bottom execution mask */
++
++	emit(&b, 0x70040000u); /* MEDIA_STATE_FLUSH after the walker */
++	emit(&b, 0u);
++
++	/* Wa_1607156449: a stalling flush without post-sync precedes the post-sync PC. */
++	emit_pc(&b, PARITY_PIPE_CONTROL_CS_STALL |
++		PARITY_PIPE_CONTROL_DC_FLUSH_ENABLE | PARITY_PIPE_CONTROL_FLUSH_ENABLE);
++
++	/* Post-sync write of the done tag into the PPGTT (raw VA). */
++	emit(&b, PARITY_GFX_OP_PIPE_CONTROL(6));
++	emit(&b, PARITY_PIPE_CONTROL_CS_STALL | (1u << 14));        /* PostSync = WriteImmediate */
++	emit(&b, (uint32_t)done_va);
++	emit(&b, (uint32_t)(done_va >> 32));
++	emit(&b, PARITY_EU_DONE_TAG);
++	emit(&b, 0u);
++
++	emit_marker(&b, shared_va + PARITY_EU_CS_OFF, PARITY_EU_CS_TAG);
++
++	emit(&b, PARITY_MI_BATCH_BUFFER_END);
++	emit(&b, PARITY_MI_NOOP);
++	return b.overflow ? 0u : b.count;
++}
++
++int
++parity_eu_batch_check_pipeline_select(const uint32_t *cmds, unsigned n,
++	struct parity_eu_pipesel_check *out)
++{
++	struct parity_eu_pipesel_check c;
++	unsigned k;
++
++	memset(&c, 0, sizeof(c));
++	for (k = 0u; k < n; k++) {
++		uint32_t dw = cmds[k];
++
++		if (dw == 0x69041310u) {            /* fixed reference: 3D */
++			if (c.n_3d++ == 0u) c.idx_3d = k;
++		} else if (dw == 0x69041312u) {     /* fixed reference: GPGPU */
++			if (c.n_gpgpu++ == 0u) c.idx_gpgpu = k;
++		} else if ((dw >> 16) == 0x6104u || (dw >> 16) == 0x6904u) {
++			if (c.n_bad++ == 0u) { c.idx_bad = k; c.bad_word = dw; }
++		}
++	}
++	if (out != 0)
++		*out = c;
++	return (c.n_3d == 1u && c.n_gpgpu == 1u && c.n_bad == 0u &&
++		c.idx_3d < c.idx_gpgpu) ? 0 : -EINVAL;
++}
++
++static uint64_t
++fnv1a64(const void *data, size_t bytes, uint64_t h)
++{
++	const uint8_t *p = data;
++	size_t i;
++
++	for (i = 0u; i < bytes; i++) {
++		h ^= p[i];
++		h *= 0x100000001b3ull;
++	}
++	return h;
++}
++
++static int
++fail(struct parity_eu_test *t, int rc, const char *where)
++{
++	if (t->err == 0) {
++		t->err = rc;
++		t->err_where = where;
++	}
++	t->outcome = PARITY_EU_ERROR;
++	return rc;
++}
++
++/* The request has landed AND the engine has reported the context complete. */
++static int
++retired(struct parity_gt_request *rq, struct parity_execlists *el)
++{
++	return parity_request_completed(rq) && !el->have_active && el->pending[0] == 0;
++}
++
++static int
++wait_retired(struct parity_eu_test *t, struct parity_gt_engine *ge,
++	struct parity_execlists *el, struct parity_gt_request *rq,
++	struct osdep_mmio *m, unsigned timeout_ms)
++{
++	unsigned budget = timeout_ms * 20u;   /* 50 us per step */
++	unsigned k;
++
++	for (k = 0u; k < budget; k++) {
++		t->polls++;
++		(void)parity_execlists_process_csb(ge, el, m);
++		if (el->csb_errors != 0u)
++			return -EIO;
++		if (retired(rq, el))
++			return 0;
++		if (parity_udelay(50u) != 0)
++			return fail(t, -EIO, "time base");
++	}
++	return -ETIMEDOUT;
++}
++
++int
++parity_eu_test_run(struct parity_eu_test *t, struct parity_gt_engines *es,
++	struct parity_gt_ppgtt *vm, struct parity_gt_mem *gm,
++	const struct parity_sseu *sseu, struct osdep_mmio *m,
++	struct spinlock *uncore_lock, unsigned timeout_ms)
++{
++	struct parity_gt_engine *ge;
++	struct parity_execlists *el;
++	volatile uint32_t *page;
++	uint64_t dma;
++	unsigned i, bit;
++	uint32_t *cs;
++	int rc;
++
++	if (t == 0 || es == 0 || vm == 0 || gm == 0 || sseu == 0 || m == 0)
++		return -EINVAL;
++	memset(t, 0, sizeof(*t));
++
++	/* The render engine. */
++	for (i = 0u; i < es->n; i++)
++		if (es->ge[i].info->class == PARITY_RENDER_CLASS)
++			break;
++	if (i == es->n)
++		return fail(t, -ENODEV, "no render engine");
++	t->engine_idx = i;
++	ge = &es->ge[i];
++	el = &es->el[i];
++
++	/* VFE MaxThreads = max_cs_threads(112) * enabled DSS - 1 (blorp, runtime popcount). */
++	for (bit = 0u; bit < 16u; bit++)
++		if ((sseu->subslice_mask >> bit) & 1u)
++			t->dss_count++;
++	if (t->dss_count == 0u)
++		return fail(t, -EINVAL, "no subslice");
++	t->max_threads = 112u * t->dss_count - 1u;
++
++	/* Two user objects, softpinned into the context's vm at the L-C1 addresses. */
++	t->shared = parity_gt_object_create(gm, 4096u);
++	t->batch = parity_gt_object_create(gm, 4096u);
++	if (t->shared == 0 || t->batch == 0)
++		return fail(t, -ENOMEM, "gem_create");
++	rc = parity_gt_ppgtt_alloc_range(gm, vm, PARITY_EU_SHARED_VA, 2u * 4096u);
++	if (rc != 0)
++		return fail(t, rc, "allocate_va_range");
++	rc = parity_gt_object_page_dma(t->shared, 0u, &dma);
++	if (rc == 0)
++		rc = parity_gt_ppgtt_insert_page(vm, dma, PARITY_EU_SHARED_VA, 0u /* I915_CACHE_LLC -> PAT 0 */);
++	if (rc == 0)
++		rc = parity_gt_object_page_dma(t->batch, 0u, &dma);
++	if (rc == 0)
++		rc = parity_gt_ppgtt_insert_page(vm, dma, PARITY_EU_BATCH_VA, 0u);
++	if (rc != 0)
++		return fail(t, rc, "ppgtt_insert");
++
++	/* The shared page: kernel at 1024, IDD at 896, markers pre-set to 0xdead0000. */
++	page = (volatile uint32_t *)t->shared->cpu;
++	memcpy((char *)t->shared->cpu + PARITY_EU_KSP_OFFSET, eu_marker_cs, sizeof(eu_marker_cs));
++	{
++		volatile uint32_t *idd = page + PARITY_EU_IDD_OFFSET / 4u;
++
++		idd[0] = PARITY_EU_KSP_OFFSET;   /* Kernel Start Pointer */
++		idd[1] = 0u; idd[2] = 1u << 20; idd[3] = 0u;
++		idd[4] = 0u; idd[5] = 0u; idd[6] = 1u; idd[7] = 0u;   /* one thread per group */
++	}
++	page[PARITY_EU_READY_OFF / 4u] = 0xdead0000u;
++	page[PARITY_EU_EU_OFF / 4u] = 0xdead0000u;
++	page[PARITY_EU_DONE_OFF / 4u] = 0xdead0000u;
++	page[PARITY_EU_CS_OFF / 4u] = 0xdead0000u;
++
++	t->batch_dwords = parity_eu_test_build_batch((uint32_t *)t->batch->cpu, 1024u,
++		PARITY_EU_SHARED_VA, PARITY_EU_SHARED_VA, t->max_threads);
++	if (t->batch_dwords == 0u)
++		return fail(t, -ENOSPC, "build_batch");
++	/* Read the words back from the object that is submitted; never submit a bad select. */
++	t->pipesel_rc = parity_eu_batch_check_pipeline_select((const uint32_t *)t->batch->cpu,
++		t->batch_dwords, &t->pipesel);
++	if (t->pipesel_rc != 0)
++		return fail(t, t->pipesel_rc, "pipeline_select_verify");
++	/* The fixture as submitted: batch dwords, and IDD..kernel of the shared page. */
++	t->batch_hash = fnv1a64(t->batch->cpu, (size_t)t->batch_dwords * 4u, 0xcbf29ce484222325ull);
++	t->fixture_hash = fnv1a64((const char *)t->shared->cpu + PARITY_EU_IDD_OFFSET,
++		(PARITY_EU_KSP_OFFSET - PARITY_EU_IDD_OFFSET) + sizeof(eu_marker_cs),
++		0xcbf29ce484222325ull);
++
++	/* intel_context_create(engine) on the kernel vm; it inherits engine->default_state. */
++	rc = parity_lrc_alloc(&t->ce, ge, vm, gm, 4096u, 0u);
++	if (rc != 0)
++		return fail(t, rc, "intel_context_create");
++	t->tl_page = parity_gt_object_create(gm, 4096u);
++	if (t->tl_page == 0)
++		return fail(t, -ENOMEM, "intel_timeline_create");
++	rc = parity_gt_ggtt_bind(gm, t->tl_page);
++	if (rc != 0)
++		return fail(t, rc, "intel_timeline_pin");
++	parity_lrc_init_state(&t->ce);
++	(void)parity_lrc_update_regs(&t->ce, t->ce.ring.tail);
++
++	/* i915_request_create(): has_initial_breadcrumb, seqno += 2. */
++	t->tl_seqno = 2u;
++	rc = parity_request_create(&t->rq, &t->ce, t->tl_seqno,
++		(uint32_t)t->tl_page->ggtt_offset, (volatile uint32_t *)t->tl_page->cpu);
++	if (rc != 0)
++		return fail(t, rc, "i915_request_create");
++
++	/* gen8_emit_init_breadcrumb() */
++	cs = parity_ring_begin(&t->rq, 6u);
++	if (cs == 0)
++		return fail(t, t->rq.error, "emit_init_breadcrumb");
++	*cs++ = MI_STORE_DWORD_IMM_GEN4 | MI_USE_GGTT;
++	*cs++ = t->rq.hwsp_ggtt;
++	*cs++ = 0u;
++	*cs++ = t->rq.seqno - 1u;
++	*cs++ = PARITY_MI_NOOP;
++	*cs++ = PARITY_MI_ARB_CHECK;
++	parity_ring_advance(&t->rq, cs);
++
++	/* gen8_emit_bb_start(): arbitration on around a PPGTT batch start. */
++	cs = parity_ring_begin(&t->rq, 6u);
++	if (cs == 0)
++		return fail(t, t->rq.error, "emit_bb_start");
++	*cs++ = PARITY_MI_ARB_ON_OFF | PARITY_MI_ARB_ENABLE;
++	*cs++ = MI_BATCH_BUFFER_START_GEN8 | (1u << 8);
++	*cs++ = (uint32_t)PARITY_EU_BATCH_VA;
++	*cs++ = (uint32_t)(PARITY_EU_BATCH_VA >> 32);
++	*cs++ = PARITY_MI_ARB_ON_OFF;   /* MI_ARB_DISABLE */
++	*cs++ = PARITY_MI_NOOP;
++	parity_ring_advance(&t->rq, cs);
++
++	rc = parity_request_add(&t->rq);
++	if (rc != 0)
++		return fail(t, rc, "i915_request_add");
++
++	/*
++	 * Immediately before submission: what the GPU will walk for the batch,
++	 * the IDD, the kernel, the EU store target and the done marker, read
++	 * from the tables PDP0 of this context names.
++	 */
++	{
++		static const uint32_t off[5] = { 0u, PARITY_EU_IDD_OFFSET, PARITY_EU_KSP_OFFSET,
++			PARITY_EU_EU_OFF, PARITY_EU_DONE_OFF };
++		uint64_t pdp0 = ((uint64_t)t->ce.lrc_reg_state[PARITY_CTX_PDP0_UDW] << 32) |
++			t->ce.lrc_reg_state[PARITY_CTX_PDP0_LDW];
++
++		t->pdp0_matches_top = pdp0 == vm->top_pd_dma;
++		for (i = 0u; i < 5u; i++) {
++			uint64_t va = (i == 0u) ? PARITY_EU_BATCH_VA : PARITY_EU_SHARED_VA + off[i];
++
++			(void)parity_gt_ppgtt_walk(vm, va, &t->walk[i]);
++		}
++		t->walks = 5u;
++	}
++
++	rc = parity_execlists_submit(ge, el, m, &t->rq);
++	if (rc != 0)
++		return fail(t, rc, "execlists_submit");
++	t->submitted = 1;
++
++	/* i915_request_wait() */
++	rc = wait_retired(t, ge, el, &t->rq, m, timeout_ms);
++	if (rc == 0) {
++		t->completed = 1;
++	} else if (rc == -ETIMEDOUT) {
++		t->timed_out = 1;
++	} else {
++		(void)fail(t, rc, "i915_request_wait");
++	}
++
++	/* Read the page back regardless (a hang may still have left the CS markers). */
++	t->ready = page[PARITY_EU_READY_OFF / 4u];
++	t->eu = page[PARITY_EU_EU_OFF / 4u];
++	t->done = page[PARITY_EU_DONE_OFF / 4u];
++	t->cs = page[PARITY_EU_CS_OFF / 4u];
++	t->idd_rb_ok = 1;
++	t->kernel_rb_ok = 1;
++	for (i = 0u; i < 8u; i++) {
++		t->idd_rb[i] = page[PARITY_EU_IDD_RB_OFF / 4u + i];
++		if (t->idd_rb[i] != page[PARITY_EU_IDD_OFFSET / 4u + i])
++			t->idd_rb_ok = 0;
++	}
++	for (i = 0u; i < PARITY_EU_KERNEL_DWORDS; i++) {
++		t->kernel_rb[i] = page[PARITY_EU_KERNEL_RB_OFF / 4u + i];
++		if (t->kernel_rb[i] != eu_marker_cs[i])
++			t->kernel_rb_ok = 0;
++	}
++
++	if (t->completed) {
++		/* intel_context_unpin / engine park: switch to the kernel context. */
++		if (el->wakeref_serial != el->serial) {
++			uint32_t kseq = ++es->kernel_tl_seqno[t->engine_idx];
++
++			rc = parity_request_create(&t->krq, &es->kernel_ce[t->engine_idx], kseq,
++				(uint32_t)ge->hwsp_ggtt + PARITY_I915_GEM_HWS_SEQNO_ADDR,
++				&ge->hwsp[PARITY_I915_GEM_HWS_SEQNO_ADDR / 4u]);
++			if (rc == 0)
++				rc = parity_request_add(&t->krq);
++			el->wakeref_serial = el->serial + 1u;
++			if (rc == 0)
++				rc = parity_execlists_submit(ge, el, m, &t->krq);
++			if (rc == 0)
++				rc = wait_retired(t, ge, el, &t->krq, m, timeout_ms);
++			if (rc == 0)
++				t->parked = 1;
++			else
++				(void)fail(t, rc, "switch_to_kernel_context");
++		} else {
++			t->parked = 1;
++		}
++		t->outcome = (t->eu == PARITY_EU_STORE_TAG && t->cs == PARITY_EU_CS_TAG &&
++			t->done == PARITY_EU_DONE_TAG) ? PARITY_EU_PASS : PARITY_EU_ERROR;
++		if (t->outcome == PARITY_EU_ERROR && t->err == 0)
++			(void)fail(t, -EIO, "markers");
++		return t->err;
++	}
++
++	/* Hang (or an error): record, dump, then reset the engines like intel_gt_set_wedged. */
++	if (t->timed_out)
++		t->outcome = PARITY_EU_HANG;
++	t->hwsp_seqno_observed = *t->rq.hwsp_cpu;
++	t->ctx_ccid_hi = (uint32_t)(t->ce.lrc_desc >> 32);
++	t->ctx_ccid_lo = (uint32_t)t->ce.lrc_desc;
++	t->time_base_fault = (t->err == -EIO && t->err_where != 0 &&
++		t->err_where[0] == 't') ? 1 : 0;
++	kern_logf("i915: parity EU-TEST record: rq seqno expected=%u hwsp_observed=%u "
++		"initial_breadcrumb_seen=%d | ctx sw_id=%u tag=%d lrca=%08x desc=%08x:%08x "
++		"state_ggtt=0x%llx ring_ggtt=0x%llx | csb_head=%u last_csb=%08x:%08x | time_base_fault=%d\n",
++		t->rq.seqno, t->hwsp_seqno_observed,
++		(int32_t)(t->hwsp_seqno_observed - (t->rq.seqno - 1u)) >= 0,
++		t->ce.sw_id, t->ce.tag, t->ce.lrca, t->ctx_ccid_hi, t->ctx_ccid_lo,
++		(unsigned long long)t->ce.state->ggtt_offset,
++		(unsigned long long)t->ce.ring.ggtt_offset,
++		ge->csb_head, el->last_csb_hi, el->last_csb_lo, t->time_base_fault);
++	parity_engine_dump(ge, el, m, "eu-test");
++	kern_logf("i915: parity EU-TEST hang: ipehr=%08x acthd=%08x:%08x instdone=%08x fault(0xcec4)=%08x "
++		"row_instdone(0xe164,raw)=%08x eu_dis(0x9134)=%08x slice_ack(0x804c)=%08x "
++		"ss01_eu_ack(0x805c)=%08x ss23_eu_ack(0x8060)=%08x\n",
++		osdep_mmio_read32(m, ge->info->mmio_base + 0x68u),
++		osdep_mmio_read32(m, ge->info->mmio_base + 0x5cu),
++		osdep_mmio_read32(m, ge->info->mmio_base + 0x74u),
++		osdep_mmio_read32(m, ge->info->mmio_base + 0x6cu),
++		osdep_mmio_read32(m, 0xcec4u), osdep_mmio_read32(m, 0xe164u),
++		osdep_mmio_read32(m, 0x9134u), osdep_mmio_read32(m, 0x804cu),
++		osdep_mmio_read32(m, 0x805cu), osdep_mmio_read32(m, 0x8060u));
++	for (i = 0u; i < es->n; i++)
++		parity_execlists_reset_prepare(&es->ge[i], m);
++	(void)parity_gt_reset_all(uncore_lock, m, 2000u);
++	t->wedged = 1;
++	return t->err != 0 ? t->err : -ETIMEDOUT;
++}
++
++void
++parity_eu_test_release(struct parity_eu_test *t, struct parity_gt_mem *gm)
++{
++	if (t == 0 || gm == 0)
++		return;
++	if (t->tl_page != 0) {
++		parity_gt_object_destroy(gm, t->tl_page);
++		t->tl_page = 0;
++	}
++	if (t->ce.allocated)
++		parity_lrc_release(&t->ce, gm);
++	if (t->batch != 0) {
++		parity_gt_object_destroy(gm, t->batch);
++		t->batch = 0;
++	}
++	if (t->shared != 0) {
++		parity_gt_object_destroy(gm, t->shared);
++		t->shared = 0;
++	}
++	/* The PPGTT tables of the range stay with the vm (freed with it). */
++}
++
++/* ---------------- MCR workaround readback (intel_gt_mcr_read per DSS) ---------------- */
++
++#define GEN8_MCR_SELECTOR        0x0fdcu
++#define GEN11_MCR_SLICE_MASK     0x78000000u
++#define GEN11_MCR_SUBSLICE_MASK  0x07000000u
++#define GEN11_MCR_SLICE(s)       ((((uint32_t)(s)) & 0xfu) << 27)
++#define GEN11_MCR_SUBSLICE(ss)   ((((uint32_t)(ss)) & 0x7u) << 24)
++
++/* The three RCS workaround registers the CS-side verify cannot read (E-94). */
++static const uint32_t mcr_probe_regs[3] = { 0xe4f4u, 0xe18cu, 0xe48cu };
++/* GEN8_ROW_CHICKEN2, GEN10_SAMPLER_MODE, GEN9_ROW_CHICKEN4 */
++
++/*
++ * rw_with_mcr_steering_fw(FW_REG_READ) for GRAPHICS_VER 11..12.5x: keep the
++ * multicast bit (Wa_22013088509), set slice/subslice, read, restore the old
++ * selector.  Forcewake (RENDER for 0xe000.., and the selector itself) must
++ * already be held by the caller; the MCR lock is the exclusive section.
++ */
++static uint32_t
++mcr_read_steered(struct osdep_mmio *m, uint32_t reg, unsigned group, unsigned instance,
++	uint32_t *sel_before, uint32_t *sel_after)
++{
++	uint32_t mcr_mask = GEN11_MCR_SLICE_MASK | GEN11_MCR_SUBSLICE_MASK;
++	uint32_t old, mcr, val;
++
++	old = osdep_mmio_raw_read32(m, GEN8_MCR_SELECTOR);
++	mcr = (old & ~mcr_mask) | GEN11_MCR_SLICE(group) | GEN11_MCR_SUBSLICE(instance);
++	osdep_mmio_raw_write32(m, GEN8_MCR_SELECTOR, mcr);
++	val = osdep_mmio_raw_read32(m, reg);
++	osdep_mmio_raw_write32(m, GEN8_MCR_SELECTOR, old);
++	*sel_before = old;
++	*sel_after = osdep_mmio_raw_read32(m, GEN8_MCR_SELECTOR);
++	return val;
++}
++
++int
++parity_mcr_probe_wa(struct parity_mcr_probe *pr, struct osdep_mmio *m,
++	const struct parity_wa_list *wal, const struct parity_sseu *sseu)
++{
++	unsigned r, ss, k;
++	int rc;
++
++	if (pr == 0 || m == 0 || wal == 0 || sseu == 0)
++		return -EINVAL;
++	memset(pr, 0, sizeof(*pr));
++	rc = osdep_mcr_lock(m, 0u);
++	pr->lock_rc = rc;
++	if (rc != 0)
++		return rc;
++	for (r = 0u; r < 3u; r++) {
++		uint32_t reg = mcr_probe_regs[r];
++		uint32_t set = 0u, mask = 0u;
++		int listed = 0;
++
++		/* The workaround list's expectation for this register (merged entries). */
++		for (k = 0u; k < wal->count; k++) {
++			if (wal->list[k].reg != reg)
++				continue;
++			listed = 1;
++			set |= wal->list[k].set;
++			mask |= wal->list[k].read_mask;
++		}
++		/* group = the first enabled slice; every enabled subslice (DSS) of it. */
++		for (ss = 0u; ss < 8u; ss++) {
++			struct parity_mcr_probe_entry *e;
++
++			if (((sseu->subslice_mask >> ss) & 1u) == 0u)
++				continue;
++			if (pr->n == PARITY_MCR_PROBE_MAX)
++				break;
++			e = &pr->e[pr->n++];
++			e->reg = reg;
++			e->group = 0u;
++			e->instance = ss;
++			e->listed = listed;
++			e->expected_set = set;
++			e->read_mask = mask;
++			e->raw = mcr_read_steered(m, reg, 0u, ss, &e->selector_before,
++				&e->selector_after);
++			/* wa_verify(): (cur ^ set) & read; masked registers compare the low bits. */
++			e->masked_mismatch = listed ? ((e->raw ^ set) & mask) : 0u;
++			if (e->masked_mismatch != 0u)
++				pr->mismatches++;
++		}
++	}
++	osdep_mcr_unlock(m);
++	return 0;
++}
+diff --git a/src/drivers/gpu/i915/parity/eu_test.h b/src/drivers/gpu/i915/parity/eu_test.h
+new file mode 100644
+index 00000000..47e7811a
+--- /dev/null
++++ b/src/drivers/gpu/i915/parity/eu_test.h
+@@ -0,0 +1,157 @@
++/*
++ * WS031 Linux-parity — the one-shot real-hardware EU test (explicitly released).
++ *
++ * The compute positive control of the big-bang investigation (C1: GPGPU_WALKER
++ * dispatching one SIMD8 thread whose kernel does an unconditional A64 store of
++ * 0xc0ffee02 and then send.ts EOT), executed on the GT that the parity port
++ * initialised the Linux way.  The kernel, IDD, VFE state and command order are
++ * the L-C1 case that completed on Linux i915 on this same GPU (E-25).  It is
++ * NOT byte-identical to that replay: the batch VA differs (0x100401000 here,
++ * 0x100600000 there) and this batch carries diagnostic MI_COPY_MEM_MEM
++ * readbacks.  Up to E-98 the PIPELINE_SELECT words were also mis-encoded
++ * (0x6104xxxx, the GPGPU_CSR_BASE_ADDRESS header); identity is established by
++ * comparing the final submitted bytes, never by provenance.
++ *
++ * The request is shaped like an execbuf request (gem/i915_gem_execbuffer.c,
++ * gt/gen8_engine_cs.c): i915_request_create (invalidate flush) ->
++ * gen8_emit_init_breadcrumb (seqno-1 store, MI_ARB_CHECK) ->
++ * gen8_emit_bb_start (ARB on, MI_BATCH_BUFFER_START_GEN8 into the PPGTT,
++ * ARB off) -> i915_request_add (fini breadcrumb), on a fresh context of the
++ * kernel vm that inherits engine->default_state (lrc_init_state).
++ *
++ * Outcome: PASS when the CS markers land and the EU store is visible;
++ * HANG when the request does not retire within the timeout (the engines are
++ * then reset the way intel_gt_set_wedged would).
++ */
++#ifndef PARITY_EU_TEST_H
++#define PARITY_EU_TEST_H
++
++#include <stdint.h>
++#include "gt_mem.h"
++#include "gt_lrc.h"
++#include "gt_request.h"
++
++struct parity_gt_engines;
++struct parity_gt_ppgtt;
++struct parity_sseu;
++struct osdep_mmio;
++struct spinlock;
++
++#define PARITY_EU_SHARED_VA      0x100400000ull
++#define PARITY_EU_BATCH_VA       0x100401000ull
++#define PARITY_EU_IDD_OFFSET     896u
++#define PARITY_EU_KSP_OFFSET     1024u
++#define PARITY_EU_READY_OFF      0xc00u
++#define PARITY_EU_EU_OFF         0xc20u     /* hard-coded in the store kernel */
++#define PARITY_EU_DONE_OFF       0xc28u
++#define PARITY_EU_CS_OFF         0xc30u
++#define PARITY_EU_IDD_RB_OFF     0xd00u
++#define PARITY_EU_KERNEL_RB_OFF  0xe00u
++#define PARITY_EU_READY_TAG      0xc0ffee10u
++#define PARITY_EU_STORE_TAG      0xc0ffee02u
++#define PARITY_EU_DONE_TAG       0xc0ffee20u
++#define PARITY_EU_CS_TAG         0xc0ffee30u
++#define PARITY_EU_KERNEL_DWORDS  36u
++
++/* The real-hardware EU test runs only when explicitly released (build-time). */
++#ifndef PARITY_EU_TEST
++#define PARITY_EU_TEST 0
++#endif
++
++#define PARITY_EU_PASS   1
++#define PARITY_EU_HANG   2
++#define PARITY_EU_ERROR  3
++
++/*
++ * Strict Gen12.0 check of the PIPELINE_SELECT words of a built C1 batch,
++ * against fixed reference words (not the emitter's macro).  0 when the batch
++ * has exactly one 0x69041310 (3D) followed by exactly one 0x69041312 (GPGPU)
++ * and no dword carrying the 0x6104 header (GPGPU_CSR_BASE_ADDRESS, which C1
++ * never emits) or an unexpected 0x6904 word.
++ */
++struct parity_eu_pipesel_check {
++	unsigned n_3d, n_gpgpu, n_bad;
++	unsigned idx_3d, idx_gpgpu, idx_bad;
++	uint32_t bad_word;
++};
++int parity_eu_batch_check_pipeline_select(const uint32_t *cmds, unsigned n,
++	struct parity_eu_pipesel_check *out);
++
++struct parity_eu_test {
++	unsigned engine_idx;
++	struct parity_gt_context ce;
++	struct parity_gt_object *tl_page;
++	uint32_t tl_seqno;
++	struct parity_gt_object *shared;
++	struct parity_gt_object *batch;
++	unsigned batch_dwords;
++	uint32_t max_threads;
++	unsigned dss_count;
++
++	struct parity_gt_request rq;
++	struct parity_gt_request krq;
++	int submitted, completed, parked, timed_out, wedged;
++	unsigned polls;
++
++	/* what the shared page says afterwards */
++	uint32_t ready, eu, done, cs;
++	uint32_t idd_rb[8];
++	uint32_t kernel_rb[PARITY_EU_KERNEL_DWORDS];
++	int idd_rb_ok, kernel_rb_ok;
++
++	/* fixture identity: FNV-1a 64 over the batch dwords and the shared fixture */
++	uint64_t batch_hash;
++	uint64_t fixture_hash;
++	/* PIPELINE_SELECT words read back from the object that is submitted */
++	struct parity_eu_pipesel_check pipesel;
++	int pipesel_rc;
++
++	/* what the GPU walks for the fixture VAs (read from the submitted tables) */
++	struct parity_gt_ppgtt_walk walk[5];
++	unsigned walks;
++	int pdp0_matches_top;
++
++	/* hang record (before the reset) */
++	uint32_t hwsp_seqno_observed;
++	uint32_t ctx_ccid_hi, ctx_ccid_lo;
++	int time_base_fault;
++
++	int outcome;
++	int err;
++	const char *err_where;
++};
++
++/* MCR (multicast) workaround readback: intel_gt_mcr_read() per DSS. */
++struct parity_mcr_probe_entry {
++	uint32_t reg;
++	unsigned group, instance;
++	uint32_t raw, expected_set, read_mask, masked_mismatch;
++	uint32_t selector_before, selector_after;
++	int listed;                 /* the register is in the workaround list */
++};
++#define PARITY_MCR_PROBE_MAX 32
++struct parity_mcr_probe {
++	struct parity_mcr_probe_entry e[PARITY_MCR_PROBE_MAX];
++	unsigned n;
++	unsigned mismatches;
++	int lock_rc;
++};
++
++struct parity_wa_list;
++struct parity_sseu;
++/* Steered reads of the three engine WA registers the SRM verify skips (E-94). */
++int parity_mcr_probe_wa(struct parity_mcr_probe *pr, struct osdep_mmio *m,
++	const struct parity_wa_list *wal, const struct parity_sseu *sseu);
++
++/* Builds the batch (exposed for the GPU-free word check); returns dwords. */
++unsigned parity_eu_test_build_batch(uint32_t *cmds, unsigned capacity,
++	uint64_t shared_va, uint64_t inst_base, uint32_t max_threads);
++
++int parity_eu_test_run(struct parity_eu_test *t, struct parity_gt_engines *es,
++	struct parity_gt_ppgtt *vm, struct parity_gt_mem *gm,
++	const struct parity_sseu *sseu, struct osdep_mmio *m,
++	struct spinlock *uncore_lock, unsigned timeout_ms);
++
++void parity_eu_test_release(struct parity_eu_test *t, struct parity_gt_mem *gm);
++
++#endif /* PARITY_EU_TEST_H */
+diff --git a/src/drivers/gpu/i915/parity/gt_engine.h b/src/drivers/gpu/i915/parity/gt_engine.h
+index 9f7b407a..60ffa8dc 100644
+--- a/src/drivers/gpu/i915/parity/gt_engine.h
++++ b/src/drivers/gpu/i915/parity/gt_engine.h
+@@ -83,6 +83,10 @@ struct parity_gt_object;
+ struct parity_gt_engine {
+ 	struct parity_engine *info;      /* the P6-0 engine object */
+ 
++	/* engine->default_state: the image __engines_record_defaults() saved;
++	 * every context created afterwards starts from it (lrc_init_state). */
++	struct parity_gt_object *default_state;
++
+ 	/* init_status_page() */
+ 	struct parity_gt_object *status_page;
+ 	volatile uint32_t *hwsp;         /* CPU view of the status page */
+diff --git a/src/drivers/gpu/i915/parity/gt_lrc.c b/src/drivers/gpu/i915/parity/gt_lrc.c
+index 5b38cad5..4ff0da19 100644
+--- a/src/drivers/gpu/i915/parity/gt_lrc.c
++++ b/src/drivers/gpu/i915/parity/gt_lrc.c
+@@ -274,11 +274,23 @@ parity_lrc_init_regs(struct parity_gt_context *ce, int inhibit)
+ void
+ parity_lrc_init_state(struct parity_gt_context *ce)
+ {
+-	int inhibit = 1;   /* engine->default_state is NULL until P6-c4 records it */
++	int inhibit = 1;   /* engine->default_state is NULL until P6-c4b records it */
+ 
+ 	if (ce == 0 || !ce->allocated)
+ 		return;
+ 
++	/* shmem_read(engine->default_state, 0, state, engine->context_size). */
++	if (ce->ge->default_state != 0 && ce->ge->default_state->cpu != 0) {
++		uint32_t n = ce->ge->info->context_size;
++
++		if (n > ce->ge->default_state->bytes)
++			n = ce->ge->default_state->bytes;
++		if (n > ce->state_bytes)
++			n = ce->state_bytes;
++		memcpy(ce->state->cpu, ce->ge->default_state->cpu, n);
++		inhibit = 0;   /* CONTEXT_VALID_BIT */
++	}
++
+ 	/* Clear the ppHWSP (including the per-context counters). */
+ 	memset(ce->state->cpu, 0, 4096u);
+ 
+diff --git a/src/drivers/gpu/i915/parity/gt_mem.c b/src/drivers/gpu/i915/parity/gt_mem.c
+index 637005c8..9775f914 100644
+--- a/src/drivers/gpu/i915/parity/gt_mem.c
++++ b/src/drivers/gpu/i915/parity/gt_mem.c
+@@ -50,6 +50,13 @@ parity_gen8_pde_encode(uint64_t dma)
+ 		PARITY_PPAT_UNCACHED;
+ }
+ 
++uint64_t
++parity_gen8_pde_encode_cached(uint64_t dma)
++{
++	/* PPAT_CACHED_PDE is 0: WB LLC. */
++	return dma | PARITY_GEN8_PAGE_PRESENT_B | PARITY_GEN8_PAGE_RW_B;
++}
++
+ /* --- the pool and the GGTT window ---------------------------------------- */
+ 
+ int
+@@ -406,6 +413,23 @@ parity_gt_init_scratch(struct parity_gt_mem *gm, struct parity_gt_object **out)
+ /* --- the kernel ppgtt ----------------------------------------------------- */
+ 
+ /* fill_px(): every entry of one page holds the same encoded address. */
++void
++parity_gt_clflush(const volatile void *address, size_t bytes)
++{
++#if defined(__x86_64__) || defined(__i386__)
++	const volatile char *p = (const volatile char *)((uintptr_t)address & ~(uintptr_t)63u);
++	const volatile char *end = (const volatile char *)address + bytes;
++
++	__asm__ volatile("mfence" : : : "memory");
++	for (; p < end; p += 64)
++		__asm__ volatile("clflush (%0)" : : "r"(p) : "memory");
++	__asm__ volatile("mfence" : : : "memory");
++#else
++	(void)address; (void)bytes;
++#endif
++}
++
++/* fill_page_dma(): memset64 + drm_clflush_virt_range(vaddr, PAGE_SIZE). */
+ static void
+ fill_px(struct parity_gt_object *o, uint64_t value, unsigned count)
+ {
+@@ -414,6 +438,7 @@ fill_px(struct parity_gt_object *o, uint64_t value, unsigned count)
+ 
+ 	for (i = 0u; i < count; i++)
+ 		p[i] = value;
++	parity_gt_clflush(o->cpu, PARITY_GT_PAGE_BYTES);
+ }
+ 
+ int
+@@ -600,8 +625,9 @@ alloc_level(struct parity_gt_mem *gm, struct parity_gt_ppgtt *pp,
+ 			t->lvl = lvl;
+ 			t->dma = dma;
+ 			pp->n_tables++;
+-			/* set_pd_entry(): gen8_pde_encode(px_dma(pt), I915_CACHE_LLC) */
+-			((uint64_t *)pd->cpu)[idx] = parity_gen8_pde_encode(dma);
++			/* set_pd_entry() -> write_dma_entry(): the entry, then clflush it. */
++			((uint64_t *)pd->cpu)[idx] = parity_gen8_pde_encode_cached(dma);
++			parity_gt_clflush(&((uint64_t *)pd->cpu)[idx], sizeof(uint64_t));
+ 		}
+ 		if (lvl != 0) {
+ 			rc = alloc_level(gm, pp, t->obj, start, end, lvl);
+@@ -686,5 +712,69 @@ parity_gt_ppgtt_insert_page(struct parity_gt_ppgtt *pp, uint64_t dma,
+ 	}
+ 	((uint64_t *)table->cpu)[idx & 511u] =
+ 		parity_gen12_ppgtt_pte_encode(dma, pat_index);
++	/* gen8_ppgtt_insert_entry(): drm_clflush_virt_range(&vaddr[idx], 8). */
++	parity_gt_clflush(&((uint64_t *)table->cpu)[idx & 511u], sizeof(uint64_t));
++	return 0;
++}
++
++#define PTE_ADDR_MASK   0x0000fffffffff000ull
++
++static struct parity_gt_ppgtt_table *
++table_by_dma(struct parity_gt_ppgtt *pp, uint64_t dma)
++{
++	unsigned i;
++
++	for (i = 0u; i < pp->n_tables; i++)
++		if (pp->tables[i].dma == dma)
++			return &pp->tables[i];
++	return 0;
++}
++
++int
++parity_gt_ppgtt_walk(struct parity_gt_ppgtt *pp, uint64_t va,
++	struct parity_gt_ppgtt_walk *w)
++{
++	struct parity_gt_object *table;
++	uint64_t idx;
++	int lvl, level;
++
++	if (pp == 0 || !pp->inited || w == 0)
++		return -EINVAL;
++	memset(w, 0, sizeof(*w));
++	w->va = va;
++	w->top_dma = pp->top_pd_dma;
++	idx = va >> 12;
++	table = pp->top_pd;
++	for (lvl = pp->top, level = 0; lvl >= 0; lvl--, level++) {
++		unsigned i = (unsigned)((idx >> ((unsigned)lvl * 9u)) & 511u);
++		uint64_t raw;
++
++		w->idx[level] = i;
++		/* Read the entry the walker would read: the table as submitted. */
++		parity_gt_clflush(&((uint64_t *)table->cpu)[i], sizeof(uint64_t));
++		raw = ((volatile uint64_t *)table->cpu)[i];
++		w->raw[level] = raw;
++		w->levels = level + 1;
++		w->scratch[level] = (lvl > 0) ? (raw == pp->scratch_encode[lvl]) :
++			(raw == pp->scratch_encode[0]);
++		if (lvl == 0) {
++			w->leaf_dma = raw & PTE_ADDR_MASK;
++			w->leaf_present = (raw & PARITY_GEN8_PAGE_PRESENT_B) != 0u;
++			w->leaf_rw = (raw & PARITY_GEN8_PAGE_RW_B) != 0u;
++			w->leaf_pat = ((raw & PARITY_GEN12_PTE_PAT0) ? 1u : 0u) |
++				((raw & PARITY_GEN12_PTE_PAT1) ? 2u : 0u) |
++				((raw & PARITY_GEN12_PTE_PAT2) ? 4u : 0u);
++			break;
++		}
++		w->child_dma[level] = raw & PTE_ADDR_MASK;
++		{
++			struct parity_gt_ppgtt_table *t = table_by_dma(pp, w->child_dma[level]);
++
++			if (t == 0)
++				break;   /* scratch or foreign: the walk ends here */
++			w->child_known[level] = 1;
++			table = t->obj;
++		}
++	}
+ 	return 0;
+ }
+diff --git a/src/drivers/gpu/i915/parity/gt_mem.h b/src/drivers/gpu/i915/parity/gt_mem.h
+index ae5bea22..be15b6e2 100644
+--- a/src/drivers/gpu/i915/parity/gt_mem.h
++++ b/src/drivers/gpu/i915/parity/gt_mem.h
+@@ -156,9 +156,39 @@ int parity_gt_ppgtt_foreach_pt(struct parity_gt_ppgtt *pp, uint64_t start,
+ int parity_gt_ppgtt_insert_page(struct parity_gt_ppgtt *pp, uint64_t dma,
+ 	uint64_t offset, unsigned pat_index);
+ 
++/*
++ * The publish contract of a page-table write (write_dma_entry / fill_page_dma /
++ * gen8_ppgtt_insert_entry in the reference): the GPU's table walker does not
++ * snoop the CPU caches, so every written entry is clflushed.
++ */
++void parity_gt_clflush(const volatile void *address, size_t bytes);
++
++/*
++ * What the GPU would actually walk for one GPU VA, read from the SUBMITTED
++ * tables (not from what the builders returned): the raw 64-bit entry at every
++ * level, the child table it names, and the leaf.
++ */
++struct parity_gt_ppgtt_walk {
++	uint64_t va;
++	uint64_t top_dma;            /* what PDP0 of the context must hold */
++	unsigned idx[4];             /* PML4, PDP, PD, PT indices */
++	uint64_t raw[4];             /* raw entries, top first */
++	uint64_t child_dma[3];       /* address bits of raw[0..2] */
++	int child_known[3];          /* the child is one of this vm's tables */
++	int scratch[4];              /* the entry equals the scratch encode of that level */
++	int levels;                  /* entries read (4 = reached the PTE) */
++	uint64_t leaf_dma;
++	int leaf_present, leaf_rw;
++	unsigned leaf_pat;           /* PAT index from PAT0/1/2 bits */
++};
++int parity_gt_ppgtt_walk(struct parity_gt_ppgtt *pp, uint64_t va,
++	struct parity_gt_ppgtt_walk *w);
++
+ /* --- encoders (exposed so the tests compare against the reference values) --- */
+ uint64_t parity_gen12_ppgtt_pte_encode(uint64_t dma, unsigned pat_index);
+ uint64_t parity_gen8_pde_encode(uint64_t dma);
++/* gen8_pde_encode(addr, I915_CACHE_LLC): PPAT_CACHED_PDE, what set_pd_entry() uses. */
++uint64_t parity_gen8_pde_encode_cached(uint64_t dma);
+ 
+ /* --- pool / GGTT window --- */
+ int parity_gt_mem_init(struct parity_gt_mem *gm, struct drv_dma_device *dma,
+diff --git a/src/drivers/gpu/i915/parity/ktest.c b/src/drivers/gpu/i915/parity/ktest.c
+index abf46f0c..a8e5ebf8 100644
+--- a/src/drivers/gpu/i915/parity/ktest.c
++++ b/src/drivers/gpu/i915/parity/ktest.c
+@@ -42,6 +42,7 @@
+ #include "gt_migrate.h"
+ #include "pxp.h"
+ #include "driver_probe.h"
++#include "eu_test.h"
+ #include "gt_init.h"
+ #include <drivers/dma.h>
+ #include "display_nogem.h"
+@@ -4579,6 +4580,32 @@ parity_sync_ktest(void)
+ 					memcmp(dd.default_state[0]->cpu, dd.ce[0].state->cpu,
+ 						dd.ce[0].state_bytes) == 0,
+ 					"p6c4: P6C4B-DEFAULT the whole switched-out image is copied as engine->default_state");
++				/* ---- P6C4B-INHERIT: a later context starts from that image ---- */
++				{
++					static struct parity_gt_context ice;
++					uint32_t want[4];
++					uint32_t *img = (uint32_t *)dd.default_state[0]->cpu;
++
++					img[4096u / 4u + 0x40u] = 0x12345678u;   /* a mark in the engine state */
++					e0->default_state = dd.default_state[0];
++					rc = parity_lrc_alloc(&ice, e0, &pp, &gm, 4096u, 0u);
++					want[0] = want[1] = want[2] = want[3] = 0u;
++					if (rc == 0) {
++						parity_lrc_init_state(&ice);
++						(void)parity_lrc_update_regs(&ice, 0u);
++						want[0] = ice.lrc_reg_state[0x40u];
++						want[1] = ice.lrc_reg_state[PARITY_CTX_CONTEXT_CONTROL];
++						want[2] = ((uint32_t *)ice.state->cpu)[0];        /* ppHWSP cleared */
++						want[3] = ice.lrc_reg_state[PARITY_CTX_RING_START];
++					}
++					KCHECK(rc == 0 && want[0] == 0x12345678u && (want[1] & 1u) == 0u &&
++						want[2] == 0u && want[3] == (uint32_t)ice.ring.ggtt_offset,
++						"p6c4: P6C4B-INHERIT lrc_init_state copies engine->default_state, clears the ppHWSP, and does not inhibit the restore");
++					if (rc == 0)
++						parity_lrc_release(&ice, &gm);
++					e0->default_state = 0;
++				}
++
+ 				parity_engines_defaults_release(&dd, &gm);
+ 
+ 				/* ---- P6C4B-WEDGE: nothing lands -> -ETIME -> wedge ---- */
+@@ -4734,15 +4761,15 @@ parity_sync_ktest(void)
+ 							const uint64_t *pt0 = (const uint64_t *)t[2].obj->cpu;
+ 							const uint64_t *win = (const uint64_t *)t[10].obj->cpu;
+ 
+-							tree_ok = pml4[0] == parity_gen8_pde_encode(t[0].dma) &&
++							tree_ok = pml4[0] == parity_gen8_pde_encode_cached(t[0].dma) &&
+ 								pml4[1] == mg.vm.scratch_encode[3] &&
+-								pdp[0] == parity_gen8_pde_encode(t[1].dma) &&
++								pdp[0] == parity_gen8_pde_encode_cached(t[1].dma) &&
+ 								pdp[1] == mg.vm.scratch_encode[2] &&
+ 								pd[9] == mg.vm.scratch_encode[1] &&
+ 								pt0[0] == mg.vm.scratch_encode[0] &&
+ 								pt0[511] == mg.vm.scratch_encode[0];
+ 							for (k = 0u; k < 9u; k++)
+-								if (pd[k] != parity_gen8_pde_encode(t[2u + k].dma))
++								if (pd[k] != parity_gen8_pde_encode_cached(t[2u + k].dma))
+ 									tree_ok = 0;
+ 							/* insert_pte(): PT k of the windows sits at 16M + 4K * k, uncached. */
+ 							for (k = 0u; k < 8u; k++)
+@@ -4753,7 +4780,7 @@ parity_sync_ktest(void)
+ 								window_ok = 0;
+ 						}
+ 						KCHECK(tree_ok && pts_ok,
+-							"p6c6: P6C6-VM allocate_va_range(0, 16M + 32K): PDP, PD, nine PTs, scratch elsewhere");
++							"p6c6: P6C6-VM allocate_va_range(0, 16M + 32K): PDP, PD, nine PTs (cached PDEs), scratch elsewhere");
+ 						KCHECK(window_ok && mg.pte_window == 2ull * PARITY_MIGRATE_CHUNK_SZ &&
+ 							mg.exposed_pts == 8u && mg.window_bytes == 16ull << 20,
+ 							"p6c6: P6C6-PTE the PTE window maps the eight window page tables themselves");
+@@ -4896,6 +4923,97 @@ parity_sync_ktest(void)
+ 				dg.num_engines = 1u;
+ 			}
+ 
++
++			/* ====== EU test batch: the L-C1 words ====== */
++			{
++				static uint32_t cmds[1024];
++				unsigned n = parity_eu_test_build_batch(cmds, 1024u, PARITY_EU_SHARED_VA,
++					PARITY_EU_SHARED_VA, 559u);
++				unsigned k, walker = 0u, sba = 0u, sel3d = 0u, selgpgpu = 0u, midl = 0u, vfe = 0u;
++
++				for (k = 0u; k + 14u < n; k++) {
++					if (cmds[k] == 0x7105000du && cmds[k + 7u] == 1u && cmds[k + 10u] == 1u &&
++					    cmds[k + 12u] == 1u && cmds[k + 13u] == 1u && cmds[k + 14u] == 0xffffffffu)
++						walker = k;
++					if (cmds[k] == 0x61010014u && cmds[k + 3u] == (6u << 16) &&
++					    cmds[k + 4u] == (1u | (6u << 4) | 0x00400000u) && cmds[k + 5u] == 1u &&
++					    cmds[k + 10u] == (1u | (4u << 4) | 0x00400000u) && cmds[k + 11u] == 1u)
++						sba = k;
++					if (cmds[k] == 0x69041310u) sel3d = k;   /* PIPELINE_SELECT(3D), Linux encoding */
++					if (cmds[k] == 0x69041312u) selgpgpu = k;
++					if (cmds[k] == 0x70020002u && cmds[k + 2u] == 32u && cmds[k + 3u] == 896u) midl = k;
++					if (cmds[k] == 0x70000007u && cmds[k + 3u] == ((559u << 16) | (2u << 8))) vfe = k;
++				}
++				KCHECK(n > 0u && n < 1024u && sel3d < sba && sba < selgpgpu && selgpgpu < vfe &&
++					vfe < midl && midl < walker && cmds[n - 2u] == PARITY_MI_BATCH_BUFFER_END,
++					"eu: EU-BATCH 3D select, SBA (stateless MOCS 6, instruction base @0x100400000), GPGPU select, VFE(559), MIDL(896), walker(1x1x1 SIMD8), BB_END");
++				{
++					/* Fixed reference words, independent of the emitter's macro. */
++					struct parity_eu_pipesel_check pc;
++					static uint32_t bad[1024];
++					int prc = parity_eu_batch_check_pipeline_select(cmds, n, &pc);
++
++					KCHECK(prc == 0 && pc.n_3d == 1u && pc.n_gpgpu == 1u && pc.n_bad == 0u &&
++						cmds[pc.idx_3d] == 0x69041310u && cmds[pc.idx_gpgpu] == 0x69041312u,
++						"eu: EU-PIPESEL the emitter's words are exactly 0x69041310 (3D) then 0x69041312 (GPGPU), Type3/SubType1/Op1/SubOp4");
++					for (k = 0u; k < n; k++)
++						bad[k] = cmds[k];
++					bad[pc.idx_3d] ^= 0x08000000u;      /* back to the pre-E-98 words */
++					bad[pc.idx_gpgpu] ^= 0x08000000u;
++					prc = parity_eu_batch_check_pipeline_select(bad, n, &pc);
++					KCHECK(bad[pc.idx_bad] == 0x61041310u && prc != 0 && pc.n_bad == 2u &&
++						pc.n_3d == 0u && pc.n_gpgpu == 0u,
++						"eu: EU-PIPESEL 0x61041310/0x61041312 (the GPGPU_CSR_BASE_ADDRESS header) are rejected as Gen12 PIPELINE_SELECT");
++				}
++			}
++
++
++			/* ====== EU page tables: what the GPU walks, read from the tables ====== */
++			{
++				static struct parity_gt_ppgtt tpp;
++				struct parity_gt_ppgtt_walk w;
++				const uint64_t dma_fake = 0x0000001234560000ull;   /* bit 32+ preserved */
++				const uint64_t addr_mask = 0x0000fffffffff000ull;
++				int rc2;
++
++				rc2 = parity_gt_ppgtt_create(&gm, &tpp);
++				if (rc2 == 0)
++					rc2 = parity_gt_ppgtt_alloc_range(&gm, &tpp, PARITY_EU_SHARED_VA, 2u * 4096u);
++				if (rc2 == 0)
++					rc2 = parity_gt_ppgtt_insert_page(&tpp, dma_fake, PARITY_EU_SHARED_VA, 0u);
++				if (rc2 == 0)
++					rc2 = parity_gt_ppgtt_walk(&tpp, PARITY_EU_SHARED_VA, &w);
++				KCHECK(rc2 == 0 && w.levels == 4 && w.top_dma == tpp.top_pd_dma &&
++					w.idx[0] == 0u && w.idx[1] == 4u && w.idx[2] == 2u && w.idx[3] == 0u &&
++					w.child_known[0] && w.child_known[1] && w.child_known[2] &&
++					(w.raw[0] & ~addr_mask) == (PARITY_GEN8_PAGE_PRESENT_B | PARITY_GEN8_PAGE_RW_B) &&
++					(w.raw[1] & ~addr_mask) == (PARITY_GEN8_PAGE_PRESENT_B | PARITY_GEN8_PAGE_RW_B) &&
++					(w.raw[2] & ~addr_mask) == (PARITY_GEN8_PAGE_PRESENT_B | PARITY_GEN8_PAGE_RW_B) &&
++					w.child_dma[0] == tpp.tables[0].dma && w.child_dma[1] == tpp.tables[1].dma &&
++					w.child_dma[2] == tpp.tables[2].dma,
++					"eu: EU-PT real page-table links are PRESENT|RW with PPAT_CACHED_PDE (no PWT/PCD), naming the child DMA addresses");
++				KCHECK(rc2 == 0 && w.leaf_present && w.leaf_rw && w.leaf_pat == 0u &&
++					w.leaf_dma == dma_fake && (w.raw[3] & ~addr_mask) == 0x3ull &&
++					(w.raw[3] & addr_mask) != (PARITY_EU_SHARED_VA & addr_mask),
++					"eu: EU-PT the leaf PTE carries the DMA address (bits above 32 kept), PAT 0, PRESENT|RW, not the GPU VA");
++				if (rc2 == 0) {
++					struct parity_gt_ppgtt_walk w2;
++
++					/* The neighbouring, never-inserted page reads the scratch PTE. */
++					rc2 = parity_gt_ppgtt_walk(&tpp, PARITY_EU_SHARED_VA + 4096u, &w2);
++					KCHECK(rc2 == 0 && w2.levels == 4 && w2.scratch[3] && w2.leaf_present && w2.leaf_pat == 3u &&
++						w2.leaf_dma == (tpp.scratch_encode[0] & addr_mask),
++						"eu: EU-PT an unmapped page inside an allocated range points at scratch[0] (uncached data page)");
++					/* An unallocated region reads the scratch tower at the first level. */
++					rc2 = parity_gt_ppgtt_walk(&tpp, 0x0000008000000000ull, &w2);   /* PML4 index 1: never allocated */
++					KCHECK(rc2 == 0 && w2.levels == 1 && w2.scratch[0] && !w2.child_known[0] &&
++						w2.raw[0] == tpp.scratch_encode[3] &&
++						(w2.raw[0] & ~addr_mask) == (PARITY_GEN8_PAGE_PRESENT_B | PARITY_GEN8_PAGE_RW_B | PARITY_PPAT_UNCACHED),
++						"eu: EU-PT an unallocated region reads the scratch PDP encode (PPAT_UNCACHED, reference gen8_init_scratch)");
++				}
++				parity_gt_ppgtt_destroy(&gm, &tpp);
++			}
++
+ 			parity_gt_ppgtt_destroy(&gm, &pp);
+ 			parity_gt_mem_fini(&gm);
+ 			KCHECK(gm.objects_live == 0u && gm.allocated_pages == 0u &&
+diff --git a/src/drivers/gpu/i915/parity/probe.c b/src/drivers/gpu/i915/parity/probe.c
+index 7df834b4..86cf4eef 100644
+--- a/src/drivers/gpu/i915/parity/probe.c
++++ b/src/drivers/gpu/i915/parity/probe.c
+@@ -36,6 +36,7 @@
+ #include "gt_migrate.h"
+ #include "pxp.h"
+ #include "driver_probe.h"
++#include "eu_test.h"
+ #include "reset.h"
+ #include "backend_sync.h"
+ #include "reset.h"
+@@ -157,6 +158,8 @@ drv_i915_parity_attach(struct i915_device *device, enum parity_stage stop_after,
+ 	static struct parity_gt_migrate gtmig;
+ 	static struct parity_pxp pxp;
+ 	static struct parity_driver_probe dprobe;
++	static struct parity_eu_test eutest;
++	int eutest_inited = 0;
+ 	int gtvwa_inited = 0;
+ 	int gtmig_inited = 0;
+ 	int pxp_inited = 0;
+@@ -1498,6 +1501,9 @@ drv_i915_parity_attach(struct i915_device *device, enum parity_stage stop_after,
+ 			goto p6_fw_out;
+ 		}
+ 		res.last_completed = "__engines_record_defaults";
++		/* engine->default_state: every later context starts from it. */
++		for (ei = 0u; ei < gteng.n; ei++)
++			gteng.ge[ei].default_state = gtdef.default_state[ei];
+ 
+ 		/*
+ 		 * __engines_verify_workarounds() (a permanent diagnostic here; the
+@@ -1674,6 +1680,127 @@ p6_fw_out:
+ 	}
+ 	res.last_completed = "i915_driver_register";
+ 
++	/*
++	 * ====================== real-hardware EU test (once) ======================
++	 * Explicitly released: the compute positive control (GPGPU_WALKER, one
++	 * SIMD8 thread, unconditional A64 store) on the GT initialised the Linux
++	 * way, as an execbuf-shaped request on a fresh context.  Like a user
++	 * submission after driver load: GT wakeref = forcewake all around it.
++	 */
++	if (PARITY_EU_TEST) {
++		static const int fwd[5] = { OSDEP_FW_RENDER, OSDEP_FW_GT,
++			OSDEP_FW_MEDIA_VDBOX0, OSDEP_FW_MEDIA_VDBOX2, OSDEP_FW_MEDIA_VEBOX0 };
++		unsigned ti, held = 0u, k;
++		int frc = 0;
++
++		while (held < 5u && (frc = osdep_fw_get(&mmio, fwd[held])) == 0)
++			held++;
++		if (held == 5u) {
++			unsigned u0 = irqdev.gt_user_intr, c0 = irqdev.gt_ctx_switch_intr;
++			unsigned e0 = irqdev.gt_error_intr;
++			static struct parity_mcr_probe mcrp;   /* off the 16 KiB stack */
++			unsigned wi;
++
++			/* MCR readback: post-init, pre-submission, RCS engine list. */
++			(void)parity_mcr_probe_wa(&mcrp, &mmio, &gtinit.engine_wa[0], &gtmmio.sseu);
++			for (wi = 0u; wi < mcrp.n; wi++)
++				kern_logf("i915: parity MCR-PROBE phase=pre-eu reg=0x%05x group=%u instance=%u "
++					"raw=0x%08x expected_set=0x%08x read_mask=0x%08x masked_mismatch=0x%08x "
++					"selector_before=0x%08x selector_after=0x%08x listed=%d\n",
++					mcrp.e[wi].reg, mcrp.e[wi].group, mcrp.e[wi].instance, mcrp.e[wi].raw,
++					mcrp.e[wi].expected_set, mcrp.e[wi].read_mask, mcrp.e[wi].masked_mismatch,
++					mcrp.e[wi].selector_before, mcrp.e[wi].selector_after, mcrp.e[wi].listed);
++			kern_logf("i915: parity MCR-PROBE summary: entries=%u mismatches=%u lock_rc=%d "
++				"subslice_mask=0x%x\n", mcrp.n, mcrp.mismatches, mcrp.lock_rc,
++				gtmmio.sseu.subslice_mask);
++
++			rc = parity_eu_test_run(&eutest, &gteng, &gtpp, &gtmem, &gtmmio.sseu,
++				&mmio, &uncore_lock, 2000u);
++			eutest_inited = 1;
++			kern_logf("i915: parity EU-TEST fixture: build PARITY_EU_TEST=%d batch_hash=%016llx "
++				"fixture_hash=%016llx batch_dwords=%u pdp0_matches_top=%d\n",
++				PARITY_EU_TEST, (unsigned long long)eutest.batch_hash,
++				(unsigned long long)eutest.fixture_hash, eutest.batch_dwords,
++				eutest.pdp0_matches_top);
++			for (wi = 0u; wi < eutest.walks; wi++) {
++				const struct parity_gt_ppgtt_walk *w = &eutest.walk[wi];
++
++				kern_logf("i915: parity EU-TEST walk va=0x%llx top=0x%llx levels=%d | "
++					"PML4[%u]=%016llx child=0x%llx known=%d scr=%d | PDP[%u]=%016llx child=0x%llx "
++					"known=%d scr=%d | PD[%u]=%016llx child=0x%llx known=%d scr=%d | "
++					"PT[%u]=%016llx leaf=0x%llx present=%d rw=%d pat=%u scr=%d\n",
++					(unsigned long long)w->va, (unsigned long long)w->top_dma, w->levels,
++					w->idx[0], (unsigned long long)w->raw[0], (unsigned long long)w->child_dma[0],
++					w->child_known[0], w->scratch[0],
++					w->idx[1], (unsigned long long)w->raw[1], (unsigned long long)w->child_dma[1],
++					w->child_known[1], w->scratch[1],
++					w->idx[2], (unsigned long long)w->raw[2], (unsigned long long)w->child_dma[2],
++					w->child_known[2], w->scratch[2],
++					w->idx[3], (unsigned long long)w->raw[3], (unsigned long long)w->leaf_dma,
++					w->leaf_present, w->leaf_rw, w->leaf_pat, w->scratch[3]);
++			}
++			kern_logf("i915: parity EU-TEST pipeline_select (read from the submitted object): rc=%d "
++				"3d=%u@%u gpgpu=%u@%u bad=%u@%u bad_word=%08x\n",
++				eutest.pipesel_rc, eutest.pipesel.n_3d, eutest.pipesel.idx_3d,
++				eutest.pipesel.n_gpgpu, eutest.pipesel.idx_gpgpu, eutest.pipesel.n_bad,
++				eutest.pipesel.idx_bad, eutest.pipesel.bad_word);
++			if (eutest.shared != 0) {
++				const uint32_t *sp = (const uint32_t *)eutest.shared->cpu;
++				unsigned fk;
++
++				kern_logf("i915: parity EU-TEST fixture-idd[@%u]: %08x %08x %08x %08x %08x %08x %08x %08x\n",
++					PARITY_EU_IDD_OFFSET, sp[224], sp[225], sp[226], sp[227], sp[228], sp[229], sp[230], sp[231]);
++				for (fk = 0u; fk < PARITY_EU_KERNEL_DWORDS; fk += 6u)
++					kern_logf("i915: parity EU-TEST fixture-kernel[%02u]: %08x %08x %08x %08x %08x %08x\n",
++						fk, sp[256u + fk], sp[257u + fk], sp[258u + fk], sp[259u + fk],
++						sp[260u + fk], sp[261u + fk]);
++			}
++			if (eutest.batch != 0 && eutest.batch_dwords != 0u) {
++				const uint32_t *bd = (const uint32_t *)eutest.batch->cpu;
++
++				for (wi = 0u; wi < eutest.batch_dwords; wi += 8u)
++					kern_logf("i915: parity EU-TEST batch[%03u]: %08x %08x %08x %08x %08x %08x %08x %08x\n",
++						wi, bd[wi], bd[wi + 1], bd[wi + 2], bd[wi + 3], bd[wi + 4], bd[wi + 5],
++						bd[wi + 6], bd[wi + 7]);
++			}
++			kern_logf("i915: parity EU-TEST %s: rc=%d where=%s engine=%s dss=%u max_threads=%u "
++				"batch_dwords=%u submitted=%d completed=%d parked=%d timed_out=%d wedged=%d "
++				"polls=%u | ready=%08x eu=%08x done=%08x cs=%08x idd_rb_ok=%d kernel_rb_ok=%d "
++				"| rq seqno=%u krq seqno=%u | gt irq: user=%u ctx_switch=%u error=%u\n",
++				eutest.outcome == PARITY_EU_PASS ? "PASS" :
++				eutest.outcome == PARITY_EU_HANG ? "HANG" : "ERROR",
++				rc, eutest.err_where != 0 ? eutest.err_where : "-",
++				gteng.ge[eutest.engine_idx].info->name, eutest.dss_count,
++				eutest.max_threads, eutest.batch_dwords, eutest.submitted,
++				eutest.completed, eutest.parked, eutest.timed_out, eutest.wedged,
++				eutest.polls, eutest.ready, eutest.eu, eutest.done, eutest.cs,
++				eutest.idd_rb_ok, eutest.kernel_rb_ok, eutest.rq.seqno, eutest.krq.seqno,
++				irqdev.gt_user_intr - u0, irqdev.gt_ctx_switch_intr - c0,
++				irqdev.gt_error_intr - e0);
++			kern_logf("i915: parity EU-TEST ctx: CTX_CTRL=%08x RING_CTL=%08x PDP0=%08x:%08x "
++				"ring ggtt=0x%llx state ggtt=0x%llx | idd_rb=%08x %08x %08x %08x %08x %08x %08x %08x\n",
++				eutest.ce.lrc_reg_state != 0 ? eutest.ce.lrc_reg_state[PARITY_CTX_CONTEXT_CONTROL] : 0u,
++				eutest.ce.lrc_reg_state != 0 ? eutest.ce.lrc_reg_state[PARITY_CTX_RING_CTL] : 0u,
++				eutest.ce.lrc_reg_state != 0 ? eutest.ce.lrc_reg_state[PARITY_CTX_PDP0_UDW] : 0u,
++				eutest.ce.lrc_reg_state != 0 ? eutest.ce.lrc_reg_state[PARITY_CTX_PDP0_LDW] : 0u,
++				(unsigned long long)eutest.ce.ring.ggtt_offset,
++				eutest.ce.state != 0 ? (unsigned long long)eutest.ce.state->ggtt_offset : 0ull,
++				eutest.idd_rb[0], eutest.idd_rb[1], eutest.idd_rb[2], eutest.idd_rb[3],
++				eutest.idd_rb[4], eutest.idd_rb[5], eutest.idd_rb[6], eutest.idd_rb[7]);
++			for (k = 0u; k < 36u; k += 12u)
++				kern_logf("i915: parity EU-TEST kernel_rb[%u..]: %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x\n",
++					k, eutest.kernel_rb[k], eutest.kernel_rb[k + 1], eutest.kernel_rb[k + 2],
++					eutest.kernel_rb[k + 3], eutest.kernel_rb[k + 4], eutest.kernel_rb[k + 5],
++					eutest.kernel_rb[k + 6], eutest.kernel_rb[k + 7], eutest.kernel_rb[k + 8],
++					eutest.kernel_rb[k + 9], eutest.kernel_rb[k + 10], eutest.kernel_rb[k + 11]);
++			(void)ti;
++		} else {
++			kern_logf("i915: parity EU-TEST not run: forcewake failed rc=%d\n", frc);
++		}
++		while (held-- > 0u)
++			osdep_fw_put(&mmio, fwd[held]);
++	}
++
+ 	/* i915_driver_probe() returns 0: the driver is loaded. */
+ 	res.outcome = PARITY_STOPPED;
+ 	res.where = "i915_driver_probe complete";
+@@ -1725,12 +1852,19 @@ teardown:
+ 		while (held-- > 0u)
+ 			osdep_fw_put(&mmio, fwd[held]);
+ 	}
++	if (eutest_inited)
++		parity_eu_test_release(&eutest, &gtmem);
+ 	if (gtmig_inited)
+ 		parity_intel_migrate_fini(&gtmig, &gtmem);
+ 	if (gtvwa_inited)
+ 		parity_engines_verify_wa_release(&gtvwa, &gtmem);
+-	if (gtdef_inited)
++	if (gtdef_inited) {
++		unsigned di;
++
++		for (di = 0u; di < gteng.n; di++)
++			gteng.ge[di].default_state = 0;
+ 		parity_engines_defaults_release(&gtdef, &gtmem);
++	}
+ 	if (gteng_inited) {
+ 		parity_intel_engines_release(&gteng, &gtmem);
+ 		kern_logf("i915: parity teardown: engines released (status pages, kernel contexts)\n");
+diff --git a/src/drivers/gpu/i915/vk/linux/3dstate-gen12.inc b/src/drivers/gpu/i915/vk/linux/3dstate-gen12.inc
+index 64452af5..3896facb 100644
+--- a/src/drivers/gpu/i915/vk/linux/3dstate-gen12.inc
++++ b/src/drivers/gpu/i915/vk/linux/3dstate-gen12.inc
+@@ -16,7 +16,13 @@
+ #define I915_VK_3DSTATE_GEN12_INC
+ 
+ /* Command opcodes (high sixteen bits of the header dword). */
+-#define GEN12_CMD_PIPELINE_SELECT		0x6104U
++/*
++ * PIPELINE_SELECT is CommandType 3 / CommandSubType 1 / Opcode 1 / SubOpcode 4
++ * = 0x6904xxxx (Linux gt/intel_gpu_commands.h PIPELINE_SELECT, gen7_renderstate
++ * literal 0x69040000, genxml).  0x6104 (SubType 0) was a transcription error:
++ * the GPU never switched pipelines for any batch that used it (WS031 E-98).
++ */
++#define GEN12_CMD_PIPELINE_SELECT		0x6904U
+ #define GEN12_CMD_STATE_BASE_ADDRESS		0x6101U
+ #define GEN12_CMD_3DSTATE_VS			0x7810U
+ #define GEN12_CMD_3DSTATE_PS			0x7820U
+@@ -46,6 +52,14 @@
+ #define GEN12_PIPELINE_SELECT_DWORD(pipeline)	\
+ 	((GEN12_CMD_PIPELINE_SELECT << 16) | GEN12_PIPELINE_SELECT_MASK | \
+ 	 GEN12_PIPELINE_SELECT_MEDIA_DOP_GATE | (pipeline))
++/*
++ * Fixed reference words (not derived from the macros above): 0x6104xxxx is the
++ * header of GPGPU_CSR_BASE_ADDRESS (SubType 0, 3 dwords), a different command.
++ */
++_Static_assert(GEN12_PIPELINE_SELECT_DWORD(0U) == 0x69041310U,
++	"Gen12 PIPELINE_SELECT(3D) must be 0x69041310");
++_Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
++	"Gen12 PIPELINE_SELECT(GPGPU) must be 0x69041312");
+ 
+ 
+ /*

@@ -4,9 +4,13 @@
  * The compute positive control of the big-bang investigation (C1: GPGPU_WALKER
  * dispatching one SIMD8 thread whose kernel does an unconditional A64 store of
  * 0xc0ffee02 and then send.ts EOT), executed on the GT that the parity port
- * initialised the Linux way.  The batch, kernel, IDD, VFE state and the VA
- * layout (shared page at 0x100400000, batch at 0x100401000) are byte-for-byte
- * the L-C1 case that completed on Linux i915 on this same GPU (E-25).
+ * initialised the Linux way.  The kernel, IDD, VFE state and command order are
+ * the L-C1 case that completed on Linux i915 on this same GPU (E-25).  It is
+ * NOT byte-identical to that replay: the batch VA differs (0x100401000 here,
+ * 0x100600000 there) and this batch carries diagnostic MI_COPY_MEM_MEM
+ * readbacks.  Up to E-98 the PIPELINE_SELECT words were also mis-encoded
+ * (0x6104xxxx, the GPGPU_CSR_BASE_ADDRESS header); identity is established by
+ * comparing the final submitted bytes, never by provenance.
  *
  * The request is shaped like an execbuf request (gem/i915_gem_execbuffer.c,
  * gt/gen8_engine_cs.c): i915_request_create (invalidate flush) ->
@@ -58,6 +62,21 @@ struct spinlock;
 #define PARITY_EU_HANG   2
 #define PARITY_EU_ERROR  3
 
+/*
+ * Strict Gen12.0 check of the PIPELINE_SELECT words of a built C1 batch,
+ * against fixed reference words (not the emitter's macro).  0 when the batch
+ * has exactly one 0x69041310 (3D) followed by exactly one 0x69041312 (GPGPU)
+ * and no dword carrying the 0x6104 header (GPGPU_CSR_BASE_ADDRESS, which C1
+ * never emits) or an unexpected 0x6904 word.
+ */
+struct parity_eu_pipesel_check {
+	unsigned n_3d, n_gpgpu, n_bad;
+	unsigned idx_3d, idx_gpgpu, idx_bad;
+	uint32_t bad_word;
+};
+int parity_eu_batch_check_pipeline_select(const uint32_t *cmds, unsigned n,
+	struct parity_eu_pipesel_check *out);
+
 struct parity_eu_test {
 	unsigned engine_idx;
 	struct parity_gt_context ce;
@@ -80,10 +99,49 @@ struct parity_eu_test {
 	uint32_t kernel_rb[PARITY_EU_KERNEL_DWORDS];
 	int idd_rb_ok, kernel_rb_ok;
 
+	/* fixture identity: FNV-1a 64 over the batch dwords and the shared fixture */
+	uint64_t batch_hash;
+	uint64_t fixture_hash;
+	/* PIPELINE_SELECT words read back from the object that is submitted */
+	struct parity_eu_pipesel_check pipesel;
+	int pipesel_rc;
+
+	/* what the GPU walks for the fixture VAs (read from the submitted tables) */
+	struct parity_gt_ppgtt_walk walk[5];
+	unsigned walks;
+	int pdp0_matches_top;
+
+	/* hang record (before the reset) */
+	uint32_t hwsp_seqno_observed;
+	uint32_t ctx_ccid_hi, ctx_ccid_lo;
+	int time_base_fault;
+
 	int outcome;
 	int err;
 	const char *err_where;
 };
+
+/* MCR (multicast) workaround readback: intel_gt_mcr_read() per DSS. */
+struct parity_mcr_probe_entry {
+	uint32_t reg;
+	unsigned group, instance;
+	uint32_t raw, expected_set, read_mask, masked_mismatch;
+	uint32_t selector_before, selector_after;
+	int listed;                 /* the register is in the workaround list */
+};
+#define PARITY_MCR_PROBE_MAX 32
+struct parity_mcr_probe {
+	struct parity_mcr_probe_entry e[PARITY_MCR_PROBE_MAX];
+	unsigned n;
+	unsigned mismatches;
+	int lock_rc;
+};
+
+struct parity_wa_list;
+struct parity_sseu;
+/* Steered reads of the three engine WA registers the SRM verify skips (E-94). */
+int parity_mcr_probe_wa(struct parity_mcr_probe *pr, struct osdep_mmio *m,
+	const struct parity_wa_list *wal, const struct parity_sseu *sseu);
 
 /* Builds the batch (exposed for the GPU-free word check); returns dwords. */
 unsigned parity_eu_test_build_batch(uint32_t *cmds, unsigned capacity,
