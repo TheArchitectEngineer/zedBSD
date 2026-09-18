@@ -273,7 +273,6 @@ void
 parity_dc_off_enable(struct parity_pw_ctx *c)
 {
 	unsigned n = 0u, s;
-	uint32_t mask, v;
 
 	c->dc_off_enable_calls++;
 
@@ -281,12 +280,14 @@ parity_dc_off_enable(struct parity_pw_ctx *c)
 	if (c->target_dc_state == DC_STATE_EN_DC3CO)
 		return;
 
-	/* gen9_set_dc_state(DC_STATE_DISABLE). */
-	mask = DC_STATE_EN_UPTO_DC5_DC6;
-	if (c->allowed_dc_mask & DC_STATE_EN_DC3CO)
-		mask |= DC_STATE_EN_DC3CO;
-	v = osdep_mmio_raw_read32(c->mmio, DC_STATE_EN);
-	osdep_mmio_raw_write32(c->mmio, DC_STATE_EN, v & ~mask);
+	/*
+	 * gen9_set_dc_state(DC_STATE_DISABLE): the reference's own function, so the
+	 * write is verified AND display.dmc.dc_state follows it.  (An earlier version
+	 * wrote the register directly; the software copy then stayed at the old value
+	 * and the next DC enable reported a false "DC state mismatch" -- seen the first
+	 * time DC_off was taken after P7, by the eDP AUX acquisition.)
+	 */
+	parity_gen9_set_dc_state(c, 0u);
 
 	/* HAS_DISPLAY: read CDCLK into a temp and COMPARE (no re-init). */
 	if (c->cd != 0) {

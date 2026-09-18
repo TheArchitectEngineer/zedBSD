@@ -93,3 +93,7 @@ static const uint32_t texfix_tex_rss[16] = {
 static const uint32_t texfix_sampler[4] = {
 	0x10000000U, 0x00000000U, 0x00000000U, 0x00000092U, 
 };
+/* SAMPLER_STATE, bilinear: linear/linear, address rounding on (anv/blorp), otherwise identical. */
+static const uint32_t texfix_sampler_linear[4] = {
+	0x10024000U, 0x00000000U, 0x00000000U, 0x0007e092U, 
+};

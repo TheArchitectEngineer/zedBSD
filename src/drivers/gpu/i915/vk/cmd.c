@@ -460,8 +460,19 @@ i915_vk_cmd_builtin(
 		return 0;
 	}
 
-	/* Remaining builtin commands are accepted without a reply for now. */
+	/*
+	 * Every other builtin opcode (instance, device and queue commands, the 1.1+
+	 * range, vkExecuteCommandStreamsMESA) is NOT implemented.  A command is
+	 * [opcode][reply flag][payload] with no length word, so the end of a command
+	 * this decoder does not understand cannot be located.  It therefore must not
+	 * report success and let the caller read the payload as the next opcode: the
+	 * reader is poisoned, nothing further in this stream is decoded or executed,
+	 * and the submission fails.  (The echoed opcode already written for a
+	 * reply-requested command is withdrawn by the caller's error path: the reply
+	 * length is only published on success.)
+	 */
 	(void)session;
-	(void)reader;
-	return 0;
+	(void)reply;
+	reader->error = 1;
+	return ENOTSUP;
 }

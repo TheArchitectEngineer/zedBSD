@@ -3100,3 +3100,177 @@ attach end: STOPPED (i915_driver_probe complete)、teardown 正常（reset な�
 ### 残(次)
 機能追加をここで止め、(第1段) 出典・表示・生成物の整理（`provenance-ledger.md`＋`license-inventory.md` が入力。parity/ 107 ファイルは SPDX／copyright 行が無い＝方針の決定が必要）→ (第2段) 本番 driver と試験・生成ツールの分離 → (第3段) 重複削減と所有権の明確化。各段とも回帰基準で「入力同一なら command/state 同一・出力同一・寿命同一」を確認。bilinear は小さな追加試験として別枠。
 台帳E-60〜E-104。GPU=vfio-pci維持, 10ms tick/HAL非変更維持, drm非blacklist, attach先行維持。git commit/push なし。
+
+（E-104 への注記, 2026-09-18）専門家の計画更新により、E-104 の「機能追加をここで止める」は撤回。E-104 は「オフスクリーン描画の基準が完成した。表示・アプリ接続へ進む」段階と位置付ける。大きなリファクタは Vulkan アプリから LCD 表示・native 総合受入の後。出典・元表示の保持は今から進める。詳細は `plan/ws031/regression-baseline.md` 冒頭。
+
+## p011 増分E-105 (2026-09-18): **オフスクリーン基準の確定（同一ソースで残り 4 モード 4/4 PASS）＋ bilinear 4/4 PASS（完全一致）＋ 表示／libvulkan の事前調査**（専門家の計画更新: 機能追加を止めず、LCD → Vulkan → native 総合受入の後に大きなリファクタ）
+
+### 0. 計画の更新（E-104 の記述の訂正）
+E-104 の「ここで機能追加を止める」は撤回。E-104 は「オフスクリーン描画の基準が完成した。表示・アプリ接続へ進む」段階。順序: 残り 4 モード → bilinear → LCD 参照確定・native 事前確認 → 通常稼働の寿命管理＋ディスプレイ／LCD（hotswap は入口と安全な下位処理）→ libvulkan 接続・Vulkan オフスクリーン → Vulkan アプリから LCD 表示 → native 総合受入 → 著作権整理・`osdep_` 改名・`parity/` 整理 → 整理後の回帰。出典・元表示の保持は今から。受入済み回帰の再実行は都度の確認待ちにしない（最初の異常で停止、ハング後は reset・回収前に次を投入しない、HAL 契約変更・新しい HW 操作は別扱い、は維持）。`regression-baseline.md` と README を更新済み。
+
+### 1. 残り 4 モードの回帰（E-104 と同じソース = commit f4dba354、作業ツリー差分なし）
+各モード clean build → GPU なし 383/0 → 同一 image を実機で独立起動 1 回。最初の異常で停止する sweep（`sweep_hw.sh`）で 4/4 完走。
+| モード | vmunix | 実機結果 | 提出 bytes の照合（host、`cmp`） |
+|---|---|---|---|
+| C1 単独＋反復 `PARITY_EU_TEST` | 445f475c… | EU-TEST PASS、EU-REPEAT PASS rounds=5 passed=5 | batch／kernel／IDD が `e99-c1-*` と byte 一致 |
+| 単色 PS `PARITY_DRAW_TEST` | fb58eae1… | DRAW-TEST PASS 1024/1024 | batch／state が `e101-draw-*` と byte 一致 |
+| R1 `PARITY_R1_TEST` | e692dc90… | R1 PASS steps=12/12 | batch hash 2 本が pin 値と一致 |
+| テクスチャ初回 `PARITY_TEX_TEST` | bf973052… | TEX-TEST PASS 1024/1024、changed 0、guard 0 | batch／state／**RT** が `e103-tex-*` と byte 一致 |
+全モード `attach end: … i915_driver_probe complete err=0`、ktest 383/0、`runner-result probe=COMPLETE cleanup=1`、reset なし。ログ `e105-run-parity-hw-{eu,draw,r1,tex}.log`。T3 は E-104 で同じソースにて実行済みのため再実行していない。**これで 5 モードすべてが同一ソース状態で実機確認済み。**
+
+### 2. bilinear（小さな機能確認）
+- **変更は SAMPLER_STATE の 2 dword だけ**: generator（`tools/reftex.c`）に linear 版 sampler を追加（min/mag = LINEAR、U/V/R の address rounding on ＝ anv／blorp が非 nearest で設定する内容）。再生成した `.inc` は `texfix_sampler_linear[]` の 4 行が増えただけで、PS（sha256 2500bd58…）ほか全語が不変（patch 適用時に機械検査）。batch は E-103 の textured batch と byte 同一（host `cmp`）。GPU-free `BL-STATE`: nearest と bilinear の state 頁の差は 2 dword（0x10000000→0x10024000、0x00000092→0x0007e092）。
+- **比較方法は実機実行の前に固定**（`draw_fixture.h` に記載）: uv=(pixel+0.5)/32、8×8 texture なので texel 空間座標は (2·pixel−3)/8 → 各軸の重みは 1/8 の倍数、各 sample は Σ(w·texel)/64（w は整数）。画像 3（全 channel が 64 の倍数、alpha 255）ならこの和は UNORM8 単位で**厳密に整数**＝丸めの判断が存在しない → **全画素の完全一致**を合格条件とし、許容誤差は設けない。範囲外の近傍は edge texel へ clamp。GPU-free `BL-EXPECT`: 1024 画素×4 channel すべて厳密、nearest の期待と 1008 画素で異なる（＝nearest と同じ結果になる入力ではない）、固定点 4 個。期待画像は kernel 内（整数演算）と host（`eu_artifact.py`、独立実装）の両方で計算。
+- T3 の runner を plan 表つきの共通関数にし（T3 の plan と動作は不変）、`PARITY_BL_TEST` は plan だけ差し替え: context A で nearest（対照）→ bilinear → nearest（filter の変更が残らない）、新規 context B で bilinear。
+- **実機**（`build/bl-e105` vmunix e77c354e… / hdd 7d4118d0…、GPU なし 385/0、ログ `e105-run-parity-hw-bl.log`）:
+```
+BL step=1 ctx=A filter=nearest differs_from_nearest=0    pixels 1024/1024 max_channel_diff=0 seqno/hwsp 2/2
+BL step=2 ctx=A filter=linear  differs_from_nearest=1008 pixels 1024/1024 max_channel_diff=0 seqno/hwsp 4/4
+BL step=3 ctx=A filter=nearest                           pixels 1024/1024 max_channel_diff=0 seqno/hwsp 6/6
+BL step=4 ctx=B filter=linear  differs_from_nearest=1008 pixels 1024/1024 max_channel_diff=0 seqno/hwsp 2/2
+BL PASS: steps=4/4 passed=4 wedged=0 | attach end STOPPED (probe complete)、teardown 正常、ktest 385/0、cleanup=1
+```
+  内側の補間と clamp 端の両方を含む全 1024 画素が厳密一致。host 独立検証 4/4（`verify-t3`）。最終 step の RT は host 期待画像と 1024/1024、`e105-bl-last-rt.png`。
+- 既知の小さな不備: `*-LAST` の texture dump は常に texture B を出す（BL では bind しているのは A）。RT・state・batch の dump と、step 行の texA/texB hash による host 同定は正しい。次の増分で「最後に bind した texture」を出すよう直す。
+- 範囲外のまま: mipmap、anisotropic、sRGB、頂点 UV。
+
+### 3. 事前調査（読み取りのみ、`handover/notes/`）
+- `survey-display-lcd.md`: 対象機は **Dell Latitude 5330（laptop、内蔵 panel あり。KVM ホストそのもの＝native 試験中は KVM 環境が使えない）**。VFIO 下は ASLS=0 で VBT 無し。parity の VBT parser は block を数えるだけ（本物の VBT だと encoder 0 個）、AUX／DPCD、PPS、backlight、PLL compute/enable、link training、transcoder／pipe／plane の書込み、WM／DDB、vblank／flip 完了、HPD 実処理、`intel_crtc_disable_noatomic`／initial plane config は無し。GGTT 窓は 1 MiB で FHD の framebuffer（約 8 MiB）が入らない。正本の呼出し順と parity の対応表、GOP が pipe を残した場合の未対応、1 回で済ませる参照データ採取計画（13 項目、bare metal 必須のものを明示）、既存 scanout 関連コードを記載。
+- `survey-libvulkan-path.md`: libvulkan は Khronos loader ではなく **Venus wire protocol の client**（169 entry point）。kernel 側 `vk/` executor が decode と GPU 固有処理を担当、境界は `/dev/gpuN` の ioctl 'G'（GPU core `src/drivers/gpu/gpu.c` が検査）。**現状は端から端まで繋がらない**（capset 不一致で libvulkan が i915 node を拒否、executor の多くが stub、parity は device 非公開で `drv_gpu_*` 未接続）。vk/ が依存する legacy service の一覧、CPU fallback は無いこと、present／display／scanout の ops が NULL であることを記載。含意: 通常 client 経路の入口は GPU core の既存 ioctl 契約が既にあるので、表示側に別の入口を作らず parity の device をその ops 表へ繋ぐのが自然。
+
+### 4. 出典・元表示
+- `plan/ws031/parity-notice-map.md`（`tools/notice_map.py` で自動抽出）: parity 107 ファイル中 36 が上流ファイルを名指し、20 が port 文言を持つ。名指しされた上流 53 ファイルは**すべて MIT**（SPDX MIT 42、permission notice 文 11、GPL は 0）。名指し＝複製の証明ではないので区分は人が確定する。
+- 次の増分で、出典が確定しているファイル（header が "port of intel_xxx.c" と明言しているもの）から、上流の copyright 行と MIT 表示を**内容非変更の差分**として復元する（新しい名義は記入しない。コメントのみの変更で vmunix が byte 同一になることを確認する）。
+
+### 提出物
+`e97-e105-changes.patch`（base 2bf790a4）、`e105-run-parity-hw-{eu,draw,r1,tex,bl}.log`、`e105-bl-last-*`、`e105-bl-last-rt.png`、`notes/survey-display-lcd.md`、`notes/survey-libvulkan-path.md`、`plan/ws031/parity-notice-map.md`、tools: `reftex.c`（linear sampler）、`eu_artifact.py`（画像 3・bilinear 期待値・`extract-bl-last`）、`notice_map.py`。
+
+### 残(次)
+(1) 出典表示の復元（内容非変更）。(2) LCD 参照確定: 既存 VFIO Linux guest での採取（VBT 以外）と、bare metal Linux での 1 回採取（VBT／OpRegion／PPS／backlight／GOP 引継ぎ状態）— 後者は KVM ホストを Linux のまま使えば `vfio-pci` を一時的に外す必要があり、**ユーザの実機操作・日程が必要**。(3) 表示実装の前半: OpRegion VBT の保持と VBT parser（child device、eDP／PPS／backlight block）を fake 試験で先行。(4) 通常稼働の寿命管理（試験して撤収するモードは回帰用に残す）と scanout 用 GGTT 領域。
+台帳E-60〜E-105。GPU=vfio-pci維持, 10ms tick/HAL非変更維持, drm非blacklist, attach先行維持。git commit/push なし。
+
+## p011 増分E-106 (2026-09-18): **調査 — (1) libvulkan の設計確認と i915 executor の実装範囲、(2) QEMU passthrough で実機の内蔵 panel を駆動できることを Linux guest で確認、参照データ一式を採取**（コード変更なし）
+
+### (1) libvulkan（`handover/notes/libvulkan-executor-scope.md`）
+- ユーザ指摘どおり: libvulkan は ICD／loader ではないが**標準 Vulkan を実装する userland ライブラリ**で、Venus からは protocol の**番号だけ**を借りている（`opcodes.h` 冒頭「Numeric declarations selected from virglrenderer 1.1.0 Venus protocol … no renderer implementation is included」、README「Mesa、loader、virglrenderer の C 実装を移入していません」「アプリは標準 Vulkan API を使います」）。前回メモの「Venus wire protocol の client」という言い方は誤解を招くので訂正。
+- i915 の executor は 1 個の backend（`vk/`）で内部 6 module（cmd／res／pipe／cmdbuf／sync／wsi＋SPIR-V→EU の 3 ファイル）。自動集計（`tools/vk_opcode_survey.py`）: 内部 opcode **145**、libvulkan が発行 **130**、i915 executor に handler **31**、標準アプリ vkdemo が使う **69**、うち handler 無し **43**（instance/device 12、memory 6、sync 3、view 2、layout 2、sampler/descriptor 8、framebuffer/render pass 4、記録 6）。ほかに WSI／display 16 関数は ioctl 経由で、i915 の ops 表の present／display／scanout は NULL。
+- handler 以外: capability set が不足（libvulkan が node を黙って飛ばす）、未実装 opcode が payload を消費せず成功を返す、opcode 180（command stream 配送）未対応、object 表が session 単位でない、bind の offset 未検査、kernel 内 SPIR-V compiler は subset。
+- 接続: Intel 向け ioctl は GPU core に実装済み。必要なのは parity device の通常稼働と `drv_gpu_ops` 表への登録（open／resource／blob／map／command／jobs／recovery）、正しい capset、executor の中身。表示側に別の入口は作らない。
+
+### (2) QEMU で実機 panel を制御できるか → **できる**（`plan/ws031/display-ref/`）
+ユーザの推測（passthrough 経由で Intel GPU から実機 panel を制御できる＝QEMU で表示制御を試験できる、目視はユーザが行う）を、既存の Linux VFIO guest（`~/linuxvm/boot-dev.sh`、SeaBIOS、kernel 6.8.0-139、enable_guc=0）で確認。
+- `eDP-1` connected／enabled／dpms On、1920×1080@60（pixel clock 140.8 MHz）、pipe A／transcoder EDP A／DDI A x2／DPLL0、plane 1A XR24、`PP_STATUS` on、backlight は PCH PWM（96000/96000）、fb0 登録。panel は AUO B133HAN（13.3 型 FHD、6 bpc）、DPCD 1.1、HBR×2 lane、PSR／DSC なし。
+- **VBT（8704 B）と OpRegion（8192 B）も guest から取得できた**（ASLS=0x7fffb000）。前回メモの「VBT は bare metal でしか取れない」は誤りで訂正。zedBSD 試験で ASLS=0（E-53）なのは OVMF 起動の違いによると推定（OVMF 側の原因は未確認）。
+- 採取物: EDID、DPCD（000/200/700）、VBT、OpRegion、i915 debugfs 一式、PPS／BLC／transcoder／PLL／DDI／plane／HPD レジスタ、intel_reg dump、dmesg。採取 script `handover/tools/collect_display.sh`（読み取りのみ）。
+- bare metal でしか確認できないのは GOP が残した active pipe の引継ぎだけになった。表示 A〜D の大半は QEMU＋目視で進められる。
+- 注意点: parity は現状 PPS／backlight を一切触らないので panel は消えたまま（ユーザの観察どおり）。PPS の待機値は VBT と正本の規則に合わせる（panel 保護）。guest 終了時は vfio が device を reset して panel は消える。
+
+### 残(次)
+出典表示の復元（内容非変更）→ 表示の前半（OpRegion VBT の取得方法の決定、VBT parser、AUX／DPCD、PPS／backlight）を fake 試験で先行 → 通常稼働の寿命管理と scanout 用 GGTT 領域。
+台帳E-60〜E-106。GPU=vfio-pci維持, 10ms tick/HAL非変更維持。git commit/push なし。
+
+## p011 増分E-107 (2026-09-18): **表示の主作業 1 — 明示 VBT の供給＋正本 parser で実 panel 設定を構築（host／GPU-free／実機で確認）**、表示参照の追記、executor の空成功撤去（専門家の方針: VBT は候補 1＝固定 blob を明示供給、OVMF と既存初期化は維持、native では OpRegion／RVDA。Vulkan は接続準備と未実装の安全な扱いまで）
+
+### 0. 既存回帰と bilinear
+E-105 で完了済み（同一ソース f4dba354 で EU／DRAW／R1／TEX 4/4、T3 は E-104、bilinear 4/4 完全一致）。再実行していない。
+
+### 1. VBT parser: 正本の本文を再入力せずに使う
+- `plan/ws031/handover/tools/port_intel_bios.py` が固定参照（Linux 6.8.12）から生成:
+  - `parity/vbt/intel_bios_port.c` ← `display/intel_bios.c`（sha256 を header に記録、2614 行／正本 3681 行）。**関数本体は正本の text のまま**。変更は (a) drm/i915 の include → `vbt_compat.h`、(b) 関数ごとの削除 22 本（SDVO、PSR、MIPI DSI、DSC、SPI/PCI ROM 取得、TV/LVDS 判定）、(c) 削除した parse_* の呼出しを comment out、(d) `intel_bios_init()` の VBT pointer を `i915->display.opregion.vbt`＋SPI/ROM fallback から `parity_vbt_provider_get()` へ、(e) 末尾で zedBSD の glue を include。全変更は生成ファイルの header に列挙。
+  - `intel_vbt_defs.h`、`intel_bios.h` ← 正本の複製（include 1 行と guard 文言だけ変更、元の Intel copyright＋MIT 表示を保持）。`vbt_ref_types.h` ← `enum port／aux_ch／phy／intel_pch／drrs_type`、`struct intel_vbt_panel_data／intel_vbt_data` を正本 header から text 抽出。
+- zedBSD 側（独立実装）: `vbt_compat.h`（型、list_head 契約の最小実装、arena 割当、log、platform 固定値＝ADL-P／display ver 13／PCH ADP、ADL-P の port→phy、ICP の GMBUS pin 表、`intel_opregion_get_panel_type()` は OpRegion 不在どおり -ENODEV）、`parity_vbt.h`＋`parity_vbt_glue.inc`（単一の device 状態、48 KiB の bump arena、byte 供給元、正本の private list を平坦な record へ）。kernel には vsnprintf が無く正本の書式（%zu、%.*s）を保証できないため、kernel では message を書式 text のまま出し error 件数を数える（引数は型検査のみ）。host 試験は全文を出す。
+- **供給元の分離**（`bios.c`）: VBT の取得と検証・解析を分離。順序 = ① OpRegion（P2 が buffer を保持していないので現状 byte 無し）→ ② **明示 blob**（build が `PARITY_VBT_EXPLICIT=1` を指定し、かつ PCI subsystem が 1028:0b02 のときだけ。read-only firmware provider の名前 `zedbsd/vbt/dell-latitude-5330-1028-0b02.vbt`、size 8704、**完全な SHA-256 3bff4a09…24cd を kernel 内で計算して pin**（SHA-256 は FIPS 180-4 の "abc" vector で検査）、`intel_bios_is_valid_vbt()`）→ ③ PCI ROM。**「OpRegion があるふり」はしない**: source は `PARITY_VBT_SRC_EXPLICIT_BLOB` と記録し、ASLS／OpRegion の状態は firmware が残したまま。採取した OpRegion 全体や ASLS 値は使わない。blob は通常配布の既定値ではない（flag 無し＝触らない、別機種＝適用しない）。
+- child device は**一箇所から**作る: VBT があれば実 VBT だけ、無ければ正本の `init_vbt_missing_defaults()` だけ（A/B 既定へ継ぎ足さない）。従来の手書き defaults と同じ A/B/C になることを GPU-free で照合。
+- teardown に `intel_bios_driver_remove()` 相当を追加（list と arena の解放）。
+- 移植台帳に残す接続差: 正本の `intel_opregion_setup()` は ASLS=0 だと `vbt_firmware` の取得に到達せず return するため、正本の override 機構は使えない → `intel_bios_init()` が読む入力へ明示 blob を直接つないだ。native 用の OpRegion／RVDA（2.0 は物理アドレス、2.1+ は OpRegion 基点の相対値。今回の VBT 8704 B は mailbox 4 に収まらず RVDA 側）経路は未実装で、同じ parser へ繋ぐ形だけ用意した。
+
+### 2. 検証
+- **独立デコーダ**: igt `intel_vbt_decode` の出力（`display-ref/vbt-decode.txt`）を期待値の出所にした（parser 自身の出力から期待値を作らない）。
+- **host 試験**（`plan/ws031/tests/vbt-host-test.c`、kernel と同じ `intel_bios_port.c` を ASan/UBSan つきで build）: 19 checks / 0 failures。実 VBT: signature "$VBT ALDERLAKE-P"、BDB 249、block 12、child 4（A=eDP type 0x1806／DVO DP-A／AUX A、B=HDMI 0x60d2／DDC pin 2、TC1・TC2=DP Type-C/TBT 0x68c6、port C 無し）、panel type 2、18 bpp、PPS T3 2000／T8 800／T9 2000／T10 1100／T12 5000、PWM backlight 200 Hz／active high／controller 0／min level 15、arena peak 5184 B、parser error 0。異常入力: header 未満・途中切詰め・signature 不正・BDB offset 範囲外は validate で拒否、先頭 block の size を 0xffff にした VBT は arena を溢れさせず child 0、二重 init は -EBUSY、fini 後の再 init 可。期待値の訂正 1 件: min brightness は BDB ≥ 234 では `brightness_min_level[]`（15）で、igt の旧欄（6）ではない（正本の debug 出力でも 15）。
+- **GPU-free ktest +8（393/0）**: VBT-SHA、VBT-EXPLICIT（未指定＝触らない／別機種 1028:0b03＝黙って適用しない／対象機＝採用）、VBT-CHILDREN、VBT-PANEL、VBT-DEFAULTS、VBT-VALIDATE。
+- **実機**（OVMF の既存構成、`build/vbt-e107` vmunix 569ec7e1… / hdd 131177d0…、flags `-DCONFIG_DRIVER_PCI_I915_PARITY=1 -DPARITY_VBT_EXPLICIT=1`、通常初期化 1 起動、ログ `handover/increment-results/e107-run-parity-hw-vbt.log`）:
+```
+P3 intel_bios_init: source=3 vbt_found=1 version=249 bdb_blocks=12 child_devices=4 missing_defaults=0 parser_errors=0 arena_peak=5184
+P3 VBT explicit blob: name=zedbsd/vbt/dell-latitude-5330-1028-0b02.vbt found=1 size=8704 sha256=3bff4a09.. hash_ok=1 valid=1 subsys=1028:0b02 subsys_ok=1 used=1 (explicit supply; OpRegion present=0 is unchanged)
+P3 VBT child[0]: port=A dvo_port=10 type=0x1806 aux_ch=0 edp=1 …   child[1]: port=B type=0x60d2 hdmi=1 ddc_pin=2   child[2]/[3]: port=D/E type=0x68c6 typec=1 tbt=1 max_rate=810000
+P5b setup_outputs: vbt_children=4 ddi_init=4 encoders=4 skipped=0   P5c readout: 全 CRTC／encoder disabled、DPLL off   P5d sanitize: 変更なし
+attach end: STOPPED (i915_driver_probe complete) err=0、teardown 正常、ktest 393/0、runner-result probe=COMPLETE cleanup=1
+```
+  実 VBT 由来の 4 出力（Linux guest の connector 構成 eDP-1／HDMI-A-1／DP-1／DP-2 と一致）で P0〜P7 が完走。Type-C の encoder 2 本が初めて readout／sanitize を通ったが、状態変更は無し。
+
+### 3. 表示参照の追記（`plan/ws031/display-ref/README.md` 末尾、保存済み dump と正本から）
+実 link 設定 DPCD 0x100/0x101 = 0x0a/0x02（HBR×2、link M/N の検算が 140.8÷270 と一致。0x100 帯だけ同じ guest 起動中に追加採取）／cpu_transcoder = **TRANSCODER_A**（0x60400／0x70008。旧 TRANSCODER_EDP の block は全て 0 で未使用。「EDP A」は intel_reg の表示文字列）／backlight = `cnp_pwm_funcs`、controller 0、`BXT_BLC_PWM_CTL/FREQ/DUTY(0)` = 0xC8250／0xC8254／0xC8258 = 0x80000000／96000／96000（周期 = rawclk 19200 kHz×1000÷200 Hz。intel_reg の旧名と「cycle 30464」のデコードは CNP 以降と対応しない）／PPS: T11+T12 = VBT 5000 ＋1000 → roundup 6000（600 ms）→ `PP_CONTROL` bits 8:4 = 6、T8／T9 は hardware 値 1 でソフトウェア待機（80／200 ms）、採用規則は `pps_init_delays()`。
+
+### 4. Vulkan 側の並行作業
+- **未実装 builtin opcode の空成功を撤去**（`vk/cmd.c`）: command は [opcode][reply flag][payload] で長さ語が無く、理解できない command の終端を確定できない → reader を poison して `ENOTSUP` を返し、その stream の以後の解釈・実行を止める（payload を次の opcode として読まない、reply 長は公開されない）。host 試験追加: vkCreateInstance(0)／1／17／148／180 の後ろに正しい version probe を置いても probe が実行されないこと。executor host fixture 9 本 PASS（通常＋ASan/UBSan）。module 側の未対応は従来から EINVAL で停止。
+  kernel は `vk/cmd.c` を -Werror で compile（`build/vbt-e107b`）。parity 構成では device 未公開のため executor は `--gc-sections` で落ち、vmunix は §2 の実機 run と**同一 hash 569ec7e1…**（GPU-free ktest 393/0）。
+- **vkdemo の実 command 依存表**（`handover/notes/vkdemo-dependency-table.md`、source と埋込み SPIR-V の decode による。実行しての採取ではない）。opcode 不足より手前の関門 4 つ: ① **libvulkan は今の i915 node を open 時に拒否**（capset に VK XML version・timeline 数・168 byte の vendor suffix が無い。さらに STRICT_QUEUE＋QUIESCE＋JOB＋JOB_CAPACITY を要求＝flags 7。これは byte 合わせではなく「fence は成功時だけ完了」「submit 単位の RESERVE→COMMIT／CANCEL と WAIT」「他 session を壊さない退役」という契約の宣言なので、parity の request／fence／reset の上で実装してから立てる）、② builtin の空成功（上で撤去）、③ **SPIR-V parser は vkdemo の `-O0` vertex shader を下ろせない**（Function storage の local 8 個、float 定数、OpFNegate、component access、3〜4 要素 compose が無く、FSUB は ADD として lower、しかも未対応 opcode を黙って skip ＝ compiler 版の空成功。fragment 側の opcode は全部認識）、④ `vkCmdBeginRenderPass`(133) ほか recording 系 126／115／116／103／132 に handler 無し。vkdemo は compute なし、最大 command は約 3.1 KB で opcode 180 は出ない見込み（size からの導出）。未確認: 既存 31 handler が libvulkan の byte 配置をそのまま消費するか、JOB ioctl が i915 と端から端まで動くか。
+- 通常 Vulkan の公開は成功扱いにしていない。
+
+### 提出物
+`src/drivers/gpu/i915/parity/vbt/*`、`parity/firmware_vbt_dell_latitude_5330.c`、`parity/bios.{c,h}`、`parity/osdep/firmware.c`、`vk/cmd.c`、tools `port_intel_bios.py`／`collect_display.sh`、tests `vbt-host-test.c`、`display-ref/`（`vbt-decode.txt`、`dpcd-…-100.bin`、README 追記）、ログ `e107-run-parity-hw-vbt.log`。出典台帳に追記（§1: 生成物／複製の区分と元表示の保持）。
+
+### 残(次) 主作業 2
+PPS／VDD の状態と所有権 → AUX transfer（`intel_dp_aux_xfer`／`intel_dp_aux_transfer`、reply の ACK／NACK／DEFER と転送 byte 数を分離）→ DPCD 能力取得 → I2C-over-AUX で EDID → panel の mode と backlight 設定の構築。採取済み VBT／EDID／DPCD を fixture にした GPU-free 試験（正常／異常／寿命）の後、OVMF＋明示 VBT で実 AUX から DPCD／EDID を取得し採取値と照合、VDD と電源参照を規定どおり返す。
+台帳E-60〜E-107。GPU=vfio-pci維持, 10ms tick/HAL非変更維持, execlists, 累積修正保持。git commit/push なし。
+
+## p011 増分E-108 (2026-09-19): **表示の主作業 2 — PPS／VDD と AUX を接続し、実機の AUX 経路から対象 LCD の DPCD／EDID を取得（実機 PASS ×2、採取済み識別情報と一致、VDD と電源参照を返却）**。DC_off 有効化経路の既存乖離を 1 件修正
+
+### 1. 実装: 正本の関数をそのまま使う（VBT と同じ生成方式）
+- `plan/ws031/handover/tools/port_dp_aux_pps.py` が固定参照から生成（関数本体は再入力なし、削除と置換は生成ファイルの header に全部記録、元の copyright／permission notice を保持）:
+  - `parity/dp/intel_pps_port.c` ← `display/intel_pps.c`（1288 行／正本 1745）。残したもの = PPS lock、VDD on/off と遅延 off worker、panel status 待ち、delay の決定（BIOS レジスタ／VBT／eDP 仕様 fallback、最大値規則、T8/T9=1 の上書き、T11_T12 の 100 ms 切上げ）、レジスタ書込み、panel power on/off、backlight enable bit。削除 13 関数 = VLV/CHV の per-pipe sequencer、全 encoder 走査（`intel_pps_reset_all`）、DRM object 経由の `intel_pps_backlight_power`、pre-DDI の unlock／assert、`intel_pps_setup`。
+  - `parity/dp/intel_dp_aux_port.c` ← `display/intel_dp_aux.c`（510 行／正本 902）。残したもの = `intel_dp_aux_xfer`、`intel_dp_aux_transfer`、pack/unpack/header、SKL+ の send-control word、TGL+ のレジスタ選択。削除 22 関数 = 他世代の divider／send ctl／レジスタ選択、object 初期化（ADL-P の選択だけを glue が行う）、encoder 間の AUX ch 決定（VBT の aux_ch を直接使う）、AUX 完了割り込み handler（残した待ちはレジスタ polling。正本 6.8 の `intel_dp_aux_wait_done` も `__intel_de_wait_for_register` の polling）。
+  - `parity/dp/drm_dp_helper_port.c` ← upstream stable v6.8.12 `drivers/gpu/drm/display/drm_dp_helper.c`（keep-list: `drm_dp_dpcd_access`／`probe`／`read`／`write`、`drm_dp_read_dpcd_caps`（拡張 caps 含む）、I2C-over-AUX 一式 `drm_dp_i2c_do_msg`／`drain_msg`／`xfer`）。module parameter 2 個は既定値（10 kHz／16 byte）で固定。
+  - `parity/dp/drm_edid_port.c` ← 同 `drivers/gpu/drm/drm_edid.c`（keep-list: `drm_do_probe_ddc_edid`、header／checksum helper）。
+  - 複製 header: `intel_dp_aux_regs.h`、`intel_pps_regs.h`、`intel_pps.h`、`intel_dp_aux.h`、`drm_dp.h`（include 行だけ変更）。`dp_ref_types.h` = `struct intel_pps` の text 抽出。
+  - DRM core の 3 ファイルは i915 の固定参照 tree に無かったので kernel.org の stable v6.8.12 から取得し、`plan/ws031/linux-parity/linux-reference/drm-v6.8.12/` に sha256 つきで固定（Ubuntu 6.8.0-139 の同ファイルとの差分は未照合＝台帳に未監査と記載）。
+- zedBSD 側（独立実装）:
+  - `dp_compat.h`: 正本 text が kernel に求めるもの（レジスタ macro、`intel_de_*`、待ち、sleep、clock、電源参照、mutex、delayed work、I2C adapter、`drm_dp_aux`／`intel_dp`／`intel_digital_port` の使う member）。**hardware と時間に触れるものは全部 `struct parity_dp_env` 経由** → 同じ本番関数が実機と register model の両方で動く。
+  - `parity_edp.{h,c}`: `intel_edp_init_connector()`／`intel_edp_init_dpcd()` の順に正本関数を呼ぶ: `intel_pps_init()` → `drm_dp_read_dpcd_caps()` → eDP display-control caps（0x700）→ DDC で EDID → `intel_pps_init_late()` → 停止 `intel_pps_vdd_off_sync()`。失敗時は正本の `out_vdd_off` と同じく VDD を落としてから返す。結果 code は Linux 番号の負 errno（zedBSD の errno 番号と違うので DP の翻訳単位内では Linux 値を強制し、公開 header に `PARITY_EDP_E*` として明記）。
+  - `parity_drm_edid_glue.inc`: base＋extension block の読出し。正本 `edid_block_read()` の契約（block ごと 4 回、read 失敗と全 0 は即停止、完全な header＋checksum）に従い、**header の修復はしない**（壊れた block は報告）。extension 数が buffer（4 block）を超えても書き越さない。
+  - `parity_dp_kernel.{c,h}`: env を MMIO／`parity_wait_reg`／`parity_udelay`／power domain の get/put へ束縛＋実機の一回取得ルーチン。
+- **まだ正本どおりでない点（明記）**: ① 実行位置 — 正本は `intel_setup_outputs()` 内（`intel_ddi_init` → `intel_edp_init_connector`）。今回は P7 後の試験モード。常駐デバイス化と一緒に正位置へ移す。② **遅延 VDD-off worker は timer に未接続**（queue は期限を記録するだけ。`parity_edp_run_due_work()` で期限後に実行できることは fake で確認）。停止経路が正本どおり cancel-sync するので今の「試験して片付ける」流れでは VDD は残らない。常駐時に worker／timer へ接続する。③ PPS／AUX の mutex は所有の**表明**（単一 thread 前提）。常駐時に kernel mutex へ。④ `intel_display_power_put_async`（100 ms 後に worker が返す）は即時 put。⑤ 未実施: `intel_hpd_enable_detection()`、shared-AUX の HPD 確認、`drm_dp_read_desc()`／DPCD quirk、PSR／DSC／MSO caps、sink rate 表、mode 構築、backlight setup、rawclk の readout（今は pre-CNP の PP_DIVISOR 経路でしか使われず、この PCH では未使用）。⑥ sleep は attach thread の busy-wait（10 ms tick より細かい sleep が無いため。HAL は変更していない）。
+
+### 2. GPU-free 試験（本番関数＋register model）
+- `parity/dp/dp_fake_hw.{c,h}`: PCH PPS0、AUX ch A、その先の sink（DPCD＋I2C-over-AUX の EDID EEPROM）、clock、電源参照 counter。レジスタ offset と bit 位置は driver の header と**独立に**書いた（driver 側の定義ミスが相殺されないように）。sink の中身 = 採取済み DPCD（0x000／0x100／0x700）と EDID。model は「AUX／PP_CONTROL 書込み時に必要な電源参照が無い」「VDD も panel power も無いのに AUX」「対象外レジスタへの access」を数える。
+- **host 試験** `plan/ws031/tests/dp-host-test.c`（`run-dp-host-test.sh`、ASan/UBSan）: **63 checks / 0 failures**。
+  - 正常: DPCD 15 byte・eDP caps 3 byte・EDID 128 byte が採取値と一致、panel = AUO 0x2b99。`PP_ON/OFF_DELAYS` = 0x07d00001／0x044c0001、power-cycle 欄 6、software delay 200／110／600／80／200 ms（＝対象機で Linux が設定した値、i915 debugfs の値）。取得後 VDD on・AUX 参照 1 本だけ保持・worker 無し（initializing）、VDD on は 1 回（transfer 間で維持）、初回 AUX の前に 200 ms 待機、無電源 access 0、対象外レジスタ 0、error log 0。
+  - delay 規則: firmware 値が大きければそちら（最大値規則）、両方 0 なら eDP 仕様の上限（210／500／610 ms、cycle 欄 7）。firmware が VDD を残していた場合は参照 1 本で引き取り、終了時に返す。
+  - 取得・解析の異常: sink 無応答（→ −ETIMEDOUT、32×5 回で有限に打切り）、native DEFER／NACK（一過性は retry、持続は −EIO）、予約 reply code、**短い reply を全量として受け取らない**（−EPROTO → retry、持続は −EPROTO）、receive error、禁止された message size 0／21（unpack しない）、busy 固着（有限待ち → 回復／有限失敗）、I2C DEFER×5、I2C NACK、**部分 I2C read の継続（欠落・重複なし）**、checksum が合わない EDID（4 回で −EPROTO）、途中で切れた EDID、全 0 EDID（即 −ENXIO）、extension block、buffer 超の extension 数、電源参照 get 失敗（put を skip、underflow 0）、不正構成（port≠A、Type-C AUX）、二重 begin（−EBUSY）。
+  - 寿命: 全失敗試験の合格条件 = VDD off・`vdd_wakeref` 無し・worker 無し・電源参照 0・underflow 0。worker は期限前（2999 ms）に走らず、3001 ms で走って VDD と参照を返す。その後の AUX read は自分で VDD を取り直し（T12 待ち＋power-up 待ち込み）、end が cancel して返す。
+  - 期待値の出所: 採取 dump（Linux 経由）と正本の規則。実装の出力から作っていない。
+  - 見つけて対処した点: 正本の bare-address I2C read は `memcpy(NULL, …, 0)` を行う（UBSan 指摘、ISO C 上は未定義）→ 正本 text は変えず、compat の `memcpy` を長さ 0 で何もしない wrapper にした。
+- **kernel ktest +14（407/0）**: EDP-ACQUIRE／DELAYS／OWNERSHIP／WORKER／WORKER-DUE／END／END-EARLY／NOSINK／RETRY／I2C／EDID-BAD／EDID-EXT／POWER-FAIL／CONFIG（kernel build の同じファイルが host と同じ挙動であること）。
+
+### 3. 実機（OVMF の既存構成＋明示 VBT、GPU 投入なしの表示試験モード `-DPARITY_AUX_TEST=1`。この flag が明示 VBT も要求する）
+- 1 回目 `build/aux-e108` vmunix 55f89b7a… / hdd 88a9ac5e…、2 回目（§4 の修正後）`build/aux-e108b` vmunix fcabaeee… / hdd 09fcdeb9…。ログ `handover/increment-results/e108-run-parity-hw-aux.log`、`e108b-…`。**2 回とも PASS、DPCD／EDID の行は 2 回で完全一致**。
+```
+AUX-TEST begin: vbt_source=3 port=A aux_ch=0 panel_early=1 type=2 pps(100us) t1_t3=2000 t8=800 t9=2000 t10=1100 t11_t12=5000 controller=0 well_refs=0
+pps before:               PP_STATUS=0 PP_CONTROL=0x00000000 PP_ON_DELAYS=0x00000000 PP_OFF_DELAYS=0x00000000   ← OVMF 下では未設定
+pps after intel_pps_init: PP_STATUS=0 PP_CONTROL=0x00000060 PP_ON_DELAYS=0x07d00001 PP_OFF_DELAYS=0x044c0001   ← Linux が対象機で設定した値と同じ
+pps: idx=0 valid=1 delays(ms) up=200 down=110 cycle=600 bl_on=80 bl_off=200
+acquire: rc=0 stage=4 dpcd_ok=1 edp_dpcd_ok=1 link_cfg_ok=1 edid_ok=1 edid_blocks=1 ext=0 i2c_defers=0 i2c_nacks=0 log_errors=0 wait_timeouts=0 time_faults=0 elapsed_ms=396 slept_us=200000
+pps after acquisition:    PP_CONTROL=0x00000068 (EDP_FORCE_VDD)   ownership: vdd_hw=1 vdd_wakeref=1 worker_pending=0 refs core=0 aux=1
+DPCD 000: 11 0a 02 41 00 00 01 00 02 00 00 00 00 0b 00 | eDP 700: 01 18 00 | 100: 0a 02
+EDID +000: 00 ff ff ff ff ff ff 00 06 af 99 2b …(128 byte、log に全量)… checksum 74   sha256=50305822…  mfg=06af product=2b99（AUO B133HAN）
+late: rc=0 panel_late=1 type=2 delays up=200 down=110 cycle=600 | vdd_hw=1 worker_pending=1
+pps after end:            PP_CONTROL=0x00000060   end: rc=0 vdd_hw=0 vdd_wakeref=0 worker_pending=0 refs core=0 aux=0 put_underflows=0 get_failures=0 well_refs 0 -> 0 log_errors=0
+verdict: PASS (acquire=0 late=0 end=0 dpcd_match=1 edp_dpcd_match=1 edid_match=1 wells_balanced=1)
+attach end … i915_driver_probe complete err=0、ktest 407/0、runner-result probe=COMPLETE cleanup=1
+```
+- 保存済み EDID は**照合にだけ**使い、実 AUX 応答の代用にはしていない（取得値は log に全量）。
+- **PPS／VDD の副作用（記録）**: ① `PP_ON_DELAYS`／`PP_OFF_DELAYS` と `PP_CONTROL` の power-cycle 欄（=6）は書いたまま残る（正本も同じ。値は Linux が同じ機体で設定するものと同一）。② VDD を約 0.4 秒強制 on → off。panel power（`PANEL_POWER_ON`）と backlight は触っていない（`PP_STATUS` は終始 0）。③ AUX_A の power well と DC_off を一時的に取得（→ DC6 を一旦解除、返却後に再許可）、前後で well 参照数 0→0。④ DPCD への書込みは無し（0x100 帯は読出しだけ）。
+
+### 4. 既存の乖離 1 件を修正: DC_off 有効化が `gen9_set_dc_state()` を通っていなかった
+1 回目の実機 log に正本の診断 `DC state mismatch (0x2 -> 0x0)` が出た。原因は `parity_dc_off_enable()`（`gen9_disable_dc_states` 相当）が `DC_STATE_EN` を直接書いていて、software 側の `dc_state` が 2 のまま残ること。P7 で DC6 を許可した**後**に DC_off を取る経路は、今回の AUX 取得が初めてだった（それまでの試験モードは表示系の電源 domain を取らない）。→ 正本どおり `parity_gen9_set_dc_state(c, DC_STATE_DISABLE)` を呼ぶ（書込みの検証 loop と `dc_state` 更新込み）。2 回目の実機 log では診断は出ず、GPU-free ktest は 407/0 のまま。初期化経路の DC_STATE_EN 書込み回数は 1→2（P7 行の `dc_state_writes`）。
+→ 初期化経路に触れたので、受入済み 6 モード（EU／DRAW／R1／TEX／T3／BL）を現ソースで再実行（次項）。
+
+### 5. 現ソースでの回帰（6 モード）
+§4 の修正と eDP 段の追加後の同一ソースで、6 モードを clean build → GPU-free ktest（各 407/0）→ 実機 1 回ずつ: **6/6 PASS**（1 モードでも PASS 行が出なければ以後投入しない方式）。EU-REPEAT rounds=5 passed=5／DRAW pixels match=1024/1024／R1 steps=12/12／TEX pixels match=1024/1024・changed_bytes=0・guard_bad_bytes=0／T3 steps=9/9／BL steps=4/4。全モード `probe=COMPLETE cleanup=1`、`DC state mismatch` は 0 件。vmunix: eu 766685ef…、draw b8fa6178…、r1 acff023c…、tex 597a40bf…、t3 38849630…、bl 5c30fa6a…。ログ `handover/increment-results/e108-run-parity-hw-{eu,draw,r1,tex,t3,bl}.log`。作業 tree は未 commit（base f4dba354＋累積 patch `e97-e108-changes.patch`）。
+
+### 提出物
+`src/drivers/gpu/i915/parity/dp/*`、`parity/vbt/vbt_compat.h`（DP 側 member の hook、`struct edid` に extension 数と checksum）、`parity/display_core.c`（§4）、`parity/bios.h`（`PARITY_AUX_TEST`）、`parity/probe.c`、`parity/ktest.c`、`platform/amd64/vmunix.mk`、tools `port_dp_aux_pps.py`／`gen_dp_fixture.py`、tests `dp-host-test.c`／`run-dp-host-test.sh`、参照 `linux-reference/drm-v6.8.12/`、ログ `e108*-run-parity-*.log`。出典台帳 §6 に追記。
+
+### 残(次)
+常駐デバイスの寿命管理（VDD-off worker と async put を worker／timer へ、mutex を実体へ、eDP 取得を `intel_setup_outputs` の正位置へ）→ EDID から mode、backlight 設定（`cnp_pwm_funcs`、rawclk readout）→ full-HD の scanout object（GGTT 窓の拡張、表示用 pin）→ LCD-A（計算した状態の検証）→ LCD-B。
+台帳E-60〜E-108。GPU=vfio-pci維持, 10ms tick/HAL非変更維持, execlists, 累積修正保持。git commit/push なし。

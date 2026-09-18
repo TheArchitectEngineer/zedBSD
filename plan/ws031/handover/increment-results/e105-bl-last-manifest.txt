@@ -1,0 +1,6 @@
+batch    bytes=1420  sha256=d853b63dcd5e466be4e5686040a770a55f615d4700229467a02b153c99892265
+state    bytes=4096  sha256=eba288b1a4b7abf03d44d1c300baa56d8c4c7554ebc7f6a8a67a4ed3627b9e50
+texture  bytes=256   sha256=899e10ea961999253ca7c084565952814318a25cf22469c2badfe46eeced291c
+rt       bytes=4096  sha256=fdd0ce8b05e25ab43442f13807760d1fb168e06a3de89bca80a54e8e60cb8a50
+texture == CPU pattern(variant 3): False
+rt vs expected (independent host computation): match=1024/1024

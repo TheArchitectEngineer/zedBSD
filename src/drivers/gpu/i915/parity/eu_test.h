@@ -84,6 +84,11 @@ struct spinlock;
 #define PARITY_T3_TEST 0
 #endif
 
+/* E-105: bilinear filtering; the T3 runner with another plan.  Its own mode, its own boot. */
+#ifndef PARITY_BL_TEST
+#define PARITY_BL_TEST 0
+#endif
+
 #define PARITY_EU_PASS   1
 #define PARITY_EU_HANG   2
 #define PARITY_EU_ERROR  3
@@ -291,6 +296,9 @@ struct parity_t3_step {
 	char upload;                      /* texture the CPU rewrote before this step, or '-' */
 	int upload_variant;
 	int expect_variant;               /* the image the bound texture holds */
+	int linear;                       /* SAMPLER_STATE of this step: 0 nearest, 1 bilinear */
+	unsigned differs_from_nearest;    /* expected pixels that differ from the nearest expectation */
+	unsigned max_channel_diff;        /* diagnostic only: largest |observed - expected| per channel */
 	int rc, completed, parked, pass;
 	uint32_t lrca, seqno, hwsp_observed;
 	unsigned polls;
@@ -313,6 +321,10 @@ struct parity_t3_test {
 };
 
 int parity_t3_test_run(struct parity_t3_test *x, struct parity_gt_engines *es,
+	struct parity_gt_ppgtt *vm, struct parity_gt_mem *gm, struct osdep_mmio *m,
+	struct spinlock *uncore_lock, unsigned timeout_ms);
+/* Same runner, bilinear plan: nearest -> bilinear -> nearest on one context, bilinear on a new one. */
+int parity_bl_test_run(struct parity_t3_test *x, struct parity_gt_engines *es,
 	struct parity_gt_ppgtt *vm, struct parity_gt_mem *gm, struct osdep_mmio *m,
 	struct spinlock *uncore_lock, unsigned timeout_ms);
 void parity_t3_test_release(struct parity_t3_test *x, struct parity_gt_mem *gm);

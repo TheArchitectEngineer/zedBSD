@@ -96,8 +96,10 @@ def tex_pattern(variant=0):
                 out[o:o + 4] = bytes((16 + 32 * u, 16 + 32 * v, 16 + 32 * ((u + 3 * v) & 7), 255))
             elif variant == 1:
                 out[o:o + 4] = bytes((239 - 32 * v, 16 + 32 * u, 16 + 32 * ((3 * u + v) & 7), 255))
-            else:
+            elif variant == 2:
                 out[o:o + 4] = bytes((240 - 32 * u, 240 - 32 * v, 16 + 32 * ((u ^ v) & 7), 255))
+            else:
+                out[o:o + 4] = bytes((64 * (u & 3), 64 * (v & 3), 64 * ((u >> 2) + 2 * (v >> 2)), 255))
     return bytes(out)
 
 def tex_expected(pattern):
@@ -108,6 +110,26 @@ def tex_expected(pattern):
             r, g, b, a = pattern[((y // 4) * 8 + (x // 4)) * 4:][:4]
             exp.append(b | (g << 8) | (r << 16) | (a << 24))
     return exp
+
+def tex_expected_linear(pattern):
+    """Bilinear, clamp to edge, uv=(pixel+0.5)/32 over 8x8: texel coordinate (2*pixel-3)/8, so the
+    weights are multiples of 1/8 and each channel is sum(w*t)/64.  Returns (dwords, inexact_count)."""
+    exp, inexact = [], 0
+    for y in range(32):
+        for x in range(32):
+            cx, cy = 2 * x - 3, 2 * y - 3
+            x0, y0 = cx // 8, cy // 8
+            fx, fy = cx - 8 * x0, cy - 8 * y0
+            xs = [min(max(x0, 0), 7), min(max(x0 + 1, 0), 7)]
+            ys = [min(max(y0, 0), 7), min(max(y0 + 1, 0), 7)]
+            w = [[(8 - fx) * (8 - fy), fx * (8 - fy)], [(8 - fx) * fy, fx * fy]]
+            ch = []
+            for c in range(4):
+                sm = sum(w[j][i] * pattern[(ys[j] * 8 + xs[i]) * 4 + c] for j in range(2) for i in range(2))
+                inexact += (sm % 64) != 0
+                ch.append((sm + 32) // 64)
+            exp.append(ch[2] | (ch[1] << 8) | (ch[0] << 16) | (ch[3] << 24))
+    return exp, inexact
 
 def write_ppm(path, dwords, scale=8):
     """B8G8R8A8 dwords -> binary PPM (RGB), each pixel enlarged for viewing."""
@@ -121,7 +143,7 @@ def write_ppm(path, dwords, scale=8):
                 row += bytes(((d >> 16) & 255, (d >> 8) & 255, d & 255)) * scale
             f.write(bytes(row) * scale)
 
-def extract_tex(log, prefix, tag="TEX-TEST", variant=0):
+def extract_tex(log, prefix, tag="TEX-TEST", variant=0, linear=False):
     sec = {"batch": {}, "state": {}, "tex": {}, "rt": {}}
     dwords = None
     for line in open(log, errors="replace"):
@@ -154,7 +176,7 @@ def extract_tex(log, prefix, tag="TEX-TEST", variant=0):
     pattern = tex_pattern(variant)
     texraw = struct.pack("<64I", *tex)
     out.append("texture == CPU pattern(variant %d): %s" % (variant, texraw == pattern))
-    exp = tex_expected(pattern)
+    exp = tex_expected_linear(pattern)[0] if linear else tex_expected(pattern)
     bad = [(i % 32, i // 32, exp[i], rt[i]) for i in range(1024) if exp[i] != rt[i]]
     out.append("rt vs expected (independent host computation): match=%d/1024" % (1024 - len(bad)))
     if bad:
@@ -173,23 +195,24 @@ def fnv1a64(data):
 def verify_t3(log):
     """Every T3 step: the render-target hash in the log against the hash of the expected image
     computed here (independently of the kernel), and the texture hashes against the images."""
-    exp_rt = {v: fnv1a64(struct.pack("<1024I", *tex_expected(tex_pattern(v)))) for v in range(3)}
-    exp_tex = {fnv1a64(tex_pattern(v)): v for v in range(3)}
+    exp_rt = {(v, "nearest"): fnv1a64(struct.pack("<1024I", *tex_expected(tex_pattern(v)))) for v in range(4)}
+    exp_rt.update({(v, "linear"): fnv1a64(struct.pack("<1024I", *tex_expected_linear(tex_pattern(v))[0])) for v in range(4)})
+    exp_tex = {fnv1a64(tex_pattern(v)): v for v in range(4)}
     ok = n = 0
     for line in open(log, errors="replace"):
-        m = re.search(r"T3 step=(\d+) ctx=(\w) bind=(\w) upload=(\S+) expect_variant=(\d+) .*pass=(\d) .*"
+        m = re.search(r"(?:T3|BL) step=(\d+) ctx=(\w) bind=(\w) upload=(\S+) expect_variant=(\d+) (?:filter=(\w+) )?.*pass=(\d) .*"
                       r"rt_hash=(\w+) texA_hash=(\w+) texB_hash=(\w+)", line)
         if not m:
             continue
         n += 1
-        step, ctx, bind, upload, ev, passed, rth, ah, bh = m.groups()
-        ev = int(ev)
+        step, ctx, bind, upload, ev, flt, passed, rth, ah, bh = m.groups()
+        ev = (int(ev), flt or "nearest")
         a, b = exp_tex.get(int(ah, 16)), exp_tex.get(int(bh, 16))
         bound = a if bind == "A" else b
-        good = int(rth, 16) == exp_rt[ev] and bound == ev and passed == "1"
+        good = int(rth, 16) == exp_rt[ev] and bound == ev[0] and passed == "1"
         ok += good
-        print("step %s ctx=%s bind=%s upload=%-4s texA=image%s texB=image%s expected=image%d rt_hash %s -> %s" % (
-            step, ctx, bind, upload, a, b, ev, "matches host" if int(rth, 16) == exp_rt[ev] else "DIFFERS",
+        print("step %s ctx=%s bind=%s upload=%-4s texA=image%s texB=image%s expected=image%d/%s rt_hash %s -> %s" % (
+            step, ctx, bind, upload, a, b, ev[0], ev[1], "matches host" if int(rth, 16) == exp_rt[ev] else "DIFFERS",
             "OK" if good else "BAD"))
     print("T3 host verification: %d/%d steps" % (ok, n))
 
@@ -217,6 +240,8 @@ if __name__ == "__main__":
         extract_tex(sys.argv[2], sys.argv[3])
     elif len(sys.argv) == 5 and sys.argv[1] == "extract-t3-last":
         extract_tex(sys.argv[2], sys.argv[3], tag="T3-LAST", variant=int(sys.argv[4]))
+    elif len(sys.argv) == 5 and sys.argv[1] == "extract-bl-last":
+        extract_tex(sys.argv[2], sys.argv[3], tag="BL-LAST", variant=int(sys.argv[4]), linear=True)
     elif len(sys.argv) == 3 and sys.argv[1] == "verify-t3":
         verify_t3(sys.argv[2])
     elif len(sys.argv) == 4 and sys.argv[1] == "diff":

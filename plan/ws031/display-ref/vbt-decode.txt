@@ -1,0 +1,605 @@
+Generating LVDS data table pointers
+Generating LVDS data table pointers
+VBT header:
+	VBT signature:		"$VBT ALDERLAKE-P    "
+	VBT version:		0x0064 (1.0)
+	VBT header size:	0x0030 (48)
+	VBT size:		0x21fd (8701)
+	VBT checksum:		0x6a
+	BDB offset:		0x00000030 (48)
+
+BDB header:
+	BDB signature:		"BIOS_DATA_BLOCK "
+	BDB version:		249
+	BDB header size:	0x0016 (22)
+	BDB size:		0x21cc (8652)
+
+BDB blocks present:
+	  1   2   9  10  12  20  27  40  41  42  43  44  46  51  52  56
+	 57 252 253 254
+
+BDB block 1 (6 bytes) - General features block:
+	Panel fitting: text & graphics (0x3)
+	Flexaim: yes
+	Message: yes
+	Clear screen: 0
+	DVO color flip required: no
+	External VBT: yes
+	LVDS SSC Enable: no
+	LVDS SSC frequency: 120 MHz (0x0)
+	LFP on override: no
+	Disable SSC on clone: no
+	Underscan support for VGA timings: no
+	Dynamic CD clock: yes
+	Hotplug support in VBIOS: yes
+	Disable smooth vision: no
+	Single DVI for CRT/DVI: no
+	Enable 180 degree rotation: no
+	Inverted FDI Rx polarity: no
+	Extended VBIOS mode: no
+	Copy iLFP DTD to SDVO LVDS DTD: no
+	Best fit panel timing algorithm: no
+	Ignore strap state: no
+	Legacy monitor detect: yes
+	Integrated CRT: no
+	Integrated TV: no
+	Integrated EFP: no
+	DP SSC enable: no
+	DP SSC frequency: 120 MHz (0x0)
+	DP SSC dongle supported: no
+
+BDB block 2 (395 bytes) - General definitions block:
+	CRT DDC GMBUS addr: 0x02
+	Use DPMS on AIM devices: yes
+	Skip CRT detect at boot: no
+	Use Non ACPI DPMS CRT power states: no
+	Boot display type: 0x0000
+	Child device size: 39
+	Child device count: 10
+	Child device info:
+		Device handle: 0x0008 (LFP 1 (eDP))
+		Device type: 0x1806 (unknown)
+			Internal connector
+			DisplayPort output
+			Digital output
+		I2C speed: 100 kHz (0x00)
+		DP onboard redriver:
+			present: no
+			vswing: 0.4V (0x0)
+			pre-emphasis: 0dB (0x0)
+		DP ondock redriver:
+			present: no
+			vswing: 0.4V (0x0)
+			pre-emphasis: 0dB (0x0)
+		HDMI max data rate: <platform max> (0x00)
+		HDMI level shifter value: 0x00
+		Offset to DTD buffer for edidless CHILD: 0x00
+		LTTPR Mode: transparent
+		Dual pipe ganged eDP: no
+		Compression method CPS: no
+		Compression enable: no
+		Edidless EFP: no
+		Compression structure index: 0
+		HDMI Max FRL rate valid: no
+		HDMI Max FRL rate: FRL not supported (0x0)
+		AIM offset: 0
+		DVO Port: DP-A (0x0a)
+		AIM I2C pin: 0x00
+		AIM Slave address: 0x00
+		DDC pin: 0x03
+		EDID buffer ptr: 0x00
+		DVO config: 0x00
+		eDP/DP max lane count: X4
+		Use VBT vswing/premph table: no
+		HPD sense invert: no
+		Iboost enable: no
+		Onboard LSPCON: no
+		Lane reversal: no
+		EFP routed through dock: no
+		TMDS compatible? no
+		DP compatible? no
+		HDMI compatible? no
+		Aux channel: AUX-A (0x40)
+		Dongle detect: 0x00
+		Integrated encoder instead of SDVO: yes
+		Hotplug connect status: 0x00
+		SDVO stall signal available: no
+		Pipe capabilities: 0x00
+		DVO wiring: 0x00
+		MIPI bridge type: 00 (unknown)
+		Device class extension: 0x00
+		DVO function: 0x00
+		DP port trace length: 0x0
+		Thunderbolt port: no
+		DP USB type C support: no
+		2X DP GPIO index: 0x00
+		2X DP GPIO pin number: 0x00
+		IBoost level for DP/eDP: 0x00
+		IBoost level for HDMI: 0x02
+		DP max link rate: <platform max> (0x00)
+	Child device info:
+		Device handle: 0x0004 (EFP 1 (HDMI/DVI/DP))
+		Device type: 0x60d2 (DVI-D)
+			Power management
+			Hotplug signaling
+			HDMI output
+			Content protection
+			High speed link
+			TMDS/DVI signaling
+			Digital output
+		I2C speed: 100 kHz (0x00)
+		DP onboard redriver:
+			present: no
+			vswing: 0.8V (0x2)
+			pre-emphasis: 0dB (0x0)
+		DP ondock redriver:
+			present: no
+			vswing: 0.8V (0x2)
+			pre-emphasis: 0dB (0x0)
+		HDMI max data rate: 594 MHz (0x03)
+		HDMI level shifter value: 0x00
+		Offset to DTD buffer for edidless CHILD: 0x211d
+		LTTPR Mode: non-transparent
+		Dual pipe ganged eDP: no
+		Compression method CPS: no
+		Compression enable: no
+		Edidless EFP: no
+		Compression structure index: 0
+		HDMI Max FRL rate valid: no
+		HDMI Max FRL rate: FRL not supported (0x0)
+		AIM offset: 0
+		DVO Port: DP-B (0x07)
+		AIM I2C pin: 0x00
+		AIM Slave address: 0x00
+		DDC pin: 0x02
+		EDID buffer ptr: 0x00
+		DVO config: 0x00
+		eDP/DP max lane count: X4
+		Use VBT vswing/premph table: no
+		HPD sense invert: no
+		Iboost enable: no
+		Onboard LSPCON: no
+		Lane reversal: no
+		EFP routed through dock: no
+		TMDS compatible? no
+		DP compatible? no
+		HDMI compatible? no
+		Aux channel: AUX-B (0x10)
+		Dongle detect: 0x01
+		Integrated encoder instead of SDVO: yes
+		Hotplug connect status: 0x00
+		SDVO stall signal available: no
+		Pipe capabilities: 0x00
+		DVO wiring: 0x01
+		MIPI bridge type: 00 (unknown)
+		Device class extension: 0x00
+		DVO function: 0x00
+		DP port trace length: 0x0
+		Thunderbolt port: no
+		DP USB type C support: no
+		2X DP GPIO index: 0x00
+		2X DP GPIO pin number: 0x00
+		IBoost level for DP/eDP: 0x00
+		IBoost level for HDMI: 0x00
+		DP max link rate: <platform max> (0x00)
+	Child device info:
+		Device handle: 0x0040 (EFP 2 (HDMI/DVI/DP))
+		Device type: 0x68c6 (DisplayPort)
+			Power management
+			Hotplug signaling
+			Content protection
+			High speed link
+			DisplayPort output
+			Digital output
+		I2C speed: 100 kHz (0x00)
+		DP onboard redriver:
+			present: no
+			vswing: 0.8V (0x2)
+			pre-emphasis: 0dB (0x0)
+		DP ondock redriver:
+			present: no
+			vswing: 0.8V (0x2)
+			pre-emphasis: 0dB (0x0)
+		HDMI max data rate: <platform max> (0x00)
+		HDMI level shifter value: 0x00
+		Offset to DTD buffer for edidless CHILD: 0x2139
+		LTTPR Mode: non-transparent
+		Dual pipe ganged eDP: no
+		Compression method CPS: no
+		Compression enable: no
+		Edidless EFP: no
+		Compression structure index: 0
+		HDMI Max FRL rate valid: no
+		HDMI Max FRL rate: FRL not supported (0x0)
+		AIM offset: 0
+		DVO Port: DP-F (0x0d)
+		AIM I2C pin: 0x00
+		AIM Slave address: 0x00
+		DDC pin: 0x03
+		EDID buffer ptr: 0x00
+		DVO config: 0x00
+		eDP/DP max lane count: X4
+		Use VBT vswing/premph table: no
+		HPD sense invert: no
+		Iboost enable: no
+		Onboard LSPCON: no
+		Lane reversal: no
+		EFP routed through dock: no
+		TMDS compatible? no
+		DP compatible? no
+		HDMI compatible? no
+		Aux channel: AUX-F (0x60)
+		Dongle detect: 0x01
+		Integrated encoder instead of SDVO: yes
+		Hotplug connect status: 0x00
+		SDVO stall signal available: no
+		Pipe capabilities: 0x00
+		DVO wiring: 0x01
+		MIPI bridge type: 00 (unknown)
+		Device class extension: 0x00
+		DVO function: 0x00
+		DP port trace length: 0x0
+		Thunderbolt port: yes
+		DP USB type C support: yes
+		2X DP GPIO index: 0x00
+		2X DP GPIO pin number: 0x00
+		IBoost level for DP/eDP: 0x00
+		IBoost level for HDMI: 0x00
+		DP max link rate: 8.1 Gbps (0x04)
+	Child device info:
+		Device handle: 0x0020 (EFP 3 (HDMI/DVI/DP))
+		Device type: 0x68c6 (DisplayPort)
+			Power management
+			Hotplug signaling
+			Content protection
+			High speed link
+			DisplayPort output
+			Digital output
+		I2C speed: 100 kHz (0x00)
+		DP onboard redriver:
+			present: no
+			vswing: 0.8V (0x2)
+			pre-emphasis: 0dB (0x0)
+		DP ondock redriver:
+			present: no
+			vswing: 0.8V (0x2)
+			pre-emphasis: 0dB (0x0)
+		HDMI max data rate: <platform max> (0x00)
+		HDMI level shifter value: 0x00
+		Offset to DTD buffer for edidless CHILD: 0x2155
+		LTTPR Mode: non-transparent
+		Dual pipe ganged eDP: no
+		Compression method CPS: no
+		Compression enable: no
+		Edidless EFP: no
+		Compression structure index: 0
+		HDMI Max FRL rate valid: no
+		HDMI Max FRL rate: FRL not supported (0x0)
+		AIM offset: 0
+		DVO Port: DP-G (0x0f)
+		AIM I2C pin: 0x00
+		AIM Slave address: 0x00
+		DDC pin: 0x04
+		EDID buffer ptr: 0x00
+		DVO config: 0x00
+		eDP/DP max lane count: X4
+		Use VBT vswing/premph table: no
+		HPD sense invert: no
+		Iboost enable: no
+		Onboard LSPCON: no
+		Lane reversal: no
+		EFP routed through dock: no
+		TMDS compatible? no
+		DP compatible? no
+		HDMI compatible? no
+		Aux channel: AUX-G (0x70)
+		Dongle detect: 0x01
+		Integrated encoder instead of SDVO: yes
+		Hotplug connect status: 0x00
+		SDVO stall signal available: no
+		Pipe capabilities: 0x00
+		DVO wiring: 0x01
+		MIPI bridge type: 00 (unknown)
+		Device class extension: 0x00
+		DVO function: 0x00
+		DP port trace length: 0x0
+		Thunderbolt port: yes
+		DP USB type C support: yes
+		2X DP GPIO index: 0x00
+		2X DP GPIO pin number: 0x00
+		IBoost level for DP/eDP: 0x00
+		IBoost level for HDMI: 0x00
+		DP max link rate: 8.1 Gbps (0x04)
+
+BDB block 9 (100 bytes) -Generating LVDS data table pointers
+Generating LVDS data table pointers
+Generating LVDS data table pointers
+ PSR block:
+	Panel 2 *
+		Full link: no
+		Require AUX to wakeup: no
+		Lines to wait before link standby: 0
+		Idle frames to for PSR enable: 0
+		TP1 wakeup time: 200 usec (0x2)
+		TP2/TP3 wakeup time: 200 usec (0x2)
+		PSR2 TP2/TP3 wakeup time: 2500 usec (0x2)
+
+BDB block 10 (203 bytes) - Unknown, no decoding available:
+
+BDB block 12 (19 bytes) - Driver feature data block:
+	Use 00000110h ID for Primary LFP: no
+	Enable Sprite in Clone Mode: yes
+	Driver INT 15h hook: no
+	Dual View Zoom: no
+	Hot Plug DVO: yes
+	Allow display switching when in Full Screen DOS: no
+	Allow display switching when DVD active: yes
+	Boot Device Algorithm: os default
+	Boot Mode X: 1024
+	Boot Mode Y: 768
+	Boot Mode Bpp: 8
+	Boot Mode Refresh: 60
+	Enable LFP as primary: no
+	Selective Mode Pruning: no
+	Dual-Frequency Graphics Technology: yes
+	Default Render Clock Frequency: high
+	NT 4.0 Dual Display Clone Support: no
+	Default Power Scheme user interface: CUI
+	Sprite Display Assignment when Overlay is Active in Clone Mode: secondary
+	Display Maintain Aspect Scaling via CUI: yes
+	Preserve Aspect Ratio: no
+	Enable SDVO device power down: no
+	CRT hotplug: yes
+	LVDS config: Embedded DisplayPort (0x3)
+	TV hotplug: no
+	Display subsystem enable: no
+	Embedded platform: no
+	Define Display statically: no
+	Legacy CRT max X: 0
+	Legacy CRT max Y: 0
+	Legacy CRT max refresh: 85
+	Internal source termination for HDMI: no
+	CEA 861-D HDMI support: no
+	Self refresh enable: no
+	Custom VBT number: 0x0
+	PC Features field validity: yes
+	Dynamic Media Refresh Rate Switching (DMRRS): yes
+	Intermediate Pixel Storage (IPS): yes
+	Panel Self Refresh (PSR): yes
+	Turbo Boost Technology: yes
+	Graphics Power Management (GPMT): yes
+	Graphics Render Standby (RS): yes
+	Dynamic Refresh Rate Switching (DRRS): yes
+	Automatic Display Brightness (ADB): yes
+	DxgkDDI Backlight Control (DxgkDdiBLC): yes
+	Display Power Saving Technology (DPST): yes
+	Smart 2D Display Technology (S2DDT): yes
+	Rapid Memory Power Management (RMPM): yes
+
+BDB block 20 (170 bytes) - Unknown, no decoding available:
+
+BDB block 27 (812 bytes) - eDP block:
+	Panel 2 *
+		Power Sequence: T3 2000 T7 800 T9 2000 T10 1100 T12 5000
+		Panel color depth: 18 bpp
+		eDP sDRRS MSA Delay: Lane 1
+		Fast link params:
+			rate: 1.62Gbps
+			lanes: X1			pre-emphasis: 0dB (0x0)
+			vswing: 0.4V (0x0)
+		Stereo 3D feature: no
+		T3 optimization: no
+		Vswing/preemphasis table selection: Default (400 mV)
+		Fast link training: no
+		DPCD 600h write required: no
+		PWM delays:
+			PWM on to backlight enable: 150
+			Backlight disable to PWM off: 150
+		Full link params provided: no
+		Full link params:
+			pre-emphasis: 0dB (0x0)
+			vswing: 0.4V (0x0)
+		eDP fast link training data rate: 0 Gbps (0x00)
+		eDP max port link rate: 0 Gbps (0x00)
+
+BDB block 40 (34 bytes) - LVDS options block:
+	Panel type: 2
+	Panel type 2: 3
+	LVDS EDID available: no
+	Pixel dither: yes
+	PFIT auto ratio: yes
+	PFIT enhanced graphics mode: no
+	PFIT enhanced text mode: no
+	PFIT mode: 3
+	Panel 2 *
+		Channel type: automatic (0x0)
+		SSC: no
+		SSC frequency: 120 MHz (0x0)
+		Disable SSC in dual display twin: no
+		Panel color depth: 18 (0x0)
+		DPS type: seamless DRRS (0x2)
+		Backlight type: LED (0x2)
+		LCDVCC on during S0 state: no
+		Panel rotation: 0 degrees (0x0)
+		Panel position: inside shell (0x0)
+
+BDB block 41 (148 bytes) - LVDS timing pointer data:
+	Number of entries: 3
+	Panel 2 *
+		FP timing offset: 132
+		FP timing table size: 38
+		DVO timing offset: 170
+		DVO timing table size: 18
+		Panel PnP ID offset: 188
+		Panel PnP ID table size: 10
+	Panel name offset: 1056
+	Panel name table size: 13
+
+BDB block 42 (1366 bytes) - LVDS panel data block:
+	Panel 2 *
+		1024x768 clock 65000000
+		info:
+		  LVDS: 0x00000300
+		  PP_ON_DELAYS: 0x025807d0
+		  PP_OFF_DELAYS: 0x01f407d0
+		  PP_DIVISOR: 0x00270f05
+		  PFIT: 0x00414000
+		timings: 1024 1048 1184 1344 768 771 777 806 65000.00 (good)
+		PnP ID:
+		  Mfg name: MS_ (0x7f36)
+		  Product code: 3
+		  Serial: 3
+		  Mfg week: 0
+		  Mfg year: 2002
+		Panel name: LFP_PanelName
+		Scaling enable: no
+		Seamless DRRS min refresh rate: 0
+		Pixel overlap count: 0
+		Black border:
+		  Top: 0
+		  Bottom: 0
+		  Left: 0
+		  Right: 0
+		Dual LFP port sync enable: no
+		GPU dithering for banding artifacts: no
+
+BDB block 43 (305 bytes) - Backlight info block:
+	Panel 2 *
+		Inverter type: 2
+		Active low: 0
+		PWM freq: 200
+		Minimum brightness: 6
+		Level: 255
+		Control type: 2
+		Controller: 0
+		Brightness level: 255
+		Brightness min level: 15
+		Brigthness precision bits: 8
+		HDR DPCD refresh timeout: 0.00 ms
+
+BDB block 44 (78 bytes) - LFP power conservation features block:
+	ALS enable: yes
+	Display LACE support: yes
+	Default Display LACE enabled status: yes
+	Power conservation preference level: 6
+	ALS backlight adjust: 70
+	ALS Lux: 0
+	ALS backlight adjust: 73
+	ALS Lux: 10
+	ALS backlight adjust: 85
+	ALS Lux: 80
+	ALS backlight adjust: 100
+	ALS Lux: 300
+	ALS backlight adjust: 150
+	ALS Lux: 1000
+	Display LACE aggressiveness profile: 0
+	Panel 2 *
+		Display Power Saving Technology (DPST): yes
+		Panel Self Refresh (PSR): yes
+		Dynamic Refresh Rate Switching (DRRS): no
+		Display LACE support: yes
+		Assertive Display Technology (ADT): no
+		Dynamic Media Refresh Rate Switching (DMRRS): yes
+		Automatic Display Brightness (ADB): yes
+		Default Display LACE enabled: yes
+		LACE Aggressiveness: 1
+		DPST Aggressiveness: 6
+		EDP 4k/2k HOBL feature: no
+		Variable Refresh Rate (VRR): yes
+		ELP: no
+		OPST: no
+		ELP Aggressiveness: 0
+		OPST Aggrgessiveness: 0
+
+BDB block 46 (304 bytes) - Unknown, no decoding available:
+
+BDB block 51 (9 bytes) - Unknown, no decoding available:
+
+BDB block 52 (822 bytes) - MIPI configuration block:
+	Panel 2 *
+		General Param
+			 BTA disable: Enabled
+			 Panel Rotation: 0 degrees
+			 Video Mode Color Format: RGB888
+			 PPS GPIO Pins: Using PMIC 
+			 CABC Support: not supported
+			 Mode: VIDEO
+			 Video transfer mode: non-burst with sync events (0x2)
+			 Dithering: done in Panel Controller
+		Port Desc
+			 Pixel overlap: 0
+			 Lane Count: 4
+			 Dual Link Support: not supported
+		Dphy Flags
+			 Clock Stop: DISABLED
+			 EOT disabled: EOT to be sent
+
+		HSTxTimeOut: 0x3fffff
+		LPRXTimeOut: 0xffff
+		TurnAroundTimeOut: 0x17
+		DeviceResetTimer: 0xff
+		MasterinitTimer: 0x7d0
+		DBIBandwidthTimer: 0x0
+		LpByteClkValue: 0x4
+
+		Dphy Params
+			Exit to zero Count: 0x3f
+			Trail Count: 0x1F
+			Clk zero count: 0x7f
+			Prepare count:0xf
+
+		ClockLaneSwitchingCount: 0xa0014
+		HighToLowSwitchingCount: 0x46
+
+		Timings based on Dphy spec
+			TClkMiss: 0x3c
+			TClkPost: 0x3c
+			TClkPre: 0x8
+			TClkPrepare: 0x32
+			TClkSettle: 0x69
+			TClkTermEnable: 0x26
+
+		TClkTrail: 0x46
+		TClkPrepareTClkZero: 0x136
+		THSExit: 0x6e
+		THsPrepare: 0x32
+		THsPrepareTHsZero: 0xc8
+		THSSettle: 0x5f
+		THSSkip: 0x28
+		THsTrail: 0x3c
+		TInit: 0x0
+		TLPX: 0x32
+		MIPI PPS
+			Panel power ON delay: 500
+			Panel power on to Backlight enable delay: 500
+			Backlight disable to Panel power OFF delay: 500
+			Panel power OFF delay: 500
+			Panel power cycle delay: 5000
+		MIPI PWM delays:
+			PWM on to backlight enable: 0
+			Backlight disable to PWM off: 0
+		MIPI PMIC I2C Bus Number: 6
+
+BDB block 56 (210 bytes) - Compression parameters block:
+	DSC block 2 *
+		DSC version: 0.0
+		Actual buffer size: 1024
+			RC buffer block size: 1024 (0)
+			RC buffer size: 0
+		Slices per line: 0x00
+		Line buffer depth: 8 bits (0)
+		Block prediction enable: 0
+		Max bpp: 6 bpp (0)
+		Support 8 bpc: 0
+		Support 10 bpc: 0
+		Support 12 bpc: 0
+		Slice height: 0
+
+BDB block 57 (2642 bytes) - Unknown, no decoding available:
+
+BDB block 252 (122 bytes) - Unknown, no decoding available:
+
+BDB block 253 (66 bytes) - Unknown, no decoding available:
+
+BDB block 254 (234 bytes) - Unknown, no decoding available:
+

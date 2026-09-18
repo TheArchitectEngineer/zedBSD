@@ -1,0 +1,23 @@
+### /sys/kernel/debug/dri/0/DP-1/edid_override
+### /sys/kernel/debug/dri/0/DP-1/force
+unspecified
+### /sys/kernel/debug/dri/0/DP-1/i915_dsc_bpc
+cat: /sys/kernel/debug/dri/0/DP-1/i915_dsc_bpc: No such device
+### /sys/kernel/debug/dri/0/DP-1/i915_dsc_fec_support
+cat: /sys/kernel/debug/dri/0/DP-1/i915_dsc_fec_support: No such device
+### /sys/kernel/debug/dri/0/DP-1/i915_dsc_fractional_bpp
+cat: /sys/kernel/debug/dri/0/DP-1/i915_dsc_fractional_bpp: No such device
+### /sys/kernel/debug/dri/0/DP-1/i915_dsc_output_format
+cat: /sys/kernel/debug/dri/0/DP-1/i915_dsc_output_format: No such device
+### /sys/kernel/debug/dri/0/DP-1/i915_hdcp_sink_capability
+cat: /sys/kernel/debug/dri/0/DP-1/i915_hdcp_sink_capability: No such device
+### /sys/kernel/debug/dri/0/DP-1/i915_lpsp_capability
+cat: /sys/kernel/debug/dri/0/DP-1/i915_lpsp_capability: No such device
+### /sys/kernel/debug/dri/0/DP-1/i915_psr_sink_status
+cat: /sys/kernel/debug/dri/0/DP-1/i915_psr_sink_status: No such device
+### /sys/kernel/debug/dri/0/DP-1/i915_psr_status
+Sink support: PSR = no, Panel Replay = no
+### /sys/kernel/debug/dri/0/DP-1/output_bpc
+cat: /sys/kernel/debug/dri/0/DP-1/output_bpc: No such device
+### /sys/kernel/debug/dri/0/DP-1/vrr_range
+cat: /sys/kernel/debug/dri/0/DP-1/vrr_range: No such device

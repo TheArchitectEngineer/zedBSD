@@ -194,6 +194,22 @@ main(void)
    ss.MaximumAnisotropy = RATIO21;
    GFX12_SAMPLER_STATE_pack(NULL, smp, &ss);
 
+   /*
+    * The bilinear variant (E-105): only the filter changes.  As anv and blorp do
+    * for any non-nearest filter, address rounding is enabled for min and mag.
+    */
+   uint32_t smp_lin[GFX12_SAMPLER_STATE_length];
+   struct GFX12_SAMPLER_STATE sl = ss;
+   sl.MagModeFilter = MAPFILTER_LINEAR;
+   sl.MinModeFilter = MAPFILTER_LINEAR;
+   sl.UAddressMinFilterRoundingEnable = true;
+   sl.UAddressMagFilterRoundingEnable = true;
+   sl.VAddressMinFilterRoundingEnable = true;
+   sl.VAddressMagFilterRoundingEnable = true;
+   sl.RAddressMinFilterRoundingEnable = true;
+   sl.RAddressMagFilterRoundingEnable = true;
+   GFX12_SAMPLER_STATE_pack(NULL, smp_lin, &sl);
+
    /* ---- packet fields that differ from the single-colour draw, packed by genxml ---- */
    uint32_t ps_pkt[GFX12_3DSTATE_PS_length];
    struct GFX12_3DSTATE_PS ps = { GFX12_3DSTATE_PS_header };
@@ -268,6 +284,12 @@ main(void)
    printf("static const uint32_t texfix_sampler[%u] = {\n\t", (unsigned)GFX12_SAMPLER_STATE_length);
    for (unsigned i = 0; i < GFX12_SAMPLER_STATE_length; i++)
       printf("0x%08xU, ", smp[i]);
+   printf("\n};\n");
+
+   printf("/* SAMPLER_STATE, bilinear: linear/linear, address rounding on (anv/blorp), otherwise identical. */\n");
+   printf("static const uint32_t texfix_sampler_linear[%u] = {\n\t", (unsigned)GFX12_SAMPLER_STATE_length);
+   for (unsigned i = 0; i < GFX12_SAMPLER_STATE_length; i++)
+      printf("0x%08xU, ", smp_lin[i]);
    printf("\n};\n");
 
    /* raw PS for the disassembler */

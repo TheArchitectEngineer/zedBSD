@@ -22,6 +22,7 @@
 #include "wait.h"
 #include "drm_device.h"
 #include "bios.h"
+#include "dp/edp_ktest.h"
 #include "vga.h"
 #include "power_domains.h"
 #include "combo_phy.h"
@@ -75,6 +76,12 @@ static int g_checks;
 	g_checks++; \
 	if (!(cond)) { kern_logf("i915: parity ktest FAIL: %s\n", (msg)); g_fail++; } \
 } while (0)
+
+static void
+edp_ktest_check(int ok, const char *msg)
+{
+	KCHECK(ok, msg);
+}
 
 static uint64_t
 deadline_ms(unsigned ms)
@@ -616,7 +623,19 @@ xcpu_fn(void *ctx)
 
 /* intel_bios_init GPU-free fixtures: a ROM-less fake PCI + a synthetic VBT. */
 static uint8_t bios_fpci_r8(void *pv, unsigned o) { (void)pv; (void)o; return 0u; }
-static uint16_t bios_fpci_r16(void *pv, unsigned o) { (void)pv; (void)o; return 0u; }
+/* PCI subsystem id of the fake device (config 0x2c / 0x2e); everything else reads 0. */
+static uint16_t g_bios_fpci_svid, g_bios_fpci_sdid;
+static uint16_t bios_fpci_r16(void *pv, unsigned o)
+{
+	(void)pv;
+	return o == 0x2cu ? g_bios_fpci_svid : o == 0x2eu ? g_bios_fpci_sdid : (uint16_t)0u;
+}
+static void fpci_subsys(struct osdep_pci *p, uint16_t svid, uint16_t sdid)
+{
+	(void)p;
+	g_bios_fpci_svid = svid;
+	g_bios_fpci_sdid = sdid;
+}
 static uint32_t bios_fpci_r32(void *pv, unsigned o) { (void)pv; (void)o; return 0u; }
 static void bios_fpci_w8(void *pv, unsigned o, uint8_t v) { (void)pv; (void)o; (void)v; }
 static void bios_fpci_w16(void *pv, unsigned o, uint16_t v) { (void)pv; (void)o; (void)v; }
@@ -1164,7 +1183,94 @@ parity_sync_ktest(void)
 			vbt.vbt_found == 0 && vbt.missing_defaults_used == 1 &&
 			vbt.num_display_devices == 3u && vbt.source == PARITY_VBT_SRC_NONE,
 			"bios: intel_bios_init falls back to defaults when VBT is absent");
+		parity_intel_bios_driver_remove(&vbt);
+
+		/* ====== E-107: the reference parser on the explicit target VBT ====== */
+		{
+			static struct parity_vbt_state xv;
+			static struct parity_vbt_state dv;
+			static struct parity_vbt_panel pn;
+			static uint8_t sha_abc[32];
+			extern const unsigned char parity_fw_vbt_dell_latitude_5330[];
+			extern const unsigned parity_fw_vbt_dell_latitude_5330_size;
+			const struct parity_vbt_encoder *ea, *eb, *ed;
+			unsigned di;
+			int same = 1, prc;
+
+			/* FIPS 180-4 test vector: SHA-256("abc") = ba7816bf 8f01cfea ... f20015ad */
+			parity_sha256("abc", 3u, sha_abc);
+			KCHECK(sha_abc[0] == 0xbau && sha_abc[1] == 0x78u && sha_abc[2] == 0x16u && sha_abc[3] == 0xbfu &&
+				sha_abc[28] == 0xf2u && sha_abc[29] == 0x00u && sha_abc[30] == 0x15u && sha_abc[31] == 0xadu,
+				"bios: VBT-SHA the SHA-256 used to pin the blob matches the FIPS 180-4 'abc' vector");
+
+			/* not requested: the blob is never used, whatever the machine */
+			fpci_subsys(&fpci, 0x1028u, 0x0b02u);
+			bios_zero(&xv);
+			KCHECK(parity_intel_bios_init_ex(&xv, &fpci, 0, 0, ftr) == 0 && xv.blob_requested == 0 &&
+				xv.source == PARITY_VBT_SRC_NONE && xv.missing_defaults_used == 1,
+				"bios: VBT-EXPLICIT not requested -> the blob is not touched; missing defaults as before");
+			parity_intel_bios_driver_remove(&xv);
+
+			/* requested, but another machine: refused, falls back to the reference defaults */
+			fpci_subsys(&fpci, 0x1028u, 0x0b03u);
+			bios_zero(&xv);
+			KCHECK(parity_intel_bios_init_ex(&xv, &fpci, 0, 1, ftr) == 0 && xv.blob_requested == 1 &&
+				xv.blob_found == 1 && xv.blob_hash_ok == 1 && xv.blob_subsys_ok == 0 &&
+				xv.source == PARITY_VBT_SRC_NONE && xv.vbt_found == 0 && xv.missing_defaults_used == 1,
+				"bios: VBT-EXPLICIT another machine (subsystem 1028:0b03) -> not applied silently; defaults");
+			parity_intel_bios_driver_remove(&xv);
+
+			/* requested on the target: parsed by the reference text; values from igt intel_vbt_decode */
+			fpci_subsys(&fpci, 0x1028u, 0x0b02u);
+			bios_zero(&xv);
+			prc = parity_intel_bios_init_ex(&xv, &fpci, 0, 1, ftr);
+			ea = parity_vbt_encoder_for_port(&xv.parsed, 0);
+			eb = parity_vbt_encoder_for_port(&xv.parsed, 1);
+			ed = parity_vbt_encoder_for_port(&xv.parsed, 3);
+			KCHECK(prc == 0 && xv.source == PARITY_VBT_SRC_EXPLICIT_BLOB && xv.vbt_found == 1 &&
+				xv.missing_defaults_used == 0 && xv.blob_size == 8704u && xv.blob_hash_ok == 1 &&
+				xv.blob_valid == 1 && xv.version == 249u && xv.parsed.log_errors == 0u &&
+				xv.parsed.alloc_failures == 0u && parity_fw_vbt_dell_latitude_5330_size == 8704u,
+				"bios: VBT-EXPLICIT on the target: 8704 bytes, SHA-256 pinned, BDB 249, source = explicit blob (not OpRegion), no parser error");
+			KCHECK(xv.num_display_devices == 4u && ea != 0 && eb != 0 && ed != 0 &&
+				ea->device_type == 0x1806u && ea->dvo_port == 10u && ea->aux_ch == 0 &&
+				ea->supports_edp == 1 && ea->supports_hdmi == 0 &&
+				eb->device_type == 0x60d2u && eb->supports_hdmi == 1 && eb->supports_dp == 0 && eb->ddc_pin == 2 &&
+				ed->device_type == 0x68c6u && ed->supports_typec_usb == 1 && ed->supports_tbt == 1 &&
+				parity_vbt_encoder_for_port(&xv.parsed, 2) == 0,
+				"bios: VBT-CHILDREN from the real VBT only: A=eDP/AUX A, B=HDMI (DDC pin 2), TC1+TC2=DP Type-C/TBT, no port C (not the A/B/C defaults)");
+			prc = parity_vbt_init_panel(&xv.parsed, 0, 0, &pn);
+			KCHECK(prc == 0 && pn.panel_type == 2 && pn.bpp == 18 && pn.t1_t3 == 2000u && pn.t8 == 800u &&
+				pn.t9 == 2000u && pn.t10 == 1100u && pn.t11_t12 == 5000u && pn.bl_present == 1 &&
+				pn.bl_pwm_freq_hz == 200u && pn.bl_active_low_pwm == 0 && pn.bl_controller == 0 &&
+				pn.bl_min_brightness == 15u,
+				"bios: VBT-PANEL type 2, 18 bpp, PPS T3 200ms/T7 80ms/T9 200ms/T10 110ms/T12 500ms, PWM backlight 200 Hz active-high controller 0, min 15 (BDB>=234 field)");
+			parity_intel_bios_driver_remove(&xv);
+
+			/* the reference's missing defaults == what the hand-written defaults produced before */
+			bios_zero(&xv);
+			(void)parity_intel_bios_init_ex(&xv, &fpci, 0, 0, ftr);
+			bios_zero(&dv);
+			parity_bios_init_vbt_missing_defaults(&dv);
+			for (di = 0u; di < 3u; di++)
+				if (xv.display_devices[di].dvo_port != dv.display_devices[di].dvo_port ||
+				    xv.display_devices[di].device_type != dv.display_devices[di].device_type)
+					same = 0;
+			KCHECK(xv.num_display_devices == 3u && dv.num_display_devices == 3u && same == 1 &&
+				xv.version == 155u,
+				"bios: VBT-DEFAULTS the reference init_vbt_missing_defaults() yields the same A/B/C children as before (version 155)");
+			parity_intel_bios_driver_remove(&xv);
+
+			/* a truncated copy of the real VBT is refused by validation */
+			KCHECK(parity_vbt_validate(parity_fw_vbt_dell_latitude_5330, 8704u) == 1 &&
+				parity_vbt_validate(parity_fw_vbt_dell_latitude_5330, 4000u) == 0 &&
+				parity_vbt_validate(parity_fw_vbt_dell_latitude_5330, 40u) == 0,
+				"bios: VBT-VALIDATE the full blob validates; truncated copies do not");
+		}
 	}
+
+	/* --- eDP first stage: PPS / VDD ownership, AUX, DPCD, EDID on the register model (GPU-free) --- */
+	parity_edp_ktest(edp_ktest_check);
 
 	/* --- intel_vga_register decode + power-domain map + pmdemand (GPU-free) --- */
 	{
@@ -5121,6 +5227,43 @@ parity_sync_ktest(void)
 					drv_i915_tex_fixture_expected_pixel(p2, 31u, 31u) == 0xff101010u &&
 					memcmp(p0, p1, 256u) != 0 && memcmp(p0, p2, 256u) != 0 && memcmp(p1, p2, 256u) != 0,
 					"tex: TEX-VARIANTS the three test images are distinct and have the documented texels");
+			}
+
+
+			/* ====== bilinear (E-105): sampler words and the exact expectation ====== */
+			{
+				static uint32_t sn[1024], sl[1024];
+				static uint8_t p3[256];
+				unsigned k, ndiff = 0u, differs = 0u, x, y;
+				int inexact = 0;
+
+				drv_i915_tex_fixture_write_state_ab_filter(sn, 0x100402000ull, I915_TEX_FIXTURE_TEX_VA,
+					I915_TEX_FIXTURE_TEX_B_VA, 0u, 0u, 6u);
+				drv_i915_tex_fixture_write_state_ab_filter(sl, 0x100402000ull, I915_TEX_FIXTURE_TEX_VA,
+					I915_TEX_FIXTURE_TEX_B_VA, 0u, 1u, 6u);
+				for (k = 0u; k < 1024u; k++)
+					if (sn[k] != sl[k])
+						ndiff++;
+				KCHECK(ndiff == 2u && sn[224u] == 0x10000000u && sl[224u] == 0x10024000u &&
+					sn[227u] == 0x00000092u && sl[227u] == 0x0007e092u,
+					"tex: BL-STATE nearest vs bilinear differs in exactly two SAMPLER_STATE dwords (min/mag filter = linear; U/V/R address rounding on)");
+				drv_i915_tex_fixture_pattern(p3, 3u);
+				for (y = 0u; y < 32u; y++)
+					for (x = 0u; x < 32u; x++)
+						if (drv_i915_tex_fixture_expected_pixel_linear(p3, x, y, &inexact) !=
+						    drv_i915_tex_fixture_expected_pixel(p3, x, y))
+							differs++;
+				/*
+				 * (0,0): clamped corner = texel(0,0) = 0,0,0.  (2,0): fx = 1/8 between texel 0 and 1
+				 * in u -> R = 64/8 = 8.  (14,0): between texel 3 (R192,B0) and 4 (R0,B64) at 1/8 ->
+				 * R = 168, B = 8.  (2,2): fx = fy = 1/8 -> R = 8, G = 8.
+				 */
+				KCHECK(inexact == 0 && differs > 700u &&
+					drv_i915_tex_fixture_expected_pixel_linear(p3, 0u, 0u, 0) == 0xff000000u &&
+					drv_i915_tex_fixture_expected_pixel_linear(p3, 2u, 0u, 0) == 0xff080000u &&
+					drv_i915_tex_fixture_expected_pixel_linear(p3, 14u, 0u, 0) == 0xffa80008u &&
+					drv_i915_tex_fixture_expected_pixel_linear(p3, 2u, 2u, 0) == 0xff080800u,
+					"tex: BL-EXPECT image 3 gives an exact (integer) bilinear expectation at every pixel, and it differs from the nearest expectation at most pixels");
 			}
 
 

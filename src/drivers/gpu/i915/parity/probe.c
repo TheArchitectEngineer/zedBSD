@@ -18,6 +18,7 @@
 #include "dram_bw.h"
 #include "drm_device.h"
 #include "bios.h"
+#include "dp/parity_dp_kernel.h"
 #include "vga.h"
 #include "power_domains.h"
 #include "cdclk.h"
@@ -754,7 +755,7 @@ drv_i915_parity_attach(struct i915_device *device, enum parity_stage stop_after,
 		 * else the PCI ROM read for real) or genuine-absence defaults.  It is
 		 * void in the reference -- it never fails the probe.
 		 */
-		(void)parity_intel_bios_init(&vbt_state, &pci, opregion_vbt_present, &trace);
+		(void)parity_intel_bios_init_ex(&vbt_state, &pci, opregion_vbt_present, PARITY_VBT_EXPLICIT, &trace);
 		kern_logf("i915: parity P3 intel_bios_init done: source=%d vbt_found=%d "
 			"version=%u child_devices=%u\n", vbt_state.source, vbt_state.vbt_found,
 			(unsigned)vbt_state.version, vbt_state.num_display_devices);
@@ -1696,7 +1697,17 @@ p6_fw_out:
 	 * way, as an execbuf-shaped request on a fresh context.  Like a user
 	 * submission after driver load: GT wakeref = forcewake all around it.
 	 */
-	if (PARITY_T3_TEST) {
+	/*
+	 * Display test configuration: one real AUX acquisition from the eDP panel (PPS /
+	 * VDD, DPCD, EDID) and its stop path.  No GPU submission happens in this mode.
+	 * Position differs from the reference, which does this inside intel_setup_outputs()
+	 * (intel_edp_init_connector); it moves there with the resident device.
+	 */
+	if (PARITY_AUX_TEST)
+		(void)parity_edp_aux_test_run(&mmio, &power_domains, &pwc, &vbt_state);
+
+	if (PARITY_T3_TEST || PARITY_BL_TEST) {
+		const char *t3tag = PARITY_BL_TEST ? "BL" : "T3";
 		static const int t3fwd[5] = { OSDEP_FW_RENDER, OSDEP_FW_GT,
 			OSDEP_FW_MEDIA_VDBOX0, OSDEP_FW_MEDIA_VDBOX2, OSDEP_FW_MEDIA_VEBOX0 };
 		unsigned held = 0u, wi;
@@ -1708,11 +1719,13 @@ p6_fw_out:
 			unsigned u0 = irqdev.gt_user_intr, c0 = irqdev.gt_ctx_switch_intr;
 			unsigned e0 = irqdev.gt_error_intr;
 
-			rc = parity_t3_test_run(&t3test, &gteng, &gtpp, &gtmem, &mmio, &uncore_lock, 2000u);
+			rc = PARITY_BL_TEST ?
+				parity_bl_test_run(&t3test, &gteng, &gtpp, &gtmem, &mmio, &uncore_lock, 2000u) :
+				parity_t3_test_run(&t3test, &gteng, &gtpp, &gtmem, &mmio, &uncore_lock, 2000u);
 			t3test_inited = 1;
-			kern_logf("i915: parity T3 fixture: build PARITY_T3_TEST=%d batch_hash=%016llx batch_dwords=%u mocs=%u "
+			kern_logf("i915: parity %s fixture: build PARITY_T3_TEST=%d PARITY_BL_TEST=%d batch_hash=%016llx batch_dwords=%u mocs=%u "
 				"state@0x%llx batch@0x%llx rt@0x%llx texA@0x%llx texB@0x%llx | pipeline_select rc=%d 3d=%u gpgpu=%u bad=%u\n",
-				PARITY_T3_TEST, (unsigned long long)t3test.t.batch_hash, t3test.t.batch_dwords,
+				t3tag, PARITY_T3_TEST, PARITY_BL_TEST, (unsigned long long)t3test.t.batch_hash, t3test.t.batch_dwords,
 				t3test.mocs, (unsigned long long)PARITY_EU_SHARED_VA,
 				(unsigned long long)PARITY_EU_BATCH_VA, (unsigned long long)PARITY_DRAW_RT_VA,
 				(unsigned long long)I915_TEX_FIXTURE_TEX_VA, (unsigned long long)I915_TEX_FIXTURE_TEX_B_VA,
@@ -1721,11 +1734,13 @@ p6_fw_out:
 			for (wi = 0u; wi < t3test.n_steps; wi++) {
 				const struct parity_t3_step *st = &t3test.step[wi];
 
-				kern_logf("i915: parity T3 step=%u ctx=%c bind=%c upload=%c:%d expect_variant=%d lrca=%08x seqno=%u "
+				kern_logf("i915: parity %s step=%u ctx=%c bind=%c upload=%c:%d expect_variant=%d filter=%s "
+					"differs_from_nearest=%u max_channel_diff=%u lrca=%08x seqno=%u "
 					"hwsp_observed=%u rc=%d completed=%d parked=%d pass=%d polls=%u | markers=%08x %08x %08x ps=%08x | "
 					"pixels match=%u/1024 stale=%u first_bad=(%d,%d) expected=%08x observed=%08x | tex changed=%u "
 					"guard_bad=%u | state_hash=%016llx rt_hash=%016llx texA_hash=%016llx texB_hash=%016llx\n",
-					wi + 1u, st->ctx, st->bind, st->upload, st->upload_variant, st->expect_variant,
+					t3tag, wi + 1u, st->ctx, st->bind, st->upload, st->upload_variant, st->expect_variant,
+					st->linear ? "linear" : "nearest", st->differs_from_nearest, st->max_channel_diff,
 					st->lrca, st->seqno, st->hwsp_observed, st->rc, st->completed, st->parked,
 					st->pass, st->polls, st->before, st->middraw, st->after, st->ps_marker,
 					st->px_match, st->px_stale, st->first_bad_x, st->first_bad_y,
@@ -1739,8 +1754,8 @@ p6_fw_out:
 				const uint32_t *bd = (const uint32_t *)t3test.t.batch->cpu;
 
 				for (wi = 0u; wi < t3test.t.batch_dwords; wi += 8u)
-					kern_logf("i915: parity T3-LAST batch[%03u]: %08x %08x %08x %08x %08x %08x %08x %08x\n",
-						wi, bd[wi], bd[wi + 1u], bd[wi + 2u], bd[wi + 3u], bd[wi + 4u],
+					kern_logf("i915: parity %s-LAST batch[%03u]: %08x %08x %08x %08x %08x %08x %08x %08x\n",
+						t3tag, wi, bd[wi], bd[wi + 1u], bd[wi + 2u], bd[wi + 3u], bd[wi + 4u],
 						bd[wi + 5u], bd[wi + 6u], bd[wi + 7u]);
 			}
 			if (t3test.t.shared != 0) {
@@ -1750,8 +1765,8 @@ p6_fw_out:
 					if ((sp[wi] | sp[wi + 1u] | sp[wi + 2u] | sp[wi + 3u] | sp[wi + 4u] |
 					     sp[wi + 5u] | sp[wi + 6u] | sp[wi + 7u]) == 0u)
 						continue;
-					kern_logf("i915: parity T3-LAST state[%04u]: %08x %08x %08x %08x %08x %08x %08x %08x\n",
-						wi, sp[wi], sp[wi + 1u], sp[wi + 2u], sp[wi + 3u], sp[wi + 4u],
+					kern_logf("i915: parity %s-LAST state[%04u]: %08x %08x %08x %08x %08x %08x %08x %08x\n",
+						t3tag, wi, sp[wi], sp[wi + 1u], sp[wi + 2u], sp[wi + 3u], sp[wi + 4u],
 						sp[wi + 5u], sp[wi + 6u], sp[wi + 7u]);
 				}
 			}
@@ -1759,35 +1774,35 @@ p6_fw_out:
 				const uint32_t *tp = (const uint32_t *)t3test.tex_b->cpu;
 
 				for (wi = 0u; wi < 64u; wi += 8u)
-					kern_logf("i915: parity T3-LAST tex[%02u]: %08x %08x %08x %08x %08x %08x %08x %08x\n",
-						wi, tp[wi], tp[wi + 1u], tp[wi + 2u], tp[wi + 3u], tp[wi + 4u],
+					kern_logf("i915: parity %s-LAST tex[%02u]: %08x %08x %08x %08x %08x %08x %08x %08x\n",
+						t3tag, wi, tp[wi], tp[wi + 1u], tp[wi + 2u], tp[wi + 3u], tp[wi + 4u],
 						tp[wi + 5u], tp[wi + 6u], tp[wi + 7u]);
 			}
 			if (t3test.rt != 0) {
 				const uint32_t *rp = (const uint32_t *)t3test.rt->cpu;
 
 				for (wi = 0u; wi < 1024u; wi += 8u)
-					kern_logf("i915: parity T3-LAST rt[%04u]: %08x %08x %08x %08x %08x %08x %08x %08x\n",
-						wi, rp[wi], rp[wi + 1u], rp[wi + 2u], rp[wi + 3u], rp[wi + 4u],
+					kern_logf("i915: parity %s-LAST rt[%04u]: %08x %08x %08x %08x %08x %08x %08x %08x\n",
+						t3tag, wi, rp[wi], rp[wi + 1u], rp[wi + 2u], rp[wi + 3u], rp[wi + 4u],
 						rp[wi + 5u], rp[wi + 6u], rp[wi + 7u]);
 			}
-			kern_logf("i915: parity T3-LAST fixture: batch_dwords=%u\n", t3test.t.batch_dwords);
-			kern_logf("i915: parity T3 %s: rc=%d where=%s steps=%u/%u passed=%u wedged=%d polls=%u | "
+			kern_logf("i915: parity %s-LAST fixture: batch_dwords=%u\n", t3tag, t3test.t.batch_dwords);
+			kern_logf("i915: parity %s %s: rc=%d where=%s steps=%u/%u passed=%u wedged=%d polls=%u | "
 				"gt irq: user=%u ctx_switch=%u error=%u\n",
-				(rc == 0 && t3test.passed == t3test.n_planned) ? "PASS" :
+				t3tag, (rc == 0 && t3test.passed == t3test.n_planned) ? "PASS" :
 				t3test.t.wedged ? "HANG" : "ERROR",
 				rc, t3test.t.err_where != 0 ? t3test.t.err_where : "-", t3test.n_steps,
 				t3test.n_planned, t3test.passed, t3test.t.wedged, t3test.t.polls,
 				irqdev.gt_user_intr - u0, irqdev.gt_ctx_switch_intr - c0,
 				irqdev.gt_error_intr - e0);
 		} else {
-			kern_logf("i915: parity T3 not run: forcewake failed rc=%d\n", frc);
+			kern_logf("i915: parity %s not run: forcewake failed rc=%d\n", t3tag, frc);
 		}
 		while (held-- > 0u)
 			osdep_fw_put(&mmio, t3fwd[held]);
 	}
 
-	if (PARITY_TEX_TEST && !PARITY_T3_TEST) {
+	if (PARITY_TEX_TEST && !PARITY_T3_TEST && !PARITY_BL_TEST) {
 		static const int tfwd[5] = { OSDEP_FW_RENDER, OSDEP_FW_GT,
 			OSDEP_FW_MEDIA_VDBOX0, OSDEP_FW_MEDIA_VDBOX2, OSDEP_FW_MEDIA_VEBOX0 };
 		unsigned held = 0u, wi;
@@ -1879,7 +1894,7 @@ p6_fw_out:
 			osdep_fw_put(&mmio, tfwd[held]);
 	}
 
-	if (PARITY_R1_TEST && !PARITY_TEX_TEST && !PARITY_T3_TEST) {
+	if (PARITY_R1_TEST && !PARITY_TEX_TEST && !PARITY_T3_TEST && !PARITY_BL_TEST) {
 		static const int rfwd[5] = { OSDEP_FW_RENDER, OSDEP_FW_GT,
 			OSDEP_FW_MEDIA_VDBOX0, OSDEP_FW_MEDIA_VDBOX2, OSDEP_FW_MEDIA_VEBOX0 };
 		unsigned held = 0u, wi;
@@ -1936,7 +1951,7 @@ p6_fw_out:
 			osdep_fw_put(&mmio, rfwd[held]);
 	}
 
-	if (PARITY_DRAW_TEST && !PARITY_R1_TEST && !PARITY_TEX_TEST && !PARITY_T3_TEST) {
+	if (PARITY_DRAW_TEST && !PARITY_R1_TEST && !PARITY_TEX_TEST && !PARITY_T3_TEST && !PARITY_BL_TEST) {
 		static const int dfwd[5] = { OSDEP_FW_RENDER, OSDEP_FW_GT,
 			OSDEP_FW_MEDIA_VDBOX0, OSDEP_FW_MEDIA_VDBOX2, OSDEP_FW_MEDIA_VEBOX0 };
 		unsigned held = 0u, wi;
@@ -2012,7 +2027,7 @@ p6_fw_out:
 			osdep_fw_put(&mmio, dfwd[held]);
 	}
 
-	if (PARITY_EU_TEST && !PARITY_DRAW_TEST && !PARITY_R1_TEST && !PARITY_TEX_TEST && !PARITY_T3_TEST) {
+	if (PARITY_EU_TEST && !PARITY_DRAW_TEST && !PARITY_R1_TEST && !PARITY_TEX_TEST && !PARITY_T3_TEST && !PARITY_BL_TEST) {
 		static const int fwd[5] = { OSDEP_FW_RENDER, OSDEP_FW_GT,
 			OSDEP_FW_MEDIA_VDBOX0, OSDEP_FW_MEDIA_VDBOX2, OSDEP_FW_MEDIA_VEBOX0 };
 		unsigned ti, held = 0u, k;
@@ -2271,6 +2286,8 @@ teardown:
 		parity_intel_power_domains_cleanup(&power_domains);
 		kern_logf("i915: parity teardown: power domains map released\n");
 	}
+	/* intel_bios_driver_remove(): the VBT parser's lists and arena. */
+	parity_intel_bios_driver_remove(&vbt_state);
 	if (vga_registered) {
 		parity_intel_vga_unregister(&vga_client);
 		kern_logf("i915: parity teardown: VGA arbiter client unregistered\n");

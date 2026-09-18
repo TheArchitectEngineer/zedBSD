@@ -1,0 +1,45 @@
+[    0.025779] smpboot: Allowing 4 CPUs, 0 hotplug CPUs
+[    0.244972] acpi PNP0A08:00: _OSC: platform does not support [PCIeHotplug LTR DPC]
+[    0.245715] acpi PNP0A08:00: _OSC: OS now controls [SHPCHotplug PME AER PCIeCapability]
+[    0.297901] pps_core: LinuxPPS API ver. 1 registered
+[    0.298416] pps_core: Software ver. 5.3.6 - Copyright 2005-2007 Rodolfo Giometti <giometti@linux.it>
+[    0.484563] ACPI: bus type drm_connector registered
+[    2.946315] systemd[1]: Starting modprobe@drm.service - Load Kernel Module drm...
+[    3.257438] EXT4-fs (vda16): mounted filesystem 47e87460-6f19-41ce-8fb0-5e896fcb3673 r/w with ordered data mode. Quota mode: none.
+[   71.268231] i915 0000:00:02.0: [drm] VT-d active for gfx access
+[   71.268319] i915 0000:00:02.0: [drm] Using Transparent Hugepages
+[   71.270121] i915 0000:00:02.0: vgaarb: VGA decodes changed: olddecodes=io+mem,decodes=none:owns=io+mem
+[   71.273095] i915 0000:00:02.0: [drm] Finished loading DMC firmware i915/adlp_dmc.bin (v2.20)
+[   71.493002] i915 0000:00:02.0: [drm] Protected Xe Path (PXP) protected content support initialized
+[   71.494657] [drm] Initialized i915 1.6.0 20230929 for 0000:00:02.0 on minor 0
+[   71.494939] i915 display info: display version: 13
+[   71.494942] i915 display info: cursor_needs_physical: no
+[   71.494944] i915 display info: has_cdclk_crawl: yes
+[   71.494945] i915 display info: has_cdclk_squash: no
+[   71.494946] i915 display info: has_ddi: yes
+[   71.494947] i915 display info: has_dp_mst: yes
+[   71.494948] i915 display info: has_dsb: yes
+[   71.494949] i915 display info: has_fpga_dbg: yes
+[   71.494950] i915 display info: has_gmch: no
+[   71.494951] i915 display info: has_hotplug: yes
+[   71.494952] i915 display info: has_hti: no
+[   71.494953] i915 display info: has_ipc: yes
+[   71.494953] i915 display info: has_overlay: no
+[   71.494954] i915 display info: has_psr: yes
+[   71.494955] i915 display info: has_psr_hw_tracking: no
+[   71.494956] i915 display info: overlay_needs_physical: no
+[   71.494957] i915 display info: supports_tv: no
+[   71.494958] i915 display info: has_hdcp: yes
+[   71.494959] i915 display info: has_dmc: yes
+[   71.494960] i915 display info: has_dsc: yes
+[   71.494961] i915 display info: rawclk rate: 19200 kHz
+[   71.844950] i915 0000:00:02.0: [drm] fb0: i915drmfb frame buffer device
+[  115.069801] i915 0000:00:02.0: [drm] Invalid mmio detected during user access
+[  115.076415] i915 0000:00:02.0: [drm] Invalid mmio detected during user access
+[  115.081802] i915 0000:00:02.0: [drm] Invalid mmio detected during user access
+[  115.100230] i915 0000:00:02.0: [drm] Invalid mmio detected during user access
+[  115.104266] i915 0000:00:02.0: [drm] Invalid mmio detected during user access
+[  115.109638] i915 0000:00:02.0: [drm] Invalid mmio detected during user access
+[  115.158417] i915 0000:00:02.0: [drm] Invalid mmio detected during user access
+[  115.165492] i915 0000:00:02.0: [drm] Invalid mmio detected during user access
+[  115.304961] i915 0000:00:02.0: [drm] Invalid mmio detected during user access

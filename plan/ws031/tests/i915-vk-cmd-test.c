@@ -171,7 +171,7 @@ test_routing(void)
 	struct i915_vk_writer writer;
 	static const uint32_t opcodes[12] = {21U, 50U, 70U, 59U, 65U, 82U, 85U, 106U, 133U, 35U, 40U, 47U};
 	static const int modules[12] = {1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4};
-	uint8_t command[16];
+	uint8_t command[32];
 	uint8_t reply[32];
 	unsigned index;
 	int error;
@@ -212,6 +212,33 @@ test_routing(void)
 	assert(reply[4] == 0U);				/* VK_SUCCESS */
 	assert(reply[8] == 1U);				/* present low */
 	assert(reply[12] == 0U);			/* present high */
+
+	/*
+	 * An unimplemented builtin command is refused, not accepted as an empty
+	 * success: vkCreateInstance (0) with a payload, followed by a valid version
+	 * probe.  The decoder must stop at the first command; the probe that follows
+	 * must NOT run (its bytes are payload as far as this decoder can tell).
+	 */
+	{
+		static const uint32_t refused[5] = {0U, 1U, 17U, 148U, 180U};
+		unsigned which;
+
+		for (which = 0U; which < 5U; which++) {
+			size_t reply_bytes = sizeof(reply);
+
+			memset(command, 0, sizeof(command));
+			put_command(command, refused[which]);
+			command[4] = 1U;		/* reply requested */
+			command[8] = 137U;		/* payload that happens to look like an opcode */
+			put_command(command + 16, 137U);
+			command[24] = 1U;
+			memset(reply, 0xee, sizeof(reply));
+			error = drv_i915_vk_command(&session, command, 32U, reply, &reply_bytes);
+			assert(error == ENOTSUP);
+			assert(reply_bytes == sizeof(reply));	/* no reply length published */
+			assert((uint8_t)reply[8] == 0xeeU);	/* the trailing probe never ran */
+		}
+	}
 }
 
 static void

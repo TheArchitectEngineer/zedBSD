@@ -2,7 +2,7 @@
 
 作成 2026-09-18。対象は **zedBSD の i915 ドライバ（Linux-parity 経路）で、GPU に dispatch した EU スレッドが完了しない問題**です。この文書だけで作業に着手できるよう、問題の定義・現在地・除外済み事項・再現手順（QEMU 起動パラメータ込み）・コード地図・参照資料の索引をまとめています。ホスト名や IP、ユーザ名は意図的に書いていません。
 
-- 実装台帳（時系列の全記録）: [`../results-ws031.md`](../results-ws031.md) — 増分 **E-16〜E-30**（big-bang 期の EU 調査）と **E-31〜E-104**（Linux-parity 移植）が本件。**E-104 で texture 更新・binding 切替・context 再利用 9/9 PASS。リファクタ前の回帰基準は [`../regression-baseline.md`](../regression-baseline.md)。****E-102 で描画反復と compute↔3D 切替 12/12 PASS、E-103 でテクスチャ付きオフスクリーン描画が実機 PASS。****E-101 で修正済み命令列による PS 描画も実機 PASS（1024/1024 画素）。****E-98 で PIPELINE_SELECT の符号化誤り（0x6104、正は 0x6904）を発見、E-99 で修正版の C1 が実機 PASS（累積修正版で EU 実行・書込み・request 完了を確認）、E-100 で反復・同一 context の次 request・新 context も 6/6 PASS。§2.5 参照。**
+- 実装台帳（時系列の全記録）: [`../results-ws031.md`](../results-ws031.md) — 増分 **E-16〜E-30**（big-bang 期の EU 調査）と **E-31〜E-105**（Linux-parity 移植）が本件。E-105 で同一ソースの回帰 4/4 と bilinear 4/4 PASS、表示／libvulkan の事前調査は [`notes/survey-display-lcd.md`](notes/survey-display-lcd.md)・[`notes/survey-libvulkan-path.md`](notes/survey-libvulkan-path.md)。**E-104 で texture 更新・binding 切替・context 再利用 9/9 PASS。リファクタ前の回帰基準は [`../regression-baseline.md`](../regression-baseline.md)。****E-102 で描画反復と compute↔3D 切替 12/12 PASS、E-103 でテクスチャ付きオフスクリーン描画が実機 PASS。****E-101 で修正済み命令列による PS 描画も実機 PASS（1024/1024 画素）。****E-98 で PIPELINE_SELECT の符号化誤り（0x6104、正は 0x6904）を発見、E-99 で修正版の C1 が実機 PASS（累積修正版で EU 実行・書込み・request 完了を確認）、E-100 で反復・同一 context の次 request・新 context も 6/6 PASS。§2.5 参照。**
 - 前任専門家の指示書: [`expert-reports/`](expert-reports/)（`gen12-ps-hang-report1..29.md`）と、それに対する進捗報告 `report_35..53.md` / `ws031-report-30..34.md`。
 - 設計メモ: [`notes/`](notes/)。増分ごとの結果メモ: [`increment-results/`](increment-results/)。生成ツール: [`tools/`](tools/)。Linux 陽性対照 VM の資材: [`linuxvm/`](linuxvm/)。
 
@@ -66,7 +66,15 @@ E-98 の再停止後、実際に提出した batch（`increment-results/e98-batc
 - **E-103（T1＋T2）**: 8×8 R8G8B8A8_UNORM texture を nearest／LOD 0／clamp で 32×32 RT へ描く fixture。PS・prog_data・texture layout・RSS・SAMPLER_STATE・変更 packet 語はすべて `tools/reftex.c`（固定 Mesa @ab691a1c: brw_compile_fs＋isl＋genxml gen120）が生成 → `src/drivers/gpu/i915/tex_fixture_gen.inc`。独立起動（`PARITY_TEX_TEST=1`）で **1024/1024 画素一致、texture・guard 無変更、request 完了、reset なし**。1 回目は generator の誤り（画素座標の内部命令を直書き → compiler が X/Y 導出コードを出さず UV が常に 0）で全画素 texel(0,0)。front-end 形（gl_FragCoord）に直し、compiler が要求する source depth／W・GRF start 4 を state に反映して合格。
 - 回帰 pin（GPU-free）: C1 batch FNV 5dfb47d3c10b0560、単色 draw batch FNV 241f478201bb3a81（実機 PASS bytes）。出典台帳 `../provenance-ledger.md`。
 - **E-104（T3）**: `PARITY_T3_TEST=1`、1 起動 9 提出。texture A の内容更新、A↔B の binding 切替（binding table entry 1 の 1 dword だけが変わる）、同一 context の再描画、新規 context、別 context 後の旧 context。全 step 1024/1024、texture・guard 無変更、host 独立検証 9/9（`tools/eu_artifact.py verify-t3`）。vmunix f9731b24、ktest 383/0。
-- ここで機能追加を止め、著作権・ライセンス整理（入力: `../provenance-ledger.md`、`../license-inventory.md`）と動作を変えないリファクタへ。基準は `../regression-baseline.md`。
+- **計画更新（2026-09-18）**: E-104 は「オフスクリーン描画の基準が完成」。機能追加は止めず、順に 残り 4 モードの回帰 → bilinear → LCD 参照確定・native 事前確認 → 通常稼働の寿命管理＋ディスプレイ／LCD（hotswap は入口と安全な下位処理まで）→ libvulkan 接続 → Vulkan アプリから LCD 表示 → native 総合受入 → 最後に著作権整理・`osdep_` 改名・`parity/` 整理。出典・元表示の保持だけは今から進める（入力: `../provenance-ledger.md`、`../license-inventory.md`）。基準は `../regression-baseline.md`（オフスクリーン基準。後で LCD 基準・Vulkan アプリ基準を追加）。
+
+### 2.7 E-107／E-108: 表示（LCD）の入口 — 明示 VBT と、実 AUX からの DPCD／EDID 取得
+
+- **VBT**（E-107）: OVMF 下では ASLS=0 で OpRegion が無い。採取済み VBT（8704 B、sha256 3bff4a09…24cd）を read-only firmware provider から**明示的に**供給する（build flag `PARITY_VBT_EXPLICIT=1` かつ PCI subsystem 1028:0b02 のときだけ。OpRegion があるふりはしない）。parser は正本 `intel_bios.c` から `tools/port_intel_bios.py` で生成（`parity/vbt/`）。child は実 VBT の 4 個（A=eDP、B=HDMI、TC1/TC2）で、既定 A/B/C には継ぎ足さない。
+- **PPS／VDD／AUX**（E-108）: 正本 `intel_pps.c`／`intel_dp_aux.c` と DRM core の DPCD・I2C-over-AUX・EDID 読出しを `tools/port_dp_aux_pps.py` で生成（`parity/dp/`）。hardware と時間への依存は `struct parity_dp_env` 経由で、同じ本番関数を register model（`dp_fake_hw.c`）と実機で動かす。host 試験 63/0（`sh plan/ws031/tests/run-dp-host-test.sh`）、ktest 407/0。
+- **実機**: `-DPARITY_AUX_TEST=1`（GPU 投入なし、明示 VBT も要求）で実 AUX から DPCD／EDID を取得、採取値と一致、VDD と電源参照を返却して PASS（2 回、`increment-results/e108*-run-parity-hw-aux.log`）。合格行: `AUX-TEST verdict: PASS (… dpcd_match=1 edp_dpcd_match=1 edid_match=1 wells_balanced=1)`。
+- まだ正本どおりでない点は台帳 E-108 §1 に列挙（実行位置、遅延 VDD-off worker が timer 未接続、mutex は所有の表明、async put は即時）。常駐デバイス化で解消する。
+- E-108 で `parity_dc_off_enable()` を正本どおり `gen9_set_dc_state()` 経由に修正（P7 後に DC_off を取る最初の経路で誤診断が出た）。
 
 ## 3. 現在地（コードの状態）
 

@@ -1,0 +1,21 @@
+debugfs=/sys/kernel/debug/dri/0
+6.8.0-139-generic
+0
+== connectors
+card0-DP-1 status=disconnected enabled=disabled dpms=Off edid_bytes=0
+card0-DP-2 status=disconnected enabled=disabled dpms=Off edid_bytes=0
+card0-eDP-1 status=connected enabled=enabled dpms=On edid_bytes=0
+    mode 1920x1080
+    mode 1920x1080
+card0-HDMI-A-1 status=disconnected enabled=disabled dpms=Off edid_bytes=0
+== backlight
+intel_backlight type=raw max=96000 actual=96000 brightness=96000
+intel_backlight
+== fb / vbt / opregion
+0 i915drmfb
+i915_vbt bytes=8704
+i915_opregion bytes=8192
+ASLS(0xfc)=7fffb000
+drm_dp_aux0 name=AUX A/DDI A/PHY A dpcd000=256
+drm_dp_aux1 name=AUX USBC1/DDI TC1/PHY TC1 dpcd000=0
+drm_dp_aux2 name=AUX USBC2/DDI TC2/PHY TC2 dpcd000=0

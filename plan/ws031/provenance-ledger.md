@@ -37,3 +37,59 @@
 2. 生成物は「入力・generator・その revision」を生成ファイルの冒頭に書く。
 3. 新しく取り込むたびに本台帳の §1 に 1 行足す。
 4. ライセンスの互換性・配布可否の判断、`LICENSES/`／SPDX の整備は、テクスチャ更新・再利用（T3）の後の独立工程で行う。
+
+## 4. 対象機固有の firmware データ（E-106 追記）
+
+| 置き場所 | 区分 | 元 | 扱い |
+|---|---|---|---|
+| `plan/ws031/display-ref/i915_vbt.bin`、`i915_opregion.bin`、`edid-eDP-1.bin`、`dpcd-*.bin` | コピー（対象機 Dell Latitude 5330 の firmware／panel から Linux i915 の debugfs・sysfs・AUX 経由で読んだ byte 列） | 機体の firmware（Dell／Intel）と panel（AUO）のデータ | 参照用の試験入力。**ライセンスと配布可否は未監査**。配布 image へ入れるかどうかは別途判断する。source tree（`src/`）には入れていない |
+
+## 5. E-107（2026-09-18）: VBT parser の取り込みと、対象機 VBT の source tree への配置
+
+### 5.1 Linux 由来（元の表示を保持）
+| zedBSD 側 | 区分 | 元（Linux 6.8.12 固定参照） | 元の copyright／license | 備考 |
+|---|---|---|---|---|
+| `parity/vbt/intel_bios_port.c` | **生成物（元 text の複製＋記録した改変）** | `drivers/gpu/drm/i915/display/intel_bios.c`。generator `plan/ws031/handover/tools/port_intel_bios.py`。元ファイルの sha256 と、削除した関数・置換の一覧を生成ファイルの冒頭に記録 | 元ファイル冒頭の Intel copyright 表示＋MIT permission notice（SPDX 行なし）を**そのまま保持**。author 行も原文どおり | 関数本体は再入力していない。zedBSD 側の追加は末尾の `#include "parity_vbt_glue.inc"` と provider 呼出し 1 箇所 |
+| `parity/vbt/intel_vbt_defs.h` | コピー（include 1 行と guard 周辺のみ変更） | `display/intel_vbt_defs.h` | 元の Intel copyright＋MIT permission notice を保持 | VBT／BDB の構造体定義 |
+| `parity/vbt/intel_bios.h` | コピー（同上） | `display/intel_bios.h` | 同上 | |
+| `parity/vbt/vbt_ref_types.h` | 生成物（enum／struct の text 抽出） | `display/intel_display_limits.h`（enum port）、`display/intel_display.h`（enum aux_ch／phy）、`soc/intel_pch.h`（enum intel_pch）、`display/intel_display_types.h`（struct intel_vbt_panel_data）、`display/intel_display_core.h`（struct intel_vbt_data）。抽出元と範囲は生成ファイルの冒頭に記録 | 各元ファイルの表示（MIT permission notice または SPDX MIT）。**ファイルごとの表示の突合せは未監査** | 抽出は generator が行い手入力なし |
+
+### 5.2 zedBSD 側で書いたもの
+| ファイル | 区分 | 備考 |
+|---|---|---|
+| `parity/vbt/vbt_compat.h` | 独立実装（正本が使う kernel API の契約に合わせた最小の型・list・割当・log。定数値 `DP_*`／`GMBUS_PIN_*`／platform 判定は Linux header の値と照合） | 定数の転記元: `include/drm/display/drm_dp.h`、`display/intel_gmbus.h`（いずれも MIT 系表示。値の照合であって本文の複製ではない） |
+| `parity/vbt/parity_vbt.h`、`parity/vbt/parity_vbt_glue.inc` | 独立実装 | 正本の private list を平坦な record へ写す glue と arena |
+| `parity/bios.c` の `parity_sha256()` | 独立実装 | FIPS 180-4 の仕様から実装。"abc" の公式 vector で検査（ktest VBT-SHA）。既存実装の複製ではない |
+| `plan/ws031/tests/vbt-host-test.c` | 独立実装 | 期待値の出所は igt `intel_vbt_decode` の出力（`display-ref/vbt-decode.txt`） |
+
+### 5.3 対象機固有の firmware データ（§4 の続き）
+| 置き場所 | 区分 | 元 | 扱い |
+|---|---|---|---|
+| `parity/firmware_vbt_dell_latitude_5330.c`（C 配列、8704 byte、sha256 `3bff4a0920d55c9aee0ea3c678904f982f8671c0e7b5bc97a335e429b29624cd`） | 生成物（`display-ref/i915_vbt.bin` の byte 写し） | 対象機 Dell Latitude 5330（PCI subsystem 1028:0b02）の firmware が持つ VBT。Linux i915 debugfs `i915_vbt` から採取（E-106） | **E-107 で初めて `src/` に入った**。build flag `PARITY_VBT_EXPLICIT=1` のときだけ参照され、かつ subsystem が一致する機体でだけ採用される。既定 build では image に含まれても使われない。**ライセンスと配布可否は未監査**（機体 firmware のデータであり、配列化しても独自著作物にはならない）。配布 image へ入れるかどうかはライセンス整理の工程で判断。native では OpRegion／RVDA から読む経路へ置き換える予定 |
+
+## 6. E-108（2026-09-19）: eDP の PPS／AUX／DPCD／EDID 取得の取り込み
+
+追加した固定参照: `plan/ws031/linux-parity/linux-reference/drm-v6.8.12/`（i915 の固定参照 tree に DRM core が無かったため、kernel.org の stable tree `v6.8.12` から 2026-09-18 に取得）。`drm_dp_helper.c` sha256 `030568524ac5db3fbd09725df196b22a430ec18fc1432dbb952298ce7c791a73`、`drm_dp.h` `306a1a47ba001c417baa3dab1f3a58c7e5de3c7a0537d26806a130603b599c5f`、`drm_edid.c` `a01138078180d234149ac4403839a99b9c85232955a9830ad5552637cd8661a7`。**正本環境（Ubuntu 6.8.0-139）の同ファイルとの差分は未照合**。
+
+### 6.1 参照由来（元の表示を保持）
+| zedBSD 側（`src/drivers/gpu/i915/parity/dp/`） | 区分 | 元 | 元の copyright／license | 備考 |
+|---|---|---|---|---|
+| `intel_pps_port.c` | 生成物（元 text の複製＋記録した削除・置換） | Linux 6.8.12 `display/intel_pps.c`。generator `tools/port_dp_aux_pps.py`。元の sha256 と変更一覧は生成ファイル冒頭 | `SPDX-License-Identifier: MIT`、Copyright © 2020 Intel Corporation（原文保持） | 関数本体は再入力なし |
+| `intel_dp_aux_port.c` | 同上 | `display/intel_dp_aux.c` | SPDX MIT、Copyright © 2020-2021 Intel Corporation（原文保持） | |
+| `intel_dp_aux_regs.h`、`intel_pps_regs.h`、`intel_pps.h`、`intel_dp_aux.h` | コピー（include 行のみ変更） | `display/` の同名 header | 各ファイルの SPDX MIT＋Intel copyright（原文保持） | |
+| `dp_ref_types.h` | 生成物（`struct intel_pps` の text 抽出） | `display/intel_display_types.h` | MIT permission notice、Copyright Intel Corporation（元ファイルの表示。抽出ファイルには出所を記載） | |
+| `drm_dp_helper_port.c` | 生成物（keep-list で関数を抜粋、module parameter 2 組を削除） | upstream v6.8.12 `drivers/gpu/drm/display/drm_dp_helper.c` | Copyright © 2009 Keith Packard、**HPND 系の permission notice**（"Permission to use, copy, modify, distribute, and sell …"。MIT とは別文面）。原文保持 | license の分類と互換性は**未監査** |
+| `drm_dp.h` | コピー（include 1 行のみ変更） | upstream v6.8.12 `include/drm/display/drm_dp.h` | Copyright © 2008 Keith Packard、同じ HPND 系 notice（原文保持） | DPCD address と AUX の request／reply code |
+| `drm_edid_port.c` | 生成物（keep-list: DDC の EDID block 読出しと header／checksum helper） | upstream v6.8.12 `drivers/gpu/drm/drm_edid.c` | 複数の copyright 行（Luc Verhaegen、Intel Corporation／Jesse Barnes、Red Hat, Inc.、Dennis Munsie）＋MIT permission notice。**全行を原文のまま保持**（名前は推測せず元ファイルから複製） | |
+
+### 6.2 zedBSD 側で書いたもの（独立実装）
+| ファイル | 備考 |
+|---|---|
+| `dp_compat.h` | 正本 text が kernel に求める契約（レジスタ macro、待ち、sleep、clock、電源参照、mutex、delayed work、I2C adapter、DP AUX object の member）の最小実装。`SOUTH_CHICKEN1`／`SOUTH_DSPCLK_GATE_D` と bit、I2C の flag／functionality 値は Linux header の値と照合した定数（値の照合であって本文の複製ではない） |
+| `parity_edp.{h,c}`、`parity_dp_kernel.{c,h}`、`parity_*_glue.inc` | 呼出し順は `intel_dp.c` の `intel_edp_init_connector()`／`intel_edp_init_dpcd()` に従うが、本文は複製していない。`parity_drm_edid_glue.inc` は `drm_edid.c` の `edid_block_read()` の契約（試行回数と打切り条件）に従う独立実装 |
+| `dp_fake_hw.{c,h}`、`edp_ktest.{c,h}`、`plan/ws031/tests/dp-host-test.c` | 試験用。register model の offset／bit は driver 側 header と独立に記述 |
+
+### 6.3 対象機固有データ
+| 置き場所 | 区分 | 扱い |
+|---|---|---|
+| `parity/dp/dp_fixture_latitude5330.h`（DPCD 0x000／0x100／0x700 各 256 byte、EDID 128 byte の C 配列。generator `tools/gen_dp_fixture.py`、各 sha256 を記載） | 生成物（`display-ref/` の byte 写し）。対象機の panel（AUO B133HAN）から Linux i915 経由で読んだデータ | GPU-free 試験の入力と、実機取得値の**照合**にだけ使う（実 AUX 応答の代用にはしない）。**ライセンスと配布可否は未監査** |

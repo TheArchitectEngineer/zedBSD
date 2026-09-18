@@ -1278,6 +1278,51 @@ _Static_assert(I915_TEX_FIXTURE_TEX_B_RSS_OFFSET >= I915_TEX_FIXTURE_TEX_RSS_OFF
 	"texture B's surface state must sit in the surface heap, 64-byte aligned, after texture A's");
 
 void
+drv_i915_tex_fixture_write_state_ab_filter(void *state_page, uint64_t rt_va, uint64_t tex_a_va,
+	uint64_t tex_b_va, unsigned bind_b, unsigned linear, uint32_t mocs)
+{
+	uint32_t *heap = state_page;
+
+	drv_i915_tex_fixture_write_state_ab(state_page, rt_va, tex_a_va, tex_b_va, bind_b, mocs);
+	if (linear != 0U)
+		memcpy(&heap[I915_TEX_FIXTURE_SAMPLER_OFFSET / 4U], texfix_sampler_linear,
+			sizeof(texfix_sampler_linear));
+}
+
+uint32_t
+drv_i915_tex_fixture_expected_pixel_linear(const uint8_t *rgba, unsigned x, unsigned y, int *inexact)
+{
+	/* texel-space coordinate in eighths: (2*pixel + 1)/8 - 1/2 = (2*pixel - 3)/8 */
+	int cx = 2 * (int)x - 3, cy = 2 * (int)y - 3;
+	int x0 = cx >= 0 ? cx / 8 : -1, y0 = cy >= 0 ? cy / 8 : -1;
+	unsigned fx = (unsigned)(cx - 8 * x0), fy = (unsigned)(cy - 8 * y0);
+	int xs[2], ys[2];
+	unsigned w[2][2], ch, i, j;
+	uint32_t out[4];
+
+	xs[0] = x0; xs[1] = x0 + 1; ys[0] = y0; ys[1] = y0 + 1;
+	for (i = 0U; i < 2U; i++) {
+		if (xs[i] < 0) xs[i] = 0;
+		if (xs[i] > (int)I915_TEX_FIXTURE_TEX_W - 1) xs[i] = (int)I915_TEX_FIXTURE_TEX_W - 1;
+		if (ys[i] < 0) ys[i] = 0;
+		if (ys[i] > (int)I915_TEX_FIXTURE_TEX_H - 1) ys[i] = (int)I915_TEX_FIXTURE_TEX_H - 1;
+	}
+	w[0][0] = (8U - fx) * (8U - fy); w[0][1] = fx * (8U - fy);
+	w[1][0] = (8U - fx) * fy;        w[1][1] = fx * fy;
+	for (ch = 0U; ch < 4U; ch++) {
+		unsigned sum = 0U;
+
+		for (j = 0U; j < 2U; j++)
+			for (i = 0U; i < 2U; i++)
+				sum += w[j][i] * rgba[((unsigned)ys[j] * I915_TEX_FIXTURE_TEX_W + (unsigned)xs[i]) * 4U + ch];
+		if (inexact != NULL && (sum & 63U) != 0U)
+			*inexact = 1;
+		out[ch] = (sum + 32U) / 64U;
+	}
+	return out[2] | (out[1] << 8) | (out[0] << 16) | (out[3] << 24);
+}
+
+void
 drv_i915_tex_fixture_write_state_ab(void *state_page, uint64_t rt_va, uint64_t tex_a_va,
 	uint64_t tex_b_va, unsigned bind_b, uint32_t mocs)
 {
@@ -1323,10 +1368,14 @@ drv_i915_tex_fixture_pattern(uint8_t *rgba, unsigned variant)
 				t[0] = (uint8_t)(239U - 32U * v);
 				t[1] = (uint8_t)(16U + 32U * u);
 				t[2] = (uint8_t)(16U + 32U * ((3U * u + v) & 7U));
-			} else {
+			} else if (variant == 2U) {
 				t[0] = (uint8_t)(240U - 32U * u);
 				t[1] = (uint8_t)(240U - 32U * v);
 				t[2] = (uint8_t)(16U + 32U * ((u ^ v) & 7U));
+			} else {
+				t[0] = (uint8_t)(64U * (u & 3U));
+				t[1] = (uint8_t)(64U * (v & 3U));
+				t[2] = (uint8_t)(64U * ((u >> 2) + 2U * (v >> 2)));
 			}
 			t[3] = 255U;
 		}

@@ -7,6 +7,9 @@
 /* Embedded reference blobs (firmware_adlp_dmc.c). */
 extern const unsigned char parity_fw_adlp_dmc[];
 extern const unsigned parity_fw_adlp_dmc_size;
+/* An explicit, machine-specific VBT (firmware_vbt_dell_latitude_5330.c); see bios.c for when it is used. */
+extern const unsigned char parity_fw_vbt_dell_latitude_5330[];
+extern const unsigned parity_fw_vbt_dell_latitude_5330_size;
 
 struct fw_entry {
 	const char *name;
@@ -16,6 +19,8 @@ struct fw_entry {
 
 static const struct fw_entry fw_table[] = {
 	{ "i915/adlp_dmc.bin", parity_fw_adlp_dmc, &parity_fw_adlp_dmc_size },
+	{ "zedbsd/vbt/dell-latitude-5330-1028-0b02.vbt", parity_fw_vbt_dell_latitude_5330,
+	  &parity_fw_vbt_dell_latitude_5330_size },
 };
 
 static const struct osdep_firmware_test_ops *g_fw_test;

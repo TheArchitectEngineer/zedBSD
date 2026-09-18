@@ -59,8 +59,10 @@ unsigned drv_i915_tex_fixture_build_batch(uint32_t *cmds, unsigned capacity,
  *   variant 0: R=16+32u G=16+32v B=16+32((u+3v)&7) A=255   (position-identifying, asymmetric)
  *   variant 1: R=239-32v G=16+32u B=16+32((3u+v)&7) A=255  (for update / binding switches)
  *   variant 2: R=240-32u G=240-32v B=16+32((u^v)&7) A=255  (a third, again distinct, image)
+ *   variant 3: R=64(u&3) G=64(v&3) B=64((u>>2)+2(v>>2)) A=255
+ *              (every channel a multiple of 64: see the bilinear test below)
  */
-#define I915_TEX_FIXTURE_VARIANTS 3u
+#define I915_TEX_FIXTURE_VARIANTS 4u
 void drv_i915_tex_fixture_pattern(uint8_t *rgba, unsigned variant);
 /* What the B8G8R8A8 render target reads back as (little-endian dword) at pixel (x,y). */
 uint32_t drv_i915_tex_fixture_expected_pixel(const uint8_t *rgba, unsigned x, unsigned y);
@@ -75,5 +77,23 @@ uint32_t drv_i915_tex_fixture_expected_pixel(const uint8_t *rgba, unsigned x, un
 #define I915_TEX_FIXTURE_TEX_B_RSS_OFFSET 192u
 void drv_i915_tex_fixture_write_state_ab(void *state_page, uint64_t rt_va, uint64_t tex_a_va,
 	uint64_t tex_b_va, unsigned bind_b, uint32_t mocs);
+
+/*
+ * ---- E-105: bilinear ----
+ * Same texture, PS, batch, RT and LOD 0; only SAMPLER_STATE changes (linear min/mag,
+ * address rounding on, as anv/blorp program it).
+ *
+ * Comparison rule, fixed BEFORE the first hardware run: with uv = (pixel + 0.5) / 32
+ * over an 8x8 texture the texel-space coordinate is (2*pixel - 3) / 8, so the two
+ * weights per axis are multiples of 1/8 and every sample is sum(w * texel) / 64 with
+ * integer w.  With image 3 (all channels multiples of 64, alpha 255) that sum is an
+ * exact integer in UNORM8 units: no rounding decision exists, so the expected image
+ * is compared for EXACT equality.  Out-of-range neighbours clamp to the edge texel.
+ */
+void drv_i915_tex_fixture_write_state_ab_filter(void *state_page, uint64_t rt_va, uint64_t tex_a_va,
+	uint64_t tex_b_va, unsigned bind_b, unsigned linear, uint32_t mocs);
+/* Bilinear expectation; *inexact (optional) is set when a channel sum is not a multiple of 64. */
+uint32_t drv_i915_tex_fixture_expected_pixel_linear(const uint8_t *rgba, unsigned x, unsigned y,
+	int *inexact);
 
 #endif /* I915_DRAW_FIXTURE_H */

@@ -1158,26 +1158,14 @@ t3_tex_diff(struct parity_gt_object *tex, const uint8_t *pattern, unsigned *guar
 	return changed;
 }
 
-int
-parity_t3_test_run(struct parity_t3_test *x, struct parity_gt_engines *es,
+struct t3_plan_row { char ctx, bind, upload; int variant; int linear; };
+
+static int
+t3_run_plan(struct parity_t3_test *x, struct parity_gt_engines *es,
 	struct parity_gt_ppgtt *vm, struct parity_gt_mem *gm, struct osdep_mmio *m,
-	struct spinlock *uncore_lock, unsigned timeout_ms)
+	struct spinlock *uncore_lock, unsigned timeout_ms,
+	const struct t3_plan_row *plan, unsigned n_plan)
 {
-	/*
-	 * Context A (new):  1 bind A (image 0)            = the T2 draw
-	 *                   2 update A := image 1, bind A  content update of the same object
-	 *                   3 bind B (image 0)            binding switch (A now holds image 1)
-	 *                   4 bind A                      switch back
-	 *                   5 bind A                      plain redraw
-	 * Context B (new):  6 bind A   7 bind B           the same fixture on a new context
-	 *                   8 update B := image 2, bind B
-	 * Context A again:  9 bind B (image 2)            an older context after another one ran
-	 */
-	static const struct { char ctx, bind, upload; int variant; } plan[] = {
-		{ 'A', 'A', '-', 0 }, { 'A', 'A', 'A', 1 }, { 'A', 'B', '-', 0 }, { 'A', 'A', '-', 0 },
-		{ 'A', 'A', '-', 0 }, { 'B', 'A', '-', 0 }, { 'B', 'B', '-', 0 }, { 'B', 'B', 'B', 2 },
-		{ 'A', 'B', '-', 0 },
-	};
 	static const uint64_t va[5] = { PARITY_EU_SHARED_VA, PARITY_EU_BATCH_VA, PARITY_DRAW_RT_VA,
 		I915_TEX_FIXTURE_TEX_VA, I915_TEX_FIXTURE_TEX_B_VA };
 	static uint8_t pat[I915_TEX_FIXTURE_VARIANTS][I915_TEX_FIXTURE_TEX_BYTES];
@@ -1194,7 +1182,7 @@ parity_t3_test_run(struct parity_t3_test *x, struct parity_gt_engines *es,
 		return -EINVAL;
 	memset(x, 0, sizeof(*x));
 	t = &x->t;
-	x->n_planned = (unsigned)(sizeof(plan) / sizeof(plan[0]));
+	x->n_planned = n_plan;
 
 	for (i = 0u; i < es->n; i++)
 		if (es->ge[i].info->class == PARITY_RENDER_CLASS)
@@ -1291,9 +1279,11 @@ parity_t3_test_run(struct parity_t3_test *x, struct parity_gt_engines *es,
 			x->content[1] = plan[s].variant;
 		}
 		st->expect_variant = x->content[bind_b];
+		st->linear = plan[s].linear;
 		want_img = pat[st->expect_variant];
-		drv_i915_tex_fixture_write_state_ab(t->shared->cpu, PARITY_DRAW_RT_VA,
-			I915_TEX_FIXTURE_TEX_VA, I915_TEX_FIXTURE_TEX_B_VA, bind_b, x->mocs);
+		drv_i915_tex_fixture_write_state_ab_filter(t->shared->cpu, PARITY_DRAW_RT_VA,
+			I915_TEX_FIXTURE_TEX_VA, I915_TEX_FIXTURE_TEX_B_VA, bind_b,
+			(unsigned)plan[s].linear, x->mocs);
 		for (i = 0u; i < 1024u; i++)
 			px[i] = TEX_RT_PREFILL;
 		st->state_hash = fnv1a64(t->shared->cpu, 4096u, 0xcbf29ce484222325ull);
@@ -1326,9 +1316,22 @@ parity_t3_test_run(struct parity_t3_test *x, struct parity_gt_engines *es,
 		mk = (volatile uint32_t *)t->shared->cpu + I915_DRAW_FIXTURE_MARKER_OFFSET / 4u;
 		st->before = mk[0]; st->after = mk[1]; st->middraw = mk[2]; st->ps_marker = mk[4];
 		for (i = 0u; i < 1024u; i++) {
-			uint32_t want = drv_i915_tex_fixture_expected_pixel(want_img, i % 32u, i / 32u);
+			uint32_t near = drv_i915_tex_fixture_expected_pixel(want_img, i % 32u, i / 32u);
+			uint32_t want = st->linear ?
+				drv_i915_tex_fixture_expected_pixel_linear(want_img, i % 32u, i / 32u, 0) : near;
 			uint32_t got = px[i];
+			unsigned chn;
 
+			if (want != near)
+				st->differs_from_nearest++;
+			for (chn = 0u; chn < 4u; chn++) {
+				int dd = (int)((got >> (8u * chn)) & 255u) - (int)((want >> (8u * chn)) & 255u);
+
+				if (dd < 0)
+					dd = -dd;
+				if ((unsigned)dd > st->max_channel_diff && got != TEX_RT_PREFILL)
+					st->max_channel_diff = (unsigned)dd;
+			}
 			if (got == want) {
 				st->px_match++;
 			} else {
@@ -1372,6 +1375,49 @@ parity_t3_test_run(struct parity_t3_test *x, struct parity_gt_engines *es,
 	}
 	t->outcome = PARITY_EU_PASS;
 	return 0;
+}
+
+int
+parity_t3_test_run(struct parity_t3_test *x, struct parity_gt_engines *es,
+	struct parity_gt_ppgtt *vm, struct parity_gt_mem *gm, struct osdep_mmio *m,
+	struct spinlock *uncore_lock, unsigned timeout_ms)
+{
+	/*
+	 * Context A (new):  1 bind A (image 0)            = the T2 draw
+	 *                   2 update A := image 1, bind A  content update of the same object
+	 *                   3 bind B (image 0)            binding switch (A now holds image 1)
+	 *                   4 bind A                      switch back
+	 *                   5 bind A                      plain redraw
+	 * Context B (new):  6 bind A   7 bind B           the same fixture on a new context
+	 *                   8 update B := image 2, bind B
+	 * Context A again:  9 bind B (image 2)            an older context after another one ran
+	 */
+	static const struct t3_plan_row plan[] = {
+		{ 'A', 'A', '-', 0, 0 }, { 'A', 'A', 'A', 1, 0 }, { 'A', 'B', '-', 0, 0 }, { 'A', 'A', '-', 0, 0 },
+		{ 'A', 'A', '-', 0, 0 }, { 'B', 'A', '-', 0, 0 }, { 'B', 'B', '-', 0, 0 }, { 'B', 'B', 'B', 2, 0 },
+		{ 'A', 'B', '-', 0, 0 },
+	};
+
+	return t3_run_plan(x, es, vm, gm, m, uncore_lock, timeout_ms, plan,
+		(unsigned)(sizeof(plan) / sizeof(plan[0])));
+}
+
+int
+parity_bl_test_run(struct parity_t3_test *x, struct parity_gt_engines *es,
+	struct parity_gt_ppgtt *vm, struct parity_gt_mem *gm, struct osdep_mmio *m,
+	struct spinlock *uncore_lock, unsigned timeout_ms)
+{
+	/*
+	 * Image 3 (multiples of 64) in texture A.  Context A: nearest (control), bilinear,
+	 * nearest again (the filter change does not stick).  Context B (new): bilinear.
+	 */
+	static const struct t3_plan_row plan[] = {
+		{ 'A', 'A', 'A', 3, 0 }, { 'A', 'A', '-', 0, 1 }, { 'A', 'A', '-', 0, 0 },
+		{ 'B', 'A', '-', 0, 1 },
+	};
+
+	return t3_run_plan(x, es, vm, gm, m, uncore_lock, timeout_ms, plan,
+		(unsigned)(sizeof(plan) / sizeof(plan[0])));
 }
 
 void
