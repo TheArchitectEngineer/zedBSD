@@ -8,6 +8,8 @@
  *   C. the pipe does not stop after the plane was armed -> no success, the buffer stays protected
  */
 #include "lcd_modeset_ktest.h"
+#include "parity_lcd_observe.h"
+#include "../display_core.h"
 #include "parity_lcd_modeset.h"
 #include "parity_lcd_trace.h"
 #include "lcd_fake_hw.h"
@@ -50,9 +52,19 @@ static int bring_up(void)
 	memcpy(cfg.edp_dpcd, res.edp_dpcd, sizeof(cfg.edp_dpcd));
 	cfg.fb_fourcc = 0x34325258u;
 	cfg.fb_width = 1920u; cfg.fb_height = 1080u; cfg.fb_pitch = 7680u; cfg.fb_surf = 0xfdfc0000u;
+	{
+		static const uint16_t lat[8] = { 3, 54, 83, 102, 147, 147, 144, 144 };
+
+		memcpy(cfg.wm_latency, lat, sizeof(lat));
+	}
+	cfg.wm_num_levels = 6; cfg.wm_ipc_enabled = 1; cfg.sagv_block_time_us = 35;
+	cfg.dbuf_size = 4096u; cfg.dbuf_slice_mask = 0x0f; cfg.dbuf_enabled_slices = 0x01;
+	lcd.dbuf_size = 4096u;
 	cfg.dmc_fw_mask = 1u << 1;
 	cfg.vbt_backlight_present = 1; cfg.vbt_backlight_pwm_freq_hz = 200; cfg.vbt_backlight_min_brightness = 6;
 	cfg.rawclk_khz = 19200u;
+	cfg.cdclk_khz = 179200u; cfg.cdclk_vco_khz = 537600u; cfg.cdclk_ref_khz = 38400u; cfg.cdclk_bypass_khz = 19200u;
+	cfg.cdclk_max_khz = 652800u; cfg.cdclk_voltage_level = 0u; cfg.mbus_joined = 0; cfg.qgv_allowed_bw = 11707u;
 	return 0;
 }
 
@@ -74,7 +86,7 @@ void parity_lcd_modeset_ktest(parity_lcd_modeset_ktest_check check)
 	rc = bring_up();
 	rc = rc == 0 ? parity_lcd_modeset_prepare(&st, &cfg, &trace.ops) : rc;
 	check(rc == 0 && trace.n == 0u, "lcd-ms: A-PREPARE the state is built without touching anything");
-	rc = parity_lcd_modeset_enable();
+	rc = parity_lcd_modeset_commit_enable();
 	parity_lcd_modeset_status(&s);
 	parity_lcd_modeset_link_status(&s);
 	check(rc == PARITY_LCD_MS_OK && s.errors == 0u && s.cr_ok && s.eq_ok && (s.link_status[0] & 0x77u) == 0x77u &&
@@ -82,40 +94,52 @@ void parity_lcd_modeset_ktest(parity_lcd_modeset_ktest_check check)
 		lcd_fake_reg(&lcd, 0x46140u) == 0x10000000u && lcd_fake_reg(&lcd, 0xc8254u) == 0x17700u,
 		"lcd-ms: A-ENABLE the sink reports CR + EQ + lock; DDI_BUF_CTL / TRANS_DDI_FUNC_CTL / TRANS_CLK_SEL / PWM = Linux's dump");
 	check(lcd_fake_violations(&lcd) == 0u && s.pll_on && s.ddi_io_wakeref != 0 && s.aux_wakeref != 0 &&
-		lcd_fake_power_refs_total(&lcd) == 2,
-		"lcd-ms: A-ORDER no ordering violation seen by the model; the enable owns the PLL and two power references");
-	rc = parity_lcd_modeset_plane_update();
+		lcd_fake_power_refs_total(&lcd) == 6 && s.crtc_domains_held == 4u && s.dc_off_held == 0 && lcd.async_puts == 1u &&
+		lcd.dbuf_enabled == 0x0fu && s.mbus_joined_now == 1 && s.cdclk_required_khz == 179200 && s.cdclk_change_needed == 0,
+		"lcd-ms: A-ORDER no violation; PLL + DDI IO + AUX + the crtc's four domains held, DC_OFF dropped, DBUF 0xf joined, CDCLK unchanged");
 	f0 = lcd.ops.read32(lcd.ops.ctx, 0x70040u);
 	lcd.ops.usleep(lcd.ops.ctx, 500000u);
 	f1 = lcd.ops.read32(lcd.ops.ctx, 0x70040u);
 	check(rc == PARITY_LCD_MS_OK && lcd.plane_arms == 1u && lcd.plane_ctl_at_arm == 0x94000000u &&
-		lcd.plane_surf_at_arm == 0xfdfc0000u && f1 >= f0 + 29u,
+		lcd.plane_surf_at_arm == 0xfdfc0000u && f1 >= f0 + 29u && lcd.plane_armed_without_ddb == 0u &&
+		lcd_fake_reg(&lcd, 0x7027cu) == 0x0fdb0000u && lcd_fake_reg(&lcd, 0x70240u) == 0x80004010u,
 		"lcd-ms: A-PLANE armed once on the running pipe with this buffer's address; frames advance");
-	rc = parity_lcd_modeset_plane_disable();
+	rc = parity_lcd_modeset_commit_disable();
 	parity_lcd_modeset_status(&s);
 	check(rc == PARITY_LCD_MS_OK && s.plane_armed == 1, "lcd-ms: A-PLANE-OFF the modeset does not declare the buffer free on its own");
 	parity_lcd_modeset_plane_released();
-	rc = parity_lcd_modeset_disable();
-	parity_lcd_modeset_status(&s);
 	check(rc == PARITY_LCD_MS_OK && s.errors == 0u && !s.crtc_active && !s.pll_on && s.ddi_io_wakeref == 0 &&
 		s.aux_wakeref == 0 && (lcd_fake_reg(&lcd, 0x70008u) & 0xc0000000u) == 0u &&
-		(lcd_fake_reg(&lcd, 0x46010u) & 0xcc000000u) == 0u && (dpf.pp_control & 5u) == 0u && lcd_fake_violations(&lcd) == 0u,
+		(lcd_fake_reg(&lcd, 0x46010u) & 0xcc000000u) == 0u && (dpf.pp_control & 5u) == 0u && lcd_fake_violations(&lcd) == 0u &&
+		s.crtc_domains_held == 0u && lcd.dbuf_enabled == 0x01u && s.mbus_joined_now == 0,
 		"lcd-ms: A-DISABLE the reference's disable: pipe / DDI / PLL / panel / backlight off, references returned, no violation");
 	check(released(), "lcd-ms: A-RELEASED nothing is held after the eDP ends");
 
 	/* ---- C ---- */
 	rc = bring_up();
 	rc = rc == 0 ? parity_lcd_modeset_prepare(&st, &cfg, &trace.ops) : rc;
-	rc = rc == 0 ? parity_lcd_modeset_enable() : rc;
-	rc = rc == 0 ? parity_lcd_modeset_plane_update() : rc;
+	rc = rc == 0 ? parity_lcd_modeset_commit_enable() : rc;
 	lcd.fault_pipe_stuck_on = 1;
-	(void)parity_lcd_modeset_plane_disable();
-	rc = rc == 0 ? parity_lcd_modeset_disable() : -99;
+	rc = rc == 0 ? parity_lcd_modeset_commit_disable() : -99;
 	parity_lcd_modeset_status(&s);
-	check(rc == PARITY_LCD_MS_ERRORS && s.first_error != 0 && s.plane_armed == 1 &&
+	check(rc == PARITY_LCD_MS_ERRORS && s.first_error != 0 && s.plane_armed == 1 && s.stop_unconfirmed == 1 && s.dc_off_held == 1 &&
+		s.crtc_domains_held == 4u && lcd.dbuf_enabled == 0x0fu &&
 		parity_lcd_modeset_prepare(&st, &cfg, &trace.ops) == -16,
 		"lcd-ms: C-STUCK a pipe that does not stop: no success, the buffer stays marked in use, a new modeset is refused");
 	(void)parity_edp_end(&res);
 	/* the caller decided what to do with that buffer (kept for ever): the object may be used again */
-	parity_lcd_modeset_plane_released();
+	parity_lcd_modeset_abandoned();
+	check(parity_lcd_modeset_prepare(&st, &cfg, &trace.ops) == -16 && parity_lcd_modeset_retained() == 1,
+		"lcd-ms: C-RETAINED abandon is not forgotten: the entry is refused again, the object still holds its state");
+	check(parity_lcd_modeset_discard_model(&trace.ops) == 0 && parity_lcd_modeset_retained() == 0,
+		"lcd-ms: C-DISCARD released only by discarding the model that holds it");
+	{
+		unsigned sl, bad = 0u;
+
+		for (sl = 0u; sl < 4u; sl++)
+			if (parity_dbuf_ctl_reg(sl) != parity_lcd_ref_dbuf_ctl(sl) || parity_dbuf_ctl_reg(sl) == 0u)
+				bad++;
+		check(bad == 0u && parity_dbuf_ctl_reg(0u) == parity_lcd_ref_dbuf_ctl(0u),
+			"lcd-ms: DBUF-ADDR the power-domain init's DBUF_CTL table = the reference's DBUF_CTL_S(S1..S4) macro, slice by slice");
+	}
 }

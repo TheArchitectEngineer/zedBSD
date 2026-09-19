@@ -12,7 +12,7 @@
  *    adlp_plane_ctl_arb_slots, skl_plane_ctl_crtc, skl_plane_ctl, glk_plane_color_ctl_crtc, glk_plane_color_ctl,
  *    skl_surf_address, skl_plane_surf, skl_plane_aux_dist, skl_plane_keyval, skl_plane_keymsk,
  *    skl_plane_keymax, icl_plane_color_plane, icl_plane_update_sel_fetch_noarm, icl_plane_update_noarm, icl_plane_disable_sel_fetch_arm,
- *    icl_plane_update_sel_fetch_arm, icl_plane_update_arm, icl_plane_disable_arm;
+ *    icl_plane_update_sel_fetch_arm, icl_plane_update_arm, icl_plane_disable_arm, icl_plane_min_cdclk;
  *  - the includes are replaced by lcd_compat.h + lcd_plane_compat.h (register writes go through the emit hook;
  *    callees that are not ported -- skl_write_plane_wm, the scaler and CSC programming -- are recorded as
  *    named steps there, never silently dropped);
@@ -675,6 +675,15 @@ icl_plane_disable_arm(struct intel_plane *plane,
 	icl_plane_disable_sel_fetch_arm(plane, crtc_state);
 	intel_de_write_fw(dev_priv, PLANE_CTL(pipe, plane_id), 0);
 	intel_de_write_fw(dev_priv, PLANE_SURF(pipe, plane_id), 0);
+}
+
+static int icl_plane_min_cdclk(const struct intel_crtc_state *crtc_state,
+			       const struct intel_plane_state *plane_state)
+{
+	unsigned int pixel_rate = intel_plane_pixel_rate(crtc_state, plane_state);
+
+	/* two pixels per clock */
+	return DIV_ROUND_UP(pixel_rate, 2);
 }
 
 

@@ -504,3 +504,6 @@ parity_intel_bios_driver_remove(struct parity_vbt_state *vbt)
 	parity_vbt_fini(&vbt->parsed);
 	vbt->parsed_live = 0;
 }
+
+/* the explicit blob's pinned sha256 (the N0 precheck compares the OpRegion VBT with it) */
+const uint8_t *parity_vbt_explicit_pin(void) { return explicit_blob_sha256; }

@@ -409,13 +409,15 @@ pw_post_enable(struct parity_power_well *w, struct parity_pw_ctx *c)
 	}
 	if (w->irq_pipe_mask != 0u) {
 		/*
-		 * gen8_irq_power_well_post_enable(): the reference takes the IRQ lock and
-		 * only acts when intel_irqs_enabled().  Before P4 the handler is not
-		 * installed (irqs_enabled == 0), so this is a guarded no-op -- but the
-		 * guarded entry is present; we do NOT front-load the P4 handler install.
+		 * gen8_irq_power_well_post_enable(): restores the pipe's IMR / IER from the IRQ state once the well is on
+		 * (the pipe's interrupt registers live in the well).  It only acts when intel_irqs_enabled(): before P4
+		 * installs the handler this is a no-op.  Until E-117 this entry only counted.
 		 */
-		if (c->irqs_enabled)
-			c->irq_post_enable_calls++;   /* would program the pipe IRQ registers */
+		if (c->irqs_enabled) {
+			c->irq_post_enable_calls++;
+			if (c->irq_ops != 0)
+				c->irq_ops->post_enable(c->irq_ctx, w->irq_pipe_mask);
+		}
 	}
 }
 
@@ -499,6 +501,11 @@ parity_power_well_disable(struct parity_power_well *w, struct parity_pw_ctx *c)
 	unsigned reg;
 	uint32_t req, st, v;
 
+	if (c->irq_sync_failed && w->ops != PARITY_PW_OPS_ALWAYS_ON) {
+		c->disable_refusals++;
+		return -EBUSY;
+	}
+
 	if (w->ops == PARITY_PW_OPS_ALWAYS_ON) {
 		w->hw_enabled = 1;   /* always-on: never actually disabled */
 		return 0;
@@ -537,7 +544,23 @@ parity_power_well_disable(struct parity_power_well *w, struct parity_pw_ctx *c)
 	req = pw_req(w->hsw_idx);
 	st = pw_state(w->hsw_idx);
 
-	/* hsw_power_well_pre_disable(): pipe-IRQ pre-disable (guarded) would run here. */
+	/*
+	 * hsw_power_well_pre_disable() -> gen8_irq_power_well_pre_disable(): stop the pipe's interrupt sources and wait for
+	 * a handler already running, BEFORE the well goes off (afterwards the handler would read a powered-off register).
+	 */
+	if (w->irq_pipe_mask != 0u && c->irqs_enabled && !c->irq_sync_failed) {
+		c->irq_pre_disable_calls++;
+		if (c->irq_ops != 0 && c->irq_ops->pre_disable(c->irq_ctx, w->irq_pipe_mask) != 0) {
+			/* the handler was not shown to have left the pipe: the well stays on, and so does everything else */
+			c->irq_sync_failed = 1;
+			kern_logf("i915: parity power well %s: pipe interrupt drain FAILED; the well is kept on and every later "
+				"well disable is refused\n", w->name);
+		}
+	}
+	if (c->irq_sync_failed) {
+		c->disable_refusals++;
+		return -EBUSY;                  /* POWER_REQUEST is not touched */
+	}
 	v = osdep_mmio_raw_read32(c->mmio, reg);
 	osdep_mmio_raw_write32(c->mmio, reg, v & ~req);
 	/*
@@ -627,8 +650,11 @@ parity_power_well_put(struct parity_power_well *w, struct parity_pw_ctx *c)
 	if (w->refcount == 0u)
 		return;   /* underflow guard */
 	w->refcount--;
-	if (w->refcount == 0u)
-		(void)parity_power_well_disable(w, c);
+	if (w->refcount == 0u && parity_power_well_disable(w, c) == -EBUSY) {
+		/* the disable was refused: the well is still on and now owned by that failed stop (never re-enabled on a later get) */
+		w->refcount = 1u;
+		c->kept_wells++;
+	}
 }
 
 /*
@@ -661,6 +687,32 @@ parity_display_power_is_enabled(struct parity_power_domains *pd,
 			return 0;
 	}
 
+	return 1;
+}
+
+/*
+ * N0 (E-120), read-only: are all of the domain's wells powered right now, whoever requested them (firmware / BIOS
+ * request register or ours)?  The STATE bit of the well in the driver request register mirrors the well's actual
+ * state; no request bit is read or written.  Always-on wells count as on; a DC_OFF well is not a power gate for
+ * register access and is skipped.  Usable before intel_power_domains_init_hw() (no sync / takeover needed).
+ */
+int
+parity_power_domain_hw_state_on(struct parity_power_domains *pd, enum parity_power_domain d, struct osdep_mmio *m)
+{
+	uint64_t wells = parity_power_domain_wells(pd, d);
+	unsigned i = pd->num_power_wells;
+
+	while (i-- > 0u) {
+		struct parity_power_well *w;
+
+		if ((wells & ((uint64_t)1u << i)) == 0u)
+			continue;
+		w = &pd->power_wells[i];
+		if (w->always_on || w->ops == PARITY_PW_OPS_ALWAYS_ON || w->ops == PARITY_PW_OPS_DC_OFF)
+			continue;
+		if ((osdep_mmio_raw_read32(m, pw_driver_reg(w->ops)) & pw_state(w->hsw_idx)) == 0u)
+			return 0;
+	}
 	return 1;
 }
 

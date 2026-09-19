@@ -45,3 +45,31 @@ int parity_lcd_ms_backlight_setup(struct parity_lcd_modeset *ms)
 	panel->backlight.present = true;
 	return 0;
 }
+
+/*
+ * The user-visible brightness: intel_backlight_device_update_status() -> intel_panel_set_backlight(conn_state,
+ * brightness, max_brightness), with the backlight device's range [0, backlight.max] (intel_backlight_device_register).
+ * The level is scaled to [backlight.min, backlight.max] -- backlight.min comes from the VBT's min_brightness, a
+ * coefficient in 0..255 of the PWM range (get_backlight_min_vbt), not a count and not a percentage.
+ */
+void parity_lcd_ms_set_brightness(struct parity_lcd_modeset *ms, u32 user_level, u32 user_max)
+{
+	parity_lcd_cur_i915 = &ms->i915;
+	intel_panel_set_backlight(&ms->conn_state, user_level, user_max);
+}
+
+/* intel_edp_backlight_on() / _off(): the PWM and the panel's backlight-enable only -- the pipe keeps scanning out */
+void parity_lcd_ms_backlight_power(struct parity_lcd_modeset *ms, int on)
+{
+	parity_lcd_cur_i915 = &ms->i915;
+	if (on)
+		intel_edp_backlight_on(&ms->crtc_state, &ms->conn_state);
+	else
+		intel_edp_backlight_off(&ms->conn_state);
+}
+
+/* the backlight device's brightness for the current hardware level (intel_backlight_device_register / __intel_backlight_enable) */
+u32 parity_lcd_ms_user_level(struct parity_lcd_modeset *ms, u32 user_max)
+{
+	return scale_hw_to_user(&ms->connector, ms->connector.panel.backlight.level, user_max);
+}

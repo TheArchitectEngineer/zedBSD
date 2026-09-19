@@ -869,6 +869,7 @@ struct i915_draw_tex_opts {
 	uint32_t ps_dw7;		/* dispatch GRF start (from the compiler's prog_data) */
 	uint32_t ps_extra_dw1;		/* valid, UAV, source depth / W as the compiler requires */
 	uint32_t ssp_dw0, ssp_dw1;	/* 3DSTATE_SAMPLER_STATE_POINTERS_PS */
+	uint32_t rt_w, rt_h;		/* E-118: the render target's size for the drawing rectangle; 0 = the 32x32 fixture */
 };
 
 static void
@@ -1146,7 +1147,8 @@ i915_draw_build_batch(
 	i915_draw_emit(&batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_DRAWING_RECTANGLE,
 		GEN12_3DSTATE_DRAWING_RECTANGLE_DWORDS));
 	i915_draw_emit(&batch, 0U);
-	i915_draw_emit(&batch, (I915_DRAW_WIDTH - 1U) | ((I915_DRAW_HEIGHT - 1U) << 16));
+	i915_draw_emit(&batch, tex != NULL && tex->rt_w != 0U ? (tex->rt_w - 1U) | ((tex->rt_h - 1U) << 16) :
+		(I915_DRAW_WIDTH - 1U) | ((I915_DRAW_HEIGHT - 1U) << 16));
 	i915_draw_emit(&batch, 0U);
 
 	/*
@@ -1342,13 +1344,94 @@ drv_i915_tex_fixture_build_batch(uint32_t *cmds, unsigned capacity, uint64_t sta
 {
 	static const struct i915_draw_tex_opts tex = {
 		TEXFIX_3DSTATE_PS_DW3, TEXFIX_3DSTATE_PS_DW7, TEXFIX_3DSTATE_PS_EXTRA_DW1,
-		TEXFIX_SAMPLER_POINTERS_PS_DW0, TEXFIX_SAMPLER_POINTERS_PS_DW1,
+		TEXFIX_SAMPLER_POINTERS_PS_DW0, TEXFIX_SAMPLER_POINTERS_PS_DW1, 0U, 0U,
 	};
 	static struct i915_gem_object state;
 
 	memset(&state, 0, sizeof(state));
 	state.va = state_va;
 	return i915_draw_build_batch(cmds, capacity, &state, &state, &state, &state, mocs, 1U, &tex);
+}
+
+/* ---- E-118: the full-HD textured draw (generated shader / render-target / texture words) ---- */
+
+#include "tex_fixture_fhd_gen.inc"
+
+_Static_assert(TEXFHD_PS_BYTES <= I915_DRAW_POSITION_OFFSET - I915_DRAW_PS_KERNEL_OFFSET,
+	"the full-HD PS must fit between the kernel offset and the vertex data");
+_Static_assert(TEXFHD_PS_DISPATCH_8 == 1U && TEXFHD_PS_NUM_VARYING == 0U && TEXFHD_PS_USES_POS_OFFSET == 0U &&
+	TEXFHD_PS_TOTAL_SCRATCH == 0U && TEXFHD_PS_PUSH_SIZE0 == 0U && TEXFHD_3DSTATE_PS_EXTRA_DW0 == 0x784f0000U &&
+	(TEXFHD_3DSTATE_PS_DW7 >> 16) == TEXFHD_PS_GRF_START_8,
+	"the full-HD PS is dispatched the way this batch dispatches the T1 one");
+_Static_assert(TEXFHD_RT_WIDTH == I915_TEX_FHD_WIDTH && TEXFHD_RT_HEIGHT == I915_TEX_FHD_HEIGHT &&
+	TEXFHD_RT_ROW_PITCH == I915_TEX_FHD_PITCH && TEXFHD_RT_SIZE == I915_TEX_FHD_RT_BYTES &&
+	TEXFHD_RT_VA_PLACEHOLDER == I915_TEX_FHD_RT_VA && TEXFHD_TEX_VA_PLACEHOLDER == I915_TEX_FIXTURE_TEX_VA &&
+	TEXFHD_SAMPLER_OFFSET == I915_TEX_FIXTURE_SAMPLER_OFFSET,
+	"draw_fixture.h must describe the generated full-HD fixture");
+
+void
+drv_i915_tex_fixture_fhd_write_state(void *state_page, uint64_t rt_va, uint64_t tex_va, uint32_t mocs)
+{
+	uint32_t *heap = state_page;
+	uint32_t *rss = &heap[I915_TEX_FIXTURE_TEX_RSS_OFFSET / 4U];
+	uint32_t *rt = &heap[I915_DRAW_SURFACE_STATE_OFFSET / 4U];
+
+	drv_i915_draw_fixture_write_state(state_page, rt_va, mocs);
+	/* the render target's surface state is isl's (render-target usage, 1920x1080, pitch 7680), address patched in */
+	memcpy(rt, texfhd_rt_rss, sizeof(texfhd_rt_rss));
+	rt[8] = (uint32_t)rt_va;
+	rt[9] = (uint32_t)(rt_va >> 32);
+	/* the full-HD sampling PS and its EOT carpet */
+	memset((uint8_t *)state_page + I915_DRAW_PS_KERNEL_OFFSET, 0, I915_DRAW_POSITION_OFFSET - I915_DRAW_PS_KERNEL_OFFSET);
+	memcpy((uint8_t *)state_page + I915_DRAW_PS_KERNEL_OFFSET, texfhd_ps, TEXFHD_PS_BYTES);
+	i915_draw_fill_eot(state_page, I915_DRAW_PS_KERNEL_OFFSET + TEXFHD_PS_BYTES,
+		I915_DRAW_POSITION_OFFSET - I915_DRAW_PS_KERNEL_OFFSET - TEXFHD_PS_BYTES);
+	/* binding table entry 1 -> the texture (the T1 surface state), sampler */
+	heap[I915_DRAW_BINDING_TABLE_OFFSET / 4U + 1U] = I915_TEX_FIXTURE_TEX_RSS_OFFSET;
+	memcpy(rss, texfhd_tex_rss, sizeof(texfhd_tex_rss));
+	rss[8] = (uint32_t)tex_va;
+	rss[9] = (uint32_t)(tex_va >> 32);
+	memcpy(&heap[I915_TEX_FIXTURE_SAMPLER_OFFSET / 4U], texfhd_sampler, sizeof(texfhd_sampler));
+	/* the RECTLIST covers the whole target: (1920, 1080), (0, 1080), (0, 0) */
+	i915_draw_write_vertices(state_page, 0x44f00000U /* 1920.0f */, 0x44870000U /* 1080.0f */);
+	(void)mocs;     /* the generated surface states carry MOCS 6 = GEN12_MOCS(I915_MOCS_UNCACHED_INDEX) (checked by the test) */
+}
+
+unsigned
+drv_i915_tex_fixture_fhd_build_batch(uint32_t *cmds, unsigned capacity, uint64_t state_va, uint32_t mocs)
+{
+	static const struct i915_draw_tex_opts tex = {
+		TEXFHD_3DSTATE_PS_DW3, TEXFHD_3DSTATE_PS_DW7, TEXFHD_3DSTATE_PS_EXTRA_DW1,
+		TEXFHD_SAMPLER_POINTERS_PS_DW0, TEXFHD_SAMPLER_POINTERS_PS_DW1, TEXFHD_RT_WIDTH, TEXFHD_RT_HEIGHT,
+	};
+	static struct i915_gem_object state;
+
+	memset(&state, 0, sizeof(state));
+	state.va = state_va;
+	return i915_draw_build_batch(cmds, capacity, &state, &state, &state, &state, mocs, 1U, &tex);
+}
+
+const uint32_t *
+drv_i915_tex_fixture_fhd_rt_rss(void)
+{
+	return texfhd_rt_rss;
+}
+
+unsigned
+drv_i915_tex_fixture_fhd_ps_bytes(void)
+{
+	return TEXFHD_PS_BYTES;
+}
+
+/* the texture state, the sampler and the packet words must be the T1 ones: only the scale and the target differ */
+int
+drv_i915_tex_fixture_fhd_same_texture_state(void)
+{
+	return memcmp(texfhd_tex_rss, texfix_tex_rss, sizeof(texfix_tex_rss)) == 0 &&
+		memcmp(texfhd_sampler, texfix_sampler, sizeof(texfix_sampler)) == 0 &&
+		TEXFHD_3DSTATE_PS_DW3 == TEXFIX_3DSTATE_PS_DW3 && TEXFHD_3DSTATE_PS_DW7 == TEXFIX_3DSTATE_PS_DW7 &&
+		TEXFHD_3DSTATE_PS_EXTRA_DW1 == TEXFIX_3DSTATE_PS_EXTRA_DW1 &&
+		TEXFHD_SAMPLER_POINTERS_PS_DW1 == TEXFIX_SAMPLER_POINTERS_PS_DW1;
 }
 
 void

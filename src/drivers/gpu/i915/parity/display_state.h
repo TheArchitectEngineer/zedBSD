@@ -280,6 +280,7 @@ void parity_intel_display_state_fini(struct parity_display_state *d);
 
 int parity_intel_has_sagv(int display_ver, int legacy_platform, int sagv_status);
 uint16_t parity_icl_qgv_points_mask(const struct parity_bw_state *bw);
+unsigned parity_icl_qgv_bw(const struct parity_bw_state *bw, int display_ver, int num_active_planes, int qgv_point);
 unsigned parity_icl_max_bw_qgv_point_mask(const struct parity_bw_state *bw,
 	int display_ver, int num_active_planes);
 unsigned parity_icl_max_bw_psf_gv_point_mask(const struct parity_bw_state *bw);

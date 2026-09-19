@@ -61,6 +61,7 @@ struct mutex { int which; };            /* PARITY_LCD_LOCK_* */
 
 /* ---- display power [ops] ---- */
 #define intel_display_power_get(i915, domain) ((i915)->emit->power_get != 0 ? (i915)->emit->power_get((i915)->emit->ctx, (int)(domain)) : 1)
+#define intel_display_power_put_async_delay(i915, domain, wakeref, delay_ms) (i915)->emit->power_put_async((i915)->emit->ctx, (int)(domain), (wakeref), (delay_ms))
 #define intel_display_power_put(i915, domain, wakeref) do { if ((i915)->emit->power_put != 0) (i915)->emit->power_put((i915)->emit->ctx, (int)(domain), (wakeref)); } while (0)
 #define fetch_and_zero(ptr) ({ __typeof__(*(ptr)) _v = *(ptr); *(ptr) = 0; _v; })
 /* intel_display_power.c maps an AUX channel to its legacy power domain through the platform's port-domain
@@ -106,6 +107,10 @@ u8 icl_hdr_plane_mask(void);
 /* backlight: runtime info and switches fixed by the configuration */
 #define DISPLAY_RUNTIME_INFO(i915) (&(i915)->display.runtime)
 #define KHz(x) (1000 * (x))
+#ifndef U16_MAX
+#define U16_MAX ((u16)0xffff)
+#define U32_MAX ((u32)0xffffffffu)
+#endif
 #include "lcd_pch_enum.h"               /* reference, extracted: enum intel_pch */
 #define INTEL_PCH_TYPE(i915) PCH_ADP    /* [fixed] the PCH the probe identified on the target (Alder Lake PCH) */
 #undef ENODEV
@@ -144,6 +149,11 @@ u8 icl_hdr_plane_mask(void);
 
 /* ---- shared DPLL objects: the members the kept functions use (intel_dpll_mgr.h) ---- */
 typedef int intel_wakeref_t;
+void intel_display_power_get_in_set(struct drm_i915_private *i915, struct intel_display_power_domain_set *power_domain_set,
+	enum intel_display_power_domain domain);
+void intel_display_power_put_mask_in_set(struct drm_i915_private *i915, struct intel_display_power_domain_set *power_domain_set,
+	struct intel_power_domain_mask *mask);
+#define __maybe_unused __attribute__((unused))
 struct intel_shared_dpll;
 struct intel_shared_dpll_funcs {
 	void (*enable)(struct drm_i915_private *i915, struct intel_shared_dpll *pll);

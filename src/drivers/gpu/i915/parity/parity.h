@@ -34,6 +34,9 @@ struct parity_result {
 	int error;                   /* the -errno of a FAILED step, else 0 */
 	const char *where;           /* static label of the stop point (blocked/failed) */
 	const char *last_completed;  /* last op that actually completed (distinct from where) */
+	/* a display test run inside the probe (0 = none ran); kept apart from the probe outcome */
+	int lcd_test_ran, lcd_test_pass, lcd_cleanup_rc, lcd_retained;
+	const char *lcd_first_anomaly_stage;
 };
 
 /*

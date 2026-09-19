@@ -399,6 +399,13 @@ adl_psf_bw(const struct parity_bw_state *bw, int psf_gv_point)
 	return bi->psf_bw[psf_gv_point];
 }
 
+/* icl_qgv_bw() for callers outside this file (the modeset's bandwidth check) */
+unsigned
+parity_icl_qgv_bw(const struct parity_bw_state *bw, int display_ver, int num_active_planes, int qgv_point)
+{
+	return icl_qgv_bw(bw, display_ver, num_active_planes, qgv_point);
+}
+
 unsigned
 parity_icl_max_bw_qgv_point_mask(const struct parity_bw_state *bw,
 	int display_ver, int num_active_planes)

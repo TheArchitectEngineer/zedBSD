@@ -67,7 +67,6 @@ void parity_lcd_debug(const char *what);
 #define lspcon_resume(dig_port) ((void)0)               /* no LSPCON behind an eDP port (lspcon.active stays false) */
 #define lspcon_wait_pcon_mode(lspcon) ((void)0)
 #define IS_G4X(i915) 0
-#define to_intel_encoder(e) ((struct intel_encoder *)(e))
 /*
  * Link-training FALLBACK is not ported.  When the reference asks for it, that fact is recorded as an
  * error ("fallback requested") and the modeset-retry work is a named step: training is never turned

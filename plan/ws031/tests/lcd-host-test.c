@@ -214,7 +214,7 @@ int main(int argc, char **argv)
 				printf("  plane[%2u] STEP  %s (reference callee, not ported)\n", i, w.w[i].step);
 			else
 				printf("  plane[%2u] write 0x%05x = 0x%08x\n", i, w.w[i].reg, w.w[i].value);
-			if (w.w[i].step != 0 && strcmp(w.w[i].step, "skl_write_plane_wm") == 0) wm_at = i;
+			if (w.w[i].step == 0 && w.w[i].reg == 0x7027c) wm_at = i;      /* PLANE_BUF_CFG: the last write of skl_write_plane_wm() */
 			if (w.w[i].step == 0 && w.w[i].reg == 0x7019c) surf_at = i;
 			if (w.w[i].step == 0 && w.w[i].reg == 0x70180) ctl_at = i;
 			if (w.w[i].step == 0 && w.w[i].reg == 0x701cc) color_at = i;
@@ -234,8 +234,8 @@ int main(int argc, char **argv)
 		      "colour key off: KEYMAX carries plane alpha 0xff, KEYMSK 0 (opaque, so no alpha-enable bit)");
 		CHECK(parity_lcd_words_find(&w, 0x701c8, &v) == 1 && v == 0u, "PLANE_CUS_CTL = 0 (the primary plane is an HDR plane; no chroma upsampler for RGB)");
 		CHECK(surf_at == w.n - 1 && ctl_at == w.n - 2, "PLANE_CTL then PLANE_SURF are the last two operations (the surface write arms the update)");
-		CHECK(wm_at != 99 && color_at != 99 && wm_at == color_at + 1 && wm_at < ctl_at,
-		      "the watermark write is NOT ported: it shows as a named step right after PLANE_COLOR_CTL, before the arm");
+		CHECK(wm_at != 99 && color_at != 99 && wm_at > color_at && wm_at < ctl_at,
+		      "skl_write_plane_wm() runs for real between PLANE_COLOR_CTL and the arm (here with an empty watermark state: the words-only API computes none)");
 		/* pipe B: the same block one pipe up */
 		rc = parity_lcd_emit_plane(1, 0, XR24, 0, 1920, 1080, 7680, 0x00100000u, &w);
 		CHECK(rc == 0 && parity_lcd_words_find(&w, 0x71180, &v) == 1 && v == 0x94000000u && parity_lcd_words_find(&w, 0x7119c, &v) == 1 && v == 0x00100000u,

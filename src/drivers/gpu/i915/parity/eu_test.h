@@ -128,6 +128,7 @@ struct parity_eu_round {
 
 struct parity_eu_test {
 	unsigned engine_idx;
+	unsigned ptes_scrubbed;          /* fixture PTEs put back to scratch at release */
 	struct parity_gt_context ce;
 	struct parity_gt_object *tl_page;
 	uint32_t tl_seqno;
@@ -227,6 +228,7 @@ int parity_draw_batch_check_pipeline_select(const uint32_t *cmds, unsigned n,
  * the C1 and single-colour draw requests are.
  */
 #define PARITY_TEX_GUARD_BYTE 0xa5u
+struct parity_tex_test;
 struct parity_tex_test {
 	struct parity_eu_test t;
 	struct parity_gt_object *rt;
@@ -242,6 +244,83 @@ struct parity_tex_test {
 	uint32_t stats_live[6];
 	int stats_valid;
 };
+
+/*
+ * E-118: the full-HD textured draw into an object the CALLER owns (the scanout buffer): it is mapped into the PPGTT at
+ * I915_TEX_FHD_RT_VA page by page (the same backing pages as its GGTT display binding), pre-filled and published by the
+ * CPU, drawn by the GPU, and compared pixel by pixel after the request retired and the CPU view was invalidated.  The
+ * object is never written by the CPU after the draw, and never freed here.
+ */
+struct parity_fhd_render {
+	struct parity_eu_test t;
+	struct parity_gt_object *tex;
+	struct parity_gt_object *rt;           /* NOT owned */
+	uint32_t mocs, rt_rss_mocs;
+	uint32_t marker_before, marker_middraw, marker_after, ps_marker;
+	unsigned px_match, px_stale, px_total;
+	int first_bad_x, first_bad_y;
+	uint32_t first_bad_expected, first_bad_observed;
+	unsigned tex_changed_bytes, guard_bad_bytes;
+	unsigned rt_pages, rt_pages_mapped, rt_pages_cleared;
+	int rt_walk_ok;                        /* first / middle / last page: the PPGTT leaf is the object's own page */
+	uint64_t rt_first_dma, rt_last_dma;
+	int gpu_done;                          /* request retired and engine parked: the GPU no longer uses the target */
+	/* release: every mapping, the TLB, then the objects -- re-verified from the tables on every call */
+	unsigned maps_total, maps_scratch;     /* PTEs this draw wrote / found back at scratch by the LAST release call */
+	int tlb_rc, released;                  /* released: mappings gone, TLB invalidated, own objects freed */
+	uint64_t first_unreleased_va;          /* the first PTE still pointing at a page, 0 = none */
+	unsigned release_calls;
+	uint64_t image_hash;
+	uint64_t rt_va;                        /* where the target is in the PPGTT */
+	unsigned variant;                      /* the texture variant drawn (the expected image follows it) */
+	int rt_premapped;                      /* the target's PTEs belong to a parity_fhd_rt_map, not to this draw */
+};
+int parity_fhd_render_run(struct parity_fhd_render *x, struct parity_gt_engines *es, struct parity_gt_ppgtt *vm,
+	struct parity_gt_mem *gm, struct osdep_mmio *m, struct spinlock *uncore_lock, unsigned timeout_ms,
+	struct parity_gt_object *rt);
+/*
+ * The same draw into a target at `rt_va` (I915_TEX_FHD_RT_VA or I915_TEX_FHD_RT_B_VA) with texture `variant`.  With
+ * rt_premapped the target's pages were inserted by parity_fhd_rt_map() and stay mapped after this draw's release (the
+ * walk of the first / middle / last page is still checked); parity_fhd_render_run() = (I915_TEX_FHD_RT_VA, 0, 0).
+ */
+int parity_fhd_render_run_ex(struct parity_fhd_render *x, struct parity_gt_engines *es, struct parity_gt_ppgtt *vm,
+	struct parity_gt_mem *gm, struct osdep_mmio *m, struct spinlock *uncore_lock, unsigned timeout_ms,
+	struct parity_gt_object *rt, uint64_t rt_va, unsigned variant, int rt_premapped);
+/*
+ * A render target mapped for a whole run (LCD-D: A and B, each at its own VA, drawn many times).  map: every page of the
+ * object's own backing at `va`, the walk of the first / middle / last page checked.  unmap: every PTE back to scratch,
+ * re-read from the tables on each call (never summed), then the GT TLB; only then released=1 and the owner may free the
+ * object.  The caller must have shown the GPU done with every draw that used it.
+ */
+struct parity_fhd_rt_map {
+	struct parity_gt_object *rt;
+	uint64_t va;
+	unsigned pages, mapped, scratch, unmap_calls;
+	int walk_ok, tlb_rc, released;
+	uint64_t first_unreleased_va;
+};
+struct parity_gt_tlb;
+int parity_fhd_rt_map(struct parity_fhd_rt_map *b, struct parity_gt_mem *gm, struct parity_gt_ppgtt *vm,
+	struct parity_gt_object *rt, uint64_t va);
+int parity_fhd_rt_unmap(struct parity_fhd_rt_map *b, struct parity_gt_ppgtt *vm, struct parity_gt_tlb *tlb,
+	struct parity_gt_engines *es, struct osdep_mmio *m, struct spinlock *uncore_lock);
+/* wrong pixels of the target against the expected image (no CPU write) */
+uint32_t parity_fhd_render_verify(const struct parity_fhd_render *x, const uint32_t *pixels, uint32_t pitch_bytes);
+/*
+ * The release, in the reference's order: (the request already retired) every PTE the draw wrote -- state, batch, texture
+ * and the render target -- back to scratch; the GT TLB invalidated; only then the draw's own objects are freed.  May be
+ * called again after a failure: the PTEs are re-read and counted afresh each time, the ownership stays until everything
+ * is done.  -EBUSY: the GPU is not shown to be done (nothing is touched).  The render target is never freed here: its
+ * owner may free it once this returned 0.
+ */
+struct parity_gt_tlb;
+int parity_fhd_render_release(struct parity_fhd_render *x, struct parity_gt_mem *gm, struct parity_gt_ppgtt *vm,
+	struct parity_gt_tlb *tlb, struct parity_gt_engines *es, struct osdep_mmio *m, struct spinlock *uncore_lock);
+/* after a GPU hang that was not shown to be over: every object the request may use is kept for ever (keep = 1) */
+void parity_fhd_render_keep(struct parity_fhd_render *x);
+/* the VA layout table of the draw and its overlap check (GPU-free): 0 = no two ranges overlap, all aligned */
+struct parity_fhd_va { const char *name; uint64_t va, len, align; };
+int parity_fhd_va_layout(const struct parity_fhd_va **out, unsigned *n);
 
 int parity_tex_test_run(struct parity_tex_test *x, struct parity_gt_engines *es,
 	struct parity_gt_ppgtt *vm, struct parity_gt_mem *gm, struct osdep_mmio *m,

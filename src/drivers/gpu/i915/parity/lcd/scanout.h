@@ -68,7 +68,11 @@ struct parity_scanout {
 	unsigned refused_unpin, refused_destroy;
 };
 
-/* 0 or a negative errno: -EINVAL unsupported layout, -ENOMEM backing.  Nothing stays allocated on failure. */
+/*
+ * 0 or a negative errno: -EINVAL unsupported layout, -ENOMEM backing, -EBUSY the storage holds a buffer (any state but
+ * NONE: it is left exactly as it was).  The storage must start zeroed (static, or memset by its owner before first use);
+ * destroy returns it to that state.  Nothing stays allocated on failure.
+ */
 int parity_scanout_create(struct parity_gt_mem *gm, uint32_t width, uint32_t height,
 	uint32_t format, uint64_t modifier, struct parity_scanout *so);
 /* Reserves the GGTT range (alignment + guards), writes the PTEs, flushes the CPU cache for the display. */

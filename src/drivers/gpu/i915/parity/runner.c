@@ -35,6 +35,9 @@ struct parity_runner_result {
 	int cleanup_done;                 /* teardown reached */
 	int published;                    /* device published (always 0 for the diagnostic) */
 	int result_valid;                 /* published under the lock after being filled */
+	int lcd_test_status;              /* enum runner_test_status: a display test inside the probe, reported apart */
+	const char *lcd_first_anomaly_stage;
+	int lcd_cleanup_rc, lcd_retained;
 };
 
 static struct parity_runner {
@@ -88,6 +91,10 @@ runner_thread(void *arg)
 	res.cleanup_done = 0;
 	res.published = 0;
 	res.result_valid = 0;
+	res.lcd_test_status = RUN_TEST_NOT_RUN;
+	res.lcd_first_anomaly_stage = "-";
+	res.lcd_cleanup_rc = 0;
+	res.lcd_retained = 0;
 
 	/*
 	 * Run the real-device attach FIRST.  The passed-through GPU idle-suspends
@@ -107,6 +114,10 @@ runner_thread(void *arg)
 		(void)drv_i915_parity_attach(dev, PARITY_STAGE_P3, &pr);
 		res.cleanup_done = 1;   /* parity_attach always tears down before returning */
 		res.last_completed_op = pr.last_completed;   /* last COMPLETED op, not the frontier */
+		res.lcd_test_status = !pr.lcd_test_ran ? RUN_TEST_NOT_RUN : pr.lcd_test_pass ? RUN_TEST_PASS : RUN_TEST_FAIL;
+		res.lcd_first_anomaly_stage = pr.lcd_first_anomaly_stage;
+		res.lcd_cleanup_rc = pr.lcd_cleanup_rc;
+		res.lcd_retained = pr.lcd_retained;
 		switch (pr.outcome) {
 		case PARITY_STOPPED: res.probe_status = RUN_PROBE_COMPLETE; break;
 		case PARITY_BLOCKED: res.probe_status = RUN_PROBE_BLOCKED; res.blocked_or_failed_op = pr.where; break;
@@ -127,13 +138,15 @@ runner_thread(void *arg)
 	spin_unlock(&g_runner.lock);
 
 	kern_logf("i915: runner-result: selftest=%s selftest_scope=%s probe=%s last_op=%s "
-		"blocked_at=%s cleanup=%d published=%d\n",
+		"blocked_at=%s cleanup=%d published=%d lcd_test=%s lcd_first_anomaly_at=%s lcd_cleanup_rc=%d lcd_retained=%d\n",
 		res.selftest_status == RUN_TEST_PASS ? "PASS" :
 			(res.selftest_status == RUN_TEST_FAIL ? "FAIL" : "NOT_RUN"),
 		res.selftest_scope, probe_status_name(res.probe_status),
 		res.last_completed_op[0] ? res.last_completed_op : "-",
 		res.blocked_or_failed_op[0] ? res.blocked_or_failed_op : "-",
-		res.cleanup_done, res.published);
+		res.cleanup_done, res.published,
+		res.lcd_test_status == RUN_TEST_PASS ? "PASS" : (res.lcd_test_status == RUN_TEST_FAIL ? "FAIL" : "NOT_RUN"),
+		res.lcd_first_anomaly_stage, res.lcd_cleanup_rc, res.lcd_retained);
 	kern_logf("i915: parity runner thread end\n");
 }
 

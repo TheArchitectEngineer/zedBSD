@@ -581,6 +581,17 @@ parity_lrc_update_regs(struct parity_gt_context *ce, uint32_t head)
 }
 
 void
+parity_lrc_keep(struct parity_gt_context *ce)
+{
+	if (ce == 0)
+		return;
+	if (ce->ring.obj != 0)
+		ce->ring.obj->keep = 1;
+	if (ce->state != 0)
+		ce->state->keep = 1;
+}
+
+void
 parity_lrc_release(struct parity_gt_context *ce, struct parity_gt_mem *gm)
 {
 	if (ce == 0 || gm == 0)

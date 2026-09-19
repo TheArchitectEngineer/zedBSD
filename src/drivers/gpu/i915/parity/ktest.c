@@ -25,6 +25,8 @@
 #include "dp/edp_ktest.h"
 #include "lcd/scanout_ktest.h"
 #include "lcd/lcd_modeset_ktest.h"
+#include "lcd/lcd_show_ktest.h"
+#include "lcd/lcdg_ktest.h"
 #include "vga.h"
 #include "power_domains.h"
 #include "combo_phy.h"
@@ -482,7 +484,7 @@ fake_raw_write32(void *priv, uint32_t off, uint32_t val)
 	if (off == 0x45400u) { f->pw_hsw_bios = val & 0xAAAAAAAAu; return; }
 	if (off == 0x45440u) { f->pw_aux_bios = val & 0xAAAAAAAAu; return; }
 	if (off == 0x45450u) { f->pw_ddi_bios = val & 0xAAAAAAAAu; return; }
-	if (off == 0x44FE8u || off == 0x44300u || off == 0x44304u || off == 0x44308u) {
+	if (off == 0x45008u || off == 0x44FE8u || off == 0x44300u || off == 0x44304u) {
 		uint32_t v = val;   /* DBUF_CTL_S: POWER_STATE follows POWER_REQUEST */
 		if (v & (1u << 31)) v |= (1u << 30); else v &= ~(1u << 30);
 		fake_gen_set(f, off, v); return;
@@ -822,6 +824,28 @@ pd_async_checks(struct parity_power_domains *pdc, struct parity_pw_ctx *cx, stru
 		parity_display_power_put(pdc, PARITY_PW_DOMAIN_PIPE_A, cx);
 		parity_display_power_async_bind(pdc, 0, 0, 0);
 	}
+}
+
+
+/* ---- E-117: vblank wait fixtures: the "frame counter" read also plays the hardware (raises a vblank on a pipe) ---- */
+static struct parity_irq_dev *kvb_dev;
+static struct osdep_mmio *kvb_m;
+static int kvb_raise_pipe = -1;                 /* pipe whose vblank the first frame read raises; -1 none */
+static int kvb_frame_moves;                     /* the frame counter advances between reads */
+static uint32_t kvb_frame;
+
+static uint32_t kvb_read_frame(void *ctx)
+{
+	(void)ctx;
+	if (kvb_raise_pipe >= 0) {
+		osdep_mmio_raw_write32(kvb_m, 0x44200u, 1u << (16u + (unsigned)kvb_raise_pipe));    /* DISPLAY_INT_CTL: pipe */
+		osdep_mmio_raw_write32(kvb_m, 0x44408u + 0x10u * (unsigned)kvb_raise_pipe, 1u);   /* GEN8_DE_PIPE_IIR: VBLANK */
+		parity_gen11_display_irq_handler(kvb_dev);
+		kvb_raise_pipe = -1;
+	}
+	if (kvb_frame_moves)
+		kvb_frame++;
+	return kvb_frame;
 }
 
 int
@@ -2050,8 +2074,8 @@ parity_sync_ktest(void)
 		parity_combo_phy_init_one(&m, PARITY_COMBO_PHY_A);
 		parity_combo_phy_init_one(&m, PARITY_COMBO_PHY_B);
 		/* DBUF already has slices S1 AND S2 powered (distinguish "kept" from "always S1"). */
-		osdep_mmio_raw_write32(&m, 0x44FE8u, (1u << 31));   /* S1 */
-		osdep_mmio_raw_write32(&m, 0x44300u, (1u << 31));   /* S2 */
+		osdep_mmio_raw_write32(&m, 0x45008u, (1u << 31));   /* S1 */
+		osdep_mmio_raw_write32(&m, 0x44FE8u, (1u << 31));   /* S2 */
 		parity_intel_power_domains_init_hw(&dc, 0);
 		KCHECK(dc.fault_stop == 0 && dc.reached_init_ref == 1 && dc.reached_sync_hw == 1 &&
 			f.ptxn_bad == 0 && f.ptxn_i == 0u &&           /* NO PCODE (no re-setup) */
@@ -3053,6 +3077,171 @@ parity_sync_ktest(void)
 			parity_gen11_display_irq_handler(&id);
 			KCHECK(fake_wt_find(&f, 0x44448u, 0x00000001u, 0xffffffffu) < 0,
 				"p4: IRQ-ACK an unasserted source is not read or acked");
+		}
+
+
+		/* ---- E-117 IRQ-HOOK: gen8_irq_power_well_post_enable / _pre_disable, synchronize, vblank ---- */
+		{
+			static struct parity_irq_vblank kv;
+			uint32_t extra = 0x00000001u | 0x80600000u | 0x00000008u;   /* VBLANK | XELPD underrun mask | flip done */
+			uint32_t seen = 0u;
+			int w;
+
+			parity_irq_vblank_init(&id, &kv);
+			id.irqs_enabled = 1;
+			id.de_irq_mask[0] = ~id.de_pipe_masked;
+			/* post-enable: stale IIR cleared, then IER = ~mask | extra, then IMR = the saved mask */
+			osdep_mmio_raw_write32(&m, 0x44408u, 0x00000001u);
+			f.wt_n = 0u;
+			parity_gen8_irq_power_well_post_enable(&id, 1u << 0);
+			KCHECK(kv.post_enable_calls == 1u && kv.post_imr[0] == id.de_irq_mask[0] && kv.post_ier[0] == (~id.de_irq_mask[0] | extra) &&
+				fake_wt_find(&f, 0x44408u, 0xffffffffu, 0xffffffffu) >= 0 &&
+				fake_wt_find(&f, 0x4440cu, ~id.de_irq_mask[0] | extra, 0xffffffffu) > fake_wt_find(&f, 0x44408u, 0xffffffffu, 0xffffffffu) &&
+				fake_wt_find(&f, 0x44404u, id.de_irq_mask[0], 0xffffffffu) > fake_wt_find(&f, 0x4440cu, ~id.de_irq_mask[0] | extra, 0xffffffffu) &&
+				fake_wt_find(&f, 0x44414u, 0u, 0u) < 0,
+				"irq: IRQ-HOOK-POST pipe A only: stale IIR cleared, IER = ~de_irq_mask | vblank | underrun | flip done, then IMR = de_irq_mask");
+			KCHECK((kv.post_imr[0] & 1u) == 1u, "irq: IRQ-HOOK-POST the restored mask keeps vblank MASKED (IER enabling it is not delivery)");
+			id.irqs_enabled = 0;
+			f.wt_n = 0u;
+			parity_gen8_irq_power_well_post_enable(&id, 1u << 0);
+			KCHECK(kv.post_enable_calls == 1u && kv.skipped_irqs_disabled == 1u && f.wt_n == 0u,
+				"irq: IRQ-HOOK-OFF with interrupts not enabled the hook writes nothing (intel_irqs_enabled gate)");
+			KCHECK(parity_drm_vblank_get(&id, 0u) == -EINVAL && kv.refs[0] == 0u,
+				"irq: VBL-GET refused while interrupts are not enabled");
+			id.irqs_enabled = 1;
+
+			/* vblank enable / disable: only the IMR vblank bit changes */
+			f.wt_n = 0u;
+			KCHECK(parity_drm_vblank_get(&id, 0u) == 0 && kv.refs[0] == 1u && kv.enabled[0] == 1 && (id.de_irq_mask[0] & 1u) == 0u &&
+				fake_wt_find(&f, 0x44404u, id.de_irq_mask[0], 0xffffffffu) >= 0 && parity_drm_vblank_get(&id, 0u) == 0 &&
+				kv.enable_calls[0] == 1u,
+				"irq: VBL-ENABLE the first reference unmasks vblank in IMR (bdw_enable_vblank); the second only counts");
+
+			/* delivery: the real display handler counts a vblank of THIS pipe while enabled */
+			kvb_dev = &id; kvb_m = &m; kvb_frame = 100u;
+			kvb_raise_pipe = 0; kvb_frame_moves = 0;
+			(void)kvb_read_frame(0);
+			KCHECK(kv.count[0] == 1u, "irq: VBL-DELIVER a pipe A vblank interrupt reaches the pipe's vblank count");
+			kvb_raise_pipe = 1;
+			(void)kvb_read_frame(0);
+			KCHECK(kv.count[0] == 1u && kv.count[1] == 0u, "irq: VBL-DELIVER pipe B's vblank (not enabled there) counts nowhere");
+
+			/* the wait: new vblank of this pipe AND a moving frame counter */
+			kvb_raise_pipe = 0; kvb_frame_moves = 1;
+			w = parity_wait_vblank(&id, 0u, 1u, 50u, kvb_read_frame, 0, &seen);
+			KCHECK(w == 0 && seen == 1u, "irq: VBL-WAIT a new pipe A vblank + a moving frame counter completes the wait");
+			kvb_raise_pipe = 1; kvb_frame_moves = 1;
+			w = parity_wait_vblank(&id, 0u, 1u, 50u, kvb_read_frame, 0, &seen);
+			KCHECK(w == -ETIMEDOUT && seen == 0u, "irq: VBL-WAIT another pipe's vblank does not complete it (timeout)");
+			kvb_raise_pipe = 0; kvb_frame_moves = 0;
+			w = parity_wait_vblank(&id, 0u, 1u, 50u, kvb_read_frame, 0, &seen);
+			KCHECK(w == -ETIMEDOUT && seen == 1u, "irq: VBL-WAIT an interrupt without the frame counter moving (stale pending bit) does not");
+			kvb_raise_pipe = -1; kvb_frame_moves = 1;
+			w = parity_wait_vblank(&id, 0u, 1u, 50u, kvb_read_frame, 0, &seen);
+			KCHECK(w == -ETIMEDOUT && seen == 0u, "irq: VBL-WAIT a moving counter / elapsed time alone does not");
+
+			parity_drm_vblank_put(&id, 0u);
+			KCHECK(kv.refs[0] == 1u && (id.de_irq_mask[0] & 1u) == 0u, "irq: VBL-PUT the non-last put keeps vblank enabled");
+			f.wt_n = 0u;
+			parity_drm_vblank_put(&id, 0u);
+			KCHECK(kv.refs[0] == 0u && kv.enabled[0] == 0 && (id.de_irq_mask[0] & 1u) == 1u &&
+				fake_wt_find(&f, 0x44404u, id.de_irq_mask[0], 0xffffffffu) >= 0 && kv.disable_calls[0] == 1u,
+				"irq: VBL-PUT the last put masks vblank at once (vblank_disable_immediate)");
+			{
+				uint32_t before = kv.count[0];
+				unsigned acks = id.de_pipe_iir_acks[0];
+
+				kvb_raise_pipe = 0;
+				(void)kvb_read_frame(0);
+				KCHECK(kv.count[0] == before && id.de_pipe_iir_acks[0] == acks + 1u,
+					"irq: VBL-OFF a vblank arriving after the last put is acked but not counted");
+			}
+			KCHECK(parity_wait_vblank(&id, 0u, 1u, 10u, kvb_read_frame, 0, &seen) == -EINVAL,
+				"irq: VBL-WAIT without a reference is refused, not waited out");
+
+			/* pre-disable: sources reset, then the handler synchronisation */
+			f.wt_n = 0u;
+			parity_gen8_irq_power_well_pre_disable(&id, 1u << 0);
+			KCHECK(kv.pre_disable_calls == 1u && kv.sync_calls == 1u && kv.sync_timeouts == 0u &&
+				fake_wt_find(&f, 0x44404u, 0xffffffffu, 0xffffffffu) == 0 && fake_wt_find(&f, 0x4440cu, 0u, 0xffffffffu) > 0 &&
+				fake_wt_find(&f, 0x44408u, 0xffffffffu, 0xffffffffu) > 0,
+				"irq: IRQ-HOOK-PRE pipe A: IMR all masked, IER 0, IIR cleared, then the handler synchronisation");
+			id.handler_entries = 5u; id.handler_exits = 4u;          /* one invocation still inside the handler */
+			KCHECK(parity_intel_synchronize_irq(&id) == -ETIMEDOUT && kv.sync_timeouts == 1u,
+				"irq: IRQ-SYNC a handler that never finishes is reported (bounded), not assumed done");
+			id.handler_exits = 5u;
+			KCHECK(parity_intel_synchronize_irq(&id) == 0, "irq: IRQ-SYNC returns once the exits reach the entries it saw");
+			id.handler_entries = 0u; id.handler_exits = 0u;
+
+			/* through the power-well bodies: PW_A's enable / disable call the bound hooks */
+			{
+				struct parity_power_well *pwa = 0;
+				unsigned before_post = kv.post_enable_calls, before_pre = kv.pre_disable_calls;
+
+				for (k = 0u; k < ipd.num_power_wells; k++)
+					if (ipd.power_wells[k].irq_pipe_mask == 1u)
+						pwa = &ipd.power_wells[k];
+				ipwc.irqs_enabled = 1;
+				ipwc.irq_ops = &parity_pw_irq_ops;
+				ipwc.irq_ctx = &id;
+				KCHECK(pwa != 0 && parity_power_well_enable(pwa, &ipwc) == 0 && kv.post_enable_calls == before_post + 1u &&
+					parity_power_well_disable(pwa, &ipwc) == 0 && kv.pre_disable_calls == before_pre + 1u &&
+					ipwc.irq_post_enable_calls >= 1u && ipwc.irq_pre_disable_calls == 1u,
+					"irq: IRQ-HOOK-WELL PW_A's enable restores and its disable stops pipe A's interrupts through the bound hooks");
+				/* ---- E-118 IRQ-DRAIN-WELL: a handler still inside pipe A: the real disable entry must keep the well on ---- */
+				{
+					static const struct parity_time_test_ops fault_ops2 = { ktest_fail_read, 0, 0, 0 };
+					struct parity_power_well *other = 0;
+					unsigned acks, j;
+					int drc;
+
+					for (j = 0u; j < ipd.num_power_wells; j++)
+						if (ipd.power_wells[j].irq_pipe_mask == 2u)
+							other = &ipd.power_wells[j];
+					KCHECK(parity_power_well_get(pwa, &ipwc) == 0 && pwa->refcount == 1u && id.pipe_closed[0] == 0,
+						"irq: IRQ-DRAIN-WELL PW_A taken; post-enable left pipe A open");
+					id.pipe_inflight[0] = 1u;                       /* an invocation that never leaves pipe A */
+					parity_power_well_put(pwa, &ipwc);
+					KCHECK(ipwc.irq_sync_failed == 1 && pwa->refcount == 1u && ipwc.kept_wells == 1u &&
+						parity_power_well_is_enabled(pwa, &ipwc) == 1 && kv.drain_timeouts == 1u && id.pipe_closed[0] == 1,
+						"irq: IRQ-DRAIN-WELL drain timed out -> POWER_REQUEST NOT cleared (the well still reads enabled), kept and owned");
+					KCHECK(other != 0 && parity_power_well_get(other, &ipwc) == 0 &&
+						parity_power_well_disable(other, &ipwc) == -EBUSY && ipwc.disable_refusals >= 2u &&
+						parity_power_well_is_enabled(other, &ipwc) == 1,
+						"irq: IRQ-DRAIN-LATCH after that, every later well disable is refused (another pipe's well stays on too)");
+					/* the handler refuses the closed pipe: its IIR is neither read nor acked */
+					acks = id.de_pipe_iir_acks[0];
+					id.pipe_inflight[0] = 0u;
+					osdep_mmio_raw_write32(&m, 0x44200u, 1u << 16);
+					osdep_mmio_raw_write32(&m, 0x44408u, 1u);
+					parity_gen11_display_irq_handler(&id);
+					KCHECK(id.de_pipe_iir_acks[0] == acks && id.pipe_refused[0] >= 1u && id.pipe_inflight[0] == 0u,
+						"irq: IRQ-GATE the handler does not enter a closed pipe (admission refused, in-flight back to 0)");
+					/* a time-base fault during the drain is -EIO, not a timeout */
+					id.pipe_inflight[1] = 1u;
+					parity_wait_test_set(&fault_ops2);
+					drc = parity_irq_drain_pipes(&id, 1u << 1, 1000u);
+					parity_wait_test_set(0);
+					id.pipe_inflight[1] = 0u;
+					KCHECK(drc == -EIO && kv.drain_time_faults == 1u && kv.drain_timeouts == 1u,
+						"irq: IRQ-DRAIN-EIO the time base failing during the drain is -EIO, counted apart from a timeout");
+					/* one waiter per pipe */
+					id.irqs_enabled = 1;
+					(void)parity_drm_vblank_get(&id, 2u);
+					kv.waiting[2] = 1;
+					KCHECK(parity_wait_vblank(&id, 2u, 1u, 10u, kvb_read_frame, 0, &seen) == -EBUSY && kv.second_waiter_refusals == 1u,
+						"irq: VBL-ONE a second waiter on the same pipe is refused (it would re-arm the first one's wake-up)");
+					kv.waiting[2] = 0;
+					parity_drm_vblank_put(&id, 2u);
+					/* this test's device is discarded: its latch goes with it */
+					ipwc.irq_sync_failed = 0;
+					id.pipe_closed[0] = 0;
+				}
+				ipwc.irq_ops = 0;
+				ipwc.irqs_enabled = 0;
+			}
+			id.vbl = 0;
+			id.irqs_enabled = 0;
 		}
 
 		/* ---- IRQ-NODISPLAY: HAS_DISPLAY=0 touches no display register ---- */
@@ -4228,6 +4417,10 @@ parity_sync_ktest(void)
 
 			/* ---- scanout buffer: display window, aligned + guarded pin, coexistence, lifetime ---- */
 			parity_scanout_ktest(edp_ktest_check, c0_dma, c0_mask);
+			/* LCD-B's production body: the modeset commits + a real scanout object on the models */
+			parity_lcd_show_ktest(edp_ktest_check, c0_dma, c0_mask);
+			/* LCD-G's release contract: TLB, mappings, retained GPU state, reclaim when never shown */
+			parity_lcdg_ktest(edp_ktest_check, c0_dma, c0_mask);
 
 
 			/* ======== P6-c1: engine setup for execlists submission ======== */

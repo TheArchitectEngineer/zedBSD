@@ -42,10 +42,10 @@ struct drm_framebuffer {
 	u64 modifier;
 };
 struct drm_plane { struct drm_device *dev; };
-struct intel_plane { struct drm_plane base; enum plane_id id; enum pipe pipe; };
+struct intel_plane { struct drm_plane base; enum plane_id id; enum pipe pipe; bool async_flip; };
 #define to_intel_plane(p) container_of(p, struct intel_plane, base)
 struct intel_plane_state {
-	struct { struct drm_plane *plane; struct drm_rect src, dst; } uapi;   /* src is 16.16 fixed point */
+	struct { struct drm_plane *plane; struct drm_rect src, dst; bool visible; } uapi;   /* src is 16.16 fixed point */
 	struct {
 		const struct drm_framebuffer *fb;
 		unsigned int rotation;
@@ -80,13 +80,17 @@ struct intel_plane_state {
  * Callees that are NOT ported.  They are reported through the emit hook as a named step at the
  * position the reference calls them, so the recorded sequence shows the gap instead of hiding it.
  */
-#define skl_write_plane_wm(plane, crtc_state) \
-	to_i915((plane)->base.dev)->emit->step(to_i915((plane)->base.dev)->emit->ctx, "skl_write_plane_wm")
 #define skl_program_plane_scaler(plane, crtc_state, plane_state) \
 	to_i915((plane)->base.dev)->emit->step(to_i915((plane)->base.dev)->emit->ctx, "skl_program_plane_scaler")
 #define icl_program_input_csc(plane, crtc_state, plane_state) \
 	to_i915((plane)->base.dev)->emit->step(to_i915((plane)->base.dev)->emit->ctx, "icl_program_input_csc")
 #define icl_plane_csc_load_black(plane) \
 	to_i915((plane)->base.dev)->emit->step(to_i915((plane)->base.dev)->emit->ctx, "icl_plane_csc_load_black")
+
+struct intel_crtc_state;
+void skl_write_plane_wm(struct intel_plane *plane, const struct intel_crtc_state *crtc_state);   /* skl_watermark_port.c */
+
+/* kept non-static reference function (intel_atomic_plane_port.c), used by the plane min-cdclk hook */
+unsigned int intel_plane_pixel_rate(const struct intel_crtc_state *crtc_state, const struct intel_plane_state *plane_state);
 
 #endif /* PARITY_LCD_PLANE_COMPAT_H */

@@ -9,6 +9,9 @@
 #include <kern/klog.h>
 #include <hal/hal.h>
 #include <errno.h>
+#include <kern/lock.h>
+#include <kern/sched.h>
+#include "wait.h"
 
 /* ---------------- i915_reg.h / gt/intel_gt_regs.h ---------------- */
 
@@ -714,10 +717,18 @@ gen8_de_irq_handler(struct parity_irq_dev *d, uint32_t master_ctl)
 			continue;
 		if (!(master_ctl & GEN8_DE_PIPE_IRQ(pipe)))
 			continue;
+		/* admission: counted in first, then the gate is checked (the closing side sets the gate, then reads the count) */
+		(void)__atomic_add_fetch(&d->pipe_inflight[pipe], 1u, __ATOMIC_SEQ_CST);
+		if (__atomic_load_n(&d->pipe_closed[pipe], __ATOMIC_SEQ_CST)) {
+			(void)__atomic_sub_fetch(&d->pipe_inflight[pipe], 1u, __ATOMIC_SEQ_CST);
+			d->pipe_refused[pipe]++;
+			continue;
+		}
 
 		iir = rd(d, GEN8_DE_PIPE_IIR(pipe));
 		if (iir == 0u) {
 			d->de_lied_count++;   /* (DE PIPE) */
+			(void)__atomic_sub_fetch(&d->pipe_inflight[pipe], 1u, __ATOMIC_SEQ_CST);
 			continue;
 		}
 
@@ -725,8 +736,19 @@ gen8_de_irq_handler(struct parity_irq_dev *d, uint32_t master_ctl)
 		d->de_pipe_iir_acks[pipe]++;
 		d->last_de_pipe_iir[pipe] = iir;
 
-		if (iir & GEN8_PIPE_VBLANK)
+		if (iir & GEN8_PIPE_VBLANK) {
 			d->de_vblank_count[pipe]++;
+			/* intel_handle_vblank() -> drm_handle_vblank(): counted and waiters woken only while enabled */
+			if (d->vbl != 0 && d->vbl->inited) {
+				unsigned long vf = spin_lock_irqsave(&d->vbl->lock);
+
+				if (d->vbl->enabled[pipe]) {
+					d->vbl->count[pipe]++;
+					parity_kcomplete(&d->vbl->wake[pipe]);
+				}
+				spin_unlock_irqrestore(&d->vbl->lock, vf);
+			}
+		}
 
 		if (iir & parity_gen8_de_pipe_flip_done_mask(d->display_ver))
 			d->de_flip_done_count++;
@@ -740,6 +762,7 @@ gen8_de_irq_handler(struct parity_irq_dev *d, uint32_t master_ctl)
 			kern_logf("i915: parity Fault errors on pipe %c: 0x%08x\n",
 				(char)('A' + pipe), fault_errors);
 		}
+		(void)__atomic_sub_fetch(&d->pipe_inflight[pipe], 1u, __ATOMIC_SEQ_CST);
 	}
 
 	/*
@@ -812,7 +835,7 @@ parity_intel_irq_postinstall(struct parity_irq_dev *d)
  * The EOI is ours to send, and it is sent on every path.
  */
 static void
-gen11_irq_handler(int irq, hal_irq_ack_t ack, void *arg)
+gen11_irq_handler_body(int irq, hal_irq_ack_t ack, void *arg)
 {
 	struct parity_irq_dev *d = (struct parity_irq_dev *)arg;
 	uint32_t master_ctl;
@@ -868,6 +891,320 @@ gen11_irq_handler(int irq, hal_irq_ack_t ack, void *arg)
 	hal_irq_send_eoi(ack);
 }
 
+/* the handler the HAL calls: the reference's body, bracketed by the counts intel_synchronize_irq() waits on */
+static void
+gen11_irq_handler(int irq, hal_irq_ack_t ack, void *arg)
+{
+	struct parity_irq_dev *d = (struct parity_irq_dev *)arg;
+
+	(void)__atomic_add_fetch(&d->handler_entries, 1u, __ATOMIC_SEQ_CST);
+	gen11_irq_handler_body(irq, ack, arg);
+	(void)__atomic_add_fetch(&d->handler_exits, 1u, __ATOMIC_SEQ_CST);
+}
+
+/* ---------------- display/intel_display_irq.c: power-well hooks, pipe IRQ mask, vblank ---------------- */
+
+void
+parity_irq_vblank_init(struct parity_irq_dev *d, struct parity_irq_vblank *v)
+{
+	unsigned p;
+
+	for (p = 0u; p < sizeof(*v); p++)
+		((char *)v)[p] = 0;
+	spin_init(&v->lock, LOCK_RANK_DEVICE, "parity-irq-lock");
+	for (p = 0u; p < PARITY_IRQ_MAX_PIPES; p++)
+		parity_kcompletion_init(&v->wake[p], "parity-vblank");
+	v->inited = 1;
+	d->vbl = v;
+}
+
+int
+parity_intel_synchronize_irq(struct parity_irq_dev *d)
+{
+	unsigned seen = __atomic_load_n(&d->handler_entries, __ATOMIC_SEQ_CST);
+	unsigned waited;
+
+	if (d->vbl != 0)
+		d->vbl->sync_calls++;
+	for (waited = 0u; waited < 100000u; waited += 10u) {
+		if ((int)(__atomic_load_n(&d->handler_exits, __ATOMIC_SEQ_CST) - seen) >= 0)
+			return 0;
+		if (parity_udelay(10u) != 0) {
+			if (d->vbl != 0)
+				d->vbl->sync_time_faults++;
+			kern_logf("i915: parity intel_synchronize_irq: the time base failed while waiting (not a timeout)\n");
+			return -EIO;
+		}
+	}
+	if (d->vbl != 0)
+		d->vbl->sync_timeouts++;
+	kern_logf("i915: parity intel_synchronize_irq: a handler invocation did not finish (entries=%u exits=%u)\n",
+		seen, d->handler_exits);
+	return -ETIMEDOUT;
+}
+
+/* gen8_irq_power_well_post_enable() */
+void
+parity_gen8_irq_power_well_post_enable(struct parity_irq_dev *d, unsigned pipe_mask)
+{
+	uint32_t extra_ier = GEN8_PIPE_VBLANK | parity_gen8_de_pipe_underrun_mask(d->display_ver) |
+		parity_gen8_de_pipe_flip_done_mask(d->display_ver);
+	unsigned long flags;
+	unsigned pipe;
+
+	if (d->vbl == 0 || !d->vbl->inited)
+		return;
+	flags = spin_lock_irqsave(&d->vbl->lock);
+	if (!d->irqs_enabled) {
+		d->vbl->skipped_irqs_disabled++;
+		spin_unlock_irqrestore(&d->vbl->lock, flags);
+		return;
+	}
+	d->vbl->post_enable_calls++;
+	for (pipe = 0u; pipe < PARITY_IRQ_MAX_PIPES; pipe++) {
+		if ((d->pipe_mask & pipe_mask & (1u << pipe)) == 0u)
+			continue;
+		/* GEN8_IRQ_INIT_NDX(uncore, DE_PIPE, pipe, de_irq_mask[pipe], ~de_irq_mask[pipe] | extra_ier) */
+		gen3_irq_init(d, GEN8_DE_PIPE_IMR(pipe), d->de_irq_mask[pipe],
+			GEN8_DE_PIPE_IER(pipe), ~d->de_irq_mask[pipe] | extra_ier, GEN8_DE_PIPE_IIR(pipe));
+		d->vbl->post_imr[pipe] = d->de_irq_mask[pipe];
+		d->vbl->post_ier[pipe] = ~d->de_irq_mask[pipe] | extra_ier;
+		__atomic_store_n(&d->pipe_closed[pipe], 0, __ATOMIC_SEQ_CST);     /* the handler may enter it again */
+	}
+	spin_unlock_irqrestore(&d->vbl->lock, flags);
+}
+
+int
+parity_irq_drain_pipes(struct parity_irq_dev *d, unsigned pipe_mask, unsigned timeout_us)
+{
+	unsigned waited, pipe, busy;
+
+	for (waited = 0u;; waited += 10u) {
+		busy = 0u;
+		for (pipe = 0u; pipe < PARITY_IRQ_MAX_PIPES; pipe++)
+			if ((pipe_mask & (1u << pipe)) != 0u && __atomic_load_n(&d->pipe_inflight[pipe], __ATOMIC_SEQ_CST) != 0u)
+				busy |= 1u << pipe;
+		if (busy == 0u)
+			return 0;
+		if (waited >= timeout_us) {
+			if (d->vbl != 0)
+				d->vbl->drain_timeouts++;
+			kern_logf("i915: parity IRQ drain: the handler did not leave pipe(s) 0x%x within %u us\n", busy, timeout_us);
+			return -ETIMEDOUT;
+		}
+		if (parity_udelay(10u) != 0) {
+			if (d->vbl != 0)
+				d->vbl->drain_time_faults++;
+			kern_logf("i915: parity IRQ drain: the time base failed while waiting (not a timeout)\n");
+			return -EIO;
+		}
+	}
+}
+
+/*
+ * gen8_irq_power_well_pre_disable(): the reference resets the pipe's interrupt registers and then completes
+ * intel_synchronize_irq() before the well goes off.  Here: close the pipe's admission (no new handler work enters its
+ * registers), reset the source, then drain what had already entered.  The pipe stays closed until the next
+ * post-enable.  A drain that does not complete is returned, so the caller keeps the well on.
+ */
+int
+parity_gen8_irq_power_well_pre_disable(struct parity_irq_dev *d, unsigned pipe_mask)
+{
+	unsigned long flags;
+	unsigned pipe, closing = 0u;
+
+	if (d->vbl == 0 || !d->vbl->inited)
+		return 0;
+	flags = spin_lock_irqsave(&d->vbl->lock);
+	if (!d->irqs_enabled) {
+		d->vbl->skipped_irqs_disabled++;
+		spin_unlock_irqrestore(&d->vbl->lock, flags);
+		return 0;
+	}
+	d->vbl->pre_disable_calls++;
+	for (pipe = 0u; pipe < PARITY_IRQ_MAX_PIPES; pipe++) {
+		if ((d->pipe_mask & pipe_mask & (1u << pipe)) == 0u)
+			continue;
+		__atomic_store_n(&d->pipe_closed[pipe], 1, __ATOMIC_SEQ_CST);
+		closing |= 1u << pipe;
+		/* GEN8_IRQ_RESET_NDX(uncore, DE_PIPE, pipe) */
+		gen3_irq_reset(d, GEN8_DE_PIPE_IMR(pipe), GEN8_DE_PIPE_IIR(pipe), GEN8_DE_PIPE_IER(pipe));
+	}
+	spin_unlock_irqrestore(&d->vbl->lock, flags);
+
+	/* make sure we're done processing display irqs (of these pipes) */
+	d->vbl->sync_calls++;
+	return parity_irq_drain_pipes(d, closing, 100000u);
+}
+
+/* bdw_update_pipe_irq(): called with the IRQ lock held */
+static void
+bdw_update_pipe_irq(struct parity_irq_dev *d, unsigned pipe, uint32_t interrupt_mask, uint32_t enabled_irq_mask)
+{
+	uint32_t new_val;
+
+	if (enabled_irq_mask & ~interrupt_mask)
+		kern_logf("i915: parity WARN bdw_update_pipe_irq: enabled bits outside the mask\n");
+	if (!d->irqs_enabled) {
+		kern_logf("i915: parity WARN bdw_update_pipe_irq: interrupts are not enabled\n");
+		return;
+	}
+	new_val = d->de_irq_mask[pipe];
+	new_val &= ~interrupt_mask;
+	new_val |= (~enabled_irq_mask & interrupt_mask);
+	if (new_val != d->de_irq_mask[pipe]) {
+		d->de_irq_mask[pipe] = new_val;
+		osdep_mmio_write32(d->m, GEN8_DE_PIPE_IMR(pipe), d->de_irq_mask[pipe]);
+		osdep_mmio_posting_read32(d->m, GEN8_DE_PIPE_IMR(pipe));
+	}
+}
+
+/*
+ * bdw_enable_vblank() / bdw_disable_vblank().  gen11_dsi_configure_te() returns false unless the crtc drives a DSI
+ * command-mode panel (not on this path).  HAS_PSR(): the reference then calls drm_crtc_vblank_restore(), which
+ * re-estimates the DRM vblank count from time across PSR self-refresh; there is no DRM vblank count here (the count
+ * is of handled interrupts, and waits also require the hardware frame counter to move), and PSR is not enabled on
+ * this path -- an explicit adaptation, not reached with PSR.
+ */
+/* bdw_enable_vblank() / bdw_disable_vblank() without their lock: the callers below hold it (one lock, one rule) */
+static int
+bdw_enable_vblank_locked(struct parity_irq_dev *d, unsigned pipe)
+{
+	bdw_update_pipe_irq(d, pipe, GEN8_PIPE_VBLANK, GEN8_PIPE_VBLANK);
+	return 0;
+}
+
+static void
+bdw_disable_vblank_locked(struct parity_irq_dev *d, unsigned pipe)
+{
+	bdw_update_pipe_irq(d, pipe, GEN8_PIPE_VBLANK, 0u);
+}
+
+/*
+ * The reference counts, the enabled state, the IMR bit and the handler's count all change under the IRQ lock.
+ * ADAPTATION: the last put masks at once.  Linux's vblank_disable_immediate still disables through the vblank core
+ * after the pending vblank / event processing; this limited path has no DRM events or workers, so it masks inside
+ * put().  Not to be carried over to a present / flip path as it is.
+ */
+int
+parity_drm_vblank_get(struct parity_irq_dev *d, unsigned pipe)
+{
+	unsigned long flags;
+
+	if (d->vbl == 0 || !d->vbl->inited || pipe >= PARITY_IRQ_MAX_PIPES)
+		return -EINVAL;
+	flags = spin_lock_irqsave(&d->vbl->lock);
+	if (!d->irqs_enabled) {
+		spin_unlock_irqrestore(&d->vbl->lock, flags);
+		return -EINVAL;
+	}
+	if (d->vbl->refs[pipe]++ == 0u) {
+		d->vbl->enable_calls[pipe]++;
+		d->vbl->enabled[pipe] = 1;
+		(void)bdw_enable_vblank_locked(d, pipe);
+	}
+	spin_unlock_irqrestore(&d->vbl->lock, flags);
+	return 0;
+}
+
+void
+parity_drm_vblank_put(struct parity_irq_dev *d, unsigned pipe)
+{
+	unsigned long flags;
+
+	if (d->vbl == 0 || !d->vbl->inited || pipe >= PARITY_IRQ_MAX_PIPES)
+		return;
+	flags = spin_lock_irqsave(&d->vbl->lock);
+	if (d->vbl->refs[pipe] != 0u && --d->vbl->refs[pipe] == 0u) {
+		d->vbl->disable_calls[pipe]++;
+		bdw_disable_vblank_locked(d, pipe);
+		d->vbl->enabled[pipe] = 0;
+	}
+	spin_unlock_irqrestore(&d->vbl->lock, flags);
+}
+
+/* one consistent view of a pipe's vblank state, read under the IRQ lock */
+static void
+vbl_snapshot(struct parity_irq_dev *d, unsigned pipe, uint32_t *count, int *enabled, unsigned *refs)
+{
+	unsigned long flags = spin_lock_irqsave(&d->vbl->lock);
+
+	if (count != 0)
+		*count = d->vbl->count[pipe];
+	if (enabled != 0)
+		*enabled = d->vbl->enabled[pipe];
+	if (refs != 0)
+		*refs = d->vbl->refs[pipe];
+	spin_unlock_irqrestore(&d->vbl->lock, flags);
+}
+
+int
+parity_wait_vblank(struct parity_irq_dev *d, unsigned pipe, unsigned n, unsigned timeout_ms,
+	uint32_t (*read_frame)(void *ctx), void *frame_ctx, uint32_t *count_seen)
+{
+	uint64_t deadline;
+	uint32_t start, frame0 = 0u;
+	int ok = 0;
+
+	unsigned long flags;
+
+	if (d->vbl == 0 || !d->vbl->inited || pipe >= PARITY_IRQ_MAX_PIPES || n == 0u)
+		return -EINVAL;
+	flags = spin_lock_irqsave(&d->vbl->lock);
+	if (d->vbl->refs[pipe] == 0u) {
+		spin_unlock_irqrestore(&d->vbl->lock, flags);
+		return -EINVAL;
+	}
+	if (d->vbl->waiting[pipe]) {            /* a second waiter would re-arm the first one's wake-up */
+		d->vbl->second_waiter_refusals++;
+		spin_unlock_irqrestore(&d->vbl->lock, flags);
+		return -EBUSY;
+	}
+	d->vbl->waiting[pipe] = 1;
+	parity_kreinit_completion(&d->vbl->wake[pipe]);
+	start = d->vbl->count[pipe];
+	spin_unlock_irqrestore(&d->vbl->lock, flags);
+	if (read_frame != 0)
+		frame0 = read_frame(frame_ctx);
+	deadline = sched_ticks() + (timeout_ms + 9u) / 10u + 1u;
+	for (;;) {
+		uint32_t now;
+
+		vbl_snapshot(d, pipe, &now, 0, 0);
+		if ((uint32_t)(now - start) >= n &&
+		    (read_frame == 0 || read_frame(frame_ctx) != frame0)) {
+			ok = 1;
+			break;
+		}
+		if (!parity_kwait(&d->vbl->wake[pipe], deadline))
+			break;
+	}
+	if (count_seen != 0) {
+		uint32_t now;
+
+		vbl_snapshot(d, pipe, &now, 0, 0);
+		*count_seen = now - start;
+	}
+	flags = spin_lock_irqsave(&d->vbl->lock);
+	d->vbl->waiting[pipe] = 0;
+	spin_unlock_irqrestore(&d->vbl->lock, flags);
+	return ok ? 0 : -ETIMEDOUT;
+}
+
+static void
+pw_irq_post_enable(void *ctx, unsigned pipe_mask)
+{
+	parity_gen8_irq_power_well_post_enable(ctx, pipe_mask);
+}
+
+static int
+pw_irq_pre_disable(void *ctx, unsigned pipe_mask)
+{
+	return parity_gen8_irq_power_well_pre_disable(ctx, pipe_mask);
+}
+
+const struct parity_pw_irq_ops parity_pw_irq_ops = { pw_irq_post_enable, pw_irq_pre_disable };
+
 int
 parity_intel_irq_install(struct parity_irq_dev *d)
 {
@@ -914,6 +1251,13 @@ parity_intel_irq_uninstall(struct parity_irq_dev *d)
 	if (!d->irq_enabled)
 		return;
 
+	if (d->vbl != 0 && d->vbl->inited) {
+		unsigned p;
+
+		for (p = 0u; p < PARITY_IRQ_MAX_PIPES; p++)
+			if (d->vbl->refs[p] != 0u)
+				kern_logf("i915: parity WARN intel_irq_uninstall: pipe %u still holds %u vblank reference(s)\n", p, d->vbl->refs[p]);
+	}
 	/*
 	 * Mask and disable every source FIRST -- detaching the handler does not
 	 * stop the device from sending messages.

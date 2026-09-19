@@ -46,6 +46,8 @@ struct parity_vbt_panel {
 	int edp_lanes;
 	int edp_preemphasis, edp_vswing;
 	int edp_low_vswing;
+	int edp_hobl;                     /* panel->vbt.edp.hobl */
+	int override_afc_startup;         /* display.vbt.override_afc_startup (general features, BDB 249+) */
 	int edp_max_link_rate;            /* 0 = not limited */
 	/* eDP panel power sequencing, in 100 us units as stored in the VBT */
 	uint16_t t1_t3, t8, t9, t10, t11_t12;

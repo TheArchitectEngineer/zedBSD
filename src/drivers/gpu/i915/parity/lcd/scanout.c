@@ -36,6 +36,9 @@ parity_scanout_create(struct parity_gt_mem *gm, uint32_t width, uint32_t height,
 {
 	if (gm == 0 || so == 0)
 		return -EINVAL;
+	/* an object in any other state owns backing / GGTT / a pin: never overwrite its record */
+	if (so->state != PARITY_SCANOUT_NONE || so->obj != 0)
+		return -EBUSY;
 	memset(so, 0, sizeof(*so));
 	/* the one layout this stage supports; anything else is refused before any allocation */
 	if (format != PARITY_FOURCC_XRGB8888 || modifier != PARITY_MOD_LINEAR ||

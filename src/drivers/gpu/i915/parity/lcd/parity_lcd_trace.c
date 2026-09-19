@@ -164,6 +164,46 @@ static void t_power_put(void *ctx, int domain, int wakeref)
 	t->backend->power_put(t->backend->ctx, domain, wakeref);
 }
 
+static void t_power_put_async(void *ctx, int domain, int wakeref, int delay_ms)
+{
+	struct parity_lcd_trace *t = ctx;
+	struct parity_lcd_trace_entry *e = add(t, PARITY_LCD_T_POWER_PUT);
+
+	if (e) { e->a = (uint32_t)domain; e->b = (uint32_t)wakeref; e->c = (uint32_t)delay_ms; e->d = 1u; }
+	t->backend->power_put_async(t->backend->ctx, domain, wakeref, delay_ms);
+}
+
+static void t_dbuf_slices_update(void *ctx, unsigned req_slices)
+{
+	struct parity_lcd_trace *t = ctx;
+	struct parity_lcd_trace_entry *e = add(t, PARITY_LCD_T_DBUF);
+
+	if (e) e->a = req_slices;
+	t->backend->dbuf_slices_update(t->backend->ctx, req_slices);
+}
+
+static void t_observe(void *ctx, int point)
+{
+	struct parity_lcd_trace *t = ctx;
+	struct parity_lcd_trace_entry *e = add(t, PARITY_LCD_T_OBSERVE);
+
+	if (e) e->a = (uint32_t)point;
+	if (t->tap != 0)
+		t->tap(t->tap_ctx, point);
+	if (t->backend->observe != 0)
+		t->backend->observe(t->backend->ctx, point);
+}
+
+#define TB(ctx) (((struct parity_lcd_trace *)(ctx))->backend)
+static int t_vblank_get(void *ctx, int pipe) { return TB(ctx)->vblank_get(TB(ctx)->ctx, pipe); }
+static void t_vblank_put(void *ctx, int pipe) { TB(ctx)->vblank_put(TB(ctx)->ctx, pipe); }
+static long t_vblank_sleep(void *ctx, int pipe, long ticks) { return TB(ctx)->vblank_sleep(TB(ctx)->ctx, pipe, ticks); }
+static void t_irq_off(void *ctx) { TB(ctx)->irq_off(TB(ctx)->ctx); }
+static void t_irq_on(void *ctx) { TB(ctx)->irq_on(TB(ctx)->ctx); }
+static void t_arm_event(void *ctx, int pipe) { TB(ctx)->arm_event(TB(ctx)->ctx, pipe); }
+static int t_wait_event(void *ctx, int pipe, unsigned timeout_ms) { return TB(ctx)->wait_event(TB(ctx)->ctx, pipe, timeout_ms); }
+static void t_cancel_event(void *ctx, int pipe) { TB(ctx)->cancel_event(TB(ctx)->ctx, pipe); }
+
 static void t_lock(void *ctx, int which, int take)
 {
 	struct parity_lcd_trace *t = ctx;
@@ -219,6 +259,7 @@ void parity_lcd_trace_init(struct parity_lcd_trace *t, struct parity_lcd_emit *b
 	t->backend = backend;
 	t->first_error_at = -1;
 	t->ops.ctx = t;
+	t->ops.model = backend->model;
 	t->ops.write32 = t_write32;
 	t->ops.rmw32 = t_rmw32;
 	t->ops.posting_read = t_posting_read;
@@ -233,6 +274,20 @@ void parity_lcd_trace_init(struct parity_lcd_trace *t, struct parity_lcd_emit *b
 	t->ops.panel = t_panel;
 	t->ops.power_get = t_power_get;
 	t->ops.power_put = t_power_put;
+	t->ops.power_put_async = backend->power_put_async != 0 ? t_power_put_async : 0;
+	t->ops.dbuf_slices_update = backend->dbuf_slices_update != 0 ? t_dbuf_slices_update : 0;
+	t->ops.observe = t_observe;
+	if (backend->vblank_get != 0) {
+		t->ops.vblank_get = t_vblank_get;
+		t->ops.vblank_put = t_vblank_put;
+		t->ops.vblank_sleep = t_vblank_sleep;
+		t->ops.irq_off = t_irq_off;
+		t->ops.irq_on = t_irq_on;
+		t->ops.arm_event = t_arm_event;
+		t->ops.wait_event = t_wait_event;
+		if (backend->cancel_event != 0)
+			t->ops.cancel_event = t_cancel_event;
+	}
 	t->ops.lock = t_lock;
 	t->ops.error = t_error;
 	t->ops.debug = t_debug;

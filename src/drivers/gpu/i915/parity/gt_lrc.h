@@ -210,6 +210,8 @@ uint32_t parity_lrc_descriptor(const struct parity_gt_context *ce);
 /* gen12_get_aux_inv_reg(): 0 when the engine has none. */
 uint32_t parity_lrc_aux_inv_reg(int engine_id);
 
+/* the context's ring and image are kept for ever (a request on it was not shown to be finished) */
+void parity_lrc_keep(struct parity_gt_context *ce);
 void parity_lrc_release(struct parity_gt_context *ce, struct parity_gt_mem *gm);
 
 #endif /* PARITY_GT_LRC_H */

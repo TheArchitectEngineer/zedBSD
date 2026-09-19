@@ -67,6 +67,10 @@ void parity_lcd_ms_bind_encoder(struct parity_lcd_modeset *ms)
 	struct intel_dp *intel_dp = &ms->dig_port.dp;
 
 	ddi_ms = ms;
+	/* intel_ddi_init(): encoder->power_domain = intel_display_power_ddi_lanes_domain() = POWER_DOMAIN_PORT_DDI_LANES_A + port */
+	encoder->power_domain = POWER_DOMAIN_PORT_DDI_LANES_A + (int)encoder->port;
+	encoder->base.index = 0;
+	parity_lcd_only_encoder = &encoder->base;
 	encoder->enable = intel_enable_ddi;
 	encoder->pre_pll_enable = intel_ddi_pre_pll_enable;
 	encoder->pre_enable = intel_ddi_pre_enable;

@@ -89,6 +89,7 @@ int parity_display_emit_cpu_transcoder(struct parity_lcd_emit *emit, const struc
  * enable and the OLD state of the disable.
  */
 struct drm_i915_private *parity_lcd_cur_i915;
+struct drm_encoder *parity_lcd_only_encoder;
 
 void parity_lcd_ms_crtc_enable(struct parity_lcd_modeset *ms)
 {

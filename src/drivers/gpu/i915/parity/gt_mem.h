@@ -100,7 +100,7 @@ struct parity_gt_object {
 	unsigned ggtt_page;         /* first page index in the GGTT table */
 	int display;                /* bound in the display window (not the GT window) */
 	unsigned display_guard;     /* scratch-filled guard pages on EACH side */
-	int keep;                   /* never destroyed by parity_gt_mem_fini: the display may still read it */
+	int keep;                   /* never destroyed / unbound (fini, destroy, display unbind all refuse): the display may still read it */
 	uint64_t ggtt_offset;       /* the GPU VA the engine uses; valid when bound */
 	int bound;
 	int in_use;
@@ -116,6 +116,7 @@ struct parity_gt_mem {
 	uint64_t scratch_pte;       /* what a free entry holds (from P2) */
 	struct osdep_mmio *m;       /* for GFX_FLSH_CNTL_GEN6 */
 
+	unsigned keep_refusals;     /* destroy / unbind requests refused because the object is kept */
 	unsigned window_first;      /* first page of the driver window */
 	unsigned window_pages;
 	uint32_t bitmap[PARITY_GT_GGTT_WORDS];
@@ -173,6 +174,9 @@ typedef void (*parity_gt_ppgtt_pt_fn)(struct parity_gt_ppgtt *pp,
 	struct parity_gt_object *pt, uint64_t pt_dma, void *data);
 int parity_gt_ppgtt_foreach_pt(struct parity_gt_ppgtt *pp, uint64_t start,
 	uint64_t length, parity_gt_ppgtt_pt_fn fn, void *data);
+
+/* gen8_ppgtt_clear(): one PTE at offset back to the scratch page (the vm's scratch encode); the tables stay. */
+int parity_gt_ppgtt_insert_scratch(struct parity_gt_ppgtt *pp, uint64_t offset);
 
 /* gen8_ppgtt_insert_entry(): one PTE at offset; the tables must exist. */
 int parity_gt_ppgtt_insert_page(struct parity_gt_ppgtt *pp, uint64_t dma,

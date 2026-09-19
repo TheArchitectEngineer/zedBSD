@@ -13,7 +13,8 @@
  *    cnp_backlight_controller_is_valid, cnp_hz_to_pwm, get_vbt_pwm_freq, get_backlight_max_vbt,
  *    get_backlight_min_vbt, cnp_setup_backlight, intel_pwm_get_backlight, intel_pwm_set_backlight,
  *    intel_pwm_enable_backlight, intel_pwm_disable_backlight, intel_pwm_setup_backlight, __intel_backlight_enable,
- *    intel_backlight_enable, intel_backlight_disable;
+ *    intel_backlight_enable, intel_backlight_disable, intel_panel_actually_set_backlight, scale_user_to_hw,
+ *    intel_panel_set_backlight;
  *  - the includes are replaced by: lcd_compat.h, lcd_seq_compat.h, lcd_modeset_compat.h, lcd_mreg_backlight.h;
  *  - parity_backlight_glue.inc (zedBSD code) is included at the end of the file.
  */
@@ -52,6 +53,12 @@ static void intel_pwm_disable_backlight(const struct drm_connector_state *conn_s
 static int intel_pwm_setup_backlight(struct intel_connector *connector, enum pipe pipe);
 static void __intel_backlight_enable(const struct intel_crtc_state *crtc_state,
 				     const struct drm_connector_state *conn_state);
+static void
+intel_panel_actually_set_backlight(const struct drm_connector_state *conn_state, u32 level);
+static u32 scale_user_to_hw(struct intel_connector *connector,
+			    u32 user_level, u32 user_max);
+static void intel_panel_set_backlight(const struct drm_connector_state *conn_state,
+				      u32 user_level, u32 user_max);
 
 /**
  * scale - scale values from one range to another
@@ -509,6 +516,54 @@ void intel_backlight_disable(const struct drm_connector_state *old_conn_state)
 		panel->backlight.device->props.power = FB_BLANK_POWERDOWN;
 	panel->backlight.enabled = false;
 	panel->backlight.funcs->disable(old_conn_state, 0);
+
+	mutex_unlock(&i915->display.backlight.lock);
+}
+
+static void
+intel_panel_actually_set_backlight(const struct drm_connector_state *conn_state, u32 level)
+{
+	struct intel_connector *connector = to_intel_connector(conn_state->connector);
+	struct drm_i915_private *i915 = to_i915(connector->base.dev);
+	struct intel_panel *panel = &connector->panel;
+
+	drm_dbg_kms(&i915->drm, "[CONNECTOR:%d:%s] set backlight level = %d\n",
+		    connector->base.base.id, connector->base.name, level);
+
+	panel->backlight.funcs->set(conn_state, level);
+}
+
+/* Scale user_level in range [0..user_max] to [hw_min..hw_max]. */
+static u32 scale_user_to_hw(struct intel_connector *connector,
+			    u32 user_level, u32 user_max)
+{
+	struct intel_panel *panel = &connector->panel;
+
+	return scale(user_level, 0, user_max,
+		     panel->backlight.min, panel->backlight.max);
+}
+
+/* set backlight brightness to level in range [0..max], scaling wrt hw min */
+static void intel_panel_set_backlight(const struct drm_connector_state *conn_state,
+				      u32 user_level, u32 user_max)
+{
+	struct intel_connector *connector = to_intel_connector(conn_state->connector);
+	struct drm_i915_private *i915 = to_i915(connector->base.dev);
+	struct intel_panel *panel = &connector->panel;
+	u32 hw_level;
+
+	if (!panel->backlight.present)
+		return;
+
+	mutex_lock(&i915->display.backlight.lock);
+
+	drm_WARN_ON(&i915->drm, panel->backlight.max == 0);
+
+	hw_level = scale_user_to_hw(connector, user_level, user_max);
+	panel->backlight.level = hw_level;
+
+	if (panel->backlight.enabled)
+		intel_panel_actually_set_backlight(conn_state, hw_level);
 
 	mutex_unlock(&i915->display.backlight.lock);
 }

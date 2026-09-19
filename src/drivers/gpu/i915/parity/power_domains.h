@@ -170,6 +170,15 @@ struct parity_vga_client;
 struct parity_cdclk_dev;
 
 /*
+ * gen8_irq_power_well_post_enable() / gen8_irq_power_well_pre_disable(): implemented by the IRQ layer (irq.c) and
+ * bound here, so this file does not depend on the IRQ device.  Both check intel_irqs_enabled() themselves.
+ */
+struct parity_pw_irq_ops {
+	void (*post_enable)(void *ctx, unsigned pipe_mask);
+	int (*pre_disable)(void *ctx, unsigned pipe_mask);     /* 0, or the drain failed: the well must NOT go off */
+};
+
+/*
  * Context for the power-well operation bodies: the MMIO handle, the VGA client
  * (has_vga post-enable) and the IRQ-enabled gate (intel_irqs_enabled(); 0 before
  * P4).  The *_calls counters are diagnostics the GPU-free tests observe.
@@ -180,6 +189,17 @@ struct parity_pw_ctx {
 	int irqs_enabled;
 	unsigned vga_reset_calls;
 	unsigned irq_post_enable_calls;
+	unsigned irq_pre_disable_calls;
+	/*
+	 * Set when a pipe's interrupt drain failed before its well would have gone off.  From then on every well disable
+	 * is refused (the handler that did not finish may still touch display registers), the well that was about to go
+	 * off stays owned, and the probe's teardown keeps the IRQ handler attached and the device resources in place.
+	 */
+	int irq_sync_failed;
+	unsigned disable_refusals;             /* well disables refused because of it */
+	unsigned kept_wells;                   /* wells kept on by a refused disable */
+	const struct parity_pw_irq_ops *irq_ops;   /* NULL: the IRQ layer is not bound (GPU-free tests) */
+	void *irq_ctx;
 	unsigned ack_timeouts;   /* real HW ACK timeouts (warn+continue) */
 	/* DC_off power-well enable (gen9_disable_dc_states) needs the shared CDCLK,
 	 * the saved DBUF slice mask and the target DC state -- these are the SAME
@@ -209,6 +229,8 @@ void parity_gen9_set_dc_state(struct parity_pw_ctx *c, uint32_t state);
 int  parity_power_well_enable(struct parity_power_well *w, struct parity_pw_ctx *c);
 int  parity_power_well_disable(struct parity_power_well *w, struct parity_pw_ctx *c);
 int  parity_power_well_is_enabled(struct parity_power_well *w, struct parity_pw_ctx *c);
+/* N0: the domain's wells powered now per their STATE bits (any requester); read-only, usable before init_hw */
+int  parity_power_domain_hw_state_on(struct parity_power_domains *pd, enum parity_power_domain d, struct osdep_mmio *m);
 void parity_power_well_sync_hw(struct parity_power_well *w, struct parity_pw_ctx *c);
 /* gen9_dc_off_power_well_enable -> gen9_disable_dc_states (implemented in display_core.c). */
 void parity_dc_off_enable(struct parity_pw_ctx *c);

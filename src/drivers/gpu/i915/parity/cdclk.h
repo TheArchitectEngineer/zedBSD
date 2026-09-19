@@ -96,5 +96,7 @@ const struct parity_cdclk_vals *parity_adlp_cdclk_table(void);
 int parity_bxt_calc_cdclk(struct parity_cdclk_dev *cd, int min_cdclk);
 int parity_bxt_calc_cdclk_pll_vco(struct parity_cdclk_dev *cd, int cdclk);
 uint8_t parity_tgl_calc_voltage_level(int cdclk);
+/* intel_update_max_cdclk(), the display version 11+ branch: 648000 kHz on a 24 MHz reference, else 652800 kHz */
+uint32_t parity_intel_max_cdclk_freq(const struct parity_cdclk_dev *cd);
 
 #endif /* PARITY_CDCLK_H */

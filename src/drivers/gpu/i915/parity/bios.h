@@ -65,8 +65,23 @@ struct parity_vbt_state {
 #ifndef PARITY_AUX_TEST
 #define PARITY_AUX_TEST 0
 #endif
+#ifndef PARITY_LCDB_TEST
+#define PARITY_LCDB_TEST 0            /* LCD-B: one picture on the panel (implies the explicit VBT) */
+#endif
+#ifndef PARITY_LCDR_TEST
+#define PARITY_LCDR_TEST 0            /* LCD reuse: three cycles + IRQ + brightness (implies the explicit VBT) */
+#endif
+#ifndef PARITY_LCDG_TEST
+#define PARITY_LCDG_TEST 0            /* LCD-G: a GPU-drawn full-HD image shown from the same backing */
+#endif
+#ifndef PARITY_LCDC_TEST
+#define PARITY_LCDC_TEST 0            /* LCD-C: synchronous flips between two buffers */
+#endif
+#ifndef PARITY_LCDD_TEST
+#define PARITY_LCDD_TEST 0            /* LCD-D: GPU back-buffer redraw + synchronous flip */
+#endif
 #ifndef PARITY_VBT_EXPLICIT
-#define PARITY_VBT_EXPLICIT PARITY_AUX_TEST
+#define PARITY_VBT_EXPLICIT (PARITY_AUX_TEST || PARITY_LCDB_TEST || PARITY_LCDR_TEST || PARITY_LCDG_TEST || PARITY_LCDC_TEST || PARITY_LCDD_TEST)
 #endif
 #define PARITY_VBT_EXPLICIT_NAME "zedbsd/vbt/dell-latitude-5330-1028-0b02.vbt"
 #define PARITY_VBT_EXPLICIT_SUBSYS_VENDOR 0x1028u
@@ -91,5 +106,6 @@ void parity_intel_bios_driver_remove(struct parity_vbt_state *vbt);
 int parity_intel_bios_init_ex(struct parity_vbt_state *vbt, struct osdep_pci *pci,
 	int opregion_has_vbt, int explicit_blob, struct osdep_trace *trace);
 void parity_sha256(const void *data, size_t len, uint8_t out[32]);
+const uint8_t *parity_vbt_explicit_pin(void);
 
 #endif /* PARITY_BIOS_H */

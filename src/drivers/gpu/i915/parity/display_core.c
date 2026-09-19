@@ -37,7 +37,10 @@
 /* DBUF: ADL-P (xe_lpd) has 4 slices S1..S4. */
 #define DBUF_POWER_REQUEST          (1u << 31)
 #define DBUF_POWER_STATE            (1u << 30)
-static const uint32_t dbuf_ctl_s[4] = { 0x44FE8u, 0x44300u, 0x44304u, 0x44308u };
+/* skl_watermark_regs.h: _DBUF_CTL_S0 0x45008, _DBUF_CTL_S1 0x44FE8, _DBUF_CTL_S2 0x44300, _DBUF_CTL_S3 0x44304; slice S1 is
+ * index 0.  (Until E-116 this table began at 0x44FE8 and ended at 0x44308: "slice 1" powered the second slice and
+ * the fourth request went to a register that is not a DBUF control -- found by LCD-B's register readback.) */
+static const uint32_t dbuf_ctl_s[4] = { 0x45008u, 0x44FE8u, 0x44300u, 0x44304u };
 #define DBUF_SLICE_MASK             0xFu   /* BIT(S1)|BIT(S2)|BIT(S3)|BIT(S4) */
 
 /* BW_BUDDY: abox_mask = GENMASK(1,0) on ADL-P. */
@@ -129,6 +132,20 @@ gen9_dbuf_slices_update(struct parity_display_core *dc, uint8_t req_slices)
 		gen9_dbuf_slice_set(dc, s, (req_slices & (1u << s)) ? 1 : 0);
 	dc->dbuf_enabled_slices = req_slices;
 	mutex_unlock(&dc->pd->lock);
+}
+
+/* the table itself, for the independent check against the reference's macro (GPU-free ktest) */
+uint32_t
+parity_dbuf_ctl_reg(unsigned slice)
+{
+	return slice < 4u ? dbuf_ctl_s[slice] : 0u;
+}
+
+/* the same body for the modeset's intel_dbuf_pre/post_plane_update() */
+void
+parity_gen9_dbuf_slices_update(struct parity_display_core *dc, uint8_t req_slices)
+{
+	gen9_dbuf_slices_update(dc, req_slices & DBUF_SLICE_MASK);
 }
 
 static void

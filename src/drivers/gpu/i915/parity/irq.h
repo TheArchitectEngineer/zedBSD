@@ -25,6 +25,7 @@
 #define PARITY_IRQ_H
 
 #include <stdint.h>
+#include "backend_sync.h"
 
 struct osdep_mmio;
 struct parity_power_domains;
@@ -38,6 +39,27 @@ struct parity_gt_mmio;
 enum parity_gt_submission {
 	PARITY_SUBMISSION_EXECLISTS = 0,  /* enable_guc=0: CS_MASTER_ERROR|CTX_SWITCH|SEMAPHORE */
 	PARITY_SUBMISSION_GUC             /* GuC submission: those three are left out */
+};
+
+/*
+ * The pipes' interrupt control and vblank delivery (the reference's irq_lock-protected de_irq_mask updates and a
+ * minimal stand-in for the DRM vblank core: a per-pipe count of vblank interrupts, a wake-up for waiters, and the
+ * enable reference).  Device-owned; bound with parity_irq_vblank_init() before the handler is installed.
+ */
+struct parity_irq_vblank {
+	struct spinlock lock;                    /* dev_priv->irq_lock */
+	int inited;
+	struct parity_kcompletion wake[PARITY_IRQ_MAX_PIPES];
+	volatile uint32_t count[PARITY_IRQ_MAX_PIPES];     /* vblank interrupts handled while enabled */
+	volatile int enabled[PARITY_IRQ_MAX_PIPES];        /* drm vblank->enabled */
+	unsigned refs[PARITY_IRQ_MAX_PIPES];               /* drm_vblank_get / _put references */
+	unsigned enable_calls[PARITY_IRQ_MAX_PIPES], disable_calls[PARITY_IRQ_MAX_PIPES];
+	/* the hooks, observed */
+	unsigned post_enable_calls, pre_disable_calls, skipped_irqs_disabled;
+	uint32_t post_imr[PARITY_IRQ_MAX_PIPES], post_ier[PARITY_IRQ_MAX_PIPES];
+	unsigned sync_calls, sync_timeouts, sync_time_faults, drain_timeouts, drain_time_faults;
+	int waiting[PARITY_IRQ_MAX_PIPES];                 /* one waiter per pipe (the wake-up is re-armed by it) */
+	unsigned second_waiter_refusals;
 };
 
 struct parity_irq_dev {
@@ -112,6 +134,14 @@ struct parity_irq_dev {
 	volatile uint32_t last_disp_ctl;
 	volatile uint32_t last_de_pipe_iir[PARITY_IRQ_MAX_PIPES];
 
+	/* handler entry / exit counts: intel_synchronize_irq() waits for exits to reach the entries it saw */
+	volatile unsigned handler_entries, handler_exits;
+	/* per-pipe admission: the handler enters a pipe's registers only while it is open, counted in pipe_inflight */
+	volatile int pipe_closed[PARITY_IRQ_MAX_PIPES];
+	volatile unsigned pipe_inflight[PARITY_IRQ_MAX_PIPES];
+	volatile unsigned pipe_refused[PARITY_IRQ_MAX_PIPES];     /* master bit seen while the pipe was closed */
+	struct parity_irq_vblank *vbl;           /* NULL: vblank delivery not bound (GPU-free tests of the old parts) */
+
 	/* Diagnostics. */
 	unsigned reset_writes;
 	unsigned postinstall_writes;
@@ -132,6 +162,38 @@ int parity_intel_irq_install(struct parity_irq_dev *d);
  * it with the rest of the P2 resources.
  */
 void parity_intel_irq_uninstall(struct parity_irq_dev *d);
+
+/* bind the vblank state (before install) and the power-well hooks (pwc->irq_ops) */
+void parity_irq_vblank_init(struct parity_irq_dev *d, struct parity_irq_vblank *v);
+/* gen8_irq_power_well_post_enable() / gen8_irq_power_well_pre_disable() */
+void parity_gen8_irq_power_well_post_enable(struct parity_irq_dev *d, unsigned pipe_mask);
+/* 0, or the pipes' in-flight handler work did not drain: -ETIMEDOUT (it did not finish) / -EIO (the time base failed) */
+int parity_gen8_irq_power_well_pre_disable(struct parity_irq_dev *d, unsigned pipe_mask);
+/* wait until no handler is inside the given pipes' registers (pipes stay as they are: open or closed) */
+int parity_irq_drain_pipes(struct parity_irq_dev *d, unsigned pipe_mask, unsigned timeout_us);
+/*
+ * intel_synchronize_irq() over the handler's own entry / exit counts: waits until the exits reach the entries seen at the
+ * call.  This equals "every invocation started before the call has finished" ONLY if invocations of this handler never
+ * overlap; the HAL (amd64) fixes an MSI's destination CPU at allocation and records one in_handler flag per vector, but
+ * nothing in it states that an invocation cannot begin after the EOI while the previous one is still returning -- so the
+ * power-well path does NOT rely on this function: it closes the pipe's admission and drains the pipe's own in-flight
+ * count (parity_irq_drain_pipes).  0; -ETIMEDOUT after 100 ms; -EIO when the time base fails while waiting.
+ */
+int parity_intel_synchronize_irq(struct parity_irq_dev *d);
+struct parity_pw_irq_ops;
+extern const struct parity_pw_irq_ops parity_pw_irq_ops;   /* for pwc->irq_ops, ctx = the irq device */
+/* drm_vblank_get() / drm_vblank_put() with the reference's bdw_enable_vblank() / bdw_disable_vblank() and i915's
+ * vblank_disable_immediate (the last put disables at once).  get: 0, or -EINVAL when interrupts are not enabled. */
+int parity_drm_vblank_get(struct parity_irq_dev *d, unsigned pipe);
+void parity_drm_vblank_put(struct parity_irq_dev *d, unsigned pipe);
+/*
+ * Wait for `n` NEW vblanks of `pipe`: the pipe's vblank interrupt count must advance by n from the moment of the call
+ * AND read_frame (the pipe's hardware frame counter, may be NULL) must have advanced -- a stale pending bit delivered
+ * at unmask, another pipe's interrupt or mere elapsed time never satisfy it.  Needs a vblank reference.
+ * 0; -EINVAL no reference held; -ETIMEDOUT.
+ */
+int parity_wait_vblank(struct parity_irq_dev *d, unsigned pipe, unsigned n, unsigned timeout_ms,
+	uint32_t (*read_frame)(void *ctx), void *frame_ctx, uint32_t *count_seen);
 
 /* The pieces, exposed so the GPU-free tests can drive them individually. */
 void parity_intel_irq_reset(struct parity_irq_dev *d);

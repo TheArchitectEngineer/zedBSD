@@ -53,7 +53,11 @@ void parity_intel_power_domains_init_hw(struct parity_display_core *dc, int resu
 /* intel_power_domains_driver_remove(): cancel the init rpm wakeref, keep wells. */
 void parity_intel_power_domains_driver_remove(struct parity_display_core *dc);
 
+/* gen9_dbuf_slices_update(): request exactly these slices; updates dbuf_enabled_slices under the power-domains lock. */
+void parity_gen9_dbuf_slices_update(struct parity_display_core *dc, uint8_t req_slices);
+
 /* Exposed for tests. */
+uint32_t parity_dbuf_ctl_reg(unsigned slice);
 uint8_t parity_enabled_dbuf_slices_mask(struct parity_display_core *dc);
 
 #endif /* PARITY_DISPLAY_CORE_H */

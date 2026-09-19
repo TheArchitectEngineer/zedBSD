@@ -21,7 +21,7 @@ struct intel_digital_port;
 /* ---- hsw_crtc_enable(): its state accessors ---- */
 struct intel_atomic_state { struct { struct drm_device *dev; } base; const struct intel_crtc_state *crtc_state, *old_crtc_state; };
 #define intel_atomic_get_old_crtc_state(state, crtc) ((state)->old_crtc_state)
-#define intel_atomic_get_new_crtc_state(state, crtc) ((state)->crtc_state)
+#define intel_atomic_get_new_crtc_state(state, crtc) ((struct intel_crtc_state *)(state)->crtc_state)   /* the check phase writes into it */
 #define intel_crtc_is_bigjoiner_slave(crtc_state) (0)          /* no big joiner in this configuration */
 #define IS_BROADWELL(i915) 0
 #define IS_GEMINILAKE(i915) 0
@@ -40,6 +40,16 @@ struct intel_atomic_state { struct { struct drm_device *dev; } base; const struc
 #define icl_program_mg_dp_mode(dig_port, cs) PARITY_LCD_GUARD(!intel_phy_is_tc(SEQ_I915_ENCODER(&(dig_port)->base), intel_port_to_phy(SEQ_I915_ENCODER(&(dig_port)->base), (dig_port)->base.port)), "icl_program_mg_dp_mode (Type-C PHY)")
 /* intel_dp_configure_protocol_converter(): returns when DPCD_REV < 1.3, or the sink is not a branch device */
 #define intel_dp_configure_protocol_converter(intel_dp, cs) PARITY_LCD_GUARD((intel_dp)->dpcd[DP_DPCD_REV] < 0x13 || !drm_dp_is_branch((intel_dp)->dpcd), "intel_dp_configure_protocol_converter (DPCD >= 1.3 branch device)")
+/* reached only with DSC (crtc_state->dsc.compression_enable): an error if it ever is */
+#define intel_dsc_power_domain(crtc, cpu_transcoder) (parity_lcd_error("intel_dsc_power_domain reached: DSC is not part of this path" "\n"), POWER_DOMAIN_DISPLAY_CORE)
+#define intel_vdsc_min_cdclk(cs) (parity_lcd_error("intel_vdsc_min_cdclk reached: DSC is not part of this path" "\n"), 0)
+#define hsw_crtc_state_ips_capable(cs) (false)   /* behind IS_BROADWELL() */
+#define IS_VALLEYVIEW(i915) 0
+/* the one encoder of the modeset (drm_encoder_mask() = 1 << index) */
+extern struct drm_encoder *parity_lcd_only_encoder;
+#define drm_for_each_encoder_mask(encoder, dev, mask) \
+	for ((encoder) = parity_lcd_only_encoder; (encoder) != 0; (encoder) = 0) for_each_if((mask) & (1u << (encoder)->index))
+
 /* DSC: every one of these returns at once when crtc_state->dsc.compression_enable is false */
 #define intel_dp_sink_enable_decompression(state, connector, cs) PARITY_LCD_GUARD(!(cs)->dsc.compression_enable, "intel_dp_sink_enable_decompression (DSC)")
 #define intel_dp_sink_disable_decompression(state, connector, cs) PARITY_LCD_GUARD(!(cs)->dsc.compression_enable, "intel_dp_sink_disable_decompression (DSC)")
@@ -100,15 +110,34 @@ struct intel_atomic_state { struct { struct drm_device *dev; } base; const struc
 /* intel_initial_watermarks(): calls display.funcs.wm->initial_watermarks, which skl_wm_funcs (display version 9+)
  * does not set: nothing happens there.  The watermarks are written by the plane update (skl_write_plane_wm). */
 #define intel_initial_watermarks(state, crtc) ((void)0)
-/* intel_set_cpu_fifo_underrun_reporting(): clears the sticky underrun bits of ICL_PIPESTATUS and unmasks the
- * pipe's underrun interrupt -- error REPORTING only.  The display interrupt is not wired in this path; the
- * LCD test reads the sticky bits itself after the observation window and logs them. */
-#define intel_set_cpu_fifo_underrun_reporting(i915, pipe, enable) PARITY_LCD_DECIDED(i915, "intel_set_cpu_fifo_underrun_reporting: underrun IRQ not wired; PIPESTATUS is read by the test")
-/* intel_crtc_vblank_on() / _off(): the DRM core's software vblank bookkeeping (drm_crtc_vblank_on / _off).  No
- * register is written there; nothing in this path waits on a DRM vblank event (frames are observed through the
- * pipe's frame counter / scanline). */
-#define intel_crtc_vblank_on(cs) PARITY_LCD_DECIDED(SEQ_I915_CRTC_STATE(cs), "intel_crtc_vblank_on: DRM vblank bookkeeping, no hardware access")
-#define intel_crtc_vblank_off(cs) PARITY_LCD_DECIDED(parity_lcd_cur_i915, "intel_crtc_vblank_off: DRM vblank bookkeeping, no hardware access")
+/*
+ * intel_set_cpu_fifo_underrun_reporting(): clears the underrun status bits of ICL_PIPESTATUS(pipe) and unmasks
+ * the pipe's underrun interrupt (bdw_set_fifo_underrun_reporting); the IRQ handler then reads and clears the
+ * status.  ADAPTATION of this diagnostic path (not a no-op of the reference): the underrun interrupt is not
+ * unmasked; the LCD test owns the status register instead -- it saves it before the run, clears it where the
+ * reference would, samples it per phase (enable / plane armed / steady picture / disable) and logs every
+ * sample with the register's name, address and bit masks.  Samples taken while the pipe starts or stops are
+ * reported separately from the steady-state ones.
+ */
+#define PARITY_LCD_OBSERVE(i915, point) do { if ((i915)->emit->observe != 0) (i915)->emit->observe((i915)->emit->ctx, (point)); } while (0)
+#define intel_set_cpu_fifo_underrun_reporting(i915, pipe, enable) do { \
+	PARITY_LCD_DECIDED(i915, "intel_set_cpu_fifo_underrun_reporting: underrun IRQ stays masked; the test owns and samples ICL_PIPESTATUS"); \
+	PARITY_LCD_OBSERVE(i915, (enable) ? PARITY_LCD_OBS_UNDERRUN_ARM : PARITY_LCD_OBS_UNDERRUN_DISARM); } while (0)
+/*
+ * intel_crtc_vblank_on() / _off(): through the DRM core they reach the driver's vblank enable / disable
+ * (bdw_enable_vblank unmasks the pipe's vblank interrupt when a reference is taken), and _off() also
+ * settles waiters, pending events and vblank work.  ADAPTATION of this private, synchronous, single-buffer
+ * test (not a no-op of the reference, and not to be carried over to buffer flips or a Vulkan present):
+ * nothing here uses DRM vblank events, references or workers; frames are observed through the pipe's
+ * hardware frame counter / scanline.  The kernel binding therefore has to show (a) no code path left that
+ * waits for a software vblank count, (b) the pipe's vblank interrupt source is masked and stays so, (c) no
+ * worker / callback / waiter exists that a teardown would have to synchronise with.
+ */
+#define intel_crtc_vblank_on(cs) PARITY_LCD_DECIDED(SEQ_I915_CRTC_STATE(cs), "intel_crtc_vblank_on: DRM vblank events unused in this test; pipe vblank IRQ stays masked (checked by the binding)")
+/* _off(): the flip path has one pending event with a reference: it is settled here (E-120; the single-buffer
+ * statement above no longer covers it).  No vblank work / other waiters exist. */
+void parity_lcd_ms_vblank_off(void);
+#define intel_crtc_vblank_off(cs) do { (void)(cs); parity_lcd_ms_vblank_off(); } while (0)
 
 /* ---- hsw_crtc_enable(): callees that are not ported ---- */
 #define icl_ddi_bigjoiner_pre_enable(state, cs) PARITY_LCD_STEP(SEQ_I915_CRTC_STATE(cs), "icl_ddi_bigjoiner_pre_enable")

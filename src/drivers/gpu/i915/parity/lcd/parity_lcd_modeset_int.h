@@ -12,6 +12,9 @@
 #ifndef PARITY_LCD_MODESET_INT_H
 #define PARITY_LCD_MODESET_INT_H
 
+#include "lcd_wm_compat.h"
+#include "lcd_flip_compat.h"
+
 struct parity_lcd_modeset {
 	struct drm_i915_private i915;
 	struct intel_crtc crtc;
@@ -25,6 +28,24 @@ struct parity_lcd_modeset {
 	struct intel_plane plane;
 	struct intel_plane_state plane_state;
 	struct drm_framebuffer fb;
+	struct intel_plane cursor;              /* never shown; the reference reserves DDB space for it (skl_cursor_allocation) */
+	struct parity_lcd_wm_ctx wm;            /* old / new global DBUF state */
+	int wm_rc;
+	/* the CDCLK state this crtc requires (bxt_modeset_calc_cdclk) against the current one */
+	struct { int crtc_min, bw_min, min_cdclk, cdclk, vco, voltage_level, change_needed; } cdclk;
+	int cdclk_rc;
+	unsigned int bw_data_rate;              /* MB/s, as intel_bw_check_qgv_points() compares it */
+	/* the commit */
+	int dc_off_held; int dc_off_wakeref;
+	u32 bl_user, bl_user_max;                /* the backlight device's props.brightness / max_brightness */
+	int stop_unconfirmed;                   /* the disable reported an error: nothing further was given back */
+	unsigned commits;
+	struct drm_vblank_crtc vblank[4];        /* dev->vblank[]: hwmode, max_vblank_count */
+	int flip_event;                          /* the event token of the pending update */
+	u32 fb_fourcc, fb_width, fb_height, fb_pitch; u64 fb_modifier;
+	u32 cur_surf, pend_surf, old_surf; int flip_pending, flip_stuck; unsigned flip_gen;
+	int flip_event_ref;                      /* the armed event still holds its vblank reference (taken in update_end) */
+	unsigned events_cancelled;
 	int prepared;
 	int backlight_setup_rc;                 /* intel_backlight_setup(): 0, or a negative errno */
 	int plane_armed;                        /* a PLANE_SURF write armed the plane: the buffer may be scanned out */
@@ -34,6 +55,25 @@ struct parity_lcd_modeset {
 void parity_lcd_ms_bind_pll(struct parity_lcd_modeset *ms, int dpll_id);              /* intel_dpll_port.c */
 void parity_lcd_ms_bind_encoder(struct parity_lcd_modeset *ms);                       /* intel_ddi_port.c */
 void parity_lcd_ms_bind_buf_trans(struct intel_encoder *encoder);                     /* intel_ddi_buf_trans_port.c */
+void parity_lcd_ms_plane_data_rates(struct parity_lcd_modeset *ms);                    /* intel_atomic_plane_port.c */
+void parity_lcd_ms_wm_compute_off(struct parity_lcd_modeset *ms);                         /* skl_watermark_port.c */
+int parity_lcd_ms_cdclk_check(struct parity_lcd_modeset *ms);                             /* intel_cdclk_port.c */
+int parity_lcd_ms_bw_min_cdclk(struct parity_lcd_modeset *ms);                            /* intel_bw_port.c */
+unsigned int parity_lcd_ms_bw_data_rate(struct parity_lcd_modeset *ms);
+void parity_lcd_ms_plane_min_cdclk(struct parity_lcd_modeset *ms);                        /* skl_plane_port.c */
+/* reference functions of the commit's outer part (generated files) */
+void intel_ddi_compute_min_voltage_level(struct intel_crtc_state *crtc_state);
+void intel_modeset_get_crtc_power_domains(struct intel_crtc_state *crtc_state, struct intel_power_domain_mask *old_domains);
+void intel_modeset_put_crtc_power_domains(struct intel_crtc *crtc, struct intel_power_domain_mask *domains);
+void intel_dbuf_pre_plane_update(struct intel_atomic_state *state);
+void intel_dbuf_post_plane_update(struct intel_atomic_state *state);
+void intel_mbus_dbox_update(struct intel_atomic_state *state);
+void parity_lcd_ms_set_brightness(struct parity_lcd_modeset *ms, u32 user_level, u32 user_max);     /* intel_backlight_port.c */
+void parity_lcd_ms_backlight_power(struct parity_lcd_modeset *ms, int on);
+u32 parity_lcd_ms_user_level(struct parity_lcd_modeset *ms, u32 user_max);
+int parity_lcd_ms_wm_compute(struct parity_lcd_modeset *ms);
+void parity_lcd_ms_active_timings(struct parity_lcd_modeset *ms);                         /* intel_crtc_port.c */
+void parity_lcd_ms_plane_update_flip(struct parity_lcd_modeset *ms);                             /* skl_watermark_port.c */
 void parity_lcd_ms_color_check(struct parity_lcd_modeset *ms);                         /* intel_color_port.c */
 int parity_lcd_ms_backlight_setup(struct parity_lcd_modeset *ms);                      /* intel_backlight_port.c */
 void parity_lcd_ms_crtc_enable(struct parity_lcd_modeset *ms);                        /* intel_display_port.c */
@@ -44,3 +84,7 @@ void parity_lcd_ms_plane_update(struct parity_lcd_modeset *ms);
 void parity_lcd_ms_plane_disable(struct parity_lcd_modeset *ms);
 
 #endif /* PARITY_LCD_MODESET_INT_H */
+
+/* intel_crtc_vblank_off() of the flip path: settle the pending event (parity_lcd_modeset.c) */
+void parity_lcd_ms_vblank_off(void);
+int parity_lcd_ms_evade_window(struct parity_lcd_modeset *ms, int *min, int *max, int *vblank_start);

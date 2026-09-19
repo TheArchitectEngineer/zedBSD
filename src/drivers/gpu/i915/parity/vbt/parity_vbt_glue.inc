@@ -228,6 +228,8 @@ parity_vbt_init_panel(struct parity_vbt *v, int port, const uint8_t *edid128,
 	out->edp_preemphasis = panel.vbt.edp.preemphasis;
 	out->edp_vswing = panel.vbt.edp.vswing;
 	out->edp_low_vswing = panel.vbt.edp.low_vswing;
+	out->edp_hobl = panel.vbt.edp.hobl;
+	out->override_afc_startup = vbt_i915.display.vbt.override_afc_startup;
 	out->edp_max_link_rate = panel.vbt.edp.max_link_rate;
 	out->t1_t3 = panel.vbt.edp.pps.t1_t3;
 	out->t8 = panel.vbt.edp.pps.t8;

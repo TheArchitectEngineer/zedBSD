@@ -20,6 +20,7 @@
 #include "bios.h"
 #include "dp/parity_dp_kernel.h"
 #include "lcd/lcd_hw_check.h"
+#include "lcd/parity_lcd_kernel.h"
 #include "vga.h"
 #include "power_domains.h"
 #include "cdclk.h"
@@ -39,6 +40,7 @@
 #include "pxp.h"
 #include "driver_probe.h"
 #include "eu_test.h"
+#include "native_precheck.h"
 #include "../draw_fixture.h"
 #include "reset.h"
 #include "backend_sync.h"
@@ -70,6 +72,18 @@ parity_dump_trace(struct osdep_trace *t)
 			(unsigned long long)buf[i].arg1);
 	if (t->dropped != 0U)
 		kern_logf("i915: parity trace dropped=%u (records overflowed)\n", t->dropped);
+}
+
+/* N0 (E-120): the aperture, and the reference's readout gate for the precheck (no write) */
+static uint64_t n0_gmadr_base, n0_gmadr_size;
+static struct osdep_mmio *n0_mmio;
+static int n0_pipe_powered(void *ctx, unsigned pipe)
+{
+	struct parity_power_domains *pd = ctx;
+
+	/* the wells' real STATE (before init_hw the driver neither synced nor took over the firmware's requests) */
+	return parity_power_domain_hw_state_on(pd, (enum parity_power_domain)(PARITY_PW_DOMAIN_PIPE_A + pipe), n0_mmio) &&
+		parity_power_domain_hw_state_on(pd, (enum parity_power_domain)(PARITY_PW_DOMAIN_TRANSCODER_A + pipe), n0_mmio);
 }
 
 static const char *
@@ -150,6 +164,7 @@ drv_i915_parity_attach(struct i915_device *device, enum parity_stage stop_after,
 	static struct parity_dmc_dev dmc_dev;
 	static struct parity_display_state dstate;
 	static struct parity_irq_dev irqdev;
+	static struct parity_irq_vblank irq_vblank;
 	static struct parity_pch_state pch;
 	static struct parity_display_nogem nogem;
 	static struct parity_gt_mmio gtmmio;
@@ -200,6 +215,8 @@ drv_i915_parity_attach(struct i915_device *device, enum parity_stage stop_after,
 	res.outcome = PARITY_STOPPED;
 	res.error = 0;
 	res.where = "start";
+	res.lcd_test_ran = 0; res.lcd_test_pass = 0; res.lcd_cleanup_rc = 0; res.lcd_retained = 0;
+	res.lcd_first_anomaly_stage = "-";
 	res.last_completed = "";
 
 	/* Device-owned locks + display bandwidth state (device lifetime = this attach). */
@@ -519,6 +536,8 @@ drv_i915_parity_attach(struct i915_device *device, enum parity_stage stop_after,
 
 			gmadr_start = aperture.bus_address;
 			mappable_end = aperture.size;
+			n0_gmadr_base = gmadr_start;
+			n0_gmadr_size = mappable_end;
 			kern_logf("i915: parity env: phys_bits=%u cpu_limit=0x%llx bar2_raw=0x%08x bar3_raw=0x%08x\n",
 				pbits, (unsigned long long)limit, bar2, bar3);
 			kern_logf("i915: parity P2 ggtt_init_hw: gmadr=0x%llx mappable_end=0x%llx\n",
@@ -798,6 +817,35 @@ drv_i915_parity_attach(struct i915_device *device, enum parity_stage stop_after,
 	res.last_completed = "intel_pmdemand_init_early";
 
 	/*
+	 * N0 (E-120): before the first display write, record what the firmware left and decide whether the prepared start
+	 * path applies (native_precheck.h).  Read-only.  STOP = the probe ends here, nothing on the display was touched.
+	 */
+	{
+		static struct parity_native_report n0;
+		struct parity_native_deps nd;
+
+		memset(&nd, 0, sizeof(nd));
+		nd.mmio = &mmio;
+		nd.asls = osdep_pci_read32(&pci, 0xFCu);
+		nd.gmadr_base = n0_gmadr_base;
+		nd.gmadr_size = n0_gmadr_size;
+		nd.ggtt_pages = ggtt_entries;
+		nd.driver_ggtt_first = ggtt_entries > PARITY_GT_GGTT_PAGES + PARITY_GT_DISPLAY_PAGES ?
+			ggtt_entries - PARITY_GT_GGTT_PAGES - PARITY_GT_DISPLAY_PAGES : 0u;
+		nd.pipe_powered = n0_pipe_powered;
+		nd.ctx = &power_domains;
+		nd.vbt_pin = parity_vbt_explicit_pin();
+		n0_mmio = &mmio;
+		(void)parity_native_precheck(&nd, &n0);
+		parity_native_log(&n0);
+		if (!n0.proceed) {
+			res.outcome = PARITY_BLOCKED;
+			res.where = "native-precheck (before any display write)";
+			goto teardown;
+		}
+	}
+
+	/*
 	 * P3.6 intel_power_domains_init_hw(i915, false): display-core HW bring-up on
 	 * the REAL device (icl_display_core_init) -- DC-state disable, PCH reset
 	 * handshake, combo PHY, PW1 (fuses), CDCLK, DBUF, BW_BUDDY, xe_lpd WAs, then
@@ -1049,6 +1097,10 @@ drv_i915_parity_attach(struct i915_device *device, enum parity_stage stop_after,
 		irqdev.m = &mmio;
 		irqdev.pd = &power_domains;
 		irqdev.pwc = &pwc;
+		/* the pipes' interrupt control + vblank delivery, and the power-well hooks that restore / stop it */
+		parity_irq_vblank_init(&irqdev, &irq_vblank);
+		pwc.irq_ops = &parity_pw_irq_ops;
+		pwc.irq_ctx = &irqdev;
 		irqdev.pch = &pch;
 		irqdev.display_ver = (int)display_ver;
 		irqdev.pipe_mask = 0xfu;              /* ADL-P (xe_lpd) A|B|C|D */
@@ -1716,6 +1768,57 @@ p6_fw_out:
 			(void)parity_lcd_scanout_hw_check(&gtmem);
 	}
 
+	/*
+	 * LCD-B: one known picture on the panel through the reference's modeset, a finite observation window, the
+	 * reference's stop path.  No GPU submission happens in this mode; the AUX diagnostics are not repeated.
+	 */
+	if (PARITY_LCDB_TEST || PARITY_LCDR_TEST || PARITY_LCDG_TEST || PARITY_LCDC_TEST || PARITY_LCDD_TEST) {
+		static struct parity_lcd_kernel_deps lcdb;
+
+		lcdb.edp = &edp_dev; lcdb.mmio = &mmio; lcdb.pd = &power_domains; lcdb.pwc = &pwc; lcdb.dcore = &dcore;
+		lcdb.cdclk = &cdclk; lcdb.nogem = &nogem; lcdb.dstate = &dstate; lcdb.bw = &bw_state; lcdb.dmc = &dmc_dev;
+		lcdb.irq = &irqdev; lcdb.gm = &gtmem; lcdb.ipc_enabled = dprobe.ipc_enabled;
+		lcdb.es = &gteng; lcdb.vm = &gtpp; lcdb.uncore_lock = &uncore_lock;
+		if (gtmem_inited) {
+			struct parity_lcd_test_summary sum;
+
+			if (PARITY_LCDG_TEST || PARITY_LCDD_TEST) {
+				/* like the TEX test: the GT's forcewake domains are held around the submission */
+				static const int gfwd[5] = { OSDEP_FW_RENDER, OSDEP_FW_GT,
+					OSDEP_FW_MEDIA_VDBOX0, OSDEP_FW_MEDIA_VDBOX2, OSDEP_FW_MEDIA_VEBOX0 };
+				unsigned gheld = 0u;
+				int gfrc = 0;
+
+				while (gheld < 5u && (gfrc = osdep_fw_get(&mmio, gfwd[gheld])) == 0)
+					gheld++;
+				if (gheld == 5u && PARITY_LCDD_TEST)
+					(void)parity_lcd_kernel_lcdd_run(&lcdb);
+				else if (gheld == 5u)
+					(void)parity_lcd_kernel_lcdg_run(&lcdb);
+				else
+					kern_logf("i915: parity LCD-%c verdict: FAIL (forcewake rc=%d; nothing submitted)\n",
+						PARITY_LCDD_TEST ? 'D' : 'G', gfrc);
+				while (gheld-- > 0u)
+					osdep_fw_put(&mmio, gfwd[gheld]);
+			} else if (PARITY_LCDC_TEST) {
+				(void)parity_lcd_kernel_lcdc_run(&lcdb);
+			} else if (PARITY_LCDR_TEST)
+				(void)parity_lcd_kernel_lcdr_run(&lcdb);
+			else
+				(void)parity_lcd_kernel_lcdb_run(&lcdb);
+			parity_lcd_kernel_summary(&sum);
+			res.lcd_test_ran = 1;
+			res.lcd_test_pass = sum.pass;
+			res.lcd_cleanup_rc = sum.cleanup_rc;
+			res.lcd_retained = sum.retained;
+			res.lcd_first_anomaly_stage = sum.first_anomaly != 0 ? sum.first_anomaly_stage : "none";
+		} else {
+			kern_logf("i915: parity LCD-B verdict: FAIL (no GT memory)\n");
+			res.lcd_test_ran = 1;
+			res.lcd_first_anomaly_stage = "no-gt-memory";
+		}
+	}
+
 	if (PARITY_T3_TEST || PARITY_BL_TEST) {
 		const char *t3tag = PARITY_BL_TEST ? "BL" : "T3";
 		static const int t3fwd[5] = { OSDEP_FW_RENDER, OSDEP_FW_GT,
@@ -2248,11 +2351,16 @@ teardown:
 			gteng.ge[di].default_state = 0;
 		parity_engines_defaults_release(&gtdef, &gtmem);
 	}
-	if (gteng_inited) {
+	if (gteng_inited && parity_lcd_kernel_gpu_retained()) {
+		kern_logf("i915: parity teardown: engines NOT released (the GPU was not shown to be done with a kept buffer)\n");
+	} else if (gteng_inited) {
 		parity_intel_engines_release(&gteng, &gtmem);
 		kern_logf("i915: parity teardown: engines released (status pages, kernel contexts)\n");
 	}
-	if (gtmem_inited) {
+	if (gtmem_inited && parity_lcd_kernel_gpu_retained()) {
+		kern_logf("i915: parity teardown: the GPU was not shown to be done with a kept buffer -- the vm, its tables "
+			"and every GT object stay (resources_retained=1)\n");
+	} else if (gtmem_inited) {
 		parity_gt_ppgtt_destroy(&gtmem, &gtpp);
 		parity_gt_mem_fini(&gtmem);
 		kern_logf("i915: parity teardown: GT objects released, GGTT window back to scratch "
@@ -2265,10 +2373,16 @@ teardown:
 		kern_logf("i915: parity teardown: display-nogem fini (crtc/plane/dpll records released)\n");
 	}
 	if (irq_installed) {
-		parity_intel_irq_uninstall(&irqdev);
-		kern_logf("i915: parity teardown: intel_irq_uninstall (sources reset, "
-			"handler detached; irq_count=%u handled=%u none=%u)\n",
-			irqdev.irq_count, irqdev.irq_handled_count, irqdev.irq_none_count);
+		if (pwc.irq_sync_failed) {
+			kern_logf("i915: parity teardown: intel_irq_uninstall NOT run: a pipe interrupt drain failed earlier "
+				"(irq_attached=1 resources_retained=1; irq_count=%u handled=%u none=%u)\n",
+				irqdev.irq_count, irqdev.irq_handled_count, irqdev.irq_none_count);
+		} else {
+			parity_intel_irq_uninstall(&irqdev);
+			kern_logf("i915: parity teardown: intel_irq_uninstall (sources reset, "
+				"handler detached; irq_count=%u handled=%u none=%u)\n",
+				irqdev.irq_count, irqdev.irq_handled_count, irqdev.irq_none_count);
+		}
 	}
 	if (dstate_inited) {
 		parity_intel_display_state_fini(&dstate);
@@ -2317,6 +2431,12 @@ teardown:
 		kern_logf("i915: parity teardown: WC aperture unmap va=%p size=0x%llx rc=%d\n",
 			wc_aperture_va, (unsigned long long)wc_aperture_size, wc_urc);
 	}
+	if (parity_lcd_kernel_abandoned() || pwc.irq_sync_failed) {
+		/* a scanout buffer may still be read by the display: its pages, the scratch page behind its guard PTEs, the DMA
+		 * device (IOMMU mappings), the GGTT and bus mastering all stay as they are -- a leak is the safe side */
+		kern_logf("i915: parity teardown: a scanout buffer was ABANDONED -- DMA device, scratch page, BARs and bus mastering are kept\n");
+		goto lcdb_kept;
+	}
 	if (scratch_created) {
 		/* Release the scratch CPU mapping / DMA mapping / backing pages together. */
 		(void)drv_dma_vector_free(scratch_vec);
@@ -2341,6 +2461,7 @@ teardown:
 			osdep_rpm_usage(&probe_pm));
 	}
 
+lcdb_kept:
 	parity_dump_trace(&trace);
 	kern_logf("i915: parity attach end: reached=P%d outcome=%s where=%s err=%d\n",
 		(int)res.reached - 1, outcome_name(res.outcome), res.where, res.error);

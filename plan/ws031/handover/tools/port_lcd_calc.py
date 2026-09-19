@@ -50,7 +50,7 @@ def wr(name, text):
 
 def func(text, name, src):
     """the definition of `name` (with a directly preceding comment), which must exist exactly once"""
-    pat = re.compile(r"^(?:static |const |struct |enum |bool |int |void |u8 |u32 |i915_reg_t )[^\n;{]*\b" + re.escape(name) + r"\(", re.M)
+    pat = re.compile(r"^(?:static |const |struct |enum |bool |int |void |u8 |u32 |u16 |unsigned |i915_reg_t )[^\n;{]*\b" + re.escape(name) + r"\(", re.M)
     hits = []
     for cand in pat.finditer(text):
         brace, semi = text.find("{", cand.end()), text.find(";", cand.end())
@@ -92,7 +92,7 @@ def protos(body):
             out.append(head + ";")
     if not out:
         return body
-    anyfn = r"(?m)^(?:static |const |struct |enum |bool |int |void |u8 |u32 |i915_reg_t )[^;{}=]*?BS([^;{}]*?BS)BSs*BSnBS{".replace("BS", chr(92))
+    anyfn = r"(?m)^(?:static |const |struct |enum |bool |int |void |u8 |u32 |u16 |unsigned |i915_reg_t )[^;{}=]*?BS([^;{}]*?BS)BSs*BSnBS{".replace("BS", chr(92))
     first = re.search(anyfn, body)
     at = first.start() if first else 0
     pre = body[:at].rstrip(NL)
@@ -451,7 +451,7 @@ PLANE_FUNCS = ("icl_hdr_plane_mask", "icl_is_hdr_plane", "skl_plane_stride_mult"
                "skl_plane_ctl", "glk_plane_color_ctl_crtc", "glk_plane_color_ctl", "skl_surf_address", "skl_plane_surf",
                "skl_plane_aux_dist", "skl_plane_keyval", "skl_plane_keymsk", "skl_plane_keymax", "icl_plane_color_plane",
                "icl_plane_update_sel_fetch_noarm", "icl_plane_update_noarm", "icl_plane_disable_sel_fetch_arm",
-               "icl_plane_update_sel_fetch_arm", "icl_plane_update_arm", "icl_plane_disable_arm")
+               "icl_plane_update_sel_fetch_arm", "icl_plane_update_arm", "icl_plane_disable_arm", "icl_plane_min_cdclk")
 for n in PLANE_FUNCS:
     body += func(sp, n, "display/skl_universal_plane.c") + NL
 lic = sp[:first_comment_end(sp)]
@@ -555,7 +555,9 @@ for spec in SPEC.get("range_headers", []):
     stext = rd(os.path.join(base, os.path.dirname(spec["source"])), os.path.basename(spec["source"]))
     guard = "PARITY_" + re.sub(r"\W", "_", spec["out"]).upper()
     lic = stext[:first_comment_end(stext)]
-    body = NL.join(between(stext, part[0], part[1], spec["source"], part[2]) for part in spec["ranges"])
+    # a 4th element = text to cut from the END of the range (an end marker that is not part of the wanted text)
+    body = NL.join((lambda t, p: t[:len(t) - len(p[3])] if len(p) > 3 else t)(between(stext, part[0], part[1], spec["source"], part[2]), part)
+                   for part in spec["ranges"])
     wr(spec["out"], lic + NL + NL + "/*" + NL +
        " * zedBSD WS031: definitions extracted textually from the Linux v6.8.12 reference " + spec["path"] + NL +
        " * (sha256 " + manifest["sources"][os.path.basename(spec["source"])] + ") by tools/port_lcd_calc.py: " + NL +

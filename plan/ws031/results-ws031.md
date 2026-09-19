@@ -3546,3 +3546,164 @@ host 統合試験 **47/0**（+2: PWM backlight の値と停止）。trace の集
 **残り**: (1) watermark／DDB — 入力（`wm_skl_latency[]`、DBUF slice、CDCLK）は既に parity の通常初期化が保持している。`skl_watermark.c` の計算部を取り込み、比較先は Linux dump の PLANE_WM 0x80004010／PLANE_BUF_CFG 0x0fdb0000。(2) commit 外側（CRTC power domain、DC_OFF、CDCLK 確認、DBUF）。(3) kernel binding → GPU-free ktest（実 scanout object）→ 実機前判定 → LCD-B。
 
 **E-115 前半の追記（同日）**: 統合経路を GPU-free の kernel 試験にも入れた（`parity/lcd/lcd_modeset_ktest.c`、8 件: A 正常の準備／enable／順序／plane／plane 停止／disable／回収、C pipe が止まらない → buffer 保護と次の modeset の拒否）。ktest **460/0**（453 から recorder 列検査 1 件を外し +8）。共通部（`parity_edp.c` に bridge 3 関数、`dp_fake_hw` に hook、`lcd_compat.h`）を変更したので実機の AUX／scanout モードを 1 回: `AUX-TEST verdict: PASS`、`SCANOUT-TEST verdict: PASS`、`edp fini` refs 0（`e115-run-parity-hw-aux.log`）。表示 register への書込みは引き続き 0 件。
+
+## p011 増分E-115 後半 (2026-09-19): **watermark／DDB を計算・割当・writer まで接続 — 対象機の実 latency から PLANE_WM 0x80004010／PLANE_BUF_CFG 0x0fdb0000 = Linux dump と一致。経路上の未移植 step は 0**。vblank／underrun の省略根拠を訂正（専門家レビュー）
+
+### 1. 訂正（E-115 前半の記述）
+`intel_crtc_vblank_on/off` を「DRM の software 管理で register 操作なし」と書いたのは誤り。正本は DRM core 経由で driver の vblank 有効化（`bdw_enable_vblank` = pipe の vblank 割込み unmask）へ達し、off 側は待機者・pending event・vblank work の整理も担う。**「正本も無操作」ではなく「この非公開・同期・単一 buffer の診断経路での明示的な適応」**に改めた（`lcd_seq_compat.h` の comment と log 文言を修正）。根拠 = この試験は DRM の vblank event／参照／worker を使わず、進行は hardware の frame counter／scanline で観測する。kernel binding で (a) software vblank count を待つ経路が残っていない、(b) pipe の vblank 割込み source が mask されたまま、(c) 終了時に同期すべき worker／callback／待機者が無い、を確認する。LCD-C の buffer 切替や Vulkan present へは一般化しない。
+underrun も同様に「適応」: 割込みは unmask せず、**試験側が ICL_PIPESTATUS を所有**する（開始前の保存 → 正本の位置で clear → enable／plane arm／安定表示／disable の段階ごとに採取、register 名・address・bit mask つきで log、開始・停止中と安定中を分けて報告）。最後に 1 回読むだけにはしない。
+
+### 2. watermark／DDB（`skl_watermark.c` 49 関数＋helper を生成 file へ）
+- 計算: `skl_build_pipe_wm` → `skl_build_plane_wm[_single/_uv]`／`icl_build_plane_wm` → `skl_compute_plane_wm_params`／`skl_compute_wm_params` → `skl_compute_wm_levels` → `skl_compute_plane_wm`（method1／method2、IPC、line 上限）、`skl_compute_transition_wm`、`tgl_compute_sagv_wm`、vblank 長の検査。plane の data rate は `intel_atomic_plane.c`（`intel_plane_data_rate`／`_relative_data_rate`／`intel_plane_pixel_rate`）、可視判定 `intel_wm_plane_visible`、`drm_mode_get_hv_timing`、`intel_usecs_to_scanlines`、固定小数点は `i915_fixed.h` 全体。
+- 割当: `adlp_check_mbus_joined` → `skl_compute_dbuf_slices`（`adlp_allowed_dbufs[]`）→ `intel_dbuf_enabled_slices` → `intel_crtc_ddb_weight` → `skl_crtc_allocate_ddb` → `skl_crtc_allocate_plane_ddb`（**cursor 用の予約 `skl_cursor_allocation` を含む** — cursor を出さなくても正本は DDB を確保する）。glue は正本 `skl_compute_wm`／`skl_compute_ddb` の 1 crtc 分の流れ（出典を comment に明記）。`intel_compute_sagv_mask`（SAGV／帯域）は commit 外側として未接続。
+- writer: `skl_write_plane_wm`（level 0〜5、transition、**SAGV WM／SAGV transition**、`PLANE_BUF_CFG`）。plane 更新の正本の位置（PLANE_COLOR_CTL の後、arm の前）で走る。E-112 の step は消滅。
+- 入力の出所: latency（`3/54/83/102/147/147/144/144` us、6 level）と SAGV block time 35 us は**対象機の通常初期化が pcode から読んだ値**（実機 log の P5a 行）、DBUF 4096 block／4 slice／IPC は正本の XE_LPD device info、pixel rate・format・pitch は今回の mode と framebuffer。Linux dump の値は入力に使っていない。
+- **結果**: DDB = [0, 4060)（MBUS joined、slice 0xf 要求、残りは cursor 予約）、`PLANE_BUF_CFG` = end−1 を 12 bit field へ = **0x0fdb0000 = Linux dump**。WM level 0 = enable／1 line／16 block = **0x80004010 = Linux dump**。WM_TRANS 0x8000001e、WM_SAGV 0x8000c031（dump に readout なし）。
+- model: plane arm 時に「`PLANE_BUF_CFG` が空でない・DBUF 内・start ≤ last、WM level 0 が enable」を検査し違反を数える。**`PLANE_BUF_CFG` の write を故意に失わせる variant で違反 1 件になること**を試験（model が新しい依存を実際に見ている証拠）。
+
+### 3. 試験
+host 統合 **51/0**（+4: DDB 範囲と符号化、WM0、arm 時の DDB 検査、model 自己試験）、経路上の step 0・decided 3。lcd 56/0（words-only API では WM state が空なので、writer が arm の前に走ることだけ検査）、dp 72/0、GPU-free ktest **460/0**（A の plane 検査に DDB／WM の dump 一致を追加）、kernel build（-Werror）、`check_generated.sh` 全一致。
+
+### 残(次)
+commit 外側（`get_crtc_power_domains` 由来の CRTC power domain、commit 全体を囲む DC_OFF、CDCLK の要求状態との比較、DBUF の pre／post と MBUS、SAGV mask）→ kernel binding `parity_lcd_kernel.c`（値の出所を明示、最初の error／実際に有効化した状態／後始末の結果を別記録、vblank・PIPESTATUS の扱い）→ 実 scanout object と結合した GPU-free ktest（abandon は backing・DMA mapping・GGTT binding・pin・所有参照を保持、外側 teardown でも回収しない）→ 実機前判定 → LCD-B。
+
+## p011 増分E-116 (2026-09-19): **LCD-B 実機 PASS — 対象 LCD に既知 pattern(id 110)を 1 枚表示し、正本の停止経路で安全に停止・全資源回収。写真で表示を確認**。commit 外側・kernel binding・実 scanout 結合 ktest を接続
+
+### 1. commit 外側（正本 `intel_atomic_commit_tail()` を 1 crtc 分に縮約、順序と callee は正本のまま）
+- wrapper: `parity_lcd_modeset_commit_enable()`／`_commit_disable()`（`parity_lcd_modeset.c`）。enable: DC_OFF get → `intel_modeset_get_crtc_power_domains()` → [CDCLK: 変更なし] → `intel_dbuf_pre_plane_update()`（`update_mbus_pre_enable` + slice old|new）→ `intel_mbus_dbox_update()` → crtc enable → plane update → `intel_dbuf_post_plane_update()` → `intel_modeset_put_crtc_power_domains()` → DC_OFF `put_async_delay(17)`。disable: DC_OFF → domains 差分 → plane disable → crtc disable → DBUF pre／DBOX／post → domains put → DC_OFF put。
+- CRTC power domain は正本 `get_crtc_power_domains()` の mask そのもの（生成 file）: PIPE_A／TRANSCODER_A／encoder の `PORT_DDI_LANES_A`／shared DPLL のための `DISPLAY_CORE`。encoder 自身の DDI_IO／AUX 参照とは別 owner（二重取得ではない）。`intel_display_power_get_in_set`／`put_mask_in_set` も生成 file。
+- CDCLK: 正本 `intel_crtc_compute_min_cdclk`（pixel rate／2 = 70400）＋ plane（`icl_plane_min_cdclk` 70400）＋帯域（`intel_bw_crtc_min_cdclk` 11000）→ `bxt_calc_cdclk`（adlp table、ref 38400）= **179200 kHz／VCO 537600／voltage level 0 = 通常初期化が残した現在値** → 正本の変更なし経路（`intel_cdclk_changed` 偽）。異なる場合は prepare が理由つきで拒否（CDCLK programming は未接続、黙って通さない）。
+- DBUF／MBUS: 既存の共有 state（`display_core` の `gen9_dbuf_slices_update` 本体 = power-domains lock と `dbuf_enabled_slices` を所有）へ ops 経由で接続。new = slice 0xf／joined。disable commit では pipe 停止後に old|new → new(0x1)、MBUS un-join。
+- SAGV／QGV: **明示的な適応**（decided、log あり）— 初期化の強制 disable 状態（最大帯域 QGV point のみ）を維持し relax しない。prepare で必要帯域（564 MB/s）≦ 許可 point の derated 帯域（実機 14899 MB/s）を検査、不明なら拒否。PMDemand は正本条件（display ver < 14）で return。
+- 適応 2 件（log に decided として出る）: enable で anomaly が出たら plane を arm しない／disable が error を返したら commit 後半（DBUF 縮小・power domain 返却・DC_OFF 返却）を**実行しない**（`stop_unconfirmed`）。
+
+### 2. 観測（`parity_lcd_observe.c`、model と実機で同一 code、register は正本 macro）
+ICL_PIPESTATUS(0x70058、underrun mask 0x9c000000 = bit31／28／27／26)を試験が所有: 正本の clear 位置（`intel_set_cpu_fifo_underrun_reporting(true)` の位置 = crtc enable 内）で clear、commit の各点（begin／pipe enabled／plane armed／plane disabled／pipe disabled／end）と安定表示中に採取、**記録してから clear**、開始・停止期間と安定期間を別集計。frame 進行は frame counter のみで判定（経過時間では判定しない）。vblank 割込み mask は pipe の power well が on の間だけ判定。停止の証拠は **pipe-disabled 点（well がまだ on）で採取**。
+
+### 3. kernel binding（`parity_lcd_kernel.c`）と共有本体（`parity_lcd_show.c`）
+値の出所は file 冒頭に列挙（常駐 eDP の DPCD／EDID／LCD-A、今回 boot の VBT、`display_nogem` の WM latency、`display_core` の DBUF、`cdclk.hw`、帯域 table＋QGV mask、DMC loader state、今回 pin した scanout）。Linux dump の値は log の比較材料のみ。最初の anomaly／有効化した状態／後始末の結果を別記録（後始末の error は最初の anomaly を上書きしない）。abandon は backing・DMA mapping・GGTT・pin・owner を保持し、外側 teardown（`parity_gt_mem_fini`＋ probe の DMA device／scratch／BAR／bus master 解放）も回収しない。
+
+### 4. 試験
+- host 統合 **79/0**（+28: commit 外側の会計と順序、DBUF／MBUS 設定欠落の検出 2 variant、CDCLK 不一致・帯域不明・hook 欠落の拒否、frame counter 凍結を経過時間で進行と判定しない、underrun を開始期間／安定期間に分けて失わない、停止不能時に DC_OFF・domain・DBUF を奪わない、PIPE_MISC dither）。lcd 56/0、dp 72/0。
+- GPU-free ktest **474/0**（+14 `lcd_show_ktest.c`: 実 DMA 確保の scanout object＋実 mutex＋model で LCD-B 本体を 3 系統 — 正常／早期失敗（plane 未 arm、全返却、最初の anomaly 保持）／停止不能（ABANDONED: PTE 全数生存・unpin/destroy 拒否・次の run 拒否・`parity_gt_mem_fini` 後も保持））。
+- `check_generated.sh` 全一致。回帰 sweep（8 mode）は別記。
+
+### 5. 実機（-DPARITY_LCDB_TEST=1、log は handover/increment-results/、写真は e116-photos/）
+- **試行 1（e116-…-attempt1.log）: preflight で停止、display へ write なし**。原因 = pipe A の register（GEN8_DE_PIPE_IMR(A) 等）は power well A の中にあり、commit が PIPE_A domain を取るまで 0 を読む。preflight の register 判定を IRQ state の判定へ改め、observer は well on の間だけ mask を判定、model にも同じ事実を入れた（host 試験で検出できる形に）。
+- **試行 2（…-first-picture.log）: PASS、写真 e116-lcdb-picture.jpg に pattern 表示**（白枠、左上赤／右上緑／左下青／右下黄、左に F、右に 110、下に color bar、上に grey ramp = 定義どおり、反転・回転・ずれなし）。停止後の写真は消灯。sink: 2.7 Gbps×2、status 77 00 01、**train_set 01 01 = sink が実行時に要求した vswing 1**（model の 0 とは異なる — 保存値の再生ではない証拠）。frame counter 17→1257（40 round、約 20.7 s）。underrun: 開始・停止 0／安定 0。register の Linux dump 一致 16/17（相違 1 = DBUF_CTL_S1 の power bit 31:30 が不成立: 0x0043c000 対 0xc043c000 — 原因は下の DBUF 表の誤り）。
+  - この run の「停止後の frame counter 0→0／TRANSCONF 0」は **well off 後の読み出しで証拠にならない**と判明 → pipe-disabled 点（well on）で採取するよう修正。
+- **試行 3（e116b-…）: PASS、停止証拠 = well on のまま frame counter 1276→1276（50 ms 静止）＋ TRANSCONF state bit clear**。
+- 写真と log から parity の欠落を 1 件発見: crtc state に正本の dither 判定（`intel_modeset_pipe_config`: pipe_bpp == 18 なら dither）が無く PIPE_MISC が dither なしだった（Linux の display_info は dither=yes）。修正し host 試験を追加。**試行 4（e116c-…）: PASS、PIPE_MISC 0x00800150**、写真 e116c-lcdb-picture-dither.jpg。
+- **写真が既存 code の誤りを発見**: 試行 2〜4 の写真は背景（単色 0x102040）と色 block に細かい縞があり、log には `DBUF slice 3 power enable timeout` と DBUF_CTL_S1(0x45008) の power bit 不成立が出ていた。原因 = `display_core.c` の `dbuf_ctl_s[]` が {0x44FE8, 0x44300, 0x44304, 0x44308} で、正本（`skl_watermark_regs.h`: S0..S3 = 0x45008／0x44FE8／0x44300／0x44304）と 1 つずれていた（P3 期の手移植の誤り。「slice 1」が実際は 2 番目の slice を on にし、4 番目は DBUF でない register へ）。**underrun status は一度も立たなかった** — register 上の合格と表示の正しさは別、という専門家の指摘どおり。表を正本値へ修正（ktest の fake も）。**試行 5（e116d-…）: PASS、Linux dump 一致 17/17、写真 e116d-lcdb-picture-dbuf.jpg は単色背景・滑らかな grey ramp・黒の第 8 bar まで定義どおり**。通常初期化後の slice は 0x3（firmware が残した S2 を保持＋S1）、停止後は 0x1（正本どおり）。
+- 全 run: first anomaly none、bring-up／cleanup error 0、unresolved step 0、power ref 残 0、buffer 解放済み、readback 一致。
+
+### 6. 未解決として記録（推測で閉じない）
+1. **既存 power-well code は正本の `gen8_irq_power_well_post_enable()`／`_pre_disable()` を実行していない**（数えるだけの placeholder、かつ `pwc.irqs_enabled` が 0 のまま）。実測: well on 後の pipe A は IMR 0xfff9ffff／IER 0 = hardware 値（vblank・underrun は mask、割込みは一切届かない）。この試験には適合するが正本の状態（IMR = de_irq_mask、IER = ~mask | vblank | underrun | flip done）ではない。pipe 割込みを使う段（LCD-C の切替、vblank）より前に実装が必要。
+2. ICL_PIPESTATUS の bit 30／29 が pipe 有効化後つねに set（0x60000000）。正本 header に定義が無く、正本は読まず clear もしない。underrun mask 外なので判定に入れていない。意味は未確認。
+3. （解決）写真の縞と DBUF_CTL_S1 の相違は上記 DBUF 表の誤りで説明がつき、修正後に消えた。ただし「DBUF slice が off でも underrun status が立たない」ことは事実として残る: 表示の正しさは写真（または CRC 等）でしか判定できない。
+4. backlight: VBT の min brightness は 15（cfg の想定 6 は試験 fixture の値）— 実機 input の log に従う。level=max(96000)。
+
+### 残(次)
+gen8 power-well IRQ hook の実装 → LCD-A 残り／backlight 制御 → LCD-C（buffer 切替: vblank／flip done が要る）。compiler 拡張は LCD 本線の後。
+
+### E-116 追記: 回帰 sweep 8/8 PASS（DBUF 表修正後の同一 source、handover/tools/sweep_e116.sh）
+EU-REPEAT 5/5、DRAW 1024/1024、R1 12/12、TEX 1024/1024、T3 9/9、BL 4/4、TEX+explicit VBT、AUX+SCANOUT。各 mode ktest 474/0。報告 = handover/expert-reports/report-e116-lcdb.md、review 用 diff = increment-results/e116-review-1-e116-changes.patch／e116-review-2-wm-scanout.patch、累積 = e97-e116-changes.patch。
+
+## p011 増分E-117 (2026-09-19): **LCD 再利用 実機 PASS — 同一 driver 生存期間で表示／停止 3 回（pattern 110／111／112）、power-well IRQ hook を正本どおり接続し実 vblank IRQ で待機、輝度 max／half／min、backlight off（scanout 継続）／on、最終停止・全回収。写真 9 枚**。E-116 レビューの境界修正 4 点
+
+### 1. 境界修正（静的レビュー 2.1〜2.4）
+1. **abandon の保持**: `parity_lcd_modeset_abandoned()` は状態を消さず `stop_unconfirmed`／retained を立てる。prepare と両 commit は初期化前に拒否。show 本体に device 側 latch（`parity_lcd_show_retained()`）— 以後の run は何も確保する前に -EBUSY、kernel 側 run も lock／状態初期化の前に拒否、外側 teardown はこの latch を見る。解除は `_discard_model()` のみ（保持しているのが register **model** の backend であるとき = model の破棄そのものが隔離）。実 hardware では解除手段なし。
+2. **scanout create の状態契約**: NONE（かつ obj 無し）の storage だけ受理、それ以外は記録を一切変えず -EBUSY。storage は zero 初期化が前提と明記。下位の `parity_gt_object_destroy()`／`parity_gt_display_unbind()` も keep object を拒否（`keep_refusals`）— wrapper を迂回しても外れない。
+3. **待機 error の意味**: `k_wait_reg` は timeout だけを `-ETIMEDOUT`(-110)、時間基盤／wait primitive の異常は `-EIO`(-5) にし `parity_lcd_backend_fault()` で modeset の最初の anomaly へ記録。sleep（eDP tick sleep の time_faults 増加）と udelay（`parity_udelay` の失敗）も同じ記録へ。10 ms tick は不変。
+4. **LCD 試験結果の伝播**: `parity_result` に lcd_test_ran／pass／first anomaly の段／cleanup rc／retained、runner の最終行に `lcd_test=… lcd_first_anomaly_at=… lcd_cleanup_rc=… lcd_retained=…`。probe の成否は変えない（probe=COMPLETE と lcd_test=FAIL が並ぶ — 試行 1 で実証）。
+
+### 2. power-well IRQ hook と vblank（irq.c／power_domains.c）
+- `gen8_irq_power_well_post_enable()`: irq_lock（新設 spinlock）下で `intel_irqs_enabled()` を確認し、対象 pipe へ `GEN8_IRQ_INIT_NDX`（残 IIR clear → IER = ~de_irq_mask | vblank | underrun | flip done → IMR = de_irq_mask）。`gen8_irq_power_well_pre_disable()`: `GEN8_IRQ_RESET_NDX` の後、lock 外で `intel_synchronize_irq()`。power-well 本体の post-enable／pre-disable 位置から ops 経由で呼ぶ（従来は数えるだけの placeholder）。
+- **同期**: HAL には detach せずに同期する API が無い（`hal_irq_detach_msi_sync` は detach）。handler の入口／出口 count を driver 側に持ち、呼出し時点の入口数に出口数が追いつくまで待つ（100 ms で -ETIMEDOUT と記録）。HAL 変更なし。**不足の明示**: HAL の同期契約は detach 時のみ。
+- vblank: `bdw_update_pipe_irq`／`bdw_enable_vblank`／`bdw_disable_vblank` を移植、`drm_vblank_get/put` 相当（i915 の vblank_disable_immediate: 最後の put で即 mask）。handler の vblank bit から pipe ごとの count と completion へ通知（有効な pipe だけ）。待機は「呼出し後の新しい vblank IRQ が対象 pipe で n 回」かつ「hardware frame counter が進んだ」の両方 — 他 pipe の通知・古い pending bit・経過時間だけでは成功しない。`drm_crtc_vblank_restore()`（HAS_PSR 時）は DRM vblank count が無く PSR 非使用のため適応（comment に明記）。
+- underrun: 所有者は従来どおり observer（ICL_PIPESTATUS）。IMR で underrun は mask のまま（IER は正本どおり立つ）なので handler は underrun を受けない。
+
+### 3. 輝度と消灯（正本経由）
+`intel_panel_set_backlight`／`scale_user_to_hw`／`intel_panel_actually_set_backlight` を生成 file に追加、`intel_edp_backlight_on/off`。API `parity_lcd_modeset_brightness(user, user_max)`／`_backlight(on)`。**VBT の min_brightness は 0..255 の係数**（`get_backlight_min_vbt`）: 実機 15 → backlight.min = 15/255 × 96000 = 5647。正本の `__intel_backlight_enable` は「level ≤ min なら max で再点灯」— host 試験で両方を確認。
+
+### 4. 試験
+- host lcd-modeset **101/0**（+22: 再呼出し拒否と保持、model 以外の解除拒否、time-base fault = -EIO かつ最初の anomaly、dither の導出 18→1／24→0、輝度 4 段・消灯中の scanout 継続・再点灯の level 規則、同一 eDP で 3 cycle）、lcd 56/0、dp 72/0。
+- GPU-free ktest **502/0**（+42: IRQ hook post／pre・irqs 無効時の不書込み・vblank get/put と IMR・実 handler からの配送・待機の拒否条件 4 種・同期 timeout・PW_A の enable/disable 経由の hook、abandon の再呼出し／新 storage での拒否・下位層の拒否・teardown 後の latch 保持・model 破棄での解除、DBUF_CTL 表と正本 macro `DBUF_CTL_S()` の slice ごと照合、同一 lifetime で 2 回目の表示、in-window 試験失敗時の停止と回収）。`check_generated.sh` 全一致。
+
+### 5. 実機（-DPARITY_LCDR_TEST=1、QEMU timeout 240 s の複製 script。reference 条件は同一）
+- **試行 1（e117-…-attempt1.log）: 最初の anomaly = pipe A IMR の読み戻しが書込み値と不一致** 0xefe9f07f vs 0xefeff07f（bit 17／18 が 0 で読める。driver 以前の既定値 0xfff9ffff でも 0）。IER は期待値 0x90700f89 と完全一致、vblank 待機 3 回とも実 IRQ で成功（frame 56→59）、mask 後 100 ms の vblank IRQ 0。停止・回収は正常、runner に `lcd_test=FAIL lcd_first_anomaly_at=picture-up`。判定を「経路が依存する bit（vblank・underrun・flip done）の一致」へ改め、差分 bit は log に残す（意味は解釈しない）。
+- **試行 2（e117b-…）: PASS 3/3**。各 cycle: post_enable +1／pre_disable +1、sync timeout 0、IER = 期待値、vblank get で IMR bit0 clear → 待機 3 回成功 → put で set → その後 vblank IRQ 0。輝度 DUTY: max 0x17700 → half 0xc688（50824 = 5647 + (96000−5647)/2）→ min 0x160f（5647）→ off（PWM_CTL 0、DUTY 0、frame counter 1429→1855 で scanout 継続、plane armed のまま）→ on で half に復帰 → 元の 96000。cycle 2／3 は pattern 111／112 を表示し全回収。runner: `probe=COMPLETE … lcd_test=PASS lcd_first_anomaly_at=none lcd_cleanup_rc=0 lcd_retained=0`。
+- 写真（e117-photos/、contact sheet あり）: max／half／min で明るさが段階的に低下、backlight-off で消灯、on で復帰、111・112 の表示、最終停止後に消灯。
+- 注: cycle 2／3 の `window=-17` は表示用 GGTT 窓が既に確保済み（-EBUSY）の意味で、設計どおり受理。
+
+### 6. 未解決（推測で閉じない）
+1. pipe A の GEN8_DE_PIPE_IMR bit 17／18 は書込みで 1 にならない（常に 0 で読める）。正本は読み戻さない。意味未確認、判定外。
+2. ICL_PIPESTATUS bit 30／29（E-116 から継続、主線にしない）。
+3. vblank 待機の同期は driver 内の入口／出口 count（HAL に synchronize_irq 相当が無い）— 同一 vector の並行実行を前提にしない近似であることを comment に記録。
+
+### 残(次)
+GPU で描いた一枚を同じ backing から表示（render と scanout の同一 object、show 本体の画素作成と表示の分離、GPU 完了と可視性の分離）→ 二枚 buffer の同期 flip。回帰 sweep の結果は追記。
+
+### E-117 追記: 回帰 sweep 9/9 PASS（sweep_e117.sh、8 mode ＋ LCD-B、同一 source、各 ktest 502/0）
+EU-REPEAT 5/5、DRAW 1024/1024、R1 12/12、TEX 1024/1024、T3 9/9、BL 4/4、TEX+explicit VBT、AUX+SCANOUT、LCD-B（lcd_test=PASS）。報告 = handover/expert-reports/report-e117-lcd-reuse.md、review diff = increment-results/e117-review-changes.patch、累積 = e97-e117-changes.patch。
+
+## p011 増分E-118 (2026-09-19): **GPU で描いた full-HD 画像を同じ backing から LCD へ表示 実機 PASS（初回）**、IRQ drain 失敗で well を落とさない修正、vblank の lock 規則、輝度の user 単位復元
+
+### 1. IRQ 同期の安全化（レビュー §2・§3）
+- pre-disable hook は int を返す。pipe の受付を閉じる → `GEN8_IRQ_RESET_NDX` → pipe の in-flight を drain。-ETIMEDOUT（終わらない）と -EIO（時間基盤）を区別する。失敗したら `pwc->irq_sync_failed` を立て、POWER_REQUEST を下ろさず -EBUSY を返す。以後、ALWAYS_ON 以外の disable はすべて拒否。put は refcount=1 に戻して所有を保つ（kept_wells）。LCD binding は refusal を backend_fault に変え、commit_disable の tail の error が停止未確認になる。probe の teardown は IRQ uninstall をせず資源を保持する。
+- HAL（amd64）の確認: MSI の destination は割当時に固定、dispatch は vector ごとに in_handler flag 1 個だけで、呼出しが重ならない保証はコード上で読み取れない。→ driver 内の pipe gate（inflight++ → gate 確認、停止側は gate 閉 → reset → inflight==0 を待つ。いずれも seq_cst）。`parity_intel_synchronize_irq` の説明を「重ならない場合に限る。power-well 経路は依存しない」に訂正。
+- vblank: refs／enabled／count／IMR を IRQ lock の下へ（locked helper）。待機者は pipe ごとに一人（二人目は -EBUSY）。即時 mask は E-117 限定経路の適応と明記（Linux の vblank_disable_immediate とは異なる）。実機 IRQ 判定の基準点は put → mask の読み戻し → drain の後。
+
+### 2. 輝度（§5）
+backlight device の user brightness を modeset が保持する（register 時に `scale_hw_to_user`、max 復帰にも追従）。復元は user 値で行う（host: user 30000 から始めて同じ DUTY に戻ることを確認）。実機 step は FREQ 不変、PWM enable、DUTY = user→hw 変換値を合否に入れた。
+
+### 3. GPU 一枚表示（§6）
+- show 分割: `parity_lcd_show_prepared()`（PINNED の buffer を表示・停止。作成・書込み・解放はしない。停止確認で PINNED のまま所有者へ返す）。CPU pattern の `parity_lcd_show_run()` は wrapper として残し、結果は不変。
+- `tools/reftex.c` を argv で寸法を受ける形にした（既定 32×32 の出力は既存 inc と byte 一致、PS sha256 同一）。`reftex 1920 1080 rt` → `tex_fixture_fhd_gen.inc`（PS: scale 即値 1/1920・1/1080 だけが異なる。isl の render target RSS: B8G8R8A8 linear pitch 7680）。描画矩形と頂点は生成した寸法から出す。texture／sampler／packet 語は T1 と同一（試験で確認）。
+- 同じ backing: scanout object の 2025 page を PPGTT 0x100800000 へ insert（GGTT 表示窓の binding とは別）。walk の leaf がその object の page であることを確認。VA 配置表と重複検査（GPU-free）。
+- 順序: CPU 公開（prefill＋clflush）→ GPU 描画 → retire＋park → CPU は clflush してから読むだけ → 同じ object を表示 → 停止確認 → 再照合 → PPGTT PTE を scratch へ → GPU 側 object 解放 → unpin／destroy。timeout 時は gpu_done=0 で buffer を abandon。
+- **実機（e118-run-parity-hw-lcdg.log）**: render PASS、marker 4 つ、**画素 2,073,600/2,073,600**、texture・guard 無変更、MOCS 6。**同じ backing**: PPGTT leaf 0x100331000／0x100b19000 = GGTT PTE 0x100331001／0x100b19001。表示: 最初の anomaly なし、underrun 0、停止確認、停止後の再照合で誤り画素 0、PTE 2025/2025 を scratch へ、unpin／destroy、電源参照の残り 0。runner `lcd_test=PASS`。写真 e118-photos/e118-gpu-picture.jpg（8×8 texture の 64 ブロック、四隅の色が variant 0 の定義どおり）、停止後は消灯。
+
+### 4. 試験
+host lcd-modeset **105/0**（+4: 電源返却の拒否 → 停止未確認、user 単位の復元ほか）、lcd 56/0、dp 72/0。GPU-free ktest **515/0**（+13: drain 失敗 → well が enabled のまま・所有・latch・別 well も拒否、閉じた pipe を handler が拒否、drain 中の時間基盤 fault は -EIO、二人目の待機者を拒否、full-HD の VA 重複なし、生成 state の内容、batch の描画矩形・頂点、全画素 verifier（誤り 2 画素を 2 と数える）、prepared 表示の所有権）。
+
+### 5. 未解決
+PPGTT の PTE は scratch に戻すが、GPU TLB の無効化は次回提出に委ねている（この mode では以後の提出なし。LCD-C の反復描画の前に正本の unbind／TLB invalidation へ接続する）。既存 T1〜T3 は解放後も PTE を残す（回帰基準なので変えていない）。IMR bit 17/18・PIPESTATUS bit 30/29 は継続扱い。
+
+### E-118 追記: 回帰 sweep 11/11 PASS（sweep_e118.sh、8 mode ＋ LCD-B ＋ LCD-R ＋ LCD-G、同一 source、各 ktest 515/0）
+LCD-R の輝度 7 step すべてで DUTY／FREQ／PWM_CTL が OK、IRQ 判定は drain 後の基準点で 3 cycle OK。報告 = handover/expert-reports/report-e118-gpu-to-lcd.md、review diff = increment-results/e118-review-changes.patch、累積 = e97-e118-changes.patch。
+
+## p011 増分E-119 (2026-09-19): **同期 flip 実機 PASS — LCD-C（CPU で用意した A/B）と LCD-D（表示していない側を GPU で描き直して flip）**、GPU 未完了時の保護を外側 teardown まで、PTE 解放契約＋GT TLB 無効化
+
+### 1. GPU 未完了時の保護（レビュー①）
+`parity_lcdg_finish()`: submitted かつ未完了なら `parity_fhd_render_keep()`（texture／state／batch／timeline／RT／ring＋context state）、scanout を abandon、`parity_lcd_show_retain_gpu()` で device の GPU latch。probe teardown は `parity_lcd_kernel_gpu_retained()` が真なら engines release と ppgtt／gt_mem fini を行わない。runner は retained=1。GPU-free: FIN-GPU／FIN-REFUSE／FIN-TEARDOWN／FIN-NOTSHOWN／FIN-DISCARD。
+
+### 2. PTE 解放契約と TLB（レビュー②）
+`parity_fhd_render_release()`: -EBUSY（GPU 未完了）→ 全 mapping を scratch → 呼出しごとに walk で確認（合算しない、-EIO で ownership を保持）→ `parity_gt_invalidate_tlb_full()`（新規 gt_tlb.c: mmio_invalidate_full 準拠、FORCEWAKE_ALL、reset との直列化、全 engine、gen12 register、OA WA 0xceec）→ 解放。T1〜T3 harness は `eu_scrub_fixture_ptes()`（fixture は不変）。実機 LCD-G: 2028/2028、TLB rc=0、timeouts 0。
+
+### 3. display_acquired、vblank snapshot、IRQ uninstall log（レビュー③ほか）
+G-NOTSTARTED（prepare 拒否 → acquired=0、書込み 0、所有者が回収）。vblank 計数は `vbl_snapshot()`。uninstall log は実行時のみ。
+
+### 4. 同期 flip
+正本から生成: intel_pipe_update_start／_end、vblank counter／scanline helper、intel_crtc_update_active_timings（intel_enable_crtc の位置）。`parity_lcd_modeset_flip()`: DC_OFF を前後で保持（put_async 17 ms）、完了＝event（新 vblank IRQ＋frame 前進）かつ PLANE_SURFLIVE==新。TIMEOUT／NOT_LATCHED は stuck で両 buffer 保持、以後の flip は拒否。model: SURFLIVE の latch を別に表現、fault 3 種。host section I。kernel ops: vblank_get/put/sleep、irq_off/on（kern_irq_disable の戻り値で復元）、arm_event／wait_event。
+- **LCD-C 実機 PASS**（-DPARITY_LCDC_TEST=1）: A=121／B=122、modeset 1 回で A→B→A→B→A、4/4 DONE、各 flip は +1 frame で live 切替、写真 6 枚一致（8 秒保持。3 秒保持の最初の試行はカメラ遅延で写真がずれたため撮り直し、verdict は両方 PASS）。
+- **LCD-D 実機 PASS**（-DPARITY_LCDD_TEST=1）: A=0x100800000／B=0x101000000 に RT を常時 map（`parity_fhd_rt_map/unmap`）、`parity_fhd_render_run_ex(rt_va, variant, premapped)`。GPU 描画 9/9（毎回 2073600/2073600、同じ variant は同じ hash）、flip 8/8 DONE、写真 10 枚一致、最後に A/B 2025/2025 を scratch＋TLB（計 11 回、timeouts 0）、両 buffer 回収、lcd_retained=0。
+
+### 5. 試験
+host lcd-modeset **115/0**（+10）、lcd 56/0、dp 72/0、check_generated 一致。GPU-free ktest **535/0**（+20）。回帰 sweep 13/13 PASS（sweep_e119f.sh、最終 source、各 ktest 535/0。round 50 前の source でも sweep_e119.sh 12/12）。
+報告 = handover/expert-reports/report-e119-sync-flip.md、review diff = increment-results/e119-review-changes.patch（E-118 tree 比）、累積 = e97-e119-changes.patch。
+
+### 6. 未解決
+LCD-D は描画ごとに context などを作り直している（同一 context の反復 submit は未）。evasion の sleep 経路は実機未通過。「同じ backing」は代表 page。IMR bit 17/18・PIPESTATUS bit 30/29 は継続。
+
+## p011 増分E-120 (2026-09-19): E-119 の境界確認と native 受入の準備（ベアメタル起動の直前まで）
+- E-119 固定: increment-results/e119-freeze.md（2bf790a4＋e97-e119-changes.patch、各 build の sha256）。報告の訂正: buffer をまたぐ同一性は E-119 では未確認だった（E-120 で確認）。`event_rc` 表記。TLB の done は 0 に戻れば完了。
+- TLB: 実装は正本どおり mask=done, value=0 を待つ。fake は受け付け後 3 read で clear（TLB-POLL）、stuck は bit が残る。seqno は成功時のみ +2。意図的な fault の log に backend／test／expected_fault と ktest の区間の目印。
+- flip の event: **欠落を修正** — TIMEOUT した event の vblank 参照が停止で返っていなかった。intel_crtc_vblank_off → parity_lcd_ms_vblank_off（cancel_event＋put 1 回）。event 本体は thread 専有、IRQ は lock 下の計数だけを更新（no-op にしている lock の根拠）。host J1。
+- evasion sleep: model J2（範囲内 → sleep 1 → DONE、IRQ 有効）／J3（vblank なし → 有限に終わり、完了扱いにしない）。**実機 REACHED**（scanline 1074、遅れ 0 line）。最初の固定先行量 2〜30 line の試行は NOT-REACHED（log 保存）。
+- LCD-D: 順序 A0 B1 A2 B3 A1 B2 A3 B0、buffer をまたぐ hash 4/4 一致、写真一致。trace 上限 768→2048（probe 分の flip で記録が欠けないように）。
+- **N0**（native_precheck.c／native_decide.c／opregion_vbt.c）: P3.4 と P3.6 の間、読むだけ。OpRegion→VBT（2.0 は物理、2.1 以上は相対の RVDA、なければ mailbox#4）、GFXVTBAR（MCHBAR mirror 0x145400）の VER／GSTS／PMEN、fb の handoff と GGTT の重なり、pipe の電源は well の STATE bit で判定（init_hw 前の hw_enabled は使わない）。判定: active pipe／重なり／VT-d が読めない・TES・PMR → 書込み前に STOP（BLOCKED where=native-precheck）。
+- 対象機の native 側の事実: ASLS 0x614e5018、OpRegion 2.1、RVDA 0x2000／RVDS 8704（VBT の sha は明示 pin と同一）、DMAR flags 0x05（platform opt-in）、GPU の DRHD 0xfed90000、efifb 0x4000000000（GMADR 先頭、1920×1080）→ **native の初回は active pipe A で STOP の見込み**。
+- 試験: host lcd-modeset 123/0、lcd 56/0、dp 72/0、opregion 11/0（新）、native-decide 8/0（新）。ktest 536/0。回帰 sweep 13/13 PASS（sweep_e120.sh、最終 source、各 ktest 536/0、全 run で N0 PROCEED）。
+- 未解決: N1（active な pipe の readout と crtc_disable_noatomic）、intel_opregion_register、同じ context を再利用する renderer（未着手）。native の log は画面の写真＋/var/log/messages（ring 32 KiB）。
+- 報告 = handover/expert-reports/report-e120-native-prep.md、review diff = e120-review-changes.patch（E-119 固定版比）、累積 = e97-e120-changes.patch。

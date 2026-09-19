@@ -31,6 +31,20 @@ struct parity_lcd_modeset_cfg {
 	uint16_t vbt_backlight_pwm_freq_hz;
 	uint8_t vbt_backlight_min_brightness;
 	uint32_t rawclk_khz;
+	/* watermark / DDB inputs, as the normal initialisation read and keeps them */
+	uint16_t wm_latency[8];         /* skl_setup_wm_latency(): usec per level */
+	uint8_t wm_num_levels;
+	int wm_ipc_enabled;
+	uint8_t sagv_block_time_us;
+	uint32_t dbuf_size;             /* DISPLAY_INFO()->dbuf.size / slice_mask of the platform */
+	uint8_t dbuf_slice_mask;
+	uint8_t dbuf_enabled_slices;    /* the slices enabled now (the old global DBUF state) */
+	int mbus_joined;                /* MBUS_CTL as found (the old global DBUF state) */
+	/* the CDCLK state the normal initialisation left (display.cdclk.hw) and the platform limit */
+	uint32_t cdclk_khz, cdclk_vco_khz, cdclk_ref_khz, cdclk_bypass_khz, cdclk_max_khz;
+	uint8_t cdclk_voltage_level;
+	/* memory bandwidth (MB/s) of the QGV point the initialisation left allowed (SAGV is kept off); 0 = unknown = refuse */
+	uint32_t qgv_allowed_bw;
 	uint32_t dmc_fw_mask;           /* bit n: DMC firmware id n is loaded (1 = pipe A, 2 = pipe B ...; from the DMC loader) */
 	int vbt_override_afc_startup;   /* VBT general feature; the value is already in the state's pll.div0 */
 	/* the framebuffer to show: what the scanout object reports */
@@ -52,6 +66,27 @@ struct parity_lcd_modeset_status {
 	/* backlight (PWM): what intel_backlight_setup() derived and whether it is on */
 	int backlight_present, backlight_enabled, backlight_setup_rc;
 	uint32_t backlight_pwm_max, backlight_level;
+	/* watermarks / DDB computed for the plane (software range [start, end) in DDB blocks) */
+	int wm_rc;
+	uint16_t ddb_start, ddb_end;
+	uint16_t wm0_blocks, wm0_lines; int wm0_enable;
+	uint8_t dbuf_slices_wanted; int mbus_joined;
+	/* the commit's outer part */
+	int cdclk_rc, cdclk_crtc_min, cdclk_bw_min, cdclk_required_khz, cdclk_required_vco, cdclk_required_level, cdclk_change_needed;
+	unsigned bw_data_rate;          /* MB/s this crtc needs */
+	int dc_off_held;                /* POWER_DOMAIN_DC_OFF is held (inside a commit, or kept after an unconfirmed stop) */
+	unsigned crtc_domains_held;     /* how many domains of get_crtc_power_domains() the crtc holds */
+	uint8_t dbuf_slices_now; int mbus_joined_now;   /* the current global DBUF state */
+	int stop_unconfirmed, retained;
+	int dither;
+	uint32_t cur_surf, pend_surf;       /* displayed / pending (valid while flip_pending) */
+	int flip_pending, flip_stuck; unsigned flip_gen;
+	int flip_event_ref;                     /* the pending event still holds its vblank reference */
+	unsigned events_cancelled;              /* events settled by the stop path (drm_crtc_vblank_off) */
+	uint32_t backlight_min;         /* panel->backlight.min (hw units) */
+	uint32_t backlight_max;
+	uint32_t backlight_user, backlight_user_max;   /* the user brightness (restore THIS, not the hw level) */                     /* crtc state: derived from pipe_bpp (intel_modeset_pipe_config) */
+	unsigned commits;
 	/* ownership */
 	int pll_on, pll_active_mask, pll_wakeref;
 	int ddi_io_wakeref, aux_wakeref;
@@ -70,6 +105,60 @@ struct parity_lcd_modeset_status {
 /* -22 for a configuration this path does not cover (checked before anything is touched) */
 int parity_lcd_modeset_prepare(const struct parity_lcd_state *s, const struct parity_lcd_modeset_cfg *cfg,
 	struct parity_lcd_emit *ops);
+/*
+ * The two commits of the test, each the reference's intel_atomic_commit_tail() reduced to this crtc:
+ *   enable : DC_OFF get -> crtc power domains -> [CDCLK: no change] -> DBUF pre-plane (MBUS, slices) -> MBUS DBOX ->
+ *            crtc enable -> plane update -> DBUF post-plane -> put unused domains -> DC_OFF put (async, 17 ms)
+ *   disable: DC_OFF get -> domains to drop -> plane disable -> crtc disable -> DBUF pre / DBOX / post -> put the
+ *            domains -> DC_OFF put
+ * Adaptations (logged): after a first anomaly in the enable the plane is NOT armed; after an error in the disable
+ * nothing further is given back (DBUF, power domains and DC_OFF stay as they are -- see stop_unconfirmed).
+ */
+int parity_lcd_modeset_commit_enable(void);
+/*
+ * While the picture is up (crtc active):
+ *   _brightness(user_level, user_max)   the backlight device's update (user range [0, user_max])
+ *   _backlight(on)                      backlight PWM + panel backlight-enable off / on; the pipe, the plane and the
+ *                                       buffer stay in use -- this is NOT a display stop
+ * PARITY_LCD_MS_OK, _NOT_PREPARED (no active crtc / retained), or _ERRORS (a reference error during the call).
+ */
+int parity_lcd_modeset_brightness(uint32_t user_level, uint32_t user_max);
+/*
+ * Flip the running picture to another buffer (same format / size / pitch): the reference's update of a running crtc
+ * (plane noarm, intel_pipe_update_start -- vblank evasion --, plane arm, intel_pipe_update_end -- the event is armed).
+ * COMPLETE only when the event completed AND the pipe's live surface (PLANE_SURFLIVE) is the new buffer; then the old
+ * buffer is no longer displayed.  Otherwise both stay protected and further flips are refused (flip_stuck) until the
+ * display is stopped.  One flip pending at a time; one display owner.
+ */
+struct parity_lcd_flip_result {
+	unsigned gen;
+	uint32_t old_surf, new_surf, live_before, live_after;
+	uint32_t frame_before, frame_after;
+	int event_rc;
+	int update_errors;                      /* reference errors during the update (e.g. "Atomic update failure") */
+	int result;                             /* PARITY_LCD_FLIP_* */
+};
+#define PARITY_LCD_FLIP_DONE        0       /* the new buffer is displayed; the old one is released */
+#define PARITY_LCD_FLIP_NOT_LATCHED 1       /* the event came but the live surface is not the new one: both kept */
+#define PARITY_LCD_FLIP_TIMEOUT     2       /* no completion: both kept */
+#define PARITY_LCD_FLIP_REFUSED     3       /* nothing written (not running, a flip stuck, same buffer, bad address) */
+int parity_lcd_modeset_flip(uint32_t new_surf, struct parity_lcd_flip_result *out);
+/* the reference's vblank-evasion window of the running mode (intel_crtc_vblank_evade_scanlines): scanlines [min, max] */
+int parity_lcd_modeset_evade_window(int *min, int *max, int *vblank_start);
+int parity_lcd_modeset_backlight(int on);
+int parity_lcd_modeset_commit_disable(void);
+/*
+ * After an unconfirmed stop.  The object does NOT forget what it holds: stop_unconfirmed, the power references,
+ * DC_OFF, the DBUF slices and the crtc state stay recorded, and every later prepare is refused before anything is
+ * initialised.  _abandoned() marks that the caller has taken the retained resources over (the scanout buffer).
+ * The only way out is _discard_model(): permitted solely when the retained state belongs to a MODEL backend, whose
+ * discarding is itself the isolation; on real hardware there is no release (a recovery that verifies isolation
+ * does not exist yet).
+ */
+void parity_lcd_modeset_abandoned(void);
+int parity_lcd_modeset_retained(void);
+int parity_lcd_modeset_discard_model(const struct parity_lcd_emit *ops);
+/* the stages the commits are made of (kept for the word-level tests; the path to a picture is the two commits) */
 int parity_lcd_modeset_enable(void);
 int parity_lcd_modeset_plane_update(void);
 int parity_lcd_modeset_plane_disable(void);

@@ -33,5 +33,8 @@
 
 #define pipe_name(p) ((p) + 'A')
 #define port_name(p) ((p) + 'A')
+#define for_each_pipe(__dev_priv, __p) \
+	for ((__p) = 0; (__p) < I915_MAX_PIPES; (__p)++) \
+		for_each_if(DISPLAY_RUNTIME_INFO(__dev_priv)->pipe_mask & BIT(__p))
 
 #endif /* PARITY_LCD_MREG_DISPLAY_H */

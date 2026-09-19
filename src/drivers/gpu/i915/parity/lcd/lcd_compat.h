@@ -90,7 +90,10 @@ void parity_lcd_error(const char *what);
 #define CRTC_STEREO_DOUBLE (1 << 1)
 #define CRTC_NO_DBLSCAN (1 << 2)
 #define CRTC_NO_VSCAN (1 << 3)
+#define CRTC_STEREO_DOUBLE_ONLY (CRTC_STEREO_DOUBLE | CRTC_NO_DBLSCAN | CRTC_NO_VSCAN)
+struct list_head { struct list_head *next, *prev; };
 struct drm_display_mode {
+	struct list_head head;
 	int clock;		/* kHz */
 	u16 hdisplay, hsync_start, hsync_end, htotal;
 	u16 vdisplay, vsync_start, vsync_end, vtotal;
@@ -105,7 +108,8 @@ struct drm_display_mode {
 	u16 crtc_vdisplay, crtc_vblank_start, crtc_vblank_end, crtc_vsync_start, crtc_vsync_end, crtc_vtotal;
 };
 void drm_mode_set_crtcinfo(struct drm_display_mode *p, int adjust_flags);
-struct drm_device { int unused; int switch_power_state; };
+struct drm_vblank_crtc;
+struct drm_device { int unused; int switch_power_state; struct drm_vblank_crtc *vblank; int vblank_time_lock; int event_lock; };
 #include "lcd_drm_colorspace.h"  /* reference, extracted: enum drm_colorspace */
 struct drm_connector_state { enum drm_colorspace colorspace; void *connector; void *best_encoder; int content_protection; };
 struct drm_display_info { u32 quirks; };
@@ -152,6 +156,8 @@ struct intel_color_funcs {             /* intel_color.c: the members this path u
 	void (*color_commit_arm)(const struct intel_crtc_state *crtc_state);
 	void (*load_luts)(const struct intel_crtc_state *crtc_state);
 };
+struct intel_cdclk_vals;
+#define DISPLAY_INFO(i915) (&(i915)->display.device_info)
 struct drm_i915_private {
 	struct drm_device drm;
 	struct parity_lcd_emit *emit;
@@ -159,32 +165,66 @@ struct drm_i915_private {
 		struct { struct { int nssc; } ref_clks; struct { int which; } lock; } dpll;
 		struct { bool override_afc_startup; u8 override_afc_startup_val; } vbt;
 		struct { bool ignore_long_hpd; } hotplug;
+		struct { u16 skl_latency[8]; u8 num_levels; bool ipc_enabled; } wm;
+		struct { struct { u32 size; u8 slice_mask; } dbuf; bool has_ddi; } device_info;   /* the reference's DISPLAY_INFO()->dbuf */
+		struct { u8 block_time_us; } sagv;
 		struct { const struct intel_color_funcs *color; } funcs;
 		struct { u32 fw_mask; } dmc;        /* bit n: firmware for enum intel_dmc_id n is loaded (from the DMC loader) */
 		struct { struct { int which; } lock; } backlight;
-		struct { u32 rawclk_freq; } runtime;
+		struct { u32 rawclk_freq; u8 pipe_mask; } runtime;
+		/* the CDCLK state the normal initialisation left: table of the platform, reference / bypass clock, limit */
+		struct { const struct intel_cdclk_vals *table; struct { unsigned int cdclk, vco, ref, bypass; u8 voltage_level; } hw; unsigned int max_cdclk_freq; } cdclk;
 		struct { int invert_brightness; } params;   /* module parameter: 0 (default) */  /* DISPLAY_RUNTIME_INFO: rawclk in kHz (read out by the caller) */
 	} display;
 };
-enum pipe { INVALID_PIPE = -1, PIPE_A = 0, PIPE_B, PIPE_C, PIPE_D };
+enum pipe { INVALID_PIPE = -1, PIPE_A = 0, PIPE_B, PIPE_C, PIPE_D, I915_MAX_PIPES };
 typedef signed char s8;
-struct drm_crtc { struct drm_device *dev; struct { int id; } base; const char *name; };
+struct drm_plane;
+struct drm_crtc_funcs;
+struct drm_crtc { struct drm_device *dev; struct { int id; } base; const char *name; struct drm_plane *cursor; const struct drm_crtc_funcs *funcs; };
 /* drm_atomic.h: the three flags drm_atomic_crtc_needs_modeset() looks at */
 struct drm_property_blob { size_t length; void *data; };
-struct drm_crtc_state { struct drm_crtc *crtc; bool mode_changed, active_changed, connectors_changed; };
+struct drm_crtc_state { struct drm_crtc *crtc; bool mode_changed, active_changed, connectors_changed, async_flip; u32 encoder_mask; void *event; };
 static inline bool drm_atomic_crtc_needs_modeset(const struct drm_crtc_state *state)
 {
 	return state->mode_changed || state->active_changed || state->connectors_changed;
 }
 #include "lcd_ddi_types.h"       /* reference, extracted: enum port, phy, intel_output_type, intel_output_format */
-struct intel_crtc { struct drm_crtc base; enum pipe pipe; bool active; };
+/* linux/bitmap.h / bitops.h, as far as the power-domain set needs them */
+#define PARITY_BITS_PER_LONG (8u * (unsigned)sizeof(unsigned long))
+#define DECLARE_BITMAP(name, bits) unsigned long name[((bits) + PARITY_BITS_PER_LONG - 1u) / PARITY_BITS_PER_LONG]
+static inline void set_bit(unsigned nr, unsigned long *p) { p[nr / PARITY_BITS_PER_LONG] |= 1ul << (nr % PARITY_BITS_PER_LONG); }
+static inline void clear_bit(unsigned nr, unsigned long *p) { p[nr / PARITY_BITS_PER_LONG] &= ~(1ul << (nr % PARITY_BITS_PER_LONG)); }
+static inline bool test_bit(unsigned nr, const unsigned long *p) { return (p[nr / PARITY_BITS_PER_LONG] >> (nr % PARITY_BITS_PER_LONG)) & 1ul; }
+static inline void bitmap_zero(unsigned long *dst, unsigned nbits)
+{ unsigned i; for (i = 0; i < (nbits + PARITY_BITS_PER_LONG - 1u) / PARITY_BITS_PER_LONG; i++) dst[i] = 0ul; }
+static inline void bitmap_andnot(unsigned long *dst, const unsigned long *a, const unsigned long *b, unsigned nbits)
+{ unsigned i; for (i = 0; i < (nbits + PARITY_BITS_PER_LONG - 1u) / PARITY_BITS_PER_LONG; i++) dst[i] = a[i] & ~b[i]; }
+static inline bool bitmap_subset(const unsigned long *a, const unsigned long *b, unsigned nbits)
+{ unsigned i; for (i = 0; i < (nbits + PARITY_BITS_PER_LONG - 1u) / PARITY_BITS_PER_LONG; i++) if (a[i] & ~b[i]) return false; return true; }
+#ifndef for_each_if
+#define for_each_if(condition) if (!(condition)) {} else
+#endif
+#define IS_ENABLED(option) 0            /* CONFIG_DRM_I915_DEBUG_RUNTIME_PM: off (no per-domain wakeref tracking) */
+#include "lcd_power_domain_enum.h"      /* reference, extracted: enum intel_display_power_domain */
+#include "lcd_power_domain_set_types.h" /* reference, extracted: the power-domain mask / set and for_each_power_domain() */
+#include "lcd_mreg_power.h"             /* reference, extracted: POWER_DOMAIN_PIPE() / _TRANSCODER() / _PIPE_PANEL_FITTER() */
+struct intel_crtc { struct drm_crtc base; enum pipe pipe; bool active; struct intel_display_power_domain_set enabled_power_domains;
+	u8 mode_flags; int scanline_offset; int vmax_vblank_start;
+	struct { u32 min_vbl, max_vbl; int scanline_start; long long start_vbl_time; u32 start_vbl_count; } debug; void *flip_done_event; };
 #define to_intel_crtc(c) container_of(c, struct intel_crtc, base)
 struct drm_rect { int x1, y1, x2, y2; };
 static inline int drm_rect_width(const struct drm_rect *r) { return r->x2 - r->x1; }
 static inline int drm_rect_height(const struct drm_rect *r) { return r->y2 - r->y1; }
+#include "lcd_plane_types.h"     /* reference, extracted: enum plane_id, I915_MAX_PLANES */
+#include "lcd_dbuf_slice_enum.h"  /* reference, extracted: enum dbuf_slice */
+#include "lcd_wm_types.h"        /* reference, extracted: skl_wm_level, skl_plane_wm, skl_pipe_wm */
+#include "lcd_wm_ddb_types.h"    /* reference, extracted: skl_ddb_entry + size / equal */
+struct intel_plane;
+struct intel_plane_state;
 struct intel_crtc_state {
 	struct drm_crtc_state uapi;
-	struct { struct drm_display_mode adjusted_mode; const struct drm_property_blob *degamma_lut, *gamma_lut, *ctm; } hw;
+	struct { struct drm_display_mode adjusted_mode, pipe_mode; const struct drm_property_blob *degamma_lut, *gamma_lut, *ctm; bool active, enable; } hw;
 	int port_clock;
 	int cpu_transcoder;         /* enum transcoder */
 	int master_transcoder, mst_master_transcoder;
@@ -201,10 +241,22 @@ struct intel_crtc_state {
 	enum pipe hsw_workaround_pipe;
 	u16 linetime, ips_linetime;
 	bool double_wide, fec_enable, has_psr, has_audio, enhanced_framing;
+	u8 min_voltage_level;
+	bool update_m_n, update_lrr, preload_luts, do_async_flip; u8 mode_flags;
+	int min_cdclk[I915_MAX_PLANES];
 	struct { bool enable; u8 link_count; u8 pixel_overlap; } splitter;
 	struct { bool compression_enable; } dsc;
 	u8 active_planes;
 	u8 sync_mode_slaves_mask;
+	/* watermarks / DDB of the crtc (intel_crtc_wm_state.skl), and the one plane of this path with its state */
+	struct { struct { struct skl_pipe_wm raw, optimal; struct skl_ddb_entry ddb;
+		struct skl_ddb_entry plane_ddb[I915_MAX_PLANES], plane_ddb_y[I915_MAX_PLANES]; } skl; } wm;
+	struct intel_plane *only_plane;
+	const struct intel_plane_state *only_plane_state;
+	u32 data_rate[I915_MAX_PLANES], data_rate_y[I915_MAX_PLANES], rel_data_rate[I915_MAX_PLANES], rel_data_rate_y[I915_MAX_PLANES];
+	u8 nv12_planes, enabled_planes;
+	bool wm_level_disabled;
+	struct { int scaler_id; } scaler_state;
 	/* colour management: no LUT / CTM blobs in this path (all NULL), modes computed by the reference's check */
 	void *dsb;
 	const struct drm_property_blob *pre_csc_lut, *post_csc_lut;
@@ -222,9 +274,12 @@ struct intel_crtc_state {
 /* encoder / digital port: the members the kept intel_ddi.c functions use */
 struct intel_atomic_state;
 struct intel_crtc_state;
+struct drm_encoder { struct drm_device *dev; struct { int id; } base; const char *name; unsigned index; };
+#define to_intel_encoder(e) ((struct intel_encoder *)(e))      /* base is the first member */
 struct intel_encoder {
-	struct { struct drm_device *dev; struct { int id; } base; const char *name; } base;
+	struct drm_encoder base;
 	int type;                   /* enum intel_output_type */
+	int power_domain;           /* enum intel_display_power_domain: intel_ddi_init() sets the port's DDI lanes domain */
 	enum port port;
 	/* the hooks hsw_crtc_enable() reaches through intel_encoders_*(); bound as intel_ddi_init() binds them */
 	void (*pre_pll_enable)(struct intel_atomic_state *, struct intel_encoder *, const struct intel_crtc_state *, const struct drm_connector_state *);

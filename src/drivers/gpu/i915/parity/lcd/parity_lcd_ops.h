@@ -32,8 +32,32 @@ enum parity_lcd_panel_op {
 #define PARITY_LCD_LOCK_DPLL 0           /* i915->display.dpll.lock */
 #define PARITY_LCD_LOCK_BACKLIGHT 1      /* i915->display.backlight.lock */
 
+/* points of the commit at which the caller may look at the hardware (no writes of the path depend on them) */
+enum parity_lcd_observe {
+	PARITY_LCD_OBS_COMMIT_BEGIN = 0,        /* DC_OFF held, nothing written yet */
+	PARITY_LCD_OBS_UNDERRUN_ARM,            /* where the reference clears the pipe's underrun status and unmasks its interrupt */
+	PARITY_LCD_OBS_PIPE_ENABLED,            /* the crtc enable returned */
+	PARITY_LCD_OBS_PLANE_ARMED,             /* PLANE_SURF written */
+	PARITY_LCD_OBS_PLANE_DISABLED,          /* the plane disable was armed */
+	PARITY_LCD_OBS_UNDERRUN_DISARM,         /* where the reference masks the underrun interrupt again */
+	PARITY_LCD_OBS_PIPE_DISABLED,           /* the crtc disable returned */
+	PARITY_LCD_OBS_COMMIT_END,              /* before DC_OFF is dropped */
+	PARITY_LCD_OBS_NUM
+};
+
+/* wait_reg results (Linux numbering, as the reference's callers compare them):
+ *   0                    the condition held
+ *   PARITY_LCD_ETIMEDOUT the device did not reach the condition in time
+ *   PARITY_LCD_EIO       the time source / the wait primitive / MMIO access failed: NOT a timeout; the backend has
+ *                        also reported it through parity_lcd_backend_fault() so it is the run's first anomaly */
+#define PARITY_LCD_ETIMEDOUT (-110)
+#define PARITY_LCD_EIO       (-5)
+/* a backend reports a fault of its own (time base, MMIO) into the modeset's first-anomaly record */
+void parity_lcd_backend_fault(const char *what);
+
 struct parity_lcd_emit {
 	void *ctx;
+	int model;              /* 1: a register / sink MODEL (discarding it isolates whatever it holds); 0: real hardware */
 	void (*write32)(void *ctx, uint32_t reg, uint32_t value);
 	uint32_t (*rmw32)(void *ctx, uint32_t reg, uint32_t clear, uint32_t set);   /* returns the old value */
 	void (*posting_read)(void *ctx, uint32_t reg);                              /* may be NULL */
@@ -54,6 +78,30 @@ struct parity_lcd_emit {
 	 * value.  get returns a non-zero wakeref cookie (0 = failed); put takes it back. */
 	int (*power_get)(void *ctx, int domain);
 	void (*power_put)(void *ctx, int domain, int wakeref);
+	/* intel_display_power_put_async_delay(): the reference drops DC_OFF this way at the end of a commit */
+	void (*power_put_async)(void *ctx, int domain, int wakeref, int delay_ms);
+	/* gen9_dbuf_slices_update(): request exactly these DBUF slices (bit n = slice n+1) */
+	void (*dbuf_slices_update)(void *ctx, unsigned req_slices);
+	/*
+	 * The synchronous plane update (intel_pipe_update_start / _end) and its completion event:
+	 *   vblank_get / vblank_put   drm_crtc_vblank_get / _put of the pipe (0 / -EINVAL)
+	 *   vblank_sleep              schedule_timeout() on the pipe's vblank wait queue: sleep until the pipe's next vblank
+	 *                             interrupt or `ticks` 10 ms ticks; returns the ticks left (0 = timed out)
+	 *   irq_off / irq_on          local_irq_disable / _enable around the short update section
+	 *   arm_event                 drm_crtc_arm_vblank_event(): the event completes at the pipe's next vblank after now
+	 *   wait_event                wait for that completion (0; -110 not within timeout_ms; -5 time base / wait fault)
+	 */
+	int (*vblank_get)(void *ctx, int pipe);
+	void (*vblank_put)(void *ctx, int pipe);
+	long (*vblank_sleep)(void *ctx, int pipe, long ticks);
+	void (*irq_off)(void *ctx);
+	void (*irq_on)(void *ctx);
+	void (*arm_event)(void *ctx, int pipe);
+	int (*wait_event)(void *ctx, int pipe, unsigned timeout_ms);
+	/* drm_crtc_vblank_off() on a pending event: it will never be waited for again (no completion after this) */
+	void (*cancel_event)(void *ctx, int pipe);
+	/* optional: a named point of the commit was reached (enum parity_lcd_observe); the real device samples here */
+	void (*observe)(void *ctx, int point);
 	void (*lock)(void *ctx, int which, int take);   /* PARITY_LCD_LOCK_*; take = 1 lock, 0 unlock */
 	/* drm_err / drm_WARN in the reference text: the FIRST one is what a failed run is read from */
 	void (*error)(void *ctx, const char *what);

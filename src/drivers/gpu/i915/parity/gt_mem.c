@@ -197,6 +197,10 @@ parity_gt_object_destroy(struct parity_gt_mem *gm, struct parity_gt_object *o)
 {
 	if (gm == 0 || o == 0 || !o->in_use)
 		return;
+	if (o->keep) {                  /* kept for the display: reachable only below the scanout wrapper -- refuse there too */
+		gm->keep_refusals++;
+		return;
+	}
 	if (o->bound && o->display)
 		parity_gt_display_unbind(gm, o);
 	else if (o->bound)
@@ -540,6 +544,10 @@ parity_gt_display_unbind(struct parity_gt_mem *gm, struct parity_gt_object *o)
 
 	if (gm == 0 || o == 0 || !o->bound || !o->display)
 		return;
+	if (o->keep) {
+		gm->keep_refusals++;
+		return;
+	}
 	first = o->ggtt_page - o->display_guard - gm->display_first;
 	span = o->display_guard + o->pages + o->display_guard;
 	for (p = 0u; p < o->pages; p++) {
@@ -886,6 +894,29 @@ parity_gt_ppgtt_insert_page(struct parity_gt_ppgtt *pp, uint64_t dma,
 	((uint64_t *)table->cpu)[idx & 511u] =
 		parity_gen12_ppgtt_pte_encode(dma, pat_index);
 	/* gen8_ppgtt_insert_entry(): drm_clflush_virt_range(&vaddr[idx], 8). */
+	parity_gt_clflush(&((uint64_t *)table->cpu)[idx & 511u], sizeof(uint64_t));
+	return 0;
+}
+
+int
+parity_gt_ppgtt_insert_scratch(struct parity_gt_ppgtt *pp, uint64_t offset)
+{
+	struct parity_gt_object *table;
+	struct parity_gt_ppgtt_table *t;
+	uint64_t idx;
+	int lvl;
+
+	if (pp == 0 || !pp->inited || (offset & (PARITY_GT_PAGE_BYTES - 1u)) != 0u)
+		return -EINVAL;
+	idx = offset >> 12;
+	table = pp->top_pd;
+	for (lvl = pp->top; lvl > 0; lvl--) {
+		t = child_of(pp, table, (unsigned)((idx >> ((unsigned)lvl * 9u)) & 511u));
+		if (t == 0)
+			return -ENOENT;
+		table = t->obj;
+	}
+	((uint64_t *)table->cpu)[idx & 511u] = pp->scratch_encode[0];
 	parity_gt_clflush(&((uint64_t *)table->cpu)[idx & 511u], sizeof(uint64_t));
 	return 0;
 }

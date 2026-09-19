@@ -65,6 +65,8 @@ static void icl_set_pipe_chicken(const struct intel_crtc_state *crtc_state);
 static void hsw_set_linetime_wm(const struct intel_crtc_state *crtc_state);
 static void hsw_crtc_disable(struct intel_atomic_state *state,
 			     struct intel_crtc *crtc);
+static void get_crtc_power_domains(struct intel_crtc_state *crtc_state,
+				   struct intel_power_domain_mask *mask);
 
 /* Prefer intel_encoder_is_tc() */
 bool intel_phy_is_tc(struct drm_i915_private *dev_priv, enum phy phy)
@@ -754,6 +756,76 @@ static void hsw_crtc_disable(struct intel_atomic_state *state,
 						 intel_crtc_bigjoiner_slave_pipes(old_crtc_state))
 			intel_dmc_disable_pipe(i915, slave_crtc->pipe);
 	}
+}
+
+static void get_crtc_power_domains(struct intel_crtc_state *crtc_state,
+				   struct intel_power_domain_mask *mask)
+{
+	struct intel_crtc *crtc = to_intel_crtc(crtc_state->uapi.crtc);
+	struct drm_i915_private *dev_priv = to_i915(crtc->base.dev);
+	enum transcoder cpu_transcoder = crtc_state->cpu_transcoder;
+	struct drm_encoder *encoder;
+	enum pipe pipe = crtc->pipe;
+
+	bitmap_zero(mask->bits, POWER_DOMAIN_NUM);
+
+	if (!crtc_state->hw.active)
+		return;
+
+	set_bit(POWER_DOMAIN_PIPE(pipe), mask->bits);
+	set_bit(POWER_DOMAIN_TRANSCODER(cpu_transcoder), mask->bits);
+	if (crtc_state->pch_pfit.enabled ||
+	    crtc_state->pch_pfit.force_thru)
+		set_bit(POWER_DOMAIN_PIPE_PANEL_FITTER(pipe), mask->bits);
+
+	drm_for_each_encoder_mask(encoder, &dev_priv->drm,
+				  crtc_state->uapi.encoder_mask) {
+		struct intel_encoder *intel_encoder = to_intel_encoder(encoder);
+
+		set_bit(intel_encoder->power_domain, mask->bits);
+	}
+
+	if (HAS_DDI(dev_priv) && crtc_state->has_audio)
+		set_bit(POWER_DOMAIN_AUDIO_MMIO, mask->bits);
+
+	if (crtc_state->shared_dpll)
+		set_bit(POWER_DOMAIN_DISPLAY_CORE, mask->bits);
+
+	if (crtc_state->dsc.compression_enable)
+		set_bit(intel_dsc_power_domain(crtc, cpu_transcoder), mask->bits);
+}
+
+void intel_modeset_get_crtc_power_domains(struct intel_crtc_state *crtc_state,
+					  struct intel_power_domain_mask *old_domains)
+{
+	struct intel_crtc *crtc = to_intel_crtc(crtc_state->uapi.crtc);
+	struct drm_i915_private *dev_priv = to_i915(crtc->base.dev);
+	enum intel_display_power_domain domain;
+	struct intel_power_domain_mask domains, new_domains;
+
+	get_crtc_power_domains(crtc_state, &domains);
+
+	bitmap_andnot(new_domains.bits,
+		      domains.bits,
+		      crtc->enabled_power_domains.mask.bits,
+		      POWER_DOMAIN_NUM);
+	bitmap_andnot(old_domains->bits,
+		      crtc->enabled_power_domains.mask.bits,
+		      domains.bits,
+		      POWER_DOMAIN_NUM);
+
+	for_each_power_domain(domain, &new_domains)
+		intel_display_power_get_in_set(dev_priv,
+					       &crtc->enabled_power_domains,
+					       domain);
+}
+
+void intel_modeset_put_crtc_power_domains(struct intel_crtc *crtc,
+					  struct intel_power_domain_mask *domains)
+{
+	intel_display_power_put_mask_in_set(to_i915(crtc->base.dev),
+					    &crtc->enabled_power_domains,
+					    domains);
 }
 
 

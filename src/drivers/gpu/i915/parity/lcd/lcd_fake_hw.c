@@ -6,6 +6,7 @@
  */
 #include "lcd_fake_hw.h"
 #include "../dp/parity_edp.h"
+#include "lcd_power_domain_enum.h"      /* reference, extracted: the domain numbers the ops carry */
 #include <string.h>
 
 #define REG_DPLL_ENABLE(id)   (0x46010u + 4u * (unsigned)(id))
@@ -30,7 +31,39 @@
 #define REG_PLANE_CTL(p)      (0x70180u + 0x1000u * (unsigned)(p))
 #define REG_PLANE_SURF(p)     (0x7019cu + 0x1000u * (unsigned)(p))
 #define  PLANE_CTL_ENABLE     (1u << 31)
+#define REG_PLANE_SURFLIVE(p) (0x701acu + 0x1000u * (unsigned)(p))
+#define REG_PLANE_WM0(p)      (0x70240u + 0x1000u * (unsigned)(p))
+#define REG_PLANE_BUF_CFG(p)  (0x7027cu + 0x1000u * (unsigned)(p))
+#define REG_PIPESTATUS(p)     (0x70058u + 0x1000u * (unsigned)(p))     /* ICL_PIPESTATUS: write-one-to-clear */
+#define  PIPESTATUS_UNDERRUN  (1u << 31)
+#define REG_DE_PIPE_IMR(p)    (0x44404u + 0x10u * (unsigned)(p))
+#define REG_MBUS_CTL          0x4438cu
+#define  MBUS_JOIN_BIT        (1u << 31)
+#define DBUF_POWER_REQUEST    (1u << 31)
+#define DBUF_POWER_STATE      (1u << 30)
 #define PPC_POWER_ON          1u
+
+static const uint32_t dbuf_ctl_reg[4] = { 0x45008u, 0x44fe8u, 0x44300u, 0x44304u };
+
+/* the slices a DDB range [start, last] lies in: with MBUS joined the pipe sees all four as one buffer, else two */
+static uint8_t slices_of_range(const struct lcd_fake_hw *hw, uint32_t start, uint32_t last)
+{
+	uint32_t per = hw->dbuf_size / 4u;
+	uint8_t m = 0u;
+	unsigned s;
+
+	if (per == 0u)
+		return 0u;
+	for (s = 0; s < 4u; s++)
+		if (start < (s + 1u) * per && last >= s * per)
+			m |= (uint8_t)(1u << s);
+	return m;
+}
+
+static int dc_off_held(const struct lcd_fake_hw *hw)
+{
+	return hw->power_refs[POWER_DOMAIN_DC_OFF] > 0;
+}
 
 static uint32_t *slot(struct lcd_fake_hw *hw, uint32_t reg, int create)
 {
@@ -71,26 +104,72 @@ static int ddi_clock_on(const struct lcd_fake_hw *hw)
 	return (lcd_fake_reg(hw, REG_DPCLKA_CFGCR0) & (1u << (10 + hw->port))) == 0u;
 }
 
+static uint32_t frame_of(const struct lcd_fake_hw *hw)
+{
+	return hw->pipe_on_since_us != 0u ? (uint32_t)((hw->dpf->now_us - hw->pipe_on_since_us) * 60u / 1000000u) : 0u;
+}
+
+/* the next frame boundary after now */
+static void to_next_frame(struct lcd_fake_hw *hw)
+{
+	uint32_t f = frame_of(hw) + 1u;
+
+	if (hw->pipe_on_since_us != 0u)
+		hw->dpf->now_us = hw->pipe_on_since_us + ((uint64_t)f * 1000000u + 59u) / 60u;
+}
+
 static uint32_t f_read32(void *ctx, uint32_t reg)
 {
 	struct lcd_fake_hw *hw = ctx;
 
+	if (reg == REG_PLANE_SURFLIVE(hw->pipe)) {
+		if (hw->surf_pending_valid && !hw->fault_flip_never_latch && frame_of(hw) > hw->surf_pending_frame) {
+			hw->surf_live = hw->surf_pending;
+			hw->surf_pending_valid = 0;
+		}
+		return hw->surf_live;
+	}
+
 	if (reg == REG_PIPEDSL(hw->pipe)) {
+		if (hw->scanline_hold_reads != 0u) {
+			hw->scanline_hold_reads--;
+			hw->scanline = hw->scanline_hold;
+			return hw->scanline;
+		}
 		if (hw->pipe_on_since_us != 0u)
 			hw->scanline = (hw->scanline + 97u) % (hw->vtotal != 0u ? hw->vtotal : 1u);
 		return hw->scanline;
 	}
-	if (reg == REG_PIPE_FRMCNT(hw->pipe))
+	if (reg == REG_PIPE_FRMCNT(hw->pipe)) {
+		if (hw->plane_arms != 0u && ++hw->frame_reads_after_arm == (unsigned)hw->fault_underrun_steady_after)
+			*slot(hw, REG_PIPESTATUS(hw->pipe), 1) |= PIPESTATUS_UNDERRUN;
+		if (hw->fault_frame_counter_frozen)
+			return 7u;
 		return hw->pipe_on_since_us != 0u ? (uint32_t)((hw->dpf->now_us - hw->pipe_on_since_us) * 60u / 1000000u) : 0u;
+	}
+	/* pipe A..D interrupt registers live in the pipe's power well: off = reads 0 (the well's enable programs the mask) */
+	if (reg == REG_DE_PIPE_IMR(hw->pipe) && hw->power_refs[POWER_DOMAIN_PIPE_A + hw->pipe] <= 0)
+		return 0u;
 	return lcd_fake_reg(hw, reg);
 }
 
 static void f_write32(void *ctx, uint32_t reg, uint32_t value)
 {
 	struct lcd_fake_hw *hw = ctx;
-	uint32_t *v = slot(hw, reg, 1), old = *v;
+	uint32_t *v, old;
 
+	if (hw->fault_drop_write_reg != 0u && reg == hw->fault_drop_write_reg)
+		return;
+	v = slot(hw, reg, 1);
+	old = *v;
+
+	if (reg == REG_PIPESTATUS(hw->pipe)) {
+		*v = old & ~value;                      /* write-one-to-clear */
+		return;
+	}
 	if (reg == REG_DPLL_ENABLE(hw->dpll_id)) {
+		if ((value & PLL_ENABLE) && !(old & PLL_ENABLE) && !dc_off_held(hw))
+			hw->modeset_without_dc_off++;
 		value &= ~(PLL_LOCK | PLL_POWER_STATE);
 		if (value & PLL_POWER_ENABLE)
 			value |= PLL_POWER_STATE;
@@ -124,6 +203,11 @@ static void f_write32(void *ctx, uint32_t reg, uint32_t value)
 				hw->pipe_on_since_us = hw->dpf->now_us != 0u ? hw->dpf->now_us : 1u;
 				if (!(lcd_fake_reg(hw, REG_DDI_BUF_CTL(hw->port)) & DDI_BUF_CTL_ENABLE))
 					hw->pipe_enabled_without_link++;
+				if (!dc_off_held(hw))
+					hw->modeset_without_dc_off++;
+				if (hw->power_refs[POWER_DOMAIN_PIPE_A + hw->pipe] <= 0 || hw->power_refs[POWER_DOMAIN_TRANSCODER_A + hw->pipe] <= 0 ||
+				    hw->power_refs[POWER_DOMAIN_PORT_DDI_LANES_A + hw->port] <= 0 || hw->power_refs[POWER_DOMAIN_DISPLAY_CORE] <= 0)
+					hw->pipe_enabled_without_power++;
 			}
 		} else if (hw->fault_pipe_stuck_on && (old & TRANSCONF_STATE)) {
 			value |= TRANSCONF_STATE;               /* the pipe does not stop */
@@ -133,12 +217,39 @@ static void f_write32(void *ctx, uint32_t reg, uint32_t value)
 	} else if (reg == REG_PLANE_SURF(hw->pipe)) {
 		uint32_t ctl = lcd_fake_reg(hw, REG_PLANE_CTL(hw->pipe));
 
+		/* double buffered: live at the next frame boundary (the first arm of a starting pipe latches at once) */
+		if (hw->surf_live == 0u || hw->pipe_on_since_us == 0u) {
+			hw->surf_live = value;
+		} else {
+			hw->surf_pending = value;
+			hw->surf_pending_valid = 1;
+			hw->surf_pending_frame = frame_of(hw);
+		}
+		if (!hw->irq_off)
+			hw->arm_outside_section++;
 		if (ctl & PLANE_CTL_ENABLE) {
 			hw->plane_arms++;
 			hw->plane_ctl_at_arm = ctl;
 			hw->plane_surf_at_arm = value;
 			if (hw->pipe_on_since_us == 0u)
 				hw->plane_armed_without_pipe++;
+			{
+				/* PLANE_BUF_CFG: start bits 11:0, end (last block) bits 27:16 -- 12-bit fields on display version 13 */
+				uint32_t cfg = lcd_fake_reg(hw, REG_PLANE_BUF_CFG(hw->pipe));
+				uint32_t start = cfg & 0xfffu, last = (cfg >> 16) & 0xfffu;
+
+				if (cfg == 0u || last < start || (hw->dbuf_size != 0u && last >= hw->dbuf_size) ||
+				    !(lcd_fake_reg(hw, REG_PLANE_WM0(hw->pipe)) & (1u << 31)))
+					hw->plane_armed_without_ddb++;
+				else if ((slices_of_range(hw, start, last) & ~hw->dbuf_enabled) != 0u ||
+					 ((slices_of_range(hw, start, last) & 0x0cu) != 0u && hw->pipe == 0 &&
+					  !(lcd_fake_reg(hw, REG_MBUS_CTL) & MBUS_JOIN_BIT)))
+					hw->plane_armed_outside_slices++;
+				if (!dc_off_held(hw))
+					hw->modeset_without_dc_off++;
+				if (hw->fault_underrun_at_arm)
+					*slot(hw, REG_PIPESTATUS(hw->pipe), 1) |= PIPESTATUS_UNDERRUN;
+			}
 		} else {
 			hw->plane_disarms++;
 		}
@@ -158,6 +269,10 @@ static int f_wait_reg(void *ctx, uint32_t reg, uint32_t mask, uint32_t value, un
 {
 	struct lcd_fake_hw *hw = ctx;
 
+	if (hw->fault_time_base_reg != 0u && reg == hw->fault_time_base_reg) {
+		parity_lcd_backend_fault("model: time base fault during a register wait (not a timeout)" "\n");
+		return PARITY_LCD_EIO;
+	}
 	/* status follows control at once in this model: either it is there, or the whole timeout passes */
 	if ((f_read32(ctx, reg) & mask) == value)
 		return 0;
@@ -213,11 +328,154 @@ static void f_power_put(void *ctx, int domain, int wakeref)
 
 	(void)wakeref;
 	hw->power_puts++;
+	if (hw->fault_put_refused_domain == domain + 1) {
+		parity_lcd_backend_fault("model: power well kept on (pipe interrupt drain failed)" "\n");
+		return;                         /* the reference stays held */
+	}
 	if (domain < 0 || domain >= LCD_FAKE_MAX_DOMAINS || hw->power_refs[domain] <= 0) {
 		hw->power_underflows++;
 		return;
 	}
 	hw->power_refs[domain]--;
+	if (hw->power_refs[domain] == 0 && hw->pipe_on_since_us != 0u &&
+	    (domain == POWER_DOMAIN_PIPE_A + hw->pipe || domain == POWER_DOMAIN_TRANSCODER_A + hw->pipe))
+		hw->power_dropped_with_pipe_on++;
+}
+
+static void f_power_put_async(void *ctx, int domain, int wakeref, int delay_ms)
+{
+	struct lcd_fake_hw *hw = ctx;
+
+	hw->async_puts++;
+	hw->last_async_delay_ms = delay_ms;
+	f_power_put(ctx, domain, wakeref);
+}
+
+/* gen9_dbuf_slices_update(): request bit -> state bit, slice by slice */
+static void f_dbuf_slices_update(void *ctx, unsigned req_slices)
+{
+	struct lcd_fake_hw *hw = ctx;
+	unsigned s;
+
+	hw->dbuf_updates++;
+	if (hw->fault_drop_dbuf_update)
+		return;
+	if (hw->plane_arms > hw->plane_disarms && hw->pipe_on_since_us != 0u) {
+		uint32_t cfg = lcd_fake_reg(hw, REG_PLANE_BUF_CFG(hw->pipe));
+
+		if ((slices_of_range(hw, cfg & 0xfffu, (cfg >> 16) & 0xfffu) & ~req_slices) != 0u)
+			hw->dbuf_shrunk_under_plane++;
+	}
+	for (s = 0; s < 4u; s++)
+		*slot(hw, dbuf_ctl_reg[s], 1) = (lcd_fake_reg(hw, dbuf_ctl_reg[s]) & ~(DBUF_POWER_REQUEST | DBUF_POWER_STATE)) |
+			((req_slices & (1u << s)) ? (DBUF_POWER_REQUEST | DBUF_POWER_STATE) : 0u);
+	hw->dbuf_enabled = (uint8_t)(req_slices & 0x0fu);
+}
+
+static int f_vblank_get(void *ctx, int pipe)
+{
+	struct lcd_fake_hw *hw = ctx;
+
+	(void)pipe;
+	hw->vblank_refs++;
+	return 0;
+}
+
+static void f_vblank_put(void *ctx, int pipe)
+{
+	struct lcd_fake_hw *hw = ctx;
+
+	(void)pipe;
+	if (hw->vblank_refs > 0)
+		hw->vblank_refs--;
+	else
+		hw->power_underflows++;
+}
+
+static long f_vblank_sleep(void *ctx, int pipe, long ticks)
+{
+	struct lcd_fake_hw *hw = ctx;
+
+	(void)pipe;
+	hw->vblank_sleeps++;
+	if (hw->irq_off)
+		hw->sleep_irq_off++;            /* the reference enables IRQs before schedule_timeout() */
+	if (hw->fault_no_vblank) {
+		hw->dpf->now_us += (uint64_t)ticks * 10000u;
+		return 0;
+	}
+	to_next_frame(hw);
+	hw->scanline = 0u;                      /* just after the vblank: far from the evasion window */
+	hw->scanline_hold_reads = 0u;
+	return ticks > 1 ? ticks - 1 : 0;
+}
+
+static void f_irq_off(void *ctx)
+{
+	struct lcd_fake_hw *hw = ctx;
+
+	if (hw->irq_off)
+		hw->lock_errors++;
+	hw->irq_off = 1;
+	hw->irq_off_calls++;
+}
+
+static void f_irq_on(void *ctx)
+{
+	struct lcd_fake_hw *hw = ctx;
+
+	if (!hw->irq_off)
+		hw->lock_errors++;
+	hw->irq_off = 0;
+}
+
+static void f_arm_event(void *ctx, int pipe)
+{
+	struct lcd_fake_hw *hw = ctx;
+
+	(void)pipe;
+	hw->event_armed = 1;
+	hw->events_armed++;
+}
+
+static int f_wait_event(void *ctx, int pipe, unsigned timeout_ms)
+{
+	struct lcd_fake_hw *hw = ctx;
+
+	(void)pipe;
+	if (!hw->event_armed) {
+		hw->waits_refused++;
+		return -22;
+	}
+	if (hw->fault_no_vblank) {
+		hw->dpf->now_us += (uint64_t)timeout_ms * 1000u;
+		return -110;
+	}
+	if (!hw->fault_early_event)
+		to_next_frame(hw);              /* the event completes at the next vblank */
+	hw->event_armed = 0;
+	hw->events_done++;
+	return 0;
+}
+
+static void f_cancel_event(void *ctx, int pipe)
+{
+	struct lcd_fake_hw *hw = ctx;
+
+	(void)pipe;
+	if (hw->event_armed)
+		hw->events_cancelled++;
+	hw->event_armed = 0;
+}
+
+static void f_observe(void *ctx, int point)
+{
+	struct lcd_fake_hw *hw = ctx;
+
+	if (hw->nobs < sizeof(hw->obs))
+		hw->obs[hw->nobs++] = (uint8_t)point;
+	if (hw->on_observe != 0)
+		hw->on_observe(hw->on_observe_ctx, point);
 }
 
 static void f_lock(void *ctx, int which, int take)
@@ -295,12 +553,17 @@ void lcd_fake_init(struct lcd_fake_hw *hw, struct dp_fake_hw *dpf, int pipe, int
 	/* as found before a modeset: DDI idle and its clock gated, PLL off, link not trained */
 	*slot(hw, REG_DDI_BUF_CTL(port), 1) = DDI_BUF_IS_IDLE;
 	*slot(hw, REG_DPCLKA_CFGCR0, 1) = (1u << 10) | (1u << 11);
+	/* as the normal initialisation leaves them: DBUF slice 1 on, MBUS not joined, every pipe interrupt masked */
+	*slot(hw, dbuf_ctl_reg[0], 1) = DBUF_POWER_REQUEST | DBUF_POWER_STATE;
+	hw->dbuf_enabled = 0x01u;
+	*slot(hw, REG_DE_PIPE_IMR(pipe), 1) = 0xffffffffu;
 	memset(dpf->dpcd + 0x202, 0, 6u);
 	dpf->dpcd[0x600] = 1u;                          /* DP_SET_POWER: D0 */
 	dpf->on_dpcd_write = sink_on_dpcd_write;
 	dpf->on_dpcd_write_ctx = hw;
 
 	hw->ops.ctx = hw;
+	hw->ops.model = 1;
 	hw->ops.write32 = f_write32;
 	hw->ops.rmw32 = f_rmw32;
 	hw->ops.read32 = f_read32;
@@ -313,6 +576,17 @@ void lcd_fake_init(struct lcd_fake_hw *hw, struct dp_fake_hw *dpf, int pipe, int
 	hw->ops.panel = f_panel;
 	hw->ops.power_get = f_power_get;
 	hw->ops.power_put = f_power_put;
+	hw->ops.power_put_async = f_power_put_async;
+	hw->ops.dbuf_slices_update = f_dbuf_slices_update;
+	hw->ops.observe = f_observe;
+	hw->ops.vblank_get = f_vblank_get;
+	hw->ops.vblank_put = f_vblank_put;
+	hw->ops.vblank_sleep = f_vblank_sleep;
+	hw->ops.irq_off = f_irq_off;
+	hw->ops.irq_on = f_irq_on;
+	hw->ops.arm_event = f_arm_event;
+	hw->ops.wait_event = f_wait_event;
+	hw->ops.cancel_event = f_cancel_event;
 	hw->ops.lock = f_lock;
 	hw->ops.step = f_step;
 }
@@ -329,6 +603,7 @@ int lcd_fake_power_refs_total(const struct lcd_fake_hw *hw)
 unsigned lcd_fake_violations(const struct lcd_fake_hw *hw)
 {
 	return hw->ddi_enabled_without_pll + hw->pipe_enabled_without_link + hw->plane_armed_without_pipe +
-		hw->pll_disabled_with_pipe_on + hw->training_without_panel_power + hw->pattern_mismatch +
+		hw->pll_disabled_with_pipe_on + hw->training_without_panel_power + hw->pattern_mismatch + hw->plane_armed_without_ddb + hw->modeset_without_dc_off +
+		hw->pipe_enabled_without_power + hw->plane_armed_outside_slices + hw->dbuf_shrunk_under_plane + hw->power_dropped_with_pipe_on +
 		hw->power_underflows + hw->lock_errors + hw->regs_overflow;
 }

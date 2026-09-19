@@ -14,6 +14,7 @@
 #include "reset.h"
 #include "wait.h"
 #include "eu_test.h"
+#include "gt_tlb.h"
 #include "../draw_fixture.h"
 #include "osdep/mmio.h"
 
@@ -733,11 +734,28 @@ parity_eu_test_repeat(struct parity_eu_test *t, struct parity_gt_engines *es,
 	return 0;
 }
 
+/*
+ * The fixture VAs (0x100400000 .. 0x100405fff) back to scratch in the context's vm before any page they named is freed.
+ * The teardown runs after the engines were reset (their TLBs dropped with it); the fixtures themselves are unchanged.
+ */
+static void
+eu_scrub_fixture_ptes(struct parity_eu_test *t)
+{
+	unsigned p;
+
+	if (t == 0 || t->ce.vm == 0)
+		return;
+	for (p = 0u; p < 6u; p++)
+		if (parity_gt_ppgtt_insert_scratch(t->ce.vm, PARITY_EU_SHARED_VA + (uint64_t)p * 4096u) == 0)
+			t->ptes_scrubbed++;
+}
+
 void
 parity_eu_test_release(struct parity_eu_test *t, struct parity_gt_mem *gm)
 {
 	if (t == 0 || gm == 0)
 		return;
+	eu_scrub_fixture_ptes(t);
 	if (t->tl_page != 0) {
 		parity_gt_object_destroy(gm, t->tl_page);
 		t->tl_page = 0;
@@ -926,6 +944,7 @@ parity_draw_test_release(struct parity_draw_test *d, struct parity_gt_mem *gm)
 {
 	if (d == 0 || gm == 0)
 		return;
+	eu_scrub_fixture_ptes(&d->t);
 	if (d->rt != 0) {
 		parity_gt_object_destroy(gm, d->rt);
 		d->rt = 0;
@@ -1116,6 +1135,7 @@ parity_tex_test_release(struct parity_tex_test *x, struct parity_gt_mem *gm)
 {
 	if (x == 0 || gm == 0)
 		return;
+	eu_scrub_fixture_ptes(&x->t);
 	if (x->rt != 0) {
 		parity_gt_object_destroy(gm, x->rt);
 		x->rt = 0;
@@ -1125,6 +1145,413 @@ parity_tex_test_release(struct parity_tex_test *x, struct parity_gt_mem *gm)
 		x->tex = 0;
 	}
 	parity_eu_test_release(&x->t, gm);
+}
+
+/* ---------------- E-118: the full-HD draw into the scanout buffer ---------------- */
+
+#define FHD_PREFILL 0x5a5a5a5au
+
+static const struct parity_fhd_va fhd_va[] = {
+	{ "state page", PARITY_EU_SHARED_VA, 4096u, 4096u },
+	{ "batch", PARITY_EU_BATCH_VA, 4096u, 4096u },
+	{ "texture", I915_TEX_FIXTURE_TEX_VA, 4096u, 4096u },
+	{ "render target = scanout backing", I915_TEX_FHD_RT_VA, (I915_TEX_FHD_RT_BYTES + 4095u) & ~4095u, 4096u },
+	{ "LCD-D second render target = scanout backing", I915_TEX_FHD_RT_B_VA, (I915_TEX_FHD_RT_BYTES + 4095u) & ~4095u, 4096u },
+};
+
+int
+parity_fhd_va_layout(const struct parity_fhd_va **out, unsigned *n)
+{
+	unsigned i, j, nn = (unsigned)(sizeof(fhd_va) / sizeof(fhd_va[0]));
+
+	if (out != 0)
+		*out = fhd_va;
+	if (n != 0)
+		*n = nn;
+	for (i = 0u; i < nn; i++) {
+		if ((fhd_va[i].va & (fhd_va[i].align - 1u)) != 0u || fhd_va[i].len == 0u)
+			return -1;
+		for (j = i + 1u; j < nn; j++)
+			if (fhd_va[i].va < fhd_va[j].va + fhd_va[j].len && fhd_va[j].va < fhd_va[i].va + fhd_va[i].len)
+				return -1;
+	}
+	return 0;
+}
+
+uint32_t
+parity_fhd_render_verify(const struct parity_fhd_render *x, const uint32_t *pixels, uint32_t pitch_bytes)
+{
+	static uint8_t pattern[I915_TEX_FIXTURE_TEX_BYTES];
+	uint32_t bad = 0u, xx, yy;
+
+	drv_i915_tex_fixture_pattern(pattern, x != 0 ? x->variant : 0u);
+	for (yy = 0u; yy < I915_TEX_FHD_HEIGHT; yy++) {
+		const uint32_t *row = (const uint32_t *)((const uint8_t *)pixels + (uint64_t)yy * pitch_bytes);
+		uint32_t row_want[8];
+		unsigned u;
+
+		for (u = 0u; u < 8u; u++)                       /* texel column u covers x in [240u, 240u + 240) */
+			row_want[u] = drv_i915_tex_fixture_expected_pixel(pattern, 4u * u, 4u * (yy / 135u));
+		for (xx = 0u; xx < I915_TEX_FHD_WIDTH; xx++)
+			if (row[xx] != row_want[xx / 240u])
+				bad++;
+	}
+	return bad;
+}
+
+int
+parity_fhd_render_run(struct parity_fhd_render *x, struct parity_gt_engines *es, struct parity_gt_ppgtt *vm,
+	struct parity_gt_mem *gm, struct osdep_mmio *m, struct spinlock *uncore_lock, unsigned timeout_ms,
+	struct parity_gt_object *rt)
+{
+	return parity_fhd_render_run_ex(x, es, vm, gm, m, uncore_lock, timeout_ms, rt, I915_TEX_FHD_RT_VA, 0u, 0);
+}
+
+int
+parity_fhd_render_run_ex(struct parity_fhd_render *x, struct parity_gt_engines *es, struct parity_gt_ppgtt *vm,
+	struct parity_gt_mem *gm, struct osdep_mmio *m, struct spinlock *uncore_lock, unsigned timeout_ms,
+	struct parity_gt_object *rt, uint64_t rt_va, unsigned variant, int rt_premapped)
+{
+	static const uint64_t va[3] = { PARITY_EU_SHARED_VA, PARITY_EU_BATCH_VA, I915_TEX_FIXTURE_TEX_VA };
+	static uint8_t pattern[I915_TEX_FIXTURE_TEX_BYTES];
+	struct parity_eu_test *t;
+	struct parity_gt_engine *ge;
+	struct parity_execlists *el;
+	struct parity_gt_object *obj[3];
+	struct parity_gt_ppgtt_walk w;
+	volatile uint32_t *mk;
+	volatile uint8_t *tb;
+	uint64_t dma;
+	unsigned i, p;
+	int rc;
+
+	if (x == 0 || es == 0 || vm == 0 || gm == 0 || m == 0 || rt == 0 || rt->bytes < I915_TEX_FHD_RT_BYTES)
+		return -EINVAL;
+	memset(x, 0, sizeof(*x));
+	t = &x->t;
+	x->rt = rt;
+	x->first_bad_x = -1;
+	x->first_bad_y = -1;
+	x->rt_va = rt_va;
+	x->variant = variant;
+	x->rt_premapped = rt_premapped;
+	if (rt_va != I915_TEX_FHD_RT_VA && rt_va != I915_TEX_FHD_RT_B_VA)
+		return fail(t, -EINVAL, "render target VA not in the layout");
+	if (parity_fhd_va_layout(0, 0) != 0)
+		return fail(t, -EINVAL, "va layout overlaps");
+
+	for (i = 0u; i < es->n; i++)
+		if (es->ge[i].info->class == PARITY_RENDER_CLASS)
+			break;
+	if (i == es->n)
+		return fail(t, -ENODEV, "no render engine");
+	t->engine_idx = i;
+	ge = &es->ge[i];
+	el = &es->el[i];
+
+	t->shared = parity_gt_object_create(gm, 4096u);
+	t->batch = parity_gt_object_create(gm, 4096u);
+	x->tex = parity_gt_object_create(gm, 4096u);
+	if (t->shared == 0 || t->batch == 0 || x->tex == 0)
+		return fail(t, -ENOMEM, "gem_create");
+	obj[0] = t->shared; obj[1] = t->batch; obj[2] = x->tex;
+	rc = parity_gt_ppgtt_alloc_range(gm, vm, PARITY_EU_SHARED_VA, 5u * 4096u);
+	if (rc == 0 && !rt_premapped)
+		rc = parity_gt_ppgtt_alloc_range(gm, vm, rt_va, (uint64_t)rt->pages * 4096u);
+	if (rc != 0)
+		return fail(t, rc, "allocate_va_range");
+	for (i = 0u; i < 3u && rc == 0; i++) {
+		rc = parity_gt_object_page_dma(obj[i], 0u, &dma);
+		if (rc == 0)
+			rc = parity_gt_ppgtt_insert_page(vm, dma, va[i], 0u);
+	}
+	/* the render target: every page of the scanout buffer's own backing */
+	x->rt_pages = (I915_TEX_FHD_RT_BYTES + 4095u) / 4096u;
+	for (p = 0u; p < x->rt_pages && rc == 0 && !rt_premapped; p++) {
+		rc = parity_gt_object_page_dma(rt, p, &dma);
+		if (rc == 0)
+			rc = parity_gt_ppgtt_insert_page(vm, dma, rt_va + (uint64_t)p * 4096u, 0u);
+		if (rc == 0)
+			x->rt_pages_mapped++;
+	}
+	if (rc != 0)
+		return fail(t, rc, "ppgtt_insert");
+	/* what the GPU will walk: the leaf of the first, a middle and the last page is the object's own page */
+	x->rt_walk_ok = 1;
+	for (i = 0u; i < 3u; i++) {
+		unsigned pg = i == 0u ? 0u : i == 1u ? x->rt_pages / 2u : x->rt_pages - 1u;
+
+		if (parity_gt_object_page_dma(rt, pg, &dma) != 0 || parity_gt_ppgtt_walk(vm, rt_va + (uint64_t)pg * 4096u, &w) != 0 ||
+		    w.levels != 4 || !w.leaf_present || w.leaf_dma != (dma & ~0xfffull))
+			x->rt_walk_ok = 0;
+		if (i == 0u)
+			x->rt_first_dma = dma;
+		if (i == 2u)
+			x->rt_last_dma = dma;
+	}
+	if (!x->rt_walk_ok)
+		return fail(t, -EFAULT, "render target PPGTT walk");
+
+	/* CPU uploads: texture (+ guard), state page, batch; the target pre-filled and published for the GPU */
+	x->mocs = drv_i915_draw_fixture_mocs();
+	drv_i915_tex_fixture_pattern(pattern, variant);
+	tb = (volatile uint8_t *)x->tex->cpu;
+	for (i = 0u; i < 4096u; i++)
+		tb[i] = i < I915_TEX_FIXTURE_TEX_BYTES ? pattern[i] : (uint8_t)PARITY_TEX_GUARD_BYTE;
+	{
+		uint32_t *px = (uint32_t *)rt->cpu;
+
+		for (i = 0u; i < I915_TEX_FHD_RT_BYTES / 4u; i++)
+			px[i] = FHD_PREFILL;
+		parity_gt_clflush(rt->cpu, I915_TEX_FHD_RT_BYTES);
+	}
+	drv_i915_tex_fixture_fhd_write_state(t->shared->cpu, rt_va, I915_TEX_FIXTURE_TEX_VA, x->mocs);
+	x->rt_rss_mocs = (((uint32_t *)t->shared->cpu)[64u / 4u + 1u] >> 24) & 0x7fu;
+	if (x->rt_rss_mocs != x->mocs)
+		return fail(t, -EINVAL, "render target surface state MOCS");
+	t->batch_dwords = drv_i915_tex_fixture_fhd_build_batch((uint32_t *)t->batch->cpu, 1024u, PARITY_EU_SHARED_VA, x->mocs);
+	if (t->batch_dwords == 0u || t->batch_dwords >= 1024u)
+		return fail(t, -ENOSPC, "build_batch");
+	t->pipesel_rc = parity_draw_batch_check_pipeline_select((const uint32_t *)t->batch->cpu, t->batch_dwords, &t->pipesel);
+	if (t->pipesel_rc != 0)
+		return fail(t, t->pipesel_rc, "pipeline_select_verify");
+	t->batch_hash = fnv1a64(t->batch->cpu, (size_t)t->batch_dwords * 4u, 0xcbf29ce484222325ull);
+
+	rc = parity_lrc_alloc(&t->ce, ge, vm, gm, 4096u, 0u);
+	if (rc != 0)
+		return fail(t, rc, "intel_context_create");
+	t->tl_page = parity_gt_object_create(gm, 4096u);
+	if (t->tl_page == 0)
+		return fail(t, -ENOMEM, "intel_timeline_create");
+	rc = parity_gt_ggtt_bind(gm, t->tl_page);
+	if (rc != 0)
+		return fail(t, rc, "intel_timeline_pin");
+	parity_lrc_init_state(&t->ce);
+	(void)parity_lrc_update_regs(&t->ce, t->ce.ring.tail);
+	t->tl_seqno = 2u;
+	rc = eu_build_request(t, &t->rq, &t->ce, t->tl_page, t->tl_seqno, PARITY_EU_BATCH_VA);
+	if (rc != 0)
+		return rc;
+	rc = parity_execlists_submit(ge, el, m, &t->rq);
+	if (rc != 0)
+		return fail(t, rc, "execlists_submit");
+	t->submitted = 1;
+	rc = wait_retired(t, ge, el, &t->rq, m, timeout_ms);
+	if (rc == 0)
+		t->completed = 1;
+	else if (rc == -ETIMEDOUT)
+		t->timed_out = 1;
+	else
+		(void)fail(t, rc, "i915_request_wait");
+
+	mk = (volatile uint32_t *)t->shared->cpu + I915_DRAW_FIXTURE_MARKER_OFFSET / 4u;
+	x->marker_before = mk[0];
+	x->marker_after = mk[1];
+	x->marker_middraw = mk[2];
+	x->ps_marker = mk[4];
+	if (t->completed) {
+		eu_log_record(t, ge, el, &t->rq, &t->ce, "completed");
+		t->parked = eu_park(t, es, ge, el, m, timeout_ms);
+		x->gpu_done = t->parked;
+		/* the CPU view: drop any line the CPU may hold for these pages before reading what the GPU wrote */
+		parity_gt_clflush(rt->cpu, I915_TEX_FHD_RT_BYTES);
+		{
+			const uint32_t *px = (const uint32_t *)rt->cpu;
+			static uint8_t pat[I915_TEX_FIXTURE_TEX_BYTES];
+			uint32_t yy, xx;
+
+			drv_i915_tex_fixture_pattern(pat, variant);
+			x->px_total = I915_TEX_FHD_WIDTH * I915_TEX_FHD_HEIGHT;
+			for (yy = 0u; yy < I915_TEX_FHD_HEIGHT; yy++) {
+				for (xx = 0u; xx < I915_TEX_FHD_WIDTH; xx++) {
+					uint32_t want = drv_i915_tex_fixture_expected_pixel(pat, 4u * (xx / 240u), 4u * (yy / 135u));
+					uint32_t got = px[yy * (I915_TEX_FHD_PITCH / 4u) + xx];
+
+					if (got == want) {
+						x->px_match++;
+					} else {
+						if (got == FHD_PREFILL)
+							x->px_stale++;
+						if (x->first_bad_x < 0) {
+							x->first_bad_x = (int)xx;
+							x->first_bad_y = (int)yy;
+							x->first_bad_expected = want;
+							x->first_bad_observed = got;
+						}
+					}
+				}
+			}
+			x->image_hash = fnv1a64(rt->cpu, I915_TEX_FHD_RT_BYTES, 0xcbf29ce484222325ull);
+		}
+		for (i = 0u; i < 4096u; i++) {
+			uint8_t want = i < I915_TEX_FIXTURE_TEX_BYTES ? pattern[i] : (uint8_t)PARITY_TEX_GUARD_BYTE;
+
+			if (tb[i] != want) {
+				if (i < I915_TEX_FIXTURE_TEX_BYTES)
+					x->tex_changed_bytes++;
+				else
+					x->guard_bad_bytes++;
+			}
+		}
+		t->outcome = (t->parked && x->marker_before == I915_DRAW_FIXTURE_MARKER_BEFORE &&
+			x->marker_middraw == I915_DRAW_FIXTURE_MARKER_MIDDRAW && x->marker_after == I915_DRAW_FIXTURE_MARKER_AFTER &&
+			x->ps_marker == I915_DRAW_FIXTURE_PS_MARKER && x->px_match == x->px_total &&
+			x->tex_changed_bytes == 0u && x->guard_bad_bytes == 0u) ? PARITY_EU_PASS : PARITY_EU_ERROR;
+		if (t->outcome == PARITY_EU_ERROR && t->err == 0)
+			(void)fail(t, -EIO, "markers/pixels/guard");
+		return t->err;
+	}
+	if (t->timed_out)
+		t->outcome = PARITY_EU_HANG;
+	eu_log_record(t, ge, el, &t->rq, &t->ce, "hang");
+	eu_hang_dump_reset(t, es, ge, el, m, uncore_lock);
+	/* gpu_done stays 0: after a hang the GPU is not shown to have let go of the target; the caller keeps it */
+	return t->err != 0 ? t->err : -ETIMEDOUT;
+}
+
+/* every PTE the draw wrote, in the order it wrote them */
+static unsigned
+fhd_maps(const struct parity_fhd_render *x, uint64_t *va, unsigned cap)
+{
+	unsigned n = 0u, p;
+
+	if (n < cap) va[n++] = PARITY_EU_SHARED_VA;
+	if (n < cap) va[n++] = PARITY_EU_BATCH_VA;
+	if (n < cap) va[n++] = I915_TEX_FIXTURE_TEX_VA;
+	for (p = 0u; p < x->rt_pages_mapped && n < cap; p++)       /* 0 when the target belongs to a parity_fhd_rt_map */
+		va[n++] = x->rt_va + (uint64_t)p * 4096u;
+	return n;
+}
+
+int
+parity_fhd_render_release(struct parity_fhd_render *x, struct parity_gt_mem *gm, struct parity_gt_ppgtt *vm,
+	struct parity_gt_tlb *tlb, struct parity_gt_engines *es, struct osdep_mmio *m, struct spinlock *uncore_lock)
+{
+	static uint64_t va[3u + 2048u];
+	struct parity_gt_ppgtt_walk w;
+	unsigned n, i;
+
+	if (x == 0 || gm == 0 || vm == 0 || tlb == 0 || es == 0 || m == 0)
+		return -EINVAL;
+	if (x->released)
+		return 0;
+	x->release_calls++;
+	if (!x->gpu_done && x->t.submitted)
+		return -EBUSY;                  /* the GPU may still use the target and the state: nothing is released */
+	/* 1. every mapping back to scratch; 2. re-read the tables: the count is THIS call's verification, never a sum */
+	n = fhd_maps(x, va, (unsigned)(sizeof(va) / sizeof(va[0])));
+	for (i = 0u; i < n; i++)
+		(void)parity_gt_ppgtt_insert_scratch(vm, va[i]);
+	x->maps_total = n;
+	x->maps_scratch = 0u;
+	x->first_unreleased_va = 0u;
+	for (i = 0u; i < n; i++) {
+		if (parity_gt_ppgtt_walk(vm, va[i], &w) == 0 && w.levels == 4 && w.scratch[3])
+			x->maps_scratch++;
+		else if (x->first_unreleased_va == 0u)
+			x->first_unreleased_va = va[i];
+	}
+	x->rt_pages_cleared = x->maps_scratch >= 3u ? x->maps_scratch - 3u : 0u;
+	if (x->maps_scratch != n)
+		return -EIO;                    /* some PTE still names a page: nothing is freed, ownership stays */
+	/* 3. the TLB, before any page these entries named may be reused */
+	x->tlb_rc = parity_gt_invalidate_tlb_full(tlb, es, m, uncore_lock);
+	if (x->tlb_rc != 0)
+		return x->tlb_rc;               /* the old translations may survive: nothing is freed */
+	/* 4. only now the draw's own objects */
+	if (x->tex != 0) {
+		parity_gt_object_destroy(gm, x->tex);
+		x->tex = 0;
+	}
+	parity_eu_test_release(&x->t, gm);
+	x->rt = 0;
+	x->released = 1;
+	return 0;
+}
+
+void
+parity_fhd_render_keep(struct parity_fhd_render *x)
+{
+	if (x == 0)
+		return;
+	if (x->tex != 0) x->tex->keep = 1;
+	if (x->t.shared != 0) x->t.shared->keep = 1;
+	if (x->t.batch != 0) x->t.batch->keep = 1;
+	if (x->t.tl_page != 0) x->t.tl_page->keep = 1;
+	if (x->rt != 0) x->rt->keep = 1;
+	parity_lrc_keep(&x->t.ce);
+}
+
+int
+parity_fhd_rt_map(struct parity_fhd_rt_map *b, struct parity_gt_mem *gm, struct parity_gt_ppgtt *vm,
+	struct parity_gt_object *rt, uint64_t va)
+{
+	struct parity_gt_ppgtt_walk w;
+	uint64_t dma;
+	unsigned p, i;
+	int rc;
+
+	if (b == 0 || gm == 0 || vm == 0 || rt == 0 || (va != I915_TEX_FHD_RT_VA && va != I915_TEX_FHD_RT_B_VA))
+		return -EINVAL;
+	memset(b, 0, sizeof(*b));
+	b->rt = rt;
+	b->va = va;
+	b->pages = (I915_TEX_FHD_RT_BYTES + 4095u) / 4096u;
+	if (b->pages > rt->pages)
+		b->pages = rt->pages;
+	rc = parity_gt_ppgtt_alloc_range(gm, vm, va, (uint64_t)b->pages * 4096u);
+	for (p = 0u; p < b->pages && rc == 0; p++) {
+		rc = parity_gt_object_page_dma(rt, p, &dma);
+		if (rc == 0)
+			rc = parity_gt_ppgtt_insert_page(vm, dma, va + (uint64_t)p * 4096u, 0u);
+		if (rc == 0)
+			b->mapped++;            /* what the unmap must take down, even after a partial map */
+	}
+	if (rc != 0)
+		return rc;
+	b->walk_ok = 1;
+	for (i = 0u; i < 3u; i++) {
+		unsigned pg = i == 0u ? 0u : i == 1u ? b->pages / 2u : b->pages - 1u;
+
+		if (parity_gt_object_page_dma(rt, pg, &dma) != 0 || parity_gt_ppgtt_walk(vm, va + (uint64_t)pg * 4096u, &w) != 0 ||
+		    w.levels != 4 || !w.leaf_present || w.leaf_dma != (dma & ~0xfffull))
+			b->walk_ok = 0;
+	}
+	return b->walk_ok ? 0 : -EFAULT;
+}
+
+int
+parity_fhd_rt_unmap(struct parity_fhd_rt_map *b, struct parity_gt_ppgtt *vm, struct parity_gt_tlb *tlb,
+	struct parity_gt_engines *es, struct osdep_mmio *m, struct spinlock *uncore_lock)
+{
+	struct parity_gt_ppgtt_walk w;
+	unsigned p;
+
+	if (b == 0 || vm == 0 || tlb == 0 || es == 0 || m == 0)
+		return -EINVAL;
+	if (b->released)
+		return 0;
+	b->unmap_calls++;
+	for (p = 0u; p < b->mapped; p++)
+		(void)parity_gt_ppgtt_insert_scratch(vm, b->va + (uint64_t)p * 4096u);
+	b->scratch = 0u;
+	b->first_unreleased_va = 0u;
+	for (p = 0u; p < b->mapped; p++) {
+		uint64_t va = b->va + (uint64_t)p * 4096u;
+
+		if (parity_gt_ppgtt_walk(vm, va, &w) == 0 && w.levels == 4 && w.scratch[3])
+			b->scratch++;
+		else if (b->first_unreleased_va == 0u)
+			b->first_unreleased_va = va;
+	}
+	if (b->scratch != b->mapped)
+		return -EIO;
+	b->tlb_rc = parity_gt_invalidate_tlb_full(tlb, es, m, uncore_lock);
+	if (b->tlb_rc != 0)
+		return b->tlb_rc;
+	b->released = 1;
+	b->rt = 0;
+	return 0;
 }
 
 /* ---------------- T3: texture update, binding switch, redraw, new context ---------------- */
@@ -1427,6 +1854,7 @@ parity_t3_test_release(struct parity_t3_test *x, struct parity_gt_mem *gm)
 
 	if (x == 0 || gm == 0)
 		return;
+	eu_scrub_fixture_ptes(&x->t);
 	for (i = 0u; i < 2u; i++) {
 		if (x->ctx[i].tl_page != 0) {
 			parity_gt_object_destroy(gm, x->ctx[i].tl_page);
@@ -1684,6 +2112,7 @@ parity_r1_test_release(struct parity_r1_test *r, struct parity_gt_mem *gm)
 
 	if (r == 0 || gm == 0)
 		return;
+	eu_scrub_fixture_ptes(&r->t);
 	for (i = 0u; i < PARITY_R1_CTX_MAX; i++) {
 		if (r->ctx[i].tl_page != 0) {
 			parity_gt_object_destroy(gm, r->ctx[i].tl_page);

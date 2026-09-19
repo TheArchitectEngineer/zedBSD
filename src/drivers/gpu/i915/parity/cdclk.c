@@ -519,3 +519,10 @@ parity_intel_cdclk_init_hw(struct parity_cdclk_dev *cd)
 	/* DISPLAY_VER >= 10 || BXT -> bxt path. */
 	bxt_cdclk_init_hw(cd);
 }
+
+/* intel_update_max_cdclk(): DISPLAY_VER >= 11 (not JSL / EHL) */
+uint32_t
+parity_intel_max_cdclk_freq(const struct parity_cdclk_dev *cd)
+{
+	return cd->hw.ref == 24000u ? 648000u : 652800u;
+}

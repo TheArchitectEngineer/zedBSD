@@ -137,3 +137,32 @@ void parity_lcd_ms_plane_disable(struct parity_lcd_modeset *ms)
 {
 	icl_plane_disable_arm(&ms->plane, &ms->crtc_state);
 }
+
+/* intel_plane_calc_min_cdclk(): plane->min_cdclk is icl_plane_min_cdclk on display version 11+ (skl_universal_plane_create) */
+void parity_lcd_ms_plane_min_cdclk(struct parity_lcd_modeset *ms)
+{
+	ms->crtc_state.min_cdclk[ms->plane.id] = icl_plane_min_cdclk(&ms->crtc_state, &ms->plane_state);
+}
+
+/* the reference update of a running crtc (intel_update_crtc) for its one primary plane: noarm -> intel_pipe_update_start
+ * -> arm -> intel_pipe_update_end (intel_crtc_port.c) */
+struct intel_atomic_state;
+void intel_pipe_update_start(struct intel_atomic_state *state, struct intel_crtc *crtc);
+void intel_pipe_update_end(struct intel_atomic_state *state, struct intel_crtc *crtc);
+extern int parity_lcd_flip_pipe;
+
+void parity_lcd_ms_plane_update_flip(struct parity_lcd_modeset *ms)
+{
+	parity_lcd_cur_i915 = &ms->i915;
+	parity_lcd_flip_pipe = ms->crtc.pipe;
+	ms->state.base.dev = &ms->i915.drm;
+	ms->state.crtc_state = &ms->crtc_state;         /* same timings: old and new crtc state agree */
+	ms->state.old_crtc_state = &ms->crtc_state;
+	ms->crtc_state.uapi.mode_changed = false;       /* an update of a running crtc, not a modeset */
+	ms->crtc_state.uapi.event = &ms->flip_event;    /* the completion the update arms */
+	icl_plane_update_noarm(&ms->plane, &ms->crtc_state, &ms->plane_state);
+	intel_pipe_update_start(&ms->state, &ms->crtc);
+	icl_plane_update_arm(&ms->plane, &ms->crtc_state, &ms->plane_state);
+	intel_pipe_update_end(&ms->state, &ms->crtc);
+	ms->crtc_state.uapi.event = 0;
+}

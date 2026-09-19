@@ -1,6 +1,8 @@
 /* WS031 T1: the first textured-draw fixture, generated from the fixed Mesa tree.
  *
- *   PS:  uv = frag_coord.xy / (32, 32);  colour = txl(texture BTI 1, sampler 0, uv, lod 0);
+ *   PS:  uv = frag_coord.xy / (RT_W, RT_H);  colour = txl(texture BTI 1, sampler 0, uv, lod 0);
+ *        RT_W / RT_H: argv[1] / argv[2], default 32 / 32 (the T1 fixture; its output is unchanged).  E-118: with
+ *        argv[3] == "rt" the render target's RENDER_SURFACE_STATE is emitted too (isl, B8G8R8A8_UNORM, linear).
  *        render target 0 (BTI 0) = colour.  It keeps the A64 entry marker of the
  *        single-colour PS (0xc0ffee01 -> 0x100400c10) so "the PS ran" and "the
  *        sample was right" stay separate observations.
@@ -38,16 +40,18 @@ __gen_combine_address(void *data, void *location, uint64_t address, uint32_t del
 
 #define TEX_W 8
 #define TEX_H 8
-#define RT_W 32
-#define RT_H 32
+#define RT_VA_PLACEHOLDER 0x100800000ull
 #define TEX_VA_PLACEHOLDER 0x100404000ull
 #define MOCS 6
 
 static void reflog(void *d, unsigned *id, const char *fmt, ...) { (void)d;(void)id;(void)fmt; }
 
 int
-main(void)
+main(int argc, char **argv)
 {
+   unsigned rt_w = argc > 2 ? (unsigned)atoi(argv[1]) : 32u;
+   unsigned rt_h = argc > 2 ? (unsigned)atoi(argv[2]) : 32u;
+   int emit_rt = argc > 3 && strcmp(argv[3], "rt") == 0;
    process_intel_debug_variable();
    void *mem_ctx = ralloc_context(NULL);
    struct intel_device_info devinfo;
@@ -83,7 +87,7 @@ main(void)
    nir_def *fc = nir_load_frag_coord(&b);
    nir_def *pixel = nir_ffloor(&b, nir_trim_vector(&b, fc, 2));
    nir_def *uv = nir_fmul(&b, nir_fadd(&b, pixel, nir_imm_vec2(&b, 0.5f, 0.5f)),
-                          nir_imm_vec2(&b, 1.0f / RT_W, 1.0f / RT_H));
+                          nir_imm_vec2(&b, 1.0f / (float)rt_w, 1.0f / (float)rt_h));
 
    nir_tex_instr *tex = nir_tex_instr_create(b.shader, 2);
    tex->op = nir_texop_txl;
@@ -291,6 +295,36 @@ main(void)
    for (unsigned i = 0; i < GFX12_SAMPLER_STATE_length; i++)
       printf("0x%08xU, ", smp_lin[i]);
    printf("\n};\n");
+
+   if (emit_rt) {
+      /* E-118: the render target as the draw names it -- layout and RENDER_SURFACE_STATE from isl */
+      struct isl_surf rt;
+      bool rt_ok = isl_surf_init(&dev, &rt, .dim = ISL_SURF_DIM_2D, .format = ISL_FORMAT_B8G8R8A8_UNORM,
+            .width = rt_w, .height = rt_h, .depth = 1, .levels = 1, .array_len = 1, .samples = 1,
+            .usage = ISL_SURF_USAGE_RENDER_TARGET_BIT, .tiling_flags = ISL_TILING_LINEAR_BIT);
+      if (!rt_ok) {
+         fprintf(stderr, "reftex: isl_surf_init(render target) failed\n");
+         return 1;
+      }
+      struct isl_view rtv = {
+         .usage = ISL_SURF_USAGE_RENDER_TARGET_BIT, .format = ISL_FORMAT_B8G8R8A8_UNORM,
+         .base_level = 0, .levels = 1, .base_array_layer = 0, .array_len = 1,
+         .swizzle = ISL_SWIZZLE_IDENTITY,
+      };
+      uint32_t rt_rss[16];
+      memset(rt_rss, 0, sizeof(rt_rss));
+      isl_surf_fill_state(&dev, rt_rss, .surf = &rt, .view = &rtv, .address = RT_VA_PLACEHOLDER, .mocs = MOCS);
+      fprintf(stderr, "reftex: render target %ux%u row_pitch_B=%u size_B=%llu alignment_B=%u\n", rt_w, rt_h,
+         rt.row_pitch_B, (unsigned long long)rt.size_B, rt.alignment_B);
+      printf("#define TEXFIX_RT_WIDTH %uU\n#define TEXFIX_RT_HEIGHT %uU\n#define TEXFIX_RT_ROW_PITCH %uU\n"
+             "#define TEXFIX_RT_SIZE %lluU\n#define TEXFIX_RT_ALIGNMENT %uU\n#define TEXFIX_RT_VA_PLACEHOLDER 0x%llxULL\n",
+         rt_w, rt_h, rt.row_pitch_B, (unsigned long long)rt.size_B, rt.alignment_B, (unsigned long long)RT_VA_PLACEHOLDER);
+      printf("/* RENDER_SURFACE_STATE of the render target (isl_surf_fill_state, render-target usage, address = placeholder, mocs %d). */\n", MOCS);
+      printf("static const uint32_t texfix_rt_rss[16] = {");
+      for (unsigned i = 0; i < 16; i++)
+         printf("%s0x%08xU,", (i % 4) == 0 ? "\n\t" : " ", rt_rss[i]);
+      printf("\n};\n");
+   }
 
    /* raw PS for the disassembler */
    FILE *f = fopen("reftex_ps.bin", "wb");

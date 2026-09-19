@@ -83,3 +83,31 @@ GPU-free ktest は 433 checks（E-109 で +26: `dwork:` 7、`pw-async:` 8、`edp
 - draw／texture の fixture は legacy 側の `selftest.c` にあり（同じ builder を使うため）、parity 構成でも `selftest.c` をビルドしている。
 - CPU アドレス／DMA アドレス／GPU VA の区別、request 完了 → park → CPU 書換えの順序、`eu_hang_dump_reset` 後は提出しない規則。
 - forcewake 全保持、polling による完了待ち、runtime suspend 無効は「挙動」なので、リファクタとは別の受入で変える。
+
+## E-116 (2026-09-19)
+- host: lcd-modeset **79/0**、lcd 56/0、dp 72/0、vk fixtures 10。GPU-free ktest **474/0**。`check_generated.sh` 全一致。
+- 新 mode `-DPARITY_LCDB_TEST=1`（LCD-B）: 合格行 = `LCD-B verdict: PASS`（furthest stage=released）＋ `first anomaly: none`＋写真。window 20 s、QEMU の timeout 120 s 内（boot 約 30 s）。
+- 既存 8 mode の sweep: `handover/tools/sweep_e116.sh`（結果は ledger E-116 の追記を参照）。
+
+## E-117 (2026-09-19)
+- host: lcd-modeset **101/0**、lcd 56/0、dp 72/0。GPU-free ktest **502/0**。`check_generated.sh` 全一致。
+- 新 mode `-DPARITY_LCDR_TEST=1`（LCD 再利用）: 合格行 = `LCD-R verdict: PASS (cycles passed 3/3 …)` ＋ runner の `lcd_test=PASS`。実行は `RUNSCRIPT=./run-parity-ref-240.sh`（QEMU timeout 240 s、他は reference 条件と同一）。写真は `tools/watch_lcd_markers.ps1`。
+- runner 行の末尾に `lcd_test=… lcd_first_anomaly_at=… lcd_cleanup_rc=… lcd_retained=…`（既存の合格正規表現は不変）。
+- 回帰 sweep: `handover/tools/sweep_e117.sh`（8 mode ＋ LCD-B）。
+
+## E-118 (2026-09-19)
+- host: lcd-modeset **105/0**、lcd 56/0、dp 72/0。GPU-free ktest **515/0**。`check_generated.sh` 全一致。reftex の既定出力（32×32）は既存 `tex_fixture_gen.inc` と byte 一致。
+- 新 mode `-DPARITY_LCDG_TEST=1`（GPU 描画を同じ backing から表示）: 合格行 = `LCD-G verdict: PASS` ＋ `lcd_test=PASS`。`RUNSCRIPT=./run-parity-ref-240.sh`。
+- 回帰 sweep: `handover/tools/sweep_e118.sh`（8 mode ＋ LCD-B ＋ LCD-R ＋ LCD-G）。
+
+## E-119 (2026-09-19)
+- host: lcd-modeset **115/0**、lcd 56/0、dp 72/0。GPU-free ktest **535/0**。`check_generated.sh` 全一致。
+- 新 mode `-DPARITY_LCDC_TEST=1`（CPU A/B 同期 flip）: 合格行 = `LCD-C verdict: PASS` ＋ `lcd_test=PASS`。`-DPARITY_LCDD_TEST=1`（GPU back-buffer 描き直し＋flip）: 合格行 = `LCD-D verdict: PASS` ＋ `lcd_test=PASS`。どちらも `RUNSCRIPT=./run-parity-ref-240.sh`。
+- どの run の log にも GPU-free ktest 由来の「TLB invalidation did not complete in 4ms」が 8 行出る（fake register による意図的な timeout。判定外）。
+- 回帰 sweep: `handover/tools/sweep_e119f.sh`（8 mode ＋ LCD-B ＋ LCD-R ＋ LCD-G ＋ LCD-C ＋ LCD-D）。回帰 sweep 13/13 PASS（sweep_e119f.sh、最終 source、各 ktest 535/0。round 50 前の source でも sweep_e119.sh 12/12）。
+
+## E-120 (2026-09-19)
+- host: lcd-modeset **123/0**、lcd 56/0、dp 72/0、opregion 11/0、native-decide 8/0。GPU-free ktest **536/0**。
+- どの mode も probe で N0 を通る（VM では `N0 decision: PROCEED`）。LCD-D の合格条件に、buffer をまたぐ比較 4/4、sleep 入口での IRQ off 0、evasion probe の結果 ≥ 0 を追加（REACHED／NOT-REACHED は記録のみ）。
+- 意図的な TLB fault の log は `backend=MODEL test=… expected_fault=1`。集計では `expected_fault=0`（HW）の行だけを異常として数える。
+- 回帰 sweep: `handover/tools/sweep_e120.sh`（13 mode）。回帰 sweep 13/13 PASS（sweep_e120.sh、最終 source、各 ktest 536/0、全 run で N0 PROCEED）。

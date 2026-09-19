@@ -172,3 +172,66 @@
 | `intel_display_port.c`（追加: `hsw_crtc_enable`） | 生成物 | Linux 6.8.12 `display/intel_display.c` | notice は §8.1 と同じ |
 | `intel_ddi_port.c`（追加 7 関数: `intel_ddi_config_transcoder_func`、`tgl_ddi_pre_enable_dp`、`intel_ddi_pre_enable_dp`、`intel_ddi_pre_enable`、`intel_enable_ddi_dp`、`intel_enable_ddi`、`intel_ddi_pre_pll_enable`） | 生成物 | `display/intel_ddi.c` | notice は §9 と同じ |
 | `lcd_seq_compat.h`、glue の dispatcher（`intel_encoders_*`）と hook の束ね | 独立実装 | — | callee の**名前**だけを step として記録（本文は取り込んでいない）。hook の対応は `intel_ddi_init()` の代入を読んで合わせた |
+
+## 12. E-114〜E-116: LCD modeset 経路の生成 file（generator の manifest から機械的に作成）
+
+生成器 `handover/tools/port_lcd_calc.py`＋表 `port_lcd_modeset.json`。関数本体・macro・型は固定した正本 text からの抽出で、手入力していない。各生成 file の先頭 license／copyright comment は**正本 file の先頭 comment をそのまま複写**したもの（名義を推測・入力していない）。再現性は `check_generated.sh`（全出力の byte 一致＋ DRM 正本の SHA256SUMS）。出力ごとの sha256 と採用した関数名は `src/drivers/gpu/i915/parity/lcd/port_lcd_calc.manifest.json`。
+
+| 正本 file（Linux v6.8.12 系、ubu-i915-src／drm-v6.8.12） | sha256（先頭） | 採用単位数 |
+|---|---|---|
+| `display/intel_atomic_plane.c` | e0a4cb70c1b830d7… | 5 |
+| `display/intel_backlight.c` | 990c147ae25d589c… | 26 |
+| `display/intel_backlight_regs.h` | fe411d1e4987cd0c… | 1 |
+| `display/intel_bw.c` | 17ebe963a5cebbe5… | 2 |
+| `display/intel_cdclk.c` | e954ff508ced6525… | 9 |
+| `display/intel_color.c` | 92993f5274bde50a… | 10 |
+| `display/intel_color_regs.h` | f4b148d849385b5b… | 1 |
+| `display/intel_combo_phy.c` | d62d20fe268d280d… | 1 |
+| `display/intel_combo_phy_regs.h` | b5f41421ca2590dd… | 1 |
+| `display/intel_crtc.c` | ff4d1d58a92d4e8a… | 1 |
+| `display/intel_cx0_phy_regs.h` | f81421088d8c61c7… | 1 |
+| `display/intel_ddi.c` | 6a40473be6b095d1… | 58 |
+| `display/intel_ddi_buf_trans.c` | fcf9694d241716a9… | 19 |
+| `display/intel_ddi_buf_trans.h` | ec4433d9f675b37e… | 1 |
+| `display/intel_display.c` | f64a3b7c30298623… | 28 |
+| `display/intel_display.h` | dde8fd52907f640d… | 3 |
+| `display/intel_display_device.h` | cb7d717bb48eacf1… | 1 |
+| `display/intel_display_limits.h` | d8049c6ede79939d… | 3 |
+| `display/intel_display_power.c` | acbe0526744d4f90… | 2 |
+| `display/intel_display_power.h` | 9dd042ad4c10c5ef… | 6 |
+| `display/intel_display_reg_defs.h` | a33d6ec765231b34… | 1 |
+| `display/intel_display_types.h` | 647773fcee0c5497… | 9 |
+| `display/intel_dmc.c` | 58f778803f7b9dbf… | 5 |
+| `display/intel_dmc_regs.h` | 5b4518fce358d21f… | 1 |
+| `display/intel_dp.c` | 36ff6ee288d212c5… | 20 |
+| `display/intel_dp_link_training.c` | af257fa29746e832… | 46 |
+| `display/intel_dp_link_training.h` | 0a4d31fd19d9db3d… | 1 |
+| `display/intel_dpll_mgr.c` | bc90f5855afccb4e… | 19 |
+| `display/intel_dpll_mgr.h` | baaf9883fe61287a… | 2 |
+| `display/intel_psr_regs.h` | 630cd23c657051e6… | 1 |
+| `display/intel_vblank.c` | e1ee4e3595d64d26… | 4 |
+| `display/intel_vdsc_regs.h` | a104c23922473017… | 1 |
+| `display/intel_vrr.c` | 03f4500bc7cbcd48… | 2 |
+| `display/intel_wm.c` | 2783a5d0e20a5b4c… | 1 |
+| `display/intel_wm_types.h` | 275b607f847b0134… | 3 |
+| `display/skl_universal_plane.c` | a286317da480cb54… | 29 |
+| `display/skl_watermark.c` | 40d3b12b5bf5a8b0… | 59 |
+| `display/skl_watermark.h` | f5d091e86d64b9c7… | 1 |
+| `display/skl_watermark_regs.h` | 5e4dba2b538c68ea… | 1 |
+| `drm_blend.h` | 46a47b37fcb9dbb1… | 2 |
+| `drm_color_mgmt.h` | 6332adb2c833e3a6… | 2 |
+| `drm_connector.h` | 1eb905598bb46d73… | 1 |
+| `drm_dp.h` | 306a1a47ba001c41… | 3 |
+| `drm_dp_helper.c` | 030568524ac5db3f… | 25 |
+| `drm_dp_helper.h` | 1969846dd3fdb5d7… | 4 |
+| `drm_edid.c` | a01138078180d234… | 3 |
+| `drm_edid.h` | e61def12761bc325… | 8 |
+| `drm_modes.c` | e3a32332f5eb4f8a… | 4 |
+| `i915_drm.h` | 37fe8b9995b560a5… | 2 |
+| `i915_fixed.h` | 0e05c8380ba07ac1… | 1 |
+| `i915_reg.h` | 82d048e09a8472af… | 16 |
+| `i915_reg_defs.h` | c24ce430f5fbb32b… | 1 |
+| `soc/intel_pch.h` | ff783ac9577b2e0c… | 1 |
+| `uapi drm_mode.h` | ?… | 3 |
+
+zedBSD project code（正本由来でない）: `parity_lcd_modeset.{c,h}`、`parity_lcd_modeset_int.h`、`parity_lcd_ops.h`、`parity_lcd_trace.{c,h}`、`parity_lcd_observe.{c,h}`、`parity_lcd_regs.c`（register 名と address は抽出 macro、Linux dump の値は比較用）、`parity_lcd_show.{c,h}`、`parity_lcd_kernel.{c,h}`、`lcd_fake_hw.{c,h}`、`lcd_modeset_ktest.{c,h}`、`lcd_show_ktest.{c,h}`、`lcd_*_compat.h`、`parity_*_glue.inc`（glue は正本の caller の流れを 1 crtc 分に縮約、出典関数名を comment に明記）。
