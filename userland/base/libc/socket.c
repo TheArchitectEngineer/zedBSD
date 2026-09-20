@@ -813,6 +813,29 @@ inet_ntop(
 	return text;
 }
 
+/*
+ * Implements the inet ntoa operation.
+ *
+ * POSIX allows the result to live in a static area, so the returned text is
+ * only valid until this thread calls the function again.
+ */
+char *
+inet_ntoa(struct in_addr address)
+{
+	static __thread char text[16];
+
+	/* Handles a conversion failure by reporting an unusable address. */
+	if (inet_ntop(AF_INET, &address, text, (socklen_t)sizeof(text)) == NULL) {
+		text[0] = '\0';
+
+		/* Returns the empty result. */
+		return text;
+	}
+
+	/* Returns the computed result. */
+	return text;
+}
+
 /* Supports the socket call operation. */
 static intptr_t
 socket_call(

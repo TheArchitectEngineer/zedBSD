@@ -4435,6 +4435,22 @@ getlogin_r(
 }
 
 /*
+ * Implements the chroot operation.
+ */
+int
+chroot(const char *path)
+{
+	int function_result;
+
+	/* Computes the function result. */
+	function_result = (int)call(KERN_SYS_chroot, (uintptr_t)path, 0, 0, 0,
+			 0, 0);
+
+	/* Returns the computed result. */
+	return function_result;
+}
+
+/*
  * Implements the gethostname operation.
  */
 int

@@ -231,7 +231,8 @@ AMD64_KERNEL_SOURCES += \
 	src/drivers/platform/pcat/graphics/pcat-graphics.c \
 	src/drivers/platform/pcat/graphics/backend.c \
 	src/drivers/platform/pcat/graphics/font.c \
-	src/drivers/platform/pcat/graphics/text.c
+	src/drivers/platform/pcat/graphics/text.c \
+	src/drivers/platform/pcat/serial-mirror.c
 endif
 AMD64_KERNEL_SOURCES += $(KERN_NET_SOURCES) $(KERN_BLOCK_IDENTITY_SOURCES) \
 	$(KERN_UFS_SOURCES)
@@ -688,9 +689,13 @@ DYNAMIC_DIR := $(BUILD)/dynamic
 DYNAMIC_CPPFLAGS := -nostdinc -I. -Iinclude \
 	-isystem $(ZEDBSD_SYSROOT_AMD64)/usr/include \
 	-DHAL_ARCH_AMD64 -DKERN_USER_ABI_LP64 -DKERN_DYNAMIC_LIBC
+# Unwind tables are kept in the dynamic objects.  A C++ program raises an
+# exception by walking the stack, and a frame with no unwind information stops
+# that walk, so the shared C library has to describe its own frames for an
+# exception to pass through a call it made.
 DYNAMIC_CFLAGS := -m64 -march=x86-64 -mno-red-zone -Os -ffreestanding \
 	-fPIC -fno-builtin -fno-stack-protector \
-	-fno-asynchronous-unwind-tables -fno-unwind-tables \
+	-fasynchronous-unwind-tables \
 	-ftls-model=global-dynamic -Wall -Wextra -Werror
 DYNAMIC_LIBC_SOURCES := userland/base/libc/posix.c userland/base/libc/poll.c \
 	userland/base/libc/termios.c userland/base/libc/pthread.c userland/base/libc/timer.c userland/base/libc/shm.c \

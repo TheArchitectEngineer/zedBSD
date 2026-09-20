@@ -8,12 +8,17 @@
 /*
  * The TCP socket implementation.
  *
- * Each socket keeps one outstanding reliable segment, retransmitted by
- * the network worker's timer with exponential backoff until it is
- * acknowledged or the attempt is abandoned.  Listeners hold half-open
- * children until their handshake completes and then queue them for
- * accept.  Payload is delivered in order only; anything else is dropped
- * and re-acknowledged.
+ * A socket may have several segments outstanding at once, held oldest first
+ * in a fixed ring.  How many is bounded by that ring and by the window the
+ * peer advertises, so a sender does not have to wait a round trip for each
+ * segment.  An acknowledgement retires every segment it covers.  The network
+ * worker's timer resends the oldest outstanding segment with exponential
+ * backoff until it is acknowledged or the attempt is abandoned; the ones
+ * behind it follow once it is taken.
+ *
+ * Listeners hold half-open children until their handshake completes and then
+ * queue them for accept.  Payload is delivered in order only; anything else
+ * is dropped and re-acknowledged.
  */
 
 #include "kern/net/tcp-socket.h"
@@ -44,6 +49,28 @@
 #define TCP_EPHEMERAL_FIRST 49152U
 #define TCP_INITIAL_RTO 100U
 #define TCP_RETRANSMIT_MAX 5U
+
+/*
+ * Idle probing for SO_KEEPALIVE, in clock ticks.  The defaults are the
+ * traditional ones: probe after two hours of silence, then every 75 seconds,
+ * and give up after nine unanswered probes.  A build may shorten them so the
+ * behaviour can be observed in a test that does not run for hours.
+ */
+#ifndef CONFIG_TCP_KEEPALIVE_IDLE_MS
+#define CONFIG_TCP_KEEPALIVE_IDLE_MS 7200000U
+#endif
+#ifndef CONFIG_TCP_KEEPALIVE_INTERVAL_MS
+#define CONFIG_TCP_KEEPALIVE_INTERVAL_MS 75000U
+#endif
+#ifndef CONFIG_TCP_KEEPALIVE_COUNT
+#define CONFIG_TCP_KEEPALIVE_COUNT 9U
+#endif
+
+#define TCP_KEEPALIVE_IDLE \
+	((uint64_t)CONFIG_TCP_KEEPALIVE_IDLE_MS * KERN_CLOCK_HZ / 1000U)
+#define TCP_KEEPALIVE_INTERVAL \
+	((uint64_t)CONFIG_TCP_KEEPALIVE_INTERVAL_MS * KERN_CLOCK_HZ / 1000U)
+#define TCP_KEEPALIVE_COUNT ((unsigned)CONFIG_TCP_KEEPALIVE_COUNT)
 #define TCP_LISTEN_BACKLOG_MAX 16U
 
 struct tcp_endpoint {
@@ -65,9 +92,17 @@ static int tcp_route(struct tcp_endpoint *endpoint, struct net_device **device, 
 static int tcp_send_segment_at(struct tcp_endpoint *endpoint, uint32_t sequence, uint8_t flags, const void *data, size_t length);
 static int tcp_allocate_port(struct tcp_endpoint *endpoint);
 static int tcp_send_segment(struct tcp_endpoint *endpoint, uint8_t flags, const void *data, size_t length);
-static void tcp_retransmit_reset(struct tcp_endpoint *endpoint, struct packet_buf **packet);
+struct tcp_discard {
+	struct packet_buf *packets[CONFIG_TCP_SEND_QUEUE_MAX];
+	unsigned count;
+};
+
+static void tcp_retransmit_reset(struct tcp_endpoint *endpoint, struct tcp_discard *discard);
+static void tcp_discard_free(struct tcp_discard *discard);
+static uint32_t tcp_in_flight(const struct tcp_endpoint *endpoint);
+static void tcp_retire_acknowledged(struct tcp_endpoint *endpoint, uint32_t acknowledgement, struct tcp_discard *discard);
 static void tcp_retransmit_clear(struct tcp_endpoint *endpoint);
-static struct packet_buf * tcp_connect_cancel_locked(struct tcp_endpoint *endpoint, uint32_t generation);
+static void tcp_connect_cancel_locked(struct tcp_endpoint *endpoint, uint32_t generation, struct tcp_discard *discard);
 static int tcp_send_reliable(struct tcp_endpoint *endpoint, uint8_t flags, const void *data, size_t length);
 static int tcp_bind(struct socket *socket, const struct sockaddr *address, socklen_t length);
 static int tcp_listen(struct socket *socket, int backlog);
@@ -80,6 +115,10 @@ static int tcp_getsockname(struct socket *socket, struct sockaddr *address, sock
 static int tcp_getpeername(struct socket *socket, struct sockaddr *address, socklen_t *length);
 static void tcp_close(struct socket *socket);
 static int tcp_poll(struct socket *socket, short events, short *revents);
+static int tcp_setsockopt(struct socket *socket, int level, int option, const void *value, socklen_t length);
+static int tcp_getsockopt(struct socket *socket, int level, int option, void *value, socklen_t *length);
+static void tcp_keepalive_changed(struct socket *socket);
+static void tcp_keepalive_arm_locked(struct tcp_endpoint *endpoint);
 static struct tcp_endpoint * tcp_lookup(uint32_t source, uint32_t destination, uint16_t source_port, uint16_t destination_port);
 static struct tcp_endpoint * tcp_passive_syn(struct tcp_endpoint *listener, uint32_t source, uint32_t destination, uint16_t source_port, uint32_t sequence);
 static int tcp_input(struct packet_buf *packet, uint32_t source, uint32_t destination);
@@ -97,6 +136,9 @@ static const struct socket_ops tcp_ops = {
 	.ioctl = inet_socket_ioctl,
 	.poll = tcp_poll,
 	.close = tcp_close,
+	.setsockopt = tcp_setsockopt,
+	.getsockopt = tcp_getsockopt,
+	.keepalive_changed = tcp_keepalive_changed,
 };
 
 /*
@@ -158,6 +200,42 @@ tcp_init(
 }
 
 /*
+ * Decides what an expired idle probe means for one socket.
+ *
+ * The caller holds the socket lock.  Returns 1 when a probe should be sent,
+ * -1 when the peer has failed to answer every probe allowed, and 0 when the
+ * socket no longer needs one.
+ */
+static int
+tcp_keepalive_expire_locked(
+	struct tcp_endpoint *endpoint,
+	uint64_t now)
+{
+	/* Stops probing a connection that is no longer established. */
+	if (endpoint->tcp.inet.socket.keepalive == 0 ||
+	    endpoint->tcp.state != TCP_ESTABLISHED) {
+		endpoint->tcp.keepalive_deadline = 0;
+		endpoint->tcp.keepalive_probes = 0;
+		return 0;
+	}
+
+	/* Declares the peer unreachable once every probe went unanswered. */
+	if (endpoint->tcp.keepalive_probes >= TCP_KEEPALIVE_COUNT) {
+		endpoint->tcp.keepalive_deadline = 0;
+		endpoint->tcp.keepalive_probes = 0;
+		endpoint->tcp.state = TCP_CLOSED;
+		endpoint->tcp.active_connect_generation = 0;
+		endpoint->tcp.connect_wait_deadline = 0;
+		return -1;
+	}
+
+	/* Schedules the next probe and asks for this one. */
+	endpoint->tcp.keepalive_probes++;
+	endpoint->tcp.keepalive_deadline = now + TCP_KEEPALIVE_INTERVAL;
+	return 1;
+}
+
+/*
  * Retransmits expired segments, abandoning attempts that failed too often.
  */
 void
@@ -171,7 +249,8 @@ tcp_timer_run(
 	unsigned long irq;
 	uint64_t now;
 	struct socket *socket;
-	struct packet_buf *discard;
+	struct tcp_discard discard;
+	struct tcp_pending *oldest;
 	uint8_t payload[TCP_MSS];
 	uint8_t flags;
 	uint32_t sequence;
@@ -180,6 +259,7 @@ tcp_timer_run(
 	unsigned shift;
 	int error;
 	int failed;
+	int probe;
 
 	count = 0;
 	now = sched_ticks();
@@ -196,13 +276,42 @@ tcp_timer_run(
 
 	/* Handles each socket whose retransmission deadline passed. */
 	for (index = 0; index < count; index++) {
-		discard = NULL;
+		discard.count = 0;
 		endpoint = snapshot[index];
 		socket = &endpoint->tcp.inet.socket;
 		irq = spin_lock_irqsave(&socket->lock);
-		if (endpoint->tcp.retransmit == NULL ||
+		if (endpoint->tcp.send_count == 0 ||
 		    endpoint->tcp.retransmit_deadline > now) {
+			/*
+			 * With nothing to retransmit, an armed idle probe is
+			 * the other reason this socket may need attention.
+			 */
+			probe = 0;
+			if (endpoint->tcp.send_count == 0 &&
+			    endpoint->tcp.keepalive_deadline != 0 &&
+			    endpoint->tcp.keepalive_deadline <= now)
+				probe = tcp_keepalive_expire_locked(endpoint, now);
 			spin_unlock_irqrestore(&socket->lock, irq);
+
+			/* A peer that answered no probe at all is gone. */
+			if (probe < 0) {
+				tcp_forget_peer(endpoint);
+				socket_set_error(socket, ETIMEDOUT);
+				socket_wake_connect(socket);
+				socket_wake_receive(socket);
+				socket_release(socket);
+				continue;
+			}
+
+			/*
+			 * The probe is an acknowledgement for the last byte
+			 * already sent, which the peer answers without
+			 * delivering anything to its reader.
+			 */
+			if (probe > 0)
+				(void)tcp_send_segment_at(endpoint,
+				    endpoint->tcp.send_next - 1U, TCP_ACK,
+				    NULL, 0);
 			socket_release(socket);
 			continue;
 		}
@@ -215,7 +324,7 @@ tcp_timer_run(
 			endpoint->tcp.connect_wait_deadline = 0;
 			tcp_forget_peer(endpoint);
 			spin_unlock_irqrestore(&socket->lock, irq);
-			packet_buf_free(discard);
+			tcp_discard_free(&discard);
 			socket_set_error(socket, ETIMEDOUT);
 			if (endpoint->tcp.listener != NULL) {
 				tcp_listener_remove(endpoint);
@@ -232,10 +341,16 @@ tcp_timer_run(
 			continue;
 		}
 
-		/* Copies the segment out so it can be sent unlocked. */
-		sequence = endpoint->tcp.retransmit_sequence;
-		flags = endpoint->tcp.retransmit_flags;
-		length = endpoint->tcp.retransmit->length;
+		/*
+		 * The oldest outstanding segment is the one a timeout
+		 * resends; anything after it follows once the peer
+		 * acknowledges this one.  It is copied out so the send can
+		 * happen with the lock released.
+		 */
+		oldest = &endpoint->tcp.send_queue[endpoint->tcp.send_first];
+		sequence = oldest->sequence;
+		flags = oldest->flags;
+		length = oldest->packet->length;
 		if (length > sizeof(payload)) {
 			tcp_retransmit_reset(endpoint, &discard);
 			endpoint->tcp.state = TCP_CLOSED;
@@ -243,14 +358,14 @@ tcp_timer_run(
 			endpoint->tcp.connect_wait_deadline = 0;
 			tcp_forget_peer(endpoint);
 			spin_unlock_irqrestore(&socket->lock, irq);
-			packet_buf_free(discard);
+			tcp_discard_free(&discard);
 			socket_set_error(socket, EIO);
 			socket_release(socket);
 			continue;
 		}
 
 		if (length != 0)
-			memcpy(payload, endpoint->tcp.retransmit->data, length);
+			memcpy(payload, oldest->packet->data, length);
 
 		/* Backs the deadline off exponentially, capped at eight times. */
 		endpoint->tcp.retransmit_count++;
@@ -266,8 +381,9 @@ tcp_timer_run(
 		if (error != 0 && error != EAGAIN && error != ENOBUFS) {
 			failed = 0;
 			irq = spin_lock_irqsave(&socket->lock);
-			if (endpoint->tcp.retransmit != NULL &&
-			    endpoint->tcp.retransmit_sequence == sequence) {
+			if (endpoint->tcp.send_count != 0 &&
+			    endpoint->tcp.send_queue[endpoint->tcp.send_first]
+				.sequence == sequence) {
 				tcp_retransmit_reset(endpoint, &discard);
 				endpoint->tcp.state = TCP_CLOSED;
 				endpoint->tcp.active_connect_generation = 0;
@@ -277,7 +393,7 @@ tcp_timer_run(
 			}
 
 			spin_unlock_irqrestore(&socket->lock, irq);
-			packet_buf_free(discard);
+			tcp_discard_free(&discard);
 			if (!failed) {
 				socket_release(socket);
 				continue;
@@ -322,10 +438,10 @@ tcp_timer_next_deadline(
 	for (endpoint = tcp_sockets; endpoint != NULL; endpoint = endpoint->next) {
 		socket_irq = spin_lock_irqsave(
 		    &endpoint->tcp.inet.socket.lock);
-		if (endpoint->tcp.retransmit != NULL)
+		if (endpoint->tcp.send_count != 0)
 			candidate = endpoint->tcp.retransmit_deadline;
 		else
-			candidate = 0;
+			candidate = endpoint->tcp.keepalive_deadline;
 		spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, socket_irq);
 		if (candidate != 0 && (deadline == 0 || candidate < deadline))
 			deadline = candidate;
@@ -335,6 +451,131 @@ tcp_timer_next_deadline(
 
 	/* Reports the earliest deadline. */
 	return deadline;
+}
+
+/*
+ * Arms or disarms the idle probe for one socket.
+ *
+ * The caller holds the socket lock.  Only an established connection probes:
+ * there is nothing to keep alive before it exists or after it is gone.
+ */
+static void
+tcp_keepalive_arm_locked(
+	struct tcp_endpoint *endpoint)
+{
+	endpoint->tcp.keepalive_probes = 0;
+
+	/* Disarms when the option is off or the connection is not up. */
+	if (endpoint->tcp.inet.socket.keepalive == 0 ||
+	    endpoint->tcp.state != TCP_ESTABLISHED) {
+		endpoint->tcp.keepalive_deadline = 0;
+		return;
+	}
+
+	/* Restarts the idle period. */
+	endpoint->tcp.keepalive_deadline = sched_ticks() + TCP_KEEPALIVE_IDLE;
+}
+
+/*
+ * Reacts to SO_KEEPALIVE being set or cleared on an existing socket.
+ */
+static void
+tcp_keepalive_changed(
+	struct socket *socket)
+{
+	struct tcp_endpoint *endpoint;
+	unsigned long irq;
+
+	endpoint = tcp_endpoint(socket);
+
+	/* Handles a socket that is not a TCP endpoint. */
+	if (endpoint == NULL)
+		return;
+	irq = spin_lock_irqsave(&socket->lock);
+	tcp_keepalive_arm_locked(endpoint);
+	spin_unlock_irqrestore(&socket->lock, irq);
+}
+
+/*
+ * Sets one option at the TCP protocol level.
+ */
+static int
+tcp_setsockopt(
+	struct socket *socket,
+	int level,
+	int option,
+	const void *value,
+	socklen_t length)
+{
+	struct tcp_endpoint *endpoint;
+	unsigned long irq;
+	int enabled;
+
+	/* Only this protocol's own level is handled here. */
+	if (socket == NULL || level != IPPROTO_TCP)
+		return ENOPROTOOPT;
+	if (option != TCP_NODELAY)
+		return ENOPROTOOPT;
+	if (value == NULL || length != sizeof(enabled))
+		return EINVAL;
+	memcpy(&enabled, value, sizeof(enabled));
+
+	endpoint = tcp_endpoint(socket);
+
+	/* Handles a socket that is not a TCP endpoint. */
+	if (endpoint == NULL)
+		return ENOPROTOOPT;
+
+	/*
+	 * The stored value is what getsockopt reports.  This implementation
+	 * sends each write as its own segment as soon as the previous one is
+	 * acknowledged, so it never accumulates small writes; clearing the
+	 * option therefore does not introduce the delay the name refers to.
+	 */
+	irq = spin_lock_irqsave(&socket->lock);
+	endpoint->tcp.nodelay = enabled != 0;
+	spin_unlock_irqrestore(&socket->lock, irq);
+
+	/* Reports successful completion. */
+	return 0;
+}
+
+/*
+ * Reads one option at the TCP protocol level.
+ */
+static int
+tcp_getsockopt(
+	struct socket *socket,
+	int level,
+	int option,
+	void *value,
+	socklen_t *length)
+{
+	struct tcp_endpoint *endpoint;
+	unsigned long irq;
+	int enabled;
+
+	/* Only this protocol's own level is handled here. */
+	if (socket == NULL || level != IPPROTO_TCP)
+		return ENOPROTOOPT;
+	if (option != TCP_NODELAY)
+		return ENOPROTOOPT;
+	if (value == NULL || length == NULL || *length < sizeof(enabled))
+		return EINVAL;
+
+	endpoint = tcp_endpoint(socket);
+
+	/* Handles a socket that is not a TCP endpoint. */
+	if (endpoint == NULL)
+		return ENOPROTOOPT;
+	irq = spin_lock_irqsave(&socket->lock);
+	enabled = endpoint->tcp.nodelay != 0;
+	spin_unlock_irqrestore(&socket->lock, irq);
+	memcpy(value, &enabled, sizeof(enabled));
+	*length = sizeof(enabled);
+
+	/* Reports successful completion. */
+	return 0;
 }
 
 /* Converts a socket to its endpoint. */
@@ -654,12 +895,89 @@ tcp_send_segment(
 static void
 tcp_retransmit_reset(
 	struct tcp_endpoint *endpoint,
-	struct packet_buf **packet)
+	struct tcp_discard *discard)
 {
-	*packet = endpoint->tcp.retransmit;
-	endpoint->tcp.retransmit = NULL;
+	unsigned index;
+	unsigned slot;
+
+	/* Hands every outstanding payload to the caller to free unlocked. */
+	discard->count = 0;
+	for (index = 0; index < endpoint->tcp.send_count; index++) {
+		slot = (endpoint->tcp.send_first + index) % TCP_SEND_QUEUE_MAX;
+		discard->packets[discard->count++] =
+		    endpoint->tcp.send_queue[slot].packet;
+		endpoint->tcp.send_queue[slot].packet = NULL;
+	}
+	endpoint->tcp.send_first = 0;
+	endpoint->tcp.send_count = 0;
 	endpoint->tcp.retransmit_deadline = 0;
 	endpoint->tcp.retransmit_count = 0;
+}
+
+/* Frees the payloads a reset handed over, outside any lock. */
+static void
+tcp_discard_free(
+	struct tcp_discard *discard)
+{
+	unsigned index;
+
+	/* Process each remaining element. */
+	for (index = 0; index < discard->count; index++)
+		packet_buf_free(discard->packets[index]);
+	discard->count = 0;
+}
+
+/* Reports the sequence space the outstanding segments occupy. */
+static uint32_t
+tcp_in_flight(
+	const struct tcp_endpoint *endpoint)
+{
+	/* Returns the computed result. */
+	return endpoint->tcp.send_next - endpoint->tcp.send_unacknowledged;
+}
+
+/*
+ * Retires every segment the acknowledgement covers.
+ *
+ * The caller holds the socket lock and frees the returned payloads once it
+ * has released it.  The deadline restarts for whatever is still outstanding.
+ */
+static void
+tcp_retire_acknowledged(
+	struct tcp_endpoint *endpoint,
+	uint32_t acknowledgement,
+	struct tcp_discard *discard)
+{
+	struct tcp_pending *entry;
+	uint32_t end;
+
+	/* Process input until it is exhausted. */
+	while (endpoint->tcp.send_count != 0) {
+		entry = &endpoint->tcp.send_queue[endpoint->tcp.send_first];
+		end = entry->sequence + entry->advance;
+
+		/*
+		 * Stops at the first segment the peer has not taken.  The
+		 * comparison is signed so that it stays correct where the
+		 * sequence numbers wrap.
+		 */
+		if ((int32_t)(acknowledgement - end) < 0)
+			break;
+
+		discard->packets[discard->count++] = entry->packet;
+		entry->packet = NULL;
+		endpoint->tcp.send_first =
+		    (endpoint->tcp.send_first + 1U) % TCP_SEND_QUEUE_MAX;
+		endpoint->tcp.send_count--;
+	}
+
+	/* The timer follows whatever is now the oldest segment. */
+	endpoint->tcp.retransmit_count = 0;
+	if (endpoint->tcp.send_count == 0)
+		endpoint->tcp.retransmit_deadline = 0;
+	else
+		endpoint->tcp.retransmit_deadline =
+		    sched_ticks() + TCP_INITIAL_RTO;
 }
 
 /* Drops the retransmission record and wakes senders. */
@@ -668,7 +986,7 @@ tcp_retransmit_clear(
 	struct tcp_endpoint *endpoint)
 {
 	struct socket *socket;
-	struct packet_buf *packet;
+	struct tcp_discard packet;
 	unsigned long irq;
 
 	/* Takes the queued segment out under the socket lock. */
@@ -679,21 +997,22 @@ tcp_retransmit_clear(
 
 	spin_unlock_irqrestore(&socket->lock, irq);
 
-	/* Frees it and lets a blocked sender continue. */
-	packet_buf_free(packet);
+	/* Frees them and lets a blocked sender continue. */
+	tcp_discard_free(&packet);
 	socket_wake_send(socket);
 }
 
 /* Abandons an active connect of a given generation; the caller holds the socket lock. */
-static struct packet_buf *
+static void
 tcp_connect_cancel_locked(
 	struct tcp_endpoint *endpoint,
-	uint32_t generation)
+	uint32_t generation,
+	struct tcp_discard *discard)
 {
 	struct socket *socket;
-	struct packet_buf *packet;
 
 	socket = &endpoint->tcp.inet.socket;
+	discard->count = 0;
 
 	/*
 	 * The generation check prevents a waiter from cancelling a later
@@ -701,10 +1020,10 @@ tcp_connect_cancel_locked(
 	 */
 	if (endpoint->tcp.state != TCP_SYN_SENT ||
 	    endpoint->tcp.active_connect_generation != generation)
-		return NULL;
+		return;
 
 	/* Closes the socket and wakes everyone waiting on the attempt. */
-	tcp_retransmit_reset(endpoint, &packet);
+	tcp_retransmit_reset(endpoint, discard);
 	endpoint->tcp.state = TCP_CLOSED;
 	endpoint->tcp.active_connect_generation = 0;
 	endpoint->tcp.connect_wait_deadline = 0;
@@ -712,9 +1031,6 @@ tcp_connect_cancel_locked(
 	waitq_wake_all(&socket->connect_waitq);
 	waitq_wake_all(&socket->send_waitq);
 	poll_notify();
-
-	/* Reports the retransmission record for the caller to free. */
-	return packet;
 }
 
 /* Sends a segment that is retransmitted until acknowledged. */
@@ -729,9 +1045,12 @@ tcp_send_reliable(
 	void *payload;
 	uint32_t sequence;
 	uint32_t advance;
+	uint32_t window;
 	unsigned long irq;
+	unsigned slot;
+	int control;
 	int error;
-	struct packet_buf *discard;
+	struct tcp_discard discard;
 
 	/* Keeps a copy of the payload for retransmission. */
 	copy = packet_buf_alloc(0);
@@ -751,21 +1070,51 @@ tcp_send_reliable(
 	if ((flags & (TCP_SYN | TCP_FIN)) != 0)
 		advance++;
 
-	/* Only one reliable segment may be outstanding. */
+	/*
+	 * The segment joins the outstanding ones if both the ring and the
+	 * peer's advertised window have room for it.  A control segment is
+	 * always admitted: refusing a SYN or a FIN for want of window would
+	 * stall the connection itself rather than the data on it.
+	 */
 	irq = spin_lock_irqsave(&endpoint->tcp.inet.socket.lock);
 
-	if (endpoint->tcp.retransmit != NULL) {
+	control = (flags & (TCP_SYN | TCP_FIN)) != 0;
+	if (endpoint->tcp.send_count >= TCP_SEND_QUEUE_MAX) {
 		spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, irq);
 		packet_buf_free(copy);
 		return EAGAIN;
 	}
+	if (!control && length != 0) {
+		window = endpoint->tcp.peer_window;
+
+		/* An unknown or closed window still allows one segment. */
+		if (window == 0)
+			window = (uint32_t)TCP_MSS;
+		if (tcp_in_flight(endpoint) != 0 &&
+		    tcp_in_flight(endpoint) + (uint32_t)length > window) {
+			spin_unlock_irqrestore(
+			    &endpoint->tcp.inet.socket.lock, irq);
+			packet_buf_free(copy);
+			return EAGAIN;
+		}
+	}
 
 	sequence = endpoint->tcp.send_next;
-	endpoint->tcp.retransmit = copy;
-	endpoint->tcp.retransmit_sequence = sequence;
-	endpoint->tcp.retransmit_flags = flags;
-	endpoint->tcp.retransmit_count = 0;
-	endpoint->tcp.retransmit_deadline = sched_ticks() + TCP_INITIAL_RTO;
+	slot = (endpoint->tcp.send_first + endpoint->tcp.send_count) %
+	    TCP_SEND_QUEUE_MAX;
+	endpoint->tcp.send_queue[slot].packet = copy;
+	endpoint->tcp.send_queue[slot].sequence = sequence;
+	endpoint->tcp.send_queue[slot].advance = advance;
+	endpoint->tcp.send_queue[slot].length = (uint16_t)length;
+	endpoint->tcp.send_queue[slot].flags = flags;
+
+	/* The deadline belongs to the oldest segment, so only it starts one. */
+	if (endpoint->tcp.send_count == 0) {
+		endpoint->tcp.retransmit_count = 0;
+		endpoint->tcp.retransmit_deadline =
+		    sched_ticks() + TCP_INITIAL_RTO;
+	}
+	endpoint->tcp.send_count++;
 	endpoint->tcp.send_next += advance;
 
 	spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, irq);
@@ -777,15 +1126,28 @@ tcp_send_reliable(
 	 */
 	error = tcp_send_segment_at(endpoint, sequence, flags, data, length);
 	if (error != 0) {
-		discard = NULL;
+		discard.count = 0;
 		irq = spin_lock_irqsave(&endpoint->tcp.inet.socket.lock);
-		if (endpoint->tcp.retransmit == copy) {
-			tcp_retransmit_reset(endpoint, &discard);
+
+		/*
+		 * Only the segment just added can be taken back: an earlier
+		 * one may already be on the wire.  It is the newest, so it
+		 * is at the end of the ring.
+		 */
+		slot = (endpoint->tcp.send_first + endpoint->tcp.send_count -
+		    1U) % TCP_SEND_QUEUE_MAX;
+		if (endpoint->tcp.send_count != 0 &&
+		    endpoint->tcp.send_queue[slot].packet == copy) {
+			discard.packets[discard.count++] = copy;
+			endpoint->tcp.send_queue[slot].packet = NULL;
+			endpoint->tcp.send_count--;
 			endpoint->tcp.send_next = sequence;
+			if (endpoint->tcp.send_count == 0)
+				endpoint->tcp.retransmit_deadline = 0;
 		}
 
 		spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, irq);
-		packet_buf_free(discard);
+		tcp_discard_free(&discard);
 		return error;
 	}
 
@@ -1000,7 +1362,7 @@ tcp_connect(
 {
 	struct tcp_endpoint *endpoint;
 	struct thread *thread;
-	struct packet_buf *cancelled;
+	struct tcp_discard cancelled;
 	uint64_t deadline;
 	uint64_t timeout;
 	uint32_t generation;
@@ -1011,7 +1373,7 @@ tcp_connect(
 
 	endpoint = tcp_endpoint(socket);
 	thread = thread_current();
-	cancelled = NULL;
+	cancelled.count = 0;
 	deadline = 0;
 
 	/*
@@ -1108,9 +1470,9 @@ tcp_connect(
 			break;
 		if (error != EAGAIN && error != EBUSY && error != ENOBUFS) {
 			irq = spin_lock_irqsave(&socket->lock);
-			cancelled = tcp_connect_cancel_locked(endpoint, generation);
+			tcp_connect_cancel_locked(endpoint, generation, &cancelled);
 			spin_unlock_irqrestore(&socket->lock, irq);
-			packet_buf_free(cancelled);
+			tcp_discard_free(&cancelled);
 			return error;
 		}
 
@@ -1120,9 +1482,9 @@ tcp_connect(
 
 	if (error != 0) {
 		irq = spin_lock_irqsave(&socket->lock);
-		cancelled = tcp_connect_cancel_locked(endpoint, generation);
+		tcp_connect_cancel_locked(endpoint, generation, &cancelled);
 		spin_unlock_irqrestore(&socket->lock, irq);
-		packet_buf_free(cancelled);
+		tcp_discard_free(&cancelled);
 		return error;
 	}
 
@@ -1139,9 +1501,9 @@ tcp_connect(
 	if (timeout != 0) {
 		error = kern_deadline_after(sched_ticks(), timeout, &deadline);
 		if (error != 0) {
-			cancelled = tcp_connect_cancel_locked(endpoint, generation);
+			tcp_connect_cancel_locked(endpoint, generation, &cancelled);
 			spin_unlock_irqrestore(&socket->lock, irq);
-			packet_buf_free(cancelled);
+			tcp_discard_free(&cancelled);
 			return error;
 		}
 	}
@@ -1167,9 +1529,9 @@ wait_for_connect:
 		}
 
 		if (error == ETIMEDOUT) {
-			cancelled = tcp_connect_cancel_locked(endpoint, generation);
+			tcp_connect_cancel_locked(endpoint, generation, &cancelled);
 			spin_unlock_irqrestore(&socket->lock, irq);
-			packet_buf_free(cancelled);
+			tcp_discard_free(&cancelled);
 			return error;
 		}
 	}
@@ -1213,6 +1575,7 @@ tcp_sendto(
 	struct thread *thread;
 	unsigned long irq;
 	unsigned attempt;
+	uint32_t window;
 	int error;
 	uint64_t sequence;
 
@@ -1250,10 +1613,21 @@ tcp_sendto(
 	if (length > TCP_MSS)
 		length = TCP_MSS;
 
-	/* Waits for the previous segment to be acknowledged. */
+	/*
+	 * Waits for room rather than for silence: several segments may be
+	 * outstanding, so the send proceeds as long as the ring has a free
+	 * entry and the peer's window has space for this many more bytes.
+	 */
 	for (;;) {
 		irq = spin_lock_irqsave(&socket->lock);
-		if (endpoint->tcp.send_unacknowledged == endpoint->tcp.send_next) {
+		window = endpoint->tcp.peer_window;
+
+		/* An unknown or closed window still allows one segment. */
+		if (window == 0)
+			window = (uint32_t)TCP_MSS;
+		if (endpoint->tcp.send_count < TCP_SEND_QUEUE_MAX &&
+		    (tcp_in_flight(endpoint) == 0 ||
+		     tcp_in_flight(endpoint) + (uint32_t)length <= window)) {
 			spin_unlock_irqrestore(&socket->lock, irq);
 			break;
 		}
@@ -1277,6 +1651,15 @@ tcp_sendto(
 		if (error == EINTR)
 			return -EINTR;
 	}
+
+	/* Our own traffic also restarts the idle period. */
+	irq = spin_lock_irqsave(&socket->lock);
+	if (endpoint->tcp.state == TCP_ESTABLISHED && socket->keepalive != 0) {
+		endpoint->tcp.keepalive_probes = 0;
+		endpoint->tcp.keepalive_deadline =
+		    sched_ticks() + TCP_KEEPALIVE_IDLE;
+	}
+	spin_unlock_irqrestore(&socket->lock, irq);
 
 	/* Sends the segment, retrying while buffers are short. */
 	for (attempt = 0; ; attempt++) {
@@ -1549,10 +1932,14 @@ tcp_poll(
 		     (endpoint->tcp.inet.inet_flags & INET_SOCKET_CONNECTED) != 0))
 			result |= events & (POLLIN | POLLRDNORM);
 
-		/* An acknowledged connection, or a failed connect, is writable. */
+		/*
+		 * A connection is writable while the send ring has room: a
+		 * write does not have to wait for everything already sent to
+		 * be acknowledged, only for space to put one more segment.
+		 */
 		if (!socket->write_shutdown &&
 		    endpoint->tcp.state == TCP_ESTABLISHED &&
-		    endpoint->tcp.send_unacknowledged == endpoint->tcp.send_next)
+		    endpoint->tcp.send_count < TCP_SEND_QUEUE_MAX)
 			result |= events & (POLLOUT | POLLWRNORM);
 		if (endpoint->tcp.state == TCP_SYN_SENT && socket->error != 0)
 			result |= events & (POLLOUT | POLLWRNORM);
@@ -1737,7 +2124,7 @@ tcp_input(
 	uint8_t flags;
 	enum tcp_state state;
 	unsigned long socket_irq;
-	struct packet_buf *retransmit;
+	struct tcp_discard retransmit;
 	uint32_t resend_sequence;
 	int resend;
 	int established;
@@ -1795,7 +2182,7 @@ tcp_input(
 
 	/* A reset closes the connection and fails any pending connect. */
 	if (flags & TCP_RST) {
-		retransmit = NULL;
+		retransmit.count = 0;
 		socket_irq = spin_lock_irqsave(
 		    &endpoint->tcp.inet.socket.lock);
 		tcp_retransmit_reset(endpoint, &retransmit);
@@ -1804,7 +2191,7 @@ tcp_input(
 		endpoint->tcp.connect_wait_deadline = 0;
 		tcp_forget_peer(endpoint);
 		spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, socket_irq);
-		packet_buf_free(retransmit);
+		tcp_discard_free(&retransmit);
 		socket_set_error(&endpoint->tcp.inet.socket, ECONNRESET);
 		if (endpoint->tcp.listener != NULL) {
 			tcp_listener_remove(endpoint);
@@ -1823,7 +2210,7 @@ tcp_input(
 
 	/* A half-open child completes on the handshake ACK, or repeats its SYN-ACK. */
 	if (state == TCP_SYN_RECEIVED) {
-		retransmit = NULL;
+		retransmit.count = 0;
 		resend_sequence = 0;
 		resend = 0;
 		established = 0;
@@ -1831,7 +2218,16 @@ tcp_input(
 		if ((flags & (TCP_SYN | TCP_ACK | TCP_RST)) == TCP_SYN &&
 		    sequence + 1U == endpoint->tcp.receive_next) {
 			resend = 1;
-			resend_sequence = endpoint->tcp.retransmit_sequence;
+
+			/*
+			 * The SYN-ACK is the oldest thing outstanding on a
+			 * half-open connection, so that is what a repeated
+			 * SYN asks to have sent again.
+			 */
+			resend_sequence = endpoint->tcp.send_count != 0
+			    ? endpoint->tcp.send_queue[
+				  endpoint->tcp.send_first].sequence
+			    : endpoint->tcp.send_next;
 		}
 
 		if ((flags & TCP_ACK) != 0 &&
@@ -1839,11 +2235,12 @@ tcp_input(
 			endpoint->tcp.send_unacknowledged = acknowledgement;
 			tcp_retransmit_reset(endpoint, &retransmit);
 			endpoint->tcp.state = TCP_ESTABLISHED;
+			tcp_keepalive_arm_locked(endpoint);
 			established = 1;
 		}
 
 		spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, socket_irq);
-		packet_buf_free(retransmit);
+		tcp_discard_free(&retransmit);
 		if (resend)
 			(void)tcp_send_segment_at(endpoint, resend_sequence,
 			    TCP_SYN | TCP_ACK, NULL, 0);
@@ -1859,7 +2256,7 @@ tcp_input(
 
 	/* An active connect completes on the SYN-ACK for its sequence. */
 	if (state == TCP_SYN_SENT) {
-		retransmit = NULL;
+		retransmit.count = 0;
 		established = 0;
 		socket_irq = spin_lock_irqsave(&endpoint->tcp.inet.socket.lock);
 		if ((flags & (TCP_SYN | TCP_ACK)) == (TCP_SYN | TCP_ACK) &&
@@ -1872,6 +2269,7 @@ tcp_input(
 			endpoint->tcp.state = TCP_ESTABLISHED;
 			endpoint->tcp.active_connect_generation = 0;
 			endpoint->tcp.connect_wait_deadline = 0;
+			tcp_keepalive_arm_locked(endpoint);
 			waitq_wake_all(&endpoint->tcp.inet.socket.connect_waitq);
 			waitq_wake_all(&endpoint->tcp.inet.socket.send_waitq);
 			poll_notify();
@@ -1879,7 +2277,7 @@ tcp_input(
 		}
 
 		spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, socket_irq);
-		packet_buf_free(retransmit);
+		tcp_discard_free(&retransmit);
 		if (established)
 			(void)tcp_send_segment(endpoint, TCP_ACK, NULL, 0);
 		packet_buf_free(packet);
@@ -1887,22 +2285,42 @@ tcp_input(
 		return 0;
 	}
 
-	/* An acknowledgement of the outstanding segment retires it. */
+	/*
+	 * Anything arriving from the peer is proof the connection is alive, so
+	 * the idle period starts over and the unanswered probes are forgotten.
+	 * This includes the peer's answer to a probe of our own.
+	 */
+	socket_irq = spin_lock_irqsave(&endpoint->tcp.inet.socket.lock);
+	if (endpoint->tcp.state == TCP_ESTABLISHED &&
+	    endpoint->tcp.inet.socket.keepalive != 0) {
+		endpoint->tcp.keepalive_probes = 0;
+		endpoint->tcp.keepalive_deadline =
+		    sched_ticks() + TCP_KEEPALIVE_IDLE;
+	}
+	spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, socket_irq);
+
+	/*
+	 * An acknowledgement retires every segment it covers, not only the
+	 * oldest, and carries the peer's current window so the next send
+	 * knows how much it may put in flight.
+	 */
 	if ((flags & TCP_ACK) != 0) {
-		retransmit = NULL;
+		retransmit.count = 0;
 		socket_irq = spin_lock_irqsave(
 		    &endpoint->tcp.inet.socket.lock);
 		if (acknowledgement >= endpoint->tcp.send_unacknowledged &&
 		    acknowledgement <= endpoint->tcp.send_next) {
 			endpoint->tcp.send_unacknowledged = acknowledgement;
-			if (acknowledgement == endpoint->tcp.send_next)
-				tcp_retransmit_reset(endpoint, &retransmit);
+			tcp_retire_acknowledged(endpoint, acknowledgement,
+			    &retransmit);
 		}
+		endpoint->tcp.peer_window = wire_get16(tcp->window);
 
 		spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, socket_irq);
-		packet_buf_free(retransmit);
-		if (retransmit != NULL)
+		if (retransmit.count != 0) {
+			tcp_discard_free(&retransmit);
 			socket_wake_send(&endpoint->tcp.inet.socket);
+		}
 	}
 
 	/* In-order payload is queued and acknowledged; a read shutdown discards it. */

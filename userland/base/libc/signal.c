@@ -197,10 +197,11 @@ signal(
 	struct sigaction a, o;
 
 	memset(&a, 0, sizeof(a));
-	a.sa_handler = (uint64_t)(uintptr_t)h;
+	a.__sa_handler_value = (uint64_t)(uintptr_t)h;
 
 	/* Computes the function result. */
-	function_result = sigaction(s, &a, &o) == 0 ? (sighandler_t)(uintptr_t)o.sa_handler
+	function_result = sigaction(s, &a, &o) == 0
+		   ? (sighandler_t)(uintptr_t)o.__sa_handler_value
 					 : (sighandler_t)-1;
 
 	/* Returns the computed result. */

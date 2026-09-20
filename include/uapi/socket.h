@@ -53,6 +53,12 @@ typedef uint32_t socklen_t;
 #define SO_RCVTIMEO	0x1006
 #define SO_DOMAIN	0x100a
 #define SO_PROTOCOL	0x100b
+/*
+ * POSIX lists SO_KEEPALIVE among the options at SOL_SOCKET.  The transport
+ * does not act on it yet: setsockopt reports EOPNOTSUPP, so a caller must
+ * treat the request as unfulfilled rather than assume keepalives are on.
+ */
+#define SO_KEEPALIVE	0x0008
 #define SO_PEERCRED	0x0011
 
 /*

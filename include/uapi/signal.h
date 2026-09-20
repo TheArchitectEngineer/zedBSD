@@ -63,8 +63,12 @@
  * Run the handler on the alternate stack installed by sigaltstack(2).
  */
 #define SA_ONSTACK	0x0040U
-#define SIG_DFL	0ULL
-#define SIG_IGN	1ULL
+/*
+ * POSIX requires these to be usable as a sigaction disposition, so they carry
+ * the handler's type.  The kernel compares them as plain values and casts.
+ */
+#define SIG_DFL	((void (*)(int))0)
+#define SIG_IGN	((void (*)(int))1)
 
 /*
  * si_code values are positive for kernel-generated events and non-positive
@@ -178,8 +182,19 @@ typedef struct ucontext {
 	uint64_t uc_reserved[5];
 } ucontext_t;
 
+/*
+ * POSIX names the disposition sa_handler, a function pointer, and sa_sigaction
+ * for a handler that also receives siginfo_t.  The kernel and the C library
+ * need the same storage as a plain value, so all three share one 64-bit field.
+ * A pointer is narrower than that on an ILP32 target, which is why the union
+ * carries the value explicitly: the layout is the same for both ABIs.
+ */
 struct sigaction {
-	uint64_t sa_handler;
+	union {
+		void (*sa_handler)(int);
+		void (*sa_sigaction)(int, siginfo_t *, void *);
+		uint64_t __sa_handler_value;
+	};
 	sigset_t sa_mask;
 	uint32_t sa_flags;
 	uint32_t __sa_reserved;

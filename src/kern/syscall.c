@@ -190,6 +190,7 @@ static intptr_t sys_fstat_call(const uintptr_t args[6]);
 static uint32_t dirent_type(enum inode_type type);
 static intptr_t sys_getdents_call(const uintptr_t args[6]);
 static intptr_t sys_chdir_call(const uintptr_t args[6]);
+static intptr_t sys_chroot_call(const uintptr_t args[6]);
 static intptr_t sys_getcwd_call(const uintptr_t args[6]);
 static int vm_prot(int prot, uint32_t *result);
 static intptr_t sys_mmap_call(const uintptr_t args[6]);
@@ -3104,6 +3105,31 @@ sys_chdir_call(
 		error = fs_chdir(process->cwdi, path);
 
 	/* Reports the outcome of the walk. */
+	if (error != 0)
+		return -error;
+	return 0;
+}
+
+/* Handles chroot(2). */
+static intptr_t
+sys_chroot_call(
+	const uintptr_t args[6])
+{
+	struct process *process;
+	char path[PATH_MAX];
+	int error;
+
+	/* Refuses the call without a name space to narrow. */
+	process = current_process();
+	if (process == NULL || process->cwdi == NULL)
+		return -EINVAL;
+
+	/* Reads the path and moves the root to it. */
+	error = copyinstr(args[0], path, sizeof(path), NULL);
+	if (error == 0)
+		error = fs_chroot(process->cwdi, path);
+
+	/* Reports the outcome of the change. */
 	if (error != 0)
 		return -error;
 	return 0;
@@ -6499,9 +6525,10 @@ sys_sigaction_call(
 		    SA_SIGINFO | SA_ONSTACK)) != 0 ||
 		    (signo != SIGCHLD && (action.sa_flags &
 		    (SA_NOCLDSTOP | SA_NOCLDWAIT)) != 0) ||
-		    (action.sa_handler > 1U &&
-		     !vmspace_user_range_valid((uintptr_t)action.sa_handler, 1)) ||
-		    (action.sa_handler > 1U &&
+		    (action.__sa_handler_value > 1U &&
+		     !vmspace_user_range_valid(
+			 (uintptr_t)action.__sa_handler_value, 1)) ||
+		    (action.__sa_handler_value > 1U &&
 		    (action.sa_restorer == 0 ||
 		     !vmspace_user_range_valid((uintptr_t)action.sa_restorer, 1))))
 			return -EINVAL;
@@ -6509,7 +6536,7 @@ sys_sigaction_call(
 
 	/* Renders the caller's action in the form the kernel keeps. */
 	if (install) {
-		replacement.handler = (uintptr_t)action.sa_handler;
+		replacement.handler = (uintptr_t)action.__sa_handler_value;
 		replacement.mask = action.sa_mask;
 		replacement.flags = action.sa_flags;
 		replacement.restorer = (uintptr_t)action.sa_restorer;
@@ -6525,7 +6552,7 @@ sys_sigaction_call(
 	if (error != 0)
 		return -error;
 	memset(&old, 0, sizeof(old));
-	old.sa_handler = previous.handler;
+	old.__sa_handler_value = previous.handler;
 	old.sa_mask = previous.mask;
 	old.sa_flags = previous.flags;
 	old.sa_restorer = previous.restorer;
@@ -8687,6 +8714,9 @@ syscall_dispatch_body(
 		break;
 	case KERN_SYS_fchdir:
 		result = sys_fchdir_call(args);
+		break;
+	case KERN_SYS_chroot:
+		result = sys_chroot_call(args);
 		break;
 	case KERN_SYS_mknodat:
 		result = sys_mknodat_call(args);

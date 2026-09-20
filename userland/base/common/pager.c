@@ -126,7 +126,7 @@ pager_main(
 		return 1;
 	}
 	memset(&action, 0, sizeof(action));
-	action.sa_handler = (uint64_t)(uintptr_t)stop_handler;
+	action.sa_handler = stop_handler;
 	sigemptyset(&action.sa_mask);
 	sigaction(SIGINT, &action, NULL);
 	sigaction(SIGTERM, &action, NULL);

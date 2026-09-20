@@ -546,6 +546,95 @@ fs_chdir_path(
 }
 
 /*
+ * Changes the root directory the resolver starts absolute paths from.
+ *
+ * The working directory is moved to the same place, so a caller that does not
+ * chdir afterwards cannot still name what is now outside its root through a
+ * relative path.
+ */
+int
+fs_chroot(
+	struct cwdinfo *context,
+	const char *path)
+{
+	struct ucred *cred;
+	const struct ucred *check;
+	struct path directory;
+	struct path replacement;
+	struct path old_root;
+	struct path old_cwd;
+	unsigned long irq;
+	int error;
+
+	/* Takes the caller's credential when the process subsystem exists. */
+	cred = NULL;
+	if (cred_current_ref != NULL)
+		cred = cred_current_ref();
+	check = cred;
+	if (check == NULL && cred_current != NULL)
+		check = cred_current();
+
+	/* Rejects a missing context. */
+	if (context == NULL || path == NULL) {
+		release_cred(cred);
+		return EINVAL;
+	}
+
+	/* Only a privileged caller may narrow the name space. */
+	if (check != NULL && check->euid != 0) {
+		release_cred(cred);
+		return EPERM;
+	}
+
+	/* Resolves the path against the caller's present root. */
+	error = namei_path_at(context, path, &directory);
+	if (error != 0) {
+		release_cred(cred);
+		return error;
+	}
+
+	/* The new root must be a searchable directory. */
+	if (directory.p_inode == NULL || directory.p_mount == NULL) {
+		path_release(&directory);
+		release_cred(cred);
+		return EINVAL;
+	}
+	if (directory.p_inode->i_type != INODE_DIR) {
+		path_release(&directory);
+		release_cred(cred);
+		return ENOTDIR;
+	}
+	error = search_access(directory.p_inode, check);
+	if (error != 0) {
+		path_release(&directory);
+		release_cred(cred);
+		return error;
+	}
+
+	/* Swaps both directories together, so neither can outlive the other. */
+	irq = spin_lock_irqsave(&context->lock);
+
+	old_root = context->root;
+	old_cwd = context->cwd;
+	path_init(&replacement);
+	path_set(&replacement, directory.p_mount, directory.p_inode);
+	context->root = replacement;
+	path_init(&replacement);
+	path_set(&replacement, directory.p_mount, directory.p_inode);
+	context->cwd = replacement;
+
+	spin_unlock_irqrestore(&context->lock, irq);
+
+	path_release(&old_root);
+	path_release(&old_cwd);
+	path_release(&directory);
+	release_cred(cred);
+
+	/* Reports the narrowed name space. */
+	return 0;
+}
+
+/*
  * Changes the working directory to a path.
  */
 int

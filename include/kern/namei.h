@@ -116,6 +116,11 @@ fs_chdir_path(
 	const struct path *directory);
 
 int
+fs_chroot(
+	struct cwdinfo *context,
+	const char *path);
+
+int
 fs_getcwd(
 	const struct cwdinfo *context,
 	char *buffer,

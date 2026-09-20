@@ -48,7 +48,8 @@ ZEDBSD_CONFIG_OPTIONAL_GOALS := menuconfig help list-user-programs \
 	noct-target-source-verify noct-host-source noct-host-source-verify \
 	llvm-download llvm-source llvm-source-verify llvm-configure llvm-build llvm-toolchain \
 	llvm-host-archive toolchain-cache \
-	sysroot-amd64 sysroot-i386 sysroots
+	sysroot-amd64 sysroot-i386 sysroots \
+	patch openssl-download openssl-source openssh-download openssh-source
 ifeq ($(strip $(ZEDBSD_PLATFORM)),)
 ifneq ($(filter-out $(ZEDBSD_CONFIG_OPTIONAL_GOALS),$(MAKECMDGOALS)),)
 $(error config.mk is missing or invalid; run 'make menuconfig')
@@ -181,6 +182,7 @@ ZEDBSD_PACKAGE_BINDIR := /usr/bin
 # paths and menu metadata live with each program.
 USERLAND_PACKAGES :=
 ZEDBSD_USERLAND_DOWNLOAD_TARGETS :=
+ZEDBSD_USERLAND_PATCH_TARGETS :=
 define ZEDBSD_USERLAND_PACKAGE
 USERLAND_PACKAGES += $(1)
 USERLAND_$(1)_LABEL := $(2)
@@ -372,6 +374,7 @@ help:
  ' make vmunix Build the kernel' \
  ' make run Build a disk image and start QEMU' \
  ' make download Acquire all declared external userland inputs' \
+ ' make patch Extract and patch every declared external input' \
  ' make toolchain-cache Install the pinned rev-0 LLVM cache (x86_64 Linux)' \
  ' make toolchain Build the toolchain' \
  ' make help Show this summary'
@@ -389,6 +392,12 @@ toolchain: $(NOCT_HOST_BUILD_STAMP) noct-toolchain-smoke llvm-toolchain \
 
 .PHONY: download
 download: $(sort $(ZEDBSD_USERLAND_DOWNLOAD_TARGETS)) llvm-download
+
+# Extracted and patched trees for every declared external input. Acquisition
+# and patch preparation stay separate so that a tree is prepared once and then
+# built repeatedly without consulting the network again.
+.PHONY: patch
+patch: $(sort $(ZEDBSD_USERLAND_PATCH_TARGETS))
 
 
 $(ZEDBSD_IMAGE_HOST): tools/build/zedimage-host.c
@@ -604,12 +613,13 @@ ARCH_IMAGE_TOOLS := $(BUILD_TOOLS_DIR)/make-arch-overlay-image.py \
 ARCH_UFS_IMAGE_TOOLS := $(BUILD_TOOLS_DIR)/make-arch-overlay-ufs.noct \
 	$(BUILD_TOOLS_DIR)/ufs_format.noct $(ZEDBSD_IMAGE_HOST)
 ZEDBSD_ACCOUNT_INPUTS := userland/base/etc/passwd userland/base/etc/group \
-	userland/base/etc/shadow
+	userland/base/etc/shadow userland/base/etc/services
 ZEDBSD_ACCOUNT_FILES := --file /etc/passwd=userland/base/etc/passwd \
 	--file /etc/group=userland/base/etc/group \
 	--file /etc/shadow=userland/base/etc/shadow \
+	--file /etc/services=userland/base/etc/services \
 	--mode /etc/passwd=0644 --mode /etc/group=0644 \
-	--mode /etc/shadow=0400
+	--mode /etc/shadow=0400 --mode /etc/services=0644
 ZEDBSD_BASE_DATA_INPUTS := $(ZEDBSD_USERLAND_DATA_INPUTS)
 ZEDBSD_BASE_DATA_FILES := $(ZEDBSD_USERLAND_DATA_FILES) \
 	$(ZEDBSD_USERLAND_DATA_MODES)
@@ -622,6 +632,15 @@ ZEDBSD_XZED_SESSION_FILES := $(if $(filter zwm,$(ZEDBSD_USER_PROGRAMS)),\
 	--mode /bin/startx=0755 --mode /etc/Xzed/Xzedrc=0755)
 ZEDBSD_PACKAGE_INPUTS += $(ZEDBSD_XZED_SESSION_INPUTS)
 ZEDBSD_PACKAGE_FILES += $(ZEDBSD_XZED_SESSION_FILES)
+
+# Files a caller wants in this one image without declaring a package, named on
+# the command line. It exists so that a test can put a program in an image and
+# run it, and is empty in an ordinary build:
+#
+#   make ZEDBSD_EXTRA_INPUTS=/path/to/prog \
+#        ZEDBSD_EXTRA_FILES='--file /usr/bin/prog=/path/to/prog' disk-image
+ZEDBSD_PACKAGE_INPUTS += $(ZEDBSD_EXTRA_INPUTS)
+ZEDBSD_PACKAGE_FILES += $(ZEDBSD_EXTRA_FILES)
 
 # The rootfs output path is shared by successive menuconfig selections. A
 # source file timestamp cannot represent removal of a program or the addition

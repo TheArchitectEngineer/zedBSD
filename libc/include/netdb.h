@@ -26,6 +26,14 @@ struct addrinfo {
 #define AI_NUMERICHOST   0x0004
 #define AI_NUMERICSERV   0x0008
 
+/*
+ * Buffer sizes for getnameinfo.  These are not POSIX names, but portable
+ * software sizes its host and service buffers with them, so the traditional
+ * BSD values are kept.
+ */
+#define NI_MAXHOST       1025
+#define NI_MAXSERV       32
+
 #define NI_NUMERICHOST   0x0001
 #define NI_NUMERICSERV   0x0002
 #define NI_NAMEREQD      0x0004
@@ -41,6 +49,60 @@ struct addrinfo {
 #define EAI_SOCKTYPE    (-9)
 #define EAI_SYSTEM      (-10)
 #define EAI_OVERFLOW    (-11)
+
+/*
+ * The host and service databases.
+ *
+ * POSIX.1-2008 removed the host functions in favour of getaddrinfo, and they
+ * carry a per-thread error in h_errno rather than errno.  They are kept
+ * because portable software still reaches for them, and because a name
+ * service has to answer the question they ask.
+ */
+struct hostent {
+	char *h_name;
+	char **h_aliases;
+	int h_addrtype;
+	int h_length;
+	char **h_addr_list;
+};
+
+#define h_addr h_addr_list[0]
+
+#define HOST_NOT_FOUND 1
+#define TRY_AGAIN      2
+#define NO_RECOVERY    3
+#define NO_DATA        4
+#define NO_ADDRESS     NO_DATA
+
+/*
+ * h_errno is per-thread, so it is reached through a function the way errno
+ * is.  Code that writes `h_errno` unchanged keeps working.
+ */
+int *__h_errno_location(void);
+#define h_errno (*__h_errno_location())
+
+struct hostent *gethostbyname(const char *);
+struct hostent *gethostbyaddr(const void *, socklen_t, int);
+void sethostent(int);
+void endhostent(void);
+const char *hstrerror(int);
+
+/*
+ * The service database, read from /etc/services.  s_port is in network byte
+ * order, as the historical interface specifies.
+ */
+struct servent {
+	char *s_name;
+	char **s_aliases;
+	int s_port;
+	char *s_proto;
+};
+
+struct servent *getservbyname(const char *, const char *);
+struct servent *getservbyport(int, const char *);
+void setservent(int);
+struct servent *getservent(void);
+void endservent(void);
 
 int getaddrinfo(const char *, const char *, const struct addrinfo *,
 	struct addrinfo **);

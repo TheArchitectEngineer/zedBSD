@@ -224,6 +224,57 @@ static int bounded_string(const char *string, size_t capacity, size_t *length_ou
 static void validate_verneed(struct rtld_object *object);
 static void register_tls_module(struct rtld_object *object);
 static void load_dependencies(struct rtld_object *object);
+/*
+ * Supports the environment lookup operation.
+ *
+ * Returns the value of one variable, or NULL when it is absent or empty.
+ * The loader runs before the C library, so it reads the vector itself.
+ */
+static const char *
+find_environment(
+	char **environment,
+	const char *name)
+{
+	size_t length;
+	char **entry;
+
+	/* Handles the environment availability. */
+	if (environment == NULL)
+		return NULL;
+	length = rtld_strlen(name);
+
+	/* Process each remaining element. */
+	for (entry = environment; *entry != NULL; entry++) {
+		const char *text = *entry;
+		size_t index;
+
+		/* Compares the name up to its separator. */
+		for (index = 0; index < length; index++) {
+			if (text[index] != name[index])
+				break;
+		}
+		if (index != length || text[length] != '=')
+			continue;
+
+		/* An empty value is the same as an absent one. */
+		if (text[length + 1U] == '\0')
+			return NULL;
+
+		/* Returns the computed result. */
+		return &text[length + 1U];
+	}
+
+	/* Reports that no result is available. */
+	return NULL;
+}
+
+/*
+ * The directories LD_LIBRARY_PATH named, or NULL when the variable was
+ * absent, empty, or withheld because the program is running with privileges
+ * its invoker does not have.
+ */
+static const char *library_path;
+
 static void relocate_object(struct rtld_object *object);
 static void apply_value(struct rtld_object *object, uintptr_t offset, uint32_t type, uint32_t symbol_index, uintptr_t addend, int is_rela);
 static uintptr_t resolve_relocation_symbol(struct rtld_object *object, uint32_t index);
@@ -984,8 +1035,10 @@ rtld_main(
 	uintptr_t phdr_vaddr;
 	Elf_Ehdr *main_header;
 	uintptr_t *cursor, *auxv;
+	char **environment;
 	uintptr_t at_base, at_phdr, at_phnum, at_phent;
 	uintptr_t at_entry;
+	uintptr_t at_secure;
 	uintptr_t main_base;
 	int main_type;
 	Elf_Ehdr *self_header;
@@ -999,6 +1052,7 @@ rtld_main(
 	at_phnum = 0;
 	at_phent = 0;
 	at_entry = 0;
+	at_secure = 0;
 	main_base = 0;
 	main_type = ET_EXEC;
 
@@ -1006,7 +1060,9 @@ rtld_main(
 	if (initial_stack == NULL)
 		rtld_fatal("missing initial stack");
 
-	/* Continue while the operation condition remains true. */
+	/* The environment follows the argument vector, ending with a zero. */
+	environment = (char **)(void *)(initial_stack + 1U +
+	    initial_stack[0] + 1U);
 	cursor = initial_stack + 1U + initial_stack[0] + 1U;
 	while (*cursor++ != 0) {
 	}
@@ -1035,10 +1091,22 @@ rtld_main(
 		case AT_ENTRY:
 			at_entry = auxv[1];
 			break;
+		case AT_SECURE:
+			at_secure = auxv[1];
+			break;
 		default:
 			break;
 		}
 	}
+
+	/*
+	 * LD_LIBRARY_PATH lets a caller name directories to look in before
+	 * the system ones.  It is ignored for a program that gained
+	 * privileges through its mode bits, because the caller would
+	 * otherwise choose the code that runs with them.
+	 */
+	if (at_secure == 0)
+		library_path = find_environment(environment, "LD_LIBRARY_PATH");
 
 	/* Checks the current index. */
 	if (i == 64 || at_base == 0 || at_phdr == 0 || at_phnum == 0 ||
@@ -1821,8 +1889,27 @@ open_dependency(
 		}
 	}
 
-	/* Obtains the open search candidate result. */
+	/* A caller's own list is consulted before the system directories. */
+	if (library_path != NULL && *library_path != '\0') {
+		fd = open_search_list(library_path, NULL, name, name_length,
+				      path);
+
+		/* Handles an operation failure. */
+		if (!raw_error(fd))
+			return fd;
+	}
+
+	/*
+	 * The default search: /lib holds the libraries the base system itself
+	 * needs, /usr/lib the ones that arrive with packages.  A name is
+	 * looked for in that order, so a base library is never shadowed.
+	 */
 	function_result = open_search_candidate("/lib", 4U, name, name_length, path);
+
+	/* Handles an operation failure. */
+	if (raw_error(function_result))
+		function_result = open_search_candidate("/usr/lib", 8U, name,
+						       name_length, path);
 
 	/* Returns the computed result. */
 	return function_result;

@@ -44,14 +44,7 @@ static volatile int timeout_reached;
 static volatile int forwarded_signal;
 static volatile int timeout_signal = SIGTERM;
 
-#if defined(HAL_ARCH_I386) || defined(HAL_ARCH_AMD64) ||                       \
-    defined(HAL_ARCH_ARM64) || defined(HAL_ARCH_SPARCV9) ||                    \
-    defined(HAL_ARCH_M68K)
-#define ACTION_HANDLER(action, handler)                                        \
-	((action).sa_handler = (uint64_t)(uintptr_t)(handler))
-#else
 #define ACTION_HANDLER(action, handler) ((action).sa_handler = (handler))
-#endif
 
 static int parse_options(int argc, char **argv, struct options *options, int *first);
 static int duration_parse(const char *text, struct timespec *result);

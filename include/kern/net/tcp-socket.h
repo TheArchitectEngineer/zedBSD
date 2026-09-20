@@ -27,6 +27,25 @@ enum tcp_state {
 	TCP_TIME_WAIT
 };
 
+/*
+ * How many segments may be outstanding at once, and one of them.
+ *
+ * The window this opens is TCP_SEND_QUEUE_MAX segments; the peer's own
+ * advertised window narrows it further whenever that is smaller.
+ */
+#ifndef CONFIG_TCP_SEND_QUEUE_MAX
+#define CONFIG_TCP_SEND_QUEUE_MAX 8
+#endif
+#define TCP_SEND_QUEUE_MAX ((unsigned)CONFIG_TCP_SEND_QUEUE_MAX)
+
+struct tcp_pending {
+	struct packet_buf *packet;
+	uint32_t sequence;
+	uint32_t advance;
+	uint16_t length;
+	uint8_t flags;
+};
+
 struct tcp_socket {
 	struct inet_socket inet;
 	enum tcp_state state;
@@ -37,11 +56,27 @@ struct tcp_socket {
 	uint32_t active_connect_generation;
 	uint64_t connect_wait_deadline;
 	uint16_t peer_window;
-	struct packet_buf *retransmit;
-	uint32_t retransmit_sequence;
+	/*
+	 * Segments that have been sent and not yet acknowledged, oldest
+	 * first.  Several may be in flight at once, bounded by the peer's
+	 * advertised window and by the size of this ring; each keeps a copy
+	 * of its payload so it can be sent again.  The deadline and the
+	 * attempt count belong to the oldest entry, which is the one a
+	 * timeout resends.
+	 */
+	struct tcp_pending send_queue[CONFIG_TCP_SEND_QUEUE_MAX];
+	unsigned send_first;
+	unsigned send_count;
 	uint64_t retransmit_deadline;
-	uint8_t retransmit_flags;
 	unsigned retransmit_count;
+	/*
+	 * TCP_NODELAY as the caller set it, and the idle-probe state for
+	 * SO_KEEPALIVE: when the next probe is due and how many have gone
+	 * unanswered.
+	 */
+	unsigned nodelay;
+	uint64_t keepalive_deadline;
+	unsigned keepalive_probes;
 	unsigned listen_backlog;
 	unsigned half_open_count;
 	unsigned accept_count;
