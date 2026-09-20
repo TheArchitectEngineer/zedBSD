@@ -214,6 +214,8 @@ struct parity_display_nogem {
 
 	/* WAs / misc */
 	int adlp_wa_applied;
+	/* E-126: the xe_d arm of intel_display_wa_apply() ran (Tiger Lake and friends) */
+	int xe_d_wa_applied;
 	int hti_state_read;             /* has_hti is 0 on xe_lpd -> stays 0 */
 	uint32_t hti_state;
 	int fdi_pll_freq_updated;       /* ADL-P: the function returns early */
@@ -312,7 +314,7 @@ int  parity_intel_crtc_init(struct parity_display_nogem *d, int display_ver,
 	unsigned pipe);
 void parity_intel_update_max_cdclk(struct parity_display_nogem *d, int display_ver,
 	uint32_t cdclk_ref);
-void parity_adlp_display_wa_apply(struct parity_display_nogem *d,
+void parity_intel_display_wa_apply(struct parity_display_nogem *d,
 	struct osdep_mmio *m, int display_ver, int is_alderlake_p);
 
 /*

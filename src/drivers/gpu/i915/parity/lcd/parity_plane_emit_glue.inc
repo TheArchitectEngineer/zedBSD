@@ -166,3 +166,19 @@ void parity_lcd_ms_plane_update_flip(struct parity_lcd_modeset *ms)
 	intel_pipe_update_end(&ms->state, &ms->crtc);
 	ms->crtc_state.uapi.event = 0;
 }
+
+/* the readout hook of a plane: static in this unit, as in the reference (the N1 registry binds it) */
+bool (*parity_lcd_plane_get_hw_state(void))(struct intel_plane *plane, enum pipe *pipe)
+{
+	return skl_plane_get_hw_state;
+}
+
+/*
+ * The plane disable of the TAKEOVER (E-124).  The reference intel_plane_disable_noatomic() calls the
+ * plane disable_arm hook; this path has that text (icl_plane_disable_arm) and reaches it here, so the
+ * takeover really stops the plane instead of recording a step.
+ */
+void parity_lcd_plane_disable_arm(struct intel_plane *plane, const struct intel_crtc_state *crtc_state)
+{
+	icl_plane_disable_arm(plane, crtc_state);
+}

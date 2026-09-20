@@ -45,10 +45,15 @@ void parity_lcd_error_bind(void (*hook)(void *ctx, const char *what), void *ctx)
 	lcd_errors = 0u;
 }
 
+/* E-124: with the trace on, the notes of the reference text are printed as they are reached */
+int parity_lcd_note_trace;
+void (*parity_lcd_note_sink)(const char *fmt);
+
 void parity_lcd_note(const char *fmt)
 {
-	(void)fmt;
 	lcd_notes++;
+	if (parity_lcd_note_trace && parity_lcd_note_sink != 0)
+		parity_lcd_note_sink(fmt);
 }
 
 /* drm_dp_bw_code_to_link_rate() for the 8b/10b codes: the code times 0.27 Gbps, in 10 kbit/s units */

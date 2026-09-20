@@ -36,6 +36,15 @@ struct parity_display_core {
 	/* Live state (not re-initialised per child). */
 	int initializing;
 	uint8_t dbuf_enabled_slices;
+	/* E-126: how many DBUF slices this display has (display version 13: 4, version 12: 2) */
+	uint8_t dbuf_slice_mask;
+	/* E-126: which MBUS ABOX registers this display has (intel_display_device.c .abox_mask);
+	   0 = the platform programs none (Alder Lake-P and display 14+) */
+	uint8_t abox_mask;
+	int display_ver;                /* E-126: 12 = Tiger Lake, 13 = Alder Lake-P class */
+	/* E-126: the reference gates a few display steps on the platform, not on the version
+	   (gen12_dbuf_slices_config() returns immediately on Alder Lake-P alone) */
+	uint8_t is_alderlake_p;
 	int init_wakeref_held;             /* POWER_DOMAIN_INIT domain reference held */
 	int pm_wakeref;                    /* runtime-PM side of the init wakeref */
 

@@ -141,6 +141,25 @@ static int all_released(const char *what)
 	return ok;
 }
 
+/* E-124: the OpRegion unit is kernel-only in this build; the boundary the readout calls (notify of a
+ * sanitized encoder) answers as a firmware without the SWSCI mailbox does. */
+int parity_opregion_notify_encoder(int port, int output_type, int enable);
+int parity_opregion_notify_encoder(int port, int output_type, int enable)
+{
+	(void)port; (void)output_type; (void)enable;
+	return 0;
+}
+
+/* E-124: the kernel log of the driver; the host tests print nothing */
+void kern_logf(const char *fmt, ...);
+void kern_logf(const char *fmt, ...)
+{
+	(void)fmt;
+}
+
+/* E-124: the diagnostic trace flag of the N1 readout (the kernel build owns it) */
+int parity_lcd_reg_trace;
+
 int main(int argc, char **argv)
 {
 	struct parity_lcd_modeset_cfg cfg;

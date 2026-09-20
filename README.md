@@ -1,9 +1,11 @@
-zedBSD
-======
+AI/UX
+=====
 
-`zedBSD` is a modern, re-designed BSD-based kernel and base system
+`AI/UX` is a modern, re-designed BSD-based kernel and base system
 aiming to implement all `POSIX.1-2024` and `Single UNIX Specification
-version 4 (SUSv4)` features with a sophisticated architecture.
+version 4 (SUSv4)` features with a sophisticated architecture. It is
+designed and directed by a human developer, and implemented by using
+AI coding agents.
 
 It runs on the latest computers. The current focused target is 64-bit
 x86 PC and Raspberry Pi series.
@@ -71,9 +73,7 @@ make help              # show a short command summary
 | `src/hal/`           | Architecture HALs and board support                    |
 | `src/kern/`          | Platform-neutral kernel                                |
 | `src/drivers/`       | Device and bus driver implementations                  |
-| `src/crt/`           | Architecture-specific crt0/crt1 startup code           |
-| `src/softfloat/`     | zedBSD's integer-only soft-float/compiler runtime      |
-| `libc/`              | zedBSD `libc`                                          |
+| `src/libc/`          | zedBSD `libc`                                          |
 | `userland/`          | Userland programs                                      |
 | `userland/base/`     | Base programs and libraries (`/bin`, `/lib`)           |
 | `userland/comp/`     | Compilers                                              |
@@ -85,11 +85,6 @@ make help              # show a short command summary
 | `tools/`             | Development scripts                                    |
 | `tests/`             | Tests                                                  |
 
-## Standards status
-
-The implemented POSIX/SUS surface and known limitations are tracked by
-[WS001](plan/ws001/ws.md).
-
 ## License
 
-- `zedBSD` is distributed under the zlib License (see `LICENSE`).
+- `AI/UX` is distributed under the zlib License (see `LICENSE`).

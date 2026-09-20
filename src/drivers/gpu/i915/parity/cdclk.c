@@ -46,6 +46,32 @@
 #define PARITY_INVALID_PIPE               (-1)
 
 /* adlp_cdclk_table[] (intel_cdclk.c). waveform is 0 (ADL-P has no squash). */
+/*
+ * icl_cdclk_table[] (intel_cdclk.c): Tiger Lake takes this table with tgl_cdclk_funcs.
+ * refclk 24 MHz and 19.2 MHz rows, as the reference lists them.
+ */
+static const struct parity_cdclk_vals icl_cdclk_table[] = {
+	{ .refclk = 19200, .cdclk = 172800, .divider = 2, .ratio = 18 },
+	{ .refclk = 19200, .cdclk = 192000, .divider = 2, .ratio = 20 },
+	{ .refclk = 19200, .cdclk = 307200, .divider = 2, .ratio = 32 },
+	{ .refclk = 19200, .cdclk = 326400, .divider = 4, .ratio = 68 },
+	{ .refclk = 19200, .cdclk = 556800, .divider = 2, .ratio = 58 },
+	{ .refclk = 19200, .cdclk = 652800, .divider = 2, .ratio = 68 },
+	{ .refclk = 24000, .cdclk = 180000, .divider = 2, .ratio = 15 },
+	{ .refclk = 24000, .cdclk = 192000, .divider = 2, .ratio = 16 },
+	{ .refclk = 24000, .cdclk = 312000, .divider = 2, .ratio = 26 },
+	{ .refclk = 24000, .cdclk = 324000, .divider = 4, .ratio = 54 },
+	{ .refclk = 24000, .cdclk = 552000, .divider = 2, .ratio = 46 },
+	{ .refclk = 24000, .cdclk = 648000, .divider = 2, .ratio = 54 },
+	{ .refclk = 38400, .cdclk = 172800, .divider = 2, .ratio =  9 },
+	{ .refclk = 38400, .cdclk = 192000, .divider = 2, .ratio = 10 },
+	{ .refclk = 38400, .cdclk = 307200, .divider = 2, .ratio = 16 },
+	{ .refclk = 38400, .cdclk = 326400, .divider = 4, .ratio = 34 },
+	{ .refclk = 38400, .cdclk = 556800, .divider = 2, .ratio = 29 },
+	{ .refclk = 38400, .cdclk = 652800, .divider = 2, .ratio = 34 },
+	{}
+};
+
 static const struct parity_cdclk_vals adlp_cdclk_table[] = {
 	{ 19200, 172800, 3, 27, 0 },
 	{ 19200, 192000, 2, 20, 0 },
@@ -67,6 +93,10 @@ static const struct parity_cdclk_vals adlp_cdclk_table[] = {
 
 const struct parity_cdclk_vals *
 parity_adlp_cdclk_table(void) { return adlp_cdclk_table; }
+
+/* icl_cdclk_table[]: the table Tiger Lake uses (E-126) */
+const struct parity_cdclk_vals *
+parity_icl_cdclk_table(void) { return icl_cdclk_table; }
 
 /* DIV_ROUND_CLOSEST for non-negative operands. */
 static uint32_t divrc(uint32_t a, uint32_t b) { return (a + b / 2u) / b; }
@@ -104,7 +134,10 @@ parity_intel_init_cdclk_hooks(struct parity_cdclk_dev *cd,
 	 * takes adlp_cdclk_table + tgl_cdclk_funcs.  RPL-U is a distinct SKU we
 	 * do not match (8086:46a8).
 	 */
-	if (is_alderlake_p && display_ver >= 12) {
+	/* E-126: display version 12 that is NOT Alder Lake-P is Tiger Lake: icl_cdclk_table. */
+	if (!is_alderlake_p && display_ver == 12) {
+		cd->table = icl_cdclk_table;
+	} else if (is_alderlake_p && display_ver >= 12) {
 		if (display_step >= PARITY_STEP_A0 && display_step < PARITY_STEP_B0) {
 			/* adlp_a_step_cdclk_table (not this device) */
 			cd->table = adlp_cdclk_table;

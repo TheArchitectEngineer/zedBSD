@@ -37,6 +37,22 @@
 #ifndef DRIVERS_GPU_I915_LINUX_I915_IDS_INC
 #define DRIVERS_GPU_I915_LINUX_I915_IDS_INC
 
+/* include/drm/intel/pciids.h:621 */
+#define INTEL_TGL_GT1_IDS(MACRO__)	MACRO__(0x9A60), \
+	MACRO__(0x9A68), \
+	MACRO__(0x9A70)
+/* include/drm/intel/pciids.h:626 */
+#define INTEL_TGL_GT2_IDS(MACRO__)	MACRO__(0x9A40), \
+	MACRO__(0x9A49), \
+	MACRO__(0x9A59), \
+	MACRO__(0x9A78), \
+	MACRO__(0x9AC0), \
+	MACRO__(0x9AC9), \
+	MACRO__(0x9AD9), \
+	MACRO__(0x9AF8)
+/* include/drm/intel/pciids.h:636 */
+#define INTEL_TGL_IDS(MACRO__)	INTEL_TGL_GT1_IDS(MACRO__), \
+	INTEL_TGL_GT2_IDS(MACRO__)
 /* include/drm/intel/pciids.h:669 */
 #define INTEL_ADLP_IDS(MACRO__)	MACRO__(0x46A0), \
 	MACRO__(0x46A1), \
@@ -56,21 +72,18 @@
 	MACRO__(0x46C1), \
 	MACRO__(0x46C2), \
 	MACRO__(0x46C3)
-
 /* include/drm/intel/pciids.h:690 */
 #define INTEL_ADLN_IDS(MACRO__)	MACRO__(0x46D0), \
 	MACRO__(0x46D1), \
 	MACRO__(0x46D2), \
 	MACRO__(0x46D3), \
 	MACRO__(0x46D4)
-
 /* include/drm/intel/pciids.h:709 */
 #define INTEL_RPLU_IDS(MACRO__)	MACRO__(0xA721), \
 	MACRO__(0xA7A1), \
 	MACRO__(0xA7A9), \
 	MACRO__(0xA7AC), \
 	MACRO__(0xA7AD)
-
 /* include/drm/intel/pciids.h:717 */
 #define INTEL_RPLP_IDS(MACRO__)	MACRO__(0xA720), \
 	MACRO__(0xA7A0), \

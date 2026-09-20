@@ -7,8 +7,9 @@
  * zedBSD WS031: generated from Linux v6.8.12 drivers/gpu/drm/i915/display/intel_crtc.c
  * (sha256 ff4d1d58a92d4e8a1f8890f20fc7d382e7833778f19bd9c22d2a7a57aeef1d82) by plan/ws031/handover/tools/port_lcd_calc.py.
  * The function bodies are the reference text.  Kept / changed:
- *  - kept: intel_usecs_to_scanlines, intel_crtc_get_vblank_counter, intel_crtc_needs_vblank_work, intel_mode_vblank_start,
- *    intel_crtc_vblank_evade_scanlines, intel_pipe_update_start, intel_pipe_update_end;
+ *  - kept: intel_crtc_state_reset, intel_usecs_to_scanlines, intel_crtc_get_vblank_counter, intel_crtc_needs_vblank_work,
+ *    intel_mode_vblank_start, intel_crtc_vblank_evade_scanlines, intel_pipe_update_start, intel_pipe_update_end,
+ *    intel_crtc_wait_for_next_vblank;
  *  - the includes are replaced by: lcd_compat.h, lcd_seq_compat.h, lcd_modeset_compat.h, lcd_flip_compat.h;
  *  - parity_flip_glue.inc (zedBSD code) is included at the end of the file.
  */
@@ -24,6 +25,21 @@ static int intel_mode_vblank_start(const struct drm_display_mode *mode);
 static void intel_crtc_vblank_evade_scanlines(struct intel_atomic_state *state,
 					      struct intel_crtc *crtc,
 					      int *min, int *max, int *vblank_start);
+
+void intel_crtc_state_reset(struct intel_crtc_state *crtc_state,
+			    struct intel_crtc *crtc)
+{
+	memset(crtc_state, 0, sizeof(*crtc_state));
+
+	__drm_atomic_helper_crtc_state_reset(&crtc_state->uapi, &crtc->base);
+
+	crtc_state->cpu_transcoder = INVALID_TRANSCODER;
+	crtc_state->master_transcoder = INVALID_TRANSCODER;
+	crtc_state->hsw_workaround_pipe = INVALID_PIPE;
+	crtc_state->scaler_state.scaler_id = -1;
+	crtc_state->mst_master_transcoder = INVALID_TRANSCODER;
+	crtc_state->max_link_bpp_x16 = INT_MAX;
+}
 
 int intel_usecs_to_scanlines(const struct drm_display_mode *adjusted_mode,
 			     int usecs)
@@ -333,6 +349,11 @@ void intel_pipe_update_end(struct intel_atomic_state *state,
 
 out:
 	intel_psr_unlock(new_crtc_state);
+}
+
+void intel_crtc_wait_for_next_vblank(struct intel_crtc *crtc)
+{
+	drm_crtc_wait_one_vblank(&crtc->base);
 }
 
 

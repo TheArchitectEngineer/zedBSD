@@ -137,6 +137,7 @@ struct parity_driver_probe {
 	unsigned active_crtcs;
 	int initial_commit_rc;
 	int initial_commit_unimplemented;   /* an active crtc needs the atomic commit */
+	int power_domains_enable_deferred;  /* E-124 (N1): the INIT reference is KEPT until the takeover */
 	int overlay;                        /* HAS_OVERLAY */
 	int fbdev;                          /* CONFIG_DRM_FBDEV_EMULATION */
 	int ipc_enabled;

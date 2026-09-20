@@ -91,6 +91,22 @@ int parity_display_emit_cpu_transcoder(struct parity_lcd_emit *emit, const struc
 struct drm_i915_private *parity_lcd_cur_i915;
 struct drm_encoder *parity_lcd_only_encoder;
 
+/*
+ * The device's display hooks.  The reference reaches hsw_get_pipe_config() / hsw_crtc_disable() through
+ * this table (intel_crtc_get_pipe_config(), intel_crtc_disable_noatomic_begin()); the enable and disable
+ * of the modeset object call them directly, as the two entry points below always did.
+ */
+static const struct intel_display_funcs parity_lcd_display_funcs = {
+	.get_pipe_config = hsw_get_pipe_config,
+	.crtc_enable = hsw_crtc_enable,
+	.crtc_disable = hsw_crtc_disable,
+};
+
+const struct intel_display_funcs *parity_lcd_ms_display_funcs(void)
+{
+	return &parity_lcd_display_funcs;
+}
+
 void parity_lcd_ms_crtc_enable(struct parity_lcd_modeset *ms)
 {
 	parity_lcd_cur_i915 = &ms->i915;

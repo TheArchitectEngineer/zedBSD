@@ -77,6 +77,30 @@ int parity_lcd_ms_bound_port(void)
 	return ddi_ms != 0 ? (int)ddi_ms->dig_port.base.port : -1;
 }
 
+/* the objects of the bound screen, for a caller that walks the device's objects (the N1 readout) */
+/*
+ * The READOUT hooks of an encoder.  intel_ddi_init() binds these in the reference; they are static in this
+ * unit, so the N1 readout asks for them here.  Without them the readout of an ACTIVE encoder calls a NULL
+ * get_config (E-124 bare metal: amd64 fault v=14 rip=0 cr2=0, an instruction fetch at address 0).
+ */
+void parity_lcd_ms_bind_readout(struct intel_encoder *encoder)
+{
+	encoder->get_hw_state = intel_ddi_get_hw_state;
+	encoder->get_config = intel_ddi_get_config;
+	encoder->sync_state = intel_ddi_sync_state;
+	encoder->get_power_domains = intel_ddi_get_power_domains;
+}
+
+struct intel_encoder *parity_lcd_ms_bound_encoder(void)
+{
+	return ddi_ms != 0 ? &ddi_ms->dig_port.base : 0;
+}
+
+struct intel_connector *parity_lcd_ms_bound_connector(void)
+{
+	return ddi_ms != 0 ? &ddi_ms->connector : 0;
+}
+
 void parity_lcd_ms_bind_encoder(struct parity_lcd_modeset *ms)
 {
 	struct intel_encoder *encoder = &ms->dig_port.base;
@@ -94,6 +118,7 @@ void parity_lcd_ms_bind_encoder(struct parity_lcd_modeset *ms)
 	encoder->post_disable = intel_ddi_post_disable;
 	encoder->post_pll_disable = intel_ddi_post_pll_disable;
 	encoder->enable_clock = icl_ddi_combo_enable_clock;
+	encoder->is_clock_enabled = icl_ddi_combo_is_clock_enabled;
 	encoder->disable_clock = icl_ddi_combo_disable_clock;
 	encoder->set_signal_levels = icl_combo_phy_set_signal_levels;
 	parity_lcd_ms_bind_buf_trans(encoder);

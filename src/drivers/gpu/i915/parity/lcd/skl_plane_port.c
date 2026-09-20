@@ -12,7 +12,7 @@
  *    adlp_plane_ctl_arb_slots, skl_plane_ctl_crtc, skl_plane_ctl, glk_plane_color_ctl_crtc, glk_plane_color_ctl,
  *    skl_surf_address, skl_plane_surf, skl_plane_aux_dist, skl_plane_keyval, skl_plane_keymsk,
  *    skl_plane_keymax, icl_plane_color_plane, icl_plane_update_sel_fetch_noarm, icl_plane_update_noarm, icl_plane_disable_sel_fetch_arm,
- *    icl_plane_update_sel_fetch_arm, icl_plane_update_arm, icl_plane_disable_arm, icl_plane_min_cdclk;
+ *    icl_plane_update_sel_fetch_arm, icl_plane_update_arm, icl_plane_disable_arm, icl_plane_min_cdclk, skl_plane_get_hw_state;
  *  - the includes are replaced by lcd_compat.h + lcd_plane_compat.h (register writes go through the emit hook;
  *    callees that are not ported -- skl_write_plane_wm, the scaler and CSC programming -- are recorded as
  *    named steps there, never silently dropped);
@@ -20,6 +20,8 @@
  */
 
 #include "lcd_compat.h"	/* zedBSD: replaces the linux/, drm/ and i915 includes */
+#include "lcd_seq_compat.h"
+#include "lcd_modeset_compat.h"
 #include "lcd_plane_compat.h"
 
 u8 icl_hdr_plane_mask(void)
@@ -684,6 +686,30 @@ static int icl_plane_min_cdclk(const struct intel_crtc_state *crtc_state,
 
 	/* two pixels per clock */
 	return DIV_ROUND_UP(pixel_rate, 2);
+}
+
+static bool
+skl_plane_get_hw_state(struct intel_plane *plane,
+		       enum pipe *pipe)
+{
+	struct drm_i915_private *dev_priv = to_i915(plane->base.dev);
+	enum intel_display_power_domain power_domain;
+	enum plane_id plane_id = plane->id;
+	intel_wakeref_t wakeref;
+	bool ret;
+
+	power_domain = POWER_DOMAIN_PIPE(plane->pipe);
+	wakeref = intel_display_power_get_if_enabled(dev_priv, power_domain);
+	if (!wakeref)
+		return false;
+
+	ret = intel_de_read(dev_priv, PLANE_CTL(plane->pipe, plane_id)) & PLANE_CTL_ENABLE;
+
+	*pipe = plane->pipe;
+
+	intel_display_power_put(dev_priv, power_domain, wakeref);
+
+	return ret;
 }
 
 

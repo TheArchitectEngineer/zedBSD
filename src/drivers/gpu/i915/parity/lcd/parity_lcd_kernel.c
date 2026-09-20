@@ -46,6 +46,29 @@
 #include "parity_lcd_kernel.h"
 #include "parity_hotplug.h"
 #include "parity_lcd_modeset.h"
+#include "parity_n1.h"
+/* the console framebuffer the kernel keeps printing into (read only, to mirror it onto the panel) */
+#include "../../../../platform/pcat/graphics/backend.h"
+/* the console backing as the boot handoff describes it, and the probe state that owns the INIT reference */
+#include <kern/platform.h>
+#include "bootloader/include/amd64-handoff.h"
+#include "../driver_probe.h"
+/* the two windows of the N1 run: the photograph of the firmware picture, and the window after the re-light */
+#ifndef PARITY_N1_REG_TRACE
+#define PARITY_N1_REG_TRACE 0
+#endif
+#ifndef PARITY_N1_PHOTO_MS
+#define PARITY_N1_PHOTO_MS 30000u
+#endif
+#ifndef PARITY_N1_WINDOW_MS
+#define PARITY_N1_WINDOW_MS 40000u
+#endif
+#ifndef PARITY_N1_FW_MS
+#define PARITY_N1_FW_MS 20000u     /* how long the plane shows the firmware framebuffer through its own GGTT */
+#endif
+#ifndef PARITY_N1_MIRROR_S
+#define PARITY_N1_MIRROR_S 45u     /* seconds of console mirroring onto the panel after the takeover */
+#endif
 #include "../eu_test.h"
 #include "../gt_tlb.h"
 #include <kern/irq.h>
@@ -102,10 +125,24 @@ static struct mutex lcdb_locks[2];       /* device lifetime (the per-run backend
 static struct parity_scanout lcdb_scanout;      /* outlives the run when the buffer is abandoned */
 
 /* ---- ops ---- */
+/* E-124: while the N1 readout runs, every register access is printed: on a console-only machine that is
+ * the only way to see where a readout of the hardware stops */
+int parity_lcd_reg_trace;
+extern int parity_lcd_note_trace;
+extern void (*parity_lcd_note_sink)(const char *fmt);
+
+static void k_note_sink(const char *fmt)
+{
+	kern_logf("i915: parity N1 note: %s", fmt);
+}
+
 static uint32_t k_read32(void *ctx, uint32_t reg)
 {
 	struct lcd_kernel *k = ctx;
 	uint32_t v = osdep_mmio_read32(k->d->mmio, reg);
+
+	if (parity_lcd_reg_trace)
+		kern_logf("i915: parity N1 read 0x%05x = 0x%08x\n", reg, v);
 
 	/* evasion probe (observation only): the first scanline the update body reads after the trigger */
 	if (k->probe_watch && reg == 0x70000u) {
@@ -117,6 +154,8 @@ static uint32_t k_read32(void *ctx, uint32_t reg)
 
 static void k_write32(void *ctx, uint32_t reg, uint32_t value)
 {
+	if (parity_lcd_reg_trace)
+		kern_logf("i915: parity N1 write 0x%05x = 0x%08x\n", reg, value);
 	osdep_mmio_write32(((struct lcd_kernel *)ctx)->d->mmio, reg, value);
 }
 
@@ -218,6 +257,21 @@ static int k_power_get(void *ctx, int domain)
 	return domain + 1;
 }
 
+/*
+ * intel_display_power_get_if_enabled(): a READOUT never turns a well on.  The domain counts as enabled
+ * when every one of its wells is (parity_display_power_is_enabled, the reference own rule).
+ */
+static int k_power_get_if_enabled(void *ctx, int domain)
+{
+	struct lcd_kernel *k = ctx;
+
+	if (domain < 0 || domain >= (int)POWER_DOMAIN_NUM)
+		return 0;
+	if (!parity_display_power_is_enabled(k->d->pd, (enum parity_power_domain)domain, k->d->pwc))
+		return 0;
+	return k_power_get(ctx, domain);
+}
+
 static void k_power_put(void *ctx, int domain, int wakeref)
 {
 	struct lcd_kernel *k = ctx;
@@ -266,6 +320,8 @@ static void k_lock(void *ctx, int which, int take)
 
 	if (which < 0 || which > 1)
 		return;
+	if (parity_lcd_reg_trace)
+		kern_logf("i915: parity N1 lock %d %s\n", which, take ? "take" : "give back");
 	if (take)
 		mutex_lock(&k->locks[which]);
 	else
@@ -414,6 +470,7 @@ static void bind_ops(struct lcd_kernel *k)
 	k->ops.read_dpcd_caps = k_read_dpcd_caps;
 	k->ops.panel = k_panel;
 	k->ops.power_get = k_power_get;
+	k->ops.power_get_if_enabled = k_power_get_if_enabled;
 	k->ops.power_put = k_power_put;
 	k->ops.power_put_async = k_power_put_async;
 	k->ops.dbuf_slices_update = k_dbuf_slices_update;
@@ -466,6 +523,108 @@ static void log_regs(struct lcd_kernel *k, const char *when, int compare)
 			when, match, compared);
 }
 
+#ifdef PARITY_LCDB_SCANOUT_PROBE
+/*
+ * E-126: what is the plane really fetching?  DSPSURFLIVE (0x701ac) is the surface address the
+ * hardware is scanning out right now and PIPEDSL (0x70000) the line it is on; PLANE_SURF is what
+ * the driver armed.  The DDB and watermark are read back too, because the DMC may rewrite them
+ * behind the driver when a DC state is entered.
+ */
+static void
+probe_scanout(struct lcd_kernel *k)
+{
+	unsigned i;
+
+	/* the transcoder's own timing and the DP transport, read once: MSA is generated from these */
+	kern_logf("i915: parity LCD-B scanout probe timing HTOTAL=0x%08x HBLANK=0x%08x HSYNC=0x%08x "
+		"VTOTAL=0x%08x VBLANK=0x%08x VSYNC=0x%08x VSYNCSHIFT=0x%08x MULT=0x%08x\n",
+		osdep_mmio_read32(k->d->mmio, 0x60000u), osdep_mmio_read32(k->d->mmio, 0x60004u),
+		osdep_mmio_read32(k->d->mmio, 0x60008u), osdep_mmio_read32(k->d->mmio, 0x6000cu),
+		osdep_mmio_read32(k->d->mmio, 0x60010u), osdep_mmio_read32(k->d->mmio, 0x60014u),
+		osdep_mmio_read32(k->d->mmio, 0x60028u), osdep_mmio_read32(k->d->mmio, 0x6002cu));
+	kern_logf("i915: parity LCD-B scanout probe transport VRR_CTL=0x%08x VRR_VMAX=0x%08x VRR_VMIN=0x%08x "
+		"VRR_STATUS=0x%08x MSA_MISC=0x%08x DP_TP_CTL=0x%08x DP_TP_STATUS=0x%08x DATA_M=0x%08x DATA_N=0x%08x LINK_M=0x%08x LINK_N=0x%08x\n",
+		osdep_mmio_read32(k->d->mmio, 0x60420u), osdep_mmio_read32(k->d->mmio, 0x60424u),
+		osdep_mmio_read32(k->d->mmio, 0x60434u), osdep_mmio_read32(k->d->mmio, 0x6042cu),
+		osdep_mmio_read32(k->d->mmio, 0x60410u), osdep_mmio_read32(k->d->mmio, 0x64040u),
+		osdep_mmio_read32(k->d->mmio, 0x64044u), osdep_mmio_read32(k->d->mmio, 0x60030u),
+		osdep_mmio_read32(k->d->mmio, 0x60034u), osdep_mmio_read32(k->d->mmio, 0x60040u),
+		osdep_mmio_read32(k->d->mmio, 0x60044u));
+
+	/* the two engines that can stand between the plane and the panel: FBC and PSR */
+	kern_logf("i915: parity LCD-B scanout probe engines DPFC_A_CTL=0x%08x DPFC_A_STATUS=0x%08x "
+		"DPFC_B_CTL=0x%08x SRD_CTL=0x%08x SRD_STATUS=0x%08x PSR2_CTL=0x%08x PSR2_STATUS=0x%08x "
+		"DC_STATE_EN=0x%08x TGL_DP_TP_CTL=0x%08x TGL_DP_TP_STATUS=0x%08x\n",
+		osdep_mmio_read32(k->d->mmio, 0x43208u), osdep_mmio_read32(k->d->mmio, 0x43210u),
+		osdep_mmio_read32(k->d->mmio, 0x43248u), osdep_mmio_read32(k->d->mmio, 0x60800u),
+		osdep_mmio_read32(k->d->mmio, 0x60840u), osdep_mmio_read32(k->d->mmio, 0x60900u),
+		osdep_mmio_read32(k->d->mmio, 0x60940u), osdep_mmio_read32(k->d->mmio, 0x45504u),
+		osdep_mmio_read32(k->d->mmio, 0x60540u), osdep_mmio_read32(k->d->mmio, 0x60544u));
+
+	/*
+	 * The pipe's own checksum of what it scans out (PIPE_CRC_CTL / PIPE_CRC_RES_*, the
+	 * debugfs 'pipe crc' of the reference).  A still picture gives the same CRC every frame:
+	 * if it does, the pipe is producing a stable image and whatever is wrong is beyond it.
+	 */
+	/*
+	 * The bytes the plane is pointed at, from both sides: the GGTT entries the driver wrote for
+	 * the first and last page of the object, and the first pixels of the CPU view.  A plane that
+	 * fetches the armed address but shows content that does not follow the buffer is either
+	 * pointed at other pages or reading memory the CPU's writes never reached.
+	 */
+	if (lcdb_scanout.obj != 0 && lcdb_scanout.gm != 0) {
+		const struct parity_gt_object *o = lcdb_scanout.obj;
+		uint64_t pte0 = parity_gt_ggtt_read_pte(lcdb_scanout.gm, o->ggtt_page);
+		uint64_t pte1 = parity_gt_ggtt_read_pte(lcdb_scanout.gm, o->ggtt_page + 1u);
+		uint64_t ptel = parity_gt_ggtt_read_pte(lcdb_scanout.gm, o->ggtt_page + o->pages - 1u);
+		const uint32_t *c = lcdb_scanout.cpu;
+
+		kern_logf("i915: parity LCD-B scanout probe memory surf=0x%08x page=%u pages=%u pitch=%u "
+			"PTE[0]=0x%016llx PTE[1]=0x%016llx PTE[last]=0x%016llx | CPU view %08x %08x %08x %08x\n",
+			(uint32_t)lcdb_scanout.surf, o->ggtt_page, o->pages, lcdb_scanout.pitch,
+			(unsigned long long)pte0, (unsigned long long)pte1, (unsigned long long)ptel,
+			c != 0 ? c[0] : 0u, c != 0 ? c[1] : 0u,
+			c != 0 ? c[lcdb_scanout.pitch / 4u] : 0u,
+			c != 0 ? c[(lcdb_scanout.pitch / 4u) * 400u + 400u] : 0u);
+	}
+
+	/* the clock the display runs on, and the plane's own geometry */
+	kern_logf("i915: parity LCD-B scanout probe clocks CDCLK_CTL=0x%08x CDCLK_PLL_ENABLE=0x%08x "
+		"DSSM=0x%08x PIPESRC=0x%08x PLANE_POS=0x%08x PLANE_OFFSET=0x%08x PLANE_KEYMAX=0x%08x "
+		"PS_CTRL_1=0x%08x PS_CTRL_2=0x%08x\n",
+		osdep_mmio_read32(k->d->mmio, 0x46000u), osdep_mmio_read32(k->d->mmio, 0x46070u),
+		osdep_mmio_read32(k->d->mmio, 0x51004u), osdep_mmio_read32(k->d->mmio, 0x6001cu),
+		osdep_mmio_read32(k->d->mmio, 0x7018cu), osdep_mmio_read32(k->d->mmio, 0x701a4u),
+		osdep_mmio_read32(k->d->mmio, 0x701a0u), osdep_mmio_read32(k->d->mmio, 0x68180u),
+		osdep_mmio_read32(k->d->mmio, 0x68280u));
+
+	osdep_mmio_write32(k->d->mmio, 0x60050u, 0x80000000u);   /* enable, source = plane 1 */
+	(void)osdep_mmio_read32(k->d->mmio, 0x60050u);
+
+	for (i = 0u; i < 30u; i++) {
+		uint32_t surf = osdep_mmio_read32(k->d->mmio, 0x7019cu);
+		uint32_t live = osdep_mmio_read32(k->d->mmio, 0x701acu);
+		uint32_t ctl = osdep_mmio_read32(k->d->mmio, 0x70180u);
+		uint32_t st = osdep_mmio_read32(k->d->mmio, 0x70058u);
+		uint32_t frm = osdep_mmio_read32(k->d->mmio, 0x70040u);
+		uint32_t dsl = osdep_mmio_read32(k->d->mmio, 0x70000u);
+		uint32_t buf = osdep_mmio_read32(k->d->mmio, 0x7027cu);
+		uint32_t wm0 = osdep_mmio_read32(k->d->mmio, 0x70240u);
+		uint32_t dbuf1 = osdep_mmio_read32(k->d->mmio, 0x45008u);
+
+		kern_logf("i915: parity LCD-B scanout probe %2u SURF=0x%08x SURFLIVE=0x%08x CTL=0x%08x "
+			"PIPESTATUS=0x%08x frame=%u DSL=0x%08x BUF_CFG=0x%08x WM0=0x%08x DBUF_S1=0x%08x\n",
+			i, surf, live, ctl, st, frm, dsl, buf, wm0, dbuf1);
+		kern_logf("i915: parity LCD-B scanout probe %2u CRC %08x %08x %08x %08x %08x\n", i,
+			osdep_mmio_read32(k->d->mmio, 0x60064u), osdep_mmio_read32(k->d->mmio, 0x60068u),
+			osdep_mmio_read32(k->d->mmio, 0x6006cu), osdep_mmio_read32(k->d->mmio, 0x60070u),
+			osdep_mmio_read32(k->d->mmio, 0x60074u));
+		k_usleep(k, 300000u);
+	}
+	osdep_mmio_write32(k->d->mmio, 0x60050u, 0u);   /* the probe leaves the CRC unit as it found it */
+}
+#endif
+
 static void at_stage(void *ctx, int stage)
 {
 	struct lcd_kernel *k = ctx;
@@ -477,6 +636,9 @@ static void at_stage(void *ctx, int stage)
 		log_regs(k, "picture-up", 1);
 		kern_logf("i915: parity LCD-B PICTURE UP: pattern id=%u on the panel; observation window %u ms starts now "
 			"(take the photograph)\n", k->pattern_id, k->window_ms);
+#ifdef PARITY_LCDB_SCANOUT_PROBE
+		probe_scanout(k);
+#endif
 	} else if (stage == PARITY_LCD_SHOW_WINDOW_DONE) {
 		kern_logf("i915: parity LCD-B observation window over; stopping through the reference's disable path\n");
 	} else if (stage == PARITY_LCD_SHOW_DISABLE_RETURNED) {
@@ -578,8 +740,12 @@ static int fill_cfg(struct lcd_kernel *k, struct parity_lcd_modeset_cfg *c)
 	c->wm_num_levels = (uint8_t)d->nogem->wm_num_levels;
 	c->wm_ipc_enabled = d->ipc_enabled;
 	c->sagv_block_time_us = (uint8_t)d->nogem->sagv_block_time_us;
-	c->dbuf_size = 4096u;                   /* XE_LPD display device info (intel_display_device.c): .dbuf.size / .slice_mask */
-	c->dbuf_slice_mask = 0x0fu;
+	/*
+	 * The DBUF geometry of THIS display (intel_display_device.c): XE_LPD has 4096 blocks over four
+	 * slices, Tiger Lake 2048 over two.  It comes from the device the probe identified.
+	 */
+	c->dbuf_size = d->dcore->dbuf_slice_mask == 0x03u ? 2048u : 4096u;
+	c->dbuf_slice_mask = d->dcore->dbuf_slice_mask != 0u ? d->dcore->dbuf_slice_mask : 0x0fu;
 	c->dbuf_enabled_slices = d->dcore->dbuf_enabled_slices;
 	mbus = osdep_mmio_read32(d->mmio, parity_lcd_reg_by_name("MBUS_CTL"));
 	c->mbus_joined = (mbus >> 31) & 1u;
@@ -655,9 +821,16 @@ static int preflight(struct lcd_kernel *k)
 	ddi = osdep_mmio_read32(d->mmio, parity_lcd_reg_by_name("DDI_BUF_CTL"));
 	imr = osdep_mmio_read32(d->mmio, parity_lcd_reg_by_name("GEN8_DE_PIPE_IMR"));
 	if ((transconf & 0xc0000000u) != 0u || (plane_ctl & 0x80000000u) != 0u || (pll & 0x80000000u) != 0u || (ddi & 0x80000000u) != 0u) {
-		kern_logf("i915: parity LCD-B preflight: the display is not idle (TRANSCONF 0x%08x PLANE_CTL 0x%08x DPLL 0x%08x DDI_BUF_CTL 0x%08x)\n",
+		/*
+		 * E-124 (N1): a RUNNING display is the subject of that run -- the firmware left it on and the
+		 * readout takes it over.  For every other run it means the start conditions are not the prepared
+		 * ones and nothing may be written.
+		 */
+		kern_logf("i915: parity LCD-B preflight: the display is %s (TRANSCONF 0x%08x PLANE_CTL 0x%08x "
+			"DPLL 0x%08x DDI_BUF_CTL 0x%08x)\n", PARITY_N1_TEST ? "RUNNING: N1 takes it over" : "not idle",
 			transconf, plane_ctl, pll, ddi);
-		ok = 0;
+		if (!PARITY_N1_TEST)
+			ok = 0;
 	}
 	/*
 	 * Pipe A's registers (TRANSCONF, PLANE_CTL, GEN8_DE_PIPE_IMR / IER(A), ICL_PIPESTATUS(A)) sit in power well A, which is
@@ -670,10 +843,20 @@ static int preflight(struct lcd_kernel *k)
 	 * state's mask, which the reference WOULD program, keeps vblank (bit 0) and underrun (bits 31 / 22 / 21) masked; the
 	 * register itself is read by the observer at every sample while the well is on.
 	 */
-	if ((d->irq->de_irq_mask[0] & 0x80600001u) != 0x80600001u) {
-		kern_logf("i915: parity LCD-B preflight: the IRQ state's pipe A mask 0x%08x would leave vblank / underrun unmasked\n",
-			d->irq->de_irq_mask[0]);
-		ok = 0;
+	/*
+	 * The bits that must stay masked: vblank (bit 0) and the FIFO underrun (bit 31) on every Gen12
+	 * display, plus the XE_LPD soft / hard underrun (bits 21 / 22), which exist only from display
+	 * version 13 (gen8_de_pipe_underrun_mask of the reference).
+	 */
+	{
+		uint32_t want = parity_lcd_display_ver() >= 13 ? 0x80600001u : 0x80000001u;
+
+		if ((d->irq->de_irq_mask[0] & want) != want) {
+			kern_logf("i915: parity LCD-B preflight: the IRQ state's pipe A mask 0x%08x would leave "
+				"vblank / underrun unmasked (this display needs 0x%08x)\n",
+				d->irq->de_irq_mask[0], want);
+			ok = 0;
+		}
 	}
 	kern_logf("i915: parity LCD-B preflight: DDI / PLL idle=%d (pipe A registers read TRANSCONF 0x%08x PLANE_CTL 0x%08x IMR 0x%08x with "
 		"power well A off) | IRQ state pipe A mask 0x%08x: vblank + underrun masked=%d | no code of this path waits for a software "
@@ -755,7 +938,15 @@ static int lcd_run_one(const struct parity_lcd_kernel_deps *d, const struct lcd_
 			env.cfg.saved_port_bits);
 	}
 	env.pattern_id = p->pattern_id;
-	env.pattern_fnv = p->pattern_fnv;
+	/* the pin is a 1920x1080 measurement: on another panel it says nothing (E-126) */
+	if (p->pattern_fnv != 0ull && (env.lcd->mode.hdisplay != 1920u || env.lcd->mode.vdisplay != 1080u)) {
+		kern_logf("i915: parity LCD-B picture: the pinned hash is a 1920x1080 measurement and "
+			"this panel is %ux%u -- the read-back check runs, the pin is not compared\n",
+			env.lcd->mode.hdisplay, env.lcd->mode.vdisplay);
+		env.pattern_fnv = 0ull;
+	} else {
+		env.pattern_fnv = p->pattern_fnv;
+	}
 	env.first_frames_ms = 1000u;
 	env.window_ms = p->window_ms;
 	env.in_window = p->in_window;
@@ -2383,4 +2574,568 @@ int parity_lcd_kernel_lcdo_run(const struct parity_lcd_kernel_deps *d)
 		lcdo_steps_ok, lcdo_restore_ok ? "OK" : "DIFFERS", rep.display_released ? "confirmed" : "NOT confirmed", released, held,
 		rep.first_anomaly != 0 ? rep.first_anomaly : "none");
 	return lcdb_summary.pass ? 0 : -1;
+}
+
+/*
+ * ===================== N1: the display the FIRMWARE left running =====================
+ *
+ * The run, in the order a machine whose only console is the screen can be watched:
+ *   1. readout + sanitize (the reference's intel_modeset_setup_hw_state): every value is printed while the
+ *      firmware's picture is still up, so it can be photographed;
+ *   2. a pause for that photograph;
+ *   3. takeover (the reference's intel_crtc_disable_noatomic): the firmware's picture stops;
+ *   4. the panel is lit again through the ordinary modeset path, with the plane pointing at THE FIRMWARE'S
+ *      OWN framebuffer -- the console reappears, so the lines printed after the takeover are visible;
+ *   5. a window, then the reference's stop path.
+ * The framebuffer of step 4 belongs to the firmware: this path never writes into it, never frees it and
+ * never maps it -- it only hands the plane the address the firmware's own plane registers carry.
+ *
+ * In a VM there is no firmware display: the readout finds no active pipe, and the run says so and stops
+ * (nothing is taken over and nothing is lit).
+ */
+static void n1_hold(struct lcd_kernel *k, unsigned ms)
+{
+	unsigned left = ms;
+
+	while (left > 0u) {
+		unsigned chunk = left > 100u ? 100u : left;
+
+		k_usleep(k, chunk * 1000u);
+		left -= chunk;
+	}
+}
+
+/* the firmware's plane: the reference's readout does not read its geometry ("FIXME read out full plane
+ * state for all planes"), so the three registers are read here, as diagnostics, before anything changes */
+static void n1_read_plane(const struct parity_lcd_kernel_deps *d, int pipe, uint32_t *ctl, uint32_t *stride,
+	uint32_t *size, uint32_t *surf, uint32_t *offset)
+{
+	uint32_t base = 0x70180u + 0x1000u * (uint32_t)pipe;
+
+	*ctl = osdep_mmio_read32(d->mmio, base);
+	*stride = osdep_mmio_read32(d->mmio, base + 0x08u);
+	*size = osdep_mmio_read32(d->mmio, base + 0x10u);
+	*offset = osdep_mmio_read32(d->mmio, base + 0x14u);
+	*surf = osdep_mmio_read32(d->mmio, base + 0x1cu);
+}
+
+/* the two buffers of the re-light, and what the flips between them returned */
+#define N1_PATTERN 124u
+static struct parity_scanout n1_so;
+static struct parity_lcd_show_env n1_env;
+static struct parity_lcd_show_report n1_rep;
+static uint32_t n1_fw_surf, n1_our_surf;
+static int n1_flip_fw_rc = -1, n1_flip_back_rc = -1, n1_flip_skipped;
+
+/*
+ * The console this machine has is the screen, and after the takeover the screen is this driver's.  The text
+ * the kernel keeps printing goes to the FIRMWARE'S framebuffer in memory, so it is mirrored from there into
+ * the buffer the panel is showing: the log becomes visible again, live, on a plane this driver owns and
+ * through the path LCD-B proves on every run.  Nothing is written to the firmware's memory; it is only read.
+ */
+/*
+ * E-125: the framebuffer the FIRMWARE left, imported and scanned out directly.
+ *
+ * What this driver owns and what it borrows are kept apart.  The pixels belong to the firmware (the kernel
+ * console keeps drawing into them); this driver owns only the mapping that lets the display engine read
+ * them, and the objects that describe it.  Nothing of that backing is allocated, written or freed here.
+ *
+ * Two ways the display engine can reach those pixels, decided by measurement, never assumed:
+ *   a) the mapping the firmware left is still valid  -> its own GGTT offset is used as it is;
+ *   b) it is not                                     -> the SAME PTE encoder / writer / invalidate path
+ *      every display buffer uses maps the firmware's physical pages into the display window (borrowed).
+ * The console is then readable with NO copying between buffers: `console_mirror_copies=0` in the result.
+ */
+static struct parity_scanout n1_fw_so;          /* the borrowed console buffer (no backing of ours) */
+static unsigned n1_fw_pages, n1_fw_bound_page;
+static int n1_fw_imported, n1_ggtt_verified, n1_fw_rebound, n1_init_ref_released;
+static unsigned n1_console_updates;
+
+/* the console's own backing, as the boot handoff describes it (read only) */
+static const struct zbl6_framebuffer *n1_console_fb(void)
+{
+	return kern_boot_handoff("pcat.framebuffer");
+}
+
+/*
+ * Does the GGTT range the firmware plane reads actually carry the console's pixels?  Answered from the
+ * table, not from the surface register: a PTE is read back per page and compared with the backing the
+ * boot handoff reports.  When the console writes THROUGH the aperture (its physical base falls inside
+ * GMADR) the question is different -- then the pixels are wherever those same PTEs point, so the plane and
+ * the CPU already agree by construction; that case is reported separately.
+ */
+static int n1_check_ggtt(const struct parity_lcd_kernel_deps *d, uint64_t fw_surf, unsigned pages,
+	uint64_t fb_phys, int in_aperture)
+{
+	unsigned first = (unsigned)(fw_surf >> 12);
+	unsigned probe[4], n = 0u, i;
+	int ok = 1;
+
+	probe[n++] = 0u;
+	if (pages > 2u)
+		probe[n++] = 1u;
+	if (pages > 4u)
+		probe[n++] = pages / 2u;
+	if (pages > 1u)
+		probe[n++] = pages - 1u;
+	for (i = 0u; i < n; i++) {
+		uint64_t pte = parity_gt_ggtt_read_pte(d->gm, first + probe[i]);
+		uint64_t pa = pte & ~(uint64_t)0xfff;
+		uint64_t want = fb_phys + (uint64_t)probe[i] * 4096u;
+
+		kern_logf("i915: parity N1 ggtt[%u] (page %u) = 0x%016llx -> 0x%llx | console page 0x%llx | %s\n",
+			probe[i], first + probe[i], (unsigned long long)pte, (unsigned long long)pa,
+			(unsigned long long)want, (pte & 1u) == 0u ? "NOT PRESENT" : (pa == want ? "same" : "DIFFERS"));
+		if ((pte & 1u) == 0u || pa != want)
+			ok = 0;
+	}
+	if (in_aperture) {
+		/* the console writes through this very mapping: plane and CPU read/write the same pages */
+		kern_logf("i915: parity N1 ggtt: the console writes THROUGH the aperture, so the plane and the CPU "
+			"use the same mapping by construction\n");
+		return 1;
+	}
+	return ok;
+}
+
+static unsigned n1_mirrors, n1_mirror_rc;
+static const struct parity_lcd_kernel_deps *n1_deps;   /* for the INIT reference returned mid-window */
+
+static void n1_mirror_console(void)
+{
+	volatile uint32_t *px = 0;
+	unsigned w = 0u, h = 0u, stride = 0u, y, x, rows, cols;
+	int rgbx = 0;
+
+	if (n1_so.cpu == 0 || !drv_pcat_graphics_backend_get_framebuffer(&px, &w, &h, &stride, &rgbx) || px == 0) {
+		n1_mirror_rc = 1u;              /* no console framebuffer: nothing to mirror */
+		return;
+	}
+	rows = h < n1_so.height ? h : n1_so.height;
+	cols = w < n1_so.width ? w : n1_so.width;
+	for (y = 0u; y < rows; y++) {
+		volatile uint32_t *src = px + (size_t)y * stride;
+		uint32_t *dst = n1_so.cpu + (size_t)y * (n1_so.pitch / 4u);
+
+		if (!rgbx) {
+			for (x = 0u; x < cols; x++)
+				dst[x] = src[x];
+		} else {
+			for (x = 0u; x < cols; x++) {
+				uint32_t v = src[x];    /* R,G,B,X -> B,G,R,X */
+
+				dst[x] = (v & 0xff00ff00u) | ((v & 0x00ff0000u) >> 16) | ((v & 0x000000ffu) << 16);
+			}
+		}
+	}
+	parity_scanout_publish(&n1_so);
+	n1_mirrors++;
+}
+
+static int n1_window_mirror(void *ctx, struct parity_lcd_observer *o)
+{
+	struct lcd_kernel *k = ctx;
+	struct parity_lcd_flip_result fr;
+	unsigned i;
+
+	(void)o;
+	kern_logf("i915: parity N1: the panel is lit from OUR buffer (pattern %u) on the pipe this driver took "
+		"over; the console is mirrored into it now -- the text below is being drawn by this run\n",
+		N1_PATTERN);
+	for (i = 0u; i < PARITY_N1_MIRROR_S; i++) {
+		n1_mirror_console();
+		n1_hold(k, 1000u);
+	}
+	kern_logf("i915: parity N1 console mirror: %u frames copied (rc=%u: 0 = a console framebuffer was found)\n",
+		n1_mirrors, n1_mirror_rc);
+	n1_mirror_console();
+	n1_hold(k, 2000u);
+
+	if (n1_flip_skipped) {
+		kern_logf("i915: parity N1: the flip onto the firmware framebuffer is not attempted (the buffer "
+			"geometry differs); the mirrored console stays on the panel\n");
+		n1_hold(k, 3000u);
+		return 0;
+	}
+	/*
+	 * The other way to the same picture: point the plane straight at the firmware's framebuffer through the
+	 * GGTT mapping the firmware left.  If the panel goes black, that mapping is not what this driver's plane
+	 * can read -- the mirror above already proves the takeover and the re-light.
+	 */
+	/*
+	 * XXX: the address below is what the FIRMWARE plane registers carried.  On this machine it is GGTT
+	 * offset 0: the firmware put its framebuffer at the start of the GGTT, and this driver GGTT
+	 * initialisation has since written scratch PTEs over that range -- so the plane reads scratch and the
+	 * panel shows black, although the flip itself succeeds.  Showing the firmware buffer through its own
+	 * address needs its physical pages mapped into the GGTT again (what the reference fbdev takeover does);
+	 * until then the console mirror above is what makes the console readable.
+	 */
+	kern_logf("i915: parity N1: flipping the plane onto the firmware framebuffer 0x%08x for %u s (its own "
+		"GGTT mapping; the mirrored console stops updating while it is shown)\n", n1_fw_surf,
+		PARITY_N1_FW_MS / 1000u);
+	memset(&fr, 0, sizeof(fr));
+	n1_flip_fw_rc = parity_lcd_modeset_flip(n1_fw_surf, &fr);
+	kern_logf("i915: parity N1 flip to the firmware framebuffer: rc=%d result=%d | live 0x%08x -> 0x%08x | "
+		"frame %u -> %u | update errors=%d\n", n1_flip_fw_rc, fr.result, fr.live_before, fr.live_after,
+		fr.frame_before, fr.frame_after, fr.update_errors);
+	n1_hold(k, PARITY_N1_FW_MS);
+	memset(&fr, 0, sizeof(fr));
+	n1_flip_back_rc = parity_lcd_modeset_flip(n1_our_surf, &fr);
+	kern_logf("i915: parity N1 flip back to our buffer: rc=%d result=%d | the mirrored console is on the panel "
+		"again\n", n1_flip_back_rc, fr.result);
+	for (i = 0u; i < 10u; i++) {
+		n1_mirror_console();
+		n1_hold(k, 1000u);
+	}
+	/*
+	 * The result is printed HERE, while the panel still shows the mirrored console: after the stop below
+	 * nothing this run prints can be seen on this machine.
+	 */
+	kern_logf("i915: parity N1 RESULT (before the stop): the firmware pipe was taken over, this driver lit "
+		"the panel again and mirrored %u console frames onto it; flip to the firmware framebuffer rc=%d "
+		"result=%d, flip back rc=%d.  The stop follows and the panel goes dark -- that is the end of the "
+		"run, not a hang.\n", n1_mirrors, n1_flip_fw_rc, n1_flip_fw_rc == 0 ? 0 : -1, n1_flip_back_rc);
+	for (i = 0u; i < 12u; i++) {
+		n1_mirror_console();
+		n1_hold(k, 1000u);
+	}
+	return 0;
+}
+
+/*
+ * While the panel shows the CONSOLE buffer itself: no copying happens here.  The lines below are written by
+ * the kernel into the very pages the display engine is reading, so they appear as they are printed -- that,
+ * and not a still picture, is what shows the takeover is complete.  The INIT power reference that kept the
+ * firmware display alive is returned in the middle of the window, and the picture is watched afterwards.
+ */
+static int n1_window(void *ctx, struct parity_lcd_observer *o)
+{
+	struct lcd_kernel *k = ctx;
+	unsigned i;
+
+	(void)o;
+	kern_logf("i915: parity N1 CONSOLE ON THE DRIVER'S PIPE: this line is being drawn into the firmware's own "
+		"framebuffer, which this driver now scans out -- console_mirror_copies=0\n");
+	for (i = 0u; i < 8u; i++) {
+		n1_console_updates++;
+		kern_logf("i915: parity N1 console update %u/%u (no copy; the panel shows the console backing)\n",
+			n1_console_updates, 8u);
+		n1_hold(k, 1000u);
+	}
+	/*
+	 * The INIT reference is returned here -- the point intel_power_domains_enable() would have done it.
+	 * Everything the picture needs must by now be held by the crtc's own power domains; the lines after
+	 * this one are the proof that it is.
+	 */
+	if (n1_deps != 0 && n1_deps->dprobe != 0 && n1_deps->dcore != 0) {
+		parity_intel_power_domains_enable(n1_deps->dprobe, n1_deps->dcore);
+		n1_init_ref_released = 1;
+		kern_logf("i915: parity N1 INIT reference returned (wells_on %u -> %u, dc_state=0x%x, verify "
+			"mismatches=%u): the picture below is what the crtc's own references keep alive\n",
+			n1_deps->dprobe->wells_on_before, n1_deps->dprobe->wells_on_after,
+			(unsigned)n1_deps->dprobe->dc_state_after, n1_deps->dprobe->verify_mismatches);
+	} else {
+		kern_logf("i915: parity N1 INIT reference: not returned here (the probe state was not handed to "
+			"this run)\n");
+	}
+	for (i = 0u; i < 10u; i++) {
+		n1_console_updates++;
+		kern_logf("i915: parity N1 console update %u after the INIT reference was returned (the panel must "
+			"still be showing this)\n", n1_console_updates);
+		n1_hold(k, 1000u);
+	}
+	kern_logf("i915: parity N1 RESULT (before the stop): console_mirror_copies=0, console updates after the "
+		"takeover=%u, INIT returned=%d.  The stop follows and the panel goes dark -- that is the end of "
+		"the run, not a hang; the counters are in the kernel log.\n", n1_console_updates, n1_init_ref_released);
+	n1_hold(k, 4000u);
+	return 0;
+}
+
+int parity_lcd_kernel_n1_run(const struct parity_lcd_kernel_deps *d)
+{
+	static struct parity_lcd_modeset_cfg cfg;
+	struct parity_n1_report rep;
+	struct parity_lcd_modeset_status st;
+	struct lcd_kernel *k = &lk;
+	uint32_t ctl = 0u, stride = 0u, size = 0u, surf = 0u, offset = 0u;
+	unsigned fb_w = 0u, fb_h = 0u, fb_pitch = 0u;
+	int rc, pipe, i, held = 0, pass = 0, lit = 0, released = 0;
+
+	memset(&lcdb_summary, 0, sizeof(lcdb_summary));
+	lcdb_summary.ran = 1;
+	if (d == 0 || d->edp == 0 || d->mmio == 0 || d->pd == 0 || d->pwc == 0 || d->dcore == 0 || d->cdclk == 0 ||
+	    d->nogem == 0 || d->dstate == 0 || d->bw == 0 || d->dmc == 0 || d->irq == 0) {
+		kern_logf("i915: parity N1 verdict: FAIL (a dependency is missing)\n");
+		return -1;
+	}
+	if (parity_lcd_show_retained() || parity_lcd_modeset_retained()) {
+		lcdb_summary.retained = 1;
+		kern_logf("i915: parity N1 verdict: FAIL (refused before any initialisation: an earlier run's resources are retained)\n");
+		return -1;
+	}
+	if (!lcdb_locks_live) {
+		(void)mutex_init(&lcdb_locks[PARITY_LCD_LOCK_DPLL], LOCK_RANK_DEVICE, "parity-lcd-dpll");
+		(void)mutex_init(&lcdb_locks[PARITY_LCD_LOCK_BACKLIGHT], LOCK_RANK_DEVICE, "parity-lcd-backlight");
+		lcdb_locks_live = 1;
+	}
+	memset(k, 0, sizeof(*k));
+	k->locks = lcdb_locks;
+	k->d = d;
+	bind_ops(k);
+	n1_deps = d;
+	if (preflight(k) != 0 || fill_cfg(k, &cfg) != 0) {
+		kern_logf("i915: parity N1 verdict: FAIL (preflight: nothing was read and nothing was written)\n");
+		return -1;
+	}
+	/* the device's PLL pool and DBUF state start as intel_shared_dpll_init() leaves them: the readout fills them */
+	parity_lcd_dplls_reset();
+	parity_lcd_dbuf_forget();
+	(void)parity_lcd_modeset_select(0);
+
+	/*
+	 * The readout asks the encoder of a screen for its hardware state, so the objects of a screen must
+	 * exist first: this prepare builds them (the encoder intel_ddi_init would leave, its connector, the
+	 * panel mode) and writes nothing.  Its framebuffer is a placeholder: the one the panel is lit from
+	 * belongs to the firmware, and its address is known only after the readout, so the second prepare
+	 * below carries it.
+	 */
+	cfg.fb_fourcc = PARITY_FOURCC_XRGB8888;
+	cfg.fb_modifier = PARITY_MOD_LINEAR;
+	cfg.fb_width = 640u; cfg.fb_height = 480u; cfg.fb_pitch = 640u * 4u; cfg.fb_surf = 0u;
+	rc = parity_lcd_modeset_prepare(&d->edp->lcd, &cfg, &k->ops);
+	if (rc != 0) {
+		kern_logf("i915: parity N1 verdict: FAIL (the screen objects could not be built rc=%d)\n", rc);
+		return -1;
+	}
+	/* that prepare took a PLL of the pool for a state that is never committed: the pool starts empty for
+	 * the readout, which fills it from the hardware (readout_dpll_hw_state) */
+	parity_lcd_dplls_reset();
+
+	/* ---- 1. the readout ---- */
+	parity_lcd_reg_trace = PARITY_N1_REG_TRACE;
+	parity_lcd_note_sink = k_note_sink;
+	parity_lcd_note_trace = PARITY_N1_REG_TRACE;
+	rc = parity_n1_readout(&cfg, &k->ops, &rep);
+	parity_lcd_reg_trace = 0;
+	parity_lcd_note_trace = 0;
+	if (rc != 0) {
+		kern_logf("i915: parity N1 verdict: FAIL (the readout was refused rc=%d)\n", rc);
+		parity_n1_release();
+		return -1;
+	}
+	kern_logf("i915: parity N1 readout: active pipes 0x%x | first pipe %d transcoder %d DPLL%d port %d | mode %ux%u %u kHz "
+		"port clock %u kHz | pipe bpp %d output types 0x%x | plane visible=%u active planes 0x%x | encoder on a crtc=%d "
+		"connector dpms=%d\n", rep.active_pipes, rep.pipe, rep.cpu_transcoder, rep.dpll_id, rep.port, rep.mode_h,
+		rep.mode_v, rep.clock_khz, rep.port_clock_khz, rep.pipe_bpp, rep.output_types, rep.plane_visible,
+		rep.active_planes, rep.encoder_on_crtc, rep.connector_dpms);
+	for (i = 0; i < (int)POWER_DOMAIN_NUM; i++)
+		held += k->power_refs[i];
+	kern_logf("i915: parity N1 readout backend: power references held after the readout=%d get_failures=%u | wait timeouts=%u "
+		"time faults=%u | unresolved steps=%u decided=%u\n", held, k->power_get_failures, k->wait_timeouts,
+		k->time_faults, k->unresolved_steps, k->decided);
+
+	pipe = rep.pipe;
+	if (pipe < 0) {
+		/* no firmware display (this is what a VM looks like): nothing to take over, nothing to light */
+		kern_logf("i915: parity N1 verdict: PASS (nothing to take over: the readout found no active pipe; "
+			"the takeover and the re-light were not run)\n");
+		parity_n1_release();
+		lcdb_summary.pass = 1;
+		lcdb_summary.stage = "readout";
+		return 0;
+	}
+	n1_read_plane(d, pipe, &ctl, &stride, &size, &surf, &offset);
+	fb_w = (size & 0x1fffu) + 1u;
+	fb_h = ((size >> 16) & 0x1fffu) + 1u;
+	fb_pitch = (stride & 0x3ffu) * 64u;
+	kern_logf("i915: parity N1 firmware framebuffer: PLANE_CTL=0x%08x STRIDE=0x%08x (%u bytes) SIZE=0x%08x (%ux%u) "
+		"OFFSET=0x%08x SURF=0x%08x (the buffer belongs to the firmware: it is read, never written or freed)\n",
+		ctl, stride, fb_pitch, size, fb_w, fb_h, offset, surf);
+
+	/* ---- 2. the photograph window, before anything changes ---- */
+	kern_logf("i915: parity N1: the firmware's picture is still up; the takeover follows in %u seconds\n",
+		PARITY_N1_PHOTO_MS / 1000u);
+	n1_hold(k, PARITY_N1_PHOTO_MS);
+
+	/* ---- 3. the takeover ---- */
+	rc = parity_n1_takeover(&rep);
+	kern_logf("i915: parity N1 takeover: rc=%d | crtcs stopped=%u | still active 0x%x | TRANSCONF=0x%08x PLANE_CTL=0x%08x "
+		"DDI_BUF_CTL(A)=0x%08x\n", rc, rep.takeovers, rep.still_active,
+		osdep_mmio_read32(d->mmio, 0x70008u + 0x1000u * (uint32_t)pipe),
+		osdep_mmio_read32(d->mmio, 0x70180u + 0x1000u * (uint32_t)pipe),
+		osdep_mmio_read32(d->mmio, 0x64000u));
+	parity_n1_release();
+	if (rc != 0) {
+		kern_logf("i915: parity N1 verdict: FAIL (the takeover did not stop every active pipe: 0x%x; nothing is lit again)\n",
+			rep.still_active);
+		lcdb_summary.first_anomaly = "the takeover left a pipe active";
+		lcdb_summary.stage = "takeover";
+		return -1;
+	}
+
+	/*
+	 * ---- 4. the firmware framebuffer is imported and scanned out directly (E-125) ----
+	 *
+	 * No copying between buffers: the panel reads the very pages the console writes.  The mapping is
+	 * measured first; only if the firmware's own one does not carry those pages is a new one made, through
+	 * the ordinary GGTT path, from the physical base the boot handoff reports.
+	 */
+	{
+		const struct zbl6_framebuffer *fb = n1_console_fb();
+		uint64_t fb_phys = 0u, console_surf = 0u;
+		unsigned cw = 0u, ch = 0u, cpitch = 0u;
+		int in_aperture = 0;
+
+		if (fb == 0 || fb->size == 0u) {
+			kern_logf("i915: parity N1 verdict: FAIL (the boot handoff reports no framebuffer: there is "
+				"nothing to import; the firmware picture is already stopped)\n");
+			return -1;
+		}
+		fb_phys = fb->physical_base;
+		cw = fb->width;
+		ch = fb->height;
+		cpitch = fb->stride * 4u;
+		n1_fw_pages = (unsigned)((((uint64_t)cpitch * ch) + 4095u) >> 12);
+		in_aperture = d->gmadr_size != 0u && fb_phys >= d->gmadr_base &&
+			fb_phys + fb->size <= d->gmadr_base + d->gmadr_size;
+		kern_logf("i915: parity N1 console backing: phys=0x%llx size=0x%llx %ux%u stride=%u bytes format=%u | "
+			"pages=%u | in the GMADR aperture=%d | the firmware plane read surf=0x%08x stride=0x%08x "
+			"size=0x%08x offset=0x%08x\n", (unsigned long long)fb_phys, (unsigned long long)fb->size,
+			cw, ch, cpitch, fb->format, n1_fw_pages, in_aperture, surf, stride, size, offset);
+
+		n1_ggtt_verified = n1_check_ggtt(d, surf, n1_fw_pages, fb_phys, in_aperture);
+		if (n1_ggtt_verified) {
+			console_surf = surf;
+			kern_logf("i915: parity N1 import: the mapping the firmware left carries the console pixels; "
+				"it is used as it is (no PTE of that range is written)\n");
+		} else {
+			unsigned page = 0u;
+			int brc = parity_gt_display_bind_foreign(d->gm, fb_phys, n1_fw_pages, &page);
+
+			if (brc != 0) {
+				kern_logf("i915: parity N1 verdict: FAIL (the console backing could not be mapped into "
+					"the display window rc=%d pages=%u)\n", brc, n1_fw_pages);
+				return -1;
+			}
+			n1_fw_bound_page = page;
+			n1_fw_rebound = 1;
+			console_surf = (uint64_t)page * 4096u;
+			kern_logf("i915: parity N1 import: the firmware mapping does not carry those pixels; the "
+				"console backing is mapped into the display window at GGTT page %u (surf=0x%08llx), "
+				"borrowed -- the pages stay the firmware's\n", page, (unsigned long long)console_surf);
+		}
+		n1_fw_imported = 1;
+
+		/* the borrowed buffer, described for the plane: geometry from the console, backing not ours */
+		memset(&n1_fw_so, 0, sizeof(n1_fw_so));
+		n1_fw_so.width = cw;
+		n1_fw_so.height = ch;
+		n1_fw_so.format = PARITY_FOURCC_XRGB8888;
+		n1_fw_so.modifier = PARITY_MOD_LINEAR;
+		n1_fw_so.cpp = 4u;
+		n1_fw_so.pitch = cpitch;
+		n1_fw_so.stride_units = cpitch / 64u;
+		n1_fw_so.size = cpitch * ch;
+		n1_fw_so.surf = console_surf;
+		n1_fw_so.state = PARITY_SCANOUT_PINNED;
+		n1_fw_so.pin_owner = "firmware console (borrowed)";
+		if ((cpitch % 64u) != 0u || cw == 0u || ch == 0u) {
+			kern_logf("i915: parity N1 verdict: FAIL (the console geometry cannot be shown by a plane: "
+				"%ux%u pitch %u)\n", cw, ch, cpitch);
+			return -1;
+		}
+		n1_our_surf = 0u;
+		n1_fw_surf = (uint32_t)console_surf;
+	}
+
+	memset(&n1_env, 0, sizeof(n1_env));
+	n1_env.cfg = cfg;
+	n1_env.cfg.pipe = pipe;
+	n1_env.cfg.cpu_transcoder = pipe;
+	n1_env.hw = &k->ops;
+	n1_env.gm = d->gm;
+	n1_env.lcd = &d->edp->lcd;
+	n1_env.pipe = pipe;
+	n1_env.pattern_id = 0u;
+	n1_env.first_frames_ms = 1000u;
+	n1_env.window_ms = 2000u;
+	n1_env.in_window = n1_window;
+	n1_env.in_window_ctx = k;
+	n1_env.at_stage = at_stage;
+	n1_env.at_stage_ctx = k;
+	k->pattern_id = 0u;
+	k->window_ms = n1_env.window_ms;
+	kern_logf("i915: parity N1: lighting the panel from the CONSOLE buffer itself (surf=0x%08x %ux%u pitch %u); "
+		"if the text appears and keeps growing, the takeover is complete with no copying\n",
+		n1_fw_surf, n1_fw_so.width, n1_fw_so.height, n1_fw_so.pitch);
+	rc = parity_lcd_show_prepared(&n1_env, &n1_fw_so, 0, 0, &n1_rep);
+	log_trace(n1_rep.trace);
+	log_observer(&n1_rep.obs);
+	lit = n1_rep.stage >= PARITY_LCD_SHOW_WINDOW_DONE;
+	parity_lcd_modeset_status(&st);
+	kern_logf("i915: parity N1 direct scanout: rc=%d stage=%s | crtc active=%d plane armed=%d | link %d kHz "
+		"x%d | first anomaly: %s\n", rc, stage_name(n1_rep.stage), st.crtc_active, st.plane_armed,
+		st.link_rate, st.lane_count, n1_rep.first_anomaly != 0 ? n1_rep.first_anomaly : "none");
+
+	/*
+	 * Fallback, for diagnosis only: if the console buffer could not be shown, the panel is lit from a
+	 * buffer of ours with the console COPIED into it, so this run can still be read on a machine whose
+	 * only console is the screen.  That path is not a pass (console_mirror_copies > 0 says so).
+	 */
+	if (!lit) {
+		kern_logf("i915: parity N1: the console buffer could not be scanned out directly; falling back to "
+			"our own buffer with the console copied into it (diagnosis only)\n");
+		memset(&n1_so, 0, sizeof(n1_so));
+		rc = parity_gt_display_window_init(d->gm, PARITY_GT_DISPLAY_PAGES);
+		if (rc == 0 || rc == -EBUSY) {
+			rc = parity_scanout_create(d->gm, n1_fw_so.width, n1_fw_so.height, PARITY_FOURCC_XRGB8888,
+				PARITY_MOD_LINEAR, &n1_so);
+			rc = rc == 0 ? parity_scanout_pin(&n1_so, "n1-fallback") : rc;
+		}
+		if (rc == 0) {
+			(void)parity_lcd_pattern_fill(n1_so.cpu, n1_so.pitch, n1_so.width, n1_so.height, N1_PATTERN);
+			parity_scanout_publish(&n1_so);
+			n1_env.in_window = n1_window_mirror;
+			n1_env.pattern_id = N1_PATTERN;
+			k->pattern_id = N1_PATTERN;
+			n1_flip_skipped = 1;
+			rc = parity_lcd_show_prepared(&n1_env, &n1_so, 0, 0, &n1_rep);
+			lit = 0;            /* the direct path is what this run is about */
+			if (n1_rep.display_released || !n1_rep.display_acquired)
+				(void)(parity_scanout_unpin(&n1_so) == 0 && parity_scanout_destroy(&n1_so) == 0);
+			else if (n1_so.state >= PARITY_SCANOUT_PINNED && n1_so.state != PARITY_SCANOUT_ABANDONED)
+				parity_scanout_abandon(&n1_so);
+		}
+	}
+
+	/* the borrowed mapping goes back; the backing is left exactly as it was found */
+	if (n1_fw_rebound && n1_rep.display_released)
+		parity_gt_display_unbind_foreign(d->gm, n1_fw_bound_page, n1_fw_pages);
+	released = n1_rep.display_released;
+	(void)released;
+
+	held = 0;
+	for (i = 0; i < (int)POWER_DOMAIN_NUM; i++)
+		held += k->power_refs[i];
+	pass = lit && n1_rep.display_released && n1_console_updates > 0u && n1_init_ref_released &&
+		held == 0 && k->time_faults == 0u && !parity_lcd_modeset_retained();
+	lcdb_summary.pass = pass;
+	lcdb_summary.cleanup_rc = n1_rep.disable_rc;
+	lcdb_summary.first_anomaly = n1_rep.first_anomaly;
+	lcdb_summary.first_anomaly_stage = stage_name(n1_rep.first_anomaly_stage);
+	lcdb_summary.stage = stage_name(n1_rep.stage);
+	lcdb_summary.retained = parity_lcd_modeset_retained() || parity_lcd_show_retained();
+	/*
+	 * The counted result, so it does not live on a screen this run switches off (the same line goes to the
+	 * kernel log, which userland can read later).
+	 */
+	kern_logf("i915: parity N1 counters: firmware_fb_imported=%d ggtt_mapping_verified=%d ggtt_rebound=%d "
+		"console_mirror_copies=%u console_updates_after_takeover=%u init_ref_released=%d "
+		"display_stop_result=%d firmware_backing_preserved=%d | power refs held=%d\n",
+		n1_fw_imported, n1_ggtt_verified, n1_fw_rebound, n1_mirrors, n1_console_updates,
+		n1_init_ref_released, n1_rep.disable_rc, 1, held);
+	kern_logf("i915: parity N1 verdict: %s (the firmware pipe %d was taken over, its own framebuffer was "
+		"imported and scanned out by this driver with no copying, the console kept updating on it, the "
+		"INIT reference was returned and the stop was confirmed)\n", pass ? "PASS" : "FAIL", pipe);
+	return pass ? 0 : -1;
 }

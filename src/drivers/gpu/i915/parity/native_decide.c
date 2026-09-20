@@ -2,6 +2,7 @@
  * WS031 Linux-parity -- the N0 decision (native_precheck.h), pure: it reads only the report.  zedBSD project code.
  */
 #include "native_precheck.h"
+#include "bios.h"    /* PARITY_N1_TEST: the takeover is in this build */
 
 void
 parity_native_decide(struct parity_native_report *r)
@@ -43,7 +44,11 @@ parity_native_decide(struct parity_native_report *r)
 
 	r->proceed = 0;
 	r->primary_stop = 0u;
-	if (r->conditions & PARITY_N0_C_ACTIVE_PIPE) {
+	/*
+	 * E-124: with the takeover ported (N1 in this build) an ACTIVE PIPE is no longer a stop -- it is what
+	 * the run is about.  Every other condition below still stops the probe before any display write.
+	 */
+	if ((r->conditions & PARITY_N0_C_ACTIVE_PIPE) && !PARITY_N1_TEST) {
 		r->primary_stop = PARITY_N0_C_ACTIVE_PIPE;
 		r->reason = "a pipe is active (firmware display): the takeover (N1: readout + crtc_disable_noatomic) is not ported";
 	} else if (r->conditions & PARITY_N0_C_PIPE_READ_ERROR) {
@@ -60,6 +65,11 @@ parity_native_decide(struct parity_native_report *r)
 		r->reason = "the GPU's VT-d unit translates / protects memory (firmware DMA protection) and zedBSD has no IOMMU driver";
 	} else {
 		r->proceed = 1;
+		if (r->conditions & PARITY_N0_C_ACTIVE_PIPE) {
+			r->reason = "a pipe is active (firmware display) and the takeover is in this build (N1): the readout "
+				"and intel_crtc_disable_noatomic take it over";
+			return;
+		}
 		r->reason = r->hypervisor ? "start conditions match the prepared path (no active pipe, no overlap; VT-d: guest view, "
 			"the host owns the unit)" : "start conditions match the prepared path (no active pipe, no overlap, DMA untranslated)";
 	}

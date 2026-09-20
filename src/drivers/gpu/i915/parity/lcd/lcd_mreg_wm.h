@@ -39,6 +39,14 @@
 #define MBUS_JOIN_PIPE_SELECT_MASK	REG_GENMASK(28, 26)
 #define MBUS_JOIN_PIPE_SELECT(pipe)	REG_FIELD_PREP(MBUS_JOIN_PIPE_SELECT_MASK, pipe)
 #define MBUS_JOIN_PIPE_SELECT_NONE	MBUS_JOIN_PIPE_SELECT(7)
+#define _CUR_WM_A_0		0x70140
+#define _CUR_WM_B_0		0x71140
+#define _CUR_WM_SAGV_A		0x70158
+#define _CUR_WM_SAGV_B		0x71158
+#define _CUR_WM_SAGV_TRANS_A	0x7015C
+#define _CUR_WM_SAGV_TRANS_B	0x7115C
+#define _CUR_WM_TRANS_A		0x70168
+#define _CUR_WM_TRANS_B		0x71168
 #define _PLANE_WM_1_A_0		0x70240
 #define _PLANE_WM_1_B_0		0x71240
 #define _PLANE_WM_2_A_0		0x70340
@@ -59,6 +67,11 @@
 #define   PLANE_WM_IGNORE_LINES	(1 << 30)
 #define   PLANE_WM_LINES_MASK	REG_GENMASK(26, 14)
 #define   PLANE_WM_BLOCKS_MASK	REG_GENMASK(11, 0)
+#define _CUR_WM_0(pipe) _PIPE(pipe, _CUR_WM_A_0, _CUR_WM_B_0)
+#define CUR_WM(pipe, level) _MMIO(_CUR_WM_0(pipe) + ((4) * (level)))
+#define CUR_WM_SAGV(pipe) _MMIO_PIPE(pipe, _CUR_WM_SAGV_A, _CUR_WM_SAGV_B)
+#define CUR_WM_SAGV_TRANS(pipe) _MMIO_PIPE(pipe, _CUR_WM_SAGV_TRANS_A, _CUR_WM_SAGV_TRANS_B)
+#define CUR_WM_TRANS(pipe) _MMIO_PIPE(pipe, _CUR_WM_TRANS_A, _CUR_WM_TRANS_B)
 #define _PLANE_WM_1(pipe) _PIPE(pipe, _PLANE_WM_1_A_0, _PLANE_WM_1_B_0)
 #define _PLANE_WM_2(pipe) _PIPE(pipe, _PLANE_WM_2_A_0, _PLANE_WM_2_B_0)
 #define _PLANE_WM_BASE(pipe, plane) \
@@ -99,6 +112,9 @@
 	_PIPE(pipe, _PLANE_NV12_BUF_CFG_2_A, _PLANE_NV12_BUF_CFG_2_B)
 #define PLANE_NV12_BUF_CFG(pipe, plane)	\
 	_MMIO_PLANE(plane, _PLANE_NV12_BUF_CFG_1(pipe), _PLANE_NV12_BUF_CFG_2(pipe))
+#define _CUR_BUF_CFG_A				0x7017c
+#define _CUR_BUF_CFG_B				0x7117c
+#define CUR_BUF_CFG(pipe)	_MMIO_PIPE(pipe, _CUR_BUF_CFG_A, _CUR_BUF_CFG_B)
 #define _DBUF_CTL_S0				0x45008
 #define _DBUF_CTL_S1				0x44FE8
 #define _DBUF_CTL_S2				0x44300

@@ -20,6 +20,15 @@ void parity_opregion_register(void);
 void parity_opregion_unregister(void);
 int parity_opregion_cleanup(void);        /* -EBUSY: still registered, or the ASLE work not shown idle */
 int parity_opregion_notify_adapter(int pci_state);
+/* the sanitized encoder of the readout (N1): port = enum port, output_type = enum intel_output_type */
+#define PARITY_OUTPUT_ANALOG  1
+#define PARITY_OUTPUT_DP      7
+#define PARITY_OUTPUT_EDP     8
+#define PARITY_OUTPUT_DSI     9
+#define PARITY_OUTPUT_DDI     10
+#define PARITY_OUTPUT_HDMI    6
+#define PARITY_OUTPUT_DP_MST  11
+int parity_opregion_notify_encoder(int port, int output_type, int enable);
 const void *parity_opregion_vbt(uint32_t *size);
 int parity_opregion_notifier_registered(void);
 void parity_opregion_counters(unsigned *unported, unsigned *boundaries, unsigned *unmaps);

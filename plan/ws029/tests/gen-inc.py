@@ -121,7 +121,7 @@ TARGETS = {
         'gt/intel_engine.h', 'gt/intel_execlists_submission.c', 'gt/gen8_ppgtt.c', 'gt/intel_engine_cs.c'],
         REGS, [], []),
     'ids': ('i915-ids.inc', ['include/drm/intel/pciids.h'],
-            ['INTEL_ADLP_IDS', 'INTEL_ADLN_IDS', 'INTEL_RPLU_IDS', 'INTEL_RPLP_IDS'], [], []),
+            ['INTEL_TGL_GT1_IDS', 'INTEL_TGL_GT2_IDS', 'INTEL_TGL_IDS', 'INTEL_ADLP_IDS', 'INTEL_ADLN_IDS', 'INTEL_RPLU_IDS', 'INTEL_RPLP_IDS'], [], []),
     'commands': ('i915-commands.inc', ['gt/intel_gpu_commands.h'], COMMANDS, [], []),
     'lrc': ('i915-lrc-offsets.inc', [], [], [
         ('gt/intel_lrc.c', r'^#define NOP\(x\)', r'^#define END 0'),

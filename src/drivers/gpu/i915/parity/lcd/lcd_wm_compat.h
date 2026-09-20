@@ -39,7 +39,6 @@ static inline const struct drm_format_info *drm_format_info(u32 format)
 
 /* the DBUF slice tables of other platforms are not reached (display version 13, not DG2) */
 #define dg2_compute_dbuf_slices(pipe, active_pipes, join_mbus) (0)
-#define tgl_compute_dbuf_slices(pipe, active_pipes, join_mbus) (0)
 #define icl_compute_dbuf_slices(pipe, active_pipes, join_mbus) (0)
 
 /* intel_mbus_dbox_update() walks the crtcs of the active pipes: here the one crtc of the modeset (lcd_modeset_compat.h
@@ -65,14 +64,18 @@ struct parity_lcd_wm_ctx { struct intel_dbuf_state old_dbuf, new_dbuf; struct in
 extern struct parity_lcd_wm_ctx *parity_lcd_wm;
 #define intel_atomic_get_new_dbuf_state(state) (&parity_lcd_wm->new_dbuf)
 #define intel_atomic_get_old_dbuf_state(state) (&parity_lcd_wm->old_dbuf)
+#ifndef intel_atomic_get_crtc_state    /* n1_compat.h answers for both paths when it is in the build */
 #define intel_atomic_get_crtc_state(state, crtc) (parity_lcd_wm->crtc_state)
+#endif
 #define intel_atomic_lock_global_state(global_state) (0)
 #define to_intel_plane_state(x) ((struct intel_plane_state *)(x))
 
 /* ---- iterators over the one plane / crtc ---- */
 #define intel_atomic_crtc_state_for_each_plane_state(plane, plane_state, crtc_state) \
 	for ((plane) = (crtc_state)->only_plane, (plane_state) = (crtc_state)->only_plane_state; (plane) != 0; (plane) = 0)
+#ifndef for_each_intel_plane_on_crtc    /* n1_compat.h walks the registry when it is included last */
 #define for_each_intel_plane_on_crtc(dev, crtc, plane) for ((plane) = parity_lcd_wm->crtc_state->only_plane; (plane) != 0; (plane) = 0)
+#endif
 #define for_each_new_intel_plane_in_state(state, plane, new_plane_state, i) \
 	for ((i) = 0, (plane) = parity_lcd_wm->crtc_state->only_plane, (new_plane_state) = (struct intel_plane_state *)parity_lcd_wm->crtc_state->only_plane_state; (i) < 1 && (plane) != 0; (i)++)
 #define for_each_plane_id_on_crtc(crtc, p) for ((p) = PLANE_PRIMARY; (p) <= PLANE_PRIMARY; (p)++)   /* crtc->plane_ids_mask = the primary */

@@ -64,7 +64,9 @@ int parity_lcd_ms_wm_compute(struct parity_lcd_modeset *ms)
 	/* the whole configuration's pipes: this one and the others it lights (the reference's
 	 * atomic state would hold every crtc) */
 	new_dbuf->active_pipes = (u8)(ms->wm.old_dbuf.active_pipes | BIT(pipe) | ms->also_active_pipes);
-	new_dbuf->joined_mbus = adlp_check_mbus_joined(new_dbuf->active_pipes);        /* HAS_MBUS_JOINING: ADL-P */
+	/* HAS_MBUS_JOINING(): Alder Lake-P and display 14+; a Tiger Lake MBUS is never joined (E-126) */
+	new_dbuf->joined_mbus = parity_lcd_display_ver() >= 13 ?
+		adlp_check_mbus_joined(new_dbuf->active_pipes) : false;
 	new_dbuf->slices[pipe] = skl_compute_dbuf_slices(&ms->crtc, new_dbuf->active_pipes, new_dbuf->joined_mbus);
 	new_dbuf->enabled_slices = intel_dbuf_enabled_slices(new_dbuf);
 	new_dbuf->weight[pipe] = intel_crtc_ddb_weight(cs);
@@ -86,11 +88,21 @@ void parity_lcd_ms_wm_compute_off(struct parity_lcd_modeset *ms)
 	parity_lcd_wm = &ms->wm;
 	*new_dbuf = ms->wm.old_dbuf;
 	new_dbuf->active_pipes = ms->wm.old_dbuf.active_pipes & (u8)~BIT(pipe);
-	new_dbuf->joined_mbus = adlp_check_mbus_joined(new_dbuf->active_pipes);
+	new_dbuf->joined_mbus = parity_lcd_display_ver() >= 13 ?
+		adlp_check_mbus_joined(new_dbuf->active_pipes) : false;
 	new_dbuf->slices[pipe] = skl_compute_dbuf_slices(&ms->crtc, new_dbuf->active_pipes, new_dbuf->joined_mbus);
 	new_dbuf->enabled_slices = intel_dbuf_enabled_slices(new_dbuf);
 	new_dbuf->weight[pipe] = 0;
 	memset(&new_dbuf->ddb[pipe], 0, sizeof(new_dbuf->ddb[pipe]));
 	new_dbuf->base.changed = new_dbuf->enabled_slices != ms->wm.old_dbuf.enabled_slices ||
 		new_dbuf->joined_mbus != ms->wm.old_dbuf.joined_mbus || new_dbuf->active_pipes != ms->wm.old_dbuf.active_pipes;
+}
+
+/*
+ * The watermark readout of the reference is static in this unit and is reached through the device watermark
+ * ops, which this path does not carry: the readout (N1) calls it through this boundary instead.
+ */
+void parity_lcd_wm_get_hw_state(struct drm_i915_private *i915)
+{
+	skl_wm_get_hw_state(i915);
 }

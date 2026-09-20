@@ -8,6 +8,7 @@
 #include <string.h>
 #include "driver_probe.h"
 #include "display_nogem.h"
+#include "bios.h"    /* PARITY_N1_TEST */
 #include "power_domains.h"
 #include "display_core.h"
 #include "pch.h"
@@ -371,8 +372,19 @@ parity_i915_driver_register(struct parity_driver_probe *p,
 	p->na_registrations += 4u;
 	p->hp.kms_poll_inited = 1;
 
-	/* intel_power_domains_enable() */
-	parity_intel_power_domains_enable(p, dc);
+	/*
+	 * intel_power_domains_enable(): the INIT reference taken during init_hw is released here, and every
+	 * well nothing references powers down.  The reference implementation can do that because
+	 * intel_initial_commit() has by then taken the firmware display over, which references the wells that
+	 * feed it.  E-124 (N1): the takeover happens later in this run, so the reference is KEPT until then --
+	 * otherwise the wells of the live display drop and the picture dies here (observed on bare metal).
+	 */
+	if (PARITY_N1_TEST && p->active_crtcs != 0u) {
+		p->power_domains_enable_deferred = 1;
+		p->wells_on_before = p->wells_on_after = 0u;
+	} else {
+		parity_intel_power_domains_enable(p, dc);
+	}
 
 	/*
 	 * intel_runtime_pm_enable(): autosuspend 10 s, allow, and put the probe

@@ -537,6 +537,85 @@ parity_gt_display_bind(struct parity_gt_mem *gm, struct parity_gt_object *o,
 	return 0;
 }
 
+/*
+ * E-125: the firmware framebuffer, borrowed.  The PTEs are encoded and written by the same code path as
+ * every other display buffer (parity_ggtt_pte_encode + ggtt_write_pte + parity_gt_ggtt_flush); what is
+ * different is only where the pages come from -- the firmware's own memory, which this driver never
+ * allocates, frees or writes.
+ */
+int
+parity_gt_display_bind_foreign(struct parity_gt_mem *gm, uint64_t phys, unsigned pages,
+	unsigned *ggtt_page_out)
+{
+	unsigned start = 0u, p, i;
+	int found = 0;
+
+	if (gm == 0 || !gm->inited || gm->display_pages == 0u || pages == 0u || ggtt_page_out == 0)
+		return -EINVAL;
+	if ((phys & (uint64_t)(PARITY_GT_PAGE_BYTES - 1u)) != 0u)
+		return -EINVAL;
+	if (pages > gm->display_pages)
+		return -ENOSPC;
+	/* a free run in the display window (no guards: the backing is not ours to guard) */
+	for (start = 0u; start + pages <= gm->display_pages; start++) {
+		unsigned clash = 0u;
+
+		for (i = start; i < start + pages; i++)
+			if (display_bit(gm, i)) {
+				clash = 1u;
+				break;
+			}
+		if (!clash) {
+			found = 1;
+			break;
+		}
+	}
+	if (!found) {
+		gm->ggtt_alloc_fail++;
+		return -ENOSPC;
+	}
+	/* encode every page BEFORE touching a PTE: a range that cannot be mapped changes nothing */
+	for (p = 0u; p < pages; p++) {
+		uint64_t pte = 0;
+
+		if (!parity_ggtt_pte_encode(osdep_dma_addr(phys + (uint64_t)p * PARITY_GT_PAGE_BYTES),
+			(uint64_t)PARITY_GT_PAGE_BYTES, gm->dma_mask, &pte))
+			return -ERANGE;
+	}
+	display_set(gm, start, pages, 1);
+	gm->display_allocated_pages += pages;
+	for (p = 0u; p < pages; p++) {
+		uint64_t pte = 0;
+
+		(void)parity_ggtt_pte_encode(osdep_dma_addr(phys + (uint64_t)p * PARITY_GT_PAGE_BYTES),
+			(uint64_t)PARITY_GT_PAGE_BYTES, gm->dma_mask, &pte);
+		ggtt_write_pte(gm, gm->display_first + start + p, pte);
+		gm->display_pte_writes++;
+	}
+	parity_gt_ggtt_flush(gm);
+	*ggtt_page_out = gm->display_first + start;
+	return 0;
+}
+
+void
+parity_gt_display_unbind_foreign(struct parity_gt_mem *gm, unsigned ggtt_page, unsigned pages)
+{
+	unsigned start, p;
+
+	if (gm == 0 || !gm->inited || pages == 0u || ggtt_page < gm->display_first)
+		return;
+	start = ggtt_page - gm->display_first;
+	if (start + pages > gm->display_pages)
+		return;
+	for (p = 0u; p < pages; p++) {
+		ggtt_write_pte(gm, ggtt_page + p, gm->scratch_pte);
+		gm->display_pte_writes++;
+	}
+	parity_gt_ggtt_flush(gm);
+	display_set(gm, start, pages, 0);
+	gm->display_allocated_pages -= pages;
+}
+
 void
 parity_gt_display_unbind(struct parity_gt_mem *gm, struct parity_gt_object *o)
 {

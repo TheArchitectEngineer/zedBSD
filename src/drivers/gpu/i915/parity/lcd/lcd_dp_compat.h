@@ -74,7 +74,18 @@ void parity_lcd_debug(const char *what);
  */
 #define intel_dp_get_link_train_fallback_values(intel_dp, rate, lanes) \
 	(parity_lcd_error("link training failed: the reference requests a FALLBACK (lower rate / lane count), which is not ported\n"), -1)
+/*
+ * XXX: UNPORTED -- the modeset retry work the reference queues when link training fails.  This path reports
+ * the failure to its caller instead, which stops the run.
+ *   pseudo: queue connector->modeset_retry_work, whose worker asks the DRM layer for a new modeset at a
+ *   lower link rate.
+ */
 #define queue_work(wq, work) PARITY_LCD_STEP(parity_lcd_cur_i915, "queue_work(modeset_retry_work)")
+/*
+ * XXX: UNPORTED -- UHBR link training (128b/132b).  This panel trains 8b/10b, which is ported.
+ *   pseudo: set the 128b/132b TPS1 pattern, wait for the sink's LT-tunable PHY repeaters, then poll
+ *   DP_LANE_ALIGN_STATUS_UPDATED for INTERLANE_ALIGN_DONE within the sink's timeout, and report it.
+ */
 #define intel_dp_128b132b_link_train(intel_dp, cs, lttpr_count) (PARITY_LCD_STEP(parity_lcd_cur_i915, "intel_dp_128b132b_link_train"), false)
 #define intel_dp_128b132b_intra_hop(intel_dp, cs) (0)   /* only evaluated for a UHBR rate */
 

@@ -93,6 +93,7 @@ void parity_intel_cdclk_init_hw(struct parity_cdclk_dev *cd);
 
 /* Table accessor + calc helpers exposed for tests. */
 const struct parity_cdclk_vals *parity_adlp_cdclk_table(void);
+const struct parity_cdclk_vals *parity_icl_cdclk_table(void);
 int parity_bxt_calc_cdclk(struct parity_cdclk_dev *cd, int min_cdclk);
 int parity_bxt_calc_cdclk_pll_vco(struct parity_cdclk_dev *cd, int cdclk);
 uint8_t parity_tgl_calc_voltage_level(int cdclk);

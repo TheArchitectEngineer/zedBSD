@@ -70,6 +70,7 @@ enum parity_power_domain {
 #define PARITY_DISP_PW_ID_NONE   0
 #define PARITY_SKL_DISP_PW_1     8
 #define PARITY_SKL_DISP_PW_2     9
+#define PARITY_ICL_DISP_PW_3     10
 #define PARITY_SKL_DISP_DC_OFF   11
 
 /* Which ops family a well uses (bodies executed at init_hw). */

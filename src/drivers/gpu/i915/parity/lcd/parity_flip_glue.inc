@@ -12,6 +12,12 @@ int parity_lcd_flip_pipe;
 /* i915's crtc funcs on display version 5+: the hardware frame counter (g4x_get_vblank_counter) */
 static const struct drm_crtc_funcs parity_lcd_crtc_funcs = { g4x_get_vblank_counter };
 
+/* the same table for a crtc that is not a modeset object (the N1 readout registry) */
+const struct drm_crtc_funcs *parity_lcd_ms_crtc_funcs(void)
+{
+	return &parity_lcd_crtc_funcs;
+}
+
 /* intel_enable_crtc(): intel_crtc_update_active_timings(new_crtc_state, false) before the crtc_enable hook;
  * drm_crtc_set_max_vblank_count(intel_crtc_max_vblank_count()) = the full 32-bit counter (not DSI) */
 void parity_lcd_ms_active_timings(struct parity_lcd_modeset *ms)
@@ -63,4 +69,10 @@ int parity_lcd_ms_evade_window(struct parity_lcd_modeset *ms, int *min, int *max
 	ms->state.old_crtc_state = &ms->crtc_state;
 	intel_crtc_vblank_evade_scanlines(&ms->state, &ms->crtc, min, max, vblank_start);
 	return *min > 0 && *max > 0 ? 0 : -1;
+}
+
+/* E-124 diagnostics: the size of a crtc state AS THIS UNIT SEES IT (it memsets one) */
+unsigned long parity_crtc_state_size_crtc_unit(void)
+{
+	return (unsigned long)sizeof(struct intel_crtc_state);
 }

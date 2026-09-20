@@ -244,6 +244,18 @@ int parity_gt_display_window_init(struct parity_gt_mem *gm, unsigned pages);
 int parity_gt_display_bind(struct parity_gt_mem *gm, struct parity_gt_object *o,
 	unsigned align_pages, unsigned guard_pages);
 void parity_gt_display_unbind(struct parity_gt_mem *gm, struct parity_gt_object *o);
+
+/*
+ * E-125: pages this driver does NOT own, mapped into the display window so the display engine can read
+ * them -- the framebuffer the FIRMWARE left, whose backing belongs to the firmware.  `phys` is the first
+ * page of that backing and must be page aligned; `pages` covers the whole image.  Nothing is allocated,
+ * nothing is freed, and the range is marked used in the display window so no buffer of this driver can
+ * land on it.  Returns 0 and the first GGTT page, or a negative errno (-ENOSPC: the window has no room).
+ */
+int parity_gt_display_bind_foreign(struct parity_gt_mem *gm, uint64_t phys, unsigned pages,
+	unsigned *ggtt_page_out);
+/* the borrowed range goes back to scratch; the backing is left exactly as it was found */
+void parity_gt_display_unbind_foreign(struct parity_gt_mem *gm, unsigned ggtt_page, unsigned pages);
 /* Reads one PTE slot back (tests / diagnostics). */
 uint64_t parity_gt_ggtt_read_pte(const struct parity_gt_mem *gm, unsigned index);
 

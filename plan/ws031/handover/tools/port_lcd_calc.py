@@ -451,7 +451,8 @@ PLANE_FUNCS = ("icl_hdr_plane_mask", "icl_is_hdr_plane", "skl_plane_stride_mult"
                "skl_plane_ctl", "glk_plane_color_ctl_crtc", "glk_plane_color_ctl", "skl_surf_address", "skl_plane_surf",
                "skl_plane_aux_dist", "skl_plane_keyval", "skl_plane_keymsk", "skl_plane_keymax", "icl_plane_color_plane",
                "icl_plane_update_sel_fetch_noarm", "icl_plane_update_noarm", "icl_plane_disable_sel_fetch_arm",
-               "icl_plane_update_sel_fetch_arm", "icl_plane_update_arm", "icl_plane_disable_arm", "icl_plane_min_cdclk")
+               "icl_plane_update_sel_fetch_arm", "icl_plane_update_arm", "icl_plane_disable_arm", "icl_plane_min_cdclk",
+               "skl_plane_get_hw_state")
 for n in PLANE_FUNCS:
     body += func(sp, n, "display/skl_universal_plane.c") + NL
 lic = sp[:first_comment_end(sp)]
@@ -463,6 +464,7 @@ wr("skl_plane_port.c", lic + note("Linux v6.8.12 drivers/gpu/drm/i915/display/sk
      "   named steps there, never silently dropped);",
      " - parity_plane_emit_glue.inc (zedBSD code) is included at the end of the file."]) + NL +
    '#include "lcd_compat.h"' + TAB + "/* zedBSD: replaces the linux/, drm/ and i915 includes */" + NL +
+   '#include "lcd_seq_compat.h"' + NL + '#include "lcd_modeset_compat.h"' + NL +
    '#include "lcd_plane_compat.h"' + NL + NL + body + NL +
    '#include "parity_plane_emit_glue.inc"' + TAB + "/* zedBSD: builds the plane / fb state and records the words */" + NL)
 

@@ -11,6 +11,7 @@
 #define C_BLUE    0x000000ffu
 #define C_YELLOW  0x00ffff00u
 
+#ifndef PARITY_LCD_PATTERN_SOLID
 static int in_rect(uint32_t x, uint32_t y, uint32_t x0, uint32_t y0, uint32_t w, uint32_t h)
 {
 	return x >= x0 && x < x0 + w && y >= y0 && y < y0 + h;
@@ -35,8 +36,18 @@ static int in_digit(uint32_t x, uint32_t y, uint32_t x0, uint32_t y0, uint32_t w
 	return 0;
 }
 
+#endif
+
 uint32_t parity_lcd_pattern_pixel(uint32_t x, uint32_t y, uint32_t width, uint32_t height, unsigned test_id)
 {
+#ifdef PARITY_LCD_PATTERN_SOLID
+	/* E-126 diagnostic: one flat colour instead of the picture, to tell a scanout that reads the
+	   wrong memory from one that reads ours but lays it out wrongly. */
+	(void)width; (void)height; (void)test_id;
+	if (x < width && y < height)
+		return (uint32_t)(PARITY_LCD_PATTERN_SOLID);
+	return 0u;
+#else
 	uint32_t frame = 16u, corner_w = width / 8u, corner_h = height / 6u;
 	uint32_t band_h = height / 12u, fx, fy, fw, fh, ft, dw, dh, dt, dx, dy, i;
 
@@ -82,6 +93,7 @@ uint32_t parity_lcd_pattern_pixel(uint32_t x, uint32_t y, uint32_t width, uint32
 			return C_YELLOW;
 	}
 	return C_BG;
+#endif
 }
 
 uint64_t parity_lcd_pattern_fill(uint32_t *pixels, uint32_t pitch, uint32_t width, uint32_t height, unsigned test_id)

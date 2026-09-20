@@ -45,6 +45,30 @@ struct intel_cdclk_vals {
 	u8 ratio;
 };
 
+static const struct intel_cdclk_vals icl_cdclk_table[] = {
+	{ .refclk = 19200, .cdclk = 172800, .divider = 2, .ratio = 18 },
+	{ .refclk = 19200, .cdclk = 192000, .divider = 2, .ratio = 20 },
+	{ .refclk = 19200, .cdclk = 307200, .divider = 2, .ratio = 32 },
+	{ .refclk = 19200, .cdclk = 326400, .divider = 4, .ratio = 68 },
+	{ .refclk = 19200, .cdclk = 556800, .divider = 2, .ratio = 58 },
+	{ .refclk = 19200, .cdclk = 652800, .divider = 2, .ratio = 68 },
+
+	{ .refclk = 24000, .cdclk = 180000, .divider = 2, .ratio = 15 },
+	{ .refclk = 24000, .cdclk = 192000, .divider = 2, .ratio = 16 },
+	{ .refclk = 24000, .cdclk = 312000, .divider = 2, .ratio = 26 },
+	{ .refclk = 24000, .cdclk = 324000, .divider = 4, .ratio = 54 },
+	{ .refclk = 24000, .cdclk = 552000, .divider = 2, .ratio = 46 },
+	{ .refclk = 24000, .cdclk = 648000, .divider = 2, .ratio = 54 },
+
+	{ .refclk = 38400, .cdclk = 172800, .divider = 2, .ratio =  9 },
+	{ .refclk = 38400, .cdclk = 192000, .divider = 2, .ratio = 10 },
+	{ .refclk = 38400, .cdclk = 307200, .divider = 2, .ratio = 16 },
+	{ .refclk = 38400, .cdclk = 326400, .divider = 4, .ratio = 34 },
+	{ .refclk = 38400, .cdclk = 556800, .divider = 2, .ratio = 29 },
+	{ .refclk = 38400, .cdclk = 652800, .divider = 2, .ratio = 34 },
+	{}
+};
+
 static const struct intel_cdclk_vals adlp_cdclk_table[] = {
 	{ .refclk = 19200, .cdclk = 172800, .divider = 3, .ratio = 27 },
 	{ .refclk = 19200, .cdclk = 192000, .divider = 2, .ratio = 20 },
