@@ -106,6 +106,8 @@ struct parity_dmc_dev {
 	struct parity_pw_ctx *pwc;
 	struct parity_kworkqueue *wq;
 	const char *fw_path;
+	/* E-126: dmc_fallback_path() is a platform question, not a path question */
+	int is_alderlake_p;
 	struct parity_kwork work;
 	int dmc_wakeref_held;          /* DMC's own INIT reference is held */
 	uint32_t dc_state;
@@ -121,7 +123,7 @@ struct parity_dmc_dev {
 
 void parity_intel_dmc_init(struct parity_dmc_dev *d, struct parity_kworkqueue *wq,
 	struct osdep_mmio *m, struct parity_power_domains *pd, struct parity_pw_ctx *pwc,
-	int display_ver, char stepping, char substepping, const char *fw_path);
+	int display_ver, int is_alderlake_p, char stepping, char substepping, const char *fw_path);
 
 /*
  * Test-only hooks (production leaves them 0):

@@ -989,7 +989,7 @@ drv_i915_parity_attach(struct i915_device *device, enum parity_stage stop_after,
 
 		for (di = 0u; di < sizeof(dmc_dev); di++) ((char *)&dmc_dev)[di] = 0;
 		parity_intel_dmc_init(&dmc_dev, &dmc_wq, &mmio, &power_domains, &pwc,
-			(int)display_ver, sc, ss,
+			(int)display_ver, is_alderlake_p, sc, ss,
 			/* E-126: the DMC of THIS display (intel_dmc.c: TGL_DMC_PATH / ADLP_DMC_PATH) */
 			display_ver >= 13u ? "i915/adlp_dmc.bin" : "i915/tgl_dmc_ver2_12.bin");
 		dmc_inited = 1;

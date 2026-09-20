@@ -2022,6 +2022,9 @@ parity_sync_ktest(void)
 			pwc.mmio = &m;                                                     \
 			for (i = 0u; i < sizeof(dc); i++) ((char *)&dc)[i] = 0;            \
 			dc.pd = &pd; dc.cd = &cd; dc.pwc = &pwc; dc.m = &m; dc.sb_lock = &tsb; \
+			/* the device this fixture stands for, as probe.c fills it (E-126) */        \
+			dc.display_ver = 13; dc.is_alderlake_p = 1;                                  \
+			dc.dbuf_slice_mask = 0x0fu; dc.abox_mask = 0x03u;                            \
 			dc.dram_type = PARITY_DRAM_LPDDR5; dc.dram_channels = 2u;          \
 			osdep_mmio_raw_write32(&m, 0x51004u, (2u << 29));  /* 38.4MHz */   \
 			parity_wait_test_reset_fault();   /* clear latch from earlier cases */ \
@@ -2433,7 +2436,7 @@ parity_sync_ktest(void)
 
 		if (wqok) {
 			for (i = 0u; i < sizeof(dd); i++) ((char *)&dd)[i] = 0;
-			parity_intel_dmc_init(&dd, &wq, &m, &pd, &pwc, 13, 'D', '0', 0 /* default path */);
+			parity_intel_dmc_init(&dd, &wq, &m, &pd, &pwc, 13, 1 /* ADL-P */, 'D', '0', 0 /* default path */);
 			deadline = sched_ticks() + 200u;   /* ~2s */
 			(void)parity_kflush_work(&wq, &dd.work, deadline);
 
@@ -2447,7 +2450,7 @@ parity_sync_ktest(void)
 
 			/* DMC-NO-FW: a genuinely absent path -> fallback requested, no payload, ref held. */
 			for (i = 0u; i < sizeof(dd); i++) ((char *)&dd)[i] = 0;
-			parity_intel_dmc_init(&dd, &wq, &m, &pd, &pwc, 13, 'D', '0', "i915/absent.bin");
+			parity_intel_dmc_init(&dd, &wq, &m, &pd, &pwc, 13, 1 /* ADL-P */, 'D', '0', "i915/absent.bin");
 			(void)parity_kflush_work(&wq, &dd.work, sched_ticks() + 200u);
 			KCHECK(dd.worker_started == 1 && dd.fallback_requested == 1 &&
 				dd.main_payload_present == 0 && dd.dmc.payload_writes == 0u &&
@@ -2496,7 +2499,7 @@ parity_sync_ktest(void)
 			g_dmc_badcopy[528u + 6301u * 4u + 5u] = 7u;
 			osdep_firmware_test_set(&dmc_bad_ops);
 			for (i = 0u; i < sizeof(dd); i++) ((char *)&dd)[i] = 0;
-			parity_intel_dmc_init(&dd, &wq, &m, &pd, &pwc, 13, 'D', '0', 0);
+			parity_intel_dmc_init(&dd, &wq, &m, &pd, &pwc, 13, 1 /* ADL-P */, 'D', '0', 0);
 			(void)parity_kflush_work(&wq, &dd.work, sched_ticks() + 200u);
 			KCHECK(dd.firmware_acquired == 1 && dd.main_payload_present == 0 &&
 				dd.dmc.payload_writes == 0u && dd.dmc.load_seq_completed == 0 &&
@@ -2513,7 +2516,7 @@ parity_sync_ktest(void)
 			parity_dmc_test_pause = 1;
 			for (i = 0u; i < sizeof(dd); i++) ((char *)&dd)[i] = 0;
 			kern_logf("i915: DMC-FINI ckpt A: init\n");
-			parity_intel_dmc_init(&dd, &wq, &m, &pd, &pwc, 13, 'D', '0', 0);
+			parity_intel_dmc_init(&dd, &wq, &m, &pd, &pwc, 13, 1 /* ADL-P */, 'D', '0', 0);
 			kern_logf("i915: DMC-FINI ckpt B: queued, spawning fini thread\n");
 			g_fini_dd = &dd; g_fini_done = 0;
 			(void)spawn_detached(dmc_fini_thread, 0);
@@ -2540,7 +2543,7 @@ parity_sync_ktest(void)
 			f.fuse_status = 0xFFFFFFFFu;
 			parity_dmc_test_fault_at = 1000u;
 			for (i = 0u; i < sizeof(dd); i++) ((char *)&dd)[i] = 0;
-			parity_intel_dmc_init(&dd, &wq, &m, &pd, &pwc, 13, 'D', '0', 0);
+			parity_intel_dmc_init(&dd, &wq, &m, &pd, &pwc, 13, 1 /* ADL-P */, 'D', '0', 0);
 			(void)parity_kflush_work(&wq, &dd.work, sched_ticks() + 200u);
 			parity_dmc_test_fault_at = 0u;   /* cleared only after the worker is done */
 			KCHECK(dd.main_payload_present == 1 && dd.dmc.payload_writes == 1000u &&

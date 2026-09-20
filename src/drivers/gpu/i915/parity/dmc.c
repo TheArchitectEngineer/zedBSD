@@ -563,10 +563,10 @@ dmc_load_work_fn(void *ctx)
 
 	rc = osdep_request_firmware(&fw, d->fw_path);
 	/*
-	 * Reference: only the default path (no explicit override) falls back -- and the fallback is
-	 * the Alder Lake-P firmware, so it is only tried when that is what was asked for (E-126).
+	 * dmc_fallback_path(): the fallback firmware exists for Alder Lake-P and for nothing else,
+	 * so on any other display there is nothing to fall back to (E-126).
 	 */
-	if (rc == -ENOENT && d->fw_path != 0 && d->fw_path[6] == 'a') {
+	if (rc == -ENOENT && d->is_alderlake_p) {
 		d->fallback_requested = 1;
 		rc = osdep_request_firmware(&fw, ADLP_DMC_FALLBACK_PATH);
 		if (rc == 0)
@@ -608,7 +608,7 @@ dmc_load_work_fn(void *ctx)
 void
 parity_intel_dmc_init(struct parity_dmc_dev *d, struct parity_kworkqueue *wq,
 	struct osdep_mmio *m, struct parity_power_domains *pd, struct parity_pw_ctx *pwc,
-	int display_ver, char stepping, char substepping, const char *fw_path)
+	int display_ver, int is_alderlake_p, char stepping, char substepping, const char *fw_path)
 {
 	/* Take the DMC's own reference first (held on failure). */
 	d->pd = pd;
@@ -618,6 +618,7 @@ parity_intel_dmc_init(struct parity_dmc_dev *d, struct parity_kworkqueue *wq,
 	d->dmc_wakeref_held = 0;
 	dmc_get_ref(d);
 
+	d->is_alderlake_p = is_alderlake_p;
 	d->fw_path = (fw_path != 0) ? fw_path : "i915/adlp_dmc.bin";
 	d->dc_state = 0xffffffffu;
 	d->work_submitted = 0;
