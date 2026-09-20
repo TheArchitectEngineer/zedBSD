@@ -104,6 +104,20 @@ intel_reference_shared_dpll(struct intel_atomic_state *state,
 static void intel_unreference_shared_dpll(struct intel_atomic_state *state,
 					  const struct intel_crtc *crtc,
 					  const struct intel_shared_dpll *pll);
+static int icl_ddi_combo_pll_get_freq(struct drm_i915_private *i915,
+				      const struct intel_shared_dpll *pll,
+				      const struct intel_dpll_hw_state *pll_state);
+static bool combo_pll_get_hw_state(struct drm_i915_private *i915,
+				   struct intel_shared_dpll *pll,
+				   struct intel_dpll_hw_state *hw_state);
+static bool icl_pll_get_hw_state(struct drm_i915_private *i915,
+				 struct intel_shared_dpll *pll,
+				 struct intel_dpll_hw_state *hw_state,
+				 i915_reg_t enable_reg);
+static void readout_dpll_hw_state(struct drm_i915_private *i915,
+				  struct intel_shared_dpll *pll);
+static void sanitize_dpll_state(struct drm_i915_private *i915,
+				struct intel_shared_dpll *pll);
 
 /*
  * Display WA #22010492432: ehl, tgl, adl-s, adl-p
@@ -819,6 +833,230 @@ static void intel_unreference_shared_dpll(struct intel_atomic_state *state,
 	shared_dpll = intel_atomic_get_shared_dpll_state(&state->base);
 
 	intel_unreference_shared_dpll_crtc(crtc, pll, &shared_dpll[pll->index]);
+}
+
+static int icl_ddi_combo_pll_get_freq(struct drm_i915_private *i915,
+				      const struct intel_shared_dpll *pll,
+				      const struct intel_dpll_hw_state *pll_state)
+{
+	int ref_clock = icl_wrpll_ref_clock(i915);
+	u32 dco_fraction;
+	u32 p0, p1, p2, dco_freq;
+
+	p0 = pll_state->cfgcr1 & DPLL_CFGCR1_PDIV_MASK;
+	p2 = pll_state->cfgcr1 & DPLL_CFGCR1_KDIV_MASK;
+
+	if (pll_state->cfgcr1 & DPLL_CFGCR1_QDIV_MODE(1))
+		p1 = (pll_state->cfgcr1 & DPLL_CFGCR1_QDIV_RATIO_MASK) >>
+			DPLL_CFGCR1_QDIV_RATIO_SHIFT;
+	else
+		p1 = 1;
+
+	switch (p0) {
+	case DPLL_CFGCR1_PDIV_2:
+		p0 = 2;
+		break;
+	case DPLL_CFGCR1_PDIV_3:
+		p0 = 3;
+		break;
+	case DPLL_CFGCR1_PDIV_5:
+		p0 = 5;
+		break;
+	case DPLL_CFGCR1_PDIV_7:
+		p0 = 7;
+		break;
+	}
+
+	switch (p2) {
+	case DPLL_CFGCR1_KDIV_1:
+		p2 = 1;
+		break;
+	case DPLL_CFGCR1_KDIV_2:
+		p2 = 2;
+		break;
+	case DPLL_CFGCR1_KDIV_3:
+		p2 = 3;
+		break;
+	}
+
+	dco_freq = (pll_state->cfgcr0 & DPLL_CFGCR0_DCO_INTEGER_MASK) *
+		   ref_clock;
+
+	dco_fraction = (pll_state->cfgcr0 & DPLL_CFGCR0_DCO_FRACTION_MASK) >>
+		       DPLL_CFGCR0_DCO_FRACTION_SHIFT;
+
+	if (ehl_combo_pll_div_frac_wa_needed(i915))
+		dco_fraction *= 2;
+
+	dco_freq += (dco_fraction * ref_clock) / 0x8000;
+
+	if (drm_WARN_ON(&i915->drm, p0 == 0 || p1 == 0 || p2 == 0))
+		return 0;
+
+	return dco_freq / (p0 * p1 * p2 * 5);
+}
+
+/**
+ * intel_dpll_get_freq - calculate the DPLL's output frequency
+ * @i915: i915 device
+ * @pll: DPLL for which to calculate the output frequency
+ * @pll_state: DPLL state from which to calculate the output frequency
+ *
+ * Return the output frequency corresponding to @pll's passed in @pll_state.
+ */
+int intel_dpll_get_freq(struct drm_i915_private *i915,
+			const struct intel_shared_dpll *pll,
+			const struct intel_dpll_hw_state *pll_state)
+{
+	if (drm_WARN_ON(&i915->drm, !pll->info->funcs->get_freq))
+		return 0;
+
+	return pll->info->funcs->get_freq(i915, pll, pll_state);
+}
+
+/**
+ * intel_dpll_get_hw_state - readout the DPLL's hardware state
+ * @i915: i915 device
+ * @pll: DPLL for which to calculate the output frequency
+ * @hw_state: DPLL's hardware state
+ *
+ * Read out @pll's hardware state into @hw_state.
+ */
+bool intel_dpll_get_hw_state(struct drm_i915_private *i915,
+			     struct intel_shared_dpll *pll,
+			     struct intel_dpll_hw_state *hw_state)
+{
+	return pll->info->funcs->get_hw_state(i915, pll, hw_state);
+}
+
+static bool combo_pll_get_hw_state(struct drm_i915_private *i915,
+				   struct intel_shared_dpll *pll,
+				   struct intel_dpll_hw_state *hw_state)
+{
+	i915_reg_t enable_reg = intel_combo_pll_enable_reg(i915, pll);
+
+	return icl_pll_get_hw_state(i915, pll, hw_state, enable_reg);
+}
+
+static bool icl_pll_get_hw_state(struct drm_i915_private *i915,
+				 struct intel_shared_dpll *pll,
+				 struct intel_dpll_hw_state *hw_state,
+				 i915_reg_t enable_reg)
+{
+	const enum intel_dpll_id id = pll->info->id;
+	intel_wakeref_t wakeref;
+	bool ret = false;
+	u32 val;
+
+	wakeref = intel_display_power_get_if_enabled(i915,
+						     POWER_DOMAIN_DISPLAY_CORE);
+	if (!wakeref)
+		return false;
+
+	val = intel_de_read(i915, enable_reg);
+	if (!(val & PLL_ENABLE))
+		goto out;
+
+	if (IS_ALDERLAKE_S(i915)) {
+		hw_state->cfgcr0 = intel_de_read(i915, ADLS_DPLL_CFGCR0(id));
+		hw_state->cfgcr1 = intel_de_read(i915, ADLS_DPLL_CFGCR1(id));
+	} else if (IS_DG1(i915)) {
+		hw_state->cfgcr0 = intel_de_read(i915, DG1_DPLL_CFGCR0(id));
+		hw_state->cfgcr1 = intel_de_read(i915, DG1_DPLL_CFGCR1(id));
+	} else if (IS_ROCKETLAKE(i915)) {
+		hw_state->cfgcr0 = intel_de_read(i915,
+						 RKL_DPLL_CFGCR0(id));
+		hw_state->cfgcr1 = intel_de_read(i915,
+						 RKL_DPLL_CFGCR1(id));
+	} else if (DISPLAY_VER(i915) >= 12) {
+		hw_state->cfgcr0 = intel_de_read(i915,
+						 TGL_DPLL_CFGCR0(id));
+		hw_state->cfgcr1 = intel_de_read(i915,
+						 TGL_DPLL_CFGCR1(id));
+		if (i915->display.vbt.override_afc_startup) {
+			hw_state->div0 = intel_de_read(i915, TGL_DPLL0_DIV0(id));
+			hw_state->div0 &= TGL_DPLL0_DIV0_AFC_STARTUP_MASK;
+		}
+	} else {
+		if ((IS_JASPERLAKE(i915) || IS_ELKHARTLAKE(i915)) &&
+		    id == DPLL_ID_EHL_DPLL4) {
+			hw_state->cfgcr0 = intel_de_read(i915,
+							 ICL_DPLL_CFGCR0(4));
+			hw_state->cfgcr1 = intel_de_read(i915,
+							 ICL_DPLL_CFGCR1(4));
+		} else {
+			hw_state->cfgcr0 = intel_de_read(i915,
+							 ICL_DPLL_CFGCR0(id));
+			hw_state->cfgcr1 = intel_de_read(i915,
+							 ICL_DPLL_CFGCR1(id));
+		}
+	}
+
+	ret = true;
+out:
+	intel_display_power_put(i915, POWER_DOMAIN_DISPLAY_CORE, wakeref);
+	return ret;
+}
+
+static void readout_dpll_hw_state(struct drm_i915_private *i915,
+				  struct intel_shared_dpll *pll)
+{
+	struct intel_crtc *crtc;
+
+	pll->on = intel_dpll_get_hw_state(i915, pll, &pll->state.hw_state);
+
+	if (pll->on && pll->info->power_domain)
+		pll->wakeref = intel_display_power_get(i915, pll->info->power_domain);
+
+	pll->state.pipe_mask = 0;
+	for_each_intel_crtc(&i915->drm, crtc) {
+		struct intel_crtc_state *crtc_state =
+			to_intel_crtc_state(crtc->base.state);
+
+		if (crtc_state->hw.active && crtc_state->shared_dpll == pll)
+			intel_reference_shared_dpll_crtc(crtc, pll, &pll->state);
+	}
+	pll->active_mask = pll->state.pipe_mask;
+
+	drm_dbg_kms(&i915->drm,
+		    "%s hw state readout: pipe_mask 0x%x, on %i\n",
+		    pll->info->name, pll->state.pipe_mask, pll->on);
+}
+
+void intel_dpll_readout_hw_state(struct drm_i915_private *i915)
+{
+	struct intel_shared_dpll *pll;
+	int i;
+
+	for_each_shared_dpll(i915, pll, i)
+		readout_dpll_hw_state(i915, pll);
+}
+
+static void sanitize_dpll_state(struct drm_i915_private *i915,
+				struct intel_shared_dpll *pll)
+{
+	if (!pll->on)
+		return;
+
+	adlp_cmtg_clock_gating_wa(i915, pll);
+
+	if (pll->active_mask)
+		return;
+
+	drm_dbg_kms(&i915->drm,
+		    "%s enabled but not in use, disabling\n",
+		    pll->info->name);
+
+	_intel_disable_shared_dpll(i915, pll);
+}
+
+void intel_dpll_sanitize_state(struct drm_i915_private *i915)
+{
+	struct intel_shared_dpll *pll;
+	int i;
+
+	for_each_shared_dpll(i915, pll, i)
+		sanitize_dpll_state(i915, pll);
 }
 
 

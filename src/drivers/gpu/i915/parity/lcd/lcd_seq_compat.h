@@ -1,3 +1,4 @@
+/* intel_crtc_wait_for_next_vblank() is the reference own text now (intel_crtc_port.c, E-124) */
 /*
  * WS031 Linux-parity — the environment the reference's ENABLE-SEQUENCE callers are compiled in:
  * hsw_crtc_enable() (intel_display_port.c) and intel_ddi_pre_pll_enable() / intel_ddi_pre_enable() /
@@ -19,7 +20,10 @@
 struct intel_digital_port;
 
 /* ---- hsw_crtc_enable(): its state accessors ---- */
-struct intel_atomic_state { struct { struct drm_device *dev; } base; const struct intel_crtc_state *crtc_state, *old_crtc_state; };
+struct drm_modeset_acquire_ctx;
+struct intel_atomic_state { struct { struct drm_device *dev; } base; const struct intel_crtc_state *crtc_state, *old_crtc_state;
+	/* the takeover's throw-away state (intel_modeset_setup.c): it holds the lock context and marks the state internal */
+	struct drm_modeset_acquire_ctx *acquire_ctx; bool internal; };
 #define intel_atomic_get_old_crtc_state(state, crtc) ((state)->old_crtc_state)
 #define intel_atomic_get_new_crtc_state(state, crtc) ((struct intel_crtc_state *)(state)->crtc_state)   /* the check phase writes into it */
 #define intel_crtc_is_bigjoiner_slave(crtc_state) (0)          /* no big joiner in this configuration */
@@ -140,12 +144,34 @@ void parity_lcd_ms_vblank_off(void);
 #define intel_crtc_vblank_off(cs) do { (void)(cs); parity_lcd_ms_vblank_off(); } while (0)
 
 /* ---- hsw_crtc_enable(): callees that are not ported ---- */
+/*
+ * XXX: UNPORTED -- the big joiner (two pipes driving one stream).  This panel and this HDMI mode fit in one
+ * pipe, so the reference never takes this branch here (crtc_state->bigjoiner_pipes is 0).
+ *   pseudo: for each slave pipe of the master crtc state: enable its transcoder, select the master's DDI
+ *   function and clock, and copy the master's timings, so both halves scan out one picture.
+ */
 #define icl_ddi_bigjoiner_pre_enable(state, cs) PARITY_LCD_STEP(SEQ_I915_CRTC_STATE(cs), "icl_ddi_bigjoiner_pre_enable")
+/*
+ * XXX: UNPORTED -- a Geminilake-only workaround (this display is version 13).
+ *   pseudo: rmw CLKGATE_DIS_PSL(pipe), setting/clearing the DPF gating bit around the scaler's use.
+ */
 #define glk_pipe_scaler_clock_gating_wa(i915, pipe, enable) PARITY_LCD_STEP(i915, "glk_pipe_scaler_clock_gating_wa")
+/*
+ * XXX: UNPORTED -- the pipe's panel fitter.  This path drives the panel at its native mode and the HDMI sink
+ * at the mode it is given, so nothing is scaled and crtc_state->pch_pfit.enabled is false.
+ *   pseudo: write PF_WIN_POS(pipe) / PF_WIN_SZ(pipe) from crtc_state->pch_pfit.dst and PF_CTL(pipe) with
+ *   PF_ENABLE | PF_FILTER_MED_3x3, after asserting the pipe is off.
+ */
 #define ilk_pfit_enable(cs) PARITY_LCD_STEP(SEQ_I915_CRTC_STATE(cs), "ilk_pfit_enable")
+/*
+ * XXX: UNPORTED -- the reference turns the primary plane off before an enable that must start from a known
+ * state.  Here the plane is programmed by this path's own plane writer in the same commit.
+ *   pseudo: plane->disable_arm(plane, crtc_state) of the crtc's primary plane.
+ */
 #define intel_disable_primary_plane(cs) PARITY_LCD_STEP(SEQ_I915_CRTC_STATE(cs), "intel_disable_primary_plane")
-#define intel_crtc_wait_for_next_vblank(crtc) PARITY_LCD_STEP(to_i915((crtc)->base.dev), "intel_crtc_wait_for_next_vblank")
+#ifndef intel_crtc_for_pipe    /* n1_compat.h answers with the readout registry when it is in the build */
 #define intel_crtc_for_pipe(i915, pipe) ((struct intel_crtc *)0)   /* Haswell workaround only */
+#endif
 
 /* the encoder hooks are called through these (zedBSD; the reference iterates the atomic state's connectors) */
 void intel_encoders_pre_pll_enable(struct intel_atomic_state *state, struct intel_crtc *crtc);
@@ -153,17 +179,55 @@ void intel_encoders_pre_enable(struct intel_atomic_state *state, struct intel_cr
 void intel_encoders_enable(struct intel_atomic_state *state, struct intel_crtc *crtc);
 
 /* ---- the DDI callers: callees that are not ported ---- */
+/*
+ * XXX: UNPORTED -- the Type-C port link reference and its FIA lane programming.  Both display outputs of this
+ * machine (eDP-1 on DDI A, HDMI-A-1 on DDI B) are COMBO PHY ports; the reference reaches these only for a
+ * Type-C PHY (intel_phy_is_tc).
+ *   pseudo (get/put): under the port's tc lock, take/return a reference on the link, waking the PHY and
+ *   keeping the mode (TBT-alt / DP-alt / legacy) stable while the modeset runs.
+ *   pseudo (fia lane count): write PORT_TX_DFLEXDPMLE1(fia), field DFLEXDPMLE1_DPMLETC_ML(tc_port) = lanes.
+ */
 #define intel_tc_port_get_link(dig_port, lanes) PARITY_LCD_STEP(SEQ_I915_ENCODER(&(dig_port)->base), "intel_tc_port_get_link")
+/*
+ * XXX: UNPORTED -- which of a Type-C port's two PLLs (MG PHY / TBT) the crtc uses.  A combo PHY port has one
+ * (ICL_PORT_DPLL_DEFAULT), which this path programs directly.
+ *   pseudo: port_dpll_id = TBT-alt ? ICL_PORT_DPLL_TBT : ICL_PORT_DPLL_MG_PHY; for the crtc and every pipe
+ *   of its bigjoiner set: crtc_state->shared_dpll = crtc_state->icl_port_dplls[port_dpll_id].pll.
+ */
 #define intel_ddi_update_active_dpll(state, encoder, crtc) PARITY_LCD_STEP(SEQ_I915_ENCODER(encoder), "intel_ddi_update_active_dpll")
 #define intel_tc_port_set_fia_lane_count(dig_port, lanes) PARITY_LCD_STEP(SEQ_I915_ENCODER(&(dig_port)->base), "intel_tc_port_set_fia_lane_count")
+/*
+ * XXX: UNPORTED -- the Broxton / Geminilake PHY lane latency optimisation (this display is version 13).
+ *   pseudo: for each lane, rmw BXT_PORT_TX_DW14_LN(phy, ch, lane), bit LATENCY_OPTIM from the mask.
+ */
 #define bxt_ddi_phy_set_lane_optim_mask(encoder, mask) PARITY_LCD_STEP(SEQ_I915_ENCODER(encoder), "bxt_ddi_phy_set_lane_optim_mask")
 /* intel_ddi_pre_enable_hdmi / intel_enable_ddi_hdmi are the reference's own text now (intel_ddi_port.c) */
 #define intel_dp_has_hdmi_sink(intel_dp) (0)
+/*
+ * XXX: UNPORTED -- UHBR (128b/132b) link SDP CRC.  This panel and this port train 8b/10b.
+ *   pseudo: drm_dp_dpcd_writeb(DP_SDP_ERROR_DETECTION_CONFIGURATION, DP_SDP_CRC16_128B132B_COMP).
+ */
 #define intel_dp_128b132b_sdp_crc16(intel_dp, cs) PARITY_LCD_STEP(SEQ_I915_CRTC_STATE(cs), "intel_dp_128b132b_sdp_crc16")
 #define PANEL_REPLAY_CONFIG 0
 #define DP_PANEL_REPLAY_ENABLE 0
+/*
+ * XXX: UNPORTED -- the display 14 (Meteor Lake) DP enable; this display is version 13, which takes
+ * tgl_ddi_pre_enable_dp (ported, the reference's own text).
+ *   pseudo: the same shape as the ported one, with the MTL PHY (C10/C20) programming in place of the combo
+ *   PHY steps and the port clock enabled through the MTL clock registers.
+ */
 #define mtl_ddi_pre_enable_dp(state, encoder, cs, conn) PARITY_LCD_STEP(SEQ_I915_ENCODER(encoder), "mtl_ddi_pre_enable_dp")
+/*
+ * XXX: UNPORTED -- the display <= 11 DP enable (Haswell..Ice Lake shape).
+ *   pseudo: set the link params, enable the PLL and the DDI clock, program the buffer translations, then
+ *   train the link with the DDI_BUF_CTL of that generation.
+ */
 #define hsw_ddi_pre_enable_dp(state, encoder, cs, conn) PARITY_LCD_STEP(SEQ_I915_ENCODER(encoder), "hsw_ddi_pre_enable_dp")
+/*
+ * XXX: UNPORTED -- DP 2.0 (128b/132b) transcoder configuration; the sinks here are DP 1.4 / HDMI 2.0.
+ *   pseudo: write TRANS_DP2_CTL(cpu_transcoder) with DP2_CTL_128B132B_CHANNEL_CODING when the crtc state
+ *   asks for it, 0 otherwise.
+ */
 #define intel_ddi_config_transcoder_dp2(encoder, cs) PARITY_LCD_STEP(SEQ_I915_ENCODER(encoder), "intel_ddi_config_transcoder_dp2")
 #define to_intel_connector(c) (c)
 
@@ -172,9 +236,24 @@ void intel_encoders_disable(struct intel_atomic_state *state, struct intel_crtc 
 void intel_encoders_post_disable(struct intel_atomic_state *state, struct intel_crtc *crtc);
 void intel_encoders_post_pll_disable(struct intel_atomic_state *state, struct intel_crtc *crtc);
 /* intel_ddi_post_disable_hdmi / intel_disable_ddi_hdmi are the reference's own text now (intel_ddi_port.c) */
+/*
+ * XXX: UNPORTED -- the panel fitter of the disable side (see ilk_pfit_enable above).
+ *   pseudo: write PF_CTL(pipe) = 0, PF_WIN_POS(pipe) = 0, PF_WIN_SZ(pipe) = 0.
+ */
 #define ilk_pfit_disable(cs) PARITY_LCD_STEP(parity_lcd_cur_i915, "ilk_pfit_disable")
+/*
+ * XXX: UNPORTED -- the display 14 DDI buffer disable (this display is version 13).
+ *   pseudo: clear DDI_BUF_CTL_ENABLE, clear TRANS_DDI_FUNC_CTL's port sync / mode select, then wait for
+ *   DDI_BUF_IS_IDLE.
+ */
 #define mtl_disable_ddi_buf(encoder, cs) PARITY_LCD_STEP(parity_lcd_cur_i915, "mtl_disable_ddi_buf")
+/*
+ * XXX: UNPORTED -- an ADL-P workaround for a Type-C port switching out of Thunderbolt-alt mode.  The ports
+ * here are combo PHY ports, which have no alt mode.
+ *   pseudo: for each lane, rmw DKL_PCS_DW5(tc_port, ln) clearing DKL_PCS_DW5_CORE_SOFTRESET.
+ */
 #define adlp_tbt_to_dp_alt_switch_wa(encoder) PARITY_LCD_STEP(parity_lcd_cur_i915, "adlp_tbt_to_dp_alt_switch_wa")
+/* XXX: UNPORTED -- the Type-C link reference given back (see intel_tc_port_get_link above). */
 #define intel_tc_port_put_link(dig_port) PARITY_LCD_STEP(parity_lcd_cur_i915, "intel_tc_port_put_link")
 #define intel_crtc_max_vblank_count(cs) (0xffffffffu)             /* the hardware frame counter's range; used by a vblank-layer check only */
 

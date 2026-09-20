@@ -41,8 +41,17 @@ struct drm_framebuffer {
 	const struct drm_format_info *format;
 	u64 modifier;
 };
-struct drm_plane { struct drm_device *dev; };
-struct intel_plane { struct drm_plane base; enum plane_id id; enum pipe pipe; bool async_flip; };
+/* the fields the readout / sanitize text reads from a plane object (drm_plane.h) */
+struct drm_plane_state;
+struct drm_plane { struct drm_device *dev; struct { int id; } base; const char *name;
+	struct drm_plane_state *state;
+	unsigned int type; };        /* DRM_PLANE_TYPE_*: the sanitize keeps the primary plane */
+struct intel_plane { struct drm_plane base; enum plane_id id; enum pipe pipe; bool async_flip;
+	/* the readout hook of the plane (skl_plane_get_hw_state, skl_universal_plane_port.c) */
+	bool (*get_hw_state)(struct intel_plane *plane, enum pipe *pipe);
+	/* the reference asks the plane for its cdclk need; the readout only tests that the hook exists */
+	int (*min_cdclk)(const struct intel_crtc_state *crtc_state,
+		const struct intel_plane_state *plane_state); };
 #define to_intel_plane(p) container_of(p, struct intel_plane, base)
 struct intel_plane_state {
 	struct { struct drm_plane *plane; struct drm_rect src, dst; bool visible; } uapi;   /* src is 16.16 fixed point */

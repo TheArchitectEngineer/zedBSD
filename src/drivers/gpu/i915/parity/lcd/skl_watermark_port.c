@@ -20,7 +20,10 @@
  *    skl_crtc_allocate_plane_ddb, skl_ddb_entry_for_slices, intel_crtc_ddb_weight, skl_crtc_allocate_ddb,
  *    skl_plane_wm_level, skl_plane_trans_wm, skl_write_wm_level, skl_ddb_entry_write,
  *    skl_write_plane_wm, intel_dbuf_mdclk_cdclk_ratio_update, update_mbus_pre_enable, intel_dbuf_pre_plane_update,
- *    intel_dbuf_post_plane_update, xelpdp_is_only_pipe_per_dbuf_bank, intel_mbus_dbox_update;
+ *    intel_dbuf_post_plane_update, xelpdp_is_only_pipe_per_dbuf_bank, intel_mbus_dbox_update, skl_wm_level_from_reg_val,
+ *    skl_pipe_wm_get_hw_state, skl_pipe_ddb_get_hw_state, skl_ddb_get_hw_plane_state, skl_ddb_entry_union,
+ *    skl_wm_get_hw_state, skl_dbuf_is_misconfigured, skl_wm_sanitize, skl_wm_get_hw_state_and_sanitize,
+ *    skl_ddb_entry_init_from_hw, skl_ddb_dbuf_slice_mask, skl_ddb_entries_overlap, skl_ddb_allocation_overlaps;
  *  - the includes are replaced by: lcd_compat.h, lcd_seq_compat.h, lcd_modeset_compat.h, lcd_plane_compat.h, lcd_wm_compat.h;
  *  - parity_wm_glue.inc (zedBSD code) is included at the end of the file.
  */
@@ -316,6 +319,27 @@ static void intel_dbuf_mdclk_cdclk_ratio_update(struct drm_i915_private *i915,
 						bool joined_mbus);
 static void update_mbus_pre_enable(struct intel_atomic_state *state);
 static bool xelpdp_is_only_pipe_per_dbuf_bank(enum pipe pipe, u8 active_pipes);
+static void skl_wm_level_from_reg_val(u32 val, struct skl_wm_level *level);
+static void skl_pipe_wm_get_hw_state(struct intel_crtc *crtc,
+				     struct skl_pipe_wm *out);
+static void skl_pipe_ddb_get_hw_state(struct intel_crtc *crtc,
+				      struct skl_ddb_entry *ddb,
+				      struct skl_ddb_entry *ddb_y);
+static void
+skl_ddb_get_hw_plane_state(struct drm_i915_private *i915,
+			   const enum pipe pipe,
+			   const enum plane_id plane_id,
+			   struct skl_ddb_entry *ddb,
+			   struct skl_ddb_entry *ddb_y);
+static void skl_ddb_entry_union(struct skl_ddb_entry *a,
+				const struct skl_ddb_entry *b);
+static void skl_wm_get_hw_state(struct drm_i915_private *i915);
+static bool skl_dbuf_is_misconfigured(struct drm_i915_private *i915);
+static void skl_wm_sanitize(struct drm_i915_private *i915);
+static void skl_wm_get_hw_state_and_sanitize(struct drm_i915_private *i915);
+static void skl_ddb_entry_init_from_hw(struct skl_ddb_entry *entry, u32 reg);
+static bool skl_ddb_entries_overlap(const struct skl_ddb_entry *a,
+				    const struct skl_ddb_entry *b);
 
 static u8 intel_dbuf_enabled_slices(const struct intel_dbuf_state *dbuf_state)
 {
@@ -1863,6 +1887,322 @@ void intel_mbus_dbox_update(struct intel_atomic_state *state)
 
 		intel_de_write(i915, PIPE_MBUS_DBOX_CTL(crtc->pipe), pipe_val);
 	}
+}
+
+static void skl_wm_level_from_reg_val(u32 val, struct skl_wm_level *level)
+{
+	level->enable = val & PLANE_WM_EN;
+	level->ignore_lines = val & PLANE_WM_IGNORE_LINES;
+	level->blocks = REG_FIELD_GET(PLANE_WM_BLOCKS_MASK, val);
+	level->lines = REG_FIELD_GET(PLANE_WM_LINES_MASK, val);
+}
+
+static void skl_pipe_wm_get_hw_state(struct intel_crtc *crtc,
+				     struct skl_pipe_wm *out)
+{
+	struct drm_i915_private *i915 = to_i915(crtc->base.dev);
+	enum pipe pipe = crtc->pipe;
+	enum plane_id plane_id;
+	int level;
+	u32 val;
+
+	for_each_plane_id_on_crtc(crtc, plane_id) {
+		struct skl_plane_wm *wm = &out->planes[plane_id];
+
+		for (level = 0; level < i915->display.wm.num_levels; level++) {
+			if (plane_id != PLANE_CURSOR)
+				val = intel_de_read(i915, PLANE_WM(pipe, plane_id, level));
+			else
+				val = intel_de_read(i915, CUR_WM(pipe, level));
+
+			skl_wm_level_from_reg_val(val, &wm->wm[level]);
+		}
+
+		if (plane_id != PLANE_CURSOR)
+			val = intel_de_read(i915, PLANE_WM_TRANS(pipe, plane_id));
+		else
+			val = intel_de_read(i915, CUR_WM_TRANS(pipe));
+
+		skl_wm_level_from_reg_val(val, &wm->trans_wm);
+
+		if (HAS_HW_SAGV_WM(i915)) {
+			if (plane_id != PLANE_CURSOR)
+				val = intel_de_read(i915, PLANE_WM_SAGV(pipe, plane_id));
+			else
+				val = intel_de_read(i915, CUR_WM_SAGV(pipe));
+
+			skl_wm_level_from_reg_val(val, &wm->sagv.wm0);
+
+			if (plane_id != PLANE_CURSOR)
+				val = intel_de_read(i915, PLANE_WM_SAGV_TRANS(pipe, plane_id));
+			else
+				val = intel_de_read(i915, CUR_WM_SAGV_TRANS(pipe));
+
+			skl_wm_level_from_reg_val(val, &wm->sagv.trans_wm);
+		} else if (DISPLAY_VER(i915) >= 12) {
+			wm->sagv.wm0 = wm->wm[0];
+			wm->sagv.trans_wm = wm->trans_wm;
+		}
+	}
+}
+
+static void skl_pipe_ddb_get_hw_state(struct intel_crtc *crtc,
+				      struct skl_ddb_entry *ddb,
+				      struct skl_ddb_entry *ddb_y)
+{
+	struct drm_i915_private *i915 = to_i915(crtc->base.dev);
+	enum intel_display_power_domain power_domain;
+	enum pipe pipe = crtc->pipe;
+	intel_wakeref_t wakeref;
+	enum plane_id plane_id;
+
+	power_domain = POWER_DOMAIN_PIPE(pipe);
+	wakeref = intel_display_power_get_if_enabled(i915, power_domain);
+	if (!wakeref)
+		return;
+
+	for_each_plane_id_on_crtc(crtc, plane_id)
+		skl_ddb_get_hw_plane_state(i915, pipe,
+					   plane_id,
+					   &ddb[plane_id],
+					   &ddb_y[plane_id]);
+
+	intel_display_power_put(i915, power_domain, wakeref);
+}
+
+static void
+skl_ddb_get_hw_plane_state(struct drm_i915_private *i915,
+			   const enum pipe pipe,
+			   const enum plane_id plane_id,
+			   struct skl_ddb_entry *ddb,
+			   struct skl_ddb_entry *ddb_y)
+{
+	u32 val;
+
+	/* Cursor doesn't support NV12/planar, so no extra calculation needed */
+	if (plane_id == PLANE_CURSOR) {
+		val = intel_de_read(i915, CUR_BUF_CFG(pipe));
+		skl_ddb_entry_init_from_hw(ddb, val);
+		return;
+	}
+
+	val = intel_de_read(i915, PLANE_BUF_CFG(pipe, plane_id));
+	skl_ddb_entry_init_from_hw(ddb, val);
+
+	if (DISPLAY_VER(i915) >= 11)
+		return;
+
+	val = intel_de_read(i915, PLANE_NV12_BUF_CFG(pipe, plane_id));
+	skl_ddb_entry_init_from_hw(ddb_y, val);
+}
+
+static void skl_ddb_entry_union(struct skl_ddb_entry *a,
+				const struct skl_ddb_entry *b)
+{
+	if (a->end && b->end) {
+		a->start = min(a->start, b->start);
+		a->end = max(a->end, b->end);
+	} else if (b->end) {
+		a->start = b->start;
+		a->end = b->end;
+	}
+}
+
+static void skl_wm_get_hw_state(struct drm_i915_private *i915)
+{
+	struct intel_dbuf_state *dbuf_state =
+		to_intel_dbuf_state(i915->display.dbuf.obj.state);
+	struct intel_crtc *crtc;
+
+	if (HAS_MBUS_JOINING(i915))
+		dbuf_state->joined_mbus = intel_de_read(i915, MBUS_CTL) & MBUS_JOIN;
+
+	for_each_intel_crtc(&i915->drm, crtc) {
+		struct intel_crtc_state *crtc_state =
+			to_intel_crtc_state(crtc->base.state);
+		enum pipe pipe = crtc->pipe;
+		unsigned int mbus_offset;
+		enum plane_id plane_id;
+		u8 slices;
+
+		memset(&crtc_state->wm.skl.optimal, 0,
+		       sizeof(crtc_state->wm.skl.optimal));
+		if (crtc_state->hw.active)
+			skl_pipe_wm_get_hw_state(crtc, &crtc_state->wm.skl.optimal);
+		crtc_state->wm.skl.raw = crtc_state->wm.skl.optimal;
+
+		memset(&dbuf_state->ddb[pipe], 0, sizeof(dbuf_state->ddb[pipe]));
+
+		for_each_plane_id_on_crtc(crtc, plane_id) {
+			struct skl_ddb_entry *ddb =
+				&crtc_state->wm.skl.plane_ddb[plane_id];
+			struct skl_ddb_entry *ddb_y =
+				&crtc_state->wm.skl.plane_ddb_y[plane_id];
+
+			if (!crtc_state->hw.active)
+				continue;
+
+			skl_ddb_get_hw_plane_state(i915, crtc->pipe,
+						   plane_id, ddb, ddb_y);
+
+			skl_ddb_entry_union(&dbuf_state->ddb[pipe], ddb);
+			skl_ddb_entry_union(&dbuf_state->ddb[pipe], ddb_y);
+		}
+
+		dbuf_state->weight[pipe] = intel_crtc_ddb_weight(crtc_state);
+
+		/*
+		 * Used for checking overlaps, so we need absolute
+		 * offsets instead of MBUS relative offsets.
+		 */
+		slices = skl_compute_dbuf_slices(crtc, dbuf_state->active_pipes,
+						 dbuf_state->joined_mbus);
+		mbus_offset = mbus_ddb_offset(i915, slices);
+		crtc_state->wm.skl.ddb.start = mbus_offset + dbuf_state->ddb[pipe].start;
+		crtc_state->wm.skl.ddb.end = mbus_offset + dbuf_state->ddb[pipe].end;
+
+		/* The slices actually used by the planes on the pipe */
+		dbuf_state->slices[pipe] =
+			skl_ddb_dbuf_slice_mask(i915, &crtc_state->wm.skl.ddb);
+
+		drm_dbg_kms(&i915->drm,
+			    "[CRTC:%d:%s] dbuf slices 0x%x, ddb (%d - %d), active pipes 0x%x, mbus joined: %s\n",
+			    crtc->base.base.id, crtc->base.name,
+			    dbuf_state->slices[pipe], dbuf_state->ddb[pipe].start,
+			    dbuf_state->ddb[pipe].end, dbuf_state->active_pipes,
+			    str_yes_no(dbuf_state->joined_mbus));
+	}
+
+	dbuf_state->enabled_slices = i915->display.dbuf.enabled_slices;
+}
+
+static bool skl_dbuf_is_misconfigured(struct drm_i915_private *i915)
+{
+	const struct intel_dbuf_state *dbuf_state =
+		to_intel_dbuf_state(i915->display.dbuf.obj.state);
+	struct skl_ddb_entry entries[I915_MAX_PIPES] = {};
+	struct intel_crtc *crtc;
+
+	for_each_intel_crtc(&i915->drm, crtc) {
+		const struct intel_crtc_state *crtc_state =
+			to_intel_crtc_state(crtc->base.state);
+
+		entries[crtc->pipe] = crtc_state->wm.skl.ddb;
+	}
+
+	for_each_intel_crtc(&i915->drm, crtc) {
+		const struct intel_crtc_state *crtc_state =
+			to_intel_crtc_state(crtc->base.state);
+		u8 slices;
+
+		slices = skl_compute_dbuf_slices(crtc, dbuf_state->active_pipes,
+						 dbuf_state->joined_mbus);
+		if (dbuf_state->slices[crtc->pipe] & ~slices)
+			return true;
+
+		if (skl_ddb_allocation_overlaps(&crtc_state->wm.skl.ddb, entries,
+						I915_MAX_PIPES, crtc->pipe))
+			return true;
+	}
+
+	return false;
+}
+
+static void skl_wm_sanitize(struct drm_i915_private *i915)
+{
+	struct intel_crtc *crtc;
+
+	/*
+	 * On TGL/RKL (at least) the BIOS likes to assign the planes
+	 * to the wrong DBUF slices. This will cause an infinite loop
+	 * in skl_commit_modeset_enables() as it can't find a way to
+	 * transition between the old bogus DBUF layout to the new
+	 * proper DBUF layout without DBUF allocation overlaps between
+	 * the planes (which cannot be allowed or else the hardware
+	 * may hang). If we detect a bogus DBUF layout just turn off
+	 * all the planes so that skl_commit_modeset_enables() can
+	 * simply ignore them.
+	 */
+	if (!skl_dbuf_is_misconfigured(i915))
+		return;
+
+	drm_dbg_kms(&i915->drm, "BIOS has misprogrammed the DBUF, disabling all planes\n");
+
+	for_each_intel_crtc(&i915->drm, crtc) {
+		struct intel_plane *plane = to_intel_plane(crtc->base.primary);
+		const struct intel_plane_state *plane_state =
+			to_intel_plane_state(plane->base.state);
+		struct intel_crtc_state *crtc_state =
+			to_intel_crtc_state(crtc->base.state);
+
+		if (plane_state->uapi.visible)
+			intel_plane_disable_noatomic(crtc, plane);
+
+		drm_WARN_ON(&i915->drm, crtc_state->active_planes != 0);
+
+		memset(&crtc_state->wm.skl.ddb, 0, sizeof(crtc_state->wm.skl.ddb));
+	}
+}
+
+static void skl_wm_get_hw_state_and_sanitize(struct drm_i915_private *i915)
+{
+	skl_wm_get_hw_state(i915);
+	skl_wm_sanitize(i915);
+}
+
+static void skl_ddb_entry_init_from_hw(struct skl_ddb_entry *entry, u32 reg)
+{
+	skl_ddb_entry_init(entry,
+			   REG_FIELD_GET(PLANE_BUF_START_MASK, reg),
+			   REG_FIELD_GET(PLANE_BUF_END_MASK, reg));
+	if (entry->end)
+		entry->end++;
+}
+
+u32 skl_ddb_dbuf_slice_mask(struct drm_i915_private *i915,
+			    const struct skl_ddb_entry *entry)
+{
+	int slice_size = intel_dbuf_slice_size(i915);
+	enum dbuf_slice start_slice, end_slice;
+	u8 slice_mask = 0;
+
+	if (!skl_ddb_entry_size(entry))
+		return 0;
+
+	start_slice = entry->start / slice_size;
+	end_slice = (entry->end - 1) / slice_size;
+
+	/*
+	 * Per plane DDB entry can in a really worst case be on multiple slices
+	 * but single entry is anyway contigious.
+	 */
+	while (start_slice <= end_slice) {
+		slice_mask |= BIT(start_slice);
+		start_slice++;
+	}
+
+	return slice_mask;
+}
+
+static bool skl_ddb_entries_overlap(const struct skl_ddb_entry *a,
+				    const struct skl_ddb_entry *b)
+{
+	return a->start < b->end && b->start < a->end;
+}
+
+bool skl_ddb_allocation_overlaps(const struct skl_ddb_entry *ddb,
+				 const struct skl_ddb_entry *entries,
+				 int num_entries, int ignore_idx)
+{
+	int i;
+
+	for (i = 0; i < num_entries; i++) {
+		if (i != ignore_idx &&
+		    skl_ddb_entries_overlap(ddb, &entries[i]))
+			return true;
+	}
+
+	return false;
 }
 
 

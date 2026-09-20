@@ -160,6 +160,10 @@ void intel_display_power_put_mask_in_set(struct drm_i915_private *i915, struct i
 #define __maybe_unused __attribute__((unused))
 struct intel_shared_dpll;
 struct intel_shared_dpll_funcs {
+	bool (*get_hw_state)(struct drm_i915_private *i915, struct intel_shared_dpll *pll,
+		struct intel_dpll_hw_state *hw_state);
+	int (*get_freq)(struct drm_i915_private *i915, const struct intel_shared_dpll *pll,
+		const struct intel_dpll_hw_state *pll_state);
 	void (*enable)(struct drm_i915_private *i915, struct intel_shared_dpll *pll);
 	void (*disable)(struct drm_i915_private *i915, struct intel_shared_dpll *pll);
 };
@@ -228,11 +232,38 @@ struct intel_shared_dpll_state *parity_lcd_shared_dpll_state(void);   /* the ato
 #define gen9_chicken_trans_reg_by_port(i915, port) CHICKEN_TRANS(0)
 /* the sink-side halves that need DDC: recorded steps (the SCDC path is only reached when the sink supports it,
  * the dual-mode adaptor path only with an adaptor present -- neither is the case here) */
+/*
+ * XXX: UNPORTED -- SCDC, the HDMI 2.0 sink-side status channel.  It is reached only above 340 MHz TMDS
+ * (scrambling / clock ratio); the modes this path drives stay below that, and the sink's DDC does not answer
+ * on this machine anyway (E-123: the same with Linux).
+ *   pseudo (both): read SCDC offset 0x20 (TMDS config) over the sink's DDC, set or clear
+ *   SCDC_SCRAMBLING_ENABLE / SCDC_TMDS_BIT_CLOCK_RATIO_BY_40, write it back, and report whether the write
+ *   was acknowledged.
+ */
 #define drm_scdc_set_high_tmds_clock_ratio(connector, set) (PARITY_LCD_STEP(parity_lcd_cur_i915, "drm_scdc_set_high_tmds_clock_ratio"), false)
 #define drm_scdc_set_scrambling(connector, enable) (PARITY_LCD_STEP(parity_lcd_cur_i915, "drm_scdc_set_scrambling"), false)
+/*
+ * XXX: UNPORTED -- a DP++ (dual-mode) adapter's TMDS output switch.  The HDMI port here is a native HDMI
+ * output, not a DP++ adapter.
+ *   pseudo: for a type 2 adapter write DP_DUAL_MODE_TMDS_OEN over the adapter's DDC (0 = output on).
+ */
 #define drm_dp_dual_mode_set_tmds_output(drm, type, ddc, enable) PARITY_LCD_STEP(parity_lcd_cur_i915, "drm_dp_dual_mode_set_tmds_output")
 /* the infoframe writes: this path runs with has_infoframe false, so the reference returns before them */
+/*
+ * XXX: UNPORTED -- the HDMI general control packet (deep colour / default phase).  This path sends 8 bpc
+ * without deep colour, where the reference writes nothing.
+ *   pseudo: if the crtc state asks for GCP, write VIDEO_DIP_GCP(transcoder) with GCP_COLOR_INDICATION /
+ *   GCP_DEFAULT_PHASE_ENABLE and enable the GCP DIP in VIDEO_DIP_CTL.
+ */
 #define intel_hdmi_set_gcp_infoframe(encoder, cs, conn) (PARITY_LCD_STEP(parity_lcd_cur_i915, "intel_hdmi_set_gcp_infoframe"), false)
+/*
+ * XXX: UNPORTED -- the AVI / SPD / vendor infoframes an HDMI sink reads for aspect ratio, colorimetry and
+ * source identification.  A sink shows a correct picture without them (E-123: the photograph proves it), and
+ * this path has no EDID to derive them from on this machine.
+ *   pseudo: build the frame (drm_hdmi_avi_infoframe_from_display_mode + quantisation range), pack it, then
+ *   write it word by word into VIDEO_DIP_DATA of the transcoder with the type selected in VIDEO_DIP_CTL and
+ *   enable that frame's send bit.
+ */
 #define intel_write_infoframe(encoder, cs, type, frame) PARITY_LCD_STEP(parity_lcd_cur_i915, "intel_write_infoframe")
 #define HDMI_INFOFRAME_TYPE_AVI 0x82
 #define HDMI_INFOFRAME_TYPE_SPD 0x83
@@ -252,5 +283,11 @@ bool intel_hdmi_handle_sink_scrambling(struct intel_encoder *encoder, struct drm
 #define XELPDP_PORT_WIDTH(width) (0u)
 #define XELPDP_PORT_WIDTH_MASK 0u
 #define XELPDP_PORT_REVERSAL 0u
+
+
+/* E-124 (N1): what the readout / sanitize / takeover text needs (every unit of this path sees it) */
+/* the readout touches the plane objects too (E-124) */
+#include "lcd_plane_compat.h"
+#include "n1_compat.h"
 
 #endif /* PARITY_LCD_MODESET_COMPAT_H */

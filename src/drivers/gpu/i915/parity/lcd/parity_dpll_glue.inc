@@ -77,6 +77,9 @@ int parity_icl_dp_combo_pll(int port_clock, int ref_nssc, u32 *cfgcr0, u32 *cfgc
 static const struct intel_shared_dpll_funcs parity_combo_pll_funcs = {
 	.enable = combo_pll_enable,
 	.disable = combo_pll_disable,
+	/* the readout half (E-124): what the reference binds for a combo PLL of this platform */
+	.get_hw_state = combo_pll_get_hw_state,
+	.get_freq = icl_ddi_combo_pll_get_freq,
 };
 
 /*
@@ -95,7 +98,8 @@ struct intel_shared_dpll_state *parity_lcd_shared_dpll_state(void)
 	return parity_lcd_dpll_pool_state;
 }
 
-static void parity_lcd_dpll_pool_init(struct parity_lcd_modeset *ms)
+/* the pool itself: built once, as intel_shared_dpll_init() leaves it */
+void parity_lcd_dpll_pool_bind(struct drm_i915_private *i915)
 {
 	int i;
 
@@ -112,8 +116,13 @@ static void parity_lcd_dpll_pool_init(struct parity_lcd_modeset *ms)
 		}
 		parity_lcd_dpll_pool_inited = 1;
 	}
-	ms->i915.display.dpll.shared_dplls = parity_lcd_dpll_pool;
-	ms->i915.display.dpll.num_shared_dpll = 2;
+	i915->display.dpll.shared_dplls = parity_lcd_dpll_pool;
+	i915->display.dpll.num_shared_dpll = 2;
+}
+
+static void parity_lcd_dpll_pool_init(struct parity_lcd_modeset *ms)
+{
+	parity_lcd_dpll_pool_bind(&ms->i915);
 }
 
 /*

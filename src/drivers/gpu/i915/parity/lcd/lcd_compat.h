@@ -111,7 +111,7 @@ void drm_mode_set_crtcinfo(struct drm_display_mode *p, int adjust_flags);
 struct drm_vblank_crtc;
 struct drm_device { int unused; int switch_power_state; struct drm_vblank_crtc *vblank; int vblank_time_lock; int event_lock; };
 #include "lcd_drm_colorspace.h"  /* reference, extracted: enum drm_colorspace */
-struct drm_connector_state { enum drm_colorspace colorspace; void *connector; void *best_encoder; int content_protection;
+struct drm_connector_state { enum drm_colorspace colorspace; void *connector; void *best_encoder; int content_protection; unsigned int max_bpc;
 	struct drm_crtc *crtc; };   /* the crtc the connector drives (E-122: intel_backlight_set_acpi reads it) */
 struct drm_scrambling { bool supported, low_rates; };
 struct drm_scdc { bool supported, read_request; struct drm_scrambling scrambling; };
@@ -162,6 +162,15 @@ struct intel_color_funcs {             /* intel_color.c: the members this path u
 };
 struct intel_cdclk_vals;
 #define DISPLAY_INFO(i915) (&(i915)->display.device_info)
+struct intel_atomic_state;
+struct intel_crtc;
+struct intel_crtc_state;
+/* intel_display_core.h: the hooks the readout and the noatomic disable reach (bound by the N1 runner) */
+struct intel_display_funcs {
+	bool (*get_pipe_config)(struct intel_crtc *crtc, struct intel_crtc_state *crtc_state);
+	void (*crtc_enable)(struct intel_atomic_state *state, struct intel_crtc *crtc);
+	void (*crtc_disable)(struct intel_atomic_state *state, struct intel_crtc *crtc);
+};
 struct drm_i915_private {
 	struct drm_device drm;
 	struct parity_lcd_emit *emit;
@@ -174,12 +183,16 @@ struct drm_i915_private {
 		struct { u16 skl_latency[8]; u8 num_levels; bool ipc_enabled; } wm;
 		struct { struct { u32 size; u8 slice_mask; } dbuf; bool has_ddi; } device_info;   /* the reference's DISPLAY_INFO()->dbuf */
 		struct { u8 block_time_us; } sagv;
-		struct { const struct intel_color_funcs *color; } funcs;
-		struct { u32 fw_mask; } dmc;        /* bit n: firmware for enum intel_dmc_id n is loaded (from the DMC loader) */
+		struct { const struct intel_color_funcs *color; const struct intel_display_funcs *display; } funcs;
+		struct { u32 fw_mask; } dmc;
+		/* the device's DBUF object the watermark readout reads (skl_wm_get_hw_state) */
+		struct { struct { struct intel_global_state *state; } obj; u8 enabled_slices; } dbuf;
+		/* the other global states the takeover clears (intel_bw.c / intel_pmdemand.c) */
+		struct { struct { struct intel_global_state *state; } obj; } bw, pmdemand;
 		struct { struct { int which; } lock; } backlight;
 		struct { u32 rawclk_freq; u8 pipe_mask; } runtime;
 		/* the CDCLK state the normal initialisation left: table of the platform, reference / bypass clock, limit */
-		struct { const struct intel_cdclk_vals *table; struct { unsigned int cdclk, vco, ref, bypass; u8 voltage_level; } hw; unsigned int max_cdclk_freq; } cdclk;
+		struct { struct { struct intel_global_state *state; } obj; const struct intel_cdclk_vals *table; struct { unsigned int cdclk, vco, ref, bypass; u8 voltage_level; } hw; unsigned int max_cdclk_freq; } cdclk;
 		struct { int invert_brightness; } params;   /* module parameter: 0 (default) */  /* DISPLAY_RUNTIME_INFO: rawclk in kHz (read out by the caller) */
 	} display;
 };
@@ -187,10 +200,15 @@ enum pipe { INVALID_PIPE = -1, PIPE_A = 0, PIPE_B, PIPE_C, PIPE_D, I915_MAX_PIPE
 typedef signed char s8;
 struct drm_plane;
 struct drm_crtc_funcs;
-struct drm_crtc { struct drm_device *dev; struct { int id; } base; const char *name; struct drm_plane *cursor; const struct drm_crtc_funcs *funcs; };
+struct drm_crtc { struct drm_device *dev; bool enabled; struct drm_crtc_state *state; struct drm_plane *primary; struct { int id; } base; const char *name; struct drm_plane *cursor; const struct drm_crtc_funcs *funcs; };
 /* drm_atomic.h: the three flags drm_atomic_crtc_needs_modeset() looks at */
 struct drm_property_blob { size_t length; void *data; };
-struct drm_crtc_state { struct drm_crtc *crtc; bool mode_changed, active_changed, connectors_changed, async_flip; u32 encoder_mask; void *event; };
+struct drm_crtc_state { struct drm_crtc *crtc; u32 plane_mask; bool mode_changed, active_changed,
+	connectors_changed, async_flip; u32 encoder_mask; void *event;
+	/* the uapi half the readout copies the hardware state into (intel_crtc_copy_hw_to_uapi_state) */
+	bool enable, active; struct drm_display_mode mode, adjusted_mode; unsigned int scaling_filter;
+	const struct drm_property_blob *degamma_lut, *gamma_lut, *ctm;
+	u32 connector_mask; };   /* the connectors the readout found on this crtc */
 static inline bool drm_atomic_crtc_needs_modeset(const struct drm_crtc_state *state)
 {
 	return state->mode_changed || state->active_changed || state->connectors_changed;
@@ -215,9 +233,14 @@ static inline bool bitmap_subset(const unsigned long *a, const unsigned long *b,
 #include "lcd_power_domain_enum.h"      /* reference, extracted: enum intel_display_power_domain */
 #include "lcd_power_domain_set_types.h" /* reference, extracted: the power-domain mask / set and for_each_power_domain() */
 #include "lcd_mreg_power.h"             /* reference, extracted: POWER_DOMAIN_PIPE() / _TRANSCODER() / _PIPE_PANEL_FITTER() */
-struct intel_crtc { struct drm_crtc base; enum pipe pipe; bool active; struct intel_display_power_domain_set enabled_power_domains;
+struct intel_crtc {
+	/* base is FIRST: to_intel_crtc(NULL) must be NULL, which the sanitize text relies on */
+	struct drm_crtc base; enum pipe pipe; bool active; struct intel_display_power_domain_set enabled_power_domains;
+	/* the power domains the READOUT found this crtc using (intel_modeset_setup.c) */
+	struct intel_display_power_domain_set hw_readout_power_domains;
 	u8 mode_flags; int scanline_offset; int vmax_vblank_start;
 	struct { u32 min_vbl, max_vbl; int scanline_start; long long start_vbl_time; u32 start_vbl_count; } debug; void *flip_done_event; };
+#define to_intel_plane(p) container_of(p, struct intel_plane, base)
 #define to_intel_crtc(c) container_of(c, struct intel_crtc, base)
 struct drm_rect { int x1, y1, x2, y2; };
 static inline int drm_rect_width(const struct drm_rect *r) { return r->x2 - r->x1; }
@@ -229,9 +252,16 @@ static inline int drm_rect_height(const struct drm_rect *r) { return r->y2 - r->
 struct intel_plane;
 struct intel_plane_state;
 struct intel_shared_dpll;
+/* intel_display_types.h: which PLL of a port a crtc uses, and the state read back from it */
+enum icl_port_dpll_id { ICL_PORT_DPLL_DEFAULT, ICL_PORT_DPLL_MG_PHY, ICL_PORT_DPLL_COUNT };
+struct icl_port_dpll { struct intel_shared_dpll *pll; struct intel_dpll_hw_state hw_state; };
 struct intel_crtc_state {
+	/* uapi is FIRST: to_intel_crtc_state() is a cast of the uapi state in this path, as in the reference */
 	struct drm_crtc_state uapi;
-	struct { struct drm_display_mode adjusted_mode, pipe_mode; const struct drm_property_blob *degamma_lut, *gamma_lut, *ctm; bool active, enable; } hw;
+	struct icl_port_dplls_dummy { int unused; } *icl_port_dplls_unused;
+	struct icl_port_dpll icl_port_dplls[ICL_PORT_DPLL_COUNT];
+	struct intel_dpll_hw_state dpll_hw_state;
+	struct { struct drm_display_mode mode, adjusted_mode, pipe_mode; const struct drm_property_blob *degamma_lut, *gamma_lut, *ctm; bool active, enable; unsigned int scaling_filter; } hw;
 	int port_clock;
 	int cpu_transcoder;         /* enum transcoder */
 	int master_transcoder, mst_master_transcoder;
@@ -241,7 +271,7 @@ struct intel_crtc_state {
 	int pipe_bpp, lane_count, fdi_lanes;
 	u8 pixel_multiplier, framestart_delay;
 	bool has_pch_encoder, dither, limited_color_range;
-	bool gamma_enable, csc_enable, enable_psr2_sel_fetch;
+	bool gamma_enable, csc_enable, enable_psr2_sel_fetch, ips_enabled;
 	bool has_infoframe, has_panel_replay;
 	u8 bigjoiner_pipes, lane_lat_optim_mask;
 	struct intel_shared_dpll *shared_dpll;
@@ -250,6 +280,7 @@ struct intel_crtc_state {
 	bool double_wide, fec_enable, has_psr, has_audio, enhanced_framing;
 	u8 min_voltage_level;
 	bool update_m_n, update_lrr, preload_luts, do_async_flip; u8 mode_flags;
+	bool inherited;             /* the state came from the READOUT, not from a check of ours */
 	int min_cdclk[I915_MAX_PLANES];
 	struct { bool enable; u8 link_count; u8 pixel_overlap; } splitter;
 	struct { bool compression_enable; } dsc;
@@ -270,10 +301,13 @@ struct intel_crtc_state {
 	u32 gamma_mode, csc_mode;
 	u8 c8_planes;
 	struct { int unused; } csc, output_csc;
-	struct { u32 enable; } infoframes;
+	/* the infoframes a readout would decode: only their presence is tracked here */
+	struct { u32 enable; int avi, spd, hdmi, drm; } infoframes;
 	int pixel_rate;
 	bool has_hdmi_sink, hdmi_scrambling, hdmi_high_tmds_clock_ratio;
-	struct { bool force_thru, enabled; } pch_pfit;
+	int max_link_bpp_x16;          /* the readout resets it (intel_crtc_state_reset) */
+	int sink_format;                /* enum intel_output_format the readout found */
+	struct { bool force_thru, enabled; struct drm_rect dst; } pch_pfit;
 	struct intel_link_m_n dp_m_n, dp_m2_n2, fdi_m_n;
 	struct { u16 flipline, vmin, vmax, guardband, pipeline_full; bool enable; } vrr;
 };
@@ -281,7 +315,9 @@ struct intel_crtc_state {
 /* encoder / digital port: the members the kept intel_ddi.c functions use */
 struct intel_atomic_state;
 struct intel_crtc_state;
-struct drm_encoder { struct drm_device *dev; struct { int id; } base; const char *name; unsigned index; };
+struct drm_crtc;
+/* drm_encoder::crtc -- the readout links an encoder to the crtc it was found driving */
+struct drm_encoder { struct drm_device *dev; struct { int id; } base; const char *name; unsigned index; struct drm_crtc *crtc; };
 #define to_intel_encoder(e) ((struct intel_encoder *)(e))      /* base is the first member */
 struct intel_encoder {
 	struct drm_encoder base;
@@ -296,6 +332,12 @@ struct intel_encoder {
 	void (*disable)(struct intel_atomic_state *, struct intel_encoder *, const struct intel_crtc_state *, const struct drm_connector_state *);
 	void (*post_disable)(struct intel_atomic_state *, struct intel_encoder *, const struct intel_crtc_state *, const struct drm_connector_state *);
 	void (*post_pll_disable)(struct intel_atomic_state *, struct intel_encoder *, const struct intel_crtc_state *, const struct drm_connector_state *);
+	/* the readout hooks the reference binds for a DDI encoder (intel_ddi_init) */
+	bool (*get_hw_state)(struct intel_encoder *, enum pipe *pipe);
+	bool (*is_clock_enabled)(struct intel_encoder *);   /* intel_ddi_init(): icl_ddi_combo_is_clock_enabled */
+	void (*get_config)(struct intel_encoder *, struct intel_crtc_state *);
+	void (*sync_state)(struct intel_encoder *, const struct intel_crtc_state *);
+	void (*get_power_domains)(struct intel_encoder *, struct intel_crtc_state *);
 	void (*enable_clock)(struct intel_encoder *, const struct intel_crtc_state *);
 	void (*disable_clock)(struct intel_encoder *);
 	const struct intel_ddi_buf_trans *(*get_buf_trans)(struct intel_encoder *, const struct intel_crtc_state *, int *n_entries);
@@ -331,7 +373,14 @@ struct intel_panel {                    /* the members the kept functions use */
 struct i2c_adapter;
 struct intel_connector {
 	struct { struct drm_device *dev; struct { int id; } base; const char *name; struct i2c_adapter *ddc;
-		struct drm_display_info display_info; } base;
+		struct drm_display_info display_info;
+		/* drm_connector: the state, the encoder the readout found, and the DPMS the sanitize sets */
+		struct drm_connector_state *state; struct drm_encoder *encoder; int dpms;
+		int connector_type; unsigned index; } base;
+	/* the encoder this connector is attached to, its readout hook, and the sync the sanitize calls */
+	struct intel_encoder *encoder;
+	bool (*get_hw_state)(struct intel_connector *connector);
+	void (*sync_state)(struct intel_connector *connector, const struct intel_crtc_state *crtc_state);
 	struct intel_panel panel;
 	int modeset_retry_work;
 };

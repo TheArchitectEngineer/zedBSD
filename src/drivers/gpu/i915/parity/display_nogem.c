@@ -1524,6 +1524,16 @@ parity_intel_modeset_sanitize_hw_state(struct parity_display_nogem *d,
 	int display_ver, int display_step, unsigned fbc_mask, struct osdep_mmio *m,
 	struct parity_power_domains *pd, struct parity_pw_ctx *pwc)
 {
+	/*
+	 * E-124 (N1): the takeover of the display the FIRMWARE lit is ported and runs later, with the
+	 * reference own readout and its power-domain accounting.  While that display is still running this
+	 * stage must not turn anything off: its readout does not take the references the reference does, so
+	 * the well feeding the live port looks unused.  On bare metal that is exactly what happened --
+	 * "BIOS left unused DDI_IO A power well enabled, disabling it" killed the picture (the backlight
+	 * stayed on, the content went black) long before N1 ran.
+	 */
+	const int keep_firmware_display = PARITY_N1_TEST && d->active_pipes != 0u;
+
 	unsigned i;
 
 	/*
@@ -1566,8 +1576,9 @@ parity_intel_modeset_sanitize_hw_state(struct parity_display_nogem *d,
 	/* intel_sanitize_plane_mapping(): DISPLAY_VER >= 4 returns immediately. */
 	d->plane_mapping_sanitized = (display_ver < 4) ? 1 : 0;
 
-	for (i = 0u; i < d->num_encoders; i++)
-		sanitize_encoder_pll_mapping(d, &d->encoders[i], m);
+	if (!keep_firmware_display)
+		for (i = 0u; i < d->num_encoders; i++)
+			sanitize_encoder_pll_mapping(d, &d->encoders[i], m);
 
 	/*
 	 * intel_modeset_update_connector_atomic_state(): no connectors exist in
@@ -1575,16 +1586,23 @@ parity_intel_modeset_sanitize_hw_state(struct parity_display_nogem *d,
 	 */
 
 	/* intel_sanitize_all_crtcs() */
-	for (i = 0u; i < (unsigned)PARITY_NOGEM_MAX_PIPES; i++)
-		if (d->crtcs[i].in_use)
-			(void)intel_sanitize_crtc(d, &d->crtcs[i]);
+	if (!keep_firmware_display) {
+		for (i = 0u; i < (unsigned)PARITY_NOGEM_MAX_PIPES; i++)
+			if (d->crtcs[i].in_use)
+				(void)intel_sanitize_crtc(d, &d->crtcs[i]);
 
-	parity_intel_dpll_sanitize_state(d, m, display_ver, display_step);
+		parity_intel_dpll_sanitize_state(d, m, display_ver, display_step);
+	}
 
 	/* intel_wm_get_hw_state(): skl_wm_get_hw_state + skl_wm_sanitize. */
 	d->wm_hw_state_read = 1;
 
-	intel_power_domains_sanitize_state(d, pd, pwc);
+	if (!keep_firmware_display)
+		intel_power_domains_sanitize_state(d, pd, pwc);
+	else
+		kern_logf("i915: parity P5c: the firmware display on pipes 0x%x is KEPT (N1 takes it over "
+			"later): the encoder clock gating, the crtc / DPLL sanitize and the unused-well disable are "
+			"not run here\n", d->active_pipes);
 
 	d->sanitize_done = 1;
 }

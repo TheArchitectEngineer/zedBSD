@@ -77,6 +77,10 @@ struct parity_lcd_emit {
 	/* intel_display_power_get / _put; `domain` = the reference's enum intel_display_power_domain
 	 * value.  get returns a non-zero wakeref cookie (0 = failed); put takes it back. */
 	int (*power_get)(void *ctx, int domain);
+	/* intel_display_power_get_if_enabled(): the cookie, or 0 when the well is OFF (a readout never
+	 * turns a well on).  NULL: the backend has no well state of its own (a model) -- the caller then
+	 * falls back to power_get. */
+	int (*power_get_if_enabled)(void *ctx, int domain);
 	void (*power_put)(void *ctx, int domain, int wakeref);
 	/* intel_display_power_put_async_delay(): the reference drops DC_OFF this way at the end of a commit */
 	void (*power_put_async)(void *ctx, int domain, int wakeref, int delay_ms);

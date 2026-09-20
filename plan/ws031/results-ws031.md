@@ -3792,3 +3792,19 @@ LCD-D は描画ごとに context などを作り直している（同一 context
 ### E-123 追記: 同一バッファの両面表示（DUAL-SHARED）— 実機 PASS
 - scanout の利用者を数える契約に拡張（begin が利用者 +1、end が -1、最後の end で PINNED に戻る）。片方が止めてもバッファは保持され、解放は拒否される。
 - **実機 PASS**: 1 つの buffer（surf 0xfdfc0000、1920x1080、pitch 7680、pattern 110）を両 pipe が読む。内蔵は全体、外部は同じ行の左上 1280x720（**部分表示**であり縮小ミラーではない。縮小には pipe scaler が要る＝未使用）。frame counter A 957 / B 946。HDMI 停止後 users=2→1 かつ IN_USE 維持、その状態の unpin は rc=-17 で拒否、内蔵停止後 users=0 → unpin/destroy 成功。log = increment-results/e123-run-parity-hw-dual-shared.log。
+
+### E-123 追記: 回帰 sweep
+- 受け入れ済み 14 モード（eu / draw / r1 / tex / t3 / bl / texvbt / aux / lcdb / lcdr / lcdg / lcdc / lcdd / lcdo）を E-123 最終ソースで実行し、**14/14 PASS**（sweep_e123f.sh、全 run で ktest 0 failures）。
+- 追加 3 モード（hdmib / dual / dualsh）は sweep 内ではビルドできなかった（実機 run 中に N1 の作業でツリーを変更したため。段取りの誤り）。3 つとも本日それぞれ実機で PASS を確認済み（各 log は increment-results/e123-run-parity-hw-{hdmib,dual,dual-shared}.log）。N1 のビルドが通った時点で 3 モードをまとめて再実行する。
+
+## E-124: N1 — ファームウェアが点けた画面の引き継ぎ（実機 PASS）
+
+- 生成追加: `intel_modeset_setup.c` 全体（readout / sanitize / `intel_crtc_disable_noatomic` / `intel_sanitize_plane_mapping` / `intel_early_display_was`）、`intel_ddi.c` の readout 側（`intel_ddi_connector_get_hw_state`、`intel_ddi_sanitize_encoder_pll_mapping`、`_icl_ddi_is_clock_enabled`、`icl_ddi_combo_is_clock_enabled`）、`skl_universal_plane.c` の `skl_plane_get_hw_state`、`skl_watermark.c` の `skl_ddb_entries_overlap`、`intel_bw.c` の `intel_bw_crtc_update` / `_num_active_planes`、`intel_dpll_mgr.c` の `intel_dpll_get_freq` / `icl_ddi_combo_pll_get_freq`。
+- 新規 unit `lcd/intel_modeset_setup_port.c` + `parity_modeset_setup_glue.inc`（pipe ごとの crtc と primary plane の登録簿、束ねた screen の encoder / connector、readout 用 device、電源の `*_if_enabled`、使い捨て atomic state、`parity_n1_readout` / `_takeover` / `_release`）、`parity_n1.h`、runner `parity_lcd_kernel_n1_run()`（`-DPARITY_N1_TEST=1`）。
+- **実機 PASS（ベアメタル）**: readout（`active pipes 0x1`、pipe A / transcoder A / DPLL1）→ 撮影用待機 → takeover → **自前 modeset でパネル再点灯（pattern 124 を目視確認）** → **コンソールを自前バッファへミラー（45 frames、rc=0）してログを画面で読める状態に** → ファームウェアのフレームバッファへ flip 往復（rc=0 result=0、frame 5819→5820）→ 停止。写真 5 枚（利用者撮影）が証拠。
+- **判明**: ファームウェアの `PLANE_SURF` は `0x00000000`（GGTT 先頭）。そこは probe の GGTT 初期化が scratch PTE で上書きしているため、その GGTT アドレス経由では黒。ファームウェアの物理ページを GGTT に貼り直す作業が残件（参照実装の fbdev 引き継ぎ相当）。コンソールの可読性は CPU ミラーで確保。
+- N1 ビルドでのみ外した停止ゲート（いずれも「ファームウェアの画面が生きているときだけ通る枝」、理由はコメントに明記）: N0 の ACTIVE_PIPE、P5c の破壊的 sanitize、LCD preflight の idle 要求、P7 `intel_initial_commit`、P7 `intel_power_domains_enable`（INIT 参照を N1 完了まで保持）。
+- 実装中に見つかった重大バグ（構造体の先頭性）: `intel_crtc_state` は `uapi` を、`intel_crtc` は `base` を先頭にしないと、キャスト（`to_intel_crtc_state`）と `container_of(NULL)` 前提の分岐が壊れる。前者は readout の memset が隣の配列を破壊、後者は `crtc ? ... : NULL` が非 NULL のゴミを返す。
+- ベアメタルで潰した NULL フック（VM では encoder/crtc が無効で通らない枝）: `encoder->get_config` ほか readout フック、takeover の `old_crtc_state`、readout device の `drm.vblank`、`display.funcs.color`、`crtc->base.funcs`。
+- ホスト試験 56/0・123/0、生成物の再現性 OK。未実装経路は `XXX:` と擬似コードを明記し、入口で `UNRESOLVED step reached: <名前>` を実機に出力する（利用者の指示による）。
+- **未了**: 回帰 sweep（受け入れ済み 14 + hdmib / dual / dualsh + n1 = 18 モード）は KVM ホストがベアメタル試験中のため再実行待ち。

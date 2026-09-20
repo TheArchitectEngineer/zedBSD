@@ -177,6 +177,25 @@ static void intel_ddi_post_disable_hdmi(struct intel_atomic_state *state,
 					struct intel_encoder *encoder,
 					const struct intel_crtc_state *old_crtc_state,
 					const struct drm_connector_state *old_conn_state);
+static void intel_ddi_get_encoder_pipes(struct intel_encoder *encoder,
+					u8 *pipe_mask, bool *is_dp_mst);
+static void intel_ddi_read_func_ctl(struct intel_encoder *encoder,
+				    struct intel_crtc_state *pipe_config);
+static void ddi_dotclock_get(struct intel_crtc_state *pipe_config);
+static void intel_ddi_get_config(struct intel_encoder *encoder,
+				 struct intel_crtc_state *pipe_config);
+static struct intel_shared_dpll *
+_icl_ddi_get_pll(struct drm_i915_private *i915, i915_reg_t reg,
+		 u32 clk_sel_mask, u32 clk_sel_shift);
+static void icl_ddi_combo_get_config(struct intel_encoder *encoder,
+				     struct intel_crtc_state *crtc_state);
+static void intel_ddi_sync_state(struct intel_encoder *encoder,
+				 const struct intel_crtc_state *crtc_state);
+static void intel_ddi_get_power_domains(struct intel_encoder *encoder,
+					struct intel_crtc_state *crtc_state);
+static bool _icl_ddi_is_clock_enabled(struct drm_i915_private *i915, i915_reg_t reg,
+				      u32 clk_off);
+static bool icl_ddi_combo_is_clock_enabled(struct intel_encoder *encoder);
 
 static u32 ddi_buf_phy_link_rate(int port_clock)
 {
@@ -1903,6 +1922,562 @@ static void intel_ddi_post_disable_hdmi(struct intel_atomic_state *state,
 	intel_ddi_disable_clock(encoder);
 
 	intel_dp_dual_mode_set_tmds_output(intel_hdmi, false);
+}
+
+static void intel_ddi_get_encoder_pipes(struct intel_encoder *encoder,
+					u8 *pipe_mask, bool *is_dp_mst)
+{
+	struct drm_device *dev = encoder->base.dev;
+	struct drm_i915_private *dev_priv = to_i915(dev);
+	enum port port = encoder->port;
+	intel_wakeref_t wakeref;
+	enum pipe p;
+	u32 tmp;
+	u8 mst_pipe_mask;
+
+	*pipe_mask = 0;
+	*is_dp_mst = false;
+
+	wakeref = intel_display_power_get_if_enabled(dev_priv,
+						     encoder->power_domain);
+	if (!wakeref)
+		return;
+
+	tmp = intel_de_read(dev_priv, DDI_BUF_CTL(port));
+	if (!(tmp & DDI_BUF_CTL_ENABLE))
+		goto out;
+
+	if (HAS_TRANSCODER(dev_priv, TRANSCODER_EDP) && port == PORT_A) {
+		tmp = intel_de_read(dev_priv,
+				    TRANS_DDI_FUNC_CTL(TRANSCODER_EDP));
+
+		switch (tmp & TRANS_DDI_EDP_INPUT_MASK) {
+		default:
+			MISSING_CASE(tmp & TRANS_DDI_EDP_INPUT_MASK);
+			fallthrough;
+		case TRANS_DDI_EDP_INPUT_A_ON:
+		case TRANS_DDI_EDP_INPUT_A_ONOFF:
+			*pipe_mask = BIT(PIPE_A);
+			break;
+		case TRANS_DDI_EDP_INPUT_B_ONOFF:
+			*pipe_mask = BIT(PIPE_B);
+			break;
+		case TRANS_DDI_EDP_INPUT_C_ONOFF:
+			*pipe_mask = BIT(PIPE_C);
+			break;
+		}
+
+		goto out;
+	}
+
+	mst_pipe_mask = 0;
+	for_each_pipe(dev_priv, p) {
+		enum transcoder cpu_transcoder = (enum transcoder)p;
+		unsigned int port_mask, ddi_select;
+		intel_wakeref_t trans_wakeref;
+
+		trans_wakeref = intel_display_power_get_if_enabled(dev_priv,
+								   POWER_DOMAIN_TRANSCODER(cpu_transcoder));
+		if (!trans_wakeref)
+			continue;
+
+		if (DISPLAY_VER(dev_priv) >= 12) {
+			port_mask = TGL_TRANS_DDI_PORT_MASK;
+			ddi_select = TGL_TRANS_DDI_SELECT_PORT(port);
+		} else {
+			port_mask = TRANS_DDI_PORT_MASK;
+			ddi_select = TRANS_DDI_SELECT_PORT(port);
+		}
+
+		tmp = intel_de_read(dev_priv,
+				    TRANS_DDI_FUNC_CTL(cpu_transcoder));
+		intel_display_power_put(dev_priv, POWER_DOMAIN_TRANSCODER(cpu_transcoder),
+					trans_wakeref);
+
+		if ((tmp & port_mask) != ddi_select)
+			continue;
+
+		if ((tmp & TRANS_DDI_MODE_SELECT_MASK) == TRANS_DDI_MODE_SELECT_DP_MST ||
+		    (HAS_DP20(dev_priv) &&
+		     (tmp & TRANS_DDI_MODE_SELECT_MASK) == TRANS_DDI_MODE_SELECT_FDI_OR_128B132B))
+			mst_pipe_mask |= BIT(p);
+
+		*pipe_mask |= BIT(p);
+	}
+
+	if (!*pipe_mask)
+		drm_dbg_kms(&dev_priv->drm,
+			    "No pipe for [ENCODER:%d:%s] found\n",
+			    encoder->base.base.id, encoder->base.name);
+
+	if (!mst_pipe_mask && hweight8(*pipe_mask) > 1) {
+		drm_dbg_kms(&dev_priv->drm,
+			    "Multiple pipes for [ENCODER:%d:%s] (pipe_mask %02x)\n",
+			    encoder->base.base.id, encoder->base.name,
+			    *pipe_mask);
+		*pipe_mask = BIT(ffs(*pipe_mask) - 1);
+	}
+
+	if (mst_pipe_mask && mst_pipe_mask != *pipe_mask)
+		drm_dbg_kms(&dev_priv->drm,
+			    "Conflicting MST and non-MST state for [ENCODER:%d:%s] (pipe_mask %02x mst_pipe_mask %02x)\n",
+			    encoder->base.base.id, encoder->base.name,
+			    *pipe_mask, mst_pipe_mask);
+	else
+		*is_dp_mst = mst_pipe_mask;
+
+out:
+	if (*pipe_mask && (IS_GEMINILAKE(dev_priv) || IS_BROXTON(dev_priv))) {
+		tmp = intel_de_read(dev_priv, BXT_PHY_CTL(port));
+		if ((tmp & (BXT_PHY_CMNLANE_POWERDOWN_ACK |
+			    BXT_PHY_LANE_POWERDOWN_ACK |
+			    BXT_PHY_LANE_ENABLED)) != BXT_PHY_LANE_ENABLED)
+			drm_err(&dev_priv->drm,
+				"[ENCODER:%d:%s] enabled but PHY powered down? (PHY_CTL %08x)\n",
+				encoder->base.base.id, encoder->base.name, tmp);
+	}
+
+	intel_display_power_put(dev_priv, encoder->power_domain, wakeref);
+}
+
+bool intel_ddi_get_hw_state(struct intel_encoder *encoder,
+			    enum pipe *pipe)
+{
+	u8 pipe_mask;
+	bool is_mst;
+
+	intel_ddi_get_encoder_pipes(encoder, &pipe_mask, &is_mst);
+
+	if (is_mst || !pipe_mask)
+		return false;
+
+	*pipe = ffs(pipe_mask) - 1;
+
+	return true;
+}
+
+static void intel_ddi_read_func_ctl(struct intel_encoder *encoder,
+				    struct intel_crtc_state *pipe_config)
+{
+	struct drm_i915_private *dev_priv = to_i915(encoder->base.dev);
+	struct intel_crtc *crtc = to_intel_crtc(pipe_config->uapi.crtc);
+	enum transcoder cpu_transcoder = pipe_config->cpu_transcoder;
+	struct intel_digital_port *dig_port = enc_to_dig_port(encoder);
+	u32 temp, flags = 0;
+
+	temp = intel_de_read(dev_priv, TRANS_DDI_FUNC_CTL(cpu_transcoder));
+	if (temp & TRANS_DDI_PHSYNC)
+		flags |= DRM_MODE_FLAG_PHSYNC;
+	else
+		flags |= DRM_MODE_FLAG_NHSYNC;
+	if (temp & TRANS_DDI_PVSYNC)
+		flags |= DRM_MODE_FLAG_PVSYNC;
+	else
+		flags |= DRM_MODE_FLAG_NVSYNC;
+
+	pipe_config->hw.adjusted_mode.flags |= flags;
+
+	switch (temp & TRANS_DDI_BPC_MASK) {
+	case TRANS_DDI_BPC_6:
+		pipe_config->pipe_bpp = 18;
+		break;
+	case TRANS_DDI_BPC_8:
+		pipe_config->pipe_bpp = 24;
+		break;
+	case TRANS_DDI_BPC_10:
+		pipe_config->pipe_bpp = 30;
+		break;
+	case TRANS_DDI_BPC_12:
+		pipe_config->pipe_bpp = 36;
+		break;
+	default:
+		break;
+	}
+
+	switch (temp & TRANS_DDI_MODE_SELECT_MASK) {
+	case TRANS_DDI_MODE_SELECT_HDMI:
+		pipe_config->has_hdmi_sink = true;
+
+		pipe_config->infoframes.enable |=
+			intel_hdmi_infoframes_enabled(encoder, pipe_config);
+
+		if (pipe_config->infoframes.enable)
+			pipe_config->has_infoframe = true;
+
+		if (temp & TRANS_DDI_HDMI_SCRAMBLING)
+			pipe_config->hdmi_scrambling = true;
+		if (temp & TRANS_DDI_HIGH_TMDS_CHAR_RATE)
+			pipe_config->hdmi_high_tmds_clock_ratio = true;
+		fallthrough;
+	case TRANS_DDI_MODE_SELECT_DVI:
+		pipe_config->output_types |= BIT(INTEL_OUTPUT_HDMI);
+		if (DISPLAY_VER(dev_priv) >= 14)
+			pipe_config->lane_count =
+				((temp & DDI_PORT_WIDTH_MASK) >> DDI_PORT_WIDTH_SHIFT) + 1;
+		else
+			pipe_config->lane_count = 4;
+		break;
+	case TRANS_DDI_MODE_SELECT_DP_SST:
+		if (encoder->type == INTEL_OUTPUT_EDP)
+			pipe_config->output_types |= BIT(INTEL_OUTPUT_EDP);
+		else
+			pipe_config->output_types |= BIT(INTEL_OUTPUT_DP);
+		pipe_config->lane_count =
+			((temp & DDI_PORT_WIDTH_MASK) >> DDI_PORT_WIDTH_SHIFT) + 1;
+
+		intel_cpu_transcoder_get_m1_n1(crtc, cpu_transcoder,
+					       &pipe_config->dp_m_n);
+		intel_cpu_transcoder_get_m2_n2(crtc, cpu_transcoder,
+					       &pipe_config->dp_m2_n2);
+
+		pipe_config->enhanced_framing =
+			intel_de_read(dev_priv, dp_tp_ctl_reg(encoder, pipe_config)) &
+			DP_TP_CTL_ENHANCED_FRAME_ENABLE;
+
+		if (DISPLAY_VER(dev_priv) >= 11)
+			pipe_config->fec_enable =
+				intel_de_read(dev_priv,
+					      dp_tp_ctl_reg(encoder, pipe_config)) & DP_TP_CTL_FEC_ENABLE;
+
+		if (dig_port->lspcon.active && intel_dp_has_hdmi_sink(&dig_port->dp))
+			pipe_config->infoframes.enable |=
+				intel_lspcon_infoframes_enabled(encoder, pipe_config);
+		else
+			pipe_config->infoframes.enable |=
+				intel_hdmi_infoframes_enabled(encoder, pipe_config);
+		break;
+	case TRANS_DDI_MODE_SELECT_FDI_OR_128B132B:
+		if (!HAS_DP20(dev_priv)) {
+			/* FDI */
+			pipe_config->output_types |= BIT(INTEL_OUTPUT_ANALOG);
+			pipe_config->enhanced_framing =
+				intel_de_read(dev_priv, dp_tp_ctl_reg(encoder, pipe_config)) &
+				DP_TP_CTL_ENHANCED_FRAME_ENABLE;
+			break;
+		}
+		fallthrough; /* 128b/132b */
+	case TRANS_DDI_MODE_SELECT_DP_MST:
+		pipe_config->output_types |= BIT(INTEL_OUTPUT_DP_MST);
+		pipe_config->lane_count =
+			((temp & DDI_PORT_WIDTH_MASK) >> DDI_PORT_WIDTH_SHIFT) + 1;
+
+		if (DISPLAY_VER(dev_priv) >= 12)
+			pipe_config->mst_master_transcoder =
+					REG_FIELD_GET(TRANS_DDI_MST_TRANSPORT_SELECT_MASK, temp);
+
+		intel_cpu_transcoder_get_m1_n1(crtc, cpu_transcoder,
+					       &pipe_config->dp_m_n);
+
+		if (DISPLAY_VER(dev_priv) >= 11)
+			pipe_config->fec_enable =
+				intel_de_read(dev_priv,
+					      dp_tp_ctl_reg(encoder, pipe_config)) & DP_TP_CTL_FEC_ENABLE;
+
+		pipe_config->infoframes.enable |=
+			intel_hdmi_infoframes_enabled(encoder, pipe_config);
+		break;
+	default:
+		break;
+	}
+}
+
+static void ddi_dotclock_get(struct intel_crtc_state *pipe_config)
+{
+	/* CRT dotclock is determined via other means */
+	if (pipe_config->has_pch_encoder)
+		return;
+
+	pipe_config->hw.adjusted_mode.crtc_clock =
+		intel_crtc_dotclock(pipe_config);
+}
+
+static void intel_ddi_get_config(struct intel_encoder *encoder,
+				 struct intel_crtc_state *pipe_config)
+{
+	struct drm_i915_private *dev_priv = to_i915(encoder->base.dev);
+	enum transcoder cpu_transcoder = pipe_config->cpu_transcoder;
+
+	/* XXX: DSI transcoder paranoia */
+	if (drm_WARN_ON(&dev_priv->drm, transcoder_is_dsi(cpu_transcoder)))
+		return;
+
+	intel_ddi_read_func_ctl(encoder, pipe_config);
+
+	intel_ddi_mso_get_config(encoder, pipe_config);
+
+	pipe_config->has_audio =
+		intel_ddi_is_audio_enabled(dev_priv, cpu_transcoder);
+
+	if (encoder->type == INTEL_OUTPUT_EDP)
+		intel_edp_fixup_vbt_bpp(encoder, pipe_config->pipe_bpp);
+
+	ddi_dotclock_get(pipe_config);
+
+	if (IS_GEMINILAKE(dev_priv) || IS_BROXTON(dev_priv))
+		pipe_config->lane_lat_optim_mask =
+			bxt_ddi_phy_get_lane_lat_optim_mask(encoder);
+
+	intel_ddi_compute_min_voltage_level(pipe_config);
+
+	intel_hdmi_read_gcp_infoframe(encoder, pipe_config);
+
+	intel_read_infoframe(encoder, pipe_config,
+			     HDMI_INFOFRAME_TYPE_AVI,
+			     &pipe_config->infoframes.avi);
+	intel_read_infoframe(encoder, pipe_config,
+			     HDMI_INFOFRAME_TYPE_SPD,
+			     &pipe_config->infoframes.spd);
+	intel_read_infoframe(encoder, pipe_config,
+			     HDMI_INFOFRAME_TYPE_VENDOR,
+			     &pipe_config->infoframes.hdmi);
+	intel_read_infoframe(encoder, pipe_config,
+			     HDMI_INFOFRAME_TYPE_DRM,
+			     &pipe_config->infoframes.drm);
+
+	if (DISPLAY_VER(dev_priv) >= 8)
+		bdw_get_trans_port_sync_config(pipe_config);
+
+	intel_read_dp_sdp(encoder, pipe_config, HDMI_PACKET_TYPE_GAMUT_METADATA);
+	intel_read_dp_sdp(encoder, pipe_config, DP_SDP_VSC);
+
+	intel_psr_get_config(encoder, pipe_config);
+
+	intel_audio_codec_get_config(encoder, pipe_config);
+}
+
+void intel_ddi_get_clock(struct intel_encoder *encoder,
+			 struct intel_crtc_state *crtc_state,
+			 struct intel_shared_dpll *pll)
+{
+	struct drm_i915_private *i915 = to_i915(encoder->base.dev);
+	enum icl_port_dpll_id port_dpll_id = ICL_PORT_DPLL_DEFAULT;
+	struct icl_port_dpll *port_dpll = &crtc_state->icl_port_dplls[port_dpll_id];
+	bool pll_active;
+
+	if (drm_WARN_ON(&i915->drm, !pll))
+		return;
+
+	port_dpll->pll = pll;
+	pll_active = intel_dpll_get_hw_state(i915, pll, &port_dpll->hw_state);
+	drm_WARN_ON(&i915->drm, !pll_active);
+
+	icl_set_active_port_dpll(crtc_state, port_dpll_id);
+
+	crtc_state->port_clock = intel_dpll_get_freq(i915, crtc_state->shared_dpll,
+						     &crtc_state->dpll_hw_state);
+}
+
+static struct intel_shared_dpll *
+_icl_ddi_get_pll(struct drm_i915_private *i915, i915_reg_t reg,
+		 u32 clk_sel_mask, u32 clk_sel_shift)
+{
+	enum intel_dpll_id id;
+
+	id = (intel_de_read(i915, reg) & clk_sel_mask) >> clk_sel_shift;
+
+	return intel_get_shared_dpll_by_id(i915, id);
+}
+
+struct intel_shared_dpll *icl_ddi_combo_get_pll(struct intel_encoder *encoder)
+{
+	struct drm_i915_private *i915 = to_i915(encoder->base.dev);
+	enum phy phy = intel_port_to_phy(i915, encoder->port);
+
+	return _icl_ddi_get_pll(i915, ICL_DPCLKA_CFGCR0,
+				ICL_DPCLKA_CFGCR0_DDI_CLK_SEL_MASK(phy),
+				ICL_DPCLKA_CFGCR0_DDI_CLK_SEL_SHIFT(phy));
+}
+
+static void icl_ddi_combo_get_config(struct intel_encoder *encoder,
+				     struct intel_crtc_state *crtc_state)
+{
+	intel_ddi_get_clock(encoder, crtc_state, icl_ddi_combo_get_pll(encoder));
+	intel_ddi_get_config(encoder, crtc_state);
+}
+
+static void intel_ddi_sync_state(struct intel_encoder *encoder,
+				 const struct intel_crtc_state *crtc_state)
+{
+	struct drm_i915_private *i915 = to_i915(encoder->base.dev);
+	enum phy phy = intel_port_to_phy(i915, encoder->port);
+
+	if (intel_phy_is_tc(i915, phy))
+		intel_tc_port_sanitize_mode(enc_to_dig_port(encoder),
+					    crtc_state);
+
+	if (crtc_state && intel_crtc_has_dp_encoder(crtc_state))
+		intel_dp_sync_state(encoder, crtc_state);
+}
+
+static void intel_ddi_get_power_domains(struct intel_encoder *encoder,
+					struct intel_crtc_state *crtc_state)
+{
+	struct drm_i915_private *dev_priv = to_i915(encoder->base.dev);
+	struct intel_digital_port *dig_port;
+
+	/*
+	 * TODO: Add support for MST encoders. Atm, the following should never
+	 * happen since fake-MST encoders don't set their get_power_domains()
+	 * hook.
+	 */
+	if (drm_WARN_ON(&dev_priv->drm,
+			intel_crtc_has_type(crtc_state, INTEL_OUTPUT_DP_MST)))
+		return;
+
+	dig_port = enc_to_dig_port(encoder);
+
+	if (!intel_tc_port_in_tbt_alt_mode(dig_port)) {
+		drm_WARN_ON(&dev_priv->drm, dig_port->ddi_io_wakeref);
+		dig_port->ddi_io_wakeref = intel_display_power_get(dev_priv,
+								   dig_port->ddi_io_power_domain);
+	}
+
+	main_link_aux_power_domain_get(dig_port, crtc_state);
+}
+
+static bool _icl_ddi_is_clock_enabled(struct drm_i915_private *i915, i915_reg_t reg,
+				      u32 clk_off)
+{
+	return !(intel_de_read(i915, reg) & clk_off);
+}
+
+static bool icl_ddi_combo_is_clock_enabled(struct intel_encoder *encoder)
+{
+	struct drm_i915_private *i915 = to_i915(encoder->base.dev);
+	enum phy phy = intel_port_to_phy(i915, encoder->port);
+
+	return _icl_ddi_is_clock_enabled(i915, ICL_DPCLKA_CFGCR0,
+					 ICL_DPCLKA_CFGCR0_DDI_CLK_OFF(phy));
+}
+
+bool intel_ddi_connector_get_hw_state(struct intel_connector *intel_connector)
+{
+	struct drm_device *dev = intel_connector->base.dev;
+	struct drm_i915_private *dev_priv = to_i915(dev);
+	struct intel_encoder *encoder = intel_attached_encoder(intel_connector);
+	int type = intel_connector->base.connector_type;
+	enum port port = encoder->port;
+	enum transcoder cpu_transcoder;
+	intel_wakeref_t wakeref;
+	enum pipe pipe = 0;
+	u32 tmp;
+	bool ret;
+
+	wakeref = intel_display_power_get_if_enabled(dev_priv,
+						     encoder->power_domain);
+	if (!wakeref)
+		return false;
+
+	if (!encoder->get_hw_state(encoder, &pipe)) {
+		ret = false;
+		goto out;
+	}
+
+	if (HAS_TRANSCODER(dev_priv, TRANSCODER_EDP) && port == PORT_A)
+		cpu_transcoder = TRANSCODER_EDP;
+	else
+		cpu_transcoder = (enum transcoder) pipe;
+
+	tmp = intel_de_read(dev_priv, TRANS_DDI_FUNC_CTL(cpu_transcoder));
+
+	switch (tmp & TRANS_DDI_MODE_SELECT_MASK) {
+	case TRANS_DDI_MODE_SELECT_HDMI:
+	case TRANS_DDI_MODE_SELECT_DVI:
+		ret = type == DRM_MODE_CONNECTOR_HDMIA;
+		break;
+
+	case TRANS_DDI_MODE_SELECT_DP_SST:
+		ret = type == DRM_MODE_CONNECTOR_eDP ||
+		      type == DRM_MODE_CONNECTOR_DisplayPort;
+		break;
+
+	case TRANS_DDI_MODE_SELECT_DP_MST:
+		/* if the transcoder is in MST state then
+		 * connector isn't connected */
+		ret = false;
+		break;
+
+	case TRANS_DDI_MODE_SELECT_FDI_OR_128B132B:
+		if (HAS_DP20(dev_priv))
+			/* 128b/132b */
+			ret = false;
+		else
+			/* FDI */
+			ret = type == DRM_MODE_CONNECTOR_VGA;
+		break;
+
+	default:
+		ret = false;
+		break;
+	}
+
+out:
+	intel_display_power_put(dev_priv, encoder->power_domain, wakeref);
+
+	return ret;
+}
+
+void intel_ddi_sanitize_encoder_pll_mapping(struct intel_encoder *encoder)
+{
+	struct drm_i915_private *i915 = to_i915(encoder->base.dev);
+	u32 port_mask;
+	bool ddi_clk_needed;
+
+	/*
+	 * In case of DP MST, we sanitize the primary encoder only, not the
+	 * virtual ones.
+	 */
+	if (encoder->type == INTEL_OUTPUT_DP_MST)
+		return;
+
+	if (!encoder->base.crtc && intel_encoder_is_dp(encoder)) {
+		u8 pipe_mask;
+		bool is_mst;
+
+		intel_ddi_get_encoder_pipes(encoder, &pipe_mask, &is_mst);
+		/*
+		 * In the unlikely case that BIOS enables DP in MST mode, just
+		 * warn since our MST HW readout is incomplete.
+		 */
+		if (drm_WARN_ON(&i915->drm, is_mst))
+			return;
+	}
+
+	port_mask = BIT(encoder->port);
+	ddi_clk_needed = encoder->base.crtc;
+
+	if (encoder->type == INTEL_OUTPUT_DSI) {
+		struct intel_encoder *other_encoder;
+
+		port_mask = intel_dsi_encoder_ports(encoder);
+		/*
+		 * Sanity check that we haven't incorrectly registered another
+		 * encoder using any of the ports of this DSI encoder.
+		 */
+		for_each_intel_encoder(&i915->drm, other_encoder) {
+			if (other_encoder == encoder)
+				continue;
+
+			if (drm_WARN_ON(&i915->drm,
+					port_mask & BIT(other_encoder->port)))
+				return;
+		}
+		/*
+		 * For DSI we keep the ddi clocks gated
+		 * except during enable/disable sequence.
+		 */
+		ddi_clk_needed = false;
+	}
+
+	if (ddi_clk_needed || !encoder->is_clock_enabled ||
+	    !encoder->is_clock_enabled(encoder))
+		return;
+
+	drm_notice(&i915->drm,
+		   "[ENCODER:%d:%s] is disabled/in DSI mode with an ungated DDI clock, gate it\n",
+		   encoder->base.base.id, encoder->base.name);
+
+	encoder->disable_clock(encoder);
 }
 
 

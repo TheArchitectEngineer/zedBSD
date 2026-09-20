@@ -1753,9 +1753,21 @@ p6_fw_out:
 	if (dprobe.initial_commit_unimplemented) {
 		osdep_trace_emit(&trace, PARITY_STAGE_P3, OSDEP_TR_UNIMPL,
 			"intel_initial_commit", dprobe.active_crtcs, 0u);
-		res.outcome = PARITY_BLOCKED;
-		res.where = "intel_initial_commit";
-		goto teardown;
+		/*
+		 * E-124 (N1): an ACTIVE crtc at probe time is the firmware display, and the takeover of it is
+		 * ported in this build -- it runs later, from the LCD test, with the reference own readout.
+		 * The reference itself only logs a failed initial modeset and continues; without the takeover
+		 * this probe stops here instead, because it would otherwise leave that display untouched and
+		 * unaccounted for.
+		 */
+		if (!PARITY_N1_TEST) {
+			res.outcome = PARITY_BLOCKED;
+			res.where = "intel_initial_commit";
+			goto teardown;
+		}
+		kern_logf("i915: parity P7 intel_initial_commit: %u active crtc(s) left by the firmware; the DRM "
+			"atomic commit is not ported, and N1 takes that display over later in this run\n",
+			dprobe.active_crtcs);
 	}
 	res.last_completed = "intel_display_driver_probe";
 
@@ -1820,7 +1832,7 @@ p6_fw_out:
 	 * LCD-B: one known picture on the panel through the reference's modeset, a finite observation window, the
 	 * reference's stop path.  No GPU submission happens in this mode; the AUX diagnostics are not repeated.
 	 */
-	if (PARITY_LCDB_TEST || PARITY_LCDR_TEST || PARITY_LCDG_TEST || PARITY_LCDC_TEST || PARITY_LCDD_TEST || PARITY_LCDO_TEST || PARITY_HDMI_B_TEST || PARITY_DUAL_TEST || PARITY_DUAL_SHARE_TEST) {
+	if (PARITY_LCDB_TEST || PARITY_LCDR_TEST || PARITY_LCDG_TEST || PARITY_LCDC_TEST || PARITY_LCDD_TEST || PARITY_LCDO_TEST || PARITY_HDMI_B_TEST || PARITY_DUAL_TEST || PARITY_DUAL_SHARE_TEST || PARITY_N1_TEST) {
 		static struct parity_lcd_kernel_deps lcdb;
 
 		lcdb.edp = &edp_dev; lcdb.mmio = &mmio; lcdb.pd = &power_domains; lcdb.pwc = &pwc; lcdb.dcore = &dcore;
@@ -1848,6 +1860,8 @@ p6_fw_out:
 						PARITY_LCDD_TEST ? 'D' : 'G', gfrc);
 				while (gheld-- > 0u)
 					osdep_fw_put(&mmio, gfwd[gheld]);
+			} else if (PARITY_N1_TEST) {
+				(void)parity_lcd_kernel_n1_run(&lcdb);
 			} else if (PARITY_DUAL_SHARE_TEST) {
 				(void)parity_lcd_kernel_dual_share_run(&lcdb);
 			} else if (PARITY_DUAL_TEST) {
@@ -1873,6 +1887,17 @@ p6_fw_out:
 			res.lcd_test_ran = 1;
 			res.lcd_first_anomaly_stage = "no-gt-memory";
 		}
+	}
+
+	/*
+	 * E-124 (N1): the takeover has run, so the INIT reference that kept the firmware display alive is
+	 * released now -- the point intel_power_domains_enable() would have done it.
+	 */
+	if (dprobe.power_domains_enable_deferred) {
+		parity_intel_power_domains_enable(&dprobe, &dcore);
+		kern_logf("i915: parity P7 power_domains_enable (deferred until after N1): wells_on %u -> %u "
+			"dc_state=0x%x verify_mismatches=%u\n", dprobe.wells_on_before, dprobe.wells_on_after,
+			(unsigned)dprobe.dc_state_after, dprobe.verify_mismatches);
 	}
 
 	/* HPD-TEST: the HDMI cable of DDI B is plugged / unplugged in a finite window (no GPU submission) */

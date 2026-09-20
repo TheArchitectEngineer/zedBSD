@@ -94,3 +94,12 @@ void parity_lcd_ms_wm_compute_off(struct parity_lcd_modeset *ms)
 	new_dbuf->base.changed = new_dbuf->enabled_slices != ms->wm.old_dbuf.enabled_slices ||
 		new_dbuf->joined_mbus != ms->wm.old_dbuf.joined_mbus || new_dbuf->active_pipes != ms->wm.old_dbuf.active_pipes;
 }
+
+/*
+ * The watermark readout of the reference is static in this unit and is reached through the device watermark
+ * ops, which this path does not carry: the readout (N1) calls it through this boundary instead.
+ */
+void parity_lcd_wm_get_hw_state(struct drm_i915_private *i915)
+{
+	skl_wm_get_hw_state(i915);
+}

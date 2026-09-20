@@ -73,6 +73,8 @@ int parity_lcd_kernel_lcdg_run(const struct parity_lcd_kernel_deps *d);
 int parity_lcd_kernel_lcdc_run(const struct parity_lcd_kernel_deps *d);
 /* LCD-O (-DPARITY_LCDO_TEST=1): synthetic ASLE brightness requests (OpRegion service on a SHADOW mailbox) on the real LCD */
 int parity_lcd_kernel_lcdo_run(const struct parity_lcd_kernel_deps *d);
+/* N1: the display the firmware left running (readout, takeover, re-light from its framebuffer) */
+int parity_lcd_kernel_n1_run(const struct parity_lcd_kernel_deps *d);
 /* LCD-D (-DPARITY_LCDD_TEST=1): the GPU redraws the hidden buffer (A/B at their own PPGTT VAs, mapped for the run), then the flip; 8 rounds */
 int parity_lcd_kernel_lcdd_run(const struct parity_lcd_kernel_deps *d);
 /* the release decision after a draw and (maybe) a show -- exported for the GPU-free test */

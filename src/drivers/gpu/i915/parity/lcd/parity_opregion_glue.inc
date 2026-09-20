@@ -334,3 +334,64 @@ void parity_opregion_worker_stats_get(unsigned *started, unsigned *finished, uns
 	*queued_new = parity_opregion_wstats.queued_new;
 	*queued_pending = parity_opregion_wstats.queued_pending;
 }
+
+/*
+ * The firmware notification of a sanitized encoder -- intel_opregion_notify_encoder() of the reference,
+ * as a boundary call of this unit (like parity_opregion_notify_adapter).  The caller hands the port and the
+ * output type because the encoder objects belong to the LCD path; the port mapping, the parm layout and the
+ * SWSCI request are the reference's.
+ *   port E is reported as port 0; every other port as (port + 1) with BIT(port) set in parm;
+ *   a disable adds 4 << 8; the display type goes to bits (16 + port * 3).
+ */
+#define PARITY_DISPLAY_TYPE_CRT		0
+#define PARITY_DISPLAY_TYPE_TV			1
+#define PARITY_DISPLAY_TYPE_EXTERNAL_FLAT_PANEL	2
+#define PARITY_DISPLAY_TYPE_INTERNAL_FLAT_PANEL	3
+int parity_opregion_notify_encoder(int port_in, int output_type, int enable)
+{
+	u32 parm = 0u, type, port;
+	int ret;
+
+	/* HAS_DDI() holds on this platform; the reference returns 0 on the older ones */
+	ret = check_swsci_function(&parity_opregion_dev, SWSCI_SBCB_DISPLAY_POWER_STATE);
+	if (ret)
+		return ret;
+
+	port = (u32)port_in;
+	if (port == 4u) {	/* PORT_E */
+		port = 0u;
+	} else {
+		parm |= 1u << port;
+		port++;
+	}
+	if (port > 4u) {
+		kern_logf("i915: parity opregion notify_encoder: port index %u out of bounds\n", (unsigned)port);
+		return -EINVAL;
+	}
+
+	if (!enable)
+		parm |= 4u << 8;
+
+	switch (output_type) {
+	case PARITY_OUTPUT_ANALOG:
+		type = PARITY_DISPLAY_TYPE_CRT;
+		break;
+	case PARITY_OUTPUT_DDI:
+	case PARITY_OUTPUT_DP:
+	case PARITY_OUTPUT_HDMI:
+	case PARITY_OUTPUT_DP_MST:
+		type = PARITY_DISPLAY_TYPE_EXTERNAL_FLAT_PANEL;
+		break;
+	case PARITY_OUTPUT_EDP:
+	case PARITY_OUTPUT_DSI:
+		type = PARITY_DISPLAY_TYPE_INTERNAL_FLAT_PANEL;
+		break;
+	default:
+		kern_logf("i915: parity opregion notify_encoder: unsupported encoder type %d\n", output_type);
+		return -EINVAL;
+	}
+
+	parm |= type << (16u + port * 3u);
+
+	return swsci(&parity_opregion_dev, SWSCI_SBCB_DISPLAY_POWER_STATE, parm, NULL);
+}
