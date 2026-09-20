@@ -339,40 +339,72 @@ parity_vbt_fmtcheck(const char *fmt, ...)
  * provider, byte-identical to the pinned capture (size + SHA-256), and only for
  * the machine it was read from (PCI subsystem id).  Any miss = not used.
  */
-static const uint8_t explicit_blob_sha256[32] = { 0x3b, 0xff, 0x4a, 0x09, 0x20, 0xd5, 0x5c, 0x9a, 0xee, 0x0e, 0xa3, 0xc6, 0x78, 0x90, 0x4f, 0x98, 0x2f, 0x86, 0x71, 0xc0, 0xe7, 0xb5, 0xbc, 0x97, 0xa3, 0x35, 0xe4, 0x29, 0xb2, 0x96, 0x24, 0xcd };
+/*
+ * E-126: one row per machine.  The bytes of a row are used only when all three match: the file is found
+ * under its name, its sha256 is the pinned one, and the PCI subsystem id is that machine.  Any miss = not
+ * used (the parser then has no VBT, which the caller reports).
+ */
+struct parity_vbt_pin {
+	const char *name;
+	uint16_t subsys_vendor, subsys_device;
+	uint8_t sha256[32];
+};
+
+/* which machine this boot is, remembered when the rows are consulted */
+static uint16_t pinned_vendor, pinned_device;
+
+static const struct parity_vbt_pin explicit_pins[] = {
+	{ "zedbsd/vbt/dell-latitude-5330-1028-0b02.vbt", 0x1028u, 0x0b02u,
+		{ 0x3b, 0xff, 0x4a, 0x09, 0x20, 0xd5, 0x5c, 0x9a, 0xee, 0x0e, 0xa3, 0xc6, 0x78, 0x90, 0x4f, 0x98,
+		  0x2f, 0x86, 0x71, 0xc0, 0xe7, 0xb5, 0xbc, 0x97, 0xa3, 0x35, 0xe4, 0x29, 0xb2, 0x96, 0x24, 0xcd } },
+	/* Dell Latitude 5320 (Tiger Lake-LP GT2 8086:9a49): read 2026-09-21 from the machine own i915 */
+	{ "zedbsd/vbt/dell-latitude-5320-1028-0a1f.vbt", 0x1028u, 0x0a1fu,
+		{ 0x03, 0x86, 0x25, 0xfb, 0xb4, 0xee, 0x5f, 0x22, 0xa4, 0x7a, 0x7c, 0x8c, 0x0f, 0x20, 0x23, 0x2a,
+		  0xfc, 0xdb, 0x43, 0xc0, 0x72, 0x32, 0xac, 0x5f, 0xc1, 0x2b, 0xa6, 0xd5, 0x1c, 0x03, 0xa5, 0xe4 } },
+};
 
 static int
 explicit_blob_get(struct parity_vbt_state *vbt, struct osdep_pci *pci,
 	const void **out, size_t *out_size)
 {
 	static struct osdep_firmware fw;
-	unsigned i;
+	unsigned row, i;
 
 	vbt->blob_requested = 1;
-	vbt->blob_name = PARITY_VBT_EXPLICIT_NAME;
 	vbt->subsys_vendor = osdep_pci_read16(pci, 0x2cu);
 	vbt->subsys_device = osdep_pci_read16(pci, 0x2eu);
-	vbt->blob_subsys_ok = vbt->subsys_vendor == PARITY_VBT_EXPLICIT_SUBSYS_VENDOR &&
-		vbt->subsys_device == PARITY_VBT_EXPLICIT_SUBSYS_DEVICE;
-	if (osdep_request_firmware(&fw, PARITY_VBT_EXPLICIT_NAME) != 0 || fw.data == 0)
-		return 0;
-	vbt->blob_found = 1;
-	vbt->blob_size = fw.size;
-	parity_sha256(fw.data, fw.size, vbt->blob_sha256);
-	vbt->blob_hash_ok = 1;
-	for (i = 0u; i < 32u; i++)
-		if (vbt->blob_sha256[i] != explicit_blob_sha256[i])
-			vbt->blob_hash_ok = 0;
-	vbt->blob_valid = parity_vbt_validate(fw.data, fw.size);
-	if (!vbt->blob_subsys_ok || !vbt->blob_hash_ok || !vbt->blob_valid) {
+	pinned_vendor = vbt->subsys_vendor;
+	pinned_device = vbt->subsys_device;
+	vbt->blob_name = explicit_pins[0].name;
+	for (row = 0u; row < sizeof(explicit_pins) / sizeof(explicit_pins[0]); row++) {
+		const struct parity_vbt_pin *pin = &explicit_pins[row];
+
+		if (vbt->subsys_vendor != pin->subsys_vendor || vbt->subsys_device != pin->subsys_device)
+			continue;
+		vbt->blob_subsys_ok = 1;
+		vbt->blob_name = pin->name;
+		if (osdep_request_firmware(&fw, pin->name) != 0 || fw.data == 0)
+			return 0;
+		vbt->blob_found = 1;
+		vbt->blob_size = fw.size;
+		parity_sha256(fw.data, fw.size, vbt->blob_sha256);
+		vbt->blob_hash_ok = 1;
+		for (i = 0u; i < 32u; i++)
+			if (vbt->blob_sha256[i] != pin->sha256[i])
+				vbt->blob_hash_ok = 0;
+		vbt->blob_valid = parity_vbt_validate(fw.data, fw.size);
+		if (!vbt->blob_hash_ok || !vbt->blob_valid) {
+			osdep_release_firmware(&fw);
+			return 0;
+		}
+		/* static read-only data: the pointer stays valid after the handle is dropped */
+		*out = fw.data;
+		*out_size = fw.size;
 		osdep_release_firmware(&fw);
-		return 0;
+		return 1;
 	}
-	/* The blob is static read-only data: the pointer stays valid after the handle is dropped. */
-	*out = fw.data;
-	*out_size = fw.size;
-	osdep_release_firmware(&fw);
-	return 1;
+	/* no row for this machine: nothing is used, and the caller reports the absence */
+	return 0;
 }
 
 /* E-122: the OpRegion VBT copy P2 made (read-only acquisition); 0 = none */
@@ -524,5 +556,18 @@ parity_intel_bios_driver_remove(struct parity_vbt_state *vbt)
 	vbt->parsed_live = 0;
 }
 
-/* the explicit blob's pinned sha256 (the N0 precheck compares the OpRegion VBT with it) */
-const uint8_t *parity_vbt_explicit_pin(void) { return explicit_blob_sha256; }
+/*
+ * The pinned sha256 the N0 precheck compares the OpRegion VBT with: the row of THIS machine, or none
+ * when the build carries no row for it (E-126).
+ */
+static const uint8_t *explicit_pin_for(uint16_t vendor, uint16_t device)
+{
+	unsigned row;
+
+	for (row = 0u; row < sizeof(explicit_pins) / sizeof(explicit_pins[0]); row++)
+		if (explicit_pins[row].subsys_vendor == vendor && explicit_pins[row].subsys_device == device)
+			return explicit_pins[row].sha256;
+	return 0;
+}
+
+const uint8_t *parity_vbt_explicit_pin(void) { return explicit_pin_for(pinned_vendor, pinned_device); }

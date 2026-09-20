@@ -39,7 +39,6 @@ static inline const struct drm_format_info *drm_format_info(u32 format)
 
 /* the DBUF slice tables of other platforms are not reached (display version 13, not DG2) */
 #define dg2_compute_dbuf_slices(pipe, active_pipes, join_mbus) (0)
-#define tgl_compute_dbuf_slices(pipe, active_pipes, join_mbus) (0)
 #define icl_compute_dbuf_slices(pipe, active_pipes, join_mbus) (0)
 
 /* intel_mbus_dbox_update() walks the crtcs of the active pipes: here the one crtc of the modeset (lcd_modeset_compat.h

@@ -60,6 +60,16 @@
 #define IDX_AUX_TBT2  10u
 #define IDX_AUX_TBT3  11u
 #define IDX_AUX_TBT4  12u
+/* Tiger Lake (display version 12) adds PW_3..PW_5 and two more Type-C sets */
+#define IDX_PW_3      2u
+#define IDX_PW_4      3u
+#define IDX_PW_5      4u
+#define IDX_DDI_TC5   7u
+#define IDX_DDI_TC6   8u
+#define IDX_AUX_TC5   7u
+#define IDX_AUX_TC6   8u
+#define IDX_AUX_TBT5  13u
+#define IDX_AUX_TBT6  14u
 
 static void
 pw_dom(struct parity_pw_domain_mask *m, enum parity_power_domain d)
@@ -252,8 +262,6 @@ power_map_init(struct parity_power_domains *pd)
 	(void)ADD("AUX_TBT2", PARITY_PW_OPS_ICL_AUX, 0, 0, 0, 1, 0, 0u, 0u, IDX_AUX_TBT2, PARITY_DISP_PW_ID_NONE, aux_tbt2);
 	(void)ADD("AUX_TBT3", PARITY_PW_OPS_ICL_AUX, 0, 0, 0, 1, 0, 0u, 0u, IDX_AUX_TBT3, PARITY_DISP_PW_ID_NONE, aux_tbt3);
 	(void)ADD("AUX_TBT4", PARITY_PW_OPS_ICL_AUX, 0, 0, 0, 1, 0, 0u, 0u, IDX_AUX_TBT4, PARITY_DISP_PW_ID_NONE, aux_tbt4);
-#undef ADD
-
 	/* Build the per-domain -> wells map from each well's membership. */
 	for (i = 0u; i < PARITY_PW_DOMAIN_NUM; i++)
 		pd->domain_wells[i] = 0u;
@@ -274,6 +282,136 @@ power_map_init(struct parity_power_domains *pd)
 	pd->map_initialized = 1;
 	return 0;
 }
+
+/*
+ * intel_display_power_map_init() for Tiger Lake: always_on + PW_1 + tgl_power_wells_main +
+ * tgl_power_wells_aux.  The TC cold-off well of the reference is NOT built here: this driver never
+ * takes a Type-C port, and its ops (tgl_tc_cold_off_ops) are a PCODE handshake that is not ported --
+ * XXX: a Type-C display on this platform needs that well and those ops before it can work.
+ */
+static int
+power_map_init_tgl(struct parity_power_domains *pd)
+{
+	/* TGL_PW_5_POWER_DOMAINS */
+	static const enum parity_power_domain pw_5[] = {
+		PARITY_PW_DOMAIN_PIPE_D, PARITY_PW_DOMAIN_PIPE_PANEL_FITTER_D,
+		PARITY_PW_DOMAIN_TRANSCODER_D, PARITY_PW_DOMAIN_INIT };
+	/* TGL_PW_4 = PW_5 + pipe C */
+	static const enum parity_power_domain pw_4[] = {
+		PARITY_PW_DOMAIN_PIPE_D, PARITY_PW_DOMAIN_PIPE_PANEL_FITTER_D,
+		PARITY_PW_DOMAIN_TRANSCODER_D,
+		PARITY_PW_DOMAIN_PIPE_C, PARITY_PW_DOMAIN_PIPE_PANEL_FITTER_C,
+		PARITY_PW_DOMAIN_TRANSCODER_C, PARITY_PW_DOMAIN_INIT };
+	/* TGL_PW_3 = PW_4 + pipe B + the six Type-C lane / AUX domains + VGA + audio */
+	static const enum parity_power_domain pw_3[] = {
+		PARITY_PW_DOMAIN_PIPE_D, PARITY_PW_DOMAIN_PIPE_PANEL_FITTER_D,
+		PARITY_PW_DOMAIN_TRANSCODER_D,
+		PARITY_PW_DOMAIN_PIPE_C, PARITY_PW_DOMAIN_PIPE_PANEL_FITTER_C,
+		PARITY_PW_DOMAIN_TRANSCODER_C,
+		PARITY_PW_DOMAIN_PIPE_B, PARITY_PW_DOMAIN_PIPE_PANEL_FITTER_B,
+		PARITY_PW_DOMAIN_TRANSCODER_B,
+		PARITY_PW_DOMAIN_PORT_DDI_LANES_TC1, PARITY_PW_DOMAIN_PORT_DDI_LANES_TC2,
+		PARITY_PW_DOMAIN_PORT_DDI_LANES_TC3, PARITY_PW_DOMAIN_PORT_DDI_LANES_TC4,
+		PARITY_PW_DOMAIN_VGA, PARITY_PW_DOMAIN_AUDIO_MMIO, PARITY_PW_DOMAIN_AUDIO_PLAYBACK,
+		PARITY_PW_DOMAIN_AUX_USBC1, PARITY_PW_DOMAIN_AUX_USBC2,
+		PARITY_PW_DOMAIN_AUX_USBC3, PARITY_PW_DOMAIN_AUX_USBC4,
+		PARITY_PW_DOMAIN_AUX_TBT1, PARITY_PW_DOMAIN_AUX_TBT2,
+		PARITY_PW_DOMAIN_AUX_TBT3, PARITY_PW_DOMAIN_AUX_TBT4,
+		PARITY_PW_DOMAIN_INIT };
+	/* tgl_pwdoms_pw_2 = PW_3 + the VDSC of PW_2 (not a domain this driver takes) */
+	/* tgl_pwdoms_dc_off = PW_3 + AUX_A/B/C + DC_OFF */
+	static const enum parity_power_domain dc_off[] = {
+		PARITY_PW_DOMAIN_PIPE_D, PARITY_PW_DOMAIN_PIPE_PANEL_FITTER_D,
+		PARITY_PW_DOMAIN_TRANSCODER_D,
+		PARITY_PW_DOMAIN_PIPE_C, PARITY_PW_DOMAIN_PIPE_PANEL_FITTER_C,
+		PARITY_PW_DOMAIN_TRANSCODER_C,
+		PARITY_PW_DOMAIN_PIPE_B, PARITY_PW_DOMAIN_PIPE_PANEL_FITTER_B,
+		PARITY_PW_DOMAIN_TRANSCODER_B,
+		PARITY_PW_DOMAIN_PORT_DDI_LANES_TC1, PARITY_PW_DOMAIN_PORT_DDI_LANES_TC2,
+		PARITY_PW_DOMAIN_PORT_DDI_LANES_TC3, PARITY_PW_DOMAIN_PORT_DDI_LANES_TC4,
+		PARITY_PW_DOMAIN_VGA, PARITY_PW_DOMAIN_AUDIO_MMIO, PARITY_PW_DOMAIN_AUDIO_PLAYBACK,
+		PARITY_PW_DOMAIN_AUX_USBC1, PARITY_PW_DOMAIN_AUX_USBC2,
+		PARITY_PW_DOMAIN_AUX_USBC3, PARITY_PW_DOMAIN_AUX_USBC4,
+		PARITY_PW_DOMAIN_AUX_TBT1, PARITY_PW_DOMAIN_AUX_TBT2,
+		PARITY_PW_DOMAIN_AUX_TBT3, PARITY_PW_DOMAIN_AUX_TBT4,
+		PARITY_PW_DOMAIN_AUX_A, PARITY_PW_DOMAIN_AUX_B, PARITY_PW_DOMAIN_AUX_C,
+		PARITY_PW_DOMAIN_DC_OFF, PARITY_PW_DOMAIN_INIT };
+	static const enum parity_power_domain ddi_io_a[] = { PARITY_PW_DOMAIN_PORT_DDI_IO_A };
+	static const enum parity_power_domain ddi_io_b[] = { PARITY_PW_DOMAIN_PORT_DDI_IO_B };
+	static const enum parity_power_domain ddi_io_c[] = { PARITY_PW_DOMAIN_PORT_DDI_IO_C };
+	static const enum parity_power_domain ddi_io_tc1[] = { PARITY_PW_DOMAIN_PORT_DDI_IO_TC1 };
+	static const enum parity_power_domain ddi_io_tc2[] = { PARITY_PW_DOMAIN_PORT_DDI_IO_TC2 };
+	static const enum parity_power_domain ddi_io_tc3[] = { PARITY_PW_DOMAIN_PORT_DDI_IO_TC3 };
+	static const enum parity_power_domain ddi_io_tc4[] = { PARITY_PW_DOMAIN_PORT_DDI_IO_TC4 };
+	static const enum parity_power_domain aux_a[] = { PARITY_PW_DOMAIN_AUX_IO_A, PARITY_PW_DOMAIN_AUX_A };
+	static const enum parity_power_domain aux_b[] = { PARITY_PW_DOMAIN_AUX_IO_B, PARITY_PW_DOMAIN_AUX_B };
+	static const enum parity_power_domain aux_c[] = { PARITY_PW_DOMAIN_AUX_IO_C, PARITY_PW_DOMAIN_AUX_C };
+	static const enum parity_power_domain aux_usbc1[] = { PARITY_PW_DOMAIN_AUX_USBC1 };
+	static const enum parity_power_domain aux_usbc2[] = { PARITY_PW_DOMAIN_AUX_USBC2 };
+	static const enum parity_power_domain aux_usbc3[] = { PARITY_PW_DOMAIN_AUX_USBC3 };
+	static const enum parity_power_domain aux_usbc4[] = { PARITY_PW_DOMAIN_AUX_USBC4 };
+	static const enum parity_power_domain aux_tbt1[] = { PARITY_PW_DOMAIN_AUX_TBT1 };
+	static const enum parity_power_domain aux_tbt2[] = { PARITY_PW_DOMAIN_AUX_TBT2 };
+	static const enum parity_power_domain aux_tbt3[] = { PARITY_PW_DOMAIN_AUX_TBT3 };
+	static const enum parity_power_domain aux_tbt4[] = { PARITY_PW_DOMAIN_AUX_TBT4 };
+
+	unsigned i;
+
+	pd->num_power_wells = 0u;
+
+	/* i9xx_power_wells_always_on -> zero-length domain list = ALL domains. */
+	(void)pw_add(pd, "always_on", PARITY_PW_OPS_ALWAYS_ON, 1, 0, 0, 0, 0, 0u, 0u, 0u,
+		PARITY_DISP_PW_ID_NONE, 1 /* domains_all */, 0, 0u);
+	/* icl_power_wells_pw_1 */
+	(void)pw_add(pd, "PW_1", PARITY_PW_OPS_HSW, 1, 0, 1, 0, 0, 0u, 0u, IDX_PW_1,
+		PARITY_SKL_DISP_PW_1, 0 /* not all */, 0, 0u);
+	/* tgl_power_wells_main */
+	(void)ADD("DC_off", PARITY_PW_OPS_DC_OFF, 0, 0, 0, 0, 0, 0u, 0u, 0u, PARITY_SKL_DISP_DC_OFF, dc_off);
+	(void)ADD("PW_2", PARITY_PW_OPS_HSW, 0, 0, 1, 0, 0, 0u, 0u, IDX_PW_2, PARITY_SKL_DISP_PW_2, pw_3);
+	(void)ADD("PW_3", PARITY_PW_OPS_HSW, 0, 1, 1, 0, 0, 0u, BIT_PIPE_B, IDX_PW_3, PARITY_ICL_DISP_PW_3, pw_3);
+	(void)ADD("DDI_IO_A", PARITY_PW_OPS_ICL_DDI, 0, 0, 0, 0, 0, 0u, 0u, IDX_DDI_A, PARITY_DISP_PW_ID_NONE, ddi_io_a);
+	(void)ADD("DDI_IO_B", PARITY_PW_OPS_ICL_DDI, 0, 0, 0, 0, 0, 0u, 0u, IDX_DDI_B, PARITY_DISP_PW_ID_NONE, ddi_io_b);
+	(void)ADD("DDI_IO_C", PARITY_PW_OPS_ICL_DDI, 0, 0, 0, 0, 0, 0u, 0u, IDX_DDI_C, PARITY_DISP_PW_ID_NONE, ddi_io_c);
+	(void)ADD("DDI_IO_TC1", PARITY_PW_OPS_ICL_DDI, 0, 0, 0, 0, 0, 0u, 0u, IDX_DDI_TC1, PARITY_DISP_PW_ID_NONE, ddi_io_tc1);
+	(void)ADD("DDI_IO_TC2", PARITY_PW_OPS_ICL_DDI, 0, 0, 0, 0, 0, 0u, 0u, IDX_DDI_TC2, PARITY_DISP_PW_ID_NONE, ddi_io_tc2);
+	(void)ADD("DDI_IO_TC3", PARITY_PW_OPS_ICL_DDI, 0, 0, 0, 0, 0, 0u, 0u, IDX_DDI_TC3, PARITY_DISP_PW_ID_NONE, ddi_io_tc3);
+	(void)ADD("DDI_IO_TC4", PARITY_PW_OPS_ICL_DDI, 0, 0, 0, 0, 0, 0u, 0u, IDX_DDI_TC4, PARITY_DISP_PW_ID_NONE, ddi_io_tc4);
+	(void)ADD("PW_4", PARITY_PW_OPS_HSW, 0, 0, 1, 0, 0, 0u, BIT_PIPE_C, IDX_PW_4, PARITY_DISP_PW_ID_NONE, pw_4);
+	(void)ADD("PW_5", PARITY_PW_OPS_HSW, 0, 0, 1, 0, 0, 0u, BIT_PIPE_D, IDX_PW_5, PARITY_DISP_PW_ID_NONE, pw_5);
+	/* tgl_power_wells_aux */
+	(void)ADD("AUX_A", PARITY_PW_OPS_ICL_AUX, 0, 0, 0, 0, 1, 0u, 0u, IDX_AUX_A, PARITY_DISP_PW_ID_NONE, aux_a);
+	(void)ADD("AUX_B", PARITY_PW_OPS_ICL_AUX, 0, 0, 0, 0, 1, 0u, 0u, IDX_AUX_B, PARITY_DISP_PW_ID_NONE, aux_b);
+	(void)ADD("AUX_C", PARITY_PW_OPS_ICL_AUX, 0, 0, 0, 0, 1, 0u, 0u, IDX_AUX_C, PARITY_DISP_PW_ID_NONE, aux_c);
+	(void)ADD("AUX_USBC1", PARITY_PW_OPS_ICL_AUX, 0, 0, 0, 0, 1, 500u, 0u, IDX_AUX_TC1, PARITY_DISP_PW_ID_NONE, aux_usbc1);
+	(void)ADD("AUX_USBC2", PARITY_PW_OPS_ICL_AUX, 0, 0, 0, 0, 1, 500u, 0u, IDX_AUX_TC2, PARITY_DISP_PW_ID_NONE, aux_usbc2);
+	(void)ADD("AUX_USBC3", PARITY_PW_OPS_ICL_AUX, 0, 0, 0, 0, 1, 500u, 0u, IDX_AUX_TC3, PARITY_DISP_PW_ID_NONE, aux_usbc3);
+	(void)ADD("AUX_USBC4", PARITY_PW_OPS_ICL_AUX, 0, 0, 0, 0, 1, 500u, 0u, IDX_AUX_TC4, PARITY_DISP_PW_ID_NONE, aux_usbc4);
+	(void)ADD("AUX_TBT1", PARITY_PW_OPS_ICL_AUX, 0, 0, 0, 1, 0, 0u, 0u, IDX_AUX_TBT1, PARITY_DISP_PW_ID_NONE, aux_tbt1);
+	(void)ADD("AUX_TBT2", PARITY_PW_OPS_ICL_AUX, 0, 0, 0, 1, 0, 0u, 0u, IDX_AUX_TBT2, PARITY_DISP_PW_ID_NONE, aux_tbt2);
+	(void)ADD("AUX_TBT3", PARITY_PW_OPS_ICL_AUX, 0, 0, 0, 1, 0, 0u, 0u, IDX_AUX_TBT3, PARITY_DISP_PW_ID_NONE, aux_tbt3);
+	(void)ADD("AUX_TBT4", PARITY_PW_OPS_ICL_AUX, 0, 0, 0, 1, 0, 0u, 0u, IDX_AUX_TBT4, PARITY_DISP_PW_ID_NONE, aux_tbt4);
+
+	/* Build the per-domain -> wells map from each well's membership (as the XE_LPD map does). */
+	for (i = 0u; i < PARITY_PW_DOMAIN_NUM; i++)
+		pd->domain_wells[i] = 0u;
+	for (i = 0u; i < pd->num_power_wells; i++) {
+		const struct parity_power_well *w = &pd->power_wells[i];
+		unsigned d;
+
+		if (w->domains_all) {
+			for (d = 0u; d < PARITY_PW_DOMAIN_NUM; d++)
+				pd->domain_wells[d] |= (uint64_t)1u << i;
+			continue;
+		}
+		for (d = 0u; d < PARITY_PW_DOMAIN_NUM; d++)
+			if (w->domains.bits[d >> 6] & ((uint64_t)1u << (d & 63u)))
+				pd->domain_wells[d] |= (uint64_t)1u << i;
+	}
+	pd->map_initialized = 1;
+	return 0;
+}
+
+#undef ADD
 
 int
 parity_intel_power_domains_init(struct parity_power_domains *pd,
@@ -309,17 +447,30 @@ parity_intel_power_domains_init(struct parity_power_domains *pd,
 	pd->map_initialized = 0;
 	pd->num_power_wells = 0u;
 
-	if (power_map_init(pd) != 0)
+	/*
+	 * Which map: display version 13 is XE_LPD (Alder Lake-P), 12 is Tiger Lake.  A version this
+	 * driver has no map for is refused here rather than programmed with another platform's wells.
+	 */
+	if (display_ver >= 13u) {
+		if (power_map_init(pd) != 0)
+			return -1;
+	} else if (display_ver == 12u) {
+		if (power_map_init_tgl(pd) != 0)
+			return -1;
+	} else {
+		kern_logf("i915: parity P3 intel_power_domains_init: no power-well map for display version %u\n",
+			display_ver);
 		return -1;
+	}
 
 	pd->initialized = 1;
 	osdep_trace_emit(trace, PARITY_STAGE_P3, OSDEP_TR_ACQUIRE,
 		"intel_power_domains_init", (uint64_t)pd->num_power_wells,
 		(uint64_t)pd->allowed_dc_mask);
 	kern_logf("i915: parity P3 intel_power_domains_init: wells=%u allowed_dc=0x%x "
-		"target_dc=0x%x disable_pw=%d (xelpd map)\n",
+		"target_dc=0x%x disable_pw=%d (%s map)\n",
 		pd->num_power_wells, pd->allowed_dc_mask, pd->target_dc_state,
-		pd->disable_power_well);
+		pd->disable_power_well, display_ver >= 13u ? "xelpd" : "tgl");
 	return 0;
 }
 

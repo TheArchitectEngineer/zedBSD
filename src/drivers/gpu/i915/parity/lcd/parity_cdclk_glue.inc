@@ -15,8 +15,12 @@ int parity_lcd_ms_cdclk_check(struct parity_lcd_modeset *ms)
 	const struct intel_crtc_state *cs = &ms->crtc_state;
 	int min_cdclk, cdclk, vco, level;
 
-	/* intel_init_cdclk_hooks(): ADL-P past display stepping B0, not RPL-U */
-	i915->display.cdclk.table = adlp_cdclk_table;
+	/*
+	 * intel_init_cdclk_hooks(): the table of THIS display -- Alder Lake-P past display stepping B0
+	 * (not RPL-U) uses adlp_cdclk_table, Tiger Lake uses icl_cdclk_table (E-126).  It must be the same
+	 * table the probe programmed the hardware from, or every mode looks like a CDCLK change.
+	 */
+	i915->display.cdclk.table = parity_lcd_display_ver() >= 13 ? adlp_cdclk_table : icl_cdclk_table;
 
 	/* intel_compute_min_cdclk(): the crtc's need, the bandwidth need (no forced minimum) */
 	min_cdclk = intel_crtc_compute_min_cdclk(cs);

@@ -42,6 +42,8 @@
 #include "driver_probe.h"
 #include "eu_test.h"
 #include "native_precheck.h"
+#include "lcd/parity_lcd_modeset.h"
+#include "../linux/i915-ids.inc"   /* the id lists the PCI driver matches on */
 #include "lcd/parity_hotplug.h"
 /* E-123: the hotplug path is running (started after intel_display_driver_probe) */
 static int parity_hpd_started;
@@ -81,6 +83,25 @@ parity_dump_trace(struct osdep_trace *t)
 
 /* N0 (E-120): the aperture, and the reference's readout gate for the precheck (no write) */
 static uint64_t n0_gmadr_base, n0_gmadr_size;
+
+/*
+ * Which display this device has.  The reference keeps this in its device-info table; here the two
+ * platforms this driver carries display data for are told apart by the PCI device id, using the SAME
+ * id lists the PCI driver matches on (linux/i915-ids.inc).
+ *   Tiger Lake        display version 12
+ *   Alder Lake-P/N, Raptor Lake-P/U  display version 13 (XE_LPD)
+ */
+#define I915_ID_VALUE(product) (product)
+static int devid_is_tigerlake(uint16_t devid)
+{
+	static const uint16_t tgl[] = { INTEL_TGL_IDS(I915_ID_VALUE) };
+	unsigned i;
+
+	for (i = 0u; i < sizeof(tgl) / sizeof(tgl[0]); i++)
+		if (tgl[i] == devid)
+			return 1;
+	return 0;
+}
 static const struct parity_opregion_data *p2_opd;   /* E-122: the P2 OpRegion data (read-only acquisition) */
 static struct osdep_mmio *n0_mmio;
 static int n0_pipe_powered(void *ctx, unsigned pipe)
@@ -212,7 +233,8 @@ drv_i915_parity_attach(struct i915_device *device, enum parity_stage stop_after,
 	int irq_installed = 0;
 	int nogem_inited = 0;
 	int modeset_wq_ok = 0, flip_wq_ok = 0;
-	unsigned display_ver = 13u;   /* ADL-P (xe_lpd) display version */
+	unsigned display_ver = 13u;   /* set from the PCI device id below */
+	int is_alderlake_p = 1;
 	static struct osdep_rpm probe_pm;   /* PCI-core probe runtime PM (distinct ref) */
 	int probe_pm_held = 0;
 	int rc;
@@ -245,6 +267,16 @@ drv_i915_parity_attach(struct i915_device *device, enum parity_stage stop_after,
 	pci_priv.msi_irq = -1;
 	osdep_pci_init(&pci, parity_pci_backend(), &pci_priv, &trace);
 
+	{
+		uint16_t devid = osdep_pci_read16(&pci, 0x02u);
+
+		if (devid_is_tigerlake(devid)) {
+			display_ver = 12u;
+			is_alderlake_p = 0;
+		}
+		kern_logf("i915: parity display device: 8086:%04x -> display version %u, %s\n", devid,
+			display_ver, is_alderlake_p ? "Alder Lake-P class (XE_LPD)" : "Tiger Lake");
+	}
 	kern_logf("i915: parity attach begin (stop_after=P%d)\n", (int)stop_after - 1);
 
 	/*
@@ -898,7 +930,7 @@ drv_i915_parity_attach(struct i915_device *device, enum parity_stage stop_after,
 
 		for (di = 0u; di < sizeof(cdclk); di++) ((char *)&cdclk)[di] = 0;
 		parity_intel_init_cdclk_hooks(&cdclk, (int)display_ver,
-			parity_adlp_display_step(revid), 1 /* ADL-P */);
+			parity_adlp_display_step(revid), is_alderlake_p);
 		cdclk.m = &mmio; cdclk.sb_lock = &sb_lock;
 
 		for (di = 0u; di < sizeof(pwc); di++) ((char *)&pwc)[di] = 0;
@@ -907,6 +939,14 @@ drv_i915_parity_attach(struct i915_device *device, enum parity_stage stop_after,
 		for (di = 0u; di < sizeof(dcore); di++) ((char *)&dcore)[di] = 0;
 		dcore.pd = &power_domains; dcore.cd = &cdclk; dcore.pwc = &pwc;
 		dcore.m = &mmio; dcore.sb_lock = &sb_lock;
+		/* the DBUF slices this display has (E-126): XE_LPD S1..S4, Tiger Lake S1..S2 */
+		dcore.dbuf_slice_mask = display_ver >= 13u ? 0x0fu : 0x03u;
+		/* .abox_mask of the device info: XE_LPD GENMASK(1,0), XE_D (Tiger Lake) GENMASK(2,1) */
+		dcore.abox_mask = display_ver >= 13u ? 0x03u : 0x06u;
+		dcore.display_ver = (int)display_ver;
+		/* the platform itself, for the steps the reference gates on it (E-126) */
+		dcore.is_alderlake_p = is_alderlake_p ? 1u : 0u;
+		parity_lcd_set_display_ver((int)display_ver);   /* the LCD path picks its tables from this */
 		dcore.dram_type = dram_info.type;
 		dcore.dram_channels = dram_info.num_channels;
 
@@ -949,7 +989,9 @@ drv_i915_parity_attach(struct i915_device *device, enum parity_stage stop_after,
 
 		for (di = 0u; di < sizeof(dmc_dev); di++) ((char *)&dmc_dev)[di] = 0;
 		parity_intel_dmc_init(&dmc_dev, &dmc_wq, &mmio, &power_domains, &pwc,
-			(int)display_ver, sc, ss, 0 /* default path */);
+			(int)display_ver, sc, ss,
+			/* E-126: the DMC of THIS display (intel_dmc.c: TGL_DMC_PATH / ADLP_DMC_PATH) */
+			display_ver >= 13u ? "i915/adlp_dmc.bin" : "i915/tgl_dmc_ver2_12.bin");
 		dmc_inited = 1;
 		pwc.display_ver = (int)display_ver;
 		kern_logf("i915: parity P3 intel_dmc_init: revid=0x%x step=%c%c DMC load queued (path=%s, work_submitted=%d)\n",
@@ -1839,6 +1881,7 @@ p6_fw_out:
 		lcdb.cdclk = &cdclk; lcdb.nogem = &nogem; lcdb.dstate = &dstate; lcdb.bw = &bw_state; lcdb.dmc = &dmc_dev;
 		lcdb.irq = &irqdev; lcdb.gm = &gtmem; lcdb.ipc_enabled = dprobe.ipc_enabled;
 		lcdb.es = &gteng; lcdb.vm = &gtpp; lcdb.uncore_lock = &uncore_lock;
+		lcdb.gmadr_base = n0_gmadr_base; lcdb.gmadr_size = n0_gmadr_size; lcdb.dprobe = &dprobe;
 		if (gtmem_inited) {
 			struct parity_lcd_test_summary sum;
 

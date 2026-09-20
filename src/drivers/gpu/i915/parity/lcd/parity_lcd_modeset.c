@@ -52,6 +52,15 @@ static void bind_current(void)
 	parity_lcd_ms_bind_encoder(&ms);
 }
 
+/*
+ * The display version of this device.  The tables that differ between the Gen12 platforms (buffer
+ * translations, DBUF geometry, cdclk) are chosen from it; the sequences are the same text.
+ */
+static int parity_lcd_ver = 13;
+
+void parity_lcd_set_display_ver(int ver) { parity_lcd_ver = ver; }
+int parity_lcd_display_ver(void) { return parity_lcd_ver; }
+
 /* the screen the following calls work on; every screen keeps its own state meanwhile */
 int parity_lcd_modeset_select(unsigned screen)
 {

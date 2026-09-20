@@ -1184,6 +1184,9 @@
         "use_edp_hobl",
         "use_edp_low_vswing",
         "intel_get_buf_trans",
+        "tgl_get_combo_buf_trans_dp",
+        "tgl_get_combo_buf_trans_edp",
+        "tgl_get_combo_buf_trans",
         "adlp_get_combo_buf_trans_dp",
         "adlp_get_combo_buf_trans_edp",
         "adlp_get_combo_buf_trans"
@@ -1255,6 +1258,21 @@
           "static const struct intel_ddi_buf_trans adlp_combo_phy_trans_edp_up_to_hbr2 = {",
           "\n};\n",
           "table adlp_combo_phy_trans_edp_up_to_hbr2"
+        ],
+        [
+          "static const union intel_ddi_buf_trans_entry _tgl_combo_phy_trans_dp_hbr[] = {",
+          ".num_entries = ARRAY_SIZE(_tgl_uy_combo_phy_trans_dp_hbr2),\n};\n",
+          "tgl combo dp tables"
+        ],
+        [
+          "static const union intel_ddi_buf_trans_entry _icl_combo_phy_trans_edp_hbr2[] = {",
+          ".num_entries = ARRAY_SIZE(_icl_combo_phy_trans_edp_hbr2),\n};\n",
+          "icl edp hbr2 table"
+        ],
+        [
+          "static const union intel_ddi_buf_trans_entry _icl_combo_phy_trans_dp_hbr2_edp_hbr3[] = {",
+          ".num_entries = ARRAY_SIZE(_icl_combo_phy_trans_dp_hbr2_edp_hbr3),\n};\n",
+          "icl dp hbr2/edp hbr3 table"
         ]
       ],
       "source": "display/intel_ddi_buf_trans.c"
@@ -1499,6 +1517,7 @@
         "check_mbus_joined",
         "adlp_check_mbus_joined",
         "compute_dbuf_slices",
+        "tgl_compute_dbuf_slices",
         "adlp_compute_dbuf_slices",
         "skl_compute_dbuf_slices",
         "intel_dbuf_slice_size",
@@ -1594,6 +1613,11 @@
           "static const struct dbuf_slice_conf_entry adlp_allowed_dbufs[] =",
           "\n};\n",
           "adlp_allowed_dbufs[]"
+        ],
+        [
+          "static const struct dbuf_slice_conf_entry tgl_allowed_dbufs[] =",
+          "\n};\n",
+          "tgl_allowed_dbufs"
         ]
       ],
       "source": "display/skl_watermark.c"
@@ -1719,6 +1743,11 @@
           "struct intel_cdclk_vals {",
           "\n};\n",
           "struct intel_cdclk_vals"
+        ],
+        [
+          "static const struct intel_cdclk_vals icl_cdclk_table[] = {",
+          "\n};\n",
+          "icl_cdclk_table[]"
         ],
         [
           "static const struct intel_cdclk_vals adlp_cdclk_table[] = {",

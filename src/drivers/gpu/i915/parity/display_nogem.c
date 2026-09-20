@@ -28,7 +28,12 @@
 #define GMBUS4_OFF                          0x5110u
 #define GMBUS_RATE_100KHZ                   0u
 
-/* adlp_display_wa_apply() */
+/* intel_display_wa.c: the registers of every arm, not only Alder Lake-P's (E-126) */
+#define ILK_DPFC_CHICKEN_FBC_A              0x43224u   /* ILK_DPFC_CHICKEN(INTEL_FBC_A) */
+#define DPFC_CHICKEN_COMP_DUMMY_PIXEL       (1u << 14) /* glk+ */
+#define CLKREQ_POLICY                       0x101038u
+#define CLKREQ_POLICY_MEM_UP_OVRD           (1u << 1)
+#define ICL_DELAY_PMRSP                     (1u << 22)
 #define GEN9_CLKGATE_DIS_5                  0x46540u
 #define DPCE_GATING_DIS                     (1u << 17)
 #define GEN8_CHICKEN_DCPR_1                 0x46430u
@@ -369,7 +374,7 @@ parity_intel_crtc_init(struct parity_display_nogem *d, int display_ver,
 /* ---------------- intel_display_wa.c ---------------- */
 
 void
-parity_adlp_display_wa_apply(struct parity_display_nogem *d, struct osdep_mmio *m,
+parity_intel_display_wa_apply(struct parity_display_nogem *d, struct osdep_mmio *m,
 	int display_ver, int is_alderlake_p)
 {
 	if (is_alderlake_p) {
@@ -380,11 +385,29 @@ parity_adlp_display_wa_apply(struct parity_display_nogem *d, struct osdep_mmio *
 		d->adlp_wa_applied = 1;
 		return;
 	}
-	/*
-	 * The DISPLAY_VER == 12 (xe_d) and == 11 arms write ILK_DPFC_CHICKEN and
-	 * their own chicken bits; this port targets ADL-P and does not guess them.
-	 */
-	(void)display_ver;
+	if (display_ver == 12) {
+		/* xe_d: Tiger Lake, Rocket Lake, DG1, ADL-S */
+		/* Wa_1409120013 */
+		(void)wr(d, m, ILK_DPFC_CHICKEN_FBC_A, DPFC_CHICKEN_COMP_DUMMY_PIXEL);
+		/* Wa_14013723622 */
+		(void)rmw(d, m, CLKREQ_POLICY, CLKREQ_POLICY_MEM_UP_OVRD, 0u);
+		d->xe_d_wa_applied = 1;
+		kern_logf("i915: parity P3 xe_d_display_wa_apply: Wa_1409120013 (DPFC chicken dummy pixel) + Wa_14013723622 (CLKREQ_POLICY memory-up override cleared)\n");
+		return;
+	}
+	if (display_ver == 11) {
+		/*
+		 * XXX: unimplemented path -- this driver attaches to Gen12 only, so the display 11
+		 * arm of the reference is written out but has never run on hardware.
+		 */
+		kern_logf("i915: parity P3 gen11_display_wa_apply: XXX unimplemented path entered (display 11 is not a device this driver claims)\n");
+		/* Wa_1409120013 */
+		(void)wr(d, m, ILK_DPFC_CHICKEN_FBC_A, DPFC_CHICKEN_COMP_DUMMY_PIXEL);
+		/* Wa_14010594013 */
+		(void)rmw(d, m, GEN8_CHICKEN_DCPR_1, 0u, ICL_DELAY_PMRSP);
+		return;
+	}
+	kern_logf("i915: parity P3 intel_display_wa_apply: XXX no arm for display version %d\n", display_ver);
 }
 
 /* ---------------- intel_cdclk.c: intel_update_max_cdclk() ---------------- */
@@ -516,7 +539,7 @@ parity_intel_display_nogem_front(struct parity_display_nogem *d, int display_ver
 	kern_logf("i915: parity P5 Current CDCLK: cdclk=%u vco=%u ref=%u voltage=%u\n",
 		cd->hw.cdclk, cd->hw.vco, cd->hw.ref, (unsigned)cd->hw.voltage_level);
 	d->cdclk_logical_set = 1;   /* cdclk_state->logical = actual = hw */
-	parity_adlp_display_wa_apply(d, m, display_ver, is_adlp);
+	parity_intel_display_wa_apply(d, m, display_ver, is_adlp);
 
 	/* intel_dpll_update_ref_clks() -> icl_update_dpll_ref_clks(): no SSC ref. */
 	if (d->dpll_mgr_present)

@@ -31,6 +31,7 @@ struct spinlock;
 #endif
 
 /* the objects of the normal initialisation this run reads and uses; none is copied, none is re-created */
+struct parity_driver_probe;
 struct parity_lcd_kernel_deps {
 	struct parity_edp_device *edp;          /* resident panel: DPCD / EDID / LCD-A state, PPS, AUX, tick sleeps, VBT */
 	struct osdep_mmio *mmio;
@@ -49,6 +50,9 @@ struct parity_lcd_kernel_deps {
 	struct parity_gt_engines *es;
 	struct parity_gt_ppgtt *vm;
 	struct spinlock *uncore_lock;
+	/* E-125 (N1): the CPU-mappable aperture, and the probe state whose INIT reference the run returns */
+	uint64_t gmadr_base, gmadr_size;
+	struct parity_driver_probe *dprobe;
 };
 
 /* 0 = PASS (software state + hardware observation; the photograph is judged outside) */

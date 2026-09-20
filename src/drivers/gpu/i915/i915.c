@@ -83,12 +83,16 @@ static struct i915_gem_object *i915_session_object(struct i915_session *session,
 static struct i915_request *i915_reservation(struct i915_engine *engine, void *reservation, struct drv_gpu_completion *completion);
 
 /*
- * Registers the i915 PCI backend for Alder Lake-P class graphics devices.
+ * Registers the i915 PCI backend for the Gen12 Xe graphics devices this driver covers:
+ * Tiger Lake, Alder Lake-P/N and Raptor Lake-P/U.  Display support beyond Alder Lake-P is
+ * still being brought up (E-126): a device that attaches but has no platform data for its
+ * display says so in the probe log instead of programming the wrong registers.
  */
 int
 drv_i915_pci_driver_register(void)
 {
 	static const struct drv_pci_id identifiers[] = {
+		INTEL_TGL_IDS(I915_ID),
 		INTEL_ADLP_IDS(I915_ID),
 		INTEL_ADLN_IDS(I915_ID),
 		INTEL_RPLU_IDS(I915_ID),

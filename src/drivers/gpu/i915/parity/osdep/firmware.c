@@ -10,6 +10,10 @@ extern const unsigned parity_fw_adlp_dmc_size;
 /* An explicit, machine-specific VBT (firmware_vbt_dell_latitude_5330.c); see bios.c for when it is used. */
 extern const unsigned char parity_fw_vbt_dell_latitude_5330[];
 extern const unsigned parity_fw_vbt_dell_latitude_5330_size;
+extern const unsigned char parity_fw_tgl_dmc[];
+extern const unsigned parity_fw_tgl_dmc_size;
+extern const unsigned char parity_fw_vbt_dell_latitude_5320[];
+extern const unsigned parity_fw_vbt_dell_latitude_5320_size;
 
 struct fw_entry {
 	const char *name;
@@ -19,8 +23,11 @@ struct fw_entry {
 
 static const struct fw_entry fw_table[] = {
 	{ "i915/adlp_dmc.bin", parity_fw_adlp_dmc, &parity_fw_adlp_dmc_size },
+	{ "i915/tgl_dmc_ver2_12.bin", parity_fw_tgl_dmc, &parity_fw_tgl_dmc_size },
 	{ "zedbsd/vbt/dell-latitude-5330-1028-0b02.vbt", parity_fw_vbt_dell_latitude_5330,
 	  &parity_fw_vbt_dell_latitude_5330_size },
+	{ "zedbsd/vbt/dell-latitude-5320-1028-0a1f.vbt", parity_fw_vbt_dell_latitude_5320,
+	  &parity_fw_vbt_dell_latitude_5320_size },
 };
 
 static const struct osdep_firmware_test_ops *g_fw_test;

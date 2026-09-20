@@ -32,7 +32,16 @@ volatile unsigned parity_dmc_test_fault_at;
 #define TGL_MAIN_MMIO_END              0x8FFFFu
 #define ADLP_PIPE_MMIO_START           0x5F000u
 #define ADLP_PIPE_MMIO_END             0x5FFFFu
+/* display version 12 keeps one window per pipe payload (intel_dmc_regs.h, _PICK_EVEN(dmc_id - 1)) */
+#define _TGL_PIPEA_MMIO_START          0x92000u
+#define _TGL_PIPEA_MMIO_END            0x93FFFu
+#define _TGL_PIPEB_MMIO_START          0x96000u
+#define _TGL_PIPEB_MMIO_END            0x97FFFu
+#define TGL_PIPE_MMIO_START(id) (_TGL_PIPEA_MMIO_START + (uint32_t)((id) - 1) * (_TGL_PIPEB_MMIO_START - _TGL_PIPEA_MMIO_START))
+#define TGL_PIPE_MMIO_END(id)   (_TGL_PIPEA_MMIO_END + (uint32_t)((id) - 1) * (_TGL_PIPEB_MMIO_END - _TGL_PIPEA_MMIO_END))
 #define DISPLAY_VER13_DMC_MAX_FW_SIZE  0x20000u
+#define ICL_DMC_MAX_FW_SIZE            0x6000u
+#define DISPLAY_VER12_DMC_MAX_FW_SIZE  ICL_DMC_MAX_FW_SIZE
 
 /* --- packed on-disk firmware layout (intel_dmc.c) --- */
 struct css_header {
@@ -145,7 +154,13 @@ mmio_addr_ok(struct parity_dmc *dmc, const uint32_t *addr, uint32_t count,
 		lo = TGL_MAIN_MMIO_START; hi = TGL_MAIN_MMIO_END;
 	} else if (dmc->display_ver >= 13) {
 		lo = ADLP_PIPE_MMIO_START; hi = ADLP_PIPE_MMIO_END;
+	} else if (dmc->display_ver >= 12) {
+		/* Tiger Lake: one window per pipe payload, not the single ADL-P one (E-126) */
+		lo = TGL_PIPE_MMIO_START(id); hi = TGL_PIPE_MMIO_END(id);
 	} else {
+		/* XXX: unimplemented path -- displays before version 12 are not ported. */
+		kern_logf("i915: parity dmc: XXX unknown mmio range for sanity check (display_ver=%d)\n",
+			dmc->display_ver);
 		return 0;
 	}
 	for (i = 0u; i < count; i++)
@@ -257,7 +272,11 @@ parse_header(struct parity_dmc *dmc, const uint8_t *data, unsigned rem, int id)
 		return 0;
 	}
 	if (!mmio_addr_ok(dmc, mmioaddr, mmio_count, base->header_ver, id)) {
-		kern_logf("i915: parity dmc: wrong MMIO addresses\n");
+		/* say WHICH payload and WHICH address: a platform whose range is missing shows up here (E-126) */
+		kern_logf("i915: parity dmc: wrong MMIO addresses (display_ver=%d id=%d header_ver=%d "
+			"count=%u first=0x%05x last=0x%05x)\n", dmc->display_ver, id, base->header_ver,
+			mmio_count, mmio_count != 0u ? mmioaddr[0] : 0u,
+			mmio_count != 0u ? mmioaddr[mmio_count - 1u] : 0u);
 		return 0;
 	}
 
@@ -303,7 +322,9 @@ parity_dmc_prepare(struct parity_dmc *dmc, int display_ver, char stepping, char 
 	dmc->display_ver = display_ver;
 	dmc->stepping = stepping;
 	dmc->substepping = substepping;
-	dmc->max_fw_size = DISPLAY_VER13_DMC_MAX_FW_SIZE;   /* display ver 13 */
+	/* the payload ceiling is per display version too (intel_dmc_init: E-126) */
+	dmc->max_fw_size = display_ver >= 13 ? DISPLAY_VER13_DMC_MAX_FW_SIZE :
+		DISPLAY_VER12_DMC_MAX_FW_SIZE;
 	g_dmc_arena_used = 0u;   /* fresh device-owned payload storage */
 }
 
@@ -541,8 +562,11 @@ dmc_load_work_fn(void *ctx)
 	d->worker_started = 1;
 
 	rc = osdep_request_firmware(&fw, d->fw_path);
-	if (rc == -ENOENT) {
-		/* Reference: only the default path (no explicit override) falls back. */
+	/*
+	 * Reference: only the default path (no explicit override) falls back -- and the fallback is
+	 * the Alder Lake-P firmware, so it is only tried when that is what was asked for (E-126).
+	 */
+	if (rc == -ENOENT && d->fw_path != 0 && d->fw_path[6] == 'a') {
 		d->fallback_requested = 1;
 		rc = osdep_request_firmware(&fw, ADLP_DMC_FALLBACK_PATH);
 		if (rc == 0)

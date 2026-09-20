@@ -113,6 +113,9 @@ struct parity_lcd_modeset_status {
  * The screen the calls below work on (0 = the first).  Each screen has its own crtc, encoder, plane and flip
  * state; the device's shared parts (DPLLs, DBUF / MBUS, power domains, locks) are common to all of them.
  */
+/* E-126: which display this device has (12 = Tiger Lake, 13 = Alder Lake-P class) */
+void parity_lcd_set_display_ver(int ver);
+int parity_lcd_display_ver(void);
 int parity_lcd_modeset_select(unsigned screen);
 unsigned parity_lcd_modeset_selected(void);
 int parity_lcd_ms_bound_port(void);     /* the port the generated DDI callers are bound to */

@@ -430,6 +430,20 @@ void intel_modeset_setup_hw_state(struct drm_i915_private *i915, struct drm_mode
 #define drm_notice(dev, fmt, ...) drm_dbg_kms(dev, fmt, ##__VA_ARGS__)
 #endif
 
+/*
+ * The two head-placement contracts this path depends on.  The reference converts with container_of(), which
+ * does not care where the member sits; the compat layer of THIS path converts with a cast
+ * (to_intel_crtc_state) and relies on to_intel_crtc(NULL) being NULL, so both members must stay first.
+ * E-124 found both the hard way: a readout memset overflowed into the next object, and a NULL crtc came
+ * back as a non-NULL pointer.  A build that moves them now fails here instead.
+ */
+_Static_assert(offsetof(struct intel_crtc_state, uapi) == 0,
+	"intel_crtc_state.uapi must remain first: to_intel_crtc_state() is a cast in this path");
+_Static_assert(offsetof(struct intel_crtc, base) == 0,
+	"intel_crtc.base must remain first: the sanitize text relies on to_intel_crtc(NULL) == NULL");
+_Static_assert(offsetof(struct intel_plane_state, uapi) == 0,
+	"intel_plane_state.uapi must remain first: to_intel_plane_state() is a cast in this path");
+
 #endif /* PARITY_N1_COMPAT_H */
 
 /*

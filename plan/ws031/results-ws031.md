@@ -3808,3 +3808,88 @@ LCD-D は描画ごとに context などを作り直している（同一 context
 - ベアメタルで潰した NULL フック（VM では encoder/crtc が無効で通らない枝）: `encoder->get_config` ほか readout フック、takeover の `old_crtc_state`、readout device の `drm.vblank`、`display.funcs.color`、`crtc->base.funcs`。
 - ホスト試験 56/0・123/0、生成物の再現性 OK。未実装経路は `XXX:` と擬似コードを明記し、入口で `UNRESOLVED step reached: <名前>` を実機に出力する（利用者の指示による）。
 - **未了**: 回帰 sweep（受け入れ済み 14 + hdmib / dual / dualsh + n1 = 18 モード）は KVM ホストがベアメタル試験中のため再実行待ち。
+
+### E-124 追記: 回帰 sweep（18 モード）
+- 最終ソース（N1 + 構造体先頭配置 + active 経路のフック追加 + XXX 注記）で **18/18 PASS**（sweep_e124.sh）。
+  eu / draw / r1 / tex / t3 / bl / texvbt / aux(+scanout) / lcdb / lcdr / lcdg / lcdc / lcdd / lcdo / hdmib / dual / dualsh / n1。
+  全 run で `runner-result: selftest=PASS probe=COMPLETE cleanup=1`、GPU なし ktest 612 checks / 0 failures。
+- 各 run に 1 行出る `LCD-G verdict: FAIL (refused ... retained resources)` は lcdg-ktest（放棄バッファがあるときの拒否を確認する model 試験）の期待出力。回帰ではない。
+- log = solaris10-man:~/bigbang/run-parity-hw-e124-*.log（18 本）。
+
+## E-126 — Gen12 generality: a second machine (Tiger Lake, Latitude 5320)
+
+Purpose: the port was written against Alder Lake-P; run it on an 11th-gen Tiger Lake laptop to find
+where it is bound to one platform.  Test host `awe@10.0.10.26` (Latitude 5320, 8086:9a49, display
+version 12), same QEMU + vfio shape as the 5330, launcher `~/bigbang/run-parity-tgl.sh`, one-run helper
+`~/bigbang/tglrun.sh` (waits for the previous qemu, prints the LAUNCH and PICTURE UP wall-clock times so
+the host camera can be triggered).
+
+### Platform gaps found and closed (all to the reference's own dispatch)
+
+1. PCI ids: `INTEL_TGL_IDS` were not claimed, so the driver never attached (the first, and the real
+   reason the panel code 'did not run').
+2. VBT: the explicit pin became a table; the 5320's blob (1028:0a1f, sha 038625fb..) was added.
+3. Power wells: `power_map_init_tgl()` (25 wells) beside the ADL-P map, chosen by display version.
+4. cdclk: `icl_cdclk_table` generated and selected for display 12 (the ADL-P table was hardcoded).
+5. DBUF: `.dbuf.size` 2048 / 2 slices, `tgl_allowed_dbufs` and `tgl_compute_dbuf_slices` generated;
+   `DISPLAY_VER` made device-driven so the ported text stops folding to 13.
+6. MBUS: `icl_mbus_init()` was missing entirely (it is an early return on ADL-P only).
+7. BW_BUDDY: indexed by the display's ABOX set (ADL-P 0/1, Tiger Lake 1/2) and Wa_22010178259's TLB
+   request timer on display 12.
+8. DMC: the Tiger Lake blob (`i915/tgl_dmc_ver2_12.bin`) embedded and chosen by display version; the
+   ADL-P fallback path is only tried for the ADL-P firmware.
+9. DMC parser: `dmc_mmio_addr_sanity_check()` had no display-12 pipe window, so the Tiger Lake pipe A
+   payload (MMIO 0x92074..) was refused and the whole blob dropped.  Added `TGL_PIPE_MMIO_START/END`
+   (pipe A 0x92000-0x93FFF, pipe B 0x96000-0x97FFF) and the per-version `max_fw_size`.  Pipe A now loads
+   (`payload=4460/220/0/0/0`).
+10. `gen12_dbuf_slices_config()`: skipped as a comment because it returns at once on ADL-P; Tiger Lake
+    needs `DBUF_TRACKER_STATE_SERVICE(8)` (DBUF_CTL_S1/S2 0xc060c000 -> 0xc040c000).
+11. `intel_display_wa_apply()`: only the ADL-P arm existed.  The xe_d arm (Wa_1409120013 and
+    Wa_14013723622, which clears CLKREQ_POLICY's memory-up override) is implemented; the display-11 arm
+    is written out as an XXX unimplemented path with a message at its entry.
+12. `icl_mbus_init()` again: on display version 12 the reference adds BIT(0) to the ABOX set -- 'the
+    gen12 platforms that use abox1 and abox2 for pixel data reads still expect us to program the
+    abox_ctl0 register as well'.  ABOX0 had been left out.  ADL-P's real `.abox_mask` (GENMASK(1,0)) is
+    now carried too, and the early return is by platform as in the reference.
+
+ktest gained P5A-WA-XED (the xe_d arm's two register operations).  Host suites after the change:
+lcd 56/0, lcd-modeset 123/0, dp 72/0.
+
+### The remaining defect on the 5320 (not closed)
+
+LCD-B lights the panel and then fails: the picture is a flat light blue that **does not follow the
+framebuffer** (a buffer filled with solid red gives the same picture as the test pattern -- no white
+border, no corner blocks, no 'F 110'), and black eats it from the top at about one line per frame
+(768 lines in roughly ten seconds).  `PIPE_STATUS` bit 31 (underrun) is set on every sample of the
+steady picture.
+
+What the hardware says while that happens (scanout probe, `-DPARITY_LCDB_SCANOUT_PROBE=1`):
+
+* plane: `PLANE_CTL=0x84000000` (enabled, XRGB8888, linear), `PLANE_SURF` = `DSPSURFLIVE` =
+  0xfdfc0000 on every sample -- the plane is fetching the address that was armed;
+* memory: the object's GGTT entries are valid and consecutive (0x100340001, 0x100341001, ...,
+  0x100747001), and the CPU view of the same pages holds the pattern (0x00ffffff border, 0x00102040
+  field);
+* geometry and timing: PIPESRC 1366x768, HTOTAL/VTOTAL/HSYNC/VSYNC exactly the mode, PLANE_POS and
+  PLANE_OFFSET 0, no scaler, `PIPEDSL` sweeps 0..797 at 60 Hz, frame counter advances throughout;
+* arbitration: DDB 0..2015 of 2048, `PLANE_WM_1_0=0x8000400c`, `PIPE_MBUS_DBOX_CTL` with the
+  display-12 credits, DBUF S1 and S2 powered with tracker service 8, ABOX 0/1/2 credited, BW_BUDDY
+  page mask 0x1f with the TLB timer;
+* nothing in the way: FBC off (DPFC_A/B_CTL 0), PSR1 and PSR2 disabled, DC_STATE_EN 0, VRR_CTL 0;
+* link: `TGL_DP_TP_CTL=0x80000300` (enabled, SST, normal), MSA MISC 0x1 (6 bpc), data M/N
+  0x7e5162fc/0x800000 (TU 64), link M/N 148159/524288 -- both the reference's formulas for 1366x768 at
+  76.3 MHz, 18 bpp, one lane at 2.7 Gb/s -- and the sink reports CR, EQ, symbol lock, interlane align
+  and RECEIVE_PORT_0_STATUS all set;
+* no IOMMU faults on the host during the run.
+
+So the plane fetches the right address with a correct allocation and a trained link, and what reaches
+the panel does not depend on the buffer.  A difference between the two machines that is worth keeping
+in mind for the next session: on the 5330 the guest firmware lights the panel before the driver starts
+(`N0 pipe A: ACTIVE`, which is what N1 takes over), while on the 5320 it does not (`N0 pipe A:
+READABLE_INACTIVE`, TRANSCONF 0, firmware framebuffer 640x480 and not in the aperture) -- the 5320 is a
+cold bring-up, so anything the driver does not program itself stays at its power-on value there while
+the 5330's firmware had already set it.
+
+Not done: the 18-mode sweep on the 5330 after these shared-code changes (10.0.10.25 was unreachable
+all session).  It must run before the result is trusted.
+

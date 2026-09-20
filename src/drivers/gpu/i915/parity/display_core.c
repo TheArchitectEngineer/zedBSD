@@ -37,17 +37,26 @@
 /* DBUF: ADL-P (xe_lpd) has 4 slices S1..S4. */
 #define DBUF_POWER_REQUEST          (1u << 31)
 #define DBUF_POWER_STATE            (1u << 30)
+/* skl_watermark_regs.h: the service levels of the DBUF trackers */
+#define DBUF_TRACKER_STATE_SERVICE_MASK (0x1fu << 19)
+#define DBUF_TRACKER_STATE_SERVICE(x)   (((uint32_t)(x) & 0x1fu) << 19)
 /* skl_watermark_regs.h: _DBUF_CTL_S0 0x45008, _DBUF_CTL_S1 0x44FE8, _DBUF_CTL_S2 0x44300, _DBUF_CTL_S3 0x44304; slice S1 is
  * index 0.  (Until E-116 this table began at 0x44FE8 and ended at 0x44308: "slice 1" powered the second slice and
  * the fourth request went to a register that is not a DBUF control -- found by LCD-B's register readback.) */
 static const uint32_t dbuf_ctl_s[4] = { 0x45008u, 0x44FE8u, 0x44300u, 0x44304u };
-#define DBUF_SLICE_MASK             0xFu   /* BIT(S1)|BIT(S2)|BIT(S3)|BIT(S4) */
+/* the slices this display HAS; the device sets it (XE_LPD: S1..S4, Tiger Lake: S1..S2) */
+#define DBUF_SLICE_MASK             (dc->dbuf_slice_mask != 0u ? dc->dbuf_slice_mask : 0xFu)
 
-/* BW_BUDDY: abox_mask = GENMASK(1,0) on ADL-P. */
-#define BW_BUDDY_CTL0               0x45130u
-#define BW_BUDDY_CTL1               0x45140u
-#define BW_BUDDY_PAGE_MASK0         0x45134u
-#define BW_BUDDY_PAGE_MASK1         0x45144u
+/* BW_BUDDY, one pair per ABOX (i915_reg.h): the device info says which ABOXes exist -- ADL-P 0/1,
+ * Tiger Lake 1/2 -- so the registers are indexed, not named (E-126). */
+#define BW_BUDDY_CTL(x)             (0x45130u + (uint32_t)(x) * 0x10u)
+#define BW_BUDDY_PAGE_MASK(x)       (0x45134u + (uint32_t)(x) * 0x10u)
+#define BW_BUDDY_TLB_REQ_TIMER_MASK (0x3fu << 16)
+#define BW_BUDDY_TLB_REQ_TIMER(x)   (((uint32_t)(x) & 0x3fu) << 16)
+#define BW_BUDDY_CTL0               BW_BUDDY_CTL(0)
+#define BW_BUDDY_CTL1               BW_BUDDY_CTL(1)
+#define BW_BUDDY_PAGE_MASK0         BW_BUDDY_PAGE_MASK(0)
+#define BW_BUDDY_PAGE_MASK1         BW_BUDDY_PAGE_MASK(1)
 #define BW_BUDDY_DISABLE            (1u << 31)
 
 /* tgl_buddy_page_masks[] (parity dram-type enum values). */
@@ -148,6 +157,29 @@ parity_gen9_dbuf_slices_update(struct parity_display_core *dc, uint8_t req_slice
 	gen9_dbuf_slices_update(dc, req_slices & DBUF_SLICE_MASK);
 }
 
+/*
+ * gen12_dbuf_slices_config().  Alder Lake-P returns at the top of the reference's function and
+ * keeps whatever the firmware left; every other display 12+ is given service level 8.
+ */
+static void
+gen12_dbuf_slices_config(struct parity_display_core *dc)
+{
+	uint8_t mask = DBUF_SLICE_MASK;
+	unsigned slice, done = 0u;
+
+	if (dc->is_alderlake_p)
+		return;
+	for (slice = 0u; slice < 4u; slice++) {
+		if ((mask & (1u << slice)) == 0u)
+			continue;
+		(void)rmw(dc->m, dbuf_ctl_s[slice], DBUF_TRACKER_STATE_SERVICE_MASK,
+			DBUF_TRACKER_STATE_SERVICE(8));
+		done++;
+	}
+	kern_logf("i915: parity P3 gen12_dbuf_slices_config: tracker state service 8 on %u slice(s) of mask 0x%x\n",
+		done, mask);
+}
+
 static void
 gen9_dbuf_enable(struct parity_display_core *dc)
 {
@@ -159,6 +191,50 @@ gen9_dbuf_enable(struct parity_display_core *dc)
 }
 
 /* tgl_bw_buddy_init(): program the arbiter BW_BUDDY from the DRAM config. */
+/* MBUS_ABOX_CTL(x) (i915_reg.h): ABOX0, then ABOX1 / ABOX2 */
+#define MBUS_ABOX0_CTL              0x45038u
+#define MBUS_ABOX1_CTL              0x45048u
+#define MBUS_ABOX2_CTL              0x4504cu
+#define MBUS_ABOX_BW_CREDIT_MASK    (3u << 20)
+#define MBUS_ABOX_BW_CREDIT(x)      ((uint32_t)(x) << 20)
+#define MBUS_ABOX_B_CREDIT_MASK     (0xfu << 16)
+#define MBUS_ABOX_B_CREDIT(x)       ((uint32_t)(x) << 16)
+#define MBUS_ABOX_BT_CREDIT_POOL2_MASK (0x1fu << 8)
+#define MBUS_ABOX_BT_CREDIT_POOL2(x)   ((uint32_t)(x) << 8)
+#define MBUS_ABOX_BT_CREDIT_POOL1_MASK (0x1fu << 0)
+#define MBUS_ABOX_BT_CREDIT_POOL1(x)   ((uint32_t)(x) << 0)
+
+/*
+ * icl_mbus_init().  The reference returns for Alder Lake-P and display 14+, and otherwise walks
+ * DISPLAY_INFO(i915)->abox_mask -- plus ABOX0 on display version 12, which its own comment
+ * explains: the gen12 platforms that read pixel data through ABOX1 and ABOX2 still expect ABOX0
+ * to be given credits, although their other instance-0 registers (BW_BUDDY) are left alone.
+ */
+static void
+icl_mbus_init(struct parity_display_core *dc)
+{
+	static const uint32_t abox_ctl[3] = { MBUS_ABOX0_CTL, MBUS_ABOX1_CTL, MBUS_ABOX2_CTL };
+	uint32_t mask = MBUS_ABOX_BT_CREDIT_POOL1_MASK | MBUS_ABOX_BT_CREDIT_POOL2_MASK |
+		MBUS_ABOX_B_CREDIT_MASK | MBUS_ABOX_BW_CREDIT_MASK;
+	uint32_t val = MBUS_ABOX_BT_CREDIT_POOL1(16) | MBUS_ABOX_BT_CREDIT_POOL2(16) |
+		MBUS_ABOX_B_CREDIT(1) | MBUS_ABOX_BW_CREDIT(1);
+	unsigned abox, i, done = 0u;
+
+	if (dc->is_alderlake_p || dc->display_ver >= 14)
+		return;
+	abox = dc->abox_mask;
+	if (dc->display_ver == 12)
+		abox |= 1u;   /* ABOX0 as well: see the comment above */
+	for (i = 0u; i < 3u; i++) {
+		if ((abox & (1u << i)) == 0u)
+			continue;
+		(void)rmw(dc->m, abox_ctl[i], mask, val);
+		done++;
+	}
+	kern_logf("i915: parity P3 icl_mbus_init: %u ABOX register(s) of mask 0x%x given the "
+		"reference credits (POOL1 16, POOL2 16, B 1, BW 1)\n", done, abox);
+}
+
 static void
 tgl_bw_buddy_init(struct parity_display_core *dc)
 {
@@ -172,17 +248,30 @@ tgl_bw_buddy_init(struct parity_display_core *dc)
 			break;
 		}
 
+	/* the ABOXes of THIS display (its device info .abox_mask) */
+	unsigned abox = dc->abox_mask;
+	unsigned b;
+
 	if (row == 0) {
 		/* Unknown memory configuration: disable address buddy logic. */
-		osdep_mmio_raw_write32(dc->m, BW_BUDDY_CTL0, BW_BUDDY_DISABLE);
-		osdep_mmio_raw_write32(dc->m, BW_BUDDY_CTL1, BW_BUDDY_DISABLE);
+		for (b = 0u; b < 3u; b++)
+			if (abox & (1u << b))
+				osdep_mmio_raw_write32(dc->m, BW_BUDDY_CTL(b), BW_BUDDY_DISABLE);
 		kern_logf("i915: parity BW_BUDDY: unknown DRAM config (ch=%u type=%d); disabled\n",
 			dc->dram_channels, dc->dram_type);
 		return;
 	}
-	/* DISPLAY_VER 13: no Wa_22010178259 TLB timer (that is ver 12 only). */
-	osdep_mmio_raw_write32(dc->m, BW_BUDDY_PAGE_MASK0, row->page_mask);
-	osdep_mmio_raw_write32(dc->m, BW_BUDDY_PAGE_MASK1, row->page_mask);
+	for (b = 0u; b < 3u; b++) {
+		if ((abox & (1u << b)) == 0u)
+			continue;
+		osdep_mmio_raw_write32(dc->m, BW_BUDDY_PAGE_MASK(b), row->page_mask);
+		/* Wa_22010178259: display version 12 only (the reference's DISPLAY_VER == 12 branch) */
+		if (dc->display_ver == 12)
+			(void)rmw(dc->m, BW_BUDDY_CTL(b), BW_BUDDY_TLB_REQ_TIMER_MASK,
+				BW_BUDDY_TLB_REQ_TIMER(0x8));
+	}
+	kern_logf("i915: parity BW_BUDDY: ABOX mask 0x%x page_mask 0x%x%s\n", abox, row->page_mask,
+		dc->display_ver == 12 ? " + TLB request timer 0x8 (Wa_22010178259)" : "");
 }
 
 /*
@@ -258,13 +347,26 @@ icl_display_core_init(struct parity_display_core *dc, int resume)
 		return -EIO;
 	}
 
-	/* gen12_dbuf_slices_config(): no-op on ADL-P. */
+	/*
+	 * gen12_dbuf_slices_config(): the reference runs it on every display 12+ and it returns at
+	 * once on Alder Lake-P.  Tiger Lake needs it: without service level 8 the display's data
+	 * path underruns continuously while a picture is up (E-126).
+	 */
+	if (dc->display_ver >= 12)
+		gen12_dbuf_slices_config(dc);
 
 	/* 5. Enable DBUF. */
 	dc->last_child = 6;
 	gen9_dbuf_enable(dc);
 
-	/* 6. icl_mbus_init(): no-op on ADL-P. */
+	/*
+	 * 6. icl_mbus_init(): the MBUS ABOX credit pools.  The reference returns immediately for
+	 * Alder Lake-P and display 14+; Tiger Lake programs every ABOX of its device info with
+	 * POOL1(16) | POOL2(16) | B_CREDIT(1) | BW_CREDIT(1).  Without it the display starves and
+	 * the pipe underruns while the picture is up (E-126, seen on Tiger Lake).
+	 */
+	icl_mbus_init(dc);
+
 
 	/* 7. Program arbiter BW_BUDDY registers. */
 	dc->last_child = 7;

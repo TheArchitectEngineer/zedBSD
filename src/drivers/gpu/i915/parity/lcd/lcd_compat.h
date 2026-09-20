@@ -135,11 +135,19 @@ void drm_mode_set_name(struct drm_display_mode *mode);
 
 /* ---- i915: the members the kept functions use ---- */
 #include "lcd_ref_types.h"        /* reference, extracted: intel_link_m_n, intel_dpll_hw_state, field macros */
-#define DISPLAY_VER(i915) 13
+/* E-126: the display version of the device the probe found (12 = Tiger Lake, 13 = ADL-P class) */
+int parity_lcd_display_ver(void);
+#define DISPLAY_VER(i915) (parity_lcd_display_ver())
 #define IS_ELKHARTLAKE(i915) 0
-#define IS_TIGERLAKE(i915) 0
 #define IS_ALDERLAKE_S(i915) 0
-#define IS_ALDERLAKE_P(i915) 1
+/*
+ * E-126: the platform predicates the ported text asks about.  The DEVICE decides now: the probe tells
+ * this path which display it found (parity_lcd_display_ver), so one build serves both Gen12 platforms.
+ */
+int parity_lcd_display_ver(void);
+#define IS_ALDERLAKE_P(i915) (parity_lcd_display_ver() >= 13)
+#define IS_TIGERLAKE(i915) (parity_lcd_display_ver() == 12)
+#define IS_TIGERLAKE_UY(i915) (0)   /* the UY sub-SKU has its own table; neither target is one */
 #define IS_DG2(i915) 0
 #define IS_DG1(i915) 0
 #define IS_ROCKETLAKE(i915) 0

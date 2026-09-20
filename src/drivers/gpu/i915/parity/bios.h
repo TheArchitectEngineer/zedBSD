@@ -110,7 +110,12 @@ struct parity_vbt_state {
 #ifndef PARITY_VBT_EXPLICIT
 #define PARITY_VBT_EXPLICIT (PARITY_N1_TEST || PARITY_DUAL_SHARE_TEST || PARITY_DUAL_TEST || PARITY_HDMI_B_TEST || PARITY_HDMI_EDID_TEST || PARITY_HDMI_HPD_TEST || PARITY_AUX_TEST || PARITY_LCDB_TEST || PARITY_LCDR_TEST || PARITY_LCDG_TEST || PARITY_LCDC_TEST || PARITY_LCDD_TEST || PARITY_LCDO_TEST)
 #endif
-#define PARITY_VBT_EXPLICIT_NAME "zedbsd/vbt/dell-latitude-5330-1028-0b02.vbt"
+/*
+ * The explicit VBT inputs, one row per machine this build carries.  A row is used only when the
+ * file is found, its sha256 matches the pin AND the PCI subsystem id is that machine -- the same
+ * rule as the single pin it replaces (E-107), now for more than one target (E-126).
+ */
+#define PARITY_VBT_EXPLICIT_NAME "zedbsd/vbt/dell-latitude-5330-1028-0b02.vbt"   /* the first target */
 #define PARITY_VBT_EXPLICIT_SUBSYS_VENDOR 0x1028u
 #define PARITY_VBT_EXPLICIT_SUBSYS_DEVICE 0x0b02u
 

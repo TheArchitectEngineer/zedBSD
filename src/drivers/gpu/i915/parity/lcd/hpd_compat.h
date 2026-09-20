@@ -314,7 +314,9 @@ struct drm_i915_private {
 #define HAS_DISPLAY(i915) (1)
 #define HAS_GMCH(i915) (0)
 #define HAS_DP_MST(i915) (1)          /* ADL-P: display ver 13 has DP MST */
-#define DISPLAY_VER(i915) (13)
+/* E-126: the display version of the device the probe found (12 = Tiger Lake, 13 = ADL-P class) */
+int parity_lcd_display_ver(void);
+#define DISPLAY_VER(i915) (parity_lcd_display_ver())
 #define intel_display_device_enabled(i915) (true)
 
 /* registers: the glue routes them to the MMIO BAR (or, in the model tests, to fake registers) */
