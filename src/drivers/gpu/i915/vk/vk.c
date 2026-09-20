@@ -14,8 +14,10 @@
 
 #include "vk.h"
 #include "cmd.h"
+#include "../parity/resident.h"
 
 #include <kern/kmem.h>
+#include <kern/klog.h>
 #include <kern/device-io.h>
 
 #include <errno.h>
@@ -174,6 +176,21 @@ i915_vk_capset_fill(
 	memset(vk->capset, 0, sizeof(vk->capset));
 	vk->capset[0] = 1U;
 	vk->capset_bytes = 156U;
+
+	/*
+	 * E-127 resident build: the record libvulkan accepts (context.c): wire version 1, the VK XML
+	 * version it was generated from, a non-zero timeline count, and the 168-byte vendor suffix.
+	 * XXX: flags 7 = OPAQUE | STRICT_QUEUE | QUIESCE is declared for the connectivity check only;
+	 * the shim honours it on the happy path and has no retire / recovery behind it.
+	 */
+	if (PARITY_RESIDENT) {
+		vk->capset[1] = 0x0040310DU;      /* VK_MAKE_VERSION(1, 3, 269) */
+		vk->capset[152U / 4U] = 1U;       /* timelines: RCS0 */
+		vk->capset[160U / 4U] = 0x5a424453U;
+		vk->capset[164U / 4U] = 7U;
+		vk->capset_bytes = 168U;
+		kern_logf("i915: vk: XXX capset declares vendor flags 7 for the connectivity check (contracts not implemented beyond the happy path)\n");
+	}
 }
 
 /* Maps a Vulkan result code carried on the wire to an errno. */

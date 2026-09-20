@@ -41,6 +41,7 @@
 #include "pxp.h"
 #include "driver_probe.h"
 #include "eu_test.h"
+#include "resident.h"
 #include "native_precheck.h"
 #include "lcd/parity_lcd_modeset.h"
 #include "../linux/i915-ids.inc"   /* the id lists the PCI driver matches on */
@@ -2420,6 +2421,35 @@ p6_fw_out:
 	/* i915_driver_probe() returns 0: the driver is loaded. */
 	res.outcome = PARITY_STOPPED;
 	res.where = "i915_driver_probe complete";
+
+	/*
+	 * E-127 resident mode (V0): instead of stopping here, publish the GPU node and serve it from
+	 * this thread, with the GT awake the way the draw tests hold it.  When serving ends the
+	 * teardown below runs exactly as it does for every test mode.
+	 */
+	if (PARITY_RESIDENT) {
+		static const int rfwd[5] = { OSDEP_FW_RENDER, OSDEP_FW_GT,
+			OSDEP_FW_MEDIA_VDBOX0, OSDEP_FW_MEDIA_VDBOX2, OSDEP_FW_MEDIA_VEBOX0 };
+		static struct parity_resident_ctx rctx;
+		unsigned rheld = 0u;
+		int rfrc = 0;
+
+		while (rheld < 5u && (rfrc = osdep_fw_get(&mmio, rfwd[rheld])) == 0)
+			rheld++;
+		if (rheld == 5u && gteng_inited && gtmem_inited) {
+			rctx.device = device;
+			rctx.mmio = &mmio;
+			rctx.uncore_lock = &uncore_lock;
+			rctx.gm = &gtmem;
+			rctx.es = &gteng;
+			(void)parity_resident_serve(&rctx);
+		} else {
+			kern_logf("i915: resident: not serving (forcewake rc=%d held=%u engines=%d mem=%d)\n",
+				rfrc, rheld, gteng_inited, gtmem_inited);
+		}
+		while (rheld-- > 0u)
+			osdep_fw_put(&mmio, rfwd[rheld]);
+	}
 
 teardown:
 	/*

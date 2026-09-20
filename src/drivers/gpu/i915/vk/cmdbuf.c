@@ -29,6 +29,12 @@
 #include <errno.h>
 
 #include "linux/3dstate-gen12.inc"
+/* E-127: in a resident parity build the submit end of the executor is the parity stack */
+#include "../parity/resident.h"
+#if CONFIG_DRIVER_PCI_I915_PARITY && PARITY_RESIDENT
+#define PARITY_SHIM_REDIRECT 1
+#endif
+#include "../parity/legacy_shim.h"
 
 /* MI_BATCH_BUFFER_END terminates a batch (MI opcode 0x0A, transcribed). */
 #define GEN12_MI_BATCH_BUFFER_END	0x05000000U

@@ -22,6 +22,12 @@
 #include <drivers/i915.h>
 #include "vk/vk.h"
 #include "parity/runner.h"
+/* E-127: in a resident parity build the hardware end of the ops layer is the parity stack */
+#include "parity/resident.h"
+#if CONFIG_DRIVER_PCI_I915_PARITY && PARITY_RESIDENT
+#define PARITY_SHIM_REDIRECT 1
+#endif
+#include "parity/legacy_shim.h"
 #include <uapi/gpu.h>
 #include <uapi/gpu-job.h>
 #include <kern/device-io.h>
@@ -635,6 +641,58 @@ i915_unpublish(
 	/* Succeeded: PCI may now stop and detach the hardware. */
 	return 0;
 }
+
+#if CONFIG_DRIVER_PCI_I915_PARITY
+/*
+ * E-127 resident mode: the software half of i915_start() that the ops layer needs, then the
+ * same registration i915_publish() does.  The hardware was brought up by the parity probe.
+ * XXX: minimal connection -- engines are records only (index, class, seqno counters).
+ */
+int
+drv_i915_resident_publish(
+	struct i915_device *device)
+{
+	struct i915_engine *engine;
+	unsigned index;
+	int error;
+
+	for (index = 0U; index < I915_ENGINE_COUNT; index++) {
+		engine = &device->engines[index];
+		memset(engine, 0, sizeof(*engine));
+		engine->device = device;
+		engine->index = index;
+		engine->class = index == I915_ENGINE_RCS0 ? I915_CLASS_RENDER : I915_CLASS_COPY;
+		engine->next_seqno = 1U;
+		engine->initialized = 1U;
+	}
+
+	error = drv_i915_vk_attach(device, &device->vk);
+	if (error != 0)
+		return error;
+
+	error = i915_publish(device->pci, device);
+	if (error != 0) {
+		drv_i915_vk_detach(device->vk);
+		device->vk = NULL;
+	}
+	return error;
+}
+
+int
+drv_i915_resident_unpublish(
+	struct i915_device *device)
+{
+	int error;
+
+	error = i915_unpublish(device->pci, device);
+	if (error != 0)
+		return error;
+	drv_i915_vk_detach(device->vk);
+	device->vk = NULL;
+	return 0;
+}
+#endif
+
 
 /* Opens one session with its own private address space and contexts. */
 static int
