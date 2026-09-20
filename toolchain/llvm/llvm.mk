@@ -253,6 +253,29 @@ $(ZEDBSD_LLVM_BUILD_STAMP): $(ZEDBSD_LLVM_CONFIG_STAMP) \
 
 llvm-build: $(ZEDBSD_LLVM_BUILD_STAMP)
 
+# An installation that already carries this version and patch identity is the
+# accepted result, however it got there: a source build, or the verified binary
+# cache. Recording that here is what keeps `make toolchain-cache` meaningful --
+# otherwise the stamp's prerequisite (a configured build tree the cache never
+# creates) sends every later target through a full LLVM source build.
+ZEDBSD_LLVM_INSTALL_ACCEPTED := $(strip $(shell \
+	if test -f '$(ZEDBSD_LLVM_INSTALL)/.zedbsd-install-identity' && \
+	   test "$$(cat '$(ZEDBSD_LLVM_INSTALL)/.zedbsd-install-identity')" = \
+		'version=$(ZEDBSD_LLVM_VERSION) patch=$(ZEDBSD_LLVM_PATCH_LEVEL)'; \
+	then echo yes; fi))
+
+ifeq ($(ZEDBSD_LLVM_INSTALL_ACCEPTED),yes)
+$(ZEDBSD_LLVM_INSTALL_STAMP):
+	@for tool in $(ZEDBSD_LLVM_INSTALLED_TOOL_NAMES); do \
+		test -x '$(ZEDBSD_LLVM_INSTALL)/bin/'"$$tool" || { \
+			echo "LLVM: accepted installation is missing a tool: $$tool" >&2; \
+			exit 1; \
+		}; \
+	done
+	@test -f '$(ZEDBSD_LLVM_INSTALL)/share/licenses/llvm/LICENSE.TXT' || { \
+		echo 'LLVM: accepted installation is missing its license' >&2; exit 1; }
+	@touch '$@'
+else
 $(ZEDBSD_LLVM_INSTALL_STAMP): $(ZEDBSD_LLVM_CONFIG_IDENTITY)
 	@$(MAKE) --no-print-directory llvm-build
 	@set -eu; \
@@ -276,6 +299,7 @@ $(ZEDBSD_LLVM_INSTALL_STAMP): $(ZEDBSD_LLVM_CONFIG_IDENTITY)
 	done
 	@test -f '$(ZEDBSD_LLVM_INSTALL)/share/licenses/llvm/LICENSE.TXT'
 	@touch '$@'
+endif
 
 $(ZEDBSD_LLVM_INSTALLED_TOOLS): | $(ZEDBSD_LLVM_INSTALL_STAMP)
 	@echo 'LLVM: repairing a missing tool in the generated installation: $(@F)'

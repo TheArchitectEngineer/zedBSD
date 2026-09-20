@@ -15,6 +15,14 @@ int tcflush(int, int);
 int tcflow(int, int);
 speed_t cfgetispeed(const struct termios *);
 speed_t cfgetospeed(const struct termios *);
+/*
+ * Puts a terminal description into raw mode: no input translation, no output
+ * processing, no line editing and no signal generation, delivering each byte
+ * as it arrives.  A BSD extension rather than a POSIX one, but portable
+ * software that drives a terminal expects it.
+ */
+void cfmakeraw(struct termios *);
+
 int cfsetispeed(struct termios *, speed_t);
 int cfsetospeed(struct termios *, speed_t);
 pid_t tcgetpgrp(int);

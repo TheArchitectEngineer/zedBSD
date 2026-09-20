@@ -27,7 +27,7 @@ Objectives → Milestone Goals → WS → Phase → Queue試行/結果を対応�
 | Milestone | 対応Objective | 到達点・受け入れの核 | Primary WS |
 | --- | --- | --- | --- |
 | **MG001：継続開発できる基盤が揃う** | O4, O5 | 文書化した環境でビルドでき、設計境界・規約・試験・制限を追跡できる。 | [ws009](https://github.com/awemorris/zedBSD/issues/10), [ws010](https://github.com/awemorris/zedBSD/issues/11), [ws021](https://github.com/awemorris/zedBSD/issues/22), [ws023](https://github.com/awemorris/zedBSD/issues/24), [ws026](https://github.com/awemorris/zedBSD/issues/27) |
-| **MG002：UNIXアプリケーションの実行基盤が成立する** | O1 | プロセス・メモリ・libc・ローダ/TLSの対応範囲を、互換性台帳と代表アプリの結果で確認できる。 | [ws001](https://github.com/awemorris/zedBSD/issues/2), [ws022](https://github.com/awemorris/zedBSD/issues/23) |
+| **MG002：UNIXアプリケーションの実行基盤が成立する** | O1 | プロセス・メモリ・libc・ローダ/TLSの対応範囲を、互換性台帳と代表アプリの結果で確認できる。 | [ws001](https://github.com/awemorris/zedBSD/issues/2), [ws022](https://github.com/awemorris/zedBSD/issues/23), [WS032](ws032/ws.md) |
 | **MG003：対象機へ導入して単独起動できる** | O2, O4 | 合意した機種・媒体でインストール後の単独起動・ログインを確認できる。実機とQEMUの証拠を区別する。 | [ws003](https://github.com/awemorris/zedBSD/issues/4), [ws004](https://github.com/awemorris/zedBSD/issues/5), [ws019](https://github.com/awemorris/zedBSD/issues/20), [ws020](https://github.com/awemorris/zedBSD/issues/21), [WS028](https://github.com/awemorris/zedBSD/issues/382) |
 | **MG004：データを保持しメモリ/ストレージを実用的に使える** | O1, O2 | 永続化、低メモリ時の進行、媒体世代、既定構成の性能を合意した用途で確認できる。 | [ws016](https://github.com/awemorris/zedBSD/issues/17), [ws024](https://github.com/awemorris/zedBSD/issues/25), [ws025](https://github.com/awemorris/zedBSD/issues/26) |
 | **MG005：シンプルで一貫したネットワーク/サービス管理を利用できる** | O1, O2, O3 | networkd/netconf/serviceの責務・設定・操作が一貫し、永続化と失敗後の復旧を確認できる。 | [ws002](https://github.com/awemorris/zedBSD/issues/3), [ws005](https://github.com/awemorris/zedBSD/issues/6), [ws011](https://github.com/awemorris/zedBSD/issues/12), [ws012](https://github.com/awemorris/zedBSD/issues/13) |
@@ -1376,6 +1376,7 @@ Future Listへ移したWS013・WS015は次節で管理する。完了WSの詳細
 | [WS029](https://github.com/awemorris/zedBSD/issues/386) | MG006 | i915ネイティブGPU | planning | p001–p007作成、q314 prepared（未開始）。対象Latitude 5330 ADL-P、VFIO passthrough test loop。 |
 | [WS030](https://github.com/awemorris/zedBSD/issues/388) | MG006 | 標準Vulkan1.0・直接表示library | completed | q308全5件cleared。137core＋18 WSI、実描画・終了・console/所有権を確認。 |
 | [WS031](ws031/ws.md) | MG006 | i915ネイティブVulkan実行器 | planning | p001–p012作成（計画）。libvulkanのVulkanコマンドをi915 driver内でGENへ変換、in-kernel SPIR-V→GEN baseline compiler、KMS/WSI。到達点は実機native vkdemo。 |
+| [WS032](ws032/ws.md) | MG002 | 外部パッケージのクロスビルド導入 | planning | p001–p010作成（計画）。`userland/packages/`へclang・OpenSSL・OpenSSHを、tarball取得・検証・パッチ・クロスビルドで追加。動的リンク、C++ランタイム込み、sshd含む。実行Queueなし。 |
 
 ## Future List(やりたいことリスト)
 

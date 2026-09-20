@@ -62,7 +62,7 @@ sigignore(int number)
 {
 	struct sigaction action;
 	memset(&action,0,sizeof(action));
-	action.sa_handler=(uint64_t)(uintptr_t)SIG_IGN;
+	action.sa_handler=SIG_IGN;
 	return sigaction(number,&action,NULL);
 }
 
@@ -97,10 +97,10 @@ sigset(int number, sighandler_t disposition)
 	if(disposition==SIG_HOLD){
 		if(sigprocmask(SIG_BLOCK,&one,NULL)!=0)return SIG_ERR;
 	} else {
-		memset(&action,0,sizeof(action));action.sa_handler=(uint64_t)(uintptr_t)disposition;
+		memset(&action,0,sizeof(action));action.sa_handler=disposition;
 		if(sigaction(number,&action,NULL)!=0 || sigprocmask(SIG_UNBLOCK,&one,NULL)!=0)return SIG_ERR;
 	}
-	return was_held?SIG_HOLD:(sighandler_t)(uintptr_t)old_action.sa_handler;
+	return was_held?SIG_HOLD:old_action.sa_handler;
 }
 
 int

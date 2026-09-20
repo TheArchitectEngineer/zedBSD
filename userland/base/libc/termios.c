@@ -367,6 +367,38 @@ ctermid(
 }
 
 /*
+ * Implements the cfmakeraw operation.
+ *
+ * The character size and parity bits BSD also clears here do not exist on
+ * this system: the line is always eight bits with no parity, so CS8 is the
+ * only setting and there is nothing to mask off.
+ */
+void
+cfmakeraw(
+	struct termios *termios)
+{
+	/* Ignores a missing description. */
+	if (termios == NULL)
+		return;
+
+	/* Stops every translation of the input. */
+	termios->c_iflag &= ~(tcflag_t)(IGNBRK | BRKINT | ISTRIP | INLCR |
+	    IGNCR | ICRNL | IXON);
+
+	/* Stops the output from being processed on its way out. */
+	termios->c_oflag &= ~(tcflag_t)OPOST;
+
+	/* Stops line editing, echo and signal generation. */
+	termios->c_lflag &= ~(tcflag_t)(ECHO | ECHONL | ICANON | ISIG |
+	    IEXTEN);
+	termios->c_cflag |= (tcflag_t)CS8;
+
+	/* A read returns as soon as one byte has arrived. */
+	termios->c_cc[VMIN] = 1;
+	termios->c_cc[VTIME] = 0;
+}
+
+/*
  * Implements the posix openpt operation.
  */
 int

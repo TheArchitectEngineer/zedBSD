@@ -426,7 +426,7 @@ run_test(
 	 */
 
 	memset(&nested, 0, sizeof(nested));
-	nested.sa_handler = (uint64_t)(uintptr_t)catch_nested_signal;
+	nested.sa_handler = catch_nested_signal;
 	nested.sa_flags = SA_NODEFER;
 	nested_signal_pid = getpid();
 	nested_signal_depth = 0;
@@ -450,7 +450,7 @@ run_test(
 	unblock_local = 1U << (SIGUSR2 - 1);
 
 	memset(&action_local, 0, sizeof(action_local));
-	action_local.sa_handler = (uint64_t)(uintptr_t)catch_siginfo;
+	action_local.sa_sigaction = catch_siginfo;
 	action_local.sa_flags = SA_SIGINFO;
 	siginfo_pid = getpid();
 	siginfo_error = 0;
@@ -473,7 +473,7 @@ run_test(
 	 */
 
 	memset(&action_local1, 0, sizeof(action_local1));
-	action_local1.sa_handler = (uint64_t)(uintptr_t)catch_sigchld_info;
+	action_local1.sa_sigaction = catch_sigchld_info;
 	action_local1.sa_flags = SA_SIGINFO | SA_RESTART;
 	sigchld_count = 0;
 	sigchld_pid = -1;
@@ -781,8 +781,7 @@ run_test(
 	/* Checks the child process state. */
 	if (child == 0) {
 		memset(&action_local8, 0, sizeof(action_local8));
-		action_local8.sa_handler =
-		    (uint64_t)(uintptr_t)catch_fault_siginfo;
+		action_local8.sa_sigaction = catch_fault_siginfo;
 		action_local8.sa_flags = SA_SIGINFO;
 		expected_fault_address = (uintptr_t)mapping_local11;
 
@@ -1156,14 +1155,16 @@ catch_fault_siginfo(
 	siginfo_t *info,
 	void *opaque_context)
 {
-	ucontext_t *context;
+	/*
+	 * The context has to be taken from the argument before the checks
+	 * below read through it.
+	 */
+	ucontext_t *context = opaque_context;
 	int valid = signo == SIGBUS && info != NULL && context != NULL &&
 		    info->si_signo == SIGBUS && info->si_code == BUS_ADRERR &&
 		    info->si_addr == expected_fault_address &&
 		    context->uc_mcontext.mc_pc != 0 &&
 		    context->uc_mcontext.mc_sp != 0;
-
-	context = opaque_context;
 
 	_exit(valid ? 0 : 1);
 }

@@ -43,45 +43,41 @@
  * XXX: Rename these __ZEDBSD_* to __LIBC_*
  */
 
+/*
+ * The ISO C atomic operations act on _Atomic-qualified objects.  Clang refuses
+ * such an object to the __atomic_* builtins, which describe a plain object
+ * accessed atomically, and offers __c11_atomic_* for the qualified form
+ * instead.  The two families are not interchangeable: using the former here
+ * made every standard use of <stdatomic.h> fail to compile.
+ */
+
 #define __zedbsd_atomic_store(object, desired, order) \
-	do { \
-		__typeof__(*(object)) __zedbsd_atomic_desired = (desired); \
-		__atomic_store((object), &__zedbsd_atomic_desired, (order)); \
-	} while (0)
+	__c11_atomic_store((object), (desired), (order))
 
 #define __zedbsd_atomic_load(object, order) \
-	({ \
-		__typeof__(*(object)) __zedbsd_atomic_result; \
-		__atomic_load((object), &__zedbsd_atomic_result, (order)); \
-		__zedbsd_atomic_result; \
-	})
+	__c11_atomic_load((object), (order))
 
 #define __zedbsd_atomic_exchange(object, desired, order) \
-	({ \
-		__typeof__(*(object)) __zedbsd_atomic_desired = (desired); \
-		__typeof__(*(object)) __zedbsd_atomic_result; \
-		__atomic_exchange((object), &__zedbsd_atomic_desired, \
-		    &__zedbsd_atomic_result, (order)); \
-		__zedbsd_atomic_result; \
-	})
+	__c11_atomic_exchange((object), (desired), (order))
 
 #define __zedbsd_atomic_compare_exchange(object, expected, desired, weak, \
 	success, failure) \
-	({ \
-		__typeof__(*(object)) __zedbsd_atomic_desired = (desired); \
-		__atomic_compare_exchange((object), (expected), \
-		    &__zedbsd_atomic_desired, (weak), (success), (failure)); \
-	})
+	((weak) \
+	    ? __c11_atomic_compare_exchange_weak((object), (expected), \
+		  (desired), (success), (failure)) \
+	    : __c11_atomic_compare_exchange_strong((object), (expected), \
+		  (desired), (success), (failure)))
 
-#define __zedbsd_atomic_is_lock_free(object) 			__atomic_is_lock_free(sizeof(*(object)), (object))
-#define __zedbsd_atomic_thread_fence(order)			__atomic_thread_fence(order)
-#define __zedbsd_atomic_signal_fence(order)			__atomic_signal_fence(order)
-#define __zedbsd_atomic_fetch_add(object, operand, order)	__atomic_fetch_add((object), (operand), (order))
-#define __zedbsd_atomic_fetch_sub(object, operand, order) 	__atomic_fetch_sub((object), (operand), (order))
-#define __zedbsd_atomic_fetch_or(object, operand, order)	__atomic_fetch_or((object), (operand), (order))
-#define __zedbsd_atomic_fetch_xor(object, operand, order)	__atomic_fetch_xor((object), (operand), (order))
-#define __zedbsd_atomic_fetch_and(object, operand, order) 	__atomic_fetch_and((object), (operand), (order))
-#define __zedbsd_atomic_flag_test_and_set(object, order) 	__atomic_test_and_set((object), (order))
-#define __zedbsd_atomic_flag_clear(object, order)		__atomic_clear((object), (order))
+#define __zedbsd_atomic_is_lock_free(object) \
+	__c11_atomic_is_lock_free(sizeof(*(object)))
+#define __zedbsd_atomic_thread_fence(order)			__c11_atomic_thread_fence(order)
+#define __zedbsd_atomic_signal_fence(order)			__c11_atomic_signal_fence(order)
+#define __zedbsd_atomic_fetch_add(object, operand, order)	__c11_atomic_fetch_add((object), (operand), (order))
+#define __zedbsd_atomic_fetch_sub(object, operand, order) 	__c11_atomic_fetch_sub((object), (operand), (order))
+#define __zedbsd_atomic_fetch_or(object, operand, order)	__c11_atomic_fetch_or((object), (operand), (order))
+#define __zedbsd_atomic_fetch_xor(object, operand, order)	__c11_atomic_fetch_xor((object), (operand), (order))
+#define __zedbsd_atomic_fetch_and(object, operand, order) 	__c11_atomic_fetch_and((object), (operand), (order))
+#define __zedbsd_atomic_flag_test_and_set(object, order) 	__c11_atomic_exchange((object), 1, (order))
+#define __zedbsd_atomic_flag_clear(object, order)		__c11_atomic_store((object), 0, (order))
 
 #endif

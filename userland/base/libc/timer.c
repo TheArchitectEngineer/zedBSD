@@ -480,7 +480,8 @@ timer_service_start_locked(
 		return 0;
 
 	memset(&action, 0, sizeof(action));
-	action.sa_handler = (uint64_t)(uintptr_t)timer_signal_handler;
+	/* SA_SIGINFO selects the three-argument form of the disposition. */
+	action.sa_sigaction = timer_signal_handler;
 	action.sa_flags = SA_SIGINFO | SA_RESTART;
 	action.sa_restorer = (uint64_t)(uintptr_t)__signal_restorer;
 

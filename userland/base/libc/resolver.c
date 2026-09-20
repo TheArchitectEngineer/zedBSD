@@ -34,7 +34,7 @@ static uint16_t query_id(const char *name);
 static int tcp_query(const struct sockaddr_in *server, const uint8_t *query, size_t query_length, uint16_t id, const char *name, uint16_t type, struct resolver_result *result);
 static int write_all_socket(int descriptor, const uint8_t *buffer, size_t length);
 static int read_exact_socket(int descriptor, uint8_t *buffer, size_t length);
-static int parse_service(const char *service, uint16_t *port);
+static int parse_service(const char *service, const char *protocol, uint16_t *port);
 static int make_ptr_name(struct in_addr address, char *output, size_t capacity);
 
 /*
@@ -205,7 +205,8 @@ getaddrinfo(
 
 		/* Returns the computed result. */
 		return EAI_SOCKTYPE;
-	error = parse_service(service, &port);
+	error = parse_service(service, hints != NULL &&
+	    hints->ai_socktype == SOCK_DGRAM ? "udp" : "tcp", &port);
 
 	/* Handles an operation failure. */
 	if (error != 0)
@@ -685,6 +686,7 @@ read_exact_socket(
 static int
 parse_service(
 	const char *service,
+	const char *protocol,
 	uint16_t *port)
 {
 	char *end;
@@ -698,8 +700,21 @@ parse_service(
 	}
 	value = strtoul(service, &end, 10);
 
+	/* A name that is not a number is looked up in the service database. */
+	if (*service == '\0' || *end != '\0') {
+		const struct servent *entry;
+
+		entry = getservbyname(service, protocol);
+		if (entry == NULL)
+			return EAI_SERVICE;
+		*port = ntohs((uint16_t)entry->s_port);
+
+		/* Reports successful completion. */
+		return 0;
+	}
+
 	/* Handles the service condition. */
-	if (*service == '\0' || *end != '\0' || value > 65535U)
+	if (value > 65535U)
 		return EAI_SERVICE;
 	*port = (uint16_t)value;
 	/* Reports successful completion. */
@@ -727,4 +742,546 @@ make_ptr_name(
 
 	/* Returns the computed result. */
 	return function_result;
+}
+
+/* ------------------------------------------------------------------ *
+ * The service database
+ *
+ * /etc/services is read line by line.  A returned entry points into
+ * per-thread storage that the next call on the same thread reuses, which is
+ * what the historical interface promises.
+ * ------------------------------------------------------------------ */
+
+#define SERVICE_ALIAS_MAX 8
+#define SERVICE_LINE_MAX 256
+
+struct service_state {
+	FILE *file;
+	int keep_open;
+	struct servent entry;
+	char name[64];
+	char proto[16];
+	char alias_text[SERVICE_ALIAS_MAX][64];
+	char *aliases[SERVICE_ALIAS_MAX + 1];
+};
+
+static __thread struct service_state service_state;
+
+/*
+ * Supports the field splitting operation.
+ *
+ * Returns the next blank-separated field and advances the cursor past it.
+ * This is strtok_r's job, which the C library does not have yet.
+ */
+static char *
+next_field(
+	char **cursor)
+{
+	char *text, *start;
+
+	text = *cursor;
+
+	/* Continue while the operation condition remains true. */
+	while (*text == ' ' || *text == '\t' || *text == '\r' || *text == '\n')
+		text++;
+
+	/* Reports that no result is available. */
+	if (*text == '\0') {
+		*cursor = text;
+		return NULL;
+	}
+	start = text;
+
+	/* Continue while the operation condition remains true. */
+	while (*text != '\0' && *text != ' ' && *text != '\t' &&
+	       *text != '\r' && *text != '\n')
+		text++;
+
+	/* Terminates the field unless the line already ended. */
+	if (*text != '\0')
+		*text++ = '\0';
+	*cursor = text;
+
+	/* Returns the computed result. */
+	return start;
+}
+
+/* Supports the service state operation. */
+static struct service_state *
+service_context(void)
+{
+	/* Returns the computed result. */
+	return &service_state;
+}
+
+/* Supports the service open operation. */
+static int
+service_open(
+	struct service_state *state)
+{
+	/* Handles the already open condition. */
+	if (state->file != NULL)
+		return 0;
+	state->file = fopen("/etc/services", "r");
+
+	/* Handles the file availability. */
+	if (state->file == NULL)
+		return -1;
+
+	/* Reports successful completion. */
+	return 0;
+}
+
+/*
+ * Reads the next entry into the thread's storage.
+ *
+ * A line is "name port/protocol [alias...]"; anything from a '#' is a
+ * comment.  A malformed line is skipped rather than ending the walk.
+ */
+static struct servent *
+service_next(
+	struct service_state *state)
+{
+	char line[SERVICE_LINE_MAX];
+	char *text, *field, *slash, *end;
+	unsigned long port;
+	unsigned count;
+
+	/* Process input until it is exhausted. */
+	while (fgets(line, sizeof(line), state->file) != NULL) {
+		text = strchr(line, '#');
+		if (text != NULL)
+			*text = '\0';
+
+		/* Takes the service name. */
+		text = line;
+		field = next_field(&text);
+		if (field == NULL)
+			continue;
+		if (strlen(field) >= sizeof(state->name))
+			continue;
+		strcpy(state->name, field);
+
+		/* Takes the port and protocol, which share one field. */
+		field = next_field(&text);
+		if (field == NULL)
+			continue;
+		slash = strchr(field, '/');
+		if (slash == NULL)
+			continue;
+		*slash++ = '\0';
+		port = strtoul(field, &end, 10);
+		if (*field == '\0' || *end != '\0' || port > 65535U)
+			continue;
+		if (strlen(slash) >= sizeof(state->proto))
+			continue;
+		strcpy(state->proto, slash);
+
+		/* Takes any further names for the same entry. */
+		count = 0;
+		while (count < SERVICE_ALIAS_MAX) {
+			field = next_field(&text);
+			if (field == NULL)
+				break;
+			if (strlen(field) >= sizeof(state->alias_text[0]))
+				continue;
+			strcpy(state->alias_text[count], field);
+			state->aliases[count] = state->alias_text[count];
+			count++;
+		}
+		state->aliases[count] = NULL;
+
+		state->entry.s_name = state->name;
+		state->entry.s_aliases = state->aliases;
+		state->entry.s_port = (int)htons((uint16_t)port);
+		state->entry.s_proto = state->proto;
+
+		/* Returns the computed result. */
+		return &state->entry;
+	}
+
+	/* Reports that no result is available. */
+	return NULL;
+}
+
+/*
+ * Implements the setservent operation.
+ */
+void
+setservent(int keep_open)
+{
+	struct service_state *state;
+
+	state = service_context();
+	state->keep_open = keep_open != 0;
+
+	/* Restarts the walk when the database is already open. */
+	if (state->file != NULL)
+		rewind(state->file);
+	else
+		(void)service_open(state);
+}
+
+/*
+ * Implements the endservent operation.
+ */
+void
+endservent(void)
+{
+	struct service_state *state;
+
+	state = service_context();
+
+	/* Handles the file availability. */
+	if (state->file != NULL) {
+		(void)fclose(state->file);
+		state->file = NULL;
+	}
+	state->keep_open = 0;
+}
+
+/*
+ * Implements the getservent operation.
+ */
+struct servent *
+getservent(void)
+{
+	struct service_state *state;
+
+	state = service_context();
+
+	/* Handles a failed open operation. */
+	if (service_open(state) != 0)
+		return NULL;
+
+	/* Returns the computed result. */
+	return service_next(state);
+}
+
+/* Supports the service lookup operation. */
+static struct servent *
+service_find(
+	const char *name,
+	int port,
+	const char *protocol)
+{
+	struct service_state *state;
+	struct servent *entry;
+	unsigned index;
+	int matched;
+
+	state = service_context();
+
+	/* Handles a failed open operation. */
+	if (service_open(state) != 0)
+		return NULL;
+	rewind(state->file);
+
+	/* Process each remaining element. */
+	while ((entry = service_next(state)) != NULL) {
+		/* Skips an entry for a different protocol. */
+		if (protocol != NULL && strcmp(entry->s_proto, protocol) != 0)
+			continue;
+
+		/* Selects by name, including the further names. */
+		if (name != NULL) {
+			matched = strcmp(entry->s_name, name) == 0;
+			for (index = 0; !matched &&
+			     entry->s_aliases[index] != NULL; index++)
+				matched = strcmp(entry->s_aliases[index],
+						 name) == 0;
+			if (!matched)
+				continue;
+		} else if (entry->s_port != port) {
+			continue;
+		}
+
+		/* Leaves the database open only when asked to. */
+		if (!state->keep_open) {
+			(void)fclose(state->file);
+			state->file = NULL;
+		}
+
+		/* Returns the computed result. */
+		return entry;
+	}
+
+	/* Leaves the database open only when asked to. */
+	if (!state->keep_open) {
+		(void)fclose(state->file);
+		state->file = NULL;
+	}
+
+	/* Reports that no result is available. */
+	return NULL;
+}
+
+/*
+ * Implements the getservbyname operation.
+ */
+struct servent *
+getservbyname(const char *name, const char *protocol)
+{
+	/* Handles the name availability. */
+	if (name == NULL)
+		return NULL;
+
+	/* Returns the computed result. */
+	return service_find(name, 0, protocol);
+}
+
+/*
+ * Implements the getservbyport operation.
+ */
+struct servent *
+getservbyport(int port, const char *protocol)
+{
+	/* Returns the computed result. */
+	return service_find(NULL, port, protocol);
+}
+
+/* ------------------------------------------------------------------ *
+ * The host database
+ *
+ * These are the interfaces POSIX.1-2008 removed.  They are answered from the
+ * same resolver getaddrinfo uses, so there is one name service and not two,
+ * and the result lives in per-thread storage the next call reuses.
+ * ------------------------------------------------------------------ */
+
+#define HOST_ADDRESS_MAX 8
+
+struct host_state {
+	int error;
+	struct hostent entry;
+	char name[256];
+	struct in_addr addresses[HOST_ADDRESS_MAX];
+	char *address_list[HOST_ADDRESS_MAX + 1];
+	char *aliases[1];
+};
+
+static __thread struct host_state host_state;
+
+/*
+ * Implements the h_errno location operation.
+ */
+int *
+__h_errno_location(void)
+{
+	/* Returns the computed result. */
+	return &host_state.error;
+}
+
+/*
+ * Implements the hstrerror operation.
+ */
+const char *
+hstrerror(int error)
+{
+	/* Selects the matching description. */
+	switch (error) {
+	case 0:
+		return "Resolver error 0";
+	case HOST_NOT_FOUND:
+		return "Unknown host";
+	case TRY_AGAIN:
+		return "Host name lookup failure";
+	case NO_RECOVERY:
+		return "Unknown server error";
+	case NO_DATA:
+		return "No address associated with name";
+	default:
+		break;
+	}
+
+	/* Returns the computed result. */
+	return "Unknown resolver error";
+}
+
+/*
+ * Implements the sethostent operation.
+ *
+ * There is no host file to hold open, so the request is accepted and the
+ * resolver is consulted per call.
+ */
+void
+sethostent(int keep_open)
+{
+	(void)keep_open;
+}
+
+/*
+ * Implements the endhostent operation.
+ */
+void
+endhostent(void)
+{
+}
+
+/* Supports the host error translation operation. */
+static int
+host_error_of(
+	int error)
+{
+	/* Selects the matching description. */
+	switch (error) {
+	case EAI_NONAME:
+	case EAI_ADDRFAMILY:
+		return HOST_NOT_FOUND;
+	case EAI_AGAIN:
+		return TRY_AGAIN;
+	case EAI_MEMORY:
+	case EAI_SYSTEM:
+	case EAI_FAIL:
+		return NO_RECOVERY;
+	default:
+		break;
+	}
+
+	/* Returns the computed result. */
+	return NO_RECOVERY;
+}
+
+/* Supports the host entry publication operation. */
+static struct hostent *
+host_publish(
+	struct host_state *state,
+	const char *name,
+	unsigned count)
+{
+	unsigned index;
+
+	/* Handles the absence of any address. */
+	if (count == 0) {
+		state->error = HOST_NOT_FOUND;
+		return NULL;
+	}
+
+	/* Process each remaining element. */
+	for (index = 0; index < count; index++)
+		state->address_list[index] = (char *)&state->addresses[index];
+	state->address_list[count] = NULL;
+	state->aliases[0] = NULL;
+
+	/* Keeps the reported name inside the thread's storage. */
+	if (name != NULL && name != state->name) {
+		if (strlen(name) >= sizeof(state->name)) {
+			state->error = NO_RECOVERY;
+			return NULL;
+		}
+		strcpy(state->name, name);
+	}
+
+	state->entry.h_name = state->name;
+	state->entry.h_aliases = state->aliases;
+	state->entry.h_addrtype = AF_INET;
+	state->entry.h_length = (int)sizeof(struct in_addr);
+	state->entry.h_addr_list = state->address_list;
+	state->error = 0;
+
+	/* Returns the computed result. */
+	return &state->entry;
+}
+
+/*
+ * Implements the gethostbyname operation.
+ */
+struct hostent *
+gethostbyname(const char *name)
+{
+	struct host_state *state;
+	struct addrinfo hints;
+	struct addrinfo *list;
+	struct addrinfo *entry;
+	struct in_addr literal;
+	unsigned count;
+	int error;
+
+	state = &host_state;
+
+	/* Rejects a missing name. */
+	if (name == NULL) {
+		state->error = HOST_NOT_FOUND;
+		return NULL;
+	}
+
+	/* An address in text form is its own answer. */
+	if (inet_aton(name, &literal) != 0) {
+		state->addresses[0] = literal;
+
+		/* Returns the computed result. */
+		return host_publish(state, name, 1);
+	}
+
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_INET;
+	hints.ai_socktype = SOCK_STREAM;
+	list = NULL;
+	error = getaddrinfo(name, NULL, &hints, &list);
+
+	/* Handles a failed lookup. */
+	if (error != 0) {
+		state->error = host_error_of(error);
+		return NULL;
+	}
+
+	/* Collects the addresses the resolver returned. */
+	count = 0;
+	for (entry = list; entry != NULL && count < HOST_ADDRESS_MAX;
+	     entry = entry->ai_next) {
+		if (entry->ai_family != AF_INET || entry->ai_addr == NULL)
+			continue;
+		state->addresses[count++] =
+		    ((const struct sockaddr_in *)(const void *)
+			entry->ai_addr)->sin_addr;
+	}
+
+	/* Prefers the canonical name the resolver reported. */
+	if (list != NULL && list->ai_canonname != NULL &&
+	    strlen(list->ai_canonname) < sizeof(state->name))
+		strcpy(state->name, list->ai_canonname);
+	else if (strlen(name) < sizeof(state->name))
+		strcpy(state->name, name);
+	else
+		count = 0;
+	freeaddrinfo(list);
+
+	/* Returns the computed result. */
+	return host_publish(state, state->name, count);
+}
+
+/*
+ * Implements the gethostbyaddr operation.
+ */
+struct hostent *
+gethostbyaddr(const void *address, socklen_t length, int family)
+{
+	struct host_state *state;
+	struct sockaddr_in query;
+	char name[256];
+	int error;
+
+	state = &host_state;
+
+	/* Only IPv4 addresses can be looked up. */
+	if (address == NULL || family != AF_INET ||
+	    length != sizeof(struct in_addr)) {
+		state->error = HOST_NOT_FOUND;
+		return NULL;
+	}
+	memcpy(&state->addresses[0], address, sizeof(struct in_addr));
+
+	memset(&query, 0, sizeof(query));
+	query.sin_family = AF_INET;
+	query.sin_addr = state->addresses[0];
+	error = getnameinfo((const struct sockaddr *)&query, sizeof(query),
+	    name, (socklen_t)sizeof(name), NULL, 0, NI_NAMEREQD);
+
+	/* Handles a failed reverse lookup. */
+	if (error != 0) {
+		state->error = host_error_of(error);
+		return NULL;
+	}
+
+	/* Returns the computed result. */
+	return host_publish(state, name, 1);
 }

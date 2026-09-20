@@ -53,6 +53,8 @@ struct socket_ops {
 	int (*getsockname)(struct socket *, struct sockaddr *, socklen_t *);
 	int (*getpeername)(struct socket *, struct sockaddr *, socklen_t *);
 	int (*setsockopt)(struct socket *, int, int, const void *, socklen_t);
+	/* Told that SO_KEEPALIVE changed, so an idle timer can be armed. */
+	void (*keepalive_changed)(struct socket *);
 	int (*getsockopt)(struct socket *, int, int, void *, socklen_t *);
 	int (*ioctl)(struct socket *, unsigned long, uintptr_t);
 	int (*poll)(struct socket *, short, short *);
@@ -88,6 +90,7 @@ struct socket {
 	uint64_t receive_timeout_ticks;
 	uint64_t send_timeout_ticks;
 	unsigned reuse_address;
+	unsigned keepalive;
 	unsigned read_shutdown;
 	unsigned write_shutdown;
 };

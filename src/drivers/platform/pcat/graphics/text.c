@@ -27,6 +27,7 @@
 #include "backend.h"
 #include "font.h"
 #include "text.h"
+#include "../serial-mirror.h"
 
 #define TEXT_GLYPH_WIDTH	8U
 #define TEXT_GLYPH_HEIGHT	16U
@@ -340,6 +341,13 @@ putc_locked(
 	int character)
 {
 	unsigned index;
+
+	/*
+	 * The mirror runs before the readiness test: a host reading the serial
+	 * line should see the same stream whether or not a framebuffer was
+	 * published, and it does not touch the cell array.
+	 */
+	drv_pcat_serial_mirror(character);
 
 	/* Ignores output before the framebuffer is published. */
 	if (!text_ready)

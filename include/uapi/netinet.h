@@ -20,11 +20,24 @@
 #define IPPROTO_TCP		6
 #define IPPROTO_UDP		17
 
+/*
+ * Options at IPPROTO_TCP.  TCP_NODELAY is the one POSIX names.
+ */
+#define TCP_NODELAY		1
+
 #define INADDR_ANY		0x00000000U
 #define INADDR_BROADCAST	0xffffffffU
+#define INADDR_LOOPBACK		0x7f000001U
+
+/*
+ * POSIX names for the address and port types carried in struct sockaddr_in.
+ * Portable software declares variables with them rather than with uint32_t.
+ */
+typedef uint32_t in_addr_t;
+typedef uint16_t in_port_t;
 
 struct in_addr {
-	uint32_t s_addr;
+	in_addr_t s_addr;
 };
 
 struct sockaddr_in {

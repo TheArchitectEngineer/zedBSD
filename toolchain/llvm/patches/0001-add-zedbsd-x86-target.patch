@@ -143,7 +143,7 @@
  TEST(TripleTest, BasicParsing) {
 --- /dev/null
 +++ b/clang/lib/Driver/ToolChains/ZedBSD.h
-@@ -0,0 +1,38 @@
+@@ -0,0 +1,64 @@
 +//===---- ZedBSD.h - zedBSD ToolChain Implementation -----------*- C++ -*-===//
 +//
 +// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
@@ -156,6 +156,25 @@
 +#define LLVM_CLANG_LIB_DRIVER_TOOLCHAINS_ZEDBSD_H
 +
 +#include "Gnu.h"
++#include "clang/Driver/Tool.h"
++
++namespace clang::driver::tools::zedbsd {
++
++/// Links with ld.lld using zedBSD's own start file, loader and link options.
++class LLVM_LIBRARY_VISIBILITY Linker final : public Tool {
++public:
++  Linker(const ToolChain &TC) : Tool("zedbsd::Linker", "ld.lld", TC) {}
++
++  bool hasIntegratedCPP() const override { return false; }
++  bool isLinkJob() const override { return true; }
++
++  void ConstructJob(Compilation &C, const JobAction &JA,
++                    const InputInfo &Output, const InputInfoList &Inputs,
++                    const llvm::opt::ArgList &TCArgs,
++                    const char *LinkingOutput) const override;
++};
++
++} // namespace clang::driver::tools::zedbsd
 +
 +namespace clang::driver::toolchains {
 +
@@ -175,8 +194,15 @@
 +  const char *getDefaultLinker() const override { return "ld.lld"; }
 +  bool HasNativeLLVMSupport() const override { return true; }
 +  bool isPICDefault() const override { return false; }
-+  bool isPIEDefault(const llvm::opt::ArgList &) const override { return false; }
++
++  // zedBSD's runtime loader does not implement copy relocations, so an
++  // executable that refers to data in a shared library has to be position
++  // independent.
++  bool isPIEDefault(const llvm::opt::ArgList &) const override { return true; }
 +  bool isPICDefaultForced() const override { return false; }
++
++protected:
++  Tool *buildLinker() const override;
 +};
 +
 +} // namespace clang::driver::toolchains
@@ -184,7 +210,7 @@
 +#endif // LLVM_CLANG_LIB_DRIVER_TOOLCHAINS_ZEDBSD_H
 --- /dev/null
 +++ b/clang/lib/Driver/ToolChains/ZedBSD.cpp
-@@ -0,0 +1,33 @@
+@@ -0,0 +1,131 @@
 +//===---- ZedBSD.cpp - zedBSD ToolChain Implementation -------------------===//
 +//
 +// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
@@ -194,7 +220,11 @@
 +//===----------------------------------------------------------------------===//
 +
 +#include "ZedBSD.h"
++#include "clang/Driver/CommonArgs.h"
++#include "clang/Driver/Compilation.h"
 +#include "clang/Driver/Driver.h"
++#include "clang/Options/Options.h"
++#include "llvm/Option/ArgList.h"
 +#include "llvm/Support/Path.h"
 +
 +using namespace clang::driver;
@@ -217,6 +247,100 @@
 +    addSystemInclude(DriverArgs, CC1Args, concat(D.ResourceDir, "/include"));
 +  if (!DriverArgs.hasArg(options::OPT_nostdlibinc))
 +    addSystemInclude(DriverArgs, CC1Args, concat(D.SysRoot, "/usr/include"));
++}
++
++Tool *ZedBSD::buildLinker() const {
++  return new tools::zedbsd::Linker(*this);
++}
++
++/*
++ * zedBSD's link line is not the usual ELF one: the loader is /lib/ld.so, its
++ * symbol lookup is by SysV hash, it binds everything at load time, and it has
++ * no copy relocations, so executables are position independent.  The shared
++ * C library also leaves the loader's own entry points undefined, which the
++ * link has to permit.  Describing all of that here is what lets an ordinary
++ * `clang foo.c -o foo` produce a program this system can run.
++ */
++void tools::zedbsd::Linker::ConstructJob(Compilation &C, const JobAction &JA,
++                                         const InputInfo &Output,
++                                         const InputInfoList &Inputs,
++                                         const ArgList &Args,
++                                         const char *LinkingOutput) const {
++  const ToolChain &TC = getToolChain();
++  const Driver &D = TC.getDriver();
++  ArgStringList CmdArgs;
++
++  const bool IsShared = Args.hasArg(options::OPT_shared);
++  const bool IsStatic = Args.hasArg(options::OPT_static);
++  const bool NoStdLib = Args.hasArg(options::OPT_nostdlib);
++  const bool IsPIE = !IsShared && !IsStatic &&
++                     Args.hasFlag(options::OPT_pie, options::OPT_no_pie, true);
++
++  if (!D.SysRoot.empty())
++    CmdArgs.push_back(Args.MakeArgString("--sysroot=" + D.SysRoot));
++
++  // The emulation is named rather than inferred, so a link whose first input
++  // is an archive or a script still resolves to the configured target.
++  CmdArgs.push_back("-m");
++  CmdArgs.push_back(TC.getTriple().getArch() == llvm::Triple::x86_64
++                        ? "elf_x86_64"
++                        : "elf_i386");
++
++  if (IsShared)
++    CmdArgs.push_back("-shared");
++  if (IsStatic)
++    CmdArgs.push_back("-static");
++  if (IsPIE)
++    CmdArgs.push_back("-pie");
++
++  // A shared object is also looked up by name from an executable built
++  // elsewhere, so it carries both hash tables; the loader reads the SysV one.
++  CmdArgs.push_back(IsShared ? "--hash-style=both" : "--hash-style=sysv");
++  CmdArgs.push_back("-z");
++  CmdArgs.push_back("now");
++  CmdArgs.push_back("-z");
++  CmdArgs.push_back("relro");
++  CmdArgs.push_back("-z");
++  CmdArgs.push_back("separate-code");
++  CmdArgs.push_back("-z");
++  CmdArgs.push_back("stack-size=0x100000");
++  CmdArgs.push_back("--no-relax");
++
++  // The shared C library takes __rtld_exports from the loader, which is not
++  // one of the link's inputs.
++  CmdArgs.push_back("--allow-shlib-undefined");
++
++  if (!IsShared && !IsStatic) {
++    CmdArgs.push_back("-dynamic-linker");
++    CmdArgs.push_back("/lib/ld.so");
++  }
++
++  CmdArgs.push_back("-o");
++  CmdArgs.push_back(Output.getFilename());
++
++  if (!NoStdLib && !Args.hasArg(options::OPT_nostartfiles) && !IsShared)
++    CmdArgs.push_back(Args.MakeArgString(TC.GetFilePath("crt1.o")));
++
++  Args.AddAllArgs(CmdArgs, options::OPT_L);
++  Args.AddAllArgs(CmdArgs, options::OPT_u);
++  TC.AddFilePathLibArgs(Args, CmdArgs);
++  Args.addAllArgs(CmdArgs, {options::OPT_T_Group, options::OPT_s,
++                            options::OPT_t, options::OPT_r});
++
++  AddLinkerInputs(TC, Inputs, Args, CmdArgs, JA);
++
++  // The C library comes last so that it answers the inputs' references, and
++  // the compiler runtime after it for the helpers the code generator emits.
++  if (!NoStdLib && !Args.hasArg(options::OPT_nodefaultlibs)) {
++    CmdArgs.push_back("-lc");
++    CmdArgs.push_back(
++        Args.MakeArgString(TC.GetFilePath("libclang_rt.builtins.a")));
++  }
++
++  const char *Exec = Args.MakeArgString(TC.GetLinkerPath());
++  C.addCommand(std::make_unique<Command>(JA, *this,
++                                         ResponseFileSupport::AtFileCurCP(),
++                                         Exec, CmdArgs, Inputs, Output));
 +}
 --- /dev/null
 +++ b/clang/test/Preprocessor/zedbsd.c

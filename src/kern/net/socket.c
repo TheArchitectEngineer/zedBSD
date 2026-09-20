@@ -214,6 +214,24 @@ socket_setsockopt_common(
 		return 0;
 	}
 
+	/*
+	 * SO_KEEPALIVE is stored here and acted on by the protocol.  A
+	 * protocol with no idle probe of its own simply never reads it.
+	 */
+	if (option == SO_KEEPALIVE) {
+		if (value == NULL || length != sizeof(enabled))
+			return EINVAL;
+		memcpy(&enabled, value, sizeof(enabled));
+		irq = spin_lock_irqsave(&socket->lock);
+		socket->keepalive = enabled != 0;
+		spin_unlock_irqrestore(&socket->lock, irq);
+
+		/* Lets the protocol start or stop its idle timer at once. */
+		if (socket->ops != NULL && socket->ops->keepalive_changed != NULL)
+			socket->ops->keepalive_changed(socket);
+		return 0;
+	}
+
 	/* The buffer sizes are bounded and wake the waiters they affect. */
 	if (option == SO_SNDBUF || option == SO_RCVBUF) {
 		if (value == NULL || length != sizeof(requested))
@@ -326,12 +344,15 @@ socket_getsockopt_common(
 		return 0;
 	}
 
-	/* SO_REUSEADDR reports the flag. */
-	if (option == SO_REUSEADDR) {
+	/* SO_REUSEADDR and SO_KEEPALIVE report their stored flags. */
+	if (option == SO_REUSEADDR || option == SO_KEEPALIVE) {
 		if (value == NULL || length == NULL || *length < sizeof(enabled))
 			return EINVAL;
 		irq = spin_lock_irqsave(&socket->lock);
-		enabled = socket->reuse_address != 0;
+		if (option == SO_REUSEADDR)
+			enabled = socket->reuse_address != 0;
+		else
+			enabled = socket->keepalive != 0;
 		spin_unlock_irqrestore(&socket->lock, irq);
 		memcpy(value, &enabled, sizeof(enabled));
 		*length = sizeof(enabled);

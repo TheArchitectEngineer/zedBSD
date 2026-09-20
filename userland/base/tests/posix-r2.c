@@ -1047,8 +1047,7 @@ main(
 	 * end. Preserve an application disposition and mask across all
 	 * lifecycle paths. */
 	memset(&public_top_install, 0, sizeof(public_top_install));
-	public_top_install.sa_handler =
-	    (uint64_t)(uintptr_t)public_realtime_handler;
+	public_top_install.sa_handler = public_realtime_handler;
 	(void)sigemptyset(&public_top_install.sa_mask);
 	(void)sigaddset(&public_top_install.sa_mask, SIGUSR1);
 
@@ -1739,7 +1738,7 @@ same_signal_action(
 	const struct sigaction *right)
 {
 	/* Returns the computed result. */
-	return left->sa_handler == right->sa_handler &&
+	return left->__sa_handler_value == right->__sa_handler_value &&
 	       left->sa_mask == right->sa_mask &&
 	       left->sa_flags == right->sa_flags &&
 	       left->sa_restorer == right->sa_restorer;

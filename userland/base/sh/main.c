@@ -2308,8 +2308,7 @@ set_trap(
 	else if (action[0] == '\0')
 		disposition.sa_handler = SIG_IGN;
 	else
-		disposition.sa_handler =
-		    (uint64_t)(uintptr_t)shell_signal_handler;
+		disposition.sa_handler = shell_signal_handler;
 	disposition.sa_flags = SA_RESTART;
 	sigemptyset(&disposition.sa_mask);
 

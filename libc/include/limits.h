@@ -10,6 +10,8 @@
 
 #define NAME_MAX 255
 #define PATH_MAX 256
+/* Longest host name gethostname may report, not counting the terminator. */
+#define HOST_NAME_MAX 255
 #define ARG_MAX 16384
 #define RTSIG_MAX 34
 #define SIGQUEUE_MAX 32
@@ -26,6 +28,7 @@
 #define EXPR_NEST_MAX 32
 #define LINE_MAX 2048
 
+#define _POSIX_HOST_NAME_MAX 255
 #define _POSIX_RTSIG_MAX 8
 #define _POSIX_SIGQUEUE_MAX 32
 

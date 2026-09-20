@@ -86,6 +86,12 @@ int pause(void);
 char *getlogin(void);
 int getlogin_r(char *, size_t);
 int gethostname(char *, size_t);
+/*
+ * Narrows the name space this process resolves absolute paths in.  Not part
+ * of POSIX, but the interface privilege separation in portable daemons is
+ * written against.  The working directory moves with the root.
+ */
+int chroot(const char *);
 int getentropy(void *buffer, size_t length);
 int sethostname(const char *, size_t);
 char *ttyname(int);
