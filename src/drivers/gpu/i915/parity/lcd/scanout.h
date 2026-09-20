@@ -64,6 +64,7 @@ struct parity_scanout {
 	/* users */
 	int state;
 	const char *pin_owner;
+	unsigned users;                 /* how many displays read it now (begin / end); IN_USE while > 0 */
 	unsigned publishes;
 	unsigned refused_unpin, refused_destroy;
 };

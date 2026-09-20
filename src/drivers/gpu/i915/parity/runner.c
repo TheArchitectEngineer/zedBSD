@@ -22,6 +22,8 @@
 #include "parity.h"
 #include "ktest.h"
 #include "runner.h"
+#include "native_precheck.h"
+#include "lcd/opregion_fwtest.h"
 
 enum runner_test_status { RUN_TEST_NOT_RUN = 0, RUN_TEST_PASS, RUN_TEST_FAIL };
 enum runner_probe_status { RUN_PROBE_NOT_RUN = 0, RUN_PROBE_COMPLETE, RUN_PROBE_BLOCKED, RUN_PROBE_FAILED };
@@ -147,6 +149,9 @@ runner_thread(void *arg)
 		res.cleanup_done, res.published,
 		res.lcd_test_status == RUN_TEST_PASS ? "PASS" : (res.lcd_test_status == RUN_TEST_FAIL ? "FAIL" : "NOT_RUN"),
 		res.lcd_first_anomaly_stage, res.lcd_cleanup_rc, res.lcd_retained);
+	parity_native_log_again();
+	/* after the N0 summary: the last lines on a native screen (E-123 native run 1: it had scrolled off above) */
+	parity_opregion_fw_log_again();
 	kern_logf("i915: parity runner thread end\n");
 }
 

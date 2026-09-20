@@ -23,3 +23,10 @@ Fetched on 2026-09-19 from the same tree and tag (E-111; input of `port_lcd_calc
 | drm_color_mgmt.h | include/drm/drm_color_mgmt.h | 6332adb2c833e3a6ac6a7b1083446eb1e2964c3e2b7f40014309a067f0b8ee5e |
 | uapi_drm_mode.h | include/uapi/drm/drm_mode.h (saved as uapi_drm_mode.h) | 6f1e99012854f40c59e62ba9ab031aa6e0f7354f41f25d0a9d23e6dfc6bd370b |
 | i915_drm.h | include/uapi/drm/i915_drm.h (E-112) | 37fe8b9995b560a5a30209fc06ae41127fc7aaf68477164bed7d054638b3dfb3 |
+
+Fetched on 2026-09-20 from the same tree and tag (E-123, HDMI hotplug: drm_helper_probe_detect / epoch counter, connector status names):
+
+| file | path in the kernel tree | sha256 |
+|---|---|---|
+| drm_probe_helper.c | drivers/gpu/drm/drm_probe_helper.c | 05cedd4c3bd94a7a451d525433754952d8e48fa1dd9c8b918a0912247181e9c6 |
+| drm_connector.c | drivers/gpu/drm/drm_connector.c | eacf432724ef7c03d6ee16dfb655aad9cbd7278987f24851fefe511d9afbfc07 |

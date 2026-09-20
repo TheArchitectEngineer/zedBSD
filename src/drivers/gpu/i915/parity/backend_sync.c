@@ -110,9 +110,10 @@ kwq_remove_pending(struct parity_kworkqueue *wq, struct parity_kwork *w)
 static void
 kworker_thread(void *arg)
 {
+	unsigned long f;   /* IRQ-safe: queue_work() may be called from an interrupt handler */
 	struct parity_kworkqueue *wq = (struct parity_kworkqueue *)arg;
 
-	spin_lock(&wq->lock);
+	f = spin_lock_irqsave(&wq->lock);
 	for (;;) {
 		if (wq->stop && wq->count == 0u)
 			break;
@@ -127,10 +128,10 @@ kworker_thread(void *arg)
 			w->state = PARITY_KWORK_RUNNING;
 			w->run_order = ++wq->run_seq;
 			w->ran_count++;
-			spin_unlock(&wq->lock);
+			spin_unlock_irqrestore(&wq->lock, f);
 			if (w->fn != 0)
 				w->fn(w->ctx);
-			spin_lock(&wq->lock);
+			f = spin_lock_irqsave(&wq->lock);
 			w->state = w->queued ? PARITY_KWORK_PENDING : PARITY_KWORK_IDLE;
 			/* Wake cancel_work_sync waiters blocked on this work finishing. */
 			waitq_wake_all(&w->done_waitq);
@@ -141,7 +142,7 @@ kworker_thread(void *arg)
 	}
 	wq->worker_alive = 0;
 	waitq_wake_all(&wq->waitq);
-	spin_unlock(&wq->lock);
+	spin_unlock_irqrestore(&wq->lock, f);
 }
 
 int
@@ -176,15 +177,16 @@ parity_kworkqueue_create(struct parity_kworkqueue *wq, const char *name)
 int
 parity_kqueue_work(struct parity_kworkqueue *wq, struct parity_kwork *w)
 {
+	unsigned long f;   /* IRQ-safe: queue_work() may be called from an interrupt handler */
 	int ret;
 
-	spin_lock(&wq->lock);
+	f = spin_lock_irqsave(&wq->lock);
 	if (w->queued) {
-		spin_unlock(&wq->lock);
+		spin_unlock_irqrestore(&wq->lock, f);
 		return 0;   /* already pending */
 	}
 	if (wq->count >= PARITY_KWQ_DEPTH) {
-		spin_unlock(&wq->lock);
+		spin_unlock_irqrestore(&wq->lock, f);
 		return 0;
 	}
 	w->wq = wq;
@@ -196,38 +198,41 @@ parity_kqueue_work(struct parity_kworkqueue *wq, struct parity_kwork *w)
 	wq->count++;
 	waitq_wake_all(&wq->waitq);   /* wake the worker */
 	ret = 1;
-	spin_unlock(&wq->lock);
+	spin_unlock_irqrestore(&wq->lock, f);
 	return ret;
 }
 
 int
 parity_kcancel_work(struct parity_kworkqueue *wq, struct parity_kwork *w)
 {
+	unsigned long f;   /* IRQ-safe: queue_work() may be called from an interrupt handler */
 	int was_pending;
 
-	spin_lock(&wq->lock);
+	f = spin_lock_irqsave(&wq->lock);
 	was_pending = kwq_remove_pending(wq, w);
-	spin_unlock(&wq->lock);
+	spin_unlock_irqrestore(&wq->lock, f);
 	return was_pending;
 }
 
 int
 parity_kwork_is_pending(struct parity_kworkqueue *wq, struct parity_kwork *w)
 {
+	unsigned long f;   /* IRQ-safe: queue_work() may be called from an interrupt handler */
 	int pending;
 
-	spin_lock(&wq->lock);
+	f = spin_lock_irqsave(&wq->lock);
 	pending = w->queued;
-	spin_unlock(&wq->lock);
+	spin_unlock_irqrestore(&wq->lock, f);
 	return pending;
 }
 
 int
 parity_kcancel_work_sync(struct parity_kworkqueue *wq, struct parity_kwork *w, uint64_t deadline)
 {
+	unsigned long f;   /* IRQ-safe: queue_work() may be called from an interrupt handler */
 	int was_pending;
 
-	spin_lock(&wq->lock);
+	f = spin_lock_irqsave(&wq->lock);
 	was_pending = kwq_remove_pending(wq, w);
 	/* Guarantee on return: the work is not running.  Block until it finishes. */
 	for (;;) {
@@ -240,7 +245,7 @@ parity_kcancel_work_sync(struct parity_kworkqueue *wq, struct parity_kwork *w, u
 		obs = waitq_sequence(&w->done_waitq);
 		(void)waitq_sleep(&w->done_waitq, &wq->lock, obs, deadline, 0u);
 	}
-	spin_unlock(&wq->lock);
+	spin_unlock_irqrestore(&wq->lock, f);
 	return was_pending;
 }
 
@@ -252,9 +257,10 @@ parity_kcancel_work_sync(struct parity_kworkqueue *wq, struct parity_kwork *w, u
 int
 parity_kflush_work(struct parity_kworkqueue *wq, struct parity_kwork *w, uint64_t deadline)
 {
+	unsigned long f;   /* IRQ-safe: queue_work() may be called from an interrupt handler */
 	int was_active;
 
-	spin_lock(&wq->lock);
+	f = spin_lock_irqsave(&wq->lock);
 	was_active = (w->state != PARITY_KWORK_IDLE) ? 1 : 0;
 	/* Wait for the work to leave PENDING/RUNNING; do NOT dequeue it. */
 	for (;;) {
@@ -267,19 +273,20 @@ parity_kflush_work(struct parity_kworkqueue *wq, struct parity_kwork *w, uint64_
 		obs = waitq_sequence(&w->done_waitq);
 		(void)waitq_sleep(&w->done_waitq, &wq->lock, obs, deadline, 0u);
 	}
-	spin_unlock(&wq->lock);
+	spin_unlock_irqrestore(&wq->lock, f);
 	return was_active;
 }
 
 void
 parity_kworkqueue_destroy(struct parity_kworkqueue *wq)
 {
-	spin_lock(&wq->lock);
+	unsigned long f;   /* IRQ-safe: queue_work() may be called from an interrupt handler */
+	f = spin_lock_irqsave(&wq->lock);
 	wq->stop = 1;
 	waitq_wake_all(&wq->waitq);
 	while (wq->worker_alive) {
 		uint64_t obs = waitq_sequence(&wq->waitq);
 		(void)waitq_sleep(&wq->waitq, &wq->lock, obs, 0u, 0u);
 	}
-	spin_unlock(&wq->lock);
+	spin_unlock_irqrestore(&wq->lock, f);
 }

@@ -18,6 +18,10 @@
 #include "parity_lcd_calc.h"
 
 struct parity_lcd_modeset_cfg {
+	int output_hdmi;                /* 0 = the eDP panel (DP SST), 1 = an HDMI sink on a combo-PHY DDI */
+	int vbt_hdmi_level_shift;       /* the VBT child's HDMI level shift for this port; < 0 = the VBT has none */
+	unsigned also_active_pipes;     /* the other pipes this configuration lights (BIT(pipe)): the DDB is
+	                                 * computed for the whole set, as the reference's atomic check would */
 	int port;                       /* enum port: 0 = A, 1 = B (combo PHY only) */
 	int pipe, cpu_transcoder;       /* 0 = A */
 	int dpll_id;                    /* 0 = DPLL 0, 1 = DPLL 1 */
@@ -89,6 +93,8 @@ struct parity_lcd_modeset_status {
 	unsigned commits;
 	/* ownership */
 	int pll_on, pll_active_mask, pll_wakeref;
+	int pll_id;                     /* the shared DPLL this crtc was given (0 / 1) */
+	int pll_pipe_mask;              /* the pipes that hold a reference on it */
 	int ddi_io_wakeref, aux_wakeref;
 	/* the reference's drm_err / WARN lines since prepare */
 	unsigned errors;
@@ -103,6 +109,14 @@ struct parity_lcd_modeset_status {
 #define PARITY_LCD_MS_STILL_OWNED (-4)       /* after the disable something is still held (status says what) */
 
 /* -22 for a configuration this path does not cover (checked before anything is touched) */
+/*
+ * The screen the calls below work on (0 = the first).  Each screen has its own crtc, encoder, plane and flip
+ * state; the device's shared parts (DPLLs, DBUF / MBUS, power domains, locks) are common to all of them.
+ */
+int parity_lcd_modeset_select(unsigned screen);
+unsigned parity_lcd_modeset_selected(void);
+int parity_lcd_ms_bound_port(void);     /* the port the generated DDI callers are bound to */
+
 int parity_lcd_modeset_prepare(const struct parity_lcd_state *s, const struct parity_lcd_modeset_cfg *cfg,
 	struct parity_lcd_emit *ops);
 /*
@@ -123,6 +137,8 @@ int parity_lcd_modeset_commit_enable(void);
  * PARITY_LCD_MS_OK, _NOT_PREPARED (no active crtc / retained), or _ERRORS (a reference error during the call).
  */
 int parity_lcd_modeset_brightness(uint32_t user_level, uint32_t user_max);
+/* the OpRegion ASLE request path (intel_backlight_set_acpi; level in [0, max], ASLE uses max 255) */
+int parity_lcd_modeset_backlight_acpi(uint32_t level, uint32_t max);
 /*
  * Flip the running picture to another buffer (same format / size / pitch): the reference's update of a running crtc
  * (plane noarm, intel_pipe_update_start -- vblank evasion --, plane arm, intel_pipe_update_end -- the event is armed).
@@ -158,6 +174,11 @@ int parity_lcd_modeset_commit_disable(void);
 void parity_lcd_modeset_abandoned(void);
 int parity_lcd_modeset_retained(void);
 int parity_lcd_modeset_discard_model(const struct parity_lcd_emit *ops);
+
+/* the device's shared DPLLs start empty (intel_shared_dpll_init): called when the device / backend is created */
+void parity_lcd_dplls_reset(void);
+/* the device's DBUF / MBUS state is forgotten with it (the next prepare reads the hardware's own) */
+void parity_lcd_dbuf_forget(void);
 /* the stages the commits are made of (kept for the word-level tests; the path to a picture is the two commits) */
 int parity_lcd_modeset_enable(void);
 int parity_lcd_modeset_plane_update(void);

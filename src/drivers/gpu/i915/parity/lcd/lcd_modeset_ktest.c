@@ -29,6 +29,8 @@ static struct parity_lcd_modeset_status s;
 
 static int bring_up(void)
 {
+	parity_lcd_dplls_reset();       /* a fresh device: the shared DPLLs and the DBUF state start over */
+	parity_lcd_dbuf_forget();
 	struct parity_edp_config c;
 	int rc;
 

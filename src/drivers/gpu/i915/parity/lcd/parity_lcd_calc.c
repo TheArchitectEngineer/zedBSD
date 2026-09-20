@@ -138,6 +138,26 @@ int parity_lcd_compute(const uint8_t *edid128, const uint8_t *dpcd, const uint8_
 	return rc;
 }
 
+int parity_icl_hdmi_wrpll(int port_clock, int ref_nssc, u32 *cfgcr0, u32 *cfgcr1, u32 *div0);
+
+int parity_lcd_compute_hdmi(const struct parity_lcd_mode *mode, int ref_nssc_khz, struct parity_lcd_state *out)
+{
+	int rc;
+
+	if (mode == 0 || out == 0 || mode->clock_khz <= 0)
+		return -EINVAL;
+	memset(out, 0, sizeof(*out));
+	out->mode = *mode;
+	/* intel_hdmi_tmds_clock(): the TMDS clock is the pixel clock scaled by bpc / 8 -- 8 bpc: the same value */
+	out->link.rate_khz = mode->clock_khz;
+	out->link.lanes = 4;
+	out->link.bpp = 24;
+	rc = parity_icl_hdmi_wrpll(out->link.rate_khz, ref_nssc_khz, &out->pll.cfgcr0, &out->pll.cfgcr1, &out->pll.div0);
+	if (rc != 0)
+		return rc;
+	return 0;
+}
+
 static void record_write(void *ctx, u32 reg, u32 value)
 {
 	struct parity_lcd_words *out = ctx;

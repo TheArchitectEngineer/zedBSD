@@ -14,7 +14,7 @@
  *    get_backlight_min_vbt, cnp_setup_backlight, intel_pwm_get_backlight, intel_pwm_set_backlight,
  *    intel_pwm_enable_backlight, intel_pwm_disable_backlight, intel_pwm_setup_backlight, __intel_backlight_enable,
  *    intel_backlight_enable, intel_backlight_disable, intel_panel_actually_set_backlight, scale_user_to_hw,
- *    intel_panel_set_backlight;
+ *    intel_panel_set_backlight, intel_backlight_set_acpi;
  *  - the includes are replaced by: lcd_compat.h, lcd_seq_compat.h, lcd_modeset_compat.h, lcd_mreg_backlight.h;
  *  - parity_backlight_glue.inc (zedBSD code) is included at the end of the file.
  */
@@ -561,6 +561,45 @@ static void intel_panel_set_backlight(const struct drm_connector_state *conn_sta
 
 	hw_level = scale_user_to_hw(connector, user_level, user_max);
 	panel->backlight.level = hw_level;
+
+	if (panel->backlight.enabled)
+		intel_panel_actually_set_backlight(conn_state, hw_level);
+
+	mutex_unlock(&i915->display.backlight.lock);
+}
+
+/* set backlight brightness to level in range [0..max], assuming hw min is
+ * respected.
+ */
+void intel_backlight_set_acpi(const struct drm_connector_state *conn_state,
+			      u32 user_level, u32 user_max)
+{
+	struct intel_connector *connector = to_intel_connector(conn_state->connector);
+	struct drm_i915_private *i915 = to_i915(connector->base.dev);
+	struct intel_panel *panel = &connector->panel;
+	u32 hw_level;
+
+	/*
+	 * Lack of crtc may occur during driver init because
+	 * connection_mutex isn't held across the entire backlight
+	 * setup + modeset readout, and the BIOS can issue the
+	 * requests at any time.
+	 */
+	if (!panel->backlight.present || !conn_state->crtc)
+		return;
+
+	mutex_lock(&i915->display.backlight.lock);
+
+	drm_WARN_ON(&i915->drm, panel->backlight.max == 0);
+
+	hw_level = clamp_user_to_hw(connector, user_level, user_max);
+	panel->backlight.level = hw_level;
+
+	if (panel->backlight.device)
+		panel->backlight.device->props.brightness =
+			scale_hw_to_user(connector,
+					 panel->backlight.level,
+					 panel->backlight.device->props.max_brightness);
 
 	if (panel->backlight.enabled)
 		intel_panel_actually_set_backlight(conn_state, hw_level);

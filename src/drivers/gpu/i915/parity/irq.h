@@ -101,6 +101,7 @@ struct parity_irq_dev {
 	volatile unsigned irq_handled_count;
 	volatile uint32_t last_master_ctl;
 	volatile uint32_t last_gu_misc_iir;
+	volatile unsigned gse_count;            /* GU_MISC GSE interrupts handed to the OpRegion GSE entry (E-123) */
 	volatile unsigned gt_irq_count, display_irq_count;
 	/*
 	 * Display source accounting.  The bottom halves (vblank / flip-done /

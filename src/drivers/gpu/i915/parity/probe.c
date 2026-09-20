@@ -21,6 +21,7 @@
 #include "dp/parity_dp_kernel.h"
 #include "lcd/lcd_hw_check.h"
 #include "lcd/parity_lcd_kernel.h"
+#include "lcd/parity_lcd_show.h"
 #include "vga.h"
 #include "power_domains.h"
 #include "cdclk.h"
@@ -41,6 +42,10 @@
 #include "driver_probe.h"
 #include "eu_test.h"
 #include "native_precheck.h"
+#include "lcd/parity_hotplug.h"
+/* E-123: the hotplug path is running (started after intel_display_driver_probe) */
+static int parity_hpd_started;
+#include "lcd/opregion_fwtest.h"
 #include "../draw_fixture.h"
 #include "reset.h"
 #include "backend_sync.h"
@@ -76,6 +81,7 @@ parity_dump_trace(struct osdep_trace *t)
 
 /* N0 (E-120): the aperture, and the reference's readout gate for the precheck (no write) */
 static uint64_t n0_gmadr_base, n0_gmadr_size;
+static const struct parity_opregion_data *p2_opd;   /* E-122: the P2 OpRegion data (read-only acquisition) */
 static struct osdep_mmio *n0_mmio;
 static int n0_pipe_powered(void *ctx, unsigned pipe)
 {
@@ -639,6 +645,18 @@ drv_i915_parity_attach(struct i915_device *device, enum parity_stage stop_after,
 		uint32_t asls = osdep_pci_read32(&pci, 0xFCu);
 
 		kern_logf("i915: parity P2 opregion: ASLS=0x%08x\n", asls);
+		/* E-122 VBT_ONLY: the OpRegion as data (read-only copy + VBT); the runtime protocol is not joined */
+		{
+			static struct parity_opregion_data opd;
+
+			(void)parity_opregion_read_data(asls, &opd);
+			parity_opregion_log(&opd);
+			p2_opd = &opd;
+			if (opd.vbt_valid) {
+				parity_bios_set_opregion_vbt(opd.vbt, opd.vbt_size);
+				opregion_vbt_present = 1;
+			}
+		}
 		opregion_present = asls != 0u;
 		if (asls == 0u) {
 			osdep_trace_emit(&trace, PARITY_STAGE_P2, OSDEP_TR_NOTE, "intel_opregion_absent", 0u, 0u);
@@ -777,6 +795,9 @@ drv_i915_parity_attach(struct i915_device *device, enum parity_stage stop_after,
 		 * void in the reference -- it never fails the probe.
 		 */
 		(void)parity_intel_bios_init_ex(&vbt_state, &pci, opregion_vbt_present, PARITY_VBT_EXPLICIT, &trace);
+		/* E-123: the OpRegion service on the real OpRegion (test builds only; before N0 and any display write) */
+		if (PARITY_OPREGION_FW_TEST)
+			(void)parity_opregion_fw_test(osdep_pci_read32(&pci, 0xFCu), &vbt_state);
 		kern_logf("i915: parity P3 intel_bios_init done: source=%d vbt_found=%d "
 			"version=%u child_devices=%u\n", vbt_state.source, vbt_state.vbt_found,
 			(unsigned)vbt_state.version, vbt_state.num_display_devices);
@@ -835,9 +856,23 @@ drv_i915_parity_attach(struct i915_device *device, enum parity_stage stop_after,
 		nd.pipe_powered = n0_pipe_powered;
 		nd.ctx = &power_domains;
 		nd.vbt_pin = parity_vbt_explicit_pin();
+		/* what intel_bios_init (P3) actually handed to the parser; only the explicit blob's bytes are hashed today */
+		nd.parser_src = vbt_state.source;
+		nd.parser_size = vbt_state.source == PARITY_VBT_SRC_EXPLICIT_BLOB ? vbt_state.blob_size : 0u;
+		nd.parser_sha256 = vbt_state.source == PARITY_VBT_SRC_EXPLICIT_BLOB ? vbt_state.blob_sha256 : 0;
+		if (vbt_state.source == PARITY_VBT_SRC_OPREGION && p2_opd != 0 && p2_opd->vbt_valid) {
+			nd.parser_size = p2_opd->vbt_size;          /* the copy P2 made is what the parser consumed */
+			nd.parser_sha256 = p2_opd->vbt_sha256;
+		}
 		n0_mmio = &mmio;
 		(void)parity_native_precheck(&nd, &n0);
+		if (PARITY_N0_FORCE_STOP) {
+			n0.proceed = 0;
+			n0.reason = "forced by the test build (PARITY_N0_FORCE_STOP): the early teardown is exercised";
+		}
 		parity_native_log(&n0);
+		kern_logf("i915: parity N0 before-N0: PCI COMMAND firmware=0x%04x now=0x%04x (BME/MEM set at P2; restored on teardown) | done already: GT reset (GDRST full, display untouched on ADL-P), GT fault/error-register clears, fence clears (0..31), PCODE reads, MSI enabled (no handler), WC CPU view of the aperture | not done: any display register, any GGTT PTE, any D-state change\n",
+			(unsigned)pci.saved_command, (unsigned)osdep_pci_read16(&pci, 0x04u));
 		if (!n0.proceed) {
 			res.outcome = PARITY_BLOCKED;
 			res.where = "native-precheck (before any display write)";
@@ -1706,6 +1741,15 @@ p6_fw_out:
 		dprobe.hp.sdeimr, dprobe.hp.sdeimr_skipped ? "(not written: irqs off)" : "",
 		dprobe.hp.shotplug_ddi, dprobe.hp.shotplug_tc, dprobe.hp.poll_init_works,
 		dprobe.hp.poll_core_gets);
+	/*
+	 * The hotplug path (E-123): intel_hpd_init_early() + the connectors of the encoders intel_setup_outputs() made;
+	 * from here on gen8_de_irq_handler() hands SDEIIR to icp_irq_handler().  (The reference makes the connectors in
+	 * intel_ddi_init; adaptation: they are made here, once the hotplug registers are programmed.)
+	 */
+	if (rc == 0 && parity_hpd_start(&dprobe.hp, &mmio, &nogem, &power_domains, &pwc, pch.type,
+			irqdev.irqs_enabled, NULL) == 0)
+		parity_hpd_started = 1;
+	kern_logf("i915: parity P7 hotplug path: %s\n", parity_hpd_started ? "started" : "NOT started");
 	if (dprobe.initial_commit_unimplemented) {
 		osdep_trace_emit(&trace, PARITY_STAGE_P3, OSDEP_TR_UNIMPL,
 			"intel_initial_commit", dprobe.active_crtcs, 0u);
@@ -1716,14 +1760,18 @@ p6_fw_out:
 	res.last_completed = "intel_display_driver_probe";
 
 	/* i915_driver_register() */
+	/*
+	 * intel_opregion_register(): E-122 VBT_ONLY -- the OpRegion runtime protocol is not joined (no ACPI notifier is
+	 * registered, drdy / ardy / csts / DIDL / CADL are not written, no ASLE service), as in the reference built without
+	 * ACPI where these calls are empty.  Recorded; the probe continues.
+	 */
 	if (opregion_present) {
-		osdep_trace_emit(&trace, PARITY_STAGE_P3, OSDEP_TR_UNIMPL,
-			"intel_opregion_register", 0u, 0u);
-		res.outcome = PARITY_BLOCKED;
-		res.where = "intel_opregion_register";
-		goto teardown;
+		osdep_trace_emit(&trace, PARITY_STAGE_P3, OSDEP_TR_NOTE,
+			"intel_opregion_register:runtime_disabled(vbt_only)", 0u, 0u);
+		kern_logf("i915: parity P7 intel_opregion_register: runtime DISABLED (VBT_ONLY, ACPI_RUNTIME_UNAVAILABLE): no "
+			"notifier registered, no mailbox written, no ASLE service -- the probe continues\n");
 	}
-	parity_i915_driver_register(&dprobe, &dcore, &probe_pm, opregion_present);
+	parity_i915_driver_register(&dprobe, &dcore, &probe_pm, 0 /* opregion runtime not registered */);
 	kern_logf("i915: parity P7 driver_register: na_registrations=%u opregion=%d kms_poll=%d | "
 		"power_domains_enable: wells_on %u -> %u dc_state=0x%x verify_mismatches=%u | "
 		"runtime_pm_enable: probe usage=%d active=%d (autosuspend not armed: "
@@ -1772,7 +1820,7 @@ p6_fw_out:
 	 * LCD-B: one known picture on the panel through the reference's modeset, a finite observation window, the
 	 * reference's stop path.  No GPU submission happens in this mode; the AUX diagnostics are not repeated.
 	 */
-	if (PARITY_LCDB_TEST || PARITY_LCDR_TEST || PARITY_LCDG_TEST || PARITY_LCDC_TEST || PARITY_LCDD_TEST) {
+	if (PARITY_LCDB_TEST || PARITY_LCDR_TEST || PARITY_LCDG_TEST || PARITY_LCDC_TEST || PARITY_LCDD_TEST || PARITY_LCDO_TEST || PARITY_HDMI_B_TEST || PARITY_DUAL_TEST || PARITY_DUAL_SHARE_TEST) {
 		static struct parity_lcd_kernel_deps lcdb;
 
 		lcdb.edp = &edp_dev; lcdb.mmio = &mmio; lcdb.pd = &power_domains; lcdb.pwc = &pwc; lcdb.dcore = &dcore;
@@ -1800,6 +1848,14 @@ p6_fw_out:
 						PARITY_LCDD_TEST ? 'D' : 'G', gfrc);
 				while (gheld-- > 0u)
 					osdep_fw_put(&mmio, gfwd[gheld]);
+			} else if (PARITY_DUAL_SHARE_TEST) {
+				(void)parity_lcd_kernel_dual_share_run(&lcdb);
+			} else if (PARITY_DUAL_TEST) {
+				(void)parity_lcd_kernel_dual_run(&lcdb);
+			} else if (PARITY_HDMI_B_TEST) {
+				(void)parity_lcd_kernel_hdmib_run(&lcdb);
+			} else if (PARITY_LCDO_TEST) {
+				(void)parity_lcd_kernel_lcdo_run(&lcdb);
 			} else if (PARITY_LCDC_TEST) {
 				(void)parity_lcd_kernel_lcdc_run(&lcdb);
 			} else if (PARITY_LCDR_TEST)
@@ -1817,6 +1873,20 @@ p6_fw_out:
 			res.lcd_test_ran = 1;
 			res.lcd_first_anomaly_stage = "no-gt-memory";
 		}
+	}
+
+	/* HPD-TEST: the HDMI cable of DDI B is plugged / unplugged in a finite window (no GPU submission) */
+	if (PARITY_HDMI_EDID_TEST) {
+		if (parity_hpd_started)
+			(void)parity_hdmi_edid_test_run(&mmio);
+		else
+			kern_logf("i915: parity HDMI-EDID verdict: FAIL (the hotplug path did not start)\n");
+	}
+	if (PARITY_HDMI_HPD_TEST) {
+		if (parity_hpd_started)
+			(void)parity_hpd_test_run(&mmio, 240u);
+		else
+			kern_logf("i915: parity HPD-TEST verdict: FAIL (the hotplug path did not start)\n");
 	}
 
 	if (PARITY_T3_TEST || PARITY_BL_TEST) {
@@ -2284,6 +2354,23 @@ p6_fw_out:
 	res.where = "i915_driver_probe complete";
 
 teardown:
+	/*
+	 * Before anything else is given back: nothing may still be scanned out.  The driver's own stop path is
+	 * the reference's; this is the test environment's last resort (a pipe left running keeps reading memory
+	 * after the driver is gone, which hangs the host's IOMMU unmap when the guest ends).
+	 */
+	{
+		unsigned forced = parity_lcd_last_resort_stop(&mmio);
+
+		if (forced != 0u)
+			kern_logf("i915: parity teardown: LAST-RESORT stopped %u display element(s) the driver had not "
+				"released\n", forced);
+	}
+	/* the hotplug path first: its IRQ entry closed, the works cancelled (intel_hpd_cancel_work) */
+	if (parity_hpd_started) {
+		parity_hpd_stop();
+		parity_hpd_started = 0;
+	}
 	/*
 	 * i915_driver_remove() -> i915_driver_unregister(): runtime PM back to
 	 * the core, the INIT power reference taken again (DC states off, wells

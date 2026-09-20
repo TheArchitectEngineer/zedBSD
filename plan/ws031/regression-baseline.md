@@ -111,3 +111,12 @@ GPU-free ktest は 433 checks（E-109 で +26: `dwork:` 7、`pw-async:` 8、`edp
 - どの mode も probe で N0 を通る（VM では `N0 decision: PROCEED`）。LCD-D の合格条件に、buffer をまたぐ比較 4/4、sleep 入口での IRQ off 0、evasion probe の結果 ≥ 0 を追加（REACHED／NOT-REACHED は記録のみ）。
 - 意図的な TLB fault の log は `backend=MODEL test=… expected_fault=1`。集計では `expected_fault=0`（HW）の行だけを異常として数える。
 - 回帰 sweep: `handover/tools/sweep_e120.sh`（13 mode）。回帰 sweep 13/13 PASS（sweep_e120.sh、最終 source、各 ktest 536/0、全 run で N0 PROCEED）。
+
+## E-121 (2026-09-20)
+- host: native-decide 14/0、opregion 11/0、lcd-modeset 123/0、lcd 56/0、dp 72/0。GPU-free ktest **539/0**（P5C-DPLL ×3）。
+- 回帰 sweep: `handover/tools/sweep_e121.sh`（13 mode、13/13 PASS）。
+
+## E-122 (2026-09-20)
+- GPU-free ktest **582/0**（OP-SETUP／REGISTER／SWSCI／NOTIFY／ASLE／LIFECYCLE）。host は上記。
+- 新 mode `-DPARITY_LCDO_TEST=1`（合成 ASLE による実 LCD の輝度）: 合格行 = `LCD-O verdict: PASS` ＋ `lcd_test=PASS`。`RUNSCRIPT=./run-parity-ref-240.sh`。
+- 回帰 sweep: `handover/tools/sweep_e122.sh`（14 mode）。

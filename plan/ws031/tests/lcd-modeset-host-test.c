@@ -87,6 +87,8 @@ static struct parity_lcd_modeset_cfg ms_cfg(void)
 /* resident eDP up (as the probe leaves it), LCD state computed from what it read, models fresh */
 static void bring_up(void)
 {
+	parity_lcd_dplls_reset();       /* a fresh device: its shared DPLLs are unused */
+	parity_lcd_dbuf_forget();       /* and its DBUF / MBUS state is read from the hardware again */
 	struct parity_edp_config cfg = vbt_cfg();
 	int rc;
 

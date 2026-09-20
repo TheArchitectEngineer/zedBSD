@@ -1186,6 +1186,64 @@ readout_plane_state(struct parity_display_nogem *d, struct osdep_mmio *m,
 	}
 }
 
+/* encoder->get_config() for the linked encoders, then intel_dpll_readout_hw_state() (E-121) */
+void
+parity_intel_dpll_readout(struct parity_display_nogem *d, struct osdep_mmio *m)
+{
+	unsigned i;
+
+	/*
+	 * encoder->get_config() for the linked encoders: icl_ddi_combo_get_config() ->
+	 * intel_ddi_get_clock(icl_ddi_combo_get_pll()) = _icl_ddi_get_pll(ICL_DPCLKA_CFGCR0,
+	 * ICL_DPCLKA_CFGCR0_DDI_CLK_SEL_MASK(phy), _SHIFT(phy) = 2 * phy): the id of the PLL feeding the PHY.
+	 * icl_ddi_tc_get_pll() is not ported: a linked TC encoder leaves its PLL unknown (readout incomplete).
+	 */
+	{
+		int tc_unknown = 0;
+
+		for (i = 0u; i < d->num_encoders; i++) {
+			struct parity_encoder *e = &d->encoders[i];
+
+			e->shared_dpll_id = -1;
+			if (!e->crtc_linked)
+				continue;
+			if (e->clk_funcs == PARITY_DDI_CLK_ICL_COMBO) {
+				e->dpclka_cfgcr0 = osdep_mmio_read32(m, 0x164280u);
+				e->shared_dpll_id = (int)((e->dpclka_cfgcr0 >> (2u * (unsigned)e->phy)) & 0x3u);
+				kern_logf("i915: parity P5c [ENCODER port %c] get_config: ICL_DPCLKA_CFGCR0=0x%08x -> "
+					"shared_dpll id %d\n", (char)('A' + e->port), e->dpclka_cfgcr0, e->shared_dpll_id);
+			} else {
+				tc_unknown = 1;
+				kern_logf("i915: parity P5c [ENCODER port %c] get_config: icl_ddi_tc_get_pll not ported -- the PLL "
+					"of this active link is unknown\n", (char)('A' + e->port));
+			}
+		}
+		for (i = 0u; i < d->num_dplls; i++)
+			d->dplls[i].readout_incomplete = tc_unknown;
+	}
+
+	/* intel_dpll_readout_hw_state() -> readout_dpll_hw_state() */
+	for (i = 0u; i < d->num_dplls; i++) {
+		struct parity_dpll *pll = &d->dplls[i];
+		unsigned c, k;
+
+		pll->on = (osdep_mmio_read32(m, pll->enable_reg) & PLL_ENABLE_BIT) ? 1 : 0;
+		pll->pipe_mask = 0u;
+		/* for_each_intel_crtc: crtc_state->hw.active && crtc_state->shared_dpll == pll -> pipe_mask |= BIT(pipe) */
+		for (c = 0u; c < (unsigned)PARITY_NOGEM_MAX_PIPES; c++) {
+			if (!d->crtcs[c].state.active)
+				continue;
+			for (k = 0u; k < d->num_encoders; k++) {
+				const struct parity_encoder *e = &d->encoders[k];
+
+				if (e->crtc_linked && (e->pipe_mask & (1u << c)) != 0u && e->shared_dpll_id == pll->id)
+					pll->pipe_mask |= 1u << c;
+			}
+		}
+		pll->active_mask = pll->pipe_mask;
+	}
+}
+
 void
 parity_intel_modeset_readout_hw_state(struct parity_display_nogem *d,
 	int display_ver, struct osdep_mmio *m, struct parity_power_domains *pd,
@@ -1255,22 +1313,10 @@ parity_intel_modeset_readout_hw_state(struct parity_display_nogem *d,
 			e->crtc_linked ? "enabled" : "disabled", e->pipe_mask, e->is_mst);
 	}
 
-	/* intel_dpll_readout_hw_state() */
+	parity_intel_dpll_readout(d, m);
 	for (i = 0u; i < d->num_dplls; i++) {
 		struct parity_dpll *pll = &d->dplls[i];
-		unsigned c;
 
-		pll->on = (osdep_mmio_read32(m, pll->enable_reg) & PLL_ENABLE_BIT) ? 1 : 0;
-		pll->pipe_mask = 0u;
-		/*
-		 * The reference credits a pipe to a PLL through
-		 * crtc_state->shared_dpll, which is filled by the per-encoder config
-		 * readout this port does not do.  With no active pipe there is nothing
-		 * to credit; when one appears this must be revisited.
-		 */
-		for (c = 0u; c < (unsigned)PARITY_NOGEM_MAX_PIPES; c++)
-			(void)c;
-		pll->active_mask = pll->pipe_mask;
 		if (pll->on)
 			d->readout_dplls_on++;
 		kern_logf("i915: parity P5c %s hw state readout: pipe_mask 0x%x, on %d\n",
@@ -1417,8 +1463,8 @@ adlp_cmtg_clock_gating_wa(struct parity_display_nogem *d, struct osdep_mmio *m,
 }
 
 /* intel_dpll_sanitize_state() -> sanitize_dpll_state(). */
-static void
-intel_dpll_sanitize_state(struct parity_display_nogem *d, struct osdep_mmio *m,
+void
+parity_intel_dpll_sanitize_state(struct parity_display_nogem *d, struct osdep_mmio *m,
 	int display_ver, int display_step)
 {
 	unsigned i;
@@ -1433,6 +1479,11 @@ intel_dpll_sanitize_state(struct parity_display_nogem *d, struct osdep_mmio *m,
 
 		if (pll->active_mask != 0u)
 			continue;
+		if (pll->readout_incomplete) {
+			kern_logf("i915: parity %s enabled, active_mask 0 but the readout is incomplete (an active link's PLL is "
+				"unknown): NOT disabled\n", pll->name);
+			continue;
+		}
 
 		kern_logf("i915: parity %s enabled but not in use, disabling\n",
 			pll->name);
@@ -1528,7 +1579,7 @@ parity_intel_modeset_sanitize_hw_state(struct parity_display_nogem *d,
 		if (d->crtcs[i].in_use)
 			(void)intel_sanitize_crtc(d, &d->crtcs[i]);
 
-	intel_dpll_sanitize_state(d, m, display_ver, display_step);
+	parity_intel_dpll_sanitize_state(d, m, display_ver, display_step);
 
 	/* intel_wm_get_hw_state(): skl_wm_get_hw_state + skl_wm_sanitize. */
 	d->wm_hw_state_read = 1;

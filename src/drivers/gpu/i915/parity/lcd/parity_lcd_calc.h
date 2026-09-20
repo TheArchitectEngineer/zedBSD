@@ -68,6 +68,13 @@ struct parity_lcd_words {
  * against a recorder.  The list is what those functions write and in their order (LINK_N last arms
  * the M/N update); where the three calls sit in the whole enable sequence is NOT expressed here.
  */
+/*
+ * The state for an HDMI sink: the mode is given (no EDID could be read from this port -- see the modeset's
+ * ADAPTATION note), the TMDS clock is the mode's pixel clock at 8 bpc (intel_hdmi_tmds_clock()), and the PLL
+ * state comes from the reference's WRPLL calculation.
+ */
+int parity_lcd_compute_hdmi(const struct parity_lcd_mode *mode, int ref_nssc_khz, struct parity_lcd_state *out);
+
 int parity_lcd_emit_transcoder(const struct parity_lcd_state *s, int pipe, int cpu_transcoder,
 	uint32_t src_width, uint32_t src_height, struct parity_lcd_words *out);
 

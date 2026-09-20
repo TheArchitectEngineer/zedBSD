@@ -77,11 +77,35 @@ struct parity_vbt_state {
 #ifndef PARITY_LCDC_TEST
 #define PARITY_LCDC_TEST 0            /* LCD-C: synchronous flips between two buffers */
 #endif
+#ifndef PARITY_N0_FORCE_STOP
+#define PARITY_N0_FORCE_STOP 0        /* VM test of the N0 STOP path (the early teardown); never in a native image */
+#endif
+#ifndef PARITY_OPREGION_FW_TEST
+#define PARITY_OPREGION_FW_TEST 0     /* E-123: the OpRegion service on the REAL OpRegion (native; writes the mailboxes) */
+#endif
+#ifndef PARITY_LCDO_TEST
+#define PARITY_LCDO_TEST 0            /* LCD-O: synthetic ASLE brightness on the real LCD (shadow OpRegion) */
+#endif
+#ifndef PARITY_HDMI_HPD_TEST
+#define PARITY_HDMI_HPD_TEST 0        /* E-123: HPD-TEST window, the HDMI cable plugged / unplugged (no GPU submission) */
+#endif
+#ifndef PARITY_DUAL_SHARE_TEST
+#define PARITY_DUAL_SHARE_TEST 0      /* E-123: one buffer, both screens (the external one sees part of it) */
+#endif
+#ifndef PARITY_DUAL_TEST
+#define PARITY_DUAL_TEST 0            /* E-123: the panel and the external HDMI display at once */
+#endif
+#ifndef PARITY_HDMI_B_TEST
+#define PARITY_HDMI_B_TEST 0          /* E-123: one picture on the external HDMI display, then the stop path */
+#endif
+#ifndef PARITY_HDMI_EDID_TEST
+#define PARITY_HDMI_EDID_TEST 0       /* E-123: the connected HDMI sink's first detection + EDID over GMBUS */
+#endif
 #ifndef PARITY_LCDD_TEST
 #define PARITY_LCDD_TEST 0            /* LCD-D: GPU back-buffer redraw + synchronous flip */
 #endif
 #ifndef PARITY_VBT_EXPLICIT
-#define PARITY_VBT_EXPLICIT (PARITY_AUX_TEST || PARITY_LCDB_TEST || PARITY_LCDR_TEST || PARITY_LCDG_TEST || PARITY_LCDC_TEST || PARITY_LCDD_TEST)
+#define PARITY_VBT_EXPLICIT (PARITY_DUAL_SHARE_TEST || PARITY_DUAL_TEST || PARITY_HDMI_B_TEST || PARITY_HDMI_EDID_TEST || PARITY_HDMI_HPD_TEST || PARITY_AUX_TEST || PARITY_LCDB_TEST || PARITY_LCDR_TEST || PARITY_LCDG_TEST || PARITY_LCDC_TEST || PARITY_LCDD_TEST || PARITY_LCDO_TEST)
 #endif
 #define PARITY_VBT_EXPLICIT_NAME "zedbsd/vbt/dell-latitude-5330-1028-0b02.vbt"
 #define PARITY_VBT_EXPLICIT_SUBSYS_VENDOR 0x1028u
@@ -107,5 +131,7 @@ int parity_intel_bios_init_ex(struct parity_vbt_state *vbt, struct osdep_pci *pc
 	int opregion_has_vbt, int explicit_blob, struct osdep_trace *trace);
 void parity_sha256(const void *data, size_t len, uint8_t out[32]);
 const uint8_t *parity_vbt_explicit_pin(void);
+/* E-122: the OpRegion VBT (P2's read-only copy) offered to intel_bios_init, after the explicit blob */
+void parity_bios_set_opregion_vbt(const void *buf, size_t size);
 
 #endif /* PARITY_BIOS_H */

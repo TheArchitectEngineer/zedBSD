@@ -61,6 +61,22 @@ int parity_ddi_emit(struct parity_lcd_emit *emit, const struct drm_display_mode 
  */
 static struct parity_lcd_modeset *ddi_ms;
 
+/*
+ * intel_bios_hdmi_level_shift(): the VBT child's value for this port, as the parser read it (vbt/parity_vbt.h).
+ * A value of 0 is a valid index; only a VBT without the field (< 0) makes intel_ddi_hdmi_level() fall back to
+ * the buffer-translation table's own default entry.
+ */
+int parity_lcd_hdmi_level_shift(void)
+{
+	return ddi_ms != 0 ? ddi_ms->hdmi_level_shift : -1;
+}
+
+/* which screen's encoder the DDI callers are bound to right now (diagnostics) */
+int parity_lcd_ms_bound_port(void)
+{
+	return ddi_ms != 0 ? (int)ddi_ms->dig_port.base.port : -1;
+}
+
 void parity_lcd_ms_bind_encoder(struct parity_lcd_modeset *ms)
 {
 	struct intel_encoder *encoder = &ms->dig_port.base;

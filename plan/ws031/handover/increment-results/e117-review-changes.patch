@@ -1,0 +1,1957 @@
+# WS031 E-117 review diff: changes of E-117 against the end of E-116 (tree 6f090b92883dc7d714183e23fb32be9397c9cab7 = 2bf790a4 + e97-e116-changes.patch); hand-written files (generated *_port.c / extracted headers / manifest left out: check_generated.sh reproduces them)
+diff --git a/plan/ws031/handover/tools/hw_run.sh b/plan/ws031/handover/tools/hw_run.sh
+index a0d18dcf..60451f9c 100644
+--- a/plan/ws031/handover/tools/hw_run.sh
++++ b/plan/ws031/handover/tools/hw_run.sh
+@@ -1,4 +1,4 @@
+ # WS031 regression helper. KVM_HOST = ssh alias of the KVM host that owns the vfio-pci GPU (run scripts live in ~/bigbang there).
+ # usage: bash -s NAME LOGNAME PATTERN  — real-GPU run of guest-parity-NAME.img, only if its GPU-free log completed the ktest
+ NAME="$1"; LOG="$2"; PAT="$3"
+-ssh ${KVM_HOST:-kvmhost} "cd ~/bigbang && if grep -q 'checks, 0 failures' run-parity-$NAME-nogpu.log; then cp -f guest-parity-$NAME.img guest-parity.img && sha256sum guest-parity.img | cut -c1-16 && lspci -nnk -s 00:02.0 | grep -i 'in use' && ./run-parity-ref.sh >/dev/null 2>&1; cp run-parity.log $LOG; grep -naE 'fatal|panic|ktest FAIL|checks,|gt_mem:|$PAT|EU-TEST (record|hang)|attach end|runner-result' $LOG | cut -c1-430; else echo 'GPU-free ktest did not complete: GPU run skipped'; fi"
++ssh ${KVM_HOST:-kvmhost} "cd ~/bigbang && if grep -q 'checks, 0 failures' run-parity-$NAME-nogpu.log; then cp -f guest-parity-$NAME.img guest-parity.img && sha256sum guest-parity.img | cut -c1-16 && lspci -nnk -s 00:02.0 | grep -i 'in use' && ${RUNSCRIPT:-./run-parity-ref.sh} >/dev/null 2>&1; cp run-parity.log $LOG; grep -naE 'fatal|panic|ktest FAIL|checks,|gt_mem:|$PAT|EU-TEST (record|hang)|attach end|runner-result' $LOG | cut -c1-430; else echo 'GPU-free ktest did not complete: GPU run skipped'; fi"
+diff --git a/plan/ws031/handover/tools/port_lcd_modeset.json b/plan/ws031/handover/tools/port_lcd_modeset.json
+index 90b4d264..2cb2c426 100644
+--- a/plan/ws031/handover/tools/port_lcd_modeset.json
++++ b/plan/ws031/handover/tools/port_lcd_modeset.json
+@@ -1221,7 +1221,10 @@
+     "intel_pwm_setup_backlight",
+     "__intel_backlight_enable",
+     "intel_backlight_enable",
+-    "intel_backlight_disable"
++    "intel_backlight_disable",
++    "intel_panel_actually_set_backlight",
++    "scale_user_to_hw",
++    "intel_panel_set_backlight"
+    ],
+    "glue": "parity_backlight_glue.inc",
+    "includes": [
+diff --git a/plan/ws031/tests/lcd-modeset-host-test.c b/plan/ws031/tests/lcd-modeset-host-test.c
+index 00fb0c9f..4d45a795 100644
+--- a/plan/ws031/tests/lcd-modeset-host-test.c
++++ b/plan/ws031/tests/lcd-modeset-host-test.c
+@@ -341,6 +341,21 @@ int main(int argc, char **argv)
+ 	      "C: nothing was taken away from under the pipe: DC_OFF, the crtc's power domains, the DBUF slices and the MBUS joining all stay");
+ 	CHECK(parity_lcd_modeset_prepare(&st, &cfg, &trace.ops) == -16, "C: and a new modeset is refused while that is so");
+ 	parity_lcd_modeset_abandoned();
++	{
++		struct parity_lcd_emit not_model = trace.ops;
++
++		not_model.model = 0;
++		CHECK(parity_lcd_modeset_prepare(&st, &cfg, &trace.ops) == -16 && parity_lcd_modeset_commit_enable() == PARITY_LCD_MS_NOT_PREPARED,
++		      "C: after abandon, a second call of the same entry is refused (prepare and commit)");
++		parity_lcd_modeset_status(&s);
++		CHECK(s.retained == 1 && s.stop_unconfirmed == 1 && s.dc_off_held == 1 && s.crtc_domains_held == 4 && s.plane_armed == 1 &&
++		      lcd.power_refs[POWER_DOMAIN_DC_OFF] == 1 && lcd.dbuf_enabled == 0x0f,
++		      "C: ... and the retained state is still recorded: nothing was forgotten by the refused calls");
++		CHECK(parity_lcd_modeset_discard_model(&not_model) == -1 && parity_lcd_modeset_retained() == 1,
++		      "C: a backend that is not a model (real hardware) cannot release it");
++		CHECK(parity_lcd_modeset_discard_model(&trace.ops) == 0 && parity_lcd_modeset_retained() == 0,
++		      "C: discarding the MODEL that holds it is the isolation: only then is the object free again");
++	}
+ 	(void)parity_edp_end(&res);
+ 
+ 	/* ================= D. the commit's outer part ================= */
+@@ -500,6 +515,130 @@ int main(int argc, char **argv)
+ 		(void)parity_edp_end(&res);
+ 	}
+ 
++	/* ================= F. brightness and backlight off / on while the picture stays up ================= */
++	bring_up();
++	cfg = ms_cfg();
++	rc = parity_lcd_modeset_prepare(&st, &cfg, &trace.ops);
++	rc = rc == 0 ? parity_lcd_modeset_commit_enable() : -99;
++	parity_lcd_modeset_status(&s);
++	CHECK(rc == PARITY_LCD_MS_OK && s.backlight_max == 96000u && s.backlight_min == (6u * 96000u + 127u) / 255u,
++	      "F: backlight range from the reference: max = the PWM period (96000), min = VBT min_brightness 6 as a 0..255 coefficient of it (2259)");
++	{
++		uint32_t mx = s.backlight_max, mn = s.backlight_min, orig = s.backlight_level, f0, f1;
++		unsigned arms = lcd.plane_arms, disarms = lcd.plane_disarms;
++
++		rc = parity_lcd_modeset_brightness(mx, mx);
++		CHECK(rc == PARITY_LCD_MS_OK && lcd_fake_reg(&lcd, 0xc8258) == mx, "F: user max -> duty = max");
++		rc = parity_lcd_modeset_brightness(mx / 2u, mx);
++		CHECK(rc == PARITY_LCD_MS_OK && lcd_fake_reg(&lcd, 0xc8258) == mn + (uint32_t)(((uint64_t)(mx / 2u) * (mx - mn) + mx / 2u) / mx),
++		      "F: user half -> duty = min + half of (max - min) (scale_user_to_hw, rounded to closest)");
++		rc = parity_lcd_modeset_brightness(0u, mx);
++		CHECK(rc == PARITY_LCD_MS_OK && lcd_fake_reg(&lcd, 0xc8258) == mn && lcd_fake_reg(&lcd, 0xc8254) == mx,
++		      "F: user 0 -> duty = the VBT-derived minimum, never 0; the PWM period is unchanged");
++		{
++			uint32_t half = lcd_fake_reg(&lcd, 0xc8258);
++
++			(void)half;
++		}
++		rc = parity_lcd_modeset_brightness(mx / 2u, mx);
++		f0 = lcd.ops.read32(lcd.ops.ctx, 0x70040);
++		rc = rc == PARITY_LCD_MS_OK ? parity_lcd_modeset_backlight(0) : rc;
++		lcd.ops.usleep(lcd.ops.ctx, 200000);
++		f1 = lcd.ops.read32(lcd.ops.ctx, 0x70040);
++		parity_lcd_modeset_status(&s);
++		CHECK(rc == PARITY_LCD_MS_OK && (lcd_fake_reg(&lcd, 0xc8250) & 0x80000000u) == 0u && (dpf.pp_control & 4u) == 0u &&
++		      s.backlight_enabled == 0 && s.crtc_active == 1 && s.plane_armed == 1 && f1 > f0 && lcd.plane_disarms == disarms,
++		      "F: backlight off = PWM disabled + PPS backlight bit clear, while the pipe keeps scanning out the SAME buffer (still in use)");
++		rc = parity_lcd_modeset_backlight(1);
++		parity_lcd_modeset_status(&s);
++		CHECK(rc == PARITY_LCD_MS_OK && (lcd_fake_reg(&lcd, 0xc8250) & 0x80000000u) != 0u && (dpf.pp_control & 4u) == 4u &&
++		      s.backlight_enabled == 1 && lcd_fake_reg(&lcd, 0xc8258) == mn + (uint32_t)(((uint64_t)(mx / 2u) * (mx - mn) + mx / 2u) / mx) &&
++		      lcd.plane_arms == arms,
++		      "F: backlight on again restores the last level (half); no new modeset, no plane re-arm");
++		rc = parity_lcd_modeset_brightness(0u, mx);
++		rc = rc == PARITY_LCD_MS_OK ? parity_lcd_modeset_backlight(0) : rc;
++		rc = rc == PARITY_LCD_MS_OK ? parity_lcd_modeset_backlight(1) : rc;
++		CHECK(rc == PARITY_LCD_MS_OK && lcd_fake_reg(&lcd, 0xc8258) == mx,
++		      "F: ... but from the minimum it comes back at MAX (__intel_backlight_enable: level <= min -> max)");
++		rc = parity_lcd_modeset_brightness(orig, mx);
++		CHECK(rc == PARITY_LCD_MS_OK && lcd_fake_reg(&lcd, 0xc8258) == orig, "F: back to the original level");
++		CHECK(lcd_fake_violations(&lcd) == 0, "F: no model violation");
++	}
++	rc = parity_lcd_modeset_commit_disable();
++	parity_lcd_modeset_plane_released();
++	CHECK(rc == PARITY_LCD_MS_OK && parity_lcd_modeset_brightness(1u, 2u) == PARITY_LCD_MS_NOT_PREPARED,
++	      "F: after the stop, brightness requests are refused (no active crtc)");
++
++	/* ================= G. the same resident eDP shows, stops, shows again (three cycles) ================= */
++	{
++		unsigned cyc, ok = 0;
++
++		for (cyc = 0; cyc < 3u; cyc++) {
++			cfg = ms_cfg();
++			cfg.dbuf_enabled_slices = lcd.dbuf_enabled;             /* the shared state as the previous cycle left it */
++			rc = parity_lcd_modeset_prepare(&st, &cfg, &trace.ops);
++			rc = rc == 0 ? parity_lcd_modeset_commit_enable() : -99;
++			parity_lcd_modeset_status(&s);
++			parity_lcd_modeset_link_status(&s);
++			if (rc == PARITY_LCD_MS_OK && s.cr_ok && s.eq_ok && lcd.plane_surf_at_arm == 0xfdfc0000u)
++				ok++;
++			rc = parity_lcd_modeset_commit_disable();
++			parity_lcd_modeset_plane_released();
++			parity_lcd_modeset_status(&s);
++			if (rc != PARITY_LCD_MS_OK || s.crtc_domains_held != 0u || lcd.dbuf_enabled != 0x01u || (dpf.pp_control & 1u) != 0u)
++				break;
++		}
++		CHECK(ok == 3u && lcd_fake_violations(&lcd) == 0 && lcd.power_underflows == 0 && lcd_fake_power_refs_total(&lcd) == 0,
++		      "G: three show / stop cycles on one resident eDP, each trained and armed, each stop returns everything, no violation");
++		CHECK(all_released("G"), "G: nothing held after the eDP ends");
++	}
++
++	/* ================= E. a time-base fault is not a timeout ================= */
++	bring_up();
++	lcd.fault_time_base_reg = 0x46010;              /* the PLL-lock wait */
++	cfg = ms_cfg();
++	rc = parity_lcd_modeset_prepare(&st, &cfg, &trace.ops);
++	rc = rc == 0 ? parity_lcd_modeset_commit_enable() : -99;
++	parity_lcd_modeset_status(&s);
++	{
++		int w = parity_lcd_trace_find(&trace, PARITY_LCD_T_WAIT, 0x46010, 0, 0);
++
++		printf("  E: enable rc=%d errors=%u first=%s", rc, s.errors, s.first_error ? s.first_error : "-\n");
++		CHECK(rc == PARITY_LCD_MS_ERRORS && s.first_error != 0 && strstr(s.first_error, "time base") != 0 && w >= 0 && trace.e[w].rc == -5,
++		      "E: the wait returns -EIO (not -ETIMEDOUT) and the time-base fault is the FIRST anomaly, ahead of the reference's own PLL error");
++		CHECK(lcd.plane_arms == 0, "E: after that anomaly the plane was not armed");
++	}
++	lcd.fault_time_base_reg = 0u;                  /* a transient fault: the stop itself runs on a sound time base */
++	rc = parity_lcd_modeset_commit_disable();
++	parity_lcd_modeset_status(&s);
++	printf("  E: disable rc=%d retained=%d stop_unconfirmed=%d crtc_active=%d\n", rc, s.retained, s.stop_unconfirmed, s.crtc_active);
++	CHECK(rc == PARITY_LCD_MS_OK && s.retained == 0 && s.crtc_active == 0 && lcd_fake_power_refs_total(&lcd) == 0,
++	      "E: with the time base sound again, the reference stop path returns everything");
++	parity_lcd_modeset_plane_released();
++	(void)parity_edp_end(&res);
++
++	/* ================= dither is derived from the pipe bpp, not fixed ================= */
++	{
++		static struct parity_lcd_state st24;
++
++		bring_up();
++		cfg = ms_cfg();
++		CHECK(parity_lcd_modeset_prepare(&st, &cfg, &trace.ops) == 0, "dither: prepare at 18 bpp");
++		parity_lcd_modeset_status(&s);
++		CHECK(s.dither == 1, "dither: an 18 bpp pipe dithers (intel_modeset_pipe_config)");
++		/* this panel's EDID caps the pipe at 6 bpc, so the computed state stays 18 bpp; the derivation is checked on a
++		 * state that carries 24 bpp (the rest of the state is this panel's) */
++		st24 = st;
++		st24.link.bpp = 24;
++		if (parity_lcd_modeset_prepare(&st24, &cfg, &trace.ops) == 0) {
++			parity_lcd_modeset_status(&s);
++			CHECK(s.dither == 0, "dither: a 24 bpp pipe does not");
++		} else {
++			CHECK(0, "dither: prepare at 24 bpp");
++		}
++		(void)parity_edp_end(&res);
++	}
++
+ 	printf("lcd_modeset_host_test: %u checks, %u failures\n", checks, failures);
+ 	return failures != 0;
+ }
+diff --git a/src/drivers/gpu/i915/parity/bios.h b/src/drivers/gpu/i915/parity/bios.h
+index 3eb785c9..ab601282 100644
+--- a/src/drivers/gpu/i915/parity/bios.h
++++ b/src/drivers/gpu/i915/parity/bios.h
+@@ -68,8 +68,11 @@ struct parity_vbt_state {
+ #ifndef PARITY_LCDB_TEST
+ #define PARITY_LCDB_TEST 0            /* LCD-B: one picture on the panel (implies the explicit VBT) */
+ #endif
++#ifndef PARITY_LCDR_TEST
++#define PARITY_LCDR_TEST 0            /* LCD reuse: three cycles + IRQ + brightness (implies the explicit VBT) */
++#endif
+ #ifndef PARITY_VBT_EXPLICIT
+-#define PARITY_VBT_EXPLICIT (PARITY_AUX_TEST || PARITY_LCDB_TEST)
++#define PARITY_VBT_EXPLICIT (PARITY_AUX_TEST || PARITY_LCDB_TEST || PARITY_LCDR_TEST)
+ #endif
+ #define PARITY_VBT_EXPLICIT_NAME "zedbsd/vbt/dell-latitude-5330-1028-0b02.vbt"
+ #define PARITY_VBT_EXPLICIT_SUBSYS_VENDOR 0x1028u
+diff --git a/src/drivers/gpu/i915/parity/display_core.c b/src/drivers/gpu/i915/parity/display_core.c
+index c7d9344c..840bb2fc 100644
+--- a/src/drivers/gpu/i915/parity/display_core.c
++++ b/src/drivers/gpu/i915/parity/display_core.c
+@@ -134,6 +134,13 @@ gen9_dbuf_slices_update(struct parity_display_core *dc, uint8_t req_slices)
+ 	mutex_unlock(&dc->pd->lock);
+ }
+ 
++/* the table itself, for the independent check against the reference's macro (GPU-free ktest) */
++uint32_t
++parity_dbuf_ctl_reg(unsigned slice)
++{
++	return slice < 4u ? dbuf_ctl_s[slice] : 0u;
++}
++
+ /* the same body for the modeset's intel_dbuf_pre/post_plane_update() */
+ void
+ parity_gen9_dbuf_slices_update(struct parity_display_core *dc, uint8_t req_slices)
+diff --git a/src/drivers/gpu/i915/parity/display_core.h b/src/drivers/gpu/i915/parity/display_core.h
+index 1fdfd655..991d8e7e 100644
+--- a/src/drivers/gpu/i915/parity/display_core.h
++++ b/src/drivers/gpu/i915/parity/display_core.h
+@@ -57,6 +57,7 @@ void parity_intel_power_domains_driver_remove(struct parity_display_core *dc);
+ void parity_gen9_dbuf_slices_update(struct parity_display_core *dc, uint8_t req_slices);
+ 
+ /* Exposed for tests. */
++uint32_t parity_dbuf_ctl_reg(unsigned slice);
+ uint8_t parity_enabled_dbuf_slices_mask(struct parity_display_core *dc);
+ 
+ #endif /* PARITY_DISPLAY_CORE_H */
+diff --git a/src/drivers/gpu/i915/parity/gt_mem.c b/src/drivers/gpu/i915/parity/gt_mem.c
+index a7c28634..3de8d5ce 100644
+--- a/src/drivers/gpu/i915/parity/gt_mem.c
++++ b/src/drivers/gpu/i915/parity/gt_mem.c
+@@ -197,6 +197,10 @@ parity_gt_object_destroy(struct parity_gt_mem *gm, struct parity_gt_object *o)
+ {
+ 	if (gm == 0 || o == 0 || !o->in_use)
+ 		return;
++	if (o->keep) {                  /* kept for the display: reachable only below the scanout wrapper -- refuse there too */
++		gm->keep_refusals++;
++		return;
++	}
+ 	if (o->bound && o->display)
+ 		parity_gt_display_unbind(gm, o);
+ 	else if (o->bound)
+@@ -540,6 +544,10 @@ parity_gt_display_unbind(struct parity_gt_mem *gm, struct parity_gt_object *o)
+ 
+ 	if (gm == 0 || o == 0 || !o->bound || !o->display)
+ 		return;
++	if (o->keep) {
++		gm->keep_refusals++;
++		return;
++	}
+ 	first = o->ggtt_page - o->display_guard - gm->display_first;
+ 	span = o->display_guard + o->pages + o->display_guard;
+ 	for (p = 0u; p < o->pages; p++) {
+diff --git a/src/drivers/gpu/i915/parity/gt_mem.h b/src/drivers/gpu/i915/parity/gt_mem.h
+index da543775..8b2e8f3d 100644
+--- a/src/drivers/gpu/i915/parity/gt_mem.h
++++ b/src/drivers/gpu/i915/parity/gt_mem.h
+@@ -100,7 +100,7 @@ struct parity_gt_object {
+ 	unsigned ggtt_page;         /* first page index in the GGTT table */
+ 	int display;                /* bound in the display window (not the GT window) */
+ 	unsigned display_guard;     /* scratch-filled guard pages on EACH side */
+-	int keep;                   /* never destroyed by parity_gt_mem_fini: the display may still read it */
++	int keep;                   /* never destroyed / unbound (fini, destroy, display unbind all refuse): the display may still read it */
+ 	uint64_t ggtt_offset;       /* the GPU VA the engine uses; valid when bound */
+ 	int bound;
+ 	int in_use;
+@@ -116,6 +116,7 @@ struct parity_gt_mem {
+ 	uint64_t scratch_pte;       /* what a free entry holds (from P2) */
+ 	struct osdep_mmio *m;       /* for GFX_FLSH_CNTL_GEN6 */
+ 
++	unsigned keep_refusals;     /* destroy / unbind requests refused because the object is kept */
+ 	unsigned window_first;      /* first page of the driver window */
+ 	unsigned window_pages;
+ 	uint32_t bitmap[PARITY_GT_GGTT_WORDS];
+diff --git a/src/drivers/gpu/i915/parity/irq.c b/src/drivers/gpu/i915/parity/irq.c
+index 96c034bd..4907f7f3 100644
+--- a/src/drivers/gpu/i915/parity/irq.c
++++ b/src/drivers/gpu/i915/parity/irq.c
+@@ -9,6 +9,9 @@
+ #include <kern/klog.h>
+ #include <hal/hal.h>
+ #include <errno.h>
++#include <kern/lock.h>
++#include <kern/sched.h>
++#include "wait.h"
+ 
+ /* ---------------- i915_reg.h / gt/intel_gt_regs.h ---------------- */
+ 
+@@ -725,8 +728,14 @@ gen8_de_irq_handler(struct parity_irq_dev *d, uint32_t master_ctl)
+ 		d->de_pipe_iir_acks[pipe]++;
+ 		d->last_de_pipe_iir[pipe] = iir;
+ 
+-		if (iir & GEN8_PIPE_VBLANK)
++		if (iir & GEN8_PIPE_VBLANK) {
+ 			d->de_vblank_count[pipe]++;
++			/* intel_handle_vblank() -> drm_handle_vblank(): counted and waiters woken only while enabled */
++			if (d->vbl != 0 && d->vbl->inited && d->vbl->enabled[pipe]) {
++				d->vbl->count[pipe]++;
++				parity_kcomplete(&d->vbl->wake[pipe]);
++			}
++		}
+ 
+ 		if (iir & parity_gen8_de_pipe_flip_done_mask(d->display_ver))
+ 			d->de_flip_done_count++;
+@@ -812,7 +821,7 @@ parity_intel_irq_postinstall(struct parity_irq_dev *d)
+  * The EOI is ours to send, and it is sent on every path.
+  */
+ static void
+-gen11_irq_handler(int irq, hal_irq_ack_t ack, void *arg)
++gen11_irq_handler_body(int irq, hal_irq_ack_t ack, void *arg)
+ {
+ 	struct parity_irq_dev *d = (struct parity_irq_dev *)arg;
+ 	uint32_t master_ctl;
+@@ -868,6 +877,228 @@ gen11_irq_handler(int irq, hal_irq_ack_t ack, void *arg)
+ 	hal_irq_send_eoi(ack);
+ }
+ 
++/* the handler the HAL calls: the reference's body, bracketed by the counts intel_synchronize_irq() waits on */
++static void
++gen11_irq_handler(int irq, hal_irq_ack_t ack, void *arg)
++{
++	struct parity_irq_dev *d = (struct parity_irq_dev *)arg;
++
++	(void)__atomic_add_fetch(&d->handler_entries, 1u, __ATOMIC_SEQ_CST);
++	gen11_irq_handler_body(irq, ack, arg);
++	(void)__atomic_add_fetch(&d->handler_exits, 1u, __ATOMIC_SEQ_CST);
++}
++
++/* ---------------- display/intel_display_irq.c: power-well hooks, pipe IRQ mask, vblank ---------------- */
++
++void
++parity_irq_vblank_init(struct parity_irq_dev *d, struct parity_irq_vblank *v)
++{
++	unsigned p;
++
++	for (p = 0u; p < sizeof(*v); p++)
++		((char *)v)[p] = 0;
++	spin_init(&v->lock, LOCK_RANK_DEVICE, "parity-irq-lock");
++	for (p = 0u; p < PARITY_IRQ_MAX_PIPES; p++)
++		parity_kcompletion_init(&v->wake[p], "parity-vblank");
++	v->inited = 1;
++	d->vbl = v;
++}
++
++int
++parity_intel_synchronize_irq(struct parity_irq_dev *d)
++{
++	unsigned seen = __atomic_load_n(&d->handler_entries, __ATOMIC_SEQ_CST);
++	unsigned waited;
++
++	if (d->vbl != 0)
++		d->vbl->sync_calls++;
++	for (waited = 0u; waited < 100000u; waited += 10u) {
++		if ((int)(__atomic_load_n(&d->handler_exits, __ATOMIC_SEQ_CST) - seen) >= 0)
++			return 0;
++		if (parity_udelay(10u) != 0)
++			break;
++	}
++	if (d->vbl != 0)
++		d->vbl->sync_timeouts++;
++	kern_logf("i915: parity intel_synchronize_irq: a handler invocation did not finish (entries=%u exits=%u)\n",
++		seen, d->handler_exits);
++	return -ETIMEDOUT;
++}
++
++/* gen8_irq_power_well_post_enable() */
++void
++parity_gen8_irq_power_well_post_enable(struct parity_irq_dev *d, unsigned pipe_mask)
++{
++	uint32_t extra_ier = GEN8_PIPE_VBLANK | parity_gen8_de_pipe_underrun_mask(d->display_ver) |
++		parity_gen8_de_pipe_flip_done_mask(d->display_ver);
++	unsigned long flags;
++	unsigned pipe;
++
++	if (d->vbl == 0 || !d->vbl->inited)
++		return;
++	flags = spin_lock_irqsave(&d->vbl->lock);
++	if (!d->irqs_enabled) {
++		d->vbl->skipped_irqs_disabled++;
++		spin_unlock_irqrestore(&d->vbl->lock, flags);
++		return;
++	}
++	d->vbl->post_enable_calls++;
++	for (pipe = 0u; pipe < PARITY_IRQ_MAX_PIPES; pipe++) {
++		if ((d->pipe_mask & pipe_mask & (1u << pipe)) == 0u)
++			continue;
++		/* GEN8_IRQ_INIT_NDX(uncore, DE_PIPE, pipe, de_irq_mask[pipe], ~de_irq_mask[pipe] | extra_ier) */
++		gen3_irq_init(d, GEN8_DE_PIPE_IMR(pipe), d->de_irq_mask[pipe],
++			GEN8_DE_PIPE_IER(pipe), ~d->de_irq_mask[pipe] | extra_ier, GEN8_DE_PIPE_IIR(pipe));
++		d->vbl->post_imr[pipe] = d->de_irq_mask[pipe];
++		d->vbl->post_ier[pipe] = ~d->de_irq_mask[pipe] | extra_ier;
++	}
++	spin_unlock_irqrestore(&d->vbl->lock, flags);
++}
++
++/* gen8_irq_power_well_pre_disable() */
++void
++parity_gen8_irq_power_well_pre_disable(struct parity_irq_dev *d, unsigned pipe_mask)
++{
++	unsigned long flags;
++	unsigned pipe;
++
++	if (d->vbl == 0 || !d->vbl->inited)
++		return;
++	flags = spin_lock_irqsave(&d->vbl->lock);
++	if (!d->irqs_enabled) {
++		d->vbl->skipped_irqs_disabled++;
++		spin_unlock_irqrestore(&d->vbl->lock, flags);
++		return;
++	}
++	d->vbl->pre_disable_calls++;
++	for (pipe = 0u; pipe < PARITY_IRQ_MAX_PIPES; pipe++) {
++		if ((d->pipe_mask & pipe_mask & (1u << pipe)) == 0u)
++			continue;
++		/* GEN8_IRQ_RESET_NDX(uncore, DE_PIPE, pipe) */
++		gen3_irq_reset(d, GEN8_DE_PIPE_IMR(pipe), GEN8_DE_PIPE_IIR(pipe), GEN8_DE_PIPE_IER(pipe));
++	}
++	spin_unlock_irqrestore(&d->vbl->lock, flags);
++
++	/* make sure we're done processing display irqs */
++	(void)parity_intel_synchronize_irq(d);
++}
++
++/* bdw_update_pipe_irq(): called with the IRQ lock held */
++static void
++bdw_update_pipe_irq(struct parity_irq_dev *d, unsigned pipe, uint32_t interrupt_mask, uint32_t enabled_irq_mask)
++{
++	uint32_t new_val;
++
++	if (enabled_irq_mask & ~interrupt_mask)
++		kern_logf("i915: parity WARN bdw_update_pipe_irq: enabled bits outside the mask\n");
++	if (!d->irqs_enabled) {
++		kern_logf("i915: parity WARN bdw_update_pipe_irq: interrupts are not enabled\n");
++		return;
++	}
++	new_val = d->de_irq_mask[pipe];
++	new_val &= ~interrupt_mask;
++	new_val |= (~enabled_irq_mask & interrupt_mask);
++	if (new_val != d->de_irq_mask[pipe]) {
++		d->de_irq_mask[pipe] = new_val;
++		osdep_mmio_write32(d->m, GEN8_DE_PIPE_IMR(pipe), d->de_irq_mask[pipe]);
++		osdep_mmio_posting_read32(d->m, GEN8_DE_PIPE_IMR(pipe));
++	}
++}
++
++/*
++ * bdw_enable_vblank() / bdw_disable_vblank().  gen11_dsi_configure_te() returns false unless the crtc drives a DSI
++ * command-mode panel (not on this path).  HAS_PSR(): the reference then calls drm_crtc_vblank_restore(), which
++ * re-estimates the DRM vblank count from time across PSR self-refresh; there is no DRM vblank count here (the count
++ * is of handled interrupts, and waits also require the hardware frame counter to move), and PSR is not enabled on
++ * this path -- an explicit adaptation, not reached with PSR.
++ */
++static int
++bdw_enable_vblank(struct parity_irq_dev *d, unsigned pipe)
++{
++	unsigned long flags = spin_lock_irqsave(&d->vbl->lock);
++
++	bdw_update_pipe_irq(d, pipe, GEN8_PIPE_VBLANK, GEN8_PIPE_VBLANK);
++	spin_unlock_irqrestore(&d->vbl->lock, flags);
++	return 0;
++}
++
++static void
++bdw_disable_vblank(struct parity_irq_dev *d, unsigned pipe)
++{
++	unsigned long flags = spin_lock_irqsave(&d->vbl->lock);
++
++	bdw_update_pipe_irq(d, pipe, GEN8_PIPE_VBLANK, 0u);
++	spin_unlock_irqrestore(&d->vbl->lock, flags);
++}
++
++int
++parity_drm_vblank_get(struct parity_irq_dev *d, unsigned pipe)
++{
++	if (d->vbl == 0 || !d->vbl->inited || pipe >= PARITY_IRQ_MAX_PIPES || !d->irqs_enabled)
++		return -EINVAL;
++	if (d->vbl->refs[pipe]++ == 0u) {
++		d->vbl->enable_calls[pipe]++;
++		d->vbl->enabled[pipe] = 1;
++		(void)bdw_enable_vblank(d, pipe);
++	}
++	return 0;
++}
++
++void
++parity_drm_vblank_put(struct parity_irq_dev *d, unsigned pipe)
++{
++	if (d->vbl == 0 || !d->vbl->inited || pipe >= PARITY_IRQ_MAX_PIPES || d->vbl->refs[pipe] == 0u)
++		return;
++	if (--d->vbl->refs[pipe] == 0u) {        /* vblank_disable_immediate */
++		d->vbl->disable_calls[pipe]++;
++		bdw_disable_vblank(d, pipe);
++		d->vbl->enabled[pipe] = 0;
++	}
++}
++
++int
++parity_wait_vblank(struct parity_irq_dev *d, unsigned pipe, unsigned n, unsigned timeout_ms,
++	uint32_t (*read_frame)(void *ctx), void *frame_ctx, uint32_t *count_seen)
++{
++	uint64_t deadline;
++	uint32_t start, frame0 = 0u;
++	int ok = 0;
++
++	if (d->vbl == 0 || !d->vbl->inited || pipe >= PARITY_IRQ_MAX_PIPES || d->vbl->refs[pipe] == 0u || n == 0u)
++		return -EINVAL;
++	parity_kreinit_completion(&d->vbl->wake[pipe]);
++	start = d->vbl->count[pipe];
++	if (read_frame != 0)
++		frame0 = read_frame(frame_ctx);
++	deadline = sched_ticks() + (timeout_ms + 9u) / 10u + 1u;
++	for (;;) {
++		if ((uint32_t)(d->vbl->count[pipe] - start) >= n &&
++		    (read_frame == 0 || read_frame(frame_ctx) != frame0)) {
++			ok = 1;
++			break;
++		}
++		if (!parity_kwait(&d->vbl->wake[pipe], deadline))
++			break;
++	}
++	if (count_seen != 0)
++		*count_seen = d->vbl->count[pipe] - start;
++	return ok ? 0 : -ETIMEDOUT;
++}
++
++static void
++pw_irq_post_enable(void *ctx, unsigned pipe_mask)
++{
++	parity_gen8_irq_power_well_post_enable(ctx, pipe_mask);
++}
++
++static void
++pw_irq_pre_disable(void *ctx, unsigned pipe_mask)
++{
++	parity_gen8_irq_power_well_pre_disable(ctx, pipe_mask);
++}
++
++const struct parity_pw_irq_ops parity_pw_irq_ops = { pw_irq_post_enable, pw_irq_pre_disable };
++
+ int
+ parity_intel_irq_install(struct parity_irq_dev *d)
+ {
+@@ -914,6 +1145,13 @@ parity_intel_irq_uninstall(struct parity_irq_dev *d)
+ 	if (!d->irq_enabled)
+ 		return;
+ 
++	if (d->vbl != 0 && d->vbl->inited) {
++		unsigned p;
++
++		for (p = 0u; p < PARITY_IRQ_MAX_PIPES; p++)
++			if (d->vbl->refs[p] != 0u)
++				kern_logf("i915: parity WARN intel_irq_uninstall: pipe %u still holds %u vblank reference(s)\n", p, d->vbl->refs[p]);
++	}
+ 	/*
+ 	 * Mask and disable every source FIRST -- detaching the handler does not
+ 	 * stop the device from sending messages.
+diff --git a/src/drivers/gpu/i915/parity/irq.h b/src/drivers/gpu/i915/parity/irq.h
+index 780b52eb..4822b791 100644
+--- a/src/drivers/gpu/i915/parity/irq.h
++++ b/src/drivers/gpu/i915/parity/irq.h
+@@ -25,6 +25,7 @@
+ #define PARITY_IRQ_H
+ 
+ #include <stdint.h>
++#include "backend_sync.h"
+ 
+ struct osdep_mmio;
+ struct parity_power_domains;
+@@ -40,6 +41,25 @@ enum parity_gt_submission {
+ 	PARITY_SUBMISSION_GUC             /* GuC submission: those three are left out */
+ };
+ 
++/*
++ * The pipes' interrupt control and vblank delivery (the reference's irq_lock-protected de_irq_mask updates and a
++ * minimal stand-in for the DRM vblank core: a per-pipe count of vblank interrupts, a wake-up for waiters, and the
++ * enable reference).  Device-owned; bound with parity_irq_vblank_init() before the handler is installed.
++ */
++struct parity_irq_vblank {
++	struct spinlock lock;                    /* dev_priv->irq_lock */
++	int inited;
++	struct parity_kcompletion wake[PARITY_IRQ_MAX_PIPES];
++	volatile uint32_t count[PARITY_IRQ_MAX_PIPES];     /* vblank interrupts handled while enabled */
++	volatile int enabled[PARITY_IRQ_MAX_PIPES];        /* drm vblank->enabled */
++	unsigned refs[PARITY_IRQ_MAX_PIPES];               /* drm_vblank_get / _put references */
++	unsigned enable_calls[PARITY_IRQ_MAX_PIPES], disable_calls[PARITY_IRQ_MAX_PIPES];
++	/* the hooks, observed */
++	unsigned post_enable_calls, pre_disable_calls, skipped_irqs_disabled;
++	uint32_t post_imr[PARITY_IRQ_MAX_PIPES], post_ier[PARITY_IRQ_MAX_PIPES];
++	unsigned sync_calls, sync_timeouts;
++};
++
+ struct parity_irq_dev {
+ 	struct osdep_mmio *m;
+ 	struct parity_power_domains *pd;
+@@ -112,6 +132,10 @@ struct parity_irq_dev {
+ 	volatile uint32_t last_disp_ctl;
+ 	volatile uint32_t last_de_pipe_iir[PARITY_IRQ_MAX_PIPES];
+ 
++	/* handler entry / exit counts: intel_synchronize_irq() waits for exits to reach the entries it saw */
++	volatile unsigned handler_entries, handler_exits;
++	struct parity_irq_vblank *vbl;           /* NULL: vblank delivery not bound (GPU-free tests of the old parts) */
++
+ 	/* Diagnostics. */
+ 	unsigned reset_writes;
+ 	unsigned postinstall_writes;
+@@ -133,6 +157,32 @@ int parity_intel_irq_install(struct parity_irq_dev *d);
+  */
+ void parity_intel_irq_uninstall(struct parity_irq_dev *d);
+ 
++/* bind the vblank state (before install) and the power-well hooks (pwc->irq_ops) */
++void parity_irq_vblank_init(struct parity_irq_dev *d, struct parity_irq_vblank *v);
++/* gen8_irq_power_well_post_enable() / gen8_irq_power_well_pre_disable() */
++void parity_gen8_irq_power_well_post_enable(struct parity_irq_dev *d, unsigned pipe_mask);
++void parity_gen8_irq_power_well_pre_disable(struct parity_irq_dev *d, unsigned pipe_mask);
++/*
++ * intel_synchronize_irq(): returns once every handler invocation that had started when it was called has finished.
++ * The HAL offers no synchronize without detach (hal_irq_detach_msi_sync detaches); this is the same guarantee from the
++ * handler's own entry / exit counts -- no HAL change.  0, or -ETIMEDOUT after 100 ms (a handler that never ends).
++ */
++int parity_intel_synchronize_irq(struct parity_irq_dev *d);
++struct parity_pw_irq_ops;
++extern const struct parity_pw_irq_ops parity_pw_irq_ops;   /* for pwc->irq_ops, ctx = the irq device */
++/* drm_vblank_get() / drm_vblank_put() with the reference's bdw_enable_vblank() / bdw_disable_vblank() and i915's
++ * vblank_disable_immediate (the last put disables at once).  get: 0, or -EINVAL when interrupts are not enabled. */
++int parity_drm_vblank_get(struct parity_irq_dev *d, unsigned pipe);
++void parity_drm_vblank_put(struct parity_irq_dev *d, unsigned pipe);
++/*
++ * Wait for `n` NEW vblanks of `pipe`: the pipe's vblank interrupt count must advance by n from the moment of the call
++ * AND read_frame (the pipe's hardware frame counter, may be NULL) must have advanced -- a stale pending bit delivered
++ * at unmask, another pipe's interrupt or mere elapsed time never satisfy it.  Needs a vblank reference.
++ * 0; -EINVAL no reference held; -ETIMEDOUT.
++ */
++int parity_wait_vblank(struct parity_irq_dev *d, unsigned pipe, unsigned n, unsigned timeout_ms,
++	uint32_t (*read_frame)(void *ctx), void *frame_ctx, uint32_t *count_seen);
++
+ /* The pieces, exposed so the GPU-free tests can drive them individually. */
+ void parity_intel_irq_reset(struct parity_irq_dev *d);
+ void parity_intel_irq_postinstall(struct parity_irq_dev *d);
+diff --git a/src/drivers/gpu/i915/parity/ktest.c b/src/drivers/gpu/i915/parity/ktest.c
+index b053f6f8..44d5297c 100644
+--- a/src/drivers/gpu/i915/parity/ktest.c
++++ b/src/drivers/gpu/i915/parity/ktest.c
+@@ -825,6 +825,28 @@ pd_async_checks(struct parity_power_domains *pdc, struct parity_pw_ctx *cx, stru
+ 	}
+ }
+ 
++
++/* ---- E-117: vblank wait fixtures: the "frame counter" read also plays the hardware (raises a vblank on a pipe) ---- */
++static struct parity_irq_dev *kvb_dev;
++static struct osdep_mmio *kvb_m;
++static int kvb_raise_pipe = -1;                 /* pipe whose vblank the first frame read raises; -1 none */
++static int kvb_frame_moves;                     /* the frame counter advances between reads */
++static uint32_t kvb_frame;
++
++static uint32_t kvb_read_frame(void *ctx)
++{
++	(void)ctx;
++	if (kvb_raise_pipe >= 0) {
++		osdep_mmio_raw_write32(kvb_m, 0x44200u, 1u << (16u + (unsigned)kvb_raise_pipe));    /* DISPLAY_INT_CTL: pipe */
++		osdep_mmio_raw_write32(kvb_m, 0x44408u + 0x10u * (unsigned)kvb_raise_pipe, 1u);   /* GEN8_DE_PIPE_IIR: VBLANK */
++		parity_gen11_display_irq_handler(kvb_dev);
++		kvb_raise_pipe = -1;
++	}
++	if (kvb_frame_moves)
++		kvb_frame++;
++	return kvb_frame;
++}
++
+ int
+ parity_sync_ktest(void)
+ {
+@@ -3056,6 +3078,122 @@ parity_sync_ktest(void)
+ 				"p4: IRQ-ACK an unasserted source is not read or acked");
+ 		}
+ 
++
++		/* ---- E-117 IRQ-HOOK: gen8_irq_power_well_post_enable / _pre_disable, synchronize, vblank ---- */
++		{
++			static struct parity_irq_vblank kv;
++			uint32_t extra = 0x00000001u | 0x80600000u | 0x00000008u;   /* VBLANK | XELPD underrun mask | flip done */
++			uint32_t seen = 0u;
++			int w;
++
++			parity_irq_vblank_init(&id, &kv);
++			id.irqs_enabled = 1;
++			id.de_irq_mask[0] = ~id.de_pipe_masked;
++			/* post-enable: stale IIR cleared, then IER = ~mask | extra, then IMR = the saved mask */
++			osdep_mmio_raw_write32(&m, 0x44408u, 0x00000001u);
++			f.wt_n = 0u;
++			parity_gen8_irq_power_well_post_enable(&id, 1u << 0);
++			KCHECK(kv.post_enable_calls == 1u && kv.post_imr[0] == id.de_irq_mask[0] && kv.post_ier[0] == (~id.de_irq_mask[0] | extra) &&
++				fake_wt_find(&f, 0x44408u, 0xffffffffu, 0xffffffffu) >= 0 &&
++				fake_wt_find(&f, 0x4440cu, ~id.de_irq_mask[0] | extra, 0xffffffffu) > fake_wt_find(&f, 0x44408u, 0xffffffffu, 0xffffffffu) &&
++				fake_wt_find(&f, 0x44404u, id.de_irq_mask[0], 0xffffffffu) > fake_wt_find(&f, 0x4440cu, ~id.de_irq_mask[0] | extra, 0xffffffffu) &&
++				fake_wt_find(&f, 0x44414u, 0u, 0u) < 0,
++				"irq: IRQ-HOOK-POST pipe A only: stale IIR cleared, IER = ~de_irq_mask | vblank | underrun | flip done, then IMR = de_irq_mask");
++			KCHECK((kv.post_imr[0] & 1u) == 1u, "irq: IRQ-HOOK-POST the restored mask keeps vblank MASKED (IER enabling it is not delivery)");
++			id.irqs_enabled = 0;
++			f.wt_n = 0u;
++			parity_gen8_irq_power_well_post_enable(&id, 1u << 0);
++			KCHECK(kv.post_enable_calls == 1u && kv.skipped_irqs_disabled == 1u && f.wt_n == 0u,
++				"irq: IRQ-HOOK-OFF with interrupts not enabled the hook writes nothing (intel_irqs_enabled gate)");
++			KCHECK(parity_drm_vblank_get(&id, 0u) == -EINVAL && kv.refs[0] == 0u,
++				"irq: VBL-GET refused while interrupts are not enabled");
++			id.irqs_enabled = 1;
++
++			/* vblank enable / disable: only the IMR vblank bit changes */
++			f.wt_n = 0u;
++			KCHECK(parity_drm_vblank_get(&id, 0u) == 0 && kv.refs[0] == 1u && kv.enabled[0] == 1 && (id.de_irq_mask[0] & 1u) == 0u &&
++				fake_wt_find(&f, 0x44404u, id.de_irq_mask[0], 0xffffffffu) >= 0 && parity_drm_vblank_get(&id, 0u) == 0 &&
++				kv.enable_calls[0] == 1u,
++				"irq: VBL-ENABLE the first reference unmasks vblank in IMR (bdw_enable_vblank); the second only counts");
++
++			/* delivery: the real display handler counts a vblank of THIS pipe while enabled */
++			kvb_dev = &id; kvb_m = &m; kvb_frame = 100u;
++			kvb_raise_pipe = 0; kvb_frame_moves = 0;
++			(void)kvb_read_frame(0);
++			KCHECK(kv.count[0] == 1u, "irq: VBL-DELIVER a pipe A vblank interrupt reaches the pipe's vblank count");
++			kvb_raise_pipe = 1;
++			(void)kvb_read_frame(0);
++			KCHECK(kv.count[0] == 1u && kv.count[1] == 0u, "irq: VBL-DELIVER pipe B's vblank (not enabled there) counts nowhere");
++
++			/* the wait: new vblank of this pipe AND a moving frame counter */
++			kvb_raise_pipe = 0; kvb_frame_moves = 1;
++			w = parity_wait_vblank(&id, 0u, 1u, 50u, kvb_read_frame, 0, &seen);
++			KCHECK(w == 0 && seen == 1u, "irq: VBL-WAIT a new pipe A vblank + a moving frame counter completes the wait");
++			kvb_raise_pipe = 1; kvb_frame_moves = 1;
++			w = parity_wait_vblank(&id, 0u, 1u, 50u, kvb_read_frame, 0, &seen);
++			KCHECK(w == -ETIMEDOUT && seen == 0u, "irq: VBL-WAIT another pipe's vblank does not complete it (timeout)");
++			kvb_raise_pipe = 0; kvb_frame_moves = 0;
++			w = parity_wait_vblank(&id, 0u, 1u, 50u, kvb_read_frame, 0, &seen);
++			KCHECK(w == -ETIMEDOUT && seen == 1u, "irq: VBL-WAIT an interrupt without the frame counter moving (stale pending bit) does not");
++			kvb_raise_pipe = -1; kvb_frame_moves = 1;
++			w = parity_wait_vblank(&id, 0u, 1u, 50u, kvb_read_frame, 0, &seen);
++			KCHECK(w == -ETIMEDOUT && seen == 0u, "irq: VBL-WAIT a moving counter / elapsed time alone does not");
++
++			parity_drm_vblank_put(&id, 0u);
++			KCHECK(kv.refs[0] == 1u && (id.de_irq_mask[0] & 1u) == 0u, "irq: VBL-PUT the non-last put keeps vblank enabled");
++			f.wt_n = 0u;
++			parity_drm_vblank_put(&id, 0u);
++			KCHECK(kv.refs[0] == 0u && kv.enabled[0] == 0 && (id.de_irq_mask[0] & 1u) == 1u &&
++				fake_wt_find(&f, 0x44404u, id.de_irq_mask[0], 0xffffffffu) >= 0 && kv.disable_calls[0] == 1u,
++				"irq: VBL-PUT the last put masks vblank at once (vblank_disable_immediate)");
++			{
++				uint32_t before = kv.count[0];
++				unsigned acks = id.de_pipe_iir_acks[0];
++
++				kvb_raise_pipe = 0;
++				(void)kvb_read_frame(0);
++				KCHECK(kv.count[0] == before && id.de_pipe_iir_acks[0] == acks + 1u,
++					"irq: VBL-OFF a vblank arriving after the last put is acked but not counted");
++			}
++			KCHECK(parity_wait_vblank(&id, 0u, 1u, 10u, kvb_read_frame, 0, &seen) == -EINVAL,
++				"irq: VBL-WAIT without a reference is refused, not waited out");
++
++			/* pre-disable: sources reset, then the handler synchronisation */
++			f.wt_n = 0u;
++			parity_gen8_irq_power_well_pre_disable(&id, 1u << 0);
++			KCHECK(kv.pre_disable_calls == 1u && kv.sync_calls == 1u && kv.sync_timeouts == 0u &&
++				fake_wt_find(&f, 0x44404u, 0xffffffffu, 0xffffffffu) == 0 && fake_wt_find(&f, 0x4440cu, 0u, 0xffffffffu) > 0 &&
++				fake_wt_find(&f, 0x44408u, 0xffffffffu, 0xffffffffu) > 0,
++				"irq: IRQ-HOOK-PRE pipe A: IMR all masked, IER 0, IIR cleared, then the handler synchronisation");
++			id.handler_entries = 5u; id.handler_exits = 4u;          /* one invocation still inside the handler */
++			KCHECK(parity_intel_synchronize_irq(&id) == -ETIMEDOUT && kv.sync_timeouts == 1u,
++				"irq: IRQ-SYNC a handler that never finishes is reported (bounded), not assumed done");
++			id.handler_exits = 5u;
++			KCHECK(parity_intel_synchronize_irq(&id) == 0, "irq: IRQ-SYNC returns once the exits reach the entries it saw");
++			id.handler_entries = 0u; id.handler_exits = 0u;
++
++			/* through the power-well bodies: PW_A's enable / disable call the bound hooks */
++			{
++				struct parity_power_well *pwa = 0;
++				unsigned before_post = kv.post_enable_calls, before_pre = kv.pre_disable_calls;
++
++				for (k = 0u; k < ipd.num_power_wells; k++)
++					if (ipd.power_wells[k].irq_pipe_mask == 1u)
++						pwa = &ipd.power_wells[k];
++				ipwc.irqs_enabled = 1;
++				ipwc.irq_ops = &parity_pw_irq_ops;
++				ipwc.irq_ctx = &id;
++				KCHECK(pwa != 0 && parity_power_well_enable(pwa, &ipwc) == 0 && kv.post_enable_calls == before_post + 1u &&
++					parity_power_well_disable(pwa, &ipwc) == 0 && kv.pre_disable_calls == before_pre + 1u &&
++					ipwc.irq_post_enable_calls >= 1u && ipwc.irq_pre_disable_calls == 1u,
++					"irq: IRQ-HOOK-WELL PW_A's enable restores and its disable stops pipe A's interrupts through the bound hooks");
++				ipwc.irq_ops = 0;
++				ipwc.irqs_enabled = 0;
++			}
++			id.vbl = 0;
++			id.irqs_enabled = 0;
++		}
++
+ 		/* ---- IRQ-NODISPLAY: HAS_DISPLAY=0 touches no display register ---- */
+ 		{
+ 			struct parity_irq_dev n;
+diff --git a/src/drivers/gpu/i915/parity/lcd/lcd_fake_hw.c b/src/drivers/gpu/i915/parity/lcd/lcd_fake_hw.c
+index 7fac6e75..982af4df 100644
+--- a/src/drivers/gpu/i915/parity/lcd/lcd_fake_hw.c
++++ b/src/drivers/gpu/i915/parity/lcd/lcd_fake_hw.c
+@@ -231,6 +231,10 @@ static int f_wait_reg(void *ctx, uint32_t reg, uint32_t mask, uint32_t value, un
+ {
+ 	struct lcd_fake_hw *hw = ctx;
+ 
++	if (hw->fault_time_base_reg != 0u && reg == hw->fault_time_base_reg) {
++		parity_lcd_backend_fault("model: time base fault during a register wait (not a timeout)" "\n");
++		return PARITY_LCD_EIO;
++	}
+ 	/* status follows control at once in this model: either it is there, or the whole timeout passes */
+ 	if ((f_read32(ctx, reg) & mask) == value)
+ 		return 0;
+@@ -421,6 +425,7 @@ void lcd_fake_init(struct lcd_fake_hw *hw, struct dp_fake_hw *dpf, int pipe, int
+ 	dpf->on_dpcd_write_ctx = hw;
+ 
+ 	hw->ops.ctx = hw;
++	hw->ops.model = 1;
+ 	hw->ops.write32 = f_write32;
+ 	hw->ops.rmw32 = f_rmw32;
+ 	hw->ops.read32 = f_read32;
+diff --git a/src/drivers/gpu/i915/parity/lcd/lcd_fake_hw.h b/src/drivers/gpu/i915/parity/lcd/lcd_fake_hw.h
+index e5499f2d..aaaffd9a 100644
+--- a/src/drivers/gpu/i915/parity/lcd/lcd_fake_hw.h
++++ b/src/drivers/gpu/i915/parity/lcd/lcd_fake_hw.h
+@@ -37,6 +37,7 @@ struct lcd_fake_hw {
+ 	int fault_underrun_at_arm;              /* the pipe raises its underrun status when the plane is armed */
+ 	int fault_underrun_steady_after;        /* n > 0: the underrun status is raised by the n-th frame-counter read after the arm */
+ 	int fault_drop_dbuf_update;             /* DBUF slice requests are lost (a test of the MODEL) */
++	uint32_t fault_time_base_reg;           /* a wait on this register meets a TIME-BASE fault (not a timeout) */
+ 	int fault_power_get;                    /* domain + 1 whose get fails; 0 = none */
+ 	/* the sink's wishes: it reports CR once voltage swing >= want_vswing, EQ once pre-emphasis >= want_preemph */
+ 	uint8_t sink_want_vswing, sink_want_preemph;
+diff --git a/src/drivers/gpu/i915/parity/lcd/lcd_modeset_ktest.c b/src/drivers/gpu/i915/parity/lcd/lcd_modeset_ktest.c
+index 4e7a45c3..adbc698c 100644
+--- a/src/drivers/gpu/i915/parity/lcd/lcd_modeset_ktest.c
++++ b/src/drivers/gpu/i915/parity/lcd/lcd_modeset_ktest.c
+@@ -8,6 +8,8 @@
+  *   C. the pipe does not stop after the plane was armed -> no success, the buffer stays protected
+  */
+ #include "lcd_modeset_ktest.h"
++#include "parity_lcd_observe.h"
++#include "../display_core.h"
+ #include "parity_lcd_modeset.h"
+ #include "parity_lcd_trace.h"
+ #include "lcd_fake_hw.h"
+@@ -127,4 +129,17 @@ void parity_lcd_modeset_ktest(parity_lcd_modeset_ktest_check check)
+ 	(void)parity_edp_end(&res);
+ 	/* the caller decided what to do with that buffer (kept for ever): the object may be used again */
+ 	parity_lcd_modeset_abandoned();
++	check(parity_lcd_modeset_prepare(&st, &cfg, &trace.ops) == -16 && parity_lcd_modeset_retained() == 1,
++		"lcd-ms: C-RETAINED abandon is not forgotten: the entry is refused again, the object still holds its state");
++	check(parity_lcd_modeset_discard_model(&trace.ops) == 0 && parity_lcd_modeset_retained() == 0,
++		"lcd-ms: C-DISCARD released only by discarding the model that holds it");
++	{
++		unsigned sl, bad = 0u;
++
++		for (sl = 0u; sl < 4u; sl++)
++			if (parity_dbuf_ctl_reg(sl) != parity_lcd_ref_dbuf_ctl(sl) || parity_dbuf_ctl_reg(sl) == 0u)
++				bad++;
++		check(bad == 0u && parity_dbuf_ctl_reg(0u) == parity_lcd_ref_dbuf_ctl(0u),
++			"lcd-ms: DBUF-ADDR the power-domain init's DBUF_CTL table = the reference's DBUF_CTL_S(S1..S4) macro, slice by slice");
++	}
+ }
+diff --git a/src/drivers/gpu/i915/parity/lcd/lcd_show_ktest.c b/src/drivers/gpu/i915/parity/lcd/lcd_show_ktest.c
+index 90918504..735586d1 100644
+--- a/src/drivers/gpu/i915/parity/lcd/lcd_show_ktest.c
++++ b/src/drivers/gpu/i915/parity/lcd/lcd_show_ktest.c
+@@ -123,6 +123,13 @@ static unsigned live_ptes(unsigned first, unsigned pages)
+ 	return n;
+ }
+ 
++static int fail_in_window(void *ctx, struct parity_lcd_observer *o)
++{
++	(void)ctx;
++	(void)o;
++	return -5;
++}
++
+ static void stick_the_pipe(void *ctx, int stage)
+ {
+ 	(void)ctx;
+@@ -168,6 +175,27 @@ void parity_lcd_show_ktest(parity_lcd_show_ktest_check check, struct drv_dma_dev
+ 	check(gm.objects_live == objects_before && gm.display_allocated_pages == 0u && so_a.state == PARITY_SCANOUT_NONE,
+ 		"lcd-show: A-MEMORY the scanout object and its GGTT range are gone");
+ 
++	/* ---- A2: the same body again in the same lifetime (another picture), then an in-window hook that fails ---- */
++	{
++		static struct parity_scanout so_a2;
++		int rc2;
++
++		rc = bring_up(&so_a2);
++		show.pattern_id = 111u;
++		show.pattern_fnv = 0u;
++		rc2 = rc == 0 ? parity_lcd_show_run(&show, &rep) : rc;
++		check(rc2 == 0 && rep.pass && rep.released && gm.objects_live == objects_before && gm.display_allocated_pages == 0u &&
++			edp_released(),
++			"lcd-show: A2-AGAIN a second show / stop in the same lifetime with another picture passes and gives everything back");
++		rc = bring_up(&so_a2);
++		show.in_window = fail_in_window;
++		rc2 = rc == 0 ? parity_lcd_show_run(&show, &rep) : rc;
++		check(rc2 != 0 && rep.window_hook_rc == -5 && rep.first_anomaly != 0 && rep.first_anomaly_stage == PARITY_LCD_SHOW_PICTURE_UP &&
++			rep.steady_rounds == 0u && rep.released && lcd_fake_power_refs_total(&lcd) == 0 && edp_released(),
++			"lcd-show: A2-HOOK a failing in-window test is the first anomaly; the stop path still runs and gives everything back");
++		show.in_window = 0;
++	}
++
+ 	/* ---- B: early failure: nothing is shown, everything is given back, the first anomaly is the training ---- */
+ 	rc = bring_up(&so_b);
+ 	lcd.fault_cr_never = 1;
+@@ -204,6 +232,24 @@ void parity_lcd_show_ktest(parity_lcd_show_ktest_check check, struct drv_dma_dev
+ 	show.at_stage = 0;
+ 	show.so = &so_c;
+ 	check(parity_lcd_show_run(&show, &rep) == -EBUSY, "lcd-show: C-NEXT a further run on the abandoned storage is refused before anything is touched");
++	{
++		unsigned live = gm.objects_live, disp = gm.display_allocated_pages;
++		uint32_t obj_page = so_c.obj->ggtt_page;
++		struct parity_gt_object *obj = so_c.obj;
++
++		show.so = &so_b;                                /* fresh (NONE) storage: still refused by the device latch */
++		check(parity_lcd_show_run(&show, &rep) == -EBUSY && parity_lcd_show_retained() == 1 && gm.objects_live == live &&
++			gm.display_allocated_pages == disp && so_b.state == PARITY_SCANOUT_NONE,
++			"lcd-show: C-LATCH a re-call with fresh storage is refused before anything is allocated; the latch stays set");
++		show.so = &so_c;
++		check(parity_scanout_create(&gm, 1920u, 1080u, PARITY_FOURCC_XRGB8888, PARITY_MOD_LINEAR, &so_c) == -EBUSY &&
++			so_c.state == PARITY_SCANOUT_ABANDONED && so_c.obj == obj && so_c.pin_owner != 0,
++			"lcd-show: C-CREATE create on an abandoned object is refused and leaves its record untouched");
++		parity_gt_object_destroy(&gm, obj);
++		parity_gt_display_unbind(&gm, obj);
++		check(obj->in_use && obj->bound && obj->ggtt_page == obj_page && gm.keep_refusals == 2u && live_ptes(first, pages) == pages,
++			"lcd-show: C-BELOW the object layer below the scanout wrapper refuses to destroy / unbind the kept object too");
++	}
+ 	(void)parity_edp_end(&res);
+ 	dp_fake_flush_async(&dpf);
+ 
+@@ -212,4 +258,7 @@ void parity_lcd_show_ktest(parity_lcd_show_ktest_check check, struct drv_dma_dev
+ 	check(gm.kept_objects == 1u && live_ptes(first, pages) == pages && so_c.obj->in_use &&
+ 		parity_lcd_pattern_verify(so_c.cpu, so_c.pitch, so_c.width, so_c.height, 110u, 0, 0) == 0u,
+ 		"lcd-show: C-TEARDOWN parity_gt_mem_fini() leaves the abandoned buffer alone: PTEs live, pages readable, object kept");
++	check(parity_lcd_show_retained() == 1 && parity_lcd_show_discard_model(&show) == 0 && parity_lcd_show_retained() == 0 &&
++		parity_lcd_modeset_retained() == 0,
++		"lcd-show: C-DISCARD the latch outlives the teardown; only discarding the model run clears it");
+ }
+diff --git a/src/drivers/gpu/i915/parity/lcd/parity_backlight_glue.inc b/src/drivers/gpu/i915/parity/lcd/parity_backlight_glue.inc
+index bc86270a..e8622313 100644
+--- a/src/drivers/gpu/i915/parity/lcd/parity_backlight_glue.inc
++++ b/src/drivers/gpu/i915/parity/lcd/parity_backlight_glue.inc
+@@ -45,3 +45,25 @@ int parity_lcd_ms_backlight_setup(struct parity_lcd_modeset *ms)
+ 	panel->backlight.present = true;
+ 	return 0;
+ }
++
++/*
++ * The user-visible brightness: intel_backlight_device_update_status() -> intel_panel_set_backlight(conn_state,
++ * brightness, max_brightness), with the backlight device's range [0, backlight.max] (intel_backlight_device_register).
++ * The level is scaled to [backlight.min, backlight.max] -- backlight.min comes from the VBT's min_brightness, a
++ * coefficient in 0..255 of the PWM range (get_backlight_min_vbt), not a count and not a percentage.
++ */
++void parity_lcd_ms_set_brightness(struct parity_lcd_modeset *ms, u32 user_level, u32 user_max)
++{
++	parity_lcd_cur_i915 = &ms->i915;
++	intel_panel_set_backlight(&ms->conn_state, user_level, user_max);
++}
++
++/* intel_edp_backlight_on() / _off(): the PWM and the panel's backlight-enable only -- the pipe keeps scanning out */
++void parity_lcd_ms_backlight_power(struct parity_lcd_modeset *ms, int on)
++{
++	parity_lcd_cur_i915 = &ms->i915;
++	if (on)
++		intel_edp_backlight_on(&ms->crtc_state, &ms->conn_state);
++	else
++		intel_edp_backlight_off(&ms->conn_state);
++}
+diff --git a/src/drivers/gpu/i915/parity/lcd/parity_lcd_kernel.c b/src/drivers/gpu/i915/parity/lcd/parity_lcd_kernel.c
+index 64e159cd..842cf1c3 100644
+--- a/src/drivers/gpu/i915/parity/lcd/parity_lcd_kernel.c
++++ b/src/drivers/gpu/i915/parity/lcd/parity_lcd_kernel.c
+@@ -44,6 +44,7 @@
+ #include "lcd_power_domain_enum.h"
+ #include "parity_lcd_show.h"
+ #include "parity_lcd_kernel.h"
++#include "parity_lcd_modeset.h"
+ 
+ /* the ops carry the reference's domain numbers; the power-domains state uses its own enum with the same order */
+ _Static_assert((int)POWER_DOMAIN_DISPLAY_CORE == (int)PARITY_PW_DOMAIN_DISPLAY_CORE, "DISPLAY_CORE");
+@@ -58,17 +59,20 @@ _Static_assert((int)POWER_DOMAIN_NUM == (int)PARITY_PW_DOMAIN_NUM, "POWER_DOMAIN
+ 
+ struct lcd_kernel {
+ 	const struct parity_lcd_kernel_deps *d;
+-	struct mutex locks[2];
++	struct mutex *locks;                    /* lcdb_locks */
+ 	int locks_live;
+ 	struct parity_lcd_emit ops;
+ 	int power_refs[POWER_DOMAIN_NUM];       /* what THIS run took and has not returned (per domain) */
+ 	unsigned power_get_failures, wait_timeouts, time_faults, unresolved_steps, decided, errors;
+-	int phase_cleanup;                      /* set when the disable commit starts: errors are counted apart */
++	int phase_cleanup;
++	unsigned pattern_id, window_ms, post_before, pre_before, vbt_min;                      /* set when the disable commit starts: errors are counted apart */
+ 	unsigned cleanup_errors;
+ };
+ 
+ static struct lcd_kernel lk;
+-static int lcdb_abandoned;
++static struct parity_lcd_test_summary lcdb_summary;
++static int lcdb_locks_live;
++static struct mutex lcdb_locks[2];       /* device lifetime (the per-run backend state is re-zeroed each run) */
+ static struct parity_scanout lcdb_scanout;      /* outlives the run when the buffer is abandoned */
+ 
+ /* ---- ops ---- */
+@@ -105,22 +109,36 @@ static int k_wait_reg(void *ctx, uint32_t reg, uint32_t mask, uint32_t value, un
+ 
+ 	if (rc == 0)
+ 		return 0;
+-	if (rc != -ETIMEDOUT)
+-		k->time_faults++;
+-	else
++	if (rc == -ETIMEDOUT) {
+ 		k->wait_timeouts++;
+-	return -110;                            /* the reference's -ETIMEDOUT (Linux numbering, as the ops define it) */
++		return PARITY_LCD_ETIMEDOUT;    /* the device did not reach the condition: the reference's timeout */
++	}
++	/* anything else is the time source / wait primitive failing: not a timeout, and the run's first anomaly */
++	k->time_faults++;
++	parity_lcd_backend_fault("time base / wait primitive fault in a register wait (not a timeout)\n");
++	return PARITY_LCD_EIO;
+ }
+ 
+ static void k_usleep(void *ctx, unsigned us)
+ {
+-	parity_dp_kernel_sleep_us(&((struct lcd_kernel *)ctx)->d->edp->k, us);
++	struct lcd_kernel *k = ctx;
++	unsigned before = k->d->edp->k.time_faults;
++
++	parity_dp_kernel_sleep_us(&k->d->edp->k, us);
++	if (k->d->edp->k.time_faults != before) {
++		k->time_faults++;
++		parity_lcd_backend_fault("time base fault during a sleep (returned early or the clock failed)\n");
++	}
+ }
+ 
+ static void k_udelay(void *ctx, unsigned us)
+ {
+-	(void)ctx;
+-	(void)parity_udelay(us);
++	struct lcd_kernel *k = ctx;
++
++	if (parity_udelay(us) != 0) {
++		k->time_faults++;
++		parity_lcd_backend_fault("time base fault during a short delay\n");
++	}
+ }
+ 
+ static long k_dpcd_read(void *ctx, unsigned offset, uint8_t *buf, size_t size)
+@@ -315,7 +333,7 @@ static void at_stage(void *ctx, int stage)
+ 	} else if (stage == PARITY_LCD_SHOW_PICTURE_UP) {
+ 		log_regs(k, "picture-up", 1);
+ 		kern_logf("i915: parity LCD-B PICTURE UP: pattern id=%u on the panel; observation window %u ms starts now "
+-			"(take the photograph)\n", PARITY_LCDB_PATTERN_ID, PARITY_LCDB_WINDOW_MS);
++			"(take the photograph)\n", k->pattern_id, k->window_ms);
+ 	} else if (stage == PARITY_LCD_SHOW_WINDOW_DONE) {
+ 		kern_logf("i915: parity LCD-B observation window over; stopping through the reference's disable path\n");
+ 	} else if (stage == PARITY_LCD_SHOW_DISABLE_RETURNED) {
+@@ -410,6 +428,7 @@ static int fill_cfg(struct lcd_kernel *k, struct parity_lcd_modeset_cfg *c)
+ 	c->vbt_backlight_controller = pn.bl_controller;
+ 	c->vbt_backlight_pwm_freq_hz = pn.bl_pwm_freq_hz;
+ 	c->vbt_backlight_min_brightness = pn.bl_min_brightness;
++	k->vbt_min = pn.bl_min_brightness;
+ 	c->rawclk_khz = edp->cfg.rawclk_khz;
+ 	for (i = 0u; i < 8u && i < PARITY_NOGEM_MAX_WM_LVL; i++)
+ 		c->wm_latency[i] = d->nogem->wm_skl_latency[i];
+@@ -503,7 +522,14 @@ static int preflight(struct lcd_kernel *k)
+ 	return ok ? 0 : -1;
+ }
+ 
+-int parity_lcd_kernel_lcdb_run(const struct parity_lcd_kernel_deps *d)
++struct lcd_run_params {
++	unsigned pattern_id;
++	uint64_t pattern_fnv;                   /* 0 = no pinned hash (the read-back check still runs) */
++	unsigned window_ms;
++	int (*in_window)(void *ctx, struct parity_lcd_observer *o);
++};
++
++static int lcd_run_one(const struct parity_lcd_kernel_deps *d, const struct lcd_run_params *p)
+ {
+ 	static struct parity_lcd_show_env env;
+ 	static struct parity_lcd_show_report rep;
+@@ -515,15 +541,31 @@ int parity_lcd_kernel_lcdb_run(const struct parity_lcd_kernel_deps *d)
+ 		kern_logf("i915: parity LCD-B verdict: FAIL (a dependency is missing)\n");
+ 		return -1;
+ 	}
++	/* an earlier run left a buffer the display may still read: refuse before anything is initialised */
++	if (parity_lcd_show_retained() || parity_lcd_modeset_retained()) {
++		lcdb_summary.ran = 1;
++		lcdb_summary.pass = 0;
++		lcdb_summary.retained = 1;
++		lcdb_summary.first_anomaly = "refused: resources of an earlier run are retained (stop not confirmed)";
++		kern_logf("i915: parity LCD-B verdict: FAIL (refused before any initialisation: an earlier run's resources are retained)\n");
++		return -1;
++	}
++	if (!lcdb_locks_live) {                 /* the mutexes live as long as the device: initialised once */
++		(void)mutex_init(&lcdb_locks[PARITY_LCD_LOCK_DPLL], LOCK_RANK_DEVICE, "parity-lcd-dpll");
++		(void)mutex_init(&lcdb_locks[PARITY_LCD_LOCK_BACKLIGHT], LOCK_RANK_DEVICE, "parity-lcd-backlight");
++		lcdb_locks_live = 1;
++	}
+ 	memset(k, 0, sizeof(*k));
++	k->locks = lcdb_locks;
+ 	k->d = d;
+-	(void)mutex_init(&k->locks[PARITY_LCD_LOCK_DPLL], LOCK_RANK_DEVICE, "parity-lcd-dpll");
+-	(void)mutex_init(&k->locks[PARITY_LCD_LOCK_BACKLIGHT], LOCK_RANK_DEVICE, "parity-lcd-backlight");
++	memset(&lcdb_summary, 0, sizeof(lcdb_summary));
++	lcdb_summary.ran = 1;
+ 	bind_ops(k);
+ 
+ 	memset(&env, 0, sizeof(env));
+ 	if (preflight(k) != 0 || fill_cfg(k, &env.cfg) != 0) {
+ 		kern_logf("i915: parity LCD-B verdict: FAIL (preflight: nothing was written to the display)\n");
++		lcdb_summary.first_anomaly = "preflight refused (nothing written)";
+ 		return -1;
+ 	}
+ 	env.hw = &k->ops;
+@@ -531,10 +573,16 @@ int parity_lcd_kernel_lcdb_run(const struct parity_lcd_kernel_deps *d)
+ 	env.so = &lcdb_scanout;
+ 	env.lcd = &d->edp->lcd;
+ 	env.pipe = 0;
+-	env.pattern_id = PARITY_LCDB_PATTERN_ID;
+-	env.pattern_fnv = PARITY_LCDB_PATTERN_FNV;
++	env.pattern_id = p->pattern_id;
++	env.pattern_fnv = p->pattern_fnv;
+ 	env.first_frames_ms = 1000u;
+-	env.window_ms = PARITY_LCDB_WINDOW_MS;
++	env.window_ms = p->window_ms;
++	env.in_window = p->in_window;
++	env.in_window_ctx = k;
++	k->pattern_id = p->pattern_id;
++	k->window_ms = p->window_ms;
++	k->post_before = d->irq->vbl != 0 ? d->irq->vbl->post_enable_calls : 0u;
++	k->pre_before = d->irq->vbl != 0 ? d->irq->vbl->pre_disable_calls : 0u;
+ 	env.at_stage = at_stage;
+ 	env.at_stage_ctx = k;
+ 
+@@ -550,7 +598,7 @@ int parity_lcd_kernel_lcdb_run(const struct parity_lcd_kernel_deps *d)
+ 		held += k->power_refs[i];
+ 	kern_logf("i915: parity LCD-B buffer: surf=0x%08llx pattern id=%u fnv=%016llx (pinned %016llx) readback_bad before=%u after=%u | "
+ 		"released=%d abandoned=%d unpin=%d destroy=%d | display pages in use=%u\n", (unsigned long long)rep.surf, env.pattern_id,
+-		(unsigned long long)rep.pattern_hash, (unsigned long long)PARITY_LCDB_PATTERN_FNV, rep.readback_bad_before,
++		(unsigned long long)rep.pattern_hash, (unsigned long long)p->pattern_fnv, rep.readback_bad_before,
+ 		rep.readback_bad_after, rep.released, rep.abandoned, rep.unpin_rc, rep.destroy_rc, d->gm->display_allocated_pages);
+ 	kern_logf("i915: parity LCD-B hardware observation: first frames rc=%d counter %u -> %u | steady rounds=%u rc=%d counter %u -> %u | "
+ 		"after stop rc=%d counter %u -> %u TRANSCONF=0x%08x\n", rep.first_frames_rc, rep.frame_first, rep.frame_last,
+@@ -566,16 +614,203 @@ int parity_lcd_kernel_lcdb_run(const struct parity_lcd_kernel_deps *d)
+ 	kern_logf("i915: parity LCD-B backend: power refs of this run still held=%d get_failures=%u | wait timeouts=%u time faults=%u | "
+ 		"unresolved steps=%u decided=%u | eDP tick sleeps=%u\n", held, k->power_get_failures, k->wait_timeouts, k->time_faults,
+ 		k->unresolved_steps, k->decided, d->edp->k.tick_sleeps);
++	if (d->irq->vbl != 0)
++		kern_logf("i915: parity LCD-B power-well IRQ hooks during this run: post_enable +%u pre_disable +%u (sync calls %u, "
++			"sync timeouts %u) | pipe A IMR now 0x%08x (well off reads 0)\n", d->irq->vbl->post_enable_calls - k->post_before,
++			d->irq->vbl->pre_disable_calls - k->pre_before, d->irq->vbl->sync_calls, d->irq->vbl->sync_timeouts,
++			osdep_mmio_read32(d->mmio, 0x44404u));
+ 	if (rep.pass && (held != 0 || k->unresolved_steps != 0u || k->time_faults != 0u))
+ 		rep.pass = 0;
++	/* the pipe's well went on (post-enable restored its interrupt registers) and off again (pre-disable stopped them) */
++	if (rep.pass && d->irq->vbl != 0 && (d->irq->vbl->post_enable_calls == k->post_before ||
++	    d->irq->vbl->pre_disable_calls == k->pre_before || d->irq->vbl->sync_timeouts != 0u))
++		rep.pass = 0;
+ 	kern_logf("i915: parity LCD-B verdict: %s (furthest stage=%s; software flags, hardware observation and the photograph are "
+ 		"separate evidence: this line covers the first two)\n", rep.pass ? "PASS" : "FAIL", stage_name(rep.stage));
+ 	(void)rc;
+-	lcdb_abandoned = rep.abandoned;
++	lcdb_summary.pass = rep.pass;
++	lcdb_summary.first_anomaly = rep.first_anomaly;
++	lcdb_summary.first_anomaly_stage = stage_name(rep.first_anomaly_stage);
++	lcdb_summary.stage = stage_name(rep.stage);
++	lcdb_summary.cleanup_rc = rep.disable_rc;
++	lcdb_summary.cleanup_errors = rep.cleanup_errors;
++	lcdb_summary.retained = parity_lcd_show_retained();
+ 	return rep.pass ? 0 : -1;
+ }
+ 
++int parity_lcd_kernel_lcdb_run(const struct parity_lcd_kernel_deps *d)
++{
++	static const struct lcd_run_params p = { PARITY_LCDB_PATTERN_ID, PARITY_LCDB_PATTERN_FNV, PARITY_LCDB_WINDOW_MS, 0 };
++
++	return lcd_run_one(d, &p);
++}
++
++/* ---------------- LCD reuse (-DPARITY_LCDR_TEST=1) ---------------- */
++
++static uint32_t read_frame(void *ctx)
++{
++	struct lcd_kernel *k = ctx;
++
++	return osdep_mmio_read32(k->d->mmio, parity_lcd_reg_by_name("PIPE_FRMCOUNT_G4X"));
++}
++
++static void step_sleep(struct lcd_kernel *k, unsigned ms)
++{
++	unsigned t;
++
++	for (t = 0u; t < ms; t += 100u)
++		k_usleep(k, 100000u);
++}
++
++/*
++ * The pipe's interrupts, driver-managed: the registers the power-well post-enable hook restored, then a vblank
++ * reference (IMR vblank bit cleared), three waits that each need a NEW pipe A vblank interrupt and a moving frame
++ * counter, the last put (bit set again), and no further vblank interrupt once it is masked.
++ */
++static int irq_check(struct lcd_kernel *k, int verbose)
++{
++	const struct parity_lcd_kernel_deps *d = k->d;
++	struct parity_irq_vblank *v = d->irq->vbl;
++	uint32_t extra = 0x00000001u | parity_gen8_de_pipe_underrun_mask(13) | parity_gen8_de_pipe_flip_done_mask(13);
++	uint32_t imr, ier, imr_on, imr_off, want_ier, f0, f1, seen[3] = { 0u, 0u, 0u };
++	unsigned raw0, raw1, raw2, i;
++	int rc[3] = { -1, -1, -1 }, get_rc, ok;
++
++	if (v == 0 || !v->inited)
++		return -22;
++	imr = osdep_mmio_read32(d->mmio, 0x44404u);
++	ier = osdep_mmio_read32(d->mmio, 0x4440cu);
++	want_ier = ~d->irq->de_irq_mask[0] | extra;
++	get_rc = parity_drm_vblank_get(d->irq, 0u);
++	imr_on = osdep_mmio_read32(d->mmio, 0x44404u);
++	raw0 = d->irq->de_vblank_count[0];
++	f0 = read_frame(k);
++	for (i = 0u; i < 3u && get_rc == 0; i++)
++		rc[i] = parity_wait_vblank(d->irq, 0u, 1u, 100u, read_frame, k, &seen[i]);
++	f1 = read_frame(k);
++	raw1 = d->irq->de_vblank_count[0];
++	parity_drm_vblank_put(d->irq, 0u);
++	imr_off = osdep_mmio_read32(d->mmio, 0x44404u);
++	step_sleep(k, 100u);
++	raw2 = d->irq->de_vblank_count[0];
++	/*
++	 * The IMR is judged on the bits this path relies on -- vblank, the underrun bits, flip done -- which must read back
++	 * as the driver's mask.  The first reuse run found bits 17 / 18 written 1 but reading 0 (the pre-driver default
++	 * 0xfff9ffff has them 0 too); the reference never reads IMR back, so their meaning is not interpreted: they are
++	 * logged, not judged.
++	 */
++	ok = get_rc == 0 && ((imr ^ d->irq->de_irq_mask[0]) & (extra | 0x1u)) == 0u && (imr & 1u) != 0u && ier == want_ier &&
++		(imr_on & 1u) == 0u && rc[0] == 0 && rc[1] == 0 && rc[2] == 0 && raw1 - raw0 >= 3u && f1 != f0 &&
++		(imr_off & 1u) != 0u && raw2 == raw1 && v->refs[0] == 0u;
++	kern_logf("i915: parity LCD-R IRQ: after the well came on: GEN8_DE_PIPE_IMR(A)=0x%08x (driver's de_irq_mask 0x%08x) "
++		"GEN8_DE_PIPE_IER(A)=0x%08x (expected ~mask|vblank|underrun|flip done = 0x%08x) | vblank get rc=%d IMR=0x%08x | waits rc=%d/%d/%d "
++		"new-vblanks %u/%u/%u | handler vblank IRQs +%u frames %u->%u | put IMR=0x%08x | vblank IRQs in the next 100 ms after "
++		"masking: %u | refs %u | IMR bits differing from the written mask 0x%08x (judged bits 0x%08x) -> %s\n", imr,
++		d->irq->de_irq_mask[0], ier, want_ier, get_rc, imr_on, rc[0], rc[1], rc[2], seen[0], seen[1], seen[2], raw1 - raw0, f0, f1,
++		imr_off, raw2 - raw1, v->refs[0], imr ^ d->irq->de_irq_mask[0], extra | 0x1u, ok ? "OK" : "FAIL");
++	(void)verbose;
++	return ok ? 0 : -5;
++}
++
++static int brightness_step(struct lcd_kernel *k, unsigned step, const char *name, int op, uint32_t level, uint32_t max,
++	unsigned hold_ms)
++{
++	const struct parity_lcd_kernel_deps *d = k->d;
++	struct parity_lcd_modeset_status s;
++	uint32_t f0, f1;
++	int rc;
++
++	rc = op == 0 ? parity_lcd_modeset_brightness(level, max) : parity_lcd_modeset_backlight(op > 0);
++	f0 = read_frame(k);
++	parity_lcd_modeset_status(&s);
++	kern_logf("i915: parity LCD-R step=%u %s rc=%d | BXT_BLC_PWM_CTL=0x%08x FREQ=0x%08x DUTY=0x%08x (level %u of [%u,%u]) "
++		"backlight_enabled=%d PP_CONTROL backlight bit via eDP | crtc_active=%d plane_armed=%d (take the photograph)\n",
++		step, name, rc, osdep_mmio_read32(d->mmio, parity_lcd_reg_by_name("BXT_BLC_PWM_CTL")),
++		osdep_mmio_read32(d->mmio, parity_lcd_reg_by_name("BXT_BLC_PWM_FREQ")),
++		osdep_mmio_read32(d->mmio, parity_lcd_reg_by_name("BXT_BLC_PWM_DUTY")), s.backlight_level, s.backlight_min,
++		s.backlight_max, s.backlight_enabled, s.crtc_active, s.plane_armed);
++	step_sleep(k, hold_ms);
++	f1 = read_frame(k);
++	kern_logf("i915: parity LCD-R step=%u %s done: frame counter %u -> %u over %u ms (the scanout %s)\n", step, name, f0, f1, hold_ms,
++		f1 != f0 ? "continued" : "STOPPED");
++	return rc == PARITY_LCD_MS_OK && f1 != f0 && s.crtc_active && s.plane_armed ? 0 : -5;
++}
++
++static unsigned d_vbt_min(struct lcd_kernel *k)
++{
++	return k->vbt_min;
++}
++
++static int window_first(void *ctx, struct parity_lcd_observer *o)
++{
++	struct lcd_kernel *k = ctx;
++	struct parity_lcd_modeset_status s;
++	uint32_t mx, orig, duty;
++	int rc;
++
++	(void)o;
++	if ((rc = irq_check(k, 1)) != 0)
++		return rc;
++	parity_lcd_modeset_status(&s);
++	mx = s.backlight_max;
++	orig = s.backlight_level;
++	kern_logf("i915: parity LCD-R brightness: VBT min_brightness %u (a 0..255 coefficient) -> backlight.min %u of max %u "
++		"(get_backlight_min_vbt); current level %u; user range [0, %u] (intel_backlight_device_register)\n",
++		d_vbt_min(k), s.backlight_min, mx, orig, mx);
++	if ((rc = brightness_step(k, 0u, "max", 0, mx, mx, 7000u)) != 0 ||
++	    (rc = brightness_step(k, 1u, "half", 0, mx / 2u, mx, 7000u)) != 0 ||
++	    (rc = brightness_step(k, 2u, "min(user 0)", 0, 0u, mx, 7000u)) != 0 ||
++	    (rc = brightness_step(k, 3u, "half-again", 0, mx / 2u, mx, 1000u)) != 0 ||
++	    (rc = brightness_step(k, 4u, "backlight-off(scanout continues)", -1, 0u, mx, 7000u)) != 0 ||
++	    (rc = brightness_step(k, 5u, "backlight-on", 1, 0u, mx, 7000u)) != 0)
++		return rc;
++	parity_lcd_modeset_status(&s);
++	duty = osdep_mmio_read32(k->d->mmio, parity_lcd_reg_by_name("BXT_BLC_PWM_DUTY"));
++	if (s.backlight_level != mx / 2u + 0u && s.backlight_level != duty)
++		kern_logf("i915: parity LCD-R note: level after backlight-on %u, duty 0x%08x\n", s.backlight_level, duty);
++	return brightness_step(k, 6u, "restore", 0, orig, mx, 1000u);
++}
++
++static int window_again(void *ctx, struct parity_lcd_observer *o)
++{
++	(void)o;
++	return irq_check(ctx, 0);
++}
++
++int parity_lcd_kernel_lcdr_run(const struct parity_lcd_kernel_deps *d)
++{
++	static const struct lcd_run_params cyc[3] = {
++		{ 110u, PARITY_LCDB_PATTERN_FNV, 2000u, window_first },
++		{ 111u, 0u, 3000u, window_again },
++		{ 112u, 0u, 3000u, window_again },
++	};
++	unsigned i, passed = 0u;
++
++	kern_logf("i915: parity LCD-R begin: three show / stop cycles in one driver lifetime (patterns 110, 111, 112); one display "
++		"owner, run serially (the modeset object is global; the DPLL / backlight mutexes do not make the whole modeset reentrant)\n");
++	for (i = 0u; i < 3u; i++) {
++		int rc;
++
++		kern_logf("i915: parity LCD-R cycle %u begin (pattern %u)\n", i + 1u, cyc[i].pattern_id);
++		rc = lcd_run_one(d, &cyc[i]);
++		kern_logf("i915: parity LCD-R cycle %u verdict: %s\n", i + 1u, rc == 0 ? "PASS" : "FAIL");
++		if (rc != 0)
++			break;                  /* first anomaly: no further cycle */
++		passed++;
++	}
++	kern_logf("i915: parity LCD-R verdict: %s (cycles passed %u/3; photographs are separate evidence)\n", passed == 3u ? "PASS" : "FAIL",
++		passed);
++	lcdb_summary.pass = passed == 3u;
++	return passed == 3u ? 0 : -1;
++}
++
+ int parity_lcd_kernel_abandoned(void)
+ {
+-	return lcdb_abandoned;
++	return parity_lcd_show_retained() || parity_lcd_modeset_retained();
++}
++
++void parity_lcd_kernel_summary(struct parity_lcd_test_summary *out)
++{
++	if (out != 0)
++		*out = lcdb_summary;
+ }
+diff --git a/src/drivers/gpu/i915/parity/lcd/parity_lcd_kernel.h b/src/drivers/gpu/i915/parity/lcd/parity_lcd_kernel.h
+index 7b8acce5..e16f867a 100644
+--- a/src/drivers/gpu/i915/parity/lcd/parity_lcd_kernel.h
++++ b/src/drivers/gpu/i915/parity/lcd/parity_lcd_kernel.h
+@@ -46,7 +46,20 @@ struct parity_lcd_kernel_deps {
+ 
+ /* 0 = PASS (software state + hardware observation; the photograph is judged outside) */
+ int parity_lcd_kernel_lcdb_run(const struct parity_lcd_kernel_deps *d);
+-/* 1 when a run left a buffer the display may still read: the outer teardown must keep DMA, bus mastering and scratch */
++/* LCD reuse (-DPARITY_LCDR_TEST=1): three show / stop cycles, pipe IRQ + vblank, brightness, backlight off / on */
++int parity_lcd_kernel_lcdr_run(const struct parity_lcd_kernel_deps *d);
++/* 1 while a run's resources are retained (the display may still read): the outer teardown keeps DMA, bus mastering, scratch */
+ int parity_lcd_kernel_abandoned(void);
+ 
++/* what the runner reports next to the probe result (the probe outcome itself is not changed by the LCD test) */
++struct parity_lcd_test_summary {
++	int ran, pass;
++	const char *stage;                      /* furthest stage */
++	const char *first_anomaly, *first_anomaly_stage;
++	int cleanup_rc;                         /* the disable commit's result */
++	unsigned cleanup_errors;
++	int retained;                           /* resources kept because the stop was not confirmed */
++};
++void parity_lcd_kernel_summary(struct parity_lcd_test_summary *out);
++
+ #endif /* PARITY_LCD_KERNEL_H */
+diff --git a/src/drivers/gpu/i915/parity/lcd/parity_lcd_modeset.c b/src/drivers/gpu/i915/parity/lcd/parity_lcd_modeset.c
+index 59c85b55..c73a4659 100644
+--- a/src/drivers/gpu/i915/parity/lcd/parity_lcd_modeset.c
++++ b/src/drivers/gpu/i915/parity/lcd/parity_lcd_modeset.c
+@@ -20,6 +20,9 @@ static struct parity_lcd_modeset ms;
+ static struct parity_lcd_emit *ms_ops;
+ static const char *ms_first_error;
+ static unsigned ms_errors;
++static int ms_retained;                 /* outlives prepare's memset: only _discard_model() clears it */
++static const struct parity_lcd_emit *ms_retained_ops;
++
+ 
+ static void on_error(void *ctx, const char *what)
+ {
+@@ -52,7 +55,8 @@ int parity_lcd_modeset_prepare(const struct parity_lcd_state *s, const struct pa
+ 	    cfg->dpll_id < 0 || cfg->dpll_id > 1 || cfg->aux_ch != cfg->port || s->link.rate_khz <= 0 || s->link.rate_khz > 810000 ||
+ 	    (s->link.lanes != 1 && s->link.lanes != 2 && s->link.lanes != 4) || s->link.bpp <= 0)
+ 		return -EINVAL;
+-	if (ms.prepared && (ms.crtc.active || ms.plane_armed || ms.dc_off_held || ms.stop_unconfirmed))
++	/* refused BEFORE anything is initialised: a retained state is never overwritten */
++	if (ms_retained || ms.stop_unconfirmed || (ms.prepared && (ms.crtc.active || ms.plane_armed || ms.dc_off_held)))
+ 		return -EBUSY;
+ 
+ 	memset(&ms, 0, sizeof(ms));
+@@ -256,6 +260,10 @@ void parity_lcd_modeset_status(struct parity_lcd_modeset_status *out)
+ 	out->dbuf_slices_now = ms.wm.old_dbuf.enabled_slices;
+ 	out->mbus_joined_now = ms.wm.old_dbuf.joined_mbus;
+ 	out->stop_unconfirmed = ms.stop_unconfirmed;
++	out->retained = parity_lcd_modeset_retained();
++	out->dither = ms.crtc_state.dither;
++	out->backlight_min = ms.connector.panel.backlight.min;
++	out->backlight_max = ms.connector.panel.backlight.max;
+ 	out->commits = ms.commits;
+ 	out->errors = ms_errors;
+ 	out->first_error = ms_first_error;
+@@ -345,7 +353,7 @@ int parity_lcd_modeset_commit_enable(void)
+ 	struct intel_power_domain_mask put_domains;
+ 	int rc, prc = PARITY_LCD_MS_OK;
+ 
+-	if (!ms.prepared || ms.crtc.active || ms.dc_off_held)
++	if (!ms.prepared || ms.crtc.active || ms.dc_off_held || parity_lcd_modeset_retained())
+ 		return PARITY_LCD_MS_NOT_PREPARED;
+ 	parity_lcd_cur_i915 = &ms.i915;
+ 	parity_lcd_wm = &ms.wm;
+@@ -394,7 +402,7 @@ int parity_lcd_modeset_commit_disable(void)
+ 	unsigned before;
+ 	int rc, prc;
+ 
+-	if (!ms.prepared || !ms.crtc.active || ms.dc_off_held)
++	if (!ms.prepared || !ms.crtc.active || ms.dc_off_held || parity_lcd_modeset_retained())
+ 		return PARITY_LCD_MS_NOT_PREPARED;
+ 	parity_lcd_cur_i915 = &ms.i915;
+ 	ms.state.base.dev = &ms.i915.drm;
+@@ -441,9 +449,49 @@ int parity_lcd_modeset_commit_disable(void)
+ 
+ void parity_lcd_modeset_abandoned(void)
+ {
+-	ms.prepared = 0;
+-	ms.plane_armed = 0;
+-	ms.dc_off_held = 0;
+-	ms.stop_unconfirmed = 0;
+-	ms.crtc.active = false;
++	ms.stop_unconfirmed = 1;
++	ms_retained = 1;
++	ms_retained_ops = ms_ops;
++}
++
++int parity_lcd_modeset_retained(void)
++{
++	return ms_retained || ms.stop_unconfirmed;
++}
++
++int parity_lcd_modeset_discard_model(const struct parity_lcd_emit *ops)
++{
++	if (!parity_lcd_modeset_retained())
++		return 0;
++	if (ops == 0 || ops != (ms_retained_ops != 0 ? ms_retained_ops : ms_ops) || !ops->model)
++		return -1;                      /* real hardware, or not the backend that holds it: nothing is released */
++	memset(&ms, 0, sizeof(ms));
++	ms_retained = 0;
++	ms_retained_ops = 0;
++	return 0;
++}
++
++void parity_lcd_backend_fault(const char *what)
++{
++	on_error(0, what);
++}
++
++int parity_lcd_modeset_brightness(uint32_t user_level, uint32_t user_max)
++{
++	unsigned before = ms_errors;
++
++	if (!ms.prepared || !ms.crtc.active || parity_lcd_modeset_retained() || user_max == 0u || user_level > user_max)
++		return PARITY_LCD_MS_NOT_PREPARED;
++	parity_lcd_ms_set_brightness(&ms, user_level, user_max);
++	return ms_errors != before ? PARITY_LCD_MS_ERRORS : PARITY_LCD_MS_OK;
++}
++
++int parity_lcd_modeset_backlight(int on)
++{
++	unsigned before = ms_errors;
++
++	if (!ms.prepared || !ms.crtc.active || parity_lcd_modeset_retained())
++		return PARITY_LCD_MS_NOT_PREPARED;
++	parity_lcd_ms_backlight_power(&ms, on);
++	return ms_errors != before ? PARITY_LCD_MS_ERRORS : PARITY_LCD_MS_OK;
+ }
+diff --git a/src/drivers/gpu/i915/parity/lcd/parity_lcd_modeset.h b/src/drivers/gpu/i915/parity/lcd/parity_lcd_modeset.h
+index 8cac4ab6..83c4c8a0 100644
+--- a/src/drivers/gpu/i915/parity/lcd/parity_lcd_modeset.h
++++ b/src/drivers/gpu/i915/parity/lcd/parity_lcd_modeset.h
+@@ -77,7 +77,10 @@ struct parity_lcd_modeset_status {
+ 	int dc_off_held;                /* POWER_DOMAIN_DC_OFF is held (inside a commit, or kept after an unconfirmed stop) */
+ 	unsigned crtc_domains_held;     /* how many domains of get_crtc_power_domains() the crtc holds */
+ 	uint8_t dbuf_slices_now; int mbus_joined_now;   /* the current global DBUF state */
+-	int stop_unconfirmed;
++	int stop_unconfirmed, retained;
++	int dither;
++	uint32_t backlight_min;         /* panel->backlight.min (hw units) */
++	uint32_t backlight_max;                     /* crtc state: derived from pipe_bpp (intel_modeset_pipe_config) */
+ 	unsigned commits;
+ 	/* ownership */
+ 	int pll_on, pll_active_mask, pll_wakeref;
+@@ -107,9 +110,27 @@ int parity_lcd_modeset_prepare(const struct parity_lcd_state *s, const struct pa
+  * nothing further is given back (DBUF, power domains and DC_OFF stay as they are -- see stop_unconfirmed).
+  */
+ int parity_lcd_modeset_commit_enable(void);
++/*
++ * While the picture is up (crtc active):
++ *   _brightness(user_level, user_max)   the backlight device's update (user range [0, user_max])
++ *   _backlight(on)                      backlight PWM + panel backlight-enable off / on; the pipe, the plane and the
++ *                                       buffer stay in use -- this is NOT a display stop
++ * PARITY_LCD_MS_OK, _NOT_PREPARED (no active crtc / retained), or _ERRORS (a reference error during the call).
++ */
++int parity_lcd_modeset_brightness(uint32_t user_level, uint32_t user_max);
++int parity_lcd_modeset_backlight(int on);
+ int parity_lcd_modeset_commit_disable(void);
+-/* after an unconfirmed stop the caller recorded what stays held for ever (buffer, power, DBUF): the object forgets it */
++/*
++ * After an unconfirmed stop.  The object does NOT forget what it holds: stop_unconfirmed, the power references,
++ * DC_OFF, the DBUF slices and the crtc state stay recorded, and every later prepare is refused before anything is
++ * initialised.  _abandoned() marks that the caller has taken the retained resources over (the scanout buffer).
++ * The only way out is _discard_model(): permitted solely when the retained state belongs to a MODEL backend, whose
++ * discarding is itself the isolation; on real hardware there is no release (a recovery that verifies isolation
++ * does not exist yet).
++ */
+ void parity_lcd_modeset_abandoned(void);
++int parity_lcd_modeset_retained(void);
++int parity_lcd_modeset_discard_model(const struct parity_lcd_emit *ops);
+ /* the stages the commits are made of (kept for the word-level tests; the path to a picture is the two commits) */
+ int parity_lcd_modeset_enable(void);
+ int parity_lcd_modeset_plane_update(void);
+diff --git a/src/drivers/gpu/i915/parity/lcd/parity_lcd_modeset_int.h b/src/drivers/gpu/i915/parity/lcd/parity_lcd_modeset_int.h
+index 00b55cc3..163e0563 100644
+--- a/src/drivers/gpu/i915/parity/lcd/parity_lcd_modeset_int.h
++++ b/src/drivers/gpu/i915/parity/lcd/parity_lcd_modeset_int.h
+@@ -60,6 +60,8 @@ void intel_modeset_put_crtc_power_domains(struct intel_crtc *crtc, struct intel_
+ void intel_dbuf_pre_plane_update(struct intel_atomic_state *state);
+ void intel_dbuf_post_plane_update(struct intel_atomic_state *state);
+ void intel_mbus_dbox_update(struct intel_atomic_state *state);
++void parity_lcd_ms_set_brightness(struct parity_lcd_modeset *ms, u32 user_level, u32 user_max);     /* intel_backlight_port.c */
++void parity_lcd_ms_backlight_power(struct parity_lcd_modeset *ms, int on);
+ int parity_lcd_ms_wm_compute(struct parity_lcd_modeset *ms);                             /* skl_watermark_port.c */
+ void parity_lcd_ms_color_check(struct parity_lcd_modeset *ms);                         /* intel_color_port.c */
+ int parity_lcd_ms_backlight_setup(struct parity_lcd_modeset *ms);                      /* intel_backlight_port.c */
+diff --git a/src/drivers/gpu/i915/parity/lcd/parity_lcd_observe.h b/src/drivers/gpu/i915/parity/lcd/parity_lcd_observe.h
+index e0deaa50..01de4916 100644
+--- a/src/drivers/gpu/i915/parity/lcd/parity_lcd_observe.h
++++ b/src/drivers/gpu/i915/parity/lcd/parity_lcd_observe.h
+@@ -81,6 +81,7 @@ struct parity_lcd_named_reg {
+ 	uint32_t linux_value, compare_mask;
+ };
+ const struct parity_lcd_named_reg *parity_lcd_reg_table(int pipe, int port, int dpll_id, unsigned *n);
+-uint32_t parity_lcd_reg_by_name(const char *name);      /* pipe A / port A / DPLL 0; 0 = unknown name */
++uint32_t parity_lcd_reg_by_name(const char *name);
++uint32_t parity_lcd_ref_dbuf_ctl(unsigned slice);       /* the reference's DBUF_CTL_S(slice), slice 0 = S1 */      /* pipe A / port A / DPLL 0; 0 = unknown name */
+ 
+ #endif /* PARITY_LCD_OBSERVE_H */
+diff --git a/src/drivers/gpu/i915/parity/lcd/parity_lcd_ops.h b/src/drivers/gpu/i915/parity/lcd/parity_lcd_ops.h
+index 9e065e30..bf6b47c3 100644
+--- a/src/drivers/gpu/i915/parity/lcd/parity_lcd_ops.h
++++ b/src/drivers/gpu/i915/parity/lcd/parity_lcd_ops.h
+@@ -45,8 +45,19 @@ enum parity_lcd_observe {
+ 	PARITY_LCD_OBS_NUM
+ };
+ 
++/* wait_reg results (Linux numbering, as the reference's callers compare them):
++ *   0                    the condition held
++ *   PARITY_LCD_ETIMEDOUT the device did not reach the condition in time
++ *   PARITY_LCD_EIO       the time source / the wait primitive / MMIO access failed: NOT a timeout; the backend has
++ *                        also reported it through parity_lcd_backend_fault() so it is the run's first anomaly */
++#define PARITY_LCD_ETIMEDOUT (-110)
++#define PARITY_LCD_EIO       (-5)
++/* a backend reports a fault of its own (time base, MMIO) into the modeset's first-anomaly record */
++void parity_lcd_backend_fault(const char *what);
++
+ struct parity_lcd_emit {
+ 	void *ctx;
++	int model;              /* 1: a register / sink MODEL (discarding it isolates whatever it holds); 0: real hardware */
+ 	void (*write32)(void *ctx, uint32_t reg, uint32_t value);
+ 	uint32_t (*rmw32)(void *ctx, uint32_t reg, uint32_t clear, uint32_t set);   /* returns the old value */
+ 	void (*posting_read)(void *ctx, uint32_t reg);                              /* may be NULL */
+diff --git a/src/drivers/gpu/i915/parity/lcd/parity_lcd_regs.c b/src/drivers/gpu/i915/parity/lcd/parity_lcd_regs.c
+index d58abbf9..bbf13dd4 100644
+--- a/src/drivers/gpu/i915/parity/lcd/parity_lcd_regs.c
++++ b/src/drivers/gpu/i915/parity/lcd/parity_lcd_regs.c
+@@ -73,3 +73,10 @@ uint32_t parity_lcd_reg_by_name(const char *name)
+ 			return t[i].reg;
+ 	return 0u;
+ }
++
++/* DBUF_CTL_S(slice) as the saved reference defines it (extracted skl_watermark_regs.h), for the independent check of the
++ * table the power-domain initialisation uses (display_core.c) -- E-116 found that table shifted by one slice */
++uint32_t parity_lcd_ref_dbuf_ctl(unsigned slice)
++{
++	return slice < 4u ? i915_mmio_reg_offset(DBUF_CTL_S((enum dbuf_slice)slice)) : 0u;
++}
+diff --git a/src/drivers/gpu/i915/parity/lcd/parity_lcd_show.c b/src/drivers/gpu/i915/parity/lcd/parity_lcd_show.c
+index 08623727..8f34a399 100644
+--- a/src/drivers/gpu/i915/parity/lcd/parity_lcd_show.c
++++ b/src/drivers/gpu/i915/parity/lcd/parity_lcd_show.c
+@@ -11,6 +11,26 @@
+ #include "parity_lcd_show.h"
+ 
+ static struct parity_lcd_trace show_trace;
++static int show_retained;               /* see parity_lcd_show_retained() */
++static const struct parity_lcd_emit *show_retained_hw;
++
++int parity_lcd_show_retained(void)
++{
++	return show_retained;
++}
++
++int parity_lcd_show_discard_model(struct parity_lcd_show_env *env)
++{
++	if (!show_retained)
++		return 0;
++	if (env == 0 || env->hw == 0 || env->hw != show_retained_hw || !env->hw->model)
++		return -1;
++	if (parity_lcd_modeset_discard_model(&show_trace.ops) != 0)
++		return -1;
++	show_retained = 0;
++	show_retained_hw = 0;
++	return 0;
++}
+ 
+ static void anomaly(struct parity_lcd_show_report *r, const char *what, int rc)
+ {
+@@ -50,6 +70,8 @@ int parity_lcd_show_run(struct parity_lcd_show_env *env, struct parity_lcd_show_
+ 
+ 	if (env == 0 || r == 0 || env->hw == 0 || env->gm == 0 || env->so == 0 || env->lcd == 0)
+ 		return -EINVAL;
++	if (show_retained || parity_lcd_modeset_retained())
++		return -EBUSY;                  /* an earlier run left resources the display may still read: nothing is touched */
+ 	memset(r, 0, sizeof(*r));
+ 	r->first_error_trace_at = -1;
+ 	r->cleanup_first_error_trace_at = -1;
+@@ -132,9 +154,14 @@ int parity_lcd_show_run(struct parity_lcd_show_env *env, struct parity_lcd_show_
+ 	if (r->enable_rc == PARITY_LCD_MS_OK && r->first_frames_rc == 0) {
+ 		parity_lcd_observer_steady_begin(&r->obs);
+ 		reached(env, r, PARITY_LCD_SHOW_PICTURE_UP);
++		if (env->in_window != 0) {
++			r->window_hook_rc = env->in_window(env->in_window_ctx, &r->obs);
++			if (r->window_hook_rc != 0)
++				anomaly(r, "the in-window test failed while the picture was up", r->window_hook_rc);
++		}
+ 		/* the finite window: every round wants 30 more frames (about half a second at 60 Hz) within 1.5 s */
+ 		r->steady_frame_first = r->frame_last;
+-		for (waited = 0u; waited < env->window_ms; waited += 500u) {
++		for (waited = 0u; r->window_hook_rc == 0 && waited < env->window_ms; waited += 500u) {
+ 			uint32_t f0 = 0u;
+ 
+ 			r->steady_rc = parity_lcd_observer_frames(&r->obs, 1500u, 30u, &f0, &r->steady_frame_last);
+@@ -191,11 +218,13 @@ int parity_lcd_show_run(struct parity_lcd_show_env *env, struct parity_lcd_show_
+ 		 * the modeset object forgets what it holds (DC_OFF, power domains, DBUF stay as they are in the hardware) */
+ 		parity_scanout_abandon(so);
+ 		parity_lcd_modeset_abandoned();
++		show_retained = 1;
++		show_retained_hw = env->hw;
+ 		r->abandoned = 1;
+ 		reached(env, r, PARITY_LCD_SHOW_ABANDONED);
+ 	}
+ 
+-	r->pass = r->first_anomaly == 0 && r->released && r->enable_rc == PARITY_LCD_MS_OK && r->steady_rc == 0 &&
++	r->pass = r->first_anomaly == 0 && r->window_hook_rc == 0 && r->released && r->enable_rc == PARITY_LCD_MS_OK && r->steady_rc == 0 &&
+ 		r->at_enable.cr_ok && r->at_enable.eq_ok && r->obs.seen_steady == 0u && r->obs.vblank_unmasked_seen == 0 &&
+ 		r->readback_bad_after == 0u && show_trace.steps == 0u && show_trace.dropped == 0u;
+ 	return r->pass ? 0 : -1;
+diff --git a/src/drivers/gpu/i915/parity/lcd/parity_lcd_show.h b/src/drivers/gpu/i915/parity/lcd/parity_lcd_show.h
+index bc00db79..a1c9b359 100644
+--- a/src/drivers/gpu/i915/parity/lcd/parity_lcd_show.h
++++ b/src/drivers/gpu/i915/parity/lcd/parity_lcd_show.h
+@@ -53,6 +53,10 @@ struct parity_lcd_show_env {
+ 	unsigned first_frames_ms;               /* how long to wait for the first frames */
+ 	unsigned window_ms;                     /* the finite observation window (for the camera) */
+ 	/* optional: called when a stage is reached (register readbacks for the log; fault injection in tests) */
++	/* optional: a test that runs while the picture is up (after the first frames, before the window); 0 = passed.
++	 * A failure is recorded as the first anomaly (if none yet) and the reference stop path follows. */
++	int (*in_window)(void *ctx, struct parity_lcd_observer *o);
++	void *in_window_ctx;
+ 	void (*at_stage)(void *ctx, int stage);
+ 	void *at_stage_ctx;
+ };
+@@ -74,6 +78,7 @@ struct parity_lcd_show_report {
+ 	/* hardware observation */
+ 	uint32_t frame_first, frame_last, steady_frame_first, steady_frame_last, stop_frame_first, stop_frame_last;
+ 	unsigned steady_rounds;
++	int window_hook_rc;
+ 	uint32_t transconf_after_stop;
+ 	/* the buffer */
+ 	uint64_t surf;
+@@ -87,5 +92,12 @@ struct parity_lcd_show_report {
+ 
+ /* 0 = the picture was up for the whole window, the stop was confirmed and everything was given back */
+ int parity_lcd_show_run(struct parity_lcd_show_env *env, struct parity_lcd_show_report *out);
++/*
++ * The device-side latch: set when a run ends ABANDONED, never cleared by a later run.  Every run refuses before it
++ * initialises anything while it is set, and the outer teardown asks it before releasing the DMA device, the scratch
++ * page, the BARs or bus mastering.  Cleared only by _discard_model() for a run on a register MODEL.
++ */
++int parity_lcd_show_retained(void);
++int parity_lcd_show_discard_model(struct parity_lcd_show_env *env);
+ 
+ #endif /* PARITY_LCD_SHOW_H */
+diff --git a/src/drivers/gpu/i915/parity/lcd/parity_lcd_trace.c b/src/drivers/gpu/i915/parity/lcd/parity_lcd_trace.c
+index beb44e6a..80a91ec4 100644
+--- a/src/drivers/gpu/i915/parity/lcd/parity_lcd_trace.c
++++ b/src/drivers/gpu/i915/parity/lcd/parity_lcd_trace.c
+@@ -249,6 +249,7 @@ void parity_lcd_trace_init(struct parity_lcd_trace *t, struct parity_lcd_emit *b
+ 	t->backend = backend;
+ 	t->first_error_at = -1;
+ 	t->ops.ctx = t;
++	t->ops.model = backend->model;
+ 	t->ops.write32 = t_write32;
+ 	t->ops.rmw32 = t_rmw32;
+ 	t->ops.posting_read = t_posting_read;
+diff --git a/src/drivers/gpu/i915/parity/lcd/scanout.c b/src/drivers/gpu/i915/parity/lcd/scanout.c
+index 568c7e58..1dd0006a 100644
+--- a/src/drivers/gpu/i915/parity/lcd/scanout.c
++++ b/src/drivers/gpu/i915/parity/lcd/scanout.c
+@@ -36,6 +36,9 @@ parity_scanout_create(struct parity_gt_mem *gm, uint32_t width, uint32_t height,
+ {
+ 	if (gm == 0 || so == 0)
+ 		return -EINVAL;
++	/* an object in any other state owns backing / GGTT / a pin: never overwrite its record */
++	if (so->state != PARITY_SCANOUT_NONE || so->obj != 0)
++		return -EBUSY;
+ 	memset(so, 0, sizeof(*so));
+ 	/* the one layout this stage supports; anything else is refused before any allocation */
+ 	if (format != PARITY_FOURCC_XRGB8888 || modifier != PARITY_MOD_LINEAR ||
+diff --git a/src/drivers/gpu/i915/parity/lcd/scanout.h b/src/drivers/gpu/i915/parity/lcd/scanout.h
+index 3c4da0e5..a83bdc97 100644
+--- a/src/drivers/gpu/i915/parity/lcd/scanout.h
++++ b/src/drivers/gpu/i915/parity/lcd/scanout.h
+@@ -68,7 +68,11 @@ struct parity_scanout {
+ 	unsigned refused_unpin, refused_destroy;
+ };
+ 
+-/* 0 or a negative errno: -EINVAL unsupported layout, -ENOMEM backing.  Nothing stays allocated on failure. */
++/*
++ * 0 or a negative errno: -EINVAL unsupported layout, -ENOMEM backing, -EBUSY the storage holds a buffer (any state but
++ * NONE: it is left exactly as it was).  The storage must start zeroed (static, or memset by its owner before first use);
++ * destroy returns it to that state.  Nothing stays allocated on failure.
++ */
+ int parity_scanout_create(struct parity_gt_mem *gm, uint32_t width, uint32_t height,
+ 	uint32_t format, uint64_t modifier, struct parity_scanout *so);
+ /* Reserves the GGTT range (alignment + guards), writes the PTEs, flushes the CPU cache for the display. */
+diff --git a/src/drivers/gpu/i915/parity/parity.h b/src/drivers/gpu/i915/parity/parity.h
+index 7b458806..7ec9e1fd 100644
+--- a/src/drivers/gpu/i915/parity/parity.h
++++ b/src/drivers/gpu/i915/parity/parity.h
+@@ -34,6 +34,9 @@ struct parity_result {
+ 	int error;                   /* the -errno of a FAILED step, else 0 */
+ 	const char *where;           /* static label of the stop point (blocked/failed) */
+ 	const char *last_completed;  /* last op that actually completed (distinct from where) */
++	/* a display test run inside the probe (0 = none ran); kept apart from the probe outcome */
++	int lcd_test_ran, lcd_test_pass, lcd_cleanup_rc, lcd_retained;
++	const char *lcd_first_anomaly_stage;
+ };
+ 
+ /*
+diff --git a/src/drivers/gpu/i915/parity/power_domains.c b/src/drivers/gpu/i915/parity/power_domains.c
+index daf49b04..de4227cf 100644
+--- a/src/drivers/gpu/i915/parity/power_domains.c
++++ b/src/drivers/gpu/i915/parity/power_domains.c
+@@ -409,13 +409,15 @@ pw_post_enable(struct parity_power_well *w, struct parity_pw_ctx *c)
+ 	}
+ 	if (w->irq_pipe_mask != 0u) {
+ 		/*
+-		 * gen8_irq_power_well_post_enable(): the reference takes the IRQ lock and
+-		 * only acts when intel_irqs_enabled().  Before P4 the handler is not
+-		 * installed (irqs_enabled == 0), so this is a guarded no-op -- but the
+-		 * guarded entry is present; we do NOT front-load the P4 handler install.
++		 * gen8_irq_power_well_post_enable(): restores the pipe's IMR / IER from the IRQ state once the well is on
++		 * (the pipe's interrupt registers live in the well).  It only acts when intel_irqs_enabled(): before P4
++		 * installs the handler this is a no-op.  Until E-117 this entry only counted.
+ 		 */
+-		if (c->irqs_enabled)
+-			c->irq_post_enable_calls++;   /* would program the pipe IRQ registers */
++		if (c->irqs_enabled) {
++			c->irq_post_enable_calls++;
++			if (c->irq_ops != 0)
++				c->irq_ops->post_enable(c->irq_ctx, w->irq_pipe_mask);
++		}
+ 	}
+ }
+ 
+@@ -537,7 +539,15 @@ parity_power_well_disable(struct parity_power_well *w, struct parity_pw_ctx *c)
+ 	req = pw_req(w->hsw_idx);
+ 	st = pw_state(w->hsw_idx);
+ 
+-	/* hsw_power_well_pre_disable(): pipe-IRQ pre-disable (guarded) would run here. */
++	/*
++	 * hsw_power_well_pre_disable() -> gen8_irq_power_well_pre_disable(): stop the pipe's interrupt sources and wait for
++	 * a handler already running, BEFORE the well goes off (afterwards the handler would read a powered-off register).
++	 */
++	if (w->irq_pipe_mask != 0u && c->irqs_enabled) {
++		c->irq_pre_disable_calls++;
++		if (c->irq_ops != 0)
++			c->irq_ops->pre_disable(c->irq_ctx, w->irq_pipe_mask);
++	}
+ 	v = osdep_mmio_raw_read32(c->mmio, reg);
+ 	osdep_mmio_raw_write32(c->mmio, reg, v & ~req);
+ 	/*
+diff --git a/src/drivers/gpu/i915/parity/power_domains.h b/src/drivers/gpu/i915/parity/power_domains.h
+index 1591ccf8..99f6c2be 100644
+--- a/src/drivers/gpu/i915/parity/power_domains.h
++++ b/src/drivers/gpu/i915/parity/power_domains.h
+@@ -169,6 +169,15 @@ struct osdep_mmio;
+ struct parity_vga_client;
+ struct parity_cdclk_dev;
+ 
++/*
++ * gen8_irq_power_well_post_enable() / gen8_irq_power_well_pre_disable(): implemented by the IRQ layer (irq.c) and
++ * bound here, so this file does not depend on the IRQ device.  Both check intel_irqs_enabled() themselves.
++ */
++struct parity_pw_irq_ops {
++	void (*post_enable)(void *ctx, unsigned pipe_mask);
++	void (*pre_disable)(void *ctx, unsigned pipe_mask);
++};
++
+ /*
+  * Context for the power-well operation bodies: the MMIO handle, the VGA client
+  * (has_vga post-enable) and the IRQ-enabled gate (intel_irqs_enabled(); 0 before
+@@ -180,6 +189,9 @@ struct parity_pw_ctx {
+ 	int irqs_enabled;
+ 	unsigned vga_reset_calls;
+ 	unsigned irq_post_enable_calls;
++	unsigned irq_pre_disable_calls;
++	const struct parity_pw_irq_ops *irq_ops;   /* NULL: the IRQ layer is not bound (GPU-free tests) */
++	void *irq_ctx;
+ 	unsigned ack_timeouts;   /* real HW ACK timeouts (warn+continue) */
+ 	/* DC_off power-well enable (gen9_disable_dc_states) needs the shared CDCLK,
+ 	 * the saved DBUF slice mask and the target DC state -- these are the SAME
+diff --git a/src/drivers/gpu/i915/parity/probe.c b/src/drivers/gpu/i915/parity/probe.c
+index 45b0958d..b5e145a9 100644
+--- a/src/drivers/gpu/i915/parity/probe.c
++++ b/src/drivers/gpu/i915/parity/probe.c
+@@ -151,6 +151,7 @@ drv_i915_parity_attach(struct i915_device *device, enum parity_stage stop_after,
+ 	static struct parity_dmc_dev dmc_dev;
+ 	static struct parity_display_state dstate;
+ 	static struct parity_irq_dev irqdev;
++	static struct parity_irq_vblank irq_vblank;
+ 	static struct parity_pch_state pch;
+ 	static struct parity_display_nogem nogem;
+ 	static struct parity_gt_mmio gtmmio;
+@@ -201,6 +202,8 @@ drv_i915_parity_attach(struct i915_device *device, enum parity_stage stop_after,
+ 	res.outcome = PARITY_STOPPED;
+ 	res.error = 0;
+ 	res.where = "start";
++	res.lcd_test_ran = 0; res.lcd_test_pass = 0; res.lcd_cleanup_rc = 0; res.lcd_retained = 0;
++	res.lcd_first_anomaly_stage = "-";
+ 	res.last_completed = "";
+ 
+ 	/* Device-owned locks + display bandwidth state (device lifetime = this attach). */
+@@ -1050,6 +1053,10 @@ drv_i915_parity_attach(struct i915_device *device, enum parity_stage stop_after,
+ 		irqdev.m = &mmio;
+ 		irqdev.pd = &power_domains;
+ 		irqdev.pwc = &pwc;
++		/* the pipes' interrupt control + vblank delivery, and the power-well hooks that restore / stop it */
++		parity_irq_vblank_init(&irqdev, &irq_vblank);
++		pwc.irq_ops = &parity_pw_irq_ops;
++		pwc.irq_ctx = &irqdev;
+ 		irqdev.pch = &pch;
+ 		irqdev.display_ver = (int)display_ver;
+ 		irqdev.pipe_mask = 0xfu;              /* ADL-P (xe_lpd) A|B|C|D */
+@@ -1721,16 +1728,30 @@ p6_fw_out:
+ 	 * LCD-B: one known picture on the panel through the reference's modeset, a finite observation window, the
+ 	 * reference's stop path.  No GPU submission happens in this mode; the AUX diagnostics are not repeated.
+ 	 */
+-	if (PARITY_LCDB_TEST) {
++	if (PARITY_LCDB_TEST || PARITY_LCDR_TEST) {
+ 		static struct parity_lcd_kernel_deps lcdb;
+ 
+ 		lcdb.edp = &edp_dev; lcdb.mmio = &mmio; lcdb.pd = &power_domains; lcdb.pwc = &pwc; lcdb.dcore = &dcore;
+ 		lcdb.cdclk = &cdclk; lcdb.nogem = &nogem; lcdb.dstate = &dstate; lcdb.bw = &bw_state; lcdb.dmc = &dmc_dev;
+ 		lcdb.irq = &irqdev; lcdb.gm = &gtmem; lcdb.ipc_enabled = dprobe.ipc_enabled;
+-		if (gtmem_inited)
+-			(void)parity_lcd_kernel_lcdb_run(&lcdb);
+-		else
++		if (gtmem_inited) {
++			struct parity_lcd_test_summary sum;
++
++			if (PARITY_LCDR_TEST)
++				(void)parity_lcd_kernel_lcdr_run(&lcdb);
++			else
++				(void)parity_lcd_kernel_lcdb_run(&lcdb);
++			parity_lcd_kernel_summary(&sum);
++			res.lcd_test_ran = 1;
++			res.lcd_test_pass = sum.pass;
++			res.lcd_cleanup_rc = sum.cleanup_rc;
++			res.lcd_retained = sum.retained;
++			res.lcd_first_anomaly_stage = sum.first_anomaly != 0 ? sum.first_anomaly_stage : "none";
++		} else {
+ 			kern_logf("i915: parity LCD-B verdict: FAIL (no GT memory)\n");
++			res.lcd_test_ran = 1;
++			res.lcd_first_anomaly_stage = "no-gt-memory";
++		}
+ 	}
+ 
+ 	if (PARITY_T3_TEST || PARITY_BL_TEST) {
+diff --git a/src/drivers/gpu/i915/parity/runner.c b/src/drivers/gpu/i915/parity/runner.c
+index 1711ea71..5c3167ef 100644
+--- a/src/drivers/gpu/i915/parity/runner.c
++++ b/src/drivers/gpu/i915/parity/runner.c
+@@ -35,6 +35,9 @@ struct parity_runner_result {
+ 	int cleanup_done;                 /* teardown reached */
+ 	int published;                    /* device published (always 0 for the diagnostic) */
+ 	int result_valid;                 /* published under the lock after being filled */
++	int lcd_test_status;              /* enum runner_test_status: a display test inside the probe, reported apart */
++	const char *lcd_first_anomaly_stage;
++	int lcd_cleanup_rc, lcd_retained;
+ };
+ 
+ static struct parity_runner {
+@@ -88,6 +91,10 @@ runner_thread(void *arg)
+ 	res.cleanup_done = 0;
+ 	res.published = 0;
+ 	res.result_valid = 0;
++	res.lcd_test_status = RUN_TEST_NOT_RUN;
++	res.lcd_first_anomaly_stage = "-";
++	res.lcd_cleanup_rc = 0;
++	res.lcd_retained = 0;
+ 
+ 	/*
+ 	 * Run the real-device attach FIRST.  The passed-through GPU idle-suspends
+@@ -107,6 +114,10 @@ runner_thread(void *arg)
+ 		(void)drv_i915_parity_attach(dev, PARITY_STAGE_P3, &pr);
+ 		res.cleanup_done = 1;   /* parity_attach always tears down before returning */
+ 		res.last_completed_op = pr.last_completed;   /* last COMPLETED op, not the frontier */
++		res.lcd_test_status = !pr.lcd_test_ran ? RUN_TEST_NOT_RUN : pr.lcd_test_pass ? RUN_TEST_PASS : RUN_TEST_FAIL;
++		res.lcd_first_anomaly_stage = pr.lcd_first_anomaly_stage;
++		res.lcd_cleanup_rc = pr.lcd_cleanup_rc;
++		res.lcd_retained = pr.lcd_retained;
+ 		switch (pr.outcome) {
+ 		case PARITY_STOPPED: res.probe_status = RUN_PROBE_COMPLETE; break;
+ 		case PARITY_BLOCKED: res.probe_status = RUN_PROBE_BLOCKED; res.blocked_or_failed_op = pr.where; break;
+@@ -127,13 +138,15 @@ runner_thread(void *arg)
+ 	spin_unlock(&g_runner.lock);
+ 
+ 	kern_logf("i915: runner-result: selftest=%s selftest_scope=%s probe=%s last_op=%s "
+-		"blocked_at=%s cleanup=%d published=%d\n",
++		"blocked_at=%s cleanup=%d published=%d lcd_test=%s lcd_first_anomaly_at=%s lcd_cleanup_rc=%d lcd_retained=%d\n",
+ 		res.selftest_status == RUN_TEST_PASS ? "PASS" :
+ 			(res.selftest_status == RUN_TEST_FAIL ? "FAIL" : "NOT_RUN"),
+ 		res.selftest_scope, probe_status_name(res.probe_status),
+ 		res.last_completed_op[0] ? res.last_completed_op : "-",
+ 		res.blocked_or_failed_op[0] ? res.blocked_or_failed_op : "-",
+-		res.cleanup_done, res.published);
++		res.cleanup_done, res.published,
++		res.lcd_test_status == RUN_TEST_PASS ? "PASS" : (res.lcd_test_status == RUN_TEST_FAIL ? "FAIL" : "NOT_RUN"),
++		res.lcd_first_anomaly_stage, res.lcd_cleanup_rc, res.lcd_retained);
+ 	kern_logf("i915: parity runner thread end\n");
+ }
+ 

@@ -99,7 +99,11 @@ u8 icl_hdr_plane_mask(void);
 #define intel_tc_port_in_dp_alt_mode(dig_port) (0)
 #define intel_tc_port_in_legacy_mode(dig_port) (0)
 #define intel_crtc_pch_transcoder(crtc) ((enum pipe)0)             /* PCH transcoders: not on this platform */
-#define intel_ddi_hdmi_level(encoder, trans) (0)                   /* HDMI branch of intel_ddi_level() */
+/* intel_ddi_hdmi_level() is the reference's own text now (intel_ddi_port.c); the VBT level shift it asks for:
+ * ADAPTATION -- the VBT child's hdmi_level_shifter_value is not read here, so the buffer-translation table's
+ * own default entry is used, which is what the reference does when the VBT has no level shift. */
+int parity_lcd_hdmi_level_shift(void);          /* the VBT value of this port (intel_ddi_port.c glue) */
+#define intel_bios_hdmi_level_shift(devdata) parity_lcd_hdmi_level_shift()
 
 /* DMC: which firmware ids are loaded is the DMC loader's knowledge, handed over in i915->display.dmc.fw_mask [ops-like] */
 #define has_dmc_id_fw(i915, dmc_id) ((((i915)->display.dmc.fw_mask) >> (dmc_id)) & 1u)
@@ -165,12 +169,15 @@ struct dpll_info {
 	enum intel_dpll_id id;
 	int power_domain;                   /* 0 = none (the reference's adlp_plls[] sets none) */
 };
+/* intel_dpll_mgr.h: the per-PLL part of the atomic state, and the object the device keeps */
+struct intel_shared_dpll_state { u8 pipe_mask; struct intel_dpll_hw_state hw_state; };
 struct intel_shared_dpll {
-	struct { u8 pipe_mask; struct intel_dpll_hw_state hw_state; } state;
+	struct intel_shared_dpll_state state;
 	u8 active_mask;
 	bool on;
 	const struct dpll_info *info;
 	intel_wakeref_t wakeref;
+	enum intel_dpll_id index;       /* its place in the device's pool (shared_dplls[]) */
 };
 
 /* prototypes of kept non-static reference functions that are called across the generated files */
@@ -198,5 +205,52 @@ void intel_wait_for_pipe_scanline_moving(struct intel_crtc *crtc);
 void intel_wait_for_pipe_scanline_stopped(struct intel_crtc *crtc);
 i915_reg_t dp_tp_ctl_reg(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state);
 i915_reg_t dp_tp_status_reg(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state);
+
+
+
+
+
+/* ---- E-123: the shared-DPLL allocation (intel_find_shared_dpll and its reference counting) ---- */
+struct intel_shared_dpll_state *parity_lcd_shared_dpll_state(void);   /* the atomic state's shared_dpll[] */
+#define intel_atomic_get_shared_dpll_state(state) parity_lcd_shared_dpll_state()
+#define for_each_set_bit(bit, addr, size) for ((bit) = 0; (bit) < (int)(size); (bit)++) for_each_if(*(addr) & (1ul << (bit)))
+#ifndef fls
+#define fls(x) ((x) ? 32 - __builtin_clz((unsigned int)(x)) : 0)
+#endif
+/* intel_dpll_mgr.h: the walk over the device's pool */
+#define for_each_shared_dpll(i915, pll, id) for ((id) = 0; (id) < (i915)->display.dpll.num_shared_dpll && ((pll) = &(i915)->display.dpll.shared_dplls[(id)]); (id)++)
+
+/* ---- E-123: what the generated HDMI text (intel_ddi_port.c, intel_hdmi_mode_port.c) needs ---- */
+/* the platform branches of the HDMI enable that DISPLAY_VER 13 never takes */
+#define has_buf_trans_select(i915) (0)
+#define hsw_prepare_hdmi_ddi_buffers(encoder, cs) ((void)0)
+#define mtl_ddi_enable_d2d(encoder) ((void)0)
+#define gen9_chicken_trans_reg_by_port(i915, port) CHICKEN_TRANS(0)
+/* the sink-side halves that need DDC: recorded steps (the SCDC path is only reached when the sink supports it,
+ * the dual-mode adaptor path only with an adaptor present -- neither is the case here) */
+#define drm_scdc_set_high_tmds_clock_ratio(connector, set) (PARITY_LCD_STEP(parity_lcd_cur_i915, "drm_scdc_set_high_tmds_clock_ratio"), false)
+#define drm_scdc_set_scrambling(connector, enable) (PARITY_LCD_STEP(parity_lcd_cur_i915, "drm_scdc_set_scrambling"), false)
+#define drm_dp_dual_mode_set_tmds_output(drm, type, ddc, enable) PARITY_LCD_STEP(parity_lcd_cur_i915, "drm_dp_dual_mode_set_tmds_output")
+/* the infoframe writes: this path runs with has_infoframe false, so the reference returns before them */
+#define intel_hdmi_set_gcp_infoframe(encoder, cs, conn) (PARITY_LCD_STEP(parity_lcd_cur_i915, "intel_hdmi_set_gcp_infoframe"), false)
+#define intel_write_infoframe(encoder, cs, type, frame) PARITY_LCD_STEP(parity_lcd_cur_i915, "intel_write_infoframe")
+#define HDMI_INFOFRAME_TYPE_AVI 0x82
+#define HDMI_INFOFRAME_TYPE_SPD 0x83
+#define HDMI_INFOFRAME_TYPE_VENDOR 0x81
+#define HDMI_INFOFRAME_TYPE_DRM 0x87
+#define str_yes_no(v) ((v) ? "yes" : "no")
+/* the WRPLL calculation's own diagnostics (i915_utils.h / linux/kernel.h) */
+#define WARN(cond, fmt) ({ int _w = !!(cond); if (_w) parity_lcd_error(fmt); _w; })
+#define abs(x) ((x) < 0 ? -(x) : (x))
+#define intel_hdmi_to_i915(hdmi) parity_lcd_cur_i915
+/* the two the HDMI text of intel_ddi_port.c calls (intel_hdmi_mode_port.c) */
+void intel_dp_dual_mode_set_tmds_output(struct intel_hdmi *hdmi, bool enable);
+bool intel_hdmi_handle_sink_scrambling(struct intel_encoder *encoder, struct drm_connector *connector,
+	bool high_tmds_clock_ratio, bool scrambling);
+/* the DISPLAY_VER >= 14 (MTL) half of intel_enable_ddi_hdmi, which this platform never takes */
+#define mtl_get_port_width(lane_count) (0u)
+#define XELPDP_PORT_WIDTH(width) (0u)
+#define XELPDP_PORT_WIDTH_MASK 0u
+#define XELPDP_PORT_REVERSAL 0u
 
 #endif /* PARITY_LCD_MODESET_COMPAT_H */

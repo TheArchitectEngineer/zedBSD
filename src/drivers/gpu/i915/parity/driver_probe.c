@@ -179,6 +179,15 @@ gen11_hpd_irq_setup(struct parity_hotplug *hp, struct osdep_mmio *m,
 		hotplug_enables(hp, icp_tc_hpd_enable, is_tc_pin));
 }
 
+/* intel_hpd_irq_setup() for the hotplug path (storm masking / re-enable): the pins' state is in hp->state */
+void
+parity_intel_hpd_irq_setup(struct parity_hotplug *hp, struct osdep_mmio *m, int pch_type,
+	int intel_irqs_enabled)
+{
+	hp->irq_setups++;
+	gen11_hpd_irq_setup(hp, m, pch_type, intel_irqs_enabled);
+}
+
 void
 parity_intel_hpd_init(struct parity_hotplug *hp, struct osdep_mmio *m,
 	int display_ver, int pch_type, int display_irqs_enabled, int intel_irqs_enabled)

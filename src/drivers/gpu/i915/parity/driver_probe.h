@@ -113,6 +113,8 @@ struct parity_hotplug {
 
 /* intel_hpd_pin_default / tgl_hpd_pin / xelpd_hpd_pin (intel_ddi_init). */
 int parity_intel_ddi_hpd_pin(int display_ver, int port);
+/* intel_hpd_irq_setup(): gen11 + icp programming from hp->state (the hotplug path's storm masking / re-enable) */
+void parity_intel_hpd_irq_setup(struct parity_hotplug *hp, struct osdep_mmio *m, int pch_type, int intel_irqs_enabled);
 
 /* intel_hotplug_irq_init()'s pin tables (DISPLAY_VER >= 11, PCH >= ICP). */
 void parity_intel_hpd_init_pins(struct parity_hotplug *hp, int display_ver, int pch_type);

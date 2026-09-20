@@ -27,6 +27,7 @@
 #include "lcd/lcd_modeset_ktest.h"
 #include "lcd/lcd_show_ktest.h"
 #include "lcd/lcdg_ktest.h"
+#include "lcd/opregion_ktest.h"
 #include "vga.h"
 #include "power_domains.h"
 #include "combo_phy.h"
@@ -55,6 +56,7 @@
 #include "gt_mmio.h"
 #include "gt_init.h"
 #include "irq.h"
+#include "lcd/parity_hotplug.h"
 #include "display_core.h"
 #include "timer_calc.h"
 #include "dram_bw.h"
@@ -3344,6 +3346,64 @@ parity_sync_ktest(void)
 				"p5a: P5A-DPLL ver>=14 has no shared DPLLs (no table is invented)");
 		}
 
+		/* ---- P5C-DPLL (E-121): the native start -- pipe A on DDI A fed by DPLL1 keeps DPLL1 ---- */
+		{
+			static struct parity_display_nogem t;
+			unsigned kept;
+
+			for (i = 0u; i < sizeof(t); i++) ((char *)&t)[i] = 0;
+			parity_intel_shared_dpll_init(&t, 13, 1);
+			fake_mmio_open(&m, &f);
+			osdep_mmio_raw_write32(&m, 0x164280u, 0x1u);          /* PHY A clock select = DPLL1 */
+			osdep_mmio_raw_write32(&m, 0x46014u, 0xc0000000u);    /* DPLL1 enabled + locked (the GOP) */
+			t.crtcs[0].state.active = 1;
+			t.num_encoders = 1u;
+			t.encoders[0].port = PARITY_PORT_A;
+			t.encoders[0].phy = PARITY_PHY_A;
+			t.encoders[0].clk_funcs = PARITY_DDI_CLK_ICL_COMBO;
+			t.encoders[0].crtc_linked = 1;
+			t.encoders[0].pipe_mask = 1u;
+			parity_intel_dpll_readout(&t, &m);
+			f.wt_n = 0u;
+			parity_intel_dpll_sanitize_state(&t, &m, 13, 0);
+			kept = (osdep_mmio_raw_read32(&m, 0x46014u) & 0x80000000u) != 0u;
+			KCHECK(t.encoders[0].shared_dpll_id == 1 && t.dplls[1].on && t.dplls[1].pipe_mask == 1u &&
+				t.dplls[1].active_mask == 1u && t.dplls[0].pipe_mask == 0u && kept && t.dplls_disabled == 0u,
+				"p5c: P5C-DPLL native start: DDI A's clock select names DPLL1 -> pipe A credited -> sanitize keeps DPLL1");
+
+			/* the reference's own case: a PLL on with no active pipe on it is disabled */
+			for (i = 0u; i < sizeof(t); i++) ((char *)&t)[i] = 0;
+			parity_intel_shared_dpll_init(&t, 13, 1);
+			fake_mmio_open(&m, &f);
+			osdep_mmio_raw_write32(&m, 0x164280u, 0x0u);          /* PHY A -> DPLL0 */
+			osdep_mmio_raw_write32(&m, 0x46010u, 0xc0000000u);
+			osdep_mmio_raw_write32(&m, 0x46014u, 0xc0000000u);    /* DPLL1 on, nobody uses it */
+			t.crtcs[0].state.active = 1;
+			t.num_encoders = 1u;
+			t.encoders[0].port = PARITY_PORT_A; t.encoders[0].phy = PARITY_PHY_A;
+			t.encoders[0].clk_funcs = PARITY_DDI_CLK_ICL_COMBO; t.encoders[0].crtc_linked = 1; t.encoders[0].pipe_mask = 1u;
+			parity_intel_dpll_readout(&t, &m);
+			parity_intel_dpll_sanitize_state(&t, &m, 13, 0);
+			KCHECK(t.dplls[0].active_mask == 1u && (osdep_mmio_raw_read32(&m, 0x46010u) & 0x80000000u) != 0u &&
+				(osdep_mmio_raw_read32(&m, 0x46014u) & 0x80000000u) == 0u && t.dplls_disabled == 1u,
+				"p5c: P5C-DPLL-UNUSED DPLL0 feeds pipe A and stays; DPLL1 on but unused is disabled (reference behaviour)");
+
+			/* an active TC link whose PLL cannot be read: nothing is disabled */
+			for (i = 0u; i < sizeof(t); i++) ((char *)&t)[i] = 0;
+			parity_intel_shared_dpll_init(&t, 13, 1);
+			fake_mmio_open(&m, &f);
+			osdep_mmio_raw_write32(&m, 0x46014u, 0xc0000000u);
+			t.crtcs[1].state.active = 1;
+			t.num_encoders = 1u;
+			t.encoders[0].port = PARITY_PORT_TC1; t.encoders[0].phy = PARITY_PHY_F;
+			t.encoders[0].clk_funcs = PARITY_DDI_CLK_ICL_TC; t.encoders[0].crtc_linked = 1; t.encoders[0].pipe_mask = 2u;
+			parity_intel_dpll_readout(&t, &m);
+			parity_intel_dpll_sanitize_state(&t, &m, 13, 0);
+			KCHECK(t.dplls[1].readout_incomplete && (osdep_mmio_raw_read32(&m, 0x46014u) & 0x80000000u) != 0u &&
+				t.dplls_disabled == 0u,
+				"p5c: P5C-DPLL-TC an active TC link's PLL is unknown -> readout incomplete -> no PLL is disabled");
+		}
+
 		/* ---- P5A-CRTC: 6 planes per pipe (1 primary + 4 sprites + cursor) ---- */
 		for (i = 0u; i < sizeof(ng); i++) ((char *)&ng)[i] = 0;
 		KCHECK(parity_intel_crtc_init(&ng, 13, 0u) == 0 &&
@@ -4421,6 +4481,10 @@ parity_sync_ktest(void)
 			parity_lcd_show_ktest(edp_ktest_check, c0_dma, c0_mask);
 			/* LCD-G's release contract: TLB, mappings, retained GPU state, reclaim when never shown */
 			parity_lcdg_ktest(edp_ktest_check, c0_dma, c0_mask);
+			/* E-122 OP-NOTIFY: the OpRegion receive side on a SHADOW mailbox, synthetic ACPI video events */
+			parity_opregion_ktest(edp_ktest_check);
+			/* E-123 HPD: the HDMI hotplug receive path (generated reference chain) on fake SHOTPLUG / SDEISR */
+			parity_hpd_ktest(edp_ktest_check);
 
 
 			/* ======== P6-c1: engine setup for execlists submission ======== */

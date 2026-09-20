@@ -58,6 +58,13 @@ void parity_lcd_ms_set_brightness(struct parity_lcd_modeset *ms, u32 user_level,
 	intel_panel_set_backlight(&ms->conn_state, user_level, user_max);
 }
 
+/* the OpRegion ASLE path: asle_set_backlight() -> intel_backlight_set_acpi(conn_state, bclp, 255) (E-122) */
+void parity_lcd_ms_set_acpi(struct parity_lcd_modeset *ms, u32 user_level, u32 user_max)
+{
+	parity_lcd_cur_i915 = &ms->i915;
+	intel_backlight_set_acpi(&ms->conn_state, user_level, user_max);
+}
+
 /* intel_edp_backlight_on() / _off(): the PWM and the panel's backlight-enable only -- the pipe keeps scanning out */
 void parity_lcd_ms_backlight_power(struct parity_lcd_modeset *ms, int on)
 {

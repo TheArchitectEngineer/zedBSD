@@ -103,8 +103,10 @@ parity_scanout_publish(struct parity_scanout *so)
 int
 parity_scanout_begin(struct parity_scanout *so)
 {
-	if (so == 0 || so->state != PARITY_SCANOUT_PINNED)
+	/* a second display may read the same buffer: the users are counted, the state is their union */
+	if (so == 0 || (so->state != PARITY_SCANOUT_PINNED && so->state != PARITY_SCANOUT_IN_USE))
 		return -EINVAL;
+	so->users++;
 	so->state = PARITY_SCANOUT_IN_USE;
 	return 0;
 }
@@ -112,7 +114,8 @@ parity_scanout_begin(struct parity_scanout *so)
 void
 parity_scanout_end(struct parity_scanout *so)
 {
-	if (so != 0 && so->state == PARITY_SCANOUT_IN_USE)
+	/* the buffer is given back when the LAST display has let go of it */
+	if (so != 0 && so->state == PARITY_SCANOUT_IN_USE && so->users != 0u && --so->users == 0u)
 		so->state = PARITY_SCANOUT_PINNED;
 }
 

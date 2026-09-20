@@ -157,8 +157,7 @@ void intel_encoders_enable(struct intel_atomic_state *state, struct intel_crtc *
 #define intel_ddi_update_active_dpll(state, encoder, crtc) PARITY_LCD_STEP(SEQ_I915_ENCODER(encoder), "intel_ddi_update_active_dpll")
 #define intel_tc_port_set_fia_lane_count(dig_port, lanes) PARITY_LCD_STEP(SEQ_I915_ENCODER(&(dig_port)->base), "intel_tc_port_set_fia_lane_count")
 #define bxt_ddi_phy_set_lane_optim_mask(encoder, mask) PARITY_LCD_STEP(SEQ_I915_ENCODER(encoder), "bxt_ddi_phy_set_lane_optim_mask")
-#define intel_ddi_pre_enable_hdmi(state, encoder, cs, conn) PARITY_LCD_STEP(SEQ_I915_ENCODER(encoder), "intel_ddi_pre_enable_hdmi")
-#define intel_enable_ddi_hdmi(state, encoder, cs, conn) PARITY_LCD_STEP(SEQ_I915_ENCODER(encoder), "intel_enable_ddi_hdmi")
+/* intel_ddi_pre_enable_hdmi / intel_enable_ddi_hdmi are the reference's own text now (intel_ddi_port.c) */
 #define intel_dp_has_hdmi_sink(intel_dp) (0)
 #define intel_dp_128b132b_sdp_crc16(intel_dp, cs) PARITY_LCD_STEP(SEQ_I915_CRTC_STATE(cs), "intel_dp_128b132b_sdp_crc16")
 #define PANEL_REPLAY_CONFIG 0
@@ -172,8 +171,7 @@ void intel_encoders_enable(struct intel_atomic_state *state, struct intel_crtc *
 void intel_encoders_disable(struct intel_atomic_state *state, struct intel_crtc *crtc);
 void intel_encoders_post_disable(struct intel_atomic_state *state, struct intel_crtc *crtc);
 void intel_encoders_post_pll_disable(struct intel_atomic_state *state, struct intel_crtc *crtc);
-#define intel_ddi_post_disable_hdmi(state, encoder, cs, conn) PARITY_LCD_STEP(parity_lcd_cur_i915, "intel_ddi_post_disable_hdmi")
-#define intel_disable_ddi_hdmi(state, encoder, cs, conn) PARITY_LCD_STEP(parity_lcd_cur_i915, "intel_disable_ddi_hdmi")
+/* intel_ddi_post_disable_hdmi / intel_disable_ddi_hdmi are the reference's own text now (intel_ddi_port.c) */
 #define ilk_pfit_disable(cs) PARITY_LCD_STEP(parity_lcd_cur_i915, "ilk_pfit_disable")
 #define mtl_disable_ddi_buf(encoder, cs) PARITY_LCD_STEP(parity_lcd_cur_i915, "mtl_disable_ddi_buf")
 #define adlp_tbt_to_dp_alt_switch_wa(encoder) PARITY_LCD_STEP(parity_lcd_cur_i915, "adlp_tbt_to_dp_alt_switch_wa")

@@ -111,8 +111,12 @@ void drm_mode_set_crtcinfo(struct drm_display_mode *p, int adjust_flags);
 struct drm_vblank_crtc;
 struct drm_device { int unused; int switch_power_state; struct drm_vblank_crtc *vblank; int vblank_time_lock; int event_lock; };
 #include "lcd_drm_colorspace.h"  /* reference, extracted: enum drm_colorspace */
-struct drm_connector_state { enum drm_colorspace colorspace; void *connector; void *best_encoder; int content_protection; };
-struct drm_display_info { u32 quirks; };
+struct drm_connector_state { enum drm_colorspace colorspace; void *connector; void *best_encoder; int content_protection;
+	struct drm_crtc *crtc; };   /* the crtc the connector drives (E-122: intel_backlight_set_acpi reads it) */
+struct drm_scrambling { bool supported, low_rates; };
+struct drm_scdc { bool supported, read_request; struct drm_scrambling scrambling; };
+struct drm_hdmi_info { struct drm_scdc scdc; };
+struct drm_display_info { u32 quirks; struct drm_hdmi_info hdmi; };
 struct drm_connector {
 	struct { int id; } base;
 	const char *name;
@@ -162,7 +166,9 @@ struct drm_i915_private {
 	struct drm_device drm;
 	struct parity_lcd_emit *emit;
 	struct {
-		struct { struct { int nssc; } ref_clks; struct { int which; } lock; } dpll;
+		/* the device's shared DPLLs: ONE pool, seen by every modeset object (intel_get_shared_dpll_by_id) */
+		struct { struct { int nssc; } ref_clks; struct { int which; } lock;
+			struct intel_shared_dpll *shared_dplls; int num_shared_dpll; } dpll;
 		struct { bool override_afc_startup; u8 override_afc_startup_val; } vbt;
 		struct { bool ignore_long_hpd; } hotplug;
 		struct { u16 skl_latency[8]; u8 num_levels; bool ipc_enabled; } wm;
@@ -222,6 +228,7 @@ static inline int drm_rect_height(const struct drm_rect *r) { return r->y2 - r->
 #include "lcd_wm_ddb_types.h"    /* reference, extracted: skl_ddb_entry + size / equal */
 struct intel_plane;
 struct intel_plane_state;
+struct intel_shared_dpll;
 struct intel_crtc_state {
 	struct drm_crtc_state uapi;
 	struct { struct drm_display_mode adjusted_mode, pipe_mode; const struct drm_property_blob *degamma_lut, *gamma_lut, *ctm; bool active, enable; } hw;
@@ -237,7 +244,7 @@ struct intel_crtc_state {
 	bool gamma_enable, csc_enable, enable_psr2_sel_fetch;
 	bool has_infoframe, has_panel_replay;
 	u8 bigjoiner_pipes, lane_lat_optim_mask;
-	void *shared_dpll;
+	struct intel_shared_dpll *shared_dpll;
 	enum pipe hsw_workaround_pipe;
 	u16 linetime, ips_linetime;
 	bool double_wide, fec_enable, has_psr, has_audio, enhanced_framing;
@@ -321,8 +328,10 @@ struct intel_panel {                    /* the members the kept functions use */
 		const struct intel_panel_bl_funcs *pwm_funcs;
 	} backlight;
 };
+struct i2c_adapter;
 struct intel_connector {
-	struct { struct drm_device *dev; struct { int id; } base; const char *name; } base;
+	struct { struct drm_device *dev; struct { int id; } base; const char *name; struct i2c_adapter *ddc;
+		struct drm_display_info display_info; } base;
 	struct intel_panel panel;
 	int modeset_retry_work;
 };
@@ -349,9 +358,15 @@ struct intel_dp {
 	void (*set_link_train)(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state, u8 dp_train_pat);
 	void (*set_idle_link_train)(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state);
 };
+/* the HDMI half of a digital port (intel_display_types.h): what the HDMI enable / disable text reads */
+enum drm_dp_dual_mode_type { DRM_DP_DUAL_MODE_NONE, DRM_DP_DUAL_MODE_TYPE1_DVI, DRM_DP_DUAL_MODE_TYPE1_HDMI,
+	DRM_DP_DUAL_MODE_TYPE2_DVI, DRM_DP_DUAL_MODE_TYPE2_HDMI, DRM_DP_DUAL_MODE_LSPCON };
+struct intel_hdmi { struct intel_connector *attached_connector;
+	struct { enum drm_dp_dual_mode_type type; int max_tmds_clock; } dp_dual_mode; };
 struct intel_digital_port {
 	struct intel_encoder base;
 	struct intel_dp dp;
+	struct intel_hdmi hdmi;
 	u32 saved_port_bits;
 	int ddi_io_wakeref, ddi_io_power_domain;
 	int aux_wakeref;

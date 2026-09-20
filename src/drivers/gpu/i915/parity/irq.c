@@ -12,6 +12,8 @@
 #include <kern/lock.h>
 #include <kern/sched.h>
 #include "wait.h"
+#include "lcd/parity_opregion.h"
+#include "lcd/parity_hotplug.h"
 
 /* ---------------- i915_reg.h / gt/intel_gt_regs.h ---------------- */
 
@@ -775,6 +777,8 @@ gen8_de_irq_handler(struct parity_irq_dev *d, uint32_t master_ctl)
 		if (iir != 0u) {
 			osdep_mmio_write32(d->m, SDEIIR, iir);
 			d->de_pch_acks++;
+			/* INTEL_PCH_TYPE >= PCH_ICP: icp_irq_handler() (the hotplug path; dropped until it is started) */
+			parity_hpd_pch_irq(iir);
 		} else {
 			d->de_lied_count++;   /* (SDE) */
 		}
@@ -886,6 +890,12 @@ gen11_irq_handler_body(int irq, hal_irq_ack_t ack, void *arg)
 	d->last_gu_misc_iir = gu_misc_iir;
 
 	gen11_master_intr_enable(d);
+
+	/* gen11_gu_misc_irq_handler(): GSE -> intel_opregion_asle_intr (the service's gated GSE entry) */
+	if (gu_misc_iir & GEN11_GU_MISC_GSE) {
+		d->gse_count++;
+		parity_opregion_gse_entry();
+	}
 
 	d->irq_handled_count++;
 	hal_irq_send_eoi(ack);

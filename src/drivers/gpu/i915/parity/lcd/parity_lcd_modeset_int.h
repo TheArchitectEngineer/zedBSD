@@ -16,6 +16,10 @@
 #include "lcd_flip_compat.h"
 
 struct parity_lcd_modeset {
+	int output_hdmi;                /* the output this state drives: an HDMI sink instead of the eDP panel */
+	int hdmi_level_shift;           /* intel_bios_hdmi_level_shift() of this port (< 0 = not in the VBT) */
+	int dpll_id;                    /* the shared DPLL the reference's rule gave this crtc */
+	unsigned also_active_pipes;     /* the other pipes of this configuration (cfg) */
 	struct drm_i915_private i915;
 	struct intel_crtc crtc;
 	struct intel_crtc_state crtc_state;     /* the new state of the enable == the old state of the disable */
@@ -53,6 +57,8 @@ struct parity_lcd_modeset {
 
 /* entry points implemented by the glue at the end of each generated file (the callers are static there) */
 void parity_lcd_ms_bind_pll(struct parity_lcd_modeset *ms, int dpll_id);              /* intel_dpll_port.c */
+int parity_lcd_ms_alloc_pll(struct parity_lcd_modeset *ms, const struct intel_dpll_hw_state *hw_state);
+void parity_lcd_ms_release_pll(struct parity_lcd_modeset *ms);
 void parity_lcd_ms_bind_encoder(struct parity_lcd_modeset *ms);                       /* intel_ddi_port.c */
 void parity_lcd_ms_bind_buf_trans(struct intel_encoder *encoder);                     /* intel_ddi_buf_trans_port.c */
 void parity_lcd_ms_plane_data_rates(struct parity_lcd_modeset *ms);                    /* intel_atomic_plane_port.c */
@@ -72,6 +78,9 @@ void parity_lcd_ms_set_brightness(struct parity_lcd_modeset *ms, u32 user_level,
 void parity_lcd_ms_backlight_power(struct parity_lcd_modeset *ms, int on);
 u32 parity_lcd_ms_user_level(struct parity_lcd_modeset *ms, u32 user_max);
 int parity_lcd_ms_wm_compute(struct parity_lcd_modeset *ms);
+int parity_lcd_dbuf_current(struct intel_dbuf_state *out);        /* the device's DBUF state (-1 = none yet) */
+void parity_lcd_dbuf_publish(const struct intel_dbuf_state *now);
+void parity_lcd_dbuf_forget(void);
 void parity_lcd_ms_active_timings(struct parity_lcd_modeset *ms);                         /* intel_crtc_port.c */
 void parity_lcd_ms_plane_update_flip(struct parity_lcd_modeset *ms);                             /* skl_watermark_port.c */
 void parity_lcd_ms_color_check(struct parity_lcd_modeset *ms);                         /* intel_color_port.c */
@@ -83,8 +92,13 @@ int parity_lcd_ms_plane_prepare(struct parity_lcd_modeset *ms, u32 fourcc, u64 m
 void parity_lcd_ms_plane_update(struct parity_lcd_modeset *ms);
 void parity_lcd_ms_plane_disable(struct parity_lcd_modeset *ms);
 
+/* intel_hdmi_mode_port.c (glue): the reference's hsw_set_infoframes, as dig_port->set_infoframes */
+void (*parity_lcd_hdmi_set_infoframes(void))(struct intel_encoder *, bool, const struct intel_crtc_state *,
+	const struct drm_connector_state *);
+
 #endif /* PARITY_LCD_MODESET_INT_H */
 
 /* intel_crtc_vblank_off() of the flip path: settle the pending event (parity_lcd_modeset.c) */
 void parity_lcd_ms_vblank_off(void);
 int parity_lcd_ms_evade_window(struct parity_lcd_modeset *ms, int *min, int *max, int *vblank_start);
+void parity_lcd_ms_set_acpi(struct parity_lcd_modeset *ms, u32 user_level, u32 user_max);

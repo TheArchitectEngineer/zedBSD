@@ -3,28 +3,50 @@ zedBSD
 
 `zedBSD` is a modern, re-designed BSD-based kernel and base system
 aiming to implement all `POSIX.1-2024` and `Single UNIX Specification
-version 4 (SUSv4)` features, along with `μITRON` hard real-time APIs.
+version 4 (SUSv4)` features with a sophisticated architecture.
 
-It runs on the latest and retro computers. Its HAL (Hardware
-Abstraction Layer, or Historic Architecture Library) keeps the
-platform-neutral kernel portable across substantially different
-machines.
+It runs on the latest computers. The current focused target is 64-bit
+x86 PC and Raspberry Pi series.
 
-Supported targets are the following:
+## Design Architecture
 
-- Well-supported:
-    - IBM PC/AT amd64
-    - IBM PC/AT i386
-    - NEC PC-9800 i386
-- Working:
-    - Raspberry Pi 4 aarch64
-    - sun4u/sparcv9
-    - Sharp X68000/m68k
+```
++----------------------------------------------------------------+
+| Official Packages (/usr)                                       |
++----------------------------------------------------------------+
+| Wayland desktop (/bin/zwl, ...)                                |
++----------------------------------------------------------------+
+| Base programs (/bin, /lib)                                     |
++----------------------------------------------------------------+
+| /sbin/networkd                                                 |
++----------------------------------------------------------------+
+| /sbin/init                                                     |
++----------------------------------------------------------------+
+| Drivers (PCI, USB, GPU, disk, ethernet, wifi, filesystem, ...) |
++----------------------------------------------------------------+
+| Kernel (platform-neutral)                                      |
++----------------------------------------------------------------+
+| HAL (CPU + BSP)                                                |
++----------------------------------------------------------------+
+```
+
+The kernel is built on a HAL. It keeps the platform-neutral kernel
+completely portable across substantially different machines.
+
+## Retro Computing
+
+For the purpose of a demonstration of the strong compatibility, we
+partially support the following:
+
+- NEC PC-9800 i386
+- IBM PC/AT i386
+- sun4u/sparcv9
+- Sharp X68000/m68k
 
 ## Building
 
-The complete prerequisite, configuration, image, and QEMU procedure is in the
-[build-from-source guide](docs/howto/build-from-source.md).
+The complete prerequisite, configuration, image, and QEMU procedure is
+in the [build-from-source guide](docs/howto/build-from-source.md).
 
 The build commands are:
 
@@ -51,13 +73,13 @@ make help              # show a short command summary
 | `src/drivers/`       | Device and bus driver implementations                  |
 | `src/crt/`           | Architecture-specific crt0/crt1 startup code           |
 | `src/softfloat/`     | zedBSD's integer-only soft-float/compiler runtime      |
-| `userland/`          | Userland programs                                      |
-| `userland/base/`     | Base programs                                          |
-| `userland/comp/`     | Compilers                                              |
-| `userland/X11/`      | Xzed programs                                          |
-| `userland/firmware/` | Optional per-device firmware packages                  |
-| `userland/packages/` | `/usr/bin` third-party packages                        |
 | `libc/`              | zedBSD `libc`                                          |
+| `userland/`          | Userland programs                                      |
+| `userland/base/`     | Base programs and libraries (`/bin`, `/lib`)           |
+| `userland/comp/`     | Compilers                                              |
+| `userland/desktop/`  | Wayland and X11 programs                               |
+| `userland/firmware/` | Optional per-device firmware packages                  |
+| `userland/packages/` | Third-party packages (`/usr`)                          |
 | `platform/`          | Target Makefiles and tools                             |
 | `vendor/`            | External programs                                      |
 | `tools/`             | Development scripts                                    |
@@ -66,9 +88,7 @@ make help              # show a short command summary
 ## Standards status
 
 The implemented POSIX/SUS surface and known limitations are tracked by
-[WS001](plan/ws001/ws.md). Focused acceptance evidence is owned by each
-workstream under `plan/wsXXX-*/tests/`; `make check` is not the project
-acceptance interface.
+[WS001](plan/ws001/ws.md).
 
 ## License
 

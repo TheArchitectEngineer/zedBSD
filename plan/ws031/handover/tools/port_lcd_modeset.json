@@ -43,7 +43,12 @@
    "icl_ddi_min_voltage_level",
    "jsl_ddi_min_voltage_level",
    "tgl_ddi_min_voltage_level",
-   "intel_ddi_compute_min_voltage_level"
+   "intel_ddi_compute_min_voltage_level",
+   "intel_ddi_hdmi_level",
+   "intel_ddi_pre_enable_hdmi",
+   "intel_enable_ddi_hdmi",
+   "intel_disable_ddi_hdmi",
+   "intel_ddi_post_disable_hdmi"
   ],
   "intel_display.c": [
    "is_hdr_mode",
@@ -87,7 +92,18 @@
    "_intel_enable_shared_dpll",
    "intel_enable_shared_dpll",
    "_intel_disable_shared_dpll",
-   "intel_disable_shared_dpll"
+   "intel_disable_shared_dpll",
+   "icl_wrpll_ref_clock",
+   "icl_wrpll_get_multipliers",
+   "icl_wrpll_params_populate",
+   "icl_calc_wrpll",
+   "intel_get_shared_dpll_by_id",
+   "intel_dpll_mask_all",
+   "intel_find_shared_dpll",
+   "intel_reference_shared_dpll_crtc",
+   "intel_reference_shared_dpll",
+   "intel_unreference_shared_dpll_crtc",
+   "intel_unreference_shared_dpll"
   ]
  },
  "extra_ranges": {
@@ -964,6 +980,121 @@
     "I915_MODE_FLAG_VRR"
    ],
    "source": "display/intel_display_types.h"
+  },
+  {
+   "dir": "i915",
+   "source": "i915_reg.h",
+   "path": "drivers/gpu/drm/i915/i915_reg.h",
+   "out": "hpd_mreg_i915_reg.h",
+   "roots": [
+    "SDEISR",
+    "SHOTPLUG_CTL_DDI",
+    "SHOTPLUG_CTL_DDI_HPD_LONG_DETECT",
+    "SHOTPLUG_CTL_TC",
+    "ICP_TC_HPD_LONG_DETECT",
+    "SDE_DDI_HOTPLUG_MASK_ICP",
+    "SDE_TC_HOTPLUG_MASK_ICP",
+    "SDE_GMBUS_ICP"
+   ],
+   "exclude": [
+    "REG_BIT",
+    "_MMIO"
+   ]
+  },
+  {
+   "dir": "drm",
+   "source": "drm_dp.h",
+   "path": "include/drm/display/drm_dp.h",
+   "out": "hpd_mreg_drm_dp.h",
+   "roots": [
+    "DP_TEST_LINK_PHY_TEST_PATTERN"
+   ]
+  },
+  {
+   "dir": "i915",
+   "source": "display/intel_gmbus_regs.h",
+   "path": "drivers/gpu/drm/i915/display/intel_gmbus_regs.h",
+   "out": "hpd_mreg_gmbus.h",
+   "exclude": [
+    "_MMIO"
+   ],
+   "roots": [
+    "GMBUS0",
+    "GMBUS1",
+    "GMBUS2",
+    "GMBUS3",
+    "GMBUS4",
+    "GMBUS5",
+    "GMBUS_RATE_100KHZ",
+    "GMBUS_BYTE_CNT_OVERRIDE",
+    "GMBUS_SW_CLR_INT",
+    "GMBUS_SW_RDY",
+    "GMBUS_CYCLE_WAIT",
+    "GMBUS_CYCLE_INDEX",
+    "GMBUS_CYCLE_STOP",
+    "GMBUS_BYTE_COUNT_SHIFT",
+    "GMBUS_BYTE_COUNT_MAX",
+    "GEN9_GMBUS_BYTE_COUNT_MAX",
+    "GMBUS_SLAVE_INDEX_SHIFT",
+    "GMBUS_SLAVE_ADDR_SHIFT",
+    "GMBUS_SLAVE_READ",
+    "GMBUS_SLAVE_WRITE",
+    "GMBUS_HW_WAIT_PHASE",
+    "GMBUS_HW_RDY",
+    "GMBUS_SATOER",
+    "GMBUS_ACTIVE",
+    "GMBUS_IDLE_EN",
+    "GMBUS_HW_WAIT_EN",
+    "GMBUS_HW_RDY_EN",
+    "GMBUS_2BYTE_INDEX_EN"
+   ]
+  },
+  {
+   "dir": "i915",
+   "source": "display/intel_gmbus.h",
+   "path": "drivers/gpu/drm/i915/display/intel_gmbus.h",
+   "out": "hpd_mreg_gmbus_pins.h",
+   "roots": [
+    "GMBUS_PIN_2_BXT",
+    "GMBUS_NUM_PINS"
+   ]
+  },
+  {
+   "dir": "i915",
+   "source": "i915_reg.h",
+   "path": "drivers/gpu/drm/i915/i915_reg.h",
+   "out": "lcd_mreg_hdmi_dip.h",
+   "exclude": [
+    "REG_BIT",
+    "_MMIO",
+    "_MMIO_TRANS2",
+    "_MMIO_PIPE2",
+    "_MMIO_PORT",
+    "_MMIO_TRANS",
+    "_PICK",
+    "_PICK_EVEN",
+    "_TRANS",
+    "_PORT",
+    "DISPLAY_VER",
+    "DISPLAY_INFO",
+    "DISPLAY_RUNTIME_INFO",
+    "REG_FIELD_PREP",
+    "REG_FIELD_GET",
+    "REG_GENMASK",
+    "IS_DISPLAY_VER",
+    "HAS_DP20",
+    "HAS_GMCH",
+    "HAS_VRR"
+   ],
+   "roots": [
+    "VIDEO_DIP_ENABLE_VSC_HSW",
+    "VIDEO_DIP_ENABLE_AVI_HSW",
+    "VIDEO_DIP_ENABLE_GCP_HSW",
+    "VIDEO_DIP_ENABLE_VS_HSW",
+    "VIDEO_DIP_ENABLE_GMP_HSW",
+    "VIDEO_DIP_ENABLE_SPD_HSW",
+    "VIDEO_DIP_ENABLE_DRM_GLK"
+   ]
   }
  ],
  "new_files": [
@@ -1241,7 +1372,8 @@
     "intel_backlight_disable",
     "intel_panel_actually_set_backlight",
     "scale_user_to_hw",
-    "intel_panel_set_backlight"
+    "intel_panel_set_backlight",
+    "intel_backlight_set_acpi"
    ],
    "glue": "parity_backlight_glue.inc",
    "includes": [
@@ -1520,6 +1652,262 @@
    "path": "drivers/gpu/drm/i915/display/intel_bw.c",
    "ranges": [],
    "source": "display/intel_bw.c"
+  },
+  {
+   "dir": "i915",
+   "functions": [
+    "asle_set_als_illum",
+    "asle_set_backlight",
+    "asle_set_pwm_freq",
+    "asle_set_pfit",
+    "asle_set_supported_rotation_angles",
+    "asle_set_button_array",
+    "asle_set_convertible",
+    "asle_set_docking",
+    "asle_isct_state",
+    "asle_work",
+    "intel_opregion_asle_intr",
+    "intel_opregion_video_event",
+    "check_swsci_function",
+    "swsci",
+    "intel_opregion_notify_adapter",
+    "set_did",
+    "intel_didl_outputs",
+    "intel_setup_cadls",
+    "intel_no_opregion_vbt_callback",
+    "intel_load_vbt_firmware",
+    "intel_opregion_setup",
+    "intel_opregion_register",
+    "intel_opregion_resume_display",
+    "intel_opregion_resume",
+    "intel_opregion_suspend_display",
+    "intel_opregion_suspend",
+    "intel_opregion_unregister",
+    "intel_opregion_cleanup"
+   ],
+   "glue": "parity_opregion_glue.inc",
+   "includes": [
+    "opregion_compat.h"
+   ],
+   "out": "intel_opregion_port.c",
+   "path": "drivers/gpu/drm/i915/display/intel_opregion.c",
+   "ranges": [
+    [
+     "#define OPREGION_HEADER_OFFSET 0",
+     "#define MAX_DSLP\t1500\n",
+     "mailbox layout and encodings"
+    ],
+    [
+     "#define ACPI_EV_DISPLAY_SWITCH (1<<0)",
+     "(1<<2)\n",
+     "ACPI_EV_*"
+    ],
+    [
+     "static const struct {\n\tpci_power_t pci_power_state;",
+     "};\n",
+     "power_state_map"
+    ],
+    [
+     "static const struct dmi_system_id intel_no_opregion_vbt[] = {",
+     "\n};\n",
+     "intel_no_opregion_vbt"
+    ]
+   ],
+   "source": "display/intel_opregion.c"
+  },
+  {
+   "dir": "i915",
+   "functions": [
+    "acpi_display_type",
+    "intel_acpi_device_id_update"
+   ],
+   "glue": "parity_acpi_glue.inc",
+   "includes": [
+    "opregion_compat.h"
+   ],
+   "out": "intel_acpi_port.c",
+   "path": "drivers/gpu/drm/i915/display/intel_acpi.c",
+   "ranges": [
+    [
+     "#define ACPI_DISPLAY_INDEX_SHIFT",
+     "(1ULL << 31)\n",
+     "ACPI _DOD display id encodings"
+    ]
+   ],
+   "source": "display/intel_acpi.c"
+  },
+  {
+   "dir": "i915",
+   "source": "display/intel_hotplug.c",
+   "path": "drivers/gpu/drm/i915/display/intel_hotplug.c",
+   "out": "intel_hotplug_port.c",
+   "includes": [
+    "hpd_compat.h"
+   ],
+   "glue": "parity_hotplug_glue.inc",
+   "ranges": [
+    [
+     "#define HPD_STORM_DEFAULT_THRESHOLD",
+     "#define HPD_RETRY_DELAY\t\t\t1000\n",
+     "HPD storm / retry timing"
+    ]
+   ],
+   "functions": [
+    "intel_connector_hpd_pin",
+    "intel_hpd_irq_storm_detect",
+    "intel_hpd_irq_storm_switch_to_polling",
+    "intel_hpd_irq_storm_reenable_work",
+    "intel_hotplug_detect_connector",
+    "intel_encoder_hotplug",
+    "intel_encoder_has_hpd_pulse",
+    "i915_digport_work_func",
+    "i915_hotplug_work_func",
+    "intel_hpd_irq_handler",
+    "intel_hpd_init_early",
+    "intel_hpd_cancel_work"
+   ]
+  },
+  {
+   "dir": "i915",
+   "source": "display/intel_hotplug_irq.c",
+   "path": "drivers/gpu/drm/i915/display/intel_hotplug_irq.c",
+   "out": "intel_hotplug_irq_port.c",
+   "includes": [
+    "hpd_compat.h"
+   ],
+   "functions": [
+    "icp_ddi_port_hotplug_long_detect",
+    "icp_tc_port_hotplug_long_detect",
+    "intel_get_hpd_pins",
+    "icp_irq_handler"
+   ]
+  },
+  {
+   "dir": "i915",
+   "source": "display/intel_ddi.c",
+   "path": "drivers/gpu/drm/i915/display/intel_ddi.c",
+   "out": "intel_ddi_hotplug_port.c",
+   "includes": [
+    "hpd_compat.h"
+   ],
+   "glue": "parity_ddi_hotplug_glue.inc",
+   "functions": [
+    "intel_ddi_hotplug",
+    "lpt_digital_port_connected"
+   ]
+  },
+  {
+   "dir": "i915",
+   "source": "display/intel_dp.c",
+   "path": "drivers/gpu/drm/i915/display/intel_dp.c",
+   "out": "intel_dp_connected_port.c",
+   "includes": [
+    "hpd_compat.h"
+   ],
+   "functions": [
+    "intel_digital_port_connected"
+   ]
+  },
+  {
+   "dir": "i915",
+   "source": "display/intel_hdmi.c",
+   "path": "drivers/gpu/drm/i915/display/intel_hdmi.c",
+   "out": "intel_hdmi_detect_port.c",
+   "includes": [
+    "hpd_compat.h"
+   ],
+   "glue": "parity_hdmi_detect_glue.inc",
+   "functions": [
+    "intel_hdmi_unset_edid",
+    "intel_hdmi_set_edid",
+    "intel_hdmi_detect"
+   ]
+  },
+  {
+   "dir": "drm",
+   "source": "drm_probe_helper.c",
+   "path": "drivers/gpu/drm/drm_probe_helper.c",
+   "out": "drm_probe_detect_port.c",
+   "includes": [
+    "hpd_compat.h"
+   ],
+   "functions": [
+    "drm_helper_probe_detect_ctx",
+    "drm_helper_probe_detect"
+   ]
+  },
+  {
+   "dir": "drm",
+   "source": "drm_connector.c",
+   "path": "drivers/gpu/drm/drm_connector.c",
+   "out": "drm_connector_status_port.c",
+   "includes": [
+    "hpd_compat.h"
+   ],
+   "functions": [
+    "drm_get_connector_status_name"
+   ]
+  },
+  {
+   "dir": "i915",
+   "source": "display/intel_gmbus.c",
+   "path": "drivers/gpu/drm/i915/display/intel_gmbus.c",
+   "out": "intel_gmbus_port.c",
+   "includes": [
+    "hpd_compat.h"
+   ],
+   "glue": "parity_gmbus_glue.inc",
+   "ranges": [
+    [
+     "struct intel_gmbus {",
+     "\tstruct drm_i915_private *i915;\n};\n",
+     "struct intel_gmbus"
+    ],
+    [
+     "#define INTEL_GMBUS_BURST_READ_MAX_LEN",
+     "767U\n",
+     "INTEL_GMBUS_BURST_READ_MAX_LEN"
+    ]
+   ],
+   "functions": [
+    "to_intel_gmbus",
+    "intel_gmbus_reset",
+    "has_gmbus_irq",
+    "gmbus_wait",
+    "gmbus_wait_idle",
+    "gmbus_max_xfer_size",
+    "gmbus_xfer_read_chunk",
+    "gmbus_xfer_read",
+    "gmbus_xfer_write_chunk",
+    "gmbus_xfer_write",
+    "gmbus_is_index_xfer",
+    "gmbus_index_xfer",
+    "do_gmbus_xfer",
+    "gmbus_xfer",
+    "intel_gmbus_force_bit",
+    "intel_gmbus_is_forced_bit",
+    "intel_gmbus_irq_handler"
+   ]
+  },
+  {
+   "dir": "i915",
+   "source": "display/intel_hdmi.c",
+   "path": "drivers/gpu/drm/i915/display/intel_hdmi.c",
+   "out": "intel_hdmi_mode_port.c",
+   "includes": [
+    "lcd_compat.h",
+    "lcd_ddi_regs.h",
+    "lcd_mreg_hdmi_dip.h",
+    "lcd_seq_compat.h",
+    "lcd_modeset_compat.h"
+   ],
+   "glue": "parity_hdmi_mode_glue.inc",
+   "functions": [
+    "assert_hdmi_transcoder_func_disabled",
+    "hsw_set_infoframes",
+    "intel_dp_dual_mode_set_tmds_output",
+    "intel_hdmi_handle_sink_scrambling"
+   ]
   }
  ],
  "range_headers": [
@@ -1732,6 +2120,107 @@
     ]
    ],
    "source": "display/intel_display_power.h"
+  },
+  {
+   "dir": "i915",
+   "out": "opreg_struct.h",
+   "path": "drivers/gpu/drm/i915/display/intel_opregion.h",
+   "ranges": [
+    [
+     "struct intel_opregion {",
+     "\n};\n",
+     "struct intel_opregion"
+    ],
+    [
+     "#define OPREGION_SIZE",
+     "\n",
+     "OPREGION_SIZE"
+    ]
+   ],
+   "source": "display/intel_opregion.h"
+  },
+  {
+   "dir": "i915",
+   "out": "opreg_pci_config.h",
+   "path": "drivers/gpu/drm/i915/intel_pci_config.h",
+   "ranges": [
+    [
+     "#define ASLE\t\t\t\t\t0xe4",
+     "(1 << 0)\n",
+     "ASLE, ASLS, SWSCI, SWSCI_SCISEL, SWSCI_GSSCIE"
+    ]
+   ],
+   "source": "intel_pci_config.h"
+  },
+  {
+   "dir": "i915",
+   "source": "display/intel_display_limits.h",
+   "path": "drivers/gpu/drm/i915/display/intel_display_limits.h",
+   "out": "hpd_pin_enum.h",
+   "ranges": [
+    [
+     "enum hpd_pin {",
+     "\n};\n",
+     "enum hpd_pin"
+    ]
+   ]
+  },
+  {
+   "dir": "i915",
+   "source": "display/intel_display.h",
+   "path": "drivers/gpu/drm/i915/display/intel_display.h",
+   "out": "hpd_for_each_pin.h",
+   "ranges": [
+    [
+     "#define for_each_hpd_pin(__pin)",
+     "(__pin)++)\n",
+     "for_each_hpd_pin"
+    ]
+   ]
+  },
+  {
+   "dir": "i915",
+   "source": "display/intel_display_types.h",
+   "path": "drivers/gpu/drm/i915/display/intel_display_types.h",
+   "out": "hpd_hotplug_state.h",
+   "ranges": [
+    [
+     "enum intel_hotplug_state {",
+     "\n};\n",
+     "enum intel_hotplug_state"
+    ]
+   ]
+  },
+  {
+   "dir": "i915",
+   "source": "display/intel_display_core.h",
+   "path": "drivers/gpu/drm/i915/display/intel_display_core.h",
+   "out": "hpd_hotplug_types.h",
+   "ranges": [
+    [
+     "struct intel_hotplug {",
+     "\tbool ignore_long_hpd;\n};\n",
+     "struct intel_hotplug"
+    ]
+   ]
+  },
+  {
+   "dir": "drm",
+   "source": "drm_connector.h",
+   "path": "include/drm/drm_connector.h",
+   "out": "hpd_drm_connector_status.h",
+   "ranges": [
+    [
+     "enum drm_connector_status {",
+     "\n};\n",
+     "enum drm_connector_status"
+    ],
+    [
+     "#define DRM_CONNECTOR_POLL_HPD",
+     "#define DRM_CONNECTOR_POLL_DISCONNECT (1 << 2)\n",
+     "DRM_CONNECTOR_POLL_*"
+    ]
+   ]
   }
  ]
 }

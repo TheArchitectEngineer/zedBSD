@@ -375,6 +375,17 @@ explicit_blob_get(struct parity_vbt_state *vbt, struct osdep_pci *pci,
 	return 1;
 }
 
+/* E-122: the OpRegion VBT copy P2 made (read-only acquisition); 0 = none */
+static const void *opregion_vbt_buf;
+static size_t opregion_vbt_size;
+
+void
+parity_bios_set_opregion_vbt(const void *buf, size_t size)
+{
+	opregion_vbt_buf = buf;
+	opregion_vbt_size = size;
+}
+
 int
 parity_intel_bios_init_ex(struct parity_vbt_state *vbt, struct osdep_pci *pci,
 	int opregion_has_vbt, int explicit_blob, struct osdep_trace *trace)
@@ -413,12 +424,20 @@ parity_intel_bios_init_ex(struct parity_vbt_state *vbt, struct osdep_pci *pci,
 	 *     are left exactly as the firmware reported them.
 	 *  3. the PCI ROM ($VBT).  ADL-P is not DGFX, so no SPI path.
 	 */
-	if (opregion_has_vbt)
-		vbt->source = PARITY_VBT_SRC_OPREGION;   /* present but not lifted: no bytes */
-
+	/*
+	 * E-122: intel_opregion_get_vbt() order -- the firmware file (vbt_firmware; here the explicit blob) first, then the
+	 * OpRegion VBT that P2 copied and validated (RVDA / mailbox #4), then the PCI ROM.
+	 */
+	(void)opregion_has_vbt;
 	if (vbt_buf == 0 && explicit_blob && explicit_blob_get(vbt, pci, &vbt_buf, &vbt_size)) {
 		vbt->source = PARITY_VBT_SRC_EXPLICIT_BLOB;
 		origin = PARITY_VBT_ORIGIN_EXPLICIT_BLOB;
+	}
+	if (vbt_buf == 0 && opregion_vbt_buf != 0 && parity_vbt_validate(opregion_vbt_buf, opregion_vbt_size)) {
+		vbt_buf = opregion_vbt_buf;
+		vbt_size = opregion_vbt_size;
+		vbt->source = PARITY_VBT_SRC_OPREGION;
+		origin = PARITY_VBT_ORIGIN_OPREGION;
 	}
 	if (vbt_buf == 0 && oprom_get_vbt(pci, &vbt_buf, &vbt_size)) {
 		if (parity_vbt_validate(vbt_buf, vbt_size)) {

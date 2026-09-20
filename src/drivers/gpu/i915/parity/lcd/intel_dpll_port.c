@@ -76,6 +76,34 @@ static void _intel_enable_shared_dpll(struct drm_i915_private *i915,
 				      struct intel_shared_dpll *pll);
 static void _intel_disable_shared_dpll(struct drm_i915_private *i915,
 				       struct intel_shared_dpll *pll);
+static int icl_wrpll_ref_clock(struct drm_i915_private *i915);
+static void icl_wrpll_get_multipliers(int bestdiv, int *pdiv,
+				      int *qdiv, int *kdiv);
+static void icl_wrpll_params_populate(struct skl_wrpll_params *params,
+				      u32 dco_freq, u32 ref_freq,
+				      int pdiv, int qdiv, int kdiv);
+static int
+icl_calc_wrpll(struct intel_crtc_state *crtc_state,
+	       struct skl_wrpll_params *wrpll_params);
+static unsigned long
+intel_dpll_mask_all(struct drm_i915_private *i915);
+static struct intel_shared_dpll *
+intel_find_shared_dpll(struct intel_atomic_state *state,
+		       const struct intel_crtc *crtc,
+		       const struct intel_dpll_hw_state *pll_state,
+		       unsigned long dpll_mask);
+static void
+intel_reference_shared_dpll_crtc(const struct intel_crtc *crtc,
+				 const struct intel_shared_dpll *pll,
+				 struct intel_shared_dpll_state *shared_dpll_state);
+static void
+intel_reference_shared_dpll(struct intel_atomic_state *state,
+			    const struct intel_crtc *crtc,
+			    const struct intel_shared_dpll *pll,
+			    const struct intel_dpll_hw_state *pll_state);
+static void intel_unreference_shared_dpll(struct intel_atomic_state *state,
+					  const struct intel_crtc *crtc,
+					  const struct intel_shared_dpll *pll);
 
 /*
  * Display WA #22010492432: ehl, tgl, adl-s, adl-p
@@ -479,6 +507,318 @@ void intel_disable_shared_dpll(const struct intel_crtc_state *crtc_state)
 
 out:
 	mutex_unlock(&i915->display.dpll.lock);
+}
+
+static int icl_wrpll_ref_clock(struct drm_i915_private *i915)
+{
+	int ref_clock = i915->display.dpll.ref_clks.nssc;
+
+	/*
+	 * For ICL+, the spec states: if reference frequency is 38.4,
+	 * use 19.2 because the DPLL automatically divides that by 2.
+	 */
+	if (ref_clock == 38400)
+		ref_clock = 19200;
+
+	return ref_clock;
+}
+
+static void icl_wrpll_get_multipliers(int bestdiv, int *pdiv,
+				      int *qdiv, int *kdiv)
+{
+	/* even dividers */
+	if (bestdiv % 2 == 0) {
+		if (bestdiv == 2) {
+			*pdiv = 2;
+			*qdiv = 1;
+			*kdiv = 1;
+		} else if (bestdiv % 4 == 0) {
+			*pdiv = 2;
+			*qdiv = bestdiv / 4;
+			*kdiv = 2;
+		} else if (bestdiv % 6 == 0) {
+			*pdiv = 3;
+			*qdiv = bestdiv / 6;
+			*kdiv = 2;
+		} else if (bestdiv % 5 == 0) {
+			*pdiv = 5;
+			*qdiv = bestdiv / 10;
+			*kdiv = 2;
+		} else if (bestdiv % 14 == 0) {
+			*pdiv = 7;
+			*qdiv = bestdiv / 14;
+			*kdiv = 2;
+		}
+	} else {
+		if (bestdiv == 3 || bestdiv == 5 || bestdiv == 7) {
+			*pdiv = bestdiv;
+			*qdiv = 1;
+			*kdiv = 1;
+		} else { /* 9, 15, 21 */
+			*pdiv = bestdiv / 3;
+			*qdiv = 1;
+			*kdiv = 3;
+		}
+	}
+}
+
+static void icl_wrpll_params_populate(struct skl_wrpll_params *params,
+				      u32 dco_freq, u32 ref_freq,
+				      int pdiv, int qdiv, int kdiv)
+{
+	u32 dco;
+
+	switch (kdiv) {
+	case 1:
+		params->kdiv = 1;
+		break;
+	case 2:
+		params->kdiv = 2;
+		break;
+	case 3:
+		params->kdiv = 4;
+		break;
+	default:
+		WARN(1, "Incorrect KDiv\n");
+	}
+
+	switch (pdiv) {
+	case 2:
+		params->pdiv = 1;
+		break;
+	case 3:
+		params->pdiv = 2;
+		break;
+	case 5:
+		params->pdiv = 4;
+		break;
+	case 7:
+		params->pdiv = 8;
+		break;
+	default:
+		WARN(1, "Incorrect PDiv\n");
+	}
+
+	WARN_ON(kdiv != 2 && qdiv != 1);
+
+	params->qdiv_ratio = qdiv;
+	params->qdiv_mode = (qdiv == 1) ? 0 : 1;
+
+	dco = div_u64((u64)dco_freq << 15, ref_freq);
+
+	params->dco_integer = dco >> 15;
+	params->dco_fraction = dco & 0x7fff;
+}
+
+static int
+icl_calc_wrpll(struct intel_crtc_state *crtc_state,
+	       struct skl_wrpll_params *wrpll_params)
+{
+	struct drm_i915_private *i915 = to_i915(crtc_state->uapi.crtc->dev);
+	int ref_clock = icl_wrpll_ref_clock(i915);
+	u32 afe_clock = crtc_state->port_clock * 5;
+	u32 dco_min = 7998000;
+	u32 dco_max = 10000000;
+	u32 dco_mid = (dco_min + dco_max) / 2;
+	static const int dividers[] = {  2,  4,  6,  8, 10, 12,  14,  16,
+					 18, 20, 24, 28, 30, 32,  36,  40,
+					 42, 44, 48, 50, 52, 54,  56,  60,
+					 64, 66, 68, 70, 72, 76,  78,  80,
+					 84, 88, 90, 92, 96, 98, 100, 102,
+					  3,  5,  7,  9, 15, 21 };
+	u32 dco, best_dco = 0, dco_centrality = 0;
+	u32 best_dco_centrality = U32_MAX; /* Spec meaning of 999999 MHz */
+	int d, best_div = 0, pdiv = 0, qdiv = 0, kdiv = 0;
+
+	for (d = 0; d < ARRAY_SIZE(dividers); d++) {
+		dco = afe_clock * dividers[d];
+
+		if (dco <= dco_max && dco >= dco_min) {
+			dco_centrality = abs(dco - dco_mid);
+
+			if (dco_centrality < best_dco_centrality) {
+				best_dco_centrality = dco_centrality;
+				best_div = dividers[d];
+				best_dco = dco;
+			}
+		}
+	}
+
+	if (best_div == 0)
+		return -EINVAL;
+
+	icl_wrpll_get_multipliers(best_div, &pdiv, &qdiv, &kdiv);
+	icl_wrpll_params_populate(wrpll_params, best_dco, ref_clock,
+				  pdiv, qdiv, kdiv);
+
+	return 0;
+}
+
+/**
+ * intel_get_shared_dpll_by_id - get a DPLL given its id
+ * @i915: i915 device instance
+ * @id: pll id
+ *
+ * Returns:
+ * A pointer to the DPLL with @id
+ */
+struct intel_shared_dpll *
+intel_get_shared_dpll_by_id(struct drm_i915_private *i915,
+			    enum intel_dpll_id id)
+{
+	struct intel_shared_dpll *pll;
+	int i;
+
+	for_each_shared_dpll(i915, pll, i) {
+		if (pll->info->id == id)
+			return pll;
+	}
+
+	MISSING_CASE(id);
+	return NULL;
+}
+
+static unsigned long
+intel_dpll_mask_all(struct drm_i915_private *i915)
+{
+	struct intel_shared_dpll *pll;
+	unsigned long dpll_mask = 0;
+	int i;
+
+	for_each_shared_dpll(i915, pll, i) {
+		drm_WARN_ON(&i915->drm, dpll_mask & BIT(pll->info->id));
+
+		dpll_mask |= BIT(pll->info->id);
+	}
+
+	return dpll_mask;
+}
+
+static struct intel_shared_dpll *
+intel_find_shared_dpll(struct intel_atomic_state *state,
+		       const struct intel_crtc *crtc,
+		       const struct intel_dpll_hw_state *pll_state,
+		       unsigned long dpll_mask)
+{
+	struct drm_i915_private *i915 = to_i915(crtc->base.dev);
+	unsigned long dpll_mask_all = intel_dpll_mask_all(i915);
+	struct intel_shared_dpll_state *shared_dpll;
+	struct intel_shared_dpll *unused_pll = NULL;
+	enum intel_dpll_id id;
+
+	shared_dpll = intel_atomic_get_shared_dpll_state(&state->base);
+
+	drm_WARN_ON(&i915->drm, dpll_mask & ~dpll_mask_all);
+
+	for_each_set_bit(id, &dpll_mask, fls(dpll_mask_all)) {
+		struct intel_shared_dpll *pll;
+
+		pll = intel_get_shared_dpll_by_id(i915, id);
+		if (!pll)
+			continue;
+
+		/* Only want to check enabled timings first */
+		if (shared_dpll[pll->index].pipe_mask == 0) {
+			if (!unused_pll)
+				unused_pll = pll;
+			continue;
+		}
+
+		if (memcmp(pll_state,
+			   &shared_dpll[pll->index].hw_state,
+			   sizeof(*pll_state)) == 0) {
+			drm_dbg_kms(&i915->drm,
+				    "[CRTC:%d:%s] sharing existing %s (pipe mask 0x%x, active 0x%x)\n",
+				    crtc->base.base.id, crtc->base.name,
+				    pll->info->name,
+				    shared_dpll[pll->index].pipe_mask,
+				    pll->active_mask);
+			return pll;
+		}
+	}
+
+	/* Ok no matching timings, maybe there's a free one? */
+	if (unused_pll) {
+		drm_dbg_kms(&i915->drm, "[CRTC:%d:%s] allocated %s\n",
+			    crtc->base.base.id, crtc->base.name,
+			    unused_pll->info->name);
+		return unused_pll;
+	}
+
+	return NULL;
+}
+
+/**
+ * intel_reference_shared_dpll_crtc - Get a DPLL reference for a CRTC
+ * @crtc: CRTC on which behalf the reference is taken
+ * @pll: DPLL for which the reference is taken
+ * @shared_dpll_state: the DPLL atomic state in which the reference is tracked
+ *
+ * Take a reference for @pll tracking the use of it by @crtc.
+ */
+static void
+intel_reference_shared_dpll_crtc(const struct intel_crtc *crtc,
+				 const struct intel_shared_dpll *pll,
+				 struct intel_shared_dpll_state *shared_dpll_state)
+{
+	struct drm_i915_private *i915 = to_i915(crtc->base.dev);
+
+	drm_WARN_ON(&i915->drm, (shared_dpll_state->pipe_mask & BIT(crtc->pipe)) != 0);
+
+	shared_dpll_state->pipe_mask |= BIT(crtc->pipe);
+
+	drm_dbg_kms(&i915->drm, "[CRTC:%d:%s] reserving %s\n",
+		    crtc->base.base.id, crtc->base.name, pll->info->name);
+}
+
+static void
+intel_reference_shared_dpll(struct intel_atomic_state *state,
+			    const struct intel_crtc *crtc,
+			    const struct intel_shared_dpll *pll,
+			    const struct intel_dpll_hw_state *pll_state)
+{
+	struct intel_shared_dpll_state *shared_dpll;
+
+	shared_dpll = intel_atomic_get_shared_dpll_state(&state->base);
+
+	if (shared_dpll[pll->index].pipe_mask == 0)
+		shared_dpll[pll->index].hw_state = *pll_state;
+
+	intel_reference_shared_dpll_crtc(crtc, pll, &shared_dpll[pll->index]);
+}
+
+/**
+ * intel_unreference_shared_dpll_crtc - Drop a DPLL reference for a CRTC
+ * @crtc: CRTC on which behalf the reference is dropped
+ * @pll: DPLL for which the reference is dropped
+ * @shared_dpll_state: the DPLL atomic state in which the reference is tracked
+ *
+ * Drop a reference for @pll tracking the end of use of it by @crtc.
+ */
+void
+intel_unreference_shared_dpll_crtc(const struct intel_crtc *crtc,
+				   const struct intel_shared_dpll *pll,
+				   struct intel_shared_dpll_state *shared_dpll_state)
+{
+	struct drm_i915_private *i915 = to_i915(crtc->base.dev);
+
+	drm_WARN_ON(&i915->drm, (shared_dpll_state->pipe_mask & BIT(crtc->pipe)) == 0);
+
+	shared_dpll_state->pipe_mask &= ~BIT(crtc->pipe);
+
+	drm_dbg_kms(&i915->drm, "[CRTC:%d:%s] releasing %s\n",
+		    crtc->base.base.id, crtc->base.name, pll->info->name);
+}
+
+static void intel_unreference_shared_dpll(struct intel_atomic_state *state,
+					  const struct intel_crtc *crtc,
+					  const struct intel_shared_dpll *pll)
+{
+	struct intel_shared_dpll_state *shared_dpll;
+
+	shared_dpll = intel_atomic_get_shared_dpll_state(&state->base);
+
+	intel_unreference_shared_dpll_crtc(crtc, pll, &shared_dpll[pll->index]);
 }
 
 

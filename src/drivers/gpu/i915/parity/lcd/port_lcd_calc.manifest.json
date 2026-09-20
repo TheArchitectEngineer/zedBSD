@@ -1,6 +1,11 @@
 {
  "generator": "port_lcd_calc.py",
  "kept": {
+  "display/intel_acpi.c": [
+   "ACPI _DOD display id encodings",
+   "acpi_display_type",
+   "intel_acpi_device_id_update"
+  ],
   "display/intel_atomic_plane.c": [
    "intel_adjusted_rate",
    "intel_plane_pixel_rate",
@@ -37,7 +42,8 @@
    "intel_backlight_disable",
    "intel_panel_actually_set_backlight",
    "scale_user_to_hw",
-   "intel_panel_set_backlight"
+   "intel_panel_set_backlight",
+   "intel_backlight_set_acpi"
   ],
   "display/intel_backlight_regs.h": [
    "lcd_mreg_backlight.h: 11 macros from 5 roots"
@@ -148,7 +154,14 @@
    "icl_ddi_min_voltage_level",
    "jsl_ddi_min_voltage_level",
    "tgl_ddi_min_voltage_level",
-   "intel_ddi_compute_min_voltage_level"
+   "intel_ddi_compute_min_voltage_level",
+   "intel_ddi_hdmi_level",
+   "intel_ddi_pre_enable_hdmi",
+   "intel_enable_ddi_hdmi",
+   "intel_disable_ddi_hdmi",
+   "intel_ddi_post_disable_hdmi",
+   "intel_ddi_hotplug",
+   "lpt_digital_port_connected"
   ],
   "display/intel_ddi_buf_trans.c": [
    "entries _icl_combo_phy_trans_hdmi",
@@ -207,7 +220,11 @@
   "display/intel_display.h": [
    "enum phy",
    "transcoder_is_dsi",
+   "for_each_hpd_pin",
    "lcd_mreg_display.h: 3 macros from 3 roots"
+  ],
+  "display/intel_display_core.h": [
+   "struct intel_hotplug"
   ],
   "display/intel_display_device.h": [
    "lcd_mreg_display_device.h: 4 macros from 4 roots"
@@ -215,7 +232,8 @@
   "display/intel_display_limits.h": [
    "enum transcoder",
    "enum port",
-   "enum plane_id"
+   "enum plane_id",
+   "enum hpd_pin"
   ],
   "display/intel_display_power.c": [
    "intel_display_power_get_in_set",
@@ -242,6 +260,7 @@
    "struct skl_wm_level",
    "struct skl_plane_wm",
    "struct skl_pipe_wm",
+   "enum intel_hotplug_state",
    "lcd_mreg_display_types.h: 2 macros from 2 roots"
   ],
   "display/intel_dmc.c": [
@@ -274,7 +293,8 @@
    "intel_dp_set_power",
    "intel_edp_backlight_on",
    "intel_edp_backlight_off",
-   "intel_dp_set_infoframes"
+   "intel_dp_set_infoframes",
+   "intel_digital_port_connected"
   ],
   "display/intel_dp_link_training.c": [
    "intel_dp_reset_lttpr_common_caps",
@@ -346,11 +366,117 @@
    "_intel_enable_shared_dpll",
    "intel_enable_shared_dpll",
    "_intel_disable_shared_dpll",
-   "intel_disable_shared_dpll"
+   "intel_disable_shared_dpll",
+   "icl_wrpll_ref_clock",
+   "icl_wrpll_get_multipliers",
+   "icl_wrpll_params_populate",
+   "icl_calc_wrpll",
+   "intel_get_shared_dpll_by_id",
+   "intel_dpll_mask_all",
+   "intel_find_shared_dpll",
+   "intel_reference_shared_dpll_crtc",
+   "intel_reference_shared_dpll",
+   "intel_unreference_shared_dpll_crtc",
+   "intel_unreference_shared_dpll"
   ],
   "display/intel_dpll_mgr.h": [
    "struct intel_dpll_hw_state",
    "enum intel_dpll_id"
+  ],
+  "display/intel_gmbus.c": [
+   "struct intel_gmbus",
+   "INTEL_GMBUS_BURST_READ_MAX_LEN",
+   "to_intel_gmbus",
+   "intel_gmbus_reset",
+   "has_gmbus_irq",
+   "gmbus_wait",
+   "gmbus_wait_idle",
+   "gmbus_max_xfer_size",
+   "gmbus_xfer_read_chunk",
+   "gmbus_xfer_read",
+   "gmbus_xfer_write_chunk",
+   "gmbus_xfer_write",
+   "gmbus_is_index_xfer",
+   "gmbus_index_xfer",
+   "do_gmbus_xfer",
+   "gmbus_xfer",
+   "intel_gmbus_force_bit",
+   "intel_gmbus_is_forced_bit",
+   "intel_gmbus_irq_handler"
+  ],
+  "display/intel_gmbus.h": [
+   "hpd_mreg_gmbus_pins.h: 2 macros from 2 roots"
+  ],
+  "display/intel_gmbus_regs.h": [
+   "hpd_mreg_gmbus.h: 29 macros from 28 roots"
+  ],
+  "display/intel_hdmi.c": [
+   "intel_hdmi_unset_edid",
+   "intel_hdmi_set_edid",
+   "intel_hdmi_detect",
+   "assert_hdmi_transcoder_func_disabled",
+   "hsw_set_infoframes",
+   "intel_dp_dual_mode_set_tmds_output",
+   "intel_hdmi_handle_sink_scrambling"
+  ],
+  "display/intel_hotplug.c": [
+   "HPD storm / retry timing",
+   "intel_connector_hpd_pin",
+   "intel_hpd_irq_storm_detect",
+   "intel_hpd_irq_storm_switch_to_polling",
+   "intel_hpd_irq_storm_reenable_work",
+   "intel_hotplug_detect_connector",
+   "intel_encoder_hotplug",
+   "intel_encoder_has_hpd_pulse",
+   "i915_digport_work_func",
+   "i915_hotplug_work_func",
+   "intel_hpd_irq_handler",
+   "intel_hpd_init_early",
+   "intel_hpd_cancel_work"
+  ],
+  "display/intel_hotplug_irq.c": [
+   "icp_ddi_port_hotplug_long_detect",
+   "icp_tc_port_hotplug_long_detect",
+   "intel_get_hpd_pins",
+   "icp_irq_handler"
+  ],
+  "display/intel_opregion.c": [
+   "mailbox layout and encodings",
+   "ACPI_EV_*",
+   "power_state_map",
+   "intel_no_opregion_vbt",
+   "asle_set_als_illum",
+   "asle_set_backlight",
+   "asle_set_pwm_freq",
+   "asle_set_pfit",
+   "asle_set_supported_rotation_angles",
+   "asle_set_button_array",
+   "asle_set_convertible",
+   "asle_set_docking",
+   "asle_isct_state",
+   "asle_work",
+   "intel_opregion_asle_intr",
+   "intel_opregion_video_event",
+   "check_swsci_function",
+   "swsci",
+   "intel_opregion_notify_adapter",
+   "set_did",
+   "intel_didl_outputs",
+   "intel_setup_cadls",
+   "intel_no_opregion_vbt_callback",
+   "intel_load_vbt_firmware",
+   "intel_opregion_setup",
+   "intel_opregion_register",
+   "intel_opregion_resume_display",
+   "intel_opregion_resume",
+   "intel_opregion_suspend_display",
+   "intel_opregion_suspend",
+   "intel_opregion_unregister",
+   "intel_opregion_cleanup"
+  ],
+  "display/intel_opregion.h": [
+   "struct intel_opregion",
+   "OPREGION_SIZE"
   ],
   "display/intel_psr_regs.h": [
    "PLANE_SEL_FETCH_*"
@@ -487,13 +613,19 @@
    "enum drm_color_encoding",
    "enum drm_color_range"
   ],
+  "drm_connector.c": [
+   "drm_get_connector_status_name"
+  ],
   "drm_connector.h": [
-   "enum drm_colorspace"
+   "enum drm_colorspace",
+   "enum drm_connector_status",
+   "DRM_CONNECTOR_POLL_*"
   ],
   "drm_dp.h": [
    "DP_MSA_MISC_*",
    "enum drm_dp_phy",
-   "lcd_mreg_drm_dp.h: 102 macros from 91 roots"
+   "lcd_mreg_drm_dp.h: 102 macros from 91 roots",
+   "hpd_mreg_drm_dp.h: 1 macros from 1 roots"
   ],
   "drm_dp_helper.c": [
    "drm_dp_bw_channel_coding_efficiency",
@@ -549,6 +681,10 @@
    "drm_mode_init",
    "drm_mode_get_hv_timing"
   ],
+  "drm_probe_helper.c": [
+   "drm_helper_probe_detect_ctx",
+   "drm_helper_probe_detect"
+  ],
   "i915_drm.h": [
    "I915_SET_COLORKEY_*",
    "struct drm_intel_sprite_colorkey"
@@ -572,10 +708,15 @@
    "DDI_BUF_CTL",
    "TRANS_MSA_MISC",
    "Skylake+ plane register block",
-   "lcd_mreg_i915_reg.h: 146 macros from 97 roots"
+   "lcd_mreg_i915_reg.h: 146 macros from 97 roots",
+   "hpd_mreg_i915_reg.h: 12 macros from 8 roots",
+   "lcd_mreg_hdmi_dip.h: 7 macros from 7 roots"
   ],
   "i915_reg_defs.h": [
    "lcd_mreg_reg_defs.h: 1 macros from 1 roots"
+  ],
+  "intel_pci_config.h": [
+   "ASLE, ASLS, SWSCI, SWSCI_SCISEL, SWSCI_GSSCIE"
   ],
   "soc/intel_pch.h": [
    "enum intel_pch"
@@ -587,27 +728,47 @@
   ]
  },
  "outputs": {
+  "drm_connector_status_port.c": "f0c0c8d8d59ab115562e39645c0888f5b1d1255c5b5e27a5c240978ed292e274",
   "drm_dp_bw_port.c": "7433ee39abf6e977bf583b9c6f91b20698ed2f497f87c66ba84b92dcc82af7fa",
   "drm_dp_link_port.c": "3403c9d12e651b5633f73638d62c2b551f27f95283578cdd9cfeb326cd5dd950",
   "drm_edid_mode_port.c": "71681a7207b3a5be6c943e246a037e66dc54e4fe15e058e39ddf0188743e1713",
   "drm_modes_hv_port.c": "d26a1d3a9f80e1fd4585987ec36777caa2c8732ad58cfff3ee28045c27027abe",
   "drm_modes_port.c": "54abc11445b8c8cb82b897e0786d01b80c622b13cba2485458ce1fbb473871fd",
+  "drm_probe_detect_port.c": "16f0933380f3c9db4eaccd3ff8216a70229fbe129475e360e40c3ea1328fc425",
   "edid_ref_types.h": "6914403ab60d4dce990ef3c6007b0176b7785428cb7801aef76572d8842cfeab",
+  "hpd_drm_connector_status.h": "8576184484bfb0f1821f44879a9bc39a1e515e4859a006ce4ce78a5c308f75fe",
+  "hpd_for_each_pin.h": "855d75fab14d56c8971ee1bd1c89f090febbefe172e040893c90a0c4b77006e2",
+  "hpd_hotplug_state.h": "cf0224ac879c72b6963538ac4c8d86d61d200efa9e46a04d40bf7c4cd149b929",
+  "hpd_hotplug_types.h": "52d4608e903a10c2e2740db192cd793b6f8aca195895b02b1631caa32f998b28",
+  "hpd_mreg_drm_dp.h": "8fba74625e5309f81ec04a5db1a87925f908a4b1bb1906323a54414fe9a02e3e",
+  "hpd_mreg_gmbus.h": "02bdae392aee177019cfd015837c240fc1ed535174a32100cac50e4345e74cc1",
+  "hpd_mreg_gmbus_pins.h": "65b6d5696a5cdbb7c487e7a5f577d6ca61f5ae1548643b1752eaae62a0a58e9e",
+  "hpd_mreg_i915_reg.h": "54e554e869262f8bb6ef6005d84178e73a7cf4fb93a96b839a1fe2c36ea3960e",
+  "hpd_pin_enum.h": "7511532e5d63ae826f965b464f7ac2d7424900fcd1341d87e388adfcf75d3c62",
+  "intel_acpi_port.c": "99f2b09a3e91358093f31d8c878b490804664459fa5832156f57f28e6b8c40b7",
   "intel_atomic_plane_port.c": "0376de7413a2303eddee79e70206446a9d1fdd1d63d183b458726046519a4d34",
-  "intel_backlight_port.c": "7f80e0b1a64f6f6f72458f9bc52d432a90e73a0330c518d5f34f94a1f3d997d4",
+  "intel_backlight_port.c": "c07050890b1431c9bd5999fbb0f8be2feed09ea4a9e1b550d02ae3d1a3d02dff",
   "intel_bw_port.c": "64de1698c381bbbb59830860e1a03f70e5c375d9fde9eacfa551771bb4869288",
   "intel_cdclk_port.c": "d9476b7d679789ada806fec0e7efce8c287bc3c02a6d1c2d202f1bdaa31c1b6c",
   "intel_color_port.c": "2957f064c0c001f16d341bc20dca92bec04fa3f83eb417cfd52f9a9728107d4c",
   "intel_combo_phy_port.c": "fd82ce387a760890fca9de30f8c6011eede21d3d2bf530faf087498ef20e5260",
   "intel_crtc_port.c": "4f4e6ac6cd4e2047dd3d2685600613e970e2341165ba31a37702cdfa49a6ecd4",
   "intel_ddi_buf_trans_port.c": "09521fca70f300db22e878db4cc229e68b52efe477e74e09cc8d0b9d852084a0",
-  "intel_ddi_port.c": "720b5bbdfdae9efea88d2d5827a02364b39ffcc29f817b4888293c303acf19a9",
+  "intel_ddi_hotplug_port.c": "d2754ed56661c41b70a8a8136668d4a540a696630d08226357d7f14fed167d62",
+  "intel_ddi_port.c": "f0f5da5702f710bcd9b944099edb595b6b4ddda468f4491d5e9e50fd00d29adb",
   "intel_display_port.c": "62698a5c287501abe3a44a81d21c51d97a297b30244a535aca3dbd7bbbae733a",
   "intel_display_power_set_port.c": "e3459aea0a5853848c4bb870507657424ee03c42682669b0400a3f4289c1d098",
   "intel_dmc_port.c": "dfb75349b30648abc8568305939af05f5b373719d47022b99e9d901be368af0a",
+  "intel_dp_connected_port.c": "c4a277466ef7a21389f4d9cf826f3297e733399be18b1841de155b7770e66328",
   "intel_dp_link_training_port.c": "0f5ac94db019ad0458408343ec6dcf2e2279a4ef5b09ab5cd75a1389be47a767",
-  "intel_dpll_port.c": "2ffe31c5c460e58fa51445e1e99c43ff435ef804d033c8b5f5f965d651a58da6",
+  "intel_dpll_port.c": "57e0d7a54553994db1a73b9f5bddb175e0e24a4038e53fd53babf07a1a857874",
+  "intel_gmbus_port.c": "1bde3e65c720833eeaa32e7f44045d99c882947309673099b66a4ace7a9e0e05",
+  "intel_hdmi_detect_port.c": "53041468b6342579bbdea7be6a610a70fef95555d3340fcfc5b7df6a6c66115b",
+  "intel_hdmi_mode_port.c": "ad16d772021a25bec71a6195965462d7a2485668da6a23915921ca2ea6c008e5",
+  "intel_hotplug_irq_port.c": "81946a8bd4db210fce22062cb3ca5186b44e4523a132dde99b4fbcb3d02c64e2",
+  "intel_hotplug_port.c": "e4d2d466f6a43e3796cd97e69caa77b7224abe464af9b0984ac0294c5e70f3a6",
   "intel_link_port.c": "81d827ba21a06a62920a60230f223425cc4516cb77466fbb1f594199719eaae8",
+  "intel_opregion_port.c": "08a15b2fda8ceff9dce0519c4e1f293a28c74d871977e383ddbbb9e6fafca179",
   "intel_vblank_port.c": "123785b5518362faf9a2a093110a2c7cfee0b58a1fa51d93b09860d4a2021d63",
   "intel_vrr_port.c": "70b40610d688b3b8498af5908d2f31c53ca8c0aa3fe109d7ab09fcb0caf88ac6",
   "intel_wm_port.c": "f1351fff7d1f9b417a2c4023bf18ca8b5fac08e051930c61e574ddbfca154e03",
@@ -637,6 +798,7 @@
   "lcd_mreg_dmc.h": "1c0c9f48546b0aedabdcbcef60e792968def3050bb21489452d8df84b8c347e7",
   "lcd_mreg_dmc_c.h": "203fea11ac6d788fef20eb5cbdd500076d18fa0381d06721114b5afc5e28bb1c",
   "lcd_mreg_drm_dp.h": "441105b4ec8e6cdf5036a8e67a67be248e0f88fa2094c85c57ba3cd0c30d34b1",
+  "lcd_mreg_hdmi_dip.h": "995863907f1e3d59d8f820dca00456c76b599a8f528824de3999f6c88f0ba3d3",
   "lcd_mreg_i915_reg.h": "80008411e46817cafc138bfcb31b2584f43666ffbbc17fad3e8bdf445b7e9b4f",
   "lcd_mreg_link_training.h": "52811588233fba45de1fd59149fcce0e281b08913a2a9d57cc48c80f4a539b03",
   "lcd_mreg_power.h": "c9c505343bc97374ad7524ef918793b99b5f01bffa9045cbbefdb5d004d1f4bf",
@@ -654,12 +816,15 @@
   "lcd_trans_regs.h": "d3f417aada15c03d39f1edaf743759cf630d743d48a1d0e06d6ab3bf87811778",
   "lcd_wm_ddb_types.h": "cefa6e118511166ef549fdf2bbcbd5507000a7013111ca167c0831efeca97fc5",
   "lcd_wm_types.h": "b0bbdbdf9f74f0c03465a9bd90fbfb2c17927690709d06bac9120a01ef7bc00b",
+  "opreg_pci_config.h": "0b684695693e7c6692372fc84436384f61d30424f58b1f60d04f6aff5f7662e0",
+  "opreg_struct.h": "53022defa93c098ff7b0a18bf9d8e0168aaf8a9ce5cdfd16292116ee140c244c",
   "skl_plane_port.c": "ce568e23f66f3d9c1cc04493cdf55e7dc81a07b0e7ccf5a9cc31f73e25c1493b",
   "skl_watermark_port.c": "51b655a8ef5710f9906a49487dcd2e21cb84c3ee0ff67f53039386441f4929e1"
  },
  "sources": {
   "drm_blend.h": "46a47b37fcb9dbb1da3f98d58db0075d21b1a0cde21290c5d627d4ace05f044f",
   "drm_color_mgmt.h": "6332adb2c833e3a6ac6a7b1083446eb1e2964c3e2b7f40014309a067f0b8ee5e",
+  "drm_connector.c": "eacf432724ef7c03d6ee16dfb655aad9cbd7278987f24851fefe511d9afbfc07",
   "drm_connector.h": "1eb905598bb46d733afe49917276689bfbef7284f3395ffa72131d4ef14c4ce3",
   "drm_dp.h": "306a1a47ba001c417baa3dab1f3a58c7e5de3c7a0537d26806a130603b599c5f",
   "drm_dp_helper.c": "030568524ac5db3fbd09725df196b22a430ec18fc1432dbb952298ce7c791a73",
@@ -668,10 +833,12 @@
   "drm_edid.h": "e61def12761bc325265437b33e91a7c0cc99ef3f7c60a4265eadb112ff66759a",
   "drm_fourcc.h": "a9607fd835647f6feae3633bbb4ca00bb15e7ff229c9df18fdc0f19a820c61fe",
   "drm_modes.c": "e3a32332f5eb4f8a40c7df278bcfc9fd3b21468f2c94aa0470cb1176c94680ef",
+  "drm_probe_helper.c": "05cedd4c3bd94a7a451d525433754952d8e48fa1dd9c8b918a0912247181e9c6",
   "i915_drm.h": "37fe8b9995b560a5a30209fc06ae41127fc7aaf68477164bed7d054638b3dfb3",
   "i915_fixed.h": "0e05c8380ba07ac1872b12ed48331d3d9ea0ff8c0e5dd191ad957ec7b580863d",
   "i915_reg.h": "82d048e09a8472af07e7d3e9db146cd849988a10d8836e64116ff26a6e6b3ed3",
   "i915_reg_defs.h": "c24ce430f5fbb32b6ac74de61f495975532c982e0a8a1e7e02bb0ddfd78cef86",
+  "intel_acpi.c": "7abb35c45a67aa587d440586a7cb10811fd1f48875590dd7ea13a9928472c0d3",
   "intel_atomic_plane.c": "e0a4cb70c1b830d76e4d014181ed313bd3cc0202e2055a08d78696a76e8d48da",
   "intel_backlight.c": "990c147ae25d589cf38abf0ca7209609a0aa1a828a18b8ab822560775ebbeecf",
   "intel_backlight_regs.h": "fe411d1e4987cd0cb17c45b5ddd005efab1ee5c44ca0de23a70bc03dff7c98b7",
@@ -688,6 +855,7 @@
   "intel_ddi_buf_trans.h": "ec4433d9f675b37e769fc219c753ee57f7404742812dbf0fe39d4c494fbdd09c",
   "intel_display.c": "f64a3b7c302986237b0c6c936be6f31a8736c04ac2dc5a2f5cab6c5307f9dee9",
   "intel_display.h": "dde8fd52907f640d35a5a490a85103a9430f1144d2a3b78c6a24041c884996e0",
+  "intel_display_core.h": "8edff66b7c1f70c86c1f7749acbeafa2a60fea51ca8273ec020237c0478d94da",
   "intel_display_device.h": "cb7d717bb48eacf17756cb666dad7cf0e006611dcbb6358a0f33f2fed23e1e9f",
   "intel_display_limits.h": "d8049c6ede79939d31462d7da810dd6afeeb9efc5a20f612e25450254c3140e1",
   "intel_display_power.c": "acbe0526744d4f90f191a694823c51a458d169c20423f098694f083e0f912708",
@@ -701,14 +869,23 @@
   "intel_dp_link_training.h": "0a4d31fd19d9db3d19fb5f44a21112457d6bd7495a43124fac5a1cb290a9a0cb",
   "intel_dpll_mgr.c": "bc90f5855afccb4ef1c18f07b284c90fb67e27df96cf9d22545768d14abc7b00",
   "intel_dpll_mgr.h": "baaf9883fe61287a68e697bb7c9978ca566fcbf64178c0c6c2cac57699bc5c9f",
+  "intel_gmbus.c": "324e6967f70a95046325a81c45f6cd038af59aae1ee9d7202f025622af7f73f0",
+  "intel_gmbus.h": "138bdbd3271a52cf07136da53ef992f7664a8123e182071ff810f8a6347af3ea",
+  "intel_gmbus_regs.h": "ce5f6978df207e8322d0527a4604fef8426f7686d7265018368b19aa0d6823ba",
+  "intel_hdmi.c": "200e4d8f5842ccc549196c503605560bda5ee5fddfb11633cd93f474c1ac824d",
+  "intel_hotplug.c": "1b88d1e007f210d565cbd2e1c806144c80218a3375103da2a7b9154f2388e011",
+  "intel_hotplug_irq.c": "468732fe1d88edecb49ffe6a8c6b87ba99d844bf148b9aa236c17f1ffefdac79",
+  "intel_opregion.c": "cf19a6a15ee196cc6541e5feac2c7ab45e0411c91eeee9974a17aa04011c66f4",
+  "intel_opregion.h": "8be6091e73b4012629447dda803d00b373c2827f4221de1f12e00138f6cef134",
   "intel_pch.h": "ff783ac9577b2e0cd7a13c9cc974f109700a816382551c06f25ac9e89968420b",
+  "intel_pci_config.h": "4306da3efbe38e8b959bd148992b7e575f5ac014bd40678a3c7d378e395ea0b7",
   "intel_psr_regs.h": "630cd23c657051e61808036fbf663fc161f916cb1f8cee1c92b725177dbf36a7",
   "intel_vblank.c": "e1ee4e3595d64d267773c042bec68486eb6751d6ba7db4308713c1982889ef6e",
   "intel_vdsc_regs.h": "a104c2392247301738c6a340bf67127c3bfd2f23d6227e760607a11b025f231d",
   "intel_vrr.c": "03f4500bc7cbcd488c3ec0a69478effb494268d4f9bb4b888c5ea07318d7773e",
   "intel_wm.c": "2783a5d0e20a5b4c6cba0757af1da469e3043ef5cb3c817bdfb688570a1c5017",
   "intel_wm_types.h": "275b607f847b0134300fdf4ce6bd4a7f5cef9cd83dcc1c83ba48dc634f8c9e2f",
-  "port_lcd_modeset.json": "b1e8ced11957c43670416c442d31efdae03514b83d24851728a9f0c8916f19bf",
+  "port_lcd_modeset.json": "ee48d72f6666610f31bc7e92ff4ddd114da26bdf361c0ad6e509b13f4dba30a5",
   "skl_universal_plane.c": "a286317da480cb543d55dfb43558884f192a6f6e09de00066c1f8b07a14a8228",
   "skl_watermark.c": "40d3b12b5bf5a8b0b7363bba4358d25aa67d72ff9635639e1fd99a8a4e8e22df",
   "skl_watermark.h": "f5d091e86d64b9c75ddc37d7600a0364cde9fb954391893a2d805a6c20166a7d",

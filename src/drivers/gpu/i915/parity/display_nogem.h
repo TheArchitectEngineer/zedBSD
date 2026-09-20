@@ -105,6 +105,8 @@ struct parity_encoder {
 	unsigned pipe_mask;
 	int is_mst;
 	int in_use;
+	int shared_dpll_id;     /* encoder->get_config: the PLL id feeding it (-1 = none / not read) */
+	uint32_t dpclka_cfgcr0; /* the value that id was read from */
 };
 
 /* intel_plane: the subset the readout/sanitize phases use. */
@@ -169,6 +171,7 @@ struct parity_dpll {
 	int on;                 /* readout (P5-c) */
 	unsigned pipe_mask;
 	unsigned active_mask;
+	int readout_incomplete; /* an active pipe's PLL could not be read (e.g. TC get_pll not ported): never disable */
 };
 
 /* One ICP gmbus pin (the adapter itself needs an i2c core we do not have). */
@@ -363,5 +366,9 @@ unsigned parity_hsw_enabled_transcoders(struct parity_display_nogem *d,
 void parity_intel_modeset_sanitize_hw_state(struct parity_display_nogem *d,
 	int display_ver, int display_step, unsigned fbc_mask, struct osdep_mmio *m,
 	struct parity_power_domains *pd, struct parity_pw_ctx *pwc);
+
+/* E-121: encoder get_config (combo PHY clock select) + the PLL <- active pipe credit; the DPLL sanitize */
+void parity_intel_dpll_readout(struct parity_display_nogem *d, struct osdep_mmio *m);
+void parity_intel_dpll_sanitize_state(struct parity_display_nogem *d, struct osdep_mmio *m, int display_ver, int display_step);
 
 #endif /* PARITY_DISPLAY_NOGEM_H */

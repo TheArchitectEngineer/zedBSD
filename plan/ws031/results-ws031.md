@@ -3707,3 +3707,88 @@ LCD-D は描画ごとに context などを作り直している（同一 context
 - 試験: host lcd-modeset 123/0、lcd 56/0、dp 72/0、opregion 11/0（新）、native-decide 8/0（新）。ktest 536/0。回帰 sweep 13/13 PASS（sweep_e120.sh、最終 source、各 ktest 536/0、全 run で N0 PROCEED）。
 - 未解決: N1（active な pipe の readout と crtc_disable_noatomic）、intel_opregion_register、同じ context を再利用する renderer（未着手）。native の log は画面の写真＋/var/log/messages（ring 32 KiB）。
 - 報告 = handover/expert-reports/report-e120-native-prep.md、review diff = e120-review-changes.patch（E-119 固定版比）、累積 = e97-e120-changes.patch。
+
+### E-120 追記: native 第一枠（事前採取）— N0 は想定どおり「display へ書く前に STOP」
+対象機を USB（zedbsd-native-e120.img、sha256 fc83e1af…）から native 起動した。写真: increment-results/e120-photos/native-n0-first.jpg（画面の右端が切れており、一部の値は読めない）。
+- hypervisor=0。OpRegion: ASLS=0x614e5018、2.1.0、8KiB、mboxes=0x1d、VBT via RVDA（rvda 0x2000、rvds 8704、relative、inside=0）、mapped=1、size=8704、valid=1、sha256=3bff4a0920d55c9a..（明示 pin と同じ先頭。「matches=」の値は写真で切れている）。
+- VT-d（GPU unit、view=native）: GFXVTBAR=0xfed90001、readable=1、GSTS=0x40000000（TES=0。bit30 RTPS のみ）、PMEN=0 → DMA は untranslated、PMR なし。
+- firmware の framebuffer: base 0x4000000000、size 0x12c000（640×480×4）、in_aperture、GGTT page 0..300、driver が書く page 1040128..1048576 と重ならない。
+- pipe A（GOP）: TRANSCONF=0xc0000000、TRANS_DDI_FUNC_CTL=0x8a210102（利用者が画面で確認済み。enable、DDI A、DP SST、6 bpc、PHSYNC、2 lane までは Linux 値 0x8a210002 と一致。違いは bit8 TRANS_DDI_DP_VC_PAYLOAD_ALLOC のみで、正本はこの bit を MST の経路でしか扱わない。firmware の差であり、N1 の readout では bit8 を MST と解釈しない。再点灯後は 0x8a210002 に戻ることを確認する）、PIPESRC=0x027f01df（640×480）、PLANE_CTL=0x94000008、SURF=0、STRIDE=0x28（2560 B）、SIZE=0x01df027f。pipe B・C は電源あり・inactive、pipe D は not_readable。
+- pipe A の domain: DPLL1_ENABLE=0xcc000000（**firmware は DPLL1 を使用**。Linux の modeset は DPLL0）、DDI_BUF_CTL_A=0x80000002、PP_STATUS=0x80000008、PP_CONTROL=0x67、BLC_PWM_CTL=0x80000000、DUTY=0x17700。
+- 判定: STOP before any display write -- a pipe is active (firmware display)（active 0x1、unreadable 0x8）。teardown の後に「runner thread end」に到達し、hang はない。表示は firmware のまま。
+- N1 への入力: DPLL1 の readout と停止、pipe A／transcoder A／DDI A の readout、GOP の plane（surf 0、640×480）の停止、backlight・PP の引継ぎ。値が切れている箇所は /var/log/messages または再撮影で確認する。
+
+## p011 増分E-121 (2026-09-20): N0 記録の改善、DPLL の危険の除去（N1 の最初の一歩）、OpRegion と N1 の準備
+- native 第一枠（E-120 イメージ）は想定どおり N0 で STOP（上の追記を参照）。
+- N0: pipe の 4 区分（READ_ERROR は丸めない）、GSTS の全 bit 復号（IRES は MSI 経路の条件）、主な停止理由と観測した全条件、VBT の観測と parser 採用の対応、N0 より前の PCI COMMAND と実施済み操作。native-decide 14/0。
+- DPLL: parity_intel_dpll_readout（combo PHY の clock select → shared_dpll → active pipe の帰属）。sanitize は active な pipe を持つ PLL を止めない。TC は特定できないので何も止めない。ktest P5C-DPLL ×3。
+- 調査 notes: pre-n0-side-effects.md（display／GGTT PTE／D-state への書込みなし）、opregion-register-scope.md（ACPI notifier chain がない → 判断依頼）、n1-takeover-plan.md。
+- 試験: ktest 539/0。回帰 sweep 13/13 PASS（sweep_e121.sh、全 run で N0 PROCEED、HW 由来の TLB timeout 0 件）。USB: zedbsd-native-e121.img（82fbd045…）。
+- 報告 = expert-reports/report-e121-n0-n1-prep.md。
+
+## p011 増分E-122 (2026-09-20): OpRegion をデータとしてだけ使う（VBT_ONLY）— 専門家の判断（C 案）の実装
+- native 第二の採取（E-121 イメージ）: N0 VBT の observed は OPREGION(RVDA)、parser が採用したのは EXPLICIT_BLOB、same bytes=1。DPCLKA_CFGCR0=0x01e07801（PHY A → DPLL1）。pipe A は READABLE_ACTIVE、B・C は READABLE_INACTIVE、D は POWER_OFF。conditions は primary=ACTIVE_PIPE、observed=0x81（ACTIVE_PIPE と OPREGION）。VT-d 由来の条件はなし（IRES=0）。
+- 専門家の判断: register_acpi_notifier は受信 callback の登録。OpRegion は firmware と driver の共有メモリ。ACPI の実行時連携（notifier、drdy／ardy／csts／DIDL／CADL、ASLE）は、受信基盤（AML）ができるまで参加しない。OpRegion は VBT などのデータ取得にだけ使う。intel_opregion_register での BLOCKED は撤回する（正本にも CONFIG_ACPI=n の空実装がある）。
+- 実装: P2 で OpRegion を読み取り専用で map してコピーし、VBT（RVDA／mailbox#4）も取得する（parity_opregion_read_data）。parser への供給順は intel_opregion_get_vbt どおり（明示 blob → OpRegion → PCI ROM）。runtime=DISABLED（ACPI_RUNTIME_UNAVAILABLE）。メールボックスの値は観測だけする（opregion_vbt.c が drdy／csts／cevt／chpd／clid／ardy／aslc／tche を読む。書込みは読み取り専用 mapping なので構造上ありえない）。P7 は記録を残して先へ進む。N0 の VBT 対応行は OPREGION 採用時にも consumed byte の sha を示す。
+- 試験: host opregion 12/0（+1 メールボックスの配置。dump は Linux 稼働中のもの: drdy=1、ardy=1、tche=2）、native-decide 14/0。ktest 539/0。VM（ASLS=0）で LCD-D PASS。VM では OpRegion がないので、他モードの動作は E-121 と同じ（全モードの sweep は N1 のまとまりで行う）。
+- native 用: zedbsd-native-e122.img（明示 blob を無効にして OpRegion から採用させる。3e731094…）。
+- GSE（ASLE の IRQ）は、正本の CONFIG_ACPI=n と同じく有効化と ack だけを行い、asle_intr は呼ばない（worker なし）。専門家の「IRQ source も有効化しない」との差は次報で確認する。
+
+### E-122 追記: OpRegion 受信側を shadow と合成通知で実装（専門家の方針: 受信側の本体を今作り、実イベント源への接続は後）
+- 通常動作は VBT_ONLY のまま。試験用に、driver 所有の RAM に OpRegion と同じ形式の shadow を作る（ASLS は書き換えない。firmware の領域には書かない）。
+- OP-NOTIFY（unit 1）: 通知の登録と配送（opregion_service.c、zedBSD 側のコード）。Linux v6.8.12 の drivers/acpi/event.c と kernel/notifier.c の契約（-EEXIST、-ENOENT、優先度順、STOP_MASK で停止、NOTIFY_BAD → -EINVAL、blocking）を公開ソースで確認し、GPL の原文は写さずに実装した。正本から生成（intel_opregion_port.c）: mailbox の定義と構造体、struct intel_opregion（opreg_struct.h）、intel_opregion_video_event。register／unregister の notifier 部分は glue（正本の条件どおり）。ktest の判定表: 非 video → DONE で CSTS は書かない、0x80 で CEVT bit0 → OK で CSTS=0、bit0 なし → BAD（dispatch は -EINVAL）で CSTS=0、0x81 → OK で CSTS=0、解除後は配送されない、重複登録は -EEXIST、STOP で配送停止。
+- OP-ASLE（unit 2a）: 正本から生成: asle_set_* のすべて、asle_work、intel_opregion_asle_intr。INIT_WORK／queue_work は共有 kworkqueue に対応させる（新規 queue と保留中を区別）。policy（acpi_video_get_backlight_type）は構成の入力。backlight は登録した対象へ。ktest: BCLP 128 → set_acpi(128,255)、CBLV 0x80000033、ASLC 0。valid bit なし／範囲外 → BACKLIGHT_FAILED。native → 何もせず成功。混在 → ASLC 0x4400。要求なし → 応答しない。mailbox なし → queue しない。
+- ktest 563/0。残り: unit 2b（setup／register／resume／suspend／unregister と DIDL／CADL を shadow で）、unit 3（寿命と競合）、合成 ASLE から実 LCD の輝度（intel_backlight_set_acpi を backlight port へ取り込む）。
+
+### E-122 追記: 寿命と競合、実 LCD（LCD-O）、回帰
+- OP-LIFECYCLE（unit 3）: 受付の関門（GSE は受付中だけ queue する）→ 正本の unregister（ARDY NOT_READY、cancel_work_sync、DRDY 0、notifier 解除。配送中の callback の終了を待つ）→ cleanup は work が idle であることを確かめてから。ktest: callback 実行中の解除、work 実行中の停止（応答の書込みを待つ）、停止後の要求は破棄、保留中の要求は取り消し、setup の失敗、再初期化。ktest 582/0。
+- LCD-O（-DPARITY_LCDO_TEST=1、実 LCD）: 正本の intel_backlight_set_acpi を backlight port に取り込み（drm_connector_state に crtc を追加）、kernel が持つ shadow の上の service と合成 GSE で、BCLP 10／64／160／255 → PWM duty 5647／24094／60235／96000。正本の clamp_user_to_hw（[0,max] へ拡大縮小してから [min,max] に制限）と一致。ASLC 0、CBLV は期待どおり、元の輝度に戻し、service を解除。写真 6 枚。最初の実行は試験の期待値の式の誤り（[min,max] へ拡大縮小すると置いた）で FAIL。ハードウェアは正本どおりだった。
+- host 試験のスクリプトは、kernel 専用の生成ファイル（intel_opregion_port.c、intel_acpi_port.c）を対象から外した。host: lcd-modeset 123/0、lcd 56/0、dp 72/0、opregion 12/0、native-decide 14/0。
+- 回帰 sweep 14/14 PASS（sweep_e122.sh、全 run で ktest 582/0）。報告 = expert-reports/report-e122-opregion-service.md。notes/opregion-register-scope.md を今回の実装に合わせて更新。
+
+## p011 増分E-123 (2026-09-20): OpRegion の実書込み（FIRMWARE backend）、HDMI 接続・切断の受信（slice a）
+- 利用者の指示: OpRegion の書込み、HDMI の接続・切断の受信、外部ディスプレイの有効化・無効化の 3 つを、それぞれ実機試験まで行ってから先へ進む。
+- 共有 kworkqueue を IRQ-safe にした（wq->lock をすべて irqsave。round75）。GU_MISC GSE を OpRegion service の GSE 入口に接続した（round76）。VM で LCD-D PASS、ktest 582/0。
+- OpRegion FIRMWARE backend: ASLS の領域を READ|WRITE で map し、正本の lifecycle（setup / register / 合成 notify / 合成 ASLE / unregister / cleanup）を実 OpRegion 上で実行する試験（-DPARITY_OPREGION_FW_TEST=1、P3.2、N0 より前）。native イメージ zedbsd-native-e123-opregion.img（f7e60a5b…）は利用者の native 実行待ち。
+- HDMI hotplug（slice a）: 正本の連鎖 icp_irq_handler → intel_get_hpd_pins → intel_hpd_irq_handler（storm 検出）→ i915_hotplug_work_func → intel_ddi_hotplug（RETRY）→ drm_helper_probe_detect（epoch）→ intel_hdmi_detect → intel_digital_port_connected（lpt: SDEISR & pch_hpd）を生成（7 unit、round77、port_lcd_modeset.json）。drm_probe_helper.c と drm_connector.c を kernel.org v6.8.12 から取得（README / SHA256SUMS 記録）。compat = lcd/hpd_compat.h（kernel の spinlock / mutex、kworkqueue / ktimerq、sched_ticks）、glue 3 本、link 名はすべて parity_hpd_ 接頭辞。
+- 適応（記録済み）: connector は hotplug 開始時に作る。intel_hdmi_set_edid は GMBUS 未移植のため step とし、live status が立っていれば接続扱い（slice b で正本に置換）。intel_dp_hpd_pulse / intel_dp_detect / intel_tc_port_connected は step（hpd_pulse は IRQ_HANDLED）。polling と uevent は計数だけ。
+- 経路は全モードで常時有効（P7 hpd_init の後に開始、teardown で IRQ uninstall の前に停止）。HPD-TEST（-DPARITY_HDMI_HPD_TEST=1、明示 VBT、窓 240 s）。
+- model 試験（GPU なし、fake SHOTPLUG / SDEISR）: HPD-DECODE / PLUG / RETRY（1000 ms 後に 1 回）/ UNPLUG / EDP（dig-port 経路）/ STORM（polling 切替と再有効化）/ GATE、ktest 605/0。実機 ktest で待ちのレース 2 件（storm 後の work 実行と reenable の arm）を検出し、有界待ちに修正。
+- **実機（VM、iGPU passthrough、利用者が HDMI を抜き差し）: HPD-TEST verdict PASS**。SDEIIR=0x00020000、SHOTPLUG_CTL_DDI=0x000000a8（B long）、pins 0x20、disconnected → connected → disconnected → connected（CHANGED、live 1/0/1、epoch 4）、storms 0、warnings 0、dropped 0。eDP の HPD（pin 4）は dig-port 経路の step に入った。log = handover/increment-results/e123-run-parity-hw-hpd.log。
+- 次: 回帰 sweep（sweep_e123.sh）、slice b（GMBUS による EDID）、外部ディスプレイの有効化・無効化。
+
+### E-123 追記: OpRegion 実書込み — native PASS
+- native 実行（zedbsd-native-e123-opregion.img、f7e60a5b…）: OPREGION-FW summary (repeated): REAL OpRegion written | setup CHPD 1 ARDY 0 | register DRDY 1 ARDY 1 | unregister DRDY 0 ARDY 0 | synthetic notify + ASLE answered | cleanup rc 0 | **verdict PASS (5/5)**。続く N0 は従来どおり STOP（pipe A active、TRANS_DDI_FUNC_CTL 0x8a210102、DPCLKA_CFGCR0 0x01e07801）、runner thread end に到達、hang なし。
+- 写真: increment-results/e123-native-opregion-fw.webp（利用者の動画から切り出し）、e123-native-n0.jpg。要約は N0 の再掲より前に出ていて画面外へ流れたため、runner.c で N0 の後（最終行）に移した（e123b イメージは作成したが、動画で確認できたので未使用）。
+
+### E-123 追記: HDMI slice (b) — EDID over GMBUS（正本の GMBUS 転送）
+- 生成: intel_gmbus_port.c（struct intel_gmbus、gmbus_wait / _idle、read / write chunk、index 転送、do_gmbus_xfer（NAK 時の 1 回 retry と bit-banging への切替信号）、gmbus_xfer、force_bit、intel_gmbus_irq_handler）、hpd_mreg_gmbus*.h。intel_hdmi_set_edid を正本の text に置換（slice a の適応を撤去）。drm_edid_read_ddc は dp/ の parity_drm_edid_read（正本 drm_do_probe_ddc_edid）で読む。drm_edid_connector_update は EDID 変化時の epoch 加算のみ（表示情報の解析は未移植）。bit-banging と DP dual-mode 検出は step。
+- 修正: (1) HPD model 試験がスレッド文脈で IRQ 入口を呼び、実機 SDE IRQ と同一 CPU で irq_lock を取り合って deadlock（sweep_e123 の eu で検出）→ 実機入口は model 稼働中は無視、model は IRQ 禁止の専用入口。(2) GMBUS 側と dp/ 側で errno 番号が不一致（ENXIO）→ hpd_compat で Linux 番号に統一。
+- model 試験: GMBUS model（0x50 の index read、NAK）で HPD-EDID / EDIDCHG / NODDC を追加、ktest 612/0。
+- 実機（VM、HDMI 接続、live=1、SDEISR=0x00030000）: GMBUS で 0x50 への書込みが NAK → retry → NAK → bit-banging でも読めず disconnected。**同じ VM 構成で Linux 6.8（正本）も同一の列**（NAK for addr 0050 w(1) → retry → skipping non-existent adapter → bit-banging → disconnected）。移植は正本と同じ挙動。EDID が取れない原因は sink 側の DDC 無応答（接続経路またはモニター）で、移植ではない。
+- 追試（別の HDMI ディスプレイ）: 同じく live=1 かつ 0x50 NAK。sink 依存ではなく、この VM 環境の HDMI DDC 経路が応答しない。点灯は正本の force 経路（EDID なし・標準モード）で行い、ポート有効化後の EDID 再読み出しも試す。
+
+### E-123 追記: 外部ディスプレイの点灯・消灯（HDMI-B）— 実機 PASS
+- 生成追加: WRPLL（icl_wrpll_ref_clock / _get_multipliers / _params_populate / icl_calc_wrpll、intel_dpll_port.c）、DDI の HDMI 分岐（intel_ddi_hdmi_level / pre_enable_hdmi / enable_ddi_hdmi / disable_ddi_hdmi / post_disable_hdmi、intel_ddi_port.c、placeholder 撤去）、intel_hdmi_mode_port.c（assert_hdmi_transcoder_func_disabled、hsw_set_infoframes、intel_dp_dual_mode_set_tmds_output、intel_hdmi_handle_sink_scrambling）、lcd_mreg_hdmi_dip.h。
+- modeset object に出力種別（cfg->output_hdmi）。HDMI では DP 固有（link M/N、enhanced framing、backlight、リンク訓練の確認）を通らず、crtc_state は intel_hdmi_compute_config 相当（DVI mode、RGB 8bpc、4 lane、TMDS=pixel clock）。PLL は parity_icl_hdmi_wrpll。
+- HDMI-B（-DPARITY_HDMI_B_TEST=1）: port B / pipe B / transcoder B / DPLL0、CEA-861 format 4（1280x720p60、74.25 MHz）。**実機 PASS**: 利用者が外部ディスプレイで pattern 110 を目視確認、frame counter 3→13→1254、停止後 1271→1271、TRANSCONF=0、wakeref/PLL/domain 全返却、unresolved steps 0、errors 0。log = increment-results/e123-run-parity-hw-hdmib.log。
+- 適応（記録）: EDID が読めないため mode は EDID からではなく CEA-861 の標準モード、has_hdmi_sink=0（DVI mode、infoframe なし）、VBT の hdmi level shift 未読（buf trans の既定 entry）。判定は HDMI ではリンク状態を見ない（show report に output_hdmi）。
+- 途中の誤り 3 件（いずれも判定側、点灯自体は初回から成功）: DP 前提のリンク確認、修正イメージの転送漏れ、report の memset で判定フラグが消えていた。
+
+### E-123 追記: 専門家レビューへの対応（model 分離、connected の出所、VBT level、GMBUS ロック）と EDID 再読み出し
+- **model と実デバイスの分離**: 実機の入口は「ハードウェア ack の後に HPD 処理だけ省略」だった（接続変更を消費して捨てる形）。指摘に従い、実インスタンスがこの起動で動いた後は model インスタンスの開始を拒否し、ktest は理由を記録して実行しない（実機 run では 582 checks、GPU なし run では 612 checks）。
+- **connected の出所**: HPD-EVENT の記録に EDID の戻り値・有効ブロック数・digital を追加。なお E-123 の HPD 実機 PASS は slice (a)（EDID 未移植、live status で接続扱い）のビルドでの結果であり、slice (b) では同じ抜き差しでも EDID が読めないため disconnected になる。正本の intel_hdmi_detect は EDID が読めなければ disconnected を返す。
+- **VBT の HDMI level shift**: 既存パーサの値を使う（port B は **0**、有効な index）。「未読なので既定 entry」ではなく、正本どおり値があれば採用、無い場合（< 0）のみ table の既定 entry。
+- **GMBUS の共有ロック**: 正本の gmbus_lock_bus と同じく display.gmbus.mutex を転送全体で保持（hotplug worker と試験スレッドの同時操作を防ぐ）。
+- **点灯中の EDID 再読み出し（実機）**: status 2（disconnected）、reads 2 fails 2 rc -5。TMDS を出しても DDC は応答しない。原因は未確定（環境または共通の開始条件に依存する可能性が高い）。log = increment-results/e123-run-parity-hw-hdmib-edid.log。
+- HDMI-B は VBT level shift 0 を使った状態でも実機 PASS。
+
+### E-123 追記: 二画面（内蔵 LCD + 外部 HDMI、別内容）— 実機 PASS
+- 専門家レビューの指摘を実装: (1) DPLL をデバイス全体の pool にし、正本の規則（hw state が一致すれば共有、なければ空き）で割り当て（intel_find_shared_dpll / intel_get_shared_dpll_by_id / intel_dpll_mask_all / intel_reference_shared_dpll ほかを生成）。pipe の参照返却（intel_release_shared_dplls 相当）と device 再作成時の初期化を追加。(2) DBUF/MBUS 状態をデバイス全体に。各画面は「最終的に点灯する pipe の集合」（cfg->also_active_pipes）で DDB を計算する（適応: 1 つの atomic commit ではなく直列 commit）。(3) modeset object を 2 面化（parity_lcd_modeset_select）。
+- **不具合 1**: 2 面化後、生成コードが参照するグローバル（ddi_ms ほか）が「最後に prepare した画面」を指したままで、内蔵の停止が外部側の encoder に対して走り、DDI IO / AUX の wakeref が返らなかった（実機: crtc_active=0・PLL off なのに io=30 aux=54）。→ 画面選択と各 entry point で結び直す（round 91）。
+- **不具合 2（ホスト巻き込み）**: 停止に失敗したまま VM が終了すると、表示が DMA を続けた状態で IOMMU unmap に入り、**ホストが vfio_iommu_type1_detach_group で soft lockup → panic**（2 回発生、電源長押しで復旧）。→ 終了処理の最後に「まだ表示している pipe / DDI を確実に止める」LAST-RESORT を追加（適応、記録）。起動スクリプトに timeout --kill-after を追加（run-parity-ref-240k.sh）。
+- **実機 PASS**: LCD 1920x1080 pattern 110（pipe A / DPLL0）+ HDMI 1280x720 pattern 111（pipe B / DPLL1）同時点灯、利用者が両画面を目視確認（F110 / F111）。frame counter A 1262 / B 1247、MBUS 非結合、外部停止後も内蔵は継続（A 1268→1298、PLL・domain・buffer 保持）、その後内蔵も停止し両 buffer 解放。log = increment-results/e123-run-parity-hw-dual.log。
+
+### E-123 追記: 同一バッファの両面表示（DUAL-SHARED）— 実機 PASS
+- scanout の利用者を数える契約に拡張（begin が利用者 +1、end が -1、最後の end で PINNED に戻る）。片方が止めてもバッファは保持され、解放は拒否される。
+- **実機 PASS**: 1 つの buffer（surf 0xfdfc0000、1920x1080、pitch 7680、pattern 110）を両 pipe が読む。内蔵は全体、外部は同じ行の左上 1280x720（**部分表示**であり縮小ミラーではない。縮小には pipe scaler が要る＝未使用）。frame counter A 957 / B 946。HDMI 停止後 users=2→1 かつ IN_USE 維持、その状態の unpin は rc=-17 で拒否、内蔵停止後 users=0 → unpin/destroy 成功。log = increment-results/e123-run-parity-hw-dual-shared.log。

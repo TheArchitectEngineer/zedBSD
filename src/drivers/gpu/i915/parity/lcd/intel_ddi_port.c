@@ -159,6 +159,24 @@ static void intel_ddi_post_pll_disable(struct intel_atomic_state *state,
 static int icl_ddi_min_voltage_level(const struct intel_crtc_state *crtc_state);
 static int jsl_ddi_min_voltage_level(const struct intel_crtc_state *crtc_state);
 static int tgl_ddi_min_voltage_level(const struct intel_crtc_state *crtc_state);
+static int intel_ddi_hdmi_level(struct intel_encoder *encoder,
+				const struct intel_ddi_buf_trans *trans);
+static void intel_ddi_pre_enable_hdmi(struct intel_atomic_state *state,
+				      struct intel_encoder *encoder,
+				      const struct intel_crtc_state *crtc_state,
+				      const struct drm_connector_state *conn_state);
+static void intel_enable_ddi_hdmi(struct intel_atomic_state *state,
+				  struct intel_encoder *encoder,
+				  const struct intel_crtc_state *crtc_state,
+				  const struct drm_connector_state *conn_state);
+static void intel_disable_ddi_hdmi(struct intel_atomic_state *state,
+				   struct intel_encoder *encoder,
+				   const struct intel_crtc_state *old_crtc_state,
+				   const struct drm_connector_state *old_conn_state);
+static void intel_ddi_post_disable_hdmi(struct intel_atomic_state *state,
+					struct intel_encoder *encoder,
+					const struct intel_crtc_state *old_crtc_state,
+					const struct drm_connector_state *old_conn_state);
 
 static u32 ddi_buf_phy_link_rate(int port_clock)
 {
@@ -1698,6 +1716,193 @@ void intel_ddi_compute_min_voltage_level(struct intel_crtc_state *crtc_state)
 		crtc_state->min_voltage_level = jsl_ddi_min_voltage_level(crtc_state);
 	else if (DISPLAY_VER(dev_priv) >= 11)
 		crtc_state->min_voltage_level = icl_ddi_min_voltage_level(crtc_state);
+}
+
+static int intel_ddi_hdmi_level(struct intel_encoder *encoder,
+				const struct intel_ddi_buf_trans *trans)
+{
+	int level;
+
+	level = intel_bios_hdmi_level_shift(encoder->devdata);
+	if (level < 0)
+		level = trans->hdmi_default_entry;
+
+	return level;
+}
+
+static void intel_ddi_pre_enable_hdmi(struct intel_atomic_state *state,
+				      struct intel_encoder *encoder,
+				      const struct intel_crtc_state *crtc_state,
+				      const struct drm_connector_state *conn_state)
+{
+	struct intel_digital_port *dig_port = enc_to_dig_port(encoder);
+	struct intel_hdmi *intel_hdmi = &dig_port->hdmi;
+	struct drm_i915_private *dev_priv = to_i915(encoder->base.dev);
+
+	intel_dp_dual_mode_set_tmds_output(intel_hdmi, true);
+	intel_ddi_enable_clock(encoder, crtc_state);
+
+	drm_WARN_ON(&dev_priv->drm, dig_port->ddi_io_wakeref);
+	dig_port->ddi_io_wakeref = intel_display_power_get(dev_priv,
+							   dig_port->ddi_io_power_domain);
+
+	icl_program_mg_dp_mode(dig_port, crtc_state);
+
+	intel_ddi_enable_transcoder_clock(encoder, crtc_state);
+
+	dig_port->set_infoframes(encoder,
+				 crtc_state->has_infoframe,
+				 crtc_state, conn_state);
+}
+
+static void intel_enable_ddi_hdmi(struct intel_atomic_state *state,
+				  struct intel_encoder *encoder,
+				  const struct intel_crtc_state *crtc_state,
+				  const struct drm_connector_state *conn_state)
+{
+	struct drm_i915_private *dev_priv = to_i915(encoder->base.dev);
+	struct intel_digital_port *dig_port = enc_to_dig_port(encoder);
+	struct drm_connector *connector = conn_state->connector;
+	enum port port = encoder->port;
+	enum phy phy = intel_port_to_phy(dev_priv, port);
+	u32 buf_ctl;
+
+	if (!intel_hdmi_handle_sink_scrambling(encoder, connector,
+					       crtc_state->hdmi_high_tmds_clock_ratio,
+					       crtc_state->hdmi_scrambling))
+		drm_dbg_kms(&dev_priv->drm,
+			    "[CONNECTOR:%d:%s] Failed to configure sink scrambling/TMDS bit clock ratio\n",
+			    connector->base.id, connector->name);
+
+	if (has_buf_trans_select(dev_priv))
+		hsw_prepare_hdmi_ddi_buffers(encoder, crtc_state);
+
+	/* e. Enable D2D Link for C10/C20 Phy */
+	if (DISPLAY_VER(dev_priv) >= 14)
+		mtl_ddi_enable_d2d(encoder);
+
+	encoder->set_signal_levels(encoder, crtc_state);
+
+	/* Display WA #1143: skl,kbl,cfl */
+	if (DISPLAY_VER(dev_priv) == 9 && !IS_BROXTON(dev_priv)) {
+		/*
+		 * For some reason these chicken bits have been
+		 * stuffed into a transcoder register, event though
+		 * the bits affect a specific DDI port rather than
+		 * a specific transcoder.
+		 */
+		i915_reg_t reg = gen9_chicken_trans_reg_by_port(dev_priv, port);
+		u32 val;
+
+		val = intel_de_read(dev_priv, reg);
+
+		if (port == PORT_E)
+			val |= DDIE_TRAINING_OVERRIDE_ENABLE |
+				DDIE_TRAINING_OVERRIDE_VALUE;
+		else
+			val |= DDI_TRAINING_OVERRIDE_ENABLE |
+				DDI_TRAINING_OVERRIDE_VALUE;
+
+		intel_de_write(dev_priv, reg, val);
+		intel_de_posting_read(dev_priv, reg);
+
+		udelay(1);
+
+		if (port == PORT_E)
+			val &= ~(DDIE_TRAINING_OVERRIDE_ENABLE |
+				 DDIE_TRAINING_OVERRIDE_VALUE);
+		else
+			val &= ~(DDI_TRAINING_OVERRIDE_ENABLE |
+				 DDI_TRAINING_OVERRIDE_VALUE);
+
+		intel_de_write(dev_priv, reg, val);
+	}
+
+	intel_ddi_power_up_lanes(encoder, crtc_state);
+
+	/* In HDMI/DVI mode, the port width, and swing/emphasis values
+	 * are ignored so nothing special needs to be done besides
+	 * enabling the port.
+	 *
+	 * On ADL_P the PHY link rate and lane count must be programmed but
+	 * these are both 0 for HDMI.
+	 *
+	 * But MTL onwards HDMI2.1 is supported and in TMDS mode this
+	 * is filled with lane count, already set in the crtc_state.
+	 * The same is required to be filled in PORT_BUF_CTL for C10/20 Phy.
+	 */
+	buf_ctl = dig_port->saved_port_bits | DDI_BUF_CTL_ENABLE;
+	if (DISPLAY_VER(dev_priv) >= 14) {
+		u8  lane_count = mtl_get_port_width(crtc_state->lane_count);
+		u32 port_buf = 0;
+
+		port_buf |= XELPDP_PORT_WIDTH(lane_count);
+
+		if (dig_port->saved_port_bits & DDI_BUF_PORT_REVERSAL)
+			port_buf |= XELPDP_PORT_REVERSAL;
+
+		intel_de_rmw(dev_priv, XELPDP_PORT_BUF_CTL1(port),
+			     XELPDP_PORT_WIDTH_MASK | XELPDP_PORT_REVERSAL, port_buf);
+
+		buf_ctl |= DDI_PORT_WIDTH(crtc_state->lane_count);
+
+		if (DISPLAY_VER(dev_priv) >= 20)
+			buf_ctl |= XE2LPD_DDI_BUF_D2D_LINK_ENABLE;
+	} else if (IS_ALDERLAKE_P(dev_priv) && intel_phy_is_tc(dev_priv, phy)) {
+		drm_WARN_ON(&dev_priv->drm, !intel_tc_port_in_legacy_mode(dig_port));
+		buf_ctl |= DDI_BUF_CTL_TC_PHY_OWNERSHIP;
+	}
+
+	intel_de_write(dev_priv, DDI_BUF_CTL(port), buf_ctl);
+
+	intel_wait_ddi_buf_active(dev_priv, port);
+}
+
+static void intel_disable_ddi_hdmi(struct intel_atomic_state *state,
+				   struct intel_encoder *encoder,
+				   const struct intel_crtc_state *old_crtc_state,
+				   const struct drm_connector_state *old_conn_state)
+{
+	struct drm_i915_private *i915 = to_i915(encoder->base.dev);
+	struct drm_connector *connector = old_conn_state->connector;
+
+	if (!intel_hdmi_handle_sink_scrambling(encoder, connector,
+					       false, false))
+		drm_dbg_kms(&i915->drm,
+			    "[CONNECTOR:%d:%s] Failed to reset sink scrambling/TMDS bit clock ratio\n",
+			    connector->base.id, connector->name);
+}
+
+static void intel_ddi_post_disable_hdmi(struct intel_atomic_state *state,
+					struct intel_encoder *encoder,
+					const struct intel_crtc_state *old_crtc_state,
+					const struct drm_connector_state *old_conn_state)
+{
+	struct drm_i915_private *dev_priv = to_i915(encoder->base.dev);
+	struct intel_digital_port *dig_port = enc_to_dig_port(encoder);
+	struct intel_hdmi *intel_hdmi = &dig_port->hdmi;
+	intel_wakeref_t wakeref;
+
+	dig_port->set_infoframes(encoder, false,
+				 old_crtc_state, old_conn_state);
+
+	if (DISPLAY_VER(dev_priv) < 12)
+		intel_ddi_disable_transcoder_clock(old_crtc_state);
+
+	intel_disable_ddi_buf(encoder, old_crtc_state);
+
+	if (DISPLAY_VER(dev_priv) >= 12)
+		intel_ddi_disable_transcoder_clock(old_crtc_state);
+
+	wakeref = fetch_and_zero(&dig_port->ddi_io_wakeref);
+	if (wakeref)
+		intel_display_power_put(dev_priv,
+					dig_port->ddi_io_power_domain,
+					wakeref);
+
+	intel_ddi_disable_clock(encoder);
+
+	intel_dp_dual_mode_set_tmds_output(intel_hdmi, false);
 }
 
 
