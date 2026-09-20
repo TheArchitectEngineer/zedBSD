@@ -3,8 +3,9 @@ AI/UX
 
 `AI/UX` is a modern, re-designed BSD-based kernel and base system
 aiming to implement all `POSIX.1-2024` and `Single UNIX Specification
-version 4 (SUSv4)` features with a sophisticated architecture.
-It is designed by a human and implemented using AI coding agents.
+version 4 (SUSv4)` features with a sophisticated architecture. It is
+designed and directed by a human developer, and implemented by using
+AI coding agents.
 
 It runs on the latest computers. The current focused target is 64-bit
 x86 PC and Raspberry Pi series.
