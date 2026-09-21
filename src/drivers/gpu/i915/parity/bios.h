@@ -107,8 +107,11 @@ struct parity_vbt_state {
 #ifndef PARITY_N1_TEST
 #define PARITY_N1_TEST 0      /* E-124: the display the firmware left running (readout, takeover, re-light) */
 #endif
+#ifndef PARITY_RESIDENT_DISPLAY
+#define PARITY_RESIDENT_DISPLAY 0      /* E-129: the panel as the resident node's display */
+#endif
 #ifndef PARITY_VBT_EXPLICIT
-#define PARITY_VBT_EXPLICIT (PARITY_N1_TEST || PARITY_DUAL_SHARE_TEST || PARITY_DUAL_TEST || PARITY_HDMI_B_TEST || PARITY_HDMI_EDID_TEST || PARITY_HDMI_HPD_TEST || PARITY_AUX_TEST || PARITY_LCDB_TEST || PARITY_LCDR_TEST || PARITY_LCDG_TEST || PARITY_LCDC_TEST || PARITY_LCDD_TEST || PARITY_LCDO_TEST)
+#define PARITY_VBT_EXPLICIT (PARITY_RESIDENT_DISPLAY || PARITY_N1_TEST || PARITY_DUAL_SHARE_TEST || PARITY_DUAL_TEST || PARITY_HDMI_B_TEST || PARITY_HDMI_EDID_TEST || PARITY_HDMI_HPD_TEST || PARITY_AUX_TEST || PARITY_LCDB_TEST || PARITY_LCDR_TEST || PARITY_LCDG_TEST || PARITY_LCDC_TEST || PARITY_LCDD_TEST || PARITY_LCDO_TEST)
 #endif
 /*
  * The explicit VBT inputs, one row per machine this build carries.  A row is used only when the

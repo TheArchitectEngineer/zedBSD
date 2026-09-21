@@ -165,6 +165,8 @@ drv_i915_ppgtt_va_alloc(
 	return 0;
 }
 
+static int i915_ppgtt_insert_bits(struct i915_ppgtt *vm, uint64_t va, uint64_t physical, unsigned pages, uint64_t bits);
+
 /*
  * Maps physically contiguous pages at a virtual address, growing tables as needed.
  */
@@ -174,6 +176,32 @@ drv_i915_ppgtt_insert(
 	uint64_t va,
 	uint64_t physical,
 	unsigned pages)
+{
+	return i915_ppgtt_insert_bits(vm, va, physical, pages, I915_PPGTT_PAGE_BITS);
+}
+
+/*
+ * E-130: the same, uncached (PAT index 3 = Linux's I915_CACHE_NONE): pages the display engine reads, which does not
+ * snoop the LLC, so a GPU write must reach memory rather than stay in the cache.
+ */
+int
+drv_i915_ppgtt_insert_uncached(
+	struct i915_ppgtt *vm,
+	uint64_t va,
+	uint64_t physical,
+	unsigned pages)
+{
+	return i915_ppgtt_insert_bits(vm, va, physical, pages,
+	    I915_PPGTT_PAGE_BITS | GEN12_PPGTT_PTE_PAT0 | GEN12_PPGTT_PTE_PAT1);
+}
+
+static int
+i915_ppgtt_insert_bits(
+	struct i915_ppgtt *vm,
+	uint64_t va,
+	uint64_t physical,
+	unsigned pages,
+	uint64_t bits)
 {
 	uint64_t *entry;
 	uint64_t page_va;
@@ -200,7 +228,7 @@ drv_i915_ppgtt_insert(
 			return ENOMEM;
 		}
 
-		*entry = page_physical | I915_PPGTT_PAGE_BITS;
+		*entry = page_physical | bits;
 	}
 
 	/* Table stores must be globally visible before a context using them is submitted. */

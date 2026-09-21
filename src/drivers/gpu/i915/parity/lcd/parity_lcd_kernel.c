@@ -3139,3 +3139,211 @@ int parity_lcd_kernel_n1_run(const struct parity_lcd_kernel_deps *d)
 		"INIT reference was returned and the stop was confirmed)\n", pass ? "PASS" : "FAIL", pipe);
 	return pass ? 0 : -1;
 }
+
+/* ---------------- E-129: the resident display (-DPARITY_RESIDENT_DISPLAY=1) ---------------- */
+
+/*
+ * The panel as a Vulkan display: the LCD-C body -- two full-panel buffers, one modeset, synchronous flips, the
+ * reference's stop path -- with the flips driven by presentation requests instead of a fixed sequence.  `serve` runs
+ * inside the observation window (after the first frames were seen) and returns when the display is to be given back;
+ * the enable, the stop confirmation and the release of both buffers are the verified LCD-C path, unchanged.
+ */
+static struct parity_scanout resident_buf[2];
+static int (*resident_serve)(void *ctx);
+static void *resident_serve_ctx;
+static unsigned resident_front;
+static int resident_up;
+int parity_lcd_resident_flip(void);
+
+static int resident_window(void *ctx, struct parity_lcd_observer *o)
+{
+	struct lcd_kernel *k = ctx;
+
+	(void)o;
+	resident_up = 1;
+	kern_logf("i915: parity resident display: picture up (buffer A surf 0x%08x); serving presentation\n",
+		(uint32_t)resident_buf[0].surf);
+	(void)resident_serve(resident_serve_ctx);
+	/* end on buffer A, the one the show body began and will end (as LCD-C does) */
+	if (resident_front != 0u && parity_lcd_resident_flip() != 0)
+		kern_logf("i915: parity resident display: XXX could not flip back to buffer A before the stop\n");
+	resident_up = 0;
+	kern_logf("i915: parity resident display: released after %u flip(s); the reference stop path follows\n", k->flips_done);
+	return 0;
+}
+
+static uint32_t resident_verify(void *ctx, const struct parity_scanout *so)
+{
+	(void)ctx;
+	(void)so;
+	return 0u;              /* the pictures are the application's: nothing to compare them with */
+}
+
+int parity_lcd_kernel_panel_mode(const struct parity_lcd_kernel_deps *d, uint32_t *width, uint32_t *height,
+	uint32_t *refresh_millihz)
+{
+	const struct parity_lcd_mode *m;
+	uint64_t pixels;
+
+	if (d == 0 || d->edp == 0)
+		return -1;
+	m = &d->edp->lcd.mode;
+	pixels = (uint64_t)m->htotal * m->vtotal;
+	if (m->hdisplay == 0u || m->vdisplay == 0u || pixels == 0u || m->clock_khz <= 0)
+		return -1;
+	*width = m->hdisplay;
+	*height = m->vdisplay;
+	/* clock_khz * 1000 pixels a second over htotal * vtotal pixels a frame, in millihertz */
+	*refresh_millihz = (uint32_t)(((uint64_t)m->clock_khz * 1000000ull + pixels / 2u) / pixels);
+	return 0;
+}
+
+/* E-130: buffer i (0 = A, 1 = B) while the display is up, for a GPU that draws into it (NULL otherwise). */
+struct parity_scanout *parity_lcd_resident_buffer(unsigned i)
+{
+	return resident_up && i < 2u ? &resident_buf[i] : 0;
+}
+
+struct parity_scanout *parity_lcd_resident_back(void)
+{
+	return resident_up ? &resident_buf[resident_front ^ 1u] : 0;
+}
+
+int parity_lcd_resident_flip(void)
+{
+	struct lcd_kernel *k = &lk;
+	struct parity_scanout *to;
+	struct parity_lcd_flip_result fr;
+	int rc;
+
+	if (!resident_up)
+		return -EINVAL;
+	to = &resident_buf[resident_front ^ 1u];
+	parity_scanout_publish(to);
+	memset(&fr, 0, sizeof(fr));
+	rc = parity_lcd_modeset_flip((uint32_t)to->surf, &fr);
+	if (rc != 0 || fr.result != PARITY_LCD_FLIP_DONE) {
+		kern_logf("i915: parity resident display: flip to 0x%08x failed: rc=%d result=%d event_rc=%d live 0x%08x\n",
+			(uint32_t)to->surf, rc, fr.result, fr.event_rc, fr.live_after);
+		return rc != 0 ? rc : -EIO;
+	}
+	resident_front ^= 1u;
+	k->flips_done++;
+	if (k->flips_done <= 3u)
+		kern_logf("i915: parity resident display: flip %u: surf 0x%08x -> 0x%08x | frame %u -> %u\n", k->flips_done,
+			fr.old_surf, fr.new_surf, fr.frame_before, fr.frame_after);
+	return 0;
+}
+
+int parity_lcd_kernel_resident_run(const struct parity_lcd_kernel_deps *d, int (*serve)(void *ctx), void *ctx)
+{
+	static struct parity_lcd_show_env env;
+	static struct parity_lcd_show_report rep;
+	struct lcd_kernel *k = &lk;
+	int rc, i, held = 0, released = 0, ok;
+
+	if (d == 0 || d->edp == 0 || d->mmio == 0 || d->gm == 0 || d->irq == 0 || serve == 0) {
+		kern_logf("i915: parity resident display: not started (a dependency is missing)\n");
+		return -1;
+	}
+	if (parity_lcd_show_retained() || parity_lcd_modeset_retained() || resident_buf[0].state != PARITY_SCANOUT_NONE ||
+	    resident_buf[1].state != PARITY_SCANOUT_NONE) {
+		kern_logf("i915: parity resident display: refused (resources of an earlier run are retained)\n");
+		return -1;
+	}
+	if (!lcdb_locks_live) {
+		(void)mutex_init(&lcdb_locks[PARITY_LCD_LOCK_DPLL], LOCK_RANK_DEVICE, "parity-lcd-dpll");
+		(void)mutex_init(&lcdb_locks[PARITY_LCD_LOCK_BACKLIGHT], LOCK_RANK_DEVICE, "parity-lcd-backlight");
+		lcdb_locks_live = 1;
+	}
+	memset(k, 0, sizeof(*k));
+	k->locks = lcdb_locks;
+	k->d = d;
+	bind_ops(k);
+	memset(&env, 0, sizeof(env));
+	if (preflight(k) != 0 || fill_cfg(k, &env.cfg) != 0) {
+		kern_logf("i915: parity resident display: not started (preflight: nothing was written)\n");
+		return -1;
+	}
+	rc = parity_gt_display_window_init(d->gm, PARITY_GT_DISPLAY_PAGES);
+	if (rc != 0 && rc != -EBUSY)
+		return -1;
+	rc = parity_scanout_create(d->gm, d->edp->lcd.mode.hdisplay,
+		d->edp->lcd.mode.vdisplay, PARITY_FOURCC_XRGB8888, PARITY_MOD_LINEAR, &resident_buf[0]);
+	rc = rc == 0 ? parity_scanout_pin(&resident_buf[0], "resident A") : rc;
+	rc = rc == 0 ? parity_scanout_create(d->gm, resident_buf[0].width, resident_buf[0].height, PARITY_FOURCC_XRGB8888,
+		PARITY_MOD_LINEAR, &resident_buf[1]) : rc;
+	rc = rc == 0 ? parity_scanout_pin(&resident_buf[1], "resident B") : rc;
+	if (rc != 0) {
+		kern_logf("i915: parity resident display: not started (buffers rc=%d)\n", rc);
+		for (i = 1; i >= 0; i--) {
+			(void)parity_scanout_unpin(&resident_buf[i]);
+			(void)parity_scanout_destroy(&resident_buf[i]);
+		}
+		return -1;
+	}
+	for (i = 0; i < 2; i++) {
+		memset(resident_buf[i].cpu, 0, resident_buf[i].size);          /* black outside the application's image */
+		parity_scanout_publish(&resident_buf[i]);
+	}
+	resident_front = 0u;
+	resident_serve = serve;
+	resident_serve_ctx = ctx;
+	k->flip_a = &resident_buf[0];
+	k->flip_b = &resident_buf[1];
+
+	env.hw = &k->ops;
+	env.gm = d->gm;
+	env.lcd = &d->edp->lcd;
+	env.pipe = 0;
+	env.first_frames_ms = 1000u;
+	env.window_ms = 0u;                     /* the window is the time `serve` runs */
+	env.in_window = resident_window;
+	env.in_window_ctx = k;
+	env.at_stage = at_stage;
+	env.at_stage_ctx = k;
+	k->window_ms = 0u;
+	rc = parity_lcd_show_prepared(&env, &resident_buf[0], resident_verify, 0, &rep);
+	for (i = 0; i < (int)POWER_DOMAIN_NUM; i++)
+		held += k->power_refs[i];
+	if (rep.display_released || !rep.display_acquired) {
+		/* the display provably reads neither buffer (show_prepared ended the one it was given) */
+		parity_scanout_end(&resident_buf[1]);
+		released = parity_scanout_unpin(&resident_buf[0]) == 0 && parity_scanout_destroy(&resident_buf[0]) == 0 &&
+			parity_scanout_unpin(&resident_buf[1]) == 0 && parity_scanout_destroy(&resident_buf[1]) == 0;
+	} else {
+		for (i = 0; i < 2; i++)
+			if (resident_buf[i].state >= PARITY_SCANOUT_PINNED && resident_buf[i].state != PARITY_SCANOUT_ABANDONED)
+				parity_scanout_abandon(&resident_buf[i]);
+	}
+	/*
+	 * show_passed() without one condition: the run log holds PARITY_LCD_TRACE_MAX entries and a display that
+	 * flips for as long as an application presents always outgrows it (every flip is a dozen plane writes).  The
+	 * counters (writes, errors, unresolved steps, timed-out waits) keep counting past the last kept entry, so the
+	 * judgement is made on them.
+	 */
+	ok = rep.first_anomaly == 0 && rep.window_hook_rc == 0 && rep.display_released &&
+		rep.enable_rc == PARITY_LCD_MS_OK && rep.steady_rc == 0 && rep.at_enable.cr_ok && rep.at_enable.eq_ok &&
+		rep.obs.seen_steady == 0u && rep.obs.vblank_unmasked_seen == 0 && rep.readback_bad_after == 0u &&
+		rep.trace->steps == 0u && rep.trace->errors == 0u && rep.trace->wait_timeouts == 0u;
+	if (!ok || !released || held != 0)
+		log_trace(rep.trace);
+	else
+		kern_logf("i915: parity resident display: run log %u writes, %u rmw, %u waits (0 timed out), 0 errors, 0 unresolved "
+			"steps (%u entries kept, %u not kept)\n", rep.trace->writes, rep.trace->rmws, rep.trace->waits, rep.trace->n,
+			rep.trace->dropped);
+	kern_logf("i915: parity resident display: ended %s (show rc=%d; flips %u, stop %s, buffers released=%d, power refs held %d, "
+		"first anomaly: %s)\n", ok && released && held == 0 ? "PASS" : "FAIL", rc, k->flips_done, rep.display_released ? "confirmed" : "NOT confirmed", released, held,
+		rep.first_anomaly != 0 ? rep.first_anomaly : "none");
+	resident_serve = 0;
+	return ok && released && held == 0 ? 0 : -1;
+}
+
+int parity_lcd_kernel_panel_size_mm(const struct parity_lcd_kernel_deps *d, uint32_t *width_mm, uint32_t *height_mm)
+{
+	if (d == 0 || d->edp == 0 || d->edp->lcd.mode.width_mm == 0u)
+		return -1;
+	*width_mm = d->edp->lcd.mode.width_mm;
+	*height_mm = d->edp->lcd.mode.height_mm;
+	return 0;
+}

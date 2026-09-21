@@ -1,6 +1,0 @@
-type=oneshot
-command=/bin/vkdemo
-arguments=--offscreen --readback --token=vkprobe --time-ms=0 --hold=0
-after=syslogd
-restart=no
-required=NO

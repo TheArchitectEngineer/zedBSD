@@ -102,6 +102,15 @@ drv_i915_gem_destroy(
 		return;
 	}
 
+	/* E-130: an alias frees only itself; its reference on the exported object goes with it. */
+	if (object->alias_of != NULL) {
+		struct i915_gem_object *source = object->alias_of;
+
+		kern_free(object);
+		drv_i915_gem_share_put(device, source);
+		return;
+	}
+
 	/* Unlinks the object from the device list. */
 	position = &device->objects;
 	while (*position != NULL && *position != object)
@@ -111,9 +120,31 @@ drv_i915_gem_destroy(
 		device->object_count--;
 	}
 
+	/* E-130: an exported object keeps its backing while an export or an alias still names it. */
+	if (object->share_refs != 0U) {
+		object->share_orphan = 1U;
+		return;
+	}
+
 	/* The backing returns to the pool only after no GPU mapping names it. */
 	(void)kern_pmem_free(&object->run);
 	kern_free(object);
+}
+
+/* E-130: one reference of an exported object goes; the last one frees an orphaned backing. */
+void
+drv_i915_gem_share_put(
+	struct i915_device *device,
+	struct i915_gem_object *object)
+{
+	(void)device;
+	if (object->share_refs == 0U)
+		return;
+	object->share_refs--;
+	if (object->share_refs == 0U && object->share_orphan != 0U) {
+		(void)kern_pmem_free(&object->run);
+		kern_free(object);
+	}
 }
 
 /*

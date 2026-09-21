@@ -892,6 +892,9 @@ i915_vk_res_dispatch(
 		return i915_vk_res_destroy(session, I915_VK_OBJ_IMAGE,
 			i915_vk_res_destroy_image_obj, reader, reply);
 	default:
-		return EINVAL;
+		/* XXX: unimplemented opcode (E-127 rule: say so at the entry) */
+		kern_logf("i915: vk: XXX unimplemented opcode %u (res)\n", opcode);
+		reader->error = 1;
+		return ENOTSUP;
 	}
 }

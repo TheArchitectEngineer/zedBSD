@@ -105,4 +105,19 @@ struct parity_lcd_test_summary {
 };
 void parity_lcd_kernel_summary(struct parity_lcd_test_summary *out);
 
+/*
+ * E-129 (-DPARITY_RESIDENT_DISPLAY=1): the panel as a display of the resident node.  resident_run lights the panel
+ * with two full-panel buffers (the LCD-C body) and calls `serve` while the picture is up; `serve` shows frames by
+ * writing resident_back() and calling resident_flip(), and returns when the display is to be given back; the
+ * reference's stop path follows.  0 = the panel came up and was stopped and released cleanly.
+ */
+struct parity_scanout;
+int parity_lcd_kernel_resident_run(const struct parity_lcd_kernel_deps *d, int (*serve)(void *ctx), void *ctx);
+struct parity_scanout *parity_lcd_resident_back(void);
+struct parity_scanout *parity_lcd_resident_buffer(unsigned i);
+int parity_lcd_resident_flip(void);
+int parity_lcd_kernel_panel_mode(const struct parity_lcd_kernel_deps *d, uint32_t *width, uint32_t *height,
+	uint32_t *refresh_millihz);
+int parity_lcd_kernel_panel_size_mm(const struct parity_lcd_kernel_deps *d, uint32_t *width_mm, uint32_t *height_mm);
+
 #endif /* PARITY_LCD_KERNEL_H */

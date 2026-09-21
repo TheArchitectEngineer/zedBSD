@@ -75,7 +75,8 @@ main(void)
 
 	assert(buffer.error == 0);
 	code = i915_vk_eu_data(&buffer, &bytes);
-	assert(bytes == 5U * 4U * sizeof(uint32_t));
+	/* five instructions and the sync.nop the encoder puts after the out-of-order MATH (E-128) */
+	assert(bytes == 6U * 4U * sizeof(uint32_t));
 
 	/* mov: opcode 97, SIMD8, dst g2, src0 g1 as a general register. */
 	assert(field(code + 0, EU_OPCODE_HI, EU_OPCODE_LO) == EU_OP_MOV);
@@ -94,12 +95,25 @@ main(void)
 	assert(field(code + 8, EU_SRC0_IS_IMM_BIT, EU_SRC0_IS_IMM_BIT) == 1U);
 	assert(code[8 + 3] == 0x3F800000U);
 
-	/* math: opcode 56, function selector sine (5). */
+	/* math: opcode 56, function selector sine (6); it names itself with token 0 and waits for the MOV before it */
 	assert(field(code + 12, EU_OPCODE_HI, EU_OPCODE_LO) == EU_OP_MATH);
 	assert(field(code + 12, EU_MATH_FUNCTION_HI, EU_MATH_FUNCTION_LO) == EU_MATH_SIN);
+	assert(field(code + 12, EU_SWSB_HI, EU_SWSB_LO) == EU_SWSB_REGDIST_SET(1U, 0U));
+	assert(field(code + 16, EU_OPCODE_HI, EU_OPCODE_LO) == EU_OP_SYNC);
+	assert(field(code + 16, EU_SWSB_HI, EU_SWSB_LO) == EU_SWSB_SYNC_DST(0U));
+
+	/* the scoreboard: nothing before the first instruction, the one before for every later in-order one */
+	assert(field(code + 0, EU_SWSB_HI, EU_SWSB_LO) == 0U);
+	assert(field(code + 4, EU_SWSB_HI, EU_SWSB_LO) == EU_SWSB_REGDIST(1U));
+
+	/* float is type 10, a SIMD8 source region is <8;8,1> = vstride 4, width 3, hstride 1 */
+	assert(field(code + 0, EU_DST_REG_TYPE_HI, EU_DST_REG_TYPE_LO) == 10U);
+	assert(field(code + 0, EU_SRC0_VSTRIDE_HI, EU_SRC0_VSTRIDE_LO) == 4U);
+	assert(field(code + 0, EU_SRC0_WIDTH_HI, EU_SRC0_WIDTH_LO) == 3U);
+	assert(field(code + 0, EU_SRC0_HSTRIDE_HI, EU_SRC0_HSTRIDE_LO) == 1U);
 
 	/* nop: opcode 96. */
-	assert(field(code + 16, EU_OPCODE_HI, EU_OPCODE_LO) == EU_OP_NOP);
+	assert(field(code + 20, EU_OPCODE_HI, EU_OPCODE_LO) == EU_OP_NOP);
 
 	i915_vk_eu_free(&buffer);
 	assert(fixture_live == 0U);

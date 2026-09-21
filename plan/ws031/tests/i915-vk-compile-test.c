@@ -63,6 +63,21 @@ load_spv(const char *name, size_t *words)
 	return code;
 }
 
+/*
+ * E-128: a kernel opens with a prologue that zeroes its outputs (compile.c compile_prologue): MOVs of
+ * an immediate into the staging registers.  The instructions of the IR start after it.
+ */
+static const uint32_t *
+body(const struct i915_vk_shader_binary *binary)
+{
+	const uint32_t *inst = binary->code;
+
+	while ((inst[0] & 0x7FU) == EU_OP_MOV && ((inst[1] >> (EU_SRC0_IS_IMM_BIT - 32U)) & 1U) != 0U &&
+	    (inst[1] >> 24) >= COMPILE_LAST_VALUE_GRF + 1U)
+		inst += 4;
+	return inst;
+}
+
 /* Reports whether any instruction in the code carries the given hw opcode. */
 static int
 has_opcode(const struct i915_vk_shader_binary *binary, uint32_t opcode)
@@ -105,7 +120,7 @@ compile_shader(const char *name, enum i915_vk_stage stage, uint32_t expect_math)
 	assert(binary->grf_used > COMPILE_FIRST_VALUE_GRF);
 
 	/* Every shader ends by sending its output and retiring the thread. */
-	assert(has_opcode(binary, EU_OP_SEND));
+	assert(has_opcode(binary, stage == I915_VK_STAGE_VERTEX ? EU_OP_SEND : EU_OP_SENDC));
 
 	/* The vertex shader's rotation lowers to math instructions. */
 	if (expect_math != 0U)
@@ -139,7 +154,7 @@ hand_ir(struct i915_vk_inst *insts, unsigned count)
 	static struct i915_vk_shader_ir ir;
 
 	memset(&ir, 0, sizeof(ir));
-	ir.stage = I915_VK_STAGE_FRAGMENT;
+	ir.stage = I915_VK_STAGE_VERTEX;
 	ir.instructions = insts;
 	ir.instruction_count = count;
 	ir.value_count = 16U;
@@ -169,7 +184,7 @@ test_fsub_is_add_with_second_source_negated(void)
 	insts[2].dst = 3U; insts[2].src[0] = 1U; insts[2].src[1] = 2U;      /* %3 = %1 - %2 */
 	error = i915_vk_compile(NULL, hand_ir(insts, 3U), &binary);
 	assert(error == 0);
-	inst = binary->code + 2U * 4U;
+	inst = body(binary) + 2U * 4U;
 	assert((inst[0] & 0x7FU) == EU_OP_ADD);
 	src0_nr = inst_field(inst, EU_SRC0_REG_NR_HI, EU_SRC0_REG_NR_LO);
 	src1_nr = inst_field(inst, EU_SRC1_REG_NR_HI, EU_SRC1_REG_NR_LO);
@@ -183,7 +198,7 @@ test_fsub_is_add_with_second_source_negated(void)
 	insts[2].op = I915_VK_IR_FADD;
 	error = i915_vk_compile(NULL, hand_ir(insts, 3U), &binary);
 	assert(error == 0);
-	inst = binary->code + 2U * 4U;
+	inst = body(binary) + 2U * 4U;
 	assert((inst[0] & 0x7FU) == EU_OP_ADD);
 	assert(inst_bit(inst, EU_SRC0_NEGATE_BIT) == 0U && inst_bit(inst, EU_SRC1_NEGATE_BIT) == 0U);
 	i915_vk_shader_binary_free(binary);
@@ -204,20 +219,20 @@ test_fneg_and_push_operands(void)
 	insts[2].op = I915_VK_IR_STORE_OUTPUT; insts[2].src[0] = 2U; insts[2].location = 0U; insts[2].component = 3U;
 	error = i915_vk_compile(NULL, hand_ir(insts, 3U), &binary);
 	assert(error == 0);
-	inst = binary->code;                                            /* MOV r16 <- r2.4<0;1,0> */
+	inst = body(binary);                                            /* MOV r16 <- r2.4<0;1,0> */
 	assert((inst[0] & 0x7FU) == EU_OP_MOV);
 	assert(inst_field(inst, EU_SRC0_REG_NR_HI, EU_SRC0_REG_NR_LO) == COMPILE_PAYLOAD_GRF);
 	assert(inst_field(inst, EU_SRC0_SUBREG_HI, EU_SRC0_SUBREG_LO) == 4U);
 	assert(inst_field(inst, EU_SRC0_VSTRIDE_HI, EU_SRC0_VSTRIDE_LO) == EU_VSTRIDE_0);
 	assert(inst_field(inst, EU_SRC0_WIDTH_HI, EU_SRC0_WIDTH_LO) == EU_WIDTH_1);
 	assert(inst_field(inst, EU_SRC0_HSTRIDE_HI, EU_SRC0_HSTRIDE_LO) == EU_HSTRIDE_0);
-	inst = binary->code + 4U;                                       /* MOV r17 <- -r16 */
+	inst = body(binary) + 4U;                                       /* MOV r17 <- -r16 */
 	assert((inst[0] & 0x7FU) == EU_OP_MOV);
 	assert(inst_field(inst, EU_SRC0_REG_NR_HI, EU_SRC0_REG_NR_LO) == COMPILE_FIRST_VALUE_GRF);
 	assert(inst_bit(inst, EU_SRC0_NEGATE_BIT) == 1U);
 	assert(inst_field(inst, EU_DST_REG_NR_HI, EU_DST_REG_NR_LO) == COMPILE_FIRST_VALUE_GRF + 1U);
-	inst = binary->code + 8U;                                       /* MOV out slot 0 component 3 <- r17 */
-	assert(inst_field(inst, EU_DST_REG_NR_HI, EU_DST_REG_NR_LO) == COMPILE_OUTPUT_GRF + 3U);
+	inst = body(binary) + 8U;                                       /* MOV the one varying, component 3 <- r17 */
+	assert(inst_field(inst, EU_DST_REG_NR_HI, EU_DST_REG_NR_LO) == COMPILE_MAX_GRF - 4U + 3U);
 	assert(inst_field(inst, EU_SRC0_REG_NR_HI, EU_SRC0_REG_NR_LO) == COMPILE_FIRST_VALUE_GRF + 1U);
 	assert(inst_bit(inst, EU_SRC0_NEGATE_BIT) == 0U);
 	i915_vk_shader_binary_free(binary);
@@ -241,9 +256,9 @@ test_register_lifetime(void)
 	insts[5].op = I915_VK_IR_STORE_OUTPUT; insts[5].src[0] = 5U;
 	error = i915_vk_compile(NULL, hand_ir(insts, 6U), &binary);
 	assert(error == 0);
-	inst = binary->code + 3U * 4U;
+	inst = body(binary) + 3U * 4U;
 	assert(inst_field(inst, EU_DST_REG_NR_HI, EU_DST_REG_NR_LO) == COMPILE_FIRST_VALUE_GRF + 1U);
-	inst = binary->code + 4U * 4U;
+	inst = body(binary) + 4U * 4U;
 	assert(inst_field(inst, EU_SRC0_REG_NR_HI, EU_SRC0_REG_NR_LO) == COMPILE_FIRST_VALUE_GRF);       /* %1 still intact */
 	assert(inst_field(inst, EU_SRC1_REG_NR_HI, EU_SRC1_REG_NR_LO) == COMPILE_FIRST_VALUE_GRF + 1U);
 	assert(inst_bit(inst, EU_SRC1_NEGATE_BIT) == 1U);
@@ -275,17 +290,25 @@ test_not_lowered_ir_is_refused(void)
 	error = i915_vk_compile(NULL, hand_ir(insts, 1U), &binary);
 	assert(error == EINVAL && binary == NULL);
 
-	/* more outputs than staging registers */
-	memset(insts, 0, sizeof(insts));
-	insts[0].op = I915_VK_IR_STORE_OUTPUT; insts[0].location = 4U;
-	error = i915_vk_compile(NULL, hand_ir(insts, 1U), &binary);
-	assert(error == ENOTSUP && binary == NULL);
+	/* more varyings than the registers below the URB handles hold (COMPILE_MAX_VARYINGS) */
+	{
+		struct i915_vk_inst many[5];
+		unsigned k;
+
+		memset(many, 0, sizeof(many));
+		many[0].op = I915_VK_IR_LOAD_PUSH; many[0].dst = 1U;
+		for (k = 1U; k < 5U; k++) {
+			many[k].op = I915_VK_IR_STORE_OUTPUT; many[k].src[0] = 1U; many[k].location = k - 1U;
+		}
+		error = i915_vk_compile(NULL, hand_ir(many, 5U), &binary);
+		assert(error == ENOTSUP && binary == NULL);
+	}
 }
 
 /*
  * EU generation for the shipped vertex shader: one EU instruction per IR instruction plus the
  * terminator, the transcendentals as MATH.  This is the "EU generated" stage: it says nothing
- * about the payload / URB conventions, which are not verified on hardware.
+ * about the payload / URB conventions; those are judged by run-vk-gentool-test.sh and on hardware (E-128).
  */
 static void
 test_vertex_shader_generates_eu(void)
@@ -298,8 +321,15 @@ test_vertex_shader_generates_eu(void)
 	spv = load_spv("cuboid.vert.spv", &words);
 	assert(i915_vk_spirv_parse(spv, words, I915_VK_STAGE_VERTEX, &ir) == 0);
 	assert(i915_vk_compile(NULL, ir, &binary) == 0);
-	assert(binary->code_bytes == (ir->instruction_count + 1U) * 16U);
-	assert(binary->grf_used > COMPILE_FIRST_VALUE_GRF && binary->grf_used <= COMPILE_OUTPUT_GRF);
+	/*
+	 * one EU instruction to an IR instruction, plus: the prologue (4 header + 4 position + 4 for the one
+	 * varying), a sync.nop after each of the 4 MATHs, and the end -- URB write, sync.nop, handle copy, URB write
+	 */
+	assert(binary->code_bytes == (ir->instruction_count + 12U + 4U + 4U) * 16U);
+	assert(binary->grf_used > COMPILE_FIRST_VALUE_GRF && binary->grf_used <= COMPILE_LAST_VALUE_GRF + 1U);
+	assert(binary->dispatch_grf_start == COMPILE_PAYLOAD_GRF && binary->push_regs == 1U);
+	assert(binary->input_count == 2U && binary->input_locations[0] == 0U && binary->input_locations[1] == 1U);
+	assert(binary->varying_count == 1U);
 	printf("  cuboid.vert.spv: %u IR instructions -> %u EU instructions, value registers r%u..r%u\n",
 		ir->instruction_count, binary->code_bytes / 16U, COMPILE_FIRST_VALUE_GRF, binary->grf_used - 1U);
 	i915_vk_shader_binary_free(binary);
@@ -328,7 +358,7 @@ eu_model_source(const struct eu_model *m, const uint32_t *inst, int which, unsig
 	float value;
 
 	if (which == 0) {
-		file = inst_bit(inst, EU_SRC0_REG_FILE_LO_BIT) | (inst_bit(inst, EU_SRC0_REG_FILE_HI_BIT) << 1);
+		file = inst_bit(inst, EU_SRC0_IS_IMM_BIT) != 0U ? EU_FILE_IMM : inst_bit(inst, EU_SRC0_REG_FILE_BIT);
 		nr = inst_field(inst, EU_SRC0_REG_NR_HI, EU_SRC0_REG_NR_LO);
 		subnr = inst_field(inst, EU_SRC0_SUBREG_HI, EU_SRC0_SUBREG_LO);
 		vstride = inst_field(inst, EU_SRC0_VSTRIDE_HI, EU_SRC0_VSTRIDE_LO);
@@ -337,7 +367,7 @@ eu_model_source(const struct eu_model *m, const uint32_t *inst, int which, unsig
 		negate = inst_bit(inst, EU_SRC0_NEGATE_BIT);
 		assert(inst_field(inst, EU_SRC0_REG_TYPE_HI, EU_SRC0_REG_TYPE_LO) == EU_TYPE_F);
 	} else {
-		file = inst_bit(inst, EU_SRC1_REG_FILE_LO_BIT) | (inst_bit(inst, EU_SRC1_REG_FILE_HI_BIT) << 1);
+		file = inst_bit(inst, EU_SRC1_IS_IMM_BIT) != 0U ? EU_FILE_IMM : inst_bit(inst, EU_SRC1_REG_FILE_BIT);
 		nr = inst_field(inst, EU_SRC1_REG_NR_HI, EU_SRC1_REG_NR_LO);
 		subnr = inst_field(inst, EU_SRC1_SUBREG_HI, EU_SRC1_SUBREG_LO);
 		vstride = inst_field(inst, EU_SRC1_VSTRIDE_HI, EU_SRC1_VSTRIDE_LO);
@@ -373,10 +403,19 @@ eu_model_run(struct eu_model *m, const struct i915_vk_shader_binary *binary)
 		unsigned dst = inst_field(inst, EU_DST_REG_NR_HI, EU_DST_REG_NR_LO);
 		float result[8];
 
+		/* the last message ends the thread; the URB write before it and every sync.nop change no register */
 		if (opcode == EU_OP_SEND) {
-			assert(index == count - 1U);            /* only the terminator in the shaders run here */
-			return;
+			if (inst_bit(inst, EU_SEND_EOT_BIT) != 0U) {
+				assert(index == count - 1U);
+				return;
+			}
+			continue;
 		}
+		if (opcode == EU_OP_SYNC)
+			continue;
+		/* integer moves: the VUE header (zeros) and the copy of the URB handles -- not floats, not modelled */
+		if (opcode == EU_OP_MOV && inst_field(inst, EU_DST_REG_TYPE_HI, EU_DST_REG_TYPE_LO) != EU_TYPE_F)
+			continue;
 		assert(inst_field(inst, EU_EXEC_SIZE_HI, EU_EXEC_SIZE_LO) == EU_EXEC_SIZE_8);
 		assert(inst_bit(inst, EU_DST_REG_FILE_BIT) == 1U && dst < 128U);
 		assert(inst_field(inst, EU_DST_SUBREG_HI, EU_DST_SUBREG_LO) == 0U);
@@ -457,7 +496,8 @@ test_vertex_shader_eu_computes_the_shader(void)
 		want[4] = p[3];
 		want[5] = p[4];
 		for (k = 0U; k < 6U; k++) {
-			float got = m.grf[COMPILE_OUTPUT_GRF + k][c];
+			/* position in r104..r107, the one varying in r123.. (compile.c "Register conventions") */
+			float got = m.grf[k < 4U ? COMPILE_VUE_GRF + 4U + k : COMPILE_MAX_GRF - 4U + (k - 4U)][c];
 			float scale = fabsf(want[k]) > 1.0f ? fabsf(want[k]) : 1.0f;
 
 			if (fabsf(got - want[k]) > 2e-6f * scale) {

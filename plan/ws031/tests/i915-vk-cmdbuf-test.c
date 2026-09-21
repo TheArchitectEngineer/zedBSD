@@ -31,6 +31,7 @@
 #include "../../../src/drivers/gpu/i915/vk/pipe.c"
 #include "../../../src/drivers/gpu/i915/vk/sync.c"
 #include "../../../src/drivers/gpu/i915/vk/cmdbuf.c"
+#include "i915-vk-e127-stubs.inc"
 
 static int fixture_pci_token;
 #define fixture_pci_device	((struct drv_pci_device *)&fixture_pci_token)

@@ -25,6 +25,7 @@
 
 #include "../internal.h"
 
+#include <kern/klog.h>
 #include <kern/kmem.h>
 #include <kern/pmem.h>
 
@@ -579,7 +580,10 @@ i915_vk_pipe_dispatch(
 	case 67U:	/* vkDestroyPipeline */
 		return i915_vk_pipe_destroy_pipeline(session, reader, reply);
 	default:
-		return EINVAL;
+		/* XXX: unimplemented opcode (E-127 rule: say so at the entry) */
+		kern_logf("i915: vk: XXX unimplemented opcode %u (pipe)\n", opcode);
+		reader->error = 1;
+		return ENOTSUP;
 	}
 }
 

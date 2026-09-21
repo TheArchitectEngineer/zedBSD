@@ -20,6 +20,7 @@
 
 #include "../internal.h"
 
+#include <kern/klog.h>
 #include <kern/kmem.h>
 
 #include <errno.h>
@@ -84,6 +85,15 @@ i915_vk_fence_reset(
 	fence->signaled = 0U;
 	fence->armed = 0U;
 	return 0;
+}
+
+/* Signals a fence whose submission has run to its end. */
+void
+i915_vk_fence_signal(
+	struct i915_vk_fence *fence)
+{
+	fence->armed = 0U;
+	fence->signaled = 1U;
 }
 
 /* Binds a fence to the seqno a submission will reach on an engine. */
@@ -345,7 +355,10 @@ i915_vk_sync_dispatch(
 	case 38U:	/* vkGetFenceStatus */
 		return i915_vk_sync_fence_status(session, reader, reply);
 	default:
-		return EINVAL;
+		/* XXX: unimplemented opcode (E-127 rule: say so at the entry) */
+		kern_logf("i915: vk: XXX unimplemented opcode %u (sync)\n", opcode);
+		reader->error = 1;
+		return ENOTSUP;
 	}
 }
 

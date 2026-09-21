@@ -30,6 +30,12 @@ int parity_shim_engine_reset(struct i915_engine *engine);
 int parity_shim_engine_recover(struct i915_engine *engine, struct i915_session *session, int error);
 int parity_shim_gt_reset(struct i915_device *device);
 
+/*
+ * E-127: runs one PPGTT batch of `context` to its end on the render engine and returns how it ended
+ * (0, ETIMEDOUT for a hang -- XXX no recovery follows --, ENODEV outside resident mode).  The caller sleeps.
+ */
+int parity_shim_run_sync(struct i915_device *device, struct i915_context *context, uint64_t batch_va);
+
 #ifdef PARITY_SHIM_REDIRECT
 #define drv_i915_lrc_create      parity_shim_lrc_create
 #define drv_i915_lrc_destroy     parity_shim_lrc_destroy

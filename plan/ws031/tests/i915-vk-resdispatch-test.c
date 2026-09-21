@@ -27,6 +27,7 @@
 #include "../../../src/drivers/gpu/i915/i915.c"
 #include "../../../src/drivers/gpu/i915/vk/cmd.c"
 #include "../../../src/drivers/gpu/i915/vk/res.c"
+#include "i915-vk-e127-stubs.inc"
 
 static int fixture_pci_token;
 #define fixture_pci_device	((struct drv_pci_device *)&fixture_pci_token)

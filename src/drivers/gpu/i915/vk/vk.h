@@ -48,4 +48,20 @@ drv_i915_vk_command(
 	void *reply,
 	size_t *reply_bytes);
 
+/*
+ * E-127: the blob libvulkan exports for a VkDeviceMemory names it by blob_id; that blob is the
+ * storage of the allocation.  ENOENT: no allocation has that identity.
+ */
+struct i915_gem_object;
+int
+drv_i915_vk_blob_attach(
+	struct i915_vk_device *vk,
+	uint64_t blob_id,
+	struct i915_gem_object *object);
+
+void
+drv_i915_vk_blob_detach(
+	struct i915_vk_device *vk,
+	struct i915_gem_object *object);
+
 #endif /* I915_VK_H */
