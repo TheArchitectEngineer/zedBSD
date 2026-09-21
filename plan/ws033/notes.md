@@ -133,3 +133,70 @@ net lan enable --wait → usage   （もう無い）
   判断の側はホストで試してある。CDC ECM の試験装置（ws004）があるので、そこで
   carrier を動かす試験は書ける。
 - dp8390 はリンクを検出しないので、この装置では抜線を検出できない。
+
+## ホストからゲストへの SSH（USB 起動・USB LAN）
+
+`plan/ws033/tests/ssh-host-to-guest.sh`
+
+既存の OpenSSH 試験はゲストがループバックで自分自身に繋ぐので、**プロトコルは試すが
+ネットワークは試さない**——機械から何も出ていかない。これは USB メモリからイメージを
+起動し、同じ xHCI のもう一方のポートに USB Ethernet を挿して、**外から**繋ぐ。
+
+```
+-machine q35 -cpu max
+-device qemu-xhci,id=xhci
+-device usb-storage,bus=xhci.0,port=1,...,bootindex=1
+-device usb-net,bus=xhci.0,port=2,...,msos-desc=on
+-netdev user,...,hostfwd=tcp:127.0.0.1:<空き>-:22
+```
+
+QEMU の `usb-net` は RNDIS を第一、CDC Ethernet を第二の構成として出す。ゲストに RNDIS は
+無いので第二を選ぶ——ws004 の HW-T22 が押さえている振る舞いで、`ue0` が生える。
+
+```
+usb-storage: sda blocks=624640 block-size=512 cache=write-back
+usb0: device 2 port 6 0525:a4a2 class 02 configuration=1 configured
+usb-cdc-ecm: ue0 mac=52:54:00:33:00:01 segment=1514
+guest interface: ue0 static online
+guest said: zedBSD zedbsd 0.0.1 zedBSD 0.0.1 x86_64
+SSH-HOST-TO-GUEST-VERIFIED
+```
+
+`ssh -tt` なので端末が付き、ゲストは擬似端末を割り当てる。**ログインが通る経路**であって、
+素のコマンド実行の経路ではない。二回走らせて二回とも通った。
+
+鍵はホストで作り、公開鍵をコンソール越しにゲストへ打ち込む。打ち込んだ先で
+`wc -l` して**一行あることを確かめてから**繋ぐ。壊れた鍵は拒否されたログインに見え、
+原因追及を別の方向へ送り込むからである。
+
+### この試験で見つかったこと
+
+**1. DHCP クライアントがイメージに入っていない。**
+
+パッケージ名は `dhcpc` だが、`config.mk` の `ZEDBSD_USER_PROGRAMS` は **`dhcpcd`** と
+書いてある。そんなパッケージは無いので**黙って何も選ばれず**、`/sbin/dhcpc` が作られない。
+networkd は `/sbin/dhcpc` を起動しようとするので、`net dhcp` はどのイメージでも失敗する。
+
+```
+$ make list-user-programs | grep ^dhcp
+dhcpc|dhcpc|*|y|base||
+$ ls build/amd64/rootfs/sbin/ | grep dhcp
+（何も無い）
+```
+
+`config.mk` は git 管理外の生成物なので、この試験用の config では `dhcpc` に直した。
+**追跡されているファイルは直していない**——menuconfig が書くのは登録名なので、この
+`dhcpcd` は手で書かれたか、改名前の名残である。どう直すかは決めてほしい。
+
+**2. 乱数が RDRAND に依存している。**
+
+`-cpu max` を付けないと `ssh-keygen` が `PRNG is not seeded` で鍵を作れず、sshd が
+`restart=on-failure` で回り続ける。`/dev/urandom` も `/dev/random` も無いので、
+OpenSSL には他に種が無い。既存のゲスト試験は `-cpu max` を付けているので表面化して
+いなかった。**RDRAND の無い実機では同じことが起きる。**
+
+### 試験自身の直し
+
+`exec python3` にしていたので**シェルごと置き換わって trap が消え**、QEMU が誰にも
+止められずに残っていた。`exec` をやめた。ポートも固定をやめ、空きを取るようにした——
+前の実行が終わりきっていないだけで落ちる試験は、対象について何も語らない。
