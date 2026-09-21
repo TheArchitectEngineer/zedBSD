@@ -13,7 +13,8 @@ ZEDBSD_NOCT_DISTFILE := $(ZEDBSD_NOCT_DISTDIR)/$(ZEDBSD_NOCT_ARCHIVE_NAME)
 # Only the cross-build wiring stays local; the rest is upstream now.
 ZEDBSD_NOCT_PATCHES := \
 	$(ZEDBSD_NOCT_PACKAGE_ROOT)/patches/0001-connect-zedbsd-target-adapter.patch \
-	$(ZEDBSD_NOCT_PACKAGE_ROOT)/patches/0002-use-project-llvm-sysroot.patch
+	$(ZEDBSD_NOCT_PACKAGE_ROOT)/patches/0002-use-project-llvm-sysroot.patch \
+	$(ZEDBSD_NOCT_PACKAGE_ROOT)/patches/0003-sigaction-disposition-is-a-pointer.patch
 ZEDBSD_NOCT_FETCH ?= curl --fail --location --silent --show-error
 ZEDBSD_NOCT_SHA256 ?= sha256sum
 
@@ -309,6 +310,15 @@ $(NOCT_HOST_BUILD_STAMP): $(NOCT_HOST_ARTIFACT)
 	@test -x '$(NOCT_HOST_ARTIFACT)'
 	@mkdir -p '$(@D)'
 	@touch '$@'
+
+#
+# Removing what extraction created.  Extraction refuses to replace an existing tree, so a
+# changed patch level needs the old tree gone first; this is that step, named.
+# The distfiles stay: they are checksum-verified inputs, not build output.
+#
+.PHONY: noct-clean
+noct-clean:
+	rm -rf -- '$(NOCT_SOURCE_DIR)' '$(NOCT_HOST_SOURCE_DIR)' '$(NOCT_HOST_STATE_DIR)'
 
 .PHONY: noct-toolchain-smoke
 noct-toolchain-smoke: $(NOCT_HOST_BUILD_STAMP) \

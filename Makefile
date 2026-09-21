@@ -768,7 +768,8 @@ world: vmunix rootfs
 clean:
 	rm -rf $(BUILD)
 
-distclean:
+# The Noct trees are extracted, one of them outside build/, so they are removed by name.
+distclean: noct-clean
 	rm -rf build
 
 ifneq ($(strip $(ZEDBSD_PLATFORM)),)
