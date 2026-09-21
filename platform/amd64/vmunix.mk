@@ -767,6 +767,19 @@ $(DYNAMIC_DIR)/libc.so: $(DYNAMIC_LIBC_OBJS)
 	$(LD) -m elf_x86_64 -shared -soname libc.so --hash-style=both \
  -z now -z relro -z separate-code -z stack-size=0x100000 $^ -o $@
 
+# The utility library.  It holds what is not part of the C library and not
+# wanted by every program, and is built from the same tree so that the two
+# cannot drift apart.
+DYNAMIC_LIBUTIL_OBJS := $(DYNAMIC_DIR)/obj/libc/libutil.o
+
+$(DYNAMIC_DIR)/libutil.so: $(DYNAMIC_LIBUTIL_OBJS) $(DYNAMIC_DIR)/libc.so \
+	tools/build/check-dynamic-elf.py
+	$(LD) -m elf_x86_64 -shared -soname libutil.so --hash-style=both \
+ -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
+ $(DYNAMIC_LIBUTIL_OBJS) -L$(DYNAMIC_DIR) -l:libc.so -o $@
+	$(PYTHON) tools/build/check-dynamic-elf.py --machine amd64 \
+ --role shared-library --needed libc.so --soname libutil.so $@
+
 # Wayland client transport is a normal shared dependency of the Vulkan WSI.
 DYNAMIC_WAYLAND_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libwayland-client)
 
@@ -929,6 +942,7 @@ AMD64_ARCH_INPUTS := $(BUILD)/bin/sh \
 	$(BUILD)/bin/sysctl \
 	$(BUILD)/bin/mount $(BUILD)/bin/umount \
 	$(DYNAMIC_DIR)/ld.so $(DYNAMIC_DIR)/libc.so \
+	$(DYNAMIC_DIR)/libutil.so \
 	$(DYNAMIC_DIR)/tlstest.so $(DYNAMIC_DIR)/dyntest \
 	$(DYNAMIC_DIR)/alt/rpathdep.so $(DYNAMIC_DIR)/rpathtest.so \
 	$(DYNAMIC_DIR)/verstest.so $(DYNAMIC_DIR)/versuse.so
@@ -938,6 +952,7 @@ AMD64_ARCH_FILES := --file /bin/sh=$(BUILD)/bin/sh \
 	--file /sbin/umount=$(BUILD)/bin/umount \
 	--file /lib/ld.so=$(DYNAMIC_DIR)/ld.so \
 	--file /lib/libc.so=$(DYNAMIC_DIR)/libc.so \
+	--file /lib/libutil.so=$(DYNAMIC_DIR)/libutil.so \
 	--file /lib/tlstest.so=$(DYNAMIC_DIR)/tlstest.so \
 	--file /lib/alt/rpathdep.so=$(DYNAMIC_DIR)/alt/rpathdep.so \
 	--file /lib/rpthtest.so=$(DYNAMIC_DIR)/rpathtest.so \

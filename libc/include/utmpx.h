@@ -12,6 +12,7 @@
 extern "C" {
 #endif
 
+#include <sys/time.h>
 #include <stdint.h>
 #include <sys/types.h>
 
@@ -34,8 +35,12 @@ struct utmpx {
 	char ut_line[UT_LINESIZE];
 	char ut_user[UT_NAMESIZE];
 	char ut_host[UT_HOSTSIZE];
-	int64_t ut_tv_sec;
-	int32_t ut_tv_usec;
+	/*
+	 * When the record was made.  POSIX names one member of this type;
+	 * it was two here, which no software written against the interface
+	 * would find.
+	 */
+	struct timeval ut_tv;
 	uint32_t ut_reserved[8];
 };
 

@@ -90,6 +90,7 @@ static void set_configured_hostname(const struct rcconf_model *snapshot);
 static void run_startup_command(const char *path, char *name);
 static int load_services(const struct rcconf_model *snapshot);
 static int load_one_service(const char *name, const struct rcconf_model *snapshot);
+static void report_unknown_services(const struct rcconf_model *snapshot);
 static int yes(const char *value);
 static int on_off(const char *value, int *result);
 static int parse_seconds(const char *value, unsigned minimum, unsigned maximum, unsigned *result);
@@ -154,6 +155,7 @@ main(
 		fprintf(stderr,
 			"init: continuing without service definitions\n");
 	}
+	report_unknown_services(snapshot);
 	free(snapshot);
 
 	listener = open_control_socket();
@@ -329,6 +331,50 @@ load_services(
 
 	/* Reports successful completion. */
 	return 0;
+}
+
+/*
+ * Supports the report unknown services operation.
+ *
+ * A configuration that names a service with no definition has usually been
+ * written wrongly, and saying so is more use than silence.  One written
+ * down as optional is expected to be absent whenever the package that
+ * carries it was left out, so that one is passed over without a word.
+ */
+static void
+report_unknown_services(
+	const struct rcconf_model *snapshot)
+{
+	const struct rcconf_service *configured;
+	size_t index;
+	size_t loaded;
+	int found;
+
+	/* Handles the snapshot availability. */
+	if (snapshot == NULL)
+		return;
+
+	/* Process each element required by the operation. */
+	for (index = 0; index < snapshot->service_count; index++) {
+		configured = &snapshot->services[index];
+		found = 0;
+
+		/* Process each remaining element. */
+		for (loaded = 0; loaded < service_count; loaded++) {
+			if (strcmp(services[loaded].name,
+			    configured->name) == 0) {
+				found = 1;
+				break;
+			}
+		}
+
+		/* Says nothing about one that is there, or one that may not be. */
+		if (found || configured->optional)
+			continue;
+		fprintf(stderr,
+			"init: %s: no definition in /etc/service.d\n",
+			configured->name);
+	}
 }
 
 /* Supports the load one service operation. */
@@ -694,7 +740,14 @@ spawn_service(
 		return -1;
 	}
 
-	argv[0] = service->name;
+	/*
+	 * The program is named to itself by the path it was run from, not by
+	 * the name of the service.  A program that re-executes itself has
+	 * only this to go on, and one that is handed a bare name cannot find
+	 * itself again; it is also what a program prints when it reports its
+	 * own name.
+	 */
+	argv[0] = service->command;
 
 	strcpy(argument_copy, service->arguments);
 

@@ -130,9 +130,63 @@ static const struct file_ops devfs_block_ops = {
 	.fsync = block_fsync,
 };
 
+/*
+ * Changes the ownership of a pseudo terminal.
+ *
+ * This is the one metadata change devfs accepts, and only on a terminal,
+ * because handing a terminal to whoever has just logged in is what a login
+ * server does and there is nowhere else to record it.  Everything else in
+ * /dev is what the driver says it is.
+ */
+static DEVFS_HIGH int
+devfs_setattr(
+	struct inode *inode,
+	const struct stat *attributes,
+	unsigned mask)
+{
+	uid_t uid;
+	gid_t gid;
+	mode_t mode;
+	uint64_t index;
+	int error;
+
+	/* Refuses anything that is not a terminal under /dev/pts. */
+	if (inode == NULL || attributes == NULL ||
+	    inode->i_ino < DEVFS_PTS_INO_BASE ||
+	    inode->i_ino >= DEVFS_PTS_INO_BASE + UINT32_MAX)
+		return EOPNOTSUPP;
+
+	/* Refuses a change to anything but the ownership and the mode. */
+	if ((mask & ~(unsigned)(INODE_ATTR_MODE | INODE_ATTR_UID |
+	    INODE_ATTR_GID)) != 0)
+		return EOPNOTSUPP;
+	index = inode->i_ino - DEVFS_PTS_INO_BASE;
+	uid = (uid_t)attributes->st_uid;
+	gid = (gid_t)attributes->st_gid;
+	mode = (mode_t)attributes->st_mode;
+	error = tty_pty_attr_set((unsigned)index,
+	    (mask & INODE_ATTR_UID) != 0 ? &uid : NULL,
+	    (mask & INODE_ATTR_GID) != 0 ? &gid : NULL,
+	    (mask & INODE_ATTR_MODE) != 0 ? &mode : NULL);
+
+	/* Reports the outcome of the change. */
+	if (error != 0)
+		return error;
+
+	/* Keeps the cached node in step with what was just recorded. */
+	if ((mask & INODE_ATTR_UID) != 0)
+		inode->i_uid = uid;
+	if ((mask & INODE_ATTR_GID) != 0)
+		inode->i_gid = gid;
+	if ((mask & INODE_ATTR_MODE) != 0)
+		inode->i_mode = S_IFCHR | (mode & 07777U);
+	return 0;
+}
+
 static const struct inode_ops devfs_inode_ops = {
 	.lookup = devfs_lookup,
 	.getattr = devfs_getattr,
+	.setattr = devfs_setattr,
 };
 
 static const struct file_ops devfs_directory_ops = {
@@ -530,6 +584,24 @@ devfs_lookup(
 			inode->i_linkcount = 1;
 			inode->i_mode = S_IFCHR | 0620U;
 			inode->i_rdev = (dev_t)(0x00020000U + number);
+		}
+
+		/*
+		 * The ownership is read afresh even from a cached node,
+		 * because a login server changes it between one lookup and
+		 * the next and the node itself keeps nothing.
+		 */
+		{
+			uid_t uid;
+			gid_t gid;
+			mode_t mode;
+
+			if (tty_pty_attr_get((unsigned)number, &uid, &gid,
+			    &mode) == 0) {
+				inode->i_uid = uid;
+				inode->i_gid = gid;
+				inode->i_mode = S_IFCHR | mode;
+			}
 		}
 
 		*result = inode;

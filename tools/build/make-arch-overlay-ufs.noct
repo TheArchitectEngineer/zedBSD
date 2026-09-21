@@ -19,8 +19,14 @@ func main(args){
     }
     if((profile!="i386"&&profile!="amd64")||output==""||backend==""||(sizeMiB!=0&&sizeMiB<16)){zbFail("missing/invalid arch UFS arguments");}
     var root=output+".root.tmp";
-    var dirs=["bin","sbin","lib","etc","var","root","home","usr/bin","dev","boot","tmp","run","shm"];
+    var dirs=["bin","sbin","lib","etc","var","root","home","usr/bin","dev","boot","tmp","run","shm","var/empty","usr/sbin","usr/libexec","etc/ssh"];
     var prepare="rm -rf "+zbShellQuote(root)+" && mkdir -p";
+    for(i in 0..Array.size(dirs)){prepare=prepare+" "+zbShellQuote(root+"/"+dirs[i]);}
+    // A directory is made with the mode it should have rather than the one
+    // the builder's file creation mask happens to leave.  A group-writable
+    // directory is refused by anything that moves its root into the tree,
+    // because whoever is in that group could have put something there.
+    prepare=prepare+" && chmod 0755 "+zbShellQuote(root);
     for(i in 0..Array.size(dirs)){prepare=prepare+" "+zbShellQuote(root+"/"+dirs[i]);}
     prepare=prepare+" && ln -s ../run "+zbShellQuote(root+"/var/run")+
             " && chmod 1777 "+zbShellQuote(root+"/tmp")+" "+zbShellQuote(root+"/shm");

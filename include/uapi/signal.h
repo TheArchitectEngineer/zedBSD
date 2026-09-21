@@ -46,7 +46,14 @@ extern "C" {
 #define SIGPOLL	SIGIO
 #define SIGXCPU	27
 #define SIGXFSZ	28
-#define SIGRTMIN	29
+/*
+ * Raised when a program asks the kernel for something that is not a system
+ * call at all, which a sandbox uses to stop a program that has been made to
+ * ask for the wrong thing.
+ */
+#define SIGSYS	29
+
+#define SIGRTMIN	30
 #define SIGRTMAX	62
 /*
  * Implementation namespace: this is deliberately outside the public

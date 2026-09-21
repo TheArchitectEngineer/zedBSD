@@ -33,6 +33,15 @@ extern "C" {
 #define INADDR_BROADCAST	0xffffffffU
 #define INADDR_LOOPBACK		0x7f000001U
 
+/* The network the loopback address belongs to. */
+#define IN_LOOPBACKNET		127
+
+/*
+ * Ports below this one are for a program that had to be privileged to bind
+ * them, which is the whole of what the number means.
+ */
+#define IPPORT_RESERVED		1024
+
 /*
  * POSIX names for the address and port types carried in struct sockaddr_in.
  * Portable software declares variables with them rather than with uint32_t.

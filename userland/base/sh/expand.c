@@ -13,6 +13,7 @@
 
 #include "userland/base/sh/expand.h"
 #include "userland/base/sh/arithmetic.h"
+#include "userland/base/sh/glob.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -38,6 +39,7 @@ static int append_buffer(struct expand_buffer *target, const struct expand_buffe
 static int append_parameter(struct expand_buffer *buffer, const char *name, size_t length, int quoted, const struct sh_expand_context *context);
 static int field_append(struct sh_field_list *list, const char *data, const unsigned char *quoted_data, size_t length, int quoted_default);
 static int is_ifs(char value, const char *ifs);
+static int trim_parameter(const char *source, const char *pattern, const unsigned char *pattern_quoted, char operation, int longest, size_t *start, size_t *end);
 
 /*
  * Implements the sh expand word operation.
@@ -203,8 +205,12 @@ expand_raw(
 	char inner_quote;
 	char *source, *substitution;
 	size_t name_end;
+	size_t name_length;
 	int colon;
 	char operation;
+	int doubled;
+	int length_wanted;
+	unsigned char *pattern_quote;
 	char *name;
 	const char *parameter;
 	int set, use_word;
@@ -456,24 +462,127 @@ expand_raw(
 			colon = 0;
 			operation = '\0';
 			name = NULL;
+			doubled = 0;
+			length_wanted = 0;
 
 			use_word = 0;
 
-			/* Process each remaining element. */
-			while (name_end < token->length &&
-			       name_character(token->text[name_end]))
-				name_end++;
+			/*
+			 * A special parameter may be written in braces, where
+			 * it means exactly what it means on its own.
+			 */
+			if (start_local6 + 1U < token->length &&
+			    token->text[start_local6 + 1U] == '}' &&
+			    strchr("?$!#*@", token->text[start_local6]) !=
+			    NULL) {
+				value = token->text[start_local6];
 
-			/* Handles a failed name start operation. */
-			if (name_end == start_local6 ||
-			    !name_start(token->text[start_local6])) {
-				*error_text = "invalid parameter name";
-				buffer_free(buffer);
+				/* Handles the value condition. */
+				if (value == '*' || value == '@') {
+					/* Handles a failed append operation. */
+					if (!append_positionals(buffer, context,
+								output_quoted))
+						goto no_memory;
+				} else {
+					number = value == '?' ? context->status
+					    : value == '$' ? context->shell_pid
+					    : value == '!' ? context->last_job
+					    : context->positional_count;
 
-				/* Reports successful completion. */
-				return 0;
+					/* Handles a failed append operation. */
+					if (!append_number(buffer, number,
+							   output_quoted))
+						goto no_memory;
+				}
+				index = start_local6 + 2U;
+				continue;
+			}
+
+			/* A positional parameter may be written in braces too. */
+			if (start_local6 + 1U < token->length &&
+			    token->text[start_local6 + 1U] == '}' &&
+			    token->text[start_local6] >= '0' &&
+			    token->text[start_local6] <= '9') {
+				value = token->text[start_local6];
+				argument = value == '0' ? context->shell_name
+				    : value - '1' < context->positional_count
+				? context->positional[value - '1']
+				: NULL;
+
+				/* Handles a failed append bytes operation. */
+				if (argument != NULL &&
+				    !append_bytes(buffer, argument,
+						  strlen(argument),
+						  output_quoted))
+					goto no_memory;
+				index = start_local6 + 2U;
+				continue;
+			}
+
+			/*
+			 * A number sign before the name asks how long the
+			 * value is rather than what it is.
+			 */
+			if (start_local6 + 1U < token->length &&
+			    token->text[start_local6] == '#' &&
+			    token->text[start_local6 + 1U] != '}') {
+				length_wanted = 1;
+				start_local6++;
+			}
+
+			/*
+			 * How long the positional parameters are, taken
+			 * together, is how many of them there are.
+			 */
+			if (length_wanted && start_local6 + 1U < token->length &&
+			    (token->text[start_local6] == '@' ||
+			     token->text[start_local6] == '*') &&
+			    token->text[start_local6 + 1U] == '}') {
+				/* Handles a failed append number operation. */
+				if (!append_number(buffer,
+						   context->positional_count,
+						   output_quoted))
+					goto no_memory;
+				index = start_local6 + 2U;
+				continue;
+			}
+			name_end = start_local6;
+
+			/*
+			 * A positional parameter is a run of digits and a
+			 * special one is a single character; either may
+			 * carry an operation, as in ${1:-word}, so the name
+			 * is read here before the operation is looked for.
+			 */
+			if (start_local6 < token->length &&
+			    token->text[start_local6] >= '0' &&
+			    token->text[start_local6] <= '9') {
+				while (name_end < token->length &&
+				       token->text[name_end] >= '0' &&
+				       token->text[name_end] <= '9')
+					name_end++;
+			} else if (start_local6 < token->length &&
+				   strchr("?$!#*@",
+					  token->text[start_local6]) != NULL) {
+				name_end = start_local6 + 1U;
+			} else {
+				/* Process each remaining element. */
+				while (name_end < token->length &&
+				       name_character(token->text[name_end]))
+					name_end++;
+
+				/* Handles a failed name start operation. */
+				if (name_end == start_local6 ||
+				    !name_start(token->text[start_local6])) {
+					*error_text = "invalid parameter name";
+					buffer_free(buffer);
+
+					/* Reports successful completion. */
+					return 0;
+				}
 			}
 			end = name_end;
+			name_length = name_end - start_local6;
 
 			/* Checks the current endpoint. */
 			if (end < token->length && token->text[end] == ':') {
@@ -485,7 +594,22 @@ expand_raw(
 			if (end < token->length &&
 			    strchr("-+=?", token->text[end]) != NULL)
 				operation = token->text[end++];
-			else if (colon) {
+			else if (!colon && end < token->length &&
+				 (token->text[end] == '#' ||
+				  token->text[end] == '%')) {
+				/*
+				 * A number sign removes what the pattern
+				 * matches from the front and a per cent sign
+				 * from the back; written twice, the longest
+				 * such part goes rather than the shortest.
+				 */
+				operation = token->text[end++];
+				if (end < token->length &&
+				    token->text[end] == operation) {
+					doubled = 1;
+					end++;
+				}
+			} else if (colon) {
 				*error_text = "unsupported parameter expansion";
 				buffer_free(buffer);
 
@@ -535,14 +659,9 @@ expand_raw(
 				return 0;
 			}
 			name_end = scan_local5;
-			parameter = lookup_parameter(
-			    context, token->text + start_local6,
-			    (size_t)(strchr(token->text + start_local6,
-					    operation == '\0' ? '}'
-					    : colon	      ? ':'
-							      : operation) -
-				     (token->text + start_local6)),
-			    &name);
+			parameter = lookup_parameter(context,
+						     token->text + start_local6,
+						     name_length, &name);
 
 			/* Handles the name availability. */
 			if (name == NULL)
@@ -552,6 +671,32 @@ expand_raw(
 
 			/* Validates the selected operation. */
 			if (operation == '\0') {
+				/* Handles a parameter that was never set. */
+				if (parameter == NULL && !length_wanted &&
+				    context->unset_is_error) {
+					*error_text = "parameter is unset";
+					free(name);
+					buffer_free(buffer);
+
+					/* Reports successful completion. */
+					return 0;
+				}
+
+				/* A parameter that is unset is of no length. */
+				if (length_wanted) {
+					/* Handles a failed append operation. */
+					if (!append_number(buffer,
+					    parameter != NULL ?
+					    (long)strlen(parameter) : 0L,
+					    output_quoted)) {
+						free(name);
+						goto no_memory;
+					}
+					free(name);
+					index = name_end + 1U;
+					continue;
+				}
+
 				/* Handles a failed append bytes operation. */
 				if (parameter != NULL &&
 				    !append_bytes(buffer, parameter,
@@ -570,15 +715,78 @@ expand_raw(
 			word_token.text = token->text + end;
 			word_token.quote = token->quote + end;
 			word_token.length = name_end - end;
+			pattern_quote = NULL;
+
+			/*
+			 * Within the braces a double quotation is the one
+			 * written around the whole word, and it does not make
+			 * a pattern character stand for itself.  A single
+			 * quotation or a backslash written inside does, so
+			 * only those are kept.
+			 */
+			if (operation == '#' || operation == '%') {
+				pattern_quote = malloc(word_token.length + 1U);
+
+				/* Handles a failed malloc operation. */
+				if (pattern_quote == NULL) {
+					free(name);
+					goto no_memory;
+				}
+
+				/* Process each remaining element. */
+				for (scan_local5 = 0;
+				     scan_local5 < word_token.length;
+				     scan_local5++)
+					pattern_quote[scan_local5] =
+					    word_token.quote[scan_local5] ==
+					    SH_QUOTE_DOUBLE ?
+					    SH_QUOTE_UNQUOTED :
+					    word_token.quote[scan_local5];
+				word_token.quote = pattern_quote;
+			}
 
 			/* Handles an operation failure. */
 			if (!expand_raw(&word_token, context, &word,
 					error_text)) {
+				free(pattern_quote);
 				free(name);
 				buffer_free(buffer);
 
 				/* Reports successful completion. */
 				return 0;
+			}
+			free(pattern_quote);
+
+			/* Validates the selected operation. */
+			if (operation == '#' || operation == '%') {
+				const char *source;
+				size_t keep_start;
+				size_t keep_end;
+
+				source = parameter != NULL ? parameter : "";
+
+				/* Handles a failed trim parameter operation. */
+				if (!trim_parameter(source, word.data,
+						    word.quoted, operation,
+						    doubled, &keep_start,
+						    &keep_end)) {
+					buffer_free(&word);
+					free(name);
+					goto no_memory;
+				}
+
+				/* Handles a failed append bytes operation. */
+				if (!append_bytes(buffer, source + keep_start,
+						  keep_end - keep_start,
+						  output_quoted)) {
+					buffer_free(&word);
+					free(name);
+					goto no_memory;
+				}
+				buffer_free(&word);
+				free(name);
+				index = name_end + 1U;
+				continue;
 			}
 
 			/* Validates the selected operation. */
@@ -645,9 +853,20 @@ expand_raw(
 				end++;
 
 			/* Handles a failed append parameter operation. */
-			if (!append_parameter(buffer, token->text + start_local7,
-					      end - start_local7, output_quoted,
-					      context))
+			set = append_parameter(buffer,
+					       token->text + start_local7,
+					       end - start_local7,
+					       output_quoted, context);
+
+			/* Handles a parameter the shell was told to require. */
+			if (set < 0) {
+				*error_text = "parameter is unset";
+				buffer_free(buffer);
+
+				/* Reports successful completion. */
+				return 0;
+			}
+			if (!set)
 				goto no_memory;
 			index = end;
 			continue;
@@ -861,6 +1080,24 @@ lookup_parameter(
 		return NULL;
 	memcpy(*allocated_name, name, length);
 	(*allocated_name)[length] = '\0';
+
+	/*
+	 * A parameter named by a number is one of the words the shell was
+	 * called with, and is not looked for among the variables: the two
+	 * are different things that happen to be written alike.
+	 */
+	if (length != 0 && (*allocated_name)[0] >= '0' &&
+	    (*allocated_name)[0] <= '9') {
+		long position = strtol(*allocated_name, NULL, 10);
+
+		/* Handles the name of the shell itself. */
+		if (position == 0)
+			return context->shell_name;
+
+		/* Returns the computed result. */
+		return position <= (long)context->positional_count ?
+		       context->positional[position - 1] : NULL;
+	}
 	value = context->lookup == NULL
 		    ? getenv(*allocated_name)
 		    : context->lookup(context->lookup_context, *allocated_name);
@@ -915,6 +1152,13 @@ append_parameter(
 		    ? getenv(copy)
 		    : context->lookup(context->lookup_context, copy);
 	free(copy);
+
+	/*
+	 * A parameter that was never set is an empty word, unless the shell
+	 * was asked to treat it as the mistake it usually is.
+	 */
+	if (value == NULL && context->unset_is_error)
+		return -1;
 
 	/* Computes the function result. */
 	function_result = value == NULL ||
@@ -982,6 +1226,69 @@ field_append(
 	list->quoted = larger_quoted;
 	list->fields[list->count++] = field;
 	list->quoted[list->count - 1U] = quoted;
+
+	/* Reports operation failure. */
+	return 1;
+}
+
+/*
+ * Supports the trim parameter operation.
+ *
+ * Reports which part of the value is kept once the pattern has taken what
+ * it matches from one end of it.  Nothing matching leaves the whole value,
+ * which is what the standard asks for.
+ */
+static int
+trim_parameter(
+	const char *source,
+	const char *pattern,
+	const unsigned char *pattern_quoted,
+	char operation,
+	int longest,
+	size_t *start,
+	size_t *end)
+{
+	char *candidate;
+	size_t length;
+	size_t step;
+	size_t taken;
+
+	length = strlen(source);
+	*start = 0;
+	*end = length;
+
+	/* A pattern of nothing matches nothing but nothing. */
+	if (pattern == NULL)
+		return 1;
+	candidate = malloc(length + 1U);
+
+	/* Handles a failed malloc operation. */
+	if (candidate == NULL)
+		return 0;
+
+	/* Process each remaining element. */
+	for (step = 0; step <= length; step++) {
+		/* The longest part is looked for from the far end inward. */
+		taken = longest ? length - step : step;
+
+		/* Handles the selected end of the value. */
+		if (operation == '#') {
+			memcpy(candidate, source, taken);
+			candidate[taken] = '\0';
+
+			/* Handles the matched condition. */
+			if (sh_glob_match(pattern, pattern_quoted,
+					  candidate)) {
+				*start = taken;
+				break;
+			}
+		} else if (sh_glob_match(pattern, pattern_quoted,
+					 source + length - taken)) {
+			*end = length - taken;
+			break;
+		}
+	}
+	free(candidate);
 
 	/* Reports operation failure. */
 	return 1;

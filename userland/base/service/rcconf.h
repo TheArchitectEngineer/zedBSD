@@ -36,6 +36,17 @@ struct rcconf_setting {
 struct rcconf_service {
 	char name[RCCONF_SERVICE_NAME_CAPACITY];
 	int enabled;
+
+	/*
+	 * Set when the service may not be installed at all.
+	 *
+	 * A configuration can then name a service that arrives with a
+	 * package without having to be rewritten when the package is left
+	 * out: init passes over it in silence rather than reporting a
+	 * service it cannot find.  Without this, a name that matches nothing
+	 * is a mistake worth reporting, which is the usual case.
+	 */
+	int optional;
 	size_t setting_count;
 	struct rcconf_setting settings[RCCONF_SETTING_MAX];
 };
@@ -55,6 +66,7 @@ int rcconf_load(const char *, struct rcconf_model *);
 int rcconf_write(FILE *, const struct rcconf_model *);
 
 int rcconf_service_enabled(const struct rcconf_model *, const char *, int *);
+int rcconf_service_optional(const struct rcconf_model *, const char *, int *);
 int rcconf_setting_get(const struct rcconf_model *, const char *, const char *,
 		       char *, size_t);
 int rcconf_model_set_enabled(struct rcconf_model *, const char *, int);

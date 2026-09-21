@@ -16,6 +16,7 @@
 #include "userland/base/sh/expand.h"
 #include "userland/base/sh/glob.h"
 #include "userland/base/sh/lexer.h"
+#include "userland/base/sh/parser.h"
 #include "userland/base/sh/vars.h"
 
 #include <errno.h>
@@ -29,6 +30,7 @@
 #include <signal.h>
 #include <spawn.h>
 #include <sys/stat.h>
+#include <sys/times.h>
 #include <sys/wait.h>
 #include <termios.h>
 #include <unistd.h>
@@ -41,6 +43,71 @@
 
 /* Last completed command, retained across input lines and empty input. */
 static int shell_status;
+
+/*
+ * What a command has asked the constructs around it to do.
+ *
+ * break and continue name how many enclosing loops they act on, and return
+ * ends a function.  They are carried here rather than in the result of each
+ * command, because they have to travel out through every list, pipeline and
+ * branch between the command and the loop it named.
+ */
+static int loop_depth;
+static int break_pending;
+static int continue_pending;
+static int return_pending;
+static int function_depth;
+
+/* How many files the shell is reading through a dot command or by name. */
+static int source_depth;
+
+/*
+ * The options set by the set command.
+ *
+ * errexit ends the shell where a command fails, but only where the failure
+ * is not itself the answer to a question: the condition of an if or a
+ * while, the left of an && or an ||, and anything a ! turns round are asked
+ * in order to be answered either way.  The count says how deep in such a
+ * question the shell is.
+ */
+static int option_errexit;
+static int option_trace;
+static int option_unset_error;
+static int condition_depth;
+
+/* The status a return asked its function to end with. */
+static int return_status;
+
+/* Set when a parse stopped because the input had not finished. */
+static int shell_incomplete;
+
+/*
+ * The tokens and the tree of one input, with a count of what holds them.
+ *
+ * A function's body is a part of the tree of the input that defined it, and
+ * the leaves of that tree name tokens of the same input, so neither may be
+ * released while a definition still points into them.  The count says how
+ * many things do.
+ */
+struct shell_input {
+	struct sh_token_list tokens;
+	struct sh_node *tree;
+	int references;
+};
+
+/* A function, named, with the body it was defined with. */
+struct shell_function {
+	char *name;
+	struct sh_node *body;
+	struct shell_input *input;
+};
+
+#define SHELL_FUNCTION_MAX 64
+
+/* How deeply one function may call another, this one included. */
+#define SHELL_CALL_DEPTH_MAX 64
+static struct shell_function shell_functions[SHELL_FUNCTION_MAX];
+static size_t shell_function_count;
 
 /* Parse failures stop a script even though ordinary command failures do not. */
 static int shell_syntax_error;
@@ -56,26 +123,95 @@ static int last_job_process_count;
 static const char *shell_name = "/bin/sh";
 static int shell_positional_count;
 static char **shell_positional;
+
+/*
+ * The positional parameters when the shell itself owns them.
+ *
+ * Those the shell was started with belong to its own argument vector, and
+ * are not freed; those a set command installs are made here, and the block
+ * is released when another set replaces it.  A function keeps its caller's
+ * block aside for the length of the call, so a set inside a function does
+ * not disturb what the caller will see again.
+ */
+static char **positional_owned;
 static char *trap_action[SHELL_SIGNAL_MAX];
 static volatile int trap_pending[SHELL_SIGNAL_MAX];
 static int getopts_offset = 1;
 static long getopts_last_index = 1;
 
+#define REDIRECT_MAX 16
+
+/*
+ * One redirection, as it was written.
+ *
+ * A redirection either puts a file on a descriptor, or makes one descriptor
+ * a second name for another, or closes one.  Which of the three it is is
+ * said by the source, because that is what the three forms differ in, while
+ * the descriptor they act on is the same question in all of them.
+ */
+#define REDIRECT_FROM_PATH  (-1)
+#define REDIRECT_CLOSE	    (-2)
+
+/*
+ * A here-document, whose text stands where a path would.  It is given to
+ * the command through a pipe that a process of its own fills, because the
+ * text may be longer than a pipe will hold at once and nothing would then
+ * read the rest of it.
+ */
+#define REDIRECT_HEREDOC    (-3)
+
+struct redirection {
+	int descriptor;
+	int source;
+	int flags;
+	char *path;
+};
+
+/* What a descriptor held before a redirection, so that it can be put back. */
+struct redirect_save {
+	int descriptor;
+	int saved;
+};
+
 struct pipeline_command {
 	char *argv[ARG_MAX + 1];
 	int argc;
-	char *input;
-	char *output;
-	int append;
+	struct redirection redirects[REDIRECT_MAX];
+	int redirect_count;
 };
 
 static int command(char *text);
+static int execute_node(const struct sh_node *node, struct shell_input *input,
+			int background);
+static int execute_simple(const struct sh_node *node,
+			  struct shell_input *input, int background);
+static int execute_pipeline_node(const struct sh_node *node,
+				 struct shell_input *input);
+static void trace_pipeline(struct pipeline_command *items, int count);
+static void errexit_check(int result);
+static void expand_context_fill(struct sh_expand_context *context);
+static char *expand_one_word(struct shell_input *input, size_t index);
+static struct shell_function *find_function(const char *name);
+static int control_flow_pending(void);
+static void positional_free(char **values);
+static int positional_replace(int argc, char **argv, int first);
+static struct shell_input *input_hold(struct shell_input *input);
+static void input_release(struct shell_input *input);
+static int redirect_apply(const struct sh_node *node,
+			  struct shell_input *input,
+			  struct redirect_save *saves, int *save_count);
+static int call_function(struct shell_function *function, int argc,
+			 char **argv);
 static int command_argv_body(int argc, char **argv);
 static int wait_status_result(int status);
 static int run_pending_traps(void);
-static int parse_pipeline(const struct sh_token_list *list, size_t *position, struct pipeline_command *items, int *item_count, enum sh_token_type *following, const struct sh_expand_context *context);
+static int parse_pipeline(const struct sh_token_list *list, size_t *position, size_t limit, struct pipeline_command *items, int *item_count, enum sh_token_type *following, const struct sh_expand_context *context);
 static int assignment_length(const char *text);
 static void pipeline_free(struct pipeline_command *items, int count);
+static int redirect_read_one(const struct sh_token_list *list, size_t *position, size_t limit, struct redirection *result, const struct sh_expand_context *context);
+static int redirections_apply(const struct redirection *items, int count, struct redirect_save *saves, int *save_count);
+static void redirections_undo(struct redirect_save *saves, int save_count);
+static int heredoc_open(const char *text, int descriptor);
 static int execute_pipeline(struct pipeline_command *items, int count, int background);
 static int execute_parent_command(struct pipeline_command *item);
 static int command_argv(int argc, char **argv);
@@ -85,6 +221,7 @@ static int temporary_assignment(char *text, struct sh_var_snapshot *snapshot);
 static int command_dispatch(int argc, char **argv);
 static int continue_foreground(pid_t pid, int *status);
 static int shell_tcsetpgrp(int descriptor, pid_t pgrp);
+static int shell_controls_terminal(void);
 static void remember_job(pid_t group, const pid_t *processes, int count);
 static void forget_job(void);
 static int resolve_command(const char *name, char *candidate, size_t capacity);
@@ -98,7 +235,8 @@ static int set_trap(const char *action, int number);
 static int source_file(const char *path);
 static int source_file_mode(const char *path, int continue_on_error);
 static int join_arguments(int argc, char **argv, int first, char **result);
-static int read_line(char *buffer, size_t capacity);
+static int read_line(char **result, int raw);
+static int read_assign_fields(char *line, int argc, char **argv, int first);
 static int shell_wait_builtin(int argc, char **argv);
 static int shell_builtin_name(const char *name);
 static int is_elf(const char *path);
@@ -130,6 +268,8 @@ main(
 	char cwd[256];
 	char hostname[65];
 	char prompt[sizeof(cwd) + sizeof(hostname) + 16U];
+	char *pending;
+	char *joined;
 	char *line;
 
 	/* Handles a failed sh var get operation. */
@@ -174,6 +314,8 @@ main(
 		shell_name = argv[0];
 	using_history();
 
+	pending = NULL;
+
 	/* Continue until the operation reaches a terminal state. */
 	for (;;) {
 		/* Handles a failed getcwd operation. */
@@ -185,11 +327,21 @@ main(
 			strcpy(hostname, "zedbsd");
 		(void)snprintf(prompt, sizeof(prompt), "root@%s:%s$ ", hostname,
 			       cwd);
-		line = readline(prompt);
+
+		/* A command that is not finished asks for the rest of itself. */
+		line = readline(pending != NULL ? "> " : prompt);
 
 		/* Handles the line availability. */
 		if (line == NULL) {
 			(void)putchar('\n');
+
+			/* Handles input that ended in the middle of a command. */
+			if (pending != NULL) {
+				fprintf(stderr,
+					"sh: unexpected end of input\n");
+				free(pending);
+				shell_status = 2;
+			}
 
 			/* Returns the last command's status at end of input. */
 			return shell_status;
@@ -198,137 +350,1121 @@ main(
 		/* Handles the line condition. */
 		if (line[0] != '\0')
 			add_history(line);
-		(void)command(line);
-		free(line);
+
+		/*
+		 * The lines of one command are joined and offered whole,
+		 * because where a construct ends is a question about all of
+		 * them together.
+		 */
+		if (pending == NULL) {
+			pending = line;
+		} else {
+			joined = malloc(strlen(pending) + strlen(line) + 2U);
+
+			/* Handles a failed malloc operation. */
+			if (joined == NULL) {
+				fprintf(stderr, "sh: out of memory\n");
+				free(line);
+				free(pending);
+				pending = NULL;
+				continue;
+			}
+			(void)sprintf(joined, "%s\n%s", pending, line);
+			free(pending);
+			free(line);
+			pending = joined;
+		}
+		(void)command(pending);
+
+		/* Handles a command that is still waiting to be finished. */
+		if (shell_incomplete)
+			continue;
+		free(pending);
+		pending = NULL;
 	}
 }
 
-/* Supports the command operation. */
+/* Supports the input hold operation. */
+static struct shell_input *
+input_hold(
+	struct shell_input *input)
+{
+	/* Handles the input availability. */
+	if (input != NULL)
+		input->references++;
+
+	/* Returns the computed result. */
+	return input;
+}
+
+/* Supports the input release operation. */
+static void
+input_release(
+	struct shell_input *input)
+{
+	/* Handles the input availability. */
+	if (input == NULL)
+		return;
+	input->references--;
+
+	/* Something still points into it, so it stays. */
+	if (input->references > 0)
+		return;
+	sh_node_free(input->tree);
+	sh_tokens_free(&input->tokens);
+	free(input);
+}
+
+/*
+ * Supports the command operation.
+ *
+ * The text may hold several lines: a compound command is written across
+ * them, and the words that open and close it are reserved only where a
+ * command may begin, which is a question about position and so about the
+ * whole of the input rather than about one line of it.
+ */
 static int
 command(
 	char *text)
 {
-	struct pipeline_command items[PIPELINE_MAX];
-	struct sh_expand_context context;
-	enum sh_token_type next;
-	int item_count;
-	int execute;
-	struct sh_token_list list;
+	struct shell_input *input;
 	const char *error_text;
-	enum sh_token_type connector;
-	size_t index;
+	int incomplete;
 	int result;
-	int any;
 
-	connector = SH_TOKEN_SEMI;
 	shell_syntax_error = 0;
-	index = 0;
-	result = shell_status == 0;
-	any = 0;
+	shell_incomplete = 0;
+	input = calloc(1, sizeof(*input));
+
+	/* Handles a failed calloc operation. */
+	if (input == NULL) {
+		fprintf(stderr, "sh: out of memory\n");
+		shell_status = 2;
+		execution_status = 2;
+		return 0;
+	}
+	input->references = 1;
 
 	/* Handles an operation failure. */
-	if (!sh_lex(text, &list, &error_text)) {
+	if (!sh_lex(text, &input->tokens, &error_text)) {
+		/*
+		 * A quotation, a substitution or a here-document that has
+		 * been opened and not closed is a fault that more input can
+		 * mend, and is how each of them is written across lines.
+		 */
+		if (strcmp(error_text, "unterminated quote") == 0 ||
+		    strcmp(error_text, "unterminated here-document") == 0 ||
+		    strcmp(error_text,
+			   "unterminated command substitution") == 0) {
+			free(input);
+			shell_incomplete = 1;
+
+			/* Returns the computed result. */
+			return shell_status == 0;
+		}
 		fprintf(stderr, "sh: syntax error: %s\n", error_text);
-
-		/* Reports successful completion. */
+		free(input);
 		shell_status = 2;
 		execution_status = 2;
 		shell_syntax_error = 1;
+
+		/* Reports successful completion. */
 		return 0;
 	}
 
 	/* Handles an operation failure. */
-	if (!sh_alias_expand(&list, &error_text)) {
+	if (!sh_alias_expand(&input->tokens, &error_text)) {
 		fprintf(stderr, "sh: alias: %s\n", error_text);
-		sh_tokens_free(&list);
-
-		/* Reports successful completion. */
+		input_release(input);
 		shell_status = 2;
 		execution_status = 2;
 		shell_syntax_error = 1;
+
+		/* Reports successful completion. */
 		return 0;
 	}
-	while (list.tokens[index].type != SH_TOKEN_END) {
-		/* Handles a failed run pending traps operation. */
-		if (!run_pending_traps())
-			result = 0;
-		context.status = shell_status;
-		context.shell_pid = (long)getpid();
-		context.last_job = (long)last_job;
-		context.lookup = shell_lookup;
-		context.assign = shell_assign;
-		context.command_substitute = shell_command_substitute;
-		context.lookup_context = NULL;
-		context.shell_name = shell_name;
-		context.positional_count = shell_positional_count;
-		context.positional = shell_positional;
 
-		/* Handles a failed parse pipeline operation. */
-		if (!parse_pipeline(&list, &index, items, &item_count, &next,
-				    &context)) {
-			result = 0;
-			shell_status = 2;
-			shell_syntax_error = 1;
-			goto done;
+	/* Handles an operation failure. */
+	if (!sh_parse(&input->tokens, &input->tree, &error_text, &incomplete)) {
+		/*
+		 * A construct that has been opened and not closed is not a
+		 * mistake: the caller reads more input and offers the whole
+		 * of it again.
+		 */
+		if (incomplete) {
+			input_release(input);
+			shell_incomplete = 1;
+
+			/* Returns the computed result. */
+			return shell_status == 0;
 		}
+		fprintf(stderr, "sh: syntax error: %s\n", error_text);
+		input_release(input);
+		shell_status = 2;
+		execution_status = 2;
+		shell_syntax_error = 1;
 
-		/* Handles the next condition. */
-		if (next != SH_TOKEN_END && next != SH_TOKEN_SEMI &&
-		    next != SH_TOKEN_AMP && next != SH_TOKEN_AND_IF &&
-		    next != SH_TOKEN_OR_IF) {
-			fprintf(stderr, "sh: invalid operator\n");
-			pipeline_free(items, item_count);
-			result = 0;
-			shell_status = 2;
-			shell_syntax_error = 1;
-			goto done;
-		}
-		execute = connector == SH_TOKEN_SEMI ||
-			  connector == SH_TOKEN_AMP ||
-			  (connector == SH_TOKEN_AND_IF && result) ||
-			  (connector == SH_TOKEN_OR_IF && !result);
-
-		/* Handles the execute condition. */
-		if (execute) {
-			execution_status = -1;
-			result = execute_pipeline(items, item_count,
-						  next == SH_TOKEN_AMP);
-			shell_status = execution_status >= 0 ? execution_status :
-			    (result ? 0 : 1);
-			any = 1;
-		}
-		pipeline_free(items, item_count);
-		connector = next;
-
-		/* Handles the next condition. */
-		if (next == SH_TOKEN_END)
-			break;
-		index++;
-
-		/* Handles the list condition. */
-		if (list.tokens[index].type == SH_TOKEN_END &&
-		    (next == SH_TOKEN_AND_IF || next == SH_TOKEN_OR_IF)) {
-			fprintf(stderr, "sh: syntax error after operator\n");
-			result = 0;
-			shell_status = 2;
-			shell_syntax_error = 1;
-			goto done;
-		}
+		/* Reports successful completion. */
+		return 0;
 	}
 
-	/* Handles the any condition. */
-	if (!any)
+	/* Handles a failed run pending traps operation. */
+	(void)run_pending_traps();
+
+	/* An input of nothing but separators runs nothing and fails at nothing. */
+	if (input->tree == NULL)
 		result = shell_status == 0;
+	else
+		result = execute_node(input->tree, input, 0);
 
 	/* Handles a failed run pending traps operation. */
 	if (!run_pending_traps())
 		result = 0;
-done:
 	command_background = 0;
-	sh_tokens_free(&list);
+	execution_status = shell_status;
+	input_release(input);
 
 	/* Returns the computed result. */
-	execution_status = shell_status;
+	return result;
+}
+
+/* Supports the control flow pending operation. */
+static int
+control_flow_pending(
+	void)
+{
+	/* Returns the computed result. */
+	return break_pending != 0 || continue_pending != 0 ||
+	       return_pending != 0;
+}
+
+/* Supports the expand context fill operation. */
+static void
+expand_context_fill(
+	struct sh_expand_context *context)
+{
+	context->status = shell_status;
+	context->shell_pid = (long)getpid();
+	context->last_job = (long)last_job;
+	context->lookup = shell_lookup;
+	context->assign = shell_assign;
+	context->command_substitute = shell_command_substitute;
+	context->lookup_context = NULL;
+	context->shell_name = shell_name;
+	context->positional_count = shell_positional_count;
+	context->positional = shell_positional;
+	context->unset_is_error = option_unset_error;
+}
+
+/*
+ * Supports the expand one word operation.
+ *
+ * Expands a single token into one word, for the places the grammar takes a
+ * word rather than a command: the name a for loop sets, the value a case
+ * matches, and the file a redirection names.
+ */
+static char *
+expand_one_word(
+	struct shell_input *input,
+	size_t index)
+{
+	struct sh_expand_context context;
+	const char *error_text;
+	char *word;
+
+	expand_context_fill(&context);
+
+	/* Handles a failed expansion. */
+	if (!sh_expand_word(&input->tokens.tokens[index], &context, &word,
+			    &error_text)) {
+		fprintf(stderr, "sh: expansion: %s\n", error_text);
+
+		/* Reports that no result is available. */
+		return NULL;
+	}
+
+	/* Returns the computed result. */
+	return word;
+}
+
+/* Supports the positional free operation. */
+static void
+positional_free(
+	char **values)
+{
+	size_t index;
+
+	/* Handles the values availability. */
+	if (values == NULL)
+		return;
+
+	/* Process each remaining element. */
+	for (index = 0; values[index] != NULL; index++)
+		free(values[index]);
+	free(values);
+}
+
+/*
+ * Supports the positional replace operation.
+ *
+ * Copies the words, because the vector they were read from is the one the
+ * command was built in and is released as soon as the command ends.
+ */
+static int
+positional_replace(
+	int argc,
+	char **argv,
+	int first)
+{
+	char **values;
+	int count;
+	int index;
+
+	count = argc - first;
+	values = calloc((size_t)count + 1U, sizeof(*values));
+
+	/* Handles a failed calloc operation. */
+	if (values == NULL)
+		return 0;
+
+	/* Process each remaining element. */
+	for (index = 0; index < count; index++) {
+		values[index] = strdup(argv[first + index]);
+
+		/* Handles a failed strdup operation. */
+		if (values[index] == NULL) {
+			positional_free(values);
+
+			/* Reports successful completion. */
+			return 0;
+		}
+	}
+	positional_free(positional_owned);
+	positional_owned = values;
+	shell_positional = values;
+	shell_positional_count = count;
+
+	/* Reports operation failure. */
+	return 1;
+}
+
+/* Supports the find function operation. */
+static struct shell_function *
+find_function(
+	const char *name)
+{
+	size_t index;
+
+	/* Process each remaining element. */
+	for (index = 0; index < shell_function_count; index++)
+		if (strcmp(shell_functions[index].name, name) == 0)
+			return &shell_functions[index];
+
+	/* Reports that no result is available. */
+	return NULL;
+}
+
+/*
+ * Supports the call function operation.
+ *
+ * The body sees the arguments as its positional parameters, and nothing
+ * else about the shell changes: a function runs in the shell that called
+ * it, so what it assigns and where it moves to are kept.
+ */
+static int
+call_function(
+	struct shell_function *function,
+	int argc,
+	char **argv)
+{
+	int saved_count;
+	char **saved_positional;
+	char **saved_owned;
+	int saved_break;
+	int saved_continue;
+	int saved_depth;
+	int result;
+
+	/*
+	 * A function that calls itself without end would take the shell down
+	 * with it, and the stack is what would run out first, so the depth
+	 * is limited to something no ordinary script reaches.
+	 */
+	if (function_depth >= SHELL_CALL_DEPTH_MAX) {
+		fprintf(stderr, "sh: %s: too deeply nested\n", function->name);
+		shell_status = 1;
+		execution_status = 1;
+
+		/* Reports successful completion. */
+		return 0;
+	}
+	saved_count = shell_positional_count;
+	saved_positional = shell_positional;
+	saved_owned = positional_owned;
+	positional_owned = NULL;
+	saved_break = break_pending;
+	saved_continue = continue_pending;
+	saved_depth = loop_depth;
+	shell_positional_count = argc - 1;
+	shell_positional = argc > 1 ? argv + 1 : NULL;
+
+	/*
+	 * A break written in a function acts on a loop in the function, so
+	 * the loops the caller is in are hidden for the length of the call.
+	 */
+	break_pending = 0;
+	continue_pending = 0;
+	loop_depth = 0;
+	function_depth++;
+	result = execute_node(function->body, function->input, 0);
+	function_depth--;
+
+	/* A return ends the call and says what it ended with. */
+	if (return_pending) {
+		return_pending = 0;
+		shell_status = return_status;
+		execution_status = return_status;
+		result = return_status == 0;
+	}
+	loop_depth = saved_depth;
+	break_pending = saved_break;
+	continue_pending = saved_continue;
+
+	/* Anything a set inside the function made is the function's alone. */
+	positional_free(positional_owned);
+	positional_owned = saved_owned;
+	shell_positional_count = saved_count;
+	shell_positional = saved_positional;
+
+	/* Returns the computed result. */
+	return result;
+}
+
+/*
+ * Supports the redirect apply operation.
+ *
+ * Applies the redirections written after a compound command, which stand
+ * for the whole of it.  What each descriptor held is kept so that it can be
+ * put back when the command ends, because the command runs in this shell.
+ */
+static int
+redirect_apply(
+	const struct sh_node *node,
+	struct shell_input *input,
+	struct redirect_save *saves,
+	int *save_count)
+{
+	struct redirection items[REDIRECT_MAX];
+	struct sh_expand_context context;
+	size_t position;
+	int count;
+	int index;
+	int result;
+
+	*save_count = 0;
+	count = 0;
+
+	/* An empty range is one that starts after it ends. */
+	if (node->redirect_first > node->redirect_last)
+		return 1;
+	expand_context_fill(&context);
+	position = node->redirect_first;
+	result = 1;
+
+	/* Continue while the operation condition remains true. */
+	while (position <= node->redirect_last) {
+		/* Checks the remaining item count. */
+		if (count == REDIRECT_MAX) {
+			fprintf(stderr, "sh: too many redirections\n");
+			result = 0;
+			break;
+		}
+
+		/* Handles a failed redirect read one operation. */
+		if (!redirect_read_one(&input->tokens, &position,
+				       node->redirect_last + 1U, &items[count],
+				       &context)) {
+			result = 0;
+			break;
+		}
+		count++;
+	}
+
+	/* Handles a failed redirections apply operation. */
+	if (result)
+		result = redirections_apply(items, count, saves, save_count);
+
+	/* Process each remaining element. */
+	for (index = 0; index < count; index++)
+		free(items[index].path);
+
+	/* Returns the computed result. */
+	return result;
+}
+
+/*
+ * Supports the execute simple operation.
+ *
+ * The words are expanded here rather than when the command was read,
+ * because the body of a loop is written once and run many times and has to
+ * see what is true on each turn.
+ */
+static int
+execute_simple(
+	const struct sh_node *node,
+	struct shell_input *input,
+	int background)
+{
+	struct pipeline_command items[PIPELINE_MAX];
+	struct sh_expand_context context;
+	enum sh_token_type following;
+	size_t index;
+	int item_count;
+	int result;
+
+	expand_context_fill(&context);
+	index = node->u.simple.first;
+
+	/* Handles a failed parse pipeline operation. */
+	if (!parse_pipeline(&input->tokens, &index, node->u.simple.last + 1U,
+			    items, &item_count, &following, &context)) {
+		shell_status = 2;
+		shell_syntax_error = 1;
+
+		/* Reports successful completion. */
+		return 0;
+	}
+
+	/* A traced command is shown as it will be run, after expansion. */
+	if (option_trace)
+		trace_pipeline(items, item_count);
+	execution_status = -1;
+	result = execute_pipeline(items, item_count, background);
+	shell_status = execution_status >= 0 ? execution_status :
+		       (result ? 0 : 1);
+	pipeline_free(items, item_count);
+
+	/* Returns the computed result. */
+	return shell_status == 0;
+}
+
+/*
+ * Supports the trace pipeline operation.
+ *
+ * Writes the words of a command as they will be run.  They go to the error
+ * output because they are about the shell rather than from the command, and
+ * what the command writes must stay usable.
+ */
+static void
+trace_pipeline(
+	struct pipeline_command *items,
+	int count)
+{
+	int index;
+	int argument;
+
+	/* Process each remaining element. */
+	for (index = 0; index < count; index++) {
+		fputs(index == 0 ? "+ " : "| ", stderr);
+
+		/* Process each remaining command-line operand. */
+		for (argument = 0; argument < items[index].argc; argument++)
+			fprintf(stderr, argument == 0 ? "%s" : " %s",
+				items[index].argv[argument]);
+		fputc('\n', stderr);
+	}
+	(void)fflush(stderr);
+}
+
+/*
+ * Supports the errexit check operation.
+ *
+ * Ends the shell where a command has failed and the failure was not asked
+ * for.  A command whose answer a construct is waiting on is exempt, and so
+ * is anything run while a function or a file is being read for its own
+ * status, because those places are where a failure is handled.
+ */
+static void
+errexit_check(
+	int result)
+{
+	/* Handles a shell that was not asked to end at a failure. */
+	if (!option_errexit || result || condition_depth != 0)
+		return;
+
+	/* Handles a failure that is not one, because nothing was run. */
+	if (shell_status == 0)
+		return;
+	exit(shell_status);
+}
+
+/*
+ * Supports the execute pipeline node operation.
+ *
+ * Runs a pipeline that holds a compound command.  Each command is a child
+ * of its own, because what a pipeline joins is the output of one command to
+ * the input of the next and a compound command has no other way to be given
+ * either.
+ */
+static int
+execute_pipeline_node(
+	const struct sh_node *node,
+	struct shell_input *input)
+{
+	pid_t children[PIPELINE_MAX];
+	int descriptors[2];
+	int previous;
+	size_t index;
+	size_t started;
+	int status;
+
+	/* Checks the remaining item count. */
+	if (node->u.pipeline.count > PIPELINE_MAX) {
+		fprintf(stderr, "sh: pipeline is too long\n");
+		shell_status = 2;
+
+		/* Reports successful completion. */
+		return 0;
+	}
+	previous = -1;
+	started = 0;
+
+	/* Process each remaining element. */
+	for (index = 0; index < node->u.pipeline.count; index++) {
+		int last = index + 1U == node->u.pipeline.count;
+
+		descriptors[0] = -1;
+		descriptors[1] = -1;
+
+		/* Handles a failed pipe operation. */
+		if (!last && pipe(descriptors) != 0) {
+			fprintf(stderr, "sh: cannot pipe: %s\n",
+				strerror(errno));
+			break;
+		}
+		children[index] = fork();
+
+		/* Handles a failed fork operation. */
+		if (children[index] < 0) {
+			fprintf(stderr, "sh: cannot fork: %s\n",
+				strerror(errno));
+			if (descriptors[0] >= 0)
+				(void)close(descriptors[0]);
+			if (descriptors[1] >= 0)
+				(void)close(descriptors[1]);
+			break;
+		}
+
+		/* The child takes its end of each pipe and runs the command. */
+		if (children[index] == 0) {
+			if (previous >= 0) {
+				(void)dup2(previous, 0);
+				(void)close(previous);
+			}
+			if (!last) {
+				(void)close(descriptors[0]);
+				(void)dup2(descriptors[1], 1);
+				(void)close(descriptors[1]);
+			}
+			(void)execute_node(node->u.pipeline.commands[index],
+					   input, 0);
+			_exit(shell_status);
+		}
+		started++;
+		if (previous >= 0)
+			(void)close(previous);
+		if (!last) {
+			(void)close(descriptors[1]);
+			previous = descriptors[0];
+		}
+	}
+	if (previous >= 0)
+		(void)close(previous);
+
+	/* Handles a pipeline that could not be started at all. */
+	if (started == 0) {
+		shell_status = 1;
+		return 0;
+	}
+	status = 0;
+
+	/* The status of the pipeline is the status of its last command. */
+	for (index = 0; index < started; index++) {
+		int child_status = 0;
+
+		while (waitpid(children[index], &child_status, 0) < 0 &&
+		       errno == EINTR)
+			continue;
+		if (index + 1U == started)
+			status = child_status;
+	}
+	execution_status = -1;
+	(void)wait_status_result(status);
+	shell_status = execution_status;
+
+	/* Returns the computed result. */
+	return shell_status == 0;
+}
+
+/*
+ * Supports the execute node operation.
+ *
+ * Walks the tree the parser built.  A command that has asked to leave a
+ * loop or to return from a function stops the walk where it is: every
+ * construct between it and the one it named simply gives up its turn.
+ */
+static int
+execute_node(
+	const struct sh_node *node,
+	struct shell_input *input,
+	int background)
+{
+	struct shell_function *function;
+	const struct sh_case_arm *arm;
+	struct sh_field_list fields;
+	struct sh_expand_context context;
+	const char *error_text;
+	char **values;
+	size_t value_count;
+	size_t value_index;
+	char *word;
+	size_t index;
+	size_t position;
+	struct redirect_save saves[REDIRECT_MAX];
+	int save_count;
+	int redirected;
+	int asked;
+	int result;
+	int matched;
+
+	/* Handles the node availability. */
+	if (node == NULL)
+		return 1;
+	result = 1;
+	redirected = 0;
+	asked = 0;
+
+	/* A command a ! turns round is asked for its answer, either way. */
+	condition_depth += node->negated;
+
+	save_count = 0;
+
+	/* Redirections written after a compound command stand for all of it. */
+	if (node->redirect_first <= node->redirect_last) {
+		/* Handles a failed redirect apply operation. */
+		if (!redirect_apply(node, input, saves, &save_count)) {
+			redirections_undo(saves, save_count);
+			shell_status = 1;
+
+			/* Reports successful completion. */
+			return 0;
+		}
+		redirected = 1;
+	}
+
+	/* Dispatch the selected kind of command. */
+	switch (node->kind) {
+	case SH_NODE_SIMPLE:
+		result = execute_simple(node, input, background);
+		break;
+
+	case SH_NODE_LIST:
+		/* Process each remaining element. */
+		for (index = 0; index < node->u.list.count; index++) {
+			const struct sh_list_entry *entry =
+			    &node->u.list.entries[index];
+			int run;
+
+			/* A command joined by && or || may be passed over. */
+			if (index == 0)
+				run = 1;
+			else if (entry->join == SH_JOIN_AND)
+				run = result;
+			else if (entry->join == SH_JOIN_OR)
+				run = !result;
+			else
+				run = 1;
+
+			/* Handles a command that is not to be run. */
+			if (!run)
+				continue;
+
+			/*
+			 * A command with an && or an || after it is asked
+			 * for its answer, so its failure is not one the
+			 * shell should end at.
+			 */
+			asked = index + 1U < node->u.list.count &&
+			    (node->u.list.entries[index + 1U].join ==
+			     SH_JOIN_AND ||
+			     node->u.list.entries[index + 1U].join ==
+			     SH_JOIN_OR);
+			condition_depth += asked;
+			result = execute_node(entry->node, input,
+					      entry->background);
+			condition_depth -= asked;
+
+			/* Stops where a command asked to leave. */
+			if (control_flow_pending())
+				goto done;
+
+			/*
+			 * A command whose answer the next one is waiting on
+			 * was asked for that answer, so its failure is not
+			 * one the shell should end at.
+			 */
+			if (!asked)
+				errexit_check(result);
+		}
+		break;
+
+	case SH_NODE_PIPELINE:
+		result = execute_pipeline_node(node, input);
+		break;
+
+	case SH_NODE_IF:
+		matched = 0;
+
+		/* Process each remaining element. */
+		for (index = 0; index < node->u.branch.count; index++) {
+			condition_depth++;
+			result = execute_node(node->u.branch.conditions[index],
+					      input, 0);
+			condition_depth--;
+
+			/* Stops where a command asked to leave. */
+			if (control_flow_pending())
+				goto done;
+
+			/* Takes the first branch whose condition held. */
+			if (result) {
+				result = execute_node(
+				    node->u.branch.bodies[index], input, 0);
+				matched = 1;
+				break;
+			}
+		}
+
+		/* Nothing held, so the else is taken when there is one. */
+		if (!matched) {
+			if (node->u.branch.otherwise != NULL) {
+				result = execute_node(node->u.branch.otherwise,
+						      input, 0);
+			} else {
+				/* An if that chose nothing has succeeded. */
+				shell_status = 0;
+				result = 1;
+			}
+		}
+		break;
+
+	case SH_NODE_WHILE:
+	case SH_NODE_UNTIL:
+		shell_status = 0;
+		result = 1;
+		loop_depth++;
+
+		/* Continue until the operation reaches a terminal state. */
+		for (;;) {
+			int holds;
+
+			condition_depth++;
+			holds = execute_node(node->u.loop.condition, input, 0);
+			condition_depth--;
+
+			/* Stops where a command asked to leave. */
+			if (control_flow_pending())
+				break;
+
+			/* An until loop runs while its condition does not hold. */
+			if (node->kind == SH_NODE_UNTIL)
+				holds = !holds;
+
+			/* A loop that ran to its end has succeeded. */
+			if (!holds) {
+				shell_status = 0;
+				result = 1;
+				break;
+			}
+			result = execute_node(node->u.loop.body, input, 0);
+
+			/* A break or a continue says how far out it acts. */
+			if (continue_pending != 0) {
+				continue_pending--;
+				if (continue_pending != 0)
+					break;
+				continue;
+			}
+			if (break_pending != 0) {
+				break_pending--;
+				break;
+			}
+			if (return_pending != 0)
+				break;
+		}
+		loop_depth--;
+		break;
+
+	case SH_NODE_FOR:
+		word = expand_one_word(input, node->u.iterate.name);
+
+		/* Handles a failed expansion of the name. */
+		if (word == NULL) {
+			shell_status = 2;
+			result = 0;
+			break;
+		}
+		values = NULL;
+		value_count = 0;
+
+		/*
+		 * A for with no "in" walks the positional parameters, and
+		 * one with words walks what those words expand to, which
+		 * may be more words than were written.
+		 */
+		if (node->u.iterate.words_absent) {
+			values = calloc((size_t)shell_positional_count + 1U,
+					sizeof(*values));
+			if (values != NULL) {
+				for (index = 0;
+				     index < (size_t)shell_positional_count;
+				     index++)
+					values[value_count++] =
+					    strdup(shell_positional[index]);
+			}
+		} else {
+			expand_context_fill(&context);
+
+			/* Process each remaining element. */
+			for (index = 0; index < node->u.iterate.word_count;
+			     index++) {
+				char **grown;
+
+				memset(&fields, 0, sizeof(fields));
+				if (!sh_expand_fields(&input->tokens.tokens[
+				    node->u.iterate.words[index]], &context,
+				    &fields, &error_text)) {
+					fprintf(stderr, "sh: expansion: %s\n",
+						error_text);
+					result = 0;
+					break;
+				}
+				if (!sh_glob_fields(&fields, &error_text)) {
+					fprintf(stderr,
+						"sh: pathname expansion: %s\n",
+						error_text);
+					sh_fields_free(&fields);
+					result = 0;
+					break;
+				}
+				grown = realloc(values, (value_count +
+				    fields.count + 1U) * sizeof(*values));
+				if (grown == NULL) {
+					sh_fields_free(&fields);
+					result = 0;
+					break;
+				}
+				values = grown;
+				for (position = 0; position < fields.count;
+				     position++) {
+					values[value_count++] =
+					    fields.fields[position];
+					fields.fields[position] = NULL;
+				}
+				sh_fields_free(&fields);
+			}
+		}
+
+		/* Handles a failed expansion of the words. */
+		if (!result) {
+			shell_status = 2;
+		} else {
+			shell_status = 0;
+			loop_depth++;
+
+			/* Process each remaining element. */
+			for (value_index = 0; value_index < value_count;
+			     value_index++) {
+				if (values[value_index] == NULL ||
+				    sh_var_set(word, values[value_index],
+					       -1) != 0) {
+					fprintf(stderr, "sh: %s: %s\n", word,
+						strerror(errno));
+					shell_status = 1;
+					result = 0;
+					break;
+				}
+				result = execute_node(node->u.iterate.body,
+						      input, 0);
+
+				/* A break or a continue says how far out it acts. */
+				if (continue_pending != 0) {
+					continue_pending--;
+					if (continue_pending != 0)
+						break;
+					continue;
+				}
+				if (break_pending != 0) {
+					break_pending--;
+					break;
+				}
+				if (return_pending != 0)
+					break;
+			}
+			loop_depth--;
+		}
+
+		/* Process each remaining element. */
+		for (value_index = 0; value_index < value_count; value_index++)
+			free(values[value_index]);
+		free(values);
+		free(word);
+		break;
+
+	case SH_NODE_CASE:
+		word = expand_one_word(input, node->u.select.word);
+
+		/* Handles a failed expansion of the word to match. */
+		if (word == NULL) {
+			shell_status = 2;
+			result = 0;
+			break;
+		}
+		shell_status = 0;
+		result = 1;
+		expand_context_fill(&context);
+
+		/* Process each remaining element. */
+		for (index = 0; index < node->u.select.arm_count; index++) {
+			arm = &node->u.select.arms[index];
+			matched = 0;
+
+			/* Process each remaining element. */
+			for (position = 0;
+			     position < arm->pattern_count && !matched;
+			     position++) {
+				memset(&fields, 0, sizeof(fields));
+
+				/*
+				 * The pattern keeps what of it was quoted,
+				 * because a quoted star stands for itself.
+				 */
+				if (!sh_expand_fields(&input->tokens.tokens[
+				    arm->pattern_first[position]], &context,
+				    &fields, &error_text)) {
+					fprintf(stderr, "sh: expansion: %s\n",
+						error_text);
+					continue;
+				}
+				if (fields.count != 0)
+					matched = sh_glob_match(
+					    fields.fields[0], fields.quoted[0],
+					    word);
+				sh_fields_free(&fields);
+			}
+
+			/* The first arm that matched is the only one taken. */
+			if (matched) {
+				result = execute_node(arm->body, input, 0);
+				break;
+			}
+		}
+		free(word);
+		break;
+
+	case SH_NODE_GROUP:
+		result = execute_node(node->u.body, input, background);
+		break;
+
+	case SH_NODE_SUBSHELL:
+		{
+			pid_t child;
+			int status;
+
+			child = fork();
+
+			/* Handles a failed fork operation. */
+			if (child < 0) {
+				fprintf(stderr, "sh: cannot fork: %s\n",
+					strerror(errno));
+				shell_status = 1;
+				result = 0;
+				break;
+			}
+
+			/* The child runs the commands and takes their status. */
+			if (child == 0) {
+				(void)execute_node(node->u.body, input, 0);
+				_exit(shell_status);
+			}
+			status = 0;
+			while (waitpid(child, &status, 0) < 0 &&
+			       errno == EINTR)
+				continue;
+			execution_status = -1;
+			(void)wait_status_result(status);
+			shell_status = execution_status;
+			result = shell_status == 0;
+		}
+		break;
+
+	case SH_NODE_FUNCTION:
+		word = expand_one_word(input, node->u.function.name);
+
+		/* Handles a failed expansion of the name. */
+		if (word == NULL) {
+			shell_status = 2;
+			result = 0;
+			break;
+		}
+		function = find_function(word);
+
+		/* Handles a table with no room for another. */
+		if (function == NULL &&
+		    shell_function_count == SHELL_FUNCTION_MAX) {
+			fprintf(stderr, "sh: too many functions\n");
+			free(word);
+			shell_status = 1;
+			result = 0;
+			break;
+		}
+
+		/* A definition replaces the one the name had before. */
+		if (function == NULL) {
+			function = &shell_functions[shell_function_count];
+			memset(function, 0, sizeof(*function));
+			function->name = word;
+			shell_function_count++;
+		} else {
+			free(word);
+			input_release(function->input);
+		}
+		function->body = node->u.function.body;
+		function->input = input_hold(input);
+		shell_status = 0;
+		result = 1;
+		break;
+
+	default:
+		shell_status = 2;
+		result = 0;
+		break;
+	}
+done:
+
+	condition_depth -= node->negated;
+
+	/* A leading exclamation turns the answer round, but not the flow. */
+	if (node->negated && !control_flow_pending()) {
+		shell_status = shell_status == 0 ? 1 : 0;
+		result = shell_status == 0;
+	}
+
+	/* Handles the redirected condition. */
+	if (redirected)
+		redirections_undo(saves, save_count);
+
+	/* Returns the computed result. */
 	return result;
 }
 
@@ -370,11 +1506,19 @@ run_pending_traps(
 	return result;
 }
 
-/* Supports the parse pipeline operation. */
+/*
+ * Supports the parse pipeline operation.
+ *
+ * Reads the words of one pipeline and the redirections written with them.
+ * The limit is one past the last token that belongs to it, because the
+ * caller hands over a part of a larger input: a pipe beyond that limit
+ * joins something else and is not this pipeline's to read.
+ */
 static int
 parse_pipeline(
 	const struct sh_token_list *list,
 	size_t *position,
+	size_t limit,
 	struct pipeline_command *items,
 	int *item_count,
 	enum sh_token_type *following,
@@ -382,7 +1526,6 @@ parse_pipeline(
 {
 	int assignment;
 	struct sh_field_list fields_local;
-	struct sh_field_list fields_local1;
 	char *word;
 	size_t field;
 	enum sh_token_type type;
@@ -396,7 +1539,9 @@ parse_pipeline(
 
 	/* Continue until the operation reaches a terminal state. */
 	for (;;) {
-		type = list->tokens[*position].type;
+		/* Anything past the limit belongs to another command. */
+		type = *position < limit ? list->tokens[*position].type :
+		       SH_TOKEN_END;
 
 		/* Handles the type condition. */
 		if (type == SH_TOKEN_WORD) {
@@ -481,64 +1626,30 @@ parse_pipeline(
 
 		/* Handles the type condition. */
 		if (type == SH_TOKEN_INPUT || type == SH_TOKEN_OUTPUT ||
-		    type == SH_TOKEN_APPEND) {
-			(*position)++;
-
-			/* Handles the list condition. */
-			if (list->tokens[*position].type != SH_TOKEN_WORD) {
-				fprintf(stderr,
-					"sh: redirection requires a path\n");
+		    type == SH_TOKEN_APPEND || type == SH_TOKEN_CLOBBER ||
+		    type == SH_TOKEN_LESSAND || type == SH_TOKEN_GREATAND ||
+		    type == SH_TOKEN_LESSGREAT || type == SH_TOKEN_DLESS ||
+		    type == SH_TOKEN_DLESSDASH) {
+			/* Checks the remaining item count. */
+			if (item->redirect_count == REDIRECT_MAX) {
+				fprintf(stderr, "sh: too many redirections\n");
 				pipeline_free(items, count);
 
 				/* Reports successful completion. */
 				return 0;
 			}
 
-			/* Handles an operation failure. */
-			if (!sh_expand_fields(&list->tokens[*position], context,
-					      &fields_local1, &error_text)) {
-				fprintf(stderr, "sh: expansion: %s\n",
-					error_text);
+			/* Handles a failed redirect read one operation. */
+			if (!redirect_read_one(list, position, limit,
+					       &item->redirects[
+						   item->redirect_count],
+					       context)) {
 				pipeline_free(items, count);
 
 				/* Reports successful completion. */
 				return 0;
 			}
-
-			/* Handles an operation failure. */
-			if (!sh_glob_fields(&fields_local1, &error_text)) {
-				fprintf(stderr, "sh: pathname expansion: %s\n",
-					error_text);
-				sh_fields_free(&fields_local1);
-				pipeline_free(items, count);
-
-				/* Reports successful completion. */
-				return 0;
-			}
-			(*position)++;
-
-			/* Handles the fields local1 condition. */
-			if (fields_local1.count != 1) {
-				fprintf(stderr, "sh: ambiguous redirection\n");
-				sh_fields_free(&fields_local1);
-				pipeline_free(items, count);
-
-				/* Reports successful completion. */
-				return 0;
-			}
-
-			/* Handles the type condition. */
-			if (type == SH_TOKEN_INPUT) {
-				free(item->input);
-				item->input = fields_local1.fields[0];
-			} else {
-				free(item->output);
-				item->output = fields_local1.fields[0];
-				item->append = type == SH_TOKEN_APPEND;
-			}
-			free(fields_local1.quoted[0]);
-			free(fields_local1.fields);
-			free(fields_local1.quoted);
+			item->redirect_count++;
 			continue;
 		}
 
@@ -600,6 +1711,415 @@ assignment_length(
 	return *cursor == '=' ? (int)(cursor - text) : -1;
 }
 
+/*
+ * Supports the redirect read one operation.
+ *
+ * Reads one redirection and the word that follows it.  The descriptor it
+ * acts on is the one written before the operator, or the one the operator
+ * implies: nought for a redirection that reads and one for a redirection
+ * that writes.
+ */
+static int
+redirect_read_one(
+	const struct sh_token_list *list,
+	size_t *position,
+	size_t limit,
+	struct redirection *result,
+	const struct sh_expand_context *context)
+{
+	struct sh_field_list fields;
+	enum sh_token_type type;
+	const char *error_text;
+	const char *word;
+	char *end;
+	long value;
+
+	type = list->tokens[*position].type;
+	memset(result, 0, sizeof(*result));
+	result->source = REDIRECT_FROM_PATH;
+
+	/*
+	 * A here-document carries its own text, which the lexer took from
+	 * the lines after the one it was written on.  What follows it in the
+	 * token list is the word that named the delimiter, and that word
+	 * names nothing to open, so it is stepped over unexpanded.
+	 */
+	if (type == SH_TOKEN_DLESS || type == SH_TOKEN_DLESSDASH) {
+		struct sh_token body;
+		char *text;
+
+		result->descriptor = list->tokens[*position].io_number >= 0 ?
+				     list->tokens[*position].io_number : 0;
+		result->source = REDIRECT_HEREDOC;
+		body = list->tokens[*position];
+		body.type = SH_TOKEN_WORD;
+
+		/* Handles a body that holds nothing at all. */
+		if (body.text == NULL) {
+			result->path = strdup("");
+
+			/* Handles a failed strdup operation. */
+			if (result->path == NULL)
+				return 0;
+		} else if (!sh_expand_word(&body, context, &text,
+					   &error_text)) {
+			fprintf(stderr, "sh: expansion: %s\n", error_text);
+
+			/* Reports successful completion. */
+			return 0;
+		} else {
+			result->path = text;
+		}
+		(*position)++;
+
+		/* The delimiter is a word of the redirection, not a file. */
+		if (*position < limit &&
+		    list->tokens[*position].type == SH_TOKEN_WORD)
+			(*position)++;
+
+		/* Reports operation failure. */
+		return 1;
+	}
+
+	/* Dispatch the selected kind of redirection. */
+	switch (type) {
+	case SH_TOKEN_INPUT:
+		result->descriptor = 0;
+		result->flags = O_RDONLY;
+		break;
+	case SH_TOKEN_OUTPUT:
+	case SH_TOKEN_CLOBBER:
+		result->descriptor = 1;
+		result->flags = O_WRONLY | O_CREAT | O_TRUNC;
+		break;
+	case SH_TOKEN_APPEND:
+		result->descriptor = 1;
+		result->flags = O_WRONLY | O_CREAT | O_APPEND;
+		break;
+	case SH_TOKEN_LESSGREAT:
+		result->descriptor = 0;
+		result->flags = O_RDWR | O_CREAT;
+		break;
+	case SH_TOKEN_LESSAND:
+		result->descriptor = 0;
+		break;
+	default:
+		result->descriptor = 1;
+		break;
+	}
+
+	/* A number written before the operator says which descriptor it is. */
+	if (list->tokens[*position].io_number >= 0)
+		result->descriptor = list->tokens[*position].io_number;
+	(*position)++;
+
+	/* Handles a redirection with nothing after it. */
+	if (*position >= limit ||
+	    list->tokens[*position].type != SH_TOKEN_WORD) {
+		fprintf(stderr, "sh: redirection requires a path\n");
+
+		/* Reports successful completion. */
+		return 0;
+	}
+	memset(&fields, 0, sizeof(fields));
+
+	/* Handles an operation failure. */
+	if (!sh_expand_fields(&list->tokens[*position], context, &fields,
+			      &error_text)) {
+		fprintf(stderr, "sh: expansion: %s\n", error_text);
+
+		/* Reports successful completion. */
+		return 0;
+	}
+
+	/* Handles an operation failure. */
+	if (!sh_glob_fields(&fields, &error_text)) {
+		fprintf(stderr, "sh: pathname expansion: %s\n", error_text);
+		sh_fields_free(&fields);
+
+		/* Reports successful completion. */
+		return 0;
+	}
+	(*position)++;
+
+	/* Handles a word that named more files than one, or none. */
+	if (fields.count != 1) {
+		fprintf(stderr, "sh: ambiguous redirection\n");
+		sh_fields_free(&fields);
+
+		/* Reports successful completion. */
+		return 0;
+	}
+
+	/*
+	 * After an ampersand the word is not a file but another descriptor,
+	 * or a dash, which asks for the descriptor to be closed.
+	 */
+	if (type == SH_TOKEN_LESSAND || type == SH_TOKEN_GREATAND) {
+		word = fields.fields[0];
+
+		/* Handles the dash, which closes the descriptor. */
+		if (strcmp(word, "-") == 0) {
+			result->source = REDIRECT_CLOSE;
+			sh_fields_free(&fields);
+
+			/* Reports operation failure. */
+			return 1;
+		}
+		value = strtol(word, &end, 10);
+
+		/* Handles a word that does not name a descriptor. */
+		if (*word == '\0' || *end != '\0' || value < 0 ||
+		    value > 1024) {
+			fprintf(stderr, "sh: %s: not a descriptor\n", word);
+			sh_fields_free(&fields);
+
+			/* Reports successful completion. */
+			return 0;
+		}
+		result->source = (int)value;
+		sh_fields_free(&fields);
+
+		/* Reports operation failure. */
+		return 1;
+	}
+	result->path = fields.fields[0];
+	fields.fields[0] = NULL;
+	sh_fields_free(&fields);
+
+	/* Reports operation failure. */
+	return 1;
+}
+
+/*
+ * Supports the heredoc open operation.
+ *
+ * Puts the text of a here-document on the descriptor.  A process of its own
+ * writes it, so that a text longer than a pipe will hold does not stop the
+ * shell: the reader is the command, which has not been started yet.
+ */
+static int
+heredoc_open(
+	const char *text,
+	int descriptor)
+{
+	int descriptors[2];
+	size_t length;
+	pid_t child;
+
+	/* Handles a failed pipe operation. */
+	if (pipe(descriptors) != 0) {
+		fprintf(stderr, "sh: cannot pipe: %s\n", strerror(errno));
+
+		/* Reports successful completion. */
+		return 0;
+	}
+	length = strlen(text);
+
+	/*
+	 * A pipe holds at least _POSIX_PIPE_BUF bytes, so a body that short
+	 * can be written straight away with nobody reading: the command that
+	 * will read it has not been started yet, and a process to write it
+	 * would only have to be waited for.
+	 */
+	if (length <= 512U) {
+		(void)shell_write_nosigpipe(descriptors[1], text, length);
+		(void)close(descriptors[1]);
+	} else {
+		child = fork();
+
+		/* Handles a failed fork operation. */
+		if (child < 0) {
+			fprintf(stderr, "sh: cannot fork: %s\n",
+				strerror(errno));
+			(void)close(descriptors[0]);
+			(void)close(descriptors[1]);
+
+			/* Reports successful completion. */
+			return 0;
+		}
+
+		/*
+		 * The writer is a child of a child, so that it is nobody's
+		 * to wait for: this shell has no place to wait for it, and
+		 * the command that reads it is not its parent.
+		 */
+		if (child == 0) {
+			size_t written;
+			ssize_t wrote;
+
+			(void)close(descriptors[0]);
+
+			/* The middle process exits at once and is waited for. */
+			if (fork() != 0)
+				_exit(0);
+			written = 0;
+
+			/* Continue while the operation condition remains true. */
+			while (written < length) {
+				wrote = write(descriptors[1], text + written,
+					      length - written);
+
+				/* Handles a write that went nowhere. */
+				if (wrote <= 0)
+					break;
+				written += (size_t)wrote;
+			}
+			_exit(0);
+		}
+		(void)close(descriptors[1]);
+
+		/* Continue while the operation condition remains true. */
+		while (waitpid(child, NULL, 0) < 0 && errno == EINTR)
+			continue;
+	}
+
+	/* Handles a failed dup2 operation. */
+	if (descriptors[0] != descriptor) {
+		if (dup2(descriptors[0], descriptor) < 0) {
+			fprintf(stderr, "sh: cannot redirect: %s\n",
+				strerror(errno));
+			(void)close(descriptors[0]);
+
+			/* Reports successful completion. */
+			return 0;
+		}
+		(void)close(descriptors[0]);
+	}
+
+	/* Reports operation failure. */
+	return 1;
+}
+
+/*
+ * Supports the redirections apply operation.
+ *
+ * Applies the redirections in the order they were written, which is the
+ * order that decides what a later one sees.  When a place to save them is
+ * given, what each descriptor held first is kept there, so that a builtin
+ * running in this shell can be given the descriptors back afterwards.
+ */
+static int
+redirections_apply(
+	const struct redirection *items,
+	int count,
+	struct redirect_save *saves,
+	int *save_count)
+{
+	int descriptor;
+	int index;
+	int position;
+	int kept;
+
+	/* Handles the save availability. */
+	if (save_count != NULL)
+		*save_count = 0;
+
+	/* Process each remaining element. */
+	for (index = 0; index < count; index++) {
+		/* Keeps what the descriptor held before anything changes it. */
+		if (saves != NULL) {
+			kept = 0;
+
+			/* Process each remaining element. */
+			for (position = 0; position < *save_count; position++)
+				if (saves[position].descriptor ==
+				    items[index].descriptor)
+					kept = 1;
+
+			/* Handles a descriptor that is not kept yet. */
+			if (!kept) {
+				saves[*save_count].descriptor =
+				    items[index].descriptor;
+				saves[*save_count].saved =
+				    fcntl(items[index].descriptor,
+					  F_DUPFD_CLOEXEC, 10);
+				(*save_count)++;
+			}
+		}
+
+		/* Handles a redirection that closes the descriptor. */
+		if (items[index].source == REDIRECT_CLOSE) {
+			(void)close(items[index].descriptor);
+			continue;
+		}
+
+		/* Handles a here-document, which is written into a pipe. */
+		if (items[index].source == REDIRECT_HEREDOC) {
+			/* Handles a failed heredoc open operation. */
+			if (!heredoc_open(items[index].path,
+					  items[index].descriptor))
+				return 0;
+			continue;
+		}
+
+		/* Handles a redirection that names another descriptor. */
+		if (items[index].source != REDIRECT_FROM_PATH) {
+			/* Handles a failed dup2 operation. */
+			if (dup2(items[index].source,
+				 items[index].descriptor) < 0) {
+				fprintf(stderr, "sh: %d: %s\n",
+					items[index].source, strerror(errno));
+
+				/* Reports successful completion. */
+				return 0;
+			}
+			continue;
+		}
+		(void)fflush(NULL);
+		descriptor = open(items[index].path, items[index].flags, 0666);
+
+		/* Handles a failed open operation. */
+		if (descriptor < 0) {
+			fprintf(stderr, "sh: %s: %s\n", items[index].path,
+				strerror(errno));
+
+			/* Reports successful completion. */
+			return 0;
+		}
+
+		/* Handles a failed dup2 operation. */
+		if (descriptor != items[index].descriptor &&
+		    dup2(descriptor, items[index].descriptor) < 0) {
+			fprintf(stderr, "sh: %s: %s\n", items[index].path,
+				strerror(errno));
+			(void)close(descriptor);
+
+			/* Reports successful completion. */
+			return 0;
+		}
+
+		/* Checks the file descriptor. */
+		if (descriptor != items[index].descriptor)
+			(void)close(descriptor);
+	}
+
+	/* Reports operation failure. */
+	return 1;
+}
+
+/* Supports the redirections undo operation. */
+static void
+redirections_undo(
+	struct redirect_save *saves,
+	int save_count)
+{
+	int index;
+
+	(void)fflush(NULL);
+
+	/* Process each remaining element. */
+	for (index = save_count - 1; index >= 0; index--) {
+		/* Handles a descriptor that held nothing to put back. */
+		if (saves[index].saved < 0) {
+			(void)close(saves[index].descriptor);
+			continue;
+		}
+		(void)dup2(saves[index].saved, saves[index].descriptor);
+		(void)close(saves[index].saved);
+	}
+}
+
 /* Supports the pipeline free operation. */
 static void
 pipeline_free(
@@ -614,8 +2134,11 @@ pipeline_free(
 		for (argument = 0; argument < items[command_index].argc;
 		     argument++)
 			free(items[command_index].argv[argument]);
-		free(items[command_index].input);
-		free(items[command_index].output);
+		/* Process each remaining element. */
+		for (argument = 0;
+		     argument < items[command_index].redirect_count;
+		     argument++)
+			free(items[command_index].redirects[argument].path);
 	}
 }
 
@@ -653,7 +2176,7 @@ execute_pipeline(
 
 	group = 0;
 	shell_group = getpgrp();
-	terminal = !command_subshell && isatty(STDIN_FILENO);
+	terminal = !command_subshell && shell_controls_terminal();
 	synchronize = terminal && !background;
 	terminal_owned = 0;
 	input = -1;
@@ -930,76 +2453,25 @@ static int
 execute_parent_command(
 	struct pipeline_command *item)
 {
-	int saved_input, saved_output;
-	int descriptor;
+	struct redirect_save saves[REDIRECT_MAX];
+	int save_count;
 	int result;
 
-	saved_input = -1;
-	saved_output = -1;
-	descriptor = -1;
-	result = 0;
+	save_count = 0;
 
-	/* Handles the input availability. */
-	if (item->input != NULL) {
-		saved_input = dup(STDIN_FILENO);
-		descriptor = open(item->input, O_RDONLY);
+	/* Handles a failed redirections apply operation. */
+	if (!redirections_apply(item->redirects, item->redirect_count, saves,
+				&save_count)) {
+		redirections_undo(saves, save_count);
+		execution_status = 1;
 
-		/* Handles a failed dup2 operation. */
-		if (saved_input < 0 || descriptor < 0 ||
-		    dup2(descriptor, STDIN_FILENO) < 0) {
-			fprintf(stderr, "%s: %s\n", item->input,
-				strerror(errno));
-			goto done;
-		}
-		(void)close(descriptor);
-		descriptor = -1;
-	}
-
-	/* Handles the output availability. */
-	if (item->output != NULL) {
-		(void)fflush(stdout);
-		saved_output = dup(STDOUT_FILENO);
-		descriptor = open(item->output,
-				  O_WRONLY | O_CREAT |
-				      (item->append ? O_APPEND : O_TRUNC),
-				  0666);
-
-		/* Handles a failed dup2 operation. */
-		if (saved_output < 0 || descriptor < 0 ||
-		    dup2(descriptor, STDOUT_FILENO) < 0) {
-			fprintf(stderr, "%s: %s\n", item->output,
-				strerror(errno));
-			goto done;
-		}
-		(void)close(descriptor);
-		descriptor = -1;
+		/* Reports successful completion. */
+		return 0;
 	}
 	command_background = 0;
 	result = command_argv(item->argc, item->argv);
-done:
 	(void)fflush(NULL);
-
-	/* Checks the file descriptor. */
-	if (descriptor >= 0)
-		(void)close(descriptor);
-
-	/* Handles the saved output condition. */
-	if (saved_output >= 0) {
-		/* Handles a failed dup2 operation. */
-		if (dup2(saved_output, STDOUT_FILENO) < 0)
-			result = 0;
-		(void)close(saved_output);
-	}
-
-	/* Handles the saved input condition. */
-	if (saved_input >= 0) {
-		/* Handles a failed dup2 operation. */
-		if (dup2(saved_input, STDIN_FILENO) < 0)
-			result = 0;
-		(void)close(saved_input);
-	}
-	clearerr(stdin);
-	clearerr(stdout);
+	redirections_undo(saves, save_count);
 
 	/* Returns the computed result. */
 	return result;
@@ -1123,7 +2595,7 @@ special_builtin_name(
 	static const char *const names[] = {
 	    ":",    ".",     "break",  "continue", "eval",
 	    "exec", "exit",  "export", "readonly", "return",
-	    "set",  "shift", "trap",   "unset",	   NULL};
+	    "set",  "shift", "times",  "trap",	   "unset",  NULL};
 	int index;
 
 	/* Process each remaining element. */
@@ -1239,13 +2711,173 @@ command_dispatch(
 	int success;
 	long count;
 	mode_t old;
-	char input[SHELL_LINE_MAX];
 	int first;
 	int handled;
 
 	/* Validates the command-line arguments. */
 	if (argc == 0)
 		return 1;
+
+	/*
+	 * A function stands where a command of that name would, ahead of the
+	 * builtins the shell provides but behind the few whose behaviour the
+	 * standard fixes.
+	 */
+	if (!special_builtin_name(argv[0])) {
+		struct shell_function *function = find_function(argv[0]);
+
+		if (function != NULL) {
+			/* Obtains the call function result. */
+			function_result = call_function(function, argc, argv);
+
+			/* Returns the computed result. */
+			return function_result;
+		}
+	}
+
+	/*
+	 * break and continue name how many enclosing loops they act on.
+	 * Outside a loop there is nothing to leave, and the standard leaves
+	 * that case to the shell, so it is quietly nothing.
+	 */
+	if (!strcmp(argv[0], "break") || !strcmp(argv[0], "continue")) {
+		count = 1;
+
+		/* Validates the command-line arguments. */
+		if (argc > 2) {
+			fprintf(stderr, "sh: %s: too many arguments\n",
+				argv[0]);
+			execution_status = 2;
+
+			/* Reports successful completion. */
+			return 0;
+		}
+
+		/* Validates the command-line arguments. */
+		if (argc == 2) {
+			count = strtol(argv[1], &end, 10);
+
+			/* Validates the command-line arguments. */
+			if (*argv[1] == '\0' || *end != '\0' || count < 1) {
+				fprintf(stderr, "sh: %s: %s\n", argv[0],
+					argv[1]);
+				execution_status = 2;
+
+				/* Reports successful completion. */
+				return 0;
+			}
+		}
+
+		/* Handles a loop count of none. */
+		if (loop_depth == 0) {
+			execution_status = 0;
+
+			/* Reports operation failure. */
+			return 1;
+		}
+
+		/* One may not leave more loops than one is inside. */
+		if (count > loop_depth)
+			count = loop_depth;
+		if (!strcmp(argv[0], "break"))
+			break_pending = (int)count;
+		else
+			continue_pending = (int)count;
+		execution_status = 0;
+
+		/* Reports operation failure. */
+		return 1;
+	}
+
+	/*
+	 * return ends a function, or the file a dot command is reading, with
+	 * the status it is given or with the one the last command left.
+	 */
+	if (!strcmp(argv[0], "return")) {
+		count = shell_status;
+
+		/* Handles a return written where there is nothing to return from. */
+		if (function_depth == 0 && source_depth == 0) {
+			fprintf(stderr,
+				"sh: return: not in a function or a file\n");
+			execution_status = 2;
+
+			/* Reports successful completion. */
+			return 0;
+		}
+
+		/* Validates the command-line arguments. */
+		if (argc > 2) {
+			fprintf(stderr, "sh: return: too many arguments\n");
+			execution_status = 2;
+
+			/* Reports successful completion. */
+			return 0;
+		}
+
+		/* Validates the command-line arguments. */
+		if (argc == 2) {
+			count = strtol(argv[1], &end, 10);
+
+			/* Validates the command-line arguments. */
+			if (*argv[1] == '\0' || *end != '\0') {
+				fprintf(stderr, "sh: return: %s\n", argv[1]);
+				execution_status = 2;
+
+				/* Reports successful completion. */
+				return 0;
+			}
+		}
+		return_status = (int)(count & 0xff);
+		return_pending = 1;
+		execution_status = return_status;
+
+		/* Returns the computed result. */
+		return return_status == 0;
+	}
+
+	/*
+	 * The time this shell and the commands it has waited for have spent.
+	 * The clock counts in ticks, so the seconds and the hundredths are
+	 * taken from it rather than printed as a number of ticks.
+	 */
+	if (!strcmp(argv[0], "times")) {
+		struct tms spent;
+		long ticks;
+
+		ticks = sysconf(_SC_CLK_TCK);
+
+		/* Handles a clock whose rate is not known. */
+		if (ticks <= 0)
+			ticks = 100;
+
+		/* Handles a failed times operation. */
+		if (times(&spent) == (clock_t)-1) {
+			fprintf(stderr, "sh: times: %s\n", strerror(errno));
+			execution_status = 1;
+
+			/* Reports successful completion. */
+			return 0;
+		}
+		printf("%ldm%ld.%02lds %ldm%ld.%02lds\n",
+		       (long)spent.tms_utime / ticks / 60,
+		       (long)spent.tms_utime / ticks % 60,
+		       (long)spent.tms_utime % ticks * 100 / ticks,
+		       (long)spent.tms_stime / ticks / 60,
+		       (long)spent.tms_stime / ticks % 60,
+		       (long)spent.tms_stime % ticks * 100 / ticks);
+		printf("%ldm%ld.%02lds %ldm%ld.%02lds\n",
+		       (long)spent.tms_cutime / ticks / 60,
+		       (long)spent.tms_cutime / ticks % 60,
+		       (long)spent.tms_cutime % ticks * 100 / ticks,
+		       (long)spent.tms_cstime / ticks / 60,
+		       (long)spent.tms_cstime / ticks % 60,
+		       (long)spent.tms_cstime % ticks * 100 / ticks);
+		execution_status = 0;
+
+		/* Reports operation failure. */
+		return 1;
+	}
 
 	/* Handles the selected command-line operation. */
 	if (!strcmp(argv[0], "jobs")) {
@@ -1531,22 +3163,66 @@ command_dispatch(
 
 	/* Handles the selected command-line operation. */
 	if (!strcmp(argv[0], "read")) {
-		name = argc == 2 ? argv[1] : "REPLY";
+		char *line;
+		char *names[ARG_MAX + 1];
+		int raw;
+		int named;
 
-		/* Validates the command-line arguments. */
-		if (argc > 2 || assignment_length(name) >= 0 ||
-		    !(name[0] == '_' || (name[0] >= 'A' && name[0] <= 'Z') ||
-		      (name[0] >= 'a' && name[0] <= 'z')))
+		raw = 0;
+		first = 1;
+
+		/* A -r asks for the line exactly as it was written. */
+		if (argc > 1 && strcmp(argv[1], "-r") == 0) {
+			raw = 1;
+			first = 2;
+		}
+		named = argc - first;
+
+		/* With no name of its own the line is put in REPLY. */
+		if (named == 0) {
+			names[0] = (char *)"REPLY";
+			child_local = names;
+			named = 1;
+			first = 0;
+			argc = 1;
+		} else {
+			child_local = argv;
+		}
+
+		/* Process each remaining command-line operand. */
+		for (index = first; index < argc; index++) {
+			name = child_local[index];
+
+			/* Validates the command-line arguments. */
+			if (assignment_length(name) >= 0 ||
+			    !(name[0] == '_' ||
+			      (name[0] >= 'A' && name[0] <= 'Z') ||
+			      (name[0] >= 'a' && name[0] <= 'z'))) {
+				fprintf(stderr, "sh: read: %s: not a name\n",
+					name);
+				execution_status = 2;
+
+				/* Reports successful completion. */
+				return 0;
+			}
+		}
+
+		/* Handles a failed read line operation. */
+		if (read_line(&line, raw) < 0) {
+			/* Every name is emptied when the input has ended. */
+			for (index = first; index < argc; index++)
+				(void)sh_var_set(child_local[index], "", -1);
+			execution_status = 1;
 
 			/* Reports successful completion. */
 			return 0;
-
-		/* Handles a failed read line operation. */
-		if (read_line(input, sizeof(input)) < 0)
-			return 0;
+		}
 
 		/* Computes the function result. */
-		function_result = sh_var_set(name, input, -1) == 0;
+		function_result = read_assign_fields(line, argc, child_local,
+						     first);
+		free(line);
+		execution_status = function_result ? 0 : 1;
 
 		/* Returns the computed result. */
 		return function_result;
@@ -1642,11 +3318,87 @@ command_dispatch(
 
 	/* Handles the selected command-line operation. */
 	if (!strcmp(argv[0], "set")) {
-		/* Computes the function result. */
-		function_result = argc == 3 && sh_var_set(argv[1], argv[2], -1) == 0;
+		first = 1;
 
-		/* Returns the computed result. */
-		return function_result;
+		/*
+		 * The options this shell knows are accepted and have no
+		 * effect; what set is wanted for here is the parameters that
+		 * follow the two dashes.
+		 */
+		while (first < argc && (argv[first][0] == '-' ||
+					argv[first][0] == '+') &&
+		       argv[first][1] != '\0') {
+			/* Two dashes end the options and begin the words. */
+			if (strcmp(argv[first], "--") == 0) {
+				first++;
+				break;
+			}
+
+			/* A dash turns an option on and a plus turns it off. */
+			handled = argv[first][0] == '-';
+
+			/* Process each remaining element. */
+			for (index = 1; argv[first][index] != '\0'; index++) {
+				/* Dispatch the selected option. */
+				switch (argv[first][index]) {
+				case 'e':
+					option_errexit = handled;
+					break;
+				case 'x':
+					option_trace = handled;
+					break;
+				case 'u':
+					option_unset_error = handled;
+					break;
+
+				/*
+				 * These the shell reads and does nothing
+				 * with: what they ask for is either already
+				 * how it behaves or is not offered.
+				 */
+				case 'a':
+				case 'b':
+				case 'f':
+				case 'h':
+				case 'm':
+				case 'n':
+				case 'v':
+				case 'C':
+					break;
+				default:
+					fprintf(stderr,
+						"sh: set: -%c: bad option\n",
+						argv[first][index]);
+					execution_status = 2;
+
+					/* Reports successful completion. */
+					return 0;
+				}
+			}
+			first++;
+		}
+
+		/* A set with nothing to set leaves the parameters alone. */
+		if (first >= argc && argc > 1 &&
+		    strcmp(argv[argc - 1], "--") != 0) {
+			execution_status = 0;
+
+			/* Reports operation failure. */
+			return 1;
+		}
+
+		/* Handles a failed positional replace operation. */
+		if (!positional_replace(argc, argv, first)) {
+			fprintf(stderr, "sh: set: out of memory\n");
+			execution_status = 1;
+
+			/* Reports successful completion. */
+			return 0;
+		}
+		execution_status = 0;
+
+		/* Reports operation failure. */
+		return 1;
 	}
 
 	/* Handles the selected command-line operation. */
@@ -1772,7 +3524,7 @@ continue_foreground(
 	int saved_errno;
 
 	shell_pgrp = getpgrp();
-	terminal = isatty(STDIN_FILENO);
+	terminal = shell_controls_terminal();
 	foreground_set = 0;
 	process_count = last_job_process_count;
 	retained_count = 0;
@@ -1880,6 +3632,27 @@ continue_foreground(
 
 	/* Reports operation failure. */
 	return 1;
+}
+
+/*
+ * Supports the shell controls terminal operation.
+ *
+ * Reports whether this shell may hand the terminal to a command it starts.
+ * Standing on a terminal is not enough: a shell started by init, or by
+ * another program, shares that terminal with whoever already holds it, and
+ * taking it would be refused and would take the command down with it.  The
+ * shell may hand over only what it already has.
+ */
+static int
+shell_controls_terminal(
+	void)
+{
+	/* Handles a descriptor that is not a terminal at all. */
+	if (!isatty(STDIN_FILENO))
+		return 0;
+
+	/* Returns the computed result. */
+	return tcgetpgrp(STDIN_FILENO) == getpgrp();
 }
 
 /* Supports the shell tcsetpgrp operation. */
@@ -2341,15 +4114,20 @@ source_file(
 	return function_result;
 }
 
-/* Supports the source file mode operation. */
+/*
+ * Supports the source file mode operation.
+ *
+ * The whole file is offered at once rather than a line at a time, because
+ * a compound command is written across lines and only the whole of it says
+ * where it ends.
+ */
 static int
 source_file_mode(
 	const char *path,
 	int continue_on_error)
 {
-	char *end;
 	FILE *file;
-	char *buffer, *line;
+	char *buffer;
 	struct stat status;
 
 	(void)continue_on_error;
@@ -2385,34 +4163,33 @@ source_file_mode(
 		return 0;
 	}
 	fclose(file);
-
-	/* Continue while the operation condition remains true. */
 	buffer[status.st_size] = '\0';
-	line = buffer;
-	while (*line != '\0') {
-		end = line;
 
-		/* Continue while the operation condition remains true. */
-		while (*end != '\0' && *end != '\r' && *end != '\n')
-			end++;
-
-		/* Checks the current endpoint. */
-		if (*end != '\0') {
-			/* Continue while the operation condition remains true. */
-			*end++ = '\0';
-			while (*end == '\r' || *end == '\n')
-				end++;
-		}
-
-		/* Ordinary failures do not enable an implicit errexit mode. */
-		(void)command(line);
-		if (shell_syntax_error) {
-			free(buffer);
-			return 0;
-		}
-		line = end;
-	}
+	/* Ordinary failures do not enable an implicit errexit mode. */
+	source_depth++;
+	(void)command(buffer);
+	source_depth--;
 	free(buffer);
+
+	/* A file that ended in the middle of a command did not hold one. */
+	if (shell_incomplete) {
+		fprintf(stderr, "sh: %s: unexpected end of file\n", path);
+		shell_status = 2;
+		shell_syntax_error = 1;
+	}
+
+	/* Handles the shell syntax error condition. */
+	if (shell_syntax_error)
+		return 0;
+
+	/*
+	 * A return written in the file ends the file rather than whatever is
+	 * reading it, so it is answered here.
+	 */
+	if (return_pending) {
+		return_pending = 0;
+		shell_status = return_status;
+	}
 
 	/* Reports operation failure. */
 	execution_status = shell_status;
@@ -2466,31 +4243,161 @@ join_arguments(
 	return 1;
 }
 
-/* Supports the read line operation. */
+/*
+ * Supports the read line operation.
+ *
+ * Reads one line, a character at a time.  The descriptor may be a pipe or a
+ * terminal shared with whatever runs next, so nothing beyond the newline
+ * may be taken: what is read here would otherwise be lost to the command
+ * that reads after it.
+ */
 static int
 read_line(
-	char *buffer,
-	size_t capacity)
+	char **result,
+	int raw)
 {
-	ssize_t length;
+	char *buffer;
+	char *grown;
+	size_t capacity;
+	size_t length;
+	char value;
+	ssize_t got;
+	int any;
 
-	/* Handles the capacity condition. */
-	if (capacity < 2)
+	capacity = 64;
+	buffer = malloc(capacity);
+
+	/* Handles a failed malloc operation. */
+	if (buffer == NULL)
 		return -1;
-	length = read(0, buffer, capacity - 1U);
+	length = 0;
+	any = 0;
 
-	/* Checks the current data length. */
-	if (length <= 0)
-		return -1;
+	/* Continue until the operation reaches a terminal state. */
+	for (;;) {
+		got = read(0, &value, 1);
 
-	/* Process each remaining element. */
-	while (length > 0 &&
-	       (buffer[length - 1] == '\r' || buffer[length - 1] == '\n'))
-		length--;
+		/* Handles a read that was interrupted by a signal. */
+		if (got < 0 && errno == EINTR)
+			continue;
+
+		/* Handles the end of the input. */
+		if (got <= 0)
+			break;
+		any = 1;
+
+		/* Handles the end of the line. */
+		if (value == '\n')
+			break;
+
+		/*
+		 * A backslash before a newline joins the lines, and before
+		 * anything else stands for that character alone, unless the
+		 * caller asked for the line exactly as written.
+		 */
+		if (!raw && value == '\\') {
+			char next;
+
+			got = read(0, &next, 1);
+
+			/* Handles the end of the input. */
+			if (got <= 0)
+				break;
+			if (next == '\n')
+				continue;
+			value = next;
+		}
+
+		/* Handles a buffer with no room left. */
+		if (length + 1U >= capacity) {
+			capacity *= 2U;
+			grown = realloc(buffer, capacity);
+
+			/* Handles a failed realloc operation. */
+			if (grown == NULL) {
+				free(buffer);
+				return -1;
+			}
+			buffer = grown;
+		}
+		buffer[length++] = value;
+	}
 	buffer[length] = '\0';
+
+	/* Handles input that ended before anything at all was read. */
+	if (!any) {
+		free(buffer);
+		return -1;
+	}
+	*result = buffer;
 
 	/* Returns the computed result. */
 	return (int)length;
+}
+
+/*
+ * Supports the read assign fields operation.
+ *
+ * Splits the line on the characters IFS names and gives one field to each
+ * name.  The last name is given everything that is left, separators and
+ * all, so that a line holding more fields than there are names is not lost.
+ */
+static int
+read_assign_fields(
+	char *line,
+	int argc,
+	char **argv,
+	int first)
+{
+	const char *separators;
+	char *cursor;
+	char *field;
+	int index;
+	int result;
+
+	separators = sh_var_get("IFS");
+
+	/* Handles an IFS that was never set. */
+	if (separators == NULL)
+		separators = " \t\n";
+	cursor = line;
+	result = 1;
+
+	/* Process each remaining element. */
+	for (index = first; index < argc; index++) {
+		/* Leading separators belong to no field. */
+		while (*cursor != '\0' && strchr(separators, *cursor) != NULL)
+			cursor++;
+
+		/* The last name is given the rest of the line as it stands. */
+		if (index + 1 == argc) {
+			field = cursor;
+			cursor += strlen(cursor);
+
+			/* Trailing separators belong to no field either. */
+			while (field < cursor &&
+			       strchr(separators, cursor[-1]) != NULL)
+				cursor--;
+			*cursor = '\0';
+		} else {
+			field = cursor;
+			while (*cursor != '\0' &&
+			       strchr(separators, *cursor) == NULL)
+				cursor++;
+			if (*cursor != '\0')
+				*cursor++ = '\0';
+		}
+
+		/* Handles a failed sh var set operation. */
+		if (sh_var_set(argv[index], field, -1) != 0) {
+			fprintf(stderr, "sh: read: %s: %s\n", argv[index],
+				strerror(errno));
+			result = 0;
+		}
+	}
+
+	/* Returns the computed result. */
+	return result;
 }
 
 /* Supports the shell wait builtin operation. */
@@ -2597,12 +4504,13 @@ shell_builtin_name(
 	const char *name)
 {
 	static const char *const names[] = {
-	    ":",       ".",	 "[",	  "alias",   "bg",	 "cd",
-	    "command", "echo",	 "env",	  "eval",    "exec",	 "exit",
-	    "export",  "false",	 "fg",	  "getopts", "hash",	 "help",
-	    "jobs",    "printf", "pwd",	  "read",    "readonly", "set",
-	    "shift",   "source", "true",  "type",    "test",	 "umask",
-	    "unalias", "ulimit", "unset", "wait",    NULL};
+	    ":",       ".",	  "[",	     "alias",	 "bg",	     "break",
+	    "cd",      "command", "continue", "echo",	 "env",	     "eval",
+	    "exec",    "exit",	  "export",   "false",	 "fg",	     "getopts",
+	    "hash",    "help",	  "jobs",     "printf",	 "pwd",	     "read",
+	    "readonly", "return", "set",      "shift",	 "source",   "true",
+	    "type",    "test",	  "umask",    "unalias", "ulimit",   "unset",
+	    "times",   "wait",	  NULL};
 	int index;
 
 	/* Process each remaining element. */
@@ -2673,7 +4581,8 @@ spawn_wait(
 	status = 0;
 
 	/* Handles a failed isatty operation. */
-	if (!command_subshell && !command_background && isatty(STDIN_FILENO)) {
+	if (!command_subshell && !command_background &&
+	    shell_controls_terminal()) {
 		/* Validates the command-line arguments. */
 		if (spawn_foreground_tty(argv, &status) != 0) {
 			fprintf(stderr, "sh: %s: %s\n", argv[0],
@@ -3005,7 +4914,7 @@ wait_foreground(
 	pid_t result;
 
 	shell_pgrp = getpgrp();
-	terminal = isatty(0);
+	terminal = shell_controls_terminal();
 	foreground_set = 0;
 
 	/* Checks the terminal state. */
@@ -3168,54 +5077,13 @@ pipeline_child(
 	struct pipeline_command *item)
 {
 	int function_result;
-	int descriptor;
 
-	/* Handles the input availability. */
-	if (item->input != NULL) {
-		descriptor = open(item->input, O_RDONLY);
+	/* Handles a failed redirections apply operation. */
+	if (!redirections_apply(item->redirects, item->redirect_count, NULL,
+				NULL))
 
-		/* Handles a failed dup2 operation. */
-		if (descriptor < 0 || dup2(descriptor, STDIN_FILENO) < 0) {
-			fprintf(stderr, "%s: %s\n", item->input,
-				strerror(errno));
-
-			/* Checks the file descriptor. */
-			if (descriptor >= 0)
-				(void)close(descriptor);
-
-			/* Reports successful completion. */
-			return 0;
-		}
-
-		/* Checks the file descriptor. */
-		if (descriptor != STDIN_FILENO)
-			(void)close(descriptor);
-	}
-
-	/* Handles the output availability. */
-	if (item->output != NULL) {
-		descriptor = open(item->output,
-				  O_WRONLY | O_CREAT |
-				      (item->append ? O_APPEND : O_TRUNC),
-				  0666);
-
-		/* Handles a failed dup2 operation. */
-		if (descriptor < 0 || dup2(descriptor, STDOUT_FILENO) < 0) {
-			fprintf(stderr, "%s: %s\n", item->output,
-				strerror(errno));
-
-			/* Checks the file descriptor. */
-			if (descriptor >= 0)
-				(void)close(descriptor);
-
-			/* Reports successful completion. */
-			return 0;
-		}
-
-		/* Checks the file descriptor. */
-		if (descriptor != STDOUT_FILENO)
-			(void)close(descriptor);
-	}
+		/* Reports successful completion. */
+		return 0;
 	command_subshell = 1;
 	command_background = 0;
 

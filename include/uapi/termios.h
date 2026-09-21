@@ -34,6 +34,10 @@
 #define IXON	0x00000020U
 #define IXOFF	0x00000040U
 #define ISTRIP	0x00000080U
+#define IGNPAR	0x00000100U
+#define PARMRK	0x00000200U
+#define INPCK	0x00000400U
+#define IXANY	0x00000800U
 
 #define OPOST	0x00000001U
 #define ONLCR	0x00000002U
@@ -45,6 +49,12 @@
 #define CS8	0x00000002U
 #define CLOCAL	0x00000004U
 #define HUPCL	0x00000008U
+#define CS5	0x00000010U
+#define CS6	0x00000020U
+#define CS7	0x00000040U
+#define CSIZE	(CS5 | CS6 | CS7 | CS8)
+#define PARENB	0x00000080U
+#define PARODD	0x00000100U
 
 #define ECHO	0x00000001U
 #define ECHOE	0x00000002U
@@ -58,6 +68,18 @@
 #define ECHOCTL	0x00000200U
 
 #define B0	0U
+#define B50	50U
+#define B75	75U
+#define B110	110U
+#define B134	134U
+#define B150	150U
+#define B200	200U
+#define B300	300U
+#define B600	600U
+#define B1200	1200U
+#define B1800	1800U
+#define B2400	2400U
+#define B4800	4800U
 #define B9600	9600U
 #define B19200	19200U
 #define B38400	38400U

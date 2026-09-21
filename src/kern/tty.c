@@ -123,6 +123,17 @@ struct pty_pair {
 	unsigned master_open;
 	unsigned slave_opens;
 	unsigned slave_ever_opened;
+
+	/*
+	 * Who the terminal belongs to while it is in use.  A login server
+	 * hands the terminal to the person who just authenticated and closes
+	 * it to everybody else, so this has to be settable and has to
+	 * survive: the node in /dev is made afresh on every lookup, so the
+	 * ownership cannot live there.
+	 */
+	uid_t owner_uid;
+	gid_t owner_gid;
+	mode_t owner_mode;
 };
 
 struct pty_handle {
@@ -164,6 +175,7 @@ static int tty_background(struct tty *tty, struct process *process, enum tty_bac
 static int tty_wait_output_enabled(struct tty *tty, struct file *file);
 static ssize_t tty_read_canonical(struct tty *tty, void *buffer, size_t size, int nonblocking);
 static ssize_t tty_read_noncanonical(struct tty *tty, void *buffer, size_t size, int nonblocking);
+static int tty_speed_named(speed_t speed);
 static int tty_termios_valid(const struct termios *value);
 static int tty_ioctl_instance(struct tty *tty, struct file *file, unsigned long request, uintptr_t argument);
 static ssize_t tty_instance_read(struct tty *tty, struct file *file, void *buffer, size_t size);
@@ -674,6 +686,88 @@ tty_vt_poll(
 
 	/* Returns the computed result. */
 	return tty_instance_poll(&console_ttys[vt], file, events, revents);
+}
+
+/*
+ * Reports who a pseudo terminal belongs to.
+ *
+ * The node under /dev/pts is made afresh each time it is looked up, so the
+ * ownership is kept with the terminal itself and read back from here.
+ */
+int
+tty_pty_attr_get(
+	unsigned index,
+	uid_t *uid,
+	gid_t *gid,
+	mode_t *mode)
+{
+	struct pty_pair *pair;
+	unsigned long irq;
+	int error;
+
+	/* Rejects an index that names no terminal. */
+	if (index >= PTY_MAX)
+		return ENODEV;
+	pair = &pty_pairs[index];
+	irq = spin_lock_irqsave(&pty_registry_lock);
+
+	/* Handles a terminal that is not in use. */
+	if (!pair->active) {
+		error = ENODEV;
+	} else {
+		if (uid != NULL)
+			*uid = pair->owner_uid;
+		if (gid != NULL)
+			*gid = pair->owner_gid;
+		if (mode != NULL)
+			*mode = pair->owner_mode;
+		error = 0;
+	}
+	spin_unlock_irqrestore(&pty_registry_lock, irq);
+
+	/* Reports the outcome of the request. */
+	return error;
+}
+
+/*
+ * Changes who a pseudo terminal belongs to.
+ *
+ * Each of the three is changed only when it is given, because chmod and
+ * chown each name one of them and must leave the others alone.
+ */
+int
+tty_pty_attr_set(
+	unsigned index,
+	const uid_t *uid,
+	const gid_t *gid,
+	const mode_t *mode)
+{
+	struct pty_pair *pair;
+	unsigned long irq;
+	int error;
+
+	/* Rejects an index that names no terminal. */
+	if (index >= PTY_MAX)
+		return ENODEV;
+	pair = &pty_pairs[index];
+	irq = spin_lock_irqsave(&pty_registry_lock);
+
+	/* Handles a terminal that is not in use. */
+	if (!pair->active) {
+		error = ENODEV;
+	} else {
+		if (uid != NULL)
+			pair->owner_uid = *uid;
+		if (gid != NULL)
+			pair->owner_gid = *gid;
+		if (mode != NULL)
+			pair->owner_mode = *mode & 07777U;
+		error = 0;
+	}
+	spin_unlock_irqrestore(&pty_registry_lock, irq);
+
+	/* Reports the outcome of the request. */
+	return error;
 }
 
 /*
@@ -2120,6 +2214,26 @@ tty_read_noncanonical(
 }
 
 /* Tests that requested terminal settings are supported. */
+/* Reports whether a speed is one of the ones with a name. */
+static int
+tty_speed_named(
+	speed_t speed)
+{
+	static const speed_t named[] = {
+		B0, B50, B75, B110, B134, B150, B200, B300, B600, B1200,
+		B1800, B2400, B4800, B9600, B19200, B38400
+	};
+	unsigned index;
+
+	/* Process each remaining element. */
+	for (index = 0; index < sizeof(named) / sizeof(named[0]); index++)
+		if (speed == named[index])
+			return 1;
+
+	/* Reports operation failure. */
+	return 0;
+}
+
 static int
 tty_termios_valid(
 	const struct termios *value)
@@ -2130,16 +2244,14 @@ tty_termios_valid(
 	if ((value->c_cflag & CS8) == 0)
 		return 0;
 
-	/* Only a few nominal speeds are accepted. */
-	if (value->c_ispeed != B0 &&
-	    value->c_ispeed != B9600 &&
-	    value->c_ispeed != B19200 &&
-	    value->c_ispeed != B38400)
-		return 0;
-	if (value->c_ospeed != B0 &&
-	    value->c_ospeed != B9600 &&
-	    value->c_ospeed != B19200 &&
-	    value->c_ospeed != B38400)
+	/*
+	 * A terminal here has no wire, so a speed is a number carried from
+	 * one end of a session to the other and nothing more.  The named
+	 * ones are all accepted; a number that names none of them is not,
+	 * so that a caller is told rather than quietly given something else.
+	 */
+	if (!tty_speed_named(value->c_ispeed) ||
+	    !tty_speed_named(value->c_ospeed))
 		return 0;
 	return 1;
 }
@@ -2686,6 +2798,11 @@ pty_master_open(
 			pair->output_tail = 0;
 			pair->output_used = 0;
 			pair->slave_output_stopped = 0;
+
+			/* A fresh pair belongs to nobody but the superuser. */
+			pair->owner_uid = 0;
+			pair->owner_gid = 0;
+			pair->owner_mode = 0620U;
 			pair->generation++;
 			if (pair->generation == 0)
 				pair->generation = 1;

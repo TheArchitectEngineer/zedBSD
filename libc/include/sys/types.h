@@ -33,6 +33,18 @@ typedef int32_t pid_t;
 typedef uint32_t id_t;
 typedef int32_t tid_t;
 typedef uint32_t useconds_t;
+
+/*
+ * The microseconds of a time of day.  It is signed because a difference
+ * between two of them is one of these, and may run backwards.
+ */
+typedef long suseconds_t;
 typedef uint32_t reclen_t;
+
+/*
+ * The type a memory address had before void * existed.  It is kept because
+ * interfaces written then still name it.
+ */
+typedef char *caddr_t;
 
 #endif

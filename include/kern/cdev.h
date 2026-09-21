@@ -35,6 +35,15 @@ struct cdev_ops {
 	int (*ioctl)(struct file *, unsigned long, uintptr_t);
 	int (*poll)(struct file *, short, short *);
 
+	/*
+	 * Moves the read and write position.  A device without one leaves
+	 * this out and a seek on it is refused, which is right for a
+	 * terminal; a device whose contents do not depend on the position
+	 * supplies it so that a caller asking where it is gets an answer
+	 * rather than an error.
+	 */
+	off_t (*seek)(struct file *, off_t, int);
+
 	/* Success transfers one retained device view; the caller must release its reference. */
 	int (*mmap)(struct file *, off_t, size_t, uint32_t, struct vm_device_mapping **);
 };

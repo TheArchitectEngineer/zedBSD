@@ -6,6 +6,6 @@ ZEDBSD_SH_SOURCES := userland/base/sh/main.c \
 	userland/base/sh/builtins.c userland/base/sh/lexer.c \
 	userland/base/sh/expand.c userland/base/sh/glob.c \
 	userland/base/sh/vars.c userland/base/sh/arithmetic.c \
-	userland/base/sh/alias.c
+	userland/base/sh/alias.c userland/base/sh/parser.c
 $(eval $(call ZEDBSD_USERLAND_PACKAGE,sh,sh,*,y,core,\
 	$(ZEDBSD_SH_SOURCES),n,base,base/sh,base/libedit,))

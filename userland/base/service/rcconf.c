@@ -127,6 +127,7 @@ rcconf_model_validate(
 		/* Handles a failed service name valid operation. */
 		if (!service_name_valid(service->name) ||
 		    service->enabled < 0 || service->enabled > 1 ||
+		    service->optional < 0 || service->optional > 1 ||
 		    service->setting_count > RCCONF_SETTING_MAX)
 			goto invalid;
 
@@ -281,6 +282,43 @@ rcconf_service_enabled(
 		return -1;
 	}
 	*enabled = service->enabled;
+	/* Reports successful completion. */
+	return 0;
+}
+
+/*
+ * Implements the rcconf service optional operation.
+ *
+ * Reports whether a service was written down as one that may not be
+ * installed, so that a caller can tell a name it cannot find because a
+ * package was left out from one it cannot find because it is wrong.
+ */
+int
+rcconf_service_optional(
+	const struct rcconf_model *model,
+	const char *name,
+	int *optional)
+{
+	const struct rcconf_service *service;
+
+	/* Handles a failed service name valid operation. */
+	if (model == NULL || !service_name_valid(name) || optional == NULL) {
+		errno = EINVAL;
+
+		/* Reports operation failure. */
+		return -1;
+	}
+	service = find_service_const(model, name);
+
+	/* Handles the service availability. */
+	if (service == NULL) {
+		errno = ENOENT;
+
+		/* Reports operation failure. */
+		return -1;
+	}
+	*optional = service->optional;
+
 	/* Reports successful completion. */
 	return 0;
 }
@@ -718,6 +756,7 @@ parse_stream(
 	struct rcconf_model *model;
 	char line[RCCONF_LINE_CAPACITY];
 	unsigned char enabled_seen[RCCONF_SERVICE_MAX] = {0};
+	unsigned char optional_seen[RCCONF_SERVICE_MAX] = {0};
 	unsigned char settings_seen[RCCONF_SERVICE_MAX] = {0};
 	size_t current_service;
 	int seen_version, seen_hostname, seen_services;
@@ -869,6 +908,12 @@ parse_stream(
 			    scalar.kind == SCALAR_BOOLEAN) {
 				service->enabled = scalar.boolean;
 				enabled_seen[current_service] = 1;
+			} else if (strcmp(content, "optional") == 0 &&
+				   !mapping &&
+				   !optional_seen[current_service] &&
+				   scalar.kind == SCALAR_BOOLEAN) {
+				service->optional = scalar.boolean;
+				optional_seen[current_service] = 1;
 			} else if (strcmp(content, "settings") == 0 &&
 				   mapping && !settings_seen[current_service]) {
 				in_settings = 1;
@@ -1213,6 +1258,13 @@ emit_model(
 			      service->enabled
 				  ? ":\n    enabled: true\n"
 				  : ":\n    enabled: false\n") != 0)
+
+			/* Reports operation failure. */
+			return -1;
+
+		/* Written only when set, so an ordinary service reads plainly. */
+		if (service->optional &&
+		    emit_text(emit, argument, "    optional: true\n") != 0)
 
 			/* Reports operation failure. */
 			return -1;

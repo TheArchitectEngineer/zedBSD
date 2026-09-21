@@ -103,6 +103,45 @@ no_memory:
 	return 0;
 }
 
+/*
+ * Implements the sh glob match operation.
+ *
+ * Unlike pathname expansion this matches the string as a whole: a slash and
+ * a leading period are ordinary characters here, because what is matched is
+ * a word rather than a path.
+ */
+int
+sh_glob_match(
+	const char *pattern,
+	const unsigned char *quoted,
+	const char *name)
+{
+	unsigned char *plain;
+	size_t length;
+	int result;
+
+	length = strlen(pattern);
+
+	/* A pattern with no mask was written with nothing quoted in it. */
+	if (quoted != NULL) {
+		/* Obtains the match component result. */
+		result = match_component(pattern, quoted, length, name);
+
+		/* Returns the computed result. */
+		return result;
+	}
+	plain = calloc(length + 1U, sizeof(*plain));
+
+	/* Handles a failed calloc operation. */
+	if (plain == NULL)
+		return 0;
+	result = match_component(pattern, plain, length, name);
+	free(plain);
+
+	/* Returns the computed result. */
+	return result;
+}
+
 /* Supports the has meta operation. */
 static int
 has_meta(

@@ -5,9 +5,10 @@ include $(ZEDBSD_REMACS_DIR)../../../../build-jobs.mk
 include $(ZEDBSD_REMACS_DIR)../../../base/package.mk
 
 REQUIRE = base/noct
-# Remacs currently requires the held target Noct package, so it is hidden
-# until that dependency is explicitly returned to service.
-$(eval $(call ZEDBSD_USERLAND_PACKAGE,remacs,Remacs,i386 pc98 amd64,n,package,,n,packages/editors,editors/remacs,$(REQUIRE)))
+# Remacs is written in Noct, so choosing it chooses the interpreter that
+# runs it.
+$(eval $(call ZEDBSD_USERLAND_PACKAGE,remacs,Remacs editor,*,n,package,,y,\
+	packages/editors,editors/remacs,$(REQUIRE)))
 REQUIRE =
 
 REMACS_REPOSITORY ?= https://github.com/awemorris/remacs.git

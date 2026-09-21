@@ -529,3 +529,324 @@ fdescfs のように一覧までプロセス別にすると readdir を呼び出
 - **パイプを `/dev/fd` 経由で読める**（開き直しでは不可能）
 - 保持していない descriptor は `EBADF`、読み取り専用 fd を `O_WRONLY` で開くと `EACCES`
 
+### `<sys/tree.h>`
+
+splay 木と赤黒木。`RB_GENERATE` は実関数を生成する形なので、平衡処理をマクロではなく
+普通の C として書けた。実機 18/18 PASS（`plan/ws032/tests/tree-target.c`）。
+
+検査は不変条件そのものを見ている: 根が黒であること、赤の下に赤が無いこと、**どの経路も
+黒の数が等しいこと**、親ポインタが整合していること。512 個の鍵を擬似乱数順に挿入し、
+**1 回ごとに**全部を確かめ、別の擬似乱数順で削除しながら同じく毎回確かめる。順序も
+毎回 in-order 走査で検証する。種を固定してあるので失敗は再現できる。
+
+赤黒木の削除で間違えやすいのは、子を 2 つ持つ記録を後続者で置き換えるときに**後続者が
+その記録の右の子だった場合**で、不足を判定する親が後続者自身になる。そこは分けて書いた。
+
+### `getopt_long` / `getopt_long_only` と `setmode` / `getmode`
+
+実機 21/21 PASS（`plan/ws032/tests/opts-target.c`）。
+
+**短いオプションの走査を既存の `getopt()` に委譲して失敗した。** 一続きの `-xy` の途中で
+`getopt` が `optind` をどこまで進めているかは実装依存で、外からは判別できない。実機テストで
+`-verbose -xy` が `vx` までしか返さないことで発覚（`y` を落としていた）。自前のカーソルで
+走査するよう書き直した。`optind`/`optarg`/`opterr`/`optopt` は共有のままなので呼び出し側の
+作法は変わらない。
+
+引数の並べ替えは**しない**。最初のオペランドでオプションが終わる — POSIX の `getopt` と
+同じ扱いで、GNU の並べ替えは持ち込まない。
+
+`setmode` は "u+rw,go-w" のような記述を 1 度だけ解析して、多数のファイルへ適用できる形に
+コンパイルする。検査した性質:
+
+- **`X` は実行権がすでにある場合とディレクトリにだけ実行権を与える**（木全体に適用したとき
+  普通のファイルが実行可能にならない、という `X` の存在理由そのもの）
+- **誰も名指さない節は file creation mask が抑える分を与えない**（`+w` が umask 022 のもとで
+  0444 → 0644 になる）
+- `g=u` のようにファイル自身の他の組からビットを写せる
+- `u+s`・`+t` で set-user-id とスティッキービットを名指せる
+
+### `glob`
+
+実機 17/17 PASS（`plan/ws032/tests/glob-target.c`）。
+
+実装は照合ではなく**歩き**にした。磁気のない部分は何も読まずに継ぎ足し、磁気のある部分だけが
+そのディレクトリを読ませる。したがって複数段のパターンでも「一致したディレクトリごとに
+1 回の readdir」で済み、木の名前の数には比例しない。
+
+各段の名前を整列してから降りている。**仕上がったパスを整列するのとは結果が違う**ためで、
+スラッシュはドットより後に並ぶので `a/b` と `a.c/b` の順が入れ替わる。
+
+対応した旗: `GLOB_APPEND` `GLOB_DOOFFS` `GLOB_ERR` `GLOB_MARK` `GLOB_NOCHECK` `GLOB_NOSORT`
+`GLOB_NOESCAPE` `GLOB_ALTDIRFUNC` `GLOB_BRACE`（入れ子も）`GLOB_MAGCHAR` `GLOB_NOMAGIC`
+`GLOB_TILDE` `GLOB_LIMIT`。先頭のドットは `fnmatch` の `FNM_PERIOD` に任せた — 部分ごとに
+照合しているので、ちょうど各部分の先頭に効く。
+
+### ダイジェスト群
+
+MD5（RFC 1321）、SHA-1 と SHA-2（FIPS 180-4）。実機 19/19 PASS
+（`plan/ws032/tests/digest-target.c`）。
+
+**公表されている検査ベクタに対して確かめている** — 空文字列・`abc`・2 ブロックにまたがる
+56 文字、SHA-1 は 100 万文字も。加えて自前の性質検査:
+
+- **同じメッセージを不揃いな断片で与えても同じ答えになる**（途中まで埋まったブロックの
+  処理が唯一間違えやすい箇所）
+- **SHA-384 は SHA-512 の先頭ではない**（初期状態が違うことの確認。同じなら短いほうは
+  単なる前置きになってしまう）
+- ちょうど 1 ブロックのメッセージがもう 1 ブロック分の詰め物を生む
+
+`MD5Final` などは終了時に文脈を消す（`explicit_bzero`）。鍵付き構成では途中状態が秘密に
+なるため。
+
+### `resolv.h` の拡張と `getrrsetbyname`
+
+`res_init` `res_mkquery` `res_send` `res_query` `res_search` `res_querydomain`
+`dn_expand` `dn_comp` `dn_skipname` `ns_get16/32` `ns_put16/32`、および
+`getrrsetbyname` / `freerrset`。実機 18/18 PASS（`plan/ws032/tests/resolv-target.c`）。
+
+ハーネスには網が無いので、**テストの中に DNS サーバを立てた**。質問をそのまま鸚鵡返しに
+しつつ、要求された型の記録2本とそれを覆う署名1本を、質問の名前を指すポインタ付きで
+返す。これで圧縮の展開まで含めて経路全体を通せる。
+
+`dn_expand` は**後ろ向きに進まないポインタを拒む**。これが無いと返答が読み手を無限に
+回せる。前向きのポインタと、どこも指さないポインタの両方を検査した。
+
+### OpenSSH — 動作した
+
+`plan/ws032/tests/openssh-target.sh`。クライアントもサーバも今回クロスビルドしたもので、
+実機でループバック接続が通る:
+
+```
+$ ssh -V                     OpenSSH_10.5p1, OpenSSL 3.5.8
+$ ssh-keygen -A              RSA ECDSA ED25519 MLDSA44-ED25519 を生成
+$ ssh root@127.0.0.1 id      uid=0 euid=0 gid=0 egid=0 groups=0
+$ ssh -t root@127.0.0.1 tty  /dev/pts/0
+$ scp /tmp/src.txt ...       payload-for-scp
+```
+
+鍵交換・公開鍵認証・コマンド実行・**pty セッション**・ファイル転送がすべて通る。
+
+#### 途中で直したもの
+
+| 問題 | 原因と対応 |
+| --- | --- |
+| `config.sub` が `zedbsd` を知らない | パッチ `0001` を追加 |
+| `EC_KEY` が無く configure が止まる | **OpenSSL を `no-deprecated` で作っていた**。`gethostbyname` が無かった頃の回避策で、もう不要。外して再ビルド |
+| `auth-shadow.c` が `FILE` を知らない | 他の系では `<shadow.h>` が `<stdio.h>` を引き込む。zedBSD のそれは stream を取る関数を宣言しないので引き込まない。パッチ `0002` で依存を明示 |
+| `/var/empty must be owned by root and not group or world-writable` | イメージのディレクトリが **0775** で作られていた。作成時に 0755 を明示するよう `make-arch-overlay-ufs.noct` を修正。根を移すものはすべて group-writable を拒むので、これは pty に限らない話 |
+| **pty セッションだけ切断される** | `chmod(/dev/pts/0, 0600)` が `EOPNOTSUPP`。**devfs が `setattr` を持っていなかった** |
+
+#### devfs に端末の所有者を持たせた
+
+`/dev/pts/N` の節点は lookup のたびに作り直されるので、所有者を節点に置けない。
+`struct pty_pair` に `owner_uid` / `owner_gid` / `owner_mode` を持たせ、
+`tty_pty_attr_get` / `tty_pty_attr_set` で読み書きするようにした。devfs の lookup は
+キャッシュ済みの節点でも所有者を引き直す（ログインサーバが lookup と lookup の間で
+変えるため）。
+
+`devfs_setattr` が受けるのは **/dev/pts の端末の所有者と mode だけ**で、ほかは
+`EOPNOTSUPP` のまま。ログイン直後の人に端末を渡すのは記録する場所が他に無いが、
+`/dev` の残りはドライバが言うとおりのものであるべきだから。
+
+### `suseconds_t` と `/dev/null` の位置
+
+実機 10/10 PASS（`plan/ws032/tests/devnull-target.c`）。
+
+`suseconds_t` を `<sys/types.h>` に足し、`struct timeval.tv_usec` の型にした（POSIX が
+そう定めている）。**符号付き**なのは、2 つの時刻の差もこの型だから。
+
+`/dev/null` が `lseek` を拒んでいた原因は、`struct cdev_ops` に `seek` が無く、文字デバイスが
+一律に汎用経路へ落ちて `ESPIPE` になっていたこと。`seek` を足し、`null` `zero` `full` に
+実装した。
+
+位置は覚えて報告するが、読み書きは変わらない。これらのデバイスに中身は無いので位置が
+結果を変えようがないが、**出力を `/dev/null` へ向けたプログラムが「今どこか」を尋ねたときに
+断られると、そのプログラムはパイプ扱いして別の経路を採る**。実際 ssh が `known_hosts` を
+`/dev/null` にしたとき `Illegal seek` を出していた。端末は従来どおり `ESPIPE` を返す
+（`seek` を持たないデバイスは拒む、という形で区別している）。
+
+### サービス定義: `optional`
+
+`/etc/service.d/` を init が走査し、rc.conf は `enabled` を供給する、という作りなので、
+定義の無いサービスは**元から黙って無視**されていた。これを明示にした。
+
+| 変更 | 内容 |
+| --- | --- |
+| `rcconf.h` / `rcconf.c` | `struct rcconf_service` に `optional`。解析・検証・書き出しと `rcconf_service_optional()` |
+| `init/main.c` | `report_unknown_services()`。rc.conf が名指すのに定義が無いサービスを報告する。**ただし `optional` のものは黙って通す** |
+| openssh パッケージ | `/etc/service.d/sshd` を同梱。パッケージを選ばなければ定義も入らない |
+| 既定 rc.conf | `sshd: enabled: true, optional: true` を追加。**外部パッケージに依存しない** |
+
+`argv[0]` も直した。init はサービス*名*を渡していたが、**sshd は自分を再実行するので絶対パス
+でないと拒む**（`sshd requires execution with an absolute path`）。プログラムが自分を名乗る
+名前はそれが走ったパスであるべきなので、`service->command` を渡すようにした。
+
+実機で両方向を確認:
+
+```
+パッケージあり:  service status sshd → running、ssh root@127.0.0.1 id が通る
+パッケージなし:  sshd について init は何も言わない（optional）
+optional 無しで定義の無い名前: init: nosuchthing: no definition in /etc/service.d
+```
+
+
+## `/bin/sh` を POSIX のコマンド言語にした
+
+これまでの `sh` は**一行がひとつのパイプラインである**という前提で書かれていた。行を読み、
+語に分け、`;` `&` `&&` `||` で区切って実行する。`if` も `while` も `case` も関数も無く、
+複数行にまたがる構文そのものが存在しなかった。OpenSSH の起動スクリプトが
+「鍵があるなら作らない」と書けなかったのはこのためで、前の版は毎回 `ssh-keygen -A` を
+呼ぶだけの無条件なものだった。
+
+### 構文解析を実行から分けた
+
+語の展開を**構文解析時ではなく実行時に**行うのが要点である。既存の実装は読んだ端から
+展開していたが、それではループの本体が初回の値のまま固定される。そこで構文木の葉には
+**展開結果ではなくトークンの範囲**を置き、実行のたびに既存の `parse_pipeline()` に
+その範囲を渡して展開させることにした。既存の展開・リダイレクト・ジョブ制御がそのまま
+再利用できる。
+
+| ファイル | 役割 |
+| --- | --- |
+| `sh/parser.h` / `parser.c` (新規) | 再帰下降。`sh_node` は SIMPLE/LIST/PIPELINE/IF/WHILE/UNTIL/FOR/CASE/GROUP/SUBSHELL/FUNCTION |
+| `sh/lexer.c` | 改行・`;;`・`( )`・`<<` `<<-` `<&` `>&` `<>` `>\|`・行継続・コメント・IO 番号・ヒアドキュメント本体 |
+| `sh/main.c` | `execute_node()` による木の実行、関数表、`break`/`continue`/`return`、リダイレクト一般化 |
+
+`parse_pipeline()` には**範囲の上限**を渡すようにした。渡さないと `true \| { echo G; }` の
+`true` が範囲を越えて次のコマンドの語まで読んでしまう（実際そうなっていた）。
+
+### 入力は行ではなく全体を渡す
+
+複合コマンドは行をまたいで書かれ、`if` や `fi` が予約語であるかどうかは**位置の問題**、
+つまり入力全体の問題である。そこで:
+
+- `source_file_mode()` はファイル全体を一度に `command()` へ渡す（従来は一行ずつ）
+- 対話時は、解析が「まだ終わっていない」と言ったら次の行を読んで**全体をもう一度**渡す
+- 「終わっていない」と見なすのは、引用・コマンド置換・ヒアドキュメントの未終了と、
+  本体がまだ書かれていない複合コマンド
+
+### 実機で見つけて直したもの
+
+| 症状 | 原因 |
+| --- | --- |
+| `echo a` と `echo b` が一つのコマンドになる | `lex_word` が改行を語の一部として読んでいた |
+| `&` を書いていないのにジョブになる | `realloc` した表要素を初期化していなかった |
+| `for v; do` が構文エラー | `in` の無い `for` の `;` を読み飛ばしていなかった |
+| `while read l` が一行目で全部読む | `read` が `read(0, buf, 255)` で**行を越えて**読んでいた。一文字ずつに直し、`-r` と複数の名前と IFS 分割を実装 |
+| `"$(cmd "arg")"` の内側の引用が壊れる | 二重引用の中で `$( )` を特別扱いしていなかった。置換は**そのまま写す**（中の引用はコマンド自身のもの） |
+| `sh: ssh-keygen: Inappropriate ioctl for device` | init から起動された `sh` が、**自分のものでない端末**を `tcsetpgrp()` で奪おうとして失敗していた。端末を渡せるのは既に持っているときだけである |
+
+`cat` も直した。ファイル名を必ず要求していたので、パイプの末尾にもヒアドキュメントの
+受け手にもなれなかった。
+
+### 加えた POSIX の機能
+
+`set -e` / `-x` / `-u` と `set -- 引数`、`times`、`${#x}` `${x#pat}` `${x##pat}`
+`${x%pat}` `${x%%pat}`、`${1:-語}` のような特殊パラメータへの操作、ヒアドキュメント、
+`2>file` `>&2` `<&-` のような記述子リダイレクト。
+
+`set -e` は**失敗が答えである場所**を免除する必要がある。`if` と `while` の条件、
+`&&` と `||` の左、`!` が反転するもの。これを深さの数で数えている。
+
+### 確認
+
+実機で 34 項目（`plan/ws032/tests/sh-target.sh`）。複数行の構文は**ファイルに書いて
+実行する**形で確かめている。コンソールは先読みができない——行編集が、読んでいない間に
+届いた文字を捨てるためで、そしてスクリプトはファイルから読まれるものである。
+
+### OpenSSH の起動スクリプト
+
+これで `/usr/libexec/sshd-start` を書き直せた。設定の有無を確かめ、`/var/empty` を
+用意し、**無い鍵だけを**種類ごとに作り、一つも作れなければ理由を言って止まる。
+`plan/ws032/tests/sshd-service-target.sh` は、**手で起動しない**。ログイン前に init が
+定義から起動したサーバへ ssh して `SERVICE-LOGIN-OK` を得る。
+
+### menuconfig: OpenSSL と OpenSSH
+
+両者は既に **Programs → Packages → Security** に並んでいた。足りていなかったのは
+**依存関係**で、OpenSSH だけを選ぶと OpenSSL が付いてこなかった。OpenSSH は libcrypto に
+対してリンクされるので、これは選んだ人が覚えておく話ではなく、パッケージが名乗るべき
+ことである。
+
+| 変更 | 内容 |
+| --- | --- |
+| `security/openssh/Makefile` | 登録に `security/openssl` を要求として加え、表示名を `OpenSSH secure shell` に |
+| `security/openssl/Makefile` | 表示名を `OpenSSL cryptography` に |
+| `tools/menuconfig.py` | 選択と依存の解決を `package_select()` / `package_dependents()` として curses のループから出した |
+| `menuconfig-target-host-test.py` | パッケージ側の検査を追加 |
+
+`package_select()` は**全部揃ったときにだけ\*\*選択を確定する。元のコードは先に本体を加えて
+から依存を辿り、途中で見つからないと本体だけ取り消していたので、**途中まで加えた依存が
+選ばれたまま残って**いた。
+
+検査は落ちることを確かめてある:
+
+```
+要求を消す:            MAC-T001: choosing OpenSSH selected ['openssh']
+分類を変える:          MAC-T001: openssh is filed under packages/network, which the menu omits
+無い要求を名乗る:      Makefile:312: *** Unknown userland package dependencies: security/nothing
+```
+
+実機での確認は **openssl を書いていない config** から:
+
+```
+ZEDBSD_USER_PROGRAMS := ... noct libcxx openssh
+→ DEPS_2 に openssl が入り、rootfs に lib/libcrypto.so が置かれ、
+  init が起動した sshd へ ssh して SERVICE-LOGIN-OK
+```
+
+### menuconfig: 並びと、プラットフォーム非依存
+
+指定された並びに合わせた。
+
+```
+Packages
+  Languages    Noct language          (clang は ws032-p008 待ち)
+  Editors      Remacs editor          (requires base/noct)
+  Development  LLVM C++ runtime
+  Network      OpenSSH secure shell   (requires security/openssl)
+  Security     OpenSSL cryptography
+```
+
+| 変更 | 内容 |
+| --- | --- |
+| `tools/menuconfig.py` | `Network` を `PACKAGE_CATEGORIES` に追加 |
+| openssh | `userland/packages/security/openssh` → `userland/packages/network/openssh`。分類 `packages/network`、経路 `network/openssh`。深さが同じなので相対 include はそのまま |
+| noct | 分類を `base` から `packages/lang` へ。**ディレクトリは動かしていない**（`userland/base/noct/noct/` に絶対パスを持つ cmake の出力があるため）。経路 `base/noct` は remacs の要求に使われているのでそのまま |
+| remacs | 選択可に。表示名 `Remacs editor` |
+
+**プラットフォーム依存をやめた。** base と packages の登録は全て `*` にした。以前は
+libvulkan・zwl・vkdemo・gpu-\*-test・zedinst・noct・libcxx・openssl・openssh などが
+特定のプラットフォームでしか選べなかった。選ぶのは構成する人であって、プラットフォームが
+決めることではない。
+
+残したのは `firmware` の二つ（`intelax211-firmware`, `rtl8822b-firmware`）だけで、
+これは**装置のファームウェアでドライバの一部**だから。動かすなら言ってほしい。
+
+### remacs の hold を外した
+
+`ZEDBSD_TARGET_PACKAGE_HOLD := remacs` があり、**メニューに出しても黙って落ちる**
+状態だった。理由として書かれていた「noct が hold されているから」は既に事実ではない
+（hold されていたのは remacs だけで、noct は選択可で実機にも入っている）。
+
+実際に外して build したところ、止まったのは remacs ではなく**古い cmake のキャッシュ**
+だった。`build/host-noct-package` が `build/sources/noct` から生成されていて、Noct の
+ソースが `userland/base/noct/noct` へ移った後も残っていた。消したら通った。
+
+```
+ZEDBSD_USER_PROGRAMS := ... noct remacs
+→ build/amd64/rootfs/usr/bin/remacs.nap と bin/noct
+```
+
+hold の仕組みは残したが、**空である**こととその理由を Makefile に書いた。build できない
+ものは hold に書くのではなくメニューから外すべきである。
+
+### 検査
+
+`menuconfig-target-host-test.py` に、どの分類に何が居るか、と、base と packages が
+`*` であることの検査を足した。落ちることは確かめてある:
+
+```
+分類を戻す:              MAC-T001: openssh is filed under packages/security rather than packages/network
+プラットフォームを戻す:  MAC-T001: openssl is offered only on amd64
+```

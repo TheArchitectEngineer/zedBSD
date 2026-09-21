@@ -221,8 +221,11 @@ ZEDBSD_USER_PROGRAMS ?= $(ZEDBSD_DEFAULT_USER_PROGRAMS)
 
 # Remove held package roots before dependency expansion. Otherwise a stale
 # configuration that still names a held application could retain its
-# dependencies even though the application itself is suppressed.
-ZEDBSD_TARGET_PACKAGE_HOLD := remacs
+# dependencies even though the application itself is suppressed.  Nothing is
+# held at present: a package named here is offered by the menu and then
+# quietly dropped, so a package that cannot be built belongs out of the menu
+# rather than in this list.
+ZEDBSD_TARGET_PACKAGE_HOLD :=
 override ZEDBSD_USER_PROGRAMS := $(filter-out \
 	$(ZEDBSD_TARGET_PACKAGE_HOLD),$(ZEDBSD_USER_PROGRAMS))
 

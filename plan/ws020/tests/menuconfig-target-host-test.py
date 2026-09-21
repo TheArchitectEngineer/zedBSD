@@ -33,6 +33,62 @@ def make_result(config: Path) -> subprocess.CompletedProcess[str]:
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
 
+def check_packages() -> None:
+    """Checks what the package menu offers and what choosing from it does.
+
+    A package that names a requirement no other package provides cannot be
+    chosen at all, and a package filed under a category the menu does not
+    list cannot be reached, so both are faults in the metadata rather than
+    in the menu.
+    """
+    rows = USER_PROGRAM_ROWS
+    provided = {row[5] for row in rows if row[5]}
+    for row in rows:
+        for requirement in row[6].split():
+            if requirement not in provided:
+                fail(f"{row[0]} requires {requirement}, which nothing provides")
+
+    offered = set()
+    for _label, group in menu.PACKAGE_CATEGORIES:
+        offered.update(row[0] for row in rows if row[4] == group)
+    for row in rows:
+        if row[4].startswith("packages/") and row[0] not in offered:
+            fail(f"{row[0]} is filed under {row[4]}, which the menu omits")
+
+    # Where each package is filed, and that the menu reaches it there.
+    expected_group = {
+        "noct": "packages/lang",
+        "remacs": "packages/editors",
+        "libcxx": "packages/devel",
+        "openssh": "packages/network",
+        "openssl": "packages/security",
+    }
+    for name, group in expected_group.items():
+        row = next((row for row in rows if row[0] == name), None)
+        if row is None:
+            fail(f"{name} is not offered at all")
+        if row[4] != group:
+            fail(f"{name} is filed under {row[4]} rather than {group}")
+
+    # A program is chosen by whoever configures the build, not by the
+    # platform: only the kernel options and the drivers are tied to one.
+    for row in rows:
+        if row[4].startswith("packages/") or row[4] == "base":
+            if row[2] != "*":
+                fail(f"{row[0]} is offered only on {row[2]}")
+
+    # The server is built against the library, so one brings the other.
+    selected: set = set()
+    if menu.package_select(rows, selected, "openssh") is not None:
+        fail("a requirement of OpenSSH is not provided")
+    if selected != {"openssh", "openssl"}:
+        fail(f"choosing OpenSSH selected {sorted(selected)}")
+    if not menu.package_dependents(rows, selected, "openssl"):
+        fail("OpenSSL can be dropped while OpenSSH still needs it")
+    if menu.package_dependents(rows, selected, "openssh"):
+        fail("OpenSSH is held by something that does not need it")
+
+
 def main() -> None:
     expected_targets = {(record[1], record[2]) for record in menu.PLATFORMS}
     if set(menu.BOARD_VARIANTS) != expected_targets:
@@ -42,6 +98,8 @@ def main() -> None:
             ("uefi", "UEFI (for Apple)"),
             ("bios", "BIOS (for PC/AT)")]:
         fail("amd64 PC/AT Variants changed")
+
+    check_packages()
 
     template = menu.defaults()
 
@@ -168,7 +226,8 @@ def main() -> None:
             expect_make_rejection(directory, *case)
 
     print("MAC-T001 menuconfig round-trip: PASS "
-          "(6 targets, 3 amd64 Variants, obsolete capacity removed)")
+          "(6 targets, 3 amd64 Variants, obsolete capacity removed, "
+          "package requirements resolved)")
 
 
 if __name__ == "__main__":

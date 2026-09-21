@@ -302,7 +302,7 @@ utmp_fill(
 
 	/* Handles a failed clock gettime operation. */
 	if (clock_gettime(CLOCK_REALTIME, &now) == 0) {
-		entry->ut_tv_sec = now.tv_sec;
-		entry->ut_tv_usec = (int32_t)(now.tv_nsec / 1000L);
+		entry->ut_tv.tv_sec = now.tv_sec;
+		entry->ut_tv.tv_usec = (long)(now.tv_nsec / 1000L);
 	}
 }

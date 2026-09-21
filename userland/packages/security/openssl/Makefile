@@ -45,12 +45,14 @@ ZEDBSD_OPENSSL_LICENSE := $(ZEDBSD_EXT_openssl_SRCDIR)/LICENSE.txt
 
 # no-asm: the x86_64 perlasm paths are not exercised yet.
 # no-engine/no-dso/no-module: nothing loads code at run time here.
-# no-deprecated: the removed interfaces reach for gethostbyname, which the
-#   zedBSD libc does not provide (POSIX removed it in 2008).
+#
+# The deprecated interfaces are kept.  They were left out while the zedBSD
+# libc had no gethostbyname, which some of them reach for; the libc has it
+# now, and OpenSSH is written against EC_KEY, which is among them.
 # See plan/ws032/phase006/results.md for the rest.
 ZEDBSD_OPENSSL_CONFIGURE_OPTIONS := \
 	--prefix=/usr --openssldir=/etc/ssl --libdir=lib \
-	no-asm no-tests no-docs no-engine no-dso no-module no-deprecated \
+	no-asm no-tests no-docs no-engine no-dso no-module \
 	shared threads
 
 $(ZEDBSD_OPENSSL_CONFIGURED): $(ZEDBSD_EXT_openssl_SRCSTAMP) \
@@ -100,7 +102,7 @@ openssl: $(ZEDBSD_OPENSSL_STAGED)
 
 # The runtime loader searches /lib, so the shared objects go there rather than
 # to the /usr/lib the staged tree uses.
-$(eval $(call ZEDBSD_USERLAND_PACKAGE,openssl,OpenSSL,amd64,n,package,,y,\
+$(eval $(call ZEDBSD_USERLAND_PACKAGE,openssl,OpenSSL cryptography,*,n,package,,y,\
 	packages/security,security/openssl,))
 
 ZEDBSD_PACKAGE_INPUTS += $(if $(filter openssl,$(ZEDBSD_USER_PROGRAMS)),\

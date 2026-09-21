@@ -57,6 +57,7 @@ static ssize_t cdev_read_file(struct file *file, void *buffer, size_t size);
 static ssize_t cdev_write_file(struct file *file, const void *buffer, size_t size);
 static int cdev_ioctl_file(struct file *file, unsigned long request, uintptr_t argument);
 static int cdev_poll_file(struct file *file, short events, short *revents);
+static off_t cdev_seek_file(struct file *file, off_t offset, int whence);
 static int cdev_mmap_file(struct file *file, off_t offset, size_t bytes, uint32_t prot, struct vm_device_mapping **result);
 static int cdev_name_valid(const char *name);
 
@@ -67,6 +68,7 @@ const struct file_ops cdev_file_ops = {
 	.write = cdev_write_file,
 	.ioctl = cdev_ioctl_file,
 	.poll = cdev_poll_file,
+	.seek = cdev_seek_file,
 	.mmap = cdev_mmap_file,
 };
 
@@ -721,6 +723,35 @@ cdev_ioctl_file(
 
 	/* Succeeded. */
 	return 0;
+}
+
+/*
+ * Moves the position of a device through its seek operation.
+ *
+ * A device that does not supply one has no position to move, which is what
+ * a terminal or a stream is; the caller is told so rather than given a
+ * number that would mean nothing.
+ */
+static off_t
+cdev_seek_file(
+	struct file *file,
+	off_t offset,
+	int whence)
+{
+	const struct cdev *device;
+
+	device = file_cdev(file);
+
+	/* A device that is gone has nothing to seek in. */
+	if (device == NULL)
+		return -ENXIO;
+
+	/* A device without a position refuses to be given one. */
+	if (device->ops->seek == NULL)
+		return -ESPIPE;
+
+	/* Returns the computed result. */
+	return device->ops->seek(file, offset, whence);
 }
 
 /* Polls a device through its poll operation. */

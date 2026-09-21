@@ -139,6 +139,25 @@ tty_pty_snapshot(
 	unsigned *indices,
 	unsigned capacity);
 
+/*
+ * Who a pseudo terminal belongs to.  The node under /dev/pts is made afresh
+ * on every lookup, so its ownership is kept with the terminal and read back
+ * through these rather than stored in the node.
+ */
+int
+tty_pty_attr_get(
+	unsigned index,
+	uid_t *uid,
+	gid_t *gid,
+	mode_t *mode);
+
+int
+tty_pty_attr_set(
+	unsigned index,
+	const uid_t *uid,
+	const gid_t *gid,
+	const mode_t *mode);
+
 extern const struct file_ops tty_pty_slave_file_ops;
 
 #ifdef KERN_TTY_TEST

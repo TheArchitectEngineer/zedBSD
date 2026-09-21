@@ -894,25 +894,28 @@ builtin_cat(
 	char **argv)
 {
 	unsigned char buffer[COPY_BUFFER_SIZE];
+	const char *name;
 	ssize_t count;
 	int descriptor;
 	int argument;
 
-	/* Validates the command-line arguments. */
-	if (argc < 2) {
-		fprintf(stderr, "usage: cat FILE...\n");
-
-		/* Reports successful completion. */
-		return 0;
-	}
-
 	/* Process each remaining command-line operand. */
-	for (argument = 1; argument < argc; argument++) {
-		descriptor = open(argv[argument], O_RDONLY);
+	for (argument = 1; argument < argc || argument == 1; argument++) {
+		/*
+		 * With no file named, the input is read, which is what lets
+		 * cat stand at the end of a pipe or take a here-document.
+		 */
+		if (argument >= argc) {
+			name = "standard input";
+			descriptor = 0;
+		} else {
+			name = argv[argument];
+			descriptor = open(argv[argument], O_RDONLY);
+		}
 
 		/* Checks the file descriptor. */
 		if (descriptor < 0) {
-			fprintf(stderr, "cat: %s: %s\n", argv[argument],
+			fprintf(stderr, "cat: %s: %s\n", name,
 				strerror(errno));
 
 			/* Reports successful completion. */
@@ -923,7 +926,8 @@ builtin_cat(
 			if (!write_all(1, buffer, (size_t)count)) {
 				fprintf(stderr, "cat: write: %s\n",
 					strerror(errno));
-				(void)close(descriptor);
+				if (descriptor != 0)
+					(void)close(descriptor);
 
 				/* Reports successful completion. */
 				return 0;
@@ -932,17 +936,22 @@ builtin_cat(
 
 		/* Checks the remaining item count. */
 		if (count < 0) {
-			fprintf(stderr, "cat: %s: %s\n", argv[argument],
+			fprintf(stderr, "cat: %s: %s\n", name,
 				strerror(errno));
-			(void)close(descriptor);
+			if (descriptor != 0)
+				(void)close(descriptor);
 
 			/* Reports successful completion. */
 			return 0;
 		}
 
+		/* The input is left open for whatever reads after this. */
+		if (descriptor == 0)
+			break;
+
 		/* Handles a failed close operation. */
 		if (close(descriptor) != 0) {
-			fprintf(stderr, "cat: %s: %s\n", argv[argument],
+			fprintf(stderr, "cat: %s: %s\n", name,
 				strerror(errno));
 
 			/* Reports successful completion. */

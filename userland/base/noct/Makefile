@@ -71,7 +71,8 @@ NOCT_PACKAGE_HOLORIS := $(NOCT_SOURCE_DIR)/resources/apps/holoris/holoris.noct
 
 # i386 uses the interpreter for the PC98 i486 baseline. Remacs stays held
 # independently until its own application acceptance is scheduled.
-$(eval $(call ZEDBSD_USERLAND_PACKAGE,noct,noct,amd64 pc98,n,package,,y,base,base/noct,))
+$(eval $(call ZEDBSD_USERLAND_PACKAGE,noct,Noct language,*,n,package,,y,\
+	packages/lang,base/noct,))
 
 ZEDBSD_PACKAGE_INPUTS += $(if $(filter noct,$(ZEDBSD_USER_PROGRAMS)),\
 	$(BUILD)/bin/noct $(NOCT_PACKAGE_HOLORIS))

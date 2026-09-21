@@ -27,6 +27,14 @@ struct sh_expand_context {
 	const char *shell_name;
 	int positional_count;
 	char **positional;
+
+	/*
+	 * Set when a parameter that was never set is a fault rather than an
+	 * empty word, which is what the u option asks for.  A parameter
+	 * written with a word to fall back on is never a fault, because the
+	 * word is what it is for.
+	 */
+	int unset_is_error;
 };
 
 struct sh_field_list {

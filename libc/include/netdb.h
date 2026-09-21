@@ -108,6 +108,41 @@ void setservent(int);
 struct servent *getservent(void);
 void endservent(void);
 
+/*
+ * A whole set of records of one type, which is what a caller checking a
+ * signature or a fingerprint needs: the records and their signatures
+ * together, with a word on whether the server said it had checked them.
+ */
+struct rdatainfo {
+	unsigned int rdi_length;
+	unsigned char *rdi_data;
+};
+
+struct rrsetinfo {
+	unsigned int rri_flags;
+	unsigned int rri_rdclass;
+	unsigned int rri_rdtype;
+	unsigned int rri_ttl;
+	unsigned int rri_nrdatas;
+	unsigned int rri_nsigs;
+	char *rri_name;
+	struct rdatainfo *rri_rdatas;
+	struct rdatainfo *rri_sigs;
+};
+
+#define RRSET_VALIDATED 1	/* The server said it had checked these. */
+
+#define ERRSET_SUCCESS  0
+#define ERRSET_NOMEMORY 1
+#define ERRSET_FAIL     2
+#define ERRSET_INVAL    3
+#define ERRSET_NONAME   4
+#define ERRSET_NODATA   5
+
+int getrrsetbyname(const char *, unsigned int, unsigned int, unsigned int,
+	struct rrsetinfo **);
+void freerrset(struct rrsetinfo *);
+
 int getaddrinfo(const char *, const char *, const struct addrinfo *,
 	struct addrinfo **);
 void freeaddrinfo(struct addrinfo *);

@@ -75,6 +75,7 @@ PACKAGE_CATEGORIES = [
     ("Languages", "packages/lang"),
     ("Editors", "packages/editors"),
     ("Development", "packages/devel"),
+    ("Network", "packages/network"),
     ("Security", "packages/security"),
 ]
 
@@ -437,6 +438,39 @@ def select_drivers(screen, values: dict[str, object]) -> None:
         edit_options(screen, title, options, values)
 
 
+def package_select(rows: list[list[str]], selected: set, name: str):
+    """Selects a program and whatever it needs.
+
+    Returns the name of a requirement that no program provides, having
+    selected nothing; returns None when everything asked for was found.
+    A requirement of a requirement is followed as well, so that choosing
+    one program brings in the whole of what it is built against.
+    """
+    added = {name}
+    pending = next((row[6].split() for row in rows if row[0] == name), [])
+    while pending:
+        requirement = pending.pop(0)
+        dependency = next((row for row in rows if row[5] == requirement), None)
+        if dependency is None:
+            return requirement
+        if dependency[0] not in selected and dependency[0] not in added:
+            added.add(dependency[0])
+            pending.extend(dependency[6].split())
+    selected.update(added)
+    return None
+
+
+def package_dependents(rows: list[list[str]], selected: set,
+                       name: str) -> list[str]:
+    """Returns the labels of the selected programs that need this one."""
+    package = next((row[5] for row in rows if row[0] == name), "")
+    if not package:
+        return []
+    return [row[1] for row in rows
+            if row[0] in selected and row[0] != name and
+            package in row[6].split()]
+
+
 def edit_program_group(screen, values: dict[str, object], groups: tuple[str, ...],
                        title: str) -> None:
     platform = str(values["ZEDBSD_PLATFORM"])
@@ -453,11 +487,10 @@ def edit_program_group(screen, values: dict[str, object], groups: tuple[str, ...
         if choice is None or choice == len(rows):
             return
         selected = choice
-        name, _label, _targets, _default, _group, package, requirements = rows[choice]
+        name = rows[choice][0]
         if name in selected_programs:
-            dependents = [row[1] for row in user_program_rows()
-                          if row[0] in selected_programs and package and
-                          package in row[6].split()]
+            dependents = package_dependents(user_program_rows(),
+                                            selected_programs, name)
             if dependents:
                 message(screen, "Required package",
                         [f"{name} is required by:", ", ".join(dependents)],
@@ -465,22 +498,12 @@ def edit_program_group(screen, values: dict[str, object], groups: tuple[str, ...
                 continue
             selected_programs.remove(name)
         else:
-            selected_programs.add(name)
-            pending = requirements.split()
-            all_rows = user_program_rows()
-            while pending:
-                requirement = pending.pop(0)
-                dependency = next((row for row in all_rows
-                                   if row[5] == requirement), None)
-                if dependency is None:
-                    message(screen, "Missing package dependency",
-                            [f"{name} requires {requirement}."],
-                            target_label(values))
-                    selected_programs.remove(name)
-                    break
-                if dependency[0] not in selected_programs:
-                    selected_programs.add(dependency[0])
-                    pending.extend(dependency[6].split())
+            missing = package_select(user_program_rows(), selected_programs,
+                                     name)
+            if missing is not None:
+                message(screen, "Missing package dependency",
+                        [f"{name} requires {missing}."],
+                        target_label(values))
 
 
 def select_package_programs(screen, values: dict[str, object]) -> None:

@@ -8,6 +8,8 @@
 #include <kern/memory-device.h>
 #include <uapi/poll.h>
 #include <errno.h>
+#include <kern/file.h>
+#include <stdint.h>
 #include <string.h>
 
 static ssize_t null_read(struct file *file, void *buffer, size_t size);
@@ -15,12 +17,23 @@ static ssize_t zero_read(struct file *file, void *buffer, size_t size);
 static ssize_t discard_write(struct file *file, const void *buffer, size_t size);
 static ssize_t full_write(struct file *file, const void *buffer, size_t size);
 static int memory_poll(struct file *file, short events, short *revents);
+static off_t memory_seek(struct file *file, off_t offset, int whence);
+
+/* Where a move starts from, as lseek names the three origins. */
+#define MEMORY_SEEK_SET 0
+#define MEMORY_SEEK_CUR 1
+#define MEMORY_SEEK_END 2
+
+/* The range a position may take, which follows the width of off_t. */
+#define MEMORY_OFF_MAX ((off_t)(sizeof(off_t) == 8 ? INT64_MAX : INT32_MAX))
+#define MEMORY_OFF_MIN ((off_t)(-MEMORY_OFF_MAX - 1))
 
 /* Immutable operations shared by every open of the discard device. */
 static const struct cdev_ops null_ops = {
 	.read = null_read,
 	.write = discard_write,
 	.poll = memory_poll,
+	.seek = memory_seek,
 };
 
 /* Immutable operations shared by every open of the zero source. */
@@ -28,6 +41,7 @@ static const struct cdev_ops zero_ops = {
 	.read = zero_read,
 	.write = discard_write,
 	.poll = memory_poll,
+	.seek = memory_seek,
 };
 
 /*
@@ -41,6 +55,7 @@ static const struct cdev_ops full_ops = {
 	.read = zero_read,
 	.write = full_write,
 	.poll = memory_poll,
+	.seek = memory_seek,
 };
 
 /*
@@ -155,6 +170,44 @@ full_write(
 
 	/* There is no room, and there never will be. */
 	return -ENOSPC;
+}
+
+/*
+ * Moves the position, which nothing here reads.
+ *
+ * These devices have no contents, so the position cannot change what a read
+ * or a write does.  It is still kept and reported, because a program that
+ * has redirected its output to one of them and then asks how far it has got
+ * expects an answer: refusing the question is what makes such a program
+ * treat the device as a pipe and take a different path.  The end is the
+ * start, there being nothing in between.
+ */
+static off_t
+memory_seek(
+	struct file *file,
+	off_t offset,
+	int whence)
+{
+	off_t base;
+
+	/* Dispatch the selected origin. */
+	if (whence == MEMORY_SEEK_SET || whence == MEMORY_SEEK_END)
+		base = 0;
+	else if (whence == MEMORY_SEEK_CUR)
+		base = file->f_offset;
+	else
+		return -EINVAL;
+
+	/* Refuses a move that would not fit, or would end before the start. */
+	if ((offset > 0 && base > MEMORY_OFF_MAX - offset) ||
+	    (offset < 0 && base < MEMORY_OFF_MIN - offset))
+		return -EOVERFLOW;
+	if (base + offset < 0)
+		return -EINVAL;
+	file->f_offset = base + offset;
+
+	/* Returns the computed result. */
+	return file->f_offset;
 }
 
 /* Reports that reading or writing can complete immediately. */

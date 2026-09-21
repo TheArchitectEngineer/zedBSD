@@ -28,11 +28,23 @@ typedef uint32_t socklen_t;
 #define AF_UNSPEC	0
 #define AF_UNIX	1
 #define AF_INET	2
+
+/*
+ * AF_INET6 is deliberately absent.  Naming it is not enough on its own:
+ * software that sees the name then writes struct sockaddr_in6 and the rest
+ * of the interface, so the name must arrive with all of it or not at all.
+ * Until the stack carries the protocol, not at all is the honest answer --
+ * and is what keeps software choosing the path that works.
+ */
+
+/* One past the highest family, for a caller sizing a table by family. */
+#define AF_MAX	32
 #define AF_PACKET	17
 #define AF_ROUTE	18
 
 #define PF_UNSPEC	AF_UNSPEC
 #define PF_UNIX	AF_UNIX
+#define PF_MAX	AF_MAX
 #define PF_INET	AF_INET
 #define PF_PACKET	AF_PACKET
 #define PF_ROUTE	AF_ROUTE

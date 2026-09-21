@@ -18,6 +18,9 @@ ZEDBSD_LIBC_USER_EXTRA_SOURCES := \
 	libc/xsi-process.c libc/fmtmsg.c libc/syslog.c libc/sysv-ipc.c \
 	libc/catalog.c libc/locale-db.c libc/fnmatch.c libc/openbsd.c libc/openbsd-vis.c \
 	libc/openbsd-base64.c libc/readpassphrase.c \
+	libc/openbsd-opts.c libc/openbsd-glob.c \
+	libc/openbsd-digest.c libc/openbsd-sha2.c \
+	userland/base/libc/resolv.c \
 	$(ZEDBSD_REGEX_SOURCES)
 
 ZEDBSD_LIBC_SOURCES := \

@@ -50,6 +50,13 @@ int *__libc_errno_location(void);
 #define ENETUNREACH 33
 #define EPROTONOSUPPORT 34
 #define EAFNOSUPPORT 35
+
+/*
+ * A protocol family that this system does not carry.  It is the same
+ * condition as an unsupported address family here, and has the same value,
+ * as it does on the systems this name comes from.
+ */
+#define EPFNOSUPPORT EAFNOSUPPORT
 #define EADDRINUSE 36
 #define EADDRNOTAVAIL 37
 #define EISCONN 38

@@ -119,20 +119,13 @@ int getpagesize(void);
  */
 int getpeereid(int, uid_t *, gid_t *);
 
-/* Closes every descriptor at or above the one named. */
-int closefrom(int);
-
-/* Reports how many descriptors are open. */
-int getdtablecount(void);
-
-/* Reports the page size as a number rather than through sysconf. */
-int getpagesize(void);
-
 /*
- * Reports who the far end of a connected local socket was when it
- * connected, an identity the peer cannot change afterwards.
+ * Compiles a file mode written as text, such as "u+rw,go-w" or "755", once
+ * so that it can be applied to many files, and applies it to one mode.  A
+ * clause that names nobody spares the bits the file creation mask withholds.
  */
-int getpeereid(int, uid_t *, gid_t *);
+void *setmode(const char *);
+mode_t getmode(const void *, mode_t);
 int sethostname(const char *, size_t);
 char *ttyname(int);
 int ttyname_r(int, char *, size_t);
