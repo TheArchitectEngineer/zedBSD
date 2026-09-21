@@ -1,0 +1,257 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The kernels of a graphics pipeline: compiling its two stages and handing
+ * what the compiler reports to the draw.
+ *
+ * The pipeline's SPIR-V goes through the executor's own compiler, and the
+ * words of 3DSTATE_VS, PS, PS_EXTRA, WM, SBE and SBE_SWIZ are packed from
+ * what that compiler reports about the kernels.  The kernels must fit the
+ * fixed slots of the instruction heap (heap.h), the two stages' interfaces
+ * must agree, and only the vertex stage may read push constants.
+ */
+
+#include "gfx.h"
+#include "heap.h"
+#include "internal.h"
+#include "state.h"
+
+#include "../compiler/compiler.h"
+#include "../i915.h"
+
+#include <kern/klog.h>
+
+#include <errno.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <string.h>
+
+static int i915_pipeline_compile_stage(const struct i915_gfx_shader *shader, enum i915_shader_stage stage, struct i915_shader_binary **result);
+static int i915_pipeline_kernels_fit(const struct i915_gfx_pipeline *pipeline);
+static const char *i915_pipeline_stage_name(enum i915_shader_stage stage);
+
+/*
+ * Compiles a pipeline's vertex and fragment kernels.
+ *
+ * The pipeline needs both stages.  Returns the parser's or the compiler's
+ * error, or ENOTSUP for kernels the draw path cannot place; the pipeline is
+ * then left without kernels.
+ * XXX: kernels of at most 4 KiB and 12 KiB, the stages' interfaces equal,
+ * push constants in the vertex stage only.
+ */
+int
+drv_i915_gfx_pipeline_prepare(
+	struct i915_render_session *session,
+	struct i915_gfx_pipeline *pipeline)
+{
+	int fits;
+	int error;
+
+	UNUSED_PARAMETER(session);
+
+	/* Refuses a pipeline without both stages. */
+	if (pipeline->vertex == NULL || pipeline->fragment == NULL)
+		return EINVAL;
+
+	/* Compiles the vertex stage. */
+	error = i915_pipeline_compile_stage(pipeline->vertex, I915_STAGE_VERTEX, &pipeline->vs_binary);
+	if (error != 0) {
+		drv_i915_gfx_pipeline_release(pipeline);
+		return error;
+	}
+
+	/* Compiles the fragment stage. */
+	error = i915_pipeline_compile_stage(pipeline->fragment, I915_STAGE_FRAGMENT, &pipeline->fs_binary);
+	if (error != 0) {
+		drv_i915_gfx_pipeline_release(pipeline);
+		return error;
+	}
+
+	/* Refuses kernels the draw path cannot place or connect. */
+	fits = i915_pipeline_kernels_fit(pipeline);
+	if (fits == 0) {
+		kern_logf("i915: vk: XXX unimplemented path: vs %u bytes / %u varyings / %u push registers, "
+			  "fs %u bytes / %u inputs / %u push registers\n",
+			  pipeline->vs_binary->code_bytes,
+			  pipeline->vs_binary->varying_count,
+			  pipeline->vs_binary->push_regs,
+			  pipeline->fs_binary->code_bytes,
+			  pipeline->fs_binary->input_count,
+			  pipeline->fs_binary->push_regs);
+		drv_i915_gfx_pipeline_release(pipeline);
+		return ENOTSUP;
+	}
+
+	/* Says what the compiler made of the pipeline. */
+	kern_logf("i915: vk: pipeline compiled by the executor: vs %u bytes (%u attributes, %u push registers, %u varyings), "
+		  "fs %u bytes (%u inputs, %u sampled images)\n",
+		  pipeline->vs_binary->code_bytes,
+		  pipeline->vs_binary->input_count,
+		  pipeline->vs_binary->push_regs,
+		  pipeline->vs_binary->varying_count,
+		  pipeline->fs_binary->code_bytes,
+		  pipeline->fs_binary->input_count,
+		  pipeline->fs_binary->sampler_count);
+
+	/* Marks the pipeline drawable. */
+	pipeline->kernels_ready = 1;
+
+	/* Succeeded: both kernels are compiled and fit the draw path. */
+	return 0;
+}
+
+/*
+ * Releases a pipeline's kernels and marks it not drawable.
+ */
+void
+drv_i915_gfx_pipeline_release(
+	struct i915_gfx_pipeline *pipeline)
+{
+	/* Frees both binaries; a stage never compiled has none. */
+	drv_i915_shader_binary_free(pipeline->vs_binary);
+	drv_i915_shader_binary_free(pipeline->fs_binary);
+
+	/* Forgets them, so the pipeline cannot be drawn with. */
+	pipeline->vs_binary = NULL;
+	pipeline->fs_binary = NULL;
+	pipeline->kernels_ready = 0;
+}
+
+/*
+ * Describes a prepared pipeline's two kernels for the state and the batch
+ * of a draw.
+ *
+ * The code pointers borrow the pipeline's binaries, which live until the
+ * pipeline is released.
+ */
+void
+drv_i915_gfx_pipeline_kernels(
+	const struct i915_gfx_pipeline *pipeline,
+	struct i915_gfx_kernels *kernels)
+{
+	const struct i915_shader_binary *vertex;
+	const struct i915_shader_binary *fragment;
+	uint32_t index;
+
+	/* Starts from nothing. */
+	memset(kernels, 0, sizeof(*kernels));
+	vertex = pipeline->vs_binary;
+	fragment = pipeline->fs_binary;
+
+	/* Takes the code of both kernels. */
+	kernels->vs_code = vertex->code;
+	kernels->vs_bytes = vertex->code_bytes;
+	kernels->ps_code = fragment->code;
+	kernels->ps_bytes = fragment->code_bytes;
+
+	/* Takes the vertex kernel's payload start, push registers and attribute locations. */
+	kernels->vs_grf_start = vertex->dispatch_grf_start;
+	kernels->vs_push_regs = vertex->push_regs;
+	kernels->vs_input_count = vertex->input_count;
+	for (index = 0U; index < kernels->vs_input_count && index < I915_GFX_MAX_VERTEX_ATTRIBUTES; index++)
+		kernels->vs_inputs[index] = vertex->input_locations[index];
+
+	/* Takes the varyings and the pixel kernel's payload start and sampled images. */
+	kernels->varyings = vertex->varying_count;
+	kernels->ps_grf_start = fragment->dispatch_grf_start;
+	kernels->ps_samplers = fragment->sampler_count;
+}
+
+/*
+ * Parses and compiles one stage of a pipeline.
+ *
+ * A refusal is logged with the stage and, for the parser, the refused
+ * instruction.
+ */
+static int
+i915_pipeline_compile_stage(
+	const struct i915_gfx_shader *shader,
+	enum i915_shader_stage stage,
+	struct i915_shader_binary **result)
+{
+	struct i915_shader_ir *ir;
+	struct i915_compile_diagnostic diagnostic;
+	const char *reason;
+	int error;
+
+	/* Parses the SPIR-V into the compiler's IR. */
+	memset(&diagnostic, 0, sizeof(diagnostic));
+	error = drv_i915_shader_parse(shader->words, shader->word_count, stage, &ir, &diagnostic);
+	if (error != 0) {
+		reason = "?";
+		if (diagnostic.reason != NULL)
+			reason = diagnostic.reason;
+		kern_logf("i915: vk: %s shader refused by the SPIR-V parser: error %d (%s; opcode %u at word %u)\n",
+			  i915_pipeline_stage_name(stage),
+			  error,
+			  reason,
+			  diagnostic.opcode,
+			  diagnostic.word_offset);
+		return error;
+	}
+
+	/* Compiles the IR to EU code, and frees the IR either way. */
+	error = drv_i915_shader_compile(ir, result);
+	drv_i915_shader_ir_free(ir);
+	if (error != 0) {
+		kern_logf("i915: vk: %s shader refused by the compiler: error %d\n", i915_pipeline_stage_name(stage), error);
+		return error;
+	}
+
+	/* Succeeded: the stage has its binary. */
+	return 0;
+}
+
+/*
+ * Reports whether a pipeline's compiled kernels fit the draw path.
+ *
+ * The vertex kernel must fit below the pixel kernel's slot and the pixel
+ * kernel in the rest of the instruction heap; the vertex stage's varyings
+ * must be the fragment stage's inputs; the fragment stage must read no push
+ * constants and the vertex stage no more than a command buffer carries.
+ */
+static int
+i915_pipeline_kernels_fit(
+	const struct i915_gfx_pipeline *pipeline)
+{
+	/* The vertex kernel must fit its slot. */
+	if (pipeline->vs_binary->code_bytes > I915_GFX_PS_KERNEL - I915_GFX_VS_KERNEL)
+		return 0;
+
+	/* The pixel kernel must fit the rest of the heap. */
+	if (pipeline->fs_binary->code_bytes > I915_GFX_INSTRUCTION_BYTES - I915_GFX_PS_KERNEL)
+		return 0;
+
+	/* The stages' interfaces must agree. */
+	if (pipeline->vs_binary->varying_count != pipeline->fs_binary->input_count)
+		return 0;
+
+	/* Only the vertex stage may read push constants. */
+	if (pipeline->fs_binary->push_regs != 0U)
+		return 0;
+
+	/* The vertex stage may read no more push constants than a command buffer carries. */
+	if (pipeline->vs_binary->push_regs * 32U > I915_GFX_PUSH_BYTES)
+		return 0;
+
+	/* Succeeded: the kernels fit. */
+	return 1;
+}
+
+/* Names a stage in the log lines. */
+static const char *
+i915_pipeline_stage_name(
+	enum i915_shader_stage stage)
+{
+	/* Only the vertex stage is not a fragment stage here. */
+	if (stage == I915_STAGE_VERTEX)
+		return "vertex";
+
+	/* Succeeded: every other stage is the fragment stage. */
+	return "fragment";
+}

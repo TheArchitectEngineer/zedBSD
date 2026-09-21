@@ -2,9 +2,10 @@
 """WS031: which wire opcodes does libvulkan emit, which does the i915 kernel executor handle,
 and which does the vkdemo application need?  Read-only, facts from the source tree."""
 import os, re, collections
-root = os.path.expanduser("~/zedBSD")
+# the repository that holds this script (plan/ws031/handover/tools/)
+root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
 lv = os.path.join(root, "userland/base/libvulkan")
-vk = os.path.join(root, "src/drivers/gpu/i915/vk")
+vk = os.path.join(root, "src/drivers/gpu/i915/render")
 
 ops = {}
 for m in re.finditer(r"VULKAN_OPCODE_(\w+)\s*=\s*(\d+)", open(os.path.join(lv, "opcodes.h")).read()):
@@ -19,14 +20,44 @@ for f in os.listdir(lv):
         for m in re.finditer(r"VULKAN_OPCODE_(\w+)", s):
             emitted[m.group(1)] += 1
 
-# kernel executor: "case NU: /* name */ return fn(...)" per module, plus builtin numbers
+# kernel executor (render/): every "switch (opcode)" arm, "case 18U:" or "case NAME:" with
+# "#define NAME 21U" in render/, and the first function the arm calls.  An arm without a call
+# (a label shared with the next arm) takes the next arm's function.
+srcs = {f: open(os.path.join(vk, f), errors="replace").read()
+        for f in sorted(os.listdir(vk)) if f.endswith((".c", ".h"))}
+value = {}
+for s in srcs.values():
+    for m in re.finditer(r"^#define\s+(\w+)\s+(\d+)U?\b", s, re.M):
+        value[m.group(1)] = int(m.group(2))
+
+def switch_bodies(s):
+    for m in re.finditer(r"switch \(opcode\) \{", s):
+        depth, i = 1, m.end()
+        while depth and i < len(s):
+            depth += {"{": 1, "}": -1}.get(s[i], 0)
+            i += 1
+        yield s[m.end():i - 1]
+
 handled = {}
-for f in ("res.c", "pipe.c", "cmdbuf.c", "sync.c", "wsi.c", "cmd.c"):
-    s = open(os.path.join(vk, f), errors="replace").read()
-    for m in re.finditer(r"case (\d+)U:\s*/\*\s*(\w+)\s*\*/\s*\n\s*return (\w+)\(", s):
-        handled[int(m.group(1))] = (f, m.group(3))
-    for m in re.finditer(r"if \(opcode == (\d+)U\)", s):
-        handled.setdefault(int(m.group(1)), (f, "builtin"))
+for f, s in srcs.items():
+    if not f.endswith(".c"):
+        continue
+    for body in switch_bodies(s):
+        pending = []
+        for line in body.split("\n"):
+            c = re.match(r"\s*case\s+(\w+):", line)
+            if c:
+                n = int(c.group(1)[:-1]) if re.match(r"\d+U$", c.group(1)) else value.get(c.group(1))
+                if n is not None:
+                    pending.append(n)
+                continue
+            call = re.search(r"\b(\w+)\(", re.sub(r"/\*.*?\*/", "", line))
+            if call and pending and call.group(1) not in ("if", "while", "for", "switch", "sizeof"):
+                for n in pending:
+                    handled.setdefault(n, (f, call.group(1)))
+                pending = []
+            if re.match(r"\s*(default:|break;)", line):
+                pending = []
 
 def body(fn):
     for f in os.listdir(vk):
@@ -61,7 +92,7 @@ fam = [("instance/device/queue", range(0, 21)), ("memory/buffer/image bind", ran
        ("shader/pipeline cache/pipeline/layout", range(59, 70)), ("sampler/descriptor", range(70, 80)),
        ("framebuffer/render pass", range(80, 85)), ("command pool/buffer", range(85, 93)),
        ("vkCmd* recording", range(93, 137)), ("version/1.1+/transport", range(137, 400))]
-print("| family | wire opcodes | emitted by libvulkan | handler in i915 vk/ | needed by vkdemo | vkdemo needs but no handler |")
+print("| family | wire opcodes | emitted by libvulkan | handler in i915 render/ | needed by vkdemo | vkdemo needs but no handler |")
 print("|---|---|---|---|---|---|")
 tot = [0, 0, 0, 0, 0]
 missing_all = []

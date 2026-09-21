@@ -17,4 +17,14 @@
 int
 drv_i915_pci_driver_register(void);
 
+/*
+ * Reports that the kernel can run the device bring-up.
+ *
+ * Called once from the boot path after regular threads, timer wakeups and
+ * the VFS are up.  Devices that attached before it start now; later ones
+ * start as they attach.  Returns without waiting.
+ */
+void
+drv_i915_runtime_ready(void);
+
 #endif

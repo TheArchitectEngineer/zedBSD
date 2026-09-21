@@ -37,7 +37,7 @@ kern_free(void *pointer)
 	free(pointer);
 }
 
-#include "../../../src/drivers/gpu/i915/vk/eu.c"
+#include "../../../src/drivers/gpu/i915/compiler/eu.c"
 
 /* Reads the inclusive bit range [high:low] from one instruction's four words. */
 static uint32_t
@@ -56,25 +56,25 @@ field(const uint32_t *inst, unsigned high, unsigned low)
 int
 main(void)
 {
-	struct i915_vk_eu_buf buffer;
+	struct i915_eu_buf buffer;
 	const uint32_t *code;
 	size_t bytes;
 
-	i915_vk_eu_init(&buffer);
+	drv_i915_eu_init(&buffer);
 
 	/* mov g2, g1 */
-	i915_vk_eu_mov(&buffer, i915_vk_eu_grf(2U), i915_vk_eu_grf(1U));
+	drv_i915_eu_mov(&buffer, drv_i915_eu_grf(2U), drv_i915_eu_grf(1U));
 	/* add g3, g1, g2 */
-	i915_vk_eu_alu2(&buffer, I915_VK_EU_ADD, i915_vk_eu_grf(3U), i915_vk_eu_grf(1U), i915_vk_eu_grf(2U));
+	drv_i915_eu_alu2(&buffer, I915_EU_ADD, drv_i915_eu_grf(3U), drv_i915_eu_grf(1U), drv_i915_eu_grf(2U));
 	/* mov g4, 1.0f */
-	i915_vk_eu_mov(&buffer, i915_vk_eu_grf(4U), i915_vk_eu_imm_f(0x3F800000U));
+	drv_i915_eu_mov(&buffer, drv_i915_eu_grf(4U), drv_i915_eu_imm_f(0x3F800000U));
 	/* math.sin g5, g1 */
-	i915_vk_eu_math(&buffer, I915_VK_EU_MATH_SIN, i915_vk_eu_grf(5U), i915_vk_eu_grf(1U), i915_vk_eu_null());
+	drv_i915_eu_math(&buffer, I915_EU_MATH_SIN, drv_i915_eu_grf(5U), drv_i915_eu_grf(1U), drv_i915_eu_null());
 	/* nop */
-	i915_vk_eu_nop(&buffer);
+	drv_i915_eu_nop(&buffer);
 
 	assert(buffer.error == 0);
-	code = i915_vk_eu_data(&buffer, &bytes);
+	code = drv_i915_eu_data(&buffer, &bytes);
 	/* five instructions and the sync.nop the encoder puts after the out-of-order MATH (E-128) */
 	assert(bytes == 6U * 4U * sizeof(uint32_t));
 
@@ -115,7 +115,7 @@ main(void)
 	/* nop: opcode 96. */
 	assert(field(code + 20, EU_OPCODE_HI, EU_OPCODE_LO) == EU_OP_NOP);
 
-	i915_vk_eu_free(&buffer);
+	drv_i915_eu_free(&buffer);
 	assert(fixture_live == 0U);
 	printf("i915 vk eu host test PASS\n");
 	return 0;

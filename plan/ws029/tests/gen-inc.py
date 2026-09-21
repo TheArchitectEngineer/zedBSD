@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 """Transcribes selected MIT definitions and tables from the fetched Linux i915 tree into
-src/drivers/gpu/i915/linux/*.inc with the original notices and a modification note.
+src/drivers/gpu/i915/data/*.inc with the original notices and a modification note.
 
 #define lines are copied one by one; tables (context image offset arrays, MOCS entries)
 are copied as verbatim blocks. Each value is kept; the header of every generated file
@@ -16,7 +16,7 @@ ROOT = Path.home() / 'zedBSD'
 TAG = sys.argv[1] if len(sys.argv) > 1 else 'v6.19'
 WHAT = sys.argv[2] if len(sys.argv) > 2 else 'all'
 TREE = ROOT / 'plan/ws029/temp/linux' / TAG
-OUT = ROOT / 'src/drivers/gpu/i915/linux'
+OUT = ROOT / 'src/drivers/gpu/i915/data'
 PREFIX = 'drivers/gpu/drm/i915/'
 
 # Bit helpers written once per .inc; every Linux helper below is rewritten to one of these.

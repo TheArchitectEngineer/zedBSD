@@ -29,7 +29,7 @@
 /* MI_SEMAPHORE_WAIT with poll and greater-or-equal compare: never satisfied on a zero page. */
 #define I915_MI_SEMAPHORE_WAIT_HANG	((0x1cU << 23) | 2U | (1U << 15) | (1U << 12))
 
-/* Command words from the transcribed Linux definitions in src/drivers/gpu/i915/linux/i915-commands.inc. */
+/* Command words from the transcribed Linux definitions in src/drivers/gpu/i915/data/i915-commands.inc. */
 #define I915_MI_NOOP			0x00000000U
 #define I915_MI_BATCH_BUFFER_END	0x05000000U
 #define I915_MI_STORE_DWORD_IMM		0x10000002U

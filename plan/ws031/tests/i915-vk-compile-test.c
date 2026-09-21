@@ -38,9 +38,9 @@ kern_free(void *pointer)
 	free(pointer);
 }
 
-#include "../../../src/drivers/gpu/i915/vk/spirv.c"
-#include "../../../src/drivers/gpu/i915/vk/eu.c"
-#include "../../../src/drivers/gpu/i915/vk/compile.c"
+#include "../../../src/drivers/gpu/i915/compiler/spirv.c"
+#include "../../../src/drivers/gpu/i915/compiler/eu.c"
+#include "../../../src/drivers/gpu/i915/compiler/compile.c"
 
 static uint32_t *
 load_spv(const char *name, size_t *words)
@@ -68,7 +68,7 @@ load_spv(const char *name, size_t *words)
  * an immediate into the staging registers.  The instructions of the IR start after it.
  */
 static const uint32_t *
-body(const struct i915_vk_shader_binary *binary)
+body(const struct i915_shader_binary *binary)
 {
 	const uint32_t *inst = binary->code;
 
@@ -80,7 +80,7 @@ body(const struct i915_vk_shader_binary *binary)
 
 /* Reports whether any instruction in the code carries the given hw opcode. */
 static int
-has_opcode(const struct i915_vk_shader_binary *binary, uint32_t opcode)
+has_opcode(const struct i915_shader_binary *binary, uint32_t opcode)
 {
 	uint32_t dwords;
 	uint32_t index;
@@ -94,23 +94,23 @@ has_opcode(const struct i915_vk_shader_binary *binary, uint32_t opcode)
 }
 
 static void
-compile_shader(const char *name, enum i915_vk_stage stage, uint32_t expect_math)
+compile_shader(const char *name, enum i915_shader_stage stage, uint32_t expect_math)
 {
 	uint32_t *spv;
 	size_t words;
-	struct i915_vk_shader_ir *ir;
-	struct i915_vk_shader_binary *binary;
+	struct i915_shader_ir *ir;
+	struct i915_shader_binary *binary;
 	int error;
 
-	struct i915_vk_spirv_diag diag;
+	struct i915_compile_diagnostic diag;
 
 	spv = load_spv(name, &words);
-	error = i915_vk_spirv_parse_diag(spv, words, stage, &ir, &diag);
+	error = drv_i915_shader_parse(spv, words, stage, &ir, &diag);
 	if (error != 0)
 		printf("  %s refused: opcode %u at word %u: %s\n", name, diag.opcode, diag.word_offset, diag.reason != NULL ? diag.reason : "-");
 	assert(error == 0);
 
-	error = i915_vk_compile(NULL, ir, &binary);
+	error = drv_i915_shader_compile(ir, &binary);
 	assert(error == 0);
 
 	/* The binary carries whole instructions, more than the payload registers. */
@@ -120,14 +120,14 @@ compile_shader(const char *name, enum i915_vk_stage stage, uint32_t expect_math)
 	assert(binary->grf_used > COMPILE_FIRST_VALUE_GRF);
 
 	/* Every shader ends by sending its output and retiring the thread. */
-	assert(has_opcode(binary, stage == I915_VK_STAGE_VERTEX ? EU_OP_SEND : EU_OP_SENDC));
+	assert(has_opcode(binary, stage == I915_STAGE_VERTEX ? EU_OP_SEND : EU_OP_SENDC));
 
 	/* The vertex shader's rotation lowers to math instructions. */
 	if (expect_math != 0U)
 		assert(has_opcode(binary, EU_OP_MATH));
 
-	i915_vk_shader_binary_free(binary);
-	i915_vk_spirv_free(ir);
+	drv_i915_shader_binary_free(binary);
+	drv_i915_shader_ir_free(ir);
 	free(spv);
 }
 
@@ -148,13 +148,13 @@ inst_field(const uint32_t *inst, unsigned high, unsigned low)
 	return value;
 }
 
-static struct i915_vk_shader_ir *
-hand_ir(struct i915_vk_inst *insts, unsigned count)
+static struct i915_shader_ir *
+hand_ir(struct i915_shader_ir_inst *insts, unsigned count)
 {
-	static struct i915_vk_shader_ir ir;
+	static struct i915_shader_ir ir;
 
 	memset(&ir, 0, sizeof(ir));
-	ir.stage = I915_VK_STAGE_VERTEX;
+	ir.stage = I915_STAGE_VERTEX;
 	ir.instructions = insts;
 	ir.instruction_count = count;
 	ir.value_count = 16U;
@@ -170,19 +170,19 @@ hand_ir(struct i915_vk_inst *insts, unsigned count)
 static void
 test_fsub_is_add_with_second_source_negated(void)
 {
-	struct i915_vk_inst insts[3];
-	struct i915_vk_shader_binary *binary;
+	struct i915_shader_ir_inst insts[3];
+	struct i915_shader_binary *binary;
 	const uint32_t *inst;
 	unsigned src0_nr, src1_nr;
 	int error;
 
 	/* two loads first, so %1 and %2 own known registers whatever order the operands are visited in */
 	memset(insts, 0, sizeof(insts));
-	insts[0].op = I915_VK_IR_LOAD_INPUT; insts[0].dst = 1U;
-	insts[1].op = I915_VK_IR_LOAD_INPUT; insts[1].dst = 2U;
-	insts[2].op = I915_VK_IR_FSUB;
+	insts[0].op = I915_IR_LOAD_INPUT; insts[0].dst = 1U;
+	insts[1].op = I915_IR_LOAD_INPUT; insts[1].dst = 2U;
+	insts[2].op = I915_IR_FSUB;
 	insts[2].dst = 3U; insts[2].src[0] = 1U; insts[2].src[1] = 2U;      /* %3 = %1 - %2 */
-	error = i915_vk_compile(NULL, hand_ir(insts, 3U), &binary);
+	error = drv_i915_shader_compile(hand_ir(insts, 3U), &binary);
 	assert(error == 0);
 	inst = body(binary) + 2U * 4U;
 	assert((inst[0] & 0x7FU) == EU_OP_ADD);
@@ -192,32 +192,32 @@ test_fsub_is_add_with_second_source_negated(void)
 	assert(src0_nr == COMPILE_FIRST_VALUE_GRF && src1_nr == COMPILE_FIRST_VALUE_GRF + 1U);
 	assert(inst_bit(inst, EU_SRC0_NEGATE_BIT) == 0U);                  /* the minuend is read as is */
 	assert(inst_bit(inst, EU_SRC1_NEGATE_BIT) == 1U);                  /* the subtrahend is negated */
-	i915_vk_shader_binary_free(binary);
+	drv_i915_shader_binary_free(binary);
 
 	/* and an ADD stays an ADD with no modifier */
-	insts[2].op = I915_VK_IR_FADD;
-	error = i915_vk_compile(NULL, hand_ir(insts, 3U), &binary);
+	insts[2].op = I915_IR_FADD;
+	error = drv_i915_shader_compile(hand_ir(insts, 3U), &binary);
 	assert(error == 0);
 	inst = body(binary) + 2U * 4U;
 	assert((inst[0] & 0x7FU) == EU_OP_ADD);
 	assert(inst_bit(inst, EU_SRC0_NEGATE_BIT) == 0U && inst_bit(inst, EU_SRC1_NEGATE_BIT) == 0U);
-	i915_vk_shader_binary_free(binary);
+	drv_i915_shader_binary_free(binary);
 }
 
 /* -a is a MOV whose source is negated; a push constant is one float read as a scalar region */
 static void
 test_fneg_and_push_operands(void)
 {
-	struct i915_vk_inst insts[3];
-	struct i915_vk_shader_binary *binary;
+	struct i915_shader_ir_inst insts[3];
+	struct i915_shader_binary *binary;
 	const uint32_t *inst;
 	int error;
 
 	memset(insts, 0, sizeof(insts));
-	insts[0].op = I915_VK_IR_LOAD_PUSH; insts[0].dst = 1U; insts[0].immediate = 4U;   /* the SECOND float */
-	insts[1].op = I915_VK_IR_FNEG; insts[1].dst = 2U; insts[1].src[0] = 1U;
-	insts[2].op = I915_VK_IR_STORE_OUTPUT; insts[2].src[0] = 2U; insts[2].location = 0U; insts[2].component = 3U;
-	error = i915_vk_compile(NULL, hand_ir(insts, 3U), &binary);
+	insts[0].op = I915_IR_LOAD_PUSH; insts[0].dst = 1U; insts[0].immediate = 4U;   /* the SECOND float */
+	insts[1].op = I915_IR_FNEG; insts[1].dst = 2U; insts[1].src[0] = 1U;
+	insts[2].op = I915_IR_STORE_OUTPUT; insts[2].src[0] = 2U; insts[2].location = 0U; insts[2].component = 3U;
+	error = drv_i915_shader_compile(hand_ir(insts, 3U), &binary);
 	assert(error == 0);
 	inst = body(binary);                                            /* MOV r16 <- r2.4<0;1,0> */
 	assert((inst[0] & 0x7FU) == EU_OP_MOV);
@@ -235,26 +235,26 @@ test_fneg_and_push_operands(void)
 	assert(inst_field(inst, EU_DST_REG_NR_HI, EU_DST_REG_NR_LO) == COMPILE_MAX_GRF - 4U + 3U);
 	assert(inst_field(inst, EU_SRC0_REG_NR_HI, EU_SRC0_REG_NR_LO) == COMPILE_FIRST_VALUE_GRF + 1U);
 	assert(inst_bit(inst, EU_SRC0_NEGATE_BIT) == 0U);
-	i915_vk_shader_binary_free(binary);
+	drv_i915_shader_binary_free(binary);
 }
 
 /* a register is reused only after the LAST reader of its value */
 static void
 test_register_lifetime(void)
 {
-	struct i915_vk_inst insts[6];
-	struct i915_vk_shader_binary *binary;
+	struct i915_shader_ir_inst insts[6];
+	struct i915_shader_binary *binary;
 	const uint32_t *inst;
 	int error;
 
 	memset(insts, 0, sizeof(insts));
-	insts[0].op = I915_VK_IR_LOAD_INPUT; insts[0].dst = 1U;                                   /* r16, read at 2 and 4 */
-	insts[1].op = I915_VK_IR_LOAD_INPUT; insts[1].dst = 2U; insts[1].component = 1U;          /* r17, last read at 2 */
-	insts[2].op = I915_VK_IR_FMUL; insts[2].dst = 3U; insts[2].src[0] = 1U; insts[2].src[1] = 2U;  /* r18 */
-	insts[3].op = I915_VK_IR_CONST; insts[3].dst = 4U; insts[3].immediate = 0x40000000U;      /* takes r17 (free), NOT r16 */
-	insts[4].op = I915_VK_IR_FSUB; insts[4].dst = 5U; insts[4].src[0] = 1U; insts[4].src[1] = 4U;
-	insts[5].op = I915_VK_IR_STORE_OUTPUT; insts[5].src[0] = 5U;
-	error = i915_vk_compile(NULL, hand_ir(insts, 6U), &binary);
+	insts[0].op = I915_IR_LOAD_INPUT; insts[0].dst = 1U;                                   /* r16, read at 2 and 4 */
+	insts[1].op = I915_IR_LOAD_INPUT; insts[1].dst = 2U; insts[1].component = 1U;          /* r17, last read at 2 */
+	insts[2].op = I915_IR_FMUL; insts[2].dst = 3U; insts[2].src[0] = 1U; insts[2].src[1] = 2U;  /* r18 */
+	insts[3].op = I915_IR_CONST; insts[3].dst = 4U; insts[3].immediate = 0x40000000U;      /* takes r17 (free), NOT r16 */
+	insts[4].op = I915_IR_FSUB; insts[4].dst = 5U; insts[4].src[0] = 1U; insts[4].src[1] = 4U;
+	insts[5].op = I915_IR_STORE_OUTPUT; insts[5].src[0] = 5U;
+	error = drv_i915_shader_compile(hand_ir(insts, 6U), &binary);
 	assert(error == 0);
 	inst = body(binary) + 3U * 4U;
 	assert(inst_field(inst, EU_DST_REG_NR_HI, EU_DST_REG_NR_LO) == COMPILE_FIRST_VALUE_GRF + 1U);
@@ -262,45 +262,45 @@ test_register_lifetime(void)
 	assert(inst_field(inst, EU_SRC0_REG_NR_HI, EU_SRC0_REG_NR_LO) == COMPILE_FIRST_VALUE_GRF);       /* %1 still intact */
 	assert(inst_field(inst, EU_SRC1_REG_NR_HI, EU_SRC1_REG_NR_LO) == COMPILE_FIRST_VALUE_GRF + 1U);
 	assert(inst_bit(inst, EU_SRC1_NEGATE_BIT) == 1U);
-	i915_vk_shader_binary_free(binary);
+	drv_i915_shader_binary_free(binary);
 }
 
 /* an unknown IR operation, a value read before its definition, a push constant outside the block: no binary */
 static void
 test_not_lowered_ir_is_refused(void)
 {
-	struct i915_vk_inst insts[1];
-	struct i915_vk_shader_binary *binary;
+	struct i915_shader_ir_inst insts[1];
+	struct i915_shader_binary *binary;
 	int error;
 
 	memset(insts, 0, sizeof(insts));
-	insts[0].op = (enum i915_vk_ir_op)0x7fff;
+	insts[0].op = (enum i915_shader_ir_op)0x7fff;
 	insts[0].dst = 3U; insts[0].src[0] = 1U; insts[0].src[1] = 2U;
-	binary = (struct i915_vk_shader_binary *)1;
-	error = i915_vk_compile(NULL, hand_ir(insts, 1U), &binary);
+	binary = (struct i915_shader_binary *)1;
+	error = drv_i915_shader_compile(hand_ir(insts, 1U), &binary);
 	assert(error == ENOTSUP && binary == NULL);
 
 	memset(insts, 0, sizeof(insts));
-	insts[0].op = I915_VK_IR_FADD; insts[0].dst = 3U; insts[0].src[0] = 1U; insts[0].src[1] = 2U;
-	error = i915_vk_compile(NULL, hand_ir(insts, 1U), &binary);
+	insts[0].op = I915_IR_FADD; insts[0].dst = 3U; insts[0].src[0] = 1U; insts[0].src[1] = 2U;
+	error = drv_i915_shader_compile(hand_ir(insts, 1U), &binary);
 	assert(error == EINVAL && binary == NULL);
 
 	memset(insts, 0, sizeof(insts));
-	insts[0].op = I915_VK_IR_LOAD_PUSH; insts[0].dst = 3U; insts[0].immediate = 8U;   /* push_bytes is 8 */
-	error = i915_vk_compile(NULL, hand_ir(insts, 1U), &binary);
+	insts[0].op = I915_IR_LOAD_PUSH; insts[0].dst = 3U; insts[0].immediate = 8U;   /* push_bytes is 8 */
+	error = drv_i915_shader_compile(hand_ir(insts, 1U), &binary);
 	assert(error == EINVAL && binary == NULL);
 
 	/* more varyings than the registers below the URB handles hold (COMPILE_MAX_VARYINGS) */
 	{
-		struct i915_vk_inst many[5];
+		struct i915_shader_ir_inst many[5];
 		unsigned k;
 
 		memset(many, 0, sizeof(many));
-		many[0].op = I915_VK_IR_LOAD_PUSH; many[0].dst = 1U;
+		many[0].op = I915_IR_LOAD_PUSH; many[0].dst = 1U;
 		for (k = 1U; k < 5U; k++) {
-			many[k].op = I915_VK_IR_STORE_OUTPUT; many[k].src[0] = 1U; many[k].location = k - 1U;
+			many[k].op = I915_IR_STORE_OUTPUT; many[k].src[0] = 1U; many[k].location = k - 1U;
 		}
-		error = i915_vk_compile(NULL, hand_ir(many, 5U), &binary);
+		error = drv_i915_shader_compile(hand_ir(many, 5U), &binary);
 		assert(error == ENOTSUP && binary == NULL);
 	}
 }
@@ -315,12 +315,12 @@ test_vertex_shader_generates_eu(void)
 {
 	uint32_t *spv;
 	size_t words;
-	struct i915_vk_shader_ir *ir;
-	struct i915_vk_shader_binary *binary;
+	struct i915_shader_ir *ir;
+	struct i915_shader_binary *binary;
 
 	spv = load_spv("cuboid.vert.spv", &words);
-	assert(i915_vk_spirv_parse(spv, words, I915_VK_STAGE_VERTEX, &ir) == 0);
-	assert(i915_vk_compile(NULL, ir, &binary) == 0);
+	assert(drv_i915_shader_parse(spv, words, I915_STAGE_VERTEX, &ir, NULL) == 0);
+	assert(drv_i915_shader_compile(ir, &binary) == 0);
 	/*
 	 * one EU instruction to an IR instruction, plus: the prologue (4 header + 4 position + 4 for the one
 	 * varying), a sync.nop after each of the 4 MATHs, and the end -- URB write, sync.nop, handle copy, URB write
@@ -332,8 +332,8 @@ test_vertex_shader_generates_eu(void)
 	assert(binary->varying_count == 1U);
 	printf("  cuboid.vert.spv: %u IR instructions -> %u EU instructions, value registers r%u..r%u\n",
 		ir->instruction_count, binary->code_bytes / 16U, COMPILE_FIRST_VALUE_GRF, binary->grf_used - 1U);
-	i915_vk_shader_binary_free(binary);
-	i915_vk_spirv_free(ir);
+	drv_i915_shader_binary_free(binary);
+	drv_i915_shader_ir_free(ir);
 	free(spv);
 }
 
@@ -393,7 +393,7 @@ eu_model_source(const struct eu_model *m, const uint32_t *inst, int which, unsig
 
 /* Runs the words up to the terminating SEND; any other instruction is a test failure. */
 static void
-eu_model_run(struct eu_model *m, const struct i915_vk_shader_binary *binary)
+eu_model_run(struct eu_model *m, const struct i915_shader_binary *binary)
 {
 	unsigned count = binary->code_bytes / 16U, index, channel;
 
@@ -459,14 +459,14 @@ test_vertex_shader_eu_computes_the_shader(void)
 	const unsigned in0 = COMPILE_PAYLOAD_GRF + 1U;          /* after one register of push constants */
 	uint32_t *spv;
 	size_t words;
-	struct i915_vk_shader_ir *ir;
-	struct i915_vk_shader_binary *binary;
+	struct i915_shader_ir *ir;
+	struct i915_shader_binary *binary;
 	static struct eu_model m;
 	unsigned c, k, r;
 
 	spv = load_spv("cuboid.vert.spv", &words);
-	assert(i915_vk_spirv_parse(spv, words, I915_VK_STAGE_VERTEX, &ir) == 0);
-	assert(i915_vk_compile(NULL, ir, &binary) == 0);
+	assert(drv_i915_shader_parse(spv, words, I915_STAGE_VERTEX, &ir, NULL) == 0);
+	assert(drv_i915_shader_compile(ir, &binary) == 0);
 
 	/* every register starts as junk that differs per channel, so an unset read cannot look right */
 	for (r = 0U; r < 128U; r++)
@@ -507,16 +507,16 @@ test_vertex_shader_eu_computes_the_shader(void)
 		}
 	}
 	printf("  cuboid.vert.spv: the generated EU words compute gl_Position / texture_coordinate of the GLSL source for 8 vertices (instruction-semantics model, not hardware)\n");
-	i915_vk_shader_binary_free(binary);
-	i915_vk_spirv_free(ir);
+	drv_i915_shader_binary_free(binary);
+	drv_i915_shader_ir_free(ir);
 	free(spv);
 }
 
 int
 main(void)
 {
-	compile_shader("cuboid.frag.spv", I915_VK_STAGE_FRAGMENT, 0U);
-	compile_shader("cuboid.vert.spv", I915_VK_STAGE_VERTEX, 1U);
+	compile_shader("cuboid.frag.spv", I915_STAGE_FRAGMENT, 0U);
+	compile_shader("cuboid.vert.spv", I915_STAGE_VERTEX, 1U);
 	test_vertex_shader_generates_eu();
 	test_vertex_shader_eu_computes_the_shader();
 	test_fneg_and_push_operands();

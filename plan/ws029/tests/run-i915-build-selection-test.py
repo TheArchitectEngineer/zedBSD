@@ -15,7 +15,16 @@ TARGETS = (
     ("sun4u", "sparcv9", "sun4u", "SPARCV9_KERNEL_OBJS"),
     ("x68k", "m68k", "x68k", "X68K_KERNEL_OBJS"),
 )
-I915_OBJECTS = ("i915.o", "uncore.o", "ggtt.o", "ppgtt.o", "gem.o", "irq.o", "engine.o", "lrc.o", "request.o")
+# The i915 driver's sources live below this directory; objects are named by their path under it.
+I915_PREFIX = "src/drivers/gpu/i915/"
+# Objects every i915 kernel links: the PCI entry, the device, the core, the executor, the compiler, the display.
+I915_REQUIRED = ("i915.o", "device.o", "ppgtt.o", "command.o", "render/vulkan.o", "compiler/spirv.o", "display/display.o")
+
+
+def object_name(path):
+    """Returns an i915 object's path below src/drivers/gpu/i915/."""
+    index = path.index(I915_PREFIX)
+    return path[index + len(I915_PREFIX):]
 
 
 def main():
@@ -26,8 +35,9 @@ def main():
             "q314-gpu-selection:\n"
             "\t@printf '%s\\n' '$(KERN_GPU_SOURCES)' "
             "'$(filter %/gpu.o %/gpu-fence.o,$($(Q314_OBJECT_LIST)))' "
-            "'$(filter %/gpu/i915/i915.o %/gpu/i915/uncore.o %/gpu/i915/ggtt.o %/gpu/i915/ppgtt.o %/gpu/i915/gem.o %/gpu/i915/irq.o %/gpu/i915/engine.o %/gpu/i915/lrc.o %/gpu/i915/request.o %/gpu/i915/selftest.o,$($(Q314_OBJECT_LIST)))' "
-            "'$(filter %/gpu/venus/venus.o %/gpu/venus/transport.o %/gpu/venus/display.o %/gpu/venus/share.o,$($(Q314_OBJECT_LIST)))'\n"
+            "'$($(Q314_OBJECT_LIST))' "
+            "'$(filter %/gpu/venus/venus.o %/gpu/venus/transport.o %/gpu/venus/display.o %/gpu/venus/share.o,$($(Q314_OBJECT_LIST)))' "
+            "'$(AMD64_I915_SOURCES)'\n"
         )
         for platform, architecture, board, objects in TARGETS:
             for venus in ("n", "y"):
@@ -41,13 +51,16 @@ def main():
                             f"ZEDBSD_BOARD={board}",
                             f"CONFIG_DRIVER_PCI_VENUS={venus}",
                             f"CONFIG_DRIVER_PCI_I915={i915}",
+                            "I915_TESTS=n",
                             f"Q314_OBJECT_LIST={objects}", "q314-gpu-selection",
                         ], cwd=ROOT, text=True, capture_output=True, timeout=30,
                         check=True,
                     )
-                    lines = result.stdout.splitlines()
-                    assert len(lines) == 4, (platform, venus, i915, result.stdout)
-                    sources, gpu_objects, i915_objects, venus_objects = lines
+                    lines = result.stdout.split("\n")
+                    assert len(lines) == 6 and lines[5] == "", (platform, venus, i915, result.stdout)
+                    sources, gpu_objects, kernel_objects, venus_objects, i915_sources = lines[:5]
+                    # make's filter takes one wildcard, so the i915 objects are picked out here.
+                    i915_objects = [p for p in kernel_objects.split() if "/" + I915_PREFIX in p]
                     if venus == "n" and i915 == "n":
                         assert not sources and not gpu_objects, (platform, lines)
                     else:
@@ -56,9 +69,16 @@ def main():
                         ], (platform, sources)
                         assert len(gpu_objects.split()) == 2, (platform, gpu_objects)
                     # Only the amd64 kernel links either backend; other lists never gain them.
-                    names = sorted(pathlib.Path(p).name for p in i915_objects.split())
+                    names = sorted(object_name(p) for p in i915_objects)
                     if platform == "amd64" and i915 == "y":
-                        assert names == sorted(I915_OBJECTS), (platform, i915_objects)
+                        # Every i915 source of the build list is linked as one object, and nothing else is.
+                        expected = sorted(object_name(p)[:-2] + ".o" for p in i915_sources.split())
+                        assert names == expected, (platform, names, expected)
+                        missing = [name for name in I915_REQUIRED if name not in names]
+                        assert not missing, (platform, missing)
+                        # The production kernel links no test code.
+                        tests = [name for name in names if name.startswith("tests/")]
+                        assert not tests, (platform, tests)
                     else:
                         assert not names, (platform, i915_objects)
                     if platform == "amd64" and venus == "y":

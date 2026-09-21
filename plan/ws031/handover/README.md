@@ -19,7 +19,7 @@ zedBSD の parity 経路は、Linux 6.8.12 i915 の `i915_driver_probe()` 全経
 ### 2.1 試験（compute 陽性対照 C1）
 - RCS0 に、`PIPELINE_SELECT(GPGPU)` → `STATE_BASE_ADDRESS` → `MEDIA_VFE_STATE(MaxThreads=559)` → `MEDIA_INTERFACE_DESCRIPTOR_LOAD` → `GPGPU_WALKER(1×1×1, SIMD8, 1 thread)` → `MEDIA_STATE_FLUSH` → post-sync `PIPE_CONTROL` → marker、という batch を投入する。
 - カーネル（36 dword、Mesa `brw_compile_cs` 出力）は **無条件の A64 store（0xc0ffee02 → VA 0x100400c20）→ `send.ts EOT`**。
-- 共有ページ VA `0x100400000`（IDD @896、カーネル @1024、marker @0xc00/0xc20/0xc28/0xc30）、batch VA `0x100401000`。全 DW 値は [`notes/compute-control-design.md`](notes/compute-control-design.md) と `src/drivers/gpu/i915/parity/eu_test.c`。
+- 共有ページ VA `0x100400000`（IDD @896、カーネル @1024、marker @0xc00/0xc20/0xc28/0xc30）、batch VA `0x100401000`。全 DW 値は [`notes/compute-control-design.md`](notes/compute-control-design.md) と `src/drivers/gpu/i915/parity/eu_test.c`（2026-09-22 の再構築後は `src/drivers/gpu/i915/tests/execution/eu-test.c`、§7）。
 - この batch/カーネル/IDD/VA は、Linux i915 上で `EXECBUFFER2`（softpin、同一 VA）により **完走が実証済み**（E-25、[`linuxvm/linux-c2-replay.c`](linuxvm/linux-c2-replay.c)）。
 
 ### 2.2 zedBSD での署名（E-97、parity 完走後の GT 上）
@@ -63,7 +63,7 @@ E-98 の再停止後、実際に提出した batch（`increment-results/e98-batc
 
 ### 2.6 E-102／E-103: 描画の再利用確認とテクスチャ描画
 - **E-102（R1）**: 1 回の P0〜P7 の後、12 提出を順に実行（`PARITY_R1_TEST=1`）: context A draw×4／B draw×2／C draw→C1→draw／A C1→B draw→A C1。全 step で marker・1024 画素（RT は毎回 0x5a5a5a5a で初期化）・HWSP 生値・park が成立、reset なし。draw の state 頁と C1 の shared 頁は同じ VA で、完了・park 後に CPU が頁全体を書き換える。
-- **E-103（T1＋T2）**: 8×8 R8G8B8A8_UNORM texture を nearest／LOD 0／clamp で 32×32 RT へ描く fixture。PS・prog_data・texture layout・RSS・SAMPLER_STATE・変更 packet 語はすべて `tools/reftex.c`（固定 Mesa @ab691a1c: brw_compile_fs＋isl＋genxml gen120）が生成 → `src/drivers/gpu/i915/tex_fixture_gen.inc`。独立起動（`PARITY_TEX_TEST=1`）で **1024/1024 画素一致、texture・guard 無変更、request 完了、reset なし**。1 回目は generator の誤り（画素座標の内部命令を直書き → compiler が X/Y 導出コードを出さず UV が常に 0）で全画素 texel(0,0)。front-end 形（gl_FragCoord）に直し、compiler が要求する source depth／W・GRF start 4 を state に反映して合格。
+- **E-103（T1＋T2）**: 8×8 R8G8B8A8_UNORM texture を nearest／LOD 0／clamp で 32×32 RT へ描く fixture。PS・prog_data・texture layout・RSS・SAMPLER_STATE・変更 packet 語はすべて `tools/reftex.c`（固定 Mesa @ab691a1c: brw_compile_fs＋isl＋genxml gen120）が生成 → `src/drivers/gpu/i915/tex_fixture_gen.inc`（再構築後は `src/drivers/gpu/i915/tests/fixtures/tex-fixture-gen.inc`）。独立起動（`PARITY_TEX_TEST=1`）で **1024/1024 画素一致、texture・guard 無変更、request 完了、reset なし**。1 回目は generator の誤り（画素座標の内部命令を直書き → compiler が X/Y 導出コードを出さず UV が常に 0）で全画素 texel(0,0)。front-end 形（gl_FragCoord）に直し、compiler が要求する source depth／W・GRF start 4 を state に反映して合格。
 - 回帰 pin（GPU-free）: C1 batch FNV 5dfb47d3c10b0560、単色 draw batch FNV 241f478201bb3a81（実機 PASS bytes）。出典台帳 `../provenance-ledger.md`。
 - **E-104（T3）**: `PARITY_T3_TEST=1`、1 起動 9 提出。texture A の内容更新、A↔B の binding 切替（binding table entry 1 の 1 dword だけが変わる）、同一 context の再描画、新規 context、別 context 後の旧 context。全 step 1024/1024、texture・guard 無変更、host 独立検証 9/9（`tools/eu_artifact.py verify-t3`）。vmunix f9731b24、ktest 383/0。
 - **計画更新（2026-09-18）**: E-104 は「オフスクリーン描画の基準が完成」。機能追加は止めず、順に 残り 4 モードの回帰 → bilinear → LCD 参照確定・native 事前確認 → 通常稼働の寿命管理＋ディスプレイ／LCD（hotswap は入口と安全な下位処理まで）→ libvulkan 接続 → Vulkan アプリから LCD 表示 → native 総合受入 → 最後に著作権整理・`osdep_` 改名・`parity/` 整理。出典・元表示の保持だけは今から進める（入力: `../provenance-ledger.md`、`../license-inventory.md`）。基準は `../regression-baseline.md`（オフスクリーン基準。後で LCD 基準・Vulkan アプリ基準を追加）。
@@ -121,6 +121,8 @@ E-98 の再停止後、実際に提出した batch（`increment-results/e98-batc
 - 試験: `sh plan/ws031/tests/run-lcd-modeset-host-test.sh`（A 正常／B 前半失敗／C arm 後の異常）。
 
 ## 3. 現在地（コードの状態）
+
+**2026-09-22 以降**: ドライバは再構築され、parity 経路が唯一の本番構成になった（§7）。`CONFIG_DRIVER_PCI_I915=y` で build し、GPU node を公開する。試験は `I915_TESTS=y` の試験 build と `-DI915_TEST_SCENARIO=<name>` で選ぶ。以下の箇条は 2026-09-18 時点の記録で、ファイル名とフラグは旧ツリー（`src/drivers/gpu/i915-old/`）のもの。
 
 - parity 経路は `CONFIG_DRIVER_PCI_I915_PARITY=y` でビルドしたときだけ有効（`src/drivers/gpu/i915/i915.c` の `#if CONFIG_DRIVER_PCI_I915_PARITY` で通常 attach を止め、runner に登録）。GPU は **公開されない診断経路**（`/dev/gpu0` は出ない）。
 - runner（`parity/runner.c`）：起動後の readiness で 1 スレッドを起動し、GPU があれば **attach（probe P0〜P7）→ teardown → ktest**、無ければ ktest のみ。結果は `runner-result:` 行。
@@ -201,25 +203,32 @@ python3 plan/ws025/tests/run-memory-host.py plan/ws025/temp/<出力dir>   # メ�
 3. `grep -n "EU-TEST\|dump(eu-test)" run-parity.log`。期待（現状）：§2.2 の HANG 署名。PASS なら `eu=c0ffee02 done=c0ffee20 cs=c0ffee30`。
 4. 試験は `parity/eu_test.c`（`parity_eu_test_run`）。batch 生成は `parity_eu_test_build_batch()`（GPU-free 試験 `EU-BATCH` で語順を照合）。hang dump を増やすなら `parity_eu_test_run()` 末尾の `kern_logf` に追加。
 
-## 7. コード地図（`src/drivers/gpu/i915/parity/`）
+## 7. コード地図（`src/drivers/gpu/i915/`、2026-09-22 の再構築後）
 
-正本は `plan/ws031/linux-parity/linux-reference/ubu-i915-src/`（Ubuntu 6.8.0-139 ＝ upstream v6.8.12。取得記録 `manifest.txt` と参照 kernel config `config-6.8.0-139-generic` は親ディレクトリ `linux-reference/`）。各ファイル冒頭コメントに対応する正本関数と「記録した適応」を書いてある。
+2026-09-22 にドライバを再構築した（[計画](../i915-rebuild-plan.md)）。旧ツリー（本書 §1〜§6 が指す `parity/`、`vk/`、`linux/`、big-bang 期の
+`*.c`）は `src/drivers/gpu/i915-old/` に待避してあり、専門家レビューの参照用で build には入らない。旧ファイル・旧関数から新しい置き場への
+対応は [被覆監査](../i915-rebuild-coverage.md) §2（ファイル別）と §3（関数別）、移行の要点は計画 §5 にある。本番は一つの構成だけで
+（旧 resident 表示構成が既定）、`CONFIG_DRIVER_PCI_I915=y` で build される（`platform/amd64/vmunix.mk` の `AMD64_I915_SOURCES`）。
 
-| 領域 | ファイル | 正本の対応 |
+正本は従来どおり `plan/ws031/linux-parity/linux-reference/ubu-i915-src/`（Ubuntu 6.8.0-139 ＝ upstream v6.8.12）。Linux から書き直した
+ファイルは冒頭に元の copyright と permission notice を保持する（[出典台帳](../provenance-ledger.md) §0、[licence 棚卸し](../license-inventory.md)）。
+
+| 領域 | ファイル | 正本・旧ツリーとの対応 |
 |---|---|---|
-| 入口・順序 | `probe.c`（P0〜P7 を実行順に配線、~1900 行）, `runner.c`, `parity.h` | `i915_driver_probe` |
-| 適応層 | `osdep/{pci,mmio,dma,sync,runtime_pm,firmware,trace}.{c,h}`, `backend_{pci,mmio,sync,dma}.c` | uncore/forcewake（`gt_fw_ranges.inc`＝`__gen12_fw_ranges` 生成）, DMA API, completion/waitq, runtime PM |
-| P1 GT MMIO | `gt_mmio.{c,h}` | `intel_gt_init_mmio`（engine mask, SSEU, fuses） |
-| P1 reset / 待機 / PCODE | `reset.{c,h}`, `wait.{c,h}`, `pcode.{c,h}`, `timer_calc.c` | `intel_gt_reset`, `wait_for`, `skl_pcode_request` |
-| P2 DRAM/BW/OpRegion/VBT | `dram_bw.{c,h}`, `bios.{c,h}` | `intel_dram_detect`, `intel_bw_init_hw`, `intel_bios_init` |
-| P3 表示電源 | `power_domains.{c,h}`（xelpd 30 wells, DC_off ops）, `display_core.{c,h}`（`icl_display_core_init`）, `combo_phy.c`, `cdclk.c`, `pch.c`, `vga.c`, `dmc.c` + `firmware_adlp_dmc.c` | `intel_power_domains_init/init_hw`, DMC ロード |
-| P4 IRQ | `irq.{c,h}` | `intel_irq_install`（gen11 reset/postinstall/handler, MSI 分離） |
-| P5 表示 nogem | `display_state.{c,h}`, `display_nogem.{c,h}`, `drm_device.c` | `intel_display_driver_probe_nogem`（readout/sanitize、DRM object model は最小表現） |
-| P6 GT | `gt_init.h`, `gt_init_base.c`, `gt_wa_adlp.c`（WA 表/MOCS/RC6/RPS）, `gt_mem.{c,h}`（GT object・GGTT 窓・ppgtt）, `gt_engine.{c,h}`（HWSP/ELSQ/CSB）, `gt_lrc.{c,h}` + `gt_lrc_offsets.inc`（context image・indirect ctx BB）, `gt_request.{c,h}`（flush/LRI/breadcrumb）, `gt_submit.{c,h}`（ELSQ 投入・CSB）, `gt_resume.{c,h}`（`intel_engines_init`/`intel_gt_resume`）, `gt_defaults.{c,h}`（`__engines_record_defaults`）, `gt_verify_wa.{c,h}`, `gt_migrate.{c,h}` | `intel_gt_init` 一式（execlists） |
-| P7 | `pxp.{c,h}`, `driver_probe.{c,h}` | `intel_pxp_init`, `intel_display_driver_probe`, `i915_driver_register` |
-| 試験 | `ktest.{c,h}`（GPU-free、fake MMIO/PCODE/CSB、367 checks）, `eu_test.{c,h}` | — |
+| 登録・起動 | `i915.c`（PCI driver、attach／detach、ops の bind）、`device.c`・`device.h`（readiness、起動列 P0–P7、forcewake の取得順）、`gt.h` | `i915_driver_probe`。旧 `probe.c`＋`runner.c`、旧 `i915.c` の登録 |
+| 基盤 | `mmio.c`（register access、forcewake、`data/forcewake-ranges.inc`）、`pci.c`、`dma.c`、`runtime-pm.c`、`firmware.c`、`sync.c`（時間・待ち・completion）、`workqueue.c`（work／delayed work）、`trace.c` | uncore、DMA API、completion／waitq、runtime PM。旧 `parity/osdep/*`、`backend_*.c`、`wait.c` |
+| GT 情報・電源・reset | `device-info.c`（engine mask、SSEU、fuse）、`power.c`（PCODE）、`gt-power.c`（RC6／RPS）、`reset.c`、`tlb.c` | `intel_gt_init_mmio`、`skl_pcode_request`、`intel_rc6`／`intel_rps`、`intel_gt_reset`。旧 `gt_mmio.c`、`pcode.c`、`reset.c`、`gt_tlb.c` |
+| workaround | `workarounds.c`（GT／engine／context WA、whitelist、MOCS、PAT）、`verify-workarounds.c` | `intel_workarounds.c`、`intel_mocs.c`。旧 `gt_init_base.c`＋`gt_wa_adlp.c`、`gt_verify_wa.c` |
+| memory | `memory.c`（memory object）、`ggtt.c`（GGTT 窓、PTE encode）、`ppgtt.c` | `gen8_ppgtt.c` ほか。旧 `gt_mem.c`、`pte.c`、legacy `gem.c`／`ppgtt.c` |
+| engine・実行 | `engine.c`、`context.c`（context image、`data/i915-lrc-offsets.inc`）、`request.c`、`submit.c`（execlists、CSB）、`defaults.c`（`__engines_record_defaults`）、`migrate.c`、`pxp.c`、`irq.c`（GT 側と top-level handler） | `intel_gt_init` 一式（execlists）。旧 `gt_engine.c`、`gt_lrc.c`、`gt_request.c`、`gt_submit.c`、`gt_resume.c`、`gt_defaults.c`、`gt_migrate.c`、`pxp.c`、`irq.c` の GT 半分 |
+| GPU node の ops | `session.c`、`resource.c`、`command.c`、`job.c`、`request-queue.c`、`worker.c`（request worker、serving thread） | 旧 `i915.c` の ops、legacy `request.c`、`legacy_shim.c` |
+| 表示 | `display/`: `display.c`（段階関数と入口）、`power.c`、`clock.c`（CDCLK、DPLL）、`phy.c`、`dmc.c`、`modeset.c`・`state.c`、`pipe.c`、`plane.c`、`scanout.c`、`present.c`、`vblank.c`、`interrupts.c`、`ddi.c`、`dp.c`・`dp-sink.c`、`aux.c`、`panel.c`・`panel-backlight.c`、`edid.c`・`edid-read.c`、`hdmi.c`・`hdmi-mode.c`、`gmbus.c`、`vbt.c`、`opregion.c`、`takeover.c`、`hotplug.c`、`watermark.c`、`color.c`、`diagnostics.c`。環境ヘッダ `*-internal.h`、`vbt.h`。定義は `data/display-*.inc` | `intel_display_*`、`intel_ddi.c`、`intel_dp*.c`、`intel_pps.c`、`intel_bios.c`、`intel_opregion.c`、`skl_*.c` ほか。旧 `parity/` の表示系（`power_domains.c`、`cdclk.c`、`display_*.c`、`dmc.c`）と `parity/{lcd,dp,vbt}/` |
+| compiler | `compiler/spirv.c`（SPIR-V → scalar IR）、`compile.c`（IR → Gen12 EU）、`eu.c`（命令 encoder、`data/eu-encoding-gen12.inc`） | 独立実装。旧 `vk/spirv.c`、`compile.c`、`eu.c` |
+| render（Vulkan executor） | `render/`: `vulkan.c`・`dispatch.c`（opcode の振分け）、`transport.c`・`codec.c`（`data/vulkan-codec.inc`、`handover/tools/gen_vk_server_codec.py` が生成）、`instance.c`、`objects.c`・`object.c`・`memory.c`・`image.c`・`descriptor.c`、`pipeline.c`・`pipeline-prepare.c`・`render-pass.c`、`command.c`（command buffer と記録）、`state.c`・`batch.c`・`draw.c`・`blit.c`・`math.c`、`fence.c`・`sync.c`、`reply.c` | 独立実装。旧 `vk/`（libvulkan から到達する部分だけ。到達しない `res`／`pipe`／`cmdbuf`／`wsi`／`display` は廃止、計画 §5.1） |
+| data | `data/`: Linux／Mesa 由来の定義と表（`i915-*.inc` は `plan/ws029/tests/gen-inc.py`、`forcewake-ranges.inc` は `handover/tools/gen_fw_ranges.py` が生成。`display-*.inc` は手で管理）、`data/firmware/`（DMC と対象機 VBT の byte 配列）、`data/provenance/`（旧表示生成器の manifest） | 旧 `linux/*.inc`、`vk/linux/*.inc`、`parity/firmware_*.c`、`parity/*_ranges.inc` など |
+| 試験 | `tests/`（`contracts/`、`execution/`、`display/`、`render/`、`fixtures/`）。試験 build は `I915_TESTS=y`＋`-DI915_TEST_SCENARIO=<name>`（`vmunix.mk`）。host 試験は `plan/ws031/tests/`。S5 で移設中 | 旧 `parity/ktest.c`、`eu_test.c`、`parity/tests/`、`dp_fake_hw.c`、`lcd_*ktest.c` ほか |
 
-big-bang 期の自作ドライバ（`src/drivers/gpu/i915/*.c`、`selftest.c` に C0/C1/C2/golden の実装）は同じツリーにあり、parity 無効ビルドで動く。parity はそれを置き換える別経路（P2 の GGTT/WC 窓など一部資産を流用）。
+本書 §2〜§6 のビルドフラグ（`CONFIG_DRIVER_PCI_I915_PARITY`、`PARITY_*_TEST`）と `parity/` のファイル名は旧ツリーのもので、新ツリーのソースは参照しない（`Makefile` に `CONFIG_DRIVER_PCI_I915_PARITY` の定義だけが残っている）。
 
 ## 8. 規約・制約（前任から引き継ぐもの）
 
@@ -245,7 +254,7 @@ big-bang 期の自作ドライバ（`src/drivers/gpu/i915/*.c`、`selftest.c` �
 - 前任専門家の指示書 [`expert-reports/gen12-ps-hang-report*.md`](expert-reports/)（1〜29）と進捗報告 `report_35..53.md`、`ws031-report-30..34.md`。**E-31 以降の方針（Linux-parity 移植）は report 30〜34 と gen12-ps-hang-report27〜29 に経緯がある。**
 - 設計メモ [`notes/`](notes/)：`compute-control-design.md`（C1 の全 DW）、`roadmap-to-eu-test.md`（P3→EU 試験の工程）、`plan-p5-nogem.md`、`plan-p6-gem-gt-init.md`、`hal-h-proposed-diff.md`。
 - 増分結果メモ [`increment-results/`](increment-results/)：`e10..e27-results.md`（big-bang 期の各試験の生データ）、`report-e86..e97-*.md`（parity 期の報告書）。
-- 生成ツール [`tools/`](tools/)：`gen_lrc_offsets.py`（`gt_lrc_offsets.inc` を正本 `intel_lrc.c` から生成）、`gen_fw_ranges.py`（`gt_fw_ranges.inc`）、`gen_refcs*.py`/`gen_refps_marker.py`（Mesa `build-gentool` でカーネルを生成、`plan/ws031/mesa-refs/`）、`engine_sseu.py`、`make_reloc_image.sh`（`zedbsd.cfg` を差し替えた試験用イメージの作り方）。
+- 生成ツール [`tools/`](tools/)：`gen_fw_ranges.py`（`src/drivers/gpu/i915/data/forcewake-ranges.inc` を正本 `intel_uncore.c` から生成）、`gen_vk_server_codec.py`（`data/vulkan-codec.inc`）、`check_generated.sh`（両者を一時 directory へ再生成して byte 比較）、`gen_refcs*.py`/`gen_refps_marker.py`（Mesa `build-gentool` でカーネルを生成、`plan/ws031/mesa-refs/`）、`make_reloc_image.sh`（`zedbsd.cfg` を差し替えた試験用イメージの作り方）、調査用 `license_inventory.py`・`notice_map.py`・`vk_opcode_survey.py`（新ツリーを読む）。旧ツリーへ書く生成器（`gen_lrc_offsets.py`、`engine_sseu.py`、`port_*.py`）は [`tools/retired/`](tools/retired/)（理由は同 README）。
 - Mesa 参照 `plan/ws031/mesa-refs/`（gentool/refcs/refps の standalone ビルド）。
 - 参照メモリ配置と `kernel_phys=`：`docs/howto/boot-and-storage.md`。
 

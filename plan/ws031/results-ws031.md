@@ -4061,3 +4061,29 @@ Date: 2026-09-21. 画素に CPU が触れる経路を、vkdemo の描画・表�
 1. 表示は同期（present は flip 完了まで戻らない）、一度に 1 つの表示 address space、map した VA 範囲は再利用しない。
 2. 共有は同一 device のみ（cross-device DMA-BUF なし）。vkAllocateMemory の external-memory 宣言は読むだけ。
 3. rect: mirrored blit 拒否、depth の copy 不可、stencil 書かない、render area を無視して全面 clear、1 op = 1 batch の同期実行。
+
+## E-131 — i915 再構築（S0–S4）: 旧ツリーを待避して関数ごとに書き直し、E-130 を新ツリーで再現（実機 PASS）
+
+Date: 2026-09-22. 専門家案（i915-refactoring-*.md）に基づくユーザー決定: src/drivers/gpu/i915 を i915-old へ待避し、関数ごとにコピーしながら plan/coding-style.md へ全面準拠で書き直す（表示の Linux 移植も含む）。計画・規則・分担・報告は i915-rebuild-plan.md、i915-rebuild-rules.md、i915-rebuild-s1.md / s3.md / s4.md と各 reports。
+
+| 段階 | 内容 | 実機・host の結果 |
+|---|---|---|
+| S0 | 待避、skeleton（PCI 登録、readiness と start worker） | attach → readiness → start worker |
+| S1 | 共通部（mmio/forcewake、pci、dma、sync/workqueue、GT 情報・reset・PCODE、workaround・RC6/RPS、memory/GGTT/PPGTT、engine/context/request/execlists、irq の GT 半分、ops、request worker） | GT 初期化完走、record_defaults / verify_workarounds PASS（mismatch 0）、node 公開 |
+| S2 | compiler | kernel md5 と 42 万行の出力が旧と一致、gentool PASS |
+| S3 | render（Vulkan executor、fence） | vkdemo offscreen frame 1 = 7523debe…05ff、独立オラクル PASS |
+| S4 | display（8 並行 package＋統合） | 共有 route 静止フレーム 94615464…19b1（E-130 と同一）、LCD-B 17/17、40 s 695 frame ended PASS、写真 handover/vk-e127/vkdemo-5330-lcd-rebuild-s4.jpg |
+
+移動は挙動を変えない方針。旧 legacy の uncore/ggtt/engine/lrc/irq は本番から到達しないため廃止。旧 vk の res/pipe/cmdbuf/sync/wsi/display は vkdemo から fence（sync の 35–38）だけが到達するため fence のみ移植。未解決は XXX として各 reports に列挙（表示版数 13 固定、DVO_PORT/DPT の食い違い、少数の file-scope 状態ポインタ、GPL-2.0 由来の ACPI 部分）。S5（試験の移設）と旧ツリー削除が残り。
+
+## E-132 — i915 再構築 S5: 試験の移設（host・実機とも PASS）、専門家レビュー待ち
+
+Date: 2026-09-22. 試験を src/drivers/gpu/i915/tests/ と plan/ws031/tests/ へ移した。本番は weak な drv_i915_test_after_start だけを持ち、試験 build（I915_TESTS=y）の runner が I915_TEST_SCENARIO で試験を選ぶ。
+
+| 区分 | 結果 |
+|---|---|
+| host | vk fixture 全一覧（通常＋ASan/UBSan）、gentool、analyzer、表示 5 script（dp 72、lcd 56、lcd-modeset 123、opregion 12、native-decide 14、旧と出力同一）、contract 6 本、ws029 ppgtt/stream、build-selection（従来 FAIL→PASS）、check_generated |
+| 実機 | ktest 382/0（13 skip）、eu（batch 5dfb47d3c10b0560、EU-REPEAT 5/5）、draw 1024/1024、r1 12/12、tex 1024/1024、t3 9/9、bl 4/4（旧台帳 E-99〜E-105 と一致）、display_ktest 182/0（1 skip）、LCD-B 17/17、LCD-C 4/4 flip、LCD-D 8 draw/7 flip |
+| 本番回帰 | offscreen 7523debe…05ff、共有 route 静止 94615464…19b1、ended PASS |
+
+未実行の実機シナリオ: lcdr、lcdo、lcdg、hdmib、dual、dual_share、aux、hdmi_edid、hdmi_hpd。廃止: N1（本番 switch が要る）、opregion fwtest、legacy selftest、参照 kernel build。対応表 i915-rebuild-coverage.md（旧 2,988 関数・378 ファイルの行き先）。i915-old は専門家レビューの参照用に残す（ユーザー決定）。

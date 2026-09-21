@@ -2,7 +2,7 @@
 """WS031: first-pass inventory for the licence / provenance work.  Facts only:
 per file, what header it carries and which upstream it says it follows.  No judgement."""
 import os, re, subprocess, sys
-root = os.path.expanduser("~/zedBSD")
+root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))  # this repository
 base = "src/drivers/gpu/i915"
 rows = []
 for d, _, fs in os.walk(os.path.join(root, base)):

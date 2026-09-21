@@ -45,7 +45,7 @@ kern_free(void *pointer)
 	free(pointer);
 }
 
-#include "../../../src/drivers/gpu/i915/vk/spirv.c"
+#include "../../../src/drivers/gpu/i915/compiler/spirv.c"
 
 /* ------------------------------------------------------------------ the IR interpreter */
 
@@ -89,7 +89,7 @@ float_to_bits(float value)
 
 /* Runs the IR; asserts the SSA discipline (defined once, defined before read). */
 static void
-run_ir(const struct i915_vk_shader_ir *ir, struct machine *m)
+run_ir(const struct i915_shader_ir *ir, struct machine *m)
 {
 	float *value = calloc(ir->value_count + 4U, sizeof(*value));
 	uint8_t *defined = calloc(ir->value_count + 4U, 1U);
@@ -99,16 +99,16 @@ run_ir(const struct i915_vk_shader_ir *ir, struct machine *m)
 	memset(m->output, 0, sizeof(m->output));
 	memset(m->written, 0, sizeof(m->written));
 	for (index = 0U; index < ir->instruction_count; index++) {
-		const struct i915_vk_inst *inst = &ir->instructions[index];
+		const struct i915_shader_ir_inst *inst = &ir->instructions[index];
 		unsigned sources = 0U, results = 1U, slot;
 		float a, b, rgba[4];
 
 		switch (inst->op) {
-		case I915_VK_IR_STORE_OUTPUT: sources = 1U; results = 0U; break;
-		case I915_VK_IR_FNEG: case I915_VK_IR_SIN: case I915_VK_IR_COS: case I915_VK_IR_RSQ: sources = 1U; break;
-		case I915_VK_IR_FADD: case I915_VK_IR_FSUB: case I915_VK_IR_FMUL: sources = 2U; break;
-		case I915_VK_IR_SAMPLE: sources = 2U; results = 4U; break;
-		case I915_VK_IR_CONST: case I915_VK_IR_LOAD_INPUT: case I915_VK_IR_LOAD_PUSH: break;
+		case I915_IR_STORE_OUTPUT: sources = 1U; results = 0U; break;
+		case I915_IR_FNEG: case I915_IR_SIN: case I915_IR_COS: case I915_IR_RSQ: sources = 1U; break;
+		case I915_IR_FADD: case I915_IR_FSUB: case I915_IR_FMUL: sources = 2U; break;
+		case I915_IR_SAMPLE: sources = 2U; results = 4U; break;
+		case I915_IR_CONST: case I915_IR_LOAD_INPUT: case I915_IR_LOAD_PUSH: break;
 		default: assert(!"IR operation the interpreter does not know"); break;
 		}
 		for (k = 0U; k < sources; k++)
@@ -121,30 +121,30 @@ run_ir(const struct i915_vk_shader_ir *ir, struct machine *m)
 		b = sources >= 2U ? value[inst->src[1]] : 0.0f;
 
 		switch (inst->op) {
-		case I915_VK_IR_CONST: value[inst->dst] = bits_to_float(inst->immediate); break;
-		case I915_VK_IR_LOAD_INPUT:
+		case I915_IR_CONST: value[inst->dst] = bits_to_float(inst->immediate); break;
+		case I915_IR_LOAD_INPUT:
 			assert(inst->location < SLOTS && inst->component < 4U);
 			value[inst->dst] = m->input[inst->location][inst->component];
 			break;
-		case I915_VK_IR_LOAD_PUSH:
+		case I915_IR_LOAD_PUSH:
 			assert(inst->immediate + 4U <= sizeof(m->push) && inst->immediate + 4U <= ir->push_bytes);
 			memcpy(&value[inst->dst], m->push + inst->immediate, 4U);
 			break;
-		case I915_VK_IR_STORE_OUTPUT:
-			slot = inst->location == I915_VK_IR_LOCATION_POSITION ? SLOT_POSITION : inst->location;
+		case I915_IR_STORE_OUTPUT:
+			slot = inst->location == I915_IR_LOCATION_POSITION ? SLOT_POSITION : inst->location;
 			assert(slot < SLOTS && inst->component < 4U);
-			assert(inst->location == I915_VK_IR_LOCATION_POSITION || inst->location < SLOT_POSITION);
+			assert(inst->location == I915_IR_LOCATION_POSITION || inst->location < SLOT_POSITION);
 			m->output[slot][inst->component] = a;
 			m->written[slot][inst->component]++;
 			break;
-		case I915_VK_IR_FADD: value[inst->dst] = a + b; break;
-		case I915_VK_IR_FSUB: value[inst->dst] = a - b; break;
-		case I915_VK_IR_FMUL: value[inst->dst] = a * b; break;
-		case I915_VK_IR_FNEG: value[inst->dst] = -a; break;
-		case I915_VK_IR_SIN: value[inst->dst] = sinf(a); break;
-		case I915_VK_IR_COS: value[inst->dst] = cosf(a); break;
-		case I915_VK_IR_RSQ: value[inst->dst] = 1.0f / sqrtf(a); break;
-		case I915_VK_IR_SAMPLE:
+		case I915_IR_FADD: value[inst->dst] = a + b; break;
+		case I915_IR_FSUB: value[inst->dst] = a - b; break;
+		case I915_IR_FMUL: value[inst->dst] = a * b; break;
+		case I915_IR_FNEG: value[inst->dst] = -a; break;
+		case I915_IR_SIN: value[inst->dst] = sinf(a); break;
+		case I915_IR_COS: value[inst->dst] = cosf(a); break;
+		case I915_IR_RSQ: value[inst->dst] = 1.0f / sqrtf(a); break;
+		case I915_IR_SAMPLE:
 			fake_texture(inst->location, inst->immediate, a, b, rgba);
 			for (k = 0U; k < 4U; k++)
 				value[inst->dst + k] = rgba[k];
@@ -229,11 +229,11 @@ begin_module(void)
 }
 
 static int
-end_module(struct i915_vk_shader_ir **ir, struct i915_vk_spirv_diag *diag)
+end_module(struct i915_shader_ir **ir, struct i915_compile_diagnostic *diag)
 {
 	op(253U, 0U);
 	op(56U, 0U);
-	return i915_vk_spirv_parse_diag(mod, mod_n, I915_VK_STAGE_FRAGMENT, ir, diag);
+	return drv_i915_shader_parse(mod, mod_n, I915_STAGE_FRAGMENT, ir, diag);
 }
 
 static void
@@ -268,8 +268,8 @@ expect_out(const struct machine *m, unsigned slot, float x, float y, float z, fl
 static void
 test_local_store_load_overwrite(void)
 {
-	struct i915_vk_shader_ir *ir;
-	struct i915_vk_spirv_diag diag;
+	struct i915_shader_ir *ir;
+	struct i915_compile_diagnostic diag;
 	struct machine m;
 
 	begin_module();
@@ -286,7 +286,7 @@ test_local_store_load_overwrite(void)
 	set_inputs(&m);
 	run_ir(ir, &m);
 	expect_out(&m, 0U, 5.0f, 2.0f, 3.0f, -3.0f);
-	i915_vk_spirv_free(ir);
+	drv_i915_shader_ir_free(ir);
 	printf("  local: store 5 / load / store 2 / load -> (5, 2), 5-2 = 3, 2-5 = -3\n");
 }
 
@@ -294,8 +294,8 @@ test_local_store_load_overwrite(void)
 static void
 test_vector_construct_extract_shuffle(void)
 {
-	struct i915_vk_shader_ir *ir;
-	struct i915_vk_spirv_diag diag;
+	struct i915_shader_ir *ir;
+	struct i915_compile_diagnostic diag;
 	struct machine m;
 
 	begin_module();
@@ -319,7 +319,7 @@ test_vector_construct_extract_shuffle(void)
 	run_ir(ir, &m);
 	expect_out(&m, 0U, 8.0f, 4.0f, 2.0f, 1.0f);
 	expect_out(&m, 1U, 10.0f, 9.0f, 24.0f, 9.0f);
-	i915_vk_spirv_free(ir);
+	drv_i915_shader_ir_free(ir);
 	printf("  vector: (1,2,4,8) extracted, reversed, shuffled and rebuilt without losing a component\n");
 }
 
@@ -327,8 +327,8 @@ test_vector_construct_extract_shuffle(void)
 static void
 test_component_access(void)
 {
-	struct i915_vk_shader_ir *ir;
-	struct i915_vk_spirv_diag diag;
+	struct i915_shader_ir *ir;
+	struct i915_compile_diagnostic diag;
 	struct machine m;
 
 	begin_module();
@@ -360,7 +360,7 @@ test_component_access(void)
 	run_ir(ir, &m);
 	expect_out(&m, 0U, 1.0f, 2.0f, 16.0f, 8.0f);
 	expect_out(&m, 1U, 8.0f, 5.0f, 16.0f, 2.0f);
-	i915_vk_spirv_free(ir);
+	drv_i915_shader_ir_free(ir);
 	printf("  access chain: one component of a local overwritten, inputs / outputs addressed by component\n");
 }
 
@@ -368,8 +368,8 @@ test_component_access(void)
 static void
 test_dot_negate_scale(void)
 {
-	struct i915_vk_shader_ir *ir;
-	struct i915_vk_spirv_diag diag;
+	struct i915_shader_ir *ir;
+	struct i915_compile_diagnostic diag;
 	struct machine m;
 	static const float a[4] = { 1.0f, 2.0f, 3.0f, 4.0f };
 
@@ -392,7 +392,7 @@ test_dot_negate_scale(void)
 	run_ir(ir, &m);
 	expect_out(&m, 0U, 70.0f, -70.0f, 65.0f, -65.0f);
 	expect_out(&m, 1U, -10.0f, -24.0f, -42.0f, -64.0f);
-	i915_vk_spirv_free(ir);
+	drv_i915_shader_ir_free(ir);
 	printf("  arithmetic: dot = 70, negate = -70, 70-5 = 65, 5-70 = -65, vector * scalar per component\n");
 }
 
@@ -400,8 +400,8 @@ test_dot_negate_scale(void)
 static void
 test_refusals(void)
 {
-	struct i915_vk_shader_ir *ir;
-	struct i915_vk_spirv_diag diag;
+	struct i915_shader_ir *ir;
+	struct i915_compile_diagnostic diag;
 
 	/* a load of a local (component) that was never stored */
 	begin_module();
@@ -476,8 +476,8 @@ test_refusals(void)
 static void
 test_harmless_decoration(void)
 {
-	struct i915_vk_shader_ir *ir;
-	struct i915_vk_spirv_diag diag;
+	struct i915_shader_ir *ir;
+	struct i915_compile_diagnostic diag;
 	unsigned function_at;
 	uint32_t tail[7];
 
@@ -489,7 +489,7 @@ test_harmless_decoration(void)
 	memcpy(mod + mod_n, tail, sizeof(tail));
 	mod_n += 7U;
 	assert(end_module(&ir, &diag) == 0);
-	i915_vk_spirv_free(ir);
+	drv_i915_shader_ir_free(ir);
 }
 
 /* ------------------------------------------------------------------ the fixed vkdemo shaders */
@@ -542,19 +542,19 @@ test_vkdemo_vertex_shader(void)
 	static const float times[3] = { 0.0f, 1.7f, 12.34f };
 	uint32_t *code;
 	size_t words;
-	struct i915_vk_shader_ir *ir;
-	struct i915_vk_spirv_diag diag;
+	struct i915_shader_ir *ir;
+	struct i915_compile_diagnostic diag;
 	struct machine m;
 	unsigned v, t, k;
 	int error;
 
 	code = load_spv("cuboid.vert.spv", &words);
-	error = i915_vk_spirv_parse_diag(code, words, I915_VK_STAGE_VERTEX, &ir, &diag);
+	error = drv_i915_shader_parse(code, words, I915_STAGE_VERTEX, &ir, &diag);
 	if (error != 0)
 		printf("  cuboid.vert.spv refused: opcode %u at word %u: %s\n", diag.opcode, diag.word_offset,
 			diag.reason != NULL ? diag.reason : "-");
 	assert(error == 0);
-	assert(ir->stage == I915_VK_STAGE_VERTEX && ir->push_bytes == 4U);
+	assert(ir->stage == I915_STAGE_VERTEX && ir->push_bytes == 4U);
 	assert(ir->input_count == 2U && ir->output_count == 1U);
 
 	for (v = 0U; v < 4U; v++) {
@@ -592,7 +592,7 @@ test_vkdemo_vertex_shader(void)
 	}
 	printf("  cuboid.vert.spv (-O0, as shipped): %u IR instructions, %u values; gl_Position and texture_coordinate match the GLSL source for 4 vertices x 3 times\n",
 		ir->instruction_count, ir->value_count);
-	i915_vk_spirv_free(ir);
+	drv_i915_shader_ir_free(ir);
 	free(code);
 }
 
@@ -601,12 +601,12 @@ test_vkdemo_fragment_shader(void)
 {
 	uint32_t *code;
 	size_t words;
-	struct i915_vk_shader_ir *ir;
+	struct i915_shader_ir *ir;
 	struct machine m;
 	float want[4];
 
 	code = load_spv("cuboid.frag.spv", &words);
-	assert(i915_vk_spirv_parse(code, words, I915_VK_STAGE_FRAGMENT, &ir) == 0);
+	assert(drv_i915_shader_parse(code, words, I915_STAGE_FRAGMENT, &ir, NULL) == 0);
 	assert(ir->uniform_count == 1U && ir->uniforms[0].set == 0U && ir->uniforms[0].binding == 0U);
 	memset(&m, 0, sizeof(m));
 	m.input[0][0] = 0.3f;
@@ -615,7 +615,7 @@ test_vkdemo_fragment_shader(void)
 	fake_texture(0U, 0U, 0.3f, 0.6f, want);
 	expect_out(&m, 0U, want[0], want[1], want[2], want[3]);
 	printf("  cuboid.frag.spv: texture(checker, texture_coordinate) with u, v in the right order, 4 components out\n");
-	i915_vk_spirv_free(ir);
+	drv_i915_shader_ir_free(ir);
 	free(code);
 }
 

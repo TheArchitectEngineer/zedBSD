@@ -6,337 +6,740 @@
  */
 
 /*
- * Host fixture for command buffer recording (p008) and the command-buffer
- * object lifecycle wire decode (p011 increment B).  test_recording checks the
- * recorded batch carries the pipeline state, the 3DPRIMITIVE and the
- * terminating MI_BATCH_BUFFER_END.  test_lifecycle drives vkCreateCommandPool,
- * vkAllocateCommandBuffers, vkBeginCommandBuffer, vkFreeCommandBuffers and
- * vkDestroyCommandPool through the router against the WS029 GEM allocator.
+ * Host fixture for command pools and buffers, recording and vkQueueSubmit
+ * (render/command.c), and for the commands a draw ends its batch with
+ * (render/state.c).
+ *
+ * A command buffer is recorded as a list of operations and runs at
+ * vkQueueSubmit: clears and copies as GPU rectangles, draws as GPU draws.
+ * The GPU runs are the stand-ins of i915-vk-render-stubs.inc, which record
+ * what they were asked to run, so the fixture checks what the recording
+ * handed to the GPU path and in which order.
  */
 
-#include "../../ws029/tests/i915-fixture.inc"
-#include "../../../src/drivers/gpu/i915/uncore.c"
-#include "../../../src/drivers/gpu/i915/ggtt.c"
-#include "../../../src/drivers/gpu/i915/ppgtt.c"
-#include "../../../src/drivers/gpu/i915/gem.c"
-#include "../../../src/drivers/gpu/i915/irq.c"
-#include "../../../src/drivers/gpu/i915/engine.c"
-#include "../../../src/drivers/gpu/i915/lrc.c"
-#include "../../../src/drivers/gpu/i915/request.c"
-#include "../../../src/drivers/gpu/i915/i915.c"
-#include "../../../src/drivers/gpu/i915/vk/cmd.c"
-#include "../../../src/drivers/gpu/i915/vk/spirv.c"
-#include "../../../src/drivers/gpu/i915/vk/eu.c"
-#include "../../../src/drivers/gpu/i915/vk/compile.c"
-#include "../../../src/drivers/gpu/i915/vk/pipe.c"
-#include "../../../src/drivers/gpu/i915/vk/sync.c"
-#include "../../../src/drivers/gpu/i915/vk/cmdbuf.c"
-#include "i915-vk-e127-stubs.inc"
+#include "i915-vk-render-stubs.inc"
 
-static int fixture_pci_token;
-#define fixture_pci_device	((struct drv_pci_device *)&fixture_pci_token)
+#include "../../../src/drivers/gpu/i915/render/batch.h"
+#include "../../../src/drivers/gpu/i915/render/state.h"
 
-/* The modules outside pipe/cmdbuf are not exercised here. */
+#include "../../../src/drivers/gpu/i915/data/i915-commands.inc"
+#include "../../../src/drivers/gpu/i915/data/i915-3dstate-gen12.inc"
+
+/* The wire opcodes the fixture sends, as libvulkan numbers them. */
+#define FIXTURE_QUEUE_SUBMIT			18U
+#define FIXTURE_ALLOCATE_MEMORY			21U
+#define FIXTURE_FREE_MEMORY			22U
+#define FIXTURE_BIND_BUFFER_MEMORY		28U
+#define FIXTURE_BIND_IMAGE_MEMORY		29U
+#define FIXTURE_CREATE_FENCE			35U
+#define FIXTURE_DESTROY_FENCE			36U
+#define FIXTURE_RESET_FENCES			37U
+#define FIXTURE_GET_FENCE_STATUS		38U
+#define FIXTURE_CREATE_BUFFER			50U
+#define FIXTURE_DESTROY_BUFFER			51U
+#define FIXTURE_CREATE_IMAGE			54U
+#define FIXTURE_DESTROY_IMAGE			55U
+#define FIXTURE_CREATE_COMMAND_POOL		85U
+#define FIXTURE_DESTROY_COMMAND_POOL		86U
+#define FIXTURE_RESET_COMMAND_POOL		87U
+#define FIXTURE_ALLOCATE_COMMAND_BUFFERS	88U
+#define FIXTURE_FREE_COMMAND_BUFFERS		89U
+#define FIXTURE_BEGIN_COMMAND_BUFFER		90U
+#define FIXTURE_END_COMMAND_BUFFER		91U
+#define FIXTURE_CMD_BIND_PIPELINE		93U
+#define FIXTURE_CMD_BIND_VERTEX_BUFFERS		105U
+#define FIXTURE_CMD_DRAW			106U
+#define FIXTURE_CMD_DRAW_INDEXED		107U
+#define FIXTURE_CMD_CLEAR_COLOR_IMAGE		119U
+#define FIXTURE_CMD_PUSH_CONSTANTS		132U
+
+/* The wire identities the fixture gives its objects. */
+#define FIXTURE_DEVICE		0xd0ULL
+#define FIXTURE_QUEUE		0xd1ULL
+#define FIXTURE_MEMORY		0x100ULL
+#define FIXTURE_BUFFER		0x200ULL
+#define FIXTURE_IMAGE		0x300ULL
+#define FIXTURE_PIPELINE	0xb00ULL
+#define FIXTURE_POOL		0x900ULL
+#define FIXTURE_CB0		0xa00ULL
+#define FIXTURE_CB1		0xa01ULL
+#define FIXTURE_FENCE		0xf00ULL
+
+/* The storage blob: its size and the GPU address it is bound at. */
+#define FIXTURE_STORAGE_BYTES	65536U
+#define FIXTURE_STORAGE_VA	0x200000000ULL
+
+/* How many operations one command buffer records (render/command.c). */
+#define FIXTURE_MAX_OPS		64U
+
+/*
+ * The storage libvulkan exports for the fixture's allocation, and the
+ * session object that stands for that blob.
+ */
+static uint8_t fixture_storage[FIXTURE_STORAGE_BYTES] __attribute__((aligned(4096)));
+static struct i915_gem_object fixture_storage_object;
+
+/*
+ * The pipeline the recordings bind.
+ *
+ * The draw is a stand-in, so the pipeline needs no kernels; it is published
+ * under its identity for the whole lifecycle test and withdrawn at its end.
+ */
+static struct i915_gfx_pipeline fixture_pipeline;
+
+/* The stream every command is built in. */
+static struct stub_wire fixture_wire;
+
+static void fixture_command_buffer(uint32_t opcode, uint64_t cmdbuf);
+static void fixture_destroy(uint32_t opcode, uint64_t identity);
+static void fixture_draw(uint64_t cmdbuf, uint32_t vertices, uint32_t instances);
+static void fixture_submit(uint64_t cmdbuf, uint64_t fence);
+static uint32_t fixture_fence_status(void);
+static void fixture_resources(void);
+static int fixture_find_command(const uint32_t *batch, unsigned used, uint32_t opcode);
+static void test_emission(void);
+static void test_lifecycle(void);
+static void test_recording_limits(void);
+
+/*
+ * Runs the command buffer checks.
+ */
 int
-i915_vk_res_dispatch(struct i915_vk_session *s, uint32_t o, struct i915_vk_reader *r, struct i915_vk_writer *w)
-{ (void)s; (void)o; (void)r; (void)w; return EINVAL; }
-int
-i915_vk_wsi_dispatch(struct i915_vk_session *s, uint32_t o, struct i915_vk_reader *r, struct i915_vk_writer *w)
-{ (void)s; (void)o; (void)r; (void)w; return EINVAL; }
-
-/* A little-endian encoder mirroring the libvulkan wire writer. */
-static uint8_t wire[512];
-static size_t wire_len;
-static void w32(uint32_t v) { wire[wire_len++] = (uint8_t)v; wire[wire_len++] = (uint8_t)(v >> 8); wire[wire_len++] = (uint8_t)(v >> 16); wire[wire_len++] = (uint8_t)(v >> 24); }
-static void w64(uint64_t v) { w32((uint32_t)v); w32((uint32_t)(v >> 32)); }
-static uint32_t rd32(const uint8_t *b, size_t o) { return (uint32_t)b[o] | ((uint32_t)b[o + 1] << 8) | ((uint32_t)b[o + 2] << 16) | ((uint32_t)b[o + 3] << 24); }
-static uint64_t rd64(const uint8_t *b, size_t o) { return (uint64_t)rd32(b, o) | ((uint64_t)rd32(b, o + 4) << 32); }
-
-static int
-find_command(const uint32_t *batch, uint32_t used, uint32_t opcode)
+main(void)
 {
-	uint32_t index;
+	/* Checks the end of a draw's batch, then recording and submission. */
+	test_emission();
+	test_lifecycle();
+	test_recording_limits();
 
+	/* Succeeded: every check held. */
+	printf("i915 vk cmdbuf host test PASS\n");
+	return 0;
+}
+
+/* Appends a command that names only a command buffer and asks for a reply: vkEndCommandBuffer. */
+static void
+fixture_command_buffer(
+	uint32_t opcode,
+	uint64_t cmdbuf)
+{
+	/* [opcode][reply][command buffer]. */
+	stub_put32(&fixture_wire, opcode);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, cmdbuf);
+}
+
+/* Appends a generic destroy or free: [opcode][reply][device][identity][pAllocator]. */
+static void
+fixture_destroy(
+	uint32_t opcode,
+	uint64_t identity)
+{
+	/* The command has no reply body; the reply is its echoed opcode. */
+	stub_put32(&fixture_wire, opcode);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put64(&fixture_wire, identity);
+	stub_put64(&fixture_wire, 0U);
+}
+
+/* Appends vkCmdDraw with no first vertex or instance; a recording asks for no reply. */
+static void
+fixture_draw(
+	uint64_t cmdbuf,
+	uint32_t vertices,
+	uint32_t instances)
+{
+	/* [106][no reply][command buffer][vertices][instances][first vertex][first instance]. */
+	stub_put32(&fixture_wire, FIXTURE_CMD_DRAW);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, cmdbuf);
+	stub_put32(&fixture_wire, vertices);
+	stub_put32(&fixture_wire, instances);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+}
+
+/* Appends vkQueueSubmit of one command buffer with no semaphores, signalling `fence`. */
+static void
+fixture_submit(
+	uint64_t cmdbuf,
+	uint64_t fence)
+{
+	/* The header, the queue and one VkSubmitInfo: sType 4, no chain. */
+	stub_put32(&fixture_wire, FIXTURE_QUEUE_SUBMIT);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_QUEUE);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 4U);
+	stub_put64(&fixture_wire, 0U);
+
+	/* No wait semaphores and no stages. */
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 0U);
+
+	/* One command buffer. */
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, cmdbuf);
+
+	/* No signal semaphores, then the fence. */
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, fence);
+}
+
+/* Asks vkGetFenceStatus of the fixture's fence and reports its VkResult. */
+static uint32_t
+fixture_fence_status(void)
+{
+	size_t reply_bytes;
+	uint32_t status;
+
+	/* [38][reply][device][fence] -> [38][VkResult]. */
+	stub_wire_begin(&fixture_wire);
+	stub_put32(&fixture_wire, FIXTURE_GET_FENCE_STATUS);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put64(&fixture_wire, FIXTURE_FENCE);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 8U);
+
+	/* Reports the fence's result. */
+	status = stub_get32(stub_reply, 4U);
+	return status;
+}
+
+/* Creates the memory with its storage, a vertex buffer and a 16x16 image bound in it. */
+static void
+fixture_resources(void)
+{
+	size_t reply_bytes;
+	int error;
+
+	/* vkAllocateMemory of the whole storage, memory type 0. */
+	stub_wire_begin(&fixture_wire);
+	stub_put32(&fixture_wire, FIXTURE_ALLOCATE_MEMORY);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 5U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, FIXTURE_STORAGE_BYTES);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_MEMORY);
+
+	/* vkCreateBuffer of 256 vertex-buffer bytes. */
+	stub_put32(&fixture_wire, FIXTURE_CREATE_BUFFER);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 12U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 256U);
+	stub_put32(&fixture_wire, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+	stub_put32(&fixture_wire, VK_SHARING_MODE_EXCLUSIVE);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_BUFFER);
+
+	/* vkCreateImage of a 16x16 R8G8B8A8_UNORM image. */
+	stub_put32(&fixture_wire, FIXTURE_CREATE_IMAGE);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 14U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, VK_IMAGE_TYPE_2D);
+	stub_put32(&fixture_wire, VK_FORMAT_R8G8B8A8_UNORM);
+	stub_put32(&fixture_wire, 16U);
+	stub_put32(&fixture_wire, 16U);
+	stub_put32(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, VK_SAMPLE_COUNT_1_BIT);
+	stub_put32(&fixture_wire, VK_IMAGE_TILING_OPTIMAL);
+	stub_put32(&fixture_wire, VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+	stub_put32(&fixture_wire, VK_SHARING_MODE_EXCLUSIVE);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, VK_IMAGE_LAYOUT_UNDEFINED);
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_IMAGE);
+
+	/* Binds the buffer at 0 and the image at 4096. */
+	stub_put32(&fixture_wire, FIXTURE_BIND_BUFFER_MEMORY);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put64(&fixture_wire, FIXTURE_BUFFER);
+	stub_put64(&fixture_wire, FIXTURE_MEMORY);
+	stub_put64(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, FIXTURE_BIND_IMAGE_MEMORY);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put64(&fixture_wire, FIXTURE_IMAGE);
+	stub_put64(&fixture_wire, FIXTURE_MEMORY);
+	stub_put64(&fixture_wire, 4096U);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 3U * 24U + 2U * 8U);
+	assert(stub_get32(stub_reply, 3U * 24U + 4U) == VK_SUCCESS);
+	assert(stub_get32(stub_reply, 3U * 24U + 12U) == VK_SUCCESS);
+
+	/* The blob libvulkan exports for the allocation becomes its storage. */
+	error = drv_i915_render_blob_attach(stub_vk, FIXTURE_MEMORY, &fixture_storage_object);
+	assert(error == 0);
+}
+
+/* Finds the first dword of a batch whose command opcode is `opcode`; -1 when none is. */
+static int
+fixture_find_command(
+	const uint32_t *batch,
+	unsigned used,
+	uint32_t opcode)
+{
+	unsigned index;
+
+	/* Looks at every dword's high half. */
 	for (index = 0U; index < used; index++) {
 		if ((batch[index] >> 16) == opcode)
 			return (int)index;
 	}
+
+	/* No dword carries the opcode. */
 	return -1;
 }
 
-static struct i915_device *
-attach(void)
-{
-	struct i915_device *device;
-	int error;
-
-	error = drv_i915_pci_driver_register();
-	assert(error == 0);
-	error = fixture_driver->attach(fixture_pci_device, &fixture_driver->ids[5]);
-	assert(error == 0);
-	device = fixture_driver_data;
-	assert(device != NULL);
-	error = fixture_service->publish(fixture_pci_device, fixture_service_argument);
-	assert(error == 0);
-	return device;
-}
-
-static size_t
-run_command(struct i915_vk_session *session, uint8_t *reply, size_t reply_size)
-{
-	struct i915_vk_reader reader;
-	struct i915_vk_writer writer;
-	int error;
-
-	reader.base = wire;
-	reader.size = wire_len;
-	reader.offset = 0U;
-	reader.error = 0;
-	writer.base = reply;
-	writer.size = reply_size;
-	writer.offset = 0U;
-	writer.error = 0;
-	error = i915_vk_cmd_dispatch(session, &reader, &writer);
-	assert(error == 0);
-	assert(writer.error == 0);
-	return writer.offset;
-}
-
-/* Records a draw into a local batch and checks the emitted GEN command stream. */
+/*
+ * A draw ends its batch with the primitive: 3DPRIMITIVE with the vertex
+ * and instance counts, a flush, and MI_BATCH_BUFFER_END.
+ */
 static void
-test_recording(void)
+test_emission(void)
 {
-	uint32_t buffer[512];
-	struct i915_vk_cmdbuf cmdbuf;
-	struct i915_vk_shader_binary vs;
-	struct i915_vk_shader_binary fs;
-	struct i915_vk_pipeline_info info;
-	struct i915_vk_pipeline *pipeline;
-	int prim_at;
-	int error;
+	struct i915_gfx_batch batch;
+	uint32_t commands[128];
+	int primitive;
 
-	memset(buffer, 0, sizeof(buffer));
-	memset(&vs, 0, sizeof(vs));
-	memset(&fs, 0, sizeof(fs));
-	vs.grf_used = 24U;
-	fs.grf_used = 20U;
-	memset(&info, 0, sizeof(info));
-	info.vs = &vs;
-	info.fs = &fs;
-	info.vs_kernel = 0x00100000ULL;
-	info.fs_kernel = 0x00200000ULL;
-	error = i915_vk_pipeline_create(NULL, &info, &pipeline);
-	assert(error == 0);
+	/* Emits the primitive of a three-vertex, one-instance triangle list on a 64x32 target. */
+	memset(commands, 0, sizeof(commands));
+	batch.cmds = commands;
+	batch.count = 0U;
+	batch.capacity = 128U;
+	batch.overflow = 0;
+	drv_i915_gfx_emit_primitive(&batch, 64U, 32U, 4U, 3U, 0U, 1U, 0U);
+	assert(batch.overflow == 0);
 
-	memset(&cmdbuf, 0, sizeof(cmdbuf));
-	cmdbuf.batch.map = buffer;
-	cmdbuf.batch.capacity = 512U;
+	/* The primitive carries the topology, the vertex count and the instance count. */
+	primitive = fixture_find_command(commands, batch.count, GEN12_CMD_3DPRIMITIVE);
+	assert(primitive >= 0);
+	assert(commands[primitive + 1] == 4U);
+	assert(commands[primitive + 2] == 3U);
+	assert(commands[primitive + 4] == 1U);
 
-	error = i915_vk_cmdbuf_begin(&cmdbuf);
-	assert(error == 0);
+	/* The drawing rectangle covers the target. */
+	primitive = fixture_find_command(commands, batch.count, GEN12_CMD_3DSTATE_DRAWING_RECTANGLE);
+	assert(primitive >= 0);
+	assert(commands[primitive + 2] == ((64U - 1U) | ((32U - 1U) << 16)));
 
-	/* A draw without a pipeline is refused. */
-	error = i915_vk_cmd_draw(&cmdbuf, 3U, 1U, 0U, 0U);
-	assert(error == EINVAL);
+	/* The batch ends: MI_BATCH_BUFFER_END and one MI_NOOP behind it. */
+	assert(commands[batch.count - 2U] == MI_BATCH_BUFFER_END);
+	assert(commands[batch.count - 1U] == MI_NOOP);
 
-	error = i915_vk_cmd_bind_pipeline(&cmdbuf, pipeline);
-	assert(error == 0);
-	error = i915_vk_cmd_draw(&cmdbuf, 3U, 1U, 0U, 0U);
-	assert(error == 0);
-	error = i915_vk_cmdbuf_end(&cmdbuf);
-	assert(error == 0);
-
-	assert(find_command(buffer, cmdbuf.batch.cursor, GEN12_CMD_3DSTATE_VS) >= 0);
-	assert(find_command(buffer, cmdbuf.batch.cursor, GEN12_CMD_3DSTATE_PS) >= 0);
-	prim_at = find_command(buffer, cmdbuf.batch.cursor, GEN12_CMD_3DPRIMITIVE);
-	assert(prim_at >= 0);
-	assert(buffer[prim_at + 2] == 3U);	/* vertex count */
-	assert(buffer[prim_at + 4] == 1U);	/* instance count */
-	assert(buffer[cmdbuf.batch.cursor - 1U] == GEN12_MI_BATCH_BUFFER_END);
-
-	i915_vk_pipeline_destroy(pipeline);
-	printf("i915 vk cmdbuf recording PASS\n");
+	/*
+	 * A batch too small for the primitive overflows instead of writing past
+	 * its end, and still counts the dwords it would have needed.
+	 */
+	memset(commands, 0xee, sizeof(commands));
+	batch.count = 0U;
+	batch.capacity = 8U;
+	batch.overflow = 0;
+	drv_i915_gfx_emit_primitive(&batch, 64U, 32U, 4U, 3U, 0U, 1U, 0U);
+	assert(batch.overflow != 0);
+	assert(batch.count > 8U);
+	assert(commands[8] == 0xeeeeeeeeU);
 }
 
-/* Drives the command-buffer object lifecycle through the wire router. */
+/*
+ * A command buffer is allocated, recorded, submitted with a fence, and
+ * freed through the wire; at submission its operations reach the GPU path
+ * in recording order with what was bound.
+ */
 static void
 test_lifecycle(void)
 {
-	struct i915_device *device;
-	struct i915_vk_device vk;
-	struct i915_vk_session session;
-	struct i915_vk_cmdbuf *cb;
-	void *gpu_session;
-	uint8_t reply[64];
-	const uint64_t pool = 0x900ULL;
-	const uint64_t cb0 = 0xA00ULL;
-	const uint64_t cb1 = 0xA01ULL;
+	struct i915_gfx_buffer *buffer;
+	size_t reply_bytes;
+	unsigned draws;
+	unsigned rects;
 	int error;
 
-	fixture_reset();
-	device = attach();
-	error = fixture_gpu_ops->open(device, &gpu_session);
+	/* Opens a session with the storage blob and makes the resources. */
+	memset(&fixture_storage_object, 0, sizeof(fixture_storage_object));
+	fixture_storage_object.slot = 7U;
+	fixture_storage_object.bytes = sizeof(fixture_storage);
+	fixture_storage_object.run.paddr = (hal_physaddr_t)(uintptr_t)fixture_storage;
+	fixture_storage_object.va = FIXTURE_STORAGE_VA;
+	stub_session_open(&fixture_storage_object);
+	fixture_resources();
+	buffer = drv_i915_object_lookup(stub_vk, I915_VK_OBJ_BUFFER, FIXTURE_BUFFER);
+	assert(buffer != NULL);
+
+	/* Publishes the stand-in pipeline the recording binds. */
+	memset(&fixture_pipeline, 0, sizeof(fixture_pipeline));
+	fixture_pipeline.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+	error = drv_i915_object_insert(stub_vk, I915_VK_OBJ_PIPELINE, FIXTURE_PIPELINE, &fixture_pipeline);
 	assert(error == 0);
 
-	memset(&vk, 0, sizeof(vk));
-	vk.i915 = device;
-	error = i915_vk_object_table_create(&vk.objects);
-	assert(error == 0);
-	memset(&session, 0, sizeof(session));
-	session.vk = &vk;
-	session.gpu = gpu_session;
+	/* vkCreateCommandPool: [85][VK_SUCCESS][present][identity]. */
+	stub_wire_begin(&fixture_wire);
+	stub_put32(&fixture_wire, FIXTURE_CREATE_COMMAND_POOL);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 39U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_POOL);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 24U);
+	assert(stub_get32(stub_reply, 4U) == VK_SUCCESS);
+	assert(stub_get64(stub_reply, 16U) == FIXTURE_POOL);
+	assert(drv_i915_object_lookup(stub_vk, I915_VK_OBJ_COMMAND_POOL, FIXTURE_POOL) != NULL);
 
-	/* vkCreateCommandPool. */
-	wire_len = 0;
-	w32(85U); w32(1U); w64(0xD0U); w64(1U); w32(39U); w64(0U); w32(0U); w32(0U);
-	w64(0U); w64(1U); w64(pool);
-	assert(run_command(&session, reply, sizeof(reply)) == 24U);
-	assert(rd32(reply, 0U) == 85U);
-	assert(rd32(reply, 4U) == 0U);
-	assert(rd64(reply, 16U) == pool);
-	assert(i915_vk_obj_lookup(&vk, I915_VK_OBJ_COMMAND_POOL, pool) != NULL);
+	/* vkAllocateCommandBuffers of two primary buffers: [88][VK_SUCCESS][count][identities]. */
+	stub_wire_begin(&fixture_wire);
+	stub_put32(&fixture_wire, FIXTURE_ALLOCATE_COMMAND_BUFFERS);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 40U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, FIXTURE_POOL);
+	stub_put32(&fixture_wire, VK_COMMAND_BUFFER_LEVEL_PRIMARY);
+	stub_put32(&fixture_wire, 2U);
+	stub_put64(&fixture_wire, 2U);
+	stub_put64(&fixture_wire, FIXTURE_CB0);
+	stub_put64(&fixture_wire, FIXTURE_CB1);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 32U);
+	assert(stub_get32(stub_reply, 4U) == VK_SUCCESS);
+	assert(stub_get64(stub_reply, 8U) == 2U);
+	assert(stub_get64(stub_reply, 16U) == FIXTURE_CB0);
+	assert(stub_get64(stub_reply, 24U) == FIXTURE_CB1);
+	assert(drv_i915_object_lookup(stub_vk, I915_VK_OBJ_COMMAND_BUFFER, FIXTURE_CB0) != NULL);
+	assert(drv_i915_object_lookup(stub_vk, I915_VK_OBJ_COMMAND_BUFFER, FIXTURE_CB1) != NULL);
 
-	/* vkAllocateCommandBuffers for two primary buffers. */
-	wire_len = 0;
-	w32(88U); w32(1U);		/* opcode, reply flag */
-	w64(0xD0U);			/* device */
-	w64(1U);			/* pAllocateInfo present */
-	w32(40U);			/* VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO */
-	w64(0U);			/* pNext present */
-	w64(pool);			/* commandPool */
-	w32(0U);			/* level PRIMARY */
-	w32(2U);			/* commandBufferCount */
-	w64(2U);			/* payload count */
-	w64(cb0); w64(cb1);		/* buffer wire ids */
-	assert(run_command(&session, reply, sizeof(reply)) == 32U);	/* op+res+count+2*id */
-	assert(rd32(reply, 0U) == 88U);
-	assert(rd32(reply, 4U) == 0U);
-	assert(rd64(reply, 8U) == 2U);
-	assert(rd64(reply, 16U) == cb0);
-	assert(rd64(reply, 24U) == cb1);
-	cb = i915_vk_obj_lookup(&vk, I915_VK_OBJ_COMMAND_BUFFER, cb0);
-	assert(cb != NULL);
-	assert(cb->batch.map != NULL && cb->batch.capacity > 0U);
+	/* vkBeginCommandBuffer of cb0: [90][VK_SUCCESS]. */
+	stub_wire_begin(&fixture_wire);
+	stub_put32(&fixture_wire, FIXTURE_BEGIN_COMMAND_BUFFER);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_CB0);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 42U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 0U);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 8U);
+	assert(stub_get32(stub_reply, 4U) == VK_SUCCESS);
 
-	/* vkBeginCommandBuffer resets the recording state. */
-	wire_len = 0;
-	w32(90U); w32(1U); w64(cb0); w64(1U); w32(42U); w64(0U); w32(0U); w64(0U);
-	assert(run_command(&session, reply, sizeof(reply)) == 8U);
-	assert(rd32(reply, 0U) == 90U);
-	assert(rd32(reply, 4U) == 0U);
+	/*
+	 * Records, with no replies: a clear of the image to four words, the
+	 * pipeline, the vertex buffer at offset 64, eight bytes of push
+	 * constants, then a three-vertex draw.
+	 */
+	stub_wire_begin(&fixture_wire);
+	stub_put32(&fixture_wire, FIXTURE_CMD_CLEAR_COLOR_IMAGE);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, FIXTURE_CB0);
+	stub_put64(&fixture_wire, FIXTURE_IMAGE);
+	stub_put32(&fixture_wire, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 4U);
+	stub_put32(&fixture_wire, 0x11111111U);
+	stub_put32(&fixture_wire, 0x22222222U);
+	stub_put32(&fixture_wire, 0x33333333U);
+	stub_put32(&fixture_wire, 0x44444444U);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, VK_IMAGE_ASPECT_COLOR_BIT);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, FIXTURE_CMD_BIND_PIPELINE);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, FIXTURE_CB0);
+	stub_put32(&fixture_wire, VK_PIPELINE_BIND_POINT_GRAPHICS);
+	stub_put64(&fixture_wire, FIXTURE_PIPELINE);
+	stub_put32(&fixture_wire, FIXTURE_CMD_BIND_VERTEX_BUFFERS);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, FIXTURE_CB0);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_BUFFER);
+	stub_put64(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, 64U);
+	stub_put32(&fixture_wire, FIXTURE_CMD_PUSH_CONSTANTS);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, FIXTURE_CB0);
+	stub_put64(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, VK_SHADER_STAGE_VERTEX_BIT);
+	stub_put32(&fixture_wire, 16U);
+	stub_put32(&fixture_wire, 8U);
+	stub_put64(&fixture_wire, 8U);
+	stub_put32(&fixture_wire, 0x04030201U);
+	stub_put32(&fixture_wire, 0x08070605U);
+	fixture_draw(FIXTURE_CB0, 3U, 1U);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 0U);
 
-	/* Record a draw into cb0 through the wire and check the emitted batch. */
-	{
-		struct i915_vk_shader_binary vs;
-		struct i915_vk_shader_binary fs;
-		struct i915_vk_pipeline_info info;
-		struct i915_vk_pipeline *pipeline;
-		const uint64_t ph = 0xB00ULL;
+	/* Recording runs nothing on the GPU. */
+	assert(stub_draw_calls == 0U);
+	assert(stub_rect_calls == 0U);
 
-		memset(&vs, 0, sizeof(vs));
-		memset(&fs, 0, sizeof(fs));
-		vs.grf_used = 24U;
-		fs.grf_used = 20U;
-		memset(&info, 0, sizeof(info));
-		info.vs = &vs;
-		info.fs = &fs;
-		info.vs_kernel = 0x00100000ULL;
-		info.fs_kernel = 0x00200000ULL;
-		error = i915_vk_pipeline_create(NULL, &info, &pipeline);
-		assert(error == 0);
-		error = i915_vk_obj_insert(&vk, I915_VK_OBJ_PIPELINE, ph, pipeline);
-		assert(error == 0);
+	/* vkEndCommandBuffer of cb0: [91][VK_SUCCESS]. */
+	stub_wire_begin(&fixture_wire);
+	fixture_command_buffer(FIXTURE_END_COMMAND_BUFFER, FIXTURE_CB0);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 8U);
+	assert(stub_get32(stub_reply, 0U) == FIXTURE_END_COMMAND_BUFFER);
+	assert(stub_get32(stub_reply, 4U) == VK_SUCCESS);
 
-		/* vkCmdBindPipeline(cb0, GRAPHICS, ph) records with no reply. */
-		wire_len = 0;
-		w32(93U); w32(0U); w64(cb0); w32(0U); w64(ph);
-		assert(run_command(&session, reply, sizeof(reply)) == 0U);
+	/* vkCreateFence, unsignaled. */
+	stub_wire_begin(&fixture_wire);
+	stub_put32(&fixture_wire, FIXTURE_CREATE_FENCE);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 8U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_FENCE);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 24U);
+	assert(fixture_fence_status() == VK_NOT_READY);
 
-		/* vkCmdBindVertexBuffers(cb0, 0, 1, {buf}, {0}) is consumed. */
-		wire_len = 0;
-		w32(105U); w32(0U); w64(cb0); w32(0U); w32(1U); w64(1U); w64(0x200ULL); w64(1U); w64(0U);
-		assert(run_command(&session, reply, sizeof(reply)) == 0U);
+	/* vkQueueSubmit runs cb0 to its end before it replies: [18][VK_SUCCESS]. */
+	stub_wire_begin(&fixture_wire);
+	fixture_submit(FIXTURE_CB0, FIXTURE_FENCE);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 8U);
+	assert(stub_get32(stub_reply, 0U) == FIXTURE_QUEUE_SUBMIT);
+	assert(stub_get32(stub_reply, 4U) == VK_SUCCESS);
 
-		/* vkCmdDraw(cb0, 3, 1, 0, 0) records the pipeline state and one primitive. */
-		wire_len = 0;
-		w32(106U); w32(0U); w64(cb0); w32(3U); w32(1U); w32(0U); w32(0U);
-		assert(run_command(&session, reply, sizeof(reply)) == 0U);
+	/* The clear ran as one GPU fill of the whole image, at the image's address in the storage. */
+	assert(stub_rect_calls == 1U);
+	assert(stub_last_rect.copy == 0);
+	assert(stub_last_rect.dst.va == FIXTURE_STORAGE_VA + 4096U);
+	assert(stub_last_rect.dst.width == 16U);
+	assert(stub_last_rect.dst.pitch == 64U);
+	assert(stub_last_rect.dst_rect.w == 16U);
+	assert(stub_last_rect.dst_rect.h == 16U);
+	assert(stub_last_rect.clear[0] == 0x11111111U);
+	assert(stub_last_rect.clear[3] == 0x44444444U);
 
-		/* vkEndCommandBuffer(cb0) terminates the batch and returns a result. */
-		wire_len = 0;
-		w32(91U); w32(1U); w64(cb0);
-		assert(run_command(&session, reply, sizeof(reply)) == 8U);
-		assert(rd32(reply, 0U) == 91U);
-		assert(rd32(reply, 4U) == 0U);
+	/* The draw ran with the pipeline, the vertex buffer and the push constants that were bound. */
+	assert(stub_draw_calls == 1U);
+	assert(stub_last_draw.state.pipeline == &fixture_pipeline);
+	assert(stub_last_draw.state.vertex[0].buffer == buffer);
+	assert(stub_last_draw.state.vertex[0].offset == 64U);
+	assert(stub_last_draw.state.push[16] == 0x01U);
+	assert(stub_last_draw.state.push[23] == 0x08U);
+	assert(stub_last_draw.vertex_count == 3U);
+	assert(stub_last_draw.instance_count == 1U);
+	assert(stub_last_draw.first_vertex == 0U);
 
-		/* The recorded batch carries the pipeline state, the primitive and the end. */
-		assert(find_command(cb->batch.map, cb->batch.cursor, GEN12_CMD_3DSTATE_VS) >= 0);
-		assert(find_command(cb->batch.map, cb->batch.cursor, GEN12_CMD_3DSTATE_PS) >= 0);
-		assert(find_command(cb->batch.map, cb->batch.cursor, GEN12_CMD_3DPRIMITIVE) >= 0);
-		assert(cb->batch.map[cb->batch.cursor - 1U] == GEN12_MI_BATCH_BUFFER_END);
+	/* Everything the submission asked for is done, so its fence is signalled. */
+	assert(fixture_fence_status() == VK_SUCCESS);
 
-		i915_vk_obj_remove(&vk, I915_VK_OBJ_PIPELINE, ph);
-		i915_vk_pipeline_destroy(pipeline);
-		printf("i915 vk cmdbuf wire recording ok\n");
-	}
+	/* vkResetFences returns the fence to unsignaled: [37][VK_SUCCESS]. */
+	stub_wire_begin(&fixture_wire);
+	stub_put32(&fixture_wire, FIXTURE_RESET_FENCES);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_FENCE);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 8U);
+	assert(fixture_fence_status() == VK_NOT_READY);
 
-	/* Submit the recorded cb0 on RCS0 and arm a fence (the fixture never runs it). */
-	{
-		struct i915_vk_fence *fence;
-		const uint64_t fence_h = 0xF00ULL;
-		int rc;
+	/*
+	 * A draw that fails on the GPU stops the command buffer: the submission
+	 * reports a lost device and the fence stays unsignaled.
+	 */
+	stub_draw_result = EIO;
+	stub_wire_begin(&fixture_wire);
+	fixture_submit(FIXTURE_CB0, FIXTURE_FENCE);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	stub_draw_result = 0;
+	assert(reply_bytes == 8U);
+	assert(stub_get32(stub_reply, 4U) == (uint32_t)VK_ERROR_DEVICE_LOST);
+	assert(strstr(stub_log, "command buffer stopped at operation 5 of 5") != NULL);
+	assert(stub_draw_calls == 2U);
+	assert(stub_rect_calls == 2U);
+	assert(fixture_fence_status() == VK_NOT_READY);
 
-		rc = i915_vk_fence_create(&session, 0, &fence);
-		assert(rc == 0);
-		rc = i915_vk_obj_insert(&vk, I915_VK_OBJ_FENCE, fence_h, fence);
-		assert(rc == 0);
-
-		wire_len = 0;
-		w32(18U); w32(1U);		/* opcode, reply flag */
-		w64(0xD0U);			/* queue */
-		w32(1U); w64(1U);		/* submitCount */
-		w32(4U); w64(0U);		/* VkSubmitInfo sType, pNext */
-		w32(0U); w64(0U); w64(0U);	/* waits: none */
-		w32(1U); w64(1U); w64(cb0);	/* one command buffer */
-		w32(0U); w64(0U);		/* signals: none */
-		w64(fence_h);			/* fence */
-		assert(run_command(&session, reply, sizeof(reply)) == 8U);
-		assert(rd32(reply, 0U) == 18U);
-		assert(rd32(reply, 4U) == 0U);	/* VK_SUCCESS */
-
-		/* The fence is armed to the RCS0 breadcrumb; advancing it retires the fence. */
-		assert(i915_vk_fence_status(fence) == EBUSY);
-		device->engines[I915_ENGINE_RCS0].completed_seqno = 0xffffffU;
-		assert(i915_vk_fence_status(fence) == 0);
-
-		i915_vk_obj_remove(&vk, I915_VK_OBJ_FENCE, fence_h);
-		i915_vk_fence_destroy(fence);
-		printf("i915 vk cmdbuf queue submit ok\n");
-	}
+	/* vkResetCommandPool empties every recording: a submission then runs nothing. */
+	stub_wire_begin(&fixture_wire);
+	stub_put32(&fixture_wire, FIXTURE_RESET_COMMAND_POOL);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put64(&fixture_wire, FIXTURE_POOL);
+	stub_put32(&fixture_wire, 0U);
+	fixture_submit(FIXTURE_CB0, FIXTURE_FENCE);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 16U);
+	assert(stub_get32(stub_reply, 4U) == VK_SUCCESS);
+	assert(stub_get32(stub_reply, 12U) == VK_SUCCESS);
+	draws = stub_draw_calls;
+	rects = stub_rect_calls;
+	assert(draws == 2U);
+	assert(rects == 2U);
+	assert(fixture_fence_status() == VK_SUCCESS);
 
 	/* vkFreeCommandBuffers releases both buffers. */
-	wire_len = 0;
-	w32(89U); w32(1U); w64(0xD0U); w64(pool); w32(2U); w64(2U); w64(cb0); w64(cb1);
-	assert(run_command(&session, reply, sizeof(reply)) == 4U);
-	assert(i915_vk_obj_lookup(&vk, I915_VK_OBJ_COMMAND_BUFFER, cb0) == NULL);
-	assert(i915_vk_obj_lookup(&vk, I915_VK_OBJ_COMMAND_BUFFER, cb1) == NULL);
+	stub_wire_begin(&fixture_wire);
+	stub_put32(&fixture_wire, FIXTURE_FREE_COMMAND_BUFFERS);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put64(&fixture_wire, FIXTURE_POOL);
+	stub_put32(&fixture_wire, 2U);
+	stub_put64(&fixture_wire, 2U);
+	stub_put64(&fixture_wire, FIXTURE_CB0);
+	stub_put64(&fixture_wire, FIXTURE_CB1);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 4U);
+	assert(drv_i915_object_lookup(stub_vk, I915_VK_OBJ_COMMAND_BUFFER, FIXTURE_CB0) == NULL);
+	assert(drv_i915_object_lookup(stub_vk, I915_VK_OBJ_COMMAND_BUFFER, FIXTURE_CB1) == NULL);
 
-	/* vkDestroyCommandPool releases the pool. */
-	wire_len = 0;
-	w32(86U); w32(1U); w64(0xD0U); w64(pool); w64(0U);
-	assert(run_command(&session, reply, sizeof(reply)) == 4U);
-	assert(i915_vk_obj_lookup(&vk, I915_VK_OBJ_COMMAND_POOL, pool) == NULL);
+	/* Destroys the pool, the fence and the resources, and withdraws the pipeline. */
+	stub_wire_begin(&fixture_wire);
+	fixture_destroy(FIXTURE_DESTROY_COMMAND_POOL, FIXTURE_POOL);
+	fixture_destroy(FIXTURE_DESTROY_FENCE, FIXTURE_FENCE);
+	fixture_destroy(FIXTURE_DESTROY_IMAGE, FIXTURE_IMAGE);
+	fixture_destroy(FIXTURE_DESTROY_BUFFER, FIXTURE_BUFFER);
+	fixture_destroy(FIXTURE_FREE_MEMORY, FIXTURE_MEMORY);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 5U * 4U);
+	assert(drv_i915_object_lookup(stub_vk, I915_VK_OBJ_COMMAND_POOL, FIXTURE_POOL) == NULL);
+	drv_i915_object_remove(stub_vk, I915_VK_OBJ_PIPELINE, FIXTURE_PIPELINE);
 
-	i915_vk_object_table_destroy(vk.objects);
-	fixture_gpu_ops->close(device, gpu_session);
-	printf("i915 vk cmdbuf lifecycle PASS\n");
+	/* Closes the session: the draw state is released once and nothing stays allocated. */
+	stub_session_close();
+	assert(stub_session_closes == 1U);
+	assert(stub_live == 0U);
 }
 
-int
-main(void)
+/*
+ * A recording that does not fit fails its end; an unimplemented vkCmd*
+ * fails the stream; destroying a pool frees the buffers still in it.
+ */
+static void
+test_recording_limits(void)
 {
-	test_recording();
-	test_lifecycle();
-	printf("i915 vk cmdbuf host test PASS\n");
-	return 0;
+	size_t reply_bytes;
+	unsigned index;
+	int error;
+
+	/* Opens a session with a pool and one command buffer. */
+	stub_session_open(NULL);
+	stub_wire_begin(&fixture_wire);
+	stub_put32(&fixture_wire, FIXTURE_CREATE_COMMAND_POOL);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 39U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_POOL);
+	stub_put32(&fixture_wire, FIXTURE_ALLOCATE_COMMAND_BUFFERS);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 40U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, FIXTURE_POOL);
+	stub_put32(&fixture_wire, VK_COMMAND_BUFFER_LEVEL_PRIMARY);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_CB0);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 24U + 24U);
+
+	/* A secondary command buffer is refused by name as a missing feature. */
+	stub_wire_begin(&fixture_wire);
+	stub_put32(&fixture_wire, FIXTURE_ALLOCATE_COMMAND_BUFFERS);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 40U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, FIXTURE_POOL);
+	stub_put32(&fixture_wire, VK_COMMAND_BUFFER_LEVEL_SECONDARY);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_CB1);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 8U);
+	assert(stub_get32(stub_reply, 4U) == (uint32_t)VK_ERROR_INITIALIZATION_FAILED);
+	assert(strstr(stub_log, "secondary command buffers are not implemented") != NULL);
+	assert(drv_i915_object_lookup(stub_vk, I915_VK_OBJ_COMMAND_BUFFER, FIXTURE_CB1) == NULL);
+
+	/* One operation more than a buffer holds: the end reports that the recording did not fit. */
+	stub_wire_begin(&fixture_wire);
+	for (index = 0U; index < FIXTURE_MAX_OPS + 1U; index++)
+		fixture_draw(FIXTURE_CB0, 3U, 1U);
+	fixture_command_buffer(FIXTURE_END_COMMAND_BUFFER, FIXTURE_CB0);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 8U);
+	assert(stub_get32(stub_reply, 4U) == (uint32_t)VK_ERROR_OUT_OF_HOST_MEMORY);
+	assert(strstr(stub_log, "holds more than 64 operations") != NULL);
+
+	/* An unimplemented recording fails the stream: nothing after it runs and no reply is published. */
+	stub_wire_begin(&fixture_wire);
+	stub_put32(&fixture_wire, FIXTURE_CMD_DRAW_INDEXED);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, FIXTURE_CB0);
+	stub_put32(&fixture_wire, 3U);
+	stub_put32(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+	fixture_command_buffer(FIXTURE_END_COMMAND_BUFFER, FIXTURE_CB0);
+	error = stub_execute(&fixture_wire, &reply_bytes);
+	assert(error == ENOTSUP);
+	assert(reply_bytes == STUB_REPLY_BYTES);
+	assert(strcmp(stub_log, "i915: vk: XXX unimplemented opcode 107 (recording)\n") == 0);
+
+	/* vkDestroyCommandPool frees the buffer still allocated from it. */
+	stub_wire_begin(&fixture_wire);
+	fixture_destroy(FIXTURE_DESTROY_COMMAND_POOL, FIXTURE_POOL);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 4U);
+	assert(drv_i915_object_lookup(stub_vk, I915_VK_OBJ_COMMAND_BUFFER, FIXTURE_CB0) == NULL);
+
+	/* Closes the session; nothing stays allocated. */
+	stub_session_close();
+	assert(stub_live == 0U);
 }

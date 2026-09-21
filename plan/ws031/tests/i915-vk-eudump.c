@@ -11,16 +11,16 @@
 void *kern_calloc(size_t count, size_t size) { return calloc(count, size); }
 void kern_free(void *pointer) { free(pointer); }
 
-#include "../../../src/drivers/gpu/i915/vk/spirv.c"
-#include "../../../src/drivers/gpu/i915/vk/eu.c"
-#include "../../../src/drivers/gpu/i915/vk/compile.c"
+#include "../../../src/drivers/gpu/i915/compiler/spirv.c"
+#include "../../../src/drivers/gpu/i915/compiler/eu.c"
+#include "../../../src/drivers/gpu/i915/compiler/compile.c"
 
 int
 main(int argc, char **argv)
 {
-	struct i915_vk_shader_ir *ir;
-	struct i915_vk_shader_binary *binary;
-	struct i915_vk_spirv_diag diag;
+	struct i915_shader_ir *ir;
+	struct i915_shader_binary *binary;
+	struct i915_compile_diagnostic diag;
 	uint32_t *words;
 	long bytes;
 	FILE *f;
@@ -40,14 +40,14 @@ main(int argc, char **argv)
 	fclose(f);
 
 	memset(&diag, 0, sizeof(diag));
-	error = i915_vk_spirv_parse_diag(words, (size_t)bytes / 4U,
-		strcmp(argv[1], "vertex") == 0 ? I915_VK_STAGE_VERTEX : I915_VK_STAGE_FRAGMENT, &ir, &diag);
+	error = drv_i915_shader_parse(words, (size_t)bytes / 4U,
+		strcmp(argv[1], "vertex") == 0 ? I915_STAGE_VERTEX : I915_STAGE_FRAGMENT, &ir, &diag);
 	if (error != 0) {
 		fprintf(stderr, "parse: error %d (%s, opcode %u at word %u)\n", error,
 			diag.reason != NULL ? diag.reason : "?", diag.opcode, diag.word_offset);
 		return 1;
 	}
-	error = i915_vk_compile(NULL, ir, &binary);
+	error = drv_i915_shader_compile(ir, &binary);
 	if (error != 0) {
 		fprintf(stderr, "compile: error %d\n", error);
 		return 1;

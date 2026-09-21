@@ -1,7 +1,10 @@
 #!/bin/sh
-# WS031 E-120: host test of the OpRegion VBT locator against the target laptop OpRegion dump.
+# WS031: host test of the OpRegion VBT locator (display/vbt.c: drv_i915_opregion_locate_vbt) against the target
+# laptop's OpRegion dump, ASan/UBSan.
 set -e
 cd "$(dirname "$0")/../../.."
+. plan/ws031/tests/display-host-lib.sh
+T=src/drivers/gpu/i915/tests/display
 OUT=${TMPDIR:-/tmp}/ws031-opregion-host-test
-cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -I src/drivers/gpu/i915/parity -o "$OUT" plan/ws031/tests/opregion-host-test.c src/drivers/gpu/i915/parity/opregion_vbt.c
+i915_display_host_build "$OUT" "$T/host-opregion-test.c"
 "$OUT"

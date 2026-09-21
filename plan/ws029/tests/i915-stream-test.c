@@ -6,20 +6,15 @@
  */
 
 /*
- * Exercises the native command stream validator with well-formed and
- * malformed streams.
+ * Exercises the native command stream validator (drv_i915_stream_parse in
+ * src/drivers/gpu/i915/command.c) with well-formed and malformed streams.
  */
 
-#include "i915-fixture.inc"
-#include "../../../src/drivers/gpu/i915/uncore.c"
-#include "../../../src/drivers/gpu/i915/ggtt.c"
-#include "../../../src/drivers/gpu/i915/ppgtt.c"
-#include "../../../src/drivers/gpu/i915/gem.c"
-#include "../../../src/drivers/gpu/i915/irq.c"
-#include "../../../src/drivers/gpu/i915/engine.c"
-#include "../../../src/drivers/gpu/i915/lrc.c"
-#include "../../../src/drivers/gpu/i915/request.c"
-#include "../../../src/drivers/gpu/i915/i915.c"
+#include "i915-host-stubs.inc"
+
+#include "../../../src/drivers/gpu/i915/command.h"
+
+#include "../../../src/drivers/gpu/i915/data/i915-commands.inc"
 
 /* One stream buffer large enough for the largest accepted stream. */
 static uint8_t stream[I915_STREAM_HEADER_BYTES + I915_STREAM_MAX_RELOCATIONS * I915_STREAM_RELOCATION_BYTES + I915_STREAM_MAX_DWORDS * 4U + 16U];

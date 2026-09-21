@@ -36,7 +36,7 @@ kern_free(void *pointer)
 	free(pointer);
 }
 
-#include "../../../src/drivers/gpu/i915/vk/spirv.c"
+#include "../../../src/drivers/gpu/i915/compiler/spirv.c"
 
 /* Loads a SPIR-V file into a word buffer the caller frees. */
 static uint32_t *
@@ -64,7 +64,7 @@ load_spv(const char *name, size_t *words)
 
 /* Counts IR instructions of one opcode. */
 static unsigned
-count_op(const struct i915_vk_shader_ir *ir, enum i915_vk_ir_op op)
+count_op(const struct i915_shader_ir *ir, enum i915_shader_ir_op op)
 {
 	unsigned found;
 	unsigned index;
@@ -88,35 +88,35 @@ test_vertex(void)
 {
 	uint32_t *code;
 	size_t words;
-	struct i915_vk_shader_ir *ir;
-	struct i915_vk_spirv_diag diag;
+	struct i915_shader_ir *ir;
+	struct i915_compile_diagnostic diag;
 	int error;
 
 	code = load_spv("cuboid.vert.spv", &words);
-	error = i915_vk_spirv_parse_diag(code, words, I915_VK_STAGE_VERTEX, &ir, &diag);
+	error = drv_i915_shader_parse(code, words, I915_STAGE_VERTEX, &ir, &diag);
 	if (error != 0)
 		printf("  vkdemo VS refused: opcode %u at word %u: %s\n", diag.opcode, diag.word_offset, diag.reason);
 	assert(error == 0 && ir != NULL);
-	assert(ir->stage == I915_VK_STAGE_VERTEX);
+	assert(ir->stage == I915_STAGE_VERTEX);
 	assert(ir->input_count == 2U && ir->output_count == 1U && ir->uniform_count == 0U);
 	assert(ir->inputs[0].location == 0U && ir->inputs[0].components == 3U);
 	assert(ir->inputs[1].location == 1U && ir->inputs[1].components == 2U);
 	assert(ir->outputs[0].location == 0U && ir->outputs[0].components == 2U);
 	assert(ir->push_bytes == 4U);                                   /* one float: animation.seconds */
-	assert(count_op(ir, I915_VK_IR_SIN) == 2U && count_op(ir, I915_VK_IR_COS) == 2U);
-	assert(count_op(ir, I915_VK_IR_FNEG) == 1U);                    /* -sy; the -1.6 is a constant */
-	assert(count_op(ir, I915_VK_IR_LOAD_PUSH) == 2U);               /* seconds is read twice */
-	assert(count_op(ir, I915_VK_IR_STORE_OUTPUT) == 6U);            /* gl_Position 4 + texture_coordinate 2 */
-	i915_vk_spirv_free(ir);
+	assert(count_op(ir, I915_IR_SIN) == 2U && count_op(ir, I915_IR_COS) == 2U);
+	assert(count_op(ir, I915_IR_FNEG) == 1U);                    /* -sy; the -1.6 is a constant */
+	assert(count_op(ir, I915_IR_LOAD_PUSH) == 2U);               /* seconds is read twice */
+	assert(count_op(ir, I915_IR_STORE_OUTPUT) == 6U);            /* gl_Position 4 + texture_coordinate 2 */
+	drv_i915_shader_ir_free(ir);
 	free(code);
 }
 
 /* a minimal module: header, OpFunction, one body instruction, OpFunctionEnd */
 static int
-parse_body_instruction(const uint32_t *inst, unsigned inst_words, struct i915_vk_spirv_diag *diag)
+parse_body_instruction(const uint32_t *inst, unsigned inst_words, struct i915_compile_diagnostic *diag)
 {
 	uint32_t module[32];
-	struct i915_vk_shader_ir *ir;
+	struct i915_shader_ir *ir;
 	unsigned n = 0U, i;
 	int error;
 
@@ -127,9 +127,9 @@ parse_body_instruction(const uint32_t *inst, unsigned inst_words, struct i915_vk
 		module[n++] = inst[i];
 	module[n++] = (1U << 16) | 253U;                                                                          /* OpReturn */
 	module[n++] = (1U << 16) | 56U;                                                                           /* OpFunctionEnd */
-	error = i915_vk_spirv_parse_diag(module, n, I915_VK_STAGE_VERTEX, &ir, diag);
+	error = drv_i915_shader_parse(module, n, I915_STAGE_VERTEX, &ir, diag);
 	if (error == 0)
-		i915_vk_spirv_free(ir);
+		drv_i915_shader_ir_free(ir);
 	else
 		assert(ir == NULL);
 	return error;
@@ -138,7 +138,7 @@ parse_body_instruction(const uint32_t *inst, unsigned inst_words, struct i915_vk
 static void
 test_body_classification(void)
 {
-	struct i915_vk_spirv_diag diag;
+	struct i915_compile_diagnostic diag;
 	/* OpLine (debug): file id 5, line 1, column 1 -- no execution semantics */
 	static const uint32_t op_line[4] = { (4U << 16) | 8U, 5U, 1U, 1U };
 	/* OpFNegate %6 = -%7, where %7 is not a float value (nothing defines it): refused, not skipped */
@@ -169,24 +169,24 @@ test_fragment(void)
 {
 	uint32_t *code;
 	size_t words;
-	struct i915_vk_shader_ir *ir;
+	struct i915_shader_ir *ir;
 	int error;
 
 	code = load_spv("cuboid.frag.spv", &words);
-	error = i915_vk_spirv_parse(code, words, I915_VK_STAGE_FRAGMENT, &ir);
+	error = drv_i915_shader_parse(code, words, I915_STAGE_FRAGMENT, &ir, NULL);
 	assert(error == 0);
 
 	/* The fragment shader samples one texture at an interpolated coordinate. */
-	assert(ir->stage == I915_VK_STAGE_FRAGMENT);
+	assert(ir->stage == I915_STAGE_FRAGMENT);
 	assert(ir->input_count == 1U);
 	assert(ir->inputs[0].location == 0U && ir->inputs[0].components == 2U);
 	assert(ir->output_count == 1U);
 	assert(ir->outputs[0].location == 0U && ir->outputs[0].components == 4U);
 	assert(ir->uniform_count == 1U);
 	assert(ir->uniforms[0].set == 0U && ir->uniforms[0].binding == 0U);
-	assert(count_op(ir, I915_VK_IR_SAMPLE) >= 1U);
+	assert(count_op(ir, I915_IR_SAMPLE) >= 1U);
 
-	i915_vk_spirv_free(ir);
+	drv_i915_shader_ir_free(ir);
 	free(code);
 }
 
@@ -194,13 +194,13 @@ static void
 test_rejects_garbage(void)
 {
 	uint32_t bad[8];
-	struct i915_vk_shader_ir *ir;
+	struct i915_shader_ir *ir;
 	int error;
 
 	/* A wrong magic is rejected without allocating an IR. */
 	memset(bad, 0, sizeof(bad));
 	bad[0] = 0x12345678U;
-	error = i915_vk_spirv_parse(bad, 8U, I915_VK_STAGE_VERTEX, &ir);
+	error = drv_i915_shader_parse(bad, 8U, I915_STAGE_VERTEX, &ir, NULL);
 	assert(error != 0);
 	assert(ir == NULL);
 }

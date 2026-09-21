@@ -7,7 +7,7 @@ the mirror image -- a decoder for each encoder, an encoder for each decoder -- a
 is where the wire silently drifts.  This tool reads codec.c and emits the mirror, statement by
 statement, and stops at the first statement it does not recognise instead of guessing.
 
-usage: gen_vk_server_codec.py <repo root>     (writes src/drivers/gpu/i915/vk/codec-generated.inc)
+usage: gen_vk_server_codec.py <repo root>     (writes src/drivers/gpu/i915/data/vulkan-codec.inc)
 """
 import re, sys
 
@@ -43,13 +43,13 @@ def elem_stmt_dec(stmt, ptr):
     """One loop-body statement of an ENCODER, turned into a decode of element [index] of `mem`."""
     e = re.escape("record->" + ptr + "[index]")
     if re.fullmatch(r"vulkan_write_u32\(writer, (vulkan_wire_image_layout\()?%s\)?\);" % e, stmt):
-        return 4, "{ uint32_t v = i915_vk_read_u32(r); memcpy((char *)mem + index * 4u, &v, 4u); }"
+        return 4, "{ uint32_t v = drv_i915_wire_read_u32(r); memcpy((char *)mem + index * 4u, &v, 4u); }"
     if re.fullmatch(r"vulkan_write_float\(writer, %s\);" % e, stmt):
-        return 4, "{ uint32_t v = i915_vk_read_u32(r); memcpy((char *)mem + index * 4u, &v, 4u); }"
+        return 4, "{ uint32_t v = drv_i915_wire_read_u32(r); memcpy((char *)mem + index * 4u, &v, 4u); }"
     if re.fullmatch(r"vulkan_write_u64\(writer, %s\);" % e, stmt):
-        return 8, "{ uint64_t v = i915_vk_read_u64(r); memcpy((char *)mem + index * 8u, &v, 8u); }"
+        return 8, "{ uint64_t v = drv_i915_wire_read_u64(r); memcpy((char *)mem + index * 8u, &v, 8u); }"
     if re.fullmatch(r"vulkan_encode_handle\(writer, \(uint64_t\)(\(uintptr_t\))?%s\);" % e, stmt):
-        return 8, "{ uint64_t v = i915_vk_read_u64(r); memcpy((char *)mem + index * 8u, &v, 8u); }"
+        return 8, "{ uint64_t v = drv_i915_wire_read_u64(r); memcpy((char *)mem + index * 8u, &v, 8u); }"
     if re.fullmatch(r"vulkan_write_string\(writer, %s\);" % e, stmt):
         return "sizeof(char *)", "{ const char *v = i915_vkc_read_string(r, a); memcpy((char *)mem + index * sizeof(char *), &v, sizeof(v)); }"
     m = re.fullmatch(r"vulkan_encode_(Vk\w+)\(writer, &%s\);" % e, stmt)
@@ -71,13 +71,13 @@ def gen_dec(t, body):
         m = re.fullmatch(r"vulkan_write_u32\(writer, (?:vulkan_wire_image_layout\()?record->([\w.\[\]]+)\)?\);", s)
         if m:
             f = m.group(1)
-            out.append("record->%s = (__typeof__(record->%s))i915_vk_read_u32(r);" % (f, f)); n += 1; continue
+            out.append("record->%s = (__typeof__(record->%s))drv_i915_wire_read_u32(r);" % (f, f)); n += 1; continue
         m = re.fullmatch(r"vulkan_write_u64\(writer, record->([\w.\[\]]+)\);", s)
         if m:
             f = m.group(1)
-            out.append("record->%s = (__typeof__(record->%s))i915_vk_read_u64(r);" % (f, f)); n += 1; continue
+            out.append("record->%s = (__typeof__(record->%s))drv_i915_wire_read_u64(r);" % (f, f)); n += 1; continue
         if s == "vulkan_write_u64(writer, 0);":
-            out.append("(void)i915_vk_read_u64(r);   /* pNext: no chain on this record */"); n += 1; continue
+            out.append("(void)drv_i915_wire_read_u64(r);   /* pNext: no chain on this record */"); n += 1; continue
         m = re.fullmatch(r"vulkan_encode_(image|buffer)_external\(writer, record->pNext\);", s)
         if m:
             out.append("i915_vkc_skip_external_chain(r);   /* the %s external-memory declaration */" % m.group(1))
@@ -88,7 +88,7 @@ def gen_dec(t, body):
         m = re.fullmatch(r"vulkan_encode_handle\(writer, \(uint64_t\)(?:\(uintptr_t\))?record->([\w.\[\]]+)\);", s)
         if m:
             f = m.group(1)
-            out.append("record->%s = (__typeof__(record->%s))(uintptr_t)i915_vk_read_u64(r);" % (f, f)); n += 1; continue
+            out.append("record->%s = (__typeof__(record->%s))(uintptr_t)drv_i915_wire_read_u64(r);" % (f, f)); n += 1; continue
         m = re.fullmatch(r"vulkan_encode_(Vk\w+)\(writer, &record->([\w.\[\]]+)\);", s)
         if m:
             out.append("i915_vkc_dec_%s(r, a, &record->%s);" % (m.group(1), m.group(2))); n += 1; continue
@@ -103,7 +103,7 @@ def gen_dec(t, body):
         m = re.fullmatch(r"count = (\w+);", s)
         if m and m.group(1) != "0" and body[n + 1] == "vulkan_write_u64(writer, count);":
             N = m.group(1)
-            out.append("count = i915_vk_read_u64(r);")
+            out.append("count = drv_i915_wire_read_u64(r);")
             out.append("if (count != %s) { r->error = 1; return; }" % N)
             n += 2
             mb = re.fullmatch(r"vulkan_write_bytes\(writer, record->(\w+), (\w+)\);", body[n])
@@ -119,7 +119,7 @@ def gen_dec(t, body):
             if m2:
                 f = m2.group(1)
                 out.append("for (index = 0; index < count && r->error == 0; index++)")
-                out.append("\trecord->%s[index] = (__typeof__(record->%s[index]))i915_vk_read_u32(r);" % (f, f))
+                out.append("\trecord->%s[index] = (__typeof__(record->%s[index]))drv_i915_wire_read_u32(r);" % (f, f))
             elif m3:
                 out.append("for (index = 0; index < count && r->error == 0; index++)")
                 out.append("\ti915_vkc_read_float(r, &record->%s[index]);" % m3.group(1))
@@ -140,7 +140,7 @@ def gen_dec(t, body):
             assert body[n] == "vulkan_write_u64(writer, count);", (t, body[n])
             n += 1
             nxt = body[n]
-            out.append("count = i915_vk_read_u64(r);")
+            out.append("count = drv_i915_wire_read_u64(r);")
             if nxt == "for (index = 0;":
                 stmt = body[n + 3]
                 ptr = re.search(r"record->(\w+)\[index\]", stmt).group(1)
@@ -194,10 +194,10 @@ def gen_enc(t, body):
             n += 2; continue
         m = re.fullmatch(r"record->([\w.\[\]]+) = \(\w+\)vulkan_read_u32\(reader\);", s)
         if m:
-            out.append("i915_vk_reply_u32(w, (uint32_t)record->%s);" % m.group(1)); n += 1; continue
+            out.append("drv_i915_wire_reply_u32(w, (uint32_t)record->%s);" % m.group(1)); n += 1; continue
         m = re.fullmatch(r"record->([\w.\[\]]+) = \(\w+\)vulkan_read_u64\(reader\);", s)
         if m:
-            out.append("i915_vk_reply_u64(w, (uint64_t)record->%s);" % m.group(1)); n += 1; continue
+            out.append("drv_i915_wire_reply_u64(w, (uint64_t)record->%s);" % m.group(1)); n += 1; continue
         m = re.fullmatch(r"record->([\w.\[\]]+) = \(float\)vulkan_read_float\(reader\);", s)
         if m:
             out.append("i915_vkc_reply_float(w, &record->%s);" % m.group(1)); n += 1; continue
@@ -208,7 +208,7 @@ def gen_enc(t, body):
             assert body[n + 1] == "if (wide > SIZE_MAX) {", body[n + 1]
             m2 = re.fullmatch(r"record->(\w+) = \(size_t\)wide;", body[n + 5])
             assert m2, body[n + 5]
-            out.append("i915_vk_reply_u64(w, (uint64_t)record->%s);" % m2.group(1))
+            out.append("drv_i915_wire_reply_u64(w, (uint64_t)record->%s);" % m2.group(1))
             n += 6; continue
         if s == "count = vulkan_read_u64(reader);":
             m2 = re.fullmatch(r"if \(count != (\w+)\) \{", body[n + 1])
@@ -217,7 +217,7 @@ def gen_enc(t, body):
             assert body[n + 4] == "}", body[n + 4]
             n += 5
             nxt = body[n]
-            out.append("i915_vk_reply_u64(w, (uint64_t)%s);" % N)
+            out.append("drv_i915_wire_reply_u64(w, (uint64_t)%s);" % N)
             m3 = re.fullmatch(r"vulkan_read_bytes\(reader, record->(\w+), (\w+)\);", nxt)
             if m3:
                 out.append("i915_vkc_reply_bytes(w, record->%s, %s);" % (m3.group(1), m3.group(2)))
@@ -230,7 +230,7 @@ def gen_enc(t, body):
             m6 = re.fullmatch(r"vulkan_decode_(Vk\w+)\(reader, &record->([\w.]+)\[index\]\);", stmt)
             out.append("for (index = 0; index < (size_t)%s; index++)" % N)
             if m4:
-                out.append("\ti915_vk_reply_u32(w, (uint32_t)record->%s[index]);" % m4.group(1))
+                out.append("\tdrv_i915_wire_reply_u32(w, (uint32_t)record->%s[index]);" % m4.group(1))
             elif m5:
                 out.append("\ti915_vkc_reply_float(w, &record->%s[index]);" % m5.group(1))
             elif m6:
@@ -245,11 +245,11 @@ protos, defs = [], []
 for kind, t, body in funcs:
     if kind == "encode":
         code = gen_dec(t, body)
-        sig = "static void i915_vkc_dec_%s(struct i915_vk_reader *r, struct i915_vk_arena *a, %s *record)" % (t, t)
+        sig = "static void i915_vkc_dec_%s(struct i915_wire_reader *r, struct i915_wire_arena *a, %s *record)" % (t, t)
         pre = ["size_t index = 0;", "uint64_t count = 0;", "(void)index; (void)count; (void)a;", "if (r->error != 0)", "\treturn;"]
     else:
         code = gen_enc(t, body)
-        sig = "static void i915_vkc_enc_%s(struct i915_vk_writer *w, const %s *record)" % (t, t)
+        sig = "static void i915_vkc_enc_%s(struct i915_wire_writer *w, const %s *record)" % (t, t)
         pre = ["size_t index = 0;", "(void)index;"]
     protos.append("__attribute__((unused)) " + sig + ";")
     defs.append(sig + "\n{\n" + "\n".join("\t" + l for l in pre + code) + "\n}\n")
@@ -262,7 +262,7 @@ hdr = """/*
  * Pointers a decoder fills point into the command's arena and live until the command returns.
  */
 """
-open(root + "src/drivers/gpu/i915/vk/codec-generated.inc", "w").write(
+open(root + "src/drivers/gpu/i915/data/vulkan-codec.inc", "w").write(
     hdr + "\n" + "\n".join(protos) + "\n\n" + "\n".join(defs))
 print("generated %d decoders, %d encoders" % (sum(1 for f in funcs if f[0] == "encode"),
                                                 sum(1 for f in funcs if f[0] == "decode")))

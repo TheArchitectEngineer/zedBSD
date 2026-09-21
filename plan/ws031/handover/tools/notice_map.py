@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""WS031: which Linux i915 files does each parity/ file say it follows, and what notice do those
-upstream files carry in the fixed reference tree?  Facts only; the input for restoring notices."""
+"""WS031: which Linux i915 files does each file of src/drivers/gpu/i915 say it follows, and what
+notice do those upstream files carry in the fixed reference tree?  Facts only; the input for
+restoring notices.  (Before the rebuild of 2026-09-22 this scanned the old parity/ tree.)"""
 import os, re, collections
-root = os.path.expanduser("~/zedBSD")
-par = os.path.join(root, "src/drivers/gpu/i915/parity")
+# the repository that holds this script (plan/ws031/handover/tools/)
+root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
+par = os.path.join(root, "src/drivers/gpu/i915")
 ref = os.path.join(root, "plan/ws031/linux-parity/linux-reference/ubu-i915-src")
 
 # index of upstream files by basename
@@ -35,9 +37,9 @@ for d, _, fs in os.walk(par):
         strong = bool(re.search(r"(?i)\b(port(s|ed)? (of|from)|faithful port|direct port|transcri|re-derived from|generated from|verbatim)\b", s[:4000]))
         rows.append((rel, s.count("\n") + 1, found, strong))
 
-print("# WS031 parity/ の出典対応表（自動抽出、事実のみ）\n")
-print("各 parity ファイルが本文中で名指ししている Linux i915 のファイル（固定参照 tree に実在するもののみ）と、その上流ファイルが持つ表示。`port 文言` は冒頭 4000 字に port/transcribe/generated 等の語があるか。**名指し＝複製の証明ではない**（API 契約の参照だけの場合もある）。区分の確定は人が行う。\n")
-print("| parity file | lines | port 文言 | 名指ししている上流ファイル（回数） |")
+print("# WS031 src/drivers/gpu/i915 の出典対応表（自動抽出、事実のみ）\n")
+print("各ファイルが本文中で名指ししている Linux i915 のファイル（固定参照 tree に実在するもののみ）と、その上流ファイルが持つ表示。`port 文言` は冒頭 4000 字に port/transcribe/generated 等の語があるか。**名指し＝複製の証明ではない**（API 契約の参照だけの場合もある）。区分の確定は人が行う。\n")
+print("| file | lines | port 文言 | 名指ししている上流ファイル（回数） |")
 print("|---|---|---|---|")
 allup = collections.Counter()
 for rel, n, found, strong in sorted(rows):
@@ -46,11 +48,11 @@ for rel, n, found, strong in sorted(rows):
         allup[up[a][0]] += 1
     print("| `%s` | %d | %s | %s |" % (rel.replace("src/drivers/gpu/i915/", ""), n, "yes" if strong else "-", lst))
 print("\n## 上流ファイルの表示（名指しされたもの）\n")
-print("| 上流ファイル | 名指しする parity ファイル数 | license | copyright 行 |")
+print("| 上流ファイル | 名指しするファイル数 | license | copyright 行 |")
 print("|---|---|---|---|")
 for u, c in allup.most_common():
     lic, cps = upstream_notice(u)
     print("| `%s` | %d | %s | %s |" % (u, c, lic, "; ".join(cps[:3]) or "—"))
 n_named = sum(1 for r in rows if r[2])
-print("\n%d parity files; %d name at least one upstream file; %d carry port wording; %d distinct upstream files named." % (
+print("\n%d files; %d name at least one upstream file; %d carry port wording; %d distinct upstream files named." % (
     len(rows), n_named, sum(1 for r in rows if r[3]), len(allup)))

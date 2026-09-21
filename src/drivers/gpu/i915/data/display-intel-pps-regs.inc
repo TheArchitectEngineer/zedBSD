@@ -1,0 +1,90 @@
+/* SPDX-License-Identifier: MIT */
+/*
+ * Copyright © 2023 Intel Corporation
+ */
+
+/*
+ * zedBSD WS031: copied from Linux v6.8.12 drivers/gpu/drm/i915/display/intel_pps_regs.h
+ * (sha256 ea2bc35d00482aa55408bb1f454639c5c5b9202b3ca188743c8b3b0a28b83d6e) by tools/port_dp_aux_pps.py.
+ * Change: the include of intel_display_reg_defs.h is removed (dp_compat.h supplies the macros).
+ */
+
+/*
+ * zedBSD display rebuild: moved from src/drivers/gpu/i915/parity/dp/intel_pps_regs.h of the
+ * pre-rebuild tree (commit 7e7ff337) without change to any definition;
+ * the include guard __INTEL_PPS_REGS_H__ was renamed.  The provenance above still applies and names the generator.
+ */
+
+#ifndef DRIVERS_GPU_I915_DATA_DISPLAY_INTEL_PPS_REGS_INC
+#define DRIVERS_GPU_I915_DATA_DISPLAY_INTEL_PPS_REGS_INC
+
+/* zedBSD: register helper macros come from dp_compat.h */
+
+/* Panel power sequencing */
+#define PPS_BASE			0x61200
+#define VLV_PPS_BASE			(VLV_DISPLAY_BASE + PPS_BASE)
+#define PCH_PPS_BASE			0xC7200
+
+#define _MMIO_PPS(pps_idx, reg)		_MMIO(dev_priv->display.pps.mmio_base -	\
+					      PPS_BASE + (reg) +	\
+					      (pps_idx) * 0x100)
+
+#define _PP_STATUS			0x61200
+#define PP_STATUS(pps_idx)		_MMIO_PPS(pps_idx, _PP_STATUS)
+#define   PP_ON				REG_BIT(31)
+/*
+ * Indicates that all dependencies of the panel are on:
+ *
+ * - PLL enabled
+ * - pipe enabled
+ * - LVDS/DVOB/DVOC on
+ */
+#define   PP_READY			REG_BIT(30)
+#define   PP_SEQUENCE_MASK		REG_GENMASK(29, 28)
+#define   PP_SEQUENCE_NONE		REG_FIELD_PREP(PP_SEQUENCE_MASK, 0)
+#define   PP_SEQUENCE_POWER_UP		REG_FIELD_PREP(PP_SEQUENCE_MASK, 1)
+#define   PP_SEQUENCE_POWER_DOWN	REG_FIELD_PREP(PP_SEQUENCE_MASK, 2)
+#define   PP_CYCLE_DELAY_ACTIVE		REG_BIT(27)
+#define   PP_SEQUENCE_STATE_MASK	REG_GENMASK(3, 0)
+#define   PP_SEQUENCE_STATE_OFF_IDLE	REG_FIELD_PREP(PP_SEQUENCE_STATE_MASK, 0x0)
+#define   PP_SEQUENCE_STATE_OFF_S0_1	REG_FIELD_PREP(PP_SEQUENCE_STATE_MASK, 0x1)
+#define   PP_SEQUENCE_STATE_OFF_S0_2	REG_FIELD_PREP(PP_SEQUENCE_STATE_MASK, 0x2)
+#define   PP_SEQUENCE_STATE_OFF_S0_3	REG_FIELD_PREP(PP_SEQUENCE_STATE_MASK, 0x3)
+#define   PP_SEQUENCE_STATE_ON_IDLE	REG_FIELD_PREP(PP_SEQUENCE_STATE_MASK, 0x8)
+#define   PP_SEQUENCE_STATE_ON_S1_1	REG_FIELD_PREP(PP_SEQUENCE_STATE_MASK, 0x9)
+#define   PP_SEQUENCE_STATE_ON_S1_2	REG_FIELD_PREP(PP_SEQUENCE_STATE_MASK, 0xa)
+#define   PP_SEQUENCE_STATE_ON_S1_3	REG_FIELD_PREP(PP_SEQUENCE_STATE_MASK, 0xb)
+#define   PP_SEQUENCE_STATE_RESET	REG_FIELD_PREP(PP_SEQUENCE_STATE_MASK, 0xf)
+
+#define _PP_CONTROL			0x61204
+#define PP_CONTROL(pps_idx)		_MMIO_PPS(pps_idx, _PP_CONTROL)
+#define  PANEL_UNLOCK_MASK		REG_GENMASK(31, 16)
+#define  PANEL_UNLOCK_REGS		REG_FIELD_PREP(PANEL_UNLOCK_MASK, 0xabcd)
+#define  BXT_POWER_CYCLE_DELAY_MASK	REG_GENMASK(8, 4)
+#define  EDP_FORCE_VDD			REG_BIT(3)
+#define  EDP_BLC_ENABLE			REG_BIT(2)
+#define  PANEL_POWER_RESET		REG_BIT(1)
+#define  PANEL_POWER_ON			REG_BIT(0)
+
+#define _PP_ON_DELAYS			0x61208
+#define PP_ON_DELAYS(pps_idx)		_MMIO_PPS(pps_idx, _PP_ON_DELAYS)
+#define  PANEL_PORT_SELECT_MASK		REG_GENMASK(31, 30)
+#define  PANEL_PORT_SELECT_LVDS		REG_FIELD_PREP(PANEL_PORT_SELECT_MASK, 0)
+#define  PANEL_PORT_SELECT_DPA		REG_FIELD_PREP(PANEL_PORT_SELECT_MASK, 1)
+#define  PANEL_PORT_SELECT_DPC		REG_FIELD_PREP(PANEL_PORT_SELECT_MASK, 2)
+#define  PANEL_PORT_SELECT_DPD		REG_FIELD_PREP(PANEL_PORT_SELECT_MASK, 3)
+#define  PANEL_PORT_SELECT_VLV(port)	REG_FIELD_PREP(PANEL_PORT_SELECT_MASK, port)
+#define  PANEL_POWER_UP_DELAY_MASK	REG_GENMASK(28, 16)
+#define  PANEL_LIGHT_ON_DELAY_MASK	REG_GENMASK(12, 0)
+
+#define _PP_OFF_DELAYS			0x6120C
+#define PP_OFF_DELAYS(pps_idx)		_MMIO_PPS(pps_idx, _PP_OFF_DELAYS)
+#define  PANEL_POWER_DOWN_DELAY_MASK	REG_GENMASK(28, 16)
+#define  PANEL_LIGHT_OFF_DELAY_MASK	REG_GENMASK(12, 0)
+
+#define _PP_DIVISOR			0x61210
+#define PP_DIVISOR(pps_idx)		_MMIO_PPS(pps_idx, _PP_DIVISOR)
+#define  PP_REFERENCE_DIVIDER_MASK	REG_GENMASK(31, 8)
+#define  PANEL_POWER_CYCLE_DELAY_MASK	REG_GENMASK(4, 0)
+
+#endif /* DRIVERS_GPU_I915_DATA_DISPLAY_INTEL_PPS_REGS_INC */
