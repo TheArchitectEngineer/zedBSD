@@ -9,6 +9,8 @@
 #                                                      (plan/ws014/tests/vkdemo_oracle.py).  The dump is slow:
 #                                                      the application times out after it, by design.
 #        plan/ws031/tests/vkloop-hw.sh oracle 2500     the same for the frame of shader time 2500 ms (--time-ms)
+#        plan/ws031/tests/vkloop-hw.sh display [ms]    E-129: on the panel (no --offscreen), the frame of shader time ms
+#                                                      (default 2500) held 20 s for the camera; "display live": 12 s of animation
 #        plan/ws031/tests/vkloop-hw.sh "-DFOO=1"       extra CPPFLAGS
 #        plan/ws031/tests/vkloop-hw.sh "oracle -DI915_VK_REFERENCE_KERNELS=1"   (flags after the word)
 set -u
@@ -16,6 +18,12 @@ cd "$(dirname "$0")/../../.."
 EXTRA=${1:-}
 TIME_MS=${2:-}
 ORACLE=0
+DISPLAY_RUN=0
+case "$EXTRA" in display*)
+	DISPLAY_RUN=1
+	EXTRA="-DPARITY_RESIDENT_DISPLAY=1 ${EXTRA#display}"
+	TIME_MS=${TIME_MS:-2500} ;;
+esac
 case "$EXTRA" in oracle*)
 	ORACLE=1
 	EXTRA="-DI915_VK_GFX_DUMP=1 ${EXTRA#oracle}" ;;
@@ -26,7 +34,11 @@ esac
 mkdir -p build/resident
 # the probe service as this run wants it; the file changes (and the cached image is rebuilt) only when its text does
 PROBE=build/resident/vkprobe1.gen
-if [ -n "$TIME_MS" ]; then
+if [ "$DISPLAY_RUN" = 1 ] && [ "$TIME_MS" = live ]; then
+	sed "s/--offscreen --readback --token=vk1 --duration=1/--token=vk1 --duration=${LIVE_S:-12}/" plan/ws031/tests/vkprobe1 > $PROBE.new
+elif [ "$DISPLAY_RUN" = 1 ]; then
+	sed "s/--offscreen --readback --token=vk1 --duration=1/--readback --token=vk1 --time-ms=$TIME_MS --hold=20/" plan/ws031/tests/vkprobe1 > $PROBE.new
+elif [ -n "$TIME_MS" ]; then
 	sed "s/--duration=1/--time-ms=$TIME_MS/" plan/ws031/tests/vkprobe1 > $PROBE.new
 else
 	cp plan/ws031/tests/vkprobe1 $PROBE.new

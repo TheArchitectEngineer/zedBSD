@@ -2442,6 +2442,17 @@ p6_fw_out:
 			rctx.uncore_lock = &uncore_lock;
 			rctx.gm = &gtmem;
 			rctx.es = &gteng;
+			if (PARITY_RESIDENT_DISPLAY) {
+				/* E-129: what the LCD tests are given (the block above), for the node's display */
+				static struct parity_lcd_kernel_deps rlcd;
+
+				rlcd.edp = &edp_dev; rlcd.mmio = &mmio; rlcd.pd = &power_domains; rlcd.pwc = &pwc; rlcd.dcore = &dcore;
+				rlcd.cdclk = &cdclk; rlcd.nogem = &nogem; rlcd.dstate = &dstate; rlcd.bw = &bw_state; rlcd.dmc = &dmc_dev;
+				rlcd.irq = &irqdev; rlcd.gm = &gtmem; rlcd.ipc_enabled = dprobe.ipc_enabled;
+				rlcd.es = &gteng; rlcd.vm = &gtpp; rlcd.uncore_lock = &uncore_lock;
+				rlcd.gmadr_base = n0_gmadr_base; rlcd.gmadr_size = n0_gmadr_size; rlcd.dprobe = &dprobe;
+				rctx.lcd = &rlcd;
+			}
 			(void)parity_resident_serve(&rctx);
 		} else {
 			kern_logf("i915: resident: not serving (forcewake rc=%d held=%u engines=%d mem=%d)\n",

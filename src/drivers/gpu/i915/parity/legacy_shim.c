@@ -22,6 +22,8 @@
 #include "osdep/mmio.h"
 #include "resident.h"
 #include "legacy_shim.h"
+#include "lcd/parity_lcd_kernel.h"
+#include "lcd/scanout.h"
 
 #define SHIM_MI_STORE_DWORD_IMM_GEN4    ((0x20u << 23) | 2u)
 #define SHIM_MI_USE_GGTT                (1u << 22)
@@ -48,8 +50,15 @@ struct shim_context {
 };
 
 /* One batch a caller sleeps on: run by the serving thread like a request, reported to the caller. */
+enum shim_sync_kind { SHIM_SYNC_BATCH = 0, SHIM_SYNC_PRESENT, SHIM_SYNC_RELEASE };
+
 struct shim_sync {
 	struct shim_sync *next;
+	enum shim_sync_kind kind;
+	/* PRESENT: the frame, read by the serving thread while the caller sleeps */
+	const uint8_t *pixels;
+	uint32_t width, height, stride;
+	int bgra;
 	struct i915_context *context;
 	uint64_t batch_va;
 	int done;
@@ -72,6 +81,10 @@ static struct {
 
 	unsigned executed, failed;
 	unsigned live_contexts, contexts_ever;
+	/* E-129: the display */
+	int display_up;		/* the serving thread is inside the display window */
+	int display_failed;	/* bringing the panel up failed once: presentation fails from then on */
+	unsigned presents;
 } shim;
 
 static int
@@ -318,34 +331,117 @@ shim_execute(struct i915_request *request)
  * Runs one batch of `context` to its end and reports how it ended.  The caller sleeps; the serving
  * thread runs the batch in the order it arrived, exactly as it runs a request.
  */
-int
-parity_shim_run_sync(struct i915_device *device, struct i915_context *context, uint64_t batch_va)
+/* Queues one item for the serving thread and sleeps until it has been done. */
+static int
+shim_sync_do(struct i915_device *device, struct shim_sync *item)
 {
-	struct shim_sync item;
 	unsigned long irq;
 	uint64_t observed;
 
 	if (shim.ctx == 0 || !shim.work_inited) {
-		kern_logf("i915: resident shim: XXX unimplemented path: a batch outside resident mode\n");
+		kern_logf("i915: resident shim: XXX unimplemented path: work outside resident mode\n");
 		return ENODEV;
 	}
-	memset(&item, 0, sizeof(item));
-	item.context = context;
-	item.batch_va = batch_va;
-
 	irq = spin_lock_irqsave(&device->irq_lock);
 	if (shim.sync_tail == NULL)
-		shim.sync_head = &item;
+		shim.sync_head = item;
 	else
-		shim.sync_tail->next = &item;
-	shim.sync_tail = &item;
+		shim.sync_tail->next = item;
+	shim.sync_tail = item;
 	waitq_wake_all(&shim.work);
-	while (!item.done) {
+	while (!item->done) {
 		observed = waitq_sequence(&shim.sync_done);
 		(void)waitq_sleep(&shim.sync_done, &device->irq_lock, observed, sched_ticks() + 100u, 0U);
 	}
 	spin_unlock_irqrestore(&device->irq_lock, irq);
-	return item.error;
+	return item->error;
+}
+
+/*
+ * Runs one batch of `context` to its end and reports how it ended.  The caller sleeps; the serving
+ * thread runs the batch in the order it arrived, exactly as it runs a request.
+ */
+int
+parity_shim_run_sync(struct i915_device *device, struct i915_context *context, uint64_t batch_va)
+{
+	struct shim_sync item;
+
+	memset(&item, 0, sizeof(item));
+	item.kind = SHIM_SYNC_BATCH;
+	item.context = context;
+	item.batch_va = batch_va;
+	return shim_sync_do(device, &item);
+}
+
+/* E-129: one frame to the panel (see resident.h). */
+int
+parity_shim_display_present(struct i915_device *device, const void *pixels, uint32_t width, uint32_t height,
+	uint32_t stride, int bgra)
+{
+	struct shim_sync item;
+
+	memset(&item, 0, sizeof(item));
+	item.kind = SHIM_SYNC_PRESENT;
+	item.pixels = pixels;
+	item.width = width;
+	item.height = height;
+	item.stride = stride;
+	item.bgra = bgra;
+	return shim_sync_do(device, &item);
+}
+
+int
+parity_shim_display_release(struct i915_device *device)
+{
+	struct shim_sync item;
+
+	memset(&item, 0, sizeof(item));
+	item.kind = SHIM_SYNC_RELEASE;
+	return shim_sync_do(device, &item);
+}
+
+const struct parity_lcd_kernel_deps *
+parity_shim_display_deps(void)
+{
+	return shim.ctx != 0 ? shim.ctx->lcd : 0;
+}
+
+/*
+ * The frame into the buffer the display is not reading, then the flip.  XXX: CPU copy, nearest-neighbour scaling
+ * by the largest whole factor that fits the panel, centred; the rest of the buffer stays black.
+ */
+static int
+shim_present(const struct shim_sync *item)
+{
+	struct parity_scanout *back = parity_lcd_resident_back();
+	uint32_t scale, x0, y0, x, y, sx, sy, pixel, *row;
+	const uint32_t *src;
+
+	if (back == 0)
+		return EIO;
+	scale = back->width / item->width < back->height / item->height ? back->width / item->width :
+		back->height / item->height;
+	if (scale == 0u) {
+		kern_logf("i915: resident display: XXX a %ux%u frame is larger than the %ux%u panel\n", item->width,
+			item->height, back->width, back->height);
+		return EINVAL;
+	}
+	x0 = (back->width - item->width * scale) / 2u;
+	y0 = (back->height - item->height * scale) / 2u;
+	for (y = 0u; y < item->height * scale; y++) {
+		sy = y / scale;
+		src = (const uint32_t *)(const void *)(item->pixels + (uint64_t)sy * item->stride);
+		row = back->cpu + (uint64_t)(y0 + y) * (back->pitch / 4u) + x0;
+		for (x = 0u; x < item->width * scale; x++) {
+			sx = x / scale;
+			pixel = src[sx];
+			/* the scanout is XRGB8888 (B G R X in memory): RGBA8888 swaps R and B, BGRA8888 is the same order */
+			if (!item->bgra)
+				pixel = ((pixel & 0xffu) << 16) | (pixel & 0xff00u) | ((pixel >> 16) & 0xffu);
+			row[x] = pixel & 0x00ffffffu;
+		}
+	}
+	return parity_lcd_resident_flip() == 0 ? 0 : EIO;
 }
 
 /* ---------------- recovery: entry points only ---------------- */
@@ -379,40 +475,30 @@ parity_shim_gt_reset(struct i915_device *device)
 
 /* ---------------- serving ---------------- */
 
-int
-parity_resident_serve(struct parity_resident_ctx *ctx)
+#define SHIM_SERVE_STOP          0   /* told to stop */
+#define SHIM_SERVE_ENTER_DISPLAY 1   /* a presentation waits and the panel is not up: the caller brings it up */
+#define SHIM_SERVE_LEAVE_DISPLAY 2   /* inside the display: a release waits (it is completed after the stop) */
+
+static uint64_t shim_started;
+
+static void
+shim_finish(struct i915_device *device, struct shim_sync *item, int error)
 {
-	struct i915_device *device = ctx->device;
+	unsigned long irq;
+
+	irq = spin_lock_irqsave(&device->irq_lock);
+	item->error = error;
+	item->done = 1;
+	waitq_wake_all(&shim.sync_done);
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+}
+
+/* Executes queued work in arrival order until one of the SHIM_SERVE_* conditions. */
+static int
+shim_serve(struct i915_device *device, int in_display)
+{
 	struct i915_engine *engine = &device->engines[I915_ENGINE_RCS0];
 	unsigned long irq;
-	uint64_t started = sched_ticks();
-	unsigned i;
-	int rc;
-
-	memset(&shim, 0, sizeof(shim));
-	shim.ctx = ctx;
-	shim.render_idx = -1;
-	for (i = 0u; i < ctx->es->n; i++)
-		if (ctx->es->ge[i].info->class == PARITY_RENDER_CLASS) {
-			shim.render_idx = (int)i;
-			break;
-		}
-	if (shim.render_idx < 0) {
-		kern_logf("i915: resident: no render engine; not serving\n");
-		shim.ctx = 0;
-		return -ENODEV;
-	}
-	waitq_init(&shim.work, "i915 resident");
-	waitq_init(&shim.sync_done, "i915 resident sync");
-	shim.work_inited = 1;
-
-	rc = drv_i915_resident_publish(device);
-	if (rc != 0) {
-		kern_logf("i915: resident: publish failed: %d\n", rc);
-		shim.ctx = 0;
-		return -rc;
-	}
-	kern_logf("i915: resident: GPU node published; serving (RCS0, one request at a time, CSB polling)\n");
 
 	irq = spin_lock_irqsave(&device->irq_lock);
 	for (;;) {
@@ -426,7 +512,7 @@ parity_resident_serve(struct parity_resident_ctx *ctx)
 			 * through the teardown before the launcher kills qemu; 0 = serve for ever.
 			 */
 			if (PARITY_RESIDENT_SERVE_S != 0 &&
-			    sched_ticks() - started >= (uint64_t)PARITY_RESIDENT_SERVE_S * 100u) {
+			    sched_ticks() - shim_started >= (uint64_t)PARITY_RESIDENT_SERVE_S * 100u) {
 				shim.stop = 1;
 				break;
 			}
@@ -436,19 +522,39 @@ parity_resident_serve(struct parity_resident_ctx *ctx)
 		if (shim.sync_head != NULL) {
 			struct shim_sync *item = shim.sync_head;
 
+			/* display items that belong to the other side of the window are left at the head */
+			if (item->kind == SHIM_SYNC_PRESENT && !in_display && !shim.display_failed && shim.ctx->lcd != 0) {
+				spin_unlock_irqrestore(&device->irq_lock, irq);
+				return SHIM_SERVE_ENTER_DISPLAY;
+			}
+			if (item->kind == SHIM_SYNC_RELEASE && in_display) {
+				spin_unlock_irqrestore(&device->irq_lock, irq);
+				return SHIM_SERVE_LEAVE_DISPLAY;
+			}
 			shim.sync_head = item->next;
 			if (shim.sync_head == NULL)
 				shim.sync_tail = NULL;
 			spin_unlock_irqrestore(&device->irq_lock, irq);
-			error = shim_run(item->context, item->batch_va, 1, 0u);
-			if (error == 0)
-				shim.executed++;
-			else
-				shim.failed++;
+			switch (item->kind) {
+			case SHIM_SYNC_BATCH:
+				error = shim_run(item->context, item->batch_va, 1, 0u);
+				if (error == 0)
+					shim.executed++;
+				else
+					shim.failed++;
+				break;
+			case SHIM_SYNC_PRESENT:
+				/* in the window; outside it only when the panel could not be brought up */
+				error = in_display ? shim_present(item) : EIO;
+				if (error == 0)
+					shim.presents++;
+				break;
+			default:
+				error = 0;                      /* a release with the panel down: nothing to stop */
+				break;
+			}
+			shim_finish(device, item, error);
 			irq = spin_lock_irqsave(&device->irq_lock);
-			item->error = error;
-			item->done = 1;
-			waitq_wake_all(&shim.sync_done);
 			continue;
 		}
 		if (shim.run_head == NULL && shim.stop)
@@ -478,8 +584,65 @@ parity_resident_serve(struct parity_resident_ctx *ctx)
 		irq = spin_lock_irqsave(&device->irq_lock);
 	}
 	spin_unlock_irqrestore(&device->irq_lock, irq);
+	return SHIM_SERVE_STOP;
+}
 
-	kern_logf("i915: resident: stopping (executed=%u failed=%u)\n", shim.executed, shim.failed);
+/* The display window's body (parity_lcd_kernel_resident_run calls it once the picture is up). */
+static int
+shim_display_window(void *ctx)
+{
+	shim.display_up = 1;
+	(void)shim_serve(ctx, 1);
+	shim.display_up = 0;
+	return 0;
+}
+
+
+int
+parity_resident_serve(struct parity_resident_ctx *ctx)
+{
+	struct i915_device *device = ctx->device;
+	unsigned i;
+	int rc;
+
+	memset(&shim, 0, sizeof(shim));
+	shim.ctx = ctx;
+	shim.render_idx = -1;
+	for (i = 0u; i < ctx->es->n; i++)
+		if (ctx->es->ge[i].info->class == PARITY_RENDER_CLASS) {
+			shim.render_idx = (int)i;
+			break;
+		}
+	if (shim.render_idx < 0) {
+		kern_logf("i915: resident: no render engine; not serving\n");
+		shim.ctx = 0;
+		return -ENODEV;
+	}
+	waitq_init(&shim.work, "i915 resident");
+	waitq_init(&shim.sync_done, "i915 resident sync");
+	shim.work_inited = 1;
+	shim_started = sched_ticks();
+
+	rc = drv_i915_resident_publish(device);
+	if (rc != 0) {
+		kern_logf("i915: resident: publish failed: %d\n", rc);
+		shim.ctx = 0;
+		return -rc;
+	}
+	kern_logf("i915: resident: GPU node published; serving (RCS0, one request at a time, CSB polling)\n");
+
+	for (;;) {
+		if (shim_serve(device, 0) != SHIM_SERVE_ENTER_DISPLAY)
+			break;
+		/* the first presentation: light the panel; the window serves everything until the release */
+		if (parity_lcd_kernel_resident_run(ctx->lcd, shim_display_window, device) != 0 && !shim.display_failed) {
+			/* XXX: no second attempt -- presentation fails from here on, the node keeps serving */
+			shim.display_failed = 1;
+			kern_logf("i915: resident display: the panel did not come up (or did not stop cleanly); presentation fails from now on\n");
+		}
+		/* a release that ended the window is at the head: shim_serve(0) completes it */
+	}
+	kern_logf("i915: resident: stopping (executed=%u failed=%u presented=%u)\n", shim.executed, shim.failed, shim.presents);
 	rc = drv_i915_resident_unpublish(device);
 	if (rc != 0)
 		kern_logf("i915: resident: XXX unpublish rc=%d (sessions still open); the teardown runs anyway\n", rc);

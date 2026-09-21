@@ -12,12 +12,16 @@
 #ifndef PARITY_RESIDENT
 #define PARITY_RESIDENT 0            /* build with -DPARITY_RESIDENT=1 to serve instead of stopping */
 #endif
+#ifndef PARITY_RESIDENT_DISPLAY
+#define PARITY_RESIDENT_DISPLAY 0    /* E-129: the panel is a Vulkan display of the published node (implies the explicit VBT) */
+#endif
 
 struct i915_device;
 struct osdep_mmio;
 struct spinlock;
 struct parity_gt_mem;
 struct parity_gt_engines;
+struct parity_lcd_kernel_deps;
 
 struct parity_resident_ctx {
 	struct i915_device *device;
@@ -25,6 +29,7 @@ struct parity_resident_ctx {
 	struct spinlock *uncore_lock;
 	struct parity_gt_mem *gm;
 	struct parity_gt_engines *es;
+	const struct parity_lcd_kernel_deps *lcd;	/* E-129: the panel (0 = the node has no display) */
 };
 
 /* Publishes the GPU node, serves until asked to stop, withdraws the node.  Forcewake is held by the caller. */
@@ -33,5 +38,16 @@ int parity_resident_serve(struct parity_resident_ctx *ctx);
 /* i915.c: the software half of the legacy start path + drv_gpu_register / unregister. */
 int drv_i915_resident_publish(struct i915_device *device);
 int drv_i915_resident_unpublish(struct i915_device *device);
+
+/*
+ * E-129: the panel behind the node's display operations (resident_display.c).  The frames are shown by the serving
+ * thread: the first presentation lights the panel (the LCD-C body), later ones flip, the release stops it through the
+ * reference's stop path.  Each call below sleeps until the serving thread has done it.
+ */
+struct i915_device;
+int parity_shim_display_present(struct i915_device *device, const void *pixels, uint32_t width, uint32_t height,
+	uint32_t stride, int bgra);
+int parity_shim_display_release(struct i915_device *device);
+const struct parity_lcd_kernel_deps *parity_shim_display_deps(void);
 
 #endif /* PARITY_RESIDENT_H */

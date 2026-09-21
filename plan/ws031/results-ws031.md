@@ -3990,3 +3990,39 @@ Date: 2026-09-21. E-127 の XXX 1（shader は Mesa の参照 kernel）を解消
 3. `GFX_MAX_VS_THREADS` は ADL-P GT2 の値を定数で持つ（device info から引いていない）。
 4. E-127 の 2〜9（CPU clear / copy、同期 submit、表示未接続ほか）はそのまま。
 5. Mesa ツールは centris で再ビルド可能になった（`libunwind-dev` を導入、`PATH=/tmp/mesa-venv/bin:$PATH ninja -C plan/ws031/mesa-refs/mesa/build-gentool src/intel/compiler/brw/refvk`。build dir は `/home/awe/zedBSD/plan/ws031/mesa-refs` の絶対 path を持つので、その位置に symlink を置いてある）。
+
+## E-129 — vkdemo の画面を LCD へ: Vulkan direct display → i915 resident node → 5330 の実 panel（実機 PASS）
+
+Date: 2026-09-21. ゴール「LCD 表示」を達成した。`/bin/vkdemo`（無改造、`--offscreen` なし）が VK_KHR_display / swapchain / vkQueuePresentKHR で表示し、Latitude 5330 の内蔵 panel に cube が出た（カメラ写真 `handover/vk-e127/` と、ユーザーの目視・動画撮影で確認）。shader は E-128 の自前 compiler。
+
+### 結果
+
+| 確認 | 値 |
+|---|---|
+| 静止フレーム（`--time-ms=2500 --hold=20`） | panel に表示（写真）。present した画素の `rgb_sha256=94615464…19b1` は E-128 で独立オラクル mismatch 0 の offscreen フレームと同一。`VKDEMO DONE frames=1` |
+| アニメーション 12 s | 184 frame present / 184 flip、`ended PASS`（stop confirmed、両 buffer 解放、power ref 0、errors 0、timed-out waits 0） |
+| アニメーション 30 s（ユーザー撮影） | 537 frame、544 flip、`ended PASS` |
+| 1 サイクル | lease claim → 最初の present で panel 点灯（LCD-C 本体）→ 毎 present で同期 flip → release で正本の停止経路 → buffer 解放 → lease 返却 |
+| 回帰 | offscreen の vkloop 11 frame、host fixtures 10/10、非 resident image build OK |
+
+再現: `plan/ws031/tests/vkloop-hw.sh display [time_ms]`（静止）、`LIVE_S=30 plan/ws031/tests/vkloop-hw.sh display live`（アニメーション）。
+
+### 構成
+
+- `parity/resident_display.c`（新規）: GPU core の display ops（query / mode / claim / release / present / wait / events）と scanout ops（device_query / constraints）。output 1（eDP panel）、plane 1、lease 1。route は **COPY のみ**: libvulkan が完成フレームを `GPU_RESOURCE_WRITE` で storage に写し、`GPU_DISPLAY_PRESENT` する。mode は panel の 1 つを列挙し、panel 以下のサイズで同じ refresh の custom mode（vkdemo は 320×240）を受理する。
+- `parity/legacy_shim.c`: serving loop を `shim_serve(in_display)` に分けた。work item に PRESENT / RELEASE を追加。最初の PRESENT で serving thread が `parity_lcd_kernel_resident_run()` を呼ぶ。その `in_window` の中で同じ loop が GPU 仕事と present を処理し、RELEASE でループを抜けて正本の停止経路へ戻る。**点灯・停止・解放は LCD-C（E-119）の検証済み本体そのまま**。
+- `parity/lcd/parity_lcd_kernel.c`: `resident_run` / `resident_back` / `resident_flip` / `panel_mode` / `panel_size_mm`。
+- present は CPU で整数倍 nearest 拡大・中央寄せ（320×240 → 1280×960）、XRGB8888 へ変換して裏 buffer へ書き、`parity_lcd_modeset_flip()`。
+- `i915.c`: `-DPARITY_RESIDENT_DISPLAY=1`（resident build）で GPU_CAP_DISPLAY / DISPLAY_EVENTS と display / scanout ops を登録。session close で lease が残っていれば返却する。`bios.h`: この flag で explicit VBT。`probe.c`: LCD 試験と同じ deps を resident ctx へ渡す。
+
+### 途中で分かったこと
+
+- 長時間の表示では `show_passed()` の条件のうち run log の容量（2048 entry）だけが必ず破れる（flip 1 回で plane 書込み十数個）。resident run は同じ条件から「entry を捨てなかったこと」だけを除き、捨てた後も数え続けるカウンタ（writes / errors / unresolved steps / timed-out waits）で判定する。
+- vkdemo 終了時の `gpu: ioctl G13 -> error 24` は timeout 0 の fence poll（EAGAIN = まだ）で、失敗ではない。`VKDEMO DONE` は serial 上で shim の停止行と文字単位で混ざって出る。
+
+### 残り（XXX として名乗っている）
+
+1. COPY route のみ（フレームごとに CPU コピー 2 回）。BLOB / 共有 route（GPU が直接 scanout buffer に描く）は未実装。
+2. present は同期、scaling は整数倍 nearest、panel の mode を変えない。output / plane / lease は各 1、hot-plug と topology event なし。
+3. panel 点灯に失敗したら、以後の present は再試行せず失敗する。
+4. E-127 / E-128 の残り（CPU clear / copy、同期 submit、compiler の受理範囲、SIMD8 のみ、全直列 SWSB、object 表が device 単位）はそのまま。

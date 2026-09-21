@@ -28,6 +28,9 @@
 #define PARITY_SHIM_REDIRECT 1
 #endif
 #include "parity/legacy_shim.h"
+#include "parity/resident_display.h"
+#include <drivers/gpu-display.h>
+#include <drivers/gpu-scanout.h>
 #include <uapi/gpu.h>
 #include <uapi/gpu-job.h>
 #include <kern/device-io.h>
@@ -45,8 +48,16 @@
 #define I915_ID(product)	{ 0x8086U, (product), DRV_PCI_ANY_ID, DRV_PCI_ANY_ID, 0U, 0U, 0U }
 
 /* Storage with CPU copies, native streams, queued completion and supervised jobs. */
-#define I915_CAPABILITIES	(GPU_CAP_RESOURCE | GPU_CAP_TRANSFER | GPU_CAP_COMMAND | \
+#define I915_CAPABILITIES_BASE	(GPU_CAP_RESOURCE | GPU_CAP_TRANSFER | GPU_CAP_COMMAND | \
 				 GPU_CAP_NOTIFICATION | GPU_CAP_JOB | GPU_CAP_JOB_CAPACITY | GPU_CAP_CAPSET | GPU_CAP_BLOB | GPU_CAP_MAPPING)
+#if defined(PARITY_SHIM_REDIRECT) && PARITY_RESIDENT_DISPLAY
+/* E-129: the resident node also drives the panel (parity/resident_display.c) */
+#define I915_RESIDENT_DISPLAY	1
+#define I915_CAPABILITIES	(I915_CAPABILITIES_BASE | GPU_CAP_DISPLAY | GPU_CAP_DISPLAY_EVENTS)
+#else
+#define I915_RESIDENT_DISPLAY	0
+#define I915_CAPABILITIES	I915_CAPABILITIES_BASE
+#endif
 
 /* The pool never holds more batch objects than requests can be in flight. */
 #define I915_BATCH_POOL_MAX	I915_REQUEST_SLOTS
@@ -588,10 +599,18 @@ i915_publish(
 		NULL,
 		i915_resource_map,
 		NULL,
+#if I915_RESIDENT_DISPLAY
+		&drv_i915_resident_display_ops,
+#else
 		NULL,
+#endif
 		NULL,
 		&commands,
+#if I915_RESIDENT_DISPLAY
+		&drv_i915_resident_scanout_ops,
+#else
 		NULL,
+#endif
 		&jobs,
 		&recovery
 	};
@@ -801,6 +820,11 @@ i915_close(
 
 	device = opaque;
 	session = private_session;
+
+#if I915_RESIDENT_DISPLAY
+	/* E-129: a lease still held is given back (the panel stops) before anything else goes */
+	drv_i915_resident_display_close(device, session);
+#endif
 
 	/* The executor session is software state, released first. */
 	if (session->vk != NULL) {
