@@ -1,0 +1,172 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ */
+
+/*
+ * SPDX-License-Identifier: MIT
+ *
+ * Copyright (C) 2025 Intel Corporation
+ */
+
+/*
+ * The Gen12 EU instruction encoding (field bit positions and values) of
+ * Mesa, for compiler/eu.c.
+ *
+ * zedBSD — transcribed hardware definitions (values only)
+ *
+ * SPDX-License-Identifier: MIT (the notice of the Mesa sources below)
+ *
+ * Source: Mesa main @ ab691a1cc7bcd264bec8f735deb2127861ad15ef (MIT):
+ *   - src/intel/compiler/gen/xe.json            field bit positions of the "Xe" (Gen12) encoding
+ *   - src/intel/compiler/gen/gen_encoding.cpp   operand sub-fields, the split of the SEND descriptors,
+ *                                               the region / type / SWSB value encodings
+ *   - src/intel/compiler/brw/brw_lower_scoreboard.cpp  what the SWSB annotation has to say
+ * These are Intel hardware facts.  Only positions and values are transcribed; the encoder logic is
+ * new.  Every emitter of compiler/eu.c is checked bit for bit against Mesa's assembler (gentool asm)
+ * and disassembler by plan/ws031/tests/run-vk-gentool-test.sh; the earlier table (from the 23.1
+ * brw_inst.h) had the float type, the region widths and the math selectors wrong and no SEND layout.
+ *
+ * Transcribed by hand from the files above; no generator produces this file.
+ *
+ * The Gen12 native instruction is four 32-bit words (128 bits); ranges are HI, LO inclusive.
+ */
+
+#ifndef DRIVERS_GPU_I915_INTEL_EU_ENCODING_GEN12_H
+#define DRIVERS_GPU_I915_INTEL_EU_ENCODING_GEN12_H
+
+#define GEN12_EU_DWORDS			4U
+
+/* Control fields. */
+#define EU_OPCODE_HI			6
+#define EU_OPCODE_LO			0
+#define EU_SWSB_HI			15
+#define EU_SWSB_LO			8
+#define EU_EXEC_SIZE_HI			18
+#define EU_EXEC_SIZE_LO			16
+#define EU_NO_MASK_BIT			31
+#define EU_SATURATE_BIT			34
+#define EU_MATH_FUNCTION_HI		95
+#define EU_MATH_FUNCTION_LO		92
+
+/* Destination (direct).  An operand is [file bit][subregister 5][register 8]. */
+#define EU_DST_REG_TYPE_HI		39
+#define EU_DST_REG_TYPE_LO		36
+#define EU_DST_HSTRIDE_HI		49
+#define EU_DST_HSTRIDE_LO		48
+#define EU_DST_REG_FILE_BIT		50
+#define EU_DST_SUBREG_HI		55
+#define EU_DST_SUBREG_LO		51
+#define EU_DST_REG_NR_HI		63
+#define EU_DST_REG_NR_LO		56
+
+/* Source 0.  An immediate is said by its own bit; the operand field then stays clear. */
+#define EU_SRC0_REG_TYPE_HI		43
+#define EU_SRC0_REG_TYPE_LO		40
+#define EU_SRC0_ABS_BIT			44
+#define EU_SRC0_NEGATE_BIT		45
+#define EU_SRC0_IS_IMM_BIT		46
+#define EU_SRC0_HSTRIDE_HI		65
+#define EU_SRC0_HSTRIDE_LO		64
+#define EU_SRC0_REG_FILE_BIT		66
+#define EU_SRC0_SUBREG_HI		71
+#define EU_SRC0_SUBREG_LO		67
+#define EU_SRC0_REG_NR_HI		79
+#define EU_SRC0_REG_NR_LO		72
+#define EU_SRC0_WIDTH_HI		83
+#define EU_SRC0_WIDTH_LO		81
+#define EU_SRC0_VSTRIDE_HI		87
+#define EU_SRC0_VSTRIDE_LO		84
+
+/* Source 1. */
+#define EU_SRC1_IS_IMM_BIT		47
+#define EU_SRC1_REG_TYPE_HI		91
+#define EU_SRC1_REG_TYPE_LO		88
+#define EU_SRC1_HSTRIDE_HI		97
+#define EU_SRC1_HSTRIDE_LO		96
+#define EU_SRC1_REG_FILE_BIT		98
+#define EU_SRC1_SUBREG_HI		103
+#define EU_SRC1_SUBREG_LO		99
+#define EU_SRC1_REG_NR_HI		111
+#define EU_SRC1_REG_NR_LO		104
+#define EU_SRC1_WIDTH_HI		115
+#define EU_SRC1_WIDTH_LO		113
+#define EU_SRC1_VSTRIDE_HI		119
+#define EU_SRC1_VSTRIDE_LO		116
+#define EU_SRC1_ABS_BIT			120
+#define EU_SRC1_NEGATE_BIT		121
+
+/* A 32-bit immediate occupies the last word. */
+#define EU_IMM32_HI			127
+#define EU_IMM32_LO			96
+
+/*
+ * SEND / SENDC (gen_encoding.cpp GEN_FORMAT_SEND).  The operands carry a file bit and a register
+ * number and no subregister, type or region; the two 32-bit descriptors are scattered:
+ *   desc[31:30] -> 123:122   desc[29:25] -> 71:67   desc[24:20] -> 55:51
+ *   desc[19:11] -> 121:113   desc[10:0]  -> 91:81
+ *   ex_desc[31:28] -> 127:124  [27:26] -> 97:96  [25:24] -> 65:64  [23:11] -> 47:35  [10:6] -> 103:99
+ */
+#define EU_SEND_EOT_BIT			34
+#define EU_SEND_SFID_HI			95
+#define EU_SEND_SFID_LO			92
+
+/* Hardware opcodes. */
+#define EU_OP_SYNC			1U
+#define EU_OP_SEND			49U
+#define EU_OP_SENDC			50U
+#define EU_OP_MATH			56U
+#define EU_OP_ADD			64U
+#define EU_OP_MUL			65U
+#define EU_OP_MAD			91U
+#define EU_OP_NOP			96U
+#define EU_OP_MOV			97U
+
+/* Register files as compiler/eu.c names them; the hardware has one bit (GRF or not) and the immediate bit. */
+#define EU_FILE_ARF			0U
+#define EU_FILE_GRF			1U
+#define EU_FILE_IMM			3U
+
+/* Register / immediate types: [float 8 | signed 4 | log2(bytes)]. */
+#define EU_TYPE_UD			2U
+#define EU_TYPE_D			6U
+#define EU_TYPE_F			10U
+
+/* Exec size: log2 of the channel count. */
+#define EU_EXEC_SIZE_1			0U
+#define EU_EXEC_SIZE_8			3U
+
+/* Regions.  hstride 0,1,2,4 -> 0..3; width 1,2,4,8,16 -> 0..4; vstride 0,1,2,4,8,16 -> 0..5. */
+#define EU_HSTRIDE_0			0U
+#define EU_HSTRIDE_1			1U
+#define EU_WIDTH_1			0U
+#define EU_WIDTH_8			3U
+#define EU_VSTRIDE_0			0U
+#define EU_VSTRIDE_8			4U
+
+/* Math function selectors. */
+#define EU_MATH_INV			1U
+#define EU_MATH_SQRT			4U
+#define EU_MATH_RSQ			5U
+#define EU_MATH_SIN			6U
+#define EU_MATH_COS			7U
+
+/* Shared functions a SEND addresses. */
+#define EU_SFID_SAMPLER			2U
+#define EU_SFID_RENDER_CACHE		5U
+#define EU_SFID_URB			6U
+
+/*
+ * SWSB, the software scoreboard byte of Gen12.0 (gen_swsb_encode, brw_lower_scoreboard.cpp):
+ *   regdist n                  = n          wait for the n-th in-order instruction before this one
+ *   token set                  = 0x40 | id  an out-of-order instruction (MATH, SEND) names itself
+ *   regdist n + token set      = 0x80 | n << 4 | id
+ *   sync.nop on a token's dst  = 0x20 | id  wait until that instruction has written its destination
+ *   sync.nop on a token's src  = 0x30 | id  wait until it has read its sources
+ */
+#define EU_SWSB_REGDIST(n)		((uint32_t)(n))
+#define EU_SWSB_REGDIST_SET(n, id)	(0x80U | ((uint32_t)(n) << 4) | (uint32_t)(id))
+#define EU_SWSB_SYNC_DST(id)		(0x20U | (uint32_t)(id))
+#define EU_SWSB_SYNC_SRC(id)		(0x30U | (uint32_t)(id))
+
+#endif /* DRIVERS_GPU_I915_INTEL_EU_ENCODING_GEN12_H */

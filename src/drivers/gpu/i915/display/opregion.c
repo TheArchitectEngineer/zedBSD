@@ -35,23 +35,13 @@
  */
 
 /*
- * Derived from the Linux kernel v6.8.12 (drivers/gpu/drm/i915/display/intel_acpi.c),
- * which carries the following notice.
- *
- * SPDX-License-Identifier: GPL-2.0
- *
- * Intel ACPI functions
- *
- * _DSM related code stolen from nouveau_acpi.c.
- */
-
-/*
  * The OpRegion service and the ACPI notifier chain (see opregion.h).
  *
- * The OpRegion lifecycle is the Linux v6.8.12 intel_opregion.c text, and the
- * ACPI display ids the intel_acpi.c text, rewritten function by function;
- * their Linux notices are in data/display-opregion-mailbox.inc and
- * data/display-acpi-display.inc.  Around them the instance provides the
+ * The OpRegion lifecycle is the Linux v6.8.12 intel_opregion.c text,
+ * rewritten function by function; its Linux notice is in
+ * intel/opregion.h.  The ACPI display ids are this driver's
+ * own code: the id layout is the ACPI _DOD device id, and its values and the
+ * connector classification agree with Linux intel_acpi.c.  Around them the instance provides the
  * mailbox mapping table memremap() resolves into, the PCI view (ASLS), the
  * backlight targets, the worker queue, and the recorded boundaries.
  *
@@ -80,10 +70,24 @@
 #include <kern/sched.h>
 
 /* The mailbox layouts, offsets and request bits of the Linux text. */
-#include "../data/display-opregion-mailbox.inc"
+#include "../intel/opregion.h"
 
-/* The ACPI display id layout of the Linux text. */
-#include "../data/display-acpi-display.inc"
+/*
+ * The ACPI display device id (the _DOD id scheme of the ACPI specification):
+ * an index within the display type in bits 3:0 and the display type in bits
+ * 11:8.  The values agree with those Linux intel_acpi.c uses.
+ */
+#define I915_ACPI_DISPLAY_INDEX_SHIFT		0
+#define I915_ACPI_DISPLAY_TYPE_SHIFT		8
+#define I915_ACPI_DISPLAY_TYPE_MASK		(0xfU << 8)
+#define I915_ACPI_DISPLAY_TYPE_OTHER		(0U << 8)
+#define I915_ACPI_DISPLAY_TYPE_VGA		(1U << 8)
+#define I915_ACPI_DISPLAY_TYPE_TV		(2U << 8)
+#define I915_ACPI_DISPLAY_TYPE_EXTERNAL_DIGITAL	(3U << 8)
+#define I915_ACPI_DISPLAY_TYPE_INTERNAL_DIGITAL	(4U << 8)
+
+/* How many display types the type field can name. */
+#define I915_ACPI_DISPLAY_TYPES			16U
 
 /* How long the ASLE work cancellation waits for a running callback, in scheduler ticks. */
 #define I915_OPREGION_CANCEL_TICKS 500u
@@ -1454,9 +1458,10 @@ drv_i915_opregion_setup(
 }
 
 /*
- * Gives every connector its ACPI device id (intel_acpi_device_id_update()).
+ * Gives every connector its ACPI device id.
  *
- * The id is the connector's display type plus an index counted per type.
+ * The id is the connector's display type with, in the index field, how many
+ * connectors of the same type came before it on the connector list.
  */
 void
 drv_i915_acpi_device_id_update(
@@ -1465,21 +1470,21 @@ drv_i915_acpi_device_id_update(
 	struct i915_opregion_world *world;
 	struct intel_connector *connector;
 	struct drm_connector_list_iter conn_iter;
-	u8 display_index[16] = { 0 };
-	u32 device_id;
-	u32 type;
+	unsigned seen[I915_ACPI_DISPLAY_TYPES];
+	unsigned type;
+	u32 display_type;
 
-	/* Populate the ACPI IDs for all connectors for a given drm_device */
+	/* No connector of any type has been numbered yet. */
+	memset(seen, 0, sizeof(seen));
+
+	/* Numbers the connectors within their display type, in list order. */
 	world = i915_opregion_world_of(dev_priv);
 	i915_opregion_drm_connector_list_iter_begin(&dev_priv->drm, &conn_iter);
 	I915_OPREGION_FOR_EACH_INTEL_CONNECTOR_ITER(world, connector, &conn_iter) {
-		device_id = i915_acpi_display_type(connector);
-
-		/* Use display type specific display index. */
-		type = (device_id & ACPI_DISPLAY_TYPE_MASK)
-			>> ACPI_DISPLAY_TYPE_SHIFT;
-		device_id |= display_index[type]++ << ACPI_DISPLAY_INDEX_SHIFT;
-		connector->acpi_device_id = device_id;
+		display_type = i915_acpi_display_type(connector);
+		type = (display_type & I915_ACPI_DISPLAY_TYPE_MASK) >> I915_ACPI_DISPLAY_TYPE_SHIFT;
+		connector->acpi_device_id = display_type | ((u32)seen[type] << I915_ACPI_DISPLAY_INDEX_SHIFT);
+		seen[type]++;
 	}
 	i915_opregion_drm_connector_list_iter_end(&conn_iter);
 }
@@ -2543,48 +2548,46 @@ i915_opregion_cleanup(
 	opregion->lid_state = NULL;
 }
 
-/* Returns the ACPI display type of a connector (acpi_display_type()). */
+/* Returns the ACPI display type a connector type belongs to. */
 static u32
 i915_acpi_display_type(
 	struct intel_connector *connector)
 {
-	u32 display_type;
+	/*
+	 * Which ACPI display type each DRM connector type reports.  The
+	 * classification agrees with Linux intel_acpi.c; the table never changes.
+	 */
+	static const struct {
+		int connector_type;
+		u32 display_type;
+	} classes[] = {
+		{ DRM_MODE_CONNECTOR_VGA, I915_ACPI_DISPLAY_TYPE_VGA },
+		{ DRM_MODE_CONNECTOR_DVIA, I915_ACPI_DISPLAY_TYPE_VGA },
+		{ DRM_MODE_CONNECTOR_Composite, I915_ACPI_DISPLAY_TYPE_TV },
+		{ DRM_MODE_CONNECTOR_SVIDEO, I915_ACPI_DISPLAY_TYPE_TV },
+		{ DRM_MODE_CONNECTOR_Component, I915_ACPI_DISPLAY_TYPE_TV },
+		{ DRM_MODE_CONNECTOR_9PinDIN, I915_ACPI_DISPLAY_TYPE_TV },
+		{ DRM_MODE_CONNECTOR_TV, I915_ACPI_DISPLAY_TYPE_TV },
+		{ DRM_MODE_CONNECTOR_DVII, I915_ACPI_DISPLAY_TYPE_EXTERNAL_DIGITAL },
+		{ DRM_MODE_CONNECTOR_DVID, I915_ACPI_DISPLAY_TYPE_EXTERNAL_DIGITAL },
+		{ DRM_MODE_CONNECTOR_DisplayPort, I915_ACPI_DISPLAY_TYPE_EXTERNAL_DIGITAL },
+		{ DRM_MODE_CONNECTOR_HDMIA, I915_ACPI_DISPLAY_TYPE_EXTERNAL_DIGITAL },
+		{ DRM_MODE_CONNECTOR_HDMIB, I915_ACPI_DISPLAY_TYPE_EXTERNAL_DIGITAL },
+		{ DRM_MODE_CONNECTOR_LVDS, I915_ACPI_DISPLAY_TYPE_INTERNAL_DIGITAL },
+		{ DRM_MODE_CONNECTOR_eDP, I915_ACPI_DISPLAY_TYPE_INTERNAL_DIGITAL },
+		{ DRM_MODE_CONNECTOR_DSI, I915_ACPI_DISPLAY_TYPE_INTERNAL_DIGITAL },
+		{ DRM_MODE_CONNECTOR_Unknown, I915_ACPI_DISPLAY_TYPE_OTHER },
+		{ DRM_MODE_CONNECTOR_VIRTUAL, I915_ACPI_DISPLAY_TYPE_OTHER }
+	};
+	unsigned index;
 
-	/* Classifies the connector type. */
-	switch (connector->base.connector_type) {
-	case DRM_MODE_CONNECTOR_VGA:
-	case DRM_MODE_CONNECTOR_DVIA:
-		display_type = ACPI_DISPLAY_TYPE_VGA;
-		break;
-	case DRM_MODE_CONNECTOR_Composite:
-	case DRM_MODE_CONNECTOR_SVIDEO:
-	case DRM_MODE_CONNECTOR_Component:
-	case DRM_MODE_CONNECTOR_9PinDIN:
-	case DRM_MODE_CONNECTOR_TV:
-		display_type = ACPI_DISPLAY_TYPE_TV;
-		break;
-	case DRM_MODE_CONNECTOR_DVII:
-	case DRM_MODE_CONNECTOR_DVID:
-	case DRM_MODE_CONNECTOR_DisplayPort:
-	case DRM_MODE_CONNECTOR_HDMIA:
-	case DRM_MODE_CONNECTOR_HDMIB:
-		display_type = ACPI_DISPLAY_TYPE_EXTERNAL_DIGITAL;
-		break;
-	case DRM_MODE_CONNECTOR_LVDS:
-	case DRM_MODE_CONNECTOR_eDP:
-	case DRM_MODE_CONNECTOR_DSI:
-		display_type = ACPI_DISPLAY_TYPE_INTERNAL_DIGITAL;
-		break;
-	case DRM_MODE_CONNECTOR_Unknown:
-	case DRM_MODE_CONNECTOR_VIRTUAL:
-		display_type = ACPI_DISPLAY_TYPE_OTHER;
-		break;
-	default:
-		i915_opregion_missing_case(connector->base.connector_type);
-		display_type = ACPI_DISPLAY_TYPE_OTHER;
-		break;
+	/* Looks the connector type up in the classification. */
+	for (index = 0U; index < sizeof(classes) / sizeof(classes[0]); index++) {
+		if (classes[index].connector_type == connector->base.connector_type)
+			return classes[index].display_type;
 	}
 
-	/* Succeeded: reports the display type. */
-	return display_type;
+	/* A connector type the classification does not know is reported and counted as other. */
+	i915_opregion_missing_case(connector->base.connector_type);
+	return I915_ACPI_DISPLAY_TYPE_OTHER;
 }

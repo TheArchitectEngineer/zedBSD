@@ -1,0 +1,6 @@
+type=oneshot
+command=/bin/wltest
+arguments=--display=/tmp/wayland-0 --mode=mailbox --frames=60 --recreate-at=30 --token=wl2
+after=wltest1
+restart=no
+required=NO

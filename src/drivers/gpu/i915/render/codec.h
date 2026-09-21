@@ -13,7 +13,7 @@
  * the terminator followed by its bytes, and a float travels as its 32 bits.
  * The readers and writers below latch the first failure in their cursor.
  *
- * data/vulkan-codec.inc is generated from libvulkan's codec.c by
+ * render/vulkan-codec.inc is generated from libvulkan's codec.c by
  * plan/ws031/handover/tools/gen_vk_server_codec.py: a decoder for every
  * record the library encodes and an encoder for every record it decodes.
  * A part that needs the record codec includes this header and then that

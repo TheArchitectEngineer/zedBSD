@@ -21,6 +21,8 @@
 #include <stddef.h>
 #include <string.h>
 
+#include "intel/gt-regs.h"
+
 static void i915_migrate_fail(struct i915_gt_migrate *m, int error, const char *where);
 static void i915_migrate_insert_pte(struct i915_gt_ppgtt *pp, struct i915_gt_object *pt, uint64_t pt_dma, void *data);
 static int i915_migrate_first_copy_engine(struct i915_gt_engines *es, unsigned *index);

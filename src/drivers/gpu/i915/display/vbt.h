@@ -48,10 +48,9 @@
  * allocator, logging, the platform predicates and the few DRM objects the
  * parser fills -- fixed to the one platform the driver drives (ADL-P, display
  * version 13, PCH ADP).  The Linux enums and structures the parser shares with
- * the rest of the driver come from data/display-intel-bios.inc and
- * data/display-vbt-ref-types.inc; the VBT block layouts of
- * data/display-intel-vbt-defs.inc are private to vbt.c, which includes them
- * itself after defining _INTEL_BIOS_PRIVATE.
+ * the rest of the driver come from intel/vbt.h; the VBT block layouts of
+ * intel/vbt-defs.h are private to vbt.c, which includes them itself after
+ * defining _INTEL_BIOS_PRIVATE.
  *
  * The DP environment (dp-internal.h) is layered on this one and replaces its
  * world name, so a DP file sees everything below as well.
@@ -271,7 +270,7 @@ typedef u16 __be16;
  * The DPCD encodings parse_edp() stores.
  *
  * From Linux include/drm/display/drm_dp.h (the same text the DP environment
- * takes from data/display-drm-dp.inc).
+ * takes from intel/dp.h).
  */
 #define DP_LINK_BW_1_62   0x06
 #define DP_LINK_BW_2_7    0x0a
@@ -461,17 +460,12 @@ struct drm_edid {
 };
 
 /*
- * The Linux intel_bios.h declarations: the backlight type, the eDP power
- * sequence, the MIPI structures and the parser's entry points.
+ * The Linux intel_bios.h declarations (the backlight type, the eDP power
+ * sequence, the MIPI structures and the parser's entry points) and the Linux
+ * enums and data structures the parser fills: the port, AUX channel, PHY and
+ * PCH enums, the per-panel VBT data and the device's VBT data.
  */
-#include "../data/display-intel-bios.inc"
-
-/*
- * The Linux enums and data structures the parser fills: the port, AUX
- * channel, PHY and PCH enums, the per-panel VBT data and the device's VBT
- * data.
- */
-#include "../data/display-vbt-ref-types.inc"
+#include "../intel/vbt.h"
 
 /*
  * The panel the parser fills for one connector.

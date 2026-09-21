@@ -66,7 +66,7 @@
 #define I915_TEST_DEVICE_TYPE_HDMI	0x60d2u
 #define I915_TEST_DEVICE_TYPE_DP_TC	0x68c6u
 
-/* The connector statuses (enum drm_connector_status). */
+/* The connector statuses (enum connector_status). */
 #define I915_TEST_STATUS_CONNECTED	1
 #define I915_TEST_STATUS_DISCONNECTED	2
 

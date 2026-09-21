@@ -377,7 +377,7 @@ i915_drm_mode_do_interlace_quirk(
 	unsigned int i;
 
 	/* A progressive timing needs nothing. */
-	if (!(pt->misc & DRM_EDID_PT_INTERLACED))
+	if (!(pt->misc & EDID_PT_INTERLACED))
 		return;
 
 	/* Turns a field-height timing of a CEA format into its frame height. */
@@ -438,7 +438,7 @@ i915_drm_mode_detailed(
 		return NULL;
 
 	/* A stereo timing is refused. */
-	if (pt->misc & DRM_EDID_PT_STEREO) {
+	if (pt->misc & EDID_PT_STEREO) {
 		I915_LCD_DRM_DBG_KMS(dev,
 				     "[CONNECTOR:%d:%s] Stereo mode not supported\n",
 				     connector->base.id,
@@ -447,7 +447,7 @@ i915_drm_mode_detailed(
 	}
 
 	/* A composite-sync timing is only noted: it is converted like a separate-sync one. */
-	if (!(pt->misc & DRM_EDID_PT_SEPARATE_SYNC)) {
+	if (!(pt->misc & EDID_PT_SEPARATE_SYNC)) {
 		I915_LCD_DRM_DBG_KMS(dev,
 				     "[CONNECTOR:%d:%s] Composite sync not supported\n",
 				     connector->base.id,
@@ -530,8 +530,8 @@ i915_drm_mode_detailed(
 		if (info->quirks & EDID_QUIRK_DETAILED_SYNC_PP) {
 			mode->flags |= DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC;
 		} else {
-			mode->flags |= (pt->misc & DRM_EDID_PT_HSYNC_POSITIVE) ? DRM_MODE_FLAG_PHSYNC : DRM_MODE_FLAG_NHSYNC;
-			mode->flags |= (pt->misc & DRM_EDID_PT_VSYNC_POSITIVE) ? DRM_MODE_FLAG_PVSYNC : DRM_MODE_FLAG_NVSYNC;
+			mode->flags |= (pt->misc & EDID_PT_HSYNC_POSITIVE) ? DRM_MODE_FLAG_PHSYNC : DRM_MODE_FLAG_NHSYNC;
+			mode->flags |= (pt->misc & EDID_PT_VSYNC_POSITIVE) ? DRM_MODE_FLAG_PVSYNC : DRM_MODE_FLAG_NVSYNC;
 		}
 	}
 

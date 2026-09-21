@@ -32,7 +32,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "../data/vulkan-codec.inc"
+#include "vulkan-codec.inc"
 
 /* How many operations one command buffer records. */
 #define I915_GFX_MAX_OPS	64U
@@ -106,6 +106,7 @@ static int i915_command_pool_create(struct i915_render_session *session, struct 
 static void i915_command_buffer_release(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf);
 static int i915_command_pool_destroy(struct i915_render_session *session, struct i915_wire_reader *reader);
 static int i915_command_pool_reset(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
+static int i915_command_buffer_reset(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int i915_command_buffers_allocate(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int i915_command_buffers_free(struct i915_render_session *session, struct i915_wire_reader *reader);
 static int i915_command_buffer_begin(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
@@ -134,7 +135,7 @@ static int i915_queue_submit(struct i915_render_session *session, struct i915_wi
  * command.
  *
  * `handled` is cleared for an opcode the module does not own; every opcode
- * from 92 to 136 is a vkCmd* and is owned here.  A recording opcode the
+ * from 93 to 136 is a vkCmd* and is owned here (92 is vkResetCommandBuffer).  A recording opcode the
  * module does not implement is refused with ENOTSUP and fails the stream.
  */
 int
@@ -184,6 +185,10 @@ drv_i915_gfx_rec_dispatch(
 	case 91U:
 		/* vkEndCommandBuffer */
 		error = i915_command_buffer_end(session, reader, reply);
+		break;
+	case 92U:
+		/* vkResetCommandBuffer */
+		error = i915_command_buffer_reset(session, reader, reply);
 		break;
 	default:
 		/* A recording, or an opcode of another module. */
@@ -549,6 +554,40 @@ i915_command_buffer_begin(
 	drv_i915_wire_reply_u32(reply, result);
 
 	/* Succeeded: the command was decoded; the reply carries the begin's result. */
+	return 0;
+}
+
+/* vkResetCommandBuffer: [command buffer][flags] -> [result]; the recording is emptied. */
+static int
+i915_command_buffer_reset(
+	struct i915_render_session *session,
+	struct i915_wire_reader *reader,
+	struct i915_wire_writer *reply)
+{
+	struct i915_gfx_cmdbuf *cmdbuf;
+	uint64_t identity;
+	uint32_t result;
+
+	/* Decodes the buffer; the flags are not acted on (nothing is held beyond the list). */
+	identity = drv_i915_wire_read_u64(reader);
+	(void)drv_i915_wire_read_u32(reader);
+	cmdbuf = drv_i915_object_lookup(session->vk, I915_VK_OBJ_COMMAND_BUFFER, identity);
+	if (reader->error != 0)
+		return EINVAL;
+
+	/* Empties the recording, as a begin does. */
+	if (cmdbuf != NULL) {
+		cmdbuf->op_count = 0U;
+		cmdbuf->overflow = 0;
+	}
+
+	/* Replies success for a known buffer and failure for an unknown one. */
+	result = 0U;
+	if (cmdbuf == NULL)
+		result = i915_command_result(EINVAL);
+	drv_i915_wire_reply_u32(reply, result);
+
+	/* Succeeded: the command was decoded; the reply carries the reset's result. */
 	return 0;
 }
 

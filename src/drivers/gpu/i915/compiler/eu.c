@@ -10,7 +10,7 @@
  *
  * Each instruction is four little-endian 32-bit words.  Field bit positions,
  * hardware opcode values, register types and the descriptor layout of SEND
- * are transcribed into data/eu-encoding-gen12.inc from Mesa (MIT); the
+ * are transcribed into intel/eu-encoding-gen12.h from Mesa (MIT); the
  * placement logic here is new.  Every emitter is checked bit for bit against
  * Mesa's assembler and disassembler (gentool) by
  * plan/ws031/tests/run-vk-gentool-test.sh.
@@ -41,7 +41,7 @@
 #include <errno.h>
 #include <string.h>
 
-#include "../data/eu-encoding-gen12.inc"
+#include "../intel/eu-encoding-gen12.h"
 
 /*
  * Marks a parameter a function deliberately leaves unread.
@@ -489,7 +489,7 @@ drv_i915_eu_send(
 	i915_eu_bit(inst, EU_SRC1_REG_FILE_BIT, i915_eu_file_bit(src1));
 	i915_eu_set(inst, EU_SRC1_REG_NR_HI, EU_SRC1_REG_NR_LO, src1.nr);
 
-	/* Scatters the message descriptor as eu-encoding-gen12.inc says. */
+	/* Scatters the message descriptor as eu-encoding-gen12.h says. */
 	i915_eu_set(inst, 123U, 122U, descriptor >> 30);
 	i915_eu_set(inst, 71U, 67U, descriptor >> 25);
 	i915_eu_set(inst, 55U, 51U, descriptor >> 20);

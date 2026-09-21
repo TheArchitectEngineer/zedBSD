@@ -43,7 +43,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "data/i915-commands.inc"
+#include "intel/commands.h"
 
 /* How many session contexts of the render engine can be live at once. */
 #define I915_WORKER_CONTEXTS		8U

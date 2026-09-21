@@ -1,0 +1,6 @@
+type=oneshot
+command=/bin/wltest
+arguments=--display=/tmp/wayland-0 --mode=fifo --frames=600 --token=wl1
+after=wlwait
+restart=no
+required=NO

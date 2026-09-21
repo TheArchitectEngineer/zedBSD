@@ -131,20 +131,20 @@ static u8 i915_drm_dp_get_adjust_tx_ffe_preset(const u8 link_status[DP_LINK_STAT
 static int i915_8b10b_clock_recovery_delay_us(const struct drm_dp_aux *aux, u8 rd_interval);
 static int i915_8b10b_channel_eq_delay_us(const struct drm_dp_aux *aux, u8 rd_interval);
 static int i915_128b132b_channel_eq_delay_us(const struct drm_dp_aux *aux, u8 rd_interval);
-static int i915_read_delay(struct drm_dp_aux *aux, const u8 dpcd[DP_RECEIVER_CAP_SIZE], enum drm_dp_phy dp_phy, bool uhbr, bool cr);
-static int i915_drm_dp_read_clock_recovery_delay(struct drm_dp_aux *aux, const u8 dpcd[DP_RECEIVER_CAP_SIZE], enum drm_dp_phy dp_phy, bool uhbr);
-static int i915_drm_dp_read_channel_eq_delay(struct drm_dp_aux *aux, const u8 dpcd[DP_RECEIVER_CAP_SIZE], enum drm_dp_phy dp_phy, bool uhbr);
+static int i915_read_delay(struct drm_dp_aux *aux, const u8 dpcd[DP_RECEIVER_CAP_SIZE], enum dp_phy dp_phy, bool uhbr, bool cr);
+static int i915_drm_dp_read_clock_recovery_delay(struct drm_dp_aux *aux, const u8 dpcd[DP_RECEIVER_CAP_SIZE], enum dp_phy dp_phy, bool uhbr);
+static int i915_drm_dp_read_channel_eq_delay(struct drm_dp_aux *aux, const u8 dpcd[DP_RECEIVER_CAP_SIZE], enum dp_phy dp_phy, bool uhbr);
 static int i915_drm_dp_lttpr_count(const u8 caps[DP_LTTPR_COMMON_CAP_SIZE]);
 static bool i915_drm_dp_lttpr_voltage_swing_level_3_supported(const u8 caps[DP_LTTPR_PHY_CAP_SIZE]);
 static bool i915_drm_dp_lttpr_pre_emphasis_level_3_supported(const u8 caps[DP_LTTPR_PHY_CAP_SIZE]);
 static int i915_drm_dp_read_lttpr_common_caps(struct drm_dp_aux *aux, const u8 dpcd[DP_RECEIVER_CAP_SIZE], u8 caps[DP_LTTPR_COMMON_CAP_SIZE]);
-static int i915_drm_dp_read_lttpr_phy_caps(struct drm_dp_aux *aux, const u8 dpcd[DP_RECEIVER_CAP_SIZE], enum drm_dp_phy dp_phy, u8 caps[DP_LTTPR_PHY_CAP_SIZE]);
-static const char *i915_drm_dp_phy_name(enum drm_dp_phy dp_phy) __maybe_unused;
+static int i915_drm_dp_read_lttpr_phy_caps(struct drm_dp_aux *aux, const u8 dpcd[DP_RECEIVER_CAP_SIZE], enum dp_phy dp_phy, u8 caps[DP_LTTPR_PHY_CAP_SIZE]);
+static const char *i915_drm_dp_phy_name(enum dp_phy dp_phy) __maybe_unused;
 static u8 i915_drm_dp_link_rate_to_bw_code(int link_rate);
 static void i915_dp_reset_lttpr_common_caps(struct intel_dp *intel_dp);
 static void i915_dp_reset_lttpr_count(struct intel_dp *intel_dp);
-static u8 *i915_dp_lttpr_phy_caps(struct intel_dp *intel_dp, enum drm_dp_phy dp_phy);
-static void i915_dp_read_lttpr_phy_caps(struct intel_dp *intel_dp, const u8 dpcd[DP_RECEIVER_CAP_SIZE], enum drm_dp_phy dp_phy);
+static u8 *i915_dp_lttpr_phy_caps(struct intel_dp *intel_dp, enum dp_phy dp_phy);
+static void i915_dp_read_lttpr_phy_caps(struct intel_dp *intel_dp, const u8 dpcd[DP_RECEIVER_CAP_SIZE], enum dp_phy dp_phy);
 static bool i915_dp_read_lttpr_common_caps(struct intel_dp *intel_dp, const u8 dpcd[DP_RECEIVER_CAP_SIZE]);
 static bool i915_dp_set_lttpr_transparent_mode(struct intel_dp *intel_dp, bool enable);
 static bool i915_dp_lttpr_transparent_mode_enabled(struct intel_dp *intel_dp);
@@ -152,23 +152,23 @@ static int i915_dp_init_lttpr_phys(struct intel_dp *intel_dp, const u8 dpcd[DP_R
 static int i915_dp_init_lttpr(struct intel_dp *intel_dp, const u8 dpcd[DP_RECEIVER_CAP_SIZE]);
 static int i915_dp_init_lttpr_and_dprx_caps(struct intel_dp *intel_dp, int *lttpr_count);
 static u8 i915_dp_voltage_max(u8 preemph);
-static u8 i915_dp_lttpr_voltage_max(struct intel_dp *intel_dp, enum drm_dp_phy dp_phy);
-static u8 i915_dp_lttpr_preemph_max(struct intel_dp *intel_dp, enum drm_dp_phy dp_phy);
-static bool i915_dp_phy_is_downstream_of_source(struct intel_dp *intel_dp, enum drm_dp_phy dp_phy);
-static u8 i915_dp_phy_voltage_max(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state, enum drm_dp_phy dp_phy);
-static u8 i915_dp_phy_preemph_max(struct intel_dp *intel_dp, enum drm_dp_phy dp_phy);
-static bool i915_has_per_lane_signal_levels(struct intel_dp *intel_dp, enum drm_dp_phy dp_phy);
-static u8 i915_dp_get_lane_adjust_tx_ffe_preset(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state, enum drm_dp_phy dp_phy, const u8 link_status[DP_LINK_STATUS_SIZE], int lane);
-static u8 i915_dp_get_lane_adjust_vswing_preemph(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state, enum drm_dp_phy dp_phy, const u8 link_status[DP_LINK_STATUS_SIZE], int lane);
-static u8 i915_dp_get_lane_adjust_train(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state, enum drm_dp_phy dp_phy, const u8 link_status[DP_LINK_STATUS_SIZE], int lane);
-static void i915_dp_get_adjust_train(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state, enum drm_dp_phy dp_phy, const u8 link_status[DP_LINK_STATUS_SIZE]);
-static int i915_dp_training_pattern_set_reg(struct intel_dp *intel_dp, enum drm_dp_phy dp_phy);
-static bool i915_dp_set_link_train(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state, enum drm_dp_phy dp_phy, u8 dp_train_pat);
+static u8 i915_dp_lttpr_voltage_max(struct intel_dp *intel_dp, enum dp_phy dp_phy);
+static u8 i915_dp_lttpr_preemph_max(struct intel_dp *intel_dp, enum dp_phy dp_phy);
+static bool i915_dp_phy_is_downstream_of_source(struct intel_dp *intel_dp, enum dp_phy dp_phy);
+static u8 i915_dp_phy_voltage_max(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state, enum dp_phy dp_phy);
+static u8 i915_dp_phy_preemph_max(struct intel_dp *intel_dp, enum dp_phy dp_phy);
+static bool i915_has_per_lane_signal_levels(struct intel_dp *intel_dp, enum dp_phy dp_phy);
+static u8 i915_dp_get_lane_adjust_tx_ffe_preset(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state, enum dp_phy dp_phy, const u8 link_status[DP_LINK_STATUS_SIZE], int lane);
+static u8 i915_dp_get_lane_adjust_vswing_preemph(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state, enum dp_phy dp_phy, const u8 link_status[DP_LINK_STATUS_SIZE], int lane);
+static u8 i915_dp_get_lane_adjust_train(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state, enum dp_phy dp_phy, const u8 link_status[DP_LINK_STATUS_SIZE], int lane);
+static void i915_dp_get_adjust_train(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state, enum dp_phy dp_phy, const u8 link_status[DP_LINK_STATUS_SIZE]);
+static int i915_dp_training_pattern_set_reg(struct intel_dp *intel_dp, enum dp_phy dp_phy);
+static bool i915_dp_set_link_train(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state, enum dp_phy dp_phy, u8 dp_train_pat);
 static char i915_dp_training_pattern_name(u8 train_pat);
-static void i915_dp_program_link_training_pattern(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state, enum drm_dp_phy dp_phy, u8 dp_train_pat);
-static void i915_dp_set_signal_levels(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state, enum drm_dp_phy dp_phy);
-static bool i915_dp_reset_link_train(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state, enum drm_dp_phy dp_phy, u8 dp_train_pat);
-static bool i915_dp_update_link_train(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state, enum drm_dp_phy dp_phy);
+static void i915_dp_program_link_training_pattern(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state, enum dp_phy dp_phy, u8 dp_train_pat);
+static void i915_dp_set_signal_levels(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state, enum dp_phy dp_phy);
+static bool i915_dp_reset_link_train(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state, enum dp_phy dp_phy, u8 dp_train_pat);
+static bool i915_dp_update_link_train(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state, enum dp_phy dp_phy);
 static bool i915_dp_lane_max_tx_ffe_reached(u8 train_set_lane);
 static bool i915_dp_lane_max_vswing_reached(u8 train_set_lane);
 static bool i915_dp_link_max_vswing_reached(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state);
@@ -176,12 +176,12 @@ static void i915_dp_update_downspread_ctrl(struct intel_dp *intel_dp, const stru
 static void i915_dp_update_link_bw_set(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state, u8 link_bw, u8 rate_select);
 static bool i915_dp_prepare_link_train(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state);
 static bool i915_dp_adjust_request_changed(const struct intel_crtc_state *crtc_state, const u8 old_link_status[DP_LINK_STATUS_SIZE], const u8 new_link_status[DP_LINK_STATUS_SIZE]);
-static void i915_dp_dump_link_status(struct intel_dp *intel_dp, enum drm_dp_phy dp_phy, const u8 link_status[DP_LINK_STATUS_SIZE]);
-static bool i915_dp_link_training_clock_recovery(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state, enum drm_dp_phy dp_phy);
-static u32 i915_dp_training_pattern(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state, enum drm_dp_phy dp_phy);
-static bool i915_dp_link_training_channel_equalization(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state, enum drm_dp_phy dp_phy);
-static bool i915_dp_disable_dpcd_training_pattern(struct intel_dp *intel_dp, enum drm_dp_phy dp_phy);
-static bool i915_dp_link_train_phy(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state, enum drm_dp_phy dp_phy);
+static void i915_dp_dump_link_status(struct intel_dp *intel_dp, enum dp_phy dp_phy, const u8 link_status[DP_LINK_STATUS_SIZE]);
+static bool i915_dp_link_training_clock_recovery(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state, enum dp_phy dp_phy);
+static u32 i915_dp_training_pattern(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state, enum dp_phy dp_phy);
+static bool i915_dp_link_training_channel_equalization(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state, enum dp_phy dp_phy);
+static bool i915_dp_disable_dpcd_training_pattern(struct intel_dp *intel_dp, enum dp_phy dp_phy);
+static bool i915_dp_link_train_phy(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state, enum dp_phy dp_phy);
 static void i915_dp_schedule_fallback_link_training(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state);
 static bool i915_dp_link_train_all_phys(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state, int lttpr_count);
 static int i915_dp_rate_index(const int *rates, int len, int rate);
@@ -265,7 +265,7 @@ drv_i915_drm_dp_clock_recovery_ok(
 int
 drv_i915_drm_dp_dpcd_read_phy_link_status(
 	struct drm_dp_aux *aux,
-	enum drm_dp_phy dp_phy,
+	enum dp_phy dp_phy,
 	u8 link_status[DP_LINK_STATUS_SIZE])
 {
 	struct drm_i915_private *i915;
@@ -582,11 +582,11 @@ drv_i915_dp_needs_vsc_sdp(
 
 	/* So are the colorimetries the MSA cannot indicate. */
 	switch (conn_state->colorspace) {
-	case DRM_MODE_COLORIMETRY_SYCC_601:
-	case DRM_MODE_COLORIMETRY_OPYCC_601:
-	case DRM_MODE_COLORIMETRY_BT2020_YCC:
-	case DRM_MODE_COLORIMETRY_BT2020_RGB:
-	case DRM_MODE_COLORIMETRY_BT2020_CYCC:
+	case MODE_COLORIMETRY_SYCC_601:
+	case MODE_COLORIMETRY_OPYCC_601:
+	case MODE_COLORIMETRY_BT2020_YCC:
+	case MODE_COLORIMETRY_BT2020_RGB:
+	case MODE_COLORIMETRY_BT2020_CYCC:
 		return true;
 	default:
 		break;
@@ -1122,7 +1122,7 @@ static int
 i915_read_delay(
 	struct drm_dp_aux *aux,
 	const u8 dpcd[DP_RECEIVER_CAP_SIZE],
-	enum drm_dp_phy dp_phy,
+	enum dp_phy dp_phy,
 	bool uhbr,
 	bool cr)
 {
@@ -1201,7 +1201,7 @@ static int
 i915_drm_dp_read_clock_recovery_delay(
 	struct drm_dp_aux *aux,
 	const u8 dpcd[DP_RECEIVER_CAP_SIZE],
-	enum drm_dp_phy dp_phy,
+	enum dp_phy dp_phy,
 	bool uhbr)
 {
 	int delay_us;
@@ -1218,7 +1218,7 @@ static int
 i915_drm_dp_read_channel_eq_delay(
 	struct drm_dp_aux *aux,
 	const u8 dpcd[DP_RECEIVER_CAP_SIZE],
-	enum drm_dp_phy dp_phy,
+	enum dp_phy dp_phy,
 	bool uhbr)
 {
 	int delay_us;
@@ -1329,7 +1329,7 @@ static int
 i915_drm_dp_read_lttpr_phy_caps(
 	struct drm_dp_aux *aux,
 	const u8 dpcd[DP_RECEIVER_CAP_SIZE],
-	enum drm_dp_phy dp_phy,
+	enum dp_phy dp_phy,
 	u8 caps[DP_LTTPR_PHY_CAP_SIZE])
 {
 	int error;
@@ -1357,7 +1357,7 @@ i915_drm_dp_read_lttpr_phy_caps(
  */
 static const char *
 i915_drm_dp_phy_name(
-	enum drm_dp_phy dp_phy)
+	enum dp_phy dp_phy)
 {
 	/* The names, indexed by the PHY (DP_PHY_DPRX, then DP_PHY_LTTPR1..8). */
 	static const char * const phy_names[] = {
@@ -1430,7 +1430,7 @@ i915_dp_reset_lttpr_count(
 static u8 *
 i915_dp_lttpr_phy_caps(
 	struct intel_dp *intel_dp,
-	enum drm_dp_phy dp_phy)
+	enum dp_phy dp_phy)
 {
 	/* LTTPR 1 is the first entry. */
 	return intel_dp->lttpr_phy_caps[dp_phy - DP_PHY_LTTPR1];
@@ -1441,7 +1441,7 @@ static void
 i915_dp_read_lttpr_phy_caps(
 	struct intel_dp *intel_dp,
 	const u8 dpcd[DP_RECEIVER_CAP_SIZE],
-	enum drm_dp_phy dp_phy)
+	enum dp_phy dp_phy)
 {
 	u8 *phy_caps;
 	int error;
@@ -1744,7 +1744,7 @@ i915_dp_voltage_max(
 static u8
 i915_dp_lttpr_voltage_max(
 	struct intel_dp *intel_dp,
-	enum drm_dp_phy dp_phy)
+	enum dp_phy dp_phy)
 {
 	const u8 *phy_caps;
 	bool level_3;
@@ -1763,7 +1763,7 @@ i915_dp_lttpr_voltage_max(
 static u8
 i915_dp_lttpr_preemph_max(
 	struct intel_dp *intel_dp,
-	enum drm_dp_phy dp_phy)
+	enum dp_phy dp_phy)
 {
 	const u8 *phy_caps;
 	bool level_3;
@@ -1786,7 +1786,7 @@ i915_dp_lttpr_preemph_max(
 static bool
 i915_dp_phy_is_downstream_of_source(
 	struct intel_dp *intel_dp,
-	enum drm_dp_phy dp_phy)
+	enum dp_phy dp_phy)
 {
 	int lttpr_count;
 
@@ -1817,7 +1817,7 @@ static u8
 i915_dp_phy_voltage_max(
 	struct intel_dp *intel_dp,
 	const struct intel_crtc_state *crtc_state,
-	enum drm_dp_phy dp_phy)
+	enum dp_phy dp_phy)
 {
 	u8 (*voltage_max_hook)(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state);
 	bool downstream;
@@ -1851,7 +1851,7 @@ i915_dp_phy_voltage_max(
 static u8
 i915_dp_phy_preemph_max(
 	struct intel_dp *intel_dp,
-	enum drm_dp_phy dp_phy)
+	enum dp_phy dp_phy)
 {
 	u8 (*preemph_max_hook)(struct intel_dp *intel_dp);
 	bool downstream;
@@ -1886,7 +1886,7 @@ i915_dp_phy_preemph_max(
 static bool
 i915_has_per_lane_signal_levels(
 	struct intel_dp *intel_dp,
-	enum drm_dp_phy dp_phy)
+	enum dp_phy dp_phy)
 {
 	bool downstream;
 	int display_ver;
@@ -1910,7 +1910,7 @@ static u8
 i915_dp_get_lane_adjust_tx_ffe_preset(
 	struct intel_dp *intel_dp,
 	const struct intel_crtc_state *crtc_state,
-	enum drm_dp_phy dp_phy,
+	enum dp_phy dp_phy,
 	const u8 link_status[DP_LINK_STATUS_SIZE],
 	int lane)
 {
@@ -1944,7 +1944,7 @@ static u8
 i915_dp_get_lane_adjust_vswing_preemph(
 	struct intel_dp *intel_dp,
 	const struct intel_crtc_state *crtc_state,
-	enum drm_dp_phy dp_phy,
+	enum dp_phy dp_phy,
 	const u8 link_status[DP_LINK_STATUS_SIZE],
 	int lane)
 {
@@ -1999,7 +1999,7 @@ static u8
 i915_dp_get_lane_adjust_train(
 	struct intel_dp *intel_dp,
 	const struct intel_crtc_state *crtc_state,
-	enum drm_dp_phy dp_phy,
+	enum dp_phy dp_phy,
 	const u8 link_status[DP_LINK_STATUS_SIZE],
 	int lane)
 {
@@ -2038,7 +2038,7 @@ static void
 i915_dp_get_adjust_train(
 	struct intel_dp *intel_dp,
 	const struct intel_crtc_state *crtc_state,
-	enum drm_dp_phy dp_phy,
+	enum dp_phy dp_phy,
 	const u8 link_status[DP_LINK_STATUS_SIZE])
 {
 	bool uhbr;
@@ -2085,7 +2085,7 @@ i915_dp_get_adjust_train(
 static int
 i915_dp_training_pattern_set_reg(
 	struct intel_dp *intel_dp,
-	enum drm_dp_phy dp_phy)
+	enum dp_phy dp_phy)
 {
 	UNUSED_PARAMETER(intel_dp);
 
@@ -2106,7 +2106,7 @@ static bool
 i915_dp_set_link_train(
 	struct intel_dp *intel_dp,
 	const struct intel_crtc_state *crtc_state,
-	enum drm_dp_phy dp_phy,
+	enum dp_phy dp_phy,
 	u8 dp_train_pat)
 {
 	struct drm_i915_private *cur_i915;
@@ -2164,7 +2164,7 @@ static void
 i915_dp_program_link_training_pattern(
 	struct intel_dp *intel_dp,
 	const struct intel_crtc_state *crtc_state,
-	enum drm_dp_phy dp_phy,
+	enum dp_phy dp_phy,
 	u8 dp_train_pat)
 {
 	void (*set_link_train)(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state, u8 dp_train_pat);
@@ -2196,7 +2196,7 @@ static void
 i915_dp_set_signal_levels(
 	struct intel_dp *intel_dp,
 	const struct intel_crtc_state *crtc_state,
-	enum drm_dp_phy dp_phy)
+	enum dp_phy dp_phy)
 {
 	void (*set_signal_levels)(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state);
 	struct intel_encoder *encoder;
@@ -2240,7 +2240,7 @@ static bool
 i915_dp_reset_link_train(
 	struct intel_dp *intel_dp,
 	const struct intel_crtc_state *crtc_state,
-	enum drm_dp_phy dp_phy,
+	enum dp_phy dp_phy,
 	u8 dp_train_pat)
 {
 	bool written;
@@ -2266,7 +2266,7 @@ static bool
 i915_dp_update_link_train(
 	struct intel_dp *intel_dp,
 	const struct intel_crtc_state *crtc_state,
-	enum drm_dp_phy dp_phy)
+	enum dp_phy dp_phy)
 {
 	struct drm_i915_private *cur_i915;
 	i915_lcd_ssize_t ret;
@@ -2561,7 +2561,7 @@ i915_dp_adjust_request_changed(
 static void
 i915_dp_dump_link_status(
 	struct intel_dp *intel_dp,
-	enum drm_dp_phy dp_phy,
+	enum dp_phy dp_phy,
 	const u8 link_status[DP_LINK_STATUS_SIZE])
 {
 	UNUSED_PARAMETER(intel_dp);
@@ -2582,7 +2582,7 @@ static bool
 i915_dp_link_training_clock_recovery(
 	struct intel_dp *intel_dp,
 	const struct intel_crtc_state *crtc_state,
-	enum drm_dp_phy dp_phy)
+	enum dp_phy dp_phy)
 {
 	struct drm_i915_private *cur_i915;
 	u8 old_link_status[DP_LINK_STATUS_SIZE];
@@ -2719,7 +2719,7 @@ static u32
 i915_dp_training_pattern(
 	struct intel_dp *intel_dp,
 	const struct intel_crtc_state *crtc_state,
-	enum drm_dp_phy dp_phy)
+	enum dp_phy dp_phy)
 {
 	struct drm_i915_private *i915;
 	bool source_tps3;
@@ -2746,7 +2746,7 @@ i915_dp_training_pattern(
 	if (dp_phy != DP_PHY_DPRX) {
 		sink_tps4 = true;
 	} else {
-		sink_tps4 = drm_dp_tps4_supported(intel_dp->dpcd);
+		sink_tps4 = dp_tps4_supported(intel_dp->dpcd);
 	}
 
 	/* Uses TPS4 when both ends support it; notes an HBR3 link without it. */
@@ -2772,7 +2772,7 @@ i915_dp_training_pattern(
 	if (dp_phy != DP_PHY_DPRX) {
 		sink_tps3 = true;
 	} else {
-		sink_tps3 = drm_dp_tps3_supported(intel_dp->dpcd);
+		sink_tps3 = dp_tps3_supported(intel_dp->dpcd);
 	}
 
 	/* Uses TPS3 when both ends support it; notes an HBR2+ link without it. */
@@ -2803,7 +2803,7 @@ static bool
 i915_dp_link_training_channel_equalization(
 	struct intel_dp *intel_dp,
 	const struct intel_crtc_state *crtc_state,
-	enum drm_dp_phy dp_phy)
+	enum dp_phy dp_phy)
 {
 	struct drm_i915_private *cur_i915;
 	int tries;
@@ -2902,7 +2902,7 @@ i915_dp_link_training_channel_equalization(
 static bool
 i915_dp_disable_dpcd_training_pattern(
 	struct intel_dp *intel_dp,
-	enum drm_dp_phy dp_phy)
+	enum dp_phy dp_phy)
 {
 	struct drm_i915_private *cur_i915;
 	i915_lcd_ssize_t written;
@@ -2926,7 +2926,7 @@ static bool
 i915_dp_link_train_phy(
 	struct intel_dp *intel_dp,
 	const struct intel_crtc_state *crtc_state,
-	enum drm_dp_phy dp_phy)
+	enum dp_phy dp_phy)
 {
 	bool passed;
 	bool recovered;
@@ -3017,7 +3017,7 @@ i915_dp_link_train_all_phys(
 	int lttpr_count)
 {
 	void (*set_idle_link_train)(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state);
-	enum drm_dp_phy dp_phy;
+	enum dp_phy dp_phy;
 	bool passed;
 	int i;
 
@@ -3187,7 +3187,7 @@ i915_downstream_hpd_needs_d0(
 		return false;
 
 	/* Only a branch device has downstream ports. */
-	branch = drm_dp_is_branch(intel_dp->dpcd);
+	branch = dp_is_branch(intel_dp->dpcd);
 	if (!branch)
 		return false;
 

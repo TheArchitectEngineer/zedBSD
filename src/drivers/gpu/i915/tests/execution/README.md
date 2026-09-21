@@ -48,7 +48,7 @@ On the hardware (the machine is shared; always take the lock):
 - `draw-test.c` — draw, R1, texture, T3 and bilinear tests.
 - `fhd-render.c`, `fhd-render.h` — the full-HD textured draw into a caller's buffer (used by the display scenarios).
 - `ppgtt-walk.c` — a read-only walk of the GT address space, as the GPU does it.
-- `firmware-override.c`, `firmware-override.h` — the test build's answer to the firmware provider's weak request checkpoint.
+- `firmware-override.c`, `firmware-override.h` — the test build's answer to the firmware provider's weak request checkpoint (an image it serves stays the test's memory; the release does not free it).
 - `../fixtures/` — the draw/texture fixtures (`draw-fixture.c`, the generated `tex-fixture*-gen.inc`) and `vkref-generated.inc`.
 
 ## Dropped tests
@@ -72,7 +72,7 @@ keeps one check per old check otherwise, so the counts stay comparable.
 | `skl_pcode_request` time-base anomaly (1) | same |
 | PCODE preemption-off region, part (b): counter fault inside the region (1) | same; part (a) runs on the real clock |
 | Timer next-event / tick calculation (8) | the calculation (`timer_calc`) is retired with the diagnostic runner |
-| IRQ-context completion one-shot (4, skipped at run time) | `kern_diag_oneshot_arm` is built only with `CONFIG_DRIVER_PCI_I915_PARITY`, which the new build does not set |
+| IRQ-context completion one-shot (4, skipped at run time) | `kern_diag_oneshot_arm` was a kernel hook built only with the removed `CONFIG_DRIVER_PCI_I915_PARITY`; the hook was deleted with the option |
 | Real preemption A/B (1, skipped at run time) | same one-shot hook |
 
 ### ktest-display.c
@@ -85,7 +85,7 @@ keeps one check per old check otherwise, so the counts stay comparable.
 | DMC-FINI(running) and DMC-FINI(MMIO fault) (4) | the loader's pause and fault-at test hooks were dropped from production |
 | DS-ENOMEM (1) | the global-state allocation can no longer fail and its failure hook is gone |
 | DS-QUIRKS forced-DMI sub-case (part of 1) | the DMI match hook no longer exists; the PCI sub-cases run |
-| `intel_bios_init` fallback and VBT-EXPLICIT/CHILDREN/PANEL/DEFAULTS (8, skipped at run time) | the VBT parser's world is a driver-wide pointer bound to the live display (`display/vbt.c` `i915_vbt_bound_world`): a second world gets EBUSY |
+| `intel_bios_init` fallback and VBT-EXPLICIT/CHILDREN/PANEL/DEFAULTS (7 with `I915_TEST_VBT=y`, 1 without; skipped at run time) | the VBT parser's world is a driver-wide pointer bound to the live display (`display/vbt.c` `i915_vbt_bound_world`): a second world gets EBUSY. The explicit-VBT group (6 skips and the VBT-VALIDATE check) exists only in the `I915_TEST_VBT=y` build; the "second machine (1028:0a1f)" case went with the Dell Latitude 5320 VBT on 2026-09-22 |
 
 ### ktest-display-probe.c
 

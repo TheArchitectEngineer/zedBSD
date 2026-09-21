@@ -131,7 +131,7 @@
  * The DBUF slice tables of the Linux text (adlp_allowed_dbufs[],
  * tgl_allowed_dbufs[]).
  */
-#include "../data/display-wm-dbuf-slices.inc"
+#include "../intel/wm-dbuf.h"
 
 /*
  * One QGV point as the PCODE reports it: the DRAM clock and timings.
@@ -2202,9 +2202,9 @@ i915_skl_cursor_allocation(
 	 * result is named ret so the warning reads as in Linux.
 	 */
 	ret = i915_skl_compute_wm_params(crtc_state, 256,
-		i915_drm_format_info(DRM_FORMAT_ARGB8888),
-		DRM_FORMAT_MOD_LINEAR,
-		DRM_MODE_ROTATE_0,
+		i915_drm_format_info(FORMAT_ARGB8888),
+		FORMAT_MOD_LINEAR,
+		MODE_ROTATE_0,
 		crtc_state->pixel_rate, &wp, 0);
 	I915_LCD_DRM_WARN_ON(&i915->drm, ret);
 
@@ -2552,7 +2552,7 @@ i915_skl_compute_wm_params(
 	}
 
 	/* The minimum scanlines of a Y tile: by cpp when rotated by 90 or 270 degrees. */
-	rotated = drm_rotation_90_or_270(rotation);
+	rotated = rotation_90_or_270(rotation);
 	if (rotated) {
 		/* The scanlines of a tile row for each cpp. */
 		switch (wp->cpp) {

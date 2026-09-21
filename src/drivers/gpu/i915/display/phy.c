@@ -107,7 +107,7 @@ static const struct i915_procmon i915_procmon_values[5] = {
 };
 
 /* The buffer translation tables (Linux-derived, constant). */
-#include "../data/display-phy-buf-trans.inc"
+#include "../intel/phy.h"
 
 static unsigned i915_combophy_base(unsigned phy);
 static unsigned i915_comp_dw(unsigned phy, unsigned dw);

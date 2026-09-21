@@ -33,7 +33,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "../data/vulkan-codec.inc"
+#include "vulkan-codec.inc"
 
 static int i915_gfx_bind_image(struct i915_render_session *session, struct i915_gfx_memory *memory, uint64_t resource, uint64_t offset);
 static int i915_gfx_bind_buffer(struct i915_render_session *session, struct i915_gfx_memory *memory, uint64_t resource, uint64_t offset);

@@ -36,7 +36,7 @@
 #include <stddef.h>
 #include <string.h>
 
-#include "data/i915-ids.inc"
+#include "intel/pci-ids.h"
 
 /* Builds one exact-match identity row for an Intel graphics product. */
 #define I915_ID(product)	{ 0x8086U, (product), DRV_PCI_ANY_ID, DRV_PCI_ANY_ID, 0U, 0U, 0U }

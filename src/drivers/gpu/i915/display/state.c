@@ -789,7 +789,7 @@ drv_i915_lcd_compute(
 	bpc = 0;
 	if (edid->version == 1 &&
 	    edid->revision >= 4 &&
-	    (edid->input & DRM_EDID_INPUT_DIGITAL) != 0) {
+	    (edid->input & EDID_INPUT_DIGITAL) != 0) {
 		depth = (edid->input >> 4) & 7u;
 		if (depth >= 1u && depth <= 6u)
 			bpc = 4 + 2 * (int)depth;

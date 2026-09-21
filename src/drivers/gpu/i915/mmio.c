@@ -51,7 +51,7 @@
  * changes, so every device shares it.
  */
 static const struct i915_mmio_range i915_gen12_ranges[] = {
-#include "data/forcewake-ranges.inc"
+#include "intel/forcewake-ranges.inc"
 };
 
 static void i915_mmio_note(struct i915_mmio *mmio, uint16_t op, const char *what, uint64_t argument0, uint64_t argument1);

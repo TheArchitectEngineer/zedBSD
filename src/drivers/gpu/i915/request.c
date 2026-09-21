@@ -26,6 +26,9 @@
 #include <stddef.h>
 #include <string.h>
 
+#include "intel/commands.h"
+#include "intel/gt-regs.h"
+
 /* How many dwords the final breadcrumb takes on the render engine and on the others. */
 #define I915_FINI_BREADCRUMB_RCS_DWORDS	22U
 #define I915_FINI_BREADCRUMB_XCS_DWORDS	18U

@@ -491,13 +491,12 @@ struct drm_dp_aux {
 };
 
 /*
- * The Linux drm_dp.h definitions: DPCD addresses and the AUX request and
- * reply codes.
+ * The quoted DisplayPort definitions: the Linux drm_dp.h DPCD addresses and
+ * AUX request and reply codes, the PPS and AUX registers, and, because this is
+ * the DP environment, struct intel_pps (the panel power sequencer state of one
+ * DP) and the PPS and AUX entry points with with_intel_pps_lock.
  */
-#include "../data/display-drm-dp.inc"
-
-/* The Linux struct intel_pps: the panel power sequencer state of one DP. */
-#include "../data/display-dp-ref-types.inc"
+#include "../intel/dp.h"
 
 /*
  * A DRM mode object (the Linux struct drm_mode_object).
@@ -668,17 +667,6 @@ struct drm_i915_private {
 	/* The work queue the delayed VDD-off is queued on; the backend ignores it. */
 	void *unordered_wq;
 };
-
-/*
- * The Linux PPS and AUX declarations: the PPS entry points, with_intel_pps_lock
- * and the AUX entry points.
- */
-#include "../data/display-intel-pps.inc"
-#include "../data/display-intel-dp-aux.inc"
-
-/* The Linux PPS and AUX register definitions. */
-#include "../data/display-intel-pps-regs.inc"
-#include "../data/display-intel-dp-aux-regs.inc"
 
 /*
  * The one live eDP: its device, port, connector and start time.

@@ -28,7 +28,9 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "data/i915-lrc-offsets.inc"
+#include "intel/commands.h"
+#include "intel/gt-regs.h"
+#include "intel/lrc-offsets.h"
 
 /* A masked register word that sets the named bits. */
 #define I915_MASKED_ENABLE(bits)	((((uint32_t)(bits)) << 16) | ((uint32_t)(bits)))

@@ -112,7 +112,7 @@ typedef int64_t s64;
  * One display register, as the Linux register definitions name it.
  *
  * Wrapping the offset in a structure keeps a register from being passed
- * where a value is expected; every Linux register macro of data/display-*.inc
+ * where a value is expected; every Linux register macro of the intel/ headers
  * builds one with _MMIO().
  */
 typedef struct {
@@ -1715,7 +1715,7 @@ struct i915_vbt_state {
 	struct i915_vbt parsed;
 	int parsed_live;
 
-	/* explicit blob bookkeeping (only meaningful when I915_VBT_EXPLICIT) */
+	/* explicit blob bookkeeping (only filled by the test build, I915_TEST_VBT; zero in production) */
 	const char *blob_name;
 	unsigned blob_size;
 	uint8_t blob_sha256[32];
@@ -1724,25 +1724,22 @@ struct i915_vbt_state {
 };
 
 /*
- * Whether the explicit VBT is used.
+ * Whether the explicit VBT is asked for.
  *
- * It supplies the target's configuration data; it does not make an
- * OpRegion exist (ASLS stays what the firmware left).  The old build used
- * it whenever the resident display or a display test was built in; the
- * resident display is the one production configuration now, so it is
- * always used.  The test switches that also selected it belong to the
- * display tests.
+ * Only the test build (I915_TEST_VBT) carries one: the captured VBT of the
+ * test machine, used when the PCI subsystem id and the SHA-256 match.  It
+ * supplies the machine's configuration data; it does not make an OpRegion
+ * exist (ASLS stays what the firmware left).  A production kernel takes the
+ * VBT from the OpRegion or the PCI ROM, or the Linux defaults.
+ *
+ * XXX: a test crutch for the QEMU passthrough guest, whose firmware presents
+ * no OpRegion.  Delete it once the GPU tests run on bare metal.
  */
+#ifdef I915_TEST_VBT
 #define I915_VBT_EXPLICIT 1
-
-/*
- * The explicit VBT inputs, one row per machine this build carries.  A row is used only when the
- * file is found, its sha256 matches the pin AND the PCI subsystem id is that machine -- the same
- * rule as the single pin it replaces, now for more than one target.
- */
-#define I915_VBT_EXPLICIT_NAME "zedbsd/vbt/dell-latitude-5330-1028-0b02.vbt"   /* the first target */
-#define I915_VBT_EXPLICIT_SUBSYS_VENDOR 0x1028u
-#define I915_VBT_EXPLICIT_SUBSYS_DEVICE 0x0b02u
+#else
+#define I915_VBT_EXPLICIT 0
+#endif
 
 /*
  * The OpRegion ACPI service (opregion.c).
@@ -1926,7 +1923,7 @@ struct i915_native_deps {
 	/* the reference's readout gate: is the pipe's / transcoder's power domain on (no write) */
 	int (*pipe_powered)(void *ctx, unsigned pipe);
 	void *ctx;
-	const uint8_t *vbt_pin;         /* the explicit blob's pinned sha256 (may be 0) */
+	const uint8_t *vbt_pin;         /* the test build's explicit blob pinned sha256 (NULL in production) */
 	/* what the VBT parser actually consumed (intel_bios_init ran before N0) */
 	int parser_src;
 	uint32_t parser_size;
@@ -2405,7 +2402,7 @@ struct i915_lcd_trace {
 /*
  * the scanout buffer: a framebuffer the DISPLAY ENGINE reads.
  *
- * First form, deliberately narrow: XRGB8888, DRM_FORMAT_MOD_LINEAR, rotation 0, no
+ * First form, deliberately narrow: XRGB8888, FORMAT_MOD_LINEAR, rotation 0, no
  * scaling, no compression / aux planes, one colour plane.  With a linear modifier the
  * reference does not use a display page table even on hardware that has one
  * (intel_fb_modifier_uses_dpt(): HAS_DPT && modifier != LINEAR), so the ordinary GGTT
@@ -2864,7 +2861,7 @@ struct i915_hpd_hotplug_record {
 	uint64_t tick;
 	unsigned connector;
 	int pin, retries;
-	int old_status, new_status;     /* enum drm_connector_status (1 connected, 2 disconnected, 3 unknown) */
+	int old_status, new_status;     /* enum connector_status (1 connected, 2 disconnected, 3 unknown) */
 	int state;                      /* enum intel_hotplug_state (0 UNCHANGED, 1 CHANGED, 2 RETRY) */
 	int live;                       /* SDEISR & pch_hpd[pin] at the detection */
 	int edid_rc;                    /* the EDID read of this detection: blocks read, or a negative errno */
@@ -2883,7 +2880,7 @@ struct i915_hpd_summary {
 	unsigned irq_records, hotplug_records;
 	unsigned to_connected, to_disconnected;     /* HDMI-A connector status transitions */
 	int hdmi_connector;                         /* index, -1 = none */
-	int hdmi_status;                            /* enum drm_connector_status, now */
+	int hdmi_status;                            /* enum connector_status, now */
 	unsigned long long hdmi_epoch;
 };
 
@@ -3415,7 +3412,7 @@ struct i915_display {
 	 * Former file-scope state of the world-neutral display files.
 	 */
 
-	/* The VBT bytes the parser reads, the OpRegion's VBT, and the pinned VBT's PCI ids (vbt.c). */
+	/* The VBT bytes the parser reads, the OpRegion's VBT, and the pinned VBT's PCI ids (vbt.c; the ids only in the test build). */
 	uint8_t i915_vbt_buf[I915_VBT_MAX];
 	const void *opregion_vbt_buf;
 	size_t opregion_vbt_size;

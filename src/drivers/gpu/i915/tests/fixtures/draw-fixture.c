@@ -30,8 +30,8 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "../../data/i915-commands.inc"
-#include "../../data/i915-3dstate-gen12.inc"
+#include "../../intel/commands.h"
+#include "../../intel/genxml.h"
 
 /* The size of the state page. */
 #define I915_DRAW_STATE_PAGE_BYTES	4096U

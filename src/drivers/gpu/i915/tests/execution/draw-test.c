@@ -38,7 +38,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "../../data/i915-regs.inc"
+#include "../../intel/gt-regs.h"
 
 /* How many pages the fixture addresses span, from the state page to the second texture. */
 #define I915_TEST_FIXTURE_PAGES		6U

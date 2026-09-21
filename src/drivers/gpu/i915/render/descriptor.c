@@ -31,7 +31,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "../data/vulkan-codec.inc"
+#include "vulkan-codec.inc"
 
 /* How many sets one vkAllocateDescriptorSets may allocate. */
 #define I915_GFX_MAX_ALLOCATED_SETS	8U

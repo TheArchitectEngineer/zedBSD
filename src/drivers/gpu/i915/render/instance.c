@@ -28,7 +28,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "../data/vulkan-codec.inc"
+#include "vulkan-codec.inc"
 
 /* The bits of the float constants the limits are filled with. */
 #define I915_F32_ONE		0x3f800000U	/* 1.0f */

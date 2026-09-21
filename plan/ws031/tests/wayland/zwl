@@ -1,0 +1,6 @@
+type=daemon
+command=/bin/zwl
+arguments=--socket=/tmp/wayland-0 --timeout=150
+after=vkwait1
+restart=no
+required=NO

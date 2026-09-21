@@ -6,7 +6,7 @@
 - `cmd spirv lower eu compile`: 試験する `.c` を fixture が `#include` する（従来どおり）。
 - `res resdispatch pipe cmdbuf sync`: fixture を executor 本体と link する。`render/` のうち
   `draw.c`・`blit.c`（GPU で実行する部分）以外の全ファイルと `compiler/` を、kernel と同じく 1 ファイル 1 翻訳単位で
-  build する（`render/*.c` の複数が `data/vulkan-codec.inc` の static 関数を持つため、1 翻訳単位にはまとめられない）。
+  build する（`render/*.c` の複数が `render/vulkan-codec.inc` の static 関数を持つため、1 翻訳単位にはまとめられない）。
   kernel 側の依存と GPU 実行は `i915-vk-render-stubs.inc` が与える:
   kern_malloc/calloc/free（生存 block を数え、失われた block も到達可能に保つ）、kern_logf（最後の行）、
   direct map（blob の物理アドレス = host pointer）、`drv_i915_gfx_draw`・`drv_i915_gfx_rect`・

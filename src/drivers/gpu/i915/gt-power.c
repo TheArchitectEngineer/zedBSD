@@ -24,7 +24,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "data/i915-gt-power.inc"
+#include "intel/gt-power.h"
 
 /*
  * Prepares the RC6 state and makes sure RC6 is off.

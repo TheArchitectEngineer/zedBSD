@@ -20,7 +20,7 @@
 #include "sync.h"
 #include "device-info.h"
 
-#include "data/i915-regs.inc"
+#include "intel/gt-regs.h"
 
 #include <hal/hal.h>
 #include <kern/klog.h>

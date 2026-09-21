@@ -31,7 +31,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "../data/vulkan-codec.inc"
+#include "vulkan-codec.inc"
 
 /* The largest SPIR-V module accepted, in bytes. */
 #define I915_GFX_MAX_SHADER_BYTES	(1U << 20)

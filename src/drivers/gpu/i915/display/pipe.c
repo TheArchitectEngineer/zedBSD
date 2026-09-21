@@ -64,7 +64,7 @@
 
 #include "modeset-internal.h"
 #include "takeover-internal.h"
-#include "../data/display-ddi-regs.inc"
+#include "../intel/trans.h"
 #include "pipe.h"
 #include "plane.h"
 #include "color.h"

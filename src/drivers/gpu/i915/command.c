@@ -39,7 +39,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "data/i915-commands.inc"
+#include "intel/commands.h"
 
 /* The pool never holds more batch objects than requests can be in flight. */
 #define I915_BATCH_POOL_MAX	I915_REQUEST_SLOTS

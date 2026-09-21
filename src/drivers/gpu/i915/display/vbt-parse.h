@@ -8,8 +8,9 @@
 /*
  * The VBT: what the rest of the display sees of vbt.c.
  *
- * vbt.c chooses the VBT bytes (the explicit pinned blob, the OpRegion's
- * copy, or the PCI expansion ROM), runs the Linux VBT parser on them, and
+ * vbt.c chooses the VBT bytes (the explicit pinned blob of the test build,
+ * the OpRegion's copy, or the PCI expansion ROM), runs the Linux VBT parser
+ * on them, and
  * flattens what the parser found into struct i915_vbt and struct
  * i915_vbt_state (internal.h), which the display code reads without the
  * parser's Linux types.  It also holds the SHA-256 the explicit blob is
@@ -49,9 +50,12 @@ void drv_i915_bios_set_opregion_vbt(struct i915_display *display, const void *bu
 int drv_i915_bios_init_ex(struct i915_display *display, struct i915_vbt_state *vbt, struct i915_pci *pci, int opregion_has_vbt, int explicit_blob, struct i915_trace *trace);
 int drv_i915_bios_init(struct i915_display *display, struct i915_vbt_state *vbt, struct i915_pci *pci, int opregion_has_vbt, struct i915_trace *trace);
 void drv_i915_bios_driver_remove(struct i915_vbt_state *vbt);
+#ifdef I915_TEST_VBT
+/* XXX: the test build's explicit VBT; delete once the GPU tests run on bare metal. */
 const uint8_t *drv_i915_vbt_explicit_pin(struct i915_display *display);
+#endif
 
-/* The SHA-256 the explicit blob is pinned with. */
+/* The SHA-256 the VBT copies are hashed and pinned with. */
 void drv_i915_sha256(const void *data, size_t len, uint8_t out[32]);
 
 /* The parser's message hooks. */

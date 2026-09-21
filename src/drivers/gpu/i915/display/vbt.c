@@ -39,26 +39,26 @@
  * of it (see vbt-parse.h).
  *
  * intel_bios_init() in the Linux order: the device and block lists, the
- * defaults, then the VBT bytes -- the explicit blob when it is pinned to this
- * machine, else the OpRegion's validated copy, else the PCI expansion ROM
- * read through configuration offset 0x30 and a device mapping and scanned for
- * "$VBT".  A found and validated VBT is parsed by the Linux v6.8.12
- * intel_bios.c text below (the BDB header, the block walk, the general
- * features and definitions, the panel blocks); a genuine absence takes
- * init_vbt_missing_defaults().  The DGFX SPI-flash path is not run on ADL-P.
+ * defaults, then the VBT bytes -- in the test build only, the explicit blob
+ * when it is pinned to this machine; then the OpRegion's validated copy, else
+ * the PCI expansion ROM read through configuration offset 0x30 and a device
+ * mapping and scanned for "$VBT".  A found and validated VBT is parsed by
+ * the Linux v6.8.12 intel_bios.c text below (the BDB header, the block walk,
+ * the general features and definitions, the panel blocks); a genuine absence
+ * takes init_vbt_missing_defaults().  The DGFX SPI-flash path is not run on
+ * ADL-P.
  * Nothing here fabricates a VBT: "absent" is a real read result.
  *
  * The parser's functions keep the Linux text's decisions, values and
  * messages; the Linux copyright and permission notice of intel_bios.c, from
- * which they are rewritten, is in data/display-vbt-tables.inc and
- * data/display-intel-vbt-defs.inc.  The Linux text's messages are counted and
+ * which they are rewritten, is in intel/vbt-defs.h.  The Linux text's
+ * messages are counted and
  * shown as their format text only (vbt.h).
  */
 
 #include "vbt.h"
 #include "vbt-parse.h"
 
-#include "../firmware.h"
 #include "../pci.h"
 #include "../trace.h"
 
@@ -68,10 +68,12 @@
 #include <kern/kmem.h>
 
 /*
- * The VBT block layouts of the Linux text, which are private to the parser.
+ * The VBT block layouts of the Linux text and the Linux parser's tables (the
+ * BDB block sizes, the DDC pin, port and AUX channel maps), which are private
+ * to the parser.  The tables never change.
  */
 #define _INTEL_BIOS_PRIVATE
-#include "../data/display-intel-vbt-defs.inc"
+#include "../intel/vbt-defs.h"
 
 /* The size of the arena every parser allocation comes from. */
 #define I915_VBT_ARENA_BYTES (48u * 1024u)
@@ -210,15 +212,26 @@ struct bdb_block_entry {
 	u8 data[];
 };
 
+#ifdef I915_TEST_VBT
 /*
  * One pinned VBT blob: the machine it belongs to and its SHA-256.
  *
- * A row is used only when the blob is found under its name, its SHA-256 is
- * the pinned one, and the PCI subsystem id is the machine's.
+ * A row is used only when its SHA-256 is the pinned one, the bytes hold a
+ * valid VBT, and the PCI subsystem id is the machine's.
+ *
+ * XXX: a test crutch.  The QEMU passthrough test runs the driver in a guest
+ * whose firmware presents ASLS=0, so the guest has no OpRegion and no VBT;
+ * the test build (I915_TEST_VBT) supplies the captured VBT of the one test
+ * machine instead.  Delete it once the GPU tests run on bare metal.  A
+ * production kernel does not contain it.
  */
 struct i915_vbt_pin {
-	/* The firmware name the blob is requested by. */
+	/* The name the blob is logged by. */
 	const char *name;
+
+	/* The captured bytes and their length. */
+	const uint8_t *data;
+	unsigned size;
 
 	/* The PCI subsystem id of the machine the blob was read from. */
 	uint16_t subsys_vendor;
@@ -229,25 +242,40 @@ struct i915_vbt_pin {
 };
 
 /*
- * The Linux parser's tables: the BDB block sizes, the DDC pin, port and
- * AUX channel maps.  They never change.
+ * The VBT captured from the OpRegion of the Dell Latitude 5330 the QEMU
+ * passthrough test runs on (vendor/intel-vbt/README.md).
+ *
+ * It is platform data of the machine's vendor, and never changes.
+ *
+ * XXX: a test crutch.  The QEMU passthrough test runs the driver in a guest
+ * whose firmware presents ASLS=0, so the guest has no OpRegion and no VBT;
+ * the test build (I915_TEST_VBT) supplies the captured VBT of the one test
+ * machine instead.  Delete it once the GPU tests run on bare metal.  A
+ * production kernel does not contain it.
  */
-#include "../data/display-vbt-tables.inc"
+static const uint8_t i915_vbt_test_dell_latitude_5330[] = {
+#include "vendor/intel-vbt/dell-latitude-5330-1028-0b02.inc"
+};
 
 /*
- * The explicit VBT blobs, one row per machine this build carries.
+ * The explicit VBT blobs, one row per machine the test build carries.
  *
  * The table never changes.
+ *
+ * XXX: a test crutch.  The QEMU passthrough test runs the driver in a guest
+ * whose firmware presents ASLS=0, so the guest has no OpRegion and no VBT;
+ * the test build (I915_TEST_VBT) supplies the captured VBT of the one test
+ * machine instead.  Delete it once the GPU tests run on bare metal.  A
+ * production kernel does not contain it.
  */
 static const struct i915_vbt_pin i915_vbt_explicit_pins[] = {
-	{ "zedbsd/vbt/dell-latitude-5330-1028-0b02.vbt", 0x1028u, 0x0b02u,
+	{ "vendor/intel-vbt/dell-latitude-5330-1028-0b02.inc",
+		i915_vbt_test_dell_latitude_5330, sizeof(i915_vbt_test_dell_latitude_5330),
+		0x1028u, 0x0b02u,
 		{ 0x3b, 0xff, 0x4a, 0x09, 0x20, 0xd5, 0x5c, 0x9a, 0xee, 0x0e, 0xa3, 0xc6, 0x78, 0x90, 0x4f, 0x98,
 		  0x2f, 0x86, 0x71, 0xc0, 0xe7, 0xb5, 0xbc, 0x97, 0xa3, 0x35, 0xe4, 0x29, 0xb2, 0x96, 0x24, 0xcd } },
-	/* Dell Latitude 5320 (Tiger Lake-LP GT2 8086:9a49): read 2026-09-21 from the machine's own i915. */
-	{ "zedbsd/vbt/dell-latitude-5320-1028-0a1f.vbt", 0x1028u, 0x0a1fu,
-		{ 0x03, 0x86, 0x25, 0xfb, 0xb4, 0xee, 0x5f, 0x22, 0xa4, 0x7a, 0x7c, 0x8c, 0x0f, 0x20, 0x23, 0x2a,
-		  0xfc, 0xdb, 0x43, 0xc0, 0x72, 0x32, 0xac, 0x5f, 0xc1, 0x2b, 0xa6, 0xd5, 0x1c, 0x03, 0xa5, 0xe4 } },
 };
+#endif
 
 /*
  * The parser's world of the display that is up.
@@ -270,10 +298,12 @@ static uint32_t i915_bios_rd32(const uint8_t *bytes);
 static int i915_bios_oprom_get_vbt(struct i915_display *display, struct i915_pci *pci, const void **out, size_t *out_size);
 static int i915_bios_oprom_lift(struct i915_display *display, const volatile uint8_t *rom, size_t rom_size, size_t found, const void **out, size_t *out_size);
 static uint32_t i915_sha_rotr(uint32_t x, unsigned n);
+#ifdef I915_TEST_VBT
 static int i915_bios_explicit_blob_get(struct i915_display *display, struct i915_vbt_state *vbt, struct i915_pci *pci, const void **out, size_t *out_size);
+static const uint8_t *i915_bios_explicit_pin_for(uint16_t vendor, uint16_t device);
+#endif
 static void i915_bios_choose_source(struct i915_display *display, struct i915_vbt_state *vbt, struct i915_pci *pci, int explicit_blob, const void **out, size_t *out_size, int *origin);
 static void i915_bios_report(struct i915_vbt_state *vbt, int opregion_has_vbt, struct i915_trace *trace);
-static const uint8_t *i915_bios_explicit_pin_for(uint16_t vendor, uint16_t device);
 static uint32_t i915_opregion_le32(const uint8_t *bytes);
 static uint64_t i915_opregion_le64(const uint8_t *bytes);
 static void i915_vbt_append_decimal(struct drm_display_mode *mode, unsigned *length, unsigned value);
@@ -607,7 +637,8 @@ drv_i915_bios_init_vbt_missing_defaults(
 /*
  * Computes the SHA-256 (FIPS 180-4) of a byte range.
  *
- * The explicit blob and the OpRegion's VBT are pinned and compared by it.
+ * The firmware display check hashes the OpRegion's VBT with it, and the
+ * test build pins its explicit blob with it.
  */
 void
 drv_i915_sha256(
@@ -780,11 +811,12 @@ drv_i915_bios_set_opregion_vbt(
  * Finds the VBT and runs the Linux parser on it (intel_bios_init()).
  *
  * opregion_has_vbt reports whether the same start's OpRegion step holds a
- * usable VBT; explicit_blob asks for the pinned blob of this machine.  The
- * byte source is, in order, the explicit blob, the OpRegion's copy, and the
- * PCI ROM; with none the parser takes the missing-VBT defaults.  vbt is
- * filled with what was actually done.  Returns 0, or the parser's refusal
- * (a VBT state already live, or no parser world).
+ * usable VBT; explicit_blob asks for the pinned blob of this machine, which
+ * only the test build (I915_TEST_VBT) carries and a production kernel
+ * ignores.  The byte source is, in order, the explicit blob, the OpRegion's
+ * copy, and the PCI ROM; with none the parser takes the missing-VBT
+ * defaults.  vbt is filled with what was actually done.  Returns 0, or the
+ * parser's refusal (a VBT state already live, or no parser world).
  */
 int
 drv_i915_bios_init_ex(
@@ -909,12 +941,19 @@ drv_i915_bios_driver_remove(
 	vbt->parsed_live = 0;
 }
 
+#ifdef I915_TEST_VBT
 /*
  * Returns the pinned SHA-256 of this machine's explicit blob, or NULL when
  * the build carries no row for the machine.
  *
  * The machine is the one the last VBT acquisition read the PCI subsystem id
  * of; the firmware display check compares the OpRegion's VBT against it.
+ *
+ * XXX: a test crutch.  The QEMU passthrough test runs the driver in a guest
+ * whose firmware presents ASLS=0, so the guest has no OpRegion and no VBT;
+ * the test build (I915_TEST_VBT) supplies the captured VBT of the one test
+ * machine instead.  Delete it once the GPU tests run on bare metal.  A
+ * production kernel does not contain it.
  */
 const uint8_t *
 drv_i915_vbt_explicit_pin(
@@ -928,6 +967,7 @@ drv_i915_vbt_explicit_pin(
 	/* Succeeded: reports the pin, or NULL for a machine without one. */
 	return pin;
 }
+#endif
 
 /*
  * Reads where a copy of the OpRegion keeps its VBT (intel_opregion_setup()).
@@ -1722,12 +1762,19 @@ i915_sha_rotr(
 	return (x >> n) | (x << (32u - n));
 }
 
+#ifdef I915_TEST_VBT
 /*
- * Supplies this machine's explicit blob when it is found, matches its pin,
- * and holds a valid VBT.
+ * Supplies this machine's explicit blob when the test build carries one for
+ * it, it matches its pin, and it holds a valid VBT.
  *
  * Records every step in vbt; reports 1 with *out and *out_size set, or 0
  * (nothing is used, and the caller reports the absence).
+ *
+ * XXX: a test crutch.  The QEMU passthrough test runs the driver in a guest
+ * whose firmware presents ASLS=0, so the guest has no OpRegion and no VBT;
+ * the test build (I915_TEST_VBT) supplies the captured VBT of the one test
+ * machine instead.  Delete it once the GPU tests run on bare metal.  A
+ * production kernel does not contain it.
  */
 static int
 i915_bios_explicit_blob_get(
@@ -1738,10 +1785,8 @@ i915_bios_explicit_blob_get(
 	size_t *out_size)
 {
 	const struct i915_vbt_pin *pin;
-	struct i915_firmware firmware;
 	unsigned row;
 	unsigned i;
-	int error;
 
 	/* Reads which machine this is, and remembers it for the pin lookup. */
 	vbt->blob_requested = 1;
@@ -1759,21 +1804,14 @@ i915_bios_explicit_blob_get(
 		if (vbt->subsys_device != pin->subsys_device)
 			continue;
 
-		/* Requests the machine's blob. */
+		/* Takes the machine's blob, which the test build carries. */
 		vbt->blob_subsys_ok = 1;
 		vbt->blob_name = pin->name;
-		firmware.data = NULL;
-		firmware.size = 0u;
-		error = drv_i915_firmware_request(&firmware, pin->name);
-		if (error != 0)
-			return 0;
-		if (firmware.data == NULL)
-			return 0;
+		vbt->blob_found = 1;
+		vbt->blob_size = pin->size;
 
 		/* Hashes the blob and compares it with the pin. */
-		vbt->blob_found = 1;
-		vbt->blob_size = firmware.size;
-		drv_i915_sha256(firmware.data, firmware.size, vbt->blob_sha256);
+		drv_i915_sha256(pin->data, pin->size, vbt->blob_sha256);
 		vbt->blob_hash_ok = 1;
 		for (i = 0u; i < 32u; i++) {
 			if (vbt->blob_sha256[i] != pin->sha256[i])
@@ -1781,16 +1819,13 @@ i915_bios_explicit_blob_get(
 		}
 
 		/* A blob that differs from the pin, or holds no valid VBT, is not used. */
-		vbt->blob_valid = drv_i915_vbt_validate(firmware.data, firmware.size);
-		if (vbt->blob_hash_ok == 0 || vbt->blob_valid == 0) {
-			drv_i915_firmware_release(&firmware);
+		vbt->blob_valid = drv_i915_vbt_validate(pin->data, pin->size);
+		if (vbt->blob_hash_ok == 0 || vbt->blob_valid == 0)
 			return 0;
-		}
 
-		/* The blob is static read-only data: the pointer stays valid after the handle is dropped. */
-		*out = firmware.data;
-		*out_size = firmware.size;
-		drv_i915_firmware_release(&firmware);
+		/* The blob is static read-only data and stays valid for the kernel lifetime. */
+		*out = pin->data;
+		*out_size = pin->size;
 
 		/* Succeeded: the pinned blob is used. */
 		return 1;
@@ -1799,13 +1834,15 @@ i915_bios_explicit_blob_get(
 	/* No row for this machine: nothing is used. */
 	return 0;
 }
+#endif
 
 /*
  * Chooses the VBT bytes in the Linux intel_opregion_get_vbt() order.
  *
- * The explicit blob stands where Linux has its VBT firmware file, and is
- * taken only when requested and pinned to this machine.  It is not an
- * OpRegion: ASLS and the OpRegion state stay as the firmware reported them.
+ * The explicit blob of the test build stands where Linux has its VBT
+ * firmware file, and is taken only when requested and pinned to this
+ * machine.  It is not an OpRegion: ASLS and the OpRegion state stay as the
+ * firmware reported them.  A production kernel has no explicit blob.
  * Then the OpRegion's validated copy (RVDA or mailbox #4), then the PCI ROM
  * (ADL-P is not DGFX, so no SPI flash).  With none, *out is NULL and
  * *origin is I915_VBT_ORIGIN_NONE.
@@ -1823,12 +1860,25 @@ i915_bios_choose_source(
 	int lifted;
 	int valid;
 
+#ifndef I915_TEST_VBT
+	UNUSED_PARAMETER(explicit_blob);
+
+#endif
 	/* Starts with no bytes. */
 	*out = NULL;
 	*out_size = 0u;
 	*origin = I915_VBT_ORIGIN_NONE;
 
-	/* The explicit blob, when the build asks for it. */
+#ifdef I915_TEST_VBT
+	/*
+	 * The explicit blob, when the build asks for it.
+	 *
+	 * XXX: a test crutch.  The QEMU passthrough test runs the driver in a guest
+	 * whose firmware presents ASLS=0, so the guest has no OpRegion and no VBT;
+	 * the test build (I915_TEST_VBT) supplies the captured VBT of the one test
+	 * machine instead.  Delete it once the GPU tests run on bare metal.  A
+	 * production kernel does not contain it.
+	 */
 	if (explicit_blob != 0) {
 		lifted = i915_bios_explicit_blob_get(display, vbt, pci, out, out_size);
 		if (lifted != 0) {
@@ -1836,6 +1886,8 @@ i915_bios_choose_source(
 			*origin = I915_VBT_ORIGIN_EXPLICIT_BLOB;
 		}
 	}
+
+#endif
 
 	/* The OpRegion's copy, when it holds a valid VBT. */
 	if (*out == NULL && display->opregion_vbt_buf != NULL) {
@@ -1920,6 +1972,7 @@ i915_bios_report(
 	}
 }
 
+#ifdef I915_TEST_VBT
 /* Returns the pinned SHA-256 of a machine's row, or NULL for a machine without one. */
 static const uint8_t *
 i915_bios_explicit_pin_for(
@@ -1942,6 +1995,7 @@ i915_bios_explicit_pin_for(
 	/* The build carries no row for the machine. */
 	return NULL;
 }
+#endif
 
 /* Reads a little-endian 32-bit value of the OpRegion. */
 static uint32_t

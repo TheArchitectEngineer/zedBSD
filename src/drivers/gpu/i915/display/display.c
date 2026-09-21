@@ -1534,9 +1534,9 @@ i915_display_noirq_front(
 	drv_i915_trace_record(&gt->trace, 0U, I915_TRACE_ACQUIRE, "drm_vblank_init", (uint64_t)num_pipes, (uint64_t)pipe_mask);
 
 	/*
-	 * P3.2 intel_bios_init: the VBT from the explicit blob, the OpRegion or
-	 * the PCI ROM, or the defaults of a genuine absence.  Void in the
-	 * reference: it never fails the probe.
+	 * P3.2 intel_bios_init: the VBT from the explicit blob (test build
+	 * only), the OpRegion or the PCI ROM, or the defaults of a genuine
+	 * absence.  Void in the reference: it never fails the probe.
 	 */
 	(void)drv_i915_bios_init_ex(display, &display->vbt_state, &gt->pci, display->opregion_vbt_present, I915_VBT_EXPLICIT, &gt->trace);
 	kern_logf("i915: P3 intel_bios_init done: source=%d vbt_found=%d version=%u child_devices=%u\n",
@@ -1601,16 +1601,26 @@ i915_display_native_check(
 	/* The pipes' real power state, read through the display's power domains. */
 	nd.pipe_powered = drv_i915_n0_pipe_powered;
 	nd.ctx = display;
-	nd.vbt_pin = drv_i915_vbt_explicit_pin(display);
 
-	/* What intel_bios_init actually handed to the parser; only the explicit blob's bytes are hashed today. */
+	/* What intel_bios_init actually handed to the parser. */
 	nd.parser_src = display->vbt_state.source;
 	nd.parser_size = 0U;
 	nd.parser_sha256 = NULL;
+
+#ifdef I915_TEST_VBT
+	/*
+	 * The test build's explicit blob: its pin, and its bytes when the
+	 * parser took them.
+	 *
+	 * XXX: a test crutch for the QEMU passthrough guest without an
+	 * OpRegion; delete it once the GPU tests run on bare metal.
+	 */
+	nd.vbt_pin = drv_i915_vbt_explicit_pin(display);
 	if (display->vbt_state.source == I915_VBT_SRC_EXPLICIT_BLOB) {
 		nd.parser_size = display->vbt_state.blob_size;
 		nd.parser_sha256 = display->vbt_state.blob_sha256;
 	}
+#endif
 
 	/* The OpRegion copy the hardware probe made is what the parser consumed. */
 	if (display->vbt_state.source == I915_VBT_SRC_OPREGION && display->p2_opd != NULL && display->p2_opd->vbt_valid) {
@@ -2434,8 +2444,8 @@ i915_next_isa_bridge(
 
 /*
  * Describes the node's one display (the display query operation): the
- * eDP panel, connected, FIFO presentation, one plane, BGRA or RGBA, the
- * panel's own mode and physical size.
+ * eDP panel, connected, FIFO presentation of shared (BLOB) frames, one
+ * plane, BGRA or RGBA, the panel's own mode and physical size.
  */
 static int
 i915_display_query(
@@ -2475,7 +2485,8 @@ i915_display_query(
 	/* The display, its state and its formats. */
 	request->display_id = I915_DISPLAY_ID;
 	request->generation = I915_DISPLAY_GENERATION;
-	request->flags = GPU_DISPLAY_CONNECTED | GPU_DISPLAY_FIFO;
+	/* Frames are presented from shared resources (present.c), so BLOB is offered. */
+	request->flags = GPU_DISPLAY_CONNECTED | GPU_DISPLAY_FIFO | GPU_DISPLAY_BLOB;
 	if (display->rd.active)
 		request->flags |= GPU_DISPLAY_ACTIVE;
 

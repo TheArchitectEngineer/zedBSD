@@ -123,9 +123,15 @@
 /* A scripted PCODE field that accepts any value. */
 #define I915_KTEST_PCODE_ANY		0xffffffffU
 
-/* The size of the fixed DMC reference blob, and the name it is requested by. */
+/*
+ * The size of the DMC reference blob, and the name it is requested by.  The
+ * i915-firmware package installs it as /lib/firmware/i915/adlp_dmc.bin.
+ */
 #define I915_KTEST_DMC_SIZE		79088U
 #define I915_KTEST_DMC_NAME		"i915/adlp_dmc.bin"
+
+/* The size of the image the test's firmware replacement serves. */
+#define I915_KTEST_FIRMWARE_TEST_IMAGE	16U
 
 /*
  * Where the MAIN DMC header's version byte sits in the reference blob: the
@@ -302,14 +308,28 @@ struct i915_ktest_display_fixture {
 };
 
 /*
- * The fixed firmware images the provider serves.
+ * The SHA-256 of the DMC reference blob (linux-firmware dc85cced,
+ * i915/adlp_dmc.bin v2.20), which the i915-firmware package pins too.
  *
- * They are defined in their own data files; no header declares them, so the
- * checks that compare against the raw bytes declare them here.
+ * The table never changes.
  */
-extern const unsigned drv_i915_firmware_adlp_dmc_checksum;
-extern const unsigned char drv_i915_firmware_vbt_dell_latitude_5330[];
-extern const unsigned drv_i915_firmware_vbt_dell_latitude_5330_size;
+static const uint8_t i915_ktest_dmc_sha256[32] = {
+	0x35, 0x16, 0xde, 0x2e, 0x13, 0x4d, 0xdc, 0xf3, 0xb3, 0x19, 0xc7, 0x5d, 0x2e, 0x43, 0x77, 0x79,
+	0xfe, 0xcb, 0xd5, 0x8c, 0xbb, 0x77, 0x23, 0x4b, 0xd6, 0xf2, 0x97, 0xc5, 0x44, 0xe9, 0x2c, 0xcb
+};
+
+#ifdef I915_TEST_VBT
+/*
+ * The test build's explicit VBT (vendor/intel-vbt/README.md), which the
+ * validation check reads whole and cut short.
+ *
+ * XXX: a test crutch for the QEMU passthrough guest without an OpRegion;
+ * delete it with the explicit VBT once the GPU tests run on bare metal.
+ */
+static const uint8_t i915_ktest_vbt_dell_latitude_5330[] = {
+#include "vendor/intel-vbt/dell-latitude-5330-1028-0b02.inc"
+};
+#endif
 
 static uint32_t i915_ktest_fake_read32(void *context, uint32_t offset);
 static void i915_ktest_fake_write32(void *context, uint32_t offset, uint32_t value);
@@ -334,6 +354,7 @@ static int i915_ktest_async_queue(void *context, int delay_ms);
 static int i915_ktest_async_cancel(void *context, int sync);
 static void i915_ktest_drm_action(void *arg);
 static int i915_ktest_dmc_bad_request(void *context, struct i915_firmware *firmware, const char *name);
+static int i915_ktest_firmware_image_request(void *context, struct i915_firmware *firmware, const char *name);
 static void i915_ktest_pwc_reset(struct i915_ktest_display_fixture *fx);
 static void i915_ktest_cdclk_reset(struct i915_ktest_display_fixture *fx);
 static unsigned i915_ktest_well_refcounts(const struct i915_power_domains *pd);
@@ -341,7 +362,9 @@ static unsigned i915_ktest_make_vbt(struct i915_ktest_display_fixture *fx, int g
 static void i915_ktest_drm(struct i915_ktest *ktest, struct i915_ktest_display_fixture *fx);
 static void i915_ktest_drm_bounds(struct i915_ktest *ktest, struct i915_ktest_display_fixture *fx);
 static void i915_ktest_bios(struct i915_ktest *ktest, struct i915_ktest_display_fixture *fx);
+#ifdef I915_TEST_VBT
 static void i915_ktest_bios_blob(struct i915_ktest *ktest);
+#endif
 static void i915_ktest_vga(struct i915_ktest *ktest, struct i915_ktest_display_fixture *fx);
 static void i915_ktest_power_map(struct i915_ktest *ktest, struct i915_ktest_display_fixture *fx);
 static void i915_ktest_power_wells(struct i915_ktest *ktest, struct i915_ktest_display_fixture *fx);
@@ -441,7 +464,9 @@ drv_i915_ktest_display(
 
 	/* The VBT checks, the parse and the missing-VBT defaults. */
 	i915_ktest_bios(ktest, fx);
+#ifdef I915_TEST_VBT
 	i915_ktest_bios_blob(ktest);
+#endif
 
 	/*
 	 * The eDP, eDP-with-threads and one-screen modeset tests are the
@@ -1054,6 +1079,23 @@ i915_ktest_dmc_bad_request(
 	return 0;
 }
 
+/* Serves the test's own image under every name. */
+static int
+i915_ktest_firmware_image_request(
+	void *context,
+	struct i915_firmware *firmware,
+	const char *name)
+{
+	UNUSED_PARAMETER(name);
+
+	/* Hands back the image the context points at; the test keeps owning it. */
+	firmware->data = context;
+	firmware->size = I915_KTEST_FIRMWARE_TEST_IMAGE;
+
+	/* Succeeded: the caller holds the test's image. */
+	return 0;
+}
+
 /* Clears the test display's power-well context and points it at the register model and the VGA client. */
 static void
 i915_ktest_pwc_reset(
@@ -1344,7 +1386,15 @@ i915_ktest_bios(
 		"bios: VBT-SHA the SHA-256 used to pin the blob matches the FIPS 180-4 'abc' vector");
 }
 
-/* Records the explicit-blob parse checks that cannot run, and tests the blob's validation. */
+#ifdef I915_TEST_VBT
+/*
+ * Records the explicit-blob parse checks that cannot run, and tests the
+ * blob's validation.
+ *
+ * XXX: the explicit VBT is a test crutch for the QEMU passthrough guest
+ * without an OpRegion; delete this with it once the GPU tests run on bare
+ * metal.
+ */
 static void
 i915_ktest_bios_blob(
 	struct i915_ktest *ktest)
@@ -1352,7 +1402,6 @@ i915_ktest_bios_blob(
 	static const char *const acquisitions[] = {
 		"bios: VBT-EXPLICIT not requested -> the blob is not touched; missing defaults as before",
 		"bios: VBT-EXPLICIT another machine (subsystem 1028:0b03) -> no row, nothing read; defaults",
-		"bios: VBT-EXPLICIT second machine (subsystem 1028:0a1f) -> that row is applied",
 		"bios: VBT-EXPLICIT on the target: 8704 bytes, SHA-256 pinned, BDB 249, source = explicit blob (not OpRegion), no parser error",
 		"bios: VBT-CHILDREN from the real VBT only: A=eDP/AUX A, B=HDMI (DDC pin 2), TC1+TC2=DP Type-C/TBT, no port C (not the A/B/C defaults)",
 		"bios: VBT-PANEL type 2, 18 bpp, PPS T3 200ms/T7 80ms/T9 200ms/T10 110ms/T12 500ms, PWM backlight 200 Hz active-high controller 0, min 15 (BDB>=234 field)",
@@ -1370,9 +1419,9 @@ i915_ktest_bios_blob(
 	}
 
 	/* The full blob validates; truncated copies do not. */
-	full = drv_i915_vbt_validate(drv_i915_firmware_vbt_dell_latitude_5330, 8704U);
-	truncated = drv_i915_vbt_validate(drv_i915_firmware_vbt_dell_latitude_5330, 4000U);
-	header_only = drv_i915_vbt_validate(drv_i915_firmware_vbt_dell_latitude_5330, 40U);
+	full = drv_i915_vbt_validate(i915_ktest_vbt_dell_latitude_5330, sizeof(i915_ktest_vbt_dell_latitude_5330));
+	truncated = drv_i915_vbt_validate(i915_ktest_vbt_dell_latitude_5330, 4000U);
+	header_only = drv_i915_vbt_validate(i915_ktest_vbt_dell_latitude_5330, 40U);
 	drv_i915_ktest_check(
 		ktest,
 		full == 1 &&
@@ -1380,6 +1429,7 @@ i915_ktest_bios_blob(
 		    header_only == 0,
 		"bios: VBT-VALIDATE the full blob validates; truncated copies do not");
 }
+#endif
 
 /* Tests the VGA decode callback and the decode state without a host bridge. */
 static void
@@ -2488,44 +2538,93 @@ i915_ktest_core_preserve(
 	 */
 }
 
-/* Tests the firmware provider on the DMC blob and an absent name. */
+/*
+ * Tests the firmware provider: the DMC file the package installs, an absent
+ * name, and the ownership of the image the provider and a test hand back.
+ */
 static void
 i915_ktest_dmc_provider(
 	struct i915_ktest *ktest)
 {
+	struct i915_test_firmware_override override;
+	uint8_t test_image[I915_KTEST_FIRMWARE_TEST_IMAGE];
 	struct i915_firmware fw;
-	uint32_t sum;
+	uint8_t digest[32];
+	int hash_ok;
+	int owned;
 	unsigned i;
 	int error;
 
-	/* The DMC name serves the fixed 79088-byte blob with its byte sum. */
+	/* Reads /lib/firmware/i915/adlp_dmc.bin, which the i915-firmware package installs. */
 	error = drv_i915_firmware_request(&fw, I915_KTEST_DMC_NAME);
-	sum = 0U;
-	if (error == 0 && fw.data != NULL) {
-		for (i = 0U; i < fw.size; i++)
-			sum += fw.data[i];
+
+	/* Compares the bytes with the pinned SHA-256 when the file has the pinned size. */
+	hash_ok = 0;
+	if (error == 0 && fw.size == I915_KTEST_DMC_SIZE) {
+		drv_i915_sha256(fw.data, fw.size, digest);
+		hash_ok = 1;
+		for (i = 0U; i < 32U; i++) {
+			if (digest[i] != i915_ktest_dmc_sha256[i])
+				hash_ok = 0;
+		}
 	}
+
+	/* The bytes are the provider's own buffer, which the release frees. */
+	owned = 0;
+	if (fw.allocation != NULL && fw.allocation == (const void *)fw.data)
+		owned = 1;
+
 	drv_i915_ktest_check(
 		ktest,
 		error == 0 &&
-		    fw.data != NULL &&
-		    fw.size == I915_KTEST_DMC_SIZE &&
-		    sum == drv_i915_firmware_adlp_dmc_checksum,
-		"dmc-fw: request i915/adlp_dmc.bin returns the fixed 79088-byte reference blob");
+		    hash_ok == 1 &&
+		    owned == 1,
+		"dmc-fw: request i915/adlp_dmc.bin reads the 79088-byte package file (sha256 3516de2e..) into a buffer of its own");
 
-	/* The release drops the handle; the static blob is not freed. */
+	/* The release frees the provider's buffer and drops the handle. */
 	drv_i915_firmware_release(&fw);
 	drv_i915_ktest_check(
 		ktest,
-		fw.data == NULL && fw.size == 0U,
-		"dmc-fw: release drops the handle (static blob not freed)");
+		fw.data == NULL &&
+		    fw.size == 0U &&
+		    fw.allocation == NULL,
+		"dmc-fw: release frees the buffer and drops the handle");
 
-	/* An absent image reports an errno and hands back no bytes. */
+	/* An absent file reports ENOENT and hands back no bytes. */
 	error = drv_i915_firmware_request(&fw, "i915/nonexistent.bin");
 	drv_i915_ktest_check(
 		ktest,
-		error != 0 && fw.data == NULL,
-		"dmc-fw: a genuinely absent firmware returns -errno with no bytes");
+		error == ENOENT &&
+		    fw.data == NULL &&
+		    fw.allocation == NULL,
+		"dmc-fw: a genuinely absent firmware returns ENOENT with no bytes");
+
+	/*
+	 * Serves an image of the test's own.  The replacement is driver-wide;
+	 * it is removed before anything else requests firmware.
+	 */
+	memset(test_image, 0, sizeof(test_image));
+	test_image[0] = 0x5aU;
+	override.request = i915_ktest_firmware_image_request;
+	override.context = test_image;
+	drv_i915_test_firmware_set_override(&override);
+	error = drv_i915_firmware_request(&fw, I915_KTEST_DMC_NAME);
+
+	/* The request leaves the test's image without a provider allocation. */
+	owned = 1;
+	if (fw.allocation == NULL)
+		owned = 0;
+
+	/* The release drops the handle and leaves the test's bytes alone. */
+	drv_i915_firmware_release(&fw);
+	drv_i915_test_firmware_set_override(NULL);
+	drv_i915_ktest_check(
+		ktest,
+		error == 0 &&
+		    owned == 0 &&
+		    fw.data == NULL &&
+		    test_image[0] == 0x5aU,
+		"dmc-fw: a test's image is not freed by the release");
 }
 
 /* Tests the DMC parse of the reference blob into the display's own payloads. */
@@ -2860,10 +2959,9 @@ i915_ktest_dmc_bad_fw_cases(
 
 	/* Copies the blob and gives the MAIN header the unknown version 7. */
 	error = drv_i915_firmware_request(&fw, I915_KTEST_DMC_NAME);
-	if (error == 0) {
+	if (error == 0 && fw.size == I915_KTEST_DMC_SIZE)
 		memcpy(fx->dmc_badcopy, fw.data, I915_KTEST_DMC_SIZE);
-		drv_i915_firmware_release(&fw);
-	}
+	drv_i915_firmware_release(&fw);
 	fx->dmc_badcopy[I915_KTEST_DMC_MAIN_VERSION_BYTE] = 7U;
 
 	/*

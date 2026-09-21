@@ -42,8 +42,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "../data/i915-commands.inc"
-#include "../data/i915-3dstate-gen12.inc"
+#include "../intel/genxml.h"
 
 /* How many rectangles are logged even when they succeed. */
 #define I915_BLIT_LOGGED_RECTANGLES	4U

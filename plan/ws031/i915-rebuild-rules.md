@@ -12,8 +12,12 @@
   最後の文は成功 return、型とファイルスコープ変数に役割コメント、多行コメントの区切りは単独行、
   `for` の初期化で宣言しない、条件演算子は短い対称な選択だけ、`goto` は単一の cleanup ラベルへの前進のみ。
 - 見本: `src/drivers/gpu/i915/mmio.c`、`trace.c`、`device.c`。
-- 新ファイルの先頭は著作権ヘッダ（Zlib）＋ファイルの説明。Linux から写した表・定義は `data/` の `.inc` に置き、
-  出典（Linux の版、ファイル）と MIT の notice を残す（既存 `data/i915-*.inc` と同じ扱い）。
+- 新ファイルの先頭は著作権ヘッダ（Zlib）＋ファイルの説明。Linux／Mesa から写した表・定義は `intel/` の系統別 header
+  （GT は `intel/gt-regs.h`・`commands.h`・`lrc-offsets.h`・`pci-ids.h`・`gt-power.h`・`workarounds.h`・`mocs.h`、Mesa の 3D state は
+  `intel/genxml.h`、表示は `intel/<系統>.h`、DisplayPort は `intel/dp.h`）に置く。配列の初期化子の中で include する行の並びだけは
+  `intel/*.inc`。先頭は zedBSD の著作権行（licence 行なし）、出典の licence block（その header が写した出典の Copyright 行だけを統合）、
+  出典（版、ファイル、sha256）を書いた説明、include guard、定義の順（既存の `intel/` のファイルと同じ扱い）。header は使う header
+  （`intel/bits.h`、`<stdint.h>` など）を自分で include し、各 .c は使う header だけを include する（まとめ役の header は作らない）。
 - コメントに設計資料の番号（E-xxx、R1 など）や「parity」「osdep」「旧ファイル名」を書かない。
   Linux の対応関数名（例: `intel_gt_init_mmio()`）は、処理の意味を説明する場合に限り書いてよい。
 - `kern_logf` の文言は、移植前と同じ情報を出す（実機ログの比較に使う）。接頭辞は `i915: ` に統一し、

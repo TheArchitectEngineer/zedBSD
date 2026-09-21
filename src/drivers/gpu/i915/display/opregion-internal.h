@@ -303,8 +303,7 @@ struct drm_connector_list_iter {
 	unsigned idx;
 };
 
-#include "../data/display-opreg-struct.inc"
-#include "../data/display-opreg-pci-config.inc"
+#include "../intel/opregion.h"
 
 /*
  * The device the OpRegion text works on: only the OpRegion state, the VBT

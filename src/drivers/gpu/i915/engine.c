@@ -28,6 +28,8 @@
 #include <stddef.h>
 #include <string.h>
 
+#include "intel/gt-regs.h"
+
 /* A masked register word that sets the named bits. */
 #define I915_MASKED_ENABLE(bits)	((((uint32_t)(bits)) << 16) | ((uint32_t)(bits)))
 

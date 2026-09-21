@@ -66,8 +66,8 @@
 #include "internal.h"
 #include "modeset-internal.h"
 #include "takeover-internal.h"
-#include "../data/display-ddi-regs.inc"
-#include "../data/display-dp-msa.inc"
+#include "../intel/trans.h"
+#include "../intel/dp.h"
 #include "ddi.h"
 #include "dp.h"
 #include "hdmi-mode.h"
@@ -454,7 +454,7 @@ drv_i915_ddi_emit(
 	dig_port.base.base.dev = &i915->drm;
 	dig_port.base.port = (enum port)port;
 	dig_port.saved_port_bits = saved_port_bits;
-	conn_state.colorspace = DRM_MODE_COLORIMETRY_DEFAULT;
+	conn_state.colorspace = MODE_COLORIMETRY_DEFAULT;
 
 	/* Computes the DDI_BUF_CTL value and hands it to the caller. */
 	i915_ddi_init_dp_buf_reg(&dig_port.base, crtc_state);

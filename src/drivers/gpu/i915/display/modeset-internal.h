@@ -145,6 +145,9 @@ typedef u16 __le16;
 typedef uint32_t __u32;
 typedef uint64_t __u64;
 
+/* The Linux spelling of a packed structure, which the DP SDP definitions use. */
+#define __packed __attribute__((packed))
+
 /*
  * The Linux definitions this environment reads, in the order the modeset
  * text first included them.  Each one depends only on internal.h and the
@@ -152,43 +155,22 @@ typedef uint64_t __u64;
  * (the power-domain set, the transcoders, the DBUF state, the crtc-state
  * inlines) are included where that definition is complete, further down.
  *
- * data/display-mreg-reg-defs.inc is not included: its only definition,
- * _PICK_EVEN_2RANGES(), is the one internal.h already gives (the Linux
- * BUILD_BUG_ON_ZERO() check it adds was defined to 0 in this environment).
- * data/display-mreg-display-reg-defs.inc now supplies _PIPE() and
+ * _PICK_EVEN_2RANGES() comes from internal.h (the Linux BUILD_BUG_ON_ZERO()
+ * check of the register definitions was defined to 0 in this environment).
+ * intel/mreg.h now supplies _PIPE() and
  * _MMIO_PIPE(), which the plane text defined again with the same body.
  */
-#include "../data/display-drm-colorspace.inc"
-#include "../data/display-edid-ref-types.inc"
-#include "../data/display-ref-types.inc"
-#include "../data/display-ddi-types.inc"
-#include "../data/display-power-domain-enum.inc"
-#include "../data/display-mreg-power.inc"
-#include "../data/display-plane-types.inc"
-#include "../data/display-dbuf-slice-enum.inc"
-#include "../data/display-wm-types.inc"
-#include "../data/display-wm-ddb-types.inc"
-#include "../data/display-pch-enum.inc"
-#include "../data/display-mreg-display-reg-defs.inc"
-#include "../data/display-mreg-display-device.inc"
-#include "../data/display-mreg-display.inc"
-#include "../data/display-mreg-i915-reg.inc"
-#include "../data/display-mreg-combo-phy.inc"
-#include "../data/display-mreg-vdsc.inc"
-#include "../data/display-mreg-cx0.inc"
-#include "../data/display-mreg-drm-dp.inc"
-#include "../data/display-buf-trans-types.inc"
-#include "../data/display-link-training-inlines.inc"
-#include "../data/display-dpll-id-enum.inc"
-#include "../data/display-drm-fourcc.inc"
-#include "../data/display-drm-plane-defs.inc"
-#include "../data/display-i915-colorkey.inc"
-#include "../data/display-plane-regs.inc"
-#include "../data/display-psr-selfetch-regs.inc"
-#include "../data/display-dp-phy-enum.inc"
-#include "../data/display-mreg-link-training.inc"
-#include "../data/display-dp-helper-inlines.inc"
-#include "../data/display-mreg-display-types.inc"
+#include "../intel/connector.h"
+#include "../intel/ref.h"
+#include "../intel/ddi.h"
+#include "../intel/power.h"
+#include "../intel/plane.h"
+#include "../intel/wm.h"
+#include "../intel/mreg.h"
+#include "../intel/dp.h"
+#include "../intel/phy.h"
+#include "../intel/fourcc.h"
+#include "../intel/psr.h"
 
 /*
  * ==== Macros and constants ====
@@ -613,7 +595,7 @@ typedef uint64_t __u64;
 #define I915_LCD_INTEL_BIOS_HDMI_LEVEL_SHIFT(world, devdata) drv_i915_lcd_hdmi_level_shift(world)
 
 /* Linear framebuffers only: no CCS, no tiling, no DPT, no aux plane. */
-#define is_surface_linear(fb, color_plane) ((fb)->modifier == DRM_FORMAT_MOD_LINEAR)
+#define is_surface_linear(fb, color_plane) ((fb)->modifier == FORMAT_MOD_LINEAR)
 #define intel_tile_height(fb, color_plane) (1u)
 #define intel_tile_width_bytes(fb, color_plane) (1u)
 #define intel_fb_uses_dpt(fb) (0)
@@ -743,7 +725,7 @@ typedef uint64_t __u64;
 
 /* intel_dp_configure_protocol_converter(): returns for DPCD < 1.3 or a sink that is not a branch device. */
 #define intel_dp_configure_protocol_converter(intel_dp, cs) \
-	I915_LCD_GUARD((intel_dp)->dpcd[DP_DPCD_REV] < 0x13 || !drm_dp_is_branch((intel_dp)->dpcd), "intel_dp_configure_protocol_converter (DPCD >= 1.3 branch device)")
+	I915_LCD_GUARD((intel_dp)->dpcd[DP_DPCD_REV] < 0x13 || !dp_is_branch((intel_dp)->dpcd), "intel_dp_configure_protocol_converter (DPCD >= 1.3 branch device)")
 
 /* Reached only with DSC: an error if it ever is. */
 #define intel_dsc_power_domain(crtc, cpu_transcoder) (drv_i915_lcd_error("intel_dsc_power_domain reached: DSC is not part of this path" "\n"), POWER_DOMAIN_DISPLAY_CORE)
@@ -771,7 +753,7 @@ typedef uint64_t __u64;
 #define intel_dp_check_frl_training(intel_dp) I915_LCD_GUARD(!((intel_dp)->downstream_ports[2] & 0x20), "intel_dp_check_frl_training (PCON, DP_PCON_SOURCE_CTL_MODE = bit 5)")
 
 /* intel_dp_pcon_dsc_configure(): returns unless the sink is an HDMI 2.1 PCON. */
-#define intel_dp_pcon_dsc_configure(intel_dp, cs) I915_LCD_GUARD(!drm_dp_is_branch((intel_dp)->dpcd), "intel_dp_pcon_dsc_configure (HDMI 2.1 PCON)")
+#define intel_dp_pcon_dsc_configure(intel_dp, cs) I915_LCD_GUARD(!dp_is_branch((intel_dp)->dpcd), "intel_dp_pcon_dsc_configure (HDMI 2.1 PCON)")
 
 /* skl_pfit_enable() / skl_scaler_disable(): nothing without the pipe scaler. */
 #define skl_pfit_enable(cs) I915_LCD_GUARD(!(cs)->pch_pfit.enabled, "skl_pfit_enable (panel fitter)")
@@ -1101,7 +1083,7 @@ typedef uint64_t __u64;
  * The power-domain mask and set of the Linux text.  It is included after
  * the macros because its structures are declared with DECLARE_BITMAP().
  */
-#include "../data/display-power-domain-set-types.inc"
+#include "../intel/power-set.h"
 
 /*
  * ==== Enums ====
@@ -1121,7 +1103,7 @@ enum pipe {
  * The transcoders and their registers.  Included after enum pipe because
  * the transcoders of the pipes are numbered after them.
  */
-#include "../data/display-trans-regs.inc"
+#include "../intel/trans.h"
 
 /* Which PLL of a port a crtc uses (intel_display_types.h). */
 enum icl_port_dpll_id {
@@ -1261,7 +1243,7 @@ struct drm_device {
  * drives, and what the HDCP and backlight text read (drm_connector.h).
  */
 struct drm_connector_state {
-	enum drm_colorspace colorspace;
+	enum colorspace colorspace;
 	void *connector;
 	void *best_encoder;
 	int content_protection;
@@ -1956,10 +1938,10 @@ struct intel_plane_state {
 		unsigned int rotation;
 		u16 alpha;
 		u16 pixel_blend_mode;
-		enum drm_color_encoding color_encoding;
-		enum drm_color_range color_range;
+		enum color_encoding color_encoding;
+		enum color_range color_range;
 	} hw;
-	struct drm_intel_sprite_colorkey ckey;
+	struct intel_sprite_colorkey ckey;
 	struct {
 		struct {
 			u32 offset;
@@ -2013,7 +1995,7 @@ struct intel_global_state {
  * The global DBUF state of the Linux text.  It is included here because it
  * embeds struct intel_global_state above.
  */
-#include "../data/display-dbuf-types.inc"
+#include "../intel/wm-dbuf.h"
 
 /*
  * The global DBUF states of one modeset: the one before and the one after
@@ -3136,6 +3118,6 @@ i915_lcd_dpcd_probe(
  * They are included last because they need the complete crtc state and
  * drm_atomic_crtc_needs_modeset() above.
  */
-#include "../data/display-ref-inlines.inc"
+#include "../intel/ref-inlines.h"
 
 #endif /* DRIVERS_GPU_I915_DISPLAY_MODESET_INTERNAL_H */

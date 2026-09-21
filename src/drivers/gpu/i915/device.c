@@ -40,8 +40,8 @@
 #include <stddef.h>
 #include <string.h>
 
-#include "data/i915-ids.inc"
-#include "data/i915-regs.inc"
+#include "intel/gt-regs.h"
+#include "intel/pci-ids.h"
 
 /* The Alder Lake-P engines the GT is brought up with: RCS0, BCS0, VCS0, VCS2 and VECS0. */
 #define I915_START_ENGINE_MASK	((1U << 0) | (1U << 1) | (1U << 8) | (1U << 10) | (1U << 16))

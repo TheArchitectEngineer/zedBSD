@@ -30,7 +30,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "../data/vulkan-codec.inc"
+#include "vulkan-codec.inc"
 
 /* The largest width and height of an image the executor lays out. */
 #define I915_GFX_IMAGE_MAX_EXTENT	16384U

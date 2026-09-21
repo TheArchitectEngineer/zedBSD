@@ -26,7 +26,7 @@
 
 bool drv_i915_drm_dp_channel_eq_ok(const u8 link_status[DP_LINK_STATUS_SIZE], int lane_count);
 bool drv_i915_drm_dp_clock_recovery_ok(const u8 link_status[DP_LINK_STATUS_SIZE], int lane_count);
-int drv_i915_drm_dp_dpcd_read_phy_link_status(struct drm_dp_aux *aux, enum drm_dp_phy dp_phy, u8 link_status[DP_LINK_STATUS_SIZE]);
+int drv_i915_drm_dp_dpcd_read_phy_link_status(struct drm_dp_aux *aux, enum dp_phy dp_phy, u8 link_status[DP_LINK_STATUS_SIZE]);
 
 bool drv_i915_dp_is_edp(struct intel_dp *intel_dp);
 bool drv_i915_dp_is_uhbr(const struct intel_crtc_state *crtc_state);

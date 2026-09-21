@@ -71,51 +71,6 @@ kern_clock_init(
 	}
 }
 
-#if CONFIG_DRIVER_PCI_I915_PARITY
-/* Diagnostic one-shot timer-IRQ hook (see kern_diag_oneshot_arm). */
-static void (*diag_oneshot_fn)(unsigned, void *);
-static void *diag_oneshot_arg;
-static unsigned diag_oneshot_avoid_cpu;
-static unsigned diag_oneshot_require_cpu;
-static atomic_uint_t diag_oneshot_armed;
-
-void
-kern_diag_oneshot_arm(void (*fn)(unsigned, void *), void *arg, unsigned avoid_cpu,
-	unsigned require_cpu)
-{
-	diag_oneshot_fn = fn;
-	diag_oneshot_arg = arg;
-	diag_oneshot_avoid_cpu = avoid_cpu;
-	diag_oneshot_require_cpu = require_cpu;
-	atomic_store_release(&diag_oneshot_armed, 1U);
-}
-
-void
-kern_diag_oneshot_disarm(void)
-{
-	atomic_store_release(&diag_oneshot_armed, 0U);
-}
-
-static void
-diag_oneshot_fire(unsigned cpu)
-{
-	/* Acquire-load publishes fn/arg/avoid_cpu written before the arming release. */
-	if (atomic_load_acquire(&diag_oneshot_armed) == 0U)
-		return;
-	if (diag_oneshot_require_cpu != 0xffffffffu && cpu != diag_oneshot_require_cpu)
-		return;
-	if (diag_oneshot_avoid_cpu != 0xffffffffu && cpu == diag_oneshot_avoid_cpu)
-		return;
-	{
-		unsigned expected = 1U;
-		if (!atomic_compare_exchange(&diag_oneshot_armed, &expected, 0U))
-			return;   /* another CPU claimed it first */
-	}
-	if (diag_oneshot_fn != 0)
-		diag_oneshot_fn(cpu, diag_oneshot_arg);
-}
-#endif
-
 /*
  * Handles the periodic timer interrupt on one CPU.
  *
@@ -142,9 +97,6 @@ kernel_timer_handler(
 
 	sched_clock_cpu(cpu, now);
 
-#if CONFIG_DRIVER_PCI_I915_PARITY
-	diag_oneshot_fire((unsigned)cpu);
-#endif
 }
 
 /*

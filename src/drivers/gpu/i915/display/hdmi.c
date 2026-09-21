@@ -23,7 +23,7 @@
  *                                epoch counter moves when a previously
  *                                stored EDID changes; the display info and
  *                                the property are not ported;
- *   drm_edid_is_digital()        EDID byte 20 bit 7 (DRM_EDID_INPUT_DIGITAL);
+ *   drm_edid_is_digital()        EDID byte 20 bit 7 (EDID_INPUT_DIGITAL);
  *   the DP dual-mode probe       (I2C address 0x40) a recorded step finding
  *                                no adaptor.
  *
@@ -64,7 +64,7 @@
 #include <stddef.h>
 #include <string.h>
 
-/* The EDID input byte whose bit 7 marks a digital sink (DRM_EDID_INPUT_DIGITAL). */
+/* The EDID input byte whose bit 7 marks a digital sink (EDID_INPUT_DIGITAL). */
 #define I915_EDID_INPUT_BYTE 20u
 #define I915_EDID_INPUT_DIGITAL 0x80u
 
@@ -74,7 +74,7 @@ static void i915_hpd_edid_note(struct i915_hpd_world *world, const u8 *block, in
 static void i915_hdmi_dp_dual_mode_detect(struct drm_connector *connector);
 static void i915_hdmi_unset_edid(struct drm_connector *connector);
 static bool i915_hdmi_set_edid(struct drm_connector *connector);
-static enum drm_connector_status i915_hdmi_detect(struct drm_connector *connector, bool force);
+static enum connector_status i915_hdmi_detect(struct drm_connector *connector, bool force);
 
 /*
  * The connector callbacks of an HDMI connector: the forced detect.
@@ -473,12 +473,12 @@ i915_hdmi_set_edid(
  *
  * It is the forced detect of the HDMI connector callbacks.
  */
-static enum drm_connector_status
+static enum connector_status
 i915_hdmi_detect(
 	struct drm_connector *connector,
 	bool force)
 {
-	enum drm_connector_status status;
+	enum connector_status status;
 	struct drm_i915_private *dev_priv;
 	struct intel_connector *intel_connector;
 	struct intel_hdmi *intel_hdmi;

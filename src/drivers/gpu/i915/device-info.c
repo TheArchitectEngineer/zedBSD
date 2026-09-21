@@ -114,7 +114,7 @@ struct i915_engine_table_entry {
  * The table never changes and every device shares it.
  */
 static const struct i915_engine_table_entry i915_engine_table[] = {
-#include "data/engine-table.inc"
+#include "intel/engine-table.inc"
 };
 
 static unsigned i915_hweight16(uint16_t bits);

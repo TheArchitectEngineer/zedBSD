@@ -60,6 +60,9 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "../../intel/commands.h"
+#include "../../intel/gt-regs.h"
+
 /* The engines Alder Lake-P can have: RCS0, BCS0, VCS0, VCS2 and VECS0. */
 #define I915_KTEST_ADLP_ENGINES		((1U << I915_RCS0) | (1U << I915_BCS0) | (1U << I915_VCS0) | (1U << I915_VCS2) | (1U << I915_VECS0))
 

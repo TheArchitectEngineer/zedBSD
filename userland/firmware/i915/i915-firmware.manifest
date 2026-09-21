@@ -1,0 +1,39 @@
+# zedBSD optional firmware package manifest
+# Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
+
+package=i915-firmware
+package-version=20260410
+installed-adlp-dmc=/lib/firmware/i915/adlp_dmc.bin
+installed-tgl-dmc=/lib/firmware/i915/tgl_dmc_ver2_12.bin
+installed-license=/usr/share/licenses/i915-firmware/LICENSE.i915
+installed-whence=/usr/share/licenses/i915-firmware/WHENCE
+
+acquisition-repository=https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git
+acquisition-tag=20260410
+acquisition-tag-object=4585dd5a5f0cee08990d754701d8866d9e9266e6
+acquisition-revision=dc85ccedc9c973682fbcf4d628ca61174bcc3120
+acquisition-base-url=https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/plain
+acquisition-url-suffix=?id=dc85ccedc9c973682fbcf4d628ca61174bcc3120
+acquisition-adlp-dmc-path=i915/adlp_dmc.bin
+acquisition-adlp-dmc-size=79088
+acquisition-adlp-dmc-sha256=3516de2e134ddcf3b319c75d2e437779fecbd58cbb77234bd6f297c544e92ccb
+acquisition-tgl-dmc-path=i915/tgl_dmc_ver2_12.bin
+acquisition-tgl-dmc-size=19760
+acquisition-tgl-dmc-sha256=3c013ef0ad96ba73aee8e5bd04a8e27cc9b1c6e9183b1a83ce124485f325afca
+acquisition-license-path=LICENSE.i915
+acquisition-license-size=2080
+acquisition-license-sha256=8542aeabf2761935122d693561e16766ce1bcc2b0d003204f9040b7d6d929f2e
+acquisition-whence-path=WHENCE
+acquisition-whence-size=425450
+acquisition-whence-sha256=c282239a5a2d849677e9304e6f361e475e1b6e71e7c771c03f8986f71b309527
+
+adlp-dmc-version=2.20
+tgl-dmc-version=2.12
+whence-recorded-adlp-dmc-version=DMC API/APB ver 2 release 20 for Alderlake P
+whence-recorded-tgl-dmc-version=DMC API/APB ver 2 release 12 for Tigerlake
+driver-reference-bytes=identical to the i915 driver bring-up reference blobs (same size and SHA-256)
+redistribution=unmodified-binary-only
+redistribution-notice=Copyright and disclaimer must accompany the unmodified binaries; consult the exact installed Intel license
+license=Intel binary firmware terms in the installed LICENSE.i915 file
+source-tree-blob=absent
+runtime-network-fetch=forbidden

@@ -2403,7 +2403,7 @@ i915_modeset_prepare_state(
 	ms->i915.display.runtime.rawclk_freq = cfg->rawclk_khz;
 
 	/* The connector state: the connector drives this crtc through this encoder. */
-	ms->conn_state.colorspace = DRM_MODE_COLORIMETRY_DEFAULT;
+	ms->conn_state.colorspace = MODE_COLORIMETRY_DEFAULT;
 	ms->conn_state.connector = &ms->connector;
 	ms->conn_state.best_encoder = &ms->dig_port.base;
 	ms->conn_state.crtc = &ms->crtc.base;

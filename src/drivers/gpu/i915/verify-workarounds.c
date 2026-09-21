@@ -30,7 +30,8 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "data/i915-commands.inc"
+#include "intel/commands.h"
+#include "intel/gt-regs.h"
 
 /* The size of the page each engine stores its registers into. */
 #define I915_VWA_SCRATCH_BYTES	4096U
@@ -56,7 +57,7 @@ struct i915_mcr_range {
  * so those entries are not verified by the GPU.  The table never changes.
  */
 static const struct i915_mcr_range i915_mcr_ranges_gen12[] = {
-#include "data/i915-mcr-ranges.inc"
+#include "intel/mcr-ranges.inc"
 };
 
 static int i915_verify_wa_fail(struct i915_gt_verify_wa *verify, int error, const char *where);

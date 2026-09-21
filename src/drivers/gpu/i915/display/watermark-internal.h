@@ -42,11 +42,11 @@
  * given to that name only while the helpers are defined.
  */
 #define WARN_ON(cond) I915_LCD_WARN_ON(cond)
-#include "../data/display-i915-fixed.inc"
+#include "../intel/fixed.h"
 #undef WARN_ON
 
 /* The watermark, DBUF and MBUS registers. */
-#include "../data/display-mreg-wm.inc"
+#include "../intel/mreg.h"
 
 /*
  * ==== Macros and constants ====
@@ -94,7 +94,7 @@
 
 /* [fixed] linear framebuffers only. */
 #define intel_fb_is_ccs_modifier(modifier) (0)
-#define intel_fb_is_tiled_modifier(modifier) ((modifier) != DRM_FORMAT_MOD_LINEAR)
+#define intel_fb_is_tiled_modifier(modifier) ((modifier) != FORMAT_MOD_LINEAR)
 
 /* The drm and intel atomic states are one object in this path. */
 #define to_intel_atomic_state(s) (s)
@@ -195,14 +195,14 @@ i915_drm_format_info(
 	u32 format)
 {
 	static const struct drm_format_info argb8888 = {
-		.format = DRM_FORMAT_ARGB8888,
+		.format = FORMAT_ARGB8888,
 		.num_planes = 1,
 		.cpp = { 4, 0, 0, 0 },
 		.has_alpha = true,
 	};
 
 	/* Only ARGB8888 is described. */
-	if (format != DRM_FORMAT_ARGB8888)
+	if (format != FORMAT_ARGB8888)
 		return NULL;
 
 	/* Succeeded: reports the cursor format. */

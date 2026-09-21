@@ -24,6 +24,8 @@
 #include <stddef.h>
 #include <string.h>
 
+#include "intel/gt-regs.h"
+
 /* The ring size of a record context and the size of its timeline page (SZ_4K). */
 #define I915_DEFAULTS_RING_BYTES	4096U
 #define I915_DEFAULTS_TIMELINE_BYTES	4096U

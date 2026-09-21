@@ -8,11 +8,14 @@ i915_gen12_ranges (src/drivers/gpu/i915/mmio.c) already means always on.
 
 Usage (from anywhere; paths are relative to the repository root):
     python3 plan/ws031/handover/tools/gen_fw_ranges.py [OUT]
-OUT defaults to src/drivers/gpu/i915/data/forcewake-ranges.inc.  To check the
-checked-in file, write to a temporary path and compare it with cmp.
+OUT defaults to src/drivers/gpu/i915/intel/forcewake-ranges.inc.  To check the
+checked-in file, write to a temporary path and compare it with cmp
+(plan/ws031/handover/tools/check_generated.sh does).
 
-The header text, including its mention of scratchpad/gen_fw_ranges.py, is kept
-exactly as in the checked-in file so that a re-run reproduces it byte for byte.
+The output has the layout of every file in intel/: the zedBSD copyright
+line, the notice of the source file (its leading comment, copied verbatim),
+a description with the provenance, and the rows.  The rows are the body of
+an array: mmio.c includes them inside the initializer of i915_gen12_ranges[].
 """
 import os
 import re
@@ -20,7 +23,7 @@ import sys
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
 REF = os.path.join(ROOT, "plan/ws031/linux-parity/linux-reference/i915-src/intel_uncore.c")
-OUT = os.path.join(ROOT, "src/drivers/gpu/i915/data/forcewake-ranges.inc")
+OUT = os.path.join(ROOT, "src/drivers/gpu/i915/intel/forcewake-ranges.inc")
 if len(sys.argv) > 1:
     OUT = sys.argv[1]
 
@@ -30,6 +33,8 @@ m = re.search(r"static const struct intel_forcewake_range __gen12_fw_ranges\[\] 
 assert m, "table"
 rows = re.findall(r"GEN_FW_RANGE\((0x[0-9a-fA-F]+),\s*(0x[0-9a-fA-F]+),\s*([A-Z0-9_]+)\)", m.group(1))
 assert len(rows) == 43, len(rows)
+notice = re.match(r"/\*.*?\*/", src, re.S)
+assert notice and "Copyright" in notice.group(0), "notice"
 
 DOM = {
     "FORCEWAKE_RENDER": "I915_FORCEWAKE_RENDER",
@@ -40,13 +45,23 @@ DOM = {
 }
 
 out = ["/*",
-       " * The Gen12 register to forcewake domain map.",
+       " * zedBSD",
+       " * Copyright (C) 2026 Awe Morris",
+       " */",
+       "",
+       notice.group(0),
+       "",
+       "/*",
+       " * The rows of the Gen12 register to forcewake domain map; mmio.c includes",
+       " * them inside the initializer of i915_gen12_ranges[].",
        " *",
        " * Generated from the Linux 6.8.12 reference (intel_uncore.c, __gen12_fw_ranges,",
        " * which uncore_forcewake_init() assigns to Alder Lake-P) by",
-       " * scratchpad/gen_fw_ranges.py; the domain names were renamed for this driver.",
-       " * The always-on entries are omitted because no match already means always on.",
-       " */"]
+       " * plan/ws031/handover/tools/gen_fw_ranges.py; the domain names were renamed",
+       " * for this driver.  The always-on entries are omitted because no match",
+       " * already means always on.  The notice above is the source file's own.",
+       " */",
+       ""]
 n = 0
 for s, e, d in rows:
     if d == "0":

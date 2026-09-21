@@ -163,7 +163,7 @@ struct icl_combo_pll_params {
 };
 
 /* The CDCLK and combo PLL tables (Linux-derived, constant). */
-#include "../data/display-clock-tables.inc"
+#include "../intel/clock.h"
 
 static uint32_t i915_divrc(uint32_t a, uint32_t b);
 static int i915_hweight16(uint16_t w);

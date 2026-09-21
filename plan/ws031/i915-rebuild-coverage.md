@@ -297,7 +297,7 @@ MISSING 5 件の内訳と判断は §3.1。いずれも本番（resident）構�
 | `parity/lcd/parity_opregion_glue.inc` | moved | functions: found 36. New homes: `display/opregion.c` (36) | `display/opregion.c` |
 | `parity/lcd/parity_plane_emit_glue.inc` | moved | functions: found 7. New homes: `display/plane.c` (7) | `display/plane.c` |
 | `parity/lcd/parity_wm_glue.inc` | moved | functions: found 6. New homes: `display/watermark.c` (6) | `display/watermark.c` |
-| `parity/lcd/port_lcd_calc.manifest.json` | MISSING | provenance manifest of the old generated LCD port. [s4 §9-6](i915-rebuild-s4.md) L763 says the manifest stays in `data/provenance`; no `data/provenance` exists in the new tree. | `data/provenance/port_lcd_calc.manifest.json` |
+| `parity/lcd/port_lcd_calc.manifest.json` | MISSING (later kept in `intel/provenance/`, deleted 2026-09-22 by user decision) | provenance manifest of the old generated LCD port. [s4 §9-6](i915-rebuild-s4.md) L763 says the manifest stays in `data/provenance`; no `data/provenance` exists in the new tree. | `data/provenance/port_lcd_calc.manifest.json` |
 | `parity/lcd/scanout.c` | moved | functions: found 8. New homes: `display/scanout.c` (8) | `display/scanout.c` |
 | `parity/lcd/scanout.h` | moved | definitions present in new tree: 4/4 (100%); mostly in `display/internal.h`, `tests/display/lcd-opregion.c`, `tests/display/aux.c` | `display/scanout.h` |
 | `parity/lcd/scanout_ktest.c` | test (S5 T4b) | destination present: `src/drivers/gpu/i915/tests/display/scanout-ktest.c`; functions located in a test tree: 5/5 | `tests/display/scanout-ktest.c` |
@@ -4484,7 +4484,7 @@ resident 構成では到達しない（呼出し元は廃止済みの legacy `en
    `selftest.c` の扱い（legacy HW 試験は廃止、T4a）。各担当が旧 → 新の対応または廃止理由を残すこと。
 3. **§5.1 の参照を直す**: 試験 fixture・host script（T1/T3）、生成器 2 本（`gen_fw_ranges.py`、`gen_lrc_offsets.py`）と点検ツール、廃止済み生成器 3 本の扱い、
    `license-inventory.md`／`provenance-ledger.md`／`handover/README.md`／AGENTS 等の現行文書、`userland/base/tests/gpu-i915/main.c` のコメント。
-4. **出典 manifest の置き場を作る**: `parity/lcd/port_lcd_calc.manifest.json` を [s4 §9-6](i915-rebuild-s4.md) L763 のとおり `data/provenance/` へ移す
+4. **出典 manifest の置き場を作る**（後日: `intel/provenance/` に置いたが、2026-09-22 にユーザー決定で削除）: `parity/lcd/port_lcd_calc.manifest.json` を [s4 §9-6](i915-rebuild-s4.md) L763 のとおり `data/provenance/` へ移す
    （ファイル単位で唯一の MISSING）。
 5. **本番に残った試験用コードを S5 で外す**（削除の前提ではないが、旧ツリーとの対応確認と同時に済ませる）: `firmware.c: drv_i915_firmware_set_override`
    （[s1-reports](i915-rebuild-s1-reports.md) L16）、`display/hotplug.c` の model 用 world 項目（`i915_hpd_fake_gmbus_write` など、[s4 §2.4](i915-rebuild-s4.md) L170）。

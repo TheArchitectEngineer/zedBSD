@@ -229,9 +229,9 @@ drv_i915_plane_emit(
 	plane_state = &world->i915_plane_emit_plane_state;
 
 	/* Only a linear XRGB8888 framebuffer is handled. */
-	if (fourcc != DRM_FORMAT_XRGB8888)
+	if (fourcc != FORMAT_XRGB8888)
 		return EINVAL;
-	if (modifier != DRM_FORMAT_MOD_LINEAR)
+	if (modifier != FORMAT_MOD_LINEAR)
 		return EINVAL;
 
 	/* Only the primary plane of pipes A to D. */
@@ -289,11 +289,11 @@ drv_i915_plane_emit(
 	plane_state->uapi.dst.x2 = (int)width;
 	plane_state->uapi.dst.y2 = (int)height;
 	plane_state->hw.fb = &fb;
-	plane_state->hw.rotation = DRM_MODE_ROTATE_0;
+	plane_state->hw.rotation = MODE_ROTATE_0;
 	plane_state->hw.alpha = 0xffff;
-	plane_state->hw.pixel_blend_mode = DRM_MODE_BLEND_PREMULTI;
-	plane_state->hw.color_encoding = DRM_COLOR_YCBCR_BT709;
-	plane_state->hw.color_range = DRM_COLOR_YCBCR_LIMITED_RANGE;
+	plane_state->hw.pixel_blend_mode = MODE_BLEND_PREMULTI;
+	plane_state->hw.color_encoding = COLOR_YCBCR_BT709;
+	plane_state->hw.color_range = COLOR_YCBCR_LIMITED_RANGE;
 	plane_state->view.color_plane[0].scanout_stride = pitch;
 	plane_state->view.color_plane[0].mapping_stride = pitch;
 	plane_state->scaler_id = -1;
@@ -331,9 +331,9 @@ drv_i915_lcd_ms_plane_prepare(
 	u32 surf_ggtt_offset)
 {
 	/* Only a linear XRGB8888 framebuffer is handled. */
-	if (fourcc != DRM_FORMAT_XRGB8888)
+	if (fourcc != FORMAT_XRGB8888)
 		return EINVAL;
-	if (modifier != DRM_FORMAT_MOD_LINEAR)
+	if (modifier != FORMAT_MOD_LINEAR)
 		return EINVAL;
 
 	/* A size of 1 to 8192 pixels each way. */
@@ -374,11 +374,11 @@ drv_i915_lcd_ms_plane_prepare(
 	ms->plane_state.uapi.dst.x2 = (int)width;
 	ms->plane_state.uapi.dst.y2 = (int)height;
 	ms->plane_state.hw.fb = &ms->fb;
-	ms->plane_state.hw.rotation = DRM_MODE_ROTATE_0;
+	ms->plane_state.hw.rotation = MODE_ROTATE_0;
 	ms->plane_state.hw.alpha = 0xffff;
-	ms->plane_state.hw.pixel_blend_mode = DRM_MODE_BLEND_PREMULTI;
-	ms->plane_state.hw.color_encoding = DRM_COLOR_YCBCR_BT709;
-	ms->plane_state.hw.color_range = DRM_COLOR_YCBCR_LIMITED_RANGE;
+	ms->plane_state.hw.pixel_blend_mode = MODE_BLEND_PREMULTI;
+	ms->plane_state.hw.color_encoding = COLOR_YCBCR_BT709;
+	ms->plane_state.hw.color_range = COLOR_YCBCR_LIMITED_RANGE;
 	ms->plane_state.view.color_plane[0].scanout_stride = pitch;
 	ms->plane_state.view.color_plane[0].mapping_stride = pitch;
 	ms->plane_state.scaler_id = -1;
@@ -579,7 +579,7 @@ i915_skl_plane_stride_mult(
 		return 64;
 
 	/* A tiled buffer counts tiles, across or down depending on the rotation. */
-	rotated = drm_rotation_90_or_270(rotation);
+	rotated = rotation_90_or_270(rotation);
 	if (rotated)
 		return intel_tile_height(fb, color_plane);
 
@@ -621,57 +621,57 @@ i915_skl_plane_ctl_format(
 {
 	/* Maps the fourcc to the plane's format and channel order. */
 	switch (pixel_format) {
-	case DRM_FORMAT_C8:
+	case FORMAT_C8:
 		return PLANE_CTL_FORMAT_INDEXED;
-	case DRM_FORMAT_RGB565:
+	case FORMAT_RGB565:
 		return PLANE_CTL_FORMAT_RGB_565;
-	case DRM_FORMAT_XBGR8888:
-	case DRM_FORMAT_ABGR8888:
+	case FORMAT_XBGR8888:
+	case FORMAT_ABGR8888:
 		return PLANE_CTL_FORMAT_XRGB_8888 | PLANE_CTL_ORDER_RGBX;
-	case DRM_FORMAT_XRGB8888:
-	case DRM_FORMAT_ARGB8888:
+	case FORMAT_XRGB8888:
+	case FORMAT_ARGB8888:
 		return PLANE_CTL_FORMAT_XRGB_8888;
-	case DRM_FORMAT_XBGR2101010:
-	case DRM_FORMAT_ABGR2101010:
+	case FORMAT_XBGR2101010:
+	case FORMAT_ABGR2101010:
 		return PLANE_CTL_FORMAT_XRGB_2101010 | PLANE_CTL_ORDER_RGBX;
-	case DRM_FORMAT_XRGB2101010:
-	case DRM_FORMAT_ARGB2101010:
+	case FORMAT_XRGB2101010:
+	case FORMAT_ARGB2101010:
 		return PLANE_CTL_FORMAT_XRGB_2101010;
-	case DRM_FORMAT_XBGR16161616F:
-	case DRM_FORMAT_ABGR16161616F:
+	case FORMAT_XBGR16161616F:
+	case FORMAT_ABGR16161616F:
 		return PLANE_CTL_FORMAT_XRGB_16161616F | PLANE_CTL_ORDER_RGBX;
-	case DRM_FORMAT_XRGB16161616F:
-	case DRM_FORMAT_ARGB16161616F:
+	case FORMAT_XRGB16161616F:
+	case FORMAT_ARGB16161616F:
 		return PLANE_CTL_FORMAT_XRGB_16161616F;
-	case DRM_FORMAT_XYUV8888:
+	case FORMAT_XYUV8888:
 		return PLANE_CTL_FORMAT_XYUV;
-	case DRM_FORMAT_YUYV:
+	case FORMAT_YUYV:
 		return PLANE_CTL_FORMAT_YUV422 | PLANE_CTL_YUV422_ORDER_YUYV;
-	case DRM_FORMAT_YVYU:
+	case FORMAT_YVYU:
 		return PLANE_CTL_FORMAT_YUV422 | PLANE_CTL_YUV422_ORDER_YVYU;
-	case DRM_FORMAT_UYVY:
+	case FORMAT_UYVY:
 		return PLANE_CTL_FORMAT_YUV422 | PLANE_CTL_YUV422_ORDER_UYVY;
-	case DRM_FORMAT_VYUY:
+	case FORMAT_VYUY:
 		return PLANE_CTL_FORMAT_YUV422 | PLANE_CTL_YUV422_ORDER_VYUY;
-	case DRM_FORMAT_NV12:
+	case FORMAT_NV12:
 		return PLANE_CTL_FORMAT_NV12;
-	case DRM_FORMAT_P010:
+	case FORMAT_P010:
 		return PLANE_CTL_FORMAT_P010;
-	case DRM_FORMAT_P012:
+	case FORMAT_P012:
 		return PLANE_CTL_FORMAT_P012;
-	case DRM_FORMAT_P016:
+	case FORMAT_P016:
 		return PLANE_CTL_FORMAT_P016;
-	case DRM_FORMAT_Y210:
+	case FORMAT_Y210:
 		return PLANE_CTL_FORMAT_Y210;
-	case DRM_FORMAT_Y212:
+	case FORMAT_Y212:
 		return PLANE_CTL_FORMAT_Y212;
-	case DRM_FORMAT_Y216:
+	case FORMAT_Y216:
 		return PLANE_CTL_FORMAT_Y216;
-	case DRM_FORMAT_XVYU2101010:
+	case FORMAT_XVYU2101010:
 		return PLANE_CTL_FORMAT_Y410;
-	case DRM_FORMAT_XVYU12_16161616:
+	case FORMAT_XVYU12_16161616:
 		return PLANE_CTL_FORMAT_Y412;
-	case DRM_FORMAT_XVYU16161616:
+	case FORMAT_XVYU16161616:
 		return PLANE_CTL_FORMAT_Y416;
 	default:
 		I915_LCD_MISSING_CASE(pixel_format);
@@ -692,11 +692,11 @@ i915_skl_plane_ctl_alpha(
 
 	/* Maps the blend mode. */
 	switch (plane_state->hw.pixel_blend_mode) {
-	case DRM_MODE_BLEND_PIXEL_NONE:
+	case MODE_BLEND_PIXEL_NONE:
 		return PLANE_CTL_ALPHA_DISABLE;
-	case DRM_MODE_BLEND_PREMULTI:
+	case MODE_BLEND_PREMULTI:
 		return PLANE_CTL_ALPHA_SW_PREMULTIPLY;
-	case DRM_MODE_BLEND_COVERAGE:
+	case MODE_BLEND_COVERAGE:
 		return PLANE_CTL_ALPHA_HW_PREMULTIPLY;
 	default:
 		I915_LCD_MISSING_CASE(plane_state->hw.pixel_blend_mode);
@@ -715,11 +715,11 @@ i915_glk_plane_color_ctl_alpha(
 
 	/* Maps the blend mode. */
 	switch (plane_state->hw.pixel_blend_mode) {
-	case DRM_MODE_BLEND_PIXEL_NONE:
+	case MODE_BLEND_PIXEL_NONE:
 		return PLANE_COLOR_ALPHA_DISABLE;
-	case DRM_MODE_BLEND_PREMULTI:
+	case MODE_BLEND_PREMULTI:
 		return PLANE_COLOR_ALPHA_SW_PREMULTIPLY;
-	case DRM_MODE_BLEND_COVERAGE:
+	case MODE_BLEND_COVERAGE:
 		return PLANE_COLOR_ALPHA_HW_PREMULTIPLY;
 	default:
 		I915_LCD_MISSING_CASE(plane_state->hw.pixel_blend_mode);
@@ -734,7 +734,7 @@ i915_skl_plane_ctl_tiling(
 {
 	/* Maps the modifier. */
 	switch (fb_modifier) {
-	case DRM_FORMAT_MOD_LINEAR:
+	case FORMAT_MOD_LINEAR:
 		break;
 	case I915_FORMAT_MOD_X_TILED:
 		return PLANE_CTL_TILED_X;
@@ -785,13 +785,13 @@ i915_skl_plane_ctl_rotate(
 {
 	/* Maps the rotation. */
 	switch (rotate) {
-	case DRM_MODE_ROTATE_0:
+	case MODE_ROTATE_0:
 		break;
-	case DRM_MODE_ROTATE_90:
+	case MODE_ROTATE_90:
 		return PLANE_CTL_ROTATE_270;
-	case DRM_MODE_ROTATE_180:
+	case MODE_ROTATE_180:
 		return PLANE_CTL_ROTATE_180;
-	case DRM_MODE_ROTATE_270:
+	case MODE_ROTATE_270:
 		return PLANE_CTL_ROTATE_90;
 	default:
 		I915_LCD_MISSING_CASE(rotate);
@@ -810,9 +810,9 @@ i915_icl_plane_ctl_flip(
 	switch (reflect) {
 	case 0:
 		break;
-	case DRM_MODE_REFLECT_X:
+	case MODE_REFLECT_X:
 		return PLANE_CTL_FLIP_HORIZONTAL;
-	case DRM_MODE_REFLECT_Y:
+	case MODE_REFLECT_Y:
 	default:
 		I915_LCD_MISSING_CASE(reflect);
 	}
@@ -890,7 +890,7 @@ i915_skl_plane_ctl(
 {
 	const struct drm_framebuffer *fb;
 	unsigned int rotation;
-	const struct drm_intel_sprite_colorkey *key;
+	const struct intel_sprite_colorkey *key;
 	u32 plane_ctl;
 	int display_ver;
 
@@ -911,22 +911,22 @@ i915_skl_plane_ctl(
 		plane_ctl |= PLANE_CTL_PLANE_GAMMA_DISABLE;
 
 		/* The BT.709 YUV conversion. */
-		if (plane_state->hw.color_encoding == DRM_COLOR_YCBCR_BT709)
+		if (plane_state->hw.color_encoding == COLOR_YCBCR_BT709)
 			plane_ctl |= PLANE_CTL_YUV_TO_RGB_CSC_FORMAT_BT709;
 
 		/* Full-range YUV needs no range correction. */
-		if (plane_state->hw.color_range == DRM_COLOR_YCBCR_FULL_RANGE)
+		if (plane_state->hw.color_range == COLOR_YCBCR_FULL_RANGE)
 			plane_ctl |= PLANE_CTL_YUV_RANGE_CORRECTION_DISABLE;
 	}
 
 	/* The format, the tiling and the rotation. */
 	plane_ctl |= i915_skl_plane_ctl_format(fb->format->format);
 	plane_ctl |= i915_skl_plane_ctl_tiling(fb->modifier);
-	plane_ctl |= i915_skl_plane_ctl_rotate(rotation & DRM_MODE_ROTATE_MASK);
+	plane_ctl |= i915_skl_plane_ctl_rotate(rotation & MODE_ROTATE_MASK);
 
 	/* The reflection (display version 11 and later). */
 	if (display_ver >= 11)
-		plane_ctl |= i915_icl_plane_ctl_flip(rotation & DRM_MODE_REFLECT_MASK);
+		plane_ctl |= i915_icl_plane_ctl_flip(rotation & MODE_REFLECT_MASK);
 
 	/* The colour key. */
 	if (key->flags & I915_SET_COLORKEY_DESTINATION) {
@@ -1004,10 +1004,10 @@ i915_glk_plane_color_ctl(
 		if (!hdr) {
 			/* Picks the conversion of the colour encoding. */
 			switch (plane_state->hw.color_encoding) {
-			case DRM_COLOR_YCBCR_BT709:
+			case COLOR_YCBCR_BT709:
 				plane_color_ctl |= PLANE_COLOR_CSC_MODE_YUV709_TO_RGB709;
 				break;
-			case DRM_COLOR_YCBCR_BT2020:
+			case COLOR_YCBCR_BT2020:
 				plane_color_ctl |= PLANE_COLOR_CSC_MODE_YUV2020_TO_RGB2020;
 				break;
 			default:
@@ -1015,11 +1015,11 @@ i915_glk_plane_color_ctl(
 			}
 
 			/* Full-range YUV needs no range correction. */
-			if (plane_state->hw.color_range == DRM_COLOR_YCBCR_FULL_RANGE)
+			if (plane_state->hw.color_range == COLOR_YCBCR_FULL_RANGE)
 				plane_color_ctl |= PLANE_COLOR_YUV_RANGE_CORRECTION_DISABLE;
 		} else {
 			plane_color_ctl |= PLANE_COLOR_INPUT_CSC_ENABLE;
-			if (plane_state->hw.color_range == DRM_COLOR_YCBCR_FULL_RANGE)
+			if (plane_state->hw.color_range == COLOR_YCBCR_FULL_RANGE)
 				plane_color_ctl |= PLANE_COLOR_YUV_RANGE_CORRECTION_DISABLE;
 		}
 	}
@@ -1135,7 +1135,7 @@ static u32
 i915_skl_plane_keymsk(
 	const struct intel_plane_state *plane_state)
 {
-	const struct drm_intel_sprite_colorkey *key;
+	const struct intel_sprite_colorkey *key;
 	u8 alpha;
 	u32 keymsk;
 
@@ -1159,7 +1159,7 @@ static u32
 i915_skl_plane_keymax(
 	const struct intel_plane_state *plane_state)
 {
-	const struct drm_intel_sprite_colorkey *key;
+	const struct intel_sprite_colorkey *key;
 	u8 alpha;
 
 	/* The colour key and the plane alpha. */
@@ -1619,7 +1619,7 @@ i915_xrgb8888_format(void)
 {
 	/* The one format of this path: 4 bytes per pixel, one plane, no alpha. */
 	static const struct drm_format_info xrgb8888 = {
-		DRM_FORMAT_XRGB8888,
+		FORMAT_XRGB8888,
 		1,
 		{ 4, 0, 0, 0 },
 		false,

@@ -52,6 +52,9 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "../../intel/commands.h"
+#include "../../intel/gt-regs.h"
+
 /* MI_COPY_MEM_MEM with both addresses in the context's address space. */
 #define I915_TEST_MI_COPY_MEM_MEM	0x17000003U
 

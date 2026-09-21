@@ -9,7 +9,7 @@
  * Gen12 EU instruction encoder: turns one instruction into its 128-bit word.
  *
  * The values (opcodes, field positions, message descriptors) are transcribed
- * with attribution into data/eu-encoding-gen12.inc; instruction selection is
+ * with attribution into intel/eu-encoding-gen12.h; instruction selection is
  * the code generator's job.  Only the compiler and its host tests use this
  * header.
  */

@@ -6,11 +6,12 @@
  */
 
 /*
- * A replacement for the firmware provider's embedded table, for unit tests.
+ * A replacement for the firmware provider's file system read, for unit tests.
  *
  * The test build answers the provider's request checkpoint here.  While a test
  * has installed a replacement, every firmware request goes to it; otherwise
- * the provider serves its table as in production.
+ * the provider reads /lib/firmware as in production.  The image a replacement
+ * hands back stays the test's memory: the release does not free it.
  */
 
 #ifndef DRIVERS_GPU_I915_TESTS_EXECUTION_FIRMWARE_OVERRIDE_H

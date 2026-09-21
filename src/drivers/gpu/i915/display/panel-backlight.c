@@ -32,7 +32,7 @@
  */
 
 #include "modeset-internal.h"
-#include "../data/display-mreg-backlight.inc"
+#include "../intel/mreg.h"
 #include "panel-backlight.h"
 #include "dp.h"
 #include "modeset.h"

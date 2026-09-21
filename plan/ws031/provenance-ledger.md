@@ -20,21 +20,40 @@
 
 - 表示系の生成器（`port_lcd_calc.py`＋`port_lcd_modeset.json`、`port_dp_aux_pps.py`、`port_intel_bios.py`）は廃止し、
   `plan/ws031/handover/tools/retired/` へ移した（[S4 §9-6](i915-rebuild-s4.md)）。生成物は関数ごとに手で `display/*.c` と
-  `data/display-*.inc` へ書き直され、以後は手で管理する。書き直したファイルは由来する Linux ファイルの表示を保持している
-  （`display/*.c` は zedBSD の Zlib 表示の後に元の copyright と permission notice、`data/display-*.inc` は元の表示と抽出元の sha256）。
-  生成時の manifest は `data/provenance/port_lcd_calc.manifest.json` に残した。
-- `gen_lrc_offsets.py` も廃止（`retired/`）。LRC offset 表は `plan/ws029/tests/gen-inc.py lrc` が Linux v6.19 から生成する
-  `data/i915-lrc-offsets.inc`（SPDX MIT、Intel copyright を保持）に一本化された。
-- `gen_fw_ranges.py` は `data/forcewake-ranges.inc` を出力するよう追従し、再実行で現在のファイルとバイト一致する。
-  `check_generated.sh` は `data/forcewake-ranges.inc` と `data/vulkan-codec.inc` の再生成比較と DRM 正本の `SHA256SUMS` を検査する。
-- licence の未決: `data/display-acpi-display.inc` と `display/opregion.c` の ACPI 関数は GPL-2.0 の `intel_acpi.c` 由来
-  （[license-inventory.md](license-inventory.md) §3、ユーザー判断待ち）。
+  定義の fragment へ書き直され、以後は手で管理する。書き直したファイルは由来する Linux ファイルの表示を保持している
+  （`display/*.c` は zedBSD の Zlib 表示の後に元の copyright と permission notice、`intel/*.h` の表示の header は下記の形の表示と抽出元の sha256）。
+  生成時の manifest は一時 `intel/provenance/port_lcd_calc.manifest.json` に残したが、（2026-09-22、ユーザー決定で `intel/provenance/` ごと削除。抽出元の版と sha256 は本台帳 §7 以降と各 header の説明に残る）。
+- 2026-09-22、`data/` を `external/` に改めた（第三者由来の置き場）。fragment は系統ごとの header に統合した: GT の定義（旧
+  `i915-*.inc` と Mesa 由来の `i915-3dstate-gen12.inc`）は `external/i915.h`、使われていない旧 MOCS 表と Linux 7.1 の workaround は
+  (deleted 2026-09-22: unused by the new driver; old `external/i915-superseded.h`)、表示は `external/display/<系統>.h`（`dp.h`、`ref.h`、`plane.h`、`mreg.h` など）。配列の初期化子の
+  中で include される行の並びは `.inc` のまま（`external/i915-engine-table.inc`、`i915-forcewake-ranges.inc`、`i915-gt-mocs-table.inc`、
+  `i915-mcr-ranges.inc`）。各ファイルの先頭は zedBSD の著作権行（licence 行なし）、licence 文ごとに一つの block（出典の Copyright 行を
+  統合、MIT 文・DRM 文は一度だけ、SPDX だけの出典は `SPDX-License-Identifier: MIT`＋Copyright 行）、出典（版・ファイル・sha256・
+  変換）を書いた説明、定義の順。表示 fragment の DRM 接頭辞は外した（`drm_dp_*`→`dp_*`、`DRM_FORMAT_*`→`FORMAT_*` など、
+  値と layout は不変、kernel の vmunix は再構成の前とバイト一致）。libvulkan から生成する `vulkan-codec.inc` は zedBSD の
+  コードなので `render/` へ、firmware の byte 配列は `external/firmware/` へ移した。
+- 2026-09-22（続き）、`src/drivers/gpu/i915/external/` を `intel/` に改めた。表示の header は `display/` を挟まず `intel/` 直下（`intel/dp.h`、`intel/mreg.h` など、名前は不変）、配列の本体は `i915-` を外した `intel/engine-table.inc`・`forcewake-ranges.inc`・`mocs-table.inc`・`mcr-ranges.inc`、`eu-encoding-gen12.h`・`provenance/`・`firmware/`（一時。どちらも同日のうちに削除、下の firmware の項）も `intel/` へ。寄せ集めになっていた `external/i915.h` は内容ごとに分割して削除した: `intel/bits.h`（Linux の bit helper の置換。zedBSD 自身の定義なので Zlib）、`gt-regs.h`（GT・engine・interrupt・context・GTT の register と execution path の register）、`commands.h`（MI・blitter・PIPE_CONTROL と execution path の command）、`lrc-offsets.h`（Gen12 context image の offset 表）、`pci-ids.h`、`gt-power.h`（RC6／RPS）、`workarounds.h`、`mocs.h`（MOCS と PAT）、`genxml.h`（Mesa genxml の Gen12 3D state、Mesa 自身の表示）。各 header は zedBSD の著作権行（licence 行なし）、その header が写した出典の Copyright 行だけを統合した licence block 一つ（SPDX だけの出典なら `SPDX-License-Identifier: MIT`＋Copyright 行、`i915_reg.h`・`i915_drm.h`・`pciids.h` を含むものはその MIT 文）、出典（版・ファイル・sha256）を書いた説明、include guard、定義の順で、使う header（`bits.h`、`<stdint.h>`）を自分で include する。各 .c は使う header だけを include する。kernel の vmunix（本番と `I915_TESTS=y`）は再構成の前とバイト一致。
+- 2026-09-22（firmware の置き場、ユーザー決定）: DMC の byte 配列（`intel/firmware/adlp-dmc.c`・`tgl-dmc.c`、`LICENSE.i915`）を
+  kernel から削除し、`firmware.c` は `/lib/firmware/<name>` を VFS から読む（package `i915-firmware` が入れる。licence 棚卸し §4）。
+  対象機 VBT は `vendor/intel-vbt/dell-latitude-5330-1028-0b02.inc`（配列の本体だけ、8704 bytes、sha256 `3bff4a09…24cd`、Dell／Intel の
+  platform data、**配布 licence 未監査**）へ移し、試験 build（`I915_TEST_VBT=y`）だけが `display/vbt.c` に include する（QEMU passthrough の
+  guest に OpRegion が無いための仮の支え。`XXX:` 実機で GPU 試験が走るようになったら削除）。本番 kernel は機体固有のデータを持たない。
+  Dell Latitude 5320 の VBT（`vbt-dell-latitude-5320.c`、どの試験も使っていなかった）は削除した。`intel/firmware/` は空になり削除。
+  `intel/provenance/`（旧表示生成器の manifest `port_lcd_calc.manifest.json` と README）もユーザー決定で削除した。
+- `gen_lrc_offsets.py` も廃止（`retired/`）。LRC offset 表は `gen-inc.py lrc` が Linux v6.19 から生成した表
+  （SPDX MIT、Intel copyright を保持）に一本化され、今は `intel/lrc-offsets.h` にある。`gen-inc.py` 自体も `external/i915.h`（今は `intel/` の系統別 header に分割）への統合で
+  廃止した（`retired/`、入力の v6.19 tree も build host にない）。
+- `gen_fw_ranges.py` は `intel/forcewake-ranges.inc`（`intel_uncore.c` の表示を含む新しい形）を出力し、再実行で現在の
+  ファイルとバイト一致する。`check_generated.sh` はそれと `render/vulkan-codec.inc` の再生成比較と DRM 正本の `SHA256SUMS` を検査する。
+- licence: GPL-2.0 の `intel_acpi.c` 由来だった旧 `data/display-acpi-display.inc` と `display/opregion.c` の ACPI 関数は、統合担当が
+  driver 自身の `I915_ACPI_DISPLAY_*` 定義と書き直した関数に置き換えた。新ツリーに GPL 由来のコードは残っていない
+  （[license-inventory.md](license-inventory.md) §3）。
 
 | 本書に出る旧ファイル（`i915-old/` 相対） | 現在の置き場 | 状態 |
 |---|---|---|
 | `draw_fixture.h` | `tests/fixtures/draw-fixture.h` | test-only (S5 T4a) |
-| `linux/i915-commands.inc` | `data/i915-commands.inc` | moved |
-| `linux/i915-workarounds.inc` | `data/i915-workarounds.inc` | moved |
+| `linux/i915-commands.inc` | `intel/commands.h` | moved |
+| `linux/i915-workarounds.inc` | (deleted 2026-09-22: unused by the new driver; old `external/i915-superseded.h`) | moved |
 | `parity/backend_delayed.c` | `workqueue.c` | moved |
 | `parity/backend_delayed.h` | `workqueue.h` | moved (renamed) |
 | `parity/backend_sync.c` | `workqueue.c`、`sync.c` | moved |
@@ -44,19 +63,19 @@
 | `parity/dp/dp_fake_hw.c` | `tests/display/dp-fake-hw.c` | test-only (S5 T3) |
 | `parity/dp/dp_fake_hw.h` | `tests/display/dp-fake-hw.h` | test-only (S5 T3) |
 | `parity/dp/dp_fixture_latitude5330.h` | `tests/display/dp-fixture-latitude5330.h` | test-only (S5 T3) |
-| `parity/dp/dp_ref_types.h` | `data/display-dp-ref-types.inc` | moved |
-| `parity/dp/drm_dp.h` | `data/display-drm-dp.inc` | moved |
+| `parity/dp/dp_ref_types.h` | `intel/dp.h` | moved |
+| `parity/dp/drm_dp.h` | `intel/dp.h` | moved |
 | `parity/dp/drm_dp_helper_port.c` | `display/dp-sink.c` | moved |
 | `parity/dp/drm_edid_port.c` | `display/edid-read.c` | moved |
 | `parity/dp/edp_ktest.c` | `tests/display/edp-ktest.c` | test-only (S5 T4b) |
 | `parity/dp/edp_ktest.h` | `tests/display/edp-ktest.h` | test-only (S5 T4b) |
 | `parity/dp/edp_sync_ktest.c` | `tests/display/edp-sync-ktest.c` | test-only (S5 T4b) |
-| `parity/dp/intel_dp_aux.h` | `data/display-intel-dp-aux.inc` | moved |
+| `parity/dp/intel_dp_aux.h` | `intel/dp.h` | moved |
 | `parity/dp/intel_dp_aux_port.c` | `display/aux.c` | moved |
-| `parity/dp/intel_dp_aux_regs.h` | `data/display-intel-dp-aux-regs.inc` | moved |
-| `parity/dp/intel_pps.h` | `data/display-intel-pps.inc` | moved |
+| `parity/dp/intel_dp_aux_regs.h` | `intel/dp.h` | moved |
+| `parity/dp/intel_pps.h` | `intel/dp.h` | moved |
 | `parity/dp/intel_pps_port.c` | `display/panel.c` | moved |
-| `parity/dp/intel_pps_regs.h` | `data/display-intel-pps-regs.inc` | moved |
+| `parity/dp/intel_pps_regs.h` | `intel/dp.h` | moved |
 | `parity/dp/parity_dp_kernel.c` | `display/dp-sink.c`、`display/hotplug.c` | moved |
 | `parity/dp/parity_dp_kernel.h` | `display/dp-sink.h` | moved |
 | `parity/dp/parity_drm_edid_glue.inc` | `display/edid-read.c` | moved |
@@ -65,10 +84,10 @@
 | `parity/drm_device.c` | `display/display.c` | moved |
 | `parity/eu_test.c` | `tests/execution/eu-test.c` | test-only (S5 T4a) |
 | `parity/eu_test.h` | `tests/execution/eu-test.h` | test-only (S5 T4a) |
-| `parity/firmware_adlp_dmc.c` | `data/firmware/adlp-dmc.c` | moved |
-| `parity/firmware_vbt_dell_latitude_5330.c` | `data/firmware/vbt-dell-latitude-5330.c` | moved |
-| `parity/gt_fw_ranges.inc` | `data/forcewake-ranges.inc` | moved |
-| `parity/gt_lrc_offsets.inc` | `data/i915-lrc-offsets.inc` | moved (merged) |
+| `parity/firmware_adlp_dmc.c` | 削除（2026-09-22、kernel から DMC を除去。driver は package `i915-firmware` の `/lib/firmware/i915/adlp_dmc.bin` を読む） | removed |
+| `parity/firmware_vbt_dell_latitude_5330.c` | `vendor/intel-vbt/dell-latitude-5330-1028-0b02.inc`（2026-09-22、試験 build `I915_TEST_VBT=y` だけが `display/vbt.c` へ include） | moved (test-only) |
+| `parity/gt_fw_ranges.inc` | `intel/forcewake-ranges.inc` | moved |
+| `parity/gt_lrc_offsets.inc` | `intel/lrc-offsets.h` | moved (merged) |
 | `parity/gt_mem.c` | `ggtt.c`、`ppgtt.c`、`memory.c` | moved |
 | `parity/gt_mem.h` | `ppgtt.c` | moved |
 | `parity/gt_submit.c` | `submit.c`、`request.c` | moved |
@@ -76,38 +95,38 @@
 | `parity/lcd/drm_dp_bw_port.c` | `display/dp.c` | moved |
 | `parity/lcd/drm_edid_mode_port.c` | `display/edid.c` | moved |
 | `parity/lcd/drm_modes_port.c` | `display/edid.c` | moved |
-| `parity/lcd/edid_ref_types.h` | `data/display-edid-ref-types.inc` | moved |
+| `parity/lcd/edid_ref_types.h` | `intel/ref.h` | moved |
 | `parity/lcd/intel_ddi_port.c` | `display/ddi.c`、`display/takeover.c` | moved |
 | `parity/lcd/intel_display_port.c` | `display/pipe.c`、`display/takeover.c` | moved |
 | `parity/lcd/intel_dpll_port.c` | `display/clock.c` | moved |
 | `parity/lcd/intel_link_port.c` | `display/dp.c` | moved |
 | `parity/lcd/intel_vrr_port.c` | `display/pipe.c` | moved |
 | `parity/lcd/lcd_compat.h` | `display/modeset-internal.h` | moved |
-| `parity/lcd/lcd_ddi_regs.h` | `data/display-ddi-regs.inc` | moved |
-| `parity/lcd/lcd_ddi_types.h` | `data/display-ddi-types.inc` | moved |
-| `parity/lcd/lcd_dp_msa.h` | `data/display-dp-msa.inc` | moved |
-| `parity/lcd/lcd_drm_colorspace.h` | `data/display-drm-colorspace.inc` | moved |
-| `parity/lcd/lcd_drm_fourcc.h` | `data/display-drm-fourcc.inc` | moved |
-| `parity/lcd/lcd_drm_plane_defs.h` | `data/display-drm-plane-defs.inc` | moved |
+| `parity/lcd/lcd_ddi_regs.h` | `intel/trans.h` | moved |
+| `parity/lcd/lcd_ddi_types.h` | `intel/ddi.h` | moved |
+| `parity/lcd/lcd_dp_msa.h` | `intel/dp.h` | moved |
+| `parity/lcd/lcd_drm_colorspace.h` | `intel/connector.h` | moved |
+| `parity/lcd/lcd_drm_fourcc.h` | `intel/fourcc.h` | moved |
+| `parity/lcd/lcd_drm_plane_defs.h` | `intel/plane.h` | moved |
 | `parity/lcd/lcd_fake_hw.c` | `tests/display/lcd-fake-hw.c` | test-only (S5 T3) |
 | `parity/lcd/lcd_fake_hw.h` | `tests/display/lcd-fake-hw.h` | test-only (S5 T3) |
 | `parity/lcd/lcd_hw_check.c` | — | test-only (S5 T4b); not yet present; planned: `tests/display/scanout-hw-check.c` |
 | `parity/lcd/lcd_hw_check.h` | — | test-only (S5 T4b); not yet present; planned: `tests/display/scanout-hw-check.h` |
-| `parity/lcd/lcd_i915_colorkey.h` | `data/display-i915-colorkey.inc` | moved |
+| `parity/lcd/lcd_i915_colorkey.h` | `intel/plane.h` | moved |
 | `parity/lcd/lcd_modeset_ktest.c` | `tests/display/lcd-modeset-ktest.c` | test-only (S5 T4b) |
 | `parity/lcd/lcd_modeset_ktest.h` | — | test-only (S5 T4b); not yet present; planned: `tests/display/lcd-modeset-ktest.h` |
 | `parity/lcd/lcd_pattern.c` | `display/diagnostics.c` | moved |
 | `parity/lcd/lcd_pattern.h` | `display/diagnostics.h` | moved (declarations) |
 | `parity/lcd/lcd_plane_compat.h` | `display/modeset-internal.h` | moved |
-| `parity/lcd/lcd_plane_regs.h` | `data/display-plane-regs.inc` | moved |
-| `parity/lcd/lcd_plane_types.h` | `data/display-plane-types.inc` | moved |
-| `parity/lcd/lcd_psr_selfetch_regs.h` | `data/display-psr-selfetch-regs.inc` | moved |
-| `parity/lcd/lcd_ref_inlines.h` | `data/display-ref-inlines.inc` | moved |
-| `parity/lcd/lcd_ref_types.h` | `data/display-ref-types.inc` | moved |
+| `parity/lcd/lcd_plane_regs.h` | `intel/plane.h` | moved |
+| `parity/lcd/lcd_plane_types.h` | `intel/plane.h` | moved |
+| `parity/lcd/lcd_psr_selfetch_regs.h` | `intel/psr.h` | moved |
+| `parity/lcd/lcd_ref_inlines.h` | `intel/ref-inlines.h` | moved |
+| `parity/lcd/lcd_ref_types.h` | `intel/ref.h` | moved |
 | `parity/lcd/lcd_seq_compat.h` | `display/modeset-internal.h` | moved |
 | `parity/lcd/lcd_show_ktest.c` | `tests/display/lcd-show-ktest.c` | test-only (S5 T4b) |
 | `parity/lcd/lcd_show_ktest.h` | — | test-only (S5 T4b); not yet present; planned: `tests/display/lcd-show-ktest.h` |
-| `parity/lcd/lcd_trans_regs.h` | `data/display-trans-regs.inc` | moved |
+| `parity/lcd/lcd_trans_regs.h` | `intel/trans.h` | moved |
 | `parity/lcd/parity_ddi_emit_glue.inc` | `display/ddi.c` | moved |
 | `parity/lcd/parity_display_emit_glue.inc` | `display/pipe.c` | moved |
 | `parity/lcd/parity_dpll_glue.inc` | `display/clock.c` | moved |
@@ -128,7 +147,7 @@
 | `parity/lcd/parity_lcd_trace.c` | `display/diagnostics.c`、`display/internal.h` | moved |
 | `parity/lcd/parity_lcd_trace.h` | `display/internal.h` | moved |
 | `parity/lcd/parity_plane_emit_glue.inc` | `display/plane.c` | moved |
-| `parity/lcd/port_lcd_calc.manifest.json` | `data/provenance/port_lcd_calc.manifest.json` | moved（出典の記録として保存） |
+| `parity/lcd/port_lcd_calc.manifest.json` | 削除（一時 `intel/provenance/` に保存、2026-09-22 ユーザー決定で削除） | removed |
 | `parity/lcd/scanout.c` | `display/scanout.c` | moved |
 | `parity/lcd/scanout.h` | `display/internal.h` | moved |
 | `parity/lcd/scanout_ktest.c` | `tests/display/scanout-ktest.c` | test-only (S5 T4b) |
@@ -136,21 +155,21 @@
 | `parity/lcd/skl_plane_port.c` | `display/plane.c` | moved |
 | `parity/osdep/*` | `mmio.c`、`pci.c`、`dma.c`、`firmware.c`、`runtime-pm.c`、`sync.c`、`workqueue.c`、`trace.c`（各 `.h`） | moved（計画 §5 の移行表） |
 | `parity/power_domains.c` | `display/power.c` | moved |
-| `parity/vbt/intel_bios.h` | `data/display-intel-bios.inc` | moved |
+| `parity/vbt/intel_bios.h` | `intel/vbt.h` | moved |
 | `parity/vbt/intel_bios_port.c` | `display/vbt.c` | moved |
-| `parity/vbt/intel_vbt_defs.h` | `data/display-intel-vbt-defs.inc` | moved |
+| `parity/vbt/intel_vbt_defs.h` | `intel/vbt-defs.h` | moved |
 | `parity/vbt/parity_vbt.h` | `display/vbt.h` | moved |
 | `parity/vbt/parity_vbt_glue.inc` | `display/vbt.c`、`display/edid.c` | moved |
 | `parity/vbt/vbt_compat.h` | `display/vbt.h`、`display/takeover.c`、`display/vbt.c` | moved |
-| `parity/vbt/vbt_ref_types.h` | `data/display-vbt-ref-types.inc` | moved |
+| `parity/vbt/vbt_ref_types.h` | `intel/vbt.h` | moved |
 | `parity/wait.c` | `sync.c` | moved |
 | `selftest.c` | — | retired (legacy HW test; S5 T4a) |
 | `tex_fixture_gen.inc` | `tests/fixtures/tex-fixture-gen.inc` | test-only (S5 T4a) |
 | `vk/compile.c` | `compiler/compile.c` | moved |
 | `vk/eu.c` | `compiler/eu.c` | moved |
 | `vk/eu.h` | `compiler/eu.h` | moved |
-| `vk/linux/3dstate-gen12.inc` | `data/i915-3dstate-gen12.inc` | moved |
-| `vk/linux/eu-encoding-gen12.inc` | `data/eu-encoding-gen12.inc` | moved |
+| `vk/linux/3dstate-gen12.inc` | `intel/genxml.h` | moved |
+| `vk/linux/eu-encoding-gen12.inc` | `intel/eu-encoding-gen12.h` | moved |
 | `vk/spirv.c` | `compiler/spirv.c` | moved |
 | `vk/spirv.h` | `compiler/ir.h` | moved (renamed) |
 
@@ -161,20 +180,20 @@
 | `src/drivers/gpu/i915/tex_fixture_gen.inc` 全体（現 `tests/fixtures/tex-fixture-gen.inc`） | 生成物 | generator `plan/ws031/handover/tools/reftex.c`（zedBSD 側で書いた NIR builder プログラム）。入力：Mesa @ab691a1c の `brw_compile_fs`（shader ISA と prog_data）、`isl`（texture layout と RENDER_SURFACE_STATE）、`genxml gen120`（SAMPLER_STATE、3DSTATE_PS DW3、3DSTATE_SAMPLER_STATE_POINTERS_PS） | Mesa `src/intel`：MIT（`brw_compiler.h` は SPDX MIT、`isl.h` は MIT permission notice、`gen120.xml` は repo の MIT data）。Copyright © Intel Corporation | 出力は数値表（shader 命令語、state 語、定数）。ファイル冒頭に generator・入力 revision・PS の sha256 を記載。`SPDX-License-Identifier: MIT` を付与 |
 | `plan/ws031/handover/tools/reftex.c` | 独立実装（Mesa の公開 API を呼ぶ試験用ツール） | 既存の `refps_marker.c`（同じく zedBSD 側で書いた generator）を土台にした | zedBSD project | Mesa tree 内でビルドするが Mesa へは取り込まない。Mesa のコードは複製していない（API 呼出しのみ） |
 | `src/drivers/gpu/i915/draw_fixture.h`、`selftest.c` の wrapper／texture fixture 関数、`parity/eu_test.{c,h}` の各試験 harness（現 `tests/fixtures/draw-fixture.h`、`tests/execution/eu-test.{c,h}`。legacy `selftest.c` は廃止） | 独立実装 | — | zedBSD project | テスト画像の式（R=16+32u …）は専門家の提案（本 WS の指示書）による |
-| `src/drivers/gpu/i915/vk/linux/3dstate-gen12.inc` の `GEN12_CMD_PIPELINE_SELECT`（0x6104→0x6904 の修正。現 `data/i915-3dstate-gen12.inc`） | 改変（定数 1 個） | Linux `gt/intel_gpu_commands.h` の `PIPELINE_SELECT` 定義、Mesa `genxml`（Type 3／SubType 1／Opcode 1／SubOpcode 4） | Linux 該当ファイル：SPDX MIT。Mesa genxml：MIT | 値の照合であって原文の複製ではない |
+| `src/drivers/gpu/i915/vk/linux/3dstate-gen12.inc` の `GEN12_CMD_PIPELINE_SELECT`（0x6104→0x6904 の修正。現 `intel/genxml.h`） | 改変（定数 1 個） | Linux `gt/intel_gpu_commands.h` の `PIPELINE_SELECT` 定義、Mesa `genxml`（Type 3／SubType 1／Opcode 1／SubOpcode 4） | Linux 該当ファイル：SPDX MIT。Mesa genxml：MIT | 値の照合であって原文の複製ではない |
 | `selftest.c` の `i915_draw_const_color_ps[]`（既存、E-101 で再利用） | 生成物 | generator `plan/ws031/handover/tools/gen_refps_marker.py`→`refps_marker.c`、入力 Mesa @ab691a1c `brw_compile_fs` | Mesa：MIT | E-13 期に生成。今回は変更なし |
 
 ## 2. 既存の取り込み（今回の作業で触れた範囲。全量の監査ではない）
 
 | zedBSD 側 | 区分 | 元 | 元の license（確認した範囲） | 状態 |
 |---|---|---|---|---|
-| `data/i915-lrc-offsets.inc`（旧 `parity/gt_lrc_offsets.inc` と `linux/i915-lrc-offsets.inc` を統合） | 生成物 | `plan/ws029/tests/gen-inc.py lrc` ← Linux v6.19 `gt/intel_lrc.c`（旧 `tools/gen_lrc_offsets.py` は廃止、`retired/`） | SPDX MIT、Copyright © 2014 Intel Corporation と permission notice を保持 | 確認済み（SPDX 行）。旧 parity 表とコンパイル結果がバイト一致（被覆監査 §4） |
-| `data/forcewake-ranges.inc`（旧 `parity/gt_fw_ranges.inc`） | 生成物 | `tools/gen_fw_ranges.py` ← Linux 6.8.12 `intel_uncore.c`（再実行でバイト一致、`check_generated.sh` が検査） | 元 file は MIT permission notice（SPDX 行なし）。**生成 file の header は出典だけを書き、notice 本文を持たない**（旧 `gt_fw_ranges.inc` も同じ） | 出典は確認済み。表示の要否は licence 整理の工程で判断 |
-| `parity/gt_wa_adlp.c`、`gt_mocs` 相当、`gt_submit.c`、`gt_mem.c`（gen8 ppgtt）（現 `workarounds.c`、`data/i915-mocs.inc`・`i915-gt-mocs-table.inc`、`submit.c`、`ppgtt.c`・`memory.c`） | 改変／独立実装が混在 | Linux `gt/intel_workarounds.c`、`gt/intel_mocs.c`、`gt/intel_execlists_submission.c`、`gt/gen8_ppgtt.c` | いずれも SPDX MIT | 関数単位の区分は**未監査**（移植台帳の状態語 PORTED／VERIFIED と対応付けて後で確定） |
+| `intel/lrc-offsets.h`（旧 `parity/gt_lrc_offsets.inc` と `linux/i915-lrc-offsets.inc` を統合） | 生成物 | `gen-inc.py lrc`（廃止、`tools/retired/`）← Linux v6.19 `gt/intel_lrc.c`（旧 `tools/gen_lrc_offsets.py` は廃止、`retired/`） | SPDX MIT、Copyright © 2014 Intel Corporation と permission notice を保持 | 確認済み（SPDX 行）。旧 parity 表とコンパイル結果がバイト一致（被覆監査 §4） |
+| `intel/forcewake-ranges.inc`（旧 `parity/gt_fw_ranges.inc`） | 生成物 | `tools/gen_fw_ranges.py` ← Linux 6.8.12 `intel_uncore.c`（再実行でバイト一致、`check_generated.sh` が検査） | 元 file は MIT permission notice（SPDX 行なし）。**生成 file の header は出典だけを書き、notice 本文を持たない**（旧 `gt_fw_ranges.inc` も同じ） | 出典は確認済み。表示の要否は licence 整理の工程で判断 |
+| `parity/gt_wa_adlp.c`、`gt_mocs` 相当、`gt_submit.c`、`gt_mem.c`（gen8 ppgtt）（現 `workarounds.c`、(deleted 2026-09-22: unused by the new driver; old `external/i915-superseded.h`)・`intel/mocs-table.inc`（定義は `intel/mocs.h`）、`submit.c`、`ppgtt.c`・`memory.c`） | 改変／独立実装が混在 | Linux `gt/intel_workarounds.c`、`gt/intel_mocs.c`、`gt/intel_execlists_submission.c`、`gt/gen8_ppgtt.c` | いずれも SPDX MIT | 関数単位の区分は**未監査**（移植台帳の状態語 PORTED／VERIFIED と対応付けて後で確定） |
 | `parity/dmc.c`（DMC ロード手順。現 `display/dmc.c`） | 改変 | Linux `display/intel_dmc.c` | MIT permission notice（SPDX 行なし） | driver source の license であり firmware 本体には適用しない |
-| `parity/firmware_adlp_dmc.c`（C 配列。現 `data/firmware/adlp-dmc.c`、バイト列一致） | 生成物（blob の byte 写し） | linux-firmware `i915/adlp_dmc.bin` v2.20 | **firmware は driver とは別ライセンス**（linux-firmware `WHENCE`／`LICENSE.i915` 系）。全文と配布条件は**未監査** | 元 blob・変換手順・生成配列・配布 image の対応を追跡する。配列化しても独自著作物にはならない |
+| `parity/firmware_adlp_dmc.c`（C 配列。2026-09-22 に kernel から削除、同じ bytes を package `i915-firmware` が `/lib/firmware/i915/` へ入れる） | 生成物（blob の byte 写し） | linux-firmware `i915/adlp_dmc.bin` v2.20 | **firmware は driver とは別ライセンス**（linux-firmware `WHENCE`／`LICENSE.i915` 系）。全文と配布条件は**未監査** | 元 blob・変換手順・生成配列・配布 image の対応を追跡する。配列化しても独自著作物にはならない |
 | `parity/osdep/*`、`wait.c`、`drm_device.c`（workqueue／timer／list／completion 相当。現 `mmio.c`・`pci.c`・`dma.c`・`sync.c`・`workqueue.c` ほか、`display/display.c`） | 独立実装（Linux の API 契約に対応する zedBSD 実装）と理解しているが | Linux `kernel/workqueue.c` 等は GPL-2.0-only | — | **未監査**。関数本体の複製・改変が無いことを後工程で確認する |
-| `vk/linux/*.inc`、`linux/i915-commands.inc`、`linux/i915-workarounds.inc`（現 `data/i915-3dstate-gen12.inc`、`data/eu-encoding-gen12.inc`、`data/i915-commands.inc`、`data/i915-workarounds.inc`。`surface-state-gen12.inc` は廃止） | 改変（定数・レジスタ定義の転記） | Linux i915 header、Mesa genxml | 既存監査 `i915-vk-license-audit.md` 参照 | 既存監査の範囲外の定数は**未監査** |
+| `vk/linux/*.inc`、`linux/i915-commands.inc`、`linux/i915-workarounds.inc`（現 `intel/genxml.h`、`intel/eu-encoding-gen12.h`、`intel/commands.h`、(deleted 2026-09-22: unused by the new driver; old `external/i915-superseded.h`)。`surface-state-gen12.inc` は廃止） | 改変（定数・レジスタ定義の転記） | Linux i915 header、Mesa genxml | 既存監査 `i915-vk-license-audit.md` 参照 | 既存監査の範囲外の定数は**未監査** |
 
 ## 3. 規約（リファクタ開始まで）
 
@@ -211,13 +230,14 @@
 | 置き場所 | 区分 | 元 | 扱い |
 |---|---|---|---|
 | `parity/firmware_vbt_dell_latitude_5330.c`（C 配列、8704 byte、sha256 `3bff4a0920d55c9aee0ea3c678904f982f8671c0e7b5bc97a335e429b29624cd`） | 生成物（`display-ref/i915_vbt.bin` の byte 写し） | 対象機 Dell Latitude 5330（PCI subsystem 1028:0b02）の firmware が持つ VBT。Linux i915 debugfs `i915_vbt` から採取（E-106） | **E-107 で初めて `src/` に入った**。build flag `PARITY_VBT_EXPLICIT=1` のときだけ参照され、かつ subsystem が一致する機体でだけ採用される。既定 build では image に含まれても使われない。**ライセンスと配布可否は未監査**（機体 firmware のデータであり、配列化しても独自著作物にはならない）。配布 image へ入れるかどうかはライセンス整理の工程で判断。native では OpRegion／RVDA から読む経路へ置き換える予定 |
+| `vendor/intel-vbt/dell-latitude-5330-1028-0b02.inc`（2026-09-22、同じ 8704 byte の配列本体） | コピー（同上の byte 写し） | 同上 | 試験 build（`I915_TEST_VBT=y`）だけが `display/vbt.c` に include。本番 kernel には入らない。**ライセンスと配布可否は未監査**（`vendor/intel-vbt/README.md`）。`XXX:` 実機で GPU 試験が走るようになったら削除 |
 
 ## 6. E-108（2026-09-19）: eDP の PPS／AUX／DPCD／EDID 取得の取り込み
 
 追加した固定参照: `plan/ws031/linux-parity/linux-reference/drm-v6.8.12/`（i915 の固定参照 tree に DRM core が無かったため、kernel.org の stable tree `v6.8.12` から 2026-09-18 に取得）。`drm_dp_helper.c` sha256 `030568524ac5db3fbd09725df196b22a430ec18fc1432dbb952298ce7c791a73`、`drm_dp.h` `306a1a47ba001c417baa3dab1f3a58c7e5de3c7a0537d26806a130603b599c5f`、`drm_edid.c` `a01138078180d234149ac4403839a99b9c85232955a9830ad5552637cd8661a7`。**正本環境（Ubuntu 6.8.0-139）の同ファイルとの差分は未照合**。
 
 ### 6.1 参照由来（元の表示を保持）
-現在の置き場は §0（`display/aux.c`、`display/panel.c`、`display/dp-sink.c`、`display/edid-read.c`、`data/display-*.inc`。生成器は廃止）。
+現在の置き場は §0（`display/aux.c`、`display/panel.c`、`display/dp-sink.c`、`display/edid-read.c`、`intel/*.h` の表示の header。生成器は廃止）。
 
 | zedBSD 側（当時 `src/drivers/gpu/i915/parity/dp/`） | 区分 | 元 | 元の copyright／license | 備考 |
 |---|---|---|---|---|
@@ -245,7 +265,7 @@
 
 固定参照の追加: `linux-reference/drm-v6.8.12/` に `drm_edid.h`（sha256 `e61def12761bc325265437b33e91a7c0cc99ef3f7c60a4265eadb112ff66759a`）と `drm_dp_helper.h`（`1969846dd3fdb5d7511319caf5f8e8481eacecad610fa429669450b9e5775b73`）。5 file の hash は同 directory の `SHA256SUMS`。`tools/check_generated.sh` が再生成して `src/` と byte 比較する（生成物の手編集・generator の未再実行・参照の変化を検出）。2026-09-22 以降、表示の生成器は廃止され `check_generated.sh` は `SHA256SUMS` と残る生成物（§0）だけを検査する。
 
-### 7.1 参照由来（元の表示を保持、当時 `src/drivers/gpu/i915/parity/lcd/`、generator `tools/port_lcd_calc.py`（現 `tools/retired/`）、manifest 現 `src/drivers/gpu/i915/data/provenance/port_lcd_calc.manifest.json`。現在の置き場は §0）
+### 7.1 参照由来（元の表示を保持、当時 `src/drivers/gpu/i915/parity/lcd/`、generator `tools/port_lcd_calc.py`（現 `tools/retired/`）、manifest は 2026-09-22 にユーザー決定で削除。現在の置き場は §0）
 | zedBSD 側 | 区分 | 元 | 元の copyright／license | 備考 |
 |---|---|---|---|---|
 | `drm_edid_mode_port.c` | 生成物（keep-list: EDID_QUIRK_* の bit 定義、`drm_mode_do_interlace_quirk`、`drm_mode_detailed`） | upstream v6.8.12 `drivers/gpu/drm/drm_edid.c` | 複数の copyright 行＋MIT permission notice（原文保持。§6.1 の `drm_edid_port.c` と同じ元 file） | |
@@ -322,7 +342,7 @@
 
 ## 12. E-114〜E-116: LCD modeset 経路の生成 file（generator の manifest から機械的に作成）
 
-生成器 `handover/tools/port_lcd_calc.py`＋表 `port_lcd_modeset.json`（2026-09-22 に廃止、現 `handover/tools/retired/`）。関数本体・macro・型は固定した正本 text からの抽出で、手入力していない。各生成 file の先頭 license／copyright comment は**正本 file の先頭 comment をそのまま複写**したもの（名義を推測・入力していない）。再現性は当時 `check_generated.sh`（全出力の byte 一致＋ DRM 正本の SHA256SUMS）で検査した。出力ごとの sha256 と採用した関数名は `src/drivers/gpu/i915/data/provenance/port_lcd_calc.manifest.json`（旧 `parity/lcd/` から移動）。再構築（S4）で生成物は `display/*.c`・`data/display-*.inc` へ手で書き直され、元の表示を保持している（§0）。
+生成器 `handover/tools/port_lcd_calc.py`＋表 `port_lcd_modeset.json`（2026-09-22 に廃止、現 `handover/tools/retired/`）。関数本体・macro・型は固定した正本 text からの抽出で、手入力していない。各生成 file の先頭 license／copyright comment は**正本 file の先頭 comment をそのまま複写**したもの（名義を推測・入力していない）。再現性は当時 `check_generated.sh`（全出力の byte 一致＋ DRM 正本の SHA256SUMS）で検査した。出力ごとの sha256 と採用した関数名は `port_lcd_calc.manifest.json`（旧 `parity/lcd/`、一時 `src/drivers/gpu/i915/intel/provenance/`）にあったが、2026-09-22 にユーザー決定で削除した。再構築（S4）で生成物は `display/*.c`・`data/display-*.inc` へ手で書き直され、元の表示を保持している（§0）。
 
 | 正本 file（Linux v6.8.12 系、ubu-i915-src／drm-v6.8.12） | sha256（先頭） | 採用単位数 |
 |---|---|---|

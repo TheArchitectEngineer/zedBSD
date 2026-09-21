@@ -38,8 +38,8 @@
 #include "watermark-internal.h"
 
 /* The backlight PWM registers and the DDI / transcoder registers the table names. */
-#include "../data/display-mreg-backlight.inc"
-#include "../data/display-ddi-regs.inc"
+#include "../intel/mreg.h"
+#include "../intel/trans.h"
 
 #include "diagnostics.h"
 #include "modeset.h"

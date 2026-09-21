@@ -50,8 +50,8 @@
 
 #include "internal.h"
 #include "modeset-internal.h"
-#include "../data/display-ddi-regs.inc"
-#include "../data/display-mreg-hdmi-dip.inc"
+#include "../intel/trans.h"
+#include "../intel/mreg.h"
 #include "hdmi-mode.h"
 
 static struct drm_i915_private *i915_hdmi_cur_i915(const struct intel_hdmi *hdmi);

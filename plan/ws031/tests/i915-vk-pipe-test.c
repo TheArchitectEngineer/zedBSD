@@ -23,7 +23,7 @@
 #include "../../../src/drivers/gpu/i915/render/heap.h"
 #include "../../../src/drivers/gpu/i915/render/state.h"
 
-#include "../../../src/drivers/gpu/i915/data/i915-3dstate-gen12.inc"
+#include "../../../src/drivers/gpu/i915/intel/genxml.h"
 
 /* The wire opcodes the fixture sends, as libvulkan numbers them. */
 #define FIXTURE_CREATE_SHADER_MODULE		59U

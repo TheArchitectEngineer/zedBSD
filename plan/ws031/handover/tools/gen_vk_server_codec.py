@@ -7,7 +7,7 @@ the mirror image -- a decoder for each encoder, an encoder for each decoder -- a
 is where the wire silently drifts.  This tool reads codec.c and emits the mirror, statement by
 statement, and stops at the first statement it does not recognise instead of guessing.
 
-usage: gen_vk_server_codec.py <repo root>     (writes src/drivers/gpu/i915/data/vulkan-codec.inc)
+usage: gen_vk_server_codec.py <repo root>     (writes src/drivers/gpu/i915/render/vulkan-codec.inc)
 """
 import re, sys
 
@@ -262,7 +262,7 @@ hdr = """/*
  * Pointers a decoder fills point into the command's arena and live until the command returns.
  */
 """
-open(root + "src/drivers/gpu/i915/data/vulkan-codec.inc", "w").write(
+open(root + "src/drivers/gpu/i915/render/vulkan-codec.inc", "w").write(
     hdr + "\n" + "\n".join(protos) + "\n\n" + "\n".join(defs))
 print("generated %d decoders, %d encoders" % (sum(1 for f in funcs if f[0] == "encode"),
                                                 sum(1 for f in funcs if f[0] == "decode")))

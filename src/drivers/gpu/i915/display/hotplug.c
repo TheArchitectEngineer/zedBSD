@@ -172,7 +172,7 @@ static void i915_get_hpd_pins(struct drm_i915_private *dev_priv, u32 *pin_mask, 
 static enum intel_hotplug_state i915_ddi_hotplug(struct intel_encoder *encoder, struct intel_connector *connector);
 static bool i915_lpt_digital_port_connected(struct intel_encoder *encoder);
 static int i915_hdmi_reset_link(struct intel_encoder *encoder, struct drm_modeset_acquire_ctx *ctx);
-static enum drm_connector_status i915_drm_helper_probe_detect_ctx(struct drm_connector *connector, bool force);
+static enum connector_status i915_drm_helper_probe_detect_ctx(struct drm_connector *connector, bool force);
 static const char *i915_hpd_status_name(int status);
 static enum irqreturn i915_hpd_dp_pulse_step(struct intel_digital_port *dig_port, bool long_hpd);
 static int i915_hpd_dp_detect_step(struct drm_connector *connector, struct drm_modeset_acquire_ctx *ctx, bool force);
@@ -684,7 +684,7 @@ drv_i915_hpd_stop(
  * Detects a connector the way its first probe does, under
  * mode_config.mutex.
  *
- * Returns the connector status (enum drm_connector_status, 1 to 3), or
+ * Returns the connector status (enum connector_status, 1 to 3), or
  * EINVAL for a path that is not running or a connector it does not have.
  */
 int
@@ -943,7 +943,7 @@ drv_i915_hpd_connector_polled(
 }
 
 /*
- * Returns a connector's status (enum drm_connector_status), or -1 for a
+ * Returns a connector's status (enum connector_status), or -1 for a
  * connector the path does not have.
  */
 int
@@ -1804,7 +1804,7 @@ bool
  * Probes a connector's status (the Linux drm_helper_probe_detect()).
  *
  * This function calls the detect callbacks of the connector.  It returns
- * enum drm_connector_status, or if @ctx is set, it might also return
+ * enum connector_status, or if @ctx is set, it might also return
  * -EDEADLK.
  */
 int
@@ -1815,7 +1815,7 @@ i915_hpd_drm_helper_probe_detect(
 {
 	const struct drm_connector_helper_funcs *funcs;
 	struct drm_device *dev;
-	enum drm_connector_status status;
+	enum connector_status status;
 	int ret;
 
 	/* Resolves the connector's callbacks and device. */
@@ -1856,7 +1856,7 @@ i915_hpd_drm_helper_probe_detect(
  */
 const char *
 i915_hpd_drm_get_connector_status_name(
-	enum drm_connector_status status)
+	enum connector_status status)
 {
 	/* Names the two definite states; everything else is unknown. */
 	if (status == connector_status_connected)
@@ -2246,7 +2246,7 @@ i915_hpd_irq_storm_switch_to_polling(
 			break;
 
 		/* Only a hotplug-detected connector is switched. */
-		if (connector->base.polled != DRM_CONNECTOR_POLL_HPD)
+		if (connector->base.polled != CONNECTOR_POLL_HPD)
 			continue;
 
 		/* Only a connector whose pin was marked is switched. */
@@ -2259,7 +2259,7 @@ i915_hpd_irq_storm_switch_to_polling(
 		/* Disables the pin and has the connector polled for connect and disconnect. */
 		I915_HPD_DRM_INFO(&dev_priv->drm, "HPD interrupt storm detected on connector %s: switching from hotplug detection to polling\n", connector->base.name);
 		dev_priv->display.hotplug.stats[pin].state = HPD_DISABLED;
-		connector->base.polled = DRM_CONNECTOR_POLL_CONNECT | DRM_CONNECTOR_POLL_DISCONNECT;
+		connector->base.polled = CONNECTOR_POLL_CONNECT | CONNECTOR_POLL_DISCONNECT;
 		hpd_disabled = true;
 	}
 	i915_hpd_drm_connector_list_iter_end(&conn_iter);
@@ -2335,7 +2335,7 @@ i915_hotplug_detect_connector(
 {
 	struct drm_device *dev;
 	struct i915_hpd_world *world;
-	enum drm_connector_status old_status;
+	enum connector_status old_status;
 	u64 old_epoch_counter;
 	int status;
 	bool locked;
@@ -2846,7 +2846,7 @@ i915_hdmi_reset_link(
 }
 
 /* Probes a connector's status, taking the locks itself (drm_helper_probe_detect_ctx()). */
-static enum drm_connector_status
+static enum connector_status
 i915_drm_helper_probe_detect_ctx(
 	struct drm_connector *connector,
 	bool force)
@@ -2900,7 +2900,7 @@ i915_drm_helper_probe_detect_ctx(
 	drm_modeset_acquire_fini(&ctx);
 
 	/* Succeeded: reports the connector status. */
-	return (enum drm_connector_status)ret;
+	return (enum connector_status)ret;
 }
 
 /* Returns the name of a connector status given as an integer. */
@@ -2911,7 +2911,7 @@ i915_hpd_status_name(
 	const char *name;
 
 	/* Names the status. */
-	name = i915_hpd_drm_get_connector_status_name((enum drm_connector_status)status);
+	name = i915_hpd_drm_get_connector_status_name((enum connector_status)status);
 
 	/* Succeeded: reports the name. */
 	return name;
@@ -3158,7 +3158,7 @@ i915_hpd_make_objects(
 			if (pe->port == I915_PORT_B)
 				ddc_pin = GMBUS_PIN_2_BXT;
 			ic->base.ddc = drv_i915_hpd_gmbus_adapter(&world->hpd_i915, ddc_pin);
-			ic->polled = DRM_CONNECTOR_POLL_HPD;
+			ic->polled = CONNECTOR_POLL_HPD;
 			dp->hdmi.attached_connector = ic;
 
 			/* Named "HDMI-A-<n>"; the first HDMI connector is the one the path watches. */
@@ -3183,7 +3183,7 @@ i915_hpd_make_objects(
 			ic->base.connector_type = DRM_MODE_CONNECTOR_DisplayPort;
 			ic->base.funcs = &i915_hpd_dp_connector_funcs;
 			ic->base.helper_private = &i915_hpd_dp_helper_funcs;
-			ic->polled = DRM_CONNECTOR_POLL_HPD;
+			ic->polled = CONNECTOR_POLL_HPD;
 			dp->dp.attached_connector = ic;
 
 			/* Named "DP-<n>". */

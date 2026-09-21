@@ -34,8 +34,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "../data/i915-commands.inc"
-#include "../data/i915-3dstate-gen12.inc"
+#include "../intel/genxml.h"
 
 /*
  * The draw checkpoint.

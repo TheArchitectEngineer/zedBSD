@@ -19,6 +19,8 @@
 #include <stddef.h>
 #include <string.h>
 
+#include "intel/gt-regs.h"
+
 /* The ring size of the PXP context (SZ_4K) and the size of the streaming command page. */
 #define I915_PXP_RING_BYTES		4096U
 #define I915_PXP_STREAM_CMD_BYTES	4096U

@@ -27,7 +27,7 @@
 #include <stddef.h>
 #include <string.h>
 
-#include "data/i915-regs.inc"
+#include "intel/gt-regs.h"
 
 /* Session object pages: present, writable, PAT index 0 (write-back through the LLC). */
 #define I915_PPGTT_PAGE_BITS		(GEN8_PAGE_PRESENT | GEN8_PAGE_RW)

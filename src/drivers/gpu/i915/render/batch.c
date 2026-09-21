@@ -13,8 +13,8 @@
 
 #include <stdint.h>
 
-#include "../data/i915-commands.inc"
-#include "../data/i915-3dstate-gen12.inc"
+#include "../intel/commands.h"
+#include "../intel/genxml.h"
 
 /* The dwords of a Gen12 PIPE_CONTROL: the header, the flags and four address and data words. */
 #define I915_PIPE_CONTROL_DWORDS	6U

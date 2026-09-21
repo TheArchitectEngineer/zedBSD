@@ -27,7 +27,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "data/i915-gt-workarounds.inc"
+#include "intel/gt-regs.h"
+#include "intel/mocs.h"
+#include "intel/workarounds.h"
 
 /* How many PAT entries the Gen12 private PAT has. */
 #define I915_PAT_ENTRIES	8U
@@ -49,7 +51,7 @@ struct i915_mocs_row {
  * arm is Tiger Lake and Rocket Lake only).  The table never changes.
  */
 static const struct i915_mocs_row i915_gen12_mocs_table[] = {
-#include "data/i915-gt-mocs-table.inc"
+#include "intel/mocs-table.inc"
 };
 
 /*

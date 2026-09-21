@@ -43,7 +43,8 @@ ZEDBSD_CONFIG ?= config.mk
 # saved. Every build target requires the target information from config.mk.
 ZEDBSD_CONFIG_OPTIONAL_GOALS := menuconfig help list-user-programs \
 	menuconfig-host-test rtl8822b-firmware-fixture-cache \
-	intelax211-firmware-fixture-cache download toolchain \
+	intelax211-firmware-fixture-cache i915-firmware-fixture-cache \
+	download toolchain \
 	noct-toolchain-smoke noct-download noct-source \
 	noct-target-source-verify noct-host-source noct-host-source-verify \
 	llvm-download llvm-source llvm-source-verify llvm-configure llvm-build llvm-toolchain \
@@ -158,8 +159,6 @@ CONFIG_DRIVER_PCI_XHCI ?= y
 CONFIG_DRIVER_PCI_NVME ?= y
 CONFIG_DRIVER_PCI_VENUS ?= n
 CONFIG_DRIVER_PCI_I915 ?= n
-CONFIG_DRIVER_PCI_I915_SELFTEST ?= n
-CONFIG_DRIVER_PCI_I915_PARITY ?= n
 CONFIG_DRIVER_PCI_INTEL_AX211 ?= n
 CONFIG_DRIVER_USB_STORAGE ?= y
 CONFIG_DRIVER_USB_CDC_NCM ?= y
@@ -429,8 +428,6 @@ ZEDBSD_CONFIG_CPPFLAGS := \
 	-DCONFIG_DRIVER_PCI_NVME=$(if $(filter y,$(CONFIG_DRIVER_PCI_NVME)),1,0) \
 	-DCONFIG_DRIVER_PCI_VENUS=$(if $(filter y,$(CONFIG_DRIVER_PCI_VENUS)),1,0) \
 	-DCONFIG_DRIVER_PCI_I915=$(if $(filter y,$(CONFIG_DRIVER_PCI_I915)),1,0) \
-	-DCONFIG_DRIVER_PCI_I915_SELFTEST=$(if $(filter y,$(CONFIG_DRIVER_PCI_I915_SELFTEST)),1,0) \
-	-DCONFIG_DRIVER_PCI_I915_PARITY=$(if $(filter y,$(CONFIG_DRIVER_PCI_I915_PARITY)),1,0) \
 	-DCONFIG_DRIVER_PCI_INTEL_AX211=$(if $(filter y,$(CONFIG_DRIVER_PCI_INTEL_AX211)),1,0) \
 	-DCONFIG_DRIVER_USB_STORAGE=$(if $(filter y,$(CONFIG_DRIVER_USB_STORAGE)),1,0) \
 	-DCONFIG_DRIVER_USB_CDC_NCM=$(if $(filter y,$(CONFIG_DRIVER_USB_CDC_NCM)),1,0) \

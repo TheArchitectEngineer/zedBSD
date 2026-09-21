@@ -45,7 +45,7 @@
 
 #include "modeset-internal.h"
 #include "takeover-internal.h"
-#include "../data/display-mreg-color.inc"
+#include "../intel/mreg.h"
 #include "color.h"
 
 static bool i915_lut_is_legacy(const struct drm_property_blob *lut);

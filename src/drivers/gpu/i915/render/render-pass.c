@@ -29,7 +29,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "../data/vulkan-codec.inc"
+#include "vulkan-codec.inc"
 
 static int i915_gfx_render_pass_supported(const VkRenderPassCreateInfo *info);
 

@@ -55,8 +55,7 @@
 #include "dmc.h"
 #include "power.h"
 
-#include "../data/display-mreg-dmc.inc"
-#include "../data/display-mreg-dmc-c.inc"
+#include "../intel/mreg.h"
 
 #include "../firmware.h"
 #include "../mmio.h"

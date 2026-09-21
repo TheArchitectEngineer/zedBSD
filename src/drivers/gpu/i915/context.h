@@ -25,15 +25,14 @@
  *     there hangs the context restore rather than the batch.
  *
  * The Linux register-state indices (CTX_RING_TAIL and the rest) and the MI
- * commands come from the data fragments this header includes.
+ * commands come from intel/gt-regs.h and intel/commands.h, which context.c
+ * includes.
  */
 
 #ifndef DRIVERS_GPU_I915_CONTEXT_H
 #define DRIVERS_GPU_I915_CONTEXT_H
 
 #include <stdint.h>
-
-#include "data/i915-execution.inc"
 
 struct i915_gt_engine;
 struct i915_gt_mem;

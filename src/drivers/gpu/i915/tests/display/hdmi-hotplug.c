@@ -59,7 +59,7 @@
 #define I915_TEST_SHOTPLUG_B_LONG	0x20u
 #define I915_TEST_SHOTPLUG_B_SHORT	0x10u
 
-/* The connector statuses (enum drm_connector_status). */
+/* The connector statuses (enum connector_status). */
 #define I915_TEST_STATUS_CONNECTED	1
 #define I915_TEST_STATUS_DISCONNECTED	2
 #define I915_TEST_STATUS_UNKNOWN	3

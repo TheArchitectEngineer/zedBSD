@@ -31,3 +31,8 @@ kernel と同じく別の翻訳単位として link し、残りの kernel は `
   1 対 1 で照合し、必須 object の存在と、試験 build（`I915_TESTS`）以外で `tests/` が link されないことを確かめる。
 - `config-i915-selftest-amd64.mk` と実機 loop（`run-i915-remote.py`、`i915-qemu.py`、`campaign.sh`）は変更していない。
   新 driver には attach 時 selftest が無いため `CONFIG_DRIVER_PCI_I915_SELFTEST` は何も選ばない。
+
+## run-i915-remote.py and config-i915-selftest-amd64.mk (retired 2026-09-22)
+
+They built and ran the legacy attach-time selftest (`CONFIG_DRIVER_PCI_I915_SELFTEST=y`) on the test host.  The
+legacy selftest was retired with the legacy hardware path, and the option was removed.  Moved to `retired/`.

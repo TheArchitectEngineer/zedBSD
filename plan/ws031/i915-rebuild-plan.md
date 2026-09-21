@@ -38,7 +38,7 @@ S1〜S3 の間は panel を触らない（firmware の表示をそのまま残�
   台帳と違う判断をしたら、その行に追記する。
 - 旧名 → 新名の対応は各新ファイル冒頭ではなく、本書 §5 の移行表に記録する（コメントに設計番号を書かない規約のため）。
 - static な関数は所有ファイル内に閉じる。境界を越える helper は設計 §5.6 の解決案に従う。
-- Linux 由来のレジスタ定義・表は `data/` の機能別 fragment に移し、出典（Linux commit、ファイル）を残す。
+- Linux 由来のレジスタ定義・表は `intel/`（第三者由来の置き場）の系統別 header に移し、出典（Linux の版、ファイル、sha256）を残す。
 - 各段階の終わりに build、host 試験、実機試験を行い、台帳（results-ws031.md）へ E 番号で記録する。
 
 ## 4. 進捗
@@ -66,7 +66,12 @@ S1〜S3 の間は panel を触らない（firmware の表示をそのまま残�
 - legacy i915.c ops → session, resource, command, job, reset（recovery）、legacy request.c → request-queue.c、legacy_shim.c（非表示）→ worker.c
 - probe.c（P0–P2、P4 の GT、P6、P7 pxp）+ runner.c → device.c、gt.h
 - 廃止（本番から到達しない）: legacy uncore.c, ggtt.c, engine.c, lrc.c, irq.c
-- firmware_*.c → data/firmware/*.c、linux/*.inc → data/*.inc（gen-inc.py の出力先も変更）
+- firmware_*.c → data/firmware/*.c、linux/*.inc → data/*.inc（gen-inc.py の出力先も変更）。2026-09-22 に `data/` を `external/` に改めた:
+  GT の定義は `external/i915.h`、表示は `external/display/<系統>.h`（DisplayPort は `external/display/dp.h`）、配列の本体は `external/i915-*.inc`、
+  firmware は `external/firmware/`、manifest は `external/provenance/`、`vulkan-codec.inc` は `render/`。gen-inc.py は廃止（`handover/tools/retired/`）。
+  同日 `external/` を `intel/` に改めた: 表示の header は `intel/` 直下（`intel/dp.h` など）、配列の本体は `intel/engine-table.inc`・`forcewake-ranges.inc`・`mocs-table.inc`・`mcr-ranges.inc`、firmware は `intel/firmware/`（一時）、manifest は `intel/provenance/`（いずれも下記 §5.1 のとおり 2026-09-22 に削除）。
+  `external/i915.h` は内容ごとに `intel/bits.h`・`gt-regs.h`・`commands.h`・`lrc-offsets.h`・`pci-ids.h`・`gt-power.h`・`workarounds.h`・`mocs.h`・`genxml.h` に分割して削除した（各 .c は使う header だけを include、vmunix はバイト一致）。
+  表示の定義の DRM 接頭辞を外した（`drm_dp_*`→`dp_*`、`DRM_FORMAT_*`→`FORMAT_*` ほか、[licence 棚卸し](license-inventory.md) の冒頭）
 
 ### 5.1 廃止・未移植の記録（監査 i915-rebuild-coverage.md の指摘による）
 
@@ -78,5 +83,11 @@ S1〜S3 の間は panel を触らない（firmware の表示をそのまま残�
   dispatch はこれらの route を XXX で拒否する。移植しない。
 - parity/legacy_shim.h の名前差替えマクロ（PARITY_SHIM_REDIRECT）: 通常の関数呼出し（worker.c）に置換済み。廃止。
 - 生成器 port_lcd_calc.py、port_dp_aux_pps.py、port_intel_bios.py: S4 §9-6 で廃止（表示コードは手で管理）。
-  manifest は data/provenance/ に保存。
+  manifest は一時 intel/provenance/ に保存したが（当初は data/provenance/、次に external/provenance/）、2026-09-22 にユーザー決定で
+  intel/provenance/ ごと削除した。
+- intel/firmware/（2026-09-22、ユーザー決定）: DMC の byte 配列 adlp-dmc.c・tgl-dmc.c は kernel から削除し、firmware.c は
+  /lib/firmware/<name> を VFS から読む（package i915-firmware、無ければ ENOENT で DMC なし）。対象機 VBT は
+  vendor/intel-vbt/dell-latitude-5330-1028-0b02.inc へ移し、試験 build（I915_TEST_VBT=y）だけが display/vbt.c に include する
+  （XXX: QEMU passthrough の guest に OpRegion が無いための支え。実機で GPU 試験が走るようになったら削除）。使われていなかった
+  Dell Latitude 5320 の VBT と、その pin 行・ktest の skip 行は削除した。intel/firmware/ は削除。
 

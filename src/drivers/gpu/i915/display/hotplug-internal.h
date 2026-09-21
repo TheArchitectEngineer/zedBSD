@@ -87,15 +87,13 @@
 #include <kern/lock.h>
 #include <kern/sched.h>
 
-#include "../data/display-ddi-types.inc"
-#include "../data/display-hpd-pin-enum.inc"
-#include "../data/display-hpd-for-each-pin.inc"
-#include "../data/display-hpd-hotplug-state.inc"
-#include "../data/display-hpd-drm-connector-status.inc"
-#include "../data/display-hpd-mreg-i915-reg.inc"
-#include "../data/display-hpd-mreg-drm-dp.inc"
-#include "../data/display-hpd-mreg-gmbus.inc"
-#include "../data/display-hpd-mreg-gmbus-pins.inc"
+/* The Linux spelling of a packed structure, which the DP SDP definitions use. */
+#define __packed __attribute__((packed))
+
+#include "../intel/ddi.h"
+#include "../intel/hotplug.h"
+#include "../intel/connector.h"
+#include "../intel/dp.h"
 
 /*
  * Linux errno numbers of the hotplug text.
@@ -420,7 +418,7 @@ struct delayed_work {
 	struct i915_delayed_work dw;
 };
 
-#include "../data/display-hpd-hotplug-types.inc"
+#include "../intel/hotplug-types.h"
 
 /*
  * One I2C transfer segment (include/uapi/linux/i2c.h).
@@ -520,7 +518,7 @@ struct drm_connector_state {
  * The connector callbacks: the forced detect of an HDMI connector.
  */
 struct drm_connector_funcs {
-	enum drm_connector_status (*detect)(struct drm_connector *connector, bool force);
+	enum connector_status (*detect)(struct drm_connector *connector, bool force);
 };
 
 /*
@@ -542,7 +540,7 @@ struct drm_connector {
 	} base;
 	const char *name;
 	int connector_type;
-	enum drm_connector_status status;
+	enum connector_status status;
 	u64 epoch_counter;
 	int force;                      /* enum drm_connector_force: 0 = DRM_FORCE_UNSPECIFIED */
 	u8 polled;
@@ -949,7 +947,7 @@ enum intel_hotplug_state intel_encoder_hotplug(struct intel_encoder *encoder, st
 void intel_hpd_init_early(struct drm_i915_private *i915);
 void intel_hpd_cancel_work(struct drm_i915_private *dev_priv);
 int drm_helper_probe_detect(struct drm_connector *connector, struct drm_modeset_acquire_ctx *ctx, bool force);
-const char *drm_get_connector_status_name(enum drm_connector_status status);
+const char *drm_get_connector_status_name(enum connector_status status);
 
 /* The static callbacks of the Linux text, for the objects the owner makes. */
 enum intel_hotplug_state (*i915_hpd_ddi_hotplug_fn(void))(struct intel_encoder *, struct intel_connector *);

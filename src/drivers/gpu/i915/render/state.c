@@ -27,8 +27,8 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "../data/i915-commands.inc"
-#include "../data/i915-3dstate-gen12.inc"
+#include "../intel/commands.h"
+#include "../intel/genxml.h"
 
 /* The genxml SURFACE_FORMAT values of the VkFormats the render paths read and write. */
 #define I915_GFX_SURFACE_R8G8B8A8_UNORM		0x0c7U

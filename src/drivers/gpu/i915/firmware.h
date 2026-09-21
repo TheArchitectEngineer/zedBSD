@@ -6,12 +6,12 @@
  */
 
 /*
- * The read-only firmware provider.
+ * The firmware provider.
  *
- * It is the driver's request_firmware() and release_firmware(): fixed
- * reference blobs embedded in the kernel image are served by name.  A blob is
- * static read-only data that is never allocated or freed, so a release only
- * drops the handle.  No file system is involved.
+ * It is the driver's request_firmware() and release_firmware(): a request
+ * reads /lib/firmware/<name> from the root file system into a buffer of its
+ * own, and the release frees that buffer.  The firmware itself is installed by
+ * the optional i915-firmware package; the kernel carries no firmware bytes.
  */
 
 #ifndef DRIVERS_GPU_I915_FIRMWARE_H
@@ -22,8 +22,10 @@
 /*
  * One firmware image a caller holds.
  *
- * The data points into the kernel image and stays valid for the kernel
- * lifetime; it is NULL until a request succeeds and again after the release.
+ * The data is NULL until a request succeeds and again after the release.
+ * The allocation is the buffer the provider read the file into, which the
+ * release frees; it is NULL for an image the test build served from memory
+ * of its own, which the release leaves alone.
  */
 struct i915_firmware {
 	/* The image bytes, or NULL. */
@@ -31,6 +33,9 @@ struct i915_firmware {
 
 	/* The image length in bytes. */
 	unsigned size;
+
+	/* The buffer the release frees, or NULL when the provider owns none. */
+	void *allocation;
 };
 
 int drv_i915_firmware_request(struct i915_firmware *firmware, const char *name);
