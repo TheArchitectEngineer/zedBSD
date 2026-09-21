@@ -12,7 +12,18 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define HEAP_ALIGNMENT 8U
+/*
+ * What every allocation is aligned to.
+ *
+ * An allocator must return memory that any object may be placed in, which
+ * means the strictest alignment the machine asks for of an ordinary type.
+ * On x86 that is sixteen: the SSE registers are that wide, and the aligned
+ * forms of the instructions that move them fault on anything less.  Eight
+ * was enough for as long as nothing put such a type on the heap, which is
+ * a thing that holds until it does not: a compiler allocating a thirty-two
+ * byte object and clearing it with one aligned store found it.
+ */
+#define HEAP_ALIGNMENT 16U
 #define HEAP_MAGIC 0x42393848U
 #define HEAP_FREE 0x46524545U
 #define HEAP_USED 0x55534544U

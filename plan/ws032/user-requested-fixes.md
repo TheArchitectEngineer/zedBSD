@@ -183,7 +183,7 @@ PS/2 キーボードとして打鍵し、シリアルに出た内容を読む。
 
 ### ローダのライブラリ探索
 
-`userland/base/rtld/rtld.c` の探索順:
+`src/rtld/rtld.c` の探索順:
 
 1. 要求元の `DT_RUNPATH`、無ければ `DT_RPATH` の連鎖（従来どおり）
 2. **`LD_LIBRARY_PATH`**（設定されていて空でないとき。`:` 区切り）

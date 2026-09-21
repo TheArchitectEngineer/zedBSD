@@ -35,6 +35,12 @@ char *strtok(char *, const char *);
 char *strdup(const char *string);
 char *strndup(const char *string, size_t maximum);
 char *strerror(int error);
+
+/*
+ * The sentence that describes a signal.  It belongs to the library, and
+ * the caller neither frees it nor writes through it.
+ */
+char *strsignal(int);
 int strcoll(const char *, const char *);
 size_t strxfrm(char *, const char *, size_t);
 

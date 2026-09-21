@@ -66,13 +66,29 @@ write_compiler() {
 # through the general-dynamic form, which is why it is the default here.
 set -eu
 
-exec '$llvm_bin/$2' \\
+# Where this build tree keeps its shared libraries is of use only to a link.
+# Passed to a compilation the driver says so, and says it in the words
+# cmake reads to mean that a flag it was testing is not supported -- so a
+# wrapper that always passed them would quietly turn every one of those
+# tests into a failure, and the flags they were testing for would be
+# dropped.  They are therefore passed only when a link is going to happen.
+zedbsd_link_flags="-L'$dynamic' -Wl,-rpath-link,'$dynamic'"
+for zedbsd_argument in "\$@"; do
+	case "\$zedbsd_argument" in
+	-c|-S|-E|-M|-MM)
+		zedbsd_link_flags=
+		break
+		;;
+	esac
+done
+
+eval "exec '$llvm_bin/$2' \\
 	--target='$triple' \\
 	--sysroot='$sysroot' \\
 	$abi_flags \\
 	-ftls-model=global-dynamic \\
-	-L'$dynamic' -Wl,-rpath-link,'$dynamic' \\
-	"\$@"
+	\$zedbsd_link_flags \\
+	\"\\\$@\""
 WRAPPER
 	chmod +x "$bin/$1"
 }
@@ -118,6 +134,23 @@ set(UNIX 1)
 set(CMAKE_DL_LIBS "")
 set(CMAKE_SHARED_LIBRARY_C_FLAGS "-fPIC")
 set(CMAKE_SHARED_LIBRARY_CXX_FLAGS "-fPIC")
+
+# What to pass when a target asks to be position independent.
+#
+# The two settings above are what cmake uses for the sources of a shared
+# library.  These are what it uses for POSITION_INDEPENDENT_CODE, which a
+# project sets on a static library whose objects will end up inside a
+# shared one.  Without them cmake has nothing to pass, says nothing, and
+# the link fails much later with relocations that cannot be used in a
+# shared object.
+set(CMAKE_C_COMPILE_OPTIONS_PIC "-fPIC")
+set(CMAKE_CXX_COMPILE_OPTIONS_PIC "-fPIC")
+set(CMAKE_ASM_COMPILE_OPTIONS_PIC "-fPIC")
+
+# There is deliberately no PIE counterpart.  An executable here is loaded at
+# a fixed address, so cmake is left with nothing to pass for that, and a
+# project asking for it gets an ordinary executable rather than one this
+# loader could not place.
 set(CMAKE_SHARED_LIBRARY_CREATE_C_FLAGS "-shared")
 set(CMAKE_SHARED_LIBRARY_CREATE_CXX_FLAGS "-shared")
 set(CMAKE_SHARED_LIBRARY_LINK_C_FLAGS "")

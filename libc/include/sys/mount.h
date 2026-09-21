@@ -17,6 +17,12 @@ extern "C" {
 
 #define MNT_RDONLY 0x00000001U
 #define MNT_NOSUID  0x00000002U
+/*
+ * The filesystem is held by this machine rather than reached over a
+ * network.  A program deciding whether a file is worth watching, or cheap
+ * to read twice, asks this.
+ */
+#define MNT_LOCAL   0x00001000U
 #define KERN_MOUNT_ARGS_VERSION 1U
 #define KERN_MOUNT_FSPEC_MAX 32U
 

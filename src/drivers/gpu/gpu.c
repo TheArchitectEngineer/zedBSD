@@ -1060,6 +1060,7 @@ gpu_publish_node(
 		NULL,
 		gpu_ioctl,
 		gpu_poll,
+		NULL,
 		gpu_mmap
 	};
 	struct cdev *node;

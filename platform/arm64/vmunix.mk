@@ -302,10 +302,10 @@ DYNAMIC_LIBC_SOURCES := userland/base/libc/posix.c userland/base/libc/poll.c \
 	libc/format.c libc/stdio.c $(ZEDBSD_LIBC_USER_EXTRA_SOURCES)
 DYNAMIC_LIBC_OBJS := $(patsubst %.c,$(DYNAMIC_DIR)/obj/%.o,\
 	$(DYNAMIC_LIBC_SOURCES)) $(DYNAMIC_DIR)/obj/userland/base/libc/syscall.o
-DYNAMIC_RTLD_OBJS := $(DYNAMIC_DIR)/obj/userland/base/rtld/entry.o \
-	$(DYNAMIC_DIR)/obj/userland/base/rtld/tlsdesc.o \
-	$(DYNAMIC_DIR)/obj/userland/base/rtld/rtld.o \
-	$(DYNAMIC_DIR)/obj/userland/base/rtld/string.o
+DYNAMIC_RTLD_OBJS := $(DYNAMIC_DIR)/obj/src/rtld/entry.o \
+	$(DYNAMIC_DIR)/obj/src/rtld/tlsdesc.o \
+	$(DYNAMIC_DIR)/obj/src/rtld/rtld.o \
+	$(DYNAMIC_DIR)/obj/src/rtld/string.o
 DYNAMIC_FLOAT_DIR := $(DYNAMIC_DIR)/float
 DYNAMIC_LIBM_OBJ := $(DYNAMIC_FLOAT_DIR)/math.o
 DYNAMIC_FLOAT_PARSE_OBJS := $(DYNAMIC_FLOAT_DIR)/zed-softfloat.o \
@@ -323,10 +323,10 @@ $(DYNAMIC_DIR)/obj/userland/base/libc/syscall.o: \
 	include/hal/arch/aarch64.h
 	@mkdir -p $(dir $@)
 	$(ARM64_CC) $(DYNAMIC_CPPFLAGS) -c $< -o $@
-$(DYNAMIC_DIR)/obj/userland/base/rtld/entry.o: userland/base/rtld/entry-aarch64.S
+$(DYNAMIC_DIR)/obj/src/rtld/entry.o: src/rtld/entry-aarch64.S
 	@mkdir -p $(dir $@)
 	$(ARM64_CC) -c $< -o $@
-$(DYNAMIC_DIR)/obj/userland/base/rtld/tlsdesc.o: userland/base/rtld/tlsdesc-arm64.S
+$(DYNAMIC_DIR)/obj/src/rtld/tlsdesc.o: src/rtld/tlsdesc-arm64.S
 	@mkdir -p $(dir $@)
 	$(ARM64_CC) -c $< -o $@
 $(DYNAMIC_DIR)/obj/userland/base/tests/tlstest.o: DYNAMIC_CFLAGS += -mtls-dialect=desc

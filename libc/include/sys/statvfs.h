@@ -19,6 +19,15 @@ typedef uint64_t fsfilcnt_t;
 
 #define ST_RDONLY 0x00000001UL
 #define ST_NOSUID 0x00000002UL
+/*
+ * The filesystem is held by this machine rather than reached over a
+ * network.  This is not one of the two flags the standard defines; it is
+ * what this system reports for the question portable software asks about a
+ * path before deciding whether reading it twice is cheap.  MNT_LOCAL in
+ * <sys/mount.h> says the same thing about a mount, and the two are kept
+ * apart because f_flag carries ST_ values and a mount carries MNT_ ones.
+ */
+#define ST_LOCAL  0x00000004UL
 
 struct statvfs {
 	uint64_t f_bsize;

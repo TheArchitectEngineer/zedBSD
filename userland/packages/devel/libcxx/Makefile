@@ -8,7 +8,7 @@
 #
 # They are installed to /usr/lib rather than /lib: /lib holds what the base
 # system itself needs, and the C++ runtime arrives with a package.  The loader
-# searches both (userland/base/rtld/rtld.c).
+# searches both (src/rtld/rtld.c).
 ZEDBSD_LIBCXX_MAKEFILE := $(lastword $(MAKEFILE_LIST))
 ZEDBSD_LIBCXX_DIR := $(patsubst %/,%,$(dir $(ZEDBSD_LIBCXX_MAKEFILE)))
 include $(ZEDBSD_LIBCXX_DIR)/../../../base/package.mk
@@ -55,8 +55,14 @@ ZEDBSD_LIBCXX_LICENSE := $(ZEDBSD_LIBCXX_SOURCE)/libcxx/LICENSE.TXT
 # from a table that each system supplies in its own way -- a BSD rune table,
 # glibc's __ctype_b_loc, and so on.  zedBSD has none of those, so libc++ uses
 # the table it carries for exactly this case.
+#
+# It is a site define rather than a flag on this build, because the headers
+# read it too: a program that includes <locale> has to agree with the library
+# about where the table comes from.  A site define is written into
+# __config_site, which every consumer of these headers includes, so the
+# agreement holds without every such program being told to repeat the flag.
 ZEDBSD_LIBCXX_CMAKE_OPTIONS := \
-	-DCMAKE_CXX_FLAGS=-D_LIBCPP_PROVIDES_DEFAULT_RUNE_TABLE \
+	-DLIBCXX_EXTRA_SITE_DEFINES=_LIBCPP_PROVIDES_DEFAULT_RUNE_TABLE \
 	-DLIBCXX_ENABLE_ABI_LINKER_SCRIPT=OFF \
 	-DLIBCXX_HAS_GCC_LIB=OFF \
 	-DCMAKE_BUILD_TYPE=Release \

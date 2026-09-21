@@ -181,6 +181,13 @@ enum syscall_number {
 	KERN_SYS_chroot = 164,
 	KERN_SYS_flock = 165,
 	KERN_SYS_setproctitle = 166,
+
+	/*
+	 * Reaps a child and reports what it spent.  waitpid answers what
+	 * happened to the child; this answers that and what it cost, which
+	 * cannot be asked afterwards because by then the child is gone.
+	 */
+	KERN_SYS_wait4 = 167,
 };
 
 #endif

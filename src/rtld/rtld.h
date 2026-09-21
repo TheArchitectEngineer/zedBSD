@@ -14,7 +14,7 @@
 #ifndef KERN_RTLD_H
 #define KERN_RTLD_H
 
-#include "userland/base/rtld/elf.h"
+#include "src/rtld/elf.h"
 #include <stddef.h>
 #include <stdint.h>
 

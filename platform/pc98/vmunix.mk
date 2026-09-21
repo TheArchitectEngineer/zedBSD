@@ -508,9 +508,9 @@ DYNAMIC_LIBC_SOURCES := userland/base/libc/posix.c userland/base/libc/poll.c \
 	libc/stdio.c $(ZEDBSD_LIBC_USER_EXTRA_SOURCES)
 DYNAMIC_LIBC_OBJS := $(patsubst %.c,$(DYNAMIC_DIR)/obj/%.o,\
 	$(DYNAMIC_LIBC_SOURCES)) $(DYNAMIC_DIR)/obj/userland/base/libc/syscall.o
-DYNAMIC_RTLD_OBJS := $(DYNAMIC_DIR)/obj/userland/base/rtld/entry.o \
-	$(DYNAMIC_DIR)/obj/userland/base/rtld/rtld.o \
-	$(DYNAMIC_DIR)/obj/userland/base/rtld/string.o
+DYNAMIC_RTLD_OBJS := $(DYNAMIC_DIR)/obj/src/rtld/entry.o \
+	$(DYNAMIC_DIR)/obj/src/rtld/rtld.o \
+	$(DYNAMIC_DIR)/obj/src/rtld/string.o
 DYNAMIC_SOFTFLOAT_DIR := $(DYNAMIC_DIR)/softfloat
 DYNAMIC_COMPILER_RT_OBJS := $(addprefix $(DYNAMIC_SOFTFLOAT_DIR)/,\
 	zed-softfloat.o compiler-runtime.o)
@@ -529,7 +529,7 @@ $(DYNAMIC_DIR)/obj/userland/base/libc/syscall.o: \
 	@mkdir -p $(dir $@)
 	$(CC) $(DYNAMIC_CPPFLAGS) -m32 -c $< -o $@
 
-$(DYNAMIC_DIR)/obj/userland/base/rtld/entry.o: userland/base/rtld/entry-i386.S
+$(DYNAMIC_DIR)/obj/src/rtld/entry.o: src/rtld/entry-i386.S
 	@mkdir -p $(dir $@)
 	$(CC) -m32 -c $< -o $@
 

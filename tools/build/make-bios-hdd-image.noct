@@ -126,10 +126,20 @@ func main(args) {
     // The checker reads the artifact into memory to validate it, so the
     // interpreter is given a heap proportional to the image rather than a
     // fixed one that the next larger image would exhaust.
+    //
+    // The size is held below two gigabytes.  The interpreter takes this
+    // figure as a signed 32-bit count, so a larger one wraps and it starts
+    // with almost nothing, which it reports as running out of memory --
+    // a message that points at the image rather than at the number that
+    // described it.  An image holding a compiler reaches that limit; the
+    // proportional figure is what smaller images get, and the ceiling is
+    // what stops the arithmetic from meaning the opposite of itself.
     var imageBytes = FileUtil.getFileSize(output + ".unchecked");
     if (imageBytes < 0) { cleanupUnchecked(output); zbFail("cannot stat the unchecked image"); }
+    var heapBytes = 2000000000;
+    if (imageBytes < 400000000) { heapBytes = imageBytes * 4 + 268435456; }
     var checkCommand = [checkerRunner,
-                        "--gc-tenure-size=" + (imageBytes * 4 + 268435456),
+                        "--gc-tenure-size=" + heapBytes,
                         "--path=tools/build", checker];
     for (i in 0..Array.size(checkerArgs)) { Array.push(checkCommand, checkerArgs[i]); }
     child = Process.spawn(checkCommand);
@@ -137,10 +147,19 @@ func main(args) {
         cleanupUnchecked(output);
         zbFail("cannot start disk-image checker");
     }
-    while (Process.isAlive(child) == 1) { Process.read(child, 100); }
-    Process.read(child, 0);
+    // What the checker says is why it refused, so it is kept and shown.
+    // Reading it and dropping it leaves a failure with no reason attached,
+    // which is a worse thing to hand someone than the refusal itself.
+    var checkerSaid = "";
+    while (Process.isAlive(child) == 1) {
+        var chunk = Process.read(child, 100);
+        if (chunk != "") { checkerSaid = checkerSaid + chunk; }
+    }
+    var rest = Process.read(child, 0);
+    if (rest != "") { checkerSaid = checkerSaid + rest; }
     status = Process.wait(child); Process.close(child);
     if (status != 0) {
+        if (checkerSaid != "") { print(checkerSaid); }
         cleanupUnchecked(output);
         zbFail("disk-image checker failed");
     }

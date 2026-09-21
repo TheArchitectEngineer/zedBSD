@@ -23,7 +23,7 @@
 - `/etc/services` と `getservbyname` 系、`gethostbyname` 系、`h_errno`
 - `HOST_NAME_MAX`、`cfmakeraw`
 - `libc.so` の unwind table 有効化（`platform/amd64/vmunix.mk`）
-- ローダの `LD_LIBRARY_PATH` と `/usr/lib` 探索（`userland/base/rtld/rtld.c`）
+- ローダの `LD_LIBRARY_PATH` と `/usr/lib` 探索（`src/rtld/rtld.c`）
 - clang driver の linker job（`toolchain/llvm/patches/0001-*.patch`）
 - OpenSSL のパッチ 0002 削除後のビルド
 

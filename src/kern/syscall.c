@@ -292,6 +292,7 @@ static intptr_t sys_setitimer_call(const uintptr_t args[6]);
 static intptr_t sys_execve_call(const uintptr_t args[6]);
 static intptr_t sys_fexecve_call(const uintptr_t args[6]);
 static SYSCALL_EXT intptr_t sys_waitpid_call(const uintptr_t args[6]);
+static SYSCALL_EXT intptr_t sys_wait4_call(const uintptr_t args[6]);
 static SYSCALL_EXT intptr_t sys_waitid_call(const uintptr_t args[6]);
 static SYSCALL_EXT intptr_t sys_resource_limit_call(const uintptr_t args[6], int setting);
 static intptr_t sys_process_identity_call(uint32_t number, const uintptr_t args[6]);
@@ -8545,6 +8546,99 @@ sys_waitpid_call(
 	return result;
 }
 
+/*
+ * Handles wait4(2).
+ *
+ * Reaps a child as waitpid does, and reports what that child spent while it
+ * ran.  The cost has to be read before the event is committed: committing
+ * releases the child, and what it spent goes with it.
+ */
+static SYSCALL_EXT intptr_t
+sys_wait4_call(
+	const uintptr_t args[6])
+{
+	struct process *process;
+	struct process_wait_event event;
+	struct uaccess_pin pin;
+	struct rusage usage;
+	int status;
+	pid_t result;
+	int error;
+
+	process = current_process();
+	status = 0;
+	error = 0;
+	memset(&usage, 0, sizeof(usage));
+
+	/* Rejects options this kernel does not know, and unused arguments. */
+	if (args[4] != 0 ||
+	    args[5] != 0 ||
+	    ((int)args[2] & ~(WNOHANG | WUNTRACED | WCONTINUED)) != 0)
+		return -EINVAL;
+
+	/* Pins the status output before the child can be consumed. */
+	if (args[1] != 0) {
+		error = uaccess_pin(args[1], sizeof(status), HAL_SPACE_WRITE,
+		    &pin);
+		if (error != 0)
+			return -error;
+	} else {
+		memset(&pin, 0, sizeof(pin));
+	}
+	result = process_wait_select(process, (pid_t)args[0], (int)args[2],
+	    &event);
+
+	/*
+	 * What the child spent is read here, while the event still holds it.
+	 * A caller that asked for nothing is not charged for the reading.
+	 */
+	if (result > 0 && args[3] != 0 && event.child != NULL) {
+		ticks_to_timeval(atomic_u64_load_acquire(
+		    &event.child->user_ticks), &usage.ru_utime);
+		ticks_to_timeval(atomic_u64_load_acquire(
+		    &event.child->system_ticks), &usage.ru_stime);
+	}
+
+	/* Commits the event straight away when no status is wanted. */
+	if (result <= 0 || args[1] == 0) {
+		if (result > 0) {
+			error = process_wait_commit(&event);
+			if (error != 0) {
+				process_wait_abort(&event);
+				result = -error;
+			}
+		}
+		uaccess_unpin(&pin);
+
+		/* The cost is reported once the child has been reaped. */
+		if (result > 0 && args[3] != 0) {
+			error = copyout(&usage, args[3], sizeof(usage));
+			if (error != 0)
+				return -error;
+		}
+		return result;
+	}
+
+	/* Reports the status, then consumes the event. */
+	status = event.status;
+	error = copyout_pinned(&pin, 0, &status, sizeof(status));
+	if (error == 0)
+		error = process_wait_commit(&event);
+	if (error != 0)
+		process_wait_abort(&event);
+	uaccess_unpin(&pin);
+	if (error != 0)
+		return -error;
+
+	/* Handles a caller that wanted the cost as well as the status. */
+	if (args[3] != 0) {
+		error = copyout(&usage, args[3], sizeof(usage));
+		if (error != 0)
+			return -error;
+	}
+	return result;
+}
+
 /* Handles waitid(2). */
 static SYSCALL_EXT intptr_t
 sys_waitid_call(
@@ -9061,6 +9155,9 @@ syscall_dispatch_body(
 		break;
 	case KERN_SYS_waitpid:
 		result = sys_waitpid_call(args);
+		break;
+	case KERN_SYS_wait4:
+		result = sys_wait4_call(args);
 		break;
 	case KERN_SYS_waitid:
 		result = sys_waitid_call(args);

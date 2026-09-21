@@ -11,6 +11,20 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/*
+ * Which user ABI these declarations describe.  A build inside this repository
+ * says so on the command line, because the kernel also compiles these headers
+ * and may be describing a user ABI narrower than its own.  A program compiled
+ * on the machine has no such build to speak for it, and for a program the
+ * answer is never in doubt: the user ABI it is part of is the one it is being
+ * compiled for, which the compiler already states.
+ */
+#ifndef KERN_USER_ABI_LP64
+#ifdef __LP64__
+#define KERN_USER_ABI_LP64 1
+#endif
+#endif
+
 typedef __PTRDIFF_TYPE__ ssize_t;
 
 #ifdef KERN_USER_ABI_LP64

@@ -165,6 +165,12 @@ $(1)/.zedbsd-sysroot-complete: $(ZEDBSD_SYSROOT_INPUTS) \
 		$(4) -nostdinc -Iinclude -D$(5) $(11) \
 		-ffreestanding -fno-pic -fno-pie -fno-stack-protector \
 		-c '$(7)' -o "$$$$temporary/usr/lib/crt1.o"; \
+	: 'zedBSD keeps the mathematics in the C library, which every link' \
+	  'already has.  An empty libm is left here so that -lm, which a' \
+	  'portable program written against the standard passes, finds a' \
+	  'library and contributes nothing, rather than stopping the link' \
+	  'over a library that was never separate on this system.'; \
+	'$(ZEDBSD_SYSROOT_AR)' rcsD "$$$$temporary/usr/lib/libm.a"; \
 	cp platform/amd64/user.ld platform/amd64/vmunix.ld \
 		"$$$$temporary/usr/lib/zedbsd/amd64/"; \
 	cp platform/pcat/user.ld platform/pcat/vmunix.ld \

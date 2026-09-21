@@ -1539,6 +1539,13 @@ sysconf(
 	case _SC_CHILD_MAX:
 		/* Returns the computed result. */
 		return 64;
+	case _SC_GETPW_R_SIZE_MAX:
+		/*
+		 * One password entry is a few short strings and the buffer
+		 * holds all of them at once.  This is what a caller who will
+		 * not guess is given, so it is generous rather than tight.
+		 */
+		return 1024;
 	case _SC_STREAM_MAX:
 		/* Returns the computed result. */
 		return 32;
@@ -2844,6 +2851,110 @@ waitpid(
 
 	/* Returns the computed result. */
 	return result;
+}
+
+/*
+ * Implements the wait4 operation.
+ *
+ * Reaps a child as waitpid does, and reports what it spent while it ran.
+ * The usage may be a null pointer, in which case only the reaping happens
+ * and nothing is written.
+ */
+pid_t
+wait4(
+	pid_t pid,
+	int *status,
+	int options,
+	struct rusage *usage)
+{
+	pid_t result;
+
+	cancel_point();
+	result = (pid_t)call(KERN_SYS_wait4, (uintptr_t)pid,
+			     (uintptr_t)status, (uintptr_t)options,
+			     (uintptr_t)usage, 0, 0);
+	cancel_point();
+
+	/* Returns the computed result. */
+	return result;
+}
+
+/*
+ * Implements the madvise operation.
+ *
+ * Every value is advice, and a system may act on it or ignore it as it
+ * sees fit; zedBSD checks what it was given and does nothing with it.  The
+ * checking is the part that matters: a program passing an address it does
+ * not own, or advice that does not exist, is told so here rather than
+ * carrying the mistake somewhere it is harder to see.
+ */
+int
+madvise(
+	void *address,
+	size_t length,
+	int advice)
+{
+	/* Rejects advice that names nothing. */
+	switch (advice) {
+	case MADV_NORMAL:
+	case MADV_RANDOM:
+	case MADV_SEQUENTIAL:
+	case MADV_WILLNEED:
+	case MADV_DONTNEED:
+	case MADV_FREE:
+		break;
+	default:
+		errno = EINVAL;
+
+		/* Reports operation failure. */
+		return -1;
+	}
+
+	/* A length of nothing advises about nothing, and is not a fault. */
+	if (length == 0)
+		return 0;
+
+	/* The address must be one a mapping could begin at. */
+	if (((uintptr_t)address & (uintptr_t)(getpagesize() - 1)) != 0) {
+		errno = EINVAL;
+
+		/* Reports operation failure. */
+		return -1;
+	}
+
+	/* Reports successful completion. */
+	return 0;
+}
+
+/*
+ * Implements the posix_madvise operation.
+ *
+ * The same advice under the name the standard gives it.  It differs in how
+ * it fails: an error is returned rather than left in errno.
+ */
+int
+posix_madvise(
+	void *address,
+	size_t length,
+	int advice)
+{
+	int saved;
+	int result;
+
+	saved = errno;
+	result = madvise(address, length, advice);
+
+	/* Handles a failure, which this interface returns rather than sets. */
+	if (result != 0) {
+		result = errno;
+		errno = saved;
+
+		/* Returns the computed result. */
+		return result;
+	}
+
+	/* Reports successful completion. */
+	return 0;
 }
 
 /*

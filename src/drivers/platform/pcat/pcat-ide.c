@@ -31,7 +31,7 @@
 #define ATA_READ 0x20U
 #define ATA_WRITE 0x30U
 #define ATA_FLUSH 0xe7U
-#define ATA_TIMEOUT 5000000U
+#define ATA_TIMEOUT 100000000U
 #define ATA_UNIT_MAX 4U
 
 struct ata_unit {

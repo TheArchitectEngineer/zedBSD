@@ -65,6 +65,11 @@ extern "C" {
 #define _SC_RTSIG_MAX 29
 #define _SC_SIGQUEUE_MAX 30
 #define _SC_DEVICE_CONTROL 31
+/*
+ * How large a buffer getpwnam_r and getpwuid_r may need for one entry.
+ * A caller that will not guess allocates what this reports.
+ */
+#define _SC_GETPW_R_SIZE_MAX 32
 
 #define _PC_LINK_MAX 1
 #define _PC_MAX_CANON 2

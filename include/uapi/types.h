@@ -14,6 +14,14 @@
 
 #include <stdint.h>
 
+/* The user ABI, from the compilation itself when the build did not say; see
+ * sys/types.h for why. */
+#ifndef KERN_USER_ABI_LP64
+#ifdef __LP64__
+#define KERN_USER_ABI_LP64 1
+#endif
+#endif
+
 /*
  * The pointed-to address belongs to the calling user ABI, not the kernel.
  */

@@ -988,7 +988,15 @@ mount_statvfs(
 		result->f_fsid = (uint64_t)(1U + (unsigned)(mountp - mounts));
 flags:
 	/* The mount flags override whatever the filesystem reported. */
-	result->f_flag &= ~((uint64_t)ST_RDONLY | (uint64_t)ST_NOSUID);
+	result->f_flag &= ~((uint64_t)ST_RDONLY | (uint64_t)ST_NOSUID |
+	    (uint64_t)ST_LOCAL);
+
+	/*
+	 * Every filesystem this kernel mounts is one this machine holds.
+	 * There is no network filesystem here yet, and when there is, this
+	 * is where it will report that it is not local.
+	 */
+	result->f_flag |= ST_LOCAL;
 	if ((mountp->m_flags & MOUNT_READ_ONLY) != 0 ||
 	    (mountp->m_disk != NULL &&
 	    (mountp->m_disk->d_flags & DISK_READ_ONLY) != 0))

@@ -13,6 +13,12 @@
 /* Longest host name gethostname may report, not counting the terminator. */
 #define HOST_NAME_MAX 255
 #define ARG_MAX 16384
+/*
+ * The least a conforming system may offer.  A program that will not assume
+ * this system's own limit reads this one instead: every system promises at
+ * least this much.
+ */
+#define _POSIX_ARG_MAX 4096
 #define RTSIG_MAX 34
 #define SIGQUEUE_MAX 32
 #define GETENTROPY_MAX 256

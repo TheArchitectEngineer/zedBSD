@@ -11,7 +11,7 @@
  * Implements the zedBSD userland string component.
  */
 
-#include "userland/base/rtld/rtld.h"
+#include "src/rtld/rtld.h"
 
 /*
  * Implements the rtld strlen operation.

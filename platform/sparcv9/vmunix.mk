@@ -319,9 +319,9 @@ SPARCV9_DYNAMIC_SOFTFP_OBJS := $(addprefix \
 	$(SPARCV9_DYNAMIC_DIR)/softfp/,zed-softfloat.o compiler-runtime.o \
 	zed-softfloat128.o compiler-runtime128.o)
 SPARCV9_DYNAMIC_RTLD_OBJS := \
-	$(SPARCV9_DYNAMIC_DIR)/obj/userland/base/rtld/entry.o \
-	$(SPARCV9_DYNAMIC_DIR)/obj/userland/base/rtld/rtld.o \
-	$(SPARCV9_DYNAMIC_DIR)/obj/userland/base/rtld/string.o
+	$(SPARCV9_DYNAMIC_DIR)/obj/src/rtld/entry.o \
+	$(SPARCV9_DYNAMIC_DIR)/obj/src/rtld/rtld.o \
+	$(SPARCV9_DYNAMIC_DIR)/obj/src/rtld/string.o
 SPARCV9_DYNAMIC_FLOAT_DIR := $(SPARCV9_DYNAMIC_DIR)/float
 SPARCV9_DYNAMIC_LIBM_OBJ := $(SPARCV9_DYNAMIC_FLOAT_DIR)/math.o
 SPARCV9_DYNAMIC_FLOAT_PARSE_OBJ := $(SPARCV9_DYNAMIC_FLOAT_DIR)/float-parse.o
@@ -346,8 +346,8 @@ $(SPARCV9_DYNAMIC_DIR)/obj/userland/base/libc/syscall.o: \
 	$(SPARCV9_CC) $(SPARCV9_DYNAMIC_CPPFLAGS) \
  $(SPARCV9_DYNAMIC_CFLAGS) -c $< -o $@
 
-$(SPARCV9_DYNAMIC_DIR)/obj/userland/base/rtld/entry.o: \
-	userland/base/rtld/entry-sparcv9.S
+$(SPARCV9_DYNAMIC_DIR)/obj/src/rtld/entry.o: \
+	src/rtld/entry-sparcv9.S
 	@mkdir -p $(dir $@)
 	$(SPARCV9_CC) $(SPARCV9_DYNAMIC_CFLAGS) -c $< -o $@
 

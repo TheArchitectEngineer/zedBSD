@@ -35,6 +35,33 @@ extern "C" {
 void *mmap(void *, size_t, int, int, int, off_t);
 int munmap(void *, size_t);
 int mprotect(void *, size_t, int);
+
+/*
+ * Advice about how a mapping will be used.
+ *
+ * Every value is advice and none of it is an instruction: a system is free
+ * to act on what it is told and equally free to ignore it, and a program
+ * that depends on the difference is relying on something the interface does
+ * not promise.  zedBSD checks what it is given and does nothing with it,
+ * which is a conforming answer and is why the values a program may pass are
+ * all named here.
+ */
+#define MADV_NORMAL     0
+#define MADV_RANDOM     1
+#define MADV_SEQUENTIAL 2
+#define MADV_WILLNEED   3
+#define MADV_DONTNEED   4
+#define MADV_FREE       5
+
+int madvise(void *, size_t, int);
+int posix_madvise(void *, size_t, int);
+
+/* posix_madvise names the same advice with a prefix of its own. */
+#define POSIX_MADV_NORMAL     MADV_NORMAL
+#define POSIX_MADV_RANDOM     MADV_RANDOM
+#define POSIX_MADV_SEQUENTIAL MADV_SEQUENTIAL
+#define POSIX_MADV_WILLNEED   MADV_WILLNEED
+#define POSIX_MADV_DONTNEED   MADV_DONTNEED
 int msync(void *, size_t, int);
 int shm_open(const char *, int, mode_t);
 int shm_unlink(const char *);

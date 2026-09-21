@@ -11,7 +11,7 @@
  * zedBSD ELF runtime linker
  */
 
-#include "userland/base/rtld/rtld.h"
+#include "src/rtld/rtld.h"
 
 #include <link.h>
 #include <uapi/auxv.h>
@@ -1153,6 +1153,8 @@ rtld_main(
 	uintptr_t at_base, at_phdr, at_phnum, at_phent;
 	uintptr_t at_entry;
 	uintptr_t at_secure;
+	uintptr_t at_execfn;
+	const char *main_name;
 	uintptr_t main_base;
 	int main_type;
 	Elf_Ehdr *self_header;
@@ -1167,6 +1169,7 @@ rtld_main(
 	at_phent = 0;
 	at_entry = 0;
 	at_secure = 0;
+	at_execfn = 0;
 	main_base = 0;
 	main_type = ET_EXEC;
 
@@ -1207,6 +1210,9 @@ rtld_main(
 			break;
 		case AT_SECURE:
 			at_secure = auxv[1];
+			break;
+		case AT_EXECFN:
+			at_execfn = auxv[1];
 			break;
 		default:
 			break;
@@ -1263,7 +1269,24 @@ rtld_main(
 		main_type = ET_DYN;
 	}
 
-	main_object = new_object("<main>");
+	/*
+	 * dladdr() names the file an address came from, and a program asking
+	 * where its own code lives wants its own path back rather than a
+	 * placeholder.  The kernel passes that path in AT_EXECFN; a program
+	 * started without one keeps the placeholder, which is a name no path
+	 * search can return.
+	 */
+	main_name = "<main>";
+
+	/* Handles the exec file name condition. */
+	if (at_execfn != 0) {
+		const char *execfn = (const char *)at_execfn;
+
+		/* Handles the exec file name length condition. */
+		if (execfn[0] != '\0' && rtld_strlen(execfn) < RTLD_PATH_MAX)
+			main_name = execfn;
+	}
+	main_object = new_object(main_name);
 	interpreter_object = new_object(RTLD_INTERP_PATH);
 	setup_premapped_object(main_object, main_base, (Elf_Phdr *)at_phdr,
 			       (unsigned)at_phnum, main_type);

@@ -731,6 +731,26 @@ realtime_offset(
 	return 0;
 }
 
+/*
+ * Implements the strsignal operation.
+ *
+ * Returns the sentence that describes a signal.  The string belongs to the
+ * library and the caller does not free it; the same description is what
+ * psignal writes, so a program that prints one and a program that prints
+ * the other say the same thing about the same signal.
+ */
+char *
+strsignal(
+	int number)
+{
+	/*
+	 * The description is a string literal, and the interface is not
+	 * const, because it was settled before the qualifier existed.  A
+	 * caller that writes through it has no right to.
+	 */
+	return (char *)signal_description(number);
+}
+
 /* Supports the signal description operation. */
 static const char *
 signal_description(
