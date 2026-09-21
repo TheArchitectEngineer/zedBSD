@@ -8,6 +8,12 @@
 #ifndef LIBC_WCHAR_H
 #define LIBC_WCHAR_H
 
+#include <locale.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -84,5 +90,27 @@ int swscanf(const wchar_t *, const wchar_t *, ...);
 int vfwscanf(FILE *, const wchar_t *, va_list);
 int vwscanf(const wchar_t *, va_list);
 int vswscanf(const wchar_t *, const wchar_t *, va_list);
+
+
+/* The locale-aware forms POSIX.1-2008 added. */
+int wcscoll_l(const wchar_t *, const wchar_t *, locale_t);
+size_t wcsxfrm_l(wchar_t *, const wchar_t *, size_t, locale_t);
+/* Bounded conversions: at most the given number of source elements is read. */
+size_t mbsnrtowcs(wchar_t *, const char **, size_t, size_t, mbstate_t *);
+size_t wcsnrtombs(char *, const wchar_t **, size_t, size_t, mbstate_t *);
+
+/* The locale-aware forms POSIX.1-2008 added. */
+int btowc_l(int, locale_t);
+int wctob_l(wint_t, locale_t);
+size_t mbrlen_l(const char *, size_t, mbstate_t *, locale_t);
+size_t mbrtowc_l(wchar_t *, const char *, size_t, mbstate_t *, locale_t);
+size_t mbsrtowcs_l(wchar_t *, const char **, size_t, mbstate_t *, locale_t);
+size_t mbsnrtowcs_l(wchar_t *, const char **, size_t, size_t, mbstate_t *, locale_t);
+size_t wcrtomb_l(char *, wchar_t, mbstate_t *, locale_t);
+size_t wcsnrtombs_l(char *, const wchar_t **, size_t, size_t, mbstate_t *, locale_t);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -8,6 +8,10 @@
 #ifndef LIBC_POLL_H
 #define LIBC_POLL_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <uapi/poll.h>
 #include <signal.h>
 #include <time.h>
@@ -15,5 +19,9 @@
 int poll(struct pollfd *, nfds_t, int);
 int ppoll(struct pollfd *, nfds_t, const struct timespec *,
 	const sigset_t *);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -58,6 +58,7 @@ static void insert_sorted(struct record_lock_state *state, struct record_lock *n
 static struct record_lock *coalesce_locked(struct record_lock_state *state);
 static struct record_lock *new_node(void *owner, unsigned owner_is_file, int64_t start, int64_t end, short type);
 static int replace_owner_range(struct record_lock_state *state, void *owner, unsigned owner_is_file, int64_t start, int64_t end, short type, uint64_t expected, unsigned needed);
+static int record_lock_apply(struct process *owner, struct file *file, int command, struct flock_record *request, unsigned whole_file);
 
 /*
  * Drops the record lock state of an inode that is going away.
@@ -99,19 +100,21 @@ record_lock_inode_destroy(
 }
 
 /*
- * Handles the record lock fcntl commands.
+ * Handles one record-lock operation for either caller.
  *
  * A get command reports the first conflicting lock.  A set command
  * replaces the owner's overlapping ranges, waiting for conflicts to clear
  * with the waiting variants; the replacement is retried when the state
- * changed while the lock was dropped for allocation.
+ * changed while the lock was dropped for allocation.  A whole-file caller
+ * is flock, whose rules on file type and open mode are its own.
  */
-int
-record_lock_fcntl(
+static int
+record_lock_apply(
 	struct process *owner,
 	struct file *file,
 	int command,
-	struct flock_record *request)
+	struct flock_record *request,
+	unsigned whole_file)
 {
 	struct record_lock_state *state;
 	struct record_lock *conflict;
@@ -133,7 +136,7 @@ record_lock_fcntl(
 	    file == NULL ||
 	    file->f_inode == NULL ||
 	    request == NULL ||
-	    file->f_inode->i_type != INODE_REG)
+	    (!whole_file && file->f_inode->i_type != INODE_REG))
 		return EBADF;
 	if (request->reserved0 != 0 ||
 	    request->reserved1 != 0 ||
@@ -157,13 +160,20 @@ record_lock_fcntl(
 	else
 		lock_owner = (void *)owner;
 
-	/* The lock type must agree with the open mode. */
-	if (request->type == F_RDLCK &&
-	    (file_status_flags_get(file) & O_ACCMODE) == O_WRONLY)
-		return EBADF;
-	if (request->type == F_WRLCK &&
-	    (file_status_flags_get(file) & O_ACCMODE) == O_RDONLY)
-		return EBADF;
+	/*
+	 * The lock type must agree with the open mode.  A whole-file lock is
+	 * exempt: it guards an agreement between programs rather than the
+	 * bytes, so a descriptor opened for reading may still hold it
+	 * exclusively.
+	 */
+	if (!whole_file) {
+		if (request->type == F_RDLCK &&
+		    (file_status_flags_get(file) & O_ACCMODE) == O_WRONLY)
+			return EBADF;
+		if (request->type == F_WRLCK &&
+		    (file_status_flags_get(file) & O_ACCMODE) == O_RDONLY)
+			return EBADF;
+	}
 
 	/* Resolves the range against the file offset or size. */
 	error = normalize_range(file, request, &start, &end);
@@ -257,6 +267,76 @@ record_lock_fcntl(
 		if (error != EAGAIN)
 			return error;
 	}
+}
+
+/*
+ * Runs one fcntl record-lock operation.
+ */
+int
+record_lock_fcntl(
+	struct process *owner,
+	struct file *file,
+	int command,
+	struct flock_record *request)
+{
+	/* Returns the computed result. */
+	return record_lock_apply(owner, file, command, request, 0U);
+}
+
+/*
+ * Runs one flock operation.
+ *
+ * The lock covers the whole file and belongs to the open file description,
+ * which is what separates this call from the fcntl one: a descriptor passed
+ * through fork or duplicated by dup shares the single lock, and the last
+ * close of that description releases it.  Reaching the same machinery under
+ * an open-file owner is therefore the whole implementation.
+ */
+int
+record_lock_flock(
+	struct process *owner,
+	struct file *file,
+	int operation)
+{
+	struct flock_record request;
+	int command;
+	int type;
+
+	/* Rejects a request that names no action, or more than one. */
+	switch (operation & ~LOCK_NB) {
+	case LOCK_SH:
+		type = F_RDLCK;
+		break;
+	case LOCK_EX:
+		type = F_WRLCK;
+		break;
+	case LOCK_UN:
+		type = F_UNLCK;
+		break;
+	default:
+		return EINVAL;
+	}
+
+	/*
+	 * An unlock never waits, and LOCK_NB chooses between reporting a
+	 * conflict and sleeping on it.
+	 */
+	if (type == F_UNLCK || (operation & LOCK_NB) != 0)
+		command = F_OFD_SETLK;
+	else
+		command = F_OFD_SETLKW;
+
+	/* Describes the whole file from its start. */
+	request.type = (int16_t)type;
+	request.whence = SEEK_SET;
+	request.reserved0 = 0;
+	request.start = 0;
+	request.length = 0;
+	request.pid = 0;
+	request.reserved1 = 0;
+
+	/* Returns the computed result. */
+	return record_lock_apply(owner, file, command, &request, 1U);
 }
 
 /*

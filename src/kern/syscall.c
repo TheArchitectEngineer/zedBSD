@@ -191,6 +191,8 @@ static uint32_t dirent_type(enum inode_type type);
 static intptr_t sys_getdents_call(const uintptr_t args[6]);
 static intptr_t sys_chdir_call(const uintptr_t args[6]);
 static intptr_t sys_chroot_call(const uintptr_t args[6]);
+static intptr_t sys_flock_call(const uintptr_t args[6]);
+static intptr_t sys_setproctitle_call(const uintptr_t args[6]);
 static intptr_t sys_getcwd_call(const uintptr_t args[6]);
 static int vm_prot(int prot, uint32_t *result);
 static intptr_t sys_mmap_call(const uintptr_t args[6]);
@@ -3132,6 +3134,77 @@ sys_chroot_call(
 	/* Reports the outcome of the change. */
 	if (error != 0)
 		return -error;
+	return 0;
+}
+
+/* Handles flock(2). */
+static intptr_t
+sys_flock_call(
+	const uintptr_t args[6])
+{
+	struct process *process;
+	struct file *file;
+	int error;
+
+	/* Refuses the call without a process to own the descriptor. */
+	process = current_process();
+	if (process == NULL || process->fd == NULL)
+		return -EINVAL;
+
+	/* Typed lookup rejects a handle that describes no open file. */
+	error = filedesc_get_file(process->fd, (int)args[0], &file);
+	if (error != 0)
+		return -error;
+
+	/* Runs the whole-file lock against the open file description. */
+	error = record_lock_flock(process, file, (int)args[1]);
+	(void)file_close(file);
+
+	/* Reports the outcome of the operation. */
+	if (error != 0)
+		return -error;
+	return 0;
+}
+
+/*
+ * Handles setproctitle(2).
+ *
+ * The title a process reports is kept beside the one exec gave it, so an
+ * empty request puts the original back.  A process only ever renames
+ * itself, so there is nobody else's title to protect.
+ */
+static intptr_t
+sys_setproctitle_call(
+	const uintptr_t args[6])
+{
+	struct process *process;
+	char title[sizeof(process0.command)];
+	size_t length;
+	int error;
+
+	/* Refuses the call without a process to rename. */
+	process = current_process();
+	if (process == NULL)
+		return -EINVAL;
+
+	/* An empty request restores the title the program started with. */
+	length = (size_t)args[1];
+	if (args[0] == 0 || length == 0U) {
+		memcpy(process->command, process->command_initial,
+		    sizeof(process->command));
+		return 0;
+	}
+
+	/* Rejects a title that does not fit rather than silently cutting it. */
+	if (length >= sizeof(title))
+		return -ENAMETOOLONG;
+
+	/* Reads the title and publishes it. */
+	error = copyin(args[0], title, length);
+	if (error != 0)
+		return -error;
+	title[length] = '\0';
+	memcpy(process->command, title, length + 1U);
 	return 0;
 }
 
@@ -7582,7 +7655,15 @@ sys_sigreturn_call(
 	return restored;
 }
 
-/* Handles dup(2). */
+/*
+ * Handles dup(2).
+ *
+ * The new descriptor names the same open file description, so the two share
+ * the file offset, the status flags and the locks the description owns.
+ * Opening /dev/fd/N is defined to do the same thing, and does it by the
+ * open path handing back this very file rather than making a second one;
+ * see i_descriptor_alias in <kern/inode.h>.
+ */
 static intptr_t
 sys_dup_call(
 	const uintptr_t args[6])
@@ -8717,6 +8798,12 @@ syscall_dispatch_body(
 		break;
 	case KERN_SYS_chroot:
 		result = sys_chroot_call(args);
+		break;
+	case KERN_SYS_flock:
+		result = sys_flock_call(args);
+		break;
+	case KERN_SYS_setproctitle:
+		result = sys_setproctitle_call(args);
 		break;
 	case KERN_SYS_mknodat:
 		result = sys_mknodat_call(args);

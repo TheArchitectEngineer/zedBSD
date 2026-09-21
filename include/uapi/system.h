@@ -12,6 +12,10 @@
 #ifndef KERN_UAPI_SYSTEM_H
 #define KERN_UAPI_SYSTEM_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 #include <stddef.h>
 #include <sys/ioctl.h>
@@ -175,5 +179,9 @@ _Static_assert(offsetof(struct system_swap_source_info, source) == 60U,
 	_IOW(KERN_SYSTEM_IOC_GROUP, 10, struct system_swap_control)
 #define KERN_SYSTEM_GET_SWAP_SOURCE                                          \
 	_IOWR(KERN_SYSTEM_IOC_GROUP, 11, struct system_swap_source_info)
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

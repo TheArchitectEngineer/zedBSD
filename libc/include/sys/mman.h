@@ -8,6 +8,10 @@
 #ifndef LIBC_SYS_MMAN_H
 #define LIBC_SYS_MMAN_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stddef.h>
 #include <sys/types.h>
 
@@ -34,5 +38,9 @@ int mprotect(void *, size_t, int);
 int msync(void *, size_t, int);
 int shm_open(const char *, int, mode_t);
 int shm_unlink(const char *);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -8,6 +8,10 @@
 #ifndef LIBC_LOCALE_H
 #define LIBC_LOCALE_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stddef.h>
 #include <stdint.h>
 
@@ -50,6 +54,17 @@ struct lconv {
 	char n_sep_by_space;
 	char p_sign_posn;
 	char n_sign_posn;
+	/*
+	 * The same six answers again for a monetary amount written with the
+	 * international currency symbol rather than the local one.  C99 added
+	 * them; software that formats money reads them by name.
+	 */
+	char int_p_cs_precedes;
+	char int_p_sep_by_space;
+	char int_n_cs_precedes;
+	char int_n_sep_by_space;
+	char int_p_sign_posn;
+	char int_n_sign_posn;
 };
 
 char *setlocale(int, const char *);
@@ -62,5 +77,12 @@ const char *getlocalename_l(int category, locale_t locale);
 
 size_t __libc_mb_cur_max(void);
 #define MB_CUR_MAX (__libc_mb_cur_max())
+
+/* The locale-aware form POSIX.1-2008 added. */
+struct lconv *localeconv_l(locale_t);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

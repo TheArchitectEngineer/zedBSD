@@ -8,6 +8,10 @@
 #ifndef LIBC_STDATOMIC_H
 #define LIBC_STDATOMIC_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -144,5 +148,9 @@ typedef struct atomic_flag {
 	__zedbsd_atomic_flag_clear(&(object)->value, (order))
 #define atomic_flag_clear(object) \
 	atomic_flag_clear_explicit((object), memory_order_seq_cst)
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -8,6 +8,10 @@
 #ifndef LIBC_FCNTL_H
 #define LIBC_FCNTL_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define O_RDONLY    0x0000
 #define O_WRONLY    0x0001
 #define O_RDWR      0x0002
@@ -68,5 +72,9 @@ int open(const char *, int, ...);
 int openat(int, const char *, int, ...);
 int creat(const char *, mode_t);
 int fcntl(int, int, ...);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

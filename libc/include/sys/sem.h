@@ -12,6 +12,10 @@
 #ifndef LIBC_SYS_SEM_H
 #define LIBC_SYS_SEM_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <sys/ipc.h>
 #include <time.h>
 
@@ -30,5 +34,9 @@ struct sembuf { unsigned short sem_num; short sem_op; short sem_flg; };
 int semget(key_t,int,int);
 int semctl(int,int,int,...);
 int semop(int,struct sembuf *,size_t);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

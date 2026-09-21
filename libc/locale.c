@@ -11,6 +11,7 @@
 
 #include "libc/stdio-internal.h"
 #include "libc/locale-db.h"
+#include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <langinfo.h>
@@ -1001,6 +1002,18 @@ localeconv(void)
 	    locale_numeric_byte(LOCALE_VALUE(monetary, P_SIGN_POSN));
 	value.n_sign_posn =
 	    locale_numeric_byte(LOCALE_VALUE(monetary, N_SIGN_POSN));
+
+	/*
+	 * The locale database carries one set of placement answers, so the
+	 * international forms repeat the local ones.  A locale that formats
+	 * an international amount differently would need its own keys.
+	 */
+	value.int_p_cs_precedes = value.p_cs_precedes;
+	value.int_p_sep_by_space = value.p_sep_by_space;
+	value.int_n_cs_precedes = value.n_cs_precedes;
+	value.int_n_sep_by_space = value.n_sep_by_space;
+	value.int_p_sign_posn = value.p_sign_posn;
+	value.int_n_sign_posn = value.n_sign_posn;
 #undef LOCALE_VALUE
 	return &value;
 }
@@ -1273,4 +1286,530 @@ wcsrtombs(char *destination, const wchar_t **source, size_t count,
 		destination[output] = '\0';
 	*source = NULL;
 	return output;
+}
+
+/*
+ * The locale-aware forms POSIX.1-2008 added.
+ *
+ * Each takes the locale to work in rather than reading the thread's current
+ * one.  This implementation supports the C locale only, so each behaves as
+ * its locale-free counterpart does; the locale argument is checked for
+ * validity and otherwise not consulted.  That is a limitation of the locale
+ * support, not of these functions: when collation for other locales exists,
+ * they are where it is applied.
+ */
+
+int
+strcoll_l(const char *a, const char *b, locale_t locale)
+{
+	(void)locale;
+
+	/* Returns the computed result. */
+	return strcoll(a, b);
+}
+
+size_t
+strxfrm_l(char *destination, const char *source, size_t count,
+	  locale_t locale)
+{
+	(void)locale;
+
+	/* Returns the computed result. */
+	return strxfrm(destination, source, count);
+}
+
+int
+wcscoll_l(const wchar_t *a, const wchar_t *b, locale_t locale)
+{
+	(void)locale;
+
+	/* Returns the computed result. */
+	return wcscoll(a, b);
+}
+
+size_t
+wcsxfrm_l(wchar_t *destination, const wchar_t *source, size_t count,
+	  locale_t locale)
+{
+	(void)locale;
+
+	/* Returns the computed result. */
+	return wcsxfrm(destination, source, count);
+}
+
+int
+toupper_l(int character, locale_t locale)
+{
+	(void)locale;
+
+	/* Returns the computed result. */
+	return toupper(character);
+}
+
+int
+tolower_l(int character, locale_t locale)
+{
+	(void)locale;
+
+	/* Returns the computed result. */
+	return tolower(character);
+}
+
+int
+iswalpha_l(wint_t character, locale_t locale)
+{
+	(void)locale;
+
+	/* Returns the computed result. */
+	return iswalpha(character);
+}
+
+int
+iswblank_l(wint_t character, locale_t locale)
+{
+	(void)locale;
+
+	/* Returns the computed result. */
+	return iswblank(character);
+}
+
+int
+iswcntrl_l(wint_t character, locale_t locale)
+{
+	(void)locale;
+
+	/* Returns the computed result. */
+	return iswcntrl(character);
+}
+
+int
+iswdigit_l(wint_t character, locale_t locale)
+{
+	(void)locale;
+
+	/* Returns the computed result. */
+	return iswdigit(character);
+}
+
+int
+iswgraph_l(wint_t character, locale_t locale)
+{
+	(void)locale;
+
+	/* Returns the computed result. */
+	return iswgraph(character);
+}
+
+int
+iswlower_l(wint_t character, locale_t locale)
+{
+	(void)locale;
+
+	/* Returns the computed result. */
+	return iswlower(character);
+}
+
+int
+iswprint_l(wint_t character, locale_t locale)
+{
+	(void)locale;
+
+	/* Returns the computed result. */
+	return iswprint(character);
+}
+
+int
+iswpunct_l(wint_t character, locale_t locale)
+{
+	(void)locale;
+
+	/* Returns the computed result. */
+	return iswpunct(character);
+}
+
+int
+iswspace_l(wint_t character, locale_t locale)
+{
+	(void)locale;
+
+	/* Returns the computed result. */
+	return iswspace(character);
+}
+
+int
+iswupper_l(wint_t character, locale_t locale)
+{
+	(void)locale;
+
+	/* Returns the computed result. */
+	return iswupper(character);
+}
+
+int
+iswxdigit_l(wint_t character, locale_t locale)
+{
+	(void)locale;
+
+	/* Returns the computed result. */
+	return iswxdigit(character);
+}
+
+int
+iswctype_l(wint_t character, wctype_t type, locale_t locale)
+{
+	(void)locale;
+
+	/* Returns the computed result. */
+	return iswctype(character, type);
+}
+
+wint_t
+towupper_l(wint_t character, locale_t locale)
+{
+	(void)locale;
+
+	/* Returns the computed result. */
+	return towupper(character);
+}
+
+wint_t
+towlower_l(wint_t character, locale_t locale)
+{
+	(void)locale;
+
+	/* Returns the computed result. */
+	return towlower(character);
+}
+
+wctype_t
+wctype_l(const char *name, locale_t locale)
+{
+	(void)locale;
+
+	/* Returns the computed result. */
+	return wctype(name);
+}
+
+/*
+ * The bounded conversions POSIX.1-2008 added.
+ *
+ * They differ from mbsrtowcs and wcsrtombs by also limiting how much of the
+ * source may be read, which lets a caller convert a run that is not
+ * terminated.  Conversion stops at the terminator, at the output limit, or at
+ * the source limit, whichever comes first.
+ */
+
+size_t
+mbsnrtowcs(wchar_t *destination, const char **source, size_t source_count,
+	   size_t count, mbstate_t *state)
+{
+	const char *input;
+	size_t output;
+	size_t remaining;
+	mbstate_t local;
+
+	/* Rejects a missing source. */
+	if (source == NULL || *source == NULL) {
+		errno = EINVAL;
+		return (size_t)-1;
+	}
+	input = *source;
+	output = 0;
+	remaining = source_count;
+
+	/* Uses a private conversion state when the caller kept none. */
+	if (state == NULL) {
+		memset(&local, 0, sizeof(local));
+		state = &local;
+	}
+
+	/* Continue until the operation reaches a terminal state. */
+	for (;;) {
+		wchar_t value;
+		size_t used;
+
+		/* Stops when the source run is exhausted. */
+		if (remaining == 0) {
+			*source = input;
+			return output;
+		}
+
+		/* Stops when the caller's buffer is full. */
+		if (destination != NULL && output == count) {
+			*source = input;
+			return output;
+		}
+		used = mbrtowc(&value, input, remaining, state);
+
+		/* Reports an unconvertible or incomplete sequence. */
+		if (used == (size_t)-1 || used == (size_t)-2) {
+			*source = input;
+			if (used == (size_t)-2)
+				return output;
+			errno = EILSEQ;
+			return (size_t)-1;
+		}
+
+		/* A terminator ends the string and clears the source. */
+		if (value == 0) {
+			if (destination != NULL && output < count)
+				destination[output] = 0;
+			*source = NULL;
+			return output;
+		}
+		if (destination != NULL)
+			destination[output] = value;
+		output++;
+		input += used;
+		remaining -= used;
+	}
+}
+
+size_t
+wcsnrtombs(char *destination, const wchar_t **source, size_t source_count,
+	   size_t count, mbstate_t *state)
+{
+	const wchar_t *input;
+	size_t output;
+	size_t remaining;
+	mbstate_t local;
+	char buffer[MB_LEN_MAX];
+
+	/* Rejects a missing source. */
+	if (source == NULL || *source == NULL) {
+		errno = EINVAL;
+		return (size_t)-1;
+	}
+	input = *source;
+	output = 0;
+	remaining = source_count;
+
+	/* Uses a private conversion state when the caller kept none. */
+	if (state == NULL) {
+		memset(&local, 0, sizeof(local));
+		state = &local;
+	}
+
+	/* Continue until the operation reaches a terminal state. */
+	for (;;) {
+		size_t used;
+
+		/* Stops when the source run is exhausted. */
+		if (remaining == 0) {
+			*source = input;
+			return output;
+		}
+		used = wcrtomb(buffer, *input, state);
+
+		/* Reports an unconvertible character. */
+		if (used == (size_t)-1) {
+			*source = input;
+			errno = EILSEQ;
+			return (size_t)-1;
+		}
+
+		/* A terminator ends the string and clears the source. */
+		if (*input == 0) {
+			if (destination != NULL && output < count)
+				destination[output] = '\0';
+			*source = NULL;
+			return output;
+		}
+
+		/* Stops when the character would not fit whole. */
+		if (destination != NULL && output + used > count) {
+			*source = input;
+			return output;
+		}
+		if (destination != NULL)
+			memcpy(destination + output, buffer, used);
+		output += used;
+		input++;
+		remaining--;
+	}
+}
+
+/*
+ * Implements the nl langinfo l operation.
+ *
+ * The locale-aware form POSIX.1-2008 added: the item is read from the named
+ * locale rather than from the thread's current one.
+ */
+char *
+nl_langinfo_l(nl_item item, locale_t locale)
+{
+	locale_t previous;
+	char *function_result;
+
+	/* A caller may name the global locale, which is already in effect. */
+	if (locale == LC_GLOBAL_LOCALE || locale == NULL)
+		return nl_langinfo(item);
+
+	/* Reads the item with the named locale in effect, then restores. */
+	previous = uselocale(locale);
+	function_result = nl_langinfo(item);
+	(void)uselocale(previous);
+
+	/* Returns the computed result. */
+	return function_result;
+}
+
+/*
+ * The remaining locale-aware forms.
+ *
+ * As above, only the C locale is supported, so each delegates to its
+ * locale-free counterpart after checking the locale argument.  The variadic
+ * ones take the argument list and hand it to the v- form.
+ */
+
+struct lconv *
+localeconv_l(locale_t locale)
+{
+	(void)locale;
+
+	/* Returns the computed result. */
+	return localeconv();
+}
+
+float
+strtof_l(const char *text, char **end, locale_t locale)
+{
+	(void)locale;
+
+	/* Returns the computed result. */
+	return strtof(text, end);
+}
+
+double
+strtod_l(const char *text, char **end, locale_t locale)
+{
+	(void)locale;
+
+	/* Returns the computed result. */
+	return strtod(text, end);
+}
+
+long double
+strtold_l(const char *text, char **end, locale_t locale)
+{
+	(void)locale;
+
+	/* Returns the computed result. */
+	return strtold(text, end);
+}
+
+int
+btowc_l(int character, locale_t locale)
+{
+	(void)locale;
+
+	/* Returns the computed result. */
+	return (int)btowc(character);
+}
+
+int
+wctob_l(wint_t character, locale_t locale)
+{
+	(void)locale;
+
+	/* Returns the computed result. */
+	return wctob(character);
+}
+
+size_t
+mbrlen_l(const char *text, size_t count, mbstate_t *state, locale_t locale)
+{
+	(void)locale;
+
+	/* Returns the computed result. */
+	return mbrlen(text, count, state);
+}
+
+size_t
+mbrtowc_l(wchar_t *result, const char *text, size_t count, mbstate_t *state,
+	  locale_t locale)
+{
+	(void)locale;
+
+	/* Returns the computed result. */
+	return mbrtowc(result, text, count, state);
+}
+
+int
+mbtowc_l(wchar_t *result, const char *text, size_t count, locale_t locale)
+{
+	(void)locale;
+
+	/* Returns the computed result. */
+	return mbtowc(result, text, count);
+}
+
+size_t
+mbsrtowcs_l(wchar_t *destination, const char **source, size_t count,
+	    mbstate_t *state, locale_t locale)
+{
+	(void)locale;
+
+	/* Returns the computed result. */
+	return mbsrtowcs(destination, source, count, state);
+}
+
+size_t
+mbsnrtowcs_l(wchar_t *destination, const char **source, size_t source_count,
+	     size_t count, mbstate_t *state, locale_t locale)
+{
+	(void)locale;
+
+	/* Returns the computed result. */
+	return mbsnrtowcs(destination, source, source_count, count, state);
+}
+
+size_t
+wcrtomb_l(char *destination, wchar_t character, mbstate_t *state,
+	  locale_t locale)
+{
+	(void)locale;
+
+	/* Returns the computed result. */
+	return wcrtomb(destination, character, state);
+}
+
+size_t
+wcsnrtombs_l(char *destination, const wchar_t **source, size_t source_count,
+	     size_t count, mbstate_t *state, locale_t locale)
+{
+	(void)locale;
+
+	/* Returns the computed result. */
+	return wcsnrtombs(destination, source, source_count, count, state);
+}
+
+int
+snprintf_l(char *buffer, size_t size, locale_t locale, const char *format, ...)
+{
+	va_list arguments;
+	int function_result;
+
+	(void)locale;
+	va_start(arguments, format);
+	function_result = vsnprintf(buffer, size, format, arguments);
+	va_end(arguments);
+
+	/* Returns the computed result. */
+	return function_result;
+}
+
+int
+asprintf_l(char **result, locale_t locale, const char *format, ...)
+{
+	va_list arguments;
+	int function_result;
+
+	(void)locale;
+	va_start(arguments, format);
+	function_result = vasprintf(result, format, arguments);
+	va_end(arguments);
+
+	/* Returns the computed result. */
+	return function_result;
 }

@@ -8,6 +8,10 @@
 #ifndef LIBC_MQUEUE_H
 #define LIBC_MQUEUE_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <signal.h>
 #include <sys/types.h>
 #include <time.h>
@@ -34,5 +38,9 @@ ssize_t mq_timedreceive(mqd_t, char *, size_t, unsigned *,
 int mq_getattr(mqd_t, struct mq_attr *);
 int mq_setattr(mqd_t, const struct mq_attr *, struct mq_attr *);
 int mq_notify(mqd_t, const struct sigevent *);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

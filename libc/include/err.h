@@ -12,6 +12,10 @@
 #ifndef LIBC_ERR_H
 #define LIBC_ERR_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdarg.h>
 #include <stdio.h>
 
@@ -29,5 +33,9 @@ void vwarnc(int, const char *, va_list);
 void vwarnx(const char *, va_list);
 void err_set_file(void *);
 void err_set_exit(void (*)(int));
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

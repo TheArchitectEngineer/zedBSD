@@ -8,6 +8,10 @@
 #ifndef KERN_UAPI_DIRENT_H
 #define KERN_UAPI_DIRENT_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 
 #define KERN_DT_UNKNOWN	0U
@@ -28,5 +32,9 @@ struct dirent_record {
 _Static_assert(
 	sizeof(struct dirent_record) == 268,
 	"zedBSD ELF32 dirent ABI must remain 268 bytes");
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -12,6 +12,10 @@
 #ifndef LIBC_TERMINFO_H
 #define LIBC_TERMINFO_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stddef.h>
 #include <stdio.h>
 
@@ -42,5 +46,9 @@ int terminfo_load(struct terminfo *, const char *, const char *);
 const struct terminfo_capability *terminfo_find(const struct terminfo *, const char *);
 int terminfo_expand(const char *, const long[9], char *, size_t);
 int terminfo_write_source(FILE *, const struct terminfo *, const char *);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

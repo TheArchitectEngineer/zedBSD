@@ -8,6 +8,10 @@
 #ifndef KERN_THREADS_H
 #define KERN_THREADS_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <pthread.h>
 #include <time.h>
 
@@ -62,5 +66,9 @@ int tss_create(tss_t *key, tss_dtor_t destructor);
 void tss_delete(tss_t key);
 void *tss_get(tss_t key);
 int tss_set(tss_t key, void *value);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -34,7 +34,21 @@ ZEDBSD_LLVM_INSTALLED_TOOLS := $(addprefix $(ZEDBSD_LLVM_INSTALL)/bin/,\
 	$(ZEDBSD_LLVM_INSTALLED_TOOL_NAMES))
 ZEDBSD_LLVM_INSTALLED_LICENSE := \
 	$(ZEDBSD_LLVM_INSTALL)/share/licenses/llvm/LICENSE.TXT
-ZEDBSD_LLVM_BUILD_PROFILE := x86-release-c4-l2-noanalyzer-noobjcrw-dist
+# How much of the machine the LLVM build may use.  The defaults suit a small
+# one: a link of an LLVM tool can need several gigabytes, so a host with
+# little memory must not run many at once.  A large host raises them on the
+# command line, for example
+#
+#   make ZEDBSD_LLVM_COMPILE_JOBS=64 ZEDBSD_LLVM_LINK_JOBS=8 toolchain
+#
+# The chosen numbers are part of the build profile, and therefore of the
+# configuration stamp, because they are set when the build tree is configured
+# rather than when it is built.
+include $(ZEDBSD_LLVM_DIR)/../../build-jobs.mk
+ZEDBSD_LLVM_COMPILE_JOBS ?= $(ZEDBSD_BUILD_JOBS)
+ZEDBSD_LLVM_LINK_JOBS ?= $(ZEDBSD_BUILD_LINK_JOBS)
+ZEDBSD_LLVM_BUILD_PROFILE := \
+	x86-release-c$(ZEDBSD_LLVM_COMPILE_JOBS)-l$(ZEDBSD_LLVM_LINK_JOBS)-noanalyzer-noobjcrw-dist
 ZEDBSD_LLVM_CONFIG_IDENTITY := $(ZEDBSD_LLVM_BUILD)/.zedbsd-config-identity
 ZEDBSD_LLVM_CONFIG_STAMP := $(ZEDBSD_LLVM_BUILD)/.zedbsd-config-$(ZEDBSD_LLVM_VERSION)-$(ZEDBSD_LLVM_PATCH_LEVEL)-$(ZEDBSD_LLVM_BUILD_PROFILE)
 ZEDBSD_LLVM_BUILD_STAMP := $(ZEDBSD_LLVM_BUILD)/.zedbsd-build-$(ZEDBSD_LLVM_VERSION)-$(ZEDBSD_LLVM_PATCH_LEVEL)-$(ZEDBSD_LLVM_BUILD_PROFILE)
@@ -239,8 +253,8 @@ $(ZEDBSD_LLVM_CONFIG_STAMP): $(ZEDBSD_LLVM_CONFIG_IDENTITY) \
 		-DLLVM_BUILD_TOOLS=ON \
 		-DLLVM_INSTALL_UTILS=ON \
 		-DLLVM_DISTRIBUTION_COMPONENTS='$(ZEDBSD_LLVM_DISTRIBUTION_COMPONENTS)' \
-		-DLLVM_PARALLEL_COMPILE_JOBS=4 \
-		-DLLVM_PARALLEL_LINK_JOBS=2
+		-DLLVM_PARALLEL_COMPILE_JOBS=$(ZEDBSD_LLVM_COMPILE_JOBS) \
+		-DLLVM_PARALLEL_LINK_JOBS=$(ZEDBSD_LLVM_LINK_JOBS)
 	@touch '$@'
 
 .PHONY: llvm-configure llvm-build
@@ -248,7 +262,8 @@ llvm-configure: $(ZEDBSD_LLVM_CONFIG_STAMP)
 
 $(ZEDBSD_LLVM_BUILD_STAMP): $(ZEDBSD_LLVM_CONFIG_STAMP) \
 		$(ZEDBSD_LLVM_CONFIG_IDENTITY)
-	cmake --build '$(ZEDBSD_LLVM_BUILD)' --target distribution --parallel
+	cmake --build '$(ZEDBSD_LLVM_BUILD)' --target distribution \
+		--parallel $(ZEDBSD_BUILD_JOBS)
 	@touch '$@'
 
 llvm-build: $(ZEDBSD_LLVM_BUILD_STAMP)
@@ -289,7 +304,8 @@ $(ZEDBSD_LLVM_INSTALL_STAMP): $(ZEDBSD_LLVM_CONFIG_IDENTITY)
 		echo 'LLVM: replacing the recognized generated installation for the new patch identity'; \
 		find '$(ZEDBSD_LLVM_INSTALL)' -depth -delete; \
 	fi
-	cmake --build '$(ZEDBSD_LLVM_BUILD)' --target install-distribution --parallel
+	cmake --build '$(ZEDBSD_LLVM_BUILD)' --target install-distribution \
+		--parallel $(ZEDBSD_BUILD_JOBS)
 	@mkdir -p '$(ZEDBSD_LLVM_INSTALL)/share/licenses/llvm'
 	@cp '$(ZEDBSD_LLVM_LICENSE)' \
 		'$(ZEDBSD_LLVM_INSTALL)/share/licenses/llvm/LICENSE.TXT'
@@ -303,7 +319,8 @@ endif
 
 $(ZEDBSD_LLVM_INSTALLED_TOOLS): | $(ZEDBSD_LLVM_INSTALL_STAMP)
 	@echo 'LLVM: repairing a missing tool in the generated installation: $(@F)'
-	cmake --build '$(ZEDBSD_LLVM_BUILD)' --target install-distribution --parallel
+	cmake --build '$(ZEDBSD_LLVM_BUILD)' --target install-distribution \
+		--parallel $(ZEDBSD_BUILD_JOBS)
 	@test -x '$@' || { echo 'LLVM: repair did not restore $(@F)' >&2; exit 1; }
 
 $(ZEDBSD_LLVM_INSTALLED_LICENSE): | $(ZEDBSD_LLVM_INSTALL_STAMP)

@@ -50,7 +50,7 @@
 - 実行ファイル: `-nostdlib -pie -Wl,--no-relax -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code -Wl,-z,stack-size=0x100000,--allow-shlib-undefined -Wl,--dynamic-linker=/lib/ld.so`、先頭に `sysroot/usr/lib/crt1.o`、libc は `-l:libc.so`。
 - 共有ライブラリ: `-shared -soname <name>.so --hash-style=both -z now -z relro -z separate-code`。
 - **symbol versioning は使えない**。`check-dynamic-elf.py` は `application` / `shared-library` に `.gnu.version_d` / `.gnu.version_r` があると失敗させる（105–107行）。OpenSSL・libc++ は既定で version script を使うので、明示的に無効化する。
-- rtld（`userland/base/rtld/rtld.c`）は sysv hash・`DT_VERSYM` の読み飛ばし・`init_array`・`dlopen`/`dlsym`/`dladdr`・TLS descriptor を持つ。**GNU_HASH・`R_X86_64_COPY`・IRELATIVE(ifunc)・`FINI_ARRAY`/`PREINIT_ARRAY` は持たない**。copy relocation が無いため実行ファイルは PIE で作る（既存の扱いと同じ）。
+- rtld（`userland/base/rtld/rtld.c`）は sysv hash・`DT_VERSYM` の読み飛ばし・`init_array`・`dlopen`/`dlsym`/`dladdr`・TLS descriptor・`dl_iterate_phdr`・`LD_LIBRARY_PATH`・起動時集合の静的 TLS 領域（実行ファイル自身の `PT_TLS` と initial-exec）を持つ。**GNU_HASH・`R_X86_64_COPY`・IRELATIVE(ifunc)・`FINI_ARRAY`/`PREINIT_ARRAY` は持たない**。copy relocation が無いため実行ファイルは PIE で作る（既存の扱いと同じ）。
 - `build/<arch>/sysroot/usr/lib` には **`libc.so` が無い**（静的な `libc.a`/`libc.o` のみ）。動的 `libc.so` は `build/<plat>/dynamic/` にある。外部パッケージのリンクはこの差を吸収する必要がある（§4.3）。
 
 ### 2.2 libc の充足と不足

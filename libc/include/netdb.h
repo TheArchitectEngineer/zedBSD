@@ -8,6 +8,10 @@
 #ifndef LIBC_NETDB_H
 #define LIBC_NETDB_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <sys/socket.h>
 
 struct addrinfo {
@@ -110,5 +114,9 @@ void freeaddrinfo(struct addrinfo *);
 const char *gai_strerror(int);
 int getnameinfo(const struct sockaddr *, socklen_t, char *, socklen_t,
 	char *, socklen_t, int);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -8,6 +8,10 @@
 #ifndef LIBC_SEARCH_H
 #define LIBC_SEARCH_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stddef.h>
 
 typedef struct entry {
@@ -29,5 +33,9 @@ void *tdelete(const void *, void **, int (*)(const void *, const void *));
 void *tfind(const void *, void *const *, int (*)(const void *, const void *));
 void *tsearch(const void *, void **, int (*)(const void *, const void *));
 void twalk(const void *, void (*)(const void *, VISIT, int));
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

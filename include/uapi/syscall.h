@@ -179,6 +179,8 @@ enum syscall_number {
 	KERN_SYS_atomic = 162,
 	KERN_SYS_renameat2 = 163,
 	KERN_SYS_chroot = 164,
+	KERN_SYS_flock = 165,
+	KERN_SYS_setproctitle = 166,
 };
 
 #endif

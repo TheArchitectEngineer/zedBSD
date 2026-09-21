@@ -16,7 +16,8 @@ ZEDBSD_LIBC_USER_EXTRA_SOURCES := \
 	libc/random48.c libc/random.c libc/xsi-crypto.c \
 	libc/ftw.c libc/ndbm.c libc/realpath.c libc/tempnam.c \
 	libc/xsi-process.c libc/fmtmsg.c libc/syslog.c libc/sysv-ipc.c \
-	libc/catalog.c libc/locale-db.c libc/fnmatch.c \
+	libc/catalog.c libc/locale-db.c libc/fnmatch.c libc/openbsd.c libc/openbsd-vis.c \
+	libc/openbsd-base64.c libc/readpassphrase.c \
 	$(ZEDBSD_REGEX_SOURCES)
 
 ZEDBSD_LIBC_SOURCES := \

@@ -8,6 +8,10 @@
 #ifndef KERN_UAPI_INPUT_H
 #define KERN_UAPI_INPUT_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 #include <sys/ioctl.h>
 #include <sys/time.h>
@@ -198,5 +202,9 @@ struct input_absinfo {
 #define EVIOCGABS(axis)                                                        \
 	_IOR(KERN_EVDEV_IOC_GROUP, 0x40 + (axis), struct input_absinfo)
 #define EVIOCGRAB _IOW(KERN_EVDEV_IOC_GROUP, 0x90, int)
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

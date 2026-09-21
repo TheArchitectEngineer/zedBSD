@@ -8,6 +8,10 @@
 #ifndef LIBC_ENDIAN_H
 #define LIBC_ENDIAN_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 
 #define LITTLE_ENDIAN	1234
@@ -30,5 +34,9 @@ uint64_t be64toh(uint64_t value);
 uint16_t le16toh(uint16_t value);
 uint32_t le32toh(uint32_t value);
 uint64_t le64toh(uint64_t value);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

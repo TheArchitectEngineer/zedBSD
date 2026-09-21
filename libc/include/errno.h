@@ -8,6 +8,10 @@
 #ifndef LIBC_ERRNO_H
 #define LIBC_ERRNO_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 int *__libc_errno_location(void);
 #define errno (*__libc_errno_location())
 
@@ -81,5 +85,9 @@ int *__libc_errno_location(void);
 #define EPROTO 67
 
 #define EWOULDBLOCK EAGAIN
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

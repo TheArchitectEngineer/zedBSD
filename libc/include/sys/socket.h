@@ -8,6 +8,10 @@
 #ifndef LIBC_SYS_SOCKET_H
 #define LIBC_SYS_SOCKET_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <uapi/socket.h>
 
 /* The standard macro evaluates its message pointer once through a bounded helper. */
@@ -25,5 +29,9 @@ __libc_cmsg_firsthdr(
 	/* Succeeded: the caller owns the complete first control header, if any. */
 	return (struct cmsghdr *)message->msg_control;
 }
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

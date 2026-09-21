@@ -166,6 +166,11 @@ static ssize_t tty_read_canonical(struct tty *tty, void *buffer, size_t size, in
 static ssize_t tty_read_noncanonical(struct tty *tty, void *buffer, size_t size, int nonblocking);
 static int tty_termios_valid(const struct termios *value);
 static int tty_ioctl_instance(struct tty *tty, struct file *file, unsigned long request, uintptr_t argument);
+static ssize_t tty_instance_read(struct tty *tty, struct file *file, void *buffer, size_t size);
+static ssize_t tty_instance_write(struct tty *tty, struct file *file, const void *buffer, size_t size);
+static int tty_instance_poll(struct tty *tty, struct file *file, short events, short *revents);
+static ssize_t tty_backend_write(struct tty *tty, struct file *file, const void *buffer, size_t size);
+static struct tty *tty_controlling(void);
 static int pty_handle_valid_locked(const struct pty_handle *handle);
 static ssize_t pty_output_bytes(struct pty_pair *pair, const uint8_t *bytes, size_t length, int nonblocking);
 static struct pty_pair * tty_backend_pair(struct tty *tty);
@@ -425,16 +430,15 @@ tty_console_input_event(
 }
 
 /*
- * Reads from a virtual console, subject to job control.
+ * Reads from a terminal, subject to job control.
  */
-ssize_t
-tty_vt_read(
-	unsigned vt,
+static ssize_t
+tty_instance_read(
+	struct tty *tty,
 	struct file *file,
 	void *buffer,
 	size_t size)
 {
-	struct tty *tty;
 	struct process *process;
 	unsigned canonical;
 	unsigned long irq;
@@ -447,16 +451,13 @@ tty_vt_read(
 	else
 		process = NULL;
 
-	/* Rejects a missing buffer or an unknown console. */
-	if (buffer == NULL)
+	/* Rejects a missing buffer or terminal. */
+	if (buffer == NULL || tty == NULL)
 		return -EINVAL;
 	if (size == 0)
 		return 0;
-	if (vt >= TTY_VT_COUNT)
-		return -ENODEV;
 
 	/* A background process is stopped or refused first. */
-	tty = &console_ttys[vt];
 	error = tty_background(tty, process, TTY_BACKGROUND_READ);
 	if (error != 0)
 		return -error;
@@ -479,38 +480,28 @@ tty_vt_read(
 }
 
 /*
- * Writes to a virtual console, subject to job control and flow control.
+ * Writes to a terminal, subject to job control and flow control.
  */
-ssize_t
-tty_vt_write(
-	unsigned vt,
+static ssize_t
+tty_instance_write(
+	struct tty *tty,
 	struct file *file,
 	const void *buffer,
 	size_t size)
 {
-	struct tty *tty;
 	struct process *process;
-	const char *bytes;
-	unsigned oflag;
-	unsigned long irq;
 	int error;
-	size_t start;
-	size_t i;
 
 	if (curthread != NULL)
 		process = curthread->proc;
 	else
 		process = NULL;
-	bytes = buffer;
 
-	(void)file;
-
-	/* Rejects an unknown console. */
-	if (vt >= TTY_VT_COUNT)
-		return -ENODEV;
+	/* Rejects a missing terminal. */
+	if (tty == NULL)
+		return -EINVAL;
 
 	/* A background process is stopped or refused first. */
-	tty = &console_ttys[vt];
 	error = tty_background(tty, process, TTY_BACKGROUND_WRITE);
 	if (error != 0)
 		return -error;
@@ -520,6 +511,40 @@ tty_vt_write(
 	if (error != 0)
 		return -error;
 
+	/* Reports the bytes the terminal's own end accepted. */
+	return tty_backend_write(tty, file, buffer, size);
+}
+
+/*
+ * Sends output to whichever end of a terminal carries it.
+ *
+ * A virtual console renders it; a pseudo terminal queues it for whoever
+ * holds the other end.  Writing to the controlling terminal has to reach
+ * the right one of those, and a console's renderer ignores a pseudo
+ * terminal, so the choice cannot be left to it.
+ */
+static ssize_t
+tty_backend_write(
+	struct tty *tty,
+	struct file *file,
+	const void *buffer,
+	size_t size)
+{
+	struct pty_pair *pair;
+	const uint8_t *bytes;
+	const uint8_t *output;
+	size_t output_length;
+	size_t done;
+	size_t start;
+	size_t i;
+	unsigned oflag;
+	unsigned long irq;
+	int nonblocking;
+	ssize_t written;
+
+	bytes = buffer;
+	pair = tty_backend_pair(tty);
+
 	/* Expands newlines to carriage return and newline under ONLCR. */
 	irq = spin_lock_irqsave(&tty->lock);
 
@@ -527,25 +552,273 @@ tty_vt_write(
 
 	spin_unlock_irqrestore(&tty->lock, irq);
 
-	if ((oflag & (OPOST | ONLCR)) == (OPOST | ONLCR)) {
-		start = 0;
-		for (i = 0; i < size; i++) {
-			if (bytes[i] == '\n') {
-				if (i != start)
-					tty_echo(tty, bytes + start, i - start);
-				tty_echo(tty, "\r\n", 2);
-				start = i + 1U;
+	/* A console takes the whole run at once and cannot refuse it. */
+	if (pair == NULL) {
+		if ((oflag & (OPOST | ONLCR)) == (OPOST | ONLCR)) {
+			start = 0;
+			for (i = 0; i < size; i++) {
+				if (bytes[i] == '\n') {
+					if (i != start) {
+						tty_echo(tty,
+						    (const char *)bytes + start,
+						    i - start);
+					}
+					tty_echo(tty, "\r\n", 2);
+					start = i + 1U;
+				}
 			}
+
+			if (start < size) {
+				tty_echo(tty, (const char *)bytes + start,
+				    size - start);
+			}
+		} else {
+			tty_echo(tty, (const char *)bytes, size);
 		}
 
-		if (start < size)
-			tty_echo(tty, bytes + start, size - start);
-	} else {
-		tty_echo(tty, bytes, size);
+		/* Reports the bytes written. */
+		return (ssize_t)size;
+	}
+
+	/* Process each remaining element. */
+	done = 0;
+	while (done < size) {
+		output = bytes + done;
+		output_length = 1;
+		if (bytes[done] == '\n' &&
+		    (oflag & (OPOST | ONLCR)) == (OPOST | ONLCR)) {
+			output = (const uint8_t *)"\r\n";
+			output_length = 2;
+		}
+
+		nonblocking = (file_status_flags_get(file) & O_NONBLOCK) != 0;
+		written = pty_output_bytes(pair, output, output_length,
+		    nonblocking);
+		if (written != (ssize_t)output_length) {
+			/*
+			 * A transformed byte is emitted atomically for
+			 * nonblocking files; blocking writes complete it
+			 * before returning.
+			 */
+			if (written > 0) {
+				/* Rechecks flags changed while output waited. */
+				nonblocking = (file_status_flags_get(file) &
+				    O_NONBLOCK) != 0;
+				if (!nonblocking)
+					continue;
+			}
+
+			if (done != 0)
+				return (ssize_t)done;
+			if (written < 0)
+				return written;
+			return -EAGAIN;
+		}
+
+		done++;
 	}
 
 	/* Reports the bytes written. */
-	return (ssize_t)size;
+	return (ssize_t)done;
+}
+
+/*
+ * Reads from a virtual console.
+ */
+ssize_t
+tty_vt_read(
+	unsigned vt,
+	struct file *file,
+	void *buffer,
+	size_t size)
+{
+	/* Rejects an unknown console. */
+	if (vt >= TTY_VT_COUNT)
+		return -ENODEV;
+
+	/* Returns the computed result. */
+	return tty_instance_read(&console_ttys[vt], file, buffer, size);
+}
+
+/*
+ * Writes to a virtual console.
+ */
+ssize_t
+tty_vt_write(
+	unsigned vt,
+	struct file *file,
+	const void *buffer,
+	size_t size)
+{
+	/* Rejects an unknown console. */
+	if (vt >= TTY_VT_COUNT)
+		return -ENODEV;
+
+	/* Returns the computed result. */
+	return tty_instance_write(&console_ttys[vt], file, buffer, size);
+}
+
+/*
+ * Reports the readiness of a virtual console.
+ */
+int
+tty_vt_poll(
+	unsigned vt,
+	struct file *file,
+	short events,
+	short *revents)
+{
+	/* Rejects an unknown console. */
+	if (vt >= TTY_VT_COUNT)
+		return ENODEV;
+
+	/* Returns the computed result. */
+	return tty_instance_poll(&console_ttys[vt], file, events, revents);
+}
+
+/*
+ * Reports the terminal a process was given when it started a session.
+ *
+ * This is what /dev/tty names.  A program whose input was redirected still
+ * reaches the person through it, which is why asking for a password opens
+ * this rather than reading standard input.
+ */
+static struct tty *
+tty_controlling(
+	void)
+{
+	struct process *process;
+	struct tty *tty;
+	uint64_t generation;
+
+	process = curthread != NULL ? curthread->proc : NULL;
+
+	/* Handles the process availability. */
+	if (process == NULL)
+		return NULL;
+
+	/* Handles a failed snapshot operation. */
+	if (process_controlling_tty_snapshot(process, &tty, &generation) != 0)
+		return NULL;
+
+	/* Handles a process that has no controlling terminal. */
+	if (tty == NULL)
+		return NULL;
+
+	/*
+	 * The terminal may have been given up and handed to somebody else
+	 * between the snapshot and here, which the generation catches.
+	 */
+	if (!process_controlling_tty_matches(process, tty, generation))
+		return NULL;
+
+	/* Returns the computed result. */
+	return tty;
+}
+
+/*
+ * Opens the controlling terminal.
+ *
+ * A process without one has nothing to open, which is the difference this
+ * device exists to report: ENXIO tells a caller to fall back rather than
+ * leaving it reading a descriptor that will never answer.
+ */
+int
+tty_controlling_open(
+	struct file *file)
+{
+	(void)file;
+
+	/* Handles a process with no controlling terminal. */
+	if (tty_controlling() == NULL)
+		return ENXIO;
+
+	/* Reports successful completion. */
+	return 0;
+}
+
+/*
+ * Reads from the controlling terminal.
+ */
+ssize_t
+tty_controlling_read(
+	struct file *file,
+	void *buffer,
+	size_t size)
+{
+	struct tty *tty;
+
+	tty = tty_controlling();
+
+	/* Handles a terminal given up since the file was opened. */
+	if (tty == NULL)
+		return -ENXIO;
+
+	/* Returns the computed result. */
+	return tty_instance_read(tty, file, buffer, size);
+}
+
+/*
+ * Writes to the controlling terminal.
+ */
+ssize_t
+tty_controlling_write(
+	struct file *file,
+	const void *buffer,
+	size_t size)
+{
+	struct tty *tty;
+
+	tty = tty_controlling();
+
+	/* Handles a terminal given up since the file was opened. */
+	if (tty == NULL)
+		return -ENXIO;
+
+	/* Returns the computed result. */
+	return tty_instance_write(tty, file, buffer, size);
+}
+
+/*
+ * Handles a control request on the controlling terminal.
+ */
+int
+tty_controlling_ioctl(
+	struct file *file,
+	unsigned long request,
+	uintptr_t argument)
+{
+	struct tty *tty;
+
+	tty = tty_controlling();
+
+	/* Handles a terminal given up since the file was opened. */
+	if (tty == NULL)
+		return ENXIO;
+
+	/* Returns the computed result. */
+	return tty_ioctl_instance(tty, file, request, argument);
+}
+
+/*
+ * Reports the readiness of the controlling terminal.
+ */
+int
+tty_controlling_poll(
+	struct file *file,
+	short events,
+	short *revents)
+{
+	struct tty *tty;
+
+	tty = tty_controlling();
+
+	/* Handles a terminal given up since the file was opened. */
+	if (tty == NULL)
+		return ENXIO;
+
+	/* Returns the computed result. */
+	return tty_instance_poll(tty, file, events, revents);
 }
 
 /*
@@ -643,17 +916,16 @@ tty_console_poll(
 }
 
 /*
- * Reports the readiness of a virtual console.
+ * Reports the readiness of a terminal.
  */
-int
-tty_vt_poll(
-	unsigned vt,
+static int
+tty_instance_poll(
+	struct tty *tty,
 	struct file *file,
 	short events,
 	short *revents)
 {
 	short result;
-	struct tty *tty;
 	unsigned long irq;
 	int readable;
 
@@ -661,11 +933,8 @@ tty_vt_poll(
 
 	(void)file;
 
-	/* Rejects an unknown console or a missing result. */
-	if (vt >= TTY_VT_COUNT)
-		return ENODEV;
-	tty = &console_ttys[vt];
-	if (revents == NULL)
+	/* Rejects a missing terminal or result. */
+	if (tty == NULL || revents == NULL)
 		return EINVAL;
 
 	/* Readable with a record or input byte; writable unless flow-stopped. */
@@ -2899,15 +3168,8 @@ pty_slave_write(
 	struct pty_pair *pair;
 	struct tty *tty;
 	struct process *process;
-	const uint8_t *bytes;
-	unsigned oflag;
 	unsigned long irq;
-	size_t done;
 	int error;
-	int nonblocking;
-	const uint8_t *output;
-	size_t output_length;
-	ssize_t written;
 
 	/* Names the calling process, if the write came from one. */
 	handle = file->f_data;
@@ -2915,8 +3177,6 @@ pty_slave_write(
 		process = curthread->proc;
 	else
 		process = NULL;
-	bytes = buffer;
-	done = 0;
 
 	/* Rejects an unbound file or a missing buffer. */
 	if (handle == NULL || buffer == NULL)
@@ -2942,50 +3202,8 @@ pty_slave_write(
 	if (error != 0)
 		return -error;
 
-	/* Queues each byte, expanding newlines under ONLCR. */
-	irq = spin_lock_irqsave(&tty->lock);
-
-	oflag = tty->termios.c_oflag;
-
-	spin_unlock_irqrestore(&tty->lock, irq);
-
-	while (done < size) {
-		output = bytes + done;
-		output_length = 1;
-		if (bytes[done] == '\n' &&
-		    (oflag & (OPOST | ONLCR)) == (OPOST | ONLCR)) {
-			output = (const uint8_t *)"\r\n";
-			output_length = 2;
-		}
-
-		nonblocking = (file_status_flags_get(file) & O_NONBLOCK) != 0;
-		written = pty_output_bytes(pair, output, output_length, nonblocking);
-		if (written != (ssize_t)output_length) {
-			/*
-			 * A transformed byte is emitted atomically for
-			 * nonblocking files; blocking writes complete it before
-			 * returning.
-			 */
-			if (written > 0) {
-				/* Rechecks flags changed while output was waiting. */
-				nonblocking =
-				    (file_status_flags_get(file) & O_NONBLOCK) != 0;
-				if (!nonblocking)
-					continue;
-			}
-
-			if (done != 0)
-				return (ssize_t)done;
-			if (written < 0)
-				return written;
-			return -EAGAIN;
-		}
-
-		done++;
-	}
-
-	/* Reports the bytes written. */
-	return (ssize_t)done;
+	/* Reports the bytes the other end accepted. */
+	return tty_backend_write(tty, file, buffer, size);
 }
 
 /* Handles a terminal control request on a slave. */

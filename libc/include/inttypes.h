@@ -8,6 +8,10 @@
 #ifndef LIBC_INTTYPES_H
 #define LIBC_INTTYPES_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 #include <wchar.h>
 
@@ -92,5 +96,9 @@ uintmax_t wcstoumax(const wchar_t *, wchar_t **, int);
 #define SCNoMAX "llo"
 #define SCNuMAX "llu"
 #define SCNxMAX "llx"
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

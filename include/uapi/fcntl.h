@@ -8,6 +8,10 @@
 #ifndef KERN_UAPI_FCNTL_H
 #define KERN_UAPI_FCNTL_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 #include <stddef.h>
 #include <sys/ioctl.h>
@@ -30,6 +34,18 @@ typedef char kern_file_format_alignment_check[
 #define KERN_FILE_FORMAT_RESERVE \
 	_IOW('f', 1, struct kern_file_format_reserve)
 
+/*
+ * Operations for flock(2).
+ *
+ * The lock is whole-file and belongs to the open file description, so a
+ * descriptor passed through fork or dup shares one lock rather than taking
+ * a second.  These are the values every system with this call uses.
+ */
+#define LOCK_SH 1
+#define LOCK_EX 2
+#define LOCK_NB 4
+#define LOCK_UN 8
+
 struct flock_record {
 	int16_t type;
 	int16_t whence;
@@ -39,5 +55,9 @@ struct flock_record {
 	int32_t pid;
 	uint32_t reserved1;
 };
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -8,6 +8,10 @@
 #ifndef LIBC_UTMPX_H
 #define LIBC_UTMPX_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 #include <sys/types.h>
 
@@ -41,5 +45,9 @@ void endutxent(void);
 struct utmpx *getutxid(const struct utmpx *);
 struct utmpx *getutxline(const struct utmpx *);
 struct utmpx *pututxline(const struct utmpx *);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

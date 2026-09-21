@@ -8,6 +8,10 @@
 #ifndef LIBC_SYS_IOCTL_H
 #define LIBC_SYS_IOCTL_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <features.h>
 #include <stddef.h>
 
@@ -25,6 +29,10 @@
 
 #if __ZEDBSD_LEGACY_VISIBLE
 int ioctl(int descriptor, unsigned long request, ...);
+#endif
+
+#ifdef __cplusplus
+}
 #endif
 
 #endif

@@ -93,6 +93,40 @@ void
 tty_detach_process(
 	struct process *process);
 
+/*
+ * The controlling terminal, which /dev/tty names.
+ *
+ * A process without one gets ENXIO rather than a descriptor that never
+ * answers, so that a caller can fall back to standard input.
+ */
+int
+tty_controlling_open(
+	struct file *file);
+
+ssize_t
+tty_controlling_read(
+	struct file *file,
+	void *buffer,
+	size_t size);
+
+ssize_t
+tty_controlling_write(
+	struct file *file,
+	const void *buffer,
+	size_t size);
+
+int
+tty_controlling_ioctl(
+	struct file *file,
+	unsigned long request,
+	uintptr_t argument);
+
+int
+tty_controlling_poll(
+	struct file *file,
+	short events,
+	short *revents);
+
 int
 tty_pty_register(void);
 

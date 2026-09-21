@@ -251,3 +251,34 @@ strerror(int error)
 	default: return "Unknown error";
 	}
 }
+
+/*
+ * Implements the strerror r operation.
+ *
+ * POSIX's reentrant form: the description is copied into the caller's buffer
+ * and the result is an errno value rather than a pointer.  ERANGE says the
+ * buffer was too small, in which case what fits is still left terminated.
+ */
+int
+strerror_r(int error, char *buffer, size_t size)
+{
+	const char *text;
+	size_t length;
+
+	/* Rejects a buffer that cannot even hold a terminator. */
+	if (buffer == NULL || size == 0)
+		return ERANGE;
+	text = strerror(error);
+	length = strlen(text);
+
+	/* Reports a buffer too small, having filled what fits. */
+	if (length >= size) {
+		memcpy(buffer, text, size - 1U);
+		buffer[size - 1U] = '\0';
+		return ERANGE;
+	}
+	memcpy(buffer, text, length + 1U);
+
+	/* Reports successful completion. */
+	return 0;
+}

@@ -8,6 +8,10 @@
 #ifndef LIBC_AIO_H
 #define LIBC_AIO_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <signal.h>
 #include <stddef.h>
 #include <sys/types.h>
@@ -45,6 +49,10 @@ int aio_read(struct aiocb *);
 ssize_t aio_return(struct aiocb *);
 int aio_suspend(const struct aiocb *const [], int, const struct timespec *);
 int aio_write(struct aiocb *);
-int lio_listio(int, struct aiocb *restrict const [restrict], int, struct sigevent *restrict);
+int lio_listio(int, struct aiocb *__restrict const [__restrict], int, struct sigevent *__restrict);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

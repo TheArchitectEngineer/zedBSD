@@ -8,6 +8,10 @@
 #ifndef LIBC_SYS_TIME_H
 #define LIBC_SYS_TIME_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <features.h>
 #include <time.h>
 
@@ -26,6 +30,10 @@ int utimes(const char *, const struct timeval [2]);
 int gettimeofday(struct timeval *, void *);
 int getitimer(int, struct itimerval *);
 int setitimer(int, const struct itimerval *, struct itimerval *);
+#endif
+
+#ifdef __cplusplus
+}
 #endif
 
 #endif

@@ -12,6 +12,10 @@
 #ifndef LIBC_SYS_MSG_H
 #define LIBC_SYS_MSG_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <sys/ipc.h>
 #include <time.h>
 
@@ -29,5 +33,9 @@ int msgget(key_t,int);
 int msgctl(int,int,struct msqid_ds *);
 int msgsnd(int,const void *,size_t,int);
 ssize_t msgrcv(int,void *,size_t,long,int);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

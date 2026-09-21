@@ -8,6 +8,10 @@
 #ifndef LIBC_SHADOW_H
 #define LIBC_SHADOW_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stddef.h>
 
 struct spwd {
@@ -27,5 +31,9 @@ int getspnam_r(const char *, struct spwd *, char *, size_t, struct spwd **);
 void setspent(void);
 struct spwd *getspent(void);
 void endspent(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

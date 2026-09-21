@@ -26,8 +26,14 @@
 #include "kern/namei.h"
 #include "kern/cred.h"
 #include "kern/record-lock.h"
+#include "kern/filedesc.h"
+#include "kern/process.h"
+#include "kern/thread.h"
 #include "kern/vm-object.h"
 #include "kern/fat.h"
+
+static int file_substitute_descriptor(struct inode *inode, int flags,
+    struct file **result);
 #include "kern/kmem.h"
 #include "kern/uaccess.h"
 #include <errno.h>
@@ -224,6 +230,7 @@ file_openat_cred(
 	struct path found;
 	struct inode *inode;
 	struct file *file;
+	struct file *substitute;
 	int error;
 	struct path parent;
 	struct inode *collision;
@@ -389,6 +396,19 @@ file_openat_cred(
 		}
 	}
 
+
+	/* A node that stands for a descriptor gives back that descriptor. */
+	if (file->f_inode != NULL && file->f_inode->i_descriptor_alias != 0U) {
+		error = file_substitute_descriptor(file->f_inode, flags,
+		    &substitute);
+		path_release(&file->f_path);
+		file_free(file);
+		if (error != 0)
+			return error;
+		*result = substitute;
+		return 0;
+	}
+
 	*result = file;
 	return 0;
 
@@ -413,6 +433,7 @@ file_open_resolved(
 	struct file **result)
 {
 	struct file *file;
+	struct file *substitute;
 	int error;
 
 	/* Rejects flags that would change the object. */
@@ -456,7 +477,78 @@ file_open_resolved(
 		}
 	}
 
+	/* A node that stands for a descriptor gives back that descriptor. */
+	if (file->f_inode != NULL && file->f_inode->i_descriptor_alias != 0U) {
+		error = file_substitute_descriptor(file->f_inode, flags,
+		    &substitute);
+		path_release(&file->f_path);
+		file_free(file);
+		if (error != 0)
+			return error;
+		*result = substitute;
+		return 0;
+	}
+
 	*result = file;
+	return 0;
+}
+
+/*
+ * Replaces a freshly opened descriptor-alias node with the file it names.
+ *
+ * /dev/fd/N stands for descriptor N of whoever opened it.  The open has to
+ * hand back the open file description the caller already holds rather than
+ * make a second one, because that is the only thing that shares an offset,
+ * shares the status flags, and shares the locks the description owns.  The
+ * number is the node's minor; only the open path can do this, because only
+ * it holds the descriptor table.
+ */
+static int
+file_substitute_descriptor(
+	struct inode *inode,
+	int flags,
+	struct file **result)
+{
+	struct process *process;
+	struct file *target;
+	unsigned requested;
+	unsigned held;
+	int descriptor;
+	int error;
+
+	*result = NULL;
+	process = curthread != NULL ? curthread->proc : NULL;
+
+	/* Refuses a caller with no descriptor table to name. */
+	if (process == NULL || process->fd == NULL)
+		return EBADF;
+	descriptor = (int)(inode->i_rdev & 0xffffU);
+	error = filedesc_get_file(process->fd, descriptor, &target);
+
+	/* Reports a descriptor the caller does not hold. */
+	if (error != 0)
+		return error;
+
+	/*
+	 * The requested access may not exceed what the descriptor already
+	 * has.  Without this, a descriptor a privileged parent opened for
+	 * reading could be reopened here for writing.
+	 */
+	requested = (unsigned)flags & O_ACCMODE;
+	held = file_status_flags_get(target) & O_ACCMODE;
+	if ((requested == O_RDONLY || requested == O_RDWR) &&
+	    held != O_RDONLY && held != O_RDWR) {
+		(void)file_close(target);
+		return EACCES;
+	}
+	if ((requested == O_WRONLY || requested == O_RDWR) &&
+	    held != O_WRONLY && held != O_RDWR) {
+		(void)file_close(target);
+		return EACCES;
+	}
+
+	/* Succeeded: the reference the lookup acquired becomes the result. */
+	*result = target;
 	return 0;
 }
 

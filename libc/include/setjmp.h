@@ -8,6 +8,10 @@
 #ifndef LIBC_SETJMP_H
 #define LIBC_SETJMP_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <features.h>
 #include <signal.h>
 
@@ -61,6 +65,10 @@ void siglongjmp(sigjmp_buf, int) __attribute__((__noreturn__));
 #if __ZEDBSD_LEGACY_VISIBLE
 #define _setjmp(environment) setjmp(environment)
 void _longjmp(jmp_buf, int) __attribute__((__noreturn__));
+#endif
+
+#ifdef __cplusplus
+}
 #endif
 
 #endif

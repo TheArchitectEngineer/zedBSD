@@ -8,6 +8,10 @@
 #ifndef LIBC_PWD_H
 #define LIBC_PWD_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stddef.h>
 #include <sys/types.h>
 
@@ -23,10 +27,17 @@ struct passwd {
 
 struct passwd *getpwnam(const char *);
 struct passwd *getpwuid(uid_t);
+
+/* Names a user, or reports the number as text when there is no such user. */
+const char *user_from_uid(uid_t, int);
 int getpwnam_r(const char *, struct passwd *, char *, size_t, struct passwd **);
 int getpwuid_r(uid_t, struct passwd *, char *, size_t, struct passwd **);
 void setpwent(void);
 struct passwd *getpwent(void);
 void endpwent(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

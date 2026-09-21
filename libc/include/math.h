@@ -8,6 +8,10 @@
 #ifndef LIBC_MATH_H
 #define LIBC_MATH_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef float float_t;
 typedef double double_t;
 
@@ -202,5 +206,9 @@ float ynf(int, float);
 
 #undef KERN_MATH_UNARY
 #undef KERN_MATH_BINARY
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

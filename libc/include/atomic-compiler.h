@@ -14,6 +14,10 @@
 #ifndef LIBC_ATOMIC_COMPILER_H
 #define LIBC_ATOMIC_COMPILER_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*
  * XXX: Rename these __ZEDBSD_* to __LIBC_*
  */
@@ -79,5 +83,9 @@
 #define __zedbsd_atomic_fetch_and(object, operand, order) 	__c11_atomic_fetch_and((object), (operand), (order))
 #define __zedbsd_atomic_flag_test_and_set(object, order) 	__c11_atomic_exchange((object), 1, (order))
 #define __zedbsd_atomic_flag_clear(object, order)		__c11_atomic_store((object), 0, (order))
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -2,6 +2,10 @@
 #ifndef KERN_TERMIOS_H
 #define KERN_TERMIOS_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <uapi/termios.h>
 #include <sys/types.h>
 
@@ -30,5 +34,9 @@ pid_t tcgetsid(int);
 int tcsetpgrp(int, pid_t);
 int tcsendbreak(int, int);
 char *ctermid(char *);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

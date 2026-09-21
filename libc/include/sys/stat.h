@@ -8,6 +8,10 @@
 #ifndef LIBC_SYS_STAT_H
 #define LIBC_SYS_STAT_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <sys/types.h>
 #include <sys/time.h>
 #include <time.h>
@@ -99,5 +103,9 @@ int futimens(int, const struct timespec [2]);
 int utimensat(int, const char *, const struct timespec [2], int);
 int utimes(const char *, const struct timeval [2]);
 mode_t umask(mode_t);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

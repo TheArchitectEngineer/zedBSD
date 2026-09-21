@@ -1262,7 +1262,16 @@ validate_and_load(
 			goto invalid;
 		if (tls->memsz > vm_layout.user_limit - start)
 			goto invalid;
-		for (i = 0; i < header.phnum; i++) {
+
+		/*
+		 * A segment that is entirely .tbss has no bytes in the file,
+		 * so it need not lie in a load segment and a linker is free
+		 * to give it an offset that belongs to none.  There is no
+		 * template to find, and the thread image is all zeroes.
+		 */
+		if (tls->filesz == 0)
+			tls_contained = 1;
+		for (i = 0; i < header.phnum && !tls_contained; i++) {
 			segment = &programs[i];
 			if (segment->type != PT_LOAD)
 				continue;

@@ -1,6 +1,10 @@
 /* BSD/XSI syslog client definitions. SPDX-License-Identifier: Zlib */
 #ifndef KERN_SYSLOG_H
 #define KERN_SYSLOG_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 #include <stdarg.h>
 #define LOG_EMERG 0
 #define LOG_ALERT 1
@@ -43,4 +47,8 @@ void closelog(void);
 int setlogmask(int);
 void syslog(int, const char *, ...);
 void vsyslog(int, const char *, va_list);
+#ifdef __cplusplus
+}
+#endif
+
 #endif

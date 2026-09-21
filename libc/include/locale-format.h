@@ -14,6 +14,10 @@
 #ifndef LIBC_ZEDBSD_LOCALE_FORMAT_H
 #define LIBC_ZEDBSD_LOCALE_FORMAT_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 
 #define KERN_LOCALE_MAGIC "ZLOCALE1"
@@ -123,5 +127,9 @@ kern_locale_put32(unsigned char *bytes, uint32_t value)
 	bytes[2] = (unsigned char)(value >> 8);
 	bytes[3] = (unsigned char)value;
 }
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

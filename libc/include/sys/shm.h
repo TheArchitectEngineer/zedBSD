@@ -12,6 +12,10 @@
 #ifndef LIBC_SYS_SHM_H
 #define LIBC_SYS_SHM_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <sys/ipc.h>
 #include <time.h>
 
@@ -31,5 +35,9 @@ int shmget(key_t,size_t,int);
 void *shmat(int,const void *,int);
 int shmdt(const void *);
 int shmctl(int,int,struct shmid_ds *);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

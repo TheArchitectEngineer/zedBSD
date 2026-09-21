@@ -179,8 +179,30 @@ def main(argv):
         # immediately, long before the command itself has finished.
         prompt = re.compile(r'[^\r\n]*[#$] ')
         seen = count_prompts(console, prompt, deadline, 1, 'the shell prompt')
-        for command in options.command:
+        for position, command in enumerate(options.command):
+            # A command answered by a ?pattern or @text that follows it is
+            # still running when they are typed, so there is no prompt after
+            # it yet to wait for.
+            answered = (position + 1 < len(options.command) and
+                        options.command[position + 1][:1] in '?@')
+            # A command written as ?pattern waits for the console to show
+            # it.  A program that asks a question of its own must be given
+            # the chance to ask it: it flushes what was typed before the
+            # question, so that a password typed ahead is never captured.
+            if command.startswith('?'):
+                wait_for(console, command[1:], deadline,
+                         'the prompt %r' % command[1:])
+                continue
+
+            # A command written as @text is typed into whatever is already
+            # running, for a program that asks a question of its own: its
+            # prompt is not the shell's, so there is none to count.
+            if command.startswith('@'):
+                monitor.type(command[1:] + '\n')
+                continue
             monitor.type(command + '\n')
+            if answered:
+                continue
             seen = count_prompts(console, prompt, deadline, seen + 1,
                                  'the end of %r' % command)
         status = 0

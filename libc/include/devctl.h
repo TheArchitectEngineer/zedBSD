@@ -8,14 +8,22 @@
 #ifndef LIBC_DEVCTL_H
 #define LIBC_DEVCTL_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <sys/types.h>
 
 int
 posix_devctl(
 	int descriptor,
 	int command,
-	void *restrict data,
+	void *__restrict data,
 	size_t size,
-	int *restrict information);
+	int *__restrict information);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

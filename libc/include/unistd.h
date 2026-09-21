@@ -8,6 +8,10 @@
 #ifndef LIBC_UNISTD_H
 #define LIBC_UNISTD_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <features.h>
 
 #include <stddef.h>
@@ -93,6 +97,42 @@ int gethostname(char *, size_t);
  */
 int chroot(const char *);
 int getentropy(void *buffer, size_t length);
+
+/*
+ * Reports whether the program was started with privileges its caller did
+ * not have, so that a library can refuse to trust the environment.
+ */
+int issetugid(void);
+
+/* Closes every descriptor at or above the one named. */
+int closefrom(int);
+
+/* Reports how many descriptors are open. */
+int getdtablecount(void);
+
+/* Reports the page size as a number rather than through sysconf. */
+int getpagesize(void);
+
+/*
+ * Reports who the far end of a connected local socket was when it
+ * connected, an identity the peer cannot change afterwards.
+ */
+int getpeereid(int, uid_t *, gid_t *);
+
+/* Closes every descriptor at or above the one named. */
+int closefrom(int);
+
+/* Reports how many descriptors are open. */
+int getdtablecount(void);
+
+/* Reports the page size as a number rather than through sysconf. */
+int getpagesize(void);
+
+/*
+ * Reports who the far end of a connected local socket was when it
+ * connected, an identity the peer cannot change afterwards.
+ */
+int getpeereid(int, uid_t *, gid_t *);
 int sethostname(const char *, size_t);
 char *ttyname(int);
 int ttyname_r(int, char *, size_t);
@@ -187,5 +227,9 @@ char *crypt(const char *, const char *);
 void encrypt(char [64], int);
 void swab(const void *, void *, ssize_t);
 void sync(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

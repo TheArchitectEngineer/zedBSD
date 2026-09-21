@@ -964,6 +964,21 @@ static const struct cdev_ops vt_ops = {
 	.poll = vt_poll,
 };
 
+/*
+ * The controlling terminal, under its own name.
+ *
+ * Every operation resolves the caller's terminal afresh, because a process
+ * may gain or give one up while the descriptor is open, and two processes
+ * sharing this descriptor do not share a terminal.
+ */
+static const struct cdev_ops controlling_tty_ops = {
+	.open = tty_controlling_open,
+	.read = tty_controlling_read,
+	.write = tty_controlling_write,
+	.ioctl = tty_controlling_ioctl,
+	.poll = tty_controlling_poll,
+};
+
 static const struct cdev_ops console_ops = {
 	.open = console_open_file,
 	.close = console_close_file,
@@ -1019,6 +1034,11 @@ drv_console_device_register(
 		if (error != 0)
 			goto fail;
 	}
+
+	/* Checks the operation status. */
+	error = cdev_register("tty", 0x00010020U, &controlling_tty_ops, NULL);
+	if (error != 0)
+		goto fail;
 
 	/* Checks the operation status. */
 	error = tty_pty_register();

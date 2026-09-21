@@ -8,6 +8,10 @@
 #ifndef LIBC_SYS_WAIT_H
 #define LIBC_SYS_WAIT_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <sys/types.h>
 #include <signal.h>
 
@@ -35,5 +39,9 @@ typedef enum {
 pid_t waitpid(pid_t, int *, int);
 pid_t wait(int *);
 int waitid(idtype_t, id_t, siginfo_t *, int);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

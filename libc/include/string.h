@@ -2,6 +2,12 @@
 #ifndef KERN_STRING_H
 #define KERN_STRING_H
 
+#include <locale.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stddef.h>
 
 void *memcpy(void *destination, const void *source, size_t count);
@@ -46,5 +52,19 @@ char *strsep(char **, const char *);
 int strverscmp(const char *, const char *);
 int timingsafe_bcmp(const void *, const void *, size_t);
 int timingsafe_memcmp(const void *, const void *, size_t);
+
+
+/*
+ * The locale-aware forms POSIX.1-2008 added.  Each takes the locale to work
+ * in rather than reading the thread's current one.
+ */
+int strcoll_l(const char *, const char *, locale_t);
+size_t strxfrm_l(char *, const char *, size_t, locale_t);
+/* POSIX's reentrant strerror: fills the caller's buffer, returns an errno. */
+int strerror_r(int, char *, size_t);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

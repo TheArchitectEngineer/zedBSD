@@ -2,6 +2,12 @@
 #ifndef KERN_STDLIB_H
 #define KERN_STDLIB_H
 
+#include <locale.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stddef.h>
 #include <stdint.h>
 #include <wchar.h>
@@ -74,6 +80,33 @@ void arc4random_buf(void *, size_t);
 uint32_t arc4random_uniform(uint32_t);
 const char *getprogname(void);
 void setprogname(const char *);
+
+/*
+ * Replaces the title this process reports to ps, which is the program's own
+ * name followed by the formatted text.  A null format restores the title the
+ * program started with.
+ */
+void setproctitle(const char *, ...);
+
+/* Releases an allocation after erasing it, for memory that held a secret. */
+void freezero(void *, size_t);
+
+/* Makes a private temporary directory, or a file with a fixed suffix. */
+char *mkdtemp(char *);
+int mkstemps(char *, int);
+
+/* Detaches from the controlling terminal and the caller's session. */
+int daemon(int, int);
+
+/* Releases an allocation after erasing it, for memory that held a secret. */
+void freezero(void *, size_t);
+
+/* Makes a private temporary directory, or a file with a fixed suffix. */
+char *mkdtemp(char *);
+int mkstemps(char *, int);
+
+/* Detaches from the controlling terminal and the caller's session. */
+int daemon(int, int);
 int heapsort(void *, size_t, size_t, int (*)(const void *, const void *));
 int mergesort(void *, size_t, size_t, int (*)(const void *, const void *));
 void qsort_r(void *, size_t, size_t,
@@ -108,5 +141,22 @@ void srandom(unsigned int);
 void setkey(const char[64]);
 
 char *realpath(const char *, char *);
+
+/*
+ * The longest multibyte character in a named locale.  The traditional
+ * spelling of the locale-aware form; only the C locale exists here, so it is
+ * the same answer MB_CUR_MAX gives.
+ */
+#define MB_CUR_MAX_L(locale) ((void)(locale), (size_t)MB_CUR_MAX)
+
+/* The locale-aware forms POSIX.1-2008 added. */
+float strtof_l(const char *, char **, locale_t);
+double strtod_l(const char *, char **, locale_t);
+long double strtold_l(const char *, char **, locale_t);
+int mbtowc_l(wchar_t *, const char *, size_t, locale_t);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

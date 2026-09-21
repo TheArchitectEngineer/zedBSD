@@ -12,6 +12,10 @@
 #ifndef KERN_UAPI_NETINET_H
 #define KERN_UAPI_NETINET_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <uapi/socket.h>
 #include <stdint.h>
 
@@ -62,5 +66,9 @@ htonl(
 uint32_t
 ntohl(
 	uint32_t value);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

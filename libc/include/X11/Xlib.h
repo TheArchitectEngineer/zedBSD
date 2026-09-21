@@ -8,6 +8,10 @@
 #ifndef LIBC_X11_XLIB_H
 #define LIBC_X11_XLIB_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <X11/X.h>
 
 #define DefaultScreen(d) XDefaultScreen(d)
@@ -78,5 +82,9 @@ int XPending(Display *);
 int XFlush(Display *);
 int XSync(Display *,Bool);
 KeySym XLookupKeysym(XKeyEvent *,int);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

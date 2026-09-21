@@ -22,6 +22,12 @@ record_lock_fcntl(
 	int command,
 	struct flock_record *request);
 
+int
+record_lock_flock(
+	struct process *owner,
+	struct file *file,
+	int operation);
+
 void
 record_lock_release_process_inode(
 	struct process *owner,

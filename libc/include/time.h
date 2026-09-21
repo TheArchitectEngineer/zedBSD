@@ -2,6 +2,10 @@
 #ifndef KERN_TIME_H
 #define KERN_TIME_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 #include <stddef.h>
 #include <locale.h>
@@ -29,20 +33,26 @@ extern int daylight;
 extern long timezone;
 extern int getdate_err;
 char *asctime(const struct tm *);
-char *asctime_r(const struct tm *restrict, char *restrict);
+char *asctime_r(const struct tm *__restrict, char *__restrict);
 clock_t clock(void);
 char *ctime(const time_t *);
-char *ctime_r(const time_t *restrict, char *restrict);
+char *ctime_r(const time_t *__restrict, char *__restrict);
 double difftime(time_t, time_t);
 struct tm *gmtime(const time_t *);
-struct tm *gmtime_r(const time_t *restrict, struct tm *restrict);
+struct tm *gmtime_r(const time_t *__restrict, struct tm *__restrict);
+
+/*
+ * Reads a broken-down time as UTC and normalises it, which is the one thing
+ * mktime cannot be asked to do.
+ */
+time_t timegm(struct tm *);
 struct tm *localtime(const time_t *);
-struct tm *localtime_r(const time_t *restrict, struct tm *restrict);
+struct tm *localtime_r(const time_t *__restrict, struct tm *__restrict);
 time_t mktime(struct tm *);
-size_t strftime(char *restrict, size_t, const char *restrict,
-	const struct tm *restrict);
-size_t strftime_l(char *restrict, size_t, const char *restrict,
-	const struct tm *restrict, locale_t);
+size_t strftime(char *__restrict, size_t, const char *__restrict,
+	const struct tm *__restrict);
+size_t strftime_l(char *__restrict, size_t, const char *__restrict,
+	const struct tm *__restrict, locale_t);
 time_t time(time_t *result);
 int timespec_get(struct timespec *, int);
 int clock_gettime(clockid_t, struct timespec *);
@@ -56,7 +66,11 @@ int timer_settime(timer_t, int, const struct itimerspec *, struct itimerspec *);
 int timer_gettime(timer_t, struct itimerspec *);
 int timer_getoverrun(timer_t);
 void tzset(void);
-char *strptime(const char *restrict, const char *restrict, struct tm *restrict);
+char *strptime(const char *__restrict, const char *__restrict, struct tm *__restrict);
 struct tm *getdate(const char *);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

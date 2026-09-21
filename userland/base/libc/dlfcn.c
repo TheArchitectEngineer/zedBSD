@@ -12,6 +12,7 @@
  */
 
 #include <dlfcn.h>
+#include <link.h>
 #include <rtld-abi.h>
 
 #if !defined(KERN_DYNAMIC_LIBC)
@@ -20,6 +21,9 @@ extern void *__rtld_dlsym(void *, const char *) __attribute__((weak));
 extern void *__rtld_dlvsym(void *, const char *, const char *)
     __attribute__((weak));
 extern int __rtld_dladdr(const void *, Dl_info *) __attribute__((weak));
+extern int __rtld_dl_iterate_phdr(
+	int (*)(struct dl_phdr_info *, size_t, void *), void *)
+	__attribute__((weak));
 extern int __rtld_dlclose(void *) __attribute__((weak));
 extern char *__rtld_dlerror(void) __attribute__((weak));
 #endif
@@ -138,6 +142,46 @@ dlsym(
 
 	/* Reports successful completion. */
 	return 0;
+#endif
+}
+
+/*
+ * Implements the dl iterate phdr operation.
+ *
+ * A statically linked program has no loader to ask, and reports no objects:
+ * its own program headers are not recorded anywhere this can reach.
+ */
+int
+dl_iterate_phdr(
+	int (*callback)(struct dl_phdr_info *, size_t, void *),
+	void *argument)
+{
+	int function_result;
+
+#if defined(KERN_DYNAMIC_LIBC)
+
+	/* Computes the function result. */
+	function_result = __rtld_exports.dl_iterate_phdr(callback, argument);
+
+	/* Returns the computed result. */
+	return function_result;
+
+#else
+
+	/* Handles the rtld dl iterate phdr condition. */
+	if (__rtld_dl_iterate_phdr != 0) {
+		/* Obtains the rtld dl iterate phdr result. */
+		function_result = __rtld_dl_iterate_phdr(callback, argument);
+
+		/* Returns the computed result. */
+		return function_result;
+	}
+	(void)callback;
+	(void)argument;
+
+	/* Reports that there was nothing to walk. */
+	return 0;
+
 #endif
 }
 

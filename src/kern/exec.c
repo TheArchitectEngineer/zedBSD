@@ -659,6 +659,10 @@ process_spawn_from(
 	stage = "create initial thread";
 	strncpy(process->command, argv[0], sizeof(process->command) - 1U);
 	process->command[sizeof(process->command) - 1U] = '\0';
+
+	/* Kept apart so that setproctitle can put the original back. */
+	memcpy(process->command_initial, process->command,
+	    sizeof(process->command_initial));
 	error = thread_create(process, execution_entry, sp, &thread);
 	if (error != 0)
 		goto out;
@@ -1457,6 +1461,10 @@ process_exec_file(
 	process->did_exec = 1;
 	strncpy(process->command, argv[0], sizeof(process->command) - 1U);
 	process->command[sizeof(process->command) - 1U] = '\0';
+
+	/* Kept apart so that setproctitle can put the original back. */
+	memcpy(process->command_initial, process->command,
+	    sizeof(process->command_initial));
 	vmspace_put(old_vm);
 out:
 	process_irq = spin_lock_irqsave(&process->lock);

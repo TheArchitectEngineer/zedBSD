@@ -8,6 +8,12 @@
 #ifndef LIBC_STDIO_H
 #define LIBC_STDIO_H
 
+#include <locale.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdarg.h>
 #include <stddef.h>
 #include <uapi/rename.h>
@@ -52,6 +58,20 @@ FILE *popen(const char *, const char *);
 int pclose(FILE *);
 FILE *freopen(const char *, const char *, FILE *);
 FILE *tmpfile(void);
+
+/*
+ * Reads a line, or a record ending in any chosen byte, growing the caller's
+ * buffer to hold it.  A null buffer asks for one to be allocated.
+ */
+ssize_t getdelim(char **, size_t *, int, FILE *);
+ssize_t getline(char **, size_t *, FILE *);
+
+/*
+ * Reads a line, or a record ending in any chosen byte, growing the caller's
+ * buffer to hold it.  A null buffer asks for one to be allocated.
+ */
+ssize_t getdelim(char **, size_t *, int, FILE *);
+ssize_t getline(char **, size_t *, FILE *);
 char *tmpnam(char *);
 char *tempnam(const char *, const char *);
 int fclose(FILE *stream);
@@ -100,5 +120,20 @@ int fpurge(FILE *);
 FILE *funopen(const void *, int (*)(void *, char *, int), int (*)(void *, const char *, int), fpos_t (*)(void *, fpos_t, int), int (*)(void *));
 void setbuffer(FILE *, char *, int);
 int setlinebuf(FILE *);
+
+/*
+ * The descriptor a stream was opened on.  POSIX; the implementation takes
+ * void * rather than FILE * so that this header need not be included where
+ * the stream type is not.
+ */
+int fileno(void *);
+
+/* The locale-aware forms POSIX.1-2008 added. */
+int snprintf_l(char *, size_t, locale_t, const char *, ...);
+int asprintf_l(char **, locale_t, const char *, ...);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

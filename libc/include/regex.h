@@ -12,6 +12,10 @@
 #ifndef LIBC_REGEX_H
 #define LIBC_REGEX_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stddef.h>
 
 typedef ptrdiff_t regoff_t;
@@ -53,10 +57,14 @@ typedef struct {
 #define REG_ESPACE 12
 #define REG_BADRPT 13
 
-int regcomp(regex_t *restrict, const char *restrict, int);
-int regexec(const regex_t *restrict, const char *restrict, size_t,
-	    regmatch_t *restrict, int);
+int regcomp(regex_t *__restrict, const char *__restrict, int);
+int regexec(const regex_t *__restrict, const char *__restrict, size_t,
+	    regmatch_t *__restrict, int);
 void regfree(regex_t *);
-size_t regerror(int, const regex_t *restrict, char *restrict, size_t);
+size_t regerror(int, const regex_t *__restrict, char *__restrict, size_t);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

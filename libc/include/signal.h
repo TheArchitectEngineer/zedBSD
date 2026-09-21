@@ -8,6 +8,10 @@
 #ifndef LIBC_SIGNAL_H
 #define LIBC_SIGNAL_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <features.h>
 #include <uapi/signal.h>
 #include <sys/types.h>
@@ -27,7 +31,7 @@ typedef struct {
 } stack_t;
 
 int sig2str(int signal_number, char *name);
-int str2sig(const char *restrict name, int *restrict signal_number);
+int str2sig(const char *__restrict name, int *__restrict signal_number);
 int sigaction(int, const struct sigaction *, struct sigaction *);
 int sigprocmask(int, const sigset_t *, sigset_t *);
 int sigpending(sigset_t *);
@@ -57,6 +61,10 @@ int siginterrupt(int, int);
 int sigpause(int);
 int sigrelse(int);
 sighandler_t sigset(int, sighandler_t);
+#endif
+
+#ifdef __cplusplus
+}
 #endif
 
 #endif

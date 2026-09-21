@@ -8,6 +8,10 @@
 #ifndef LIBC_SEMAPHORE_H
 #define LIBC_SEMAPHORE_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 #include <time.h>
 
@@ -33,5 +37,9 @@ int sem_getvalue(sem_t *, int *);
 sem_t *sem_open(const char *, int, ...);
 int sem_close(sem_t *);
 int sem_unlink(const char *);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

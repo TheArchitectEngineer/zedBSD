@@ -12,6 +12,10 @@
 #ifndef KERN_UAPI_SOCKET_H
 #define KERN_UAPI_SOCKET_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stddef.h>
 #include <stdint.h>
 #include <uapi/types.h>
@@ -286,5 +290,9 @@ getsockopt(
 int
 sockatmark(
 	int descriptor);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

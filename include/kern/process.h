@@ -136,6 +136,8 @@ struct process {
 	struct tty *controlling_tty;
 	uint64_t controlling_tty_generation;
 	char command[64];
+	/* The title exec gave, which setproctitle(NULL) restores. */
+	char command_initial[64];
 };
 
 extern struct process process0;

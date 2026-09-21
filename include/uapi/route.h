@@ -12,6 +12,10 @@
 #ifndef KERN_UAPI_ROUTE_H
 #define KERN_UAPI_ROUTE_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <uapi/socket.h>
 #include <stdint.h>
 
@@ -65,5 +69,9 @@ struct rtentry {
 
 _Static_assert(sizeof(struct rtm_ifinfo) == 56U,
     "RTM_IFINFO ABI must remain fixed width");
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

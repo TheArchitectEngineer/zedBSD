@@ -248,6 +248,7 @@ typedef uint32_t Elf_Off;
 #define R_X86_64_RELATIVE 8
 #define R_X86_64_DTPMOD64 16
 #define R_X86_64_DTPOFF64 17
+#define R_X86_64_TPOFF64 18
 #define R_X86_64_TLSDESC 36
 
 /* AArch64 */

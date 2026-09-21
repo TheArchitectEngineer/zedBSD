@@ -8,6 +8,10 @@
 #ifndef LIBC_X11_XZED_H_
 #define LIBC_X11_XZED_H_
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <X11/Xlib.h>
 
 /*
@@ -31,5 +35,9 @@ int XzedSetInputMargins(Display *, Window, unsigned, unsigned, unsigned,
     unsigned);
 int XzedMoveResizeWindowBuffered(Display *, Window, int, int, unsigned,
     unsigned);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

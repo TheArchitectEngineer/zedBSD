@@ -8,6 +8,10 @@
 #ifndef LIBC_NDBM_H
 #define LIBC_NDBM_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <sys/types.h>
 
 typedef struct { char *dptr; int dsize; } datum;
@@ -25,5 +29,9 @@ datum dbm_firstkey(DBM *);
 datum dbm_nextkey(DBM *);
 int dbm_error(DBM *);
 int dbm_clearerr(DBM *);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -14,6 +14,10 @@
 #ifndef LIBC_ZEDBSD_CATALOG_FORMAT_H
 #define LIBC_ZEDBSD_CATALOG_FORMAT_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 
 #define KERN_CATALOG_MAGIC "ZMCAT01\0"
@@ -37,5 +41,9 @@ kern_catalog_put32(unsigned char *bytes, uint32_t value)
 	bytes[2] = (unsigned char)(value >> 8);
 	bytes[3] = (unsigned char)value;
 }
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

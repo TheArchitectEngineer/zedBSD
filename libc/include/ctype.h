@@ -8,6 +8,12 @@
 #ifndef KERN_CTYPE_H
 #define KERN_CTYPE_H
 
+#include <locale.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 int isalnum(int character);
 int isalpha(int character);
 int isascii(int character);
@@ -26,5 +32,14 @@ int toupper(int character);
 int _tolower(int character);
 int _toupper(int character);
 int toascii(int character);
+
+
+/* The locale-aware forms POSIX.1-2008 added. */
+int toupper_l(int, locale_t);
+int tolower_l(int, locale_t);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

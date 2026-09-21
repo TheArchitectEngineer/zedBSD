@@ -8,6 +8,10 @@
 #ifndef KERN_UAPI_WLAN_H
 #define KERN_UAPI_WLAN_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 #include <sys/ioctl.h>
 #include <uapi/netif.h>
@@ -186,5 +190,9 @@ struct wlan_status_request {
 	_IOWR(KERN_WLAN_IOCTL_GROUP, 5, struct wlan_disconnect_request)
 #define SIOCGWLANSTATUS \
 	_IOWR(KERN_WLAN_IOCTL_GROUP, 6, struct wlan_status_request)
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -8,6 +8,10 @@
 #ifndef LIBC_SYS_MOUNT_H
 #define LIBC_SYS_MOUNT_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 #include <uapi/unmount.h>
 
@@ -24,5 +28,9 @@ struct mount_args {
 
 int mount(const char *, const char *, int, void *);
 int unmount(const char *, int);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

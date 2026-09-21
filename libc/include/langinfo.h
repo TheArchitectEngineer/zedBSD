@@ -8,6 +8,12 @@
 #ifndef LIBC_LANGINFO_H
 #define LIBC_LANGINFO_H
 
+#include <locale.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <locale-format.h>
 
 typedef int nl_item;
@@ -70,4 +76,11 @@ typedef int nl_item;
 #define YESSTR KERN_LOCALE_KEY_YESSTR
 #define NOSTR KERN_LOCALE_KEY_NOSTR
 char *nl_langinfo(nl_item);
+/* The locale-aware form POSIX.1-2008 added. */
+char *nl_langinfo_l(nl_item, locale_t);
+
+#ifdef __cplusplus
+}
+#endif
+
 #endif

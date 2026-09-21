@@ -8,6 +8,10 @@
 #ifndef KERN_UAPI_MOUNTINFO_H
 #define KERN_UAPI_MOUNTINFO_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 #include <stddef.h>
 #include <sys/ioctl.h>
@@ -42,5 +46,9 @@ struct kern_mount_query {
 
 _Static_assert(sizeof(struct kern_mount_query) == 32U, "mount query ABI");
 _Static_assert(sizeof(struct kern_mount_info) == 544U, "mount entry ABI");
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -87,6 +87,11 @@ $(ZEDBSD_OPENSSL_LIBCRYPTO) $(ZEDBSD_OPENSSL_LIBSSL) $(ZEDBSD_OPENSSL_APP) \
 $(ZEDBSD_OPENSSL_CONF): $(ZEDBSD_OPENSSL_STAGED)
 	@test -f '$@'
 
+# The notice is taken from the extracted tree rather than the staged one, so
+# it needs the source rather than the build.
+$(ZEDBSD_OPENSSL_LICENSE): $(ZEDBSD_EXT_openssl_SRCSTAMP)
+	@test -f '$@'
+
 .PHONY: openssl
 openssl: $(ZEDBSD_OPENSSL_STAGED)
 	@:

@@ -8,6 +8,10 @@
 #ifndef LIBC_SPAWN_H
 #define LIBC_SPAWN_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <fcntl.h>
 #include <signal.h>
 #include <sys/types.h>
@@ -61,5 +65,9 @@ int posix_spawnattr_getsigmask(const posix_spawnattr_t *, sigset_t *);
 int posix_spawnattr_setsigmask(posix_spawnattr_t *, const sigset_t *);
 int posix_spawnattr_getsigdefault(const posix_spawnattr_t *, sigset_t *);
 int posix_spawnattr_setsigdefault(posix_spawnattr_t *, const sigset_t *);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

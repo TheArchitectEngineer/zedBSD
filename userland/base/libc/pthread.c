@@ -3403,3 +3403,97 @@ c11_start(
 	/* Returns the computed result. */
 	return (void *)(intptr_t)result;
 }
+
+/*
+ * Destruction of thread-local objects with non-trivial destructors.
+ *
+ * The C++ ABI has a compiler-generated initialiser register each such object
+ * here as it is constructed, and expects the registered destructors to run in
+ * reverse order when the thread ends.  The list lives in a thread-specific
+ * key, so each thread destroys its own objects and the main thread's run at
+ * exit like any other.
+ *
+ * These are the Itanium C++ ABI's names, which every C++ implementation on
+ * ELF emits calls to.  Nothing else in the C library uses them.
+ */
+
+struct cxa_thread_entry {
+	struct cxa_thread_entry *next;
+	void (*destructor)(void *);
+	void *object;
+};
+
+static pthread_key_t cxa_thread_key;
+static pthread_once_t cxa_thread_once = PTHREAD_ONCE_INIT;
+
+/* Supports the thread exit operation. */
+static void
+cxa_thread_run(
+	void *value)
+{
+	struct cxa_thread_entry *entry;
+	struct cxa_thread_entry *next;
+
+	/* Runs each destructor in the reverse of its registration order. */
+	for (entry = value; entry != NULL; entry = next) {
+		next = entry->next;
+		entry->destructor(entry->object);
+		free(entry);
+	}
+}
+
+/* Supports the key creation operation. */
+static void
+cxa_thread_setup(
+	void)
+{
+	(void)pthread_key_create(&cxa_thread_key, cxa_thread_run);
+}
+
+/*
+ * Implements the cxa thread atexit operation.
+ *
+ * The handle names the shared object the object belongs to; it exists so a
+ * library can be kept loaded until its thread-local objects are gone.  This
+ * implementation does not unload libraries while a thread still holds such an
+ * object, so the handle is not needed and the object is simply recorded.
+ */
+int
+__cxa_thread_atexit_impl(void (*destructor)(void *), void *object, void *handle)
+{
+	struct cxa_thread_entry *entry;
+
+	(void)handle;
+
+	/* Rejects a registration with nothing to run. */
+	if (destructor == NULL)
+		return -1;
+	(void)pthread_once(&cxa_thread_once, cxa_thread_setup);
+	entry = malloc(sizeof(*entry));
+
+	/* Reports an allocation failure to the caller. */
+	if (entry == NULL)
+		return -1;
+
+	/* Pushes onto the front, which makes the run order the reverse. */
+	entry->destructor = destructor;
+	entry->object = object;
+	entry->next = pthread_getspecific(cxa_thread_key);
+
+	/* Handles a failed set specific operation. */
+	if (pthread_setspecific(cxa_thread_key, entry) != 0) {
+		free(entry);
+		return -1;
+	}
+
+	/* Reports successful completion. */
+	return 0;
+}
+
+/* The name a compiler emits when it does not look for the _impl form. */
+int
+__cxa_thread_atexit(void (*destructor)(void *), void *object, void *handle)
+{
+	/* Returns the computed result. */
+	return __cxa_thread_atexit_impl(destructor, object, handle);
+}

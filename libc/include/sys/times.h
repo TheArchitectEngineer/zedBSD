@@ -8,6 +8,10 @@
 #ifndef LIBC_SYS_TIMES_H
 #define LIBC_SYS_TIMES_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <sys/types.h>
 
 typedef long clock_t;
@@ -20,5 +24,9 @@ struct tms {
 };
 
 clock_t times(struct tms *);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

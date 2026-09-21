@@ -7,6 +7,8 @@ from pathlib import Path
 
 PT_LOAD, PT_INTERP, PT_DYNAMIC = 1, 3, 2
 PT_GNU_STACK, PT_GNU_RELRO = 0x6474E551, 0x6474E552
+# The loader's limits on one thread-local segment (include/uapi/tls.h).
+TLS_MEMORY_MAX, TLS_ALIGN_MAX = 1024 * 1024, 4096
 PF_X, PF_W, PF_R = 1, 2, 4
 ET_EXEC, ET_DYN = 2, 3
 DT_NULL, DT_NEEDED, DT_HASH, DT_SONAME = 0, 1, 4, 14
@@ -111,9 +113,9 @@ def check(path, machine_name, role, expected_needed=None, expected_soname=None, 
     temporary_plts = 0
     for ph in phdrs:
         if elf_class == 1:
-            p_type, p_offset, p_vaddr, _, p_filesz, p_memsz, p_flags, _ = ph
+            p_type, p_offset, p_vaddr, _, p_filesz, p_memsz, p_flags, p_align = ph
         else:
-            p_type, p_flags, p_offset, p_vaddr, _, p_filesz, p_memsz, _ = ph
+            p_type, p_flags, p_offset, p_vaddr, _, p_filesz, p_memsz, p_align = ph
         if p_type == PT_LOAD and p_flags & PF_W and p_flags & PF_X:
             if (machine_name != "sparcv9" or temporary_plts != 0 or
                     p_flags != PF_R | PF_W | PF_X or p_filesz == 0 or
@@ -130,16 +132,23 @@ def check(path, machine_name, role, expected_needed=None, expected_soname=None, 
         if p_type == PT_GNU_RELRO:
             relros.append(ph)
         if p_type == 7:
-            tls_segments.append(ph)
+            tls_segments.append((p_filesz, p_memsz, p_align))
     if role in ("program", "application"):
         if interps != [b"/lib/ld.so"]:
             fail(path, "dynamic program must use /lib/ld.so")
         if len(stacks) != 1 or stacks[0] != PF_R | PF_W:
             fail(path, "program requires one non-executable RW stack")
-        if tls_segments:
-            fail(path, "main-executable TLS could relax to unsupported IE/LE access")
     elif interps:
         fail(path, "shared object must not contain PT_INTERP")
+    if len(tls_segments) > 1:
+        fail(path, "more than one PT_TLS")
+    for t_filesz, t_memsz, t_align in tls_segments:
+        if t_filesz > t_memsz:
+            fail(path, "PT_TLS holds more file than memory")
+        if t_memsz > TLS_MEMORY_MAX:
+            fail(path, f"PT_TLS exceeds {TLS_MEMORY_MAX} bytes")
+        if t_align > TLS_ALIGN_MAX or t_align & (t_align - 1):
+            fail(path, "PT_TLS alignment is not a power of two the loader can place")
     if not relros:
         fail(path, "missing PT_GNU_RELRO")
 

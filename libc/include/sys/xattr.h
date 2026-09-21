@@ -8,6 +8,10 @@
 #ifndef LIBC_SYS_XATTR_H
 #define LIBC_SYS_XATTR_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stddef.h>
 #include <sys/types.h>
 
@@ -26,5 +30,9 @@ ssize_t flistxattr(int, char *, size_t);
 int removexattr(const char *, const char *);
 int lremovexattr(const char *, const char *);
 int fremovexattr(int, const char *);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

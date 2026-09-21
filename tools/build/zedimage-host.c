@@ -344,8 +344,14 @@ static void disk_create_variant(struct diskopt *o){
     const char *layout=o->layout;
     if(!o->machine||strcmp(o->machine,"pcat"))
         fail("selected amd64 disk layout requires machine pcat");
-    if(o->size_mib!=177||o->fat_mib!=176||o->ufs_root||o->fragment_kernel)
-        fail("selected disk layout received a legacy geometry or mode override");
+    /* The payload partition holds everything the loader reads at boot, so
+       its capacity follows what was actually built.  make-bios-hdd-image
+       measures the inputs and states the geometry, which is also what it
+       gives the checker, so one place decides it. */
+    if(o->ufs_root||o->fragment_kernel)
+        fail("selected disk layout received a legacy mode override");
+    if(o->fat_mib<176||o->size_mib<o->fat_mib+1)
+        fail("selected disk layout received an undersized geometry");
     if(!strcmp(layout,"uefi")){disk_create_uefi(o);return;}
     if(strcmp(layout,"hybrid")&&strcmp(layout,"bios"))fail("unsupported disk layout");
     if(!o->stage1||!o->stage2||!o->pbr||!o->bootzbsd||!o->kernel||

@@ -8,6 +8,10 @@
 #ifndef KERN_UAPI_BLOCK_H
 #define KERN_UAPI_BLOCK_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 #include <stddef.h>
 #include <sys/ioctl.h>
@@ -49,5 +53,9 @@ struct kern_block_info {
 
 _Static_assert(sizeof(struct kern_block_info) == 88U, "block ABI size");
 _Static_assert(offsetof(struct kern_block_info, sector_count) == 24U, "block ABI alignment");
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

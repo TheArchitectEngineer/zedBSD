@@ -14,6 +14,10 @@
 #ifndef LIBC_RTLD_ABI_H
 #define LIBC_RTLD_ABI_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stddef.h>
 #include <stdint.h>
 #include <uapi/tls.h>
@@ -21,7 +25,7 @@
 /*
  * XXX: Rename the following KERN_* to KERN_*
  */
-#define KERN_RTLD_ABI_VERSION 5U
+#define KERN_RTLD_ABI_VERSION 6U
 #define KERN_RTLD_DLERROR_SIZE 192U
 
 struct __tls_index {
@@ -30,6 +34,7 @@ struct __tls_index {
 };
 
 struct dl_info;
+struct dl_phdr_info;
 
 struct __rtld_tcb {
 	struct kern_tls_prefix tls;
@@ -73,6 +78,8 @@ struct __rtld_exports {
 	void (*fork_child)(void);
 	void *(*tls_get_addr)(const struct __tls_index *);
 	int (*dladdr)(const void *, struct dl_info *);
+	int (*dl_iterate_phdr)(int (*)(struct dl_phdr_info *, size_t, void *),
+	    void *);
 };
 
 extern const struct __rtld_exports __rtld_exports;
@@ -84,6 +91,8 @@ void *__rtld_dlopen(const char *, int);
 void *__rtld_dlsym(void *, const char *);
 void *__rtld_dlvsym(void *, const char *, const char *);
 int __rtld_dladdr(const void *, struct dl_info *);
+int __rtld_dl_iterate_phdr(int (*)(struct dl_phdr_info *, size_t, void *),
+	void *);
 int __rtld_dlclose(void *);
 char *__rtld_dlerror(void);
 int __rtld_thread_alloc(void *, struct __rtld_tcb **);
@@ -94,5 +103,9 @@ void __rtld_fork_prepare(void);
 void __rtld_fork_parent(void);
 void __rtld_fork_child(void);
 void *__tls_get_addr(const struct __tls_index *);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

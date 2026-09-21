@@ -184,6 +184,30 @@ struct inode {
 
 	void (*i_special_destroy)(void *);
 	void *i_record_locks;
+
+	/*
+	 * Set on a node that stands for one of the caller's own descriptors,
+	 * which is what /dev/fd/N is.  Opening such a node must not make a new
+	 * open file description: it must hand back the one the caller already
+	 * holds, the way dup does, so that the two descriptors share a file
+	 * offset, share the status flags, and share the locks that belong to
+	 * the description.  Copying the offset across at open time would not
+	 * do -- the two would diverge on the first read -- and re-opening the
+	 * underlying object would re-check permission, could widen the access
+	 * mode, and is not possible at all for a pipe, a socket, or a file
+	 * that has been unlinked.  A pipe is the common case, because that is
+	 * what a shell's process substitution passes this way.
+	 *
+	 * The open path, not the filesystem, performs the substitution: only
+	 * it owns the descriptor table.  The descriptor number is i_rdev's
+	 * minor, so nothing has to be carried from the filesystem to the open
+	 * path beyond this flag.  Solaris signals the same thing by setting
+	 * VDUP on the vnode at every open; FreeBSD and NetBSD instead return
+	 * a reserved errno and leave the number in a per-thread field, which
+	 * their own comments call a kludge.  Here it is a property of the
+	 * node, decided when the node is made and never changed.
+	 */
+	unsigned i_descriptor_alias;
 	refcount_t i_refs;
 	/* Directory-entry owners, classified within i_refs; changed under VFS transactions. */
 	atomic_uint_t i_namespace_refs;

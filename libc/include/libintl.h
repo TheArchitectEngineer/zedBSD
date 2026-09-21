@@ -8,6 +8,10 @@
 #ifndef LIBC_LIBINTL_H
 #define LIBC_LIBINTL_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <limits.h>
 #include <locale.h>
 
@@ -104,5 +108,9 @@ ngettext_l(
 char *
 textdomain(
 	const char *domainname);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

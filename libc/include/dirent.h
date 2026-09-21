@@ -8,6 +8,10 @@
 #ifndef LIBC_DIRENT_H
 #define LIBC_DIRENT_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stddef.h>
 #include <stdint.h>
 #include <sys/types.h>
@@ -53,4 +57,8 @@ void rewinddir(DIR *);
 void seekdir(DIR *, long);
 long telldir(DIR *);
 int dirfd(DIR *);
+#ifdef __cplusplus
+}
+#endif
+
 #endif

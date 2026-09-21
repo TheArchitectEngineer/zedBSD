@@ -1,6 +1,8 @@
 # zedBSD userland package
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
-include $(dir $(lastword $(MAKEFILE_LIST)))../../../base/package.mk
+ZEDBSD_REMACS_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
+include $(ZEDBSD_REMACS_DIR)../../../../build-jobs.mk
+include $(ZEDBSD_REMACS_DIR)../../../base/package.mk
 
 REQUIRE = base/noct
 # Remacs currently requires the held target Noct package, so it is hidden
@@ -40,7 +42,8 @@ $(REMACS_HOST_NOCT): $(NOCT_SOURCE_STAMP) | noct-target-source-verify
 		-DNOCT_ENABLE_API_FILE=ON -DNOCT_ENABLE_API_TERM=ON \
 		-DNOCT_ENABLE_REPL=ON -DNOCT_ENABLE_BCBACKEND=ON \
 		-DNOCT_ENABLE_OPTIMIZER=ON -DNOCT_ENABLE_INSTALL=OFF
-	cmake --build $(REMACS_HOST_NOCT_DIR) --target noctcli --parallel
+	cmake --build $(REMACS_HOST_NOCT_DIR) --target noctcli \
+		--parallel $(ZEDBSD_BUILD_JOBS)
 
 $(REMACS_NAP): $(REMACS_SOURCE_STAMP) $(REMACS_HOST_NOCT)
 	$(MAKE) -C $(REMACS_SOURCE_DIR) NOCT=$(abspath $(REMACS_HOST_NOCT)) all

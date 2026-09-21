@@ -12,6 +12,10 @@
 #ifndef LIBC_FTW_H
 #define LIBC_FTW_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <features.h>
 #include <sys/stat.h>
 
@@ -34,4 +38,8 @@ int ftw(const char *, int (*)(const char *, const struct stat *, int), int);
 #endif
 int nftw(const char *, int (*)(const char *, const struct stat *, int,
     struct FTW *), int, int);
+#ifdef __cplusplus
+}
+#endif
+
 #endif

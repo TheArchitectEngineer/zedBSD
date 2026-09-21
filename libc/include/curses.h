@@ -12,6 +12,10 @@
 #ifndef LIBC_CURSES_H
 #define LIBC_CURSES_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef unsigned long chtype;
 typedef struct _zed_window WINDOW;
 
@@ -69,5 +73,9 @@ int tigetflag(const char *);
 int tigetnum(const char *);
 char *tigetstr(const char *);
 int putp(const char *);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -8,6 +8,10 @@
 #ifndef LIBC_FENV_H
 #define LIBC_FENV_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef unsigned int fexcept_t;
 typedef struct {
 	unsigned int exceptions;
@@ -36,5 +40,9 @@ int fesetexceptflag(const fexcept_t *, int);
 int fesetround(int);
 int fetestexcept(int);
 int feupdateenv(const fenv_t *);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

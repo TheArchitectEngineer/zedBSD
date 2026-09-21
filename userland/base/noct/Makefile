@@ -5,6 +5,7 @@ ZEDBSD_NOCT_PACKAGE_MAKEFILE := $(lastword $(MAKEFILE_LIST))
 ZEDBSD_NOCT_PACKAGE_DIR := $(patsubst %/,%,$(dir $(ZEDBSD_NOCT_PACKAGE_MAKEFILE)))
 include $(ZEDBSD_NOCT_PACKAGE_DIR)/../package.mk
 include $(ZEDBSD_NOCT_PACKAGE_DIR)/version.mk
+include $(ZEDBSD_NOCT_PACKAGE_DIR)/../../../build-jobs.mk
 
 ZEDBSD_NOCT_ROOT := $(if $(ZEDBSD_TOPLEVEL_BUILD),$(CURDIR),$(ZEDBSD_REPO_ROOT))
 ZEDBSD_NOCT_PACKAGE_ROOT := $(abspath $(ZEDBSD_NOCT_ROOT)/userland/base/noct)
@@ -290,7 +291,7 @@ $(NOCT_ZEDBSD_BUILD_STAMP): $(NOCT_SOURCE_VERIFIED) \
 		ZEDBSD_SOURCE_DIR='$(ZEDBSD_NOCT_ROOT)' \
 		ZEDBSD_SYSROOT='$(NOCT_ZEDBSD_SYSROOT)' \
 		ZEDBSD_LLVM_BIN='$(ZEDBSD_LLVM_INSTALL)/bin' \
-		cmake --build build-zedbsd-$(NOCT_ZEDBSD_ARCH) --parallel 16
+		cmake --build build-zedbsd-$(NOCT_ZEDBSD_ARCH) --parallel $(ZEDBSD_BUILD_JOBS)
 	@test -x '$(NOCT_ZEDBSD_ARTIFACT)'
 	@touch '$@'
 
@@ -302,7 +303,7 @@ $(NOCT_HOST_ARTIFACT): $(NOCT_HOST_SOURCE_STAMP) \
 	cd '$(NOCT_HOST_SOURCE_DIR)' && cmake --preset static \
 		$(NOCT_HOST_CMAKE_OPTIONS)
 	cd '$(NOCT_HOST_SOURCE_DIR)' && \
-		cmake --build --preset static --parallel 16
+		cmake --build --preset static --parallel $(ZEDBSD_BUILD_JOBS)
 	@test -x '$@'
 	@touch '$(NOCT_HOST_BUILD_STAMP)'
 

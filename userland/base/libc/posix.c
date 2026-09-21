@@ -19,6 +19,9 @@
 #include <uapi/dirent.h>
 #include <uapi/fcntl.h>
 #include <uapi/syscall.h>
+#include <sys/file.h>
+#include <sys/random.h>
+#include <uapi/system.h>
 #include <sys/sysctl.h>
 #include <uapi/process.h>
 #include <uapi/netif.h>
@@ -4503,6 +4506,134 @@ getentropy(
 
 	/* Returns the computed result. */
 	return function_result;
+}
+
+/*
+ * Implements the getrandom operation.
+ *
+ * The bytes come from the draw getentropy makes, taken in the largest pieces
+ * one draw may be.  The caller is told how many bytes it received, which is
+ * always all of them: the source answers immediately, so nothing here waits
+ * and nothing is left over for a second call to finish.
+ */
+ssize_t
+getrandom(
+	void *buffer,
+	size_t length,
+	unsigned int flags)
+{
+	unsigned char *bytes;
+	size_t remaining;
+	size_t chunk;
+
+	/* Rejects a flag this system does not define, or a contradiction. */
+	if ((flags & ~(unsigned int)(GRND_NONBLOCK | GRND_RANDOM |
+				     GRND_INSECURE)) != 0U ||
+	    (flags & (unsigned int)(GRND_RANDOM | GRND_INSECURE)) ==
+	    (unsigned int)(GRND_RANDOM | GRND_INSECURE)) {
+		errno = EINVAL;
+
+		/* Reports operation failure. */
+		return -1;
+	}
+
+	/* Rejects a length whose count could not be reported. */
+	if (length > (size_t)SSIZE_MAX) {
+		errno = EINVAL;
+
+		/* Reports operation failure. */
+		return -1;
+	}
+
+	/* Process each remaining element. */
+	bytes = buffer;
+	remaining = length;
+	while (remaining != 0U) {
+		chunk = remaining < (size_t)GETENTROPY_MAX ?
+			remaining : (size_t)GETENTROPY_MAX;
+
+		/* Handles a failed draw, keeping the reason it gave. */
+		if (getentropy(bytes, chunk) != 0)
+			return -1;
+		bytes += chunk;
+		remaining -= chunk;
+	}
+
+	/* Returns the computed result. */
+	return (ssize_t)length;
+}
+
+/*
+ * Implements the flock operation.
+ */
+int
+flock(
+	int fd,
+	int operation)
+{
+	int function_result;
+
+	/* Computes the function result. */
+	function_result = (int)call(KERN_SYS_flock, (uintptr_t)fd,
+				    (uintptr_t)operation, 0, 0, 0, 0);
+
+	/* Returns the computed result. */
+	return function_result;
+}
+
+/*
+ * Implements the issetugid operation.
+ */
+int
+issetugid(
+	void)
+{
+	/* Returns the computed result. */
+	return secure_execution != 0 ? 1 : 0;
+}
+
+/*
+ * Implements the setproctitle operation.
+ *
+ * The title ps reports is the program's own name, a colon and a space, then
+ * the caller's text; a null format asks for the title the program started
+ * with.  A title that will not fit is dropped rather than shown cut in half,
+ * because a half-written title says something the caller did not.
+ */
+void
+setproctitle(
+	const char *format,
+	...)
+{
+	char title[KERN_SYSTEM_PROCESS_COMMAND_MAX];
+	va_list arguments;
+	int prefix;
+	int used;
+
+	/* Handles a request for the original title. */
+	if (format == NULL) {
+		(void)call(KERN_SYS_setproctitle, 0, 0, 0, 0, 0, 0);
+		return;
+	}
+
+	/* Writes the program's name, which every title begins with. */
+	prefix = snprintf(title, sizeof(title), "%s: ", getprogname());
+
+	/* Handles a name that already fills the title. */
+	if (prefix < 0 || (size_t)prefix >= sizeof(title))
+		return;
+
+	/* Appends the caller's text. */
+	va_start(arguments, format);
+	used = vsnprintf(title + prefix, sizeof(title) - (size_t)prefix,
+			 format, arguments);
+	va_end(arguments);
+
+	/* Handles a title that does not fit. */
+	if (used < 0 || (size_t)used >= sizeof(title) - (size_t)prefix)
+		return;
+	(void)call(KERN_SYS_setproctitle, (uintptr_t)title,
+		   (uintptr_t)(prefix + used), 0, 0, 0, 0);
 }
 
 /*

@@ -12,6 +12,10 @@
 #ifndef LIBC_SYS_IPC_H
 #define LIBC_SYS_IPC_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <sys/types.h>
 
 #define IPC_PRIVATE ((key_t)0)
@@ -32,5 +36,9 @@ struct ipc_perm {
 };
 
 key_t ftok(const char *, int);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -8,6 +8,12 @@
 #ifndef LIBC_WCTYPE_H
 #define LIBC_WCTYPE_H
 
+#include <locale.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <wchar.h>
 
 #ifdef KERN_REGEX_HOST_TEST
@@ -36,5 +42,27 @@ wctype_t wctype(const char *);
 int iswctype(wint_t, wctype_t);
 wctrans_t wctrans(const char *);
 wint_t towctrans(wint_t, wctrans_t);
+
+
+/* The locale-aware forms POSIX.1-2008 added. */
+int iswalpha_l(wint_t, locale_t);
+int iswblank_l(wint_t, locale_t);
+int iswcntrl_l(wint_t, locale_t);
+int iswdigit_l(wint_t, locale_t);
+int iswgraph_l(wint_t, locale_t);
+int iswlower_l(wint_t, locale_t);
+int iswprint_l(wint_t, locale_t);
+int iswpunct_l(wint_t, locale_t);
+int iswspace_l(wint_t, locale_t);
+int iswupper_l(wint_t, locale_t);
+int iswxdigit_l(wint_t, locale_t);
+int iswctype_l(wint_t, wctype_t, locale_t);
+wint_t towupper_l(wint_t, locale_t);
+wint_t towlower_l(wint_t, locale_t);
+wctype_t wctype_l(const char *, locale_t);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

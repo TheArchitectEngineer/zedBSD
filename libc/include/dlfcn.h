@@ -8,6 +8,10 @@
 #ifndef LIBC_DLFCN_H
 #define LIBC_DLFCN_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define RTLD_LAZY   0x0001
 #define RTLD_NOW    0x0002
 #define RTLD_LOCAL  0x0000
@@ -26,5 +30,9 @@ void *dlvsym(void *, const char *, const char *);
 int dladdr(const void *address, Dl_info *information);
 int dlclose(void *);
 char *dlerror(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

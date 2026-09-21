@@ -8,6 +8,10 @@
 #ifndef KERN_UAPI_SIGNAL_H
 #define KERN_UAPI_SIGNAL_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 #include <stddef.h>
 #include <uapi/types.h>
@@ -200,4 +204,8 @@ struct sigaction {
 	uint32_t __sa_reserved;
 	uint64_t sa_restorer;
 };
+#ifdef __cplusplus
+}
+#endif
+
 #endif

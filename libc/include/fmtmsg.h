@@ -12,6 +12,10 @@
 #ifndef LIBC_FMTMSG_H
 #define LIBC_FMTMSG_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define MM_HARD  0x0001L
 #define MM_SOFT  0x0002L
 #define MM_FIRM  0x0004L
@@ -39,5 +43,9 @@
 #define MM_NOCON 2
 
 int fmtmsg(long, const char *, int, const char *, const char *, const char *);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

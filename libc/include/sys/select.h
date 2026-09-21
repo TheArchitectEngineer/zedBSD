@@ -8,6 +8,10 @@
 #ifndef LIBC_SYS_SELECT_H
 #define LIBC_SYS_SELECT_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <uapi/select.h>
 #include <signal.h>
 #include <sys/time.h>
@@ -22,5 +26,9 @@
 
 int select(int, fd_set *, fd_set *, fd_set *, struct timeval *);
 int pselect(int, fd_set *, fd_set *, fd_set *, const struct timespec *, const sigset_t *);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

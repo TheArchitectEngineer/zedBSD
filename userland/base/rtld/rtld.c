@@ -13,6 +13,7 @@
 
 #include "userland/base/rtld/rtld.h"
 
+#include <link.h>
 #include <uapi/auxv.h>
 #include <rtld-abi.h>
 #include <uapi/syscall.h>
@@ -138,10 +139,16 @@ struct rtld_tls_module {
 	size_t alignment;
 	struct rtld_object *owner;
 	unsigned active;
+	/* Distance below the thread pointer, zero for a dynamic module. */
+	size_t static_offset;
+	unsigned is_static;
 };
 
 static struct rtld_object objects[RTLD_OBJECT_MAX];
 static unsigned object_count;
+/* How many objects have been added and removed over the process's life. */
+static unsigned long long rtld_object_generation;
+static unsigned long long rtld_object_removals;
 static struct rtld_object *main_object;
 static struct rtld_object *interpreter_object;
 static struct rtld_object *initialization_order[RTLD_OBJECT_MAX];
@@ -158,6 +165,25 @@ static unsigned loader_error_pending;
 static struct rtld_tls_module tls_modules[RTLD_OBJECT_MAX + 1U];
 static uintptr_t tls_module_count;
 static uint64_t tls_generation;
+
+/*
+ * The static TLS area.
+ *
+ * A linker turns a main executable's access to its own thread-local storage
+ * into a fixed displacement below the thread pointer, and it does so whatever
+ * model the compiler asked for, because an executable is never loaded at a
+ * second address.  Nothing relocates such an access, so the program only
+ * works if its TLS block really is there.  The executable and the objects
+ * loaded alongside it are therefore given one contiguous block under the
+ * thread pointer, laid out once before any relocation is processed.  An
+ * object that arrives later through dlopen() cannot join that block and keeps
+ * a separately allocated one reached through __tls_get_addr.
+ */
+static uintptr_t static_tls_distance;
+static void *static_tls_template;
+static size_t static_tls_template_size;
+static size_t static_tls_alignment = 1;
+static unsigned static_tls_sealed;
 static struct __rtld_tcb *rtld_threads;
 static uint32_t next_object_generation = 1;
 
@@ -181,6 +207,7 @@ const struct __rtld_exports __rtld_exports = {
     .fork_child = __rtld_fork_child,
     .tls_get_addr = __tls_get_addr,
     .dladdr = __rtld_dladdr,
+    .dl_iterate_phdr = __rtld_dl_iterate_phdr,
 };
 
 static intptr_t syscall6(uint32_t number, uintptr_t a0, uintptr_t a1, uintptr_t a2, uintptr_t a3, uintptr_t a4, uintptr_t a5);
@@ -193,6 +220,8 @@ static void loader_lock(void);
 static uintptr_t current_tid(void);
 static void loader_unlock(void);
 static void *allocate_tls_block(const struct rtld_tls_module *module);
+static void layout_static_tls(void);
+static uintptr_t static_tls_displacement(const struct rtld_object *owner);
 static void initialize_object(struct rtld_object *object);
 static void clear_loader_error(void);
 static void set_loader_error(const char *message);
@@ -358,28 +387,53 @@ __rtld_thread_alloc(
 	struct __rtld_tcb **out)
 {
 	struct __rtld_tcb *tcb;
+	unsigned char *mapping;
 	void **dtv;
+	size_t payload;
+	size_t size;
 
 	/* Handles the out availability. */
 	if (out == NULL)
 		return -1;
 	*out = NULL;
-	tcb = tls_map(sizeof(*tcb));
 
-	/* Handles the tcb availability. */
-	if (tcb == NULL)
+	/*
+	 * One mapping holds the static area and the control block, so that
+	 * the thread pointer stays a page boundary and the whole thread is
+	 * released in a single unmap.
+	 */
+	payload = (size_t)page_ceil(static_tls_distance);
+	size = payload + KERN_TLS_TCB_RESERVE;
+	mapping = tls_map(size);
+
+	/* Handles the mapping availability. */
+	if (mapping == NULL)
 		return -1;
+	tcb = (struct __rtld_tcb *)(mapping + payload);
 	dtv = tls_map((RTLD_OBJECT_MAX + 1U) * sizeof(*dtv));
 
 	/* Handles the dtv availability. */
 	if (dtv == NULL) {
-		tls_unmap(tcb, sizeof(*tcb));
+		tls_unmap(mapping, size);
 
 		/* Reports operation failure. */
 		return -1;
 	}
+
+	/* Anonymous memory leaves .tbss zeroed; only the template is copied. */
+	if (static_tls_template_size != 0) {
+		rtld_memcpy((unsigned char *)tcb - static_tls_distance,
+			    static_tls_template, static_tls_template_size);
+	}
 	rtld_memset(tcb, 0, sizeof(*tcb));
 	tcb->tls.self = (uintptr_t)tcb;
+	tcb->tls.mapping_base = (uintptr_t)mapping;
+	tcb->tls.mapping_size = size;
+	tcb->tls.template_address = (uintptr_t)static_tls_template;
+	tcb->tls.template_size = static_tls_template_size;
+	tcb->tls.memory_size = static_tls_distance;
+	tcb->tls.alignment = static_tls_alignment;
+	tcb->tls.distance = static_tls_distance;
 	rtld_memset(dtv, 0, (RTLD_OBJECT_MAX + 1U) * sizeof(*dtv));
 	tcb->dtv = dtv;
 	tcb->dtv_count = RTLD_OBJECT_MAX + 1U;
@@ -440,7 +494,9 @@ __rtld_thread_free(
 	}
 	tls_unmap(tcb->dtv, (RTLD_OBJECT_MAX + 1U) * sizeof(*tcb->dtv));
 	tcb->dtv = NULL;
-	tls_unmap(tcb, sizeof(*tcb));
+
+	/* The control block sits inside the mapping it records, not at it. */
+	tls_unmap((void *)tcb->tls.mapping_base, tcb->tls.mapping_size);
 }
 
 /*
@@ -536,9 +592,19 @@ __tls_get_addr(
 	tcb = (struct __rtld_tcb *)(uintptr_t)value;
 	module = &tls_modules[index->module];
 
+	/* Handles the module availability. */
+	if (!module->active || index->offset >= module->memory_size)
+		rtld_fatal("invalid TLS module access");
+
+	/* A module in the static area is already present in every thread. */
+	if (module->is_static) {
+		/* Returns the computed result. */
+		return (unsigned char *)tcb - module->static_offset +
+		       index->offset;
+	}
+
 	/* Handles the dtv availability. */
-	if (!module->active || index->offset >= module->memory_size ||
-	    tcb->dtv == NULL || index->module >= tcb->dtv_count)
+	if (tcb->dtv == NULL || index->module >= tcb->dtv_count)
 		rtld_fatal("invalid TLS module access");
 	block = tcb->dtv[index->module];
 
@@ -845,6 +911,54 @@ __rtld_dlvsym(
 
 	/* Returns the computed result. */
 	return function_result;
+}
+
+/*
+ * Implements the dl iterate phdr operation.
+ *
+ * Reports every loaded object to the callback, oldest first, stopping at the
+ * first non-zero return and passing it back.  An unwinder uses this to find
+ * the exception tables of whichever object a frame belongs to.
+ */
+int
+__rtld_dl_iterate_phdr(
+	int (*callback)(struct dl_phdr_info *, size_t, void *),
+	void *argument)
+{
+	struct dl_phdr_info information;
+	struct rtld_object *object;
+	unsigned index;
+	int result;
+
+	/* Handles the callback availability. */
+	if (callback == NULL)
+		return 0;
+
+	/* Process each remaining element. */
+	for (index = 0; index < object_count; index++) {
+		object = &objects[index];
+
+		/* Skips an object that is not part of the process now. */
+		if (!object->active || object->unloading)
+			continue;
+
+		rtld_memset(&information, 0, sizeof(information));
+		information.dlpi_addr = (ElfW_Addr)object->base;
+		information.dlpi_name = object->path;
+		information.dlpi_phdr = (const ElfW_Phdr *)(const void *)
+		    object->phdr;
+		information.dlpi_phnum = (ElfW_Half)object->phnum;
+		information.dlpi_adds = rtld_object_generation;
+		information.dlpi_subs = rtld_object_removals;
+
+		/* Stops at the first callback that asks to. */
+		result = callback(&information, sizeof(information), argument);
+		if (result != 0)
+			return result;
+	}
+
+	/* Reports that every object was visited. */
+	return 0;
 }
 
 /*
@@ -1161,6 +1275,7 @@ rtld_main(
 	/* Handles the interpreter object condition. */
 	if (interpreter_object->needed_count != 0)
 		rtld_fatal("interpreter must not have dependencies");
+	layout_static_tls();
 
 	/* Process each remaining element. */
 	for (i = 0; i < object_count; i++) {
@@ -1385,6 +1500,135 @@ allocate_tls_block(
 
 	/* Returns the computed result. */
 	return block;
+}
+
+/*
+ * Supports the layout static tls operation.
+ *
+ * Places the main executable first, because its displacement below the
+ * thread pointer is the one a linker has already committed to, and then
+ * every other module loaded at startup.  The result is a template image of
+ * the whole area, which each thread copies into place as it is created.
+ */
+static void
+layout_static_tls(
+	void)
+{
+	struct rtld_tls_module *module;
+	struct rtld_tls_module *order[RTLD_OBJECT_MAX + 1U];
+	unsigned char *image;
+	uintptr_t offset;
+	uintptr_t id;
+	unsigned count;
+	unsigned i;
+
+	/* Handles a second pass, which would move blocks already in use. */
+	if (static_tls_sealed)
+		return;
+	count = 0;
+
+#if !defined(HAL_ARCH_AMD64) && !defined(HAL_ARCH_I386)
+	/*
+	 * A variant I architecture counts upwards from the thread pointer and
+	 * reserves the control block at its base, which the kern_tls_prefix
+	 * contract cannot describe.  The kernel declines static TLS there for
+	 * the same reason, so every module stays dynamic.
+	 */
+	static_tls_sealed = 1;
+	return;
+#else
+
+	/* Handles the main object condition. */
+	if (main_object != NULL && main_object->tls_module_id != 0)
+		order[count++] = &tls_modules[main_object->tls_module_id];
+
+	/* Process each remaining element. */
+	for (id = 1; id <= tls_module_count; id++) {
+		module = &tls_modules[id];
+
+		/* Skips a slot that holds no module, and the main one. */
+		if (!module->active || (count != 0 && module == order[0]))
+			continue;
+		order[count++] = module;
+	}
+
+	/* Process each remaining element. */
+	offset = 0;
+	for (i = 0; i < count; i++) {
+		module = order[i];
+
+		/* Handles a total the thread pointer cannot reach. */
+		if (module->memory_size > KERN_TLS_MEMORY_MAX - offset)
+			rtld_fatal("static TLS area is too large");
+
+		/*
+		 * Variant II counts downwards from the thread pointer, so a
+		 * block ends at its own offset and the rounding that aligns
+		 * it belongs below, not above.
+		 */
+		offset += module->memory_size;
+		offset = (offset + module->alignment - 1U) &
+			 ~(uintptr_t)(module->alignment - 1U);
+		module->static_offset = (size_t)offset;
+		module->is_static = 1;
+
+		/* Handles the alignment condition. */
+		if (module->alignment > static_tls_alignment)
+			static_tls_alignment = module->alignment;
+	}
+	static_tls_sealed = 1;
+
+	/* Handles the offset condition. */
+	if (offset == 0)
+		return;
+
+	/* The template is mapped once and never written again. */
+	image = tls_map((size_t)offset);
+
+	/* Handles the image availability. */
+	if (image == NULL)
+		rtld_fatal("cannot allocate static TLS template");
+
+	/* Process each remaining element. */
+	for (i = 0; i < count; i++) {
+		module = order[i];
+
+		/* Anonymous memory leaves .tbss and the padding zeroed. */
+		if (module->file_size != 0) {
+			rtld_memcpy(image + (offset - module->static_offset),
+				    module->init_image, module->file_size);
+		}
+	}
+	static_tls_distance = offset;
+	static_tls_template = image;
+	static_tls_template_size = (size_t)offset;
+#endif
+}
+
+/*
+ * Supports the static tls displacement operation.
+ *
+ * Reports how far below the thread pointer a module's block sits.  Only a
+ * module present in every thread has such a place, so an object that
+ * dlopen() added later cannot satisfy an initial-exec access.
+ */
+static uintptr_t
+static_tls_displacement(
+	const struct rtld_object *owner)
+{
+	const struct rtld_tls_module *module;
+
+	/* Handles the owner availability. */
+	if (owner == NULL || owner->tls_module_id == 0)
+		rtld_fatal("TLS module is unavailable");
+	module = &tls_modules[owner->tls_module_id];
+
+	/* Handles a module that is not part of the static area. */
+	if (!module->is_static)
+		rtld_fatal("initial-exec TLS needs a startup-loaded module");
+
+	/* Returns the computed result. */
+	return (uintptr_t)0 - (uintptr_t)module->static_offset;
 }
 
 /* Supports the initialize object operation. */
@@ -2094,6 +2338,9 @@ new_object(
 	rtld_memset(object, 0, sizeof(*object));
 	object->active = 1;
 	object->generation = next_object_generation++;
+
+	/* A walk of the loaded objects reports this as one more addition. */
+	rtld_object_generation++;
 
 	/* Handles the next object generation condition. */
 	if (next_object_generation == 0)
@@ -3420,6 +3667,22 @@ apply_value(
 			rtld_fatal("TLS symbol is unavailable");
 		value = (uintptr_t)tls_symbol->st_value + addend;
 		break;
+	case R_X86_64_TPOFF64:
+		/* Handles the symbol index condition. */
+		if (symbol_index == 0) {
+			tls_owner = object;
+			value = 0;
+		} else {
+			tls_symbol = resolve_tls_symbol(object, symbol_index,
+							&tls_owner);
+
+			/* Handles the tls symbol availability. */
+			if (tls_symbol == NULL)
+				rtld_fatal("TLS symbol is unavailable");
+			value = (uintptr_t)tls_symbol->st_value;
+		}
+		value += static_tls_displacement(tls_owner) + addend;
+		break;
 	case R_X86_64_TLSDESC:
 		install_tlsdesc(object, address, symbol_index, addend);
 
@@ -4258,6 +4521,9 @@ unload_object_locked(
 			}
 		}
 		module->active = 0;
+
+		/* And this as one more removal. */
+		rtld_object_removals++;
 		module->owner = NULL;
 		module->init_image = NULL;
 		tls_generation++;

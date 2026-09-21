@@ -12,6 +12,10 @@
 #ifndef KERN_UAPI_GRAPHICS_H
 #define KERN_UAPI_GRAPHICS_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 #include <sys/ioctl.h>
 #include <uapi/types.h>
@@ -151,5 +155,9 @@ struct graphics_glyph {
 	_IOWR(KERN_GRAPHICS_IOC_GROUP, 10, struct graphics_glyph)
 #define KERN_GRAPHICS_GET_MODES	\
 	_IOWR(KERN_GRAPHICS_IOC_GROUP, 11, struct graphics_mode_list)
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

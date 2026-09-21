@@ -8,6 +8,10 @@
 #ifndef LIBC_PTHREAD_H
 #define LIBC_PTHREAD_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stddef.h>
 #include <stdint.h>
 #include <signal.h>
@@ -122,5 +126,9 @@ void __pthread_cleanup_pop(struct __pthread_cleanup *,int);
 #define pthread_cleanup_pop(execute) \
 	__pthread_cleanup_pop(&__pthread_cleanup_record,(execute)); \
 } while (0)
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

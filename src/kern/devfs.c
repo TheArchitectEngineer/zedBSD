@@ -24,6 +24,7 @@
 #include "kern/block-identity.h"
 #include "kern/buf.h"
 #include "kern/cdev.h"
+#include "kern/filedesc.h"
 #include "kern/disk.h"
 #include "kern/file.h"
 #include "kern/inode.h"
@@ -48,8 +49,12 @@
 #define DEVFS_SHM_INO 2U
 #define DEVFS_PTS_INO 3U
 #define DEVFS_INPUT_INO 4U
+#define DEVFS_FD_INO 5U
 #define DEVFS_PTS_INO_BASE 0x200000000ULL
 #define DEVFS_CHAR_INO_BASE 0x300000000ULL
+#define DEVFS_FD_INO_BASE 0x400000000ULL
+/* The three standard descriptors, named in the root. */
+#define DEVFS_STD_INO_BASE 0x500000000ULL
 #define DEVFS_HIGH __attribute__((section(".hightext")))
 #ifdef KERN_STORAGE_HOST_TEST
 #undef DEVFS_HIGH
@@ -338,7 +343,8 @@ devfs_fixed_inode(
 	    result == NULL ||
 	    (number != DEVFS_SHM_INO &&
 	     number != DEVFS_PTS_INO &&
-	     number != DEVFS_INPUT_INO))
+	     number != DEVFS_INPUT_INO &&
+	     number != DEVFS_FD_INO))
 		return EINVAL;
 
 	/* The mount-local mutex permits allocation and victim reclaim to sleep. */
@@ -370,6 +376,99 @@ devfs_fixed_inode(
 	return 0;
 }
 
+/*
+ * Accepts an open of /dev/fd/N.
+ *
+ * This is the whole of the node's own part in the mechanism, and it does no
+ * work beyond checking: the open path itself replaces the file being opened
+ * with descriptor N of the calling process, having seen i_descriptor_alias
+ * on the node.  Only the open path can do that, because only it owns the
+ * descriptor table.
+ *
+ * The reason it must be a replacement rather than a fresh open is that
+ * /dev/fd/N is defined to behave as dup(N) does.  dup does not copy the
+ * open file description; it makes a second name for the one that is already
+ * there, and the two names then share:
+ *
+ *   - the file offset, continuously.  Reading through one advances the
+ *     other.  Copying the offset here would give the right answer once and
+ *     the wrong answer from the first read onwards.
+ *   - the status flags.  fcntl(F_SETFL, O_NONBLOCK) through one is seen by
+ *     the other.
+ *   - the locks that belong to the description: flock and the F_OFD_ family.
+ *     A second description would take independent locks and so contend with
+ *     the process that already holds them.
+ *
+ * Re-opening the underlying object instead would also re-check permission,
+ * so it could fail where dup succeeds -- a descriptor handed down by a
+ * more privileged parent -- and could widen the access mode, which is why
+ * the open path additionally refuses a mode the descriptor does not already
+ * have.  And it is not possible at all for a pipe, a socket, or a file that
+ * has been unlinked, because none of those has a name to open.  A pipe is
+ * the common case: it is what a shell's process substitution passes this
+ * way, so a scheme that cannot express dup cannot serve the main use.
+ *
+ * The listing of /dev/fd does not depend on the caller: every node from 0
+ * to KERN_OPEN_MAX - 1 is present for everyone, as it is on SunOS, and only
+ * the open resolves against the caller.  A filesystem that instead showed
+ * each process only its own descriptors -- the 4.4BSD fdescfs -- has to
+ * answer readdir per caller and must keep its lookups out of the name
+ * cache, since a path would no longer name the same object for everyone.
+ */
+static DEVFS_HIGH int
+devfs_descriptor_open(
+	struct file *file)
+{
+	/* The node carries no state of its own; the open path does the work. */
+	(void)file;
+
+	/* Reports successful completion. */
+	return 0;
+}
+
+/* One node under /dev/fd, which the open path turns into a descriptor. */
+static const struct file_ops devfs_descriptor_file_ops = {
+	.open = devfs_descriptor_open,
+};
+
+/*
+ * Makes one node that stands for a descriptor of the calling process.
+ *
+ * The descriptor number is kept in the minor, which is where the open path
+ * reads it from; i_descriptor_alias is what tells it to look.
+ */
+static DEVFS_HIGH int
+devfs_descriptor_inode(
+	struct inode *directory,
+	uint64_t descriptor,
+	ino_t number,
+	struct inode **result)
+{
+	struct inode *inode;
+
+	/* Creates the node unless it is already cached. */
+	if (inode_get(directory->i_mount, number, &inode) != 0) {
+		inode = inode_alloc(directory->i_mount);
+		if (inode == NULL)
+			return ENOSPC;
+		inode->i_type = INODE_CHAR;
+		inode->i_ino = number;
+		inode->i_op = directory->i_op;
+		inode->i_fop = &devfs_descriptor_file_ops;
+		inode->i_linkcount = 1;
+		inode->i_mode = S_IFCHR | 0666U;
+
+		/* The minor is the descriptor the open hands back. */
+		inode->i_rdev = (dev_t)(0x00030000U + descriptor);
+		inode->i_descriptor_alias = 1U;
+	}
+
+	*result = inode;
+
+	/* Reports the node. */
+	return 0;
+}
+
 /* Looks a name up in the root or one of the fixed directories. */
 static DEVFS_HIGH int
 devfs_lookup(
@@ -391,7 +490,8 @@ devfs_lookup(
 		if (component_equal(component, "..") &&
 		    (directory->i_ino == DEVFS_SHM_INO ||
 		     directory->i_ino == DEVFS_PTS_INO ||
-		     directory->i_ino == DEVFS_INPUT_INO)) {
+		     directory->i_ino == DEVFS_INPUT_INO ||
+		     directory->i_ino == DEVFS_FD_INO)) {
 			error = inode_get(directory->i_mount, 1, result);
 			return error;
 		}
@@ -436,6 +536,43 @@ devfs_lookup(
 		return 0;
 	}
 
+	/* The three standard descriptors have names of their own. */
+	if (directory->i_ino == 1) {
+		number = UINT64_MAX;
+		if (component_equal(component, "stdin"))
+			number = 0;
+		else if (component_equal(component, "stdout"))
+			number = 1;
+		else if (component_equal(component, "stderr"))
+			number = 2;
+		if (number != UINT64_MAX) {
+			error = devfs_descriptor_inode(directory, number,
+			    (ino_t)(DEVFS_STD_INO_BASE + number), result);
+			return error;
+		}
+	}
+
+	/* /dev/fd names the caller's own descriptors by their number. */
+	if (directory->i_ino == DEVFS_FD_INO) {
+		number = 0;
+		if (component->cn_namelen == 0 || component->cn_namelen > 3U)
+			return ENOENT;
+		for (i = 0; i < component->cn_namelen; i++) {
+			digit = (unsigned char)component->cn_nameptr[i];
+			if (digit < '0' || digit > '9')
+				return ENOENT;
+			number = number * 10U + (digit - '0');
+		}
+
+		if (number >= (uint64_t)KERN_OPEN_MAX)
+			return ENOENT;
+
+		/* Returns the node for that descriptor number. */
+		error = devfs_descriptor_inode(directory, number,
+		    (ino_t)(DEVFS_FD_INO_BASE + number), result);
+		return error;
+	}
+
 	/* Every other name must fit a device name. */
 	error = component_copy(component, name, sizeof(name));
 	if (error != 0)
@@ -466,6 +603,11 @@ devfs_lookup(
 
 	if (component_equal(component, "input")) {
 		error = devfs_fixed_inode(directory, DEVFS_INPUT_INO, result);
+		return error;
+	}
+
+	if (component_equal(component, "fd")) {
+		error = devfs_fixed_inode(directory, DEVFS_FD_INO, result);
 		return error;
 	}
 
@@ -668,13 +810,13 @@ devfs_dir_open(
 	}
 
 	/* Reserves room for all non-character entries without count overflow. */
-	if (character_count > UINT_MAX - DISK_MAX - 10U) {
+	if (character_count > UINT_MAX - DISK_MAX - KERN_OPEN_MAX - 10U) {
 		devfs_cdev_snapshot_release(snapshot, character_count);
 		return EOVERFLOW;
 	}
 
 	/* Includes all existing disk slots, terminal slots and fixed directories. */
-	capacity = character_count + DISK_MAX + 10U;
+	capacity = character_count + DISK_MAX + KERN_OPEN_MAX + 10U;
 
 	/* Rejects byte counts that cannot be represented by this architecture. */
 	allocation_bytes = (size_t)capacity * sizeof(*entry);
@@ -727,6 +869,33 @@ devfs_dir_open(
 			entry->type = INODE_CHAR;
 			state->count++;
 		}
+	} else if (file->f_inode->i_ino == DEVFS_FD_INO) {
+		/*
+		 * Every descriptor number the process table can hold is
+		 * listed, for every caller alike; the open is what resolves
+		 * against the caller.
+		 */
+		for (index = 0; index < (unsigned)KERN_OPEN_MAX; index++) {
+			entry = &state->entries[state->count];
+			number = index;
+			used = 0;
+			do {
+				digits[used++] = (char)('0' + number % 10U);
+				number /= 10U;
+			} while (number != 0);
+
+			/* Reverses the digits into their directory order. */
+			for (digit_index = 0; digit_index < used;
+			     digit_index++) {
+				entry->name[digit_index] =
+					digits[used - digit_index - 1U];
+			}
+
+			entry->name[used] = '\0';
+			entry->ino = (ino_t)(DEVFS_FD_INO_BASE + index);
+			entry->type = INODE_CHAR;
+			state->count++;
+		}
 	} else if (file->f_inode->i_ino == DEVFS_INPUT_INO) {
 		/* Copies every event device visible at snapshot acquisition. */
 		devfs_directory_add_cdevs(state, 1, snapshot, character_count);
@@ -751,6 +920,26 @@ devfs_dir_open(
 		entry->ino = DEVFS_INPUT_INO;
 		entry->type = INODE_DIR;
 		state->count++;
+
+		/* Publishes the fixed descriptor directory in the root listing. */
+		entry = &state->entries[state->count];
+		strcpy(entry->name, "fd");
+		entry->ino = DEVFS_FD_INO;
+		entry->type = INODE_DIR;
+		state->count++;
+
+		/* Publishes the three standard descriptors by name. */
+		for (index = 0; index < 3U; index++) {
+			static const char *const standard[3] = {
+				"stdin", "stdout", "stderr"
+			};
+
+			entry = &state->entries[state->count];
+			strcpy(entry->name, standard[index]);
+			entry->ino = (ino_t)(DEVFS_STD_INO_BASE + index);
+			entry->type = INODE_CHAR;
+			state->count++;
+		}
 
 		/* Copies every root-level device into its reserved snapshot space. */
 		devfs_directory_add_cdevs(state, 0, snapshot, character_count);
