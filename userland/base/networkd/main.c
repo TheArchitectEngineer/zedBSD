@@ -16,6 +16,7 @@
 #include "userland/base/net/publication-trace.h"
 #include "userland/base/net/wifi-store.h"
 #include "userland/base/networkd/confirmed.h"
+#include "userland/base/networkd/managed-lan.h"
 #include "userland/base/networkd/managed-wlan.h"
 #include "userland/base/networkd/wifi-child.h"
 
@@ -161,6 +162,23 @@ struct networkd_control_input {
 
 static volatile sig_atomic_t stopping;
 static struct networkd_managed_wlan managed_wlan;
+
+/*
+ * The wired interfaces, and what is to happen to them.
+ *
+ * What the configuration says is handed over by the net command, which owns
+ * the file it is written in; what the cables are doing is told by the
+ * kernel on the route socket.  The daemon holds both and acts on them in
+ * the background, because a cable moves when it moves and nobody is
+ * waiting to be told.
+ */
+static struct networkd_lan managed_lan;
+
+/* Set when an event has left the wired policy something to do. */
+static int lan_work_due;
+
+/* An interface an event asked to be taken down, done at the next turn. */
+static char lan_down_pending[IFNAMSIZ];
 static struct networkd_wlan_radio known_wlan_radios[NETWORKD_WLAN_RADIO_MAX];
 static size_t known_wlan_radio_count;
 static int wifi_disable_pending;
@@ -203,6 +221,15 @@ static int open_listener(struct networkd_listener *listener);
 static int open_route_events(void);
 static int process_route_events(void);
 static void process_route_event(const struct rtm_ifinfo *);
+static int lan_policy_decode(const struct networkd_request *,
+			     struct networkd_lan_policy *, size_t, size_t *);
+static int lan_interface_name(uint32_t, char *, size_t);
+static void lan_snapshot(void);
+static int lan_address_usable(const char *);
+static void lan_assign_link_local(const char *, uint64_t);
+static void lan_configure(const struct networkd_lan_work *);
+static void lan_take_down(const char *);
+static void run_lan_work(void);
 static void recover_managed_wlan(void);
 static void schedule_automatic_work(unsigned);
 static int automatic_poll_timeout(void);
@@ -974,6 +1001,413 @@ process_route_events(
 	}
 }
 
+/*
+ * Supports the lan interface name operation.
+ *
+ * Names the interface an event was about.  An event carries the index
+ * rather than the name, and the index is all that is left once a device has
+ * gone, so this answers only for one that is still there.
+ */
+static int
+lan_interface_name(
+	uint32_t ifindex,
+	char *output,
+	size_t capacity)
+{
+	char name[IFNAMSIZ];
+	int descriptor;
+	int result;
+
+	/* Rejects a buffer that could not hold a name. */
+	if (output == NULL || capacity < sizeof(name))
+		return -1;
+	descriptor = socket(AF_INET, SOCK_DGRAM, 0);
+
+	/* Handles a failed socket operation. */
+	if (descriptor < 0)
+		return -1;
+	result = netutil_ifname(descriptor, ifindex, name);
+	(void)close(descriptor);
+
+	/* Handles an index that names nothing. */
+	if (result != 0)
+		return -1;
+	strncpy(output, name, capacity - 1U);
+	output[capacity - 1U] = '\0';
+
+	/* Reports successful completion. */
+	return 0;
+}
+
+/*
+ * Supports the lan policy decode operation.
+ *
+ * Reads the wired policy out of a request.  It is carried as one text
+ * record per interface, because the decoder the other operations share
+ * admits one interface and no more, and what is described here is every
+ * interface at once.
+ */
+static int
+lan_policy_decode(
+	const struct networkd_request *request,
+	struct networkd_lan_policy *policy,
+	size_t capacity,
+	size_t *count)
+{
+	struct networkd_field_reader reader;
+	struct networkd_field field;
+	char record[128];
+	char *word[5];
+	char *token;
+	unsigned words;
+	int result;
+
+	*count = 0U;
+	networkd_field_reader_init(&reader, request->payload,
+	    request->header.payload_length);
+
+	/* Continue while the operation condition remains true. */
+	while ((result = networkd_field_read(&reader, &field)) == 0) {
+		/* Rejects anything that is not one of the records. */
+		if (field.type != NETWORKD_FIELD_OUTPUT ||
+		    field.length == 0U || field.length >= sizeof(record) ||
+		    memchr(field.value, '\0', field.length) != NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+
+		/* Rejects more interfaces than can be held. */
+		if (*count == capacity) {
+			errno = EOVERFLOW;
+			return -1;
+		}
+		memcpy(record, field.value, field.length);
+		record[field.length] = '\0';
+		words = 0U;
+		for (token = strtok(record, " "); token != NULL;
+		    token = strtok(NULL, " ")) {
+			if (words == sizeof(word) / sizeof(word[0])) {
+				errno = EINVAL;
+				return -1;
+			}
+			word[words++] = token;
+		}
+
+		/* Every record names an interface and what is asked of it. */
+		if (words < 2U || strlen(word[0]) >= IFNAMSIZ) {
+			errno = EINVAL;
+			return -1;
+		}
+		memset(&policy[*count], 0, sizeof(policy[*count]));
+		strncpy(policy[*count].interface, word[0],
+			sizeof(policy[*count].interface) - 1U);
+
+		/* Dispatch the selected kind of record. */
+		if (strcmp(word[1], "dhcp") == 0 && words == 3U) {
+			policy[*count].mode = NETWORKD_LAN_MODE_DHCP;
+			policy[*count].dhcp_timeout =
+			    (unsigned)strtoul(word[2], NULL, 10);
+			if (policy[*count].dhcp_timeout == 0U ||
+			    policy[*count].dhcp_timeout > 3600U) {
+				errno = EINVAL;
+				return -1;
+			}
+		} else if (strcmp(word[1], "static") == 0 && words == 4U) {
+			policy[*count].mode = NETWORKD_LAN_MODE_STATIC;
+			if (strlen(word[2]) >= sizeof(policy[*count].address) ||
+			    strlen(word[3]) >= sizeof(policy[*count].netmask)) {
+				errno = EINVAL;
+				return -1;
+			}
+			strcpy(policy[*count].address, word[2]);
+			strcpy(policy[*count].netmask, word[3]);
+		} else if (strcmp(word[1], "disabled") == 0 && words == 2U) {
+			policy[*count].mode = NETWORKD_LAN_MODE_DISABLED;
+		} else {
+			errno = EINVAL;
+			return -1;
+		}
+		(*count)++;
+	}
+
+	/* Handles a payload that ended in the middle of a record. */
+	if (result < 0)
+		return -1;
+
+	/* Reports successful completion. */
+	return 0;
+}
+
+/*
+ * Supports the lan snapshot operation.
+ *
+ * Reads every interface and tells the policy which of them are there and
+ * which have a cable.  The running flag is what the kernel sets from the
+ * carrier, so it is the same question asked a different way; asking it
+ * outright is what an event that was lost leaves as the only option.
+ */
+static void
+lan_snapshot(
+	void)
+{
+	struct ifreq *list;
+	unsigned count;
+	unsigned index;
+	uint32_t ifindex;
+	int descriptor;
+	int flags;
+
+	descriptor = socket(AF_INET, SOCK_DGRAM, 0);
+
+	/* Handles a failed socket operation. */
+	if (descriptor < 0)
+		return;
+	list = NULL;
+	count = 0U;
+
+	/* Handles a failed enumeration, which leaves the snapshot for later. */
+	if (netutil_interfaces(descriptor, &list, &count) != 0) {
+		(void)close(descriptor);
+		return;
+	}
+	networkd_lan_snapshot_begin(&managed_lan);
+
+	/* Process each remaining element. */
+	for (index = 0U; index < count; index++) {
+		flags = 0;
+		ifindex = 0U;
+
+		/* Handles an interface that cannot be asked about. */
+		if (interface_flags(list[index].ifr_name, &flags) != 0 ||
+		    interface_index(list[index].ifr_name, &ifindex) != 0)
+			continue;
+
+		/* The loopback is nobody's cable and is never managed. */
+		if ((flags & IFF_LOOPBACK) != 0)
+			continue;
+		(void)networkd_lan_observe(&managed_lan, list[index].ifr_name,
+					   ifindex, 0U,
+					   (flags & IFF_RUNNING) != 0);
+	}
+	networkd_lan_snapshot_end(&managed_lan);
+	free(list);
+	(void)close(descriptor);
+}
+
+/*
+ * Supports the lan address usable operation.
+ *
+ * Reports whether an interface holds an address a machine can be reached
+ * at.  A link-local address does not count: it is what is given to an
+ * interface that could not be configured, so counting it would make the
+ * failure look like a success.
+ */
+static int
+lan_address_usable(
+	const char *name)
+{
+	struct ifreq request;
+	uint32_t value;
+	int descriptor;
+	int usable;
+
+	descriptor = socket(AF_INET, SOCK_DGRAM, 0);
+
+	/* Handles a failed socket operation. */
+	if (descriptor < 0)
+		return 0;
+	memset(&request, 0, sizeof(request));
+	strncpy(request.ifr_name, name, sizeof(request.ifr_name) - 1U);
+	usable = 0;
+
+	/* Handles an interface that holds no address at all. */
+	if (ioctl(descriptor, SIOCGIFADDR, &request) == 0 &&
+	    request.ifr_addr.sa_family == AF_INET) {
+		value = ntohl(((struct sockaddr_in *)(void *)
+		    &request.ifr_addr)->sin_addr.s_addr);
+		usable = value != 0U && (value >> 24) != 127U &&
+			 (value >> 16) != 0xa9feU;
+	}
+	(void)close(descriptor);
+
+	/* Returns the computed result. */
+	return usable;
+}
+
+/*
+ * Supports the lan assign link local operation.
+ *
+ * Gives an interface the address that says it has none.  A machine whose
+ * lease was not answered is still reachable by whoever is on the same
+ * cable, and an address out of the link-local range says, to anything that
+ * looks, exactly how it was arrived at.
+ */
+static void
+lan_assign_link_local(
+	const char *name,
+	uint64_t deadline)
+{
+	char diagnostic[CHILD_OUTPUT_MAX];
+	char address[NETWORKD_LAN_ADDRESS_MAX];
+	struct ifreq request;
+	char *arguments[7];
+	int descriptor;
+
+	descriptor = socket(AF_INET, SOCK_DGRAM, 0);
+
+	/* Handles a failed socket operation. */
+	if (descriptor < 0)
+		return;
+	memset(&request, 0, sizeof(request));
+	strncpy(request.ifr_name, name, sizeof(request.ifr_name) - 1U);
+
+	/* Handles hardware that will not say what its address is. */
+	if (ioctl(descriptor, SIOCGIFHWADDR, &request) != 0) {
+		(void)close(descriptor);
+		return;
+	}
+	(void)close(descriptor);
+
+	/* Handles an address that could not be derived. */
+	if (networkd_lan_link_local(request.ifr_hwaddr,
+				    sizeof(request.ifr_hwaddr), address,
+				    sizeof(address)) != 0)
+		return;
+	diagnostic[0] = '\0';
+	arguments[0] = (char *)"/sbin/ifconfig";
+	arguments[1] = (char *)name;
+	arguments[2] = (char *)"inet";
+	arguments[3] = address;
+	arguments[4] = (char *)"netmask";
+	arguments[5] = (char *)"255.255.0.0";
+	arguments[6] = NULL;
+	(void)run_command_until(arguments, 10U, deadline, diagnostic);
+}
+
+/*
+ * Supports the lan configure operation.
+ *
+ * Brings one interface up and gives it what the configuration asks for.
+ * Whether that succeeded is answered by looking at the interface rather
+ * than at what the command returned: a lease that was refused and a lease
+ * that was never answered leave the same interface behind.
+ */
+static void
+lan_configure(
+	const struct networkd_lan_work *work)
+{
+	char diagnostic[CHILD_OUTPUT_MAX];
+	char seconds[16];
+	char *arguments[7];
+	uint64_t deadline;
+	int obtained;
+
+	deadline = netutil_monotonic_us() +
+	    (uint64_t)(work->policy.dhcp_timeout + 30U) * 1000000ULL;
+	diagnostic[0] = '\0';
+	arguments[0] = (char *)"/sbin/ifconfig";
+	arguments[1] = (char *)work->interface;
+	arguments[2] = (char *)"up";
+	arguments[3] = NULL;
+
+	/* Handles an interface that will not come up at all. */
+	if (run_command_until(arguments, 10U, deadline, diagnostic) != 0) {
+		(void)networkd_lan_configured(&managed_lan, work->interface, 0);
+		return;
+	}
+
+	/* Dispatch the selected kind of configuration. */
+	if (work->policy.mode == NETWORKD_LAN_MODE_STATIC) {
+		diagnostic[0] = '\0';
+		arguments[0] = (char *)"/sbin/ifconfig";
+		arguments[1] = (char *)work->interface;
+		arguments[2] = (char *)"inet";
+		arguments[3] = (char *)work->policy.address;
+		arguments[4] = (char *)"netmask";
+		arguments[5] = (char *)work->policy.netmask;
+		arguments[6] = NULL;
+		(void)run_command_until(arguments, 10U, deadline, diagnostic);
+	} else {
+		(void)snprintf(seconds, sizeof(seconds), "%u",
+			       work->policy.dhcp_timeout);
+		diagnostic[0] = '\0';
+		arguments[0] = (char *)"/sbin/dhcpc";
+		arguments[1] = (char *)"-t";
+		arguments[2] = seconds;
+		arguments[3] = (char *)work->interface;
+		arguments[4] = NULL;
+		(void)run_command_until(arguments,
+		    work->policy.dhcp_timeout + 5U, deadline, diagnostic);
+	}
+	obtained = lan_address_usable(work->interface);
+
+	/* An interface that obtained nothing is told to say so. */
+	if (!obtained)
+		lan_assign_link_local(work->interface, deadline);
+	(void)networkd_lan_configured(&managed_lan, work->interface, obtained);
+}
+
+/*
+ * Supports the lan take down operation.
+ */
+static void
+lan_take_down(
+	const char *name)
+{
+	char diagnostic[CHILD_OUTPUT_MAX];
+	char *arguments[4];
+
+	diagnostic[0] = '\0';
+	arguments[0] = (char *)"/sbin/ifconfig";
+	arguments[1] = (char *)name;
+	arguments[2] = (char *)"down";
+	arguments[3] = NULL;
+	(void)run_command_until(arguments, 10U,
+	    netutil_monotonic_us() + 15000000ULL, diagnostic);
+	(void)networkd_lan_down(&managed_lan, name);
+}
+
+/*
+ * Supports the run lan work operation.
+ *
+ * Carries out whatever the wired policy has decided, one interface at a
+ * time, until it has decided nothing more.  Each step is bounded, so a
+ * server that never answers holds up the interface it was asked about and
+ * nothing else.
+ */
+static void
+run_lan_work(
+	void)
+{
+	struct networkd_lan_work work;
+	unsigned steps;
+
+	/* Handles the work that a lost event left. */
+	if (lan_down_pending[0] != '\0') {
+		lan_take_down(lan_down_pending);
+		lan_down_pending[0] = '\0';
+	}
+
+	/*
+	 * The count bounds one turn of the loop rather than the work: an
+	 * interface that is configured is not offered again, so the only way
+	 * round twice is for something to have changed meanwhile, and the
+	 * event that changed it will bring the daemon back here.
+	 */
+	for (steps = 0U; steps < NETWORKD_LAN_MAX; steps++) {
+		/* Handles a policy that cannot say what to do. */
+		if (networkd_lan_next(&managed_lan, &work) != 0)
+			return;
+		if (work.action == NETWORKD_LAN_ACTION_RESNAPSHOT) {
+			lan_snapshot();
+			continue;
+		}
+		if (work.action != NETWORKD_LAN_ACTION_CONFIGURE)
+			return;
+		lan_configure(&work);
+	}
+}
+
 /* Records event-driven intent; child work is owned only by the outer loop. */
 static void
 process_route_event(
@@ -982,6 +1416,30 @@ process_route_event(
 	struct networkd_managed_wlan_connection *connection;
 	enum networkd_managed_wlan_action action;
 	int flags;
+
+	/*
+	 * The wired policy sees every event too.  A carrier change means one
+	 * thing to a radio and another to a cable, so each reads the event
+	 * for itself rather than one deciding for both.
+	 */
+	switch (networkd_lan_event(&managed_lan, event)) {
+	case NETWORKD_LAN_ACTION_CONFIGURE:
+	case NETWORKD_LAN_ACTION_RESNAPSHOT:
+		lan_work_due = 1;
+		break;
+	case NETWORKD_LAN_ACTION_DOWN:
+		/*
+		 * Taking it down is done at the next turn of the loop, not
+		 * here: this is called while events are being read, and
+		 * running a command would stop them being read.
+		 */
+		if (lan_interface_name(event->rtm_ifindex, lan_down_pending,
+				       sizeof(lan_down_pending)) == 0)
+			lan_work_due = 1;
+		break;
+	default:
+		break;
+	}
 
 	action = networkd_managed_wlan_event(&managed_wlan, event);
 	connection = &managed_wlan.connection;
@@ -1275,6 +1733,9 @@ event_poll_timeout(
 	int automatic;
 	int rollback;
 
+	/* Wired work that is waiting is done before anything is waited for. */
+	if (lan_work_due)
+		return 0;
 	automatic = networkd_confirmed_active(&confirmed) ? -1 :
 	    automatic_poll_timeout();
 	rollback = networkd_confirmed_poll_timeout(&confirmed,
@@ -1311,6 +1772,11 @@ static void
 run_due_work(
 	void)
 {
+	/* The wired work is done first: it is bounded and it is cheap. */
+	if (lan_work_due) {
+		lan_work_due = 0;
+		run_lan_work();
+	}
 	run_confirmed_due();
 	if (!networkd_confirmed_active(&confirmed) &&
 	    automatic_poll_timeout() == 0) {
@@ -1710,6 +2176,44 @@ dispatch_request(
 
 	/* A request arriving with the timer event cannot disarm an expired owner. */
 	run_confirmed_due();
+
+	/*
+	 * Wired management says what is to happen from now on.  The answer
+	 * is sent as soon as that has been recorded, because the work
+	 * itself belongs to the background: a cable that is not in yet will
+	 * not go in any sooner for the caller waiting.
+	 */
+	if (request->header.opcode == NETWORKD_OP_LAN_ENABLE ||
+	    request->header.opcode == NETWORKD_OP_LAN_DISABLE) {
+		struct networkd_lan_policy policy[NETWORKD_LAN_MAX];
+		size_t policy_count;
+
+		if (request->header.opcode == NETWORKD_OP_LAN_DISABLE) {
+			(void)networkd_lan_disable(&managed_lan);
+			send_response(client, request->header.request_id,
+			    request->header.opcode, NETWORKD_RESULT_OK, 0,
+			    NULL, NULL, 0U);
+			return;
+		}
+		policy_count = 0U;
+
+		/* Handles a policy that could not be read. */
+		if (lan_policy_decode(request, policy,
+		    sizeof(policy) / sizeof(policy[0]), &policy_count) != 0 ||
+		    networkd_lan_set_policy(&managed_lan, policy,
+					    policy_count) != 0) {
+			send_response(client, request->header.request_id,
+			    request->header.opcode, NETWORKD_RESULT_ERROR,
+			    EINVAL, "wired policy", NULL, 0U);
+			return;
+		}
+		(void)networkd_lan_enable(&managed_lan);
+		lan_work_due = 1;
+		send_response(client, request->header.request_id,
+		    request->header.opcode, NETWORKD_RESULT_OK, 0, NULL,
+		    NULL, 0U);
+		return;
+	}
 
 	/* Owns confirmed-commit control without ever opening net.conf. */
 	if (request->header.opcode >= NETWORKD_OP_CONFIRMED_ARM &&
@@ -2964,8 +3468,18 @@ read_request(
 	/* Reads and semantically validates one request payload. */
 	if (networkd_protocol_read_frame_timed(descriptor, &request->header,
 	    request->payload, sizeof(request->payload),
-	    NETWORKD_REQUEST_MAX, 5U) != 0 || read_request_end(descriptor) != 0 ||
-	    decode_request(request) != 0)
+	    NETWORKD_REQUEST_MAX, 5U) != 0 || read_request_end(descriptor) != 0)
+		return -1;
+
+	/*
+	 * A wired-management request carries one record per interface, so it
+	 * does not fit the decoder for operations that name a single one.
+	 * It is read where it is acted on.
+	 */
+	if (request->header.opcode == NETWORKD_OP_LAN_ENABLE ||
+	    request->header.opcode == NETWORKD_OP_LAN_DISABLE)
+		return 0;
+	if (decode_request(request) != 0)
 		return -1;
 
 	/* Reports successful completion. */
@@ -3147,6 +3661,10 @@ operation_name(
 		return "DEFAULTROUTE_CLEAR";
 	if (opcode == NETWORKD_OP_DNS_CLEAR)
 		return "DNS_CLEAR";
+	if (opcode == NETWORKD_OP_LAN_ENABLE)
+		return "LAN_ENABLE";
+	if (opcode == NETWORKD_OP_LAN_DISABLE)
+		return "LAN_DISABLE";
 	if (opcode == NETWORKD_OP_CONFIRMED_ARM)
 		return "CONFIRMED_ARM";
 	if (opcode == NETWORKD_OP_CONFIRMED_DISARM)

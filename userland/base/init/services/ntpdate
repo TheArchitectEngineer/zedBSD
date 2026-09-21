@@ -1,6 +1,6 @@
 type=oneshot
 command=/sbin/ntpdate
-after=net
-requires=net
+after=networking
+requires=networking
 restart=no
 required=NO

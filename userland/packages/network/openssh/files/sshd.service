@@ -1,6 +1,6 @@
 type=daemon
 command=/usr/libexec/sshd-start
 arguments=-D
-after=syslogd,net
+after=syslogd,networking
 restart=on-failure
 required=NO

@@ -1,7 +1,7 @@
 type=oneshot
 command=/sbin/net
-arguments=boot
-after=networkd
+arguments=startup
+after=syslogd,networkd
 requires=networkd
 restart=no
 required=NO

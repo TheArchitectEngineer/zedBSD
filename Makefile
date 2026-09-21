@@ -360,6 +360,17 @@ menuconfig:
 menuconfig-host-test:
 	@$(PYTHON) plan/ws020/tests/menuconfig-target-host-test.py
 
+# The wired policy takes no device and runs no command, so what it decides
+# can be put to it on the host, where a cable can be moved by writing one.
+.PHONY: managed-lan-host-test
+managed-lan-host-test:
+	@mkdir -p $(BUILD)/host-tests
+	@$(HOSTCC) -std=c11 -O2 -Wall -Wextra -Werror -Iplan/ws033/tests/include -Iinclude -I. \
+	 userland/base/networkd/managed-lan.c \
+	 plan/ws033/tests/managed-lan-host-test.c \
+	 -o $(BUILD)/host-tests/managed-lan
+	@$(BUILD)/host-tests/managed-lan
+
 .PHONY: validate-image-config
 validate-image-config:
 	@:
@@ -466,6 +477,7 @@ ZEDBSD_CHECK_TARGETS := check softfloat-host-test \
 	posix2024-utility-matrix-check \
 	susv4-libc-host-test crypt-host-test gettext-catalog-host-test \
 	userland-command-host-test menuconfig-host-test \
+	managed-lan-host-test \
 	ufs-format-host-test ufs-format-python-test overlay-journal-format-host-test
 
 # Scripts invoked from make receive the configured architecture and build tree.

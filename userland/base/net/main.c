@@ -15,7 +15,9 @@
 #include "userland/base/net/reconcile.h"
 #include "userland/base/net/netconf.h"
 #include "userland/base/net/publication-trace.h"
+#include "userland/base/net/netutil.h"
 #include "userland/base/net/wifi-store.h"
+#include "userland/base/service/rcconf.h"
 #include "userland/base/libedit/readline/history.h"
 #include "userland/base/libedit/readline/readline.h"
 
@@ -24,12 +26,15 @@
 #include <errno.h>
 #include <limits.h>
 #include <net/if.h>
+#include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <sys/un.h>
 #include <unistd.h>
 
@@ -89,14 +94,24 @@ static int command_help(void);
 static int wifi_set_key_command(int argc, char **argv);
 static int wifi_command(int argc, char **argv);
 static int wifi_backend(uint32_t, const unsigned char *, size_t, int);
-static int boot(void);
-static int apply_candidate(const struct netconf *configuration);
-static int candidate_supported(const struct netconf *configuration, char *error, size_t capacity);
-static int send_up(const char *name);
-static int send_dhcp(const char *name, unsigned timeout);
-static int prefix_mask(unsigned prefix, char *buffer, size_t capacity);
-static int send_static(const char *name, const char *address, const char *mask);
+static int lan_command(int argc, char **argv);
+static int startup_command(void);
+static int start_detached(const char *operation);
+static int lan_send_policy(void);
+static int configure_loopback(const struct netconf_interface *item);
+static int mask_from_prefix(unsigned prefix, char *output, size_t capacity);
+static int address_usable(struct in_addr address);
+static int any_interface_configured(void);
+static int wait_requested(void);
+static int wait_for_address(unsigned seconds);
 static int decimal_timeout(const char *text, unsigned *result);
+/*
+ * How long a startup that was asked to wait will wait for an address.  A
+ * lease takes a few seconds where there is a server and forever where
+ * there is not, so the wait has to end somewhere.
+ */
+#define NET_STARTUP_WAIT_SECONDS 30U
+
 static int usage(void);
 static int console_configuration(struct console *console, int count, char **words);
 static struct netconf_interface *configuration_interface(struct netconf *configuration, const char *name, int create);
@@ -665,7 +680,9 @@ backend_opcode(
 		{ "DNS", NETWORKD_OP_DNS },
 		{ "RELOAD", NETWORKD_OP_RELOAD },
 		{ "DEFAULTROUTE_CLEAR", NETWORKD_OP_DEFAULT_ROUTE_CLEAR },
-		{ "DNS_CLEAR", NETWORKD_OP_DNS_CLEAR }
+		{ "DNS_CLEAR", NETWORKD_OP_DNS_CLEAR },
+		{ "LAN_ENABLE", NETWORKD_OP_LAN_ENABLE },
+		{ "LAN_DISABLE", NETWORKD_OP_LAN_DISABLE }
 	};
 	size_t index;
 
@@ -727,7 +744,9 @@ backend_payload(
 	    (opcode == NETWORKD_OP_DNS && (count == 0U || count > NET_DNS_LIMIT)) ||
 	    ((opcode == NETWORKD_OP_RELOAD ||
 	    opcode == NETWORKD_OP_DEFAULT_ROUTE_CLEAR ||
-	    opcode == NETWORKD_OP_DNS_CLEAR) && count != 0U))
+	    opcode == NETWORKD_OP_DNS_CLEAR ||
+	    opcode == NETWORKD_OP_LAN_ENABLE ||
+	    opcode == NETWORKD_OP_LAN_DISABLE) && count != 0U))
 		return -1;
 
 	/* Encodes each operation through explicit field boundaries. */
@@ -1141,9 +1160,18 @@ dispatch(
 	}
 
 	/* Handles the selected command-line operation. */
-	if (argc == 2 && strcmp(argv[1], "boot") == 0) {
-		/* Obtains the boot result. */
-		function_result = boot();
+	if (argc >= 2 && strcmp(argv[1], "lan") == 0) {
+		/* Obtains the lan command result. */
+		function_result = lan_command(argc, argv);
+
+		/* Returns the computed result. */
+		return function_result;
+	}
+
+	/* Handles the selected command-line operation. */
+	if (argc == 2 && strcmp(argv[1], "startup") == 0) {
+		/* Obtains the startup command result. */
+		function_result = startup_command();
 
 		/* Returns the computed result. */
 		return function_result;
@@ -1301,7 +1329,9 @@ command_help(
 	     "  net wifi list               show managed Wi-Fi state\n"
 	     "  net wifi connect SSID       connect a saved profile\n"
 	     "  net wifi disconnect         disconnect managed Wi-Fi\n"
-	     "  net boot                    apply boot network configuration");
+	     "  net lan enable              manage the wired interfaces\n"
+	     "  net lan disable             stop managing the wired interfaces\n"
+	     "  net startup                 bring the network up, as a boot does");
 
 	/* Computes the function result. */
 	function_result = ferror(stdout) ? 1 : 0;
@@ -1455,268 +1485,6 @@ wifi_backend(
 	return result;
 }
 
-/* Supports the boot operation. */
-static int
-boot(
-	void)
-{
-	int function_result;
-	struct netconf configuration;
-	char error[160] = "";
-
-	/* Handles an operation failure. */
-	if (netconf_load(NETCONF_PATH, &configuration, error, sizeof(error)) !=
-	    0) {
-		fprintf(stderr, "net: cannot load %s: %s\n", NETCONF_PATH,
-			error[0] != '\0' ? error : strerror(errno));
-
-		/* Reports operation failure. */
-		return 1;
-	}
-
-	/* Obtains the apply candidate result. */
-	function_result = apply_candidate(&configuration);
-
-	/* Returns the computed result. */
-	return function_result;
-}
-
-/* Supports the apply candidate operation. */
-static int
-apply_candidate(
-	const struct netconf *configuration)
-{
-	const struct netconf_interface *item;
-	char error[160], mask[32], operands[256];
-	size_t index, dns_used;
-	int length;
-
-	dns_used = 0;
-
-	/* Handles an operation failure. */
-	if (candidate_supported(configuration, error, sizeof(error)) != 0) {
-		fprintf(stderr, "net: candidate cannot be applied: %s\n",
-			error);
-
-		/* Reports operation failure. */
-		return 1;
-	}
-
-	/* Process each remaining element. */
-	for (index = 0; index < configuration->interface_count; index++) {
-		item = &configuration->interfaces[index];
-
-		/* Handles the item condition. */
-		if (!item->enabled) {
-			/* Handles a failed backend operation. */
-			if (backend("DOWN", item->name, 0) != 0)
-				return 1;
-			continue;
-		}
-
-		/* Handles a failed send up operation. */
-		if (send_up(item->name) != 0)
-			return 1;
-
-		/* Handles a failed send dhcp operation. */
-		if (item->dhcp && send_dhcp(item->name, item->dhcp_timeout_set
-							    ? item->dhcp_timeout
-							    : 10) != 0)
-
-			/* Reports operation failure. */
-			return 1;
-
-		/* Handles the item condition. */
-		if (item->address_count != 0) {
-			/* Handles a failed prefix mask operation. */
-			if (prefix_mask(item->addresses[0].prefix_length, mask,
-					sizeof(mask)) != 0 ||
-			    send_static(item->name, item->addresses[0].address,
-					mask) != 0)
-
-				/* Reports operation failure. */
-				return 1;
-		}
-	}
-
-	/* Process each remaining element. */
-	for (index = 0; index < configuration->route_count; index++) {
-		/* Handles a failed backend operation. */
-		if (backend("DEFAULTROUTE",
-			    configuration->routes[index].gateway, 0) != 0)
-
-			/* Reports operation failure. */
-			return 1;
-	}
-
-	/* Handles the configuration condition. */
-	if (configuration->dns_count != 0) {
-		/* Process each remaining element. */
-		for (index = 0; index < configuration->dns_count; index++) {
-			length = snprintf(operands + dns_used,
-					  sizeof(operands) - dns_used, "%s%s",
-					  dns_used == 0 ? "" : " ",
-					  configuration->dns_servers[index]);
-
-			/* Checks the current data length. */
-			if (length < 0 ||
-			    (size_t)length >= sizeof(operands) - dns_used)
-
-				/* Reports operation failure. */
-				return 1;
-			dns_used += (size_t)length;
-		}
-
-		/* Handles a failed backend operation. */
-		if (backend("DNS", operands, 0) != 0)
-			return 1;
-	}
-
-	/* Reports successful completion. */
-	return 0;
-}
-
-/* Supports the candidate supported operation. */
-static int
-candidate_supported(
-	const struct netconf *configuration,
-	char *error,
-	size_t capacity)
-{
-	const struct netconf_interface *item;
-	size_t index;
-
-	/* Handles an operation failure. */
-	if (netconf_validate(configuration, error, capacity) != 0)
-		return -1;
-
-	/* Process each remaining element. */
-	for (index = 0; index < configuration->interface_count; index++) {
-		item = &configuration->interfaces[index];
-
-		/* Handles the item condition. */
-		if (item->type != NETCONF_INTERFACE_LOOPBACK &&
-		    item->type != NETCONF_INTERFACE_ETHERNET) {
-			(void)snprintf(
-			    error, capacity,
-			    "interface %s type is not yet applicable",
-			    item->name);
-
-			/* Reports operation failure. */
-			return -1;
-		}
-
-		/* Handles the item condition. */
-		if (item->address_count > 1) {
-			(void)snprintf(error, capacity,
-				       "interface %s has multiple addresses",
-				       item->name);
-
-			/* Reports operation failure. */
-			return -1;
-		}
-	}
-
-	/* Process each remaining element. */
-	for (index = 0; index < configuration->route_count; index++) {
-		/* Selects the matching value. */
-		if (strcmp(configuration->routes[index].destination,
-			   "default") != 0) {
-			(void)snprintf(
-			    error, capacity,
-			    "only a default route is currently applicable");
-
-			/* Reports operation failure. */
-			return -1;
-		}
-	}
-
-	/* Reports successful completion. */
-	return 0;
-}
-
-/* Supports the send up operation. */
-static int
-send_up(
-	const char *name)
-{
-	int function_result;
-
-	/* Obtains the backend result. */
-	function_result = backend("UP", name, 0);
-
-	/* Returns the computed result. */
-	return function_result;
-}
-
-/* Supports the send dhcp operation. */
-static int
-send_dhcp(
-	const char *name,
-	unsigned timeout)
-{
-	int function_result;
-	char operands[96];
-
-	/* Handles a failed snprintf operation. */
-	if (snprintf(operands, sizeof(operands), "%s %u", name, timeout) >=
-	    (int)sizeof(operands))
-
-		/* Reports operation failure. */
-		return 1;
-
-	/* Obtains the backend result. */
-	function_result = backend("DHCP", operands, 0);
-
-	/* Returns the computed result. */
-	return function_result;
-}
-
-/* Supports the prefix mask operation. */
-static int
-prefix_mask(
-	unsigned prefix,
-	char *buffer,
-	size_t capacity)
-{
-	int function_result;
-	uint32_t mask = prefix == 0 ? 0 : 0xffffffffU << (32U - prefix);
-
-	/* Computes the function result. */
-	function_result = snprintf(buffer, capacity, "%u.%u.%u.%u", (mask >> 24) & 0xffU,
-			(mask >> 16) & 0xffU, (mask >> 8) & 0xffU,
-			mask & 0xffU) >= (int)capacity
-		   ? -1
-		   : 0;
-
-	/* Returns the computed result. */
-	return function_result;
-}
-
-/* Supports the send static operation. */
-static int
-send_static(
-	const char *name,
-	const char *address,
-	const char *mask)
-{
-	int function_result;
-	char operands[160];
-
-	/* Handles a failed snprintf operation. */
-	if (snprintf(operands, sizeof(operands), "%s ipv4 %s netmask %s", name,
-		     address, mask) >= (int)sizeof(operands))
-
-		/* Reports operation failure. */
-		return 1;
-
-	/* Obtains the backend result. */
-	function_result = backend("STATIC", operands, 0);
-
-	/* Returns the computed result. */
-	return function_result;
-}
-
 /* Supports the decimal timeout operation. */
 static int
 decimal_timeout(
@@ -1739,6 +1507,434 @@ decimal_timeout(
 	return 0;
 }
 
+/*
+ * Supports the mask from prefix operation.
+ *
+ * Writes the dotted mask a prefix length stands for.  The configuration
+ * counts the bits and the command that applies it takes the four numbers,
+ * so one of them has to be turned into the other.
+ */
+static int
+mask_from_prefix(
+	unsigned prefix,
+	char *output,
+	size_t capacity)
+{
+	uint32_t value;
+	int written;
+
+	/* Rejects a length that is not one a mask can have. */
+	if (prefix > 32U || output == NULL)
+		return -1;
+	value = prefix == 0U ? 0U : 0xffffffffU << (32U - prefix);
+	written = snprintf(output, capacity, "%u.%u.%u.%u",
+			   (value >> 24) & 0xffU, (value >> 16) & 0xffU,
+			   (value >> 8) & 0xffU, value & 0xffU);
+
+	/* Handles output that did not fit. */
+	if (written < 0 || (size_t)written >= capacity)
+		return -1;
+
+	/* Reports successful completion. */
+	return 0;
+}
+
+/*
+ * Supports the configure loopback operation.
+ *
+ * Brings the loopback up and gives it the address written for it.  A
+ * machine talks to itself over this interface, so it is configured whether
+ * or not anything else could be, and before anything else is: what is
+ * waiting for the network may be waiting only for this.
+ */
+static int
+configure_loopback(
+	const struct netconf_interface *item)
+{
+	char operands[128];
+	char mask[32];
+	int length;
+
+	/* Handles a failed backend operation. */
+	if (backend("UP", item->name, 0) != 0)
+		return 1;
+
+	/* An interface with no address written for it is left up and bare. */
+	if (item->address_count == 0)
+		return 0;
+
+	/* Handles a prefix length that cannot be written as a mask. */
+	if (mask_from_prefix(item->addresses[0].prefix_length, mask,
+			     sizeof(mask)) != 0) {
+		fprintf(stderr, "net: %s: the prefix length cannot be used\n",
+			item->name);
+
+		/* Reports operation failure. */
+		return 1;
+	}
+	length = snprintf(operands, sizeof(operands), "%s ipv4 %s netmask %s",
+			  item->name, item->addresses[0].address, mask);
+
+	/* Handles operands that did not fit. */
+	if (length < 0 || (size_t)length >= sizeof(operands))
+		return 1;
+
+	/* Obtains the backend result. */
+	return backend("STATIC", operands, 0) != 0 ? 1 : 0;
+}
+
+/*
+ * Supports the lan send policy operation.
+ *
+ * Tells the daemon what the configuration says about the wired
+ * interfaces.  The file belongs to this command, so it is read here and
+ * handed over; the daemon holds what it is told and never opens the file
+ * itself, which keeps one reader and one writer of it.
+ *
+ * Each interface is one record, because the daemon is being told about all
+ * of them at once and the field set the other operations share admits one.
+ */
+static int
+lan_send_policy(
+	void)
+{
+	struct networkd_field_writer writer;
+	struct netconf configuration;
+	const struct netconf_interface *item;
+	unsigned char payload[NETWORKD_REQUEST_MAX];
+	char record[128];
+	char mask[32];
+	char error[160] = "";
+	size_t index;
+	int length;
+
+	/* Handles a configuration that cannot be read. */
+	if (netconf_load(NETCONF_PATH, &configuration, error,
+			 sizeof(error)) != 0) {
+		fprintf(stderr, "net: cannot load %s: %s\n", NETCONF_PATH,
+			error[0] != '\0' ? error : strerror(errno));
+
+		/* Reports operation failure. */
+		return 1;
+	}
+	networkd_field_writer_init(&writer, payload, sizeof(payload));
+
+	/* Process each remaining element. */
+	for (index = 0; index < configuration.interface_count; index++) {
+		item = &configuration.interfaces[index];
+
+		/*
+		 * The loopback is not a cable.  Nothing can be plugged into
+		 * it or pulled out of it, so there is nothing for the daemon
+		 * to watch and nothing for it to decide: it is configured
+		 * here, once, and stays as it was configured.
+		 */
+		if (item->type == NETCONF_INTERFACE_LOOPBACK) {
+			if (item->enabled && configure_loopback(item) != 0)
+				return 1;
+			continue;
+		}
+
+		/* Dispatch the selected kind of record. */
+		if (!item->enabled) {
+			length = snprintf(record, sizeof(record),
+					  "%s disabled", item->name);
+		} else if (item->dhcp) {
+			length = snprintf(record, sizeof(record), "%s dhcp %u",
+					  item->name,
+					  item->dhcp_timeout_set ?
+					  item->dhcp_timeout : 10U);
+		} else if (item->address_count != 0) {
+			/* Handles an address whose mask cannot be written. */
+			if (mask_from_prefix(
+			    item->addresses[0].prefix_length, mask,
+			    sizeof(mask)) != 0) {
+				fprintf(stderr,
+					"net: %s: the prefix length cannot be used\n",
+					item->name);
+				return 1;
+			}
+			length = snprintf(record, sizeof(record),
+					  "%s static %s %s", item->name,
+					  item->addresses[0].address, mask);
+		} else {
+			/*
+			 * Enabled, and nothing said about an address.  There
+			 * is nothing to configure it with, so it is left for
+			 * whoever writes one.
+			 */
+			continue;
+		}
+
+		/* Handles a record that did not fit. */
+		if (length < 0 || (size_t)length >= sizeof(record)) {
+			fprintf(stderr, "net: %s: the record is too long\n",
+				item->name);
+			return 1;
+		}
+
+		/* Handles a payload with no room for another record. */
+		if (networkd_field_write(&writer, NETWORKD_FIELD_OUTPUT,
+					 record, (size_t)length) != 0) {
+			fprintf(stderr, "net: too many interfaces\n");
+			return 1;
+		}
+	}
+
+	/* Obtains the backend exchange result. */
+	return backend_exchange(NETWORKD_OP_LAN_ENABLE, payload, writer.used,
+				0, 15U, 1) == 0 ? 0 : 1;
+}
+
+/*
+ * Supports the address usable operation.
+ *
+ * Reports whether an address is one a machine can be reached at.  A
+ * link-local address is not: it is what an interface is given when it could
+ * not be configured, so treating it as an address would make an
+ * unconfigured interface look configured.
+ */
+static int
+address_usable(
+	struct in_addr address)
+{
+	uint32_t value = ntohl(address.s_addr);
+
+	/* Nothing at all, and the loopback network, are not reachable addresses. */
+	if (value == 0U || (value >> 24) == 127U)
+		return 0;
+
+	/* 169.254.0.0/16 says the interface has no address of its own. */
+	if ((value >> 16) == 0xa9feU)
+		return 0;
+
+	/* Reports successful completion. */
+	return 1;
+}
+
+/*
+ * Supports the any interface configured operation.
+ *
+ * Reports whether any interface has an address a machine can be reached at.
+ */
+static int
+any_interface_configured(
+	void)
+{
+	struct ifreq *list;
+	struct ifreq request;
+	unsigned count;
+	unsigned index;
+	int descriptor;
+	int found;
+
+	descriptor = socket(AF_INET, SOCK_DGRAM, 0);
+
+	/* Handles a failed socket operation. */
+	if (descriptor < 0)
+		return 0;
+	list = NULL;
+	count = 0U;
+
+	/* Handles a failed interface enumeration. */
+	if (netutil_interfaces(descriptor, &list, &count) != 0) {
+		(void)close(descriptor);
+		return 0;
+	}
+	found = 0;
+
+	/* Process each remaining element. */
+	for (index = 0U; index < count && !found; index++) {
+		memset(&request, 0, sizeof(request));
+		strncpy(request.ifr_name, list[index].ifr_name,
+			sizeof(request.ifr_name) - 1U);
+
+		/* Handles an interface that has no address at all. */
+		if (ioctl(descriptor, SIOCGIFADDR, &request) != 0)
+			continue;
+		if (request.ifr_addr.sa_family != AF_INET)
+			continue;
+		found = address_usable(((struct sockaddr_in *)
+		    (void *)&request.ifr_addr)->sin_addr);
+	}
+	free(list);
+	(void)close(descriptor);
+
+	/* Returns the computed result. */
+	return found;
+}
+
+/*
+ * Supports the wait requested operation.
+ *
+ * Reads whether the networking service was asked to wait.  The setting
+ * belongs to that service, because what it decides is when the service may
+ * report itself started: a boot that needs the network must not go on
+ * without one, and a boot that does not need it must not stand still.
+ */
+static int
+wait_requested(
+	void)
+{
+	struct rcconf_model *snapshot;
+	char value[32];
+	int wanted;
+
+	snapshot = malloc(sizeof(*snapshot));
+
+	/* Handles a failed malloc operation. */
+	if (snapshot == NULL)
+		return 0;
+	wanted = 0;
+
+	/* Handles a configuration that cannot be read, which asks for nothing. */
+	if (rcconf_load(RCCONF_PATH, snapshot) == 0 &&
+	    rcconf_setting_get(snapshot, "networking", "wait", value,
+			       sizeof(value)) == 0)
+		wanted = strcmp(value, "true") == 0 ||
+			 strcmp(value, "yes") == 0 ||
+			 strcmp(value, "1") == 0;
+	free(snapshot);
+
+	/* Returns the computed result. */
+	return wanted;
+}
+
+/*
+ * Supports the wait for address operation.
+ *
+ * Waits until some interface has an address a machine can be reached at, or
+ * until the time given has passed.  Waiting is the whole point of the
+ * option, so a timeout is reported rather than hidden: what follows in the
+ * boot may need the network and should be told it is not there.
+ */
+static int
+wait_for_address(
+	unsigned seconds)
+{
+	unsigned waited;
+
+	/* Process each remaining element. */
+	for (waited = 0U; waited < seconds; waited++) {
+		/* Handles an address that arrived. */
+		if (any_interface_configured())
+			return 0;
+		(void)sleep(1U);
+	}
+
+	/* Handles an address that arrived as the last second passed. */
+	if (any_interface_configured())
+		return 0;
+	fprintf(stderr, "net: no interface was configured within %u seconds\n",
+		seconds);
+
+	/* Reports operation failure. */
+	return 1;
+}
+
+/*
+ * Supports the lan command operation.
+ *
+ * enable tells the daemon to manage the wired interfaces, and hands over
+ * what the configuration says about them.  It returns as soon as the
+ * daemon has heard: the work itself happens in the background, because a
+ * cable that is not in yet will not go in any sooner for being waited on.
+ * disable says the daemon is to stop deciding, and leaves the interfaces
+ * as they stand.
+ */
+static int
+lan_command(
+	int argc,
+	char **argv)
+{
+	/* Handles the selected command-line operation. */
+	if (argc != 3)
+		return usage();
+	if (strcmp(argv[2], "enable") == 0)
+		return lan_send_policy();
+	if (strcmp(argv[2], "disable") == 0)
+		return backend("LAN_DISABLE", NULL, 0);
+
+	/* Obtains the usage result. */
+	return usage();
+}
+
+/*
+ * Supports the startup operation.
+ *
+ * Brings the network up as a machine that has just started needs it: the
+ * loopback, which a machine uses to talk to itself; the wired interfaces,
+ * which the daemon then goes on watching; and the radio, which is left to
+ * associate in its own time.
+ *
+ * Waiting belongs here rather than to either half.  What a boot waits for
+ * is an address it can be reached at, from whichever interface obtains one
+ * first, so it is not a question either `net lan' or `net wifi' could
+ * answer alone.
+ */
+static int
+startup_command(
+	void)
+{
+	/* Handles a failed enable, which leaves nothing to wait for. */
+	if (lan_send_policy() != 0)
+		return 1;
+
+	/*
+	 * The radio is started in a process of its own.  Associating takes
+	 * as long as it takes, and the wired side has no reason to stand
+	 * behind it; what the attempt reports goes to the log.
+	 */
+	(void)start_detached("WIFI_ENABLE");
+
+	/* A machine that was not told to wait is started. */
+	if (!wait_requested())
+		return 0;
+
+	/* Obtains the wait for address result. */
+	return wait_for_address(NET_STARTUP_WAIT_SECONDS);
+}
+
+/*
+ * Supports the start detached operation.
+ *
+ * Sends one operation from a process of its own, so that the caller is not
+ * held for as long as the work takes.  The child is a child of a child, so
+ * nobody is left to wait for it: the caller is going on to other things,
+ * and what the daemon did is reported through the log.
+ */
+static int
+start_detached(
+	const char *operation)
+{
+	pid_t child;
+	int status;
+
+	child = fork();
+
+	/* Handles a failed fork operation. */
+	if (child < 0) {
+		fprintf(stderr, "net: cannot fork: %s\n", strerror(errno));
+		return 1;
+	}
+
+	/* The middle process exits at once and is waited for here. */
+	if (child == 0) {
+		if (fork() != 0)
+			_exit(0);
+		(void)setsid();
+		_exit(backend(operation, NULL, 0) == 0 ? 0 : 1);
+	}
+	status = 0;
+
+	/* Continue while the operation condition remains true. */
+	while (waitpid(child, &status, 0) < 0 && errno == EINTR)
+		continue;
+
+	/* Reports successful completion. */
+	return 0;
+}
+
 /* Supports the usage operation. */
 static int
 usage(
@@ -1756,7 +1952,9 @@ usage(
 		"       net wifi set-key SSID PASSPHRASE [auto]\n"
 		"       net wifi enable|disable|list|disconnect\n"
 		"       net wifi connect SSID\n"
-		"       net boot\n");
+		"       net lan enable\n"
+		"       net lan disable\n"
+		"       net startup\n");
 
 	/* Reports operation failure. */
 	return 2;

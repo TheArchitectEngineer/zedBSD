@@ -732,14 +732,34 @@ setting_allowed(
 	const char *service,
 	const char *setting)
 {
-	int function_result;
+	/*
+	 * Every setting a service may carry is named here.  A file naming
+	 * one that is not is refused rather than passed over, so that a
+	 * setting spelled wrongly is found when the file is read and not
+	 * when whatever needed it quietly does without.
+	 */
+	static const struct {
+		const char *service;
+		const char *setting;
+	} allowed[] = {
+		{ "ntpdate", "servers" },
 
-	/* Computes the function result. */
-	function_result = strcmp(service, "ntpdate") == 0 &&
-	       strcmp(setting, "servers") == 0;
+		/* Whether the boot waits for an interface to be reachable. */
+		{ "networking", "wait" }
+	};
+	size_t index;
 
-	/* Returns the computed result. */
-	return function_result;
+	/* Process each remaining element. */
+	for (index = 0; index < sizeof(allowed) / sizeof(allowed[0]);
+	     index++) {
+		/* Selects the matching value. */
+		if (strcmp(service, allowed[index].service) == 0 &&
+		    strcmp(setting, allowed[index].setting) == 0)
+			return 1;
+	}
+
+	/* Reports that the setting belongs to no service. */
+	return 0;
 }
 
 /* Supports the parse stream operation. */

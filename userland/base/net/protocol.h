@@ -62,7 +62,16 @@ enum networkd_opcode {
 	NETWORKD_OP_WIFI_LIST = 34,
 	NETWORKD_OP_WIFI_CONNECT = 35,
 	NETWORKD_OP_WIFI_DISCONNECT = 36,
-	NETWORKD_OP_WIFI_PROFILES_CHANGED = 37
+	NETWORKD_OP_WIFI_PROFILES_CHANGED = 37,
+
+	/*
+	 * Wired management.  These say what the daemon is to do from now on
+	 * rather than what it is to do now: the work they ask for is carried
+	 * out in the background, and the answer says only that the daemon
+	 * heard.  A caller that wants to know the outcome asks SHOW.
+	 */
+	NETWORKD_OP_LAN_ENABLE = 48,
+	NETWORKD_OP_LAN_DISABLE = 49
 };
 
 enum networkd_field_type {
