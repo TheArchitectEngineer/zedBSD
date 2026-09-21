@@ -3947,3 +3947,46 @@ Date: 2026-09-21. Work host moved to `centris` (`awe@10.0.10.2:~/zedBSD-gpu`); a
 - 3DSTATE_CONSTANT_XS は slot 3 に置けば絶対 address（anv と同じ。slot 0 は dynamic state base 相対）。
 - Gen9+ の depth buffer は常に Y-tiled（isl）。pitch は 128 byte、高さは 32 行の倍数で確保する。
 - VS の入力を payload へ push させるには `brw_vs_prog_key.max_payload_percent` が要る（0 だと URB から pull する kernel になる）。
+
+## E-128 — カーネル内コンパイラの bring-up: 自前 compiler の kernel で vkdemo が描画（実機 PASS）
+
+Date: 2026-09-21. E-127 の XXX 1（shader は Mesa の参照 kernel）を解消した。既定 build は executor 自身の
+`spirv.c → compile.c → eu.c` が出した kernel で描く。参照 kernel は比較用 build（`-DI915_VK_REFERENCE_KERNELS=1`）に残した。
+
+### 結果
+
+| 確認 | 値 |
+|---|---|
+| 完走 | 既定 build で 11 フレーム、`pipeline compiled by the executor: vs 1120 bytes (2 attributes, 1 push registers, 1 varyings), fs 304 bytes (1 inputs, 1 sampled images)` |
+| time_ms=0 | `rgb_sha256=7523debe…05ff` = **Mesa 参照 kernel のときと同一**（E-127 でオラクル PASS 済みの画素） |
+| time_ms=2500 | 自前 compiler: `9461546422e2…19b1`、独立オラクル **passed**、checked 76,089 px、mismatch 0、visible faces 2。同じ時刻の参照 kernel build も **同一 hash** |
+| 初回実機実行 | 修正後の kernel は **1 回目の実機投入で hang なく正しく描いた**（実機での試行錯誤 0 回。理由は下の「方法」） |
+| live 時刻での差 | 11 フレーム中 1 枚（time_ms=660）だけ参照 build と hash が異なる。参照 kernel は MAD（fused）、自前は MUL+ADD なので丸めが 1 ulp 違い得る。オラクルの許容内（未個別確認） |
+| host | `run-vk-host-tests.sh` 10/10、`run-vk-gentool-test.sh` PASS |
+
+### 方法 — Mesa の assembler / disassembler を判定者にした
+
+この Mesa（`mesa-refs`）には `src/intel/compiler/gen/` に Gen 命令の parser・printer・validator と `gentool asm / disasm` がある。
+
+1. 参照 kernel（vkdemo の出荷版 SPIR-V を `brw_compile_vs / fs` に通したもの）を `gentool disasm -v` で読み、payload・補間・sampler / URB / RT write の message・SWSB の実例を得た。
+2. 既存 `eu.c` の出力を同じ disassembler に掛けると、float が `:hf`、region が `<8;16,1>`、`math.sin` が `math.rsq`、SEND が `send.null … a0.0` と読まれ、validator が全命令を拒否した。table（mesa-23.1 の brw_inst.h 由来）の **型 F=9→10、width 8=4→3、math selector sin 5→6 / cos 6→7 / rsq 2→5 / sqrt 3→4、即値は file 値でなく IsImm bit**、SEND の descriptor 配置と SWSB は未実装、が原因。
+3. `linux/eu-encoding-gen12.inc` を `gen/xe.json`・`gen_encoding.cpp` から取り直し、`eu.c` を同じ骨格（関数名・構造）のまま直した。`tests/run-vk-gentool-test.sh` が (a) encoder の全 emitter、(b) vkdemo の VS、(c) FS を disassemble し、validator error が無いこと、再 assemble した program が同じに読めることを要求する。byte 単位では null operand と sync.nop の綴りが gentool の assembler と Mesa compiler で違い、eu.c は **参照 kernel（＝実機で動いた方）と同じ綴り**を出す。
+4. `compile.c` は IR の走査と register 割当てをそのまま使い、規約だけ参照 kernel のものへ替えた（ファイル冒頭 "Register conventions"）。
+
+### 確定した規約（SIMD8、Gen12.0）
+
+- VS payload: r0 header、r1 URB handle、r2.. push constant（32 B / register、`<0;1,0>`）、続けて attribute ごとに 4 register（location 昇順＝draw が組む vertex element の順）。
+- VS 出力: VUE = [header][position][varying…]。1 回目の URB write（src0 = r1、src1 = header+position の 8 register、desc `0x02080007`、ex_desc = 長さ << 6）、handle を r127 へ copy、varying を r127 の直下に置いて EOT つき URB write（desc の bit 14:4 = slot 2）。EOT の message は payload 全体が r112..r127。
+- FS payload: r2 / r3 = perspective pixel barycentric、その後ろに input ごとに 2 register、成分 c は register c/2 の float 4·(c&1).. に [∂/∂b1, ∂/∂b2, –, 原点値]。Gen11+ に PLN は無く `原点 + d1·b1 + d2·b2` を命令で書く（3DSTATE_WM の barycentric mode bit 11、PS_EXTRA AttributeEnable が要る）。
+- texture: split SEND（src0 = u、src1 = v、各 1 register）、desc `0x02420000 | sampler << 8 | bti`、返答 4 register。binding table は [0] = render target、[1+n] = n 番目の sampled image。
+- RT write: `sendc`、src0 = r124（4 register）、desc `0x08031400`、EOT。
+- **SWSB**: Gen12.0 は in-order pipe が 1 本。regdist n は「n 個前の in-order 命令を待つ」。MATH（ver < 20）と SEND は out-of-order で token を使う。eu.c の方針は「全命令を直列化」: in-order は `@1`、MATH / SEND は `{@1,$0}` ＋直後に `sync.nop {$0.dst}`（宛先なしなら `{$0.src}`）、EOT の SEND は `@1`。常に正しく、並列性は捨てている（XXX）。byte: regdist = n、token set = 0x40|id、両方 = 0x80|n<<4|id、sync dst = 0x20|id、sync src = 0x30|id。
+- 3DSTATE_VS / PS / PS_EXTRA / WM / SBE / SBE_SWIZ は `gfx-draw.c emit_shader_state()` が compiler の報告（`compile.h` の追加 field）から pack する。参照 kernel の parameter を入れると参照 packet と一致する形（16-wide dispatch を除く）。
+
+### 残り（XXX として名乗っている）
+
+1. compiler の受理範囲は E-110 のまま（分岐なし 1 basic block、float scalar / vector、FAdd / FSub / FMul / FNeg / Dot / Sin / Cos / RSQ、texture() 1 種）。入力 3 location、varying 3、sampled image は draw 側が 1 枚（set 0 binding 0）まで。FS の push constant、MAD、整数演算、比較・分岐は未実装（拒否）。
+2. SWSB は全直列。SIMD16 dispatch なし（8-pixel のみ）。
+3. `GFX_MAX_VS_THREADS` は ADL-P GT2 の値を定数で持つ（device info から引いていない）。
+4. E-127 の 2〜9（CPU clear / copy、同期 submit、表示未接続ほか）はそのまま。
+5. Mesa ツールは centris で再ビルド可能になった（`libunwind-dev` を導入、`PATH=/tmp/mesa-venv/bin:$PATH ninja -C plan/ws031/mesa-refs/mesa/build-gentool src/intel/compiler/brw/refvk`。build dir は `/home/awe/zedBSD/plan/ws031/mesa-refs` の絶対 path を持つので、その位置に symlink を置いてある）。

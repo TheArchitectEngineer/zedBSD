@@ -35,6 +35,13 @@ struct i915_vk_shader_binary {
 	uint32_t simd;
 	uint32_t thread_count;
 	uint32_t sampler_count;
+
+	/* E-128: what a draw has to program around the kernel (compile.c "Register conventions"). */
+	uint32_t dispatch_grf_start;	/* first payload register after the fixed ones */
+	uint32_t push_regs;		/* registers of push constants, 32 bytes each */
+	uint32_t input_count;		/* vertex: attributes; fragment: interpolated inputs */
+	uint32_t input_locations[3];	/* ascending: the payload order */
+	uint32_t varying_count;		/* vertex: VUE slots after the position; fragment: = input_count */
 };
 
 /* Compiles one shader IR to a GEN binary. */

@@ -8,20 +8,32 @@
 #                                                      rebuilt and given to the independent pixel oracle
 #                                                      (plan/ws014/tests/vkdemo_oracle.py).  The dump is slow:
 #                                                      the application times out after it, by design.
+#        plan/ws031/tests/vkloop-hw.sh oracle 2500     the same for the frame of shader time 2500 ms (--time-ms)
 #        plan/ws031/tests/vkloop-hw.sh "-DFOO=1"       extra CPPFLAGS
+#        plan/ws031/tests/vkloop-hw.sh "oracle -DI915_VK_REFERENCE_KERNELS=1"   (flags after the word)
 set -u
 cd "$(dirname "$0")/../../.."
 EXTRA=${1:-}
+TIME_MS=${2:-}
 ORACLE=0
-if [ "$EXTRA" = oracle ]; then
+case "$EXTRA" in oracle*)
 	ORACLE=1
-	EXTRA="-DI915_VK_GFX_DUMP=1"
-fi
+	EXTRA="-DI915_VK_GFX_DUMP=1 ${EXTRA#oracle}" ;;
+esac
 # make does not know the flags changed: the one file they reach is rebuilt by hand
 [ -f build/resident/.vkloop-flags ] && [ "$(cat build/resident/.vkloop-flags)" = "$EXTRA" ] ||
 	touch src/drivers/gpu/i915/vk/gfx-draw.c
-FILES=""
-for n in vkwait1 vkprobe1 vkwait2 poweroff; do
+mkdir -p build/resident
+# the probe service as this run wants it; the file changes (and the cached image is rebuilt) only when its text does
+PROBE=build/resident/vkprobe1.gen
+if [ -n "$TIME_MS" ]; then
+	sed "s/--duration=1/--time-ms=$TIME_MS/" plan/ws031/tests/vkprobe1 > $PROBE.new
+else
+	cp plan/ws031/tests/vkprobe1 $PROBE.new
+fi
+cmp -s $PROBE.new $PROBE 2>/dev/null || mv $PROBE.new $PROBE
+FILES="--file /etc/service.d/vkprobe1=$PROBE"
+for n in vkwait1 vkwait2 poweroff; do
 	FILES="$FILES --file /etc/service.d/$n=plan/ws031/tests/$n"
 done
 make -j"$(nproc)" BUILD=build/resident CONFIG_DRIVER_PCI_I915_PARITY=y \
@@ -38,5 +50,5 @@ ssh solaris10-man 'cd ~/bigbang && rm -f run-parity-serial.log && ./run-parity-v
 scp -q solaris10-man:bigbang/vkloop-last.log /tmp/vkloop-last.log
 grep -anE 'i915: vk|gpu: ioctl|VKDEMO|vkdemo:|resident|panic|fault|init: ' /tmp/vkloop-last.log | grep -v 'parity N0\|parity P\|expected_fault' | cut -c1-200 | head -60
 if [ "$ORACLE" = 1 ]; then
-	python3 plan/ws031/handover/tools/vkdump_verify.py /tmp/vkloop-last.log plan/ws014/tests /tmp/vkframe1.ppm 0
+	python3 plan/ws031/handover/tools/vkdump_verify.py /tmp/vkloop-last.log plan/ws014/tests /tmp/vkframe1.ppm "${TIME_MS:-0}"
 fi

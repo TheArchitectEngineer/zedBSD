@@ -959,6 +959,28 @@ gfx_create_pipelines(struct i915_vk_session *session, struct i915_vk_reader *rea
 	return 0;
 }
 
+/* vkDestroyPipeline: a generic destroy; the pipeline owns its compiled kernels. */
+static int
+gfx_destroy_pipeline(struct i915_vk_session *session, struct i915_vk_reader *reader)
+{
+	struct gfx_pipeline *pipeline;
+	uint64_t identity;
+
+	(void)i915_vk_read_u64(reader);
+	identity = i915_vk_read_u64(reader);
+	(void)i915_vk_read_u64(reader);
+	if (reader->error != 0)
+		return EINVAL;
+
+	pipeline = i915_vk_obj_lookup(session->vk, I915_VK_OBJ_PIPELINE, identity);
+	if (pipeline != NULL) {
+		i915_vk_obj_remove(session->vk, I915_VK_OBJ_PIPELINE, identity);
+		i915_vk_gfx_pipeline_release(pipeline);
+		kern_free(pipeline);
+	}
+	return 0;
+}
+
 /* ---------------- semaphore ---------------- */
 
 /*
@@ -1010,7 +1032,7 @@ i915_vk_gfx_obj_dispatch(struct i915_vk_session *session, uint32_t opcode,
 	case 59U: return gfx_create_shader(session, reader, reply);
 	case 60U: return gfx_destroy_plain(session, reader, I915_VK_OBJ_SHADER_MODULE);
 	case 65U: return gfx_create_pipelines(session, reader, reply);
-	case 67U: return gfx_destroy_plain(session, reader, I915_VK_OBJ_PIPELINE);
+	case 67U: return gfx_destroy_pipeline(session, reader);
 	case 68U: return gfx_create_pipeline_layout(session, reader, reply);
 	case 69U: return gfx_destroy_plain(session, reader, I915_VK_OBJ_PIPELINE_LAYOUT);
 	case 70U: return gfx_create_sampler(session, reader, reply);

@@ -12,11 +12,10 @@
  * value lives in one register from its definition to its last use (the IR is
  * straight-line SSA, so the last use is known from one backward look).
  *
- * The payload, push-constant, output-register and message conventions are
- * baseline choices that have NOT been verified on hardware; the lowering shape
- * (one IR instruction to a small EU sequence, operands and modifiers in the
- * right places) is what this module fixes and what the host tests check.  The
- * encoded words are returned for the caller to place in a GEM object.
+ * E-128: the register and message conventions are the ones Mesa's compiler uses for the same shaders
+ * (tools/refvk.c, disassembled with gentool) -- see the table below -- and the emitted kernels are
+ * judged by Mesa's assembler / disassembler (tests/run-vk-gentool-test.sh) before they meet a GPU.
+ * The encoded words are returned for the caller to place in a GEM object.
  */
 
 #include "vk-internal.h"
@@ -30,17 +29,46 @@
 #include <string.h>
 
 /*
- * Baseline register conventions (NOT verified on hardware).  The payload follows the
- * usual order: push constants first (32 bytes to a register, read as scalar regions),
- * then the inputs, four registers (components) to a location.  Outputs are staged in
- * four registers to a slot: a vertex shader's slot 0 is Position and location n is
- * slot n + 1; a fragment shader's location n is slot n.
+ * Register conventions of a SIMD8 dispatch on Gen12 (one register = one float to a channel).
+ *
+ * Vertex shader payload:   r0 header, r1 the URB handles of the eight vertices,
+ *                          r2.. the push constants (32 bytes to a register, scalar regions),
+ *                          then four registers (x y z w) to an attribute, attributes in ascending
+ *                          location order -- the order of the vertex elements the draw programs.
+ * Vertex shader output:    the VUE is [header][position][varyings in ascending location order], four
+ *                          registers to a slot.  Header and position go out with a first URB write
+ *                          (handles from r1); the varyings with the write that ends the thread, whose
+ *                          whole payload has to sit in r112..r127: the handles copied to r127, the
+ *                          varyings right below.  With no varying the one write is that last write.
+ * Fragment shader payload: r0 header, r1 pixel positions, r2 / r3 the two perspective barycentrics of
+ *                          each pixel, push constants, then two registers to an input (ascending
+ *                          location): component c keeps its plane in floats 4 * (c & 1) .. + 3 of
+ *                          register c / 2 as [d/d bary1, d/d bary2, -, value at the origin].
+ *                          Gen11+ has no PLN: value = origin + d1 * bary1 + d2 * bary2, written out.
+ * Fragment shader output:  location 0 in r124..r127, the render-target write that ends the thread.
+ * Texture:                 one SIMD8 "sample" message, u and v each its own payload run, the reply
+ *                          four registers; binding table entry 1 + n, sampler n for the n-th
+ *                          sampled image of the shader (entry 0 is the render target).
  */
-#define COMPILE_PAYLOAD_GRF	2U
+#define COMPILE_PAYLOAD_GRF	2U	/* vertex: push constants start here */
+#define COMPILE_FS_BARY1_GRF	2U
+#define COMPILE_FS_BARY2_GRF	3U
+#define COMPILE_FS_SETUP_GRF	4U	/* fragment: push constants, then the input planes */
+#define COMPILE_SCRATCH_GRF	15U	/* one temporary of the interpolation */
 #define COMPILE_FIRST_VALUE_GRF	16U
-#define COMPILE_OUTPUT_GRF	112U
+#define COMPILE_LAST_VALUE_GRF	95U
+#define COMPILE_VUE_GRF		100U	/* vertex: header r100..r103, position r104..r107 */
+#define COMPILE_EOT_GRF		112U	/* a message that ends the thread reads r112..r127 only */
 #define COMPILE_MAX_GRF		127U
 #define COMPILE_NO_GRF		0U
+#define COMPILE_MAX_VARYINGS	3U	/* 4 * 3 registers below the handles in r127 */
+#define COMPILE_MAX_INPUTS	3U	/* payload registers below COMPILE_SCRATCH_GRF */
+
+/* Message descriptors (gentool's reading of Mesa's kernels for the same shaders). */
+#define COMPILE_DESC_URB_WRITE(slot)	(0x02080007U | ((uint32_t)(slot) << 4))	/* mlen 1 (handles), header, SIMD8 write */
+#define COMPILE_DESC_SAMPLE(bti, smp)	(0x02420000U | ((uint32_t)(smp) << 8) | (uint32_t)(bti))	/* mlen 1, rlen 4, SIMD8 sample */
+#define COMPILE_DESC_RT_WRITE		0x08031400U	/* mlen 4, SIMD8 single source, last target, entry 0 */
+#define COMPILE_EX_MLEN(n)		((uint32_t)(n) << 6)
 
 /* The lowering state threaded through the instruction walk. */
 struct compile_state {
@@ -53,6 +81,11 @@ struct compile_state {
 	uint32_t grf_high;		/* one past the highest value register ever used */
 	int error;
 	int unsupported;	/* the IR asks for something this compiler cannot lower */
+	uint32_t inputs[COMPILE_MAX_INPUTS];		/* input locations, ascending */
+	uint32_t input_count;
+	uint32_t varyings[COMPILE_MAX_VARYINGS];	/* vertex: output locations other than Position, ascending */
+	uint32_t varying_count;
+	uint32_t push_regs;
 };
 
 static uint32_t compile_grf(struct compile_state *state, uint32_t value);
@@ -61,6 +94,9 @@ static uint32_t compile_sources(const struct i915_vk_inst *inst);
 static void compile_release(struct compile_state *state, const struct i915_vk_inst *inst);
 static void compile_instruction(struct compile_state *state, const struct i915_vk_inst *inst);
 static void compile_terminate(struct compile_state *state);
+static void compile_interface(struct compile_state *state);
+static void compile_prologue(struct compile_state *state);
+static int compile_rank(const uint32_t *list, uint32_t count, uint32_t location, uint32_t *rank);
 
 /* Compiles one shader IR into a Gen12 GEN binary. */
 int
@@ -107,6 +143,10 @@ i915_vk_compile(
 				state.last_use[ir->instructions[index].src[source]] = index;
 	}
 
+	/* What the shader reads and writes fixes where its payload and its outputs are. */
+	compile_interface(&state);
+	compile_prologue(&state);
+
 	/* Each IR instruction lowers to a short EU sequence in order. */
 	for (index = 0U; index < ir->instruction_count; index++) {
 		state.index = index;
@@ -146,6 +186,11 @@ i915_vk_compile(
 	binary->code_bytes = (uint32_t)bytes;
 	binary->grf_used = state.grf_high;
 	binary->thread_count = 1U;
+	binary->push_regs = state.push_regs;
+	binary->input_count = state.input_count;
+	memcpy(binary->input_locations, state.inputs, sizeof(state.inputs));
+	binary->varying_count = ir->stage == I915_VK_STAGE_VERTEX ? state.varying_count : state.input_count;
+	binary->dispatch_grf_start = ir->stage == I915_VK_STAGE_VERTEX ? COMPILE_PAYLOAD_GRF : COMPILE_FS_SETUP_GRF;
 
 	i915_vk_eu_free(&state.code);
 	kern_free(state.value_grf);
@@ -219,7 +264,7 @@ compile_define(
 			return COMPILE_FIRST_VALUE_GRF;
 		}
 	}
-	for (grf = COMPILE_FIRST_VALUE_GRF; grf + count <= COMPILE_OUTPUT_GRF; grf++) {
+	for (grf = COMPILE_FIRST_VALUE_GRF; grf + count <= COMPILE_LAST_VALUE_GRF + 1U; grf++) {
 		for (run = 0U; run < count && state->grf_busy[grf + run] == 0U; run++)
 			;
 		if (run != count)
@@ -277,7 +322,8 @@ compile_instruction(
 	uint32_t dst;
 
 	code = &state->code;
-	payload_inputs = COMPILE_PAYLOAD_GRF + (state->ir->push_bytes + 31U) / 32U;
+	payload_inputs = (state->ir->stage == I915_VK_STAGE_VERTEX ? COMPILE_PAYLOAD_GRF : COMPILE_FS_SETUP_GRF) +
+		state->push_regs;
 
 	switch (inst->op) {
 	case I915_VK_IR_NOP:
@@ -289,13 +335,29 @@ compile_instruction(
 		i915_vk_eu_mov(code, i915_vk_eu_grf(dst), i915_vk_eu_imm_f(inst->immediate));
 		break;
 	case I915_VK_IR_LOAD_INPUT:
-		grf = payload_inputs + 4U * inst->location + inst->component;
-		if (inst->component > 3U || inst->location > COMPILE_FIRST_VALUE_GRF || grf >= COMPILE_FIRST_VALUE_GRF) {
-			state->unsupported = 1;	/* more inputs than the payload convention has registers for */
+		if (inst->component > 3U || compile_rank(state->inputs, state->input_count, inst->location, &grf) != 0) {
+			state->unsupported = 1;
 			break;
 		}
 		dst = compile_define(state, inst->dst, 1U);
-		i915_vk_eu_mov(code, i915_vk_eu_grf(dst), i915_vk_eu_grf(grf));
+		if (state->ir->stage == I915_VK_STAGE_VERTEX) {
+			/* an attribute component is a payload register of its own */
+			i915_vk_eu_mov(code, i915_vk_eu_grf(dst),
+				i915_vk_eu_grf(payload_inputs + 4U * grf + inst->component));
+		} else {
+			/* origin + d1 * bary1 + d2 * bary2 over the component's plane (see the conventions) */
+			uint32_t plane = COMPILE_FS_SETUP_GRF + state->push_regs + 2U * grf + inst->component / 2U;
+			uint32_t first = (inst->component & 1U) * 16U;
+
+			i915_vk_eu_alu2(code, I915_VK_EU_MUL, i915_vk_eu_grf(dst),
+				i915_vk_eu_grf_scalar(plane, first + 4U), i915_vk_eu_grf(COMPILE_FS_BARY2_GRF));
+			i915_vk_eu_alu2(code, I915_VK_EU_ADD, i915_vk_eu_grf(dst),
+				i915_vk_eu_grf(dst), i915_vk_eu_grf_scalar(plane, first + 12U));
+			i915_vk_eu_alu2(code, I915_VK_EU_MUL, i915_vk_eu_grf(COMPILE_SCRATCH_GRF),
+				i915_vk_eu_grf_scalar(plane, first), i915_vk_eu_grf(COMPILE_FS_BARY1_GRF));
+			i915_vk_eu_alu2(code, I915_VK_EU_ADD, i915_vk_eu_grf(dst),
+				i915_vk_eu_grf(dst), i915_vk_eu_grf(COMPILE_SCRATCH_GRF));
+		}
 		break;
 	case I915_VK_IR_LOAD_PUSH:
 		if ((inst->immediate & 3U) != 0U || inst->immediate + 4U > state->ir->push_bytes) {
@@ -304,22 +366,30 @@ compile_instruction(
 		}
 		dst = compile_define(state, inst->dst, 1U);
 		i915_vk_eu_mov(code, i915_vk_eu_grf(dst),
-			i915_vk_eu_grf_scalar(COMPILE_PAYLOAD_GRF + inst->immediate / 32U, inst->immediate % 32U));
+			i915_vk_eu_grf_scalar(payload_inputs - state->push_regs + inst->immediate / 32U, inst->immediate % 32U));
 		break;
 
 	/* An output component leaves through its staging register. */
 	case I915_VK_IR_STORE_OUTPUT:
-		if (inst->location == I915_VK_IR_LOCATION_POSITION)
-			grf = state->ir->stage == I915_VK_STAGE_VERTEX ? 0U : COMPILE_MAX_GRF;
-		else
-			grf = inst->location < COMPILE_MAX_GRF ?
-				inst->location + (state->ir->stage == I915_VK_STAGE_VERTEX ? 1U : 0U) : COMPILE_MAX_GRF;
-		grf = COMPILE_OUTPUT_GRF + 4U * grf + inst->component;
-		if (inst->component > 3U || grf > COMPILE_MAX_GRF) {
-			state->unsupported = 1;	/* more outputs than staging registers, or Position outside a vertex shader */
+		if (inst->component > 3U) {
+			state->unsupported = 1;
 			break;
 		}
-		i915_vk_eu_mov(code, i915_vk_eu_grf(grf), i915_vk_eu_grf(compile_grf(state, inst->src[0])));
+		if (state->ir->stage == I915_VK_STAGE_VERTEX && inst->location == I915_VK_IR_LOCATION_POSITION) {
+			grf = (state->varying_count != 0U ? COMPILE_VUE_GRF : COMPILE_MAX_GRF - 8U) + 4U;
+		} else if (state->ir->stage == I915_VK_STAGE_VERTEX) {
+			if (compile_rank(state->varyings, state->varying_count, inst->location, &grf) != 0) {
+				state->unsupported = 1;
+				break;
+			}
+			grf = COMPILE_MAX_GRF - 4U * state->varying_count + 4U * grf;
+		} else if (inst->location == 0U) {
+			grf = COMPILE_MAX_GRF - 3U;
+		} else {
+			state->unsupported = 1;	/* XXX: one colour output; Position belongs to a vertex shader */
+			break;
+		}
+		i915_vk_eu_mov(code, i915_vk_eu_grf(grf + inst->component), i915_vk_eu_grf(compile_grf(state, inst->src[0])));
 		break;
 
 	/* Arithmetic: sources are read before the destination gets its register. */
@@ -349,27 +419,20 @@ compile_instruction(
 			I915_VK_EU_MATH_COS : I915_VK_EU_MATH_RSQ, i915_vk_eu_grf(dst), a, i915_vk_eu_null());
 		break;
 
-	/*
-	 * texture(): the message payload is u then v in two consecutive registers, the reply is
-	 * the four colour components in four consecutive registers.  The descriptor (binding
-	 * table index, message type, SIMD mode) is not filled in yet -- see the header comment.
-	 */
+	/* texture(): see the conventions -- u and v are the two payload runs, the reply is four registers. */
 	case I915_VK_IR_SAMPLE:
 		a = i915_vk_eu_grf(compile_grf(state, inst->src[0]));
 		b = i915_vk_eu_grf(compile_grf(state, inst->src[1]));
-		dst = compile_define(state, inst->dst, 4U);
-		for (grf = COMPILE_FIRST_VALUE_GRF; grf + 2U <= COMPILE_OUTPUT_GRF; grf++)
-			if (state->grf_busy[grf] == 0U && state->grf_busy[grf + 1U] == 0U)
+		for (grf = 0U; grf < state->ir->uniform_count; grf++)
+			if (state->ir->uniforms[grf].set == inst->location && state->ir->uniforms[grf].binding == inst->immediate)
 				break;
-		if (grf + 2U > COMPILE_OUTPUT_GRF) {
+		if (grf >= state->ir->uniform_count || grf > 14U) {
 			state->unsupported = 1;
 			break;
 		}
-		if (grf + 2U > state->grf_high)
-			state->grf_high = grf + 2U;
-		i915_vk_eu_mov(code, i915_vk_eu_grf(grf), a);
-		i915_vk_eu_mov(code, i915_vk_eu_grf(grf + 1U), b);
-		i915_vk_eu_send(code, i915_vk_eu_grf(dst), i915_vk_eu_grf(grf), 2U, 0U, 0U, 2U, 4U, 0);
+		dst = compile_define(state, inst->dst, 4U);
+		i915_vk_eu_send(code, i915_vk_eu_grf(dst), a, b, 2U /* sampler */, COMPILE_DESC_SAMPLE(1U + grf, grf),
+			COMPILE_EX_MLEN(1U), 0, 0);
 		break;
 
 	default:
@@ -379,16 +442,128 @@ compile_instruction(
 	}
 }
 
+/* The position of `location` in an ascending list. */
+static int
+compile_rank(
+	const uint32_t *list,
+	uint32_t count,
+	uint32_t location,
+	uint32_t *rank)
+{
+	uint32_t index;
+
+	for (index = 0U; index < count; index++)
+		if (list[index] == location) {
+			*rank = index;
+			return 0;
+		}
+	return ENOENT;
+}
+
+/* Adds `location` to an ascending list without duplicates; more than `limit` entries is refused. */
+static void
+compile_note(
+	struct compile_state *state,
+	uint32_t *list,
+	uint32_t *count,
+	uint32_t limit,
+	uint32_t location)
+{
+	uint32_t index;
+	uint32_t at;
+
+	for (at = 0U; at < *count && list[at] < location; at++)
+		;
+	if (at < *count && list[at] == location)
+		return;
+	if (*count >= limit) {
+		state->unsupported = 1;
+		return;
+	}
+	for (index = *count; index > at; index--)
+		list[index] = list[index - 1U];
+	list[at] = location;
+	(*count)++;
+}
+
+/* Reads the interface off the instructions: the locations read, the locations written. */
+static void
+compile_interface(
+	struct compile_state *state)
+{
+	const struct i915_vk_inst *inst;
+	uint32_t index;
+
+	state->push_regs = (state->ir->push_bytes + 31U) / 32U;
+	for (index = 0U; index < state->ir->instruction_count; index++) {
+		inst = &state->ir->instructions[index];
+		if (inst->op == I915_VK_IR_LOAD_INPUT)
+			compile_note(state, state->inputs, &state->input_count, COMPILE_MAX_INPUTS, inst->location);
+		else if (inst->op == I915_VK_IR_STORE_OUTPUT && state->ir->stage == I915_VK_STAGE_VERTEX &&
+		    inst->location != I915_VK_IR_LOCATION_POSITION)
+			compile_note(state, state->varyings, &state->varying_count, COMPILE_MAX_VARYINGS, inst->location);
+	}
+
+	/* the payload has to end below the scratch register */
+	if ((state->ir->stage == I915_VK_STAGE_VERTEX ?
+	    COMPILE_PAYLOAD_GRF + state->push_regs + 4U * state->input_count :
+	    COMPILE_FS_SETUP_GRF + state->push_regs + 2U * state->input_count) > COMPILE_SCRATCH_GRF)
+		state->unsupported = 1;
+}
+
+/* What the outputs hold where the shader stores nothing: zeros, and the VUE header. */
+static void
+compile_prologue(
+	struct compile_state *state)
+{
+	struct i915_vk_eu_reg header;
+	uint32_t first;
+	uint32_t grf;
+
+	if (state->ir->stage == I915_VK_STAGE_VERTEX) {
+		/* header (point size, layer, viewport index): integer zeros; then position and the varyings */
+		first = state->varying_count != 0U ? COMPILE_VUE_GRF : COMPILE_MAX_GRF - 8U;
+		for (grf = first; grf < first + 4U; grf++) {
+			header = i915_vk_eu_grf_ud(grf);
+			header.type = 6U;	/* D */
+			i915_vk_eu_mov(&state->code, header, i915_vk_eu_imm_d(0U));
+		}
+		for (grf = first + 4U; grf < first + 8U; grf++)
+			i915_vk_eu_mov(&state->code, i915_vk_eu_grf(grf), i915_vk_eu_imm_f(0U));
+		for (grf = COMPILE_MAX_GRF - 4U * state->varying_count; grf < COMPILE_MAX_GRF; grf++)
+			i915_vk_eu_mov(&state->code, i915_vk_eu_grf(grf), i915_vk_eu_imm_f(0U));
+	} else {
+		for (grf = COMPILE_MAX_GRF - 3U; grf <= COMPILE_MAX_GRF; grf++)
+			i915_vk_eu_mov(&state->code, i915_vk_eu_grf(grf), i915_vk_eu_imm_f(0U));
+	}
+}
+
 /* Emits the shader's terminating output message. */
 static void
 compile_terminate(
 	struct compile_state *state)
 {
-	/*
-	 * A fragment shader writes its colour to the render target and a vertex
-	 * shader writes the vertex URB; both retire the thread.  The message
-	 * descriptors are completed on hardware, so the terminator is a send with
-	 * end-of-thread from the output register.
-	 */
-	i915_vk_eu_send(&state->code, i915_vk_eu_null(), i915_vk_eu_grf(COMPILE_OUTPUT_GRF), 2U, 0U, 0U, 1U, 0U, 1);
+	struct i915_vk_eu_buf *code = &state->code;
+
+	if (state->ir->stage != I915_VK_STAGE_VERTEX) {
+		/* the colour in r124..r127 to the render target: SENDC, as a render-target write must be */
+		i915_vk_eu_send(code, i915_vk_eu_null(), i915_vk_eu_grf(COMPILE_MAX_GRF - 3U), i915_vk_eu_null(),
+			5U /* render cache */, COMPILE_DESC_RT_WRITE, 0U, 1, 1);
+		return;
+	}
+
+	if (state->varying_count != 0U) {
+		/* header and position, slots 0 and 1 */
+		i915_vk_eu_send(code, i915_vk_eu_null(), i915_vk_eu_grf(1U), i915_vk_eu_grf(COMPILE_VUE_GRF),
+			6U /* URB */, COMPILE_DESC_URB_WRITE(0U), COMPILE_EX_MLEN(8U), 0, 0);
+		/* the varyings from slot 2, and the end of the thread: handles and payload in r112..r127 */
+		i915_vk_eu_mov(code, i915_vk_eu_grf_ud(COMPILE_MAX_GRF), i915_vk_eu_grf_ud(1U));
+		i915_vk_eu_send(code, i915_vk_eu_null(), i915_vk_eu_grf(COMPILE_MAX_GRF),
+			i915_vk_eu_grf(COMPILE_MAX_GRF - 4U * state->varying_count), 6U, COMPILE_DESC_URB_WRITE(2U),
+			COMPILE_EX_MLEN(4U * state->varying_count), 0, 1);
+	} else {
+		i915_vk_eu_mov(code, i915_vk_eu_grf_ud(COMPILE_MAX_GRF), i915_vk_eu_grf_ud(1U));
+		i915_vk_eu_send(code, i915_vk_eu_null(), i915_vk_eu_grf(COMPILE_MAX_GRF),
+			i915_vk_eu_grf(COMPILE_MAX_GRF - 8U), 6U, COMPILE_DESC_URB_WRITE(0U), COMPILE_EX_MLEN(8U), 0, 1);
+	}
 }

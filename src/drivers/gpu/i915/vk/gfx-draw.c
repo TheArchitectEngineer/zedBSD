@@ -14,14 +14,17 @@
  * Bit positions are those of Mesa's genxml (gen120); the words that depend on the compiled shaders
  * come from vkref-generated.inc.
  *
- * XXX: THE KERNELS.  The pipeline's SPIR-V is recognised by content (word count + FNV-1a) and the
- * kernels used are the ones Mesa's compiler produced from those very modules (tools/refvk.c).  The
- * executor's own compiler (spirv.c / compile.c / eu.c) is NOT in this path yet: its payload, URB
- * write, sampler and render-target messages have never run on a GPU.  A pipeline with any other
- * SPIR-V is refused at creation.
+ * THE KERNELS (E-128).  The pipeline's SPIR-V goes through the executor's own compiler (spirv.c ->
+ * compile.c -> eu.c) and the words of 3DSTATE_VS / PS / PS_EXTRA / WM / SBE / SBE_SWIZ are packed
+ * here from what that compiler reports (compile.h).  -DI915_VK_REFERENCE_KERNELS=1 builds the
+ * comparison path instead: the kernels and packet words Mesa's compiler produced from the same two
+ * SPIR-V modules (tools/refvk.c, vkref-generated.inc), recognised by content; everything else in the
+ * draw is identical, so a difference between the two builds is a difference between the compilers.
  */
 
 #include "gfx.h"
+#include "spirv.h"
+#include "compile.h"
 
 #include "../internal.h"
 #include "../parity/legacy_shim.h"
@@ -38,6 +41,10 @@
 #include "linux/3dstate-gen12.inc"
 #include "vkref-generated.inc"
 
+#ifndef I915_VK_REFERENCE_KERNELS
+#define I915_VK_REFERENCE_KERNELS 0
+#endif
+
 #ifndef I915_VK_GFX_DUMP
 #define I915_VK_GFX_DUMP 0
 #endif
@@ -46,6 +53,9 @@
 #define GFX_CMD_3DSTATE_VIEWPORT_STATE_POINTERS_SF_CLIP	0x7821U
 #define GFX_CMD_3DSTATE_SCISSOR_STATE_POINTERS		0x780FU
 #define GFX_CMD_3DSTATE_SAMPLER_STATE_POINTERS_PS	0x782FU
+#define GFX_CMD_3DSTATE_SBE_SWIZ			0x7851U
+#define GFX_3DSTATE_SBE_SWIZ_DWORDS			11U
+#define GFX_MAX_VS_THREADS			546U	/* intel_device_info (ADL-P GT2): max_vs_threads */
 
 /* One object holds every heap of a draw.  Offsets from its start: */
 #define GFX_STATE_BYTES			65536U
@@ -63,7 +73,9 @@
 #define GFX_DYN_CPS			0x0180U
 #define GFX_PUSH_BUFFER			0x2000U		/* absolute address in 3DSTATE_CONSTANT_VS */
 #define GFX_SCRATCH			0x3000U		/* post-sync writes land here */
-#define GFX_INSTRUCTION_HEAP		0x4000U		/* instruction base; kernels at VKREF_*_KERNEL_OFFSET */
+#define GFX_INSTRUCTION_HEAP		0x4000U		/* instruction base */
+#define GFX_VS_KERNEL			0x0000U		/*   offsets from the instruction base (= VKREF_*_KERNEL_OFFSET) */
+#define GFX_PS_KERNEL			0x1000U
 #define GFX_INSTRUCTION_BYTES		0x4000U
 #define GFX_BATCH_BYTES			16384U
 
@@ -258,6 +270,24 @@ i915_vk_gfx_session_close(struct i915_vk_session *session)
 
 /* ---------------- kernels ---------------- */
 
+/* The two kernels of a draw and what has to be programmed around them, whichever compiler made them. */
+struct gfx_kernels {
+	const uint32_t *vs_code;
+	uint32_t vs_bytes;
+	const uint32_t *ps_code;
+	uint32_t ps_bytes;
+	uint32_t vs_grf_start;
+	uint32_t vs_push_regs;
+	uint32_t vs_input_count;
+	uint32_t vs_inputs[GFX_MAX_VERTEX_ATTRIBUTES];	/* attribute locations in payload order */
+	uint32_t varyings;				/* VUE slots after the position = fragment inputs */
+	uint32_t ps_grf_start;
+	uint32_t ps_samplers;
+};
+
+_Static_assert(VKREF_VS_KERNEL_OFFSET == GFX_VS_KERNEL && VKREF_PS_KERNEL_OFFSET == GFX_PS_KERNEL,
+	"the reference packets name the kernels at these offsets");
+
 static uint32_t
 gfx_fnv1a(const uint32_t *words, uint32_t count)
 {
@@ -272,28 +302,124 @@ gfx_fnv1a(const uint32_t *words, uint32_t count)
 	return hash;
 }
 
+static int
+gfx_compile_stage(const struct gfx_shader *shader, enum i915_vk_stage stage, struct i915_vk_shader_binary **out)
+{
+	struct i915_vk_shader_ir *ir;
+	struct i915_vk_spirv_diag diag;
+	int error;
+
+	memset(&diag, 0, sizeof(diag));
+	error = i915_vk_spirv_parse_diag(shader->words, shader->word_count, stage, &ir, &diag);
+	if (error != 0) {
+		kern_logf("i915: vk: %s shader refused by the SPIR-V parser: error %d (%s; opcode %u at word %u)\n",
+			stage == I915_VK_STAGE_VERTEX ? "vertex" : "fragment", error,
+			diag.reason != NULL ? diag.reason : "?", diag.opcode, diag.word_offset);
+		return error;
+	}
+	error = i915_vk_compile(NULL, ir, out);
+	i915_vk_spirv_free(ir);
+	if (error != 0)
+		kern_logf("i915: vk: %s shader refused by the compiler: error %d\n",
+			stage == I915_VK_STAGE_VERTEX ? "vertex" : "fragment", error);
+	return error;
+}
+
 int
 i915_vk_gfx_pipeline_prepare(struct i915_vk_session *session, struct gfx_pipeline *pipeline)
 {
+	int error;
+
 	(void)session;
 	if (pipeline->vertex == NULL || pipeline->fragment == NULL)
 		return EINVAL;
 
-	/* XXX: see the header comment -- kernels by content, not from the executor's compiler. */
-	if (pipeline->vertex->word_count != VKREF_VS_SPIRV_WORDS ||
-	    gfx_fnv1a(pipeline->vertex->words, pipeline->vertex->word_count) != VKREF_VS_SPIRV_FNV1A ||
-	    pipeline->fragment->word_count != VKREF_FS_SPIRV_WORDS ||
-	    gfx_fnv1a(pipeline->fragment->words, pipeline->fragment->word_count) != VKREF_FS_SPIRV_FNV1A) {
-		kern_logf("i915: vk: XXX unimplemented path: the pipeline's SPIR-V (vs %u words, fs %u words) is not the pair "
-			"the reference kernels were generated from, and the executor's own compiler is not connected\n",
-			pipeline->vertex->word_count, pipeline->fragment->word_count);
-		return ENOTSUP;
+	if (I915_VK_REFERENCE_KERNELS) {
+		/* XXX: comparison build -- kernels by content, not from the executor's compiler. */
+		if (pipeline->vertex->word_count != VKREF_VS_SPIRV_WORDS ||
+		    gfx_fnv1a(pipeline->vertex->words, pipeline->vertex->word_count) != VKREF_VS_SPIRV_FNV1A ||
+		    pipeline->fragment->word_count != VKREF_FS_SPIRV_WORDS ||
+		    gfx_fnv1a(pipeline->fragment->words, pipeline->fragment->word_count) != VKREF_FS_SPIRV_FNV1A) {
+			kern_logf("i915: vk: XXX reference-kernel build: the pipeline's SPIR-V (vs %u words, fs %u words) is not "
+				"the pair the reference kernels were generated from\n",
+				pipeline->vertex->word_count, pipeline->fragment->word_count);
+			return ENOTSUP;
+		}
+		kern_logf("i915: vk: XXX reference-kernel build: Mesa-generated kernels (vs %u bytes, ps %u bytes)\n",
+			VKREF_VS_BYTES, VKREF_PS_BYTES);
+		pipeline->kernels_ready = 1;
+		return 0;
 	}
-	kern_logf("i915: vk: XXX pipeline runs Mesa-generated reference kernels for its SPIR-V "
-		"(vs %u bytes, ps %u bytes); the executor's compiler is not in this path\n",
-		VKREF_VS_BYTES, VKREF_PS_BYTES);
+
+	error = gfx_compile_stage(pipeline->vertex, I915_VK_STAGE_VERTEX, &pipeline->vs_binary);
+	if (error == 0)
+		error = gfx_compile_stage(pipeline->fragment, I915_VK_STAGE_FRAGMENT, &pipeline->fs_binary);
+	if (error == 0 && (pipeline->vs_binary->code_bytes > GFX_PS_KERNEL - GFX_VS_KERNEL ||
+	    pipeline->fs_binary->code_bytes > GFX_INSTRUCTION_BYTES - GFX_PS_KERNEL ||
+	    pipeline->vs_binary->varying_count != pipeline->fs_binary->input_count ||
+	    pipeline->fs_binary->push_regs != 0U || pipeline->vs_binary->push_regs * 32U > GFX_PUSH_BYTES)) {
+		/* XXX: kernels of at most 4 KiB / 12 KiB, the stages' interfaces equal, push constants in the vertex stage only */
+		kern_logf("i915: vk: XXX unimplemented path: vs %u bytes / %u varyings / %u push registers, "
+			"fs %u bytes / %u inputs / %u push registers\n",
+			pipeline->vs_binary->code_bytes, pipeline->vs_binary->varying_count, pipeline->vs_binary->push_regs,
+			pipeline->fs_binary->code_bytes, pipeline->fs_binary->input_count, pipeline->fs_binary->push_regs);
+		error = ENOTSUP;
+	}
+	if (error != 0) {
+		i915_vk_gfx_pipeline_release(pipeline);
+		return error;
+	}
+	kern_logf("i915: vk: pipeline compiled by the executor: vs %u bytes (%u attributes, %u push registers, %u varyings), "
+		"fs %u bytes (%u inputs, %u sampled images)\n",
+		pipeline->vs_binary->code_bytes, pipeline->vs_binary->input_count, pipeline->vs_binary->push_regs,
+		pipeline->vs_binary->varying_count, pipeline->fs_binary->code_bytes, pipeline->fs_binary->input_count,
+		pipeline->fs_binary->sampler_count);
 	pipeline->kernels_ready = 1;
 	return 0;
+}
+
+void
+i915_vk_gfx_pipeline_release(struct gfx_pipeline *pipeline)
+{
+	i915_vk_shader_binary_free(pipeline->vs_binary);
+	i915_vk_shader_binary_free(pipeline->fs_binary);
+	pipeline->vs_binary = NULL;
+	pipeline->fs_binary = NULL;
+	pipeline->kernels_ready = 0;
+}
+
+static void
+gfx_kernels(const struct gfx_pipeline *pipeline, struct gfx_kernels *k)
+{
+	uint32_t index;
+
+	memset(k, 0, sizeof(*k));
+	if (I915_VK_REFERENCE_KERNELS) {
+		k->vs_code = vkref_vs_kernel;
+		k->vs_bytes = VKREF_VS_BYTES;
+		k->ps_code = vkref_ps_kernel;
+		k->ps_bytes = VKREF_PS_BYTES;
+		k->vs_push_regs = VKREF_VS_PUSH_REGS;
+		/* refvk: inputs_read, location n = bit VERT_ATTRIB_GENERIC0 + n, ascending */
+		for (index = 0U; index < GFX_MAX_VERTEX_ATTRIBUTES; index++)
+			if (((VKREF_VS_INPUTS_READ >> (VKREF_VERT_ATTRIB_GENERIC0 + index)) & 1U) != 0U)
+				k->vs_inputs[k->vs_input_count++] = index;
+		k->varyings = 1U;
+		k->ps_samplers = 1U;
+		return;
+	}
+	k->vs_code = pipeline->vs_binary->code;
+	k->vs_bytes = pipeline->vs_binary->code_bytes;
+	k->ps_code = pipeline->fs_binary->code;
+	k->ps_bytes = pipeline->fs_binary->code_bytes;
+	k->vs_grf_start = pipeline->vs_binary->dispatch_grf_start;
+	k->vs_push_regs = pipeline->vs_binary->push_regs;
+	k->vs_input_count = pipeline->vs_binary->input_count;
+	for (index = 0U; index < k->vs_input_count && index < GFX_MAX_VERTEX_ATTRIBUTES; index++)
+		k->vs_inputs[index] = pipeline->vs_binary->input_locations[index];
+	k->varyings = pipeline->vs_binary->varying_count;
+	k->ps_grf_start = pipeline->fs_binary->dispatch_grf_start;
+	k->ps_samplers = pipeline->fs_binary->sampler_count;
 }
 
 /* ---------------- state ---------------- */
@@ -379,7 +505,7 @@ static const uint32_t gfx_eot_only[4] = {	/* selftest.c: a null render-target wr
 /* Everything the batch points at.  Returns 0 or what is missing. */
 static int
 gfx_write_state(uint8_t *page, uint64_t state_va, const struct gfx_draw_state *state,
-	const struct gfx_image *target, uint32_t mocs)
+	const struct gfx_kernels *k, const struct gfx_image *target, uint32_t mocs)
 {
 	const struct gfx_pipeline *pipeline = state->pipeline;
 	uint32_t *surface = (uint32_t *)(void *)(page + GFX_SURFACE_HEAP);
@@ -398,6 +524,13 @@ gfx_write_state(uint8_t *page, uint64_t state_va, const struct gfx_draw_state *s
 	error = gfx_write_rss(&surface[GFX_RSS_TARGET / 4U], target, mocs);
 	if (error != 0)
 		return error;
+	if (k->ps_samplers == 0U)
+		goto no_texture;
+	if (k->ps_samplers > 1U) {
+		kern_logf("i915: vk: XXX unimplemented path: %u sampled images in one fragment shader\n", k->ps_samplers);
+		return ENOTSUP;
+	}
+	/* XXX: the one sampled image is set 0 binding 0 (binding table entry 1, sampler 0) */
 	if (state->dset[0] == NULL || state->dset[0]->slots[0].view == NULL || state->dset[0]->slots[0].sampler == NULL) {
 		kern_logf("i915: vk: draw refused: set 0 binding 0 has no image view and sampler\n");
 		return EINVAL;
@@ -406,6 +539,7 @@ gfx_write_state(uint8_t *page, uint64_t state_va, const struct gfx_draw_state *s
 	if (error != 0)
 		return error;
 	gfx_write_sampler(&dynamic[GFX_DYN_SAMPLER / 4U], state->dset[0]->slots[0].sampler);
+no_texture:
 
 	/* BLEND_STATE: global dword, then the entry -- pre / post blend clamp to the target's format */
 	words = &dynamic[GFX_DYN_BLEND / 4U];
@@ -449,13 +583,13 @@ gfx_write_state(uint8_t *page, uint64_t state_va, const struct gfx_draw_state *s
 		((((uint32_t)pipeline->scissor.offset.y + pipeline->scissor.extent.height - 1U) & 0xffffU) << 16);
 
 	/* push constants: the block the vertex shader reads, register by register */
-	memcpy(page + GFX_PUSH_BUFFER, state->push, VKREF_VS_PUSH_REGS * 32U <= GFX_PUSH_BYTES ? VKREF_VS_PUSH_REGS * 32U : GFX_PUSH_BYTES);
+	memcpy(page + GFX_PUSH_BUFFER, state->push, k->vs_push_regs * 32U <= GFX_PUSH_BYTES ? k->vs_push_regs * 32U : GFX_PUSH_BYTES);
 
 	/* instruction heap: a thread that starts anywhere it should not retires at once */
 	for (at = 0U; at + sizeof(gfx_eot_only) <= GFX_INSTRUCTION_BYTES; at += sizeof(gfx_eot_only))
 		memcpy(page + GFX_INSTRUCTION_HEAP + at, gfx_eot_only, sizeof(gfx_eot_only));
-	memcpy(page + GFX_INSTRUCTION_HEAP + VKREF_VS_KERNEL_OFFSET, vkref_vs_kernel, VKREF_VS_BYTES);
-	memcpy(page + GFX_INSTRUCTION_HEAP + VKREF_PS_KERNEL_OFFSET, vkref_ps_kernel, VKREF_PS_BYTES);
+	memcpy(page + GFX_INSTRUCTION_HEAP + GFX_VS_KERNEL, k->vs_code, k->vs_bytes);
+	memcpy(page + GFX_INSTRUCTION_HEAP + GFX_PS_KERNEL, k->ps_code, k->ps_bytes);
 	return 0;
 }
 
@@ -495,29 +629,27 @@ emit_sba(struct gfx_batch *b, uint64_t state_va, uint32_t mocs)
 /* Vertex buffers and elements.  The elements follow the locations in ascending order: that is the
  * order in which the compiled vertex shader finds its attributes in the payload. */
 static int
-emit_vertex_input(struct gfx_batch *b, const struct gfx_draw_state *state, uint32_t mocs)
+emit_vertex_input(struct gfx_batch *b, const struct gfx_draw_state *state, const struct gfx_kernels *k, uint32_t mocs)
 {
 	const struct gfx_pipeline *pipeline = state->pipeline;
 	uint32_t order[GFX_MAX_VERTEX_ATTRIBUTES];
 	uint32_t index, other, count, format, components;
 
-	count = pipeline->attribute_count;
+	/* one vertex element to an attribute the kernel reads, in the kernel's payload order */
+	count = k->vs_input_count;
 	if (count == 0U || pipeline->binding_count == 0U)
 		return EINVAL;
-	for (index = 0U; index < count; index++)
-		order[index] = index;
-	for (index = 0U; index < count; index++)
-		for (other = index + 1U; other < count; other++)
-			if (pipeline->attributes[order[other]].location < pipeline->attributes[order[index]].location) {
-				uint32_t t = order[index];
-
-				order[index] = order[other];
-				order[other] = t;
-			}
-	/* XXX: every declared attribute must be one the shader reads (refvk: inputs_read), or the order shifts */
-	for (index = 0U; index < count; index++)
-		if (((VKREF_VS_INPUTS_READ >> (VKREF_VERT_ATTRIB_GENERIC0 + pipeline->attributes[order[index]].location)) & 1U) == 0U)
-			return ENOTSUP;
+	for (index = 0U; index < count; index++) {
+		for (other = 0U; other < pipeline->attribute_count; other++)
+			if (pipeline->attributes[other].location == k->vs_inputs[index])
+				break;
+		if (other == pipeline->attribute_count) {
+			kern_logf("i915: vk: draw refused: the vertex shader reads location %u and the pipeline has no such attribute\n",
+				k->vs_inputs[index]);
+			return EINVAL;
+		}
+		order[index] = other;
+	}
 
 	emit(b, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_VERTEX_BUFFERS, 1U + pipeline->binding_count * GEN12_VERTEX_BUFFER_STATE_DWORDS));
 	for (index = 0U; index < pipeline->binding_count; index++) {
@@ -571,7 +703,7 @@ emit_vertex_input(struct gfx_batch *b, const struct gfx_draw_state *state, uint3
 
 /* selftest.c i915_draw_emit_urb(), with the push-constant space split between the VS and the PS. */
 static void
-emit_urb(struct gfx_batch *b)
+emit_urb(struct gfx_batch *b, uint32_t entry_size)
 {
 	uint32_t opcode;
 
@@ -584,7 +716,7 @@ emit_urb(struct gfx_batch *b)
 
 	/* The vertex stage owns the URB past the push constants: 3576 entries of one 64-byte slot. */
 	emit(b, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_URB_ALLOC_VS, GEN12_3DSTATE_URB_ALLOC_DWORDS));
-	emit(b, (4U << 10) | (4U << 21) | ((VKREF_VS_URB_ENTRY_SIZE - 1U) << 0));
+	emit(b, (4U << 10) | (4U << 21) | (entry_size - 1U));
 	emit(b, 3576U | (3576U << 16));
 	for (opcode = GEN12_CMD_3DSTATE_URB_ALLOC_HS; opcode <= GEN12_CMD_3DSTATE_URB_ALLOC_GS; opcode++) {
 		emit(b, GEN12_CMD_HEADER(opcode, GEN12_3DSTATE_URB_ALLOC_DWORDS));
@@ -594,7 +726,7 @@ emit_urb(struct gfx_batch *b)
 }
 
 static void
-emit_constants(struct gfx_batch *b, uint64_t push_va, uint32_t mocs)
+emit_constants(struct gfx_batch *b, uint64_t push_va, uint32_t push_regs, uint32_t mocs)
 {
 	static const uint32_t opcodes[5] = {
 		GEN12_CMD_3DSTATE_CONSTANT_VS, GEN12_CMD_3DSTATE_CONSTANT_HS, GEN12_CMD_3DSTATE_CONSTANT_DS,
@@ -604,10 +736,10 @@ emit_constants(struct gfx_batch *b, uint64_t push_va, uint32_t mocs)
 
 	for (stage = 0U; stage < 5U; stage++) {
 		emit(b, GEN12_CMD_HEADER(opcodes[stage], GEN12_3DSTATE_CONSTANT_DWORDS) | (mocs << 8));
-		if (stage == 0U && VKREF_VS_PUSH_REGS != 0U) {
+		if (stage == 0U && push_regs != 0U) {
 			/* anv: the highest slot first, so that slot 0 is never the only one in use */
 			emit(b, 0U);
-			emit(b, VKREF_VS_PUSH_REGS << 16);		/* read length of buffer 3 */
+			emit(b, push_regs << 16);			/* read length of buffer 3 */
 			for (index = 3U; index < 9U; index++)
 				emit(b, 0U);
 			emit(b, (uint32_t)push_va);
@@ -699,8 +831,63 @@ emit_depth(struct gfx_batch *b, const struct gfx_draw_state *state, const struct
 	return 0;
 }
 
+/*
+ * The packets that say what the kernels are (genxml gen120; anv genX_shader.c / genX_gfx_state.c).
+ * With the reference kernels' parameters these give the reference packets, 16-wide dispatch aside.
+ */
+static void
+emit_shader_state(struct gfx_batch *b, const struct gfx_kernels *k, int vertex)
+{
+	uint32_t index;
+
+	if (vertex != 0) {
+		emit(b, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_VS, GEN12_3DSTATE_VS_DWORDS));
+		emit(b, GFX_VS_KERNEL);				/* kernel start pointer */
+		emit(b, 0U);
+		emit(b, 0U);					/* IEEE-754, no samplers, no binding table */
+		emit(b, 0U);					/* no scratch space */
+		emit(b, 0U);
+		emit(b, (k->vs_grf_start << 20) | (((k->vs_input_count + 1U) / 2U) << 11));	/* URB read: pairs of attributes from 0 */
+		emit(b, ((GFX_MAX_VS_THREADS - 1U) << 22) | (1U << 10) | (1U << 2) | 1U);	/* statistics, SIMD8, enable */
+		emit(b, 0U);
+		return;
+	}
+
+	emit(b, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_SBE, GEN12_3DSTATE_SBE_DWORDS));
+	emit(b, (1U << 29) | (1U << 28) | (k->varyings << 22) | (1U << 21) |
+		((k->varyings != 0U ? (k->varyings + 1U) / 2U : 1U) << 11) | (1U << 5));	/* read from VUE slot 2 */
+	emit(b, 0U);
+	emit(b, 0U);
+	emit(b, 0xffffffffU);					/* every attribute: all four components */
+	emit(b, 0xffffffffU);
+	emit(b, GEN12_CMD_HEADER(GFX_CMD_3DSTATE_SBE_SWIZ, GFX_3DSTATE_SBE_SWIZ_DWORDS));
+	for (index = 0U; index < 16U; index += 2U)		/* fragment input n = the n-th slot read */
+		emit(b, (index < k->varyings ? index : 0U) | ((index + 1U < k->varyings ? index + 1U : 0U) << 16));
+	emit(b, 0U);
+	emit(b, 0U);
+
+	emit(b, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_WM, GEN12_3DSTATE_WM_DWORDS));
+	emit(b, (1U << 31) | (1U << 11) | (1U << 6));		/* statistics, perspective pixel barycentrics, line AA 1.0 */
+
+	emit(b, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_PS, GEN12_3DSTATE_PS_DWORDS));
+	emit(b, GFX_PS_KERNEL);					/* kernel 0: the SIMD8 one */
+	emit(b, 0U);
+	emit(b, (1U << 30) | ((k->ps_samplers != 0U ? 1U : 0U) << 27) | ((1U + k->ps_samplers) << 18));	/* vector mask */
+	emit(b, 0U);
+	emit(b, 0U);
+	emit(b, ((GEN12_MAX_THREADS_PER_PSD - 1U) << 23) | 1U);	/* 8-pixel dispatch only */
+	emit(b, k->ps_grf_start << 16);
+	emit(b, 0U);
+	emit(b, 0U);
+	emit(b, 0U);
+	emit(b, 0U);
+
+	emit(b, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_PS_EXTRA, GEN12_3DSTATE_PS_EXTRA_DWORDS));
+	emit(b, (1U << 31) | ((k->varyings != 0U ? 1U : 0U) << 8));	/* valid, attributes */
+}
+
 static int
-gfx_build_batch(struct gfx_batch *b, uint64_t state_va, const struct gfx_draw_state *state,
+gfx_build_batch(struct gfx_batch *b, uint64_t state_va, const struct gfx_draw_state *state, const struct gfx_kernels *k,
 	const struct gfx_image *target, const struct gfx_image *depth, uint32_t mocs,
 	uint32_t vertex_count, uint32_t instance_count, uint32_t first_vertex, uint32_t first_instance)
 {
@@ -730,11 +917,11 @@ gfx_build_batch(struct gfx_batch *b, uint64_t state_va, const struct gfx_draw_st
 	emit_zero(b, GEN12_CMD_3DSTATE_BINDING_TABLE_POINTERS_DS, GEN12_3DSTATE_POINTERS_DWORDS);
 	emit_zero(b, GEN12_CMD_3DSTATE_BINDING_TABLE_POINTERS_GS, GEN12_3DSTATE_POINTERS_DWORDS);
 
-	error = emit_vertex_input(b, state, mocs);
+	error = emit_vertex_input(b, state, k, mocs);
 	if (error != 0)
 		return error;
-	emit_urb(b);
-	emit_constants(b, state_va + GFX_PUSH_BUFFER, mocs);
+	emit_urb(b, I915_VK_REFERENCE_KERNELS ? VKREF_VS_URB_ENTRY_SIZE : ((2U + k->varyings) * 16U + 63U) / 64U);
+	emit_constants(b, state_va + GFX_PUSH_BUFFER, k->vs_push_regs, mocs);
 
 	emit_pointer(b, GEN12_CMD_3DSTATE_CC_STATE_POINTERS, GFX_DYN_COLOR_CALC | 1U);
 	emit_pointer(b, GEN12_CMD_3DSTATE_BLEND_STATE_POINTERS, GFX_DYN_BLEND | 1U);
@@ -752,7 +939,10 @@ gfx_build_batch(struct gfx_batch *b, uint64_t state_va, const struct gfx_draw_st
 	emit(b, 1U);
 
 	/* the geometry stages: the vertex shader, and nothing else */
-	emit_words(b, vkref_3dstate_vs, GEN12_3DSTATE_VS_DWORDS);
+	if (I915_VK_REFERENCE_KERNELS)
+		emit_words(b, vkref_3dstate_vs, GEN12_3DSTATE_VS_DWORDS);
+	else
+		emit_shader_state(b, k, 1);
 	emit_zero(b, GEN12_CMD_3DSTATE_HS, GEN12_3DSTATE_HS_DWORDS);
 	emit_zero(b, GEN12_CMD_3DSTATE_TE, GEN12_3DSTATE_TE_DWORDS);
 	emit_zero(b, GEN12_CMD_3DSTATE_DS, GEN12_3DSTATE_DS_DWORDS);
@@ -761,11 +951,15 @@ gfx_build_batch(struct gfx_batch *b, uint64_t state_va, const struct gfx_draw_st
 	emit_zero(b, GEN12_CMD_3DSTATE_PRIMITIVE_REPLICATION, GEN12_3DSTATE_PRIMITIVE_REPLICATION_DWORDS);
 
 	emit_raster(b, state->pipeline);
-	emit_words(b, vkref_3dstate_sbe, sizeof(vkref_3dstate_sbe) / 4U);
-	emit_words(b, vkref_3dstate_sbe_swiz, sizeof(vkref_3dstate_sbe_swiz) / 4U);
-	emit_words(b, vkref_3dstate_wm, sizeof(vkref_3dstate_wm) / 4U);
-	emit_words(b, vkref_3dstate_ps, sizeof(vkref_3dstate_ps) / 4U);
-	emit_words(b, vkref_3dstate_ps_extra, sizeof(vkref_3dstate_ps_extra) / 4U);
+	if (I915_VK_REFERENCE_KERNELS) {
+		emit_words(b, vkref_3dstate_sbe, sizeof(vkref_3dstate_sbe) / 4U);
+		emit_words(b, vkref_3dstate_sbe_swiz, sizeof(vkref_3dstate_sbe_swiz) / 4U);
+		emit_words(b, vkref_3dstate_wm, sizeof(vkref_3dstate_wm) / 4U);
+		emit_words(b, vkref_3dstate_ps, sizeof(vkref_3dstate_ps) / 4U);
+		emit_words(b, vkref_3dstate_ps_extra, sizeof(vkref_3dstate_ps_extra) / 4U);
+	} else {
+		emit_shader_state(b, k, 0);
+	}
 	emit(b, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_PS_BLEND, GEN12_3DSTATE_PS_BLEND_DWORDS));
 	emit(b, 1U << 30);					/* has a writeable render target */
 
@@ -871,6 +1065,7 @@ i915_vk_gfx_draw(struct i915_vk_session *session, const struct gfx_draw_state *s
 {
 	struct gfx_session *gs;
 	struct gfx_batch batch;
+	struct gfx_kernels kernels;
 	const struct gfx_image *target;
 	const struct gfx_image *depth;
 	uint32_t mocs;
@@ -893,14 +1088,15 @@ i915_vk_gfx_draw(struct i915_vk_session *session, const struct gfx_draw_state *s
 		return ENOMEM;
 	mocs = GEN12_MOCS(I915_MOCS_UNCACHED_INDEX);
 
-	error = gfx_write_state((uint8_t *)kern_pmem_to_kernel(gs->state->run.paddr), gs->state->va, state, target, mocs);
+	gfx_kernels(state->pipeline, &kernels);
+	error = gfx_write_state((uint8_t *)kern_pmem_to_kernel(gs->state->run.paddr), gs->state->va, state, &kernels, target, mocs);
 	if (error != 0)
 		return error;
 	batch.cmds = (uint32_t *)kern_pmem_to_kernel(gs->batch->run.paddr);
 	batch.count = 0U;
 	batch.capacity = GFX_BATCH_BYTES / 4U;
 	batch.overflow = 0;
-	error = gfx_build_batch(&batch, gs->state->va, state, target, depth, mocs,
+	error = gfx_build_batch(&batch, gs->state->va, state, &kernels, target, depth, mocs,
 		vertex_count, instance_count, first_vertex, first_instance);
 	if (error != 0)
 		return error;

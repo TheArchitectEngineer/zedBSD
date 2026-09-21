@@ -23,6 +23,7 @@ struct i915_vk_eu_buf {
 	size_t count;
 	size_t capacity;
 	int error;
+	unsigned in_order;	/* in-order instructions so far: what the scoreboard byte counts back over */
 };
 
 /* An operand: register file, number, subregister, type and region. */
@@ -87,6 +88,15 @@ i915_vk_eu_grf_scalar(
 	uint32_t nr,
 	uint32_t subnr);
 
+/* The same register as eight unsigned 32-bit words (URB handles, anything copied bit for bit). */
+struct i915_vk_eu_reg
+i915_vk_eu_grf_ud(
+	uint32_t nr);
+
+struct i915_vk_eu_reg
+i915_vk_eu_imm_d(
+	uint32_t value);
+
 struct i915_vk_eu_reg
 i915_vk_eu_imm_f(
 	uint32_t bits);
@@ -135,12 +145,12 @@ void
 i915_vk_eu_send(
 	struct i915_vk_eu_buf *buffer,
 	struct i915_vk_eu_reg dst,
-	struct i915_vk_eu_reg src,
+	struct i915_vk_eu_reg src0,
+	struct i915_vk_eu_reg src1,
 	uint32_t sfid,
 	uint32_t descriptor,
 	uint32_t ex_descriptor,
-	uint32_t mlen,
-	uint32_t rlen,
+	int conditional,
 	int end_of_thread);
 
 void

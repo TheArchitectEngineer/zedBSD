@@ -62,3 +62,8 @@ WS031 E-110（2026-09-19）。`vkdemo-dependency-table.md` §2 の続き。対�
 1. sampler SEND の descriptor（binding table index、message type、SIMD mode）と、終端 SEND（VS = URB write、FS = render target write）の message。値は Mesa の定義から出典つきで `vk/linux/eu-encoding-gen12.inc` へ転記する（記憶から書かない）。
 2. payload／出力の register 規約を E-103 で確定した 3DSTATE 側の値（dispatch GRF start、URB entry 読取り、PS の barycentric 入力）と突合せ。FS の入力は実際には plane 方程式＋barycentric からの補間で、`LOAD_INPUT` = payload register の MOV という今の規約は FS では成り立たない見込み（未検証と明記した範囲）。
 3. そのうえで最初の GPU 実行試験（parity の draw 経路に compiler 出力の kernel を載せ、readback を独立式と比較）→ ここで初めて「GPU検証済み」を付ける。
+
+## 6. E-128 更新（2026-09-21）: GPU 検証済み
+
+§0 の表の「GPU検証済み = 該当なし」は過去の状態。E-128 で出荷版 `cuboid.{vert,frag}.spv` を executor の compiler に通した kernel が Latitude 5330 の実 GPU で動き、time_ms = 0 と 2500 のフレームが Mesa 参照 kernel のフレームと **同一 SHA-256**、独立オラクル mismatch 0 だった（`results-ws031.md` E-128）。したがって §2 の項目 2・4〜6・9・10・13〜17 は固定 shader の範囲で「GPU検証済み」。
+その過程で §0 の「EU生成済み」の根拠だった model が、**同じ誤った encoding table を encoder と共有していた**ことが分かった（float の型番号、region の width、math selector、即値の表し方が Gen12 と違っていた。model は自分の table で decode するので気付けない）。いまの判定者は Mesa の assembler / disassembler（`tests/run-vk-gentool-test.sh`）で、model は命令の意味の検算として残している。§5 の 1〜3 は E-128 で実施済み（規約は `compile.c` 冒頭）。

@@ -122,16 +122,7 @@ struct gfx_shader {
 #define GFX_MAX_VERTEX_BINDINGS 4U
 #define GFX_MAX_VERTEX_ATTRIBUTES 8U
 
-/* One compiled stage as a draw consumes it (gfx-draw.c fills it when the pipeline is created). */
-struct gfx_kernel {
-	const uint32_t *code;
-	uint32_t code_bytes;
-	uint32_t grf_start;			/* dispatch GRF start register */
-	uint32_t urb_read_length;		/* VS: vertex URB entry read length; FS: unused */
-	uint32_t urb_entry_size;		/* VS: output VUE size in 64-byte units */
-	uint32_t push_regs;			/* registers of push constants in the payload */
-	uint32_t state[8];			/* stage-specific words (PS: DW3, DW6 bits, DW7, PS_EXTRA DW1, offset16) */
-};
+struct i915_vk_shader_binary;
 
 struct gfx_pipeline {
 	struct gfx_shader *vertex;
@@ -157,8 +148,8 @@ struct gfx_pipeline {
 	uint32_t depth_write;
 	uint32_t depth_compare;
 	int kernels_ready;
-	struct gfx_kernel vs;
-	struct gfx_kernel fs;
+	struct i915_vk_shader_binary *vs_binary;	/* the executor's compiler (compile.h); NULL in a reference-kernel build */
+	struct i915_vk_shader_binary *fs_binary;
 };
 
 /* ---- the recorded form of a command buffer ---- */
@@ -247,6 +238,7 @@ void i915_vk_gfx_session_close(struct i915_vk_session *session);
 
 /* gfx-draw.c: prepares a pipeline's kernels; runs one draw to its end on the GPU. */
 int i915_vk_gfx_pipeline_prepare(struct i915_vk_session *session, struct gfx_pipeline *pipeline);
+void i915_vk_gfx_pipeline_release(struct gfx_pipeline *pipeline);
 int i915_vk_gfx_draw(struct i915_vk_session *session, const struct gfx_draw_state *state,
 	uint32_t vertex_count, uint32_t instance_count, uint32_t first_vertex, uint32_t first_instance);
 
