@@ -31,6 +31,7 @@
 #include "parity/resident_display.h"
 #include <drivers/gpu-display.h>
 #include <drivers/gpu-scanout.h>
+#include <drivers/gpu-share.h>
 #include <uapi/gpu.h>
 #include <uapi/gpu-job.h>
 #include <kern/device-io.h>
@@ -53,7 +54,7 @@
 #if defined(PARITY_SHIM_REDIRECT) && PARITY_RESIDENT_DISPLAY
 /* E-129: the resident node also drives the panel (parity/resident_display.c) */
 #define I915_RESIDENT_DISPLAY	1
-#define I915_CAPABILITIES	(I915_CAPABILITIES_BASE | GPU_CAP_DISPLAY | GPU_CAP_DISPLAY_EVENTS)
+#define I915_CAPABILITIES	(I915_CAPABILITIES_BASE | GPU_CAP_DISPLAY | GPU_CAP_DISPLAY_EVENTS | GPU_CAP_SHARE)
 #else
 #define I915_RESIDENT_DISPLAY	0
 #define I915_CAPABILITIES	I915_CAPABILITIES_BASE
@@ -78,6 +79,11 @@ static int i915_resource_write(void *opaque, void *private_session, void *object
 static int i915_get_capset(void *opaque, void *private_session, struct gpu_capset *capset);
 static int i915_blob_create(void *opaque, void *private_session, const struct gpu_blob_create *request, void **result, uint32_t *resource_id);
 static int i915_resource_map(void *opaque, void *private_session, void *object, struct drv_gpu_mapping *mapping);
+#if I915_RESIDENT_DISPLAY
+static int i915_share_export(void *opaque, void *private_session, void *object, const struct gpu_image_descriptor *image, void **result);
+static void i915_share_release(void *opaque, void *shared);
+static int i915_share_import(void *opaque, void *private_session, void *shared, void **result, uint32_t *resource_id);
+#endif
 static int i915_command(void *opaque, void *private_session, const void *buffer, uint32_t bytes);
 static int i915_command_submit(void *opaque, void *private_session, const void *buffer, uint32_t bytes, uint32_t flags, uint32_t timeline, struct drv_gpu_completion *completion);
 static void i915_command_drain(void *opaque, void *private_session);
@@ -581,6 +587,11 @@ i915_publish(
 		i915_reset_device,
 		i915_isolate
 	};
+#if I915_RESIDENT_DISPLAY
+	static const struct drv_gpu_share_ops shares = {
+		i915_share_export, i915_share_release, i915_share_import, NULL
+	};
+#endif
 	static const struct drv_gpu_ops operations = {
 		DRV_GPU_INTERFACE_VERSION,
 		sizeof(struct drv_gpu_ops),
@@ -601,10 +612,11 @@ i915_publish(
 		NULL,
 #if I915_RESIDENT_DISPLAY
 		&drv_i915_resident_display_ops,
+		&shares,
 #else
 		NULL,
-#endif
 		NULL,
+#endif
 		&commands,
 #if I915_RESIDENT_DISPLAY
 		&drv_i915_resident_scanout_ops,
@@ -1092,7 +1104,8 @@ i915_blob_create(
 	/* Only mappable, optionally shareable, host storage is backed. */
 	if (request->flags == 0U)
 		return EOPNOTSUPP;
-	if ((request->flags & ~(GPU_BLOB_MAPPABLE | GPU_BLOB_SHAREABLE)) != 0U)
+	/* E-130: CROSS_DEVICE is accepted; with no scanout import_image the core refuses any foreign import. */
+	if ((request->flags & ~(GPU_BLOB_MAPPABLE | GPU_BLOB_SHAREABLE | GPU_BLOB_CROSS_DEVICE)) != 0U)
 		return EOPNOTSUPP;
 
 	/* Allocation and binding are serialized with every other controller operation. */
@@ -1143,6 +1156,77 @@ i915_blob_create(
 	/* Succeeded: the session owns zeroed storage the GPU can address. */
 	return 0;
 }
+
+#if I915_RESIDENT_DISPLAY
+/*
+ * E-130: sharing a blob between the opens of this node (the display connection imports what the rendering
+ * connection exported).  The export is a counted reference on the GEM object; an import is an alias object that
+ * borrows the backing, is bound in the importer's address space and frees only itself.
+ * XXX: same device only; no cross-device DMA-BUF, no image metadata beyond what the core keeps.
+ */
+static int
+i915_share_export(void *opaque, void *private_session, void *object, const struct gpu_image_descriptor *image, void **result)
+{
+	struct i915_device *device = opaque;
+	struct i915_gem_object *source = object;
+
+	(void)private_session;
+	(void)image;
+	mutex_lock(&device->mutex);
+	source->share_refs++;
+	mutex_unlock(&device->mutex);
+	*result = source;
+	return 0;
+}
+
+static void
+i915_share_release(void *opaque, void *shared)
+{
+	struct i915_device *device = opaque;
+
+	mutex_lock(&device->mutex);
+	drv_i915_gem_share_put(device, shared);
+	mutex_unlock(&device->mutex);
+}
+
+static int
+i915_share_import(void *opaque, void *private_session, void *shared, void **result, uint32_t *resource_id)
+{
+	struct i915_device *device = opaque;
+	struct i915_session *session = private_session;
+	struct i915_gem_object *source = shared;
+	struct i915_gem_object *alias;
+	int error;
+
+	*result = NULL;
+	*resource_id = 0U;
+	alias = kern_calloc(1U, sizeof(*alias));
+	if (alias == NULL)
+		return ENOMEM;
+	mutex_lock(&device->mutex);
+	alias->run = source->run;
+	alias->address = source->address;
+	alias->bytes = source->bytes;
+	alias->pages = source->pages;
+	error = drv_i915_gem_bind_vm(session->vm, alias);
+	if (error != 0) {
+		mutex_unlock(&device->mutex);
+		kern_free(alias);
+		return error;
+	}
+	alias->alias_of = source;
+	source->share_refs++;
+	alias->session_next = session->objects;
+	session->objects = alias;
+	alias->slot = session->next_slot;
+	session->next_slot++;
+	session->resources++;
+	mutex_unlock(&device->mutex);
+	*result = alias;
+	*resource_id = alias->slot;
+	return 0;
+}
+#endif
 
 /* Exposes a blob's system-RAM backing as a CPU mapping for the client. */
 static int

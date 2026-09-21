@@ -50,7 +50,7 @@ struct shim_context {
 };
 
 /* One batch a caller sleeps on: run by the serving thread like a request, reported to the caller. */
-enum shim_sync_kind { SHIM_SYNC_BATCH = 0, SHIM_SYNC_PRESENT, SHIM_SYNC_RELEASE };
+enum shim_sync_kind { SHIM_SYNC_BATCH = 0, SHIM_SYNC_PRESENT, SHIM_SYNC_PRESENT_BLOB, SHIM_SYNC_RELEASE };
 
 struct shim_sync {
 	struct shim_sync *next;
@@ -59,6 +59,10 @@ struct shim_sync {
 	const uint8_t *pixels;
 	uint32_t width, height, stride;
 	int bgra;
+	/* PRESENT_BLOB: the GPU copy (the batch runs in `context`, whose address space is `vm`) */
+	struct i915_ppgtt *vm;
+	parity_shim_blit_fn build;
+	void *build_ctx;
 	struct i915_context *context;
 	uint64_t batch_va;
 	int done;
@@ -85,6 +89,10 @@ static struct {
 	int display_up;		/* the serving thread is inside the display window */
 	int display_failed;	/* bringing the panel up failed once: presentation fails from then on */
 	unsigned presents;
+	/* E-130: the panel buffers as the GPU sees them (mapped into one address space at a time) */
+	struct i915_ppgtt *map_vm;
+	uint64_t map_va[2];
+	unsigned map_pages[2];
 } shim;
 
 static int
@@ -400,6 +408,21 @@ parity_shim_display_release(struct i915_device *device)
 	return shim_sync_do(device, &item);
 }
 
+int
+parity_shim_display_present_blob(struct i915_device *device, struct i915_context *context, struct i915_ppgtt *vm,
+	parity_shim_blit_fn build, void *ctx)
+{
+	struct shim_sync item;
+
+	memset(&item, 0, sizeof(item));
+	item.kind = SHIM_SYNC_PRESENT_BLOB;
+	item.context = context;
+	item.vm = vm;
+	item.build = build;
+	item.build_ctx = ctx;
+	return shim_sync_do(device, &item);
+}
+
 const struct parity_lcd_kernel_deps *
 parity_shim_display_deps(void)
 {
@@ -473,6 +496,117 @@ parity_shim_gt_reset(struct i915_device *device)
 	return ENOTSUP;
 }
 
+/*
+ * E-130: both panel buffers in `vm`, page by page and uncached (the display does not snoop the LLC) (their backing is DMA pages of the parity memory manager, the
+ * address space is the legacy session's).  XXX: the legacy address space never reuses a range, so the ranges are
+ * only cleared (not given back) when the display goes, and no TLB invalidation is needed for a range nothing names.
+ */
+static int
+shim_map_panel(struct i915_device *device, struct i915_ppgtt *vm)
+{
+	struct parity_scanout *so;
+	uint64_t va, dma;
+	unsigned i, p;
+	int error;
+
+	if (shim.map_vm == vm)
+		return 0;
+	if (shim.map_vm != NULL)
+		return EBUSY;                   /* XXX: one presenting address space at a time */
+	mutex_lock(&device->mutex);
+	for (i = 0u; i < 2u; i++) {
+		so = parity_lcd_resident_buffer(i);
+		if (so == 0 || so->obj == 0) {
+			mutex_unlock(&device->mutex);
+			return EIO;
+		}
+		error = drv_i915_ppgtt_va_alloc(vm, (uint64_t)so->obj->pages * 4096u, &va);
+		for (p = 0u; error == 0 && p < so->obj->pages; p++) {
+			if (parity_gt_object_page_dma(so->obj, p, &dma) != 0)
+				error = EIO;
+			else
+				error = drv_i915_ppgtt_insert_uncached(vm, va + (uint64_t)p * 4096u, dma, 1u);
+		}
+		if (error != 0) {
+			mutex_unlock(&device->mutex);
+			return error;
+		}
+		shim.map_va[i] = va;
+		shim.map_pages[i] = so->obj->pages;
+	}
+	shim.map_vm = vm;
+	mutex_unlock(&device->mutex);
+	kern_logf("i915: resident display: panel buffers mapped for the GPU at 0x%llx / 0x%llx (%u pages each)\n",
+		(unsigned long long)shim.map_va[0], (unsigned long long)shim.map_va[1], shim.map_pages[0]);
+	return 0;
+}
+
+static void
+shim_unmap_panel(struct i915_device *device)
+{
+	unsigned i;
+
+	if (shim.map_vm == NULL)
+		return;
+	mutex_lock(&device->mutex);
+	for (i = 0u; i < 2u; i++)
+		drv_i915_ppgtt_clear(shim.map_vm, shim.map_va[i], shim.map_pages[i]);
+	mutex_unlock(&device->mutex);
+	shim.map_vm = NULL;
+}
+
+/* The frame by the GPU into the back buffer, then the flip. */
+static int
+shim_present_blob(struct i915_device *device, const struct shim_sync *item)
+{
+	struct parity_scanout *back = parity_lcd_resident_back();
+	uint64_t batch_va;
+	unsigned i;
+	int error;
+
+	if (back == 0)
+		return EIO;
+	error = shim_map_panel(device, item->vm);
+	if (error != 0)
+		return error;
+	i = back == parity_lcd_resident_buffer(0) ? 0u : 1u;
+	error = item->build(item->build_ctx, shim.map_va[i], back->width, back->height, back->pitch, &batch_va);
+	if (error == 0)
+		error = shim_run(item->context, batch_va, 1, 0u);
+	/* E-130 check: the first frames, as the CPU reads them after the GPU (source and panel buffer) */
+	if (error == 0 && shim.presents < 2u) {
+		const uint32_t *src;
+		uint32_t sw = 0, sh = 0, sp = 0, x, y, nz_s = 0, nz_d = 0, h_s = 2166136261u, h_d = 2166136261u;
+
+		src = parity_shim_blit_source(item->build_ctx, &sw, &sh, &sp);
+		if (src != 0) {
+			parity_gt_clflush(src, (size_t)sp * sh);
+			for (y = 0; y < sh; y++)
+				for (x = 0; x < sw; x++) {
+					uint32_t v = src[y * (sp / 4u) + x];
+					nz_s += (v & 0xffffffu) != 0u;
+					h_s = (h_s ^ v) * 16777619u;
+				}
+		}
+		parity_gt_clflush(back->cpu, back->size);
+		for (y = 0; y < back->height; y++)
+			for (x = 0; x < back->width; x++) {
+				uint32_t v = back->cpu[y * (back->pitch / 4u) + x];
+				nz_d += (v & 0xffffffu) != 0u;
+				h_d = (h_d ^ v) * 16777619u;
+			}
+		kern_logf("i915: resident display: check frame %u: source %ux%u pitch %u non-black %u fnv %08x (px(0,0)=%08x) | "
+			"panel buffer %c non-black %u of %u fnv %08x (px(center)=%08x)\n", shim.presents + 1u, sw, sh, sp, nz_s, h_s,
+			src != 0 ? src[0] : 0u, 'A' + i, nz_d, back->width * back->height, h_d,
+			back->cpu[(back->height / 2u) * (back->pitch / 4u) + back->width / 2u]);
+	}
+	if (error != 0) {
+		kern_logf("i915: resident display: the GPU copy into the panel buffer failed: %d\n", error);
+		return error;
+	}
+	return parity_lcd_resident_flip() == 0 ? 0 : EIO;
+}
+
 /* ---------------- serving ---------------- */
 
 #define SHIM_SERVE_STOP          0   /* told to stop */
@@ -523,7 +657,8 @@ shim_serve(struct i915_device *device, int in_display)
 			struct shim_sync *item = shim.sync_head;
 
 			/* display items that belong to the other side of the window are left at the head */
-			if (item->kind == SHIM_SYNC_PRESENT && !in_display && !shim.display_failed && shim.ctx->lcd != 0) {
+			if ((item->kind == SHIM_SYNC_PRESENT || item->kind == SHIM_SYNC_PRESENT_BLOB) && !in_display &&
+			    !shim.display_failed && shim.ctx->lcd != 0) {
 				spin_unlock_irqrestore(&device->irq_lock, irq);
 				return SHIM_SERVE_ENTER_DISPLAY;
 			}
@@ -546,6 +681,11 @@ shim_serve(struct i915_device *device, int in_display)
 			case SHIM_SYNC_PRESENT:
 				/* in the window; outside it only when the panel could not be brought up */
 				error = in_display ? shim_present(item) : EIO;
+				if (error == 0)
+					shim.presents++;
+				break;
+			case SHIM_SYNC_PRESENT_BLOB:
+				error = in_display ? shim_present_blob(device, item) : EIO;
 				if (error == 0)
 					shim.presents++;
 				break;
@@ -593,6 +733,8 @@ shim_display_window(void *ctx)
 {
 	shim.display_up = 1;
 	(void)shim_serve(ctx, 1);
+	/* the GPU's mappings of the panel buffers go before the buffers do */
+	shim_unmap_panel(ctx);
 	shim.display_up = 0;
 	return 0;
 }

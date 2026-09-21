@@ -1119,3 +1119,397 @@ i915_vk_gfx_draw(struct i915_vk_session *session, const struct gfx_draw_state *s
 		gfx_census(target, gs->draws);
 	return 0;
 }
+
+/* ---------------- E-130: rectangles on the GPU (clear, copy, blit) ---------------- */
+
+/*
+ * Every transfer the executor performs -- attachment and image clears, buffer <-> image copies, image copies and
+ * blits, and the display's scaled copy into the scanout buffer -- is one RECTLIST drawn by the 3D pipeline, the way
+ * Mesa's blorp does it on the render engine: the vertex shader is disabled, the vertex fetcher writes the VUE itself
+ * ([header][position][one attribute]), and one of two fragment kernels runs.  Both kernels come from the executor's
+ * own compiler, built from IR here (no SPIR-V):
+ *   fill:  colour = the attribute              (a clear: the attribute is the clear value at every vertex)
+ *   copy:  colour = texture(source, attribute)  (the attribute is the source coordinate, nearest or linear)
+ * A depth clear writes the depth value's bits through an R32_FLOAT view of the depth memory: the value is the same
+ * everywhere, so the view does not have to know the depth buffer's tiling.
+ */
+#define GFX_RECT_VERTICES		0x2800U		/* in the state object: three vertices of 12 floats */
+#define GFX_RECT_VERTEX_BYTES		48U
+
+static struct i915_vk_shader_binary *gfx_rect_fill_kernel;
+static struct i915_vk_shader_binary *gfx_rect_copy_kernel;
+
+static int
+gfx_rect_compile(int copy, struct i915_vk_shader_binary **out)
+{
+	struct i915_vk_inst insts[8];
+	struct i915_vk_uniform uniform;
+	struct i915_vk_shader_ir ir;
+	uint32_t index, count, first;
+
+	memset(insts, 0, sizeof(insts));
+	memset(&ir, 0, sizeof(ir));
+	memset(&uniform, 0, sizeof(uniform));
+	count = 0U;
+	if (copy) {
+		/* v0, v1 = the coordinate; v2..v5 = texture(set 0, binding 0) at it */
+		for (index = 0U; index < 2U; index++) {
+			insts[count].op = I915_VK_IR_LOAD_INPUT;
+			insts[count].dst = index;
+			insts[count].component = index;
+			count++;
+		}
+		insts[count].op = I915_VK_IR_SAMPLE;
+		insts[count].dst = 2U;
+		insts[count].src[0] = 0U;
+		insts[count].src[1] = 1U;
+		count++;
+		uniform.kind = 1U;
+		ir.uniforms = &uniform;
+		ir.uniform_count = 1U;
+		first = 2U;
+	} else {
+		for (index = 0U; index < 4U; index++) {
+			insts[count].op = I915_VK_IR_LOAD_INPUT;
+			insts[count].dst = index;
+			insts[count].component = index;
+			count++;
+		}
+		first = 0U;
+	}
+	for (index = 0U; index < 4U; index++) {
+		insts[count].op = I915_VK_IR_STORE_OUTPUT;
+		insts[count].src[0] = first + index;
+		insts[count].component = index;
+		count++;
+	}
+	ir.stage = I915_VK_STAGE_FRAGMENT;
+	ir.instructions = insts;
+	ir.instruction_count = count;
+	ir.value_count = first + 4U;
+	return i915_vk_compile(NULL, &ir, out);
+}
+
+/* Compiles the two kernels once; the session's state and batch objects exist afterwards. */
+int
+i915_vk_gfx_rect_prepare(struct i915_vk_session *session)
+{
+	int error;
+
+	if (gfx_rect_fill_kernel == NULL) {
+		error = gfx_rect_compile(0, &gfx_rect_fill_kernel);
+		if (error != 0) {
+			kern_logf("i915: vk: the fill kernel does not compile: %d\n", error);
+			return error;
+		}
+	}
+	if (gfx_rect_copy_kernel == NULL) {
+		error = gfx_rect_compile(1, &gfx_rect_copy_kernel);
+		if (error != 0) {
+			kern_logf("i915: vk: the copy kernel does not compile: %d\n", error);
+			return error;
+		}
+		kern_logf("i915: vk: transfer kernels compiled by the executor: fill %u bytes, copy %u bytes\n",
+			gfx_rect_fill_kernel->code_bytes, gfx_rect_copy_kernel->code_bytes);
+	}
+	return gfx_session(session) != NULL ? 0 : ENOMEM;
+}
+
+/* float bits of a non-negative integer (exact below 2^24) */
+static uint32_t
+sf_from_u32(uint32_t value)
+{
+	uint32_t msb;
+
+	if (value == 0U)
+		return 0U;
+	msb = 31U - (uint32_t)__builtin_clz(value);
+	if (msb > 23U)
+		value >>= msb - 23U;
+	else
+		value <<= 23U - msb;
+	return ((127U + msb) << 23) | (value & 0x7fffffU);
+}
+
+/* float bits of num / den for 0 <= num <= 2^20, 0 < den <= 2^20, rounded to nearest (no FP register) */
+static uint32_t
+sf_ratio(uint32_t num, uint32_t den)
+{
+	uint64_t q;
+	uint32_t msb, mantissa;
+	int exponent;
+
+	if (num == 0U || den == 0U)
+		return 0U;
+	q = ((uint64_t)num << 40) / den;		/* num / den * 2^40, at least 2^20 */
+	msb = 63U - (uint32_t)__builtin_clzll(q);
+	exponent = (int)msb - 40;
+	mantissa = (uint32_t)((((msb >= 24U) ? (q >> (msb - 24U)) : (q << (24U - msb))) + 1U) >> 1);	/* 24 bits, rounded */
+	if (mantissa >> 24) {
+		mantissa >>= 1;
+		exponent++;
+	}
+	return ((uint32_t)(127 + exponent) << 23) | (mantissa & 0x7fffffU);
+}
+
+/* RENDER_SURFACE_STATE of a linear 2D surface (see gfx_write_rss) */
+static int
+gfx_write_surface(uint32_t *rss, const struct gfx_surface *s, uint32_t mocs)
+{
+	uint32_t format;
+
+	if (s->va == 0U || s->width == 0U || s->height == 0U || s->width > 16384U || s->height > 16384U ||
+	    s->pitch < s->width * 4U || gfx_surface_format(s->format, &format) != 0)
+		return EINVAL;
+	memset(rss, 0, GEN12_RENDER_SURFACE_STATE_DWORDS * 4U);
+	rss[0] = (GEN12_SURFTYPE_2D << 29) | (format << 18) | (GEN12_SURFACE_ALIGN_4 << 16) |
+		(GEN12_SURFACE_ALIGN_4 << 14) | (GEN12_TILEMODE_LINEAR << 12);
+	rss[1] = (s->format == VK_FORMAT_R32_SFLOAT ? 0U : (1U << 31)) | (mocs << 24) | (((s->height + 3U) & ~3U) / 4U);
+	rss[2] = (s->width - 1U) | ((s->height - 1U) << 16);
+	rss[3] = s->pitch - 1U;
+	rss[5] = 0x00000100U;
+	rss[7] = (4U << 25) | (5U << 22) | (6U << 19) | (7U << 16);
+	rss[8] = (uint32_t)s->va;
+	rss[9] = (uint32_t)(s->va >> 32);
+	return 0;
+}
+
+/* Writes the state and the batch of one rectangle; the caller runs the batch. */
+int
+i915_vk_gfx_rect_build(struct i915_vk_session *session, const struct gfx_surface *dst, const struct gfx_rect *dst_rect,
+	const struct gfx_surface *src, const struct gfx_rect *src_rect, const uint32_t clear[4], int linear,
+	uint64_t *batch_va)
+{
+	const struct i915_vk_shader_binary *kernel;
+	struct gfx_session *gs;
+	struct gfx_kernels k;
+	struct gfx_batch batch;
+	struct gfx_sampler sampler;
+	uint8_t *page;
+	uint32_t *surface, *dynamic, *v;
+	uint32_t mocs, index, x0, y0, x1, y1, attr[3][4];
+	unsigned at;
+	int error;
+
+	error = i915_vk_gfx_rect_prepare(session);
+	if (error != 0)
+		return error;
+	gs = session->gfx;
+	mocs = GEN12_MOCS(I915_MOCS_UNCACHED_INDEX);
+	kernel = src != NULL ? gfx_rect_copy_kernel : gfx_rect_fill_kernel;
+	if (dst_rect->x < 0 || dst_rect->y < 0 || dst_rect->w == 0U || dst_rect->h == 0U ||
+	    (uint32_t)dst_rect->x + dst_rect->w > dst->width || (uint32_t)dst_rect->y + dst_rect->h > dst->height)
+		return EINVAL;
+	if (src != NULL && (src_rect->x < 0 || src_rect->y < 0 || src_rect->w == 0U || src_rect->h == 0U ||
+	    (uint32_t)src_rect->x + src_rect->w > src->width || (uint32_t)src_rect->y + src_rect->h > src->height))
+		return EINVAL;
+
+	/* ---- state: binding table [0] destination [1] source, the sampler, blend / colour calc, vertices, kernel ---- */
+	page = (uint8_t *)kern_pmem_to_kernel(gs->state->run.paddr);
+	memset(page, 0, GFX_INSTRUCTION_HEAP);
+	surface = (uint32_t *)(void *)(page + GFX_SURFACE_HEAP);
+	dynamic = (uint32_t *)(void *)(page + GFX_DYNAMIC_HEAP);
+	surface[GFX_BINDING_TABLE / 4U] = GFX_RSS_TARGET;
+	surface[GFX_BINDING_TABLE / 4U + 1U] = GFX_RSS_TEXTURE;
+	error = gfx_write_surface(&surface[GFX_RSS_TARGET / 4U], dst, mocs);
+	if (error == 0 && src != NULL)
+		error = gfx_write_surface(&surface[GFX_RSS_TEXTURE / 4U], src, mocs);
+	if (error != 0)
+		return error;
+	memset(&sampler, 0, sizeof(sampler));
+	sampler.mag_filter = sampler.min_filter = linear ? VK_FILTER_LINEAR : VK_FILTER_NEAREST;
+	sampler.address_u = sampler.address_v = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	gfx_write_sampler(&dynamic[GFX_DYN_SAMPLER / 4U], &sampler);
+	dynamic[GFX_DYN_BLEND / 4U + 2U] = 1U | (1U << 1) | (GEN12_COLORCLAMP_RTFORMAT << 2);
+	dynamic[GFX_DYN_CC_VIEWPORT / 4U + 1U] = SF_ONE;
+
+	/* the three corners of a RECTLIST: (x1, y1), (x0, y1), (x0, y0); the attribute follows its corner */
+	x0 = (uint32_t)dst_rect->x;
+	y0 = (uint32_t)dst_rect->y;
+	x1 = x0 + dst_rect->w;
+	y1 = y0 + dst_rect->h;
+	for (index = 0U; index < 3U; index++) {
+		if (src != NULL) {
+			uint32_t sx = (uint32_t)src_rect->x + (index == 0U ? src_rect->w : 0U);
+			uint32_t sy = (uint32_t)src_rect->y + (index < 2U ? src_rect->h : 0U);
+
+			attr[index][0] = sf_ratio(sx, src->width);	/* normalised: the proven sampling form */
+			attr[index][1] = sf_ratio(sy, src->height);
+			attr[index][2] = 0U;
+			attr[index][3] = 0U;
+		} else {
+			memcpy(attr[index], clear, sizeof(attr[index]));
+		}
+	}
+	v = (uint32_t *)(void *)(page + GFX_RECT_VERTICES);
+	for (index = 0U; index < 3U; index++) {
+		uint32_t *vertex = v + index * (GFX_RECT_VERTEX_BYTES / 4U);
+
+		/* [VUE header: zeros][position x y 0 1][attribute] */
+		vertex[4] = sf_from_u32(index == 0U ? x1 : x0);
+		vertex[5] = sf_from_u32(index < 2U ? y1 : y0);
+		vertex[6] = 0U;
+		vertex[7] = SF_ONE;
+		memcpy(&vertex[8], attr[index], sizeof(attr[index]));
+	}
+
+	for (at = 0U; at + sizeof(gfx_eot_only) <= GFX_INSTRUCTION_BYTES; at += sizeof(gfx_eot_only))
+		memcpy(page + GFX_INSTRUCTION_HEAP + at, gfx_eot_only, sizeof(gfx_eot_only));
+	memcpy(page + GFX_INSTRUCTION_HEAP + GFX_PS_KERNEL, kernel->code, kernel->code_bytes);
+
+	memset(&k, 0, sizeof(k));
+	k.varyings = 1U;
+	k.ps_grf_start = kernel->dispatch_grf_start;
+	k.ps_samplers = kernel->sampler_count;
+
+	/* ---- the batch (selftest.c's order; the RECTLIST path of the fixture with a fragment input) ---- */
+	batch.cmds = (uint32_t *)kern_pmem_to_kernel(gs->batch->run.paddr);
+	batch.count = 0U;
+	batch.capacity = GFX_BATCH_BYTES / 4U;
+	batch.overflow = 0;
+	emit_pc(&batch, PIPE_CONTROL_CS_STALL | PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH | PIPE_CONTROL_DEPTH_CACHE_FLUSH |
+		PIPE_CONTROL_DC_FLUSH_ENABLE | PIPE_CONTROL_FLUSH_ENABLE);
+	emit(&batch, GEN12_PIPELINE_SELECT_DWORD(GEN12_PIPELINE_SELECT_3D));
+	emit_sba(&batch, gs->state->va, mocs);
+	emit_pc(&batch, PIPE_CONTROL_CS_STALL | PIPE_CONTROL_STATE_CACHE_INVALIDATE | PIPE_CONTROL_CONST_CACHE_INVALIDATE |
+		PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE | PIPE_CONTROL_INSTRUCTION_CACHE_INVALIDATE);
+	emit_zero(&batch, GEN12_CMD_3DSTATE_WM_HZ_OP, GEN12_3DSTATE_WM_HZ_OP_DWORDS);
+	emit_zero(&batch, GEN12_CMD_3DSTATE_AA_LINE_PARAMETERS, GEN12_3DSTATE_AA_LINE_PARAMETERS_DWORDS);
+	emit_zero(&batch, GEN12_CMD_3DSTATE_WM_CHROMAKEY, GEN12_3DSTATE_WM_CHROMAKEY_DWORDS);
+	emit_zero(&batch, GEN12_CMD_3DSTATE_POLY_STIPPLE_OFFSET, GEN12_3DSTATE_POLY_STIPPLE_OFFSET_DWORDS);
+	emit_zero(&batch, GEN12_CMD_3DSTATE_LINE_STIPPLE, GEN12_3DSTATE_LINE_STIPPLE_DWORDS);
+	emit(&batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_SAMPLE_PATTERN, GEN12_3DSTATE_SAMPLE_PATTERN_DWORDS));
+	for (index = 1U; index < GEN12_3DSTATE_SAMPLE_PATTERN_DWORDS; index++)
+		emit(&batch, index == 8U ? GEN12_SAMPLE_PATTERN_1X_CENTRE : 0U);
+	emit_zero(&batch, GEN12_CMD_3DSTATE_DEPTH_BOUNDS, GEN12_3DSTATE_DEPTH_BOUNDS_DWORDS);
+	emit_zero(&batch, GEN12_CMD_3DSTATE_BINDING_TABLE_POINTERS_VS, GEN12_3DSTATE_POINTERS_DWORDS);
+	emit_zero(&batch, GEN12_CMD_3DSTATE_BINDING_TABLE_POINTERS_HS, GEN12_3DSTATE_POINTERS_DWORDS);
+	emit_zero(&batch, GEN12_CMD_3DSTATE_BINDING_TABLE_POINTERS_DS, GEN12_3DSTATE_POINTERS_DWORDS);
+	emit_zero(&batch, GEN12_CMD_3DSTATE_BINDING_TABLE_POINTERS_GS, GEN12_3DSTATE_POINTERS_DWORDS);
+
+	/* one buffer of three vertices; three elements = VUE slots 0 (header), 1 (position), 2 (attribute) */
+	emit(&batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_VERTEX_BUFFERS, 1U + GEN12_VERTEX_BUFFER_STATE_DWORDS));
+	emit(&batch, GEN12_VERTEX_BUFFER_L3_BYPASS_DISABLE | (mocs << 16) | (1U << 14) | GFX_RECT_VERTEX_BYTES);
+	emit(&batch, (uint32_t)(gs->state->va + GFX_RECT_VERTICES));
+	emit(&batch, (uint32_t)((gs->state->va + GFX_RECT_VERTICES) >> 32));
+	emit(&batch, 3U * GFX_RECT_VERTEX_BYTES);
+	emit(&batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_VERTEX_ELEMENTS, 1U + 3U * GEN12_VERTEX_ELEMENT_STATE_DWORDS));
+	for (index = 0U; index < 3U; index++) {
+		emit(&batch, (1U << 25) | (GEN12_FORMAT_R32G32B32A32_FLOAT << 16) | (index * 16U));
+		emit(&batch, (GEN12_VFCOMP_STORE_SRC << 28) | (GEN12_VFCOMP_STORE_SRC << 24) |
+			(GEN12_VFCOMP_STORE_SRC << 20) | (GEN12_VFCOMP_STORE_SRC << 16));
+	}
+	emit(&batch, (GEN12_CMD_3DSTATE_VF_STATISTICS << 16) | 1U);
+	emit_zero(&batch, GEN12_CMD_3DSTATE_VF, GEN12_3DSTATE_VF_DWORDS);
+	emit_zero(&batch, GEN12_CMD_3DSTATE_VF_SGVS, GEN12_3DSTATE_VF_SGVS_DWORDS);
+	emit_zero(&batch, GEN12_CMD_3DSTATE_VF_SGVS_2, GEN12_3DSTATE_VF_SGVS_2_DWORDS);
+	for (index = 0U; index < 3U; index++) {
+		emit(&batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_VF_INSTANCING, GEN12_3DSTATE_VF_INSTANCING_DWORDS));
+		emit(&batch, index);
+		emit(&batch, 0U);
+	}
+	emit(&batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_VF_TOPOLOGY, GEN12_3DSTATE_VF_TOPOLOGY_DWORDS));
+	emit(&batch, GEN12_3DPRIM_RECTLIST);
+	emit_urb(&batch, 1U);
+	emit_constants(&batch, gs->state->va + GFX_PUSH_BUFFER, 0U, mocs);
+
+	emit_pointer(&batch, GEN12_CMD_3DSTATE_CC_STATE_POINTERS, GFX_DYN_COLOR_CALC | 1U);
+	emit_pointer(&batch, GEN12_CMD_3DSTATE_BLEND_STATE_POINTERS, GFX_DYN_BLEND | 1U);
+	emit_pointer(&batch, GEN12_CMD_3DSTATE_VIEWPORT_STATE_POINTERS_CC, GFX_DYN_CC_VIEWPORT);
+	emit_pointer(&batch, GEN12_CMD_3DSTATE_CPS_POINTERS, GFX_DYN_CPS);
+	emit(&batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_BINDING_TABLE_POOL_ALLOC, GEN12_3DSTATE_BINDING_TABLE_POOL_ALLOC_DWORDS));
+	emit(&batch, mocs);
+	emit(&batch, 0U);
+	emit(&batch, 0U);
+	emit_zero(&batch, GEN12_CMD_3DSTATE_MULTISAMPLE, GEN12_3DSTATE_MULTISAMPLE_DWORDS);
+	emit(&batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_SAMPLE_MASK, GEN12_3DSTATE_SAMPLE_MASK_DWORDS));
+	emit(&batch, 1U);
+
+	/* no geometry shading: the vertex fetcher feeds the clipper (selftest.c) */
+	emit(&batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_VS, GEN12_3DSTATE_VS_DWORDS));
+	for (index = 1U; index < GEN12_3DSTATE_VS_DWORDS; index++)
+		emit(&batch, index == 7U ? (1U << 10) : 0U);
+	emit_zero(&batch, GEN12_CMD_3DSTATE_HS, GEN12_3DSTATE_HS_DWORDS);
+	emit_zero(&batch, GEN12_CMD_3DSTATE_TE, GEN12_3DSTATE_TE_DWORDS);
+	emit_zero(&batch, GEN12_CMD_3DSTATE_DS, GEN12_3DSTATE_DS_DWORDS);
+	emit_zero(&batch, GEN12_CMD_3DSTATE_STREAMOUT, GEN12_3DSTATE_STREAMOUT_DWORDS);
+	emit_zero(&batch, GEN12_CMD_3DSTATE_GS, GEN12_3DSTATE_GS_DWORDS);
+	emit_zero(&batch, GEN12_CMD_3DSTATE_PRIMITIVE_REPLICATION, GEN12_3DSTATE_PRIMITIVE_REPLICATION_DWORDS);
+
+	/* screen-space rectangle: no clipping, no perspective divide, no viewport transform (selftest.c) */
+	emit(&batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_CLIP, GEN12_3DSTATE_CLIP_DWORDS));
+	emit(&batch, 1U << 10);
+	emit(&batch, 1U << 9);
+	emit(&batch, 0U);
+	emit(&batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_SF, GEN12_3DSTATE_SF_DWORDS));
+	emit(&batch, 1U << 10);
+	emit(&batch, GEN12_URB_DEREF_BLOCK_SIZE_32 << 29);
+	emit(&batch, 0U);
+	emit(&batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_RASTER, GEN12_3DSTATE_RASTER_DWORDS));
+	emit(&batch, GEN12_CULLMODE_NONE << 16);
+	for (index = 2U; index < GEN12_3DSTATE_RASTER_DWORDS; index++)
+		emit(&batch, 0U);
+
+	emit_shader_state(&batch, &k, 0);
+	emit(&batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_PS_BLEND, GEN12_3DSTATE_PS_BLEND_DWORDS));
+	emit(&batch, 1U << 30);
+
+	/* no depth */
+	emit_zero(&batch, GEN12_CMD_3DSTATE_WM_DEPTH_STENCIL, GEN12_3DSTATE_WM_DEPTH_STENCIL_DWORDS);
+	emit(&batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_DEPTH_BUFFER, GEN12_3DSTATE_DEPTH_BUFFER_DWORDS));
+	emit(&batch, (GEN12_SURFTYPE_NULL << 29) | (GEN12_DEPTH_FORMAT_D32_FLOAT << 24));
+	for (index = 2U; index < GEN12_3DSTATE_DEPTH_BUFFER_DWORDS; index++)
+		emit(&batch, 0U);
+	emit(&batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_STENCIL_BUFFER, GEN12_3DSTATE_STENCIL_BUFFER_DWORDS));
+	emit(&batch, GEN12_SURFTYPE_NULL << 29);
+	for (index = 2U; index < GEN12_3DSTATE_STENCIL_BUFFER_DWORDS; index++)
+		emit(&batch, 0U);
+	emit_zero(&batch, GEN12_CMD_3DSTATE_HIER_DEPTH_BUFFER, GEN12_3DSTATE_HIER_DEPTH_BUFFER_DWORDS);
+	emit_zero(&batch, GEN12_CMD_3DSTATE_CLEAR_PARAMS, GEN12_3DSTATE_CLEAR_PARAMS_DWORDS);
+
+	emit_pointer(&batch, GFX_CMD_3DSTATE_SAMPLER_STATE_POINTERS_PS, GFX_DYN_SAMPLER);
+	emit_pointer(&batch, GEN12_CMD_3DSTATE_BINDING_TABLE_POINTERS_PS, GFX_BINDING_TABLE);
+	emit(&batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_DRAWING_RECTANGLE, GEN12_3DSTATE_DRAWING_RECTANGLE_DWORDS));
+	emit(&batch, 0U);
+	emit(&batch, (dst->width - 1U) | ((dst->height - 1U) << 16));
+	emit(&batch, 0U);
+	emit_pc(&batch, PIPE_CONTROL_CS_STALL | PIPE_CONTROL_STALL_AT_SCOREBOARD | PIPE_CONTROL_DEPTH_STALL_ENABLE);
+	emit(&batch, GEN12_CMD_HEADER(GEN12_CMD_3DPRIMITIVE, GEN12_3DPRIMITIVE_DWORDS));
+	emit(&batch, GEN12_3DPRIM_RECTLIST);
+	emit(&batch, 3U);
+	emit(&batch, 0U);
+	emit(&batch, 1U);
+	emit(&batch, 0U);
+	emit(&batch, 0U);
+	emit_pc(&batch, PIPE_CONTROL_CS_STALL | PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH | PIPE_CONTROL_DEPTH_CACHE_FLUSH |
+		PIPE_CONTROL_DC_FLUSH_ENABLE | PIPE_CONTROL_FLUSH_ENABLE);
+	emit(&batch, MI_BATCH_BUFFER_END);
+	emit(&batch, MI_NOOP);
+	if (batch.overflow != 0)
+		return ENOSPC;
+	kern_io_write_barrier();
+	*batch_va = gs->batch->va;
+	return 0;
+}
+
+/* One rectangle to its end on the GPU (the recorded clears and copies). */
+int
+i915_vk_gfx_rect(struct i915_vk_session *session, const struct gfx_surface *dst, const struct gfx_rect *dst_rect,
+	const struct gfx_surface *src, const struct gfx_rect *src_rect, const uint32_t clear[4], int linear)
+{
+	static unsigned logged;
+	uint64_t batch_va;
+	int error;
+
+	error = i915_vk_gfx_rect_build(session, dst, dst_rect, src, src_rect, clear, linear, &batch_va);
+	if (error != 0)
+		return error;
+	error = parity_shim_run_sync(session->vk->i915, &session->gpu->contexts[I915_ENGINE_RCS0], batch_va);
+	if (error != 0 || logged < 4U) {
+		logged++;
+		kern_logf("i915: vk: GPU %s %ux%u -> %ux%u at (%d,%d) of a %ux%u surface: %d\n", src != NULL ? "copy" : "fill",
+			src != NULL ? src_rect->w : dst_rect->w, src != NULL ? src_rect->h : dst_rect->h, dst_rect->w, dst_rect->h,
+			dst_rect->x, dst_rect->y, dst->width, dst->height, error);
+	}
+	return error;
+}

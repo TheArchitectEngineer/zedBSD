@@ -114,6 +114,7 @@ void parity_lcd_kernel_summary(struct parity_lcd_test_summary *out);
 struct parity_scanout;
 int parity_lcd_kernel_resident_run(const struct parity_lcd_kernel_deps *d, int (*serve)(void *ctx), void *ctx);
 struct parity_scanout *parity_lcd_resident_back(void);
+struct parity_scanout *parity_lcd_resident_buffer(unsigned i);
 int parity_lcd_resident_flip(void);
 int parity_lcd_kernel_panel_mode(const struct parity_lcd_kernel_deps *d, uint32_t *width, uint32_t *height,
 	uint32_t *refresh_millihz);

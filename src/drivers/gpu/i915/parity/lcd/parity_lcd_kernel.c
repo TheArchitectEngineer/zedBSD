@@ -3198,6 +3198,12 @@ int parity_lcd_kernel_panel_mode(const struct parity_lcd_kernel_deps *d, uint32_
 	return 0;
 }
 
+/* E-130: buffer i (0 = A, 1 = B) while the display is up, for a GPU that draws into it (NULL otherwise). */
+struct parity_scanout *parity_lcd_resident_buffer(unsigned i)
+{
+	return resident_up && i < 2u ? &resident_buf[i] : 0;
+}
+
 struct parity_scanout *parity_lcd_resident_back(void)
 {
 	return resident_up ? &resident_buf[resident_front ^ 1u] : 0;

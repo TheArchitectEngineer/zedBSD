@@ -191,6 +191,14 @@ struct i915_gem_object {
 	unsigned busy;
 	struct i915_gem_object *next;
 	struct i915_gem_object *session_next;
+	/*
+	 * E-130 sharing: an exported object counts its exports and the aliases imported from them; its backing
+	 * outlives its own destroy until the last of them is gone.  An alias borrows the backing (run, address)
+	 * and frees only itself.
+	 */
+	struct i915_gem_object *alias_of;
+	unsigned share_refs;
+	unsigned share_orphan;	/* destroyed while shared: the backing waits for the last reference */
 };
 
 /*
@@ -392,12 +400,15 @@ int drv_i915_ppgtt_create(struct i915_ppgtt *vm);
 void drv_i915_ppgtt_destroy(struct i915_ppgtt *vm);
 int drv_i915_ppgtt_va_alloc(struct i915_ppgtt *vm, uint64_t bytes, uint64_t *va);
 int drv_i915_ppgtt_insert(struct i915_ppgtt *vm, uint64_t va, uint64_t physical, unsigned pages);
+int drv_i915_ppgtt_insert_uncached(struct i915_ppgtt *vm, uint64_t va, uint64_t physical, unsigned pages);
 void drv_i915_ppgtt_clear(struct i915_ppgtt *vm, uint64_t va, unsigned pages);
 uint64_t drv_i915_ppgtt_lookup(const struct i915_ppgtt *vm, uint64_t va);
 
 /* gem.c: contiguous objects, their CPU view and GPU bindings. */
 int drv_i915_gem_create(struct i915_device *device, uint64_t bytes, struct i915_gem_object **result);
 void drv_i915_gem_destroy(struct i915_device *device, struct i915_gem_object *object);
+/* E-130: one reference of an exported object goes; the last one frees an orphaned backing.  Mutex held. */
+void drv_i915_gem_share_put(struct i915_device *device, struct i915_gem_object *object);
 int drv_i915_gem_bind_ggtt(struct i915_device *device, struct i915_gem_object *object);
 void drv_i915_gem_unbind_ggtt(struct i915_device *device, struct i915_gem_object *object);
 int drv_i915_gem_bind_vm(struct i915_ppgtt *vm, struct i915_gem_object *object);

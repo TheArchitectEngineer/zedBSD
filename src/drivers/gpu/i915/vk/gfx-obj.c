@@ -444,6 +444,36 @@ gfx_create_sampler(struct i915_vk_session *session, struct i915_vk_reader *reade
 	return gfx_create_reply(session, reply, I915_VK_OBJ_SAMPLER, identity, sampler, 0);
 }
 
+/*
+ * vkGetImageSubresourceLayout (resources.c): [device][image][present][VkImageSubresource][present]
+ * -> [present][VkSubresourceLayout].  Every image is one linear level (see gfx_create_image).
+ */
+static int
+gfx_subresource_layout(struct i915_vk_session *session, struct i915_vk_reader *reader, struct i915_vk_writer *reply)
+{
+	VkImageSubresource subresource;
+	VkSubresourceLayout layout;
+	struct gfx_image *image;
+
+	(void)i915_vk_read_u64(reader);
+	image = i915_vk_obj_lookup(session->vk, I915_VK_OBJ_IMAGE, i915_vk_read_u64(reader));
+	if (i915_vk_read_u64(reader) != 0U)
+		i915_vkc_dec_VkImageSubresource(reader, &session->arena, &subresource);
+	(void)i915_vk_read_u64(reader);
+	if (reader->error != 0)
+		return EINVAL;
+	memset(&layout, 0, sizeof(layout));
+	if (image != NULL) {
+		layout.size = image->bytes;
+		layout.rowPitch = image->pitch;
+		layout.arrayPitch = image->bytes;
+		layout.depthPitch = image->bytes;
+	}
+	i915_vk_reply_u64(reply, 1U);
+	i915_vkc_enc_VkSubresourceLayout(reply, &layout);
+	return 0;
+}
+
 /* ---------------- descriptors and layouts ---------------- */
 
 static int
@@ -1027,6 +1057,7 @@ i915_vk_gfx_obj_dispatch(struct i915_vk_session *session, uint32_t opcode,
 	case 51U: return gfx_destroy_plain(session, reader, I915_VK_OBJ_BUFFER);
 	case 54U: return gfx_create_image(session, reader, reply);
 	case 55U: return gfx_destroy_plain(session, reader, I915_VK_OBJ_IMAGE);
+	case 56U: return gfx_subresource_layout(session, reader, reply);
 	case 57U: return gfx_create_image_view(session, reader, reply);
 	case 58U: return gfx_destroy_plain(session, reader, I915_VK_OBJ_IMAGE_VIEW);
 	case 59U: return gfx_create_shader(session, reader, reply);

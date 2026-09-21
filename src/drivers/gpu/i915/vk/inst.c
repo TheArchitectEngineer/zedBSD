@@ -347,7 +347,8 @@ inst_format_features(
 	case VK_FORMAT_B8G8R8A8_UNORM:
 		properties->optimalTilingFeatures = VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
 			VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_TRANSFER_SRC_BIT |
-			VK_FORMAT_FEATURE_TRANSFER_DST_BIT;
+			VK_FORMAT_FEATURE_TRANSFER_DST_BIT | VK_FORMAT_FEATURE_BLIT_SRC_BIT |
+			VK_FORMAT_FEATURE_BLIT_DST_BIT;	/* E-130: GPU rectangles (gfx-draw.c) */
 		properties->linearTilingFeatures = properties->optimalTilingFeatures;
 		break;
 	case VK_FORMAT_D32_SFLOAT:

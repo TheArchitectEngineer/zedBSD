@@ -4026,3 +4026,38 @@ Date: 2026-09-21. ゴール「LCD 表示」を達成した。`/bin/vkdemo`（無
 2. present は同期、scaling は整数倍 nearest、panel の mode を変えない。output / plane / lease は各 1、hot-plug と topology event なし。
 3. panel 点灯に失敗したら、以後の present は再試行せず失敗する。
 4. E-127 / E-128 の残り（CPU clear / copy、同期 submit、compiler の受理範囲、SIMD8 のみ、全直列 SWSB、object 表が device 単位）はそのまま。
+
+## E-130 — CPU コピー撤去: clear / copy を GPU で、表示は共有 blob を GPU で panel へ（実機 PASS）
+
+Date: 2026-09-21. 画素に CPU が触れる経路を、vkdemo の描画・表示の両方からなくした。
+
+### 結果
+
+| 確認 | 値 |
+|---|---|
+| clear / copy（offscreen、oracle） | texture upload 64×64 GPU copy、colour 320×240 / depth 320×256 GPU fill、readback 320×240 GPU copy。フレーム `rgb_sha256=94615464…19b1` は E-128 / E-129 と同一、独立オラクル PASS |
+| 表示 route | libvulkan が **SHARED route** を選択（`first frame 320x240 (stride 1280; shared, GPU copy; RGBA)`）。`GPU_RESOURCE_WRITE` による storage への CPU コピーなし、kernel 側の CPU 拡大コピーなし |
+| 静止フレーム | present した画素の hash 同一。check: source 非黒 76800/76800、panel buffer の非黒 1228800 = 1280×960（4 倍・中央寄せの範囲そのもの） |
+| アニメーション 40 s | 726 frame / 726 flip（約 18 fps、E-129 の CPU route と同等）、`ended PASS`（stop confirmed、buffer 解放、power ref 0）。panel に回転する cube（写真 `handover/vk-e127/vkdemo-5330-lcd-e130-shared.jpg`） |
+| 回帰 | offscreen oracle PASS、host fixtures 10/10、gentool test PASS、非 resident build OK |
+
+再現: `plan/ws031/tests/vkloop-hw.sh oracle`（offscreen）、`vkloop-hw.sh display`、`LIVE_S=40 vkloop-hw.sh display live`。最初の 2 frame は CPU で source と panel buffer を読み戻して非黒画素数を記録する（`check frame N`、2 frame 目で約 2 s 止まる。診断用）。
+
+### 構成
+
+- **GPU rect primitive**（`vk/gfx-draw.c` 後半）: VS 無効の RECTLIST、VUE は頂点データ（header / pos / attr）。FS は自前 compiler が IR から作る 2 本（fill: 定数 4 成分 → RT、copy: 正規化 UV → SAMPLE → RT）。`i915_vk_gfx_rect_build()` が任意の dst / src surface（va, w, h, pitch, format）と矩形から batch を作る。depth clear は depth 割当て全体を R32_FLOAT の平面として塗る（tiling 非依存）。
+- `vk/gfx-rec.c`: vkCmdClear* / vkCmdCopy* / vkCmdBlitImage（113/114/119 を新規記録）を rect で実行。`vk/gfx-obj.c`: vkGetImageSubresourceLayout（56）、vkDestroyPipeline（67）。`vk/inst.c`: RGBA8/BGRA8 に BLIT_SRC/DST。
+- **共有**（`i915.c`, `gem.c`, `internal.h`）: GPU_CAP_SHARE、share ops（export = 参照数、import = 同じ backing を借りる alias を importer の PPGTT に bind、alias は自分だけ解放）。export 元が先に destroy されたら orphan として最後の参照まで backing を保持。
+- **表示**（`parity/resident_display.c`, `parity/legacy_shim.c`）: constraints が SHARED|COPY を提示。BLOB present は serving thread で、panel の 2 buffer を表示 session の PPGTT に **uncached（PAT 3）** で map し（一度だけ、window 終了で clear）、rect で整数倍拡大・中央寄せして裏 buffer に書き、同期 flip。COPY route は fallback として残る。
+- `ppgtt.c`: `drv_i915_ppgtt_insert_uncached()`。
+
+### 途中で分かったこと
+
+- 黒い写真が 2 枚出た。1 枚目は watcher が前回 run の log に反応して build 中に撮影、2 枚目は表示終了後の撮影だった（E-129 と同種の失敗）。撮影は「新しい QEMU の起動 → `serving presentation`」を待ってから同じ script 内で行う形にした（3 枚目で cube を確認）。
+- display engine は LLC を snoop しないので、panel buffer の GPU mapping は Linux と同じ I915_CACHE_NONE（PAT 3）にした。rect の surface MOCS は元から UC（index 3）。PAT 0 のままで表示が崩れるかは切り分けていない（黒写真は上の撮影時期が原因）。
+
+### 残り（XXX）
+
+1. 表示は同期（present は flip 完了まで戻らない）、一度に 1 つの表示 address space、map した VA 範囲は再利用しない。
+2. 共有は同一 device のみ（cross-device DMA-BUF なし）。vkAllocateMemory の external-memory 宣言は読むだけ。
+3. rect: mirrored blit 拒否、depth の copy 不可、stencil 書かない、render area を無視して全面 clear、1 op = 1 batch の同期実行。

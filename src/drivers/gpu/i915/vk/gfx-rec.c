@@ -11,13 +11,10 @@
  * (commands.c command_record_begin); what it says is kept as one entry of the command buffer's
  * operation list.
  *
- * XXX: EXECUTION MODEL OF THE CONNECTIVITY CHECK.  vkQueueSubmit walks the operation lists in
- * order and finishes every operation before it replies:
- *   - a draw becomes one GPU batch, run to its end (gfx-draw.c);
- *   - attachment clears and buffer <-> image copies are done BY THE CPU on the (linear, CPU-visible)
- *     storage, between those batches.  The order of the list is the order of execution, so the
- *     result is what the GPU commands would give; what is missing is the GPU doing them (BLT /
- *     clear passes) and any overlap between the CPU and the GPU.
+ * EXECUTION MODEL.  vkQueueSubmit walks the operation lists in order and finishes every operation
+ * before it replies: every draw, clear, copy and blit is one GPU batch run to its end (gfx-draw.c;
+ * E-130: the clears and copies are GPU rectangles -- no CPU touches pixels).  XXX: one batch per
+ * operation and a synchronous submit: no batching, no overlap between the CPU and the GPU.
  * The fence of the submission is signalled when vkQueueSubmit replies.
  */
 
@@ -296,6 +293,74 @@ rec_op(struct gfx_cmdbuf *cmdbuf, enum gfx_op_kind kind)
 	return op;
 }
 
+/* vkCmdCopyImage: [src][layout][dst][layout][n][n]{VkImageCopy}; vkCmdBlitImage: the same with VkImageBlit and [filter]. */
+static int
+rec_image_copy(struct i915_vk_session *session, struct gfx_cmdbuf *cmdbuf, struct i915_vk_reader *reader, int blit)
+{
+	struct gfx_image *src, *dst;
+	struct gfx_op *op;
+	uint64_t count;
+	uint64_t index;
+	struct gfx_op *ops[16];
+
+	src = i915_vk_obj_lookup(session->vk, I915_VK_OBJ_IMAGE, i915_vk_read_u64(reader));
+	(void)i915_vk_read_u32(reader);
+	dst = i915_vk_obj_lookup(session->vk, I915_VK_OBJ_IMAGE, i915_vk_read_u64(reader));
+	(void)i915_vk_read_u32(reader);
+	(void)i915_vk_read_u32(reader);
+	count = i915_vk_read_u64(reader);
+	if (reader->error != 0 || count > 16U)
+		return EINVAL;
+	for (index = 0U; index < count; index++) {
+		op = rec_op(cmdbuf, blit ? GFX_OP_BLIT_IMAGE : GFX_OP_COPY_IMAGE);
+		ops[index] = op;
+		if (blit) {
+			op->u.blit.src = src;
+			op->u.blit.dst = dst;
+			i915_vkc_dec_VkImageBlit(reader, &session->arena, &op->u.blit.region);
+		} else {
+			op->u.image_copy.src = src;
+			op->u.image_copy.dst = dst;
+			i915_vkc_dec_VkImageCopy(reader, &session->arena, &op->u.image_copy.region);
+		}
+	}
+	if (blit) {
+		uint32_t filter = i915_vk_read_u32(reader);
+
+		for (index = 0U; index < count; index++)
+			ops[index]->u.blit.filter = filter;
+	}
+	return reader->error != 0 ? EINVAL : 0;
+}
+
+/* vkCmdClearColorImage: [image][layout][present]{[2][4]{4 words}}[n][n]{VkImageSubresourceRange}. */
+static int
+rec_clear_image(struct i915_vk_session *session, struct gfx_cmdbuf *cmdbuf, struct i915_vk_reader *reader)
+{
+	VkImageSubresourceRange range;
+	struct gfx_op *op;
+	uint64_t count;
+	uint64_t index;
+
+	op = rec_op(cmdbuf, GFX_OP_CLEAR_IMAGE);
+	op->u.clear_image.image = i915_vk_obj_lookup(session->vk, I915_VK_OBJ_IMAGE, i915_vk_read_u64(reader));
+	(void)i915_vk_read_u32(reader);
+	if (i915_vk_read_u64(reader) != 0U) {
+		(void)i915_vk_read_u32(reader);			/* the union's tag */
+		if (i915_vk_read_u64(reader) != 4U)
+			reader->error = 1;
+		for (index = 0U; index < 4U; index++)
+			op->u.clear_image.words[index] = i915_vk_read_u32(reader);
+	}
+	(void)i915_vk_read_u32(reader);
+	count = i915_vk_read_u64(reader);
+	if (reader->error != 0 || count > 16U)
+		return EINVAL;
+	for (index = 0U; index < count; index++)
+		i915_vkc_dec_VkImageSubresourceRange(reader, &session->arena, &range);	/* XXX: one level, one layer: the whole image */
+	return reader->error != 0 ? EINVAL : 0;
+}
+
 /* vkCmdPipelineBarrier: decoded to its end and not acted on -- see the execution model above. */
 static int
 rec_barrier(struct i915_vk_session *session, struct i915_vk_reader *reader)
@@ -516,6 +581,12 @@ rec_command(struct i915_vk_session *session, uint32_t opcode, struct i915_vk_rea
 		op->u.draw.first_vertex = i915_vk_read_u32(reader);
 		op->u.draw.first_instance = i915_vk_read_u32(reader);
 		break;
+	case 113U:	/* vkCmdCopyImage */
+		return rec_image_copy(session, cmdbuf, reader, 0);
+	case 114U:	/* vkCmdBlitImage */
+		return rec_image_copy(session, cmdbuf, reader, 1);
+	case 119U:	/* vkCmdClearColorImage */
+		return rec_clear_image(session, cmdbuf, reader);
 	case 115U:	/* vkCmdCopyBufferToImage */
 		return rec_copy(session, cmdbuf, reader, 1);
 	case 116U:	/* vkCmdCopyImageToBuffer */
@@ -537,124 +608,172 @@ rec_command(struct i915_vk_session *session, uint32_t opcode, struct i915_vk_rea
 
 /* ---------------- execution ---------------- */
 
-/* round(value * 255) of a float given by its bits, clamped to [0, 1]; no floating-point register. */
-static uint32_t
-gfx_unorm8(uint32_t bits)
+/* The surface an image is, in its own format. */
+static int
+image_surface(const struct gfx_image *image, struct gfx_surface *out)
 {
-	uint32_t exponent;
-	uint64_t mantissa;
-	uint32_t shift;
-
-	if ((bits >> 31) != 0U)
-		return 0U;
-	exponent = (bits >> 23) & 0xffU;
-	if (exponent >= 127U)
-		return 255U;			/* >= 1.0, infinities and NaNs */
-	if (exponent < 127U - 16U)
-		return 0U;
-	/* value = 1.m * 2^(exponent - 127); 1.m is the 24-bit integer `mantissa` / 2^23 */
-	mantissa = ((uint64_t)(bits & 0x7fffffU) | 0x800000U) * 255U;
-	shift = 23U + (127U - exponent);
-	return (uint32_t)((mantissa + ((uint64_t)1U << (shift - 1U))) >> shift);
+	out->va = i915_vk_gfx_memory_va(image->memory, image->offset);
+	out->width = image->width;
+	out->height = image->height;
+	out->pitch = image->pitch;
+	out->format = image->format;
+	return out->va != 0U ? 0 : EINVAL;
 }
 
-static void
-exec_clear(const struct gfx_op *op)
+/* The render pass's clears (loadOp CLEAR), one GPU fill each. */
+static int
+exec_clear(struct i915_vk_session *session, const struct gfx_op *op)
 {
 	struct gfx_framebuffer *framebuffer;
 	struct gfx_pass *pass;
 	struct gfx_image *image;
-	uint32_t *pixels;
-	uint64_t count;
-	uint64_t pixel;
+	struct gfx_surface surface;
+	struct gfx_rect rect;
 	uint32_t index;
-	uint32_t value;
+	uint32_t words[4];
+	int error;
 
 	pass = op->u.begin.pass;
 	framebuffer = op->u.begin.framebuffer;
 	if (pass == NULL || framebuffer == NULL)
-		return;
-
-	/* XXX: CPU clear -- see the execution model at the top of this file. */
+		return 0;
 	for (index = 0U; index < pass->attachment_count && index < framebuffer->view_count; index++) {
 		if (pass->attachments[index].load_op != VK_ATTACHMENT_LOAD_OP_CLEAR || index >= op->u.begin.clear_count ||
 		    framebuffer->views[index] == NULL)
 			continue;
 		image = framebuffer->views[index]->image;
-		pixels = (uint32_t *)(void *)i915_vk_gfx_memory_cpu(image->memory, image->offset, image->bytes);
-		if (pixels == NULL) {
-			kern_logf("i915: vk: clear of attachment %u skipped: its image has no storage\n", index);
-			continue;
-		}
-
+		if (image_surface(image, &surface) != 0)
+			return EINVAL;
+		memset(words, 0, sizeof(words));
 		if (op->u.begin.clear_is_depth[index] != 0U) {
-			value = op->u.begin.clear_words[index][0];
+			/*
+			 * The depth value's bits through an R32_FLOAT view of the whole allocation: every word gets the same
+			 * value, so the depth buffer's tiling does not matter.  XXX: the stencil value is not written.
+			 */
+			surface.format = VK_FORMAT_R32_SFLOAT;
+			surface.width = image->pitch / 4U;
+			surface.height = (uint32_t)(image->bytes / image->pitch);
+			words[0] = op->u.begin.clear_words[index][0];
 		} else {
-			uint32_t r = gfx_unorm8(op->u.begin.clear_words[index][0]);
-			uint32_t g = gfx_unorm8(op->u.begin.clear_words[index][1]);
-			uint32_t b = gfx_unorm8(op->u.begin.clear_words[index][2]);
-			uint32_t a = gfx_unorm8(op->u.begin.clear_words[index][3]);
-
-			/* bytes in memory order: R G B A, or B G R A */
-			value = image->format == VK_FORMAT_B8G8R8A8_UNORM ?
-				(b | (g << 8) | (r << 16) | (a << 24)) : (r | (g << 8) | (b << 16) | (a << 24));
+			memcpy(words, op->u.begin.clear_words[index], sizeof(words));
 		}
-		count = image->bytes / 4U;
-		for (pixel = 0U; pixel < count; pixel++)
-			pixels[pixel] = value;
+		/* XXX: the whole attachment is cleared, not the render area */
+		rect.x = 0;
+		rect.y = 0;
+		rect.w = surface.width;
+		rect.h = surface.height;
+		error = i915_vk_gfx_rect(session, &surface, &rect, NULL, NULL, words, 0);
+		if (error != 0)
+			return error;
 	}
+	return 0;
 }
 
+/* vkCmdCopyBufferToImage / vkCmdCopyImageToBuffer: the buffer region is a linear surface of the image's format. */
 static int
-exec_copy(const struct gfx_op *op)
+exec_copy(struct i915_vk_session *session, const struct gfx_op *op)
 {
 	const VkBufferImageCopy *region;
 	struct gfx_buffer *buffer;
 	struct gfx_image *image;
-	uint8_t *image_bytes;
-	uint8_t *buffer_bytes;
+	struct gfx_surface image_s, buffer_s;
+	struct gfx_rect image_r, buffer_r;
 	uint64_t row_pixels;
-	uint64_t buffer_row;
 	uint64_t needed;
-	uint32_t row;
 
 	buffer = op->u.copy.buffer;
 	image = op->u.copy.image;
 	region = &op->u.copy.region;
-	if (buffer == NULL || image == NULL)
+	if (buffer == NULL || image == NULL || image_surface(image, &image_s) != 0)
 		return EINVAL;
-
-	/* XXX: CPU copy of whole texels of a 4-byte format, level 0, layer 0 -- see the execution model. */
-	if (region->imageOffset.x < 0 || region->imageOffset.y < 0 || region->imageExtent.depth != 1U ||
-	    (uint64_t)region->imageOffset.x + region->imageExtent.width > image->width ||
-	    (uint64_t)region->imageOffset.y + region->imageExtent.height > image->height)
-		return EINVAL;
+	if (image->format == VK_FORMAT_D32_SFLOAT) {
+		kern_logf("i915: vk: XXX unimplemented path: a copy to or from a depth image\n");
+		return ENOTSUP;
+	}
 	row_pixels = region->bufferRowLength != 0U ? region->bufferRowLength : region->imageExtent.width;
-	if (row_pixels < region->imageExtent.width || region->imageExtent.height == 0U)
+	if (region->imageExtent.depth != 1U || region->imageExtent.width == 0U || region->imageExtent.height == 0U ||
+	    row_pixels < region->imageExtent.width)
 		return EINVAL;
 	needed = region->bufferOffset + ((uint64_t)(region->imageExtent.height - 1U) * row_pixels +
 		region->imageExtent.width) * 4U;
 	if (needed > buffer->size)
 		return EINVAL;
-
-	image_bytes = i915_vk_gfx_memory_cpu(image->memory, image->offset, image->bytes);
-	buffer_bytes = i915_vk_gfx_memory_cpu(buffer->memory, buffer->offset, buffer->size);
-	if (image_bytes == NULL || buffer_bytes == NULL) {
-		kern_logf("i915: vk: copy skipped: %s has no storage\n", image_bytes == NULL ? "the image" : "the buffer");
+	buffer_s.va = i915_vk_gfx_memory_va(buffer->memory, buffer->offset + region->bufferOffset);
+	buffer_s.width = region->imageExtent.width;
+	buffer_s.height = region->imageExtent.height;
+	buffer_s.pitch = (uint32_t)(row_pixels * 4U);
+	buffer_s.format = image->format;
+	if (buffer_s.va == 0U)
 		return EINVAL;
-	}
+	buffer_r.x = 0;
+	buffer_r.y = 0;
+	buffer_r.w = region->imageExtent.width;
+	buffer_r.h = region->imageExtent.height;
+	image_r.x = region->imageOffset.x;
+	image_r.y = region->imageOffset.y;
+	image_r.w = region->imageExtent.width;
+	image_r.h = region->imageExtent.height;
+	if (op->kind == GFX_OP_COPY_BUFFER_TO_IMAGE)
+		return i915_vk_gfx_rect(session, &image_s, &image_r, &buffer_s, &buffer_r, NULL, 0);
+	return i915_vk_gfx_rect(session, &buffer_s, &buffer_r, &image_s, &image_r, NULL, 0);
+}
 
-	for (row = 0U; row < region->imageExtent.height; row++) {
-		uint8_t *texels = image_bytes + (uint64_t)(region->imageOffset.y + (int32_t)row) * image->pitch +
-			(uint64_t)region->imageOffset.x * 4U;
+/* vkCmdCopyImage / vkCmdBlitImage / vkCmdClearColorImage. */
+static int
+exec_image(struct i915_vk_session *session, const struct gfx_op *op)
+{
+	struct gfx_surface src_s, dst_s;
+	struct gfx_rect src_r, dst_r;
+	int32_t x0, y0, x1, y1;
 
-		buffer_row = region->bufferOffset + (uint64_t)row * row_pixels * 4U;
-		if (op->kind == GFX_OP_COPY_BUFFER_TO_IMAGE)
-			memcpy(texels, buffer_bytes + buffer_row, (size_t)region->imageExtent.width * 4U);
-		else
-			memcpy(buffer_bytes + buffer_row, texels, (size_t)region->imageExtent.width * 4U);
+	if (op->kind == GFX_OP_CLEAR_IMAGE) {
+		if (op->u.clear_image.image == NULL || image_surface(op->u.clear_image.image, &dst_s) != 0)
+			return EINVAL;
+		dst_r.x = 0;
+		dst_r.y = 0;
+		dst_r.w = dst_s.width;
+		dst_r.h = dst_s.height;
+		return i915_vk_gfx_rect(session, &dst_s, &dst_r, NULL, NULL, op->u.clear_image.words, 0);
 	}
-	return 0;
+	if (op->kind == GFX_OP_COPY_IMAGE) {
+		const VkImageCopy *c = &op->u.image_copy.region;
+
+		if (op->u.image_copy.src == NULL || op->u.image_copy.dst == NULL ||
+		    image_surface(op->u.image_copy.src, &src_s) != 0 || image_surface(op->u.image_copy.dst, &dst_s) != 0)
+			return EINVAL;
+		src_r.x = c->srcOffset.x;
+		src_r.y = c->srcOffset.y;
+		src_r.w = c->extent.width;
+		src_r.h = c->extent.height;
+		dst_r.x = c->dstOffset.x;
+		dst_r.y = c->dstOffset.y;
+		dst_r.w = c->extent.width;
+		dst_r.h = c->extent.height;
+		return i915_vk_gfx_rect(session, &dst_s, &dst_r, &src_s, &src_r, NULL, 0);
+	}
+	{
+		const VkImageBlit *bl = &op->u.blit.region;
+
+		if (op->u.blit.src == NULL || op->u.blit.dst == NULL ||
+		    image_surface(op->u.blit.src, &src_s) != 0 || image_surface(op->u.blit.dst, &dst_s) != 0)
+			return EINVAL;
+		/* XXX: mirrored blits (an offset pair given in decreasing order) are refused */
+		x0 = bl->srcOffsets[0].x; y0 = bl->srcOffsets[0].y; x1 = bl->srcOffsets[1].x; y1 = bl->srcOffsets[1].y;
+		if (x1 <= x0 || y1 <= y0)
+			return ENOTSUP;
+		src_r.x = x0;
+		src_r.y = y0;
+		src_r.w = (uint32_t)(x1 - x0);
+		src_r.h = (uint32_t)(y1 - y0);
+		x0 = bl->dstOffsets[0].x; y0 = bl->dstOffsets[0].y; x1 = bl->dstOffsets[1].x; y1 = bl->dstOffsets[1].y;
+		if (x1 <= x0 || y1 <= y0)
+			return ENOTSUP;
+		dst_r.x = x0;
+		dst_r.y = y0;
+		dst_r.w = (uint32_t)(x1 - x0);
+		dst_r.h = (uint32_t)(y1 - y0);
+		return i915_vk_gfx_rect(session, &dst_s, &dst_r, &src_s, &src_r, NULL, op->u.blit.filter == VK_FILTER_LINEAR);
+	}
 }
 
 static int
@@ -672,12 +791,17 @@ exec_cmdbuf(struct i915_vk_session *session, struct gfx_cmdbuf *cmdbuf)
 		switch (op->kind) {
 		case GFX_OP_COPY_BUFFER_TO_IMAGE:
 		case GFX_OP_COPY_IMAGE_TO_BUFFER:
-			error = exec_copy(op);
+			error = exec_copy(session, op);
 			break;
 		case GFX_OP_BEGIN_PASS:
 			state.pass = op->u.begin.pass;
 			state.framebuffer = op->u.begin.framebuffer;
-			exec_clear(op);
+			error = exec_clear(session, op);
+			break;
+		case GFX_OP_COPY_IMAGE:
+		case GFX_OP_BLIT_IMAGE:
+		case GFX_OP_CLEAR_IMAGE:
+			error = exec_image(session, op);
 			break;
 		case GFX_OP_END_PASS:
 			state.pass = NULL;

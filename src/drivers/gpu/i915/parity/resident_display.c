@@ -18,7 +18,10 @@
  *   - XXX: one output, one plane, one lease at a time; the panel's own mode only.  A requested mode smaller
  *     than the panel is accepted and shown scaled by a whole factor and centred (the rest black); the
  *     display is never re-timed.
- *   - XXX: no shared (BLOB) route -- every frame is copied twice by the CPU (into storage, into the scanout).
+ *   - E-130: the SHARED route: the application's frame is a blob the rendering connection exported and the
+ *     display connection imported; each presentation is a GPU copy (scaled by a whole factor, centred) of that
+ *     blob into the panel's back buffer, then the flip.  No CPU touches pixels.  The COPIED route stays as the
+ *     fallback the constraints still offer.
  *   - XXX: presentation is synchronous: it returns once the flip has completed, so a wait never waits.
  *   - XXX: no hot-plug, no topology events: the panel exists from the first query to the unpublish.
  */
@@ -27,6 +30,7 @@
 #include "resident.h"
 #include "resident_display.h"
 #include "lcd/parity_lcd_kernel.h"
+#include "../vk/gfx.h"
 
 #include <drivers/gpu.h>
 #include <drivers/gpu-display.h>
@@ -95,10 +99,10 @@ rd_constraints(void *device, void *session, struct gpu_scanout_constraints *requ
 		return ENOENT;
 	if (request->generation != RD_GENERATION)
 		return ESTALE;
-	request->flags = GPU_SCANOUT_COPY;		/* XXX: the copied route only */
+	request->flags = GPU_SCANOUT_SHARED | GPU_SCANOUT_COPY;
 	request->formats = GPU_DISPLAY_FORMAT_BGRA8888 | GPU_DISPLAY_FORMAT_RGBA8888;
-	request->stride_alignment = 4U;
-	request->offset_alignment = 4U;
+	request->stride_alignment = 64U;	/* a linear render-target / sampler surface */
+	request->offset_alignment = 64U;
 	request->placement = 0U;
 	request->max_dma_address = 0U;
 	return 0;
@@ -253,6 +257,51 @@ rd_release(void *device, void *session, const struct gpu_display_release *reques
 	return error;
 }
 
+/* The GPU copy of one shared frame into a panel buffer (built on the serving thread, run there). */
+struct rd_blit {
+	struct i915_vk_session *vk;
+	struct gfx_surface src;
+	const uint32_t *cpu;
+};
+
+const uint32_t *
+parity_shim_blit_source(void *ctx, uint32_t *width, uint32_t *height, uint32_t *pitch)
+{
+	struct rd_blit *blit = ctx;
+
+	*width = blit->src.width;
+	*height = blit->src.height;
+	*pitch = blit->src.pitch;
+	return blit->cpu;
+}
+
+static int
+rd_blit_build(void *ctx, uint64_t dst_va, uint32_t width, uint32_t height, uint32_t pitch, uint64_t *batch_va)
+{
+	struct rd_blit *blit = ctx;
+	struct gfx_surface dst;
+	struct gfx_rect src_rect, dst_rect;
+	uint32_t scale;
+
+	dst.va = dst_va;
+	dst.width = width;
+	dst.height = height;
+	dst.pitch = pitch;
+	dst.format = VK_FORMAT_B8G8R8A8_UNORM;		/* the panel's XRGB8888 */
+	scale = width / blit->src.width < height / blit->src.height ? width / blit->src.width : height / blit->src.height;
+	if (scale == 0U)
+		return EINVAL;
+	src_rect.x = 0;
+	src_rect.y = 0;
+	src_rect.w = blit->src.width;
+	src_rect.h = blit->src.height;
+	dst_rect.w = blit->src.width * scale;
+	dst_rect.h = blit->src.height * scale;
+	dst_rect.x = (int32_t)((width - dst_rect.w) / 2U);
+	dst_rect.y = (int32_t)((height - dst_rect.h) / 2U);
+	return i915_vk_gfx_rect_build(blit->vk, &dst, &dst_rect, &blit->src, &src_rect, NULL, 0, batch_va);
+}
+
 static int
 rd_present(void *device, void *session, void *object, struct gpu_display_present *request)
 {
@@ -272,10 +321,6 @@ rd_present(void *device, void *session, void *object, struct gpu_display_present
 		mutex_unlock(&rd.mutex);
 		return ESTALE;
 	}
-	if ((request->flags & GPU_DISPLAY_PRESENT_BLOB) != 0U) {
-		mutex_unlock(&rd.mutex);
-		return ENOTSUP;			/* the constraints never offered the shared route */
-	}
 	error = rd_panel(&width, &height, &refresh);
 	if (error == 0 && (request->width > width || request->height > height))
 		error = EINVAL;
@@ -284,18 +329,40 @@ rd_present(void *device, void *session, void *object, struct gpu_display_present
 		return error;
 	}
 
+	/* E-130: the shared route -- the GPU copies the imported blob into the panel's back buffer */
+	if ((request->flags & GPU_DISPLAY_PRESENT_BLOB) != 0U) {
+		struct i915_session *owner = session;
+		struct rd_blit blit;
+
+		blit.vk = owner->vk;
+		blit.src.va = storage->va != 0U ? storage->va + request->offset : 0U;
+		blit.src.width = request->width;
+		blit.src.height = request->height;
+		blit.src.pitch = request->stride;
+		blit.cpu = (const uint32_t *)((const uint8_t *)kern_pmem_to_kernel(storage->run.paddr) + request->offset);
+		blit.src.format = request->format == GPU_PIXEL_BGRA8888 ? VK_FORMAT_B8G8R8A8_UNORM : VK_FORMAT_R8G8B8A8_UNORM;
+		/* the kernels and the session's objects are made here, not on the serving thread */
+		error = blit.vk == NULL || blit.src.va == 0U ? EINVAL : i915_vk_gfx_rect_prepare(blit.vk);
+		if (error == 0)
+			error = parity_shim_display_present_blob(device, &owner->contexts[I915_ENGINE_RCS0], owner->vm,
+				rd_blit_build, &blit);
+		goto presented;
+	}
+
 	/* the core checked the extent against the storage; the storage is ordinary managed RAM */
 	pixels = (const uint8_t *)kern_pmem_to_kernel(storage->run.paddr) + request->offset;
 	error = parity_shim_display_present(device, pixels, request->width, request->height, request->stride,
 		request->format == GPU_PIXEL_BGRA8888);
+presented:
 	if (error == 0) {
 		rd.active = 1;
 		rd.sequence++;
 		rd.present_tick = sched_ticks();
 		request->sequence = rd.sequence;
 		if (rd.sequence == 1U)
-			kern_logf("i915: resident display: first frame %ux%u (stride %u, %s) shown on the %ux%u panel\n",
+			kern_logf("i915: resident display: first frame %ux%u (stride %u; %s; %s) shown on the %ux%u panel\n",
 				request->width, request->height, request->stride,
+				(request->flags & GPU_DISPLAY_PRESENT_BLOB) != 0U ? "shared, GPU copy" : "copied, CPU copy",
 				request->format == GPU_PIXEL_BGRA8888 ? "BGRA" : "RGBA", width, height);
 	}
 	mutex_unlock(&rd.mutex);

@@ -152,11 +152,28 @@ struct gfx_pipeline {
 	struct i915_vk_shader_binary *fs_binary;
 };
 
+/* ---- E-130: what a GPU rectangle reads and writes ---- */
+
+/* A linear 2D surface in the session's address space: an image, a buffer region or a scanout buffer. */
+struct gfx_surface {
+	uint64_t va;
+	uint32_t width, height, pitch;
+	uint32_t format;			/* VkFormat: R8G8B8A8 / B8G8R8A8 UNORM, R32_SFLOAT */
+};
+
+struct gfx_rect {
+	int32_t x, y;
+	uint32_t w, h;
+};
+
 /* ---- the recorded form of a command buffer ---- */
 
 enum gfx_op_kind {
 	GFX_OP_COPY_BUFFER_TO_IMAGE = 1,
 	GFX_OP_COPY_IMAGE_TO_BUFFER,
+	GFX_OP_COPY_IMAGE,
+	GFX_OP_BLIT_IMAGE,
+	GFX_OP_CLEAR_IMAGE,
 	GFX_OP_BEGIN_PASS,
 	GFX_OP_END_PASS,
 	GFX_OP_BIND_PIPELINE,
@@ -176,6 +193,19 @@ struct gfx_op {
 			struct gfx_image *image;
 			VkBufferImageCopy region;
 		} copy;
+		struct {
+			struct gfx_image *src, *dst;
+			VkImageCopy region;
+		} image_copy;
+		struct {
+			struct gfx_image *src, *dst;
+			VkImageBlit region;
+			uint32_t filter;
+		} blit;
+		struct {
+			struct gfx_image *image;
+			uint32_t words[4];
+		} clear_image;
 		struct {
 			struct gfx_pass *pass;
 			struct gfx_framebuffer *framebuffer;
@@ -241,5 +271,18 @@ int i915_vk_gfx_pipeline_prepare(struct i915_vk_session *session, struct gfx_pip
 void i915_vk_gfx_pipeline_release(struct gfx_pipeline *pipeline);
 int i915_vk_gfx_draw(struct i915_vk_session *session, const struct gfx_draw_state *state,
 	uint32_t vertex_count, uint32_t instance_count, uint32_t first_vertex, uint32_t first_instance);
+
+/*
+ * E-130, gfx-draw.c: one rectangle on the GPU -- a copy of src_rect of `src` into dst_rect of `dst` (scaled when the
+ * sizes differ; `linear` selects the filter) or, with src NULL, a fill of dst_rect with the four float words of
+ * `clear`.  _rect runs it to its end; _rect_build only writes the session's state and batch objects and returns the
+ * batch address, for a caller that runs the batch itself (the display, on the serving thread).
+ */
+int i915_vk_gfx_rect_prepare(struct i915_vk_session *session);
+int i915_vk_gfx_rect(struct i915_vk_session *session, const struct gfx_surface *dst, const struct gfx_rect *dst_rect,
+	const struct gfx_surface *src, const struct gfx_rect *src_rect, const uint32_t clear[4], int linear);
+int i915_vk_gfx_rect_build(struct i915_vk_session *session, const struct gfx_surface *dst, const struct gfx_rect *dst_rect,
+	const struct gfx_surface *src, const struct gfx_rect *src_rect, const uint32_t clear[4], int linear,
+	uint64_t *batch_va);
 
 #endif /* I915_VK_GFX_H */
