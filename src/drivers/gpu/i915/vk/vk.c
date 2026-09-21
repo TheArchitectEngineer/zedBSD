@@ -14,6 +14,7 @@
 
 #include "vk.h"
 #include "cmd.h"
+#include "gfx.h"
 #include "../parity/resident.h"
 
 #include <kern/kmem.h>
@@ -95,6 +96,14 @@ drv_i915_vk_open(
 	session->vk = vk;
 	session->gpu = gpu_session;
 
+	/* The decode scratch of this session (vkc.h); a session without one decodes no records. */
+	session->arena.base = kern_calloc(1U, I915_VK_ARENA_BYTES);
+	if (session->arena.base == NULL) {
+		kern_free(session);
+		return ENOMEM;
+	}
+	session->arena.size = I915_VK_ARENA_BYTES;
+
 	/* Succeeded: the session accepts commands. */
 	*out = session;
 	return 0;
@@ -109,6 +118,8 @@ drv_i915_vk_close(
 	if (session == NULL)
 		return;
 
+	i915_vk_gfx_session_close(session);
+	kern_free(session->arena.base);
 	kern_free(session);
 }
 
@@ -139,6 +150,7 @@ drv_i915_vk_command(
 
 	/* One submission may carry several commands back to back. */
 	while (reader.offset < reader.size) {
+		session->arena.used = 0U;
 		error = i915_vk_cmd_dispatch(session, &reader, &writer);
 		if (error != 0)
 			return error;

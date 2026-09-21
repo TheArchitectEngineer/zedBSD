@@ -22,6 +22,7 @@
 
 #include "../internal.h"
 
+#include <kern/klog.h>
 #include <kern/kmem.h>
 #include <kern/pmem.h>
 #include <kern/device-io.h>
@@ -644,7 +645,10 @@ i915_vk_cmdbuf_dispatch(
 	case 135U:	/* vkCmdEndRenderPass */
 		return i915_vk_cmdbuf_record_end_render_pass(session, reader, reply);
 	default:
-		return EINVAL;
+		/* XXX: unimplemented opcode (E-127 rule: say so at the entry) */
+		kern_logf("i915: vk: XXX unimplemented opcode %u (cmdbuf)\n", opcode);
+		reader->error = 1;
+		return ENOTSUP;
 	}
 }
 

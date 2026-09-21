@@ -3893,3 +3893,57 @@ the 5330's firmware had already set it.
 Not done: the 18-mode sweep on the 5330 after these shared-code changes (10.0.10.25 was unreachable
 all session).  It must run before the result is trusted.
 
+
+## E-127 — V0: vkdemo draws through libvulkan on the 5330 (実機 PASS、疎通確認)
+
+Date: 2026-09-21. Work host moved to `centris` (`awe@10.0.10.2:~/zedBSD-gpu`); agent-1 is only needed to rebuild the Mesa reference tools (see "What is not done").
+
+**方針（ユーザー指示）**: リファクタリングは後回し。正常系 1 パスだけを最低限の接続で通す。未実装の経路は `XXX:` コメントと kernel message で必ず名乗る。空成功は作らない。
+
+### 結果
+
+`/bin/vkdemo --offscreen --readback`（標準 Vulkan アプリ、無改造）→ `/lib/libvulkan.so`（無改造）→ `/dev/gpu0` の通常 ioctl → i915 executor → parity の GT スタック → Latitude 5330 の実 GPU。
+
+| 確認 | 値 |
+|---|---|
+| 完走 | `VKDEMO DONE run=vk1 frames=11`、shim `executed=24 failed=0`（描画 11 + job marker） |
+| 1 フレーム目の hash | `rgb_sha256=7523debe…05ff`（time_ms=0）。3 回の起動で同一 |
+| 独立オラクル | `plan/ws014/tests/vkdemo_oracle.py verify_pixels(pixels, 0)`: **passed**、checked 75,841 px、mismatch 0、visible faces 3、foreground 7,968 px、checked colours 4,003 |
+| オラクルへ渡した画素 | kernel が serial へ出した render target そのもの。再構成した RGB の SHA-256 が vkdemo 自身の readback の hash と一致（＝アプリが見た画素と同じもの） |
+| 画像 | `handover/vk-e127/vkdemo-5330-frame1.png` |
+| host fixtures | `run-vk-host-tests.sh` 10/10 PASS（旧 module の fixture は新 module を stand-in にして維持） |
+| 通常（非 resident）の parity image | build OK。実機 sweep は未再実行 |
+
+再現: `plan/ws031/tests/vkloop-hw.sh`（約 75 秒）、オラクルつきは `vkloop-hw.sh oracle`。
+
+### 何を足したか（すべて `XXX:` つきの最低限接続）
+
+| 層 | ファイル | 内容 |
+|---|---|---|
+| 常駐 | `parity/resident.h`, `parity/legacy_shim.[ch]`, `parity/probe.c`, `i915.c` | `-DPARITY_RESIDENT=1` で attach が teardown の手前に留まり `/dev/gpu0` を公開。legacy の gem / ppgtt / request queue はそのまま使い、LRC 生成・kick・reset の 6 関数だけ parity へ向ける。`parity_shim_run_sync()`＝ batch 1 本を最後まで走らせて結果を返す。queue timeline 1 → RCS0。job marker（batch なし）は breadcrumb だけを実行 |
+| wire | `vk/vkc.[ch]`, `vk/codec-generated.inc`（`tools/gen_vk_server_codec.py`） | libvulkan の `codec.c` から server 側 codec を生成（decoder 100、encoder 47）。両端がずれない |
+| instance / device | `vk/inst.c` | opcode 0–8, 11, 12, 19, 20, 155, 180。memory type 1 個（device-local かつ host-coherent＝UMA）、queue family 1 |
+| object | `vk/gfx-obj.c` | memory / buffer / image / view / sampler / descriptor / layout / render pass / framebuffer / shader module / pipeline / semaphore。**VkDeviceMemory の実体は libvulkan が直後に作る blob**（`blob_id` = memory の wire id、`i915.c` の blob_create → `drv_i915_vk_blob_attach`）。アプリの map と GPU の address が同じ page を指す |
+| 記録と submit | `vk/gfx-rec.c` | command buffer は GPU 命令ではなく操作列。`vkQueueSubmit` が順に実行し終えてから返る（同期）。fence は返答時に signal |
+| draw | `vk/gfx-draw.c`, `vk/vkref-generated.inc`（`tools/refvk.c`） | 実機で描けている fixture（selftest.c）の command 列に、VS・vertex buffer・push constant・viewport / scissor・depth buffer・SBE・texture を足したもの。bit 位置は genxml gen120 |
+| 試験 | `tests/vkloop-hw.sh`, `tests/vkprobe-rc.conf` ほか, `tools/vkdump_verify.py`, `platform/amd64/vmunix.mk` の test-image hook | |
+
+### What is not done（名乗っている XXX の一覧）
+
+1. **shader は executor の compiler を通っていない**。pipeline の SPIR-V を内容（語数＋FNV-1a）で識別し、その SPIR-V そのものから Mesa の `brw_compile_vs / brw_compile_fs` が出した kernel（`vkref-generated.inc`）を使う。SPIR-V は vkdemo の出荷版のまま（書換えなし）。他の SPIR-V は pipeline 作成時に拒否。`spirv.c / compile.c / eu.c` の出力は依然 GPU 検証 0 件（payload、URB write・sampler・RT write の SEND、Gen12 の SWSB が未実装）。→ 次の増分。いまは「正しく描ける state と batch」が手に入ったので、compiler 出力を同じ draw に載せて Mesa 版と比較できる。
+2. **clear と buffer↔image copy は CPU**（batch と batch の間、操作列の順序どおり）。GPU の clear / BLT は未実装。
+3. 同期 submit、semaphore は identity のみ、recovery なし（hang したら request が失敗して終わり。reset は ENOTSUP を名乗る）。
+4. image は 2D・1 level・1 layer・linear のみ（depth だけ Y-tiled の extent）。view の swizzle / sub-range、blend、dynamic state、secondary command buffer、descriptor array、buffer descriptor は未対応（作成時または記録時に名乗る）。
+5. object 表は device 単位のまま（session 分離なし）、session close で object を回収しない。
+6. capset の vendor flags 7 は疎通確認のための宣言で、契約の実装は正常系のみ。
+7. **表示（swapchain / present → LCD）は未接続**。今回は `--offscreen`。LCD 側（E-116〜E-122 の scanout / flip）を `present` / `display` / `scanout` ops へつなぐのが表示の増分。
+8. unpublish 時の `device fault 13`（session が開いたままの ENODEV）。teardown は完走する。未調査。
+9. Mesa 参照ツールの再ビルドは agent-1 でのみ可能（centris に `libunwind-dev` が無い。`/tmp/mesa-venv` と実行ファイルは centris へ複製済みで、既存ツールの実行はできる）。
+
+### 途中で確定した事実
+
+- libvulkan は host-visible な memory type では **すべての** allocation を直後に blob として export する（`memory.c memory_export`）。executor 側で別の GEM object を作ると、アプリの書込みが GPU から見えない。
+- queue の timeline は libvulkan が 1 から振る。capset が「timeline 1 本」を宣言するなら timeline 1 が render engine でなければならない。
+- 3DSTATE_CONSTANT_XS は slot 3 に置けば絶対 address（anv と同じ。slot 0 は dynamic state base 相対）。
+- Gen9+ の depth buffer は常に Y-tiled（isl）。pitch は 128 byte、高さは 32 行の倍数で確保する。
+- VS の入力を payload へ push させるには `brw_vs_prog_key.max_payload_percent` が要る（0 だと URB から pull する kernel になる）。

@@ -30,6 +30,9 @@
 #define SHIM_CONTEXTS     8u
 #define SHIM_RING_BYTES   16384u
 #define SHIM_TIMEOUT_MS   10000u
+#ifndef PARITY_RESIDENT_STOP_ON_CLOSE
+#define PARITY_RESIDENT_STOP_ON_CLOSE 0   /* test builds: end serving when the last session closes */
+#endif
 #ifndef PARITY_RESIDENT_SERVE_S
 #define PARITY_RESIDENT_SERVE_S 0
 #endif
@@ -44,6 +47,15 @@ struct shim_context {
 	struct parity_gt_request rq;           /* one at a time: the serving thread runs them in order */
 };
 
+/* One batch a caller sleeps on: run by the serving thread like a request, reported to the caller. */
+struct shim_sync {
+	struct shim_sync *next;
+	struct i915_context *context;
+	uint64_t batch_va;
+	int done;
+	int error;
+};
+
 static struct {
 	struct parity_resident_ctx *ctx;
 	int render_idx;
@@ -51,11 +63,15 @@ static struct {
 
 	/* requests handed over by kick, in order; guarded by device->irq_lock */
 	struct i915_request *run_head, *run_tail;
+	/* batches the executor waits for (parity_shim_run_sync), in order; same lock */
+	struct shim_sync *sync_head, *sync_tail;
+	struct wait_queue sync_done;
 	struct wait_queue work;
 	int work_inited;
 	int stop;
 
 	unsigned executed, failed;
+	unsigned live_contexts, contexts_ever;
 } shim;
 
 static int
@@ -142,6 +158,8 @@ parity_shim_lrc_create(struct i915_device *device, struct i915_engine *engine,
 	(void)parity_lrc_update_regs(&sc->ce, sc->ce.ring.tail);
 	sc->tl_seqno = 0u;
 	sc->owner = context;
+	shim.live_contexts++;
+	shim.contexts_ever++;
 	context->created = 1U;
 	kern_logf("i915: resident shim: context sw_id=%u lrca=%08x pml4=0x%llx ring=%u bytes\n",
 		sw_id, sc->ce.lrca, (unsigned long long)sc->vm.top_pd_dma, SHIM_RING_BYTES);
@@ -161,6 +179,13 @@ parity_shim_lrc_destroy(struct i915_device *device, struct i915_context *context
 			parity_gt_object_destroy(c->gm, sc->tl_page);
 		parity_lrc_release(&sc->ce, c->gm);
 		sc->owner = 0;
+		if (shim.live_contexts != 0u)
+			shim.live_contexts--;
+		if (PARITY_RESIDENT_STOP_ON_CLOSE && shim.live_contexts == 0u) {
+			shim.stop = 1;
+			if (shim.work_inited)
+				waitq_wake_all(&shim.work);
+		}
 	}
 	context->created = 0U;
 }
@@ -193,7 +218,7 @@ parity_shim_request_kick(struct i915_engine *engine)
 
 /* One execbuf-shaped request, as the accepted EU test builds it, run to its end. */
 static int
-shim_execute(struct i915_request *request)
+shim_run(struct i915_context *context, uint64_t batch_va, int has_batch, uint32_t label)
 {
 	struct parity_resident_ctx *c = shim.ctx;
 	struct parity_gt_engine *ge = &c->es->ge[shim.render_idx];
@@ -204,12 +229,12 @@ shim_execute(struct i915_request *request)
 	unsigned k, budget = SHIM_TIMEOUT_MS * 20u;
 	int rc;
 
-	if (request->context == NULL || request->context->engine == NULL ||
-	    request->context->engine->index != I915_ENGINE_RCS0) {
+	if (context == NULL || context->engine == NULL ||
+	    context->engine->index != I915_ENGINE_RCS0) {
 		kern_logf("i915: resident shim: XXX unimplemented path: request on an engine other than RCS0\n");
 		return ENOTSUP;
 	}
-	sc = shim_find(request->context);
+	sc = shim_find(context);
 	if (sc == 0)
 		return EINVAL;
 
@@ -243,17 +268,19 @@ shim_execute(struct i915_request *request)
 	*cs++ = PARITY_MI_ARB_CHECK;
 	parity_ring_advance(rq, cs);
 
-	/* gen8_emit_bb_start(): a PPGTT batch */
-	cs = parity_ring_begin(rq, 6u);
-	if (cs == 0)
-		return to_errno(rq->error);
-	*cs++ = PARITY_MI_ARB_ON_OFF | PARITY_MI_ARB_ENABLE;
-	*cs++ = SHIM_MI_BATCH_BUFFER_START_GEN8 | (1u << 8);
-	*cs++ = (uint32_t)request->batch_va;
-	*cs++ = (uint32_t)(request->batch_va >> 32);
-	*cs++ = PARITY_MI_ARB_ON_OFF;
-	*cs++ = PARITY_MI_NOOP;
-	parity_ring_advance(rq, cs);
+	/* gen8_emit_bb_start(): a PPGTT batch.  A marker (a job with no batch) is the breadcrumbs alone. */
+	if (has_batch) {
+		cs = parity_ring_begin(rq, 6u);
+		if (cs == 0)
+			return to_errno(rq->error);
+		*cs++ = PARITY_MI_ARB_ON_OFF | PARITY_MI_ARB_ENABLE;
+		*cs++ = SHIM_MI_BATCH_BUFFER_START_GEN8 | (1u << 8);
+		*cs++ = (uint32_t)batch_va;
+		*cs++ = (uint32_t)(batch_va >> 32);
+		*cs++ = PARITY_MI_ARB_ON_OFF;
+		*cs++ = PARITY_MI_NOOP;
+		parity_ring_advance(rq, cs);
+	}
 
 	rc = parity_request_add(rq);
 	if (rc != 0)
@@ -275,10 +302,50 @@ shim_execute(struct i915_request *request)
 	}
 	/* XXX: unimplemented path -- a hang.  No reset, no recovery: the request fails and the log says so. */
 	kern_logf("i915: resident shim: XXX request seqno=%u batch_va=0x%llx did not complete in %u ms "
-		"(no recovery path; hwsp=%u last_csb=%08x:%08x)\n", request->seqno,
-		(unsigned long long)request->batch_va, SHIM_TIMEOUT_MS,
+		"(no recovery path; hwsp=%u last_csb=%08x:%08x)\n", label,
+		(unsigned long long)batch_va, SHIM_TIMEOUT_MS,
 		(unsigned)*rq->hwsp_cpu, el->last_csb_hi, el->last_csb_lo);
 	return ETIMEDOUT;
+}
+
+static int
+shim_execute(struct i915_request *request)
+{
+	return shim_run(request->context, request->batch_va, request->batch != NULL, request->seqno);
+}
+
+/*
+ * Runs one batch of `context` to its end and reports how it ended.  The caller sleeps; the serving
+ * thread runs the batch in the order it arrived, exactly as it runs a request.
+ */
+int
+parity_shim_run_sync(struct i915_device *device, struct i915_context *context, uint64_t batch_va)
+{
+	struct shim_sync item;
+	unsigned long irq;
+	uint64_t observed;
+
+	if (shim.ctx == 0 || !shim.work_inited) {
+		kern_logf("i915: resident shim: XXX unimplemented path: a batch outside resident mode\n");
+		return ENODEV;
+	}
+	memset(&item, 0, sizeof(item));
+	item.context = context;
+	item.batch_va = batch_va;
+
+	irq = spin_lock_irqsave(&device->irq_lock);
+	if (shim.sync_tail == NULL)
+		shim.sync_head = &item;
+	else
+		shim.sync_tail->next = &item;
+	shim.sync_tail = &item;
+	waitq_wake_all(&shim.work);
+	while (!item.done) {
+		observed = waitq_sequence(&shim.sync_done);
+		(void)waitq_sleep(&shim.sync_done, &device->irq_lock, observed, sched_ticks() + 100u, 0U);
+	}
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+	return item.error;
 }
 
 /* ---------------- recovery: entry points only ---------------- */
@@ -336,6 +403,7 @@ parity_resident_serve(struct parity_resident_ctx *ctx)
 		return -ENODEV;
 	}
 	waitq_init(&shim.work, "i915 resident");
+	waitq_init(&shim.sync_done, "i915 resident sync");
 	shim.work_inited = 1;
 
 	rc = drv_i915_resident_publish(device);
@@ -352,7 +420,7 @@ parity_resident_serve(struct parity_resident_ctx *ctx)
 		uint64_t observed;
 		int error;
 
-		while (shim.run_head == NULL && !shim.stop) {
+		while (shim.run_head == NULL && shim.sync_head == NULL && !shim.stop) {
 			/*
 			 * XXX: test builds serve for a bounded time (PARITY_RESIDENT_SERVE_S) so that the run ends
 			 * through the teardown before the launcher kills qemu; 0 = serve for ever.
@@ -364,6 +432,24 @@ parity_resident_serve(struct parity_resident_ctx *ctx)
 			}
 			observed = waitq_sequence(&shim.work);
 			(void)waitq_sleep(&shim.work, &device->irq_lock, observed, sched_ticks() + 100u, 0U);
+		}
+		if (shim.sync_head != NULL) {
+			struct shim_sync *item = shim.sync_head;
+
+			shim.sync_head = item->next;
+			if (shim.sync_head == NULL)
+				shim.sync_tail = NULL;
+			spin_unlock_irqrestore(&device->irq_lock, irq);
+			error = shim_run(item->context, item->batch_va, 1, 0u);
+			if (error == 0)
+				shim.executed++;
+			else
+				shim.failed++;
+			irq = spin_lock_irqsave(&device->irq_lock);
+			item->error = error;
+			item->done = 1;
+			waitq_wake_all(&shim.sync_done);
+			continue;
 		}
 		if (shim.run_head == NULL && shim.stop)
 			break;

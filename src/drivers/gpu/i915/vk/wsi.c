@@ -20,6 +20,7 @@
 #include "sync.h"
 #include "display.h"
 
+#include <kern/klog.h>
 #include <kern/kmem.h>
 
 #include <errno.h>
@@ -50,10 +51,11 @@ i915_vk_wsi_dispatch(
 	struct i915_vk_writer *reply)
 {
 	(void)session;
-	(void)opcode;
-	(void)reader;
 	(void)reply;
-	return EINVAL;
+	/* XXX: unimplemented path -- no swapchain opcode is served through the command stream */
+	kern_logf("i915: vk: XXX unimplemented opcode %u (wsi)\n", opcode);
+	reader->error = 1;
+	return ENOTSUP;
 }
 
 /* Creates a swapchain of memory-backed images sized to the request. */

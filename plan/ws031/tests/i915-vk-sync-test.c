@@ -23,6 +23,7 @@
 #include "../../../src/drivers/gpu/i915/i915.c"
 #include "../../../src/drivers/gpu/i915/vk/cmd.c"
 #include "../../../src/drivers/gpu/i915/vk/sync.c"
+#include "i915-vk-e127-stubs.inc"
 
 /* The other modules are not exercised here; routing never reaches them. */
 int

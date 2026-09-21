@@ -48,6 +48,11 @@ int
 i915_vk_fence_status(
 	struct i915_vk_fence *fence);
 
+/* Signals a fence whose submission has run to its end (E-127: vkQueueSubmit is synchronous). */
+void
+i915_vk_fence_signal(
+	struct i915_vk_fence *fence);
+
 /* Binds a fence to the target seqno a submit produced on an engine. */
 int
 i915_vk_fence_arm(

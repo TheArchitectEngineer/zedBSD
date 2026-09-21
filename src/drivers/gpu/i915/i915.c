@@ -954,6 +954,10 @@ i915_resource_destroy(
 	/* Unbinding and freeing are serialized with submissions of the same session. */
 	mutex_lock(&device->mutex);
 
+	/* E-127: an allocation whose storage this was has none from here on. */
+	if (device->vk != NULL)
+		drv_i915_vk_blob_detach(device->vk, object);
+
 	/* The object leaves the session's handle list whatever happens to its backing. */
 	position = &session->objects;
 	while (*position != NULL && *position != object)
@@ -1099,6 +1103,14 @@ i915_blob_create(
 	session->resources++;
 
 	mutex_unlock(&device->mutex);
+
+	/* E-127: a blob that names a VkDeviceMemory is that allocation's storage. */
+	if (request->blob_id != 0U && device->vk != NULL) {
+		error = drv_i915_vk_blob_attach(device->vk, request->blob_id, object);
+		if (error != 0)
+			kern_logf("i915: vk: XXX blob_id %llu is not the storage of any allocation (error %d); the blob stands alone\n",
+				(unsigned long long)request->blob_id, error);
+	}
 
 	/* The core tracks the blob as a resource the executor and map reference. */
 	*result = object;
@@ -1818,6 +1830,16 @@ i915_engine_for_timeline(
 {
 	/* Zero and one name the copy engine; two names the render engine. */
 	*engine = NULL;
+#ifdef PARITY_SHIM_REDIRECT
+	/*
+	 * E-127 resident build: the capset declares ONE queue timeline and libvulkan numbers it 1, so
+	 * timeline 1 is the render engine here.  XXX: BCS0 is a record only in this mode; nothing is run on it.
+	 */
+	if (timeline == I915_TIMELINE_BCS0) {
+		*engine = &device->engines[I915_ENGINE_RCS0];
+		return 0;
+	}
+#endif
 	if (timeline == I915_TIMELINE_DEFAULT || timeline == I915_TIMELINE_BCS0) {
 		*engine = &device->engines[I915_ENGINE_BCS0];
 	} else if (timeline == I915_TIMELINE_RCS0) {

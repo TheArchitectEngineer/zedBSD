@@ -17,7 +17,9 @@
 
 #include "vk-internal.h"
 #include "cmd.h"
+#include "gfx.h"
 
+#include <kern/klog.h>
 #include <kern/kmem.h>
 
 #include <errno.h>
@@ -339,6 +341,18 @@ i915_vk_cmd_dispatch(
 	if (reply_requested != 0)
 		i915_vk_reply_u32(reply, opcode);
 
+	/* E-127: the graphics path (gfx.h) owns the objects, the recording and the submission. */
+	{
+		int handled;
+		int error;
+
+		error = i915_vk_gfx_obj_dispatch(session, opcode, reader, reply, &handled);
+		if (handled == 0)
+			error = i915_vk_gfx_rec_dispatch(session, opcode, reader, reply, &handled);
+		if (handled != 0)
+			return error;
+	}
+
 	/* The opcode range selects the owning module; NONE means cmd handles it. */
 	route = i915_vk_route(opcode);
 	switch (route) {
@@ -471,8 +485,17 @@ i915_vk_cmd_builtin(
 	 * reply-requested command is withdrawn by the caller's error path: the reply
 	 * length is only published on success.)
 	 */
-	(void)session;
-	(void)reply;
+	{
+		int handled;
+		int error;
+
+		/* E-127: the instance / device / queue commands and the external stream are inst's. */
+		error = i915_vk_inst_dispatch(session, opcode, reader, reply, &handled);
+		if (handled != 0)
+			return error;
+	}
+
+	kern_logf("i915: vk: XXX unimplemented opcode %u (builtin)\n", opcode);
 	reader->error = 1;
 	return ENOTSUP;
 }

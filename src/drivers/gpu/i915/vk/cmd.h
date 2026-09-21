@@ -132,4 +132,16 @@ i915_vk_wsi_dispatch(
 	struct i915_vk_reader *reader,
 	struct i915_vk_writer *reply);
 
+/*
+ * inst.c: instance, physical-device, device and queue commands, and the external command stream.
+ * `handled` is cleared for an opcode the module does not own.
+ */
+int
+i915_vk_inst_dispatch(
+	struct i915_vk_session *session,
+	uint32_t opcode,
+	struct i915_vk_reader *reader,
+	struct i915_vk_writer *reply,
+	int *handled);
+
 #endif /* I915_VK_CMD_H */

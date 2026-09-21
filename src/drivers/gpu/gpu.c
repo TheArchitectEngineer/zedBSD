@@ -9,6 +9,7 @@
  * GPU registration, character-device sessions, and owned resource handles.
  */
 
+#include <kern/klog.h>
 #include <drivers/gpu.h>
 #include <drivers/gpu-scanout.h>
 #include <uapi/gpu-allocation.h>
@@ -1426,8 +1427,32 @@ gpu_session_leave(
 }
 
 /* Dispatches only fixed-size, versioned requests into the GPU core. */
+#ifndef GPU_IOCTL_TRACE
+#define GPU_IOCTL_TRACE 0
+#endif
+
+static int gpu_ioctl_body(struct file *file, unsigned long command, uintptr_t argument);
+
+/*
+ * WS031 E-127: with -DGPU_IOCTL_TRACE=1 every failing GPU ioctl is logged by its 'G' number,
+ * for backend bring-up (the application only names the Vulkan call it was in).
+ */
 static int
 gpu_ioctl(
+	struct file *file,
+	unsigned long command,
+	uintptr_t argument)
+{
+	int error = gpu_ioctl_body(file, command, argument);
+
+	if (GPU_IOCTL_TRACE && error != 0)
+		kern_logf("gpu: ioctl G%lu (cmd 0x%lx) -> error %d\n",
+			command & 0xffUL, command, error);
+	return error;
+}
+
+static int
+gpu_ioctl_body(
 	struct file *file,
 	unsigned long command,
 	uintptr_t argument)

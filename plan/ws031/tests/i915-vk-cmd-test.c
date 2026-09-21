@@ -40,9 +40,13 @@ kern_free(void *pointer)
 
 /* The executor under test. */
 void kern_io_write_barrier(void) { }
+/* E-127: the executor says so in the kernel log when it meets an opcode it does not implement. */
+void kern_logf(const char *format, ...);
+void kern_logf(const char *format, ...) { (void)format; }
 
 #include "../../../src/drivers/gpu/i915/vk/cmd.c"
 #include "../../../src/drivers/gpu/i915/vk/vk.c"
+#include "i915-vk-e127-stubs.inc"
 
 /* Records the last routed dispatch so the routing can be checked. */
 static uint32_t routed_opcode;

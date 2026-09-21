@@ -82,6 +82,18 @@ struct i915_vk_writer {
 	int error;
 };
 
+/*
+ * The scratch a command decodes its records into (vkc.h).  One per session, emptied before each
+ * command: a decoded pointer lives until its command returns and no longer.
+ */
+struct i915_vk_arena {
+	uint8_t *base;
+	size_t size;
+	size_t used;
+};
+
+#define I915_VK_ARENA_BYTES (256U * 1024U)
+
 /* WS029 GEM object that backs vk memory, batches and shader code. */
 struct i915_gem_object;
 
@@ -115,6 +127,8 @@ struct i915_vk_device {
 struct i915_vk_session {
 	struct i915_vk_device *vk;
 	struct i915_session *gpu;
+	struct i915_vk_arena arena;
+	struct gfx_session *gfx;	/* gfx-draw.c: what draws keep between them */
 };
 
 /* A Gen batch under construction: a GEM buffer and a dword cursor. */
