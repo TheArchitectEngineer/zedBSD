@@ -56,6 +56,14 @@ typedef struct {
 	uint64_t p_align;
 } ElfW_Phdr;
 
+typedef struct {
+	int64_t d_tag;
+	union {
+		uint64_t d_val;
+		ElfW_Addr d_ptr;
+	} d_un;
+} ElfW_Dyn;
+
 #else
 
 typedef uint32_t ElfW_Addr;
@@ -72,6 +80,14 @@ typedef struct {
 	ElfW_Word p_flags;
 	uint32_t p_align;
 } ElfW_Phdr;
+
+typedef struct {
+	int32_t d_tag;
+	union {
+		uint32_t d_val;
+		ElfW_Addr d_ptr;
+	} d_un;
+} ElfW_Dyn;
 
 #endif
 
@@ -109,6 +125,40 @@ struct dl_phdr_info {
 	size_t dlpi_tls_modid;
 	void *dlpi_tls_data;
 };
+
+/*
+ * What a debugger reads to find the loaded objects.
+ *
+ * A debugger stops a program it did not load, so it has no list of its
+ * own.  The executable's dynamic section carries a DT_DEBUG entry, which
+ * the loader fills in with the address of the structure below; from there
+ * the debugger walks the objects and learns where each one was placed.
+ *
+ * The list changes while the program runs.  So that a debugger never
+ * reads it half-written, the loader calls the function r_brk names both
+ * before and after it changes anything: r_state says which change is
+ * under way, and is RT_CONSISTENT when the list may be read.  A debugger
+ * plants a breakpoint at r_brk to be told.
+ */
+struct link_map {
+	ElfW_Addr l_addr;	/* what was added to the linked addresses */
+	char *l_name;		/* the path the object was loaded from */
+	ElfW_Dyn *l_ld;		/* the object's own dynamic section */
+	struct link_map *l_next;
+	struct link_map *l_prev;
+};
+
+struct r_debug {
+	int r_version;		/* one */
+	struct link_map *r_map;	/* the first loaded object */
+	ElfW_Addr r_brk;	/* the function the loader calls */
+	int r_state;
+	ElfW_Addr r_ldbase;	/* where the loader itself was placed */
+};
+
+#define RT_CONSISTENT	0	/* the list may be read */
+#define RT_ADD		1	/* an object is being added */
+#define RT_DELETE	2	/* an object is being removed */
 
 /*
  * Calls back once for each loaded object until the callback returns a

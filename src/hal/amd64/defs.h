@@ -29,6 +29,7 @@
 #define SEG_USER_DATA          0x20
 #define SEG_TSS                0x28
 
+#define INT_DEBUG              0x01
 #define INT_PAGEFAULT          0x0e
 #define INT_SYSCALL            0xc2
 #define AMD64_VECTOR_MSI_BASE  0xd0

@@ -22,6 +22,7 @@
 #include "kern/kmem.h"
 #include "kern/mount.h"
 #include "kern/process.h"
+#include <uapi/ptrace.h>
 #include "kern/process-timer.h"
 #include "kern/thread.h"
 #include "kern/tty.h"
@@ -1483,6 +1484,15 @@ out:
 	/* Reports why the exec failed. */
 	if (error != 0)
 		return error;
+
+	/*
+	 * A traced process stops here, with the new image in place and not
+	 * one instruction of it run.  This is where a debugger that
+	 * started the program takes hold of it: the program it asked for
+	 * exists, and has not yet done anything.
+	 */
+	if (process->traced)
+		(void)process_trace_stop(PTRACE_STOP_EXEC, SIGTRAP);
 
 	/* Succeeded. */
 	return 0;

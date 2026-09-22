@@ -97,6 +97,14 @@ extern "C" {
 #define BUS_ADRALN	1
 #define BUS_ADRERR	2
 #define TRAP_BRKPT	1
+
+/*
+ * The thread took the one instruction it was asked to take, and the
+ * thread reached a hardware debug point.  A debugger tells these apart
+ * from a breakpoint it planted, because it did not plant these.
+ */
+#define TRAP_TRACE	2
+#define TRAP_HWBKPT	3
 #define CLD_EXITED	1
 #define CLD_KILLED	2
 #define CLD_DUMPED	3

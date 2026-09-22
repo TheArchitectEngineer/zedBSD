@@ -98,6 +98,9 @@ struct rtld_object {
 	dev_t device;
 	ino_t inode;
 	unsigned has_identity;
+
+	/* This object's place in the list a debugger reads. */
+	struct link_map map;
 	uintptr_t mapping_start[64];
 	size_t mapping_size[64];
 	unsigned mapping_count;
@@ -186,6 +189,123 @@ static size_t static_tls_alignment = 1;
 static unsigned static_tls_sealed;
 static struct __rtld_tcb *rtld_threads;
 static uint32_t next_object_generation = 1;
+
+/*
+ * What a debugger reads to find the loaded objects.
+ *
+ * A debugger stops a program it did not load, so it has no list of its
+ * own.  It finds this structure through the DT_DEBUG entry of the
+ * executable, which is filled in below, and walks the objects from it.
+ *
+ * The list is published only while r_state says it is consistent, and the
+ * loader calls the function r_brk names before and after it changes
+ * anything.  A debugger plants a breakpoint there to be told.
+ */
+__attribute__((visibility("default")))
+struct r_debug _r_debug = { 1, NULL, 0, RT_CONSISTENT, 0 };
+
+static struct link_map *debug_map_tail;
+
+/*
+ * The function a debugger stops on.  It does nothing: being called is the
+ * whole of what it says.  It is kept from being optimised away or folded
+ * with another empty function, because its address is the interface.
+ */
+__attribute__((visibility("default"), noinline))
+void
+_rtld_debug_state(void)
+{
+	__asm__ volatile("" ::: "memory");
+}
+
+/* Announces that the list is about to change, and then that it has. */
+static void
+debug_state_change(
+	int state)
+{
+	_r_debug.r_state = state;
+	_rtld_debug_state();
+}
+
+/* Adds one object to the end of the list a debugger walks. */
+static void
+debug_map_add(
+	struct rtld_object *object)
+{
+	struct link_map *map;
+
+	map = &object->map;
+	map->l_addr = (ElfW_Addr)object->base;
+	map->l_name = object->path;
+	map->l_ld = (ElfW_Dyn *)object->dynamic;
+	map->l_next = NULL;
+	map->l_prev = debug_map_tail;
+
+	/* Handles the first object, which the structure itself names. */
+	if (debug_map_tail == NULL)
+		_r_debug.r_map = map;
+	else
+		debug_map_tail->l_next = map;
+	debug_map_tail = map;
+}
+
+/*
+ * Adds every object a load brought in that is not in the list yet.  One
+ * dlopen() may bring in a whole closure of dependencies, and a debugger
+ * is told about all of them at once rather than one at a time.
+ */
+static void
+debug_map_publish(
+	void)
+{
+	unsigned index;
+	int added;
+
+	added = 0;
+
+	/* Process each remaining element. */
+	for (index = 0; index < object_count; index++) {
+		/* Handles the objects condition. */
+		if (!objects[index].active || objects[index].unloading ||
+		    objects[index].map.l_name != NULL)
+			continue;
+
+		/* Announces the change once, before the first addition. */
+		if (!added) {
+			debug_state_change(RT_ADD);
+			added = 1;
+		}
+		debug_map_add(&objects[index]);
+	}
+
+	/* Handles the addition condition. */
+	if (added)
+		debug_state_change(RT_CONSISTENT);
+}
+
+/* Removes one object from the list a debugger walks. */
+static void
+debug_map_remove(
+	struct rtld_object *object)
+{
+	struct link_map *map;
+
+	map = &object->map;
+
+	/* Handles an object that was never published. */
+	if (map->l_prev == NULL && _r_debug.r_map != map)
+		return;
+	if (map->l_prev != NULL)
+		map->l_prev->l_next = map->l_next;
+	else
+		_r_debug.r_map = map->l_next;
+	if (map->l_next != NULL)
+		map->l_next->l_prev = map->l_prev;
+	else
+		debug_map_tail = map->l_prev;
+	map->l_next = NULL;
+	map->l_prev = NULL;
+}
 
 __attribute__((visibility("default")))
 const struct __rtld_exports __rtld_exports = {
@@ -850,6 +970,7 @@ __rtld_dlopen(
 	(void)syscall6(KERN_SYS_close, (uintptr_t)fd, 0, 0, 0, 0, 0);
 	object = load_object(name, NULL);
 	relocate_object(object);
+	debug_map_publish();
 
 	/* Constructors may call dlopen recursively, so do not hold the lock. */
 	loader_unlock();
@@ -1299,6 +1420,42 @@ rtld_main(
 	if (interpreter_object->needed_count != 0)
 		rtld_fatal("interpreter must not have dependencies");
 	layout_static_tls();
+
+	/*
+	 * Publishes the loaded objects for a debugger, before anything is
+	 * relocated.
+	 *
+	 * The executable's dynamic section carries a DT_DEBUG entry, empty
+	 * as the linker wrote it; filling it in with the address of the
+	 * structure is how a debugger that stopped this process finds the
+	 * list at all.  That entry sits inside the range relocation then
+	 * seals against writing, so it is written while it still can be.
+	 * The executable comes first, which is the order a debugger
+	 * expects to read.
+	 */
+	_r_debug.r_ldbase = (ElfW_Addr)at_base;
+	_r_debug.r_brk = (ElfW_Addr)(uintptr_t)_rtld_debug_state;
+	debug_state_change(RT_ADD);
+	debug_map_add(main_object);
+
+	/* Process each remaining element. */
+	for (i = 0; i < object_count; i++) {
+		/* Handles the objects condition. */
+		if (objects[i].active && &objects[i] != main_object)
+			debug_map_add(&objects[i]);
+	}
+
+	/* Process each element required by the operation. */
+	for (i = 0; main_object->dynamic != NULL &&
+	     i < main_object->dynamic_count; i++) {
+		/* Handles the dynamic entry condition. */
+		if (main_object->dynamic[i].d_tag == DT_DEBUG) {
+			main_object->dynamic[i].d_un.d_ptr =
+			    (Elf_Addr)(uintptr_t)&_r_debug;
+			break;
+		}
+	}
+	debug_state_change(RT_CONSISTENT);
 
 	/* Process each remaining element. */
 	for (i = 0; i < object_count; i++) {
@@ -4515,6 +4672,14 @@ unload_object_locked(
 		/* Returns the computed result. */
 		return;
 	object->unloading = 1;
+
+	/*
+	 * A debugger is told before the object goes, while its name and
+	 * its mapping are still there to be read.
+	 */
+	debug_state_change(RT_DELETE);
+	debug_map_remove(object);
+	debug_state_change(RT_CONSISTENT);
 	remove_initialization_record(object);
 
 	/* Process each remaining element. */

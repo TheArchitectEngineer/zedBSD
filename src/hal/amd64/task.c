@@ -569,6 +569,13 @@ hal_task_context_switch(
 	hal_space_switch(to->space);
 	asm_write_msr(AMD64_MSR_FS_BASE, (uint64_t)to->tls);
 
+	/*
+	 * The debug registers are written only when one of the two tasks
+	 * uses them, so a system with no debugger pays nothing.
+	 */
+	if (from->debug_point_count != 0U || to->debug_point_count != 0U)
+		amd64_debug_load(to);
+
 	/* Selects the destination kernel stack for future privilege changes. */
 	if (to->sys_stack != NULL) {
 		amd64_set_tss_rsp0(
@@ -1018,4 +1025,636 @@ build_initial_stack(
 	*--stack = 0;
 	*--stack = 0;
 	task->resume_rsp = (uintptr_t)stack;
+}
+
+/*
+ * Debugging a task
+ */
+
+/*
+ * The flag bits a debugger may set.  The rest of the saved flags belong to
+ * the kernel: interrupts stay enabled, the privilege level stays at zero,
+ * and the reserved bit stays set, whatever was written.
+ */
+#define AMD64_USER_RFLAGS_MASK		0x0000000000254dd5ULL
+#define AMD64_USER_RFLAGS_FIXED		0x0000000000000202ULL
+#define AMD64_RFLAGS_TRAP		0x0000000000000100ULL
+
+/*
+ * A user address the processor will accept in the return frame.  A value
+ * outside the low canonical half faults on the way out of the kernel,
+ * which would be the kernel's fault rather than the debugger's.
+ */
+static int
+amd64_user_address_valid(
+	uint64_t value)
+{
+	/* Reports whether the address is canonical and below the hole. */
+	return (value >> 47) == 0ULL;
+}
+
+/*
+ * The frame a stopped task returns to user through, or NULL when the task
+ * has none to show.
+ */
+static struct amd64_interrupt_frame *
+task_user_frame(
+	struct amd64_task *task)
+{
+	struct amd64_interrupt_frame *frame;
+
+	/* Requires a task. */
+	if (task == NULL)
+		return NULL;
+	frame = task->active_user_frame;
+
+	/* Requires a frame that returns to ring three. */
+	if (frame == NULL || (frame->cs & 3U) != 3U)
+		return NULL;
+
+	/* Returns the user frame. */
+	return frame;
+}
+
+/*
+ * Reads the user integer registers of a task.
+ */
+int
+hal_task_get_user_gpregs(
+	hal_task_t handle,
+	struct hal_gpregs *registers)
+{
+	struct amd64_task *task;
+	const struct amd64_interrupt_frame *frame;
+
+	task = handle;
+
+	/* Requires a task with a user frame and somewhere to report. */
+	if (registers == NULL)
+		return -1;
+	frame = task_user_frame(task);
+	if (frame == NULL)
+		return -1;
+
+	registers->rax = frame->rax;
+	registers->rbx = frame->rbx;
+	registers->rcx = frame->rcx;
+	registers->rdx = frame->rdx;
+	registers->rsi = frame->rsi;
+	registers->rdi = frame->rdi;
+	registers->rbp = frame->rbp;
+	registers->rsp = frame->rsp;
+	registers->r8 = frame->r8;
+	registers->r9 = frame->r9;
+	registers->r10 = frame->r10;
+	registers->r11 = frame->r11;
+	registers->r12 = frame->r12;
+	registers->r13 = frame->r13;
+	registers->r14 = frame->r14;
+	registers->r15 = frame->r15;
+	registers->rip = frame->rip;
+	registers->rflags = frame->rflags;
+	registers->cs = frame->cs;
+	registers->ss = frame->ss;
+
+	/*
+	 * The thread pointer lives in the register while its task runs, and
+	 * is written back to the task when the task leaves the processor.
+	 */
+	if (task == running_task)
+		registers->fs_base = (uint64_t)asm_read_msr(AMD64_MSR_FS_BASE);
+	else
+		registers->fs_base = (uint64_t)task->tls;
+	registers->gs_base = 0;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Writes the user integer registers of a task.
+ */
+int
+hal_task_set_user_gpregs(
+	hal_task_t handle,
+	const struct hal_gpregs *registers)
+{
+	struct amd64_task *task;
+	struct amd64_interrupt_frame *frame;
+
+	task = handle;
+
+	/* Requires a task with a user frame and something to write. */
+	if (registers == NULL)
+		return -1;
+	frame = task_user_frame(task);
+	if (frame == NULL)
+		return -1;
+
+	/*
+	 * The instruction and stack pointers are the two the processor
+	 * itself reads on the way out, so a value it would refuse is
+	 * refused here instead of faulting in the kernel.
+	 */
+	if (!amd64_user_address_valid(registers->rip) ||
+	    !amd64_user_address_valid(registers->rsp))
+		return -1;
+
+	frame->rax = registers->rax;
+	frame->rbx = registers->rbx;
+	frame->rcx = registers->rcx;
+	frame->rdx = registers->rdx;
+	frame->rsi = registers->rsi;
+	frame->rdi = registers->rdi;
+	frame->rbp = registers->rbp;
+	frame->rsp = registers->rsp;
+	frame->r8 = registers->r8;
+	frame->r9 = registers->r9;
+	frame->r10 = registers->r10;
+	frame->r11 = registers->r11;
+	frame->r12 = registers->r12;
+	frame->r13 = registers->r13;
+	frame->r14 = registers->r14;
+	frame->r15 = registers->r15;
+	frame->rip = registers->rip;
+
+	/* The segment selectors are the kernel's and are not taken. */
+	frame->rflags = (frame->rflags & ~AMD64_USER_RFLAGS_MASK) |
+	    (registers->rflags & AMD64_USER_RFLAGS_MASK) |
+	    AMD64_USER_RFLAGS_FIXED;
+
+	/* The thread pointer follows the running task into the register. */
+	if (task == running_task)
+		asm_write_msr(AMD64_MSR_FS_BASE, registers->fs_base);
+	task->tls = (uintptr_t)registers->fs_base;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * The processor writes the x87 and vector state out together, so both of
+ * the calls below read and write parts of one saved area.  A task that is
+ * on a processor has the live registers rather than the saved ones, and
+ * is written out first.
+ */
+static void *
+task_current_fpregs(
+	struct amd64_task *task)
+{
+	void *area;
+
+	area = task_fpregs(task);
+
+	/* Brings the live registers into the saved area. */
+	if (task == running_task)
+		__asm__ volatile("fxsave64 (%0)" : : "r"(area) : "memory");
+
+	/* Returns the saved area. */
+	return area;
+}
+
+static void
+task_reload_fpregs(
+	struct amd64_task *task,
+	void *area)
+{
+	/* Returns the saved area to the live registers. */
+	if (task == running_task)
+		__asm__ volatile("fxrstor64 (%0)" : : "r"(area) : "memory");
+}
+
+/*
+ * Reads the x87 state of a task.
+ */
+int
+hal_task_get_user_fpregs(
+	hal_task_t handle,
+	struct hal_fpregs *registers)
+{
+	struct amd64_task *task;
+	const uint8_t *area;
+
+	task = handle;
+
+	/* Requires a task and somewhere to report. */
+	if (task == NULL || registers == NULL)
+		return -1;
+	area = task_current_fpregs(task);
+
+	registers->control = (uint16_t)(area[0] | ((uint16_t)area[1] << 8));
+	registers->status = (uint16_t)(area[2] | ((uint16_t)area[3] << 8));
+	registers->tag = (uint16_t)area[4];
+	registers->opcode = (uint16_t)(area[6] | ((uint16_t)area[7] << 8));
+	hal_memcpy(&registers->instruction_pointer, area + 8, 8U);
+	hal_memcpy(&registers->data_pointer, area + 16, 8U);
+	hal_memcpy(registers->stack, area + 32, sizeof(registers->stack));
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Writes the x87 state of a task.
+ */
+int
+hal_task_set_user_fpregs(
+	hal_task_t handle,
+	const struct hal_fpregs *registers)
+{
+	struct amd64_task *task;
+	uint8_t *area;
+
+	task = handle;
+
+	/* Requires a task and something to write. */
+	if (task == NULL || registers == NULL)
+		return -1;
+	area = task_current_fpregs(task);
+
+	area[0] = (uint8_t)(registers->control & 0xffU);
+	area[1] = (uint8_t)((registers->control >> 8) & 0xffU);
+	area[2] = (uint8_t)(registers->status & 0xffU);
+	area[3] = (uint8_t)((registers->status >> 8) & 0xffU);
+	area[4] = (uint8_t)(registers->tag & 0xffU);
+	area[6] = (uint8_t)(registers->opcode & 0xffU);
+	area[7] = (uint8_t)((registers->opcode >> 8) & 0xffU);
+	hal_memcpy(area + 8, &registers->instruction_pointer, 8U);
+	hal_memcpy(area + 16, &registers->data_pointer, 8U);
+	hal_memcpy(area + 32, registers->stack, sizeof(registers->stack));
+	task_reload_fpregs(task, area);
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Reads the vector state of a task.
+ */
+int
+hal_task_get_user_vregs(
+	hal_task_t handle,
+	struct hal_vregs *registers)
+{
+	struct amd64_task *task;
+	const uint8_t *area;
+
+	task = handle;
+
+	/* Requires a task and somewhere to report. */
+	if (task == NULL || registers == NULL)
+		return -1;
+	area = task_current_fpregs(task);
+
+	hal_memcpy(&registers->control, area + 24, 4U);
+	hal_memcpy(&registers->control_mask, area + 28, 4U);
+	hal_memcpy(registers->xmm, area + 160, sizeof(registers->xmm));
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Writes the vector state of a task.
+ */
+int
+hal_task_set_user_vregs(
+	hal_task_t handle,
+	const struct hal_vregs *registers)
+{
+	struct amd64_task *task;
+	uint8_t *area;
+	uint32_t mask;
+	uint32_t control;
+
+	task = handle;
+
+	/* Requires a task and something to write. */
+	if (task == NULL || registers == NULL)
+		return -1;
+	area = task_current_fpregs(task);
+
+	/*
+	 * A control word with a bit the processor does not implement makes
+	 * the reload fault, so only the bits this processor published as
+	 * writable are taken.
+	 */
+	hal_memcpy(&mask, area + 28, 4U);
+	if (mask == 0U)
+		mask = 0x0000ffbfU;
+	control = registers->control & mask;
+	hal_memcpy(area + 24, &control, 4U);
+	hal_memcpy(area + 160, registers->xmm, sizeof(registers->xmm));
+	task_reload_fpregs(task, area);
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Asks that a task execute one instruction and then trap.
+ */
+int
+hal_task_set_single_step(
+	hal_task_t handle,
+	int enable)
+{
+	struct amd64_interrupt_frame *frame;
+
+	/* Requires a task with a user frame. */
+	frame = task_user_frame(handle);
+	if (frame == NULL)
+		return -1;
+
+	/* Records the request in the flags the task returns with. */
+	if (enable)
+		frame->rflags |= AMD64_RFLAGS_TRAP;
+	else
+		frame->rflags &= ~AMD64_RFLAGS_TRAP;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Reports whether a task was asked to execute one instruction.
+ */
+int
+hal_task_get_single_step(
+	hal_task_t handle,
+	int *enable)
+{
+	const struct amd64_interrupt_frame *frame;
+
+	/* Requires a task with a user frame and somewhere to report. */
+	if (enable == NULL)
+		return -1;
+	frame = task_user_frame(handle);
+	if (frame == NULL)
+		return -1;
+	*enable = (frame->rflags & AMD64_RFLAGS_TRAP) != 0ULL ? 1 : 0;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Hardware debug points
+ *
+ * Four registers hold an address each, and one control word says for each
+ * of them what to watch for and how many bytes.  The same four serve
+ * instruction and data points, which is why a set is accepted or refused
+ * as a whole.
+ */
+
+/* Control word: the local enable of one point, and its field. */
+#define AMD64_DR7_LOCAL(index)		(1ULL << (2U * (index)))
+#define AMD64_DR7_FIELD(index)		(16U + 4U * (index))
+#define AMD64_DR7_RESERVED		0x0000000000000400ULL
+#define AMD64_DR7_EXACT			0x0000000000000300ULL
+
+/* What to watch for, as the control word spells it. */
+#define AMD64_DR7_RW_EXECUTE		0ULL
+#define AMD64_DR7_RW_WRITE		1ULL
+#define AMD64_DR7_RW_ACCESS		3ULL
+
+/* Status word: one bit per point, and the one-instruction bit. */
+#define AMD64_DR6_POINT(index)		(1ULL << (index))
+#define AMD64_DR6_STEP			0x0000000000004000ULL
+#define AMD64_DR6_WRITABLE		0x000000000000e00fULL
+
+static uint64_t
+read_debug_status(
+	void)
+{
+	uint64_t value;
+
+	__asm__ volatile("movq %%dr6, %0" : "=r"(value));
+
+	/* Returns the status word. */
+	return value;
+}
+
+static void
+write_debug_status(
+	uint64_t value)
+{
+	__asm__ volatile("movq %0, %%dr6" : : "r"(value));
+}
+
+/*
+ * Writes a task's debug points into the processor.
+ */
+void
+amd64_debug_load(
+	struct amd64_task *task)
+{
+	uintptr_t address[HAL_DEBUG_POINT_MAX];
+	unsigned index;
+
+	/* Disables every point before the addresses move under them. */
+	__asm__ volatile("movq %0, %%dr7" : : "r"(0ULL));
+
+	/* Leaves the registers disabled for a task that uses none. */
+	if (task == NULL || task->debug_point_count == 0U)
+		return;
+
+	/* Process each element required by the operation. */
+	for (index = 0; index < HAL_DEBUG_POINT_MAX; index++) {
+		address[index] = index < task->debug_point_count
+		    ? task->debug_points[index].address : 0;
+	}
+	__asm__ volatile("movq %0, %%dr0" : : "r"(address[0]));
+	__asm__ volatile("movq %0, %%dr1" : : "r"(address[1]));
+	__asm__ volatile("movq %0, %%dr2" : : "r"(address[2]));
+	__asm__ volatile("movq %0, %%dr3" : : "r"(address[3]));
+
+	/* Publishes the points by enabling them together. */
+	__asm__ volatile("movq %0, %%dr7" : : "r"(task->debug_control));
+}
+
+/*
+ * Reports which of the running task's debug points the processor stopped
+ * on, and clears the status so that the next stop is unambiguous.
+ */
+int
+amd64_debug_hit(
+	uintptr_t *address,
+	int *mode)
+{
+	uint64_t status;
+	unsigned index;
+
+	status = read_debug_status();
+	write_debug_status(status & ~AMD64_DR6_WRITABLE);
+
+	/* Requires a running task to attribute the stop to. */
+	if (running_task == NULL)
+		return 0;
+
+	/* Process each element required by the operation. */
+	for (index = 0; index < running_task->debug_point_count; index++) {
+		/* Handles the status condition. */
+		if ((status & AMD64_DR6_POINT(index)) == 0ULL)
+			continue;
+		if (address != NULL)
+			*address = running_task->debug_points[index].address;
+
+		/* Reports the kind the point was watching for. */
+		if (mode != NULL) {
+			switch (running_task->debug_points[index].kind) {
+			case HAL_DEBUG_KIND_EXECUTE:
+				*mode = HAL_TRAP_MODE_EXEC;
+				break;
+			case HAL_DEBUG_KIND_WRITE:
+				*mode = HAL_TRAP_MODE_WRITE;
+				break;
+			default:
+				*mode = HAL_TRAP_MODE_READ;
+				break;
+			}
+		}
+
+		/* Reports that a point matched. */
+		return 1;
+	}
+
+	/* Reports that no point matched; the stop was the step. */
+	return 0;
+}
+
+/*
+ * Builds the control word one point contributes, or reports that this
+ * processor cannot express the point.
+ */
+static int
+debug_point_field(
+	const struct hal_debug_point *point,
+	unsigned index,
+	uint64_t *field)
+{
+	uint64_t watch;
+	uint64_t length;
+
+	/* Rejects a kind this processor does not implement. */
+	switch (point->kind) {
+	case HAL_DEBUG_KIND_EXECUTE:
+		watch = AMD64_DR7_RW_EXECUTE;
+		break;
+	case HAL_DEBUG_KIND_WRITE:
+		watch = AMD64_DR7_RW_WRITE;
+		break;
+	case HAL_DEBUG_KIND_ACCESS:
+		watch = AMD64_DR7_RW_ACCESS;
+		break;
+	default:
+		return -1;
+	}
+
+	/*
+	 * An instruction point covers the one instruction at the address.
+	 * A data point covers one, two, four or eight bytes, and the
+	 * address is a multiple of that length.
+	 */
+	if (watch == AMD64_DR7_RW_EXECUTE) {
+		if (point->length != 1U)
+			return -1;
+		length = 0ULL;
+	} else {
+		switch (point->length) {
+		case 1U: length = 0ULL; break;
+		case 2U: length = 1ULL; break;
+		case 8U: length = 2ULL; break;
+		case 4U: length = 3ULL; break;
+		default: return -1;
+		}
+		if ((point->address & (uintptr_t)(point->length - 1U)) != 0)
+			return -1;
+	}
+	*field = AMD64_DR7_LOCAL(index) |
+	    ((watch | (length << 2)) << AMD64_DR7_FIELD(index));
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Gives a task the complete set of debug points it is to run with.
+ */
+int
+hal_task_set_debug_points(
+	hal_task_t handle,
+	const struct hal_debug_point *points,
+	unsigned count)
+{
+	struct amd64_task *task;
+	uint64_t control;
+	uint64_t field;
+	unsigned index;
+
+	task = handle;
+
+	/* Requires a task, and a set this processor has registers for. */
+	if (task == NULL || count > HAL_DEBUG_POINT_MAX)
+		return -1;
+	if (count != 0U && points == NULL)
+		return -1;
+
+	/* Builds the whole control word before any of it is published. */
+	control = count != 0U ? (AMD64_DR7_RESERVED | AMD64_DR7_EXACT) : 0ULL;
+
+	/* Process each element required by the operation. */
+	for (index = 0; index < count; index++) {
+		/* Handles a point this processor cannot express. */
+		if (debug_point_field(&points[index], index, &field) != 0)
+			return -1;
+		control |= field;
+	}
+
+	/* Records the accepted set. */
+	for (index = 0; index < count; index++)
+		task->debug_points[index] = points[index];
+	task->debug_point_count = count;
+	task->debug_control = control;
+
+	/* A running task takes them immediately. */
+	if (task == running_task)
+		amd64_debug_load(task);
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Reports the debug points a task runs with.
+ */
+int
+hal_task_get_debug_points(
+	hal_task_t handle,
+	struct hal_debug_point *points,
+	unsigned capacity,
+	unsigned *count)
+{
+	struct amd64_task *task;
+	unsigned index;
+
+	task = handle;
+
+	/* Requires a task and somewhere to report the number. */
+	if (task == NULL || count == NULL)
+		return -1;
+
+	/* Requires room for every point the task has. */
+	if (task->debug_point_count > capacity)
+		return -1;
+	if (task->debug_point_count != 0U && points == NULL)
+		return -1;
+
+	/* Process each element required by the operation. */
+	for (index = 0; index < task->debug_point_count; index++)
+		points[index] = task->debug_points[index];
+	*count = task->debug_point_count;
+
+	/* Succeeded. */
+	return 0;
 }

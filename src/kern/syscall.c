@@ -293,6 +293,7 @@ static intptr_t sys_execve_call(const uintptr_t args[6]);
 static intptr_t sys_fexecve_call(const uintptr_t args[6]);
 static SYSCALL_EXT intptr_t sys_waitpid_call(const uintptr_t args[6]);
 static SYSCALL_EXT intptr_t sys_wait4_call(const uintptr_t args[6]);
+static SYSCALL_EXT intptr_t sys_ptrace_call(const uintptr_t args[6]);
 static SYSCALL_EXT intptr_t sys_waitid_call(const uintptr_t args[6]);
 static SYSCALL_EXT intptr_t sys_resource_limit_call(const uintptr_t args[6], int setting);
 static intptr_t sys_process_identity_call(uint32_t number, const uintptr_t args[6]);
@@ -8546,6 +8547,27 @@ sys_waitpid_call(
 	return result;
 }
 
+/* Handles ptrace(2). */
+static SYSCALL_EXT intptr_t
+sys_ptrace_call(
+	const uintptr_t args[6])
+{
+	intptr_t result;
+	int error;
+
+	result = 0;
+	error = kern_ptrace((int)args[0], (pid_t)args[1], args[2],
+	    (int)args[3], &result);
+
+	/* Reports the failure. */
+	if (error != 0)
+		return -error;
+
+	/* Reports what the request returned. */
+	return result;
+}
+
+
 /*
  * Handles wait4(2).
  *
@@ -9158,6 +9180,9 @@ syscall_dispatch_body(
 		break;
 	case KERN_SYS_wait4:
 		result = sys_wait4_call(args);
+		break;
+	case KERN_SYS_ptrace:
+		result = sys_ptrace_call(args);
 		break;
 	case KERN_SYS_waitid:
 		result = sys_waitid_call(args);

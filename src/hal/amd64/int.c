@@ -77,6 +77,15 @@ prekern_amd64_int_init(
 	for (index = 0; index < 32; index++)
 		set_gate(index, 0, amd64_fault_table[index]);
 
+	/*
+	 * The breakpoint trap is the one exception a user program raises on
+	 * purpose: a debugger plants the one-byte form of it in the text it
+	 * is stopping.  Reaching it from ring three needs a gate that ring
+	 * three may use, and the gate grants nothing else -- the trap ends
+	 * in the same handler, which reports it to the process as its own.
+	 */
+	set_gate(3, 3, amd64_fault_table[3]);
+
 	/* Selects the dedicated double-fault stack. */
 	idt[8].ist = 1;
 
@@ -117,6 +126,15 @@ trap_cause(
 		return HAL_TRAP_CAUSE_ILLEGAL_INSN;
 	if (vector == 3)
 		return HAL_TRAP_CAUSE_BREAKPOINT;
+
+	/*
+	 * The debug exception is raised both by a task that was asked to
+	 * take one instruction and by a hardware debug point; which of the
+	 * two it was is in the debug status register, so the caller reads
+	 * that rather than the vector.
+	 */
+	if (vector == INT_DEBUG)
+		return HAL_TRAP_CAUSE_SINGLE_STEP;
 	if (vector == 17)
 		return HAL_TRAP_CAUSE_ALIGNMENT;
 	if (vector == 18)
@@ -287,6 +305,25 @@ handle_fault(
 
 	/* Maps the architectural vector onto the generic trap causes. */
 	cause = trap_cause(vector);
+
+	/*
+	 * The debug exception is one vector for two events.  The status
+	 * register says which, and reading it also clears it, so it is read
+	 * exactly once here and what it said is carried onward as an
+	 * ordinary cause, mode and address.
+	 */
+	if (vector == INT_DEBUG) {
+		uintptr_t point_address;
+		int point_mode;
+
+		point_address = 0;
+		point_mode = HAL_TRAP_MODE_NONE;
+		if (amd64_debug_hit(&point_address, &point_mode)) {
+			cause = HAL_TRAP_CAUSE_DEBUG_POINT;
+			mode = point_mode;
+			address = point_address;
+		}
+	}
 
 	/* Gives a userspace fault to the kernel's user-fault entry. */
 	if ((frame->cs & 3U) == 3U) {

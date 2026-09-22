@@ -54,6 +54,7 @@
 #include <sys/times.h>
 #include <sys/uio.h>
 #include <sys/utsname.h>
+#include <sys/ptrace.h>
 #include <sys/wait.h>
 #include <termios.h>
 #include <time.h>
@@ -2848,6 +2849,30 @@ waitpid(
 	result = (pid_t)call(KERN_SYS_waitpid, (uintptr_t)pid,
 			     (uintptr_t)status, (uintptr_t)options, 0, 0, 0);
 	cancel_point();
+
+	/* Returns the computed result. */
+	return result;
+}
+
+/*
+ * Implements the ptrace operation.
+ *
+ * What the address and the data mean depends on the request.  A request
+ * that reports a word returns it, so a caller that cannot rule out the
+ * word being -1 clears errno before the call and reads it after.
+ */
+int
+ptrace(
+	int request,
+	pid_t pid,
+	void *addr,
+	int data)
+{
+	int result;
+
+	result = (int)call(KERN_SYS_ptrace, (uintptr_t)request,
+			   (uintptr_t)pid, (uintptr_t)addr,
+			   (uintptr_t)data, 0, 0);
 
 	/* Returns the computed result. */
 	return result;

@@ -470,3 +470,20 @@ put_unsigned(
 	while (length > 0)
 		hal_putc(digits[--length]);
 }
+
+/*
+ * Makes a range of memory visible to instruction fetch.
+ *
+ * This processor keeps its instruction cache coherent with stores on its
+ * own, so what a debugger wrote into the text it is stopping is already
+ * what will be fetched.  The call exists because the machines that need
+ * to be told are the reason the caller asks at all.
+ */
+void
+hal_icache_invalidate_range(
+	uintptr_t address,
+	size_t size)
+{
+	(void)address;
+	(void)size;
+}

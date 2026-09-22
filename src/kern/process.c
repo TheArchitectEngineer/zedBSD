@@ -19,6 +19,7 @@
 #include "kern/process.h"
 #ifndef KERN_PROCESS_TEST
 #include "kern/process-timer.h"
+#include <uapi/ptrace.h>
 #else
 /*
  * Targeted host lifetime tests link only the tree/interval-timer sections.
@@ -3012,4 +3013,230 @@ process_exit_final(
 	/* A later thread just exits itself. */
 	curthread->exit_status = thread_status;
 	sched_exit_current();
+}
+
+/*
+ * Tracing
+ *
+ * The stop machinery above already reports a stop to the parent and lets
+ * the parent wait for it.  Tracing reuses all of that by putting the
+ * tracer in the parent's place while it is attached, so that a stop needs
+ * no second path to travel and wait() needs no second rule.
+ */
+
+/* Moves a process from one parent's child list to another's. */
+static void
+trace_reparent_locked(
+	struct process *process,
+	struct process *parent)
+{
+	struct process **link;
+
+	/* Unlinks the process from the list it is on. */
+	if (process->parent != NULL) {
+		link = &process->parent->children;
+		while (*link != NULL && *link != process)
+			link = &(*link)->sibling;
+		if (*link == process)
+			*link = process->sibling;
+	}
+
+	/* Links it into the new parent's list. */
+	process->parent = parent;
+	process->sibling = parent->children;
+	parent->children = process;
+}
+
+/*
+ * Asks that this process be traced by its own parent.
+ */
+int
+process_trace_self(
+	void)
+{
+	struct process *process;
+	unsigned long tree_irq;
+	int error;
+
+	process = curthread != NULL ? curthread->proc : NULL;
+
+	/* Rejects a caller with no process, and the kernel process. */
+	if (process == NULL || process == &process0)
+		return EINVAL;
+
+	tree_irq = spin_lock_irqsave(&process_tree_lock);
+
+	/* Rejects a process that is already traced or has no parent. */
+	if (process->traced || process->parent == NULL ||
+	    process->parent == &process0) {
+		error = EBUSY;
+	} else {
+		/*
+		 * The parent is already where stops are reported, so
+		 * nothing moves; only the displaced parent is recorded, to
+		 * keep detach the same in both directions.
+		 */
+		process->traced = 1;
+		process->trace_parent = process->parent;
+		process->trace_signal = -1;
+		process->trace_stop_kind = PTRACE_STOP_SIGNAL;
+		process->trace_thread = 0;
+		error = 0;
+	}
+
+	spin_unlock_irqrestore(&process_tree_lock, tree_irq);
+
+	/* Reports the outcome. */
+	return error;
+}
+
+/*
+ * Attaches a tracer to a process.
+ */
+int
+process_trace_attach(
+	struct process *process,
+	struct process *tracer)
+{
+	unsigned long tree_irq;
+	int error;
+
+	/* Rejects a missing process, the kernel process, and tracing self. */
+	if (process == NULL || tracer == NULL ||
+	    process == &process0 || process == tracer)
+		return EINVAL;
+
+	tree_irq = spin_lock_irqsave(&process_tree_lock);
+
+	/* Rejects a process that is already traced, or tracing the tracer. */
+	if (process->traced)
+		error = EBUSY;
+	else if (tracer->traced && tracer->trace_parent == process)
+		error = EINVAL;
+	else if (process->parent == NULL)
+		error = ESRCH;
+	else {
+		process->traced = 1;
+		process->trace_parent = process->parent;
+		process->trace_signal = -1;
+		process->trace_stop_kind = PTRACE_STOP_SIGNAL;
+		process->trace_thread = 0;
+		trace_reparent_locked(process, tracer);
+		error = 0;
+	}
+
+	spin_unlock_irqrestore(&process_tree_lock, tree_irq);
+
+	/* Reports the outcome. */
+	return error;
+}
+
+/*
+ * Detaches a tracer from a process.
+ */
+int
+process_trace_detach(
+	struct process *process,
+	struct process *tracer)
+{
+	struct process *parent;
+	unsigned long tree_irq;
+	int error;
+
+	/* Rejects a missing process. */
+	if (process == NULL || tracer == NULL)
+		return EINVAL;
+
+	tree_irq = spin_lock_irqsave(&process_tree_lock);
+
+	/* Rejects a process this caller is not tracing. */
+	if (!process->traced || process->parent != tracer) {
+		error = ESRCH;
+	} else {
+		parent = process->trace_parent;
+		process->traced = 0;
+		process->trace_stopped = 0;
+		process->trace_signal = -1;
+		process->trace_parent = NULL;
+
+		/* Puts the displaced parent back. */
+		if (parent != NULL && parent != tracer)
+			trace_reparent_locked(process, parent);
+		error = 0;
+	}
+
+	spin_unlock_irqrestore(&process_tree_lock, tree_irq);
+
+	/* Reports the outcome. */
+	return error;
+}
+
+/*
+ * Tests whether one process is tracing another.
+ */
+int
+process_trace_is_tracer(
+	const struct process *process,
+	const struct process *tracer)
+{
+	unsigned long tree_irq;
+	int result;
+
+	/* Reports no relation without both processes. */
+	if (process == NULL || tracer == NULL)
+		return 0;
+
+	tree_irq = spin_lock_irqsave(&process_tree_lock);
+	result = process->traced && process->parent == tracer;
+	spin_unlock_irqrestore(&process_tree_lock, tree_irq);
+
+	/* Reports the relation. */
+	return result;
+}
+
+/*
+ * Stops the calling process for its tracer.
+ */
+int
+process_trace_stop(
+	int kind,
+	int signo)
+{
+	struct process *process;
+	struct thread *thread;
+	unsigned long irq;
+	int delivered;
+
+	thread = curthread;
+	process = thread != NULL ? thread->proc : NULL;
+
+	/* Reports that nothing happened for a process nobody is tracing. */
+	if (process == NULL || !process->traced)
+		return -1;
+
+	/* Records why the stop happened, for the tracer to ask about. */
+	irq = spin_lock_irqsave(&process->lock);
+	process->trace_stop_kind = kind;
+	process->trace_thread = thread->tid;
+	process->trace_signal = -1;
+	process->trace_stopped = 1;
+	spin_unlock_irqrestore(&process->lock, irq);
+
+	/*
+	 * The stop is the ordinary one, so the tracer sees it through the
+	 * same wait() every parent uses.  The signal it carries is the one
+	 * that caused the stop, which is what a debugger expects to read
+	 * out of the status.
+	 */
+	process_stop_current(signo);
+
+	/* Takes what the tracer said to deliver on the way out. */
+	irq = spin_lock_irqsave(&process->lock);
+	delivered = process->trace_signal;
+	process->trace_signal = -1;
+	process->trace_stopped = 0;
+	spin_unlock_irqrestore(&process->lock, irq);
+
+	/* Reports the signal to deliver, or zero for none. */
+	return delivered < 0 ? 0 : delivered;
 }

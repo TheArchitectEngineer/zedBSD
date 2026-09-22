@@ -114,4 +114,75 @@ _Static_assert(
 	"amd64 restorer context offset");
 #endif
 
+
+/*
+ * Debugging
+ */
+
+#if !defined(__ASSEMBLER__) && !defined(_ASM_SRC_)
+/*
+ * The user integer registers of a task.  Segment selectors other than the
+ * two the processor saves are not part of a task's user state here, and
+ * the general-purpose segment base is the one the C library calls the
+ * thread pointer.
+ */
+struct hal_gpregs {
+	uint64_t rax, rbx, rcx, rdx;
+	uint64_t rsi, rdi, rbp, rsp;
+	uint64_t r8, r9, r10, r11;
+	uint64_t r12, r13, r14, r15;
+	uint64_t rip, rflags;
+	uint64_t cs, ss;
+	uint64_t fs_base;
+	uint64_t gs_base;	/* reserved; user code here has no gs base */
+};
+
+/*
+ * The x87 state.  Each of the eight registers is ten bytes wide and is
+ * held in sixteen, which is how the processor writes them out.
+ */
+struct hal_fpregs {
+	uint16_t control;
+	uint16_t status;
+	uint16_t tag;
+	uint16_t opcode;
+	uint64_t instruction_pointer;
+	uint64_t data_pointer;
+	uint8_t stack[8][16];
+};
+
+/*
+ * The vector state.
+ */
+struct hal_vregs {
+	uint32_t control;	/* mxcsr */
+	uint32_t control_mask;	/* mxcsr_mask */
+	uint8_t xmm[16][16];
+};
+#endif
+
+/*
+ * One instruction at a time is a property of the saved flags, so every
+ * task can be asked for it.
+ */
+#define HAL_DEBUG_HAS_SINGLE_STEP	1
+
+/*
+ * Four debug registers, shared between instruction and data points: a set
+ * of five never fits, whichever kinds it asks for.  A data point covers
+ * one, two, four or eight bytes from an address that is a multiple of its
+ * length.
+ */
+#define HAL_DEBUG_POINT_MAX		4
+#define HAL_DEBUG_LENGTH_MAX		8
+
+/*
+ * The processor distinguishes an instruction point, a store, and a load
+ * or store together.  It has no way to watch for a load alone.
+ */
+#define HAL_DEBUG_KIND_EXECUTE_OK	1
+#define HAL_DEBUG_KIND_WRITE_OK		1
+#define HAL_DEBUG_KIND_READ_OK		0
+#define HAL_DEBUG_KIND_ACCESS_OK	1
+
 #endif

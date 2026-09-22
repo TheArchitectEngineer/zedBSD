@@ -138,6 +138,23 @@ struct process {
 	char command[64];
 	/* The title exec gave, which setproctitle(NULL) restores. */
 	char command_initial[64];
+
+	/*
+	 * Tracing.
+	 *
+	 * A traced process reports its stops to whoever is tracing it, and
+	 * the machinery that reports a stop already reports it to the
+	 * parent.  So a tracer takes the parent's place for as long as it
+	 * is attached, and the parent it displaced is kept here and put
+	 * back when it detaches.  trace_signal is what the tracer said to
+	 * deliver when it let the process go, or -1 for nothing.
+	 */
+	unsigned traced;
+	unsigned trace_stopped;
+	struct process *trace_parent;
+	int trace_stop_kind;
+	int trace_signal;
+	tid_t trace_thread;
 };
 
 extern struct process process0;
@@ -349,6 +366,49 @@ process_stop_current(
 int
 process_stop_requested(
 	const struct thread *thread);
+
+/*
+ * Tracing.  A process asks to be traced by its own parent; a tracer
+ * attaches to another process and detaches from it again.
+ */
+int
+process_trace_self(void);
+
+int
+process_trace_attach(
+	struct process *process,
+	struct process *tracer);
+
+int
+process_trace_detach(
+	struct process *process,
+	struct process *tracer);
+
+int
+process_trace_is_tracer(
+	const struct process *process,
+	const struct process *tracer);
+
+/*
+ * Stops the calling process for its tracer and reports why.  Returns the
+ * signal the tracer asked to have delivered, which is zero when it asked
+ * for none, or -1 when the process is not traced and nothing happened.
+ */
+int
+process_trace_stop(
+	int kind,
+	int signo);
+
+/*
+ * Handles ptrace(2) on behalf of the system call layer.
+ */
+int
+kern_ptrace(
+	int request,
+	pid_t pid,
+	uintptr_t address,
+	int data,
+	intptr_t *result);
 
 int
 process_continue(

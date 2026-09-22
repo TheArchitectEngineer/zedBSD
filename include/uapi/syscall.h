@@ -188,6 +188,7 @@ enum syscall_number {
 	 * cannot be asked afterwards because by then the child is gone.
 	 */
 	KERN_SYS_wait4 = 167,
+	KERN_SYS_ptrace = 168,
 };
 
 #endif

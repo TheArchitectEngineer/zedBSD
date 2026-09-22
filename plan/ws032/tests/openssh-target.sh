@@ -13,10 +13,17 @@
 set -eu
 
 root=$(cd "$(dirname "$0")/../../.." && pwd)
-image=${1:-$root/build/amd64/hdd-image.img}
 
-rm -f "$root/build/data.img"
-make -C "$root" disk-image >/dev/null
+# A caller that names an image has already prepared it and owns it, which is
+# what lets several of these tests run at once against separate copies of one
+# build.  Only the default image is remade here.
+if test $# -ge 1; then
+	image=$1
+else
+	image=$root/build/amd64/hdd-image.img
+	rm -f "$root/build/data.img"
+	make -C "$root" disk-image >/dev/null
+fi
 
 exec python3 "$root/plan/ws032/tests/run-target-console.py" \
 	--image "$image" --timeout 340 \

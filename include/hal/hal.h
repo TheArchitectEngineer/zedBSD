@@ -863,6 +863,122 @@ hal_task_transfer(
 
 
 /*
+ * The register sets belong to the architecture, which defines them in its
+ * own header.  The tags are named here so that an architecture which has
+ * not defined them yet still agrees with these declarations.
+ */
+struct hal_gpregs;
+struct hal_fpregs;
+struct hal_vregs;
+
+/*
+ * Debugging a task
+ *
+ * The registers of a task that is not running are read and written through
+ * these.  The layout of each set belongs to the architecture, which is why
+ * the structures are declared in its own header; a caller that has to name
+ * a register copies the set into a form of its own rather than passing this
+ * one outward.
+ */
+int
+hal_task_get_user_gpregs(
+	hal_task_t task,
+	struct hal_gpregs *registers);
+
+int
+hal_task_set_user_gpregs(
+	hal_task_t task,
+	const struct hal_gpregs *registers);
+
+int
+hal_task_get_user_fpregs(
+	hal_task_t task,
+	struct hal_fpregs *registers);
+
+int
+hal_task_set_user_fpregs(
+	hal_task_t task,
+	const struct hal_fpregs *registers);
+
+int
+hal_task_get_user_vregs(
+	hal_task_t task,
+	struct hal_vregs *registers);
+
+int
+hal_task_set_user_vregs(
+	hal_task_t task,
+	const struct hal_vregs *registers);
+
+/*
+ * Ask that a task execute one instruction and then trap, reported as
+ * HAL_TRAP_CAUSE_SINGLE_STEP.  This is a property of the task rather than
+ * of the call that resumes it, because a debugger steps one thread while
+ * the others run.  An architecture with no step facility of its own
+ * arranges the same observable behaviour by other means: where the next
+ * instruction ends is something only the architecture knows.
+ */
+int
+hal_task_set_single_step(
+	hal_task_t task,
+	int enable);
+
+int
+hal_task_get_single_step(
+	hal_task_t task,
+	int *enable);
+
+/*
+ * What a hardware debug point is watching for.
+ */
+enum hal_debug_kind {
+	HAL_DEBUG_KIND_EXECUTE,	/* the instruction at the address */
+	HAL_DEBUG_KIND_WRITE,	/* a store into the range */
+	HAL_DEBUG_KIND_READ,	/* a load from the range */
+	HAL_DEBUG_KIND_ACCESS	/* either a load or a store */
+};
+
+/*
+ * One hardware debug point.  A length of one is what an execute point
+ * uses; a data point covers length bytes from the address.
+ */
+struct hal_debug_point {
+	uintptr_t address;
+	unsigned length;
+	unsigned kind;
+};
+
+/*
+ * The complete set of hardware debug points the task is to run with.
+ *
+ * The whole set is given at once, and replaces whatever the task had,
+ * because architectures divide their debug registers differently: one
+ * shares four registers between instruction and data points, another
+ * keeps separate banks for the two.  Expressing that in the interface
+ * would make the interface wrong for the other; instead the architecture
+ * is handed the set and answers whether it holds.
+ *
+ * What a caller may ask for at all is settled before the call, by the
+ * HAL_DEBUG_ macros the architecture publishes: how many points there
+ * can be, how long a data point may be, and which kinds exist.  A
+ * failure here therefore means the particular combination does not fit,
+ * which is the one thing those macros cannot say in advance.
+ */
+int
+hal_task_set_debug_points(
+	hal_task_t task,
+	const struct hal_debug_point *points,
+	unsigned count);
+
+int
+hal_task_get_debug_points(
+	hal_task_t task,
+	struct hal_debug_point *points,
+	unsigned capacity,
+	unsigned *count);
+
+
+/*
  * Synchronization
  */
 
@@ -1096,6 +1212,20 @@ enum hal_trap_cause {
 	HAL_TRAP_CAUSE_MACHINE_CHECK,
 	HAL_TRAP_CAUSE_ARITHMETIC,
 	HAL_TRAP_CAUSE_PROTECTION,
+
+	/*
+	 * A task that was asked to take one instruction has taken it.
+	 */
+	HAL_TRAP_CAUSE_SINGLE_STEP,
+
+	/*
+	 * A hardware debug point matched.  The trap mode says whether it
+	 * matched an instruction, a load or a store, and the address is the
+	 * one that matched; which register held it is the architecture's
+	 * own business and is not reported.
+	 */
+	HAL_TRAP_CAUSE_DEBUG_POINT,
+
 	HAL_TRAP_CAUSE_OTHER
 };
 

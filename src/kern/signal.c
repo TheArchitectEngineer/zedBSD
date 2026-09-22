@@ -20,6 +20,7 @@
 #include "kern/klog.h"
 #include "kern/cred.h"
 #include "kern/process.h"
+#include <uapi/ptrace.h>
 #include "kern/process-timer.h"
 #include "kern/sched.h"
 #include "kern/thread.h"
@@ -779,6 +780,27 @@ retry:
 	spin_unlock_irqrestore(&process->lock, irq);
 
 	signal_timer_complete_one(process, &selected_info);
+
+	/*
+	 * A traced process stops here, before its own disposition is
+	 * consulted: what a debugger wants to see is every signal the
+	 * process was about to take, including the ones it ignores.  The
+	 * tracer decides what is delivered, and may decide nothing is.
+	 * SIGKILL is not offered, because nothing may refuse it.
+	 */
+	if (signo != SIGKILL && process->traced) {
+		int traced_signo;
+
+		traced_signo = process_trace_stop(PTRACE_STOP_SIGNAL, signo);
+		if (traced_signo >= 0) {
+			if (traced_signo == 0)
+				goto retry;
+			signo = traced_signo;
+			irq = spin_lock_irqsave(&process->lock);
+			action = process->signal_actions[signo];
+			spin_unlock_irqrestore(&process->lock, irq);
+		}
+	}
 
 	/* An ignored signal is dropped and the next one considered. */
 	if (action.handler == (uintptr_t)SIG_IGN &&

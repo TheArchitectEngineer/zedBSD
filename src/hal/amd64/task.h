@@ -35,6 +35,15 @@ struct amd64_task {
 	uint8_t signal_fpregs[HAL_SIGNAL_NEST_MAX][512 + 15];
 	uint32_t signal_token[HAL_SIGNAL_NEST_MAX];
 	unsigned signal_depth;
+
+	/*
+	 * The hardware debug points this task runs with, and the control
+	 * word they add up to.  A task with none never has the debug
+	 * registers written on its behalf.
+	 */
+	struct hal_debug_point debug_points[HAL_DEBUG_POINT_MAX];
+	unsigned debug_point_count;
+	uint64_t debug_control;
 };
 
 void asm_task_dispatch(uintptr_t *save, const uintptr_t *load);
@@ -45,6 +54,8 @@ void amd64_task_returned(void) __attribute__((noreturn));
 void amd64_task_enter_user_frame(void *frame);
 void amd64_task_leave_user_frame(void);
 struct amd64_task *amd64_task_init_cpu(int run_selftest);
+void amd64_debug_load(struct amd64_task *task);
+int amd64_debug_hit(uintptr_t *address, int *mode);
 void amd64_xmm_load(const void *value);
 void amd64_xmm_store(void *value);
 

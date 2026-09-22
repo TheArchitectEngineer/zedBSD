@@ -137,6 +137,8 @@ kernel_user_fault_handler(
 		signo = SIGFPE;
 		break;
 	case HAL_TRAP_CAUSE_BREAKPOINT:
+	case HAL_TRAP_CAUSE_SINGLE_STEP:
+	case HAL_TRAP_CAUSE_DEBUG_POINT:
 		signo = SIGTRAP;
 		break;
 	case HAL_TRAP_CAUSE_ILLEGAL_INSN:
@@ -158,7 +160,8 @@ kernel_user_fault_handler(
 
 	/* Describes the fault for the signal handler. */
 	memset(&info, 0, sizeof(info));
-	if (cause == HAL_TRAP_CAUSE_PAGE_FAULT)
+	if (cause == HAL_TRAP_CAUSE_PAGE_FAULT ||
+	    cause == HAL_TRAP_CAUSE_DEBUG_POINT)
 		info.address = address;
 	else
 		info.address = pc;
@@ -169,7 +172,17 @@ kernel_user_fault_handler(
 		info.code = FPE_INTDIV;
 		break;
 	case SIGTRAP:
-		info.code = TRAP_BRKPT;
+		/*
+		 * Which of the three kinds of stop this is decides what a
+		 * debugger does next, so the cause is carried through
+		 * rather than flattened into one code.
+		 */
+		if (cause == HAL_TRAP_CAUSE_SINGLE_STEP)
+			info.code = TRAP_TRACE;
+		else if (cause == HAL_TRAP_CAUSE_DEBUG_POINT)
+			info.code = TRAP_HWBKPT;
+		else
+			info.code = TRAP_BRKPT;
 		break;
 	case SIGILL:
 		info.code = ILL_ILLOPC;

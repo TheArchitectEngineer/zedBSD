@@ -218,7 +218,7 @@ AMD64_KERNEL_SOURCES := \
 	src/kern/device-io.c src/kern/irq.c src/kern/pmem.c \
 	src/kern/test-checkpoint.c \
 	src/kern/lock.c src/kern/waitq.c \
-	src/kern/process.c src/kern/thread.c src/kern/sched.c \
+	src/kern/process.c src/kern/ptrace.c src/kern/thread.c src/kern/sched.c \
  src/kern/vmspace.c src/kern/vm-device.c src/kern/vm.c \
 	src/kern/filedesc.c src/kern/handle.c src/kern/fd-object.c \
 	src/kern/record-lock.c \
