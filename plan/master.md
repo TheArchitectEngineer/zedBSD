@@ -1376,7 +1376,7 @@ Future Listへ移したWS013・WS015は次節で管理する。完了WSの詳細
 | [WS029](https://github.com/awemorris/zedBSD/issues/386) | MG006 | i915ネイティブGPU | planning | p001–p007作成、q314 prepared（未開始）。対象Latitude 5330 ADL-P、VFIO passthrough test loop。 |
 | [WS030](https://github.com/awemorris/zedBSD/issues/388) | MG006 | 標準Vulkan1.0・直接表示library | completed | q308全5件cleared。137core＋18 WSI、実描画・終了・console/所有権を確認。 |
 | [WS031](ws031/ws.md) | MG006 | i915ネイティブVulkan実行器 | planning | p001–p012作成（計画）。libvulkanのVulkanコマンドをi915 driver内でGENへ変換、in-kernel SPIR-V→GEN baseline compiler、KMS/WSI。到達点は実機native vkdemo。 |
-| [WS032](ws032/ws.md) | MG002 | 外部パッケージのクロスビルド導入 | planning | p001–p010作成（計画）。`userland/packages/`へclang・OpenSSL・OpenSSHを、tarball取得・検証・パッチ・クロスビルドで追加。動的リンク、C++ランタイム込み、sshd含む。実行Queueなし。 |
+| [WS032](ws032/ws.md) | MG002 | 外部パッケージのクロスビルド導入 | completed | q315全10件cleared（2026-09-23）。`userland/packages/`にclang・OpenSSL・OpenSSH・libc++をtarball取得・SHA-256検証・パッチ・クロスビルドで追加し、menuconfigで選んだものがイメージに載る。実機で`clang hello.c`→実行、公開鍵ssh、openssl、lldbのブレークポイント/ウォッチポイントを確認。ユーザー指示でlldbとptrace/HALデバッグ面を追加。ターゲット試験6本PASS。残件はBUG-026/027/028。 |
 | [WS034](ws034/ws.md) | MG002 | アプリケーション拡充とカーネル・libc是正 | planning | p001–p017（計画、2026-09-23）。which/lspci/lsusb（base）、bash・coreutils・vim・emacs・curl・wget・git・gcc16・gdb・Rust（packages）。発見したlibc/カーネル不足を原因側で修正。受入はQEMU amd64。WS031/WS032完了とWS035 refactorの後に実行。GitHub未公開、Queueなし。 |
 | [WS035](ws035/ws.md) | MG006 | デスクトップ環境の構築とGPUドライバ安定化 | planning | p001–p019（計画、2026-09-23）。WS031/WS032完了後、最優先でrefactor（include/drivers階層化、libc→src/libc・include/、boot→include/kern/boot）。/dev/graphicsのGPU scanout引継ぎ、audio（/dev/dsp、HDA QEMU→VFIO実機）・audiod・互換libpulse、libtruetype、zdesktop、networkd状態push通知（WS005-p016から移管）、i915安定化（QEMU＋VFIO）、Chromium。GitHub未公開、Queueなし。 |
 

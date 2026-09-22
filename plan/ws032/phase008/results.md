@@ -1,4 +1,4 @@
-# ws032-p008 結果（進行中）: clang（2026-09-22）
+# ws032-p008 結果: clang（2026-09-22、2026-09-23 cleared）
 
 `userland/packages/lang/clang/`。コンパイラ自身と同じ LLVM 23.1.0 の tarball を使う。
 **二重取得しない**——libcxx と同じ方針で、ツリーに LLVM は一つ、ライセンスも一つ。
@@ -115,3 +115,47 @@ $ dd if=hdd-image.img bs=512 skip=2048 count=1 | strings
 
 チェッカの言い分を捨てていたのも直した。読んで捨てると、理由の無い失敗だけが
 残る。今は何と言って断ったかが出る。
+
+## 追加（2026-09-22〜23、ユーザー指示）: lldb と、それを動かすためのカーネル支援
+
+「lldb と LLVM のツールもビルドを通してインストールし、以後 ssh+lldb でバグを追えるように」
+という指示で、このパッケージの成果物に **lldb / lldb-server**（と `liblldb.so.23.1`）を
+加えた。ツール一覧の延長として p008 に含め、別 Phase は作っていない。
+
+ツールチェイン側の LLVM ビルドにも lldb が要るため `ZEDBSD_LLVM_PATCH_LEVEL` を
+zedbsd5 → zedbsd6 へ上げた。計画では変更しないと決めていた項目で、LLVM の全再ビルドを
+招いている。
+
+### カーネル・libc 側で要ったもの（承認を得た API 追加）
+
+| 追加 | 場所 |
+| --- | --- |
+| `ptrace(2)`（OpenBSD の API 形）と `KERN_SYS_ptrace` | `include/uapi/ptrace.h`、`src/kern/ptrace.c`、`libc/include/sys/ptrace.h` |
+| `PT_IO` の `PIOD_READ_AUXV`（補助ベクタを offset で読む） | 同上。PIE のロード位置を知るのにデバッガが要る |
+| `PT_GET_SIGINFO` と `struct ptrace_siginfo` | 停止を起こした信号の `siginfo_t`。ウォッチポイントが一致した番地を `si_addr` で返す |
+| HAL のデバッグ面 `hal_task_{get,set}_user_{gpregs,fpregs,vregs}`、単一ステップ、デバッグ点 | `include/hal/hal.h`、`include/hal/arch/amd64.h`、`src/hal/amd64/task.c` |
+| `struct reg` / `struct fpreg` / `struct xmmreg` | `include/uapi/reg.h`。HAL の形を外へ出さず、UAPI が独立に定義する |
+| 動的リンカを `src/rtld/` へ移し、`r_debug`・`link_map`・`DT_DEBUG` を公開 | `src/rtld/rtld.c`、`libc/include/link.h` |
+
+デバッグ例外は `kernel_user_fault_handler()` の cause を増やして受ける
+（`HAL_TRAP_CAUSE_SINGLE_STEP`、`HAL_TRAP_CAUSE_DEBUG_POINT`）。traced な SIGTRAP は
+`si_code` から breakpoint / step / watchpoint を見分けてデバッガへ伝える。
+
+### lldb 側
+
+`patches/0004-add-the-zedbsd-process-plugin.patch`（約 2500 行）に、process・platform・
+host・signal のプラグインとして入れてある。上流の NetBSD/FreeBSD 実装は参照せず、
+公開されている振る舞いの記述から独立に書いた。
+
+### 実機で動くこと
+
+`plan/ws032/tests/lldb-target.sh`。ブレークポイント（関数名・`file:line`）、
+バックトレース、`frame variable`・`p` 式・構造体・配列・グローバル、`list`、
+step in/over/out/inst、ハードウェアウォッチポイント（複数、当たった点を名指し）、
+`expr` による代入、`register read`・`memory read`・`image list`、削除、終了状態。
+
+この過程で原因側の不具合を五つ直した。中でも**シグナルハンドラのスタックが呼び出し
+規約から一語ずれていた**のは、ハンドラから `sigaction()` を呼ぶだけで落ちる問題で、
+デバッガに限らず全プログラムに効く。全文は
+[user-requested-fixes.md](../user-requested-fixes.md) の「デバッガを一通り動かして
+見つけたもの」。

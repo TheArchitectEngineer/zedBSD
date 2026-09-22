@@ -3,11 +3,11 @@
 # Queue q315: WS032 外部パッケージのクロスビルド導入
 
 <!-- awesome-plan-current:start -->
-Status: active
+Status: finished
 Workspace: ws032
 Executor: q315-root
 Goal: WS032 完了（`userland/packages/` の clang・OpenSSL・OpenSSH がクロスビルドででき、実機で動く）
-Item: q315-i01..i03 cleared; i06 はビルド・パッケージ化まで完了（ターゲット実行の確認は未了）、i04 は継続
+Item: q315-i01..i10 cleared; Queue finished（2026-09-23）
 <!-- awesome-plan-current:end -->
 
 本記録は WS032 専用の Queue である。`plan/queue.md`（q314 finished）と
@@ -35,13 +35,13 @@ LLVM/clang のクロス build 7200 秒、VM 300 秒。同条件無変更 retry �
 | 1 | q315-i01 | ws032-p001 | cleared | 設計固め・版と入手元の確定・ライセンス監査方針（180 分） |
 | 2 | q315-i02 | ws032-p002 | cleared | 共通取得機構 `external.mk` と host 試験（300 分） |
 | 3 | q315-i03 | ws032-p003 | cleared | クロスビルド契約（wrapper・cross cache・toolchain file）（300 分） |
-| 4 | q315-i04 | ws032-p004 | in-progress | libc・ヘッダの不足補完（300 分） |
-| 5 | q315-i05 | ws032-p005 | planning | C++ ランタイム（libunwind/libc++abi/libc++）（360 分） |
-| 6 | q315-i06 | ws032-p006 | in-progress | OpenSSL（360 分） |
-| 7 | q315-i07 | ws032-p007 | planning | OpenSSH（420 分） |
-| 8 | q315-i08 | ws032-p008 | planning | clang（480 分） |
-| 9 | q315-i09 | ws032-p009 | planning | イメージ統合・ライセンス・provenance（240 分） |
-| 10 | q315-i10 | ws032-p010 | planning | レビュー（180 分） |
+| 4 | q315-i04 | ws032-p004 | cleared | libc・ヘッダの不足補完（300 分） |
+| 5 | q315-i05 | ws032-p005 | cleared | C++ ランタイム（libunwind/libc++abi/libc++）（360 分） |
+| 6 | q315-i06 | ws032-p006 | cleared | OpenSSL（360 分） |
+| 7 | q315-i07 | ws032-p007 | cleared | OpenSSH（420 分） |
+| 8 | q315-i08 | ws032-p008 | cleared | clang（480 分） |
+| 9 | q315-i09 | ws032-p009 | cleared | イメージ統合・ライセンス・provenance（240 分） |
+| 10 | q315-i10 | ws032-p010 | cleared | レビュー（180 分） |
 
 p004 は一度で閉じない。後続 item が見つけた libc/ヘッダ不足は p004 へ差し戻して閉じる。
 
@@ -59,3 +59,23 @@ p004 は一度で閉じない。後続 item が見つけた libc/ヘッダ不足
 
 HAL/UAPI 不変。aggregate `make check` は使わない。既存の無関係な変更を保護する。
 source/doc の git add/commit/push はユーザーが行う。GitHub Issue/Project 公開は別途の指示。
+
+
+## q315完了（2026-09-23）
+
+q315-i01..i10 を cleared、q315 を finished とする。active Queue なし。WS032 は completed。
+結果と証拠は [ws.md の完了節](ws.md)、各 `plan/ws032/phaseNNN/results.md`、
+[user-requested-fixes.md](user-requested-fixes.md)。
+
+停止条件に触れたのは三度で、いずれもユーザーの判断を得てから進めた。
+
+| 停止した理由 | 扱い |
+| --- | --- |
+| UAPI の変更が必要（`struct sigaction` が POSIX の形でない） | 承認を得て POSIX 準拠へ直した（[p004 §4](phase004/results.md)） |
+| UAPI・HAL の追加が必要（ptrace、デバッグ点、レジスタ面、`PT_GET_SIGINFO`） | 追加案を提示し、承認を得て実装した（[p008 結果](phase008/results.md)） |
+| `ZEDBSD_LLVM_PATCH_LEVEL` の変更が必要（lldb をツールチェインの LLVM ビルドへ加える） | ユーザーの lldb 導入指示のもとで zedbsd5 → **zedbsd6**（commit `cde8e875`）。計画では変更しないと決めていた項目で、LLVM の全再ビルドを招いた |
+
+GPL 混入の停止条件には触れていない。ライセンスは [provenance.md §4](provenance.md)
+のとおり 5 件を判定し、いずれも寛容側の条項を選べることを確認して通した。
+
+source/doc の git add/commit/push はユーザーが行う。GitHub Issue/Project への公開はしていない。

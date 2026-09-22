@@ -75,6 +75,20 @@ Public` / `SPDX-License-Identifier: (L)GPL` の全文検索。
 ツリーに入る外部差分は `userland/packages/<category>/<name>/patches/` のみ。
 各パッチの目的・必要な理由・上流に出す価値の有無を、当該 Phase の results に書く。
 
-| パッケージ | パッチ | 目的 | 状態 |
-| --- | --- | --- | --- |
-| （p006 以降で記入） | | | |
+| パッケージ | パッチ | 目的 |
+| --- | --- | --- |
+| OpenSSL | `0001-add-zedbsd-target.patch` | `Configurations/` に zedBSD のクロスビルド target を足す。上流は知らない OS へ既定値を当てない |
+| OpenSSH | `0001-recognise-the-zedbsd-target.patch` | `configure` の `case $host_os` に zedbsd を足す。同じ理由 |
+| OpenSSH | `0002-include-stdio-where-a-stream-is-named.patch` | `FILE *` を使う場所の `<stdio.h>`。上流が別経路で間接 include していたものが、こちらのヘッダでは来ない |
+| libcxx | `0001-zedbsd-locale-backend.patch` | locale の backend 選択に zedBSD の枝を足す。枝が無いと transitional へ落ち、AIX のヘッダを引いて compile できない |
+| clang | `0001-use-the-posix-statvfs-field-name.patch` | `Path.inc` が `struct statvfs` を選んだうえで `struct statfs` の名前 `f_flags` を読む。POSIX の名前（`f_flag`）を使う系の一覧に zedBSD が無いだけ |
+| clang | `0002-ask-statvfs-whether-a-filesystem-is-local.patch` | 同じ場所で `statvfs` の `f_flag` を `MNT_LOCAL`（`statfs` 側の定数）で判定している。`ST_` の意味で問い合わせる |
+| clang | `0003-write-the-linked-image-through-the-output-file.patch` | ドライバが `ld.lld` へ `--mmap-output-file` を渡す。[BUG-026](../bugs/BUG-026.md) の回避で、修正ではない |
+| clang | `0004-add-the-zedbsd-process-plugin.patch` | lldb に zedBSD の process / platform / host / signal プラグインを足す（[p008](phase008/results.md)） |
+
+ツールチェイン側の LLVM に当てる `toolchain/llvm/patches/0001-add-zedbsd-x86-target.patch`
+（`llvm::Triple::ZedBSD` と driver）は本WSより前からあるもので、ここでは扱わない。
+
+このリポジトリでは適用せず、当該プロジェクトの upstream が持つべき変更は
+`plan/ws032/patches-for-upstream/` に分けてある（`struct sigaction` を POSIX の形へ
+直したことで不要になった NoctLang の回避分岐など）。

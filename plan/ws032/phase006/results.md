@@ -1,4 +1,4 @@
-# ws032-p006 結果（進行中・停止）: OpenSSL（2026-09-21）
+# ws032-p006 結果: OpenSSL（2026-09-21、cleared）
 
 q315-i06。OpenSSL 3.5.8 のクロスビルドは **libcrypto の最後の 1 file まで到達**し、
 `struct sigaction` の UAPI 問題（[p004 §4](../phase004/results.md)）で停止した。

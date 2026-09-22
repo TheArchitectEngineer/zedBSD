@@ -32,33 +32,12 @@ jobs:
           make toolchain-cache
           make -j16 toolchain
 
-      - name: Build i386 PC-98
-        run: |
-          cp config/ci/config-pc98.mk config.mk
-          make -j16
-          mkdir -p artifacts
-          cp build/pc98/hdd-image.img artifacts/zedbsd-pc98.img
-
-      - name: Build i386 PC/AT
-        run: |
-          cp config/ci/config-pcat.mk config.mk
-          make -j16
-          mkdir -p artifacts
-          cp build/pcat/hdd-image.img artifacts/zedbsd-pcat.img
-
       - name: Build amd64
         run: |
           cp config/ci/config-amd64.mk config.mk
           make -j16
           mkdir -p artifacts
           cp build/amd64/hdd-image.img artifacts/zedbsd-amd64.img
-
-      - name: Build Intel Mac
-        run: |
-          cp config/ci/config-intelmac.mk config.mk
-          make -j16
-          mkdir -p artifacts
-          cp build/amd64/hdd-image.img artifacts/zedbsd-intelmac.img
 
       - name: Upload binary
         uses: actions/upload-artifact@v4
@@ -96,17 +75,9 @@ jobs:
             zedBSD OS
             =========
             
-            `zedBSD` is a modern, re-designed BSD-based kernel and base system aiming to implement all `POSIX.1-2024` and `Single UNIX Specification version 4 (SUSv4)` features, along with `μITRON` hard real-time APIs.
-             
             | CPU     | Machine      | File                  | Description                                             |
             |---------|--------------|-----------------------|---------------------------------------------------------|
-            | amd64   | PC           | `zedbsd-amd64.img`    | USB image.                                              |
-            | amd64   | Intel Mac    | `zedbsd-intelmac.img` | USB image. No MacBook keyboard driver yet, use USB one. |
-            | i386    | PC           | `zedbsd-pcat.img`     | IDE HDD image.                                          |
-            | i386    | NEC PC-9800  | `zedbsd-pc98.img`     | IDE HDD image.                                          |
+            | amd64   | PC (UEFI)    | `zedbsd-amd64.img`    | USB image.                                              |
 
           files: |
             artifacts/zedbsd-amd64.img
-            artifacts/zedbsd-intelmac.img
-            artifacts/zedbsd-pcat.img
-            artifacts/zedbsd-pc98.img
