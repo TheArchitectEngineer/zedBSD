@@ -1,7 +1,7 @@
-AI/UX
+zedBSD
 =====
 
-`AI/UX` is a modern, re-designed BSD-based kernel and base system
+`zedBSD` is a modern, re-designed BSD-based kernel and base system
 aiming to implement all `POSIX.1-2024` and `Single UNIX Specification
 version 4 (SUSv4)` features with a sophisticated architecture. It is
 designed and directed by a human developer, and implemented by using
@@ -34,6 +34,12 @@ x86 PC and Raspberry Pi series.
 
 The kernel is built on a HAL. It keeps the platform-neutral kernel
 completely portable across substantially different machines.
+
+## GPU Support
+
+`zedBSD` has a modern GPU drivers that features a true native Vulkan
+stack. It doesn't require Linux DRM/KMS or Mesa.  Currently, Intel
+iGPU (Xe-LP) is supported, and NVIDIA/AMD support is planned.
 
 ## Retro Computing
 
@@ -87,4 +93,4 @@ make help              # show a short command summary
 
 ## License
 
-- `AI/UX` is distributed under the zlib License (see `LICENSE`).
+- `zedBSD` is distributed under the zlib License (see `LICENSE`).
