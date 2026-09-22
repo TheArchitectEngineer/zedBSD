@@ -3,6 +3,12 @@
 .global _start
 .type _start, %function
 _start:
+	.cfi_startproc
+	/*
+	 * Nothing called this, so a debugger walking the stack stops here:
+	 * the register it would return through holds no return address.
+	 */
+	.cfi_undefined x30
 	mov x29, xzr
 	mov x30, xzr
 	mov x19, sp
@@ -22,4 +28,5 @@ _start:
 1:
 	wfe
 	b 1b
+	.cfi_endproc
 .size _start, .-_start

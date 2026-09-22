@@ -850,3 +850,72 @@ hold の仕組みは残したが、**空である**こととその理由を Make
 分類を戻す:              MAC-T001: openssh is filed under packages/security rather than packages/network
 プラットフォームを戻す:  MAC-T001: openssl is offered only on amd64
 ```
+
+## デバッガを一通り動かして見つけたもの
+
+長めのサンプル（複数の関数、グローバル、構造体、配列、ループ、再帰）に対して
+ブレークポイント・ステップ・ウォッチポイント・`list`・変数の表示を順に通した。
+動かなかったものは次の五つで、いずれも直してある。
+
+### シグナルハンドラのスタックが一語ずれていた
+
+呼び出し規約は、関数に入った時点でスタックポインタがどこに立っているかを決めている。
+x86-64 では `call` が戻り番地を積んだ直後、つまり十六の倍数から一語下である。コンパイラは
+その約束を信じて十六バイトのデータを置き、処理系は十六バイトを一度に動かす命令でそれに
+触れる。カーネルはハンドラをその約束の一語ずれた位置で始めていたので、ハンドラから
+呼んだ `sigaction()` の中の `movaps` が一般保護例外を出し、**lldb と lldb-server が
+落ちていた**。
+
+フレームの基点は十六に揃えるのではなく、戻り番地を持つ形式では十六の倍数から一語下に
+置く（Linux も FreeBSD もそうしている）。`src/kern/signal.c`。i386 の
+`HAL_TASK_SIGNAL_FRAME_ALIGNMENT` も 4 から 16 にした。四つのアーキテクチャの
+`_start` には `.cfi_undefined`（戻り番地は無い）を足した。これでバックトレースが
+`_start` で止まり、その先の偽のフレームが出なくなった。
+
+確認: `plan/ws032/tests/signal-stack-target.c`。実機 10/10 PASS。
+
+```
+SIG ok   a handler is entered on an aligned stack
+SIG ok   a handler may call what moves sixteen bytes
+SIG ok   a thread's handler is entered on an aligned stack
+```
+
+### ウォッチポイントの読み書きビットが逆だった
+
+lldb が渡す `watch_flags` は、この処理系のデバッグ制御レジスタが取る二ビットそのもので、
+1 が書き込み、3 が読み書きである（2 の読み出しだけは処理系に無い）。プラグインは 1 を
+読み出しと解釈していたので、処理系が表現できない点をカーネルに渡して断られ、lldb は
+ソフトウェアのウォッチポイントに落ちて失敗していた。
+
+### 止まるたびにスレッドの一覧を作り直していた
+
+`Resume` のたびに `m_threads` を捨てて作り直していたため、スレッドに設定した
+デバッグ点とその対応表が消えていた。結果、ウォッチポイントで止まっても理由が
+`signal SIGTRAP` としか出ず、`watchpoint delete` も効かなかった（処理系のレジスタに
+点が残り続ける）。既にあるスレッドはそのまま持ち越し、現れたものを足し、消えたものを
+落とすようにした。
+
+### デバッグ点の番号が詰められていた
+
+点を一つ外すと後ろの点が前に詰められ、デバッガが持っている番号が別の点を指すように
+なっていた。二つ目の `watchpoint delete` が「0 個消した」と言って実際には消えないのは
+これである。点の置き場は番号のついた四つの枠とし、枠は点を持っている間その番号を保つ。
+
+### どの点が当たったかをカーネルが言えなかった
+
+`PT_GET_SIGINFO` を足した（`include/uapi/ptrace.h`、`struct ptrace_siginfo`）。
+停止を起こした信号の `siginfo_t` をそのまま返すので、デバッグ点が一致した番地が
+`si_addr` で分かる。これでウォッチポイントが複数あっても、当たったものを名指しできる。
+`qXfer:siginfo:read` も実装に見合うようになった。
+
+### 確認
+
+`plan/ws032/tests/lldb-target.sh` を、ブレークポイント・バックトレース・変数・式・
+ウォッチポイント・step out/over・削除・終了状態まで通すように書き直した。
+
+```
+* thread #1, stop reason = watchpoint 1
+(lldb) p total
+(int) 1
+Process 30 exited with status = 42 (0x0000002a)
+```

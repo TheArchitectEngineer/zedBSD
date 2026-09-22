@@ -28,7 +28,7 @@ struct hal_task_signal_frame_head {
 /*
  * Alignment.
  */
-#define HAL_TASK_SIGNAL_FRAME_ALIGNMENT			4
+#define HAL_TASK_SIGNAL_FRAME_ALIGNMENT			16
 
 /*
  * Signal frame style.

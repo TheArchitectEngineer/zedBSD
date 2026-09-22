@@ -686,6 +686,27 @@ signal_exec(
 }
 
 /*
+ * Fills the description of a signal that a handler and a debugger both
+ * read.  The two see the same account of what happened.
+ */
+static void
+signal_fill_user_info(
+	siginfo_t *user_info,
+	int signo,
+	const struct signal_info *info)
+{
+	memset(user_info, 0, sizeof(*user_info));
+	user_info->si_signo = signo;
+	user_info->si_errno = info->error;
+	user_info->si_code = info->code;
+	user_info->si_pid = info->pid;
+	user_info->si_uid = info->uid;
+	user_info->si_status = info->status;
+	user_info->si_addr = (uint64_t)info->address;
+	memcpy(&user_info->si_value, &info->value, sizeof(info->value));
+}
+
+/*
  * Delivers one pending signal to the current thread on its way to user mode.
  *
  * The lowest deliverable signal is taken.  An ignored one is dropped, a
@@ -789,6 +810,7 @@ retry:
 	 * SIGKILL is not offered, because nothing may refuse it.
 	 */
 	if (signo != SIGKILL && process->traced) {
+		siginfo_t traced_info;
 		int traced_signo;
 		int stop_kind;
 
@@ -798,6 +820,7 @@ retry:
 		 * asked for, and a debug point it set as three different
 		 * events; every other signal is reported as itself.
 		 */
+		signal_fill_user_info(&traced_info, signo, &selected_info);
 		stop_kind = PTRACE_STOP_SIGNAL;
 		if (signo == SIGTRAP) {
 			if (selected_info.code == TRAP_BRKPT)
@@ -807,7 +830,8 @@ retry:
 			else if (selected_info.code == TRAP_HWBKPT)
 				stop_kind = PTRACE_STOP_WATCHPOINT;
 		}
-		traced_signo = process_trace_stop(stop_kind, signo);
+		traced_signo = process_trace_stop(stop_kind, signo,
+		    &traced_info);
 		if (traced_signo >= 0) {
 			if (traced_signo == 0)
 				goto retry;
@@ -904,16 +928,7 @@ retry:
 	    (action.flags & SA_RESTART) != 0;
 
 	/* Builds the user-visible signal information and context. */
-	memset(&user_info, 0, sizeof(user_info));
-	user_info.si_signo = signo;
-	user_info.si_errno = selected_info.error;
-	user_info.si_code = selected_info.code;
-	user_info.si_pid = selected_info.pid;
-	user_info.si_uid = selected_info.uid;
-	user_info.si_status = selected_info.status;
-	user_info.si_addr = (uint64_t)selected_info.address;
-	memcpy(&user_info.si_value, &selected_info.value,
-	    sizeof(selected_info.value));
+	signal_fill_user_info(&user_info, signo, &selected_info);
 	memset(&user_context, 0, sizeof(user_context));
 	user_context.uc_sigmask = level->saved_mask;
 	user_context.uc_mcontext.mc_pc = (uint64_t)interrupted_pc;
@@ -923,10 +938,23 @@ retry:
 	thread->signal_depth++;
 	thread->signal_token = token;
 
-	/* Pushes the signal frame on the chosen stack. */
+	/*
+	 * Pushes the signal frame on the chosen stack.
+	 *
+	 * Where the frame carries the address the handler returns to, the
+	 * handler is entered exactly as a call would have entered it: that
+	 * address lies one pointer below an aligned boundary, because a
+	 * call pushes it from an aligned stack.  A handler whose compiler
+	 * believes the calling convention puts its own aligned data where
+	 * the boundary says, and a processor that is asked to move sixteen
+	 * bytes at once faults when it is one word out.
+	 */
 	memset(&frame, 0, sizeof(frame));
 	sp = (sp - sizeof(frame)) &
 	    ~((uintptr_t)HAL_TASK_SIGNAL_FRAME_ALIGNMENT - 1U);
+#if HAL_TASK_SIGNAL_FRAME_HAS_RESTORER
+	sp -= sizeof(uintptr_t);
+#endif
 	info_pointer = sp + offsetof(struct signal_frame, info);
 	context_pointer = sp + offsetof(struct signal_frame, context);
 #if HAL_TASK_SIGNAL_FRAME_HAS_RESTORER

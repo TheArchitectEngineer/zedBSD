@@ -740,6 +740,18 @@ kern_ptrace(
 		}
 		break;
 
+	case PT_GET_SIGINFO:
+		{
+			struct ptrace_siginfo siginfo;
+
+			memset(&siginfo, 0, sizeof(siginfo));
+			siginfo.psi_siginfo = process->trace_siginfo;
+			siginfo.psi_thread = (int)process->trace_thread;
+			error = vmspace_copy_to(caller->vmspace, address,
+			    &siginfo, sizeof(siginfo));
+		}
+		break;
+
 	case PT_GET_PROCESS_STATE:
 		state.pe_report_event = process->trace_stop_kind;
 		state.pe_thread = (int)process->trace_thread;

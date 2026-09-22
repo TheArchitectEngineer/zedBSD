@@ -3,6 +3,12 @@
 .globl _start
 .type _start, @function
 _start:
+	.cfi_startproc
+	/*
+	 * Nothing called this, so a debugger walking the stack stops here:
+	 * the register it would return through holds no return address.
+	 */
+	.cfi_undefined %eip
 	xorl %ebp, %ebp
 	movl %esp, %esi
 	call __x86.get_pc_thunk.bx
@@ -27,6 +33,7 @@ _start:
 	call exit@PLT
 1:
 	jmp 1b
+	.cfi_endproc
 .size _start, .-_start
 
 .section .text.__x86.get_pc_thunk.bx,"axG",@progbits,__x86.get_pc_thunk.bx,comdat

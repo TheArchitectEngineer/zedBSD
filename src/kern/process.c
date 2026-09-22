@@ -3210,7 +3210,8 @@ process_trace_is_tracer(
 int
 process_trace_stop(
 	int kind,
-	int signo)
+	int signo,
+	const siginfo_t *info)
 {
 	struct process *process;
 	struct thread *thread;
@@ -3230,6 +3231,16 @@ process_trace_stop(
 	process->trace_thread = thread->tid;
 	process->trace_signal = -1;
 	process->trace_stopped = 1;
+
+	/*
+	 * A stop that carries no description of its signal still says which
+	 * signal it was, because that is what a debugger asks first.
+	 */
+	memset(&process->trace_siginfo, 0, sizeof(process->trace_siginfo));
+	if (info != NULL)
+		process->trace_siginfo = *info;
+	else
+		process->trace_siginfo.si_signo = signo;
 	spin_unlock_irqrestore(&process->lock, irq);
 
 	/*

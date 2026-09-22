@@ -155,6 +155,7 @@ struct process {
 	int trace_stop_kind;
 	int trace_signal;
 	tid_t trace_thread;
+	siginfo_t trace_siginfo;
 
 	/*
 	 * Where exec left the auxiliary vector on the initial stack, so a
@@ -404,7 +405,8 @@ process_trace_is_tracer(
 int
 process_trace_stop(
 	int kind,
-	int signo);
+	int signo,
+	const siginfo_t *info);
 
 /*
  * Handles ptrace(2) on behalf of the system call layer.

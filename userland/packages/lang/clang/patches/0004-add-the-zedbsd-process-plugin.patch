@@ -379,7 +379,7 @@
 +#endif
 --- /dev/null
 +++ b/lldb/source/Plugins/Process/ZedBSD/NativeProcessZedBSD.cpp
-@@ -0,0 +1,533 @@
+@@ -0,0 +1,562 @@
 +//===-- NativeProcessZedBSD.cpp -------------------------------------------===//
 +//
 +// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
@@ -406,6 +406,7 @@
 +#include <sys/types.h>
 +#include <sys/wait.h>
 +
++#include <algorithm>
 +#include <cerrno>
 +#include <cstring>
 +
@@ -585,11 +586,20 @@
 +void NativeProcessZedBSD::SetStopReasonFromStopState(
 +    NativeThreadZedBSD &thread, int signal) {
 +  struct ptrace_state state;
++  struct ptrace_siginfo siginfo;
++
++  // What the signal said about itself: for a fault or a debug point it
++  // carries the address, which is how a watchpoint stop names the point
++  // that matched.
++  ::memset(&siginfo, 0, sizeof(siginfo));
++  const bool described =
++      PtraceWrapper(PT_GET_SIGINFO, GetID(), &siginfo).Success();
++  const siginfo_t *info = described ? &siginfo.psi_siginfo : nullptr;
 +
 +  ::memset(&state, 0, sizeof(state));
 +  if (signal != SIGTRAP ||
 +      PtraceWrapper(PT_GET_PROCESS_STATE, GetID(), &state).Fail()) {
-+    thread.SetStoppedBySignal(signal);
++    thread.SetStoppedBySignal(signal, info);
 +    return;
 +  }
 +
@@ -605,19 +615,21 @@
 +    // Which point matched is decided by the address the stop carried,
 +    // because that is what the processor reported having matched.
 +    uint32_t wp_index = LLDB_INVALID_INDEX32;
-+    lldb::addr_t hit = LLDB_INVALID_ADDRESS;
++    lldb::addr_t hit = info != nullptr
++                           ? static_cast<lldb::addr_t>(info->si_addr)
++                           : LLDB_INVALID_ADDRESS;
 +    thread.GetRegisterContext().GetWatchpointHitIndex(wp_index, hit);
 +    if (wp_index != LLDB_INVALID_INDEX32)
 +      thread.SetStoppedByWatchpoint(wp_index);
 +    else
-+      thread.SetStoppedBySignal(signal);
++      thread.SetStoppedBySignal(signal, info);
 +    break;
 +  }
 +  case PTRACE_STOP_EXEC:
 +    thread.SetStoppedByExec();
 +    break;
 +  default:
-+    thread.SetStoppedBySignal(signal);
++    thread.SetStoppedBySignal(signal, info);
 +    break;
 +  }
 +}
@@ -876,10 +888,27 @@
 +  if (current.empty())
 +    current.push_back(static_cast<lldb::tid_t>(GetID()));
 +
++  // A thread the debugger already knows keeps the object that stands for
++  // it, because that object holds what has been set on the thread: the
++  // debug points it runs with and which watchpoint each one belongs to.
++  // Only threads that have appeared are made, and only threads that have
++  // gone are dropped.
 +  lldb::tid_t current_thread = GetCurrentThreadID();
-+  m_threads.clear();
-+  for (lldb::tid_t tid : current)
-+    AddThread(tid);
++  std::vector<std::unique_ptr<NativeThreadProtocol>> threads;
++  for (lldb::tid_t tid : current) {
++    auto known = std::find_if(
++        m_threads.begin(), m_threads.end(),
++        [tid](const std::unique_ptr<NativeThreadProtocol> &thread) {
++          return thread != nullptr && thread->GetID() == tid;
++        });
++    if (known != m_threads.end())
++      threads.push_back(std::move(*known));
++    else
++      threads.push_back(std::make_unique<NativeThreadZedBSD>(*this, tid));
++  }
++  m_threads = std::move(threads);
++  if (!m_threads.empty() && !HasThreadNoLock(current_thread))
++    SetCurrentThreadID(m_threads.front()->GetID());
 +  if (std::find(current.begin(), current.end(), current_thread) !=
 +      current.end())
 +    SetCurrentThreadID(current_thread);
@@ -998,7 +1027,7 @@
 +}
 --- /dev/null
 +++ b/lldb/source/Plugins/Process/ZedBSD/NativeRegisterContextZedBSD_x86_64.h
-@@ -0,0 +1,106 @@
+@@ -0,0 +1,111 @@
 +//===-- NativeRegisterContextZedBSD_x86_64.h --------------------*- C++ -*-===//
 +//
 +// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
@@ -1087,8 +1116,11 @@
 +  };
 +
 +  UserArea m_user;
++  // One slot per debug point the processor can hold.  A slot keeps its
++  // number while it holds a point, so that the number a debugger was
++  // given goes on meaning the same point.
 +  std::array<struct ptrace_debug_point, PTRACE_DEBUG_POINT_MAX> m_points;
-+  unsigned m_point_count;
++  std::array<bool, PTRACE_DEBUG_POINT_MAX> m_point_used;
 +  std::array<lldb::addr_t, PTRACE_DEBUG_POINT_MAX> m_point_hit;
 +
 +  Status ReadGPR();
@@ -1096,6 +1128,8 @@
 +  Status ReadFPR();
 +  Status WriteFPR();
 +  Status WriteDebugPoints();
++  unsigned FreeDebugPoint() const;
++  unsigned NumSupportedDebugPoints() const;
 +
 +  bool IsGPR(uint32_t reg_index) const;
 +  bool IsFPR(uint32_t reg_index) const;
@@ -1107,7 +1141,7 @@
 +#endif
 --- /dev/null
 +++ b/lldb/source/Plugins/Process/ZedBSD/NativeRegisterContextZedBSD_x86_64.cpp
-@@ -0,0 +1,439 @@
+@@ -0,0 +1,494 @@
 +//===-- NativeRegisterContextZedBSD_x86_64.cpp ----------------------------===//
 +//
 +// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
@@ -1126,6 +1160,7 @@
 +#include "lldb/Utility/RegisterValue.h"
 +#include "lldb/Utility/Status.h"
 +
++#include <climits>
 +#include <cstring>
 +
 +using namespace lldb_private;
@@ -1179,9 +1214,10 @@
 +    const ArchSpec &target_arch, NativeThreadProtocol &native_thread)
 +    : NativeRegisterContextRegisterInfo(
 +          native_thread, new RegisterContextZedBSD_x86_64(target_arch)),
-+      NativeRegisterContextZedBSD(native_thread), m_point_count(0) {
++      NativeRegisterContextZedBSD(native_thread) {
 +  ::memset(&m_user, 0, sizeof(m_user));
 +  m_points.fill({});
++  m_point_used.fill(false);
 +  m_point_hit.fill(LLDB_INVALID_ADDRESS);
 +}
 +
@@ -1436,73 +1472,111 @@
 +Status NativeRegisterContextZedBSD_x86_64::WriteDebugPoints() {
 +  struct ptrace_debug_points points;
 +
++  // A slot a debugger has been given keeps its number for as long as it
++  // holds a point, because that number is how the debugger asks for the
++  // point again; the kernel is given the points that are in use, in
++  // whatever order the slots hold them.
 +  ::memset(&points, 0, sizeof(points));
 +  points.pdps_thread = static_cast<int>(m_thread.GetID());
-+  points.pdps_count = m_point_count;
-+  for (unsigned index = 0; index < m_point_count; ++index)
-+    points.pdps_point[index] = m_points[index];
++  points.pdps_count = 0;
++  for (unsigned index = 0; index < m_points.size(); ++index) {
++    if (!m_point_used[index])
++      continue;
++    points.pdps_point[points.pdps_count++] = m_points[index];
++  }
 +  return DoRegisterRequest(PT_SET_DEBUG_POINTS, &points, 0);
 +}
 +
++// The number of the first slot that holds no point, or as many slots as
++// there are when every one is taken.
++unsigned NativeRegisterContextZedBSD_x86_64::FreeDebugPoint() const {
++  unsigned index;
++
++  for (index = 0; index < NumSupportedDebugPoints(); ++index) {
++    if (!m_point_used[index])
++      break;
++  }
++  return index;
++}
++
++unsigned NativeRegisterContextZedBSD_x86_64::NumSupportedDebugPoints() const {
++  return 4;
++}
++
++// Four, because this processor has four debug address registers and shares
++// them between instructions and data; the protocol's array is larger, but
++// the number offered is the number the machine can hold.
 +uint32_t NativeRegisterContextZedBSD_x86_64::NumSupportedHardwareBreakpoints() {
-+  return PTRACE_DEBUG_POINT_MAX;
++  return NumSupportedDebugPoints();
 +}
 +
 +uint32_t NativeRegisterContextZedBSD_x86_64::SetHardwareBreakpoint(
 +    lldb::addr_t addr, size_t size) {
-+  if (m_point_count >= m_points.size())
++  const unsigned slot = FreeDebugPoint();
++
++  if (slot >= NumSupportedDebugPoints())
 +    return LLDB_INVALID_INDEX32;
-+  m_points[m_point_count].pdp_address = addr;
-+  m_points[m_point_count].pdp_length = 1;
-+  m_points[m_point_count].pdp_kind = PTRACE_DEBUG_EXECUTE;
-+  ++m_point_count;
++  m_points[slot].pdp_address = addr;
++  m_points[slot].pdp_length = 1;
++  m_points[slot].pdp_kind = PTRACE_DEBUG_EXECUTE;
++  m_point_used[slot] = true;
 +  if (WriteDebugPoints().Fail()) {
-+    --m_point_count;
++    m_point_used[slot] = false;
 +    return LLDB_INVALID_INDEX32;
 +  }
-+  return m_point_count - 1;
++  return slot;
 +}
 +
 +bool NativeRegisterContextZedBSD_x86_64::ClearHardwareBreakpoint(
 +    uint32_t hw_idx) {
-+  if (hw_idx >= m_point_count)
++  if (hw_idx >= NumSupportedDebugPoints() || !m_point_used[hw_idx])
 +    return false;
-+  for (unsigned index = hw_idx; index + 1 < m_point_count; ++index)
-+    m_points[index] = m_points[index + 1];
-+  --m_point_count;
-+  return WriteDebugPoints().Success();
++  m_point_used[hw_idx] = false;
++  m_point_hit[hw_idx] = LLDB_INVALID_ADDRESS;
++  if (WriteDebugPoints().Fail()) {
++    m_point_used[hw_idx] = true;
++    return false;
++  }
++  return true;
 +}
 +
 +uint32_t NativeRegisterContextZedBSD_x86_64::NumSupportedHardwareWatchpoints() {
-+  return PTRACE_DEBUG_POINT_MAX;
++  return NumSupportedDebugPoints();
 +}
 +
 +uint32_t NativeRegisterContextZedBSD_x86_64::SetHardwareWatchpoint(
 +    lldb::addr_t addr, size_t size, uint32_t watch_flags) {
-+  if (m_point_count >= m_points.size())
++  const unsigned slot = FreeDebugPoint();
++
++  if (slot >= NumSupportedDebugPoints())
 +    return LLDB_INVALID_INDEX32;
 +
++  // The flags are the two read/write bits this processor's debug control
++  // register takes: one for a write, three for either access.  A read
++  // alone is not something the processor can watch for, so a request to
++  // watch reads watches both, which is what every other system does with
++  // these registers.
 +  unsigned kind;
 +  switch (watch_flags) {
 +  case 0x1:
-+    kind = PTRACE_DEBUG_READ;
-+    break;
-+  case 0x2:
 +    kind = PTRACE_DEBUG_WRITE;
 +    break;
-+  default:
++  case 0x2:
++  case 0x3:
 +    kind = PTRACE_DEBUG_ACCESS;
 +    break;
-+  }
-+  m_points[m_point_count].pdp_address = addr;
-+  m_points[m_point_count].pdp_length = static_cast<unsigned>(size);
-+  m_points[m_point_count].pdp_kind = kind;
-+  ++m_point_count;
-+  if (WriteDebugPoints().Fail()) {
-+    --m_point_count;
++  default:
 +    return LLDB_INVALID_INDEX32;
 +  }
-+  return m_point_count - 1;
++  m_points[slot].pdp_address = addr;
++  m_points[slot].pdp_length = static_cast<unsigned>(size);
++  m_points[slot].pdp_kind = kind;
++  m_point_used[slot] = true;
++  if (WriteDebugPoints().Fail()) {
++    m_point_used[slot] = false;
++    return LLDB_INVALID_INDEX32;
++  }
++  return slot;
 +}
 +
 +bool NativeRegisterContextZedBSD_x86_64::ClearHardwareWatchpoint(
@@ -1511,13 +1585,14 @@
 +}
 +
 +Status NativeRegisterContextZedBSD_x86_64::ClearAllHardwareWatchpoints() {
-+  m_point_count = 0;
++  m_point_used.fill(false);
++  m_point_hit.fill(LLDB_INVALID_ADDRESS);
 +  return WriteDebugPoints();
 +}
 +
 +lldb::addr_t
 +NativeRegisterContextZedBSD_x86_64::GetWatchpointAddress(uint32_t wp_index) {
-+  if (wp_index >= m_point_count)
++  if (wp_index >= NumSupportedDebugPoints() || !m_point_used[wp_index])
 +    return LLDB_INVALID_ADDRESS;
 +  return m_points[wp_index].pdp_address;
 +}
@@ -1532,24 +1607,38 @@
 +
 +Status NativeRegisterContextZedBSD_x86_64::GetWatchpointHitIndex(
 +    uint32_t &wp_index, lldb::addr_t trap_addr) {
-+  // The stop reported the address that matched, so the point it belongs to
-+  // is the one watching that address.
-+  for (unsigned index = 0; index < m_point_count; ++index) {
++  // The point a stop belongs to is the one watching the address that
++  // matched.  Where the stop did not say which address that was, and only
++  // one point watches data, that point is the answer: the processor
++  // stopped for a data point and there is no other it could have been.
++  unsigned only = UINT_MAX;
++  unsigned data_points = 0;
++
++  for (unsigned index = 0; index < NumSupportedDebugPoints(); ++index) {
 +    const lldb::addr_t start = m_points[index].pdp_address;
 +    const lldb::addr_t end = start + m_points[index].pdp_length;
-+    if (m_points[index].pdp_kind != PTRACE_DEBUG_EXECUTE &&
-+        trap_addr >= start && trap_addr < end) {
++    if (!m_point_used[index] ||
++        m_points[index].pdp_kind == PTRACE_DEBUG_EXECUTE)
++      continue;
++    only = index;
++    data_points++;
++    if (trap_addr >= start && trap_addr < end) {
 +      m_point_hit[index] = trap_addr;
 +      wp_index = index;
 +      return Status();
 +    }
++  }
++  if (trap_addr == LLDB_INVALID_ADDRESS && data_points == 1) {
++    m_point_hit[only] = m_points[only].pdp_address;
++    wp_index = only;
++    return Status();
 +  }
 +  wp_index = LLDB_INVALID_INDEX32;
 +  return Status();
 +}
 --- /dev/null
 +++ b/lldb/source/Plugins/Process/ZedBSD/NativeThreadZedBSD.h
-@@ -0,0 +1,73 @@
+@@ -0,0 +1,77 @@
 +//===-- NativeThreadZedBSD.h ------------------------------------*- C++ -*-===//
 +//
 +// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
@@ -1601,6 +1690,9 @@
 +private:
 +  // The states a thread is reported in, and how it came to stop.
 +  void SetStoppedBySignal(uint32_t signo, const siginfo_t *info = nullptr);
++
++  llvm::Expected<std::unique_ptr<llvm::MemoryBuffer>>
++  GetSiginfo() const override;
 +  void SetStoppedByBreakpoint();
 +  void SetStoppedByTrace();
 +  void SetStoppedByWatchpoint(uint32_t wp_index);
@@ -1613,6 +1705,7 @@
 +  ThreadStopInfo m_stop_info;
 +  std::unique_ptr<NativeRegisterContextZedBSD> m_reg_context_up;
 +  std::string m_stop_description;
++  siginfo_t m_siginfo = {};
 +  std::map<lldb::addr_t, size_t> m_watchpoint_index_map;
 +  std::map<lldb::addr_t, size_t> m_hw_break_index_map;
 +};
@@ -1625,7 +1718,7 @@
 +#endif
 --- /dev/null
 +++ b/lldb/source/Plugins/Process/ZedBSD/NativeThreadZedBSD.cpp
-@@ -0,0 +1,179 @@
+@@ -0,0 +1,196 @@
 +//===-- NativeThreadZedBSD.cpp --------------------------------------------===//
 +//
 +// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
@@ -1642,6 +1735,9 @@
 +#include "lldb/Utility/Log.h"
 +#include "lldb/Utility/State.h"
 +
++#include "llvm/Support/MemoryBuffer.h"
++
++#include <cstring>
 +#include <sstream>
 +
 +using namespace lldb;
@@ -1662,7 +1758,21 @@
 +  m_stop_info.reason = StopReason::eStopReasonSignal;
 +  m_stop_info.signo = signo;
 +  m_stop_description.clear();
-+  (void)info;
++
++  // What the kernel said about the signal is kept, because a debugger
++  // asks for it separately from the reason the thread stopped.
++  ::memset(&m_siginfo, 0, sizeof(m_siginfo));
++  if (info != nullptr)
++    m_siginfo = *info;
++  else
++    m_siginfo.si_signo = static_cast<int32_t>(signo);
++}
++
++llvm::Expected<std::unique_ptr<llvm::MemoryBuffer>>
++NativeThreadZedBSD::GetSiginfo() const {
++  return llvm::MemoryBuffer::getMemBufferCopy(
++      llvm::StringRef(reinterpret_cast<const char *>(&m_siginfo),
++                      sizeof(m_siginfo)));
 +}
 +
 +void NativeThreadZedBSD::SetStoppedByBreakpoint() {

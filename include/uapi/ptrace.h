@@ -19,6 +19,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <uapi/signal.h>
 
 /*
  * Requests a process makes about itself.
@@ -62,6 +63,15 @@
 #define PT_SET_DEBUG_POINTS	21
 
 /*
+ * What the signal that stopped a thread said about itself.
+ *
+ * A debugger reads this to learn what a stop it was told about really
+ * was: which address a debug point matched, where a fault happened, or
+ * who sent a signal.  The thread is the one the stop was reported for.
+ */
+#define PT_GET_SIGINFO		22
+
+/*
  * A block of memory moved between the tracer and the traced process.
  * piod_offs is the address in the traced process and piod_addr the
  * buffer in the tracer; on return piod_len is what was moved.
@@ -93,6 +103,14 @@ struct ptrace_state {
 #define PTRACE_STOP_STEP	2	/* the thread took one instruction */
 #define PTRACE_STOP_WATCHPOINT	3	/* a debug point matched */
 #define PTRACE_STOP_EXEC	4	/* the process replaced its image */
+
+/*
+ * The signal a stop was reported for.
+ */
+struct ptrace_siginfo {
+	siginfo_t psi_siginfo;
+	int psi_thread;
+};
 
 /*
  * One thread of a traced process, as the enumeration reports it.

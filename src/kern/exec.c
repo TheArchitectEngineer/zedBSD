@@ -1507,7 +1507,7 @@ out:
 	 * exists, and has not yet done anything.
 	 */
 	if (process->traced)
-		(void)process_trace_stop(PTRACE_STOP_EXEC, SIGTRAP);
+		(void)process_trace_stop(PTRACE_STOP_EXEC, SIGTRAP, NULL);
 
 	/* Succeeded. */
 	return 0;
