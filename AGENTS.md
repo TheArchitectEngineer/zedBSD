@@ -494,3 +494,11 @@ Latitude 5330（`awe@10.0.10.25`）の IGD（`0000:00:02.0`、`8086:46a8` rev 0c
 ## q314完了: WS029 i915ネイティブGPU driver（2026-09-14）
 
 q314 finished、ws029-p001..p007 全 cleared。実機（Latitude 5330、IGD 8086:46a8、VFIO passthrough）で attach → selftest（BCS0 が store を実行し user interrupt）→ /dev/gpu0 公開まで到達し、userland /bin/gpu-i915-test が copy/fill/store/job を実行、host が QMP pmemsave で guest RAM を独立照合して PASS（test-002）。Linux i915（MIT）の定義/テーブルは出典付き .inc へ転記、driver 論理は zedBSD 規約で新規実装。HAL/UAPI 不変。静的解析 gcc -fanalyzer / clang --analyze 0 件、規約 §14 確認、host fixture・GPU core 回帰・build 3 構成 PASS。制限: cold VFIO attach の bring-up 間欠ハング（最優先の後続）、hang 注入の実機 peer 継続未達、display/scanout は対象外。後続は WS029 registry の planning 行に列挙。source/doc の git add/commit/push はユーザー担当。
+## 2026-09-23 WS034/WS035 計画（zedBSD-rpi4 チェックアウト）
+
+ユーザー指示で WS034（アプリケーション拡充とカーネル・libc是正、`plan/ws034/ws.md`）と
+WS035（デスクトップ環境構築とi915安定化、`plan/ws035/ws.md`）を計画した。どちらも planning で、
+Queue・実装は無く、GitHub にも未公開である（このチェックアウトには `.sync/` が無い）。
+実行は、別エージェントが `~/zedBSD/` で作業中の WS031・WS032 が完了するまで始めない。
+完了後は WS035 の refactor（p002–p004）を最優先で行う。GPU 安定化は i915 を QEMU＋VFIO で試験する
+（参照コマンドラインは WS035 本文。出典は WS031 handover §4.2）。WS005 p016 は WS035 p018 へ移管して取り消した。

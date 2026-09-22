@@ -103,7 +103,7 @@ Shared tests: [WS005 test index](tests/README.md)
 | [ws005-p013](phase013/phase.md) | planning | ネットワーク改善の共通契約・Wi-Fi enable仕様確認 |
 | [ws005-p014](phase014/phase.md) | planning | net lanとnetworkdの有線LAN管理 |
 | [ws005-p015](phase015/phase.md) | planning | oneshot network-enableと設定可能な起動待機 |
-| [ws005-p016](phase016/phase.md) | planning | networkd状態通知とデスクトップ受信 |
+| [ws005-p016](phase016/phase.md) | planning / canceled | networkd状態通知とデスクトップ受信。2026-09-23 [WS035 p018](../ws035/ws.md)へ移管（未実装のまま取消し） |
 | [ws005-p017](phase017/phase.md) | planning | ネットワーク改善の統合受け入れと最終規約確認 |
 
 `ws002-p020` remains historical ownership of the current wired

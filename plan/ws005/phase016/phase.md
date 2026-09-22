@@ -3,11 +3,15 @@
 Phase ID: `ws005-p016`
 Parent: [ws005](../ws.md)
 Status: planning
-Phase disposition: normal
+Phase disposition: canceled（2026-09-23、WS035-p018へ移管）
 Date: 2026-09-11
 Primary Milestone: MG005
 Focused Goal: fg005
 Queue: none / 実装未承認
+
+## 移管（2026-09-23）
+
+ユーザー指示「wifiの状態通知は、すでにnetworkdのパイプかソケットで存在すると思います。もしソースを見てもみつからなければ、ws035で実装します。」により調査した。networkdの`/run/networkd.sock`は要求・応答だけで、購読・push通知のopcodeは無く、本Phaseも未実装だった。したがって本Phaseを移管により取り消し、実装は[WS035 p018](../../ws035/ws.md)で行う。本Phaseの受け入れ条件（snapshotと変更通知、秘密情報を含まない、閲覧から制御権限を得ない、daemon再起動・取りこぼし後の再同期、遅いDEがdaemonを止めない）はp018へ引き継ぐ。実行・成果は無く、取消しは完了を意味しない。
 
 ## 範囲・手順
 
