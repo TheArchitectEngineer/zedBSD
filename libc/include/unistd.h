@@ -183,6 +183,15 @@ int fexecve(int, char *const [], char *const []);
 extern char **environ;
 extern char *optarg;
 extern int opterr, optind, optopt;
+
+/*
+ * Setting this asks the next getopt() to start a new scan, which is what a
+ * program that parses more than one argument vector needs.  Setting optind
+ * back to one is not enough on its own: how far into a run of single
+ * letters the last scan had reached is not written down anywhere the
+ * program can reach.
+ */
+extern int optreset;
 int getopt(int, char *const [], const char *);
 pid_t getpid(void);
 pid_t getppid(void);

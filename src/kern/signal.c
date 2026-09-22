@@ -790,8 +790,24 @@ retry:
 	 */
 	if (signo != SIGKILL && process->traced) {
 		int traced_signo;
+		int stop_kind;
 
-		traced_signo = process_trace_stop(PTRACE_STOP_SIGNAL, signo);
+		/*
+		 * A trap the process took is told apart by what caused it,
+		 * because a debugger treats its own breakpoint, a step it
+		 * asked for, and a debug point it set as three different
+		 * events; every other signal is reported as itself.
+		 */
+		stop_kind = PTRACE_STOP_SIGNAL;
+		if (signo == SIGTRAP) {
+			if (selected_info.code == TRAP_BRKPT)
+				stop_kind = PTRACE_STOP_BREAKPOINT;
+			else if (selected_info.code == TRAP_TRACE)
+				stop_kind = PTRACE_STOP_STEP;
+			else if (selected_info.code == TRAP_HWBKPT)
+				stop_kind = PTRACE_STOP_WATCHPOINT;
+		}
+		traced_signo = process_trace_stop(stop_kind, signo);
 		if (traced_signo >= 0) {
 			if (traced_signo == 0)
 				goto retry;

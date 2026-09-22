@@ -97,7 +97,17 @@ ZEDBSD_CLANG_CMAKE_OPTIONS := \
 	-DCMAKE_SHARED_LINKER_FLAGS='$(ZEDBSD_CLANG_LINK_FLAGS)' \
 	-DCMAKE_MODULE_LINKER_FLAGS='$(ZEDBSD_CLANG_LINK_FLAGS)' \
 	-DLLVM_NATIVE_TOOL_DIR='$(ZEDBSD_CLANG_NATIVE_DIR)' \
-	-DLLVM_ENABLE_PROJECTS='clang;lld' \
+	-DLLVM_ENABLE_PROJECTS='clang;lld;lldb' \
+	-DLLDB_TABLEGEN='$(ZEDBSD_CLANG_NATIVE_DIR)/lldb-tblgen' \
+	-DLLDB_ENABLE_PYTHON=OFF \
+	-DLLDB_ENABLE_LUA=OFF \
+	-DLLDB_ENABLE_LIBEDIT=OFF \
+	-DLLDB_ENABLE_CURSES=OFF \
+	-DLLDB_ENABLE_LZMA=OFF \
+	-DLLDB_ENABLE_LIBXML2=OFF \
+	-DLLDB_ENABLE_SWIG=OFF \
+	-DLLDB_INCLUDE_TESTS=OFF \
+	-DLLDB_BUILD_FRAMEWORK=OFF \
 	-DLLVM_TARGETS_TO_BUILD=X86 \
 	-DLLVM_DEFAULT_TARGET_TRIPLE='$(ZEDBSD_EXTERNAL_TRIPLE)' \
 	-DLLVM_HOST_TRIPLE='$(ZEDBSD_EXTERNAL_TRIPLE)' \
@@ -143,6 +153,10 @@ $(ZEDBSD_CLANG_PATCHED): $(ZEDBSD_CLANG_SOURCE_STAMP) $(ZEDBSD_CLANG_PATCHES)
 $(ZEDBSD_CLANG_CONFIGURED): $(ZEDBSD_CLANG_SOURCE_STAMP) \
 	$(ZEDBSD_CLANG_PATCHED) $(ZEDBSD_CLANG_LIBCXX_STAMP) \
 	$(ZEDBSD_EXTERNAL_CROSS_STAMP) $(ZEDBSD_CLANG_MAKEFILE)
+	@test -x '$(ZEDBSD_CLANG_NATIVE_DIR)/lldb-tblgen' || { \
+		echo "clang: $(ZEDBSD_CLANG_NATIVE_DIR)/lldb-tblgen is missing;" >&2; \
+		echo "clang: build the toolchain first (make toolchain)." >&2; \
+		exit 1; }
 	@test -x '$(ZEDBSD_CLANG_NATIVE_DIR)/llvm-tblgen' || { \
 		echo "clang: $(ZEDBSD_CLANG_NATIVE_DIR)/llvm-tblgen is missing;" >&2; \
 		echo "clang: build the toolchain first (make toolchain)." >&2; \
@@ -208,8 +222,8 @@ $(eval $(call ZEDBSD_USERLAND_PACKAGE,clang,clang compiler,*,n,package,,y,\
 # files, and a copy of a small driver costs less than teaching it to place
 # links.
 ZEDBSD_CLANG_TOOLS := ld.lld llvm-ar llvm-ranlib llvm-nm llvm-objcopy \
-	llvm-objdump llvm-readelf llvm-strip
-ZEDBSD_CLANG_LIBS := libLLVM.so.23.1 libclang-cpp.so.23.1
+	llvm-objdump llvm-readelf llvm-strip lldb lldb-server
+ZEDBSD_CLANG_LIBS := libLLVM.so.23.1 libclang-cpp.so.23.1 liblldb.so.23.1
 
 # The headers the compiler supplies for itself -- stddef.h, stdarg.h and the
 # rest, which belong to the compiler rather than to the C library.

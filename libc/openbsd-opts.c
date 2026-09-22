@@ -181,9 +181,14 @@ getopt_long_internal(
 
 	optarg = NULL;
 
-	/* A caller resets the scan by setting optind to zero. */
-	if (optind == 0) {
-		optind = 1;
+	/*
+	 * A caller starts a new scan either by asking for one or by setting
+	 * the index back to where a scan begins.
+	 */
+	if (optreset != 0 || optind == 0) {
+		optreset = 0;
+		if (optind == 0)
+			optind = 1;
 		option_cursor = NULL;
 	}
 
@@ -213,6 +218,15 @@ getopt_long_internal(
 		dashes = 2;
 	else if (single_dash)
 		dashes = 1;
+
+	/*
+	 * A lone letter that is a single-letter option is that option, not
+	 * an abbreviation of every name beginning with it; otherwise the
+	 * letter could never be given once two such names existed.
+	 */
+	if (dashes == 1 && argument[2] == '\0' && short_options != NULL &&
+	    argument[1] != ':' && strchr(short_options, argument[1]) != NULL)
+		dashes = 0;
 	if (dashes == 0) {
 		option_cursor = argument + 1;
 

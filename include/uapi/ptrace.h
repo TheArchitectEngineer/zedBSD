@@ -77,6 +77,7 @@ struct ptrace_io_desc {
 #define PIOD_WRITE_D		2
 #define PIOD_READ_I		3
 #define PIOD_WRITE_I		4
+#define PIOD_READ_AUXV		5	/* piod_offs is an offset into the vector */
 
 /*
  * What a stopped process was doing.  The thread is the one the stop is

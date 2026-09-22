@@ -30,12 +30,17 @@ typedef uint32_t socklen_t;
 #define AF_INET	2
 
 /*
- * AF_INET6 is deliberately absent.  Naming it is not enough on its own:
- * software that sees the name then writes struct sockaddr_in6 and the rest
- * of the interface, so the name must arrive with all of it or not at all.
- * Until the stack carries the protocol, not at all is the honest answer --
- * and is what keeps software choosing the path that works.
+ * AF_INET6 arrives with the whole of the interface that goes with it --
+ * struct sockaddr_in6, struct in6_addr, the two well-known addresses and
+ * the address-string length -- because a name on its own is what leaves
+ * software writing the rest and finding it missing.
+ *
+ * What is not here is the protocol.  Nothing carries IPv6 yet, so a socket
+ * asked for in this family is refused with EAFNOSUPPORT, which is the
+ * answer a system without the protocol owes its caller.  Software that
+ * tries both families therefore still finds the one that works.
  */
+#define AF_INET6	24
 
 /* One past the highest family, for a caller sizing a table by family. */
 #define AF_MAX	32
@@ -46,6 +51,7 @@ typedef uint32_t socklen_t;
 #define PF_UNIX	AF_UNIX
 #define PF_MAX	AF_MAX
 #define PF_INET	AF_INET
+#define PF_INET6	AF_INET6
 #define PF_PACKET	AF_PACKET
 #define PF_ROUTE	AF_ROUTE
 

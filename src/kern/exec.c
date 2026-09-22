@@ -353,7 +353,9 @@ exec_build_initial_stack(
 	char *const argv[],
 	char *const envp[],
 	const struct exec_auxv_info *aux,
-	uintptr_t *sp_out)
+	uintptr_t *sp_out,
+	uintptr_t *auxv_out,
+	size_t *auxv_size_out)
 {
 	exec_user_word_t *address;
 	exec_user_word_t *argv_address;
@@ -384,7 +386,9 @@ exec_build_initial_stack(
 	    argv[0] == NULL ||
 	    aux == NULL ||
 	    aux->exec_path == NULL ||
-	    sp_out == NULL)
+	    sp_out == NULL ||
+	    auxv_out == NULL ||
+	    auxv_size_out == NULL)
 		return EINVAL;
 
 	/* Counts the strings against the limits. */
@@ -513,6 +517,10 @@ exec_build_initial_stack(
 	if (error != 0)
 		goto out;
 	*sp_out = sp;
+
+	/* The auxiliary vector follows the two pointer tables and their ends. */
+	*auxv_out = sp + (1U + argc + 1U + envc + 1U) * sizeof(words[0]);
+	*auxv_size_out = EXEC_AUXV_PAIRS * 2U * sizeof(words[0]);
 out:
 	kern_free(words);
 	kern_free(address);
@@ -636,7 +644,9 @@ process_spawn_from(
 	fill_auxv_info(&aux, &image, interpreter_base, prospective_cred, secure,
 		       path);
 	error = exec_build_initial_stack(process->vmspace, image.stack_size,
-					 target.argv, envp, &aux, &sp);
+					 target.argv, envp, &aux, &sp,
+					 &process->auxv_address,
+					 &process->auxv_size);
 	if (error != 0)
 		goto out;
 
@@ -1273,6 +1283,8 @@ process_exec_file(
 	EXEC_IMAGE_INFO image;
 	struct exec_auxv_info aux;
 	uintptr_t sp;
+	uintptr_t auxv_address;
+	size_t auxv_size;
 	uintptr_t execution_entry;
 	uintptr_t interpreter_base;
 	unsigned secure;
@@ -1355,7 +1367,8 @@ process_exec_file(
 		fill_auxv_info(&aux, &image, interpreter_base, prospective_cred,
 			       secure, path);
 		error = exec_build_initial_stack(new_vm, image.stack_size,
-						 target.argv, envp, &aux, &sp);
+						 target.argv, envp, &aux, &sp,
+						 &auxv_address, &auxv_size);
 	}
 
 	if (error != 0)
@@ -1438,6 +1451,8 @@ process_exec_file(
 
 	old_vm = process->vmspace;
 	process->vmspace = new_vm;
+	process->auxv_address = auxv_address;
+	process->auxv_size = auxv_size;
 
 	spin_unlock_irqrestore(&process->lock, process_irq);
 

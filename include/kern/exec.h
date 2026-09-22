@@ -161,7 +161,9 @@ exec_build_initial_stack(
 	char *const argv[],
 	char *const envp[],
 	const struct exec_auxv_info *aux,
-	uintptr_t *sp);
+	uintptr_t *sp,
+	uintptr_t *auxv,
+	size_t *auxv_size);
 
 int
 process_spawn(

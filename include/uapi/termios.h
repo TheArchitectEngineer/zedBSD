@@ -56,6 +56,14 @@
 #define PARENB	0x00000080U
 #define PARODD	0x00000100U
 
+/*
+ * Two stop bits rather than one.  The terminals this system drives do not
+ * vary the framing, so the bit is carried and reported unchanged; a
+ * program that sets and reads back the line settings still sees what it
+ * asked for, which is what makes the setting worth having a name.
+ */
+#define CSTOPB	0x00000200U
+
 #define ECHO	0x00000001U
 #define ECHOE	0x00000002U
 #define ECHOK	0x00000004U

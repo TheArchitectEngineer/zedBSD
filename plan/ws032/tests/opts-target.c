@@ -24,6 +24,7 @@ static struct option longopts[] = {
 	{ "colour",  optional_argument, NULL,     'c' },
 	{ "quiet",   no_argument,       &flagged, 42  },
 	{ "quarrel", no_argument,       NULL,     'q' },
+	{ "fold",    no_argument,       NULL,     'F' },
 	{ NULL,      0,                 NULL,     0   }
 };
 
@@ -134,6 +135,15 @@ int main(void)
 			printf("OPT info got [%s]\n", out);
 		check("with one dash a name in full is recognised too",
 		      strcmp(out, "vxy|") == 0);
+	}
+	{
+		char *argv[] = { "prog", "-f", "one.txt", NULL };
+
+		run(argv, 3, out, sizeof(out), 1);
+		if (strcmp(out, "f(one.txt)|") != 0)
+			printf("OPT info got [%s]\n", out);
+		check("with one dash a lone letter is the letter, not a prefix",
+		      strcmp(out, "f(one.txt)|") == 0);
 	}
 
 	/* File modes written as text. */

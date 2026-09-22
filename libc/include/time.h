@@ -27,6 +27,15 @@ struct itimerspec { struct timespec it_interval; struct timespec it_value; };
 struct tm {
 	int tm_sec, tm_min, tm_hour, tm_mday, tm_mon, tm_year;
 	int tm_wday, tm_yday, tm_isdst;
+
+	/*
+	 * How far this time is from Coordinated Universal Time, and what the
+	 * zone it belongs to is called.  A broken-down time is otherwise
+	 * ambiguous: the same fields describe two different instants
+	 * depending on where they were read.
+	 */
+	long tm_gmtoff;
+	const char *tm_zone;
 };
 extern char *tzname[2];
 extern int daylight;

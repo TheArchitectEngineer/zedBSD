@@ -3676,6 +3676,29 @@ private_page_attach_new(
 	spin_unlock_irqrestore(&backing->state_lock, irq);
 }
 
+/*
+ * Reports whether a backing is held only by pins, with its page in memory.
+ *
+ * Such a page cannot be shared copy-on-write, because whoever pinned it
+ * may still write into it; but it can be copied outright, since a pin
+ * keeps the page in memory and keeps reclaim away from it.
+ */
+static int
+private_page_pinned_resident(
+	struct vm_private_page *backing)
+{
+	unsigned long irq;
+	int result;
+
+	irq = spin_lock_irqsave(&backing->state_lock);
+	result = backing->pin_count != 0 &&
+	    backing->active_operations == 0 &&
+	    (backing->flags & (VM_PAGE_BUSY | VM_PAGE_RESIDENT)) ==
+	    VM_PAGE_RESIDENT;
+	spin_unlock_irqrestore(&backing->state_lock, irq);
+	return result;
+}
+
 /* Copies a vmspace's regions and shares its private pages; the caller holds the source locks. */
 static int
 vmspace_fork_locked(
@@ -3686,7 +3709,9 @@ vmspace_fork_locked(
 {
 	struct vmspace *copy;
 	struct vm_region *source_region;
+	struct vm_private_page *fresh;
 	int error;
+	int eager;
 	struct vm_region *copy_region;
 	struct vm_page *source_page;
 	struct vm_private_page *backing;
@@ -3810,7 +3835,26 @@ vmspace_fork_locked(
 			reservation_generation = source->generation;
 
 			/* Read-only private mappings also need COW for later mprotect. */
+			eager = 0;
 			error = vm_page_share_private(source_page, copy_page);
+
+			/*
+			 * A page another thread of the parent has pinned, for a
+			 * read that may not finish until long after this fork,
+			 * is copied now rather than waited for: the child gets
+			 * its own page holding what the parent's held at this
+			 * moment, which is all a fork ever promises.
+			 */
+			if (error == EBUSY &&
+			    private_page_pinned_resident(backing)) {
+				error = prepare_cow_copy(source_page, backing,
+				    &fresh);
+				if (error == 0) {
+					private_page_attach_new(copy_page, fresh);
+					vm_page_track(copy_page);
+					eager = 1;
+				}
+			}
 			if (error != 0) {
 				if (error == EBUSY) {
 					*wait_backing = backing;
@@ -3830,18 +3874,26 @@ vmspace_fork_locked(
 			/* Links the copy in and samples the backing it will share. */
 			copy_page->next = copy_region->pages;
 			copy_region->pages = copy_page;
-			state_irq = spin_lock_irqsave(&backing->state_lock);
-			resident = (backing->flags & VM_PAGE_RESIDENT) != 0;
-			if (resident)
-				physical = backing->pmem.paddr;
+			if (eager) {
+				/* An outright copy is the child's own, writable page. */
+				resident = 1;
+				physical = fresh->pmem.paddr;
+				cow_prot = source_region->prot;
+			} else {
+				state_irq = spin_lock_irqsave(&backing->state_lock);
+				resident = (backing->flags & VM_PAGE_RESIDENT) != 0;
+				if (resident)
+					physical = backing->pmem.paddr;
 
-			spin_unlock_irqrestore(&backing->state_lock, state_irq);
+				spin_unlock_irqrestore(&backing->state_lock, state_irq);
+			}
 
 			/* Downgrades the source and maps the child with no VM lock held. */
 			mutex_unlock(&source->lock);
 			vm_metadata_leave();
 
-			if (resident && source_mapped && hal_space_prot(source->space,
+			if (!eager && resident && source_mapped &&
+			    hal_space_prot(source->space,
 			    (void *)page_address, PAGE_SIZE, cow_prot) != HAL_OK)
 				error = ENOMEM;
 
@@ -3874,7 +3926,8 @@ vmspace_fork_locked(
 				HAL_FATAL("VM fork region hold underflow");
 
 			source_region->hold_count--;
-			vm_private_page_operation_end(backing);
+			if (!eager)
+				vm_private_page_operation_end(backing);
 			vmspace_fault_wake_locked(source);
 
 			if (error != 0)

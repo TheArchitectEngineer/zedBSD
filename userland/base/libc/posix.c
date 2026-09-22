@@ -54,6 +54,7 @@
 #include <sys/times.h>
 #include <sys/uio.h>
 #include <sys/utsname.h>
+#include <netinet/in.h>
 #include <sys/ptrace.h>
 #include <sys/wait.h>
 #include <termios.h>
@@ -69,6 +70,15 @@ char *optarg;
 int opterr = 1;
 int optind = 1;
 int optopt;
+int optreset;
+
+/*
+ * The two addresses of the second family that every implementation
+ * publishes by name.  Nothing carries the protocol, but a program that
+ * names them is compiled and linked here as it is anywhere else.
+ */
+const struct in6_addr in6addr_any = IN6ADDR_ANY_INIT;
+const struct in6_addr in6addr_loopback = IN6ADDR_LOOPBACK_INIT;
 
 #define ENVIRONMENT_MAX 64U
 static char *environment_entries[ENVIRONMENT_MAX + 1U];
@@ -197,9 +207,15 @@ getopt(
 
 	optarg = NULL;
 
-	/* Validates the command-line arguments. */
-	if (optind == 0) {
-		optind = 1;
+	/*
+	 * A caller starts a new scan either by asking for one or by setting
+	 * the index back to where a scan begins; the run of single letters
+	 * the last scan was in the middle of is forgotten either way.
+	 */
+	if (optreset != 0 || optind == 0) {
+		optreset = 0;
+		if (optind == 0)
+			optind = 1;
 		next = NULL;
 	}
 
@@ -6407,6 +6423,14 @@ gmtime_r(
 	result->tm_yday = (int)year_day;
 	result->tm_isdst = 0;
 
+	/*
+	 * This conversion is to Coordinated Universal Time, so the offset
+	 * is none and the zone is that one.  A conversion to local time
+	 * fills these in from the zone it used.
+	 */
+	result->tm_gmtoff = 0;
+	result->tm_zone = "UTC";
+
 	/* Returns the computed result. */
 	return result;
 }
@@ -6544,6 +6568,14 @@ localtime_r(
 		return NULL;
 	result->tm_isdst =
 	    offset == timezone_daylight_east && timezone_has_daylight;
+
+	/*
+	 * The conversion above went through the universal one, which said
+	 * no offset and named that zone; what this conversion actually
+	 * used is recorded here instead.
+	 */
+	result->tm_gmtoff = offset;
+	result->tm_zone = tzname[result->tm_isdst ? 1 : 0];
 
 	/* Returns the computed result. */
 	return result;

@@ -189,6 +189,22 @@ trace_io(
 
 	address = (uintptr_t)request->piod_offs;
 
+	/*
+	 * The auxiliary vector is read from where exec left it, by offset
+	 * within the vector; a read past its end returns what is left,
+	 * which at the end is nothing.
+	 */
+	if (request->piod_op == PIOD_READ_AUXV) {
+		if (address >= process->auxv_size)
+			request->piod_len = 0;
+		else if (request->piod_len > process->auxv_size - address)
+			request->piod_len = process->auxv_size - address;
+		if (request->piod_len == 0)
+			return 0;
+		address += process->auxv_address;
+		request->piod_op = PIOD_READ_D;
+	}
+
 	/* Rejects an empty or unreasonable transfer. */
 	if (request->piod_len == 0 || request->piod_len > 0x100000U)
 		return EINVAL;
@@ -443,6 +459,10 @@ kern_ptrace(
 		 * The request says whether the thread takes one instruction
 		 * or runs on, and which signal it carries out of the stop.
 		 */
+		if (data < 0 || data >= NSIG) {
+			error = EINVAL;
+			break;
+		}
 		if (hal_task_set_single_step(thread->task,
 		    request == PT_STEP) != 0) {
 			error = ENOTSUP;
@@ -574,6 +594,9 @@ kern_ptrace(
 		    sizeof(io));
 		if (error == 0)
 			error = trace_io(process, &io);
+		if (error == 0)
+			error = vmspace_copy_to(caller->vmspace, address, &io,
+			    sizeof(io));
 		break;
 
 	case PT_READ_I:

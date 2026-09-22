@@ -1258,6 +1258,10 @@ process_fork(
 	if (error != 0)
 		goto fail;
 
+	/* The copied stack still holds the auxiliary vector where it was. */
+	child->auxv_address = parent->auxv_address;
+	child->auxv_size = parent->auxv_size;
+
 	/* Forks the task and thread, then publishes and starts the child. */
 	task = hal_task_fork_current(child->vmspace->space, 0);
 	if (task == NULL) {
@@ -1553,8 +1557,14 @@ process_wait_select_mask(
 			matched = 1;
 			if (child->wait_reserved != PROCESS_WAIT_NONE)
 				continue;
-			if ((event_mask & PROCESS_WAIT_EVENT_STOPPED) != 0 &&
-			    child->wait_stopped) {
+			/*
+			 * A stop is reported when the caller asked for stops --
+			 * or, for a child this caller is tracing, always: the
+			 * one thing a tracer waits for is its subject stopping,
+			 * and software that traces is written against that.
+			 */
+			if (((event_mask & PROCESS_WAIT_EVENT_STOPPED) != 0 ||
+			    child->traced) && child->wait_stopped) {
 				event->kind = PROCESS_WAIT_STOPPED;
 				event->status = child->wait_status;
 				goto reserve;

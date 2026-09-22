@@ -155,6 +155,13 @@ struct process {
 	int trace_stop_kind;
 	int trace_signal;
 	tid_t trace_thread;
+
+	/*
+	 * Where exec left the auxiliary vector on the initial stack, so a
+	 * tracer can read what the program was told about its own image.
+	 */
+	uintptr_t auxv_address;
+	size_t auxv_size;
 };
 
 extern struct process process0;
