@@ -62,6 +62,9 @@
 #define STUB_SET_REPLY_STREAM	178U
 #define STUB_SELECTOR_BYTES	36U
 
+/* How many of the rectangles asked for are kept in order. */
+#define STUB_RECT_LOG		8U
+
 /*
  * The header in front of every block the fixture's kernel allocator hands
  * out.
@@ -94,11 +97,8 @@ struct stub_draw_call {
 	/* What was bound when the draw was reached. */
 	struct i915_gfx_draw_state state;
 
-	/* The draw's own parameters. */
-	uint32_t vertex_count;
-	uint32_t instance_count;
-	uint32_t first_vertex;
-	uint32_t first_instance;
+	/* The draw's own parameters: counts, firsts and whether it is indexed. */
+	struct i915_gfx_draw_args args;
 };
 
 /*
@@ -114,6 +114,10 @@ struct stub_rect_call {
 
 	/* Nonzero for a copy (a source was given), zero for a fill. */
 	int copy;
+
+	/* The surface and the rectangle a copy reads; zero for a fill. */
+	struct i915_gfx_surface src;
+	struct i915_gfx_rect src_rect;
 
 	/* The four words a fill writes. */
 	uint32_t clear[4];
@@ -151,6 +155,13 @@ static unsigned stub_draw_calls;
 static struct stub_draw_call stub_last_draw;
 static unsigned stub_rect_calls;
 static struct stub_rect_call stub_last_rect;
+
+/*
+ * The first rectangles asked for since the fixture last cleared the count,
+ * in order: stub_rect_calls says how many were asked for, and the first
+ * STUB_RECT_LOG of them are kept.
+ */
+static struct stub_rect_call stub_rects[STUB_RECT_LOG];
 
 /* What the next draw and rectangle report: 0, or the errno the GPU run failed with. */
 static int stub_draw_result;
@@ -293,20 +304,14 @@ int
 drv_i915_gfx_draw(
 	struct i915_render_session *session,
 	const struct i915_gfx_draw_state *state,
-	uint32_t vertex_count,
-	uint32_t instance_count,
-	uint32_t first_vertex,
-	uint32_t first_instance)
+	const struct i915_gfx_draw_args *args)
 {
 	UNUSED_PARAMETER(session);
 
 	/* Records what was bound and what was drawn. */
 	stub_draw_calls++;
 	stub_last_draw.state = *state;
-	stub_last_draw.vertex_count = vertex_count;
-	stub_last_draw.instance_count = instance_count;
-	stub_last_draw.first_vertex = first_vertex;
-	stub_last_draw.first_instance = first_instance;
+	stub_last_draw.args = *args;
 
 	/* Reports a GPU failure the fixture asked for. */
 	if (stub_draw_result != 0)
@@ -331,7 +336,6 @@ drv_i915_gfx_rect(
 	int linear)
 {
 	UNUSED_PARAMETER(session);
-	UNUSED_PARAMETER(src_rect);
 	UNUSED_PARAMETER(linear);
 
 	/* Records the target and whether the rectangle copies or fills. */
@@ -340,18 +344,52 @@ drv_i915_gfx_rect(
 	stub_last_rect.dst = *dst;
 	stub_last_rect.dst_rect = *dst_rect;
 	stub_last_rect.copy = 0;
-	if (src != NULL)
+	if (src != NULL) {
 		stub_last_rect.copy = 1;
+		stub_last_rect.src = *src;
+		stub_last_rect.src_rect = *src_rect;
+	}
 
 	/* Keeps the words of a fill. */
 	if (clear != NULL)
 		memcpy(stub_last_rect.clear, clear, sizeof(stub_last_rect.clear));
+
+	/* Keeps the first rectangles in order. */
+	if (stub_rect_calls <= STUB_RECT_LOG)
+		stub_rects[stub_rect_calls - 1U] = stub_last_rect;
 
 	/* Reports a GPU failure the fixture asked for. */
 	if (stub_rect_result != 0)
 		return stub_rect_result;
 
 	/* Succeeded: the rectangle counts as run. */
+	return 0;
+}
+
+/*
+ * Stands in for opening a submission's batch: the stand-in draw and
+ * rectangle count as run when they are called, so there is no batch.
+ */
+int
+drv_i915_gfx_submit_begin(
+	struct i915_render_session *session)
+{
+	UNUSED_PARAMETER(session);
+
+	/* Succeeded: nothing to open. */
+	return 0;
+}
+
+/*
+ * Stands in for running a submission's batch: nothing waits in one.
+ */
+int
+drv_i915_gfx_submit_end(
+	struct i915_render_session *session)
+{
+	UNUSED_PARAMETER(session);
+
+	/* Succeeded: nothing to run. */
 	return 0;
 }
 

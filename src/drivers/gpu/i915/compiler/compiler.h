@@ -22,6 +22,15 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* The most sampled images a kernel reads: binding table entries 1 .. 16. */
+#define I915_SHADER_MAX_SAMPLERS	16U
+
+/* The most uniform blocks a kernel reads. */
+#define I915_SHADER_MAX_BLOCKS		8U
+
+/* The most vertex attributes, and varyings, a kernel reads or writes. */
+#define I915_SHADER_MAX_INPUTS		16U
+
 /*
  * Why a SPIR-V module was refused.
  *
@@ -33,6 +42,20 @@ struct i915_compile_diagnostic {
 	uint32_t opcode;
 	uint32_t word_offset;
 	const char *reason;
+};
+
+/*
+ * One uniform block a kernel reads, delivered with its push constants.
+ *
+ * The draw copies bytes [offset, offset + bytes) of the buffer bound at
+ * (set, binding) to byte `push_offset` of the stage's push data.
+ */
+struct i915_shader_block {
+	uint32_t set;
+	uint32_t binding;
+	uint32_t offset;
+	uint32_t bytes;
+	uint32_t push_offset;
 };
 
 /*
@@ -49,7 +72,11 @@ struct i915_shader_binary {
 	uint32_t grf_used;
 	uint32_t simd;
 	uint32_t thread_count;
+
+	/* The sampled images: the n-th is binding table entry 1 + n and sampler n. */
 	uint32_t sampler_count;
+	uint32_t sampler_set[I915_SHADER_MAX_SAMPLERS];
+	uint32_t sampler_binding[I915_SHADER_MAX_SAMPLERS];
 
 	/*
 	 * What a draw has to program around the kernel (see the register
@@ -59,17 +86,32 @@ struct i915_shader_binary {
 	/* The first payload register after the fixed ones. */
 	uint32_t dispatch_grf_start;
 
-	/* Registers of push constants, 32 bytes each. */
+	/*
+	 * Registers of push data, 32 bytes each: the push constants first
+	 * (push_constant_bytes of them, a whole number of registers), then the
+	 * uniform blocks.
+	 */
 	uint32_t push_regs;
+	uint32_t push_constant_bytes;
+
+	/* The uniform blocks delivered after the push constants. */
+	uint32_t block_count;
+	struct i915_shader_block blocks[I915_SHADER_MAX_BLOCKS];
 
 	/* Vertex: attributes; fragment: interpolated inputs. */
 	uint32_t input_count;
 
 	/* The input locations in ascending order: the payload order. */
-	uint32_t input_locations[3];
+	uint32_t input_locations[I915_SHADER_MAX_INPUTS];
 
 	/* Vertex: VUE slots after the position; fragment: equal to input_count. */
 	uint32_t varying_count;
+
+	/*
+	 * Fragment: nonzero when the kernel discards pixels, which the draw
+	 * declares in 3DSTATE_PS_EXTRA (Pixel Shader Kills Pixel).
+	 */
+	uint32_t uses_kill;
 };
 
 int drv_i915_shader_parse(const uint32_t *words, size_t word_count, enum i915_shader_stage stage, struct i915_shader_ir **out, struct i915_compile_diagnostic *diagnostic);

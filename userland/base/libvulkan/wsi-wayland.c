@@ -18,6 +18,9 @@
 #include <string.h>
 #include <time.h>
 
+/* The longest one sleep on the connection lasts while waiting for frame progress, in milliseconds. */
+#define WAYLAND_WAIT_SLICE_MS	50
+
 /* A stalled FIFO frame cannot hold presentation forever. */
 #define WAYLAND_WAIT_NS 10000000000ULL
 
@@ -477,12 +480,13 @@ wayland_wait(
 	uint64_t timeout)
 {
 	struct wayland_lease *lease;
+	struct pollfd descriptor;
 	struct timespec started;
 	struct timespec now;
-	struct timespec pause;
 	uint64_t elapsed;
 	uint64_t completed;
 	VkResult error;
+	int remaining;
 	int status;
 
 	/* A monotonic deadline distinguishes compositor stalling from GPU completion. */
@@ -492,8 +496,6 @@ wayland_wait(
 		return VK_ERROR_SURFACE_LOST_KHR;
 
 	/* Polls private progress without busy waiting or dispatching application callbacks. */
-	pause.tv_sec = 0;
-	pause.tv_nsec = 1000000L;
 	for (;;) {
 		/* Receives releases and pacing updates owned by this surface's queue. */
 		error = wayland_progress(lease);
@@ -516,8 +518,20 @@ wayland_wait(
 		if (timeout != UINT64_MAX && elapsed >= timeout)
 			return VK_TIMEOUT;
 
-		/* Gives the compositor and other readers time to make the next event observable. */
-		nanosleep(&pause, NULL);
+		/*
+		 * Sleeps until the compositor writes to the connection, or for a bounded
+		 * slice of the remaining deadline.  A timed sleep would round up to the
+		 * scheduler tick (10 ms), far longer than one frame takes.
+		 */
+		remaining = WAYLAND_WAIT_SLICE_MS;
+		if (timeout != UINT64_MAX && (timeout - elapsed) / 1000000ULL < (uint64_t)remaining)
+			remaining = (int)((timeout - elapsed) / 1000000ULL) + 1;
+		descriptor.fd = wl_display_get_fd(lease->surface->display);
+		descriptor.events = POLLIN;
+		descriptor.revents = 0;
+		status = poll(&descriptor, 1U, remaining);
+		if (status < 0 && errno != EINTR)
+			return VK_ERROR_SURFACE_LOST_KHR;
 	}
 
 	/* Succeeded: the selected frame sequence completed on the private queue. */

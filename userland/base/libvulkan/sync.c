@@ -10,6 +10,7 @@
  */
 
 #include <errno.h>
+#include <stdio.h>
 #include <string.h>
 #include <time.h>
 #include <stdlib.h>
@@ -24,6 +25,7 @@ static VkResult sync_create(struct VkDevice_T *device, enum vulkan_object_kind k
 static void sync_destroy(struct VkDevice_T *device, struct vulkan_sync *sync, uint32_t opcode, const VkAllocationCallbacks *allocator);
 static VkResult sync_event_operation(VkDevice device, VkEvent event, uint32_t opcode);
 static VkResult sync_notifications_reap(struct vulkan_context *context, unsigned *retired);
+static VkResult sync_notifications_reap_if(struct vulkan_context *context, unsigned *retired, int force);
 static VkResult sync_notification_wait(struct vulkan_context *context, uint64_t sequence, uint64_t timeout_ns);
 static VkResult sync_notification_poll(struct vulkan_context *context, uint64_t timeout_ns, struct pollfd *descriptors, uint32_t count);
 static void sync_release_storage(struct vulkan_object *object);
@@ -582,7 +584,7 @@ vulkan_sync_job_reserve(
 	/* Reclaims only previously terminal jobs before reserving another bounded kernel slot. */
 	pthread_mutex_lock(&context->mutex);
 
-	status = sync_notifications_reap(context, &retired);
+	status = sync_notifications_reap_if(context, &retired, 0);
 	if (status != VK_SUCCESS) {
 		pthread_mutex_unlock(&context->mutex);
 		free(notification);
@@ -995,7 +997,7 @@ vulkan_sync_job_status(
 	/* Another reaper may publish loss between the initial sample and this lock acquisition. */
 	status = __atomic_load_n(&context->error, __ATOMIC_ACQUIRE);
 	if (status == VK_SUCCESS)
-		status = sync_notifications_reap(context, &retired);
+		status = sync_notifications_reap_if(context, &retired, 0);
 
 	/* The protected ledger snapshot cannot precede the terminal error just sampled. */
 	notification = context->notifications;
@@ -1267,6 +1269,40 @@ sync_fences_wait(
 	return VK_SUCCESS;
 }
 
+/*
+ * How many pending records the ledger may hold before a reap asks the
+ * kernel about them.  Every question is a system call, and the kernel keeps
+ * GPU_SUBMIT_MAX (64) records per open, so asking on every operation only
+ * costs time; the ledger is asked when it has grown, or when forced.
+ */
+#define VULKAN_REAP_THRESHOLD	8U
+
+/* Reaps when the ledger has grown past the threshold, or always when forced. */
+static VkResult
+sync_notifications_reap_if(
+	struct vulkan_context *context,
+	unsigned *retired,
+	int force)
+{
+	struct vulkan_notification *notification;
+	unsigned pending;
+	VkResult status;
+
+	/* Counts the ledger; a short one is left for a later reap. */
+	pending = 0;
+	for (notification = context->notifications; notification != NULL; notification = notification->next)
+		pending++;
+	*retired = 0;
+	if (!force && pending < VULKAN_REAP_THRESHOLD)
+		return VK_SUCCESS;
+
+	/* Asks the kernel about every record without a waiter. */
+	status = sync_notifications_reap(context, retired);
+
+	/* Succeeded, or the device is lost. */
+	return status;
+}
+
 /* Reclaims strict records and publishes terminal failure before releasing the ledger lock. */
 static VkResult
 sync_notifications_reap(
@@ -1366,7 +1402,7 @@ sync_notification_wait(
 	/* Another observer may have consumed this marker while retaining the native fence. */
 	pthread_mutex_lock(&context->mutex);
 
-	status = sync_notifications_reap(context, &retired);
+	status = sync_notifications_reap_if(context, &retired, 0);
 	notification = context->notifications;
 	while (notification != NULL) {
 		if (notification->sequence == sequence)
@@ -1433,7 +1469,7 @@ sync_notification_poll(
 	/* Consume unrelated completed markers so level-triggered poll cannot spin on them. */
 	pthread_mutex_lock(&context->mutex);
 
-	status = sync_notifications_reap(context, &retired);
+	status = sync_notifications_reap_if(context, &retired, 0);
 
 	pthread_mutex_unlock(&context->mutex);
 
@@ -1504,7 +1540,7 @@ sync_release_storage(
 	sync->notification = 0;
 	pthread_mutex_lock(&context->mutex);
 
-	status = sync_notifications_reap(context, &retired);
+	status = sync_notifications_reap_if(context, &retired, 1);
 	(void)status;
 
 	pthread_mutex_unlock(&context->mutex);

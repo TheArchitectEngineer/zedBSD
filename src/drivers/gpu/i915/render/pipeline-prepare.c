@@ -13,7 +13,8 @@
  * words of 3DSTATE_VS, PS, PS_EXTRA, WM, SBE and SBE_SWIZ are packed from
  * what that compiler reports about the kernels.  The kernels must fit the
  * fixed slots of the instruction heap (heap.h), the two stages' interfaces
- * must agree, and only the vertex stage may read push constants.
+ * must agree, and neither stage may read more push constants than a command
+ * buffer carries.
  */
 
 #include "gfx.h"
@@ -41,8 +42,7 @@ static const char *i915_pipeline_stage_name(enum i915_shader_stage stage);
  * The pipeline needs both stages.  Returns the parser's or the compiler's
  * error, or ENOTSUP for kernels the draw path cannot place; the pipeline is
  * then left without kernels.
- * XXX: kernels of at most 4 KiB and 12 KiB, the stages' interfaces equal,
- * push constants in the vertex stage only.
+ * XXX: kernels of at most 16 KiB and 32 KiB, the stages' interfaces equal.
  */
 int
 drv_i915_gfx_pipeline_prepare(
@@ -89,13 +89,14 @@ drv_i915_gfx_pipeline_prepare(
 
 	/* Says what the compiler made of the pipeline. */
 	kern_logf("i915: vk: pipeline compiled by the executor: vs %u bytes (%u attributes, %u push registers, %u varyings), "
-		  "fs %u bytes (%u inputs, %u sampled images)\n",
+		  "fs %u bytes (%u inputs, %u push registers, %u sampled images)\n",
 		  pipeline->vs_binary->code_bytes,
 		  pipeline->vs_binary->input_count,
 		  pipeline->vs_binary->push_regs,
 		  pipeline->vs_binary->varying_count,
 		  pipeline->fs_binary->code_bytes,
 		  pipeline->fs_binary->input_count,
+		  pipeline->fs_binary->push_regs,
 		  pipeline->fs_binary->sampler_count);
 
 	/* Marks the pipeline drawable. */
@@ -149,9 +150,13 @@ drv_i915_gfx_pipeline_kernels(
 	kernels->ps_code = fragment->code;
 	kernels->ps_bytes = fragment->code_bytes;
 
-	/* Takes the vertex kernel's payload start, push registers and attribute locations. */
+	/* Takes the vertex kernel's payload start, push data and attribute locations. */
 	kernels->vs_grf_start = vertex->dispatch_grf_start;
 	kernels->vs_push_regs = vertex->push_regs;
+	kernels->vs_push.regs = vertex->push_regs;
+	kernels->vs_push.constant_bytes = vertex->push_constant_bytes;
+	kernels->vs_push.block_count = vertex->block_count;
+	kernels->vs_push.blocks = vertex->blocks;
 	kernels->vs_input_count = vertex->input_count;
 	for (index = 0U; index < kernels->vs_input_count && index < I915_GFX_MAX_VERTEX_ATTRIBUTES; index++)
 		kernels->vs_inputs[index] = vertex->input_locations[index];
@@ -160,6 +165,18 @@ drv_i915_gfx_pipeline_kernels(
 	kernels->varyings = vertex->varying_count;
 	kernels->ps_grf_start = fragment->dispatch_grf_start;
 	kernels->ps_samplers = fragment->sampler_count;
+	kernels->ps_sampler_sets = fragment->sampler_set;
+	kernels->ps_sampler_bindings = fragment->sampler_binding;
+
+	/* Takes the pixel kernel's push data. */
+	kernels->ps_push_regs = fragment->push_regs;
+	kernels->ps_push.regs = fragment->push_regs;
+	kernels->ps_push.constant_bytes = fragment->push_constant_bytes;
+	kernels->ps_push.block_count = fragment->block_count;
+	kernels->ps_push.blocks = fragment->blocks;
+
+	/* Takes whether the pixel kernel discards, which the pixel stage must be told. */
+	kernels->ps_kills = fragment->uses_kill;
 }
 
 /*
@@ -212,8 +229,11 @@ i915_pipeline_compile_stage(
  *
  * The vertex kernel must fit below the pixel kernel's slot and the pixel
  * kernel in the rest of the instruction heap; the vertex stage's varyings
- * must be the fragment stage's inputs; the fragment stage must read no push
- * constants and the vertex stage no more than a command buffer carries.
+ * must be the fragment stage's inputs; neither stage may read more push
+ * constants than a command buffer carries, nor more push data than its
+ * buffer holds; the pixel kernel may sample no more textures than the
+ * binding table has room for, and the vertex kernel none (it has no
+ * binding table).
  */
 static int
 i915_pipeline_kernels_fit(
@@ -231,12 +251,28 @@ i915_pipeline_kernels_fit(
 	if (pipeline->vs_binary->varying_count != pipeline->fs_binary->input_count)
 		return 0;
 
-	/* Only the vertex stage may read push constants. */
-	if (pipeline->fs_binary->push_regs != 0U)
+	/* The vertex stage may read no more push constants than a command buffer carries. */
+	if (pipeline->vs_binary->push_constant_bytes > I915_GFX_PUSH_BYTES)
 		return 0;
 
-	/* The vertex stage may read no more push constants than a command buffer carries. */
-	if (pipeline->vs_binary->push_regs * 32U > I915_GFX_PUSH_BYTES)
+	/* Nor may the fragment stage, which reads the same block. */
+	if (pipeline->fs_binary->push_constant_bytes > I915_GFX_PUSH_BYTES)
+		return 0;
+
+	/* The vertex stage's push data must fit its buffer. */
+	if (pipeline->vs_binary->push_regs * 32U > I915_GFX_PUSH_DATA_BYTES)
+		return 0;
+
+	/* So must the pixel stage's. */
+	if (pipeline->fs_binary->push_regs * 32U > I915_GFX_PUSH_DATA_BYTES)
+		return 0;
+
+	/* XXX: the vertex stage has no binding table, so a vertex kernel does not sample. */
+	if (pipeline->vs_binary->sampler_count != 0U)
+		return 0;
+
+	/* The pixel kernel's textures must fit the binding table. */
+	if (pipeline->fs_binary->sampler_count > I915_GFX_MAX_TEXTURES)
 		return 0;
 
 	/* Succeeded: the kernels fit. */

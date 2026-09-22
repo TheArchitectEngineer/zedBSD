@@ -50,6 +50,58 @@ main(int argc, char **argv)
 	drv_i915_eu_send(&b, drv_i915_eu_null(), drv_i915_eu_grf(127U), drv_i915_eu_grf(123U), 6U, 0x02080027U, 0x00000100U, 0, 1);
 	/* render-target write, end of thread */
 	drv_i915_eu_send(&b, drv_i915_eu_null(), drv_i915_eu_grf(124U), drv_i915_eu_null(), 5U, 0x08031400U, 0U, 1, 1);
+	/* p014 stage C: comparisons, selections, logic, rounding, abs, the flag load, the math functions, a masked write */
+	drv_i915_eu_cmp(&b, I915_EU_COND_LT, I915_EU_FLAG_F0_0, 0, drv_i915_eu_grf(27U), drv_i915_eu_grf(16U), drv_i915_eu_grf(17U));
+	drv_i915_eu_cmp(&b, I915_EU_COND_GE, I915_EU_FLAG_F0_0, 0, drv_i915_eu_grf(28U), drv_i915_eu_grf(16U), drv_i915_eu_grf(17U));
+	drv_i915_eu_cmp(&b, I915_EU_COND_EQ, I915_EU_FLAG_F0_0, 0, drv_i915_eu_grf(29U), drv_i915_eu_grf(16U), drv_i915_eu_grf(17U));
+	drv_i915_eu_cmp(&b, I915_EU_COND_NE, I915_EU_FLAG_F0_0, 0, drv_i915_eu_grf(30U), drv_i915_eu_grf(16U), drv_i915_eu_grf(17U));
+	{
+		struct i915_eu_reg n = drv_i915_eu_null();
+
+		n.type = 6U;
+		drv_i915_eu_cmp(&b, I915_EU_COND_NE, I915_EU_FLAG_F0_0, 0, n, drv_i915_eu_grf_d(27U), drv_i915_eu_imm_d(0U));
+		drv_i915_eu_select(&b, I915_EU_FLAG_F0_0, drv_i915_eu_grf_d(31U), drv_i915_eu_grf_d(16U), drv_i915_eu_grf_d(17U));
+		drv_i915_eu_flag_load(&b, I915_EU_FLAG_F1_0, 1U, 28U);
+		drv_i915_eu_cmp(&b, I915_EU_COND_EQ, I915_EU_FLAG_F1_0, 1, n, drv_i915_eu_grf_d(28U), drv_i915_eu_imm_d(0U));
+	}
+	drv_i915_eu_minmax(&b, I915_EU_COND_LT, drv_i915_eu_grf(32U), drv_i915_eu_grf(16U), drv_i915_eu_grf(17U));
+	drv_i915_eu_minmax(&b, I915_EU_COND_GE, drv_i915_eu_grf(33U), drv_i915_eu_grf(16U), drv_i915_eu_grf(17U));
+	drv_i915_eu_alu2(&b, I915_EU_AND, drv_i915_eu_grf_d(34U), drv_i915_eu_grf_d(27U), drv_i915_eu_grf_d(28U));
+	drv_i915_eu_alu2(&b, I915_EU_OR, drv_i915_eu_grf_d(35U), drv_i915_eu_grf_d(27U), drv_i915_eu_grf_d(28U));
+	drv_i915_eu_alu1(&b, I915_EU_NOT, drv_i915_eu_grf_d(36U), drv_i915_eu_grf_d(27U));
+	drv_i915_eu_alu1(&b, I915_EU_RNDD, drv_i915_eu_grf(37U), drv_i915_eu_grf(16U));
+	drv_i915_eu_alu1(&b, I915_EU_FRC, drv_i915_eu_grf(38U), drv_i915_eu_grf(16U));
+	drv_i915_eu_mov(&b, drv_i915_eu_grf(39U), drv_i915_eu_abs(drv_i915_eu_grf(16U)));
+	drv_i915_eu_math(&b, I915_EU_MATH_INV, drv_i915_eu_grf(44U), drv_i915_eu_grf(16U), drv_i915_eu_null());
+	drv_i915_eu_math(&b, I915_EU_MATH_SQRT, drv_i915_eu_grf(45U), drv_i915_eu_grf(16U), drv_i915_eu_null());
+	drv_i915_eu_math(&b, I915_EU_MATH_LOG, drv_i915_eu_grf(46U), drv_i915_eu_grf(16U), drv_i915_eu_null());
+	drv_i915_eu_math(&b, I915_EU_MATH_EXP, drv_i915_eu_grf(47U), drv_i915_eu_grf(16U), drv_i915_eu_null());
+	/* p014 stage E: integer arithmetic, shifts, conversions, the 32 x 16-bit multiply halves, masked ALU, WHILE */
+	{
+		uint32_t top = drv_i915_eu_position(&b);
+		struct i915_eu_reg n = drv_i915_eu_null();
+
+		drv_i915_eu_alu2(&b, I915_EU_ADD, drv_i915_eu_grf_d(48U), drv_i915_eu_grf_d(16U), drv_i915_eu_negate(drv_i915_eu_grf_d(17U)));
+		drv_i915_eu_alu2(&b, I915_EU_XOR, drv_i915_eu_grf_d(49U), drv_i915_eu_grf_d(16U), drv_i915_eu_grf_d(17U));
+		drv_i915_eu_alu2(&b, I915_EU_SHL, drv_i915_eu_grf_d(50U), drv_i915_eu_grf_d(16U), drv_i915_eu_grf_d(17U));
+		drv_i915_eu_alu2(&b, I915_EU_SHR, drv_i915_eu_grf_ud(51U), drv_i915_eu_grf_ud(16U), drv_i915_eu_imm_ud(5U));
+		drv_i915_eu_alu2(&b, I915_EU_ASR, drv_i915_eu_grf_d(52U), drv_i915_eu_grf_d(16U), drv_i915_eu_grf_d(17U));
+		drv_i915_eu_alu2(&b, I915_EU_MUL, drv_i915_eu_grf_d(53U), drv_i915_eu_grf_d(16U), drv_i915_eu_grf_uw_half(17U, 0));
+		drv_i915_eu_alu2(&b, I915_EU_MUL, drv_i915_eu_grf_d(54U), drv_i915_eu_grf_d(16U), drv_i915_eu_grf_uw_half(17U, 1));
+		drv_i915_eu_alu1(&b, I915_EU_RNDZ, drv_i915_eu_grf(55U), drv_i915_eu_grf(16U));
+		drv_i915_eu_mov(&b, drv_i915_eu_grf_d(56U), drv_i915_eu_grf(16U));
+		drv_i915_eu_mov(&b, drv_i915_eu_grf(57U), drv_i915_eu_grf_d(16U));
+		drv_i915_eu_mov(&b, drv_i915_eu_grf_ud(58U), drv_i915_eu_grf(16U));
+		drv_i915_eu_mov(&b, drv_i915_eu_grf(59U), drv_i915_eu_grf_ud(16U));
+		drv_i915_eu_cmp(&b, I915_EU_COND_GE, I915_EU_FLAG_F0_0, 0, drv_i915_eu_grf_d(60U), drv_i915_eu_grf_ud(16U), drv_i915_eu_grf_ud(17U));
+		drv_i915_eu_alu2_masked(&b, I915_EU_FLAG_F0_0, I915_EU_ADD, drv_i915_eu_grf_d(61U), drv_i915_eu_grf_d(61U), drv_i915_eu_negate(drv_i915_eu_grf_d(17U)));
+		drv_i915_eu_alu2_masked(&b, I915_EU_FLAG_F0_0, I915_EU_OR, drv_i915_eu_grf_d(62U), drv_i915_eu_grf_d(62U), drv_i915_eu_imm_d(0x80000000U));
+		n.type = 6U;
+		drv_i915_eu_cmp(&b, I915_EU_COND_NE, I915_EU_FLAG_F0_0, 0, n, drv_i915_eu_grf_d(60U), drv_i915_eu_imm_d(0U));
+		drv_i915_eu_while(&b, I915_EU_FLAG_F0_0, top);
+	}
+	/* render-target write predicated on the discard flag, end of thread */
+	drv_i915_eu_send_masked(&b, I915_EU_FLAG_F1_0, drv_i915_eu_null(), drv_i915_eu_grf(124U), drv_i915_eu_null(), 5U, 0x08031400U, 0U, 1, 1);
 	if (b.error != 0)
 		return 1;
 	words = drv_i915_eu_data(&b, &bytes);

@@ -191,6 +191,7 @@ zwl_present(
 	struct zwl_object *previous;
 	struct gpu_display_present present;
 	struct gpu_image_descriptor *image;
+	uint64_t mark;
 	int error;
 
 	/* Null committed attachment unmaps this surface instead of presenting pixels. */
@@ -234,7 +235,10 @@ zwl_present(
 	present.refresh_millihz = server->refresh;
 	present.flags = GPU_DISPLAY_PRESENT_FIFO | GPU_DISPLAY_PRESENT_BLOB;
 	present.generation = server->display.generation;
+	mark = zwl_cycles();
 	error = ioctl(server->gpu, GPU_DISPLAY_PRESENT, &present);
+	server->perf.present_cycles += zwl_cycles() - mark;
+	server->perf.presents++;
 	if (error != 0)
 		return errno;
 
@@ -252,7 +256,10 @@ zwl_present(
 	surface->queued = NULL;
 	surface->ready = 0;
 	zwl_buffer_put(previous);
-	printf("ZWL PRESENT client=%llu surface=%u buffer=%u resource=%u frame=%llu sequence=%llu width=%u height=%u flags=%u refresh=%u\n", (unsigned long long)surface->client->number, surface->id, buffer->id, buffer->image.resource_id, (unsigned long long)server->frame, (unsigned long long)present.sequence, image->width, image->height, present.flags, present.refresh_millihz);
+
+	/* Names the presentation when the per-frame lines were asked for. */
+	if (server->log_frames)
+		printf("ZWL PRESENT client=%llu surface=%u buffer=%u resource=%u frame=%llu sequence=%llu width=%u height=%u flags=%u refresh=%u\n", (unsigned long long)surface->client->number, surface->id, buffer->id, buffer->image.resource_id, (unsigned long long)server->frame, (unsigned long long)present.sequence, image->width, image->height, present.flags, present.refresh_millihz);
 
 	/* Input follows the surface that is now on the display. */
 	zwl_seat_focus(server);

@@ -124,7 +124,10 @@ zwl_buffer_put(
 	/* Only committed buffers receive release, and destroyed identities receive no event. */
 	if (buffer->busy) {
 		buffer->busy = 0;
-		printf("ZWL RELEASE client=%llu buffer=%u resource=%u dead=%u\n", (unsigned long long)buffer->client->number, buffer->id, buffer->image.resource_id, buffer->dead);
+
+		/* Names the release when the per-frame lines were asked for. */
+		if (buffer->client->server->log_frames)
+			printf("ZWL RELEASE client=%llu buffer=%u resource=%u dead=%u\n", (unsigned long long)buffer->client->number, buffer->id, buffer->image.resource_id, buffer->dead);
 
 		/* Only a surviving protocol identity may tell its producer to reuse storage. */
 		if (!buffer->dead && !buffer->client->fatal) {

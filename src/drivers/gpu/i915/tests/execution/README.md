@@ -34,6 +34,8 @@ On the hardware (the machine is shared; always take the lock):
 | `tex` | `drv_i915_test_execution_tex` | the first textured draw, 1024 pixels, texture untouched |
 | `t3` | `drv_i915_test_execution_t3` | texture update, binding switch, redraw on the same and a new context (9 steps) |
 | `bl` | `drv_i915_test_execution_bl` | bilinear filtering, exact comparison (4 steps) |
+| `vkx` | `drv_i915_test_render_executor` (`../render/executor.c`) | the Vulkan executor once the node is served: a thread opens a session and records command buffers through the wire -- 16/32-bit indexed draws (bind offset, first index, vertex offset, instances), dynamic viewport and scissor, `vkCmdCopyBuffer` (byte-exact), a 134-operation command buffer whose fragment shader reads the pushed colour at byte 112; a 64x64 texture of 7 levels filled level by level with distinct colours and sampled minified (nearest level at 32/16/8 pixels, LOD held at 1.5 with linear mip blending, LOD bias 2, a view of level 2 on), and a mip chain made by linear `vkCmdBlitImage` from level to level and checked as the box filter of the level above; each step `VKX-<name> PASS/FAIL`, then `vkx: verdict` (the runner logs `end` before it) |
+| `vkc` | `drv_i915_test_render_compiler` (`../render/compiler.c`) | the shader compiler on the GPU once the node is served: each step compiles a shader pair of `../render/compiler-shaders/` (and mview's shipped vertex shader), draws straight through `drv_i915_gfx_draw` into a 64x64 R32G32B32A32_SFLOAT target the CPU cleared, and checks every component of every pixel against the bounds `regenerate.py` computed (exact, or the precision Vulkan requires): GLSL.std.450 functions over 256 inputs, division, the comparisons and selections (NaN included), vertex-stage normalize/max/clamp, mview.vert with its push constants, nested if/else diverging inside a SIMD8 dispatch, discard (discarded pixels keep the clear value); each step `VKC-<name> PASS/FAIL`, then `vkc: verdict` |
 | `lcdb` ... `display_ktest` | `drv_i915_test_display_<name>` | the display scenarios of `tests/display/` (weak in the runner's table until linked) |
 
 ## Files
@@ -50,6 +52,8 @@ On the hardware (the machine is shared; always take the lock):
 - `ppgtt-walk.c` — a read-only walk of the GT address space, as the GPU does it.
 - `firmware-override.c`, `firmware-override.h` — the test build's answer to the firmware provider's weak request checkpoint (an image it serves stays the test's memory; the release does not free it).
 - `../fixtures/` — the draw/texture fixtures (`draw-fixture.c`, the generated `tex-fixture*-gen.inc`) and `vkref-generated.inc`.
+- `../render/compiler.c` — the compiler scenario `vkc`; its shaders are `../render/compiler-shaders/*.{vert,frag}`, compiled by `../render/compiler-shaders/regenerate.py` into `.spv` (read by the host fixtures `plan/ws031/tests/i915-vk-lower-test.c` and `i915-vk-compile-test.c`) and `../fixtures/compiler-shaders-gen.inc` (the SPIR-V, mview's shipped vertex shader, the cell inputs and the expected output bounds).
+- `../render/executor.c`, `../render/scenarios.h` — the executor scenario `vkx`; its shaders are `../render/shaders/*.{vert,frag}`, compiled by `../render/shaders/regenerate.py` into `.spv` (read by the host fixture `plan/ws031/tests/i915-vk-pipe-test.c`) and `../fixtures/executor-shaders-gen.inc`.
 
 ## Dropped tests
 

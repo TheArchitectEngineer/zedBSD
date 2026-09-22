@@ -66,6 +66,7 @@
 #include "opregion.h"
 
 #include <hal/hal.h>
+#include <kern/clock.h>
 #include <kern/kmem.h>
 #include <kern/sched.h>
 
@@ -90,7 +91,7 @@
 #define I915_ACPI_DISPLAY_TYPES			16U
 
 /* How long the ASLE work cancellation waits for a running callback, in scheduler ticks. */
-#define I915_OPREGION_CANCEL_TICKS 500u
+#define I915_OPREGION_CANCEL_TICKS (5u * KERN_CLOCK_HZ)
 
 /* How many regions the memremap() table holds, and how many HAL mappings the FIRMWARE backend makes. */
 #define I915_OPREGION_MAPS 4u

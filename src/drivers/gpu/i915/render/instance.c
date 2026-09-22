@@ -535,12 +535,20 @@ i915_instance_format_features(
 	/* A format not listed below has no feature. */
 	memset(properties, 0, sizeof(*properties));
 
-	/* XXX: the three formats the connectivity check uses; nothing else is claimed. */
+	/*
+	 * XXX: the three formats the executor lays out; nothing else is claimed.
+	 * Every image is linear, so both tilings have the same features.
+	 */
 	switch (format) {
 	case VK_FORMAT_R8G8B8A8_UNORM:
 	case VK_FORMAT_B8G8R8A8_UNORM:
-		/* Colour targets, sampled images, and GPU rectangle copies and blits. */
+		/*
+		 * Colour targets, sampled images read nearest or linear (between
+		 * texels and between mip levels), and GPU rectangle copies and
+		 * blits, a linear blit included.
+		 */
 		properties->optimalTilingFeatures = VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
+			VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
 			VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT |
 			VK_FORMAT_FEATURE_TRANSFER_SRC_BIT |
 			VK_FORMAT_FEATURE_TRANSFER_DST_BIT |
@@ -619,11 +627,16 @@ i915_instance_image_format_properties(
 		return 0;
 	}
 
-	/* Describes a 2D image of one level, one layer and one sample.  XXX: one level is what the executor lays out. */
+	/*
+	 * Describes a 2D image of one layer and one sample: a colour image has
+	 * its levels down to one texel (15 for 16384), a depth image one level.
+	 */
 	image.maxExtent.width = 16384U;
 	image.maxExtent.height = 16384U;
 	image.maxExtent.depth = 1U;
-	image.maxMipLevels = 1U;
+	image.maxMipLevels = 15U;
+	if (format == VK_FORMAT_D32_SFLOAT)
+		image.maxMipLevels = 1U;
 	image.maxArrayLayers = 1U;
 	image.sampleCounts = VK_SAMPLE_COUNT_1_BIT;
 	image.maxResourceSize = 1ULL << 30;

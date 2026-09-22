@@ -23,6 +23,7 @@
 #include <stdint.h>
 
 #include "memory.h"
+#include "perf.h"
 #include "request-queue.h"
 #include "gt.h"
 
@@ -143,6 +144,13 @@ struct i915_device {
 	 * device stop frees it; NULL for a device started without a display.
 	 */
 	struct i915_display *display;
+
+	/*
+	 * The frame timing totals the executor, the present path and the
+	 * worker add to; prepared by drv_i915_node_init() and logged every few
+	 * seconds while frames flow.
+	 */
+	struct i915_perf perf;
 
 	/*
 	 * Nonzero once the start worker has returned, so the device stop knows

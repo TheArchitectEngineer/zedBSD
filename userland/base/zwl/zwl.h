@@ -169,7 +169,23 @@ struct zwl_client {
 };
 
 /* The compositor alone owns the GPU context and the currently scanned-out image. */
+/* Cycle counts of the event loop, reported every few seconds (ZWL PERF). */
+struct zwl_perf {
+	uint64_t window_start_ms;
+	uint64_t window_start_cycles;
+	uint64_t poll_cycles;
+	uint64_t work_cycles;
+	uint64_t present_cycles;
+	uint64_t present_to_flush_cycles;
+	uint32_t passes;
+	uint32_t timeouts;
+	uint32_t presents;
+};
+
+uint64_t zwl_cycles(void);
+
 struct zwl_server {
+	struct zwl_perf perf;
 	int listener;
 	int gpu;
 	const char *gpu_path;
@@ -191,6 +207,8 @@ struct zwl_server {
 	uint32_t refresh;
 	uint64_t timeout_ms;
 	uint64_t max_frames;
+	/* Nonzero with --log-frames: every presentation and buffer release is printed (for the tests that read them). */
+	unsigned log_frames;
 	unsigned failed;
 	struct zwl_input_device inputs[ZWL_INPUT_MAX];
 	uint64_t input_scan_time;

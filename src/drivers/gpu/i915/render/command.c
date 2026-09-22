@@ -34,8 +34,17 @@
 
 #include "vulkan-codec.inc"
 
-/* How many operations one command buffer records. */
-#define I915_GFX_MAX_OPS	64U
+/*
+ * How many operations one command buffer records at most.
+ *
+ * The list grows as the recording needs it, from the first allocation on;
+ * the bound only keeps a runaway recording from taking the kernel's memory
+ * (one operation is a few hundred bytes).
+ */
+#define I915_GFX_MAX_OPS	65536U
+
+/* How many operations the list of a command buffer holds when it is first allocated. */
+#define I915_GFX_FIRST_OPS	64U
 
 /* How many command buffers one vkAllocateCommandBuffers creates, and one vkQueueSubmit runs. */
 #define I915_GFX_MAX_ALLOCATE	16U
@@ -50,6 +59,16 @@
 /* How many descriptor sets one command buffer binds. */
 #define I915_GFX_MAX_SETS	4U
 
+/*
+ * The texels of one row of a buffer copy, which runs as a copy between two
+ * linear surfaces of four-byte texels.  A power of two keeps the sampled
+ * coordinates of every texel exact.
+ */
+#define I915_GFX_COPY_ROW_TEXELS	4096U
+
+/* How many rows one rectangle of a buffer copy covers at most. */
+#define I915_GFX_COPY_MAX_ROWS		4096U
+
 struct i915_gfx_cmdpool;
 struct i915_vk_fence;
 
@@ -58,7 +77,8 @@ struct i915_vk_fence;
  *
  * It belongs to its pool from vkAllocateCommandBuffers to vkFreeCommandBuffers
  * or the pool's destruction, and is published in the object table under its
- * identity for that whole time.  Begin and a pool reset empty the list.
+ * identity for that whole time.  Begin and a pool reset empty the list but
+ * keep its storage, which is freed with the buffer.
  */
 struct i915_gfx_cmdbuf {
 	/* The next buffer of the same pool. */
@@ -73,11 +93,18 @@ struct i915_gfx_cmdbuf {
 	/* How many operations are recorded. */
 	uint32_t op_count;
 
-	/* Nonzero once an operation did not fit: vkEndCommandBuffer then fails. */
+	/* How many operations the list has room for; zero until the first operation. */
+	uint32_t op_capacity;
+
+	/*
+	 * Nonzero once an operation did not fit: the list reached its bound or
+	 * could not grow.  vkEndCommandBuffer then fails, and a begin or a reset
+	 * clears it.
+	 */
 	int overflow;
 
-	/* The recorded operations, in recording order. */
-	struct i915_gfx_op ops[I915_GFX_MAX_OPS];
+	/* The recorded operations, in recording order; NULL until the first operation. */
+	struct i915_gfx_op *ops;
 };
 
 /*
@@ -112,6 +139,7 @@ static int i915_command_buffers_free(struct i915_render_session *session, struct
 static int i915_command_buffer_begin(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int i915_command_buffer_end(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static struct i915_gfx_op *i915_command_op(struct i915_gfx_cmdbuf *cmdbuf, enum i915_gfx_op_kind kind);
+static int i915_command_grow(struct i915_gfx_cmdbuf *cmdbuf);
 static int i915_record_image_copy(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader, int blit);
 static int i915_record_clear_image(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader);
 static int i915_record_barrier(struct i915_render_session *session, struct i915_wire_reader *reader);
@@ -120,15 +148,22 @@ static int i915_record_begin_pass(struct i915_render_session *session, struct i9
 static int i915_record_bind_vertex(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader);
 static int i915_record_bind_descriptor_sets(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader);
 static int i915_record_push_constants(struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader);
+static int i915_record_bind_index(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader);
+static int i915_record_set_viewport(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader);
+static int i915_record_set_scissor(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader);
+static int i915_record_copy_buffer(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader);
 static int i915_record_clear_attachments(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader);
 static int i915_record_command(struct i915_render_session *session, uint32_t opcode, struct i915_wire_reader *reader);
-static int i915_image_surface(const struct i915_gfx_image *image, struct i915_gfx_surface *surface);
+static int i915_image_surface(const struct i915_gfx_image *image, uint32_t level, struct i915_gfx_surface *surface);
+static int i915_attachment_surface(const struct i915_gfx_view *view, struct i915_gfx_surface *surface);
 static int i915_execute_clear(struct i915_render_session *session, const struct i915_gfx_op *op);
 static int i915_execute_buffer_image_copy(struct i915_render_session *session, const struct i915_gfx_op *op);
 static int i915_execute_clear_image(struct i915_render_session *session, const struct i915_gfx_op *op);
 static int i915_execute_clear_attachment(struct i915_render_session *session, const struct i915_gfx_draw_state *state, const struct i915_gfx_op *op);
 static int i915_execute_image_copy(struct i915_render_session *session, const struct i915_gfx_op *op);
 static int i915_execute_image_blit(struct i915_render_session *session, const struct i915_gfx_op *op);
+static int i915_execute_buffer_copy(struct i915_render_session *session, const struct i915_gfx_op *op);
+static int i915_execute_draw(struct i915_render_session *session, const struct i915_gfx_draw_state *state, const struct i915_gfx_op *op);
 static int i915_command_buffer_execute(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf);
 static int i915_queue_submit(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 
@@ -323,8 +358,9 @@ i915_command_buffer_release(
 		}
 	}
 
-	/* Withdraws the identity, then frees the buffer. */
+	/* Withdraws the identity, then frees the operation list and the buffer. */
 	drv_i915_object_remove(session->vk, I915_VK_OBJ_COMMAND_BUFFER, cmdbuf->identity);
+	kern_free(cmdbuf->ops);
 	kern_free(cmdbuf);
 }
 
@@ -611,8 +647,10 @@ i915_command_buffer_end(
 		return EINVAL;
 
 	/* Says why a recording that did not fit is refused. */
-	if (cmdbuf != NULL && cmdbuf->overflow != 0)
-		kern_logf("i915: vk: XXX command buffer holds more than %u operations; the recording is refused\n", I915_GFX_MAX_OPS);
+	if (cmdbuf != NULL && cmdbuf->overflow != 0) {
+		kern_logf("i915: vk: command buffer recording refused: it needs more than %u operations or its operation list could not grow\n",
+			  cmdbuf->op_capacity);
+	}
 
 	/* Replies success only for a known buffer whose recording fit. */
 	result = (uint32_t)VK_ERROR_OUT_OF_HOST_MEMORY;
@@ -628,9 +666,9 @@ i915_command_buffer_end(
  * Returns the next free operation of a command buffer, zeroed and of the
  * given kind.
  *
- * A buffer that does not exist, or that is full, gets the discarded
- * operation instead; a full buffer is marked overflowed so that its end
- * fails.
+ * The list grows when it is full.  A buffer that does not exist, that has
+ * already overflowed, or whose list cannot grow gets the discarded operation
+ * instead; such a buffer is marked overflowed so that its end fails.
  */
 static struct i915_gfx_op *
 i915_command_op(
@@ -638,12 +676,23 @@ i915_command_op(
 	enum i915_gfx_op_kind kind)
 {
 	struct i915_gfx_op *op;
+	int error;
+
+	/*
+	 * Grows a full list of a recording that still fits.  A list that
+	 * cannot grow overflows the recording: every later operation of it is
+	 * discarded and its end fails.
+	 */
+	if (cmdbuf != NULL &&
+	    cmdbuf->overflow == 0 &&
+	    cmdbuf->op_count >= cmdbuf->op_capacity) {
+		error = i915_command_grow(cmdbuf);
+		if (error != 0)
+			cmdbuf->overflow = 1;
+	}
 
 	/* Hands a recording with nowhere to go the discarded operation. */
-	if (cmdbuf == NULL || cmdbuf->op_count >= I915_GFX_MAX_OPS) {
-		/* A full buffer remembers that its recording did not fit. */
-		if (cmdbuf != NULL)
-			cmdbuf->overflow = 1;
+	if (cmdbuf == NULL || cmdbuf->overflow != 0) {
 		memset(&i915_command_discard_op, 0, sizeof(i915_command_discard_op));
 		return &i915_command_discard_op;
 	}
@@ -658,6 +707,52 @@ i915_command_op(
 
 	/* Succeeded: the operation is the buffer's newest. */
 	return op;
+}
+
+/*
+ * Doubles the room of a command buffer's operation list, keeping what is
+ * recorded.
+ *
+ * Returns ENOSPC when the list already holds the most operations a buffer
+ * records, and ENOMEM when the larger list cannot be allocated; the list is
+ * then left as it was.
+ */
+static int
+i915_command_grow(
+	struct i915_gfx_cmdbuf *cmdbuf)
+{
+	struct i915_gfx_op *ops;
+	uint32_t capacity;
+
+	/* Refuses to grow past the bound of a recording. */
+	if (cmdbuf->op_capacity >= I915_GFX_MAX_OPS)
+		return ENOSPC;
+
+	/* Starts with a small list and doubles it after that, never past the bound. */
+	capacity = I915_GFX_FIRST_OPS;
+	if (cmdbuf->op_capacity != 0U)
+		capacity = cmdbuf->op_capacity * 2U;
+	if (capacity > I915_GFX_MAX_OPS)
+		capacity = I915_GFX_MAX_OPS;
+
+	/* Allocates the larger list. */
+	ops = kern_malloc((size_t)capacity * sizeof(*ops));
+	if (ops == NULL) {
+		kern_logf("i915: vk: the operation list of a command buffer cannot grow to %u operations\n", capacity);
+		return ENOMEM;
+	}
+
+	/* Moves the recorded operations over and frees the old list. */
+	if (cmdbuf->op_count != 0U)
+		memcpy(ops, cmdbuf->ops, (size_t)cmdbuf->op_count * sizeof(*ops));
+	kern_free(cmdbuf->ops);
+
+	/* The buffer records into the larger list from now on. */
+	cmdbuf->ops = ops;
+	cmdbuf->op_capacity = capacity;
+
+	/* Succeeded: the list has room for more operations. */
+	return 0;
 }
 
 /*
@@ -734,8 +829,8 @@ i915_record_image_copy(
  * vkCmdClearColorImage: [image][layout][present]{[tag][4][4 words]}
  * [present][count]{VkImageSubresourceRange}.
  *
- * XXX: one level and one layer: the whole image is cleared, whatever the
- * ranges say.
+ * Every range is one operation over its levels.  XXX: array layers are not
+ * consulted (every image has one).
  */
 static int
 i915_record_clear_image(
@@ -744,20 +839,22 @@ i915_record_clear_image(
 	struct i915_wire_reader *reader)
 {
 	VkImageSubresourceRange range;
+	struct i915_gfx_image *image;
 	struct i915_gfx_op *op;
 	uint64_t identity;
 	uint64_t present;
 	uint64_t words;
 	uint64_t count;
 	uint64_t index;
+	uint32_t colour[4];
 
-	/* Records the image. */
-	op = i915_command_op(cmdbuf, I915_GFX_OP_CLEAR_IMAGE);
+	/* Decodes the image. */
 	identity = drv_i915_wire_read_u64(reader);
-	op->u.clear_image.image = drv_i915_object_lookup(session->vk, I915_VK_OBJ_IMAGE, identity);
+	image = drv_i915_object_lookup(session->vk, I915_VK_OBJ_IMAGE, identity);
 	(void)drv_i915_wire_read_u32(reader);
 
-	/* Records the four words of the clear colour: the union's tag, then an array of four. */
+	/* Decodes the four words of the clear colour: the union's tag, then an array of four. */
+	memset(colour, 0, sizeof(colour));
 	present = drv_i915_wire_read_u64(reader);
 	if (present != 0U) {
 		(void)drv_i915_wire_read_u32(reader);
@@ -765,7 +862,7 @@ i915_record_clear_image(
 		if (words != 4U)
 			reader->error = 1;
 		for (index = 0U; index < 4U; index++)
-			op->u.clear_image.words[index] = drv_i915_wire_read_u32(reader);
+			colour[index] = drv_i915_wire_read_u32(reader);
 	}
 
 	/* Decodes the number of ranges, at most sixteen. */
@@ -774,9 +871,15 @@ i915_record_clear_image(
 	if (reader->error != 0 || count > I915_GFX_MAX_REGIONS)
 		return EINVAL;
 
-	/* Decodes the ranges to their end without keeping them. */
-	for (index = 0U; index < count; index++)
+	/* Records one clear for each range, with the levels it names. */
+	for (index = 0U; index < count; index++) {
 		i915_vkc_dec_VkImageSubresourceRange(reader, &session->arena, &range);
+		op = i915_command_op(cmdbuf, I915_GFX_OP_CLEAR_IMAGE);
+		op->u.clear_image.image = image;
+		memcpy(op->u.clear_image.words, colour, sizeof(colour));
+		op->u.clear_image.base_level = range.baseMipLevel;
+		op->u.clear_image.level_count = range.levelCount;
+	}
 
 	/* Refuses a stream that ended inside the ranges. */
 	if (reader->error != 0)
@@ -1210,6 +1313,166 @@ i915_record_push_constants(
 	return 0;
 }
 
+/* vkCmdBindIndexBuffer: [buffer][offset][index type]. */
+static int
+i915_record_bind_index(
+	struct i915_render_session *session,
+	struct i915_gfx_cmdbuf *cmdbuf,
+	struct i915_wire_reader *reader)
+{
+	struct i915_gfx_op *op;
+	uint64_t identity;
+
+	/* Records the buffer, the offset and the index type. */
+	op = i915_command_op(cmdbuf, I915_GFX_OP_BIND_INDEX_BUFFER);
+	identity = drv_i915_wire_read_u64(reader);
+	op->u.index.buffer = drv_i915_object_lookup(session->vk, I915_VK_OBJ_BUFFER, identity);
+	op->u.index.offset = drv_i915_wire_read_u64(reader);
+	op->u.index.type = drv_i915_wire_read_u32(reader);
+
+	/* Refuses a stream that ended inside the bind. */
+	if (reader->error != 0)
+		return EINVAL;
+
+	/* Succeeded: the bind is recorded. */
+	return 0;
+}
+
+/*
+ * vkCmdSetViewport: [first][count][count]{VkViewport}.
+ *
+ * A pipeline has one viewport, so only viewport 0 is recorded; the others
+ * are decoded and not kept.
+ */
+static int
+i915_record_set_viewport(
+	struct i915_render_session *session,
+	struct i915_gfx_cmdbuf *cmdbuf,
+	struct i915_wire_reader *reader)
+{
+	VkViewport viewport;
+	struct i915_gfx_op *op;
+	uint64_t count;
+	uint64_t index;
+	uint32_t first;
+
+	/* Decodes the first viewport and the number of viewports, at most sixteen. */
+	first = drv_i915_wire_read_u32(reader);
+	(void)drv_i915_wire_read_u32(reader);
+	count = drv_i915_wire_read_u64(reader);
+	if (reader->error != 0 || count > I915_GFX_MAX_REGIONS)
+		return EINVAL;
+
+	/* Decodes every viewport and records the one that lands on viewport 0. */
+	for (index = 0U; index < count; index++) {
+		memset(&viewport, 0, sizeof(viewport));
+		i915_vkc_dec_VkViewport(reader, &session->arena, &viewport);
+		if (reader->error != 0)
+			return EINVAL;
+
+		/* Keeps viewport 0 as float bits; the others have no place in the pipeline. */
+		if ((uint64_t)first + index == 0U) {
+			op = i915_command_op(cmdbuf, I915_GFX_OP_SET_VIEWPORT);
+			memcpy(&op->u.viewport[0], &viewport.x, sizeof(op->u.viewport[0]));
+			memcpy(&op->u.viewport[1], &viewport.y, sizeof(op->u.viewport[1]));
+			memcpy(&op->u.viewport[2], &viewport.width, sizeof(op->u.viewport[2]));
+			memcpy(&op->u.viewport[3], &viewport.height, sizeof(op->u.viewport[3]));
+			memcpy(&op->u.viewport[4], &viewport.minDepth, sizeof(op->u.viewport[4]));
+			memcpy(&op->u.viewport[5], &viewport.maxDepth, sizeof(op->u.viewport[5]));
+		}
+	}
+
+	/* Succeeded: viewport 0, when it was set, is recorded. */
+	return 0;
+}
+
+/*
+ * vkCmdSetScissor: [first][count][count]{VkRect2D}.
+ *
+ * A pipeline has one scissor, so only scissor 0 is recorded; the others are
+ * decoded and not kept.
+ */
+static int
+i915_record_set_scissor(
+	struct i915_render_session *session,
+	struct i915_gfx_cmdbuf *cmdbuf,
+	struct i915_wire_reader *reader)
+{
+	VkRect2D scissor;
+	struct i915_gfx_op *op;
+	uint64_t count;
+	uint64_t index;
+	uint32_t first;
+
+	/* Decodes the first scissor and the number of scissors, at most sixteen. */
+	first = drv_i915_wire_read_u32(reader);
+	(void)drv_i915_wire_read_u32(reader);
+	count = drv_i915_wire_read_u64(reader);
+	if (reader->error != 0 || count > I915_GFX_MAX_REGIONS)
+		return EINVAL;
+
+	/* Decodes every scissor and records the one that lands on scissor 0. */
+	for (index = 0U; index < count; index++) {
+		memset(&scissor, 0, sizeof(scissor));
+		i915_vkc_dec_VkRect2D(reader, &session->arena, &scissor);
+		if (reader->error != 0)
+			return EINVAL;
+
+		/* Keeps scissor 0; the others have no place in the pipeline. */
+		if ((uint64_t)first + index == 0U) {
+			op = i915_command_op(cmdbuf, I915_GFX_OP_SET_SCISSOR);
+			op->u.scissor = scissor;
+		}
+	}
+
+	/* Succeeded: scissor 0, when it was set, is recorded. */
+	return 0;
+}
+
+/*
+ * vkCmdCopyBuffer: [src][dst][region count][count]{VkBufferCopy}.
+ *
+ * Every region is one operation.
+ */
+static int
+i915_record_copy_buffer(
+	struct i915_render_session *session,
+	struct i915_gfx_cmdbuf *cmdbuf,
+	struct i915_wire_reader *reader)
+{
+	struct i915_gfx_buffer *src;
+	struct i915_gfx_buffer *dst;
+	struct i915_gfx_op *op;
+	uint64_t identity;
+	uint64_t count;
+	uint64_t index;
+
+	/* Decodes the two buffers and the number of regions, at most as many as a buffer records. */
+	identity = drv_i915_wire_read_u64(reader);
+	src = drv_i915_object_lookup(session->vk, I915_VK_OBJ_BUFFER, identity);
+	identity = drv_i915_wire_read_u64(reader);
+	dst = drv_i915_object_lookup(session->vk, I915_VK_OBJ_BUFFER, identity);
+	(void)drv_i915_wire_read_u32(reader);
+	count = drv_i915_wire_read_u64(reader);
+	if (reader->error != 0 || count > I915_GFX_MAX_OPS)
+		return EINVAL;
+
+	/* Records one operation for each region. */
+	for (index = 0U; index < count; index++) {
+		op = i915_command_op(cmdbuf, I915_GFX_OP_COPY_BUFFER);
+		op->u.buffer_copy.src = src;
+		op->u.buffer_copy.dst = dst;
+		i915_vkc_dec_VkBufferCopy(reader, &session->arena, &op->u.buffer_copy.region);
+	}
+
+	/* Refuses a stream that ended inside the regions. */
+	if (reader->error != 0)
+		return EINVAL;
+
+	/* Succeeded: the regions are recorded. */
+	return 0;
+}
+
 /*
  * Records one vkCmd* into the command buffer it names.
  *
@@ -1241,9 +1504,21 @@ i915_record_command(
 		identity = drv_i915_wire_read_u64(reader);
 		op->u.pipeline = drv_i915_object_lookup(session->vk, I915_VK_OBJ_PIPELINE, identity);
 		break;
+	case 94U:
+		/* vkCmdSetViewport */
+		error = i915_record_set_viewport(session, cmdbuf, reader);
+		return error;
+	case 95U:
+		/* vkCmdSetScissor */
+		error = i915_record_set_scissor(session, cmdbuf, reader);
+		return error;
 	case 103U:
 		/* vkCmdBindDescriptorSets */
 		error = i915_record_bind_descriptor_sets(session, cmdbuf, reader);
+		return error;
+	case 104U:
+		/* vkCmdBindIndexBuffer */
+		error = i915_record_bind_index(session, cmdbuf, reader);
 		return error;
 	case 105U:
 		/* vkCmdBindVertexBuffers */
@@ -1257,6 +1532,19 @@ i915_record_command(
 		op->u.draw.first_vertex = drv_i915_wire_read_u32(reader);
 		op->u.draw.first_instance = drv_i915_wire_read_u32(reader);
 		break;
+	case 107U:
+		/* vkCmdDrawIndexed: [indices][instances][first index][vertex offset][first instance]. */
+		op = i915_command_op(cmdbuf, I915_GFX_OP_DRAW_INDEXED);
+		op->u.draw_indexed.index_count = drv_i915_wire_read_u32(reader);
+		op->u.draw_indexed.instance_count = drv_i915_wire_read_u32(reader);
+		op->u.draw_indexed.first_index = drv_i915_wire_read_u32(reader);
+		op->u.draw_indexed.vertex_offset = (int32_t)drv_i915_wire_read_u32(reader);
+		op->u.draw_indexed.first_instance = drv_i915_wire_read_u32(reader);
+		break;
+	case 112U:
+		/* vkCmdCopyBuffer */
+		error = i915_record_copy_buffer(session, cmdbuf, reader);
+		return error;
 	case 113U:
 		/* vkCmdCopyImage */
 		error = i915_record_image_copy(session, cmdbuf, reader, 0);
@@ -1309,24 +1597,59 @@ i915_record_command(
 	return 0;
 }
 
-/* Describes an image as the linear surface it is, in its own format; EINVAL when it has no storage. */
+/*
+ * Describes one mip level of an image as the linear surface it is, in its
+ * own format; EINVAL for a level the image does not have or an image with
+ * no storage, with the level named in the log.
+ */
 static int
 i915_image_surface(
 	const struct i915_gfx_image *image,
+	uint32_t level,
 	struct i915_gfx_surface *surface)
 {
-	/* Takes the image's address, extent, pitch and format. */
-	surface->va = drv_i915_gfx_memory_va(image->memory, image->offset);
-	surface->width = image->width;
-	surface->height = image->height;
-	surface->pitch = image->pitch;
-	surface->format = image->format;
+	int error;
 
-	/* Refuses an image that is not bound to storage. */
-	if (surface->va == 0U)
-		return EINVAL;
+	/* Takes the level's address, extent, pitch and format. */
+	error = drv_i915_gfx_image_level(image, level, surface);
+	if (error != 0) {
+		kern_logf("i915: vk: level %u of a %ux%u image of %u levels cannot be used: %d\n",
+			  level,
+			  image->width,
+			  image->height,
+			  image->levels,
+			  error);
+		return error;
+	}
 
-	/* Succeeded: the surface describes the image. */
+	/* Succeeded: the surface describes the level. */
+	return 0;
+}
+
+/*
+ * Describes the image of a render pass attachment: level 0 of its view's
+ * image.  XXX: an attachment view of another level is refused (ENOTSUP):
+ * the draw and the clears write level 0.
+ */
+static int
+i915_attachment_surface(
+	const struct i915_gfx_view *view,
+	struct i915_gfx_surface *surface)
+{
+	int error;
+
+	/* Refuses a view that starts at another level. */
+	if (view->base_level != 0U) {
+		kern_logf("i915: vk: XXX unimplemented path: an attachment view of mip level %u\n", view->base_level);
+		return ENOTSUP;
+	}
+
+	/* Describes level 0 of the image. */
+	error = i915_image_surface(view->image, 0U, surface);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the surface describes the attachment. */
 	return 0;
 }
 
@@ -1376,9 +1699,9 @@ i915_execute_clear(
 
 		/* Describes the attachment's image. */
 		image = framebuffer->views[index]->image;
-		error = i915_image_surface(image, &surface);
+		error = i915_attachment_surface(framebuffer->views[index], &surface);
 		if (error != 0)
-			return EINVAL;
+			return error;
 
 		/* Takes the value: the depth bits through the R32_FLOAT view, or the four colour words. */
 		memset(words, 0, sizeof(words));
@@ -1442,11 +1765,11 @@ i915_execute_clear_attachment(
 	if (attachment >= framebuffer->view_count || framebuffer->views[attachment] == NULL)
 		return 0;
 
-	/* Describes the attachment's image. */
+	/* Describes the attachment's image; a depth clear writes the R32_FLOAT view of its bytes. */
 	image = framebuffer->views[attachment]->image;
-	error = i915_image_surface(image, &surface);
+	error = i915_attachment_surface(framebuffer->views[attachment], &surface);
 	if (error != 0)
-		return EINVAL;
+		return error;
 	if (op->u.clear_attachment.is_depth != 0U) {
 		surface.format = VK_FORMAT_R32_SFLOAT;
 		surface.width = image->pitch / 4U;
@@ -1480,7 +1803,8 @@ i915_execute_clear_attachment(
  * copy.
  *
  * The buffer region is a linear surface of the image's format with the
- * region's row length.  A copy to or from a depth image is not implemented.
+ * region's row length; the image side is the mip level the region names.
+ * A copy to or from a depth image is not implemented.
  */
 static int
 i915_execute_buffer_image_copy(
@@ -1505,8 +1829,8 @@ i915_execute_buffer_image_copy(
 	if (buffer == NULL || image == NULL)
 		return EINVAL;
 
-	/* Describes the image. */
-	error = i915_image_surface(image, &image_surface);
+	/* Describes the level of the image the region names. */
+	error = i915_image_surface(image, region->imageSubresource.mipLevel, &image_surface);
 	if (error != 0)
 		return EINVAL;
 
@@ -1573,39 +1897,60 @@ i915_execute_buffer_image_copy(
 	return 0;
 }
 
-/* Runs a vkCmdClearColorImage as one GPU fill of the whole image. */
+/*
+ * Runs one range of a vkCmdClearColorImage as one GPU fill of each level it
+ * names; VK_REMAINING_MIP_LEVELS runs to the last level.
+ */
 static int
 i915_execute_clear_image(
 	struct i915_render_session *session,
 	const struct i915_gfx_op *op)
 {
+	struct i915_gfx_image *image;
 	struct i915_gfx_surface surface;
 	struct i915_gfx_rect rect;
+	uint32_t level;
+	uint32_t level_count;
 	int error;
 
 	/* Refuses a clear whose image does not exist. */
-	if (op->u.clear_image.image == NULL)
+	image = op->u.clear_image.image;
+	if (image == NULL)
 		return EINVAL;
 
-	/* Describes the image. */
-	error = i915_image_surface(op->u.clear_image.image, &surface);
-	if (error != 0)
+	/* Refuses a range that starts past the image's last level. */
+	if (op->u.clear_image.base_level >= image->levels)
 		return EINVAL;
 
-	/* Fills the whole image with the clear words. */
-	rect.x = 0;
-	rect.y = 0;
-	rect.w = surface.width;
-	rect.h = surface.height;
-	error = drv_i915_gfx_rect(session, &surface, &rect, NULL, NULL, op->u.clear_image.words, 0);
-	if (error != 0)
-		return error;
+	/* The remaining levels run to the last one; a range past the last level is refused. */
+	level_count = op->u.clear_image.level_count;
+	if (level_count == VK_REMAINING_MIP_LEVELS)
+		level_count = image->levels - op->u.clear_image.base_level;
+	if (level_count > image->levels - op->u.clear_image.base_level)
+		return EINVAL;
 
-	/* Succeeded: the image is cleared. */
+	/* Fills every level of the range with the clear words. */
+	for (level = op->u.clear_image.base_level; level < op->u.clear_image.base_level + level_count; level++) {
+		/* Describes the level. */
+		error = i915_image_surface(image, level, &surface);
+		if (error != 0)
+			return EINVAL;
+
+		/* Fills the whole level. */
+		rect.x = 0;
+		rect.y = 0;
+		rect.w = surface.width;
+		rect.h = surface.height;
+		error = drv_i915_gfx_rect(session, &surface, &rect, NULL, NULL, op->u.clear_image.words, 0);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: every level of the range is cleared. */
 	return 0;
 }
 
-/* Runs a vkCmdCopyImage region as one GPU copy. */
+/* Runs a vkCmdCopyImage region as one GPU copy between the two levels it names. */
 static int
 i915_execute_image_copy(
 	struct i915_render_session *session,
@@ -1623,13 +1968,13 @@ i915_execute_image_copy(
 	if (op->u.image_copy.src == NULL || op->u.image_copy.dst == NULL)
 		return EINVAL;
 
-	/* Describes the source image. */
-	error = i915_image_surface(op->u.image_copy.src, &src_surface);
+	/* Describes the source level. */
+	error = i915_image_surface(op->u.image_copy.src, region->srcSubresource.mipLevel, &src_surface);
 	if (error != 0)
 		return EINVAL;
 
-	/* Describes the destination image. */
-	error = i915_image_surface(op->u.image_copy.dst, &dst_surface);
+	/* Describes the destination level. */
+	error = i915_image_surface(op->u.image_copy.dst, region->dstSubresource.mipLevel, &dst_surface);
 	if (error != 0)
 		return EINVAL;
 
@@ -1655,7 +2000,9 @@ i915_execute_image_copy(
 }
 
 /*
- * Runs a vkCmdBlitImage region as one scaled GPU copy.
+ * Runs a vkCmdBlitImage region as one scaled GPU copy between the two
+ * levels it names, which may be two levels of the same image (the mip
+ * chain a linear blit generates level by level).
  *
  * XXX: mirrored blits (an offset pair given in decreasing order) are
  * refused.
@@ -1682,13 +2029,13 @@ i915_execute_image_blit(
 	if (op->u.blit.src == NULL || op->u.blit.dst == NULL)
 		return EINVAL;
 
-	/* Describes the source image. */
-	error = i915_image_surface(op->u.blit.src, &src_surface);
+	/* Describes the source level. */
+	error = i915_image_surface(op->u.blit.src, region->srcSubresource.mipLevel, &src_surface);
 	if (error != 0)
 		return EINVAL;
 
-	/* Describes the destination image. */
-	error = i915_image_surface(op->u.blit.dst, &dst_surface);
+	/* Describes the destination level. */
+	error = i915_image_surface(op->u.blit.dst, region->dstSubresource.mipLevel, &dst_surface);
 	if (error != 0)
 		return EINVAL;
 
@@ -1735,11 +2082,155 @@ i915_execute_image_blit(
 }
 
 /*
- * Runs the operation list of one command buffer in order.
+ * Runs one vkCmdCopyBuffer region as GPU copies.
+ *
+ * The bytes are copied as four-byte texels between two linear surfaces over
+ * the buffers: full rows of 4096 texels, at most 4096 rows to a rectangle,
+ * then the rest as one short row.  An R8G8B8A8_UNORM texel read and written
+ * back keeps its four bytes exactly.
+ * XXX: a region whose offsets or size are not multiples of four is refused.
+ */
+static int
+i915_execute_buffer_copy(
+	struct i915_render_session *session,
+	const struct i915_gfx_op *op)
+{
+	const VkBufferCopy *region;
+	struct i915_gfx_buffer *src;
+	struct i915_gfx_buffer *dst;
+	struct i915_gfx_surface src_surface;
+	struct i915_gfx_surface dst_surface;
+	struct i915_gfx_rect rect;
+	uint64_t texels;
+	uint64_t done;
+	uint64_t rows;
+	uint32_t width;
+	int error;
+
+	/* Refuses a copy whose buffers do not exist. */
+	src = op->u.buffer_copy.src;
+	dst = op->u.buffer_copy.dst;
+	region = &op->u.buffer_copy.region;
+	if (src == NULL || dst == NULL)
+		return EINVAL;
+
+	/* An empty region copies nothing. */
+	if (region->size == 0U)
+		return 0;
+
+	/* Refuses a region that starts past the end of the source or runs past it. */
+	if (region->srcOffset > src->size || region->size > src->size - region->srcOffset)
+		return EINVAL;
+
+	/* Refuses a region that starts past the end of the destination or runs past it. */
+	if (region->dstOffset > dst->size || region->size > dst->size - region->dstOffset)
+		return EINVAL;
+
+	/* Refuses a region that is not whole four-byte texels. */
+	if ((region->srcOffset % 4U) != 0U ||
+	    (region->dstOffset % 4U) != 0U ||
+	    (region->size % 4U) != 0U) {
+		kern_logf("i915: vk: XXX unimplemented path: a buffer copy of %llu bytes from offset %llu to offset %llu (not multiples of 4)\n",
+			  (unsigned long long)region->size,
+			  (unsigned long long)region->srcOffset,
+			  (unsigned long long)region->dstOffset);
+		return ENOTSUP;
+	}
+
+	/* Copies the region one rectangle at a time. */
+	texels = region->size / 4U;
+	done = 0U;
+	while (done < texels) {
+		/* Takes as many full rows as one rectangle covers, or the short row that is left. */
+		if (texels - done >= I915_GFX_COPY_ROW_TEXELS) {
+			width = I915_GFX_COPY_ROW_TEXELS;
+			rows = (texels - done) / I915_GFX_COPY_ROW_TEXELS;
+			if (rows > I915_GFX_COPY_MAX_ROWS)
+				rows = I915_GFX_COPY_MAX_ROWS;
+		} else {
+			width = (uint32_t)(texels - done);
+			rows = 1U;
+		}
+
+		/* Describes the source bytes as a linear surface of four-byte texels. */
+		src_surface.va = drv_i915_gfx_memory_va(src->memory, src->offset + region->srcOffset + done * 4U);
+		src_surface.width = width;
+		src_surface.height = (uint32_t)rows;
+		src_surface.pitch = width * 4U;
+		src_surface.format = VK_FORMAT_R8G8B8A8_UNORM;
+		if (src_surface.va == 0U)
+			return EINVAL;
+
+		/* Describes the destination bytes the same way. */
+		dst_surface = src_surface;
+		dst_surface.va = drv_i915_gfx_memory_va(dst->memory, dst->offset + region->dstOffset + done * 4U);
+		if (dst_surface.va == 0U)
+			return EINVAL;
+
+		/* The whole of both surfaces is the rectangle. */
+		rect.x = 0;
+		rect.y = 0;
+		rect.w = width;
+		rect.h = (uint32_t)rows;
+
+		/* Copies the rectangle, unscaled. */
+		error = drv_i915_gfx_rect(session, &dst_surface, &rect, &src_surface, &rect, NULL, 0);
+		if (error != 0)
+			return error;
+
+		/* Moves past the texels the rectangle copied. */
+		done += (uint64_t)width * rows;
+	}
+
+	/* Succeeded: the region is copied. */
+	return 0;
+}
+
+/*
+ * Runs a recorded vkCmdDraw or vkCmdDrawIndexed with what is bound.
+ */
+static int
+i915_execute_draw(
+	struct i915_render_session *session,
+	const struct i915_gfx_draw_state *state,
+	const struct i915_gfx_op *op)
+{
+	struct i915_gfx_draw_args args;
+	int error;
+
+	/* Describes the draw: its counts and firsts, and for an indexed draw the vertex offset. */
+	memset(&args, 0, sizeof(args));
+	if (op->kind == I915_GFX_OP_DRAW_INDEXED) {
+		args.indexed = 1;
+		args.count = op->u.draw_indexed.index_count;
+		args.instance_count = op->u.draw_indexed.instance_count;
+		args.first = op->u.draw_indexed.first_index;
+		args.vertex_offset = op->u.draw_indexed.vertex_offset;
+		args.first_instance = op->u.draw_indexed.first_instance;
+	} else {
+		args.count = op->u.draw.vertex_count;
+		args.instance_count = op->u.draw.instance_count;
+		args.first = op->u.draw.first_vertex;
+		args.first_instance = op->u.draw.first_instance;
+	}
+
+	/* Records the draw into the batch. */
+	error = drv_i915_gfx_draw(session, state, &args);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the draw is recorded. */
+	return 0;
+}
+
+/*
+ * Records the operation list of one command buffer, in order, into the
+ * submission's batch.
  *
  * Binds are tracked in a draw state that lives for this execution; clears,
- * copies and draws each run to their end on the GPU.  The first failure
- * stops the list and is logged with where it stopped.
+ * copies and draws are appended to the batch, which runs when the
+ * submission ends (or earlier, when it is full).  The first failure stops
+ * the list and is logged with where it stopped.
  */
 static int
 i915_command_buffer_execute(
@@ -1807,12 +2298,24 @@ i915_command_buffer_execute(
 			error = i915_execute_clear_attachment(session, &state, op);
 			break;
 		case I915_GFX_OP_DRAW:
-			error = drv_i915_gfx_draw(session,
-						  &state,
-						  op->u.draw.vertex_count,
-						  op->u.draw.instance_count,
-						  op->u.draw.first_vertex,
-						  op->u.draw.first_instance);
+		case I915_GFX_OP_DRAW_INDEXED:
+			error = i915_execute_draw(session, &state, op);
+			break;
+		case I915_GFX_OP_BIND_INDEX_BUFFER:
+			state.index.buffer = op->u.index.buffer;
+			state.index.offset = op->u.index.offset;
+			state.index.type = op->u.index.type;
+			break;
+		case I915_GFX_OP_SET_VIEWPORT:
+			memcpy(state.viewport, op->u.viewport, sizeof(state.viewport));
+			state.viewport_set = 1;
+			break;
+		case I915_GFX_OP_SET_SCISSOR:
+			state.scissor = op->u.scissor;
+			state.scissor_set = 1;
+			break;
+		case I915_GFX_OP_COPY_BUFFER:
+			error = i915_execute_buffer_copy(session, op);
 			break;
 		default:
 			error = EINVAL;
@@ -1836,7 +2339,7 @@ i915_command_buffer_execute(
 		return error;
 	}
 
-	/* Succeeded: every operation has run to its end. */
+	/* Succeeded: every operation is recorded. */
 	return 0;
 }
 
@@ -1845,8 +2348,9 @@ i915_command_buffer_execute(
  * [count]{[sType][pNext][present][count]{wait}[count]{stage}[present]
  * [count]{buffer}[present][count]{signal}}[fence] -> [result].
  *
- * The command buffers run in submission order, each to its end, before the
- * reply; the fence is signalled once all of them succeeded.
+ * The command buffers are recorded in submission order into one batch,
+ * which runs to its end before the reply; the fence is signalled once all
+ * of them succeeded.
  * XXX: the waits and signals are decoded and not acted on: every earlier
  * submission has finished, so there is nothing to wait for.
  */
@@ -1867,6 +2371,7 @@ i915_queue_submit(
 	uint32_t total;
 	uint32_t index;
 	uint32_t result;
+	int end_error;
 	int error;
 
 	/* Decodes the number of submissions, at most eight. */
@@ -1923,10 +2428,21 @@ i915_queue_submit(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* Runs the command buffers in order until one fails. */
-	error = 0;
+	/* Opens the batch the command buffers are recorded into. */
+	error = drv_i915_gfx_submit_begin(session);
+
+	/* Records the command buffers in order until one fails. */
 	for (index = 0U; index < total && error == 0; index++)
 		error = i915_command_buffer_execute(session, cmdbufs[index]);
+
+	/*
+	 * Runs what was recorded, also after a failure, so every operation
+	 * before the failed one has run, as it would have alone; the first
+	 * failure is the submission's.
+	 */
+	end_error = drv_i915_gfx_submit_end(session);
+	if (error == 0)
+		error = end_error;
 
 	/* Signals the fence: everything the submission asked for has been done by now. */
 	if (error == 0 && fence != NULL) {

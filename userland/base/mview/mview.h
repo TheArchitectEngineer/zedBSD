@@ -70,7 +70,27 @@ struct mview_buffer {
 #define MVIEW_PIPELINE_COUNT	6U
 
 /* One application's standard Vulkan owners; no kernel or renderer ABI is present. */
+/* The stages of one drawn frame whose time the renderer accumulates (in TSC cycles). */
+enum mview_stage {
+	MVIEW_STAGE_ACQUIRE,
+	MVIEW_STAGE_RECORD,
+	MVIEW_STAGE_SUBMIT,
+	MVIEW_STAGE_PRESENT,
+	MVIEW_STAGE_FENCE,
+	MVIEW_STAGE_COUNT
+};
+
+struct mview_renderer;
+void mview_renderer_report_stages(struct mview_renderer *renderer, const char *token, double seconds);
+void mview_renderer_span(struct mview_renderer *renderer, int end);
+
 struct mview_renderer {
+	/* Cycles spent in each stage since the counters were last cleared, and the frames counted. */
+	uint64_t stage_cycles[MVIEW_STAGE_COUNT];
+	uint64_t span_start;
+	uint64_t span_cycles;
+	uint32_t stage_frames;
+
 	VkInstance instance;
 	VkPhysicalDevice physical;
 	VkPhysicalDeviceMemoryProperties memory;

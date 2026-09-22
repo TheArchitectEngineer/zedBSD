@@ -25,6 +25,7 @@
 #include <string.h>
 
 #include <kern/file.h>
+#include <kern/clock.h>
 #include <kern/klog.h>
 #include <kern/kmem.h>
 #include <kern/mount.h>
@@ -44,10 +45,10 @@
 #define I915_FIRMWARE_MAX_BYTES		(1024U * 1024U)
 
 /* How long a request waits for the root file system, in scheduler ticks (30 s). */
-#define I915_FIRMWARE_ROOT_WAIT_TICKS	3000U
+#define I915_FIRMWARE_ROOT_WAIT_TICKS	(30U * KERN_CLOCK_HZ)
 
 /* How long each sleep of that wait lasts, in scheduler ticks (100 ms). */
-#define I915_FIRMWARE_ROOT_POLL_TICKS	10U
+#define I915_FIRMWARE_ROOT_POLL_TICKS	(KERN_CLOCK_HZ / 10U)
 
 /*
  * Test checkpoints.

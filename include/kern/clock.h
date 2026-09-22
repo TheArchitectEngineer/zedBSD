@@ -18,7 +18,7 @@
 
 struct ucred;
 
-#define KERN_CLOCK_HZ	100U
+#define KERN_CLOCK_HZ	1000U
 #define KERN_NSEC_PER_SEC	1000000000ULL
 
 struct kern_timespec {

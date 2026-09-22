@@ -7,6 +7,8 @@
  * SPDX-License-Identifier: MIT
  *
  * Copyright (C) 2025 Intel Corporation
+ * Copyright (C) 2014 Intel Corporation
+ * Copyright (C) Intel Corp.  2006.  All Rights Reserved.
  */
 
 /*
@@ -22,6 +24,26 @@
  *   - src/intel/compiler/gen/gen_encoding.cpp   operand sub-fields, the split of the SEND descriptors,
  *                                               the region / type / SWSB value encodings
  *   - src/intel/compiler/brw/brw_lower_scoreboard.cpp  what the SWSB annotation has to say
+ * and, for the predication, flag, conditional-modifier and logic / rounding / comparison fields,
+ * Mesa 25.0.7 (MIT; the release tarball, as Debian packages it):
+ *   - src/intel/compiler/brw_eu_inst.h     (sha256 e9feb41a37628b8c117877d626c859083fd58802002246df4da5d28c2bf969f5)
+ *                                          the Gen12 positions of cond_modifier, pred_control, pred_inv,
+ *                                          flag_reg_nr, flag_subreg_nr and the source abs bits
+ *   - src/intel/compiler/brw_eu.c          (sha256 4c608ce5e1c1aa2bd480339247ed864c1c1e7b79c1ded0db69e495cd08342d55)
+ *                                          the Gen12 hardware opcodes of SEL, NOT, AND, OR, CMP, FRC and RNDD
+ *   - src/intel/compiler/brw_eu_defines.h  (sha256 12a919edc56a75efe68afffa55ca42278a0cd489efddc8a0915919be756d7abc)
+ *                                          the conditional modifiers, BRW_PREDICATE_NORMAL, BRW_ARF_FLAG and
+ *                                          the LOG / EXP math selectors
+ * and, for the integer and flow-control instructions (p014 stage E), the same release:
+ *   - brw_eu.c                             the Gen12 hardware opcodes of XOR, SHR, SHL, ASR, RNDZ and WHILE
+ *   - brw_eu_inst.h                        the Gen12 JIP of a branch: bits 127:96, with the src0 immediate
+ *                                          bit set (brw_eu_inst_set_jip)
+ *   - src/intel/compiler/brw_eu_emit.c     (sha256 7a359df7a0d4fc8085d050e510c34a074ebaccbf6ae826a009ac73875223853d)
+ *                                          brw_WHILE: a null D destination, the JIP in bytes from the WHILE
+ *                                          back to the first instruction of the loop (16 * (do - while))
+ * and checked against Mesa 25.0.7's brw_asm / brw_disasm (--gen=adl) for each new form, among them the
+ * 16-bit strided source <16;8,2>:uw of the 32 x 16-bit multiply Mesa lowers a 32-bit integer multiply to
+ * on Tiger Lake (has_integer_dword_mul false, brw_lower_integer_multiplication.cpp).
  * These are Intel hardware facts.  Only positions and values are transcribed; the encoder logic is
  * new.  Every emitter of compiler/eu.c is checked bit for bit against Mesa's assembler (gentool asm)
  * and disassembler by plan/ws031/tests/run-vk-gentool-test.sh; the earlier table (from the 23.1
@@ -48,6 +70,18 @@
 #define EU_SATURATE_BIT			34
 #define EU_MATH_FUNCTION_HI		95
 #define EU_MATH_FUNCTION_LO		92
+
+/*
+ * Predication and flags (brw_eu_inst.h, Gen12 column).  The conditional modifier shares bits 95:92
+ * with the math function: a math instruction has no conditional modifier.
+ */
+#define EU_FLAG_SUBREG_NR_BIT		22
+#define EU_FLAG_REG_NR_BIT		23
+#define EU_PRED_CONTROL_HI		27
+#define EU_PRED_CONTROL_LO		24
+#define EU_PRED_INV_BIT			28
+#define EU_COND_MODIFIER_HI		95
+#define EU_COND_MODIFIER_LO		92
 
 /* Destination (direct).  An operand is [file bit][subregister 5][register 8]. */
 #define EU_DST_REG_TYPE_HI		39
@@ -118,9 +152,40 @@
 #define EU_OP_MATH			56U
 #define EU_OP_ADD			64U
 #define EU_OP_MUL			65U
+#define EU_OP_FRC			67U
+#define EU_OP_RNDD			69U
 #define EU_OP_MAD			91U
 #define EU_OP_NOP			96U
 #define EU_OP_MOV			97U
+#define EU_OP_SEL			98U
+#define EU_OP_NOT			100U
+#define EU_OP_AND			101U
+#define EU_OP_OR			102U
+#define EU_OP_CMP			112U
+#define EU_OP_XOR			103U
+#define EU_OP_SHR			104U
+#define EU_OP_SHL			105U
+#define EU_OP_ASR			108U
+#define EU_OP_RNDZ			71U
+#define EU_OP_WHILE			39U
+
+/* A branch's jump target: bytes from the branch instruction, in the last word. */
+#define EU_JIP_HI			127
+#define EU_JIP_LO			96
+
+/* Conditional modifiers (BRW_CONDITIONAL_*): what a CMP tests, or which source a SEL keeps. */
+#define EU_COND_Z			1U
+#define EU_COND_NZ			2U
+#define EU_COND_G			3U
+#define EU_COND_GE			4U
+#define EU_COND_L			5U
+#define EU_COND_LE			6U
+
+/* The predicate that enables a channel whose bit in the named flag subregister is set. */
+#define EU_PREDICATE_NORMAL		1U
+
+/* The architecture register number of flag register f0; f1 is the next one. */
+#define EU_ARF_FLAG			0x30U
 
 /* Register files as compiler/eu.c names them; the hardware has one bit (GRF or not) and the immediate bit. */
 #define EU_FILE_ARF			0U
@@ -128,6 +193,7 @@
 #define EU_FILE_IMM			3U
 
 /* Register / immediate types: [float 8 | signed 4 | log2(bytes)]. */
+#define EU_TYPE_UW			1U
 #define EU_TYPE_UD			2U
 #define EU_TYPE_D			6U
 #define EU_TYPE_F			10U
@@ -139,13 +205,17 @@
 /* Regions.  hstride 0,1,2,4 -> 0..3; width 1,2,4,8,16 -> 0..4; vstride 0,1,2,4,8,16 -> 0..5. */
 #define EU_HSTRIDE_0			0U
 #define EU_HSTRIDE_1			1U
+#define EU_HSTRIDE_2			2U
 #define EU_WIDTH_1			0U
 #define EU_WIDTH_8			3U
 #define EU_VSTRIDE_0			0U
 #define EU_VSTRIDE_8			4U
+#define EU_VSTRIDE_16			5U
 
 /* Math function selectors. */
 #define EU_MATH_INV			1U
+#define EU_MATH_LOG			2U
+#define EU_MATH_EXP			3U
 #define EU_MATH_SQRT			4U
 #define EU_MATH_RSQ			5U
 #define EU_MATH_SIN			6U

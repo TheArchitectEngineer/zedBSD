@@ -63,6 +63,13 @@ load_spv(const char *name, size_t *words)
 	return code;
 }
 
+/* The staged position of a vertex kernel: the VUE ends at r126, header first (compile.c "Register conventions"). */
+static unsigned
+vue_position(const struct i915_shader_binary *binary)
+{
+	return COMPILE_MAX_GRF - 4U * (2U + binary->varying_count) + 4U;
+}
+
 /*
  * E-128: a kernel opens with a prologue that zeroes its outputs (compile.c compile_prologue): MOVs of
  * an immediate into the staging registers.  The instructions of the IR start after it.
@@ -290,17 +297,17 @@ test_not_lowered_ir_is_refused(void)
 	error = drv_i915_shader_compile(hand_ir(insts, 1U), &binary);
 	assert(error == EINVAL && binary == NULL);
 
-	/* more varyings than the registers below the URB handles hold (COMPILE_MAX_VARYINGS) */
+	/* more varyings than a VUE carries (COMPILE_MAX_VARYINGS, sixteen) */
 	{
-		struct i915_shader_ir_inst many[5];
+		struct i915_shader_ir_inst many[18];
 		unsigned k;
 
 		memset(many, 0, sizeof(many));
 		many[0].op = I915_IR_LOAD_PUSH; many[0].dst = 1U;
-		for (k = 1U; k < 5U; k++) {
+		for (k = 1U; k < 18U; k++) {
 			many[k].op = I915_IR_STORE_OUTPUT; many[k].src[0] = 1U; many[k].location = k - 1U;
 		}
-		error = drv_i915_shader_compile(hand_ir(many, 5U), &binary);
+		error = drv_i915_shader_compile(hand_ir(many, 18U), &binary);
 		assert(error == ENOTSUP && binary == NULL);
 	}
 }
@@ -339,23 +346,84 @@ test_vertex_shader_generates_eu(void)
 
 /*
  * A model of what the generated EU words compute, for the instructions this compiler emits:
- * 8 SIMD channels, a register = 8 floats (32 bytes), a <8;8,1> region reads channel c from
- * float c, a <0;1,0> region reads the one float at byte `subnr` for every channel, an
+ * 8 SIMD channels, a register = 8 dwords (32 bytes), a <8;8,1> region reads channel c from
+ * dword c, a <0;1,0> region reads the one element at byte `subnr` for every channel, an
  * immediate is the same for every channel.  The model decodes the ENCODED words (bit fields
- * from the transcribed encoding table), so an operand in the wrong slot, a missing negate,
- * a register reused while its value is still needed, or a push constant read as a vector all
- * change the result.  It is a model of the instruction semantics only; it says nothing about
- * how the hardware fills the payload or consumes the staged outputs.
+ * from the transcribed encoding table), so an operand in the wrong slot, a missing negate or
+ * abs, a wrong conditional modifier, a flag read or written in the wrong place, a predicate
+ * on the wrong instruction, a register reused while its value is still needed, or a push
+ * constant read as a vector all change the result.  Registers hold bits: a float, or a
+ * Boolean as all ones / zero.
+ *
+ * Flags: f0.0 f0.1 f1.0 f1.1, sixteen channel bits each.  A predicated instruction runs only
+ * on the channels whose flag bit is set -- except SEL, which takes source 0 there and source
+ * 1 elsewhere.  A CMP writes the flag bits (and its register destination) of the channels it
+ * runs on.  The render-target write that ends a fragment thread records the channels it went
+ * to (the predicate) in `written`, and the thread ends there.
+ *
+ * It is a model of the instruction semantics only; it says nothing about how the hardware
+ * fills the payload or consumes the staged outputs.
  */
 struct eu_model {
-	float grf[128][8];
+	uint32_t grf[128][8];
+	uint16_t flag[4];
+	unsigned written;               /* the channels the render-target write went to */
+	int ended;                      /* the thread ended (an end-of-thread SEND ran) */
+	unsigned dispatched;            /* the channels the thread runs on (the execution mask) */
 };
 
 static float
-eu_model_source(const struct eu_model *m, const uint32_t *inst, int which, unsigned channel)
+mget(const struct eu_model *m, unsigned r, unsigned c)
 {
-	unsigned file, nr, subnr, vstride, width, hstride, negate;
 	float value;
+
+	memcpy(&value, &m->grf[r][c], sizeof(value));
+	return value;
+}
+
+static void
+mset(struct eu_model *m, unsigned r, unsigned c, float value)
+{
+	memcpy(&m->grf[r][c], &value, sizeof(value));
+}
+
+static float
+bits_float(uint32_t bits)
+{
+	float value;
+
+	memcpy(&value, &bits, sizeof(value));
+	return value;
+}
+
+static uint32_t
+float_bits(float value)
+{
+	uint32_t bits;
+
+	memcpy(&bits, &value, sizeof(bits));
+	return bits;
+}
+
+/* Starts a model: every register junk that differs per channel, all eight channels dispatched. */
+static void
+eu_model_init(struct eu_model *m)
+{
+	unsigned r, c;
+
+	memset(m, 0, sizeof(*m));
+	for (r = 0U; r < 128U; r++)
+		for (c = 0U; c < 8U; c++)
+			mset(m, r, c, -1000.0f - (float)(r * 8U + c));
+	m->dispatched = 0xFFU;
+}
+
+/* The operand of one source as the model reads it: bits and type, modifiers applied to floats. */
+static uint32_t
+eu_model_source(const struct eu_model *m, const uint32_t *inst, int which, unsigned channel, unsigned *type_out)
+{
+	unsigned file, nr, subnr, vstride, width, hstride, negate, absolute, type;
+	uint32_t bits;
 
 	if (which == 0) {
 		file = inst_bit(inst, EU_SRC0_IS_IMM_BIT) != 0U ? EU_FILE_IMM : inst_bit(inst, EU_SRC0_REG_FILE_BIT);
@@ -365,7 +433,8 @@ eu_model_source(const struct eu_model *m, const uint32_t *inst, int which, unsig
 		width = inst_field(inst, EU_SRC0_WIDTH_HI, EU_SRC0_WIDTH_LO);
 		hstride = inst_field(inst, EU_SRC0_HSTRIDE_HI, EU_SRC0_HSTRIDE_LO);
 		negate = inst_bit(inst, EU_SRC0_NEGATE_BIT);
-		assert(inst_field(inst, EU_SRC0_REG_TYPE_HI, EU_SRC0_REG_TYPE_LO) == EU_TYPE_F);
+		absolute = inst_bit(inst, EU_SRC0_ABS_BIT);
+		type = inst_field(inst, EU_SRC0_REG_TYPE_HI, EU_SRC0_REG_TYPE_LO);
 	} else {
 		file = inst_bit(inst, EU_SRC1_IS_IMM_BIT) != 0U ? EU_FILE_IMM : inst_bit(inst, EU_SRC1_REG_FILE_BIT);
 		nr = inst_field(inst, EU_SRC1_REG_NR_HI, EU_SRC1_REG_NR_LO);
@@ -374,24 +443,88 @@ eu_model_source(const struct eu_model *m, const uint32_t *inst, int which, unsig
 		width = inst_field(inst, EU_SRC1_WIDTH_HI, EU_SRC1_WIDTH_LO);
 		hstride = inst_field(inst, EU_SRC1_HSTRIDE_HI, EU_SRC1_HSTRIDE_LO);
 		negate = inst_bit(inst, EU_SRC1_NEGATE_BIT);
-		assert(inst_field(inst, EU_SRC1_REG_TYPE_HI, EU_SRC1_REG_TYPE_LO) == EU_TYPE_F);
+		absolute = inst_bit(inst, EU_SRC1_ABS_BIT);
+		type = inst_field(inst, EU_SRC1_REG_TYPE_HI, EU_SRC1_REG_TYPE_LO);
 	}
+	assert(type == EU_TYPE_F || type == EU_TYPE_D || type == EU_TYPE_UD || type == EU_TYPE_UW);
+	*type_out = type;
 	if (file == EU_FILE_IMM) {
-		memcpy(&value, &inst[3], sizeof(value));
-		return value;
-	}
-	assert(file == EU_FILE_GRF && nr < 128U);
-	if (vstride == EU_VSTRIDE_8 && width == EU_WIDTH_8 && hstride == EU_HSTRIDE_1) {
-		assert(subnr == 0U);
-		value = m->grf[nr][channel];
+		bits = inst[3];
 	} else {
-		assert(vstride == EU_VSTRIDE_0 && width == EU_WIDTH_1 && hstride == EU_HSTRIDE_0 && (subnr % 4U) == 0U);
-		value = m->grf[nr][subnr / 4U];
+		assert(file == EU_FILE_GRF && nr < 128U);
+		if (vstride == EU_VSTRIDE_8 && width == EU_WIDTH_8 && hstride == EU_HSTRIDE_1) {
+			assert(subnr == 0U && type != EU_TYPE_UW);
+			bits = m->grf[nr][channel];
+		} else {
+			assert(vstride == EU_VSTRIDE_0 && width == EU_WIDTH_1 && hstride == EU_HSTRIDE_0);
+			if (type == EU_TYPE_UW) {
+				assert((subnr % 2U) == 0U);
+				bits = (m->grf[nr][subnr / 4U] >> ((subnr % 4U) * 8U)) & 0xFFFFU;
+			} else {
+				assert((subnr % 4U) == 0U);
+				bits = m->grf[nr][subnr / 4U];
+			}
+		}
 	}
-	return negate != 0U ? -value : value;
+	/* modifiers: only float operands carry them in this compiler's output */
+	if (type == EU_TYPE_F) {
+		float value = bits_float(bits);
+
+		if (absolute != 0U)
+			value = fabsf(value);
+		if (negate != 0U)
+			value = -value;
+		bits = float_bits(value);
+	} else {
+		assert(negate == 0U && absolute == 0U);
+	}
+	return bits;
 }
 
-/* Runs the words up to the terminating SEND; any other instruction is a test failure. */
+/* Evaluates a conditional modifier on two sources of one type. */
+static int
+eu_model_test(unsigned cond, uint32_t a, uint32_t b, unsigned type)
+{
+	if (type == EU_TYPE_F) {
+		float fa = bits_float(a), fb = bits_float(b);
+
+		switch (cond) {
+		case EU_COND_Z: return fa == fb;
+		case EU_COND_NZ: return fa != fb;
+		case EU_COND_G: return fa > fb;
+		case EU_COND_GE: return fa >= fb;
+		case EU_COND_L: return fa < fb;
+		case EU_COND_LE: return fa <= fb;
+		default: break;
+		}
+	} else {
+		int32_t ia = (int32_t)a, ib = (int32_t)b;
+
+		switch (cond) {
+		case EU_COND_Z: return ia == ib;
+		case EU_COND_NZ: return ia != ib;
+		case EU_COND_G: return ia > ib;
+		case EU_COND_GE: return ia >= ib;
+		case EU_COND_L: return ia < ib;
+		case EU_COND_LE: return ia <= ib;
+		default: break;
+		}
+	}
+	assert(!"conditional modifier the model does not know");
+	return 0;
+}
+
+/* the fake texture of the sampler: every component depends on u, v and the binding in its own way */
+static void
+eu_model_texture(uint32_t binding, float u, float v, float rgba[4])
+{
+	rgba[0] = u + 10.0f * (float)binding;
+	rgba[1] = v;
+	rgba[2] = u + 2.0f * v;
+	rgba[3] = u * v + 0.5f;
+}
+
+/* Runs the words up to the SEND that ends the thread; any instruction the model does not know fails. */
 static void
 eu_model_run(struct eu_model *m, const struct i915_shader_binary *binary)
 {
@@ -401,45 +534,194 @@ eu_model_run(struct eu_model *m, const struct i915_shader_binary *binary)
 		const uint32_t *inst = binary->code + index * 4U;
 		unsigned opcode = inst_field(inst, EU_OPCODE_HI, EU_OPCODE_LO);
 		unsigned dst = inst_field(inst, EU_DST_REG_NR_HI, EU_DST_REG_NR_LO);
-		float result[8];
+		unsigned dst_file = inst_bit(inst, EU_DST_REG_FILE_BIT);
+		unsigned dst_type = inst_field(inst, EU_DST_REG_TYPE_HI, EU_DST_REG_TYPE_LO);
+		unsigned exec = inst_field(inst, EU_EXEC_SIZE_HI, EU_EXEC_SIZE_LO);
+		unsigned predicate = inst_field(inst, EU_PRED_CONTROL_HI, EU_PRED_CONTROL_LO);
+		unsigned flag = inst_bit(inst, EU_FLAG_REG_NR_BIT) * 2U + inst_bit(inst, EU_FLAG_SUBREG_NR_BIT);
+		unsigned cond = inst_field(inst, EU_COND_MODIFIER_HI, EU_COND_MODIFIER_LO);
+		unsigned enabled, types[2];
+		uint32_t result[8];
 
-		/* the last message ends the thread; the URB write before it and every sync.nop change no register */
-		if (opcode == EU_OP_SEND) {
-			if (inst_bit(inst, EU_SEND_EOT_BIT) != 0U) {
-				assert(index == count - 1U);
-				return;
-			}
-			continue;
-		}
 		if (opcode == EU_OP_SYNC)
 			continue;
-		/* integer moves: the VUE header (zeros) and the copy of the URB handles -- not floats, not modelled */
-		if (opcode == EU_OP_MOV && inst_field(inst, EU_DST_REG_TYPE_HI, EU_DST_REG_TYPE_LO) != EU_TYPE_F)
+		assert(inst_bit(inst, EU_PRED_INV_BIT) == 0U);
+
+		/* the channels that run: the dispatched ones, narrowed by a predicate (not for SEL) */
+		enabled = m->dispatched;
+		if (predicate != 0U) {
+			assert(predicate == EU_PREDICATE_NORMAL);
+			if (opcode != EU_OP_SEL)
+				enabled &= m->flag[flag];
+		}
+
+		if (opcode == EU_OP_SEND || opcode == EU_OP_SENDC) {
+			unsigned sfid = inst_field(inst, EU_SEND_SFID_HI, EU_SEND_SFID_LO);
+			unsigned src0 = inst_field(inst, EU_SRC0_REG_NR_HI, EU_SRC0_REG_NR_LO);
+			unsigned src1 = inst_field(inst, EU_SRC1_REG_NR_HI, EU_SRC1_REG_NR_LO);
+
+			if (inst_bit(inst, EU_SEND_EOT_BIT) != 0U) {
+				assert(index == count - 1U);
+				m->written = enabled;
+				m->ended = 1;
+				return;
+			}
+			if (sfid == EU_SFID_SAMPLER) {
+				/* binding table entry 1 + n: the low byte of the descriptor, in bits 91:81 and on */
+				unsigned binding = (inst_field(inst, 91U, 81U) & 0xFFU) - 1U;
+
+				for (channel = 0U; channel < 8U; channel++) {
+					float rgba[4];
+					unsigned k;
+
+					eu_model_texture(binding, mget(m, src0, channel), mget(m, src1, channel), rgba);
+					for (k = 0U; k < 4U; k++)
+						if ((enabled >> channel) & 1U)
+							mset(m, dst + k, channel, rgba[k]);
+				}
+			}
 			continue;
-		assert(inst_field(inst, EU_EXEC_SIZE_HI, EU_EXEC_SIZE_LO) == EU_EXEC_SIZE_8);
-		assert(inst_bit(inst, EU_DST_REG_FILE_BIT) == 1U && dst < 128U);
+		}
+
+		/* the SIMD1 flag load: a word of a general register into a flag subregister */
+		if (exec == EU_EXEC_SIZE_1) {
+			unsigned type;
+			uint32_t word;
+
+			assert(opcode == EU_OP_MOV && inst_bit(inst, EU_NO_MASK_BIT) == 1U);
+			assert(dst_file == 0U && (dst == EU_ARF_FLAG || dst == EU_ARF_FLAG + 1U) && dst_type == EU_TYPE_UW);
+			word = eu_model_source(m, inst, 0, 0U, &type);
+			assert(type == EU_TYPE_UW);
+			m->flag[(dst - EU_ARF_FLAG) * 2U + inst_field(inst, EU_DST_SUBREG_HI, EU_DST_SUBREG_LO) / 2U] = (uint16_t)word;
+			continue;
+		}
+
+		assert(exec == EU_EXEC_SIZE_8);
 		assert(inst_field(inst, EU_DST_SUBREG_HI, EU_DST_SUBREG_LO) == 0U);
 		for (channel = 0U; channel < 8U; channel++) {
-			float a = eu_model_source(m, inst, 0, channel);
+			uint32_t a = eu_model_source(m, inst, 0, channel, &types[0]);
+			uint32_t b = 0U;
+			float fa = bits_float(a), fb;
 
-			if (opcode == EU_OP_MOV) {
+			if (opcode != EU_OP_MOV && opcode != EU_OP_NOT && opcode != EU_OP_RNDD && opcode != EU_OP_FRC &&
+			    opcode != EU_OP_MATH)
+				b = eu_model_source(m, inst, 1, channel, &types[1]);
+			fb = bits_float(b);
+			switch (opcode) {
+			case EU_OP_MOV:
+				/* a move between registers of one kind, or of a float / integer immediate */
+				assert(types[0] == dst_type || (dst_type == EU_TYPE_UD && types[0] == EU_TYPE_UD));
 				result[channel] = a;
-			} else if (opcode == EU_OP_ADD) {
-				result[channel] = a + eu_model_source(m, inst, 1, channel);
-			} else if (opcode == EU_OP_MUL) {
-				result[channel] = a * eu_model_source(m, inst, 1, channel);
-			} else if (opcode == EU_OP_MATH) {
+				break;
+			case EU_OP_ADD: assert(types[0] == EU_TYPE_F); result[channel] = float_bits(fa + fb); break;
+			case EU_OP_MUL: assert(types[0] == EU_TYPE_F); result[channel] = float_bits(fa * fb); break;
+			case EU_OP_AND: assert(types[0] == EU_TYPE_D); result[channel] = a & b; break;
+			case EU_OP_OR: assert(types[0] == EU_TYPE_D); result[channel] = a | b; break;
+			case EU_OP_NOT: assert(types[0] == EU_TYPE_D); result[channel] = ~a; break;
+			case EU_OP_RNDD: assert(types[0] == EU_TYPE_F); result[channel] = float_bits(floorf(fa)); break;
+			case EU_OP_FRC: assert(types[0] == EU_TYPE_F); result[channel] = float_bits(fa - floorf(fa)); break;
+			case EU_OP_SEL:
+				if (predicate != 0U) {
+					/* per channel: source 0 where the flag bit is set */
+					result[channel] = ((m->flag[flag] >> channel) & 1U) ? a : b;
+				} else {
+					/* min / max: source 0 where the test holds */
+					assert(cond == EU_COND_L || cond == EU_COND_GE);
+					result[channel] = eu_model_test(cond, a, b, types[0]) ? a : b;
+				}
+				break;
+			case EU_OP_CMP:
+				result[channel] = eu_model_test(cond, a, b, types[0]) ? 0xFFFFFFFFU : 0U;
+				break;
+			case EU_OP_MATH: {
 				unsigned function = inst_field(inst, EU_MATH_FUNCTION_HI, EU_MATH_FUNCTION_LO);
 
-				assert(function == EU_MATH_SIN || function == EU_MATH_COS || function == EU_MATH_RSQ);
-				result[channel] = function == EU_MATH_SIN ? sinf(a) : function == EU_MATH_COS ? cosf(a) : 1.0f / sqrtf(a);
-			} else {
+				switch (function) {
+				case EU_MATH_SIN: result[channel] = float_bits(sinf(fa)); break;
+				case EU_MATH_COS: result[channel] = float_bits(cosf(fa)); break;
+				case EU_MATH_RSQ: result[channel] = float_bits(1.0f / sqrtf(fa)); break;
+				case EU_MATH_INV: result[channel] = float_bits(1.0f / fa); break;
+				case EU_MATH_SQRT: result[channel] = float_bits(sqrtf(fa)); break;
+				case EU_MATH_EXP: result[channel] = float_bits(exp2f(fa)); break;
+				case EU_MATH_LOG: result[channel] = float_bits(log2f(fa)); break;
+				default: assert(!"math function the model does not know"); break;
+				}
+				break;
+			}
+			default:
 				assert(!"EU opcode the model does not know");
+				break;
 			}
 		}
-		memcpy(m->grf[dst], result, sizeof(result));
+
+		/* a comparison writes the flag bits of the channels it ran on */
+		if (opcode == EU_OP_CMP) {
+			for (channel = 0U; channel < 8U; channel++) {
+				if (((enabled >> channel) & 1U) == 0U)
+					continue;
+				if (result[channel] != 0U)
+					m->flag[flag] |= (uint16_t)(1U << channel);
+				else
+					m->flag[flag] &= (uint16_t)~(1U << channel);
+			}
+		} else {
+			assert(cond == 0U || opcode == EU_OP_SEL || opcode == EU_OP_MATH);
+		}
+
+		/* the destination: a general register (the null register discards) */
+		if (dst_file == 0U) {
+			assert(dst == 0U);
+			continue;
+		}
+		assert(dst < 128U);
+		for (channel = 0U; channel < 8U; channel++)
+			if (opcode == EU_OP_SEL || ((enabled >> channel) & 1U))
+				m->grf[dst][channel] = result[channel];
 	}
 	assert(!"no terminating SEND");
+}
+
+/*
+ * Fragment payload: the dispatch mask in the low word of dword 7 of r1 (the PS thread payload of the
+ * BSpec; Mesa reads it as brw_vec1_grf(1, 7) retyped to UW), the barycentrics in r2 / r3.  The rest
+ * of r1 stays junk, so a kernel that loads its discard flag from anywhere else discards at random.
+ */
+static void
+eu_model_fs_payload(struct eu_model *m, const struct i915_shader_binary *binary, unsigned dispatch_mask,
+	const float bary1[8], const float bary2[8])
+{
+	unsigned c;
+
+	m->dispatched = dispatch_mask;
+	m->grf[1][7] = 0xDEAD0000U | dispatch_mask;
+	for (c = 0U; c < 8U; c++) {
+		mset(m, COMPILE_FS_BARY1_GRF, c, bary1[c]);
+		mset(m, COMPILE_FS_BARY2_GRF, c, bary2[c]);
+	}
+	(void)binary;
+}
+
+/* Fragment payload: the plane of component `component` of the input of payload rank `rank`. */
+static void
+eu_model_fs_plane(struct eu_model *m, const struct i915_shader_binary *binary, unsigned rank, unsigned component,
+	float d1, float d2, float origin)
+{
+	unsigned reg = COMPILE_FS_SETUP_GRF + binary->push_regs + 2U * rank + component / 2U;
+	unsigned first = (component & 1U) * 4U;
+
+	mset(m, reg, first + 0U, d1);
+	mset(m, reg, first + 1U, d2);
+	mset(m, reg, first + 3U, origin);
+}
+
+/* What the kernel's interpolation computes for a plane: (d2 * b2 + origin) + d1 * b1, in that order. */
+static float
+eu_model_interpolate(float d1, float d2, float origin, float b1, float b2)
+{
+	float value = d2 * b2;
+
+	value = value + origin;
+	return value + d1 * b1;
 }
 
 /*
@@ -462,22 +744,20 @@ test_vertex_shader_eu_computes_the_shader(void)
 	struct i915_shader_ir *ir;
 	struct i915_shader_binary *binary;
 	static struct eu_model m;
-	unsigned c, k, r;
+	unsigned c, k;
 
 	spv = load_spv("cuboid.vert.spv", &words);
 	assert(drv_i915_shader_parse(spv, words, I915_STAGE_VERTEX, &ir, NULL) == 0);
 	assert(drv_i915_shader_compile(ir, &binary) == 0);
 
 	/* every register starts as junk that differs per channel, so an unset read cannot look right */
-	for (r = 0U; r < 128U; r++)
-		for (c = 0U; c < 8U; c++)
-			m.grf[r][c] = -1000.0f - (float)(r * 8U + c);
-	m.grf[COMPILE_PAYLOAD_GRF][0] = seconds;                /* the other seven floats of the push register stay junk */
+	eu_model_init(&m);
+	mset(&m, COMPILE_PAYLOAD_GRF, 0U, seconds);             /* the other seven floats of the push register stay junk */
 	for (c = 0U; c < 8U; c++) {
 		for (k = 0U; k < 3U; k++)
-			m.grf[in0 + k][c] = vertices[c][k];
-		m.grf[in0 + 4U][c] = vertices[c][3];
-		m.grf[in0 + 5U][c] = vertices[c][4];
+			mset(&m, in0 + k, c, vertices[c][k]);
+		mset(&m, in0 + 4U, c, vertices[c][3]);
+		mset(&m, in0 + 5U, c, vertices[c][4]);
 	}
 	eu_model_run(&m, binary);
 
@@ -496,8 +776,8 @@ test_vertex_shader_eu_computes_the_shader(void)
 		want[4] = p[3];
 		want[5] = p[4];
 		for (k = 0U; k < 6U; k++) {
-			/* position in r104..r107, the one varying in r123.. (compile.c "Register conventions") */
-			float got = m.grf[k < 4U ? COMPILE_VUE_GRF + 4U + k : COMPILE_MAX_GRF - 4U + (k - 4U)][c];
+			/* the position after the VUE header, the one varying in r123.. (compile.c "Register conventions") */
+			float got = mget(&m, k < 4U ? vue_position(binary) + k : COMPILE_MAX_GRF - 4U + (k - 4U), c);
 			float scale = fabsf(want[k]) > 1.0f ? fabsf(want[k]) : 1.0f;
 
 			if (fabsf(got - want[k]) > 2e-6f * scale) {
@@ -512,6 +792,548 @@ test_vertex_shader_eu_computes_the_shader(void)
 	free(spv);
 }
 
+/* ------------------------------------------------------------------ p014 stage C through the EU model */
+
+#define COMPILER_SHADERS "src/drivers/gpu/i915/tests/render/compiler-shaders"
+#define MVIEW_SHADERS "userland/base/mview/shaders"
+
+/* Parses and compiles a shader file, printing a refusal before failing. */
+static struct i915_shader_binary *
+compile_file(const char *directory, const char *name, enum i915_shader_stage stage)
+{
+	char path[512];
+	FILE *file;
+	long size;
+	uint32_t *code;
+	struct i915_shader_ir *ir;
+	struct i915_shader_binary *binary;
+	struct i915_compile_diagnostic diag;
+	int error;
+
+	snprintf(path, sizeof(path), "%s/%s/%s", VK_REPO, directory, name);
+	file = fopen(path, "rb");
+	assert(file != NULL);
+	fseek(file, 0, SEEK_END);
+	size = ftell(file);
+	fseek(file, 0, SEEK_SET);
+	code = malloc((size_t)size);
+	assert(fread(code, 1, (size_t)size, file) == (size_t)size);
+	fclose(file);
+	error = drv_i915_shader_parse(code, (size_t)size / 4U, stage, &ir, &diag);
+	if (error != 0)
+		printf("  %s refused: opcode %u at word %u: %s\n", name, diag.opcode, diag.word_offset,
+			diag.reason != NULL ? diag.reason : "-");
+	assert(error == 0);
+	error = drv_i915_shader_compile(ir, &binary);
+	assert(error == 0);
+	drv_i915_shader_ir_free(ir);
+	free(code);
+	return binary;
+}
+
+/*
+ * Runs a fragment kernel whose one input (location 0) is v, over eight channels:
+ * v.x = bary1, v.y = bary2 per channel, v.z and v.w the same for all.  `values` receives
+ * what the kernel's interpolation makes of that, per channel.
+ */
+static void
+fs_run(struct eu_model *m, const struct i915_shader_binary *binary, unsigned mask, const float x[8],
+	const float y[8], float z, float w, float values[8][4])
+{
+	unsigned c;
+
+	eu_model_init(m);
+	eu_model_fs_payload(m, binary, mask, x, y);
+	eu_model_fs_plane(m, binary, 0U, 0U, 1.0f, 0.0f, 0.0f);
+	eu_model_fs_plane(m, binary, 0U, 1U, 0.0f, 1.0f, 0.0f);
+	eu_model_fs_plane(m, binary, 0U, 2U, 0.0f, 0.0f, z);
+	eu_model_fs_plane(m, binary, 0U, 3U, 0.0f, 0.0f, w);
+	for (c = 0U; c < 8U; c++) {
+		values[c][0] = eu_model_interpolate(1.0f, 0.0f, 0.0f, x[c], y[c]);
+		values[c][1] = eu_model_interpolate(0.0f, 1.0f, 0.0f, x[c], y[c]);
+		values[c][2] = eu_model_interpolate(0.0f, 0.0f, z, x[c], y[c]);
+		values[c][3] = eu_model_interpolate(0.0f, 0.0f, w, x[c], y[c]);
+	}
+	eu_model_run(m, binary);
+	assert(m->ended != 0);
+}
+
+/* Compares the colour of channel c (r124..r127) with four floats, bit for bit. */
+static void
+expect_channel(const struct eu_model *m, const char *what, unsigned c, const float v[4], const float want[4])
+{
+	unsigned k;
+
+	for (k = 0U; k < 4U; k++) {
+		if (m->grf[COMPILE_MAX_GRF - 3U + k][c] != float_bits(want[k])) {
+			printf("  %s channel %u at (%g, %g, %g, %g): colour.%u = %.9g want %.9g\n", what, c, (double)v[0],
+				(double)v[1], (double)v[2], (double)v[3], k, (double)mget(m, COMPILE_MAX_GRF - 3U + k, c),
+				(double)want[k]);
+			assert(!"EU model result differs from the GLSL source");
+		}
+	}
+}
+
+/* The GLSL sources of the math shaders evaluated in C (the lowering the parser documents). */
+static void
+math_reference(const char *shader, const float v[4], float want[4])
+{
+	float larger, length2, scale;
+
+	if (strcmp(shader, "unary") == 0) {
+		want[0] = fabsf(v[0]);
+		want[1] = floorf(v[0]);
+		want[2] = v[0] - floorf(v[0]);
+		want[3] = sqrtf(v[1]);
+	} else if (strcmp(shader, "exponent") == 0) {
+		want[0] = exp2f(v[2]);
+		want[1] = log2f(v[1]);
+		want[2] = exp2f(log2f(v[1]) * v[3]);
+		want[3] = 1.0f / sqrtf(v[1]);
+	} else if (strcmp(shader, "minmax") == 0) {
+		want[0] = v[0] < v[2] ? v[0] : v[2];
+		want[1] = v[0] >= v[2] ? v[0] : v[2];
+		larger = v[0] >= -0.5f ? v[0] : -0.5f;
+		want[2] = larger < 0.75f ? larger : 0.75f;
+		want[3] = v[0] * (1.0f - v[3]) + v[2] * v[3];
+	} else {
+		length2 = v[0] * v[0] + v[1] * v[1];
+		length2 = length2 + v[2] * v[2];
+		scale = 1.0f / sqrtf(length2);
+		want[0] = v[0] * (1.0f / v[1]);
+		want[1] = 1.0f * (1.0f / v[2]);
+		want[2] = v[0] * scale;
+		want[3] = v[2] * scale;
+	}
+}
+
+/* The four math shaders through SPIR-V -> IR -> EU words, eight different inputs at a time. */
+static void
+test_eu_glsl_math(void)
+{
+	static const char *const shaders[4] = { "unary", "exponent", "minmax", "divide" };
+	static const float xs[16] = {
+		0.0f, 1.0f, -1.0f, 2.75f, -2.75f, 7.5f, -0.3f, 0.75f, -8.0f, 5.0f, 0.25f, 3.5f, -6.125f, 1e-3f, 100.0f, -0.5f,
+	};
+	static const float ys[16] = {
+		1.0f, 2.0f, 0.5f, 3.0f, 0.1f, 100.0f, 0.01f, 1.5f, 42.0f, 5.0f, 4096.0f, 0.75f, 7.0f, 0.3f, 16.0f, 2.5f,
+	};
+	static const float zs[4] = { 1.0f, -6.25f, 10.0f, 0.5f };
+	static const float ws[4] = { 0.0f, 0.5f, -1.25f, 2.5f };
+	struct eu_model *m;
+	unsigned s, batch, i, c, runs;
+
+	m = malloc(sizeof(*m));
+	runs = 0U;
+	for (s = 0U; s < 4U; s++) {
+		char name[32];
+		struct i915_shader_binary *binary;
+
+		snprintf(name, sizeof(name), "%s.frag.spv", shaders[s]);
+		binary = compile_file(COMPILER_SHADERS, name, I915_STAGE_FRAGMENT);
+		for (batch = 0U; batch < 2U; batch++) {
+			for (i = 0U; i < 4U; i++) {
+				float values[8][4];
+
+				fs_run(m, binary, 0xFFU, xs + 8U * batch, ys + 8U * ((batch + i) % 2U), zs[i], ws[i], values);
+				assert(m->written == 0xFFU);
+				for (c = 0U; c < 8U; c++) {
+					float want[4];
+
+					math_reference(shaders[s], values[c], want);
+					expect_channel(m, name, c, values[c], want);
+				}
+				runs++;
+			}
+		}
+		drv_i915_shader_binary_free(binary);
+	}
+	free(m);
+	printf("  EU model: unary / exponent / minmax / divide shaders compute their GLSL for %u x 8 channels\n", runs);
+}
+
+/* compare.frag through the EU model: eight different pairs at a time, one of them NaN. */
+static void
+test_eu_comparisons(void)
+{
+	static const float xs[8] = { 1.0f, 2.0f, 3.0f, -4.0f, 0.0f, 0.0f, 5.5f, 1.0f };
+	static const float ys[8] = { 2.0f, 1.0f, 3.0f, 7.0f, -0.0f, 0.0f, -5.5f, 1.0f };
+	struct i915_shader_binary *binary;
+	struct eu_model *m;
+	unsigned run, c;
+
+	m = malloc(sizeof(*m));
+	binary = compile_file(COMPILER_SHADERS, "compare.frag.spv", I915_STAGE_FRAGMENT);
+	for (run = 0U; run < 3U; run++) {
+		float x[8], y[8], values[8][4];
+
+		memcpy(x, xs, sizeof(x));
+		memcpy(y, ys, sizeof(y));
+		if (run == 2U)
+			x[7] = bits_float(0x7FC00000U);     /* a NaN in one channel (it reaches v.y too: 0 * NaN) */
+		fs_run(m, binary, 0xFFU, x, y, run == 0U ? 5.0f : 3.0f, run == 0U ? 3.0f : 5.0f, values);
+		for (c = 0U; c < 8U; c++) {
+			const float *v = values[c];
+			float want[4];
+
+			want[0] = (float)(v[0] < v[1]) + 2.0f * (float)(v[0] > v[1]) + 4.0f * (float)(v[0] <= v[1]) +
+				8.0f * (float)(v[0] >= v[1]);
+			want[1] = (float)(v[0] == v[1]) + 2.0f * (float)(v[0] != v[1]) +
+				4.0f * (float)(v[0] < v[1] && v[2] > v[3]) + 8.0f * (float)(v[0] < v[1] || v[2] > v[3]);
+			want[2] = v[0] < v[2] ? v[1] : v[3];
+			want[3] = (float)(!(v[0] < v[1])) + 2.0f * (v[2] < v[3] ? v[3] : v[2]);
+			if (want[2] != want[2])
+				continue;               /* a NaN picked: nothing bit-exact to compare */
+			expect_channel(m, "compare.frag", c, v, want);
+		}
+	}
+	drv_i915_shader_binary_free(binary);
+	free(m);
+	printf("  EU model: compare.frag -- per channel <, >, <=, >=, ==, != (NaN), &&, || (phi selects), ?:, !\n");
+}
+
+/* The GLSL of branch.frag evaluated in C at one pixel centre (x, y). */
+static void
+branch_reference(float x, float y, float want[4])
+{
+	float c[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+	float t = 1.0f, s;
+	unsigned k;
+
+	if (x < 21.0f) {
+		if (y < 11.0f) {
+			c[0] = 1.0f;
+		} else {
+			c[1] = 1.0f;
+			t = t * 2.0f;
+		}
+	} else if (y < 33.0f && x > 41.0f) {
+		c[2] = 1.0f;
+		t = 3.0f;
+	} else {
+		for (k = 0U; k < 4U; k++)
+			c[k] = 0.25f;
+	}
+	s = (x < y + 0.5f) ? t : -t;
+	for (k = 0U; k < 3U; k++)
+		want[k] = c[k];
+	want[3] = c[3] + s;
+}
+
+/* The GLSL of discard.frag evaluated in C: returns 1 when the pixel is discarded. */
+static int
+discard_reference(float x, float y, float want[4])
+{
+	float cell = floorf(x * 0.125f) + floorf(y * 0.125f);
+
+	if ((cell * 0.5f - floorf(cell * 0.5f)) > 0.25f)
+		return 1;
+	want[0] = 0.5f;
+	want[1] = 0.25f;
+	want[2] = 1.0f;
+	want[3] = 1.0f;
+	if (y < 32.0f) {
+		if ((x * 0.5f - floorf(x * 0.5f)) < 0.5f && x > 16.0f)
+			return 1;
+		want[0] = 1.0f;
+	}
+	return 0;
+}
+
+/*
+ * branch.frag and discard.frag at every pixel centre of 64 x 64, eight neighbouring pixels to a
+ * dispatch: the branches diverge inside a dispatch, and the discard leaves every mix of live and
+ * discarded channels, all eight discarded included.  A partial dispatch mask is never written.
+ */
+static void
+test_eu_branches_and_discard(void)
+{
+	struct i915_shader_binary *branch, *discard;
+	struct eu_model *m;
+	unsigned x0, y, c, divergent, all_gone, partial;
+
+	m = malloc(sizeof(*m));
+	branch = compile_file(COMPILER_SHADERS, "branch.frag.spv", I915_STAGE_FRAGMENT);
+	discard = compile_file(COMPILER_SHADERS, "discard.frag.spv", I915_STAGE_FRAGMENT);
+	assert(branch->uses_kill == 0U && discard->uses_kill == 1U);
+	divergent = 0U;
+	all_gone = 0U;
+	partial = 0U;
+	for (y = 0U; y < 64U; y++) {
+		for (x0 = 0U; x0 < 64U; x0 += 8U) {
+			float x[8], yy[8], values[8][4];
+			unsigned killed, regions, mask;
+
+			for (c = 0U; c < 8U; c++) {
+				x[c] = (float)(x0 + c) + 0.5f;
+				yy[c] = (float)y + 0.5f;
+			}
+
+			fs_run(m, branch, 0xFFU, x, yy, 0.0f, 0.0f, values);
+			assert(m->written == 0xFFU);
+			regions = 0U;
+			for (c = 0U; c < 8U; c++) {
+				float want[4];
+
+				branch_reference(values[c][0], values[c][1], want);
+				expect_channel(m, "branch.frag", c, values[c], want);
+				regions |= 1U << (unsigned)(want[0] + 2.0f * want[1] + 4.0f * want[2]);
+			}
+			if ((regions & (regions - 1U)) != 0U)
+				divergent++;
+
+			/* every dispatched pixel, then only some of them */
+			for (mask = 0xFFU; ; mask = 0xA5U) {
+				fs_run(m, discard, mask, x, yy, 0.0f, 0.0f, values);
+				killed = 0U;
+				for (c = 0U; c < 8U; c++) {
+					float want[4];
+
+					if (discard_reference(values[c][0], values[c][1], want) != 0) {
+						killed |= 1U << c;
+						continue;
+					}
+					if ((mask >> c) & 1U)
+						expect_channel(m, "discard.frag", c, values[c], want);
+				}
+				if (m->written != (mask & ~killed & 0xFFU)) {
+					printf("  discard.frag at (%u.., %u) mask 0x%02x: written 0x%02x, want 0x%02x\n", x0, y, mask,
+						m->written, mask & ~killed & 0xFFU);
+					assert(!"discard mask mismatch");
+				}
+				if (mask == 0xFFU && killed == 0xFFU)
+					all_gone++;
+				if (mask == 0xFFU && killed != 0U && killed != 0xFFU)
+					partial++;
+				if (mask == 0xA5U)
+					break;
+			}
+		}
+	}
+	assert(divergent > 0U && all_gone > 0U && partial > 0U);
+	drv_i915_shader_binary_free(branch);
+	drv_i915_shader_binary_free(discard);
+	free(m);
+	printf("  EU model: branch.frag diverges in %u dispatches; discard.frag leaves %u fully discarded and %u partly discarded dispatches, each ending with the write masked to the live pixels\n",
+		divergent, all_gone, partial);
+}
+
+/* cells.vert and vsmath.vert through the EU model: eight vertices at a time. */
+static void
+test_eu_vertex_shaders(void)
+{
+	static const float values[8][4] = {
+		{ 1.0f, 2.0f, 2.0f, -0.5f }, { -3.0f, 0.5f, 4.0f, 0.25f }, { 0.0f, 0.0f, 1.0f, 1.5f }, { 2.5f, -1.0f, -2.0f, 0.75f },
+		{ 0.3f, 0.3f, 0.3f, 1.0f }, { -7.0f, 1.0f, 0.1f, 0.0f }, { 5.0f, 5.0f, -5.0f, 0.5f }, { 0.125f, 8.0f, 2.0f, 2.0f },
+	};
+	struct i915_shader_binary *cells, *vsmath;
+	struct eu_model *m;
+	unsigned c, k;
+
+	m = malloc(sizeof(*m));
+	cells = compile_file(COMPILER_SHADERS, "cells.vert.spv", I915_STAGE_VERTEX);
+	vsmath = compile_file(COMPILER_SHADERS, "vsmath.vert.spv", I915_STAGE_VERTEX);
+	assert(cells->input_count == 2U && cells->varying_count == 1U && cells->push_regs == 0U);
+
+	/* the payload: location 0 (position) in r2..r5, location 1 (value) in r6..r9 */
+	eu_model_init(m);
+	for (c = 0U; c < 8U; c++) {
+		for (k = 0U; k < 4U; k++) {
+			mset(m, COMPILE_PAYLOAD_GRF + k, c, 0.125f * (float)(c + k));
+			mset(m, COMPILE_PAYLOAD_GRF + 4U + k, c, values[c][k]);
+		}
+	}
+	eu_model_run(m, cells);
+	for (c = 0U; c < 8U; c++) {
+		for (k = 0U; k < 4U; k++) {
+			assert(mget(m, vue_position(cells) + k, c) == 0.125f * (float)(c + k));
+			assert(mget(m, COMPILE_MAX_GRF - 4U + k, c) == values[c][k]);
+		}
+	}
+
+	eu_model_init(m);
+	for (c = 0U; c < 8U; c++)
+		for (k = 0U; k < 4U; k++)
+			mset(m, COMPILE_PAYLOAD_GRF + 4U + k, c, values[c][k]);
+	eu_model_run(m, vsmath);
+	for (c = 0U; c < 8U; c++) {
+		const float *v = values[c];
+		float length2, scale, n[3], lambert, want[4];
+
+		length2 = v[0] * v[0] + v[1] * v[1];
+		length2 = length2 + v[2] * v[2];
+		scale = 1.0f / sqrtf(length2);
+		for (k = 0U; k < 3U; k++)
+			n[k] = v[k] * scale;
+		lambert = n[0] * 0.267261f + n[1] * 0.534522f;
+		lambert = lambert + n[2] * 0.801784f;
+		want[0] = n[0];
+		want[1] = n[1];
+		want[2] = lambert >= 0.0f ? lambert : 0.0f;
+		want[3] = v[3] >= 0.0f ? v[3] : 0.0f;
+		want[3] = want[3] < 1.0f ? want[3] : 1.0f;
+		for (k = 0U; k < 4U; k++)
+			assert(m->grf[COMPILE_MAX_GRF - 4U + k][c] == float_bits(want[k]));
+	}
+	drv_i915_shader_binary_free(cells);
+	drv_i915_shader_binary_free(vsmath);
+	free(m);
+	printf("  EU model: cells.vert passes its value on, vsmath.vert computes normalize / max(dot) / clamp for 8 vertices\n");
+}
+
+/*
+ * mview's shaders through the EU model.  mview.vert has four registers of push constants and
+ * three attributes: its payload reaches r17, so its values start at r19 (the interpolation
+ * temporary at r18), and nothing may write the payload.  cutout.frag discards where the texel's
+ * alpha times the pushed alpha is below one half.
+ */
+static void
+test_eu_mview(void)
+{
+	static const float columns[7][4] = {
+		{ 0.5f, 0.0f, 0.0f, 0.0f }, { 0.0f, -0.75f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.25f, 1.0f },
+		{ 0.125f, -0.25f, 0.5f, 2.0f }, { 0.0f, 1.0f, 0.0f, 0.0f }, { -1.0f, 0.0f, 0.0f, 0.0f },
+		{ 0.0f, 0.0f, 1.0f, 0.0f },
+	};
+	struct i915_shader_binary *vert, *frag, *cutout;
+	struct eu_model *m;
+	uint32_t payload[16][8];
+	unsigned c, k, r;
+
+	m = malloc(sizeof(*m));
+	vert = compile_file(MVIEW_SHADERS, "mview.vert.spv", I915_STAGE_VERTEX);
+	frag = compile_file(MVIEW_SHADERS, "mview.frag.spv", I915_STAGE_FRAGMENT);
+	cutout = compile_file(MVIEW_SHADERS, "cutout.frag.spv", I915_STAGE_FRAGMENT);
+	assert(vert->push_regs == 4U && vert->input_count == 3U && vert->varying_count == 2U);
+	assert(vert->grf_used > 19U);
+	assert(frag->push_regs == 4U && frag->input_count == 2U && frag->uses_kill == 0U);
+	assert(cutout->push_regs == 4U && cutout->input_count == 2U && cutout->uses_kill == 1U);
+
+	/* mview.vert: push in r2..r5 (read as scalars), position r6.., normal r10.., texture position r14.. */
+	eu_model_init(m);
+	for (k = 0U; k < 7U; k++)
+		for (c = 0U; c < 4U; c++)
+			mset(m, COMPILE_PAYLOAD_GRF + (4U * k + c) / 8U, (4U * k + c) % 8U, columns[k][c]);
+	for (c = 0U; c < 8U; c++) {
+		mset(m, 6U, c, 0.5f + 0.25f * (float)c);
+		mset(m, 7U, c, -1.0f + 0.125f * (float)c);
+		mset(m, 8U, c, 2.0f - 0.5f * (float)c);
+		mset(m, 10U, c, 0.3f - 0.1f * (float)c);
+		mset(m, 11U, c, -0.6f + 0.2f * (float)c);
+		mset(m, 12U, c, 0.8f);
+		mset(m, 14U, c, 0.0625f * (float)c);
+		mset(m, 15U, c, 1.0f - 0.0625f * (float)c);
+	}
+	memcpy(payload, &m->grf[COMPILE_PAYLOAD_GRF], sizeof(payload));
+	eu_model_run(m, vert);
+	assert(memcmp(payload, &m->grf[COMPILE_PAYLOAD_GRF], sizeof(payload)) == 0);
+	for (c = 0U; c < 8U; c++) {
+		float p[3], nrm[3], turned[3], length2, scale, lambert, shade, clip;
+
+		p[0] = mget(m, 6U, c);
+		p[1] = mget(m, 7U, c);
+		p[2] = mget(m, 8U, c);
+		nrm[0] = mget(m, 10U, c);
+		nrm[1] = mget(m, 11U, c);
+		nrm[2] = mget(m, 12U, c);
+		for (k = 0U; k < 3U; k++) {
+			turned[k] = nrm[0] * columns[4][k] + nrm[1] * columns[5][k];
+			turned[k] = turned[k] + nrm[2] * columns[6][k];
+		}
+		length2 = turned[0] * turned[0] + turned[1] * turned[1];
+		length2 = length2 + turned[2] * turned[2];
+		scale = 1.0f / sqrtf(length2);
+		lambert = turned[0] * scale * 0.267261f + turned[1] * scale * 0.534522f;
+		lambert = lambert + turned[2] * scale * 0.801784f;
+		lambert = lambert >= 0.0f ? lambert : 0.0f;
+		shade = 0.35f + 0.65f * lambert;
+		for (k = 0U; k < 4U; k++) {
+			clip = columns[0][k] * p[0] + columns[1][k] * p[1];
+			clip = clip + columns[2][k] * p[2];
+			clip = clip + columns[3][k];
+			assert(fabsf(mget(m, vue_position(vert) + k, c) - clip) <= 1e-6f);
+		}
+		/* the varyings below the handles: location 0 (texture coordinate) at r119, location 1 (shade) at r123 */
+		assert(mget(m, COMPILE_MAX_GRF - 8U, c) == mget(m, 14U, c));
+		assert(mget(m, COMPILE_MAX_GRF - 7U, c) == mget(m, 15U, c));
+		assert(fabsf(mget(m, COMPILE_MAX_GRF - 4U, c) - shade) <= 1e-6f);
+	}
+
+	/* the fragment shaders: push in r4..r7 (the colour at byte 112: r7.4..7), texture coordinate r8, shade r10 */
+	for (r = 0U; r < 2U; r++) {
+		const struct i915_shader_binary *binary = r == 0U ? frag : cutout;
+		float u[8], v[8];
+		unsigned killed;
+
+		for (c = 0U; c < 8U; c++) {
+			u[c] = 0.1f + 0.1f * (float)c;
+			v[c] = 0.9f - 0.05f * (float)c;
+		}
+		eu_model_init(m);
+		eu_model_fs_payload(m, binary, 0xFFU, u, v);
+		mset(m, COMPILE_FS_SETUP_GRF + 3U, 4U, 0.5f);
+		mset(m, COMPILE_FS_SETUP_GRF + 3U, 5U, 0.75f);
+		mset(m, COMPILE_FS_SETUP_GRF + 3U, 6U, 1.0f);
+		mset(m, COMPILE_FS_SETUP_GRF + 3U, 7U, 0.6f);
+		eu_model_fs_plane(m, binary, 0U, 0U, 1.0f, 0.0f, 0.0f);
+		eu_model_fs_plane(m, binary, 0U, 1U, 0.0f, 1.0f, 0.0f);
+		eu_model_fs_plane(m, binary, 1U, 0U, 0.0f, 0.0f, 0.8f);
+		eu_model_run(m, binary);
+		killed = 0U;
+		for (c = 0U; c < 8U; c++) {
+			float rgba[4], want[4], color[4] = { 0.5f, 0.75f, 1.0f, 0.6f };
+
+			eu_model_texture(0U, u[c], v[c], rgba);
+			for (k = 0U; k < 3U; k++)
+				want[k] = (rgba[k] * color[k]) * 0.8f;
+			want[3] = rgba[3] * color[3];
+			if (r == 1U && want[3] < 0.5f) {
+				killed |= 1U << c;
+				continue;
+			}
+			if (r == 1U)
+				want[3] = 1.0f;
+			for (k = 0U; k < 4U; k++)
+				assert(m->grf[COMPILE_MAX_GRF - 3U + k][c] == float_bits(want[k]));
+		}
+		assert(m->written == (0xFFU & ~killed));
+		if (r == 1U)
+			assert(killed != 0U && killed != 0xFFU);
+	}
+	drv_i915_shader_binary_free(vert);
+	drv_i915_shader_binary_free(frag);
+	drv_i915_shader_binary_free(cutout);
+	free(m);
+	printf("  EU model: mview.vert (payload to r17, values from r19, payload untouched), mview.frag, cutout.frag (discard below alpha 0.5)\n");
+}
+
+/* Every mview and stage-C shader compiles; the vkdemo kernels are what they were before stage C. */
+static void
+test_all_shaders_compile(void)
+{
+	static const char *const files[][2] = {
+		{ MVIEW_SHADERS, "mview.vert.spv" }, { MVIEW_SHADERS, "mview.frag.spv" }, { MVIEW_SHADERS, "cutout.frag.spv" },
+		{ COMPILER_SHADERS, "cells.vert.spv" }, { COMPILER_SHADERS, "vsmath.vert.spv" },
+		{ COMPILER_SHADERS, "passthrough.frag.spv" }, { COMPILER_SHADERS, "unary.frag.spv" },
+		{ COMPILER_SHADERS, "exponent.frag.spv" }, { COMPILER_SHADERS, "minmax.frag.spv" },
+		{ COMPILER_SHADERS, "divide.frag.spv" }, { COMPILER_SHADERS, "compare.frag.spv" },
+		{ COMPILER_SHADERS, "branch.frag.spv" }, { COMPILER_SHADERS, "discard.frag.spv" },
+		{ COMPILER_SHADERS, "shade.frag.spv" },
+	};
+	unsigned i;
+
+	for (i = 0U; i < sizeof(files) / sizeof(files[0]); i++) {
+		struct i915_shader_binary *binary;
+		enum i915_shader_stage stage;
+
+		stage = strstr(files[i][1], ".vert.") != NULL ? I915_STAGE_VERTEX : I915_STAGE_FRAGMENT;
+		binary = compile_file(files[i][0], files[i][1], stage);
+		assert(binary->code_bytes > 0U && binary->stage == stage);
+		drv_i915_shader_binary_free(binary);
+	}
+	printf("  compiled: mview.vert, mview.frag, cutout.frag and the %u stage-C test shaders\n", i - 3U);
+}
+
 int
 main(void)
 {
@@ -523,6 +1345,12 @@ main(void)
 	test_register_lifetime();
 	test_fsub_is_add_with_second_source_negated();
 	test_not_lowered_ir_is_refused();
+	test_all_shaders_compile();
+	test_eu_glsl_math();
+	test_eu_comparisons();
+	test_eu_branches_and_discard();
+	test_eu_vertex_shaders();
+	test_eu_mview();
 	assert(fixture_live == 0U);
 	printf("i915 vk compile host test PASS\n");
 	return 0;

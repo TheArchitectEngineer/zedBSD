@@ -101,6 +101,9 @@ drv_i915_node_init(
 
 	/* Session zero is reserved, so a logged identifier of zero is always a bug. */
 	device->next_session = 1U;
+
+	/* Starts the frame timing with an empty window. */
+	drv_i915_perf_init(&device->perf);
 }
 
 /*

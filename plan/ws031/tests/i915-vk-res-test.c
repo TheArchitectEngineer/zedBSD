@@ -18,6 +18,7 @@
 
 #include "i915-vk-render-stubs.inc"
 
+#include "../../../src/drivers/gpu/i915/render/heap.h"
 #include "../../../src/drivers/gpu/i915/render/state.h"
 
 /* The wire opcodes the fixture sends, as libvulkan numbers them. */
@@ -73,6 +74,9 @@
 static uint8_t fixture_storage[FIXTURE_STORAGE_BYTES] __attribute__((aligned(4096)));
 static struct i915_gem_object fixture_storage_object;
 
+/* The state object a draw's state is written into, as the draw path writes it on the GPU's page. */
+static uint8_t fixture_state_page[I915_GFX_STATE_BYTES] __attribute__((aligned(4096)));
+
 /* The stream every command is built in. */
 static struct stub_wire fixture_wire;
 
@@ -80,8 +84,11 @@ static void fixture_allocate_memory(uint64_t identity, uint64_t size, uint32_t t
 static void fixture_destroy(uint32_t opcode, uint64_t identity);
 static void fixture_create_image(uint64_t identity, uint32_t format, uint32_t width, uint32_t height, uint32_t levels);
 static void fixture_bind(uint32_t opcode, uint64_t resource, uint64_t offset);
+static void fixture_create_view(uint64_t identity, uint64_t image, uint32_t base_level, uint32_t level_count);
+static void fixture_create_sampler(uint64_t identity, uint32_t mipmap_mode, uint32_t lod_bias, uint32_t min_lod, uint32_t max_lod);
 static void test_memory_storage(void);
 static void test_buffer_image(void);
+static void test_mip_images(void);
 static void test_descriptors(void);
 
 /*
@@ -90,9 +97,10 @@ static void test_descriptors(void);
 int
 main(void)
 {
-	/* Checks memory, then the resources bound to it, then descriptors. */
+	/* Checks memory, then the resources bound to it, mipmapped images and samplers, then descriptors. */
 	test_memory_storage();
 	test_buffer_image();
+	test_mip_images();
 	test_descriptors();
 
 	/* Succeeded: every check held. */
@@ -193,6 +201,88 @@ fixture_bind(
 	stub_put64(&fixture_wire, resource);
 	stub_put64(&fixture_wire, FIXTURE_MEMORY);
 	stub_put64(&fixture_wire, offset);
+}
+
+/* Appends vkCreateImageView of a 2D RGBA8 view of the levels [base_level, base_level + level_count). */
+static void
+fixture_create_view(
+	uint64_t identity,
+	uint64_t image,
+	uint32_t base_level,
+	uint32_t level_count)
+{
+	unsigned index;
+
+	/* The header, the device and the create info's presence marker; sType 15, no chain, no flags. */
+	stub_put32(&fixture_wire, FIXTURE_CREATE_IMAGE_VIEW);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 15U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+
+	/* The image, the view type, the format and identity swizzles. */
+	stub_put64(&fixture_wire, image);
+	stub_put32(&fixture_wire, VK_IMAGE_VIEW_TYPE_2D);
+	stub_put32(&fixture_wire, VK_FORMAT_R8G8B8A8_UNORM);
+	for (index = 0U; index < 4U; index++)
+		stub_put32(&fixture_wire, 0U);
+
+	/* The subresource range: colour, the levels, one layer. */
+	stub_put32(&fixture_wire, VK_IMAGE_ASPECT_COLOR_BIT);
+	stub_put32(&fixture_wire, base_level);
+	stub_put32(&fixture_wire, level_count);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 1U);
+
+	/* The tail: no allocator, the identity behind its presence marker. */
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, identity);
+}
+
+/* Appends vkCreateSampler of a linear sampler, repeating along u and v, with a mipmap mode and float-bit LODs. */
+static void
+fixture_create_sampler(
+	uint64_t identity,
+	uint32_t mipmap_mode,
+	uint32_t lod_bias,
+	uint32_t min_lod,
+	uint32_t max_lod)
+{
+	/* The header, the device and the create info's presence marker; sType 31, no chain, no flags. */
+	stub_put32(&fixture_wire, FIXTURE_CREATE_SAMPLER);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 31U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+
+	/* Linear filters, the mipmap mode, repeat along u, v and w. */
+	stub_put32(&fixture_wire, VK_FILTER_LINEAR);
+	stub_put32(&fixture_wire, VK_FILTER_LINEAR);
+	stub_put32(&fixture_wire, mipmap_mode);
+	stub_put32(&fixture_wire, VK_SAMPLER_ADDRESS_MODE_REPEAT);
+	stub_put32(&fixture_wire, VK_SAMPLER_ADDRESS_MODE_REPEAT);
+	stub_put32(&fixture_wire, VK_SAMPLER_ADDRESS_MODE_REPEAT);
+
+	/* The bias; no anisotropy (ratio 1.0); no comparison; the LOD range; border and coordinates zero. */
+	stub_put32(&fixture_wire, lod_bias);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0x3f800000U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, VK_COMPARE_OP_ALWAYS);
+	stub_put32(&fixture_wire, min_lod);
+	stub_put32(&fixture_wire, max_lod);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+
+	/* The tail: no allocator, the identity behind its presence marker. */
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, identity);
 }
 
 /*
@@ -395,13 +485,21 @@ test_buffer_image(void)
 	assert(image->pitch == 512U);
 	assert(image->bytes == 512U * 64U);
 
-	/* An image with two mip levels is refused by name as a missing feature. */
+	/* A depth image with two mip levels is refused by name as a missing feature. */
 	stub_wire_begin(&fixture_wire);
-	fixture_create_image(FIXTURE_MIPMAPPED, VK_FORMAT_R8G8B8A8_UNORM, 64U, 64U, 2U);
+	fixture_create_image(FIXTURE_MIPMAPPED, VK_FORMAT_D32_SFLOAT, 64U, 64U, 2U);
 	reply_bytes = stub_execute_ok(&fixture_wire);
 	assert(reply_bytes == 8U);
 	assert(stub_get32(stub_reply, 4U) == (uint32_t)VK_ERROR_FEATURE_NOT_PRESENT);
 	assert(strstr(stub_log, "XXX vkCreateImage refused") != NULL);
+	assert(drv_i915_object_lookup(stub_vk, I915_VK_OBJ_IMAGE, FIXTURE_MIPMAPPED) == NULL);
+
+	/* A colour image with more levels than halve 64 down to one texel (7) is refused the same way. */
+	stub_wire_begin(&fixture_wire);
+	fixture_create_image(FIXTURE_MIPMAPPED, VK_FORMAT_R8G8B8A8_UNORM, 64U, 64U, 8U);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 8U);
+	assert(stub_get32(stub_reply, 4U) == (uint32_t)VK_ERROR_FEATURE_NOT_PRESENT);
 	assert(drv_i915_object_lookup(stub_vk, I915_VK_OBJ_IMAGE, FIXTURE_MIPMAPPED) == NULL);
 
 	/* Binds the colour image behind the buffer and creates the whole-image view. */
@@ -482,6 +580,229 @@ test_buffer_image(void)
 }
 
 /*
+ * A mipmapped image takes the 2D mip layout with one pitch for every level
+ * (level 1 below level 0, level 2 to its right, the rest below level 2);
+ * its memory covers the whole chain, each level can be described on its
+ * own, a view keeps its range of levels, a sampler its mipmap mode, bias
+ * and LOD range, and the surface and sampler state a draw writes carry them.
+ */
+static void
+test_mip_images(void)
+{
+	static const uint32_t code[4] = { 0U, 0U, 0U, 0U };
+	struct i915_gfx_image *image;
+	struct i915_gfx_image *odd;
+	struct i915_gfx_image *target;
+	struct i915_gfx_view *view;
+	struct i915_gfx_sampler *sampler;
+	struct i915_gfx_surface surface;
+	struct i915_gfx_pipeline pipeline;
+	struct i915_gfx_dset dset;
+	struct i915_gfx_draw_state state;
+	struct i915_gfx_kernels kernels;
+	uint32_t words[4];
+	const uint32_t *rss;
+	size_t reply_bytes;
+	int error;
+
+	/* Opens a session and gives an allocation its storage. */
+	stub_session_open(&fixture_storage_object);
+	stub_wire_begin(&fixture_wire);
+	fixture_allocate_memory(FIXTURE_MEMORY, FIXTURE_STORAGE_BYTES, 0U);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 24U);
+	error = drv_i915_render_blob_attach(stub_vk, FIXTURE_MEMORY, &fixture_storage_object);
+	assert(error == 0);
+
+	/*
+	 * A 64x64 image of all 7 levels: 64 wide (level 0 above levels 1 and 2,
+	 * 32 + 16), 100 rows (64, then 16 + 8 + 4 + 4 + 4 in the right column,
+	 * the levels of 2 and 1 texels rounded up to 4): 256-byte rows.
+	 */
+	stub_wire_begin(&fixture_wire);
+	fixture_create_image(FIXTURE_MIPMAPPED, VK_FORMAT_R8G8B8A8_UNORM, 64U, 64U, 7U);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 24U);
+	image = drv_i915_object_lookup(stub_vk, I915_VK_OBJ_IMAGE, FIXTURE_MIPMAPPED);
+	assert(image != NULL);
+	assert(image->levels == 7U);
+	assert(image->pitch == 256U);
+	assert(image->bytes == 256U * 100U);
+
+	/* Its requirements cover the whole chain in whole pages. */
+	stub_wire_begin(&fixture_wire);
+	stub_put32(&fixture_wire, FIXTURE_GET_IMAGE_MEMORY_REQUIREMENTS);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put64(&fixture_wire, FIXTURE_MIPMAPPED);
+	stub_put64(&fixture_wire, 1U);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 32U);
+	assert(stub_get64(stub_reply, 12U) == 28672U);
+
+	/* Level 3 (8x8) starts at row 80, column 32, and ends with its last texel. */
+	stub_wire_begin(&fixture_wire);
+	stub_put32(&fixture_wire, FIXTURE_GET_SUBRESOURCE_LAYOUT);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put64(&fixture_wire, FIXTURE_MIPMAPPED);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, VK_IMAGE_ASPECT_COLOR_BIT);
+	stub_put32(&fixture_wire, 3U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 1U);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 52U);
+	assert(stub_get64(stub_reply, 12U) == 80U * 256U + 32U * 4U);
+	assert(stub_get64(stub_reply, 20U) == 7U * 256U + 8U * 4U);
+	assert(stub_get64(stub_reply, 28U) == 256U);
+
+	/* A 5x3 image of its 3 levels: every level rounds up to 4x4 texels, so 8 by 8 in all. */
+	stub_wire_begin(&fixture_wire);
+	fixture_create_image(FIXTURE_MIPMAPPED + 1U, VK_FORMAT_R8G8B8A8_UNORM, 5U, 3U, 3U);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 24U);
+	odd = drv_i915_object_lookup(stub_vk, I915_VK_OBJ_IMAGE, FIXTURE_MIPMAPPED + 1U);
+	assert(odd != NULL);
+	assert(odd->pitch == 32U);
+	assert(odd->bytes == 32U * 8U);
+
+	/* Binds the chain at the start of the storage and a 16x16 one-level target after it. */
+	stub_wire_begin(&fixture_wire);
+	fixture_create_image(FIXTURE_IMAGE, VK_FORMAT_R8G8B8A8_UNORM, 16U, 16U, 1U);
+	fixture_bind(FIXTURE_BIND_IMAGE_MEMORY, FIXTURE_MIPMAPPED, 0U);
+	fixture_bind(FIXTURE_BIND_IMAGE_MEMORY, FIXTURE_IMAGE, 65536U);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 24U + 8U + 8U);
+	target = drv_i915_object_lookup(stub_vk, I915_VK_OBJ_IMAGE, FIXTURE_IMAGE);
+	assert(target != NULL);
+
+	/* Level 2 (16x16) is described on its own: row 64, column 32, the image's pitch. */
+	error = drv_i915_gfx_image_level(image, 2U, &surface);
+	assert(error == 0);
+	assert(surface.va == FIXTURE_STORAGE_VA + 64U * 256U + 32U * 4U);
+	assert(surface.width == 16U);
+	assert(surface.height == 16U);
+	assert(surface.pitch == 256U);
+
+	/* Level 6 is one texel at row 96, column 32; there is no level 7. */
+	error = drv_i915_gfx_image_level(image, 6U, &surface);
+	assert(error == 0);
+	assert(surface.va == FIXTURE_STORAGE_VA + 96U * 256U + 32U * 4U);
+	assert(surface.width == 1U);
+	assert(surface.height == 1U);
+	error = drv_i915_gfx_image_level(image, 7U, &surface);
+	assert(error == EINVAL);
+
+	/* A view of levels 1 on (the remaining levels) keeps 6 levels from level 1. */
+	stub_wire_begin(&fixture_wire);
+	fixture_create_view(FIXTURE_VIEW, FIXTURE_MIPMAPPED, 1U, VK_REMAINING_MIP_LEVELS);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 24U);
+	view = drv_i915_object_lookup(stub_vk, I915_VK_OBJ_IMAGE_VIEW, FIXTURE_VIEW);
+	assert(view != NULL);
+	assert(view->base_level == 1U);
+	assert(view->level_count == 6U);
+
+	/* A view that starts past the last level, or that has no level, is refused. */
+	stub_wire_begin(&fixture_wire);
+	fixture_create_view(FIXTURE_VIEW + 1U, FIXTURE_MIPMAPPED, 7U, 1U);
+	fixture_create_view(FIXTURE_VIEW + 2U, FIXTURE_MIPMAPPED, 0U, 0U);
+	fixture_create_view(FIXTURE_VIEW + 3U, FIXTURE_MIPMAPPED, 5U, 3U);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 3U * 8U);
+	assert(stub_get32(stub_reply, 4U) == (uint32_t)VK_ERROR_INITIALIZATION_FAILED);
+	assert(stub_get32(stub_reply, 12U) == (uint32_t)VK_ERROR_INITIALIZATION_FAILED);
+	assert(stub_get32(stub_reply, 20U) == (uint32_t)VK_ERROR_INITIALIZATION_FAILED);
+	assert(strstr(stub_log, "vkCreateImageView refused") != NULL);
+	assert(drv_i915_object_lookup(stub_vk, I915_VK_OBJ_IMAGE_VIEW, FIXTURE_VIEW + 1U) == NULL);
+
+	/* A trilinear sampler with bias 1.5 and LOD range [0.25, 16] keeps them as float bits. */
+	stub_wire_begin(&fixture_wire);
+	fixture_create_sampler(FIXTURE_SAMPLER, VK_SAMPLER_MIPMAP_MODE_LINEAR, 0x3fc00000U, 0x3e800000U, 0x41800000U);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 24U);
+	sampler = drv_i915_object_lookup(stub_vk, I915_VK_OBJ_SAMPLER, FIXTURE_SAMPLER);
+	assert(sampler != NULL);
+	assert(sampler->mipmap_mode == VK_SAMPLER_MIPMAP_MODE_LINEAR);
+	assert(sampler->lod_bias == 0x3fc00000U);
+	assert(sampler->min_lod == 0x3e800000U);
+	assert(sampler->max_lod == 0x41800000U);
+
+	/*
+	 * Its SAMPLER_STATE: OpenGL pre-clamp, MIPFILTER_LINEAR, linear filters
+	 * and bias 384/256; Max LOD clamped to 14 (3584) and Min LOD 64; address
+	 * rounding and WRAP along u and v.
+	 */
+	drv_i915_gfx_sampler_write(words, sampler);
+	assert(words[0] == ((2U << 27) | (3U << 20) | (1U << 17) | (1U << 14) | (384U << 1)));
+	assert(words[1] == ((3584U << 8) | (64U << 20)));
+	assert(words[3] == (0x0007e000U | 2U));
+
+	/* A nearest-level sampler with bias -2 and LOD range [0, 0.5]: MIPFILTER_NEAREST, bias 0x1e00. */
+	sampler->mipmap_mode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+	sampler->lod_bias = 0xc0000000U;
+	sampler->min_lod = 0U;
+	sampler->max_lod = 0x3f000000U;
+	drv_i915_gfx_sampler_write(words, sampler);
+	assert(words[0] == ((2U << 27) | (1U << 20) | (1U << 17) | (1U << 14) | (0x1e00U << 1)));
+	assert(words[1] == (128U << 8));
+
+	/* Describes a draw that samples the view through the sampler into the target. */
+	memset(&pipeline, 0, sizeof(pipeline));
+	memset(&dset, 0, sizeof(dset));
+	memset(&state, 0, sizeof(state));
+	memset(&kernels, 0, sizeof(kernels));
+	dset.slots[0].view = view;
+	dset.slots[0].sampler = sampler;
+	state.pipeline = &pipeline;
+	state.dset[0] = &dset;
+	kernels.vs_code = code;
+	kernels.vs_bytes = sizeof(code);
+	kernels.ps_code = code;
+	kernels.ps_bytes = sizeof(code);
+	kernels.ps_samplers = 1U;
+	error = drv_i915_gfx_write_state(fixture_state_page, &state, &kernels, target, 0U);
+	assert(error == 0);
+
+	/*
+	 * The texture's surface state: the level-0 extent and the shared pitch
+	 * at the chain's start, QPitch 100 / 4, MIP count 5 from Surface Min
+	 * LOD 1, mip tail start 7.
+	 */
+	rss = (const uint32_t *)(const void *)(fixture_state_page + I915_GFX_SURFACE_HEAP + I915_GFX_RSS_TEXTURE);
+	assert((rss[1] & 0x7fffU) == 25U);
+	assert(rss[2] == (63U | (63U << 16)));
+	assert((rss[3] & 0x3ffffU) == 255U);
+	assert(rss[5] == (5U | (1U << 4) | (7U << 8)));
+	assert(rss[8] == (uint32_t)FIXTURE_STORAGE_VA);
+
+	/* The target's surface state is its one level: MIP count 0, mip tail start 1, QPitch 16 / 4. */
+	rss = (const uint32_t *)(const void *)(fixture_state_page + I915_GFX_SURFACE_HEAP + I915_GFX_RSS_TARGET);
+	assert(rss[5] == 0x00000100U);
+	assert((rss[1] & 0x7fffU) == 4U);
+
+	/* A view with no level cannot be sampled. */
+	view->level_count = 0U;
+	error = drv_i915_gfx_write_state(fixture_state_page, &state, &kernels, target, 0U);
+	assert(error == EINVAL);
+	view->level_count = 6U;
+
+	/* Every object is destroyed through the wire and nothing stays allocated. */
+	stub_wire_begin(&fixture_wire);
+	fixture_destroy(FIXTURE_DESTROY_SAMPLER, FIXTURE_SAMPLER);
+	fixture_destroy(FIXTURE_DESTROY_IMAGE_VIEW, FIXTURE_VIEW);
+	fixture_destroy(FIXTURE_DESTROY_IMAGE, FIXTURE_IMAGE);
+	fixture_destroy(FIXTURE_DESTROY_IMAGE, FIXTURE_MIPMAPPED + 1U);
+	fixture_destroy(FIXTURE_DESTROY_IMAGE, FIXTURE_MIPMAPPED);
+	fixture_destroy(FIXTURE_FREE_MEMORY, FIXTURE_MEMORY);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 6U * 4U);
+	stub_session_close();
+	assert(stub_live == 0U);
+}
+
+/*
  * A layout keeps its bindings, a set keeps its layout, and an update
  * records the view and the sampler a binding samples.
  */
@@ -510,8 +831,13 @@ test_descriptors(void)
 	stub_put64(&fixture_wire, FIXTURE_IMAGE);
 	stub_put32(&fixture_wire, VK_IMAGE_VIEW_TYPE_2D);
 	stub_put32(&fixture_wire, VK_FORMAT_R8G8B8A8_UNORM);
-	for (index = 0U; index < 4U + 5U; index++)
+	for (index = 0U; index < 4U; index++)
 		stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, VK_IMAGE_ASPECT_COLOR_BIT);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 1U);
 	stub_put64(&fixture_wire, 0U);
 	stub_put64(&fixture_wire, 1U);
 	stub_put64(&fixture_wire, FIXTURE_VIEW);

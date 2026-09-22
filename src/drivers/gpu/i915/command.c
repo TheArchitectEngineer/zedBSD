@@ -20,6 +20,7 @@
  */
 
 #include "command.h"
+#include "perf.h"
 #include "i915.h"
 #include "memory.h"
 #include "request-queue.h"
@@ -506,6 +507,7 @@ i915_submit_marker(
 
 	/* A marker only writes its breadcrumbs. */
 	request->context = &session->contexts[engine->index];
+	request->queued_at = drv_i915_perf_now();
 	drv_i915_request_queue(engine, request);
 	drv_i915_worker_kick(engine);
 

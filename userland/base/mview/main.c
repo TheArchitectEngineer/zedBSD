@@ -24,6 +24,9 @@
 /* How long an idle viewer waits for input before looking again, in milliseconds. */
 #define MAIN_IDLE_WAIT		16
 
+/* The turn of the spin demonstration, in degrees per second (one revolution in ten seconds). */
+#define MAIN_SPIN_RATE		36.0
+
 /* How many consecutive out-of-date swapchains are tolerated before giving up. */
 #define MAIN_RECREATE_LIMIT	16U
 
@@ -34,6 +37,33 @@ struct main_options {
 	const char *token;
 	uint32_t frames;
 	uint32_t timeout;
+
+	/* Seconds of automatic turning about the vertical axis, with the frame rate measured; zero for none. */
+	uint32_t spin;
+};
+
+/* The frame-rate measurement of the spin demonstration. */
+struct main_spin {
+	/* When the first spinning frame was drawn, and when the latest one was presented. */
+	struct timespec start;
+	struct timespec last;
+
+	/* The yaw the spin started from and the one it applied last. */
+	double base_yaw;
+	double applied;
+
+	/* Presented frames in all and in the current whole second, and that second's number. */
+	uint32_t frames;
+	uint32_t second_frames;
+	uint32_t second;
+
+	/* The shortest, longest and summed time between presented frames, in milliseconds. */
+	double shortest;
+	double longest;
+	double total;
+
+	/* Nonzero once the first spinning frame was drawn. */
+	int started;
 };
 
 static int options_parse(int argc, char **argv, struct main_options *options);
@@ -41,6 +71,9 @@ static int option_number(const char *text, uint32_t maximum, uint32_t *number);
 static int option_token(const char *token);
 static int main_expired(const struct timespec *start, uint32_t timeout);
 static void main_frame_log(const char *token, uint32_t frame, const struct mview_camera *camera);
+static double main_seconds(const struct timespec *from, const struct timespec *to);
+static void main_spin_turn(struct main_spin *spin, struct mview_camera *camera);
+static int main_spin_presented(struct main_spin *spin, const char *token, uint32_t duration);
 
 /*
  * Loads the model, opens the window and renderer, and runs until quit.
@@ -58,6 +91,7 @@ main(
 	struct mview_camera camera;
 	struct mview_input input;
 	struct mview_window window;
+	struct main_spin spin;
 	struct mview_renderer renderer;
 	struct timespec start;
 	const char *operation;
@@ -78,7 +112,7 @@ main(
 	/* Argument failure starts no connection or GPU namespace. */
 	status = options_parse(argc, argv, &options);
 	if (status != 0) {
-		fprintf(stderr, "usage: mview [--display=NAME] [--model=DIR] [--token=NAME] [--frames=N] [--timeout-s=N]\n");
+		fprintf(stderr, "usage: mview [--display=NAME] [--model=DIR] [--token=NAME] [--frames=N] [--timeout-s=N] [--spin=SECONDS]\n");
 		return 2;
 	}
 
@@ -142,10 +176,11 @@ main(
 	 */
 	redraw = 1;
 	stale = 0U;
+	memset(&spin, 0, sizeof(spin));
 	for (;;) {
 		/* An idle viewer sleeps on the connection instead of spinning. */
 		operation = "mview_window_dispatch";
-		if (redraw != 0 || options.frames != 0U) {
+		if (redraw != 0 || options.frames != 0U || options.spin != 0U) {
 			status = mview_window_dispatch(&window, 0);
 		} else {
 			status = mview_window_dispatch(&window, MAIN_IDLE_WAIT);
@@ -193,6 +228,19 @@ main(
 		/* A changed view needs a new frame. */
 		if (input.changed != 0)
 			redraw = 1;
+
+		/* The spin demonstration turns the model by the time since it began and draws every frame. */
+		if (options.spin != 0U) {
+			if (spin.started == 0) {
+				/* The stages are reported over the spin; the frames before it are dropped. */
+				memset(renderer.stage_cycles, 0, sizeof(renderer.stage_cycles));
+				renderer.stage_frames = 0U;
+				mview_renderer_span(&renderer, 0);
+			}
+
+			main_spin_turn(&spin, &camera);
+			redraw = 1;
+		}
 
 		/* Nothing to draw: wait for the next event. */
 		if (redraw == 0 && options.frames == 0U)
@@ -253,6 +301,18 @@ main(
 		if (options.frames != 0U && completed >= options.frames) {
 			reason = "frames";
 			break;
+		}
+
+		/* The spin demonstration counts the frame and ends once its time is up. */
+		if (options.spin != 0U) {
+			status = main_spin_presented(&spin, options.token, options.spin);
+			if (status != 0) {
+				mview_renderer_span(&renderer, 1);
+				mview_renderer_report_stages(&renderer, options.token, main_seconds(&spin.start, &spin.last));
+				status = 0;
+				reason = "spin";
+				break;
+			}
 		}
 	}
 
@@ -348,6 +408,14 @@ options_parse(
 		}
 
 		/* Zero seconds means no deadline. */
+		match = strncmp(argv[index], "--spin=", 7U);
+		if (match == 0) {
+			status = option_number(argv[index] + 7U, 3600U, &options->spin);
+			if (status != 0)
+				return status;
+			continue;
+		}
+
 		match = strncmp(argv[index], "--timeout-s=", 12U);
 		if (match == 0) {
 			status = option_number(argv[index] + 12U, 86400U, &options->timeout);
@@ -485,4 +553,117 @@ main_frame_log(
 
 	/* Succeeded: the frame is visible to the harness. */
 	return;
+}
+
+/* Returns the seconds from one monotonic time to a later one. */
+static double
+main_seconds(
+	const struct timespec *from,
+	const struct timespec *to)
+{
+	double seconds;
+
+	/* Whole seconds and the nanosecond remainder, which may be negative. */
+	seconds = (double)(to->tv_sec - from->tv_sec);
+	seconds += (double)(to->tv_nsec - from->tv_nsec) / 1e9;
+
+	/* Succeeded: the difference in seconds. */
+	return seconds;
+}
+
+/*
+ * Turns the model about the vertical axis to where the spin should be now.
+ *
+ * The angle follows the clock, not the frame count, so a slow frame rate turns
+ * the model just as far and the rate can be read from the frames drawn.
+ */
+static void
+main_spin_turn(
+	struct main_spin *spin,
+	struct mview_camera *camera)
+{
+	struct timespec now;
+	double target;
+
+	/* The first spinning frame starts the clock at the current view. */
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	if (spin->started == 0) {
+		spin->started = 1;
+		spin->start = now;
+		spin->last = now;
+		spin->base_yaw = camera->yaw;
+		spin->applied = 0.0;
+		spin->shortest = 1e9;
+	}
+
+	/* Applies only the turn since the last frame, so the camera keeps wrapping its yaw. */
+	target = MAIN_SPIN_RATE * main_seconds(&spin->start, &now);
+	mview_camera_orbit(camera, (float)(target - spin->applied), 0.0f);
+	spin->applied = target;
+
+	/* Succeeded: the camera shows the spin's current angle. */
+	return;
+}
+
+/*
+ * Counts one presented spinning frame and reports the frame rate.
+ *
+ * Logs MVIEW FPS once per whole second and MVIEW SPIN at the end.  Returns
+ * nonzero once the spin has lasted its duration.
+ */
+static int
+main_spin_presented(
+	struct main_spin *spin,
+	const char *token,
+	uint32_t duration)
+{
+	struct timespec now;
+	double interval;
+	double elapsed;
+	uint32_t second;
+
+	/* The time since the previous presented frame feeds the frame-time figures. */
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	interval = 1000.0 * main_seconds(&spin->last, &now);
+	spin->last = now;
+	if (spin->frames != 0U) {
+		spin->total += interval;
+		if (interval < spin->shortest)
+			spin->shortest = interval;
+		if (interval > spin->longest)
+			spin->longest = interval;
+	}
+
+	spin->frames++;
+
+	/* A new whole second reports how many frames the last one presented. */
+	elapsed = main_seconds(&spin->start, &now);
+	second = (uint32_t)elapsed;
+	if (second != spin->second) {
+		printf("MVIEW FPS run=%s second=%u frames=%u\n", token, spin->second + 1U, spin->second_frames);
+		fflush(stdout);
+		spin->second = second;
+		spin->second_frames = 0U;
+	}
+
+	spin->second_frames++;
+
+	/* The spin goes on until its duration has passed. */
+	if (elapsed < (double)duration)
+		return 0;
+
+	/* The summary: frames, time, average rate and the frame-time spread. */
+	printf(
+		"MVIEW SPIN run=%s frames=%u seconds=%.3f fps=%.2f frame_ms_min=%.2f frame_ms_avg=%.2f frame_ms_max=%.2f\n",
+		token,
+		spin->frames,
+		elapsed,
+		(double)(spin->frames - 1U) / elapsed,
+		spin->shortest,
+		spin->frames > 1U ? spin->total / (double)(spin->frames - 1U) : 0.0,
+		spin->longest);
+	fflush(stdout);
+
+	/* The spin is over. */
+	return 1;
 }

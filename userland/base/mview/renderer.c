@@ -53,6 +53,8 @@ static VkResult renderer_memory(struct mview_renderer *renderer, const VkMemoryR
 static VkResult renderer_image(struct mview_renderer *renderer, struct mview_image *image, VkFormat format, uint32_t width, uint32_t height, uint32_t levels, VkImageUsageFlags usage, VkImageAspectFlags aspect);
 static VkResult renderer_buffer(struct mview_renderer *renderer, struct mview_buffer *buffer, VkDeviceSize bytes, VkBufferUsageFlags usage, int host);
 static VkResult renderer_begin(struct mview_renderer *renderer);
+static uint64_t renderer_cycles(void);
+static void renderer_stage(struct mview_renderer *renderer, enum mview_stage stage, uint64_t *mark);
 static VkResult renderer_finish(struct mview_renderer *renderer);
 static VkResult renderer_upload_buffer(struct mview_renderer *renderer, struct mview_buffer *buffer, const void *data, VkDeviceSize bytes, VkBufferUsageFlags usage);
 static VkResult renderer_upload_texture(struct mview_renderer *renderer, struct mview_image *image, const uint8_t *pixels, uint32_t width, uint32_t height);
@@ -286,13 +288,16 @@ mview_renderer_draw(
 	VkResult acquired;
 	VkResult presented;
 	VkResult error;
+	uint64_t mark;
 	uint32_t image;
 
 	/* The acquire semaphore is signaled only after the compositor releases an image. */
+	mark = renderer_cycles();
 	renderer->operation = "vkAcquireNextImageKHR";
 	acquired = vkAcquireNextImageKHR(renderer->device, renderer->swapchain, RENDERER_GPU_TIMEOUT, renderer->acquired, VK_NULL_HANDLE, &image);
 	if (acquired != VK_SUCCESS && acquired != VK_SUBOPTIMAL_KHR)
 		return acquired;
+	renderer_stage(renderer, MVIEW_STAGE_ACQUIRE, &mark);
 
 	/* Retires the prior recording before describing the next acquired image. */
 	error = renderer_begin(renderer);
@@ -307,6 +312,8 @@ mview_renderer_draw(
 	error = vkEndCommandBuffer(renderer->command);
 	if (error != VK_SUCCESS)
 		return error;
+
+	renderer_stage(renderer, MVIEW_STAGE_RECORD, &mark);
 
 	/* The fence of the previous submission has been waited on and can be reused. */
 	renderer->operation = "vkResetFences";
@@ -331,6 +338,7 @@ mview_renderer_draw(
 	error = vkQueueSubmit(renderer->queue, 1U, &submit, renderer->fence);
 	if (error != VK_SUCCESS)
 		return error;
+	renderer_stage(renderer, MVIEW_STAGE_SUBMIT, &mark);
 
 	/* Transfers the completed acquired image to the surface. */
 	memset(&present, 0, sizeof(present));
@@ -342,12 +350,15 @@ mview_renderer_draw(
 	present.pImageIndices = &image;
 	renderer->operation = "vkQueuePresentKHR";
 	presented = vkQueuePresentKHR(renderer->queue, &present);
+	renderer_stage(renderer, MVIEW_STAGE_PRESENT, &mark);
 
 	/* Command-buffer reuse is ordered by the rendering fence whatever the present did. */
 	renderer->operation = "vkWaitForFences";
 	error = vkWaitForFences(renderer->device, 1U, &renderer->fence, VK_TRUE, RENDERER_GPU_TIMEOUT);
 	if (error != VK_SUCCESS)
 		return error;
+	renderer_stage(renderer, MVIEW_STAGE_FENCE, &mark);
+	renderer->stage_frames++;
 
 	/* A lost or failed present is reported after the fence is idle. */
 	renderer->operation = "vkQueuePresentKHR";
@@ -2323,4 +2334,86 @@ renderer_buffer_free(
 
 	/* Succeeded: the buffer is released. */
 	return;
+}
+
+/* Reads the processor's cycle counter; the clock a user program can read has only tick resolution. */
+static uint64_t
+renderer_cycles(
+	void)
+{
+	uint32_t low;
+	uint32_t high;
+
+	__asm__ volatile("rdtsc" : "=a"(low), "=d"(high));
+
+	/* Succeeded: the counter as one 64-bit value. */
+	return ((uint64_t)high << 32) | low;
+}
+
+/* Adds the cycles since `mark` to one stage and moves the mark to now. */
+static void
+renderer_stage(
+	struct mview_renderer *renderer,
+	enum mview_stage stage,
+	uint64_t *mark)
+{
+	uint64_t now;
+
+	now = renderer_cycles();
+	renderer->stage_cycles[stage] += now - *mark;
+	*mark = now;
+}
+
+/*
+ * Reports the share of the drawn frames' time each stage took, and clears the
+ * counters.  `seconds` is how long the frames took in all, so the cycle
+ * counter can be scaled to milliseconds.
+ */
+void
+mview_renderer_report_stages(
+	struct mview_renderer *renderer,
+	const char *token,
+	double seconds)
+{
+	static const char *const names[MVIEW_STAGE_COUNT] = { "acquire", "record", "submit", "present", "fence" };
+	uint64_t total;
+	double per_cycle;
+	unsigned stage;
+
+	/* The cycle counter's rate over the frames counted: their cycles over their seconds. */
+	total = 0U;
+	for (stage = 0U; stage < MVIEW_STAGE_COUNT; stage++)
+		total += renderer->stage_cycles[stage];
+	if (total == 0U || renderer->stage_frames == 0U || seconds <= 0.0 || renderer->span_cycles == 0U)
+		return;
+	per_cycle = 1000.0 * seconds / (double)renderer->span_cycles;
+
+	printf("MVIEW STAGES run=%s frames=%u frame=%.2fms", token, renderer->stage_frames,
+	    per_cycle * (double)renderer->span_cycles / (double)renderer->stage_frames);
+	for (stage = 0U; stage < MVIEW_STAGE_COUNT; stage++) {
+		printf(" %s=%.2fms",
+		    names[stage],
+		    per_cycle * (double)renderer->stage_cycles[stage] / (double)renderer->stage_frames);
+	}
+	printf(" other=%.2fms\n", per_cycle * (double)(renderer->span_cycles - total) / (double)renderer->stage_frames);
+	fflush(stdout);
+
+	memset(renderer->stage_cycles, 0, sizeof(renderer->stage_cycles));
+	renderer->stage_frames = 0U;
+	renderer->span_cycles = 0U;
+}
+
+/* Marks the start or the end of the span the stages are reported over. */
+void
+mview_renderer_span(
+	struct mview_renderer *renderer,
+	int end)
+{
+	uint64_t now;
+
+	now = renderer_cycles();
+	if (end)
+		renderer->span_cycles = now - renderer->span_start;
+	else
+		renderer->span_start = now;
 }

@@ -56,13 +56,19 @@ struct i915_eu_reg {
 
 	/* Source modifier: the operand is read as -value. */
 	uint32_t negate;
+
+	/* Source modifier: the operand is read as |value| (before any negation). */
+	uint32_t absolute;
 };
 
 /*
- * The two-source arithmetic operations a caller can ask for.
+ * The two-source arithmetic and logic operations a caller can ask for.
  *
- * Only ADD and MUL are encoded; the others are refused by poisoning the
- * buffer.
+ * ADD and MUL (of floats or of integers, as the operand types say), AND,
+ * OR, XOR, SHL, SHR and ASR are encoded; SUB is refused by poisoning the
+ * buffer (a subtraction is an ADD with its second source negated).  The
+ * logic and shift operations take integer operands; SHR shifts zeros in,
+ * ASR copies of the sign bit.
  */
 enum i915_eu_alu {
 	I915_EU_ADD = 0,
@@ -72,6 +78,8 @@ enum i915_eu_alu {
 	I915_EU_OR,
 	I915_EU_SHL,
 	I915_EU_SHR,
+	I915_EU_XOR,
+	I915_EU_ASR,
 	I915_EU_ALU_COUNT
 };
 
@@ -86,7 +94,52 @@ enum i915_eu_math {
 	I915_EU_MATH_SQRT,
 	I915_EU_MATH_SIN,
 	I915_EU_MATH_COS,
+	I915_EU_MATH_LOG,
+	I915_EU_MATH_EXP,
 	I915_EU_MATH_COUNT
+};
+
+/*
+ * The one-source operations other than a move.
+ *
+ * NOT takes an integer operand; RNDD (round down), RNDZ (round toward
+ * zero) and FRC (fraction) take a float.
+ */
+enum i915_eu_unary {
+	I915_EU_NOT = 0,
+	I915_EU_RNDD,
+	I915_EU_FRC,
+	I915_EU_RNDZ,
+	I915_EU_UNARY_COUNT
+};
+
+/*
+ * A conditional modifier: what a comparison tests, or which source a
+ * selection keeps.
+ *
+ * With floats every test but NE is false when either source is NaN; NE is
+ * true then.
+ */
+enum i915_eu_cond {
+	I915_EU_COND_EQ = 0,
+	I915_EU_COND_NE,
+	I915_EU_COND_GT,
+	I915_EU_COND_GE,
+	I915_EU_COND_LT,
+	I915_EU_COND_LE,
+	I915_EU_COND_COUNT
+};
+
+/*
+ * A flag subregister: sixteen channel bits a comparison writes and a
+ * predicate reads.
+ */
+enum i915_eu_flag {
+	I915_EU_FLAG_F0_0 = 0,
+	I915_EU_FLAG_F0_1,
+	I915_EU_FLAG_F1_0,
+	I915_EU_FLAG_F1_1,
+	I915_EU_FLAG_COUNT
 };
 
 void drv_i915_eu_init(struct i915_eu_buf *buffer);
@@ -96,16 +149,29 @@ const uint32_t *drv_i915_eu_data(const struct i915_eu_buf *buffer, size_t *bytes
 struct i915_eu_reg drv_i915_eu_grf(uint32_t nr);
 struct i915_eu_reg drv_i915_eu_grf_ud(uint32_t nr);
 struct i915_eu_reg drv_i915_eu_grf_scalar(uint32_t nr, uint32_t subnr);
+struct i915_eu_reg drv_i915_eu_grf_d(uint32_t nr);
+struct i915_eu_reg drv_i915_eu_grf_uw_half(uint32_t nr, int high);
 struct i915_eu_reg drv_i915_eu_negate(struct i915_eu_reg reg);
+struct i915_eu_reg drv_i915_eu_abs(struct i915_eu_reg reg);
 struct i915_eu_reg drv_i915_eu_imm_f(uint32_t bits);
 struct i915_eu_reg drv_i915_eu_imm_d(uint32_t value);
+struct i915_eu_reg drv_i915_eu_imm_ud(uint32_t value);
 struct i915_eu_reg drv_i915_eu_null(void);
 
 void drv_i915_eu_mov(struct i915_eu_buf *buffer, struct i915_eu_reg dst, struct i915_eu_reg src);
 void drv_i915_eu_alu2(struct i915_eu_buf *buffer, enum i915_eu_alu op, struct i915_eu_reg dst, struct i915_eu_reg src0, struct i915_eu_reg src1);
+void drv_i915_eu_alu2_masked(struct i915_eu_buf *buffer, enum i915_eu_flag flag, enum i915_eu_alu op, struct i915_eu_reg dst, struct i915_eu_reg src0, struct i915_eu_reg src1);
+void drv_i915_eu_alu1(struct i915_eu_buf *buffer, enum i915_eu_unary op, struct i915_eu_reg dst, struct i915_eu_reg src);
+void drv_i915_eu_cmp(struct i915_eu_buf *buffer, enum i915_eu_cond cond, enum i915_eu_flag flag, int predicated, struct i915_eu_reg dst, struct i915_eu_reg src0, struct i915_eu_reg src1);
+void drv_i915_eu_minmax(struct i915_eu_buf *buffer, enum i915_eu_cond cond, struct i915_eu_reg dst, struct i915_eu_reg src0, struct i915_eu_reg src1);
+void drv_i915_eu_select(struct i915_eu_buf *buffer, enum i915_eu_flag flag, struct i915_eu_reg dst, struct i915_eu_reg src0, struct i915_eu_reg src1);
+void drv_i915_eu_flag_load(struct i915_eu_buf *buffer, enum i915_eu_flag flag, uint32_t nr, uint32_t subnr);
 void drv_i915_eu_mad(struct i915_eu_buf *buffer, struct i915_eu_reg dst, struct i915_eu_reg src0, struct i915_eu_reg src1, struct i915_eu_reg src2);
 void drv_i915_eu_math(struct i915_eu_buf *buffer, enum i915_eu_math func, struct i915_eu_reg dst, struct i915_eu_reg src0, struct i915_eu_reg src1);
 void drv_i915_eu_send(struct i915_eu_buf *buffer, struct i915_eu_reg dst, struct i915_eu_reg src0, struct i915_eu_reg src1, uint32_t sfid, uint32_t descriptor, uint32_t ex_descriptor, int conditional, int end_of_thread);
+void drv_i915_eu_send_masked(struct i915_eu_buf *buffer, enum i915_eu_flag flag, struct i915_eu_reg dst, struct i915_eu_reg src0, struct i915_eu_reg src1, uint32_t sfid, uint32_t descriptor, uint32_t ex_descriptor, int conditional, int end_of_thread);
 void drv_i915_eu_nop(struct i915_eu_buf *buffer);
+uint32_t drv_i915_eu_position(const struct i915_eu_buf *buffer);
+void drv_i915_eu_while(struct i915_eu_buf *buffer, enum i915_eu_flag flag, uint32_t target);
 
 #endif /* DRIVERS_GPU_I915_COMPILER_EU_H */

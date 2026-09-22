@@ -42,6 +42,10 @@
 #include "vbt-parse.h"
 #include "watermark.h"
 
+#ifdef I915_TEST_CAPTURE
+#include "capture.h"
+#endif
+
 #include "../i915.h"
 #include "../irq.h"
 #include "../memory.h"
@@ -55,6 +59,7 @@
 #include <drivers/gpu-scanout.h>
 #include <drivers/pci.h>
 #include <hal/hal.h>
+#include <kern/clock.h>
 #include <kern/klog.h>
 #include <kern/kmem.h>
 #include <kern/lock.h>
@@ -96,7 +101,7 @@
 #define I915_DISPLAY_ABOX_TGL		0x06U
 
 /* How long the DMC stop waits for its worker (500 ticks). */
-#define I915_DISPLAY_DMC_FINI_TICKS	500U
+#define I915_DISPLAY_DMC_FINI_TICKS	(5U * KERN_CLOCK_HZ)
 
 /* DC_STATE_EN, read for the registration log. */
 #define I915_DISPLAY_DC_STATE_EN	0x45504U
@@ -231,6 +236,16 @@ drv_i915_display_create(
 	}
 
 	device->display = display;
+
+#ifdef I915_TEST_CAPTURE
+	/*
+	 * The capture build never touches the display hardware: every display
+	 * stage is skipped, as after a firmware display check that stopped, and
+	 * the node offers the capture display (capture.c) instead of the panel.
+	 */
+	display->absent = 1;
+	kern_logf("i915: capture: capture build: the display hardware is not used (no modeset, no panel); presentations are captured into guest RAM\n");
+#endif
 
 	/* Succeeded: the display stages may run. */
 	return 0;
@@ -852,6 +867,11 @@ drv_i915_display_fini(
 		drv_i915_display_irq_unbind(display, &device->gt.irq);
 		display->irq_bound = 0;
 	}
+
+#ifdef I915_TEST_CAPTURE
+	/* The capture area, once no address space maps it. */
+	drv_i915_capture_fini(device);
+#endif
 }
 
 /*
@@ -925,6 +945,12 @@ drv_i915_display_bind_ops(
 {
 	struct i915_display *display;
 
+#ifdef I915_TEST_CAPTURE
+	/* The capture build binds the capture display in place of the panel. */
+	drv_i915_capture_bind_ops(device, ops);
+	return;
+#endif
+
 	/* A node without a panel offers no display. */
 	display = i915_display_live(device);
 	if (display == NULL)
@@ -947,6 +973,12 @@ drv_i915_display_session_close(
 	struct i915_device *device,
 	void *session)
 {
+#ifdef I915_TEST_CAPTURE
+	/* The capture display owns the lease in the capture build. */
+	drv_i915_capture_session_close(device, session);
+	return;
+#endif
+
 	/* The present path owns the lease. */
 	drv_i915_present_lease_close(device, session);
 }

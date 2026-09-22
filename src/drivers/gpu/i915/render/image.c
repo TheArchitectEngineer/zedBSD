@@ -35,15 +35,33 @@
 /* The largest width and height of an image the executor lays out. */
 #define I915_GFX_IMAGE_MAX_EXTENT	16384U
 
+/* The most mip levels an image has: 16384 down to one texel. */
+#define I915_GFX_IMAGE_MAX_LEVELS	15U
+
+/*
+ * The alignment of a mip level in the 2D mip layout, in texels, across and
+ * down.  It is the Surface Horizontal and Vertical Alignment (HALIGN_4,
+ * VALIGN_4) the surface state names (state.c), which isl picks for a linear
+ * 32-bit colour surface on this generation (isl_gfx8.c,
+ * isl_gfx8_choose_image_alignment_el()).
+ */
+#define I915_GFX_IMAGE_LEVEL_ALIGN	4U
+
 static uint32_t i915_gfx_format_bytes(uint32_t format);
 static int i915_gfx_image_supported(const VkImageCreateInfo *info);
+static uint32_t i915_gfx_image_max_levels(uint32_t width, uint32_t height);
+static uint32_t i915_gfx_minify(uint32_t extent, uint32_t level);
+static uint32_t i915_gfx_level_align(uint32_t extent);
+static void i915_gfx_level_origin(const struct i915_gfx_image *image, uint32_t level, uint32_t *x, uint32_t *y);
+static void i915_gfx_float_bits(uint32_t *destination, const float *source);
 
 /*
  * Creates a VkImage: vkCreateImage, a generic create.
  *
- * XXX: one layout -- 2D, one level, one layer, one sample, linear rows of
- * width * 4 bytes.  Anything else is refused here, by name, rather than laid
- * out wrongly.  A depth image is laid out in whole Y tiles.
+ * XXX: one kind of image -- 2D, one layer, one sample, linear, with any
+ * number of mip levels down to one texel (drv_i915_gfx_image_layout()).
+ * Anything else is refused here, by name, rather than laid out wrongly.  A
+ * depth image has one level and is laid out in whole Y tiles.
  */
 int
 drv_i915_gfx_create_image(
@@ -54,7 +72,6 @@ drv_i915_gfx_create_image(
 	VkImageCreateInfo info;
 	struct i915_gfx_image *image;
 	uint64_t identity;
-	uint32_t texel_bytes;
 	int supported;
 	int error;
 
@@ -88,26 +105,14 @@ drv_i915_gfx_create_image(
 		image = kern_calloc(1U, sizeof(*image));
 	}
 
-	/* Lays the image out as linear rows of whole texels. */
+	/* Lays the image out from its format, extent and levels; the check above makes the layout succeed. */
 	if (image != NULL) {
-		texel_bytes = i915_gfx_format_bytes(info.format);
 		image->format = info.format;
 		image->width = info.extent.width;
 		image->height = info.extent.height;
 		image->usage = info.usage;
-		image->pitch = info.extent.width * texel_bytes;
-		image->bytes = (uint64_t)image->pitch * info.extent.height;
-
-		/*
-		 * A Gen9+ depth buffer is always Y-tiled (isl_emit_depth_stencil.c):
-		 * whole 4 KiB tiles of 128 bytes by 32 rows.  Nothing reads depth
-		 * texel by texel here (the clear is one value), so only the extent
-		 * matters.  XXX: a depth image can not be copied or sampled.
-		 */
-		if (info.format == VK_FORMAT_D32_SFLOAT) {
-			image->pitch = (image->pitch + 127U) & ~127U;
-			image->bytes = (uint64_t)image->pitch * ((info.extent.height + 31U) & ~31U);
-		}
+		image->levels = info.mipLevels;
+		(void)drv_i915_gfx_image_layout(image);
 	}
 
 	/* Publishes the image and answers; a refused or failed image is reported there. */
@@ -120,8 +125,10 @@ drv_i915_gfx_create_image(
 /*
  * Creates a VkImageView: vkCreateImageView, a generic create.
  *
- * XXX: a view is the whole image in the image's own format; swizzles and
- * sub-ranges are not applied.  A view of an unknown image fails.
+ * The view keeps its range of mip levels (VK_REMAINING_MIP_LEVELS runs to
+ * the last level).  A view of an unknown image, or of levels the image does
+ * not have, fails.  XXX: swizzles and array layers are not applied; the
+ * texels are read in the image's own format.
  */
 int
 drv_i915_gfx_create_image_view(
@@ -133,6 +140,8 @@ drv_i915_gfx_create_image_view(
 	struct i915_gfx_view *view;
 	struct i915_gfx_image *image;
 	uint64_t identity;
+	uint32_t base_level;
+	uint32_t level_count;
 	int error;
 
 	/* Decodes the create info behind the device and its presence marker. */
@@ -148,16 +157,42 @@ drv_i915_gfx_create_image_view(
 	view = NULL;
 	error = 0;
 	image = drv_i915_object_lookup(session->vk, I915_VK_OBJ_IMAGE, (uint64_t)(uintptr_t)info.image);
-	if (image == NULL) {
+	if (image == NULL)
 		error = EINVAL;
-	} else {
+
+	/* Resolves the levels the view shows; the remaining levels run to the last one. */
+	base_level = info.subresourceRange.baseMipLevel;
+	level_count = info.subresourceRange.levelCount;
+	if (image != NULL && level_count == VK_REMAINING_MIP_LEVELS && base_level < image->levels)
+		level_count = image->levels - base_level;
+
+	/* Refuses a first level the image does not have, an empty range and one past the last level. */
+	if (image != NULL) {
+		if (base_level >= image->levels) {
+			error = EINVAL;
+		} else if (level_count == 0U) {
+			error = EINVAL;
+		} else if (level_count > image->levels - base_level) {
+			error = EINVAL;
+		}
+	}
+
+	/* Says why the view of an existing image was refused, and allocates an accepted view. */
+	if (image != NULL && error != 0) {
+		kern_logf("i915: vk: vkCreateImageView refused: levels %u count %u of an image of %u levels\n",
+			  info.subresourceRange.baseMipLevel,
+			  info.subresourceRange.levelCount,
+			  image->levels);
+	} else if (image != NULL) {
 		view = kern_calloc(1U, sizeof(*view));
 	}
 
-	/* Records the image and the format the view was created with. */
+	/* Records the image, the format and the levels the view was created with. */
 	if (view != NULL) {
 		view->image = image;
 		view->format = info.format;
+		view->base_level = base_level;
+		view->level_count = level_count;
 	}
 
 	/* Publishes the view and answers; a failed view is reported there. */
@@ -170,7 +205,9 @@ drv_i915_gfx_create_image_view(
 /*
  * Creates a VkSampler: vkCreateSampler, a generic create.
  *
- * The sampler keeps the filters and the address modes along u and v.
+ * The sampler keeps the filters, the mipmap mode, the LOD bias and range
+ * and the address modes along u and v.  XXX: anisotropy, depth comparison,
+ * the border colour and unnormalized coordinates are not kept.
  */
 int
 drv_i915_gfx_create_sampler(
@@ -198,6 +235,10 @@ drv_i915_gfx_create_sampler(
 		sampler->min_filter = info.minFilter;
 		sampler->address_u = info.addressModeU;
 		sampler->address_v = info.addressModeV;
+		sampler->mipmap_mode = info.mipmapMode;
+		i915_gfx_float_bits(&sampler->lod_bias, &info.mipLodBias);
+		i915_gfx_float_bits(&sampler->min_lod, &info.minLod);
+		i915_gfx_float_bits(&sampler->max_lod, &info.maxLod);
 	}
 
 	/* Publishes the sampler and answers; a failed allocation is reported there. */
@@ -208,13 +249,14 @@ drv_i915_gfx_create_sampler(
 }
 
 /*
- * Reports the layout of an image's one subresource:
+ * Reports the layout of one subresource of an image:
  * vkGetImageSubresourceLayout.
  *
  * The command is [device][image][present][VkImageSubresource][present] and
- * the reply [present][VkSubresourceLayout].  Every image is one linear
- * level, so the subresource asked for is not consulted; an unknown image
- * reports an empty layout.
+ * the reply [present][VkSubresourceLayout].  A level starts at its place in
+ * the mip layout and has the image's pitch; the array layer is not
+ * consulted (every image has one).  An unknown image or level reports an
+ * empty layout.
  */
 int
 drv_i915_gfx_subresource_layout(
@@ -227,13 +269,18 @@ drv_i915_gfx_subresource_layout(
 	struct i915_gfx_image *image;
 	uint64_t image_id;
 	uint64_t present;
+	uint32_t level_x;
+	uint32_t level_y;
+	uint32_t level_width;
+	uint32_t level_height;
 
 	/* Reads the image behind the device and resolves it. */
 	(void)drv_i915_wire_read_u64(reader);
 	image_id = drv_i915_wire_read_u64(reader);
 	image = drv_i915_object_lookup(session->vk, I915_VK_OBJ_IMAGE, image_id);
 
-	/* Decodes the subresource when it is present; it is not consulted. */
+	/* Decodes the subresource when it is present; an absent one is level 0. */
+	memset(&subresource, 0, sizeof(subresource));
 	present = drv_i915_wire_read_u64(reader);
 	if (present != 0U)
 		i915_vkc_dec_VkImageSubresource(reader, &session->arena, &subresource);
@@ -243,10 +290,21 @@ drv_i915_gfx_subresource_layout(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* Describes the image's one linear level. */
+	/*
+	 * Describes the level: its first texel in the mip layout, its rows at
+	 * the image's pitch up to its last texel, and the whole image as the
+	 * array and depth pitch.  A single-level image is its whole allocation,
+	 * padding rows of a depth image included.
+	 */
 	memset(&layout, 0, sizeof(layout));
-	if (image != NULL) {
-		layout.size = image->bytes;
+	if (image != NULL && subresource.mipLevel < image->levels) {
+		i915_gfx_level_origin(image, subresource.mipLevel, &level_x, &level_y);
+		level_width = i915_gfx_minify(image->width, subresource.mipLevel);
+		level_height = i915_gfx_minify(image->height, subresource.mipLevel);
+		layout.offset = (uint64_t)level_y * image->pitch + (uint64_t)level_x * 4U;
+		layout.size = (uint64_t)(level_height - 1U) * image->pitch + (uint64_t)level_width * 4U;
+		if (image->levels == 1U)
+			layout.size = image->bytes;
 		layout.rowPitch = image->pitch;
 		layout.arrayPitch = image->bytes;
 		layout.depthPitch = image->bytes;
@@ -257,6 +315,161 @@ drv_i915_gfx_subresource_layout(
 	i915_vkc_enc_VkSubresourceLayout(reply, &layout);
 
 	/* Succeeded: the reply carries the layout. */
+	return 0;
+}
+
+/*
+ * Lays an image out from its format, width, height and levels: sets its
+ * pitch and the bytes it occupies.
+ *
+ * One colour level is linear rows of width * 4 bytes, as isl leaves a
+ * single-level linear surface unpadded.  A depth image is Y-tiled: a Gen9+
+ * depth buffer always is (isl_emit_depth_stencil.c), whole 4 KiB tiles of
+ * 128 bytes by 32 rows; nothing reads depth texel by texel here (the clear
+ * is one value), so only the extent matters.  XXX: a depth image can not be
+ * copied or sampled.
+ *
+ * Several colour levels take the 2D mip layout the hardware samples (isl.c,
+ * isl_calc_phys_slice0_extent_sa_gfx4_2d(), ISL_DIM_LAYOUT_GFX4_2D, which isl
+ * uses for every 2D surface on Gen9+): level 0 at the top, level 1 below it
+ * at the left edge, level 2 to the right of level 1 and every further level
+ * below the one before, each level's extent rounded up to the level
+ * alignment; all levels share one pitch.  Returns EINVAL for an image the
+ * executor does not lay out.
+ */
+int
+drv_i915_gfx_image_layout(
+	struct i915_gfx_image *image)
+{
+	uint32_t texel_bytes;
+	uint32_t max_levels;
+	uint32_t level;
+	uint32_t level_width;
+	uint32_t level_height;
+	uint32_t top_width;
+	uint32_t bottom_width;
+	uint32_t left_height;
+	uint32_t right_height;
+	uint32_t layout_width;
+	uint32_t layout_height;
+
+	/* Refuses a format the executor does not lay out. */
+	texel_bytes = i915_gfx_format_bytes(image->format);
+	if (texel_bytes == 0U)
+		return EINVAL;
+
+	/* Refuses an empty image. */
+	if (image->width == 0U || image->height == 0U)
+		return EINVAL;
+
+	/* Refuses no level, and more levels than halve the extent down to one texel. */
+	max_levels = i915_gfx_image_max_levels(image->width, image->height);
+	if (image->levels == 0U || image->levels > max_levels)
+		return EINVAL;
+
+	/* One level is linear rows of whole texels. */
+	if (image->levels == 1U) {
+		image->pitch = image->width * texel_bytes;
+		image->bytes = (uint64_t)image->pitch * image->height;
+
+		/* A depth image is rounded up to whole Y tiles. */
+		if (image->format == VK_FORMAT_D32_SFLOAT) {
+			image->pitch = (image->pitch + 127U) & ~127U;
+			image->bytes = (uint64_t)image->pitch * ((image->height + 31U) & ~31U);
+		}
+
+		/* Succeeded: one level needs no mip layout. */
+		return 0;
+	}
+
+	/* Refuses a mipmapped depth image. */
+	if (image->format == VK_FORMAT_D32_SFLOAT)
+		return EINVAL;
+
+	/*
+	 * Measures the two columns of the layout: level 0 spans the top; level
+	 * 1 starts the left column below it, level 2 the right column, and every
+	 * further level extends the right column downwards.
+	 */
+	top_width = 0U;
+	bottom_width = 0U;
+	left_height = 0U;
+	right_height = 0U;
+	for (level = 0U; level < image->levels; level++) {
+		level_width = i915_gfx_level_align(i915_gfx_minify(image->width, level));
+		level_height = i915_gfx_level_align(i915_gfx_minify(image->height, level));
+		if (level == 0U) {
+			/* Level 0 is above both columns. */
+			top_width = level_width;
+			left_height = level_height;
+			right_height = level_height;
+		} else if (level == 1U) {
+			/* Level 1 heads the left column. */
+			bottom_width = level_width;
+			left_height += level_height;
+		} else if (level == 2U) {
+			/* Level 2 heads the right column, beside level 1. */
+			bottom_width += level_width;
+			right_height += level_height;
+		} else {
+			/* Every further level goes below the one before, in the right column. */
+			right_height += level_height;
+		}
+	}
+
+	/* The layout is as wide as its wider part and as tall as its taller column. */
+	layout_width = top_width;
+	if (bottom_width > layout_width)
+		layout_width = bottom_width;
+	layout_height = left_height;
+	if (right_height > layout_height)
+		layout_height = right_height;
+
+	/* Every level shares the layout's pitch. */
+	image->pitch = layout_width * texel_bytes;
+	image->bytes = (uint64_t)image->pitch * layout_height;
+
+	/* Succeeded: the image has its pitch and its size. */
+	return 0;
+}
+
+/*
+ * Describes one mip level of an image as the linear surface it is: its
+ * first texel, its extent and the image's pitch, in the image's format.
+ *
+ * Returns EINVAL for a level the image does not have, or an image that is
+ * not bound to storage.
+ */
+int
+drv_i915_gfx_image_level(
+	const struct i915_gfx_image *image,
+	uint32_t level,
+	struct i915_gfx_surface *surface)
+{
+	uint32_t level_x;
+	uint32_t level_y;
+	uint64_t offset;
+
+	/* Refuses a level the image does not have. */
+	if (level >= image->levels)
+		return EINVAL;
+
+	/* Finds the level's first texel in the mip layout. */
+	i915_gfx_level_origin(image, level, &level_x, &level_y);
+	offset = (uint64_t)level_y * image->pitch + (uint64_t)level_x * 4U;
+
+	/* Takes the level's address, its extent, the shared pitch and the format. */
+	surface->va = drv_i915_gfx_memory_va(image->memory, image->offset + offset);
+	surface->width = i915_gfx_minify(image->width, level);
+	surface->height = i915_gfx_minify(image->height, level);
+	surface->pitch = image->pitch;
+	surface->format = image->format;
+
+	/* Refuses an image that is not bound to storage. */
+	if (surface->va == 0U)
+		return EINVAL;
+
+	/* Succeeded: the surface describes the level. */
 	return 0;
 }
 
@@ -284,13 +497,10 @@ i915_gfx_image_supported(
 	const VkImageCreateInfo *info)
 {
 	uint32_t texel_bytes;
+	uint32_t max_levels;
 
 	/* Only a 2D image. */
 	if (info->imageType != VK_IMAGE_TYPE_2D)
-		return 0;
-
-	/* Only one mip level. */
-	if (info->mipLevels != 1U)
 		return 0;
 
 	/* Only one array layer. */
@@ -318,6 +528,104 @@ i915_gfx_image_supported(
 	if (texel_bytes == 0U)
 		return 0;
 
+	/* Only levels down to one texel. */
+	max_levels = i915_gfx_image_max_levels(info->extent.width, info->extent.height);
+	if (info->mipLevels == 0U || info->mipLevels > max_levels)
+		return 0;
+
+	/* Only one level of a depth image. */
+	if (info->format == VK_FORMAT_D32_SFLOAT && info->mipLevels != 1U)
+		return 0;
+
 	/* Succeeded: the image has the supported layout. */
 	return 1;
+}
+
+/* Reports how many mip levels an extent has down to one texel, the larger side halving each time. */
+static uint32_t
+i915_gfx_image_max_levels(
+	uint32_t width,
+	uint32_t height)
+{
+	uint32_t largest;
+	uint32_t levels;
+
+	/* Halves the larger side until it is one texel, counting the levels. */
+	largest = width;
+	if (height > largest)
+		largest = height;
+	levels = 1U;
+	while (largest > 1U && levels < I915_GFX_IMAGE_MAX_LEVELS) {
+		largest >>= 1;
+		levels++;
+	}
+
+	/* Succeeded: the number of levels. */
+	return levels;
+}
+
+/* Reports the extent of a level: the level-0 extent halved `level` times, at least one texel. */
+static uint32_t
+i915_gfx_minify(
+	uint32_t extent,
+	uint32_t level)
+{
+	uint32_t minified;
+
+	/* A level past the bits of the extent is one texel. */
+	if (level >= 32U)
+		return 1U;
+
+	/* Halves the extent once for each level, stopping at one texel. */
+	minified = extent >> level;
+	if (minified == 0U)
+		minified = 1U;
+
+	/* Succeeded: the extent of the level. */
+	return minified;
+}
+
+/* Rounds a level's width or height up to the level alignment. */
+static uint32_t
+i915_gfx_level_align(
+	uint32_t extent)
+{
+	/* Succeeded: the extent in whole alignment units. */
+	return (extent + I915_GFX_IMAGE_LEVEL_ALIGN - 1U) & ~(I915_GFX_IMAGE_LEVEL_ALIGN - 1U);
+}
+
+/*
+ * Finds where a level starts in the 2D mip layout, in texels across and
+ * rows down (isl.c, get_image_offset_sa_gfx4_2d()): below level 0 for level
+ * 1, and from level 2 on to the right of level 1, below the levels between.
+ */
+static void
+i915_gfx_level_origin(
+	const struct i915_gfx_image *image,
+	uint32_t level,
+	uint32_t *x,
+	uint32_t *y)
+{
+	uint32_t before;
+
+	/* Moves past every level before this one: level 1 moves right, every other level down. */
+	*x = 0U;
+	*y = 0U;
+	for (before = 0U; before < level; before++) {
+		if (before == 1U) {
+			*x += i915_gfx_level_align(i915_gfx_minify(image->width, before));
+		} else {
+			*y += i915_gfx_level_align(i915_gfx_minify(image->height, before));
+		}
+	}
+}
+
+/* Copies a float as its 32 bits; no floating-point register is involved. */
+static void
+i915_gfx_float_bits(
+	uint32_t *destination,
+	const float *source)
+{
+	/* The bytes of the float are its bit pattern. */
+	memcpy(destination, source, sizeof(*destination));
 }

@@ -110,6 +110,9 @@ struct i915_request {
 	/* How the request ended: 0 or a positive errno. */
 	int error;
 
+	/* When the request was queued (drv_i915_perf_now()), for the timing report. */
+	uint64_t queued_at;
+
 	/* The engine queue, the worker's run list, or a retired list. */
 	struct i915_request *next;
 };

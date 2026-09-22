@@ -44,6 +44,15 @@
  *     fd58ca141b55246826628c3d8d4a0d142b2db51d1ad7033c21c4b282916883ae
  *   src/intel/common/intel_l3_config.h (the URB deref block sizes)
  *     70450c118ffc67771a1b727f2c502f8ff8fb8b930edb1cd34a322470480ffb01
+ * The index buffer, the random vertex access of 3DPRIMITIVE and the pixel
+ * stage's push constant enable were added from the same file of Mesa 25.0.7
+ * (Debian source package 25.0.7-2+deb13u1):
+ *   src/intel/genxml/gen120.xml
+ *     e2452c7dd2d19f9c506f487ce98e938984b6bdf8a3ea2504c64afdd4facd542e
+ * The mip fields of RENDER_SURFACE_STATE and the SAMPLER_STATE filter, LOD
+ * and bias fields come from that same gen120.xml; the LOD clamps are the
+ * ones anv programs (src/intel/vulkan/genX_init_state.c
+ *     716543ab781499a3079174681a90943e9a28b2c1658c2f12dbe4f15df2bead4b).
  * The genxml files carry no notice of their own; the notice above is the one
  * Mesa's generator (src/intel/genxml/gen_pack_header.py) puts on the headers
  * it produces from them, followed by the copyright line of intel_l3_config.h.
@@ -217,6 +226,14 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 /* URB allocations are made in 8 KiB chunks and entries in 64-byte units. */
 #define GEN12_URB_CHUNK_KB			8U
 
+/*
+ * The URB the vertex stage owns past the 32 KiB of push constants on the
+ * target (3576 entries of 64 bytes fill it), and the most vertex entries
+ * (intel_device_info urb.max_entries[MESA_SHADER_VERTEX] of Gen12).
+ */
+#define GEN12_URB_VS_BYTES			(3576U * 64U)
+#define GEN12_URB_VS_ENTRIES			3576U
+
 /* 3DSTATE_SF deref block size (intel_l3_config.h). */
 #define GEN12_URB_DEREF_BLOCK_SIZE_32		0U
 #define GEN12_URB_DEREF_BLOCK_SIZE_PER_POLY	1U
@@ -360,5 +377,159 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 #define GEN12_CMD_3DSTATE_SAMPLER_STATE_POINTERS_PS	0x782FU
 #define GEN12_CMD_3DSTATE_SBE_SWIZ		0x7851U
 #define GEN12_3DSTATE_SBE_SWIZ_DWORDS		11U
+
+/*
+ * The index buffer of an indexed draw (gen120.xml 3DSTATE_INDEX_BUFFER):
+ * dword 1 carries the MOCS in bits 6:0, the Index Format in bits 9:8 and
+ * the L3 Bypass Disable in bit 11; dwords 2 and 3 the address and dword 4
+ * the size in bytes.
+ */
+#define GEN12_CMD_3DSTATE_INDEX_BUFFER		0x780AU
+#define GEN12_3DSTATE_INDEX_BUFFER_DWORDS	5U
+#define GEN12_INDEX_BYTE			0U
+#define GEN12_INDEX_WORD			1U
+#define GEN12_INDEX_DWORD			2U
+#define GEN12_INDEX_FORMAT_SHIFT		8U
+#define GEN12_INDEX_BUFFER_L3_BYPASS_DISABLE	(1U << 11)
+
+/*
+ * 3DPRIMITIVE dword 1 bit 8 (Vertex Access Type): RANDOM fetches every
+ * vertex through the index buffer; SEQUENTIAL (0) numbers them in order.
+ * Dword 6 is the Base Vertex Location added to every index.
+ */
+#define GEN12_3DPRIMITIVE_VERTEX_RANDOM		(1U << 8)
+
+/*
+ * 3DSTATE_PS dword 6 bit 11 (Push Constant Enable): the pixel threads get
+ * the push constants of 3DSTATE_CONSTANT_PS in front of their setup data.
+ */
+#define GEN12_3DSTATE_PS_PUSH_CONSTANT_ENABLE	(1U << 11)
+
+/*
+ * 3DSTATE_PS_EXTRA dword 1 bit 28 (Pixel Shader Kills Pixel): the pixel
+ * kernel may discard pixels, so the pixel stage must not write depth or
+ * stencil for a pixel before the kernel has decided (gen110.xml, imported
+ * by gen120.xml; Mesa 25.0.7 gen110.xml sha256
+ * 6598e556ffedf4fe051c78af3bb08030a39af865c76e2784dba5374646fce35d).
+ */
+#define GEN12_3DSTATE_PS_EXTRA_KILLS_PIXEL	(1U << 28)
+
+/*
+ * The mip fields of RENDER_SURFACE_STATE dword 5 (gen120.xml): MIP Count /
+ * LOD in bits 3:0, Surface Min LOD in bits 7:4, Mip Tail Start LOD in bits
+ * 11:8.  A sampled surface reads levels [Surface Min LOD, Surface Min LOD +
+ * MIP Count]; a render target writes level MIP Count.  Surface QPitch is
+ * dword 1 bits 14:0, in units of four rows (isl_surface_state.c programs
+ * the array pitch in rows shifted down by two).
+ */
+#define GEN12_RSS_MIP_COUNT_SHIFT		0U
+#define GEN12_RSS_SURFACE_MIN_LOD_SHIFT		4U
+#define GEN12_RSS_MIP_TAIL_START_SHIFT		8U
+#define GEN12_RSS_LOD_MASK			0xfU
+#define GEN12_RSS_QPITCH_MASK			0x7fffU
+
+/*
+ * SAMPLER_STATE fields (gen120.xml), in dword and bit:
+ *   dword 0: Texture LOD Bias 13:1 (s4.8), Min Mode Filter 16:14,
+ *            Mag Mode Filter 19:17, Mip Mode Filter 21:20, LOD PreClamp
+ *            Mode 28:27
+ *   dword 1: Max LOD 19:8 (u4.8), Min LOD 31:20 (u4.8)
+ *   dword 3: the address rounding enables 18:13 and the TCX, TCY and TCZ
+ *            address control modes 8:6, 5:3 and 2:0
+ * Mip Mode Filter is MIPFILTER_NONE 0, NEAREST 1, LINEAR 3.  anv
+ * (genX_init_state.c) clamps the LOD bias to [-16, 15.996] and both LOD
+ * limits to [0, 14].
+ */
+#define GEN12_SAMPLER_LOD_BIAS_SHIFT		1U
+#define GEN12_SAMPLER_LOD_BIAS_MASK		0x1fffU
+#define GEN12_SAMPLER_MIN_FILTER_SHIFT		14U
+#define GEN12_SAMPLER_MAG_FILTER_SHIFT		17U
+#define GEN12_SAMPLER_MIP_FILTER_SHIFT		20U
+#define GEN12_SAMPLER_LOD_PRECLAMP_SHIFT	27U
+#define GEN12_SAMPLER_MAX_LOD_SHIFT		8U
+#define GEN12_SAMPLER_MIN_LOD_SHIFT		20U
+#define GEN12_MAPFILTER_NEAREST			0U
+#define GEN12_MAPFILTER_LINEAR			1U
+#define GEN12_MIPFILTER_NONE			0U
+#define GEN12_MIPFILTER_NEAREST			1U
+#define GEN12_MIPFILTER_LINEAR			3U
+#define GEN12_CLAMP_MODE_OGL			2U
+#define GEN12_SAMPLER_LOD_FRACTION_BITS		8U
+#define GEN12_SAMPLER_LOD_MAX			(14 * 256)
+#define GEN12_SAMPLER_LOD_BIAS_MIN		(-16 * 256)
+#define GEN12_SAMPLER_LOD_BIAS_MAX		(16 * 256 - 1)
+
+/*
+ * Colour blending.  gen120.xml takes these from the files it imports (Mesa
+ * 25.0.7, the same Debian source package): BLEND_STATE and
+ * BLEND_STATE_ENTRY from gen80.xml
+ *     2962677cf69dc947345fd88bd7010427900160eb7a7b076463e6e8d28772439d,
+ * 3DSTATE_PS_BLEND from gen90.xml
+ *     d86fb566b9292280e2d6a385107711fb7ee8008e5c54bb3ba70a2c0343262ddb,
+ * COLOR_CALC_STATE from gen90.xml, and the 3D_Color_Buffer_Blend_Factor and
+ * 3D_Color_Buffer_Blend_Function enumerations from gen40.xml
+ *     8fe6663fa39cdfc6cd1cc4481e464824c2dcc5ea7d7d1a4d2e4a5791aa32f206.
+ *
+ * BLEND_STATE dword 0: Independent Alpha Blend Enable in bit 30.
+ * BLEND_STATE_ENTRY dword 0: Write Disable Blue, Green, Red, Alpha in bits
+ * 0..3, Alpha Blend Function 7:5, Destination Alpha Blend Factor 12:8,
+ * Source Alpha Blend Factor 17:13, Color Blend Function 20:18, Destination
+ * Blend Factor 25:21, Source Blend Factor 30:26, Color Buffer Blend Enable
+ * 31.  (Dword 1 carries the clamps, GEN12_COLORCLAMP_RTFORMAT above.)
+ * 3DSTATE_PS_BLEND dword 1: Independent Alpha Blend Enable in bit 7,
+ * Destination Blend Factor 13:9, Source Blend Factor 18:14, Destination
+ * Alpha Blend Factor 23:19, Source Alpha Blend Factor 28:24, Color Buffer
+ * Blend Enable 29, Has Writeable RT 30.
+ * COLOR_CALC_STATE dwords 2..5: the blend constant colour R, G, B, A as
+ * floats.
+ */
+#define GEN12_BLEND_INDEPENDENT_ALPHA		(1U << 30)
+#define GEN12_BLEND_WRITE_DISABLE_BLUE		(1U << 0)
+#define GEN12_BLEND_WRITE_DISABLE_GREEN		(1U << 1)
+#define GEN12_BLEND_WRITE_DISABLE_RED		(1U << 2)
+#define GEN12_BLEND_WRITE_DISABLE_ALPHA		(1U << 3)
+#define GEN12_BLEND_ALPHA_FUNCTION_SHIFT	5U
+#define GEN12_BLEND_DST_ALPHA_FACTOR_SHIFT	8U
+#define GEN12_BLEND_SRC_ALPHA_FACTOR_SHIFT	13U
+#define GEN12_BLEND_COLOR_FUNCTION_SHIFT	18U
+#define GEN12_BLEND_DST_FACTOR_SHIFT		21U
+#define GEN12_BLEND_SRC_FACTOR_SHIFT		26U
+#define GEN12_BLEND_ENABLE			(1U << 31)
+#define GEN12_PS_BLEND_INDEPENDENT_ALPHA	(1U << 7)
+#define GEN12_PS_BLEND_DST_FACTOR_SHIFT		9U
+#define GEN12_PS_BLEND_SRC_FACTOR_SHIFT		14U
+#define GEN12_PS_BLEND_DST_ALPHA_FACTOR_SHIFT	19U
+#define GEN12_PS_BLEND_SRC_ALPHA_FACTOR_SHIFT	24U
+#define GEN12_PS_BLEND_ENABLE			(1U << 29)
+#define GEN12_PS_BLEND_HAS_WRITEABLE_RT		(1U << 30)
+#define GEN12_CC_BLEND_CONSTANT_DWORD		2U
+
+/* 3D_Color_Buffer_Blend_Factor (BLENDFACTOR_*). */
+#define GEN12_BLENDFACTOR_ONE			1U
+#define GEN12_BLENDFACTOR_SRC_COLOR		2U
+#define GEN12_BLENDFACTOR_SRC_ALPHA		3U
+#define GEN12_BLENDFACTOR_DST_ALPHA		4U
+#define GEN12_BLENDFACTOR_DST_COLOR		5U
+#define GEN12_BLENDFACTOR_SRC_ALPHA_SATURATE	6U
+#define GEN12_BLENDFACTOR_CONST_COLOR		7U
+#define GEN12_BLENDFACTOR_CONST_ALPHA		8U
+#define GEN12_BLENDFACTOR_SRC1_COLOR		9U
+#define GEN12_BLENDFACTOR_SRC1_ALPHA		10U
+#define GEN12_BLENDFACTOR_ZERO			17U
+#define GEN12_BLENDFACTOR_INV_SRC_COLOR		18U
+#define GEN12_BLENDFACTOR_INV_SRC_ALPHA		19U
+#define GEN12_BLENDFACTOR_INV_DST_ALPHA		20U
+#define GEN12_BLENDFACTOR_INV_DST_COLOR		21U
+#define GEN12_BLENDFACTOR_INV_CONST_COLOR	23U
+#define GEN12_BLENDFACTOR_INV_CONST_ALPHA	24U
+#define GEN12_BLENDFACTOR_INV_SRC1_COLOR	25U
+#define GEN12_BLENDFACTOR_INV_SRC1_ALPHA	26U
+
+/* 3D_Color_Buffer_Blend_Function (BLENDFUNCTION_*). */
+#define GEN12_BLENDFUNCTION_ADD			0U
+#define GEN12_BLENDFUNCTION_SUBTRACT		1U
+#define GEN12_BLENDFUNCTION_REVERSE_SUBTRACT	2U
+#define GEN12_BLENDFUNCTION_MIN			3U
+#define GEN12_BLENDFUNCTION_MAX			4U
 
 #endif /* DRIVERS_GPU_I915_INTEL_GENXML_H */

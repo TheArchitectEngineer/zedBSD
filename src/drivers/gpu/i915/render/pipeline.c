@@ -45,9 +45,9 @@
 static int i915_gfx_decode_pipeline(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_gfx_pipeline *pipeline);
 static int i915_gfx_decode_stages(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_gfx_pipeline *pipeline);
 static int i915_gfx_decode_vertex_input(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_gfx_pipeline *pipeline);
-static void i915_gfx_decode_viewport(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_gfx_pipeline *pipeline);
-static void i915_gfx_decode_blend(struct i915_render_session *session, struct i915_wire_reader *reader);
-static void i915_gfx_decode_dynamic(struct i915_render_session *session, struct i915_wire_reader *reader);
+static void i915_gfx_decode_viewport(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_gfx_pipeline *pipeline, int *viewport_given, int *scissor_given);
+static void i915_gfx_decode_blend(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_gfx_pipeline *pipeline);
+static void i915_gfx_decode_dynamic(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_gfx_pipeline *pipeline);
 static void i915_gfx_float_bits(uint32_t *destination, const float *source);
 static void i915_gfx_free_pipelines(struct i915_gfx_pipeline **pipelines, uint64_t count);
 
@@ -313,6 +313,8 @@ i915_gfx_decode_pipeline(
 	VkPipelineMultisampleStateCreateInfo multisample;
 	VkPipelineDepthStencilStateCreateInfo depth;
 	uint64_t present;
+	int viewport_given;
+	int scissor_given;
 	int error;
 
 	/* Decodes the shader stages. */
@@ -344,9 +346,11 @@ i915_gfx_decode_pipeline(
 	}
 
 	/* Decodes the viewport state when it is present. */
+	viewport_given = 0;
+	scissor_given = 0;
 	present = drv_i915_wire_read_u64(reader);
 	if (present != 0U)
-		i915_gfx_decode_viewport(session, reader, pipeline);
+		i915_gfx_decode_viewport(session, reader, pipeline, &viewport_given, &scissor_given);
 
 	/* Decodes the rasterization state, which gives the culling. */
 	present = drv_i915_wire_read_u64(reader);
@@ -377,12 +381,26 @@ i915_gfx_decode_pipeline(
 	/* Decodes the colour blend state when it is present. */
 	present = drv_i915_wire_read_u64(reader);
 	if (present != 0U)
-		i915_gfx_decode_blend(session, reader);
+		i915_gfx_decode_blend(session, reader, pipeline);
 
 	/* Decodes the dynamic state when it is present. */
 	present = drv_i915_wire_read_u64(reader);
 	if (present != 0U)
-		i915_gfx_decode_dynamic(session, reader);
+		i915_gfx_decode_dynamic(session, reader, pipeline);
+
+	/* Says when a draw would have no viewport: none given and none dynamic. */
+	if (reader->error == 0 &&
+	    viewport_given == 0 &&
+	    pipeline->dynamic_viewport == 0) {
+		kern_logf("i915: vk: XXX pipeline has neither a viewport nor a dynamic viewport; its draws use an empty one\n");
+	}
+
+	/* Says when a draw would have no scissor: none given and none dynamic. */
+	if (reader->error == 0 &&
+	    scissor_given == 0 &&
+	    pipeline->dynamic_scissor == 0) {
+		kern_logf("i915: vk: XXX pipeline has neither a scissor nor a dynamic scissor; its draws use an empty one\n");
+	}
 
 	/* Skips the layout, the render pass, the subpass and the base pipeline and index. */
 	(void)drv_i915_wire_read_u64(reader);
@@ -490,12 +508,20 @@ i915_gfx_decode_vertex_input(
 	return 0;
 }
 
-/* Decodes the viewport state of a pipeline record into its first viewport and scissor. */
+/*
+ * Decodes the viewport state of a pipeline record into its first viewport
+ * and scissor.
+ *
+ * A dynamic viewport or scissor comes without its array; the flags say
+ * which of the two the record gave.
+ */
 static void
 i915_gfx_decode_viewport(
 	struct i915_render_session *session,
 	struct i915_wire_reader *reader,
-	struct i915_gfx_pipeline *pipeline)
+	struct i915_gfx_pipeline *pipeline,
+	int *viewport_given,
+	int *scissor_given)
 {
 	VkPipelineViewportStateCreateInfo viewport;
 
@@ -507,7 +533,7 @@ i915_gfx_decode_viewport(
 	if (reader->error != 0)
 		return;
 
-	/* Keeps the first viewport as float bits; a dynamic viewport is not implemented. */
+	/* Keeps the first viewport as float bits. */
 	if (viewport.pViewports != NULL && viewport.viewportCount != 0U) {
 		i915_gfx_float_bits(&pipeline->viewport[0], &viewport.pViewports[0].x);
 		i915_gfx_float_bits(&pipeline->viewport[1], &viewport.pViewports[0].y);
@@ -515,22 +541,32 @@ i915_gfx_decode_viewport(
 		i915_gfx_float_bits(&pipeline->viewport[3], &viewport.pViewports[0].height);
 		i915_gfx_float_bits(&pipeline->viewport[4], &viewport.pViewports[0].minDepth);
 		i915_gfx_float_bits(&pipeline->viewport[5], &viewport.pViewports[0].maxDepth);
-	} else {
-		kern_logf("i915: vk: XXX pipeline has a dynamic viewport; vkCmdSetViewport is not implemented\n");
+		*viewport_given = 1;
 	}
 
 	/* Keeps the first scissor rectangle. */
-	if (viewport.pScissors != NULL && viewport.scissorCount != 0U)
+	if (viewport.pScissors != NULL && viewport.scissorCount != 0U) {
 		pipeline->scissor = viewport.pScissors[0];
+		*scissor_given = 1;
+	}
 }
 
-/* Decodes the colour blend state of a pipeline record; blending is not applied. */
+/*
+ * Decodes the colour blend state of a pipeline record into the blend of
+ * attachment 0: the enable, the factors and operations of the colour and
+ * of the alpha, the write mask and the blend constants.
+ *
+ * XXX: one colour attachment is drawn, so only attachment 0 is kept; a
+ * logic operation is named and not applied.
+ */
 static void
 i915_gfx_decode_blend(
 	struct i915_render_session *session,
-	struct i915_wire_reader *reader)
+	struct i915_wire_reader *reader,
+	struct i915_gfx_pipeline *pipeline)
 {
 	VkPipelineColorBlendStateCreateInfo blend;
+	const VkPipelineColorBlendAttachmentState *attachment;
 
 	/* Decodes the record. */
 	memset(&blend, 0, sizeof(blend));
@@ -540,22 +576,53 @@ i915_gfx_decode_blend(
 	if (reader->error != 0)
 		return;
 
-	/* A record without attachments asks for no blending. */
-	if (blend.attachmentCount == 0U)
+	/* Keeps the blend constants as float bits, which a constant factor reads. */
+	i915_gfx_float_bits(&pipeline->blend_constants[0], &blend.blendConstants[0]);
+	i915_gfx_float_bits(&pipeline->blend_constants[1], &blend.blendConstants[1]);
+	i915_gfx_float_bits(&pipeline->blend_constants[2], &blend.blendConstants[2]);
+	i915_gfx_float_bits(&pipeline->blend_constants[3], &blend.blendConstants[3]);
+
+	/* Names a logic operation the draw does not apply. */
+	if (blend.logicOpEnable != VK_FALSE)
+		kern_logf("i915: vk: XXX pipeline asks for logic operation %u; the draw does not apply it\n", blend.logicOp);
+
+	/* A record without attachments asks for no blending and writes nothing it could mask. */
+	if (blend.attachmentCount == 0U || blend.pAttachments == NULL)
 		return;
 
-	/* Reports blending the draw does not apply. */
-	if (blend.pAttachments[0].blendEnable != VK_FALSE)
-		kern_logf("i915: vk: XXX pipeline asks for blending; the draw writes the colour unblended\n");
+	/* Blending is on only when attachment 0 asks for it. */
+	attachment = &blend.pAttachments[0];
+	pipeline->blend_enable = 0U;
+	if (attachment->blendEnable != VK_FALSE)
+		pipeline->blend_enable = 1U;
+
+	/* Keeps the factors and the operations of the colour and of the alpha. */
+	pipeline->blend_src_color = attachment->srcColorBlendFactor;
+	pipeline->blend_dst_color = attachment->dstColorBlendFactor;
+	pipeline->blend_color_op = attachment->colorBlendOp;
+	pipeline->blend_src_alpha = attachment->srcAlphaBlendFactor;
+	pipeline->blend_dst_alpha = attachment->dstAlphaBlendFactor;
+	pipeline->blend_alpha_op = attachment->alphaBlendOp;
+
+	/* Keeps the components the attachment does not write. */
+	pipeline->color_write_disable = ~(uint32_t)attachment->colorWriteMask & 0xfU;
 }
 
-/* Decodes the dynamic state of a pipeline record; no dynamic state is implemented. */
+/*
+ * Decodes the dynamic state of a pipeline record.
+ *
+ * The viewport and the scissor may be dynamic; any other dynamic state is
+ * named as not implemented, and a draw then uses the pipeline's value.
+ */
 static void
 i915_gfx_decode_dynamic(
 	struct i915_render_session *session,
-	struct i915_wire_reader *reader)
+	struct i915_wire_reader *reader,
+	struct i915_gfx_pipeline *pipeline)
 {
 	VkPipelineDynamicStateCreateInfo dynamic;
+	uint32_t index;
+	uint32_t state;
 
 	/* Decodes the record. */
 	memset(&dynamic, 0, sizeof(dynamic));
@@ -565,10 +632,22 @@ i915_gfx_decode_dynamic(
 	if (reader->error != 0)
 		return;
 
-	/* Reports dynamic states that no vkCmdSet* command implements. */
-	if (dynamic.dynamicStateCount != 0U) {
-		kern_logf("i915: vk: XXX pipeline declares %u dynamic states; none of the vkCmdSet* commands is implemented\n",
-			  dynamic.dynamicStateCount);
+	/* A record whose list did not arrive declares nothing. */
+	if (dynamic.pDynamicStates == NULL)
+		return;
+
+	/* Marks each dynamic state the draws take from the command buffer. */
+	for (index = 0U; index < dynamic.dynamicStateCount; index++) {
+		state = (uint32_t)dynamic.pDynamicStates[index];
+
+		/* The viewport and the scissor come from vkCmdSetViewport and vkCmdSetScissor. */
+		if (state == VK_DYNAMIC_STATE_VIEWPORT) {
+			pipeline->dynamic_viewport = 1;
+		} else if (state == VK_DYNAMIC_STATE_SCISSOR) {
+			pipeline->dynamic_scissor = 1;
+		} else {
+			kern_logf("i915: vk: XXX pipeline declares dynamic state %u; no vkCmdSet* command for it is implemented\n", state);
+		}
 	}
 }
 

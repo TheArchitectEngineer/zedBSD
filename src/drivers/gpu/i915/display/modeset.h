@@ -81,6 +81,15 @@ int drv_i915_lcd_modeset_discard_model(struct i915_display *display, const struc
 int drv_i915_lcd_modeset_flip(struct i915_display *display, uint32_t new_surf, struct i915_lcd_flip_result *out);
 
 /*
+ * Arms a flip without waiting for it; tells whether none is pending any
+ * more (completing a latched one); waits for the armed one.
+ */
+int drv_i915_lcd_modeset_flip_nowait(struct i915_display *display, uint32_t new_surf, struct i915_lcd_flip_result *out);
+int drv_i915_lcd_modeset_flip_poll(struct i915_display *display);
+int drv_i915_lcd_modeset_flip_settle(struct i915_display *display);
+int drv_i915_lcd_modeset_flip_wait(struct i915_display *display);
+
+/*
  * ==== One picture on the panel ====
  */
 

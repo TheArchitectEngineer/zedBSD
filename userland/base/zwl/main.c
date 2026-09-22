@@ -32,6 +32,7 @@ static int unsigned_option(const char *text, uint64_t maximum, uint64_t *number)
 static int listen_socket(struct zwl_server *server);
 static void unlink_socket(struct zwl_server *server);
 static int accept_client(struct zwl_server *server);
+static void zwl_perf_report(struct zwl_server *server, uint64_t now);
 static int event_loop(struct zwl_server *server);
 static void service_cleanup(struct zwl_server *server);
 
@@ -60,7 +61,7 @@ main(
 	setvbuf(stdout, NULL, _IOLBF, 0);
 	error = parse_options(&server, count, arguments);
 	if (error != 0) {
-		fprintf(stderr, "usage: zwl [--socket=/path] [--gpu=/dev/gpu0] [--width=N] [--height=N] [--timeout=seconds] [--max-frames=N]\n");
+		fprintf(stderr, "usage: zwl [--socket=/path] [--gpu=/dev/gpu0] [--width=N] [--height=N] [--timeout=seconds] [--max-frames=N] [--log-frames]\n");
 		return 2;
 	}
 
@@ -212,6 +213,13 @@ parse_options(
 
 			/* Only completed GPU presentations count toward this bound. */
 			server->max_frames = number;
+			continue;
+		}
+
+		/* The per-frame lines cost a console write each, so they are printed only on request. */
+		match = strcmp(argument, "--log-frames");
+		if (match == 0) {
+			server->log_frames = 1;
 			continue;
 		}
 
@@ -398,6 +406,8 @@ event_loop(
 	size_t index;
 	size_t first_input;
 	unsigned slot;
+	uint64_t mark;
+	uint32_t presents;
 	int timeout;
 	int ready;
 	int error;
@@ -482,7 +492,13 @@ event_loop(
 		}
 
 		/* Poll sees sockets only; typed image fds are consumed immediately during import. */
+		mark = zwl_cycles();
 		ready = poll(descriptors, count, timeout);
+		server->perf.poll_cycles += zwl_cycles() - mark;
+		mark = zwl_cycles();
+		server->perf.passes++;
+		if (ready == 0)
+			server->perf.timeouts++;
 		if (ready < 0) {
 			error = errno;
 			free(clients);
@@ -559,7 +575,27 @@ event_loop(
 			return error;
 
 		/* The scheduler presents at most one latest per-surface queued image this pass. */
+		presents = server->perf.presents;
 		zwl_schedule(server);
+
+		/*
+		 * The presentation queued frame callbacks and buffer releases; they
+		 * leave now, not after the next poll, which would otherwise hold a
+		 * FIFO client for up to the poll timeout every frame.
+		 */
+		for (client = server->clients; client != NULL; client = client->next) {
+			/* A connection that cannot take its events is retired on the next pass. */
+			if (!client->fatal && zwl_flush(client) != 0) {
+				client->fatal = 1;
+				client->fatal_time = zwl_milliseconds();
+			}
+		}
+
+		/* The pass's work, and for a presenting pass the time from the wake to the flushed callback. */
+		server->perf.work_cycles += zwl_cycles() - mark;
+		if (server->perf.presents != presents)
+			server->perf.present_to_flush_cycles += zwl_cycles() - mark;
+		zwl_perf_report(server, now);
 	}
 
 	/* A hardware cleanup failure is distinct from a normal finite timeout or signal exit. */
@@ -604,4 +640,56 @@ service_cleanup(
 
 	/* Succeeded: the service retains no listener, client or GPU descriptor. */
 	return;
+}
+
+/* Reads the processor's cycle counter (the millisecond clock has only tick resolution). */
+uint64_t
+zwl_cycles(
+	void)
+{
+	uint32_t low;
+	uint32_t high;
+
+	__asm__ volatile("rdtsc" : "=a"(low), "=d"(high));
+
+	/* Succeeded: the counter as one value. */
+	return ((uint64_t)high << 32) | low;
+}
+
+/* Prints the loop's timing every five seconds and starts a new window. */
+static void
+zwl_perf_report(
+	struct zwl_server *server,
+	uint64_t now)
+{
+	struct zwl_perf *perf;
+	uint64_t cycles;
+	double per_ms;
+
+	perf = &server->perf;
+	if (perf->window_start_ms == 0) {
+		perf->window_start_ms = now;
+		perf->window_start_cycles = zwl_cycles();
+		return;
+	}
+	if (now - perf->window_start_ms < 5000U)
+		return;
+
+	/* The window's length in cycles scales the counters to milliseconds. */
+	cycles = zwl_cycles() - perf->window_start_cycles;
+	per_ms = (double)cycles / (double)(now - perf->window_start_ms);
+	printf("ZWL PERF %llums: passes=%u timeouts=%u presents=%u | poll %.1f%% work %.1f%% | per present ms: ioctl %.2f wake-to-flush %.2f\n",
+	    (unsigned long long)(now - perf->window_start_ms),
+	    perf->passes,
+	    perf->timeouts,
+	    perf->presents,
+	    100.0 * (double)perf->poll_cycles / (double)cycles,
+	    100.0 * (double)perf->work_cycles / (double)cycles,
+	    perf->presents ? (double)perf->present_cycles / per_ms / (double)perf->presents : 0.0,
+	    perf->presents ? (double)perf->present_to_flush_cycles / per_ms / (double)perf->presents : 0.0);
+	fflush(stdout);
+
+	memset(perf, 0, sizeof(*perf));
+	perf->window_start_ms = now;
+	perf->window_start_cycles = zwl_cycles();
 }

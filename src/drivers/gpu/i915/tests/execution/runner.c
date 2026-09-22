@@ -21,6 +21,7 @@
 #include "ktest.h"
 #include "scenarios.h"
 #include "../display/scenarios.h"
+#include "../render/scenarios.h"
 
 #include "../../i915.h"
 
@@ -43,8 +44,9 @@
 /*
  * One scenario the runner can select.
  *
- * An execution scenario returns its verdict; a display scenario logs its own
- * and returns nothing.  Exactly one of the two functions is set.
+ * An execution scenario returns its verdict; a display scenario, or the
+ * render scenario that runs once the node is served, logs its own and
+ * returns nothing.  Exactly one of the two functions is set.
  */
 struct i915_test_scenario {
 	/* The name I915_TEST_SCENARIO selects it by. */
@@ -53,7 +55,7 @@ struct i915_test_scenario {
 	/* The execution scenario, which reports 0 for a pass. */
 	int (*execution)(struct i915_device *device);
 
-	/* The display scenario, which logs its own verdict. */
+	/* The display or render scenario, which logs its own verdict. */
 	void (*display)(struct i915_device *device);
 };
 
@@ -84,9 +86,11 @@ extern void drv_i915_test_display_ktest(struct i915_device *device) __attribute_
 /*
  * Every scenario the runner can select, by name.
  *
- * The execution scenarios first, then the display scenarios; the display
- * test suite is "display_ktest", apart from the unit test suite "ktest".  The
- * table never changes.
+ * The execution scenarios first, then the render scenarios "vkx" (the
+ * Vulkan executor, driven once the node is served) and "vkc" (the
+ * shader compiler on the GPU, likewise), then the display
+ * scenarios; the display test suite is "display_ktest", apart from the unit
+ * test suite "ktest".  The table never changes.
  */
 static const struct i915_test_scenario i915_test_scenarios[] = {
 	{ "ktest", drv_i915_test_execution_ktest, NULL },
@@ -96,6 +100,8 @@ static const struct i915_test_scenario i915_test_scenarios[] = {
 	{ "tex", drv_i915_test_execution_tex, NULL },
 	{ "t3", drv_i915_test_execution_t3, NULL },
 	{ "bl", drv_i915_test_execution_bl, NULL },
+	{ "vkx", NULL, drv_i915_test_render_executor },
+	{ "vkc", NULL, drv_i915_test_render_compiler },
 	{ "lcdb", NULL, drv_i915_test_display_lcdb },
 	{ "lcdc", NULL, drv_i915_test_display_lcdc },
 	{ "lcdd", NULL, drv_i915_test_display_lcdd },

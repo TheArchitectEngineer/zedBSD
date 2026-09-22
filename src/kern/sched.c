@@ -28,6 +28,83 @@
 
 #include <errno.h>
 #include <hal/hal.h>
+
+#if SCHED_WAKE_LATENCY
+#include "kern/clock.h"
+#include "kern/klog.h"
+#include <string.h>
+
+/* Diagnostic: wake-to-run latency buckets (<0.1 ms, <1 ms, <5 ms, <12 ms, more), same CPU and cross CPU. */
+static struct {
+	uint64_t count[2][5];
+	uint64_t total_ns[2];
+	uint64_t max_ns[2];
+} wake_latency;
+
+static uint64_t
+wake_latency_now(void)
+{
+	uint64_t counter;
+	uint64_t frequency;
+
+	if (!kern_rtc_read_counter(&counter, &frequency) || frequency == 0U)
+		return 0U;
+	return (counter / frequency) * 1000000000ULL + ((counter % frequency) * 1000000000ULL) / frequency;
+}
+
+static void
+wake_latency_account(struct thread *next)
+{
+	uint64_t now;
+	uint64_t latency;
+	unsigned bucket;
+	unsigned kind;
+
+	if (next->sched.woken_at == 0U)
+		return;
+	now = wake_latency_now();
+	latency = now - next->sched.woken_at;
+	next->sched.woken_at = 0U;
+	kind = next->sched.woken_same_cpu ? 0U : 1U;
+	if (latency < 100000ULL)
+		bucket = 0U;
+	else if (latency < 1000000ULL)
+		bucket = 1U;
+	else if (latency < 5000000ULL)
+		bucket = 2U;
+	else if (latency < 12000000ULL)
+		bucket = 3U;
+	else
+		bucket = 4U;
+	wake_latency.count[kind][bucket]++;
+	wake_latency.total_ns[kind] += latency;
+	if (latency > wake_latency.max_ns[kind])
+		wake_latency.max_ns[kind] = latency;
+}
+
+void
+sched_wake_latency_report(void)
+{
+	unsigned kind;
+	uint64_t n;
+
+	for (kind = 0U; kind < 2U; kind++) {
+		n = wake_latency.count[kind][0] + wake_latency.count[kind][1] + wake_latency.count[kind][2] +
+		    wake_latency.count[kind][3] + wake_latency.count[kind][4];
+		kern_logf("sched: wake latency %s: n=%llu avg=%llu us max=%llu us | <0.1ms %llu <1ms %llu <5ms %llu <12ms %llu more %llu\n",
+		    kind == 0U ? "same-cpu" : "cross-cpu",
+		    (unsigned long long)n,
+		    (unsigned long long)(n ? wake_latency.total_ns[kind] / n / 1000U : 0U),
+		    (unsigned long long)(wake_latency.max_ns[kind] / 1000U),
+		    (unsigned long long)wake_latency.count[kind][0],
+		    (unsigned long long)wake_latency.count[kind][1],
+		    (unsigned long long)wake_latency.count[kind][2],
+		    (unsigned long long)wake_latency.count[kind][3],
+		    (unsigned long long)wake_latency.count[kind][4]);
+	}
+	memset(&wake_latency, 0, sizeof(wake_latency));
+}
+#endif
 #include <string.h>
 
 #define SCHED_MIGRATING 0x00000001U
@@ -295,6 +372,10 @@ sched_wakeup(
 	queue_remove_thread(cpu, thread);
 	thread->state = THREAD_RUNNABLE;
 	thread->sched.wakeup_tick = 0;
+#if SCHED_WAKE_LATENCY
+	thread->sched.woken_at = wake_latency_now();
+	thread->sched.woken_same_cpu = (id == hal_cpu_current());
+#endif
 	thread->sched.quantum = SCHED_QUANTUM_TICKS;
 	queue_append(&cpu->run[thread->sched.priority], thread,
 	    SCHED_QUEUE_RUN);
@@ -461,6 +542,9 @@ sched_yield(
 	if (next == NULL)
 		HAL_FATAL("yield without idle thread");
 	next->state = THREAD_RUNNING;
+#if SCHED_WAKE_LATENCY
+	wake_latency_account(next);
+#endif
 	next->sched.last_cpu = id;
 	next->sched.quantum = SCHED_QUANTUM_TICKS;
 	cpu->need_resched = 0;
@@ -523,6 +607,9 @@ sched_exit_current(
 	if (next == NULL || next == current)
 		HAL_FATAL("scheduler exit without idle thread");
 	next->state = THREAD_RUNNING;
+#if SCHED_WAKE_LATENCY
+	wake_latency_account(next);
+#endif
 	next->sched.last_cpu = id;
 	next->sched.quantum = SCHED_QUANTUM_TICKS;
 	cpu->need_resched = 0;
@@ -1486,6 +1573,9 @@ switch_without_enqueue(
 	}
 
 	next->state = THREAD_RUNNING;
+#if SCHED_WAKE_LATENCY
+	wake_latency_account(next);
+#endif
 	next->sched.last_cpu = id;
 	next->sched.quantum = SCHED_QUANTUM_TICKS;
 	cpu->need_resched = 0;

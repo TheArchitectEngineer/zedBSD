@@ -31,7 +31,10 @@
 #include "submit.h"
 #include "sync.h"
 #include "worker.h"
+#include "perf.h"
 
+#include <kern/clock.h>
+#include <hal/hal.h>
 #include <kern/klog.h>
 #include <kern/kmem.h>
 #include <kern/lock.h>
@@ -62,7 +65,7 @@
 #define I915_WORKER_REQUEST_ROOM	512U
 
 /* How long the worker sleeps before it looks again for work it was not woken for (one second). */
-#define I915_WORKER_SLEEP_TICKS		100U
+#define I915_WORKER_SLEEP_TICKS		(1U * KERN_CLOCK_HZ)
 
 /* The size of a context's timeline page. */
 #define I915_WORKER_TIMELINE_BYTES	4096U
@@ -267,7 +270,7 @@ drv_i915_worker_serve(
 		return error;
 	}
 
-	kern_logf("i915: resident: GPU node published; serving (RCS0, one request at a time, CSB polling)\n");
+	kern_logf("i915: resident: GPU node published; serving (RCS0, one request at a time, CSB polling) on cpu %u\n", (unsigned)hal_cpu_current());
 
 	/*
 	 * Runs the queued work until a stop is asked for.  The first
@@ -578,6 +581,7 @@ drv_i915_worker_run_sync(
 	uint64_t batch_va)
 {
 	struct i915_worker_sync item;
+	uint64_t start;
 	int error;
 
 	/* Describes the batch. */
@@ -586,8 +590,10 @@ drv_i915_worker_run_sync(
 	item.context = context;
 	item.batch_va = batch_va;
 
-	/* Queues the batch and sleeps until it has run. */
+	/* Queues the batch and sleeps until it has run; the whole round trip is timed. */
+	start = drv_i915_perf_now();
 	error = i915_worker_queue_sync(device, &item);
+	drv_i915_perf_add(&device->perf, I915_PERF_RUN, start);
 	if (error != 0)
 		return error;
 
@@ -821,6 +827,7 @@ i915_worker_run_request(
 	struct i915_device *device;
 	struct i915_engine *engine;
 	unsigned long irq;
+	uint64_t start;
 	int error;
 	int has_batch;
 
@@ -832,8 +839,22 @@ i915_worker_run_request(
 	if (request->batch != NULL)
 		has_batch = 1;
 
-	/* Runs the request to its end. */
-	error = i915_worker_run(worker, request->context, request->batch_va, has_batch, request->seqno);
+	/* A marker's wait for the worker, and the start of its run, are timed. */
+	start = 0U;
+	if (!has_batch && request->queued_at != 0U) {
+		drv_i915_perf_add(&device->perf, I915_PERF_MARKER_WAIT, request->queued_at);
+		start = drv_i915_perf_now();
+	}
+
+	/*
+	 * Runs the request to its end.  The worker runs one request at a time
+	 * to completion, so a marker, which only orders itself after the
+	 * requests before it, is complete the moment the worker reaches it: it
+	 * is not sent to the engine.
+	 */
+	error = 0;
+	if (has_batch)
+		error = i915_worker_run(worker, request->context, request->batch_va, has_batch, request->seqno);
 
 	/* Counts how it ended. */
 	if (error == 0) {
@@ -853,6 +874,8 @@ i915_worker_run_request(
 
 	/* Delivers the completion, drops the session's count, frees the slot and wakes the waiters. */
 	drv_i915_request_complete_list(engine, request);
+	if (start != 0U)
+		drv_i915_perf_add(&device->perf, I915_PERF_MARKER_RUN, start);
 }
 
 /* Does one synchronous item and wakes its caller; the IRQ lock is not held. */
@@ -864,6 +887,7 @@ i915_worker_run_sync_item(
 {
 	struct i915_device *device;
 	unsigned long irq;
+	uint64_t start;
 	int error;
 
 	device = worker->device;
@@ -871,8 +895,10 @@ i915_worker_run_sync_item(
 	/* Does what the item asks for. */
 	switch (item->kind) {
 	case I915_WORKER_SYNC_BATCH:
-		/* Runs the batch to its end and counts how it ended. */
+		/* Runs the batch to its end, timing it on the engine, and counts how it ended. */
+		start = drv_i915_perf_now();
 		error = i915_worker_run(worker, item->context, item->batch_va, 1, 0U);
+		drv_i915_perf_add(&device->perf, I915_PERF_GPU, start);
 		if (error == 0) {
 			worker->executed++;
 		} else {

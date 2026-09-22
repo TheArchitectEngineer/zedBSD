@@ -14,7 +14,9 @@
  * vkQueueSubmit: clears and copies as GPU rectangles, draws as GPU draws.
  * The GPU runs are the stand-ins of i915-vk-render-stubs.inc, which record
  * what they were asked to run, so the fixture checks what the recording
- * handed to the GPU path and in which order.
+ * handed to the GPU path and in which order: the draws and indexed draws
+ * with what was bound and set, and the buffer copies as the rectangles they
+ * become.
  */
 
 #include "i915-vk-render-stubs.inc"
@@ -47,9 +49,17 @@
 #define FIXTURE_BEGIN_COMMAND_BUFFER		90U
 #define FIXTURE_END_COMMAND_BUFFER		91U
 #define FIXTURE_CMD_BIND_PIPELINE		93U
+#define FIXTURE_CMD_SET_VIEWPORT		94U
+#define FIXTURE_CMD_SET_SCISSOR			95U
+#define FIXTURE_CMD_SET_LINE_WIDTH		96U
+#define FIXTURE_CMD_BIND_INDEX_BUFFER		104U
 #define FIXTURE_CMD_BIND_VERTEX_BUFFERS		105U
 #define FIXTURE_CMD_DRAW			106U
 #define FIXTURE_CMD_DRAW_INDEXED		107U
+#define FIXTURE_CMD_COPY_BUFFER			112U
+#define FIXTURE_CMD_BLIT_IMAGE			114U
+#define FIXTURE_CMD_COPY_BUFFER_TO_IMAGE	115U
+#define FIXTURE_CMD_COPY_IMAGE_TO_BUFFER	116U
 #define FIXTURE_CMD_CLEAR_COLOR_IMAGE		119U
 #define FIXTURE_CMD_PUSH_CONSTANTS		132U
 
@@ -58,7 +68,10 @@
 #define FIXTURE_QUEUE		0xd1ULL
 #define FIXTURE_MEMORY		0x100ULL
 #define FIXTURE_BUFFER		0x200ULL
+#define FIXTURE_SRC_BUFFER	0x201ULL
+#define FIXTURE_DST_BUFFER	0x202ULL
 #define FIXTURE_IMAGE		0x300ULL
+#define FIXTURE_MIP_IMAGE	0x301ULL
 #define FIXTURE_PIPELINE	0xb00ULL
 #define FIXTURE_POOL		0x900ULL
 #define FIXTURE_CB0		0xa00ULL
@@ -66,11 +79,28 @@
 #define FIXTURE_FENCE		0xf00ULL
 
 /* The storage blob: its size and the GPU address it is bound at. */
-#define FIXTURE_STORAGE_BYTES	65536U
+#define FIXTURE_STORAGE_BYTES	262144U
 #define FIXTURE_STORAGE_VA	0x200000000ULL
 
-/* How many operations one command buffer records (render/command.c). */
-#define FIXTURE_MAX_OPS		64U
+/* Where the copy buffers are bound in the storage, and their size. */
+#define FIXTURE_SRC_OFFSET	65536U
+#define FIXTURE_DST_OFFSET	131072U
+#define FIXTURE_COPY_BYTES	65536U
+
+/*
+ * The mipmapped image of the transfer test: 32x32 with all 6 levels, bound
+ * at 8192.  Its levels share 128-byte rows: level 1 at row 32, level 2 to
+ * its right at column 16, levels 3, 4 and 5 below level 2 at rows 40, 44
+ * and 48 (each level at least 4 rows).
+ */
+#define FIXTURE_MIP_OFFSET	8192U
+#define FIXTURE_MIP_PITCH	128U
+
+/* How many operations one command buffer records at most (render/command.c). */
+#define FIXTURE_MAX_OPS		65536U
+
+/* How many draws one stream of the fixture carries: each is 32 bytes. */
+#define FIXTURE_DRAWS_PER_STREAM	2000U
 
 /*
  * The storage libvulkan exports for the fixture's allocation, and the
@@ -96,9 +126,16 @@ static void fixture_draw(uint64_t cmdbuf, uint32_t vertices, uint32_t instances)
 static void fixture_submit(uint64_t cmdbuf, uint64_t fence);
 static uint32_t fixture_fence_status(void);
 static void fixture_resources(void);
+static void fixture_copy_buffers(void);
+static void fixture_begin(uint64_t cmdbuf);
 static int fixture_find_command(const uint32_t *batch, unsigned used, uint32_t opcode);
+static void fixture_subresource(uint32_t level);
+static void fixture_level_copy(uint32_t opcode, uint64_t buffer, uint32_t level, uint32_t extent, uint64_t offset);
 static void test_emission(void);
 static void test_lifecycle(void);
+static void test_indexed_dynamic(void);
+static void test_copy_buffer(void);
+static void test_mip_transfers(void);
 static void test_recording_limits(void);
 
 /*
@@ -110,6 +147,9 @@ main(void)
 	/* Checks the end of a draw's batch, then recording and submission. */
 	test_emission();
 	test_lifecycle();
+	test_indexed_dynamic();
+	test_copy_buffer();
+	test_mip_transfers();
 	test_recording_limits();
 
 	/* Succeeded: every check held. */
@@ -299,6 +339,69 @@ fixture_resources(void)
 	assert(error == 0);
 }
 
+/* Creates two 64 KiB transfer buffers bound at FIXTURE_SRC_OFFSET and FIXTURE_DST_OFFSET. */
+static void
+fixture_copy_buffers(void)
+{
+	size_t reply_bytes;
+	uint64_t identities[2];
+	uint64_t offsets[2];
+	unsigned index;
+
+	/* The two buffers and where they are bound. */
+	identities[0] = FIXTURE_SRC_BUFFER;
+	identities[1] = FIXTURE_DST_BUFFER;
+	offsets[0] = FIXTURE_SRC_OFFSET;
+	offsets[1] = FIXTURE_DST_OFFSET;
+
+	/* vkCreateBuffer and vkBindBufferMemory of each. */
+	stub_wire_begin(&fixture_wire);
+	for (index = 0U; index < 2U; index++) {
+		stub_put32(&fixture_wire, FIXTURE_CREATE_BUFFER);
+		stub_put32(&fixture_wire, 1U);
+		stub_put64(&fixture_wire, FIXTURE_DEVICE);
+		stub_put64(&fixture_wire, 1U);
+		stub_put32(&fixture_wire, 12U);
+		stub_put64(&fixture_wire, 0U);
+		stub_put32(&fixture_wire, 0U);
+		stub_put64(&fixture_wire, FIXTURE_COPY_BYTES);
+		stub_put32(&fixture_wire, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+		stub_put32(&fixture_wire, VK_SHARING_MODE_EXCLUSIVE);
+		stub_put32(&fixture_wire, 0U);
+		stub_put64(&fixture_wire, 0U);
+		stub_put64(&fixture_wire, 0U);
+		stub_put64(&fixture_wire, 1U);
+		stub_put64(&fixture_wire, identities[index]);
+		stub_put32(&fixture_wire, FIXTURE_BIND_BUFFER_MEMORY);
+		stub_put32(&fixture_wire, 1U);
+		stub_put64(&fixture_wire, FIXTURE_DEVICE);
+		stub_put64(&fixture_wire, identities[index]);
+		stub_put64(&fixture_wire, FIXTURE_MEMORY);
+		stub_put64(&fixture_wire, offsets[index]);
+	}
+
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 2U * (24U + 8U));
+	assert(stub_get32(stub_reply, 4U) == VK_SUCCESS);
+	assert(stub_get32(stub_reply, 24U + 4U) == VK_SUCCESS);
+}
+
+/* Appends vkBeginCommandBuffer with no flags; the reply is [90][VkResult]. */
+static void
+fixture_begin(
+	uint64_t cmdbuf)
+{
+	/* [90][reply][command buffer][present][sType 42][no chain][flags][no inheritance]. */
+	stub_put32(&fixture_wire, FIXTURE_BEGIN_COMMAND_BUFFER);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, cmdbuf);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 42U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 0U);
+}
+
 /* Finds the first dword of a batch whose command opcode is `opcode`; -1 when none is. */
 static int
 fixture_find_command(
@@ -325,9 +428,15 @@ fixture_find_command(
 static void
 test_emission(void)
 {
+	struct i915_gfx_draw_state state;
+	struct i915_gfx_primitive shape;
+	struct i915_gfx_memory memory;
+	struct i915_gfx_buffer buffer;
+	struct i915_gem_object object;
 	struct i915_gfx_batch batch;
 	uint32_t commands[128];
 	int primitive;
+	int error;
 
 	/* Emits the primitive of a three-vertex, one-instance triangle list on a 64x32 target. */
 	memset(commands, 0, sizeof(commands));
@@ -335,15 +444,20 @@ test_emission(void)
 	batch.count = 0U;
 	batch.capacity = 128U;
 	batch.overflow = 0;
-	drv_i915_gfx_emit_primitive(&batch, 64U, 32U, 4U, 3U, 0U, 1U, 0U);
+	memset(&shape, 0, sizeof(shape));
+	shape.topology = GEN12_3DPRIM_TRILIST;
+	shape.vertex_count = 3U;
+	shape.instance_count = 1U;
+	drv_i915_gfx_emit_primitive(&batch, 64U, 32U, &shape);
 	assert(batch.overflow == 0);
 
-	/* The primitive carries the topology, the vertex count and the instance count. */
+	/* The primitive carries the topology, sequential access, the vertex count and the instance count. */
 	primitive = fixture_find_command(commands, batch.count, GEN12_CMD_3DPRIMITIVE);
 	assert(primitive >= 0);
 	assert(commands[primitive + 1] == 4U);
 	assert(commands[primitive + 2] == 3U);
 	assert(commands[primitive + 4] == 1U);
+	assert(commands[primitive + 6] == 0U);
 
 	/* The drawing rectangle covers the target. */
 	primitive = fixture_find_command(commands, batch.count, GEN12_CMD_3DSTATE_DRAWING_RECTANGLE);
@@ -362,10 +476,90 @@ test_emission(void)
 	batch.count = 0U;
 	batch.capacity = 8U;
 	batch.overflow = 0;
-	drv_i915_gfx_emit_primitive(&batch, 64U, 32U, 4U, 3U, 0U, 1U, 0U);
+	drv_i915_gfx_emit_primitive(&batch, 64U, 32U, &shape);
 	assert(batch.overflow != 0);
 	assert(batch.count > 8U);
 	assert(commands[8] == 0xeeeeeeeeU);
+
+	/*
+	 * An indexed primitive reads at random from the first index, each index
+	 * moved by the base vertex: six indices from index 3, base vertex -2,
+	 * two instances from instance 1.
+	 */
+	memset(commands, 0, sizeof(commands));
+	batch.count = 0U;
+	batch.capacity = 128U;
+	batch.overflow = 0;
+	shape.random_access = 1;
+	shape.vertex_count = 6U;
+	shape.start_vertex = 3U;
+	shape.instance_count = 2U;
+	shape.start_instance = 1U;
+	shape.base_vertex = -2;
+	drv_i915_gfx_emit_primitive(&batch, 64U, 32U, &shape);
+	assert(batch.overflow == 0);
+	primitive = fixture_find_command(commands, batch.count, GEN12_CMD_3DPRIMITIVE);
+	assert(primitive >= 0);
+	assert(commands[primitive + 1] == (4U | GEN12_3DPRIMITIVE_VERTEX_RANDOM));
+	assert(commands[primitive + 2] == 6U);
+	assert(commands[primitive + 3] == 3U);
+	assert(commands[primitive + 4] == 2U);
+	assert(commands[primitive + 5] == 1U);
+	assert(commands[primitive + 6] == 0xfffffffeU);
+
+	/* A buffer of 256 bytes bound at 0x1000 of an object at 0x7000_0000. */
+	memset(&object, 0, sizeof(object));
+	object.bytes = 65536U;
+	object.va = 0x70000000ULL;
+	memset(&memory, 0, sizeof(memory));
+	memory.object = &object;
+	memory.size = 65536U;
+	memset(&buffer, 0, sizeof(buffer));
+	buffer.size = 256U;
+	buffer.memory = &memory;
+	buffer.offset = 0x1000U;
+
+	/* A 16-bit index buffer at offset 8: the address past the offset and the bytes to the end. */
+	memset(&state, 0, sizeof(state));
+	state.index.buffer = &buffer;
+	state.index.offset = 8U;
+	state.index.type = VK_INDEX_TYPE_UINT16;
+	memset(commands, 0, sizeof(commands));
+	batch.count = 0U;
+	error = drv_i915_gfx_emit_index_buffer(&batch, &state, 0x6U);
+	assert(error == 0);
+	assert(batch.count == GEN12_3DSTATE_INDEX_BUFFER_DWORDS);
+	assert(commands[0] == GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_INDEX_BUFFER, GEN12_3DSTATE_INDEX_BUFFER_DWORDS));
+	assert(commands[1] == (0x6U | (GEN12_INDEX_WORD << 8) | (1U << 11)));
+	assert(commands[2] == 0x70001008U);
+	assert(commands[3] == 0U);
+	assert(commands[4] == 248U);
+
+	/* A 32-bit index buffer names the dword format. */
+	state.index.type = VK_INDEX_TYPE_UINT32;
+	batch.count = 0U;
+	error = drv_i915_gfx_emit_index_buffer(&batch, &state, 0x6U);
+	assert(error == 0);
+	assert(commands[1] == (0x6U | (GEN12_INDEX_DWORD << 8) | (1U << 11)));
+
+	/* An offset that does not start an index, one past the end, and no buffer are refused. */
+	state.index.offset = 6U;
+	error = drv_i915_gfx_emit_index_buffer(&batch, &state, 0x6U);
+	assert(error == EINVAL);
+	state.index.offset = 256U;
+	error = drv_i915_gfx_emit_index_buffer(&batch, &state, 0x6U);
+	assert(error == EINVAL);
+	state.index.buffer = NULL;
+	error = drv_i915_gfx_emit_index_buffer(&batch, &state, 0x6U);
+	assert(error == EINVAL);
+
+	/* An 8-bit index type is not implemented and says so. */
+	state.index.buffer = &buffer;
+	state.index.offset = 0U;
+	state.index.type = VK_INDEX_TYPE_UINT8_EXT;
+	error = drv_i915_gfx_emit_index_buffer(&batch, &state, 0x6U);
+	assert(error == ENOTSUP);
+	assert(strstr(stub_log, "index type") != NULL);
 }
 
 /*
@@ -562,9 +756,10 @@ test_lifecycle(void)
 	assert(stub_last_draw.state.vertex[0].offset == 64U);
 	assert(stub_last_draw.state.push[16] == 0x01U);
 	assert(stub_last_draw.state.push[23] == 0x08U);
-	assert(stub_last_draw.vertex_count == 3U);
-	assert(stub_last_draw.instance_count == 1U);
-	assert(stub_last_draw.first_vertex == 0U);
+	assert(stub_last_draw.args.indexed == 0);
+	assert(stub_last_draw.args.count == 3U);
+	assert(stub_last_draw.args.instance_count == 1U);
+	assert(stub_last_draw.args.first == 0U);
 
 	/* Everything the submission asked for is done, so its fence is signalled. */
 	assert(fixture_fence_status() == VK_SUCCESS);
@@ -649,13 +844,15 @@ test_lifecycle(void)
 }
 
 /*
- * A recording that does not fit fails its end; an unimplemented vkCmd*
+ * A recording far longer than the first operation list grows its list and
+ * runs whole; one past the bound fails its end; an unimplemented vkCmd*
  * fails the stream; destroying a pool frees the buffers still in it.
  */
 static void
 test_recording_limits(void)
 {
 	size_t reply_bytes;
+	unsigned recorded;
 	unsigned index;
 	int error;
 
@@ -706,31 +903,62 @@ test_recording_limits(void)
 	assert(strstr(stub_log, "secondary command buffers are not implemented") != NULL);
 	assert(drv_i915_object_lookup(stub_vk, I915_VK_OBJ_COMMAND_BUFFER, FIXTURE_CB1) == NULL);
 
-	/* One operation more than a buffer holds: the end reports that the recording did not fit. */
+	/*
+	 * Two hundred draws, more than three times the first list: the list
+	 * grows, the end succeeds and a submission runs every draw in order.
+	 * With no fence the submission signals nothing.
+	 */
+	stub_draw_calls = 0U;
 	stub_wire_begin(&fixture_wire);
-	for (index = 0U; index < FIXTURE_MAX_OPS + 1U; index++)
-		fixture_draw(FIXTURE_CB0, 3U, 1U);
+	for (index = 0U; index < 200U; index++)
+		fixture_draw(FIXTURE_CB0, index + 1U, 1U);
+	fixture_command_buffer(FIXTURE_END_COMMAND_BUFFER, FIXTURE_CB0);
+	fixture_submit(FIXTURE_CB0, 0U);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 16U);
+	assert(stub_get32(stub_reply, 4U) == VK_SUCCESS);
+	assert(stub_get32(stub_reply, 12U) == VK_SUCCESS);
+	assert(stub_draw_calls == 200U);
+	assert(stub_last_draw.args.count == 200U);
+
+	/*
+	 * One operation more than a buffer records at most: the end reports
+	 * that the recording did not fit.  The draws travel in streams of their
+	 * own, as a long recording does.
+	 */
+	stub_wire_begin(&fixture_wire);
+	fixture_begin(FIXTURE_CB0);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(stub_get32(stub_reply, 4U) == VK_SUCCESS);
+	recorded = 0U;
+	while (recorded < FIXTURE_MAX_OPS + 1U) {
+		stub_wire_begin(&fixture_wire);
+		for (index = 0U; index < FIXTURE_DRAWS_PER_STREAM && recorded < FIXTURE_MAX_OPS + 1U; index++) {
+			fixture_draw(FIXTURE_CB0, 3U, 1U);
+			recorded++;
+		}
+		reply_bytes = stub_execute_ok(&fixture_wire);
+		assert(reply_bytes == 0U);
+	}
+
+	stub_wire_begin(&fixture_wire);
 	fixture_command_buffer(FIXTURE_END_COMMAND_BUFFER, FIXTURE_CB0);
 	reply_bytes = stub_execute_ok(&fixture_wire);
 	assert(reply_bytes == 8U);
 	assert(stub_get32(stub_reply, 4U) == (uint32_t)VK_ERROR_OUT_OF_HOST_MEMORY);
-	assert(strstr(stub_log, "holds more than 64 operations") != NULL);
+	assert(strstr(stub_log, "needs more than 65536 operations") != NULL);
 
 	/* An unimplemented recording fails the stream: nothing after it runs and no reply is published. */
 	stub_wire_begin(&fixture_wire);
-	stub_put32(&fixture_wire, FIXTURE_CMD_DRAW_INDEXED);
+	stub_put32(&fixture_wire, FIXTURE_CMD_SET_LINE_WIDTH);
 	stub_put32(&fixture_wire, 0U);
 	stub_put64(&fixture_wire, FIXTURE_CB0);
-	stub_put32(&fixture_wire, 3U);
-	stub_put32(&fixture_wire, 1U);
-	stub_put32(&fixture_wire, 0U);
-	stub_put32(&fixture_wire, 0U);
-	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0x3f800000U);
 	fixture_command_buffer(FIXTURE_END_COMMAND_BUFFER, FIXTURE_CB0);
 	error = stub_execute(&fixture_wire, &reply_bytes);
 	assert(error == ENOTSUP);
 	assert(reply_bytes == STUB_REPLY_BYTES);
-	assert(strcmp(stub_log, "i915: vk: XXX unimplemented opcode 107 (recording)\n") == 0);
+	assert(strcmp(stub_log, "i915: vk: XXX unimplemented opcode 96 (recording)\n") == 0);
 
 	/* vkDestroyCommandPool frees the buffer still allocated from it. */
 	stub_wire_begin(&fixture_wire);
@@ -738,6 +966,608 @@ test_recording_limits(void)
 	reply_bytes = stub_execute_ok(&fixture_wire);
 	assert(reply_bytes == 4U);
 	assert(drv_i915_object_lookup(stub_vk, I915_VK_OBJ_COMMAND_BUFFER, FIXTURE_CB0) == NULL);
+
+	/* Closes the session; nothing stays allocated. */
+	stub_session_close();
+	assert(stub_live == 0U);
+}
+
+/*
+ * An index buffer bind, a dynamic viewport and scissor and an indexed draw
+ * reach the GPU path with what was recorded: the draw carries its counts,
+ * its first index, its vertex offset and its first instance; the state
+ * carries the index buffer and the viewport and scissor set last.  A
+ * viewport or scissor set at index 1 has no place and changes nothing.
+ */
+static void
+test_indexed_dynamic(void)
+{
+	struct i915_gfx_buffer *buffer;
+	size_t reply_bytes;
+	int error;
+
+	/* Opens a session with the storage blob, the resources, the pipeline, a pool and one buffer. */
+	memset(&fixture_storage_object, 0, sizeof(fixture_storage_object));
+	fixture_storage_object.slot = 7U;
+	fixture_storage_object.bytes = sizeof(fixture_storage);
+	fixture_storage_object.run.paddr = (hal_physaddr_t)(uintptr_t)fixture_storage;
+	fixture_storage_object.va = FIXTURE_STORAGE_VA;
+	stub_session_open(&fixture_storage_object);
+	fixture_resources();
+	buffer = drv_i915_object_lookup(stub_vk, I915_VK_OBJ_BUFFER, FIXTURE_BUFFER);
+	assert(buffer != NULL);
+	memset(&fixture_pipeline, 0, sizeof(fixture_pipeline));
+	fixture_pipeline.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+	error = drv_i915_object_insert(stub_vk, I915_VK_OBJ_PIPELINE, FIXTURE_PIPELINE, &fixture_pipeline);
+	assert(error == 0);
+	stub_wire_begin(&fixture_wire);
+	stub_put32(&fixture_wire, FIXTURE_CREATE_COMMAND_POOL);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 39U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_POOL);
+	stub_put32(&fixture_wire, FIXTURE_ALLOCATE_COMMAND_BUFFERS);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 40U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, FIXTURE_POOL);
+	stub_put32(&fixture_wire, VK_COMMAND_BUFFER_LEVEL_PRIMARY);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_CB0);
+	fixture_begin(FIXTURE_CB0);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 24U + 24U + 8U);
+
+	/* Counts the GPU runs of this test only. */
+	stub_draw_calls = 0U;
+	stub_rect_calls = 0U;
+
+	/*
+	 * Records the pipeline; a 16-bit index buffer at offset 8; viewport 0 of
+	 * (16, 8, 32, 16) in depth [0, 1]; viewport 1, which has no place;
+	 * scissor 0 of (4, 2) 40x30; then an indexed draw of six indices from
+	 * index 3 with vertex offset -2, two instances from instance 1.
+	 */
+	stub_wire_begin(&fixture_wire);
+	stub_put32(&fixture_wire, FIXTURE_CMD_BIND_PIPELINE);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, FIXTURE_CB0);
+	stub_put32(&fixture_wire, VK_PIPELINE_BIND_POINT_GRAPHICS);
+	stub_put64(&fixture_wire, FIXTURE_PIPELINE);
+	stub_put32(&fixture_wire, FIXTURE_CMD_BIND_INDEX_BUFFER);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, FIXTURE_CB0);
+	stub_put64(&fixture_wire, FIXTURE_BUFFER);
+	stub_put64(&fixture_wire, 8U);
+	stub_put32(&fixture_wire, VK_INDEX_TYPE_UINT16);
+	stub_put32(&fixture_wire, FIXTURE_CMD_SET_VIEWPORT);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, FIXTURE_CB0);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 0x41800000U);
+	stub_put32(&fixture_wire, 0x41000000U);
+	stub_put32(&fixture_wire, 0x42000000U);
+	stub_put32(&fixture_wire, 0x41800000U);
+	stub_put32(&fixture_wire, 0x00000000U);
+	stub_put32(&fixture_wire, 0x3f800000U);
+	stub_put32(&fixture_wire, FIXTURE_CMD_SET_VIEWPORT);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, FIXTURE_CB0);
+	stub_put32(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 0x3f800000U);
+	stub_put32(&fixture_wire, 0x3f800000U);
+	stub_put32(&fixture_wire, 0x3f800000U);
+	stub_put32(&fixture_wire, 0x3f800000U);
+	stub_put32(&fixture_wire, 0x3f800000U);
+	stub_put32(&fixture_wire, 0x3f800000U);
+	stub_put32(&fixture_wire, FIXTURE_CMD_SET_SCISSOR);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, FIXTURE_CB0);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 4U);
+	stub_put32(&fixture_wire, 2U);
+	stub_put32(&fixture_wire, 40U);
+	stub_put32(&fixture_wire, 30U);
+	stub_put32(&fixture_wire, FIXTURE_CMD_DRAW_INDEXED);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, FIXTURE_CB0);
+	stub_put32(&fixture_wire, 6U);
+	stub_put32(&fixture_wire, 2U);
+	stub_put32(&fixture_wire, 3U);
+	stub_put32(&fixture_wire, 0xfffffffeU);
+	stub_put32(&fixture_wire, 1U);
+	fixture_command_buffer(FIXTURE_END_COMMAND_BUFFER, FIXTURE_CB0);
+	fixture_submit(FIXTURE_CB0, 0U);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 16U);
+	assert(stub_get32(stub_reply, 4U) == VK_SUCCESS);
+	assert(stub_get32(stub_reply, 12U) == VK_SUCCESS);
+
+	/* The indexed draw ran with its counts and firsts. */
+	assert(stub_draw_calls == 1U);
+	assert(stub_last_draw.args.indexed != 0);
+	assert(stub_last_draw.args.count == 6U);
+	assert(stub_last_draw.args.instance_count == 2U);
+	assert(stub_last_draw.args.first == 3U);
+	assert(stub_last_draw.args.vertex_offset == -2);
+	assert(stub_last_draw.args.first_instance == 1U);
+
+	/* It ran with the index buffer, and with viewport 0 and scissor 0 as set. */
+	assert(stub_last_draw.state.index.buffer == buffer);
+	assert(stub_last_draw.state.index.offset == 8U);
+	assert(stub_last_draw.state.index.type == VK_INDEX_TYPE_UINT16);
+	assert(stub_last_draw.state.viewport_set != 0);
+	assert(stub_last_draw.state.viewport[0] == 0x41800000U);
+	assert(stub_last_draw.state.viewport[1] == 0x41000000U);
+	assert(stub_last_draw.state.viewport[2] == 0x42000000U);
+	assert(stub_last_draw.state.viewport[3] == 0x41800000U);
+	assert(stub_last_draw.state.viewport[4] == 0x00000000U);
+	assert(stub_last_draw.state.viewport[5] == 0x3f800000U);
+	assert(stub_last_draw.state.scissor_set != 0);
+	assert(stub_last_draw.state.scissor.offset.x == 4);
+	assert(stub_last_draw.state.scissor.offset.y == 2);
+	assert(stub_last_draw.state.scissor.extent.width == 40U);
+	assert(stub_last_draw.state.scissor.extent.height == 30U);
+
+	/* Destroys the pool and the resources, and withdraws the pipeline. */
+	stub_wire_begin(&fixture_wire);
+	fixture_destroy(FIXTURE_DESTROY_COMMAND_POOL, FIXTURE_POOL);
+	fixture_destroy(FIXTURE_DESTROY_IMAGE, FIXTURE_IMAGE);
+	fixture_destroy(FIXTURE_DESTROY_BUFFER, FIXTURE_BUFFER);
+	fixture_destroy(FIXTURE_FREE_MEMORY, FIXTURE_MEMORY);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 4U * 4U);
+	drv_i915_object_remove(stub_vk, I915_VK_OBJ_PIPELINE, FIXTURE_PIPELINE);
+
+	/* Closes the session; nothing stays allocated. */
+	stub_session_close();
+	assert(stub_live == 0U);
+}
+
+/*
+ * A buffer copy runs as copies between linear surfaces of four-byte texels
+ * over the two buffers: a short region as one short row; a long one as full
+ * rows of 4096 texels and then its rest.  A region that is not whole
+ * four-byte texels, or that runs past a buffer, fails the submission.
+ */
+static void
+test_copy_buffer(void)
+{
+	size_t reply_bytes;
+
+	/* Opens a session with the storage blob, the resources, the copy buffers, a pool and one buffer. */
+	memset(&fixture_storage_object, 0, sizeof(fixture_storage_object));
+	fixture_storage_object.slot = 7U;
+	fixture_storage_object.bytes = sizeof(fixture_storage);
+	fixture_storage_object.run.paddr = (hal_physaddr_t)(uintptr_t)fixture_storage;
+	fixture_storage_object.va = FIXTURE_STORAGE_VA;
+	stub_session_open(&fixture_storage_object);
+	fixture_resources();
+	fixture_copy_buffers();
+	stub_wire_begin(&fixture_wire);
+	stub_put32(&fixture_wire, FIXTURE_CREATE_COMMAND_POOL);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 39U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_POOL);
+	stub_put32(&fixture_wire, FIXTURE_ALLOCATE_COMMAND_BUFFERS);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 40U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, FIXTURE_POOL);
+	stub_put32(&fixture_wire, VK_COMMAND_BUFFER_LEVEL_PRIMARY);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_CB0);
+	fixture_begin(FIXTURE_CB0);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 24U + 24U + 8U);
+
+	/* Counts the GPU runs of this test only. */
+	stub_draw_calls = 0U;
+	stub_rect_calls = 0U;
+
+	/*
+	 * Records one copy of two regions: 12 bytes from source 16 to
+	 * destination 4, and 2 * 16384 + 20 bytes from source 4096 to
+	 * destination 8192.
+	 */
+	stub_wire_begin(&fixture_wire);
+	stub_put32(&fixture_wire, FIXTURE_CMD_COPY_BUFFER);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, FIXTURE_CB0);
+	stub_put64(&fixture_wire, FIXTURE_SRC_BUFFER);
+	stub_put64(&fixture_wire, FIXTURE_DST_BUFFER);
+	stub_put32(&fixture_wire, 2U);
+	stub_put64(&fixture_wire, 2U);
+	stub_put64(&fixture_wire, 16U);
+	stub_put64(&fixture_wire, 4U);
+	stub_put64(&fixture_wire, 12U);
+	stub_put64(&fixture_wire, 4096U);
+	stub_put64(&fixture_wire, 8192U);
+	stub_put64(&fixture_wire, 2U * 16384U + 20U);
+	fixture_command_buffer(FIXTURE_END_COMMAND_BUFFER, FIXTURE_CB0);
+	fixture_submit(FIXTURE_CB0, 0U);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 16U);
+	assert(stub_get32(stub_reply, 4U) == VK_SUCCESS);
+	assert(stub_get32(stub_reply, 12U) == VK_SUCCESS);
+
+	/* Three rectangles ran: the short region, then the long one's two full rows and its rest. */
+	assert(stub_rect_calls == 3U);
+
+	/* The short region is one row of three texels, source to destination. */
+	assert(stub_rects[0].copy != 0);
+	assert(stub_rects[0].src.va == FIXTURE_STORAGE_VA + FIXTURE_SRC_OFFSET + 16U);
+	assert(stub_rects[0].dst.va == FIXTURE_STORAGE_VA + FIXTURE_DST_OFFSET + 4U);
+	assert(stub_rects[0].src.width == 3U);
+	assert(stub_rects[0].src.height == 1U);
+	assert(stub_rects[0].src.pitch == 12U);
+	assert(stub_rects[0].src.format == VK_FORMAT_R8G8B8A8_UNORM);
+	assert(stub_rects[0].dst.width == 3U);
+	assert(stub_rects[0].dst_rect.w == 3U);
+	assert(stub_rects[0].src_rect.w == 3U);
+
+	/* The long region's full rows: two rows of 4096 texels. */
+	assert(stub_rects[1].src.va == FIXTURE_STORAGE_VA + FIXTURE_SRC_OFFSET + 4096U);
+	assert(stub_rects[1].dst.va == FIXTURE_STORAGE_VA + FIXTURE_DST_OFFSET + 8192U);
+	assert(stub_rects[1].src.width == 4096U);
+	assert(stub_rects[1].src.height == 2U);
+	assert(stub_rects[1].src.pitch == 16384U);
+	assert(stub_rects[1].dst_rect.h == 2U);
+
+	/* Its rest: one row of five texels after them. */
+	assert(stub_rects[2].src.va == FIXTURE_STORAGE_VA + FIXTURE_SRC_OFFSET + 4096U + 32768U);
+	assert(stub_rects[2].dst.va == FIXTURE_STORAGE_VA + FIXTURE_DST_OFFSET + 8192U + 32768U);
+	assert(stub_rects[2].src.width == 5U);
+	assert(stub_rects[2].src.height == 1U);
+
+	/* A region of six bytes is not whole texels: the submission fails and says why. */
+	stub_rect_calls = 0U;
+	stub_wire_begin(&fixture_wire);
+	fixture_begin(FIXTURE_CB0);
+	stub_put32(&fixture_wire, FIXTURE_CMD_COPY_BUFFER);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, FIXTURE_CB0);
+	stub_put64(&fixture_wire, FIXTURE_SRC_BUFFER);
+	stub_put64(&fixture_wire, FIXTURE_DST_BUFFER);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 6U);
+	fixture_command_buffer(FIXTURE_END_COMMAND_BUFFER, FIXTURE_CB0);
+	fixture_submit(FIXTURE_CB0, 0U);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 24U);
+	assert(stub_get32(stub_reply, 20U) == (uint32_t)VK_ERROR_INITIALIZATION_FAILED);
+	assert(stub_rect_calls == 0U);
+	assert(strstr(stub_log, "command buffer stopped at operation 1 of 1") != NULL);
+
+	/* A region that runs past the destination fails the submission before any copy. */
+	stub_wire_begin(&fixture_wire);
+	fixture_begin(FIXTURE_CB0);
+	stub_put32(&fixture_wire, FIXTURE_CMD_COPY_BUFFER);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, FIXTURE_CB0);
+	stub_put64(&fixture_wire, FIXTURE_SRC_BUFFER);
+	stub_put64(&fixture_wire, FIXTURE_DST_BUFFER);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, FIXTURE_COPY_BYTES - 4U);
+	stub_put64(&fixture_wire, 8U);
+	fixture_command_buffer(FIXTURE_END_COMMAND_BUFFER, FIXTURE_CB0);
+	fixture_submit(FIXTURE_CB0, 0U);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 24U);
+	assert(stub_get32(stub_reply, 20U) == (uint32_t)VK_ERROR_INITIALIZATION_FAILED);
+	assert(stub_rect_calls == 0U);
+
+	/* Destroys the pool and the resources. */
+	stub_wire_begin(&fixture_wire);
+	fixture_destroy(FIXTURE_DESTROY_COMMAND_POOL, FIXTURE_POOL);
+	fixture_destroy(FIXTURE_DESTROY_IMAGE, FIXTURE_IMAGE);
+	fixture_destroy(FIXTURE_DESTROY_BUFFER, FIXTURE_BUFFER);
+	fixture_destroy(FIXTURE_DESTROY_BUFFER, FIXTURE_SRC_BUFFER);
+	fixture_destroy(FIXTURE_DESTROY_BUFFER, FIXTURE_DST_BUFFER);
+	fixture_destroy(FIXTURE_FREE_MEMORY, FIXTURE_MEMORY);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 6U * 4U);
+
+	/* Closes the session; nothing stays allocated. */
+	stub_session_close();
+	assert(stub_live == 0U);
+}
+
+/* Appends a VkImageSubresourceLayers of one colour level: [aspect][level][first layer][layers]. */
+static void
+fixture_subresource(
+	uint32_t level)
+{
+	/* The colour aspect of the level's one layer. */
+	stub_put32(&fixture_wire, VK_IMAGE_ASPECT_COLOR_BIT);
+	stub_put32(&fixture_wire, level);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 1U);
+}
+
+/*
+ * Appends vkCmdCopyBufferToImage or vkCmdCopyImageToBuffer of one tightly
+ * packed region: a whole level of `extent` texels square, at buffer offset
+ * `offset`.
+ */
+static void
+fixture_level_copy(
+	uint32_t opcode,
+	uint64_t buffer,
+	uint32_t level,
+	uint32_t extent,
+	uint64_t offset)
+{
+	/* The header and the buffer and image in the direction's order. */
+	stub_put32(&fixture_wire, opcode);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, FIXTURE_CB0);
+	if (opcode == FIXTURE_CMD_COPY_BUFFER_TO_IMAGE) {
+		stub_put64(&fixture_wire, buffer);
+		stub_put64(&fixture_wire, FIXTURE_MIP_IMAGE);
+		stub_put32(&fixture_wire, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+	} else {
+		stub_put64(&fixture_wire, FIXTURE_MIP_IMAGE);
+		stub_put32(&fixture_wire, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+		stub_put64(&fixture_wire, buffer);
+	}
+
+	/* One region: the offset, packed rows, the level, no image offset, the extent. */
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, offset);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+	fixture_subresource(level);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, extent);
+	stub_put32(&fixture_wire, extent);
+	stub_put32(&fixture_wire, 1U);
+}
+
+/*
+ * Per-level transfers of a mipmapped image: a buffer copy into level 2, a
+ * linear blit from level 0 into level 1 of the same image, a clear of the
+ * remaining levels from level 3 and a copy of level 5 out to a buffer each
+ * address the level's own place in the mip layout, with the level's extent
+ * and the image's pitch; a copy into a level the image lacks fails the
+ * submission.
+ */
+static void
+test_mip_transfers(void)
+{
+	size_t reply_bytes;
+	uint64_t base;
+	unsigned index;
+
+	/* Opens a session with the storage blob, the resources, the copy buffers, a pool and one buffer. */
+	memset(&fixture_storage_object, 0, sizeof(fixture_storage_object));
+	fixture_storage_object.slot = 7U;
+	fixture_storage_object.bytes = sizeof(fixture_storage);
+	fixture_storage_object.run.paddr = (hal_physaddr_t)(uintptr_t)fixture_storage;
+	fixture_storage_object.va = FIXTURE_STORAGE_VA;
+	stub_session_open(&fixture_storage_object);
+	fixture_resources();
+	fixture_copy_buffers();
+
+	/* vkCreateImage of a 32x32 R8G8B8A8_UNORM image of 6 levels, bound at FIXTURE_MIP_OFFSET. */
+	stub_wire_begin(&fixture_wire);
+	stub_put32(&fixture_wire, FIXTURE_CREATE_IMAGE);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 14U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, VK_IMAGE_TYPE_2D);
+	stub_put32(&fixture_wire, VK_FORMAT_R8G8B8A8_UNORM);
+	stub_put32(&fixture_wire, 32U);
+	stub_put32(&fixture_wire, 32U);
+	stub_put32(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 6U);
+	stub_put32(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, VK_SAMPLE_COUNT_1_BIT);
+	stub_put32(&fixture_wire, VK_IMAGE_TILING_OPTIMAL);
+	stub_put32(&fixture_wire, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+	stub_put32(&fixture_wire, VK_SHARING_MODE_EXCLUSIVE);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, VK_IMAGE_LAYOUT_UNDEFINED);
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_MIP_IMAGE);
+	stub_put32(&fixture_wire, FIXTURE_BIND_IMAGE_MEMORY);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put64(&fixture_wire, FIXTURE_MIP_IMAGE);
+	stub_put64(&fixture_wire, FIXTURE_MEMORY);
+	stub_put64(&fixture_wire, FIXTURE_MIP_OFFSET);
+
+	/* A pool with one command buffer, begun. */
+	stub_put32(&fixture_wire, FIXTURE_CREATE_COMMAND_POOL);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 39U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_POOL);
+	stub_put32(&fixture_wire, FIXTURE_ALLOCATE_COMMAND_BUFFERS);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 40U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, FIXTURE_POOL);
+	stub_put32(&fixture_wire, VK_COMMAND_BUFFER_LEVEL_PRIMARY);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_CB0);
+	fixture_begin(FIXTURE_CB0);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 24U + 8U + 24U + 24U + 8U);
+	assert(stub_get32(stub_reply, 24U + 4U) == VK_SUCCESS);
+
+	/* Counts the GPU runs of this test only. */
+	stub_rect_calls = 0U;
+
+	/* Records the copy into level 2, the blit of level 0 into level 1, the clear from level 3 and the copy out of level 5. */
+	stub_wire_begin(&fixture_wire);
+	fixture_level_copy(FIXTURE_CMD_COPY_BUFFER_TO_IMAGE, FIXTURE_SRC_BUFFER, 2U, 8U, 256U);
+
+	/* vkCmdBlitImage: [src][layout][dst][layout][1][1]{src level, 2 corners, dst level, 2 corners}[filter]. */
+	stub_put32(&fixture_wire, FIXTURE_CMD_BLIT_IMAGE);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, FIXTURE_CB0);
+	stub_put64(&fixture_wire, FIXTURE_MIP_IMAGE);
+	stub_put32(&fixture_wire, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+	stub_put64(&fixture_wire, FIXTURE_MIP_IMAGE);
+	stub_put32(&fixture_wire, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, 1U);
+	fixture_subresource(0U);
+	stub_put64(&fixture_wire, 2U);
+	for (index = 0U; index < 3U; index++)
+		stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 32U);
+	stub_put32(&fixture_wire, 32U);
+	stub_put32(&fixture_wire, 1U);
+	fixture_subresource(1U);
+	stub_put64(&fixture_wire, 2U);
+	for (index = 0U; index < 3U; index++)
+		stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 16U);
+	stub_put32(&fixture_wire, 16U);
+	stub_put32(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, VK_FILTER_LINEAR);
+
+	/* vkCmdClearColorImage: [image][layout][present][tag][4]{opaque red}[1][1]{colour, level 3, the remaining levels, layer 0, 1}. */
+	stub_put32(&fixture_wire, FIXTURE_CMD_CLEAR_COLOR_IMAGE);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, FIXTURE_CB0);
+	stub_put64(&fixture_wire, FIXTURE_MIP_IMAGE);
+	stub_put32(&fixture_wire, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 4U);
+	stub_put32(&fixture_wire, 0x3f800000U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0x3f800000U);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, VK_IMAGE_ASPECT_COLOR_BIT);
+	stub_put32(&fixture_wire, 3U);
+	stub_put32(&fixture_wire, VK_REMAINING_MIP_LEVELS);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 1U);
+
+	/* The copy of level 5 out to the destination buffer, then the end and the submission. */
+	fixture_level_copy(FIXTURE_CMD_COPY_IMAGE_TO_BUFFER, FIXTURE_DST_BUFFER, 5U, 1U, 64U);
+	fixture_command_buffer(FIXTURE_END_COMMAND_BUFFER, FIXTURE_CB0);
+	fixture_submit(FIXTURE_CB0, 0U);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 16U);
+	assert(stub_get32(stub_reply, 4U) == VK_SUCCESS);
+	assert(stub_get32(stub_reply, 12U) == VK_SUCCESS);
+
+	/* Six rectangles ran: the copy in, the blit, three level fills and the copy out. */
+	base = FIXTURE_STORAGE_VA + FIXTURE_MIP_OFFSET;
+	assert(stub_rect_calls == 6U);
+
+	/* The copy in writes level 2: 8x8 at row 32, column 16, with the image's pitch. */
+	assert(stub_rects[0].copy != 0);
+	assert(stub_rects[0].src.va == FIXTURE_STORAGE_VA + FIXTURE_SRC_OFFSET + 256U);
+	assert(stub_rects[0].dst.va == base + 32U * FIXTURE_MIP_PITCH + 16U * 4U);
+	assert(stub_rects[0].dst.width == 8U);
+	assert(stub_rects[0].dst.height == 8U);
+	assert(stub_rects[0].dst.pitch == FIXTURE_MIP_PITCH);
+	assert(stub_rects[0].dst_rect.w == 8U);
+
+	/* The blit reads all of level 0 and writes all of level 1, at row 32 of the same image. */
+	assert(stub_rects[1].copy != 0);
+	assert(stub_rects[1].src.va == base);
+	assert(stub_rects[1].src.width == 32U);
+	assert(stub_rects[1].src_rect.w == 32U);
+	assert(stub_rects[1].dst.va == base + 32U * FIXTURE_MIP_PITCH);
+	assert(stub_rects[1].dst.width == 16U);
+	assert(stub_rects[1].dst.pitch == FIXTURE_MIP_PITCH);
+	assert(stub_rects[1].dst_rect.h == 16U);
+
+	/* The clear fills levels 3, 4 and 5 whole: rows 40, 44 and 48 at column 16. */
+	assert(stub_rects[2].copy == 0);
+	assert(stub_rects[2].dst.va == base + 40U * FIXTURE_MIP_PITCH + 16U * 4U);
+	assert(stub_rects[2].dst_rect.w == 4U);
+	assert(stub_rects[2].clear[0] == 0x3f800000U);
+	assert(stub_rects[3].dst.va == base + 44U * FIXTURE_MIP_PITCH + 16U * 4U);
+	assert(stub_rects[3].dst_rect.w == 2U);
+	assert(stub_rects[4].dst.va == base + 48U * FIXTURE_MIP_PITCH + 16U * 4U);
+	assert(stub_rects[4].dst_rect.h == 1U);
+
+	/* The copy out reads level 5's one texel into the destination buffer. */
+	assert(stub_rects[5].copy != 0);
+	assert(stub_rects[5].src.va == base + 48U * FIXTURE_MIP_PITCH + 16U * 4U);
+	assert(stub_rects[5].dst.va == FIXTURE_STORAGE_VA + FIXTURE_DST_OFFSET + 64U);
+	assert(stub_rects[5].src_rect.w == 1U);
+
+	/* A copy into level 6, which the image lacks, fails the submission before any rectangle. */
+	stub_rect_calls = 0U;
+	stub_wire_begin(&fixture_wire);
+	fixture_begin(FIXTURE_CB0);
+	fixture_level_copy(FIXTURE_CMD_COPY_BUFFER_TO_IMAGE, FIXTURE_SRC_BUFFER, 6U, 1U, 0U);
+	fixture_command_buffer(FIXTURE_END_COMMAND_BUFFER, FIXTURE_CB0);
+	fixture_submit(FIXTURE_CB0, 0U);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 24U);
+	assert(stub_get32(stub_reply, 20U) == (uint32_t)VK_ERROR_INITIALIZATION_FAILED);
+	assert(stub_rect_calls == 0U);
+
+	/* Destroys the pool and the resources. */
+	stub_wire_begin(&fixture_wire);
+	fixture_destroy(FIXTURE_DESTROY_COMMAND_POOL, FIXTURE_POOL);
+	fixture_destroy(FIXTURE_DESTROY_IMAGE, FIXTURE_MIP_IMAGE);
+	fixture_destroy(FIXTURE_DESTROY_IMAGE, FIXTURE_IMAGE);
+	fixture_destroy(FIXTURE_DESTROY_BUFFER, FIXTURE_BUFFER);
+	fixture_destroy(FIXTURE_DESTROY_BUFFER, FIXTURE_SRC_BUFFER);
+	fixture_destroy(FIXTURE_DESTROY_BUFFER, FIXTURE_DST_BUFFER);
+	fixture_destroy(FIXTURE_FREE_MEMORY, FIXTURE_MEMORY);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 7U * 4U);
 
 	/* Closes the session; nothing stays allocated. */
 	stub_session_close();

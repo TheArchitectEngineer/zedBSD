@@ -25,10 +25,16 @@
  * request from inside the window; the release makes it leave, and the panel
  * is stopped through the reference's stop path.
  *
+ * A presentation returns once the flip has completed (FIFO), so a wait
+ * never waits.  A kernel built with I915_PRESENT_NO_VSYNC set does not wait
+ * for the vblank instead: the flip is armed and the presentation returns;
+ * a frame that comes before the armed flip has latched is drawn into the
+ * buffer that flip shows (the newest frame wins, as in a mailbox), and the
+ * copy may meet the latch, which tears.
+ *
  * XXX: one output, one plane, one lease at a time; a requested mode smaller
  * than the panel is shown scaled and centred, the display is never
- * re-timed.  Presentation is synchronous: it returns once the flip has
- * completed, so a wait never waits.  No hot-plug and no topology events.
+ * re-timed.  No hot-plug and no topology events.
  */
 
 #include "internal.h"
@@ -67,6 +73,15 @@
 #define I915_PRESENT_CHECKED_FRAMES	2U
 
 /*
+ * Whether a presentation returns without waiting for its flip (the build
+ * option I915_PRESENT_NO_VSYNC, default 0: FIFO, one flip per vblank and
+ * a wait for each).
+ */
+#ifndef I915_PRESENT_NO_VSYNC
+#define I915_PRESENT_NO_VSYNC		0
+#endif
+
+/*
  * The GPU copy of one shared frame into a panel buffer.
  *
  * Built on the asking thread (the kernels and the session's objects are made
@@ -89,6 +104,8 @@ static int i915_present_blit_build(void *ctx, uint64_t dst_va, uint32_t width, u
 static int i915_present_shared(struct i915_device *device, void *session, void *object, struct gpu_display_present *request);
 static int i915_present_window_serve(void *ctx);
 static void i915_present_check_frame(struct i915_display *display, const struct i915_worker_present *frame, struct i915_scanout *back, unsigned index);
+static struct i915_scanout *i915_present_target(struct i915_display *display, int *flip);
+static int i915_present_flip(struct i915_display *display, int publish);
 
 /*
  * Shows a CPU frame on the panel.
@@ -175,12 +192,16 @@ drv_i915_present_display_present(
 	uint32_t width;
 	uint32_t height;
 	uint32_t refresh;
+	uint64_t start;
 	int error;
 
 	owner_device = device;
 	display = owner_device->display;
 	rd = &display->rd;
 	storage = object;
+
+	/* The whole presentation is timed, the wait for the lease included. */
+	start = drv_i915_perf_now();
 
 	/* Checks the lease and the frame under the lease mutex. */
 	drv_i915_present_lease_init(display);
@@ -252,6 +273,10 @@ drv_i915_present_display_present(
 	/* Reports a failed presentation. */
 	if (error != 0)
 		return error;
+
+	/* Counts the presentation's time and logs the timing once a window is over. */
+	drv_i915_perf_add(&owner_device->perf, I915_PERF_PRESENT, start);
+	drv_i915_perf_report(&owner_device->perf, 0);
 
 	/* Succeeded: the frame is on the panel. */
 	return 0;
@@ -473,12 +498,13 @@ drv_i915_present_frame(
 	uint32_t x;
 	uint32_t y;
 	uint32_t pixel;
+	int flip;
 	int flip_error;
 
 	display = device->display;
 
-	/* The buffer the panel does not show. */
-	back = drv_i915_lcd_resident_back(display);
+	/* The buffer the frame goes into, and whether the panel must flip to it. */
+	back = i915_present_target(display, &flip);
 	if (back == NULL)
 		return EIO;
 
@@ -517,10 +543,14 @@ drv_i915_present_frame(
 		}
 	}
 
-	/* Shows the back buffer. */
-	flip_error = drv_i915_lcd_resident_flip(display);
-	if (flip_error != 0)
-		return EIO;
+	/* Shows the buffer: the CPU wrote it, so its cache lines are published first. */
+	if (flip) {
+		flip_error = i915_present_flip(display, 1);
+		if (flip_error != 0)
+			return EIO;
+	} else {
+		drv_i915_scanout_publish(back);
+	}
 
 	/* Succeeded: one more presentation completed. */
 	display->window.presents++;
@@ -545,14 +575,16 @@ drv_i915_present_blob_frame(
 	struct i915_scanout *back;
 	struct i915_scanout *first;
 	uint64_t batch_va;
+	uint64_t start;
 	unsigned index;
+	int flip;
 	int error;
 	int flip_error;
 
 	display = device->display;
 
-	/* The buffer the panel does not show. */
-	back = drv_i915_lcd_resident_back(display);
+	/* The buffer the frame goes into, and whether the panel must flip to it. */
+	back = i915_present_target(display, &flip);
 	if (back == NULL)
 		return EIO;
 
@@ -567,11 +599,13 @@ drv_i915_present_blob_frame(
 	if (back == first)
 		index = 0U;
 
-	/* Builds the copy and runs it in the session's context. */
+	/* Builds the copy and runs it in the session's context, timing both. */
+	start = drv_i915_perf_now();
 	batch_va = 0U;
 	error = frame->build(frame->build_ctx, display->window.map_va[index], back->width, back->height, back->pitch, &batch_va);
 	if (error == 0)
 		error = drv_i915_worker_run_batch(device, frame->context, batch_va);
+	drv_i915_perf_add(&device->perf, I915_PERF_PRESENT_COPY, start);
 
 	/* The first frames, as the CPU reads them after the GPU (source and panel buffer). */
 	if (error == 0 && display->window.presents < I915_PRESENT_CHECKED_FRAMES)
@@ -583,10 +617,15 @@ drv_i915_present_blob_frame(
 		return error;
 	}
 
-	/* Shows the back buffer. */
-	flip_error = drv_i915_lcd_resident_flip(display);
-	if (flip_error != 0)
-		return EIO;
+	/*
+	 * Shows the buffer.  Only the GPU wrote it, through an uncached
+	 * mapping, so no CPU cache line needs publishing.
+	 */
+	if (flip) {
+		flip_error = i915_present_flip(display, 0);
+		if (flip_error != 0)
+			return EIO;
+	}
 
 	/* Succeeded: one more presentation completed. */
 	display->window.presents++;
@@ -611,55 +650,20 @@ drv_i915_present_count(
 /*
  * Flips the panel to the back buffer of the resident run.
  *
- * Returns 0 once the new buffer is displayed and the old one free, EINVAL
- * when the panel is not up, or the flip's error (EIO when the flip did not
- * complete).
+ * What the CPU or the GPU wrote is made visible first.  Returns 0 once the
+ * new buffer is displayed and the old one free, EINVAL when the panel is
+ * not up, or the flip's error (EIO when the flip did not complete).
  */
 int
 drv_i915_lcd_resident_flip(
 	struct i915_display *display)
 {
-	struct i915_lcd_kernel *k;
-	struct i915_scanout *to;
-	struct i915_lcd_flip_result result;
 	int error;
 
-	k = &display->lk;
-
-	/* Only a panel that is up has a back buffer. */
-	if (!display->resident_up)
-		return EINVAL;
-
-	/* The back buffer, with what the CPU or the GPU wrote made visible. */
-	to = &display->resident_buf[display->resident_front ^ 1U];
-	drv_i915_scanout_publish(to);
-
-	/* Flips to it and waits for the completion. */
-	memset(&result, 0, sizeof(result));
-	error = drv_i915_lcd_modeset_flip(display, (uint32_t)to->surf, &result);
-	if (error != 0 || result.result != I915_LCD_FLIP_DONE) {
-		kern_logf("i915: resident display: flip to 0x%08x failed: rc=%d result=%d event_rc=%d live 0x%08x\n",
-		    (uint32_t)to->surf,
-		    error,
-		    result.result,
-		    result.event_rc,
-		    result.live_after);
-		return EIO;
-	}
-
-	/* The back buffer is the front one now. */
-	display->resident_front ^= 1U;
-	k->flips_done++;
-
-	/* The first flips are logged. */
-	if (k->flips_done <= 3U) {
-		kern_logf("i915: resident display: flip %u: surf 0x%08x -> 0x%08x | frame %u -> %u\n",
-		    k->flips_done,
-		    result.old_surf,
-		    result.new_surf,
-		    result.frame_before,
-		    result.frame_after);
-	}
+	/* Publishes the back buffer and flips to it, waiting for the completion. */
+	error = i915_present_flip(display, 1);
+	if (error != 0)
+		return error;
 
 	/* Succeeded: the new buffer is displayed. */
 	return 0;
@@ -690,6 +694,9 @@ i915_present_release_locked(
 	stop = "FAILED";
 	if (error == 0)
 		stop = "done";
+
+	/* Logs what the timing window holds so far. */
+	drv_i915_perf_report(&device->perf, 1);
 
 	kern_logf("i915: resident display: lease %llu released after %llu frame(s) (stop %s)\n",
 	    (unsigned long long)rd->lease,
@@ -781,6 +788,7 @@ i915_present_shared(
 	struct i915_gem_object *storage;
 	struct i915_present_blit blit;
 	struct i915_worker_present item;
+	uint64_t start;
 	int error;
 
 	owner = session;
@@ -810,7 +818,11 @@ i915_present_shared(
 	if (error != 0)
 		return error;
 
-	/* The worker maps the panel into the session's space and runs the copy in its render context. */
+	/*
+	 * The worker maps the panel into the session's space and runs the copy
+	 * in its render context, and arms the flip.  A presentation that waits
+	 * for its flip (FIFO) waits here, outside the worker.
+	 */
 	memset(&item, 0, sizeof(item));
 	item.context = &owner->contexts[I915_ENGINE_RCS0];
 	item.vm = owner->vm;
@@ -819,6 +831,15 @@ i915_present_shared(
 	error = drv_i915_worker_sync_display(device, I915_WORKER_SYNC_PRESENT_BLOB, &item);
 	if (error != 0)
 		return error;
+
+	/* FIFO: the presentation returns once its flip has latched. */
+	if (!I915_PRESENT_NO_VSYNC && device->display->resident_up) {
+		start = drv_i915_perf_now();
+		error = drv_i915_lcd_modeset_flip_wait(device->display);
+		drv_i915_perf_add(&device->perf, I915_PERF_PRESENT_FLIP, start);
+		if (error != 0)
+			return error;
+	}
 
 	/* Succeeded: the frame is on the panel. */
 	return 0;
@@ -922,4 +943,113 @@ i915_present_check_frame(
 	    back->width * back->height,
 	    hash_panel,
 	    back->cpu[(back->height / 2U) * (back->pitch / 4U) + back->width / 2U]);
+}
+
+/*
+ * Chooses the resident buffer a frame is drawn into, and whether the panel
+ * must then flip to it; NULL when the panel is not up.
+ *
+ * Normally it is the buffer the panel does not show.  Without the wait for
+ * the vblank, a flip may still be armed: the frame then replaces the one
+ * that flip shows, in the buffer it latches, and no new flip is needed.
+ */
+static struct i915_scanout *
+i915_present_target(
+	struct i915_display *display,
+	int *flip)
+{
+	struct i915_scanout *back;
+	int idle;
+
+	/* The panel shows its buffers only while it is up. */
+	back = drv_i915_lcd_resident_back(display);
+	if (back == NULL)
+		return NULL;
+
+	/* An armed flip that has not latched keeps the frame in the buffer it shows next. */
+	*flip = 1;
+	idle = drv_i915_lcd_modeset_flip_poll(display);
+	if (!idle) {
+		*flip = 0;
+		return &display->resident_buf[display->resident_front];
+	}
+
+	/* Nothing armed: the buffer the panel does not show. */
+	return back;
+}
+
+/*
+ * Flips the panel to the back buffer of the resident run, publishing the
+ * CPU's writes first when `publish` is set.
+ *
+ * The flip waits for its completion, or only arms it in a kernel built
+ * with I915_PRESENT_NO_VSYNC set; either way the back buffer is the front
+ * one afterwards.  Returns 0, EINVAL when the panel is not up, or EIO when
+ * the flip failed or did not complete.
+ */
+static int
+i915_present_flip(
+	struct i915_display *display,
+	int publish)
+{
+	struct i915_lcd_kernel *k;
+	struct i915_scanout *to;
+	struct i915_lcd_flip_result result;
+	uint64_t start;
+	int expected;
+	int error;
+
+	k = &display->lk;
+
+	/* Only a panel that is up has a back buffer. */
+	if (!display->resident_up)
+		return EINVAL;
+
+	/* The back buffer, with what the CPU wrote made visible. */
+	to = &display->resident_buf[display->resident_front ^ 1U];
+	if (publish) {
+		start = drv_i915_perf_now();
+		drv_i915_scanout_publish(to);
+		drv_i915_perf_add(&display->device->perf, I915_PERF_PRESENT_PUBLISH, start);
+	}
+
+	/*
+	 * Arms the flip; it latches at the next vblank.  The worker never waits
+	 * for it: a presentation that waits (FIFO) does so on the presenting
+	 * thread once the worker has handed the item back, so the worker can run
+	 * the next frame's rendering meanwhile.
+	 */
+	memset(&result, 0, sizeof(result));
+	start = drv_i915_perf_now();
+	expected = I915_LCD_FLIP_ARMED;
+	error = drv_i915_lcd_modeset_flip_nowait(display, (uint32_t)to->surf, &result);
+	drv_i915_perf_add(&display->device->perf, I915_PERF_PRESENT_FLIP, start);
+
+	/* Says why the flip failed. */
+	if (error != 0 || result.result != expected) {
+		kern_logf("i915: resident display: flip to 0x%08x failed: rc=%d result=%d event_rc=%d live 0x%08x\n",
+		    (uint32_t)to->surf,
+		    error,
+		    result.result,
+		    result.event_rc,
+		    result.live_after);
+		return EIO;
+	}
+
+	/* The back buffer is the front one now. */
+	display->resident_front ^= 1U;
+	k->flips_done++;
+
+	/* The first flips are logged. */
+	if (k->flips_done <= 3U) {
+		kern_logf("i915: resident display: flip %u: surf 0x%08x -> 0x%08x | frame %u -> %u\n",
+		    k->flips_done,
+		    result.old_surf,
+		    result.new_surf,
+		    result.frame_before,
+		    result.frame_after);
+	}
+
+	/* Succeeded: the new buffer is displayed, or armed to be at the next vblank. */
+	return 0;
 }

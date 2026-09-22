@@ -15,6 +15,12 @@
 #        plan/ws031/tests/vkloop-hw.sh "oracle -DI915_VK_REFERENCE_KERNELS=1"   (flags after the word)
 #        plan/ws031/tests/vkloop-hw.sh wayland         the zwl compositor and two wltest clients (FIFO 600 frames, then mailbox
 #                                                      with a swapchain recreate) in place of vkdemo; services in plan/ws031/tests/wayland/
+#        plan/ws031/tests/vkloop-hw.sh mview           the model viewer (zwl + mview, services in plan/ws031/tests/mview/) in place of vkdemo;
+#                                                      MVIEW_ARGS="--spin=30" adds viewer options
+#        CAPTURE=<vkdemo|wayland|mview> plan/ws031/tests/vkloop-hw.sh [display|wayland|mview]
+#                                                      the capture build (I915_TEST_CAPTURE=y: no LCD, presents copied into guest RAM);
+#                                                      plan/ws031/tests/i915-capture.py reads them over QMP on the 5330 and checks the
+#                                                      scenario; images and result.json land in /tmp/capture-last/
 #        plan/ws031/tests/vkloop-hw.sh test <scenario>  the i915 test build (I915_TESTS=y) running one scenario of
 #                                                      src/drivers/gpu/i915/tests/execution/runner.c after the device
 #                                                      start (e.g. ktest, eu, draw, r1, tex, t3, bl, lcdb, display_ktest);
@@ -44,6 +50,13 @@ case "$EXTRA" in wayland*)
 	WAYLAND_RUN=1
 	EXTRA="${EXTRA#wayland}" ;;
 esac
+MVIEW_RUN=0
+case "$EXTRA" in mview*)
+	MVIEW_RUN=1
+	EXTRA="${EXTRA#mview}" ;;
+esac
+# a capture run is the capture build (p014 A0)
+[ -z "${CAPTURE:-}" ] || I915_TEST_CAPTURE=y
 case "$EXTRA" in display*)
 	DISPLAY_RUN=1
 	EXTRA="${EXTRA#display}"
@@ -58,9 +71,12 @@ esac
 # XXX: the run is the QEMU passthrough, whose guest sees no OpRegion, so the kernel always carries the
 # test machine's captured VBT (I915_TEST_VBT=y, vendor/intel-vbt/).  Drop it once the GPU tests run on bare metal.
 I915_TEST_VBT=y
+# I915_TEST_CAPTURE=y (from the environment, default n): the capture display in place of the panel -- the LCD is not
+# brought up and every presentation is copied into guest RAM for the host's pmemsave (display/capture.c)
+I915_TEST_CAPTURE=${I915_TEST_CAPTURE:-n}
 mkdir -p build/resident
 # a change of flags or of the test build is not seen by make: force the rebuild and relink by hand
-FLAGS="$EXTRA|${I915_TESTS:-n}|${I915_TEST_ORACLE:-n}|vbt=$I915_TEST_VBT"
+FLAGS="$EXTRA|${I915_TESTS:-n}|${I915_TEST_ORACLE:-n}|vbt=$I915_TEST_VBT|capture=$I915_TEST_CAPTURE"
 [ -f build/resident/.vkloop-flags ] && [ "$(cat build/resident/.vkloop-flags)" = "$FLAGS" ] || {
 	touch src/drivers/gpu/i915/i915.c
 	# the scenario is read by the runner only
@@ -68,6 +84,8 @@ FLAGS="$EXTRA|${I915_TESTS:-n}|${I915_TEST_ORACLE:-n}|vbt=$I915_TEST_VBT"
 	# the test VBT is read by these only
 	touch src/drivers/gpu/i915/display/vbt.c src/drivers/gpu/i915/display/display.c
 	[ ! -f src/drivers/gpu/i915/tests/execution/ktest-display.c ] || touch src/drivers/gpu/i915/tests/execution/ktest-display.c
+	# the capture display is read by these only (display.c is touched above)
+	touch src/drivers/gpu/i915/display/capture.c
 }
 # the probe service as this run wants it; the file changes (and the cached image is rebuilt) only when its text does
 PROBE=build/resident/vkprobe1.gen
@@ -102,6 +120,21 @@ if [ "$WAYLAND_RUN" = 1 ]; then
 	done
 	RC_CONF=plan/ws031/tests/wayland/rc.conf
 fi
+if [ "$MVIEW_RUN" = 1 ]; then
+	# the compositor and the model viewer; the capture harness sends the input
+	FILES="--file /etc/service.d/vkwait1=$WAIT1 --file /etc/service.d/poweroff=plan/ws031/tests/poweroff"
+	# MVIEW_ARGS adds viewer options (e.g. MVIEW_ARGS=--spin=30 for the turning demonstration); the service
+	# file changes (and the cached image is rebuilt) only when its text does
+	MVIEW1=build/resident/mview1.gen
+	sed "s|^arguments=\(.*\)$|arguments=\1${MVIEW_ARGS:+ $MVIEW_ARGS}|" plan/ws031/tests/mview/mview1 > $MVIEW1.new
+	cmp -s $MVIEW1.new $MVIEW1 2>/dev/null || mv $MVIEW1.new $MVIEW1
+	rm -f $MVIEW1.new
+	FILES="$FILES --file /etc/service.d/mview1=$MVIEW1"
+	for n in zwl wlwait vkwait2; do
+		FILES="$FILES --file /etc/service.d/$n=plan/ws031/tests/mview/$n"
+	done
+	RC_CONF=plan/ws031/tests/mview/rc.conf
+fi
 # the image is rebuilt only when an input is newer than it: switching to an older rc.conf does not
 # count, so the chosen one is copied to one path whose file changes only when its text does
 RC_GEN=build/resident/rc-conf.gen
@@ -110,7 +143,7 @@ cmp -s $RC_GEN.new $RC_GEN 2>/dev/null || mv $RC_GEN.new $RC_GEN
 rm -f $RC_GEN.new
 RC_CONF=$RC_GEN
 make -j"$(nproc)" BUILD=build/resident "I915_TESTS=${I915_TESTS:-n}" "I915_TEST_ORACLE=${I915_TEST_ORACLE:-n}" \
-	"I915_TEST_VBT=$I915_TEST_VBT" \
+	"I915_TEST_VBT=$I915_TEST_VBT" "I915_TEST_CAPTURE=$I915_TEST_CAPTURE" \
 	"ZEDBSD_TEST_CPPFLAGS=-DGPU_IOCTL_TRACE=1 $EXTRA" \
 	ZEDBSD_TEST_RC_CONF=$RC_CONF "ZEDBSD_TEST_EXTRA_FILES=$FILES" \
 	ZEDBSD_TEST_IMAGE_TAG=vkprobe disk-image > /tmp/resident-build.log 2>&1 || {
@@ -122,7 +155,27 @@ printf '%s' "$FLAGS" > build/resident/.vkloop-flags
 # the iGPU goes back to vfio-pci if a Venus run left it on the host i915 driver (bigbang/igpu-mode.sh)
 ssh solaris10-man bigbang/igpu-mode.sh vfio >/dev/null || { echo "iGPU is not on vfio-pci"; exit 1; }
 scp -q build/resident/hdd-image.img solaris10-man:bigbang/guest-parity.img || exit 1
-ssh solaris10-man 'cd ~/bigbang && rm -f run-parity-serial.log && ./run-parity-vk.sh >/dev/null 2>&1; cp run-parity-serial.log vkloop-last.log'
+if [ -n "${CAPTURE:-}" ]; then
+	# QEMU with a QMP socket and USB input; the harness starts once the old serial log is gone
+	scp -q plan/ws031/tests/i915-capture.py solaris10-man:bigbang/i915-capture.py || exit 1
+	REF=
+	if [ "$CAPTURE" = mview ] && [ -d plan/ws031/temp/remote/p013-mview-009/evidence ]; then
+		ssh solaris10-man 'mkdir -p bigbang/mview-venus-ref'
+		scp -q plan/ws031/temp/remote/p013-mview-009/evidence/*.ppm solaris10-man:bigbang/mview-venus-ref/
+		REF=--reference=/home/awe/bigbang/mview-venus-ref
+	fi
+	ssh solaris10-man 'cd ~/bigbang && rm -f run-parity-serial.log && QMP=1 ./run-parity-vk.sh >/dev/null 2>&1; cp run-parity-serial.log vkloop-last.log' &
+	LAUNCHER=$!
+	sleep 5
+	ssh solaris10-man "sudo -n rm -rf bigbang/capture-out; sudo -n python3 bigbang/i915-capture.py $CAPTURE --output=/home/awe/bigbang/capture-out $REF; sudo -n chown -R awe: bigbang/capture-out" > /tmp/capture-harness.out 2>&1
+	wait $LAUNCHER
+	rm -rf /tmp/capture-last
+	scp -qr solaris10-man:bigbang/capture-out /tmp/capture-last
+	echo "--- capture $CAPTURE"
+	cat /tmp/capture-harness.out
+else
+	ssh solaris10-man 'cd ~/bigbang && rm -f run-parity-serial.log && ./run-parity-vk.sh >/dev/null 2>&1; cp run-parity-serial.log vkloop-last.log'
+fi
 scp -q solaris10-man:bigbang/vkloop-last.log /tmp/vkloop-last.log
 if [ -n "$SCENARIO" ]; then
 	echo "--- test $SCENARIO"
@@ -130,7 +183,7 @@ if [ -n "$SCENARIO" ]; then
 	grep -aE 'i915: (test |ktest|MCR-PROBE summary)|i915: .*(verdict|[A-Z0-9-]+ (PASS|FAIL|HANG|ERROR)[:( ]|[A-Z0-9-]+ cleanup|[A-Z0-9-]+ release:)' /tmp/vkloop-last.log | cut -c1-300 | head -100
 	echo "--- vkdemo"
 fi
-grep -anE 'i915: vk|gpu: ioctl|VKDEMO|vkdemo:|ZWL|WLTEST|wltest:|zwl:|resident|panic|fault|init: ' /tmp/vkloop-last.log | grep -v 'parity N0\|parity P\|expected_fault' | cut -c1-200 | head -60
+grep -anE 'i915: vk|i915: capture: (base|lease)|gpu: ioctl|VKDEMO|vkdemo:|ZWL|WLTEST|wltest:|zwl:|MVIEW (START|DONE|FAILED)|mview:|resident|panic|fault|init: ' /tmp/vkloop-last.log | grep -v 'parity N0\|parity P\|expected_fault' | cut -c1-200 | head -60
 if [ "$ORACLE" = 1 ]; then
 	python3 plan/ws031/handover/tools/vkdump_verify.py /tmp/vkloop-last.log plan/ws014/tests /tmp/vkframe1.ppm "${TIME_MS:-0}"
 fi

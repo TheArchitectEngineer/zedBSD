@@ -2602,6 +2602,7 @@ struct i915_lcd_flip_result {
 #define I915_LCD_FLIP_NOT_LATCHED 1       /* the event came but the live surface is not the new one: both kept */
 #define I915_LCD_FLIP_TIMEOUT     2       /* no completion: both kept */
 #define I915_LCD_FLIP_REFUSED     3       /* nothing written (not running, a flip stuck, same buffer, bad address) */
+#define I915_LCD_FLIP_ARMED       4       /* armed without waiting: latches at the next vblank, both kept until then */
 
 /*
  * The one picture on the panel (modeset.c).

@@ -1856,6 +1856,7 @@ present_record(
 		present_copy(job->command, job->chains[index], info->pImageIndices[index], job->queue->family, display);
 	}
 
+
 	/* Final recording failure occurs before any semaphore-consuming submit is attempted. */
 	error = vkEndCommandBuffer(job->command);
 	if (error != VK_SUCCESS)

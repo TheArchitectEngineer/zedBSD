@@ -34,6 +34,11 @@ struct sched {
 	int priority;
 	uint32_t quantum;
 	uint64_t wakeup_tick;
+#if SCHED_WAKE_LATENCY
+	/* Diagnostic: the counter value when the thread was last woken, and whether the waker shared its CPU. */
+	uint64_t woken_at;
+	unsigned woken_same_cpu;
+#endif
 	unsigned queue_kind;
 	hal_cpu_id_t cpu;
 	hal_cpu_id_t last_cpu;
@@ -41,6 +46,11 @@ struct sched {
 	struct thread *next;
 	struct thread *prev;
 };
+
+#if SCHED_WAKE_LATENCY
+/* Diagnostic: logs the distribution of wake-to-run latencies since the last report. */
+void sched_wake_latency_report(void);
+#endif
 
 struct sched_queue {
 	struct thread *head;

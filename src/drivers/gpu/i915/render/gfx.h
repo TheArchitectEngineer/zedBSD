@@ -21,12 +21,14 @@
  *                module, pipeline, semaphore; objects.c routes their
  *                commands
  *  - command.c   command pools and buffers, recording, vkQueueSubmit
- *  - draw.c      one recorded draw into state heaps and a batch, on the GPU
+ *  - draw.c      recorded draws into state heaps and the submission's
+ *                batch, on the GPU
  *
  * A command buffer is recorded as a list of operations, not as GPU
- * commands: clears and copies run between GPU batches, so the order of the
- * list is the order of execution and a submission is complete when
- * vkQueueSubmit replies.
+ * commands.  vkQueueSubmit turns the operations of its command buffers, in
+ * order, into one batch (clears and copies as rectangles, draws as draws,
+ * each with the flushes it needs in front of it), runs the batch once, and
+ * the submission is complete when vkQueueSubmit replies.
  */
 
 #ifndef DRIVERS_GPU_I915_RENDER_GFX_H
@@ -54,7 +56,7 @@ struct i915_wire_writer;
 
 /* How many vertex buffer bindings and vertex attributes one pipeline holds. */
 #define I915_GFX_MAX_VERTEX_BINDINGS	4U
-#define I915_GFX_MAX_VERTEX_ATTRIBUTES	8U
+#define I915_GFX_MAX_VERTEX_ATTRIBUTES	16U
 
 /* How many bytes of push constants a command buffer carries. */
 #define I915_GFX_PUSH_BYTES		128U
@@ -78,7 +80,12 @@ enum i915_gfx_op_kind {
 	I915_GFX_OP_BIND_DESCRIPTOR_SET,
 	I915_GFX_OP_PUSH_CONSTANTS,
 	I915_GFX_OP_DRAW,
-	I915_GFX_OP_CLEAR_ATTACHMENT
+	I915_GFX_OP_CLEAR_ATTACHMENT,
+	I915_GFX_OP_BIND_INDEX_BUFFER,
+	I915_GFX_OP_DRAW_INDEXED,
+	I915_GFX_OP_SET_VIEWPORT,
+	I915_GFX_OP_SET_SCISSOR,
+	I915_GFX_OP_COPY_BUFFER
 };
 
 /*
@@ -119,10 +126,13 @@ struct i915_gfx_buffer {
 };
 
 /*
- * One VkImage: a linear 2D level of one layer in an allocation.
+ * One VkImage: a linear 2D image of one layer in an allocation, with one
+ * or more mip levels.
  *
  * A depth image is laid out in whole Y tiles, so its pitch and height are
- * rounded up; every other image is linear rows of width * 4 bytes.
+ * rounded up; a colour image of one level is linear rows of width * 4
+ * bytes.  The levels of a mipmapped colour image share one pitch and lie in
+ * the hardware's 2D mip layout (image.c, drv_i915_gfx_image_layout()).
  */
 struct i915_gfx_image {
 	/* The VkFormat, the extent and the usage the image was created with. */
@@ -135,22 +145,31 @@ struct i915_gfx_image {
 	uint32_t pitch;
 	uint64_t bytes;
 
+	/* The mip levels, at least one. */
+	uint32_t levels;
+
 	/* The allocation and the offset the image is bound at; NULL until bound. */
 	struct i915_gfx_memory *memory;
 	uint64_t offset;
 };
 
 /*
- * One VkImageView: the whole image, in the format the view was created with.
+ * One VkImageView: a range of the image's mip levels, in the format the
+ * view was created with.
  */
 struct i915_gfx_view {
 	/* The image the view shows, and the view's VkFormat. */
 	struct i915_gfx_image *image;
 	uint32_t format;
+
+	/* The first mip level the view shows and how many, at least one. */
+	uint32_t base_level;
+	uint32_t level_count;
 };
 
 /*
- * One VkSampler: the filters and the address modes a texture read uses.
+ * One VkSampler: the filters, the level selection and the address modes a
+ * texture read uses.
  */
 struct i915_gfx_sampler {
 	/* The magnification and minification filters (VkFilter). */
@@ -160,6 +179,14 @@ struct i915_gfx_sampler {
 	/* The address modes along u and v (VkSamplerAddressMode). */
 	uint32_t address_u;
 	uint32_t address_v;
+
+	/* How the level is chosen and blended between levels (VkSamplerMipmapMode). */
+	uint32_t mipmap_mode;
+
+	/* The LOD bias and the LOD range, as float bits. */
+	uint32_t lod_bias;
+	uint32_t min_lod;
+	uint32_t max_lod;
 };
 
 /*
@@ -184,10 +211,17 @@ struct i915_gfx_dset {
 	/* The layout the set was allocated with. */
 	struct i915_gfx_dsl *layout;
 
-	/* The view and the sampler of each binding, indexed by binding number. */
+	/*
+	 * What each binding, indexed by binding number, was updated to: the
+	 * view and the sampler of a combined image sampler, or the buffer and
+	 * the range of a uniform buffer.
+	 */
 	struct {
 		struct i915_gfx_view *view;
 		struct i915_gfx_sampler *sampler;
+		struct i915_gfx_buffer *buffer;
+		uint64_t offset;
+		uint64_t range;
 	} slots[I915_GFX_MAX_BINDINGS];
 };
 
@@ -269,6 +303,14 @@ struct i915_gfx_pipeline {
 	/* The scissor rectangle. */
 	VkRect2D scissor;
 
+	/*
+	 * Nonzero when the viewport or the scissor is dynamic state: a draw then
+	 * takes the one vkCmdSetViewport or vkCmdSetScissor recorded before it,
+	 * and the pipeline's own is not used.
+	 */
+	int dynamic_viewport;
+	int dynamic_scissor;
+
 	/* The rasterization state. */
 	uint32_t cull_mode;
 	uint32_t front_face;
@@ -278,8 +320,38 @@ struct i915_gfx_pipeline {
 	uint32_t depth_write;
 	uint32_t depth_compare;
 
+	/*
+	 * The colour blend of attachment 0: whether it is on, the VkBlendFactor
+	 * and VkBlendOp of the colour and of the alpha, and the blend constants
+	 * as float bits.  All zero is blending off.
+	 */
+	uint32_t blend_enable;
+	uint32_t blend_src_color;
+	uint32_t blend_dst_color;
+	uint32_t blend_color_op;
+	uint32_t blend_src_alpha;
+	uint32_t blend_dst_alpha;
+	uint32_t blend_alpha_op;
+	uint32_t blend_constants[4];
+
+	/*
+	 * The colour components attachment 0 does NOT write, as the complement
+	 * of its VkColorComponentFlags; zero writes every component.
+	 */
+	uint32_t color_write_disable;
+
 	/* Nonzero once the kernels are prepared. */
 	int kernels_ready;
+
+	/*
+	 * Where the kernels were last placed: the session record (struct
+	 * i915_gfx_session) whose kernel object holds them, the instruction
+	 * window and the window generation.  Zero until the first draw; a
+	 * record, window or generation that no longer matches places them again.
+	 */
+	const void *kernel_owner;
+	uint32_t kernel_window;
+	uint32_t kernel_generation;
 
 	/* The kernels the executor's compiler made; NULL in a reference-kernel build. */
 	struct i915_shader_binary *vs_binary;
@@ -349,10 +421,12 @@ struct i915_gfx_op {
 			uint32_t filter;
 		} blit;
 
-		/* A clear of a whole image to four words. */
+		/* A clear of a range of an image's levels to four words. */
 		struct {
 			struct i915_gfx_image *image;
 			uint32_t words[4];
+			uint32_t base_level;
+			uint32_t level_count;
 		} clear_image;
 
 		/* The start of a render pass and the clears its attachments load with. */
@@ -397,6 +471,35 @@ struct i915_gfx_op {
 			uint32_t first_instance;
 		} draw;
 
+		/* An index buffer bind: the buffer, the offset and the VkIndexType. */
+		struct {
+			struct i915_gfx_buffer *buffer;
+			uint64_t offset;
+			uint32_t type;
+		} index;
+
+		/* An indexed draw. */
+		struct {
+			uint32_t index_count;
+			uint32_t instance_count;
+			uint32_t first_index;
+			int32_t vertex_offset;
+			uint32_t first_instance;
+		} draw_indexed;
+
+		/* A dynamic viewport: x, y, width, height, minDepth and maxDepth as float bits. */
+		uint32_t viewport[6];
+
+		/* A dynamic scissor rectangle. */
+		VkRect2D scissor;
+
+		/* A copy of one region between two buffers. */
+		struct {
+			struct i915_gfx_buffer *src;
+			struct i915_gfx_buffer *dst;
+			VkBufferCopy region;
+		} buffer_copy;
+
 		/* A clear of one rectangle of the colour or the depth attachment of the pass in progress. */
 		struct {
 			uint32_t is_depth;
@@ -433,6 +536,47 @@ struct i915_gfx_draw_state {
 
 	/* The push constants. */
 	uint8_t push[I915_GFX_PUSH_BYTES];
+
+	/* The bound index buffer, its offset and its VkIndexType. */
+	struct {
+		struct i915_gfx_buffer *buffer;
+		uint64_t offset;
+		uint32_t type;
+	} index;
+
+	/* The viewport vkCmdSetViewport set, as float bits; valid once viewport_set is nonzero. */
+	uint32_t viewport[6];
+	int viewport_set;
+
+	/* The scissor vkCmdSetScissor set; valid once scissor_set is nonzero. */
+	VkRect2D scissor;
+	int scissor_set;
+};
+
+/*
+ * What one draw asks for: the counts and the first elements of a vkCmdDraw
+ * or a vkCmdDrawIndexed.
+ *
+ * It lives on the stack of the command buffer execution for one draw.
+ */
+struct i915_gfx_draw_args {
+	/* Nonzero for an indexed draw, which reads its vertices through the bound index buffer. */
+	int indexed;
+
+	/* The vertices of a draw, or the indices of an indexed draw. */
+	uint32_t count;
+
+	/* The instances. */
+	uint32_t instance_count;
+
+	/* The first vertex, or the first index. */
+	uint32_t first;
+
+	/* What an indexed draw adds to every index; zero for a draw. */
+	int32_t vertex_offset;
+
+	/* The first instance. */
+	uint32_t first_instance;
 };
 
 /*
@@ -450,21 +594,39 @@ int drv_i915_gfx_rec_dispatch(struct i915_render_session *session, uint32_t opco
 uint8_t *drv_i915_gfx_memory_cpu(struct i915_gfx_memory *memory, uint64_t offset, uint64_t bytes);
 uint64_t drv_i915_gfx_memory_va(struct i915_gfx_memory *memory, uint64_t offset);
 
-/* Releases what the session's draws kept: the state and batch objects (draw.c). */
+/*
+ * Lays an image out from its format, extent and levels, and describes one
+ * of its levels as a linear surface (image.c).
+ */
+int drv_i915_gfx_image_layout(struct i915_gfx_image *image);
+int drv_i915_gfx_image_level(const struct i915_gfx_image *image, uint32_t level, struct i915_gfx_surface *surface);
+
+/* Releases what the session's draws kept: the state, batch and kernel objects (draw.c). */
 void drv_i915_gfx_session_close(struct i915_render_session *session);
 
 /* Prepares and releases a pipeline's kernels (pipeline-prepare.c). */
 int drv_i915_gfx_pipeline_prepare(struct i915_render_session *session, struct i915_gfx_pipeline *pipeline);
 void drv_i915_gfx_pipeline_release(struct i915_gfx_pipeline *pipeline);
 
-/* Runs one draw to its end on the GPU (draw.c). */
-int drv_i915_gfx_draw(struct i915_render_session *session, const struct i915_gfx_draw_state *state, uint32_t vertex_count, uint32_t instance_count, uint32_t first_vertex, uint32_t first_instance);
+/*
+ * Records one draw or indexed draw into the submission's batch, or runs it
+ * to its end outside a submission (draw.c).
+ */
+int drv_i915_gfx_draw(struct i915_render_session *session, const struct i915_gfx_draw_state *state, const struct i915_gfx_draw_args *args);
+
+/*
+ * Opens the batch of a submission, and runs what it recorded and closes it
+ * (draw.c).
+ */
+int drv_i915_gfx_submit_begin(struct i915_render_session *session);
+int drv_i915_gfx_submit_end(struct i915_render_session *session);
 
 /*
  * One rectangle on the GPU (blit.c): a copy of src_rect of `src` into
  * dst_rect of `dst`, scaled when the sizes differ with `linear` selecting
  * the filter, or, with src NULL, a fill of dst_rect with the four float
- * words of `clear`.  drv_i915_gfx_rect runs it to its end;
+ * words of `clear`.  drv_i915_gfx_rect records it into the submission's
+ * batch, or runs it to its end outside a submission;
  * drv_i915_gfx_rect_build only writes the session's state and batch objects
  * and returns the batch address, for a caller that runs the batch itself
  * (the display, on the serving thread).

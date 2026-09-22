@@ -143,15 +143,15 @@ test_body_classification(void)
 	static const uint32_t op_line[4] = { (4U << 16) | 8U, 5U, 1U, 1U };
 	/* OpFNegate %6 = -%7, where %7 is not a float value (nothing defines it): refused, not skipped */
 	static const uint32_t op_fnegate[4] = { (4U << 16) | 127U, 1U, 6U, 7U };
-	/* OpFDiv: never lowered */
+	/* OpFDiv of %7, which is not a float value (nothing defines it): refused, not skipped */
 	static const uint32_t op_fdiv[5] = { (5U << 16) | 136U, 1U, 6U, 7U, 8U };
-	/* OpBranch: control flow */
+	/* OpBranch back to the block it ends (%4): a loop, which is not lowered */
 	static const uint32_t op_branch[2] = { (2U << 16) | 249U, 4U };
 	/* OpFunctionCall */
 	static const uint32_t op_call[4] = { (4U << 16) | 57U, 1U, 6U, 7U };
 	/* an instruction whose length runs past the module */
 	static const uint32_t op_overrun[1] = { (9U << 16) | 129U };
-	/* OpExtInst with an instruction other than Sin/Cos/InverseSqrt (Tan = 15) */
+	/* OpExtInst with a GLSL.std.450 instruction that is not lowered (Tan = 15) */
 	static const uint32_t op_tan[6] = { (6U << 16) | 12U, 1U, 6U, 9U, 15U, 7U };
 
 	assert(parse_body_instruction(op_line, 4U, &diag) == 0);

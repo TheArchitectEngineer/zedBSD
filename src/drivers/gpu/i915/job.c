@@ -17,6 +17,7 @@
 
 #include "i915.h"
 #include "job.h"
+#include "perf.h"
 #include "request-queue.h"
 #include "session.h"
 #include "worker.h"
@@ -170,6 +171,7 @@ i915_job_commit(
 	 */
 	request->state = I915_REQUEST_QUEUED;
 	session->pending_requests--;
+	request->queued_at = drv_i915_perf_now();
 	drv_i915_request_queue(engine, request);
 	drv_i915_worker_kick(engine);
 

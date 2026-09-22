@@ -30,5 +30,6 @@ uint32_t drv_i915_float_add(uint32_t augend, uint32_t addend);
 uint32_t drv_i915_float_sub(uint32_t minuend, uint32_t subtrahend);
 uint32_t drv_i915_float_from_u32(uint32_t value);
 uint32_t drv_i915_float_ratio(uint32_t numerator, uint32_t denominator);
+int32_t drv_i915_float_to_fixed(uint32_t value, uint32_t fraction_bits, int32_t minimum, int32_t maximum);
 
 #endif

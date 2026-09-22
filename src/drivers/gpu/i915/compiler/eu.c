@@ -20,8 +20,12 @@
  * (brw_lower_scoreboard.cpp).  This encoder says the one thing that is always
  * true of its output: every instruction depends on the one before it.
  *
- *   - an in-order instruction (MOV, ADD, MUL) waits for the previous in-order
- *     instruction (@1);
+ *   - an in-order instruction (MOV, ADD, MUL, SEL, CMP, AND, OR, XOR, NOT,
+ *     SHL, SHR, ASR, RNDD, RNDZ, FRC, WHILE) waits for the previous in-order
+ *     instruction (@1); a flag a CMP writes is read only by a later in-order
+ *     instruction, so the same wait covers it.  The wait counts back over
+ *     the instructions as they ran, so the first instruction of a loop,
+ *     reached again from the WHILE, still waits for the one before it;
  *   - an out-of-order instruction (MATH, SEND) waits the same way, names
  *     itself with token 0 and is followed by a sync.nop that waits until it
  *     has written its destination (or, having none, has read its sources), so
@@ -77,9 +81,22 @@
 /* The extended-descriptor bits that are not encodable (they held the SFID once). */
 #define I915_EU_EX_DESC_LOW_MASK	0x3fU
 
+/* The hardware conditional modifier of each enum i915_eu_cond, in its order. */
+static const uint32_t i915_eu_cond_bits[I915_EU_COND_COUNT] = {
+	EU_COND_Z,
+	EU_COND_NZ,
+	EU_COND_G,
+	EU_COND_GE,
+	EU_COND_L,
+	EU_COND_LE,
+};
+
 static struct i915_eu_reg i915_eu_grf_typed(uint32_t nr, uint32_t type);
 static uint32_t *i915_eu_reserve(struct i915_eu_buf *buffer);
 static void i915_eu_common(struct i915_eu_buf *buffer, uint32_t *inst, uint32_t opcode, int order);
+static void i915_eu_flag(uint32_t *inst, enum i915_eu_flag flag);
+static void i915_eu_alu2_common(struct i915_eu_buf *buffer, int predicated, enum i915_eu_flag flag, enum i915_eu_alu op, struct i915_eu_reg dst, struct i915_eu_reg src0, struct i915_eu_reg src1);
+static void i915_eu_send_common(struct i915_eu_buf *buffer, int predicated, enum i915_eu_flag flag, struct i915_eu_reg dst, struct i915_eu_reg src0, struct i915_eu_reg src1, uint32_t sfid, uint32_t descriptor, uint32_t ex_descriptor, int conditional, int end_of_thread);
 static void i915_eu_sync(struct i915_eu_buf *buffer, uint32_t swsb);
 static void i915_eu_dst(uint32_t *inst, struct i915_eu_reg reg);
 static void i915_eu_src0(uint32_t *inst, struct i915_eu_reg reg);
@@ -172,6 +189,60 @@ drv_i915_eu_grf_ud(
 }
 
 /*
+ * Names a general register as eight signed 32-bit words.
+ *
+ * This is how a Boolean (all ones for true, zero for false) is read.
+ */
+struct i915_eu_reg
+drv_i915_eu_grf_d(
+	uint32_t nr)
+{
+	struct i915_eu_reg reg;
+
+	/* Builds eight signed-word channels of the register. */
+	reg = i915_eu_grf_typed(nr, EU_TYPE_D);
+
+	/* Succeeded: the operand is a plain SIMD8 signed-word register. */
+	return reg;
+}
+
+/*
+ * Names the low (or, with `high`, the high) 16 bits of each 32-bit channel
+ * of a general register, as eight unsigned words.
+ *
+ * The region is <16;8,2>:uw from byte 0 or 2: how Mesa reads the halves of
+ * the second source when it lowers a 32-bit integer multiply to two 32 x
+ * 16-bit ones (brw_lower_integer_multiplication.cpp), which Tiger Lake needs
+ * because it has no 32 x 32-bit multiply.
+ */
+struct i915_eu_reg
+drv_i915_eu_grf_uw_half(
+	uint32_t nr,
+	int high)
+{
+	struct i915_eu_reg reg;
+
+	/* Names the register as unsigned words. */
+	memset(&reg, 0, sizeof(reg));
+	reg.file = EU_FILE_GRF;
+	reg.nr = nr;
+	reg.type = EU_TYPE_UW;
+
+	/* The high half starts two bytes into each channel. */
+	reg.subnr = 0U;
+	if (high != 0)
+		reg.subnr = 2U;
+
+	/* Every second word: eight of them across the register. */
+	reg.vstride = EU_VSTRIDE_16;
+	reg.width = EU_WIDTH_8;
+	reg.hstride = EU_HSTRIDE_2;
+
+	/* Succeeded: the operand reads one half of each channel. */
+	return reg;
+}
+
+/*
  * Names one float of a general register, replicated to every channel.
  *
  * The float sits at byte `subnr` and is read with region <0;1,0>: how a value
@@ -217,6 +288,22 @@ drv_i915_eu_negate(
 }
 
 /*
+ * Returns the same operand read as its absolute value.
+ *
+ * It is a source modifier of a float operand, applied before any negation.
+ */
+struct i915_eu_reg
+drv_i915_eu_abs(
+	struct i915_eu_reg reg)
+{
+	/* The absolute value of an absolute value is the same. */
+	reg.absolute = 1U;
+
+	/* Succeeded: the operand now carries the absolute modifier. */
+	return reg;
+}
+
+/*
  * Names a 32-bit float immediate operand from its bits.
  */
 struct i915_eu_reg
@@ -251,6 +338,25 @@ drv_i915_eu_imm_d(
 	reg.immediate = value;
 
 	/* Succeeded: the operand is an integer immediate. */
+	return reg;
+}
+
+/*
+ * Names a 32-bit unsigned integer immediate operand.
+ */
+struct i915_eu_reg
+drv_i915_eu_imm_ud(
+	uint32_t value)
+{
+	struct i915_eu_reg reg;
+
+	/* Carries the integer bits unchanged. */
+	memset(&reg, 0, sizeof(reg));
+	reg.file = EU_FILE_IMM;
+	reg.type = EU_TYPE_UD;
+	reg.immediate = value;
+
+	/* Succeeded: the operand is an unsigned integer immediate. */
 	return reg;
 }
 
@@ -298,10 +404,10 @@ drv_i915_eu_mov(
 }
 
 /*
- * Encodes a two-source arithmetic instruction.
+ * Encodes a two-source arithmetic, logic or shift instruction.
  *
- * Only add and multiply are encoded; any other operation, and an immediate
- * first source, poison the buffer.
+ * Add, multiply, and, or, exclusive or and the three shifts are encoded;
+ * any other operation, and an immediate first source, poison the buffer.
  */
 void
 drv_i915_eu_alu2(
@@ -311,15 +417,102 @@ drv_i915_eu_alu2(
 	struct i915_eu_reg src0,
 	struct i915_eu_reg src1)
 {
+	/* Encodes the instruction for every channel of the mask. */
+	i915_eu_alu2_common(buffer, 0, I915_EU_FLAG_F0_0, op, dst, src0, src1);
+}
+
+/*
+ * Encodes a two-source instruction for the channels whose bit of `flag` is
+ * set.
+ *
+ * The operands are those of drv_i915_eu_alu2(); every other channel keeps
+ * its destination.  An integer division steps this way: a channel whose
+ * remainder reached the divisor subtracts it and sets its quotient bit.
+ */
+void
+drv_i915_eu_alu2_masked(
+	struct i915_eu_buf *buffer,
+	enum i915_eu_flag flag,
+	enum i915_eu_alu op,
+	struct i915_eu_reg dst,
+	struct i915_eu_reg src0,
+	struct i915_eu_reg src1)
+{
+	/* A flag outside the two flag registers is refused. */
+	if (flag >= I915_EU_FLAG_COUNT) {
+		buffer->error = 1;
+		return;
+	}
+
+	/* Encodes the instruction predicated on the flag. */
+	i915_eu_alu2_common(buffer, 1, flag, op, dst, src0, src1);
+}
+
+/*
+ * Encodes a one-source operation other than a move: not, round down, round
+ * toward zero or fraction.
+ *
+ * Mesa lowers ffloor to RNDD, ftrunc to RNDZ, ffract to FRC and inot to NOT
+ * (brw_fs_nir.cpp).  An operation outside the enum poisons the buffer.
+ */
+void
+drv_i915_eu_alu1(
+	struct i915_eu_buf *buffer,
+	enum i915_eu_unary op,
+	struct i915_eu_reg dst,
+	struct i915_eu_reg src)
+{
 	uint32_t *inst;
 	uint32_t opcode;
 
-	/* Only add and multiply are encoded at the baseline; others are refused. */
-	if (op == I915_EU_ADD) {
-		opcode = EU_OP_ADD;
-	} else if (op == I915_EU_MUL) {
-		opcode = EU_OP_MUL;
+	/* Picks the hardware opcode of the operation. */
+	if (op == I915_EU_NOT) {
+		opcode = EU_OP_NOT;
+	} else if (op == I915_EU_RNDD) {
+		opcode = EU_OP_RNDD;
+	} else if (op == I915_EU_FRC) {
+		opcode = EU_OP_FRC;
+	} else if (op == I915_EU_RNDZ) {
+		opcode = EU_OP_RNDZ;
 	} else {
+		buffer->error = 1;
+		return;
+	}
+
+	/* Reserves the instruction; a poisoned or full buffer takes nothing. */
+	inst = i915_eu_reserve(buffer);
+	if (inst == NULL)
+		return;
+
+	/* Encodes an in-order instruction and its two operands. */
+	i915_eu_common(buffer, inst, opcode, I915_EU_IN_ORDER);
+	i915_eu_dst(inst, dst);
+	i915_eu_src0(inst, src);
+}
+
+/*
+ * Encodes a comparison.
+ *
+ * Each channel's bit of `flag` becomes the result of `src0 cond src1`, and
+ * a register destination receives all ones for true and zero for false.
+ * With `predicated`, only the channels whose bit of `flag` is already set
+ * are compared, so a cleared bit stays cleared: how a discard keeps the
+ * pixels it has already discarded (Mesa's demote, brw_fs_nir.cpp).
+ */
+void
+drv_i915_eu_cmp(
+	struct i915_eu_buf *buffer,
+	enum i915_eu_cond cond,
+	enum i915_eu_flag flag,
+	int predicated,
+	struct i915_eu_reg dst,
+	struct i915_eu_reg src0,
+	struct i915_eu_reg src1)
+{
+	uint32_t *inst;
+
+	/* A test outside the enum, or a flag outside the two flag registers, is refused. */
+	if (cond >= I915_EU_COND_COUNT || flag >= I915_EU_FLAG_COUNT) {
 		buffer->error = 1;
 		return;
 	}
@@ -335,11 +528,151 @@ drv_i915_eu_alu2(
 	if (inst == NULL)
 		return;
 
-	/* Encodes an in-order arithmetic instruction and its three operands. */
-	i915_eu_common(buffer, inst, opcode, I915_EU_IN_ORDER);
+	/* Encodes an in-order comparison, the flag it writes and the test. */
+	i915_eu_common(buffer, inst, EU_OP_CMP, I915_EU_IN_ORDER);
+	i915_eu_flag(inst, flag);
+	i915_eu_set(inst, EU_COND_MODIFIER_HI, EU_COND_MODIFIER_LO, i915_eu_cond_bits[cond]);
+
+	/* A predicated comparison reads the same flag it writes. */
+	if (predicated != 0)
+		i915_eu_set(inst, EU_PRED_CONTROL_HI, EU_PRED_CONTROL_LO, EU_PREDICATE_NORMAL);
+
+	/* Encodes the operands. */
 	i915_eu_dst(inst, dst);
 	i915_eu_src0(inst, src0);
 	i915_eu_src1(inst, src1);
+}
+
+/*
+ * Encodes a minimum or a maximum: SEL with a conditional modifier.
+ *
+ * `cond` LT keeps the smaller source and GE the larger one, as Mesa's
+ * emit_minmax() lowers fmin and fmax (brw_builder.h); no flag is involved.
+ */
+void
+drv_i915_eu_minmax(
+	struct i915_eu_buf *buffer,
+	enum i915_eu_cond cond,
+	struct i915_eu_reg dst,
+	struct i915_eu_reg src0,
+	struct i915_eu_reg src1)
+{
+	uint32_t *inst;
+
+	/* Only the minimum and the maximum form are encoded. */
+	if (cond != I915_EU_COND_LT && cond != I915_EU_COND_GE) {
+		buffer->error = 1;
+		return;
+	}
+
+	/* The hardware has one immediate slot, and it belongs to the second source. */
+	if (src0.file == EU_FILE_IMM) {
+		buffer->error = 1;
+		return;
+	}
+
+	/* Reserves the instruction; a poisoned or full buffer takes nothing. */
+	inst = i915_eu_reserve(buffer);
+	if (inst == NULL)
+		return;
+
+	/* Encodes an in-order selection with its test and its operands. */
+	i915_eu_common(buffer, inst, EU_OP_SEL, I915_EU_IN_ORDER);
+	i915_eu_set(inst, EU_COND_MODIFIER_HI, EU_COND_MODIFIER_LO, i915_eu_cond_bits[cond]);
+	i915_eu_dst(inst, dst);
+	i915_eu_src0(inst, src0);
+	i915_eu_src1(inst, src1);
+}
+
+/*
+ * Encodes a per-channel selection: SEL predicated on a flag.
+ *
+ * A channel whose bit of `flag` is set takes `src0`, any other `src1`.
+ * With integer operands the selected bits are copied unchanged.
+ */
+void
+drv_i915_eu_select(
+	struct i915_eu_buf *buffer,
+	enum i915_eu_flag flag,
+	struct i915_eu_reg dst,
+	struct i915_eu_reg src0,
+	struct i915_eu_reg src1)
+{
+	uint32_t *inst;
+
+	/* A flag outside the two flag registers is refused. */
+	if (flag >= I915_EU_FLAG_COUNT) {
+		buffer->error = 1;
+		return;
+	}
+
+	/* The hardware has one immediate slot, and it belongs to the second source. */
+	if (src0.file == EU_FILE_IMM) {
+		buffer->error = 1;
+		return;
+	}
+
+	/* Reserves the instruction; a poisoned or full buffer takes nothing. */
+	inst = i915_eu_reserve(buffer);
+	if (inst == NULL)
+		return;
+
+	/* Encodes an in-order selection predicated on the flag, and its operands. */
+	i915_eu_common(buffer, inst, EU_OP_SEL, I915_EU_IN_ORDER);
+	i915_eu_flag(inst, flag);
+	i915_eu_set(inst, EU_PRED_CONTROL_HI, EU_PRED_CONTROL_LO, EU_PREDICATE_NORMAL);
+	i915_eu_dst(inst, dst);
+	i915_eu_src0(inst, src0);
+	i915_eu_src1(inst, src1);
+}
+
+/*
+ * Loads a flag subregister from the 16-bit word at byte `subnr` of general
+ * register `nr`.
+ *
+ * It is a SIMD1 move outside the channel mask, the way Mesa loads the
+ * dispatched pixels of a fragment thread into the discard flag
+ * (brw_compile_fs.cpp).
+ */
+void
+drv_i915_eu_flag_load(
+	struct i915_eu_buf *buffer,
+	enum i915_eu_flag flag,
+	uint32_t nr,
+	uint32_t subnr)
+{
+	struct i915_eu_reg dst;
+	struct i915_eu_reg src;
+	uint32_t *inst;
+
+	/* A flag outside the two flag registers is refused. */
+	if (flag >= I915_EU_FLAG_COUNT) {
+		buffer->error = 1;
+		return;
+	}
+
+	/* The flag register and the byte of its subregister, as a 16-bit destination. */
+	memset(&dst, 0, sizeof(dst));
+	dst.file = EU_FILE_ARF;
+	dst.nr = EU_ARF_FLAG + (uint32_t)flag / 2U;
+	dst.subnr = ((uint32_t)flag % 2U) * 2U;
+	dst.type = EU_TYPE_UW;
+
+	/* The word of the general register, read once for the one channel. */
+	src = drv_i915_eu_grf_scalar(nr, subnr);
+	src.type = EU_TYPE_UW;
+
+	/* Reserves the instruction; a poisoned or full buffer takes nothing. */
+	inst = i915_eu_reserve(buffer);
+	if (inst == NULL)
+		return;
+
+	/* Encodes an in-order move, then narrows it to one channel outside the mask. */
+	i915_eu_common(buffer, inst, EU_OP_MOV, I915_EU_IN_ORDER);
+	i915_eu_set(inst, EU_EXEC_SIZE_HI, EU_EXEC_SIZE_LO, EU_EXEC_SIZE_1);
+	i915_eu_bit(inst, EU_NO_MASK_BIT, 1U);
+	i915_eu_dst(inst, dst);
+	i915_eu_src0(inst, src);
 }
 
 /*
@@ -394,6 +727,10 @@ drv_i915_eu_math(
 		selector = EU_MATH_SIN;
 	} else if (func == I915_EU_MATH_COS) {
 		selector = EU_MATH_COS;
+	} else if (func == I915_EU_MATH_LOG) {
+		selector = EU_MATH_LOG;
+	} else if (func == I915_EU_MATH_EXP) {
+		selector = EU_MATH_EXP;
 	} else {
 		buffer->error = 1;
 		return;
@@ -428,6 +765,223 @@ drv_i915_eu_math(
 void
 drv_i915_eu_send(
 	struct i915_eu_buf *buffer,
+	struct i915_eu_reg dst,
+	struct i915_eu_reg src0,
+	struct i915_eu_reg src1,
+	uint32_t sfid,
+	uint32_t descriptor,
+	uint32_t ex_descriptor,
+	int conditional,
+	int end_of_thread)
+{
+	/* Encodes the message for every channel of the mask. */
+	i915_eu_send_common(buffer,
+			    0,
+			    I915_EU_FLAG_F0_0,
+			    dst,
+			    src0,
+			    src1,
+			    sfid,
+			    descriptor,
+			    ex_descriptor,
+			    conditional,
+			    end_of_thread);
+}
+
+/*
+ * Encodes a message to a shared function for the channels whose bit of
+ * `flag` is set.
+ *
+ * The operands are those of drv_i915_eu_send().  A render-target write that
+ * ends the thread is sent this way when the shader discards: the pixels the
+ * flag no longer holds are not written, and the thread still ends when no
+ * pixel is left (Mesa predicates the FB write on the discard flag,
+ * brw_compile_fs.cpp).
+ */
+void
+drv_i915_eu_send_masked(
+	struct i915_eu_buf *buffer,
+	enum i915_eu_flag flag,
+	struct i915_eu_reg dst,
+	struct i915_eu_reg src0,
+	struct i915_eu_reg src1,
+	uint32_t sfid,
+	uint32_t descriptor,
+	uint32_t ex_descriptor,
+	int conditional,
+	int end_of_thread)
+{
+	/* A flag outside the two flag registers is refused. */
+	if (flag >= I915_EU_FLAG_COUNT) {
+		buffer->error = 1;
+		return;
+	}
+
+	/* Encodes the message predicated on the flag. */
+	i915_eu_send_common(buffer,
+			    1,
+			    flag,
+			    dst,
+			    src0,
+			    src1,
+			    sfid,
+			    descriptor,
+			    ex_descriptor,
+			    conditional,
+			    end_of_thread);
+}
+
+/*
+ * Encodes a no-op.
+ */
+void
+drv_i915_eu_nop(
+	struct i915_eu_buf *buffer)
+{
+	uint32_t *inst;
+
+	/* Reserves the instruction; a poisoned or full buffer takes nothing. */
+	inst = i915_eu_reserve(buffer);
+	if (inst == NULL)
+		return;
+
+	/* Only the opcode is set; the no-op carries no scoreboard byte. */
+	i915_eu_set(inst, EU_OPCODE_HI, EU_OPCODE_LO, EU_OP_NOP);
+}
+
+/*
+ * Returns the index of the instruction encoded next.
+ *
+ * A loop remembers it at its start, for the WHILE at its end to jump back
+ * to.
+ */
+uint32_t
+drv_i915_eu_position(
+	const struct i915_eu_buf *buffer)
+{
+	/* Four words to an instruction. */
+	return (uint32_t)(buffer->count / GEN12_EU_DWORDS);
+}
+
+/*
+ * Encodes the WHILE that ends a loop: the channels whose bit of `flag` is
+ * set jump back to instruction `target`, the others wait after the WHILE
+ * until the loop ends.
+ *
+ * The form is Mesa's brw_WHILE on Gen12: a null signed-integer
+ * destination, SIMD8, the jump in bytes from the WHILE to the target in the
+ * JIP.  A target at or after the WHILE, or a poisoned buffer, encodes
+ * nothing.
+ */
+void
+drv_i915_eu_while(
+	struct i915_eu_buf *buffer,
+	enum i915_eu_flag flag,
+	uint32_t target)
+{
+	struct i915_eu_reg null;
+	uint32_t *inst;
+	uint32_t here;
+	int32_t jump;
+
+	/* A flag outside the two flag registers is refused. */
+	if (flag >= I915_EU_FLAG_COUNT) {
+		buffer->error = 1;
+		return;
+	}
+
+	/* A loop jumps back to an instruction before its end. */
+	here = drv_i915_eu_position(buffer);
+	if (target >= here) {
+		buffer->error = 1;
+		return;
+	}
+
+	/* Reserves the instruction; a poisoned or full buffer takes nothing. */
+	inst = i915_eu_reserve(buffer);
+	if (inst == NULL)
+		return;
+
+	/* The jump, in bytes, back from the WHILE to the first instruction of the loop. */
+	jump = -(int32_t)((here - target) * GEN12_EU_DWORDS * 4U);
+
+	/* Encodes an in-order WHILE predicated on the flag, its null destination and its jump. */
+	i915_eu_common(buffer, inst, EU_OP_WHILE, I915_EU_IN_ORDER);
+	i915_eu_flag(inst, flag);
+	i915_eu_set(inst, EU_PRED_CONTROL_HI, EU_PRED_CONTROL_LO, EU_PREDICATE_NORMAL);
+	null = drv_i915_eu_null();
+	null.type = EU_TYPE_D;
+	i915_eu_dst(inst, null);
+	i915_eu_bit(inst, EU_SRC0_IS_IMM_BIT, 1U);
+	i915_eu_set(inst, EU_JIP_HI, EU_JIP_LO, (uint32_t)jump);
+}
+
+/* Encodes a two-source instruction, predicated on `flag` when `predicated` is nonzero (see drv_i915_eu_alu2()). */
+static void
+i915_eu_alu2_common(
+	struct i915_eu_buf *buffer,
+	int predicated,
+	enum i915_eu_flag flag,
+	enum i915_eu_alu op,
+	struct i915_eu_reg dst,
+	struct i915_eu_reg src0,
+	struct i915_eu_reg src1)
+{
+	uint32_t *inst;
+	uint32_t opcode;
+
+	/* Picks the hardware opcode; a subtraction is refused. */
+	if (op == I915_EU_ADD) {
+		opcode = EU_OP_ADD;
+	} else if (op == I915_EU_MUL) {
+		opcode = EU_OP_MUL;
+	} else if (op == I915_EU_AND) {
+		opcode = EU_OP_AND;
+	} else if (op == I915_EU_OR) {
+		opcode = EU_OP_OR;
+	} else if (op == I915_EU_XOR) {
+		opcode = EU_OP_XOR;
+	} else if (op == I915_EU_SHL) {
+		opcode = EU_OP_SHL;
+	} else if (op == I915_EU_SHR) {
+		opcode = EU_OP_SHR;
+	} else if (op == I915_EU_ASR) {
+		opcode = EU_OP_ASR;
+	} else {
+		buffer->error = 1;
+		return;
+	}
+
+	/* The hardware has one immediate slot, and it belongs to the second source. */
+	if (src0.file == EU_FILE_IMM) {
+		buffer->error = 1;
+		return;
+	}
+
+	/* Reserves the instruction; a poisoned or full buffer takes nothing. */
+	inst = i915_eu_reserve(buffer);
+	if (inst == NULL)
+		return;
+
+	/* Encodes an in-order instruction and its three operands. */
+	i915_eu_common(buffer, inst, opcode, I915_EU_IN_ORDER);
+	i915_eu_dst(inst, dst);
+	i915_eu_src0(inst, src0);
+	i915_eu_src1(inst, src1);
+
+	/* A masked instruction runs only on the channels whose bit of the flag is set. */
+	if (predicated != 0) {
+		i915_eu_flag(inst, flag);
+		i915_eu_set(inst, EU_PRED_CONTROL_HI, EU_PRED_CONTROL_LO, EU_PREDICATE_NORMAL);
+	}
+}
+
+/* Encodes a SEND or SENDC, predicated on `flag` when `predicated` is nonzero (see drv_i915_eu_send()). */
+static void
+i915_eu_send_common(
+	struct i915_eu_buf *buffer,
+	int predicated,
+	enum i915_eu_flag flag,
 	struct i915_eu_reg dst,
 	struct i915_eu_reg src0,
 	struct i915_eu_reg src1,
@@ -481,6 +1035,12 @@ drv_i915_eu_send(
 	i915_eu_bit(inst, EU_SEND_EOT_BIT, eot);
 	i915_eu_set(inst, EU_SEND_SFID_HI, EU_SEND_SFID_LO, sfid);
 
+	/* A masked message goes only to the channels whose bit of the flag is set. */
+	if (predicated != 0) {
+		i915_eu_flag(inst, flag);
+		i915_eu_set(inst, EU_PRED_CONTROL_HI, EU_PRED_CONTROL_LO, EU_PREDICATE_NORMAL);
+	}
+
 	/* Encodes the operands: a file bit and a register number, nothing else. */
 	i915_eu_bit(inst, EU_DST_REG_FILE_BIT, i915_eu_file_bit(dst));
 	i915_eu_set(inst, EU_DST_REG_NR_HI, EU_DST_REG_NR_LO, dst.nr);
@@ -519,24 +1079,6 @@ drv_i915_eu_send(
 
 	/* Waits until the message is done with its registers. */
 	i915_eu_sync(buffer, swsb);
-}
-
-/*
- * Encodes a no-op.
- */
-void
-drv_i915_eu_nop(
-	struct i915_eu_buf *buffer)
-{
-	uint32_t *inst;
-
-	/* Reserves the instruction; a poisoned or full buffer takes nothing. */
-	inst = i915_eu_reserve(buffer);
-	if (inst == NULL)
-		return;
-
-	/* Only the opcode is set; the no-op carries no scoreboard byte. */
-	i915_eu_set(inst, EU_OPCODE_HI, EU_OPCODE_LO, EU_OP_NOP);
 }
 
 /* Names a general register operand: eight channels of `type`. */
@@ -662,6 +1204,17 @@ i915_eu_common(
 		buffer->in_order++;
 }
 
+/* Names the flag subregister an instruction's conditional modifier writes or its predicate reads. */
+static void
+i915_eu_flag(
+	uint32_t *inst,
+	enum i915_eu_flag flag)
+{
+	/* f0.0, f0.1, f1.0, f1.1: the register is the high bit, the subregister the low one. */
+	i915_eu_bit(inst, EU_FLAG_REG_NR_BIT, (uint32_t)flag >> 1);
+	i915_eu_bit(inst, EU_FLAG_SUBREG_NR_BIT, (uint32_t)flag & 1U);
+}
+
 /* Encodes a sync.nop: the front end waits here until the named dependency is resolved. */
 static void
 i915_eu_sync(
@@ -720,6 +1273,7 @@ i915_eu_src0(
 	i915_eu_set(inst, EU_SRC0_WIDTH_HI, EU_SRC0_WIDTH_LO, reg.width);
 	i915_eu_set(inst, EU_SRC0_VSTRIDE_HI, EU_SRC0_VSTRIDE_LO, reg.vstride);
 	i915_eu_bit(inst, EU_SRC0_NEGATE_BIT, reg.negate & 1U);
+	i915_eu_bit(inst, EU_SRC0_ABS_BIT, reg.absolute & 1U);
 }
 
 /* Encodes source one, whether a register or an immediate. */
@@ -746,6 +1300,7 @@ i915_eu_src1(
 	i915_eu_set(inst, EU_SRC1_WIDTH_HI, EU_SRC1_WIDTH_LO, reg.width);
 	i915_eu_set(inst, EU_SRC1_VSTRIDE_HI, EU_SRC1_VSTRIDE_LO, reg.vstride);
 	i915_eu_bit(inst, EU_SRC1_NEGATE_BIT, reg.negate & 1U);
+	i915_eu_bit(inst, EU_SRC1_ABS_BIT, reg.absolute & 1U);
 }
 
 /* Returns the hardware file bit of an operand: one for a general register, zero otherwise. */

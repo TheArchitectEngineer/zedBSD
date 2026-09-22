@@ -70,9 +70,11 @@ static unsigned i915_blit_logged;
 
 static int i915_blit_compile(int copy, struct i915_shader_binary **result);
 static int i915_blit_check_rect(const struct i915_gfx_surface *surface, const struct i915_gfx_rect *rect);
-static int i915_blit_write_state(uint8_t *page, const struct i915_gfx_surface *dst, const struct i915_gfx_rect *dst_rect, const struct i915_gfx_surface *src, const struct i915_gfx_rect *src_rect, const uint32_t clear[4], int linear, const struct i915_shader_binary *kernel, uint32_t mocs);
+static int i915_blit_window(struct i915_render_session *session, struct i915_gfx_session *work, int copy, struct i915_gfx_op_space *space);
+static int i915_blit_record(const struct i915_gfx_op_space *space, const struct i915_gfx_surface *dst, const struct i915_gfx_rect *dst_rect, const struct i915_gfx_surface *src, const struct i915_gfx_rect *src_rect, const uint32_t clear[4], int linear);
+static int i915_blit_write_state(uint8_t *page, const struct i915_gfx_surface *dst, const struct i915_gfx_rect *dst_rect, const struct i915_gfx_surface *src, const struct i915_gfx_rect *src_rect, const uint32_t clear[4], int linear, uint32_t mocs);
 static void i915_blit_write_vertices(uint8_t *page, const struct i915_gfx_rect *dst_rect, const struct i915_gfx_surface *src, const struct i915_gfx_rect *src_rect, const uint32_t clear[4]);
-static void i915_blit_build_batch(struct i915_gfx_batch *batch, uint64_t state_va, const struct i915_gfx_surface *dst, const struct i915_gfx_kernels *kernels, uint32_t mocs);
+static void i915_blit_build_batch(struct i915_gfx_batch *batch, const struct i915_gfx_op_space *space, const struct i915_gfx_surface *dst, const struct i915_gfx_kernels *kernels, uint32_t mocs);
 
 /*
  * Compiles the fill and copy kernels once, and makes the session's state
@@ -126,9 +128,11 @@ drv_i915_gfx_rect_prepare(
  *
  * A copy of src_rect of `src` into dst_rect of `dst` when src is not NULL,
  * or a fill of dst_rect with the four float words of `clear`.  Both
- * rectangles must be non-empty and lie inside their surfaces.  Returns
- * EINVAL for a rectangle or surface that cannot be drawn, ENOSPC when the
- * batch does not fit, or what the preparation reports.
+ * rectangles must be non-empty and lie inside their surfaces.  The
+ * rectangle takes the first slot and the start of the batch object, so the
+ * session must not be recording a submission.  Returns EINVAL for a
+ * rectangle or surface that cannot be drawn, EBUSY inside a submission,
+ * ENOSPC when the batch does not fit, or what the preparation reports.
  */
 int
 drv_i915_gfx_rect_build(
@@ -141,11 +145,8 @@ drv_i915_gfx_rect_build(
 	int linear,
 	uint64_t *batch_va)
 {
-	const struct i915_shader_binary *kernel;
 	struct i915_gfx_session *work;
-	struct i915_gfx_kernels kernels;
-	struct i915_gfx_batch batch;
-	uint32_t mocs;
+	struct i915_gfx_op_space space;
 	int error;
 
 	/* Makes sure the kernels and the session's objects exist. */
@@ -153,47 +154,41 @@ drv_i915_gfx_rect_build(
 	if (error != 0)
 		return error;
 
-	/* A copy runs the copy kernel and a fill the fill kernel; every surface is uncached. */
+	/* A submission being recorded owns the batch.  XXX: the caller would have to wait for it. */
 	work = session->gfx;
-	mocs = GEN12_MOCS(I915_MOCS_UNCACHED_INDEX);
-	kernel = i915_blit_fill_kernel;
-	if (src != NULL)
-		kernel = i915_blit_copy_kernel;
-
-	/* Refuses a destination rectangle outside its surface. */
-	error = i915_blit_check_rect(dst, dst_rect);
-	if (error != 0)
-		return error;
-
-	/* Refuses a source rectangle outside its surface. */
-	if (src != NULL) {
-		error = i915_blit_check_rect(src, src_rect);
-		if (error != 0)
-			return error;
+	if (work->open) {
+		kern_logf("i915: vk: XXX unimplemented path: a rectangle built while the session records a submission\n");
+		return EBUSY;
 	}
 
-	/* Writes the surfaces, the sampler, the vertices and the kernel into the state object. */
-	error = i915_blit_write_state(work->state->address, dst, dst_rect, src, src_rect, clear, linear, kernel, mocs);
+	/* Finds the kernel's instruction window. */
+	error = i915_blit_window(session, work, src != NULL, &space);
 	if (error != 0)
 		return error;
 
-	/*
-	 * Describes the pixel kernel for its packets: one attribute, the
-	 * kernel's payload start and its sampled images.
-	 */
-	memset(&kernels, 0, sizeof(kernels));
-	kernels.varyings = 1U;
-	kernels.ps_grf_start = kernel->dispatch_grf_start;
-	kernels.ps_samplers = kernel->sampler_count;
+	/* Takes the first slot and starts the batch at the start of the batch object. */
+	space.slot = work->state->address;
+	space.slot_va = work->state->va;
+	space.batch = &work->cursor;
+	work->cursor.count = 0U;
+	work->cursor.overflow = 0;
 
-	/* Builds the batch into the batch object. */
-	batch.cmds = work->batch->address;
-	batch.count = 0U;
-	batch.capacity = I915_GFX_BATCH_BYTES / 4U;
-	batch.overflow = 0;
-	i915_blit_build_batch(&batch, work->state->va, dst, &kernels, mocs);
-	if (batch.overflow != 0)
-		return ENOSPC;
+	/* Writes the rectangle's state and commands, and ends the batch. */
+	error = i915_blit_record(&space, dst, dst_rect, src, src_rect, clear, linear);
+	if (error == 0)
+		drv_i915_gfx_emit_batch_end(&work->cursor);
+
+	/* Refuses a rectangle that did not fit the batch; the batch is left empty either way. */
+	if (error == 0 && work->cursor.overflow != 0)
+		error = ENOSPC;
+	if (error != 0) {
+		work->cursor.count = 0U;
+		work->cursor.overflow = 0;
+		return error;
+	}
+
+	/* The caller runs the batch; the session's batch starts empty again next time. */
+	work->cursor.count = 0U;
 
 	/* Makes the CPU writes visible before the GPU reads them. */
 	kern_io_write_barrier();
@@ -206,9 +201,12 @@ drv_i915_gfx_rect_build(
 }
 
 /*
- * Runs one rectangle to its end on the GPU: the recorded clears and copies.
+ * Records one rectangle into the submission's batch, or runs it to its end
+ * on the GPU outside a submission: the recorded clears and copies.
  *
- * The first few rectangles and every failed one are logged.
+ * The first few rectangles and every failed one are logged; a recorded
+ * rectangle is logged with how its recording ended, its GPU run with the
+ * batch.
  */
 int
 drv_i915_gfx_rect(
@@ -220,19 +218,41 @@ drv_i915_gfx_rect(
 	const uint32_t clear[4],
 	int linear)
 {
+	struct i915_gfx_session *work;
+	struct i915_gfx_op_space space;
 	const char *what;
 	uint32_t read_width;
 	uint32_t read_height;
-	uint64_t batch_va;
 	int error;
 
-	/* Writes the rectangle's state and batch. */
-	error = drv_i915_gfx_rect_build(session, dst, dst_rect, src, src_rect, clear, linear, &batch_va);
+	/* Makes sure the kernels and the session's objects exist. */
+	error = drv_i915_gfx_rect_prepare(session);
 	if (error != 0)
 		return error;
 
-	/* Runs the batch to its end on the session's render context. */
-	error = drv_i915_worker_run_sync(session->vk->i915, &session->gpu->contexts[I915_ENGINE_RCS0], batch_va);
+	/* Finds the kernel's instruction window. */
+	work = session->gfx;
+	error = i915_blit_window(session, work, src != NULL, &space);
+	if (error != 0)
+		return error;
+
+	/* Takes the rectangle's slot and its room in the batch. */
+	error = drv_i915_gfx_op_begin(session, work, &space);
+	if (error != 0)
+		return error;
+
+	/* Writes the rectangle's state and commands. */
+	error = i915_blit_record(&space, dst, dst_rect, src, src_rect, clear, linear);
+
+	/*
+	 * A recorded rectangle may write a buffer that a later draw reads on
+	 * the CPU as uniform data (see drv_i915_gfx_draw()).
+	 */
+	if (error == 0)
+		work->transfer_pending = 1;
+
+	/* Keeps the rectangle in the batch, or takes it back; outside a submission it runs now. */
+	error = drv_i915_gfx_op_end(session, work, error);
 
 	/* Logs a failure, and the first few rectangles whatever their outcome. */
 	if (error != 0 || i915_blit_logged < I915_BLIT_LOGGED_RECTANGLES) {
@@ -263,11 +283,11 @@ drv_i915_gfx_rect(
 			  error);
 	}
 
-	/* Reports why the rectangle failed on the GPU. */
+	/* Reports why the rectangle failed. */
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the rectangle has run to its end. */
+	/* Succeeded: the rectangle is recorded, or has run outside a submission. */
 	return 0;
 }
 
@@ -355,6 +375,111 @@ i915_blit_compile(
 	return 0;
 }
 
+/*
+ * Finds the instruction window of the copy kernel (copy nonzero) or of the
+ * fill kernel, placing it the first time.
+ */
+static int
+i915_blit_window(
+	struct i915_render_session *session,
+	struct i915_gfx_session *work,
+	int copy,
+	struct i915_gfx_op_space *space)
+{
+	int error;
+
+	/* The copy kernel and the fill kernel each have a window of their own. */
+	if (copy) {
+		error = drv_i915_gfx_window(session,
+					    work,
+					    NULL,
+					    &work->copy_window,
+					    &work->copy_generation,
+					    NULL,
+					    0U,
+					    i915_blit_copy_kernel->code,
+					    i915_blit_copy_kernel->code_bytes,
+					    space);
+	} else {
+		error = drv_i915_gfx_window(session,
+					    work,
+					    NULL,
+					    &work->fill_window,
+					    &work->fill_generation,
+					    NULL,
+					    0U,
+					    i915_blit_fill_kernel->code,
+					    i915_blit_fill_kernel->code_bytes,
+					    space);
+	}
+
+	/* Reports a window that could not be had. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the kernel is in its window. */
+	return 0;
+}
+
+/*
+ * Writes one rectangle into its slot and appends its commands to the batch.
+ *
+ * Returns EINVAL for a rectangle or a surface that cannot be drawn.
+ */
+static int
+i915_blit_record(
+	const struct i915_gfx_op_space *space,
+	const struct i915_gfx_surface *dst,
+	const struct i915_gfx_rect *dst_rect,
+	const struct i915_gfx_surface *src,
+	const struct i915_gfx_rect *src_rect,
+	const uint32_t clear[4],
+	int linear)
+{
+	const struct i915_shader_binary *kernel;
+	struct i915_gfx_kernels kernels;
+	uint32_t mocs;
+	int error;
+
+	/* A copy runs the copy kernel and a fill the fill kernel; every surface is uncached. */
+	mocs = GEN12_MOCS(I915_MOCS_UNCACHED_INDEX);
+	kernel = i915_blit_fill_kernel;
+	if (src != NULL)
+		kernel = i915_blit_copy_kernel;
+
+	/* Refuses a destination rectangle outside its surface. */
+	error = i915_blit_check_rect(dst, dst_rect);
+	if (error != 0)
+		return error;
+
+	/* Refuses a source rectangle outside its surface. */
+	if (src != NULL) {
+		error = i915_blit_check_rect(src, src_rect);
+		if (error != 0)
+			return error;
+	}
+
+	/* Writes the surfaces, the sampler and the vertices into the slot. */
+	error = i915_blit_write_state(space->slot, dst, dst_rect, src, src_rect, clear, linear, mocs);
+	if (error != 0)
+		return error;
+
+	/*
+	 * Describes the pixel kernel for its packets: one attribute, the
+	 * kernel's payload start and its sampled images.
+	 */
+	memset(&kernels, 0, sizeof(kernels));
+	kernels.varyings = 1U;
+	kernels.ps_grf_start = kernel->dispatch_grf_start;
+	kernels.ps_samplers = kernel->sampler_count;
+
+	/* Appends the rectangle's commands. */
+	i915_blit_build_batch(space->batch, space, dst, &kernels, mocs);
+
+	/* Succeeded: the rectangle is written. */
+	return 0;
+}
+
 /* Refuses (EINVAL) a rectangle that is empty or does not lie inside its surface. */
 static int
 i915_blit_check_rect(
@@ -382,12 +507,12 @@ i915_blit_check_rect(
 }
 
 /*
- * Writes everything a rectangle's batch points at into the state object.
+ * Writes everything a rectangle's batch points at into its slot.
  *
  * Binding table entry 0 is the destination and entry 1 the source; the
  * sampler clamps to the edge with the requested filter; blending clamps to
- * the target's format and the depth range is [0, 1].  The instruction heap
- * holds the pixel kernel only.
+ * the target's format and the depth range is [0, 1].  The pixel kernel
+ * waits in its instruction window.
  */
 static int
 i915_blit_write_state(
@@ -398,7 +523,6 @@ i915_blit_write_state(
 	const struct i915_gfx_rect *src_rect,
 	const uint32_t clear[4],
 	int linear,
-	const struct i915_shader_binary *kernel,
 	uint32_t mocs)
 {
 	struct i915_gfx_sampler sampler;
@@ -407,8 +531,8 @@ i915_blit_write_state(
 	uint32_t filter;
 	int error;
 
-	/* Clears everything below the instruction heap and locates the two heaps. */
-	memset(page, 0, I915_GFX_INSTRUCTION_HEAP);
+	/* Clears the whole slot and locates the two heaps. */
+	memset(page, 0, I915_GFX_SLOT_BYTES);
 	surface = (uint32_t *)(void *)(page + I915_GFX_SURFACE_HEAP);
 	dynamic = (uint32_t *)(void *)(page + I915_GFX_DYNAMIC_HEAP);
 
@@ -428,7 +552,11 @@ i915_blit_write_state(
 			return error;
 	}
 
-	/* Samples with the requested filter, clamped to the edge. */
+	/*
+	 * Samples with the requested filter, clamped to the edge, at LOD 0 of
+	 * the source's one level: a surface here is always one level, a mip
+	 * level of an image being described as a surface of its own.
+	 */
 	filter = VK_FILTER_NEAREST;
 	if (linear)
 		filter = VK_FILTER_LINEAR;
@@ -437,6 +565,10 @@ i915_blit_write_state(
 	sampler.min_filter = filter;
 	sampler.address_u = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
 	sampler.address_v = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	sampler.mipmap_mode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+	sampler.lod_bias = 0U;
+	sampler.min_lod = 0U;
+	sampler.max_lod = 0U;
 	drv_i915_gfx_sampler_write(&dynamic[I915_GFX_DYN_SAMPLER / 4U], &sampler);
 
 	/* Clamps before and after blending to the target's format; the depth range ends at 1.0. */
@@ -445,10 +577,6 @@ i915_blit_write_state(
 
 	/* Writes the three corners of the rectangle and their attributes. */
 	i915_blit_write_vertices(page, dst_rect, src, src_rect, clear);
-
-	/* Places the pixel kernel in an instruction heap where every other start retires at once. */
-	drv_i915_gfx_instruction_heap_clear(page);
-	memcpy(page + I915_GFX_INSTRUCTION_HEAP + I915_GFX_PS_KERNEL, kernel->code, kernel->code_bytes);
 
 	/* Succeeded: the state object holds everything the batch points at. */
 	return 0;
@@ -538,29 +666,32 @@ i915_blit_write_vertices(
 }
 
 /*
- * Builds the command list of one rectangle.
+ * Appends the commands of one rectangle to the batch.
  *
  * The order is the fixture draw's RECTLIST path with a fragment input: the
- * context setup; one vertex buffer of three vertices whose three elements
+ * context setup at the rectangle's slot and window; one vertex buffer of three vertices whose three elements
  * are VUE slots 0 (header), 1 (position) and 2 (attribute); no geometry
  * shading, so the vertex fetcher feeds the clipper; a screen-space
  * rectangle with no clipping, perspective divide or viewport transform; the
- * pixel kernel; no depth; the primitive.
+ * pixel kernel; no depth; the primitive with its closing flush.
  */
 static void
 i915_blit_build_batch(
 	struct i915_gfx_batch *batch,
-	uint64_t state_va,
+	const struct i915_gfx_op_space *space,
 	const struct i915_gfx_surface *dst,
 	const struct i915_gfx_kernels *kernels,
 	uint32_t mocs)
 {
+	struct i915_gfx_primitive primitive;
+	uint64_t state_va;
 	uint64_t vertices_va;
 	uint32_t index;
 	uint32_t vs_dword;
 
 	/* Switches to 3D, programs the state bases and the once-per-context state. */
-	drv_i915_gfx_emit_context_setup(batch, state_va, mocs);
+	state_va = space->slot_va;
+	drv_i915_gfx_emit_context_setup(batch, state_va, space->window_va, mocs);
 
 	/* Describes the one vertex buffer: MOCS, address modify enable and the stride; the address; the size. */
 	vertices_va = state_va + I915_GFX_RECT_VERTICES;
@@ -604,7 +735,7 @@ i915_blit_build_batch(
 
 	/* Gives the vertex stage one-slot URB entries and reads no push constants. */
 	drv_i915_gfx_emit_urb(batch, 1U);
-	drv_i915_gfx_emit_constants(batch, state_va + I915_GFX_PUSH_BUFFER, 0U, mocs);
+	drv_i915_gfx_emit_constants(batch, state_va + I915_GFX_PUSH_BUFFER, 0U, state_va + I915_GFX_PS_PUSH_BUFFER, 0U, mocs);
 
 	/* Points the pipeline at the colour calc, blend, viewport and coarse pixel state. */
 	drv_i915_batch_pointer(batch, GEN12_CMD_3DSTATE_CC_STATE_POINTERS, I915_GFX_DYN_COLOR_CALC | 1U);
@@ -676,6 +807,12 @@ i915_blit_build_batch(
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_HIER_DEPTH_BUFFER, GEN12_3DSTATE_HIER_DEPTH_BUFFER_DWORDS);
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_CLEAR_PARAMS, GEN12_3DSTATE_CLEAR_PARAMS_DWORDS);
 
-	/* Draws the one rectangle over the destination and ends the batch. */
-	drv_i915_gfx_emit_primitive(batch, dst->width, dst->height, GEN12_3DPRIM_RECTLIST, 3U, 0U, 1U, 0U);
+	/* Describes the one rectangle: three vertices in order, one instance. */
+	memset(&primitive, 0, sizeof(primitive));
+	primitive.topology = GEN12_3DPRIM_RECTLIST;
+	primitive.vertex_count = 3U;
+	primitive.instance_count = 1U;
+
+	/* Draws the one rectangle over the destination and flushes what it wrote. */
+	drv_i915_gfx_emit_draw(batch, dst->width, dst->height, &primitive);
 }

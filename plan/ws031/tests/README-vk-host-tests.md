@@ -38,6 +38,32 @@
 
 `vk/wsi.c`・`vk/display.c` の検査は元から既定一覧に無い（S3 報告: libvulkan から到達しない）。
 
+## p014 段階 A で足した検査
+
+| fixture | 検査 |
+| --- | --- |
+| pipe | 実行器試験の shader（`src/drivers/gpu/i915/tests/render/shaders/place.vert` + `push.frag` の `.spv`）で、viewport/scissor を dynamic にした pipeline（viewport state は数だけ・配列なし、dynamic state に VIEWPORT/SCISSOR）を作る。`dynamic_viewport`/`dynamic_scissor` が立ち、fragment shader が byte 112 の push colour を読む（push 4 register、vertex は 1）pipeline が受理され、`3DSTATE_CONSTANT_VS`/`PS` が同じ block を buffer 3 から読み、`3DSTATE_PS` dword 6 の Push Constant Enable が立つ |
+| cmdbuf | 3DPRIMITIVE の random access・start/base vertex・instance、`3DSTATE_INDEX_BUFFER`（MOCS・WORD/DWORD・L3 bypass disable・address・size、offset の境界と整列、UINT8 は ENOTSUP）。`vkCmdBindIndexBuffer`/`vkCmdSetViewport`/`vkCmdSetScissor`（index 1 は捨てる）/`vkCmdDrawIndexed` が draw stand-in に届く内容。`vkCmdCopyBuffer` が rect stand-in に渡す surface（4096 texel 行 + 端数行、R8G8B8A8、va）と、4 の倍数でない region・範囲外 region の失敗。200 操作の command buffer（list が伸びる）と 65537 操作での end の失敗。未実装 recording の検査は opcode 96 に変更 |
+
+## p014 段階 B で足した検査（texture と mip）
+
+| fixture | 検査 |
+| --- | --- |
+| res | 64x64・7 level の RGBA8 image が 2D mip layout（level 1 は level 0 の下、level 2 はその右、以降は level 2 の下、各 level は 4x4 texel 単位に切上げ）で pitch 256・100 行、要求 memory が chain 全体（28672）、level 3 の subresource layout（offset・size・row pitch）、5x3・3 level の端数、`drv_i915_gfx_image_level` の level 2・6 の va/寸法と level 7 の拒否。depth の 2 level と 64x64 の 8 level は ENOTSUP。view の levels（`VK_REMAINING_MIP_LEVELS` → 6）と、範囲外・0 level・末尾超えの拒否。sampler の mipmap mode・bias・LOD 範囲（float bit）と `SAMPLER_STATE`（MIPFILTER LINEAR/NEAREST、bias s4.8 正負、Max LOD の 14 clamp、Min LOD）、draw の texture `RENDER_SURFACE_STATE`（QPitch、MIP count 5・Surface Min LOD 1・mip tail start 7、level 0 の寸法と先頭 address）と render target（MIP count 0）、0 level の view で draw の state が EINVAL |
+| cmdbuf | 32x32・6 level の image に `vkCmdCopyBufferToImage`（level 2）、同一 image の level 0→1 の linear `vkCmdBlitImage`、level 3 からの残り全 level の `vkCmdClearColorImage`（3 level を 1 回ずつ fill）、level 5 の `vkCmdCopyImageToBuffer` が rect stand-in に渡す surface（各 level の va・寸法・共有 pitch）。存在しない level 6 への copy で submit が失敗 |
+
+## p014 段階 C で足した検査（SPIR-V compiler）
+
+| fixture | 検査 |
+| --- | --- |
+| lower | IR interpreter を bit 単位（float と Boolean）に拡張。`src/drivers/gpu/i915/tests/render/compiler-shaders/*.spv` と mview の 3 shader（`userland/base/mview/shaders/`）を C で評価した GLSL と比較: GLSL.std.450 の abs/floor/fract/sqrt/exp2/log2/pow/inversesqrt/min/max/clamp/mix/normalize と a / b（11 入力）、比較 12 種（FOrd*/FUnord*、NaN を片側・両側、手組み SPIR-V）、`&&`/`||`（phi）、`?:`（分岐と local）、入れ子の if/else と discard を 64x64 の全画素、分岐内 return（leak）、vertex の normalize/max/clamp（OpConstantComposite）、mview.vert・mview.frag・cutout.frag（alpha 0.5 未満で discard）。拒否は FMod・OpLoopMerge・後方分岐・OpSwitch・vertex の OpKill |
+| compile | EU model を bit 単位・flag register・predication（SEL は選択、他は mask）・CMP・SEL・AND/OR/NOT・RNDD/FRC・abs・math（INV/SQRT/LOG/EXP）・sampler（偽 texture）・predicate 付き SENDC（書いた channel を記録）に拡張。上の shader を SPIR-V → IR → EU 語で 8 channel ずつ実行し参照と bit 一致: 数学 4 本 x 32 回、compare（NaN channel 入り）、branch（64x64、dispatch 内で分岐が割れる 86 回）、discard（全 channel 破棄 256 回・一部 96 回、dispatch mask 0xA5 でも未 dispatch channel を書かない）、cells/vsmath の vertex、mview.vert（payload r2..r17、値は r19 から、payload 不変）・mview.frag・cutout.frag。vkdemo の kernel は段階 C 前と byte 一致 |
+| eu | CMP（cond・flag・predicate）、discard の predicate 付き CMP、SEL（cond / predicate）、AND/OR/NOT/RNDD/FRC、abs、flag load（SIMD1 NoMask、f1.0 ← r1.7 UW）、math LOG/EXP、predicate 付き SENDC の各 field と拒否 |
+| pipe | 「lower できない shader」を OpFDiv（lower されるようになった）から OpFMod に変更 |
+
+`run-vk-gentool-test.sh` は mview と compiler-shaders の全 `.spv` も判定する。gentool（Mesa main）が無い環境では
+`BRW_TOOLS=<Mesa 25.0 の build>/src/intel/compiler` で `brw_disasm`/`brw_asm` の往復に切り替わる（判定は同じ）。
+
 ## fixture が固定している既知の問題（production は変更していない）
 
 - `render/pipeline.c`: kernel の準備に失敗した vkCreateGraphicsPipelines は、公開しなかった pipeline の record を

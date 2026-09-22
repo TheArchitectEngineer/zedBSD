@@ -220,8 +220,9 @@ drv_i915_gfx_allocate_dsets(
  *
  * The command is [device][n][n]{write}[m][m]{copy}; its writes are laid out
  * as i915_gfx_update_write reads them.  There is no reply body.  Only the
- * first image descriptor of a write is applied; buffer descriptors, texel
- * views and copies are read and reported as not applied.
+ * first image or uniform buffer descriptor of a write is applied; other
+ * buffer descriptors, texel views and copies are read and reported as not
+ * applied.
  */
 int
 drv_i915_gfx_update_dsets(
@@ -275,7 +276,8 @@ drv_i915_gfx_update_dsets(
 }
 
 /*
- * Reads one descriptor write and applies its first image descriptor.
+ * Reads one descriptor write and applies its first image descriptor, or
+ * its first buffer descriptor when it is a uniform buffer.
  *
  * A write is [sType][pNext][set][binding][element][count][type][images]
  * {[sampler][view][layout]}[buffers]{VkDescriptorBufferInfo}[texel views]
@@ -293,6 +295,7 @@ i915_gfx_update_write(
 	uint64_t item;
 	uint64_t sampler;
 	uint64_t view;
+	uint64_t buffer_id;
 	uint32_t binding;
 	uint32_t type;
 
@@ -339,13 +342,29 @@ i915_gfx_update_write(
 	if (count > I915_GFX_MAX_UPDATE_ITEMS)
 		return EINVAL;
 
-	/* Decodes each buffer descriptor; none is bound. */
-	for (item = 0U; item < count; item++)
+	/* Reads every buffer descriptor and applies the first uniform buffer to a known set's binding. */
+	for (item = 0U; item < count; item++) {
+		memset(&buffer_info, 0, sizeof(buffer_info));
 		i915_vkc_dec_VkDescriptorBufferInfo(reader, &session->arena, &buffer_info);
 
-	/* Reports the buffer descriptors that were not bound. */
-	if (count != 0U)
-		kern_logf("i915: vk: XXX vkUpdateDescriptorSets: buffer descriptors (type %u) are not bound to anything\n", type);
+		/* Only the first descriptor of a known set within the set's bindings is applied. */
+		if (item != 0U ||
+		    dset == NULL ||
+		    binding >= I915_GFX_MAX_BINDINGS)
+			continue;
+
+		/* XXX: a buffer descriptor of another type than a uniform buffer is not bound to anything. */
+		if (type != VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER) {
+			kern_logf("i915: vk: XXX vkUpdateDescriptorSets: buffer descriptors (type %u) are not bound to anything\n", type);
+			continue;
+		}
+
+		/* The binding reads this range of this buffer from here on. */
+		buffer_id = (uint64_t)(uintptr_t)buffer_info.buffer;
+		dset->slots[binding].buffer = drv_i915_object_lookup(session->vk, I915_VK_OBJ_BUFFER, buffer_id);
+		dset->slots[binding].offset = buffer_info.offset;
+		dset->slots[binding].range = buffer_info.range;
+	}
 
 	/* Reads how many texel buffer views follow. */
 	count = drv_i915_wire_read_u64(reader);
@@ -358,6 +377,6 @@ i915_gfx_update_write(
 	for (item = 0U; item < count; item++)
 		(void)drv_i915_wire_read_u64(reader);
 
-	/* Succeeded: the write is read and its first image descriptor applied. */
+	/* Succeeded: the write is read and its first image or uniform buffer descriptor applied. */
 	return 0;
 }

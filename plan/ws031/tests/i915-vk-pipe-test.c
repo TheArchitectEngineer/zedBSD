@@ -13,7 +13,9 @@
  * vkCreateShaderModule and vkCreateGraphicsPipelines are driven through the
  * wire with the vkdemo shaders, so the pipeline's kernels come from the
  * executor's own compiler; the vertex and pixel shader state is then
- * emitted from those kernels.
+ * emitted from those kernels.  A second pipeline, made from the executor
+ * test's shaders, declares its viewport and scissor dynamic and reads push
+ * constants in both stages, as the model viewer's pipelines do.
  */
 
 #include "i915-vk-render-stubs.inc"
@@ -31,9 +33,9 @@
 #define FIXTURE_CREATE_GRAPHICS_PIPELINES	65U
 #define FIXTURE_DESTROY_PIPELINE		67U
 
-/* The SPIR-V opcodes the fixture rewrites: a float multiply becomes a float division. */
+/* The SPIR-V opcodes the fixture rewrites: a float multiply becomes a float remainder (not lowered). */
 #define FIXTURE_SPIRV_FMUL	133U
-#define FIXTURE_SPIRV_FDIV	136U
+#define FIXTURE_SPIRV_OUTER_PRODUCT	147U
 
 /* The wire identities the fixture gives its objects. */
 #define FIXTURE_DEVICE		0xd0ULL
@@ -43,18 +45,26 @@
 #define FIXTURE_BAD_VS		0xd10ULL
 #define FIXTURE_PIPELINE	0xe00ULL
 #define FIXTURE_BAD_PIPELINE	0xe10ULL
+#define FIXTURE_PLACE_VS	0xd20ULL
+#define FIXTURE_PUSH_FS		0xd21ULL
+#define FIXTURE_DYNAMIC_PIPELINE	0xe20ULL
+
+/* The shaders of the executor test, compiled next to their GLSL. */
+#define FIXTURE_EXECUTOR_SHADERS	"src/drivers/gpu/i915/tests/render/shaders"
 
 /* The stream every command is built in. */
 static struct stub_wire fixture_wire;
 
-static uint32_t *fixture_load_spirv(const char *name, size_t *words);
+static uint32_t *fixture_load_spirv(const char *directory, const char *name, size_t *words);
 static void fixture_shader_module(const uint32_t *code, size_t words, uint64_t identity);
 static void fixture_stage(uint32_t stage, uint64_t module);
 static void fixture_pipeline(uint64_t vertex, uint64_t fragment, uint64_t identity);
+static void fixture_dynamic_pipeline(uint64_t vertex, uint64_t fragment, uint64_t identity);
 static void fixture_destroy(uint32_t opcode, uint64_t identity);
 static int fixture_find_command(const uint32_t *batch, unsigned used, uint32_t opcode);
 static void test_shader_module(void);
 static void test_graphics_pipeline(void);
+static void test_dynamic_push_pipeline(void);
 
 /*
  * Runs the pipeline checks.
@@ -65,15 +75,17 @@ main(void)
 	/* Checks shader modules, then pipelines and the state they emit. */
 	test_shader_module();
 	test_graphics_pipeline();
+	test_dynamic_push_pipeline();
 
 	/* Succeeded: every check held. */
 	printf("i915 vk pipe host test PASS\n");
 	return 0;
 }
 
-/* Loads one vkdemo SPIR-V shader into words the caller frees. */
+/* Loads one SPIR-V shader of a directory of the tree into words the caller frees. */
 static uint32_t *
 fixture_load_spirv(
+	const char *directory,
 	const char *name,
 	size_t *words)
 {
@@ -84,8 +96,8 @@ fixture_load_spirv(
 	long size;
 	int status;
 
-	/* Opens the shader shipped with vkdemo. */
-	snprintf(path, sizeof(path), "%s/userland/base/vkdemo/shaders/%s", VK_REPO, name);
+	/* Opens the shader. */
+	snprintf(path, sizeof(path), "%s/%s/%s", VK_REPO, directory, name);
 	file = fopen(path, "rb");
 	assert(file != NULL);
 
@@ -225,6 +237,108 @@ fixture_pipeline(
 	stub_put64(&fixture_wire, identity);
 }
 
+/*
+ * Appends vkCreateGraphicsPipelines of one triangle-list pipeline with two
+ * stages, two vec4 attributes, one viewport and one scissor, both dynamic.
+ */
+static void
+fixture_dynamic_pipeline(
+	uint64_t vertex,
+	uint64_t fragment,
+	uint64_t identity)
+{
+	unsigned index;
+
+	/* The header, the device, no cache and one create info. */
+	stub_put32(&fixture_wire, FIXTURE_CREATE_GRAPHICS_PIPELINES);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put64(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, 1U);
+
+	/* VkGraphicsPipelineCreateInfo: sType 28, no chain, flags, two stages. */
+	stub_put32(&fixture_wire, 28U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 2U);
+	stub_put64(&fixture_wire, 2U);
+	fixture_stage(VK_SHADER_STAGE_VERTEX_BIT, vertex);
+	fixture_stage(VK_SHADER_STAGE_FRAGMENT_BIT, fragment);
+
+	/* Vertex input: sType 19, no chain, flags, binding 0 of stride 32 per vertex. */
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 19U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 32U);
+	stub_put32(&fixture_wire, VK_VERTEX_INPUT_RATE_VERTEX);
+
+	/* Two vec4 attributes of binding 0: location 0 at 0 and location 1 at 16. */
+	stub_put32(&fixture_wire, 2U);
+	stub_put64(&fixture_wire, 2U);
+	for (index = 0U; index < 2U; index++) {
+		stub_put32(&fixture_wire, index);
+		stub_put32(&fixture_wire, 0U);
+		stub_put32(&fixture_wire, VK_FORMAT_R32G32B32A32_SFLOAT);
+		stub_put32(&fixture_wire, index * 16U);
+	}
+
+	/* Input assembly: sType 20, no chain, flags, triangle list, no restart. */
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 20U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+	stub_put32(&fixture_wire, 0U);
+
+	/* No tessellation; viewport state: sType 22, one viewport and one scissor, neither array sent. */
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 22U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, 0U);
+
+	/* The rasterization record, all zero, is always present. */
+	stub_put64(&fixture_wire, 1U);
+	for (index = 0U; index < 14U; index++)
+		stub_put32(&fixture_wire, 0U);
+
+	/* No multisample, depth-stencil or colour blend state. */
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 0U);
+
+	/* Dynamic state: sType 27, no chain, flags, the viewport and the scissor. */
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 27U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 2U);
+	stub_put64(&fixture_wire, 2U);
+	stub_put32(&fixture_wire, VK_DYNAMIC_STATE_VIEWPORT);
+	stub_put32(&fixture_wire, VK_DYNAMIC_STATE_SCISSOR);
+
+	/* No layout or render pass, subpass 0, no base pipeline. */
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+
+	/* No allocator, then one identity. */
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, identity);
+}
+
 /* Appends a generic destroy: [opcode][reply][device][identity][pAllocator]. */
 static void
 fixture_destroy(
@@ -332,14 +446,14 @@ test_graphics_pipeline(void)
 	int found;
 
 	/* Loads the vkdemo shaders and opens the fixture session. */
-	vertex = fixture_load_spirv("cuboid.vert.spv", &vertex_words);
-	fragment = fixture_load_spirv("cuboid.frag.spv", &fragment_words);
+	vertex = fixture_load_spirv("userland/base/vkdemo/shaders", "cuboid.vert.spv", &vertex_words);
+	fragment = fixture_load_spirv("userland/base/vkdemo/shaders", "cuboid.frag.spv", &fragment_words);
 	stub_session_open(NULL);
 
 	/*
 	 * Makes a valid vertex shader with an instruction the compiler does not
-	 * lower: the shipped shader with its first OpFMul turned into OpFDiv on
-	 * the same operands.
+	 * lower: the shipped shader with its first OpFMul turned into OpOuterProduct
+	 * on the same operands.
 	 */
 	broken = malloc(vertex_words * sizeof(*broken));
 	assert(broken != NULL);
@@ -349,7 +463,7 @@ test_graphics_pipeline(void)
 	     at += broken[at] >> 16)
 		assert((broken[at] >> 16) != 0U);
 	assert(at < vertex_words);
-	broken[at] = (broken[at] & 0xffff0000U) | FIXTURE_SPIRV_FDIV;
+	broken[at] = (broken[at] & 0xffff0000U) | FIXTURE_SPIRV_OUTER_PRODUCT;
 
 	/* Creates the three modules. */
 	stub_wire_begin(&fixture_wire);
@@ -442,6 +556,110 @@ test_graphics_pipeline(void)
 	assert(reply_bytes == 4U * 4U);
 	pipeline = drv_i915_object_lookup(stub_vk, I915_VK_OBJ_PIPELINE, FIXTURE_PIPELINE);
 	assert(pipeline == NULL);
+
+	/* Closes the session; nothing stays allocated. */
+	stub_session_close();
+	assert(stub_live == 0U);
+	free(vertex);
+	free(fragment);
+}
+
+/*
+ * A pipeline whose viewport and scissor are dynamic keeps them for the
+ * command buffer, and one whose fragment shader reads the push constant
+ * colour at byte 112 is accepted: its pixel stage is given the push
+ * constants in front of its setup data, from the same block the vertex
+ * stage reads.
+ */
+static void
+test_dynamic_push_pipeline(void)
+{
+	struct i915_gfx_pipeline *pipeline;
+	struct i915_gfx_kernels kernels;
+	struct i915_gfx_batch batch;
+	uint32_t commands[256];
+	uint32_t *vertex;
+	uint32_t *fragment;
+	size_t vertex_words;
+	size_t fragment_words;
+	size_t reply_bytes;
+	int found;
+
+	/* Loads the executor test's shaders and opens the fixture session. */
+	vertex = fixture_load_spirv(FIXTURE_EXECUTOR_SHADERS, "place.vert.spv", &vertex_words);
+	fragment = fixture_load_spirv(FIXTURE_EXECUTOR_SHADERS, "push.frag.spv", &fragment_words);
+	stub_session_open(NULL);
+
+	/* Creates the two modules and the pipeline: [65][VK_SUCCESS][count 1][identity]. */
+	stub_wire_begin(&fixture_wire);
+	fixture_shader_module(vertex, vertex_words, FIXTURE_PLACE_VS);
+	fixture_shader_module(fragment, fragment_words, FIXTURE_PUSH_FS);
+	fixture_dynamic_pipeline(FIXTURE_PLACE_VS, FIXTURE_PUSH_FS, FIXTURE_DYNAMIC_PIPELINE);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 2U * 24U + 24U);
+	assert(stub_get32(stub_reply, 48U + 4U) == VK_SUCCESS);
+	assert(stub_get64(stub_reply, 48U + 16U) == FIXTURE_DYNAMIC_PIPELINE);
+
+	/* The pipeline takes its viewport and scissor from the command buffer. */
+	pipeline = drv_i915_object_lookup(stub_vk, I915_VK_OBJ_PIPELINE, FIXTURE_DYNAMIC_PIPELINE);
+	assert(pipeline != NULL);
+	assert(pipeline->dynamic_viewport != 0);
+	assert(pipeline->dynamic_scissor != 0);
+	assert(pipeline->binding_count == 1U);
+	assert(pipeline->bindings[0].stride == 32U);
+	assert(pipeline->attribute_count == 2U);
+	assert(pipeline->attributes[1].offset == 16U);
+
+	/*
+	 * The vertex stage reads the offset at the start of the block, one
+	 * register; the fragment stage reads the colour at byte 112, so it
+	 * takes the block's first four registers.
+	 */
+	assert(pipeline->kernels_ready != 0);
+	assert(pipeline->vs_binary->push_regs == 1U);
+	assert(pipeline->fs_binary->push_regs == 4U);
+	drv_i915_gfx_pipeline_kernels(pipeline, &kernels);
+	assert(kernels.vs_push_regs == 1U);
+	assert(kernels.ps_push_regs == 4U);
+
+	/* Emits the push constants of both stages and the pixel shader state. */
+	memset(commands, 0, sizeof(commands));
+	batch.cmds = commands;
+	batch.count = 0U;
+	batch.capacity = 256U;
+	batch.overflow = 0;
+	drv_i915_gfx_emit_constants(&batch, 0x123450000ULL, kernels.vs_push_regs, 0x123450400ULL, kernels.ps_push_regs, 0x6U);
+	drv_i915_gfx_emit_pixel_shader(&batch, &kernels);
+	assert(batch.overflow == 0);
+
+	/* 3DSTATE_CONSTANT_VS reads one register from buffer 3 at the block. */
+	found = fixture_find_command(commands, batch.count, GEN12_CMD_3DSTATE_CONSTANT_VS);
+	assert(found >= 0);
+	assert(commands[found + 2] == (1U << 16));
+	assert(commands[found + 9] == 0x23450000U);
+	assert(commands[found + 10] == 0x1U);
+
+	/* 3DSTATE_CONSTANT_PS reads four registers from buffer 3 at the pixel stage's own push data. */
+	found = fixture_find_command(commands, batch.count, GEN12_CMD_3DSTATE_CONSTANT_PS);
+	assert(found >= 0);
+	assert(commands[found + 1] == 0U);
+	assert(commands[found + 2] == (4U << 16));
+	assert(commands[found + 9] == 0x23450400U);
+	assert(commands[found + 10] == 0x1U);
+
+	/* 3DSTATE_PS enables the push constants, in front of the setup data at the payload start. */
+	found = fixture_find_command(commands, batch.count, GEN12_CMD_3DSTATE_PS);
+	assert(found >= 0);
+	assert((commands[found + 6] & GEN12_3DSTATE_PS_PUSH_CONSTANT_ENABLE) != 0U);
+	assert((commands[found + 7] >> 16) == kernels.ps_grf_start);
+
+	/* Destroys the pipeline and the modules. */
+	stub_wire_begin(&fixture_wire);
+	fixture_destroy(FIXTURE_DESTROY_PIPELINE, FIXTURE_DYNAMIC_PIPELINE);
+	fixture_destroy(FIXTURE_DESTROY_SHADER_MODULE, FIXTURE_PLACE_VS);
+	fixture_destroy(FIXTURE_DESTROY_SHADER_MODULE, FIXTURE_PUSH_FS);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 3U * 4U);
 
 	/* Closes the session; nothing stays allocated. */
 	stub_session_close();

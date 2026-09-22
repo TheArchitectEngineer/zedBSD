@@ -242,3 +242,68 @@ drv_i915_float_ratio(
 	/* Succeeded: packs the biased exponent and the fraction. */
 	return ((uint32_t)(127 + exponent) << I915_FLOAT_EXPONENT_SHIFT) | (mantissa & I915_FLOAT_FRACTION);
 }
+
+/*
+ * Converts a value to a signed fixed-point number, rounding to nearest and
+ * clamping.
+ *
+ * The result counts units of 2^-fraction_bits (at most 16 fraction bits)
+ * and is clamped to [minimum, maximum], which are in the same units.  A zero
+ * or a subnormal value gives zero, and so does a NaN; an infinity clamps to
+ * the limit of its sign.
+ */
+int32_t
+drv_i915_float_to_fixed(
+	uint32_t value,
+	uint32_t fraction_bits,
+	int32_t minimum,
+	int32_t maximum)
+{
+	uint32_t exponent;
+	uint32_t mantissa;
+	uint64_t magnitude;
+	int64_t fixed;
+	int shift;
+
+	/* Takes the biased exponent and the mantissa with its hidden one. */
+	exponent = (value >> I915_FLOAT_EXPONENT_SHIFT) & I915_FLOAT_EXPONENT_MASK;
+	mantissa = (value & I915_FLOAT_FRACTION) | I915_FLOAT_HIDDEN_ONE;
+
+	/* A zero, a subnormal value and a NaN convert to zero. */
+	if (exponent == 0U)
+		return 0;
+	if (exponent == I915_FLOAT_EXPONENT_MASK && (value & I915_FLOAT_FRACTION) != 0U)
+		return 0;
+
+	/*
+	 * The value is mantissa * 2^(exponent - 127 - 23); in fixed-point units
+	 * the mantissa moves by that power plus the fraction bits.  A shift of
+	 * more than 24 already exceeds every 32-bit limit, and an infinity is
+	 * such a shift.
+	 */
+	shift = (int)exponent - (int)I915_FLOAT_BIAS - 23 + (int)fraction_bits;
+	if (shift > 24) {
+		magnitude = (uint64_t)1U << 48;
+	} else if (shift >= 0) {
+		magnitude = (uint64_t)mantissa << shift;
+	} else if (shift >= -25) {
+		/* Rounds the bits shifted out away to nearest, halves up. */
+		magnitude = ((uint64_t)mantissa + ((uint64_t)1U << (-shift - 1))) >> -shift;
+	} else {
+		magnitude = 0U;
+	}
+
+	/* Applies the sign. */
+	fixed = (int64_t)magnitude;
+	if ((value & I915_FLOAT_SIGN) != 0U)
+		fixed = -fixed;
+
+	/* Clamps to the range the caller can hold. */
+	if (fixed < minimum)
+		return minimum;
+	if (fixed > maximum)
+		return maximum;
+
+	/* Succeeded: the value in fixed-point units. */
+	return (int32_t)fixed;
+}

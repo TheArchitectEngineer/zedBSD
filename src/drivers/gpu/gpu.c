@@ -32,6 +32,7 @@
 #include <kern/pmem.h>
 #include <kern/vm-device.h>
 #include <kern/clock.h>
+#include <hal/hal.h>
 #include <kern/sched.h>
 #include <kern/waitq.h>
 
