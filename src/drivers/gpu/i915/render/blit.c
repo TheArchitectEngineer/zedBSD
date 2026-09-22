@@ -691,7 +691,7 @@ i915_blit_build_batch(
 
 	/* Switches to 3D, programs the state bases and the once-per-context state. */
 	state_va = space->slot_va;
-	drv_i915_gfx_emit_context_setup(batch, state_va, space->window_va, mocs);
+	drv_i915_gfx_emit_context_setup(batch, state_va, space->window_va, 0U, mocs);
 
 	/* Describes the one vertex buffer: MOCS, address modify enable and the stride; the address; the size. */
 	vertices_va = state_va + I915_GFX_RECT_VERTICES;

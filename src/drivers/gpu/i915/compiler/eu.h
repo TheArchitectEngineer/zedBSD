@@ -86,7 +86,10 @@ enum i915_eu_alu {
 /*
  * The math functions a caller can ask for.
  *
- * Each maps to one hardware math selector.
+ * Each maps to one hardware math selector.  The float functions read one
+ * float source; the integer division's quotient and remainder read two
+ * integer sources, signed or unsigned as their type says, without source
+ * modifiers.
  */
 enum i915_eu_math {
 	I915_EU_MATH_INV = 0,
@@ -96,6 +99,8 @@ enum i915_eu_math {
 	I915_EU_MATH_COS,
 	I915_EU_MATH_LOG,
 	I915_EU_MATH_EXP,
+	I915_EU_MATH_INT_QUOTIENT,
+	I915_EU_MATH_INT_REMAINDER,
 	I915_EU_MATH_COUNT
 };
 
@@ -103,13 +108,15 @@ enum i915_eu_math {
  * The one-source operations other than a move.
  *
  * NOT takes an integer operand; RNDD (round down), RNDZ (round toward
- * zero) and FRC (fraction) take a float.
+ * zero), RNDE (round to the nearest, ties to even) and FRC (fraction)
+ * take a float.
  */
 enum i915_eu_unary {
 	I915_EU_NOT = 0,
 	I915_EU_RNDD,
 	I915_EU_FRC,
 	I915_EU_RNDZ,
+	I915_EU_RNDE,
 	I915_EU_UNARY_COUNT
 };
 
@@ -161,6 +168,9 @@ struct i915_eu_reg drv_i915_eu_null(void);
 void drv_i915_eu_mov(struct i915_eu_buf *buffer, struct i915_eu_reg dst, struct i915_eu_reg src);
 void drv_i915_eu_alu2(struct i915_eu_buf *buffer, enum i915_eu_alu op, struct i915_eu_reg dst, struct i915_eu_reg src0, struct i915_eu_reg src1);
 void drv_i915_eu_alu2_masked(struct i915_eu_buf *buffer, enum i915_eu_flag flag, enum i915_eu_alu op, struct i915_eu_reg dst, struct i915_eu_reg src0, struct i915_eu_reg src1);
+void drv_i915_eu_alu2_scalar(struct i915_eu_buf *buffer, enum i915_eu_alu op, struct i915_eu_reg dst, struct i915_eu_reg src0, struct i915_eu_reg src1);
+void drv_i915_eu_mov_all(struct i915_eu_buf *buffer, struct i915_eu_reg dst, struct i915_eu_reg src);
+void drv_i915_eu_mov_scalar(struct i915_eu_buf *buffer, struct i915_eu_reg dst, struct i915_eu_reg src);
 void drv_i915_eu_alu1(struct i915_eu_buf *buffer, enum i915_eu_unary op, struct i915_eu_reg dst, struct i915_eu_reg src);
 void drv_i915_eu_cmp(struct i915_eu_buf *buffer, enum i915_eu_cond cond, enum i915_eu_flag flag, int predicated, struct i915_eu_reg dst, struct i915_eu_reg src0, struct i915_eu_reg src1);
 void drv_i915_eu_minmax(struct i915_eu_buf *buffer, enum i915_eu_cond cond, struct i915_eu_reg dst, struct i915_eu_reg src0, struct i915_eu_reg src1);
@@ -170,6 +180,7 @@ void drv_i915_eu_mad(struct i915_eu_buf *buffer, struct i915_eu_reg dst, struct 
 void drv_i915_eu_math(struct i915_eu_buf *buffer, enum i915_eu_math func, struct i915_eu_reg dst, struct i915_eu_reg src0, struct i915_eu_reg src1);
 void drv_i915_eu_send(struct i915_eu_buf *buffer, struct i915_eu_reg dst, struct i915_eu_reg src0, struct i915_eu_reg src1, uint32_t sfid, uint32_t descriptor, uint32_t ex_descriptor, int conditional, int end_of_thread);
 void drv_i915_eu_send_masked(struct i915_eu_buf *buffer, enum i915_eu_flag flag, struct i915_eu_reg dst, struct i915_eu_reg src0, struct i915_eu_reg src1, uint32_t sfid, uint32_t descriptor, uint32_t ex_descriptor, int conditional, int end_of_thread);
+void drv_i915_eu_send_all(struct i915_eu_buf *buffer, struct i915_eu_reg dst, struct i915_eu_reg src0, struct i915_eu_reg src1, uint32_t sfid, uint32_t descriptor, uint32_t ex_descriptor);
 void drv_i915_eu_nop(struct i915_eu_buf *buffer);
 uint32_t drv_i915_eu_position(const struct i915_eu_buf *buffer);
 void drv_i915_eu_while(struct i915_eu_buf *buffer, enum i915_eu_flag flag, uint32_t target);

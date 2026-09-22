@@ -192,10 +192,10 @@ enum i915_shader_ir_op {
 	/* dst = -src[0], an integer modulo 2^32. */
 	I915_IR_INEG,
 
-	/* dst = src[0] / src[1], unsigned, rounded toward zero. */
+	/* dst = src[0] / src[1], unsigned, rounded toward zero; undefined for a zero divisor. */
 	I915_IR_UDIV,
 
-	/* dst = src[0] % src[1], unsigned. */
+	/* dst = src[0] % src[1], unsigned; undefined for a zero divisor. */
 	I915_IR_UMOD,
 
 	/* dst = the bitwise and, or, exclusive or of src[0] and src[1]. */
@@ -246,6 +246,18 @@ enum i915_shader_ir_op {
 	 * true run the body again; the loop ends when it is false for all.
 	 */
 	I915_IR_LOOP_END,
+
+	/*
+	 * dst = src[0] / src[1], signed, rounded toward zero; undefined for a
+	 * zero divisor and for the most negative integer divided by -1.
+	 */
+	I915_IR_IDIV,
+
+	/* dst = src[0] - src[1] * (src[0] / src[1]), signed: the sign of src[0] (SPIR-V OpSRem). */
+	I915_IR_IREM,
+
+	/* dst = src[0] rounded to the nearest integer, a tie to the even one (a float). */
+	I915_IR_FROUND_EVEN,
 
 	I915_IR_OP_COUNT
 };

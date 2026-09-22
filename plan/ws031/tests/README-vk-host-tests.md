@@ -18,9 +18,9 @@
 | fixture | 旧 | 新 |
 | --- | --- | --- |
 | res | `vk/res.c` の memory/buffer/image API（GEM 確保・map）、image の surface state、descriptor API | wire 経由で `render/memory.c`・`image.c`・`descriptor.c`。memory の storage は libvulkan の blob（`drv_i915_render_blob_attach/detach`、`drv_i915_gfx_memory_cpu/va`）。surface state は `render/state.c` の `drv_i915_gfx_surface_write` |
-| resdispatch | `vk/cmd.c` + `vk/res.c` の wire decode と reply 枠、`i915_vk_command_reply` | `render/vulkan.c` → `dispatch.c` → `objects.c`・`memory.c`・`image.c`。reply 領域は `drv_i915_render_transport_reply`、select/seek/version probe は `transport.c` |
-| pipe | `vk/pipe.c` の shader module・graphics pipeline の wire decode、3DSTATE 発行 | `render/pipeline.c`・`pipeline-prepare.c`（executor の compiler で vkdemo shader を compile）。VS/PS の state は `render/state.c` の `drv_i915_gfx_emit_vertex_shader/pixel_shader` に、compile 済み kernel から出す |
-| cmdbuf | `vk/cmdbuf.c` の記録（記録時に GPU 命令を書く）、lifecycle、vkQueueSubmit | `render/command.c`（操作列として記録し、submit で実行）。submit で GPU 経路へ渡る内容（clear の rect、draw の pipeline・vertex buffer・push constant・回数）を stand-in で確認。3DPRIMITIVE と MI_BATCH_BUFFER_END は `render/state.c` の `drv_i915_gfx_emit_primitive` |
+| resdispatch | `vk/cmd.c` + `vk/res.c` の wire decode と reply 枠、`i915_vk_command_reply` | `render/vulkan.c` → `dispatch.c` → `objects.c`・`memory.c`・`image.c`。reply 領域は `drv_i915_render_transport_reply`、select/seek/version probe は `transport.c`。format 特性（`instance.c` の vkGetPhysicalDevice(Image)FormatProperties、tiling・usage と実装の一致） |
+| pipe | `vk/pipe.c` の shader module・graphics pipeline の wire decode、3DSTATE 発行 | `render/pipeline.c`・`pipeline-prepare.c`（executor の compiler で vkdemo shader を compile）。VS/PS の state は `render/state.c` の `drv_i915_gfx_emit_vertex_shader/pixel_shader` に、compile 済み kernel から出す。colour blend state（attachment 0 の factor・op・write mask・blend constants）と dynamic state `VK_DYNAMIC_STATE_BLEND_CONSTANTS` の decode |
+| cmdbuf | `vk/cmdbuf.c` の記録（記録時に GPU 命令を書く）、lifecycle、vkQueueSubmit | `render/command.c`（操作列として記録し、submit で実行）。submit で GPU 経路へ渡る内容（clear の rect、draw の pipeline・vertex buffer・push constant・回数）を stand-in で確認。3DPRIMITIVE と MI_BATCH_BUFFER_END は `render/state.c` の `drv_i915_gfx_emit_primitive`。`drv_i915_gfx_write_state` の BLEND_STATE・COLOR_CALC の blend constants（pipeline／dynamic）・3DSTATE_PS_BLEND、複数 sampled image の binding table・surface・sampler、uniform block の push data（dynamic offset 込み）。wire 経由の uniform buffer（plain／dynamic）の vkUpdateDescriptorSets、vkCmdBindDescriptorSets の dynamic offset の対応付けと過不足の拒否、vkCmdSetBlendConstants |
 | sync | `vk/sync.c` の fence・semaphore・query | fence は `render/fence.c`（opcode 35–38、latch）、semaphore は `render/sync.c` |
 | cmd | 経路表の 35・42 を「sync 未移植」として検査 | sync の範囲は `fence.c` へ経路が付いた。35 は fence 作成、42 は `fence.c` が名乗って拒否する検査に変更 |
 
@@ -63,6 +63,32 @@
 
 `run-vk-gentool-test.sh` は mview と compiler-shaders の全 `.spv` も判定する。gentool（Mesa main）が無い環境では
 `BRW_TOOLS=<Mesa 25.0 の build>/src/intel/compiler` で `brw_disasm`/`brw_asm` の往復に切り替わる（判定は同じ）。
+
+## p014 段階 E2 で足した検査（compiler の一般化）
+
+generality 試験（`src/drivers/gpu/i915/tests/render/generality-shaders/`、`regenerate.py` が
+`tests/fixtures/generality-shaders-gen.inc` に SPIR-V と期待値を出す。host fixture はこの `.inc` を `#include` する）。
+
+| fixture | 検査 |
+| --- | --- |
+| lower | interpreter に IDIV/IREM/FROUND_EVEN、location 16 まで。matrix/int/float/loop の 4 fragment shader を 64x64 の全画素で regenerate.py の語と bit 一致（loop.frag の loop 5 本）。vary16.vert（16 varying）、vary16.frag と subset.frag（16 中 5）、vin16.vert（16 attribute）、matrix.vert（row-major の transpose × column-major で角を置く）。手組み SPIR-V で OpSRem/OpSMod/OpFRem/OpFMod の負の被演算子 |
+| compile | EU model に整数（ADD/MUL の D・UD、32×16 の UW 半分、XOR/SHL/SHR/ASR/NOT、整数の negate/abs 修飾、UD の比較）、F↔D/UD の MOV 変換、RNDZ/RNDE、math の INT DIV 商・余り（D/UD）、WHILE（跳ばない channel は WHILE の後で待ち、全 channel が抜けたら loop に入った channel で再開）。4 fragment shader を 8 channel ずつ全画素で bit 一致（loop.frag で channel が割れた WHILE 10030 回）、vary16.vert の 16 slot、vin16.vert（payload r2..r65 不変）、matrix.vert、vary16/subset/vin16.frag。spill.frag と「16 attribute + 16 varying」の手組み IR は ENOTSUP（12 + 12 は通る） |
+| pipe | vary16.vert + subset.frag: kernels の route（入力 n ← location の slot: 0,1,6,11,15）、`3DSTATE_SBE`（属性 5、read length 8、offset 1）、`3DSTATE_SBE_SWIZ`、PS_EXTRA の attribute enable。quad.vert + subset.frag（書かれない location を読む）は ENOTSUP。vin16.vert + vin16.frag（16 attribute、location 0/3 → slot 0/1）。壊した VS の置換 opcode の説明を OuterProduct（スカラーは拒否）に修正 |
+
+`run-vk-gentool-test.sh` は generality の全 `.spv`（spill.frag を除く）も判定し、encoder 試験に math intdiv/intmod（D・UD）と
+rnde を足した。
+
+## p014 段階 E3 で足した検査（register spill と 16 入力 + 16 出力）
+
+| fixture | 検査 |
+| --- | --- |
+| lower | spill.frag（96 値を同時に生かし、画素ごとに trip count の違う loop が loop 変数 2 つを更新）も 64x64 全画素で regenerate.py の語と bit 一致（5 shader） |
+| compile | EU model に scratch memory（64 KiB、未書込みは NaN）: r0.3（per-thread scratch space）と r0.5（scratch base、下位 10 bit は junk）を初期値に、SIMD1 NoMask の MOV/AND（header の dword 2/3/5）、SIMD8 NoMask の MOV、data cache（SFID 10）の OWord block write（execution mask 下、data 1 register）と read（NoMask 必須）。header が Mesa の generate_scratch_header() どおりか、offset が 32 byte 境界で kernel の scratch_bytes 内かを assert。URB write の slot 内容を記録（gathered VUE の確認用）。spill.frag を 8 channel ずつ全画素で bit 一致（scratch 2 KiB/thread、書込み 30720 回のうち一部 channel だけのもの 4096 回、読出し 51712 回、channel が割れた WHILE 2048 回）。vio16.vert（16 attribute + 16 varying）: gathered VUE の 18 slot が GLSL どおり、scratch 書込み 41・読出し 41。手組み IR の 16 + 16 も compile でき URB の slot 2+k = attribute k（12 + 12 は staged VUE のまま scratch 0）。spill しない既存 shader の scratch_bytes は 0 |
+| pipe | vio16.vert + spill.frag: kernels の scratch_bytes 2048/2048、`3DSTATE_VS`/`3DSTATE_PS` dword 4-5 に offset（bit 63:10）と Per-Thread Scratch Space（1 KiB << 1）、`STATE_BASE_ADDRESS` の General State Base Address = scratch buffer。spill しない pipeline は dword 4-5 が 0 |
+
+`run-vk-gentool-test.sh` は spill.frag と vio16.vert も判定し（brw_disasm が `DC OWORD block write/read, bti 253, owords = 2` と
+読む）、encoder 試験に scratch header（`mov(8) ... WE_all`、`and(1) g95.3 g0.3<0,1,0>UD 0xf WE_all`、`and(1) g95.5 g0.5 0xfffffc00`）、
+offset の `mov(1) g95.2`、OWord block write（mask 下）と read（WE_all）を足した。
 
 ## fixture が固定している既知の問題（production は変更していない）
 

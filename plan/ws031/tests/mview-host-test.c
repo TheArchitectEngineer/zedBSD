@@ -366,6 +366,66 @@ test_camera(
 	mview_camera_push(&camera, 640U, 480U, &push);
 	check(memcmp(&push, &first, sizeof(push)) == 0, "R restores the transforms bit for bit");
 
+	/*
+	 * The per-pixel shading's scene block: projection * view * model is the push block's clip transform, the
+	 * normal matrix its normal rotation; one directional and two point lights in front of the model.
+	 */
+	{
+		struct mview_scene scene;
+		struct mview_scene again;
+		float view_model[16];
+		float product[16];
+		float largest;
+		float error;
+		uint32_t row;
+		uint32_t column;
+		uint32_t k;
+		int normals;
+
+		mview_camera_scene(&camera, 640U, 480U, &scene);
+		for (column = 0U; column < 4U; column++) {
+			for (row = 0U; row < 4U; row++) {
+				view_model[column * 4U + row] = 0.0f;
+				for (k = 0U; k < 4U; k++)
+					view_model[column * 4U + row] += scene.view[k * 4U + row] * scene.model[column * 4U + k];
+			}
+		}
+		largest = 0.0f;
+		error = 0.0f;
+		for (column = 0U; column < 4U; column++) {
+			for (row = 0U; row < 4U; row++) {
+				product[column * 4U + row] = 0.0f;
+				for (k = 0U; k < 4U; k++)
+					product[column * 4U + row] += scene.projection[k * 4U + row] * view_model[column * 4U + k];
+				if (fabsf(first.clip[column * 4U + row]) > largest)
+					largest = fabsf(first.clip[column * 4U + row]);
+				if (fabsf(product[column * 4U + row] - first.clip[column * 4U + row]) > error)
+					error = fabsf(product[column * 4U + row] - first.clip[column * 4U + row]);
+			}
+		}
+		check(error <= 1.0e-5f * largest, "projection * view * model is the clip transform");
+		normals = 1;
+		for (column = 0U; column < 3U; column++) {
+			for (row = 0U; row < 3U; row++) {
+				if (scene.normal[column * 4U + row] != first.normal[column * 4U + row])
+					normals = 0;
+			}
+		}
+		check(normals && scene.normal[15] == 1.0f, "the normal matrix is the normal rotation");
+		check(scene.light_position[0][3] == 0.0f && scene.light_position[1][3] == 1.0f && scene.light_position[2][3] == 1.0f,
+		      "one directional and two point lights");
+		check(scene.light_position[1][2] > -camera.distance && scene.light_position[2][2] > -camera.distance &&
+		      scene.light_factors[1][1] > 0.0f && scene.light_factors[2][2] > 0.0f,
+		      "the point lights are in front of the model and fade with distance");
+		mview_camera_orbit(&camera, 30.0f, 10.0f);
+		mview_camera_scene(&camera, 640U, 480U, &again);
+		check(memcmp(&again, &scene, sizeof(scene)) != 0, "the scene block follows the view");
+		mview_camera_reset(&camera);
+		mview_camera_scene(&camera, 640U, 480U, &again);
+		check(memcmp(&again, &scene, sizeof(scene)) == 0, "R restores the scene block bit for bit");
+		check(sizeof(struct mview_scene) == 416U, "the scene block is the shaders' std140 layout (416 bytes)");
+	}
+
 	/* Pitch is clamped and yaw wraps. */
 	mview_camera_orbit(&camera, 725.0f, 200.0f);
 	check(camera.pitch == 89.0f && camera.yaw == 5.0f, "pitch clamps and yaw wraps");

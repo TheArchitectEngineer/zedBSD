@@ -25,6 +25,8 @@ It shows a model converted by `tools/fbx2mview.py` (format:
 | `--token=NAME` | label of every log line (1–64 of `A-Z a-z 0-9 - _`, default `manual`) |
 | `--frames=N` | stop after N presented frames and draw continuously; `0` (default) draws on demand until quit |
 | `--timeout-s=N` | stop normally after N seconds; `0` (default) means no deadline |
+| `--spin=N` | turn the model for N seconds, drawing every frame, and report the frame rate |
+| `--shading=vertex\|pixel` | lighting per vertex (default, the p013 images) or per pixel (see Rendering) |
 
 ## Controls
 
@@ -44,7 +46,7 @@ synthesized. Without a `wl_seat` the viewer still renders, without input.
 ## Log
 
 ```
-MVIEW START run=<t> model=<dir> vertices=<n> triangles=<m> materials=<k> textures=<t>
+MVIEW START run=<t> model=<dir> vertices=<n> triangles=<m> materials=<k> textures=<t>[ shading=pixel]
 MVIEW INPUT run=<t> kind=motion|button|axis|key <event fields> yaw=<deg> pitch=<deg> distance=<d> pan=<x>,<y>
 MVIEW FRAME run=<t> frame=<n> yaw=<deg> pitch=<deg> distance=<d> pan=<x>,<y>
 MVIEW DONE run=<t> frames=<n> reason=quit|closed|timeout|frames
@@ -75,6 +77,18 @@ pixel for pixel.
   rotation as columns, and the material colour.
 - Lighting: Lambert from a fixed view-space direction plus 0.35 ambient,
   per vertex, times texture × material colour. Clear colour is dark grey.
+- `--shading=pixel` lights every pixel instead (`shaders/pixel.vert`,
+  `pixel.frag`, `pixel-cutout.frag`): a host-visible uniform buffer, binding 1
+  of every texture's set, holds the scene block (`struct mview_scene`, std140:
+  model, view and projection matrices and the normal matrix, whose product is
+  the per-vertex path's clip transform; an ambient term; three lights). The
+  fragment shader loops over the lights -- one directional, two point lights
+  with constant/linear/quadratic attenuation in units of the model radius --
+  with Blinn-Phong (`normalize`, `dot`, `max`, `pow`), multiplies texture ×
+  material colour by the diffuse light and adds the specular light; the cutout
+  variant discards alpha < 0.5. The lights are fixed in view space, so `R`
+  still restores the first frame exactly. The block is rewritten before each
+  frame is recorded (the previous frame's fence has been waited on).
 - Textures are uploaded through one reused host-visible staging buffer (the
   Venus host-visible window is small) and mipmapped with `vkCmdBlitImage`, or
   with a CPU box filter when the format cannot be blitted with linear
@@ -86,7 +100,8 @@ pixel for pixel.
 ## Limits
 
 - Bind pose only: no skinning, bones or blend shapes.
-- Simple lighting: no normal maps, specular, shadows or MToon-style shading.
+- Simple lighting: no normal maps, shadows or MToon-style shading; specular
+  highlights only with `--shading=pixel`.
 - Textures are sampled as UNORM because the surface is UNORM; the stored
   sRGB colours reach the screen unchanged, and lighting is applied in that
   encoding.

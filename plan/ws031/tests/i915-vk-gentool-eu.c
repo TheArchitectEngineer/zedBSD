@@ -100,6 +100,32 @@ main(int argc, char **argv)
 		drv_i915_eu_cmp(&b, I915_EU_COND_NE, I915_EU_FLAG_F0_0, 0, n, drv_i915_eu_grf_d(60U), drv_i915_eu_imm_d(0U));
 		drv_i915_eu_while(&b, I915_EU_FLAG_F0_0, top);
 	}
+	/* p014 stage E2: the integer division in the math box (signed and unsigned), round to even */
+	drv_i915_eu_math(&b, I915_EU_MATH_INT_QUOTIENT, drv_i915_eu_grf_d(63U), drv_i915_eu_grf_d(16U), drv_i915_eu_grf_d(17U));
+	drv_i915_eu_math(&b, I915_EU_MATH_INT_REMAINDER, drv_i915_eu_grf_d(64U), drv_i915_eu_grf_d(16U), drv_i915_eu_grf_d(17U));
+	drv_i915_eu_math(&b, I915_EU_MATH_INT_QUOTIENT, drv_i915_eu_grf_ud(65U), drv_i915_eu_grf_ud(16U), drv_i915_eu_grf_ud(17U));
+	drv_i915_eu_math(&b, I915_EU_MATH_INT_REMAINDER, drv_i915_eu_grf_ud(66U), drv_i915_eu_grf_ud(16U), drv_i915_eu_grf_ud(17U));
+	drv_i915_eu_alu1(&b, I915_EU_RNDE, drv_i915_eu_grf(67U), drv_i915_eu_grf(16U));
+	/*
+	 * p014 stage E3: the scratch header (cleared on all channels, the size and base copied out of r0 by SIMD1 AND),
+	 * its offset (SIMD1 MOV), an OWord block write of r20 under the mask and a read into r21 outside it
+	 */
+	{
+		struct i915_eu_reg dword = drv_i915_eu_grf_ud(95U);
+		struct i915_eu_reg payload = drv_i915_eu_grf_scalar(0U, 12U);
+
+		drv_i915_eu_mov_all(&b, drv_i915_eu_grf_ud(95U), drv_i915_eu_imm_ud(0U));
+		dword.subnr = 12U;
+		payload.type = EU_TYPE_UD;
+		drv_i915_eu_alu2_scalar(&b, I915_EU_AND, dword, payload, drv_i915_eu_imm_ud(0x0000000fU));
+		dword.subnr = 20U;
+		payload.subnr = 20U;
+		drv_i915_eu_alu2_scalar(&b, I915_EU_AND, dword, payload, drv_i915_eu_imm_ud(0xfffffc00U));
+		dword.subnr = 8U;
+		drv_i915_eu_mov_scalar(&b, dword, drv_i915_eu_imm_ud(6U));
+		drv_i915_eu_send(&b, drv_i915_eu_null(), drv_i915_eu_grf_ud(95U), drv_i915_eu_grf_ud(20U), 10U, 0x020a02fdU, 0x00000040U, 0, 0);
+		drv_i915_eu_send_all(&b, drv_i915_eu_grf_ud(21U), drv_i915_eu_grf_ud(95U), drv_i915_eu_null(), 10U, 0x021802fdU, 0U);
+	}
 	/* render-target write predicated on the discard flag, end of thread */
 	drv_i915_eu_send_masked(&b, I915_EU_FLAG_F1_0, drv_i915_eu_null(), drv_i915_eu_grf(124U), drv_i915_eu_null(), 5U, 0x08031400U, 0U, 1, 1);
 	if (b.error != 0)

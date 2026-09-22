@@ -107,6 +107,10 @@
 #define I915_VKX_ID_SET_FORCED		(I915_VKX_IDENTITY + 16U)
 #define I915_VKX_ID_SET_BIAS		(I915_VKX_IDENTITY + 17U)
 #define I915_VKX_ID_SET_LATER		(I915_VKX_IDENTITY + 18U)
+#define I915_VKX_ID_SET_LINEAR		(I915_VKX_IDENTITY + 19U)
+#define I915_VKX_ID_SET_LOD5		(I915_VKX_IDENTITY + 20U)
+#define I915_VKX_ID_SET_LOD5_HALF	(I915_VKX_IDENTITY + 21U)
+#define I915_VKX_ID_SET_LOD6		(I915_VKX_IDENTITY + 22U)
 
 /* The wire opcodes the scenario sends, as libvulkan numbers them. */
 #define I915_VKX_OP_QUEUE_SUBMIT		18U
@@ -155,6 +159,9 @@
 #define I915_VKX_F_64			0x42800000U
 #define I915_VKX_F_ONE_AND_HALF		0x3fc00000U
 #define I915_VKX_F_2			0x40000000U
+#define I915_VKX_F_5			0x40a00000U
+#define I915_VKX_F_FIVE_AND_HALF	0x40b00000U
+#define I915_VKX_F_6			0x40c00000U
 
 /* The pixels the scenario writes: RGBA8 in memory, red in the low byte. */
 #define I915_VKX_BLACK			0xff000000U
@@ -204,7 +211,9 @@ struct i915_vkx {
 	 * The mip steps' objects: the sampled texture and the blitted chain;
 	 * the texturing shader and pipeline; a view of every level of the
 	 * texture and one of level 2 on; the samplers (nearest level, LOD fixed
-	 * at 1.5 with linear blending, bias 2) and the sets that pair them.
+	 * at 1.5 with linear blending, bias 2, linear blending over the whole
+	 * range, and the least LOD held at 5, 5.5 with linear blending and 6)
+	 * and the sets that pair them.
 	 */
 	struct i915_gfx_image texture;
 	struct i915_gfx_image chain;
@@ -215,10 +224,18 @@ struct i915_vkx {
 	struct i915_gfx_sampler nearest_sampler;
 	struct i915_gfx_sampler forced_sampler;
 	struct i915_gfx_sampler bias_sampler;
+	struct i915_gfx_sampler linear_sampler;
+	struct i915_gfx_sampler lod5_sampler;
+	struct i915_gfx_sampler lod5_half_sampler;
+	struct i915_gfx_sampler lod6_sampler;
 	struct i915_gfx_dset nearest_set;
 	struct i915_gfx_dset forced_set;
 	struct i915_gfx_dset bias_set;
 	struct i915_gfx_dset later_set;
+	struct i915_gfx_dset linear_set;
+	struct i915_gfx_dset lod5_set;
+	struct i915_gfx_dset lod5_half_set;
+	struct i915_gfx_dset lod6_set;
 
 	/* Nonzero once the objects are published, and once the command pool exists. */
 	int published;
@@ -711,6 +728,14 @@ i915_vkx_objects_publish(
 		error = drv_i915_object_insert(vk, I915_VK_OBJ_DESCRIPTOR_SET, I915_VKX_ID_SET_BIAS, &x->bias_set);
 	if (error == 0)
 		error = drv_i915_object_insert(vk, I915_VK_OBJ_DESCRIPTOR_SET, I915_VKX_ID_SET_LATER, &x->later_set);
+	if (error == 0)
+		error = drv_i915_object_insert(vk, I915_VK_OBJ_DESCRIPTOR_SET, I915_VKX_ID_SET_LINEAR, &x->linear_set);
+	if (error == 0)
+		error = drv_i915_object_insert(vk, I915_VK_OBJ_DESCRIPTOR_SET, I915_VKX_ID_SET_LOD5, &x->lod5_set);
+	if (error == 0)
+		error = drv_i915_object_insert(vk, I915_VK_OBJ_DESCRIPTOR_SET, I915_VKX_ID_SET_LOD5_HALF, &x->lod5_half_set);
+	if (error == 0)
+		error = drv_i915_object_insert(vk, I915_VK_OBJ_DESCRIPTOR_SET, I915_VKX_ID_SET_LOD6, &x->lod6_set);
 
 	/* The teardown withdraws whatever was published, all of it or part of it. */
 	x->published = 1;
@@ -748,6 +773,10 @@ i915_vkx_objects_withdraw(
 	drv_i915_object_remove(vk, I915_VK_OBJ_DESCRIPTOR_SET, I915_VKX_ID_SET_FORCED);
 	drv_i915_object_remove(vk, I915_VK_OBJ_DESCRIPTOR_SET, I915_VKX_ID_SET_BIAS);
 	drv_i915_object_remove(vk, I915_VK_OBJ_DESCRIPTOR_SET, I915_VKX_ID_SET_LATER);
+	drv_i915_object_remove(vk, I915_VK_OBJ_DESCRIPTOR_SET, I915_VKX_ID_SET_LINEAR);
+	drv_i915_object_remove(vk, I915_VK_OBJ_DESCRIPTOR_SET, I915_VKX_ID_SET_LOD5);
+	drv_i915_object_remove(vk, I915_VK_OBJ_DESCRIPTOR_SET, I915_VKX_ID_SET_LOD5_HALF);
+	drv_i915_object_remove(vk, I915_VK_OBJ_DESCRIPTOR_SET, I915_VKX_ID_SET_LOD6);
 	x->published = 0;
 }
 
@@ -849,7 +878,7 @@ i915_vkx_pipelines_prepare(
  *   12..15  the whole target, white
  *   16..19  pixels 0..8 square (grid cell 0), white
  *
- * then, from vertex 32 on, five textured quads whose colour carries the
+ * then, from vertex 32 on, seven textured quads whose colour carries the
  * texture coordinate, (0, 0) at the top left to (1, 1) at the bottom right:
  *
  *   32..35  pixels 0..32 square (the texture minified twice)
@@ -857,6 +886,8 @@ i915_vkx_pipelines_prepare(
  *   40..43  columns 48..56, rows 0..8 (eight times)
  *   44..47  pixels 32..64 square (twice)
  *   48..51  columns 0..16, rows 32..48 (four times)
+ *   52..55  columns 56..64, rows 0..8 (eight times)
+ *   56..59  columns 56..64, rows 8..16 (eight times)
  */
 static void
 i915_vkx_vertices_write(
@@ -876,12 +907,14 @@ i915_vkx_vertices_write(
 	i915_vkx_quad_write(words + 96U, 0U, 0U, 8U, 8U, white);
 	i915_vkx_quad_write(words + 128U, 0U, 0U, 1U, 1U, white);
 
-	/* Writes the five textured quads. */
+	/* Writes the seven textured quads. */
 	i915_vkx_texquad_write(words + I915_VKX_TEXQUAD_FIRST * 8U, 0U, 0U, 4U, 4U);
 	i915_vkx_texquad_write(words + (I915_VKX_TEXQUAD_FIRST + 4U) * 8U, 4U, 0U, 6U, 2U);
 	i915_vkx_texquad_write(words + (I915_VKX_TEXQUAD_FIRST + 8U) * 8U, 6U, 0U, 7U, 1U);
 	i915_vkx_texquad_write(words + (I915_VKX_TEXQUAD_FIRST + 12U) * 8U, 4U, 4U, 8U, 8U);
 	i915_vkx_texquad_write(words + (I915_VKX_TEXQUAD_FIRST + 16U) * 8U, 0U, 4U, 2U, 6U);
+	i915_vkx_texquad_write(words + (I915_VKX_TEXQUAD_FIRST + 20U) * 8U, 7U, 0U, 8U, 1U);
+	i915_vkx_texquad_write(words + (I915_VKX_TEXQUAD_FIRST + 24U) * 8U, 7U, 1U, 8U, 2U);
 
 	/* Writes the vertices back to memory before the GPU reads them. */
 	drv_i915_gt_clflush(words, I915_VKX_VERTEX_BYTES);
@@ -1688,7 +1721,7 @@ i915_vkx_step_grid(
  * Describes the mip steps' objects: the texture and the chain, 64x64 RGBA8
  * images of all 7 levels laid out as the executor lays out a created image;
  * the texturing pipeline; a view of every level and one of level 2 on; the
- * three samplers and the four sets that pair a view with a sampler.
+ * seven samplers and the eight sets that pair a view with a sampler.
  */
 static void
 i915_vkx_mip_objects_init(
@@ -1736,6 +1769,12 @@ i915_vkx_mip_objects_init(
 	i915_vkx_mip_sampler_init(&x->forced_sampler, VK_SAMPLER_MIPMAP_MODE_LINEAR, I915_VKX_F_0, I915_VKX_F_ONE_AND_HALF, I915_VKX_F_ONE_AND_HALF);
 	i915_vkx_mip_sampler_init(&x->bias_sampler, VK_SAMPLER_MIPMAP_MODE_NEAREST, I915_VKX_F_2, I915_VKX_F_0, I915_VKX_F_16);
 
+	/* Linear blending over the whole LOD range; the least LOD held at 5 (nearest), 5.5 (blended) and 6 (nearest). */
+	i915_vkx_mip_sampler_init(&x->linear_sampler, VK_SAMPLER_MIPMAP_MODE_LINEAR, I915_VKX_F_0, I915_VKX_F_0, I915_VKX_F_16);
+	i915_vkx_mip_sampler_init(&x->lod5_sampler, VK_SAMPLER_MIPMAP_MODE_NEAREST, I915_VKX_F_0, I915_VKX_F_5, I915_VKX_F_16);
+	i915_vkx_mip_sampler_init(&x->lod5_half_sampler, VK_SAMPLER_MIPMAP_MODE_LINEAR, I915_VKX_F_0, I915_VKX_F_FIVE_AND_HALF, I915_VKX_F_16);
+	i915_vkx_mip_sampler_init(&x->lod6_sampler, VK_SAMPLER_MIPMAP_MODE_NEAREST, I915_VKX_F_0, I915_VKX_F_6, I915_VKX_F_16);
+
 	/* The sets: binding 0 is the one sampled image of the texturing shader. */
 	x->nearest_set.slots[0].view = &x->texture_view;
 	x->nearest_set.slots[0].sampler = &x->nearest_sampler;
@@ -1745,6 +1784,14 @@ i915_vkx_mip_objects_init(
 	x->bias_set.slots[0].sampler = &x->bias_sampler;
 	x->later_set.slots[0].view = &x->later_view;
 	x->later_set.slots[0].sampler = &x->nearest_sampler;
+	x->linear_set.slots[0].view = &x->texture_view;
+	x->linear_set.slots[0].sampler = &x->linear_sampler;
+	x->lod5_set.slots[0].view = &x->texture_view;
+	x->lod5_set.slots[0].sampler = &x->lod5_sampler;
+	x->lod5_half_set.slots[0].view = &x->texture_view;
+	x->lod5_half_set.slots[0].sampler = &x->lod5_half_sampler;
+	x->lod6_set.slots[0].view = &x->texture_view;
+	x->lod6_set.slots[0].sampler = &x->lod6_sampler;
 }
 
 /* Describes a sampler with linear filters that clamps to the edge, with a mipmap mode, a bias and a LOD range as float bits. */
@@ -2119,7 +2166,10 @@ i915_vkx_step_mip_nearest(
  * 2 half and half with the linear mip filter; a sampler with LOD bias 2
  * reads level 3 through a quad that shows level 1 unbiased; a view of level
  * 2 on reads its first level (the texture's level 2) through a quad of that
- * level's size.
+ * level's size.  The linear mip filter over the whole LOD range shows level
+ * 2 alone through a quad minified exactly four times; a least LOD of 5 and
+ * of 6 shows the two smallest levels (2x2 and 1x1) through quads that are
+ * minified only eight times, and a least LOD of 5.5 blends them.
  */
 static void
 i915_vkx_step_mip_linear(
@@ -2146,15 +2196,34 @@ i915_vkx_step_mip_linear(
 	/* The 16-pixel quad at the left through the view of level 2 on. */
 	i915_vkx_bind_set(x, I915_VKX_ID_SET_LATER);
 	i915_vkx_draw_indexed(x, 6U, 1U, 0U, (int32_t)I915_VKX_TEXQUAD_FIRST + 16, 0U);
+
+	/* The 16-pixel quad at the top with linear blending at its natural LOD of 2. */
+	i915_vkx_bind_set(x, I915_VKX_ID_SET_LINEAR);
+	i915_vkx_draw_indexed(x, 6U, 1U, 0U, (int32_t)I915_VKX_TEXQUAD_FIRST + 4, 0U);
+
+	/* The three 8-pixel quads at the top right with the least LOD at 5, 5.5 and 6. */
+	i915_vkx_bind_set(x, I915_VKX_ID_SET_LOD5);
+	i915_vkx_draw_indexed(x, 6U, 1U, 0U, (int32_t)I915_VKX_TEXQUAD_FIRST + 8, 0U);
+	i915_vkx_bind_set(x, I915_VKX_ID_SET_LOD5_HALF);
+	i915_vkx_draw_indexed(x, 6U, 1U, 0U, (int32_t)I915_VKX_TEXQUAD_FIRST + 20, 0U);
+	i915_vkx_bind_set(x, I915_VKX_ID_SET_LOD6);
+	i915_vkx_draw_indexed(x, 6U, 1U, 0U, (int32_t)I915_VKX_TEXQUAD_FIRST + 24, 0U);
 	i915_vkx_record(x, I915_VKX_OP_END_RENDER_PASS);
 
-	/* Runs it and compares: the blend of levels 1 and 2, level 3, level 2. */
+	/*
+	 * Runs it and compares: the blend of levels 1 and 2, level 3, level 2;
+	 * level 2; level 5, the blend of levels 5 and 6, level 6.
+	 */
 	error = i915_vkx_finish(x, "MIP-LINEAR");
 	if (error == 0) {
 		i915_vkx_expect_clear(x);
 		i915_vkx_expect_rect(x, 0U, 0U, 32U, 32U, i915_vkx_blend(i915_vkx_level_colors[1], i915_vkx_level_colors[2]));
 		i915_vkx_expect_rect(x, 32U, 32U, 64U, 64U, i915_vkx_level_colors[3]);
 		i915_vkx_expect_rect(x, 0U, 32U, 16U, 48U, i915_vkx_level_colors[2]);
+		i915_vkx_expect_rect(x, 32U, 0U, 48U, 16U, i915_vkx_level_colors[2]);
+		i915_vkx_expect_rect(x, 48U, 0U, 56U, 8U, i915_vkx_level_colors[5]);
+		i915_vkx_expect_rect(x, 56U, 0U, 64U, 8U, i915_vkx_blend(i915_vkx_level_colors[5], i915_vkx_level_colors[6]));
+		i915_vkx_expect_rect(x, 56U, 8U, 64U, 16U, i915_vkx_level_colors[6]);
 		error = i915_vkx_compare_near(x, "MIP-LINEAR");
 	}
 

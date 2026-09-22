@@ -160,12 +160,14 @@ static uint32_t i915_sampler_mip_filter(uint32_t mipmap_mode);
 static int i915_state_write_surfaces(uint32_t *surface, uint32_t *dynamic, const struct i915_gfx_draw_state *state, const struct i915_gfx_kernels *kernels, const struct i915_gfx_image *target, uint32_t mocs);
 static int i915_state_viewport_source(const struct i915_gfx_draw_state *state, const uint32_t **viewport, const VkRect2D **scissor);
 static void i915_state_write_viewport(uint32_t *dynamic, const uint32_t *viewport, const VkRect2D *scissor);
-static void i915_state_write_blend(uint32_t *dynamic, const struct i915_gfx_pipeline *pipeline);
+static void i915_state_write_blend(uint32_t *dynamic, const struct i915_gfx_draw_state *state);
 static int i915_state_write_push(uint8_t *data, const struct i915_gfx_draw_state *state, const struct i915_gfx_push_layout *layout);
 static void i915_blend_equation(const struct i915_gfx_pipeline *pipeline, struct i915_gfx_blend *equation);
 static uint32_t i915_blend_factor(uint32_t factor);
 static uint32_t i915_blend_function(uint32_t op);
 static int i915_blend_uses_second_source(uint32_t factor);
+static uint32_t i915_state_input_slot(const struct i915_gfx_kernels *kernels, uint32_t inputs, uint32_t input);
+static uint64_t i915_state_scratch(uint32_t per_thread_bytes, uint64_t offset);
 
 /*
  * Writes everything a draw's batch points at into its slot of the state
@@ -211,7 +213,7 @@ drv_i915_gfx_write_state(
 
 	/* Writes the viewports and the scissor, then the blend state and its constants. */
 	i915_state_write_viewport(dynamic, viewport, scissor);
-	i915_state_write_blend(dynamic, state->pipeline);
+	i915_state_write_blend(dynamic, state);
 
 	/* Fills the vertex stage's push data. */
 	error = i915_state_write_push(page + I915_GFX_PUSH_BUFFER, state, &kernels->vs_push);
@@ -399,8 +401,11 @@ drv_i915_gfx_instruction_heap_clear(
  * state bases and the state anv programs once per context before its first
  * draw.
  *
- * The surface and dynamic heaps are the operation's slot at state_va and
- * the instruction heap its kernels' window at instruction_va.  A stalling
+ * The surface and dynamic heaps are the operation's slot at state_va, the
+ * instruction heap its kernels' window at instruction_va, and the general
+ * state its kernels' scratch buffer at general_va (0 when they spill
+ * nothing: stateless accesses and scratch pointers are then absolute
+ * below 4 GiB, and none is made).  A stalling
  * flush precedes the pipeline select and the base addresses, so whatever an
  * earlier operation of the batch wrote is flushed first, and the caches
  * that hold state or read textures are invalidated after them.
@@ -410,6 +415,7 @@ drv_i915_gfx_emit_context_setup(
 	struct i915_gfx_batch *batch,
 	uint64_t state_va,
 	uint64_t instruction_va,
+	uint64_t general_va,
 	uint32_t mocs)
 {
 	uint64_t surface;
@@ -433,15 +439,16 @@ drv_i915_gfx_emit_context_setup(
 	drv_i915_batch_emit(batch, GEN12_PIPELINE_SELECT_DWORD(GEN12_PIPELINE_SELECT_3D));
 
 	/*
-	 * Programs STATE_BASE_ADDRESS: general and indirect bases at zero, the
-	 * surface and dynamic heaps with the given MOCS, the instruction heap
-	 * write-back (instruction fetches go through the L3), every size the
-	 * largest, the bindless surface heap over the surface heap and no
-	 * bindless sampler heap.
+	 * Programs STATE_BASE_ADDRESS: the general base at the scratch buffer
+	 * (zero without one) and the indirect base at zero, the surface and
+	 * dynamic heaps with the given MOCS, the instruction heap write-back
+	 * (instruction fetches go through the L3), every size the largest, the
+	 * bindless surface heap over the surface heap and no bindless sampler
+	 * heap.
 	 */
 	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_STATE_BASE_ADDRESS, GEN12_STATE_BASE_ADDRESS_DWORDS));
-	drv_i915_batch_emit(batch, 1U | (mocs << 4));
-	drv_i915_batch_emit(batch, 0U);
+	drv_i915_batch_emit(batch, 1U | (mocs << 4) | ((uint32_t)general_va & 0xfffff000U));
+	drv_i915_batch_emit(batch, (uint32_t)(general_va >> 32));
 	drv_i915_batch_emit(batch, mocs << 16);
 	drv_i915_batch_emit(batch, 1U | (mocs << 4) | ((uint32_t)surface & 0xfffff000U));
 	drv_i915_batch_emit(batch, (uint32_t)(surface >> 32));
@@ -991,17 +998,22 @@ drv_i915_gfx_emit_vertex_shader(
 	struct i915_gfx_batch *batch,
 	const struct i915_gfx_kernels *kernels)
 {
+	uint64_t scratch;
+
+	/* The scratch space of a kernel that spills: its per-thread size and the stage's buffer. */
+	scratch = i915_state_scratch(kernels->vs_scratch_bytes, kernels->vs_scratch_offset);
+
 	/*
 	 * Writes the kernel start pointer; IEEE-754 with no samplers and no
-	 * binding table; no scratch space; the first payload register and the
+	 * binding table; the scratch space; the first payload register and the
 	 * URB read length; the thread count, statistics, SIMD8 and enable.
 	 */
 	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_VS, GEN12_3DSTATE_VS_DWORDS));
 	drv_i915_batch_emit(batch, I915_GFX_VS_KERNEL);
 	drv_i915_batch_emit(batch, 0U);
 	drv_i915_batch_emit(batch, 0U);
-	drv_i915_batch_emit(batch, 0U);
-	drv_i915_batch_emit(batch, 0U);
+	drv_i915_batch_emit(batch, (uint32_t)scratch);
+	drv_i915_batch_emit(batch, (uint32_t)(scratch >> 32));
 	drv_i915_batch_emit(batch, (kernels->vs_grf_start << 20) | (((kernels->vs_input_count + 1U) / 2U) << 11));
 	drv_i915_batch_emit(batch, ((I915_GFX_MAX_VS_THREADS - 1U) << 22) | (1U << 10) | (1U << 2) | 1U);
 	drv_i915_batch_emit(batch, 0U);
@@ -1010,9 +1022,10 @@ drv_i915_gfx_emit_vertex_shader(
 /*
  * Emits SBE, SBE_SWIZ, WM, PS and PS_EXTRA for the pixel kernel.
  *
- * The varyings are read from VUE slot 2 on, and fragment input n is the
- * n-th slot read.  The kernel starts at the pixel kernel offset and runs
- * 8-pixel dispatch only.
+ * Every varying the vertex kernel writes is read from VUE slot 2 on, and
+ * fragment input n takes the slot the pipeline routed it from (the n-th
+ * for a rectangle kernel).  The kernel starts at the pixel kernel offset
+ * and runs 8-pixel dispatch only.
  */
 void
 drv_i915_gfx_emit_pixel_shader(
@@ -1021,17 +1034,24 @@ drv_i915_gfx_emit_pixel_shader(
 {
 	uint32_t index;
 	uint32_t read_length;
+	uint32_t inputs;
 	uint32_t low;
 	uint32_t high;
 	uint32_t sampler_groups;
 	uint32_t has_varyings;
 	uint32_t push_enable;
 	uint32_t kills;
+	uint64_t scratch;
 
 	/* Reads the varyings in pairs of slots, at least one pair. */
 	read_length = 1U;
 	if (kernels->varyings != 0U)
 		read_length = (kernels->varyings + 1U) / 2U;
+
+	/* Counts the fragment inputs: the routed ones, or every varying of a rectangle. */
+	inputs = kernels->varyings;
+	if (kernels->ps_inputs_mapped != 0U)
+		inputs = kernels->ps_input_count;
 
 	/*
 	 * Programs SBE: the attribute swizzle and the read offset override, the
@@ -1042,7 +1062,7 @@ drv_i915_gfx_emit_pixel_shader(
 	drv_i915_batch_emit(batch,
 			    (1U << 29) |
 			    (1U << 28) |
-			    (kernels->varyings << 22) |
+			    (inputs << 22) |
 			    (1U << 21) |
 			    (read_length << 11) |
 			    (1U << 5));
@@ -1051,16 +1071,11 @@ drv_i915_gfx_emit_pixel_shader(
 	drv_i915_batch_emit(batch, 0xffffffffU);
 	drv_i915_batch_emit(batch, 0xffffffffU);
 
-	/* Programs SBE_SWIZ: fragment input n takes the n-th slot read, two inputs to a dword. */
+	/* Programs SBE_SWIZ: the source slot of each fragment input, two inputs to a dword. */
 	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_SBE_SWIZ, GEN12_3DSTATE_SBE_SWIZ_DWORDS));
-	for (index = 0U; index < 16U; index += 2U) {
-		/* An input past the varyings takes slot 0. */
-		low = 0U;
-		if (index < kernels->varyings)
-			low = index;
-		high = 0U;
-		if (index + 1U < kernels->varyings)
-			high = index + 1U;
+	for (index = 0U; index < I915_GFX_MAX_VARYINGS; index += 2U) {
+		low = i915_state_input_slot(kernels, inputs, index);
+		high = i915_state_input_slot(kernels, inputs, index + 1U);
 		drv_i915_batch_emit(batch, low | (high << 16));
 	}
 
@@ -1080,18 +1095,21 @@ drv_i915_gfx_emit_pixel_shader(
 	if (kernels->ps_push_regs != 0U)
 		push_enable = GEN12_3DSTATE_PS_PUSH_CONSTANT_ENABLE;
 
+	/* The scratch space of a kernel that spills: its per-thread size and the stage's buffer. */
+	scratch = i915_state_scratch(kernels->ps_scratch_bytes, kernels->ps_scratch_offset);
+
 	/*
 	 * Programs PS: kernel 0 is the SIMD8 one; the vector mask, the sampler
 	 * count and the binding table entries (the render target and the
-	 * samplers); the thread count, the push constant enable and 8-pixel
-	 * dispatch; the first payload register.
+	 * samplers); the scratch space; the thread count, the push constant
+	 * enable and 8-pixel dispatch; the first payload register.
 	 */
 	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_PS, GEN12_3DSTATE_PS_DWORDS));
 	drv_i915_batch_emit(batch, I915_GFX_PS_KERNEL);
 	drv_i915_batch_emit(batch, 0U);
 	drv_i915_batch_emit(batch, (1U << 30) | (sampler_groups << 27) | ((1U + kernels->ps_samplers) << 18));
-	drv_i915_batch_emit(batch, 0U);
-	drv_i915_batch_emit(batch, 0U);
+	drv_i915_batch_emit(batch, (uint32_t)scratch);
+	drv_i915_batch_emit(batch, (uint32_t)(scratch >> 32));
 	drv_i915_batch_emit(batch, ((GEN12_MAX_THREADS_PER_PSD - 1U) << 23) | push_enable | 1U);
 	drv_i915_batch_emit(batch, kernels->ps_grf_start << 16);
 	drv_i915_batch_emit(batch, 0U);
@@ -1101,7 +1119,7 @@ drv_i915_gfx_emit_pixel_shader(
 
 	/* Notes whether the kernel reads attributes. */
 	has_varyings = 0U;
-	if (kernels->varyings != 0U)
+	if (inputs != 0U)
 		has_varyings = 1U;
 
 	/* Notes whether the kernel discards pixels. */
@@ -1112,6 +1130,38 @@ drv_i915_gfx_emit_pixel_shader(
 	/* Programs PS_EXTRA: valid, whether the kernel discards and whether it reads attributes. */
 	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_PS_EXTRA, GEN12_3DSTATE_PS_EXTRA_DWORDS));
 	drv_i915_batch_emit(batch, (1U << 31) | kills | (has_varyings << 8));
+}
+
+/*
+ * Packs dwords 4-5 of 3DSTATE_VS or PS: the Scratch Space Base Pointer of
+ * the stage's part of the scratch buffer (an offset from the general state
+ * base, which the draw sets to the buffer) and the Per-Thread Scratch Space
+ * of the kernel
+ * (1 KiB << n, the n Mesa's get_scratch_space() computes); zero for a
+ * kernel that spills nothing.
+ */
+static uint64_t
+i915_state_scratch(
+	uint32_t per_thread_bytes,
+	uint64_t offset)
+{
+	uint32_t space;
+	uint32_t bytes;
+
+	/* A kernel that spills nothing has no scratch space. */
+	if (per_thread_bytes == 0U)
+		return 0U;
+
+	/* Finds n with 1 KiB << n equal to the kernel's space (the compiler rounds it to a power of two). */
+	space = 0U;
+	bytes = GEN12_SCRATCH_SPACE_MIN_BYTES;
+	while (bytes < per_thread_bytes && space < GEN12_SCRATCH_SPACE_MAX) {
+		bytes *= 2U;
+		space++;
+	}
+
+	/* Succeeded: the pointer's bits 63:10 and the space in bits 3:0. */
+	return (offset & ~(uint64_t)(GEN12_SCRATCH_POINTER_ALIGN - 1U)) | (uint64_t)(space & GEN12_SCRATCH_SPACE_MASK);
 }
 
 /*
@@ -1425,7 +1475,7 @@ i915_state_write_surfaces(
 
 		/* Refuses a draw whose set and binding lack the view or the sampler. */
 		set = NULL;
-		if (set_index < 4U && binding < I915_GFX_MAX_BINDINGS)
+		if (set_index < I915_GFX_BOUND_SETS && binding < I915_GFX_MAX_BINDINGS)
 			set = state->dset[set_index];
 		if (set == NULL ||
 		    set->slots[binding].view == NULL ||
@@ -1454,9 +1504,10 @@ i915_state_write_surfaces(
 /*
  * Fills one stage's push data: the push constants the kernel reads from the
  * start of the command buffer's block, then each uniform block's range
- * from the buffer bound at its set and binding (what lies past the bound
- * range reads as zero).  Returns EINVAL for a layout larger than the buffer
- * or a uniform block that is not bound to storage.
+ * from the buffer bound at its set and binding, moved by the bind's dynamic
+ * offset for a dynamic uniform buffer (what lies past the bound range reads
+ * as zero).  Returns EINVAL for a layout larger than the buffer or a
+ * uniform block that is not bound to storage.
  */
 static int
 i915_state_write_push(
@@ -1468,6 +1519,7 @@ i915_state_write_push(
 	const struct i915_gfx_dset *set;
 	const struct i915_gfx_buffer *buffer;
 	const uint8_t *source;
+	uint64_t descriptor_offset;
 	uint64_t range;
 	uint64_t start;
 	uint64_t bytes;
@@ -1494,7 +1546,7 @@ i915_state_write_push(
 
 		/* Finds the buffer bound at the block's set and binding. */
 		set = NULL;
-		if (block->set < 4U && block->binding < I915_GFX_MAX_BINDINGS)
+		if (block->set < I915_GFX_BOUND_SETS && block->binding < I915_GFX_MAX_BINDINGS)
 			set = state->dset[block->set];
 		buffer = NULL;
 		if (set != NULL)
@@ -1504,12 +1556,17 @@ i915_state_write_push(
 			return EINVAL;
 		}
 
+		/* The descriptor's offset, moved by the bind's dynamic offset for a dynamic uniform buffer. */
+		descriptor_offset = set->slots[block->binding].offset;
+		if (set->slots[block->binding].dynamic != 0)
+			descriptor_offset += state->dynamic_offsets[block->set][block->binding];
+
 		/* The descriptor's range: to the buffer's end for VK_WHOLE_SIZE, nothing past it. */
 		range = set->slots[block->binding].range;
-		if (set->slots[block->binding].offset >= buffer->size) {
+		if (descriptor_offset >= buffer->size) {
 			range = 0U;
-		} else if (range == VK_WHOLE_SIZE || range > buffer->size - set->slots[block->binding].offset) {
-			range = buffer->size - set->slots[block->binding].offset;
+		} else if (range == VK_WHOLE_SIZE || range > buffer->size - descriptor_offset) {
+			range = buffer->size - descriptor_offset;
 		}
 
 		/* A block read wholly past the range reads zeros only. */
@@ -1517,7 +1574,7 @@ i915_state_write_push(
 			continue;
 
 		/* The bytes read that the range holds. */
-		start = set->slots[block->binding].offset + block->offset;
+		start = descriptor_offset + block->offset;
 		bytes = range - block->offset;
 		if (bytes > block->bytes)
 			bytes = block->bytes;
@@ -1653,19 +1710,25 @@ i915_state_write_viewport(
  *
  * Every entry clamps before and after blending to the render target's
  * format, as anv programs it; the entry blends as the pipeline says and
- * leaves the components the pipeline masks unwritten.
+ * leaves the components the pipeline masks unwritten.  The blend constants
+ * are the pipeline's, or the ones the command buffer set when the pipeline
+ * declares them dynamic (zero until one is set, which Vulkan leaves
+ * undefined).
  */
 static void
 i915_state_write_blend(
 	uint32_t *dynamic,
-	const struct i915_gfx_pipeline *pipeline)
+	const struct i915_gfx_draw_state *state)
 {
+	const struct i915_gfx_pipeline *pipeline;
 	struct i915_gfx_blend equation;
+	const uint32_t *constants;
 	uint32_t *words;
 	uint32_t entry;
 	uint32_t index;
 
 	/* Works out the hardware blend of attachment 0. */
+	pipeline = state->pipeline;
 	i915_blend_equation(pipeline, &equation);
 
 	/* The components attachment 0 leaves as they are. */
@@ -1698,10 +1761,19 @@ i915_state_write_blend(
 	words[1] = entry;
 	words[2] = 1U | (1U << 1) | (GEN12_COLORCLAMP_RTFORMAT << 2);
 
+	/* Takes the pipeline's blend constants, or the dynamic ones vkCmdSetBlendConstants set. */
+	constants = pipeline->blend_constants;
+	if (pipeline->dynamic_blend_constants != 0) {
+		/* Names a draw before any vkCmdSetBlendConstants, whose constants Vulkan leaves undefined: it reads zeros. */
+		if (state->blend_constants_set == 0)
+			kern_logf("i915: vk: the pipeline's blend constants are dynamic and none were set; the draw blends with zeros\n");
+		constants = state->blend_constants;
+	}
+
 	/* Gives COLOR_CALC_STATE the blend constants a constant factor reads. */
 	words = &dynamic[I915_GFX_DYN_COLOR_CALC / 4U];
 	for (index = 0U; index < 4U; index++)
-		words[GEN12_CC_BLEND_CONSTANT_DWORD + index] = pipeline->blend_constants[index];
+		words[GEN12_CC_BLEND_CONSTANT_DWORD + index] = constants[index];
 }
 
 /*
@@ -1814,4 +1886,27 @@ i915_blend_uses_second_source(
 
 	/* Succeeded: any other factor reads the first source only. */
 	return 0;
+}
+
+/*
+ * Returns the VUE slot after the position fragment input `input` is read
+ * from: the one the pipeline routed it from, or for a rectangle kernel the
+ * input's own number; an input past the kernel's `inputs` takes slot 0.
+ */
+static uint32_t
+i915_state_input_slot(
+	const struct i915_gfx_kernels *kernels,
+	uint32_t inputs,
+	uint32_t input)
+{
+	/* An input the kernel does not read takes slot 0. */
+	if (input >= inputs)
+		return 0U;
+
+	/* A rectangle kernel reads its slots in order. */
+	if (kernels->ps_inputs_mapped == 0U)
+		return input;
+
+	/* Succeeded: the slot the pipeline routed the input from. */
+	return kernels->ps_input_slots[input];
 }

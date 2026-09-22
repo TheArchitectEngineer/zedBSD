@@ -220,9 +220,9 @@ drv_i915_gfx_allocate_dsets(
  *
  * The command is [device][n][n]{write}[m][m]{copy}; its writes are laid out
  * as i915_gfx_update_write reads them.  There is no reply body.  Only the
- * first image or uniform buffer descriptor of a write is applied; other
- * buffer descriptors, texel views and copies are read and reported as not
- * applied.
+ * first image or uniform buffer (plain or dynamic) descriptor of a write is
+ * applied; other buffer descriptors, texel views and copies are read and
+ * reported as not applied.
  */
 int
 drv_i915_gfx_update_dsets(
@@ -277,7 +277,8 @@ drv_i915_gfx_update_dsets(
 
 /*
  * Reads one descriptor write and applies its first image descriptor, or
- * its first buffer descriptor when it is a uniform buffer.
+ * its first buffer descriptor when it is a uniform buffer, plain or
+ * dynamic.
  *
  * A write is [sType][pNext][set][binding][element][count][type][images]
  * {[sampler][view][layout]}[buffers]{VkDescriptorBufferInfo}[texel views]
@@ -354,7 +355,8 @@ i915_gfx_update_write(
 			continue;
 
 		/* XXX: a buffer descriptor of another type than a uniform buffer is not bound to anything. */
-		if (type != VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER) {
+		if (type != VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER &&
+		    type != VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC) {
 			kern_logf("i915: vk: XXX vkUpdateDescriptorSets: buffer descriptors (type %u) are not bound to anything\n", type);
 			continue;
 		}
@@ -364,6 +366,11 @@ i915_gfx_update_write(
 		dset->slots[binding].buffer = drv_i915_object_lookup(session->vk, I915_VK_OBJ_BUFFER, buffer_id);
 		dset->slots[binding].offset = buffer_info.offset;
 		dset->slots[binding].range = buffer_info.range;
+
+		/* A dynamic uniform buffer's range moves by the dynamic offset of each bind. */
+		dset->slots[binding].dynamic = 0;
+		if (type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC)
+			dset->slots[binding].dynamic = 1;
 	}
 
 	/* Reads how many texel buffer views follow. */

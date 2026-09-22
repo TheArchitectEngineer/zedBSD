@@ -44,7 +44,8 @@
  * latest store to that component, merged with the older one under the
  * predicate of the storing block: the parser keeps, per local variable and
  * component, the IR value currently stored there (store-to-load forwarding).
- * A load of a component that was never stored is refused.
+ * A load of a component that was never stored is refused.  An output read
+ * back by the shader gives the value last written to it the same way.
  *
  * Push constants and uniform blocks are memory the draw delivers with the
  * push data: a load reads words at byte offsets the access chain works out
@@ -149,6 +150,7 @@
 #define OP_VECTOR_TIMES_MATRIX 144U
 #define OP_MATRIX_TIMES_VECTOR 145U
 #define OP_MATRIX_TIMES_MATRIX 146U
+#define OP_OUTER_PRODUCT 147U
 #define OP_DOT 148U
 #define OP_LOGICAL_EQUAL 164U
 #define OP_LOGICAL_NOT_EQUAL 165U
@@ -227,10 +229,13 @@
 #define EM_FRAGMENT 4U
 
 /* GLSL.std.450 extended instruction numbers. */
+#define GLSL_ROUND 1U
+#define GLSL_ROUND_EVEN 2U
 #define GLSL_TRUNC 3U
 #define GLSL_FABS 4U
 #define GLSL_SABS 5U
 #define GLSL_FSIGN 6U
+#define GLSL_SSIGN 7U
 #define GLSL_FLOOR 8U
 #define GLSL_CEIL 9U
 #define GLSL_FRACT 10U
@@ -662,6 +667,7 @@ static int i915_spirv_lower_float_remainder(struct i915_spirv_parser *parser, co
 static int i915_spirv_lower_vector_times_scalar(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int i915_spirv_lower_matrix_product(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int i915_spirv_lower_transpose(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
+static int i915_spirv_lower_outer_product(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int i915_spirv_lower_negate(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int i915_spirv_lower_dot(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static uint32_t i915_spirv_dot_value(struct i915_spirv_parser *parser, const uint32_t *left, const uint32_t *right, uint32_t components);
@@ -1762,6 +1768,9 @@ i915_spirv_lower(
 	case OP_TRANSPOSE:
 		return i915_spirv_lower_transpose(parser, word, count, opcode, offset);
 
+	case OP_OUTER_PRODUCT:
+		return i915_spirv_lower_outer_product(parser, word, count, opcode, offset);
+
 	case OP_FNEGATE:
 		return i915_spirv_lower_negate(parser, word, count, opcode, offset);
 
@@ -2076,7 +2085,7 @@ i915_spirv_chain_scalars(
 	return 0;
 }
 
-/* Lowers OpLoad from a sampler, a local, an input, push constants or a uniform block. */
+/* Lowers OpLoad from a sampler, a local, an output, an input, push constants or a uniform block. */
 static int
 i915_spirv_lower_load(
 	struct i915_spirv_parser *parser,
@@ -2135,8 +2144,14 @@ i915_spirv_lower_load(
 		first = (uint32_t)base->component;
 
 	/* Loads by what the pointer addresses. */
-	if (base->ptr_kind == PTR_LOCAL) {
-		/* Store-to-load forwarding: the scalars currently stored in the local. */
+	if (base->ptr_kind == PTR_LOCAL ||
+	    base->ptr_kind == PTR_OUTPUT ||
+	    base->ptr_kind == PTR_OUTPUT_BLOCK) {
+		/*
+		 * Store-to-load forwarding: the scalars currently stored in the local,
+		 * or last written to the output (a shader may read back what it
+		 * wrote).
+		 */
 		record = i915_spirv_result(parser, word[2], word[1], components, 0);
 		if (record == NULL)
 			return EINVAL;
@@ -2144,7 +2159,7 @@ i915_spirv_lower_load(
 		/* Each component must have been stored before it is read. */
 		for (index = 0U; index < components; index++) {
 			if (first + index >= MAX_COMPONENTS || variable->comp[first + index] == NO_VALUE)
-				return i915_spirv_refuse(parser, opcode, offset, "load of a local component that was never stored");
+				return i915_spirv_refuse(parser, opcode, offset, "load of a local or output component that was never stored");
 			record->comp[index] = variable->comp[first + index];
 		}
 	} else if (base->ptr_kind == PTR_INPUT) {
@@ -2610,11 +2625,12 @@ i915_spirv_lower_integer(
  * Lowers one component of a two-operand integer instruction and returns
  * the IR value of the result.
  *
- * The signed division and remainders go through the unsigned ones on the
- * absolute values, with the signs fixed after, as Mesa's nir_lower_idiv
- * does (emit_idiv): the quotient is negated when the operands' signs
- * differ, the remainder takes the dividend's sign, and a modulus that is
- * not zero moves to the divisor's sign by adding the divisor.
+ * The divisions and remainders are the hardware's (see
+ * i915_compile_divide()): OpSDiv is IDIV, OpSRem IREM, OpUDiv UDIV and OpUMod
+ * UMOD.  OpSMod is the remainder moved to the divisor's sign as Mesa lowers
+ * imod on Gen12.0 (brw_fs_nir.cpp): where the remainder is not zero and the
+ * operands' signs differ (their exclusive or is negative), the divisor is
+ * added to it.
  */
 static uint32_t
 i915_spirv_lower_integer_component(
@@ -2624,17 +2640,11 @@ i915_spirv_lower_integer_component(
 	uint32_t right)
 {
 	uint32_t zero;
-	uint32_t left_magnitude;
-	uint32_t right_magnitude;
-	uint32_t left_negative;
-	uint32_t right_negative;
-	uint32_t result;
-	uint32_t negated;
+	uint32_t remainder;
+	uint32_t nonzero;
 	uint32_t signs;
 	uint32_t different;
-	uint32_t same_signs;
-	uint32_t is_zero;
-	uint32_t keep;
+	uint32_t moves;
 	uint32_t moved;
 
 	/* The operations the IR has as they are. */
@@ -2653,6 +2663,12 @@ i915_spirv_lower_integer_component(
 
 	case OP_UMOD:
 		return i915_spirv_emit_value(parser, I915_IR_UMOD, left, right);
+
+	case OP_SDIV:
+		return i915_spirv_emit_value(parser, I915_IR_IDIV, left, right);
+
+	case OP_SREM:
+		return i915_spirv_emit_value(parser, I915_IR_IREM, left, right);
 
 	case OP_SHIFT_RIGHT_LOGICAL:
 		return i915_spirv_emit_value(parser, I915_IR_SHR, left, right);
@@ -2676,37 +2692,19 @@ i915_spirv_lower_integer_component(
 		break;
 	}
 
-	/* The signs and magnitudes of both operands. */
+	/* OpSMod: the signed remainder, which has the dividend's sign. */
+	remainder = i915_spirv_emit_value(parser, I915_IR_IREM, left, right);
+
+	/* It moves where it is not zero and the operands' signs differ. */
 	zero = i915_spirv_integer_constant(parser, 0U);
-	left_negative = i915_spirv_emit_value(parser, I915_IR_ILT, left, zero);
-	right_negative = i915_spirv_emit_value(parser, I915_IR_ILT, right, zero);
-	left_magnitude = i915_spirv_absolute_integer(parser, left, left_negative);
-	right_magnitude = i915_spirv_absolute_integer(parser, right, right_negative);
-
-	/* A division: the unsigned quotient, negated where the signs differ. */
-	if (opcode == OP_SDIV) {
-		result = i915_spirv_emit_value(parser, I915_IR_UDIV, left_magnitude, right_magnitude);
-		signs = i915_spirv_emit_value(parser, I915_IR_IXOR, left, right);
-		different = i915_spirv_emit_value(parser, I915_IR_ILT, signs, zero);
-		negated = i915_spirv_emit_value(parser, I915_IR_INEG, result, 0U);
-		return i915_spirv_select_value(parser, different, negated, result);
-	}
-
-	/* A remainder: the unsigned remainder with the dividend's sign. */
-	result = i915_spirv_emit_value(parser, I915_IR_UMOD, left_magnitude, right_magnitude);
-	negated = i915_spirv_emit_value(parser, I915_IR_INEG, result, 0U);
-	result = i915_spirv_select_value(parser, left_negative, negated, result);
-	if (opcode == OP_SREM)
-		return result;
-
-	/* A modulus: kept when zero or when the signs agree, moved by the divisor otherwise. */
-	is_zero = i915_spirv_emit_value(parser, I915_IR_IEQ, result, zero);
-	same_signs = i915_spirv_emit_value(parser, I915_IR_IEQ, left_negative, right_negative);
-	keep = i915_spirv_emit_value(parser, I915_IR_OR, same_signs, is_zero);
-	moved = i915_spirv_emit_value(parser, I915_IR_IADD, result, right);
+	nonzero = i915_spirv_emit_value(parser, I915_IR_INE, remainder, zero);
+	signs = i915_spirv_emit_value(parser, I915_IR_IXOR, left, right);
+	different = i915_spirv_emit_value(parser, I915_IR_ILT, signs, zero);
+	moves = i915_spirv_emit_value(parser, I915_IR_AND, nonzero, different);
+	moved = i915_spirv_emit_value(parser, I915_IR_IADD, remainder, right);
 
 	/* Succeeded: the modulus with the divisor's sign. */
-	return i915_spirv_select_value(parser, keep, result, moved);
+	return i915_spirv_select_value(parser, moves, moved, remainder);
 }
 
 /* Returns the absolute value of an integer whose negativity is already known. */
@@ -3126,6 +3124,56 @@ i915_spirv_lower_transpose(
 	return 0;
 }
 
+/*
+ * Lowers OpOuterProduct: column c of the result is the first vector times
+ * component c of the second, one multiply per scalar (spirv_to_nir builds
+ * the same columns).
+ */
+static int
+i915_spirv_lower_outer_product(
+	struct i915_spirv_parser *parser,
+	const uint32_t *word,
+	uint32_t count,
+	uint32_t opcode,
+	uint32_t offset)
+{
+	struct i915_spirv_id *record;
+	uint32_t left[4];
+	uint32_t right[4];
+	uint32_t left_count;
+	uint32_t right_count;
+	uint32_t components;
+	uint32_t column;
+	uint32_t row;
+
+	/* The instruction must carry both vectors. */
+	if (count != 5U)
+		return EINVAL;
+
+	/* Resolves both vectors; either may emit a constant. */
+	left_count = i915_spirv_operand(parser, word[3], left);
+	right_count = i915_spirv_operand(parser, word[4], right);
+	if (left_count < 2U || right_count < 2U)
+		return i915_spirv_refuse(parser, opcode, offset, "OpOuterProduct of operands that are not float vectors");
+
+	/* The result has a column per component of the second vector, a row per component of the first. */
+	components = i915_spirv_float_components_wide(parser, word[1]);
+	if (components != left_count * right_count)
+		return i915_spirv_refuse(parser, opcode, offset, "OpOuterProduct whose result is not the operands' shape");
+
+	/* Declares the result; its scalars are the products, column after column. */
+	record = i915_spirv_result(parser, word[2], word[1], components, 0);
+	if (record == NULL)
+		return EINVAL;
+	for (column = 0U; column < right_count; column++) {
+		for (row = 0U; row < left_count; row++)
+			record->comp[column * left_count + row] = i915_spirv_emit_value(parser, I915_IR_FMUL, left[row], right[column]);
+	}
+
+	/* Succeeded: the outer product is lowered. */
+	return 0;
+}
+
 /* Lowers OpFNegate to one negation per component. */
 static int
 i915_spirv_lower_negate(
@@ -3424,7 +3472,8 @@ i915_spirv_lower_shuffle(
 /*
  * Lowers a GLSL.std.450 instruction.
  *
- * Per component: Trunc, FAbs, SAbs, FSign, Floor, Ceil, Fract, Radians,
+ * Per component: Round, RoundEven, Trunc, FAbs, SAbs, FSign, SSign, Floor,
+ * Ceil, Fract, Radians,
  * Degrees, Sin, Cos, Tan, Pow, Exp, Log, Exp2, Log2, Sqrt, InverseSqrt,
  * FMin, UMin, SMin, FMax, UMax, SMax, FClamp, UClamp, SClamp, FMix, Step
  * and SmoothStep, each the way Mesa lowers it for Gen12 where Mesa has a
@@ -3465,6 +3514,8 @@ i915_spirv_lower_extended(
 	/* Counts the operands of each lowered function and notes the integer ones; any other is refused. */
 	integers = 0;
 	switch (function) {
+	case GLSL_ROUND:
+	case GLSL_ROUND_EVEN:
 	case GLSL_TRUNC:
 	case GLSL_FABS:
 	case GLSL_FSIGN:
@@ -3486,6 +3537,7 @@ i915_spirv_lower_extended(
 		break;
 
 	case GLSL_SABS:
+	case GLSL_SSIGN:
 		operands = 1U;
 		integers = 1;
 		break;
@@ -3558,6 +3610,8 @@ i915_spirv_lower_extended(
  * Lowers one component of a per-component GLSL.std.450 function and
  * returns the IR value of the result.
  *
+ * Round and RoundEven both round a tie to the even integer (RNDE; Mesa
+ * lowers Round to fround_even, which SPIR-V's choice of direction allows).
  * Pow is exp2(log2(x) * y) and FClamp is min(max(x, lo), hi), as Mesa
  * lowers them on Gen12 (nir lower_fpow, nir_fclamp); Exp and Log go through
  * exp2 and log2 with log2(e), Tan is sin / cos, Ceil is -floor(-x), FSign
@@ -3566,7 +3620,7 @@ i915_spirv_lower_extended(
  * (the GLSL specification).  FMix is x * (1 - a) + y * a, the definition of
  * the GLSL specification; Mesa's nir_lower_flrp may pick another
  * association.  The integer minimum, maximum, clamp and absolute value
- * compare and select.
+ * compare and select, and SSign is 1, 0 or -1 by two comparisons.
  */
 static uint32_t
 i915_spirv_lower_extended_component(
@@ -3590,6 +3644,10 @@ i915_spirv_lower_extended_component(
 
 	/* Lowers by the function. */
 	switch (function) {
+	case GLSL_ROUND:
+	case GLSL_ROUND_EVEN:
+		return i915_spirv_emit_value(parser, I915_IR_FROUND_EVEN, x, 0U);
+
 	case GLSL_TRUNC:
 		return i915_spirv_emit_value(parser, I915_IR_FTRUNC, x, 0U);
 
@@ -3697,6 +3755,16 @@ i915_spirv_lower_extended_component(
 		zero = i915_spirv_integer_constant(parser, 0U);
 		temporary = i915_spirv_emit_value(parser, I915_IR_ILT, x, zero);
 		return i915_spirv_absolute_integer(parser, x, temporary);
+
+	case GLSL_SSIGN:
+		/* -1 below zero, 1 above it, 0 at it. */
+		zero = i915_spirv_integer_constant(parser, 0U);
+		one = i915_spirv_integer_constant(parser, 1U);
+		other = i915_spirv_integer_constant(parser, 0xFFFFFFFFU);
+		temporary = i915_spirv_emit_value(parser, I915_IR_ILT, x, zero);
+		temporary = i915_spirv_select_value(parser, temporary, other, zero);
+		other = i915_spirv_emit_value(parser, I915_IR_ILT, zero, x);
+		return i915_spirv_select_value(parser, other, one, temporary);
 
 	case GLSL_SMIN:
 		temporary = i915_spirv_emit_value(parser, I915_IR_ILT, y, x);

@@ -124,6 +124,10 @@ struct mview_renderer {
 	VkShaderModule fragment_shader;
 	VkShaderModule cutout_shader;
 	VkPipeline pipelines[MVIEW_PIPELINE_COUNT];
+
+	/* Nonzero for per-pixel lighting (--shading=pixel): the scene block in a uniform buffer, binding 1 of every set. */
+	int pixel_shading;
+	struct mview_buffer scene;
 	uint32_t max_texture_side;
 	int blit_mipmaps;
 	int linear_filter;
@@ -136,7 +140,7 @@ int mview_window_dispatch(struct mview_window *window, int timeout);
 void mview_window_close(struct mview_window *window);
 
 /* Renderer cleanup releases Vulkan ownership before the native window closes. */
-VkResult mview_renderer_open(struct mview_renderer *renderer, struct mview_window *window);
+VkResult mview_renderer_open(struct mview_renderer *renderer, struct mview_window *window, int pixel_shading);
 VkResult mview_renderer_load(struct mview_renderer *renderer, const struct mview_model *model);
 VkResult mview_renderer_draw(struct mview_renderer *renderer, const struct mview_model *model, const struct mview_camera *camera);
 VkResult mview_renderer_recreate(struct mview_renderer *renderer, uint32_t width, uint32_t height);

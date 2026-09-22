@@ -50,7 +50,14 @@
  */
 extern void drv_i915_gfx_draw_checkpoint(const struct i915_gfx_image *target, unsigned draw) __attribute__((weak));
 
+/* The stages of the scratch buffer's parts, as the index of struct i915_gfx_session's scratch arrays. */
+#define I915_DRAW_SCRATCH_VERTEX	0U
+#define I915_DRAW_SCRATCH_PIXEL		1U
+
 static int i915_draw_object_create(struct i915_render_session *session, uint64_t bytes, struct i915_gem_object **result);
+static int i915_draw_scratch(struct i915_render_session *session, struct i915_gfx_session *work, struct i915_gfx_kernels *kernels);
+static int i915_draw_scratch_grow(struct i915_render_session *session, struct i915_gfx_session *work, const struct i915_gfx_kernels *kernels);
+static void i915_draw_object_destroy(struct i915_render_session *session, struct i915_gem_object *object);
 static int i915_draw_build_batch(struct i915_gfx_batch *batch, const struct i915_gfx_op_space *space, const struct i915_gfx_draw_state *state, const struct i915_gfx_kernels *kernels, const struct i915_gfx_image *target, const struct i915_gfx_image *depth, uint32_t mocs, const struct i915_gfx_draw_args *args);
 
 /*
@@ -139,6 +146,10 @@ drv_i915_gfx_session_close(
 	drv_i915_gem_destroy(&device->gem, work->kernels);
 
 	mutex_unlock(&device->mutex);
+
+	/* Destroys the scratch buffer the spilling kernels had. */
+	if (work->scratch != NULL)
+		i915_draw_object_destroy(session, work->scratch);
 
 	/* Forgets the record, so a later draw makes new objects. */
 	kern_free(work);
@@ -507,6 +518,11 @@ drv_i915_gfx_draw(
 		}
 	}
 
+	/* Gives kernels that spill their part of the scratch buffer. */
+	error = i915_draw_scratch(session, work, &kernels);
+	if (error != 0)
+		return error;
+
 	/* Finds the pipeline's instruction window, placing its kernels the first time. */
 	error = drv_i915_gfx_window(session,
 				    work,
@@ -619,6 +635,162 @@ i915_draw_object_create(
 	return 0;
 }
 
+/* Unbinds and destroys one session object. */
+static void
+i915_draw_object_destroy(
+	struct i915_render_session *session,
+	struct i915_gem_object *object)
+{
+	struct i915_device *device;
+
+	/* Unbinds, then destroys, under the device lock. */
+	device = session->vk->i915;
+	mutex_lock(&device->mutex);
+
+	drv_i915_gem_unbind_vm(object);
+	drv_i915_gem_destroy(&device->gem, object);
+
+	mutex_unlock(&device->mutex);
+}
+
+/*
+ * Gives a draw's kernels that spill their part of the session's scratch
+ * buffer, which the draw makes the general state base.
+ *
+ * Returns 0 with the buffer and the parts' offsets in `kernels`, or the
+ * error that kept the buffer from growing.
+ */
+static int
+i915_draw_scratch(
+	struct i915_render_session *session,
+	struct i915_gfx_session *work,
+	struct i915_gfx_kernels *kernels)
+{
+	int error;
+	int roomy;
+
+	/* Kernels that spill nothing need no buffer, and the general state base stays zero. */
+	if (kernels->vs_scratch_bytes == 0U && kernels->ps_scratch_bytes == 0U)
+		return 0;
+
+	/* Notes whether the buffer has room for both kernels' per-thread spaces. */
+	roomy = 0;
+	if (work->scratch != NULL &&
+	    kernels->vs_scratch_bytes <= work->scratch_per_thread[I915_DRAW_SCRATCH_VERTEX] &&
+	    kernels->ps_scratch_bytes <= work->scratch_per_thread[I915_DRAW_SCRATCH_PIXEL])
+		roomy = 1;
+
+	/* Grows the buffer when it has not. */
+	if (roomy == 0) {
+		error = i915_draw_scratch_grow(session, work, kernels);
+		if (error != 0)
+			return error;
+	}
+
+	/* Points the kernels at the buffer and their parts of it. */
+	kernels->scratch_base = work->scratch->va;
+	kernels->vs_scratch_offset = work->scratch_offset[I915_DRAW_SCRATCH_VERTEX];
+	kernels->ps_scratch_offset = work->scratch_offset[I915_DRAW_SCRATCH_PIXEL];
+
+	/* Succeeded: every spilling kernel has its part. */
+	return 0;
+}
+
+/*
+ * Replaces the scratch buffer with one whose parts have room for the
+ * kernels' per-thread spaces (and for what the old one had room for) for
+ * every thread id of their stages.
+ *
+ * The vertex stage uses 546 thread ids, the pixel stage 1024 for every
+ * slice present (heap.h).  The operations recorded so far may still point
+ * at the old buffer, so they run first.  Returns 0, the error of that run,
+ * the object's creation error, or ENOTSUP for a buffer larger than the
+ * general state.
+ */
+static int
+i915_draw_scratch_grow(
+	struct i915_render_session *session,
+	struct i915_gfx_session *work,
+	const struct i915_gfx_kernels *kernels)
+{
+	struct i915_device *device;
+	struct i915_gem_object *object;
+	uint32_t vertex_bytes;
+	uint32_t pixel_bytes;
+	uint32_t slice_mask;
+	uint32_t slices;
+	uint64_t pixel_ids;
+	uint64_t pixel_offset;
+	uint64_t bytes;
+	int error;
+
+	/* The recorded operations run before the old buffer goes. */
+	if (work->scratch != NULL) {
+		error = drv_i915_gfx_flush(session, work);
+		if (error != 0)
+			return error;
+
+		i915_draw_object_destroy(session, work->scratch);
+		work->scratch = NULL;
+	}
+
+	/* Each part keeps the room it had and takes what the kernel needs. */
+	vertex_bytes = work->scratch_per_thread[I915_DRAW_SCRATCH_VERTEX];
+	if (kernels->vs_scratch_bytes > vertex_bytes)
+		vertex_bytes = kernels->vs_scratch_bytes;
+	pixel_bytes = work->scratch_per_thread[I915_DRAW_SCRATCH_PIXEL];
+	if (kernels->ps_scratch_bytes > pixel_bytes)
+		pixel_bytes = kernels->ps_scratch_bytes;
+
+	/* Counts the slices the fuses left: the pixel stage's thread ids grow with them. */
+	device = session->vk->i915;
+	slices = 0U;
+	for (slice_mask = device->gt.info.sseu.slice_mask;
+	     slice_mask != 0U;
+	     slice_mask &= slice_mask - 1U)
+		slices++;
+	if (slices == 0U)
+		slices = 1U;
+	pixel_ids = (uint64_t)I915_GFX_PS_SCRATCH_IDS_PER_SLICE * slices;
+
+	/* Lays the buffer out: the guard page, the vertex part, the pixel part, each page-aligned. */
+	pixel_offset = I915_GFX_SCRATCH_GUARD + (uint64_t)vertex_bytes * I915_GFX_VS_SCRATCH_IDS;
+	pixel_offset = (pixel_offset + I915_GFX_SCRATCH_ALIGN - 1U) & ~(uint64_t)(I915_GFX_SCRATCH_ALIGN - 1U);
+	bytes = pixel_offset + (uint64_t)pixel_bytes * pixel_ids;
+
+	/* A buffer beyond the general state's size cannot be addressed. */
+	if (bytes > I915_GFX_GENERAL_STATE_BYTES) {
+		kern_logf("i915: vk: XXX unimplemented path: a scratch buffer of %llu bytes\n", (unsigned long long)bytes);
+		return ENOTSUP;
+	}
+
+	/* Makes the buffer. */
+	error = i915_draw_object_create(session, bytes, &object);
+	if (error != 0) {
+		kern_logf("i915: vk: a scratch buffer of %llu bytes cannot be made: error %d\n", (unsigned long long)bytes, error);
+		return error;
+	}
+
+	/* Keeps the buffer with the session, with the room of each part and where it starts. */
+	work->scratch = object;
+	work->scratch_per_thread[I915_DRAW_SCRATCH_VERTEX] = vertex_bytes;
+	work->scratch_per_thread[I915_DRAW_SCRATCH_PIXEL] = pixel_bytes;
+	work->scratch_offset[I915_DRAW_SCRATCH_VERTEX] = I915_GFX_SCRATCH_GUARD;
+	work->scratch_offset[I915_DRAW_SCRATCH_PIXEL] = pixel_offset;
+	kern_logf("i915: vk: scratch: %llu bytes at 0x%llx: vertex %u bytes a thread for %u ids at +0x%x, pixel %u for %llu ids at +0x%llx\n",
+		  (unsigned long long)bytes,
+		  (unsigned long long)object->va,
+		  vertex_bytes,
+		  I915_GFX_VS_SCRATCH_IDS,
+		  I915_GFX_SCRATCH_GUARD,
+		  pixel_bytes,
+		  (unsigned long long)pixel_ids,
+		  (unsigned long long)pixel_offset);
+
+	/* Succeeded: the buffer has room for both kernels. */
+	return 0;
+}
+
 /*
  * Appends the commands of one draw to the batch.
  *
@@ -641,12 +813,13 @@ i915_draw_build_batch(
 {
 	struct i915_gfx_primitive primitive;
 	uint64_t state_va;
+	uint32_t slots;
 	uint32_t entry_size;
 	int error;
 
 	/* Switches to 3D, programs the state bases and the once-per-context state. */
 	state_va = space->slot_va;
-	drv_i915_gfx_emit_context_setup(batch, state_va, space->window_va, mocs);
+	drv_i915_gfx_emit_context_setup(batch, state_va, space->window_va, kernels->scratch_base, mocs);
 
 	/* Programs the vertex buffers and elements. */
 	error = drv_i915_gfx_emit_vertex_input(batch, state, kernels, mocs);
@@ -660,8 +833,16 @@ i915_draw_build_batch(
 			return error;
 	}
 
-	/* Sizes a VUE entry for the header, the position and the varyings, in 64-byte units. */
-	entry_size = ((2U + kernels->varyings) * 16U + 63U) / 64U;
+	/*
+	 * Sizes a VUE entry, in 64-byte units of four 16-byte slots: the vertex
+	 * fetcher writes the attributes into the entry the vertex shader then
+	 * overwrites with the header, the position and the varyings, so it holds
+	 * the larger of the two (brw_compile_vs.cpp, urb_entry_size).
+	 */
+	slots = 2U + kernels->varyings;
+	if (kernels->vs_input_count > slots)
+		slots = kernels->vs_input_count;
+	entry_size = (slots + 3U) / 4U;
 	drv_i915_gfx_emit_urb(batch, entry_size);
 
 	/* Points the vertex and the pixel stage at their push data. */

@@ -41,6 +41,37 @@
  *   - src/intel/compiler/brw_eu_emit.c     (sha256 7a359df7a0d4fc8085d050e510c34a074ebaccbf6ae826a009ac73875223853d)
  *                                          brw_WHILE: a null D destination, the JIP in bytes from the WHILE
  *                                          back to the first instruction of the loop (16 * (do - while))
+ * and, for the integer division and the round-to-even of p014 stage E2, the same release:
+ *   - brw_eu_defines.h                     BRW_MATH_FUNCTION_INT_DIV_QUOTIENT (12) and _REMAINDER (13)
+ *   - brw_eu.c                             the Gen12 hardware opcode of RNDE (70)
+ *   - brw_eu_emit.c                        gfx6_math(): INT DIV takes integer sources, a register or an
+ *                                          immediate second source, and no source modifier
+ *   - src/intel/compiler/brw_fs_nir.cpp    (sha256 2e6116f7818ad378a4ea4d0724b237cec7477940aaa0e19735b32a0c6a4920f8)
+ *                                          idiv / udiv to SHADER_OPCODE_INT_QUOTIENT, umod / irem to
+ *                                          SHADER_OPCODE_INT_REMAINDER (the hardware's signed remainder has the
+ *                                          dividend's sign), imod from the remainder and the divisor's sign;
+ *                                          fround_even to RNDE
+ *   - src/intel/compiler/brw_nir.c         (sha256 7cb2e82e04b4cf81b76441eb9e71ede3835f16350171a04dc350a24a14fc32c2)
+ *                                          nir_lower_idiv only from verx10 125 on: Gen12.0 divides in the math box
+ *   - src/intel/compiler/brw_lower_simd_width.cpp (sha256 4ac59b1abd2c08c3f56a579c79636aedc43772b2156713bb1f2a25cb508a9885)
+ *                                          integer division is SIMD8 at most
+ * and, for spilling registers to scratch memory (p014 stage E3), the same release:
+ *   - brw_eu_defines.h                     GFX7_SFID_DATAPORT_DATA_CACHE (10), the OWord block read (0) and
+ *                                          write (8) message types, BRW_DATAPORT_OWORD_BLOCK_2_OWORDS (2) and
+ *                                          GFX8_BTI_STATELESS_NON_COHERENT (253)
+ *   - src/intel/compiler/brw_eu.h          (sha256 87a58fd1a719122d81539607f0fb72cf0483486ed8aa5540c387c217d337fc1b)
+ *                                          brw_message_desc(): mlen in bits 28:25, rlen in 24:20, the header
+ *                                          bit 19; brw_dp_desc(): the binding table index in 7:0, the message
+ *                                          control in 13:8, the message type in 18:14
+ *   - src/intel/compiler/brw_reg_allocate.cpp (sha256 6ba5ce7a8431c9e3aa0c583cf0386ba642022d5712517e181091f2c516df97e8)
+ *                                          emit_spill() / emit_unspill() before LSC (verx10 < 125): a
+ *                                          one-register header, the offset in OWords in its dword 2, a
+ *                                          stateless non-coherent OWord block write (the data as the second
+ *                                          payload run) or read of one register
+ *   - src/intel/compiler/brw_generator.cpp (sha256 0c3f99afe06ae7b651d48ff4966d0f8dabcb744fa3513a7018ee51a1bea90d3b)
+ *                                          generate_scratch_header(): the header cleared, then r0.3[3:0] (the
+ *                                          per-thread scratch space) and r0.5[31:10] (the thread's scratch
+ *                                          base) copied into its dwords 3 and 5
  * and checked against Mesa 25.0.7's brw_asm / brw_disasm (--gen=adl) for each new form, among them the
  * 16-bit strided source <16;8,2>:uw of the 32 x 16-bit multiply Mesa lowers a 32-bit integer multiply to
  * on Tiger Lake (has_integer_dword_mul false, brw_lower_integer_multiplication.cpp).
@@ -167,6 +198,7 @@
 #define EU_OP_SHL			105U
 #define EU_OP_ASR			108U
 #define EU_OP_RNDZ			71U
+#define EU_OP_RNDE			70U
 #define EU_OP_WHILE			39U
 
 /* A branch's jump target: bytes from the branch instruction, in the last word. */
@@ -220,11 +252,42 @@
 #define EU_MATH_RSQ			5U
 #define EU_MATH_SIN			6U
 #define EU_MATH_COS			7U
+#define EU_MATH_INT_DIV_QUOTIENT	12U
+#define EU_MATH_INT_DIV_REMAINDER	13U
 
 /* Shared functions a SEND addresses. */
 #define EU_SFID_SAMPLER			2U
 #define EU_SFID_RENDER_CACHE		5U
 #define EU_SFID_URB			6U
+#define EU_SFID_DATA_CACHE		10U
+
+/* The message descriptor: the payload and reply lengths in registers, and whether a header leads the payload. */
+#define EU_DESC_MLEN_SHIFT		25
+#define EU_DESC_RLEN_SHIFT		20
+#define EU_DESC_HEADER_PRESENT		(1U << 19)
+
+/* A data-port descriptor: the binding table index, the message control and the message type. */
+#define EU_DP_CONTROL_SHIFT		8
+#define EU_DP_TYPE_SHIFT		14
+
+/* The OWord block messages of the data cache, and the block of two OWords (one SIMD8 register). */
+#define EU_DP_OWORD_BLOCK_READ		0U
+#define EU_DP_OWORD_BLOCK_WRITE		8U
+#define EU_DP_OWORD_BLOCK_2_OWORDS	2U
+
+/* The binding table index of stateless, non-coherent accesses: the scratch space. */
+#define EU_BTI_STATELESS_NON_COHERENT	253U
+
+/*
+ * The scratch message header: the offset (in OWords) in dword 2; dwords 3
+ * and 5 copy the per-thread scratch space (r0.3 bits 3:0) and the thread's
+ * scratch base (r0.5 bits 31:10) out of the thread payload.
+ */
+#define EU_SCRATCH_HEADER_OFFSET_DWORD	2U
+#define EU_SCRATCH_HEADER_SIZE_DWORD	3U
+#define EU_SCRATCH_HEADER_BASE_DWORD	5U
+#define EU_SCRATCH_SIZE_MASK		0x0000000fU
+#define EU_SCRATCH_BASE_MASK		0xfffffc00U
 
 /*
  * SWSB, the software scoreboard byte of Gen12.0 (gen_swsb_encode, brw_lower_scoreboard.cpp):

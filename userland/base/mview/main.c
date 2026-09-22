@@ -40,6 +40,9 @@ struct main_options {
 
 	/* Seconds of automatic turning about the vertical axis, with the frame rate measured; zero for none. */
 	uint32_t spin;
+
+	/* Nonzero for per-pixel lighting (--shading=pixel); the default lights per vertex. */
+	int pixel_shading;
 };
 
 /* The frame-rate measurement of the spin demonstration. */
@@ -112,7 +115,7 @@ main(
 	/* Argument failure starts no connection or GPU namespace. */
 	status = options_parse(argc, argv, &options);
 	if (status != 0) {
-		fprintf(stderr, "usage: mview [--display=NAME] [--model=DIR] [--token=NAME] [--frames=N] [--timeout-s=N] [--spin=SECONDS]\n");
+		fprintf(stderr, "usage: mview [--display=NAME] [--model=DIR] [--token=NAME] [--frames=N] [--timeout-s=N] [--spin=SECONDS] [--shading=vertex|pixel]\n");
 		return 2;
 	}
 
@@ -130,15 +133,16 @@ main(
 		goto cleanup;
 	}
 
-	/* Publishes what is about to be shown. */
+	/* Publishes what is about to be shown; the per-pixel shading says so at the end. */
 	printf(
-		"MVIEW START run=%s model=%s vertices=%u triangles=%u materials=%u textures=%u\n",
+		"MVIEW START run=%s model=%s vertices=%u triangles=%u materials=%u textures=%u%s\n",
 		options.token,
 		options.model,
 		model.vertex_count,
 		model.triangle_count,
 		model.material_count,
-		model.texture_count);
+		model.texture_count,
+		options.pixel_shading != 0 ? " shading=pixel" : "");
 	fflush(stdout);
 
 	/* Input events apply to the camera from the first dispatch on. */
@@ -151,7 +155,7 @@ main(
 		goto cleanup;
 
 	/* Creates renderer ownership only after the native surface is configured. */
-	result = mview_renderer_open(&renderer, &window);
+	result = mview_renderer_open(&renderer, &window, options.pixel_shading);
 	operation = renderer.operation;
 	if (result != VK_SUCCESS) {
 		status = -1;
@@ -413,6 +417,23 @@ options_parse(
 			status = option_number(argv[index] + 7U, 3600U, &options->spin);
 			if (status != 0)
 				return status;
+			continue;
+		}
+
+		/* The lighting: per vertex (the default) or per pixel. */
+		match = strncmp(argv[index], "--shading=", 10U);
+		if (match == 0) {
+			match = strcmp(argv[index] + 10U, "pixel");
+			if (match == 0) {
+				options->pixel_shading = 1;
+				continue;
+			}
+
+			/* Anything but the two names is refused. */
+			match = strcmp(argv[index] + 10U, "vertex");
+			if (match != 0)
+				return -1;
+			options->pixel_shading = 0;
 			continue;
 		}
 

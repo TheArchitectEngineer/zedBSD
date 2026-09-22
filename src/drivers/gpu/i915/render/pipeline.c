@@ -611,8 +611,9 @@ i915_gfx_decode_blend(
 /*
  * Decodes the dynamic state of a pipeline record.
  *
- * The viewport and the scissor may be dynamic; any other dynamic state is
- * named as not implemented, and a draw then uses the pipeline's value.
+ * The viewport, the scissor and the blend constants may be dynamic; any
+ * other dynamic state is named as not implemented, and a draw then uses the
+ * pipeline's value.
  */
 static void
 i915_gfx_decode_dynamic(
@@ -640,11 +641,13 @@ i915_gfx_decode_dynamic(
 	for (index = 0U; index < dynamic.dynamicStateCount; index++) {
 		state = (uint32_t)dynamic.pDynamicStates[index];
 
-		/* The viewport and the scissor come from vkCmdSetViewport and vkCmdSetScissor. */
+		/* The viewport, the scissor and the blend constants come from their vkCmdSet* commands. */
 		if (state == VK_DYNAMIC_STATE_VIEWPORT) {
 			pipeline->dynamic_viewport = 1;
 		} else if (state == VK_DYNAMIC_STATE_SCISSOR) {
 			pipeline->dynamic_scissor = 1;
+		} else if (state == VK_DYNAMIC_STATE_BLEND_CONSTANTS) {
+			pipeline->dynamic_blend_constants = 1;
 		} else {
 			kern_logf("i915: vk: XXX pipeline declares dynamic state %u; no vkCmdSet* command for it is implemented\n", state);
 		}

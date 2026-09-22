@@ -107,11 +107,22 @@ struct i915_shader_binary {
 	/* Vertex: VUE slots after the position; fragment: equal to input_count. */
 	uint32_t varying_count;
 
+	/* Vertex: the location each VUE slot after the position holds, ascending. */
+	uint32_t varying_locations[I915_SHADER_MAX_INPUTS];
+
 	/*
 	 * Fragment: nonzero when the kernel discards pixels, which the draw
 	 * declares in 3DSTATE_PS_EXTRA (Pixel Shader Kills Pixel).
 	 */
 	uint32_t uses_kill;
+
+	/*
+	 * The scratch memory each thread of the kernel needs for the values it
+	 * spills: a power of two from 1 KiB to 2 MiB, or 0 for a kernel that
+	 * spills nothing.  The draw programs it, and a buffer of it for every
+	 * thread the stage may run at once, in 3DSTATE_VS / PS.
+	 */
+	uint32_t scratch_bytes;
 };
 
 int drv_i915_shader_parse(const uint32_t *words, size_t word_count, enum i915_shader_stage stage, struct i915_shader_ir **out, struct i915_compile_diagnostic *diagnostic);

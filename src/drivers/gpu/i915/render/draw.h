@@ -92,6 +92,16 @@ struct i915_gfx_session {
 	uint32_t fill_generation;
 	uint32_t copy_window;
 	uint32_t copy_generation;
+
+	/*
+	 * The scratch buffer, made on the first draw whose kernel spills: the
+	 * per-thread space each stage's part has room for and where the part
+	 * starts (heap.h).  It only grows: a kernel that needs more replaces it
+	 * once the recorded operations, which may still point at it, have run.
+	 */
+	struct i915_gem_object *scratch;
+	uint32_t scratch_per_thread[2];
+	uint64_t scratch_offset[2];
 };
 
 /*

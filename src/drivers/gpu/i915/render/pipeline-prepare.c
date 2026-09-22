@@ -34,6 +34,7 @@
 
 static int i915_pipeline_compile_stage(const struct i915_gfx_shader *shader, enum i915_shader_stage stage, struct i915_shader_binary **result);
 static int i915_pipeline_kernels_fit(const struct i915_gfx_pipeline *pipeline);
+static int i915_pipeline_input_slot(const struct i915_shader_binary *vertex, uint32_t location, uint32_t *slot);
 static const char *i915_pipeline_stage_name(enum i915_shader_stage stage);
 
 /*
@@ -42,7 +43,7 @@ static const char *i915_pipeline_stage_name(enum i915_shader_stage stage);
  * The pipeline needs both stages.  Returns the parser's or the compiler's
  * error, or ENOTSUP for kernels the draw path cannot place; the pipeline is
  * then left without kernels.
- * XXX: kernels of at most 16 KiB and 32 KiB, the stages' interfaces equal.
+ * XXX: kernels of at most 16 KiB and 32 KiB.
  */
 int
 drv_i915_gfx_pipeline_prepare(
@@ -138,6 +139,8 @@ drv_i915_gfx_pipeline_kernels(
 	const struct i915_shader_binary *vertex;
 	const struct i915_shader_binary *fragment;
 	uint32_t index;
+	uint32_t slot;
+	int found;
 
 	/* Starts from nothing. */
 	memset(kernels, 0, sizeof(*kernels));
@@ -163,6 +166,21 @@ drv_i915_gfx_pipeline_kernels(
 
 	/* Takes the varyings and the pixel kernel's payload start and sampled images. */
 	kernels->varyings = vertex->varying_count;
+
+	/*
+	 * Finds the VUE slot of each fragment input; the fit check made sure the
+	 * vertex kernel writes every location the pixel kernel reads.
+	 */
+	kernels->ps_inputs_mapped = 1U;
+	kernels->ps_input_count = fragment->input_count;
+	for (index = 0U; index < fragment->input_count && index < I915_GFX_MAX_VARYINGS; index++) {
+		slot = 0U;
+		found = i915_pipeline_input_slot(vertex, fragment->input_locations[index], &slot);
+		if (found != 0)
+			slot = 0U;
+		kernels->ps_input_slots[index] = slot;
+	}
+
 	kernels->ps_grf_start = fragment->dispatch_grf_start;
 	kernels->ps_samplers = fragment->sampler_count;
 	kernels->ps_sampler_sets = fragment->sampler_set;
@@ -177,6 +195,10 @@ drv_i915_gfx_pipeline_kernels(
 
 	/* Takes whether the pixel kernel discards, which the pixel stage must be told. */
 	kernels->ps_kills = fragment->uses_kill;
+
+	/* Takes the scratch memory each kernel spills to; the draw places the buffers. */
+	kernels->vs_scratch_bytes = vertex->scratch_bytes;
+	kernels->ps_scratch_bytes = fragment->scratch_bytes;
 }
 
 /*
@@ -228,8 +250,8 @@ i915_pipeline_compile_stage(
  * Reports whether a pipeline's compiled kernels fit the draw path.
  *
  * The vertex kernel must fit below the pixel kernel's slot and the pixel
- * kernel in the rest of the instruction heap; the vertex stage's varyings
- * must be the fragment stage's inputs; neither stage may read more push
+ * kernel in the rest of the instruction heap; the vertex stage must write
+ * every location the fragment stage reads; neither stage may read more push
  * constants than a command buffer carries, nor more push data than its
  * buffer holds; the pixel kernel may sample no more textures than the
  * binding table has room for, and the vertex kernel none (it has no
@@ -239,6 +261,10 @@ static int
 i915_pipeline_kernels_fit(
 	const struct i915_gfx_pipeline *pipeline)
 {
+	uint32_t index;
+	uint32_t slot;
+	int found;
+
 	/* The vertex kernel must fit its slot. */
 	if (pipeline->vs_binary->code_bytes > I915_GFX_PS_KERNEL - I915_GFX_VS_KERNEL)
 		return 0;
@@ -247,9 +273,23 @@ i915_pipeline_kernels_fit(
 	if (pipeline->fs_binary->code_bytes > I915_GFX_INSTRUCTION_BYTES - I915_GFX_PS_KERNEL)
 		return 0;
 
-	/* The stages' interfaces must agree. */
-	if (pipeline->vs_binary->varying_count != pipeline->fs_binary->input_count)
+	/* The pixel kernel reads no more inputs than the setup can route. */
+	if (pipeline->fs_binary->input_count > I915_GFX_MAX_VARYINGS)
 		return 0;
+
+	/*
+	 * The stages' interfaces must agree: every location the fragment kernel
+	 * reads is one the vertex kernel writes (it may read only some of them,
+	 * in any order).
+	 */
+	for (index = 0U; index < pipeline->fs_binary->input_count; index++) {
+		found = i915_pipeline_input_slot(pipeline->vs_binary, pipeline->fs_binary->input_locations[index], &slot);
+		if (found != 0) {
+			kern_logf("i915: vk: the fragment shader reads location %u, which the vertex shader does not write\n",
+				  pipeline->fs_binary->input_locations[index]);
+			return 0;
+		}
+	}
 
 	/* The vertex stage may read no more push constants than a command buffer carries. */
 	if (pipeline->vs_binary->push_constant_bytes > I915_GFX_PUSH_BYTES)
@@ -277,6 +317,31 @@ i915_pipeline_kernels_fit(
 
 	/* Succeeded: the kernels fit. */
 	return 1;
+}
+
+/*
+ * Finds the VUE slot after the position in which a vertex kernel writes a
+ * location; ENOENT when it writes none there.
+ */
+static int
+i915_pipeline_input_slot(
+	const struct i915_shader_binary *vertex,
+	uint32_t location,
+	uint32_t *slot)
+{
+	uint32_t index;
+
+	/* Looks the location up among the slots the vertex kernel writes. */
+	for (index = 0U; index < vertex->varying_count && index < I915_SHADER_MAX_INPUTS; index++) {
+		if (vertex->varying_locations[index] == location) {
+			/* Succeeded: the location is this slot. */
+			*slot = index;
+			return 0;
+		}
+	}
+
+	/* The vertex kernel does not write the location. */
+	return ENOENT;
 }
 
 /* Names a stage in the log lines. */

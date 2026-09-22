@@ -112,6 +112,27 @@
 #define I915_GFX_MAX_VS_THREADS		546U
 
 /*
+ * The thread ids the scratch memory of a stage has to cover (Mesa 25.0.7
+ * src/intel/dev/intel_device_info.c, sha256
+ * 1a3c7c6d87c4a60af5d1003096b4add0a34c4a02afc12b40a378cc060540afd8,
+ * init_max_scratch_ids()): the vertex stage's max_vs_threads, the pixel
+ * stage's max_wm_threads, which on Gen12 is 128 threads per PSD on each of
+ * the 8 subslices of every slice present.
+ */
+#define I915_GFX_VS_SCRATCH_IDS			I915_GFX_MAX_VS_THREADS
+#define I915_GFX_PS_SCRATCH_IDS_PER_SLICE	(128U * 8U)
+
+/*
+ * The session's scratch buffer: an unused first page, so neither stage's
+ * scratch pointer is zero, then the vertex stage's part, then the pixel
+ * stage's, each page-aligned.  A draw whose kernels spill makes the buffer
+ * the general state base, whose size is 4 GiB less a page.
+ */
+#define I915_GFX_SCRATCH_GUARD			4096U
+#define I915_GFX_SCRATCH_ALIGN			4096U
+#define I915_GFX_GENERAL_STATE_BYTES		0xfffff000ULL
+
+/*
  * The MOCS table entry the render paths use for their surfaces, vertex
  * buffers and state: index 3, uncached (see GEN12_MOCS()).
  */

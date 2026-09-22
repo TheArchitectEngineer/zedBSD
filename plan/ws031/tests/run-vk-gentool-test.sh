@@ -52,8 +52,10 @@ judge vkdemo-vertex "$work/vs.bin"
 "$work/eudump" fragment "$repo/userland/base/vkdemo/shaders/cuboid.frag.spv" "$work/fs.bin"
 judge vkdemo-fragment "$work/fs.bin"
 
-# p014: mview's shaders and the stage-C test shaders (comparisons, selections, discard, math)
-for spv in "$repo"/userland/base/mview/shaders/*.spv "$repo"/src/drivers/gpu/i915/tests/render/compiler-shaders/*.spv; do
+# p014: mview's shaders and the stage-C test shaders (comparisons, selections, discard, math);
+# p014 E2: the generality test's shaders (matrices, integers, loops, 16 varyings / attributes);
+# p014 E3: spill.frag and vio16.vert spill to scratch memory (OWord block write / read, the scratch header)
+for spv in "$repo"/userland/base/mview/shaders/*.spv "$repo"/src/drivers/gpu/i915/tests/render/compiler-shaders/*.spv     "$repo"/src/drivers/gpu/i915/tests/render/generality-shaders/*.spv; do
 	name=$(basename "$spv" .spv)
 	case $name in
 	*.vert) stage=vertex ;;

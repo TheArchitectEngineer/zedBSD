@@ -400,6 +400,23 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 #define GEN12_3DPRIMITIVE_VERTEX_RANDOM		(1U << 8)
 
 /*
+ * 3DSTATE_VS (gen110.xml, imported by gen120.xml) and 3DSTATE_PS (gen120.xml)
+ * dwords 4-5, the same in both: Per-Thread Scratch Space in bits 3:0 of
+ * dword 4, the scratch memory of one thread as 1 KiB << n (n up to 11, 2
+ * MiB); Scratch Space Base Pointer in bits 63:10 of the two dwords, an
+ * address relative to the General State Base Address.  A thread's scratch
+ * starts at the pointer plus its thread id times the per-thread space.
+ * Mesa 25.0.7: gen110.xml sha256
+ * 6598e556ffedf4fe051c78af3bb08030a39af865c76e2784dba5374646fce35d, gen120.xml
+ * (above); anv programs them from the kernel's total_scratch
+ * (src/intel/vulkan/genX_pipeline.c get_scratch_space(), gfx12.0 path).
+ */
+#define GEN12_SCRATCH_SPACE_MASK		0x0000000fU
+#define GEN12_SCRATCH_POINTER_ALIGN		1024U
+#define GEN12_SCRATCH_SPACE_MIN_BYTES		1024U
+#define GEN12_SCRATCH_SPACE_MAX			11U
+
+/*
  * 3DSTATE_PS dword 6 bit 11 (Push Constant Enable): the pixel threads get
  * the push constants of 3DSTATE_CONSTANT_PS in front of their setup data.
  */

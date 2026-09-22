@@ -13,7 +13,9 @@
  * image with its own descriptor set.  Six pipelines cover the three alpha
  * modes with and without back-face culling.  All uploads pass through one
  * reused host-visible staging buffer, because the host-visible window of the
- * Venus transport is small.
+ * Venus transport is small.  The per-pixel shading (--shading=pixel) adds a
+ * host-visible uniform buffer with the scene block, binding 1 of every
+ * texture's set, rewritten before each frame is recorded.
  */
 
 #include "mview.h"
@@ -75,7 +77,8 @@ static void renderer_buffer_free(struct mview_renderer *renderer, struct mview_b
 VkResult
 mview_renderer_open(
 	struct mview_renderer *renderer,
-	struct mview_window *window)
+	struct mview_window *window,
+	int pixel_shading)
 {
 	VkApplicationInfo application;
 	VkInstanceCreateInfo instance;
@@ -83,10 +86,11 @@ mview_renderer_open(
 	const char *extensions[2];
 	VkResult error;
 
-	/* Initializes renderer ownership and the configured native image extent. */
+	/* Initializes renderer ownership, the configured native image extent and the shading. */
 	memset(renderer, 0, sizeof(*renderer));
 	renderer->extent.width = window->width;
 	renderer->extent.height = window->height;
+	renderer->pixel_shading = pixel_shading;
 
 	/* The application requests only standard instance extensions. */
 	extensions[0] = VK_KHR_SURFACE_EXTENSION_NAME;
@@ -486,10 +490,11 @@ mview_renderer_close(
 		free(renderer->textures);
 		renderer->textures = NULL;
 
-		/* Geometry and staging buffers. */
+		/* Geometry, staging and scene buffers. */
 		renderer_buffer_free(renderer, &renderer->vertices);
 		renderer_buffer_free(renderer, &renderer->indices);
 		renderer_buffer_free(renderer, &renderer->staging);
+		renderer_buffer_free(renderer, &renderer->scene);
 
 		/* Releases attachments before the objects referenced by their recorded rendering. */
 		renderer_targets_free(renderer);
@@ -1117,14 +1122,15 @@ renderer_commands(
  *
  * The push-constant block is shared by both stages: 112 bytes of transforms
  * for the vertex stage and the material colour at offset 112 for the
- * fragment stage.
+ * fragment stage.  The per-pixel shading adds binding 1, the scene's
+ * uniform buffer for both stages, and makes that buffer.
  */
 static VkResult
 renderer_layout(
 	struct mview_renderer *renderer)
 {
 	VkSamplerCreateInfo sampler;
-	VkDescriptorSetLayoutBinding binding;
+	VkDescriptorSetLayoutBinding bindings[2];
 	VkDescriptorSetLayoutCreateInfo set;
 	VkPushConstantRange push;
 	VkPipelineLayoutCreateInfo layout;
@@ -1157,17 +1163,25 @@ renderer_layout(
 		return error;
 
 	/* Binding zero supplies one combined texture and sampler to the fragment stage. */
-	memset(&binding, 0, sizeof(binding));
-	binding.binding = 0U;
-	binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-	binding.descriptorCount = 1U;
-	binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+	memset(bindings, 0, sizeof(bindings));
+	bindings[0].binding = 0U;
+	bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	bindings[0].descriptorCount = 1U;
+	bindings[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-	/* Every material set has this one binding. */
+	/* Binding one, for the per-pixel shading, supplies the scene block to both stages. */
+	bindings[1].binding = 1U;
+	bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	bindings[1].descriptorCount = 1U;
+	bindings[1].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+
+	/* Every material set has the texture binding, and the scene binding when lit per pixel. */
 	memset(&set, 0, sizeof(set));
 	set.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 	set.bindingCount = 1U;
-	set.pBindings = &binding;
+	if (renderer->pixel_shading != 0)
+		set.bindingCount = 2U;
+	set.pBindings = bindings;
 	renderer->operation = "vkCreateDescriptorSetLayout";
 	error = vkCreateDescriptorSetLayout(renderer->device, &set, NULL, &renderer->set_layout);
 	if (error != VK_SUCCESS)
@@ -1190,6 +1204,13 @@ renderer_layout(
 	error = vkCreatePipelineLayout(renderer->device, &layout, NULL, &renderer->layout);
 	if (error != VK_SUCCESS)
 		return error;
+
+	/* The per-pixel shading's scene block lives in one mapped uniform buffer. */
+	if (renderer->pixel_shading != 0) {
+		error = renderer_buffer(renderer, &renderer->scene, sizeof(struct mview_scene), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, 1);
+		if (error != VK_SUCCESS)
+			return error;
+	}
 
 	/* Succeeded: descriptors and push constants have a layout. */
 	return VK_SUCCESS;
@@ -1225,22 +1246,45 @@ static VkResult
 renderer_pipelines(
 	struct mview_renderer *renderer)
 {
+	const uint32_t *vertex_words;
+	const uint32_t *fragment_words;
+	const uint32_t *cutout_words;
+	size_t vertex_bytes;
+	size_t fragment_bytes;
+	size_t cutout_bytes;
 	uint32_t alpha;
 	uint32_t cull;
 	VkResult error;
 
+	/* The per-vertex shading's modules, or the per-pixel shading's. */
+	if (renderer->pixel_shading != 0) {
+		vertex_words = mview_pixel_vertex_shader;
+		vertex_bytes = sizeof(mview_pixel_vertex_shader);
+		fragment_words = mview_pixel_fragment_shader;
+		fragment_bytes = sizeof(mview_pixel_fragment_shader);
+		cutout_words = mview_pixel_cutout_shader;
+		cutout_bytes = sizeof(mview_pixel_cutout_shader);
+	} else {
+		vertex_words = mview_vertex_shader;
+		vertex_bytes = sizeof(mview_vertex_shader);
+		fragment_words = mview_fragment_shader;
+		fragment_bytes = sizeof(mview_fragment_shader);
+		cutout_words = mview_cutout_shader;
+		cutout_bytes = sizeof(mview_cutout_shader);
+	}
+
 	/* The vertex stage is shared by every pipeline. */
-	error = renderer_shader(renderer, mview_vertex_shader, sizeof(mview_vertex_shader), &renderer->vertex_shader);
+	error = renderer_shader(renderer, vertex_words, vertex_bytes, &renderer->vertex_shader);
 	if (error != VK_SUCCESS)
 		return error;
 
 	/* Opaque and blended materials use the plain fragment stage. */
-	error = renderer_shader(renderer, mview_fragment_shader, sizeof(mview_fragment_shader), &renderer->fragment_shader);
+	error = renderer_shader(renderer, fragment_words, fragment_bytes, &renderer->fragment_shader);
 	if (error != VK_SUCCESS)
 		return error;
 
 	/* Cut-out materials discard transparent fragments. */
-	error = renderer_shader(renderer, mview_cutout_shader, sizeof(mview_cutout_shader), &renderer->cutout_shader);
+	error = renderer_shader(renderer, cutout_words, cutout_bytes, &renderer->cutout_shader);
 	if (error != VK_SUCCESS)
 		return error;
 
@@ -1978,25 +2022,32 @@ static VkResult
 renderer_descriptors(
 	struct mview_renderer *renderer)
 {
-	VkDescriptorPoolSize size;
+	VkDescriptorPoolSize sizes[2];
 	VkDescriptorPoolCreateInfo pool;
 	VkDescriptorSetAllocateInfo allocation;
 	VkDescriptorImageInfo image;
-	VkWriteDescriptorSet write;
+	VkDescriptorBufferInfo scene;
+	VkWriteDescriptorSet writes[2];
+	uint32_t count;
 	uint32_t index;
 	VkResult error;
 
-	/* Exactly one combined image sampler per texture. */
-	memset(&size, 0, sizeof(size));
-	size.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-	size.descriptorCount = renderer->texture_count;
+	/* Exactly one combined image sampler per texture, and one scene block per set when lit per pixel. */
+	memset(sizes, 0, sizeof(sizes));
+	sizes[0].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	sizes[0].descriptorCount = renderer->texture_count;
+	sizes[1].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	sizes[1].descriptorCount = renderer->texture_count;
+	count = 1U;
+	if (renderer->pixel_shading != 0)
+		count = 2U;
 
 	/* The pool owns every set until the renderer closes. */
 	memset(&pool, 0, sizeof(pool));
 	pool.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 	pool.maxSets = renderer->texture_count;
-	pool.poolSizeCount = 1U;
-	pool.pPoolSizes = &size;
+	pool.poolSizeCount = count;
+	pool.pPoolSizes = sizes;
 	renderer->operation = "vkCreateDescriptorPool";
 	error = vkCreateDescriptorPool(renderer->device, &pool, NULL, &renderer->descriptor_pool);
 	if (error != VK_SUCCESS)
@@ -2027,15 +2078,27 @@ renderer_descriptors(
 		image.imageView = renderer->textures[index].view;
 		image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-		/* Publishes the one binding of the set. */
-		memset(&write, 0, sizeof(write));
-		write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		write.dstSet = renderer->sets[index];
-		write.dstBinding = 0U;
-		write.descriptorCount = 1U;
-		write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		write.pImageInfo = &image;
-		vkUpdateDescriptorSets(renderer->device, 1U, &write, 0U, NULL);
+		/* The whole scene block, for the per-pixel shading. */
+		memset(&scene, 0, sizeof(scene));
+		scene.buffer = renderer->scene.buffer;
+		scene.offset = 0U;
+		scene.range = sizeof(struct mview_scene);
+
+		/* Publishes the texture binding of the set, and the scene binding when lit per pixel. */
+		memset(writes, 0, sizeof(writes));
+		writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		writes[0].dstSet = renderer->sets[index];
+		writes[0].dstBinding = 0U;
+		writes[0].descriptorCount = 1U;
+		writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		writes[0].pImageInfo = &image;
+		writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		writes[1].dstSet = renderer->sets[index];
+		writes[1].dstBinding = 1U;
+		writes[1].descriptorCount = 1U;
+		writes[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		writes[1].pBufferInfo = &scene;
+		vkUpdateDescriptorSets(renderer->device, count, writes, 0U, NULL);
 	}
 
 	/* Succeeded: every texture can be bound by its set. */
@@ -2137,6 +2200,13 @@ renderer_record(
 
 	/* The transforms are the same for every group; the colour changes per material. */
 	mview_camera_push(camera, renderer->extent.width, renderer->extent.height, &push);
+
+	/*
+	 * The per-pixel shading's scene block for this view; the previous frame's
+	 * fence was waited on, so no GPU work reads the buffer while it changes.
+	 */
+	if (renderer->pixel_shading != 0)
+		mview_camera_scene(camera, renderer->extent.width, renderer->extent.height, (struct mview_scene *)renderer->scene.mapping);
 
 	/* Draws each group with its material's pipeline, texture and colour. */
 	bound = VK_NULL_HANDLE;

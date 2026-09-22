@@ -21,7 +21,7 @@
  * true of its output: every instruction depends on the one before it.
  *
  *   - an in-order instruction (MOV, ADD, MUL, SEL, CMP, AND, OR, XOR, NOT,
- *     SHL, SHR, ASR, RNDD, RNDZ, FRC, WHILE) waits for the previous in-order
+ *     SHL, SHR, ASR, RNDD, RNDZ, RNDE, FRC, WHILE) waits for the previous in-order
  *     instruction (@1); a flag a CMP writes is read only by a later in-order
  *     instruction, so the same wait covers it.  The wait counts back over
  *     the instructions as they ran, so the first instruction of a loop,
@@ -81,6 +81,16 @@
 /* The extended-descriptor bits that are not encodable (they held the SFID once). */
 #define I915_EU_EX_DESC_LOW_MASK	0x3fU
 
+/*
+ * Which channels an instruction runs on, as i915_eu_scope() takes it: the
+ * eight channels of the dispatch that the execution mask leaves enabled,
+ * all eight regardless of the mask (NoMask), or the first one regardless of
+ * the mask (a SIMD1 NoMask instruction, which writes one dword).
+ */
+#define I915_EU_SCOPE_MASKED		0
+#define I915_EU_SCOPE_ALL		1
+#define I915_EU_SCOPE_SCALAR		2
+
 /* The hardware conditional modifier of each enum i915_eu_cond, in its order. */
 static const uint32_t i915_eu_cond_bits[I915_EU_COND_COUNT] = {
 	EU_COND_Z,
@@ -95,8 +105,9 @@ static struct i915_eu_reg i915_eu_grf_typed(uint32_t nr, uint32_t type);
 static uint32_t *i915_eu_reserve(struct i915_eu_buf *buffer);
 static void i915_eu_common(struct i915_eu_buf *buffer, uint32_t *inst, uint32_t opcode, int order);
 static void i915_eu_flag(uint32_t *inst, enum i915_eu_flag flag);
-static void i915_eu_alu2_common(struct i915_eu_buf *buffer, int predicated, enum i915_eu_flag flag, enum i915_eu_alu op, struct i915_eu_reg dst, struct i915_eu_reg src0, struct i915_eu_reg src1);
-static void i915_eu_send_common(struct i915_eu_buf *buffer, int predicated, enum i915_eu_flag flag, struct i915_eu_reg dst, struct i915_eu_reg src0, struct i915_eu_reg src1, uint32_t sfid, uint32_t descriptor, uint32_t ex_descriptor, int conditional, int end_of_thread);
+static void i915_eu_alu2_common(struct i915_eu_buf *buffer, int predicated, enum i915_eu_flag flag, int scope, enum i915_eu_alu op, struct i915_eu_reg dst, struct i915_eu_reg src0, struct i915_eu_reg src1);
+static void i915_eu_send_common(struct i915_eu_buf *buffer, int predicated, enum i915_eu_flag flag, int scope, struct i915_eu_reg dst, struct i915_eu_reg src0, struct i915_eu_reg src1, uint32_t sfid, uint32_t descriptor, uint32_t ex_descriptor, int conditional, int end_of_thread);
+static void i915_eu_scope(uint32_t *inst, int scope);
 static void i915_eu_sync(struct i915_eu_buf *buffer, uint32_t swsb);
 static void i915_eu_dst(uint32_t *inst, struct i915_eu_reg reg);
 static void i915_eu_src0(uint32_t *inst, struct i915_eu_reg reg);
@@ -418,7 +429,7 @@ drv_i915_eu_alu2(
 	struct i915_eu_reg src1)
 {
 	/* Encodes the instruction for every channel of the mask. */
-	i915_eu_alu2_common(buffer, 0, I915_EU_FLAG_F0_0, op, dst, src0, src1);
+	i915_eu_alu2_common(buffer, 0, I915_EU_FLAG_F0_0, I915_EU_SCOPE_MASKED, op, dst, src0, src1);
 }
 
 /*
@@ -445,15 +456,92 @@ drv_i915_eu_alu2_masked(
 	}
 
 	/* Encodes the instruction predicated on the flag. */
-	i915_eu_alu2_common(buffer, 1, flag, op, dst, src0, src1);
+	i915_eu_alu2_common(buffer, 1, flag, I915_EU_SCOPE_MASKED, op, dst, src0, src1);
+}
+
+/*
+ * Encodes a two-source instruction on the first channel alone, regardless
+ * of the execution mask: a SIMD1 NoMask instruction that writes the one
+ * dword the destination's subregister names.
+ *
+ * The operands are those of drv_i915_eu_alu2(), a source normally read as a
+ * scalar region.  Mesa builds the header of a scratch message this way: the
+ * two AND of generate_scratch_header() (brw_generator.cpp) copy the scratch
+ * space size and base out of r0.
+ */
+void
+drv_i915_eu_alu2_scalar(
+	struct i915_eu_buf *buffer,
+	enum i915_eu_alu op,
+	struct i915_eu_reg dst,
+	struct i915_eu_reg src0,
+	struct i915_eu_reg src1)
+{
+	/* Encodes the instruction for the first channel, outside the mask. */
+	i915_eu_alu2_common(buffer, 0, I915_EU_FLAG_F0_0, I915_EU_SCOPE_SCALAR, op, dst, src0, src1);
+}
+
+/*
+ * Encodes a move on all eight channels regardless of the execution mask.
+ *
+ * Mesa clears a scratch message header this way before filling it (the
+ * SIMD8 NoMask MOV of generate_scratch_header(), brw_generator.cpp): a
+ * channel the dispatch left disabled must not keep junk in the header.
+ */
+void
+drv_i915_eu_mov_all(
+	struct i915_eu_buf *buffer,
+	struct i915_eu_reg dst,
+	struct i915_eu_reg src)
+{
+	uint32_t *inst;
+
+	/* Reserves the instruction; a poisoned or full buffer takes nothing. */
+	inst = i915_eu_reserve(buffer);
+	if (inst == NULL)
+		return;
+
+	/* Encodes an in-order move and its two operands, outside the mask. */
+	i915_eu_common(buffer, inst, EU_OP_MOV, I915_EU_IN_ORDER);
+	i915_eu_scope(inst, I915_EU_SCOPE_ALL);
+	i915_eu_dst(inst, dst);
+	i915_eu_src0(inst, src);
+}
+
+/*
+ * Encodes a move of one dword on the first channel alone, regardless of the
+ * execution mask (a SIMD1 NoMask MOV).
+ *
+ * Mesa writes the offset of a scratch message into dword 2 of its header
+ * this way (build_legacy_scratch_header(), brw_reg_allocate.cpp).
+ */
+void
+drv_i915_eu_mov_scalar(
+	struct i915_eu_buf *buffer,
+	struct i915_eu_reg dst,
+	struct i915_eu_reg src)
+{
+	uint32_t *inst;
+
+	/* Reserves the instruction; a poisoned or full buffer takes nothing. */
+	inst = i915_eu_reserve(buffer);
+	if (inst == NULL)
+		return;
+
+	/* Encodes an in-order move of the one dword, outside the mask. */
+	i915_eu_common(buffer, inst, EU_OP_MOV, I915_EU_IN_ORDER);
+	i915_eu_scope(inst, I915_EU_SCOPE_SCALAR);
+	i915_eu_dst(inst, dst);
+	i915_eu_src0(inst, src);
 }
 
 /*
  * Encodes a one-source operation other than a move: not, round down, round
- * toward zero or fraction.
+ * toward zero, round to even or fraction.
  *
- * Mesa lowers ffloor to RNDD, ftrunc to RNDZ, ffract to FRC and inot to NOT
- * (brw_fs_nir.cpp).  An operation outside the enum poisons the buffer.
+ * Mesa lowers ffloor to RNDD, ftrunc to RNDZ, fround_even to RNDE, ffract
+ * to FRC and inot to NOT (brw_fs_nir.cpp).  An operation outside the enum
+ * poisons the buffer.
  */
 void
 drv_i915_eu_alu1(
@@ -474,6 +562,8 @@ drv_i915_eu_alu1(
 		opcode = EU_OP_FRC;
 	} else if (op == I915_EU_RNDZ) {
 		opcode = EU_OP_RNDZ;
+	} else if (op == I915_EU_RNDE) {
+		opcode = EU_OP_RNDE;
 	} else {
 		buffer->error = 1;
 		return;
@@ -700,10 +790,15 @@ drv_i915_eu_mad(
 }
 
 /*
- * Encodes a one-operand math function.
+ * Encodes a math function: a one-operand float function, whose second
+ * source is the null register, or the quotient or the remainder of an
+ * integer division of src0 by src1.
  *
  * Math is out of order, so a sync.nop on its destination follows it (see the
- * scoreboard note above).
+ * scoreboard note above).  The integer division reads its operands as their
+ * type says (signed D or unsigned UD) and takes no source modifier
+ * (gfx6_math(), brw_eu_emit.c); a negated or absolute integer source poisons
+ * the buffer.
  */
 void
 drv_i915_eu_math(
@@ -731,9 +826,24 @@ drv_i915_eu_math(
 		selector = EU_MATH_LOG;
 	} else if (func == I915_EU_MATH_EXP) {
 		selector = EU_MATH_EXP;
+	} else if (func == I915_EU_MATH_INT_QUOTIENT) {
+		selector = EU_MATH_INT_DIV_QUOTIENT;
+	} else if (func == I915_EU_MATH_INT_REMAINDER) {
+		selector = EU_MATH_INT_DIV_REMAINDER;
 	} else {
 		buffer->error = 1;
 		return;
+	}
+
+	/* The integer division takes no source modifier. */
+	if (func == I915_EU_MATH_INT_QUOTIENT || func == I915_EU_MATH_INT_REMAINDER) {
+		if (src0.negate != 0U ||
+		    src0.absolute != 0U ||
+		    src1.negate != 0U ||
+		    src1.absolute != 0U) {
+			buffer->error = 1;
+			return;
+		}
 	}
 
 	/* Reserves the instruction; a poisoned or full buffer takes nothing. */
@@ -778,6 +888,7 @@ drv_i915_eu_send(
 	i915_eu_send_common(buffer,
 			    0,
 			    I915_EU_FLAG_F0_0,
+			    I915_EU_SCOPE_MASKED,
 			    dst,
 			    src0,
 			    src1,
@@ -821,6 +932,7 @@ drv_i915_eu_send_masked(
 	i915_eu_send_common(buffer,
 			    1,
 			    flag,
+			    I915_EU_SCOPE_MASKED,
 			    dst,
 			    src0,
 			    src1,
@@ -829,6 +941,41 @@ drv_i915_eu_send_masked(
 			    ex_descriptor,
 			    conditional,
 			    end_of_thread);
+}
+
+/*
+ * Encodes a message to a shared function on all eight channels regardless
+ * of the execution mask.
+ *
+ * The operands are those of drv_i915_eu_send().  Mesa reads a spilled
+ * register back from scratch memory this way (emit_unspill() under
+ * exec_all(), brw_reg_allocate.cpp): the fill is a temporary of the
+ * instruction that needs it, so every channel of it is read, whichever are
+ * enabled.
+ */
+void
+drv_i915_eu_send_all(
+	struct i915_eu_buf *buffer,
+	struct i915_eu_reg dst,
+	struct i915_eu_reg src0,
+	struct i915_eu_reg src1,
+	uint32_t sfid,
+	uint32_t descriptor,
+	uint32_t ex_descriptor)
+{
+	/* Encodes the message for all eight channels, outside the mask. */
+	i915_eu_send_common(buffer,
+			    0,
+			    I915_EU_FLAG_F0_0,
+			    I915_EU_SCOPE_ALL,
+			    dst,
+			    src0,
+			    src1,
+			    sfid,
+			    descriptor,
+			    ex_descriptor,
+			    0,
+			    0);
 }
 
 /*
@@ -916,12 +1063,16 @@ drv_i915_eu_while(
 	i915_eu_set(inst, EU_JIP_HI, EU_JIP_LO, (uint32_t)jump);
 }
 
-/* Encodes a two-source instruction, predicated on `flag` when `predicated` is nonzero (see drv_i915_eu_alu2()). */
+/*
+ * Encodes a two-source instruction on the channels `scope` names,
+ * predicated on `flag` when `predicated` is nonzero (see drv_i915_eu_alu2()).
+ */
 static void
 i915_eu_alu2_common(
 	struct i915_eu_buf *buffer,
 	int predicated,
 	enum i915_eu_flag flag,
+	int scope,
 	enum i915_eu_alu op,
 	struct i915_eu_reg dst,
 	struct i915_eu_reg src0,
@@ -963,8 +1114,9 @@ i915_eu_alu2_common(
 	if (inst == NULL)
 		return;
 
-	/* Encodes an in-order instruction and its three operands. */
+	/* Encodes an in-order instruction on its channels and its three operands. */
 	i915_eu_common(buffer, inst, opcode, I915_EU_IN_ORDER);
+	i915_eu_scope(inst, scope);
 	i915_eu_dst(inst, dst);
 	i915_eu_src0(inst, src0);
 	i915_eu_src1(inst, src1);
@@ -976,12 +1128,16 @@ i915_eu_alu2_common(
 	}
 }
 
-/* Encodes a SEND or SENDC, predicated on `flag` when `predicated` is nonzero (see drv_i915_eu_send()). */
+/*
+ * Encodes a SEND or SENDC on the channels `scope` names, predicated on
+ * `flag` when `predicated` is nonzero (see drv_i915_eu_send()).
+ */
 static void
 i915_eu_send_common(
 	struct i915_eu_buf *buffer,
 	int predicated,
 	enum i915_eu_flag flag,
+	int scope,
 	struct i915_eu_reg dst,
 	struct i915_eu_reg src0,
 	struct i915_eu_reg src1,
@@ -1030,8 +1186,9 @@ i915_eu_send_common(
 		eot = 0U;
 	}
 
-	/* Encodes the control fields, the end-of-thread bit and the shared function. */
+	/* Encodes the control fields, the channels, the end-of-thread bit and the shared function. */
 	i915_eu_common(buffer, inst, opcode, order);
+	i915_eu_scope(inst, scope);
 	i915_eu_bit(inst, EU_SEND_EOT_BIT, eot);
 	i915_eu_set(inst, EU_SEND_SFID_HI, EU_SEND_SFID_LO, sfid);
 
@@ -1202,6 +1359,28 @@ i915_eu_common(
 	 */
 	if (order == I915_EU_IN_ORDER)
 		buffer->in_order++;
+}
+
+/*
+ * Narrows an instruction to the channels `scope` names: the SIMD8 dispatch
+ * under the execution mask (what i915_eu_common() encoded), all eight
+ * channels outside it, or the first channel outside it.
+ */
+static void
+i915_eu_scope(
+	uint32_t *inst,
+	int scope)
+{
+	/* The masked SIMD8 form is what the common fields already say. */
+	if (scope == I915_EU_SCOPE_MASKED)
+		return;
+
+	/* A scalar instruction runs one channel. */
+	if (scope == I915_EU_SCOPE_SCALAR)
+		i915_eu_set(inst, EU_EXEC_SIZE_HI, EU_EXEC_SIZE_LO, EU_EXEC_SIZE_1);
+
+	/* Both other forms ignore the execution mask. */
+	i915_eu_bit(inst, EU_NO_MASK_BIT, 1U);
 }
 
 /* Names the flag subregister an instruction's conditional modifier writes or its predicate reads. */

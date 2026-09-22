@@ -58,8 +58,14 @@ struct i915_wire_writer;
 #define I915_GFX_MAX_VERTEX_BINDINGS	4U
 #define I915_GFX_MAX_VERTEX_ATTRIBUTES	16U
 
+/* The most VUE slots after the position a vertex kernel writes, and fragment inputs a pixel kernel reads. */
+#define I915_GFX_MAX_VARYINGS		16U
+
 /* How many bytes of push constants a command buffer carries. */
 #define I915_GFX_PUSH_BYTES		128U
+
+/* How many descriptor sets a command buffer binds at once. */
+#define I915_GFX_BOUND_SETS		4U
 
 /*
  * The kinds of operation a command buffer is recorded as.
@@ -85,7 +91,8 @@ enum i915_gfx_op_kind {
 	I915_GFX_OP_DRAW_INDEXED,
 	I915_GFX_OP_SET_VIEWPORT,
 	I915_GFX_OP_SET_SCISSOR,
-	I915_GFX_OP_COPY_BUFFER
+	I915_GFX_OP_COPY_BUFFER,
+	I915_GFX_OP_SET_BLEND_CONSTANTS
 };
 
 /*
@@ -214,7 +221,8 @@ struct i915_gfx_dset {
 	/*
 	 * What each binding, indexed by binding number, was updated to: the
 	 * view and the sampler of a combined image sampler, or the buffer and
-	 * the range of a uniform buffer.
+	 * the range of a uniform buffer.  A dynamic uniform buffer's range
+	 * moves by the dynamic offset its descriptor set bind gives it.
 	 */
 	struct {
 		struct i915_gfx_view *view;
@@ -222,6 +230,7 @@ struct i915_gfx_dset {
 		struct i915_gfx_buffer *buffer;
 		uint64_t offset;
 		uint64_t range;
+		int dynamic;
 	} slots[I915_GFX_MAX_BINDINGS];
 };
 
@@ -310,6 +319,12 @@ struct i915_gfx_pipeline {
 	 */
 	int dynamic_viewport;
 	int dynamic_scissor;
+
+	/*
+	 * Nonzero when the blend constants are dynamic state: a draw then takes
+	 * the ones vkCmdSetBlendConstants recorded before it.
+	 */
+	int dynamic_blend_constants;
 
 	/* The rasterization state. */
 	uint32_t cull_mode;
@@ -450,10 +465,14 @@ struct i915_gfx_op {
 			uint64_t offset;
 		} vertex;
 
-		/* A descriptor set bind. */
+		/*
+		 * A descriptor set bind, with the dynamic offset of each dynamic
+		 * uniform buffer of the set, indexed by binding number.
+		 */
 		struct {
 			uint32_t set;
 			struct i915_gfx_dset *dset;
+			uint32_t dynamic_offsets[I915_GFX_MAX_BINDINGS];
 		} descriptor;
 
 		/* A push constant update. */
@@ -492,6 +511,9 @@ struct i915_gfx_op {
 
 		/* A dynamic scissor rectangle. */
 		VkRect2D scissor;
+
+		/* Dynamic blend constants: R, G, B and A as float bits. */
+		uint32_t blend_constants[4];
 
 		/* A copy of one region between two buffers. */
 		struct {
@@ -532,7 +554,10 @@ struct i915_gfx_draw_state {
 	} vertex[I915_GFX_MAX_VERTEX_BINDINGS];
 
 	/* The bound descriptor sets. */
-	struct i915_gfx_dset *dset[4];
+	struct i915_gfx_dset *dset[I915_GFX_BOUND_SETS];
+
+	/* The dynamic offset of each dynamic uniform buffer of each bound set, by binding number. */
+	uint32_t dynamic_offsets[I915_GFX_BOUND_SETS][I915_GFX_MAX_BINDINGS];
 
 	/* The push constants. */
 	uint8_t push[I915_GFX_PUSH_BYTES];
@@ -551,6 +576,10 @@ struct i915_gfx_draw_state {
 	/* The scissor vkCmdSetScissor set; valid once scissor_set is nonzero. */
 	VkRect2D scissor;
 	int scissor_set;
+
+	/* The blend constants vkCmdSetBlendConstants set, as float bits; valid once blend_constants_set is nonzero. */
+	uint32_t blend_constants[4];
+	int blend_constants_set;
 };
 
 /*

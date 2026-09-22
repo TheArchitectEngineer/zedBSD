@@ -46,10 +46,11 @@ kern_free(void *pointer)
 }
 
 #include "../../../src/drivers/gpu/i915/compiler/spirv.c"
+#include "../../../src/drivers/gpu/i915/tests/fixtures/generality-shaders-gen.inc"
 
 /* ------------------------------------------------------------------ the IR interpreter */
 
-#define SLOTS 8U
+#define SLOTS 17U
 #define SLOT_POSITION (SLOTS - 1U)
 
 struct machine {
@@ -137,11 +138,12 @@ run_ir(const struct i915_shader_ir *ir, struct machine *m)
 		case I915_IR_RCP: case I915_IR_SQRT: case I915_IR_EXP2: case I915_IR_LOG2:
 		case I915_IR_FABS: case I915_IR_FLOOR: case I915_IR_FRACT: case I915_IR_NOT:
 		case I915_IR_FTRUNC: case I915_IR_INEG: case I915_IR_INOT: case I915_IR_I2F: case I915_IR_U2F:
-		case I915_IR_F2I: case I915_IR_F2U: case I915_IR_MOVE:
+		case I915_IR_F2I: case I915_IR_F2U: case I915_IR_MOVE: case I915_IR_FROUND_EVEN:
 			sources = 1U; break;
 		case I915_IR_FADD: case I915_IR_FSUB: case I915_IR_FMUL: case I915_IR_FMIN: case I915_IR_FMAX:
 		case I915_IR_FLT: case I915_IR_FGE: case I915_IR_FEQ: case I915_IR_FNEU: case I915_IR_AND: case I915_IR_OR:
 		case I915_IR_IADD: case I915_IR_ISUB: case I915_IR_IMUL: case I915_IR_UDIV: case I915_IR_UMOD:
+		case I915_IR_IDIV: case I915_IR_IREM:
 		case I915_IR_IAND: case I915_IR_IOR: case I915_IR_IXOR: case I915_IR_SHL: case I915_IR_SHR: case I915_IR_ASR:
 		case I915_IR_ILT: case I915_IR_IGE: case I915_IR_ULT: case I915_IR_UGE: case I915_IR_IEQ: case I915_IR_INE:
 			sources = 2U; break;
@@ -235,6 +237,15 @@ run_ir(const struct i915_shader_ir *ir, struct machine *m)
 		case I915_IR_INEG: value[inst->dst] = 0U - a; break;
 		case I915_IR_UDIV: value[inst->dst] = b != 0U ? a / b : 0xFFFFFFFFU; break;
 		case I915_IR_UMOD: value[inst->dst] = b != 0U ? a % b : a; break;
+		case I915_IR_IDIV:
+			assert(b != 0U && !(a == 0x80000000U && b == 0xFFFFFFFFU));
+			value[inst->dst] = (uint32_t)((int32_t)a / (int32_t)b);
+			break;
+		case I915_IR_IREM:
+			assert(b != 0U && !(a == 0x80000000U && b == 0xFFFFFFFFU));
+			value[inst->dst] = (uint32_t)((int32_t)a % (int32_t)b);
+			break;
+		case I915_IR_FROUND_EVEN: value[inst->dst] = float_to_bits(nearbyintf(fa)); break;
 		case I915_IR_IAND: value[inst->dst] = a & b; break;
 		case I915_IR_IOR: value[inst->dst] = a | b; break;
 		case I915_IR_IXOR: value[inst->dst] = a ^ b; break;
@@ -787,6 +798,7 @@ load_spv_at(const char *directory, const char *name, size_t *words)
 
 #define COMPILER_SHADERS "src/drivers/gpu/i915/tests/render/compiler-shaders"
 #define MVIEW_SHADERS "userland/base/mview/shaders"
+#define FEATURE_SHADERS "src/drivers/gpu/i915/tests/render/feature-shaders"
 
 /* Parses a shader file, printing a refusal before failing. */
 static struct i915_shader_ir *
@@ -1193,6 +1205,82 @@ test_stage_vertex_shaders(void)
 	printf("  vertex: normalize, max(dot, 0) with a constant vec3 (OpConstantComposite), clamp\n");
 }
 
+/*
+ * The feature test's shaders: ubo.vert transforms by a column-major mat4 of a uniform block (MatrixStride 16) and
+ * adds its offset; ubo.frag reads a vec4, the second element of a vec4 array (ArrayStride 16) and the third column
+ * of a mat4 of another block; tex3.frag samples three images of two sets.
+ */
+static void
+test_feature_shaders(void)
+{
+	static const float transform[20] = {
+		0.25f, 0.5f, -1.0f, 2.0f, 3.0f, 0.5f, 0.25f, -0.5f, 0.125f, -2.0f, 1.0f, 0.75f,
+		0.5f, -0.5f, 0.0f, 1.0f, 0.25f, 0.125f, 0.0f, 0.5f,
+	};
+	static const float material[28] = {
+		0.5f, 0.25f, 1.0f, 1.0f, 9.0f, 9.0f, 9.0f, 9.0f, 0.5f, 1.0f, 0.5f, 3.0f,
+		7.0f, 7.0f, 7.0f, 7.0f, 6.0f, 6.0f, 6.0f, 6.0f, 0.25f, 0.5f, 0.75f, -1.0f, 5.0f, 5.0f, 5.0f, 5.0f,
+	};
+	static const float position[4] = { -0.5f, 0.75f, 0.25f, 1.0f };
+	struct i915_shader_ir *vert, *frag, *tex;
+	struct machine m;
+	float want;
+	unsigned k, c;
+
+	vert = parse_file(FEATURE_SHADERS, "ubo.vert.spv", I915_STAGE_VERTEX);
+	frag = parse_file(FEATURE_SHADERS, "ubo.frag.spv", I915_STAGE_FRAGMENT);
+	tex = parse_file(FEATURE_SHADERS, "tex3.frag.spv", I915_STAGE_FRAGMENT);
+
+	/* One uniform block each, at the binding the GLSL names, read over the bytes the shader uses. */
+	assert(vert->uniform_count == 1U && vert->uniforms[0].kind == I915_IR_UNIFORM_BLOCK);
+	assert(vert->uniforms[0].set == 0U && vert->uniforms[0].binding == 0U);
+	assert(vert->uniforms[0].offset == 0U && vert->uniforms[0].size == 80U);
+	assert(frag->uniform_count == 1U && frag->uniforms[0].binding == 1U);
+	assert(frag->uniforms[0].offset == 0U && frag->uniforms[0].size == 96U);
+
+	/* ubo.vert: gl_Position = transform * position + offset, the transform read as columns */
+	memset(&m, 0, sizeof(m));
+	memcpy(m.ubo[0], transform, sizeof(transform));
+	memcpy(m.input[0], position, sizeof(position));
+	m.input[1][0] = 0.5f;
+	run_ir(vert, &m);
+	for (k = 0U; k < 4U; k++) {
+		want = 0.0f;
+		for (c = 0U; c < 4U; c++)
+			want = want + transform[c * 4U + k] * position[c];
+		want = want + transform[16U + k];
+		assert(fabsf(m.output[SLOT_POSITION][k] - want) <= 1e-6f);
+	}
+	assert(m.output[0][0] == 0.5f);
+
+	/* ubo.frag: color * scale[1] + extra[2] */
+	memset(&m, 0, sizeof(m));
+	memcpy(m.ubo[0], material, sizeof(material));
+	run_ir(frag, &m);
+	for (k = 0U; k < 4U; k++) {
+		want = material[k] * material[8U + k] + material[20U + k];
+		assert(fabsf(m.output[0][k] - want) <= 1e-6f);
+	}
+
+	/* tex3.frag: three sampled images in the order named, (set 0, 0), (set 0, 2), (set 1, 1); r, g, b of each */
+	assert(tex->uniform_count == 3U);
+	assert(tex->uniforms[0].set == 0U && tex->uniforms[0].binding == 0U);
+	assert(tex->uniforms[1].set == 0U && tex->uniforms[1].binding == 2U);
+	assert(tex->uniforms[2].set == 1U && tex->uniforms[2].binding == 1U);
+	memset(&m, 0, sizeof(m));
+	m.input[0][0] = 0.25f;
+	m.input[0][1] = 0.5f;
+	run_ir(tex, &m);
+	assert(m.output[0][0] == 0.25f);
+	assert(m.output[0][1] == 0.5f);
+	assert(m.output[0][2] == 0.25f + 2.0f * 0.5f);
+	assert(m.output[0][3] == 1.0f);
+	drv_i915_shader_ir_free(vert);
+	drv_i915_shader_ir_free(frag);
+	drv_i915_shader_ir_free(tex);
+	printf("  feature: mat4 uniform read as columns times a vec4 plus an offset; vec4, array element and mat4 column of a block; 3 samplers of 2 sets\n");
+}
+
 /* mview's three shaders as shipped: mview.vert against its GLSL, cutout.frag's discard at alpha 0.5. */
 static void
 test_mview_shaders(void)
@@ -1283,6 +1371,256 @@ test_mview_shaders(void)
 	printf("  mview: mview.vert (normalize, max, OpConstantComposite) against its GLSL; mview.frag; cutout.frag discards below alpha 0.5\n");
 }
 
+/* ------------------------------------------------------------------ the generality test (p014 E2) */
+
+/* Parses one of the generality test's embedded modules. */
+static struct i915_shader_ir *
+parse_words(const char *name, const uint32_t *words, size_t bytes, enum i915_shader_stage stage)
+{
+	struct i915_shader_ir *ir;
+	struct i915_compile_diagnostic diag;
+	int error;
+
+	error = drv_i915_shader_parse(words, bytes / 4U, stage, &ir, &diag);
+	if (error != 0)
+		printf("  %s refused (%d): opcode %u at word %u: %s\n", name, error, diag.opcode, diag.word_offset,
+			diag.reason != NULL ? diag.reason : "-");
+	assert(error == 0);
+	return ir;
+}
+
+/* The word an RGBA8 target stores for the colour a fragment shader wrote to location 0. */
+static uint32_t
+target_word(const struct machine *m)
+{
+	uint32_t word = 0U;
+	unsigned k;
+
+	for (k = 0U; k < 4U; k++) {
+		float value = m->output[0][k];
+		uint32_t byte;
+
+		assert(m->written[0][k] >= 1U);
+		value = value < 0.0f ? 0.0f : (value > 1.0f ? 1.0f : value);
+		byte = (uint32_t)floorf(value * 255.0f + 0.5f);
+		word |= byte << (8U * k);
+	}
+	return word;
+}
+
+/* The bits of the float that is twice / 2 (the varying steps' sums are whole halves below 2^24). */
+static uint32_t
+half_bits(uint32_t twice)
+{
+	return float_to_bits((float)twice * 0.5f);
+}
+
+/*
+ * The generality test's fragment shaders at every pixel of 64 x 64, the pixel coordinate (x + 0.5, y + 0.5) at
+ * location 0, against the words regenerate.py computed from the SPIR-V definitions: matrices from a uniform block
+ * (column- and row-major, mat3) and push constants, a local matrix, transpose, outer product; the integer
+ * operations, divisions and conversions; mod / round / trunc / ceil / sign / step / smoothstep; loops with
+ * per-pixel trip counts, continue, break, nesting and do-while.
+ */
+static void
+test_generality_fragment_shaders(void)
+{
+	static const struct {
+		const char *name;
+		const uint32_t *words;
+		size_t bytes;
+		const uint32_t *expected;
+	} steps[5] = {
+		{ "matrix.frag", i915_vke2_matrix_frag, sizeof(i915_vke2_matrix_frag), i915_vke2_matrix_expected },
+		{ "int.frag", i915_vke2_int_frag, sizeof(i915_vke2_int_frag), i915_vke2_int_expected },
+		{ "float.frag", i915_vke2_float_frag, sizeof(i915_vke2_float_frag), i915_vke2_float_expected },
+		{ "loop.frag", i915_vke2_loop_frag, sizeof(i915_vke2_loop_frag), i915_vke2_loop_expected },
+		{ "spill.frag", i915_vke2_spill_frag, sizeof(i915_vke2_spill_frag), i915_vke2_spill_expected },
+	};
+	struct i915_shader_ir *ir;
+	struct machine m;
+	unsigned step, x, y, loops, k;
+
+	for (step = 0U; step < 5U; step++) {
+		ir = parse_words(steps[step].name, steps[step].words, steps[step].bytes, I915_STAGE_FRAGMENT);
+		loops = 0U;
+		for (k = 0U; k < ir->instruction_count; k++)
+			if (ir->instructions[k].op == I915_IR_LOOP_BEGIN)
+				loops++;
+		if (step == 3U)
+			assert(loops == 5U);            /* for, for { while }, do-while, while (true) */
+		for (y = 0U; y < 64U; y++) {
+			for (x = 0U; x < 64U; x++) {
+				uint32_t got, want;
+
+				memset(&m, 0, sizeof(m));
+				m.input[0][0] = (float)x + 0.5f;
+				m.input[0][1] = (float)y + 0.5f;
+				memcpy(m.ubo[0], i915_vke2_matrices, sizeof(i915_vke2_matrices));
+				memcpy(m.push, i915_vke2_push, sizeof(i915_vke2_push));
+				run_ir(ir, &m);
+				got = target_word(&m);
+				want = steps[step].expected[y * 64U + x];
+				if (got != want) {
+					printf("  %s at (%u, %u): 0x%08x, want 0x%08x\n", steps[step].name, x, y, got, want);
+					assert(!"generality fragment shader differs from regenerate.py");
+				}
+			}
+		}
+		drv_i915_shader_ir_free(ir);
+	}
+	printf("  generality: matrix / int / float / loop / spill fragment shaders match regenerate.py at 5 x 4096 pixels (5 loops in loop.frag)\n");
+}
+
+/*
+ * The generality test's vertex shaders and the varying / attribute fragment shaders: vary16.vert writes sixteen
+ * varyings, vary16.frag reads them all and subset.frag five of them; vin16.vert reads sixteen attributes; the
+ * matrix step's placement chain; vio16.vert (sixteen attributes and sixteen varyings) parses.
+ */
+static void
+test_generality_interfaces(void)
+{
+	struct i915_shader_ir *vary_vert, *vary_frag, *subset, *vin_vert, *vin_frag, *matrix_vert, *spill;
+	struct machine m;
+	unsigned k, c, x, y;
+
+	vary_vert = parse_words("vary16.vert", i915_vke2_vary16_vert, sizeof(i915_vke2_vary16_vert), I915_STAGE_VERTEX);
+	vary_frag = parse_words("vary16.frag", i915_vke2_vary16_frag, sizeof(i915_vke2_vary16_frag), I915_STAGE_FRAGMENT);
+	subset = parse_words("subset.frag", i915_vke2_subset_frag, sizeof(i915_vke2_subset_frag), I915_STAGE_FRAGMENT);
+	vin_vert = parse_words("vin16.vert", i915_vke2_vin16_vert, sizeof(i915_vke2_vin16_vert), I915_STAGE_VERTEX);
+	vin_frag = parse_words("vin16.frag", i915_vke2_vin16_frag, sizeof(i915_vke2_vin16_frag), I915_STAGE_FRAGMENT);
+	matrix_vert = parse_words("matrix.vert", i915_vke2_matrix_vert, sizeof(i915_vke2_matrix_vert), I915_STAGE_VERTEX);
+	spill = parse_words("spill.frag", i915_vke2_spill_frag, sizeof(i915_vke2_spill_frag), I915_STAGE_FRAGMENT);
+
+	/* vary16.vert: location 0 the coordinate, location k the seed times k + 1 plus (k, -k, k / 2, 16 - k) */
+	memset(&m, 0, sizeof(m));
+	m.input[0][0] = -1.0f;
+	m.input[0][3] = 1.0f;
+	m.input[1][0] = 12.0f;
+	m.input[1][1] = 34.0f;
+	for (c = 0U; c < 4U; c++)
+		m.input[2][c] = bits_to_float(i915_vke2_seed[c]);
+	run_ir(vary_vert, &m);
+	assert(m.output[0][0] == 12.0f && m.output[0][1] == 34.0f);
+	assert(m.output[SLOT_POSITION][0] == -1.0f && m.output[SLOT_POSITION][3] == 1.0f);
+	for (k = 1U; k < 16U; k++) {
+		const float offset[4] = { (float)k, -(float)k, 0.5f * (float)k, 16.0f - (float)k };
+
+		for (c = 0U; c < 4U; c++)
+			assert(m.output[k][c] == bits_to_float(i915_vke2_seed[c]) * (float)(k + 1U) + offset[c]);
+	}
+
+	/* vary16.frag and subset.frag, fed what vary16.vert wrote, at a few pixels */
+	for (y = 0U; y < 64U; y += 21U) {
+		for (x = 0U; x < 64U; x += 13U) {
+			struct machine in;
+
+			memset(&in, 0, sizeof(in));
+			memcpy(in.input, m.output, sizeof(in.input));
+			in.input[0][0] = (float)x + 0.5f;
+			in.input[0][1] = (float)y + 0.5f;
+			run_ir(vary_frag, &in);
+			assert(target_word(&in) == half_bits(2U * (x * 1000U + y * 100000U) + I915_VKE2_VARY16_TWICE));
+			run_ir(subset, &in);
+			assert(target_word(&in) == half_bits(2U * (x * 1000U + y * 100000U) + I915_VKE2_SUBSET_TWICE));
+		}
+	}
+
+	/* subset.frag reads locations 0, 1, 6, 11 and 15 only */
+	assert(subset->input_count == 5U);
+	assert(subset->inputs[0].location + subset->inputs[1].location + subset->inputs[2].location +
+	       subset->inputs[3].location + subset->inputs[4].location == 0U + 1U + 6U + 11U + 15U);
+
+	/* vin16.vert: sixteen attributes; the data 2 .. 15 weighted by their locations at location 3 */
+	memset(&m, 0, sizeof(m));
+	m.input[0][3] = 1.0f;
+	m.input[1][0] = 7.0f;
+	for (k = 2U; k < 16U; k++)
+		for (c = 0U; c < 4U; c++)
+			m.input[k][c] = bits_to_float(i915_vke2_vin_data[(k - 2U) * 4U + c]);
+	run_ir(vin_vert, &m);
+	assert(m.output[0][0] == 7.0f);
+	{
+		struct machine in;
+
+		memset(&in, 0, sizeof(in));
+		memcpy(in.input[3], m.output[3], sizeof(in.input[3]));
+		in.input[0][0] = 5.5f;
+		in.input[0][1] = 9.5f;
+		run_ir(vin_frag, &in);
+		assert(target_word(&in) == half_bits(2U * (5U * 1000U + 9U * 100000U) + I915_VKE2_VIN16_TWICE));
+	}
+
+	/* matrix.vert: transpose(turn) * scale, a row-major and a column-major matrix of one block, places each corner */
+	for (k = 0U; k < 4U; k++) {
+		static const float corners[4][2] = { { -1.0f, -1.0f }, { 1.0f, -1.0f }, { 1.0f, 1.0f }, { -1.0f, 1.0f } };
+
+		memset(&m, 0, sizeof(m));
+		memcpy(m.ubo[0], i915_vke2_placement, sizeof(i915_vke2_placement));
+		m.input[0][0] = bits_to_float(i915_vke2_matrix_corners[2U * k]);
+		m.input[0][1] = bits_to_float(i915_vke2_matrix_corners[2U * k + 1U]);
+		m.input[0][3] = 1.0f;
+		run_ir(matrix_vert, &m);
+		assert(m.output[SLOT_POSITION][0] == corners[k][0] && m.output[SLOT_POSITION][1] == corners[k][1]);
+		assert(m.output[SLOT_POSITION][3] == 1.0f);
+	}
+
+	drv_i915_shader_ir_free(vary_vert);
+	drv_i915_shader_ir_free(vary_frag);
+	drv_i915_shader_ir_free(subset);
+	drv_i915_shader_ir_free(vin_vert);
+	drv_i915_shader_ir_free(vin_frag);
+	drv_i915_shader_ir_free(matrix_vert);
+	drv_i915_shader_ir_free(spill);
+	printf("  generality: 16 varyings out and in, 5 of 16 read, 16 attributes, row-/column-major placement chain\n");
+}
+
+/*
+ * OpSRem, OpSMod, OpFRem and OpFMod on negative operands (GLSL has no SRem or FRem): the remainder takes the
+ * dividend's sign, the modulus the divisor's.
+ */
+static void
+test_remainders(void)
+{
+	struct i915_shader_ir *ir;
+	struct i915_compile_diagnostic diag;
+	struct machine m;
+	unsigned function_at;
+	uint32_t tail[7];
+
+	begin_module();
+	function_at = mod_n - 7U;
+	memcpy(tail, mod + function_at, sizeof(tail));
+	mod_n = function_at;
+	op(43U, 3U, U(T_INT), U(B), U(0xFFFFFFF9U));                    /* -7 */
+	op(43U, 3U, U(T_INT), U(B + 1), U(0xFFFFFFFDU));                /* -3 */
+	op(43U, 3U, U(T_INT), U(B + 2), U(7));
+	op(43U, 3U, U(T_FLOAT), U(B + 3), float_to_bits(-7.5f));
+	memcpy(mod + mod_n, tail, sizeof(tail));
+	mod_n += 7U;
+	op(138U, 4U, U(T_INT), U(B + 10), U(B), U(C_I3));               /* SRem(-7, 3) = -1 */
+	op(138U, 4U, U(T_INT), U(B + 11), U(B + 2), U(B + 1));          /* SRem(7, -3) = 1 */
+	op(139U, 4U, U(T_INT), U(B + 12), U(B), U(C_I3));               /* SMod(-7, 3) = 2 */
+	op(139U, 4U, U(T_INT), U(B + 13), U(B + 2), U(B + 1));          /* SMod(7, -3) = -2 */
+	op(111U, 3U, U(T_FLOAT), U(B + 14), U(B + 10));
+	op(111U, 3U, U(T_FLOAT), U(B + 15), U(B + 11));
+	op(111U, 3U, U(T_FLOAT), U(B + 16), U(B + 12));
+	op(111U, 3U, U(T_FLOAT), U(B + 17), U(B + 13));
+	op(80U, 6U, U(T_VEC4), U(B + 18), U(B + 14), U(B + 15), U(B + 16), U(B + 17));
+	op(62U, 2U, U(V_OUT0), U(B + 18));
+	op(140U, 4U, U(T_FLOAT), U(B + 19), U(B + 3), U(C_F2));         /* FRem(-7.5, 2) = -1.5 */
+	op(141U, 4U, U(T_FLOAT), U(B + 20), U(B + 3), U(C_F2));         /* FMod(-7.5, 2) = 0.5 */
+	op(80U, 6U, U(T_VEC4), U(B + 21), U(B + 19), U(B + 20), U(B + 19), U(B + 20));
+	op(62U, 2U, U(V_OUT1), U(B + 21));
+	assert(end_module(&ir, &diag) == 0);
+	set_inputs(&m);
+	run_ir(ir, &m);
+	expect_out(&m, 0U, -1.0f, 1.0f, 2.0f, -2.0f);
+	expect_out(&m, 1U, -1.5f, 0.5f, -1.5f, 0.5f);
+	drv_i915_shader_ir_free(ir);
+	printf("  remainders: SRem(-7,3) = -1, SRem(7,-3) = 1, SMod(-7,3) = 2, SMod(7,-3) = -2, FRem(-7.5,2) = -1.5, FMod = 0.5\n");
+}
+
 int
 main(void)
 {
@@ -1301,6 +1639,10 @@ main(void)
 	test_return_in_branch();
 	test_stage_vertex_shaders();
 	test_mview_shaders();
+	test_feature_shaders();
+	test_generality_fragment_shaders();
+	test_generality_interfaces();
+	test_remainders();
 	assert(fixture_live == 0U);
 	printf("i915 vk lower host test PASS\n");
 	return 0;

@@ -13,12 +13,15 @@
  * entry (render/vulkan.c) and the router into the resource objects
  * (render/objects.c, memory.c, image.c), and checks the object table and
  * the reply framing: opcode echo, VkResult, output identity, and a reply
- * region selected and positioned by the transport commands.
+ * region selected and positioned by the transport commands.  The format
+ * queries report only what the executor implements.
  */
 
 #include "i915-vk-render-stubs.inc"
 
 /* The wire opcodes the fixture sends, as libvulkan numbers them. */
+#define FIXTURE_FORMAT_PROPERTIES	4U
+#define FIXTURE_IMAGE_FORMAT_PROPERTIES	5U
 #define FIXTURE_ALLOCATE_MEMORY		21U
 #define FIXTURE_FREE_MEMORY		22U
 #define FIXTURE_BIND_BUFFER_MEMORY	28U
@@ -46,6 +49,9 @@ static struct stub_wire fixture_wire;
 
 static void fixture_allocate_memory(uint64_t identity, uint64_t size, uint32_t reply);
 static void fixture_destroy(uint32_t opcode, uint64_t identity, uint32_t reply);
+static uint32_t fixture_format_features(uint32_t format, int optimal);
+static uint32_t fixture_image_format(uint32_t format, uint32_t type, uint32_t tiling, uint32_t usage, uint32_t *max_levels);
+static void test_format_properties(void);
 static void test_memory(void);
 static void test_buffer_image(void);
 static void test_transport(void);
@@ -60,6 +66,7 @@ main(void)
 	test_memory();
 	test_buffer_image();
 	test_transport();
+	test_format_properties();
 
 	/* Succeeded: every check held. */
 	printf("i915 vk resdispatch host test PASS\n");
@@ -370,4 +377,167 @@ test_transport(void)
 	/* Closes the session; nothing stays allocated. */
 	stub_session_close();
 	assert(stub_live == 0U);
+}
+
+/* Queries vkGetPhysicalDeviceFormatProperties and reports the optimal or the linear tiling's features. */
+static uint32_t
+fixture_format_features(
+	uint32_t format,
+	int optimal)
+{
+	size_t reply_bytes;
+
+	/* [4][reply][physical][format][present]. */
+	stub_wire_begin(&fixture_wire);
+	stub_put32(&fixture_wire, FIXTURE_FORMAT_PROPERTIES);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put32(&fixture_wire, format);
+	stub_put64(&fixture_wire, 1U);
+
+	/* [4][present][linear][optimal][buffer]. */
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 24U);
+	assert(stub_get32(stub_reply, 0U) == FIXTURE_FORMAT_PROPERTIES);
+	assert(stub_get64(stub_reply, 4U) == 1U);
+	assert(stub_get32(stub_reply, 20U) == 0U);
+
+	/* Reports the optimal tiling's features. */
+	if (optimal)
+		return stub_get32(stub_reply, 16U);
+
+	/* Reports the linear tiling's features. */
+	return stub_get32(stub_reply, 12U);
+}
+
+/* Queries vkGetPhysicalDeviceImageFormatProperties; reports the VkResult and, on success, the level limit. */
+static uint32_t
+fixture_image_format(
+	uint32_t format,
+	uint32_t type,
+	uint32_t tiling,
+	uint32_t usage,
+	uint32_t *max_levels)
+{
+	size_t reply_bytes;
+
+	/* [5][reply][physical][format][type][tiling][usage][flags][present]. */
+	stub_wire_begin(&fixture_wire);
+	stub_put32(&fixture_wire, FIXTURE_IMAGE_FORMAT_PROPERTIES);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put32(&fixture_wire, format);
+	stub_put32(&fixture_wire, type);
+	stub_put32(&fixture_wire, tiling);
+	stub_put32(&fixture_wire, usage);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 1U);
+
+	/* [5][result][present][extent][levels][layers][samples][size]. */
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 48U);
+	assert(stub_get32(stub_reply, 0U) == FIXTURE_IMAGE_FORMAT_PROPERTIES);
+	assert(stub_get64(stub_reply, 8U) == 1U);
+	*max_levels = stub_get32(stub_reply, 28U);
+
+	/* Succeeded: the VkResult of the query. */
+	return stub_get32(stub_reply, 4U);
+}
+
+/*
+ * The format queries claim what the executor implements: RGBA8 and BGRA8
+ * are sampled (linearly), rendered to, copied and blitted in both tilings
+ * with a full mip chain; D32 is an optimal-tiled depth attachment of one
+ * level and nothing else.  A usage the tiling's features do not cover, a
+ * storage image and a 3D image are not supported.
+ */
+static void
+test_format_properties(void)
+{
+	uint32_t colour_features;
+	uint32_t features;
+	uint32_t result;
+	uint32_t levels;
+
+	/* Opens the fixture session. */
+	stub_session_open(NULL);
+
+	/* RGBA8 and BGRA8 have every colour feature in both tilings. */
+	colour_features = VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
+	    VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
+	    VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT |
+	    VK_FORMAT_FEATURE_TRANSFER_SRC_BIT |
+	    VK_FORMAT_FEATURE_TRANSFER_DST_BIT |
+	    VK_FORMAT_FEATURE_BLIT_SRC_BIT |
+	    VK_FORMAT_FEATURE_BLIT_DST_BIT;
+	features = fixture_format_features(VK_FORMAT_R8G8B8A8_UNORM, 1);
+	assert(features == colour_features);
+	features = fixture_format_features(VK_FORMAT_R8G8B8A8_UNORM, 0);
+	assert(features == colour_features);
+	features = fixture_format_features(VK_FORMAT_B8G8R8A8_UNORM, 1);
+	assert(features == colour_features);
+
+	/* D32 is an optimal-tiled depth attachment only; an unknown format has nothing. */
+	features = fixture_format_features(VK_FORMAT_D32_SFLOAT, 1);
+	assert(features == VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
+	features = fixture_format_features(VK_FORMAT_D32_SFLOAT, 0);
+	assert(features == 0U);
+	features = fixture_format_features(VK_FORMAT_R16G16B16A16_SFLOAT, 1);
+	assert(features == 0U);
+
+	/* The display's optimal colour and transfer image, and its linear sampled copy, are supported with 15 levels. */
+	levels = 0U;
+	result = fixture_image_format(VK_FORMAT_B8G8R8A8_UNORM,
+				      VK_IMAGE_TYPE_2D,
+				      VK_IMAGE_TILING_OPTIMAL,
+				      VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+				      &levels);
+	assert(result == VK_SUCCESS);
+	assert(levels == 15U);
+	result = fixture_image_format(VK_FORMAT_R8G8B8A8_UNORM,
+				      VK_IMAGE_TYPE_2D,
+				      VK_IMAGE_TILING_LINEAR,
+				      VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+				      &levels);
+	assert(result == VK_SUCCESS);
+
+	/* A depth attachment has one level. */
+	result = fixture_image_format(VK_FORMAT_D32_SFLOAT,
+				      VK_IMAGE_TYPE_2D,
+				      VK_IMAGE_TILING_OPTIMAL,
+				      VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+				      &levels);
+	assert(result == VK_SUCCESS);
+	assert(levels == 1U);
+
+	/* A sampled depth image, a linear depth image and a colour storage image are not supported. */
+	result = fixture_image_format(VK_FORMAT_D32_SFLOAT,
+				      VK_IMAGE_TYPE_2D,
+				      VK_IMAGE_TILING_OPTIMAL,
+				      VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+				      &levels);
+	assert(result == (uint32_t)VK_ERROR_FORMAT_NOT_SUPPORTED);
+	result = fixture_image_format(VK_FORMAT_D32_SFLOAT,
+				      VK_IMAGE_TYPE_2D,
+				      VK_IMAGE_TILING_LINEAR,
+				      VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+				      &levels);
+	assert(result == (uint32_t)VK_ERROR_FORMAT_NOT_SUPPORTED);
+	result = fixture_image_format(VK_FORMAT_R8G8B8A8_UNORM,
+				      VK_IMAGE_TYPE_2D,
+				      VK_IMAGE_TILING_OPTIMAL,
+				      VK_IMAGE_USAGE_STORAGE_BIT,
+				      &levels);
+	assert(result == (uint32_t)VK_ERROR_FORMAT_NOT_SUPPORTED);
+
+	/* A 3D image is not supported. */
+	result = fixture_image_format(VK_FORMAT_R8G8B8A8_UNORM,
+				      VK_IMAGE_TYPE_3D,
+				      VK_IMAGE_TILING_OPTIMAL,
+				      VK_IMAGE_USAGE_SAMPLED_BIT,
+				      &levels);
+	assert(result == (uint32_t)VK_ERROR_FORMAT_NOT_SUPPORTED);
+
+	/* Closes the fixture session. */
+	stub_session_close();
 }

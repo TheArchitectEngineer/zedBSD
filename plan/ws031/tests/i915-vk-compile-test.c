@@ -41,6 +41,7 @@ kern_free(void *pointer)
 #include "../../../src/drivers/gpu/i915/compiler/spirv.c"
 #include "../../../src/drivers/gpu/i915/compiler/eu.c"
 #include "../../../src/drivers/gpu/i915/compiler/compile.c"
+#include "../../../src/drivers/gpu/i915/tests/fixtures/generality-shaders-gen.inc"
 
 static uint32_t *
 load_spv(const char *name, size_t *words)
@@ -364,12 +365,34 @@ test_vertex_shader_generates_eu(void)
  * It is a model of the instruction semantics only; it says nothing about how the hardware
  * fills the payload or consumes the staged outputs.
  */
+/* How many WHILEs sent some but not all of their channels back (divergent loop passes). */
+static unsigned eu_model_divergent_whiles;
+
+/*
+ * Scratch memory (p014 E3): the thread's scratch space, junk until written; r0.3 carries the per-thread scratch
+ * space and r0.5 the thread's scratch base, both with junk around the bits a header copies.  A block write stores
+ * the channels it runs on (the execution mask), a block read loads all eight and must run outside the mask.
+ */
+#define EU_MODEL_SCRATCH_BYTES	65536U
+#define EU_MODEL_R0_3		0x5a5a5a50U     /* per-thread scratch space 0 (1 KiB) under junk */
+#define EU_MODEL_R0_5		0x00340000U     /* the scratch base; the low ten bits get junk */
+
+/* The URB writes of a vertex thread: VUE slot, component, channel. */
+#define EU_MODEL_VUE_SLOTS	34U
+
+static unsigned eu_model_scratch_writes;
+static unsigned eu_model_scratch_reads;
+static unsigned eu_model_scratch_partial;       /* block writes that ran on some channels only (a loop had stopped others) */
+
 struct eu_model {
 	uint32_t grf[128][8];
 	uint16_t flag[4];
 	unsigned written;               /* the channels the render-target write went to */
 	int ended;                      /* the thread ended (an end-of-thread SEND ran) */
 	unsigned dispatched;            /* the channels the thread runs on (the execution mask) */
+	uint32_t scratch[EU_MODEL_SCRATCH_BYTES / 4U];
+	uint32_t vue[EU_MODEL_VUE_SLOTS][4][8];
+	uint64_t vue_written;           /* the VUE slots a URB write reached */
 };
 
 static float
@@ -416,9 +439,72 @@ eu_model_init(struct eu_model *m)
 		for (c = 0U; c < 8U; c++)
 			mset(m, r, c, -1000.0f - (float)(r * 8U + c));
 	m->dispatched = 0xFFU;
+	m->grf[0][3] = EU_MODEL_R0_3;
+	m->grf[0][5] = EU_MODEL_R0_5 | 0x2A5U;
+	for (r = 0U; r < EU_MODEL_SCRATCH_BYTES / 4U; r++)
+		m->scratch[r] = 0x7F800001U + r;          /* NaNs, so a read of an unwritten slot shows */
 }
 
-/* The operand of one source as the model reads it: bits and type, modifiers applied to floats. */
+/* The 32-bit message descriptor of a SEND, gathered from where eu.c scatters it. */
+static uint32_t
+eu_model_descriptor(const uint32_t *inst)
+{
+	return (inst_field(inst, 123U, 122U) << 30) | (inst_field(inst, 71U, 67U) << 25) |
+	       (inst_field(inst, 55U, 51U) << 20) | (inst_field(inst, 121U, 113U) << 11) | inst_field(inst, 91U, 81U);
+}
+
+/* A scratch block write or read: the header in src0, the data in src1 (write) or the destination (read). */
+static void
+eu_model_scratch(struct eu_model *m, const struct i915_shader_binary *binary, const uint32_t *inst, unsigned enabled)
+{
+	uint32_t descriptor = eu_model_descriptor(inst);
+	unsigned header = inst_field(inst, EU_SRC0_REG_NR_HI, EU_SRC0_REG_NR_LO);
+	unsigned data = inst_field(inst, EU_SRC1_REG_NR_HI, EU_SRC1_REG_NR_LO);
+	unsigned dst = inst_field(inst, EU_DST_REG_NR_HI, EU_DST_REG_NR_LO);
+	unsigned no_mask = inst_bit(inst, EU_NO_MASK_BIT);
+	uint32_t offset, channel;
+
+	/* the header Mesa's generate_scratch_header() builds, and a slot inside the kernel's scratch space */
+	assert(m->grf[header][3] == (EU_MODEL_R0_3 & EU_SCRATCH_SIZE_MASK));
+	assert(m->grf[header][5] == EU_MODEL_R0_5);
+	offset = m->grf[header][2] * 16U;
+	assert(binary->scratch_bytes >= 1024U && (binary->scratch_bytes & (binary->scratch_bytes - 1U)) == 0U);
+	assert((offset % 32U) == 0U && offset + 32U <= binary->scratch_bytes && offset + 32U <= EU_MODEL_SCRATCH_BYTES);
+	if (descriptor == COMPILE_DESC_SCRATCH_WRITE) {
+		assert(no_mask == 0U && inst_field(inst, 103U, 99U) == 1U);      /* under the mask, one data register */
+		for (channel = 0U; channel < 8U; channel++)
+			if ((enabled >> channel) & 1U)
+				m->scratch[offset / 4U + channel] = m->grf[data][channel];
+		eu_model_scratch_writes++;
+		if (enabled != m->dispatched)
+			eu_model_scratch_partial++;
+		return;
+	}
+	assert(descriptor == COMPILE_DESC_SCRATCH_READ && no_mask == 1U);
+	for (channel = 0U; channel < 8U; channel++)
+		m->grf[dst][channel] = m->scratch[offset / 4U + channel];
+	eu_model_scratch_reads++;
+}
+
+/* A URB write: the slots of its second payload run, from the global offset in the descriptor on. */
+static void
+eu_model_urb(struct eu_model *m, const uint32_t *inst, unsigned enabled)
+{
+	uint32_t descriptor = eu_model_descriptor(inst);
+	unsigned data = inst_field(inst, EU_SRC1_REG_NR_HI, EU_SRC1_REG_NR_LO);
+	unsigned slots = inst_field(inst, 103U, 99U) / 4U, first = (descriptor >> 4) & 0x7FFU, s, k, c;
+
+	assert(slots >= 1U && slots <= 2U && first + slots <= EU_MODEL_VUE_SLOTS);
+	for (s = 0U; s < slots; s++) {
+		for (k = 0U; k < 4U; k++)
+			for (c = 0U; c < 8U; c++)
+				if ((enabled >> c) & 1U)
+					m->vue[first + s][k][c] = m->grf[data + 4U * s + k][c];
+		m->vue_written |= 1ULL << (first + s);
+	}
+}
+
+/* The operand of one source as the model reads it: bits and type, modifiers applied (floats and integers). */
 static uint32_t
 eu_model_source(const struct eu_model *m, const uint32_t *inst, int which, unsigned channel, unsigned *type_out)
 {
@@ -455,6 +541,10 @@ eu_model_source(const struct eu_model *m, const uint32_t *inst, int which, unsig
 		if (vstride == EU_VSTRIDE_8 && width == EU_WIDTH_8 && hstride == EU_HSTRIDE_1) {
 			assert(subnr == 0U && type != EU_TYPE_UW);
 			bits = m->grf[nr][channel];
+		} else if (vstride == EU_VSTRIDE_16 && width == EU_WIDTH_8 && hstride == EU_HSTRIDE_2) {
+			/* every second word: the low (subregister 0) or high (2) half of each channel's dword */
+			assert(type == EU_TYPE_UW && (subnr == 0U || subnr == 2U));
+			bits = (m->grf[nr][channel] >> (subnr * 8U)) & 0xFFFFU;
 		} else {
 			assert(vstride == EU_VSTRIDE_0 && width == EU_WIDTH_1 && hstride == EU_HSTRIDE_0);
 			if (type == EU_TYPE_UW) {
@@ -466,7 +556,6 @@ eu_model_source(const struct eu_model *m, const uint32_t *inst, int which, unsig
 			}
 		}
 	}
-	/* modifiers: only float operands carry them in this compiler's output */
 	if (type == EU_TYPE_F) {
 		float value = bits_float(bits);
 
@@ -476,12 +565,17 @@ eu_model_source(const struct eu_model *m, const uint32_t *inst, int which, unsig
 			value = -value;
 		bits = float_bits(value);
 	} else {
-		assert(negate == 0U && absolute == 0U);
+		/* an integer modifier: |x| (signed), then -x, modulo 2^32 */
+		assert(type != EU_TYPE_UW || (negate == 0U && absolute == 0U));
+		if (absolute != 0U && (int32_t)bits < 0)
+			bits = 0U - bits;
+		if (negate != 0U)
+			bits = 0U - bits;
 	}
 	return bits;
 }
 
-/* Evaluates a conditional modifier on two sources of one type. */
+/* Evaluates a conditional modifier on two sources of one type (floats, signed or unsigned integers). */
 static int
 eu_model_test(unsigned cond, uint32_t a, uint32_t b, unsigned type)
 {
@@ -495,6 +589,16 @@ eu_model_test(unsigned cond, uint32_t a, uint32_t b, unsigned type)
 		case EU_COND_GE: return fa >= fb;
 		case EU_COND_L: return fa < fb;
 		case EU_COND_LE: return fa <= fb;
+		default: break;
+		}
+	} else if (type == EU_TYPE_UD) {
+		switch (cond) {
+		case EU_COND_Z: return a == b;
+		case EU_COND_NZ: return a != b;
+		case EU_COND_G: return a > b;
+		case EU_COND_GE: return a >= b;
+		case EU_COND_L: return a < b;
+		case EU_COND_LE: return a <= b;
 		default: break;
 		}
 	} else {
@@ -524,11 +628,45 @@ eu_model_texture(uint32_t binding, float u, float v, float rgba[4])
 	rgba[3] = u * v + 0.5f;
 }
 
-/* Runs the words up to the SEND that ends the thread; any instruction the model does not know fails. */
+/* An integer source as a signed or unsigned 64-bit value, by its type. */
+static int64_t
+eu_model_integer(uint32_t bits, unsigned type)
+{
+	if (type == EU_TYPE_D)
+		return (int64_t)(int32_t)bits;
+	return (int64_t)bits;
+}
+
+/* A result into the destination's type: a float result converted to an integer truncates toward zero. */
+static uint32_t
+eu_model_store(int is_float, float f, int64_t i, unsigned dst_type)
+{
+	if (dst_type == EU_TYPE_F) {
+		if (is_float)
+			return float_bits(f);
+		return float_bits((float)i);            /* the default rounding: to nearest even */
+	}
+	assert(dst_type == EU_TYPE_D || dst_type == EU_TYPE_UD);
+	if (is_float) {
+		if (dst_type == EU_TYPE_D)
+			return (uint32_t)(int32_t)f;
+		return (uint32_t)f;
+	}
+	return (uint32_t)i;
+}
+
+/*
+ * Runs the words up to the SEND that ends the thread; any instruction the model does not know fails.
+ *
+ * A WHILE sends the channels whose flag bit is set back to the loop's first instruction; the others wait after
+ * it (parked) and run again, with every channel that entered the loop, once none goes back.
+ */
 static void
 eu_model_run(struct eu_model *m, const struct i915_shader_binary *binary)
 {
 	unsigned count = binary->code_bytes / 16U, index, channel;
+	unsigned active = m->dispatched;
+	unsigned loop_at[32], parked[32], loops = 0U, passes = 0U;
 
 	for (index = 0U; index < count; index++) {
 		const uint32_t *inst = binary->code + index * 4U;
@@ -547,12 +685,41 @@ eu_model_run(struct eu_model *m, const struct i915_shader_binary *binary)
 			continue;
 		assert(inst_bit(inst, EU_PRED_INV_BIT) == 0U);
 
-		/* the channels that run: the dispatched ones, narrowed by a predicate (not for SEL) */
-		enabled = m->dispatched;
+		/* the channels that run: the active ones (all eight outside the mask), narrowed by a predicate (not for SEL) */
+		enabled = active;
+		if (inst_bit(inst, EU_NO_MASK_BIT) != 0U)
+			enabled = 0xFFU;
 		if (predicate != 0U) {
 			assert(predicate == EU_PREDICATE_NORMAL);
 			if (opcode != EU_OP_SEL)
 				enabled &= m->flag[flag];
+		}
+
+		if (opcode == EU_OP_WHILE) {
+			int32_t jump = (int32_t)inst[3];
+			unsigned back;
+
+			assert(predicate == EU_PREDICATE_NORMAL && jump < 0 && (jump % 16) == 0);
+			assert(inst_bit(inst, EU_SRC0_IS_IMM_BIT) == 1U);
+			assert(++passes < 1000000U);
+			if (loops == 0U || loop_at[loops - 1U] != index) {
+				assert(loops < 32U);
+				loop_at[loops] = index;
+				parked[loops] = 0U;
+				loops++;
+			}
+			back = enabled;
+			if (back != 0U && back != active)
+				eu_model_divergent_whiles++;
+			parked[loops - 1U] |= active & ~back;
+			if (back != 0U) {
+				active = back;
+				index = (unsigned)((int32_t)index + jump / 16) - 1U;
+			} else {
+				active = parked[loops - 1U];
+				loops--;
+			}
+			continue;
 		}
 
 		if (opcode == EU_OP_SEND || opcode == EU_OP_SENDC) {
@@ -560,8 +727,15 @@ eu_model_run(struct eu_model *m, const struct i915_shader_binary *binary)
 			unsigned src0 = inst_field(inst, EU_SRC0_REG_NR_HI, EU_SRC0_REG_NR_LO);
 			unsigned src1 = inst_field(inst, EU_SRC1_REG_NR_HI, EU_SRC1_REG_NR_LO);
 
+			if (sfid == EU_SFID_URB)
+				eu_model_urb(m, inst, enabled);
+			if (sfid == EU_SFID_DATA_CACHE) {
+				eu_model_scratch(m, binary, inst, enabled);
+				continue;
+			}
 			if (inst_bit(inst, EU_SEND_EOT_BIT) != 0U) {
 				assert(index == count - 1U);
+				assert(loops == 0U && active == m->dispatched);
 				m->written = enabled;
 				m->ended = 1;
 				return;
@@ -580,6 +754,23 @@ eu_model_run(struct eu_model *m, const struct i915_shader_binary *binary)
 							mset(m, dst + k, channel, rgba[k]);
 				}
 			}
+			continue;
+		}
+
+		/* a SIMD1 move or AND of one dword outside the mask: the scratch header (p014 E3) */
+		if (exec == EU_EXEC_SIZE_1 && dst_file == 1U) {
+			unsigned type, type1, subnr = inst_field(inst, EU_DST_SUBREG_HI, EU_DST_SUBREG_LO);
+			uint32_t a = eu_model_source(m, inst, 0, 0U, &type);
+
+			assert(inst_bit(inst, EU_NO_MASK_BIT) == 1U && predicate == 0U && (subnr % 4U) == 0U);
+			assert(dst_type == EU_TYPE_UD && type == EU_TYPE_UD);
+			if (opcode == EU_OP_AND) {
+				a &= eu_model_source(m, inst, 1, 0U, &type1);
+				assert(type1 == EU_TYPE_UD);
+			} else {
+				assert(opcode == EU_OP_MOV);
+			}
+			m->grf[dst][subnr / 4U] = a;
 			continue;
 		}
 
@@ -602,23 +793,60 @@ eu_model_run(struct eu_model *m, const struct i915_shader_binary *binary)
 			uint32_t a = eu_model_source(m, inst, 0, channel, &types[0]);
 			uint32_t b = 0U;
 			float fa = bits_float(a), fb;
+			int64_t ia = eu_model_integer(a, types[0]), ib = 0;
+			int two_sources;
 
-			if (opcode != EU_OP_MOV && opcode != EU_OP_NOT && opcode != EU_OP_RNDD && opcode != EU_OP_FRC &&
-			    opcode != EU_OP_MATH)
+			two_sources = opcode != EU_OP_MOV && opcode != EU_OP_NOT && opcode != EU_OP_RNDD && opcode != EU_OP_FRC &&
+				opcode != EU_OP_RNDZ && opcode != EU_OP_RNDE;
+			if (opcode == EU_OP_MATH) {
+				unsigned function = inst_field(inst, EU_MATH_FUNCTION_HI, EU_MATH_FUNCTION_LO);
+
+				two_sources = function == EU_MATH_INT_DIV_QUOTIENT || function == EU_MATH_INT_DIV_REMAINDER;
+			}
+			if (two_sources) {
 				b = eu_model_source(m, inst, 1, channel, &types[1]);
+				ib = eu_model_integer(b, types[1]);
+			}
 			fb = bits_float(b);
 			switch (opcode) {
 			case EU_OP_MOV:
-				/* a move between registers of one kind, or of a float / integer immediate */
-				assert(types[0] == dst_type || (dst_type == EU_TYPE_UD && types[0] == EU_TYPE_UD));
-				result[channel] = a;
+				/* a move within a type (or between the integer types), or a conversion between floats and integers */
+				if (types[0] == EU_TYPE_F && dst_type != EU_TYPE_F)
+					result[channel] = eu_model_store(1, fa, 0, dst_type);
+				else if (types[0] != EU_TYPE_F && dst_type == EU_TYPE_F)
+					result[channel] = eu_model_store(0, 0.0f, ia, dst_type);
+				else
+					result[channel] = a;
 				break;
-			case EU_OP_ADD: assert(types[0] == EU_TYPE_F); result[channel] = float_bits(fa + fb); break;
-			case EU_OP_MUL: assert(types[0] == EU_TYPE_F); result[channel] = float_bits(fa * fb); break;
-			case EU_OP_AND: assert(types[0] == EU_TYPE_D); result[channel] = a & b; break;
-			case EU_OP_OR: assert(types[0] == EU_TYPE_D); result[channel] = a | b; break;
-			case EU_OP_NOT: assert(types[0] == EU_TYPE_D); result[channel] = ~a; break;
+			case EU_OP_ADD:
+				if (types[0] == EU_TYPE_F) {
+					assert(types[1] == EU_TYPE_F && dst_type == EU_TYPE_F);
+					result[channel] = float_bits(fa + fb);
+				} else {
+					assert(types[1] != EU_TYPE_F && dst_type != EU_TYPE_F);
+					result[channel] = (uint32_t)(ia + ib);
+				}
+				break;
+			case EU_OP_MUL:
+				if (types[0] == EU_TYPE_F) {
+					assert(types[1] == EU_TYPE_F && dst_type == EU_TYPE_F);
+					result[channel] = float_bits(fa * fb);
+				} else {
+					/* the 32 x 16-bit multiply of the lowering: the low 32 bits of the product */
+					assert(types[1] == EU_TYPE_UW && dst_type != EU_TYPE_F);
+					result[channel] = (uint32_t)((uint64_t)ia * (uint64_t)ib);
+				}
+				break;
+			case EU_OP_AND: assert(types[0] != EU_TYPE_F); result[channel] = a & b; break;
+			case EU_OP_OR: assert(types[0] != EU_TYPE_F); result[channel] = a | b; break;
+			case EU_OP_XOR: assert(types[0] != EU_TYPE_F); result[channel] = a ^ b; break;
+			case EU_OP_NOT: assert(types[0] != EU_TYPE_F); result[channel] = ~a; break;
+			case EU_OP_SHL: assert(types[0] != EU_TYPE_F); result[channel] = a << (b & 31U); break;
+			case EU_OP_SHR: assert(types[0] == EU_TYPE_UD); result[channel] = a >> (b & 31U); break;
+			case EU_OP_ASR: assert(types[0] == EU_TYPE_D); result[channel] = (uint32_t)((int32_t)a >> (b & 31U)); break;
 			case EU_OP_RNDD: assert(types[0] == EU_TYPE_F); result[channel] = float_bits(floorf(fa)); break;
+			case EU_OP_RNDZ: assert(types[0] == EU_TYPE_F); result[channel] = float_bits(truncf(fa)); break;
+			case EU_OP_RNDE: assert(types[0] == EU_TYPE_F); result[channel] = float_bits(nearbyintf(fa)); break;
 			case EU_OP_FRC: assert(types[0] == EU_TYPE_F); result[channel] = float_bits(fa - floorf(fa)); break;
 			case EU_OP_SEL:
 				if (predicate != 0U) {
@@ -631,6 +859,7 @@ eu_model_run(struct eu_model *m, const struct i915_shader_binary *binary)
 				}
 				break;
 			case EU_OP_CMP:
+				assert(types[0] == types[1] || (types[0] != EU_TYPE_F && types[1] != EU_TYPE_F));
 				result[channel] = eu_model_test(cond, a, b, types[0]) ? 0xFFFFFFFFU : 0U;
 				break;
 			case EU_OP_MATH: {
@@ -644,6 +873,24 @@ eu_model_run(struct eu_model *m, const struct i915_shader_binary *binary)
 				case EU_MATH_SQRT: result[channel] = float_bits(sqrtf(fa)); break;
 				case EU_MATH_EXP: result[channel] = float_bits(exp2f(fa)); break;
 				case EU_MATH_LOG: result[channel] = float_bits(log2f(fa)); break;
+				case EU_MATH_INT_DIV_QUOTIENT:
+				case EU_MATH_INT_DIV_REMAINDER:
+					/* signed or unsigned by the type, rounded toward zero; the remainder has the dividend's sign */
+					assert(types[0] == types[1] && types[0] == dst_type && types[0] != EU_TYPE_F);
+					if (((enabled >> channel) & 1U) == 0U) {
+						result[channel] = 0U;
+						break;
+					}
+					assert(ib != 0);
+					if (types[0] == EU_TYPE_D) {
+						int32_t sa = (int32_t)a, sb = (int32_t)b;
+
+						assert(!(sa == INT32_MIN && sb == -1));
+						result[channel] = function == EU_MATH_INT_DIV_QUOTIENT ? (uint32_t)(sa / sb) : (uint32_t)(sa % sb);
+					} else {
+						result[channel] = function == EU_MATH_INT_DIV_QUOTIENT ? a / b : a % b;
+					}
+					break;
 				default: assert(!"math function the model does not know"); break;
 				}
 				break;
@@ -675,7 +922,7 @@ eu_model_run(struct eu_model *m, const struct i915_shader_binary *binary)
 		}
 		assert(dst < 128U);
 		for (channel = 0U; channel < 8U; channel++)
-			if (opcode == EU_OP_SEL || ((enabled >> channel) & 1U))
+			if (((enabled >> channel) & 1U) || (opcode == EU_OP_SEL && ((active >> channel) & 1U)))
 				m->grf[dst][channel] = result[channel];
 	}
 	assert(!"no terminating SEND");
@@ -795,6 +1042,7 @@ test_vertex_shader_eu_computes_the_shader(void)
 /* ------------------------------------------------------------------ p014 stage C through the EU model */
 
 #define COMPILER_SHADERS "src/drivers/gpu/i915/tests/render/compiler-shaders"
+#define FEATURE_SHADERS "src/drivers/gpu/i915/tests/render/feature-shaders"
 #define MVIEW_SHADERS "userland/base/mview/shaders"
 
 /* Parses and compiles a shader file, printing a refusal before failing. */
@@ -1319,7 +1567,11 @@ test_all_shaders_compile(void)
 		{ COMPILER_SHADERS, "divide.frag.spv" }, { COMPILER_SHADERS, "compare.frag.spv" },
 		{ COMPILER_SHADERS, "branch.frag.spv" }, { COMPILER_SHADERS, "discard.frag.spv" },
 		{ COMPILER_SHADERS, "shade.frag.spv" },
+		{ FEATURE_SHADERS, "pass.vert.spv" }, { FEATURE_SHADERS, "color.frag.spv" },
+		{ FEATURE_SHADERS, "ubo.vert.spv" }, { FEATURE_SHADERS, "ubo.frag.spv" },
+		{ FEATURE_SHADERS, "tex3.frag.spv" },
 	};
+	struct i915_shader_binary *vertex, *fragment, *textures;
 	unsigned i;
 
 	for (i = 0U; i < sizeof(files) / sizeof(files[0]); i++) {
@@ -1331,7 +1583,451 @@ test_all_shaders_compile(void)
 		assert(binary->code_bytes > 0U && binary->stage == stage);
 		drv_i915_shader_binary_free(binary);
 	}
-	printf("  compiled: mview.vert, mview.frag, cutout.frag and the %u stage-C test shaders\n", i - 3U);
+	printf("  compiled: mview.vert, mview.frag, cutout.frag and the %u stage-C and feature test shaders\n", i - 3U);
+
+	/*
+	 * The uniform blocks travel with the push data: ubo.vert reads bytes 0 .. 79 of set 0 binding 0 (the
+	 * mat4 and the offset), ubo.frag bytes 0 .. 15, 32 .. 47 and 80 .. 95 of set 0 binding 1, each range
+	 * widened to whole 32-byte registers; neither reads push constants.
+	 */
+	vertex = compile_file(FEATURE_SHADERS, "ubo.vert.spv", I915_STAGE_VERTEX);
+	fragment = compile_file(FEATURE_SHADERS, "ubo.frag.spv", I915_STAGE_FRAGMENT);
+	assert(vertex->push_constant_bytes == 0U && vertex->block_count == 1U);
+	assert(vertex->blocks[0].set == 0U && vertex->blocks[0].binding == 0U);
+	assert(vertex->blocks[0].offset == 0U && vertex->blocks[0].bytes == 96U && vertex->blocks[0].push_offset == 0U);
+	assert(vertex->push_regs == 3U);
+	assert(fragment->push_constant_bytes == 0U && fragment->block_count == 1U);
+	assert(fragment->blocks[0].set == 0U && fragment->blocks[0].binding == 1U);
+	assert(fragment->blocks[0].offset == 0U && fragment->blocks[0].bytes == 96U);
+	assert(fragment->push_regs == 3U && fragment->sampler_count == 0U);
+
+	/* tex3.frag samples three images, each its own binding table entry and sampler, in the order it names them. */
+	textures = compile_file(FEATURE_SHADERS, "tex3.frag.spv", I915_STAGE_FRAGMENT);
+	assert(textures->sampler_count == 3U);
+	assert(textures->sampler_set[0] == 0U && textures->sampler_binding[0] == 0U);
+	assert(textures->sampler_set[1] == 0U && textures->sampler_binding[1] == 2U);
+	assert(textures->sampler_set[2] == 1U && textures->sampler_binding[2] == 1U);
+	drv_i915_shader_binary_free(vertex);
+	drv_i915_shader_binary_free(fragment);
+	drv_i915_shader_binary_free(textures);
+	printf("  feature shaders: uniform blocks laid out in the push data (vertex 3, fragment 3 registers), 3 samplers from 2 sets\n");
+}
+
+/* ------------------------------------------------------------------ the generality test (p014 E2) */
+
+/* Compiles one of the generality test's embedded modules. */
+static struct i915_shader_binary *
+compile_words(const char *name, const uint32_t *words, size_t bytes, enum i915_shader_stage stage, int *refused)
+{
+	struct i915_shader_ir *ir;
+	struct i915_shader_binary *binary;
+	struct i915_compile_diagnostic diag;
+	int error;
+
+	error = drv_i915_shader_parse(words, bytes / 4U, stage, &ir, &diag);
+	if (error != 0)
+		printf("  %s refused: opcode %u at word %u: %s\n", name, diag.opcode, diag.word_offset,
+			diag.reason != NULL ? diag.reason : "-");
+	assert(error == 0);
+	error = drv_i915_shader_compile(ir, &binary);
+	drv_i915_shader_ir_free(ir);
+	if (refused != NULL) {
+		*refused = error;
+		return error == 0 ? binary : NULL;
+	}
+	assert(error == 0);
+	return binary;
+}
+
+/* Writes bytes into a kernel's push data, 32 bytes to a register from `first`. */
+static void
+push_bytes(struct eu_model *m, unsigned first, unsigned offset, const uint32_t *words, unsigned bytes)
+{
+	unsigned k;
+
+	for (k = 0U; k < bytes / 4U; k++)
+		m->grf[first + (offset + 4U * k) / 32U][((offset + 4U * k) % 32U) / 4U] = words[k];
+}
+
+/* Delivers a binary's push constants and uniform blocks as the draw does (the blocks from the given words). */
+static void
+push_data(struct eu_model *m, const struct i915_shader_binary *binary, unsigned first, const uint32_t *constants,
+	unsigned constant_bytes, const uint32_t *block, unsigned block_bytes)
+{
+	unsigned k;
+
+	if (binary->push_constant_bytes != 0U)
+		push_bytes(m, first, 0U, constants, constant_bytes);
+	for (k = 0U; k < binary->block_count; k++) {
+		assert(binary->blocks[k].offset + binary->blocks[k].bytes <= block_bytes + 32U);
+		push_bytes(m, first, binary->blocks[k].push_offset, block + binary->blocks[k].offset / 4U,
+			binary->blocks[k].offset + binary->blocks[k].bytes <= block_bytes ? binary->blocks[k].bytes :
+			block_bytes - binary->blocks[k].offset);
+	}
+}
+
+/* The word an RGBA8 target stores for channel c's colour. */
+static uint32_t
+channel_word(const struct eu_model *m, unsigned c)
+{
+	uint32_t word = 0U;
+	unsigned k;
+
+	for (k = 0U; k < 4U; k++) {
+		float value = mget(m, COMPILE_MAX_GRF - 3U + k, c);
+
+		value = value < 0.0f ? 0.0f : (value > 1.0f ? 1.0f : value);
+		word |= (uint32_t)floorf(value * 255.0f + 0.5f) << (8U * k);
+	}
+	return word;
+}
+
+/*
+ * The generality test's fragment shaders at every pixel of 64 x 64, eight neighbouring pixels to a dispatch, the
+ * push data delivered as the draw delivers it, against the words regenerate.py computed: the loops leave the
+ * channels of a dispatch at different passes, and the integer division runs in the math box.
+ */
+static void
+test_eu_generality_fragment(void)
+{
+	static const struct {
+		const char *name;
+		const uint32_t *words;
+		size_t bytes;
+		const uint32_t *expected;
+	} steps[5] = {
+		{ "matrix.frag", i915_vke2_matrix_frag, sizeof(i915_vke2_matrix_frag), i915_vke2_matrix_expected },
+		{ "int.frag", i915_vke2_int_frag, sizeof(i915_vke2_int_frag), i915_vke2_int_expected },
+		{ "float.frag", i915_vke2_float_frag, sizeof(i915_vke2_float_frag), i915_vke2_float_expected },
+		{ "loop.frag", i915_vke2_loop_frag, sizeof(i915_vke2_loop_frag), i915_vke2_loop_expected },
+		{ "spill.frag", i915_vke2_spill_frag, sizeof(i915_vke2_spill_frag), i915_vke2_spill_expected },
+	};
+	struct eu_model *m;
+	unsigned step, x0, y, c, divergent[5], spill_bytes = 0U;
+
+	m = malloc(sizeof(*m));
+	eu_model_scratch_writes = 0U;
+	eu_model_scratch_reads = 0U;
+	eu_model_scratch_partial = 0U;
+	for (step = 0U; step < 5U; step++) {
+		struct i915_shader_binary *binary;
+
+		binary = compile_words(steps[step].name, steps[step].words, steps[step].bytes, I915_STAGE_FRAGMENT, NULL);
+		assert(binary->input_count == 1U);
+		if (step == 1U || step == 3U)
+			assert(has_opcode(binary, EU_OP_MATH));         /* the integer division */
+		assert((step == 4U) == (binary->scratch_bytes != 0U));  /* only spill.frag spills */
+		if (step == 4U)
+			spill_bytes = binary->scratch_bytes;
+		eu_model_divergent_whiles = 0U;
+		for (y = 0U; y < 64U; y++) {
+			for (x0 = 0U; x0 < 64U; x0 += 8U) {
+				float x[8], yy[8], values[8][4];
+
+				for (c = 0U; c < 8U; c++) {
+					x[c] = (float)(x0 + c) + 0.5f;
+					yy[c] = (float)y + 0.5f;
+				}
+				eu_model_init(m);
+				eu_model_fs_payload(m, binary, 0xFFU, x, yy);
+				eu_model_fs_plane(m, binary, 0U, 0U, 1.0f, 0.0f, 0.0f);
+				eu_model_fs_plane(m, binary, 0U, 1U, 0.0f, 1.0f, 0.0f);
+				eu_model_fs_plane(m, binary, 0U, 2U, 0.0f, 0.0f, 0.0f);
+				eu_model_fs_plane(m, binary, 0U, 3U, 0.0f, 0.0f, 0.0f);
+				push_data(m, binary, COMPILE_FS_SETUP_GRF, i915_vke2_push, sizeof(i915_vke2_push),
+					i915_vke2_matrices, sizeof(i915_vke2_matrices));
+				(void)values;
+				eu_model_run(m, binary);
+				assert(m->ended != 0 && m->written == 0xFFU);
+				for (c = 0U; c < 8U; c++) {
+					uint32_t got = channel_word(m, c), want = steps[step].expected[y * 64U + x0 + c];
+
+					if (got != want) {
+						printf("  %s at (%u, %u): 0x%08x, want 0x%08x\n", steps[step].name, x0 + c, y, got, want);
+						assert(!"EU model result differs from regenerate.py");
+					}
+				}
+			}
+		}
+		divergent[step] = eu_model_divergent_whiles;
+		drv_i915_shader_binary_free(binary);
+	}
+	assert(divergent[3] > 0U);
+	assert(divergent[4] > 0U && eu_model_scratch_writes > 0U && eu_model_scratch_reads > 0U);
+	assert(eu_model_scratch_partial > 0U);          /* a spilled loop variable written while a loop had stopped channels */
+	free(m);
+	printf("  EU model: generality matrix / int / float / loop / spill shaders match regenerate.py at 5 x 4096 pixels; loop.frag: %u divergent WHILE passes; "
+		"spill.frag: %u bytes of scratch a thread, %u scratch writes (%u on some channels only) and %u reads, %u divergent WHILE passes\n",
+		divergent[3], spill_bytes, eu_model_scratch_writes, eu_model_scratch_partial, eu_model_scratch_reads, divergent[4]);
+}
+
+/* Sets every component of fragment input `rank` to a constant (no slope), as a varying equal at every vertex. */
+static void
+plane_constant(struct eu_model *m, const struct i915_shader_binary *binary, unsigned rank, const float value[4])
+{
+	unsigned k;
+
+	for (k = 0U; k < 4U; k++)
+		eu_model_fs_plane(m, binary, rank, k, 0.0f, 0.0f, value[k]);
+}
+
+/* A varying of vary16.vert: the seed times k + 1 plus (k, -k, k / 2, 16 - k). */
+static void
+vary16_value(unsigned k, float value[4])
+{
+	const float offset[4] = { (float)k, -(float)k, 0.5f * (float)k, 16.0f - (float)k };
+	unsigned c;
+
+	for (c = 0U; c < 4U; c++)
+		value[c] = bits_float(i915_vke2_seed[c]) * (float)(k + 1U) + offset[c];
+}
+
+/*
+ * The generality test's interfaces through the EU model: vary16.vert stages sixteen varyings, vin16.vert reads
+ * sixteen attributes (payload r2..r65 untouched), matrix.vert places its corners by a row-major and a
+ * column-major matrix of the push data; vary16.frag, subset.frag (5 of 16, routed by location) and vin16.frag
+ * read them back.  vio16.vert, sixteen attributes and sixteen varyings, and a hand-made IR of the same shape do not
+ * fit the registers with a staged VUE: they gather the VUE at the end and spill, and their URB writes carry what
+ * the shader computed.
+ */
+static void
+test_eu_generality_interfaces(void)
+{
+	static const float corners[4][2] = { { -1.0f, -1.0f }, { 1.0f, -1.0f }, { 1.0f, 1.0f }, { -1.0f, 1.0f } };
+	struct i915_shader_binary *vary_vert, *vary_frag, *subset, *vin_vert, *vin_frag, *matrix_vert, *vio_vert;
+	struct i915_shader_ir_inst many[32];
+	struct i915_shader_ir ir;
+	struct eu_model *m;
+	uint32_t payload[64][8];
+	unsigned c, k, rank, x0, y;
+
+	m = malloc(sizeof(*m));
+	vary_vert = compile_words("vary16.vert", i915_vke2_vary16_vert, sizeof(i915_vke2_vary16_vert), I915_STAGE_VERTEX, NULL);
+	vary_frag = compile_words("vary16.frag", i915_vke2_vary16_frag, sizeof(i915_vke2_vary16_frag), I915_STAGE_FRAGMENT, NULL);
+	subset = compile_words("subset.frag", i915_vke2_subset_frag, sizeof(i915_vke2_subset_frag), I915_STAGE_FRAGMENT, NULL);
+	vin_vert = compile_words("vin16.vert", i915_vke2_vin16_vert, sizeof(i915_vke2_vin16_vert), I915_STAGE_VERTEX, NULL);
+	vin_frag = compile_words("vin16.frag", i915_vke2_vin16_frag, sizeof(i915_vke2_vin16_frag), I915_STAGE_FRAGMENT, NULL);
+	matrix_vert = compile_words("matrix.vert", i915_vke2_matrix_vert, sizeof(i915_vke2_matrix_vert), I915_STAGE_VERTEX, NULL);
+	vio_vert = compile_words("vio16.vert", i915_vke2_vio16_vert, sizeof(i915_vke2_vio16_vert), I915_STAGE_VERTEX, NULL);
+	assert(vio_vert->input_count == 16U && vio_vert->varying_count == 16U && vio_vert->scratch_bytes != 0U);
+	assert(vary_vert->scratch_bytes == 0U && vin_vert->scratch_bytes == 0U && matrix_vert->scratch_bytes == 0U);
+
+	/* the interfaces: sixteen varyings in location order; five of them read; sixteen attributes */
+	assert(vary_vert->input_count == 3U && vary_vert->varying_count == 16U);
+	for (k = 0U; k < 16U; k++)
+		assert(vary_vert->varying_locations[k] == k);
+	assert(vary_frag->input_count == 16U);
+	assert(subset->input_count == 5U);
+	assert(subset->input_locations[0] == 0U && subset->input_locations[1] == 1U && subset->input_locations[2] == 6U &&
+	       subset->input_locations[3] == 11U && subset->input_locations[4] == 15U);
+	assert(vin_vert->input_count == 16U && vin_vert->varying_count == 2U);
+	assert(vin_vert->varying_locations[0] == 0U && vin_vert->varying_locations[1] == 3U);
+	assert(vin_frag->input_count == 2U && vin_frag->input_locations[1] == 3U);
+
+	/* vary16.vert: the position r2.., the coordinate r6.., the seed r10.. (per vertex, to tell channels apart) */
+	eu_model_init(m);
+	for (c = 0U; c < 8U; c++) {
+		for (k = 0U; k < 4U; k++) {
+			mset(m, COMPILE_PAYLOAD_GRF + k, c, 0.25f * (float)(c + k));
+			mset(m, COMPILE_PAYLOAD_GRF + 4U + k, c, (float)(8U * c + k));
+			mset(m, COMPILE_PAYLOAD_GRF + 8U + k, c, bits_float(i915_vke2_seed[k]) + (float)c);
+		}
+	}
+	eu_model_run(m, vary_vert);
+	for (c = 0U; c < 8U; c++) {
+		for (k = 0U; k < 4U; k++) {
+			assert(mget(m, vue_position(vary_vert) + k, c) == 0.25f * (float)(c + k));
+			assert(mget(m, vue_position(vary_vert) + 4U + k, c) == (float)(8U * c + k));
+		}
+		for (rank = 1U; rank < 16U; rank++) {
+			const float offset[4] = { (float)rank, -(float)rank, 0.5f * (float)rank, 16.0f - (float)rank };
+
+			for (k = 0U; k < 4U; k++) {
+				float want = (bits_float(i915_vke2_seed[k]) + (float)c) * (float)(rank + 1U) + offset[k];
+
+				assert(mget(m, vue_position(vary_vert) + 4U + 4U * rank + k, c) == want);
+			}
+		}
+	}
+
+	/* vary16.frag and subset.frag: the coordinate at rank 0, each other input constant */
+	for (y = 0U; y < 64U; y += 9U) {
+		for (x0 = 0U; x0 < 64U; x0 += 8U) {
+			static const unsigned subset_locations[5] = { 0U, 1U, 6U, 11U, 15U };
+			float x[8], yy[8], value[4];
+
+			for (c = 0U; c < 8U; c++) {
+				x[c] = (float)(x0 + c) + 0.5f;
+				yy[c] = (float)y + 0.5f;
+			}
+			eu_model_init(m);
+			eu_model_fs_payload(m, vary_frag, 0xFFU, x, yy);
+			eu_model_fs_plane(m, vary_frag, 0U, 0U, 1.0f, 0.0f, 0.0f);
+			eu_model_fs_plane(m, vary_frag, 0U, 1U, 0.0f, 1.0f, 0.0f);
+			for (rank = 1U; rank < 16U; rank++) {
+				vary16_value(rank, value);
+				plane_constant(m, vary_frag, rank, value);
+			}
+			eu_model_run(m, vary_frag);
+			for (c = 0U; c < 8U; c++)
+				assert(channel_word(m, c) == float_bits((float)(2U * ((x0 + c) * 1000U + y * 100000U) + I915_VKE2_VARY16_TWICE) * 0.5f));
+
+			eu_model_init(m);
+			eu_model_fs_payload(m, subset, 0xFFU, x, yy);
+			eu_model_fs_plane(m, subset, 0U, 0U, 1.0f, 0.0f, 0.0f);
+			eu_model_fs_plane(m, subset, 0U, 1U, 0.0f, 1.0f, 0.0f);
+			for (rank = 1U; rank < 5U; rank++) {
+				vary16_value(subset_locations[rank], value);
+				plane_constant(m, subset, rank, value);
+			}
+			eu_model_run(m, subset);
+			for (c = 0U; c < 8U; c++)
+				assert(channel_word(m, c) == float_bits((float)(2U * ((x0 + c) * 1000U + y * 100000U) + I915_VKE2_SUBSET_TWICE) * 0.5f));
+		}
+	}
+
+	/* vin16.vert: sixteen attributes in r2..r65, nothing written there; the weighted sum at location 3 (rank 1) */
+	eu_model_init(m);
+	for (c = 0U; c < 8U; c++) {
+		mset(m, COMPILE_PAYLOAD_GRF + 3U, c, 1.0f);
+		mset(m, COMPILE_PAYLOAD_GRF + 4U, c, (float)c);
+		for (k = 2U; k < 16U; k++)
+			for (rank = 0U; rank < 4U; rank++)
+				mset(m, COMPILE_PAYLOAD_GRF + 4U * k + rank, c, bits_float(i915_vke2_vin_data[(k - 2U) * 4U + rank]));
+	}
+	memcpy(payload, &m->grf[COMPILE_PAYLOAD_GRF], sizeof(payload));
+	eu_model_run(m, vin_vert);
+	assert(memcmp(payload, &m->grf[COMPILE_PAYLOAD_GRF], sizeof(payload)) == 0);
+	for (c = 0U; c < 8U; c++) {
+		float sum[4];
+
+		assert(mget(m, vue_position(vin_vert) + 4U, c) == (float)c);
+		for (rank = 0U; rank < 4U; rank++) {
+			sum[rank] = bits_float(i915_vke2_vin_data[rank]) * 2.0f;
+			for (k = 3U; k < 16U; k++)
+				sum[rank] = sum[rank] + bits_float(i915_vke2_vin_data[(k - 2U) * 4U + rank]) * (float)k;
+			assert(mget(m, vue_position(vin_vert) + 8U + rank, c) == sum[rank]);
+		}
+		if (c == 0U) {
+			float x[8], yy[8];
+			unsigned d;
+
+			/* vin16.frag, fed that sum at rank 1 */
+			for (d = 0U; d < 8U; d++) {
+				x[d] = (float)d + 0.5f;
+				yy[d] = 3.5f;
+			}
+			{
+				struct eu_model *f = malloc(sizeof(*f));
+
+				eu_model_init(f);
+				eu_model_fs_payload(f, vin_frag, 0xFFU, x, yy);
+				eu_model_fs_plane(f, vin_frag, 0U, 0U, 1.0f, 0.0f, 0.0f);
+				eu_model_fs_plane(f, vin_frag, 0U, 1U, 0.0f, 1.0f, 0.0f);
+				plane_constant(f, vin_frag, 1U, sum);
+				eu_model_run(f, vin_frag);
+				for (d = 0U; d < 8U; d++)
+					assert(channel_word(f, d) == float_bits((float)(2U * (d * 1000U + 3U * 100000U) + I915_VKE2_VIN16_TWICE) * 0.5f));
+				free(f);
+			}
+		}
+	}
+
+	/* matrix.vert: the placement block in the push data (r2..), the corner, then the coordinate */
+	assert(matrix_vert->block_count == 1U && matrix_vert->push_constant_bytes == 0U);
+	eu_model_init(m);
+	push_data(m, matrix_vert, COMPILE_PAYLOAD_GRF, NULL, 0U, i915_vke2_placement, sizeof(i915_vke2_placement));
+	for (c = 0U; c < 8U; c++) {
+		unsigned first = COMPILE_PAYLOAD_GRF + matrix_vert->push_regs;
+
+		mset(m, first + 0U, c, bits_float(i915_vke2_matrix_corners[2U * (c % 4U)]));
+		mset(m, first + 1U, c, bits_float(i915_vke2_matrix_corners[2U * (c % 4U) + 1U]));
+		mset(m, first + 2U, c, 0.0f);
+		mset(m, first + 3U, c, 1.0f);
+	}
+	eu_model_run(m, matrix_vert);
+	for (c = 0U; c < 8U; c++) {
+		assert(mget(m, vue_position(matrix_vert) + 0U, c) == corners[c % 4U][0]);
+		assert(mget(m, vue_position(matrix_vert) + 1U, c) == corners[c % 4U][1]);
+		assert(mget(m, vue_position(matrix_vert) + 3U, c) == 1.0f);
+	}
+
+	/*
+	 * vio16.vert: sixteen attributes in r2..r65 (a different vertex in each channel), sixteen varyings out through
+	 * the URB writes of a gathered VUE: the header zeros, the position, the coordinate, then data k + 1 weighted by
+	 * k + 1 plus the next attribute.
+	 */
+	eu_model_init(m);
+	for (c = 0U; c < 8U; c++) {
+		for (k = 0U; k < 16U; k++)
+			for (rank = 0U; rank < 4U; rank++)
+				mset(m, COMPILE_PAYLOAD_GRF + 4U * k + rank, c, (float)(k * 10U + rank) + 0.25f * (float)c);
+	}
+	eu_model_scratch_writes = 0U;
+	eu_model_scratch_reads = 0U;
+	eu_model_run(m, vio_vert);
+	assert(m->ended != 0 && m->vue_written == (1ULL << 18) - 1U);
+	assert(eu_model_scratch_writes > 0U && eu_model_scratch_reads > 0U);
+	for (c = 0U; c < 8U; c++) {
+		for (rank = 0U; rank < 4U; rank++) {
+			assert(m->vue[0][rank][c] == 0U);
+			assert(bits_float(m->vue[1][rank][c]) == (float)rank + 0.25f * (float)c);
+			assert(bits_float(m->vue[2][rank][c]) == (float)(10U + rank) + 0.25f * (float)c);
+			for (k = 1U; k < 16U; k++) {
+				unsigned weighted = k == 15U ? 2U : k + 1U, next = k == 15U ? 15U : (k == 14U ? 2U : k + 2U);
+				float scale = k == 15U ? 16.0f : (float)(k + 1U);
+				float want = ((float)(weighted * 10U + rank) + 0.25f * (float)c) * scale + ((float)(next * 10U + rank) + 0.25f * (float)c);
+
+				assert(bits_float(m->vue[2U + k][rank][c]) == want);
+			}
+		}
+	}
+	printf("  EU model: vio16.vert (16 attributes, 16 varyings): gathered VUE, %u bytes of scratch a thread, %u scratch writes, %u reads; all 18 slots right\n",
+		vio_vert->scratch_bytes, eu_model_scratch_writes, eu_model_scratch_reads);
+
+	/* sixteen attributes and sixteen varyings of a hand-made IR: output k is attribute k */
+	memset(many, 0, sizeof(many));
+	for (k = 0U; k < 16U; k++) {
+		many[2U * k].op = I915_IR_LOAD_INPUT;
+		many[2U * k].dst = k;
+		many[2U * k].location = k;
+		many[2U * k + 1U].op = I915_IR_STORE_OUTPUT;
+		many[2U * k + 1U].src[0] = k;
+		many[2U * k + 1U].location = k;
+	}
+	memset(&ir, 0, sizeof(ir));
+	ir.stage = I915_STAGE_VERTEX;
+	ir.instructions = many;
+	ir.instruction_count = 32U;
+	ir.value_count = 16U;
+	{
+		struct i915_shader_binary *binary = (struct i915_shader_binary *)1;
+
+		assert(drv_i915_shader_compile(&ir, &binary) == 0 && binary != NULL);
+		eu_model_init(m);
+		for (c = 0U; c < 8U; c++)
+			for (k = 0U; k < 64U; k++)
+				m->grf[COMPILE_PAYLOAD_GRF + k][c] = 0x1000U * k + c;
+		eu_model_run(m, binary);
+		assert(m->ended != 0 && m->vue_written == (1ULL << 18) - 1U);
+		for (c = 0U; c < 8U; c++)
+			for (k = 0U; k < 16U; k++)
+				assert(m->vue[2U + k][0][c] == 0x1000U * (4U * k) + c);
+		drv_i915_shader_binary_free(binary);
+		ir.instruction_count = 24U;             /* twelve of each fit with the VUE staged */
+		assert(drv_i915_shader_compile(&ir, &binary) == 0 && binary->scratch_bytes == 0U);
+		drv_i915_shader_binary_free(binary);
+	}
+
+	drv_i915_shader_binary_free(vary_vert);
+	drv_i915_shader_binary_free(vary_frag);
+	drv_i915_shader_binary_free(subset);
+	drv_i915_shader_binary_free(vin_vert);
+	drv_i915_shader_binary_free(vin_frag);
+	drv_i915_shader_binary_free(matrix_vert);
+	drv_i915_shader_binary_free(vio_vert);
+	free(m);
+	printf("  EU model: vary16.vert stages 16 varyings, vary16.frag / subset.frag (5 of 16) read them, vin16.vert reads 16 attributes, matrix.vert places its corners; a hand-made 16 attributes + 16 varyings gathers its VUE\n");
 }
 
 int
@@ -1351,6 +2047,8 @@ main(void)
 	test_eu_branches_and_discard();
 	test_eu_vertex_shaders();
 	test_eu_mview();
+	test_eu_generality_fragment();
+	test_eu_generality_interfaces();
 	assert(fixture_live == 0U);
 	printf("i915 vk compile host test PASS\n");
 	return 0;

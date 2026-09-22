@@ -32,8 +32,26 @@
 /* ...and go this far away. */
 #define CAMERA_FAR_LIMIT	20.0f
 
+/*
+ * What one view of the camera is made of: the rotation (column-major), the
+ * translation that follows it, and the perspective and depth terms.
+ *
+ * It lives on the stack of the function turning a camera into the push
+ * constants or the scene block, so both see the very same numbers.
+ */
+struct camera_frame {
+	float rotation[9];
+	float translation[3];
+	float focal;
+	float aspect;
+	float depth_scale;
+	float depth_offset;
+};
+
 static float camera_radians(float degrees);
 static void camera_rotation(const struct mview_camera *camera, float rotation[9]);
+static void camera_frame(const struct mview_camera *camera, uint32_t width, uint32_t height, struct camera_frame *frame);
+static void camera_light(struct mview_scene *scene, uint32_t index, const float position[4], const float color[4], const float factors[4]);
 
 /*
  * Places the camera so that the whole bounding sphere is visible.
@@ -236,35 +254,194 @@ mview_camera_push(
 	uint32_t height,
 	struct mview_push *push)
 {
-	float rotation[9];
-	float translation[3];
-	float focal;
-	float aspect;
+	struct camera_frame frame;
+	uint32_t column;
+	uint32_t row;
+
+	/* The rotation, translation and projection terms of the view. */
+	camera_frame(camera, width, height, &frame);
+
+	/*
+	 * Composes projection and view: each clip column is the projection of one
+	 * view-matrix column.  Clip w is the negated view z.
+	 */
+	memset(push->clip, 0, sizeof(push->clip));
+	for (column = 0U; column < 3U; column++) {
+		push->clip[column * 4U + 0U] = frame.focal / frame.aspect * frame.rotation[column * 3U + 0U];
+		push->clip[column * 4U + 1U] = -frame.focal * frame.rotation[column * 3U + 1U];
+		push->clip[column * 4U + 2U] = frame.depth_scale * frame.rotation[column * 3U + 2U];
+		push->clip[column * 4U + 3U] = -frame.rotation[column * 3U + 2U];
+	}
+
+	/* The fourth column projects the translation, which carries a w of one. */
+	push->clip[12] = frame.focal / frame.aspect * frame.translation[0];
+	push->clip[13] = -frame.focal * frame.translation[1];
+	push->clip[14] = frame.depth_scale * frame.translation[2] + frame.depth_offset;
+	push->clip[15] = -frame.translation[2];
+
+	/* Normals only turn with the model; each column is padded to four floats. */
+	memset(push->normal, 0, sizeof(push->normal));
+	for (column = 0U; column < 3U; column++) {
+		for (row = 0U; row < 3U; row++)
+			push->normal[column * 4U + row] = frame.rotation[column * 3U + row];
+	}
+
+	/* Succeeded: the push block holds the transforms of the current view. */
+	return;
+}
+
+/*
+ * Fills the scene block of the per-pixel shading from the camera.
+ *
+ * The model matrix turns the model about its centre (the rotation, then the
+ * rotated centre moved to the origin), the view matrix moves it to the pan
+ * offset in front of the viewer, and the projection is the one the push
+ * constants compose with them: projection * view * model is the push block's
+ * clip transform.  The normal matrix is the rotation.  The lights sit at
+ * fixed places of the view, so a reset restores the first frame exactly:
+ * a directional light from the upper right front, a warm point light to the
+ * upper left and a cool one to the lower right, both in front of the model
+ * and fading with the distance in units of the model's radius.
+ */
+void
+mview_camera_scene(
+	const struct mview_camera *camera,
+	uint32_t width,
+	uint32_t height,
+	struct mview_scene *scene)
+{
+	static const float ambient[4] = { 0.16f, 0.16f, 0.18f, 0.0f };
+	static const float key_color[4] = { 0.55f, 0.55f, 0.55f, 0.35f };
+	static const float warm_color[4] = { 0.95f, 0.62f, 0.35f, 0.5f };
+	static const float cool_color[4] = { 0.3f, 0.45f, 0.95f, 0.4f };
+	struct camera_frame frame;
+	float position[4];
+	float factors[4];
+	float radius;
+	uint32_t column;
+	uint32_t row;
+
+	/* The rotation, translation and projection terms of the view. */
+	camera_frame(camera, width, height, &frame);
+	memset(scene, 0, sizeof(*scene));
+
+	/* The model matrix: the rotation, and the rotated centre moved to the origin. */
+	for (column = 0U; column < 3U; column++) {
+		for (row = 0U; row < 3U; row++)
+			scene->model[column * 4U + row] = frame.rotation[column * 3U + row];
+	}
+
+	for (row = 0U; row < 3U; row++) {
+		scene->model[12U + row] = 0.0f;
+		for (column = 0U; column < 3U; column++)
+			scene->model[12U + row] -= frame.rotation[column * 3U + row] * camera->center[column];
+	}
+
+	scene->model[15] = 1.0f;
+
+	/* The view matrix: the pan offset in front of the viewer. */
+	scene->view[0] = 1.0f;
+	scene->view[5] = 1.0f;
+	scene->view[10] = 1.0f;
+	scene->view[12] = camera->pan[0];
+	scene->view[13] = camera->pan[1];
+	scene->view[14] = -camera->distance;
+	scene->view[15] = 1.0f;
+
+	/* The projection: the perspective scale (y flipped) and the depth mapping, w the negated view z. */
+	scene->projection[0] = frame.focal / frame.aspect;
+	scene->projection[5] = -frame.focal;
+	scene->projection[10] = frame.depth_scale;
+	scene->projection[11] = -1.0f;
+	scene->projection[14] = frame.depth_offset;
+
+	/* The normal matrix: normals only turn with the model. */
+	for (column = 0U; column < 3U; column++) {
+		for (row = 0U; row < 3U; row++)
+			scene->normal[column * 4U + row] = frame.rotation[column * 3U + row];
+	}
+
+	scene->normal[15] = 1.0f;
+
+	/* The ambient light. */
+	memcpy(scene->ambient, ambient, sizeof(scene->ambient));
+
+	/* The lights are placed and faded in units of the model's radius; a model of no size counts as one. */
+	radius = camera->radius;
+	if (radius <= 0.0f)
+		radius = 1.0f;
+
+	/* The directional light, from the direction the per-vertex shading uses. */
+	position[0] = 0.267261f;
+	position[1] = 0.534522f;
+	position[2] = 0.801784f;
+	position[3] = 0.0f;
+	factors[0] = 1.0f;
+	factors[1] = 0.0f;
+	factors[2] = 0.0f;
+	factors[3] = 24.0f;
+	camera_light(scene, 0U, position, key_color, factors);
+
+	/* The warm point light, upper left and in front of the model. */
+	position[0] = -1.2f * radius;
+	position[1] = 0.9f * radius;
+	position[2] = -camera->distance + 1.5f * radius;
+	position[3] = 1.0f;
+	factors[0] = 1.0f;
+	factors[1] = 0.35f / radius;
+	factors[2] = 0.25f / (radius * radius);
+	factors[3] = 32.0f;
+	camera_light(scene, 1U, position, warm_color, factors);
+
+	/* The cool point light, lower right and in front of the model. */
+	position[0] = 1.4f * radius;
+	position[1] = -0.4f * radius;
+	position[2] = -camera->distance + 1.2f * radius;
+	position[3] = 1.0f;
+	factors[0] = 1.0f;
+	factors[1] = 0.3f / radius;
+	factors[2] = 0.2f / (radius * radius);
+	factors[3] = 16.0f;
+	camera_light(scene, 2U, position, cool_color, factors);
+
+	/* Succeeded: the scene block holds the transforms and lights of the current view. */
+	return;
+}
+
+/*
+ * Computes the rotation, the translation and the projection terms of the
+ * camera's current view, in the order the push constants always have.
+ */
+static void
+camera_frame(
+	const struct mview_camera *camera,
+	uint32_t width,
+	uint32_t height,
+	struct camera_frame *frame)
+{
 	float near_plane;
 	float far_plane;
-	float depth_scale;
-	float depth_offset;
 	uint32_t column;
 	uint32_t row;
 
 	/* The rotation is the combined pitch and yaw, column-major. */
-	camera_rotation(camera, rotation);
+	camera_rotation(camera, frame->rotation);
 
 	/* The translation carries the rotated centre to the pan offset in front of the viewer. */
 	for (row = 0U; row < 3U; row++) {
-		translation[row] = 0.0f;
+		frame->translation[row] = 0.0f;
 		for (column = 0U; column < 3U; column++)
-			translation[row] -= rotation[column * 3U + row] * camera->center[column];
+			frame->translation[row] -= frame->rotation[column * 3U + row] * camera->center[column];
 	}
 
-	translation[0] += camera->pan[0];
-	translation[1] += camera->pan[1];
-	translation[2] -= camera->distance;
+	frame->translation[0] += camera->pan[0];
+	frame->translation[1] += camera->pan[1];
+	frame->translation[2] -= camera->distance;
 
 	/* A degenerate window is treated as square rather than dividing by zero. */
-	aspect = 1.0f;
+	frame->aspect = 1.0f;
 	if (width != 0U && height != 0U)
-		aspect = (float)width / (float)height;
+		frame->aspect = (float)width / (float)height;
 
 	/*
 	 * The depth range brackets the bounding sphere; a pan cannot move the
@@ -276,37 +453,24 @@ mview_camera_push(
 		near_plane = camera->distance * 0.01f;
 
 	/* The perspective scale and the depth mapping onto Vulkan's 0..1 range. */
-	focal = 1.0f / tanf(camera_radians(0.5f * CAMERA_FOV_DEGREES));
-	depth_scale = far_plane / (near_plane - far_plane);
-	depth_offset = near_plane * far_plane / (near_plane - far_plane);
+	frame->focal = 1.0f / tanf(camera_radians(0.5f * CAMERA_FOV_DEGREES));
+	frame->depth_scale = far_plane / (near_plane - far_plane);
+	frame->depth_offset = near_plane * far_plane / (near_plane - far_plane);
+}
 
-	/*
-	 * Composes projection and view: each clip column is the projection of one
-	 * view-matrix column.  Clip w is the negated view z.
-	 */
-	memset(push->clip, 0, sizeof(push->clip));
-	for (column = 0U; column < 3U; column++) {
-		push->clip[column * 4U + 0U] = focal / aspect * rotation[column * 3U + 0U];
-		push->clip[column * 4U + 1U] = -focal * rotation[column * 3U + 1U];
-		push->clip[column * 4U + 2U] = depth_scale * rotation[column * 3U + 2U];
-		push->clip[column * 4U + 3U] = -rotation[column * 3U + 2U];
-	}
-
-	/* The fourth column projects the translation, which carries a w of one. */
-	push->clip[12] = focal / aspect * translation[0];
-	push->clip[13] = -focal * translation[1];
-	push->clip[14] = depth_scale * translation[2] + depth_offset;
-	push->clip[15] = -translation[2];
-
-	/* Normals only turn with the model; each column is padded to four floats. */
-	memset(push->normal, 0, sizeof(push->normal));
-	for (column = 0U; column < 3U; column++) {
-		for (row = 0U; row < 3U; row++)
-			push->normal[column * 4U + row] = rotation[column * 3U + row];
-	}
-
-	/* Succeeded: the push block holds the transforms of the current view. */
-	return;
+/* Stores one light of the scene block. */
+static void
+camera_light(
+	struct mview_scene *scene,
+	uint32_t index,
+	const float position[4],
+	const float color[4],
+	const float factors[4])
+{
+	/* The position or direction, the colour and specular strength, the attenuation and shininess. */
+	memcpy(scene->light_position[index], position, sizeof(scene->light_position[index]));
+	memcpy(scene->light_color[index], color, sizeof(scene->light_color[index]));
+	memcpy(scene->light_factors[index], factors, sizeof(scene->light_factors[index]));
 }
 
 /* Converts an angle from degrees to radians. */

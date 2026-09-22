@@ -9,7 +9,9 @@ scenario:
   vkdemo   the captured frame's RGB SHA-256 equals the one vkdemo reports for the frame it presented
   wayland  frames of wltest through zwl are captured (saved for inspection)
   mview    the model viewer through zwl: the p013 input sequence and six checks, and the similarity of
-           each view to the Venus images of p013 when a reference directory is given
+           each view to the Venus images of p013 when a reference directory is given (--no-venus skips
+           that comparison, for a viewer run the p013 images do not describe, such as --shading=pixel);
+           the six views are also laid out on one sheet, sheet.png
 
 The area layout is the comment at the top of src/drivers/gpu/i915/display/capture.c.
 
@@ -25,6 +27,7 @@ import socket
 import struct
 import sys
 import time
+import zlib
 
 # Formats of the gpu-display UAPI.
 FORMAT_BGRA8888 = 1
@@ -188,6 +191,34 @@ def psnr(left, right):
     return math.inf if error == 0 else 10 * math.log10(255 * 255 / error)
 
 
+def write_sheet(paths, output, columns=3, gap=4):
+    """Lays images of one size out in a grid on a grey sheet and writes it as an RGB PNG."""
+    images = [read_ppm(path) for path in paths]
+    width, height = images[0][0], images[0][1]
+    rows = (len(images) + columns - 1) // columns
+    sheet_width = columns * width + (columns + 1) * gap
+    sheet_height = rows * height + (rows + 1) * gap
+    sheet = bytearray(b'\x60' * (sheet_width * sheet_height * 3))
+    for number, (image_width, image_height, pixels) in enumerate(images):
+        if (image_width, image_height) != (width, height):
+            raise ValueError('sheet images differ in size')
+        left = gap + (number % columns) * (width + gap)
+        top = gap + (number // columns) * (height + gap)
+        for row in range(height):
+            start = ((top + row) * sheet_width + left) * 3
+            sheet[start:start + width * 3] = pixels[row * width * 3:(row + 1) * width * 3]
+    raw = b''.join(b'\x00' + bytes(sheet[row * sheet_width * 3:(row + 1) * sheet_width * 3])
+                   for row in range(sheet_height))
+
+    def chunk(kind, data):
+        return (struct.pack('>I', len(data)) + kind + data +
+                struct.pack('>I', zlib.crc32(kind + data) & 0xffffffff))
+
+    header = struct.pack('>IIBBBBB', sheet_width, sheet_height, 8, 2, 0, 0, 0)
+    Path(output).write_bytes(b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', header) +
+                             chunk(b'IDAT', zlib.compress(raw, 9)) + chunk(b'IEND', b''))
+
+
 def coloured(path):
     """The share of pixels that are neither the most common colour (the clear colour) nor black."""
     width, height, pixels = read_ppm(path)
@@ -280,6 +311,8 @@ def run(args):
 def mview(args, qmp, capture, report, wait, settled):
     """The p013 input sequence and checks on the capture display."""
     token = args.token
+    # The frames the input causes must arrive within the run's budget.
+    deadline = time.monotonic() + args.timeout
 
     def events(items):
         qmp.call('input-send-event', {'events': items})
@@ -338,8 +371,17 @@ def mview(args, qmp, capture, report, wait, settled):
     key('q')
     report['viewer_done'] = wait(r'MVIEW DONE run=' + re.escape(token) + r'[^\r\n]*', 'viewer exit').group(0)
 
-    # The Venus images of p013 are a reference: another GPU, so similar rather than equal.
-    if args.reference:
+    # The six views on one sheet, in the order they were taken.
+    tags = ('initial', 'rotate', 'pan', 'zoom', 'keys', 'reset')
+    sheet = Path(args.output) / 'sheet.png'
+    write_sheet([report['images'][tag]['path'] for tag in tags], sheet)
+    report['sheet'] = str(sheet)
+
+    # The Venus images of p013 are a reference: another GPU, so similar rather than equal.  A run they do not
+    # describe (--no-venus) skips the comparison.
+    if args.no_venus:
+        report['psnr_vs_venus'] = 'skipped (--no-venus)'
+    elif args.reference:
         report['psnr_vs_venus'] = {}
         for tag in ('initial', 'rotate', 'pan', 'zoom', 'keys', 'reset'):
             reference = Path(args.reference) / f'{tag}.ppm'
@@ -360,6 +402,8 @@ def main():
     parser.add_argument('--token', default='mv1')
     parser.add_argument('--reference', help='directory of the Venus images (initial.ppm ...)')
     parser.add_argument('--min-psnr', type=float, default=20.0)
+    parser.add_argument('--no-venus', action='store_true',
+                        help='skip the comparison with the Venus images (a viewer run they do not describe)')
     return run(parser.parse_args())
 
 

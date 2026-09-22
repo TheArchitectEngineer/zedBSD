@@ -19,6 +19,9 @@ SHADERS = (
     ('mview.vert', 'vertex', 'mview_vertex_shader'),
     ('mview.frag', 'fragment', 'mview_fragment_shader'),
     ('cutout.frag', 'fragment', 'mview_cutout_shader'),
+    ('pixel.vert', 'vertex', 'mview_pixel_vertex_shader'),
+    ('pixel.frag', 'fragment', 'mview_pixel_fragment_shader'),
+    ('pixel-cutout.frag', 'fragment', 'mview_pixel_cutout_shader'),
 )
 
 

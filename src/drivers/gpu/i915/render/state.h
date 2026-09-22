@@ -72,8 +72,18 @@ struct i915_gfx_kernels {
 	uint32_t vs_input_count;
 	uint32_t vs_inputs[I915_GFX_MAX_VERTEX_ATTRIBUTES];
 
-	/* The VUE slots after the position, which are the fragment inputs. */
+	/* The VUE slots after the position the vertex kernel writes. */
 	uint32_t varyings;
+
+	/*
+	 * The fragment inputs: when ps_inputs_mapped is nonzero, the pixel
+	 * kernel reads ps_input_count inputs and input n (in its payload order)
+	 * comes from VUE slot ps_input_slots[n] after the position; otherwise (a
+	 * rectangle kernel) input n is slot n of the `varyings` slots.
+	 */
+	uint32_t ps_inputs_mapped;
+	uint32_t ps_input_count;
+	uint32_t ps_input_slots[I915_GFX_MAX_VARYINGS];
 
 	/* The pixel kernel's first payload register and sampled images. */
 	uint32_t ps_grf_start;
@@ -89,6 +99,18 @@ struct i915_gfx_kernels {
 
 	/* Nonzero when the pixel kernel discards pixels (3DSTATE_PS_EXTRA Pixel Shader Kills Pixel). */
 	uint32_t ps_kills;
+
+	/*
+	 * The scratch memory a thread of each kernel spills to (a power of two
+	 * from 1 KiB, 0 for a kernel that spills nothing); the session's scratch
+	 * buffer the draw makes the general state base (0 when no kernel
+	 * spills), and where each stage's part starts in it.
+	 */
+	uint32_t vs_scratch_bytes;
+	uint32_t ps_scratch_bytes;
+	uint64_t scratch_base;
+	uint64_t vs_scratch_offset;
+	uint64_t ps_scratch_offset;
 };
 
 /*
@@ -122,7 +144,7 @@ int drv_i915_gfx_surface_write(uint32_t *rss, const struct i915_gfx_surface *sur
 void drv_i915_gfx_sampler_write(uint32_t *state, const struct i915_gfx_sampler *sampler);
 void drv_i915_gfx_instruction_heap_clear(uint8_t *window);
 
-void drv_i915_gfx_emit_context_setup(struct i915_gfx_batch *batch, uint64_t state_va, uint64_t instruction_va, uint32_t mocs);
+void drv_i915_gfx_emit_context_setup(struct i915_gfx_batch *batch, uint64_t state_va, uint64_t instruction_va, uint64_t general_va, uint32_t mocs);
 int drv_i915_gfx_emit_vertex_input(struct i915_gfx_batch *batch, const struct i915_gfx_draw_state *state, const struct i915_gfx_kernels *kernels, uint32_t mocs);
 int drv_i915_gfx_emit_index_buffer(struct i915_gfx_batch *batch, const struct i915_gfx_draw_state *state, uint32_t mocs);
 void drv_i915_gfx_emit_urb(struct i915_gfx_batch *batch, uint32_t entry_size);

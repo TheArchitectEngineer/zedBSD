@@ -29,6 +29,30 @@
       "binary": "cutout.frag.spv",
       "binary_sha256": "cc78e1f184acd9924a60986ec4ba0949eda1ab8f1fef7b41553a308952cab153",
       "bytes": 1400
+    },
+    "pixel.vert": {
+      "stage": "vertex",
+      "array": "mview_pixel_vertex_shader",
+      "source_sha256": "51cb5c5086ac0ea24afe09c94434ca3f5a8b056feedcc36e81605f6c9515222c",
+      "binary": "pixel.vert.spv",
+      "binary_sha256": "f0c5318249c02f01e3614a18f68687e745ad9605e659981f099be22f8a34e19f",
+      "bytes": 2644
+    },
+    "pixel.frag": {
+      "stage": "fragment",
+      "array": "mview_pixel_fragment_shader",
+      "source_sha256": "c2b3746b389cc6eaf6940d8fc90e6c7a1b2c411fc166636632f0482f6fb6719d",
+      "binary": "pixel.frag.spv",
+      "binary_sha256": "34b99931bfb3bb83c834d99667b24f4394df3186531d40af07fee1d4f1cf8f75",
+      "bytes": 5084
+    },
+    "pixel-cutout.frag": {
+      "stage": "fragment",
+      "array": "mview_pixel_cutout_shader",
+      "source_sha256": "321747c78c1febbd3a3ee11a23760137ef277ee9151b7b5b45c2f4fd97a4189b",
+      "binary": "pixel-cutout.frag.spv",
+      "binary_sha256": "c852924ec942f0cf3055a595b5f39c5da785a45b729ec4b1b913e626a47d1073",
+      "bytes": 5168
     }
   }
 }

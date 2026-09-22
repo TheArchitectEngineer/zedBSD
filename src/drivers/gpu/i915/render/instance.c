@@ -56,6 +56,7 @@ static int i915_instance_features(struct i915_render_session *session, struct i9
 static int i915_instance_memory_properties(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int i915_instance_queue_families(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static void i915_instance_format_features(uint32_t format, VkFormatProperties *properties);
+static uint32_t i915_instance_usage_features(uint32_t usage);
 static int i915_instance_format_properties(struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int i915_instance_image_format_properties(struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int i915_instance_create_device(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
@@ -565,6 +566,47 @@ i915_instance_format_features(
 	}
 }
 
+/*
+ * Reports the format features an image usage needs: sampling, rendering and
+ * copying each need their own.  A storage image needs the storage feature,
+ * which no format claims.  XXX: an input or transient attachment is not
+ * mapped to a feature.
+ */
+static uint32_t
+i915_instance_usage_features(
+	uint32_t usage)
+{
+	uint32_t required;
+
+	/* A copy out of the image needs the transfer source feature. */
+	required = 0U;
+	if ((usage & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) != 0U)
+		required |= VK_FORMAT_FEATURE_TRANSFER_SRC_BIT;
+
+	/* A copy into the image needs the transfer destination feature. */
+	if ((usage & VK_IMAGE_USAGE_TRANSFER_DST_BIT) != 0U)
+		required |= VK_FORMAT_FEATURE_TRANSFER_DST_BIT;
+
+	/* Sampling needs the sampled image feature. */
+	if ((usage & VK_IMAGE_USAGE_SAMPLED_BIT) != 0U)
+		required |= VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
+
+	/* A storage image needs the storage feature. */
+	if ((usage & VK_IMAGE_USAGE_STORAGE_BIT) != 0U)
+		required |= VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT;
+
+	/* Rendering colour into the image needs the colour attachment feature. */
+	if ((usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) != 0U)
+		required |= VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
+
+	/* Rendering depth into the image needs the depth attachment feature. */
+	if ((usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) != 0U)
+		required |= VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
+
+	/* Succeeded: the features the usage needs. */
+	return required;
+}
+
 /* vkGetPhysicalDeviceFormatProperties: [physical][format][present] -> [present][VkFormatProperties]. */
 static int
 i915_instance_format_properties(
@@ -603,24 +645,40 @@ i915_instance_image_format_properties(
 	VkFormatProperties properties;
 	uint32_t format;
 	uint32_t type;
+	uint32_t tiling;
+	uint32_t usage;
+	uint32_t features;
+	uint32_t required;
 
-	/* Reads the format and the type, and skips the rest. */
+	/* Reads the format, the type, the tiling and the usage, and skips the create flags. */
 	(void)drv_i915_wire_read_u64(reader);
 	format = drv_i915_wire_read_u32(reader);
 	type = drv_i915_wire_read_u32(reader);
-	(void)drv_i915_wire_read_u32(reader);
-	(void)drv_i915_wire_read_u32(reader);
+	tiling = drv_i915_wire_read_u32(reader);
+	usage = drv_i915_wire_read_u32(reader);
 	(void)drv_i915_wire_read_u32(reader);
 	(void)drv_i915_wire_read_u64(reader);
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* Looks the format up. */
+	/* Looks the format up and takes the features of the tiling asked about. */
 	i915_instance_format_features(format, &properties);
 	memset(&image, 0, sizeof(image));
+	features = properties.optimalTilingFeatures;
+	if (tiling == VK_IMAGE_TILING_LINEAR)
+		features = properties.linearTilingFeatures;
 
-	/* A format without features or an image that is not 2D replies VK_ERROR_FORMAT_NOT_SUPPORTED. */
-	if (properties.optimalTilingFeatures == 0U || type != VK_IMAGE_TYPE_2D) {
+	/* Finds the features the usage needs; a usage the executor never implements needs a feature no format has. */
+	required = i915_instance_usage_features(usage);
+
+	/*
+	 * A format without features in that tiling, an image that is not 2D and
+	 * a usage the features do not cover reply VK_ERROR_FORMAT_NOT_SUPPORTED.
+	 * XXX: the create flags are not consulted.
+	 */
+	if (features == 0U ||
+	    type != VK_IMAGE_TYPE_2D ||
+	    (features & required) != required) {
 		drv_i915_wire_reply_u32(reply, (uint32_t)VK_ERROR_FORMAT_NOT_SUPPORTED);
 		drv_i915_wire_reply_u64(reply, 1U);
 		i915_vkc_enc_VkImageFormatProperties(reply, &image);

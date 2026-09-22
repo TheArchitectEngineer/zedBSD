@@ -22,6 +22,7 @@
 #include "i915-vk-render-stubs.inc"
 
 #include "../../../src/drivers/gpu/i915/render/batch.h"
+#include "../../../src/drivers/gpu/i915/render/heap.h"
 #include "../../../src/drivers/gpu/i915/render/state.h"
 
 #include "../../../src/drivers/gpu/i915/intel/commands.h"
@@ -41,6 +42,12 @@
 #define FIXTURE_DESTROY_BUFFER			51U
 #define FIXTURE_CREATE_IMAGE			54U
 #define FIXTURE_DESTROY_IMAGE			55U
+#define FIXTURE_CREATE_DSL			72U
+#define FIXTURE_DESTROY_DSL			73U
+#define FIXTURE_CREATE_DESCRIPTOR_POOL		74U
+#define FIXTURE_DESTROY_DESCRIPTOR_POOL		75U
+#define FIXTURE_ALLOCATE_DESCRIPTOR_SETS	77U
+#define FIXTURE_UPDATE_DESCRIPTOR_SETS		79U
 #define FIXTURE_CREATE_COMMAND_POOL		85U
 #define FIXTURE_DESTROY_COMMAND_POOL		86U
 #define FIXTURE_RESET_COMMAND_POOL		87U
@@ -52,6 +59,8 @@
 #define FIXTURE_CMD_SET_VIEWPORT		94U
 #define FIXTURE_CMD_SET_SCISSOR			95U
 #define FIXTURE_CMD_SET_LINE_WIDTH		96U
+#define FIXTURE_CMD_SET_BLEND_CONSTANTS		98U
+#define FIXTURE_CMD_BIND_DESCRIPTOR_SETS	103U
 #define FIXTURE_CMD_BIND_INDEX_BUFFER		104U
 #define FIXTURE_CMD_BIND_VERTEX_BUFFERS		105U
 #define FIXTURE_CMD_DRAW			106U
@@ -77,6 +86,9 @@
 #define FIXTURE_CB0		0xa00ULL
 #define FIXTURE_CB1		0xa01ULL
 #define FIXTURE_FENCE		0xf00ULL
+#define FIXTURE_DSL		0x600ULL
+#define FIXTURE_DESCRIPTOR_POOL	0x700ULL
+#define FIXTURE_SET		0x800ULL
 
 /* The storage blob: its size and the GPU address it is bound at. */
 #define FIXTURE_STORAGE_BYTES	262144U
@@ -137,6 +149,12 @@ static void test_indexed_dynamic(void);
 static void test_copy_buffer(void);
 static void test_mip_transfers(void);
 static void test_recording_limits(void);
+static void fixture_state_image(struct i915_gfx_image *image, struct i915_gfx_memory *memory, uint32_t side, uint64_t offset);
+static void test_blend_state(void);
+static void fixture_dsl(uint64_t identity, const uint32_t *numbers, const uint32_t *types, uint32_t count);
+static void fixture_buffer_write(uint64_t set, uint32_t binding, uint32_t type, uint64_t offset, uint64_t range);
+static void fixture_bind_set(uint64_t cmdbuf, uint32_t first, uint64_t set, const uint32_t *offsets, uint32_t offset_count);
+static void test_uniform_bindings(void);
 
 /*
  * Runs the command buffer checks.
@@ -151,6 +169,8 @@ main(void)
 	test_copy_buffer();
 	test_mip_transfers();
 	test_recording_limits();
+	test_blend_state();
+	test_uniform_bindings();
 
 	/* Succeeded: every check held. */
 	printf("i915 vk cmdbuf host test PASS\n");
@@ -1568,6 +1588,610 @@ test_mip_transfers(void)
 	fixture_destroy(FIXTURE_FREE_MEMORY, FIXTURE_MEMORY);
 	reply_bytes = stub_execute_ok(&fixture_wire);
 	assert(reply_bytes == 7U * 4U);
+
+	/* Closes the session; nothing stays allocated. */
+	stub_session_close();
+	assert(stub_live == 0U);
+}
+
+/* Describes a linear RGBA8 image of one level in the fixture's storage at `offset`. */
+static void
+fixture_state_image(
+	struct i915_gfx_image *image,
+	struct i915_gfx_memory *memory,
+	uint32_t side,
+	uint64_t offset)
+{
+	/* A square RGBA8 image of one level. */
+	memset(image, 0, sizeof(*image));
+	image->format = VK_FORMAT_R8G8B8A8_UNORM;
+	image->width = side;
+	image->height = side;
+	image->pitch = side * 4U;
+	image->bytes = (uint64_t)side * side * 4U;
+	image->levels = 1U;
+	image->memory = memory;
+	image->offset = offset;
+}
+
+/*
+ * The state a draw writes for blending, sampled images and uniform blocks
+ * (render/state.c): BLEND_STATE and the blend constants of COLOR_CALC_STATE
+ * as the pipeline or the dynamic state says, 3DSTATE_PS_BLEND agreeing with
+ * BLEND_STATE; one binding table entry, surface state and sampler per
+ * sampled image of the kernel, each from its own set and binding; and the
+ * push data of a stage, its push constants then each uniform block's range,
+ * moved by the dynamic offset of a dynamic uniform buffer.
+ */
+static void
+test_blend_state(void)
+{
+	static uint8_t page[I915_GFX_SLOT_BYTES];
+	static const uint32_t sampler_sets[3] = { 0U, 0U, 1U };
+	static const uint32_t sampler_bindings[3] = { 0U, 2U, 1U };
+	struct i915_shader_block blocks[2];
+	struct i915_gfx_pipeline pipeline;
+	struct i915_gfx_draw_state state;
+	struct i915_gfx_kernels kernels;
+	struct i915_gem_object object;
+	struct i915_gfx_memory memory;
+	struct i915_gfx_image target;
+	struct i915_gfx_image images[3];
+	struct i915_gfx_view views[3];
+	struct i915_gfx_sampler samplers[3];
+	struct i915_gfx_dset sets[2];
+	struct i915_gfx_buffer uniforms;
+	struct i915_gfx_batch batch;
+	const uint32_t *dynamic;
+	const uint32_t *surface;
+	const uint32_t *push;
+	uint32_t commands[8];
+	uint32_t *words;
+	uint32_t index;
+	int error;
+
+	/* The fixture's storage at 0x7000_0000: the target at 0, three 4x4 textures after it, uniforms at 0x8000. */
+	memset(&object, 0, sizeof(object));
+	object.bytes = sizeof(fixture_storage);
+	object.va = 0x70000000ULL;
+	object.run.paddr = (hal_physaddr_t)(uintptr_t)fixture_storage;
+	memset(&memory, 0, sizeof(memory));
+	memory.object = &object;
+	memory.size = sizeof(fixture_storage);
+	fixture_state_image(&target, &memory, 16U, 0U);
+	for (index = 0U; index < 3U; index++) {
+		fixture_state_image(&images[index], &memory, 4U, 0x1000U + index * 0x100U);
+		memset(&views[index], 0, sizeof(views[index]));
+		views[index].image = &images[index];
+		views[index].format = VK_FORMAT_R8G8B8A8_UNORM;
+		views[index].level_count = 1U;
+		memset(&samplers[index], 0, sizeof(samplers[index]));
+	}
+
+	/* Texture 0 and 2 are sampled linear, texture 1 nearest, so each sampler shows whose it is. */
+	samplers[0].mag_filter = VK_FILTER_LINEAR;
+	samplers[0].min_filter = VK_FILTER_LINEAR;
+	samplers[2].mag_filter = VK_FILTER_LINEAR;
+
+	/* Set 0 holds textures 0 and 1 at bindings 0 and 2, set 1 texture 2 at binding 1 and the uniforms. */
+	memset(sets, 0, sizeof(sets));
+	sets[0].slots[0].view = &views[0];
+	sets[0].slots[0].sampler = &samplers[0];
+	sets[0].slots[2].view = &views[1];
+	sets[0].slots[2].sampler = &samplers[1];
+	sets[1].slots[1].view = &views[2];
+	sets[1].slots[1].sampler = &samplers[2];
+	memset(&uniforms, 0, sizeof(uniforms));
+	uniforms.size = 1024U;
+	uniforms.memory = &memory;
+	uniforms.offset = 0x8000U;
+	sets[1].slots[3].buffer = &uniforms;
+	sets[1].slots[3].offset = 64U;
+	sets[1].slots[3].range = VK_WHOLE_SIZE;
+	sets[1].slots[4].buffer = &uniforms;
+	sets[1].slots[4].offset = 0U;
+	sets[1].slots[4].range = 256U;
+	sets[1].slots[4].dynamic = 1;
+
+	/* The uniform buffer's words are their own byte offsets. */
+	words = (uint32_t *)(void *)(fixture_storage + 0x8000U);
+	for (index = 0U; index < 256U; index++)
+		words[index] = index * 4U;
+
+	/* A pipeline blending source alpha over the destination, alpha by ONE and ZERO, writing R, G and A. */
+	memset(&pipeline, 0, sizeof(pipeline));
+	pipeline.blend_enable = 1U;
+	pipeline.blend_src_color = VK_BLEND_FACTOR_SRC_ALPHA;
+	pipeline.blend_dst_color = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+	pipeline.blend_color_op = VK_BLEND_OP_ADD;
+	pipeline.blend_src_alpha = VK_BLEND_FACTOR_ONE;
+	pipeline.blend_dst_alpha = VK_BLEND_FACTOR_ZERO;
+	pipeline.blend_alpha_op = VK_BLEND_OP_REVERSE_SUBTRACT;
+	pipeline.blend_constants[0] = 0x3e800000U;
+	pipeline.blend_constants[3] = 0x3f800000U;
+	pipeline.color_write_disable = VK_COLOR_COMPONENT_B_BIT;
+	pipeline.viewport[2] = 0x41800000U;
+	pipeline.viewport[3] = 0x41800000U;
+	pipeline.viewport[5] = 0x3f800000U;
+	pipeline.scissor.extent.width = 16U;
+	pipeline.scissor.extent.height = 16U;
+
+	/* The draw state: the pipeline, both sets, push constants 0..127, dynamic offset 128 for set 1 binding 4. */
+	memset(&state, 0, sizeof(state));
+	state.pipeline = &pipeline;
+	state.dset[0] = &sets[0];
+	state.dset[1] = &sets[1];
+	for (index = 0U; index < I915_GFX_PUSH_BYTES; index++)
+		state.push[index] = (uint8_t)index;
+	state.dynamic_offsets[1][4] = 128U;
+	state.blend_constants[1] = 0x3f000000U;
+
+	/*
+	 * The kernels: a pixel kernel that samples the three textures and reads
+	 * 32 bytes of push constants, then 32 bytes from byte 32 of set 1
+	 * binding 3 and 32 bytes from byte 0 of set 1 binding 4.
+	 */
+	memset(&kernels, 0, sizeof(kernels));
+	kernels.ps_samplers = 3U;
+	kernels.ps_sampler_sets = sampler_sets;
+	kernels.ps_sampler_bindings = sampler_bindings;
+	memset(blocks, 0, sizeof(blocks));
+	blocks[0].set = 1U;
+	blocks[0].binding = 3U;
+	blocks[0].offset = 32U;
+	blocks[0].bytes = 32U;
+	blocks[0].push_offset = 32U;
+	blocks[1].set = 1U;
+	blocks[1].binding = 4U;
+	blocks[1].offset = 0U;
+	blocks[1].bytes = 32U;
+	blocks[1].push_offset = 64U;
+	kernels.ps_push_regs = 3U;
+	kernels.ps_push.regs = 3U;
+	kernels.ps_push.constant_bytes = 32U;
+	kernels.ps_push.block_count = 2U;
+	kernels.ps_push.blocks = blocks;
+
+	/* Writes the state. */
+	error = drv_i915_gfx_write_state(page, &state, &kernels, &target, 0x6U);
+	assert(error == 0);
+	dynamic = (const uint32_t *)(const void *)(page + I915_GFX_DYNAMIC_HEAP);
+	surface = (const uint32_t *)(const void *)(page + I915_GFX_SURFACE_HEAP);
+
+	/*
+	 * BLEND_STATE: the alpha blends by its own factors and function; the
+	 * entry blends SRC_ALPHA / INV_SRC_ALPHA / ADD for the colour and ONE /
+	 * ZERO / REVERSE_SUBTRACT for the alpha, blue unwritten; the clamps.
+	 */
+	assert(dynamic[I915_GFX_DYN_BLEND / 4U] == GEN12_BLEND_INDEPENDENT_ALPHA);
+	assert(dynamic[I915_GFX_DYN_BLEND / 4U + 1U] ==
+	       (GEN12_BLEND_ENABLE |
+		(GEN12_BLENDFACTOR_SRC_ALPHA << GEN12_BLEND_SRC_FACTOR_SHIFT) |
+		(GEN12_BLENDFACTOR_INV_SRC_ALPHA << GEN12_BLEND_DST_FACTOR_SHIFT) |
+		(GEN12_BLENDFUNCTION_ADD << GEN12_BLEND_COLOR_FUNCTION_SHIFT) |
+		(GEN12_BLENDFACTOR_ONE << GEN12_BLEND_SRC_ALPHA_FACTOR_SHIFT) |
+		(GEN12_BLENDFACTOR_ZERO << GEN12_BLEND_DST_ALPHA_FACTOR_SHIFT) |
+		(GEN12_BLENDFUNCTION_REVERSE_SUBTRACT << GEN12_BLEND_ALPHA_FUNCTION_SHIFT) |
+		GEN12_BLEND_WRITE_DISABLE_BLUE));
+	assert(dynamic[I915_GFX_DYN_BLEND / 4U + 2U] == (1U | (1U << 1) | (GEN12_COLORCLAMP_RTFORMAT << 2)));
+
+	/* COLOR_CALC_STATE carries the pipeline's blend constants. */
+	assert(dynamic[I915_GFX_DYN_COLOR_CALC / 4U + 2U] == 0x3e800000U);
+	assert(dynamic[I915_GFX_DYN_COLOR_CALC / 4U + 3U] == 0U);
+	assert(dynamic[I915_GFX_DYN_COLOR_CALC / 4U + 5U] == 0x3f800000U);
+
+	/* 3DSTATE_PS_BLEND repeats the factors and the independent alpha, with a writeable target. */
+	memset(commands, 0, sizeof(commands));
+	batch.cmds = commands;
+	batch.count = 0U;
+	batch.capacity = 8U;
+	batch.overflow = 0;
+	drv_i915_gfx_emit_ps_blend(&batch, &pipeline);
+	assert(batch.count == 2U);
+	assert(commands[0] == GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_PS_BLEND, GEN12_3DSTATE_PS_BLEND_DWORDS));
+	assert(commands[1] ==
+	       (GEN12_PS_BLEND_HAS_WRITEABLE_RT |
+		GEN12_PS_BLEND_ENABLE |
+		GEN12_PS_BLEND_INDEPENDENT_ALPHA |
+		(GEN12_BLENDFACTOR_SRC_ALPHA << GEN12_PS_BLEND_SRC_FACTOR_SHIFT) |
+		(GEN12_BLENDFACTOR_INV_SRC_ALPHA << GEN12_PS_BLEND_DST_FACTOR_SHIFT) |
+		(GEN12_BLENDFACTOR_ONE << GEN12_PS_BLEND_SRC_ALPHA_FACTOR_SHIFT) |
+		(GEN12_BLENDFACTOR_ZERO << GEN12_PS_BLEND_DST_ALPHA_FACTOR_SHIFT)));
+
+	/*
+	 * The binding table: the target at entry 0, then texture n at entry
+	 * 1 + n with its surface state at RSS_TEXTURE + n * RSS_BYTES, each the
+	 * image its set and binding hold.
+	 */
+	assert(surface[0] == I915_GFX_RSS_TARGET);
+	assert(surface[I915_GFX_RSS_TARGET / 4U + 8U] == 0x70000000U);
+	for (index = 0U; index < 3U; index++) {
+		assert(surface[1U + index] == I915_GFX_RSS_TEXTURE + index * I915_GFX_RSS_BYTES);
+		assert(surface[(I915_GFX_RSS_TEXTURE + index * I915_GFX_RSS_BYTES) / 4U + 8U] == 0x70001000U + index * 0x100U);
+	}
+
+	/* Sampler n is the sampler of texture n: linear, nearest, linear magnification only. */
+	assert(((dynamic[I915_GFX_DYN_SAMPLER / 4U] >> GEN12_SAMPLER_MAG_FILTER_SHIFT) & 1U) == 1U);
+	assert(((dynamic[I915_GFX_DYN_SAMPLER / 4U] >> GEN12_SAMPLER_MIN_FILTER_SHIFT) & 1U) == 1U);
+	assert(((dynamic[(I915_GFX_DYN_SAMPLER + I915_GFX_SAMPLER_BYTES) / 4U] >> GEN12_SAMPLER_MAG_FILTER_SHIFT) & 1U) == 0U);
+	assert(((dynamic[(I915_GFX_DYN_SAMPLER + 2U * I915_GFX_SAMPLER_BYTES) / 4U] >> GEN12_SAMPLER_MAG_FILTER_SHIFT) & 1U) == 1U);
+	assert(((dynamic[(I915_GFX_DYN_SAMPLER + 2U * I915_GFX_SAMPLER_BYTES) / 4U] >> GEN12_SAMPLER_MIN_FILTER_SHIFT) & 1U) == 0U);
+
+	/*
+	 * The pixel push data: push constants 0..31; binding 3's bytes 32..63
+	 * of its range at 64 (buffer bytes 96..127); binding 4's bytes 0..31 at
+	 * its dynamic offset 128 (buffer bytes 128..159).
+	 */
+	push = (const uint32_t *)(const void *)(page + I915_GFX_PS_PUSH_BUFFER);
+	assert(page[I915_GFX_PS_PUSH_BUFFER] == 0U);
+	assert(page[I915_GFX_PS_PUSH_BUFFER + 31U] == 31U);
+	for (index = 0U; index < 8U; index++) {
+		assert(push[8U + index] == 96U + index * 4U);
+		assert(push[16U + index] == 128U + index * 4U);
+	}
+
+	/* A pipeline whose blend constants are dynamic takes the ones the command buffer set. */
+	pipeline.dynamic_blend_constants = 1;
+	state.blend_constants_set = 1;
+	error = drv_i915_gfx_write_state(page, &state, &kernels, &target, 0x6U);
+	assert(error == 0);
+	assert(dynamic[I915_GFX_DYN_COLOR_CALC / 4U + 2U] == 0U);
+	assert(dynamic[I915_GFX_DYN_COLOR_CALC / 4U + 3U] == 0x3f000000U);
+
+	/* MIN and MAX use no factors: the hardware is given ONE for both, and the same colour and alpha blend together. */
+	pipeline.blend_src_color = VK_BLEND_FACTOR_SRC_ALPHA;
+	pipeline.blend_dst_color = VK_BLEND_FACTOR_DST_COLOR;
+	pipeline.blend_color_op = VK_BLEND_OP_MAX;
+	pipeline.blend_src_alpha = VK_BLEND_FACTOR_SRC_ALPHA;
+	pipeline.blend_dst_alpha = VK_BLEND_FACTOR_DST_COLOR;
+	pipeline.blend_alpha_op = VK_BLEND_OP_MAX;
+	pipeline.color_write_disable = 0U;
+	error = drv_i915_gfx_write_state(page, &state, &kernels, &target, 0x6U);
+	assert(error == 0);
+	assert(dynamic[I915_GFX_DYN_BLEND / 4U] == 0U);
+	assert(dynamic[I915_GFX_DYN_BLEND / 4U + 1U] ==
+	       (GEN12_BLEND_ENABLE |
+		(GEN12_BLENDFACTOR_ONE << GEN12_BLEND_SRC_FACTOR_SHIFT) |
+		(GEN12_BLENDFACTOR_ONE << GEN12_BLEND_DST_FACTOR_SHIFT) |
+		(GEN12_BLENDFUNCTION_MAX << GEN12_BLEND_COLOR_FUNCTION_SHIFT) |
+		(GEN12_BLENDFACTOR_ONE << GEN12_BLEND_SRC_ALPHA_FACTOR_SHIFT) |
+		(GEN12_BLENDFACTOR_ONE << GEN12_BLEND_DST_ALPHA_FACTOR_SHIFT) |
+		(GEN12_BLENDFUNCTION_MAX << GEN12_BLEND_ALPHA_FUNCTION_SHIFT)));
+
+	/* A constant factor and SUBTRACT: CONST_COLOR and INV_CONST_ALPHA. */
+	pipeline.blend_src_color = VK_BLEND_FACTOR_CONSTANT_COLOR;
+	pipeline.blend_dst_color = VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA;
+	pipeline.blend_color_op = VK_BLEND_OP_SUBTRACT;
+	pipeline.blend_src_alpha = VK_BLEND_FACTOR_CONSTANT_COLOR;
+	pipeline.blend_dst_alpha = VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA;
+	pipeline.blend_alpha_op = VK_BLEND_OP_SUBTRACT;
+	error = drv_i915_gfx_write_state(page, &state, &kernels, &target, 0x6U);
+	assert(error == 0);
+	assert(dynamic[I915_GFX_DYN_BLEND / 4U + 1U] ==
+	       (GEN12_BLEND_ENABLE |
+		(GEN12_BLENDFACTOR_CONST_COLOR << GEN12_BLEND_SRC_FACTOR_SHIFT) |
+		(GEN12_BLENDFACTOR_INV_CONST_ALPHA << GEN12_BLEND_DST_FACTOR_SHIFT) |
+		(GEN12_BLENDFUNCTION_SUBTRACT << GEN12_BLEND_COLOR_FUNCTION_SHIFT) |
+		(GEN12_BLENDFACTOR_CONST_COLOR << GEN12_BLEND_SRC_ALPHA_FACTOR_SHIFT) |
+		(GEN12_BLENDFACTOR_INV_CONST_ALPHA << GEN12_BLEND_DST_ALPHA_FACTOR_SHIFT) |
+		(GEN12_BLENDFUNCTION_SUBTRACT << GEN12_BLEND_ALPHA_FUNCTION_SHIFT)));
+
+	/* An equation that reads a second source is not blended; blending off leaves only the write mask. */
+	pipeline.blend_dst_alpha = VK_BLEND_FACTOR_SRC1_ALPHA;
+	pipeline.color_write_disable = VK_COLOR_COMPONENT_A_BIT;
+	error = drv_i915_gfx_write_state(page, &state, &kernels, &target, 0x6U);
+	assert(error == 0);
+	assert(dynamic[I915_GFX_DYN_BLEND / 4U] == 0U);
+	assert(dynamic[I915_GFX_DYN_BLEND / 4U + 1U] == GEN12_BLEND_WRITE_DISABLE_ALPHA);
+	batch.count = 0U;
+	drv_i915_gfx_emit_ps_blend(&batch, &pipeline);
+	assert(commands[1] == GEN12_PS_BLEND_HAS_WRITEABLE_RT);
+
+	/* A sampled image whose set lacks it, and a uniform block with no buffer, refuse the draw. */
+	sets[0].slots[2].view = NULL;
+	error = drv_i915_gfx_write_state(page, &state, &kernels, &target, 0x6U);
+	assert(error == EINVAL);
+	assert(strstr(stub_log, "set 0 binding 2 has no image view and sampler") != NULL);
+	sets[0].slots[2].view = &views[1];
+	sets[1].slots[3].buffer = NULL;
+	error = drv_i915_gfx_write_state(page, &state, &kernels, &target, 0x6U);
+	assert(error == EINVAL);
+	assert(strstr(stub_log, "set 1 binding 3 has no uniform buffer") != NULL);
+
+	/* A dynamic offset past the range reads zeros. */
+	sets[1].slots[3].buffer = &uniforms;
+	state.dynamic_offsets[1][4] = 1024U;
+	error = drv_i915_gfx_write_state(page, &state, &kernels, &target, 0x6U);
+	assert(error == 0);
+	for (index = 0U; index < 8U; index++)
+		assert(push[16U + index] == 0U);
+}
+
+/* Appends vkCreateDescriptorSetLayout of bindings (number, type) for the fragment stage. */
+static void
+fixture_dsl(
+	uint64_t identity,
+	const uint32_t *numbers,
+	const uint32_t *types,
+	uint32_t count)
+{
+	uint32_t index;
+
+	/* [72][reply][device][present][sType 32][no chain][flags][count][count]{binding}[no allocator][present][identity]. */
+	stub_put32(&fixture_wire, FIXTURE_CREATE_DSL);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 32U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, count);
+	stub_put64(&fixture_wire, count);
+	for (index = 0U; index < count; index++) {
+		stub_put32(&fixture_wire, numbers[index]);
+		stub_put32(&fixture_wire, types[index]);
+		stub_put32(&fixture_wire, 1U);
+		stub_put32(&fixture_wire, VK_SHADER_STAGE_FRAGMENT_BIT);
+		stub_put64(&fixture_wire, 0U);
+	}
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, identity);
+}
+
+/* Appends one VkWriteDescriptorSet of one buffer descriptor: [sType 35][no chain][set][binding][0][1][type][0][1]{buffer offset range}[0]. */
+static void
+fixture_buffer_write(
+	uint64_t set,
+	uint32_t binding,
+	uint32_t type,
+	uint64_t offset,
+	uint64_t range)
+{
+	/* The write's head. */
+	stub_put32(&fixture_wire, 35U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, set);
+	stub_put32(&fixture_wire, binding);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, type);
+
+	/* No images, one buffer, no texel views. */
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_BUFFER);
+	stub_put64(&fixture_wire, offset);
+	stub_put64(&fixture_wire, range);
+	stub_put64(&fixture_wire, 0U);
+}
+
+/* Appends vkCmdBindDescriptorSets of one set at `first` with its dynamic offsets. */
+static void
+fixture_bind_set(
+	uint64_t cmdbuf,
+	uint32_t first,
+	uint64_t set,
+	const uint32_t *offsets,
+	uint32_t offset_count)
+{
+	uint32_t index;
+
+	/* [103][no reply][command buffer][bind point][layout][first][1][1]{set}[count][count]{offset}. */
+	stub_put32(&fixture_wire, FIXTURE_CMD_BIND_DESCRIPTOR_SETS);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, cmdbuf);
+	stub_put32(&fixture_wire, VK_PIPELINE_BIND_POINT_GRAPHICS);
+	stub_put64(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, first);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, set);
+	stub_put32(&fixture_wire, offset_count);
+	stub_put64(&fixture_wire, offset_count);
+	for (index = 0U; index < offset_count; index++)
+		stub_put32(&fixture_wire, offsets[index]);
+}
+
+/*
+ * Uniform buffers, plain and dynamic, reach a draw through the wire:
+ * vkUpdateDescriptorSets binds a uniform buffer and a dynamic one (the
+ * dynamic flag kept with the slot); vkCmdBindDescriptorSets gives the
+ * dynamic buffers their offsets in binding order; vkCmdSetBlendConstants
+ * reaches the draw state.  Too few or too many dynamic offsets are refused.
+ */
+static void
+test_uniform_bindings(void)
+{
+	static const uint32_t numbers[3] = { 3U, 0U, 1U };
+	static const uint32_t types[3] = {
+		VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+		VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+		VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+	};
+	static const uint32_t offsets[3] = { 64U, 192U, 7U };
+	struct i915_gfx_buffer *buffer;
+	struct i915_gfx_dset *dset;
+	size_t reply_bytes;
+	int error;
+
+	/* Opens a session with the storage blob, the resources, the pipeline, a pool and one buffer. */
+	memset(&fixture_storage_object, 0, sizeof(fixture_storage_object));
+	fixture_storage_object.slot = 7U;
+	fixture_storage_object.bytes = sizeof(fixture_storage);
+	fixture_storage_object.run.paddr = (hal_physaddr_t)(uintptr_t)fixture_storage;
+	fixture_storage_object.va = FIXTURE_STORAGE_VA;
+	stub_session_open(&fixture_storage_object);
+	fixture_resources();
+	buffer = drv_i915_object_lookup(stub_vk, I915_VK_OBJ_BUFFER, FIXTURE_BUFFER);
+	assert(buffer != NULL);
+	memset(&fixture_pipeline, 0, sizeof(fixture_pipeline));
+	fixture_pipeline.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+	fixture_pipeline.dynamic_blend_constants = 1;
+	error = drv_i915_object_insert(stub_vk, I915_VK_OBJ_PIPELINE, FIXTURE_PIPELINE, &fixture_pipeline);
+	assert(error == 0);
+
+	/* A layout of dynamic buffers at bindings 3 and 0 and a plain one at 1; a pool; one set of it. */
+	stub_wire_begin(&fixture_wire);
+	fixture_dsl(FIXTURE_DSL, numbers, types, 3U);
+	stub_put32(&fixture_wire, FIXTURE_CREATE_DESCRIPTOR_POOL);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 33U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+	stub_put32(&fixture_wire, 3U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DESCRIPTOR_POOL);
+	stub_put32(&fixture_wire, FIXTURE_ALLOCATE_DESCRIPTOR_SETS);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 34U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, FIXTURE_DESCRIPTOR_POOL);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DSL);
+	stub_put64(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_SET);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 24U + 24U + 24U);
+	assert(stub_get32(stub_reply, 72U - 20U) == VK_SUCCESS);
+	dset = drv_i915_object_lookup(stub_vk, I915_VK_OBJ_DESCRIPTOR_SET, FIXTURE_SET);
+	assert(dset != NULL);
+
+	/* vkUpdateDescriptorSets: the three buffers, each a range of the vertex buffer. */
+	stub_wire_begin(&fixture_wire);
+	stub_put32(&fixture_wire, FIXTURE_UPDATE_DESCRIPTOR_SETS);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put32(&fixture_wire, 3U);
+	stub_put64(&fixture_wire, 3U);
+	fixture_buffer_write(FIXTURE_SET, 3U, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 16U, 64U);
+	fixture_buffer_write(FIXTURE_SET, 0U, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 0U, VK_WHOLE_SIZE);
+	fixture_buffer_write(FIXTURE_SET, 1U, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 32U, 32U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 0U);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 4U);
+
+	/* Each slot holds its buffer and range; only the dynamic ones say so. */
+	assert(dset->slots[3].buffer == buffer);
+	assert(dset->slots[3].offset == 16U);
+	assert(dset->slots[3].range == 64U);
+	assert(dset->slots[3].dynamic != 0);
+	assert(dset->slots[0].buffer == buffer);
+	assert(dset->slots[0].range == VK_WHOLE_SIZE);
+	assert(dset->slots[0].dynamic != 0);
+	assert(dset->slots[1].buffer == buffer);
+	assert(dset->slots[1].offset == 32U);
+	assert(dset->slots[1].dynamic == 0);
+
+	/* A pool and a command buffer. */
+	stub_wire_begin(&fixture_wire);
+	stub_put32(&fixture_wire, FIXTURE_CREATE_COMMAND_POOL);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 39U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_POOL);
+	stub_put32(&fixture_wire, FIXTURE_ALLOCATE_COMMAND_BUFFERS);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 40U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, FIXTURE_POOL);
+	stub_put32(&fixture_wire, VK_COMMAND_BUFFER_LEVEL_PRIMARY);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_CB0);
+	fixture_begin(FIXTURE_CB0);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 24U + 24U + 8U);
+
+	/*
+	 * Records the pipeline, the set as set 1 with dynamic offsets 64 and
+	 * 192 (binding 0 takes the first, binding 3 the second), the blend
+	 * constants (0.25, 0.5, 0.75, 1) and a draw.
+	 */
+	stub_draw_calls = 0U;
+	stub_wire_begin(&fixture_wire);
+	stub_put32(&fixture_wire, FIXTURE_CMD_BIND_PIPELINE);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, FIXTURE_CB0);
+	stub_put32(&fixture_wire, VK_PIPELINE_BIND_POINT_GRAPHICS);
+	stub_put64(&fixture_wire, FIXTURE_PIPELINE);
+	fixture_bind_set(FIXTURE_CB0, 1U, FIXTURE_SET, offsets, 2U);
+	stub_put32(&fixture_wire, FIXTURE_CMD_SET_BLEND_CONSTANTS);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, FIXTURE_CB0);
+	stub_put64(&fixture_wire, 4U);
+	stub_put32(&fixture_wire, 0x3e800000U);
+	stub_put32(&fixture_wire, 0x3f000000U);
+	stub_put32(&fixture_wire, 0x3f400000U);
+	stub_put32(&fixture_wire, 0x3f800000U);
+	fixture_draw(FIXTURE_CB0, 3U, 1U);
+	fixture_command_buffer(FIXTURE_END_COMMAND_BUFFER, FIXTURE_CB0);
+	fixture_submit(FIXTURE_CB0, 0U);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 16U);
+	assert(stub_get32(stub_reply, 4U) == VK_SUCCESS);
+	assert(stub_get32(stub_reply, 12U) == VK_SUCCESS);
+
+	/* The draw ran with the set as set 1, its dynamic offsets by binding and the blend constants. */
+	assert(stub_draw_calls == 1U);
+	assert(stub_last_draw.state.dset[1] == dset);
+	assert(stub_last_draw.state.dynamic_offsets[1][0] == 64U);
+	assert(stub_last_draw.state.dynamic_offsets[1][3] == 192U);
+	assert(stub_last_draw.state.dynamic_offsets[1][1] == 0U);
+	assert(stub_last_draw.state.blend_constants_set != 0);
+	assert(stub_last_draw.state.blend_constants[0] == 0x3e800000U);
+	assert(stub_last_draw.state.blend_constants[3] == 0x3f800000U);
+
+	/* One offset for two dynamic buffers, and three, are refused while recording. */
+	stub_wire_begin(&fixture_wire);
+	fixture_begin(FIXTURE_CB0);
+	fixture_bind_set(FIXTURE_CB0, 0U, FIXTURE_SET, offsets, 1U);
+	error = stub_execute(&fixture_wire, &reply_bytes);
+	assert(error == EINVAL);
+	assert(strstr(stub_log, "1 dynamic offsets for more dynamic uniform buffers") != NULL);
+	stub_wire_begin(&fixture_wire);
+	fixture_begin(FIXTURE_CB0);
+	fixture_bind_set(FIXTURE_CB0, 0U, FIXTURE_SET, offsets, 3U);
+	error = stub_execute(&fixture_wire, &reply_bytes);
+	assert(error == EINVAL);
+	assert(strstr(stub_log, "3 dynamic offsets for 2 dynamic uniform buffers") != NULL);
+
+	/*
+	 * Destroys the pool, the resources and the layout, and withdraws the
+	 * pipeline.  XXX: no command frees a descriptor set (see the res
+	 * fixture); the fixture unpublishes and frees it itself.
+	 */
+	drv_i915_object_remove(stub_vk, I915_VK_OBJ_DESCRIPTOR_SET, FIXTURE_SET);
+	kern_free(dset);
+	stub_wire_begin(&fixture_wire);
+	fixture_destroy(FIXTURE_DESTROY_COMMAND_POOL, FIXTURE_POOL);
+	fixture_destroy(FIXTURE_DESTROY_DESCRIPTOR_POOL, FIXTURE_DESCRIPTOR_POOL);
+	fixture_destroy(FIXTURE_DESTROY_DSL, FIXTURE_DSL);
+	fixture_destroy(FIXTURE_DESTROY_IMAGE, FIXTURE_IMAGE);
+	fixture_destroy(FIXTURE_DESTROY_BUFFER, FIXTURE_BUFFER);
+	fixture_destroy(FIXTURE_FREE_MEMORY, FIXTURE_MEMORY);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 6U * 4U);
+	drv_i915_object_remove(stub_vk, I915_VK_OBJ_PIPELINE, FIXTURE_PIPELINE);
 
 	/* Closes the session; nothing stays allocated. */
 	stub_session_close();

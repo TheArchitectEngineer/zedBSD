@@ -27,13 +27,15 @@
 
 #include "../../../src/drivers/gpu/i915/intel/genxml.h"
 
+#include "../../../src/drivers/gpu/i915/tests/fixtures/generality-shaders-gen.inc"
+
 /* The wire opcodes the fixture sends, as libvulkan numbers them. */
 #define FIXTURE_CREATE_SHADER_MODULE		59U
 #define FIXTURE_DESTROY_SHADER_MODULE		60U
 #define FIXTURE_CREATE_GRAPHICS_PIPELINES	65U
 #define FIXTURE_DESTROY_PIPELINE		67U
 
-/* The SPIR-V opcodes the fixture rewrites: a float multiply becomes a float remainder (not lowered). */
+/* The SPIR-V opcodes the fixture rewrites: a float multiply of scalars becomes an outer product of them (refused). */
 #define FIXTURE_SPIRV_FMUL	133U
 #define FIXTURE_SPIRV_OUTER_PRODUCT	147U
 
@@ -65,6 +67,8 @@ static int fixture_find_command(const uint32_t *batch, unsigned used, uint32_t o
 static void test_shader_module(void);
 static void test_graphics_pipeline(void);
 static void test_dynamic_push_pipeline(void);
+static void fixture_generality_pipeline(struct i915_gfx_pipeline *pipeline, struct i915_gfx_shader *vertex, struct i915_gfx_shader *fragment, const uint32_t *vertex_words, size_t vertex_bytes, const uint32_t *fragment_words, size_t fragment_bytes);
+static void test_varying_routing(void);
 
 /*
  * Runs the pipeline checks.
@@ -76,6 +80,7 @@ main(void)
 	test_shader_module();
 	test_graphics_pipeline();
 	test_dynamic_push_pipeline();
+	test_varying_routing();
 
 	/* Succeeded: every check held. */
 	printf("i915 vk pipe host test PASS\n");
@@ -239,7 +244,10 @@ fixture_pipeline(
 
 /*
  * Appends vkCreateGraphicsPipelines of one triangle-list pipeline with two
- * stages, two vec4 attributes, one viewport and one scissor, both dynamic.
+ * stages, two vec4 attributes, one viewport and one scissor, both dynamic,
+ * attachment 0 blending source alpha over the destination with the alpha
+ * added and blue masked, blend constants (0.25, 0.5, 0.75, 1) and the blend
+ * constants dynamic as well.
  */
 static void
 fixture_dynamic_pipeline(
@@ -311,20 +319,47 @@ fixture_dynamic_pipeline(
 	for (index = 0U; index < 14U; index++)
 		stub_put32(&fixture_wire, 0U);
 
-	/* No multisample, depth-stencil or colour blend state. */
-	stub_put64(&fixture_wire, 0U);
+	/* No multisample or depth-stencil state. */
 	stub_put64(&fixture_wire, 0U);
 	stub_put64(&fixture_wire, 0U);
 
-	/* Dynamic state: sType 27, no chain, flags, the viewport and the scissor. */
+	/* Colour blend state: sType 26, no chain, flags, no logic operation, one attachment. */
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 26U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, 1U);
+
+	/* Attachment 0: blending on, SRC_ALPHA / ONE_MINUS_SRC_ALPHA / ADD, ONE / ONE / ADD, R G A written. */
+	stub_put32(&fixture_wire, VK_TRUE);
+	stub_put32(&fixture_wire, VK_BLEND_FACTOR_SRC_ALPHA);
+	stub_put32(&fixture_wire, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA);
+	stub_put32(&fixture_wire, VK_BLEND_OP_ADD);
+	stub_put32(&fixture_wire, VK_BLEND_FACTOR_ONE);
+	stub_put32(&fixture_wire, VK_BLEND_FACTOR_ONE);
+	stub_put32(&fixture_wire, VK_BLEND_OP_ADD);
+	stub_put32(&fixture_wire, VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_A_BIT);
+
+	/* The four blend constants. */
+	stub_put64(&fixture_wire, 4U);
+	stub_put32(&fixture_wire, 0x3e800000U);
+	stub_put32(&fixture_wire, 0x3f000000U);
+	stub_put32(&fixture_wire, 0x3f400000U);
+	stub_put32(&fixture_wire, 0x3f800000U);
+
+	/* Dynamic state: sType 27, no chain, flags, the viewport, the scissor and the blend constants. */
 	stub_put64(&fixture_wire, 1U);
 	stub_put32(&fixture_wire, 27U);
 	stub_put64(&fixture_wire, 0U);
 	stub_put32(&fixture_wire, 0U);
-	stub_put32(&fixture_wire, 2U);
-	stub_put64(&fixture_wire, 2U);
+	stub_put32(&fixture_wire, 3U);
+	stub_put64(&fixture_wire, 3U);
 	stub_put32(&fixture_wire, VK_DYNAMIC_STATE_VIEWPORT);
 	stub_put32(&fixture_wire, VK_DYNAMIC_STATE_SCISSOR);
+	stub_put32(&fixture_wire, VK_DYNAMIC_STATE_BLEND_CONSTANTS);
 
 	/* No layout or render pass, subpass 0, no base pipeline. */
 	stub_put64(&fixture_wire, 0U);
@@ -565,8 +600,9 @@ test_graphics_pipeline(void)
 }
 
 /*
- * A pipeline whose viewport and scissor are dynamic keeps them for the
- * command buffer, and one whose fragment shader reads the push constant
+ * A pipeline whose viewport, scissor and blend constants are dynamic keeps
+ * them for the command buffer and keeps attachment 0's blend, and one whose
+ * fragment shader reads the push constant
  * colour at byte 112 is accepted: its pixel stage is given the push
  * constants in front of its setup data, from the same block the vertex
  * stage reads.
@@ -605,6 +641,19 @@ test_dynamic_push_pipeline(void)
 	assert(pipeline != NULL);
 	assert(pipeline->dynamic_viewport != 0);
 	assert(pipeline->dynamic_scissor != 0);
+
+	/* It keeps attachment 0's blend, the components it does not write, and dynamic blend constants. */
+	assert(pipeline->blend_enable == 1U);
+	assert(pipeline->blend_src_color == VK_BLEND_FACTOR_SRC_ALPHA);
+	assert(pipeline->blend_dst_color == VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA);
+	assert(pipeline->blend_color_op == VK_BLEND_OP_ADD);
+	assert(pipeline->blend_src_alpha == VK_BLEND_FACTOR_ONE);
+	assert(pipeline->blend_dst_alpha == VK_BLEND_FACTOR_ONE);
+	assert(pipeline->blend_alpha_op == VK_BLEND_OP_ADD);
+	assert(pipeline->color_write_disable == VK_COLOR_COMPONENT_B_BIT);
+	assert(pipeline->blend_constants[0] == 0x3e800000U);
+	assert(pipeline->blend_constants[3] == 0x3f800000U);
+	assert(pipeline->dynamic_blend_constants != 0);
 	assert(pipeline->binding_count == 1U);
 	assert(pipeline->bindings[0].stride == 32U);
 	assert(pipeline->attribute_count == 2U);
@@ -666,4 +715,188 @@ test_dynamic_push_pipeline(void)
 	assert(stub_live == 0U);
 	free(vertex);
 	free(fragment);
+}
+
+/* Describes a pipeline over two of the generality test's modules, as the draw path sees it before preparing. */
+static void
+fixture_generality_pipeline(
+	struct i915_gfx_pipeline *pipeline,
+	struct i915_gfx_shader *vertex,
+	struct i915_gfx_shader *fragment,
+	const uint32_t *vertex_words,
+	size_t vertex_bytes,
+	const uint32_t *fragment_words,
+	size_t fragment_bytes)
+{
+	/* The modules borrow the generated words, which the compiler only reads. */
+	memset(vertex, 0, sizeof(*vertex));
+	memset(fragment, 0, sizeof(*fragment));
+	vertex->words = (uint32_t *)(uintptr_t)vertex_words;
+	vertex->word_count = (uint32_t)(vertex_bytes / 4U);
+	fragment->words = (uint32_t *)(uintptr_t)fragment_words;
+	fragment->word_count = (uint32_t)(fragment_bytes / 4U);
+
+	/* The pipeline names both stages; nothing else matters to the kernels. */
+	memset(pipeline, 0, sizeof(*pipeline));
+	pipeline->vertex = vertex;
+	pipeline->fragment = fragment;
+}
+
+/*
+ * A fragment shader may read only some of the vertex shader's varyings, in
+ * any order: vary16.vert writes locations 0 .. 15, subset.frag reads 0, 1,
+ * 6, 11 and 15, so 3DSTATE_SBE reads all sixteen slots (eight pairs) and
+ * sends five attributes, and 3DSTATE_SBE_SWIZ routes attribute n from the
+ * slot of the n-th location read.  A fragment shader reading a location
+ * the vertex shader does not write (quad.vert writes location 0 only) is
+ * refused.
+ */
+static void
+test_varying_routing(void)
+{
+	static const uint32_t slots[5] = { 0U, 1U, 6U, 11U, 15U };
+	struct i915_gfx_pipeline pipeline;
+	struct i915_gfx_shader vertex;
+	struct i915_gfx_shader fragment;
+	struct i915_gfx_kernels kernels;
+	struct i915_gfx_batch batch;
+	uint32_t commands[256];
+	uint32_t low;
+	uint32_t high;
+	unsigned index;
+	int found;
+	int error;
+
+	/* Prepares vary16.vert with subset.frag. */
+	fixture_generality_pipeline(&pipeline,
+				    &vertex,
+				    &fragment,
+				    i915_vke2_vary16_vert,
+				    sizeof(i915_vke2_vary16_vert),
+				    i915_vke2_subset_frag,
+				    sizeof(i915_vke2_subset_frag));
+	error = drv_i915_gfx_pipeline_prepare(NULL, &pipeline);
+	assert(error == 0);
+	assert(pipeline.vs_binary->varying_count == 16U);
+	assert(pipeline.fs_binary->input_count == 5U);
+
+	/* The kernels carry the route: input n from the slot of its location. */
+	drv_i915_gfx_pipeline_kernels(&pipeline, &kernels);
+	assert(kernels.varyings == 16U);
+	assert(kernels.ps_inputs_mapped != 0U);
+	assert(kernels.ps_input_count == 5U);
+	for (index = 0U; index < 5U; index++)
+		assert(kernels.ps_input_slots[index] == slots[index]);
+
+	/* Emits the pixel shader state. */
+	memset(commands, 0, sizeof(commands));
+	batch.cmds = commands;
+	batch.count = 0U;
+	batch.capacity = 256U;
+	batch.overflow = 0;
+	drv_i915_gfx_emit_pixel_shader(&batch, &kernels);
+	assert(batch.overflow == 0);
+
+	/* 3DSTATE_SBE: five attributes, eight pairs of slots read from slot 2 on. */
+	found = fixture_find_command(commands, batch.count, GEN12_CMD_3DSTATE_SBE);
+	assert(found >= 0);
+	assert(((commands[found + 1] >> 22) & 0x3fU) == 5U);
+	assert(((commands[found + 1] >> 11) & 0x1fU) == 8U);
+	assert(((commands[found + 1] >> 5) & 0x3fU) == 1U);
+
+	/* 3DSTATE_SBE_SWIZ: the five sources, two to a dword, then slot 0 for the inputs not read. */
+	found = fixture_find_command(commands, batch.count, GEN12_CMD_3DSTATE_SBE_SWIZ);
+	assert(found >= 0);
+	for (index = 0U; index < 16U; index += 2U) {
+		low = commands[found + 1 + index / 2U] & 0xffffU;
+		high = commands[found + 1 + index / 2U] >> 16;
+		assert(low == (index < 5U ? slots[index] : 0U));
+		assert(high == (index + 1U < 5U ? slots[index + 1U] : 0U));
+	}
+
+	/* 3DSTATE_PS_EXTRA: the kernel reads attributes. */
+	found = fixture_find_command(commands, batch.count, GEN12_CMD_3DSTATE_PS_EXTRA);
+	assert(found >= 0);
+	assert((commands[found + 1] & (1U << 8)) != 0U);
+	drv_i915_gfx_pipeline_release(&pipeline);
+
+	/* quad.vert writes location 0 only: subset.frag's other four inputs have no source. */
+	fixture_generality_pipeline(&pipeline,
+				    &vertex,
+				    &fragment,
+				    i915_vke2_quad_vert,
+				    sizeof(i915_vke2_quad_vert),
+				    i915_vke2_subset_frag,
+				    sizeof(i915_vke2_subset_frag));
+	error = drv_i915_gfx_pipeline_prepare(NULL, &pipeline);
+	assert(error == ENOTSUP);
+	assert(pipeline.kernels_ready == 0 && pipeline.vs_binary == NULL && pipeline.fs_binary == NULL);
+
+	/* vin16.vert writes locations 0 and 3; vin16.frag reads them from slots 0 and 1. */
+	fixture_generality_pipeline(&pipeline,
+				    &vertex,
+				    &fragment,
+				    i915_vke2_vin16_vert,
+				    sizeof(i915_vke2_vin16_vert),
+				    i915_vke2_vin16_frag,
+				    sizeof(i915_vke2_vin16_frag));
+	error = drv_i915_gfx_pipeline_prepare(NULL, &pipeline);
+	assert(error == 0);
+	drv_i915_gfx_pipeline_kernels(&pipeline, &kernels);
+	assert(kernels.vs_input_count == 16U && kernels.varyings == 2U);
+	assert(kernels.ps_input_count == 2U && kernels.ps_input_slots[0] == 0U && kernels.ps_input_slots[1] == 1U);
+
+	/* Kernels that spill nothing leave dwords 4-5 of 3DSTATE_VS and PS (the scratch space) zero. */
+	assert(kernels.vs_scratch_bytes == 0U && kernels.ps_scratch_bytes == 0U);
+	memset(commands, 0, sizeof(commands));
+	batch.count = 0U;
+	batch.overflow = 0;
+	drv_i915_gfx_emit_vertex_shader(&batch, &kernels);
+	drv_i915_gfx_emit_pixel_shader(&batch, &kernels);
+	found = fixture_find_command(commands, batch.count, GEN12_CMD_3DSTATE_VS);
+	assert(found >= 0 && commands[found + 4] == 0U && commands[found + 5] == 0U);
+	found = fixture_find_command(commands, batch.count, GEN12_CMD_3DSTATE_PS);
+	assert(found >= 0 && commands[found + 4] == 0U && commands[found + 5] == 0U);
+	drv_i915_gfx_pipeline_release(&pipeline);
+
+	/*
+	 * vio16.vert (16 attributes, 16 varyings) with spill.frag: both kernels spill, 2 KiB a thread each; their
+	 * parts of the scratch buffer land in dwords 4-5 as the Scratch Space Base Pointer (bits 63:10, an offset
+	 * from the general state base) and the Per-Thread Scratch Space (1 KiB << 1); STATE_BASE_ADDRESS puts
+	 * the general state base at the buffer.
+	 */
+	fixture_generality_pipeline(&pipeline,
+				    &vertex,
+				    &fragment,
+				    i915_vke2_vio16_vert,
+				    sizeof(i915_vke2_vio16_vert),
+				    i915_vke2_spill_frag,
+				    sizeof(i915_vke2_spill_frag));
+	error = drv_i915_gfx_pipeline_prepare(NULL, &pipeline);
+	assert(error == 0);
+	drv_i915_gfx_pipeline_kernels(&pipeline, &kernels);
+	assert(kernels.vs_input_count == 16U && kernels.varyings == 16U);
+	assert(kernels.vs_scratch_bytes == 2048U && kernels.ps_scratch_bytes == 2048U);
+	kernels.scratch_base = 0x123450000ULL;
+	kernels.vs_scratch_offset = 0x1000ULL;
+	kernels.ps_scratch_offset = 0x00678400ULL;
+	memset(commands, 0, sizeof(commands));
+	batch.count = 0U;
+	batch.overflow = 0;
+	drv_i915_gfx_emit_vertex_shader(&batch, &kernels);
+	drv_i915_gfx_emit_pixel_shader(&batch, &kernels);
+	assert(batch.overflow == 0);
+	found = fixture_find_command(commands, batch.count, GEN12_CMD_3DSTATE_VS);
+	assert(found >= 0 && commands[found + 4] == (0x1000U | 1U) && commands[found + 5] == 0U);
+	found = fixture_find_command(commands, batch.count, GEN12_CMD_3DSTATE_PS);
+	assert(found >= 0 && commands[found + 4] == (0x00678400U | 1U) && commands[found + 5] == 0U);
+	memset(commands, 0, sizeof(commands));
+	batch.count = 0U;
+	batch.overflow = 0;
+	drv_i915_gfx_emit_context_setup(&batch, 0x200000ULL, 0x300000ULL, kernels.scratch_base, 3U << 1);
+	found = fixture_find_command(commands, batch.count, GEN12_CMD_STATE_BASE_ADDRESS);
+	assert(found >= 0 && commands[found + 1] == (1U | ((3U << 1) << 4) | 0x23450000U) && commands[found + 2] == 1U);
+	drv_i915_gfx_pipeline_release(&pipeline);
+	printf("  varyings: 5 of 16 routed by location through SBE_SWIZ; an unwritten location refused; 16 attributes; "
+	       "16 attributes + 16 varyings and spill.frag spill 2 KiB a thread into the scratch fields of 3DSTATE_VS / PS\n");
 }

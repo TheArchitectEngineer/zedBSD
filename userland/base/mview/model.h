@@ -145,6 +145,28 @@ struct mview_push {
 	float color[4];
 };
 
+/* The lights of the per-pixel shading: one directional, two points. */
+#define MVIEW_LIGHT_COUNT	3U
+
+/*
+ * The scene block of the per-pixel shading (--shading=pixel), laid out as
+ * the shaders' std140 uniform block reads it: the model, view and projection
+ * matrices and the normal matrix, column-major; the ambient light; and per
+ * light its view-space position (w 1) or direction towards it (w 0), its
+ * colour with the specular strength in alpha, and its constant, linear and
+ * quadratic attenuation with the shininess in w.
+ */
+struct mview_scene {
+	float model[16];
+	float view[16];
+	float projection[16];
+	float normal[16];
+	float ambient[4];
+	float light_position[MVIEW_LIGHT_COUNT][4];
+	float light_color[MVIEW_LIGHT_COUNT][4];
+	float light_factors[MVIEW_LIGHT_COUNT][4];
+};
+
 /*
  * Pointer and keyboard state that turns input events into camera changes.
  *
@@ -179,6 +201,7 @@ void mview_camera_orbit(struct mview_camera *camera, float yaw, float pitch);
 void mview_camera_pan(struct mview_camera *camera, float dx, float dy, uint32_t height);
 void mview_camera_zoom(struct mview_camera *camera, int notches);
 void mview_camera_push(const struct mview_camera *camera, uint32_t width, uint32_t height, struct mview_push *push);
+void mview_camera_scene(const struct mview_camera *camera, uint32_t width, uint32_t height, struct mview_scene *scene);
 
 /* Input translation applies each event to the camera and logs the new view. */
 void mview_input_init(struct mview_input *input, struct mview_camera *camera, const char *token, uint32_t height);

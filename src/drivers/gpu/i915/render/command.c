@@ -57,7 +57,10 @@
 #define I915_GFX_MAX_REGIONS	16U
 
 /* How many descriptor sets one command buffer binds. */
-#define I915_GFX_MAX_SETS	4U
+#define I915_GFX_MAX_SETS	I915_GFX_BOUND_SETS
+
+/* How many dynamic offsets one vkCmdBindDescriptorSets carries. */
+#define I915_GFX_MAX_DYNAMIC_OFFSETS	64U
 
 /*
  * The texels of one row of a buffer copy, which runs as a copy between two
@@ -147,6 +150,8 @@ static int i915_record_buffer_image_copy(struct i915_render_session *session, st
 static int i915_record_begin_pass(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader);
 static int i915_record_bind_vertex(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader);
 static int i915_record_bind_descriptor_sets(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader);
+static int i915_record_dynamic_offsets(struct i915_gfx_op **ops, uint32_t set_count, const uint32_t *offsets, uint32_t offset_count);
+static int i915_record_set_blend_constants(struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader);
 static int i915_record_push_constants(struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader);
 static int i915_record_bind_index(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader);
 static int i915_record_set_viewport(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader);
@@ -873,6 +878,8 @@ i915_record_clear_image(
 
 	/* Records one clear for each range, with the levels it names. */
 	for (index = 0U; index < count; index++) {
+		/* A range the stream ends inside of reads as zeros; the recording is then refused below. */
+		memset(&range, 0, sizeof(range));
 		i915_vkc_dec_VkImageSubresourceRange(reader, &session->arena, &range);
 		op = i915_command_op(cmdbuf, I915_GFX_OP_CLEAR_IMAGE);
 		op->u.clear_image.image = image;
@@ -1216,9 +1223,8 @@ i915_record_bind_vertex(
  * vkCmdBindDescriptorSets: [bind point][layout][first][present][count]{set}
  * [present][count]{dynamic offset}.
  *
- * Every set is one operation.
- * XXX: no dynamic buffers are bound; the dynamic offsets are decoded and
- * not kept.
+ * Every set is one operation, which keeps the dynamic offsets of its
+ * dynamic uniform buffers (see i915_record_dynamic_offsets()).
  */
 static int
 i915_record_bind_descriptor_sets(
@@ -1226,44 +1232,146 @@ i915_record_bind_descriptor_sets(
 	struct i915_gfx_cmdbuf *cmdbuf,
 	struct i915_wire_reader *reader)
 {
+	struct i915_gfx_op *ops[I915_GFX_MAX_SETS];
+	uint32_t offsets[I915_GFX_MAX_DYNAMIC_OFFSETS];
 	struct i915_gfx_op *op;
 	uint64_t identity;
 	uint64_t count;
+	uint64_t set_count;
 	uint64_t index;
 	uint32_t first;
+	int error;
 
 	/* Decodes the bind point, the layout, the first set and the number of sets, at most four. */
 	(void)drv_i915_wire_read_u32(reader);
 	(void)drv_i915_wire_read_u64(reader);
 	first = drv_i915_wire_read_u32(reader);
 	(void)drv_i915_wire_read_u32(reader);
-	count = drv_i915_wire_read_u64(reader);
-	if (reader->error != 0 || count > I915_GFX_MAX_SETS)
+	set_count = drv_i915_wire_read_u64(reader);
+	if (reader->error != 0 || set_count > I915_GFX_MAX_SETS)
 		return EINVAL;
 
 	/* Records every set. */
-	for (index = 0U; index < count; index++) {
+	for (index = 0U; index < set_count; index++) {
 		op = i915_command_op(cmdbuf, I915_GFX_OP_BIND_DESCRIPTOR_SET);
 		op->u.descriptor.set = first + (uint32_t)index;
 		identity = drv_i915_wire_read_u64(reader);
 		op->u.descriptor.dset = drv_i915_object_lookup(session->vk, I915_VK_OBJ_DESCRIPTOR_SET, identity);
+		ops[index] = op;
 	}
 
 	/* Decodes the number of dynamic offsets, at most sixty-four. */
 	(void)drv_i915_wire_read_u32(reader);
 	count = drv_i915_wire_read_u64(reader);
-	if (reader->error != 0 || count > 64U)
+	if (reader->error != 0 || count > I915_GFX_MAX_DYNAMIC_OFFSETS)
 		return EINVAL;
 
-	/* Decodes the dynamic offsets without keeping them. */
+	/* Decodes the dynamic offsets. */
 	for (index = 0U; index < count; index++)
-		(void)drv_i915_wire_read_u32(reader);
+		offsets[index] = drv_i915_wire_read_u32(reader);
 
 	/* Refuses a stream that ended inside the offsets. */
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* Succeeded: the sets are recorded. */
+	/* Hands the offsets to the dynamic uniform buffers of the sets. */
+	error = i915_record_dynamic_offsets(ops, (uint32_t)set_count, offsets, (uint32_t)count);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the sets and their dynamic offsets are recorded. */
+	return 0;
+}
+
+/*
+ * Gives each dynamic uniform buffer of the bound sets its dynamic offset.
+ *
+ * Vulkan takes the offsets in the order of the sets, and within a set in the
+ * order of the binding numbers.  Returns EINVAL when the offsets and the
+ * dynamic uniform buffers do not pair up.  XXX: a binding holds one
+ * descriptor, so an array of dynamic buffers takes one offset.
+ */
+static int
+i915_record_dynamic_offsets(
+	struct i915_gfx_op **ops,
+	uint32_t set_count,
+	const uint32_t *offsets,
+	uint32_t offset_count)
+{
+	const struct i915_gfx_dsl *layout;
+	uint32_t set;
+	uint32_t binding;
+	uint32_t entry;
+	uint32_t next;
+
+	/* Walks the sets in order and each set's bindings by number. */
+	next = 0U;
+	for (set = 0U; set < set_count; set++) {
+		/* A set that is unknown or has no layout has no dynamic buffers. */
+		layout = NULL;
+		if (ops[set]->u.descriptor.dset != NULL)
+			layout = ops[set]->u.descriptor.dset->layout;
+		if (layout == NULL)
+			continue;
+
+		/* Gives each dynamic uniform buffer, lowest binding number first, the next offset. */
+		for (binding = 0U; binding < I915_GFX_MAX_BINDINGS; binding++) {
+			for (entry = 0U; entry < layout->count; entry++) {
+				/* Only the layout's dynamic uniform buffer of this number takes an offset. */
+				if (layout->bindings[entry].binding != binding)
+					continue;
+				if (layout->bindings[entry].type != VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC)
+					continue;
+
+				/* Refuses a bind with fewer offsets than dynamic buffers. */
+				if (next >= offset_count) {
+					kern_logf("i915: vk: vkCmdBindDescriptorSets: %u dynamic offsets for more dynamic uniform buffers\n", offset_count);
+					return EINVAL;
+				}
+
+				ops[set]->u.descriptor.dynamic_offsets[binding] = offsets[next];
+				next++;
+			}
+		}
+	}
+
+	/* Refuses a bind with more offsets than dynamic buffers. */
+	if (next != offset_count) {
+		kern_logf("i915: vk: vkCmdBindDescriptorSets: %u dynamic offsets for %u dynamic uniform buffers\n", offset_count, next);
+		return EINVAL;
+	}
+
+	/* Succeeded: every dynamic uniform buffer has its offset. */
+	return 0;
+}
+
+/*
+ * vkCmdSetBlendConstants: [count]{float}, four floats.
+ */
+static int
+i915_record_set_blend_constants(
+	struct i915_gfx_cmdbuf *cmdbuf,
+	struct i915_wire_reader *reader)
+{
+	struct i915_gfx_op *op;
+	uint64_t count;
+	uint32_t index;
+
+	/* Decodes the count, which is four. */
+	count = drv_i915_wire_read_u64(reader);
+	if (reader->error != 0 || count != 4U)
+		return EINVAL;
+
+	/* Records the four constants as float bits. */
+	op = i915_command_op(cmdbuf, I915_GFX_OP_SET_BLEND_CONSTANTS);
+	for (index = 0U; index < 4U; index++)
+		op->u.blend_constants[index] = drv_i915_wire_read_u32(reader);
+
+	/* Refuses a stream that ended inside the constants. */
+	if (reader->error != 0)
+		return EINVAL;
+
+	/* Succeeded: the blend constants are recorded. */
 	return 0;
 }
 
@@ -1511,6 +1619,10 @@ i915_record_command(
 	case 95U:
 		/* vkCmdSetScissor */
 		error = i915_record_set_scissor(session, cmdbuf, reader);
+		return error;
+	case 98U:
+		/* vkCmdSetBlendConstants */
+		error = i915_record_set_blend_constants(cmdbuf, reader);
 		return error;
 	case 103U:
 		/* vkCmdBindDescriptorSets */
@@ -2287,9 +2399,14 @@ i915_command_buffer_execute(
 
 			break;
 		case I915_GFX_OP_BIND_DESCRIPTOR_SET:
-			/* A set past the tracked ones is ignored. */
-			if (op->u.descriptor.set < I915_GFX_MAX_SETS)
+			/* A set past the tracked ones is ignored; a bound set brings its dynamic offsets. */
+			if (op->u.descriptor.set < I915_GFX_MAX_SETS) {
 				state.dset[op->u.descriptor.set] = op->u.descriptor.dset;
+				memcpy(state.dynamic_offsets[op->u.descriptor.set],
+				       op->u.descriptor.dynamic_offsets,
+				       sizeof(state.dynamic_offsets[op->u.descriptor.set]));
+			}
+
 			break;
 		case I915_GFX_OP_PUSH_CONSTANTS:
 			memcpy(state.push + op->u.push.offset, op->u.push.bytes, op->u.push.size);
@@ -2313,6 +2430,10 @@ i915_command_buffer_execute(
 		case I915_GFX_OP_SET_SCISSOR:
 			state.scissor = op->u.scissor;
 			state.scissor_set = 1;
+			break;
+		case I915_GFX_OP_SET_BLEND_CONSTANTS:
+			memcpy(state.blend_constants, op->u.blend_constants, sizeof(state.blend_constants));
+			state.blend_constants_set = 1;
 			break;
 		case I915_GFX_OP_COPY_BUFFER:
 			error = i915_execute_buffer_copy(session, op);

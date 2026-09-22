@@ -3,13 +3,14 @@
 # WS031: i915ネイティブVulkan実行器
 
 <!-- awesome-plan-current:start -->
-Status: incomplete
+Status: incomplete（2026-09-23 ユーザー判断で継続。p001〜p014 cleared、p015〜p018 planning・後回し）
 Primary Milestone: MG006
 Related Milestones: MG003
 Objectives: O1, O2
 Parent: [Master](https://github.com/awemorris/zedBSD/issues/1)
-Queue: WS031 build-complete（p001-p010,p012 cleared、p011 は実機ビッグバンテスト待ち）
+Queue: none（実行中の項目なし。統合回帰は p015 の最後）
 Design: plan/ws031/native-vulkan-design.md
+Handover: 本文の「引き継ぎ（2026-09-23）」節
 <!-- awesome-plan-current:end -->
 
 ## 単一目標
@@ -59,9 +60,103 @@ WS029のdisplay/scanout後続（[ws029-f003](https://github.com/awemorris/zedBSD
 | ws031-p011 | 統合: build-passing 達成／実機描画はビッグバンテスト（[phase011](phase011/phase.md)） | big-bang待ち | 360 分 |
 | ws031-p012 | レビュー: 静的解析・規約全文確認・回帰・制限整理（[phase012](phase012/phase.md)） | cleared | 180 分 |
 | ws031-p013 | Wayland モデルビューア（Venus）: FBX 変換・zwl の seat/pointer/keyboard・mview（[phase013](phase013/phase.md)） | cleared（Venus） | 3 日 |
-| ws031-p014 | モデルビューアを i915 で・シェーダー一通り: executor（索引描画・mip・push・blend）と compiler（制御フロー・discard・行列・UBO）（[phase014](phase014/phase.md)） | planned | 約 7.5 日（A–E） |
+| ws031-p014 | モデルビューアを i915 で・シェーダー一通り: executor（索引描画・mip・push・blend）と compiler（制御フロー・discard・行列・UBO）（[phase014](phase014/phase.md)） | cleared（A0・A・B・C・D・E1・E2・E3・性能第 2 回。残りは p015〜p018 へ） | 約 7.5 日（A–E） |
+| ws031-p015 | 準正常系・異常系の確認と小さな欠落の修正（p014 の後回し一覧から）（[phase015](phase015/phase.md)） | planning（後回し） | 2 日 |
+| ws031-p016 | executor の未実装機能: mip/layer への描画・MRT・logic op/dual source・swizzle・descriptor 配列・VS sampler・UBO dataport・tiling（[phase016](phase016/phase.md)） | planning（後回し） | 5〜7 日 |
+| ws031-p017 | compiler の未実装機能: 整数 varying/属性・16/64 bit・local 配列/構造体・動的 index・switch・関数・SWSB・spill 改善（[phase017](phase017/phase.md)） | planning（後回し） | 6〜8 日 |
+| ws031-p018 | 性能の構造改善: 非同期 executor・割込み待ち・scheduler wakeup・frame copy の削減・present mode（[phase018](phase018/phase.md)） | planning（後回し） | 5〜8 日 |
 
 段階的な受け入れの単位は Phase 境界と一致しない。増分A（三角形）は複数モジュールの最小経路を横断する最初の実機到達点で、Phase 計画時に「増分Aで必要な関数」を先行実装対象として明示する。増分B・Cで texture/depth・実shader を足す。
+
+## 引き継ぎ（2026-09-23、次のエージェントへ）
+
+### 現状
+- p001〜p014 cleared。p015〜p018 は planning（後回し、未着手）。**統合回帰は未実行**（p015 の最後に 1 回、一覧は下）。
+- WS031 は未完了（2026-09-23 ユーザー判断で閉じない）。GitHub Issues には未公開（`plan/records.json` に ws031 は無い）。
+  完了時に `plan/tools/README.md` の手順で同期する。
+- 作業ツリーは centris の `~/zedBSD-gpu`。未コミットの変更がある（ユーザーがレビューしてコミットする）。**push はしない。**
+- 主な資料: [phase014](phase014/phase.md)（進捗 A0〜E3・性能・後回し一覧）、[results-ws031.md](results-ws031.md)（E-ledger、E-134 まで）、
+  [handover/README.md](handover/README.md)、[i915-rebuild-plan.md](i915-rebuild-plan.md)、`src/drivers/gpu/i915/tests/render/README.md`
+  （shader 試験の索引）。専門家レビュー待ちの再構築報告は `handover/expert-reports/ws031-report-36.md`。
+
+### ホスト
+| 役割 | 名前・場所 | 接続 |
+| --- | --- | --- |
+| 作業・build | centris | `ssh awe@10.0.10.2`、tree `~/zedBSD-gpu`、passwordless sudo |
+| 試験機（KVM host 兼、LCD が試験対象） | Dell Latitude 5330、hostname `chaos`、IP `10.0.10.25`。centris の ssh alias `solaris10-man`（`~/.ssh/config`: HostName 10.0.10.25、ssh-rsa/aes256-cbc/group1 を許可） | `ssh awe@10.0.10.25`（centris から `ssh solaris10-man`）、passwordless sudo。CPU i5-1245U（ADL-P）、iGPU `8086:46a8`（subsystem `1028:0b02`）、TSC 2.496 GHz |
+| カメラ（LCD 撮影） | Windows workstation `C:\Work\qemu-work` | `tools\capture_lcd.ps1`（写しは [tests/host/capture_lcd.ps1](tests/host/capture_lcd.ps1)） |
+
+### 5330 の iGPU の割当て
+- boot の既定は vfio-pci（`/etc/modprobe.d/vfio-igd.conf` の `options vfio-pci ids=8086:46a8`、`/etc/modules-load.d/vfio-igd.conf`）。
+- 実行時の切替は `~/bigbang/igpu-mode.sh host|vfio|show`（写し [tests/host/igpu-mode.sh](tests/host/igpu-mode.sh)）。
+  `host` は host の i915 に付け替え、awe に `/dev/dri/renderD128` と `/dev/kvm` の実行時 ACL を付ける（Venus の QEMU は awe で動く）。
+  `vfio` は passthrough 用。QEMU が動いている間は切替えを拒否する。
+- `vkloop-hw.sh` は開始時に vfio へ戻す。Venus の runner（`plan/ws014/tests/run-venus-remote.py`）は host にしてから走らせ、終わると vfio に戻す。
+
+### QEMU + i915 passthrough のコマンドライン
+5330 の `~/bigbang/run-parity-vk.sh`（写し [tests/host/run-parity-vk.sh](tests/host/run-parity-vk.sh)）。直接ではなく
+`vkloop-hw.sh` から使う（image を `~/bigbang/guest-parity.img` へ scp してから起動する）。要点:
+```
+sudo -n timeout 360 qemu-system-x86_64 \
+  -machine q35,accel=kvm,memory-backend=mem -cpu host,host-phys-bits-limit=39 -m 4096 -smp 4 \
+  -object memory-backend-memfd,id=mem,size=4G,share=on \
+  -device vfio-pci,host=0000:00:02.0,x-igd-opregion=on,rombar=0 \
+  -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
+  -drive if=pflash,format=raw,file=/home/awe/bigbang/vg-parity.fd \
+  -drive file=/home/awe/bigbang/guest-parity.img,format=raw,if=none,id=zd0 -device nvme,drive=zd0,serial=zedbsd0 \
+  -vga std -display none -monitor none -serial file:/home/awe/bigbang/run-parity-serial.log -nic none \
+  -debugcon file:/home/awe/bigbang/run-parity.log -no-reboot
+```
+- `QMP=1` で `-qmp unix:/home/awe/bigbang/qmp.sock,server=on,wait=off` と `qemu-xhci`＋`usb-tablet`＋`usb-kbd` を足す（capture と入力用）。
+- `VK_STOP_RE` は終了検出の正規表現（既定 `VKDEMO DONE|VKDEMO FAILED|oneshot vkprobe1|resident: stopping`）。見つけて数秒後に QEMU を止める。
+- guest からは OpRegion が見えない（ASLS=0）。そのため試験 build は `vendor/intel-vbt/` の 5330 の VBT を `I915_TEST_VBT=y` で取り込む
+  （`vkloop-hw.sh` が常に指定。XXX: ベアメタルで GPU 試験ができるようになったら削除）。
+
+### 日常のコマンド（centris の `~/zedBSD-gpu` で）
+**実機を使う run は必ず `flock /tmp/i915-hw.lock ...` で 1 つずつ。** 1 run は build・転送・boot 込みで 3〜5 分。結果の serial 全文は
+`/tmp/vkloop-last.log`。
+
+| 目的 | コマンド | 期待値 |
+| --- | --- | --- |
+| vkdemo offscreen | `flock /tmp/i915-hw.lock plan/ws031/tests/vkloop-hw.sh` | frame 1 `rgb_sha256=7523debe5f925b33c94af8b0a306d6bcf62c78d520a9091d42d53ba032b105ff` |
+| vkdemo を LCD に | `... vkloop-hw.sh display` | `rgb_sha256=94615464…19b1`、`resident display: ended PASS` |
+| kernel 試験 | `... vkloop-hw.sh test <scenario>` | scenario: `ktest`（最後は 383/0/12）、`eu`、`draw`、`r1`、`tex`、`t3`、`bl`、`vkx`（8/8）、`vkc`（9/9）、`vke1`（3/3）、`vke2`（9/9）、`lcdb`、`display_ktest` ほか（`src/drivers/gpu/i915/tests/execution/runner.c` の表） |
+| Wayland | `... vkloop-hw.sh wayland` | `WLTEST DONE wl1 frames=600` / `wl2 frames=60`、`ZWL EXIT ... error=0` |
+| mview を LCD に | `... vkloop-hw.sh mview`、`MVIEW_ARGS="--spin=30"`（fps 計測）、`MVIEW_ARGS="--spin=30 --shading=pixel"`、`MVIEW_MODEL=test`（blend のある test model） | `MVIEW SPIN ... fps=`、`ended PASS` |
+| vsync なし | `... vkloop-hw.sh "mview -DI915_PRESENT_NO_VSYNC=1"`（引数の後ろに `-D...` を書ける） | 190 fps（per-vertex）/ 130 fps（pixel） |
+| capture display（LCD なし、guest RAM から画像） | `CAPTURE=<vkdemo\|wayland\|mview> ... vkloop-hw.sh <display\|wayland\|mview>` | `/tmp/capture-last/`（`result.json`・PPM・`sheet.png`）。mview は 6 検査と p013 Venus 画像との PSNR |
+| build dir を分ける | `BUILD=build/xxx`（既定 `build/resident`） | flag の変更は自動で rebuild される |
+| Venus（5330 の host i915 で virtio-gpu + venus） | `python3 plan/ws031/tests/run-mview-remote.py --attempt <未使用の名前> --timeout 300 --render-server /home/awe/zedbsd-q306-venus/dependencies/q312-quiesce/install/libexec/virgl_render_server --renderer-library-dir /home/awe/zedbsd-q306-venus/dependencies/q312-quiesce/install/lib/x86_64-linux-gnu --output-root plan/ws031/temp/remote`（同じ flag で `plan/ws014/tests/run-wayland-remote.py`・`run-vkdemo-remote.py`） | `"status": "pass"`。**q312 の renderer が必須**（stock の 1.1.0-2 では物理 device が 0） |
+| host 試験 | `plan/ws031/tests/run-vk-host-tests.sh`、`run-lcd-modeset-host-test.sh`、`run-dp-host-test.sh`、`run-lcd-host-test.sh`、`run-opregion-host-test.sh`、`run-native-decide-host-test.sh`、`run-capture-host-test.sh`、`run-mview-host-test.sh`、`run-i915-firmware-package-test.sh`、`src/drivers/gpu/i915/tests/contracts/run.sh` | 全 PASS |
+| EU encoding を Mesa と照合 | `BRW_TOOLS=~/p014-c/mesa/build-asm/src/intel/compiler plan/ws031/tests/run-vk-gentool-test.sh` | PASS（Mesa 25.0.7 の assembler/disassembler） |
+| 1 file だけ compile | `plan/ws031/tests/i915-cc.sh <file.c>`（追加の flag は `I915_CC_CPPFLAGS`） | `i915-cc: ok` |
+| LCD の写真（Windows 側） | `powershell -ExecutionPolicy Bypass -File C:\Work\qemu-work\tools\capture_lcd.ps1 out.jpg` | 新しい QEMU が起動し `serving presentation` が `~/bigbang/run-parity-serial.log` に出てから撮る（古い log に反応しない） |
+| 性能の内訳 | mview の `MVIEW SPIN`・`MVIEW STAGES`、kernel の `i915: perf:`、zwl の `ZWL PERF`。scheduler の wakeup 遅延は `-DSCHED_WAKE_LATENCY=1` | phase014 §性能 第 2 回 |
+| モデルの再生成 | `python3 userland/base/mview/tools/fbx2mview.py userland/base/mview/models/qs40/source/qs40-r4.fbx userland/base/mview/models/qs40 --max-texture-side 1024 --date 2026-09-22` | 出力は byte 一致 |
+
+### 統合回帰の一覧（p015 の最後に 1 回）
+offscreen hash、display `ended PASS`（写真）、`wayland`、`CAPTURE=vkdemo` / `CAPTURE=wayland` / `CAPTURE=mview`（per-vertex と `--shading=pixel`）、
+`test ktest`・`eu`・`draw`・`tex`・`t3`・`bl`・`vkx`・`vkc`・`vke1`・`vke2`、host 試験一式、Venus の `run-mview-remote.py`・`run-wayland-remote.py`
+（libvulkan の reap 変更と kernel tick 1 kHz は Venus 側にも効く）。
+
+### 注意点（ハマりどころ）
+- centris 経由の ssh で引用符が二重になると壊れやすい（特に heredoc 内の `'` と `\n`）。編集 script は手元で書いて scp してから実行する。
+- 実機は 1 台。並列に run しない。build dir を共有すると flag の違いで毎回 rebuild になる（`BUILD=` で分ける）。
+- 5330 の serial log は guest の console 出力と kernel の log が混ざる。行の完全一致に頼らない（capture は write_count で判定している）。
+- Venus も同じ 5330 で動く。iGPU の切替えは QEMU が止まっている時だけ。
+- LLVM toolchain は zedbsd6（commit "lldb works" 以降）。`build/llvm` は `~/zedBSD/build/llvm` からの写し。`build/llvm.zedbsd5-old` は削除してよい。
+- QMP 経由の key は PS/2 keyboard だと zwl に届かない（usb-kbd なら届く、原因未調査は p015）。`input-send-event` に `device` を付けると
+  QEMU 10.0.11 が egl-headless で abort する。
+- `src/drivers/gpu/i915-old/` は専門家レビューの参照用に残してある（レビュー対応後に削除）。触らない。
+- 規約: `plan/coding-style.md`、`plan/ws031/i915-rebuild-rules.md`。
+- ユーザーの進め方: agent を並列に走らせない。正常系の疎通を先に、回帰は最後に 1 回。準正常系・異常系は後回しの一覧へ。commit は
+  ユーザーが行い、push はしない。governance 文書（`AGENTS.md`、`plan/AGENTS.md`、`plan/master.md`、`plan/queue.md`）は指示なく編集しない。
+
+### 次の作業
+1. p015（確認・小修正・統合回帰）。
+2. p016（executor）・p017（compiler）・p018（性能の構造）は計画のみ。着手はユーザーの指示で。
+3. 再構築の専門家レビュー（report 36）への対応、その後 `i915-old/` を削除。
+4. WS031 の完了判断はユーザー。完了したら GitHub Issues へ同期（WS 本体と p001〜p018 の Issue はまだ無い）。
 
 ## 適用規約・実行境界
 

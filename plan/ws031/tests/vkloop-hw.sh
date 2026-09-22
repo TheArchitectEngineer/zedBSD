@@ -16,7 +16,11 @@
 #        plan/ws031/tests/vkloop-hw.sh wayland         the zwl compositor and two wltest clients (FIFO 600 frames, then mailbox
 #                                                      with a swapchain recreate) in place of vkdemo; services in plan/ws031/tests/wayland/
 #        plan/ws031/tests/vkloop-hw.sh mview           the model viewer (zwl + mview, services in plan/ws031/tests/mview/) in place of vkdemo;
-#                                                      MVIEW_ARGS="--spin=30" adds viewer options
+#                                                      MVIEW_ARGS="--spin=30" adds viewer options; MVIEW_MODEL=test shows
+#                                                      userland/base/mview/models/test/ (it has a blend material) in place of qs40
+#                                                      MVIEW_ARGS="--shading=pixel" (or MVIEW_NO_VENUS=1) makes a CAPTURE=mview run skip
+#                                                      the comparison with the p013 Venus images (i915-capture.py --no-venus);
+#                                                      the six views are also on one sheet, /tmp/capture-last/sheet.png
 #        CAPTURE=<vkdemo|wayland|mview> plan/ws031/tests/vkloop-hw.sh [display|wayland|mview]
 #                                                      the capture build (I915_TEST_CAPTURE=y: no LCD, presents copied into guest RAM);
 #                                                      plan/ws031/tests/i915-capture.py reads them over QMP on the 5330 and checks the
@@ -74,10 +78,11 @@ I915_TEST_VBT=y
 # I915_TEST_CAPTURE=y (from the environment, default n): the capture display in place of the panel -- the LCD is not
 # brought up and every presentation is copied into guest RAM for the host's pmemsave (display/capture.c)
 I915_TEST_CAPTURE=${I915_TEST_CAPTURE:-n}
-mkdir -p build/resident
+BUILD=${BUILD:-build/resident}
+mkdir -p $BUILD
 # a change of flags or of the test build is not seen by make: force the rebuild and relink by hand
 FLAGS="$EXTRA|${I915_TESTS:-n}|${I915_TEST_ORACLE:-n}|vbt=$I915_TEST_VBT|capture=$I915_TEST_CAPTURE"
-[ -f build/resident/.vkloop-flags ] && [ "$(cat build/resident/.vkloop-flags)" = "$FLAGS" ] || {
+[ -f $BUILD/.vkloop-flags ] && [ "$(cat $BUILD/.vkloop-flags)" = "$FLAGS" ] || {
 	touch src/drivers/gpu/i915/i915.c
 	# the scenario is read by the runner only
 	[ ! -f src/drivers/gpu/i915/tests/execution/runner.c ] || touch src/drivers/gpu/i915/tests/execution/runner.c
@@ -88,7 +93,7 @@ FLAGS="$EXTRA|${I915_TESTS:-n}|${I915_TEST_ORACLE:-n}|vbt=$I915_TEST_VBT|capture
 	touch src/drivers/gpu/i915/display/capture.c
 }
 # the probe service as this run wants it; the file changes (and the cached image is rebuilt) only when its text does
-PROBE=build/resident/vkprobe1.gen
+PROBE=$BUILD/vkprobe1.gen
 if [ "$DISPLAY_RUN" = 1 ] && [ "$TIME_MS" = live ]; then
 	sed "s/--offscreen --readback --token=vk1 --duration=1/--token=vk1 --duration=${LIVE_S:-12}/" plan/ws031/tests/vkprobe1 > $PROBE.new
 elif [ "$DISPLAY_RUN" = 1 ]; then
@@ -100,7 +105,7 @@ else
 fi
 cmp -s $PROBE.new $PROBE 2>/dev/null || mv $PROBE.new $PROBE
 # the first wait as this run wants it: a test scenario runs before the node is served, so the application waits longer
-WAIT1=build/resident/vkwait1.gen
+WAIT1=$BUILD/vkwait1.gen
 if [ -n "$SCENARIO" ]; then
 	sed "s/^arguments=45\$/arguments=$((45 + ${TEST_WAIT_S:-90}))/" plan/ws031/tests/vkwait1 > $WAIT1.new
 else
@@ -125,7 +130,15 @@ if [ "$MVIEW_RUN" = 1 ]; then
 	FILES="--file /etc/service.d/vkwait1=$WAIT1 --file /etc/service.d/poweroff=plan/ws031/tests/poweroff"
 	# MVIEW_ARGS adds viewer options (e.g. MVIEW_ARGS=--spin=30 for the turning demonstration); the service
 	# file changes (and the cached image is rebuilt) only when its text does
-	MVIEW1=build/resident/mview1.gen
+	# MVIEW_MODEL=test ships the test model (userland/base/mview/models/test/: opaque, cutout and blend materials)
+	# to /usr/share/mview/test/ and shows it in place of qs40; the p013 Venus images are then no reference
+	if [ "${MVIEW_MODEL:-}" = test ]; then
+		MVIEW_ARGS="${MVIEW_ARGS:+$MVIEW_ARGS }--model=/usr/share/mview/test"
+		for n in model.txt tex/0.pam tex/1.pam; do
+			FILES="$FILES --file /usr/share/mview/test/$n=userland/base/mview/models/test/$n"
+		done
+	fi
+	MVIEW1=$BUILD/mview1.gen
 	sed "s|^arguments=\(.*\)$|arguments=\1${MVIEW_ARGS:+ $MVIEW_ARGS}|" plan/ws031/tests/mview/mview1 > $MVIEW1.new
 	cmp -s $MVIEW1.new $MVIEW1 2>/dev/null || mv $MVIEW1.new $MVIEW1
 	rm -f $MVIEW1.new
@@ -137,12 +150,12 @@ if [ "$MVIEW_RUN" = 1 ]; then
 fi
 # the image is rebuilt only when an input is newer than it: switching to an older rc.conf does not
 # count, so the chosen one is copied to one path whose file changes only when its text does
-RC_GEN=build/resident/rc-conf.gen
+RC_GEN=$BUILD/rc-conf.gen
 cp "$RC_CONF" $RC_GEN.new
 cmp -s $RC_GEN.new $RC_GEN 2>/dev/null || mv $RC_GEN.new $RC_GEN
 rm -f $RC_GEN.new
 RC_CONF=$RC_GEN
-make -j"$(nproc)" BUILD=build/resident "I915_TESTS=${I915_TESTS:-n}" "I915_TEST_ORACLE=${I915_TEST_ORACLE:-n}" \
+make -j"$(nproc)" BUILD=$BUILD "I915_TESTS=${I915_TESTS:-n}" "I915_TEST_ORACLE=${I915_TEST_ORACLE:-n}" \
 	"I915_TEST_VBT=$I915_TEST_VBT" "I915_TEST_CAPTURE=$I915_TEST_CAPTURE" \
 	"ZEDBSD_TEST_CPPFLAGS=-DGPU_IOCTL_TRACE=1 $EXTRA" \
 	ZEDBSD_TEST_RC_CONF=$RC_CONF "ZEDBSD_TEST_EXTRA_FILES=$FILES" \
@@ -151,15 +164,19 @@ make -j"$(nproc)" BUILD=build/resident "I915_TESTS=${I915_TESTS:-n}" "I915_TEST_
 	grep -E ' error: |Error [0-9]' /tmp/resident-build.log | head
 	exit 1
 }
-printf '%s' "$FLAGS" > build/resident/.vkloop-flags
+printf '%s' "$FLAGS" > $BUILD/.vkloop-flags
 # the iGPU goes back to vfio-pci if a Venus run left it on the host i915 driver (bigbang/igpu-mode.sh)
 ssh solaris10-man bigbang/igpu-mode.sh vfio >/dev/null || { echo "iGPU is not on vfio-pci"; exit 1; }
-scp -q build/resident/hdd-image.img solaris10-man:bigbang/guest-parity.img || exit 1
+scp -q $BUILD/hdd-image.img solaris10-man:bigbang/guest-parity.img || exit 1
 if [ -n "${CAPTURE:-}" ]; then
 	# QEMU with a QMP socket and USB input; the harness starts once the old serial log is gone
 	scp -q plan/ws031/tests/i915-capture.py solaris10-man:bigbang/i915-capture.py || exit 1
 	REF=
-	if [ "$CAPTURE" = mview ] && [ -d plan/ws031/temp/remote/p013-mview-009/evidence ]; then
+	# the per-pixel shading draws what the p013 Venus images do not show: the comparison is skipped
+	case "${MVIEW_ARGS:-}" in *--shading=pixel*) MVIEW_NO_VENUS=1 ;; esac
+	if [ "${MVIEW_NO_VENUS:-0}" = 1 ]; then
+		REF=--no-venus
+	elif [ "$CAPTURE" = mview ] && [ -z "${MVIEW_MODEL:-}" ] && [ -d plan/ws031/temp/remote/p013-mview-009/evidence ]; then
 		ssh solaris10-man 'mkdir -p bigbang/mview-venus-ref'
 		scp -q plan/ws031/temp/remote/p013-mview-009/evidence/*.ppm solaris10-man:bigbang/mview-venus-ref/
 		REF=--reference=/home/awe/bigbang/mview-venus-ref
