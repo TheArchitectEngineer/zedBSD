@@ -309,6 +309,206 @@ const struct wl_interface wl_output_interface = {
 	6, wl_output_events
 };
 
+/* Identifies object arguments in wl_seat.get_pointer for validation. */
+static const struct wl_interface *wl_seat_requests_0_types[] = {
+	&wl_pointer_interface,
+};
+
+/* Identifies object arguments in wl_seat.get_keyboard for validation. */
+static const struct wl_interface *wl_seat_requests_1_types[] = {
+	&wl_keyboard_interface,
+};
+
+/*
+ * Identifies object arguments in wl_seat.get_touch for validation.
+ *
+ * wl_touch is not described by this library, so the entry only keeps the
+ * request opcodes in their protocol order; no wrapper sends it.
+ */
+static const struct wl_interface *wl_seat_requests_2_types[] = {
+	NULL,
+};
+
+/* Preserves the wire opcode order for wl_seat requests. */
+static const struct wl_message wl_seat_requests[] = {
+	{ "get_pointer", "n", wl_seat_requests_0_types },
+	{ "get_keyboard", "n", wl_seat_requests_1_types },
+	{ "get_touch", "n", wl_seat_requests_2_types },
+	{ "release", "5", NULL },
+};
+
+/* Identifies object arguments in wl_seat.capabilities for validation. */
+static const struct wl_interface *wl_seat_events_0_types[] = {
+	NULL,
+};
+
+/* Identifies object arguments in wl_seat.name for validation. */
+static const struct wl_interface *wl_seat_events_1_types[] = {
+	NULL,
+};
+
+/* Preserves the wire opcode order for wl_seat events. */
+static const struct wl_message wl_seat_events[] = {
+	{ "capabilities", "u", wl_seat_events_0_types },
+	{ "name", "2s", wl_seat_events_1_types },
+};
+
+/* Exposes the immutable selected wl_seat protocol description. */
+const struct wl_interface wl_seat_interface = {
+	"wl_seat", 5, 4, wl_seat_requests,
+	2, wl_seat_events
+};
+
+/* Identifies object arguments in wl_pointer.set_cursor for validation. */
+static const struct wl_interface *wl_pointer_requests_0_types[] = {
+	NULL,
+	&wl_surface_interface,
+	NULL,
+	NULL,
+};
+
+/* Preserves the wire opcode order for wl_pointer requests. */
+static const struct wl_message wl_pointer_requests[] = {
+	{ "set_cursor", "u?oii", wl_pointer_requests_0_types },
+	{ "release", "3", NULL },
+};
+
+/* Identifies object arguments in wl_pointer.enter for validation. */
+static const struct wl_interface *wl_pointer_events_0_types[] = {
+	NULL,
+	&wl_surface_interface,
+	NULL,
+	NULL,
+};
+
+/* Identifies object arguments in wl_pointer.leave for validation. */
+static const struct wl_interface *wl_pointer_events_1_types[] = {
+	NULL,
+	&wl_surface_interface,
+};
+
+/* Identifies object arguments in wl_pointer.motion for validation. */
+static const struct wl_interface *wl_pointer_events_2_types[] = {
+	NULL,
+	NULL,
+	NULL,
+};
+
+/* Identifies object arguments in wl_pointer.button for validation. */
+static const struct wl_interface *wl_pointer_events_3_types[] = {
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+};
+
+/* Identifies object arguments in wl_pointer.axis for validation. */
+static const struct wl_interface *wl_pointer_events_4_types[] = {
+	NULL,
+	NULL,
+	NULL,
+};
+
+/* Identifies object arguments in wl_pointer.axis_source for validation. */
+static const struct wl_interface *wl_pointer_events_6_types[] = {
+	NULL,
+};
+
+/* Identifies object arguments in wl_pointer.axis_stop for validation. */
+static const struct wl_interface *wl_pointer_events_7_types[] = {
+	NULL,
+	NULL,
+};
+
+/* Identifies object arguments in wl_pointer.axis_discrete for validation. */
+static const struct wl_interface *wl_pointer_events_8_types[] = {
+	NULL,
+	NULL,
+};
+
+/* Preserves the wire opcode order for wl_pointer events. */
+static const struct wl_message wl_pointer_events[] = {
+	{ "enter", "uoff", wl_pointer_events_0_types },
+	{ "leave", "uo", wl_pointer_events_1_types },
+	{ "motion", "uff", wl_pointer_events_2_types },
+	{ "button", "uuuu", wl_pointer_events_3_types },
+	{ "axis", "uuf", wl_pointer_events_4_types },
+	{ "frame", "5", NULL },
+	{ "axis_source", "5u", wl_pointer_events_6_types },
+	{ "axis_stop", "5uu", wl_pointer_events_7_types },
+	{ "axis_discrete", "5ui", wl_pointer_events_8_types },
+};
+
+/* Exposes the immutable selected wl_pointer protocol description. */
+const struct wl_interface wl_pointer_interface = {
+	"wl_pointer", 5, 2, wl_pointer_requests,
+	9, wl_pointer_events
+};
+
+/* Preserves the wire opcode order for wl_keyboard requests. */
+static const struct wl_message wl_keyboard_requests[] = {
+	{ "release", "3", NULL },
+};
+
+/* Identifies object arguments in wl_keyboard.keymap for validation. */
+static const struct wl_interface *wl_keyboard_events_0_types[] = {
+	NULL,
+	NULL,
+	NULL,
+};
+
+/* Identifies object arguments in wl_keyboard.enter for validation. */
+static const struct wl_interface *wl_keyboard_events_1_types[] = {
+	NULL,
+	&wl_surface_interface,
+	NULL,
+};
+
+/* Identifies object arguments in wl_keyboard.leave for validation. */
+static const struct wl_interface *wl_keyboard_events_2_types[] = {
+	NULL,
+	&wl_surface_interface,
+};
+
+/* Identifies object arguments in wl_keyboard.key for validation. */
+static const struct wl_interface *wl_keyboard_events_3_types[] = {
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+};
+
+/* Identifies object arguments in wl_keyboard.modifiers for validation. */
+static const struct wl_interface *wl_keyboard_events_4_types[] = {
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+};
+
+/* Identifies object arguments in wl_keyboard.repeat_info for validation. */
+static const struct wl_interface *wl_keyboard_events_5_types[] = {
+	NULL,
+	NULL,
+};
+
+/* Preserves the wire opcode order for wl_keyboard events. */
+static const struct wl_message wl_keyboard_events[] = {
+	{ "keymap", "uhu", wl_keyboard_events_0_types },
+	{ "enter", "uoa", wl_keyboard_events_1_types },
+	{ "leave", "uo", wl_keyboard_events_2_types },
+	{ "key", "uuuu", wl_keyboard_events_3_types },
+	{ "modifiers", "uuuuu", wl_keyboard_events_4_types },
+	{ "repeat_info", "4ii", wl_keyboard_events_5_types },
+};
+
+/* Exposes the immutable selected wl_keyboard protocol description. */
+const struct wl_interface wl_keyboard_interface = {
+	"wl_keyboard", 5, 1, wl_keyboard_requests,
+	6, wl_keyboard_events
+};
+
 /* Identifies object arguments in xdg_wm_base.create_positioner for validation. */
 static const struct wl_interface *xdg_wm_base_requests_1_types[] = {
 	&xdg_positioner_interface,
@@ -468,7 +668,7 @@ static const struct wl_interface *xdg_toplevel_requests_3_types[] = {
 
 /* Identifies object arguments in xdg_toplevel.show_window_menu for validation. */
 static const struct wl_interface *xdg_toplevel_requests_4_types[] = {
-	NULL,
+	&wl_seat_interface,
 	NULL,
 	NULL,
 	NULL,
@@ -476,13 +676,13 @@ static const struct wl_interface *xdg_toplevel_requests_4_types[] = {
 
 /* Identifies object arguments in xdg_toplevel.move for validation. */
 static const struct wl_interface *xdg_toplevel_requests_5_types[] = {
-	NULL,
+	&wl_seat_interface,
 	NULL,
 };
 
 /* Identifies object arguments in xdg_toplevel.resize for validation. */
 static const struct wl_interface *xdg_toplevel_requests_6_types[] = {
-	NULL,
+	&wl_seat_interface,
 	NULL,
 	NULL,
 };
@@ -543,7 +743,7 @@ const struct wl_interface xdg_toplevel_interface = {
 
 /* Identifies object arguments in xdg_popup.grab for validation. */
 static const struct wl_interface *xdg_popup_requests_1_types[] = {
-	NULL,
+	&wl_seat_interface,
 	NULL,
 };
 
@@ -1528,6 +1728,367 @@ wl_output_get_version(
 }
 
 /*
+ * Installs the listener for wl_seat events.
+ */
+int
+wl_seat_add_listener(
+	struct wl_seat *wl_seat,
+	const struct wl_seat_listener *listener,
+	void *data)
+{
+	int error;
+
+	/* Associates typed callbacks with the proxy event stream. */
+	error = wl_proxy_add_listener((struct wl_proxy *)wl_seat, (void (**)(void))listener, data);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: subsequent events use this listener. */
+	return 0;
+}
+
+/*
+ * Sends the wl_seat.get_pointer request.
+ */
+struct wl_pointer *
+wl_seat_get_pointer(
+	struct wl_seat *wl_seat)
+{
+	union wl_argument arguments[1];
+	struct wl_proxy *created;
+	uint32_t version;
+
+	/* The child inherits the seat's negotiated version, as the protocol requires. */
+	version = wl_proxy_get_version((struct wl_proxy *)wl_seat);
+
+	/* The new_id slot is filled with the identity allocated for the child. */
+	arguments[0].n = 0;
+	created = wl_proxy_marshal_array_flags((struct wl_proxy *)wl_seat, 0U, &wl_pointer_interface, version, 0, arguments);
+	if (created == NULL)
+		return NULL;
+
+	/* Succeeded: the caller owns the new protocol proxy. */
+	return (struct wl_pointer *)created;
+}
+
+/*
+ * Sends the wl_seat.get_keyboard request.
+ */
+struct wl_keyboard *
+wl_seat_get_keyboard(
+	struct wl_seat *wl_seat)
+{
+	union wl_argument arguments[1];
+	struct wl_proxy *created;
+	uint32_t version;
+
+	/* The child inherits the seat's negotiated version, as the protocol requires. */
+	version = wl_proxy_get_version((struct wl_proxy *)wl_seat);
+
+	/* The new_id slot is filled with the identity allocated for the child. */
+	arguments[0].n = 0;
+	created = wl_proxy_marshal_array_flags((struct wl_proxy *)wl_seat, 1U, &wl_keyboard_interface, version, 0, arguments);
+	if (created == NULL)
+		return NULL;
+
+	/* Succeeded: the caller owns the new protocol proxy. */
+	return (struct wl_keyboard *)created;
+}
+
+/*
+ * Sends the wl_seat.release request and drops the local proxy.
+ */
+void
+wl_seat_release(
+	struct wl_seat *wl_seat)
+{
+	/* Queues the destructor request; the proxy is destroyed with it. */
+	wl_proxy_marshal_array_flags((struct wl_proxy *)wl_seat, 3U, NULL, 0, WL_MARSHAL_FLAG_DESTROY, NULL);
+
+	/* Succeeded: the display owns the queued request or its fatal error. */
+	return;
+}
+
+/*
+ * Drops the local wl_seat proxy without telling the compositor.
+ */
+void
+wl_seat_destroy(
+	struct wl_seat *wl_seat)
+{
+	/* Suppresses future callbacks; the compositor keeps its object alive. */
+	wl_proxy_destroy((struct wl_proxy *)wl_seat);
+
+	/* Succeeded: caller ownership has ended. */
+	return;
+}
+
+/*
+ * Associates client state with the wl_seat proxy.
+ */
+void
+wl_seat_set_user_data(
+	struct wl_seat *wl_seat,
+	void *data)
+{
+	/* Uses the common proxy ownership and synchronization contract. */
+	wl_proxy_set_user_data((struct wl_proxy *)wl_seat, data);
+
+	/* Succeeded: the association is updated. */
+	return;
+}
+
+/*
+ * Obtains client state from the wl_seat proxy.
+ */
+void *
+wl_seat_get_user_data(
+	struct wl_seat *wl_seat)
+{
+	void *answer;
+
+	/* Uses the common proxy ownership and synchronization contract. */
+	answer = wl_proxy_get_user_data((struct wl_proxy *)wl_seat);
+
+	/* Succeeded: reports the requested proxy property. */
+	return answer;
+}
+
+/*
+ * Obtains the negotiated version of the wl_seat proxy.
+ */
+uint32_t
+wl_seat_get_version(
+	struct wl_seat *wl_seat)
+{
+	uint32_t answer;
+
+	/* Uses the common proxy ownership and synchronization contract. */
+	answer = wl_proxy_get_version((struct wl_proxy *)wl_seat);
+
+	/* Succeeded: reports the requested proxy property. */
+	return answer;
+}
+
+/*
+ * Installs the listener for wl_pointer events.
+ */
+int
+wl_pointer_add_listener(
+	struct wl_pointer *wl_pointer,
+	const struct wl_pointer_listener *listener,
+	void *data)
+{
+	int error;
+
+	/* Associates typed callbacks with the proxy event stream. */
+	error = wl_proxy_add_listener((struct wl_proxy *)wl_pointer, (void (**)(void))listener, data);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: subsequent events use this listener. */
+	return 0;
+}
+
+/*
+ * Sends the wl_pointer.set_cursor request.
+ *
+ * zwl accepts the request and draws no cursor; other compositors may.
+ */
+void
+wl_pointer_set_cursor(
+	struct wl_pointer *wl_pointer,
+	uint32_t serial,
+	struct wl_surface *surface,
+	int32_t hotspot_x,
+	int32_t hotspot_y)
+{
+	union wl_argument arguments[4];
+
+	/* Preserves argument order; a null surface hides the cursor. */
+	arguments[0].u = serial;
+	arguments[1].o = (struct wl_object *)surface;
+	arguments[2].i = hotspot_x;
+	arguments[3].i = hotspot_y;
+
+	/* Queues the wire request atomically. */
+	wl_proxy_marshal_array_flags((struct wl_proxy *)wl_pointer, 0U, NULL, 0, 0, arguments);
+
+	/* Succeeded: the display owns the queued request or its fatal error. */
+	return;
+}
+
+/*
+ * Sends the wl_pointer.release request and drops the local proxy.
+ */
+void
+wl_pointer_release(
+	struct wl_pointer *wl_pointer)
+{
+	/* Queues the destructor request; the proxy is destroyed with it. */
+	wl_proxy_marshal_array_flags((struct wl_proxy *)wl_pointer, 1U, NULL, 0, WL_MARSHAL_FLAG_DESTROY, NULL);
+
+	/* Succeeded: the display owns the queued request or its fatal error. */
+	return;
+}
+
+/*
+ * Drops the local wl_pointer proxy without telling the compositor.
+ */
+void
+wl_pointer_destroy(
+	struct wl_pointer *wl_pointer)
+{
+	/* Suppresses future callbacks; the compositor keeps its object alive. */
+	wl_proxy_destroy((struct wl_proxy *)wl_pointer);
+
+	/* Succeeded: caller ownership has ended. */
+	return;
+}
+
+/*
+ * Associates client state with the wl_pointer proxy.
+ */
+void
+wl_pointer_set_user_data(
+	struct wl_pointer *wl_pointer,
+	void *data)
+{
+	/* Uses the common proxy ownership and synchronization contract. */
+	wl_proxy_set_user_data((struct wl_proxy *)wl_pointer, data);
+
+	/* Succeeded: the association is updated. */
+	return;
+}
+
+/*
+ * Obtains client state from the wl_pointer proxy.
+ */
+void *
+wl_pointer_get_user_data(
+	struct wl_pointer *wl_pointer)
+{
+	void *answer;
+
+	/* Uses the common proxy ownership and synchronization contract. */
+	answer = wl_proxy_get_user_data((struct wl_proxy *)wl_pointer);
+
+	/* Succeeded: reports the requested proxy property. */
+	return answer;
+}
+
+/*
+ * Obtains the negotiated version of the wl_pointer proxy.
+ */
+uint32_t
+wl_pointer_get_version(
+	struct wl_pointer *wl_pointer)
+{
+	uint32_t answer;
+
+	/* Uses the common proxy ownership and synchronization contract. */
+	answer = wl_proxy_get_version((struct wl_proxy *)wl_pointer);
+
+	/* Succeeded: reports the requested proxy property. */
+	return answer;
+}
+
+/*
+ * Installs the listener for wl_keyboard events.
+ */
+int
+wl_keyboard_add_listener(
+	struct wl_keyboard *wl_keyboard,
+	const struct wl_keyboard_listener *listener,
+	void *data)
+{
+	int error;
+
+	/* Associates typed callbacks with the proxy event stream. */
+	error = wl_proxy_add_listener((struct wl_proxy *)wl_keyboard, (void (**)(void))listener, data);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: subsequent events use this listener. */
+	return 0;
+}
+
+/*
+ * Sends the wl_keyboard.release request and drops the local proxy.
+ */
+void
+wl_keyboard_release(
+	struct wl_keyboard *wl_keyboard)
+{
+	/* Queues the destructor request; the proxy is destroyed with it. */
+	wl_proxy_marshal_array_flags((struct wl_proxy *)wl_keyboard, 0U, NULL, 0, WL_MARSHAL_FLAG_DESTROY, NULL);
+
+	/* Succeeded: the display owns the queued request or its fatal error. */
+	return;
+}
+
+/*
+ * Drops the local wl_keyboard proxy without telling the compositor.
+ */
+void
+wl_keyboard_destroy(
+	struct wl_keyboard *wl_keyboard)
+{
+	/* Suppresses future callbacks; the compositor keeps its object alive. */
+	wl_proxy_destroy((struct wl_proxy *)wl_keyboard);
+
+	/* Succeeded: caller ownership has ended. */
+	return;
+}
+
+/*
+ * Associates client state with the wl_keyboard proxy.
+ */
+void
+wl_keyboard_set_user_data(
+	struct wl_keyboard *wl_keyboard,
+	void *data)
+{
+	/* Uses the common proxy ownership and synchronization contract. */
+	wl_proxy_set_user_data((struct wl_proxy *)wl_keyboard, data);
+
+	/* Succeeded: the association is updated. */
+	return;
+}
+
+/*
+ * Obtains client state from the wl_keyboard proxy.
+ */
+void *
+wl_keyboard_get_user_data(
+	struct wl_keyboard *wl_keyboard)
+{
+	void *answer;
+
+	/* Uses the common proxy ownership and synchronization contract. */
+	answer = wl_proxy_get_user_data((struct wl_proxy *)wl_keyboard);
+
+	/* Succeeded: reports the requested proxy property. */
+	return answer;
+}
+
+/*
+ * Obtains the negotiated version of the wl_keyboard proxy.
+ */
+uint32_t
+wl_keyboard_get_version(
+	struct wl_keyboard *wl_keyboard)
+{
+	uint32_t answer;
+
+	/* Uses the common proxy ownership and synchronization contract. */
+	answer = wl_proxy_get_version((struct wl_proxy *)wl_keyboard);
+
+	/* Succeeded: reports the requested proxy property. */
+	return answer;
+}
+
+/*
  * Installs the listener for xdg_wm_base events.
  */
 int
@@ -2144,7 +2705,7 @@ xdg_toplevel_set_app_id(
 void
 xdg_toplevel_show_window_menu(
 	struct xdg_toplevel *object,
-	struct wl_proxy *seat,
+	struct wl_seat *seat,
 	uint32_t serial,
 	int32_t x,
 	int32_t y)
@@ -2170,7 +2731,7 @@ xdg_toplevel_show_window_menu(
 void
 xdg_toplevel_move(
 	struct xdg_toplevel *object,
-	struct wl_proxy *seat,
+	struct wl_seat *seat,
 	uint32_t serial)
 {
 	union wl_argument arguments[2];
@@ -2192,7 +2753,7 @@ xdg_toplevel_move(
 void
 xdg_toplevel_resize(
 	struct xdg_toplevel *object,
-	struct wl_proxy *seat,
+	struct wl_seat *seat,
 	uint32_t serial,
 	uint32_t edges)
 {
@@ -2422,7 +2983,7 @@ xdg_popup_destroy(
 void
 xdg_popup_grab(
 	struct xdg_popup *object,
-	struct wl_proxy *seat,
+	struct wl_seat *seat,
 	uint32_t serial)
 {
 	union wl_argument arguments[2];

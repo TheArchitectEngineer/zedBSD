@@ -19,10 +19,27 @@ behavioral/interface facts. The maintained finite C descriptions and wrappers
 are independently expressed source, with no production generator.
 
 Selected wire descriptions: wl_display/registry/callback/region/buffer v1,
-wl_compositor/surface/output v4, xdg_wm_base/positioner/surface/toplevel/popup v1.
-This library does not claim a complete Wayland SDK. It does not supply input,
+wl_compositor/surface/output v4, wl_seat/wl_pointer/wl_keyboard v5,
+xdg_wm_base/positioner/surface/toplevel/popup v1.
+This library does not claim a complete Wayland SDK. It does not supply wl_touch,
 wl_shm, wl_subcompositor, EGL, a public server library, or general C callback
-FFI. Custom event interfaces use `wl_proxy_add_dispatcher`; selected interface
+FFI.
+
+Input interfaces (added for WS031 p013) were checked against the same pinned
+Wayland 1.23.1 description and client ABI: wl_seat requests get_pointer (0),
+get_keyboard (1), get_touch (2), release (3, since 5) and events capabilities
+(0), name (1, since 2); wl_pointer requests set_cursor (0, `u?oii`), release
+(1, since 3) and events enter (`uoff`), leave (`uo`), motion (`uff`), button
+(`uuuu`), axis (`uuf`), frame, axis_source (`u`), axis_stop (`uu`) and
+axis_discrete (`ui`), the last four since 5; wl_keyboard request release (0,
+since 3) and events keymap (`uhu`), enter (`uoa`), leave (`uo`), key (`uuuu`),
+modifiers (`uuuuu`) and repeat_info (`ii`, since 4). The described versions stop
+at 5: pointer axis_value120/axis_relative_direction (v8/v9) and keyboard v10 key
+repetition are not described, and wl_touch is not supplied, so get_touch has no
+wrapper. The public names, signatures, listener member order (including the
+never-invoked v8/v9 pointer members) and enum values follow the upstream client
+header; no upstream code or scanner output was copied. The xdg-shell seat
+arguments now use `struct wl_seat *` as upstream declares them. Custom event interfaces use `wl_proxy_add_dispatcher`; selected interface
 listeners have typed independent dispatch code. Extension arrays, strings,
 objects, scalar/fixed values and fd arguments use the standard wire format.
 Server-created new_id event objects are outside these selected interfaces and

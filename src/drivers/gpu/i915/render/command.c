@@ -120,11 +120,13 @@ static int i915_record_begin_pass(struct i915_render_session *session, struct i9
 static int i915_record_bind_vertex(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader);
 static int i915_record_bind_descriptor_sets(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader);
 static int i915_record_push_constants(struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader);
+static int i915_record_clear_attachments(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader);
 static int i915_record_command(struct i915_render_session *session, uint32_t opcode, struct i915_wire_reader *reader);
 static int i915_image_surface(const struct i915_gfx_image *image, struct i915_gfx_surface *surface);
 static int i915_execute_clear(struct i915_render_session *session, const struct i915_gfx_op *op);
 static int i915_execute_buffer_image_copy(struct i915_render_session *session, const struct i915_gfx_op *op);
 static int i915_execute_clear_image(struct i915_render_session *session, const struct i915_gfx_op *op);
+static int i915_execute_clear_attachment(struct i915_render_session *session, const struct i915_gfx_draw_state *state, const struct i915_gfx_op *op);
 static int i915_execute_image_copy(struct i915_render_session *session, const struct i915_gfx_op *op);
 static int i915_execute_image_blit(struct i915_render_session *session, const struct i915_gfx_op *op);
 static int i915_command_buffer_execute(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf);
@@ -981,6 +983,83 @@ i915_record_begin_pass(
 }
 
 /*
+ * vkCmdClearAttachments: [count][count]{aspect, colour index, is depth,
+ * value}[count][count]{VkClearRect}.
+ *
+ * Every attachment and rectangle pair is one operation.  The pass has one
+ * subpass, so a colour clear names the subpass's colour attachment and a
+ * depth clear its depth attachment.  The layers are not acted on.
+ */
+static int
+i915_record_clear_attachments(
+	struct i915_render_session *session,
+	struct i915_gfx_cmdbuf *cmdbuf,
+	struct i915_wire_reader *reader)
+{
+	struct i915_gfx_op *op;
+	VkClearRect rects[I915_GFX_MAX_CLEAR_RECTS];
+	uint32_t is_depth[I915_GFX_MAX_ATTACHMENTS];
+	uint32_t words[I915_GFX_MAX_ATTACHMENTS][4];
+	uint64_t attachments;
+	uint64_t count;
+	uint64_t length;
+	uint64_t index;
+	uint64_t rect;
+	uint32_t word;
+
+	/* Decodes the number of attachments. */
+	(void)drv_i915_wire_read_u32(reader);
+	attachments = drv_i915_wire_read_u64(reader);
+	if (reader->error != 0 || attachments > I915_GFX_MAX_ATTACHMENTS)
+		return EINVAL;
+
+	/* Decodes every attachment's value: a depth and stencil pair, or four colour words. */
+	for (index = 0U; index < attachments; index++) {
+		memset(words[index], 0, sizeof(words[index]));
+		(void)drv_i915_wire_read_u32(reader);
+		(void)drv_i915_wire_read_u32(reader);
+		is_depth[index] = drv_i915_wire_read_u32(reader);
+		if (is_depth[index] != 0U) {
+			words[index][0] = drv_i915_wire_read_u32(reader);
+			(void)drv_i915_wire_read_u32(reader);
+		} else {
+			(void)drv_i915_wire_read_u32(reader);
+			length = drv_i915_wire_read_u64(reader);
+			if (length != 4U)
+				reader->error = 1;
+			for (word = 0U; word < 4U; word++)
+				words[index][word] = drv_i915_wire_read_u32(reader);
+		}
+	}
+
+	/* Decodes the rectangles. */
+	(void)drv_i915_wire_read_u32(reader);
+	count = drv_i915_wire_read_u64(reader);
+	if (reader->error != 0 || count > I915_GFX_MAX_CLEAR_RECTS)
+		return EINVAL;
+	for (rect = 0U; rect < count; rect++)
+		i915_vkc_dec_VkClearRect(reader, &session->arena, &rects[rect]);
+	if (reader->error != 0)
+		return EINVAL;
+
+	/* Records one clear for every attachment and rectangle. */
+	for (index = 0U; index < attachments; index++) {
+		for (rect = 0U; rect < count; rect++) {
+			op = i915_command_op(cmdbuf, I915_GFX_OP_CLEAR_ATTACHMENT);
+			op->u.clear_attachment.is_depth = is_depth[index];
+			memcpy(op->u.clear_attachment.words, words[index], sizeof(words[index]));
+			op->u.clear_attachment.rect.x = rects[rect].rect.offset.x;
+			op->u.clear_attachment.rect.y = rects[rect].rect.offset.y;
+			op->u.clear_attachment.rect.w = rects[rect].rect.extent.width;
+			op->u.clear_attachment.rect.h = rects[rect].rect.extent.height;
+		}
+	}
+
+	/* Succeeded: every clear is recorded. */
+	return 0;
+}
+
+/*
  * vkCmdBindVertexBuffers: [first][present][count]{buffer}[count]{offset}.
  *
  * Every binding is one operation.
@@ -1190,6 +1269,10 @@ i915_record_command(
 		/* vkCmdClearColorImage */
 		error = i915_record_clear_image(session, cmdbuf, reader);
 		return error;
+	case 121U:
+		/* vkCmdClearAttachments */
+		error = i915_record_clear_attachments(session, cmdbuf, reader);
+		return error;
 	case 115U:
 		/* vkCmdCopyBufferToImage */
 		error = i915_record_buffer_image_copy(session, cmdbuf, reader, 1);
@@ -1320,6 +1403,76 @@ i915_execute_clear(
 
 	/* Succeeded: every attachment that loads with a clear is cleared. */
 	return 0;
+}
+
+/*
+ * Runs one vkCmdClearAttachments rectangle on the attachment of the pass in
+ * progress.
+ *
+ * The rectangle is clipped to the attachment.  A depth clear fills the
+ * rectangle of the R32_FLOAT view of the depth buffer's bytes, as the pass
+ * begin does.
+ * XXX: the stencil value is not written, and a depth rectangle is cleared in
+ * the linear view, which matches the tiled layout only for the whole buffer.
+ */
+static int
+i915_execute_clear_attachment(
+	struct i915_render_session *session,
+	const struct i915_gfx_draw_state *state,
+	const struct i915_gfx_op *op)
+{
+	struct i915_gfx_framebuffer *framebuffer;
+	struct i915_gfx_image *image;
+	struct i915_gfx_surface surface;
+	struct i915_gfx_rect rect;
+	uint32_t attachment;
+	int64_t right;
+	int64_t bottom;
+	int error;
+
+	/* A clear outside a pass is refused. */
+	framebuffer = state->framebuffer;
+	if (state->pass == NULL || framebuffer == NULL)
+		return EINVAL;
+
+	/* Finds the attachment the clear names; one the subpass does not use clears nothing. */
+	attachment = state->pass->color_attachment;
+	if (op->u.clear_attachment.is_depth != 0U)
+		attachment = state->pass->depth_attachment;
+	if (attachment >= framebuffer->view_count || framebuffer->views[attachment] == NULL)
+		return 0;
+
+	/* Describes the attachment's image. */
+	image = framebuffer->views[attachment]->image;
+	error = i915_image_surface(image, &surface);
+	if (error != 0)
+		return EINVAL;
+	if (op->u.clear_attachment.is_depth != 0U) {
+		surface.format = VK_FORMAT_R32_SFLOAT;
+		surface.width = image->pitch / 4U;
+		surface.height = (uint32_t)(image->bytes / image->pitch);
+	}
+
+	/* Clips the rectangle to the surface; an empty one clears nothing. */
+	rect = op->u.clear_attachment.rect;
+	right = (int64_t)rect.x + rect.w;
+	bottom = (int64_t)rect.y + rect.h;
+	if (rect.x < 0)
+		rect.x = 0;
+	if (rect.y < 0)
+		rect.y = 0;
+	if (right > (int64_t)surface.width)
+		right = surface.width;
+	if (bottom > (int64_t)surface.height)
+		bottom = surface.height;
+	if (right <= rect.x || bottom <= rect.y)
+		return 0;
+	rect.w = (uint32_t)(right - rect.x);
+	rect.h = (uint32_t)(bottom - rect.y);
+
+	/* Fills the rectangle. */
+	error = drv_i915_gfx_rect(session, &surface, &rect, NULL, NULL, op->u.clear_attachment.words, 0);
+	return error;
 }
 
 /*
@@ -1649,6 +1802,9 @@ i915_command_buffer_execute(
 			break;
 		case I915_GFX_OP_PUSH_CONSTANTS:
 			memcpy(state.push + op->u.push.offset, op->u.push.bytes, op->u.push.size);
+			break;
+		case I915_GFX_OP_CLEAR_ATTACHMENT:
+			error = i915_execute_clear_attachment(session, &state, op);
 			break;
 		case I915_GFX_OP_DRAW:
 			error = drv_i915_gfx_draw(session,

@@ -58,6 +58,8 @@ WS029のdisplay/scanout後続（[ws029-f003](https://github.com/awemorris/zedBSD
 | ws031-p010 | wsi: KMS/modeset・scanout・swapchain present（`VK_KHR_display`/`swapchain`）（[phase010](phase010/phase.md)） | cleared | 300 分 |
 | ws031-p011 | 統合: build-passing 達成／実機描画はビッグバンテスト（[phase011](phase011/phase.md)） | big-bang待ち | 360 分 |
 | ws031-p012 | レビュー: 静的解析・規約全文確認・回帰・制限整理（[phase012](phase012/phase.md)） | cleared | 180 分 |
+| ws031-p013 | Wayland モデルビューア（Venus）: FBX 変換・zwl の seat/pointer/keyboard・mview（[phase013](phase013/phase.md)） | cleared（Venus） | 3 日 |
+| ws031-p014 | モデルビューアを i915 で: compiler/executor の拡張（[phase013 §p014](phase013/phase.md)） | planning | 未見積 |
 
 段階的な受け入れの単位は Phase 境界と一致しない。増分A（三角形）は複数モジュールの最小経路を横断する最初の実機到達点で、Phase 計画時に「増分Aで必要な関数」を先行実装対象として明示する。増分B・Cで texture/depth・実shader を足す。
 

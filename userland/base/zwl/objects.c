@@ -195,6 +195,10 @@ zwl_object_destroy(
 	if (object == NULL || object->dead)
 		return;
 
+	/* Seat leave events must name the surface before its identity is retired. */
+	if (object->kind == ZWL_SURFACE)
+		zwl_seat_surface_gone(object);
+
 	/* Destroyed IDs become reusable only through ordered delete_id notification. */
 	server = object->client->server;
 	object->dead = 1;
@@ -314,11 +318,11 @@ zwl_client_destroy(
 	for (index = 0; index < client->right_count; index++)
 		close(client->rights[index]);
 
-	/* Unsent events carry only bytes and cannot extend GPU resource ownership. */
+	/* Unsent events cannot extend GPU resource ownership; their descriptors close here. */
 	while (client->output_head != NULL) {
 		packet = client->output_head;
 		client->output_head = packet->next;
-		free(packet);
+		zwl_packet_free(packet);
 	}
 
 	/* Unlink the client before closing its descriptor so reuse cannot select this generation. */

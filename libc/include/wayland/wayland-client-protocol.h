@@ -24,6 +24,9 @@ struct wl_surface;
 struct wl_region;
 struct wl_buffer;
 struct wl_output;
+struct wl_seat;
+struct wl_pointer;
+struct wl_keyboard;
 struct xdg_wm_base;
 struct xdg_positioner;
 struct xdg_surface;
@@ -169,6 +172,156 @@ void wl_output_release(struct wl_output *object);
 void wl_output_set_user_data(struct wl_output *object, void *data);
 void *wl_output_get_user_data(struct wl_output *object);
 uint32_t wl_output_get_version(struct wl_output *object);
+
+struct wl_seat;
+extern const struct wl_interface wl_seat_interface;
+
+/* Names the input device classes a seat currently offers; values are bits. */
+enum wl_seat_capability {
+	WL_SEAT_CAPABILITY_POINTER = 1,
+	WL_SEAT_CAPABILITY_KEYBOARD = 2,
+	WL_SEAT_CAPABILITY_TOUCH = 4
+};
+
+/* Names the protocol errors a seat can raise. */
+enum wl_seat_error {
+	WL_SEAT_ERROR_MISSING_CAPABILITY = 0
+};
+
+/* Receives events for one wl_seat object; retained by its proxy. */
+struct wl_seat_listener {
+	void (*capabilities)(void *data, struct wl_seat *wl_seat, uint32_t capabilities);
+	void (*name)(void *data, struct wl_seat *wl_seat, const char *name);
+};
+
+int wl_seat_add_listener(struct wl_seat *wl_seat, const struct wl_seat_listener *listener, void *data);
+#define WL_SEAT_GET_POINTER 0U
+#define WL_SEAT_GET_KEYBOARD 1U
+#define WL_SEAT_GET_TOUCH 2U
+#define WL_SEAT_RELEASE 3U
+#define WL_SEAT_CAPABILITIES_SINCE_VERSION 1
+#define WL_SEAT_NAME_SINCE_VERSION 2
+#define WL_SEAT_GET_POINTER_SINCE_VERSION 1
+#define WL_SEAT_GET_KEYBOARD_SINCE_VERSION 1
+#define WL_SEAT_GET_TOUCH_SINCE_VERSION 1
+#define WL_SEAT_RELEASE_SINCE_VERSION 5
+struct wl_pointer *wl_seat_get_pointer(struct wl_seat *wl_seat);
+struct wl_keyboard *wl_seat_get_keyboard(struct wl_seat *wl_seat);
+void wl_seat_release(struct wl_seat *wl_seat);
+void wl_seat_destroy(struct wl_seat *wl_seat);
+void wl_seat_set_user_data(struct wl_seat *wl_seat, void *data);
+void *wl_seat_get_user_data(struct wl_seat *wl_seat);
+uint32_t wl_seat_get_version(struct wl_seat *wl_seat);
+
+struct wl_pointer;
+extern const struct wl_interface wl_pointer_interface;
+
+/* Names the protocol errors a pointer can raise. */
+enum wl_pointer_error {
+	WL_POINTER_ERROR_ROLE = 0
+};
+
+/* Says whether a button event reports a press or a release. */
+enum wl_pointer_button_state {
+	WL_POINTER_BUTTON_STATE_RELEASED = 0,
+	WL_POINTER_BUTTON_STATE_PRESSED = 1
+};
+
+/* Names the scroll axis an axis event moves. */
+enum wl_pointer_axis {
+	WL_POINTER_AXIS_VERTICAL_SCROLL = 0,
+	WL_POINTER_AXIS_HORIZONTAL_SCROLL = 1
+};
+
+/* Names the physical source of a group of axis events. */
+enum wl_pointer_axis_source {
+	WL_POINTER_AXIS_SOURCE_WHEEL = 0,
+	WL_POINTER_AXIS_SOURCE_FINGER = 1,
+	WL_POINTER_AXIS_SOURCE_CONTINUOUS = 2,
+	WL_POINTER_AXIS_SOURCE_WHEEL_TILT = 3
+};
+
+/*
+ * Receives events for one wl_pointer object; retained by its proxy.
+ *
+ * The last two members exist for source compatibility with the upstream
+ * listener layout.  They belong to pointer versions 8 and 9, which this
+ * library does not describe, so they are never invoked.
+ */
+struct wl_pointer_listener {
+	void (*enter)(void *data, struct wl_pointer *wl_pointer, uint32_t serial, struct wl_surface *surface, wl_fixed_t surface_x, wl_fixed_t surface_y);
+	void (*leave)(void *data, struct wl_pointer *wl_pointer, uint32_t serial, struct wl_surface *surface);
+	void (*motion)(void *data, struct wl_pointer *wl_pointer, uint32_t time, wl_fixed_t surface_x, wl_fixed_t surface_y);
+	void (*button)(void *data, struct wl_pointer *wl_pointer, uint32_t serial, uint32_t time, uint32_t button, uint32_t state);
+	void (*axis)(void *data, struct wl_pointer *wl_pointer, uint32_t time, uint32_t axis, wl_fixed_t value);
+	void (*frame)(void *data, struct wl_pointer *wl_pointer);
+	void (*axis_source)(void *data, struct wl_pointer *wl_pointer, uint32_t axis_source);
+	void (*axis_stop)(void *data, struct wl_pointer *wl_pointer, uint32_t time, uint32_t axis);
+	void (*axis_discrete)(void *data, struct wl_pointer *wl_pointer, uint32_t axis, int32_t discrete);
+	void (*axis_value120)(void *data, struct wl_pointer *wl_pointer, uint32_t axis, int32_t value120);
+	void (*axis_relative_direction)(void *data, struct wl_pointer *wl_pointer, uint32_t axis, uint32_t direction);
+};
+
+int wl_pointer_add_listener(struct wl_pointer *wl_pointer, const struct wl_pointer_listener *listener, void *data);
+#define WL_POINTER_SET_CURSOR 0U
+#define WL_POINTER_RELEASE 1U
+#define WL_POINTER_ENTER_SINCE_VERSION 1
+#define WL_POINTER_LEAVE_SINCE_VERSION 1
+#define WL_POINTER_MOTION_SINCE_VERSION 1
+#define WL_POINTER_BUTTON_SINCE_VERSION 1
+#define WL_POINTER_AXIS_SINCE_VERSION 1
+#define WL_POINTER_FRAME_SINCE_VERSION 5
+#define WL_POINTER_AXIS_SOURCE_SINCE_VERSION 5
+#define WL_POINTER_AXIS_STOP_SINCE_VERSION 5
+#define WL_POINTER_AXIS_DISCRETE_SINCE_VERSION 5
+#define WL_POINTER_SET_CURSOR_SINCE_VERSION 1
+#define WL_POINTER_RELEASE_SINCE_VERSION 3
+void wl_pointer_set_cursor(struct wl_pointer *wl_pointer, uint32_t serial, struct wl_surface *surface, int32_t hotspot_x, int32_t hotspot_y);
+void wl_pointer_release(struct wl_pointer *wl_pointer);
+void wl_pointer_destroy(struct wl_pointer *wl_pointer);
+void wl_pointer_set_user_data(struct wl_pointer *wl_pointer, void *data);
+void *wl_pointer_get_user_data(struct wl_pointer *wl_pointer);
+uint32_t wl_pointer_get_version(struct wl_pointer *wl_pointer);
+
+struct wl_keyboard;
+extern const struct wl_interface wl_keyboard_interface;
+
+/* Names the format of the keymap file a keyboard supplies. */
+enum wl_keyboard_keymap_format {
+	WL_KEYBOARD_KEYMAP_FORMAT_NO_KEYMAP = 0,
+	WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1 = 1
+};
+
+/* Says whether a key event reports a press or a release. */
+enum wl_keyboard_key_state {
+	WL_KEYBOARD_KEY_STATE_RELEASED = 0,
+	WL_KEYBOARD_KEY_STATE_PRESSED = 1
+};
+
+/* Receives events for one wl_keyboard object; retained by its proxy. */
+struct wl_keyboard_listener {
+	void (*keymap)(void *data, struct wl_keyboard *wl_keyboard, uint32_t format, int32_t fd, uint32_t size);
+	void (*enter)(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, struct wl_surface *surface, struct wl_array *keys);
+	void (*leave)(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, struct wl_surface *surface);
+	void (*key)(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, uint32_t time, uint32_t key, uint32_t state);
+	void (*modifiers)(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, uint32_t mods_depressed, uint32_t mods_latched, uint32_t mods_locked, uint32_t group);
+	void (*repeat_info)(void *data, struct wl_keyboard *wl_keyboard, int32_t rate, int32_t delay);
+};
+
+int wl_keyboard_add_listener(struct wl_keyboard *wl_keyboard, const struct wl_keyboard_listener *listener, void *data);
+#define WL_KEYBOARD_RELEASE 0U
+#define WL_KEYBOARD_KEYMAP_SINCE_VERSION 1
+#define WL_KEYBOARD_ENTER_SINCE_VERSION 1
+#define WL_KEYBOARD_LEAVE_SINCE_VERSION 1
+#define WL_KEYBOARD_KEY_SINCE_VERSION 1
+#define WL_KEYBOARD_MODIFIERS_SINCE_VERSION 1
+#define WL_KEYBOARD_REPEAT_INFO_SINCE_VERSION 4
+#define WL_KEYBOARD_RELEASE_SINCE_VERSION 3
+void wl_keyboard_release(struct wl_keyboard *wl_keyboard);
+void wl_keyboard_destroy(struct wl_keyboard *wl_keyboard);
+void wl_keyboard_set_user_data(struct wl_keyboard *wl_keyboard, void *data);
+void *wl_keyboard_get_user_data(struct wl_keyboard *wl_keyboard);
+uint32_t wl_keyboard_get_version(struct wl_keyboard *wl_keyboard);
 
 #define WL_REGISTRY_BIND 0U
 void *wl_registry_bind(struct wl_registry *registry, uint32_t name, const struct wl_interface *interface, uint32_t version);

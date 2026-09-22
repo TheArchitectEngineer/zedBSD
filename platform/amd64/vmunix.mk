@@ -689,7 +689,7 @@ $(BUILD)/bin/$(1): $(AMD64_USER_LIBC_OBJS) \
 	@test -z "$$$$($(NM) -u $$@)" || { $(NM) -u $$@; exit 1; }
 	$(NOCT) --path=tools/build $(AMD64_USER_ELF_CHECK) --machine amd64 $$@
 endef
-$(foreach command,$(filter-out vkdemo wltest gpu-share-test gpu-fence-test,$(USER_BASIC_COMMANDS)),\
+$(foreach command,$(filter-out vkdemo wltest mview gpu-share-test gpu-fence-test,$(USER_BASIC_COMMANDS)),\
 	$(eval $(call AMD64_USER_BASIC_COMMAND,$(command))))
 # ELF64 runtime linker and shared libc.
 DYNAMIC_DIR := $(BUILD)/dynamic
@@ -841,6 +841,23 @@ $(BUILD)/bin/wltest: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_WLTEST_OBJS) \
+ -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
+ -l:libvulkan.so -l:libwayland-client.so -l:libc.so -o $@
+	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
+ --needed libvulkan.so --needed libwayland-client.so --needed libc.so $@
+
+# The model viewer imports only standard Wayland, Vulkan and C library entry points.
+DYNAMIC_MVIEW_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,mview)
+
+$(BUILD)/bin/mview: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
+	$(DYNAMIC_MVIEW_OBJS) $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libwayland-client.so \
+	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
+	@mkdir -p $(dir $@)
+	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
+ -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
+ -Wl,--dynamic-linker=/lib/ld.so \
+ $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_MVIEW_OBJS) \
  -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
  -l:libvulkan.so -l:libwayland-client.so -l:libc.so -o $@
 	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \

@@ -117,6 +117,25 @@ PROFILES = {
 }
 
 
+PROFILES['mview'] = {
+    'application': 'mview', 'harness': 'mview-qemu.py', 'harness_dir': 'plan/ws031/tests',
+    'config': 'plan/ws031/tests/config-mview-amd64.mk',
+    'modules': {'rfb_client': 'venus_rfb.py', 'transport_harness': 'venus-qemu.py'},
+    'evidence': [name for name in EVIDENCE_FILES if name != 'frame.ppm'] +
+                ['initial.ppm', 'rotate.ppm', 'pan.ppm', 'zoom.ppm', 'keys.ppm', 'reset.ppm',
+                 'mview-observed.log'],
+    'source_directories': ['userland/base/mview', 'userland/base/zwl', 'userland/base/libwayland',
+                           'libc/include/wayland', 'userland/base/libvulkan', 'libc/include/vulkan'],
+    'source_files': ['plan/ws031/tests/mview-qemu.py', 'plan/ws031/tests/run-mview-remote.py',
+                     'plan/ws031/tests/config-mview-amd64.mk'],
+    'additional_artifacts': {'vulkan_library': 'dynamic/libvulkan.so',
+                             'wayland_library': 'dynamic/libwayland-client.so',
+                             'compositor': 'bin/zwl'}}
+
+# The profiles whose harness runs its own guest commands with a token.
+TOKEN_PROFILES = ('vkdemo', 'wayland', 'mview')
+
+
 def selected_profile(args):
     return PROFILES[getattr(args, 'profile', 'venus')]
 
@@ -326,7 +345,7 @@ def prepare_payload(args, output, report):
     kernel = build / 'vmunix'
     application = build / 'bin' / profile['application']
     image = args.image.resolve() if args.image else build / 'hdd-image.img'
-    harness = REPO / 'plan/ws014/tests' / profile['harness']
+    harness = REPO / profile.get('harness_dir', 'plan/ws014/tests') / profile['harness']
     artifact_paths = {'kernel': kernel, 'application': application,
                       'base_image': image, 'harness': harness}
     artifact_paths.update({role: build / name for role, name in profile.get('additional_artifacts', {}).items()})
@@ -454,6 +473,8 @@ def verify_remote_result(args, report, remote):
         if args.profile in ('vkdemo', 'wayland'):
             required += [f'frame-{i}.ppm' for i in range(1, 7)]
             required += [f'oracle-{i}.json' for i in range(1, 7)]
+        elif args.profile == 'mview':
+            required += ['initial.ppm', 'rotate.ppm', 'pan.ppm', 'zoom.ppm', 'keys.ppm', 'reset.ppm']
         else:
             required.append('frame.ppm')
     if any(name not in fetched for name in required):
@@ -524,12 +545,27 @@ def verify_remote_result(args, report, remote):
         verify_wayland_result(args, report, remote)
     elif args.profile == 'vkdemo':
         verify_vkdemo_result(args, report, remote)
+    elif args.profile == 'mview':
+        verify_mview_result(args, report, remote)
     elif not args.boot_only:
         if remote.get('expected') != [args.left, args.right]:
             raise RuntimeError('remote frame used different independent RGB expectations')
         if fetched['frame.ppm'] != remote.get('frame_sha256'):
             raise RuntimeError('retrieved frame differs from the validated remote pixels')
     return expected_status
+
+
+def verify_mview_result(args, report, remote):
+    """Require the viewer's images and the harness's view checks (WS031 p013)."""
+    fetched = report.get('fetched_evidence', {})
+    for name in ('initial.ppm', 'rotate.ppm', 'pan.ppm', 'zoom.ppm', 'keys.ppm', 'reset.ppm'):
+        if fetched.get(name) != remote.get('images', {}).get(name):
+            raise RuntimeError(f'retrieved {name} differs from the remote capture')
+    checks = remote.get('checks', {})
+    if not checks or not all(value is True for value in checks.values()):
+        raise RuntimeError(f'viewer checks failed: {checks}')
+    if remote.get('token') != args.token:
+        raise RuntimeError('remote result belongs to a different token')
 
 
 def verify_wayland_result(args, report, remote):
@@ -674,9 +710,10 @@ def run(args):
               'phase': args.phase, 'frame': args.frame, 'render_server': args.render_server,
               'expected': {'left': args.left, 'right': args.right},
               'wrapper_sha256': digest(__file__), 'remote_created': False}
-    if args.profile in ('vkdemo', 'wayland'):
+    if args.profile in TOKEN_PROFILES:
+        wrapper_dir = profile.get('harness_dir', 'plan/ws014/tests')
         report.update(profile=args.profile, token=args.token,
-                      profile_wrapper_sha256=digest(REPO / f'plan/ws014/tests/run-{args.profile}-remote.py'))
+                      profile_wrapper_sha256=digest(REPO / wrapper_dir / f'run-{args.profile}-remote.py'))
     started = time.monotonic()
     write_json(output / 'result.json', report)
     try:
@@ -692,6 +729,10 @@ def run(args):
                      'vmunix', 'manifest.json']:
             logged(['scp', *SSH_OPTIONS, str(payload / name), f'{args.host}:{remote_attempt / name}'],
                    output / 'transfer.log', args.transfer_timeout)
+        # Venus renders on the host GPU: the iGPU leaves vfio-pci (the i915 passthrough tests) for the
+        # host i915 driver for this attempt and goes back afterwards (bigbang/igpu-mode.sh on the host).
+        logged(ssh_command(args.host, ['bigbang/igpu-mode.sh', 'host']), output / 'transfer.log', 60)
+        report['igpu_mode'] = 'host'
         remote_limit = 2 * args.timeout + 180
         command = ['timeout', '--signal=TERM', '--kill-after=15s', str(remote_limit),
                    'python3', str(remote_attempt / profile['harness']),
@@ -704,7 +745,7 @@ def run(args):
             command += ['--renderer-library-dir', args.renderer_library_dir]
         if args.fault_test is not None:
             command += ['--fault-test', args.fault_test]
-        if args.profile in ('vkdemo', 'wayland'):
+        if args.profile in TOKEN_PROFILES:
             command += ['--token', args.token]
             if args.lifecycle:
                 command.append('--lifecycle')
@@ -712,7 +753,7 @@ def run(args):
             command += ['--phase', args.phase, '--frame', str(args.frame)]
         if args.boot_only:
             command.append('--boot-only')
-        elif args.profile not in ('vkdemo', 'wayland'):
+        elif args.profile not in TOKEN_PROFILES:
             command += ['--left', ','.join(map(str, args.left)),
                         '--right', ','.join(map(str, args.right))]
         report['remote_argv'] = command
@@ -724,6 +765,12 @@ def run(args):
     except (Exception, KeyboardInterrupt) as error:
         report.update(status='fail', error=f'{type(error).__name__}: {error}')
     finally:
+        if report.get('igpu_mode') == 'host':
+            try:
+                logged(ssh_command(args.host, ['bigbang/igpu-mode.sh', 'vfio']), output / 'transfer.log', 60)
+                report['igpu_mode'] = 'vfio'
+            except Exception as error:
+                report.update(status='fail', igpu_error=str(error))
         if report['remote_created']:
             try:
                 fetch_evidence(args, remote_attempt, output, report)
@@ -764,7 +811,8 @@ def main(profile='venus'):
     parser.add_argument('--renderer-library-dir', help='isolated remote libvirglrenderer directory for a paired renderer build')
     parser.add_argument('--output-root', type=Path, default=REPO / 'plan/ws014/temp/remote')
     parser.add_argument('--build-directory', type=Path, default=REPO / f'build/{profile}-amd64')
-    parser.add_argument('--config', type=Path, default=REPO / f'plan/ws014/tests/config-{profile}-amd64.mk')
+    parser.add_argument('--config', type=Path,
+                        default=REPO / PROFILES[profile].get('config', f'plan/ws014/tests/config-{profile}-amd64.mk'))
     parser.add_argument('--image', type=Path, help='explicit base image; defaults to the selected build directory')
     parser.add_argument('--init', default='/bin/sh', help='init path written only into the disposable image')
     parser.add_argument('--skip-build', action='store_true', help='explicitly reuse and record existing artifacts')
@@ -812,7 +860,7 @@ def main(profile='venus'):
         parser.error('frame must be 0..1000000 and timeout 1..600 seconds')
     if not 1 <= args.build_timeout <= 7200 or not 1 <= args.transfer_timeout <= 1800:
         parser.error('build timeout must be 1..7200 and transfer timeout 1..1800 seconds')
-    if profile in ('vkdemo', 'wayland') and (args.boot_only or args.frame != 0 or args.left is not None or args.right is not None):
+    if profile in TOKEN_PROFILES and (args.boot_only or args.frame != 0 or args.left is not None or args.right is not None):
         parser.error('vkdemo runs exactly six frames; boot-only/frame/left/right overrides are unsupported')
     if profile == 'venus' and not args.boot_only and (args.left is None or args.right is None):
         parser.error('frame acceptance requires independent --left and --right RGB expectations')

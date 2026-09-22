@@ -29,6 +29,7 @@ static const struct zwl_global globals[] = {
 	{ 2, "xdg_wm_base", 1, ZWL_WM },
 	{ 3, "zed_gpu_buffer_v1", 1, ZWL_FACTORY },
 	{ 4, "wl_output", 2, ZWL_OUTPUT },
+	{ 5, "wl_seat", 5, ZWL_SEAT },
 };
 
 static uint32_t word_at(const unsigned char *bytes, size_t offset);
@@ -141,6 +142,11 @@ zwl_dispatch(
 	case ZWL_XDG_SURFACE:
 	case ZWL_TOPLEVEL:
 		error = shell_request(object, opcode, bytes, size);
+		break;
+	case ZWL_SEAT:
+	case ZWL_POINTER:
+	case ZWL_KEYBOARD:
+		error = zwl_seat_request(object, opcode, bytes, size);
 		break;
 	default:
 		/* Callback objects and version-2 outputs have no client requests. */
@@ -358,6 +364,14 @@ bind_global(
 		if (object->kind == ZWL_OUTPUT) {
 			/* Publish the newly bound output's complete initial property snapshot. */
 			error = output_events(object);
+			if (error != 0)
+				return error;
+		}
+
+		/* Seat bindings immediately learn the present device classes and the seat name. */
+		if (object->kind == ZWL_SEAT) {
+			/* Publish the newly bound seat's capabilities and name. */
+			error = zwl_seat_bind(object);
 			if (error != 0)
 				return error;
 		}
@@ -789,7 +803,7 @@ shell_request(
 		/* The supported advisory request retains the selected fullscreen presentation policy. */
 		break;
 	default:
-		/* Interactive moves, resizing and popup menus have no seat in this minimal compositor. */
+		/* Interactive moves, resizing and window menus have no implementation in this fullscreen policy. */
 		return EPROTO;
 	}
 

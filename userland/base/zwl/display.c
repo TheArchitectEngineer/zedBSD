@@ -168,6 +168,9 @@ zwl_unscan(
 	server->front_surface = NULL;
 	zwl_buffer_put(front);
 
+	/* A display without a front surface gives no client input focus. */
+	zwl_seat_focus(server);
+
 	/* Reports a hardware release failure without announcing safe producer reuse. */
 	if (error != 0)
 		return error;
@@ -250,6 +253,9 @@ zwl_present(
 	surface->ready = 0;
 	zwl_buffer_put(previous);
 	printf("ZWL PRESENT client=%llu surface=%u buffer=%u resource=%u frame=%llu sequence=%llu width=%u height=%u flags=%u refresh=%u\n", (unsigned long long)surface->client->number, surface->id, buffer->id, buffer->image.resource_id, (unsigned long long)server->frame, (unsigned long long)present.sequence, image->width, image->height, present.flags, present.refresh_millihz);
+
+	/* Input follows the surface that is now on the display. */
+	zwl_seat_focus(server);
 
 	/* Frame callbacks pace FIFO clients but do not release the newly selected front buffer. */
 	zwl_callbacks_done(&surface->committed_callbacks);

@@ -4087,3 +4087,24 @@ Date: 2026-09-22. 試験を src/drivers/gpu/i915/tests/ と plan/ws031/tests/ �
 | 本番回帰 | offscreen 7523debe…05ff、共有 route 静止 94615464…19b1、ended PASS |
 
 未実行の実機シナリオ: lcdr、lcdo、lcdg、hdmib、dual、dual_share、aux、hdmi_edid、hdmi_hpd。廃止: N1（本番 switch が要る）、opregion fwtest、legacy selftest、参照 kernel build。対応表 i915-rebuild-coverage.md（旧 2,988 関数・378 ファイルの行き先）。i915-old は専門家レビューの参照用に残す（ユーザー決定）。
+
+## E-133 (2026-09-22): firmware の分離、intel/ への再編、i915 上の Wayland（QEMU passthrough）
+- DMC firmware（LICENSE.i915）をカーネルから除去。任意 package `userland/firmware/i915/`（linux-firmware 20260410、旧配列と同一 byte）が
+  `/lib/firmware/i915/` に入れ、`firmware.c` が VFS で読む（root mount を最大 30 s 待つ。無ければ Linux 同様 DMC なしで続行）。
+  実機: `firmware /lib/firmware/i915/adlp_dmc.bin: loaded (79088 bytes)`、`dmc_has_payload=1`。
+- Dell VBT は `vendor/intel-vbt/` へ（5330 のみ、5320 は削除）。`I915_TEST_VBT=y`（vkloop-hw.sh）のときだけ取り込む。
+  XXX: GPU 試験がベアメタルで回るようになったら削除。本番 vmunix に機種固有データなし。
+- `external/` → `intel/`（表示 header は平置き、`i915.h` は bits/gt-regs/commands/lrc-offsets/pci-ids/gt-power/workarounds/mocs/genxml に分割）、
+  `provenance/` は削除。移動の前後で vmunix は byte 一致。
+- Wayland: `vkloop-hw.sh wayland`（service は `plan/ws031/tests/wayland/`）で zwl と wltest（FIFO 600 frame、mailbox 60 frame・30 で swapchain 再作成）。
+  修正: 表示 query が `GPU_DISPLAY_BLOB` を返す（zwl の必須条件）、`render/command.c` に `vkResetCommandBuffer`（opcode 92）と
+  `vkCmdClearAttachments`（opcode 121）を実装。
+  結果: WLTEST DONE wl1 600 / wl2 60、ZWL EXIT frames=660 error=0 cleanup_failed=0、LCD 写真（3 色の領域と動く白い棒）。
+- vkloop-hw.sh: 選んだ rc.conf を `build/resident/rc-conf.gen` へ写し、mode の切替で image が作り直されるようにした。
+- 回帰: offscreen frame 1 `7523debe…05ff`、display `94615464…19b1` ended PASS、vk host PASS、lcd-modeset 123/0。
+
+## E-134 (2026-09-22): p013 Wayland モデルビューア（Venus）PASS
+- FBX（ユーザー著作、commit 可）をビルドホストでテキストのポリゴンリスト＋非圧縮 PAM へ変換（`userland/base/mview/`）。
+- zwl に `wl_seat`/`wl_pointer`/`wl_keyboard`、libwayland に同 API（upstream 名）。mview（Vulkan＋Wayland）で回転・移動・拡大縮小・キー操作。
+- Venus 実 QEMU `p013-mview-009` PASS（6 検査、`R` で初期画像と画素一致）。WS014 Wayland 受入と i915 の `vkloop-hw.sh wayland` も PASS。
+- 詳細・制限は `phase013/phase.md` §完了。次は p014（i915 で mview）。

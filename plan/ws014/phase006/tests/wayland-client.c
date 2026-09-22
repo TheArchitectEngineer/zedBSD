@@ -57,6 +57,7 @@ static void check_queues_and_lifetimes(void);
 static void check_descriptor_transport(void);
 static void check_reader_barrier(void);
 static void check_errors(void);
+static void check_seat(void);
 
 /*
  * Runs meaningful client transport, ownership and event-loop acceptance cases.
@@ -72,9 +73,10 @@ main(void)
 	check_descriptor_transport();
 	check_reader_barrier();
 	check_errors();
+	check_seat();
 
 	/* Succeeded: reports the covered protocol and ownership boundaries. */
-	puts("PASS Wayland client: queues, fragmented wire, tombstones, fd ownership, delayed rights, partial sends, reader barrier, protocol errors");
+	puts("PASS Wayland client: queues, fragmented wire, tombstones, fd ownership, delayed rights, partial sends, reader barrier, protocol errors, seat/pointer/keyboard");
 	return 0;
 }
 
@@ -280,6 +282,538 @@ read_once(
 
 	/* Succeeded: selected queues now own all complete decoded messages. */
 	return;
+}
+
+/* Records what the seat, pointer and keyboard listeners received. */
+struct seat_state {
+	uint32_t capabilities;
+	char name[16];
+	struct wl_surface *pointer_surface;
+	struct wl_surface *keyboard_surface;
+	wl_fixed_t enter_x;
+	wl_fixed_t enter_y;
+	wl_fixed_t motion_x;
+	wl_fixed_t motion_y;
+	uint32_t motion_time;
+	uint32_t button;
+	uint32_t button_state;
+	uint32_t button_serial;
+	uint32_t axis;
+	wl_fixed_t axis_value;
+	uint32_t axis_source;
+	int32_t discrete;
+	uint32_t keymap_format;
+	uint32_t keymap_size;
+	int keymap_fd;
+	size_t enter_keys;
+	uint32_t first_key;
+	uint32_t key;
+	uint32_t key_state;
+	uint32_t depressed;
+	int32_t rate;
+	int32_t delay;
+	unsigned pointer_enters;
+	unsigned pointer_leaves;
+	unsigned frames;
+	unsigned keyboard_leaves;
+};
+
+static void seat_capabilities(void *data, struct wl_seat *seat, uint32_t capabilities);
+static void seat_name(void *data, struct wl_seat *seat, const char *name);
+static void pointer_enter(void *data, struct wl_pointer *pointer, uint32_t serial, struct wl_surface *surface, wl_fixed_t x, wl_fixed_t y);
+static void pointer_leave(void *data, struct wl_pointer *pointer, uint32_t serial, struct wl_surface *surface);
+static void pointer_motion(void *data, struct wl_pointer *pointer, uint32_t time, wl_fixed_t x, wl_fixed_t y);
+static void pointer_button(void *data, struct wl_pointer *pointer, uint32_t serial, uint32_t time, uint32_t button, uint32_t state);
+static void pointer_axis(void *data, struct wl_pointer *pointer, uint32_t time, uint32_t axis, wl_fixed_t value);
+static void pointer_frame(void *data, struct wl_pointer *pointer);
+static void pointer_axis_source(void *data, struct wl_pointer *pointer, uint32_t source);
+static void pointer_axis_discrete(void *data, struct wl_pointer *pointer, uint32_t axis, int32_t discrete);
+static void keyboard_keymap(void *data, struct wl_keyboard *keyboard, uint32_t format, int32_t fd, uint32_t size);
+static void keyboard_enter(void *data, struct wl_keyboard *keyboard, uint32_t serial, struct wl_surface *surface, struct wl_array *keys);
+static void keyboard_leave(void *data, struct wl_keyboard *keyboard, uint32_t serial, struct wl_surface *surface);
+static void keyboard_key(void *data, struct wl_keyboard *keyboard, uint32_t serial, uint32_t time, uint32_t key, uint32_t state);
+static void keyboard_modifiers(void *data, struct wl_keyboard *keyboard, uint32_t serial, uint32_t depressed, uint32_t latched, uint32_t locked, uint32_t group);
+static void keyboard_repeat(void *data, struct wl_keyboard *keyboard, int32_t rate, int32_t delay);
+
+/* Records the seat's capability bits. */
+static void
+seat_capabilities(
+	void *data,
+	struct wl_seat *seat,
+	uint32_t capabilities)
+{
+	struct seat_state *state;
+
+	(void)seat;
+	state = data;
+	state->capabilities = capabilities;
+}
+
+/* Records the seat's name. */
+static void
+seat_name(
+	void *data,
+	struct wl_seat *seat,
+	const char *name)
+{
+	struct seat_state *state;
+
+	(void)seat;
+	state = data;
+	assert(strlen(name) < sizeof(state->name));
+	strcpy(state->name, name);
+}
+
+/* Records pointer enter with its surface and fixed-point position. */
+static void
+pointer_enter(
+	void *data,
+	struct wl_pointer *pointer,
+	uint32_t serial,
+	struct wl_surface *surface,
+	wl_fixed_t x,
+	wl_fixed_t y)
+{
+	struct seat_state *state;
+
+	(void)pointer;
+	state = data;
+	assert(serial == 10);
+	state->pointer_surface = surface;
+	state->enter_x = x;
+	state->enter_y = y;
+	state->pointer_enters++;
+}
+
+/* Records pointer leave. */
+static void
+pointer_leave(
+	void *data,
+	struct wl_pointer *pointer,
+	uint32_t serial,
+	struct wl_surface *surface)
+{
+	struct seat_state *state;
+
+	(void)pointer;
+	state = data;
+	assert(serial == 15);
+	assert(surface == state->pointer_surface);
+	state->pointer_leaves++;
+}
+
+/* Records pointer motion. */
+static void
+pointer_motion(
+	void *data,
+	struct wl_pointer *pointer,
+	uint32_t time,
+	wl_fixed_t x,
+	wl_fixed_t y)
+{
+	struct seat_state *state;
+
+	(void)pointer;
+	state = data;
+	state->motion_time = time;
+	state->motion_x = x;
+	state->motion_y = y;
+}
+
+/* Records a pointer button. */
+static void
+pointer_button(
+	void *data,
+	struct wl_pointer *pointer,
+	uint32_t serial,
+	uint32_t time,
+	uint32_t button,
+	uint32_t button_state)
+{
+	struct seat_state *state;
+
+	(void)pointer;
+	state = data;
+	assert(time == 100);
+	state->button_serial = serial;
+	state->button = button;
+	state->button_state = button_state;
+}
+
+/* Records a scroll value. */
+static void
+pointer_axis(
+	void *data,
+	struct wl_pointer *pointer,
+	uint32_t time,
+	uint32_t axis,
+	wl_fixed_t value)
+{
+	struct seat_state *state;
+
+	(void)pointer;
+	state = data;
+	assert(time == 101);
+	state->axis = axis;
+	state->axis_value = value;
+}
+
+/* Counts pointer frames. */
+static void
+pointer_frame(
+	void *data,
+	struct wl_pointer *pointer)
+{
+	struct seat_state *state;
+
+	(void)pointer;
+	state = data;
+	state->frames++;
+}
+
+/* Records the scroll source. */
+static void
+pointer_axis_source(
+	void *data,
+	struct wl_pointer *pointer,
+	uint32_t source)
+{
+	struct seat_state *state;
+
+	(void)pointer;
+	state = data;
+	state->axis_source = source;
+}
+
+/* Records discrete scroll steps. */
+static void
+pointer_axis_discrete(
+	void *data,
+	struct wl_pointer *pointer,
+	uint32_t axis,
+	int32_t discrete)
+{
+	struct seat_state *state;
+
+	(void)pointer;
+	state = data;
+	assert(axis == WL_POINTER_AXIS_VERTICAL_SCROLL);
+	state->discrete = discrete;
+}
+
+/* Takes ownership of the keymap descriptor. */
+static void
+keyboard_keymap(
+	void *data,
+	struct wl_keyboard *keyboard,
+	uint32_t format,
+	int32_t fd,
+	uint32_t size)
+{
+	struct seat_state *state;
+
+	(void)keyboard;
+	state = data;
+	state->keymap_format = format;
+	state->keymap_size = size;
+	state->keymap_fd = fd;
+}
+
+/* Records keyboard enter and the held-keys array. */
+static void
+keyboard_enter(
+	void *data,
+	struct wl_keyboard *keyboard,
+	uint32_t serial,
+	struct wl_surface *surface,
+	struct wl_array *keys)
+{
+	struct seat_state *state;
+
+	(void)keyboard;
+	state = data;
+	assert(serial == 12);
+	state->keyboard_surface = surface;
+	state->enter_keys = keys->size;
+	memcpy(&state->first_key, keys->data, sizeof(state->first_key));
+}
+
+/* Records keyboard leave. */
+static void
+keyboard_leave(
+	void *data,
+	struct wl_keyboard *keyboard,
+	uint32_t serial,
+	struct wl_surface *surface)
+{
+	struct seat_state *state;
+
+	(void)keyboard;
+	state = data;
+	assert(serial == 16);
+	assert(surface == state->keyboard_surface);
+	state->keyboard_leaves++;
+}
+
+/* Records one key. */
+static void
+keyboard_key(
+	void *data,
+	struct wl_keyboard *keyboard,
+	uint32_t serial,
+	uint32_t time,
+	uint32_t key,
+	uint32_t key_state)
+{
+	struct seat_state *state;
+
+	(void)keyboard;
+	state = data;
+	assert(serial == 13 && time == 102);
+	state->key = key;
+	state->key_state = key_state;
+}
+
+/* Records the modifier masks. */
+static void
+keyboard_modifiers(
+	void *data,
+	struct wl_keyboard *keyboard,
+	uint32_t serial,
+	uint32_t depressed,
+	uint32_t latched,
+	uint32_t locked,
+	uint32_t group)
+{
+	struct seat_state *state;
+
+	(void)keyboard;
+	state = data;
+	assert(serial == 14 && latched == 0 && locked == 0 && group == 0);
+	state->depressed = depressed;
+}
+
+/* Records the repeat settings. */
+static void
+keyboard_repeat(
+	void *data,
+	struct wl_keyboard *keyboard,
+	int32_t rate,
+	int32_t delay)
+{
+	struct seat_state *state;
+
+	(void)keyboard;
+	state = data;
+	state->rate = rate;
+	state->delay = delay;
+}
+
+/* Validates wl_seat, wl_pointer and wl_keyboard requests, events and the keymap fd. */
+static void
+check_seat(void)
+{
+	static const struct wl_seat_listener seat_listener = {
+		seat_capabilities, seat_name
+	};
+	static const struct wl_pointer_listener pointer_listener = {
+		pointer_enter, pointer_leave, pointer_motion, pointer_button, pointer_axis,
+		pointer_frame, pointer_axis_source, NULL, pointer_axis_discrete, NULL, NULL
+	};
+	static const struct wl_keyboard_listener keyboard_listener = {
+		keyboard_keymap, keyboard_enter, keyboard_leave, keyboard_key,
+		keyboard_modifiers, keyboard_repeat
+	};
+	struct wl_display *display;
+	struct wl_registry *registry;
+	struct wl_compositor *compositor;
+	struct wl_surface *surface;
+	struct wl_seat *seat;
+	struct wl_seat *old_seat;
+	struct wl_pointer *pointer;
+	struct wl_pointer *old_pointer;
+	struct wl_keyboard *keyboard;
+	struct seat_state state;
+	struct msghdr message;
+	struct iovec vector;
+	struct cmsghdr *control;
+	union {
+		struct cmsghdr alignment;
+		unsigned char bytes[CMSG_SPACE(sizeof(int))];
+	} ancillary;
+	unsigned char bytes[512];
+	uint32_t words[64];
+	uint32_t expected[12];
+	int sockets[2];
+	int pipes[2];
+	int error;
+	int sent;
+	ssize_t got;
+	char byte;
+
+	/* Binds a version 5 seat and a surface through the ordinary registry. */
+	memset(&state, 0, sizeof(state));
+	state.keymap_fd = -1;
+	error = socketpair(AF_UNIX, SOCK_STREAM, 0, sockets);
+	assert(error == 0);
+	display = wl_display_connect_to_fd(sockets[0]);
+	assert(display != NULL);
+	registry = wl_display_get_registry(display);
+	compositor = wl_registry_bind(registry, 1, &wl_compositor_interface, 4);
+	seat = wl_registry_bind(registry, 5, &wl_seat_interface, 5);
+	assert(registry != NULL && compositor != NULL && seat != NULL);
+	surface = wl_compositor_create_surface(compositor);
+	assert(surface != NULL && wl_proxy_get_id((struct wl_proxy *)surface) == 5);
+	assert(wl_seat_get_version(seat) == 5);
+	error = wl_seat_add_listener(seat, &seat_listener, &state);
+	assert(error == 0);
+
+	/* The bind request carries name 5, "wl_seat", version 5 and new id 4. */
+	sent = wl_display_flush(display);
+	assert(sent == 12 + 40 + 32 + 12);
+	recv_bytes(sockets[1], bytes, (size_t)sent);
+	memcpy(words, bytes + 52, 32);
+	assert(words[0] == 2 && words[1] == (32U << 16) && words[2] == 5 && words[3] == 8);
+	assert(memcmp(&words[4], "wl_seat", 8) == 0 && words[6] == 5 && words[7] == 4);
+
+	/* get_pointer, get_keyboard and set_cursor use the standard opcodes and signatures. */
+	pointer = wl_seat_get_pointer(seat);
+	keyboard = wl_seat_get_keyboard(seat);
+	assert(pointer != NULL && keyboard != NULL);
+	assert(wl_pointer_get_version(pointer) == 5 && wl_keyboard_get_version(keyboard) == 5);
+	assert(wl_proxy_get_id((struct wl_proxy *)pointer) == 6 && wl_proxy_get_id((struct wl_proxy *)keyboard) == 7);
+	error = wl_pointer_add_listener(pointer, &pointer_listener, &state);
+	assert(error == 0);
+	error = wl_keyboard_add_listener(keyboard, &keyboard_listener, &state);
+	assert(error == 0);
+	wl_pointer_set_cursor(pointer, 77, NULL, 3, 4);
+	wl_pointer_set_cursor(pointer, 78, surface, -1, 2);
+	sent = wl_display_flush(display);
+	assert(sent == 12 + 12 + 24 + 24);
+	recv_bytes(sockets[1], bytes, (size_t)sent);
+	expected[0] = 4;
+	expected[1] = (12U << 16) | 0U;
+	expected[2] = 6;
+	expected[3] = 4;
+	expected[4] = (12U << 16) | 1U;
+	expected[5] = 7;
+	expected[6] = 6;
+	expected[7] = (24U << 16) | 0U;
+	expected[8] = 77;
+	expected[9] = 0;
+	expected[10] = 3;
+	expected[11] = 4;
+	assert(memcmp(bytes, expected, 48) == 0);
+	memcpy(words, bytes + 48, 24);
+	assert(words[0] == 6 && words[2] == 78 && words[3] == 5 && (int32_t)words[4] == -1 && words[5] == 2);
+
+	/* The peer sends seat, pointer and keyboard events; the keymap carries a pipe fd. */
+	memset(words, 0, sizeof(words));
+	words[0] = 4; words[1] = (12U << 16) | 0U; words[2] = 3;
+	words[3] = 4; words[4] = (20U << 16) | 1U; words[5] = 6; memcpy(&words[6], "seat0", 6);
+	words[8] = 6; words[9] = (24U << 16) | 0U; words[10] = 10; words[11] = 5; words[12] = 3200; words[13] = 7 * 256;
+	words[14] = 6; words[15] = (8U << 16) | 5U;
+	words[16] = 6; words[17] = (20U << 16) | 2U; words[18] = 99; words[19] = 20 * 256; words[20] = 30 * 256;
+	words[21] = 6; words[22] = (24U << 16) | 3U; words[23] = 11; words[24] = 100; words[25] = 0x110; words[26] = 1;
+	words[27] = 6; words[28] = (12U << 16) | 6U; words[29] = 0;
+	words[30] = 6; words[31] = (16U << 16) | 8U; words[32] = 0; words[33] = (uint32_t)-1;
+	words[34] = 6; words[35] = (20U << 16) | 4U; words[36] = 101; words[37] = 0; words[38] = (uint32_t)(-15 * 256);
+	words[39] = 6; words[40] = (8U << 16) | 5U;
+	send_bytes(sockets[1], words, 41 * sizeof(uint32_t));
+	error = pipe(pipes);
+	assert(error == 0);
+	got = write(pipes[1], "K", 1);
+	assert(got == 1);
+	words[0] = 7; words[1] = (16U << 16) | 0U; words[2] = 0; words[3] = 0;
+	memset(&message, 0, sizeof(message));
+	memset(&ancillary, 0, sizeof(ancillary));
+	vector.iov_base = words;
+	vector.iov_len = 16;
+	message.msg_iov = &vector;
+	message.msg_iovlen = 1;
+	message.msg_control = ancillary.bytes;
+	message.msg_controllen = sizeof(ancillary.bytes);
+	control = CMSG_FIRSTHDR(&message);
+	control->cmsg_len = CMSG_LEN(sizeof(int));
+	control->cmsg_level = SOL_SOCKET;
+	control->cmsg_type = SCM_RIGHTS;
+	memcpy(CMSG_DATA(control), &pipes[0], sizeof(int));
+	got = sendmsg(sockets[1], &message, MSG_NOSIGNAL);
+	assert(got == 16);
+	close(pipes[0]);
+	memset(words, 0, sizeof(words));
+	words[0] = 7; words[1] = (24U << 16) | 1U; words[2] = 12; words[3] = 5; words[4] = 4; words[5] = 30;
+	words[6] = 7; words[7] = (24U << 16) | 3U; words[8] = 13; words[9] = 102; words[10] = 30; words[11] = 1;
+	words[12] = 7; words[13] = (28U << 16) | 4U; words[14] = 14; words[15] = 1;
+	words[19] = 7; words[20] = (16U << 16) | 5U; words[21] = 0; words[22] = 600;
+	words[23] = 6; words[24] = (16U << 16) | 1U; words[25] = 15; words[26] = 5;
+	words[27] = 7; words[28] = (16U << 16) | 2U; words[29] = 16; words[30] = 5;
+	send_bytes(sockets[1], words, 31 * sizeof(uint32_t));
+
+	/* Every event reaches its typed listener with the decoded arguments. */
+	while (state.keyboard_leaves == 0) {
+		read_once(display);
+		error = wl_display_dispatch_pending(display);
+		assert(error >= 0);
+	}
+	assert(state.capabilities == (WL_SEAT_CAPABILITY_POINTER | WL_SEAT_CAPABILITY_KEYBOARD));
+	assert(strcmp(state.name, "seat0") == 0);
+	assert(state.pointer_enters == 1 && state.pointer_surface == surface);
+	assert(state.enter_x == 3200 && wl_fixed_to_double(state.enter_x) == 12.5 && wl_fixed_to_int(state.enter_y) == 7);
+	assert(state.motion_time == 99 && wl_fixed_to_int(state.motion_x) == 20 && wl_fixed_to_int(state.motion_y) == 30);
+	assert(state.button_serial == 11 && state.button == 0x110 && state.button_state == WL_POINTER_BUTTON_STATE_PRESSED);
+	assert(state.axis_source == WL_POINTER_AXIS_SOURCE_WHEEL && state.discrete == -1);
+	assert(state.axis == WL_POINTER_AXIS_VERTICAL_SCROLL && state.axis_value == wl_fixed_from_int(-15));
+	assert(state.frames == 2 && state.pointer_leaves == 1);
+	assert(state.keymap_format == WL_KEYBOARD_KEYMAP_FORMAT_NO_KEYMAP && state.keymap_size == 0);
+	assert(state.keymap_fd >= 0);
+	got = read(state.keymap_fd, &byte, 1);
+	assert(got == 1 && byte == 'K');
+	close(state.keymap_fd);
+	close(pipes[1]);
+	assert(state.keyboard_surface == surface && state.enter_keys == 4 && state.first_key == 30);
+	assert(state.key == 30 && state.key_state == WL_KEYBOARD_KEY_STATE_PRESSED && state.depressed == 1);
+	assert(state.rate == 0 && state.delay == 600);
+
+	/* release requests are destructors with the standard opcodes. */
+	wl_pointer_release(pointer);
+	wl_keyboard_release(keyboard);
+	wl_seat_release(seat);
+	sent = wl_display_flush(display);
+	assert(sent == 24);
+	recv_bytes(sockets[1], bytes, (size_t)sent);
+	expected[0] = 6;
+	expected[1] = (8U << 16) | 1U;
+	expected[2] = 7;
+	expected[3] = (8U << 16) | 0U;
+	expected[4] = 4;
+	expected[5] = (8U << 16) | 3U;
+	assert(memcmp(bytes, expected, 24) == 0);
+
+	/* A version 1 pointer rejects a version 5 frame event as a protocol violation. */
+	old_seat = wl_registry_bind(registry, 5, &wl_seat_interface, 1);
+	assert(old_seat != NULL);
+	old_pointer = wl_seat_get_pointer(old_seat);
+	assert(old_pointer != NULL && wl_pointer_get_version(old_pointer) == 1);
+	sent = wl_display_flush(display);
+	assert(sent > 0);
+	recv_bytes(sockets[1], bytes, (size_t)sent);
+	words[0] = wl_proxy_get_id((struct wl_proxy *)old_pointer);
+	words[1] = (8U << 16) | 5U;
+	send_bytes(sockets[1], words, 8);
+	error = wl_display_prepare_read(display);
+	assert(error == 0);
+	error = wl_display_read_events(display);
+	assert(error == -1 && errno == EPROTO);
+
+	/* Local destruction needs no wire traffic. */
+	wl_pointer_destroy(old_pointer);
+	wl_seat_destroy(old_seat);
+	wl_surface_destroy(surface);
+	wl_compositor_destroy(compositor);
+	wl_registry_destroy(registry);
+	wl_display_disconnect(display);
+	close(sockets[1]);
 }
 
 /* Validates queue isolation, wrapper inheritance and delayed object retirement. */

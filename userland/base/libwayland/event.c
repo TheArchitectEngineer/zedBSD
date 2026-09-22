@@ -81,6 +81,9 @@ wlc_event_dispatch(
 	const struct xdg_surface_listener *xdg_surface_callbacks;
 	const struct xdg_toplevel_listener *xdg_toplevel_callbacks;
 	const struct xdg_popup_listener *xdg_popup_callbacks;
+	const struct wl_seat_listener *wl_seat_callbacks;
+	const struct wl_pointer_listener *wl_pointer_callbacks;
+	const struct wl_keyboard_listener *wl_keyboard_callbacks;
 
 	/* Captures listener metadata while retaining the exact queued generation. */
 	proxy = event->proxy;
@@ -387,6 +390,195 @@ wlc_event_dispatch(
 			/* Delivers payload ownership according to this callback contract. */
 			event->delivered = 1;
 			xdg_popup_callbacks->popup_done(data, (struct xdg_popup *)proxy);
+			return 0;
+		default:
+			return EPROTO;
+		}
+	}
+
+	/* Dispatches wl_seat events through the exact published callback types. */
+	same = strcmp(proxy->interface->name, "wl_seat");
+	if (same == 0) {
+		wl_seat_callbacks = listener;
+
+		/* Selects the callback using the stable protocol event opcode. */
+		switch (event->opcode) {
+		case 0:
+			/* An optional listener slot deliberately ignores this event. */
+			if (wl_seat_callbacks->capabilities == NULL)
+				return 0;
+
+			/* Delivers payload ownership according to this callback contract. */
+			event->delivered = 1;
+			wl_seat_callbacks->capabilities(data, (struct wl_seat *)proxy, arguments[0].u);
+			return 0;
+		case 1:
+			/* An optional listener slot deliberately ignores this event. */
+			if (wl_seat_callbacks->name == NULL)
+				return 0;
+
+			/* Delivers payload ownership according to this callback contract. */
+			event->delivered = 1;
+			wl_seat_callbacks->name(data, (struct wl_seat *)proxy, arguments[0].s);
+			return 0;
+		default:
+			return EPROTO;
+		}
+	}
+
+	/* Dispatches wl_pointer events through the exact published callback types. */
+	same = strcmp(proxy->interface->name, "wl_pointer");
+	if (same == 0) {
+		wl_pointer_callbacks = listener;
+
+		/* Selects the callback using the stable protocol event opcode. */
+		switch (event->opcode) {
+		case 0:
+			/* An optional listener slot deliberately ignores this event. */
+			if (wl_pointer_callbacks->enter == NULL)
+				return 0;
+
+			/* Delivers payload ownership according to this callback contract. */
+			event->delivered = 1;
+			wl_pointer_callbacks->enter(data, (struct wl_pointer *)proxy, arguments[0].u, (struct wl_surface *)arguments[1].o, arguments[2].f, arguments[3].f);
+			return 0;
+		case 1:
+			/* An optional listener slot deliberately ignores this event. */
+			if (wl_pointer_callbacks->leave == NULL)
+				return 0;
+
+			/* Delivers payload ownership according to this callback contract. */
+			event->delivered = 1;
+			wl_pointer_callbacks->leave(data, (struct wl_pointer *)proxy, arguments[0].u, (struct wl_surface *)arguments[1].o);
+			return 0;
+		case 2:
+			/* An optional listener slot deliberately ignores this event. */
+			if (wl_pointer_callbacks->motion == NULL)
+				return 0;
+
+			/* Delivers payload ownership according to this callback contract. */
+			event->delivered = 1;
+			wl_pointer_callbacks->motion(data, (struct wl_pointer *)proxy, arguments[0].u, arguments[1].f, arguments[2].f);
+			return 0;
+		case 3:
+			/* An optional listener slot deliberately ignores this event. */
+			if (wl_pointer_callbacks->button == NULL)
+				return 0;
+
+			/* Delivers payload ownership according to this callback contract. */
+			event->delivered = 1;
+			wl_pointer_callbacks->button(data, (struct wl_pointer *)proxy, arguments[0].u, arguments[1].u, arguments[2].u, arguments[3].u);
+			return 0;
+		case 4:
+			/* An optional listener slot deliberately ignores this event. */
+			if (wl_pointer_callbacks->axis == NULL)
+				return 0;
+
+			/* Delivers payload ownership according to this callback contract. */
+			event->delivered = 1;
+			wl_pointer_callbacks->axis(data, (struct wl_pointer *)proxy, arguments[0].u, arguments[1].u, arguments[2].f);
+			return 0;
+		case 5:
+			/* An optional listener slot deliberately ignores this event. */
+			if (wl_pointer_callbacks->frame == NULL)
+				return 0;
+
+			/* Delivers payload ownership according to this callback contract. */
+			event->delivered = 1;
+			wl_pointer_callbacks->frame(data, (struct wl_pointer *)proxy);
+			return 0;
+		case 6:
+			/* An optional listener slot deliberately ignores this event. */
+			if (wl_pointer_callbacks->axis_source == NULL)
+				return 0;
+
+			/* Delivers payload ownership according to this callback contract. */
+			event->delivered = 1;
+			wl_pointer_callbacks->axis_source(data, (struct wl_pointer *)proxy, arguments[0].u);
+			return 0;
+		case 7:
+			/* An optional listener slot deliberately ignores this event. */
+			if (wl_pointer_callbacks->axis_stop == NULL)
+				return 0;
+
+			/* Delivers payload ownership according to this callback contract. */
+			event->delivered = 1;
+			wl_pointer_callbacks->axis_stop(data, (struct wl_pointer *)proxy, arguments[0].u, arguments[1].u);
+			return 0;
+		case 8:
+			/* An optional listener slot deliberately ignores this event. */
+			if (wl_pointer_callbacks->axis_discrete == NULL)
+				return 0;
+
+			/* Delivers payload ownership according to this callback contract. */
+			event->delivered = 1;
+			wl_pointer_callbacks->axis_discrete(data, (struct wl_pointer *)proxy, arguments[0].u, arguments[1].i);
+			return 0;
+		default:
+			return EPROTO;
+		}
+	}
+
+	/* Dispatches wl_keyboard events through the exact published callback types. */
+	same = strcmp(proxy->interface->name, "wl_keyboard");
+	if (same == 0) {
+		wl_keyboard_callbacks = listener;
+
+		/* Selects the callback using the stable protocol event opcode. */
+		switch (event->opcode) {
+		case 0:
+			/* An optional listener slot deliberately ignores this event. */
+			if (wl_keyboard_callbacks->keymap == NULL)
+				return 0;
+
+			/* Delivers payload ownership according to this callback contract. */
+			event->delivered = 1;
+			wl_keyboard_callbacks->keymap(data, (struct wl_keyboard *)proxy, arguments[0].u, arguments[1].h, arguments[2].u);
+			return 0;
+		case 1:
+			/* An optional listener slot deliberately ignores this event. */
+			if (wl_keyboard_callbacks->enter == NULL)
+				return 0;
+
+			/* Delivers payload ownership according to this callback contract. */
+			event->delivered = 1;
+			wl_keyboard_callbacks->enter(data, (struct wl_keyboard *)proxy, arguments[0].u, (struct wl_surface *)arguments[1].o, arguments[2].a);
+			return 0;
+		case 2:
+			/* An optional listener slot deliberately ignores this event. */
+			if (wl_keyboard_callbacks->leave == NULL)
+				return 0;
+
+			/* Delivers payload ownership according to this callback contract. */
+			event->delivered = 1;
+			wl_keyboard_callbacks->leave(data, (struct wl_keyboard *)proxy, arguments[0].u, (struct wl_surface *)arguments[1].o);
+			return 0;
+		case 3:
+			/* An optional listener slot deliberately ignores this event. */
+			if (wl_keyboard_callbacks->key == NULL)
+				return 0;
+
+			/* Delivers payload ownership according to this callback contract. */
+			event->delivered = 1;
+			wl_keyboard_callbacks->key(data, (struct wl_keyboard *)proxy, arguments[0].u, arguments[1].u, arguments[2].u, arguments[3].u);
+			return 0;
+		case 4:
+			/* An optional listener slot deliberately ignores this event. */
+			if (wl_keyboard_callbacks->modifiers == NULL)
+				return 0;
+
+			/* Delivers payload ownership according to this callback contract. */
+			event->delivered = 1;
+			wl_keyboard_callbacks->modifiers(data, (struct wl_keyboard *)proxy, arguments[0].u, arguments[1].u, arguments[2].u, arguments[3].u, arguments[4].u);
+			return 0;
+		case 5:
+			/* An optional listener slot deliberately ignores this event. */
+			if (wl_keyboard_callbacks->repeat_info == NULL)
+				return 0;
+
+			/* Delivers payload ownership according to this callback contract. */
+			event->delivered = 1;
+			wl_keyboard_callbacks->repeat_info(data, (struct wl_keyboard *)proxy, arguments[0].i, arguments[1].i);
 			return 0;
 		default:
 			return EPROTO;

@@ -74,8 +74,18 @@ main(
 	if (previous_handler == SIG_ERR)
 		return 1;
 
+	/* The pointer starts in the middle of the configured output. */
+	server.pointer_x = (int32_t)(server.width / 2U);
+	server.pointer_y = (int32_t)(server.height / 2U);
+
 	/* Open an independent GPU context before publishing a usable Wayland endpoint. */
 	error = zwl_gpu_open(&server);
+
+	/* Input devices are found before READY; a seat without devices is still valid. */
+	if (error == 0)
+		zwl_input_scan(&server);
+
+	/* The endpoint is published last. */
 	if (error == 0)
 		error = listen_socket(&server);
 
@@ -88,7 +98,7 @@ main(
 	/* No exit path leaves a lease, imported image or owned socket generation behind. */
 	service_cleanup(&server);
 	cleanup_failed = server.failed;
-	printf("ZWL EXIT frames=%llu error=%d cleanup_failed=%d pid=%ld\n", (unsigned long long)server.frame, error, cleanup_failed, (long)getpid());
+	printf("ZWL EXIT frames=%llu error=%d cleanup_failed=%d pid=%ld input_events=%llu seat_events=%llu\n", (unsigned long long)server.frame, error, cleanup_failed, (long)getpid(), (unsigned long long)server.input_events, (unsigned long long)server.seat_events);
 	if (error != 0 || cleanup_failed)
 		return 1;
 
@@ -380,11 +390,14 @@ event_loop(
 {
 	struct zwl_client *client;
 	struct zwl_client **clients;
+	struct zwl_input_device *devices[ZWL_INPUT_MAX];
 	struct pollfd *descriptors;
 	uint64_t started;
 	uint64_t now;
 	size_t count;
 	size_t index;
+	size_t first_input;
+	unsigned slot;
 	int timeout;
 	int ready;
 	int error;
@@ -407,10 +420,24 @@ event_loop(
 		    (server->max_frames != 0 && server->frame >= server->max_frames))
 			break;
 
-		/* Allocate exactly enough poll storage for the presently live client set. */
+		/* Evdev nodes that appeared since the last scan join the seat. */
+		if (now - server->input_scan_time >= ZWL_INPUT_SCAN_MS)
+			zwl_input_scan(server);
+
+		/* Allocate exactly enough poll storage for the presently live client and device set. */
 		count = 1;
 		for (client = server->clients; client != NULL; client = client->next)
 			count++;
+
+		/* Input devices follow the clients in the same poll snapshot. */
+		first_input = count;
+		for (slot = 0; slot < ZWL_INPUT_MAX; slot++) {
+			/* Only open devices are polled; the table keeps each slot's address stable. */
+			if (server->inputs[slot].live) {
+				devices[count - first_input] = &server->inputs[slot];
+				count++;
+			}
+		}
 
 		/* Allocation failure leaves all live clients owned by service cleanup. */
 		descriptors = calloc(count, sizeof(*descriptors));
@@ -448,6 +475,12 @@ event_loop(
 			index++;
 		}
 
+		/* Every open device is polled for readable events. */
+		for (; index < count; index++) {
+			descriptors[index].fd = devices[index - first_input]->fd;
+			descriptors[index].events = POLLIN;
+		}
+
 		/* Poll sees sockets only; typed image fds are consumed immediately during import. */
 		ready = poll(descriptors, count, timeout);
 		if (ready < 0) {
@@ -472,8 +505,15 @@ event_loop(
 		if ((descriptors[0].revents & (POLLERR | POLLHUP | POLLNVAL)) != 0)
 			error = EIO;
 
+		/* Device events are applied before clients are flushed, so they leave in this pass. */
+		for (index = first_input; index < count; index++) {
+			/* A readable, failed or vanished device is read; a read failure closes it. */
+			if (descriptors[index].revents != 0)
+				zwl_input_read(server, devices[index - first_input]);
+		}
+
 		/* Process only the clients captured by this poll snapshot. */
-		for (index = 1; index < count; index++) {
+		for (index = 1; index < first_input; index++) {
 			/* Apply readiness only to this iteration's still-owned connection generation. */
 			client = clients[index];
 			remove = 0;
@@ -552,6 +592,9 @@ service_cleanup(
 	/* Each client cleanup closes both user-received and still-kernel-queued rights. */
 	while (server->clients != NULL)
 		zwl_client_destroy(server->clients);
+
+	/* No client remains to hear from the seat, so its devices close quietly. */
+	zwl_input_cleanup(server);
 
 	/* Closing the independent renderer session completes all remaining native cleanup. */
 	if (server->gpu >= 0) {

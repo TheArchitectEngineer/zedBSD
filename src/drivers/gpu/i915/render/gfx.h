@@ -49,6 +49,9 @@ struct i915_wire_writer;
 /* How many attachments one render pass and one framebuffer hold. */
 #define I915_GFX_MAX_ATTACHMENTS	4U
 
+/* How many rectangles one vkCmdClearAttachments records. */
+#define I915_GFX_MAX_CLEAR_RECTS	16U
+
 /* How many vertex buffer bindings and vertex attributes one pipeline holds. */
 #define I915_GFX_MAX_VERTEX_BINDINGS	4U
 #define I915_GFX_MAX_VERTEX_ATTRIBUTES	8U
@@ -74,7 +77,8 @@ enum i915_gfx_op_kind {
 	I915_GFX_OP_BIND_VERTEX_BUFFER,
 	I915_GFX_OP_BIND_DESCRIPTOR_SET,
 	I915_GFX_OP_PUSH_CONSTANTS,
-	I915_GFX_OP_DRAW
+	I915_GFX_OP_DRAW,
+	I915_GFX_OP_CLEAR_ATTACHMENT
 };
 
 /*
@@ -392,6 +396,15 @@ struct i915_gfx_op {
 			uint32_t first_vertex;
 			uint32_t first_instance;
 		} draw;
+
+		/* A clear of one rectangle of the colour or the depth attachment of the pass in progress. */
+		struct {
+			uint32_t is_depth;
+
+			/* A colour clear is RGBA float bits; a depth clear is word 0. */
+			uint32_t words[4];
+			struct i915_gfx_rect rect;
+		} clear_attachment;
 	} u;
 };
 

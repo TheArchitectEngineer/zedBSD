@@ -185,6 +185,8 @@ def run(args, exercise=None, harness_path=None):
                '-debugcon', f'file:{debug}', '-no-reboot',
                '-trace', 'enable=virtio_gpu_cmd_set_scanout_blob',
                '-trace', 'enable=virtio_gpu_cmd_set_scanout']
+    # A profile may add devices (WS031 p013: the model viewer's USB tablet).
+    command += list(getattr(args, 'extra_qemu', []))
     environment = os.environ.copy()
     environment['VK_DRIVER_FILES'] = args.icd
     environment['VIRGL_LOG_LEVEL'] = 'debug'

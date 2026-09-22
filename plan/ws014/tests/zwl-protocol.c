@@ -12,6 +12,7 @@
 #include <assert.h>
 #include <stdarg.h>
 #include <sys/ioctl.h>
+#include <sys/stat.h>
 
 static struct gpu_image_descriptor authoritative;
 static unsigned resources[256];
@@ -829,6 +830,458 @@ socket_generation_test(
 	assert(error == 0);
 }
 
+/* Find the nth queued event for one object and opcode and return its payload words. */
+static const uint32_t *
+find_event(
+	struct zwl_client *client,
+	uint32_t id,
+	uint32_t opcode,
+	unsigned nth,
+	size_t *words)
+{
+	struct zwl_packet *packet;
+	uint32_t header[2];
+
+	for (packet = client->output_head; packet != NULL; packet = packet->next) {
+		memcpy(header, packet->bytes, sizeof(header));
+		if (header[0] != id || (header[1] & 65535) != opcode)
+			continue;
+		if (nth != 0) {
+			nth--;
+			continue;
+		}
+		*words = (packet->size - 8) / 4;
+		return (const uint32_t *)(packet->bytes + 8);
+	}
+	return NULL;
+}
+
+/* Return the queue position of the event for one object and opcode whose first word matches, or -1. */
+static int
+event_position(
+	struct zwl_client *client,
+	uint32_t id,
+	uint32_t opcode,
+	uint32_t first_word)
+{
+	struct zwl_packet *packet;
+	uint32_t header[3];
+	int position;
+
+	position = 0;
+	for (packet = client->output_head; packet != NULL; packet = packet->next) {
+		if (packet->size >= 12) {
+			memcpy(header, packet->bytes, sizeof(header));
+			if (header[0] == id && (header[1] & 65535) == opcode && header[2] == first_word)
+				return position;
+		}
+		position++;
+	}
+	return -1;
+}
+
+/* Drop every queued event so the next checks see only new ones. */
+static void
+drop_events(
+	struct zwl_client *client)
+{
+	struct zwl_packet *packet;
+
+	while (client->output_head != NULL) {
+		packet = client->output_head;
+		client->output_head = packet->next;
+		client->output_bytes -= packet->size;
+		zwl_packet_free(packet);
+	}
+	client->output_tail = NULL;
+}
+
+/* Write one evdev report into a test device pipe and let the seat read it. */
+static void
+device_report(
+	struct zwl_server *server,
+	struct zwl_input_device *device,
+	int writer,
+	const struct input_event *events,
+	size_t count)
+{
+	ssize_t written;
+
+	written = write(writer, events, count * sizeof(*events));
+	assert(written == (ssize_t)(count * sizeof(*events)));
+	zwl_input_read(server, device);
+}
+
+/* Fill one evdev record with a fixed timestamp of 12.345 s. */
+static void
+set_event(
+	struct input_event *event,
+	uint16_t type,
+	uint16_t code,
+	int32_t value)
+{
+	memset(event, 0, sizeof(*event));
+	event->time.tv_sec = 12;
+	event->time.tv_usec = 345000;
+	event->type = type;
+	event->code = code;
+	event->value = value;
+}
+
+/* Open a nonblocking pipe standing in for one evdev node. */
+static void
+test_device(
+	int pipe_ends[2])
+{
+	int error;
+	int flags;
+
+	error = pipe(pipe_ends);
+	assert(error == 0);
+	flags = fcntl(pipe_ends[0], F_GETFL);
+	assert(flags >= 0);
+	error = fcntl(pipe_ends[0], F_SETFL, flags | O_NONBLOCK);
+	assert(error == 0);
+}
+
+/* Receive every queued byte and descriptor from the compositor side. */
+static size_t
+drain_peer(
+	int peer,
+	unsigned char *bytes,
+	size_t capacity,
+	int *descriptors,
+	unsigned *descriptor_count)
+{
+	union {
+		struct cmsghdr alignment;
+		unsigned char bytes[CMSG_SPACE(8 * sizeof(int))];
+	} control;
+	struct msghdr message;
+	struct iovec vector;
+	struct cmsghdr *header;
+	size_t received;
+	size_t count;
+	ssize_t length;
+
+	received = 0;
+	*descriptor_count = 0;
+	while (1) {
+		memset(&message, 0, sizeof(message));
+		memset(&control, 0, sizeof(control));
+		vector.iov_base = bytes + received;
+		vector.iov_len = capacity - received;
+		message.msg_iov = &vector;
+		message.msg_iovlen = 1;
+		message.msg_control = control.bytes;
+		message.msg_controllen = sizeof(control.bytes);
+		length = recvmsg(peer, &message, MSG_DONTWAIT | MSG_CMSG_CLOEXEC);
+		if (length < 0) {
+			assert(errno == EAGAIN || errno == EWOULDBLOCK);
+			break;
+		}
+		assert(length > 0);
+		for (header = CMSG_FIRSTHDR(&message); header != NULL; header = CMSG_NXTHDR(&message, header)) {
+			assert(header->cmsg_level == SOL_SOCKET && header->cmsg_type == SCM_RIGHTS);
+			count = (header->cmsg_len - CMSG_LEN(0)) / sizeof(int);
+			assert(*descriptor_count + count <= 8);
+			memcpy(descriptors + *descriptor_count, CMSG_DATA(header), count * sizeof(int));
+			*descriptor_count += (unsigned)count;
+		}
+		received += (size_t)length;
+		assert(received < capacity);
+	}
+	return received;
+}
+
+/* Report whether every queued event of a client targets one of two object IDs. */
+static int
+only_events_for(
+	struct zwl_client *client,
+	uint32_t first,
+	uint32_t second)
+{
+	struct zwl_packet *packet;
+	uint32_t header[2];
+
+	for (packet = client->output_head; packet != NULL; packet = packet->next) {
+		memcpy(header, packet->bytes, sizeof(header));
+		if (header[0] != first && header[0] != second)
+			return 0;
+	}
+	return 1;
+}
+
+/* wl_seat, wl_pointer and wl_keyboard: wire, focus, evdev mapping and descriptor transfer. */
+static void
+seat_test(
+	void)
+{
+	struct zwl_server server;
+	struct zwl_client *client;
+	struct zwl_client *other;
+	struct zwl_object *surface;
+	struct zwl_object *object;
+	struct zwl_input_device *tablet;
+	struct zwl_input_device *mouse;
+	struct input_absinfo range;
+	struct input_event events[4];
+	struct stat null_status;
+	struct stat received_status;
+	unsigned char stream[8192];
+	const uint32_t *words;
+	uint32_t header[2];
+	uint32_t id;
+	size_t count;
+	size_t received;
+	size_t offset;
+	unsigned descriptor_count;
+	unsigned keymaps;
+	int descriptors[8];
+	int tablet_pipe[2];
+	int mouse_pipe[2];
+	int peer;
+	int other_peer;
+	int error;
+	int leave;
+	int deleted;
+
+	server_init(&server);
+	server.pointer_x = 160;
+	server.pointer_y = 120;
+
+	/* An absolute tablet and a relative mouse that also has keys. */
+	test_device(tablet_pipe);
+	test_device(mouse_pipe);
+	memset(&range, 0, sizeof(range));
+	range.minimum = 0;
+	range.maximum = 32767;
+	error = zwl_input_attach(&server, tablet_pipe[0], "/test/event0", 1, 0, &range, &range);
+	assert(error == 0 && server.capabilities == 1);
+	error = zwl_input_attach(&server, mouse_pipe[0], "/test/event1", 1, 1, NULL, NULL);
+	assert(error == 0 && server.capabilities == 3);
+	tablet = &server.inputs[0];
+	mouse = &server.inputs[1];
+	assert(tablet->live && tablet->absolute && mouse->live && !mouse->absolute);
+
+	/* The registry advertises wl_seat version 5 as global 5. */
+	client = client_new(&server, &peer);
+	surface = configure_surface(client, peer);
+	words = find_event(client, 2, 0, 4, &count);
+	assert(words != NULL && words[0] == 5 && words[1] == 8);
+	assert(memcmp(&words[2], "wl_seat", 8) == 0 && words[4] == 5);
+
+	/* Binding sends capabilities then the name "seat0". */
+	drop_events(client);
+	bind_interface(client, peer, 5, "wl_seat", 5, 7);
+	words = find_event(client, 7, 0, 0, &count);
+	assert(words != NULL && count == 1 && words[0] == 3);
+	words = find_event(client, 7, 1, 0, &count);
+	assert(words != NULL && count == 3 && words[0] == 6);
+	assert(memcmp(&words[1], "seat0", 6) == 0);
+
+	/* A pointer and a keyboard created before the surface is shown get no enter. */
+	id = 8;
+	error = request(client, peer, 7, 0, &id, 4, -1);
+	assert(error == 0);
+	id = 9;
+	error = request(client, peer, 7, 1, &id, 4, -1);
+	assert(error == 0);
+	object = zwl_find(client, 8);
+	assert(object != NULL && object->kind == ZWL_POINTER && object->version == 5);
+	object = zwl_find(client, 9);
+	assert(object != NULL && object->kind == ZWL_KEYBOARD && object->version == 5);
+	assert(count_events(client, 8, 0) == 0 && count_events(client, 9, 1) == 0);
+
+	/* The keyboard hears no_keymap (size 0) and repeat_info with rate 0. */
+	words = find_event(client, 9, 0, 0, &count);
+	assert(words != NULL && count == 2 && words[0] == 0 && words[1] == 0);
+	words = find_event(client, 9, 5, 0, &count);
+	assert(words != NULL && count == 2 && words[0] == 0 && words[1] == 600);
+
+	/* The keymap descriptor crosses the socket as SCM_RIGHTS: it is /dev/null. */
+	error = zwl_flush(client);
+	assert(error == 0 && client->output_head == NULL);
+	received = drain_peer(peer, stream, sizeof(stream), descriptors, &descriptor_count);
+	assert(descriptor_count == 1);
+	error = fstat(descriptors[0], &received_status);
+	assert(error == 0);
+	error = stat("/dev/null", &null_status);
+	assert(error == 0 && received_status.st_rdev == null_status.st_rdev);
+	close(descriptors[0]);
+	keymaps = 0;
+	for (offset = 0; offset < received; offset += header[1] >> 16) {
+		memcpy(header, stream + offset, sizeof(header));
+		assert((header[1] >> 16) >= 8);
+		if (header[0] == 9 && (header[1] & 65535) == 0) {
+			assert((header[1] >> 16) == 16);
+			keymaps++;
+		}
+	}
+	assert(offset == received && keymaps == 1);
+
+	/* Input without focus moves the pointer but is not delivered. */
+	set_event(&events[0], EV_REL, REL_X, 10);
+	set_event(&events[1], EV_SYN, SYN_REPORT, 0);
+	device_report(&server, mouse, mouse_pipe[1], events, 2);
+	assert(server.pointer_x == 170 && client->output_head == NULL);
+
+	/* Presenting the surface gives it focus: enter with position, frame, keyboard enter, modifiers. */
+	create_buffer(client, peer, 20);
+	commit_buffer(client, peer, 20, 30);
+	drop_events(client);
+	zwl_schedule(&server);
+	assert(server.focus == surface);
+	words = find_event(client, 8, 0, 0, &count);
+	assert(words != NULL && count == 4 && words[0] != 0 && words[1] == 10);
+	assert(words[2] == 170U * 256U && words[3] == 120U * 256U);
+	assert(count_events(client, 8, 5) == 1);
+	words = find_event(client, 9, 1, 0, &count);
+	assert(words != NULL && count == 3 && words[1] == 10 && words[2] == 0);
+	words = find_event(client, 9, 4, 0, &count);
+	assert(words != NULL && count == 5 && words[1] == 0);
+
+	/* An absolute report maps 0..32767 onto 0..319 and 0..239; one motion and one frame. */
+	drop_events(client);
+	set_event(&events[0], EV_ABS, ABS_X, 16383);
+	set_event(&events[1], EV_ABS, ABS_Y, 32767);
+	set_event(&events[2], EV_SYN, SYN_REPORT, 0);
+	device_report(&server, tablet, tablet_pipe[1], events, 3);
+	words = find_event(client, 8, 2, 0, &count);
+	assert(words != NULL && count == 3 && words[0] == 12345);
+	assert(words[1] == 159U * 256U && words[2] == 239U * 256U);
+	assert(count_events(client, 8, 2) == 1 && count_events(client, 8, 5) == 1);
+
+	/* A button carries a serial, the time, BTN_LEFT and the pressed state, then a frame. */
+	drop_events(client);
+	set_event(&events[0], EV_KEY, BTN_LEFT, 1);
+	set_event(&events[1], EV_SYN, SYN_REPORT, 0);
+	device_report(&server, tablet, tablet_pipe[1], events, 2);
+	words = find_event(client, 8, 3, 0, &count);
+	assert(words != NULL && count == 4 && words[0] != 0);
+	assert(words[1] == 12345 && words[2] == BTN_LEFT && words[3] == 1);
+	assert(count_events(client, 8, 2) == 0 && count_events(client, 8, 5) == 1);
+
+	/* One wheel notch up: axis_source wheel, discrete -1, value -15, frame. */
+	drop_events(client);
+	set_event(&events[0], EV_REL, REL_WHEEL, 1);
+	set_event(&events[1], EV_SYN, SYN_REPORT, 0);
+	device_report(&server, mouse, mouse_pipe[1], events, 2);
+	words = find_event(client, 8, 6, 0, &count);
+	assert(words != NULL && count == 1 && words[0] == 0);
+	words = find_event(client, 8, 8, 0, &count);
+	assert(words != NULL && count == 2 && words[0] == 0 && (int32_t)words[1] == -1);
+	words = find_event(client, 8, 4, 0, &count);
+	assert(words != NULL && count == 3 && words[1] == 0 && (int32_t)words[2] == -15 * 256);
+	assert(event_position(client, 8, 8, 0) < event_position(client, 8, 4, 12345));
+	assert(count_events(client, 8, 5) == 1);
+
+	/* Relative motion is clamped to the surface. */
+	drop_events(client);
+	set_event(&events[0], EV_REL, REL_X, -100000);
+	set_event(&events[1], EV_SYN, SYN_REPORT, 0);
+	device_report(&server, mouse, mouse_pipe[1], events, 2);
+	words = find_event(client, 8, 2, 0, &count);
+	assert(words != NULL && words[1] == 0 && words[2] == 239U * 256U);
+
+	/* Shift then A: key, modifiers depressed=shift, key; autorepeat is not forwarded. */
+	drop_events(client);
+	set_event(&events[0], EV_KEY, KEY_LEFTSHIFT, 1);
+	set_event(&events[1], EV_KEY, KEY_A, 1);
+	set_event(&events[2], EV_KEY, KEY_A, 2);
+	set_event(&events[3], EV_SYN, SYN_REPORT, 0);
+	device_report(&server, mouse, mouse_pipe[1], events, 4);
+	assert(count_events(client, 9, 3) == 2);
+	words = find_event(client, 9, 3, 0, &count);
+	assert(words != NULL && count == 4 && words[2] == KEY_LEFTSHIFT && words[3] == 1);
+	words = find_event(client, 9, 3, 1, &count);
+	assert(words != NULL && words[2] == KEY_A && words[3] == 1);
+	words = find_event(client, 9, 4, 0, &count);
+	assert(words != NULL && count == 5 && words[1] == 1 && words[2] == 0 && words[3] == 0);
+	assert(count_events(client, 9, 4) == 1 && count_events(client, 8, 5) == 0);
+
+	/* Releasing shift clears the mask. */
+	drop_events(client);
+	set_event(&events[0], EV_KEY, KEY_LEFTSHIFT, 0);
+	set_event(&events[1], EV_SYN, SYN_REPORT, 0);
+	device_report(&server, mouse, mouse_pipe[1], events, 2);
+	words = find_event(client, 9, 4, 0, &count);
+	assert(words != NULL && words[1] == 0);
+
+	/* A report damaged by SYN_DROPPED is thrown away. */
+	drop_events(client);
+	set_event(&events[0], EV_ABS, ABS_X, 0);
+	set_event(&events[1], EV_SYN, SYN_DROPPED, 0);
+	set_event(&events[2], EV_SYN, SYN_REPORT, 0);
+	device_report(&server, tablet, tablet_pipe[1], events, 3);
+	assert(client->output_head == NULL);
+
+	/* A second client without a seat takes the display: the first hears leave, the second no input. */
+	other = client_new(&server, &other_peer);
+	configure_surface(other, other_peer);
+	create_buffer(other, other_peer, 20);
+	commit_buffer(other, other_peer, 20, 30);
+	drop_events(other);
+	zwl_schedule(&server);
+	assert(server.focus != NULL && server.focus->client == other);
+	words = find_event(client, 8, 1, 0, &count);
+	assert(words != NULL && count == 2 && words[1] == 10);
+	words = find_event(client, 9, 2, 0, &count);
+	assert(words != NULL && count == 2 && words[1] == 10);
+	set_event(&events[0], EV_KEY, KEY_A, 1);
+	set_event(&events[1], EV_SYN, SYN_REPORT, 0);
+	device_report(&server, mouse, mouse_pipe[1], events, 2);
+	assert(count_events(client, 9, 3) == 0);
+	assert(count_events(other, 30, 0) == 1);
+	error = only_events_for(other, 30, 1);
+	assert(error == 1);
+	zwl_client_destroy(other);
+	close(other_peer);
+	assert(server.focus == NULL);
+
+	/* Destroying the focused client's surface sends leave before the surface's delete_id. */
+	commit_buffer(client, peer, 20, 31);
+	zwl_schedule(&server);
+	assert(server.focus == surface);
+	drop_events(client);
+	zwl_object_destroy(zwl_find(client, 12));
+	zwl_object_destroy(zwl_find(client, 11));
+	zwl_object_destroy(surface);
+	assert(server.focus == NULL);
+	words = find_event(client, 8, 1, 0, &count);
+	assert(words != NULL && words[1] == 10);
+	leave = event_position(client, 8, 1, words[0]);
+	deleted = event_position(client, 1, 1, 10);
+	assert(leave >= 0 && deleted > leave);
+
+	/* release retires pointer and keyboard with ordinary delete_id. */
+	drop_events(client);
+	error = request(client, peer, 8, 1, NULL, 0, -1);
+	assert(error == 0 && zwl_find(client, 8) == NULL);
+	error = request(client, peer, 9, 0, NULL, 0, -1);
+	assert(error == 0 && zwl_find(client, 9) == NULL);
+	assert(event_position(client, 1, 1, 8) >= 0 && event_position(client, 1, 1, 9) >= 0);
+
+	/* A vanished device is closed and bound seats hear the reduced capabilities. */
+	drop_events(client);
+	close(mouse_pipe[1]);
+	zwl_input_read(&server, mouse);
+	assert(!mouse->live && server.capabilities == 1);
+	words = find_event(client, 7, 0, 0, &count);
+	assert(words != NULL && words[0] == 1);
+
+	/* get_touch is not offered. */
+	id = 40;
+	error = request(client, peer, 7, 2, &id, 4, -1);
+	assert(error == EPROTO && client->fatal);
+
+	close(tablet_pipe[1]);
+	close(peer);
+	service_cleanup(&server);
+	assert(!tablet->live && server.capabilities == 0);
+	printf("zwl seat: wl_seat/wl_pointer/wl_keyboard wire, focus, evdev mapping, keymap SCM_RIGHTS PASS\n");
+}
+
 /* Exercise actual server code with finite transport and failure injection. */
 int
 main(
@@ -854,6 +1307,7 @@ main(
 	partial_output_test();
 	remap_test();
 	socket_generation_test();
+	seat_test();
 	for (index = 1; index <= next_resource; index++)
 		assert(resources[index] == 0);
 	assert(imported == destroyed && scanning == 0);

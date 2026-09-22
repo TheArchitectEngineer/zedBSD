@@ -21,6 +21,7 @@
 
 static int receive_rights(struct zwl_client *client, const struct msghdr *message);
 static int decode_messages(struct zwl_client *client);
+static ssize_t send_packet(struct zwl_client *client, struct zwl_packet *packet);
 
 /*
  * Reads a monotonic time for frame callbacks and finite service deadlines.
@@ -52,26 +53,65 @@ zwl_emit(
 	const void *payload,
 	size_t size)
 {
+	int error;
+
+	/* An ordinary event carries no descriptor. */
+	error = zwl_emit_fd(client, object, opcode, payload, size, -1);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the event is retained for nonblocking delivery. */
+	return 0;
+}
+
+/*
+ * Queues one protocol event whose descriptor argument travels as SCM_RIGHTS.
+ *
+ * The packet takes ownership of a descriptor that is not -1: it is closed
+ * once sent, when the client is destroyed, or here when queuing fails.
+ */
+int
+zwl_emit_fd(
+	struct zwl_client *client,
+	uint32_t object,
+	uint32_t opcode,
+	const void *payload,
+	size_t size,
+	int descriptor)
+{
 	struct zwl_packet *packet;
 	uint32_t header[2];
 	size_t total;
 
 	/* Refuse malformed or excessive event storage before allocating a packet. */
-	if (size > ZWL_WIRE_MAX - 8U || (size & 3U) != 0)
+	if (size > ZWL_WIRE_MAX - 8U || (size & 3U) != 0) {
+		if (descriptor >= 0)
+			close(descriptor);
+
 		return EPROTO;
+	}
 
 	/* A client that never reads cannot consume unbounded compositor memory. */
 	total = size + 8U;
-	if (client->output_bytes > ZWL_OUTPUT_MAX - total)
+	if (client->output_bytes > ZWL_OUTPUT_MAX - total) {
+		if (descriptor >= 0)
+			close(descriptor);
+
 		return ENOBUFS;
+	}
 
 	/* Each packet owns its unsent suffix until flush or client destruction. */
 	packet = calloc(1, sizeof(*packet) + total);
-	if (packet == NULL)
+	if (packet == NULL) {
+		if (descriptor >= 0)
+			close(descriptor);
+
 		return ENOMEM;
+	}
 
 	/* Wayland uses native-endian words on its local Unix stream. */
 	packet->size = total;
+	packet->descriptor = descriptor;
 	header[0] = object;
 	header[1] = (uint32_t)(total << 16) | opcode;
 	memcpy(packet->bytes, header, sizeof(header));
@@ -108,7 +148,7 @@ zwl_flush(
 	while (client->output_head != NULL) {
 		/* Resume this packet at exactly the suffix the previous write left unsent. */
 		packet = client->output_head;
-		sent = send(client->fd, packet->bytes + packet->sent, packet->size - packet->sent, MSG_DONTWAIT | MSG_NOSIGNAL);
+		sent = send_packet(client, packet);
 		if (sent < 0) {
 			/* Retry an interrupted write without losing the queued suffix. */
 			if (errno == EINTR)
@@ -134,7 +174,7 @@ zwl_flush(
 		/* Complete packets release their memory charge and list ownership. */
 		client->output_head = packet->next;
 		client->output_bytes -= packet->size;
-		free(packet);
+		zwl_packet_free(packet);
 	}
 
 	/* An empty queue has no last packet. */
@@ -142,6 +182,24 @@ zwl_flush(
 
 	/* Succeeded: all currently queued events were accepted by the socket. */
 	return 0;
+}
+
+/*
+ * Releases one queued event and any descriptor it has not yet sent.
+ */
+void
+zwl_packet_free(
+	struct zwl_packet *packet)
+{
+	/* An unsent descriptor still belongs to the packet. */
+	if (packet->descriptor >= 0)
+		close(packet->descriptor);
+
+	/* The packet storage holds nothing else that needs releasing. */
+	free(packet);
+
+	/* Succeeded: the packet and its descriptor are gone. */
+	return;
 }
 
 /*
@@ -350,6 +408,58 @@ receive_rights(
 
 	/* Succeeded: connection ownership includes every received descriptor. */
 	return 0;
+}
+
+/*
+ * Writes the unsent suffix of one packet, attaching its descriptor to the first byte.
+ *
+ * The descriptor is closed as soon as any byte of the packet has been accepted,
+ * because the kernel then holds its own reference in the receive queue.
+ */
+static ssize_t
+send_packet(
+	struct zwl_client *client,
+	struct zwl_packet *packet)
+{
+	struct msghdr message;
+	struct iovec vector;
+	struct cmsghdr *header;
+	union {
+		struct cmsghdr alignment;
+		unsigned char bytes[CMSG_SPACE(sizeof(int))];
+	} control;
+	ssize_t sent;
+
+	/* A packet without a pending descriptor is plain stream bytes. */
+	if (packet->descriptor < 0 || packet->sent != 0) {
+		sent = send(client->fd, packet->bytes + packet->sent, packet->size - packet->sent, MSG_DONTWAIT | MSG_NOSIGNAL);
+		return sent;
+	}
+
+	/* The descriptor rides on the first byte of its own event. */
+	memset(&message, 0, sizeof(message));
+	memset(&control, 0, sizeof(control));
+	vector.iov_base = packet->bytes;
+	vector.iov_len = packet->size;
+	message.msg_iov = &vector;
+	message.msg_iovlen = 1;
+	message.msg_control = control.bytes;
+	message.msg_controllen = sizeof(control.bytes);
+	header = CMSG_FIRSTHDR(&message);
+	header->cmsg_len = CMSG_LEN(sizeof(int));
+	header->cmsg_level = SOL_SOCKET;
+	header->cmsg_type = SCM_RIGHTS;
+	memcpy(CMSG_DATA(header), &packet->descriptor, sizeof(int));
+	sent = sendmsg(client->fd, &message, MSG_DONTWAIT | MSG_NOSIGNAL);
+
+	/* Once any byte is accepted the kernel owns the transferred reference. */
+	if (sent > 0) {
+		close(packet->descriptor);
+		packet->descriptor = -1;
+	}
+
+	/* Reports the byte count or the failure exactly as sendmsg did. */
+	return sent;
 }
 
 /* Decodes complete native-endian requests without reading beyond an incomplete suffix. */

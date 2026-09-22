@@ -25,6 +25,7 @@ struct wl_surface;
 struct wl_region;
 struct wl_buffer;
 struct wl_output;
+struct wl_seat;
 struct xdg_wm_base;
 struct xdg_positioner;
 struct xdg_surface;
@@ -115,11 +116,11 @@ void xdg_toplevel_set_title(struct xdg_toplevel *object, const char *title);
 #define XDG_TOPLEVEL_SET_APP_ID 3U
 void xdg_toplevel_set_app_id(struct xdg_toplevel *object, const char *app_id);
 #define XDG_TOPLEVEL_SHOW_WINDOW_MENU 4U
-void xdg_toplevel_show_window_menu(struct xdg_toplevel *object, struct wl_proxy *seat, uint32_t serial, int32_t x, int32_t y);
+void xdg_toplevel_show_window_menu(struct xdg_toplevel *object, struct wl_seat *seat, uint32_t serial, int32_t x, int32_t y);
 #define XDG_TOPLEVEL_MOVE 5U
-void xdg_toplevel_move(struct xdg_toplevel *object, struct wl_proxy *seat, uint32_t serial);
+void xdg_toplevel_move(struct xdg_toplevel *object, struct wl_seat *seat, uint32_t serial);
 #define XDG_TOPLEVEL_RESIZE 6U
-void xdg_toplevel_resize(struct xdg_toplevel *object, struct wl_proxy *seat, uint32_t serial, uint32_t edges);
+void xdg_toplevel_resize(struct xdg_toplevel *object, struct wl_seat *seat, uint32_t serial, uint32_t edges);
 #define XDG_TOPLEVEL_SET_MAX_SIZE 7U
 void xdg_toplevel_set_max_size(struct xdg_toplevel *object, int32_t width, int32_t height);
 #define XDG_TOPLEVEL_SET_MIN_SIZE 8U
@@ -151,7 +152,7 @@ int xdg_popup_add_listener(struct xdg_popup *object, const struct xdg_popup_list
 #define XDG_POPUP_DESTROY 0U
 void xdg_popup_destroy(struct xdg_popup *object);
 #define XDG_POPUP_GRAB 1U
-void xdg_popup_grab(struct xdg_popup *object, struct wl_proxy *seat, uint32_t serial);
+void xdg_popup_grab(struct xdg_popup *object, struct wl_seat *seat, uint32_t serial);
 void xdg_popup_set_user_data(struct xdg_popup *object, void *data);
 void *xdg_popup_get_user_data(struct xdg_popup *object);
 uint32_t xdg_popup_get_version(struct xdg_popup *object);

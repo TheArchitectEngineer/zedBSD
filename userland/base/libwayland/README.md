@@ -42,10 +42,25 @@ permissions are checked by the compositor/GPU layers.
 
 [API-PROVENANCE.md](../../../libc/include/wayland/API-PROVENANCE.md) records pinned
 upstream interface facts, hashes, selected scope, limitations and notices.
-Selected core descriptions are wl_display/registry/callback/region/buffer v1
-and wl_compositor/surface/output v4. Selected xdg-shell descriptions are v1.
-Input, wl_shm, wl_subcompositor, server-created new_id events, a public server
-library and general typed callback FFI are outside this library's current scope.
+Selected core descriptions are wl_display/registry/callback/region/buffer v1,
+wl_compositor/surface/output v4 and wl_seat/pointer/keyboard v5. Selected
+xdg-shell descriptions are v1; their seat arguments are typed `struct wl_seat *`
+as upstream declares them. wl_shm, wl_subcompositor, wl_touch, server-created
+new_id events, a public server library and general typed callback FFI are
+outside this library's current scope.
+
+Input (WS031 p013) uses the upstream client API names, signatures, listener
+layouts and enum values: `wl_seat_get_pointer`/`get_keyboard`/`release`/
+`destroy`, `wl_pointer_set_cursor`/`release`/`destroy`, `wl_keyboard_release`/
+`destroy` and the three `*_add_listener` functions. `wl_pointer_listener` keeps
+the upstream member order including `axis_value120` and
+`axis_relative_direction`; those two belong to pointer v8/v9, which are not
+described, so they are never called. `wl_seat.get_touch` is described only to
+keep the request opcodes in order; no wrapper sends it. The wl_keyboard.keymap
+descriptor is delivered to the listener, which owns and must close it; an
+unobserved, suppressed or discarded keymap event closes it in the library.
+`wl_fixed_to_int`, `wl_fixed_from_int`, `wl_fixed_to_double` and
+`wl_fixed_from_double` are exported functions rather than inline helpers.
 Custom event bindings use the public dispatcher contract. This is a minimal
 client SDK, not full Wayland or desktop conformance.
 
@@ -60,7 +75,9 @@ inheritance, callback destruction before dispatch, delete_id lifetime,
 fragmented messages, 4096 dynamic object identities, 60016-byte partial sends
 with exactly one descriptor transfer, sender-close and callback-fd ownership,
 CLOEXEC, delayed rights after complete message bytes, unsent-fd cleanup,
-two-thread prepared-reader cancellation, malformed protocol rejection and compositor disconnect. Ordinary and ASan/UBSan executions
+two-thread prepared-reader cancellation, malformed protocol rejection, compositor disconnect,
+and the seat/pointer/keyboard request encoding, typed event dispatch, keymap fd
+ownership and version gating of pointer v5 events. Ordinary and ASan/UBSan executions
 pass. Public Wayland utility layouts and the Vulkan Wayland creation record
 are checked on ILP32/LP64 in C and C++ by
 `plan/ws014/phase006/tests/run-wayland-abi.sh`; that runner accepts the pinned

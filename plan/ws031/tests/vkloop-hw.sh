@@ -102,6 +102,13 @@ if [ "$WAYLAND_RUN" = 1 ]; then
 	done
 	RC_CONF=plan/ws031/tests/wayland/rc.conf
 fi
+# the image is rebuilt only when an input is newer than it: switching to an older rc.conf does not
+# count, so the chosen one is copied to one path whose file changes only when its text does
+RC_GEN=build/resident/rc-conf.gen
+cp "$RC_CONF" $RC_GEN.new
+cmp -s $RC_GEN.new $RC_GEN 2>/dev/null || mv $RC_GEN.new $RC_GEN
+rm -f $RC_GEN.new
+RC_CONF=$RC_GEN
 make -j"$(nproc)" BUILD=build/resident "I915_TESTS=${I915_TESTS:-n}" "I915_TEST_ORACLE=${I915_TEST_ORACLE:-n}" \
 	"I915_TEST_VBT=$I915_TEST_VBT" \
 	"ZEDBSD_TEST_CPPFLAGS=-DGPU_IOCTL_TRACE=1 $EXTRA" \
@@ -112,6 +119,8 @@ make -j"$(nproc)" BUILD=build/resident "I915_TESTS=${I915_TESTS:-n}" "I915_TEST_
 	exit 1
 }
 printf '%s' "$FLAGS" > build/resident/.vkloop-flags
+# the iGPU goes back to vfio-pci if a Venus run left it on the host i915 driver (bigbang/igpu-mode.sh)
+ssh solaris10-man bigbang/igpu-mode.sh vfio >/dev/null || { echo "iGPU is not on vfio-pci"; exit 1; }
 scp -q build/resident/hdd-image.img solaris10-man:bigbang/guest-parity.img || exit 1
 ssh solaris10-man 'cd ~/bigbang && rm -f run-parity-serial.log && ./run-parity-vk.sh >/dev/null 2>&1; cp run-parity-serial.log vkloop-last.log'
 scp -q solaris10-man:bigbang/vkloop-last.log /tmp/vkloop-last.log
