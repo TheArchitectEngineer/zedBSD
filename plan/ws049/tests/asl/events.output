@@ -1,0 +1,3 @@
+NOTIFY \_SB_.PWRB 0x80
+NOTIFY \_SB_.LID0 0x80
+FIXED power-button

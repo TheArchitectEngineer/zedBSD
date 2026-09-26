@@ -1459,7 +1459,7 @@ parse_reference_target(
 
 		/* A string operand is the path of the target. */
 		if (object->type == DRV_ACPI_TYPE_STRING) {
-			error = drv_acpi_lookup(eval->scope, object->value.string.text, &node);
+			error = drv_acpi_lookup_path(eval->scope, object->value.string.text, true, &node);
 			drv_acpi_object_release(object);
 			if (error != 0)
 				return error;

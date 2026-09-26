@@ -57,6 +57,25 @@ bool
 drv_acpi_os_lock_owned(void);
 
 int
+drv_acpi_os_port_read(
+	uint32_t port,
+	unsigned width,
+	uint32_t *value);
+
+int
+drv_acpi_os_port_write(
+	uint32_t port,
+	unsigned width,
+	uint32_t value);
+
+unsigned long
+drv_acpi_os_event_lock(void);
+
+void
+drv_acpi_os_event_unlock(
+	unsigned long state);
+
+int
 drv_acpi_os_table(
 	const char *signature,
 	const char *oem_id,

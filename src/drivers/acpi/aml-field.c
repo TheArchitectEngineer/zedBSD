@@ -701,7 +701,7 @@ evaluate_found(
 	int error;
 
 	/* Searches from the device toward the root. */
-	error = drv_acpi_lookup(device, name, &found);
+	error = drv_acpi_lookup_path(device, name, true, &found);
 	if (error == ENOENT)
 		return 0;
 	if (error != 0)

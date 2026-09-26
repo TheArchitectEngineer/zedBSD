@@ -1415,7 +1415,7 @@ drv_acpi_reference_resolve(
 		return;
 
 	/* Looks the name up from its scope. */
-	error = drv_acpi_lookup(reference->value.reference.node, reference->value.reference.name, &node);
+	error = drv_acpi_lookup_path(reference->value.reference.node, reference->value.reference.name, true, &node);
 	if (error != 0)
 		return;
 

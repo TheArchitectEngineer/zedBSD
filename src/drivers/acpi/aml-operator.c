@@ -1380,7 +1380,7 @@ op_deref_of(
 
 	/* A string is the path of a named object. */
 	if (operand->type == DRV_ACPI_TYPE_STRING) {
-		error = drv_acpi_lookup(eval->scope, operand->value.string.text, &node);
+		error = drv_acpi_lookup_path(eval->scope, operand->value.string.text, true, &node);
 		drv_acpi_object_release(operand);
 		if (error != 0)
 			return error;

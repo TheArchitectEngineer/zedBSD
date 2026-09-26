@@ -8,8 +8,10 @@
 /*
  * The ACPI driver's kernel side: the operating system services the AML
  * interpreter asks for (aml-os.h), the address space handlers for system
- * memory, system I/O and PCI configuration space, and the attachment at
- * boot that finds the firmware's tables and loads them.
+ * memory, system I/O and PCI configuration space, the SCI interrupt and
+ * the thread that handles its events, and the attachment at boot that
+ * finds the firmware's tables, loads them and starts the events and the
+ * Embedded Controller.
  *
  * The RSDP comes from the platform as the boot handoff "acpi.rsdp" (the
  * physical address of the RSDP the HAL validated).  A platform that does
@@ -26,11 +28,14 @@
 #include <drivers/pci/pci.h>
 
 #include "kern/clock.h"
+#include "kern/irq.h"
 #include "kern/klog.h"
 #include "kern/kmem.h"
 #include "kern/lock.h"
 #include "kern/platform.h"
 #include "kern/sched.h"
+#include "kern/thread.h"
+#include "kern/waitq.h"
 
 #include "acpi-tables.h"
 #include "aml-internal.h"
@@ -90,6 +95,19 @@ static struct drv_acpi_firmware firmware;
 static struct memory_mapping memory_cache[MEMORY_CACHE_SLOTS];
 static uint64_t memory_cache_clock;
 
+/*
+ * The lock the SCI interrupt and the event code share, the queue the
+ * event thread sleeps on, and the number of SCIs it has not handled yet;
+ * the thread takes the count, and the interrupt adds to it.
+ */
+static struct spinlock event_lock;
+static struct wait_queue event_queue;
+static unsigned event_work;
+
+static int start_events(void);
+static void sci_interrupt(int irq, kern_irq_ack_t acknowledge, void *argument);
+static void event_thread(void *argument);
+static void power_button(enum drv_acpi_fixed_event event, void *argument);
 static int read_physical(uint64_t address, void *buffer, size_t length, void *argument);
 static int memory_handler(const struct drv_acpi_region_access *access, uint64_t *value, void *argument);
 static int memory_bytes(const struct drv_acpi_region_access *access, uint64_t *value);
@@ -153,6 +171,14 @@ drv_acpi_attach(void)
 	if (error != 0)
 		kern_logf("acpi: _REG failed (error %d)\n", error);
 	drv_acpi_initialize_devices();
+
+	/* Starts the SCI and its thread, then the Embedded Controller. */
+	error = start_events();
+	if (error != 0)
+		kern_logf("acpi: no ACPI events (error %d)\n", error);
+	error = drv_acpi_ec_attach();
+	if (error != 0 && error != ENODEV)
+		kern_logf("acpi: the Embedded Controller did not attach (error %d)\n", error);
 
 	/* Succeeded. */
 	kern_logf("acpi: %u tables listed, namespace ready\n", firmware.count);
@@ -315,6 +341,96 @@ drv_acpi_os_lock_owned(void)
 }
 
 /*
+ * Reads an I/O port for the event and EC code.
+ */
+int
+drv_acpi_os_port_read(
+	uint32_t port,
+	unsigned width,
+	uint32_t *value)
+{
+	/* Refuses a port beyond the 64 KiB space. */
+	if (port > 0xffffU)
+		return EFAULT;
+
+	/* Reads at the width. */
+	switch (width) {
+	case 8:
+		*value = hal_io_inp8((uint16_t)port);
+		return 0;
+	case 16:
+		*value = hal_io_inp16((uint16_t)port);
+		return 0;
+	case 32:
+		*value = hal_io_inp32((uint16_t)port);
+		return 0;
+	default:
+		break;
+	}
+
+	/* Refuses another width. */
+	return EINVAL;
+}
+
+/*
+ * Writes an I/O port for the event and EC code.
+ */
+int
+drv_acpi_os_port_write(
+	uint32_t port,
+	unsigned width,
+	uint32_t value)
+{
+	/* Refuses a port beyond the 64 KiB space. */
+	if (port > 0xffffU)
+		return EFAULT;
+
+	/* Writes at the width. */
+	switch (width) {
+	case 8:
+		hal_io_outp8((uint16_t)port, (uint8_t)value);
+		return 0;
+	case 16:
+		hal_io_outp16((uint16_t)port, (uint16_t)value);
+		return 0;
+	case 32:
+		hal_io_outp32((uint16_t)port, value);
+		return 0;
+	default:
+		break;
+	}
+
+	/* Refuses another width. */
+	return EINVAL;
+}
+
+/*
+ * Takes the lock the SCI interrupt shares with the event code.
+ */
+unsigned long
+drv_acpi_os_event_lock(void)
+{
+	unsigned long state;
+
+	/* Takes it with interrupts off, as the interrupt takes it too. */
+	state = spin_lock_irqsave(&event_lock);
+
+	/* Reports the interrupt state to restore. */
+	return state;
+}
+
+/*
+ * Lets the event lock go.
+ */
+void
+drv_acpi_os_event_unlock(
+	unsigned long state)
+{
+	/* Lets it go and restores the interrupt state. */
+	spin_unlock_irqrestore(&event_lock, state);
+}
+
+/*
  * Finds a table LoadTable asks for among the tables the firmware lists.
  */
 int
@@ -334,6 +450,113 @@ drv_acpi_os_table(
 
 	/* Succeeded. */
 	return 0;
+}
+
+/* Reads the event hardware and starts the event thread and the SCI. */
+static int
+start_events(void)
+{
+	struct thread *thread;
+	unsigned irq;
+	int error;
+
+	/* The event lock and queue exist before anything takes them. */
+	spin_init(&event_lock, LOCK_RANK_DEVICE, "acpi event");
+	waitq_init(&event_queue, "acpi event");
+
+	/* Reads the hardware and enables the runtime GPEs. */
+	error = drv_acpi_events_init(firmware.fadt, firmware.fadt_length);
+	if (error != 0)
+		return error;
+
+	/* Starts the thread that handles the events. */
+	error = kthread_create(event_thread, NULL, SCHED_PRIORITY_DEFAULT, &thread);
+	if (error != 0)
+		return error;
+
+	/* Takes the SCI. */
+	irq = drv_acpi_sci_irq();
+	error = kern_irq_register((int)irq, sci_interrupt, NULL);
+	if (error != 0)
+		return error;
+
+	/* Logs the power button until a driver takes it. */
+	error = drv_acpi_fixed_event_install(DRV_ACPI_EVENT_POWER_BUTTON, power_button, NULL);
+	if (error != 0 && error != ENODEV)
+		return error;
+
+	/* Succeeded. */
+	kern_logf("acpi: SCI on IRQ %u\n", irq);
+	return 0;
+}
+
+/* The SCI: masks and records the events that fired, then wakes the thread. */
+static void
+sci_interrupt(
+	int irq,
+	kern_irq_ack_t acknowledge,
+	void *argument)
+{
+	unsigned long state;
+	bool pending;
+
+	UNUSED_PARAMETER(irq);
+	UNUSED_PARAMETER(argument);
+
+	/* Masks what fired; the level SCI goes quiet with it. */
+	pending = drv_acpi_sci_interrupt();
+
+	/* Hands the work to the thread. */
+	if (pending) {
+		state = spin_lock_irqsave(&event_lock);
+		event_work++;
+		waitq_wake_all(&event_queue);
+		spin_unlock_irqrestore(&event_lock, state);
+	}
+
+	/* Ends the interrupt. */
+	kern_irq_send_eoi(acknowledge);
+}
+
+/* Handles the events the SCI recorded, for the life of the system. */
+static void
+event_thread(
+	void *argument)
+{
+	unsigned long state;
+	uint64_t sequence;
+
+	UNUSED_PARAMETER(argument);
+
+	/* Sleeps until the SCI records work, then handles it. */
+	for (;;) {
+		/* Waits for work. */
+		state = spin_lock_irqsave(&event_lock);
+		while (event_work == 0) {
+			sequence = waitq_sequence(&event_queue);
+			(void)waitq_sleep(&event_queue, &event_lock, sequence, 0, 0);
+		}
+
+		/* The work counted so far is taken as a whole. */
+		event_work = 0;
+		spin_unlock_irqrestore(&event_lock, state);
+
+		/* Runs the handlers and the AML. */
+		drv_acpi_events_process();
+	}
+}
+
+/* Logs a press of the power button; the power management WS will act on it. */
+static void
+power_button(
+	enum drv_acpi_fixed_event event,
+	void *argument)
+{
+	UNUSED_PARAMETER(event);
+	UNUSED_PARAMETER(argument);
+
+	/* Logs it. */
+	kern_logf("acpi: power button\n");
 }
 
 /* Reads physical memory for the table finder, one page at a time. */

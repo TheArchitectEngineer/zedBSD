@@ -69,15 +69,39 @@ drv_acpi_root(void)
 }
 
 /*
- * Finds a node by a path in text, such as "\\_SB.PCI0" or "_STA".
+ * Finds a node by a path in text, such as "\\_SB.PCI0" or "_STA", for a
+ * driver.
  *
- * A relative path starts at scope, or at the root when scope is NULL.  A
- * single relative name is searched for toward the root as AML does.
+ * A relative path starts at scope, or at the root when scope is NULL, and
+ * is not searched for toward the root: a driver asking a device for _STA
+ * wants the device's own.
  */
 int
 drv_acpi_lookup(
 	struct drv_acpi_node *scope,
 	const char *path,
+	struct drv_acpi_node **result)
+{
+	int error;
+
+	/* Resolves the path without the search rule. */
+	error = drv_acpi_lookup_path(scope, path, false, result);
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Finds a node by a path in text; with search set, a single relative name
+ * is searched for toward the root as AML references are.
+ */
+int
+drv_acpi_lookup_path(
+	struct drv_acpi_node *scope,
+	const char *path,
+	bool search,
 	struct drv_acpi_node **result)
 {
 	uint8_t segments[NAMESPACE_DEPTH_MAX * 4U];
@@ -98,8 +122,8 @@ drv_acpi_lookup(
 	if (error != 0)
 		return error;
 
-	/* Resolves the name the way an AML reference would. */
-	error = drv_acpi_ns_lookup(scope, &name, true, &node);
+	/* Resolves the name. */
+	error = drv_acpi_ns_lookup(scope, &name, search, &node);
 	if (error != 0)
 		return error;
 

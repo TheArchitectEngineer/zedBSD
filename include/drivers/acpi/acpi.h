@@ -106,6 +106,29 @@ typedef int (*drv_acpi_region_handler_t)(const struct drv_acpi_region_access *ac
  */
 typedef void (*drv_acpi_notify_handler_t)(struct drv_acpi_node *node, uint32_t value, void *argument);
 
+/*
+ * The fixed events of the PM1 registers a driver may handle; the numbers
+ * are their bits in PM1_STS and PM1_EN.
+ */
+enum drv_acpi_fixed_event {
+	DRV_ACPI_EVENT_TIMER = 0,
+	DRV_ACPI_EVENT_GLOBAL_LOCK = 5,
+	DRV_ACPI_EVENT_POWER_BUTTON = 8,
+	DRV_ACPI_EVENT_SLEEP_BUTTON = 9,
+	DRV_ACPI_EVENT_RTC = 10
+};
+
+/*
+ * A fixed event handler, called in the event thread.
+ */
+typedef void (*drv_acpi_fixed_handler_t)(enum drv_acpi_fixed_event event, void *argument);
+
+/*
+ * A GPE handler a driver installs in place of the GPE's method, called in
+ * the event thread.
+ */
+typedef void (*drv_acpi_gpe_handler_t)(unsigned gpe, void *argument);
+
 int
 drv_acpi_attach(void);
 
@@ -227,5 +250,35 @@ drv_acpi_notify_install(
 	struct drv_acpi_node *node,
 	drv_acpi_notify_handler_t handler,
 	void *argument);
+
+int
+drv_acpi_events_init(
+	const uint8_t *fadt,
+	size_t length);
+
+unsigned
+drv_acpi_sci_irq(void);
+
+int
+drv_acpi_fixed_event_install(
+	enum drv_acpi_fixed_event event,
+	drv_acpi_fixed_handler_t handler,
+	void *argument);
+
+int
+drv_acpi_gpe_install(
+	unsigned gpe,
+	bool edge,
+	drv_acpi_gpe_handler_t handler,
+	void *argument);
+
+bool
+drv_acpi_sci_interrupt(void);
+
+void
+drv_acpi_events_process(void);
+
+int
+drv_acpi_ec_attach(void);
 
 #endif

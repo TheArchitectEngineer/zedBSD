@@ -600,6 +600,13 @@ drv_acpi_ns_resolve_alias(
 	struct drv_acpi_node *node);
 
 int
+drv_acpi_lookup_path(
+	struct drv_acpi_node *scope,
+	const char *path,
+	bool search,
+	struct drv_acpi_node **result);
+
+int
 drv_acpi_ns_parse_path(
 	const char *text,
 	uint8_t *segments,

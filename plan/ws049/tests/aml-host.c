@@ -28,6 +28,13 @@
  *     --shared-pci    simulate one PCI configuration space for every
  *                     function, as acpiexec does (it keeps one buffer per
  *                     region address, and PCI regions all start at 0)
+ *     --events        read the event hardware from the FADT (the firmware's,
+ *                     or a simulated q35-like one) and enable the GPEs
+ *     --ec            attach the Embedded Controller (PNP0C09)
+ *     --ec-ram A=V    preset byte A of the simulated EC (repeatable)
+ *     --gpe N         raise GPE N and handle the SCI (repeatable, in order)
+ *     --power-button  press the fixed power button and handle the SCI
+ *     --ec-query Q@G  queue EC query Q, raise the EC's GPE G, handle the SCI
  *     --stack         print the deepest stack use of the interpreter
  *     --budget BYTES  the stack budget (default 1 MiB)
  *     --quiet         do not print the interpreter's log
@@ -45,6 +52,8 @@
 #include "drivers/acpi/acpi-tables.h"
 #include "drivers/acpi/aml-internal.h"
 #include "drivers/acpi/aml-os.h"
+
+#include "aml-host-hardware.h"
 
 /*
  * The size of one simulated memory page.
@@ -81,6 +90,12 @@ enum option_kind {
 	OPTION_FIRMWARE,
 	OPTION_STACK,
 	OPTION_SHARED_PCI,
+	OPTION_EVENTS,
+	OPTION_EC,
+	OPTION_EC_RAM,
+	OPTION_GPE,
+	OPTION_POWER_BUTTON,
+	OPTION_EC_QUERY,
 	OPTION_REG,
 	OPTION_INIT,
 	OPTION_BUDGET,
@@ -116,6 +131,11 @@ struct harness_options {
 	int stack;
 	int connect;
 	int initialize;
+	int events;
+	int ec;
+	const char *actions[OPTION_LIST_MAX];
+	enum option_kind action_kinds[OPTION_LIST_MAX];
+	unsigned action_count;
 };
 
 /*
@@ -160,6 +180,12 @@ static const struct option_name option_names[] = {
 	{ "--firmware", OPTION_FIRMWARE, 1 },
 	{ "--stack", OPTION_STACK, 0 },
 	{ "--shared-pci", OPTION_SHARED_PCI, 0 },
+	{ "--events", OPTION_EVENTS, 0 },
+	{ "--ec", OPTION_EC, 0 },
+	{ "--ec-ram", OPTION_EC_RAM, 1 },
+	{ "--gpe", OPTION_GPE, 1 },
+	{ "--power-button", OPTION_POWER_BUTTON, 0 },
+	{ "--ec-query", OPTION_EC_QUERY, 1 },
 	{ "--reg", OPTION_REG, 0 },
 	{ "--init", OPTION_INIT, 0 },
 	{ "--budget", OPTION_BUDGET, 1 },
@@ -215,7 +241,10 @@ static int lock_held;
 
 static int parse_arguments(int argc, char **argv, struct harness_options *options);
 static enum option_kind option_of(const char *text, int *takes_value);
-static int install_spaces(void);
+static int install_spaces(const struct harness_options *options);
+static int start_events(const struct harness_options *options);
+static void run_actions(const struct harness_options *options);
+static void print_fixed_event(enum drv_acpi_fixed_event event, void *argument);
 static int load_tables(const struct harness_options *options);
 static int install_notifications(const struct harness_options *options);
 static int run_main(void);
@@ -259,7 +288,7 @@ main(
 		return 2;
 
 	/* Installs the simulated spaces before any AML runs. */
-	error = install_spaces();
+	error = install_spaces(&options);
 	if (error != 0)
 		return 2;
 
@@ -284,6 +313,12 @@ main(
 	error = install_notifications(&options);
 	if (error != 0)
 		status = 1;
+
+	/* Starts the events and the EC, then plays the hardware actions. */
+	error = start_events(&options);
+	if (error != 0)
+		status = 1;
+	run_actions(&options);
 
 	/* Prints the namespace. */
 	if (options.dump)
@@ -433,6 +468,89 @@ drv_acpi_os_timer(void)
 }
 
 /*
+ * Reads a port: the simulated hardware, or plain memory elsewhere.
+ */
+int
+drv_acpi_os_port_read(
+	uint32_t port,
+	unsigned width,
+	uint32_t *value)
+{
+	uint8_t *byte;
+	unsigned index;
+	int modelled;
+
+	/* The simulated hardware answers for its ports. */
+	modelled = hardware_port(port, width, false, value);
+	if (modelled)
+		return 0;
+
+	/* Anything else is the plain memory of the I/O space. */
+	*value = 0;
+	for (index = 0; index < width / 8U; index++) {
+		/* Reads one byte. */
+		byte = page_byte(DRV_ACPI_SPACE_SYSTEM_IO, port + index);
+		if (byte == NULL)
+			return 12;
+		*value |= (uint32_t)*byte << (index * 8U);
+	}
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Writes a port: the simulated hardware, or plain memory elsewhere.
+ */
+int
+drv_acpi_os_port_write(
+	uint32_t port,
+	unsigned width,
+	uint32_t value)
+{
+	uint8_t *byte;
+	unsigned index;
+	int modelled;
+
+	/* The simulated hardware answers for its ports. */
+	modelled = hardware_port(port, width, true, &value);
+	if (modelled)
+		return 0;
+
+	/* Anything else is the plain memory of the I/O space. */
+	for (index = 0; index < width / 8U; index++) {
+		/* Writes one byte. */
+		byte = page_byte(DRV_ACPI_SPACE_SYSTEM_IO, port + index);
+		if (byte == NULL)
+			return 12;
+		*byte = (uint8_t)(value >> (index * 8U));
+	}
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Takes the event lock; the harness has no interrupt to keep out.
+ */
+unsigned long
+drv_acpi_os_event_lock(void)
+{
+	/* Nothing to take. */
+	return 0;
+}
+
+/*
+ * Lets the event lock go.
+ */
+void
+drv_acpi_os_event_unlock(
+	unsigned long state)
+{
+	UNUSED_PARAMETER(state);
+}
+
+/*
  * Takes the interpreter lock.
  */
 void
@@ -579,6 +697,21 @@ parse_arguments(
 		case OPTION_SHARED_PCI:
 			shared_pci = 1;
 			break;
+		case OPTION_EVENTS:
+			options->events = 1;
+			break;
+		case OPTION_EC:
+			options->ec = 1;
+			break;
+		case OPTION_EC_RAM:
+		case OPTION_GPE:
+		case OPTION_POWER_BUTTON:
+		case OPTION_EC_QUERY:
+			/* The hardware actions run in the order given, after the loading. */
+			options->actions[options->action_count % OPTION_LIST_MAX] = value;
+			options->action_kinds[options->action_count % OPTION_LIST_MAX] = kind;
+			options->action_count++;
+			break;
 		case OPTION_REG:
 			options->connect = 1;
 			break;
@@ -649,13 +782,18 @@ option_of(
 
 /* Installs the simulated handler for every address space. */
 static int
-install_spaces(void)
+install_spaces(
+	const struct harness_options *options)
 {
 	unsigned space;
 	int error;
 
 	/* Every space is plain memory here, as acpiexec simulates it. */
 	for (space = 0; space < DRV_ACPI_SPACE_COUNT; space++) {
+		/* The EC's space is left to the EC driver when it attaches. */
+		if (options->ec && space == DRV_ACPI_SPACE_EMBEDDED_CONTROL)
+			continue;
+
 		/* Installs one space. */
 		error = drv_acpi_region_install((enum drv_acpi_space)space, simulated_space, (void *)(uintptr_t)space);
 		if (error != 0)
@@ -664,6 +802,134 @@ install_spaces(void)
 
 	/* Succeeded. */
 	return 0;
+}
+
+/*
+ * Reads the event hardware from the firmware's FADT or a simulated one,
+ * and attaches the EC, when the options ask.
+ */
+static int
+start_events(
+	const struct harness_options *options)
+{
+	uint8_t fadt[512];
+	const uint8_t *table;
+	size_t length;
+	unsigned index;
+	int address;
+	int value;
+	int fields;
+	int error;
+
+	/* Presets the EC's bytes first. */
+	for (index = 0; index < options->action_count; index++) {
+		/* Only the --ec-ram actions preset. */
+		if (options->action_kinds[index] != OPTION_EC_RAM)
+			continue;
+
+		/* Stores the byte an "address=value" names. */
+		fields = sscanf(options->actions[index], "%i=%i", &address, &value);
+		if (fields == 2)
+			hardware_ec_ram((uint8_t)address, (uint8_t)value);
+	}
+
+	/* Reads the event hardware. */
+	if (options->events) {
+		table = fadt;
+		length = hardware_default_fadt(fadt, sizeof(fadt));
+		if (firmware_loaded && firmware.fadt != NULL) {
+			table = firmware.fadt;
+			length = firmware.fadt_length;
+		}
+
+		/* Starts the events from it. */
+		error = drv_acpi_events_init(table, length);
+		if (error != 0) {
+			fprintf(stderr, "events: initialization failed (error %d)\n", error);
+			return error;
+		}
+
+		/* Prints the power button's presses. */
+		error = drv_acpi_fixed_event_install(DRV_ACPI_EVENT_POWER_BUTTON, print_fixed_event, NULL);
+		if (error != 0)
+			fprintf(stderr, "events: no fixed power button (error %d)\n", error);
+	}
+
+	/* Attaches the EC. */
+	if (options->ec) {
+		error = drv_acpi_ec_attach();
+		if (error != 0) {
+			fprintf(stderr, "ec: attach failed (error %d)\n", error);
+			return error;
+		}
+	}
+
+	/* Succeeded. */
+	return 0;
+}
+
+/* Raises the events the options ask for, in order, and handles each SCI. */
+static void
+run_actions(
+	const struct harness_options *options)
+{
+	unsigned index;
+	int query;
+	int gpe;
+	int fields;
+	bool pending;
+
+	/* Plays each action. */
+	for (index = 0; index < options->action_count; index++) {
+		/* Raises the event in the simulated hardware. */
+		switch (options->action_kinds[index]) {
+		case OPTION_GPE:
+			hardware_raise_gpe((unsigned)strtoul(options->actions[index], NULL, 0));
+			break;
+		case OPTION_POWER_BUTTON:
+			hardware_raise_fixed(DRV_ACPI_EVENT_POWER_BUTTON);
+			break;
+		case OPTION_EC_QUERY:
+			/* A "query@gpe" queues the query and raises the EC's GPE. */
+			fields = sscanf(options->actions[index], "%i@%i", &query, &gpe);
+			if (fields != 2)
+				continue;
+			hardware_ec_query((uint8_t)query);
+			hardware_raise_gpe((unsigned)gpe);
+			break;
+		default:
+			continue;
+		}
+
+		/* Handles the SCI as the kernel's interrupt and thread would. */
+		pending = drv_acpi_sci_interrupt();
+		if (!pending) {
+			printf("SCI none\n");
+			continue;
+		}
+
+		/* The thread's part runs the handlers. */
+		printf("SCI pending\n");
+		drv_acpi_events_process();
+	}
+}
+
+/* Prints a fixed event. */
+static void
+print_fixed_event(
+	enum drv_acpi_fixed_event event,
+	void *argument)
+{
+	UNUSED_PARAMETER(argument);
+
+	/* Prints its name. */
+	if (event == DRV_ACPI_EVENT_POWER_BUTTON) {
+		printf("FIXED power-button\n");
+		return;
+	}
+
+	/* Any other fixed event by its number. */
+	printf("FIXED %u\n", (unsigned)event);
 }
 
 /* Reads the dynamic tables and loads the others in order. */
@@ -962,9 +1228,22 @@ simulated_space(
 	void *argument)
 {
 	uint64_t space;
+	uint32_t port_value;
 	unsigned bytes;
 	unsigned index;
 	uint8_t *byte;
+	int modelled;
+
+	/* The simulated hardware answers for its I/O ports. */
+	if ((uintptr_t)argument == DRV_ACPI_SPACE_SYSTEM_IO) {
+		port_value = (uint32_t)*value;
+		modelled = hardware_port((uint32_t)access->address, access->width, access->write, &port_value);
+		if (modelled) {
+			if (!access->write)
+				*value = port_value;
+			return 0;
+		}
+	}
 
 	/* The argument is the number of the space the handler was installed for. */
 	space = space_key(access, (unsigned)(uintptr_t)argument);

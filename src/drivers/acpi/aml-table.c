@@ -824,7 +824,7 @@ load_table_install(
 	/* Finds the scope the table is loaded at: the root unless a path is given. */
 	scope = drv_acpi_root();
 	if (request->root_path[0] != '\0') {
-		error = drv_acpi_lookup(eval->scope, request->root_path, &scope);
+		error = drv_acpi_lookup_path(eval->scope, request->root_path, true, &scope);
 		if (error != 0)
 			return error;
 	}
@@ -838,7 +838,7 @@ load_table_install(
 	if (request->parameter_path[0] != '\0') {
 		kern_memset(&target, 0, sizeof(target));
 		target.kind = DRV_ACPI_TARGET_NODE;
-		error = drv_acpi_lookup(scope, request->parameter_path, &target.node);
+		error = drv_acpi_lookup_path(scope, request->parameter_path, true, &target.node);
 		if (error == 0)
 			error = drv_acpi_store(eval, request->parameter, &target);
 		if (error != 0)

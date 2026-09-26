@@ -10,9 +10,13 @@ CC ?= cc
 
 SOURCES := $(sort $(wildcard $(REPO)/src/drivers/acpi/aml-*.c)) \
 	$(REPO)/src/drivers/acpi/acpi-tables.c \
-	$(REPO)/plan/ws049/tests/aml-host.c
+	$(REPO)/src/drivers/acpi/acpi-event.c \
+	$(REPO)/src/drivers/acpi/acpi-ec.c \
+	$(REPO)/plan/ws049/tests/aml-host.c \
+	$(REPO)/plan/ws049/tests/aml-host-hardware.c
 HEADERS := $(wildcard $(REPO)/src/drivers/acpi/*.h) \
-	$(REPO)/include/drivers/acpi/acpi.h
+	$(REPO)/include/drivers/acpi/acpi.h \
+	$(REPO)/plan/ws049/tests/aml-host-hardware.h
 
 WARNINGS := -Wall -Wextra -Werror -Wdeclaration-after-statement \
 	-Wstrict-prototypes -Wmissing-prototypes -Wshadow
