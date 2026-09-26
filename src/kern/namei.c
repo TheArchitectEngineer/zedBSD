@@ -19,6 +19,7 @@
 #include "kern/cred.h"
 #include "kern/file.h"
 #include "kern/mount.h"
+#include "kern/namecache.h"
 #include <kern/kcrt.h>
 
 #include <uapi/errno.h>
@@ -37,6 +38,11 @@ static int search_access(const struct inode *directory, const struct ucred *cred
 static int child_path(const struct path *parent, const char *name, struct path *result);
 static int find_child_name(const struct path *parent, const struct path *child, char name[NAME_MAX + 1U]);
 static int getcwd_once(const struct path *root, const struct path *cwd, char *buffer, size_t capacity);
+static int walk_up_to_root(const struct path *root, const struct path *directory, char *buffer, size_t capacity);
+static int find_parent_of(const struct path *target, struct path *parent, char name[NAME_MAX + 1U]);
+static int find_number_name(const struct path *directory, ino_t number, char name[NAME_MAX + 1U]);
+static int find_number_below(const struct path *top, ino_t number, struct path *parent, char name[NAME_MAX + 1U]);
+static int append_component(char *buffer, size_t capacity, const char *name);
 
 /*
  * Resolves a path to a referenced path record.
@@ -712,6 +718,87 @@ fs_getcwd(
 	return 0;
 }
 
+/*
+ * Writes an absolute path that names an open file, for readlink of /dev/fd/N.
+ *
+ * A directory is named the way getcwd names one, by walking up to the root.
+ * Anything else has no way up, so it is named by the directory a recent
+ * lookup found it in, which the name cache remembers, and a device node,
+ * which devfs keeps at its top or one directory below, by a scan of those
+ * directories.  A file that none of these can name reports ENOENT, and the
+ * caller then describes it by its type instead, as Linux does for a pipe.
+ */
+int
+fs_path_of(
+	const struct cwdinfo *context,
+	const struct path *target,
+	char *buffer,
+	size_t capacity)
+{
+	struct path root;
+	struct path parent;
+	char name[NAME_MAX + 1U];
+	unsigned long irq;
+	int error;
+
+	/* Rejects a missing operand or an empty buffer. */
+	if (context == NULL ||
+	    target == NULL ||
+	    target->p_mount == NULL ||
+	    target->p_inode == NULL ||
+	    buffer == NULL ||
+	    capacity == 0)
+		return EINVAL;
+
+	/* Takes a reference on the root the path is to start from. */
+	irq = spin_lock_irqsave((struct spinlock *)&context->lock);
+
+	/* A context being torn down has no root any more. */
+	if (context->root.p_inode == NULL) {
+		spin_unlock_irqrestore((struct spinlock *)&context->lock, irq);
+		return EINVAL;
+	}
+
+	/* Holds the root for the walks below. */
+	path_set(&root, context->root.p_mount, context->root.p_inode);
+
+	/* Leaves the section with the root held. */
+	spin_unlock_irqrestore((struct spinlock *)&context->lock, irq);
+
+	/* A directory is named by walking up from it. */
+	if (target->p_inode->i_type == INODE_DIR) {
+		error = walk_up_to_root(&root, target, buffer, capacity);
+		path_release(&root);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the buffer holds the directory's path. */
+		return 0;
+	}
+
+	/* Anything else is named by its directory and its name there. */
+	error = find_parent_of(target, &parent, name);
+	if (error != 0) {
+		path_release(&root);
+		return error;
+	}
+
+	/* Names the directory, then appends the file's name to it. */
+	error = walk_up_to_root(&root, &parent, buffer, capacity);
+	path_release(&parent);
+	path_release(&root);
+	if (error != 0)
+		return error;
+
+	/* Appends the name the file has in that directory. */
+	error = append_component(buffer, capacity, name);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the buffer holds the file's path. */
+	return 0;
+}
+
 /* Releases a credential when the process subsystem exists. */
 static void
 release_cred(
@@ -992,5 +1079,250 @@ getcwd_once(
 	kern_memcpy(buffer, reverse + position, sizeof(reverse) - position);
 
 	/* Reports the built path. */
+	return 0;
+}
+
+/* Builds the path of a directory, retrying when a directory changes under it. */
+static int
+walk_up_to_root(
+	const struct path *root,
+	const struct path *directory,
+	char *buffer,
+	size_t capacity)
+{
+	unsigned attempt;
+	int error;
+
+	/* Walks up, as getcwd does, until a walk sees no concurrent change. */
+	error = EAGAIN;
+	for (attempt = 0; attempt < 8U; attempt++) {
+		error = getcwd_once(root, directory, buffer, capacity);
+		if (error != EAGAIN)
+			break;
+	}
+
+	/* Reports why the walk failed. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/* Finds the directory that holds a file other than a directory, and its name. */
+static int
+find_parent_of(
+	const struct path *target,
+	struct path *parent,
+	char name[NAME_MAX + 1U])
+{
+	struct inode *parent_inode;
+	struct path top;
+	int error;
+
+	/* A recent lookup remembers where the file was found. */
+	error = namecache_parent(target->p_inode, &parent_inode, name);
+	if (error == 0) {
+		path_set(parent, parent_inode->i_mount, parent_inode);
+		inode_release(parent_inode);
+		return 0;
+	}
+
+	/*
+	 * Only a device node is worth a scan: devfs keeps each one at its top
+	 * or one directory below, while a regular file could be anywhere.
+	 */
+	if (target->p_inode->i_type != INODE_CHAR &&
+	    target->p_inode->i_type != INODE_BLOCK)
+		return ENOENT;
+	if (target->p_mount->m_root == NULL)
+		return ENOENT;
+
+	/* Looks at the top of the file's own filesystem first. */
+	path_set(&top, target->p_mount, target->p_mount->m_root);
+	error = find_number_name(&top, target->p_inode->i_ino, name);
+	if (error == 0) {
+		*parent = top;
+		return 0;
+	}
+
+	/* Then in each directory directly below it. */
+	error = find_number_below(&top, target->p_inode->i_ino, parent, name);
+	path_release(&top);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caller holds the directory. */
+	return 0;
+}
+
+/*
+ * Finds the name an inode number has in one directory.
+ *
+ * Numbers are compared rather than looked up, so a scan makes no node, which
+ * matters in devfs, where /dev/fd makes one for every name looked up.
+ */
+static int
+find_number_name(
+	const struct path *directory,
+	ino_t number,
+	char name[NAME_MAX + 1U])
+{
+	struct file *handle;
+	struct dirent entry;
+	int eof;
+	int error;
+
+	/* Opens the directory for reading its entries. */
+	error = file_open_resolved(directory, O_RDONLY | O_DIRECTORY, &handle);
+	if (error != 0)
+		return error;
+
+	/* Compares the number of every entry but dot and dot-dot. */
+	eof = 0;
+	error = ENOENT;
+	while (!eof) {
+		/* Reads the next entry, stopping at the end or a failure. */
+		error = file_readdir(handle, &entry, &eof);
+		if (error != 0)
+			break;
+		if (eof) {
+			error = ENOENT;
+			break;
+		}
+
+		/* Skips the entries that name the directory and its parent. */
+		if (entry.d_name[0] == '.' && entry.d_name[1] == '\0')
+			continue;
+		if (entry.d_name[0] == '.' &&
+		    entry.d_name[1] == '.' &&
+		    entry.d_name[2] == '\0')
+			continue;
+
+		/* Keeps the name of the entry with the number. */
+		if (entry.d_ino == number) {
+			kern_strcpy(name, entry.d_name);
+			error = 0;
+			break;
+		}
+	}
+
+	/* Closes the directory, whatever the scan found. */
+	(void)file_close(handle);
+
+	/* Reports why no name was found. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: name holds the entry's name. */
+	return 0;
+}
+
+/* Finds an inode number in the directories directly below a directory. */
+static int
+find_number_below(
+	const struct path *top,
+	ino_t number,
+	struct path *parent,
+	char name[NAME_MAX + 1U])
+{
+	struct file *handle;
+	struct dirent entry;
+	struct path below;
+	int eof;
+	int error;
+
+	/* Opens the top directory for reading its entries. */
+	error = file_open_resolved(top, O_RDONLY | O_DIRECTORY, &handle);
+	if (error != 0)
+		return error;
+
+	/* Scans every subdirectory of the same filesystem. */
+	eof = 0;
+	error = ENOENT;
+	while (!eof) {
+		/* Reads the next entry, stopping at the end or a failure. */
+		error = file_readdir(handle, &entry, &eof);
+		if (error != 0)
+			break;
+		if (eof) {
+			error = ENOENT;
+			break;
+		}
+
+		/* Skips what is not a subdirectory, and dot and dot-dot. */
+		if (entry.d_type != INODE_DIR)
+			continue;
+		if (entry.d_name[0] == '.' && entry.d_name[1] == '\0')
+			continue;
+		if (entry.d_name[0] == '.' &&
+		    entry.d_name[1] == '.' &&
+		    entry.d_name[2] == '\0')
+			continue;
+
+		/* Resolves the subdirectory. */
+		error = child_path(top, entry.d_name, &below);
+		if (error != 0) {
+			error = ENOENT;
+			continue;
+		}
+
+		/* A mounted filesystem numbers its inodes on its own. */
+		if (below.p_mount != top->p_mount) {
+			path_release(&below);
+			error = ENOENT;
+			continue;
+		}
+
+		/* Keeps the subdirectory that holds the number. */
+		error = find_number_name(&below, number, name);
+		if (error == 0) {
+			*parent = below;
+			break;
+		}
+
+		/* Drops a subdirectory that does not hold the number. */
+		path_release(&below);
+		error = ENOENT;
+	}
+
+	/* Closes the top directory, whatever the scan found. */
+	(void)file_close(handle);
+
+	/* Reports why no directory holds the number. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caller holds the directory. */
+	return 0;
+}
+
+/* Appends a slash and a name to a path, unless the path is the root. */
+static int
+append_component(
+	char *buffer,
+	size_t capacity,
+	const char *name)
+{
+	size_t used;
+	size_t length;
+
+	/* Measures what is there and what is to be added. */
+	used = kern_strlen(buffer);
+	length = kern_strlen(name);
+
+	/* The root already ends in the slash that separates the name. */
+	if (used == 1U && buffer[0] == '/')
+		used = 0;
+
+	/* Refuses a result that does not fit with its terminator. */
+	if (used + 1U + length + 1U > capacity)
+		return ERANGE;
+
+	/* Writes the separator, the name and the terminator. */
+	buffer[used] = '/';
+	kern_memcpy(buffer + used + 1U, name, length + 1U);
+
+	/* Succeeded: the buffer holds the longer path. */
 	return 0;
 }

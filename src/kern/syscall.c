@@ -197,6 +197,8 @@ static intptr_t sys_lseek_call(const uintptr_t args[6]);
 static intptr_t sys_fstat_call(const uintptr_t args[6]);
 static int pseudo_file_getattr(struct process *process, struct file *file, struct stat *status);
 static int descriptor_getattr(struct process *process, int descriptor, struct stat *status);
+static int descriptor_link_target(struct process *process, const struct inode *alias, char *buffer, size_t capacity);
+static int descriptor_link_getattr(struct process *process, struct inode *alias, struct stat *status);
 static uint32_t dirent_type(enum inode_type type);
 static intptr_t sys_getdents_call(const uintptr_t args[6]);
 static intptr_t sys_chdir_call(const uintptr_t args[6]);
@@ -3125,6 +3127,152 @@ descriptor_getattr(
 	return error;
 }
 
+/*
+ * Writes the target that readlink and lstat show for a /dev/fd node.
+ *
+ * /dev/stdin and its two siblings point at fd/N, a link relative to /dev.
+ * /dev/fd/N points at the path of the file that descriptor N holds when one
+ * can be found, and otherwise describes the file by its kind and number the
+ * way Linux does ("pipe:[12]"), which is a target no lookup resolves.
+ */
+static int
+descriptor_link_target(
+	struct process *process,
+	const struct inode *alias,
+	char *buffer,
+	size_t capacity)
+{
+	struct file *file;
+	struct stat status;
+	const char *kind;
+	mode_t format;
+	int descriptor;
+	int length;
+	int error;
+
+	/* The descriptor number is the node's minor. */
+	descriptor = (int)(alias->i_rdev & 0xffffU);
+
+	/* A standard name points at its number in /dev/fd. */
+	if (alias->i_descriptor_alias == INODE_DESCRIPTOR_ALIAS_STANDARD) {
+		length = kern_snprintf(buffer, capacity, "fd/%d", descriptor);
+		if (length < 0 || (size_t)length >= capacity)
+			return ERANGE;
+
+		/* Succeeded: the buffer holds fd/N. */
+		return 0;
+	}
+
+	/* Takes a reference to what the descriptor holds. */
+	error = filedesc_get_file(process->fd, descriptor, &file);
+	if (error != 0)
+		return error;
+
+	/* A file reached through a path is named by that path when possible. */
+	error = ENOENT;
+	if (file->f_inode != NULL && file->f_path.p_inode != NULL) {
+		error = fs_path_of(process->cwdi, &file->f_path, buffer,
+		    capacity);
+	}
+
+	/* Drops the reference; the path, if any, is in the buffer. */
+	(void)file_close(file);
+
+	/* Succeeded: the file has a path. */
+	if (error == 0)
+		return 0;
+
+	/* Anything else is described by its kind and its number. */
+	error = descriptor_getattr(process, descriptor, &status);
+	if (error != 0)
+		return error;
+
+	/* Picks the word Linux uses for each kind of file. */
+	format = status.st_mode & S_IFMT;
+	if (format == S_IFIFO) {
+		kind = "pipe";
+	} else if (format == S_IFSOCK) {
+		kind = "socket";
+	} else {
+		/* A file whose name could not be recovered, such as an unlinked one. */
+		kind = "file";
+	}
+
+	/* Writes the description when it fits. */
+	length = kern_snprintf(buffer, capacity, "%s:[%llu]", kind,
+	    (unsigned long long)status.st_ino);
+	if (length < 0 || (size_t)length >= capacity)
+		return ERANGE;
+
+	/* Succeeded: the buffer holds the description. */
+	return 0;
+}
+
+/*
+ * Describes a /dev/fd node itself, as lstat does not follow it.
+ *
+ * The node is a symbolic link: its size is the length of its target, and
+ * its permission bits say how the descriptor was opened, as Linux shows
+ * them.  The standard names are ordinary links, open to everyone.
+ */
+static int
+descriptor_link_getattr(
+	struct process *process,
+	struct inode *alias,
+	struct stat *status)
+{
+	struct file *file;
+	char target[PATH_MAX];
+	unsigned access;
+	int descriptor;
+	int error;
+
+	/* Starts from the node's own identity and times. */
+	error = inode_getattr(alias, status);
+	if (error != 0)
+		return error;
+
+	/* Measures the target the link shows. */
+	error = descriptor_link_target(process, alias, target, sizeof(target));
+	if (error != 0)
+		return error;
+
+	/* The link is owned by the process that holds the descriptor. */
+	status->st_size = (off_t)kern_strlen(target);
+	status->st_rdev = 0;
+	status->st_nlink = 1;
+	if (process->cred != NULL) {
+		status->st_uid = process->cred->euid;
+		status->st_gid = process->cred->egid;
+	}
+
+	/* A standard name is a plain link open to everyone. */
+	if (alias->i_descriptor_alias == INODE_DESCRIPTOR_ALIAS_STANDARD) {
+		status->st_mode = S_IFLNK | 0777U;
+		return 0;
+	}
+
+	/* Samples how the descriptor was opened. */
+	descriptor = (int)(alias->i_rdev & 0xffffU);
+	error = filedesc_get_file(process->fd, descriptor, &file);
+	if (error != 0)
+		return error;
+
+	/* Reads the access mode the descriptor was opened with. */
+	access = file_status_flags_get(file) & O_ACCMODE;
+	(void)file_close(file);
+
+	/* The owner's bits: search always, read and write as opened. */
+	status->st_mode = S_IFLNK | 0100U;
+	if (access == O_RDONLY || access == O_RDWR)
+		status->st_mode |= 0400U;
+	if (access == O_WRONLY || access == O_RDWR)
+		status->st_mode |= 0200U;
+
+	/* Succeeded: status describes the link. */
+	return 0;
+}
+
 /* Handles fstat(2). */
 static intptr_t
 sys_fstat_call(
@@ -4819,10 +4967,16 @@ sys_stat_path_call(
 
 	/*
 	 * A /dev/fd node reports the file its descriptor holds, as fstat of
-	 * the descriptor would (BUG-054); anything else, its own attributes.
+	 * the descriptor would (BUG-054), unless the link is not to be
+	 * followed, when it reports itself as a link (BUG-061); anything
+	 * else, its own attributes.
 	 */
 	if (error == 0) {
-		if (path.p_inode->i_descriptor_alias != 0U) {
+		if (path.p_inode->i_descriptor_alias != 0U &&
+		    namei_flags == NAMEI_NOFOLLOW_FINAL) {
+			error = descriptor_link_getattr(process, path.p_inode,
+			    &status);
+		} else if (path.p_inode->i_descriptor_alias != 0U) {
 			descriptor = (int)(path.p_inode->i_rdev & 0xffffU);
 			error = descriptor_getattr(process, descriptor, &status);
 		} else {
@@ -6777,7 +6931,26 @@ sys_readlinkat_call(
 		capacity = (size_t)args[3];
 	else
 		capacity = sizeof(buffer);
-	count = inode_readlink(path.p_inode, buffer, capacity);
+
+	/*
+	 * A /dev/fd node is a link to what its descriptor holds (BUG-061);
+	 * its target is built whole and then cut to the caller's buffer, as a
+	 * link's target is.
+	 */
+	if (path.p_inode->i_descriptor_alias != 0U) {
+		error = descriptor_link_target(process, path.p_inode, buffer,
+		    sizeof(buffer));
+		if (error == 0) {
+			count = (ssize_t)kern_strlen(buffer);
+			if ((size_t)count > capacity)
+				count = (ssize_t)capacity;
+		} else {
+			count = -(ssize_t)error;
+		}
+	} else {
+		count = inode_readlink(path.p_inode, buffer, capacity);
+	}
+
 	if (count >= 0)
 		error = copyout(buffer, args[2], (size_t)count);
 	else
