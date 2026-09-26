@@ -9,7 +9,7 @@ Related Milestones: MG005
 Objectives: O1, O2, O3
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p029（diff）。p024〜p028 cleared。p031 まで順に実行する
+Resume point: p030（date・sleep・uname・kill・pathchk・strings ほか）。p024〜p029 cleared。p031 まで順に実行する
 <!-- awesome-plan-current:end -->
 
 Shared tests: [WS001 test index](tests/README.md)
@@ -48,7 +48,7 @@ Shared tests: [WS001 test index](tests/README.md)
 | `ws001-p026` | [id・chown・chgrp・chmod・mkdir・mkfifo・rmdir](phase026/phase.md) | cleared（2026-09-27） | host の差分 128/128・amd64 guest 128/128、style 0。記号 mode を chmod・mkdir・mkfifo で共有 |
 | `ws001-p027` | [expand・unexpand・fold・nl・comm](phase027/phase.md) | cleared（2026-09-27） | host の差分 54/54（全 case 810/810）・amd64 guest 77/77、style 0 |
 | `ws001-p028` | [split・csplit・pr](phase028/phase.md) | cleared（2026-09-27） | host の差分 62/62・amd64 guest 62/62、style 0。pr の header は POSIX の書式 |
-| `ws001-p029` | [diff](phase029/phase.md) | planned | 2026-09-27 に計画 |
+| `ws001-p029` | [diff](phase029/phase.md) | cleared（2026-09-27） | Myers の最長共通部分列、全形式、host 29/29・乱数 2000/2000（GNU の patch/ed に当て、GNU --minimal と同じ変更行数）・amd64 guest 71/71、installer の呼び方は旧と同じ |
 | `ws001-p030` | [date・sleep・uname・kill・pathchk・strings ほかの小さな utility](phase030/phase.md) | planned | 2026-09-27 に計画 |
 | `ws001-p031` | [guest の回帰と台帳の照合](phase031/phase.md) | planned | 2026-09-27 に計画 |
 
@@ -462,7 +462,7 @@ The current register therefore contains 0 P0, 73 P1, and 38 P2 findings.
 | 31 | [dd](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/dd.html) | P2 incomplete proof | A substantial operand/conversion path exists, but record accounting, `conv=` combinations, skip/seek/truncation, partial records, signals, `EINTR`, full-disk, and exact diagnostics need a dedicated matrix. |
 | 32 | [delta](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/delta.html) | P1 known incompatibility | Only `-y` is parsed; required options, MR/comment rules, p-file selection, SID/permission cases, weave interoperability, signals, and transactional recovery are incomplete. |
 | 33 | [df](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/df.html) | P1 known incompatibility | Only `-k` exists; `-P`/`-t`, correct filesystem/device identity, block accounting, operand resolution, default operand safety, locale formatting, and errors are incomplete. |
-| 34 | [diff](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/diff.html) | P1 known incompatibility | Performs line-at-the-same-index comparison rather than a difference algorithm; output forms, context/unified hunks, whitespace/recursive options, binary/errors, and exit status 2 semantics are absent. |
+| 34 | [diff](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/diff.html) | implemented-unreviewed (`ws001-p029`) | A minimal longest-common-subsequence difference (Myers, linear space) with normal, `-c`/`-C`, `-u`/`-U`, `-e`, and `-f` output, `-b`, `-r` headers, directory/file pairing, stdin, missing-newline notes, and statuses 0/1/2 passes 29 host cases, 2000 random pairs applied by GNU patch/ed with GNU `--minimal` change counts, and the amd64 guest; the installer's `-r -q --metadata` output is unchanged. |
 | 35 | [dirname](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/dirname.html) | implemented-unreviewed (`ws001-p012`) | Empty/no-slash, chosen double-slash, all/trailing/repeated slash, long operand, `--`, usage, and host broken-stdout cases pass. Localized diagnostics, allocation-failure injection, and direct guest failure evidence remain. |
 | 36 | [du](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/du.html) | P1 known incompatibility | Only `-a` exists; `-s`/`-k`/`-x` and `-H`/`-L`, hard-link deduplication, mount/symlink/cycle rules, overflow, permissions, and traversal errors are absent. |
 | 37 | [echo](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/echo.html) | P2 incomplete proof | Simple joining/newline exists; implementation-defined `-n`/backslash cases must be documented, and NUL/locale/output-error behavior needs running-shell tests. |

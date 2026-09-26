@@ -206,3 +206,4 @@ entire production overlay/UFS translation units.
 | `ws001-p026` | cases `id`・`chown`（chgrp を含む）・`chmod`・`mkdir`・`mkfifo`・`rmdir`。host の user と guest の root の両方で成り立つように書いてある |
 | `ws001-p027` | cases `expand`（unexpand を含む）・`fold`・`nl`・`comm` |
 | `ws001-p028` | cases `split`・`csplit`・`pr` |
+| `ws001-p029` | case `diff`、`diff-random-host-test.py`（乱数の組を GNU の patch と ed に当て、GNU `--minimal` と変更行数を比べる）、`diff-installer-compare.sh OLD_DIFF NEW_DIFF`（installer の `-r -q --metadata`） |
