@@ -196,6 +196,89 @@ terminal_screen_cell(
 	return &screen->cells[row * screen->columns + column];
 }
 
+/*
+ * Writes the grid's text as UTF-8, a line per row without its trailing
+ * spaces and without the empty rows at the bottom, into a buffer (cut at
+ * its size).  Returns the number of bytes written, without a terminator.
+ */
+size_t
+terminal_screen_text(
+	struct terminal_screen *screen,
+	char *text,
+	size_t size)
+{
+	struct terminal_cell *cell;
+	unsigned char bytes[4];
+	uint32_t codepoint;
+	size_t length;
+	size_t kept;
+	size_t start;
+	size_t count;
+	unsigned column;
+	unsigned row;
+
+	/* Each row, then a line break; kept is the length up to the end of the last row with text. */
+	length = 0;
+	kept = 0;
+	start = 0;
+	for (row = 0U; row < screen->rows; row++) {
+		for (column = 0U; column < screen->columns; column++) {
+			/* A continuation is the right half of a wide character written already. */
+			cell = terminal_screen_cell(screen, column, row);
+			if (cell->continuation)
+				continue;
+			codepoint = cell->codepoint;
+			if (codepoint == 0U)
+				codepoint = ' ';
+
+			/* The character as UTF-8. */
+			if (codepoint < 0x80U) {
+				bytes[0] = (unsigned char)codepoint;
+				count = 1;
+			} else if (codepoint < 0x800U) {
+				bytes[0] = (unsigned char)(0xc0U | (codepoint >> 6));
+				bytes[1] = (unsigned char)(0x80U | (codepoint & 0x3fU));
+				count = 2;
+			} else if (codepoint < 0x10000U) {
+				bytes[0] = (unsigned char)(0xe0U | (codepoint >> 12));
+				bytes[1] = (unsigned char)(0x80U | ((codepoint >> 6) & 0x3fU));
+				bytes[2] = (unsigned char)(0x80U | (codepoint & 0x3fU));
+				count = 3;
+			} else {
+				bytes[0] = (unsigned char)(0xf0U | (codepoint >> 18));
+				bytes[1] = (unsigned char)(0x80U | ((codepoint >> 12) & 0x3fU));
+				bytes[2] = (unsigned char)(0x80U | ((codepoint >> 6) & 0x3fU));
+				bytes[3] = (unsigned char)(0x80U | (codepoint & 0x3fU));
+				count = 4;
+			}
+
+			/* Into the buffer while it has room. */
+			if (length + count > size)
+				return kept;
+			memcpy(text + length, bytes, count);
+			length += count;
+		}
+
+		/* The row's trailing spaces go (the row started after the last line break). */
+		while (length > start && text[length - 1U] == ' ')
+			length--;
+
+		/* A row with text is kept up to its end. */
+		if (length > start)
+			kept = length;
+
+		/* Each row ends with a line break, and the next row starts after it. */
+		if (length + 1U > size)
+			return kept;
+		text[length] = '\n';
+		length++;
+		start = length;
+	}
+
+	/* Succeeded: the text up to the end of the last row that had any. */
+	return kept;
+}
+
 /* Makes one cell blank in the current background. */
 static void
 screen_blank(

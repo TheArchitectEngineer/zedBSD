@@ -537,8 +537,16 @@ zwl_menu_motion(
 		return 1;
 	}
 
-	/* The row under the pointer is selected when it can be chosen; deeper popups than its own close. */
+	/* A row whose submenu is open already keeps it open; nothing changes. */
 	row = shell_row_at(server, model, (unsigned)level, server->pointer_x, server->pointer_y, &row_y);
+	if (row != NULL &&
+	    shell_menu.depth > (unsigned)level + 1U &&
+	    shell_menu.popups[level + 1].parent == row->id) {
+		shell_menu.popups[level].selected = row->id;
+		return 1;
+	}
+
+	/* The row under the pointer is selected when it can be chosen; deeper popups than its own close. */
 	shell_close_from(server, (unsigned)level + 1U, 1U);
 	shell_menu.popups[level].selected = 0;
 	if (row == NULL)
@@ -878,7 +886,7 @@ shell_close_from(
 		parent = shell_menu.popups[shell_menu.depth].parent;
 		if (notify && place != NULL && parent != SHELL_OVERFLOW)
 			zwl_menu_send_popup(place, parent, 0U);
-		printf("ZWL MENU close surface=%u item=%u depth=%u\n", shell_menu.surface->id, parent, shell_menu.depth);
+		printf("ZWL MENU close client=%llu surface=%u item=%u depth=%u\n", (unsigned long long)shell_menu.surface->client->number, shell_menu.surface->id, parent, shell_menu.depth);
 	}
 
 	/* The whole menu closed: menu mode ends. */
@@ -1538,7 +1546,7 @@ shell_log_bar(
 		item = hit->item;
 		if (item == SHELL_OVERFLOW)
 			item = 0U;
-		printf("ZWL MENU bar surface=%u where=%s item=%u offset=%d top=%d width=%d height=%d\n", surface->id,
+		printf("ZWL MENU bar client=%llu surface=%u where=%s item=%u offset=%d top=%d width=%d height=%d\n", (unsigned long long)surface->client->number, surface->id,
 		       where, item, hit->x - area->origin, hit->y, hit->width, hit->height);
 	}
 }
@@ -1582,7 +1590,7 @@ shell_log_popup(
 	parent = popup->parent;
 	if (parent == SHELL_OVERFLOW)
 		parent = 0U;
-	printf("ZWL MENU open surface=%u item=%u depth=%u x=%d y=%d width=%d height=%d\n", shell_menu.surface->id,
+	printf("ZWL MENU open client=%llu surface=%u item=%u depth=%u x=%d y=%d width=%d height=%d\n", (unsigned long long)shell_menu.surface->client->number, shell_menu.surface->id,
 	       parent, level + 1U, popup->x, popup->y, popup->width, popup->height);
 
 	/* Each row. */

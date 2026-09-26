@@ -33,6 +33,7 @@
 #define FONT_EMPTY		0xffffffffU
 
 static int font_read(struct terminal_font *font, const char *path);
+static int font_measure(struct terminal_font *font, unsigned pixels);
 static void font_draw(struct terminal_font *font, unsigned slot, uint32_t codepoint);
 static void font_slot_origin(const struct terminal_font *font, unsigned slot, unsigned *x, unsigned *y);
 
@@ -48,9 +49,6 @@ terminal_font_open(
 	const char *path,
 	unsigned pixels)
 {
-	struct truetype_metrics metrics;
-	struct truetype_glyph glyph;
-	unsigned index;
 	int error;
 
 	/* Nothing is held until the file is read. */
@@ -68,38 +66,50 @@ terminal_font_open(
 		return error;
 	}
 
-	/* The size every glyph is drawn at. */
-	error = truetype_set_pixel_size(font->face, pixels);
+	/* The cell's size at the size every glyph is drawn at. */
+	error = font_measure(font, pixels);
 	if (error != 0) {
 		terminal_font_close(font);
 		return error;
 	}
 
-	/* The line's height and where its baseline is. */
-	error = truetype_metrics(font->face, &metrics);
+	/* Succeeded: the font is open. */
+	return 0;
+}
+
+/*
+ * Changes the size glyphs are drawn at (zooming): the cell is measured
+ * again and the atlas starts over with nothing but the cursor's block.
+ *
+ * Returns 0, or an errno value with the font as it was when the size could
+ * not be measured, or ENOMEM when the atlas's table could not be made again.
+ */
+int
+terminal_font_resize(
+	struct terminal_font *font,
+	unsigned pixels)
+{
+	unsigned old_pixels;
+	int error;
+
+	/* The new cell; a size the font cannot give keeps the old one. */
+	old_pixels = font->pixels_size;
+	error = font_measure(font, pixels);
 	if (error != 0) {
-		terminal_font_close(font);
+		(void)font_measure(font, old_pixels);
 		return error;
 	}
 
-	/* The cell is as wide as an M advances and as tall as the font's line. */
-	index = truetype_glyph_index(font->face, 'M');
-	error = truetype_glyph_metrics(font->face, index, &glyph);
-	if (error != 0) {
-		terminal_font_close(font);
+	/* The table of drawn characters goes; every glyph is drawn again at the new size. */
+	free(font->keys);
+	free(font->values);
+	font->keys = NULL;
+	font->values = NULL;
+	error = terminal_font_attach(font, font->pixels, font->row_pitch, font->atlas_width, font->atlas_height);
+	if (error != 0)
 		return error;
-	}
 
-	/* A font with no width or height is not usable for a grid. */
-	if (glyph.advance <= 0 || metrics.line_height <= 0) {
-		terminal_font_close(font);
-		return EINVAL;
-	}
-
-	/* Succeeded: the cell's size and baseline. */
-	font->cell_width = (unsigned)glyph.advance;
-	font->cell_height = (unsigned)metrics.line_height;
-	font->baseline = metrics.ascent;
+	/* Succeeded: the next frame draws at the new size. */
 	return 0;
 }
 
@@ -276,6 +286,45 @@ font_read(
 
 	/* Succeeded: the font is in memory. */
 	close(descriptor);
+	return 0;
+}
+
+/* Sets the size glyphs are drawn at and measures the cell and the baseline at it. */
+static int
+font_measure(
+	struct terminal_font *font,
+	unsigned pixels)
+{
+	struct truetype_metrics metrics;
+	struct truetype_glyph glyph;
+	unsigned index;
+	int error;
+
+	/* The size every glyph is drawn at. */
+	error = truetype_set_pixel_size(font->face, pixels);
+	if (error != 0)
+		return error;
+
+	/* The line's height and where its baseline is. */
+	error = truetype_metrics(font->face, &metrics);
+	if (error != 0)
+		return error;
+
+	/* The cell is as wide as an M advances and as tall as the font's line. */
+	index = truetype_glyph_index(font->face, 'M');
+	error = truetype_glyph_metrics(font->face, index, &glyph);
+	if (error != 0)
+		return error;
+
+	/* A font with no width or height is not usable for a grid. */
+	if (glyph.advance <= 0 || metrics.line_height <= 0)
+		return EINVAL;
+
+	/* Succeeded: the cell's size and baseline. */
+	font->pixels_size = pixels;
+	font->cell_width = (unsigned)glyph.advance;
+	font->cell_height = (unsigned)metrics.line_height;
+	font->baseline = metrics.ascent;
 	return 0;
 }
 
