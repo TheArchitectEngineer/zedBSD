@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 ユーザーの指示でサブエージェントが worktree の branch で実行。main の Queue への反映は main の session）
-Resume point: p002（骨格: window・present・canvas・text・icons・静的な配置・host の render 試験・guest の image）
+Resume point: p003（一覧と移動: 選択・keyboard・list 表示・Ctrl+L）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -69,7 +69,7 @@ libpng-compat の decode（WS035 p040・p041 の decode の半分を p010 で先
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
 | [ws071-p001](phase001/phase.md) | 設計（design.md） | cleared | WS070-p001 |
-| ws071-p002 | 骨格: window（pointer・keyboard）、present（Vulkan の canvas）、canvas・text・icons、toolbar・sidebar・content の静的な配置、host の render 試験、guest の image と起動 | planned | p001 |
+| [ws071-p002](phase002/phase.md) | 骨格: window（pointer・keyboard）、present（Vulkan の canvas）、canvas・text・icons、toolbar・sidebar・content の静的な配置、host の render 試験、guest の image と起動 | cleared | p001 |
 | ws071-p003 | 一覧と移動: dir、nav（履歴・パンくず・Back/Forward/Home）、icon・list 表示、並べ替え、選択、scroll、folder を開く、Ctrl+L | planned | p002 |
 | ws071-p004 | file 操作: task（copy・move・delete・duplicate・link）、clipboard、new folder、rename、ゴミ箱（Put Back・Empty）、完全削除の確認、undo・redo、進みと status | planned | p003 |
 | ws071-p005 | 検索、タグ（xattr・定義・索引・sidebar）、recent（libzdesktop の API）、Favorites の編集、Locations（mount） | planned | p004 |
