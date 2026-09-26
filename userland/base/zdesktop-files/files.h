@@ -22,6 +22,7 @@
 #define ZDESKTOP_FILES_H
 
 #include "canvas.h"
+#include "ops.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -478,7 +479,45 @@ struct fm_app {
 	/* A short message in the status pill, and until when it shows. */
 	char message[160];
 	uint64_t message_until;
+
+	/* The tasks running, oldest first, whether their list is open, and when their progress was last drawn. */
+	struct fm_task *tasks[FM_TASKS];
+	int task_count;
+	int show_tasks;
+	uint64_t task_drawn_at;
+
+	/* The undo and redo histories. */
+	struct fm_undo undo;
+
+	/* The name being changed: the field, the item's path and its index when the edit began. */
+	struct fm_field rename;
+	char rename_path[FM_PATH_MAX];
+
+	/* A question being asked (FM_DIALOG_*), and the paths it is about. */
+	unsigned dialog;
+	char **dialog_paths;
+	size_t dialog_count;
+
+	/* The paths to select once the folder is read again (a finished task's outcome). */
+	char **select_paths;
+	size_t select_count;
 };
+
+/*
+ * The questions the window asks before an action that cannot be undone.
+ */
+enum fm_dialog {
+	FM_DIALOG_NONE,
+	FM_DIALOG_DELETE,
+	FM_DIALOG_EMPTY_TRASH
+};
+
+/* The indexes of the buttons (FM_HIT_BUTTON) the frame records. */
+#define FM_BUTTON_CANCEL	0
+#define FM_BUTTON_CONFIRM	1
+#define FM_BUTTON_PUT_BACK	10
+#define FM_BUTTON_EMPTY_TRASH	11
+#define FM_BUTTON_TASK_CANCEL	100
 
 /* The interface (ui.c). */
 int fm_app_init(struct fm_app *app, struct fm_text *text, const char *start);
@@ -522,6 +561,30 @@ unsigned fm_field_key(struct fm_field *field, uint32_t key, uint32_t modifiers);
 void fm_field_insert(struct fm_field *field, const char *text, size_t length);
 void fm_field_draw(struct fm_app *app, struct fm_canvas *canvas, const struct fm_field *field, const struct fm_rect *rect, unsigned pixels, const char *placeholder);
 
+/* The file operations (actions.c). */
+void fm_action_copy(struct fm_app *app, int cut);
+void fm_action_paste(struct fm_app *app);
+void fm_action_duplicate(struct fm_app *app);
+void fm_action_trash(struct fm_app *app);
+void fm_action_delete(struct fm_app *app);
+void fm_action_empty_trash(struct fm_app *app);
+void fm_action_confirm(struct fm_app *app, int confirmed);
+void fm_action_put_back(struct fm_app *app);
+void fm_action_new_folder(struct fm_app *app);
+void fm_action_rename_begin(struct fm_app *app);
+void fm_action_rename_end(struct fm_app *app, int commit);
+void fm_action_undo(struct fm_app *app, int redo);
+void fm_action_cancel_task(struct fm_app *app, int index);
+int fm_actions_tick(struct fm_app *app);
+void fm_actions_release(struct fm_app *app);
+const char *fm_current_folder(struct fm_app *app);
+int fm_selected_paths(struct fm_app *app, char ***paths, size_t *count);
+
+/* The dialogs and the tasks' list (ui-overlay.c). */
+void fm_overlay_draw(struct fm_app *app, struct fm_canvas *canvas);
+void fm_tasks_draw(struct fm_app *app, struct fm_canvas *canvas, int x, int y);
+void fm_task_text(const struct fm_task *task, char *text, size_t size);
+
 /* The selection (select.c). */
 void fm_select_none(struct fm_tab *tab);
 void fm_select_only(struct fm_tab *tab, int index);
@@ -538,6 +601,7 @@ void fm_dir_sort(struct fm_listing *listing, unsigned sort, int reverse);
 void fm_dir_free(struct fm_listing *listing);
 struct fm_entry *fm_dir_add(struct fm_listing *listing, const char *folder, const char *name);
 int fm_dir_count(const char *path, int hidden);
+int fm_dir_read_trash(struct fm_listing *listing, const char *trash);
 void fm_dir_size_text(uint64_t size, char *text, size_t length);
 void fm_dir_items_text(long count, char *text, size_t length);
 void fm_owner_text(uid_t uid, gid_t gid, char *text, size_t length);

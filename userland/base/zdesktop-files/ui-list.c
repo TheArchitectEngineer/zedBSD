@@ -307,9 +307,12 @@ list_row(
 	const struct list_column *columns,
 	int count)
 {
+	struct fm_rect field;
 	char text[FM_PATH_MAX];
 	fm_color ink;
 	fm_color faint;
+	int renaming;
+	int match;
 	int baseline;
 	int column;
 	int width;
@@ -329,11 +332,33 @@ list_row(
 		fm_canvas_round(canvas, (float)row->x, (float)row->y + 1.0f, (float)row->width, (float)row->height - 2.0f, 7.0f, FM_COLOR_HOVER);
 	}
 
-	/* The small icon and the name. */
+	/* The small icon (faded when cut) and the name, or the field while it is being changed. */
 	baseline = fm_text_center(LIST_TEXT, row->y, row->height);
 	fm_grid_entry_icon(app, canvas, entry, (float)columns[0].x, (float)row->y + 3.0f, 22.0f);
+	if (entry->cut != 0)
+		fm_canvas_round(canvas, (float)columns[0].x, (float)row->y + 3.0f, 22.0f, 22.0f, 4.0f, FM_RGBA(0xffffff, 150));
 	width = columns[0].width - 34;
-	(void)fm_text_draw_fit(app->text, canvas, columns[0].x + 30, baseline, entry->name, LIST_TEXT, 0, width, ink);
+	renaming = 0;
+	if (app->focus == FM_FOCUS_RENAME) {
+		match = strcmp(entry->path, app->rename_path);
+		if (match == 0)
+			renaming = 1;
+	}
+
+	/* The field where the name was, or the name. */
+	if (renaming != 0) {
+		field.x = columns[0].x + 26;
+		field.y = row->y + 3;
+		field.width = width + 4;
+		field.height = row->height - 6;
+		fm_canvas_round(canvas, (float)field.x, (float)field.y, (float)field.width, (float)field.height, 5.0f, FM_COLOR_PANEL);
+		fm_canvas_round_border(canvas, (float)field.x, (float)field.y, (float)field.width, (float)field.height, 5.0f, 1.5f, FM_COLOR_ACCENT);
+		field.x += 4;
+		field.width -= 8;
+		fm_field_draw(app, canvas, &app->rename, &field, LIST_TEXT, NULL);
+	} else {
+		(void)fm_text_draw_fit(app->text, canvas, columns[0].x + 30, baseline, entry->name, LIST_TEXT, 0, width, ink);
+	}
 
 	/* The other columns' cells. */
 	for (column = 1; column < count; column++) {

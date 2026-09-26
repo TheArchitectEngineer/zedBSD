@@ -45,6 +45,8 @@ static int grid_name(struct fm_app *app, struct fm_canvas *canvas, const struct 
 static void grid_message(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *inner, const char *message);
 static void grid_band(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *inner);
 static void grid_status(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *area);
+static void grid_trash_buttons(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *area);
+static void grid_button(struct fm_app *app, struct fm_canvas *canvas, int right, int y, const char *label, int index, int enabled);
 
 /*
  * Draws the content panel for the place the tab shows.
@@ -61,6 +63,9 @@ fm_grid_draw(
 
 	/* The panel and its title. */
 	grid_panel(app, canvas, area);
+
+	/* The whole panel's ground can be clicked (a rubber band starts there); what is drawn on it comes after. */
+	fm_ui_hit(app, area, FM_HIT_CONTENT, 0);
 	grid_title(app, canvas, area);
 
 	/* The items' part of the panel, under the title. */
@@ -70,9 +75,6 @@ fm_grid_draw(
 	inner.height = area->height - GRID_TITLE_HEIGHT - 4;
 	app->layout.content_height = 0;
 	app->layout.items = inner;
-
-	/* The whole panel's background can be clicked (it clears the selection later). */
-	fm_ui_hit(app, area, FM_HIT_CONTENT, 0);
 
 	/* A folder that could not be read says so. */
 	tab = fm_ui_tab(app);
@@ -198,6 +200,10 @@ grid_title(
 	baseline = area->y + 38;
 	width = fm_text_draw_fit(app->text, canvas, area->x + 24, baseline, name, GRID_TEXT_TITLE, 1, area->width / 2, FM_COLOR_TEXT);
 
+	/* In the trash: Put Back (for a selection) and Empty Trash at the right. */
+	if (location->kind == FM_LOCATION_TRASH)
+		grid_trash_buttons(app, canvas, area);
+
 	/* How many items, after it, quietly. */
 	if (tab->listing.error != 0)
 		return;
@@ -260,8 +266,11 @@ grid_cell(
 	int y)
 {
 	struct fm_rect cell;
+	struct fm_rect field;
 	fm_color selection;
 	char detail[64];
+	int renaming;
+	int match;
 	int baseline;
 	int width;
 
@@ -283,9 +292,32 @@ grid_cell(
 
 	/* The icon, faded when the item is cut. */
 	fm_grid_entry_icon(app, canvas, entry, (float)x + (GRID_CELL_WIDTH - GRID_ICON) * 0.5f, (float)y + 10.0f, (float)GRID_ICON);
+	if (entry->cut != 0)
+		fm_canvas_round(canvas, (float)x + (GRID_CELL_WIDTH - GRID_ICON) * 0.5f, (float)y + 10.0f, (float)GRID_ICON, (float)GRID_ICON, 8.0f, FM_RGBA(0xffffff, 150));
 
-	/* The name, on the accent when selected. */
-	baseline = grid_name(app, canvas, entry, x, y + GRID_ICON + 30, entry->selected);
+	/* The name being changed is a field; otherwise the name, on the accent when selected. */
+	renaming = 0;
+	if (app->focus == FM_FOCUS_RENAME) {
+		match = strcmp(entry->path, app->rename_path);
+		if (match == 0)
+			renaming = 1;
+	}
+
+	/* The field, white with the accent edge, where the name was. */
+	if (renaming != 0) {
+		field.x = x + 2;
+		field.y = y + GRID_ICON + 16;
+		field.width = GRID_CELL_WIDTH - 4;
+		field.height = 22;
+		fm_canvas_round(canvas, (float)field.x, (float)field.y, (float)field.width, (float)field.height, 6.0f, FM_COLOR_PANEL);
+		fm_canvas_round_border(canvas, (float)field.x, (float)field.y, (float)field.width, (float)field.height, 6.0f, 1.5f, FM_COLOR_ACCENT);
+		field.x += 5;
+		field.width -= 10;
+		fm_field_draw(app, canvas, &app->rename, &field, GRID_TEXT_NAME, NULL);
+		baseline = y + GRID_ICON + 32;
+	} else {
+		baseline = grid_name(app, canvas, entry, x, y + GRID_ICON + 30, entry->selected);
+	}
 
 	/* The detail: a folder's item count, a file's size. */
 	if (entry->folder != 0) {
@@ -445,6 +477,10 @@ grid_status(
 	if (app->message[0] != '\0' && app->now < app->message_until)
 		snprintf(text, sizeof(text), "%s", app->message);
 
+	/* Otherwise the running operation's progress (spec §32). */
+	if (text[0] == '\0' && app->task_count > 0)
+		fm_task_text(app->tasks[0], text, sizeof(text));
+
 	/* Otherwise two or more selected items: how many and how large. */
 	if (text[0] == '\0') {
 		count = fm_select_count(tab, &bytes);
@@ -466,4 +502,62 @@ grid_status(
 	fm_canvas_shadow(canvas, (float)x, (float)y + 2.0f, (float)width, 28.0f, 14.0f, 8.0f, FM_COLOR_SHADOW);
 	fm_canvas_round(canvas, (float)x, (float)y, (float)width, 28.0f, 14.0f, FM_RGBA(0x2a3345, 225));
 	(void)fm_text_draw(app->text, canvas, x + 16, fm_text_center(12U, y, 28), text, strlen(text), 12U, 0, FM_RGB(0xffffff));
+}
+
+/* Draws the trash's buttons at the right of the title: Put Back (with a selection) and Empty Trash. */
+static void
+grid_trash_buttons(
+	struct fm_app *app,
+	struct fm_canvas *canvas,
+	const struct fm_rect *area)
+{
+	struct fm_tab *tab;
+	uint64_t bytes;
+	size_t selected;
+	int right;
+
+	/* Empty Trash at the right end, Put Back before it. */
+	tab = fm_ui_tab(app);
+	selected = fm_select_count(tab, &bytes);
+	right = area->x + area->width - 20;
+	grid_button(app, canvas, right, area->y + 18, "Empty Trash", FM_BUTTON_EMPTY_TRASH, tab->listing.count != 0U);
+	grid_button(app, canvas, right - 120, area->y + 18, "Put Back", FM_BUTTON_PUT_BACK, selected != 0U);
+}
+
+/* Draws a small pill button ending at a right edge; a disabled one is pale and not clickable. */
+static void
+grid_button(
+	struct fm_app *app,
+	struct fm_canvas *canvas,
+	int right,
+	int y,
+	const char *label,
+	int index,
+	int enabled)
+{
+	struct fm_rect rect;
+	fm_color ground;
+	fm_color ink;
+	int width;
+
+	/* The pill fits its label. */
+	width = fm_text_width(app->text, label, strlen(label), 12U, 1) + 28;
+	rect.x = right - width;
+	rect.y = y;
+	rect.width = width;
+	rect.height = 28;
+
+	/* Its colors: pale when disabled, darker under the pointer. */
+	ground = FM_RGB(0xeef1f6);
+	ink = FM_COLOR_TEXT;
+	if (enabled == 0)
+		ink = FM_COLOR_TEXT_FAINT;
+	else if (app->hover_kind == FM_HIT_BUTTON && app->hover_index == index)
+		ground = FM_RGB(0xe2e7ef);
+	fm_canvas_round(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, 14.0f, ground);
+	(void)fm_text_draw(app->text, canvas, rect.x + 14, fm_text_center(12U, rect.y, rect.height), label, strlen(label), 12U, 1, ink);
+
+	/* An enabled button can be clicked. */
+	if (enabled != 0)
+		fm_ui_hit(app, &rect, FM_HIT_BUTTON, index);
 }

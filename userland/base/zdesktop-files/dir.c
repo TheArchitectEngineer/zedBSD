@@ -116,6 +116,51 @@ fm_dir_read(
 }
 
 /*
+ * Reads the trash's items into a listing (emptied first): each item of
+ * its files folder, with where it was (its folder, as detail) and when it
+ * was trashed (extra_time) from its record.
+ *
+ * Returns 0, or the errno value of a trash that cannot be read.
+ */
+int
+fm_dir_read_trash(
+	struct fm_listing *listing,
+	const char *trash)
+{
+	struct fm_entry *entry;
+	char files[FM_PATH_MAX];
+	char original[FM_PATH_MAX];
+	char *slash;
+	size_t index;
+	time_t deleted;
+	int error;
+
+	/* The items of the trash's files folder, hidden ones too (they were trashed like any other). */
+	snprintf(files, sizeof(files), "%s/files", trash);
+	error = fm_dir_read(listing, files, 1);
+	if (error != 0)
+		return error;
+
+	/* Each item's record: the folder it was in and the time it was trashed. */
+	for (index = 0; index < listing->count; index++) {
+		entry = &listing->entries[index];
+		error = fm_trash_info_read(trash, entry->name, original, sizeof(original), &deleted);
+		if (error != 0)
+			continue;
+
+		/* The folder is the original path without its last part. */
+		slash = strrchr(original, '/');
+		if (slash != NULL && slash != original)
+			*slash = '\0';
+		entry->detail = strdup(original);
+		entry->extra_time = deleted;
+	}
+
+	/* Succeeded: the listing holds the trash's items. */
+	return 0;
+}
+
+/*
  * Sorts a listing: folders first, then by the key (names break ties), in
  * reverse when asked.
  */

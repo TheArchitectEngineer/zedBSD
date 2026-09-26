@@ -47,6 +47,14 @@
 #define INPUT_KEY_END		107U
 #define INPUT_KEY_DOWN		108U
 #define INPUT_KEY_PAGEDOWN	109U
+#define INPUT_KEY_DELETE	111U
+#define INPUT_KEY_F2		60U
+#define INPUT_KEY_C		46U
+#define INPUT_KEY_X		45U
+#define INPUT_KEY_V		47U
+#define INPUT_KEY_D		32U
+#define INPUT_KEY_Z		44U
+#define INPUT_KEY_N		49U
 
 /*
  * The selection the log reported last: how many items and which had the
@@ -73,6 +81,8 @@ static void input_open_selection(struct fm_app *app);
 static void input_enclosing(struct fm_app *app);
 static void input_show(struct fm_app *app, int index);
 static void input_report(struct fm_app *app);
+static int input_operation_key(struct fm_app *app, const struct fm_event *event);
+static void input_button(struct fm_app *app, int index);
 
 /*
  * Follows the pointer: the region under it is lit, and a rubber band being
@@ -189,6 +199,7 @@ fm_input_key(
 	struct fm_app *app,
 	const struct fm_event *event)
 {
+	unsigned result;
 	char character;
 	int handled;
 
@@ -197,9 +208,35 @@ fm_input_key(
 		return;
 	app->dirty = 1;
 
+	/* A question takes Enter (yes) and Esc (no), and nothing else. */
+	if (app->dialog != FM_DIALOG_NONE) {
+		if (event->key == INPUT_KEY_ENTER || event->key == INPUT_KEY_KPENTER)
+			fm_action_confirm(app, 1);
+		else if (event->key == INPUT_KEY_ESC)
+			fm_action_confirm(app, 0);
+		return;
+	}
+
 	/* The location field edits while it has the focus. */
 	if (app->focus == FM_FOCUS_LOCATION) {
 		input_location_key(app, event);
+		return;
+	}
+
+	/* So does the name being changed: Enter renames, Esc gives up. */
+	if (app->focus == FM_FOCUS_RENAME) {
+		result = fm_field_key(&app->rename, event->key, event->modifiers);
+		if (result == FM_FIELD_ENTER)
+			fm_action_rename_end(app, 1);
+		else if (result == FM_FIELD_CANCEL)
+			fm_action_rename_end(app, 0);
+		return;
+	}
+
+	/* The file operations' keys. */
+	handled = input_operation_key(app, event);
+	if (handled != 0) {
+		input_report(app);
 		return;
 	}
 
@@ -307,6 +344,14 @@ input_press(
 	if (app->focus == FM_FOCUS_LOCATION && kind != FM_HIT_CRUMB)
 		app->focus = FM_FOCUS_CONTENT;
 
+	/* A press anywhere but on the name being changed ends the change, keeping what was typed. */
+	if (app->focus == FM_FOCUS_RENAME && kind != FM_HIT_OVERLAY)
+		fm_action_rename_end(app, 1);
+
+	/* A press anywhere but on the operations' list or its ring closes the list. */
+	if (app->show_tasks != 0 && kind != FM_HIT_BUTTON && kind != FM_HIT_PROGRESS)
+		app->show_tasks = 0;
+
 	/* What the press does. */
 	input_click(app, kind, index, double_click, event->modifiers);
 }
@@ -368,6 +413,12 @@ input_click(
 		break;
 	case FM_HIT_CONTENT:
 		input_band_start(app, app->pointer_x, app->pointer_y, modifiers);
+		break;
+	case FM_HIT_BUTTON:
+		input_button(app, index);
+		break;
+	case FM_HIT_PROGRESS:
+		app->show_tasks = !app->show_tasks;
 		break;
 	default:
 		break;
@@ -900,4 +951,81 @@ input_report(
 	input_reported_count = count;
 	input_reported_cursor = tab->cursor;
 	fm_log("SELECT count=%lu cursor=%d bytes=%llu", (unsigned long)count, tab->cursor, (unsigned long long)bytes);
+}
+
+/* Handles the keys of the file operations; zero when the key is not one. */
+static int
+input_operation_key(
+	struct fm_app *app,
+	const struct fm_event *event)
+{
+	int handled;
+
+	/* Delete trashes, Shift+Delete deletes for good (asking), F2 renames, Ctrl+Shift+N makes a folder, Ctrl+Shift+Z redoes. */
+	handled = 1;
+	if (event->key == INPUT_KEY_DELETE && event->modifiers == 0U) {
+		fm_action_trash(app);
+	} else if (event->key == INPUT_KEY_DELETE && event->modifiers == FM_MOD_SHIFT) {
+		fm_action_delete(app);
+	} else if (event->key == INPUT_KEY_F2 && event->modifiers == 0U) {
+		fm_action_rename_begin(app);
+	} else if (event->key == INPUT_KEY_N && event->modifiers == (FM_MOD_CTRL | FM_MOD_SHIFT)) {
+		fm_action_new_folder(app);
+	} else if (event->key == INPUT_KEY_Z && event->modifiers == (FM_MOD_CTRL | FM_MOD_SHIFT)) {
+		fm_action_undo(app, 1);
+	} else {
+		handled = 0;
+	}
+
+	/* One of those was pressed. */
+	if (handled != 0)
+		return 1;
+
+	/* The rest take Ctrl alone. */
+	if (event->modifiers != FM_MOD_CTRL)
+		return 0;
+
+	/* Copy, cut, paste, duplicate and undo. */
+	switch (event->key) {
+	case INPUT_KEY_C:
+		fm_action_copy(app, 0);
+		return 1;
+	case INPUT_KEY_X:
+		fm_action_copy(app, 1);
+		return 1;
+	case INPUT_KEY_V:
+		fm_action_paste(app);
+		return 1;
+	case INPUT_KEY_D:
+		fm_action_duplicate(app);
+		return 1;
+	case INPUT_KEY_Z:
+		fm_action_undo(app, 0);
+		return 1;
+	default:
+		break;
+	}
+
+	/* Not an operation's key. */
+	return 0;
+}
+
+/* Carries out a button of the frame: the question's answers, the trash's buttons, a task's cancel. */
+static void
+input_button(
+	struct fm_app *app,
+	int index)
+{
+	/* Each button. */
+	if (index == FM_BUTTON_CANCEL) {
+		fm_action_confirm(app, 0);
+	} else if (index == FM_BUTTON_CONFIRM) {
+		fm_action_confirm(app, 1);
+	} else if (index == FM_BUTTON_PUT_BACK) {
+		fm_action_put_back(app);
+	} else if (index == FM_BUTTON_EMPTY_TRASH) {
+		fm_action_empty_trash(app);
+	} else if (index >= FM_BUTTON_TASK_CANCEL) {
+		fm_action_cancel_task(app, index - FM_BUTTON_TASK_CANCEL);
+	}
 }
