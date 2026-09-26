@@ -1234,9 +1234,13 @@ draw_system_bar(
 	/* The docked window: a line, its mark, title and menu, and its buttons with restore for maximize. */
 	if (docked != NULL) {
 		glass_draw_solid(server, command, (float)bar->menu_line, 9.0f, 1.0f, 16.0f, 0.0f, line);
+
+		/* The title shares the room before the buttons with the window's menu. */
 		available = bar->buttons[BUTTON_MINIMIZE] - 24 - bar->title_x - 30;
 		limit = zwl_menu_title_limit(server, docked, available);
 		draw_title(server, command, docked, bar->title_x, ZWL_GLASS_BAR / 2, limit, dark);
+
+		/* The menu after the title (menu-shell.c). */
 		end = title_end(server, docked, limit);
 		area.x = bar->title_x + 30 + end + 18;
 		area.top = 0;
@@ -1244,6 +1248,8 @@ draw_system_bar(
 		area.height = ZWL_GLASS_BAR;
 		area.origin = 0;
 		zwl_menu_draw_bar(server, command, docked, 1, &area, dark, 1.0f);
+
+		/* The buttons, the one under the pointer lit. */
 		over = bar_button_at(bar, server->pointer_x, server->pointer_y);
 		for (button = 0; button < BUTTON_COUNT; button++)
 			draw_sign(server, command, button, bar->buttons[button], ZWL_GLASS_BAR / 2, 1, over == button, 1.0f, dark);
