@@ -374,8 +374,16 @@ wl_display_flush(
 	sent = wlc_wire_flush(display);
 	error = errno;
 
-	/* Backpressure retains queued packets and is not a protocol failure. */
-	if (sent < 0 && error != EAGAIN && error != EWOULDBLOCK)
+	/*
+	 * Backpressure retains queued packets and is not a protocol failure.  Nor
+	 * is a peer that has closed (EPIPE): a compositor closes right after it
+	 * sends a protocol error, which is still to be read, and the read that
+	 * meets the end of the stream makes the connection fail.
+	 */
+	if (sent < 0 &&
+	    error != EAGAIN &&
+	    error != EWOULDBLOCK &&
+	    error != EPIPE)
 		wlc_display_error(display, error);
 
 	pthread_mutex_unlock(&display->mutex);
@@ -963,20 +971,33 @@ wlc_display_wait(
 {
 	struct pollfd descriptor;
 	int flushed;
+	int error;
 	int ready;
 
 	/* Polls both directions while socket backpressure prevents a full flush. */
 	while (1) {
-		/* The standard flush interface preserves queued bytes on EAGAIN. */
+		/*
+		 * The standard flush interface preserves queued bytes on EAGAIN.  A
+		 * closed peer (EPIPE) still leaves its last events to be read: the
+		 * protocol error a compositor sends before it closes.
+		 */
+		error = 0;
 		flushed = wl_display_flush(display);
-		if (flushed < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
+		if (flushed < 0)
+			error = errno;
+		if (flushed < 0 &&
+		    error != EAGAIN &&
+		    error != EWOULDBLOCK &&
+		    error != EPIPE)
 			return -1;
 
 		/* Input may become ready even before every queued request is writable. */
 		descriptor.fd = display->fd;
 		descriptor.events = POLLIN;
 		descriptor.revents = 0;
-		if (flushed < 0)
+
+		/* Only requests held back by backpressure wait for the socket to take more. */
+		if (error == EAGAIN || error == EWOULDBLOCK)
 			descriptor.events |= POLLOUT;
 
 		/* Library dispatch has the standard unbounded event-waiting semantics. */

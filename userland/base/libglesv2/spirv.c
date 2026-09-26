@@ -39,6 +39,9 @@
 #define OP_TYPE_VECTOR		23U
 #define OP_TYPE_MATRIX		24U
 #define OP_TYPE_IMAGE		25U
+
+/* OpTypeImage's Dim of a cube map. */
+#define SPIRV_DIM_CUBE		3U
 #define OP_TYPE_SAMPLED_IMAGE	27U
 #define OP_TYPE_ARRAY		28U
 #define OP_TYPE_STRUCT		30U
@@ -762,6 +765,7 @@ spirv_leaf(
 	static const GLenum matrices[4] = { GL_FLOAT_MAT2, GL_FLOAT_MAT2, GL_FLOAT_MAT3, GL_FLOAT_MAT4 };
 	const uint32_t *code;
 	size_t at;
+	size_t image;
 	uint32_t opcode;
 	int status;
 
@@ -817,6 +821,15 @@ spirv_leaf(
 		uniform->components = 1U;
 		uniform->columns = 1U;
 		uniform->type = GL_SAMPLER_2D;
+
+		/* An image of Dim Cube is a cube map's sampler. */
+		image = 0U;
+		if (code[at + 2U] < module->bound)
+			image = module->defs[code[at + 2U]];
+		if (image != 0U &&
+		    (code[image] & 0xffffU) == OP_TYPE_IMAGE &&
+		    code[image + 3U] == SPIRV_DIM_CUBE)
+			uniform->type = GL_SAMPLER_CUBE;
 		return 0;
 	default:
 		break;

@@ -38,9 +38,17 @@ keys() { python3 plan/ws035/tests/qmp-keys.py "$GUEST_RUNTIME/qmp.sock" "$@"; }
 stop_all='for p in $(ps -A -o pid,args | grep -E "[z]desktop( |$)|[z]desktop-terminal" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[z]desktop( |$)|[z]desktop-terminal" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
 status=0
 
-# Fails the run unless a log has a line matching a pattern.
+# Fails the run unless a log has a line matching a pattern (within a few seconds: a loaded host
+# delays the line of an action the guest has already carried out).
 expect_log() {
-	found=$(guest "grep -cE '$2' $1" | tail -1)
+	tries=0
+	found=0
+	while [ $tries -lt 5 ]; do
+		found=$(guest "grep -cE '$2' $1" | tail -1)
+		[ "${found:-0}" -gt 0 ] 2>/dev/null && break
+		tries=$((tries + 1))
+		sleep 1
+	done
 	if [ "${found:-0}" -gt 0 ] 2>/dev/null; then
 		echo "log: $2 ok"
 	else

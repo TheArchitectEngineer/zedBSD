@@ -37,6 +37,8 @@
 #define FORMAT_NATIVE 2
 #define FORMAT_NATIVE_USED 152U
 #define FORMAT_MAX_FPG ((FORMAT_BLOCK - 200U) * 8U)
+/* The superblock offset of the journal size record ("ZJ3R", spare words). */
+#define FORMAT_JOURNAL_REQUEST 1248U
 
 /* One exact byte interval already compared with the generator's final bytes. */
 struct format_extent {
@@ -237,6 +239,18 @@ int
 ufs_format_native_verify(int fd, uint64_t bytes)
 {
 	return format_run(fd, bytes, 1, FORMAT_NATIVE);
+}
+
+/*
+ * Chooses the journal size mkfs records; -1 selects the default for the
+ * volume's size.
+ */
+void
+ufs_format_set_journal_mib(
+	int64_t mib)
+{
+	/* Keeps the size for the superblocks the format writes. */
+	format_journal_mib = mib;
 }
 
 /* Generates or checks one explicit profile without mutable global state. */
@@ -1135,17 +1149,6 @@ format_tail(
 }
 
 /*
- * Chooses the journal size mkfs records; -1 selects the default for the
- * volume's size.
- */
-void
-ufs_format_set_journal_mib(
-	int64_t mib)
-{
-	format_journal_mib = mib;
-}
-
-/*
  * Records the journal size in the superblock's spare words ("ZJ3R"): the
  * ext4 (e2fsprogs) default for the volume's size, capped at 128 MiB, unless
  * one was chosen.  The kernel makes the journal file of that size when it
@@ -1157,36 +1160,41 @@ make_journal_request(
 	uint64_t bytes)
 {
 	uint8_t *record;
+	uint64_t megabytes;
 	uint32_t mib;
-	uint32_t value;
+	uint32_t sum;
 	unsigned index;
 
-	/* Takes the chosen size, or the table's for the volume. */
+	/* Takes the chosen size, or else the table's for the volume's size in MiB. */
+	megabytes = bytes >> 20;
 	if (format_journal_mib >= 0)
 		mib = (uint32_t)format_journal_mib;
-	else if (bytes < (8ULL << 20))
+	else if (megabytes < 8U)
 		mib = 0;
-	else if (bytes < (128ULL << 20))
+	else if (megabytes < 128U)
 		mib = 4;
-	else if (bytes < (1ULL << 30))
+	else if (megabytes < 1024U)
 		mib = 16;
-	else if (bytes < (2ULL << 30))
+	else if (megabytes < 2048U)
 		mib = 32;
-	else if (bytes < (16ULL << 30))
+	else if (megabytes < 16384U)
 		mib = 64;
 	else
 		mib = 128;
 
-	/* Seals the record with the journal's FNV-1a checksum. */
-	record = buffer + 1248U;
+	/* Stores the record: the magic "ZJ3R", the version, and the size in MiB. */
+	record = buffer + FORMAT_JOURNAL_REQUEST;
 	memcpy(record, "ZJ3R", 4U);
 	put32(record, 4U, 1U);
 	put32(record, 8U, mib);
-	value = 2166136261U;
-	for (index = 0; index < 12U; index++) {
-		value ^= record[index];
-		value *= 16777619U;
-	}
-	put32(record, 12U, value);
-}
 
+	/* Seals the words above with the journal's FNV-1a checksum. */
+	sum = 2166136261U;
+	for (index = 0; index < 12U; index++) {
+		sum ^= record[index];
+		sum *= 16777619U;
+	}
+
+	/* Stores the checksum after the words it covers. */
+	put32(record, 12U, sum);
+}

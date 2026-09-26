@@ -61,12 +61,16 @@ EGL と OpenGL ES（2.0、次に 3.0）を、zedBSD の libvulkan（Vulkan）と
 | ws068-p013 | desktop GL 3.0 の context（`glXCreateContextAttribsARB`、core と compatibility の profile、VAO、GL 3.0 の API） | planning | p003、ws069-p008 |
 | ws068-p014 | desktop GL 3.3〜4.6 の出来る範囲（Venus 先。geometry・tessellation・compute・SSBO は device の feature で。i915 の不足は F-023） | planning | p012、p013 |
 | ws068-p004 | GLES 2.0 の残りと試験の充実 | planning | p003 |
-| ws068-p005 | GLES 3.0 | planning | p004 |
+| ws068-p005 | GLES 3.0 | 2026-09-27 に p024〜p027 に分けた | p004 |
+| [ws068-p024](phase024/phase.md) | GLES 3.0 の API（1）: VAO、buffer の map・copy、instancing、整数の属性と uniform、uniform buffer、glGetStringi | in-progress（q495-i01） | p020、p021、p022 |
+| ws068-p025 | GLES 3.0 の API（2）: sized の format（float・整数を含む）、3D・2D 配列の texture、glTexStorage、sampler object、depth texture と shadow sampler、pixel の pack/unpack buffer | planned | p024 |
+| ws068-p026 | GLES 3.0 の API（3）: 複数の colour attachment（glDrawBuffers）、READ/DRAW の framebuffer、glBlitFramebuffer、glReadBuffer、glClearBuffer*、glInvalidateFramebuffer、depth texture の取り付け | planned | p025 |
+| ws068-p027 | GLES 3.0 の API（4）: query（occlusion）、sync object（glFenceSync）、transform feedback、GL_VERSION を「OpenGL ES 3.0」に（必須の機能が揃ったとき） | planned | p026 |
 | [ws068-p006](phase006/phase.md) | i915 実機での確認（GLX の zgears、App Home の X11、仮想デスクトップ） | cleared（q484-i01。実機で 6 検査 PASS の run あり、回転の間欠の止まりは BUG-057） | p008、p010、ws069-p005、F-023 |
 | ws068-p007 | 規約の全文との照合と回帰（最後） | planning | 全 Phase |
 | [ws068-p008](phase008/phase.md) | GLES 2.0 の描画の核（SPIR-V の shader binary、変換層。compiler の方式に依らない部分） | cleared（q475-i01。Venus で strip・texture・blend・depth・cull、display 直接と窓と resize） | p002 |
 | ws068-p009 | frame を 2〜3 枚重ねる（EGL の frame in flight。Venus で clear だけ 125 ms/frame、WSI 直接は 50 ms） | planned | p008 |
 | [ws068-p010](phase010/phase.md) | EGL の pbuffer（offscreen。GLX の描画先） | cleared（q476-i01。Venus で 600 frame と 2048x1536） | p008 |
 | ws068-p011 | framebuffer object・renderbuffer・cube map（texture への描画） | 2026-09-27 に p022（FBO・renderbuffer）と p023（cube map・mipmap の GPU 化・FBO からの copy）に分けた | p008 |
-| [ws068-p022](phase022/phase.md) | framebuffer object と renderbuffer（texture への描画、FBO の readback） | in-progress（q493-i01） | p008 |
-| ws068-p023 | cube map（texture・sample・面への描画）、GPU の描いた texture の `glGenerateMipmap`、FBO からの `glCopyTex*` | planned | p022 |
+| [ws068-p022](phase022/phase.md) | framebuffer object と renderbuffer（texture への描画、FBO の readback） | cleared（q493-i01、2026-09-27。Venus で egl-p022） | p008 |
+| [ws068-p023](phase023/phase.md) | cube map（texture・sample・面への描画）、GPU の描いた texture の `glGenerateMipmap`、FBO からの `glCopyTex*` | cleared（q494-i01、2026-09-27。Venus で egl-p023） | p022 |

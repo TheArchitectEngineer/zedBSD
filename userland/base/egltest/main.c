@@ -18,7 +18,8 @@
  * frame reads its colours back (EGLTEST PIXEL and EGLTEST CHECK lines);
  * --scene=glsl draws them with shaders compiled from GLSL ES 1.00 source,
  * --scene=glsl3 with GLSL ES 3.00 source in an OpenGL ES 3 context, and
- * --scene=fbo draws them into a framebuffer object's texture first.
+ * --scene=fbo draws them into a framebuffer object's texture first;
+ * --scene=cube draws cube.c's squares, each sampling a cube map's face.
  *
  * Every outcome is one line: EGLTEST DONE on a clean end, EGLTEST FAILED
  * naming what failed otherwise.
@@ -30,6 +31,7 @@
 #include <wayland-egl.h>
 #include <xdg-shell-client-protocol.h>
 
+#include "cube.h"
 #include "scene.h"
 
 #include <stdio.h>
@@ -140,7 +142,7 @@ main(
 	/* The command line. */
 	status = egltest_parse(argc, argv, &options);
 	if (status != 0) {
-		fprintf(stderr, "usage: egltest [--display=NAME] [--platform=wayland|display|pbuffer] [--size=WxH] [--frames=N] [--delay-ms=N] [--color=RRGGBB] [--scene=draw|glsl|glsl3|fbo] [--token=NAME]\n");
+		fprintf(stderr, "usage: egltest [--display=NAME] [--platform=wayland|display|pbuffer] [--size=WxH] [--frames=N] [--delay-ms=N] [--color=RRGGBB] [--scene=draw|glsl|glsl3|fbo|cube] [--token=NAME]\n");
 		return 2;
 	}
 
@@ -277,7 +279,9 @@ egltest_start(
 	/* The scene's program, buffers and texture. */
 	egl->operation = "scene";
 	if (options->scene) {
-		if (options->scene == 4) {
+		if (options->scene == 5) {
+			status = egltest_cube_start();
+		} else if (options->scene == 4) {
 			status = egltest_scene_start_fbo();
 		} else if (options->scene == 3) {
 			status = egltest_scene_start_glsl3();
@@ -341,8 +345,12 @@ egltest_frames(
 				(void)eglQuerySurface(egl->display, egl->surface, EGL_HEIGHT, &height);
 			}
 
-			/* The scene, through the framebuffer object for --scene=fbo. */
-			if (options->scene == 4) {
+			/* The scene, through the framebuffer object for --scene=fbo, or the cube map's squares. */
+			if (options->scene == 5) {
+				egltest_cube_draw(width, height);
+				if (frame == 1U)
+					egl->failures = egltest_cube_check(width, height, options->token);
+			} else if (options->scene == 4) {
 				egltest_scene_draw_fbo(width, height);
 				if (frame == 1U)
 					egl->failures = egltest_scene_check_fbo(width, height, options->token);
@@ -487,6 +495,9 @@ egltest_parse(
 			differs = strcmp(value, "fbo");
 			if (differs == 0)
 				options->scene = 4;
+			differs = strcmp(value, "cube");
+			if (differs == 0)
+				options->scene = 5;
 			differs = strcmp(value, "draw");
 			if (differs != 0 && options->scene == 1)
 				return -1;

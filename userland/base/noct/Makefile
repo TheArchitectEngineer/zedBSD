@@ -50,9 +50,13 @@ NOCT_HOST_CMAKE_OPTIONS := -DNOCT_ENABLE_API_PROCESS=ON \
 	-DNOCT_VERSION=$(ZEDBSD_NOCT_VERSION)
 NOCT ?= $(abspath $(NOCT_HOST_ARTIFACT))
 
-NOCT_ZEDBSD_ARCH := $(if $(filter i386,$(ZEDBSD_ARCHITECTURE)),i386,amd64)
-NOCT_ZEDBSD_SYSROOT = $(if $(filter i386,$(NOCT_ZEDBSD_ARCH)),$(ZEDBSD_SYSROOT_I386),$(ZEDBSD_SYSROOT_AMD64))
-NOCT_ZEDBSD_CMAKE_OPTIONS := $(if $(filter i386,$(NOCT_ZEDBSD_ARCH)),--toolchain $(ZEDBSD_NOCT_PACKAGE_ROOT)/zedbsd-i386.cmake -DNOCT_ENABLE_JIT=OFF,)
+NOCT_ZEDBSD_ARCH := $(if $(filter i386 arm64,$(ZEDBSD_ARCHITECTURE)),$(ZEDBSD_ARCHITECTURE),amd64)
+NOCT_ZEDBSD_SYSROOT = $(if $(filter i386,$(NOCT_ZEDBSD_ARCH)),$(ZEDBSD_SYSROOT_I386),$(if $(filter arm64,$(NOCT_ZEDBSD_ARCH)),$(ZEDBSD_SYSROOT_ARM64),$(ZEDBSD_SYSROOT_AMD64)))
+# amd64 uses the toolchain file the Noct release carries; the others use the
+# ones kept here.
+NOCT_ZEDBSD_TOOLCHAIN_FILE := $(if $(filter amd64,$(NOCT_ZEDBSD_ARCH)),,$(ZEDBSD_NOCT_PACKAGE_ROOT)/zedbsd-$(NOCT_ZEDBSD_ARCH).cmake)
+NOCT_ZEDBSD_CMAKE_OPTIONS := $(if $(NOCT_ZEDBSD_TOOLCHAIN_FILE),--toolchain $(NOCT_ZEDBSD_TOOLCHAIN_FILE),) \
+	$(if $(filter i386,$(NOCT_ZEDBSD_ARCH)),-DNOCT_ENABLE_JIT=OFF,)
 NOCT_ZEDBSD_BUILD_DIR := $(NOCT_SOURCE_DIR)/build-zedbsd-$(NOCT_ZEDBSD_ARCH)
 NOCT_ZEDBSD_ARTIFACT := $(NOCT_ZEDBSD_BUILD_DIR)/noct
 
@@ -71,7 +75,7 @@ NOCT_PACKAGE_HOLORIS := $(NOCT_SOURCE_DIR)/resources/apps/holoris/holoris.noct
 
 # i386 uses the interpreter for the PC98 i486 baseline. Remacs stays held
 # independently until its own application acceptance is scheduled.
-$(eval $(call ZEDBSD_USERLAND_PACKAGE,noct,Noct language,amd64 i386 pc98,n,package,,y,\
+$(eval $(call ZEDBSD_USERLAND_PACKAGE,noct,Noct language,amd64 i386 pc98 rpi4,n,package,,y,\
 	packages/lang,base/noct,))
 
 ZEDBSD_PACKAGE_INPUTS += $(if $(filter noct,$(ZEDBSD_USER_PROGRAMS)),\
@@ -283,6 +287,7 @@ $(NOCT_PACKAGE_HOLORIS): | $(NOCT_SOURCE_VERIFIED)
 $(NOCT_ZEDBSD_BUILD_STAMP): $(NOCT_SOURCE_VERIFIED) \
 		$(ZEDBSD_NOCT_PACKAGE_MAKEFILE) $(NOCT_ZEDBSD_SYSROOT_STAMP) \
 		$(dir $(ZEDBSD_NOCT_PACKAGE_MAKEFILE))zedbsd.cmake \
+		$(NOCT_ZEDBSD_TOOLCHAIN_FILE) \
 		$(BUILD)/dynamic/libc.so $(BUILD)/dynamic/ld.so
 	cd '$(NOCT_SOURCE_DIR)' && \
 		ZEDBSD_SOURCE_DIR='$(ZEDBSD_NOCT_ROOT)' \
@@ -332,7 +337,7 @@ noct-toolchain-smoke: $(NOCT_HOST_BUILD_STAMP) \
 	$(NOCT) tools/build/noct-toolchain-smoke.noct \
 		$(abspath build/noct-toolchain-smoke.txt)
 
-ifneq ($(filter amd64 i386,$(ZEDBSD_ARCHITECTURE)),)
+ifneq ($(filter amd64 i386 arm64,$(ZEDBSD_ARCHITECTURE)),)
 $(BUILD)/bin/noct: $(NOCT_ZEDBSD_BUILD_STAMP)
 	@mkdir -p $(dir $@)
 	cp -f '$(NOCT_ZEDBSD_ARTIFACT)' '$@'
