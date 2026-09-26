@@ -4,7 +4,7 @@
 
 Phase ID: `ws069-p008`
 Parent: [WS069](../ws.md)
-Status: uncleared（q488-i01、2026-09-27。受け入れ 2 の x11-p005 の frame 数だけが BUG-057 で未達。p010 の後に再試験して clear）
+Status: cleared（2026-09-27 の追記。q488-i01 は uncleared、p010 の後に x11-p005 と実機が PASS）
 Phase disposition: normal
 Queue: q488-i01
 承認: 2026-09-27 ユーザー「Wayland用のXサーバは、単体のプログラムとして実装しましょう。userland/base/zdesktop-x11serverとします。」
@@ -73,3 +73,8 @@ protocol の核と ws069-p002〜p005 の Wayland・rootless・glyph・GLX を移
 ## 再開の条件
 
 ws069-p010 で BUG-057 を直した後、Venus の x11-p005 と実機の run を流し、通れば日付を付けて clear する。
+
+## 追記（2026-09-27、p010 の後）: cleared
+
+ws069-p010 で BUG-057（kernel の socket の待ち）を直した後、Venus の x11-p005 が PASS（frame 300、DONE、回る）、実機の run3 で 6 検査 PASS。
+受け入れ 2・3 を満たしたので clear とする（q488-i01 の uncleared の結果はそのまま履歴に残す）。

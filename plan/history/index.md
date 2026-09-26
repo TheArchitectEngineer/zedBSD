@@ -2,12 +2,14 @@
 
 <!-- awesome-plan-current:start -->
 Active Queue: なし
-Last finished Queue: q488（ws069-p008 uncleared。zdesktop-x11server）
+Last finished Queue: q489（ws069-p010 cleared。BUG-057 の修正）
 <!-- awesome-plan-current:end -->
 
 # Past Log
 
-## 最新: q443〜q488（2026-09-26〜27）
+## 最新: q443〜q489（2026-09-26〜27）
+
+[q489](queue-q489.md): ws069-p010 cleared。BUG-057 の原因は kernel: `waitq_sleep` の「眠る前の wakeup」の EAGAIN を unix socket の送りの待ちが失敗として返し、blocking の send が失敗して libX11 が要求を打ち切っていた。2 つの待ちを直し、Venus の x11-p005 と実機の zgears 5000 frame で確認。ws069-p008 も追記で clear。
 
 [q488](queue-q488.md): ws069-p008 uncleared。単体の rootless の X server `zdesktop-x11server`（組み込める形、出力の queue、絶対座標の一貫）が Venus と i915 実機で動く。x11-p005 の frame 数だけ BUG-057 で未達。BUG-057 は Venus でも再現し、kernel の unix socket で大きな send の送り手が起きない所まで特定。
 
