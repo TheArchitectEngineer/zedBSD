@@ -3,13 +3,13 @@
 # WS049: kernel 内の ACPI AML interpreter
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: incomplete
 Primary Milestone: MG003
 Related Milestones: MG006, MG008
 Objectives: O2, O4
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001（調査と設計）から
+Resume point: p002（object・namespace・読み込み）から。p006 以降は HAL の差分の承認を待つ
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -50,13 +50,23 @@ kernel の中に ACPI の AML interpreter を持ち、DSDT・SSDT を読み込�
 
 ## Phase 一覧
 
+設計: [design.md](design.md)（2026-09-27、p001）。p002〜p005 は host だけで進められる。p006 以降は HAL の差分の承認が前提。
+
 | Phase | 内容 | Status | 依存 | 対象 |
 | --- | --- | --- | --- | --- |
-| ws049-p001 | 調査と設計: AML の仕様（ACPI 6.5）の範囲、対象機の DSDT・SSDT が使う opcode と OperationRegion の種類（実機の table を読む。取り出しはユーザーの手を借りる）、kernel の中の置き場（`src/kern/acpi` か `src/drivers/acpi`）、`hal_get_arch_handoff()` に足す名前の案（承認が要る差分）、試験の方法 | planning | — | 設計文書 |
-
-p001 の結果で p002 以降（解析、namespace、評価器、OperationRegion、SCI・GPE・EC、規約）に分ける。
+| [ws049-p001](phase001/phase.md) | 調査と設計: table の道、利用者の要求、構成、評価の方式、HAL の差分の案、試験の方法 | cleared（2026-09-27） | — | 設計文書 |
+| ws049-p002 | object・namespace・byte 列・DefinitionBlock の読み込み、host の harness | planned | p001 | `src/drivers/acpi/` |
+| ws049-p003 | 評価器: method、制御、全ての式の opcode、参照、変換、Store の規則 | planned | p002 | 同上 |
+| ws049-p004 | OperationRegion・Field・IndexField・BankField・BufferField、region の handler と `_REG` | planned | p003 | 同上 |
+| ws049-p005 | 同期と OS の口: Mutex・Event・Sleep・Notify・`_OSI`・Load/LoadTable/Unload・`_INI`、stack の予算 | planned | p004 | 同上 |
+| ws049-p006 | kernel への組み込み（amd64）: table の発見、region の handler、起動時の読み込み、診断の口 | planned | p005、**HAL の差分の承認** | `src/drivers/acpi/`、platform |
+| ws049-p007 | SCI・GPE・固定 event・EC（`_Qxx`）・Notify の配送 | planned | p006 | 同上 |
+| ws049-p008 | 対象機（Latitude 5330）の table と実機の確認 | planned | p007、対象機の table | 同上 |
+| ws049-p009 | 規約の全文の確認と最終の確認 | planned | p002〜p008 | WS の全 source |
 
 ## 人間の判断が要る点
 
-- `hal_get_arch_handoff()` に ACPI の名前を足す差分の承認（p001 が案を作る。`hal.h` は変えない見込み）。
-- 対象機（Latitude 5330 でよいか）と、`_OSI` でどの Windows を名乗るか。
+- `hal_get_arch_handoff("acpi.rsdp")` を足す差分の承認（[design.md](design.md) §9、差分 [proposed/hal-acpi-rsdp.diff](proposed/hal-acpi-rsdp.diff)。
+  `hal.h` は変えない。未適用）。p006 以降の前提。
+- 対象機（Latitude 5330 でよいか）と、その table の取り出し（Linux で `sudo acpidump -b`）。
+- `_OSI` でどの Windows を名乗るか（design §8、案は `Windows 2022` まで真）。
