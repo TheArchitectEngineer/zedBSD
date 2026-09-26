@@ -57,7 +57,7 @@ SError で止まる）。
 | HARD_DEBUG | `0x4204` | bit 1 CLKREQ_DEBUG_ENABLE、bit 27 SERDES_IDDQ（1 = SerDes の電源断） |
 | INTR2_CPU | `0x4300` | +0 status、+8 clear、+0x10 mask set、+0x14 mask clear。link の状態変化・MSI の要約 |
 | EXT_CFG_DATA | `0x8000` | index で選んだ function の config 空間の窓（4 KiB） |
-| EXT_CFG_INDEX | `0x9000` | `bus << 20 | device << 15 | function << 12` |
+| EXT_CFG_INDEX | `0x9000` | bus を bit 20、device を bit 15、function を bit 12 から置いた値 |
 | RGR1_SW_INIT_1 | `0x9210` | bit 0 PERST（1 = PERST# を assert）、bit 1 INIT（1 = bridge を reset） |
 
 inbound の大きさの符号（RC_BAR2 の bit 4:0）: 大きさを 2 の冪 2^n として、n が 12〜15 なら `n - 12 + 0x1c`、16〜37 なら `n - 15`。
