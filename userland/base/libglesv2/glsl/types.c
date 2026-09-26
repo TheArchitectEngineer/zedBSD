@@ -677,7 +677,7 @@ glsl_std140_size(
 		for (index = 0U; index < type->field_count; index++) {
 			alignment = glsl_std140_alignment(type->fields[index].type);
 			offset = types_round(offset, alignment);
-			offset += glsl_std140_size(type->fields[index].type);
+			offset += glsl_std140_member_size(type->fields[index].type, type->fields[index].row_major);
 		}
 
 		/* The end rounded to the struct's alignment. */
@@ -708,6 +708,60 @@ glsl_std140_stride(
 
 	/* Succeeded: the stride. */
 	return types_round(size, 16U);
+}
+
+/*
+ * Returns the std140 size of a struct member, whose matrices (or array
+ * of matrices) may be row-major: then each row is a vector of the
+ * columns' count, 16 bytes apart.
+ */
+unsigned
+glsl_std140_member_size(
+	const struct glsl_type *type,
+	unsigned row_major)
+{
+	unsigned stride;
+	unsigned size;
+
+	/* Column-major, or not a matrix: the type's own size. */
+	if (!row_major) {
+		size = glsl_std140_size(type);
+		return size;
+	}
+
+	/* A row-major matrix: one row per component of a column. */
+	if (type->kind == GLSL_KIND_MATRIX)
+		return 16U * type->components;
+
+	/* An array of them: the rows' stride times the length. */
+	if (type->kind == GLSL_KIND_ARRAY && type->element->kind == GLSL_KIND_MATRIX) {
+		stride = glsl_std140_member_stride(type, row_major);
+		return stride * type->length;
+	}
+
+	/* Anything else is not a matrix. */
+	size = glsl_std140_size(type);
+	return size;
+}
+
+/*
+ * Returns the std140 stride of an array member's elements, row-major
+ * matrices taking a row per component.
+ */
+unsigned
+glsl_std140_member_stride(
+	const struct glsl_type *type,
+	unsigned row_major)
+{
+	unsigned stride;
+
+	/* An array of row-major matrices. */
+	if (row_major && type->element->kind == GLSL_KIND_MATRIX)
+		return 16U * type->element->components;
+
+	/* Any other array. */
+	stride = glsl_std140_stride(type);
+	return stride;
 }
 
 /* Rounds a value up to a multiple of an alignment (a power of two). */

@@ -187,6 +187,8 @@ enum glsl_keyword {
 #define GLSL_VAR_INPUT		4U
 #define GLSL_VAR_OUTPUT		5U
 #define GLSL_VAR_PARAMETER	6U
+#define GLSL_VAR_BLOCK		7U
+#define GLSL_VAR_BLOCK_MEMBER	8U
 
 /* The built-in variables (0: a variable the shader declared). */
 #define GLSL_BUILTIN_NONE	0U
@@ -495,9 +497,14 @@ struct glsl_symbol {
 	/* The location a layout qualifier gave (GLSL_NO_LOCATION: none). */
 	unsigned explicit_location;
 
-	/* What the link gave: an input's or output's location, a uniform's index among the program's uniforms. */
+	/* A uniform block's member without an instance name: the block's symbol and the member's index. */
+	struct glsl_symbol *block;
+	unsigned member;
+
+	/* What the link gave: an input's or output's location, a uniform's index among the program's uniforms, a block's binding. */
 	unsigned location;
 	unsigned uniform;
+	unsigned binding;
 
 	/* While emitting: the SPIR-V id of the variable, and its storage class. */
 	uint32_t id;
@@ -725,6 +732,8 @@ void glsl_type_name(const struct glsl_type *type, char *out, size_t size);
 unsigned glsl_std140_alignment(const struct glsl_type *type);
 unsigned glsl_std140_size(const struct glsl_type *type);
 unsigned glsl_std140_stride(const struct glsl_type *type);
+unsigned glsl_std140_member_size(const struct glsl_type *type, unsigned row_major);
+unsigned glsl_std140_member_stride(const struct glsl_type *type, unsigned row_major);
 
 /* builtins.c: built-in functions, variables and constants. */
 const struct glsl_builtin *glsl_builtin_first(const char *name);

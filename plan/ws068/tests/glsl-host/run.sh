@@ -30,6 +30,9 @@ cc -std=gnu99 -O0 -g -w -I"$root" -I"$root/include" -DHAL_ARCH_AMD64 -o "$out/i9
 version_of() {
 	case $1 in
 	*130*|*modern*) echo 130;;
+	*300*|*es300*) echo 300;;
+	*330*) echo 330;;
+	*150*) echo 150;;
 	*120*) echo 120;;
 	*110*) echo 110;;
 	*) echo 100;;
@@ -65,7 +68,7 @@ done
 echo "link: done"
 
 # 4. The i915 compiler takes the shaders that stay inside what it supports.
-I915_PAIRS=${I915_PAIRS:-scene fixed}
+I915_PAIRS=${I915_PAIRS:-scene fixed scene300}
 for name in $I915_PAIRS; do
 	"$out/i915-check" vertex "$out/$name.vert.linked.spv" || fail "i915 $name.vert"
 	"$out/i915-check" fragment "$out/$name.frag.linked.spv" || fail "i915 $name.frag"

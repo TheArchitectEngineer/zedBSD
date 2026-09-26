@@ -32,7 +32,9 @@
 static void emit_capability(struct emit_state *state, uint32_t capability, unsigned *declared);
 static unsigned emit_type_slot(struct emit_state *state, const struct glsl_type *type);
 static uint32_t emit_layout_type(struct emit_state *state, const struct glsl_type *type);
-static void emit_layout_members(struct emit_state *state, uint32_t structure, unsigned member, const struct glsl_type *type, uint32_t offset, const char *name);
+static void emit_layout_members(struct emit_state *state, uint32_t structure, unsigned member, const struct glsl_type *type, uint32_t offset, const char *name, unsigned row_major);
+static uint32_t emit_layout_row_major_array(struct emit_state *state, const struct glsl_type *type);
+static void emit_uniform_block(struct emit_state *state, struct glsl_symbol *symbol);
 static uint32_t emit_constant(struct emit_state *state, const struct glsl_constant *constant);
 static uint32_t emit_constant_part(struct emit_state *state, const struct glsl_type *type, const union glsl_scalar *values, unsigned *at);
 static uint32_t emit_zero(struct emit_state *state, const struct glsl_type *type);
@@ -691,6 +693,7 @@ emit_layout_type(
 	const struct glsl_type *type)
 {
 	uint32_t operands[GLSL_MAX_OPERANDS];
+	const struct glsl_type *field;
 	uint32_t stride;
 	uint32_t id;
 	uint32_t offset;
@@ -724,9 +727,17 @@ emit_layout_type(
 		return id;
 	}
 
-	/* A struct: its members' layouts. */
-	for (index = 0U; index < type->field_count && index + 1U < GLSL_MAX_OPERANDS; index++)
-		operands[index + 1U] = emit_layout_type(state, type->fields[index].type);
+	/* A struct: its members' layouts (an array of row-major matrices has a stride of its own). */
+	for (index = 0U; index < type->field_count && index + 1U < GLSL_MAX_OPERANDS; index++) {
+		field = type->fields[index].type;
+		if (type->fields[index].row_major && field->kind == GLSL_KIND_ARRAY && field->element->kind == GLSL_KIND_MATRIX) {
+			operands[index + 1U] = emit_layout_row_major_array(state, field);
+		} else {
+			operands[index + 1U] = emit_layout_type(state, field);
+		}
+	}
+
+	/* The struct, a type of its own. */
 	id = glsl_module_declare(state->module, SPV_OP_TYPE_STRUCT, operands, type->field_count + 1U, 1);
 
 	/* Each member's offset, name and matrix layout. */
@@ -734,8 +745,8 @@ emit_layout_type(
 	for (index = 0U; index < type->field_count; index++) {
 		alignment = glsl_std140_alignment(type->fields[index].type);
 		offset = (offset + alignment - 1U) & ~(alignment - 1U);
-		emit_layout_members(state, id, index, type->fields[index].type, offset, type->fields[index].name);
-		offset += glsl_std140_size(type->fields[index].type);
+		emit_layout_members(state, id, index, type->fields[index].type, offset, type->fields[index].name, type->fields[index].row_major);
+		offset += glsl_std140_member_size(type->fields[index].type, type->fields[index].row_major);
 	}
 
 	/* Succeeded: the struct's layout type, remembered. */
@@ -752,7 +763,8 @@ emit_layout_members(
 	unsigned member,
 	const struct glsl_type *type,
 	uint32_t offset,
-	const char *name)
+	const char *name,
+	unsigned row_major)
 {
 	const struct glsl_type *element;
 
@@ -760,14 +772,71 @@ emit_layout_members(
 	glsl_module_member_decorate(state->module, structure, member, SPV_DECORATION_OFFSET, offset);
 	glsl_module_member_name(state->module, structure, member, name);
 
-	/* A matrix (or an array of them): columns 16 bytes apart. */
+	/* A matrix (or an array of them): columns (or rows) 16 bytes apart. */
 	element = type;
 	if (element->kind == GLSL_KIND_ARRAY)
 		element = element->element;
-	if (element->kind == GLSL_KIND_MATRIX) {
+	if (element->kind != GLSL_KIND_MATRIX)
+		return;
+	if (row_major) {
+		glsl_module_member_decorate(state->module, structure, member, SPV_DECORATION_ROW_MAJOR, 0xffffffffU);
+	} else {
 		glsl_module_member_decorate(state->module, structure, member, SPV_DECORATION_COL_MAJOR, 0xffffffffU);
-		glsl_module_member_decorate(state->module, structure, member, SPV_DECORATION_MATRIX_STRIDE, 16U);
 	}
+
+	/* Rows or columns 16 bytes apart. */
+	glsl_module_member_decorate(state->module, structure, member, SPV_DECORATION_MATRIX_STRIDE, 16U);
+}
+
+/* Returns the laid-out type of an array of row-major matrices (a row per component, 16 bytes apart). */
+static uint32_t
+emit_layout_row_major_array(
+	struct emit_state *state,
+	const struct glsl_type *type)
+{
+	uint32_t operands[3];
+	uint32_t stride;
+	uint32_t id;
+
+	/* The array, a type of its own with its stride. */
+	operands[0] = 0U;
+	operands[1] = emit_layout_type(state, type->element);
+	operands[2] = glsl_module_constant(state->module, glsl_emit_type(state, glsl_type_scalar(GLSL_BASE_UINT)), type->length);
+	id = glsl_module_declare(state->module, SPV_OP_TYPE_ARRAY, operands, 3U, 1);
+	stride = glsl_std140_member_stride(type, 1U);
+	glsl_module_decorate(state->module, id, SPV_DECORATION_ARRAY_STRIDE, &stride, 1U);
+
+	/* Succeeded: the type. */
+	return id;
+}
+
+/* Declares a uniform block: its laid-out struct, a Block at set 0 and the link's binding, named by the block. */
+static void
+emit_uniform_block(
+	struct emit_state *state,
+	struct glsl_symbol *symbol)
+{
+	uint32_t operands[3];
+	uint32_t structure;
+	uint32_t value;
+
+	/* The struct, a Block named by the block. */
+	structure = emit_layout_type(state, symbol->type);
+	glsl_module_decorate(state->module, structure, SPV_DECORATION_BLOCK, NULL, 0U);
+	glsl_module_name(state->module, structure, symbol->type->name);
+
+	/* The variable: set 0, the link's binding. */
+	symbol->id = glsl_module_id(state->module);
+	symbol->id_storage = SPV_STORAGE_UNIFORM;
+	operands[0] = glsl_emit_pointer(state, SPV_STORAGE_UNIFORM, structure);
+	operands[1] = symbol->id;
+	operands[2] = SPV_STORAGE_UNIFORM;
+	glsl_words_add(state->module, &state->module->globals, SPV_OP_VARIABLE, operands, 3U);
+	value = 0U;
+	glsl_module_decorate(state->module, symbol->id, SPV_DECORATION_DESCRIPTOR_SET, &value, 1U);
+	value = symbol->binding;
+	glsl_module_decorate(state->module, symbol->id, SPV_DECORATION_BINDING, &value, 1U);
+	glsl_module_name(state->module, symbol->id, symbol->type->name);
 }
 
 /* Returns the id of a constant value. */
@@ -906,6 +975,9 @@ emit_globals(
 		case GLSL_VAR_OUTPUT:
 			emit_interface(state, symbol);
 			break;
+		case GLSL_VAR_BLOCK:
+			emit_uniform_block(state, symbol);
+			break;
 		case GLSL_VAR_GLOBAL:
 			/* A plain global is a variable of main, stored first with its value or zero. */
 			symbol->id = emit_variable(state, symbol->type);
@@ -965,7 +1037,7 @@ emit_block(
 		if (state->members[index] < 0)
 			continue;
 		emit_layout_members(state, structure, (unsigned)state->members[index], state->uniforms[index].type,
-				    state->uniforms[index].offset, state->uniforms[index].name);
+				    state->uniforms[index].offset, state->uniforms[index].name, 0U);
 	}
 
 	/* The struct is a block, named for the reflection. */
@@ -1725,7 +1797,25 @@ emit_path(
 		memset(path, 0, sizeof(*path));
 		path->type = symbol->type;
 
-		/* A uniform other than a sampler is a member of the block. */
+		/* A uniform block (by its instance name) is read as a laid-out struct. */
+		if (symbol->where == GLSL_VAR_BLOCK) {
+			path->base = symbol->id;
+			path->storage = SPV_STORAGE_UNIFORM;
+			path->block = 1;
+			return 0;
+		}
+
+		/* A member of a uniform block without an instance name is a member of that block. */
+		if (symbol->where == GLSL_VAR_BLOCK_MEMBER) {
+			path->base = symbol->block->id;
+			path->storage = SPV_STORAGE_UNIFORM;
+			path->block = 1;
+			path->indices[0] = glsl_emit_int(state, (int32_t)symbol->member);
+			path->index_count = 1U;
+			return 0;
+		}
+
+		/* A uniform other than a sampler is a member of the default block. */
 		if (symbol->where == GLSL_VAR_UNIFORM && symbol->type->kind != GLSL_KIND_SAMPLER) {
 			path->base = state->block;
 			path->storage = SPV_STORAGE_UNIFORM;

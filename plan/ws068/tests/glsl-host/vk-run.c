@@ -23,7 +23,9 @@
  *   // expect: R G B A          the colour at every pixel, 0..255 (within 2)
  *
  * Every sampler reads a 2x2 texture, nearest, clamped: red (0,0), green
- * (1,0), blue (0,1), white (1,1) in texture coordinates.
+ * (1,0), blue (0,1), white (1,1) in texture coordinates.  Every uniform
+ * block of its own (WS068 p021) reads one buffer whose float at byte
+ * offset o is o / 4, so a shader can check its members' std140 offsets.
  */
 
 #include "../../../../userland/base/libglesv2/gles.h"
@@ -73,10 +75,13 @@ struct run_context {
 	VkImageView texture_view;
 	VkSampler sampler;
 
-	/* The uniform and vertex buffers (host visible, mapped). */
+	/* The uniform, uniform block and vertex buffers (host visible, mapped). */
 	VkBuffer uniforms;
 	VkDeviceMemory uniforms_memory;
 	void *uniforms_mapped;
+	VkBuffer pattern;
+	VkDeviceMemory pattern_memory;
+	void *pattern_mapped;
 	VkBuffer vertices;
 	VkDeviceMemory vertices_memory;
 	void *vertices_mapped;
@@ -350,6 +355,14 @@ run_setup(
 			    &context->vertices_mapped);
 	if (status != 0)
 		return -1;
+
+	/* The uniform blocks' buffer: the float at byte offset o is o / 4. */
+	status = run_buffer(context, RUN_UNIFORM_BYTES, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, &context->pattern,
+			    &context->pattern_memory, &context->pattern_mapped);
+	if (status != 0)
+		return -1;
+	for (index = 0U; index < RUN_UNIFORM_BYTES / 4U; index++)
+		((float *)context->pattern_mapped)[index] = (float)index;
 
 	/* The texture. */
 	status = run_texture(context);
@@ -816,6 +829,7 @@ run_program(
 	VkDescriptorSet set;
 	VkWriteDescriptorSet writes[17];
 	VkDescriptorBufferInfo buffer_info;
+	VkDescriptorBufferInfo pattern_info;
 	VkDescriptorImageInfo image_info;
 	VkPipelineShaderStageCreateInfo stages[2];
 	VkVertexInputBindingDescription vertex_binding;
@@ -894,6 +908,17 @@ run_program(
 		count = 1U;
 	}
 
+	/* Each stage's uniform blocks of their own. */
+	for (stage = 0U; stage < 2U; stage++) {
+		for (index = 0U; index < spirv[stage].named_count && count < 17U; index++) {
+			bindings[count].binding = spirv[stage].named_bindings[index];
+			bindings[count].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+			bindings[count].descriptorCount = 1U;
+			bindings[count].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+			count++;
+		}
+	}
+
 	/* Each stage's samplers. */
 	for (stage = 0U; stage < 2U; stage++) {
 		for (index = 0U; index < spirv[stage].uniform_count && count < 17U; index++) {
@@ -943,7 +968,7 @@ run_program(
 
 	/* The descriptor set: the uniform buffer and the texture. */
 	sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	sizes[0].descriptorCount = 1U;
+	sizes[0].descriptorCount = 17U;
 	sizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 	sizes[1].descriptorCount = 16U;
 	memset(&pool_create, 0, sizeof(pool_create));
@@ -965,6 +990,9 @@ run_program(
 	buffer_info.buffer = context->uniforms;
 	buffer_info.offset = 0U;
 	buffer_info.range = RUN_UNIFORM_BYTES;
+	pattern_info.buffer = context->pattern;
+	pattern_info.offset = 0U;
+	pattern_info.range = RUN_UNIFORM_BYTES;
 	image_info.sampler = context->sampler;
 	image_info.imageView = context->texture_view;
 	image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -976,6 +1004,8 @@ run_program(
 		writes[index].descriptorCount = 1U;
 		writes[index].descriptorType = bindings[index].descriptorType;
 		writes[index].pBufferInfo = &buffer_info;
+		if (bindings[index].binding != 0U)
+			writes[index].pBufferInfo = &pattern_info;
 		writes[index].pImageInfo = &image_info;
 	}
 

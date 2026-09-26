@@ -57,6 +57,9 @@
 /* How many of Vulkan's core formats the vertex format cache covers. */
 #define GLES_FORMATS		192U
 
+/* The most uniform blocks besides the default one a shader's reflection records. */
+#define GLES_NAMED_BLOCKS	16U
+
 /* The longest name of an attribute or a uniform, with its terminator. */
 #define GLES_NAME		64U
 
@@ -635,6 +638,10 @@ struct gles_spirv {
 	uint32_t block_binding;
 	uint32_t block_size;
 	int has_block;
+
+	/* The bindings of the uniform blocks other than the default one (GLSL's named blocks). */
+	uint32_t named_bindings[GLES_NAMED_BLOCKS];
+	unsigned named_count;
 };
 
 /* spirv.c: reading SPIR-V and rewriting it. */

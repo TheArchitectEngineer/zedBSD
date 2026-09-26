@@ -52,6 +52,7 @@ static void check_external(struct glsl_shader *shader, struct glsl_node *node, s
 static void check_precision(struct glsl_shader *shader, struct glsl_node *node);
 static void check_invariant(struct glsl_shader *shader, struct glsl_node *node);
 static void check_interface(struct glsl_shader *shader, struct glsl_node *node);
+static void check_uniform_block(struct glsl_shader *shader, struct glsl_node *node);
 static const struct glsl_type *check_block_type(struct glsl_shader *shader, struct glsl_node *node, unsigned storage);
 static void check_block_variable(struct glsl_shader *shader, const char *name, const struct glsl_type *type, unsigned where, unsigned interpolation, unsigned line);
 static void check_location(struct glsl_shader *shader, struct glsl_node *type_node, struct glsl_symbol *symbol, unsigned line);
@@ -429,7 +430,7 @@ check_interface(
 	type_node = node->child[0];
 	storage = type_node->storage;
 	if (storage == GLSL_STORAGE_UNIFORM) {
-		glsl_error(shader, node->line, "uniform blocks are not supported yet (WS068 p021)");
+		check_uniform_block(shader, node);
 		return;
 	}
 
@@ -467,6 +468,73 @@ check_interface(
 	/* Without one: each member a variable of its own. */
 	for (index = 0U; index < type->field_count; index++)
 		check_block_variable(shader, type->fields[index].name, type->fields[index].type, where, type->fields[index].interpolation, node->line);
+}
+
+/*
+ * Checks a uniform block (GLSL 1.40, OpenGL ES 3.00): its struct, and its
+ * instance name, or its members as names of their own that read from it.
+ */
+static void
+check_uniform_block(
+	struct glsl_shader *shader,
+	struct glsl_node *node)
+{
+	struct glsl_node *instance;
+	struct glsl_symbol *block;
+	struct glsl_symbol *member;
+	const struct glsl_type *type;
+	unsigned index;
+	int allowed;
+
+	/* The version. */
+	allowed = glsl_since(shader, GLSL_VERSION_140, GLSL_VERSION_ES300);
+	if (!allowed) {
+		glsl_error(shader, node->line, "uniform blocks need GLSL 1.40 or OpenGL ES 3.00");
+		return;
+	}
+
+	/* The struct, and no arrays of blocks. */
+	type = check_block_type(shader, node, GLSL_STORAGE_UNIFORM);
+	instance = node->child[2];
+	if (instance != NULL && (instance->flags & GLSL_NODE_ARRAY) != 0U) {
+		glsl_error(shader, node->line, "arrays of uniform blocks are not supported");
+		return;
+	}
+
+	/* The block's symbol: the instance, or one without a scope named by the block. */
+	if (instance != NULL) {
+		check_reserved_name(shader, instance->name, node->line);
+		block = glsl_declare(shader, instance->name, GLSL_SYMBOL_VARIABLE, node->line);
+		if (block->type != NULL)
+			return;
+	} else {
+		block = glsl_alloc(&shader->arena, sizeof(*block));
+		block->name = node->name;
+		block->kind = GLSL_SYMBOL_VARIABLE;
+		block->line = node->line;
+		block->explicit_location = GLSL_NO_LOCATION;
+	}
+
+	/* A uniform read from its own buffer. */
+	block->type = type;
+	block->where = GLSL_VAR_BLOCK;
+	block->storage = GLSL_STORAGE_UNIFORM;
+	glsl_add_global(shader, block);
+	if (instance != NULL)
+		return;
+
+	/* Each member a name of its own, reading from the block. */
+	for (index = 0U; index < type->field_count; index++) {
+		check_reserved_name(shader, type->fields[index].name, node->line);
+		member = glsl_declare(shader, type->fields[index].name, GLSL_SYMBOL_VARIABLE, node->line);
+		if (member->type != NULL)
+			continue;
+		member->type = type->fields[index].type;
+		member->where = GLSL_VAR_BLOCK_MEMBER;
+		member->storage = GLSL_STORAGE_UNIFORM;
+		member->block = block;
+		member->member = index;
+	}
 }
 
 /* Makes the struct type of an interface block's members, with their matrix orders and interpolations. */
@@ -2973,8 +3041,12 @@ check_lvalue(
 	/* The variable. */
 	symbol = node->symbol;
 
-	/* Constants, uniforms and inputs are read-only. */
-	if (symbol->where == GLSL_VAR_CONST || symbol->where == GLSL_VAR_UNIFORM || symbol->where == GLSL_VAR_INPUT) {
+	/* Constants, uniforms (in the default block or a block of their own) and inputs are read-only. */
+	if (symbol->where == GLSL_VAR_CONST ||
+	    symbol->where == GLSL_VAR_UNIFORM ||
+	    symbol->where == GLSL_VAR_BLOCK ||
+	    symbol->where == GLSL_VAR_BLOCK_MEMBER ||
+	    symbol->where == GLSL_VAR_INPUT) {
 		glsl_error(shader, node->line, "%s cannot write '%s', which is read-only", what, symbol->name);
 		return -1;
 	}
@@ -3046,9 +3118,12 @@ check_use(
 
 	/* Each node of the list. */
 	for (; node != NULL; node = node->next) {
-		/* A variable named. */
-		if (node->kind == GLSL_N_IDENTIFIER && node->symbol != NULL)
+		/* A variable named (a block's member uses its block). */
+		if (node->kind == GLSL_N_IDENTIFIER && node->symbol != NULL) {
 			node->symbol->used = 1U;
+			if (node->symbol->block != NULL)
+				node->symbol->block->used = 1U;
+		}
 
 		/* A user function called. */
 		if (node->kind == GLSL_N_CALL && node->function != NULL)

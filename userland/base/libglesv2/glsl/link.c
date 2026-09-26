@@ -28,6 +28,9 @@
 #define LINK_MAX_UNIFORMS	256U
 #define LINK_MAX_LOCATIONS	32U
 
+/* The binding of the first uniform block (the default block is 0, the samplers 1 to 16). */
+#define LINK_FIRST_BLOCK_BINDING 32U
+
 /*
  * A link in progress: its arena, where failures jump to, its log, and the
  * program's uniforms.
@@ -47,6 +50,7 @@ static void link_error(struct link_state *state, const char *format, ...);
 static int link_same_type(const struct glsl_type *left, const struct glsl_type *right);
 static void link_uniforms(struct link_state *state, struct glsl_shader *shader);
 static void link_layout(struct link_state *state);
+static void link_blocks(struct link_state *state, struct glsl_shader *vertex, struct glsl_shader *fragment);
 static void link_attributes(struct link_state *state, struct glsl_shader *vertex, const struct glsl_binding *bindings, unsigned binding_count);
 static void link_varyings(struct link_state *state, struct glsl_shader *vertex, struct glsl_shader *fragment);
 static void link_outputs(struct link_state *state, struct glsl_shader *fragment);
@@ -113,6 +117,7 @@ glsl_link(
 	link_uniforms(state, vertex);
 	link_uniforms(state, fragment);
 	link_layout(state);
+	link_blocks(state, vertex, fragment);
 	link_attributes(state, vertex, bindings, binding_count);
 	link_varyings(state, vertex, fragment);
 	link_outputs(state, fragment);
@@ -306,6 +311,58 @@ link_layout(
 	/* libGLESv2 binds sixteen texture units. */
 	if (binding > 17U)
 		link_error(state, "more than 16 samplers");
+}
+
+/*
+ * Gives the uniform blocks their bindings: 32 on, in the order the vertex
+ * shader and then the fragment shader use them; a block of one name in
+ * both stages is one block (and must be the same).
+ */
+static void
+link_blocks(
+	struct link_state *state,
+	struct glsl_shader *vertex,
+	struct glsl_shader *fragment)
+{
+	struct glsl_symbol *symbol;
+	struct glsl_symbol *other;
+	unsigned binding;
+	int differs;
+	int same;
+
+	/* The vertex shader's blocks in order. */
+	binding = LINK_FIRST_BLOCK_BINDING;
+	for (symbol = vertex->globals; symbol != NULL; symbol = symbol->next_global) {
+		if (!symbol->used || symbol->where != GLSL_VAR_BLOCK)
+			continue;
+		symbol->binding = binding;
+		binding++;
+	}
+
+	/* The fragment shader's: the vertex shader's binding for a block of the same name, the next for a new one. */
+	for (symbol = fragment->globals; symbol != NULL; symbol = symbol->next_global) {
+		if (!symbol->used || symbol->where != GLSL_VAR_BLOCK)
+			continue;
+		symbol->binding = binding;
+		for (other = vertex->globals; other != NULL; other = other->next_global) {
+			if (!other->used || other->where != GLSL_VAR_BLOCK)
+				continue;
+			differs = strcmp(other->type->name, symbol->type->name);
+			if (differs != 0)
+				continue;
+
+			/* The same block: its binding, and the same members. */
+			same = link_same_type(other->type, symbol->type);
+			if (!same)
+				link_error(state, "uniform block '%s' differs between the two shaders", symbol->type->name);
+			symbol->binding = other->binding;
+			break;
+		}
+
+		/* A new block takes the next binding. */
+		if (other == NULL)
+			binding++;
+	}
 }
 
 /* Gives the vertex shader's attributes their locations: the bound ones, then the lowest free ones in order. */

@@ -1673,6 +1673,14 @@ program_link_code(
 		return -1;
 	}
 
+	/* Uniform blocks of their own need the uniform buffers of OpenGL ES 3.0's API (WS068 p005). */
+	if (vertex.named_count != 0U || fragment.named_count != 0U) {
+		(void)snprintf(log, PROGRAM_LOG, "uniform blocks need the OpenGL ES 3.0 API, which is not there yet\n");
+		gles_spirv_free(&vertex);
+		gles_spirv_free(&fragment);
+		return -1;
+	}
+
 	/* The stages must be the ones the shaders say. */
 	if (vertex.model != 0U || fragment.model != 4U) {
 		(void)snprintf(log, PROGRAM_LOG, "the SPIR-V stages do not match the shader types\n");
