@@ -28,7 +28,11 @@ ZEDBSD_EXTERNAL_ARCHIVE_SH := $(ZEDBSD_EXTERNAL_TOOLS)/archive.sh
 # Archives are architecture-independent, so every configured build shares one
 # distfiles directory.  Extracted trees and build directories are per package.
 ZEDBSD_EXTERNAL_DISTDIR := $(abspath $(ZEDBSD_EXTERNAL_ROOT)/build/distfiles)
-ZEDBSD_EXTERNAL_WORKROOT := $(abspath $(ZEDBSD_EXTERNAL_ROOT)/build/packages)
+# The work trees hold what was built for one architecture, so each
+# architecture has its own.  amd64 keeps the name it had before the others
+# could build packages, so its trees are not built again.
+ZEDBSD_EXTERNAL_WORKROOT := $(abspath $(ZEDBSD_EXTERNAL_ROOT)/build/packages$(if \
+	$(filter-out amd64,$(ZEDBSD_ARCHITECTURE)),-$(ZEDBSD_ARCHITECTURE),))
 
 # ---------------------------------------------------------------- cross build
 
@@ -37,7 +41,12 @@ ZEDBSD_EXTERNAL_WORKROOT := $(abspath $(ZEDBSD_EXTERNAL_ROOT)/build/packages)
 # agree without depending on include order.
 ZEDBSD_EXTERNAL_TRIPLE := $(strip \
 	$(if $(filter amd64,$(ZEDBSD_ARCHITECTURE)),x86_64-unknown-zedbsd,\
-	$(if $(filter i386,$(ZEDBSD_ARCHITECTURE)),i386-unknown-zedbsd,)))
+	$(if $(filter i386,$(ZEDBSD_ARCHITECTURE)),i386-unknown-zedbsd,\
+	$(if $(filter arm64,$(ZEDBSD_ARCHITECTURE)),aarch64-unknown-zedbsd,))))
+
+# The LLVM backend of the configured target, for the packages built from LLVM.
+ZEDBSD_EXTERNAL_LLVM_TARGET := $(strip \
+	$(if $(filter arm64,$(ZEDBSD_ARCHITECTURE)),AArch64,X86))
 ZEDBSD_EXTERNAL_LLVM_BIN := $(abspath $(ZEDBSD_EXTERNAL_ROOT)/build/llvm/bin)
 ZEDBSD_EXTERNAL_SYSROOT := \
 	$(abspath $(ZEDBSD_EXTERNAL_ROOT)/build/$(ZEDBSD_ARCHITECTURE)/sysroot)
