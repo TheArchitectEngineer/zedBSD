@@ -63,7 +63,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 
 | WS | Primary | 内容 | 状態 | 再開点 |
 | --- | --- | --- | --- | --- |
-| [WS001](ws001/ws.md) | MG002 | POSIX.1-2024 準拠 | incomplete | 準拠性の台帳の残件 |
+| [WS001](ws001/ws.md) | MG002 | POSIX.1-2024 準拠 | incomplete | 準拠性の台帳の残件。p033（patch の書き直し）・p034（df・du の書き直し）cleared、WS045 の GNU 拡張と統合して 2026-09-27 に main へ merge。サブエージェントが続行 |
 | [WS002](ws002/ws.md) | MG005 | システムサービス | completed | — |
 | [WS003](ws003/ws.md) | MG003 | 旧実機 bring-up（終了・再利用禁止） | completed（ユーザー判断で終了） | 未完了は WS027・WS028・F-004 へ |
 | [WS004](ws004/ws.md) | MG003 | ハードウェア拡張 | incomplete | NVMe 実機・転送・driver 共通化 |
