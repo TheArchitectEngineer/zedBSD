@@ -8,44 +8,74 @@
  */
 
 /*
- * Implements the zedBSD chgrp userland command.
+ * Changes the group of files (POSIX XCU chgrp).
+ *
+ *	chgrp [-h] group file...
+ *	chgrp -R [-H|-L|-P] group file...
+ *
+ * group is a group name or a numeric group ID.  The traversal and the
+ * symbolic link rules are those of chown, in userland/base/chown/change.c.
  */
 
-#include "userland/base/common/command.h"
+#include "userland/base/chown/change.h"
 #include <stdio.h>
-#include <unistd.h>
+#include <stdlib.h>
+
+static void usage(void);
 
 /*
- * Runs the chgrp command.
+ * Runs chgrp.
  */
 int
 main(
 	int argc,
 	char **argv)
 {
-	unsigned long long group;
-	int i, failed;
+	struct owner_change change;
+	int first;
+	int index;
+	int failed;
+	int status;
 
-	failed = 0;
+	/* Reads the options; the group and the files follow them. */
+	change.program = "chgrp";
+	first = owner_read_options(argc, argv, &change);
+	if (first < 0)
+		usage();
+	if (argc - first < 2)
+		usage();
 
-	/* Validates the command-line arguments. */
-	if (argc < 3 || command_parse_ull(argv[1], &group) ||
-	    group > (unsigned long long)(gid_t)-1) {
-		fprintf(stderr, "usage: chgrp gid file...\n");
-
-		/* Reports operation failure. */
+	/* Resolves the group before any file changes; the owner stays. */
+	change.uid = (uid_t)-1;
+	status = owner_parse_group(argv[first], &change.gid);
+	if (status != 0) {
+		fprintf(stderr, "chgrp: invalid group: '%s'\n", argv[first]);
 		return 1;
 	}
 
-	/* Process each remaining command-line operand. */
-	for (i = 2; i < argc; i++) {
-		/* Validates the command-line arguments. */
-		if (chown(argv[i], (uid_t)-1, (gid_t)group)) {
-			command_error("chgrp", argv[i]);
+	/* Changes each file; a failure is remembered and the rest go on. */
+	failed = 0;
+	for (index = first + 1; index < argc; index++) {
+		status = owner_change_operand(&change, argv[index]);
+		if (status != 0)
 			failed = 1;
-		}
 	}
 
-	/* Returns the computed result. */
-	return failed;
+	/* Reports whether any file could not be changed. */
+	if (failed)
+		return 1;
+
+	/* Succeeded: every file has its new group. */
+	return 0;
+}
+
+/* Writes the usage message and exits with an error status. */
+static void
+usage(void)
+{
+	/* Names the POSIX forms. */
+	fprintf(stderr,
+		"usage: chgrp [-h] group file...\n"
+		"       chgrp -R [-H|-L|-P] group file...\n");
+	exit(1);
 }

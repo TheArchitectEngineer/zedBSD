@@ -68,6 +68,33 @@ $(ZEDBSD_EXTERNAL_CROSS_STAMP): $(ZEDBSD_EXTERNAL_CROSS_INPUTS)
 packages-cross-toolchain: $(ZEDBSD_EXTERNAL_CROSS_STAMP)
 	@:
 
+# ------------------------------------------------------- the LLVM source tree
+
+# The packages built from LLVM (the C++ runtime, the compiler) use the source
+# tree the toolchain build extracted and verified.  That tree is the
+# toolchain's: it is checked against the release and its patch whenever it is
+# extracted, so a package never patches it.  Each gets a copy of its own and
+# patches that.  The copy is made of hard links, which costs no space; patch
+# replaces a file it changes rather than writing into it, so the toolchain's
+# names keep the verified contents.
+ZEDBSD_EXTERNAL_LLVM_SOURCE := $(abspath $(ZEDBSD_EXTERNAL_ROOT)/build/llvm-source)
+ZEDBSD_EXTERNAL_LLVM_VERIFIED = \
+	$(ZEDBSD_EXTERNAL_LLVM_SOURCE)/.zedbsd-source-verified-$(ZEDBSD_LLVM_VERSION)-$(ZEDBSD_LLVM_PATCH_LEVEL)
+
+# $(1) = the copy, $(2) = the patches, applied in order.  A changed patch set
+# or LLVM release makes a new copy from the verified tree.
+define ZEDBSD_EXTERNAL_LLVM_COPY
+	@set -eu; \
+	copy='$(1)'; \
+	rm -rf "$$copy" "$$copy.tmp"; \
+	mkdir -p "$${copy%/*}"; \
+	cp -al '$(ZEDBSD_EXTERNAL_LLVM_SOURCE)' "$$copy.tmp"; \
+	for patch in $(2); do \
+		patch -p1 --batch --forward --fuzz=0 -d "$$copy.tmp" < "$$patch"; \
+	done; \
+	mv "$$copy.tmp" "$$copy"
+endef
+
 # $(1) = package name, as declared by ZEDBSD_EXT_<name>_* variables.
 define ZEDBSD_EXTERNAL_SOURCE
 

@@ -97,6 +97,7 @@ gles_read_rgba(
 	VkBuffer buffer;
 	VkDeviceSize offset;
 	VkImage image;
+	uint32_t layer;
 	VkImageLayout rest_layout;
 	VkExtent2D extent;
 	unsigned char *mapped;
@@ -134,6 +135,7 @@ gles_read_rgba(
 		/* Its image and size. */
 		surface = target.surface;
 		image = target.fbo->color_image;
+		layer = target.fbo->color_layer;
 		rest_layout = target.fbo->color_layout;
 		extent = target.extent;
 		flip = 0;
@@ -164,6 +166,7 @@ gles_read_rgba(
 		zegl_frame_pass(surface, NULL);
 		zegl_frame_leave_pass(surface);
 		image = surface->images[surface->image];
+		layer = 0U;
 		rest_layout = surface->rest_layout;
 		extent = surface->extent;
 		flip = 1;
@@ -208,6 +211,7 @@ gles_read_rgba(
 	barrier.image = image;
 	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	barrier.subresourceRange.levelCount = 1U;
+	barrier.subresourceRange.baseArrayLayer = layer;
 	barrier.subresourceRange.layerCount = 1U;
 	vkCmdPipelineBarrier(surface->command, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
 			     0U, 0U, NULL, 0U, NULL, 1U, &barrier);
@@ -216,6 +220,7 @@ gles_read_rgba(
 	memset(&copy, 0, sizeof(copy));
 	copy.bufferOffset = offset;
 	copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	copy.imageSubresource.baseArrayLayer = layer;
 	copy.imageSubresource.layerCount = 1U;
 	copy.imageOffset.x = left;
 	copy.imageOffset.y = bottom;
@@ -1799,6 +1804,8 @@ draw_descriptors(
 	uint32_t samplers;
 	unsigned index;
 	int status;
+	int unit;
+	int cube;
 	int same;
 	int differs;
 	VkResult result;
@@ -1824,12 +1831,23 @@ draw_descriptors(
 	for (index = 0U; index < program->uniform_count && samplers < GLES_UNITS; index++) {
 		if (!program->uniforms[index].sampler)
 			continue;
+		cube = 0;
+		if (program->uniforms[index].type == GL_SAMPLER_CUBE)
+			cube = 1;
+
+		/* The unit's texture of the sampler's kind, or black. */
 		texture = NULL;
-		if (program->uniforms[index].unit >= 0 && (unsigned)program->uniforms[index].unit < GLES_UNITS)
-			texture = state->units[program->uniforms[index].unit];
+		unit = program->uniforms[index].unit;
+		if (unit >= 0 && (unsigned)unit < GLES_UNITS) {
+			texture = state->units[unit];
+			if (cube)
+				texture = state->cube_units[unit];
+		}
+
+		/* One that cannot be sampled reads as black. */
 		status = gles_texture_complete(texture);
 		if (!status)
-			texture = gles_texture_black(state);
+			texture = gles_texture_black(state, cube);
 		if (texture == NULL)
 			return VK_NULL_HANDLE;
 		status = gles_texture_sync(state, texture);

@@ -8,35 +8,37 @@
  */
 
 /*
- * Makes directories (the mkdir command).
+ * Makes directories (POSIX XCU mkdir).
  *
- *	mkdir [-pv] [-m mode] directory...
+ *	mkdir [-pv] [-m mode] dir...
  *
- * -p makes the missing directories above each one too, and is content when
- * the directory is already there.  -m gives the last directory the mode (in
- * octal) whatever the umask; the ones -p makes above it have the usual
- * mode.  -v (GNU) writes each directory made.  The long options are GNU's
- * (--parents, --mode, --verbose), and options may follow operands unless
- * POSIXLY_CORRECT is set.
+ * Each directory is made with rwx for all, less the file mode creation
+ * mask; -m gives it exactly the mode instead, a symbolic mode counting
+ * from a=rwx.  -p also makes every missing parent, each with the mask's
+ * bits and at least owner write and search so that the next one can be
+ * made in it, and accepts a directory that already exists.
+ *
+ * GNU's -v writes each directory made, and the long options --parents,
+ * --mode and --verbose are taken; options may follow operands unless
+ * POSIXLY_CORRECT is set (ws045).
  */
 
+#include "userland/base/chmod/mode.h"
 #include "userland/base/common/command.h"
-
 #include <errno.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 
 /* The codes of the long options that have no letter. */
-#define OPTION_HELP	256
-#define OPTION_VERSION	257
+#define OPTION_HELP 256
+#define OPTION_VERSION 257
 
 /*
- * The options written in full.
- *
- * The table is read by the scan of the command line only; the letter a
- * long option shares its code with makes the two forms one case.
+ * The options written in full, read by the scan of the command line; a
+ * long option shares its code with its letter.
  */
 static const struct command_long_option mkdir_long_options[] = {
 	{"help", COMMAND_VALUE_NONE, OPTION_HELP},
@@ -47,77 +49,88 @@ static const struct command_long_option mkdir_long_options[] = {
 	{NULL, 0, 0}
 };
 
-/* What the command line asks for. */
-struct options {
+/*
+ * What one run of mkdir makes.
+ *
+ * One instance lives for the run.  mode is the mode of each operand's
+ * directory and exact says whether it must be set despite the mask;
+ * verbose (-v) writes each directory made.
+ */
+struct mkdir_request {
 	int parents;
+	int exact;
 	int verbose;
-	int have_mode;
 	mode_t mode;
+	mode_t mask;
 };
 
-static int read_options(int argc, char **argv, struct options *options);
-static int make_directory(const struct options *options, const char *path, int last);
-static int make_parents(const struct options *options, const char *name);
-static int make_existing(const struct options *options, const char *path, int last);
+static int read_options(int argc, char **argv, struct mkdir_request *request);
+static int make_operand(const struct mkdir_request *request, const char *path);
+static int make_parents(const struct mkdir_request *request, const char *path);
+static int make_directory(const struct mkdir_request *request, const char *path, mode_t mode, int exact, int existing_ok);
+static int is_directory(const char *path);
 static void usage(void);
 
 /*
- * Runs the mkdir command.
+ * Runs mkdir.
  */
 int
 main(
 	int argc,
 	char **argv)
 {
-	struct options options;
+	struct mkdir_request request;
 	int count;
 	int index;
-	int result;
 	int failed;
+	int status;
 
-	/* The options; the directories follow argv[0]. */
-	memset(&options, 0, sizeof(options));
-	count = read_options(argc, argv, &options);
+	/* Reads the options; the directories are left from argv[1] on. */
+	count = read_options(argc, argv, &request);
 	if (count == 0)
 		usage();
 
-	/* Each directory. */
+	/* Makes each directory; a failure is remembered and the rest go on. */
 	failed = 0;
 	for (index = 1; index <= count; index++) {
-		if (options.parents)
-			result = make_parents(&options, argv[index]);
-		else
-			result = make_directory(&options, argv[index], 1);
-		if (result != 0) {
-			command_error("mkdir", argv[index]);
+		status = make_operand(&request, argv[index]);
+		if (status != 0)
 			failed = 1;
-		}
 	}
 
-	/* Some directory could not be made. */
+	/* Reports whether any directory could not be made. */
 	if (failed)
 		return 1;
 
-	/* Succeeded. */
+	/* Succeeded: every directory exists. */
 	return 0;
 }
 
 /*
- * Reads the options; returns the number of operands, which are left in
- * argv from argv[1] on.
+ * Reads the options and returns the number of operands, which are left in
+ * argv from argv[1] on.  The mode of -m is computed here, from a=rwx.
  */
 static int
 read_options(
 	int argc,
 	char **argv,
-	struct options *options)
+	struct mkdir_request *request)
 {
 	struct command_options scan;
-	unsigned mode;
-	int code;
-	int result;
+	const char *mode_text;
+	int option;
+	int status;
 
-	/* The scan of the command line. */
+	/* Without -m the mode is rwx for all less the mask. */
+	request->parents = 0;
+	request->exact = 0;
+	request->verbose = 0;
+	request->mask = umask(0);
+	umask(request->mask);
+	request->mode = 0777 & ~request->mask;
+	mode_text = NULL;
+
+	/* Reads -p, -v and -m, and their long forms. */
 	memset(&scan, 0, sizeof(scan));
 	scan.argc = argc;
 	scan.argv = argv;
@@ -125,173 +138,210 @@ read_options(
 	scan.letters = "pvm:";
 	scan.names = mkdir_long_options;
 	command_options_start(&scan);
-
-	/* Each option in turn. */
 	for (;;) {
-		code = command_options_next(&scan);
-		if (code == COMMAND_OPTION_END)
+		option = command_options_next(&scan);
+		if (option == COMMAND_OPTION_END)
 			break;
-		switch (code) {
+
+		/* Records what the option asks for. */
+		switch (option) {
 		case 'p':
-			options->parents = 1;
+			request->parents = 1;
 			break;
 		case 'v':
-			options->verbose = 1;
+			request->verbose = 1;
 			break;
 		case 'm':
-			/* The mode, in octal. */
-			result = command_parse_mode(scan.value, &mode);
-			if (result != 0) {
-				fprintf(stderr, "mkdir: invalid mode '%s'\n",
-					scan.value);
-				exit(1);
-			}
-
-			/* The mode for the last directory. */
-			options->mode = (mode_t)mode;
-			options->have_mode = 1;
+			mode_text = scan.value;
 			break;
 		case OPTION_VERSION:
 			printf("mkdir (zedBSD) 1.0\n");
 			exit(0);
+			break;
 		default:
 			usage();
+			break;
 		}
 	}
 
-	/* Succeeded: the operands follow argv[0]. */
+	/* Computes the -m mode from a=rwx; it is set exactly. */
+	if (mode_text != NULL) {
+		status = mode_apply(mode_text, 0777, request->mask, 1, &request->mode);
+		if (status != 0) {
+			fprintf(stderr, "mkdir: invalid mode: '%s'\n", mode_text);
+			exit(1);
+		}
+
+		/* The mode is set whatever the mask. */
+		request->exact = 1;
+	}
+
+	/* Reports how many operands there are. */
 	return scan.operand_count;
 }
 
-/*
- * Makes one directory: the last one gets -m's mode, exactly.  Returns 0,
- * or -1 with errno set.
- */
+/* Makes one directory operand, and with -p its missing parents. */
 static int
-make_directory(
-	const struct options *options,
-	const char *path,
-	int last)
+make_operand(
+	const struct mkdir_request *request,
+	const char *path)
 {
-	int result;
+	int status;
 
-	/* The directory, with the usual mode that the umask narrows. */
-	result = mkdir(path, 0777);
-	if (result != 0)
-		return -1;
-
-	/* -m sets the last one's mode whatever the umask. */
-	if (last && options->have_mode) {
-		result = chmod(path, options->mode);
-		if (result != 0)
+	/* Makes the parents first with -p. */
+	if (request->parents) {
+		status = make_parents(request, path);
+		if (status != 0)
 			return -1;
 	}
 
-	/* Succeeded: said so with -v. */
-	if (options->verbose)
+	/* Makes the directory; with -p an existing one is accepted. */
+	status = make_directory(request, path, request->mode, request->exact, request->parents);
+	if (status != 0)
+		return -1;
+
+	/* Succeeded: the directory exists. */
+	return 0;
+}
+
+/*
+ * Makes every missing parent of a pathname.  A parent gets the mask's
+ * bits with owner write and search added.
+ */
+static int
+make_parents(
+	const struct mkdir_request *request,
+	const char *path)
+{
+	char prefix[PATH_MAX + 1];
+	mode_t mode;
+	size_t length;
+	size_t end;
+	int status;
+	int exact;
+
+	/* Copies the pathname so that it can be cut at each slash. */
+	length = strlen(path);
+	if (length > PATH_MAX) {
+		fprintf(stderr, "mkdir: %s: %s\n", path, strerror(ENAMETOOLONG));
+		return -1;
+	}
+
+	/* Copies it with its terminator. */
+	memcpy(prefix, path, length + 1);
+
+	/* Drops trailing slashes; the last component is the operand's own. */
+	while (length > 1 && prefix[length - 1] == '/')
+		length--;
+	prefix[length] = '\0';
+
+	/*
+	 * The parent mode: the mask's bits with owner write and search, which
+	 * must be set explicitly when the mask removes them.
+	 */
+	mode = (0777 & ~request->mask) | S_IWUSR | S_IXUSR;
+	exact = 0;
+	if ((request->mask & (S_IWUSR | S_IXUSR)) != 0)
+		exact = 1;
+
+	/* Makes each prefix that ends before a slash. */
+	end = 0;
+	while (end < length) {
+		/* Finds the end of the next component. */
+		while (end < length && prefix[end] == '/')
+			end++;
+		while (end < length && prefix[end] != '/')
+			end++;
+
+		/* The last component is made by the caller. */
+		if (end >= length)
+			break;
+
+		/* Makes the parent, accepting an existing directory. */
+		prefix[end] = '\0';
+		status = make_directory(request, prefix, mode, exact, 1);
+		prefix[end] = '/';
+		if (status != 0)
+			return -1;
+	}
+
+	/* Succeeded: every parent exists. */
+	return 0;
+}
+
+/*
+ * Makes one directory with a mode, setting the mode exactly when asked.
+ * An existing directory is accepted when existing_ok is set.
+ */
+static int
+make_directory(
+	const struct mkdir_request *request,
+	const char *path,
+	mode_t mode,
+	int exact,
+	int existing_ok)
+{
+	int status;
+	int error;
+	int directory;
+
+	/* Makes the directory. */
+	status = mkdir(path, mode);
+	if (status != 0) {
+		error = errno;
+
+		/* With -p an existing directory is what was asked for. */
+		if (error == EEXIST && existing_ok) {
+			directory = is_directory(path);
+			if (directory)
+				return 0;
+			error = ENOTDIR;
+		}
+
+		/* Anything else fails the operand. */
+		fprintf(stderr, "mkdir: %s: %s\n", path, strerror(error));
+		return -1;
+	}
+
+	/* Sets the mode the mask would have narrowed, and special bits. */
+	if (exact) {
+		status = chmod(path, mode);
+		if (status != 0) {
+			fprintf(stderr, "mkdir: %s: %s\n", path, strerror(errno));
+			return -1;
+		}
+	}
+
+	/* Succeeded: the directory was made, which -v tells. */
+	if (request->verbose)
 		printf("mkdir: created directory '%s'\n", path);
 	return 0;
 }
 
-/*
- * -p: makes each missing directory of a path, from the top down; one that
- * is there already is passed.  Returns 0, or -1 with errno set.
- */
+/* Tells whether a pathname names a directory, following links. */
 static int
-make_parents(
-	const struct options *options,
-	const char *name)
+is_directory(
+	const char *path)
 {
-	char *path;
-	size_t length;
-	size_t index;
-	int last;
-	int result;
+	struct stat status_of_path;
+	int status;
+	int directory;
 
-	/* A name to make. */
-	length = strlen(name);
-	if (length == 0) {
-		errno = ENOENT;
-		return -1;
-	}
-
-	/* A copy of the name, cut at each slash in turn. */
-	path = malloc(length + 1U);
-	if (path == NULL)
-		return -1;
-	memcpy(path, name, length + 1U);
-
-	/* Each part's end: before a slash (not in a run of them), and the end. */
-	for (index = 1; index <= length; index++) {
-		if (index < length) {
-			if (path[index] != '/')
-				continue;
-			if (path[index - 1U] == '/')
-				continue;
-		}
-
-		/* The directory up to here; the last is the whole name. */
-		last = 0;
-		if (index == length)
-			last = 1;
-		path[index] = '\0';
-		result = make_existing(options, path, last);
-		if (result != 0) {
-			free(path);
-			return -1;
-		}
-
-		/* The slash back, for the next part. */
-		if (index < length)
-			path[index] = '/';
-	}
-
-	/* Succeeded. */
-	free(path);
-	return 0;
-}
-
-/*
- * Makes a directory for -p, content when a directory is there already.
- * Returns 0, or -1 with errno set.
- */
-static int
-make_existing(
-	const struct options *options,
-	const char *path,
-	int last)
-{
-	struct stat status;
-	int result;
-
-	/* The directory, made. */
-	result = make_directory(options, path, last);
-	if (result == 0)
+	/* Reads the file. */
+	status = stat(path, &status_of_path);
+	if (status != 0)
 		return 0;
 
-	/* Anything but a name that is there is an error. */
-	if (errno != EEXIST)
-		return -1;
-
-	/* What is there must be a directory. */
-	result = stat(path, &status);
-	if (result != 0)
-		return -1;
-	if ((status.st_mode & S_IFMT) != S_IFDIR) {
-		errno = ENOTDIR;
-		return -1;
-	}
-
-	/* Succeeded: the directory was there. */
-	return 0;
+	/* Reports whether it is a directory. */
+	directory = S_ISDIR(status_of_path.st_mode);
+	return directory;
 }
 
-/* Reports the usage and ends mkdir. */
+/* Writes the usage message and exits with an error status. */
 static void
-usage(
-	void)
+usage(void)
 {
-	/* The form. */
-	fprintf(stderr, "usage: mkdir [-pv] [-m mode] directory...\n");
+	/* Names the POSIX form. */
+	fprintf(stderr, "usage: mkdir [-pv] [-m mode] dir...\n");
 	exit(1);
 }

@@ -54,6 +54,9 @@
 #define GLES_UNITS		16U
 #define GLES_LEVELS		15U
 
+/* The faces of a cube map (a 2D texture uses the first). */
+#define GLES_FACES		6U
+
 /* How many of Vulkan's core formats the vertex format cache covers. */
 #define GLES_FORMATS		192U
 
@@ -101,16 +104,17 @@ struct gles_level {
 };
 
 /*
- * A 2D texture: its levels on the CPU, its sampling state, and the device
- * image made from the levels.
+ * A 2D texture or a cube map: its levels on the CPU, its sampling state,
+ * and the device image made from the levels (a cube map's has six
+ * layers).
  */
 struct gles_texture {
-	/* The GL name and the target it was first bound to. */
+	/* The GL name and the target it was first bound to (0 before its first bind). */
 	GLuint name;
 	GLenum target;
 
-	/* The levels (width 0 when a level is not specified). */
-	struct gles_level levels[GLES_LEVELS];
+	/* The levels of each face, face * GLES_LEVELS + level (a 2D texture has face 0 only; width 0 when a level is not specified). */
+	struct gles_level levels[GLES_FACES * GLES_LEVELS];
 
 	/* The filters and the wrap modes. */
 	GLenum min_filter;
@@ -128,15 +132,15 @@ struct gles_texture {
 	uint32_t level_count;
 	uint64_t used;
 
-	/* The view of level 0 a framebuffer object draws into, made with the image. */
-	VkImageView attach_view;
+	/* The views of each face's level 0 a framebuffer object draws into, made with the image. */
+	VkImageView attach_views[GLES_FACES];
 
 	/*
-	 * Nonzero when a framebuffer object drew into the image since its
-	 * levels were last read: level 0 on the CPU is stale, and is read back
-	 * before the CPU changes the texture (gles_texture_fetch).
+	 * The faces a framebuffer object drew into since their levels were
+	 * last read (bit f: face f): their level 0 on the CPU is stale, and is
+	 * read back before the CPU changes the texture (gles_texture_fetch).
 	 */
-	int gpu_written;
+	unsigned gpu_written;
 };
 
 /* What an attachment point of a framebuffer object names. */
@@ -174,6 +178,9 @@ struct gles_renderbuffer {
 struct gles_attachment {
 	int kind;
 	GLuint name;
+
+	/* The face of a cube map drawn into (0 for a 2D texture). */
+	unsigned face;
 };
 
 /*
@@ -197,6 +204,7 @@ struct gles_framebuffer {
 
 	/* The colour image (glReadPixels reads it) and the layout it rests in (a texture's is sampled, a renderbuffer's attached), and the depth image's aspects (0: none). */
 	VkImage color_image;
+	uint32_t color_layer;
 	VkImageLayout color_layout;
 	VkImageAspectFlags depth_aspects;
 };
@@ -547,9 +555,10 @@ struct gles_state {
 	/* The current program. */
 	struct gles_program *program;
 
-	/* The active texture unit and each unit's 2D texture. */
+	/* The active texture unit, and each unit's 2D texture and cube map. */
 	unsigned active_unit;
 	struct gles_texture *units[GLES_UNITS];
+	struct gles_texture *cube_units[GLES_UNITS];
 
 	/* Blending. */
 	int blend;
@@ -655,8 +664,9 @@ struct gles_state {
 	/* The fixed-function layer's state (libGL), NULL until it is made. */
 	void *fixed;
 
-	/* The texture sampled where a unit has no complete texture (black), made at its first use. */
+	/* The textures sampled where a unit has no complete texture (black), a 2D one and a cube map, made at their first use. */
 	struct gles_texture *black;
+	struct gles_texture *black_cube;
 };
 
 /*
@@ -710,9 +720,9 @@ int gles_upload_end(struct gles_state *state);
 int gles_texture_sync(struct gles_state *state, struct gles_texture *texture);
 int gles_texture_complete(struct gles_texture *texture);
 VkSampler gles_sampler_get(struct gles_state *state, struct gles_texture *texture);
-struct gles_texture *gles_texture_black(struct gles_state *state);
+struct gles_texture *gles_texture_black(struct gles_state *state, int cube);
 void gles_texture_free(struct gles_state *state, struct gles_texture *texture);
-void gles_texture_define(struct gles_texture *texture, GLint level, int width, int height, unsigned char *pixels);
+void gles_texture_define(struct gles_texture *texture, unsigned face, GLint level, int width, int height, unsigned char *pixels);
 
 /* framebuffer.c: framebuffer objects, renderbuffers, and the target of a draw. */
 int gles_target_open(struct zegl_context *context, struct gles_state *state, const VkClearValue *clear, struct gles_target *target);

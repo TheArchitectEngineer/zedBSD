@@ -153,6 +153,7 @@ signal_stop_before_return(
 	int candidate;
 	int signo;
 
+	/* Nothing has interrupted the caller yet. */
 	interrupt_pending = 0;
 
 	/* Kernel threads and threads without a process never stop here. */
@@ -287,6 +288,7 @@ signal_action_set(
 	unsigned long irq;
 	unsigned completion_count;
 
+	/* No timer has completed yet. */
 	completion_count = 0;
 
 	/* Rejects a bad signal, or a change to SIGKILL or SIGSTOP. */
@@ -343,22 +345,28 @@ signal_kill_pending(
 	sigset_t pending;
 	sigset_t kill;
 
-	/* A thread without a process has no signals. */
+	/* No thread has no signals. */
 	if (thread == NULL)
 		return 0;
+
+	/* A thread without a process has no signals. */
 	process = thread->proc;
 	if (process == NULL)
 		return 0;
 
 	/* Samples both pending sets under the process lock. */
 	irq = spin_lock_irqsave(&process->lock);
+
 	pending = thread->signal_pending | process->signal_pending;
+
 	spin_unlock_irqrestore(&process->lock, irq);
 
 	/* Reports the unmaskable kill. */
 	kill = SIGNAL_BIT(SIGKILL);
 	if ((pending & kill) != 0)
 		return 1;
+
+	/* Succeeded: no kill is pending. */
 	return 0;
 }
 
@@ -1078,6 +1086,7 @@ signal_send_thread_info(
 	unsigned long irq;
 	unsigned completion_count;
 
+	/* No timer has completed yet. */
 	completion_count = 0;
 
 	/* Rejects a thread without a process or a bad signal. */

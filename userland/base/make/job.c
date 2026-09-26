@@ -46,6 +46,9 @@
 /*
  * A recipe that is running: its target, its lines and the variables they
  * expand with, how far it has got, and the shell running a command now.
+ *
+ * A job lives from job_start until job_end, which frees it and the
+ * recipe's variables it owns.
  */
 struct job {
 	struct job *next;
@@ -58,49 +61,78 @@ struct job {
 	char *expanded;			/* that line expanded, or NULL before the first */
 	char *command;			/* the next command of the expansion, or NULL when none is left */
 	int force;			/* the line names $(MAKE), so -n runs it */
-	int ignore_errors;
-	int silent;
+	int ignore_errors;		/* the target's failures are ignored (-i, .IGNORE) */
+	int silent;			/* the target's commands are not echoed (-s, .SILENT) */
 	int command_ignored;		/* the running command had - */
 	pid_t child;			/* the shell running a command */
 	int holds_token;		/* the job took a token from the jobserver */
 	int removable;			/* an interrupt may remove its target */
 	int existed;			/* its target's file before the recipe */
-	long long seconds;
+	long long seconds;		/* that file's time before the recipe */
 	long nanoseconds;
 };
 
-/* The jobs that are running, and how many. */
+/*
+ * The jobs that are running, newest first.  job_start adds a job and
+ * job_end takes it out; the interrupt handler walks the list.
+ */
 static struct job *jobs;
+
+/* The number of jobs on the list. */
 static size_t job_count;
 
-/* Whether the job this make has without a token is running. */
+/*
+ * Whether the job this make has without a token is running.  The first
+ * job to start takes it; any other takes a token.
+ */
 static int own_job_busy;
 
 /*
- * The jobserver: its pipe (-1 when there is none), the tokens taken but
- * not yet given to a job, and whether a walk found no token for a recipe.
+ * The reading end of the jobserver's pipe, or -1 when there is none: a
+ * make runs one job at a time then, unless -j gave no limit.
  */
 static int server_read = -1;
+
+/* The writing end of the jobserver's pipe, or -1. */
 static int server_write = -1;
+
+/*
+ * The tokens this make has taken from the pipe but not yet given to a
+ * job.  A token no recipe wants goes back before make waits.
+ */
 static size_t spare_tokens;
+
+/*
+ * Whether the last walk found a recipe with no free job, so that the next
+ * wait also waits for a token.
+ */
 static int token_wanted;
 
-/* The flags a recursive make inherits for the jobs: -jN and the jobserver. */
+/*
+ * The flags a recursive make inherits for the jobs in MAKEFLAGS: -jN and
+ * the jobserver, set once by job_server_start.
+ */
 static char server_flags[64];
 
 /*
- * The descriptor a wait for a token reads.  The end of a child closes it,
- * so that the read returns rather than waiting on while a job has ended.
+ * The descriptor a wait for a token reads, or -1.  It is a copy of the
+ * pipe's reading end that the end of a child closes (in the SIGCHLD
+ * handler), so that the read returns rather than waiting on while a job
+ * has ended.
  */
 static volatile sig_atomic_t token_descriptor = -1;
 
 static int job_advance(struct job *job);
+static int job_next_line(struct job *job);
 static int start_command(struct job *job, char *command);
 static void job_end(struct job *job);
+static void inherit_server(const char *inherited);
+static void create_server(void);
 static void wait_for_token(void);
 static void reap(int block);
 static void child_ended(pid_t child, int raw_status);
 static void remember_target(struct job *job);
+static int target_changed(const struct job *job);
 static void give_token(void);
 static void child_signal(int signal_number);
 static int names_make(const char *line);
@@ -127,9 +159,9 @@ job_start(
 	int silent)
 {
 	struct job *job;
-	int result;
+	int outcome;
 
-	/* The job, before its first line. */
+	/* Makes the job, before its first line. */
 	job = make_malloc(sizeof(*job));
 	memset(job, 0, sizeof(*job));
 	job->target = target;
@@ -147,7 +179,7 @@ job_start(
 	job->environment = variable_environment(scope, &variables->automatic);
 	remember_target(job);
 
-	/* The job this make has of its own, or a token taken for it. */
+	/* Takes the job this make has of its own, or a token taken for it. */
 	if (!own_job_busy) {
 		own_job_busy = 1;
 	} else if (server_read >= 0) {
@@ -155,17 +187,21 @@ job_start(
 		job->holds_token = 1;
 	}
 
-	/* The job is running. */
+	/* Puts the job on the list of running jobs. */
 	job->next = jobs;
 	jobs = job;
 	job_count++;
 
-	/* The first command, or the end of a recipe that runs nothing. */
-	result = job_advance(job);
-	if (result == UPDATE_PENDING)
+	/* Runs the first command; a recipe that runs nothing ends at once. */
+	outcome = job_advance(job);
+	if (outcome == UPDATE_PENDING)
 		return UPDATE_PENDING;
+
+	/* Ends the recipe that ran nothing. */
 	job_end(job);
-	return result;
+
+	/* Succeeded: 0, or 1 when the recipe failed. */
+	return outcome;
 }
 
 /*
@@ -177,8 +213,11 @@ job_slot_free(
 	void)
 {
 	/* .NOTPARALLEL: one recipe at a time. */
-	if (make_not_parallel)
-		return job_count == 0;
+	if (make_not_parallel) {
+		if (job_count == 0)
+			return 1;
+		return 0;
+	}
 
 	/* This make's own job. */
 	if (!own_job_busy)
@@ -196,7 +235,7 @@ job_slot_free(
 	if (spare_tokens > 0)
 		return 1;
 
-	/* None. */
+	/* No job is free. */
 	return 0;
 }
 
@@ -247,6 +286,7 @@ size_t
 job_running(
 	void)
 {
+	/* Reports the length of the list of running jobs. */
 	return job_count;
 }
 
@@ -260,59 +300,27 @@ job_server_start(
 	const char *inherited,
 	int jobs_on_command_line)
 {
-	const char *cursor;
-	char *end;
-	char token;
-	int descriptors[2];
-	int read_end;
-	int write_end;
-	int matched;
-	int error;
-	int index;
-
 	/* A jobserver from the make above, unless -j was given here. */
 	if (inherited != NULL && !jobs_on_command_line) {
-		read_end = (int)strtol(inherited, &end, 10);
-		write_end = -1;
-		matched = 0;
-		if (end != inherited && *end == ',') {
-			cursor = end + 1;
-			write_end = (int)strtol(cursor, &end, 10);
-			if (end != cursor && *end == '\0')
-				matched = 1;
-		}
-
-		/* The two descriptors must be open in this make. */
-		if (matched && fcntl(read_end, F_GETFD) >= 0 && fcntl(write_end, F_GETFD) >= 0) {
-			server_read = read_end;
-			server_write = write_end;
-			make_options.jobs = 2;
-		} else {
-			make_message("warning: jobserver unavailable: using -j1.  Add '+' to parent make rule.");
-			make_options.jobs = 1;
-		}
+		inherit_server(inherited);
 	} else if (inherited != NULL && make_options.jobs != 1) {
-		make_message("warning: -j%d forced in submake: resetting jobserver mode.", make_options.jobs);
+		make_message("warning: -j%d forced in submake: resetting jobserver mode.",
+			     make_options.jobs);
 	}
 
-	/* -jN with more than one job and no jobserver yet: a pipe with a token for each job beyond the first. */
-	if (server_read < 0 && make_options.jobs > 1) {
-		error = pipe(descriptors);
-		if (error != 0)
-			make_fatal("pipe: %s", strerror(errno));
-		server_read = descriptors[0];
-		server_write = descriptors[1];
-		token = JOB_TOKEN;
-		for (index = 1; index < make_options.jobs; index++) {
-			if (write(server_write, &token, 1) != 1)
-				make_fatal("jobserver: %s", strerror(errno));
-		}
-	}
+	/* -jN with more than one job and no jobserver yet starts one. */
+	if (server_read < 0 && make_options.jobs > 1)
+		create_server();
 
-	/* What a recursive make inherits. */
+	/* Writes what a recursive make inherits. */
 	server_flags[0] = '\0';
 	if (server_read >= 0) {
-		snprintf(server_flags, sizeof(server_flags), "-j%d --jobserver-auth=%d,%d", make_options.jobs, server_read, server_write);
+		snprintf(server_flags,
+			 sizeof(server_flags),
+			 "-j%d --jobserver-auth=%d,%d",
+			 make_options.jobs,
+			 server_read,
+			 server_write);
 	} else if (make_options.jobs == 0) {
 		snprintf(server_flags, sizeof(server_flags), "-j");
 	}
@@ -323,6 +331,7 @@ const char *
 job_server_flags(
 	void)
 {
+	/* Reports the flags job_server_start wrote. */
 	return server_flags;
 }
 
@@ -331,7 +340,7 @@ void
 job_server_finish(
 	void)
 {
-	/* Each spare token. */
+	/* Gives back each spare token. */
 	while (spare_tokens > 0) {
 		give_token();
 		spare_tokens--;
@@ -351,13 +360,14 @@ job_shell_output(
 	struct buffer output;
 	char **environment;
 	char *shell;
+	char *text;
 	char chunk[4096];
 	ssize_t count;
 	int pipe_ends[2];
 	int child;
 	int error;
 
-	/* The shell and the environment of the global scope. */
+	/* Finds the shell and the environment of the global scope. */
 	context.scope = &make_global_scope;
 	context.automatic = NULL;
 	context.file = NULL;
@@ -365,15 +375,17 @@ job_shell_output(
 	shell = shell_of(&context);
 	environment = variable_environment(&make_global_scope, NULL);
 
-	/* A pipe the command writes into. */
+	/* Creates the pipe the command writes into. */
 	memset(&output, 0, sizeof(output));
 	error = pipe(pipe_ends);
 	if (error != 0)
 		make_fatal("pipe: %s", strerror(errno));
+
+	/* Starts the command, after what make wrote so far. */
 	fflush(stdout);
 	child = spawn(shell, command, environment, pipe_ends[1]);
 
-	/* Everything the command writes, until it closes the pipe. */
+	/* Reads everything the command writes, until it closes the pipe. */
 	close(pipe_ends[1]);
 	for (;;) {
 		count = read(pipe_ends[0], chunk, sizeof(chunk));
@@ -387,11 +399,14 @@ job_shell_output(
 	/* The command has closed its output. */
 	close(pipe_ends[0]);
 
-	/* Succeeded: the output, and the status. */
+	/* Waits for the command and frees what running it needed. */
 	*status = wait_for(child);
 	free(shell);
 	variable_free_environment(environment);
-	return buffer_finish(&output);
+	text = buffer_finish(&output);
+
+	/* Succeeded: the output; the status is stored. */
+	return text;
 }
 
 /*
@@ -427,27 +442,18 @@ job_advance(
 	char *command;
 	char *end;
 	int running;
+	int more;
 
-	/* Commands until one runs in a child. */
+	/* Starts commands until one runs in a child. */
 	for (;;) {
-		/* The next line, when the commands of this one are done. */
+		/* Goes to the next line when the commands of this one are done. */
 		if (job->command == NULL) {
-			if (job->expanded != NULL) {
-				free(job->expanded);
-				job->expanded = NULL;
-				job->line_index++;
-			}
-			if (job->line_index >= job->recipe->count)
+			more = job_next_line(job);
+			if (!more)
 				return 0;
-
-			/* A line that names $(MAKE) runs even with -n (GNU make and POSIX). */
-			job->force = names_make(job->recipe->lines[job->line_index]);
-			job->context.line = job->recipe->line_numbers[job->line_index];
-			job->expanded = expand(&job->context, job->recipe->lines[job->line_index]);
-			job->command = job->expanded;
 		}
 
-		/* The next command, cut at a newline that no backslash escapes. */
+		/* Cuts the next command at a newline that no backslash escapes. */
 		command = job->command;
 		end = strchr(command, '\n');
 		while (end != NULL && end > command && end[-1] == '\\')
@@ -458,11 +464,45 @@ job_advance(
 			job->command = end + 1;
 		}
 
-		/* The command, which may run in a child. */
+		/* Starts the command, which may run in a child. */
 		running = start_command(job, command);
 		if (running)
 			return UPDATE_PENDING;
 	}
+}
+
+/*
+ * Expands the next line of a job's recipe into its commands.  Returns 0
+ * when the recipe has no more lines.
+ */
+static int
+job_next_line(
+	struct job *job)
+{
+	size_t index;
+
+	/* Leaves the line whose commands are done. */
+	if (job->expanded != NULL) {
+		free(job->expanded);
+		job->expanded = NULL;
+		job->line_index++;
+	}
+
+	/* The recipe is over after its last line. */
+	index = job->line_index;
+	if (index >= job->recipe->count)
+		return 0;
+
+	/* A line that names $(MAKE) runs even with -n (GNU make and POSIX). */
+	job->force = names_make(job->recipe->lines[index]);
+
+	/* Expands the line; its commands are taken from the expansion. */
+	job->context.line = job->recipe->line_numbers[index];
+	job->expanded = expand(&job->context, job->recipe->lines[index]);
+	job->command = job->expanded;
+
+	/* Succeeded: the line's commands are next. */
+	return 1;
 }
 
 /*
@@ -481,7 +521,7 @@ start_command(
 	int ignore;
 	int force;
 
-	/* The prefixes @ (silent), - (ignore) and +, with blanks among them. */
+	/* Reads the prefixes @ (silent), - (ignore) and +, with blanks among them. */
 	quiet = job->silent;
 	ignore = job->ignore_errors;
 	force = job->force;
@@ -496,7 +536,7 @@ start_command(
 			break;
 		}
 
-		/* Past the prefix. */
+		/* Steps past the prefix. */
 		command++;
 	}
 
@@ -513,12 +553,14 @@ start_command(
 	if (command[0] == '\0')
 		return 0;
 
-	/* The shell runs it. */
+	/* Finds the shell of the global scope. */
 	context.scope = &make_global_scope;
 	context.automatic = NULL;
 	context.file = NULL;
 	context.line = 0;
 	shell = shell_of(&context);
+
+	/* Starts the shell on the command, after what make wrote so far. */
 	fflush(stdout);
 	job->command_ignored = ignore;
 	job->child = spawn(shell, command, job->environment, -1);
@@ -538,23 +580,25 @@ job_end(
 {
 	struct job **link;
 
-	/* Out of the list of running jobs. */
+	/* Takes the job out of the list of running jobs. */
 	for (link = &jobs; *link != NULL; link = &(*link)->next) {
 		if (*link == job) {
 			*link = job->next;
 			break;
 		}
 	}
+
+	/* One job fewer runs. */
 	job_count--;
 
-	/* Its token, or this make's own job. */
+	/* Gives back its token, or frees this make's own job. */
 	if (job->holds_token) {
 		give_token();
 	} else {
 		own_job_busy = 0;
 	}
 
-	/* What the recipe held. */
+	/* Frees what the recipe held. */
 	free(job->expanded);
 	variable_free_environment(job->environment);
 	free(job->variables->newer.text);
@@ -563,6 +607,80 @@ job_end(
 	free(job->variables->order_only.text);
 	free(job->variables);
 	free(job);
+}
+
+/*
+ * Takes the jobserver from the make above, named in MAKEFLAGS as "R,W".
+ * Without both descriptors open, this make runs one job at a time.
+ */
+static void
+inherit_server(
+	const char *inherited)
+{
+	const char *cursor;
+	char *end;
+	int read_end;
+	int write_end;
+	int matched;
+	int read_open;
+	int write_open;
+
+	/* Reads the two descriptors. */
+	read_end = (int)strtol(inherited, &end, 10);
+	write_end = -1;
+	matched = 0;
+	if (end != inherited && *end == ',') {
+		cursor = end + 1;
+		write_end = (int)strtol(cursor, &end, 10);
+		if (end != cursor && *end == '\0')
+			matched = 1;
+	}
+
+	/* The two descriptors must be open in this make. */
+	read_open = -1;
+	write_open = -1;
+	if (matched) {
+		read_open = fcntl(read_end, F_GETFD);
+		if (read_open >= 0)
+			write_open = fcntl(write_end, F_GETFD);
+	}
+
+	/* Uses the jobserver, or falls back to one job at a time. */
+	if (read_open >= 0 && write_open >= 0) {
+		server_read = read_end;
+		server_write = write_end;
+		make_options.jobs = 2;
+	} else {
+		make_message("warning: jobserver unavailable: using -j1.  Add '+' to parent make rule.");
+		make_options.jobs = 1;
+	}
+}
+
+/* Starts a jobserver: a pipe with a token for each job beyond the first. */
+static void
+create_server(
+	void)
+{
+	ssize_t written;
+	char token;
+	int descriptors[2];
+	int error;
+	int index;
+
+	/* Creates the pipe. */
+	error = pipe(descriptors);
+	if (error != 0)
+		make_fatal("pipe: %s", strerror(errno));
+	server_read = descriptors[0];
+	server_write = descriptors[1];
+
+	/* Fills it with the tokens. */
+	token = JOB_TOKEN;
+	for (index = 1; index < make_options.jobs; index++) {
+		written = write(server_write, &token, 1);
+		if (written != 1)
+			make_fatal("jobserver: %s", strerror(errno));
+	}
 }
 
 /*
@@ -591,7 +709,7 @@ wait_for_token(
 	sigemptyset(&block);
 	sigaddset(&block, SIGCHLD);
 
-	/* The copy, made while a child's end cannot close it half made. */
+	/* Makes the copy while a child's end cannot close it half made. */
 	sigprocmask(SIG_BLOCK, &block, &saved);
 	token_descriptor = dup(server_read);
 	sigprocmask(SIG_SETMASK, &saved, NULL);
@@ -599,18 +717,20 @@ wait_for_token(
 	/* A child that ended before the copy was made is taken now. */
 	reap(0);
 
-	/* A token, or the end of a child. */
+	/* Reads a token, or returns at the end of a child. */
 	count = -1;
 	descriptor = token_descriptor;
 	if (descriptor >= 0)
 		count = read(descriptor, &token, 1);
 
-	/* The copy is closed, by the signal or here. */
+	/* Closes the copy, unless the signal has closed it. */
 	sigprocmask(SIG_BLOCK, &block, &saved);
 	if (token_descriptor >= 0) {
 		close(token_descriptor);
 		token_descriptor = -1;
 	}
+
+	/* Puts back the mask and the handler from before the wait. */
 	sigprocmask(SIG_SETMASK, &saved, NULL);
 	sigaction(SIGCHLD, &previous, NULL);
 
@@ -618,7 +738,7 @@ wait_for_token(
 	if (count == 1)
 		spare_tokens++;
 
-	/* Any child that ended. */
+	/* Takes any child that ended. */
 	reap(0);
 }
 
@@ -631,7 +751,7 @@ reap(
 	int raw_status;
 	int options;
 
-	/* Each child that ended. */
+	/* Takes each child that ended; only one when waiting. */
 	options = WNOHANG;
 	if (block)
 		options = 0;
@@ -641,6 +761,8 @@ reap(
 			continue;
 		if (child <= 0)
 			return;
+
+		/* Moves the child's job on. */
 		child_ended(child, raw_status);
 		if (block)
 			return;
@@ -658,21 +780,27 @@ child_ended(
 {
 	struct job *job;
 	int status;
-	int result;
+	int outcome;
 
-	/* The job the child belongs to. */
+	/* Finds the job the child belongs to. */
 	for (job = jobs; job != NULL; job = job->next) {
 		if (job->child == child)
 			break;
 	}
+
+	/* A child that belongs to no job is not the walk's. */
 	if (job == NULL)
 		return;
 	job->child = -1;
 
-	/* A failure, ignored or not. */
+	/* A failure is reported; unless it is ignored, it ends the recipe. */
 	status = shell_status(raw_status);
 	if (status != 0) {
-		report_failure(job->target, job->recipe, job->line_index, status, job->command_ignored);
+		report_failure(job->target,
+			       job->recipe,
+			       job->line_index,
+			       status,
+			       job->command_ignored);
 		if (!job->command_ignored) {
 			update_recipe_done(job->target, 1);
 			job_end(job);
@@ -680,10 +808,12 @@ child_ended(
 		}
 	}
 
-	/* The next command, or the end of the recipe. */
-	result = job_advance(job);
-	if (result == UPDATE_PENDING)
+	/* Starts the next command, unless the recipe is over. */
+	outcome = job_advance(job);
+	if (outcome == UPDATE_PENDING)
 		return;
+
+	/* Tells the walk that the recipe succeeded, and ends the job. */
 	update_recipe_done(job->target, 0);
 	job_end(job);
 }
@@ -696,7 +826,7 @@ give_token(
 	char token;
 	ssize_t count;
 
-	/* The byte, through interruptions. */
+	/* Writes the byte, through interruptions. */
 	token = JOB_TOKEN;
 	for (;;) {
 		count = write(server_write, &token, 1);
@@ -715,7 +845,7 @@ child_signal(
 {
 	int descriptor;
 
-	/* The copy, once. */
+	/* Closes the copy, once. */
 	(void)signal_number;
 	descriptor = token_descriptor;
 	if (descriptor >= 0) {
@@ -731,7 +861,7 @@ names_make(
 {
 	const char *found;
 
-	/* Either spelling. */
+	/* Looks for either spelling. */
 	found = strstr(line, "$(MAKE)");
 	if (found != NULL)
 		return 1;
@@ -739,7 +869,7 @@ names_make(
 	if (found != NULL)
 		return 1;
 
-	/* Neither. */
+	/* The line names neither. */
 	return 0;
 }
 
@@ -751,17 +881,24 @@ shell_of(
 	struct variable *variable;
 	char *shell;
 
-	/* SHELL as the makefiles set it. */
+	/* Finds SHELL as the makefiles set it; without it, /bin/sh. */
 	variable = variable_lookup(context->scope, "SHELL", 5);
-	if (variable == NULL)
-		return make_strdup("/bin/sh");
-	shell = expand(context, variable->value);
-	if (shell[0] == '\0') {
-		free(shell);
-		return make_strdup("/bin/sh");
+	if (variable == NULL) {
+		shell = make_strdup("/bin/sh");
+		return shell;
 	}
 
-	/* Succeeded. */
+	/* Expands the value, which may name other variables. */
+	shell = expand(context, variable->value);
+
+	/* An empty SHELL is /bin/sh too. */
+	if (shell[0] == '\0') {
+		free(shell);
+		shell = make_strdup("/bin/sh");
+		return shell;
+	}
+
+	/* Succeeded: the shell, which the caller frees. */
 	return shell;
 }
 
@@ -792,17 +929,19 @@ spawn(
 	arguments[2] = (char *)command;
 	arguments[3] = NULL;
 
-	/* The shell, with its output where it was asked for. */
+	/* Starts the shell with posix_spawn, its output where it was asked for. */
 	error = posix_spawn_file_actions_init(&actions);
 	if (error == 0 && output >= 0)
 		error = posix_spawn_file_actions_adddup2(&actions, output, 1);
 	if (error == 0)
 		error = posix_spawn(&spawned, shell, &actions, NULL, arguments, environment);
 	(void)posix_spawn_file_actions_destroy(&actions);
+
+	/* The spawned shell is the child. */
 	if (error == 0)
 		return (int)spawned;
 
-	/* A child that becomes the shell, or says why it cannot. */
+	/* Otherwise a forked child becomes the shell, or says why it cannot. */
 	child = fork();
 	if (child < 0)
 		make_fatal("fork: %s", strerror(errno));
@@ -828,8 +967,9 @@ wait_for(
 {
 	pid_t done;
 	int raw_status;
+	int status;
 
-	/* The child's end, through interruptions. */
+	/* Waits for the child's end, through interruptions. */
 	for (;;) {
 		done = waitpid((pid_t)child, &raw_status, 0);
 		if (done >= 0)
@@ -838,8 +978,11 @@ wait_for(
 			return 127;
 	}
 
-	/* Succeeded: its status. */
-	return shell_status(raw_status);
+	/* Turns the raw status into the shell's. */
+	status = shell_status(raw_status);
+
+	/* Succeeded: the child's status. */
+	return status;
 }
 
 /*
@@ -884,12 +1027,24 @@ report_failure(
 
 	/* An ignored failure. */
 	if (ignored) {
-		fprintf(stderr, "%s: [%s:%ld: %s] Error %d (ignored)\n", make_program(), recipe->file, recipe->line_numbers[line_index], target->name, status);
+		fprintf(stderr,
+			"%s: [%s:%ld: %s] Error %d (ignored)\n",
+			make_program(),
+			recipe->file,
+			recipe->line_numbers[line_index],
+			target->name,
+			status);
 		return;
 	}
 
 	/* A failure that stops the recipe. */
-	fprintf(stderr, "%s: *** [%s:%ld: %s] Error %d\n", make_program(), recipe->file, recipe->line_numbers[line_index], target->name, status);
+	fprintf(stderr,
+		"%s: *** [%s:%ld: %s] Error %d\n",
+		make_program(),
+		recipe->file,
+		recipe->line_numbers[line_index],
+		target->name,
+		status);
 }
 
 /* Records a job's target as the recipe starts, for the interrupt handler. */
@@ -905,7 +1060,7 @@ remember_target(
 	if (job->target->phony || job->target->precious)
 		job->removable = 0;
 
-	/* Its time now, to tell whether the recipe changed it. */
+	/* Keeps its time now, to tell whether the recipe changed it. */
 	error = stat(job->target->name, &status);
 	job->existed = 0;
 	if (error == 0) {
@@ -916,6 +1071,36 @@ remember_target(
 }
 
 /*
+ * Reports whether a running recipe has changed its target's file: made it,
+ * or given it another time.  Called from the interrupt handler.
+ */
+static int
+target_changed(
+	const struct job *job)
+{
+	struct stat status;
+	int error;
+
+	/* A file that is not there was not made. */
+	error = stat(job->target->name, &status);
+	if (error != 0)
+		return 0;
+
+	/* A file that was not there before was made. */
+	if (!job->existed)
+		return 1;
+
+	/* A file with another time was changed. */
+	if ((long long)status.st_mtim.tv_sec != job->seconds)
+		return 1;
+	if ((long)status.st_mtim.tv_nsec != job->nanoseconds)
+		return 1;
+
+	/* The file is as it was. */
+	return 0;
+}
+
+/*
  * Handles an interrupt: removes the target of each running recipe when
  * the recipe changed it, then ends make by the same signal.
  */
@@ -923,32 +1108,29 @@ static void
 interrupted(
 	int signal_number)
 {
-	struct stat status;
 	struct job *job;
 	const char *name;
-	int error;
 	int changed;
 
-	/* Each running recipe's target, when it is removable and the recipe touched it. */
+	/* Removes each running recipe's target, when it is removable and the recipe touched it. */
 	for (job = jobs; job != NULL; job = job->next) {
 		if (!job->removable)
 			continue;
+
+		/* Leaves a target the recipe did not change. */
+		changed = target_changed(job);
+		if (!changed)
+			continue;
+
+		/* Says so, with write since this is a signal handler, and removes it. */
 		name = job->target->name;
-		error = stat(name, &status);
-		changed = 0;
-		if (error == 0 && !job->existed)
-			changed = 1;
-		if (error == 0 && job->existed && ((long long)status.st_mtim.tv_sec != job->seconds || (long)status.st_mtim.tv_nsec != job->nanoseconds))
-			changed = 1;
-		if (changed) {
-			write(2, "make: *** Deleting file '", 25);
-			write(2, name, strlen(name));
-			write(2, "'\n", 2);
-			unlink(name);
-		}
+		(void)write(2, "make: *** Deleting file '", 25);
+		(void)write(2, name, strlen(name));
+		(void)write(2, "'\n", 2);
+		unlink(name);
 	}
 
-	/* The signal again, with its default action. */
+	/* Raises the signal again, with its default action. */
 	signal(signal_number, SIG_DFL);
 	kill(getpid(), signal_number);
 }

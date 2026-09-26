@@ -99,7 +99,9 @@ static const struct operator_text assignment_operators[] = {
 
 static int parse_comma(struct arithmetic *state, struct operand *result);
 static int parse_assignment(struct arithmetic *state, struct operand *result);
-static int step_variable(struct arithmetic *state, struct operand *result, int increment, int prefix);
+static int prefix_step(const struct arithmetic *state, char op);
+static int postfix_step(const struct arithmetic *state);
+static int step_variable(struct arithmetic *state, struct operand *result, char op, int prefix);
 static int assignment_operator(const char *cursor, int *op, size_t *length);
 static int assign_operand(struct arithmetic *state, struct operand *result, int op);
 static int parse_conditional(struct arithmetic *state, struct operand *result);
@@ -189,19 +191,23 @@ parse_comma(
 {
 	int ok;
 
-	/* The first, then each after a comma. */
+	/* Evaluates the first expression, then each one after a comma. */
 	ok = parse_assignment(state, result);
 	for (;;) {
 		if (!ok)
 			return 0;
+
+		/* Stops at the end of the list, where no comma follows. */
 		skip_space(state);
 		if (*state->cursor != ',')
 			break;
+
+		/* Steps over the comma and evaluates the next expression. */
 		state->cursor++;
 		ok = parse_assignment(state, result);
 	}
 
-	/* Succeeded. */
+	/* Succeeded: the result holds the last expression's value. */
 	return 1;
 }
 
@@ -713,6 +719,7 @@ parse_unary(
 {
 	unsigned long long bits;
 	char op;
+	int step;
 	int ok;
 
 	/* A primary, when there is no unary operator. */
@@ -726,13 +733,16 @@ parse_unary(
 	 * 2.6.4 does not require them; bash's meaning); before anything
 	 * else they are two signs, as dash reads them.
 	 */
-	if ((op == '+' || op == '-') && state->cursor[1] == op &&
-	    is_name_start(state->cursor[2])) {
+	step = prefix_step(state, op);
+	if (step) {
 		state->cursor += 2;
 		ok = parse_variable(state, result);
 		if (!ok)
 			return 0;
-		return step_variable(state, result, op == '+', 1);
+		ok = step_variable(state, result, op, 1);
+		if (!ok)
+			return 0;
+		return 1;
 	}
 
 	/* The operand. */
@@ -765,6 +775,7 @@ parse_primary(
 	char op;
 	int digit;
 	int name;
+	int step;
 	int ok;
 
 	/* A parenthesized expression. */
@@ -784,14 +795,18 @@ parse_primary(
 		ok = parse_variable(state, result);
 		if (!ok)
 			return 0;
-		op = state->cursor[0];
-		if ((op == '+' || op == '-') && state->cursor[1] == op &&
-		    !is_name_start(state->cursor[2]) &&
-		    digit_value(state->cursor[2]) < 0 &&
-		    state->cursor[2] != '(') {
+
+		/* Steps the variable when a postfix ++ or -- follows it. */
+		step = postfix_step(state);
+		if (step) {
+			op = state->cursor[0];
 			state->cursor += 2;
-			return step_variable(state, result, op == '+', 0);
+			ok = step_variable(state, result, op, 0);
+			if (!ok)
+				return 0;
 		}
+
+		/* Succeeded: the variable's value, stepped or not. */
 		return 1;
 	}
 
@@ -1121,37 +1136,111 @@ store(
 }
 
 /*
- * Steps a variable just read by one, up or down, and gives the value
- * after (prefix) or before (postfix) the step; the result is a value,
- * no longer the variable.
+ * Reports whether the cursor is at a prefix ++ or -- (op is its first
+ * character) that steps a variable: 1 or 0.
+ *
+ * Before anything but a name the two characters are two signs, as dash
+ * reads them.
+ */
+static int
+prefix_step(
+	const struct arithmetic *state,
+	char op)
+{
+	int name;
+
+	/* Refuses anything but a doubled + or -. */
+	if (op != '+' && op != '-')
+		return 0;
+	if (state->cursor[1] != op)
+		return 0;
+
+	/* Refuses the two signs before anything but a variable. */
+	name = is_name_start(state->cursor[2]);
+	if (!name)
+		return 0;
+
+	/* Succeeded: a prefix step of the variable that follows. */
+	return 1;
+}
+
+/*
+ * Reports whether the cursor, just after a variable, is at a postfix ++
+ * or -- that steps it: 1 or 0.
+ *
+ * When an operand follows (x--1, x++y) the characters are an operator and
+ * a sign, as POSIX and dash read them.
+ */
+static int
+postfix_step(
+	const struct arithmetic *state)
+{
+	char op;
+	int name;
+	int digit;
+
+	/* Refuses anything but a doubled + or -. */
+	op = state->cursor[0];
+	if (op != '+' && op != '-')
+		return 0;
+	if (state->cursor[1] != op)
+		return 0;
+
+	/* Refuses the operator and sign before a variable. */
+	name = is_name_start(state->cursor[2]);
+	if (name)
+		return 0;
+
+	/* Refuses the operator and sign before a constant. */
+	digit = digit_value(state->cursor[2]);
+	if (digit >= 0)
+		return 0;
+
+	/* Refuses the operator and sign before a parenthesized expression. */
+	if (state->cursor[2] == '(')
+		return 0;
+
+	/* Succeeded: a postfix step of the variable. */
+	return 1;
+}
+
+/*
+ * Steps a variable just read by one, up for op '+' and down for '-', and
+ * gives the value after (prefix) or before (postfix) the step; the result
+ * is a value, no longer the variable.
  */
 static int
 step_variable(
 	struct arithmetic *state,
 	struct operand *result,
-	int increment,
+	char op,
 	int prefix)
 {
 	long long before;
 	long long after;
 	int ok;
 
-	/* The value, one up or one down. */
+	/* Computes the value one up or one down, wrapping as unsigned. */
 	before = result->value;
-	if (increment)
+	if (op == '+')
 		after = (long long)((unsigned long long)before + 1ULL);
 	else
 		after = (long long)((unsigned long long)before - 1ULL);
 
-	/* Stored where the value is used. */
+	/* Stores the stepped value, unless this part is not evaluated. */
 	if (state->evaluate) {
 		ok = store(state, result->name, after);
 		if (!ok)
 			return 0;
 	}
 
-	/* Succeeded. */
-	result->value = prefix ? after : before;
+	/* A prefix step gives the new value, a postfix step the old one. */
+	if (prefix)
+		result->value = after;
+	else
+		result->value = before;
+
+	/* Succeeded: a value, which is no longer a variable. */
 	result->name[0] = '\0';
 	return 1;
 }

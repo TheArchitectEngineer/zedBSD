@@ -246,9 +246,9 @@ gles_framebuffers_release(
 }
 
 /*
- * Brings a texture's level 0 on the CPU up to date with what framebuffer
- * objects drew into its image, before the CPU changes the texture.
- * Returns 0, or -1 with the error recorded.
+ * Brings the level 0 on the CPU of each face framebuffer objects drew into
+ * up to date with the texture's image, before the CPU changes the
+ * texture.  Returns 0, or -1 with the error recorded.
  */
 int
 gles_texture_fetch(
@@ -259,15 +259,17 @@ gles_texture_fetch(
 	struct zegl_surface *surface;
 	VkImageMemoryBarrier barrier;
 	VkBufferImageCopy copy;
-	VkBuffer buffer;
+	VkBuffer buffers[GLES_FACES];
 	VkDeviceSize offset;
-	unsigned char *mapped;
+	unsigned char *mapped[GLES_FACES];
 	unsigned char *pixels;
+	struct gles_level *level;
 	size_t bytes;
+	unsigned face;
 	EGLint error;
 
 	/* Nothing was drawn into it since its levels were read. */
-	if (!texture->gpu_written)
+	if (texture->gpu_written == 0U)
 		return 0;
 
 	/* The frame that drew into it is the draw surface's; without one there is nothing to read. */
@@ -276,7 +278,7 @@ gles_texture_fetch(
 	if (state == NULL ||
 	    surface == NULL ||
 	    texture->image == VK_NULL_HANDLE) {
-		texture->gpu_written = 0;
+		texture->gpu_written = 0U;
 		return 0;
 	}
 
@@ -291,78 +293,98 @@ gles_texture_fetch(
 	/* No pass of the surface either. */
 	zegl_frame_leave_pass(surface);
 
-	/* Room in the stream for level 0. */
-	bytes = (size_t)texture->levels[0].width * (size_t)texture->levels[0].height * 4U;
-	mapped = gles_stream(state, bytes, 16U, &buffer, &offset);
-	if (mapped == NULL) {
-		gles_error(context, GL_OUT_OF_MEMORY);
-		return -1;
+	/* Level 0 of each face drawn into, copied out between two layout changes (its rows are GL's already). */
+	memset(mapped, 0, sizeof(mapped));
+	for (face = 0U; face < GLES_FACES; face++) {
+		if ((texture->gpu_written & (1U << face)) == 0U)
+			continue;
+
+		/* Room in the stream for the face. */
+		level = &texture->levels[face * GLES_LEVELS];
+		bytes = (size_t)level->width * (size_t)level->height * 4U;
+		mapped[face] = gles_stream(state, bytes, 16U, &buffers[face], &offset);
+		if (mapped[face] == NULL) {
+			gles_error(context, GL_OUT_OF_MEMORY);
+			return -1;
+		}
+
+		/* Ready to be copied. */
+		memset(&barrier, 0, sizeof(barrier));
+		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+		barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.image = texture->image;
+		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		barrier.subresourceRange.levelCount = 1U;
+		barrier.subresourceRange.baseArrayLayer = face;
+		barrier.subresourceRange.layerCount = 1U;
+		vkCmdPipelineBarrier(surface->command, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+				     0U, 0U, NULL, 0U, NULL, 1U, &barrier);
+
+		/* The copy of the face's level 0. */
+		memset(&copy, 0, sizeof(copy));
+		copy.bufferOffset = offset;
+		copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		copy.imageSubresource.baseArrayLayer = face;
+		copy.imageSubresource.layerCount = 1U;
+		copy.imageExtent.width = (uint32_t)level->width;
+		copy.imageExtent.height = (uint32_t)level->height;
+		copy.imageExtent.depth = 1U;
+		vkCmdCopyImageToBuffer(surface->command, texture->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, buffers[face], 1U, &copy);
+
+		/* Back to be sampled. */
+		barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+		barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+		barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		vkCmdPipelineBarrier(surface->command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT,
+				     0U, 0U, NULL, 0U, NULL, 1U, &barrier);
 	}
 
-	/* Level 0 copied out between two layout changes (its rows are GL's already). */
-	memset(&barrier, 0, sizeof(barrier));
-	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-	barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-	barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-	barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-	barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	barrier.image = texture->image;
-	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	barrier.subresourceRange.levelCount = 1U;
-	barrier.subresourceRange.layerCount = 1U;
-	vkCmdPipelineBarrier(surface->command, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
-			     0U, 0U, NULL, 0U, NULL, 1U, &barrier);
-
-	/* The copy of level 0. */
-	memset(&copy, 0, sizeof(copy));
-	copy.bufferOffset = offset;
-	copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	copy.imageSubresource.layerCount = 1U;
-	copy.imageExtent.width = (uint32_t)texture->levels[0].width;
-	copy.imageExtent.height = (uint32_t)texture->levels[0].height;
-	copy.imageExtent.depth = 1U;
-	vkCmdCopyImageToBuffer(surface->command, texture->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, buffer, 1U, &copy);
-
-	/* Back to be sampled. */
-	barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-	barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-	barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-	barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-	vkCmdPipelineBarrier(surface->command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT,
-			     0U, 0U, NULL, 0U, NULL, 1U, &barrier);
-	surface->recorded = 1;
-
 	/* Done before the bytes are read. */
+	surface->recorded = 1;
 	error = zegl_frame_flush(surface);
 	if (error != EGL_SUCCESS) {
 		gles_error(context, GL_OUT_OF_MEMORY);
 		return -1;
 	}
 
-	/* Level 0's pixels on the CPU (a level made without data has none yet). */
-	pixels = texture->levels[0].pixels;
-	if (pixels == NULL) {
-		pixels = malloc(bytes);
+	/* Each face's bytes into its level 0 (a level made without data has no pixels yet). */
+	for (face = 0U; face < GLES_FACES; face++) {
+		if (mapped[face] == NULL)
+			continue;
+
+		/* The level's pixels. */
+		level = &texture->levels[face * GLES_LEVELS];
+		bytes = (size_t)level->width * (size_t)level->height * 4U;
+		pixels = level->pixels;
 		if (pixels == NULL) {
-			gles_error(context, GL_OUT_OF_MEMORY);
-			return -1;
+			pixels = malloc(bytes);
+			if (pixels == NULL) {
+				gles_error(context, GL_OUT_OF_MEMORY);
+				return -1;
+			}
+
+			/* The level keeps them. */
+			level->pixels = pixels;
 		}
 
-		/* The level keeps them. */
-		texture->levels[0].pixels = pixels;
+		/* The bytes. */
+		memcpy(pixels, mapped[face], bytes);
 	}
 
-	/* The bytes, and the CPU's copy is the newest again. */
-	memcpy(pixels, mapped, bytes);
-	texture->gpu_written = 0;
+	/* The CPU's copy is the newest again. */
+	texture->gpu_written = 0U;
 
 	/* Everything recorded before is done: the frame's resources are free again. */
 	state->frame++;
 	gles_collect(state);
 
-	/* Succeeded: level 0 is what the device drew. */
+	/* Succeeded: level 0 of each face is what the device drew. */
 	return 0;
 }
 
@@ -568,6 +590,8 @@ glFramebufferTexture2D(
 	struct gles_framebuffer *fbo;
 	struct gles_attachment *point;
 	struct gles_texture *object;
+	unsigned face;
+	GLenum kind;
 	int status;
 
 	/* A context with its state and the one target. */
@@ -600,8 +624,9 @@ glFramebufferTexture2D(
 		return;
 	}
 
-	/* A 2D texture's level 0 (cube map faces come with ws068-p023). */
-	if (textarget != GL_TEXTURE_2D) {
+	/* A 2D texture, or a face of a cube map. */
+	if (textarget != GL_TEXTURE_2D &&
+	    (textarget < GL_TEXTURE_CUBE_MAP_POSITIVE_X || textarget > GL_TEXTURE_CUBE_MAP_NEGATIVE_Z)) {
 		gles_error(context, GL_INVALID_ENUM);
 		return;
 	}
@@ -612,9 +637,23 @@ glFramebufferTexture2D(
 		return;
 	}
 
-	/* A name that is a texture. */
+	/* A name that is a texture of the target's kind. */
 	object = gles_names_get(&state->textures, texture);
 	if (object == NULL) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return;
+	}
+
+	/* A face needs a cube map, GL_TEXTURE_2D a 2D texture. */
+	face = 0U;
+	kind = GL_TEXTURE_2D;
+	if (textarget != GL_TEXTURE_2D) {
+		face = textarget - GL_TEXTURE_CUBE_MAP_POSITIVE_X;
+		kind = GL_TEXTURE_CUBE_MAP;
+	}
+
+	/* The texture must be of that kind. */
+	if (object->target != kind) {
 		gles_error(context, GL_INVALID_OPERATION);
 		return;
 	}
@@ -624,6 +663,7 @@ glFramebufferTexture2D(
 		gles_target_close(state);
 	point->kind = GLES_ATTACH_TEXTURE;
 	point->name = texture;
+	point->face = face;
 }
 
 /*
@@ -708,6 +748,7 @@ glGetFramebufferAttachmentParameteriv(
 	struct gles_state *state;
 	struct gles_framebuffer *fbo;
 	struct gles_attachment *point;
+	struct gles_texture *object;
 	int status;
 
 	/* A context with its state and the one target. */
@@ -749,9 +790,17 @@ glGetFramebufferAttachmentParameteriv(
 			*params = (GLint)point->name;
 		break;
 	case GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_LEVEL:
-	case GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_CUBE_MAP_FACE:
-		/* Level 0 of a 2D texture is all that is attached. */
+		/* Level 0 is all that is attached. */
 		*params = 0;
+		break;
+	case GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_CUBE_MAP_FACE:
+		/* A cube map's face, 0 for a 2D texture. */
+		*params = 0;
+		object = NULL;
+		if (point->kind == GLES_ATTACH_TEXTURE)
+			object = gles_names_get(&state->textures, point->name);
+		if (object != NULL && object->target == GL_TEXTURE_CUBE_MAP)
+			*params = (GLint)(GL_TEXTURE_CUBE_MAP_POSITIVE_X + point->face);
 		break;
 	default:
 		gles_error(context, GL_INVALID_ENUM);
@@ -1061,6 +1110,7 @@ framebuffer_status(
 {
 	struct gles_renderbuffer *depth_object;
 	struct gles_renderbuffer *stencil_object;
+	const struct gles_level *level;
 	int width;
 	int height;
 
@@ -1079,15 +1129,18 @@ framebuffer_status(
 	    fbo->stencil.kind == GLES_ATTACH_NONE)
 		return GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT;
 
-	/* The colour: a texture with level 0, or a colour renderbuffer with storage. */
+	/* The colour: a texture with level 0 on the face, or a colour renderbuffer with storage. */
 	if (fbo->color.kind == GLES_ATTACH_TEXTURE) {
 		*texture = gles_names_get(&state->textures, fbo->color.name);
-		if (*texture == NULL ||
-		    (*texture)->levels[0].width <= 0 ||
-		    (*texture)->levels[0].height <= 0)
+		if (*texture == NULL)
 			return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
-		width = (*texture)->levels[0].width;
-		height = (*texture)->levels[0].height;
+
+		/* The face's level 0 is specified. */
+		level = &(*texture)->levels[fbo->color.face * GLES_LEVELS];
+		if (level->width <= 0 || level->height <= 0)
+			return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
+		width = level->width;
+		height = level->height;
 	} else if (fbo->color.kind == GLES_ATTACH_RENDERBUFFER) {
 		*color = gles_names_get(&state->renderbuffers, fbo->color.name);
 		if (*color == NULL ||
@@ -1166,6 +1219,7 @@ framebuffer_build(
 	VkFramebufferCreateInfo create;
 	VkImageView views[2];
 	VkImage color_image;
+	uint32_t color_layer;
 	VkImageView color_view;
 	VkImageView depth_view;
 	VkImageLayout color_layout;
@@ -1194,12 +1248,14 @@ framebuffer_build(
 	depth_view = VK_NULL_HANDLE;
 	extent.width = 0U;
 	extent.height = 0U;
+	color_layer = 0U;
 	if (texture != NULL) {
 		color_image = texture->image;
-		color_view = texture->attach_view;
+		color_view = texture->attach_views[fbo->color.face];
+		color_layer = fbo->color.face;
 		color_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		extent.width = (uint32_t)texture->levels[0].width;
-		extent.height = (uint32_t)texture->levels[0].height;
+		extent.width = (uint32_t)texture->levels[fbo->color.face * GLES_LEVELS].width;
+		extent.height = (uint32_t)texture->levels[fbo->color.face * GLES_LEVELS].height;
 	} else if (color != NULL) {
 		color_image = color->image;
 		color_view = color->view;
@@ -1258,6 +1314,7 @@ framebuffer_build(
 	fbo->built_depth = depth_view;
 	fbo->extent = extent;
 	fbo->color_image = color_image;
+	fbo->color_layer = color_layer;
 	fbo->color_layout = color_layout;
 	fbo->depth_aspects = 0U;
 	if (depth_view != VK_NULL_HANDLE)
@@ -1281,10 +1338,10 @@ framebuffer_mark(
 	if (status != GL_FRAMEBUFFER_COMPLETE)
 		return;
 
-	/* A texture's level 0 on the CPU is older than its image from now on. */
+	/* The face's level 0 on the CPU is older than the image from now on. */
 	if (texture != NULL) {
 		texture->used = state->frame;
-		texture->gpu_written = 1;
+		texture->gpu_written |= 1U << fbo->color.face;
 	}
 
 	/* The renderbuffers wait for the frame before they may go. */

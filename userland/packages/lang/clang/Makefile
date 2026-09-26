@@ -20,10 +20,9 @@ include $(ZEDBSD_CLANG_DIR)/../../../base/package.mk
 include $(ZEDBSD_CLANG_DIR)/../../external.mk
 include $(ZEDBSD_CLANG_DIR)/../../../../toolchain/llvm/version.mk
 
-# The cross compiler's own source tree; the toolchain build extracts it.
-ZEDBSD_CLANG_SOURCE := $(abspath $(ZEDBSD_EXTERNAL_ROOT)/build/llvm-source)
-ZEDBSD_CLANG_SOURCE_STAMP := \
-	$(ZEDBSD_CLANG_SOURCE)/.zedbsd-source-$(ZEDBSD_LLVM_VERSION)-$(ZEDBSD_LLVM_PATCH_LEVEL)
+# The cross compiler's own source; the toolchain build extracts it.  This
+# package patches a copy of it (external.mk), never the toolchain's tree.
+ZEDBSD_CLANG_SOURCE := $(ZEDBSD_EXTERNAL_WORKROOT)/clang/src
 
 # The host build tree, for the generators.  It belongs to the toolchain build
 # rather than to this package, which is why it is named and not made here.
@@ -32,8 +31,8 @@ ZEDBSD_CLANG_NATIVE_DIR := $(abspath $(ZEDBSD_EXTERNAL_ROOT)/build/llvm-build/bi
 ZEDBSD_CLANG_PATCHES := $(sort $(wildcard \
 	$(abspath $(ZEDBSD_CLANG_DIR))/patches/*.patch))
 ZEDBSD_CLANG_PATCH_LEVEL := zedbsd1
-ZEDBSD_CLANG_PATCHED := \
-	$(ZEDBSD_CLANG_SOURCE)/.zedbsd-clang-patched-$(ZEDBSD_CLANG_PATCH_LEVEL)
+ZEDBSD_CLANG_SOURCE_STAMP := \
+	$(ZEDBSD_CLANG_SOURCE)/.zedbsd-clang-source-$(ZEDBSD_LLVM_VERSION)-$(ZEDBSD_LLVM_PATCH_LEVEL)-$(ZEDBSD_CLANG_PATCH_LEVEL)
 
 ZEDBSD_CLANG_BUILD := $(ZEDBSD_EXTERNAL_WORKROOT)/clang/build
 ZEDBSD_CLANG_STAGE := $(ZEDBSD_EXTERNAL_WORKROOT)/clang/stage
@@ -137,25 +136,20 @@ ZEDBSD_CLANG_CMAKE_OPTIONS := \
 	-DLLD_INCLUDE_TESTS=OFF \
 	-DLLVM_TOOL_LLVM_SHLIB_BUILD=ON
 
-# The toolchain verifies the tree against the release and its own patch, and
-# builds the host generators from it, before these patches change it.  With
-# the binary cache both first happen here (llvm-native-tools).
-$(ZEDBSD_CLANG_PATCHED): $(ZEDBSD_CLANG_SOURCE_STAMP) $(ZEDBSD_CLANG_PATCHES) \
+# The copy is made from the tree the toolchain verified against the release
+# and its own patch.  The host generators are built from that tree too (with
+# the binary cache, here: llvm-native-tools).  The record names the LLVM
+# release and both patch levels, so a change to any of them makes a new copy.
+$(ZEDBSD_CLANG_SOURCE_STAMP): $(ZEDBSD_EXTERNAL_LLVM_VERIFIED) \
+	$(ZEDBSD_CLANG_PATCHES) \
 	$(if $(ZEDBSD_TOPLEVEL_BUILD),| $(ZEDBSD_LLVM_NATIVE_STAMP))
-	@set -eu; for patch in $(ZEDBSD_CLANG_PATCHES); do \
-		if patch -p1 -R --dry-run -f -d '$(ZEDBSD_CLANG_SOURCE)' \
-			< "$$patch" >/dev/null 2>&1; then \
-			echo "clang: already applied: $$patch"; \
-		else \
-			patch -p1 -d '$(ZEDBSD_CLANG_SOURCE)' < "$$patch"; \
-		fi; \
-	done
+	$(call ZEDBSD_EXTERNAL_LLVM_COPY,$(ZEDBSD_CLANG_SOURCE),$(ZEDBSD_CLANG_PATCHES))
 	@touch '$@'
 
 # The generators are the toolchain build's output.  Saying so here turns a
 # missing one into a sentence rather than into a cmake error about a path.
 $(ZEDBSD_CLANG_CONFIGURED): $(ZEDBSD_CLANG_SOURCE_STAMP) \
-	$(ZEDBSD_CLANG_PATCHED) $(ZEDBSD_CLANG_LIBCXX_STAMP) \
+	$(ZEDBSD_CLANG_LIBCXX_STAMP) \
 	$(ZEDBSD_EXTERNAL_CROSS_STAMP) $(ZEDBSD_CLANG_MAKEFILE)
 	@test -x '$(ZEDBSD_CLANG_NATIVE_DIR)/lldb-tblgen' || { \
 		echo "clang: $(ZEDBSD_CLANG_NATIVE_DIR)/lldb-tblgen is missing;" >&2; \

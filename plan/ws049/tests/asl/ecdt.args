@@ -1,0 +1,1 @@
+--ecdt @SUPPORT@/ecdt.aml --reg --init --events --ec --ec-ram 0x10=0x3c --ec-query 0x42@0x16

@@ -38,24 +38,10 @@
 #define MUTEX_HELD      1U
 #define MUTEX_CONTENDED 2U
 
-/*
- * Takes a free mutex with one compare-and-swap; reports whether it did.
- */
-static int
-mutex_take_free(
-	struct mutex *mutex)
-{
-	unsigned expected;
-	int taken;
-
-	/* Free becomes held, and nothing else does. */
-	expected = MUTEX_FREE;
-	taken = __atomic_compare_exchange_n(&mutex->locked, &expected,
-	    MUTEX_HELD, 0, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED);
-
-	/* Reports the take. */
-	return taken;
-}
+static int mutex_take_free(struct mutex *mutex);
+static int mutex_spin_take(struct mutex *mutex);
+static void mutex_sleep_take(struct mutex *mutex, unsigned flags, int *error);
+static void mutex_check_owner(struct mutex *mutex, struct thread *thread);
 
 /*
  * Initializes an unlocked spinlock.
@@ -85,6 +71,8 @@ spin_trylock(
 	struct spinlock *lock)
 {
 	unsigned cpu;
+	unsigned held;
+	int acquired;
 
 	/*
 	 * Traps on a recursive acquisition by the owning CPU, and reports a
@@ -92,21 +80,23 @@ spin_trylock(
 	 * the line away from the holder on every spin.
 	 */
 	cpu = hal_cpu_current();
-	if (atomic_load_acquire(&lock->held) != 0) {
+	held = atomic_load_acquire(&lock->held);
+	if (held != 0) {
 		if (lock->owner_valid && lock->owner_cpu == cpu)
 			__builtin_trap();
 		return 0;
 	}
 
 	/* Reports a lock taken by another CPU since the load. */
-	if (!atomic_try_acquire_zero(&lock->held))
+	acquired = atomic_try_acquire_zero(&lock->held);
+	if (!acquired)
 		return 0;
 
 	/* Records this CPU as the owner. */
 	lock->owner_cpu = cpu;
 	atomic_raw_store_release(&lock->owner_valid, 1U);
 
-	/* Reports the acquisition. */
+	/* Succeeded: this CPU holds the lock. */
 	return 1;
 }
 
@@ -117,9 +107,15 @@ void
 spin_lock(
 	struct spinlock *lock)
 {
+	int acquired;
+
 	/* Retries the acquisition while relaxing the CPU between attempts. */
-	while (!spin_trylock(lock))
+	for (;;) {
+		acquired = spin_trylock(lock);
+		if (acquired)
+			break;
 		hal_atomic_relax();
+	}
 }
 
 /*
@@ -132,10 +128,12 @@ spin_unlock(
 	struct spinlock *lock)
 {
 	unsigned cpu;
+	unsigned held;
 
 	/* Traps unless this CPU is the recorded owner. */
 	cpu = hal_cpu_current();
-	if (atomic_load_acquire(&lock->held) == 0 ||
+	held = atomic_load_acquire(&lock->held);
+	if (held == 0 ||
 	    !lock->owner_valid ||
 	    lock->owner_cpu != cpu)
 		__builtin_trap();
@@ -156,12 +154,15 @@ spin_lock_irqsave(
 	struct spinlock *lock)
 {
 	unsigned long enabled;
+	bool was_enabled;
 
 	/* Disables interrupts and remembers whether they were enabled. */
 	enabled = 0UL;
-	if (hal_irq_disable())
+	was_enabled = hal_irq_disable();
+	if (was_enabled)
 		enabled = 1UL;
 
+	/* Acquires the lock with interrupts off. */
 	spin_lock(lock);
 
 	/* Reports the previous interrupt state. */
@@ -176,6 +177,7 @@ spin_unlock_irqrestore(
 	struct spinlock *lock,
 	unsigned long enabled)
 {
+	/* Releases the lock before interrupts can come in again. */
 	spin_unlock(lock);
 
 	/* Re-enables interrupts only when they were enabled before. */
@@ -216,6 +218,7 @@ mutex_trylock(
 	struct mutex *mutex)
 {
 	struct thread *thread;
+	struct thread *owner;
 	int acquired;
 
 	/* Reports failure without a mutex or a current thread. */
@@ -224,7 +227,8 @@ mutex_trylock(
 		return 0;
 
 	/* Traps on a recursive acquisition. */
-	if (__atomic_load_n(&mutex->owner, __ATOMIC_RELAXED) == thread)
+	owner = __atomic_load_n(&mutex->owner, __ATOMIC_RELAXED);
+	if (owner == thread)
 		__builtin_trap();
 
 	/* Takes ownership only while the mutex is free. */
@@ -283,9 +287,8 @@ mutex_lock_interruptible(
 	struct mutex *mutex)
 {
 	struct thread *thread;
+	struct thread *owner;
 	unsigned long irq;
-	uint64_t sequence;
-	unsigned spins;
 	int acquired;
 	int error;
 
@@ -295,51 +298,37 @@ mutex_lock_interruptible(
 		return EINVAL;
 
 	/* Traps on a recursive acquisition. */
-	if (__atomic_load_n(&mutex->owner, __ATOMIC_RELAXED) == thread)
+	owner = __atomic_load_n(&mutex->owner, __ATOMIC_RELAXED);
+	if (owner == thread)
 		__builtin_trap();
 
-	/* A free mutex, or one that its holder lets go of soon. */
-	for (spins = 0; spins <= MUTEX_SPIN_LIMIT; spins++) {
-		if (__atomic_load_n(&mutex->locked, __ATOMIC_RELAXED) == MUTEX_FREE) {
-			acquired = mutex_take_free(mutex);
-			if (acquired) {
-				__atomic_store_n(&mutex->owner, thread, __ATOMIC_RELAXED);
-				return 0;
-			}
-		}
-		hal_atomic_relax();
+	/* Takes a free mutex, or one that its holder lets go of soon. */
+	acquired = mutex_spin_take(mutex);
+	if (acquired) {
+		__atomic_store_n(&mutex->owner, thread, __ATOMIC_RELAXED);
+		return 0;
 	}
 
 	/*
 	 * Marks the mutex contended, which makes the holder's release wake
-	 * a sleeper, and sleeps until the release; the exchange that finds
-	 * it free takes it.
+	 * a sleeper, and sleeps until the release; an interruption gives up.
 	 */
 	irq = spin_lock_irqsave(&mutex->guard);
-	for (;;) {
-		sequence = waitq_sequence(&mutex->waiters);
-		if (__atomic_exchange_n(&mutex->locked, MUTEX_CONTENDED,
-		    __ATOMIC_ACQUIRE) == MUTEX_FREE)
-			break;
 
-		/* Gives up the wait on an interruption. */
-		error = waitq_sleep(
-			&mutex->waiters,
-			&mutex->guard,
-			sequence,
-			0,
-			WAITQ_INTERRUPTIBLE);
-		if (error == EINTR) {
-			spin_unlock_irqrestore(&mutex->guard, irq);
-			return EINTR;
-		}
-	}
+	/* Sleeps until the mutex is taken, or an interruption gives up. */
+	mutex_sleep_take(mutex, WAITQ_INTERRUPTIBLE, &error);
+
+	/* Leaves the guard; the mutex, when taken, stays held. */
 	spin_unlock_irqrestore(&mutex->guard, irq);
+
+	/* Reports an interrupted wait, which left the mutex untouched. */
+	if (error == EINTR)
+		return EINTR;
 
 	/* Takes ownership. */
 	__atomic_store_n(&mutex->owner, thread, __ATOMIC_RELAXED);
 
-	/* Reports the acquisition. */
+	/* Succeeded: the caller holds the mutex. */
 	return 0;
 }
 
@@ -368,6 +357,7 @@ void
 mutex_unlock(
 	struct mutex *mutex)
 {
+	struct thread *thread;
 	unsigned long irq;
 	unsigned previous;
 
@@ -376,19 +366,24 @@ mutex_unlock(
 		__builtin_trap();
 
 	/* Traps unless the current thread owns the mutex. */
-	if (__atomic_load_n(&mutex->locked, __ATOMIC_RELAXED) == MUTEX_FREE ||
-	    __atomic_load_n(&mutex->owner, __ATOMIC_RELAXED) != thread_current())
-		__builtin_trap();
+	thread = thread_current();
+	mutex_check_owner(mutex, thread);
 
-	/* Releases ownership. */
+	/*
+	 * Releases ownership.  The exchange tells whether a thread may be
+	 * asleep for the mutex (MUTEX_CONTENDED).
+	 */
 	__atomic_store_n(&mutex->owner, NULL, __ATOMIC_RELAXED);
-	previous = __atomic_exchange_n(&mutex->locked, MUTEX_FREE,
-	    __ATOMIC_RELEASE);
+	previous = __atomic_exchange_n(&mutex->locked, MUTEX_FREE, __ATOMIC_RELEASE);
 
 	/* A contended mutex hands the release to one sleeper. */
 	if (previous == MUTEX_CONTENDED) {
 		irq = spin_lock_irqsave(&mutex->guard);
+
+		/* Wakes one thread asleep for the mutex. */
 		waitq_wake_one(&mutex->waiters);
+
+		/* Leaves the guard. */
 		spin_unlock_irqrestore(&mutex->guard, irq);
 	}
 }
@@ -409,8 +404,8 @@ mutex_wait(
 {
 	struct thread *thread;
 	unsigned long irq;
-	uint64_t sequence;
 	unsigned previous;
+	int reacquired;
 	int error;
 
 	/* Rejects a missing mutex, condition, or current thread. */
@@ -418,30 +413,23 @@ mutex_wait(
 	if (mutex == NULL || condition == NULL || thread == NULL)
 		return EINVAL;
 
+	/* Yields the mutex and sleeps on the condition, then takes the mutex back. */
 	irq = spin_lock_irqsave(&mutex->guard);
 
 	/* Traps unless the current thread owns the mutex. */
-	if (__atomic_load_n(&mutex->locked, __ATOMIC_RELAXED) == MUTEX_FREE ||
-	    __atomic_load_n(&mutex->owner, __ATOMIC_RELAXED) != thread)
-		__builtin_trap();
+	mutex_check_owner(mutex, thread);
 
 	/* Yields the mutex, waking one sleeper, before sleeping on the condition. */
 	__atomic_store_n(&mutex->owner, NULL, __ATOMIC_RELAXED);
-	previous = __atomic_exchange_n(&mutex->locked, MUTEX_FREE,
-	    __ATOMIC_RELEASE);
+	previous = __atomic_exchange_n(&mutex->locked, MUTEX_FREE, __ATOMIC_RELEASE);
 	if (previous == MUTEX_CONTENDED)
 		waitq_wake_one(&mutex->waiters);
 	error = waitq_sleep(condition, &mutex->guard, observed, deadline, flags);
 
 	/* Reacquiring the mutex is not itself an interruptible operation. */
-	for (;;) {
-		sequence = waitq_sequence(&mutex->waiters);
-		if (__atomic_exchange_n(&mutex->locked, MUTEX_CONTENDED,
-		    __ATOMIC_ACQUIRE) == MUTEX_FREE)
-			break;
-		(void)waitq_sleep(&mutex->waiters, &mutex->guard, sequence, 0, 0);
-	}
+	mutex_sleep_take(mutex, 0, &reacquired);
 
+	/* Leaves the guard, holding the mutex again. */
 	spin_unlock_irqrestore(&mutex->guard, irq);
 
 	/* Takes ownership back. */
@@ -451,6 +439,117 @@ mutex_wait(
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: the condition wait ended and the caller holds the mutex. */
 	return 0;
+}
+
+/*
+ * Takes a free mutex with one compare-and-swap; reports whether it did.
+ */
+static int
+mutex_take_free(
+	struct mutex *mutex)
+{
+	unsigned expected;
+	int taken;
+
+	/* Free becomes held, and nothing else does. */
+	expected = MUTEX_FREE;
+	taken = __atomic_compare_exchange_n(&mutex->locked,
+					    &expected,
+					    MUTEX_HELD,
+					    0,
+					    __ATOMIC_ACQUIRE,
+					    __ATOMIC_RELAXED);
+
+	/* Reports the take. */
+	return taken;
+}
+
+/*
+ * Looks at a held mutex up to MUTEX_SPIN_LIMIT more times, relaxing the
+ * CPU between looks, and takes it when it is free.  Reports whether it
+ * did.
+ */
+static int
+mutex_spin_take(
+	struct mutex *mutex)
+{
+	unsigned spins;
+	unsigned locked;
+	int acquired;
+
+	/* Takes the mutex as soon as a look finds it free. */
+	for (spins = 0; spins <= MUTEX_SPIN_LIMIT; spins++) {
+		locked = __atomic_load_n(&mutex->locked, __ATOMIC_RELAXED);
+		if (locked == MUTEX_FREE) {
+			acquired = mutex_take_free(mutex);
+			if (acquired)
+				return 1;
+		}
+
+		/* Lets the holder's CPU have the line before the next look. */
+		hal_atomic_relax();
+	}
+
+	/* The mutex stayed held. */
+	return 0;
+}
+
+/*
+ * Takes a mutex under its guard, sleeping on its waiters until a release
+ * lets it: the locked word is exchanged for MUTEX_CONTENDED, which makes
+ * the next release wake a sleeper, and an exchange that finds it free
+ * takes it.  With WAITQ_INTERRUPTIBLE in flags, an interruption gives up
+ * with *error set to EINTR and the mutex not taken; otherwise *error is
+ * 0.  The caller holds the guard.
+ */
+static void
+mutex_sleep_take(
+	struct mutex *mutex,
+	unsigned flags,
+	int *error)
+{
+	uint64_t sequence;
+	unsigned previous;
+	int slept;
+
+	/* Sleeps until an exchange finds the mutex free. */
+	*error = 0;
+	for (;;) {
+		sequence = waitq_sequence(&mutex->waiters);
+		previous = __atomic_exchange_n(&mutex->locked, MUTEX_CONTENDED, __ATOMIC_ACQUIRE);
+		if (previous == MUTEX_FREE)
+			break;
+
+		/* Gives up the wait on an interruption, when it may be interrupted. */
+		slept = waitq_sleep(&mutex->waiters, &mutex->guard, sequence, 0, flags);
+		if (slept == EINTR && (flags & WAITQ_INTERRUPTIBLE) != 0) {
+			*error = EINTR;
+			return;
+		}
+	}
+}
+
+/*
+ * Traps unless a thread owns a mutex: the mutex must be held and its
+ * owner must be the thread.
+ */
+static void
+mutex_check_owner(
+	struct mutex *mutex,
+	struct thread *thread)
+{
+	struct thread *owner;
+	unsigned locked;
+
+	/* Traps on a mutex that is not held. */
+	locked = __atomic_load_n(&mutex->locked, __ATOMIC_RELAXED);
+	if (locked == MUTEX_FREE)
+		__builtin_trap();
+
+	/* Traps on a mutex another thread holds. */
+	owner = __atomic_load_n(&mutex->owner, __ATOMIC_RELAXED);
+	if (owner != thread)
+		__builtin_trap();
 }
