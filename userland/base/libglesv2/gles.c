@@ -1431,7 +1431,7 @@ gles_integers(
 		values[0] = GL_SHADER_BINARY_FORMAT_SPIR_V;
 		return 1U;
 	case GL_SHADER_COMPILER:
-		values[0] = GL_FALSE;
+		values[0] = GL_TRUE;
 		return 1U;
 	case GL_IMPLEMENTATION_COLOR_READ_FORMAT:
 		values[0] = GL_RGBA;

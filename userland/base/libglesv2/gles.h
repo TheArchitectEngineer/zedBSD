@@ -15,8 +15,10 @@
  * frame being recorded already uses is never written again: a new one is
  * made and the old one waits in the garbage until the frame is done.
  *
- * Shaders are SPIR-V (glShaderBinary with GL_SHADER_BINARY_FORMAT_SPIR_V)
- * in the form plan/ws068/phase008/phase.md gives: the uniforms other than
+ * Shaders are GLSL (compiled by glsl/, WS068 p015-p019, into SPIR-V when
+ * the program links) or SPIR-V (glShaderBinary with
+ * GL_SHADER_BINARY_FORMAT_SPIR_V), both in the form
+ * plan/ws068/phase008/phase.md gives: the uniforms other than
  * samplers in one uniform block at set 0 binding 0, the samplers at set 0
  * from binding 1, attributes and varyings by location.  Linking reads the
  * names and locations out of the SPIR-V and rewrites the vertex shader so
@@ -54,6 +56,9 @@
 
 /* How many of Vulkan's core formats the vertex format cache covers. */
 #define GLES_FORMATS		192U
+
+/* The most uniform blocks besides the default one a shader's reflection records. */
+#define GLES_NAMED_BLOCKS	16U
 
 /* The longest name of an attribute or a uniform, with its terminator. */
 #define GLES_NAME		64U
@@ -124,8 +129,11 @@ struct gles_texture {
 	uint64_t used;
 };
 
+struct glsl_shader;
+
 /*
- * A shader: its SPIR-V, and what glGetShaderiv reports about it.
+ * A shader: its SPIR-V or its compiled GLSL, and what glGetShaderiv
+ * reports about it.
  */
 struct gles_shader {
 	/* GLES_KIND_SHADER, the GL name, and GL_VERTEX_SHADER or GL_FRAGMENT_SHADER. */
@@ -137,8 +145,9 @@ struct gles_shader {
 	uint32_t *code;
 	size_t words;
 
-	/* The source glShaderSource gave (NULL when none). */
+	/* The source glShaderSource gave (NULL when none), and the GLSL compiler's shader once it compiled. */
 	char *source;
+	struct glsl_shader *glsl;
 
 	/* Whether the last compile or binary succeeded, and its log. */
 	int compiled;
@@ -629,6 +638,10 @@ struct gles_spirv {
 	uint32_t block_binding;
 	uint32_t block_size;
 	int has_block;
+
+	/* The bindings of the uniform blocks other than the default one (GLSL's named blocks). */
+	uint32_t named_bindings[GLES_NAMED_BLOCKS];
+	unsigned named_count;
 };
 
 /* spirv.c: reading SPIR-V and rewriting it. */

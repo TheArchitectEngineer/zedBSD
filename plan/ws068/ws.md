@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: none
-Resume point: 2026-09-27 の順（master）で WS069 の後に p003（自前の GLSL compiler、方式 A）→ p012 → p013・p014（desktop GL 3.0〜4.6）。p009（frame を重ねる）、p011（FBO）も残る
+Resume point: p003（自前の GLSL compiler、方式 A）は p015〜p019、p012（GLSL 1.40〜3.30・ES 3.00）は p020・p021 で cleared（2026-09-27、サブエージェント、Venus で egl-p019・egl-p020 PASS）。次は p005（GLES 3.0 の API: uniform buffer 等）・p013・p014（desktop GL 3.0〜4.6）。p009（frame を重ねる）、p011（FBO）も残る
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -49,8 +49,15 @@ EGL と OpenGL ES（2.0、次に 3.0）を、zedBSD の libvulkan（Vulkan）と
 | --- | --- | --- | --- |
 | [ws068-p001](phase001/phase.md) | 設計: library の構成（`libEGL.so`・`libGLESv2.so`・`libwayland-egl.so`）、GLES の方式の比較（自前の変換層＋glslang / Zink / ANGLE）、libvulkan に要る機能、試験アプリ、ライセンス（[design.md](design.md)） | cleared（q470-i01。GLES の方式はユーザーの判断待ち） | — |
 | [ws068-p002](phase002/phase.md) | EGL の核と `libwayland-egl`、display 直接の platform（最初は clear だけの GLES で疎通） | cleared（q471-i01、2026-09-26。Venus で Wayland と display 直接の clear） | p001 |
-| ws068-p003 | 自前の GLSL compiler（C、2026-09-27 方式 A）の共通の核: 前処理・字句・構文・型検査・SPIR-V の出力。GLSL ES 1.00 と GLSL 1.30、`glShaderSource`・`glCompileShader` へ接続（i915 の受ける形） | planning（大きいので計画の段で分ける） | p008、p006 |
-| ws068-p012 | GLSL 3.30・ES 3.00（in/out、layout、UBO、整数） | planning | p003 |
+| ws068-p003 | 自前の GLSL compiler（C、2026-09-27 方式 A）の共通の核: 前処理・字句・構文・型検査・SPIR-V の出力。GLSL ES 1.00 と GLSL 1.30、`glShaderSource`・`glCompileShader` へ接続（i915 の受ける形） | 分割（2026-09-27、p015〜p019 に分けた。p019 の clear で満たした（2026-09-27）。設計 [glsl-design.md](glsl-design.md)） | p008、p006 |
+| [ws068-p015](phase015/phase.md) | GLSL compiler の設計（[glsl-design.md](glsl-design.md)）と p003 の分割 | cleared（2026-09-27） | p008 |
+| [ws068-p016](phase016/phase.md) | GLSL compiler: 前処理・字句・構文（AST）と host の試験 | cleared（2026-09-27。host の試験 PASS） | p015 |
+| [ws068-p017](phase017/phase.md) | GLSL compiler: 型・意味解析・定数の畳み込み・built-in の宣言 | cleared（2026-09-27。host の試験 PASS） | p016 |
+| [ws068-p018](phase018/phase.md) | GLSL compiler: SPIR-V の出力と link（i915 の受ける形、spirv-val・lavapipe の実行・i915 の host の検査） | cleared（2026-09-27。spirv-val、lavapipe の 15 試験、i915 の host 検査 PASS） | p017 |
+| [ws068-p019](phase019/phase.md) | GLSL compiler を libGLESv2 へ接続（`glShaderSource`・`glCompileShader`・`glLinkProgram`）、egltest の GLSL の場面、Venus の試験と回帰 | cleared（2026-09-27。Venus で egl-p019 PASS、回帰 PASS。i915 実機は未実施） | p018 |
+| ws068-p012 | GLSL 3.30・ES 3.00（in/out、layout、UBO、整数） | 分割（2026-09-27、p020・p021 に分けた。両方 cleared（2026-09-27）。[glsl-design.md](glsl-design.md) §11） | p003（p019） |
+| [ws068-p020](phase020/phase.md) | GLSL 1.40〜3.30・ES 3.00 の言語（`#version`、`layout(location)`、in/out の block、整数の varying、複数の出力、新しい sampler と built-in） | cleared（2026-09-27。host の試験 PASS、Venus で egl-p020 PASS（ES 3 の context）。i915 実機は未実施） | p019 |
+| [ws068-p021](phase021/phase.md) | GLSL の uniform block（std140、row_major、binding の約束）と libGLESv2 の反射の対応（API は p005・p013） | cleared（2026-09-27。host で std140 の offset を lavapipe で確認。libGLESv2 は API（p005）まで断る） | p020 |
 | ws068-p013 | desktop GL 3.0 の context（`glXCreateContextAttribsARB`、core と compatibility の profile、VAO、GL 3.0 の API） | planning | p003、ws069-p008 |
 | ws068-p014 | desktop GL 3.3〜4.6 の出来る範囲（Venus 先。geometry・tessellation・compute・SSBO は device の feature で。i915 の不足は F-023） | planning | p012、p013 |
 | ws068-p004 | GLES 2.0 の残りと試験の充実 | planning | p003 |

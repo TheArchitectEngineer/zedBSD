@@ -1,0 +1,775 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The GLSL compiler's types: the built-in scalars, vectors, matrices and
+ * samplers (static, shared by every compile and never written), arrays
+ * made in a compile's arena, and the std140 layout the default uniform
+ * block uses.
+ */
+
+#include "internal.h"
+
+#include <stdio.h>
+#include <string.h>
+
+/*
+ * A built-in type's name and the versions it exists in.
+ */
+struct types_name {
+	const char *name;
+	const struct glsl_type *type;
+	unsigned versions;
+};
+
+/* void, and the type of an expression that already had an error. */
+static const struct glsl_type types_void = { GLSL_KIND_VOID, GLSL_BASE_NONE, 0U, 0U, 0U, 0U, "void", NULL, 0U, NULL, 0U, 0U, 0U };
+static const struct glsl_type types_error = { GLSL_KIND_ERROR, GLSL_BASE_NONE, 0U, 0U, 0U, 0U, "<error>", NULL, 0U, NULL, 0U, 0U, 0U };
+
+/*
+ * The scalars, by base (GLSL_BASE_BOOL .. GLSL_BASE_FLOAT; index 0 is
+ * not a type).
+ */
+static const struct glsl_type types_scalars[5] = {
+	{ GLSL_KIND_ERROR, GLSL_BASE_NONE, 0U, 0U, 0U, 0U, "<error>", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SCALAR, GLSL_BASE_BOOL, 1U, 1U, 0U, 0U, "bool", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SCALAR, GLSL_BASE_INT, 1U, 1U, 0U, 0U, "int", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SCALAR, GLSL_BASE_UINT, 1U, 1U, 0U, 0U, "uint", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SCALAR, GLSL_BASE_FLOAT, 1U, 1U, 0U, 0U, "float", NULL, 0U, NULL, 0U, 0U, 0U }
+};
+
+/*
+ * The vectors, by base and then by size - 2 (vec2, vec3, vec4).
+ */
+static const struct glsl_type types_vectors[5][3] = {
+	{
+		{ GLSL_KIND_ERROR, GLSL_BASE_NONE, 0U, 0U, 0U, 0U, "<error>", NULL, 0U, NULL, 0U, 0U, 0U },
+		{ GLSL_KIND_ERROR, GLSL_BASE_NONE, 0U, 0U, 0U, 0U, "<error>", NULL, 0U, NULL, 0U, 0U, 0U },
+		{ GLSL_KIND_ERROR, GLSL_BASE_NONE, 0U, 0U, 0U, 0U, "<error>", NULL, 0U, NULL, 0U, 0U, 0U }
+	},
+	{
+		{ GLSL_KIND_VECTOR, GLSL_BASE_BOOL, 2U, 1U, 0U, 0U, "bvec2", NULL, 0U, NULL, 0U, 0U, 0U },
+		{ GLSL_KIND_VECTOR, GLSL_BASE_BOOL, 3U, 1U, 0U, 0U, "bvec3", NULL, 0U, NULL, 0U, 0U, 0U },
+		{ GLSL_KIND_VECTOR, GLSL_BASE_BOOL, 4U, 1U, 0U, 0U, "bvec4", NULL, 0U, NULL, 0U, 0U, 0U }
+	},
+	{
+		{ GLSL_KIND_VECTOR, GLSL_BASE_INT, 2U, 1U, 0U, 0U, "ivec2", NULL, 0U, NULL, 0U, 0U, 0U },
+		{ GLSL_KIND_VECTOR, GLSL_BASE_INT, 3U, 1U, 0U, 0U, "ivec3", NULL, 0U, NULL, 0U, 0U, 0U },
+		{ GLSL_KIND_VECTOR, GLSL_BASE_INT, 4U, 1U, 0U, 0U, "ivec4", NULL, 0U, NULL, 0U, 0U, 0U }
+	},
+	{
+		{ GLSL_KIND_VECTOR, GLSL_BASE_UINT, 2U, 1U, 0U, 0U, "uvec2", NULL, 0U, NULL, 0U, 0U, 0U },
+		{ GLSL_KIND_VECTOR, GLSL_BASE_UINT, 3U, 1U, 0U, 0U, "uvec3", NULL, 0U, NULL, 0U, 0U, 0U },
+		{ GLSL_KIND_VECTOR, GLSL_BASE_UINT, 4U, 1U, 0U, 0U, "uvec4", NULL, 0U, NULL, 0U, 0U, 0U }
+	},
+	{
+		{ GLSL_KIND_VECTOR, GLSL_BASE_FLOAT, 2U, 1U, 0U, 0U, "vec2", NULL, 0U, NULL, 0U, 0U, 0U },
+		{ GLSL_KIND_VECTOR, GLSL_BASE_FLOAT, 3U, 1U, 0U, 0U, "vec3", NULL, 0U, NULL, 0U, 0U, 0U },
+		{ GLSL_KIND_VECTOR, GLSL_BASE_FLOAT, 4U, 1U, 0U, 0U, "vec4", NULL, 0U, NULL, 0U, 0U, 0U }
+	}
+};
+
+/*
+ * The float matrices, by columns - 2 and then rows - 2 (matCxR).
+ */
+static const struct glsl_type types_matrices[3][3] = {
+	{
+		{ GLSL_KIND_MATRIX, GLSL_BASE_FLOAT, 2U, 2U, 0U, 0U, "mat2", NULL, 0U, NULL, 0U, 0U, 0U },
+		{ GLSL_KIND_MATRIX, GLSL_BASE_FLOAT, 3U, 2U, 0U, 0U, "mat2x3", NULL, 0U, NULL, 0U, 0U, 0U },
+		{ GLSL_KIND_MATRIX, GLSL_BASE_FLOAT, 4U, 2U, 0U, 0U, "mat2x4", NULL, 0U, NULL, 0U, 0U, 0U }
+	},
+	{
+		{ GLSL_KIND_MATRIX, GLSL_BASE_FLOAT, 2U, 3U, 0U, 0U, "mat3x2", NULL, 0U, NULL, 0U, 0U, 0U },
+		{ GLSL_KIND_MATRIX, GLSL_BASE_FLOAT, 3U, 3U, 0U, 0U, "mat3", NULL, 0U, NULL, 0U, 0U, 0U },
+		{ GLSL_KIND_MATRIX, GLSL_BASE_FLOAT, 4U, 3U, 0U, 0U, "mat3x4", NULL, 0U, NULL, 0U, 0U, 0U }
+	},
+	{
+		{ GLSL_KIND_MATRIX, GLSL_BASE_FLOAT, 2U, 4U, 0U, 0U, "mat4x2", NULL, 0U, NULL, 0U, 0U, 0U },
+		{ GLSL_KIND_MATRIX, GLSL_BASE_FLOAT, 3U, 4U, 0U, 0U, "mat4x3", NULL, 0U, NULL, 0U, 0U, 0U },
+		{ GLSL_KIND_MATRIX, GLSL_BASE_FLOAT, 4U, 4U, 0U, 0U, "mat4", NULL, 0U, NULL, 0U, 0U, 0U }
+	}
+};
+
+/*
+ * The samplers: float, int and uint texels of each dimension, then the
+ * shadow samplers.
+ */
+static const struct glsl_type types_samplers[] = {
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_FLOAT, 4U, 1U, GLSL_SAMPLER_1D, 0U, "sampler1D", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_FLOAT, 4U, 1U, GLSL_SAMPLER_2D, 0U, "sampler2D", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_FLOAT, 4U, 1U, GLSL_SAMPLER_3D, 0U, "sampler3D", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_FLOAT, 4U, 1U, GLSL_SAMPLER_CUBE, 0U, "samplerCube", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_INT, 4U, 1U, GLSL_SAMPLER_1D, 0U, "isampler1D", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_INT, 4U, 1U, GLSL_SAMPLER_2D, 0U, "isampler2D", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_INT, 4U, 1U, GLSL_SAMPLER_3D, 0U, "isampler3D", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_INT, 4U, 1U, GLSL_SAMPLER_CUBE, 0U, "isamplerCube", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_UINT, 4U, 1U, GLSL_SAMPLER_1D, 0U, "usampler1D", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_UINT, 4U, 1U, GLSL_SAMPLER_2D, 0U, "usampler2D", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_UINT, 4U, 1U, GLSL_SAMPLER_3D, 0U, "usampler3D", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_UINT, 4U, 1U, GLSL_SAMPLER_CUBE, 0U, "usamplerCube", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_FLOAT, 4U, 1U, GLSL_SAMPLER_1D, 1U, "sampler1DShadow", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_FLOAT, 4U, 1U, GLSL_SAMPLER_2D, 1U, "sampler2DShadow", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_FLOAT, 4U, 1U, GLSL_SAMPLER_CUBE, 1U, "samplerCubeShadow", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_FLOAT, 4U, 1U, GLSL_SAMPLER_2D, 0U, "sampler2DArray", NULL, 0U, NULL, 0U, 1U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_INT, 4U, 1U, GLSL_SAMPLER_2D, 0U, "isampler2DArray", NULL, 0U, NULL, 0U, 1U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_UINT, 4U, 1U, GLSL_SAMPLER_2D, 0U, "usampler2DArray", NULL, 0U, NULL, 0U, 1U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_FLOAT, 4U, 1U, GLSL_SAMPLER_2D, 1U, "sampler2DArrayShadow", NULL, 0U, NULL, 0U, 1U, 0U }
+};
+
+/*
+ * The built-in type names and the versions each exists in (a name
+ * outside its versions is an ordinary identifier).
+ */
+static const struct types_name types_names[] = {
+	{ "void", &types_void, GLSL_IN_ALL },
+	{ "bool", &types_scalars[GLSL_BASE_BOOL], GLSL_IN_ALL },
+	{ "int", &types_scalars[GLSL_BASE_INT], GLSL_IN_ALL },
+	{ "uint", &types_scalars[GLSL_BASE_UINT], GLSL_IN_130_UP },
+	{ "float", &types_scalars[GLSL_BASE_FLOAT], GLSL_IN_ALL },
+	{ "bvec2", &types_vectors[GLSL_BASE_BOOL][0], GLSL_IN_ALL },
+	{ "bvec3", &types_vectors[GLSL_BASE_BOOL][1], GLSL_IN_ALL },
+	{ "bvec4", &types_vectors[GLSL_BASE_BOOL][2], GLSL_IN_ALL },
+	{ "ivec2", &types_vectors[GLSL_BASE_INT][0], GLSL_IN_ALL },
+	{ "ivec3", &types_vectors[GLSL_BASE_INT][1], GLSL_IN_ALL },
+	{ "ivec4", &types_vectors[GLSL_BASE_INT][2], GLSL_IN_ALL },
+	{ "uvec2", &types_vectors[GLSL_BASE_UINT][0], GLSL_IN_130_UP },
+	{ "uvec3", &types_vectors[GLSL_BASE_UINT][1], GLSL_IN_130_UP },
+	{ "uvec4", &types_vectors[GLSL_BASE_UINT][2], GLSL_IN_130_UP },
+	{ "vec2", &types_vectors[GLSL_BASE_FLOAT][0], GLSL_IN_ALL },
+	{ "vec3", &types_vectors[GLSL_BASE_FLOAT][1], GLSL_IN_ALL },
+	{ "vec4", &types_vectors[GLSL_BASE_FLOAT][2], GLSL_IN_ALL },
+	{ "mat2", &types_matrices[0][0], GLSL_IN_ALL },
+	{ "mat3", &types_matrices[1][1], GLSL_IN_ALL },
+	{ "mat4", &types_matrices[2][2], GLSL_IN_ALL },
+	{ "mat2x2", &types_matrices[0][0], GLSL_IN_120_UP },
+	{ "mat2x3", &types_matrices[0][1], GLSL_IN_120_UP },
+	{ "mat2x4", &types_matrices[0][2], GLSL_IN_120_UP },
+	{ "mat3x2", &types_matrices[1][0], GLSL_IN_120_UP },
+	{ "mat3x3", &types_matrices[1][1], GLSL_IN_120_UP },
+	{ "mat3x4", &types_matrices[1][2], GLSL_IN_120_UP },
+	{ "mat4x2", &types_matrices[2][0], GLSL_IN_120_UP },
+	{ "mat4x3", &types_matrices[2][1], GLSL_IN_120_UP },
+	{ "mat4x4", &types_matrices[2][2], GLSL_IN_120_UP },
+	{ "sampler1D", &types_samplers[0], GLSL_IN_DESKTOP },
+	{ "sampler2D", &types_samplers[1], GLSL_IN_ALL },
+	{ "sampler3D", &types_samplers[2], GLSL_IN_DESKTOP | GLSL_IN_ES300 },
+	{ "samplerCube", &types_samplers[3], GLSL_IN_ALL },
+	{ "isampler1D", &types_samplers[4], GLSL_IN_DESKTOP_130_UP },
+	{ "isampler2D", &types_samplers[5], GLSL_IN_130_UP },
+	{ "isampler3D", &types_samplers[6], GLSL_IN_130_UP },
+	{ "isamplerCube", &types_samplers[7], GLSL_IN_130_UP },
+	{ "usampler1D", &types_samplers[8], GLSL_IN_DESKTOP_130_UP },
+	{ "usampler2D", &types_samplers[9], GLSL_IN_130_UP },
+	{ "usampler3D", &types_samplers[10], GLSL_IN_130_UP },
+	{ "usamplerCube", &types_samplers[11], GLSL_IN_130_UP },
+	{ "sampler1DShadow", &types_samplers[12], GLSL_IN_DESKTOP },
+	{ "sampler2DShadow", &types_samplers[13], GLSL_IN_DESKTOP | GLSL_IN_ES300 },
+	{ "samplerCubeShadow", &types_samplers[14], GLSL_IN_130_UP },
+	{ "sampler2DArray", &types_samplers[15], GLSL_IN_130_UP },
+	{ "isampler2DArray", &types_samplers[16], GLSL_IN_130_UP },
+	{ "usampler2DArray", &types_samplers[17], GLSL_IN_130_UP },
+	{ "sampler2DArrayShadow", &types_samplers[18], GLSL_IN_130_UP }
+};
+
+static unsigned types_round(unsigned value, unsigned alignment);
+
+/*
+ * Returns void.
+ */
+const struct glsl_type *
+glsl_type_void(void)
+{
+	/* The one void. */
+	return &types_void;
+}
+
+/*
+ * Returns the type of an expression that already had an error (no
+ * further error is reported about it).
+ */
+const struct glsl_type *
+glsl_type_error(void)
+{
+	/* The one error type. */
+	return &types_error;
+}
+
+/*
+ * Returns the scalar type of a base.
+ */
+const struct glsl_type *
+glsl_type_scalar(
+	unsigned base)
+{
+	/* A base outside the table is an error. */
+	if (base < GLSL_BASE_BOOL || base > GLSL_BASE_FLOAT)
+		return &types_error;
+
+	/* The scalar. */
+	return &types_scalars[base];
+}
+
+/*
+ * Returns the vector type of a base and a size (a size of 1 is the
+ * scalar).
+ */
+const struct glsl_type *
+glsl_type_vector(
+	unsigned base,
+	unsigned components)
+{
+	/* One component is the scalar. */
+	if (components == 1U)
+		return glsl_type_scalar(base);
+
+	/* A base or size outside the table is an error. */
+	if (base < GLSL_BASE_BOOL || base > GLSL_BASE_FLOAT)
+		return &types_error;
+	if (components < 2U || components > 4U)
+		return &types_error;
+
+	/* The vector. */
+	return &types_vectors[base][components - 2U];
+}
+
+/*
+ * Returns the float matrix type of a number of columns and rows.
+ */
+const struct glsl_type *
+glsl_type_matrix(
+	unsigned columns,
+	unsigned rows)
+{
+	/* A shape outside the table is an error. */
+	if (columns < 2U || columns > 4U)
+		return &types_error;
+	if (rows < 2U || rows > 4U)
+		return &types_error;
+
+	/* The matrix. */
+	return &types_matrices[columns - 2U][rows - 2U];
+}
+
+/*
+ * Returns the GLSL_IN_* bit of a shader's version.
+ */
+unsigned
+glsl_version_mask(
+	const struct glsl_shader *shader)
+{
+	/* OpenGL ES 1.00 and 3.00. */
+	if (shader->es && shader->version >= GLSL_VERSION_ES300)
+		return GLSL_IN_ES300;
+	if (shader->es)
+		return GLSL_IN_ES100;
+
+	/* Desktop 1.10 to 3.30. */
+	switch (shader->version) {
+	case GLSL_VERSION_110:
+		return GLSL_IN_110;
+	case GLSL_VERSION_120:
+		return GLSL_IN_120;
+	case GLSL_VERSION_130:
+		return GLSL_IN_130;
+	case GLSL_VERSION_140:
+		return GLSL_IN_140;
+	case GLSL_VERSION_150:
+		return GLSL_IN_150;
+	default:
+		break;
+	}
+
+	/* 3.30. */
+	return GLSL_IN_330;
+}
+
+/*
+ * Reports whether a shader's version has a feature that came with a
+ * desktop version and an OpenGL ES version (0: never in OpenGL ES).
+ */
+int
+glsl_since(
+	const struct glsl_shader *shader,
+	unsigned desktop,
+	unsigned es)
+{
+	/* OpenGL ES from its version, when it has the feature at all. */
+	if (shader->es) {
+		if (es != 0U && shader->version >= es)
+			return 1;
+		return 0;
+	}
+
+	/* Desktop from its version. */
+	if (shader->version >= desktop)
+		return 1;
+
+	/* Too old. */
+	return 0;
+}
+
+/*
+ * Returns the sampler type of a texel base, a dimension and shadow.
+ */
+const struct glsl_type *
+glsl_type_sampler(
+	unsigned base,
+	unsigned sampler,
+	unsigned shadow)
+{
+	size_t index;
+	const struct glsl_type *type;
+
+	/* The sampler of that kind. */
+	for (index = 0U; index < sizeof(types_samplers) / sizeof(types_samplers[0]); index++) {
+		type = &types_samplers[index];
+		if (type->base == base && type->sampler == sampler && type->shadow == shadow && !type->arrayed)
+			return type;
+	}
+
+	/* None. */
+	return &types_error;
+}
+
+/*
+ * Returns the built-in type a name spells, or NULL.  *versions receives
+ * the GLSL_IN_* versions the name exists in.
+ */
+const struct glsl_type *
+glsl_type_named(
+	const char *name,
+	unsigned length,
+	unsigned *versions)
+{
+	size_t index;
+	size_t name_length;
+	int differs;
+
+	/* The name of that spelling. */
+	for (index = 0U; index < sizeof(types_names) / sizeof(types_names[0]); index++) {
+		name_length = strlen(types_names[index].name);
+		if (name_length != length)
+			continue;
+		differs = memcmp(types_names[index].name, name, length);
+		if (differs != 0)
+			continue;
+
+		/* The type and its versions. */
+		*versions = types_names[index].versions;
+		return types_names[index].type;
+	}
+
+	/* Not a built-in type. */
+	*versions = 0U;
+	return NULL;
+}
+
+/*
+ * Makes an array type of an element type and a length (0: unsized).
+ */
+const struct glsl_type *
+glsl_type_array(
+	struct glsl_arena *arena,
+	const struct glsl_type *element,
+	unsigned length)
+{
+	struct glsl_type *type;
+
+	/* The array type. */
+	type = glsl_alloc(arena, sizeof(*type));
+	type->kind = GLSL_KIND_ARRAY;
+	type->base = GLSL_BASE_NONE;
+	type->element = element;
+	type->length = length;
+
+	/* Succeeded: the new type. */
+	return type;
+}
+
+/*
+ * Returns the type of a matrix's column (or of a vector's component, or
+ * an array's element).
+ */
+const struct glsl_type *
+glsl_type_column(
+	const struct glsl_type *type)
+{
+	/* The kinds that have parts. */
+	switch (type->kind) {
+	case GLSL_KIND_MATRIX:
+		return glsl_type_vector(type->base, type->components);
+	case GLSL_KIND_VECTOR:
+		return glsl_type_scalar(type->base);
+	case GLSL_KIND_ARRAY:
+		return type->element;
+	default:
+		break;
+	}
+
+	/* Anything else has none. */
+	return &types_error;
+}
+
+/*
+ * Returns the scalar or vector of another base with the shape of a
+ * scalar or vector.
+ */
+const struct glsl_type *
+glsl_type_with_base(
+	const struct glsl_type *type,
+	unsigned base)
+{
+	/* Only scalars and vectors change their base. */
+	if (type->kind != GLSL_KIND_SCALAR && type->kind != GLSL_KIND_VECTOR)
+		return &types_error;
+
+	/* The same size, the other base. */
+	return glsl_type_vector(base, type->components);
+}
+
+/*
+ * Reports whether two types are the same type.
+ */
+int
+glsl_type_equal(
+	const struct glsl_type *left,
+	const struct glsl_type *right)
+{
+	int same;
+
+	/* The same object (every built-in type and struct is unique). */
+	if (left == right)
+		return 1;
+
+	/* Two arrays of the same element and length. */
+	if (left->kind != GLSL_KIND_ARRAY || right->kind != GLSL_KIND_ARRAY)
+		return 0;
+	if (left->length != right->length)
+		return 0;
+	same = glsl_type_equal(left->element, right->element);
+	if (!same)
+		return 0;
+
+	/* Succeeded: the same array type. */
+	return 1;
+}
+
+/*
+ * Reports whether a type is a scalar, vector or matrix of numbers (not
+ * bool).
+ */
+int
+glsl_type_numeric(
+	const struct glsl_type *type)
+{
+	/* The shapes that hold numbers. */
+	if (type->kind != GLSL_KIND_SCALAR && type->kind != GLSL_KIND_VECTOR && type->kind != GLSL_KIND_MATRIX)
+		return 0;
+
+	/* Numbers, not bool. */
+	if (type->base == GLSL_BASE_BOOL)
+		return 0;
+
+	/* Succeeded: numeric. */
+	return 1;
+}
+
+/*
+ * Reports whether a type is or contains a sampler.
+ */
+int
+glsl_type_contains_sampler(
+	const struct glsl_type *type)
+{
+	unsigned index;
+	int contains;
+
+	/* A sampler, or an array of something containing one. */
+	if (type->kind == GLSL_KIND_SAMPLER)
+		return 1;
+	if (type->kind == GLSL_KIND_ARRAY) {
+		contains = glsl_type_contains_sampler(type->element);
+		return contains;
+	}
+
+	/* A struct with a member containing one. */
+	if (type->kind == GLSL_KIND_STRUCT) {
+		for (index = 0U; index < type->field_count; index++) {
+			contains = glsl_type_contains_sampler(type->fields[index].type);
+			if (contains)
+				return 1;
+		}
+	}
+
+	/* Anything else has none. */
+	return 0;
+}
+
+/*
+ * Returns how many scalars a value of a type has (the length of its
+ * flattened constant).
+ */
+unsigned
+glsl_type_scalars(
+	const struct glsl_type *type)
+{
+	unsigned count;
+	unsigned index;
+
+	/* The shapes of scalars. */
+	switch (type->kind) {
+	case GLSL_KIND_SCALAR:
+		return 1U;
+	case GLSL_KIND_VECTOR:
+		return type->components;
+	case GLSL_KIND_MATRIX:
+		return type->components * type->columns;
+	case GLSL_KIND_ARRAY:
+		count = glsl_type_scalars(type->element);
+		return count * type->length;
+	case GLSL_KIND_STRUCT:
+		count = 0U;
+		for (index = 0U; index < type->field_count; index++)
+			count += glsl_type_scalars(type->fields[index].type);
+		return count;
+	default:
+		break;
+	}
+
+	/* Anything else has none. */
+	return 0U;
+}
+
+/*
+ * Returns how many locations a varying or an attribute of a type takes.
+ */
+unsigned
+glsl_type_locations(
+	const struct glsl_type *type)
+{
+	unsigned count;
+	unsigned index;
+
+	/* A matrix takes one per column, an array one per element's worth, a struct its members'. */
+	switch (type->kind) {
+	case GLSL_KIND_MATRIX:
+		return type->columns;
+	case GLSL_KIND_ARRAY:
+		count = glsl_type_locations(type->element);
+		return count * type->length;
+	case GLSL_KIND_STRUCT:
+		count = 0U;
+		for (index = 0U; index < type->field_count; index++)
+			count += glsl_type_locations(type->fields[index].type);
+		return count;
+	default:
+		break;
+	}
+
+	/* A scalar or a vector takes one. */
+	return 1U;
+}
+
+/*
+ * Writes a type's GLSL spelling (for messages).
+ */
+void
+glsl_type_name(
+	const struct glsl_type *type,
+	char *out,
+	size_t size)
+{
+	char element[64];
+
+	/* An array: its element and its length. */
+	if (type->kind == GLSL_KIND_ARRAY) {
+		glsl_type_name(type->element, element, sizeof(element));
+		if (type->length == 0U) {
+			(void)snprintf(out, size, "%s[]", element);
+		} else {
+			(void)snprintf(out, size, "%s[%u]", element, type->length);
+		}
+
+		/* The array is spelled. */
+		return;
+	}
+
+	/* A struct: "struct NAME"; anything else its name. */
+	if (type->kind == GLSL_KIND_STRUCT) {
+		(void)snprintf(out, size, "struct %s", type->name);
+	} else {
+		(void)snprintf(out, size, "%s", type->name);
+	}
+}
+
+/*
+ * Returns a type's alignment in a std140 block.
+ */
+unsigned
+glsl_std140_alignment(
+	const struct glsl_type *type)
+{
+	unsigned alignment;
+	unsigned member;
+	unsigned index;
+
+	/* Scalars 4, two-vectors 8, three- and four-vectors 16. */
+	switch (type->kind) {
+	case GLSL_KIND_SCALAR:
+		return 4U;
+	case GLSL_KIND_VECTOR:
+		if (type->components == 2U)
+			return 8U;
+		return 16U;
+	case GLSL_KIND_MATRIX:
+		return 16U;
+	case GLSL_KIND_ARRAY:
+		alignment = glsl_std140_alignment(type->element);
+		return types_round(alignment, 16U);
+	case GLSL_KIND_STRUCT:
+		alignment = 16U;
+		for (index = 0U; index < type->field_count; index++) {
+			member = glsl_std140_alignment(type->fields[index].type);
+			if (member > alignment)
+				alignment = member;
+		}
+
+		/* The largest member's, at least 16. */
+		return alignment;
+	default:
+		break;
+	}
+
+	/* Anything else is not in a block. */
+	return 4U;
+}
+
+/*
+ * Returns a type's size in a std140 block (a struct's and an array's
+ * rounded up to their alignment).
+ */
+unsigned
+glsl_std140_size(
+	const struct glsl_type *type)
+{
+	unsigned offset;
+	unsigned alignment;
+	unsigned index;
+	unsigned stride;
+
+	/* The kinds of types. */
+	switch (type->kind) {
+	case GLSL_KIND_SCALAR:
+		return 4U;
+	case GLSL_KIND_VECTOR:
+		return 4U * type->components;
+	case GLSL_KIND_MATRIX:
+		return 16U * type->columns;
+	case GLSL_KIND_ARRAY:
+		stride = glsl_std140_stride(type);
+		return stride * type->length;
+	case GLSL_KIND_STRUCT:
+		offset = 0U;
+		for (index = 0U; index < type->field_count; index++) {
+			alignment = glsl_std140_alignment(type->fields[index].type);
+			offset = types_round(offset, alignment);
+			offset += glsl_std140_member_size(type->fields[index].type, type->fields[index].row_major);
+		}
+
+		/* The end rounded to the struct's alignment. */
+		alignment = glsl_std140_alignment(type);
+		return types_round(offset, alignment);
+	default:
+		break;
+	}
+
+	/* Anything else is not in a block. */
+	return 0U;
+}
+
+/*
+ * Returns the std140 stride of an array type's elements.
+ */
+unsigned
+glsl_std140_stride(
+	const struct glsl_type *type)
+{
+	unsigned size;
+	unsigned alignment;
+
+	/* The element's size rounded up to its alignment and to 16. */
+	size = glsl_std140_size(type->element);
+	alignment = glsl_std140_alignment(type->element);
+	size = types_round(size, alignment);
+
+	/* Succeeded: the stride. */
+	return types_round(size, 16U);
+}
+
+/*
+ * Returns the std140 size of a struct member, whose matrices (or array
+ * of matrices) may be row-major: then each row is a vector of the
+ * columns' count, 16 bytes apart.
+ */
+unsigned
+glsl_std140_member_size(
+	const struct glsl_type *type,
+	unsigned row_major)
+{
+	unsigned stride;
+	unsigned size;
+
+	/* Column-major, or not a matrix: the type's own size. */
+	if (!row_major) {
+		size = glsl_std140_size(type);
+		return size;
+	}
+
+	/* A row-major matrix: one row per component of a column. */
+	if (type->kind == GLSL_KIND_MATRIX)
+		return 16U * type->components;
+
+	/* An array of them: the rows' stride times the length. */
+	if (type->kind == GLSL_KIND_ARRAY && type->element->kind == GLSL_KIND_MATRIX) {
+		stride = glsl_std140_member_stride(type, row_major);
+		return stride * type->length;
+	}
+
+	/* Anything else is not a matrix. */
+	size = glsl_std140_size(type);
+	return size;
+}
+
+/*
+ * Returns the std140 stride of an array member's elements, row-major
+ * matrices taking a row per component.
+ */
+unsigned
+glsl_std140_member_stride(
+	const struct glsl_type *type,
+	unsigned row_major)
+{
+	unsigned stride;
+
+	/* An array of row-major matrices. */
+	if (row_major && type->element->kind == GLSL_KIND_MATRIX)
+		return 16U * type->element->components;
+
+	/* Any other array. */
+	stride = glsl_std140_stride(type);
+	return stride;
+}
+
+/* Rounds a value up to a multiple of an alignment (a power of two). */
+static unsigned
+types_round(
+	unsigned value,
+	unsigned alignment)
+{
+	/* The next multiple. */
+	return (value + alignment - 1U) & ~(alignment - 1U);
+}

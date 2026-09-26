@@ -15,7 +15,9 @@
  * EGL pbuffer that nothing shows.  Each frame clears to one colour
  * (--color) or to a colour that changes with the frame, and swaps; with
  * --scene=draw each frame draws scene.c's shapes instead, and the first
- * frame reads its colours back (EGLTEST PIXEL and EGLTEST CHECK lines).
+ * frame reads its colours back (EGLTEST PIXEL and EGLTEST CHECK lines);
+ * --scene=glsl draws them with shaders compiled from GLSL ES 1.00 source,
+ * --scene=glsl3 with GLSL ES 3.00 source in an OpenGL ES 3 context.
  *
  * Every outcome is one line: EGLTEST DONE on a clean end, EGLTEST FAILED
  * naming what failed otherwise.
@@ -137,7 +139,7 @@ main(
 	/* The command line. */
 	status = egltest_parse(argc, argv, &options);
 	if (status != 0) {
-		fprintf(stderr, "usage: egltest [--display=NAME] [--platform=wayland|display|pbuffer] [--size=WxH] [--frames=N] [--delay-ms=N] [--color=RRGGBB] [--scene=draw] [--token=NAME]\n");
+		fprintf(stderr, "usage: egltest [--display=NAME] [--platform=wayland|display|pbuffer] [--size=WxH] [--frames=N] [--delay-ms=N] [--color=RRGGBB] [--scene=draw|glsl|glsl3] [--token=NAME]\n");
 		return 2;
 	}
 
@@ -184,7 +186,7 @@ egltest_start(
 		EGL_DEPTH_SIZE, 0,
 		EGL_NONE
 	};
-	static const EGLint context_attributes[] = {
+	EGLint context_attributes[] = {
 		EGL_CONTEXT_CLIENT_VERSION, 2,
 		EGL_NONE
 	};
@@ -250,6 +252,8 @@ egltest_start(
 
 	/* An OpenGL ES 2 context. */
 	egl->operation = "eglCreateContext";
+	if (options->scene == 3)
+		context_attributes[1] = 3;
 	egl->context = eglCreateContext(egl->display, egl->config, EGL_NO_CONTEXT, context_attributes);
 	if (egl->context == EGL_NO_CONTEXT)
 		return -1;
@@ -272,7 +276,15 @@ egltest_start(
 	/* The scene's program, buffers and texture. */
 	egl->operation = "scene";
 	if (options->scene) {
-		status = egltest_scene_start();
+		if (options->scene == 3) {
+			status = egltest_scene_start_glsl3();
+		} else if (options->scene == 2) {
+			status = egltest_scene_start_glsl();
+		} else {
+			status = egltest_scene_start();
+		}
+
+		/* The scene is needed. */
 		if (status != 0)
 			return -1;
 	}
@@ -455,10 +467,17 @@ egltest_parse(
 		/* The drawing scene. */
 		value = egltest_value(argv[index], "--scene=");
 		if (value != NULL) {
-			differs = strcmp(value, "draw");
-			if (differs != 0)
-				return -1;
+			/* draw: the shaders from SPIR-V; glsl: from GLSL ES 1.00 source; glsl3: from GLSL ES 3.00. */
 			options->scene = 1;
+			differs = strcmp(value, "glsl");
+			if (differs == 0)
+				options->scene = 2;
+			differs = strcmp(value, "glsl3");
+			if (differs == 0)
+				options->scene = 3;
+			differs = strcmp(value, "draw");
+			if (differs != 0 && options->scene == 1)
+				return -1;
 			continue;
 		}
 

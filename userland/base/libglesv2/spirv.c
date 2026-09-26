@@ -1028,6 +1028,15 @@ spirv_variable(
 		return 0;
 	}
 
+	/* A uniform block other than the default one (binding 0): its binding is recorded. */
+	if (storage == STORAGE_UNIFORM && module->bindings[id] != SPIRV_NONE && module->bindings[id] != 0U) {
+		if (!module->blocks[pointee] || out->named_count == GLES_NAMED_BLOCKS)
+			return -1;
+		out->named_bindings[out->named_count] = module->bindings[id];
+		out->named_count++;
+		return 0;
+	}
+
 	/* The default uniform block: set 0, its leaves by name. */
 	if (storage == STORAGE_UNIFORM) {
 		if (!module->blocks[pointee] || out->has_block)
