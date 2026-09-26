@@ -9,7 +9,7 @@ Related Milestones: MG003, MG006
 Objectives: O2, O4
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 ユーザー指示でサブエージェントが worktree の branch で実行。main session が merge する）
-Resume point: p002（PCIe の root complex）。p004 は HAL の承認待ち（design.md §6）
+Resume point: p003（mailbox と VL805 の通知）。p004 は HAL の承認待ち（design.md §6）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -43,7 +43,7 @@ Resume point: p002（PCIe の root complex）。p004 は HAL の承認待ち（d
 | Phase | 内容 | Status | 依存 | HAL の承認 |
 | --- | --- | --- | --- | --- |
 | [ws048-p001](phase001/phase.md) | 調査と設計 | cleared | — | 不要 |
-| [ws048-p002](phase002/phase.md) | FDT の reader、arm64 の device mapping の実装の修正、brcmstb の host bridge と PCI の backend（VL805 が列挙される） | planned | p001 | 不要 |
+| [ws048-p002](phase002/phase.md) | FDT の reader、arm64 の device mapping の実装の修正、brcmstb の host bridge と PCI の backend（VL805 が列挙される） | cleared（実機は未実施） | p001 | 不要 |
 | [ws048-p003](phase003/phase.md) | firmware の mailbox と VL805 の firmware の通知 | planned | p002 | 不要 |
 | [ws048-p004](phase004/phase.md) | 非 coherent な DMA（`hal_pmem_map_uncached` と `dma.c`） | planned | p001 | **要る**（design.md §6） |
 | [ws048-p005](phase005/phase.md) | xHCI を rpi4 で | planned | p002・p003・p004 | 不要 |
