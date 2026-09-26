@@ -9,7 +9,7 @@ Related Milestones: MG005
 Objectives: O1, O2, O3
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p024〜p031 cleared（2026-09-27）。p032〜p036 cleared、main を merge（2026-09-27、phase034 の記録）。次はユーザーの決めた WS045 の 3 件（dirname の複数 operand、mktemp・install・base64、xargs の GNU option）を p037〜p039 で、その後 §12 の残り（mesg・tabs・find・ls）
+Resume point: p024〜p031 cleared（2026-09-27）。p032〜p037 cleared、main を merge（2026-09-27、phase034 の記録）。次はユーザーの決めた WS045 の残り 2 件（mktemp・install・base64 を p038、xargs の GNU option を p039）、その後 §12 の残り（mesg・tabs・find・ls）
 <!-- awesome-plan-current:end -->
 
 Shared tests: [WS001 test index](tests/README.md)
@@ -56,6 +56,7 @@ Shared tests: [WS001 test index](tests/README.md)
 | `ws001-p034` | [df・du](phase034/phase.md) | cleared（2026-09-27） | df は mount 表の全部と operand の file system、du は全 option と hard link・loop、host du 15/15・amd64 guest 23/23、style 0 |
 | `ws001-p035` | [who](phase035/phase.md) | cleared（2026-09-27） | 全 option と `am i`・file operand、`<utmpx.h>` に POSIX の定数、host who 5/5（glibc の記録を GNU と）・amd64 guest 28/28、style 0 |
 | `ws001-p036` | [stty](phase036/phase.md) | cleared（2026-09-27） | 全 operand・`-a`・`-g`・窓の大きさ、`<termios.h>` に XSI の遅延、`<unistd.h>` に `_POSIX_VDISABLE`、host pty 89/89・amd64 guest 30/30、style 0 |
+| `ws001-p037` | [dirname の複数の operand](phase037/phase.md) | cleared（2026-09-27） | ユーザーの決定（WS045 から）。各結果を 1 行ずつ、`-z`、dirname-test PASS・host 5/5・amd64 guest 28/28、style 0 |
 
 ### q042 pre-merge identifier migration
 
@@ -114,6 +115,7 @@ Phase に分けた。範囲の境界:
 | p034 | #33 df、#36 du（p033 の後に追加） | df の全 file system と operand の解決、du の `-a`/`-s`/`-k`/`-x`/`-H`/`-L`、hard link、loop |
 | p035 | #150 who（p034 の後に追加） | option の全部、`am i`、file operand、端末の状態と idle、`<utmpx.h>` の定数 |
 | p036 | #116 stty（p035 の後に追加） | 全 operand、`-a`・`-g`、設定の読み戻し、窓の大きさ |
+| p037 | #35 dirname（ユーザーの決定、WS045 から） | 複数の operand、`-z`、dirname-test の更新 |
 
 ## 1. Project objective
 
@@ -474,7 +476,7 @@ The current register therefore contains 0 P0, 73 P1, and 38 P2 findings.
 | 32 | [delta](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/delta.html) | P1 known incompatibility | Only `-y` is parsed; required options, MR/comment rules, p-file selection, SID/permission cases, weave interoperability, signals, and transactional recovery are incomplete. |
 | 33 | [df](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/df.html) | implemented-unreviewed (`ws001-p034`) | Every mounted file system from the kernel mount table without operands, the file system of each operand (same device, or a mounted device special file), `-k`, `-P`, `-t` (XSI, same output), 512/1024-byte units without overflow, rounded-up capacity, and failures pass guest cases; non-`-P` formats beyond the portable one are not provided. |
 | 34 | [diff](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/diff.html) | implemented-unreviewed (`ws001-p029`) | A minimal longest-common-subsequence difference (Myers, linear space) with normal, `-c`/`-C`, `-u`/`-U`, `-e`, and `-f` output, `-b`, `-r` headers, directory/file pairing, stdin, missing-newline notes, and statuses 0/1/2 passes 29 host cases, 2000 random pairs applied by GNU patch/ed with GNU `--minimal` change counts, and the amd64 guest; the installer's `-r -q --metadata` output is unchanged. |
-| 35 | [dirname](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/dirname.html) | implemented-unreviewed (`ws001-p012`) | Empty/no-slash, chosen double-slash, all/trailing/repeated slash, long operand, `--`, usage, and host broken-stdout cases pass. Localized diagnostics, allocation-failure injection, and direct guest failure evidence remain. |
+| 35 | [dirname](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/dirname.html) | implemented-unreviewed (`ws001-p012`, `ws001-p037`) | Empty/no-slash, chosen double-slash, all/trailing/repeated slash, long operand, `--`, usage, and host broken-stdout cases pass. Localized diagnostics, allocation-failure injection, and direct guest failure evidence remain. Several strings (one result per line) and GNU `-z` are taken by the user's decision for WS045 (`ws001-p037`). |
 | 36 | [du](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/du.html) | implemented-unreviewed (`ws001-p034`) | `-a`/`-s`, `-k` (rounded up), `-x`, `-H`/`-L`, post-order directories, hard links and followed links counted once across operands, loop diagnostics, unreadable directories, and statuses pass host cases against GNU du, a pinned loop case, and guest cases on UFS/devfs/tmpfs; devfs `/dev/fd/N` appears as a loop (finding in phase034). |
 | 37 | [echo](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/echo.html) | implemented-unreviewed (WS043) | Rewritten by WS043 against the GNU POSIX-mode differential cases (`plan/tools/utils/cases/`), which pass on the host and on the amd64 guest (ws001-p031 rerun: 948/948 with the WS001 cases). Also a command built from the shell's source. |
 | 38 | [ed](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/ed.html) | P1 known incompatibility (P0 resolved 2026-08-24) | The independent local replacement provides a checked memory line store, basic addresses and edit commands, BRE substitution, `g`/`v`, single-operation undo, reads, and atomic sibling-file writes.  Relative/mark/BRE addresses, the remaining commands, temporary backing storage, signal recovery, exact newline/byte-count/diagnostic behavior, metadata preservation, and locale remain. |

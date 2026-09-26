@@ -9,8 +9,8 @@ expected=$test_root/expected
 
 trap 'rm -rf "$test_root"' EXIT HUP INT TERM
 mkdir -p "$test_root"
-cc -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror \
-  "$source_file" -o "$binary"
+cc -std=c11 -D_GNU_SOURCE -Wall -Wextra -Werror -I. -Iinclude \
+  "$source_file" userland/base/common/command.c -o "$binary"
 
 check() {
   expected_text=$1
@@ -32,6 +32,13 @@ check /usr /usr//bin///
 check a a/b
 check a/b a/b/c
 check . -- -dash
+# Several strings, each result on its own line (GNU; the user's decision
+# for WS045, 2026-09-27).
+check "$(printf 'a\n/\n.\n/usr')" a/b / c /usr//bin
+check "$(printf 'x\n.')" -- x/y -z
+printf 'a\0.\0' >"$expected"
+"$binary" -z a/b c >"$actual"
+cmp "$expected" "$actual"
 
 long_component=$(awk 'BEGIN { for (i = 0; i < 4096; i++) printf "x" }')
 check "$long_component" "$long_component/value"
@@ -40,8 +47,8 @@ if "$binary" >/dev/null 2>&1; then
   echo "dirname accepted a missing operand" >&2
   exit 1
 fi
-if "$binary" a b >/dev/null 2>&1; then
-  echo "dirname accepted too many operands" >&2
+if "$binary" -q a >/dev/null 2>&1; then
+  echo "dirname accepted an unknown option" >&2
   exit 1
 fi
 if [ -e /dev/full ] && "$binary" value >/dev/full 2>/dev/null; then
