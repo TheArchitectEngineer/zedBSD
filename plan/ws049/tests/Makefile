@@ -9,6 +9,7 @@ OUT ?= $(REPO)/build/ws049/host
 CC ?= cc
 
 SOURCES := $(sort $(wildcard $(REPO)/src/drivers/acpi/aml-*.c)) \
+	$(REPO)/src/drivers/acpi/acpi-tables.c \
 	$(REPO)/plan/ws049/tests/aml-host.c
 HEADERS := $(wildcard $(REPO)/src/drivers/acpi/*.h) \
 	$(REPO)/include/drivers/acpi/acpi.h
@@ -55,7 +56,7 @@ KERNEL_CFLAGS := -nostdlibinc -I$(REPO)/include -I$(REPO)/src -I$(REPO) \
 	-ffunction-sections -fdata-sections -Os -Wall -Wextra -Werror \
 	-Wframe-larger-than=8192 -fno-builtin -fstack-usage
 KERNEL_OBJECTS := $(patsubst $(REPO)/src/drivers/acpi/%.c,$(OUT)/kernel/%.o,\
-	$(sort $(wildcard $(REPO)/src/drivers/acpi/aml-*.c)))
+	$(sort $(wildcard $(REPO)/src/drivers/acpi/*.c)))
 
 .PHONY: kernel-check
 kernel-check: $(KERNEL_OBJECTS)

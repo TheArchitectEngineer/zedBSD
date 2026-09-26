@@ -9,7 +9,7 @@ Related Milestones: MG006, MG008
 Objectives: O2, O4
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p010（firmware の table の発見と kernel の glue、HAL の承認なしでできる部分）。p006 以降は HAL の差分の承認を待つ
+Resume point: p006（kernel image への組み込みと QEMU での確認）。HAL の差分 `acpi.rsdp` の承認を待つ
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -50,7 +50,7 @@ kernel の中に ACPI の AML interpreter を持ち、DSDT・SSDT を読み込�
 
 ## Phase 一覧
 
-設計: [design.md](design.md)（2026-09-27、p001）。p002〜p005 は host だけで進められる。p006 以降は HAL の差分の承認が前提。
+設計: [design.md](design.md)（2026-09-27、p001）。p002〜p005 と p010 は host だけで進められる（完了）。p006 以降は HAL の差分の承認が前提。
 
 | Phase | 内容 | Status | 依存 | 対象 |
 | --- | --- | --- | --- | --- |
@@ -59,10 +59,11 @@ kernel の中に ACPI の AML interpreter を持ち、DSDT・SSDT を読み込�
 | [ws049-p003](phase003/phase.md) | 評価器: method、制御、全ての式の opcode、参照、変換、Store の規則 | cleared（2026-09-27） | p002 | 同上 |
 | [ws049-p004](phase004/phase.md) | OperationRegion・Field・IndexField・BankField・BufferField、region の handler と `_REG` | cleared（2026-09-27） | p003 | 同上 |
 | [ws049-p005](phase005/phase.md) | 同期と OS の口: Mutex・Event・Sleep・Notify・`_OSI`・Load/LoadTable/Unload・`_INI`、stack の予算 | cleared（2026-09-27） | p004 | 同上 |
-| ws049-p006 | kernel への組み込み（amd64）: table の発見、region の handler、起動時の読み込み、診断の口 | planned | p005、**HAL の差分の承認** | `src/drivers/acpi/`、platform |
+| ws049-p006 | kernel への組み込み（amd64）: kernel image への link（`CONFIG_DRIVER_ACPI`、vmunix.mk、`pcat.c` の `drv_acpi_attach()`）、起動時の読み込み、診断の口、QEMU（q35・OVMF）での確認 | planned | p010、**HAL の差分の承認** | `src/drivers/acpi/`、platform |
 | ws049-p007 | SCI・GPE・固定 event・EC（`_Qxx`）・Notify の配送 | planned | p006 | 同上 |
 | ws049-p008 | 対象機（Latitude 5330）の table と実機の確認 | planned | p007、対象機の table | 同上 |
-| ws049-p009 | 規約の全文の確認と最終の確認 | planned | p002〜p008 | WS の全 source |
+| ws049-p009 | 規約の全文の確認と最終の確認 | planned | p002〜p008、p010 | WS の全 source |
+| [ws049-p010](phase010/phase.md) | p006 のうち承認なしでできる部分: firmware の table の発見（`acpi-tables.c`、host の疑似の物理 memory で試験）、kernel の glue（`acpi-kern.c`、kernel の flag で compile） | cleared（2026-09-27） | p005 | `src/drivers/acpi/` |
 
 ## 人間の判断が要る点
 

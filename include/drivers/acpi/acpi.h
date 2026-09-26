@@ -107,6 +107,9 @@ typedef int (*drv_acpi_region_handler_t)(const struct drv_acpi_region_access *ac
 typedef void (*drv_acpi_notify_handler_t)(struct drv_acpi_node *node, uint32_t value, void *argument);
 
 int
+drv_acpi_attach(void);
+
+int
 drv_acpi_initialize_namespace(void);
 
 int

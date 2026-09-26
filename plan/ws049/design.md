@@ -246,7 +246,8 @@ host の試験を中心にする（guest を起動しない）。道具は `plan
 | p003 | 評価器: method の呼び出し、制御、全ての式の opcode、参照（RefOf・DerefOf・Index・CondRefOf）、変換、Store/CopyObject の規則、method の中の名前の後始末、integer の幅 | p002 | 自作の ASL の試験（region を使わないもの）が全部成功し、acpiexec でも同じ結果。規約の検査 0 件 |
 | p004 | OperationRegion・Field・IndexField・BankField・BufferField・DataTableRegion、region の handler の登録と `_REG` | p003 | region の ASL の試験が全部成功。q35・pc・PRIMERGY の全 device の `_HID`・`_CID`・`_UID`・`_ADR`・`_STA`・`_CRS` が acpiexec と一致 |
 | p005 | 同期と OS の口: Mutex・Event・Sleep・Stall・Timer・Notify の配送・`_OSI`・Load/LoadTable/Unload・Fatal、`_INI` の初期化の順、stack の予算の測定 | p004 | 同期と Load の ASL の試験。PRIMERGY の `_INI` の全体と `_PDC`/`_OSC` の LoadTable が acpiexec と同じ node を作る。最大の stack の深さの記録 |
-| p006 | kernel への組み込み（amd64）: `acpi-tables.c`、`acpi-kern.c`、region の handler、起動時の読み込み、診断の口、`CONFIG_DRIVER_ACPI` | p005、**§9 の HAL の差分の承認** | QEMU（q35、OVMF）で guest の中から namespace の一覧と `_STA`・`_CRS`・`_HID` の評価。build（warning 0）、boot test |
+| p010 | p006 の前半: `acpi-tables.c`（host の疑似の物理 memory で試験）と `acpi-kern.c`（kernel の flag で compile）。共有の build の file は触らない | p005 | 疑似の firmware からの namespace が file からと一致。kernel-check warning 0 |
+| p006 | kernel への組み込み（amd64）: link（`CONFIG_DRIVER_ACPI`、vmunix.mk）、`drv_acpi_attach()` の呼び出し、診断の口 | p010、**§9 の HAL の差分の承認** | QEMU（q35、OVMF）で guest の中から namespace の一覧と `_STA`・`_CRS`・`_HID` の評価。build（warning 0）、boot test |
 | p007 | SCI・GPE・固定 event（電源 button）・EC（`_Qxx`）・Notify の driver への配送 | p006 | QEMU で電源 button（QMP の `system_powerdown`）の固定 event か GPE が handler に届く。EC は実機（p008） |
 | p008 | 対象機: Latitude 5330 の table の host 試験と実機での確認 | p007、対象機の table（ユーザーの手か ssh） | 5330 の table を host で読み込み acpiexec と一致。実機で `_STA`・`_CRS`・`_HID` と、EC の `_Qxx`（lid か電源 button）が届く |
 | p009 | 規約の全文の確認（WS の全 source）と最終の確認 | p002〜p008 | 規約の全文、build、boot test |

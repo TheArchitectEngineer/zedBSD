@@ -21,6 +21,8 @@
  *     --main          evaluate \MAIN and exit with 0 when it returned 0
  *     --notify PATH   print the notifications PATH receives (repeatable)
  *     --dynamic FILE  a table LoadTable may load, not loaded at start
+ *     --firmware FILE load the tables from a simulated physical memory
+ *                     (make-firmware.py): RSDP, XSDT, FADT, DSDT, SSDTs
  *     --reg           connect the address spaces (run _REG) after loading
  *     --init          initialize the devices (_INI by _STA) after loading
  *     --shared-pci    simulate one PCI configuration space for every
@@ -40,6 +42,7 @@
 
 #include <drivers/acpi/acpi.h>
 
+#include "drivers/acpi/acpi-tables.h"
 #include "drivers/acpi/aml-internal.h"
 #include "drivers/acpi/aml-os.h"
 
@@ -75,6 +78,7 @@ enum option_kind {
 	OPTION_MAIN,
 	OPTION_NOTIFY,
 	OPTION_DYNAMIC,
+	OPTION_FIRMWARE,
 	OPTION_STACK,
 	OPTION_SHARED_PCI,
 	OPTION_REG,
@@ -100,6 +104,7 @@ struct harness_options {
 	const char *evaluations[OPTION_LIST_MAX];
 	const char *notified[OPTION_LIST_MAX];
 	const char *dynamic[OPTION_LIST_MAX];
+	const char *firmware;
 	unsigned table_count;
 	unsigned evaluation_count;
 	unsigned notified_count;
@@ -117,6 +122,16 @@ struct harness_options {
  * One table LoadTable may load, read from a file at start.
  */
 struct dynamic_table {
+	uint8_t *data;
+	size_t length;
+};
+
+/*
+ * One piece of the simulated physical memory of --firmware: a file's bytes
+ * at an address.
+ */
+struct memory_piece {
+	uint64_t address;
 	uint8_t *data;
 	size_t length;
 };
@@ -142,6 +157,7 @@ static const struct option_name option_names[] = {
 	{ "--main", OPTION_MAIN, 0 },
 	{ "--notify", OPTION_NOTIFY, 1 },
 	{ "--dynamic", OPTION_DYNAMIC, 1 },
+	{ "--firmware", OPTION_FIRMWARE, 1 },
 	{ "--stack", OPTION_STACK, 0 },
 	{ "--shared-pci", OPTION_SHARED_PCI, 0 },
 	{ "--reg", OPTION_REG, 0 },
@@ -166,6 +182,15 @@ static unsigned dynamic_table_count;
  * Whether every PCI function shares one simulated configuration space.
  */
 static int shared_pci;
+
+/*
+ * The simulated physical memory of --firmware, and the tables found in it.
+ * Both live until the harness exits.
+ */
+static struct memory_piece memory_pieces[OPTION_LIST_MAX];
+static unsigned memory_piece_count;
+static struct drv_acpi_firmware firmware;
+static int firmware_loaded;
 
 /*
  * Whether the interpreter's log is printed.
@@ -196,6 +221,8 @@ static int install_notifications(const struct harness_options *options);
 static int run_main(void);
 static int read_file(const char *path, uint8_t **data, size_t *length);
 static int load_file(const char *path);
+static int load_firmware(const char *description);
+static int read_memory(uint64_t address, void *buffer, size_t length, void *argument);
 static int simulated_space(const struct drv_acpi_region_access *access, uint64_t *value, void *argument);
 static uint64_t space_key(const struct drv_acpi_region_access *access, unsigned space);
 static uint8_t *page_byte(uint64_t space, uint64_t address);
@@ -294,6 +321,10 @@ main(
 
 	/* Frees everything so that the leak checker sees a clean exit. */
 	drv_acpi_reset();
+	if (firmware_loaded)
+		drv_acpi_firmware_release(&firmware);
+	for (index = 0; index < memory_piece_count; index++)
+		free(memory_pieces[index].data);
 	for (index = 0; index < dynamic_table_count; index++)
 		free(dynamic_tables[index].data);
 
@@ -460,6 +491,13 @@ drv_acpi_os_table(
 	unsigned index;
 	int compared;
 
+	/* The firmware's tables come first when the tables were loaded from it. */
+	if (firmware_loaded) {
+		compared = drv_acpi_firmware_find(&firmware, signature, oem_id, oem_table_id, data, length);
+		if (compared == 0)
+			return 0;
+	}
+
 	/* Compares each table's header; an empty identifier matches any. */
 	for (index = 0; index < dynamic_table_count; index++) {
 		table = &dynamic_tables[index];
@@ -565,6 +603,9 @@ parse_arguments(
 			options->dynamic[options->dynamic_count % OPTION_LIST_MAX] = value;
 			options->dynamic_count++;
 			break;
+		case OPTION_FIRMWARE:
+			options->firmware = value;
+			break;
 		default:
 			options->tables[options->table_count % OPTION_LIST_MAX] = value;
 			options->table_count++;
@@ -655,6 +696,13 @@ load_tables(
 
 		/* Counts it. */
 		dynamic_table_count++;
+	}
+
+	/* Loads the firmware's tables from the simulated memory. */
+	if (options->firmware != NULL) {
+		error = load_firmware(options->firmware);
+		if (error != 0)
+			status = 1;
 	}
 
 	/* Loads each table in order. */
@@ -798,6 +846,112 @@ load_file(
 
 	/* Succeeded. */
 	return 0;
+}
+
+/*
+ * Reads the description of a simulated physical memory, then finds and
+ * loads the tables in it as the kernel does.
+ */
+static int
+load_firmware(
+	const char *description)
+{
+	struct memory_piece *piece;
+	unsigned long long address;
+	unsigned long long rsdp;
+	char line[1024];
+	char path[1024];
+	char *got;
+	FILE *stream;
+	int fields;
+	int error;
+
+	/* Opens the description. */
+	stream = fopen(description, "r");
+	if (stream == NULL) {
+		perror(description);
+		return 1;
+	}
+
+	/* Reads the RSDP's address and each piece of memory, a line at a time. */
+	rsdp = 0;
+	for (;;) {
+		/* Stops at the end of the description. */
+		got = fgets(line, sizeof(line), stream);
+		if (got == NULL)
+			break;
+
+		/* The RSDP line. */
+		fields = sscanf(line, "rsdp %llx", &rsdp);
+		if (fields == 1)
+			continue;
+
+		/* A piece: an address and the file whose bytes are there. */
+		fields = sscanf(line, "%llx %1023s", &address, path);
+		if (fields != 2 || memory_piece_count == OPTION_LIST_MAX)
+			continue;
+		piece = &memory_pieces[memory_piece_count];
+		error = read_file(path, &piece->data, &piece->length);
+		if (error != 0)
+			continue;
+		piece->address = address;
+		memory_piece_count++;
+	}
+
+	/* The description is read. */
+	fclose(stream);
+
+	/* Finds the tables from the RSDP. */
+	error = drv_acpi_firmware_discover(rsdp, read_memory, NULL, &firmware);
+	if (error != 0) {
+		fprintf(stderr, "%s: no ACPI tables found (error %d)\n", description, error);
+		return 1;
+	}
+
+	/* The record is released at exit and serves LoadTable meanwhile. */
+	firmware_loaded = 1;
+
+	/* Loads the DSDT and the SSDTs. */
+	error = drv_acpi_firmware_load(&firmware);
+	if (error != 0) {
+		fprintf(stderr, "%s: the DSDT did not load (error %d)\n", description, error);
+		return 1;
+	}
+
+	/* Succeeded. */
+	return 0;
+}
+
+/* Reads the simulated physical memory; a range outside every piece cannot be read. */
+static int
+read_memory(
+	uint64_t address,
+	void *buffer,
+	size_t length,
+	void *argument)
+{
+	struct memory_piece *piece;
+	unsigned index;
+
+	UNUSED_PARAMETER(argument);
+
+	/* Finds the piece that holds the whole range. */
+	for (index = 0; index < memory_piece_count; index++) {
+		piece = &memory_pieces[index];
+
+		/* Skips a piece that does not hold it. */
+		if (address < piece->address || address - piece->address > piece->length)
+			continue;
+		if (length > piece->length - (size_t)(address - piece->address))
+			continue;
+
+		/* Copies the bytes. */
+		memcpy(buffer, piece->data + (address - piece->address), length);
+		return 0;
+	}
+
+	/* Reports memory that is not there. */
+	return 14;
 }
 
 /* Reads or writes a simulated address space. */
