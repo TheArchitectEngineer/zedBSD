@@ -87,6 +87,6 @@ POSIX の範囲で足りるもの（多く使われるが拡張ではない）: 
 
 ## 見つけたこと
 
-- `xargs -I`（POSIX）が status 127 で動かない、`awk` の `system()` が wait の status（768）を返す（gawk・POSIX は終了の status 3）。POSIX の範囲の不具合で、
-  前者は WS001 の範囲に近い。後者は p006 で gawk と揃える（POSIX の文言とも合う）。
+- `xargs` は option を 1 つも持たない（`-I` で status 127）。POSIX の範囲で、WS001 の台帳 #152。
+- `awk` の `system()` は wait の status（768）を返す。gawk も POSIX mode ではそうで、既定（GNU mode）では終了 status（3）。p006 で既定を gawk に揃えた。
 - `find` は知らない primary（`-maxdepth` など）を黙って何も出さない。
