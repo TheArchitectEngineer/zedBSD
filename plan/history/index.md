@@ -9,6 +9,8 @@ Last finished Queue: q494（ws068-p023 cleared。cube map）
 
 ## 最新: q443〜q494（2026-09-26〜27）
 
+WS071 p001 と WS036（p026）・WS044（p002）の merge（2026-09-27、Queue の外、サブエージェント）: File Manager の設計（`zdesktop-files`）。LLVM の AArch64 zedbsd target（patch zedbsd7）、sysroot-arm64、rpi4 の FAT32 の boot partition、rtld の PF_X の重複の修正。main の toolchain を zedbsd7 に切り替えた。
+
 WS049 の merge（2026-09-27、Queue の外、サブエージェント）: kernel の ACPI AML interpreter（host の試験で acpiexec と一致、fuzzing、SCI・GPE・EC の host の模擬、`/dev/acpi`、Global Lock、ECDT）。kernel への統合は HAL の差分の承認待ち。
 
 [q494](queue-q494.md): ws068-p023 cleared。cube map（6 layer の image、cube の束縛と sampler、FBO の面への描画、面ごとの読み戻し、mipmap）。Venus の egl-p023 と回帰 PASS。

@@ -98,7 +98,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS033](ws033/ws.md) | MG005 | networking サービスと有線インタフェースの管理 | incomplete | 抜き差しの実機確認 |
 | [WS034](ws034/ws.md) | MG002 | アプリケーション拡充と kernel・libc の是正 | incomplete | package の導入 |
 | [WS035](ws035/ws.md) | MG006 | デスクトップ環境とアプリケーション | incomplete | **fg010**: zdesktop の合成・タスクバー |
-| [WS036](ws036/ws.md) | MG008 | amd64 の成果を他 platform へ（aarch64 を含む） | incomplete | p021・p026（AArch64 の LLVM target）・p027（HAL 承認待ち） |
+| [WS036](ws036/ws.md) | MG008 | amd64 の成果を他 platform へ（aarch64 を含む） | incomplete | p026（LLVM の AArch64 zedbsd target、patch zedbsd7、sysroot-arm64）cleared（サブエージェント、2026-09-27 に main へ merge）。p028 実行中。**p027（Pi の firmware の bootargs）は方針の判断待ち（案 A〜D、既定 D）**。実機は未実施 |
 | [WS037](ws037/ws.md) | MG006 | NVIDIA GPU（予約） | planning | 番号のみ |
 | [WS038](ws038/ws.md) | MG006 | Intel Arc dGPU（予約） | planning | 番号のみ |
 | [WS039](ws039/ws.md) | MG006 | AMD RDNA GPU（予約） | planning | 番号のみ |
@@ -110,7 +110,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS046](ws046/ws.md) | MG002 | GNU 互換の make（autotools の出力を実行できる範囲。並列・jobserver は WS064） | incomplete | p002〜p004・p006 cleared。p007 uncleared（BUG-033 の主因を直した）。p009・p012 cleared（BUG-033: configure 204〜252 → 91 秒、link 0.36 秒、file の fault 15 µs/page）。p013 cleared（libc の mount の一覧の API。coreutils の cross build が通った）。次は p014（p011 の当て直し）・p005 |
 | [WS047](ws047/ws.md) | MG001 | build.sh と Noct による build system（TUI・kernel・base・packages を別の system に。Makefile は当面残す） | planning | p001 調査と設計 |
 | [WS048](ws048/ws.md) | MG008 | Raspberry Pi 4 の USB（PCIe・VL805 の xHCI・USB キーボード） | incomplete | p001〜p003 cleared（FDT、brcmstb の PCIe、firmware の mailbox と VL805 の firmware。host 試験と QEMU の起動、実機は未実施）。**p004 は hal.h の差分（`hal_pmem_map_uncached`）の承認待ち**（ws048/proposed/）。2026-09-27 サブエージェント、main へ merge |
-| [WS044](ws044/ws.md) | MG008 | rpi4 を開発に使える形に（console の font、FAT32 の boot、lldb） | incomplete | p001 font・p005 実機起動の準備 cleared、実機の結果待ち。p002・p003 は kernel の安定化の後 |
+| [WS044](ws044/ws.md) | MG008 | rpi4 を開発に使える形に（console の font、FAT32 の boot、lldb） | incomplete | p001 font・p002 FAT32 の boot partition（QEMU）・p005 cleared。p003（lldb）ほかは WS036 の agent。実機は未実施 |
 | [WS049](ws049/ws.md) | MG003 | kernel 内の ACPI AML interpreter | incomplete | p001〜p005・p010〜p015 cleared（サブエージェント、host の試験で acpiexec と一致、2026-09-27 に main へ merge。kernel には未 link）。**p006（kernel への統合）は HAL の差分 `acpi.rsdp`（ws049/proposed/hal-acpi-rsdp.diff）の承認待ち**。判断待ち: 対象機（Dell Latitude 5330 の acpidump）、`_OSI` の答え、`/dev/acpi` の形 |
 | [WS050](ws050/ws.md) | MG003 | USB-C の UCSI driver | planning | WS049 が前提 |
 | [WS051](ws051/ws.md) | MG006 | USB-C の DisplayPort Alternate Mode | planning | WS050 と i915 の display が前提 |
@@ -133,7 +133,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS068](ws068/ws.md) | MG006 | EGL と OpenGL ES（と desktop GL 3.0〜4.6）を Vulkan と display 拡張の上に実装する（Wayland とディスプレイ直接の両方）（2026-09-26・27 ユーザー指示） | incomplete | 自前の GLSL compiler（p003 = p015〜p019、GLSL 1.40〜3.30・ES 3.00 と uniform block の p012 = p020・p021）cleared（2026-09-27、サブエージェント、main へ merge）。次は p013（desktop GL 3.0 の context）・p005（GLES 3.0 の API）・p014（GL 3.3〜4.6）。p002・p008・p010・p006 cleared |
 | [WS069](ws069/ws.md) | MG006 | zdesktop で X11 の app を動かす（単体の `zdesktop-x11server`、rootless、GLX）（2026-09-26・27 ユーザー指示） | completed | 2026-09-27 完了（q492）。zdesktop-x11server（rootless、窓は Vulkan、GLX）、BUG-057 の修正、Xzed はレトロ用に戻した。残りは F-021・F-024・F-030 |
 | [WS070](ws070/ws.md) | MG006 | zdesktop の System Menu: client がメニューの意味を渡し、zdesktop が浮いたタイトルバーとシステムバーに描く（`xdg_toplevel_menu_v1`、libzdesktop で包む）（2026-09-27 ユーザー指示） | incomplete | p001〜p004 cleared（Venus、サブエージェント、2026-09-27 に main へ merge）。p005（i915 実機、規約の全文、最後）。design.md §11 の 5 つの既定はユーザーの確認待ち |
-| [WS071](ws071/ws.md) | MG006 | zedBSD File Manager: Finder 風で zedBSD らしいファイルマネージャ（ホームのダッシュボード、サイドバー、タグ、Quick Look、System Menu）（2026-09-27 ユーザー指示、仕様案は ws071/spec.md） | planning | p001（設計）。WS070 の後 |
+| [WS071](ws071/ws.md) | MG006 | zedBSD File Manager: Finder 風で zedBSD らしいファイルマネージャ（ホームのダッシュボード、サイドバー、タグ、Quick Look、System Menu）（2026-09-27 ユーザー指示、仕様案は ws071/spec.md） | incomplete | p001（設計、`zdesktop-files`、既定の判断は design.md §15）cleared、2026-09-27 に main へ merge。p002〜p011 をサブエージェントが実行中 |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 
@@ -264,6 +264,7 @@ tick 周期は `include/hal/arch/<arch>.h` の `HAL_TIMER_FREQUENCY`。時間の
 | System Menu の統合 | WS070 の p001〜p004（サブエージェント、Venus）を 2026-09-27 に main へ merge。既定で進めた 5 点（F10 で menu、shortcut は zdesktop が実行、外の click は下の窓へ渡さない、icon は描かない、label は ASCII）はユーザーの確認待ち（ws070 design.md §11）。WS071 の右 click の menu は protocol の version 2 の追加（design.md §12） | WS070 |
 | Raspberry Pi 4 の USB | WS048 の p001〜p003（サブエージェント）を 2026-09-27 に main へ merge。xHCI は PCIe の DMA が cache を snoop しないため、**hal.h の差分 `hal_pmem_map_uncached`・`hal_pmem_unmap_uncached`（plan/ws048/proposed/hal-pmem-uncached.diff、arm64 だけ実装）の承認待ち**。mailbox は起動後は kernel の driver が持つ（hal.h を変えない）ことの確認も待つ。実機の確認（lspci、dmesg の link up と VL805 の firmware）はユーザー | WS048、Guardrail |
 | ACPI の統合 | WS049 の p001〜p005・p010〜p015（サブエージェント）を 2026-09-27 に main へ merge（driver は未 link）。**判断待ち**: (1) HAL の差分 `hal_get_arch_handoff("acpi.rsdp")`（ws049/proposed/hal-acpi-rsdp.diff、hal.h は変えないが HAL の責務の追加）の承認、(2) 対象機を Dell Latitude 5330 とし Linux の `sudo acpidump -b` の table を得る、(3) `_OSI` は既定で Windows 2000〜2022 を名乗る（ACPICA と同じ）でよいか、(4) `/dev/acpi` は text の読み書き（UAPI を足さない、device 番号 0x000B0000）か ioctl か `/dev/system` への統合か | WS049、Guardrail |
+| aarch64 の toolchain（WS036） | WS036 の p026 を 2026-09-27 に main へ merge: LLVM の patch が zedbsd6 → zedbsd7（AArch64 zedbsd target）。main の `build/llvm` は `build/llvm-zedbsd7`（symlink）、作業中のサブエージェントは main を merge するまで `build/llvm-zedbsd6`。**判断待ち**: (1) GitHub の Release rev-0 の toolchain cache が zedbsd6 のままで、`make toolchain-cache` と CI の identity 検査が落ちる。zedbsd7 の archive（`make llvm-host-archive`）の upload と `ZEDBSD_LLVM_CACHE_SHA256` の更新（push・公開はユーザーの指示で）。(2) ws036-p027: Pi の firmware の bootargs には `=` の無い token（rootwait 等）があり kernel の parser が拒む。案 A（parser を緩める、全 platform）・B（rpi4 の HAL が区切りの後を渡す）・C（boot partition の file を読む）・D（今のまま、既定） | WS036、Guardrail |
 
 ### 主な依存関係
 
