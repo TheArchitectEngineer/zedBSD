@@ -2163,11 +2163,17 @@ vm_object_mapping_add(
 	if (object_page->hold_count == 0)
 		HAL_FATAL("mapping VM object page without fault hold");
 
+	/*
+	 * Puts the mapping at the head of the list.  Each mapping's
+	 * object_link points at the link that points at it, so that it can
+	 * leave without a walk of the list.
+	 */
 	mapping->object_next = object_page->mappings;
 	if (mapping->object_next != NULL)
 		mapping->object_next->object_link = &mapping->object_next;
 	mapping->object_link = &object_page->mappings;
 
+	/* The mapping is published, and the fault's hold becomes it. */
 	object_page->mappings = mapping;
 	object_page->mapping_count++;
 	object_page->hold_count--;
@@ -2197,11 +2203,15 @@ vm_object_mapping_remove_locked(
 	link = mapping->object_link;
 	if (link == NULL || *link != mapping)
 		return;
+
+	/* Unlinks the mapping; the one after it now hangs from its link. */
 	*link = mapping->object_next;
 	if (mapping->object_next != NULL)
 		mapping->object_next->object_link = link;
 	mapping->object_next = NULL;
 	mapping->object_link = NULL;
+
+	/* One mapping fewer keeps the object page. */
 	if (object_page->mapping_count == 0)
 		HAL_FATAL("VM object mapping counter underflow");
 	object_page->mapping_count--;
