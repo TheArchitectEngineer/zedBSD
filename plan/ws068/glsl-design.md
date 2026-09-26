@@ -32,7 +32,8 @@
 | `builtins.c` | built-in の関数（署名の表）・変数・定数 |
 | `check.c` | 意味解析: scope と symbol、型検査、暗黙の変換、overload の解決、lvalue、使われた global の印 |
 | `fold.c` | 定数式の評価（配列の長さ、`const`、case の値、定数の畳み込み） |
-| `spirv.c` | SPIR-V の module を組む道具（節ごとの word 列、型と定数の重複の除去、id の払い出し） |
+| `module.c` | SPIR-V の module を組む道具（節ごとの word 列、型と定数の重複の除去、id の払い出し。libGLESv2 の `spirv.c` と名前が重ならないように） |
+| `emit.h` | back end（module・emit・link）の共有の定義 |
 | `emit.c` | AST → SPIR-V（式・文・制御・関数の inline 展開） |
 | `emit-builtin.c` | built-in 関数の SPIR-V（GLSL.std.450・texture・関係演算） |
 | `link.c` | 2 つの stage の interface の照合、uniform block の配置、attribute・varying の location、各 stage の emit |

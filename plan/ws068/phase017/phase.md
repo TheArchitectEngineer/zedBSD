@@ -4,7 +4,7 @@
 
 Phase ID: `ws068-p017`
 Parent: [WS068](../ws.md)
-Status: planned
+Status: cleared（2026-09-27）
 Phase disposition: normal
 Queue: —（2026-09-27 ユーザーの指示でサブエージェントが実行）
 設計: [glsl-design.md](../glsl-design.md) §4・§6
@@ -21,3 +21,20 @@ Queue: —（2026-09-27 ユーザーの指示でサブエージェントが実�
 
 1. host の試験が PASS。p016 の正の shader がすべて検査も通る。
 2. 新しい C の style-check 0、warning 0。
+
+## 結果（2026-09-27）
+
+cleared。受け入れ 1・2 を満たした。
+
+### 実装
+
+- `types.c`（scalar・vector・matrix（非正方も）・sampler（float・int・uint、1D・2D・3D・cube、shadow）の静的な表、配列、std140）、
+  `builtins.c`（built-in の関数 150 余りの署名の表と照合、built-in の変数と定数）、`check.c`（scope、宣言と修飾子の規則、
+  暗黙の変換（desktop 1.20 以上）、演算子、lvalue、constructor、overload、switch の label、ES の float の精度の要求、`main` から
+  届く global の印、static な再帰と未定義の関数の検出）、`fold.c`（定数式: 算術、比較、constructor、swizzle、添字、built-in の一部）。
+
+### 検証（host）
+
+- glsl-host の 1・2（上の p016 と同じ試験: 正の shader は検査も通り、負の例は未宣言、型の不一致、書けない lvalue、版の差、精度、
+  overload の失敗、定数でない配列の長さ、再帰、ES の `%`・bit 演算、`discard` の stage、flat でない整数の入力、等で期待どおり失敗）。
+- style-check 0。
