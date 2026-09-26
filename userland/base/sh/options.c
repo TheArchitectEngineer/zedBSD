@@ -196,7 +196,13 @@ sh_set_builtin(
 	 */
 	if (index < argc || explicit) {
 		sh_parameters_set(argc - index, argv + index);
+
+		/*
+		 * A new generation tells a running . or source that the file
+		 * replaced the parameters, so they are kept when it returns.
+		 */
 		sh_parameters_generation++;
+
 		(void)sh_var_set("OPTIND", "1", 0);
 	}
 
@@ -630,11 +636,15 @@ sh_option_named(
 {
 	int index;
 
-	/* The option, if there is one. */
+	/* Looks the option up by its long name; an unknown name is -1. */
 	index = option_by_name(name);
 	if (index < 0)
 		return -1;
 
-	/* Succeeded: whether it is on. */
-	return sh_option[index] != 0;
+	/* An option that is off is 0. */
+	if (sh_option[index] == 0)
+		return 0;
+
+	/* Succeeded: the option is on. */
+	return 1;
 }
