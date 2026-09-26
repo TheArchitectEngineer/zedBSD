@@ -61,7 +61,7 @@ Resume point: **ユーザーの判断待ち**: p004 の hal.h の差分（design
 - rpi4 の image の `make -j16` はこの branch の起点で userland（`src/rtld/rtld.c` と `include/libc/elf.h` の macro の再定義）で止まる（WS048 の外）。
   boot test は main の `build/ws053-rpi4-full/hdd-image.img`（2026-09-25）を SD にし、kernel だけをこの branch の build にした。
 
-## Future Work の候補（main session が `plan/future-work.md` へ移す）
+## Future Work の候補（2026-09-27 に plan/future-work.md の F-025〜F-029 へ移した）
 
 | 候補 | 理由・きっかけ |
 | --- | --- |

@@ -9,6 +9,8 @@ Last finished Queue: q491（ws069-p011 cleared。X の窓を Vulkan で表示）
 
 ## 最新: q443〜q491（2026-09-26〜27）
 
+WS048 の merge（2026-09-27、Queue の外、サブエージェント）: Pi 4 の FDT、brcmstb の PCIe、firmware の mailbox と VL805 の firmware、非 coherent の DMA（dma.c）。p004 は hal.h の差分の承認待ち。main で amd64 の image と rpi4 の vmunix の build（warning 0）、boot test（amd64 と QEMU raspi4b）PASS。実機は未実施。
+
 WS070 の merge（2026-09-27、Queue の外、ユーザーの例外の許可でサブエージェントが実行）: System Menu の p001〜p004（protocol、zdesktop の描画と操作、libzdesktop、zdesktop-terminal の menu）。main の Venus で x11-p003〜p005・zdesktop-p068（題名の double click を x+80 に直した）・p070・menu-p003 PASS。p005（実機・規約）は残り。
 
 [q491](queue-q491.md): ws069-p011 cleared。zdesktop-x11server の窓を top-level ごとの Vulkan の swapchain（MAILBOX）で表示し、wl_shm は fallback（`X11SERVER_SHM=1`）。libvulkan の present の worker と同じ接続を読むため、server の Wayland の dispatch を非 blocking に直した。Venus の x11-p003〜p005・zdesktop-p070、実機の run1 が PASS。Venus では Vulkan の道が約 3 倍遅い（F-021）。

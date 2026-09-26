@@ -109,7 +109,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS045](ws045/ws.md) | MG002 | base の text utility の GNU 拡張（sed・awk・grep ほか） | planning | WS043 が完了したので着手できる |
 | [WS046](ws046/ws.md) | MG002 | GNU 互換の make（autotools の出力を実行できる範囲。並列・jobserver は WS064） | incomplete | p002〜p004・p006 cleared。p007 uncleared（BUG-033 の主因を直した）。p009・p012 cleared（BUG-033: configure 204〜252 → 91 秒、link 0.36 秒、file の fault 15 µs/page）。p013 cleared（libc の mount の一覧の API。coreutils の cross build が通った）。次は p014（p011 の当て直し）・p005 |
 | [WS047](ws047/ws.md) | MG001 | build.sh と Noct による build system（TUI・kernel・base・packages を別の system に。Makefile は当面残す） | planning | p001 調査と設計 |
-| [WS048](ws048/ws.md) | MG008 | Raspberry Pi 4 の USB（PCIe・VL805 の xHCI・USB キーボード） | planning | p001（調査と設計）。2026-09-24 ユーザー判断で後回し |
+| [WS048](ws048/ws.md) | MG008 | Raspberry Pi 4 の USB（PCIe・VL805 の xHCI・USB キーボード） | incomplete | p001〜p003 cleared（FDT、brcmstb の PCIe、firmware の mailbox と VL805 の firmware。host 試験と QEMU の起動、実機は未実施）。**p004 は hal.h の差分（`hal_pmem_map_uncached`）の承認待ち**（ws048/proposed/）。2026-09-27 サブエージェント、main へ merge |
 | [WS044](ws044/ws.md) | MG008 | rpi4 を開発に使える形に（console の font、FAT32 の boot、lldb） | incomplete | p001 font・p005 実機起動の準備 cleared、実機の結果待ち。p002・p003 は kernel の安定化の後 |
 | [WS049](ws049/ws.md) | MG003 | kernel 内の ACPI AML interpreter | planning | p001 調査と設計（`hal_get_arch_handoff()` に ACPI の名前を足す差分に承認が要る） |
 | [WS050](ws050/ws.md) | MG003 | USB-C の UCSI driver | planning | WS049 が前提 |
@@ -259,6 +259,7 @@ tick 周期は `include/hal/arch/<arch>.h` の `HAL_TIMER_FREQUENCY`。時間の
 | GL_VERSION | 実装した版を正直に名乗る（必須の機能が揃った所まで）。上の版の機能は GL_ARB_* の拡張で個別に出す | WS068 design.md §6 |
 | File Manager | ユーザー（同日）:「これもWSを追加しておいてください。Finder風だけどzedBSDらしいファイルマネージャとして、仕様書のベースになる形でまとめます。現在の作業は続けてください。」→ WS071（仕様案の原文は ws071/spec.md）。今の作業（WS069）は続ける | WS071、WS の優先順位 |
 | System Menu の統合 | WS070 の p001〜p004（サブエージェント、Venus）を 2026-09-27 に main へ merge。既定で進めた 5 点（F10 で menu、shortcut は zdesktop が実行、外の click は下の窓へ渡さない、icon は描かない、label は ASCII）はユーザーの確認待ち（ws070 design.md §11）。WS071 の右 click の menu は protocol の version 2 の追加（design.md §12） | WS070 |
+| Raspberry Pi 4 の USB | WS048 の p001〜p003（サブエージェント）を 2026-09-27 に main へ merge。xHCI は PCIe の DMA が cache を snoop しないため、**hal.h の差分 `hal_pmem_map_uncached`・`hal_pmem_unmap_uncached`（plan/ws048/proposed/hal-pmem-uncached.diff、arm64 だけ実装）の承認待ち**。mailbox は起動後は kernel の driver が持つ（hal.h を変えない）ことの確認も待つ。実機の確認（lspci、dmesg の link up と VL805 の firmware）はユーザー | WS048、Guardrail |
 
 ### 主な依存関係
 
