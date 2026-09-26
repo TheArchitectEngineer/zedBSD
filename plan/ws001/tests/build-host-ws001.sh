@@ -37,6 +37,9 @@ for utility in $list; do
 	unexpand)
 		extra=userland/base/expand/tabs.c
 		;;
+	cksum)
+		extra=userland/base/common/sha256.c
+		;;
 	esac
 	if ! cc -std=c11 -D_GNU_SOURCE -O1 -g -w -I. -Iinclude \
 		userland/base/$utility/*.c $extra userland/base/common/command.c \

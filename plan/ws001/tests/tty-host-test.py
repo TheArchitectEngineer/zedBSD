@@ -57,6 +57,10 @@ CASES = [
 	 "printf new > a; printf old > b; chmod 444 b; mv -f a b; "
 	 "echo st=$? > result; ls >> result; cat b >> result",
 	 b""),
+	("dd reports and ends on an interrupt from the terminal",
+	 "trap 'x=1' INT; dd if=/dev/zero of=/dev/null 2>err; "
+	 "echo st=$? > result; grep -c 'records in' err >> result; grep -c 'records out' err >> result",
+	 b"\x03"),
 	("xargs -p runs on y and skips on n",
 	 "printf 'a\\nb\\nc\\n' | xargs -p -n 1 sh -c 'echo \"$0\" >> result'; "
 	 "echo st=$? >> result",
