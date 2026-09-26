@@ -72,11 +72,18 @@ ZEDBSD_SYSROOT_LLVM_BUILTIN_NAMES := \
 ZEDBSD_SYSROOT_LLVM_BUILTIN_SOURCES := $(addprefix \
 	$(ZEDBSD_LLVM_SOURCE)/compiler-rt/lib/builtins/,\
 	$(ZEDBSD_SYSROOT_LLVM_BUILTIN_NAMES))
+# AArch64 keeps its instruction cache coherent with data only on request, so
+# a program that writes code (a JIT) calls __clear_cache, which the compiler
+# runtime provides.  The kernel lets user code clean and invalidate the
+# caches itself (SCTLR_EL1.UCI and UCT).
+ZEDBSD_SYSROOT_ARM64_LLVM_BUILTIN_SOURCES := \
+	$(ZEDBSD_LLVM_SOURCE)/compiler-rt/lib/builtins/clear_cache.c
 
 # A clean cache-based bootstrap has build/llvm but no extracted LLVM source.
 # Give each compiler-rt input a real generating prerequisite so parallel Make
 # completes the verified source extraction before it diagnoses a missing file.
-$(ZEDBSD_SYSROOT_LLVM_BUILTIN_SOURCES): | $(ZEDBSD_LLVM_SOURCE_STAMP)
+$(ZEDBSD_SYSROOT_LLVM_BUILTIN_SOURCES) \
+$(ZEDBSD_SYSROOT_ARM64_LLVM_BUILTIN_SOURCES): | $(ZEDBSD_LLVM_SOURCE_STAMP)
 	@test -f '$@'
 
 ZEDBSD_SYSROOT_PUBLIC_HEADERS := $(shell \
@@ -94,6 +101,7 @@ ZEDBSD_SYSROOT_INPUTS := $(ZEDBSD_SYSROOT_LIBC_SOURCES) \
 	$(ZEDBSD_SYSROOT_ARM64_LIBC_SOURCES) \
 	$(ZEDBSD_SYSROOT_ARM64_COMPILER_RT_SOURCES) \
 	$(ZEDBSD_SYSROOT_LLVM_BUILTIN_SOURCES) \
+	$(ZEDBSD_SYSROOT_ARM64_LLVM_BUILTIN_SOURCES) \
 	$(ZEDBSD_SYSROOT_PUBLIC_HEADERS) $(ZEDBSD_SYSROOT_LINKER_SCRIPTS) \
 	src/libc/crt/crt0-amd64.S src/libc/crt/crt1-amd64.S \
 	src/libc/crt/crt0-i386.S src/libc/crt/crt1-i386.S \
@@ -106,7 +114,8 @@ ZEDBSD_SYSROOT_INPUTS := $(ZEDBSD_SYSROOT_LIBC_SOURCES) \
 # $(8) and $(9) the linker script the smoke program is linked with, $(10) the
 # ELF machine llvm-readelf names, $(11) user ABI macros, $(12) the C library's
 # assembly sources, $(13) the compiler runtime's floating-point ABI flags and
-# $(14) its sources beyond the common ones.
+# $(14) its sources beyond the common ones and $(15) the LLVM builtins beyond
+# the common ones.
 
 define ZEDBSD_BUILD_SYSROOT
 $(1)/.zedbsd-sysroot-complete: $(ZEDBSD_SYSROOT_INPUTS) \
@@ -164,7 +173,7 @@ $(1)/.zedbsd-sysroot-complete: $(ZEDBSD_SYSROOT_INPUTS) \
 		"$$$$temporary/usr/lib/libzedbsd-compiler-rt.a" --no-whole-archive \
 		-o "$$$$temporary/usr/lib/libzedbsd-compiler-rt.o"; \
 	find "$$$$temporary/obj" -depth -delete; mkdir -p "$$$$temporary/obj"; \
-	for source in $$(ZEDBSD_SYSROOT_LLVM_BUILTIN_SOURCES); do \
+	for source in $$(ZEDBSD_SYSROOT_LLVM_BUILTIN_SOURCES) $(15); do \
 		object="$$$$temporary/obj/$$$${source##*/}.o"; \
 		'$(ZEDBSD_SYSROOT_CLANG)' --target='$(3)' --sysroot="$$$$temporary" \
 			$(4) -D$(5) $(11) -nostdinc -isystem "$$$$temporary/usr/include" \
@@ -243,7 +252,7 @@ endef
 
 $(eval $(call ZEDBSD_BUILD_SYSROOT,$(ZEDBSD_SYSROOT_AMD64),amd64,x86_64-unknown-zedbsd,-m64 -march=x86-64 -mno-red-zone,HAL_ARCH_AMD64,src/libc/crt/crt0-amd64.S,src/libc/crt/crt1-amd64.S,amd64,user.ld,Advanced Micro Devices X86-64,-DKERN_USER_ABI_LP64,,-mlong-double-64,))
 $(eval $(call ZEDBSD_BUILD_SYSROOT,$(ZEDBSD_SYSROOT_I386),i386,i386-unknown-zedbsd,-m32 -march=i386 -msoft-float -mno-mmx -mno-sse -mno-sse2,HAL_ARCH_I386,src/libc/crt/crt0-i386.S,src/libc/crt/crt1-i386.S,pcat,user.ld,Intel 80386,,,-mlong-double-64,))
-$(eval $(call ZEDBSD_BUILD_SYSROOT,$(ZEDBSD_SYSROOT_ARM64),arm64,aarch64-unknown-zedbsd,-march=armv8-a -mno-outline-atomics,HAL_ARCH_ARM64,src/libc/crt/crt0-aarch64.S,src/libc/crt/crt1-aarch64.S,arm64,user.ld,AArch64,-DKERN_USER_ABI_AARCH64 -DKERN_USER_ABI_LP64,$(ZEDBSD_SYSROOT_ARM64_LIBC_SOURCES),,$(ZEDBSD_SYSROOT_ARM64_COMPILER_RT_SOURCES)))
+$(eval $(call ZEDBSD_BUILD_SYSROOT,$(ZEDBSD_SYSROOT_ARM64),arm64,aarch64-unknown-zedbsd,-march=armv8-a -mno-outline-atomics,HAL_ARCH_ARM64,src/libc/crt/crt0-aarch64.S,src/libc/crt/crt1-aarch64.S,arm64,user.ld,AArch64,-DKERN_USER_ABI_AARCH64 -DKERN_USER_ABI_LP64,$(ZEDBSD_SYSROOT_ARM64_LIBC_SOURCES),,$(ZEDBSD_SYSROOT_ARM64_COMPILER_RT_SOURCES),$(ZEDBSD_SYSROOT_ARM64_LLVM_BUILTIN_SOURCES)))
 
 .PHONY: sysroot-amd64 sysroot-i386 sysroot-arm64 sysroots
 sysroot-amd64: $(ZEDBSD_SYSROOT_AMD64)/.zedbsd-sysroot-complete
