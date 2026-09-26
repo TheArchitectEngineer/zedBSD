@@ -19,7 +19,38 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
+
+/*
+ * A date being read by command_parse_date: where the reading is, and the
+ * items found so far.  The relative items add up; the others are set once.
+ */
+struct command_date {
+	const char *cursor;
+
+	/* The date, the time and the zone, when given. */
+	int have_date;
+	int year;
+	int month;
+	int day;
+	int have_time;
+	int hour;
+	int minute;
+	int second;
+	long nanoseconds;
+	int have_zone;
+	long zone_offset;
+
+	/* today: the time is midnight. */
+	int midnight;
+
+	/* The moves: seconds, days, months and years. */
+	time_t relative_seconds;
+	int relative_days;
+	int relative_months;
+	int relative_years;
+};
 
 extern char **environ;
 
@@ -28,6 +59,17 @@ static int options_long(struct command_options *scan, const char *text);
 static int options_find_long(const struct command_options *scan, const char *name, size_t length);
 static void options_operand(struct command_options *scan, char *argument);
 static void options_rest(struct command_options *scan);
+static int date_epoch(struct command_date *date, struct timespec *moment);
+static int date_item(struct command_date *date);
+static int date_iso_date(struct command_date *date);
+static int date_time(struct command_date *date);
+static int date_signed(struct command_date *date);
+static int date_move(struct command_date *date, long long count);
+static int date_word(struct command_date *date);
+static size_t date_word_text(struct command_date *date, char *word, size_t size);
+static int date_number(struct command_date *date, long long *value, size_t *digits);
+static long date_fraction(struct command_date *date);
+static void date_skip_blanks(struct command_date *date);
 
 /*
  * Starts a scan of the command line for command_options_next.
@@ -465,6 +507,572 @@ command_exec(
 
 	/* Reports operation failure. */
 	return -1;
+}
+
+/*
+ * Reads a date the way GNU's date -d and touch -d take them.
+ *
+ * The forms are those scripts use: @SECONDS[.fraction]; a date written
+ * YYYY-MM-DD or YYYYMMDD; a time hh:mm[:ss[.fraction]] after the date, a T
+ * or blanks; a zone of Z, UTC, GMT or +hhmm/-hhmm; the words now, today,
+ * yesterday and tomorrow; and relative items "[+|-]N unit [ago]" (second,
+ * minute, hour, day, week, fortnight, month or year, with or without an s).
+ * What is not given comes from now; a date without a time is midnight.  A
+ * date without a zone is local time, or UTC when utc is set.  Returns 0
+ * when the text is not such a date.
+ */
+int
+command_parse_date(
+	const char *text,
+	const struct timespec *now,
+	int utc,
+	struct timespec *moment)
+{
+	struct command_date date;
+	struct tm fields;
+	time_t seconds;
+	int valid;
+
+	/* @SECONDS is the moment itself. */
+	memset(&date, 0, sizeof(date));
+	date.cursor = text;
+	date_skip_blanks(&date);
+	if (*date.cursor == '@') {
+		date.cursor++;
+		valid = date_epoch(&date, moment);
+		return valid;
+	}
+
+	/* The items, in any order, each at most once. */
+	for (;;) {
+		date_skip_blanks(&date);
+		if (*date.cursor == '\0')
+			break;
+		valid = date_item(&date);
+		if (!valid)
+			return 0;
+	}
+
+	/* The fields of now, in the zone the date is read in. */
+	seconds = now->tv_sec;
+	if (utc || date.have_zone)
+		gmtime_r(&seconds, &fields);
+	else
+		localtime_r(&seconds, &fields);
+
+	/* The date, and midnight when it has no time. */
+	if (date.have_date) {
+		fields.tm_year = date.year - 1900;
+		fields.tm_mon = date.month - 1;
+		fields.tm_mday = date.day;
+		fields.tm_hour = 0;
+		fields.tm_min = 0;
+		fields.tm_sec = 0;
+	}
+
+	/* A named day at midnight, or a date, has no fraction of a second. */
+	moment->tv_nsec = now->tv_nsec;
+	if (date.have_date || date.have_time || date.midnight)
+		moment->tv_nsec = 0;
+
+	/* today: midnight. */
+	if (date.midnight) {
+		fields.tm_hour = 0;
+		fields.tm_min = 0;
+		fields.tm_sec = 0;
+	}
+
+	/* The time given. */
+	if (date.have_time) {
+		fields.tm_hour = date.hour;
+		fields.tm_min = date.minute;
+		fields.tm_sec = date.second;
+		moment->tv_nsec = date.nanoseconds;
+	}
+
+	/* Months and years move the fields; the rest moves the seconds. */
+	fields.tm_year += date.relative_years;
+	fields.tm_mon += date.relative_months;
+	fields.tm_mday += date.relative_days;
+	fields.tm_isdst = -1;
+
+	/* The fields as seconds: UTC, a zone's offset, or local time. */
+	if (utc || date.have_zone)
+		seconds = timegm(&fields);
+	else
+		seconds = mktime(&fields);
+	if (date.have_zone)
+		seconds -= date.zone_offset;
+
+	/* Succeeded: the moment, with the relative seconds. */
+	moment->tv_sec = seconds + date.relative_seconds;
+	return 1;
+}
+
+/* Reads @SECONDS[.fraction]: the seconds since the epoch. */
+static int
+date_epoch(
+	struct command_date *date,
+	struct timespec *moment)
+{
+	long long value;
+	int negative;
+	int valid;
+
+	/* The sign. */
+	negative = 0;
+	if (*date->cursor == '-' || *date->cursor == '+') {
+		if (*date->cursor == '-')
+			negative = 1;
+		date->cursor++;
+	}
+
+	/* The seconds. */
+	valid = date_number(date, &value, NULL);
+	if (!valid)
+		return 0;
+
+	/* A fraction of a second. */
+	moment->tv_nsec = 0;
+	if (*date->cursor == '.' || *date->cursor == ',') {
+		date->cursor++;
+		moment->tv_nsec = date_fraction(date);
+	}
+
+	/* Only blanks may follow. */
+	date_skip_blanks(date);
+	if (*date->cursor != '\0')
+		return 0;
+
+	/* Succeeded. */
+	moment->tv_sec = (time_t)value;
+	if (negative)
+		moment->tv_sec = -(time_t)value;
+	return 1;
+}
+
+/* Reads one item of a date: a date, a time, a zone, a word or a move. */
+static int
+date_item(
+	struct command_date *date)
+{
+	const char *start;
+	long long value;
+	size_t digits;
+	int valid;
+
+	/* T between a date and its time. */
+	if (*date->cursor == 'T' && date->have_date && !date->have_time) {
+		date->cursor++;
+		valid = date_time(date);
+		return valid;
+	}
+
+	/* A word: the named days, a zone, or a unit. */
+	if ((*date->cursor >= 'a' && *date->cursor <= 'z') ||
+	    (*date->cursor >= 'A' && *date->cursor <= 'Z')) {
+		valid = date_word(date);
+		return valid;
+	}
+
+	/* A signed number: a zone after a time, or a move. */
+	if (*date->cursor == '+' || *date->cursor == '-') {
+		valid = date_signed(date);
+		return valid;
+	}
+
+	/* A number: a date, a time, or a move. */
+	start = date->cursor;
+	valid = date_number(date, &value, &digits);
+	if (!valid)
+		return 0;
+
+	/* YYYY-MM-DD. */
+	if (*date->cursor == '-' && !date->have_date) {
+		date->cursor = start;
+		valid = date_iso_date(date);
+		return valid;
+	}
+
+	/* hh:mm. */
+	if (*date->cursor == ':' && !date->have_time) {
+		date->cursor = start;
+		valid = date_time(date);
+		return valid;
+	}
+
+	/* YYYYMMDD. */
+	if (digits == 8U && !date->have_date) {
+		date->year = (int)(value / 10000);
+		date->month = (int)(value / 100 % 100);
+		date->day = (int)(value % 100);
+		date->have_date = 1;
+		return 1;
+	}
+
+	/* Succeeded: a number before a unit. */
+	valid = date_move(date, value);
+	return valid;
+}
+
+/* Reads YYYY-MM-DD. */
+static int
+date_iso_date(
+	struct command_date *date)
+{
+	long long year;
+	long long month;
+	long long day;
+	int valid;
+
+	/* The year, the month and the day, with a - between them. */
+	valid = date_number(date, &year, NULL);
+	if (!valid || *date->cursor != '-')
+		return 0;
+	date->cursor++;
+	valid = date_number(date, &month, NULL);
+	if (!valid || *date->cursor != '-')
+		return 0;
+	date->cursor++;
+	valid = date_number(date, &day, NULL);
+	if (!valid)
+		return 0;
+
+	/* A month and a day that exist. */
+	if (month < 1 || month > 12 || day < 1 || day > 31)
+		return 0;
+
+	/* Succeeded. */
+	date->year = (int)year;
+	date->month = (int)month;
+	date->day = (int)day;
+	date->have_date = 1;
+	return 1;
+}
+
+/* Reads hh:mm[:ss[.fraction]]. */
+static int
+date_time(
+	struct command_date *date)
+{
+	long long hour;
+	long long minute;
+	long long second;
+	int valid;
+
+	/* The hour and the minute. */
+	valid = date_number(date, &hour, NULL);
+	if (!valid || *date->cursor != ':')
+		return 0;
+	date->cursor++;
+	valid = date_number(date, &minute, NULL);
+	if (!valid)
+		return 0;
+
+	/* The seconds, and a fraction of one. */
+	second = 0;
+	date->nanoseconds = 0;
+	if (*date->cursor == ':') {
+		date->cursor++;
+		valid = date_number(date, &second, NULL);
+		if (!valid)
+			return 0;
+		if (*date->cursor == '.' || *date->cursor == ',') {
+			date->cursor++;
+			date->nanoseconds = date_fraction(date);
+		}
+	}
+
+	/* A time of the day. */
+	if (hour > 24 || minute > 59 || second > 60)
+		return 0;
+
+	/* Succeeded. */
+	date->hour = (int)hour;
+	date->minute = (int)minute;
+	date->second = (int)second;
+	date->have_time = 1;
+	return 1;
+}
+
+/*
+ * Reads a number with a sign: a zone (+hhmm, +hh:mm) right after a time,
+ * or else a move of so many units.
+ */
+static int
+date_signed(
+	struct command_date *date)
+{
+	long long value;
+	long long hours;
+	long long minutes;
+	size_t digits;
+	int negative;
+	int valid;
+
+	/* The sign and the number. */
+	negative = 0;
+	if (*date->cursor == '-')
+		negative = 1;
+	date->cursor++;
+	valid = date_number(date, &value, &digits);
+	if (!valid)
+		return 0;
+
+	/* A zone after a time: hhmm, hh, or hh:mm. */
+	if (date->have_time && !date->have_zone) {
+		hours = value;
+		minutes = 0;
+		if (digits == 4U) {
+			hours = value / 100;
+			minutes = value % 100;
+		} else if (*date->cursor == ':') {
+			date->cursor++;
+			valid = date_number(date, &minutes, NULL);
+			if (!valid)
+				return 0;
+		}
+
+		/* The offset east of UTC, in seconds. */
+		date->zone_offset = (long)(hours * 3600 + minutes * 60);
+		if (negative)
+			date->zone_offset = -date->zone_offset;
+		date->have_zone = 1;
+		return 1;
+	}
+
+	/* Succeeded: a move of so many units. */
+	if (negative)
+		value = -value;
+	valid = date_move(date, value);
+	return valid;
+}
+
+/* Reads the unit after a number of a move, and an ago after it. */
+static int
+date_move(
+	struct command_date *date,
+	long long count)
+{
+	static const struct {
+		const char *name;
+		long seconds;
+		int kind;
+	} units[] = {
+		{"second", 1L, 0}, {"sec", 1L, 0},
+		{"minute", 60L, 0}, {"min", 60L, 0},
+		{"hour", 3600L, 0},
+		{"day", 0L, 1},
+		{"week", 0L, 2},
+		{"fortnight", 0L, 3},
+		{"month", 0L, 4},
+		{"year", 0L, 5},
+		{NULL, 0L, 0}
+	};
+	char word[16];
+	size_t length;
+	size_t index;
+	int differs;
+
+	/* The unit's word, without an s at its end. */
+	date_skip_blanks(date);
+	length = date_word_text(date, word, sizeof(word));
+	if (length == 0)
+		return 0;
+	if (length > 1U && word[length - 1U] == 's')
+		word[length - 1U] = '\0';
+
+	/* ago turns the move back. */
+	date_skip_blanks(date);
+	differs = strncmp(date->cursor, "ago", 3);
+	if (differs == 0) {
+		date->cursor += 3;
+		count = -count;
+	}
+
+	/* The unit. */
+	for (index = 0; units[index].name != NULL; index++) {
+		differs = strcmp(word, units[index].name);
+		if (differs != 0)
+			continue;
+
+		/* The move, in seconds, days, months or years. */
+		switch (units[index].kind) {
+		case 0:
+			date->relative_seconds += (time_t)(count * units[index].seconds);
+			break;
+		case 1:
+			date->relative_days += (int)count;
+			break;
+		case 2:
+			date->relative_days += (int)(count * 7);
+			break;
+		case 3:
+			date->relative_days += (int)(count * 14);
+			break;
+		case 4:
+			date->relative_months += (int)count;
+			break;
+		default:
+			date->relative_years += (int)count;
+			break;
+		}
+
+		/* Succeeded. */
+		return 1;
+	}
+
+	/* A word that is no unit. */
+	return 0;
+}
+
+/* Reads a word: the named days, a zone name, or a unit with a count of 1. */
+static int
+date_word(
+	struct command_date *date)
+{
+	char word[16];
+	size_t length;
+	int differs;
+	int valid;
+
+	/* The word, in lower case. */
+	length = date_word_text(date, word, sizeof(word));
+	if (length == 0)
+		return 0;
+
+	/* now changes nothing. */
+	differs = strcmp(word, "now");
+	if (differs == 0)
+		return 1;
+
+	/* today is midnight. */
+	differs = strcmp(word, "today");
+	if (differs == 0) {
+		date->midnight = 1;
+		return 1;
+	}
+
+	/* yesterday is a day before, at this time. */
+	differs = strcmp(word, "yesterday");
+	if (differs == 0) {
+		date->relative_days -= 1;
+		return 1;
+	}
+
+	/* tomorrow is a day after. */
+	differs = strcmp(word, "tomorrow");
+	if (differs == 0) {
+		date->relative_days += 1;
+		return 1;
+	}
+
+	/* Z, UTC and GMT are the zone of offset 0. */
+	differs = strcmp(word, "z");
+	if (differs != 0)
+		differs = strcmp(word, "utc");
+	if (differs != 0)
+		differs = strcmp(word, "gmt");
+	if (differs == 0) {
+		date->zone_offset = 0;
+		date->have_zone = 1;
+		return 1;
+	}
+
+	/* Succeeded: a unit alone, as in "next day", counts 1. */
+	date->cursor -= length;
+	valid = date_move(date, 1);
+	return valid;
+}
+
+/* Copies the letters at the cursor, in lower case.  Returns how many. */
+static size_t
+date_word_text(
+	struct command_date *date,
+	char *word,
+	size_t size)
+{
+	size_t length;
+	char value;
+
+	/* Each letter, while there is room. */
+	length = 0;
+	for (;;) {
+		value = *date->cursor;
+		if (value >= 'A' && value <= 'Z')
+			value = (char)(value - 'A' + 'a');
+		if (value < 'a' || value > 'z')
+			break;
+		if (length + 1U >= size)
+			return 0;
+		word[length] = value;
+		length++;
+		date->cursor++;
+	}
+
+	/* Succeeded: the word, ended. */
+	word[length] = '\0';
+	return length;
+}
+
+/* Reads decimal digits.  Returns 0 when there is none. */
+static int
+date_number(
+	struct command_date *date,
+	long long *value,
+	size_t *digits)
+{
+	size_t count;
+
+	/* Each digit. */
+	*value = 0;
+	count = 0;
+	while (*date->cursor >= '0' && *date->cursor <= '9') {
+		*value = *value * 10 + (long long)(*date->cursor - '0');
+		date->cursor++;
+		count++;
+	}
+
+	/* How many there were. */
+	if (digits != NULL)
+		*digits = count;
+	if (count == 0)
+		return 0;
+
+	/* Succeeded. */
+	return 1;
+}
+
+/* Reads the digits of a fraction of a second, as nanoseconds. */
+static long
+date_fraction(
+	struct command_date *date)
+{
+	long nanoseconds;
+	long scale;
+
+	/* Each digit, the first nine counting. */
+	nanoseconds = 0;
+	scale = 100000000L;
+	while (*date->cursor >= '0' && *date->cursor <= '9') {
+		nanoseconds += (long)(*date->cursor - '0') * scale;
+		scale /= 10;
+		date->cursor++;
+	}
+
+	/* Succeeded. */
+	return nanoseconds;
+}
+
+/* Skips blanks and commas between the items of a date. */
+static void
+date_skip_blanks(
+	struct command_date *date)
+{
+	/* Each blank. */
+	while (*date->cursor == ' ' || *date->cursor == '\t' ||
+	       *date->cursor == ',')
+		date->cursor++;
 }
 
 /* Reads one letter of a run, and its value when it takes one. */

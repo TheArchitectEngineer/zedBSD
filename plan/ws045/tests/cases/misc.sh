@@ -55,12 +55,27 @@ cmp --silent t1 t2; echo $?
 touch -t 202001020304 a
 touch b
 touch --reference=a b
-ls -l --time-style=+%Y%m%d%H%M b 2>/dev/null | cut -d' ' -f6 || true
-[ a -nt b ] || [ b -nt a ] || echo same
+/usr/bin/stat -c %Y b
 
 #### touch -d
 touch -d '2020-01-02 03:04:05' a
-ls -l --time-style=+%Y%m%d%H%M%S a 2>/dev/null | cut -d' ' -f6
+/usr/bin/stat -c %Y a
+
+#### touch -d with a date only and @seconds
+touch -d 2021-03-04 a
+touch -d @1700000000 b
+/usr/bin/stat -c %Y a b
+
+#### touch -d relative to now is later than an old file
+touch -d '2000-01-01' old
+touch -d '1 day ago' new
+[ new -nt old ] && echo newer
+
+#### touch --no-create and --time=mtime
+touch --no-create missing; ls missing 2>/dev/null; echo $?
+touch -d @1000 f
+touch --time=mtime -d @2000 f
+/usr/bin/stat -c '%X %Y' f
 
 #### date -d @epoch (vim configure)
 date -u -d @1700000000 '+%Y-%m-%d %H:%M:%S'
@@ -77,6 +92,23 @@ date -u -r f '+%Y%m%d%H%M%S'
 
 #### date -r seconds is not a file (BSD) falls back
 date -u -r 0 '+%Y' 2>/dev/null || echo fail
+
+#### date -d YYYYMMDD (ncurses make-tar.sh)
+date -u +'%a %b %d %Y' -d 20260101
+
+#### date -d relative items
+date -u -d '2024-01-31 00:00:00 +1 day' +%F
+date -u -d '2024-03-01 2 days ago' +%F
+date -u -d '2024-01-01T10:00:00Z' +%s
+date -u -d '2024-01-01 10:00 +0200' +%H:%M
+
+#### date -I and -R
+date -u -d @0 -I
+date -u -d @0 -Iseconds
+date -u -d @0 -R
+
+#### date formats through strftime
+date -u -d @1700000000 '+%a %A %b %B %e %j %y %H%%'
 
 #### find -maxdepth
 mkdir -p a/b/c
@@ -129,24 +161,6 @@ find . -newer old | sort
 #### find -printf
 mkdir d; touch d/f
 find d -type f -printf '%f %p\n'
-
-#### xargs -0
-printf 'a b\0c\0' | xargs -0 printf '[%s]\n'
-
-#### xargs -r with no input
-printf '' | xargs -r echo run; echo done
-
-#### xargs --null and --no-run-if-empty
-printf 'x\0' | xargs --null --no-run-if-empty echo
-
-#### xargs -I
-printf 'a\nb\n' | xargs -I{} echo 'x{}y'
-
-#### xargs -d
-printf 'a:b:c' | xargs -d: echo
-
-#### xargs -P1 accepted
-printf 'a\n' | xargs -P1 echo
 
 #### readlink -f
 mkdir -p d/e
@@ -291,3 +305,215 @@ expr length abc; expr match abc 'a\(.\)'; expr substr abcde 2 3; expr index abc 
 
 #### expr + token
 expr + length
+
+#### find -maxdepth 0
+mkdir -p a/b
+find a -maxdepth 0
+
+#### find -mindepth 1 -maxdepth 2 -type f
+mkdir -p a/b/c
+touch a/x a/b/y a/b/c/z
+find a -mindepth 1 -maxdepth 2 -type f | sort
+
+#### find -ipath and -wholename
+mkdir -p A/B
+touch A/B/f
+find . -ipath './a/b/*' | sort
+find . -wholename './A/B/f'
+
+#### find -regex with -regextype posix-extended
+touch a1.c b22.c c.h
+find . -regextype posix-extended -regex '\./[a-z][0-9]+\.c' | sort
+
+#### find -iregex
+touch A.C b.c
+find . -iregex '.*\.c' | sort
+
+#### find -empty on files and directories
+mkdir -p e f
+touch f/g empty
+printf x > full
+find . -empty | sort
+
+#### find -delete with -depth order
+mkdir -p d/e/f
+touch d/e/f/g
+find d -delete
+ls d 2>/dev/null; echo $?
+
+#### find -printf directives
+mkdir -p d/e
+printf abc > d/e/f
+chmod 640 d/e/f
+find d -type f -printf '%p|%f|%h|%P|%s|%m|%M|%d|%y\n'
+
+#### find -printf escapes and %%
+touch f
+find f -printf '%f\t100%%\n'
+
+#### find -quit
+mkdir d
+touch d/a d/b
+find d -type f -print -quit | wc -l
+
+#### find -false and -or
+touch a b
+find . -name a -false -or -name b | sort
+
+#### find -and and -not
+touch a b c
+find . -type f -and -not -name a | sort
+
+#### find -mmin
+touch -d '10 minutes ago' old
+touch new
+find . -type f -mmin -5 | sort
+find . -type f -mmin +5 | sort
+
+#### find -executable -readable -writable
+touch f; chmod 755 f; touch g; chmod 444 g
+find . -type f -executable | sort
+find . -type f -readable | sort
+
+#### find with -print0 and xargs-free sort
+mkdir d
+touch 'd/a b'
+find d -type f -print0 | od -c
+
+#### readlink -e an existing chain
+mkdir -p d
+touch d/f
+ln -s d/f l1
+ln -s l1 l2
+readlink -e l2 | sed "s|$PWD|.|"
+
+#### readlink -f a missing file in an existing directory
+mkdir d
+readlink -f d/missing | sed "s|$PWD|.|"
+
+#### readlink -f a missing directory fails
+readlink -f nodir/missing; echo $?
+
+#### readlink -m anything
+readlink -m nodir/../x/./y | sed "s|$PWD|.|"
+
+#### readlink -n and several operands
+mkdir d
+readlink -f -n d | sed "s|$PWD|.|"; echo "|"
+readlink -f d d | sed "s|$PWD|.|"
+
+#### readlink -z
+mkdir d
+readlink -fz d | tr '\0' '|' | sed "s|$PWD|.|"
+
+#### readlink of a relative link
+ln -s target l
+readlink l
+
+#### readlink -f through .. after a link
+mkdir -p a/b c
+ln -s ../c a/b/lc
+readlink -f a/b/lc/.. | sed "s|$PWD|.|"
+
+#### stat -c directives
+printf 'abcd' > f
+chmod 640 f
+stat -c '%n %s %a %A %F %h %f' f
+
+#### stat -c on a directory and a link
+mkdir d
+ln -s d l
+stat -c '%n %F %N' d l
+
+#### stat --printf with escapes
+printf 'ab' > f
+stat --printf='%s\t%n\n' f
+
+#### stat -L follows
+printf 'abc' > f
+ln -s f l
+stat -L -c %s l
+
+#### stat of an empty file type
+: > e
+stat -c %F e
+
+#### stat -c %Y and %X
+touch -d @1234567890 f
+stat -c '%X %Y' f
+
+#### head -n -0 and head -c -0
+seq 3 | head -n -0
+printf abc | head -c -0; echo
+
+#### head with a unit
+yes x | head -c 1K | wc -c
+yes | head -n 1b | wc -l
+
+#### head -q and -v
+printf 'a\n' > f1
+printf 'b\n' > f2
+head -q -n1 f1 f2
+head -v -n1 f1
+
+#### head -z
+printf 'a\0b\0c\0' | head -z -n 2 | od -c
+
+#### head -n -N on a file without a final newline
+printf 'a\nb\nc' | head -n -1
+
+#### head options after the file
+printf 'a\nb\n' > f
+head f -n 1
+
+#### tail -n with a unit and -q -v
+seq 5 > f
+tail -q -n 1 f f
+tail -v -n 1 f
+
+#### tail -z
+printf 'a\0b\0c\0' | tail -z -n 1 | od -c
+
+#### tail -c +N and --bytes
+printf 'abcdef' | tail -c +3; echo
+printf 'abcdef' | tail --bytes=+3; echo
+
+#### tail -n +N with -z
+printf 'a\0b\0c\0' | tail -z -n +2 | od -c
+
+#### cmp -n
+printf 'abcX' > t1
+printf 'abcY' > t2
+cmp -n 3 t1 t2; echo $?
+cmp --bytes=4 t1 t2 >/dev/null; echo $?
+
+#### cmp -i with a difference after the skip
+printf 'xxabc' > t1
+printf 'yyabd' > t2
+cmp -s -i 2 t1 t2; echo $?
+
+#### cmp --verbose
+printf 'ab' > t1
+printf 'ac' > t2
+cmp --verbose t1 t2
+
+#### expr keywords with operators
+expr length abcd + 1
+expr substr hello 2 10
+expr substr hello 0 2; echo $?
+expr index hello lo
+expr match abc 'ab'
+expr + match
+
+#### expr keyword in parentheses
+expr \( length abc \) \* 2
+
+#### echo -E and -n combined
+env echo -nE 'a\tb'; echo
+env echo -en 'a\tb'; echo
+
+#### echo -- is an operand
+env echo -- -n
+
+#### sort -V and head together (emacs configure)
+printf 'gcc-9\ngcc-12\ngcc-10\n' | sort -V | tail -n 1

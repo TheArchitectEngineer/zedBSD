@@ -9,6 +9,11 @@
 
 /*
  * Implements the zedBSD expr userland command.
+ *
+ * GNU's keywords are taken where an operand may stand, as GNU's expr takes
+ * them even in POSIX mode: length STRING, match STRING REGEX (as :),
+ * substr STRING POSITION LENGTH, index STRING CHARACTERS, and + TOKEN
+ * (the token as a string, even when it is an operator or a keyword).
  */
 
 #include <limits.h>
@@ -50,6 +55,12 @@ static int integer_parse(const char *text, long long *result);
 static int is_comparison(const char *token);
 static int comparison(const char *operation, const char *left, const char *right);
 static int is_true(const struct value *value);
+static struct value parse_keyword(struct parser *parser, int *handled);
+static struct value keyword_length(struct parser *parser);
+static struct value keyword_match(struct parser *parser);
+static struct value keyword_substr(struct parser *parser);
+static struct value keyword_index(struct parser *parser);
+static struct value substring_value(const char *text, long long position, long long length);
 
 /*
  * Runs the expr command.
@@ -463,6 +474,12 @@ parse_primary(
 {
 	struct value function_result;
 	struct value result;
+	int handled;
+
+	/* GNU's keywords. */
+	result = parse_keyword(parser, &handled);
+	if (handled)
+		return result;
 
 	/* Handles the accept condition. */
 	if (accept(parser, "(")) {
@@ -502,6 +519,247 @@ parse_primary(
 		parser_error(parser, 3, "out of memory");
 
 	/* Returns the computed result. */
+	return result;
+}
+
+/*
+ * Parses one of GNU's keywords where an operand may stand: length, match,
+ * substr, index or +, when the operands it needs follow.  Sets handled
+ * when it is one.
+ */
+static struct value
+parse_keyword(
+	struct parser *parser,
+	int *handled)
+{
+	static const char *const keywords[] = {"length", "match", "substr", "index", "+"};
+	static const int operands[] = {1, 2, 3, 2, 1};
+	struct value result;
+	const char *token;
+	size_t index;
+	int differs;
+
+	/* Not a keyword unless its operands follow it. */
+	*handled = 0;
+	result = invalid_value();
+	if (parser->index >= parser->argc)
+		return result;
+	token = parser->argv[parser->index];
+	for (index = 0; index < 5U; index++) {
+		differs = strcmp(token, keywords[index]);
+		if (differs == 0)
+			break;
+	}
+
+	/* A keyword, with enough operands after it. */
+	if (index == 5U)
+		return result;
+	if (parser->argc - parser->index - 1 < operands[index])
+		return result;
+
+	/* The keyword, then its operands. */
+	*handled = 1;
+	parser->index++;
+	switch (index) {
+	case 0:
+		result = keyword_length(parser);
+		break;
+	case 1:
+		result = keyword_match(parser);
+		break;
+	case 2:
+		result = keyword_substr(parser);
+		break;
+	case 3:
+		result = keyword_index(parser);
+		break;
+	default:
+		/* + TOKEN: the token itself. */
+		result = string_value(parser->argv[parser->index]);
+		parser->index++;
+		if (result.text == NULL)
+			parser_error(parser, 3, "out of memory");
+		break;
+	}
+
+	/* Succeeded: the keyword's value. */
+	return result;
+}
+
+/* length STRING: the number of characters of the string. */
+static struct value
+keyword_length(
+	struct parser *parser)
+{
+	struct value text;
+	struct value result;
+	size_t count;
+
+	/* The string. */
+	text = parse_primary(parser);
+	if (text.text == NULL)
+		return text;
+
+	/* Succeeded: its length in characters. */
+	count = character_count(text.text, strlen(text.text));
+	free(text.text);
+	result = integer_value((long long)count);
+	return result;
+}
+
+/* match STRING REGEX: the same as STRING : REGEX. */
+static struct value
+keyword_match(
+	struct parser *parser)
+{
+	struct value text;
+	struct value pattern;
+	struct value result;
+
+	/* The string and the regex. */
+	text = parse_primary(parser);
+	if (text.text == NULL)
+		return text;
+	pattern = parse_primary(parser);
+	if (pattern.text == NULL) {
+		free(text.text);
+		return pattern;
+	}
+
+	/* Succeeded: the match. */
+	result = match_value(parser, text.text, pattern.text);
+	free(text.text);
+	free(pattern.text);
+	return result;
+}
+
+/*
+ * substr STRING POSITION LENGTH: the part of the string from the position
+ * (from 1) of at most the length; empty when either is not a positive
+ * integer.
+ */
+static struct value
+keyword_substr(
+	struct parser *parser)
+{
+	struct value text;
+	struct value position;
+	struct value length;
+	struct value result;
+	long long start;
+	long long count;
+	int start_valid;
+	int count_valid;
+
+	/* The string, the position and the length. */
+	text = parse_primary(parser);
+	if (text.text == NULL)
+		return text;
+	position = parse_primary(parser);
+	if (position.text == NULL) {
+		free(text.text);
+		return position;
+	}
+
+	/* The length. */
+	length = parse_primary(parser);
+	if (length.text == NULL) {
+		free(text.text);
+		free(position.text);
+		return length;
+	}
+
+	/* The numbers. */
+	start_valid = integer_parse(position.text, &start);
+	count_valid = integer_parse(length.text, &count);
+	if (!start_valid || !count_valid) {
+		start = 0;
+		count = 0;
+	}
+
+	/* Succeeded: the part. */
+	result = substring_value(text.text, start, count);
+	free(text.text);
+	free(position.text);
+	free(length.text);
+	if (result.text == NULL)
+		parser_error(parser, 3, "out of memory");
+	return result;
+}
+
+/*
+ * index STRING CHARACTERS: the position (from 1) of the first byte of the
+ * string that is one of the characters, or 0.
+ */
+static struct value
+keyword_index(
+	struct parser *parser)
+{
+	struct value text;
+	struct value characters;
+	struct value result;
+	size_t position;
+	const char *found;
+
+	/* The string and the characters. */
+	text = parse_primary(parser);
+	if (text.text == NULL)
+		return text;
+	characters = parse_primary(parser);
+	if (characters.text == NULL) {
+		free(text.text);
+		return characters;
+	}
+
+	/* The first byte that is one of them. */
+	position = 0;
+	for (; text.text[position] != '\0'; position++) {
+		found = strchr(characters.text, text.text[position]);
+		if (found != NULL)
+			break;
+	}
+
+	/* Succeeded: its position, or 0 when there is none. */
+	if (text.text[position] == '\0')
+		result = integer_value(0);
+	else
+		result = integer_value((long long)position + 1);
+	free(text.text);
+	free(characters.text);
+	return result;
+}
+
+/* Returns the part of a text from a position (from 1) of at most a length. */
+static struct value
+substring_value(
+	const char *text,
+	long long position,
+	long long length)
+{
+	struct value result;
+	size_t size;
+	size_t start;
+	size_t count;
+
+	/* Nothing for a position or a length that is not positive. */
+	size = strlen(text);
+	if (position < 1 || length < 1 || (unsigned long long)position > size) {
+		result = string_value("");
+		return result;
+	}
+
+	/* The bytes that are there. */
+	start = (size_t)position - 1U;
+	count = size - start;
+	if ((unsigned long long)length < count)
+		count = (size_t)length;
+
+	/* Succeeded: a copy of them. */
+	result.text = malloc(count + 1U);
+	if (result.text == NULL)
+		return result;
+	memcpy(result.text, text + start, count);
+	result.text[count] = '\0';
 	return result;
 }
 

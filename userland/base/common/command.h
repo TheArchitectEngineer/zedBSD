@@ -16,6 +16,7 @@
 
 #include <stddef.h>
 #include <stdio.h>
+#include <time.h>
 
 /* How an option written in full takes its value. */
 #define COMMAND_VALUE_NONE	0	/* no value: --name */
@@ -81,6 +82,7 @@ struct command_options {
 
 void command_options_start(struct command_options *scan);
 int command_options_next(struct command_options *scan);
+int command_parse_date(const char *text, const struct timespec *now, int utc, struct timespec *moment);
 
 int command_write_all(int descriptor, const void *data, size_t length);
 int command_copy_fd(int input, int output);

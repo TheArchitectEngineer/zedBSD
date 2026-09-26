@@ -9,6 +9,10 @@
 
 /*
  * Implements the zedBSD cmp userland command.
+ *
+ * GNU's extensions: -i SKIP1[:SKIP2] (--ignore-initial), -n LIMIT
+ * (--bytes), --silent and --quiet for -s, --verbose for -l, and options
+ * after operands (unless POSIXLY_CORRECT is set).
  */
 
 #include "userland/base/common/command.h"
@@ -31,14 +35,47 @@ struct cmp_reader {
 	int eof;
 };
 
+/* The codes of the long options that have no letter. */
+#define CMP_OPTION_HELP		256
+#define CMP_OPTION_VERSION	257
+
+/*
+ * What the command line asks of the comparison.
+ *
+ * The skips of -i apply unless skip operands are given; limit (with -n)
+ * is the most bytes compared.
+ */
 struct cmp_options {
 	int list;
 	int silent;
+	int operand_count;
+	unsigned long long first_skip;
+	unsigned long long second_skip;
+	unsigned long long limit;
+	int limited;
+};
+
+/*
+ * The options written in full.
+ *
+ * The table is read by the scan of the command line only; the letter a
+ * long option shares its code with makes the two forms one case.
+ */
+static const struct command_long_option cmp_long_options[] = {
+	{"bytes", COMMAND_VALUE_REQUIRED, 'n'},
+	{"help", COMMAND_VALUE_NONE, CMP_OPTION_HELP},
+	{"ignore-initial", COMMAND_VALUE_REQUIRED, 'i'},
+	{"quiet", COMMAND_VALUE_NONE, 's'},
+	{"silent", COMMAND_VALUE_NONE, 's'},
+	{"verbose", COMMAND_VALUE_NONE, 'l'},
+	{"version", COMMAND_VALUE_NONE, CMP_OPTION_VERSION},
+	{NULL, 0, 0}
 };
 
 static int cmp_parse_options(int argc, char **argv, struct cmp_options *options);
 static void cmp_usage(void);
 static int cmp_parse_skip(const char *text, unsigned long long *result);
+static int cmp_parse_ignore(const char *text, struct cmp_options *options);
 static int cmp_reader_open(struct cmp_reader *reader, const char *name);
 static int cmp_reader_close(struct cmp_reader *reader);
 static int cmp_reader_skip(struct cmp_reader *reader, unsigned long long count);
@@ -70,6 +107,7 @@ main(
 	int result;
 	int status;
 
+	/* The options; the operands follow argv[0]. */
 	memset(&options, 0, sizeof(options));
 	first_operand = cmp_parse_options(argc, argv, &options);
 
@@ -81,7 +119,7 @@ main(
 		return 2;
 	}
 
-	operand_count = argc - first_operand;
+	operand_count = options.operand_count;
 
 	/* Handles the operand count condition. */
 	if (operand_count < 2 || operand_count > 4) {
@@ -100,8 +138,9 @@ main(
 		return 2;
 	}
 
-	first_skip = 0;
-	second_skip = 0;
+	/* The skips of -i, unless the operands give their own. */
+	first_skip = options.first_skip;
+	second_skip = options.second_skip;
 
 	/* Validates the command-line arguments. */
 	if (operand_count >= 3 &&
@@ -166,6 +205,11 @@ main(
 
 	/* Compare one logical byte at a time across arbitrary read boundaries. */
 	while (result < 2) {
+		/* -n: the bytes after the limit are not compared. */
+		if (options.limited && byte > options.limit)
+			break;
+
+		/* The next byte of each. */
 		first_status = cmp_reader_next(&first, &first_value);
 
 		/* Handles the first status condition. */
@@ -265,39 +309,113 @@ main(
 	return result;
 }
 
-/* Parses the mutually exclusive comparison output modes. */
+/*
+ * Parses the options: the output modes (-l and -s, which exclude each
+ * other), and GNU's -i and -n.  Returns the index of the first operand
+ * (the operands are gathered from argv[1] on), or -1 for a usage error.
+ */
 static int
 cmp_parse_options(
 	int argc,
 	char **argv,
 	struct cmp_options *options)
 {
-	int option;
+	struct command_options scan;
+	int valid;
+	int code;
 
-	opterr = 0;
+	/* The scan of the command line. */
+	memset(&scan, 0, sizeof(scan));
+	scan.argc = argc;
+	scan.argv = argv;
+	scan.program = "cmp";
+	scan.letters = "lsi:n:";
+	scan.names = cmp_long_options;
+	command_options_start(&scan);
 
-	/* Accept only the two standard output modes. */
-	while ((option = getopt(argc, argv, "ls")) != -1) {
-		/* Dispatch the selected command-line option. */
-		switch (option) {
+	/* Each option in turn. */
+	for (;;) {
+		code = command_options_next(&scan);
+		if (code == COMMAND_OPTION_END)
+			break;
+
+		/* The option of its code. */
+		switch (code) {
 		case 'l':
 			options->list = 1;
 			break;
 		case 's':
 			options->silent = 1;
 			break;
+		case 'i':
+			valid = cmp_parse_ignore(scan.value, options);
+			if (!valid)
+				return -1;
+			break;
+		case 'n':
+			valid = cmp_parse_skip(scan.value, &options->limit);
+			if (valid != 0)
+				return -1;
+			options->limited = 1;
+			break;
+		case CMP_OPTION_VERSION:
+			printf("cmp (zedBSD) 1.0\n");
+			exit(0);
 		default:
-			/* Reports operation failure. */
 			return -1;
 		}
 	}
 
-	/* Checks the selected options. */
+	/* -l and -s exclude each other. */
 	if (options->list && options->silent)
 		return -1;
 
-	/* Returns the computed result. */
-	return optind;
+	/* Succeeded: the operands follow argv[0]. */
+	options->operand_count = scan.operand_count;
+	return 1;
+}
+
+/*
+ * Parses GNU's -i SKIP1[:SKIP2]: the bytes skipped at the start of each
+ * file (SKIP2 defaults to SKIP1).  Returns 0 when invalid.
+ */
+static int
+cmp_parse_ignore(
+	const char *text,
+	struct cmp_options *options)
+{
+	char first[32];
+	const char *colon;
+	size_t length;
+	int status;
+
+	/* One value for both files. */
+	colon = strchr(text, ':');
+	if (colon == NULL) {
+		status = cmp_parse_skip(text, &options->first_skip);
+		if (status != 0)
+			return 0;
+		options->second_skip = options->first_skip;
+		return 1;
+	}
+
+	/* The first value, before the colon. */
+	length = (size_t)(colon - text);
+	if (length >= sizeof(first))
+		return 0;
+	memcpy(first, text, length);
+	first[length] = '\0';
+	status = cmp_parse_skip(first, &options->first_skip);
+	if (status != 0)
+		return 0;
+
+	/* The second, after it. */
+	status = cmp_parse_skip(colon + 1, &options->second_skip);
+	if (status != 0)
+		return 0;
+
+	/* Succeeded. */
+	return 1;
 }
 
 /* Prints the accepted POSIX and historical operand surface. */

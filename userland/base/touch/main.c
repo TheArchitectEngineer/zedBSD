@@ -17,7 +17,14 @@
  * space may stand for the T, and Z means UTC).  -a changes only the access
  * time and -m only the modification time; neither changes both.  A missing
  * file is made, unless -c is given.
+ *
+ * GNU's extensions: -d takes the other dates GNU's touch does (@SECONDS,
+ * a date without a time, relative items; see command_parse_date), the
+ * long options (--reference, --date, --no-create, --time=atime|mtime), and
+ * options after operands (unless POSIXLY_CORRECT is set).
  */
+
+#include "userland/base/common/command.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -28,6 +35,28 @@
 #include <time.h>
 #include <unistd.h>
 
+/* The codes of the long options that have no letter. */
+#define OPTION_TIME	256
+#define OPTION_HELP	257
+#define OPTION_VERSION	258
+
+/*
+ * The options written in full.
+ *
+ * The table is read by the scan of the command line only; the letter a
+ * long option shares its code with makes the two forms one case.
+ */
+static const struct command_long_option touch_long_options[] = {
+	{"date", COMMAND_VALUE_REQUIRED, 'd'},
+	{"help", COMMAND_VALUE_NONE, OPTION_HELP},
+	{"no-create", COMMAND_VALUE_NONE, 'c'},
+	{"no-dereference", COMMAND_VALUE_NONE, 'h'},
+	{"reference", COMMAND_VALUE_REQUIRED, 'r'},
+	{"time", COMMAND_VALUE_REQUIRED, OPTION_TIME},
+	{"version", COMMAND_VALUE_NONE, OPTION_VERSION},
+	{NULL, 0, 0}
+};
+
 /* The options: which times change, and to what. */
 struct options {
 	int access_only;
@@ -37,7 +66,8 @@ struct options {
 };
 
 static int read_options(int argc, char **argv, struct options *options);
-static const char *option_argument(int argc, char **argv, int *index, const char *rest);
+static void apply_time_word(const char *word, struct options *options);
+static void gnu_date(const char *text, struct options *options);
 static void reference_times(const char *path, struct options *options);
 static int parse_time(const char *text, struct options *options);
 static int parse_date_time(const char *text, struct options *options);
@@ -55,6 +85,7 @@ main(
 	char **argv)
 {
 	struct options options;
+	int count;
 	int first;
 	int index;
 	int error;
@@ -64,9 +95,11 @@ main(
 	memset(&options, 0, sizeof(options));
 	options.times[0].tv_nsec = UTIME_NOW;
 	options.times[1].tv_nsec = UTIME_NOW;
-	first = read_options(argc, argv, &options);
-	if (first >= argc)
+	count = read_options(argc, argv, &options);
+	if (count == 0)
 		usage();
+	first = 1;
+	argc = first + count;
 
 	/* -a leaves the modification time, and -m the access time. */
 	if (options.access_only && !options.modification_only)
@@ -90,88 +123,138 @@ main(
 	return 0;
 }
 
-/* Reads the options; returns the index of the first file. */
+/*
+ * Reads the options; returns the number of files, which are left in argv
+ * from argv[1] on.
+ */
 static int
 read_options(
 	int argc,
 	char **argv,
 	struct options *options)
 {
-	const char *word;
-	const char *letter;
-	const char *argument;
-	int index;
+	struct command_options scan;
 	int valid;
+	int code;
 
-	/* Each word that starts with - and is not - alone; -- ends them. */
-	for (index = 1; index < argc; index++) {
-		word = argv[index];
-		if (word[0] != '-' || word[1] == '\0')
+	/* The scan of the command line. */
+	memset(&scan, 0, sizeof(scan));
+	scan.argc = argc;
+	scan.argv = argv;
+	scan.program = "touch";
+	scan.letters = "acfhmr:t:d:";
+	scan.names = touch_long_options;
+	command_options_start(&scan);
+
+	/* Each option in turn. */
+	for (;;) {
+		code = command_options_next(&scan);
+		if (code == COMMAND_OPTION_END)
 			break;
-		if (word[1] == '-' && word[2] == '\0')
-			return index + 1;
 
-		/* Each letter; -r, -t and -d take the rest or the next word. */
-		for (letter = word + 1; *letter != '\0'; letter++) {
-			switch (*letter) {
-			case 'a':
-				options->access_only = 1;
-				continue;
-			case 'm':
-				options->modification_only = 1;
-				continue;
-			case 'c':
-				options->no_create = 1;
-				continue;
-			case 'r':
-				argument = option_argument(argc, argv, &index, letter + 1);
-				reference_times(argument, options);
-				break;
-			case 't':
-				argument = option_argument(argc, argv, &index, letter + 1);
-				valid = parse_time(argument, options);
-				if (!valid)
-					invalid_date();
-				break;
-			case 'd':
-				argument = option_argument(argc, argv, &index, letter + 1);
-				valid = parse_date_time(argument, options);
-				if (!valid)
-					invalid_date();
-				break;
-			default:
-				usage();
-				break;
-			}
-
-			/* The argument took the rest of the word. */
+		/* The option of its code. */
+		switch (code) {
+		case 'a':
+			options->access_only = 1;
+			break;
+		case 'm':
+			options->modification_only = 1;
+			break;
+		case 'c':
+			options->no_create = 1;
+			break;
+		case 'f':
+		case 'h':
+			/* Nothing to force; links are followed. */
+			break;
+		case 'r':
+			reference_times(scan.value, options);
+			break;
+		case 't':
+			valid = parse_time(scan.value, options);
+			if (!valid)
+				invalid_date();
+			break;
+		case 'd':
+			/* POSIX's form, or one of GNU's. */
+			valid = parse_date_time(scan.value, options);
+			if (!valid)
+				gnu_date(scan.value, options);
+			break;
+		case OPTION_TIME:
+			apply_time_word(scan.value, options);
+			break;
+		case OPTION_VERSION:
+			printf("touch (zedBSD) 1.0\n");
+			exit(0);
+		default:
+			usage();
 			break;
 		}
 	}
 
-	/* Succeeded: the first file. */
-	return index;
+	/* Succeeded: the files follow argv[0]. */
+	return scan.operand_count;
 }
 
-/* Returns an option's argument: the rest of the word, or the next word. */
-static const char *
-option_argument(
-	int argc,
-	char **argv,
-	int *index,
-	const char *rest)
+/* Applies --time=WORD: atime, access or use is -a; mtime or modify is -m. */
+static void
+apply_time_word(
+	const char *word,
+	struct options *options)
 {
-	/* The rest of the word. */
-	if (*rest != '\0')
-		return rest;
+	static const char *const access_words[] = {"atime", "access", "use"};
+	static const char *const modify_words[] = {"mtime", "modify"};
+	size_t index;
+	int differs;
 
-	/* The next word, which must be there. */
-	if (*index + 1 >= argc)
-		usage();
-	(*index)++;
+	/* A word of the access time. */
+	for (index = 0; index < 3U; index++) {
+		differs = strcmp(word, access_words[index]);
+		if (differs == 0) {
+			options->access_only = 1;
+			return;
+		}
+	}
 
-	/* Succeeded. */
-	return argv[*index];
+	/* A word of the modification time. */
+	for (index = 0; index < 2U; index++) {
+		differs = strcmp(word, modify_words[index]);
+		if (differs == 0) {
+			options->modification_only = 1;
+			return;
+		}
+	}
+
+	/* Any other word. */
+	fprintf(stderr, "touch: invalid argument '%s' for '--time'\n", word);
+	exit(1);
+}
+
+/* Reads -d's date in one of GNU's forms, ending touch when it is none. */
+static void
+gnu_date(
+	const char *text,
+	struct options *options)
+{
+	struct timespec now;
+	struct timespec moment;
+	int result;
+	int valid;
+
+	/* Now, which the date is relative to. */
+	result = clock_gettime(CLOCK_REALTIME, &now);
+	if (result != 0)
+		invalid_date();
+
+	/* The date. */
+	valid = command_parse_date(text, &now, 0, &moment);
+	if (!valid)
+		invalid_date();
+
+	/* Succeeded: both times. */
+	options->times[0] = moment;
+	options->times[1] = moment;
 }
 
 /* Takes both times from a reference file (-r). */
