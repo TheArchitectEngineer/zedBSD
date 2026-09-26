@@ -22,4 +22,10 @@
  */
 int drv_rpi4_pcie_init(uint64_t fdt_phys);
 
+/*
+ * Finishes discovery behind PCIe once interrupts are enabled: the USB host
+ * controllers look at their root ports.  Does nothing without them.
+ */
+void drv_rpi4_pcie_refresh(void);
+
 #endif

@@ -99,7 +99,10 @@ kern_platform_init(
 }
 
 /*
- * Refreshes the published devices; the Pi 4 has no hot-pluggable devices.
+ * Finishes device discovery once interrupts are enabled.
+ *
+ * The SD card is the boot device and is published already; the USB host
+ * controllers behind PCIe look at their root ports now.
  */
 void
 kern_platform_refresh_devices(
@@ -108,6 +111,9 @@ kern_platform_refresh_devices(
 {
 	(void)d;
 	(void)n;
+
+	/* Has the USB controllers behind PCIe find their devices. */
+	drv_rpi4_pcie_refresh();
 }
 
 /*

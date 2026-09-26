@@ -83,6 +83,21 @@ ARM64_KERNEL_SOURCES := \
 	src/kern/tty.c \
  src/drivers/generic/system-device.c src/drivers/generic/memory-device.c src/kern/shutdown.c \
 	src/kern/init.c
+# USB behind the Pi 4's PCIe (ws048): the core comes with any USB driver.
+ARM64_USB_SOURCES :=
+ifneq ($(filter y,$(CONFIG_DRIVER_PCI_XHCI) $(CONFIG_DRIVER_USB_HID) $(CONFIG_DRIVER_USB_HUB)),)
+ARM64_USB_SOURCES += src/drivers/usb/usb.c
+endif
+ifeq ($(CONFIG_DRIVER_PCI_XHCI),y)
+ARM64_USB_SOURCES += src/drivers/pci/pci-xhci.c
+endif
+ifeq ($(CONFIG_DRIVER_USB_HID),y)
+ARM64_USB_SOURCES += src/drivers/usb/usb-hid.c
+endif
+ifeq ($(CONFIG_DRIVER_USB_HUB),y)
+ARM64_USB_SOURCES += src/drivers/usb/usb-hub.c
+endif
+ARM64_KERNEL_SOURCES += $(ARM64_USB_SOURCES)
 ARM64_KERNEL_SOURCES += $(KERN_NET_SOURCES) $(KERN_BLOCK_IDENTITY_SOURCES) \
 	$(KERN_UFS_SOURCES)
 ARM64_KERNEL_SOURCES += $(KERN_BOOT_SOURCES)

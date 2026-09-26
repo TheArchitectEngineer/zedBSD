@@ -19,6 +19,10 @@
 #include <drivers/generic/fdt.h>
 #include <drivers/pci/pci.h>
 #include <drivers/pci/pci-brcmstb.h>
+#include <drivers/pci/pci-xhci.h>
+#include <drivers/usb/usb.h>
+#include <drivers/usb/usb-hid.h>
+#include <drivers/usb/usb-hub.h>
 #include <kern/clock.h>
 #include <kern/kcrt.h>
 #include <kern/klog.h>
@@ -41,6 +45,7 @@
 #define RPI4_VL805_START_MAX_US	2000U
 
 static void load_usb_firmware(const struct drv_fdt *fdt, struct drv_pci_brcmstb *host);
+static void register_usb_drivers(void);
 
 /*
  * Starts the PCI core and the BCM2711 root complex.
@@ -60,6 +65,9 @@ drv_rpi4_pcie_init(
 	error = drv_pci_init();
 	if (error != 0 && error != EALREADY)
 		return error;
+
+	/* Registers the USB drivers, so enumeration binds the controller. */
+	register_usb_drivers();
 
 	/* Finds the device tree in the direct map. */
 	blob = kern_pmem_to_kernel((hal_physaddr_t)fdt_phys);
@@ -113,6 +121,19 @@ drv_rpi4_pcie_init(
 }
 
 /*
+ * Finishes discovery behind PCIe once interrupts are enabled.
+ */
+void
+drv_rpi4_pcie_refresh(
+	void)
+{
+	/* Has each xHCI controller look at its root ports. */
+#if CONFIG_DRIVER_PCI_XHCI
+	drv_pci_xhci_probe_roots();
+#endif
+}
+
+/*
  * Has the VideoCore firmware load the VL805's firmware.
  *
  * Most Pi 4 boards carry no EEPROM for the VL805; the firmware loads it
@@ -160,4 +181,46 @@ load_usb_firmware(
 	error = drv_pci_brcmstb_reassign(host);
 	if (error != 0)
 		kern_logf("pcie: VL805 BARs not placed again (%d)\n", error);
+}
+
+/*
+ * Registers the USB core and the USB drivers the configuration selects.
+ *
+ * They must be known before the PCI core enumerates the bus, because
+ * enumeration binds the xHCI controller and the controller then finds its
+ * devices.  A failure is recorded; the boot goes on without that driver.
+ */
+static void
+register_usb_drivers(
+	void)
+{
+#if CONFIG_DRIVER_PCI_XHCI
+	int error;
+
+	/* Brings up the USB core. */
+	error = drv_usb_init();
+	if (error != 0) {
+		kern_logf("usb: core initialization failed (%d)\n", error);
+		return;
+	}
+
+	/* Registers the keyboard and mouse driver. */
+#if CONFIG_DRIVER_USB_HID
+	error = drv_usb_hid_driver_register();
+	if (error != 0)
+		kern_logf("usb: HID input driver registration failed (%d)\n", error);
+#endif
+
+	/* Registers the hub driver; the Pi 4's USB 2.0 ports sit behind a hub. */
+#if CONFIG_DRIVER_USB_HUB
+	error = drv_usb_hub_driver_register();
+	if (error != 0)
+		kern_logf("usb: hub driver registration failed (%d)\n", error);
+#endif
+
+	/* Registers the host controller driver. */
+	error = drv_pci_xhci_driver_register();
+	if (error != 0)
+		kern_logf("usb: xHCI PCI driver registration failed (%d)\n", error);
+#endif
 }
