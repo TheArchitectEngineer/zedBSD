@@ -163,3 +163,18 @@ location・整数の varying の flat・複数の出力・`texture` の新しい
 - `gl_FragCoord` の y は Vulkan の向き（上から）。GL の向き（下から）には framebuffer の高さの隠れた uniform が要る（p019 で判断、
   または p004）。
 - i915: §5 の表の「記録」の行。
+
+## 11. GLSL 1.40〜3.30 と ES 3.00（p012 を p020・p021 に分ける、2026-09-27）
+
+p003（p015〜p019）の核に、GL 3.x と GLES 3.0 の shader の言語を足す。GLES 3.0 と desktop GL 3.1 以上の **API**（uniform buffer の
+bind、`glUniformBlockBinding`、`glBindFragDataLocation`、VAO 等）は p005・p013 で、ここでは compiler と SPIR-V まで。
+
+| Phase | 内容 |
+| --- | --- |
+| p020 | 言語: `#version 140`・`150`・`330`（core・compatibility）・`300 es`、`layout(location = N)`（vertex の入力と fragment の出力）、`in`/`out` の interface block（1.50 以上、desktop）、整数の varying（flat）、複数の fragment 出力、`gl_InstanceID`、新しい sampler（2D 配列、cube と 2D 配列の shadow）と texture 関数（`textureGrad`・`textureOffset` 等）、`determinant`・`inverse`・`floatBitsToInt` 等・`pack*`/`unpack*`（ES 3.00）。ES 3.00 で消えたもの（`attribute`・`varying`・`gl_FragColor`・`texture2D` 等）は誤り。libGLESv2 は `#version 300 es` を ES 3 の context でだけ受ける |
+| p021 | uniform block（`layout(std140) uniform Name { ... } [instance];`、`row_major`）: SPIR-V では block ごとに set 0 の binding 32 + i（i は両 stage を併せた block の順）の Uniform の Block。libGLESv2 の反射は既定の block（binding 0、`gl_DefaultUniformBlock`）の外の block を記録し、API（p005・p013）が来るまで link は「uniform block は GLES 3.0 の API が要る」と断る |
+
+試験: glsl-host の pass/・fail/・exec/ に 1.40〜3.30・ES 3.00 の shader を足す（lavapipe の実行では uniform block の buffer を
+「byte offset o の float は o / 4」で埋め、shader が std140 の offset どおりの値を読むことを確かめる）。i915 の host の検査は、
+3.00 の代表の shader（整数の varying の flat と uniform block は i915 の制約で記録）。Venus: ES 3 の context の egltest で
+`#version 300 es` の場面（uniform block を使わない）。

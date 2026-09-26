@@ -55,7 +55,9 @@ EGL と OpenGL ES（2.0、次に 3.0）を、zedBSD の libvulkan（Vulkan）と
 | [ws068-p017](phase017/phase.md) | GLSL compiler: 型・意味解析・定数の畳み込み・built-in の宣言 | cleared（2026-09-27。host の試験 PASS） | p016 |
 | [ws068-p018](phase018/phase.md) | GLSL compiler: SPIR-V の出力と link（i915 の受ける形、spirv-val・lavapipe の実行・i915 の host の検査） | cleared（2026-09-27。spirv-val、lavapipe の 15 試験、i915 の host 検査 PASS） | p017 |
 | [ws068-p019](phase019/phase.md) | GLSL compiler を libGLESv2 へ接続（`glShaderSource`・`glCompileShader`・`glLinkProgram`）、egltest の GLSL の場面、Venus の試験と回帰 | cleared（2026-09-27。Venus で egl-p019 PASS、回帰 PASS。i915 実機は未実施） | p018 |
-| ws068-p012 | GLSL 3.30・ES 3.00（in/out、layout、UBO、整数） | planning | p003（p019） |
+| ws068-p012 | GLSL 3.30・ES 3.00（in/out、layout、UBO、整数） | 分割（2026-09-27、p020・p021 に分けた。[glsl-design.md](glsl-design.md) §11） | p003（p019） |
+| [ws068-p020](phase020/phase.md) | GLSL 1.40〜3.30・ES 3.00 の言語（`#version`、`layout(location)`、in/out の block、整数の varying、複数の出力、新しい sampler と built-in） | planned | p019 |
+| [ws068-p021](phase021/phase.md) | GLSL の uniform block（std140、row_major、binding の約束）と libGLESv2 の反射の対応（API は p005・p013） | planned | p020 |
 | ws068-p013 | desktop GL 3.0 の context（`glXCreateContextAttribsARB`、core と compatibility の profile、VAO、GL 3.0 の API） | planning | p003、ws069-p008 |
 | ws068-p014 | desktop GL 3.3〜4.6 の出来る範囲（Venus 先。geometry・tessellation・compute・SSBO は device の feature で。i915 の不足は F-023） | planning | p012、p013 |
 | ws068-p004 | GLES 2.0 の残りと試験の充実 | planning | p003 |
