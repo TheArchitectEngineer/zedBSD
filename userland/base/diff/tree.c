@@ -41,6 +41,7 @@ struct names {
 
 static int error(const char *path);
 static int different(const char *left, const char *right, const char *reason);
+static int files_differ(const char *kind, const char *left, const char *right);
 static int identity(const struct stat *left, const struct stat *right);
 static int stable(const struct stat *before, const struct stat *after);
 static int metadata_equal(const struct stat *left, const struct stat *right);
@@ -70,6 +71,20 @@ static int
 different(const char *left, const char *right, const char *reason)
 {
 	printf("%s and %s differ: %s\n", left, right, reason);
+	return 1;
+}
+
+/* Reports files whose lines are not shown: "Files" for -q, "Binary files" otherwise. */
+static int
+files_differ(
+	const char *kind,
+	const char *left,
+	const char *right)
+{
+	/* The pathnames and "differ", as POSIX asks. */
+	printf("%s %s and %s differ\n", kind, left, right);
+
+	/* The files differ. */
 	return 1;
 }
 
@@ -396,15 +411,16 @@ compare_node(struct comparison *context, const char *left, const char *right, un
 	} else if (S_ISREG(a.st_mode)) {
 		binary = 0;
 		status = compare_file(left, right, &a, &b, &binary);
+		/* The installer's check names the reason; POSIX output names the kind. */
 		if (status == 1) {
-			if (binary || context->brief || context->metadata)
+			if (context->metadata)
 				status = different(left, right, "contents");
-			else {
+			else if (context->brief)
+				status = files_differ("Files", left, right);
+			else if (binary)
+				status = files_differ("Binary files", left, right);
+			else
 				status = context->text(left, right, left, right);
-				/* Two reads that disagree about equality cannot prove a match. */
-				if (status == 0)
-					status = 2;
-			}
 		}
 	} else if (S_ISLNK(a.st_mode)) {
 		/* Allocate link buffers only for links, not every recursive directory frame. */
@@ -533,14 +549,15 @@ compare_streams(
 	binary = 0;
 	if (status == 0)
 		status = compare_file(left_copy, right_copy, &a, &b, &binary);
-	if (status == 1 && (binary || context->brief || context->metadata)) {
+	if (status == 1 && context->metadata) {
 		status = different(left, right, "contents");
+	} else if (status == 1 && context->brief) {
+		status = files_differ("Files", left, right);
+	} else if (status == 1 && binary) {
+		status = files_differ("Binary files", left, right);
 	} else if (status == 1) {
+		/* The lines are compared; under -b they may still be the same. */
 		status = context->text(left_copy, right_copy, left, right);
-
-		/* Two reads that disagree about equality cannot prove a match. */
-		if (status == 0)
-			status = 2;
 	}
 
 	/* Removes the copies. */

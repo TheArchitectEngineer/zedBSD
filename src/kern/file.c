@@ -170,6 +170,15 @@ file_format_reserve(
 	if (file->f_inode == NULL || file->f_inode->i_type != INODE_REG)
 		return EINVAL;
 
+	/*
+	 * Writes out what the file has in memory first.  A write-cached volume
+	 * keeps writes in its cache, and once the file is leased a delayed
+	 * write-back into its blocks would be refused.
+	 */
+	error = file_fsync(file);
+	if (error != 0)
+		return error;
+
 	/* Closes optional readers before taking any descriptor or inode mutex. */
 	if (vm_object_cache_drain != NULL)
 		(void)vm_object_cache_drain(NULL);
@@ -1157,6 +1166,16 @@ file_io_begin_cred(
 		io->context.flags |= IO_CONTEXT_DRAIN;
 	if ((internal_flags & FILE_IO_ORDERED) != 0)
 		io->context.flags |= IO_CONTEXT_ORDERED | IO_CONTEXT_DRAIN;
+
+	/*
+	 * A formatter's write carries its lease down to the buffer cache, which
+	 * then writes it to the device at once: a delayed write-back would carry
+	 * no lease, and the leased range refuses it.
+	 */
+	if (writing && file->f_format_claim != NULL)
+		io->context.claim = file->f_format_claim;
+
+	/* Records the content generation the transfer starts from. */
 	if (io->content_inode != NULL) {
 		context_irq = spin_lock_irqsave(&io->content_inode->i_vm_lock);
 		io->context.content_generation = io->content_inode->i_vm_content_generation;

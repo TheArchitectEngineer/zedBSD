@@ -8,44 +8,52 @@
  */
 
 /*
- * Implements the zedBSD link userland command.
+ * Calls the link() function (POSIX XCU link).
+ *
+ *	link file1 file2
+ *
+ * One call to link() makes file2 a new name of file1, with no other
+ * checks; its error is reported as it is.  -- may come first.
  */
 
-#include "userland/base/common/command.h"
+#include <errno.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 
 /*
- * Runs the link command.
+ * Runs link.
  */
 int
 main(
 	int argc,
 	char **argv)
 {
-	/* Handles the selected command-line operation. */
-	if (argc > 1 && strcmp(argv[1], "--") == 0) {
-		argc--;
-		argv++;
+	int first;
+	int status;
+	int compare;
+
+	/* -- may end the options; there are none. */
+	first = 1;
+	if (argc > 1) {
+		compare = strcmp(argv[1], "--");
+		if (compare == 0)
+			first = 2;
 	}
 
-	/* Validates the command-line arguments. */
-	if (argc != 3) {
-		fprintf(stderr, "usage: link source target\n");
-
-		/* Reports operation failure. */
+	/* Exactly two operands. */
+	if (argc - first != 2) {
+		fprintf(stderr, "usage: link file1 file2\n");
 		return 1;
 	}
 
-	/* Validates the command-line arguments. */
-	if (link(argv[1], argv[2])) {
-		command_error("link", argv[2]);
-
-		/* Reports operation failure. */
+	/* Makes the new name. */
+	status = link(argv[first], argv[first + 1]);
+	if (status != 0) {
+		fprintf(stderr, "link: cannot link '%s' to '%s': %s\n", argv[first + 1], argv[first], strerror(errno));
 		return 1;
 	}
 
-	/* Reports successful completion. */
+	/* Succeeded: the new name exists. */
 	return 0;
 }

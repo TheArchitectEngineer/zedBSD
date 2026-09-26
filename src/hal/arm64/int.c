@@ -35,6 +35,22 @@ arm64_classify(const struct arm64_exception_frame *f, uint32_t ec,
 			*mode = HAL_TRAP_MODE_READ;
 	} else if (ec == 0x3c) {
 		*cause = HAL_TRAP_CAUSE_BREAKPOINT;
+	} else if (ec == 0x32) {
+		/* A software step from EL0: one instruction has run. */
+		*cause = HAL_TRAP_CAUSE_SINGLE_STEP;
+	} else if (ec == 0x30) {
+		/* A hardware breakpoint from EL0, before the instruction runs. */
+		*cause = HAL_TRAP_CAUSE_DEBUG_POINT;
+		*mode = HAL_TRAP_MODE_EXEC;
+		*address = (uintptr_t)f->elr;
+	} else if (ec == 0x34) {
+		/* A watchpoint from EL0: FAR holds the address, WnR the direction. */
+		*cause = HAL_TRAP_CAUSE_DEBUG_POINT;
+		*address = (uintptr_t)f->far;
+		if (f->esr & (1ULL << 6))
+			*mode = HAL_TRAP_MODE_WRITE;
+		else
+			*mode = HAL_TRAP_MODE_READ;
 	} else if (ec == 0x22 || ec == 0x26) {
 		*cause = HAL_TRAP_CAUSE_ALIGNMENT;
 		*address = (uintptr_t)f->far;

@@ -195,3 +195,22 @@ The `analyze` targets analyze the programmable fixture translation unit, then
 link and execute it against ordinary-warning production objects. They are
 fixture-scoped analyzer evidence, not a claim that GCC's analyzer covered the
 entire production overlay/UFS translation units.
+
+## 2026-09-27 からの utility の Phase（p024〜）
+
+| Phase | Test cases / executable evidence |
+| --- | --- |
+| 共通 | `build-host-ws001.sh`（host の build を `build/ws001/bin` へ）、`plan/tools/utils/util-diff.py --bin build/ws001/bin --only <utility>`（case は `plan/tools/utils/cases/<utility>.sh`、GNU の POSIX mode と比べる）、`tty-host-test.py`（端末が要る case）、`guest-run.sh OUTPUT [CASE...]`（lean guest の image を `config-amd64-lean-guest.mk` で作り、QEMU で serial console から `guest-cases.sh` で case を流す） |
+| `ws001-p024` | cases `xargs`・`time`・`nohup`・`env`・`pwd` と `tty-host-test.py` |
+| `ws001-p025` | cases `cp`・`cp-user`（root でない user が要る。guest では流さない）・`mv`・`files`、`tty-host-test.py` の mv の問い、`cp-installer-compare.sh OLD_CP NEW_CP`（installer の cp の呼び方を新旧で比べる）、`strerror-host-test.py [STRING_C]`（libc の strerror の全 error 番号） |
+| `ws001-p026` | cases `id`・`chown`（chgrp を含む）・`chmod`・`mkdir`・`mkfifo`・`rmdir`。host の user と guest の root の両方で成り立つように書いてある |
+| `ws001-p027` | cases `expand`（unexpand を含む）・`fold`・`nl`・`comm` |
+| `ws001-p028` | cases `split`・`csplit`・`pr` |
+| `ws001-p029` | case `diff`、`diff-random-host-test.py`（乱数の組を GNU の patch と ed に当て、GNU `--minimal` と変更行数を比べる）、`diff-installer-compare.sh OLD_DIFF NEW_DIFF`（installer の `-r -q --metadata`） |
+| `ws001-p030` | cases `date`・`small`（sleep・uname・kill・pathchk・strings・link・unlink・tty・logname）、`pinned-cases.py`（期待値を書いた case、`pinned/*.sh`。GNU が POSIX と違う点と意図した違い。`guest-run.sh ... pinned` で guest にも流す） |
+| `ws001-p031` | 全 case の guest の回帰（`guest-run.sh` に case file を列べる）、`status-after-not-found.py SERIAL_SOCKET`（q136 の観察）、`plan/tools/boot-test.sh` |
+| `ws001-p032` | case `stream`（cat・cksum・dd）、`tty-host-test.py` の dd の ^C、`pinned/posix.sh` の `cksum -a sha256` |
+| `ws001-p033` | case `patch`、`pinned/posix.sh` の patch（`-N`、normal の reject、標準出力）、`diff-random-host-test.py --patch build/ws001/bin/patch`（zedBSD diff の全形式を zedBSD patch で当てる） |
+| `ws001-p034` | case `du`（host だけ。block の数は file system で違う）、`pinned/guest.sh`（guest だけの期待値。df と、UFS の上の du。`pinned-cases.py` は host では流さず export だけ）、`pinned/posix.sh` の `du -L` の loop |
+| `ws001-p035` | case `who`（host だけ。glibc の記録の file を python で作る）、`pinned/guest.sh` の who、`pinned/posix.sh` の読めない file |
+| `ws001-p036` | `stty-host-test.py [--bin DIR]`（pty の上で zedBSD stty を試し、termios と GNU stty で読み戻す）、`pinned/guest.sh` の stty（console に設定して戻す） |

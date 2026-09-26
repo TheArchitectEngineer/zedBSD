@@ -5,7 +5,7 @@
 
 Each character becomes a press and a release of its key on a US layout,
 with shift held for the shifted characters; "\\n" is Enter.  A word of the
-form <name> presses one QEMU qcode (for example <esc>, <ctrl-c>).
+form <name> presses one QEMU qcode (for example <esc>, <ctrl-c>, <super-tab>).
 Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 """
 import json
@@ -60,7 +60,7 @@ def main():
     for text in sys.argv[2:]:
         if text.startswith('<') and text.endswith('>'):
             names = text[1:-1].split('-')
-            modifiers = {'ctrl': 'ctrl', 'shift': 'shift', 'alt': 'alt'}
+            modifiers = {'ctrl': 'ctrl', 'shift': 'shift', 'alt': 'alt', 'super': 'meta_l'}
             held = [modifiers[name] for name in names[:-1]]
             for code in held:
                 key(code, True)

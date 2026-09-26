@@ -8,57 +8,110 @@
  */
 
 /*
- * Implements the zedBSD mkfifo userland command.
+ * Makes FIFO special files (POSIX XCU mkfifo).
+ *
+ *	mkfifo [-m mode] file...
+ *
+ * Each FIFO is made with rw for all, less the file mode creation mask; -m
+ * gives it exactly the mode instead, a symbolic mode counting from a=rw.
  */
 
-#include "userland/base/common/command.h"
+#include "userland/base/chmod/mode.h"
+#include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <unistd.h>
+
+static void usage(void);
 
 /*
- * Runs the mkfifo command.
+ * Runs mkfifo.
  */
 int
 main(
 	int argc,
 	char **argv)
 {
-	unsigned value;
+	const char *mode_text;
+	mode_t mask;
 	mode_t mode;
-	int i, failed;
+	int option;
+	int index;
+	int failed;
+	int status;
 
-	mode = 0666;
-	i = 1;
-	failed = 0;
+	/* Without -m the mode is rw for all less the mask. */
+	mask = umask(0);
+	umask(mask);
+	mode = 0666 & ~mask;
+	mode_text = NULL;
 
-	/* Handles the selected command-line operation. */
-	if (i < argc && !strcmp(argv[i], "-m") && ++i < argc) {
-		/* Validates the command-line arguments. */
-		if (command_parse_mode(argv[i], &value))
-			goto usage;
-		mode = (mode_t)value;
-		i++;
+	/* Reads -m. */
+	for (;;) {
+		option = getopt(argc, argv, "m:");
+		if (option == -1)
+			break;
+
+		/* -m is the only option. */
+		if (option != 'm')
+			usage();
+		mode_text = optarg;
 	}
 
-	/* Validates the command-line arguments. */
-	if (i == argc)
-		goto usage;
+	/* At least one file is named. */
+	if (optind >= argc)
+		usage();
 
-	/* Process each remaining command-line operand. */
-	for (; i < argc; i++) {
-		/* Validates the command-line arguments. */
-		if (mkfifo(argv[i], mode)) {
-			command_error("mkfifo", argv[i]);
-			failed = 1;
+	/* Computes the -m mode from a=rw. */
+	if (mode_text != NULL) {
+		status = mode_apply(mode_text, 0666, mask, 0, &mode);
+		if (status != 0) {
+			fprintf(stderr, "mkfifo: invalid mode: '%s'\n", mode_text);
+			return 1;
+		}
+
+		/* A FIFO takes permission bits only, no set-ID or sticky bit. */
+		if ((mode & ~(mode_t)0777) != 0) {
+			fprintf(stderr, "mkfifo: mode must specify only file permission bits\n");
+			return 1;
 		}
 	}
 
-	/* Returns the computed result. */
-	return failed;
-usage:
-	fprintf(stderr, "usage: mkfifo [-m mode] file...\n");
+	/* Makes each FIFO; a failure is remembered and the rest go on. */
+	failed = 0;
+	for (index = optind; index < argc; index++) {
+		status = mkfifo(argv[index], mode);
+		if (status != 0) {
+			fprintf(stderr, "mkfifo: %s: %s\n", argv[index], strerror(errno));
+			failed = 1;
+			continue;
+		}
 
-	/* Reports operation failure. */
-	return 1;
+		/* -m sets the mode exactly, whatever the mask. */
+		if (mode_text != NULL) {
+			status = chmod(argv[index], mode);
+			if (status != 0) {
+				fprintf(stderr, "mkfifo: %s: %s\n", argv[index], strerror(errno));
+				failed = 1;
+			}
+		}
+	}
+
+	/* Reports whether any FIFO could not be made. */
+	if (failed)
+		return 1;
+
+	/* Succeeded: every FIFO exists. */
+	return 0;
+}
+
+/* Writes the usage message and exits with an error status. */
+static void
+usage(void)
+{
+	/* Names the POSIX form. */
+	fprintf(stderr, "usage: mkfifo [-m mode] file...\n");
+	exit(1);
 }
