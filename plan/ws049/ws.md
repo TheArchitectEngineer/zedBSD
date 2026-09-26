@@ -9,7 +9,7 @@ Related Milestones: MG006, MG008
 Objectives: O2, O4
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p002（object・namespace・読み込み）から。p006 以降は HAL の差分の承認を待つ
+Resume point: p003（評価器の ASL 試験）から。p006 以降は HAL の差分の承認を待つ
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -55,7 +55,7 @@ kernel の中に ACPI の AML interpreter を持ち、DSDT・SSDT を読み込�
 | Phase | 内容 | Status | 依存 | 対象 |
 | --- | --- | --- | --- | --- |
 | [ws049-p001](phase001/phase.md) | 調査と設計: table の道、利用者の要求、構成、評価の方式、HAL の差分の案、試験の方法 | cleared（2026-09-27） | — | 設計文書 |
-| ws049-p002 | object・namespace・byte 列・DefinitionBlock の読み込み、host の harness | planned | p001 | `src/drivers/acpi/` |
+| [ws049-p002](phase002/phase.md) | object・namespace・byte 列・DefinitionBlock の読み込み、host の harness | cleared（2026-09-27） | p001 | `src/drivers/acpi/` |
 | ws049-p003 | 評価器: method、制御、全ての式の opcode、参照、変換、Store の規則 | planned | p002 | 同上 |
 | ws049-p004 | OperationRegion・Field・IndexField・BankField・BufferField、region の handler と `_REG` | planned | p003 | 同上 |
 | ws049-p005 | 同期と OS の口: Mutex・Event・Sleep・Notify・`_OSI`・Load/LoadTable/Unload・`_INI`、stack の予算 | planned | p004 | 同上 |
