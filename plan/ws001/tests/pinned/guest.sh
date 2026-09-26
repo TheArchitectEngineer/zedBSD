@@ -119,3 +119,24 @@ who -m; echo "st=$?"; who nothere 2> /dev/null; echo "st=$?"
 ## expect
 st=0
 st=1
+
+#### stty sets and restores the console
+# Guest only: the settings of /dev/console, put back with -g in the case.
+# The case runs in a background process group; SIGTTOU is ignored so that
+# stty may set the terminal.
+trap '' TTOU; s=$(stty -g < /dev/console); z=$(stty size < /dev/console); stty -echo tostop intr ^A ofill tab3 19200 rows 40 cols 100 < /dev/console; stty -a < /dev/console | tr ' ' '\n' | grep -c -e '^-echo$' -e '^tostop$' -e '^ofill$' -e '^tab3$'; stty -a < /dev/console | grep -o -e 'intr = ^A;' -e 'speed 19200 baud;'; stty size < /dev/console; stty "$s" rows "${z% *}" cols "${z#* }" < /dev/console; test "$(stty -g < /dev/console)" = "$s" && echo restored; test "$(stty size < /dev/console)" = "$z" && echo size-restored
+## expect
+4
+speed 19200 baud;
+intr = ^A;
+40 100
+restored
+size-restored
+
+#### stty reports what the terminal refuses
+trap '' TTOU; s=$(stty -g < /dev/console); stty cs7 < /dev/console 2> /dev/null; echo "st=$?"; test "$(stty -g < /dev/console)" = "$s" && echo unchanged; stty bogus < /dev/console 2> /dev/null; echo "st=$?"; stty < /dev/null 2> /dev/null; echo "st=$?"
+## expect
+st=1
+unchanged
+st=1
+st=1
