@@ -34,6 +34,9 @@ for utility in $list; do
 	chgrp)
 		extra=userland/base/chown/change.c
 		;;
+	unexpand)
+		extra=userland/base/expand/tabs.c
+		;;
 	esac
 	if ! cc -std=c11 -D_GNU_SOURCE -O1 -g -w -I. -Iinclude \
 		userland/base/$utility/*.c $extra userland/base/common/command.c \

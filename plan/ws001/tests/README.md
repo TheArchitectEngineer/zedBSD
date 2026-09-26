@@ -204,3 +204,4 @@ entire production overlay/UFS translation units.
 | `ws001-p024` | cases `xargs`・`time`・`nohup`・`env`・`pwd` と `tty-host-test.py` |
 | `ws001-p025` | cases `cp`・`cp-user`（root でない user が要る。guest では流さない）・`mv`・`files`、`tty-host-test.py` の mv の問い、`cp-installer-compare.sh OLD_CP NEW_CP`（installer の cp の呼び方を新旧で比べる）、`strerror-host-test.py [STRING_C]`（libc の strerror の全 error 番号） |
 | `ws001-p026` | cases `id`・`chown`（chgrp を含む）・`chmod`・`mkdir`・`mkfifo`・`rmdir`。host の user と guest の root の両方で成り立つように書いてある |
+| `ws001-p027` | cases `expand`（unexpand を含む）・`fold`・`nl`・`comm` |
