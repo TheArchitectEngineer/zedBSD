@@ -2009,10 +2009,23 @@ static void
 idle_mask_clear(
 	hal_cpu_id_t cpu)
 {
-	(void)__atomic_fetch_and(
-	    &scheduler_idle_mask.bits[cpu / 64U],
-	    ~((uint64_t)1U << (cpu % 64U)),
-	    __ATOMIC_RELEASE);
+	volatile uint64_t *word;
+	uint64_t expected;
+	uint64_t desired;
+	int exchanged;
+
+	/*
+	 * Clears the bit by compare and exchange.  The atomic interface has
+	 * no "and" (a 32-bit machine emulates 64-bit atomics), so the word is
+	 * read and replaced until no other CPU changed it in between.
+	 */
+	word = &scheduler_idle_mask.bits[cpu / 64U];
+	expected = atomic_u64_load_acquire(word);
+	do {
+		desired = expected & ~((uint64_t)1U << (cpu % 64U));
+		exchanged = atomic_u64_compare_exchange(word, &expected,
+		    desired);
+	} while (!exchanged);
 }
 
 /*
