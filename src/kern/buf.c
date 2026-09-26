@@ -29,8 +29,8 @@
 #include <kern/kcrt.h>
 
 /*
- * The hash table's size: 2^13 buckets.  The cache holds a sixteenth of memory
- * in page-sized lines (8192 lines for 512 MiB, 32768 for 2 GiB), and a lookup
+ * The hash table's size: 2^16 buckets.  The cache holds an eighth of memory
+ * in page-sized lines (16384 lines for 512 MiB, 65536 for 2 GiB), and a lookup
  * walks one chain under the cache lock on every cached read and file fault,
  * so the chains must stay short (BUG-033).
  */
@@ -39,6 +39,26 @@
 #define BUF_MIN_BYTES		(1024U * 1024U)
 #define BUF_SLAB_BYTES		KERN_PAGE_SIZE
 #define BUF_RUN_LINES		(KERN_IO_BATCH_MAX / KERN_PAGE_SIZE)
+
+/*
+ * Delayed writes of write-cached disks.
+ *
+ * A write to a DISK_WRITE_CACHED disk only dirties its buffers.  The
+ * flusher wakes every BUF_FLUSH_INTERVAL ticks and writes each buffer that
+ * has been dirty for BUF_FLUSH_AGE ticks, oldest first, then flushes the
+ * devices it wrote to (at most BUF_FLUSH_LEAVES of them, and at most
+ * BUF_FLUSH_PASS_MAX buffers a pass).  A short-lived file is usually gone
+ * before then.  While more than BUF_DIRTY_LIMIT bytes are dirty a write goes
+ * through at once, so dirty memory stays bounded however fast a writer is.
+ */
+#define BUF_FLUSH_INTERVAL	(KERN_CLOCK_HZ)
+#define BUF_FLUSH_AGE		(2U * KERN_CLOCK_HZ)
+#define BUF_DIRTY_LIMIT		(UINT64_C(32) * 1024U * 1024U)
+#define BUF_FLUSH_LEAVES	8U
+#define BUF_FLUSH_PASS_MAX	65536U
+
+/* The number of functions the flusher can call each interval. */
+#define BUF_FLUSHER_HOOKS	8U
 
 #ifndef CONFIG_BUF_CACHE_KIB
 #define CONFIG_BUF_CACHE_KIB 0
@@ -141,27 +161,41 @@ static uint64_t cache_metadata_bytes;
 static volatile uint64_t cache_dirty_bytes;
 
 /*
- * Delayed writes of write-cached disks.
+ * The flusher's thread.
  *
- * A write to a DISK_WRITE_CACHED disk only dirties its buffers.  The
- * flusher wakes every BUF_FLUSH_INTERVAL ticks and writes each buffer that
- * has been dirty for BUF_FLUSH_AGE ticks, oldest first, then flushes the
- * devices it wrote to.  A short-lived file is usually gone before then.
- * While more than BUF_DIRTY_LIMIT bytes are dirty a write goes through at
- * once, so dirty memory stays bounded however fast a writer is.
+ * It is made by the first buf_flusher_start() and runs until the machine
+ * stops; NULL until then.
  */
-#define BUF_FLUSH_INTERVAL	(KERN_CLOCK_HZ)
-#define BUF_FLUSH_AGE		(2U * KERN_CLOCK_HZ)
-#define BUF_DIRTY_LIMIT		(32ULL * 1024U * 1024U)
-#define BUF_FLUSH_LEAVES	8U
-#define BUF_FLUSH_PASS_MAX	65536U
 static struct thread *flusher_thread;
+
+/*
+ * Whether a caller has claimed the making of the flusher.
+ *
+ * The first buf_flusher_start() sets it and makes the thread; it is cleared
+ * again only when the thread could not be made, so that a later call tries.
+ */
 static atomic_uint_t flusher_started;
 
-/* The functions the flusher calls each interval, under flusher_hooks_lock. */
-#define BUF_FLUSHER_HOOKS	8U
+/*
+ * Serializes the hook registry against the flusher's calls.
+ *
+ * The flusher holds it while it calls the hooks, so a hook removed under
+ * it has made its last call.  Hooks take filesystem locks, so it ranks
+ * below them.
+ */
 static struct mutex flusher_hooks_lock;
+
+/* Whether flusher_hooks_lock has been initialized; set once, never cleared. */
 static atomic_uint_t flusher_hooks_ready;
+
+/*
+ * The functions the flusher calls each interval before it writes aged
+ * buffers, and the argument each is called with.
+ *
+ * A slot is empty when its function is NULL.  Both arrays change only
+ * under flusher_hooks_lock; a filesystem fills a slot while its journal
+ * is in service and empties it before the journal goes.
+ */
 static void (*flusher_hooks[BUF_FLUSHER_HOOKS])(void *);
 static void *flusher_hook_arguments[BUF_FLUSHER_HOOKS];
 
@@ -238,7 +272,9 @@ static void hash_remove_locked(struct buf *buffer);
 static struct buf * hash_find_locked(struct disk *disk, uint64_t block);
 static void stat_add(volatile uint64_t *counter, uint64_t value);
 static void flusher(void *argument);
+static struct buf *oldest_aged(uint64_t cutoff);
 static int flush_aged(uint64_t cutoff);
+static int writes_delayed(const struct disk *disk);
 static int write_lines(struct disk *disk, uint64_t block, uint32_t count, const void *data, int pin);
 static void flusher_hooks_init(void);
 static int reserve_bytes(size_t size, int metadata);
@@ -279,21 +315,28 @@ buf_init(
 #if CONFIG_BUF_CACHE_KIB == 0
 	uint64_t total;
 #endif
+	int error;
 
 	/* Initializes only once. */
 	if (cache_initialized)
 		return 0;
 
-	/* Sets up the locks and the empty hash table. */
+	/* Sets up the spin locks and the flusher's hook registry. */
 	spin_init(&cache_lock, LOCK_RANK_BUFCACHE, "buffer cache");
 	spin_init(&dirty_index_lock, LOCK_RANK_DIRTY_INDEX, "dirty buffer index");
 	flusher_hooks_init();
-	if (mutex_init(&cache_control, LOCK_RANK_BUFCACHE,
-	    "buffer cache control") != 0)
+
+	/* Sets up the lock that serializes changes to the cache's size. */
+	error = mutex_init(&cache_control, LOCK_RANK_BUFCACHE, "buffer cache control");
+	if (error != 0)
 		return ENOMEM;
-	if (mutex_init(&cache_admission, LOCK_RANK_BUFCACHE,
-	    "buffer cache admission") != 0)
+
+	/* Sets up the lock that serializes admission of new buffers. */
+	error = mutex_init(&cache_admission, LOCK_RANK_BUFCACHE, "buffer cache admission");
+	if (error != 0)
 		return ENOMEM;
+
+	/* Empties the hash table. */
 	kern_memset(cache_hash, 0, sizeof(cache_hash));
 
 	/* Sizes the cache. */
@@ -476,6 +519,7 @@ buf_writeback_context(
 		return 0;
 	}
 
+	/* An invalid buffer holds nothing that could be written. */
 	if (!(buffer->b_flags & BUF_VALID)) {
 		spin_unlock_irqrestore(&buffer->b_lock, irq);
 		return EIO;
@@ -799,8 +843,7 @@ buf_write_context(
 		 * to the device.
 		 */
 		run_blocks = 0;
-		delayed = (disk->d_flags & DISK_WRITE_CACHED) != 0 &&
-		    atomic_u64_load_acquire(&cache_dirty_bytes) <= BUF_DIRTY_LIMIT;
+		delayed = writes_delayed(disk);
 		error = 0;
 		if (!delayed)
 			error = transfer_run(leaf, mapped, end - mapped, (void *)in, 1, &run_blocks, context);
@@ -843,8 +886,7 @@ buf_write_context(
 		 * unless dirty memory is already at its bound.
 		 */
 		buf_mark_dirty(buffer);
-		delayed = (disk->d_flags & DISK_WRITE_CACHED) != 0 &&
-		    atomic_u64_load_acquire(&cache_dirty_bytes) <= BUF_DIRTY_LIMIT;
+		delayed = writes_delayed(disk);
 		error = 0;
 		if (!delayed)
 			error = buf_writeback_context(buffer, context);
@@ -995,8 +1037,11 @@ buf_discard_media(
 	    !atomic_raw_load_acquire(&disk->d_media_revoked))
 		return EINVAL;
 
-	/* Refuse before any dirty data is discarded. The caller keeps users excluded
-	 * across this check and eviction; this scan alone is not an admission gate. */
+	/*
+	 * Refuse before any dirty data is discarded.  The caller keeps users
+	 * excluded across this check and eviction; this scan alone is not an
+	 * admission gate.
+	 */
 	irq = spin_lock_irqsave(&cache_lock);
 	for (bucket = 0; bucket < BUF_HASH_BUCKETS; bucket++) {
 		for (buffer = cache_hash[bucket]; buffer != NULL;
@@ -1180,6 +1225,173 @@ buf_reset(
 	}
 }
 
+/*
+ * Starts the thread that writes out aged dirty buffers of write-cached
+ * disks; later calls do nothing.
+ */
+int
+buf_flusher_start(
+	void)
+{
+	int first;
+	int error;
+
+	/* Prepares the hook registry the flusher reads. */
+	flusher_hooks_init();
+
+	/* Only the first caller makes the thread. */
+	first = atomic_try_acquire_zero(&flusher_started);
+	if (!first)
+		return 0;
+
+	/* Makes the thread; a failure lets a later caller try again. */
+	error = kthread_create(flusher, NULL, SCHED_PRIORITY_DEFAULT, &flusher_thread);
+	if (error != 0) {
+		atomic_store_release(&flusher_started, 0);
+		return error;
+	}
+
+	/* Runs the flusher from here on. */
+	thread_start(flusher_thread);
+
+	/* Succeeded: the flusher runs. */
+	return 0;
+}
+
+/*
+ * Adds or removes a function the flusher calls each interval.
+ *
+ * A removal returns only after the function's last call has finished.
+ */
+int
+buf_flusher_hook(
+	void (*hook)(void *),
+	void *argument,
+	int add)
+{
+	unsigned index;
+	int error;
+
+	/* Prepares the registry on first use. */
+	flusher_hooks_init();
+
+	/* Changes the registry while no hook runs. */
+	mutex_lock(&flusher_hooks_lock);
+
+	/* Finds the slot to change; a full registry, or one without the hook, has none. */
+	error = ENOSPC;
+	for (index = 0; index < BUF_FLUSHER_HOOKS; index++) {
+		/* An addition takes the first empty slot. */
+		if (add && flusher_hooks[index] == NULL) {
+			flusher_hooks[index] = hook;
+			flusher_hook_arguments[index] = argument;
+			error = 0;
+			break;
+		}
+
+		/* A removal empties the slot that holds the hook and its argument. */
+		if (!add &&
+		    flusher_hooks[index] == hook &&
+		    flusher_hook_arguments[index] == argument) {
+			flusher_hooks[index] = NULL;
+			flusher_hook_arguments[index] = NULL;
+			error = 0;
+			break;
+		}
+	}
+
+	mutex_unlock(&flusher_hooks_lock);
+
+	/* Reports why the registry could not change. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the registry changed. */
+	return 0;
+}
+
+/*
+ * Writes into the cache and pins the lines for a journal: they stay dirty
+ * and nothing writes them to the disk until buf_unpin() releases them.
+ */
+int
+buf_write_pinned(
+	struct disk *disk,
+	uint64_t block,
+	uint32_t count,
+	const void *data)
+{
+	int error;
+
+	/* Writes the lines, pinned and dirty, without writing them back. */
+	error = write_lines(disk, block, count, data, 1);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the lines hold the data until they are unpinned. */
+	return 0;
+}
+
+/*
+ * Releases the journal pins of the lines a range covers; they are then
+ * ordinary dirty lines.
+ */
+int
+buf_unpin(
+	struct disk *disk,
+	uint64_t block,
+	uint32_t count)
+{
+	struct disk *leaf;
+	struct buf *buffer;
+	uint64_t mapped;
+	uint64_t end;
+	uint64_t line_blocks;
+	uint64_t line_start;
+	unsigned long irq;
+	int error;
+
+	/* An empty range has no lines to unpin. */
+	if (count == 0)
+		return 0;
+
+	/* Resolves the range to the leaf disk the lines belong to. */
+	error = disk_resolve_range(disk, block, count, &leaf, &mapped);
+	if (error != 0)
+		return error;
+
+	/* Measures a line in blocks: a page, or one block larger than a page. */
+	line_blocks = KERN_PAGE_SIZE / leaf->d_block_size;
+	if (leaf->d_block_size > KERN_PAGE_SIZE)
+		line_blocks = 1;
+
+	/* Clears the pin of each line the range covers. */
+	end = mapped + count;
+	line_start = mapped - mapped % line_blocks;
+	while (line_start < end) {
+		/* Takes the line. */
+		error = reference_line(leaf, line_start, &buffer);
+		if (error != 0)
+			return error;
+
+		/*
+		 * Clears the pin: write-back and the flusher, which left the
+		 * line alone while the journal held it, may write it home now.
+		 */
+		irq = spin_lock_irqsave(&buffer->b_lock);
+
+		buffer->b_journal_pin = 0;
+
+		spin_unlock_irqrestore(&buffer->b_lock, irq);
+
+		/* Lets the line go and steps to the next one. */
+		drop_caller_reference(buffer);
+		line_start += line_blocks;
+	}
+
+	/* Succeeded: the lines are ordinary dirty lines now. */
+	return 0;
+}
 /*
  * Hashes a disk and block to a bucket.
  *
@@ -1375,6 +1587,7 @@ cancel_reservation(
 	size_t size,
 	int metadata)
 {
+	enum cache_memory_kind kind;
 	unsigned long irq;
 
 	/* Takes the bytes off the cache's own reservation. */
@@ -1385,10 +1598,14 @@ cancel_reservation(
 
 	spin_unlock_irqrestore(&cache_lock, irq);
 
+	/* Names the budget the bytes were reserved from. */
+	kind = CACHE_MEMORY_BUF_DATA;
+	if (metadata)
+		kind = CACHE_MEMORY_BUF_META;
+
 	/* Tells the shared budget that the reservation is gone. */
 	if (cache_memory_cancel != NULL)
-		cache_memory_cancel(metadata ? CACHE_MEMORY_BUF_META :
-		    CACHE_MEMORY_BUF_DATA, size);
+		cache_memory_cancel(kind, size);
 }
 
 /* Converts a reservation into data or metadata usage. */
@@ -1397,6 +1614,7 @@ commit_reservation(
 	size_t size,
 	int metadata)
 {
+	enum cache_memory_kind kind;
 	unsigned long irq;
 
 	/* Moves the bytes from reserved to resident in the cache. */
@@ -1411,10 +1629,14 @@ commit_reservation(
 
 	spin_unlock_irqrestore(&cache_lock, irq);
 
+	/* Names the budget the bytes were reserved from. */
+	kind = CACHE_MEMORY_BUF_DATA;
+	if (metadata)
+		kind = CACHE_MEMORY_BUF_META;
+
 	/* Tells the shared budget that the reservation became memory. */
 	if (cache_memory_commit != NULL)
-		cache_memory_commit(metadata ? CACHE_MEMORY_BUF_META :
-		    CACHE_MEMORY_BUF_DATA, size);
+		cache_memory_commit(kind, size);
 }
 
 /* Allocates page-aligned physical memory reserved against the cap. */
@@ -1442,6 +1664,8 @@ alloc_pmem(
 			stat_add(&stat_physical_failures, 1);
 			return ENOMEM;
 		}
+
+		/* Any other failure is the memory's, not the demand's. */
 		return EIO;
 	}
 
@@ -2183,8 +2407,7 @@ evict_one(
 
 	/* Frees the candidate and updates the statistics. */
 	if (candidate->b_flags & BUF_DIRTY)
-		stat_add(&cache_dirty_bytes,
-		    (uint64_t)-(int64_t)candidate->b_size);
+		stat_add(&cache_dirty_bytes, (uint64_t)-(int64_t)candidate->b_size);
 	*freed = candidate->b_memory.size;
 	stat_add(&stat_buffers, UINT64_MAX);
 	stat_add(&stat_evictions, 1);
@@ -2337,33 +2560,6 @@ dirty_reference(
 	return buffer;
 }
 
-/*
- * Starts the flusher of write-cached disks once.
- */
-int
-buf_flusher_start(
-	void)
-{
-	int error;
-
-	/* Only the first caller creates the thread. */
-	flusher_hooks_init();
-	if (!atomic_try_acquire_zero(&flusher_started))
-		return 0;
-	error = kthread_create(flusher, NULL, SCHED_PRIORITY_DEFAULT,
-	    &flusher_thread);
-	if (error != 0) {
-		atomic_store_release(&flusher_started, 0);
-
-		/* Reports why the flusher could not start. */
-		return error;
-	}
-
-	/* Runs the flusher from here on. */
-	thread_start(flusher_thread);
-	return 0;
-}
-
 /* Writes out aged dirty buffers every interval, forever. */
 static void
 flusher(
@@ -2372,24 +2568,70 @@ flusher(
 	uint64_t now;
 	unsigned index;
 
+	/* The flusher takes no argument. */
 	(void)argument;
 
 	/* Sleeps an interval, then writes what has been dirty long enough. */
 	for (;;) {
-		sched_sleep(sched_ticks() + BUF_FLUSH_INTERVAL);
+		/* Waits for the next interval. */
+		now = sched_ticks();
+		sched_sleep(now + BUF_FLUSH_INTERVAL);
 
-		/* Lets each registered filesystem commit first. */
+		/*
+		 * Lets each registered filesystem commit first, under the
+		 * registry lock, so that no hook is removed while it runs.
+		 */
 		mutex_lock(&flusher_hooks_lock);
+
+		/* Calls every registered hook with its argument. */
 		for (index = 0; index < BUF_FLUSHER_HOOKS; index++) {
 			if (flusher_hooks[index] != NULL)
 				flusher_hooks[index](flusher_hook_arguments[index]);
 		}
+
 		mutex_unlock(&flusher_hooks_lock);
 
+		/* Writes the buffers that have been dirty for longer than the age. */
 		now = sched_ticks();
 		if (now > BUF_FLUSH_AGE)
 			(void)flush_aged(now - BUF_FLUSH_AGE);
 	}
+}
+
+/*
+ * Takes a reference to the oldest dirty buffer a journal does not pin,
+ * when it has been dirty since the cutoff tick or earlier.
+ */
+static struct buf *
+oldest_aged(
+	uint64_t cutoff)
+{
+	struct buf *candidate;
+	unsigned long irq;
+
+	/*
+	 * Walks the dirty list, which is in the order buffers became dirty,
+	 * past the old buffers a journal pins.
+	 */
+	irq = spin_lock_irqsave(&dirty_index_lock);
+
+	candidate = dirty_head;
+	while (candidate != NULL &&
+	       candidate->b_dirty_tick <= cutoff &&
+	       candidate->b_journal_pin)
+		candidate = candidate->b_dirty_next;
+
+	/* Holds a buffer old enough to write; a younger one is not taken. */
+	if (candidate != NULL && candidate->b_dirty_tick <= cutoff) {
+		refcount_get(&candidate->b_refs);
+	} else {
+		candidate = NULL;
+	}
+
+	spin_unlock_irqrestore(&dirty_index_lock, irq);
+
+	/* Reports the buffer, or NULL when none is old enough. */
+	return candidate;
 }
 
 /*
@@ -2413,44 +2655,45 @@ flush_aged(
 	int error;
 	int known;
 
-	count = 0;
-	error = 0;
-
 	/*
 	 * Writes the oldest dirty buffer while it is old enough.  A buffer
 	 * rewritten during its own write stays first, so a pass is bounded.
 	 */
+	count = 0;
+	error = 0;
 	for (written = 0; written < BUF_FLUSH_PASS_MAX; written++) {
-		irq = spin_lock_irqsave(&dirty_index_lock);
-		candidate = dirty_head;
-		while (candidate != NULL && candidate->b_dirty_tick <= cutoff &&
-		    candidate->b_journal_pin)
-			candidate = candidate->b_dirty_next;
-		if (candidate != NULL && candidate->b_dirty_tick <= cutoff)
-			refcount_get(&candidate->b_refs);
-		else
-			candidate = NULL;
-		spin_unlock_irqrestore(&dirty_index_lock, irq);
+		/* Takes the oldest buffer; the pass ends when none is old enough. */
+		candidate = oldest_aged(cutoff);
 		if (candidate == NULL)
 			break;
 
-		/* Remembers the device so that it is flushed after the pass. */
+		/* Looks the buffer's device up among those already written to. */
 		known = 0;
 		for (index = 0; index < count; index++) {
 			if (leaves[index] == candidate->b_disk)
 				known = 1;
 		}
-		if (!known && count < BUF_FLUSH_LEAVES)
-			leaves[count++] = candidate->b_disk;
+
+		/* Remembers a new device, so that it is flushed after the pass. */
+		if (!known && count < BUF_FLUSH_LEAVES) {
+			leaves[count] = candidate->b_disk;
+			count++;
+		}
+
+		/* Takes the buffer off the reclaim list while it is written. */
+		irq = spin_lock_irqsave(&cache_lock);
+
+		lru_remove_locked(candidate);
+
+		spin_unlock_irqrestore(&cache_lock, irq);
 
 		/* Writes the buffer, which leaves the dirty list when clean. */
-		irq = spin_lock_irqsave(&cache_lock);
-		lru_remove_locked(candidate);
-		spin_unlock_irqrestore(&cache_lock, irq);
 		error = busy_acquire(candidate);
 		if (error == 0)
 			error = buf_writeback(candidate);
 		buf_release(candidate);
+
+		/* A failed write ends the pass; the buffer is tried again later. */
 		if (error != 0)
 			break;
 	}
@@ -2459,110 +2702,35 @@ flush_aged(
 	for (index = 0; index < count; index++)
 		(void)bio_flush(leaves[index]);
 
-	/* Reports the first write that failed. */
-	return error;
-}
-
-/*
- * Adds or removes a function the flusher calls each interval.
- */
-int
-buf_flusher_hook(
-	void (*hook)(void *),
-	void *argument,
-	int add)
-{
-	unsigned index;
-	int error;
-
-	/* Prepares the registry on first use. */
-	flusher_hooks_init();
-
-	/*
-	 * Changes the registry while no hook runs; a removal returns only
-	 * after the hook's last call has finished.
-	 */
-	error = ENOSPC;
-	mutex_lock(&flusher_hooks_lock);
-	for (index = 0; index < BUF_FLUSHER_HOOKS; index++) {
-		if (add && flusher_hooks[index] == NULL) {
-			flusher_hooks[index] = hook;
-			flusher_hook_arguments[index] = argument;
-			error = 0;
-			break;
-		}
-		if (!add && flusher_hooks[index] == hook &&
-		    flusher_hook_arguments[index] == argument) {
-			flusher_hooks[index] = NULL;
-			flusher_hook_arguments[index] = NULL;
-			error = 0;
-			break;
-		}
-	}
-	mutex_unlock(&flusher_hooks_lock);
-
-	/* Reports whether the registry changed. */
-	return error;
-}
-
-/*
- * Writes into the cache and pins the lines for a journal.
- */
-int
-buf_write_pinned(
-	struct disk *disk,
-	uint64_t block,
-	uint32_t count,
-	const void *data)
-{
-	/* Writes the lines, pinned and dirty, without writing them back. */
-	return write_lines(disk, block, count, data, 1);
-}
-
-/*
- * Releases the journal pins of the lines a range covers.
- */
-int
-buf_unpin(
-	struct disk *disk,
-	uint64_t block,
-	uint32_t count)
-{
-	struct disk *leaf;
-	struct buf *buffer;
-	uint64_t mapped;
-	uint64_t end;
-	uint64_t line_blocks;
-	uint64_t line_start;
-	unsigned long irq;
-	int error;
-
-	/* Resolves the range to the leaf disk the lines belong to. */
-	if (count == 0)
-		return 0;
-	error = disk_resolve_range(disk, block, count, &leaf, &mapped);
+	/* Reports the write that failed. */
 	if (error != 0)
 		return error;
 
-	/* Clears the pin of each line in turn. */
-	line_blocks = KERN_PAGE_SIZE / leaf->d_block_size;
-	if (leaf->d_block_size > KERN_PAGE_SIZE)
-		line_blocks = 1;
-	end = mapped + count;
-	line_start = mapped - mapped % line_blocks;
-	while (line_start < end) {
-		error = reference_line(leaf, line_start, &buffer);
-		if (error != 0)
-			return error;
-		irq = spin_lock_irqsave(&buffer->b_lock);
-		buffer->b_journal_pin = 0;
-		spin_unlock_irqrestore(&buffer->b_lock, irq);
-		drop_caller_reference(buffer);
-		line_start += line_blocks;
-	}
-
-	/* Succeeded: the lines are ordinary dirty lines now. */
+	/* Succeeded: every aged buffer was written. */
 	return 0;
+}
+
+/*
+ * Asks whether a write to a disk may stay in the cache: the disk is
+ * write-cached and dirty memory is within its bound.
+ */
+static int
+writes_delayed(
+	const struct disk *disk)
+{
+	uint64_t dirty;
+
+	/* A write-through disk sends every write to the device. */
+	if ((disk->d_flags & DISK_WRITE_CACHED) == 0)
+		return 0;
+
+	/* Past the bound a write goes through at once, which bounds dirty memory. */
+	dirty = atomic_u64_load_acquire(&cache_dirty_bytes);
+	if (dirty > BUF_DIRTY_LIMIT)
+		return 0;
+
+	/* Succeeded: reports that the write may wait in the cache. */
+	return 1;
 }
 
 /*
@@ -2591,28 +2759,39 @@ write_lines(
 	int full;
 	int error;
 
-	/* Rejects a missing buffer, an empty range, or a read-only disk. */
+	/* Rejects a missing buffer or an empty range. */
 	in = data;
 	if (data == NULL || count == 0)
 		return EINVAL;
-	if (disk->d_flags & DISK_READ_ONLY)
+
+	/* Refuses a read-only disk. */
+	if ((disk->d_flags & DISK_READ_ONLY) != 0)
 		return EROFS;
+
+	/* Resolves the range to the leaf disk. */
 	error = disk_resolve_range(disk, block, count, &leaf, &mapped);
 	if (error != 0)
 		return error;
+
+	/* Counts the write. */
 	io_stats_record(IO_BUF_WRITE, (uint64_t)count * leaf->d_block_size);
 
 	/* Copies into each line in turn, leaving it dirty. */
 	end = mapped + count;
 	while (mapped < end) {
+		/* Measures the line: a page, or one block larger than a page. */
 		if (leaf->d_block_size > KERN_PAGE_SIZE)
 			line_bytes = leaf->d_block_size;
 		else
 			line_bytes = KERN_PAGE_SIZE;
+
+		/* Finds the part of the line the range covers. */
 		line_blocks = line_bytes / leaf->d_block_size;
 		line_start = mapped - mapped % line_blocks;
 		offset_blocks = mapped - line_start;
 		amount_blocks = line_blocks - offset_blocks;
+
+		/* Stops the part at the end of the range. */
 		if (amount_blocks > end - mapped)
 			amount_blocks = end - mapped;
 
@@ -2622,22 +2801,33 @@ write_lines(
 		    amount_blocks == line_blocks &&
 		    line_start + line_blocks <= leaf->d_block_count)
 			full = 1;
+
+		/* Takes the line, read first unless the write covers all of it. */
 		error = acquire_line(leaf, mapped, !full, &buffer);
 		if (error != 0)
 			return error;
 
-		/* Pins before the line is dirty, so no writer sees it unpinned. */
+		/*
+		 * Pins the line for the journal before it is dirty, so that no
+		 * writer sees it dirty and unpinned: write-back and the flusher
+		 * leave a pinned line alone until buf_unpin().
+		 */
 		if (pin) {
 			irq = spin_lock_irqsave(&buffer->b_lock);
+
 			buffer->b_journal_pin = 1;
+
 			spin_unlock_irqrestore(&buffer->b_lock, irq);
 		}
-		kern_memcpy((uint8_t *)buffer->b_data +
-		    offset_blocks * leaf->d_block_size, in,
-		    (size_t)(amount_blocks * leaf->d_block_size));
+
+		/* Copies the data into the line and leaves it dirty. */
+		kern_memcpy((uint8_t *)buffer->b_data + offset_blocks * leaf->d_block_size,
+			    in,
+			    (size_t)(amount_blocks * leaf->d_block_size));
 		buf_mark_dirty(buffer);
 		buf_release(buffer);
 
+		/* Steps past the part written. */
 		in += amount_blocks * leaf->d_block_size;
 		mapped += amount_blocks;
 	}
@@ -2654,9 +2844,10 @@ static void
 flusher_hooks_init(
 	void)
 {
-	/* Only the first caller initializes the lock. */
-	if (atomic_try_acquire_zero(&flusher_hooks_ready))
-		(void)mutex_init(&flusher_hooks_lock, LOCK_RANK_WRITEBACK_CONTROL,
-		    "buffer flusher hooks");
-}
+	int first;
 
+	/* Only the first caller initializes the lock. */
+	first = atomic_try_acquire_zero(&flusher_hooks_ready);
+	if (first)
+		(void)mutex_init(&flusher_hooks_lock, LOCK_RANK_WRITEBACK_CONTROL, "buffer flusher hooks");
+}

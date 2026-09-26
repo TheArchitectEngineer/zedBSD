@@ -1223,9 +1223,11 @@ gles_release(
 			gles_texture_free(state, state->textures.objects[name]);
 	}
 
-	/* The black texture. */
+	/* The black textures. */
 	if (state->black != NULL)
 		gles_texture_free(state, state->black);
+	if (state->black_cube != NULL)
+		gles_texture_free(state, state->black_cube);
 
 	/* The framebuffer objects and renderbuffers. */
 	gles_framebuffers_release(state);
@@ -1400,6 +1402,12 @@ gles_integers(
 		return 1U;
 	case GL_TEXTURE_BINDING_2D:
 		texture = state->units[state->active_unit];
+		values[0] = 0;
+		if (texture != NULL)
+			values[0] = (GLint)texture->name;
+		return 1U;
+	case GL_TEXTURE_BINDING_CUBE_MAP:
+		texture = state->cube_units[state->active_unit];
 		values[0] = 0;
 		if (texture != NULL)
 			values[0] = (GLint)texture->name;

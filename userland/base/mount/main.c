@@ -23,6 +23,25 @@
 #include <unistd.h>
 #include <uapi/mountinfo.h>
 
+/* One mount option that sets a flag of mount(2). */
+struct mount_flag_option {
+	const char *name;
+	int flag;
+};
+
+/*
+ * The mount options that set a flag, in the order the list of mounts shows
+ * them; "ro" comes first and is shown as "ro" or "rw".  Never changed.
+ */
+static const struct mount_flag_option mount_flag_options[] = {
+	{ "ro", MNT_RDONLY },
+	{ "nosuid", MNT_NOSUID },
+	{ "writethru", MNT_WRITETHRU },
+	{ "nojournal", MNT_NOJOURNAL },
+};
+
+static void print_mount_options(const struct kern_mount_info *entry);
+static int option_flag(const char *option);
 static const char *program_name(const char *path);
 static int run_unmount(int argc, char **argv);
 static int mount_all(void);
@@ -55,15 +74,12 @@ list_mounts(void)
 	}
 	for (i = 0; i < query->count; i++) {
 		const struct kern_mount_info *entry = &query->entries[i];
-		printf("%s%s on %s type %s (%s%s%s%s%s)\n",
+		printf("%s%s on %s type %s (",
 		    entry->device != 0 && !(entry->kind & KERN_MOUNT_INFO_BIND) ?
 		    "/dev/" : "", entry->source[0] ? entry->source : entry->type,
-		    entry->target, entry->type,
-		    entry->flags & MNT_RDONLY ? "ro" : "rw",
-		    entry->flags & MNT_NOSUID ? ",nosuid" : "",
-		    entry->flags & MNT_WRITETHRU ? ",writethru" : "",
-		    entry->flags & MNT_NOJOURNAL ? ",nojournal" : "",
-		    entry->kind & KERN_MOUNT_INFO_BIND ? ",bind" : "");
+		    entry->target, entry->type);
+		print_mount_options(entry);
+		printf(")\n");
 	}
 	free(query);
 	return 0;
@@ -82,6 +98,7 @@ main(
 	struct mount_args arguments;
 	const char *type, *source, *target;
 	int flags, i;
+	int flag;
 
 	type = NULL;
 	source = NULL;
@@ -122,16 +139,11 @@ main(
 		} else if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
 			option = argv[++i];
 
-			/* Selects the matching value. */
-			if (strcmp(option, "ro") == 0)
-				flags |= MNT_RDONLY;
-			else if (strcmp(option, "nosuid") == 0)
-				flags |= MNT_NOSUID;
-			else if (strcmp(option, "writethru") == 0)
-				flags |= MNT_WRITETHRU;
-			else if (strcmp(option, "nojournal") == 0)
-				flags |= MNT_NOJOURNAL;
-			else if (strncmp(option, "fspec=", 6) == 0) {
+			/* Takes the flag the option names, or the disk it names. */
+			flag = option_flag(option);
+			if (flag != 0) {
+				flags |= flag;
+			} else if (strncmp(option, "fspec=", 6) == 0) {
 				source = option + 6;
 			} else {
 				fprintf(stderr,
@@ -195,6 +207,49 @@ main(
 	}
 
 	/* Reports successful completion. */
+	return 0;
+}
+
+/* Prints the options of one mounted filesystem, as mount -o names them. */
+static void
+print_mount_options(
+	const struct kern_mount_info *entry)
+{
+	size_t index;
+
+	/* A mount is either read-only or read-write. */
+	if ((entry->flags & MNT_RDONLY) != 0)
+		fputs("ro", stdout);
+	else
+		fputs("rw", stdout);
+
+	/* Adds each other flag the mount carries, by its option's name. */
+	for (index = 1; index < sizeof(mount_flag_options) / sizeof(mount_flag_options[0]); index++) {
+		if ((entry->flags & (unsigned)mount_flag_options[index].flag) != 0)
+			printf(",%s", mount_flag_options[index].name);
+	}
+
+	/* Marks a bind mount. */
+	if ((entry->kind & KERN_MOUNT_INFO_BIND) != 0)
+		fputs(",bind", stdout);
+}
+
+/* Finds the mount(2) flag an option names; reports 0 when it names none. */
+static int
+option_flag(
+	const char *option)
+{
+	size_t index;
+	int differs;
+
+	/* Compares the option with each name in turn. */
+	for (index = 0; index < sizeof(mount_flag_options) / sizeof(mount_flag_options[0]); index++) {
+		differs = strcmp(option, mount_flag_options[index].name);
+		if (differs == 0)
+			return mount_flag_options[index].flag;
+	}
+
+	/* The option names no flag. */
 	return 0;
 }
 
@@ -304,6 +359,7 @@ mount_fstab_entry(
 	struct mount_args arguments;
 	char *option;
 	int flags, nofail;
+	int flag;
 
 	flags = 0;
 	nofail = 0;
@@ -331,15 +387,10 @@ mount_fstab_entry(
 	/* Process each element required by the operation. */
 	for (option = strtok(options, ","); option != NULL;
 	     option = strtok(NULL, ",")) {
-		/* Selects the matching value. */
-		if (strcmp(option, "ro") == 0)
-			flags |= MNT_RDONLY;
-		else if (strcmp(option, "nosuid") == 0)
-			flags |= MNT_NOSUID;
-		else if (strcmp(option, "writethru") == 0)
-			flags |= MNT_WRITETHRU;
-		else if (strcmp(option, "nojournal") == 0)
-			flags |= MNT_NOJOURNAL;
+		/* Takes the flag the option names; nofail, rw and defaults set none. */
+		flag = option_flag(option);
+		if (flag != 0)
+			flags |= flag;
 		else if (strcmp(option, "nofail") == 0)
 			nofail = 1;
 		else if (strcmp(option, "rw") != 0 &&

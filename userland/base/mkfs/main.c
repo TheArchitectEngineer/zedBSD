@@ -19,36 +19,11 @@
 #include <stdio.h>
 #include <string.h>
 
+static int parse_journal_mib(const char *text);
+
 /*
  * Runs the explicit UFS regular-file formatter.
  */
-/*
- * Takes the journal size from --journal-size=MIB: whole MiB from 0 (no
- * journal) to 1024.  Reports -1 for anything else.
- */
-static int
-parse_journal_mib(
-	const char *text)
-{
-	uint64_t value;
-
-	/* Accepts decimal digits only, and at most 1024. */
-	if (*text == '\0')
-		return -1;
-	value = 0;
-	for (; *text != '\0'; text++) {
-		if (*text < '0' || *text > '9')
-			return -1;
-		value = value * 10U + (uint64_t)(*text - '0');
-		if (value > 1024U)
-			return -1;
-	}
-
-	/* Chooses the size the format records. */
-	ufs_format_set_journal_mib((int64_t)value);
-	return 0;
-}
-
 int
 main(
 	int argc,
@@ -67,11 +42,14 @@ main(
 	int index;
 	int pristine;
 	int profile;
+	int refused;
+	int differs;
 	int (*verify)(int, uint64_t);
 
 	/* Capacity inspection never falls through to a device or file mutation. */
 	for (index = 1; index < argc; index++) {
-		if (strcmp(argv[index], "--check-size") == 0)
+		differs = strcmp(argv[index], "--check-size");
+		if (differs == 0)
 			return mkfs_capacity_command(argc, argv);
 	}
 
@@ -91,14 +69,18 @@ main(
 	pristine = 0;
 	profile = 0;
 	for (index = 3; index < argc - 1; index++) {
-		if (strcmp(argv[index], "--verify-pristine") == 0 && !pristine)
+		if (strcmp(argv[index], "--verify-pristine") == 0 && !pristine) {
 			pristine = 1;
-		else if (strcmp(argv[index], "--profile=journal-snapshot") == 0 && !profile)
+		} else if (strcmp(argv[index], "--profile=journal-snapshot") == 0 && !profile) {
 			profile = 1;
-		else if (strncmp(argv[index], "--journal-size=", 15) == 0 &&
-		    parse_journal_mib(argv[index] + 15) == 0)
-			continue;
-		else {
+		} else if (strncmp(argv[index], "--journal-size=", 15) == 0) {
+			/* Takes the journal size; a size out of range is refused. */
+			refused = parse_journal_mib(argv[index] + 15);
+			if (refused != 0) {
+				fprintf(stderr, "mkfs: unsupported or repeated option\n");
+				return 2;
+			}
+		} else {
 			fprintf(stderr, "mkfs: unsupported or repeated option\n");
 			return 2;
 		}
@@ -136,5 +118,42 @@ main(
 		printf("mkfs: %s: ufs pristine (%" PRIu64 " bytes)\n", path, size);
 	else
 		printf("mkfs: %s: ufs initialized (%" PRIu64 " bytes)\n", path, size);
+	return 0;
+}
+
+/*
+ * Takes the journal size from --journal-size=MIB: whole MiB from 0 (no
+ * journal) to 1024.  Reports -1 for anything else.
+ */
+static int
+parse_journal_mib(
+	const char *text)
+{
+	uint64_t value;
+
+	/* Refuses an empty size. */
+	if (*text == '\0')
+		return -1;
+
+	/* Reads the decimal digits one by one. */
+	value = 0;
+	while (*text != '\0') {
+		/* Only a digit belongs in the size. */
+		if (*text < '0' || *text > '9')
+			return -1;
+
+		/* Adds the digit, refusing a size past the largest journal. */
+		value = value * 10U + (uint64_t)(*text - '0');
+		if (value > 1024U)
+			return -1;
+
+		/* Steps to the next digit. */
+		text++;
+	}
+
+	/* Chooses the size the format records. */
+	ufs_format_set_journal_mib((int64_t)value);
+
+	/* Succeeded: the size is chosen. */
 	return 0;
 }

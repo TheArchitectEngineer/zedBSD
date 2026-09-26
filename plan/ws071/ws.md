@@ -3,13 +3,13 @@
 # WS071: zedBSD File Manager（Finder 風で zedBSD らしいファイルマネージャ）
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: incomplete
 Primary Milestone: MG006
 Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
-Queue: none
-Resume point: p001（設計）。WS070（System Menu）の p002〜p004 が使える状態になってから本体を作る（メニューと context menu を使うため）
+Queue: なし（2026-09-27 ユーザーの指示でサブエージェントが worktree の branch で実行。main の Queue への反映は main の session）
+Resume point: p003（一覧と移動: 選択・keyboard・list 表示・Ctrl+L）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -56,9 +56,42 @@ Finder の操作モデル（左のサイドバー、浮いたツールバー、�
 2. メニューバーが浮いたタイトルバーと docked のシステムバーに出て、選ぶと action が動く。context menu が system の UI で出る。
 3. 規約の全文との照合。
 
+## 設計（p001、2026-09-27）
+
+[design.md](design.md)。上の「p001 で決めること」8 点と設計中に出た判断は design.md §15「判断が要る点（既定で進めた）」に既定と理由が
+ある（戻せる既定。ユーザーの判断があれば変える）。要点: `zdesktop-files`（`/bin/zdesktop-files`）、CPU の canvas を Vulkan で貼る描画、
+タグは xattr `user.zdesktop.tags`、recent は libzdesktop の新しい API、ゴミ箱は freedesktop.org の Trash、context menu は WS070 の
+protocol の version 2（**WS070 の protocol の拡張を WS071 の p009 として実装**）、PNG は WS035 の D2〜D4 に従う libz-compat・
+libpng-compat の decode（WS035 p040・p041 の decode の半分を p010 で先に作る）、DnD は窓の中だけ、Quick Look は窓の中の overlay。
+
 ## Phase 一覧
 
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
-| ws071-p001 | 設計: 範囲（最初の版と後の版）、上の 8 つの決定、画面の構成と部品、file 操作の model（履歴・選択・task・Undo）、試験 | planning | WS070-p001（protocol の形） |
-| ws071-p002 以降 | p001 で分ける（目安: 窓と描画の骨格とサイドバー → 一覧の表示と選択 → file 操作と task・ゴミ箱・Undo → 検索・タグ・最近のファイル → ホームのダッシュボード → プレビュー・Quick Look・ファイル情報 → メニューと context menu → 実機・規約の照合（最後）） | planning | p001 |
+| [ws071-p001](phase001/phase.md) | 設計（design.md） | cleared | WS070-p001 |
+| [ws071-p002](phase002/phase.md) | 骨格: window（pointer・keyboard）、present（Vulkan の canvas）、canvas・text・icons、toolbar・sidebar・content の静的な配置、host の render 試験、guest の image と起動 | cleared | p001 |
+| ws071-p003 | 一覧と移動: dir、nav（履歴・パンくず・Back/Forward/Home）、icon・list 表示、並べ替え、選択、scroll、folder を開く、Ctrl+L | planned | p002 |
+| ws071-p004 | file 操作: task（copy・move・delete・duplicate・link）、clipboard、new folder、rename、ゴミ箱（Put Back・Empty）、完全削除の確認、undo・redo、進みと status | planned | p003 |
+| ws071-p005 | 検索、タグ（xattr・定義・索引・sidebar）、recent（libzdesktop の API）、Favorites の編集、Locations（mount） | planned | p004 |
+| ws071-p006 | Home の dashboard（hero、folder cards、recent files・folders） | planned | p005 |
+| ws071-p007 | preview pane、Quick Look、Get Info（checksum・xattr）、MIME、開く・別のアプリで開く | planned | p005 |
+| ws071-p008 | menubar（System Menu）、タブ、New Window、keyboard の shortcut の全体、Help | planned | p007、WS070-p004 |
+| ws071-p009 | context menu: WS070 protocol version 2（libwayland、zdesktop、libzdesktop `zdesktop_menu_popup`）と file manager の context menu | planned | p008 |
+| ws071-p010 | サムネイル（libz-compat の inflate、libpng-compat の decode）と窓の中の DnD | planned | p007 |
+| ws071-p011 | App Home の項目、規約の全文との照合、回帰、boot test、i915 実機（任意） | planned | p002〜p010 |
+
+## Future Work の候補（main session が future-work.md へ）
+
+| 候補 | 内容 | 出どころ |
+| --- | --- | --- |
+| F-a | クラウド（spec §27）、SMB・NFS・WebDAV・「サーバーへ接続」（spec §26） | ws.md の後の版 |
+| F-b | カラム表示・ギャラリー表示（spec §10） | 同 |
+| F-c | 全体の indexer と file の中身の検索（spec §7、§34） | 同 |
+| F-d | 動画・PDF・JPEG のサムネイル、disk の thumbnail cache | 同、design §9 |
+| F-e | 装置の unmount・eject（spec §25） | 同、design §13 |
+| F-f | 描き直しを damage の矩形に絞る（CPU の canvas の最適化） | design §2 |
+| F-g | canvas・text・icons を共有の UI library へ（2 つ目の使い手のとき） | design §2 |
+| F-h | 窓ごとの本当のすりガラス（alpha の Vulkan surface の後ろに zdesktop が blur） | design §2、WS035 |
+| F-i | zdesktop の `wl_data_device`（窓・アプリの間の DnD と clipboard） | design §5.6、§12 |
+| F-j | compositor が描く system の Quick Look | design §9 |
+| F-k | 名前の衝突の Replace・Skip の dialog、日本語の UI 文言と IME、`$topdir/.Trash-$uid` | design §5.3、§5.4、§15 |

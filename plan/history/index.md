@@ -2,12 +2,20 @@
 
 <!-- awesome-plan-current:start -->
 Active Queue: なし
-Last finished Queue: q492（ws069-p006 cleared。WS069 completed）
+Last finished Queue: q494（ws068-p023 cleared。cube map）
 <!-- awesome-plan-current:end -->
 
 # Past Log
 
-## 最新: q443〜q492（2026-09-26〜27）
+## 最新: q443〜q494（2026-09-26〜27）
+
+WS071 p001 と WS036（p026）・WS044（p002）の merge（2026-09-27、Queue の外、サブエージェント）: File Manager の設計（`zdesktop-files`）。LLVM の AArch64 zedbsd target（patch zedbsd7）、sysroot-arm64、rpi4 の FAT32 の boot partition、rtld の PF_X の重複の修正。main の toolchain を zedbsd7 に切り替えた。
+
+WS049 の merge（2026-09-27、Queue の外、サブエージェント）: kernel の ACPI AML interpreter（host の試験で acpiexec と一致、fuzzing、SCI・GPE・EC の host の模擬、`/dev/acpi`、Global Lock、ECDT）。kernel への統合は HAL の差分の承認待ち。
+
+[q494](queue-q494.md): ws068-p023 cleared。cube map（6 layer の image、cube の束縛と sampler、FBO の面への描画、面ごとの読み戻し、mipmap）。Venus の egl-p023 と回帰 PASS。
+
+[q493](queue-q493.md): ws068-p022 cleared。libGLESv2 の framebuffer object と renderbuffer（texture の level 0 への描画、depth renderbuffer、FBO の readback、GPU の描いた texture の読み戻し）。FBO は GL の行の向きで描く（y を裏返さない vertex module、front face を逆）。Venus の egl-p022 と回帰 PASS。
 
 WS045 の merge（2026-09-27、Queue の外、サブエージェント）: sed・awk・grep ほかの GNU 拡張（p001〜p009）。判断待ち 3 点は ws045/ws.md。
 

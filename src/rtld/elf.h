@@ -49,9 +49,9 @@
 #define PT_TLS 7
 #define PT_GNU_STACK 0x6474e551
 #define PT_GNU_RELRO 0x6474e552
-#define PF_X 1U
-#define PF_W 2U
-#define PF_R 4U
+#define PF_X 1
+#define PF_W 2
+#define PF_R 4
 
 #define DT_NULL 0
 #define DT_NEEDED 1
@@ -103,7 +103,7 @@
 
 #define SHN_UNDEF 0
 #define STN_UNDEF 0
-#define SHN_ABS 0xfff1U
+#define SHN_ABS 0xfff1
 #define STB_LOCAL 0
 #define STB_GLOBAL 1
 #define STB_WEAK 2
