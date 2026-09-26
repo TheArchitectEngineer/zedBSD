@@ -9,6 +9,9 @@
 #   (default OUTPUT build/ws045/guest-all.out; IMAGE the native guest image
 #   /home/awe/zedBSD-rpi4/build/ws053-full-hal-guest/hdd-image.img, booted
 #   from NVMe, read only: the guest runs on a copy)
+# With SH=1 the guest's copy also gets this tree's sh as /bin/sh and env as
+# /usr/bin/env, so that the sh's env builtin (which leaves GNU's options to
+# /usr/bin/env) is the one the cases run.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 out=${1:-build/ws045/guest-all.out}
@@ -30,7 +33,7 @@ else
 fi
 
 # The utilities, as one archive.
-tar -C build/ws045 -cf "$work/bin.tar" guest-bin
+tar -C build/ws045 -cf "$work/bin.tar" guest-bin guest-bin.sh
 
 # The cases, 40 to a batch.
 ls build/ws045/guest-export/*/*.sh | sort > "$work/cases"
@@ -45,6 +48,9 @@ for batch in "$work"/batch.*; do
 		$guest put plan/ws045/tests/guest-diff.sh /root/ws045-diff.sh
 		$guest put "$work/bin.tar" /root/ws045-bin.tar
 		$guest run 'cd /root && rm -rf guest-bin && pax -r -f ws045-bin.tar && rm -f ws045-bin.tar'
+		if [ -n "${SH-}" ]; then
+			$guest run 'cp /root/guest-bin.sh/sh /bin/sh.new && mv /bin/sh.new /bin/sh && cp /root/guest-bin/env /usr/bin/env.new && mv /usr/bin/env.new /usr/bin/env'
+		fi
 	fi
 	n=$((n + 1))
 	rm -rf "$work/one" && mkdir -p "$work/one/export/00"
