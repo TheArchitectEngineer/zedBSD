@@ -50,6 +50,7 @@
 #include <drivers/acpi/acpi.h>
 
 #include "drivers/acpi/acpi-tables.h"
+#include "drivers/acpi/acpi-text.h"
 #include "drivers/acpi/aml-internal.h"
 #include "drivers/acpi/aml-os.h"
 
@@ -255,17 +256,10 @@ static int read_memory(uint64_t address, void *buffer, size_t length, void *argu
 static int simulated_space(const struct drv_acpi_region_access *access, uint64_t *value, void *argument);
 static uint64_t space_key(const struct drv_acpi_region_access *access, unsigned space);
 static uint8_t *page_byte(uint64_t space, uint64_t address);
-static int dump_visitor(struct drv_acpi_node *node, unsigned depth, void *argument);
 static int devices_visitor(struct drv_acpi_node *node, unsigned depth, void *argument);
-static void print_node_line(struct drv_acpi_node *node);
-static void print_field(const char *path, const struct drv_acpi_object *object);
-static void print_object(const struct drv_acpi_object *object);
-static void print_package(const struct drv_acpi_object *object);
-static void print_reference(const struct drv_acpi_object *object);
 static void print_notification(struct drv_acpi_node *node, uint32_t value, void *argument);
-static const char *space_name(unsigned space);
-static void segment_name(const struct drv_acpi_node *node, char *text);
 static int evaluate_and_print(struct drv_acpi_node *scope, const char *path, const char *label);
+static int print_namespace(void);
 static int evaluate_methods(void);
 static int method_visitor(struct drv_acpi_node *node, unsigned depth, void *argument);
 
@@ -322,7 +316,7 @@ main(
 
 	/* Prints the namespace. */
 	if (options.dump)
-		drv_acpi_walk(NULL, dump_visitor, NULL);
+		print_namespace();
 
 	/* Runs an ASL test's MAIN first, which returns 0 when every check passed. */
 	if (options.run_main) {
@@ -1333,146 +1327,6 @@ page_byte(
 	return &page->bytes[address % PAGE_SIZE];
 }
 
-/* Prints one node of the namespace. */
-static int
-dump_visitor(
-	struct drv_acpi_node *node,
-	unsigned depth,
-	void *argument)
-{
-	UNUSED_PARAMETER(depth);
-	UNUSED_PARAMETER(argument);
-
-	/* Prints the line and goes on into the children. */
-	print_node_line(node);
-	return 0;
-}
-
-/* Prints one node as "path type attributes", the form acpiexec-namespace.py writes. */
-static void
-print_node_line(
-	struct drv_acpi_node *node)
-{
-	const struct drv_acpi_object *object;
-	char path[PATH_MAX_LENGTH];
-	char name[5];
-	int error;
-
-	/* Writes the path. */
-	error = drv_acpi_node_path(node, path, sizeof(path));
-	if (error != 0)
-		strcpy(path, "(long)");
-
-	/* A node without an object is untyped. */
-	object = node->object;
-	if (object == NULL) {
-		printf("%s Untyped\n", path);
-		return;
-	}
-
-	/* Writes the type and what identifies the object. */
-	switch (object->type) {
-	case DRV_ACPI_TYPE_SCOPE:
-		printf("%s Scope\n", path);
-		break;
-	case DRV_ACPI_TYPE_DEVICE:
-		printf("%s Device\n", path);
-		break;
-	case DRV_ACPI_TYPE_THERMAL_ZONE:
-		printf("%s Thermal\n", path);
-		break;
-	case DRV_ACPI_TYPE_POWER_RESOURCE:
-		printf("%s Power\n", path);
-		break;
-	case DRV_ACPI_TYPE_EVENT:
-		printf("%s Event\n", path);
-		break;
-	case DRV_ACPI_TYPE_MUTEX:
-		printf("%s Mutex\n", path);
-		break;
-	case DRV_ACPI_TYPE_PROCESSOR:
-		printf("%s Processor id=%02X len=%02X addr=%llX\n",
-		       path,
-		       object->value.processor.id,
-		       object->value.processor.block_length,
-		       (unsigned long long)object->value.processor.block_address);
-		break;
-	case DRV_ACPI_TYPE_INTEGER:
-		printf("%s Integer %llX\n", path, (unsigned long long)object->value.integer);
-		break;
-	case DRV_ACPI_TYPE_STRING:
-		printf("%s String \"%s\"\n", path, object->value.string.text);
-		break;
-	case DRV_ACPI_TYPE_BUFFER:
-		printf("%s Buffer len=%zX\n", path, object->value.buffer.length);
-		break;
-	case DRV_ACPI_TYPE_PACKAGE:
-		printf("%s Package count=%X\n", path, (unsigned)object->value.package.count);
-		break;
-	case DRV_ACPI_TYPE_METHOD:
-		printf("%s Method args=%u\n", path, (unsigned)object->value.method.argument_count);
-		break;
-	case DRV_ACPI_TYPE_REGION:
-		printf("%s Region %s addr=%llX len=%llX\n",
-		       path,
-		       space_name(object->value.region.space),
-		       (unsigned long long)object->value.region.offset,
-		       (unsigned long long)object->value.region.length);
-		break;
-	case DRV_ACPI_TYPE_FIELD_UNIT:
-		print_field(path, object);
-		break;
-	case DRV_ACPI_TYPE_BUFFER_FIELD:
-		printf("%s BufferField off=%llX len=%llX\n",
-		       path,
-		       (unsigned long long)object->value.buffer_field.bit_offset,
-		       (unsigned long long)object->value.buffer_field.bit_length);
-		break;
-	case DRV_ACPI_TYPE_ALIAS:
-		segment_name(object->value.alias.target, name);
-		printf("%s Alias target=%s\n", path, name);
-		break;
-	default:
-		printf("%s Type%u\n", path, (unsigned)object->type);
-		break;
-	}
-}
-
-/* Prints a field unit's line by its kind. */
-static void
-print_field(
-	const char *path,
-	const struct drv_acpi_object *object)
-{
-	const struct drv_acpi_field *field;
-	char first[5];
-	char second[5];
-
-	/* Names the nodes the field refers to. */
-	field = &object->value.field;
-	segment_name(field->region, first);
-	segment_name(field->index, second);
-
-	/* Writes the line by the kind of field. */
-	if (field->kind == DRV_ACPI_FIELD_INDEX) {
-		segment_name(field->data, first);
-		printf("%s IndexField idx=%s dat=%s off=%X len=%X\n",
-		       path, second, first,
-		       (unsigned)field->bit_offset,
-		       (unsigned)field->bit_length);
-	} else if (field->kind == DRV_ACPI_FIELD_BANK) {
-		printf("%s BankField rgn=%s bnk=%s off=%X len=%X\n",
-		       path, first, second,
-		       (unsigned)field->bit_offset,
-		       (unsigned)field->bit_length);
-	} else {
-		printf("%s RegionField rgn=%s off=%X len=%X\n",
-		       path, first,
-		       (unsigned)field->bit_offset,
-		       (unsigned)field->bit_length);
-	}
-}
-
 /* Evaluates the identification objects of one device. */
 static int
 devices_visitor(
@@ -1593,121 +1447,51 @@ method_visitor(
 	return 0;
 }
 
-/* Evaluates one path and prints the result under a label. */
+/* Evaluates one path and prints the result under a label, as /dev/acpi writes it. */
 static int
 evaluate_and_print(
 	struct drv_acpi_node *scope,
 	const char *path,
 	const char *label)
 {
-	struct drv_acpi_object *result;
+	struct drv_acpi_text text;
 	int error;
 
-	/* Evaluates it. */
-	error = drv_acpi_evaluate(scope, path, NULL, 0, &result);
-	if (error != 0) {
-		printf("%s = error %d\n", label, error);
-		return error;
-	}
+	/* Writes the result line. */
+	drv_acpi_text_init(&text);
+	error = drv_acpi_text_evaluate(&text, scope, path, label);
 
-	/* Prints the result. */
-	printf("%s = ", label);
-	print_object(result);
-	printf("\n");
-	drv_acpi_object_release(result);
+	/* Prints it. */
+	if (text.data != NULL)
+		fputs(text.data, stdout);
+	drv_acpi_text_release(&text);
+	if (error != 0)
+		return error;
 
 	/* Succeeded. */
 	return 0;
 }
 
-/* Prints an object on one line. */
-static void
-print_object(
-	const struct drv_acpi_object *object)
+/* Prints the namespace, one line per node, as /dev/acpi writes it. */
+static int
+print_namespace(void)
 {
-	const uint8_t *bytes;
-	size_t length;
-	size_t index;
-
-	/* A missing object prints as none. */
-	if (object == NULL) {
-		printf("None");
-		return;
-	}
-
-	/* Prints by type. */
-	switch (drv_acpi_object_type(object)) {
-	case DRV_ACPI_TYPE_INTEGER:
-		printf("Integer 0x%llX", (unsigned long long)drv_acpi_object_integer(object));
-		break;
-	case DRV_ACPI_TYPE_STRING:
-		printf("String \"%s\"", drv_acpi_object_string(object, NULL));
-		break;
-	case DRV_ACPI_TYPE_BUFFER:
-		/* The length and every byte. */
-		bytes = drv_acpi_object_buffer(object, &length);
-		printf("Buffer [%zu]", length);
-		for (index = 0; index < length; index++)
-			printf(" %02X", bytes[index]);
-		break;
-	case DRV_ACPI_TYPE_PACKAGE:
-		print_package(object);
-		break;
-	case DRV_ACPI_TYPE_REFERENCE:
-		print_reference(object);
-		break;
-	default:
-		printf("Type%u", (unsigned)drv_acpi_object_type(object));
-		break;
-	}
-}
-
-/* Prints a package and its elements. */
-static void
-print_package(
-	const struct drv_acpi_object *object)
-{
-	unsigned count;
-	unsigned index;
-
-	/* Prints the count, then each element separated by commas. */
-	count = drv_acpi_object_package_count(object);
-	printf("Package [%u] {", count);
-	for (index = 0; index < count; index++) {
-		/* Separates it from the element before. */
-		if (index != 0)
-			printf(",");
-
-		/* Prints the element. */
-		printf(" ");
-		print_object(drv_acpi_object_package_element(object, index));
-	}
-
-	/* Closes the list. */
-	printf(" }");
-}
-
-/* Prints a reference by the path of its node. */
-static void
-print_reference(
-	const struct drv_acpi_object *object)
-{
-	struct drv_acpi_node *node;
-	char path[PATH_MAX_LENGTH];
+	struct drv_acpi_text text;
 	int error;
 
-	/* A reference to anything but a node has no path to print. */
-	node = drv_acpi_object_reference_node(object);
-	if (node == NULL) {
-		printf("Reference");
-		return;
-	}
+	/* Writes the lines. */
+	drv_acpi_text_init(&text);
+	error = drv_acpi_text_namespace(&text);
 
-	/* Prints the path. */
-	error = drv_acpi_node_path(node, path, sizeof(path));
+	/* Prints them. */
+	if (text.data != NULL)
+		fputs(text.data, stdout);
+	drv_acpi_text_release(&text);
 	if (error != 0)
-		strcpy(path, "(long)");
-	printf("Reference %s", path);
+		return error;
+
+	/* Succeeded. */
+	return 0;
 }
 
 /* Prints a notification a node received. */
@@ -1729,41 +1513,3 @@ print_notification(
 	printf("NOTIFY %s 0x%X\n", path, (unsigned)value);
 }
 
-/* Names an address space the way acpiexec does. */
-static const char *
-space_name(
-	unsigned space)
-{
-	static const char *const names[] = {
-		"SystemMemory", "SystemIO", "PCI_Config", "EmbeddedControl", "SMBus",
-		"SystemCMOS", "PCIBARTarget", "IPMI", "GeneralPurposeIo", "GenericSerialBus",
-		"PCC", "PlatformRtMechanism",
-	};
-
-	/* Names the spaces ACPI defines. */
-	if (space < sizeof(names) / sizeof(names[0]))
-		return names[space];
-
-	/* Anything above is an OEM space. */
-	return "OEM";
-}
-
-/* Writes the four characters of a node's name. */
-static void
-segment_name(
-	const struct drv_acpi_node *node,
-	char *text)
-{
-	/* A missing node has no name. */
-	if (node == NULL) {
-		strcpy(text, "????");
-		return;
-	}
-
-	/* Unpacks the name, lowest byte first. */
-	text[0] = (char)(node->name & 0xffU);
-	text[1] = (char)((node->name >> 8) & 0xffU);
-	text[2] = (char)((node->name >> 16) & 0xffU);
-	text[3] = (char)((node->name >> 24) & 0xffU);
-	text[4] = '\0';
-}

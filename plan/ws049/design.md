@@ -186,8 +186,8 @@ interpreter が OS に求めるもの。kernel は `acpi-kern.c`、host 試験�
 - SCI: FADT の `SCI_INT` を `hal_irq_register()` で受け、PM1 の status と GPE の status を port I/O で読む（level の GPE は `_Lxx` の後に clear）。
   AML の実行は割り込みの中でせず、kernel thread（`kthread_create`）で行う。
 - EC: ECDT か `PNP0C09` の device の `_CRS`（port 0x62/0x66 など）、EmbeddedControl の region の handler、SCI_EVT で `_Qxx`。
-- 診断: kernel の中の namespace と評価を user から確かめる口（`/dev/acpi` の read で namespace の一覧、ioctl で method の評価。
-  UAPI を足すので p006 で設計して決める）。起動の確認は `plan/tools/boot-test.sh`、機能の確認は guest の中の command をシリアルか SSH で。
+- 診断: kernel の中の namespace と評価を user から確かめる口。p013 で UAPI を足さない text の `/dev/acpi` にした（read で namespace の
+  一覧、path を write すると続く read で評価の結果。出力は host の harness と同じ `acpi-text.c`）。起動の確認は `plan/tools/boot-test.sh`、機能の確認は guest の中の command をシリアルか SSH で。
 
 ## 8. `_OSI`
 
@@ -261,4 +261,4 @@ p002〜p005 は HAL の承認を待たずに進められる（host だけ）。
 2. `_OSI` で名乗る Windows の版（§8。案は `Windows 2022` まで）。
 3. 対象機は Latitude 5330 でよいか。その table の取り出し（Linux が動いているときに `sudo acpidump -b`）。2026-09-27 の時点で
    5330（`10.0.10.25`）は ssh に応答しない。
-4. 診断の口の形（`/dev/acpi` か `/dev/system` の ioctl か。p006 で案を出す）。
+4. 診断の口の形（p013 の案: text の `/dev/acpi`、device 番号 `0x000B0000`。ioctl か `/dev/system` への統合にするかの判断）。

@@ -38,6 +38,7 @@
 #include "kern/waitq.h"
 
 #include "acpi-tables.h"
+#include "acpi-text.h"
 #include "aml-internal.h"
 #include "aml-os.h"
 
@@ -179,6 +180,11 @@ drv_acpi_attach(void)
 	error = drv_acpi_ec_attach();
 	if (error != 0 && error != ENODEV)
 		kern_logf("acpi: the Embedded Controller did not attach (error %d)\n", error);
+
+	/* Publishes the namespace to user programs. */
+	error = drv_acpi_device_register();
+	if (error != 0)
+		kern_logf("acpi: /dev/acpi was not published (error %d)\n", error);
 
 	/* Succeeded. */
 	kern_logf("acpi: %u tables listed, namespace ready\n", firmware.count);
