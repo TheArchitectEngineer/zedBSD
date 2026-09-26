@@ -9,7 +9,11 @@ test is found first on PATH.  A line "## skip-status" in a case compares
 only the output (for utilities whose error status POSIX leaves as ">0").
 
   python3 plan/tools/utils/util-diff.py [--bin build/ws043/bin] [--only sed]
-      [--report FILE] [--export DIR]
+      [--report FILE] [--export DIR] [--cases DIR] [--gnu]
+
+ws045: --cases reads the case files from another directory, and --gnu runs
+both sides without POSIXLY_CORRECT, for the cases of the GNU extensions
+(plan/ws045/tests/cases).
 """
 
 import argparse
@@ -49,6 +53,9 @@ def parse_file(path: Path) -> list[tuple[str, str, bool]]:
 	return cases
 
 
+GNU_MODE = False
+
+
 def run(code: str, path: str) -> tuple[bytes, int]:
 	"""Runs a case in a fresh directory with PATH as given."""
 	work = Path(tempfile.mkdtemp(prefix="ws043-"))
@@ -59,6 +66,8 @@ def run(code: str, path: str) -> tuple[bytes, int]:
 		"POSIXLY_CORRECT": "1",
 		"TZ": "UTC",
 	}
+	if GNU_MODE:
+		del env["POSIXLY_CORRECT"]
 	# Sanitizer builds are run with the caller's sanitizer options.
 	for name in ("ASAN_OPTIONS", "UBSAN_OPTIONS"):
 		if name in os.environ:
@@ -96,11 +105,15 @@ def main() -> int:
 	parser.add_argument("--report")
 	parser.add_argument("--export")
 	parser.add_argument("--jobs", type=int, default=os.cpu_count())
+	parser.add_argument("--cases", default=str(HERE / "cases"))
+	parser.add_argument("--gnu", action="store_true")
 	options = parser.parse_args()
 	ours = str(Path(options.bin).resolve())
+	global GNU_MODE
+	GNU_MODE = options.gnu
 
 	work = []
-	for path in sorted((HERE / "cases").glob("*.sh")):
+	for path in sorted(Path(options.cases).glob("*.sh")):
 		if options.only and path.stem != options.only:
 			continue
 		for name, code, status in parse_file(path):

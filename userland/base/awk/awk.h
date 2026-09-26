@@ -150,6 +150,18 @@
 #define BUILTIN_SYSTEM		19
 #define BUILTIN_CLOSE		20
 #define BUILTIN_FFLUSH		21
+#define BUILTIN_GENSUB		22	/* gawk's, from here on (gawk.c) */
+#define BUILTIN_SYSTIME		23
+#define BUILTIN_STRFTIME	24
+#define BUILTIN_MKTIME		25
+#define BUILTIN_AND		26
+#define BUILTIN_OR		27
+#define BUILTIN_XOR		28
+#define BUILTIN_LSHIFT		29
+#define BUILTIN_RSHIFT		30
+#define BUILTIN_COMPL		31
+#define BUILTIN_ASORT		32
+#define BUILTIN_ASORTI		33
 
 /* The kinds of node: expressions first, then statements. */
 #define NODE_NUMBER		0	/* a numeric constant */
@@ -440,6 +452,12 @@ struct awk_state {
 	/* The state and the seed of rand(). */
 	double random_seed;
 	unsigned long long random_state;
+
+	/*
+	 * Set by --posix or POSIXLY_CORRECT: system() gives the status as
+	 * wait gives it, as POSIX has it, not gawk's exit status.
+	 */
+	int posix;
 };
 
 /* The state of the program being run, defined in main.c. */
@@ -529,5 +547,9 @@ void format_values(const char *format, size_t length, struct value *arguments, s
 regex_t *regex_compile(const char *text, size_t length, int cached);
 regex_t *regex_of(struct node *expression, struct value *scratch);
 int regex_search(regex_t *regex, const char *text, size_t length, size_t from, size_t *match_start, size_t *match_end);
+
+/* gawk.c */
+void gawk_call(struct node *call, struct value *value);
+void gawk_match_groups(struct node *array_node, regex_t *regex, const char *text);
 
 #endif

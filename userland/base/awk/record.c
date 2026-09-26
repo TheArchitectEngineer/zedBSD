@@ -41,6 +41,8 @@ struct pieces {
  */
 static struct pieces split_pieces;
 
+static int record_read_regex(FILE *stream, struct buffer *buffer, const char *separator, size_t separator_length);
+static void set_record_terminator(const char *text, size_t length);
 static void split_record(void);
 static void split_string(const char *text, size_t length, const char *separator, size_t separator_length, regex_t *regex, int paragraph);
 static void split_blanks(const char *text, size_t length);
@@ -164,8 +166,10 @@ field_write(
 }
 
 /*
- * Reads a record from a stream, separated by RS: its first character, or
- * blank lines when RS is empty.  Returns 0 at the end of the stream.
+ * Reads a record from a stream, separated by RS: its first character, a
+ * regex when it is longer (gawk), or blank lines when RS is empty.  RT
+ * (gawk's) is set to the text that ended the record.  Returns 0 at the end
+ * of the stream.
  */
 int
 record_read(
@@ -177,11 +181,18 @@ record_read(
 	int character;
 	int following;
 	int read_any;
+	int read;
 
 	/* An empty record to fill. */
 	buffer->length = 0;
 	buffer_append(buffer, "", 0);
 	separator = special_text(SPECIAL_RS, &separator_length);
+
+	/* gawk: a longer RS is a regex. */
+	if (separator_length > 1) {
+		read = record_read_regex(stream, buffer, separator, separator_length);
+		return read;
+	}
 
 	/* One character separates records. */
 	if (separator_length > 0) {
@@ -191,16 +202,24 @@ record_read(
 			if (character == EOF)
 				break;
 			read_any = 1;
-			if (character == (unsigned char)separator[0])
+			if (character == (unsigned char)separator[0]) {
+				set_record_terminator(separator, 1);
 				return 1;
+			}
+
+			/* A byte of the record. */
 			buffer_append_byte(buffer, (char)character);
 		}
 
 		/* Nothing before the end is no record. */
+		set_record_terminator("", 0);
 		if (!read_any)
 			return 0;
 		return 1;
 	}
+
+	/* The newlines that end a paragraph are RT. */
+	set_record_terminator("\n\n", 2);
 
 	/* Paragraph mode: newlines before the first record do not count. */
 	character = getc(stream);
@@ -236,6 +255,94 @@ record_read(
 		buffer_append_byte(buffer, (char)character);
 		character = getc(stream);
 	}
+}
+
+/*
+ * Reads a record separated by a regex RS (gawk): the bytes up to the first
+ * match that more input could not make longer, which is RT.  The byte read
+ * past the match goes back to the stream (a match found as soon as it is
+ * complete ends at most one byte before what was read).  Returns 0 at the
+ * end of the stream.
+ */
+static int
+record_read_regex(
+	FILE *stream,
+	struct buffer *buffer,
+	const char *separator,
+	size_t separator_length)
+{
+	regmatch_t match;
+	regex_t *regex;
+	size_t start;
+	size_t end;
+	int character;
+	int read_any;
+	int result;
+
+	/* The regex, and each byte in turn until a match is complete. */
+	regex = regex_compile(separator, separator_length, 1);
+	read_any = 0;
+	for (;;) {
+		character = getc(stream);
+		if (character == EOF)
+			break;
+		read_any = 1;
+		buffer_append_byte(buffer, (char)character);
+
+		/* A match that is not empty and ends before the last byte read. */
+		result = regexec(regex, buffer->data, 1, &match, REG_NOTEOL);
+		if (result != 0)
+			continue;
+		start = (size_t)match.rm_so;
+		end = (size_t)match.rm_eo;
+		if (end == start || end >= buffer->length)
+			continue;
+
+		/* The byte after the match goes back; the match is RT. */
+		ungetc((unsigned char)buffer->data[buffer->length - 1U], stream);
+		set_record_terminator(buffer->data + start, end - start);
+		buffer->length = start;
+		buffer->data[start] = '\0';
+		return 1;
+	}
+
+	/* The end of the stream, with nothing read. */
+	if (!read_any) {
+		set_record_terminator("", 0);
+		return 0;
+	}
+
+	/* A match that reaches the end ends the last record too. */
+	result = regexec(regex, buffer->data, 1, &match, 0);
+	if (result == 0 && match.rm_eo > match.rm_so &&
+	    (size_t)match.rm_eo == buffer->length) {
+		start = (size_t)match.rm_so;
+		set_record_terminator(buffer->data + start, buffer->length - start);
+		buffer->length = start;
+		buffer->data[start] = '\0';
+		return 1;
+	}
+
+	/* Succeeded: the last record, with no terminator. */
+	set_record_terminator("", 0);
+	return 1;
+}
+
+/* Sets gawk's RT, the text that ended the record just read. */
+static void
+set_record_terminator(
+	const char *text,
+	size_t length)
+{
+	struct variable *variable;
+	struct value value;
+
+	/* RT, made when it is first needed. */
+	variable = variable_find("RT", 1);
+	memset(&value, 0, sizeof(value));
+	value_set_text(&value, text, length);
+	assign_variable(variable, &value);
+	value_free(&value);
 }
 
 /*

@@ -28,7 +28,14 @@
  * -m merges files that are already sorted; since sorting everything gives
  * the same order, it is done the same way.  The output (-o) is written only
  * after all input is read, so it may be one of the inputs.
+ *
+ * GNU's extensions: the types V (version), h (human numbers, 2K < 1M), g
+ * (general numbers, with exponents) and M (month names), -s (equal keys keep
+ * their input order), -z (lines end with a NUL byte), the long options, and
+ * options after operands (unless POSIXLY_CORRECT is set).
  */
+
+#include "userland/base/common/command.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -42,6 +49,52 @@
 #define KEY_PRINTABLE	0x08	/* i */
 #define KEY_NUMERIC	0x10	/* n */
 #define KEY_REVERSE	0x20	/* r */
+#define KEY_VERSION	0x40	/* V (GNU) */
+#define KEY_HUMAN	0x80	/* h (GNU) */
+#define KEY_GENERAL	0x100	/* g (GNU) */
+#define KEY_MONTH	0x200	/* M (GNU) */
+
+/* The codes of the long options that have no letter. */
+#define OPTION_SORT	256
+#define OPTION_CHECK	257
+#define OPTION_IGNORED	258
+#define OPTION_VERSION	259
+#define OPTION_HELP	260
+
+/*
+ * The options written in full.
+ *
+ * The table is read by the scan of the command line only; the letter a
+ * long option shares its code with makes the two forms one case.
+ */
+static const struct command_long_option sort_long_options[] = {
+	{"buffer-size", COMMAND_VALUE_REQUIRED, 'S'},
+	{"check", COMMAND_VALUE_OPTIONAL, OPTION_CHECK},
+	{"debug", COMMAND_VALUE_NONE, OPTION_IGNORED},
+	{"dictionary-order", COMMAND_VALUE_NONE, 'd'},
+	{"field-separator", COMMAND_VALUE_REQUIRED, 't'},
+	{"general-numeric-sort", COMMAND_VALUE_NONE, 'g'},
+	{"help", COMMAND_VALUE_NONE, OPTION_HELP},
+	{"human-numeric-sort", COMMAND_VALUE_NONE, 'h'},
+	{"ignore-case", COMMAND_VALUE_NONE, 'f'},
+	{"ignore-leading-blanks", COMMAND_VALUE_NONE, 'b'},
+	{"ignore-nonprinting", COMMAND_VALUE_NONE, 'i'},
+	{"key", COMMAND_VALUE_REQUIRED, 'k'},
+	{"merge", COMMAND_VALUE_NONE, 'm'},
+	{"month-sort", COMMAND_VALUE_NONE, 'M'},
+	{"numeric-sort", COMMAND_VALUE_NONE, 'n'},
+	{"output", COMMAND_VALUE_REQUIRED, 'o'},
+	{"parallel", COMMAND_VALUE_REQUIRED, OPTION_IGNORED},
+	{"reverse", COMMAND_VALUE_NONE, 'r'},
+	{"sort", COMMAND_VALUE_REQUIRED, OPTION_SORT},
+	{"stable", COMMAND_VALUE_NONE, 's'},
+	{"temporary-directory", COMMAND_VALUE_REQUIRED, 'T'},
+	{"unique", COMMAND_VALUE_NONE, 'u'},
+	{"version", COMMAND_VALUE_NONE, OPTION_VERSION},
+	{"version-sort", COMMAND_VALUE_NONE, 'V'},
+	{"zero-terminated", COMMAND_VALUE_NONE, 'z'},
+	{NULL, 0, 0}
+};
 
 /* A key: where it starts and ends, and how it is compared. */
 struct key {
@@ -54,16 +107,19 @@ struct key {
 	int end_blanks;			/* b on the end */
 };
 
-/* One line of input. */
+/* One line of input, and where it was in the input (for -s). */
 struct line {
 	char *text;
 	size_t length;
+	size_t order;
 };
 
 /* The options, the keys and the lines. */
 struct sort {
 	int check;		/* -c: 1, -C: 2 */
 	int unique;
+	int stable;		/* -s: no last-resort comparison */
+	int delimiter;		/* the end of a line: newline, or NUL (-z) */
 	int separator;		/* -t, or -1 for blanks */
 	int flags;		/* the global modifiers */
 	const char *output;
@@ -84,6 +140,10 @@ struct span {
 static struct sort *sorting;
 
 static int read_options(int argc, char **argv, struct sort *sort);
+static void apply_option(struct sort *sort, int code, const char *value);
+static void apply_separator(struct sort *sort, const char *value);
+static void apply_sort_word(struct sort *sort, const char *word);
+static void apply_check_word(struct sort *sort, const char *word);
 static int modifier_flag(char letter);
 static void parse_key(struct sort *sort, const char *text);
 static const char *parse_position(const char *cursor, unsigned long *field, unsigned long *character, int *flags, int *blanks);
@@ -98,6 +158,19 @@ static size_t field_end(const struct sort *sort, const struct line *line, size_t
 static size_t skip_blanks(const struct line *line, size_t position, size_t end);
 static int compare_spans(struct span left, struct span right, int flags);
 static int compare_text(struct span left, struct span right, int flags);
+static int compare_version(struct span left, struct span right);
+static int version_dots(struct span span);
+static size_t version_prefix(struct span span);
+static int compare_version_part(const char *left, size_t left_length, const char *right, size_t right_length);
+static int version_order(const char *text, size_t position, size_t length);
+static int compare_human(struct span left, struct span right);
+static int unit_order(struct span span);
+static int compare_general(struct span left, struct span right);
+static int general_value(struct span span, double *value);
+static int compare_month(struct span left, struct span right);
+static int month_number(struct span span);
+static int is_digit(char value);
+static int is_letter(char value);
 static int compare_numbers(struct span left, struct span right);
 static int number_parts(struct span span, int *negative, const char **integer, size_t *integer_length, const char **fraction, size_t *fraction_length);
 static int compare_magnitudes(const char *left_integer, size_t left_integer_length, const char *left_fraction, size_t left_fraction_length, const char *right_integer, size_t right_integer_length, const char *right_fraction, size_t right_fraction_length);
@@ -120,6 +193,7 @@ main(
 	static struct sort sort;
 	FILE *stream;
 	const char *name;
+	int count;
 	int first;
 	int index;
 	int compare;
@@ -128,12 +202,15 @@ main(
 	/* The options; the comparison reads them through sorting. */
 	memset(&sort, 0, sizeof(sort));
 	sort.separator = -1;
-	first = read_options(argc, argv, &sort);
+	sort.delimiter = '\n';
+	count = read_options(argc, argv, &sort);
+	first = 1;
+	argc = first + count;
 	sorting = &sort;
 
 	/* Every input, whole; standard input when there is none. */
 	name = "-";
-	if (first >= argc)
+	if (count == 0)
 		read_input(&sort, stdin);
 	for (index = first; index < argc; index++) {
 		name = argv[index];
@@ -165,89 +242,190 @@ main(
 	return 0;
 }
 
-/* Reads the options; returns the index of the first operand. */
+/*
+ * Reads the options; returns the number of operands, which are left in
+ * argv from argv[1] on.
+ */
 static int
 read_options(
 	int argc,
 	char **argv,
 	struct sort *sort)
 {
-	const char *word;
-	const char *letter;
-	const char *argument;
-	int index;
-	int flag;
+	struct command_options scan;
+	int code;
 
-	/* Each option word. */
-	for (index = 1; index < argc; index++) {
-		/* An operand, or - alone, ends the options; so does --. */
-		word = argv[index];
-		if (word[0] != '-' || word[1] == '\0')
+	/* The scan of the command line. */
+	memset(&scan, 0, sizeof(scan));
+	scan.argc = argc;
+	scan.argv = argv;
+	scan.program = "sort";
+	scan.letters = "bdfghiMnrVcCmsuzk:o:t:S:T:";
+	scan.names = sort_long_options;
+	command_options_start(&scan);
+
+	/* Each option in turn. */
+	for (;;) {
+		code = command_options_next(&scan);
+		if (code == COMMAND_OPTION_END)
 			break;
-		if (word[1] == '-' && word[2] == '\0')
-			return index + 1;
-
-		/* Each letter of the word. */
-		for (letter = word + 1; *letter != '\0'; letter++) {
-			/* The modifiers that apply to every key. */
-			flag = modifier_flag(*letter);
-			if (flag != 0) {
-				sort->flags |= flag;
-				continue;
-			}
-
-			/* Letters that take nothing. */
-			if (*letter == 'c' || *letter == 'C') {
-				sort->check = 1;
-				if (*letter == 'C')
-					sort->check = 2;
-				continue;
-			}
-
-			/* -u keeps one of equal lines. */
-			if (*letter == 'u') {
-				sort->unique = 1;
-				continue;
-			}
-
-			/* -m is taken as a plain sort; the rest take an argument. */
-			if (*letter == 'm')
-				continue;
-			if (*letter != 'o' && *letter != 't' && *letter != 'k')
-				usage();
-
-			/* -o, -t and -k take the rest of the word or the next. */
-			argument = letter + 1;
-			if (*argument == '\0') {
-				if (index + 1 >= argc)
-					usage();
-				index++;
-				argument = argv[index];
-			}
-
-			/* -o names the output, and -t the field separator. */
-			if (*letter == 'o')
-				sort->output = argument;
-			if (*letter == 't') {
-				if (argument[0] == '\0' || argument[1] != '\0') {
-					fprintf(stderr, "sort: multi-character "
-						"tab '%s'\n", argument);
-					exit(2);
-				}
-
-				/* The separator. */
-				sort->separator = (unsigned char)argument[0];
-			}
-
-			/* -k adds a key. */
-			if (*letter == 'k')
-				parse_key(sort, argument);
-			break;
-		}
+		if (code == COMMAND_OPTION_ERROR)
+			usage();
+		apply_option(sort, code, scan.value);
 	}
 
-	/* Succeeded: the first operand. */
-	return index;
+	/* Succeeded: the operands follow argv[0]. */
+	return scan.operand_count;
+}
+
+/* Applies one option. */
+static void
+apply_option(
+	struct sort *sort,
+	int code,
+	const char *value)
+{
+	int flag;
+
+	/* The modifiers that apply to every key. */
+	flag = modifier_flag((char)code);
+	if (code < 256 && flag != 0) {
+		sort->flags |= flag;
+		return;
+	}
+
+	/* The option of its code. */
+	switch (code) {
+	case 'c':
+		sort->check = 1;
+		break;
+	case 'C':
+		sort->check = 2;
+		break;
+	case OPTION_CHECK:
+		apply_check_word(sort, value);
+		break;
+	case 'u':
+		sort->unique = 1;
+		break;
+	case 's':
+		sort->stable = 1;
+		break;
+	case 'z':
+		sort->delimiter = '\0';
+		break;
+	case 'o':
+		sort->output = value;
+		break;
+	case 't':
+		apply_separator(sort, value);
+		break;
+	case 'k':
+		parse_key(sort, value);
+		break;
+	case OPTION_SORT:
+		apply_sort_word(sort, value);
+		break;
+	case 'm':
+	case 'S':
+	case 'T':
+	case OPTION_IGNORED:
+		/* -m is a plain sort; memory, temporary files and threads are sort's own. */
+		break;
+	case OPTION_VERSION:
+		printf("sort (zedBSD) 1.0\n");
+		exit(0);
+	case OPTION_HELP:
+		usage();
+		break;
+	default:
+		usage();
+	}
+}
+
+/* Sets the field separator of -t, which is one character. */
+static void
+apply_separator(
+	struct sort *sort,
+	const char *value)
+{
+	/* One character only. */
+	if (value[0] == '\0' || value[1] != '\0') {
+		fprintf(stderr, "sort: multi-character tab '%s'\n", value);
+		exit(2);
+	}
+
+	/* The separator. */
+	sort->separator = (unsigned char)value[0];
+}
+
+/* Applies --sort=WORD, another name for a type. */
+static void
+apply_sort_word(
+	struct sort *sort,
+	const char *word)
+{
+	int differs;
+
+	/* Each word and its type. */
+	differs = strcmp(word, "general-numeric");
+	if (differs == 0) {
+		sort->flags |= KEY_GENERAL;
+		return;
+	}
+
+	/* human-numeric. */
+	differs = strcmp(word, "human-numeric");
+	if (differs == 0) {
+		sort->flags |= KEY_HUMAN;
+		return;
+	}
+
+	/* month. */
+	differs = strcmp(word, "month");
+	if (differs == 0) {
+		sort->flags |= KEY_MONTH;
+		return;
+	}
+
+	/* numeric. */
+	differs = strcmp(word, "numeric");
+	if (differs == 0) {
+		sort->flags |= KEY_NUMERIC;
+		return;
+	}
+
+	/* version. */
+	differs = strcmp(word, "version");
+	if (differs == 0) {
+		sort->flags |= KEY_VERSION;
+		return;
+	}
+
+	/* Any other word. */
+	fprintf(stderr, "sort: invalid argument '%s' for '--sort'\n", word);
+	exit(2);
+}
+
+/* Applies --check[=WORD]: quiet and silent are -C, the rest -c. */
+static void
+apply_check_word(
+	struct sort *sort,
+	const char *word)
+{
+	int quiet;
+	int silent;
+
+	/* No word, or diagnose-first: -c. */
+	sort->check = 1;
+	if (word == NULL)
+		return;
+
+	/* quiet or silent: -C. */
+	quiet = strcmp(word, "quiet");
+	silent = strcmp(word, "silent");
+	if (quiet == 0 || silent == 0)
+		sort->check = 2;
 }
 
 /* Returns the flag of a modifier letter, or 0 when it is none. */
@@ -269,6 +447,14 @@ modifier_flag(
 		return KEY_NUMERIC;
 	case 'r':
 		return KEY_REVERSE;
+	case 'V':
+		return KEY_VERSION;
+	case 'h':
+		return KEY_HUMAN;
+	case 'g':
+		return KEY_GENERAL;
+	case 'M':
+		return KEY_MONTH;
 	default:
 		break;
 	}
@@ -386,10 +572,10 @@ read_input(
 	length = 0;
 	capacity = 0;
 	for (;;) {
-		/* The next byte; a newline or the end ends a line. */
+		/* The next byte; a newline (NUL with -z) or the end ends a line. */
 		value = getc(stream);
-		if (value == EOF || value == '\n') {
-			if (value == '\n' || length > 0)
+		if (value == EOF || value == sort->delimiter) {
+			if (value == sort->delimiter || length > 0)
 				add_line(sort, text, length);
 			length = 0;
 			if (value == EOF)
@@ -435,6 +621,7 @@ add_line(
 		memcpy(line->text, text, length);
 	line->text[length] = '\0';
 	line->length = length;
+	line->order = sort->line_count;
 	sort->line_count++;
 }
 
@@ -456,6 +643,15 @@ compare_lines(
 	result = compare_keys(sorting, a, b);
 	if (result != 0 || sorting->unique)
 		return result;
+
+	/* -s: equal keys keep the order of the input. */
+	if (sorting->stable) {
+		if (a->order < b->order)
+			return -1;
+		if (a->order > b->order)
+			return 1;
+		return 0;
+	}
 
 	/* The whole line as a last resort, reversed with a global -r. */
 	result = compare_whole(a, b);
@@ -676,9 +872,17 @@ compare_spans(
 {
 	int result;
 
-	/* Numeric or text. */
+	/* Numeric, one of GNU's types, or text. */
 	if ((flags & KEY_NUMERIC) != 0)
 		result = compare_numbers(left, right);
+	else if ((flags & KEY_HUMAN) != 0)
+		result = compare_human(left, right);
+	else if ((flags & KEY_GENERAL) != 0)
+		result = compare_general(left, right);
+	else if ((flags & KEY_MONTH) != 0)
+		result = compare_month(left, right);
+	else if ((flags & KEY_VERSION) != 0)
+		result = compare_version(left, right);
 	else
 		result = compare_text(left, right, flags);
 
@@ -905,6 +1109,464 @@ compare_magnitudes(
 	return 0;
 }
 
+/*
+ * Compares two versions (GNU's V), as GNU sort does: a name's suffixes
+ * (such as .tar.gz) are left out at first; runs of digits compare as
+ * numbers, and other characters one by one, letters before other
+ * characters and ~ before anything, even the end.  A name that starts with
+ * a dot comes first.
+ */
+static int
+compare_version(
+	struct span left,
+	struct span right)
+{
+	size_t left_prefix;
+	size_t right_prefix;
+	int left_dots;
+	int right_dots;
+	int result;
+
+	/* An empty version comes first. */
+	if (left.length == 0 && right.length == 0)
+		return 0;
+	if (left.length == 0)
+		return -1;
+	if (right.length == 0)
+		return 1;
+
+	/* A hidden name (a leading dot) comes before others. */
+	if (left.text[0] == '.' && right.text[0] != '.')
+		return -1;
+	if (left.text[0] != '.' && right.text[0] == '.')
+		return 1;
+
+	/* Among hidden names . comes first, then .. . */
+	if (left.text[0] == '.') {
+		left_dots = version_dots(left);
+		right_dots = version_dots(right);
+		if (left_dots != right_dots)
+			return right_dots - left_dots;
+	}
+
+	/* The names without their suffixes. */
+	left_prefix = version_prefix(left);
+	right_prefix = version_prefix(right);
+	result = compare_version_part(left.text, left_prefix, right.text,
+				      right_prefix);
+	if (result != 0)
+		return result;
+
+	/* Without suffixes, the first comparison was of the whole names. */
+	if (left_prefix == left.length && right_prefix == right.length)
+		return 0;
+
+	/* Succeeded: the whole names. */
+	result = compare_version_part(left.text, left.length, right.text,
+				      right.length);
+	return result;
+}
+
+/* Returns 2 for the name ., 1 for .., and 0 for any other name. */
+static int
+version_dots(
+	struct span span)
+{
+	/* . */
+	if (span.length == 1U && span.text[0] == '.')
+		return 2;
+
+	/* .. */
+	if (span.length == 2U && span.text[0] == '.' && span.text[1] == '.')
+		return 1;
+
+	/* Any other name. */
+	return 0;
+}
+
+/*
+ * Returns the length of a name without its suffixes: the dot-words at its
+ * end that start with a letter or ~ (such as .tar.gz), never the first
+ * character.
+ */
+static size_t
+version_prefix(
+	struct span span)
+{
+	size_t prefix;
+	size_t position;
+	int letter;
+	int digit;
+
+	/* Each character; a run of suffixes that reaches the end is cut. */
+	prefix = 0;
+	position = 0;
+	while (position < span.length) {
+		/* The character is part of the name. */
+		position++;
+		prefix = position;
+
+		/* Suffixes that follow: .word, while they last. */
+		while (position + 1U < span.length && span.text[position] == '.') {
+			letter = is_letter(span.text[position + 1U]);
+			if (!letter && span.text[position + 1U] != '~')
+				break;
+
+			/* The word of the suffix: letters, digits and ~. */
+			position += 2U;
+			while (position < span.length) {
+				letter = is_letter(span.text[position]);
+				digit = is_digit(span.text[position]);
+				if (!letter && !digit && span.text[position] != '~')
+					break;
+				position++;
+			}
+		}
+	}
+
+	/* Succeeded: where the suffixes start. */
+	return prefix;
+}
+
+/*
+ * Compares two parts of versions: the characters before each run of digits
+ * one by one, then the runs as numbers.
+ */
+static int
+compare_version_part(
+	const char *left,
+	size_t left_length,
+	const char *right,
+	size_t right_length)
+{
+	size_t a;
+	size_t b;
+	int first_difference;
+	int left_order;
+	int right_order;
+	int digit_a;
+	int digit_b;
+
+	/* Each pair of a text run and a number run. */
+	a = 0;
+	b = 0;
+	while (a < left_length || b < right_length) {
+		/* The characters up to the digits, in version order. */
+		for (;;) {
+			digit_a = 1;
+			if (a < left_length)
+				digit_a = is_digit(left[a]);
+			digit_b = 1;
+			if (b < right_length)
+				digit_b = is_digit(right[b]);
+			if (digit_a && digit_b)
+				break;
+
+			/* A character that orders differently decides. */
+			left_order = version_order(left, a, left_length);
+			right_order = version_order(right, b, right_length);
+			if (left_order != right_order)
+				return left_order - right_order;
+			a++;
+			b++;
+		}
+
+		/* The numbers, without their leading zeros. */
+		while (a < left_length && left[a] == '0')
+			a++;
+		while (b < right_length && right[b] == '0')
+			b++;
+
+		/* The digits side by side; the first difference counts. */
+		first_difference = 0;
+		for (;;) {
+			digit_a = 0;
+			if (a < left_length)
+				digit_a = is_digit(left[a]);
+			digit_b = 0;
+			if (b < right_length)
+				digit_b = is_digit(right[b]);
+			if (!digit_a || !digit_b)
+				break;
+			if (first_difference == 0)
+				first_difference = left[a] - right[b];
+			a++;
+			b++;
+		}
+
+		/* A longer number is larger. */
+		if (digit_a)
+			return 1;
+		if (digit_b)
+			return -1;
+
+		/* As long: the first differing digit. */
+		if (first_difference != 0)
+			return first_difference;
+	}
+
+	/* Equal. */
+	return 0;
+}
+
+/*
+ * Returns where a character of a version sorts: the end before letters,
+ * ~ before the end, letters by their code, other characters after all
+ * letters.  A digit is 0 (the text run is over).
+ */
+static int
+version_order(
+	const char *text,
+	size_t position,
+	size_t length)
+{
+	int letter;
+	int digit;
+	unsigned char value;
+
+	/* The end. */
+	if (position >= length)
+		return -1;
+	value = (unsigned char)text[position];
+
+	/* A digit, a letter, a ~, or anything else. */
+	digit = is_digit((char)value);
+	if (digit)
+		return 0;
+	letter = is_letter((char)value);
+	if (letter)
+		return value;
+	if (value == '~')
+		return -2;
+
+	/* Anything else sorts after every letter. */
+	return value + 256;
+}
+
+/*
+ * Compares human numbers (GNU's h): the unit (none, K, M, G, T, P, E, Z,
+ * Y, R, Q) first, negative units before, then the numbers.
+ */
+static int
+compare_human(
+	struct span left,
+	struct span right)
+{
+	int left_unit;
+	int right_unit;
+	int result;
+
+	/* The units. */
+	left_unit = unit_order(left);
+	right_unit = unit_order(right);
+	if (left_unit != right_unit)
+		return left_unit - right_unit;
+
+	/* Succeeded: the same unit, so the numbers. */
+	result = compare_numbers(left, right);
+	return result;
+}
+
+/*
+ * Returns the order of a human number's unit: 0 for none, 1 for K and so
+ * on, negative for a negative number.
+ */
+static int
+unit_order(
+	struct span span)
+{
+	static const char units[] = "KMGTPEZYRQ";
+	const char *found;
+	size_t position;
+	int negative;
+	int blank;
+	int digit;
+	int order;
+
+	/* Leading blanks. */
+	position = 0;
+	while (position < span.length) {
+		blank = is_blank(span.text[position]);
+		if (!blank)
+			break;
+		position++;
+	}
+
+	/* The sign. */
+	negative = 0;
+	if (position < span.length && span.text[position] == '-') {
+		negative = 1;
+		position++;
+	}
+
+	/* The digits and a fraction. */
+	while (position < span.length) {
+		digit = is_digit(span.text[position]);
+		if (!digit && span.text[position] != '.')
+			break;
+		position++;
+	}
+
+	/* The unit after them (k is K). */
+	order = 0;
+	if (position < span.length && span.text[position] != '\0') {
+		found = strchr(units, span.text[position]);
+		if (span.text[position] == 'k')
+			found = units;
+		if (found != NULL)
+			order = (int)(found - units) + 1;
+	}
+
+	/* Succeeded: negative for a negative number. */
+	if (negative)
+		return -order;
+	return order;
+}
+
+/*
+ * Compares general numbers (GNU's g), read as floating point with an
+ * exponent; what is no number sorts before every number.
+ */
+static int
+compare_general(
+	struct span left,
+	struct span right)
+{
+	double left_value;
+	double right_value;
+	int left_number;
+	int right_number;
+
+	/* The values, where they are numbers. */
+	left_number = general_value(left, &left_value);
+	right_number = general_value(right, &right_value);
+
+	/* What is no number comes first. */
+	if (!left_number && !right_number)
+		return 0;
+	if (!left_number)
+		return -1;
+	if (!right_number)
+		return 1;
+
+	/* Succeeded: the values. */
+	if (left_value < right_value)
+		return -1;
+	if (left_value > right_value)
+		return 1;
+	return 0;
+}
+
+/* Reads a general number from the start of a span.  Returns 0 for none. */
+static int
+general_value(
+	struct span span,
+	double *value)
+{
+	char buffer[128];
+	char *end;
+	size_t length;
+
+	/* A copy that ends, as strtod needs. */
+	length = span.length;
+	if (length >= sizeof(buffer))
+		length = sizeof(buffer) - 1U;
+	memcpy(buffer, span.text, length);
+	buffer[length] = '\0';
+
+	/* The number; a NaN is no number. */
+	*value = strtod(buffer, &end);
+	if (end == buffer)
+		return 0;
+	if (*value != *value)
+		return 0;
+
+	/* Succeeded. */
+	return 1;
+}
+
+/*
+ * Compares month names (GNU's M): JAN to DEC in any case, after blanks;
+ * what is no month comes first.
+ */
+static int
+compare_month(
+	struct span left,
+	struct span right)
+{
+	int left_month;
+	int right_month;
+
+	/* The months, 0 for none. */
+	left_month = month_number(left);
+	right_month = month_number(right);
+
+	/* Succeeded: in the order of the year. */
+	return left_month - right_month;
+}
+
+/* Returns the month (1 to 12) a span starts with, or 0. */
+static int
+month_number(
+	struct span span)
+{
+	static const char months[] = "JANFEBMARAPRMAYJUNJULAUGSEPOCTNOVDEC";
+	char name[3];
+	size_t position;
+	size_t index;
+	int blank;
+	int same;
+
+	/* Leading blanks. */
+	position = 0;
+	while (position < span.length) {
+		blank = is_blank(span.text[position]);
+		if (!blank)
+			break;
+		position++;
+	}
+
+	/* Three letters, in upper case. */
+	if (span.length - position < 3U)
+		return 0;
+	for (index = 0; index < 3U; index++)
+		name[index] = (char)fold((unsigned char)span.text[position + index], KEY_FOLD);
+
+	/* The month they name. */
+	for (index = 0; index < 12U; index++) {
+		same = memcmp(name, months + index * 3U, 3U);
+		if (same == 0)
+			return (int)index + 1;
+	}
+
+	/* No month. */
+	return 0;
+}
+
+/* Reports whether a character is a decimal digit. */
+static int
+is_digit(
+	char value)
+{
+	/* 0 to 9. */
+	if (value >= '0' && value <= '9')
+		return 1;
+	return 0;
+}
+
+/* Reports whether a character is an ASCII letter. */
+static int
+is_letter(
+	char value)
+{
+	/* a to z and A to Z. */
+	if (value >= 'a' && value <= 'z')
+		return 1;
+	if (value >= 'A' && value <= 'Z')
+		return 1;
+	return 0;
+}
+
 /* Reports whether d or i makes a character not count. */
 static int
 ignored(
@@ -1015,10 +1677,10 @@ write_output(
 				continue;
 		}
 
-		/* The line and its newline. */
+		/* The line and its newline (NUL with -z). */
 		fwrite(sort->lines[index].text, 1, sort->lines[index].length,
 		       stream);
-		putc('\n', stream);
+		putc(sort->delimiter, stream);
 	}
 
 	/* The output is done with. */
@@ -1051,8 +1713,9 @@ usage(
 	void)
 {
 	/* The forms. */
-	fprintf(stderr, "usage: sort [-m] [-o output] [-bdfinru] [-t char] "
-		"[-k keydef]... [file...]\n"
-		"       sort -c|-C [-bdfinru] [-t char] [-k keydef] [file]\n");
+	fprintf(stderr, "usage: sort [-m] [-o output] [-bdfghiMnrsuVz] "
+		"[-t char] [-k keydef]... [file...]\n"
+		"       sort -c|-C [-bdfghiMnrsuVz] [-t char] [-k keydef] "
+		"[file]\n");
 	exit(2);
 }

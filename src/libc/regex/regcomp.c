@@ -870,8 +870,8 @@ parse_atom(tre_parse_ctx_t *ctx, const char *s)
 			}
 			/* fallthrough */
 		default:
-			if (!ere && (unsigned)*s - '1' < 9) {
-				/* back reference */
+			if ((unsigned)*s - '1' < 9) {
+				/* back reference (in an ERE too, as in glibc) */
 				int val = *s - '0';
 				if (!(ctx->backref_ok & 1 << val))
 					return REG_ESUBREG;
