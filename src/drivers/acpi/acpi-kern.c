@@ -114,6 +114,7 @@ static unsigned event_work;
 
 static int start_events(void);
 static int start_global_lock(void);
+static void start_ecdt(void);
 static void sci_interrupt(int irq, kern_irq_ack_t acknowledge, void *argument);
 static void event_thread(void *argument);
 static void power_button(enum drv_acpi_fixed_event event, void *argument);
@@ -176,6 +177,7 @@ drv_acpi_attach(void)
 	error = drv_acpi_initialize_objects();
 	if (error != 0)
 		kern_logf("acpi: object preparation failed (error %d)\n", error);
+	start_ecdt();
 	error = drv_acpi_region_connect_all();
 	if (error != 0)
 		kern_logf("acpi: _REG failed (error %d)\n", error);
@@ -509,6 +511,28 @@ start_events(void)
 	/* Succeeded. */
 	kern_logf("acpi: SCI on IRQ %u\n", irq);
 	return 0;
+}
+
+/*
+ * Starts the EC of the ECDT, when firmware lists one, so that its _REG
+ * runs with the other spaces and _INI can reach it.
+ */
+static void
+start_ecdt(void)
+{
+	const uint8_t *ecdt;
+	size_t length;
+	int error;
+
+	/* Most firmware lists none. */
+	error = drv_acpi_firmware_find(&firmware, "ECDT", "", "", &ecdt, &length);
+	if (error != 0)
+		return;
+
+	/* Starts the EC; drv_acpi_ec_attach() adds its GPE later. */
+	error = drv_acpi_ec_ecdt(ecdt, length);
+	if (error != 0)
+		kern_logf("acpi: the ECDT's EC did not start (error %d)\n", error);
 }
 
 /*

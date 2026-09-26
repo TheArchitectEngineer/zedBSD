@@ -186,6 +186,7 @@ interpreter が OS に求めるもの。kernel は `acpi-kern.c`、host 試験�
 - SCI: FADT の `SCI_INT` を `hal_irq_register()` で受け、PM1 の status と GPE の status を port I/O で読む（level の GPE は `_Lxx` の後に clear）。
   AML の実行は割り込みの中でせず、kernel thread（`kthread_create`）で行う。
 - EC: ECDT か `PNP0C09` の device の `_CRS`（port 0x62/0x66 など）、EmbeddedControl の region の handler、SCI_EVT で `_Qxx`。
+  ECDT があれば `_REG` の前に handler を入れ（p015）、device の GPE は event を始めた後に足す。
 - 診断: kernel の中の namespace と評価を user から確かめる口。p013 で UAPI を足さない text の `/dev/acpi` にした（read で namespace の
   一覧、path を write すると続く read で評価の結果。出力は host の harness と同じ `acpi-text.c`）。起動の確認は `plan/tools/boot-test.sh`、機能の確認は guest の中の command をシリアルか SSH で。
 

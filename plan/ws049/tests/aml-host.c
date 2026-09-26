@@ -31,6 +31,8 @@
  *     --events        read the event hardware from the FADT (the firmware's,
  *                     or a simulated q35-like one) and enable the GPEs
  *     --ec            attach the Embedded Controller (PNP0C09)
+ *     --ecdt FILE     start the EC from an ECDT before _REG and _INI, as
+ *                     the kernel does when firmware lists one
  *     --ec-ram A=V    preset byte A of the simulated EC (repeatable)
  *     --gpe N         raise GPE N and handle the SCI (repeatable, in order)
  *     --power-button  press the fixed power button and handle the SCI
@@ -96,6 +98,7 @@ enum option_kind {
 	OPTION_SHARED_PCI,
 	OPTION_EVENTS,
 	OPTION_EC,
+	OPTION_ECDT,
 	OPTION_EC_RAM,
 	OPTION_GPE,
 	OPTION_POWER_BUTTON,
@@ -125,6 +128,7 @@ struct harness_options {
 	const char *notified[OPTION_LIST_MAX];
 	const char *dynamic[OPTION_LIST_MAX];
 	const char *firmware;
+	const char *ecdt;
 	unsigned table_count;
 	unsigned evaluation_count;
 	unsigned notified_count;
@@ -188,6 +192,7 @@ static const struct option_name option_names[] = {
 	{ "--shared-pci", OPTION_SHARED_PCI, 0 },
 	{ "--events", OPTION_EVENTS, 0 },
 	{ "--ec", OPTION_EC, 0 },
+	{ "--ecdt", OPTION_ECDT, 1 },
 	{ "--ec-ram", OPTION_EC_RAM, 1 },
 	{ "--gpe", OPTION_GPE, 1 },
 	{ "--power-button", OPTION_POWER_BUTTON, 0 },
@@ -257,6 +262,8 @@ static int install_notifications(const struct harness_options *options);
 static int run_main(void);
 static void print_sci(void);
 static int read_file(const char *path, uint8_t **data, size_t *length);
+static int start_ecdt(const char *path);
+static void preset_ec(const struct harness_options *options);
 static int load_file(const char *path);
 static int load_firmware(const char *description);
 static int read_memory(uint64_t address, void *buffer, size_t length, void *argument);
@@ -288,16 +295,24 @@ main(
 	if (error != 0)
 		return 2;
 
-	/* Installs the simulated spaces before any AML runs. */
+	/* Installs the simulated spaces and presets the EC before any AML runs. */
 	error = install_spaces(&options);
 	if (error != 0)
 		return 2;
+	preset_ec(&options);
 
 	/* Loads the tables and prepares their objects as the kernel does. */
 	status = load_tables(&options);
 	error = drv_acpi_initialize_objects();
 	if (error != 0)
 		fprintf(stderr, "initialize_objects: error %d\n", error);
+
+	/* Starts the EC an ECDT describes before _REG and _INI, as the kernel does. */
+	if (options.ecdt != NULL) {
+		error = start_ecdt(options.ecdt);
+		if (error != 0)
+			status = 1;
+	}
 
 	/* Connects the address spaces as the kernel does, when asked to. */
 	if (options.connect) {
@@ -752,6 +767,9 @@ parse_arguments(
 		case OPTION_FIRMWARE:
 			options->firmware = value;
 			break;
+		case OPTION_ECDT:
+			options->ecdt = value;
+			break;
 		default:
 			options->tables[options->table_count % OPTION_LIST_MAX] = value;
 			options->table_count++;
@@ -828,23 +846,7 @@ start_events(
 	uint8_t fadt[512];
 	const uint8_t *table;
 	size_t length;
-	unsigned index;
-	int address;
-	int value;
-	int fields;
 	int error;
-
-	/* Presets the EC's bytes first. */
-	for (index = 0; index < options->action_count; index++) {
-		/* Only the --ec-ram actions preset. */
-		if (options->action_kinds[index] != OPTION_EC_RAM)
-			continue;
-
-		/* Stores the byte an "address=value" names. */
-		fields = sscanf(options->actions[index], "%i=%i", &address, &value);
-		if (fields == 2)
-			hardware_ec_ram((uint8_t)address, (uint8_t)value);
-	}
 
 	/* Reads the event hardware. */
 	if (options->events) {
@@ -882,6 +884,57 @@ start_events(
 			fprintf(stderr, "ec: attach failed (error %d)\n", error);
 			return error;
 		}
+	}
+
+	/* Succeeded. */
+	return 0;
+}
+
+/* Presets the simulated EC's bytes the --ec-ram options name, before any AML runs. */
+static void
+preset_ec(
+	const struct harness_options *options)
+{
+	unsigned index;
+	int address;
+	int value;
+	int fields;
+
+	/* Stores each byte an "address=value" names. */
+	for (index = 0; index < options->action_count; index++) {
+		/* Only the --ec-ram actions preset. */
+		if (options->action_kinds[index] != OPTION_EC_RAM)
+			continue;
+
+		/* Stores the byte. */
+		fields = sscanf(options->actions[index], "%i=%i", &address, &value);
+		if (fields == 2)
+			hardware_ec_ram((uint8_t)address, (uint8_t)value);
+	}
+}
+
+/* Reads an ECDT and starts the EC it describes. */
+static int
+start_ecdt(
+	const char *path)
+{
+	uint8_t *data;
+	size_t length;
+	int error;
+
+	/* Reads the table. */
+	error = read_file(path, &data, &length);
+	if (error != 0) {
+		fprintf(stderr, "%s: cannot read\n", path);
+		return error;
+	}
+
+	/* Starts the EC from it; the EC keeps nothing of the table. */
+	error = drv_acpi_ec_ecdt(data, length);
+	free(data);
+	if (error != 0) {
+		fprintf(stderr, "ecdt: error %d\n", error);
+		return error;
 	}
 
 	/* Succeeded. */

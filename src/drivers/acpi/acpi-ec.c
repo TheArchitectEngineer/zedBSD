@@ -63,10 +63,24 @@
 #define RESOURCE_END		0x79U
 
 /*
+ * The ECDT fields (ACPI 6.5 table 5.123): the command/status and data
+ * registers as Generic Address Structures, the GPE, and the path of the
+ * EC device; and the GAS fields read.
+ */
+#define ECDT_EC_CONTROL		36U
+#define ECDT_EC_DATA		48U
+#define ECDT_GPE_BIT		64U
+#define ECDT_EC_ID		65U
+#define GAS_ADDRESS		4U
+#define GAS_SPACE_SYSTEM_IO	1U
+
+/*
  * The embedded controller the driver found.
  *
- * drv_acpi_ec_attach() fills it once; attached says it did.  The ports
- * are used only under the interpreter lock.
+ * drv_acpi_ec_ecdt() and drv_acpi_ec_attach() fill it; attached says
+ * the address space handler is installed, and from_ecdt that the ECDT
+ * installed it.  The ports are used and changed only under the
+ * interpreter lock.
  */
 static struct {
 	struct drv_acpi_node *device;
@@ -76,11 +90,14 @@ static struct {
 	uint8_t global_lock;
 	uint8_t has_gpe;
 	uint8_t attached;
+	uint8_t from_ecdt;
 } ec;
 
+static int attach_device(void);
+static uint64_t load_u64(const uint8_t *bytes);
 static int find_visitor(struct drv_acpi_node *node, unsigned depth, void *argument);
 static bool is_ec(struct drv_acpi_node *node);
-static int read_ports(struct drv_acpi_node *device);
+static int read_ports(struct drv_acpi_node *device, uint16_t *data, uint16_t *command);
 static int ec_region(const struct drv_acpi_region_access *access, uint64_t *value, void *argument);
 static void ec_gpe(unsigned gpe, void *argument);
 static int ec_transaction(uint8_t command, uint8_t address, bool has_address, bool write, uint8_t *data);
@@ -92,31 +109,159 @@ static uint8_t read_status(void);
 static void run_query(uint8_t query);
 
 /*
+ * Starts the embedded controller the ECDT describes, before the namespace
+ * is initialized (ACPI 6.5 section 5.2.16).
+ *
+ * Firmware lists the EC in the ECDT when _REG and _INI need its address
+ * space: the handler is installed now, so drv_acpi_region_connect_all()
+ * runs the EC's _REG with the other spaces and _INI can reach the EC.
+ * drv_acpi_ec_attach() later adds the device's GPE and queries.  It is
+ * called after the tables are loaded.
+ */
+int
+drv_acpi_ec_ecdt(
+	const uint8_t *ecdt,
+	size_t length)
+{
+	struct drv_acpi_node *device;
+	uint64_t control;
+	uint64_t data;
+	uint64_t value;
+	size_t index;
+	int error;
+
+	/* Refuses a table too short for its EC_ID, or one that is not the ECDT. */
+	if (ecdt == NULL || length < ECDT_EC_ID + 1U)
+		return EINVAL;
+	if (ecdt[0] != 'E' || ecdt[1] != 'C' || ecdt[2] != 'D' || ecdt[3] != 'T')
+		return EINVAL;
+
+	/* The ports must be system I/O ports. */
+	control = load_u64(ecdt + ECDT_EC_CONTROL + GAS_ADDRESS);
+	data = load_u64(ecdt + ECDT_EC_DATA + GAS_ADDRESS);
+	if (ecdt[ECDT_EC_CONTROL] != GAS_SPACE_SYSTEM_IO || ecdt[ECDT_EC_DATA] != GAS_SPACE_SYSTEM_IO)
+		return ENOTSUP;
+	if (control == 0 || data == 0 || control > 0xffffU || data > 0xffffU)
+		return EINVAL;
+
+	/* The EC_ID must end within the table. */
+	for (index = ECDT_EC_ID; index < length; index++) {
+		/* Stops at its terminator. */
+		if (ecdt[index] == 0)
+			break;
+	}
+
+	/* Refuses an EC_ID without its terminator. */
+	if (index == length)
+		return EINVAL;
+
+	/* Takes the ports and the GPE. */
+	ec.data_port = (uint16_t)data;
+	ec.command_port = (uint16_t)control;
+	ec.gpe = ecdt[ECDT_GPE_BIT];
+	ec.has_gpe = 1;
+	ec.from_ecdt = 1;
+
+	/* Finds the device EC_ID names, whose _GLK says whether the Global Lock guards it. */
+	error = drv_acpi_lookup(NULL, (const char *)ecdt + ECDT_EC_ID, &device);
+	if (error == 0) {
+		ec.device = device;
+		error = drv_acpi_evaluate_integer(device, "_GLK", &value);
+		if (error == 0 && value != 0)
+			ec.global_lock = 1;
+	}
+
+	/* Installs the address space; its _REG runs with the others. */
+	ec.attached = 1;
+	error = drv_acpi_region_install(DRV_ACPI_SPACE_EMBEDDED_CONTROL, ec_region, NULL);
+	if (error != 0) {
+		ec.attached = 0;
+		ec.from_ecdt = 0;
+		return error;
+	}
+
+	/* Succeeded. */
+	drv_acpi_os_log("ACPI: EC from the ECDT at ports 0x%x/0x%x, GPE 0x%x\n", ec.data_port, ec.command_port, ec.gpe);
+	return 0;
+}
+
+/*
  * Finds the embedded controller in the namespace, installs the handler of
  * its address space (which runs its _REG) and the handler of its GPE.
+ *
+ * After drv_acpi_ec_ecdt() the space is already there; the device's _CRS
+ * and _GPE are preferred when they differ from the ECDT, as firmware
+ * whose ECDT disagrees with its namespace is known.
  */
 int
 drv_acpi_ec_attach(void)
 {
+	struct drv_acpi_thread storage;
+	struct drv_acpi_thread *thread;
+	int error;
+
+	/* Holds the interpreter, so that no AML reaches the EC while it changes. */
+	thread = drv_acpi_enter(&storage, __builtin_frame_address(0));
+	error = attach_device();
+	drv_acpi_leave(thread);
+	if (error != 0)
+		return error;
+
+	/* Installs the GPE handler, which drains the EC's queries. */
+	if (ec.has_gpe && ec.device != NULL) {
+		error = drv_acpi_gpe_install(ec.gpe, true, ec_gpe, NULL);
+		if (error != 0)
+			drv_acpi_os_log("ACPI: the EC's GPE 0x%x cannot be handled (error %d)\n", ec.gpe, error);
+	}
+
+	/* Succeeded. */
+	drv_acpi_os_log("ACPI: EC at ports 0x%x/0x%x, GPE 0x%x\n", ec.data_port, ec.command_port, ec.gpe);
+	return 0;
+}
+
+/* Finds the EC's device and reads its ports, GPE and _GLK; installs the space unless the ECDT did. */
+static int
+attach_device(void)
+{
 	struct drv_acpi_node *found;
+	uint16_t data;
+	uint16_t command;
 	uint64_t value;
 	int error;
 
-	/* Finds the PNP0C09 device. */
+	/* Finds the PNP0C09 device, or keeps the one the ECDT named. */
 	found = NULL;
 	drv_acpi_walk(NULL, find_visitor, &found);
 	if (found == NULL)
+		found = ec.device;
+	if (found == NULL && !ec.from_ecdt)
 		return ENODEV;
+
+	/* An EC only the ECDT describes keeps its space, without queries. */
+	if (found == NULL) {
+		drv_acpi_os_log("ACPI: the ECDT's EC has no device; no queries\n");
+		return 0;
+	}
+
+	/* The device is the EC's from now on. */
 	ec.device = found;
 
-	/* Reads its ports from _CRS. */
-	error = read_ports(found);
-	if (error != 0) {
+	/* Reads its ports from _CRS; an ECDT's stay when _CRS gives none. */
+	error = read_ports(found, &data, &command);
+	if (error != 0 && !ec.from_ecdt) {
 		drv_acpi_os_log("ACPI: the EC's _CRS gives no ports (error %d)\n", error);
 		return error;
 	}
 
-	/* Reads its GPE, and whether the Global Lock guards it. */
+	/* Takes _CRS's ports, noting when they differ from the ECDT's. */
+	if (error == 0) {
+		if (ec.from_ecdt && (data != ec.data_port || command != ec.command_port))
+			drv_acpi_os_log("ACPI: the ECDT's EC ports differ from _CRS; _CRS is used\n");
+		ec.data_port = data;
+		ec.command_port = command;
+	}
+
+	/* Reads its GPE, which the ECDT may have given already. */
 	error = drv_acpi_evaluate_integer(found, "_GPE", &value);
 	if (error == 0) {
 		ec.gpe = (unsigned)value;
@@ -127,22 +272,18 @@ drv_acpi_ec_attach(void)
 	error = drv_acpi_evaluate_integer(found, "_GLK", &value);
 	if (error == 0 && value != 0)
 		ec.global_lock = 1;
-	ec.attached = 1;
+
+	/* The ECDT installed the space already. */
+	if (ec.from_ecdt)
+		return 0;
 
 	/* Installs the address space; the EC's _REG runs now. */
+	ec.attached = 1;
 	error = drv_acpi_region_install(DRV_ACPI_SPACE_EMBEDDED_CONTROL, ec_region, NULL);
 	if (error != 0)
 		return error;
 
-	/* Installs the GPE handler, which drains the EC's queries. */
-	if (ec.has_gpe) {
-		error = drv_acpi_gpe_install(ec.gpe, true, ec_gpe, NULL);
-		if (error != 0)
-			drv_acpi_os_log("ACPI: the EC's GPE 0x%x cannot be handled (error %d)\n", ec.gpe, error);
-	}
-
 	/* Succeeded. */
-	drv_acpi_os_log("ACPI: EC at ports 0x%x/0x%x, GPE 0x%x\n", ec.data_port, ec.command_port, ec.gpe);
 	return 0;
 }
 
@@ -209,7 +350,9 @@ is_ec(
 /* Reads the data port and the command port from the EC's _CRS. */
 static int
 read_ports(
-	struct drv_acpi_node *device)
+	struct drv_acpi_node *device,
+	uint16_t *data,
+	uint16_t *command)
 {
 	struct drv_acpi_object *resources;
 	uint16_t ports[2];
@@ -264,9 +407,26 @@ read_ports(
 		return ENOENT;
 
 	/* Succeeded. */
-	ec.data_port = ports[0];
-	ec.command_port = ports[1];
+	*data = ports[0];
+	*command = ports[1];
 	return 0;
+}
+
+/* Reads a little-endian 64-bit value. */
+static uint64_t
+load_u64(
+	const uint8_t *bytes)
+{
+	uint64_t value;
+	unsigned index;
+
+	/* Assembles it from its highest byte down. */
+	value = 0;
+	for (index = 8; index != 0; index--)
+		value = value << 8 | bytes[index - 1U];
+
+	/* Reports it. */
+	return value;
 }
 
 /* Reads or writes the EC's address space for an operation region, a byte at a time. */

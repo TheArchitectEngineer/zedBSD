@@ -283,6 +283,11 @@ drv_acpi_global_lock_attach(
 	volatile uint32_t *word);
 
 int
+drv_acpi_ec_ecdt(
+	const uint8_t *ecdt,
+	size_t length);
+
+int
 drv_acpi_ec_attach(void);
 
 #endif
