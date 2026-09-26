@@ -1,0 +1,34 @@
+# ws045-p008: config/ci/config-amd64.mk with the base userland only: no
+# external packages (clang, openssh, openssl, libcxx, remacs), no firmware
+# downloads and no desktop programs, so that an image with the WS045
+# utilities builds in the worktree without the package caches, for the boot
+# test.
+ZEDBSD_MENU_VERSION := 3
+ZEDBSD_PLATFORM := amd64
+ZEDBSD_ARCHITECTURE := amd64
+ZEDBSD_BOARD := pcat
+ZEDBSD_VARIANT := native
+
+CONFIG_KERNEL_TEST_CHECKPOINTS := n
+CONFIG_BUF_CACHE_KIB := 0
+CONFIG_GPU_JOB_RESERVATION_MS := 10000
+CONFIG_GPU_JOB_EXECUTION_MS := 60000
+CONFIG_GPU_JOB_STOP_MS := 10000
+CONFIG_GPU_CONTROL_MS := 10000
+CONFIG_DRIVER_NE2000 := y
+CONFIG_DRIVER_PCI_UHCI := y
+CONFIG_DRIVER_PCI_EHCI := y
+CONFIG_DRIVER_PCI_XHCI := y
+CONFIG_DRIVER_PCI_NVME := y
+CONFIG_DRIVER_PCI_INTEL_AX211 := y
+CONFIG_DRIVER_PCI_VENUS := y
+CONFIG_DRIVER_PCI_I915 := y
+CONFIG_DRIVER_USB_STORAGE := y
+CONFIG_DRIVER_USB_CDC_NCM := y
+CONFIG_DRIVER_USB_CDC_ECM := y
+CONFIG_DRIVER_USB_HID := y
+CONFIG_DRIVER_USB_RTL8822BU := y
+CONFIG_DRIVER_GRAPHICS := y
+CONFIG_DRIVER_LGY98 := n
+
+ZEDBSD_USER_PROGRAMS := admin ar at awk basename batch bc blkid cal cat cflow chgrp chmod chown cksum cmp comm compress cp crontab csplit curses cut cxref date dd delta df dhcpc diff dirname diskpart dmesg du ed expand expr fetch file find fmt fold fuser gencat get getconf gettext grep halt head host hostname iconv id ifconfig infocmp ipcrm ipcs join kill less link ln locale localedef logger login logname lp lpr ls m4 mailx mesg mkdir mkfifo mkfs mkswap more msgfmt mv newgrp ngettext nice nl nm nohup nslookup ntpdate od paste patch pathchk pax ping poweroff pr prs ps readlink realpath reboot renice rm rmdel rmdir route sact sccs sed service shutdown sleep sort split stat strings stty swapoff swapon sync tabs tail talk tee terminfo-extra terminfo tic time timeout top touch tput tr truncate tsort tty uname uncompress unexpand unget uniq unlink uudecode uuencode val wc what lspci lsusb which who whoami wifi write xargs zcat echo false printf test true seq tac egrep fgrep env make

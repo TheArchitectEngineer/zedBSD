@@ -17,12 +17,42 @@
  * before comparing.  Each group is written once; -d writes only groups of
  * more than one line, -u only groups of one, and -c puts the size of the
  * group before the line (padded to 7, as GNU uniq does).
+ *
+ * GNU's extensions: -i compares ignoring case, -w N compares at most N
+ * characters, -z reads and writes lines that end with a NUL byte, the long
+ * options, and options after operands (unless POSIXLY_CORRECT is set).
  */
+
+#include "userland/base/common/command.h"
 
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* The codes of the long options that have no letter. */
+#define OPTION_HELP	256
+#define OPTION_VERSION	257
+
+/*
+ * The options written in full.
+ *
+ * The table is read by the scan of the command line only; the letter a
+ * long option shares its code with makes the two forms one case.
+ */
+static const struct command_long_option uniq_long_options[] = {
+	{"check-chars", COMMAND_VALUE_REQUIRED, 'w'},
+	{"count", COMMAND_VALUE_NONE, 'c'},
+	{"help", COMMAND_VALUE_NONE, OPTION_HELP},
+	{"ignore-case", COMMAND_VALUE_NONE, 'i'},
+	{"repeated", COMMAND_VALUE_NONE, 'd'},
+	{"skip-chars", COMMAND_VALUE_REQUIRED, 's'},
+	{"skip-fields", COMMAND_VALUE_REQUIRED, 'f'},
+	{"unique", COMMAND_VALUE_NONE, 'u'},
+	{"version", COMMAND_VALUE_NONE, OPTION_VERSION},
+	{"zero-terminated", COMMAND_VALUE_NONE, 'z'},
+	{NULL, 0, 0}
+};
 
 /* The options. */
 struct options {
@@ -31,6 +61,12 @@ struct options {
 	int unique;
 	unsigned long fields;
 	unsigned long characters;
+
+	/* GNU's: case ignored, the characters compared (-w), the end of a line. */
+	int ignore_case;
+	int limited;
+	unsigned long check;
+	int end;
 };
 
 /* A line being read. */
@@ -42,7 +78,8 @@ struct line {
 
 static int read_options(int argc, char **argv, struct options *options);
 static unsigned long parse_number(const char *text);
-static int read_line(FILE *stream, struct line *line);
+static int read_line(FILE *stream, struct line *line, int end);
+static int same_bytes(const char *left, const char *right, size_t length, int ignore_case);
 static size_t compared_part(const struct options *options, const struct line *line);
 static int same_lines(const struct options *options, const struct line *left, const struct line *right);
 static void write_group(const struct options *options, FILE *output, const struct line *line, unsigned long size);
@@ -64,15 +101,19 @@ main(
 	unsigned long size;
 	FILE *input;
 	FILE *output;
+	int count;
 	int first;
 	int read;
 	int same;
 	int compare;
 
-	/* The options and at most two operands. */
+	/* The options and at most two operands, which follow argv[0]. */
 	memset(&options, 0, sizeof(options));
-	first = read_options(argc, argv, &options);
-	if (argc - first > 2)
+	options.end = '\n';
+	count = read_options(argc, argv, &options);
+	first = 1;
+	argc = first + count;
+	if (count > 2)
 		usage();
 
 	/* The input: standard input, - or a file. */
@@ -102,11 +143,11 @@ main(
 	/* The first line starts the first group. */
 	memset(&previous, 0, sizeof(previous));
 	memset(&current, 0, sizeof(current));
-	read = read_line(input, &previous);
+	read = read_line(input, &previous, options.end);
 	size = 1;
 	while (read) {
 		/* The next line joins the group, or ends it. */
-		read = read_line(input, &current);
+		read = read_line(input, &current, options.end);
 		if (read) {
 			same = same_lines(&options, &previous, &current);
 			if (same) {
@@ -129,71 +170,69 @@ main(
 	return 0;
 }
 
-/* Reads the options; returns the index of the first operand. */
+/*
+ * Reads the options; returns the number of operands, which are left in
+ * argv from argv[1] on.
+ */
 static int
 read_options(
 	int argc,
 	char **argv,
 	struct options *options)
 {
-	const char *word;
-	const char *letter;
-	const char *argument;
-	int index;
+	struct command_options scan;
+	int code;
 
-	/* Each option word. */
-	for (index = 1; index < argc; index++) {
-		/* An operand, or - alone, ends the options; so does --. */
-		word = argv[index];
-		if (word[0] != '-' || word[1] == '\0')
+	/* The scan of the command line. */
+	memset(&scan, 0, sizeof(scan));
+	scan.argc = argc;
+	scan.argv = argv;
+	scan.program = "uniq";
+	scan.letters = "cdiuzf:s:w:";
+	scan.names = uniq_long_options;
+	command_options_start(&scan);
+
+	/* Each option in turn. */
+	for (;;) {
+		code = command_options_next(&scan);
+		if (code == COMMAND_OPTION_END)
 			break;
-		if (word[1] == '-' && word[2] == '\0')
-			return index + 1;
-
-		/* Each letter of the word. */
-		for (letter = word + 1; *letter != '\0'; letter++) {
-			/* -c, -d and -u. */
-			if (*letter == 'c') {
-				options->count = 1;
-				continue;
-			}
-
-			/* -d. */
-			if (*letter == 'd') {
-				options->repeated = 1;
-				continue;
-			}
-
-			/* -u. */
-			if (*letter == 'u') {
-				options->unique = 1;
-				continue;
-			}
-
-			/* Any other letter but -f and -s is not an option. */
-			if (*letter != 'f' && *letter != 's')
-				usage();
-
-			/* -f and -s take the rest of the word or the next. */
-			argument = letter + 1;
-			if (*argument == '\0') {
-				if (index + 1 >= argc)
-					usage();
-				index++;
-				argument = argv[index];
-			}
-
-			/* The number of fields or of characters. */
-			if (*letter == 'f')
-				options->fields = parse_number(argument);
-			else
-				options->characters = parse_number(argument);
+		switch (code) {
+		case 'c':
+			options->count = 1;
 			break;
+		case 'd':
+			options->repeated = 1;
+			break;
+		case 'u':
+			options->unique = 1;
+			break;
+		case 'i':
+			options->ignore_case = 1;
+			break;
+		case 'z':
+			options->end = '\0';
+			break;
+		case 'f':
+			options->fields = parse_number(scan.value);
+			break;
+		case 's':
+			options->characters = parse_number(scan.value);
+			break;
+		case 'w':
+			options->check = parse_number(scan.value);
+			options->limited = 1;
+			break;
+		case OPTION_VERSION:
+			printf("uniq (zedBSD) 1.0\n");
+			exit(0);
+		default:
+			usage();
 		}
 	}
 
-	/* Succeeded: the first operand. */
-	return index;
+	/* Succeeded: the operands follow argv[0]. */
+	return scan.operand_count;
 }
 
 /* Reads a non-negative decimal number. */
@@ -222,7 +261,8 @@ parse_number(
 static int
 read_line(
 	FILE *stream,
-	struct line *line)
+	struct line *line,
+	int end)
 {
 	int value;
 	int newline;
@@ -235,7 +275,7 @@ read_line(
 		value = getc(stream);
 		if (value == EOF)
 			break;
-		if (value == '\n') {
+		if (value == end) {
 			newline = 1;
 			break;
 		}
@@ -305,18 +345,55 @@ same_lines(
 {
 	size_t a;
 	size_t b;
+	size_t left_length;
+	size_t right_length;
 	int result;
 
-	/* The compared parts, of the same length and bytes. */
+	/* The compared parts, at most -w's characters of each. */
 	a = compared_part(options, left);
 	b = compared_part(options, right);
-	if (left->length - a != right->length - b)
+	left_length = left->length - a;
+	right_length = right->length - b;
+	if (options->limited && left_length > options->check)
+		left_length = (size_t)options->check;
+	if (options->limited && right_length > options->check)
+		right_length = (size_t)options->check;
+
+	/* Of the same length and bytes (case aside with -i). */
+	if (left_length != right_length)
 		return 0;
-	if (left->length == a)
-		return 1;
-	result = memcmp(left->data + a, right->data + b, left->length - a);
-	if (result != 0)
+	result = same_bytes(left->data + a, right->data + b, left_length,
+			    options->ignore_case);
+	if (!result)
 		return 0;
+
+	/* Succeeded: the same. */
+	return 1;
+}
+
+/* Reports whether two runs of bytes are the same, ignoring case when asked. */
+static int
+same_bytes(
+	const char *left,
+	const char *right,
+	size_t length,
+	int ignore_case)
+{
+	size_t index;
+	int a;
+	int b;
+
+	/* Each byte, folded to lower case with -i. */
+	for (index = 0; index < length; index++) {
+		a = (unsigned char)left[index];
+		b = (unsigned char)right[index];
+		if (ignore_case && a >= 'A' && a <= 'Z')
+			a = a - 'A' + 'a';
+		if (ignore_case && b >= 'A' && b <= 'Z')
+			b = b - 'A' + 'a';
+		if (a != b)
+			return 0;
+	}
 
 	/* Succeeded: the same. */
 	return 1;
@@ -341,7 +418,7 @@ write_group(
 		fprintf(output, "%7lu ", size);
 	if (line->length > 0)
 		fwrite(line->data, 1, line->length, output);
-	putc('\n', output);
+	putc(options->end, output);
 }
 
 /* Swaps two line buffers. */
@@ -375,7 +452,7 @@ usage(
 	void)
 {
 	/* The form. */
-	fprintf(stderr, "usage: uniq [-c|-d|-u] [-f fields] [-s chars] "
-		"[input [output]]\n");
+	fprintf(stderr, "usage: uniq [-c|-d|-u] [-iz] [-f fields] [-s chars] "
+		"[-w chars] [input [output]]\n");
 	exit(1);
 }

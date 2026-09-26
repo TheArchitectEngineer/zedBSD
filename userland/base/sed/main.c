@@ -8,22 +8,65 @@
  */
 
 /*
- * The stream editor (POSIX XCU sed): the options, and the script made of
- * the -e and -f pieces.
+ * The stream editor (POSIX XCU sed, with the GNU extensions scripts use):
+ * the options, and the script made of the -e and -f pieces.
  *
- *	sed [-nE] script [file...]
- *	sed [-nE] -e script [-e script]... [-f file]... [file...]
+ *	sed [options] script [file...]
+ *	sed [options] -e script [-e script]... [-f file]... [file...]
+ *
+ * The options are POSIX's -n, -e, -f and -E, and GNU's -r, -i[SUFFIX], -s,
+ * -z, -l N, -u and the long forms.  Options may follow operands, as GNU
+ * sed takes them (sed -i FILE -e SCRIPT), unless POSIXLY_CORRECT is set.
  *
  * The pieces of the script are joined with newlines in the order given, so
  * that a text of a, i or c may continue into the next piece.
  */
 
 #include "userland/base/sed/sed.h"
+#include "userland/base/common/command.h"
 
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* The codes of the long options that have no letter. */
+#define OPTION_POSIX		256
+#define OPTION_DEBUG		257
+#define OPTION_SANDBOX		258
+#define OPTION_FOLLOW_SYMLINKS	259
+#define OPTION_HELP		260
+#define OPTION_VERSION		261
+
+/* The status of an input sed cannot edit in place (GNU's). */
+#define STATUS_PANIC 4
+
+/*
+ * The options written in full.
+ *
+ * The table is read by the scan of the command line only; the letter a
+ * long option shares its code with makes the two forms one case.
+ */
+static const struct command_long_option sed_long_options[] = {
+	{"debug", COMMAND_VALUE_NONE, OPTION_DEBUG},
+	{"expression", COMMAND_VALUE_REQUIRED, 'e'},
+	{"file", COMMAND_VALUE_REQUIRED, 'f'},
+	{"follow-symlinks", COMMAND_VALUE_NONE, OPTION_FOLLOW_SYMLINKS},
+	{"help", COMMAND_VALUE_NONE, OPTION_HELP},
+	{"in-place", COMMAND_VALUE_OPTIONAL, 'i'},
+	{"line-length", COMMAND_VALUE_REQUIRED, 'l'},
+	{"null-data", COMMAND_VALUE_NONE, 'z'},
+	{"posix", COMMAND_VALUE_NONE, OPTION_POSIX},
+	{"quiet", COMMAND_VALUE_NONE, 'n'},
+	{"regexp-extended", COMMAND_VALUE_NONE, 'E'},
+	{"sandbox", COMMAND_VALUE_NONE, OPTION_SANDBOX},
+	{"separate", COMMAND_VALUE_NONE, 's'},
+	{"silent", COMMAND_VALUE_NONE, 'n'},
+	{"unbuffered", COMMAND_VALUE_NONE, 'u'},
+	{"version", COMMAND_VALUE_NONE, OPTION_VERSION},
+	{"zero-terminated", COMMAND_VALUE_NONE, 'z'},
+	{NULL, 0, 0}
+};
 
 /* The script as it is put together. */
 struct script {
@@ -33,12 +76,13 @@ struct script {
 	int pieces;
 };
 
-static int read_options(int argc, char **argv, struct script *script, int *quiet, int *extended);
-static int option_word(int argc, char **argv, int *index, struct script *script, int *quiet, int *extended);
-static const char *option_argument(int argc, char **argv, int *index, const char *rest);
+static int read_options(int argc, char **argv, struct script *script, struct sed_settings *settings, int *extended, int *sandbox);
+static void apply_option(int code, const char *value, struct script *script, struct sed_settings *settings, int *extended, int *sandbox);
+static unsigned long parse_line_length(const char *text);
 static void script_add(struct script *script, const char *text, size_t length);
 static void script_add_file(struct script *script, const char *name);
-static void usage(void);
+static void version(void);
+static void usage(int status);
 
 /*
  * Runs sed.
@@ -49,35 +93,48 @@ main(
 	char **argv)
 {
 	struct sed_program program;
+	struct sed_settings settings;
 	struct script script;
-	int quiet;
+	char **operands;
+	int count;
 	int extended;
-	int index;
+	int sandbox;
 	int compiled;
 	int status;
 
 	/* The options and the script. */
 	memset(&script, 0, sizeof(script));
-	index = read_options(argc, argv, &script, &quiet, &extended);
+	memset(&settings, 0, sizeof(settings));
+	count = read_options(argc, argv, &script, &settings, &extended,
+			     &sandbox);
+	operands = argv + 1;
 	if (script.pieces == 0) {
 		/* Without -e or -f, the first operand is the script. */
-		if (index >= argc)
-			usage();
-		script_add(&script, argv[index], strlen(argv[index]));
-		index++;
+		if (count == 0)
+			usage(1);
+		script_add(&script, operands[0], strlen(operands[0]));
+		operands++;
+		count--;
+	}
+
+	/* -i needs files to edit. */
+	if (settings.in_place && count == 0) {
+		fprintf(stderr, "sed: no input files\n");
+		return STATUS_PANIC;
 	}
 
 	/* The script, compiled. */
 	memset(&program, 0, sizeof(program));
 	program.extended = extended;
+	program.sandbox = sandbox;
 	compiled = sed_compile(script.text, &program);
 	if (!compiled)
 		return 1;
 	if (program.quiet)
-		quiet = 1;
+		settings.quiet = 1;
 
 	/* Succeeded: the status of running it over the files. */
-	status = sed_execute(&program, argv + index, argc - index, quiet);
+	status = sed_execute(&program, operands, count, &settings);
 	return status;
 }
 
@@ -162,117 +219,143 @@ sed_fatal(
 
 /*
  * Reads the options, adding -e and -f pieces to the script.  Returns the
- * index of the first operand.
+ * number of operands, which are left in argv from argv[1] on.
  */
 static int
 read_options(
 	int argc,
 	char **argv,
 	struct script *script,
-	int *quiet,
-	int *extended)
+	struct sed_settings *settings,
+	int *extended,
+	int *sandbox)
 {
-	const char *word;
-	int index;
-	int more;
+	struct command_options scan;
+	const char *posix;
+	int code;
 
-	/* No options yet. */
-	*quiet = 0;
+	/* No options yet; POSIXLY_CORRECT asks for POSIX's N. */
 	*extended = 0;
-	for (index = 1; index < argc; index++) {
-		/* An operand, or - alone, ends the options. */
-		word = argv[index];
-		if (word[0] != '-' || word[1] == '\0')
-			break;
+	*sandbox = 0;
+	settings->line_length = 70;
+	posix = getenv("POSIXLY_CORRECT");
+	if (posix != NULL)
+		settings->posix = 1;
 
-		/* -- ends them too. */
-		if (word[1] == '-' && word[2] == '\0') {
-			index++;
-			break;
-		}
+	/* The scan of the command line. */
+	memset(&scan, 0, sizeof(scan));
+	scan.argc = argc;
+	scan.argv = argv;
+	scan.program = "sed";
+	scan.letters = "Enrsuze:f:i::l:";
+	scan.names = sed_long_options;
+	command_options_start(&scan);
 
-		/* The letters of the word. */
-		more = option_word(argc, argv, &index, script, quiet, extended);
-		if (!more)
-			usage();
+	/* Each option in turn. */
+	for (;;) {
+		code = command_options_next(&scan);
+		if (code == COMMAND_OPTION_END)
+			break;
+		if (code == COMMAND_OPTION_ERROR)
+			usage(1);
+		apply_option(code, scan.value, script, settings, extended,
+			     sandbox);
 	}
 
-	/* Succeeded: the first operand. */
-	return index;
+	/* Succeeded: the operands follow argv[0]. */
+	return scan.operand_count;
 }
 
-/*
- * Reads the letters of one option word; -e and -f take the rest of the
- * word or the next word.  Returns 0 for an unknown letter.
- */
-static int
-option_word(
-	int argc,
-	char **argv,
-	int *index,
+/* Applies one option. */
+static void
+apply_option(
+	int code,
+	const char *value,
 	struct script *script,
-	int *quiet,
-	int *extended)
+	struct sed_settings *settings,
+	int *extended,
+	int *sandbox)
 {
-	const char *letter;
-	const char *argument;
-
-	/* Each letter of the word. */
-	for (letter = argv[*index] + 1; *letter != '\0'; letter++) {
-		switch (*letter) {
-		case 'n':
-			*quiet = 1;
-			break;
-		case 'E':
-		case 'r':
-			*extended = 1;
-			break;
-		case 'e':
-			/* -e script: a piece of the script. */
-			argument = option_argument(argc, argv, index, letter + 1);
-			script_add(script, argument, strlen(argument));
-			return 1;
-		case 'f':
-			/* -f file: a piece read from a file. */
-			argument = option_argument(argc, argv, index, letter + 1);
-			script_add_file(script, argument);
-			return 1;
-		default:
-			fprintf(stderr, "sed: unknown option -- '%c'\n", *letter);
-			return 0;
-		}
+	/* The option of its code. */
+	switch (code) {
+	case 'n':
+		settings->quiet = 1;
+		break;
+	case 'E':
+	case 'r':
+		*extended = 1;
+		break;
+	case 'e':
+		/* -e script: a piece of the script. */
+		script_add(script, value, strlen(value));
+		break;
+	case 'f':
+		/* -f file: a piece read from a file. */
+		script_add_file(script, value);
+		break;
+	case 'i':
+		/* -i[SUFFIX]: in place, which treats the files separately. */
+		settings->in_place = 1;
+		settings->separate = 1;
+		settings->suffix = NULL;
+		if (value != NULL && value[0] != '\0')
+			settings->suffix = value;
+		break;
+	case 's':
+		settings->separate = 1;
+		break;
+	case 'z':
+		settings->null_data = 1;
+		break;
+	case 'l':
+		settings->line_length = parse_line_length(value);
+		break;
+	case 'u':
+		settings->unbuffered = 1;
+		break;
+	case OPTION_POSIX:
+		settings->posix = 1;
+		break;
+	case OPTION_SANDBOX:
+		*sandbox = 1;
+		break;
+	case OPTION_FOLLOW_SYMLINKS:
+		settings->follow_symlinks = 1;
+		break;
+	case OPTION_DEBUG:
+		/* The annotations of --debug are not written. */
+		break;
+	case OPTION_VERSION:
+		version();
+		break;
+	case OPTION_HELP:
+		usage(0);
+		break;
+	default:
+		usage(1);
 	}
-
-	/* Succeeded. */
-	return 1;
 }
 
-/*
- * Returns the argument of an option: the rest of its word, or the next
- * word.  A missing one is a usage error.
- */
-static const char *
-option_argument(
-	int argc,
-	char **argv,
-	int *index,
-	const char *rest)
+/* Reads the width of -l, ending sed when it is not a number. */
+static unsigned long
+parse_line_length(
+	const char *text)
 {
-	/* The rest of the word. */
-	if (*rest != '\0')
-		return rest;
+	unsigned long width;
+	const char *cursor;
 
-	/* The next word. */
-	if (*index + 1 >= argc) {
-		fprintf(stderr, "sed: option requires an argument\n");
-		usage();
+	/* At least one digit, and nothing but digits. */
+	if (*text == '\0')
+		sed_fatal("invalid line length", text);
+	width = 0;
+	for (cursor = text; *cursor != '\0'; cursor++) {
+		if (*cursor < '0' || *cursor > '9')
+			sed_fatal("invalid line length", text);
+		width = width * 10UL + (unsigned long)(*cursor - '0');
 	}
 
-	/* The next word is the argument. */
-	(*index)++;
-
 	/* Succeeded. */
-	return argv[*index];
+	return width;
 }
 
 /* Adds a piece to the script, after a newline when it is not the first. */
@@ -344,13 +427,32 @@ script_add_file(
 	free(text);
 }
 
-/* Reports the usage and ends sed. */
+/* Writes the version and ends sed. */
 static void
-usage(
+version(
 	void)
 {
-	/* The two forms. */
-	fprintf(stderr, "usage: sed [-nE] script [file...]\n"
-		"       sed [-nE] [-e script]... [-f file]... [file...]\n");
-	exit(1);
+	/* The name and where it comes from. */
+	printf("sed (zedBSD) 1.0\n");
+	exit(0);
+}
+
+/* Reports the usage (on standard output for --help) and ends sed. */
+static void
+usage(
+	int status)
+{
+	FILE *stream;
+
+	/* --help writes to standard output and succeeds. */
+	stream = stderr;
+	if (status == 0)
+		stream = stdout;
+
+	/* The two forms and the options. */
+	fprintf(stream, "usage: sed [-nErsuz] [-i[suffix]] [-l length] "
+		"script [file...]\n"
+		"       sed [-nErsuz] [-i[suffix]] [-l length] [-e script]... "
+		"[-f file]... [file...]\n");
+	exit(status);
 }

@@ -1,0 +1,76 @@
+diff -ru a/config/drivers/architecture/amd64.drivers b/config/drivers/architecture/amd64.drivers
+--- a/config/drivers/architecture/amd64.drivers	2026-09-27 07:18:06.228435713 +0900
++++ b/config/drivers/architecture/amd64.drivers	2026-09-27 07:18:06.228435713 +0900
+@@ -2,3 +2,4 @@
+ -|fixed|PC/AT IDE controller|amd64|y|
+ -|fixed|APIC, HPET/PIT and i8042 platform devices|amd64|y|
+ CONFIG_DRIVER_GRAPHICS|bool|Framebuffer driver|amd64|y|
++CONFIG_DRIVER_ACPI|bool|ACPI AML interpreter, events and Embedded Controller|amd64|y|
+diff -ru a/Makefile b/Makefile
+--- a/Makefile	2026-09-27 07:18:06.228435713 +0900
++++ b/Makefile	2026-09-27 07:18:06.228435713 +0900
+@@ -198,6 +198,9 @@
+ # by the menu names it explicitly.
+ CONFIG_DRIVER_PCI_HDA ?= $(if $(filter amd64,$(ZEDBSD_PLATFORM)),y,n)
+ CONFIG_DRIVER_PCI_INTEL_AX211 ?= n
++# The ACPI driver (WS049) builds on amd64; it stays off at run time when
++# the platform gives no RSDP (hal_get_arch_handoff("acpi.rsdp")).
++CONFIG_DRIVER_ACPI ?= $(if $(filter amd64,$(ZEDBSD_PLATFORM)),y,n)
+ CONFIG_DRIVER_USB_STORAGE ?= y
+ CONFIG_DRIVER_USB_CDC_NCM ?= y
+ CONFIG_DRIVER_USB_CDC_ECM ?= y
+@@ -483,6 +486,7 @@
+ 	-DCONFIG_DRIVER_PCI_I915=$(if $(filter y,$(CONFIG_DRIVER_PCI_I915)),1,0) \
+ 	-DCONFIG_DRIVER_PCI_HDA=$(if $(filter y,$(CONFIG_DRIVER_PCI_HDA)),1,0) \
+ 	-DCONFIG_DRIVER_PCI_INTEL_AX211=$(if $(filter y,$(CONFIG_DRIVER_PCI_INTEL_AX211)),1,0) \
++	-DCONFIG_DRIVER_ACPI=$(if $(filter y,$(CONFIG_DRIVER_ACPI)),1,0) \
+ 	-DCONFIG_DRIVER_USB_STORAGE=$(if $(filter y,$(CONFIG_DRIVER_USB_STORAGE)),1,0) \
+ 	-DCONFIG_DRIVER_USB_CDC_NCM=$(if $(filter y,$(CONFIG_DRIVER_USB_CDC_NCM)),1,0) \
+ 	-DCONFIG_DRIVER_USB_CDC_ECM=$(if $(filter y,$(CONFIG_DRIVER_USB_CDC_ECM)),1,0) \
+diff -ru a/platform/amd64/vmunix.mk b/platform/amd64/vmunix.mk
+--- a/platform/amd64/vmunix.mk	2026-09-27 07:18:06.228435713 +0900
++++ b/platform/amd64/vmunix.mk	2026-09-27 07:18:06.232435707 +0900
+@@ -167,6 +167,10 @@
+ AMD64_CPPFLAGS += -DI915_TEST_CAPTURE=1
+ AMD64_I915_SOURCES += src/drivers/gpu/i915/display/capture.c
+ endif
++AMD64_ACPI_SOURCES :=
++ifeq ($(CONFIG_DRIVER_ACPI),y)
++AMD64_ACPI_SOURCES += $(sort $(wildcard src/drivers/acpi/*.c))
++endif
+ AMD64_INTEL_WLAN_SOURCES :=
+ ifeq ($(CONFIG_DRIVER_PCI_INTEL_AX211),y)
+ AMD64_INTEL_WLAN_SOURCES += src/drivers/wifi/intel-ax211/intel-ax211.c \
+@@ -231,6 +235,7 @@
+ 	$(AMD64_HDA_SOURCES) \
+ 	$(AMD64_I915_SOURCES) \
+ 	$(AMD64_INTEL_WLAN_SOURCES) \
++	$(AMD64_ACPI_SOURCES) \
+ 	src/drivers/platform/pcat/pcat-ide.c src/drivers/ethernet/dp8390.c \
+ 	src/drivers/isa/ne2000.c src/drivers/platform/pcat/ps2-8042.c \
+ 	src/drivers/disklabel/mbr.c src/drivers/disklabel/gpt.c \
+diff -ru a/src/kern/platform/pcat.c b/src/kern/platform/pcat.c
+--- a/src/kern/platform/pcat.c	2026-09-27 07:18:06.228435713 +0900
++++ b/src/kern/platform/pcat.c	2026-09-27 07:18:06.232435707 +0900
+@@ -65,6 +65,9 @@
+ #include <drivers/usb/usb-rtl8822bu.h>
+ #endif
+ #include <drivers/pci/pci.h>
++#if CONFIG_DRIVER_ACPI
++#include <drivers/acpi/acpi.h>
++#endif
+ #include <drivers/usb/usb.h>
+ #if CONFIG_DRIVER_NE2000
+ #include "drivers/isa/pcat-ne2000.h"
+@@ -224,6 +227,11 @@
+ 	else
+ 		drv_pci_dump();
+ #endif
++#if CONFIG_DRIVER_ACPI
++
++	/* Loads the firmware's ACPI tables once the PCI functions are known. */
++	(void)drv_acpi_attach();
++#endif
+ 
+ 	/* Lists every BIOS IDE unit as a boot device. */
+ 	(void)drv_pcat_ide_init();

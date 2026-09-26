@@ -586,7 +586,7 @@ def zdesktop_home(args, qmp, capture, report):
 
 def zdesktop_x11(args, qmp, capture, report):
     """X11 and GLX from App Home (WS035 p070, WS069 p005) on the capture display: Gears (zgears, OpenGL
-    1.x through GLX on Xzed --rootless, which zdesktop-x11 starts) and the X terminal (zterm), then
+    1.x through GLX on zdesktop-x11server, which zdesktop-x11 starts) and the X terminal (zterm), then
     Ctrl+Alt+Right to the empty desktop 2 and Ctrl+Alt+Left back (WS035 p065)."""
     width, height = 1920, 1080
     time_limit = time.monotonic() + args.timeout
@@ -631,7 +631,7 @@ def zdesktop_x11(args, qmp, capture, report):
     desktop = shot('desktop', 25.0)
     report['checks']['desktop_drawn'] = coloured(desktop) > 0.02
 
-    # Gears from Home: Xzed starts, then zgears draws through GLX.
+    # Gears from Home: zdesktop-x11server starts, then zgears draws through GLX.
     click(23, 17)
     time.sleep(1.5)
     click(*gears)
@@ -641,7 +641,7 @@ def zdesktop_x11(args, qmp, capture, report):
     gears_later = shot('gears-later', 5.0)
     report['checks']['gears_turns'] = difference(gears_shot, gears_later) > 0.001
 
-    # The X terminal on the same Xzed.
+    # The X terminal on the same X server.
     click(23, 17)
     time.sleep(1.5)
     click(*xterm)

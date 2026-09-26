@@ -20,8 +20,16 @@
 #include "kern/panic.h"
 #include <kern/kcrt.h>
 
+/*
+ * One coherent allocation of a DMA device.
+ *
+ * Address is the CPU's view of the payload: the direct map for a device that
+ * snoops the CPU caches, an uncached mapping of its own for one that does
+ * not.  The view lives exactly as long as the memory.
+ */
 struct dma_allocation {
 	struct kern_pmem memory;
+	void *address;
 	size_t payload_size;
 	struct dma_allocation *next;
 };
@@ -59,6 +67,16 @@ extern void cache_memory_release(enum cache_memory_kind, size_t) __attribute__((
 extern size_t cache_memory_reclaim(size_t) __attribute__((weak));
 
 /*
+ * Uncached views for devices that do not snoop the CPU caches.
+ *
+ * Only architectures that have such devices provide them.  Where they are
+ * absent, a null test fails the coherent allocations of a non-coherent device
+ * with ENOTSUP instead of handing out cached memory the device would not see.
+ */
+extern int kern_pmem_map_uncached(const struct kern_pmem *run, void **mapped) __attribute__((weak));
+extern int kern_pmem_unmap_uncached(void *mapped, size_t size) __attribute__((weak));
+
+/*
  * Forward declaration
  */
 static int device_operation_begin(struct drv_dma_device *device, int allow_destroying);
@@ -67,6 +85,8 @@ static int dma_vector_backing_free(struct drv_dma_vector *vector);
 
 static void device_operation_end(struct drv_dma_device *device);
 static int address_fits(const struct drv_dma_device *device, uint64_t address, size_t size);
+static int allocation_map(const struct drv_dma_device *device, struct dma_allocation *allocation);
+static int allocation_release(const struct drv_dma_device *device, struct dma_allocation *allocation);
 static int is_power_of_two(uint64_t value);
 
 /*
@@ -285,13 +305,27 @@ drv_dma_alloc_coherent(
 
 	allocation_bytes = allocation->memory.size;
 
+	/* Gives the CPU its view of the payload, uncached for a device that does not snoop. */
+	error = allocation_map(device, allocation);
+	if (error != 0) {
+		/* Checks the hal pmem free result. */
+		if (kern_pmem_free(&allocation->memory) != 0)
+			__builtin_trap();
+		kern_free(allocation);
+		device_operation_end(device);
+
+		/* Reports why no view could be made. */
+		return error;
+	}
+
 	/* Accounts mandatory backing before publishing device ownership. */
 	if (cache_memory_reserve != NULL) {
 		/* Checks the cache memory reserve result. */
 		if (cache_memory_reserve(CACHE_MEMORY_DMA,
 					 allocation->memory.size, 0) != 0) {
-			/* Checks the hal pmem free result. */
-			if (kern_pmem_free(&allocation->memory) != 0)
+			/* Gives the unaccounted memory back; failing to is fatal. */
+			error = allocation_release(device, allocation);
+			if (error != 0)
 				__builtin_trap();
 			kern_free(allocation);
 			device_operation_end(device);
@@ -306,8 +340,9 @@ drv_dma_alloc_coherent(
 	if (device->destroying) {
 		spin_unlock_irqrestore(&device->lock, irq);
 
-		/* Checks the hal pmem free result. */
-		if (kern_pmem_free(&allocation->memory) != 0)
+		/* Gives the memory of a destroyed device back; failing to is fatal. */
+		error = allocation_release(device, allocation);
+		if (error != 0)
 			__builtin_trap();
 
 		/* Handles the cache memory cancel availability. */
@@ -326,7 +361,7 @@ drv_dma_alloc_coherent(
 
 	spin_unlock_irqrestore(&device->lock, irq);
 
-	buffer->address = kern_pmem_to_kernel(allocation->memory.paddr);
+	buffer->address = allocation->address;
 	buffer->device_address = allocation->memory.paddr;
 	buffer->size = size;
 	buffer->private_data[0] = (uintptr_t)allocation;
@@ -353,6 +388,7 @@ drv_dma_free_coherent(
 	struct dma_allocation **link, *allocation;
 	unsigned long irq;
 	int found = 0;
+	int release_error;
 	size_t released_size;
 
 	/* Handles the device availability. */
@@ -382,8 +418,9 @@ drv_dma_free_coherent(
 	if (found) {
 		released_size = allocation->memory.size;
 
-		/* Checks the hal pmem free result. */
-		if (kern_pmem_free(&allocation->memory) == 0) {
+		/* Removes the view and returns the memory. */
+		release_error = allocation_release(device, allocation);
+		if (release_error == 0) {
 			/* Handles the cache memory release availability. */
 			if (cache_memory_release != NULL) {
 				cache_memory_release(CACHE_MEMORY_DMA,
@@ -475,8 +512,7 @@ drv_dma_map(
 	for (allocation = device->allocations; allocation != NULL;
 	     allocation = allocation->next) {
 		/* Handles the start condition. */
-		base = (uintptr_t)kern_pmem_to_kernel(
-			allocation->memory.paddr);
+		base = (uintptr_t)allocation->address;
 		if (start < base || start - base > allocation->payload_size ||
 		    size > allocation->payload_size - (start - base))
 			continue;
@@ -589,14 +625,6 @@ drv_dma_vector_create(
 	error = device_operation_begin(device, 0);
 	if (error != 0)
 		return error;
-
-	/* Handles the device condition. */
-	if (!device->constraints.coherent) {
-		device_operation_end(device);
-
-		/* Failed. */
-		return EOPNOTSUPP;
-	}
 
 	/* Handles the vector availability. */
 	vector = kern_malloc(sizeof(*vector));
@@ -836,6 +864,71 @@ address_fits(
 
 	/* Returns the computed result. */
 	return address < limit && size <= limit - address;
+}
+
+/*
+ * Gives the CPU its view of an allocation's payload.
+ *
+ * A device that snoops the caches shares the direct map.  One that does not
+ * gets an uncached mapping, so neither side needs cache maintenance.
+ */
+static int
+allocation_map(
+	const struct drv_dma_device *device,
+	struct dma_allocation *allocation)
+{
+	int error;
+
+	/* Uses the direct map for a device that snoops the caches. */
+	if (device->constraints.coherent) {
+		allocation->address = kern_pmem_to_kernel(allocation->memory.paddr);
+		return 0;
+	}
+
+	/* Refuses coherent memory where no uncached view can be made. */
+	if (kern_pmem_map_uncached == NULL)
+		return ENOTSUP;
+
+	/* Maps the payload uncached. */
+	error = kern_pmem_map_uncached(&allocation->memory, &allocation->address);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the CPU reaches the payload at address. */
+	return 0;
+}
+
+/*
+ * Removes an allocation's uncached view and returns its memory.
+ *
+ * A refusal keeps both, so the owner can retry.
+ */
+static int
+allocation_release(
+	const struct drv_dma_device *device,
+	struct dma_allocation *allocation)
+{
+	int error;
+
+	/* Removes the uncached view of a device that does not snoop. */
+	if (!device->constraints.coherent) {
+		/* The view exists only where the uncached calls do. */
+		if (kern_pmem_unmap_uncached == NULL)
+			return ENOTSUP;
+
+		/* Unmaps the view; a refusal keeps it. */
+		error = kern_pmem_unmap_uncached(allocation->address, allocation->memory.size);
+		if (error != 0)
+			return error;
+	}
+
+	/* Returns the memory to the physical allocator. */
+	error = kern_pmem_free(&allocation->memory);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the allocation holds nothing any more. */
+	return 0;
 }
 
 /* Supports the is power of two operation. */

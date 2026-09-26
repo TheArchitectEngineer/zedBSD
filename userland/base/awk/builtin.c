@@ -120,8 +120,14 @@ builtin_call(
 	case BUILTIN_TOUPPER:
 		builtin_case(call, 1, value);
 		break;
-	default:
+	case BUILTIN_SYSTEM:
+	case BUILTIN_CLOSE:
+	case BUILTIN_FFLUSH:
 		builtin_io(call, value);
+		break;
+	default:
+		/* gawk's functions. */
+		gawk_call(call, value);
 		break;
 	}
 }
@@ -722,7 +728,10 @@ append_replacement(
 	}
 }
 
-/* match(s, re): the position of the leftmost longest match, in RSTART and RLENGTH too. */
+/*
+ * match(s, re[, array]): the position of the leftmost longest match, in
+ * RSTART and RLENGTH too, and with gawk's array its groups.
+ */
 static void
 builtin_match(
 	struct node *call,
@@ -758,6 +767,10 @@ builtin_match(
 	/* RSTART and RLENGTH tell where. */
 	assign_variable(awk.specials[SPECIAL_RSTART], &start);
 	assign_variable(awk.specials[SPECIAL_RLENGTH], &length);
+
+	/* gawk's third argument: the array of the groups. */
+	if (call->argument_count == 3U)
+		gawk_match_groups(call->arguments->next->next, regex, string.text);
 
 	/* Succeeded: RSTART is the value. */
 	value_copy(value, &start);

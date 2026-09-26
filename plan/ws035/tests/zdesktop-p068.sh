@@ -58,7 +58,8 @@ sleep 3
 check "$out/output.png" >/dev/null
 
 # 3. Docked: the terminal takes the full size.
-pointer move $((tx + 150)) $((ty - 8 - 22)) sleep 400 down sleep 60 up sleep 60 down sleep 60 up sleep 100
+# The double click is on the title (x+80): x+150 is the terminal's Shell menu since WS070.
+pointer move $((tx + 80)) $((ty - 8 - 22)) sleep 400 down sleep 60 up sleep 60 down sleep 60 up sleep 100
 sleep 3
 pointer move 1250 780 sleep 500
 keys 'ls -l /bin | head -40\n'

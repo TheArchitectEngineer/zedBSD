@@ -1541,6 +1541,20 @@ unix_stream_wait_space(
 		error = waitq_sleep(&peer->receive_space_waitq,
 				    &peer->lock, sequence, deadline,
 				    WAITQ_INTERRUPTIBLE);
+
+		/*
+		 * EAGAIN from the sleep is a wakeup that came before it (the
+		 * receiver made room while the lock was dropped to look for
+		 * signals): the space is looked at again.  Returning it would
+		 * fail a blocking send and cut a stream's message short
+		 * (BUG-057).
+		 */
+		if (error == EAGAIN) {
+			error = 0;
+			continue;
+		}
+
+		/* The send timeout is EAGAIN; anything else ends the wait. */
 		if (error == ETIMEDOUT)
 			error = EAGAIN;
 		if (error != 0)

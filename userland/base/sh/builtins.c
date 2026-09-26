@@ -40,6 +40,7 @@ static void alias_show(const char *name, int *status);
 static void alias_define(const char *word, const char *equals, int *status);
 static void print_time(clock_t value, long ticks, char after);
 static void env_child(int argc, char **argv, int index, int clean);
+static void env_external(char **argv);
 
 /* Every builtin, sorted by name. */
 static const struct sh_builtin builtins[] = {
@@ -362,7 +363,9 @@ builtin_clear(
 
 /*
  * Implements env: env [-i] [name=value...] [command [argument...]].  With no
- * command, prints the environment.
+ * command, prints the environment.  An option the builtin does not know
+ * (GNU's -u, -S, -C, -0 and the long ones) is left to the env command,
+ * /usr/bin/env, which runs in the child in the builtin's place.
  */
 static int
 builtin_env(
@@ -373,29 +376,66 @@ builtin_env(
 	void *job;
 	int index;
 	int clean;
+	int external;
 	int status;
 
-	/* -i (or -) starts from an empty environment. */
+	/*
+	 * -i (or -) starts from an empty environment and -- ends the options;
+	 * any other option is the env command's.
+	 */
 	clean = 0;
 	index = 1;
-	if (index < argc && argv[index][0] == '-') {
-		if (argv[index][1] == '\0')
+	external = 0;
+	while (index < argc &&
+	       argv[index][0] == '-' &&
+	       !external) {
+		if (argv[index][1] == '\0') {
 			clean = 1;
-		else if (argv[index][1] == 'i' && argv[index][2] == '\0')
+		} else if (argv[index][1] == 'i' && argv[index][2] == '\0') {
 			clean = 1;
-		if (clean)
+		} else if (argv[index][1] == '-' && argv[index][2] == '\0') {
 			index++;
+			break;
+		} else {
+			external = 1;
+			break;
+		}
+
+		/* The next word. */
+		index++;
 	}
 
 	/* The rest runs in a child, which changes its own variables. */
 	job = sh_job_new(0);
 	child = sh_fork(SH_FORK_FOREGROUND, job);
+	if (child == 0 && external)
+		env_external(argv);
 	if (child == 0)
 		env_child(argc, argv, index, clean);
 	status = sh_job_wait_foreground(job);
 
 	/* Succeeded: the command's status. */
 	return status;
+}
+
+/*
+ * The child of env for an option only the env command knows: runs
+ * /usr/bin/env with the same words.  It does not return.
+ */
+static void
+env_external(
+	char **argv)
+{
+	char **environment;
+
+	/* The environment the shell exports, and the command. */
+	environment = sh_var_environment();
+	sh_signals_for_exec();
+	execve("/usr/bin/env", argv, environment);
+
+	/* The command could not run. */
+	fprintf(stderr, "env: /usr/bin/env: %s\n", strerror(errno));
+	_exit(125);
 }
 
 /*

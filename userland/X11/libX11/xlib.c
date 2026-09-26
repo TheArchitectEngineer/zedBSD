@@ -1787,7 +1787,8 @@ wr(
 			if (errno == EINTR)
 				continue;
 
-			/* Reports operation failure. */
+			/* A request cut short puts every later one out of step: said (WS069 p010, BUG-057). */
+			fprintf(stderr, "Xlib: send failed: errno=%d with %lu bytes of the request left\n", errno, (unsigned long)n);
 			return -1;
 		}
 

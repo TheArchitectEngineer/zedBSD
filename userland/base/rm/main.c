@@ -18,7 +18,14 @@
  * Without -f, a file that cannot be written is asked about when standard
  * input is a terminal.  An operand whose last component is . or .., and
  * the root directory, are refused.
+ *
+ * GNU's extensions: -d removes an empty directory without -r, -v writes
+ * what is removed, -I is taken (it asks nothing more here), the long
+ * options (--force, --recursive, --dir, --verbose, --interactive[=WHEN]),
+ * and options after operands (unless POSIXLY_CORRECT is set).
  */
+
+#include "userland/base/common/command.h"
 
 #include <dirent.h>
 #include <errno.h>
@@ -28,18 +35,47 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+/* The codes of the long options that have no letter. */
+#define OPTION_INTERACTIVE	256
+#define OPTION_IGNORED		257
+#define OPTION_HELP		258
+#define OPTION_VERSION		259
+
+/*
+ * The options written in full.
+ *
+ * The table is read by the scan of the command line only; the letter a
+ * long option shares its code with makes the two forms one case.
+ */
+static const struct command_long_option rm_long_options[] = {
+	{"dir", COMMAND_VALUE_NONE, 'd'},
+	{"force", COMMAND_VALUE_NONE, 'f'},
+	{"help", COMMAND_VALUE_NONE, OPTION_HELP},
+	{"interactive", COMMAND_VALUE_OPTIONAL, OPTION_INTERACTIVE},
+	{"no-preserve-root", COMMAND_VALUE_NONE, OPTION_IGNORED},
+	{"one-file-system", COMMAND_VALUE_NONE, OPTION_IGNORED},
+	{"preserve-root", COMMAND_VALUE_OPTIONAL, OPTION_IGNORED},
+	{"recursive", COMMAND_VALUE_NONE, 'r'},
+	{"verbose", COMMAND_VALUE_NONE, 'v'},
+	{"version", COMMAND_VALUE_NONE, OPTION_VERSION},
+	{NULL, 0, 0}
+};
+
 /* The options. */
 struct options {
 	int force;
 	int interactive;
 	int recursive;
 	int terminal;
+	int empty_directories;
+	int verbose;
 };
 
 static int read_options(int argc, char **argv, struct options *options);
 static int remove_operand(const struct options *options, const char *path);
 static int remove_path(const struct options *options, const char *path);
 static int remove_tree(const struct options *options, const char *path);
+static int remove_directory(const struct options *options, const char *path);
 static int refused_name(const char *path);
 static int ask(const char *question, const char *path);
 static char *join_path(const char *directory, const char *name);
@@ -55,6 +91,7 @@ main(
 	char **argv)
 {
 	struct options options;
+	int count;
 	int first;
 	int index;
 	int failed;
@@ -62,8 +99,10 @@ main(
 
 	/* The options; no operand is an error unless -f is given. */
 	memset(&options, 0, sizeof(options));
-	first = read_options(argc, argv, &options);
-	if (first >= argc && !options.force)
+	count = read_options(argc, argv, &options);
+	first = 1;
+	argc = first + count;
+	if (count == 0 && !options.force)
 		usage();
 	options.terminal = isatty(STDIN_FILENO);
 
@@ -83,49 +122,77 @@ main(
 	return 0;
 }
 
-/* Reads the options; returns the index of the first operand. */
+/*
+ * Reads the options; returns the number of operands, which are left in
+ * argv from argv[1] on.
+ */
 static int
 read_options(
 	int argc,
 	char **argv,
 	struct options *options)
 {
-	const char *word;
-	const char *letter;
-	int index;
+	struct command_options scan;
+	int never;
+	int code;
 
-	/* Each word that starts with - and is not - alone; -- ends them. */
-	for (index = 1; index < argc; index++) {
-		word = argv[index];
-		if (word[0] != '-' || word[1] == '\0')
+	/* The scan of the command line. */
+	memset(&scan, 0, sizeof(scan));
+	scan.argc = argc;
+	scan.argv = argv;
+	scan.program = "rm";
+	scan.letters = "fiIrRdv";
+	scan.names = rm_long_options;
+	command_options_start(&scan);
+
+	/* Each option; -f and -i override each other. */
+	for (;;) {
+		code = command_options_next(&scan);
+		if (code == COMMAND_OPTION_END)
 			break;
-		if (word[1] == '-' && word[2] == '\0')
-			return index + 1;
-
-		/* Each letter; -f and -i override each other. */
-		for (letter = word + 1; *letter != '\0'; letter++) {
-			switch (*letter) {
-			case 'f':
-				options->force = 1;
-				options->interactive = 0;
-				break;
-			case 'i':
+		switch (code) {
+		case 'f':
+			options->force = 1;
+			options->interactive = 0;
+			break;
+		case 'i':
+			options->interactive = 1;
+			options->force = 0;
+			break;
+		case OPTION_INTERACTIVE:
+			/* --interactive=never asks nothing; any other WHEN is -i. */
+			never = 1;
+			if (scan.value != NULL)
+				never = strcmp(scan.value, "never");
+			options->interactive = 0;
+			if (never != 0)
 				options->interactive = 1;
-				options->force = 0;
-				break;
-			case 'r':
-			case 'R':
-				options->recursive = 1;
-				break;
-			default:
-				usage();
-				break;
-			}
+			break;
+		case 'r':
+		case 'R':
+			options->recursive = 1;
+			break;
+		case 'd':
+			options->empty_directories = 1;
+			break;
+		case 'v':
+			options->verbose = 1;
+			break;
+		case 'I':
+		case OPTION_IGNORED:
+			/* Asking once, and the root's protection, change nothing here. */
+			break;
+		case OPTION_VERSION:
+			printf("rm (zedBSD) 1.0\n");
+			exit(0);
+		default:
+			usage();
+			break;
 		}
 	}
 
-	/* Succeeded: the first operand. */
-	return index;
+	/* Succeeded: the operands follow argv[0]. */
+	return scan.operand_count;
 }
 
 /* Removes one operand, after refusing the names rm must not touch. */
@@ -171,10 +238,16 @@ remove_path(
 		return -1;
 	}
 
-	/* A directory needs -r. */
+	/* A directory needs -r (or -d, when it is empty). */
 	directory = S_ISDIR(status.st_mode);
 	symbolic = S_ISLNK(status.st_mode);
 	if (directory) {
+		if (!options->recursive && options->empty_directories) {
+			error = remove_directory(options, path);
+			return error;
+		}
+
+		/* Without either, a directory is refused. */
 		if (!options->recursive) {
 			fprintf(stderr, "rm: %s: is a directory\n", path);
 			return -1;
@@ -206,7 +279,30 @@ remove_path(
 		return -1;
 	}
 
-	/* Succeeded. */
+	/* Succeeded: said so with -v. */
+	if (options->verbose)
+		printf("removed '%s'\n", path);
+	return 0;
+}
+
+/* Removes an empty directory (-d, and the last step of -r). */
+static int
+remove_directory(
+	const struct options *options,
+	const char *path)
+{
+	int error;
+
+	/* The directory, which must be empty. */
+	error = rmdir(path);
+	if (error != 0) {
+		report(path);
+		return -1;
+	}
+
+	/* Succeeded: said so with -v. */
+	if (options->verbose)
+		printf("removed directory '%s'\n", path);
 	return 0;
 }
 
@@ -269,15 +365,9 @@ remove_tree(
 			return 0;
 	}
 
-	/* The directory, now empty. */
-	error = rmdir(path);
-	if (error != 0) {
-		report(path);
-		return -1;
-	}
-
-	/* Succeeded. */
-	return 0;
+	/* Succeeded: the directory, now empty. */
+	error = remove_directory(options, path);
+	return error;
 }
 
 /* Returns whether a path is the root, or ends in . or .. as a component. */
@@ -403,6 +493,6 @@ usage(
 	void)
 {
 	/* The form. */
-	fprintf(stderr, "usage: rm [-fiRr] file...\n");
+	fprintf(stderr, "usage: rm [-dfiRrv] file...\n");
 	exit(1);
 }

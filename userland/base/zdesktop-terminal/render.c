@@ -1118,9 +1118,13 @@ render_build(
 			if (cell->continuation == 0 && cell->codepoint != ' ' && cell->codepoint != 0U)
 				slot = terminal_font_slot(font, cell->codepoint);
 
-			/* The cursor's cell is drawn with its colours swapped: a block cursor. */
+			/* A selected screen has the selection's background (Edit > Select All). */
 			foreground = cell->foreground;
 			background = cell->background;
+			if (screen->selected)
+				background = TERMINAL_SELECTION;
+
+			/* The cursor's cell is drawn with its colours swapped: a block cursor. */
 			if (screen->cursor_visible && column == screen->cursor_column && row == screen->cursor_row) {
 				foreground = cell->background;
 				background = cell->foreground;

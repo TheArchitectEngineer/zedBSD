@@ -303,6 +303,53 @@ zwl_error(
 }
 
 /*
+ * Queues wl_display.error naming the object at fault and its interface's error code.
+ *
+ * zwl_error names the display with code 1 because the request it reports may
+ * have named no live object; a request that failed on a live object of an
+ * interface with its own error enum uses this instead, so that the client
+ * learns which object and which error.  Returns EPROTO, like zwl_error.
+ */
+int
+zwl_error_code(
+	struct zwl_client *client,
+	uint32_t object,
+	uint32_t code,
+	const char *reason)
+{
+	unsigned char payload[268];
+	uint32_t word;
+	size_t bytes;
+	int error;
+
+	/* Only the first defect owns the connection's final protocol error. */
+	if (client->fatal)
+		return EPROTO;
+
+	/* The object at fault and the code of its interface's error. */
+	memset(payload, 0, sizeof(payload));
+	memcpy(payload, &object, 4);
+	memcpy(payload + 4, &code, 4);
+
+	/* The message, cut to 255 bytes, with its terminator and aligned storage. */
+	bytes = strlen(reason);
+	if (bytes > 255U)
+		bytes = 255U;
+	word = (uint32_t)bytes + 1U;
+	memcpy(payload + 8, &word, 4);
+	memcpy(payload + 12, reason, bytes);
+
+	/* The event goes out before the connection is closed; nothing more is taken from it. */
+	error = zwl_emit(client, 1, 0, payload, 12U + ((bytes + 4U) & ~(size_t)3U));
+	client->fatal = 1;
+	client->fatal_time = zwl_milliseconds();
+	printf("ZWL ERROR client=%llu object=%u code=%u reason=%s emit=%d\n", (unsigned long long)client->number, object, code, reason, error);
+
+	/* Succeeded: EPROTO makes the loop flush the error before it disconnects. */
+	return EPROTO;
+}
+
+/*
  * Transfers the next ancillary descriptor from connection ownership to a request.
  */
 int
