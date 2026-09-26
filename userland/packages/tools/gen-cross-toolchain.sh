@@ -41,7 +41,7 @@ mkdir -p "$bin"
 # target contract.  Getting this wrong is not silent: sys/stat.h asserts the
 # size and layout of struct stat for the ABI it thinks it is compiling for.
 case $triple in
-x86_64-*) abi_flags='-DKERN_USER_ABI_LP64' ;;
+x86_64-*|aarch64-*) abi_flags='-DKERN_USER_ABI_LP64' ;;
 *) abi_flags='' ;;
 esac
 

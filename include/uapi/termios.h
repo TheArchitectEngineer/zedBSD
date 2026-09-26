@@ -45,6 +45,35 @@
 #define ONOCR	0x00000008U
 #define ONLRET	0x00000010U
 
+/*
+ * The XSI fill and delay settings.  Output here needs no fill characters
+ * or delays, so the bits are carried and reported unchanged, as CSTOPB is.
+ */
+#define OFILL	0x00000020U
+#define OFDEL	0x00000040U
+#define NLDLY	0x00000100U
+#define NL0	0x00000000U
+#define NL1	0x00000100U
+#define CRDLY	0x00000600U
+#define CR0	0x00000000U
+#define CR1	0x00000200U
+#define CR2	0x00000400U
+#define CR3	0x00000600U
+#define TABDLY	0x00001800U
+#define TAB0	0x00000000U
+#define TAB1	0x00000800U
+#define TAB2	0x00001000U
+#define TAB3	0x00001800U
+#define BSDLY	0x00002000U
+#define BS0	0x00000000U
+#define BS1	0x00002000U
+#define VTDLY	0x00004000U
+#define VT0	0x00000000U
+#define VT1	0x00004000U
+#define FFDLY	0x00008000U
+#define FF0	0x00000000U
+#define FF1	0x00008000U
+
 #define CREAD	0x00000001U
 #define CS8	0x00000002U
 #define CLOCAL	0x00000004U

@@ -1935,6 +1935,9 @@ keyboard_code(
 	case 0xe2:
 		/* Returns the computed result. */
 		return KEY_LEFTALT;
+	case 0xe3:
+		/* The left GUI (Super, Windows) key. */
+		return KEY_LEFTMETA;
 	case 0xe4:
 		/* Returns the computed result. */
 		return KEY_RIGHTCTRL;
@@ -1944,6 +1947,9 @@ keyboard_code(
 	case 0xe6:
 		/* Returns the computed result. */
 		return KEY_RIGHTALT;
+	case 0xe7:
+		/* The right GUI (Super, Windows) key. */
+		return KEY_RIGHTMETA;
 	default:
 		/* Returns the computed result. */
 		return KEY_RESERVED;
@@ -2868,7 +2874,7 @@ drv_hid_report_layout_boot_keyboard(
 	struct hid_report_description *report;
 	struct hid_parser *parser;
 	static const uint16_t modifier_usages[] = {
-		0xe0, 0xe1, 0xe2, 0xe4, 0xe5, 0xe6,
+		0xe0, 0xe1, 0xe2, 0xe3, 0xe4, 0xe5, 0xe6, 0xe7,
 	};
 	size_t index;
 	int error;

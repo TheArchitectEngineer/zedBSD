@@ -167,8 +167,11 @@ trace_subject(
 	return 0;
 }
 
-static int trace_write(struct process *process, uintptr_t address,
-	const void *source, size_t length, int instruction);
+static int trace_write(struct process *process, uintptr_t address, const void *source, size_t length);
+static void trace_gpregs_out(const struct hal_gpregs *from, struct reg *to);
+static void trace_gpregs_in(const struct reg *from, struct hal_gpregs *to);
+static void trace_fpregs_out(const struct hal_fpregs *from, struct fpreg *to);
+static void trace_fpregs_in(const struct fpreg *from, struct hal_fpregs *to);
 
 /*
  * Moves a block of memory between the tracer and the traced process.
@@ -242,7 +245,7 @@ trace_io(
 	    (uintptr_t)request->piod_addr, request->piod_len);
 	if (error == 0) {
 		error = trace_write(process, address, buffer,
-		    request->piod_len, request->piod_op == PIOD_WRITE_I);
+		    request->piod_len);
 	}
 	kern_free(buffer);
 
@@ -263,14 +266,14 @@ trace_write(
 	struct process *process,
 	uintptr_t address,
 	const void *source,
-	size_t length,
-	int instruction)
+	size_t length)
 {
 	struct vm_region *region;
 	uintptr_t page;
 	size_t span;
 	uint32_t prot;
 	uint32_t max_prot;
+	uint32_t writable;
 	int raised;
 	int error;
 
@@ -287,33 +290,47 @@ trace_write(
 	prot = region->prot;
 	max_prot = region->max_prot;
 
-	/* Raises the permission only where the mapping allows it. */
+	/*
+	 * Raises the permission only where the mapping allows it.  Not every
+	 * machine lets a page be writable and executable at once (AArch64
+	 * refuses it), so text is writable and not executable for the copy.
+	 */
 	if ((prot & HAL_SPACE_WRITE) == 0) {
 		if ((max_prot & HAL_SPACE_WRITE) == 0)
 			return EACCES;
+		writable = (prot | HAL_SPACE_WRITE) & ~(uint32_t)HAL_SPACE_EXEC;
 		error = vmspace_protect(process->vmspace, page, span,
-		    prot | HAL_SPACE_WRITE);
+		    writable);
 		if (error != 0)
 			return error;
 		raised = 1;
 	}
 
+	/* Copies the bytes into the traced process. */
 	error = vmspace_copy_to(process->vmspace, address, source, length);
 
-	/* Puts the permission back before anything runs again. */
+	/*
+	 * Puts the permission back before anything runs again.  Making the
+	 * text executable again is also what makes instruction fetch see
+	 * the written bytes: the hardware layer synchronizes the instruction
+	 * stream of a page when it becomes executable.
+	 */
 	if (raised)
 		(void)vmspace_protect(process->vmspace, page, span, prot);
 
 	/*
-	 * Instruction fetch does not see a store on every machine, so the
-	 * written range is made visible to it.
+	 * A page that stayed executable while it was written (one that was
+	 * writable and executable already) is made visible to instruction
+	 * fetch here.
 	 */
-	if (error == 0 && (instruction || (prot & HAL_SPACE_EXEC) != 0))
+	if (error == 0 && !raised && (prot & HAL_SPACE_EXEC) != 0)
 		hal_icache_invalidate_range(address, length);
 
 	/* Reports the outcome. */
 	return error;
 }
+
+#if defined(__x86_64__)
 
 /*
  * Copies the integer registers outward, under the names a process sees.
@@ -380,6 +397,112 @@ trace_gpregs_in(
 }
 
 /*
+ * Copies the x87 state outward.
+ */
+static void
+trace_fpregs_out(
+	const struct hal_fpregs *from,
+	struct fpreg *to)
+{
+	to->fp_control = from->control;
+	to->fp_status = from->status;
+	to->fp_tag = from->tag;
+	to->fp_opcode = from->opcode;
+	to->fp_instruction_pointer = from->instruction_pointer;
+	to->fp_data_pointer = from->data_pointer;
+	kern_memcpy(to->fp_stack, from->stack, sizeof(to->fp_stack));
+}
+
+/*
+ * Copies the x87 state inward.
+ */
+static void
+trace_fpregs_in(
+	const struct fpreg *from,
+	struct hal_fpregs *to)
+{
+	to->control = from->fp_control;
+	to->status = from->fp_status;
+	to->tag = from->fp_tag;
+	to->opcode = from->fp_opcode;
+	to->instruction_pointer = from->fp_instruction_pointer;
+	to->data_pointer = from->fp_data_pointer;
+	kern_memcpy(to->stack, from->fp_stack, sizeof(to->stack));
+}
+
+#elif defined(__aarch64__)
+
+/*
+ * Copies the integer registers outward, under the names a process sees.
+ */
+static void
+trace_gpregs_out(
+	const struct hal_gpregs *from,
+	struct reg *to)
+{
+	unsigned index;
+
+	/* Copies the general registers, x30 (the link register) included. */
+	for (index = 0; index < 31U; index++)
+		to->r_x[index] = from->x[index];
+
+	/* Copies the stack pointer, the next instruction, the state and the thread pointer. */
+	to->r_sp = from->sp;
+	to->r_pc = from->pc;
+	to->r_pstate = from->pstate;
+	to->r_tpidr = from->tpidr;
+}
+
+/*
+ * Copies the integer registers inward.
+ */
+static void
+trace_gpregs_in(
+	const struct reg *from,
+	struct hal_gpregs *to)
+{
+	unsigned index;
+
+	/* Copies the general registers, x30 (the link register) included. */
+	for (index = 0; index < 31U; index++)
+		to->x[index] = from->r_x[index];
+
+	/* Copies the stack pointer, the next instruction, the state and the thread pointer. */
+	to->sp = from->r_sp;
+	to->pc = from->r_pc;
+	to->pstate = from->r_pstate;
+	to->tpidr = from->r_tpidr;
+}
+
+/*
+ * Copies the floating-point and SIMD state outward.
+ */
+static void
+trace_fpregs_out(
+	const struct hal_fpregs *from,
+	struct fpreg *to)
+{
+	kern_memcpy(to->fp_v, from->v, sizeof(to->fp_v));
+	to->fp_fpsr = from->fpsr;
+	to->fp_fpcr = from->fpcr;
+}
+
+/*
+ * Copies the floating-point and SIMD state inward.
+ */
+static void
+trace_fpregs_in(
+	const struct fpreg *from,
+	struct hal_fpregs *to)
+{
+	kern_memcpy(to->v, from->fp_v, sizeof(to->v));
+	to->fpsr = from->fp_fpsr;
+	to->fpcr = from->fp_fpcr;
+}
+
+#endif
+
+/*
  * Handles ptrace(2).
  */
 int
@@ -395,10 +518,12 @@ kern_ptrace(
 	struct thread *thread;
 	struct hal_gpregs gpregs;
 	struct hal_fpregs fpregs;
+#if defined(__x86_64__)
 	struct hal_vregs vregs;
+	struct xmmreg user_xmmreg;
+#endif
 	struct reg user_reg;
 	struct fpreg user_fpreg;
-	struct xmmreg user_xmmreg;
 	struct ptrace_io_desc io;
 	struct ptrace_state state;
 	int error;
@@ -519,14 +644,7 @@ kern_ptrace(
 			error = EIO;
 			break;
 		}
-		user_fpreg.fp_control = fpregs.control;
-		user_fpreg.fp_status = fpregs.status;
-		user_fpreg.fp_tag = fpregs.tag;
-		user_fpreg.fp_opcode = fpregs.opcode;
-		user_fpreg.fp_instruction_pointer = fpregs.instruction_pointer;
-		user_fpreg.fp_data_pointer = fpregs.data_pointer;
-		kern_memcpy(user_fpreg.fp_stack, fpregs.stack,
-		    sizeof(user_fpreg.fp_stack));
+		trace_fpregs_out(&fpregs, &user_fpreg);
 		error = vmspace_copy_to(caller->vmspace, address, &user_fpreg,
 		    sizeof(user_fpreg));
 		break;
@@ -541,18 +659,12 @@ kern_ptrace(
 		    address, sizeof(user_fpreg));
 		if (error != 0)
 			break;
-		fpregs.control = user_fpreg.fp_control;
-		fpregs.status = user_fpreg.fp_status;
-		fpregs.tag = user_fpreg.fp_tag;
-		fpregs.opcode = user_fpreg.fp_opcode;
-		fpregs.instruction_pointer = user_fpreg.fp_instruction_pointer;
-		fpregs.data_pointer = user_fpreg.fp_data_pointer;
-		kern_memcpy(fpregs.stack, user_fpreg.fp_stack,
-		    sizeof(fpregs.stack));
+		trace_fpregs_in(&user_fpreg, &fpregs);
 		if (hal_task_set_user_fpregs(thread->task, &fpregs) != 0)
 			error = EINVAL;
 		break;
 
+#if defined(__x86_64__)
 	case PT_GETXMMREGS:
 		thread = trace_thread(process, (tid_t)data);
 		if (thread == NULL) {
@@ -588,6 +700,7 @@ kern_ptrace(
 		if (hal_task_set_user_vregs(thread->task, &vregs) != 0)
 			error = EINVAL;
 		break;
+#endif
 
 	case PT_IO:
 		error = vmspace_copy_from(caller->vmspace, &io, address,
@@ -627,8 +740,7 @@ kern_ptrace(
 
 			word = data;
 			error = trace_write(process, address, &word,
-			    sizeof(word),
-			    request == PT_WRITE_I);
+			    sizeof(word));
 		}
 		break;
 

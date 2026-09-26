@@ -8995,12 +8995,13 @@ static SYSCALL_EXT intptr_t
 sys_ptrace_call(
 	const uintptr_t args[6])
 {
-#if !defined(__x86_64__)
+#if !defined(__x86_64__) && !defined(__aarch64__)
 
 	/*
 	 * The registers a debugger reads are described in <uapi/reg.h> for
-	 * amd64 only, so src/kern/ptrace.c is not part of the other kernels
-	 * yet.  Those report the request as one this system does not have.
+	 * amd64 and aarch64 only, so src/kern/ptrace.c is not part of the
+	 * other kernels yet.  Those report the request as one this system
+	 * does not have.
 	 */
 	(void)args;
 	return -ENOSYS;
