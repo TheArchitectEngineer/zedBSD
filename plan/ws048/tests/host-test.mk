@@ -12,7 +12,7 @@ DTC ?= dtc
 DTB ?= $(REPO)/vendor/raspberrypi-firmware/boot/bcm2711-rpi-4-b.dtb
 TESTS := $(REPO)/plan/ws048/tests
 
-CPPFLAGS := -I$(REPO)/include -I$(REPO)/src -I$(REPO)
+CPPFLAGS := -D_POSIX_C_SOURCE=200809L -I$(REPO)/include -I$(REPO)/src -I$(REPO)
 CFLAGS := -std=c11 -O1 -g -Wall -Wextra -Werror \
 	-fsanitize=address,undefined -fno-omit-frame-pointer
 LDFLAGS := -fsanitize=address,undefined
@@ -20,8 +20,17 @@ LDFLAGS := -fsanitize=address,undefined
 .PHONY: all run
 all: run
 
-run: $(OUT)/fdt-host-test $(OUT)/disabled.dtb
+run: $(OUT)/fdt-host-test $(OUT)/brcmstb-host-test $(OUT)/disabled.dtb
 	$(OUT)/fdt-host-test $(DTB) $(OUT)/disabled.dtb
+	$(OUT)/brcmstb-host-test $(DTB) $(OUT)/disabled.dtb
+
+$(OUT)/brcmstb-host-test: $(TESTS)/brcmstb-host-test.c \
+	$(REPO)/src/drivers/pci/pci-brcmstb.c $(REPO)/src/drivers/generic/fdt.c \
+	$(REPO)/include/drivers/pci/pci-brcmstb.h $(REPO)/include/drivers/generic/fdt.h
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(TESTS)/brcmstb-host-test.c \
+		$(REPO)/src/drivers/pci/pci-brcmstb.c \
+		$(REPO)/src/drivers/generic/fdt.c $(LDFLAGS) -o $@
 
 $(OUT)/fdt-host-test: $(TESTS)/fdt-host-test.c $(REPO)/src/drivers/generic/fdt.c \
 	$(REPO)/include/drivers/generic/fdt.h

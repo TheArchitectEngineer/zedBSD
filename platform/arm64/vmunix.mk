@@ -60,6 +60,9 @@ ARM64_KERNEL_SOURCES := \
 	src/kern/platform/rpi4.c \
 	src/drivers/platform/rpi4/rpi4-sdhci.c \
 	src/drivers/platform/rpi4/rpi4-console.c \
+	src/drivers/platform/rpi4/rpi4-pcie.c \
+	src/drivers/generic/fdt.c src/drivers/generic/dma.c \
+	src/drivers/pci/pci.c src/drivers/pci/pci-brcmstb.c \
 	src/kern/panic.c src/kern/entry.c src/kern/clock.c \
 	src/kern/timer.c src/kern/klog.c \
 	src/kern/lock.c src/kern/waitq.c \
@@ -257,7 +260,7 @@ $(BUILD)/POSIX-R1.ELF: $(BUILD)/user/src/libc/crt/crt0-aarch64.o \
 	@# A weak undefined symbol is an optional hook, not a link error.
 	@# GNU nm drops those from -u; llvm-nm reports them, so the strong
 	@# references are selected explicitly.
-	@test -z "$$($(ARM64_NM) -u $@ | $(AWK) '$$1 == \"U\"')" || \
+	@test -z "$$($(ARM64_NM) -u $@ | $(AWK) '$$1 == "U"')" || \
 		{ $(ARM64_NM) -u $@; exit 1; }
 	$(PYTHON) tools/build/check-user-elf.py --machine aarch64 $@
 
@@ -273,7 +276,7 @@ $(BUILD)/POSIX-R2.ELF: $(BUILD)/user/src/libc/crt/crt0-aarch64.o \
 	@# A weak undefined symbol is an optional hook, not a link error.
 	@# GNU nm drops those from -u; llvm-nm reports them, so the strong
 	@# references are selected explicitly.
-	@test -z "$$($(ARM64_NM) -u $@ | $(AWK) '$$1 == \"U\"')" || \
+	@test -z "$$($(ARM64_NM) -u $@ | $(AWK) '$$1 == "U"')" || \
 		{ $(ARM64_NM) -u $@; exit 1; }
 	$(PYTHON) tools/build/check-user-elf.py --machine aarch64 $@
 
@@ -289,7 +292,7 @@ $(BUILD)/POSIX-R2-REMAINING.ELF: \
 	@# A weak undefined symbol is an optional hook, not a link error.
 	@# GNU nm drops those from -u; llvm-nm reports them, so the strong
 	@# references are selected explicitly.
-	@test -z "$$($(ARM64_NM) -u $@ | $(AWK) '$$1 == \"U\"')" || \
+	@test -z "$$($(ARM64_NM) -u $@ | $(AWK) '$$1 == "U"')" || \
 		{ $(ARM64_NM) -u $@; exit 1; }
 	$(PYTHON) tools/build/check-user-elf.py --machine aarch64 $@
 
@@ -494,7 +497,7 @@ $(BUILD)/kernel.elf: $(ARM64_VMUNIX_OBJS) $(ARM64_PLATFORM)/vmunix.ld \
 	@# A weak undefined symbol is an optional hook, not a link error.
 	@# GNU nm drops those from -u; llvm-nm reports them, so the strong
 	@# references are selected explicitly.
-	@test -z "$$($(ARM64_NM) -u $@ | $(AWK) '$$1 == \"U\"')" || \
+	@test -z "$$($(ARM64_NM) -u $@ | $(AWK) '$$1 == "U"')" || \
 		{ $(ARM64_NM) -u $@; exit 1; }
 	$(PYTHON) platform/arm64/tools/check-arm64-vmunix.py --elf $@
 

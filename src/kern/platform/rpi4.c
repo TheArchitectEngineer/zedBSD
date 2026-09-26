@@ -20,6 +20,7 @@
 #include <kern/platform.h>
 #include <kern/boot.h>
 #include "drivers/platform/rpi4/rpi4-console.h"
+#include "drivers/platform/rpi4/rpi4-pcie.h"
 #include "drivers/platform/rpi4/rpi4-sdhci.h"
 
 /*
@@ -70,6 +71,12 @@ kern_platform_init(
 			return 0;
 		hal_puts("sdhci: using QEMU legacy-controller fallback\n");
 	}
+
+	/*
+	 * Brings up PCIe and what sits behind it.  A board or emulator without
+	 * a usable controller boots without PCI devices.
+	 */
+	(void)drv_rpi4_pcie_init(rpi4->fdt_phys);
 
 	/* Publishes the SD card as the boot device. */
 	device = &devices[0];
