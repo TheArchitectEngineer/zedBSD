@@ -202,3 +202,4 @@ entire production overlay/UFS translation units.
 | --- | --- |
 | 共通 | `build-host-ws001.sh`（host の build を `build/ws001/bin` へ）、`plan/tools/utils/util-diff.py --bin build/ws001/bin --only <utility>`（case は `plan/tools/utils/cases/<utility>.sh`、GNU の POSIX mode と比べる）、`tty-host-test.py`（端末が要る case）、`guest-run.sh OUTPUT [CASE...]`（lean guest の image を `config-amd64-lean-guest.mk` で作り、QEMU で serial console から `guest-cases.sh` で case を流す） |
 | `ws001-p024` | cases `xargs`・`time`・`nohup`・`env`・`pwd` と `tty-host-test.py` |
+| `ws001-p025` | cases `cp`・`cp-user`（root でない user が要る。guest では流さない）・`mv`・`files`、`tty-host-test.py` の mv の問い、`cp-installer-compare.sh OLD_CP NEW_CP`（installer の cp の呼び方を新旧で比べる）、`strerror-host-test.py [STRING_C]`（libc の strerror の全 error 番号） |

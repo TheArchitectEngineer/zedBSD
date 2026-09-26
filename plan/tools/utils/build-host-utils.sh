@@ -7,8 +7,13 @@ set -e
 out=${1:-build/ws043/bin}
 mkdir -p "$out"
 for utility in sed grep awk cut wc head tail sort uniq tr od expr paste join comm fold nl split csplit tsort basename dirname cat rm rmdir mkdir ln touch mv cp chmod ls; do
+	# mv shares cp's copy of file hierarchies (ws001-p025).
+	extra=
+	if [ "$utility" = mv ]; then
+		extra=userland/base/cp/copy.c
+	fi
 	cc -std=c11 -D_GNU_SOURCE -O1 -g -w -I. -Iinclude \
-		userland/base/$utility/*.c userland/base/common/command.c \
+		userland/base/$utility/*.c $extra userland/base/common/command.c \
 		-o "$out/$utility" -lm
 done
 # The shell's echo, printf and test built as commands, and true and false.

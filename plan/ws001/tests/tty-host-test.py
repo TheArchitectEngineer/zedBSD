@@ -45,6 +45,18 @@ CASES = [
 	("nohup replaces terminal input",
 	 "nohup sh -c 'cat 2>/dev/null; echo done' ; cat nohup.out > result",
 	 b""),
+	("mv asks about an unwritable destination on a terminal (no)",
+	 "printf new > a; printf old > b; chmod 444 b; mv a b; "
+	 "echo st=$? > result; ls >> result; cat b >> result",
+	 b"n\n"),
+	("mv asks about an unwritable destination on a terminal (yes)",
+	 "printf new > a; printf old > b; chmod 444 b; mv a b; "
+	 "echo st=$? > result; ls >> result; cat b >> result",
+	 b"y\n"),
+	("mv -f does not ask on a terminal",
+	 "printf new > a; printf old > b; chmod 444 b; mv -f a b; "
+	 "echo st=$? > result; ls >> result; cat b >> result",
+	 b""),
 	("xargs -p runs on y and skips on n",
 	 "printf 'a\\nb\\nc\\n' | xargs -p -n 1 sh -c 'echo \"$0\" >> result'; "
 	 "echo st=$? >> result",

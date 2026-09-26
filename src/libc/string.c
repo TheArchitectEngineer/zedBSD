@@ -11,6 +11,121 @@
 #include <errno.h>
 #include <string.h>
 
+/* The longest "Unknown error N" description, with its terminator. */
+#define ERROR_UNKNOWN_SIZE 32
+
+/*
+ * One error number and the description strerror gives it.
+ *
+ * The descriptions follow the wording that other systems print, so that a
+ * diagnostic reads the same everywhere.
+ */
+struct error_description {
+	int number;
+	const char *text;
+};
+
+/*
+ * The description of every error number of <uapi/errno.h>, in its order.
+ *
+ * The table is constant for the life of the program.  An error number
+ * added to <uapi/errno.h> needs a row here;
+ * plan/ws001/tests/strerror-host-test.sh checks that every one has one.
+ */
+static const struct error_description error_descriptions[] = {
+	{ EDOM, "Numerical argument out of domain" },
+	{ ERANGE, "Numerical result out of range" },
+	{ EINVAL, "Invalid argument" },
+	{ ENOMEM, "Cannot allocate memory" },
+	{ EIO, "Input/output error" },
+	{ ENOENT, "No such file or directory" },
+	{ EINTR, "Interrupted system call" },
+	{ ENOSPC, "No space left on device" },
+	{ EROFS, "Read-only file system" },
+	{ EOVERFLOW, "Value too large for defined data type" },
+	{ ENAMETOOLONG, "File name too long" },
+	{ ENXIO, "No such device or address" },
+	{ ENODEV, "No such device" },
+	{ ENOTDIR, "Not a directory" },
+	{ EISDIR, "Is a directory" },
+	{ EEXIST, "File exists" },
+	{ EBUSY, "Device or resource busy" },
+	{ ENOTEMPTY, "Directory not empty" },
+	{ EBADF, "Bad file descriptor" },
+	{ ENOSYS, "Function not implemented" },
+	{ EOPNOTSUPP, "Operation not supported" },
+	{ ENOEXEC, "Exec format error" },
+	{ EFAULT, "Bad address" },
+	{ EAGAIN, "Resource temporarily unavailable" },
+	{ EACCES, "Permission denied" },
+	{ ESRCH, "No such process" },
+	{ ECHILD, "No child processes" },
+	{ E2BIG, "Argument list too long" },
+	{ ENFILE, "Too many open files in system" },
+	{ EMSGSIZE, "Message too long" },
+	{ ENOBUFS, "No buffer space available" },
+	{ ENETDOWN, "Network is down" },
+	{ ENETUNREACH, "Network is unreachable" },
+	{ EPROTONOSUPPORT, "Protocol not supported" },
+	{ EAFNOSUPPORT, "Address family not supported by protocol" },
+	{ EADDRINUSE, "Address already in use" },
+	{ EADDRNOTAVAIL, "Cannot assign requested address" },
+	{ EISCONN, "Transport endpoint is already connected" },
+	{ ENOTCONN, "Transport endpoint is not connected" },
+	{ ECONNREFUSED, "Connection refused" },
+	{ ECONNRESET, "Connection reset by peer" },
+	{ ETIMEDOUT, "Connection timed out" },
+	{ EHOSTUNREACH, "No route to host" },
+	{ EPIPE, "Broken pipe" },
+	{ EDESTADDRREQ, "Destination address required" },
+	{ EMFILE, "Too many open files" },
+	{ EPERM, "Operation not permitted" },
+	{ EXDEV, "Invalid cross-device link" },
+	{ ESPIPE, "Illegal seek" },
+	{ ELOOP, "Too many levels of symbolic links" },
+	{ EFBIG, "File too large" },
+	{ ENOTTY, "Inappropriate ioctl for device" },
+	{ EINPROGRESS, "Operation now in progress" },
+	{ EALREADY, "Operation already in progress" },
+	{ ECONNABORTED, "Software caused connection abort" },
+	{ ENOPROTOOPT, "Protocol not available" },
+	{ EMLINK, "Too many links" },
+	{ EDEADLK, "Resource deadlock avoided" },
+	{ ECANCELED, "Operation canceled" },
+	{ ENOTSOCK, "Socket operation on non-socket" },
+	{ EILSEQ, "Invalid or incomplete multibyte or wide character" },
+	{ ENODATA, "No data available" },
+	{ EDQUOT, "Disk quota exceeded" },
+	{ ENOMSG, "No message of desired type" },
+	{ EIDRM, "Identifier removed" },
+	{ ESTALE, "Stale file handle" },
+	{ EPROTO, "Protocol error" },
+	{ EPFNOSUPPORT, "Protocol family not supported" },
+	{ ETXTBSY, "Text file busy" },
+	{ EBADMSG, "Bad message" },
+	{ EMULTIHOP, "Multihop attempted" },
+	{ ENETRESET, "Network dropped connection on reset" },
+	{ ENOLCK, "No locks available" },
+	{ ENOLINK, "Link has been severed" },
+	{ ENOSR, "Out of streams resources" },
+	{ ENOSTR, "Device not a stream" },
+	{ ENOTRECOVERABLE, "State not recoverable" },
+	{ EOWNERDEAD, "Owner died" },
+	{ EPROTOTYPE, "Protocol wrong type for socket" },
+	{ ESOCKTNOSUPPORT, "Socket type not supported" },
+	{ ETIME, "Timer expired" },
+};
+
+/*
+ * The description strerror returns for a number that is not an error
+ * number.  POSIX lets strerror reuse its result, so it is rewritten by the
+ * next such call.
+ */
+static char error_unknown[ERROR_UNKNOWN_SIZE];
+
+static const char *error_text(int error);
+static void error_format_unknown(int error, char *buffer, size_t size);
+
 void *
 memcpy(void *destination, const void *source, size_t count)
 {
@@ -204,95 +319,142 @@ strdup(const char *string)
 	return heap_strdup_active(string);
 }
 
+/*
+ * Describes an error number.
+ *
+ * A number that is not an error number gets "Unknown error" and the number.
+ */
 char *
-strerror(int error)
+strerror(
+	int error)
 {
-	switch (error) {
-	case EDOM: return "Domain error";
-	case ERANGE: return "Range error";
-	case EINVAL: return "Invalid argument";
-	case ENOMEM: return "Not enough memory";
-	case EIO: return "Input/output error";
-	case EPROTO:
-		return "Protocol error";
-	case ENOENT: return "No such file or directory";
-	case EINTR: return "Interrupted system call";
-	case ENOSPC: return "No space left on device";
-	case EROFS: return "Read-only file system";
-	case EOVERFLOW: return "Value too large";
-	case ENAMETOOLONG: return "File name too long";
-	case EPFNOSUPPORT: return "Protocol family not supported";
-	case ETXTBSY: return "Text file busy";
-	case EBADMSG: return "Bad message";
-	case EMULTIHOP: return "Multihop attempted";
-	case ENETRESET: return "Connection aborted by network";
-	case ENOLCK: return "No locks available";
-	case ENOLINK: return "Link has been severed";
-	case ENOSR: return "No STREAM resources";
-	case ENOSTR: return "Not a STREAM";
-	case ENOTRECOVERABLE: return "State not recoverable";
-	case EOWNERDEAD: return "Previous owner died";
-	case EPROTOTYPE: return "Protocol wrong type for socket";
-	case ESOCKTNOSUPPORT: return "Socket type not supported";
-	case ETIME: return "STREAM ioctl timeout";
-	case ENXIO: return "No such device or address";
-	case ENODEV: return "No such device";
-	case ENOTDIR: return "Not a directory";
-	case EISDIR: return "Is a directory";
-	case EEXIST: return "File exists";
-	case EBUSY: return "Device or resource busy";
-	case ENOTEMPTY: return "Directory not empty";
-	case EBADF: return "Bad file descriptor";
-	case ENOSYS: return "Function not implemented";
-	case EOPNOTSUPP: return "Operation not supported";
-	case ENOEXEC: return "Executable format error";
-	case EFAULT: return "Bad address";
-	case EAGAIN: return "Resource temporarily unavailable";
-	case EACCES: return "Permission denied";
-	case ENETDOWN: return "Network is down";
-	case ETIMEDOUT: return "Connection timed out";
-	case ECONNRESET: return "Connection reset by peer";
-	case ESRCH: return "No such process";
-	case ECHILD: return "No child process";
-	case E2BIG: return "Argument list too long";
-	case EMFILE: return "Too many open files";
-	case EPERM: return "Operation not permitted";
-	case EXDEV: return "Cross-device link";
-	case ESPIPE: return "Illegal seek";
-	case ELOOP: return "Too many levels of symbolic links";
-	case EFBIG: return "File too large";
-	case ENOTTY: return "Inappropriate ioctl for device";
-	default: return "Unknown error";
+	const char *text;
+
+	/* Looks the number up. */
+	text = error_text(error);
+	if (text == NULL) {
+		error_format_unknown(error, error_unknown, sizeof(error_unknown));
+		return error_unknown;
 	}
+
+	/* Succeeded: the description, which the caller must not change. */
+	return (char *)text;
 }
 
 /*
- * Implements the strerror r operation.
+ * Describes an error number into the caller's buffer.
  *
- * POSIX's reentrant form: the description is copied into the caller's buffer
- * and the result is an errno value rather than a pointer.  ERANGE says the
+ * POSIX's reentrant form: the result is an errno value rather than a
+ * pointer.  EINVAL says the number is not an error number, though the
+ * buffer still receives "Unknown error" and the number; ERANGE says the
  * buffer was too small, in which case what fits is still left terminated.
  */
 int
-strerror_r(int error, char *buffer, size_t size)
+strerror_r(
+	int error,
+	char *buffer,
+	size_t size)
 {
+	char unknown[ERROR_UNKNOWN_SIZE];
 	const char *text;
 	size_t length;
+	int result;
 
 	/* Rejects a buffer that cannot even hold a terminator. */
 	if (buffer == NULL || size == 0)
 		return ERANGE;
-	text = strerror(error);
-	length = strlen(text);
+
+	/* Looks the number up; an unknown one is described and refused. */
+	result = 0;
+	text = error_text(error);
+	if (text == NULL) {
+		error_format_unknown(error, unknown, sizeof(unknown));
+		text = unknown;
+		result = EINVAL;
+	}
 
 	/* Reports a buffer too small, having filled what fits. */
+	length = strlen(text);
 	if (length >= size) {
 		memcpy(buffer, text, size - 1U);
 		buffer[size - 1U] = '\0';
 		return ERANGE;
 	}
+
+	/* Copies the whole description. */
 	memcpy(buffer, text, length + 1U);
 
-	/* Reports successful completion. */
+	/* Reports an unknown number after describing it. */
+	if (result != 0)
+		return result;
+
+	/* Succeeded: the buffer holds the description. */
 	return 0;
+}
+
+/* Finds the description of an error number, or NULL for another number. */
+static const char *
+error_text(
+	int error)
+{
+	size_t index;
+	size_t count;
+
+	/* Searches the table; it is short and read rarely. */
+	count = sizeof(error_descriptions) / sizeof(error_descriptions[0]);
+	for (index = 0; index < count; index++) {
+		if (error_descriptions[index].number == error)
+			return error_descriptions[index].text;
+	}
+
+	/* Not an error number. */
+	return NULL;
+}
+
+/* Writes "Unknown error" and a number in decimal into a buffer. */
+static void
+error_format_unknown(
+	int error,
+	char *buffer,
+	size_t size)
+{
+	static const char prefix[] = "Unknown error ";
+	char digits[16];
+	unsigned int magnitude;
+	size_t count;
+	size_t length;
+
+	/* The digits of the magnitude, least significant first. */
+	magnitude = (unsigned int)error;
+	if (error < 0)
+		magnitude = 0U - (unsigned int)error;
+	count = 0;
+	do {
+		digits[count] = (char)('0' + magnitude % 10U);
+		count++;
+		magnitude /= 10U;
+	} while (magnitude != 0U);
+
+	/* The prefix, the sign, then the digits most significant first. */
+	length = 0;
+	while (prefix[length] != '\0' && length + 1U < size) {
+		buffer[length] = prefix[length];
+		length++;
+	}
+
+	/* A negative number keeps its sign. */
+	if (error < 0 && length + 1U < size) {
+		buffer[length] = '-';
+		length++;
+	}
+
+	/* The digits, as many as fit. */
+	while (count > 0 && length + 1U < size) {
+		count--;
+		buffer[length] = digits[count];
+		length++;
+	}
+
+	/* Terminates the description. */
+	buffer[length] = '\0';
 }

@@ -21,8 +21,13 @@ for utility in $list; do
 		failed="$failed $utility"
 		continue
 	fi
+	# mv shares cp's copy of file hierarchies.
+	extra=
+	if [ "$utility" = mv ]; then
+		extra=userland/base/cp/copy.c
+	fi
 	if ! cc -std=c11 -D_GNU_SOURCE -O1 -g -w -I. -Iinclude \
-		userland/base/$utility/*.c userland/base/common/command.c \
+		userland/base/$utility/*.c $extra userland/base/common/command.c \
 		-o "$out/$utility" -lm; then
 		failed="$failed $utility"
 	fi

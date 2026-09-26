@@ -9,7 +9,7 @@ Related Milestones: MG005
 Objectives: O1, O2, O3
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p025（cp と mv）。p024 cleared。p031 まで順に実行する
+Resume point: p026（id・chown・chgrp・mkdir・mkfifo・rmdir）。p024・p025 cleared。p031 まで順に実行する
 <!-- awesome-plan-current:end -->
 
 Shared tests: [WS001 test index](tests/README.md)
@@ -44,7 +44,7 @@ Shared tests: [WS001 test index](tests/README.md)
 | `ws001-p022` | [credential-aware VFS object creation](phase022/phase.md) | Complete (`q050`, 2026-09-01) | Production-linked UFS/overlay rollback faults, root/non-root backend matrix, and abrupt-stop/reopen/remount acceptance pass; tmpfs double link increment fixed |
 | `ws001-p023` | [truthful and durable directory fsync](phase023/phase.md) | Complete (`q050`, 2026-09-01) | VFS/UFS/overlay ordering and mutation gates plus five-launch abrupt-stop/remount durability pass; FAT/tmpfs directory sync stays explicitly unsupported |
 | `ws001-p024` | [実行系の utility（xargs・time・nohup・env・pwd）](phase024/phase.md) | cleared（2026-09-27） | host の差分 102/102・端末 7/7・amd64 guest 102/102、style 0。sh の `env` builtin を削除 |
-| `ws001-p025` | [cp と mv](phase025/phase.md) | planned | 2026-09-27 に計画 |
+| `ws001-p025` | [cp と mv](phase025/phase.md) | cleared（2026-09-27） | host の差分 118/118・端末 10/10・amd64 guest 116/116・installer の呼び方は旧と同じ、style 0。libc の `strerror` を全 81 error 番号に（coordinator の依頼） |
 | `ws001-p026` | [id・chown・chgrp・mkdir・mkfifo・rmdir](phase026/phase.md) | planned | 2026-09-27 に計画 |
 | `ws001-p027` | [expand・unexpand・fold・nl・comm](phase027/phase.md) | planned | 2026-09-27 に計画 |
 | `ws001-p028` | [split・csplit・pr](phase028/phase.md) | planned | 2026-09-27 に計画 |
@@ -305,6 +305,7 @@ dependency even when they are not POSIX public APIs.
 | LIBC-CTYPE-01 | multibyte and display-width behavior | partial | `cut`, `fold`, `expand`, `unexpand`, `wc`, `strings` | complete decoding/state/error rules and column-width behavior across buffer boundaries |
 | LIBC-ICONV-01 | character conversion | partial | `iconv`, locale tools | UTF-8 validation exists; implement actual conversion pairs, aliases, stateful encodings, `-c`/`-s`, and streaming errors |
 | LIBC-REGEX-01 | BRE/ERE engine | implemented-unreviewed | `awk`, `ed`, `find`, `grep`, `sed` | utility-level grammar integration, locale/collation, empty expressions, backreferences, limits, and malformed-input fuzzing |
+| LIBC-ERRNO-01 | error descriptions (`strerror`, `strerror_r`, `perror`, `err`/`warn`) | implemented-unreviewed (`ws001-p025`) | every diagnostic | all 81 numeric error numbers of `include/uapi/errno.h` have distinct descriptions; unknown numbers give `Unknown error N` and `strerror_r` gives `EINVAL`/`ERANGE` (`plan/ws001/tests/strerror-host-test.py`); locale-specific messages (`LC_MESSAGES`) remain |
 | LIBC-STDIO-01 | robust stream I/O | partial | most utilities | standardize short read/write, `EINTR`, broken stdout, close/flush errors, and accumulated exit status |
 | LIBC-ALLOC-01 | allocation/resource failure discipline | partial | parsers and recursive tools | add fault injection and checked size/growth paths; prohibit silent truncation and success after `ENOMEM` |
 | LIBC-ACCT-01 | passwd/group lookup and group membership | partial | `id`, `chown`, `chgrp`, `newgrp`, `ps` | names, supplementary groups, reentrant/error behavior, missing records, and credential transition tests |
@@ -453,7 +454,7 @@ The current register therefore contains 0 P0, 73 P1, and 38 P2 findings.
 | 21 | [comm](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/comm.html) | P1 known incompatibility | Column suppression exists, but comparison uses byte ordering rather than `LC_COLLATE`; sorted-input assumptions, long lines, read/write errors, and locale behavior are unproved. |
 | 22 | [command](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/command.html) | P1 known incompatibility | Only ordinary dispatch and `-v` are recognized; `-p`, `-V`, lookup/reporting rules, special-builtin behavior, and 126/127 statuses are incomplete. |
 | 23 | [compress](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/compress.html) | P1 known incompatibility | Classic `.Z` LZW is implemented, but Issue 8 algorithm-selection interfaces and complete overwrite, metadata, signal, full-disk, corrupted-stream, and replacement semantics remain. |
-| 24 | [cp](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/cp.html) | P1 known incompatibility | Regular-file copying only; required options, directories, recursion, symlinks, special files, metadata preservation, interactive/force behavior, alias detection, and robust I/O are absent. |
+| 24 | [cp](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/cp.html) | implemented-unreviewed (`ws001-p025`) | `-R`/`-r`, `-H`/`-L`/`-P`, `-f`, `-i`, `-p` (set-ID bits dropped when the owner cannot be kept), new-file and new-directory modes, same-file and into-itself refusal, directories without `-R`, special files with and without `-R`, and the installer's extensions pass 47 host cases and the amd64 guest; the installer's calls give the same tree and report as before. yesexpr locale remains. |
 | 26 | [csplit](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/csplit.html) | P1 known incompatibility | Supports one numeric split only; regex operands, repeats, `-f`/`-n`/`-s`/`-k`, multiple sections, cleanup rules, line zero/errors, and output failure handling are absent. |
 | 28 | [cut](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/cut.html) | P1 known incompatibility | `-b` and `-c` are byte-equivalent and `-n`/multibyte semantics are missing; field delimiter/suppression and list grammar need correction and boundary/I/O tests. |
 | 29 | [cxref](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/cxref.html) | P1 known incompatibility | Token-based references are not a complete C translation-unit analysis; preprocessing options, declarations/scopes, output formats, width, and diagnostics need full implementation. |
@@ -493,7 +494,7 @@ The current register therefore contains 0 P0, 73 P1, and 38 P2 findings.
 | 78 | [mesg](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/mesg.html) | P2 incomplete proof | Basic tty mode query/change exists; no-controlling-terminal, `y`/`n` parsing, unrelated permission-bit preservation, diagnostic/status, and QEMU tty tests remain. |
 | 79 | [mkdir](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/mkdir.html) | P2 incomplete proof | `-p` and `-m` exist; full symbolic mode grammar/umask, intermediate modes, existing paths, slash/symlink/race cases, partial failure, and diagnostics need tests. |
 | 80 | [mkfifo](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/mkfifo.html) | P2 incomplete proof | `-m` exists but numeric parsing alone is insufficient; symbolic modes/umask, multiple operands, existing paths, permissions, cleanup/error accumulation, and filesystem support need proof. |
-| 83 | [mv](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/mv.html) | P1 known incompatibility | Rename-only subset with simple destination directories; `-f`/`-i`, cross-filesystem copy/remove, directories, symlinks/specials, metadata, self/subtree checks, and failure recovery are absent. |
+| 83 | [mv](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/mv.html) | implemented-unreviewed (`ws001-p025`) | `-i`/`-f` (last wins), the terminal prompt for unwritable destinations, same-file refusal, directory/non-directory rules, and cross-file-system moves (copy as `cp -pRP` keeping hard links, then removal) pass 29 host cases, 3 pty cases, and the amd64 guest. |
 | 84 | [newgrp](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/newgrp.html) | P2 incomplete proof | Membership/password and login mode paths exist; real set-ID/session behavior, supplementary groups, environment reset, shell replacement, audit/security failures, and interactive QEMU cases remain. |
 | 87 | [nl](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/nl.html) | P1 known incompatibility | Only a few body/start/increment options exist; header/footer styles, delimiters, width/format/separator, regex numbering, blank grouping, section resets, and locale/I/O behavior are absent. |
 | 88 | [nm](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/nm.html) | P1 known incompatibility | Checked ELF/archive parsing exists, but several accepted options are ignored or incomplete; standard output formats, radix/sort/undefined/dynamic symbols, archive labels, malformed objects, and non-ELF policy need review. |
