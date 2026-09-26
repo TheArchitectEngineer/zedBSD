@@ -59,10 +59,11 @@ kernel の中に ACPI の AML interpreter を持ち、DSDT・SSDT を読み込�
 | [ws049-p003](phase003/phase.md) | 評価器: method、制御、全ての式の opcode、参照、変換、Store の規則 | cleared（2026-09-27） | p002 | 同上 |
 | [ws049-p004](phase004/phase.md) | OperationRegion・Field・IndexField・BankField・BufferField、region の handler と `_REG` | cleared（2026-09-27） | p003 | 同上 |
 | [ws049-p005](phase005/phase.md) | 同期と OS の口: Mutex・Event・Sleep・Notify・`_OSI`・Load/LoadTable/Unload・`_INI`、stack の予算 | cleared（2026-09-27） | p004 | 同上 |
-| ws049-p006 | kernel への組み込み（amd64）: kernel image への link（`CONFIG_DRIVER_ACPI`、vmunix.mk、`pcat.c` の `drv_acpi_attach()`）、起動時の読み込み、診断の口、QEMU（q35・OVMF）での確認 | planned | p010、**HAL の差分の承認** | `src/drivers/acpi/`、platform |
+| [ws049-p006](phase006/phase.md) | kernel への組み込み（amd64）: kernel image への link（`CONFIG_DRIVER_ACPI`、vmunix.mk、`pcat.c` の `drv_acpi_attach()`）、起動時の読み込み、診断の口、QEMU（q35・OVMF）での確認 | planned（**HAL の差分の承認待ち**。統合の差分は準備済みで、当てた kernel の build と boot test（ACPI は止まったまま）は PASS） | p010、**HAL の差分の承認** | `src/drivers/acpi/`、platform |
 | ws049-p007 | SCI・GPE・固定 event・EC の kernel での確認: SCI の割り込み、event thread、QEMU の `system_powerdown`（固定の電源 button）と GPE | planned | p006、p011 | 同上 |
 | ws049-p008 | 対象機（Latitude 5330）の table と実機の確認 | planned | p007、対象機の table | 同上 |
 | ws049-p009 | 規約の全文の確認と最終の確認 | planned | p002〜p008、p010、p011 | WS の全 source |
+| [ws049-p012](phase012/phase.md) | 壊れた table への堅牢性: AML の byte を変えた table を sanitizer の下で読み込み、全 method を走らせる（fuzz） | cleared（2026-09-27） | p011 | 試験 |
 | [ws049-p011](phase011/phase.md) | p007 のうち承認なしでできる部分: event の核（FADT、ACPI mode、PM1・GPE、`_Lxx`/`_Exx`、wake GPE、割り込みと thread の分担）と EC（`_CRS`・`_GPE`・`_GLK`、protocol、EmbeddedControl の region、`_Qxx`）。host の疑似の hardware で試験、kernel の側は compile | cleared（2026-09-27） | p010 | `src/drivers/acpi/` |
 | [ws049-p010](phase010/phase.md) | p006 のうち承認なしでできる部分: firmware の table の発見（`acpi-tables.c`、host の疑似の物理 memory で試験）、kernel の glue（`acpi-kern.c`、kernel の flag で compile） | cleared（2026-09-27） | p005 | `src/drivers/acpi/` |
 
