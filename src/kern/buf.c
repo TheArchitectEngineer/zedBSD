@@ -16,6 +16,7 @@
  * they return.
  */
 
+#include "kern/backing-claim.h"
 #include "kern/buf.h"
 #include "kern/io-stats.h"
 #include "kern/io-pool.h"
@@ -493,6 +494,7 @@ buf_writeback_context(
 {
 	uint64_t generation;
 	struct io_context drain;
+	struct backing_mutation_guard guard;
 	int error;
 	unsigned long irq;
 
@@ -532,12 +534,25 @@ buf_writeback_context(
 
 	spin_unlock_irqrestore(&buffer->b_lock, irq);
 
+	/*
+	 * Writes the line as the filesystem's write.  The data was admitted
+	 * when it dirtied the buffer; a delayed write-back runs on the flusher
+	 * or a sync, which holds no filesystem guard of its own, and a raw
+	 * write would be refused on a volume where a file is leased.
+	 */
 	stat_add(&stat_write_bios, 1);
-	error = disk_write_direct_context(buffer->b_disk,
-					  buffer->b_block,
-					  buffer->b_block_count,
-					  buffer->b_data,
-					  &drain);
+	error = backing_mutation_begin_disk_filesystem(buffer->b_disk,
+						       buffer->b_block,
+						       buffer->b_block_count,
+						       &guard);
+	if (error == 0) {
+		error = disk_write_direct_context(buffer->b_disk,
+						  buffer->b_block,
+						  buffer->b_block_count,
+						  buffer->b_data,
+						  &drain);
+		backing_mutation_end(&guard);
+	}
 
 	/* Records the outcome; only an unmodified buffer becomes clean. */
 	irq = spin_lock_irqsave(&buffer->b_lock);

@@ -170,6 +170,15 @@ file_format_reserve(
 	if (file->f_inode == NULL || file->f_inode->i_type != INODE_REG)
 		return EINVAL;
 
+	/*
+	 * Writes out what the file has in memory first.  A write-cached volume
+	 * keeps writes in its cache, and once the file is leased a delayed
+	 * write-back into its blocks would be refused.
+	 */
+	error = file_fsync(file);
+	if (error != 0)
+		return error;
+
 	/* Closes optional readers before taking any descriptor or inode mutex. */
 	if (vm_object_cache_drain != NULL)
 		(void)vm_object_cache_drain(NULL);
