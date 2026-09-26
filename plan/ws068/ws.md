@@ -68,5 +68,5 @@ EGL と OpenGL ES（2.0、次に 3.0）を、zedBSD の libvulkan（Vulkan）と
 | ws068-p009 | frame を 2〜3 枚重ねる（EGL の frame in flight。Venus で clear だけ 125 ms/frame、WSI 直接は 50 ms） | planned | p008 |
 | [ws068-p010](phase010/phase.md) | EGL の pbuffer（offscreen。GLX の描画先） | cleared（q476-i01。Venus で 600 frame と 2048x1536） | p008 |
 | ws068-p011 | framebuffer object・renderbuffer・cube map（texture への描画） | 2026-09-27 に p022（FBO・renderbuffer）と p023（cube map・mipmap の GPU 化・FBO からの copy）に分けた | p008 |
-| [ws068-p022](phase022/phase.md) | framebuffer object と renderbuffer（texture への描画、FBO の readback） | in-progress（q493-i01） | p008 |
-| ws068-p023 | cube map（texture・sample・面への描画）、GPU の描いた texture の `glGenerateMipmap`、FBO からの `glCopyTex*` | planned | p022 |
+| [ws068-p022](phase022/phase.md) | framebuffer object と renderbuffer（texture への描画、FBO の readback） | cleared（q493-i01、2026-09-27。Venus で egl-p022） | p008 |
+| [ws068-p023](phase023/phase.md) | cube map（texture・sample・面への描画）、GPU の描いた texture の `glGenerateMipmap`、FBO からの `glCopyTex*` | in-progress（q494-i01） | p022 |

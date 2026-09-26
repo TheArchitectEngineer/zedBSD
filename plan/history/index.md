@@ -2,12 +2,14 @@
 
 <!-- awesome-plan-current:start -->
 Active Queue: なし
-Last finished Queue: q492（ws069-p006 cleared。WS069 completed）
+Last finished Queue: q493（ws068-p022 cleared。framebuffer object）
 <!-- awesome-plan-current:end -->
 
 # Past Log
 
-## 最新: q443〜q492（2026-09-26〜27）
+## 最新: q443〜q493（2026-09-26〜27）
+
+[q493](queue-q493.md): ws068-p022 cleared。libGLESv2 の framebuffer object と renderbuffer（texture の level 0 への描画、depth renderbuffer、FBO の readback、GPU の描いた texture の読み戻し）。FBO は GL の行の向きで描く（y を裏返さない vertex module、front face を逆）。Venus の egl-p022 と回帰 PASS。
 
 WS045 の merge（2026-09-27、Queue の外、サブエージェント）: sed・awk・grep ほかの GNU 拡張（p001〜p009）。判断待ち 3 点は ws045/ws.md。
 
