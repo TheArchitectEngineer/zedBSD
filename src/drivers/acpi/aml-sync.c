@@ -12,7 +12,7 @@
  *
  * One interpreter lock serializes all AML, so an AML mutex that another
  * evaluation owns can only become free while that evaluation sleeps; the
- * waits here poll with drv_acpi_os_sleep(), which lets the lock go.
+ * waits here poll with drv_acpi_sleep(), which lets the lock go.
  */
 
 #include <kern/kcrt.h>
@@ -33,8 +33,9 @@
 #define POLL_MILLISECONDS 1U
 
 static int sync_object(struct drv_acpi_eval *eval, enum drv_acpi_type type, struct drv_acpi_object **result);
-static int mutex_acquire(struct drv_acpi_object *mutex, uint64_t timeout, bool *timed_out);
-static int mutex_release(struct drv_acpi_object *mutex);
+static int mutex_acquire(struct drv_acpi_eval *eval, struct drv_acpi_object *mutex, uint64_t timeout, bool *timed_out);
+static int mutex_release(struct drv_acpi_eval *eval, struct drv_acpi_object *mutex);
+static struct drv_acpi_object *global_lock_object(void);
 static int event_wait(struct drv_acpi_object *event, uint64_t timeout, bool *timed_out);
 
 /*
@@ -96,6 +97,184 @@ drv_acpi_notify(
 }
 
 /*
+ * Acquires an AML mutex for a thread, waiting up to the timeout in
+ * milliseconds (0xffff waits for ever).
+ *
+ * A thread may acquire only mutexes of its current sync level or higher,
+ * and a mutex it already owns is acquired again (ACPI 6.5 section 19.6.2).
+ */
+int
+drv_acpi_mutex_acquire(
+	struct drv_acpi_thread *thread,
+	struct drv_acpi_object *mutex,
+	uint64_t timeout,
+	bool *timed_out)
+{
+	struct drv_acpi_mutex *state;
+	uint64_t waited;
+
+	/* Refuses a mutex below the level the thread already holds. */
+	state = &mutex->value.mutex;
+	*timed_out = false;
+	if (state->sync_level < thread->sync_level) {
+		drv_acpi_os_log(
+			"ACPI: Acquire of a sync level %u mutex while holding level %u\n",
+			(unsigned)state->sync_level,
+			(unsigned)thread->sync_level);
+		return EDEADLK;
+	}
+
+	/* A mutex the thread already owns is acquired again. */
+	if (state->owner == thread) {
+		state->depth++;
+		return 0;
+	}
+
+	/* Waits for the owner to release it, sleeping so that it can. */
+	waited = 0;
+	while (state->owner != NULL) {
+		/* Gives up when the timeout has passed. */
+		if (timeout != TIMEOUT_FOREVER && waited >= timeout) {
+			*timed_out = true;
+			return 0;
+		}
+
+		/* Sleeps, which lets the owner run. */
+		drv_acpi_sleep(POLL_MILLISECONDS);
+		waited += POLL_MILLISECONDS;
+	}
+
+	/*
+	 * The thread owns the mutex now and holds it above its older ones;
+	 * the list keeps a reference so that the mutex outlives its node.
+	 * The thread's level becomes the mutex's until the last Release.
+	 */
+	state->owner = thread;
+	state->depth = 1;
+	state->original_sync_level = thread->sync_level;
+	state->next_held = thread->held;
+	drv_acpi_object_ref(mutex);
+	thread->held = mutex;
+	thread->sync_level = state->sync_level;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Releases an AML mutex a thread owns.
+ *
+ * Mutexes are released in the reverse order of their sync levels: the one
+ * released must be at the thread's current level.
+ */
+int
+drv_acpi_mutex_release(
+	struct drv_acpi_thread *thread,
+	struct drv_acpi_object *mutex)
+{
+	struct drv_acpi_mutex *state;
+	struct drv_acpi_object **link;
+
+	/* Refuses a release by a thread that does not own the mutex. */
+	state = &mutex->value.mutex;
+	if (state->owner != thread) {
+		drv_acpi_os_log("ACPI: Release of a mutex the thread does not own\n");
+		return EPERM;
+	}
+
+	/* Refuses a release out of the order of the sync levels. */
+	if (state->sync_level != thread->sync_level) {
+		drv_acpi_os_log("ACPI: Release of a sync level %u mutex at level %u\n",
+				(unsigned)state->sync_level,
+				(unsigned)thread->sync_level);
+		return EDEADLK;
+	}
+
+	/* Only the last matching Release frees it. */
+	state->depth--;
+	if (state->depth != 0)
+		return 0;
+
+	/* Unlinks it from the thread's list of held mutexes. */
+	for (link = &thread->held; *link != NULL; link = &(*link)->value.mutex.next_held) {
+		/* Stops at the link that points at this mutex. */
+		if (*link == mutex)
+			break;
+	}
+
+	/* Takes it out of the list when it is there. */
+	if (*link == mutex)
+		*link = state->next_held;
+
+	/*
+	 * The mutex is free and the thread is back at the level it had
+	 * before acquiring it; the list's reference goes.
+	 */
+	thread->sync_level = state->original_sync_level;
+	state->owner = NULL;
+	state->next_held = NULL;
+	drv_acpi_object_release(mutex);
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Releases every mutex a thread still holds when it leaves the
+ * interpreter, newest first.
+ */
+void
+drv_acpi_thread_end(
+	struct drv_acpi_thread *thread)
+{
+	struct drv_acpi_object *mutex;
+
+	/* Releases the held mutexes one at a time, whatever their depth. */
+	while (thread->held != NULL) {
+		mutex = thread->held;
+		drv_acpi_os_log("ACPI: a mutex was still held when the evaluation ended\n");
+		mutex->value.mutex.depth = 1;
+		thread->sync_level = mutex->value.mutex.sync_level;
+		drv_acpi_mutex_release(thread, mutex);
+	}
+}
+
+/*
+ * Acquires or releases the ACPI Global Lock (\_GL_) for a field whose
+ * lock rule asks for it.
+ */
+int
+drv_acpi_global_lock(
+	struct drv_acpi_eval *eval,
+	bool acquire)
+{
+	struct drv_acpi_thread *thread;
+	struct drv_acpi_object *lock;
+	bool timed_out;
+	int error;
+
+	/* Finds the global lock's mutex; a namespace without one needs no locking. */
+	lock = global_lock_object();
+	if (lock == NULL)
+		return 0;
+	thread = drv_acpi_eval_thread(eval);
+
+	/* Releases it. */
+	if (!acquire) {
+		error = drv_acpi_mutex_release(thread, lock);
+		return error;
+	}
+
+	/* Acquires it, waiting as long as it takes. */
+	error = drv_acpi_mutex_acquire(thread, lock, TIMEOUT_FOREVER, &timed_out);
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
  * Runs Acquire, Release, Signal, Wait or Reset.
  */
 int
@@ -128,10 +307,10 @@ drv_acpi_sync_operator(
 		error = drv_acpi_stream_integer(eval, 2, &timeout);
 		if (error != 0)
 			break;
-		error = mutex_acquire(object, timeout, &timed_out);
+		error = mutex_acquire(eval, object, timeout, &timed_out);
 		break;
 	case DRV_ACPI_OP_RELEASE:
-		error = mutex_release(object);
+		error = mutex_release(eval, object);
 		break;
 	case DRV_ACPI_OP_SIGNAL:
 		/* A signal is counted until a Wait takes it. */
@@ -221,72 +400,64 @@ sync_object(
 	return 0;
 }
 
-/* Acquires an AML mutex, waiting up to the timeout in milliseconds. */
+/* Acquires an AML mutex for the operator, waiting up to the timeout. */
 static int
 mutex_acquire(
+	struct drv_acpi_eval *eval,
 	struct drv_acpi_object *mutex,
 	uint64_t timeout,
 	bool *timed_out)
 {
-	const void *self;
-	uint64_t waited;
+	struct drv_acpi_thread *thread;
+	int error;
 
-	/* The evaluating thread is the would-be owner. */
-	self = drv_acpi_os_thread();
-	*timed_out = false;
-
-	/* A mutex the thread already owns is acquired again. */
-	if (mutex->value.mutex.owner == self) {
-		mutex->value.mutex.depth++;
-		return 0;
-	}
-
-	/* Waits for the owner to release it, sleeping so that it can. */
-	waited = 0;
-	while (mutex->value.mutex.owner != NULL) {
-		/* Gives up when the timeout has passed. */
-		if (timeout != TIMEOUT_FOREVER && waited >= timeout) {
-			*timed_out = true;
-			return 0;
-		}
-
-		/* Sleeps, which lets the owner run. */
-		drv_acpi_os_sleep(POLL_MILLISECONDS);
-		waited += POLL_MILLISECONDS;
-	}
-
-	/*
-	 * The thread owns the mutex now; depth counts its acquisitions so
-	 * that the last Release frees it.
-	 */
-	mutex->value.mutex.owner = self;
-	mutex->value.mutex.depth = 1;
+	/* The evaluating thread becomes the owner. */
+	thread = drv_acpi_eval_thread(eval);
+	error = drv_acpi_mutex_acquire(thread, mutex, timeout, timed_out);
+	if (error != 0)
+		return error;
 
 	/* Succeeded. */
 	return 0;
 }
 
-/* Releases an AML mutex the evaluating thread owns. */
+/* Releases an AML mutex for the operator. */
 static int
 mutex_release(
+	struct drv_acpi_eval *eval,
 	struct drv_acpi_object *mutex)
 {
-	const void *self;
+	struct drv_acpi_thread *thread;
+	int error;
 
-	/* Refuses a release by a thread that does not own the mutex. */
-	self = drv_acpi_os_thread();
-	if (mutex->value.mutex.owner != self) {
-		drv_acpi_os_log("ACPI: Release of a mutex the thread does not own\n");
-		return EPERM;
-	}
-
-	/* The last matching Release makes the mutex free. */
-	mutex->value.mutex.depth--;
-	if (mutex->value.mutex.depth == 0)
-		mutex->value.mutex.owner = NULL;
+	/* Only the owning thread can release it. */
+	thread = drv_acpi_eval_thread(eval);
+	error = drv_acpi_mutex_release(thread, mutex);
+	if (error != 0)
+		return error;
 
 	/* Succeeded. */
 	return 0;
+}
+
+/* Finds the mutex of the global lock, \\_GL_. */
+static struct drv_acpi_object *
+global_lock_object(void)
+{
+	struct drv_acpi_node *node;
+	int error;
+
+	/* Looks the predefined name up. */
+	error = drv_acpi_lookup(NULL, "\\_GL_", &node);
+	if (error != 0)
+		return NULL;
+
+	/* Only a mutex can be the lock. */
+	if (node->object == NULL || node->object->type != DRV_ACPI_TYPE_MUTEX)
+		return NULL;
+
+	/* Reports the mutex. */
+	return node->object;
 }
 
 /* Takes one signal of an event, waiting up to the timeout in milliseconds. */
@@ -309,7 +480,7 @@ event_wait(
 		}
 
 		/* Sleeps, which lets a signaler run. */
-		drv_acpi_os_sleep(POLL_MILLISECONDS);
+		drv_acpi_sleep(POLL_MILLISECONDS);
 		waited += POLL_MILLISECONDS;
 	}
 

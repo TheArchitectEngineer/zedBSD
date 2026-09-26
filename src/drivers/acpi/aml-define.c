@@ -1351,6 +1351,9 @@ package_element(
 	reference = drv_acpi_object_reference_new(DRV_ACPI_REFERENCE_NAME);
 	if (reference == NULL)
 		return ENOMEM;
+
+	/* The scope the name is resolved from later, and the text of the name. */
+	reference->value.reference.node = eval->scope;
 	length = kern_strlen(text);
 	reference->value.reference.name = drv_acpi_os_alloc(length + 1U);
 	if (reference->value.reference.name == NULL) {
@@ -1364,6 +1367,63 @@ package_element(
 	/* Succeeded. */
 	*result = reference;
 	return 0;
+}
+
+/*
+ * Resolves the names a package holds that did not exist when the package
+ * was built, now that the tables are loaded; nested packages too.  A name
+ * that still does not resolve stays a name.
+ */
+void
+drv_acpi_package_resolve(
+	struct drv_acpi_object *package)
+{
+	struct drv_acpi_object *element;
+	uint32_t index;
+
+	/* Looks at each element. */
+	for (index = 0; index < package->value.package.count; index++) {
+		element = package->value.package.elements[index];
+		if (element == NULL)
+			continue;
+
+		/* A nested package is resolved the same way. */
+		if (element->type == DRV_ACPI_TYPE_PACKAGE) {
+			drv_acpi_package_resolve(element);
+			continue;
+		}
+
+		/* A name reference becomes a node reference when its name resolves. */
+		if (element->type == DRV_ACPI_TYPE_REFERENCE)
+			drv_acpi_reference_resolve(element);
+	}
+}
+
+/*
+ * Turns a name reference into a node reference when its name resolves
+ * from the scope it was written in.
+ */
+void
+drv_acpi_reference_resolve(
+	struct drv_acpi_object *reference)
+{
+	struct drv_acpi_node *node;
+	int error;
+
+	/* Only a name reference has anything to resolve. */
+	if (reference->value.reference.kind != DRV_ACPI_REFERENCE_NAME)
+		return;
+
+	/* Looks the name up from its scope. */
+	error = drv_acpi_lookup(reference->value.reference.node, reference->value.reference.name, &node);
+	if (error != 0)
+		return;
+
+	/* The reference now names the node; the text is no longer needed. */
+	reference->value.reference.kind = DRV_ACPI_REFERENCE_NODE;
+	reference->value.reference.node = node;
+	drv_acpi_os_free(reference->value.reference.name);
+	reference->value.reference.name = NULL;
 }
 
 /* Finds a loaded table by its signature and OEM identifiers. */

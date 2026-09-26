@@ -9,7 +9,7 @@ Related Milestones: MG006, MG008
 Objectives: O2, O4
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p005（同期・Notify・Load 系・`_INI`・stack の予算）から。p006 以降は HAL の差分の承認を待つ
+Resume point: p010（firmware の table の発見と kernel の glue、HAL の承認なしでできる部分）。p006 以降は HAL の差分の承認を待つ
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -58,7 +58,7 @@ kernel の中に ACPI の AML interpreter を持ち、DSDT・SSDT を読み込�
 | [ws049-p002](phase002/phase.md) | object・namespace・byte 列・DefinitionBlock の読み込み、host の harness | cleared（2026-09-27） | p001 | `src/drivers/acpi/` |
 | [ws049-p003](phase003/phase.md) | 評価器: method、制御、全ての式の opcode、参照、変換、Store の規則 | cleared（2026-09-27） | p002 | 同上 |
 | [ws049-p004](phase004/phase.md) | OperationRegion・Field・IndexField・BankField・BufferField、region の handler と `_REG` | cleared（2026-09-27） | p003 | 同上 |
-| ws049-p005 | 同期と OS の口: Mutex・Event・Sleep・Notify・`_OSI`・Load/LoadTable/Unload・`_INI`、stack の予算 | planned | p004 | 同上 |
+| [ws049-p005](phase005/phase.md) | 同期と OS の口: Mutex・Event・Sleep・Notify・`_OSI`・Load/LoadTable/Unload・`_INI`、stack の予算 | cleared（2026-09-27） | p004 | 同上 |
 | ws049-p006 | kernel への組み込み（amd64）: table の発見、region の handler、起動時の読み込み、診断の口 | planned | p005、**HAL の差分の承認** | `src/drivers/acpi/`、platform |
 | ws049-p007 | SCI・GPE・固定 event・EC（`_Qxx`）・Notify の配送 | planned | p006 | 同上 |
 | ws049-p008 | 対象機（Latitude 5330）の table と実機の確認 | planned | p007、対象機の table | 同上 |

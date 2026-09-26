@@ -29,17 +29,8 @@
 #define WHILE_TIMEOUT_TICKS (30ULL * 10000000ULL)
 
 /*
- * The stack address the outermost evaluation started at.
- *
- * drv_acpi_stack_begin() sets it when an evaluation enters the interpreter
- * with no evaluation running, and clears it when that evaluation leaves;
- * the interpreter lock keeps a second thread out meanwhile.  Zero means
- * that no evaluation is running.
- */
-static uintptr_t stack_base;
-
-/*
- * The deepest the stack has been below stack_base, for measurement.
+ * The deepest the stack has been below an entry's frame, for measurement.
+ * It only grows, and only the holder of the interpreter lock writes it.
  */
 static size_t stack_deepest;
 
@@ -60,6 +51,7 @@ static int store_buffer_into(struct drv_acpi_object *target, struct drv_acpi_obj
 static int parse_reference_target(struct drv_acpi_eval *eval, unsigned opcode, struct drv_acpi_target *target);
 static void debug_store(struct drv_acpi_object *value);
 static void frame_release(struct drv_acpi_frame *frame);
+static int serialize(struct drv_acpi_eval *eval, struct drv_acpi_object *method, bool acquire);
 static void report_name(const char *what, const struct drv_acpi_name *name, int error);
 
 /*
@@ -77,33 +69,38 @@ drv_acpi_evaluate(
 	unsigned argument_count,
 	struct drv_acpi_object **result)
 {
+	struct drv_acpi_thread storage;
+	struct drv_acpi_thread *thread;
+	struct drv_acpi_eval entry;
 	struct drv_acpi_node *node;
 	int error;
 
-	/* Finds the object: the scope itself, or the path from it. */
+	/* Enters the interpreter, measuring the stack from here. */
 	*result = NULL;
+	thread = drv_acpi_enter(&storage, __builtin_frame_address(0));
+
+	/* Finds the object: the scope itself, or the path from it. */
 	node = scope;
-	if (path != NULL) {
+	error = 0;
+	if (path != NULL)
 		error = drv_acpi_lookup(scope, path, &node);
-		if (error != 0)
-			return error;
+	if (error == 0 && node == NULL)
+		error = ENOENT;
+
+	/* Invokes a method or reads anything else, as the entered thread. */
+	if (error == 0) {
+		node = drv_acpi_ns_resolve_alias(node);
+		kern_memset(&entry, 0, sizeof(entry));
+		entry.thread = thread;
+		if (node->object != NULL && node->object->type == DRV_ACPI_TYPE_METHOD) {
+			error = drv_acpi_invoke(&entry, node, arguments, argument_count, result);
+		} else {
+			error = drv_acpi_read_node(&entry, node, result);
+		}
 	}
 
-	/* Refuses to evaluate nothing; an alias stands for its node. */
-	if (node == NULL)
-		return ENOENT;
-	node = drv_acpi_ns_resolve_alias(node);
-
-	/* Invokes a method or reads anything else, measuring the stack from here. */
-	drv_acpi_stack_begin(__builtin_frame_address(0));
-	if (node->object != NULL && node->object->type == DRV_ACPI_TYPE_METHOD) {
-		error = drv_acpi_invoke(NULL, node, arguments, argument_count, result);
-	} else {
-		error = drv_acpi_read_node(NULL, node, result);
-	}
-
-	/* Ends the measurement and reports a failed evaluation. */
-	drv_acpi_stack_begin(NULL);
+	/* Leaves the interpreter and reports a failed evaluation. */
+	drv_acpi_leave(thread);
 	if (error != 0)
 		return error;
 
@@ -573,14 +570,19 @@ drv_acpi_invoke(
 			drv_acpi_object_ref(arguments[index]);
 	}
 
-	/* Runs the body in the scope of the method's node. */
+	/* Runs the body in the scope of the method's node, as the caller's thread. */
 	kern_memset(&eval, 0, sizeof(eval));
 	eval.position = method->start;
 	eval.end = method->end;
 	eval.scope = node;
 	eval.frame = frame;
 	eval.table = method->table;
-	error = drv_acpi_exec_term_list(&eval);
+	eval.thread = drv_acpi_eval_thread(caller);
+	error = serialize(&eval, node->object, true);
+	if (error == 0) {
+		error = drv_acpi_exec_term_list(&eval);
+		serialize(&eval, node->object, false);
+	}
 
 	/* Hands the returned value to the caller, or drops it on failure. */
 	if (error == 0) {
@@ -718,13 +720,17 @@ drv_acpi_index_read(
 int
 drv_acpi_stack_check(void)
 {
+	struct drv_acpi_thread *thread;
+	uintptr_t stack_base;
 	uintptr_t here;
 	size_t used;
 	size_t budget;
 
-	/* Nothing is measured outside an evaluation. */
-	if (stack_base == 0)
+	/* Nothing is measured outside an entry. */
+	thread = drv_acpi_active_thread();
+	if (thread == NULL || thread->stack_base == 0)
 		return 0;
+	stack_base = thread->stack_base;
 
 	/*
 	 * Measures from the outermost evaluation down to this frame.  The
@@ -751,30 +757,6 @@ drv_acpi_stack_check(void)
 
 	/* Succeeded: there is room to go deeper. */
 	return 0;
-}
-
-/*
- * Marks where the outermost evaluation's stack starts, or ends it.
- *
- * A marker is the frame address of the entry function; NULL ends the
- * evaluation.  Nested entries leave the outermost mark alone.
- */
-void
-drv_acpi_stack_begin(
-	const void *marker)
-{
-	/* Ends the evaluation. */
-	if (marker == NULL) {
-		stack_base = 0;
-		return;
-	}
-
-	/* Keeps the outermost mark when an evaluation is already running. */
-	if (stack_base != 0)
-		return;
-
-	/* Starts measuring from the marker. */
-	stack_base = (uintptr_t)marker;
 }
 
 /*
@@ -1557,6 +1539,49 @@ frame_release(
 
 	/* Frees the frame. */
 	drv_acpi_os_free(frame);
+}
+
+/*
+ * Acquires or releases the mutex of a serialized method, which keeps two
+ * threads from running it at once; its sync level is the method's.
+ */
+static int
+serialize(
+	struct drv_acpi_eval *eval,
+	struct drv_acpi_object *method,
+	bool acquire)
+{
+	struct drv_acpi_object *mutex;
+	bool timed_out;
+	int error;
+
+	/* A method that is not serialized has no mutex. */
+	if (!method->value.method.serialized)
+		return 0;
+
+	/* Releases the mutex after the body. */
+	if (!acquire) {
+		error = drv_acpi_mutex_release(eval->thread, method->value.method.serialization);
+		return error;
+	}
+
+	/* Creates the mutex on the first invocation. */
+	mutex = method->value.method.serialization;
+	if (mutex == NULL) {
+		mutex = drv_acpi_object_new(DRV_ACPI_TYPE_MUTEX);
+		if (mutex == NULL)
+			return ENOMEM;
+		mutex->value.mutex.sync_level = method->value.method.sync_level;
+		method->value.method.serialization = mutex;
+	}
+
+	/* Acquires it, waiting as long as another thread runs the method. */
+	error = drv_acpi_mutex_acquire(eval->thread, mutex, 0xffffU, &timed_out);
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
 }
 
 /* Logs a name that could not be resolved. */

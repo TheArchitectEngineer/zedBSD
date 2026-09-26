@@ -47,8 +47,14 @@ drv_acpi_os_stall(
 uint64_t
 drv_acpi_os_timer(void);
 
-const void *
-drv_acpi_os_thread(void);
+void
+drv_acpi_os_lock(void);
+
+void
+drv_acpi_os_unlock(void);
+
+bool
+drv_acpi_os_lock_owned(void);
 
 int
 drv_acpi_os_table(

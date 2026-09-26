@@ -1910,7 +1910,7 @@ op_time(
 
 		/* Sleeps in milliseconds or spins in microseconds. */
 		if (opcode == DRV_ACPI_OP_SLEEP) {
-			drv_acpi_os_sleep(value);
+			drv_acpi_sleep(value);
 		} else {
 			drv_acpi_os_stall(value);
 		}

@@ -16,10 +16,16 @@
  *     --dump          print the namespace, one normalized line per node
  *     --eval PATH     evaluate PATH and print the result (repeatable)
  *     --devices       evaluate _HID _CID _UID _ADR _STA _CRS of every device
+ *     --methods       evaluate every method that takes no arguments, in
+ *                     namespace order (the paths are listed first)
  *     --main          evaluate \MAIN and exit with 0 when it returned 0
  *     --notify PATH   print the notifications PATH receives (repeatable)
  *     --dynamic FILE  a table LoadTable may load, not loaded at start
  *     --reg           connect the address spaces (run _REG) after loading
+ *     --init          initialize the devices (_INI by _STA) after loading
+ *     --shared-pci    simulate one PCI configuration space for every
+ *                     function, as acpiexec does (it keeps one buffer per
+ *                     region address, and PCI regions all start at 0)
  *     --stack         print the deepest stack use of the interpreter
  *     --budget BYTES  the stack budget (default 1 MiB)
  *     --quiet         do not print the interpreter's log
@@ -65,11 +71,14 @@ enum option_kind {
 	OPTION_DUMP,
 	OPTION_EVAL,
 	OPTION_DEVICES,
+	OPTION_METHODS,
 	OPTION_MAIN,
 	OPTION_NOTIFY,
 	OPTION_DYNAMIC,
 	OPTION_STACK,
+	OPTION_SHARED_PCI,
 	OPTION_REG,
+	OPTION_INIT,
 	OPTION_BUDGET,
 	OPTION_QUIET
 };
@@ -97,9 +106,11 @@ struct harness_options {
 	unsigned dynamic_count;
 	int dump;
 	int devices;
+	int methods;
 	int run_main;
 	int stack;
 	int connect;
+	int initialize;
 };
 
 /*
@@ -127,11 +138,14 @@ static const struct option_name option_names[] = {
 	{ "--dump", OPTION_DUMP, 0 },
 	{ "--eval", OPTION_EVAL, 1 },
 	{ "--devices", OPTION_DEVICES, 0 },
+	{ "--methods", OPTION_METHODS, 0 },
 	{ "--main", OPTION_MAIN, 0 },
 	{ "--notify", OPTION_NOTIFY, 1 },
 	{ "--dynamic", OPTION_DYNAMIC, 1 },
 	{ "--stack", OPTION_STACK, 0 },
+	{ "--shared-pci", OPTION_SHARED_PCI, 0 },
 	{ "--reg", OPTION_REG, 0 },
+	{ "--init", OPTION_INIT, 0 },
 	{ "--budget", OPTION_BUDGET, 1 },
 	{ "--quiet", OPTION_QUIET, 0 },
 };
@@ -149,6 +163,11 @@ static struct dynamic_table dynamic_tables[OPTION_LIST_MAX];
 static unsigned dynamic_table_count;
 
 /*
+ * Whether every PCI function shares one simulated configuration space.
+ */
+static int shared_pci;
+
+/*
  * Whether the interpreter's log is printed.
  */
 static int log_enabled = 1;
@@ -163,6 +182,12 @@ static size_t stack_budget = 1024U * 1024U;
  */
 static uint64_t slept;
 
+/*
+ * Whether the interpreter lock is held.  The harness has one thread, so
+ * the lock only checks that the interpreter takes and lets it go in pairs.
+ */
+static int lock_held;
+
 static int parse_arguments(int argc, char **argv, struct harness_options *options);
 static enum option_kind option_of(const char *text, int *takes_value);
 static int install_spaces(void);
@@ -172,7 +197,7 @@ static int run_main(void);
 static int read_file(const char *path, uint8_t **data, size_t *length);
 static int load_file(const char *path);
 static int simulated_space(const struct drv_acpi_region_access *access, uint64_t *value, void *argument);
-static uint64_t space_key(const struct drv_acpi_region_access *access);
+static uint64_t space_key(const struct drv_acpi_region_access *access, unsigned space);
 static uint8_t *page_byte(uint64_t space, uint64_t address);
 static int dump_visitor(struct drv_acpi_node *node, unsigned depth, void *argument);
 static int devices_visitor(struct drv_acpi_node *node, unsigned depth, void *argument);
@@ -185,6 +210,8 @@ static void print_notification(struct drv_acpi_node *node, uint32_t value, void 
 static const char *space_name(unsigned space);
 static void segment_name(const struct drv_acpi_node *node, char *text);
 static int evaluate_and_print(struct drv_acpi_node *scope, const char *path, const char *label);
+static int evaluate_methods(void);
+static int method_visitor(struct drv_acpi_node *node, unsigned depth, void *argument);
 
 /*
  * Runs the harness.
@@ -222,6 +249,10 @@ main(
 			status = 1;
 	}
 
+	/* Initializes the devices as the kernel does, when asked to. */
+	if (options.initialize)
+		drv_acpi_initialize_devices();
+
 	/* Installs the notification printers. */
 	error = install_notifications(&options);
 	if (error != 0)
@@ -230,6 +261,13 @@ main(
 	/* Prints the namespace. */
 	if (options.dump)
 		drv_acpi_walk(NULL, dump_visitor, NULL);
+
+	/* Runs an ASL test's MAIN first, which returns 0 when every check passed. */
+	if (options.run_main) {
+		error = run_main();
+		if (error != 0)
+			status = 1;
+	}
 
 	/* Evaluates the paths the options named, in order. */
 	for (index = 0; index < options.evaluation_count; index++) {
@@ -243,9 +281,9 @@ main(
 	if (options.devices)
 		drv_acpi_walk(NULL, devices_visitor, NULL);
 
-	/* Runs an ASL test's MAIN, which returns 0 when every check passed. */
-	if (options.run_main) {
-		error = run_main();
+	/* Evaluates every method that takes no arguments. */
+	if (options.methods) {
+		error = evaluate_methods();
 		if (error != 0)
 			status = 1;
 	}
@@ -364,13 +402,47 @@ drv_acpi_os_timer(void)
 }
 
 /*
- * Reports the identity of the evaluating thread; the harness has one.
+ * Takes the interpreter lock.
  */
-const void *
-drv_acpi_os_thread(void)
+void
+drv_acpi_os_lock(void)
 {
-	/* Any fixed non-NULL address will do. */
-	return &slept;
+	/* A second take without a let-go is a bug in the interpreter. */
+	if (lock_held) {
+		fprintf(stderr, "aml-host: interpreter lock taken twice\n");
+		abort();
+	}
+
+	/* Holds it. */
+	lock_held = 1;
+}
+
+/*
+ * Lets the interpreter lock go.
+ */
+void
+drv_acpi_os_unlock(void)
+{
+	/* A let-go without a take is a bug in the interpreter. */
+	if (!lock_held) {
+		fprintf(stderr, "aml-host: interpreter lock let go twice\n");
+		abort();
+	}
+
+	/* Lets it go. */
+	lock_held = 0;
+}
+
+/*
+ * Reports whether this thread holds the interpreter lock.
+ */
+bool
+drv_acpi_os_lock_owned(void)
+{
+	/* The harness's one thread holds it whenever it is held. */
+	if (lock_held)
+		return true;
+	return false;
 }
 
 /*
@@ -457,14 +529,23 @@ parse_arguments(
 		case OPTION_DEVICES:
 			options->devices = 1;
 			break;
+		case OPTION_METHODS:
+			options->methods = 1;
+			break;
 		case OPTION_MAIN:
 			options->run_main = 1;
 			break;
 		case OPTION_STACK:
 			options->stack = 1;
 			break;
+		case OPTION_SHARED_PCI:
+			shared_pci = 1;
+			break;
 		case OPTION_REG:
 			options->connect = 1;
+			break;
+		case OPTION_INIT:
+			options->initialize = 1;
 			break;
 		case OPTION_QUIET:
 			log_enabled = 0;
@@ -535,7 +616,7 @@ install_spaces(void)
 	/* Every space is plain memory here, as acpiexec simulates it. */
 	for (space = 0; space < DRV_ACPI_SPACE_COUNT; space++) {
 		/* Installs one space. */
-		error = drv_acpi_region_install((enum drv_acpi_space)space, simulated_space, NULL);
+		error = drv_acpi_region_install((enum drv_acpi_space)space, simulated_space, (void *)(uintptr_t)space);
 		if (error != 0)
 			return error;
 	}
@@ -731,10 +812,10 @@ simulated_space(
 	unsigned index;
 	uint8_t *byte;
 
-	UNUSED_PARAMETER(argument);
+	/* The argument is the number of the space the handler was installed for. */
+	space = space_key(access, (unsigned)(uintptr_t)argument);
 
 	/* A read starts from zero. */
-	space = space_key(access);
 	bytes = access->width / 8U;
 	if (!access->write)
 		*value = 0;
@@ -758,12 +839,24 @@ simulated_space(
 	return 0;
 }
 
-/* Keeps every PCI function in a space of its own, and every space apart. */
+/*
+ * Keeps every address space apart, and every PCI function in a space of
+ * its own unless --shared-pci asked for one for all.
+ */
 static uint64_t
 space_key(
-	const struct drv_acpi_region_access *access)
+	const struct drv_acpi_region_access *access,
+	unsigned space)
 {
 	uint64_t function;
+
+	/* A space other than PCI configuration is keyed by its number alone. */
+	if (space != DRV_ACPI_SPACE_PCI_CONFIG)
+		return space;
+
+	/* One configuration space for every function, as acpiexec simulates it. */
+	if (shared_pci)
+		return DRV_ACPI_SPACE_PCI_CONFIG;
 
 	/* Combines the segment, bus, device and function. */
 	function = (uint64_t)access->pci_segment << 16;
@@ -771,8 +864,8 @@ space_key(
 	function |= (uint64_t)access->pci_device << 3;
 	function |= access->pci_function;
 
-	/* Leaves room below for the plain spaces. */
-	return function << 8;
+	/* Leaves room below for the numbers of the spaces. */
+	return (function + 1U) << 8;
 }
 
 /* Finds the simulated byte at an address, creating its page. */
@@ -986,6 +1079,84 @@ devices_visitor(
 	}
 
 	/* Goes on into the children. */
+	return 0;
+}
+
+/*
+ * The paths of the methods --methods evaluates, collected before any runs,
+ * because a method may load or unload tables and change the namespace.
+ */
+struct method_list {
+	char **paths;
+	size_t count;
+	size_t capacity;
+};
+
+/* Lists every method without arguments, then evaluates each by its path. */
+static int
+evaluate_methods(void)
+{
+	struct method_list list;
+	size_t index;
+
+	/* Lists the methods. */
+	memset(&list, 0, sizeof(list));
+	drv_acpi_walk(NULL, method_visitor, &list);
+
+	/* Evaluates each; a failure is printed and the next one runs. */
+	for (index = 0; index < list.count; index++) {
+		/* Evaluates one method. */
+		evaluate_and_print(NULL, list.paths[index], list.paths[index]);
+		free(list.paths[index]);
+	}
+
+	/* Frees the list. */
+	free(list.paths);
+	return 0;
+}
+
+/* Adds a method without arguments to the list. */
+static int
+method_visitor(
+	struct drv_acpi_node *node,
+	unsigned depth,
+	void *argument)
+{
+	struct method_list *list;
+	char path[PATH_MAX_LENGTH];
+	char **grown;
+	int error;
+
+	UNUSED_PARAMETER(depth);
+
+	/* Only methods without arguments are listed. */
+	list = argument;
+	if (node->object == NULL || node->object->type != DRV_ACPI_TYPE_METHOD)
+		return 0;
+	if (node->object->value.method.argument_count != 0)
+		return 0;
+
+	/* Writes the path. */
+	error = drv_acpi_node_path(node, path, sizeof(path));
+	if (error != 0)
+		return 0;
+
+	/* Grows the list when it is full. */
+	if (list->count == list->capacity) {
+		list->capacity = list->capacity * 2U + 64U;
+		grown = realloc(list->paths, list->capacity * sizeof(list->paths[0]));
+		if (grown == NULL)
+			return -1;
+		list->paths = grown;
+	}
+
+	/* Keeps a copy of the path. */
+	list->paths[list->count] = strdup(path);
+	if (list->paths[list->count] == NULL)
+		return -1;
+	list->count++;
+
+	/* Goes on with the walk. */
 	return 0;
 }
 

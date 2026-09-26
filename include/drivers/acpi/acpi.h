@@ -118,6 +118,9 @@ int
 drv_acpi_initialize_objects(void);
 
 void
+drv_acpi_initialize_devices(void);
+
+void
 drv_acpi_reset(void);
 
 int

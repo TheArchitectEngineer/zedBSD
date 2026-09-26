@@ -215,6 +215,7 @@ enum drv_acpi_control {
 struct drv_acpi_eval;
 struct drv_acpi_frame;
 struct drv_acpi_table;
+struct drv_acpi_thread;
 
 /*
  * A native method: a predefined method the interpreter implements in C,
@@ -300,13 +301,18 @@ struct drv_acpi_buffer_field {
 /*
  * One AML mutex.
  *
- * owner is the evaluation that holds it and depth counts how many times
- * that evaluation acquired it; both are zero when the mutex is free.
+ * owner is the thread that holds it and depth counts how many times that
+ * thread acquired it; both are zero when the mutex is free.  While it is
+ * held, next_held links the older mutexes of the same thread and
+ * original_sync_level keeps the thread's level from before the
+ * acquisition, which the last Release restores.
  */
 struct drv_acpi_mutex {
-	const void *owner;
+	struct drv_acpi_thread *owner;
+	struct drv_acpi_object *next_held;
 	uint32_t depth;
 	uint8_t sync_level;
+	uint8_t original_sync_level;
 };
 
 /*
@@ -452,6 +458,25 @@ struct drv_acpi_frame {
 };
 
 /*
+ * One entry into the interpreter: a driver's evaluation, a table load, or
+ * the preparation of a region.
+ *
+ * AML mutexes and serialized methods are owned by it.  held lists the
+ * mutexes it holds, newest first, each with a reference; sync_level is the
+ * level the newest one set, zero when it holds none (ACPI 6.5 section
+ * 19.6.2).  stack_base is where the stack budget is measured from, and
+ * nesting counts the entries of the same thread.  It lives on the stack
+ * of the outermost entry function, whose leave releases whatever is still
+ * held.
+ */
+struct drv_acpi_thread {
+	struct drv_acpi_object *held;
+	uintptr_t stack_base;
+	unsigned nesting;
+	uint8_t sync_level;
+};
+
+/*
  * The state of one run through AML: a table load or a method invocation.
  *
  * position walks the bytes; end bounds the term list being run.  control
@@ -464,6 +489,7 @@ struct drv_acpi_eval {
 	struct drv_acpi_node *scope;
 	struct drv_acpi_frame *frame;
 	struct drv_acpi_table *table;
+	struct drv_acpi_thread *thread;
 	struct drv_acpi_object *return_value;
 	int control;
 };
@@ -697,10 +723,6 @@ drv_acpi_read_node(
 int
 drv_acpi_stack_check(void);
 
-void
-drv_acpi_stack_begin(
-	const void *marker);
-
 size_t
 drv_acpi_stack_deepest(void);
 
@@ -757,6 +779,14 @@ drv_acpi_create_buffer_field(
 	struct drv_acpi_eval *eval,
 	unsigned opcode);
 
+void
+drv_acpi_package_resolve(
+	struct drv_acpi_object *package);
+
+void
+drv_acpi_reference_resolve(
+	struct drv_acpi_object *reference);
+
 /* aml-field.c */
 int
 drv_acpi_field_read(
@@ -787,6 +817,14 @@ drv_acpi_region_prepare(
 void
 drv_acpi_region_reset(void);
 
+int
+drv_acpi_region_read(
+	struct drv_acpi_eval *eval,
+	struct drv_acpi_object *region,
+	uint64_t offset,
+	size_t length,
+	uint8_t *bytes);
+
 /* aml-table.c */
 struct drv_acpi_table *
 drv_acpi_table_first(void);
@@ -796,6 +834,27 @@ drv_acpi_table_operator(
 	struct drv_acpi_eval *eval,
 	unsigned opcode,
 	struct drv_acpi_object **result);
+
+/* aml-thread.c */
+struct drv_acpi_thread *
+drv_acpi_enter(
+	struct drv_acpi_thread *storage,
+	const void *frame);
+
+void
+drv_acpi_leave(
+	struct drv_acpi_thread *thread);
+
+struct drv_acpi_thread *
+drv_acpi_active_thread(void);
+
+struct drv_acpi_thread *
+drv_acpi_eval_thread(
+	struct drv_acpi_eval *eval);
+
+void
+drv_acpi_sleep(
+	uint64_t milliseconds);
 
 /* aml-sync.c */
 int
@@ -808,6 +867,27 @@ drv_acpi_sync_operator(
 	struct drv_acpi_eval *eval,
 	unsigned opcode,
 	struct drv_acpi_object **result);
+
+int
+drv_acpi_mutex_acquire(
+	struct drv_acpi_thread *thread,
+	struct drv_acpi_object *mutex,
+	uint64_t timeout,
+	bool *timed_out);
+
+int
+drv_acpi_mutex_release(
+	struct drv_acpi_thread *thread,
+	struct drv_acpi_object *mutex);
+
+void
+drv_acpi_thread_end(
+	struct drv_acpi_thread *thread);
+
+int
+drv_acpi_global_lock(
+	struct drv_acpi_eval *eval,
+	bool acquire);
 
 int
 drv_acpi_osi_install(void);

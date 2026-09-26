@@ -32,6 +32,15 @@ $(OUT)/aml-host-O2: $(SOURCES) $(HEADERS) $(lastword $(MAKEFILE_LIST))
 	@mkdir -p $(OUT)
 	$(CC) -std=gnu11 -O2 $(WARNINGS) $(CPPFLAGS) -o $@ $(SOURCES)
 
+# The interpreter built as close to the kernel as a host program can be
+# (clang, -Os, no red zone, no stack protector), for measuring its stack.
+.PHONY: stack
+stack: $(OUT)/aml-host-Os
+$(OUT)/aml-host-Os: $(SOURCES) $(HEADERS) $(lastword $(MAKEFILE_LIST))
+	@mkdir -p $(OUT)
+	clang -std=gnu11 -Os -mno-red-zone -fno-stack-protector \
+		-fno-asynchronous-unwind-tables $(WARNINGS) $(CPPFLAGS) -o $@ $(SOURCES)
+
 clean:
 	rm -f $(OUT)/aml-host $(OUT)/aml-host-O2
 

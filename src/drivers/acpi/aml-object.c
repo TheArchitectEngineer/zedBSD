@@ -245,6 +245,10 @@ drv_acpi_object_reference_node(
 	if (object == NULL || object->type != DRV_ACPI_TYPE_REFERENCE)
 		return NULL;
 
+	/* A name that did not resolve before may resolve now. */
+	if (object->value.reference.kind == DRV_ACPI_REFERENCE_NAME)
+		drv_acpi_reference_resolve((struct drv_acpi_object *)object);
+
 	/* Only a node reference names one. */
 	if (object->value.reference.kind != DRV_ACPI_REFERENCE_NODE)
 		return NULL;

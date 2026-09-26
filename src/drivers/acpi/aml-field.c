@@ -60,6 +60,8 @@ static int region_resolve_pci(struct drv_acpi_object *region);
 static int evaluate_found(struct drv_acpi_node *device, const char *name, bool own, uint64_t *value);
 static unsigned field_access_bytes(const struct drv_acpi_field *field, uint64_t region_length);
 static int field_span(struct drv_acpi_eval *eval, struct drv_acpi_object *field, unsigned *access, uint64_t *first, uint64_t *last);
+static int field_read_bits(struct drv_acpi_eval *eval, struct drv_acpi_object *field, unsigned access, uint64_t first, uint64_t last, struct drv_acpi_object **result);
+static int field_write_bits(struct drv_acpi_eval *eval, struct drv_acpi_object *field, unsigned access, uint64_t first, uint64_t last, struct drv_acpi_object *value);
 static int unit_read(struct drv_acpi_eval *eval, struct drv_acpi_object *field, uint64_t byte_offset, unsigned bytes, uint64_t *value);
 static int unit_write(struct drv_acpi_eval *eval, struct drv_acpi_object *field, uint64_t byte_offset, unsigned bytes, uint64_t value);
 static int bits_to_object(const uint8_t *bytes, uint64_t bit_length, struct drv_acpi_object **result);
@@ -81,6 +83,8 @@ drv_acpi_region_install(
 	drv_acpi_region_handler_t handler,
 	void *argument)
 {
+	struct drv_acpi_thread storage;
+	struct drv_acpi_thread *thread;
 	int error;
 
 	/* Refuses a space ACPI does not define. */
@@ -88,19 +92,23 @@ drv_acpi_region_install(
 		return EINVAL;
 
 	/* Refuses a second handler for the same space. */
-	if (region_handlers[space].handler != NULL)
+	thread = drv_acpi_enter(&storage, __builtin_frame_address(0));
+	if (region_handlers[space].handler != NULL) {
+		drv_acpi_leave(thread);
 		return EBUSY;
+	}
 
-	/* Installs it. */
+	/* Installs it; a handler installed after the tables tells their regions at once. */
 	region_handlers[space].handler = handler;
 	region_handlers[space].argument = argument;
-
-	/* A handler installed after the tables tells their regions at once. */
-	if (regions_connected) {
+	error = 0;
+	if (regions_connected)
 		error = region_connect(space);
-		if (error != 0)
-			return error;
-	}
+
+	/* Leaves the interpreter and reports a failed connection. */
+	drv_acpi_leave(thread);
+	if (error != 0)
+		return error;
 
 	/* Succeeded. */
 	return 0;
@@ -117,13 +125,17 @@ drv_acpi_region_install(
 int
 drv_acpi_region_connect_all(void)
 {
+	struct drv_acpi_thread storage;
+	struct drv_acpi_thread *thread;
 	unsigned space;
 	int error;
 
 	/* Handlers installed from now on connect at once. */
+	thread = drv_acpi_enter(&storage, __builtin_frame_address(0));
 	regions_connected = true;
 
 	/* Connects each space that has a handler. */
+	error = 0;
 	for (space = 0; space < DRV_ACPI_SPACE_COUNT; space++) {
 		/* Skips a space without a handler. */
 		if (region_handlers[space].handler == NULL)
@@ -132,8 +144,13 @@ drv_acpi_region_connect_all(void)
 		/* Runs the _REG methods of the space's regions. */
 		error = region_connect((enum drv_acpi_space)space);
 		if (error != 0)
-			return error;
+			break;
 	}
+
+	/* Leaves the interpreter and reports a failed connection. */
+	drv_acpi_leave(thread);
+	if (error != 0)
+		return error;
 
 	/* Succeeded. */
 	return 0;
@@ -162,16 +179,9 @@ drv_acpi_field_read(
 	struct drv_acpi_object **result)
 {
 	struct drv_acpi_field *unit;
-	uint8_t *units;
-	uint8_t *bits;
 	uint64_t first;
 	uint64_t last;
-	uint64_t offset;
-	uint64_t value;
 	unsigned access;
-	unsigned index;
-	size_t span;
-	size_t size;
 	int error;
 
 	/* Covers the field's bits with aligned accesses of one width. */
@@ -179,40 +189,27 @@ drv_acpi_field_read(
 	error = field_span(eval, field, &access, &first, &last);
 	if (error != 0)
 		return error;
-	span = (size_t)(last - first);
-	size = (size_t)((unit->bit_length + 7U) / 8U);
 
-	/* Allocates the bytes the accesses fill and the bytes of the field. */
-	units = drv_acpi_os_alloc(span + size + 1U);
-	if (units == NULL)
-		return ENOMEM;
-	kern_memset(units, 0, span + size + 1U);
-	bits = units + span;
-
-	/* Reads each access unit into its place, lowest byte first. */
-	for (offset = first; offset < last; offset += access) {
-		/* Reads one unit. */
-		error = unit_read(eval, field, offset, access, &value);
-		if (error != 0) {
-			drv_acpi_os_free(units);
+	/* A field whose lock rule asks for it is read under the global lock. */
+	if ((unit->flags & DRV_ACPI_FIELD_LOCK) != 0) {
+		error = drv_acpi_global_lock(eval, true);
+		if (error != 0)
 			return error;
-		}
-
-		/* Lays its bytes out in order. */
-		for (index = 0; index < access; index++)
-			units[offset - first + index] = (uint8_t)(value >> (index * 8U));
 	}
 
-	/* Takes the field's bits out and makes the value. */
-	bits_extract(units, unit->bit_offset - first * 8U, unit->bit_length, bits);
-	error = bits_to_object(bits, unit->bit_length, result);
-	drv_acpi_os_free(units);
+	/* Reads the field's bits. */
+	error = field_read_bits(eval, field, access, first, last, result);
+
+	/* Lets the global lock go and reports a failed read. */
+	if ((unit->flags & DRV_ACPI_FIELD_LOCK) != 0)
+		drv_acpi_global_lock(eval, false);
 	if (error != 0)
 		return error;
 
 	/* Succeeded. */
 	return 0;
 }
+
 
 /*
  * Writes a value into a field unit.
@@ -227,21 +224,9 @@ drv_acpi_field_write(
 	struct drv_acpi_object *value)
 {
 	struct drv_acpi_field *unit;
-	uint8_t *units;
-	uint8_t *bits;
 	uint64_t first;
 	uint64_t last;
-	uint64_t offset;
-	uint64_t word;
-	uint64_t unit_start;
-	uint64_t unit_end;
-	uint64_t field_start;
-	uint64_t field_end;
-	unsigned update;
 	unsigned access;
-	unsigned index;
-	size_t span;
-	size_t size;
 	int error;
 
 	/* Covers the field's bits with aligned accesses of one width. */
@@ -249,71 +234,22 @@ drv_acpi_field_write(
 	error = field_span(eval, field, &access, &first, &last);
 	if (error != 0)
 		return error;
-	span = (size_t)(last - first);
-	size = (size_t)((unit->bit_length + 7U) / 8U);
 
-	/* Allocates the bytes of the accesses and of the field. */
-	units = drv_acpi_os_alloc(span + size + 1U);
-	if (units == NULL)
-		return ENOMEM;
-	kern_memset(units, 0, span + size + 1U);
-	bits = units + span;
-
-	/* Converts the value to the field's bits. */
-	error = object_to_bits(value, unit->bit_length, bits);
-	if (error != 0) {
-		drv_acpi_os_free(units);
-		return error;
-	}
-
-	/* Fills each unit the field covers only in part, by the update rule. */
-	update = unit->flags & DRV_ACPI_FIELD_UPDATE_MASK;
-	field_start = unit->bit_offset;
-	field_end = field_start + unit->bit_length;
-	for (offset = first; offset < last; offset += access) {
-		unit_start = offset * 8U;
-		unit_end = unit_start + access * 8U;
-
-		/* A unit entirely inside the field needs nothing of its own. */
-		if (unit_start >= field_start && unit_end <= field_end)
-			continue;
-
-		/* Keeps, sets or clears the bits outside the field. */
-		if (update == DRV_ACPI_FIELD_UPDATE_PRESERVE) {
-			error = unit_read(eval, field, offset, access, &word);
-			if (error != 0) {
-				drv_acpi_os_free(units);
-				return error;
-			}
-		} else if (update == DRV_ACPI_FIELD_UPDATE_ONES) {
-			word = ~0ULL;
-		} else {
-			word = 0;
-		}
-
-		/* Lays the unit's bytes out in order. */
-		for (index = 0; index < access; index++)
-			units[offset - first + index] = (uint8_t)(word >> (index * 8U));
-	}
-
-	/* Puts the field's bits in place and writes each unit. */
-	bits_insert(units, field_start - first * 8U, unit->bit_length, bits);
-	for (offset = first; offset < last; offset += access) {
-		/* Assembles one unit, lowest byte first. */
-		word = 0;
-		for (index = 0; index < access; index++)
-			word |= (uint64_t)units[offset - first + index] << (index * 8U);
-
-		/* Writes it. */
-		error = unit_write(eval, field, offset, access, word);
-		if (error != 0) {
-			drv_acpi_os_free(units);
+	/* A field whose lock rule asks for it is written under the global lock. */
+	if ((unit->flags & DRV_ACPI_FIELD_LOCK) != 0) {
+		error = drv_acpi_global_lock(eval, true);
+		if (error != 0)
 			return error;
-		}
 	}
 
-	/* Frees the staging bytes. */
-	drv_acpi_os_free(units);
+	/* Writes the field's bits. */
+	error = field_write_bits(eval, field, access, first, last, value);
+
+	/* Lets the global lock go and reports a failed write. */
+	if ((unit->flags & DRV_ACPI_FIELD_LOCK) != 0)
+		drv_acpi_global_lock(eval, false);
+	if (error != 0)
+		return error;
 
 	/* Succeeded. */
 	return 0;
@@ -396,6 +332,35 @@ drv_acpi_buffer_field_write(
 }
 
 /*
+ * Reads bytes of a region through its handler, one byte at a time, as Load
+ * does to read a table from a region.
+ */
+int
+drv_acpi_region_read(
+	struct drv_acpi_eval *eval,
+	struct drv_acpi_object *region,
+	uint64_t offset,
+	size_t length,
+	uint8_t *bytes)
+{
+	uint64_t value;
+	size_t index;
+	int error;
+
+	/* Reads each byte. */
+	for (index = 0; index < length; index++) {
+		/* Reads one byte. */
+		error = region_access(eval, region, offset + index, 1, false, &value);
+		if (error != 0)
+			return error;
+		bytes[index] = (uint8_t)value;
+	}
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
  * Evaluates the offset and length of a region defined while a table
  * loaded, the first time the region is used.
  */
@@ -428,6 +393,160 @@ drv_acpi_region_prepare(
 
 	/* Succeeded: the region has its place. */
 	region->value.region.evaluated = 1;
+	return 0;
+}
+
+/* Writes the access units that cover a field, filling their other bits by the update rule. */
+static int
+field_write_bits(
+	struct drv_acpi_eval *eval,
+	struct drv_acpi_object *field,
+	unsigned access,
+	uint64_t first,
+	uint64_t last,
+	struct drv_acpi_object *value)
+{
+	struct drv_acpi_field *unit;
+	uint8_t *units;
+	uint8_t *bits;
+	uint64_t offset;
+	uint64_t word;
+	uint64_t unit_start;
+	uint64_t unit_end;
+	uint64_t field_start;
+	uint64_t field_end;
+	unsigned update;
+	unsigned index;
+	size_t span;
+	size_t size;
+	int error;
+
+	/* Measures the accesses and the field. */
+	unit = &field->value.field;
+	span = (size_t)(last - first);
+	size = (size_t)((unit->bit_length + 7U) / 8U);
+
+	/* Allocates the bytes of the accesses and of the field. */
+	units = drv_acpi_os_alloc(span + size + 1U);
+	if (units == NULL)
+		return ENOMEM;
+	kern_memset(units, 0, span + size + 1U);
+	bits = units + span;
+
+	/* Converts the value to the field's bits. */
+	error = object_to_bits(value, unit->bit_length, bits);
+	if (error != 0) {
+		drv_acpi_os_free(units);
+		return error;
+	}
+
+	/* Fills each unit the field covers only in part, by the update rule. */
+	update = unit->flags & DRV_ACPI_FIELD_UPDATE_MASK;
+	field_start = unit->bit_offset;
+	field_end = field_start + unit->bit_length;
+	for (offset = first; offset < last; offset += access) {
+		unit_start = offset * 8U;
+		unit_end = unit_start + access * 8U;
+
+		/* A unit entirely inside the field needs nothing of its own. */
+		if (unit_start >= field_start && unit_end <= field_end)
+			continue;
+
+		/* Keeps, sets or clears the bits outside the field. */
+		if (update == DRV_ACPI_FIELD_UPDATE_PRESERVE) {
+			error = unit_read(eval, field, offset, access, &word);
+			if (error != 0) {
+				drv_acpi_os_free(units);
+				return error;
+			}
+		} else if (update == DRV_ACPI_FIELD_UPDATE_ONES) {
+			word = ~0ULL;
+		} else {
+			word = 0;
+		}
+
+		/* Lays the unit's bytes out in order. */
+		for (index = 0; index < access; index++)
+			units[offset - first + index] = (uint8_t)(word >> (index * 8U));
+	}
+
+	/* Puts the field's bits in place and writes each unit. */
+	bits_insert(units, field_start - first * 8U, unit->bit_length, bits);
+	for (offset = first; offset < last; offset += access) {
+		/* Assembles one unit, lowest byte first. */
+		word = 0;
+		for (index = 0; index < access; index++)
+			word |= (uint64_t)units[offset - first + index] << (index * 8U);
+
+		/* Writes it. */
+		error = unit_write(eval, field, offset, access, word);
+		if (error != 0) {
+			drv_acpi_os_free(units);
+			return error;
+		}
+	}
+
+	/* Frees the staging bytes. */
+	drv_acpi_os_free(units);
+
+	/* Succeeded. */
+	return 0;
+}
+
+/* Reads the access units that cover a field and makes its value from its bits. */
+static int
+field_read_bits(
+	struct drv_acpi_eval *eval,
+	struct drv_acpi_object *field,
+	unsigned access,
+	uint64_t first,
+	uint64_t last,
+	struct drv_acpi_object **result)
+{
+	struct drv_acpi_field *unit;
+	uint8_t *units;
+	uint8_t *bits;
+	uint64_t offset;
+	uint64_t value;
+	unsigned index;
+	size_t span;
+	size_t size;
+	int error;
+
+	/* Measures the accesses and the field. */
+	unit = &field->value.field;
+	span = (size_t)(last - first);
+	size = (size_t)((unit->bit_length + 7U) / 8U);
+
+	/* Allocates the bytes the accesses fill and the bytes of the field. */
+	units = drv_acpi_os_alloc(span + size + 1U);
+	if (units == NULL)
+		return ENOMEM;
+	kern_memset(units, 0, span + size + 1U);
+	bits = units + span;
+
+	/* Reads each access unit into its place, lowest byte first. */
+	for (offset = first; offset < last; offset += access) {
+		/* Reads one unit. */
+		error = unit_read(eval, field, offset, access, &value);
+		if (error != 0) {
+			drv_acpi_os_free(units);
+			return error;
+		}
+
+		/* Lays its bytes out in order. */
+		for (index = 0; index < access; index++)
+			units[offset - first + index] = (uint8_t)(value >> (index * 8U));
+	}
+
+	/* Takes the field's bits out and makes the value. */
+	bits_extract(units, unit->bit_offset - first * 8U, unit->bit_length, bits);
+	error = bits_to_object(bits, unit->bit_length, result);
+	drv_acpi_os_free(units);
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
 	return 0;
 }
 
