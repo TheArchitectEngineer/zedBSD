@@ -49,7 +49,7 @@ ZEDBSD_CONFIG_OPTIONAL_GOALS := menuconfig help list-user-programs \
 	noct-target-source-verify noct-host-source noct-host-source-verify \
 	llvm-download llvm-source llvm-source-verify llvm-configure llvm-build llvm-toolchain \
 	llvm-host-archive toolchain-cache \
-	sysroot-amd64 sysroot-i386 sysroots \
+	sysroot-amd64 sysroot-i386 sysroot-arm64 sysroots \
 	patch openssl-download openssl-source openssh-download openssh-source
 ifeq ($(strip $(ZEDBSD_PLATFORM)),)
 ifneq ($(filter-out $(ZEDBSD_CONFIG_OPTIONAL_GOALS),$(MAKECMDGOALS)),)
@@ -73,7 +73,7 @@ endif
 endif
 BUILD := build/$(ZEDBSD_PLATFORM_DIR)
 
-# Maintained x86 target artifacts are built only by the project-owned LLVM
+# Maintained target artifacts are built only by the project-owned LLVM
 # installation. HOSTCC/HOSTCXX remain independent bootstrap compilers for
 # host Noct and LLVM themselves.
 ZEDBSD_TARGET_LLVM_BIN := $(abspath build/llvm/bin)
@@ -83,6 +83,9 @@ ZEDBSD_TARGET_SYSROOT := $(abspath build/amd64/sysroot)
 else ifeq ($(ZEDBSD_ARCHITECTURE),i386)
 ZEDBSD_TARGET_TRIPLE := i386-unknown-zedbsd
 ZEDBSD_TARGET_SYSROOT := $(abspath build/i386/sysroot)
+else ifeq ($(ZEDBSD_ARCHITECTURE),arm64)
+ZEDBSD_TARGET_TRIPLE := aarch64-unknown-zedbsd
+ZEDBSD_TARGET_SYSROOT := $(abspath build/arm64/sysroot)
 endif
 ifneq ($(strip $(ZEDBSD_TARGET_TRIPLE)),)
 ZEDBSD_TARGET_CLANG := $(ZEDBSD_TARGET_LLVM_BIN)/clang
@@ -541,6 +544,8 @@ export ZEDBSD_BUILD_DIR := $(CURDIR)/$(BUILD)
 
 ifeq ($(ZEDBSD_ARCHITECTURE),amd64)
 ASFLAGS := -m64 -c
+else ifeq ($(ZEDBSD_ARCHITECTURE),arm64)
+ASFLAGS := -c
 else
 ASFLAGS := -m32 -c
 endif
@@ -865,7 +870,7 @@ ZEDBSD_PACKAGE_LINKS ?=
 # SONAME as a regular file, so removing the .so links leaves the loader's
 # names intact.
 ZEDBSD_ROOTFS_DEVELOPMENT ?= y
-# A target without a sysroot (arm64 for now) has no development files.
+# A target without a sysroot has no development files.
 ifeq ($(strip $(ZEDBSD_TARGET_SYSROOT)),)
 override ZEDBSD_ROOTFS_DEVELOPMENT := n
 endif
