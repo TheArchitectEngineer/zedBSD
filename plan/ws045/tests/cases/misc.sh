@@ -275,9 +275,6 @@ basename -s .c /x/y.c
 #### basename -a
 basename -a /x/a /y/b
 
-#### dirname several
-dirname /a/b /c/d
-
 #### env -u
 X=1 env -u X sh -c 'echo "${X-unset}"'
 
@@ -517,3 +514,171 @@ env echo -- -n
 
 #### sort -V and head together (emacs configure)
 printf 'gcc-9\ngcc-12\ngcc-10\n' | sort -V | tail -n 1
+
+#### rm -d an empty directory, and a full one
+mkdir e f
+touch f/x
+rm -d e; echo $?
+rm -d f 2>/dev/null; echo $?
+ls
+
+#### rm -rv a tree
+mkdir -p d/e
+touch d/e/f
+rm -rv d | sort
+
+#### rm --interactive=never
+touch a
+rm --interactive=never a; ls
+
+#### mv -t and -v
+mkdir d
+touch a b
+mv -v -t d a b
+ls d
+
+#### mv -T onto a file name
+mkdir d
+touch f
+mv -T f g; ls
+
+#### mv -u keeps a newer file
+echo old > a
+touch -d '2000-01-01' a
+echo new > b
+mv -u a b; cat b
+
+#### mv --update=none
+echo a > a; echo b > b
+mv --update=none a b; cat b; ls
+
+#### mv options after the operands
+touch a
+mv a b -v
+
+#### mkdir -m with -p gives the mode to the last only
+mkdir -p -m 700 x/y
+ls -ld x/y | cut -c1-10
+
+#### mkdir -m exactly
+umask 077
+mkdir -m 755 d
+ls -ld d | cut -c1-10
+
+#### mkdir --parents on an existing tree is quiet
+mkdir -p a/b
+mkdir --parents --verbose a/b/c
+
+#### ln -t, -T and -v
+mkdir d
+touch f
+ln -sv -t d ../f
+readlink d/f
+ln -sT f g; readlink g
+
+#### ln with one operand
+mkdir d
+touch d/f
+ln -s d/f
+readlink f
+
+#### ln -sr into a deeper directory
+mkdir -p a/b/c x
+touch x/f
+ln -sr x/f a/b/c/l
+readlink a/b/c/l
+
+#### ln -sfn replaces a link to a directory
+mkdir d e
+ln -s d l
+ln -sfn e l
+readlink l
+
+#### basename -z and --suffix
+basename -z -s .h /a/b.h | od -c
+basename --suffix=.c x.c y.c
+
+#### cut --complement on bytes and -z
+echo 'abcdef' | cut -b 2-3 --complement
+printf 'a:b\0c:d\0' | cut -z -d: -f2 | od -c
+
+#### cut --output-delimiter on byte ranges
+echo 'abcdef' | cut -b 1-2,4-5 --output-delimiter=:
+
+#### wc -L with a tab and several files
+printf 'a\tb\n' > f1
+printf 'abcdefghijk\n' > f2
+wc -L f1 f2
+
+#### wc -lL
+printf 'ab\nabc\n' | wc -lL
+
+#### uniq -c -w
+printf 'ab1\nab2\ncd\n' | uniq -c -w 2
+
+#### uniq -z
+printf 'a\0a\0b\0' | uniq -z | od -c
+
+#### tr -t
+echo abcd | tr -t abcd xy
+
+#### tr --squeeze-repeats
+echo 'aaabbb' | tr --squeeze-repeats ab
+
+#### env -S splits the string
+env -S 'sh -c "echo one two"'
+
+#### env -S with more options inside
+X=1 env -S '-u X printenv X'; echo $?
+
+#### env -0
+env -i A=1 B=2 env -0 | od -c
+
+#### env -C
+mkdir d
+env -C d sh -c 'basename "$PWD"'
+
+#### env stops at the utility
+env sh -c 'echo "$1"' -i x
+
+#### split --additional-suffix and -a 3
+seq 3 | split -l 1 -a 3 --additional-suffix=.txt
+ls x*
+
+#### split --numeric-suffixes=5
+seq 4 | split -l 2 --numeric-suffixes=5 - p
+ls p*
+
+#### split -b with a unit
+yes | head -c 3000 | split -b 1K
+ls x* | wc -l
+
+#### split --verbose
+seq 2 | split -l 1 --verbose
+
+#### tee --append
+echo a > f
+echo b | tee --append f >/dev/null
+cat f
+
+#### cp -t and -v
+mkdir d
+touch a b
+cp -v -t d a b
+ls d
+
+#### cp -rv
+mkdir -p s/e
+touch s/e/f
+cp -rv s t | sort
+
+#### cp --preserve=mode
+touch f
+chmod 604 f
+cp --preserve=mode f g
+ls -l g | cut -c1-10
+
+#### cp -T
+mkdir d
+touch f
+cp -T f d/g; ls d

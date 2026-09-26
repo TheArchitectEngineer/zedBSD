@@ -33,7 +33,7 @@ struct tee_options {
 	int ignore_interrupt;
 };
 
-static int tee_parse_options(int argc, char **argv, struct tee_options *options);
+static int tee_parse_options(int argc, char **argv, struct tee_options *options, int *count);
 static void tee_usage(void);
 static int tee_open_outputs(struct tee_output *outputs, char **names, size_t count, int append);
 static int tee_write_output(struct tee_output *output, const void *data, size_t size);
@@ -54,12 +54,13 @@ main(
 	size_t output_count;
 	size_t index;
 	int first_operand;
+	int operand_count;
 	int stdout_active;
 	int failed;
 	int status;
 
 	memset(&options, 0, sizeof(options));
-	first_operand = tee_parse_options(argc, argv, &options);
+	first_operand = tee_parse_options(argc, argv, &options, &operand_count);
 
 	/* Handles the first operand condition. */
 	if (first_operand < 0) {
@@ -78,7 +79,7 @@ main(
 		return 1;
 	}
 
-	output_count = (size_t)(argc - first_operand);
+	output_count = (size_t)operand_count;
 
 	/* Handles the output count condition. */
 	if (output_count > SIZE_MAX / sizeof(*outputs)) {
@@ -168,19 +169,44 @@ main(
 	return failed;
 }
 
-/* Parses append and interrupt-handling modes. */
+/*
+ * Parses append and interrupt-handling modes, with GNU's long forms
+ * (--append, --ignore-interrupts) and -p (--output-error[=MODE]), which
+ * is taken: an output that fails is reported and dropped anyway.  The
+ * operands are gathered from argv[1] on, count of them; returns 1, or -1
+ * for an option tee does not take.
+ */
 static int
 tee_parse_options(
 	int argc,
 	char **argv,
-	struct tee_options *options)
+	struct tee_options *options,
+	int *count)
 {
+	static const struct command_long_option names[] = {
+		{"append", COMMAND_VALUE_NONE, 'a'},
+		{"ignore-interrupts", COMMAND_VALUE_NONE, 'i'},
+		{"output-error", COMMAND_VALUE_OPTIONAL, 'p'},
+		{NULL, 0, 0}
+	};
+	struct command_options scan;
 	int option;
 
-	opterr = 0;
+	/* The scan of the command line. */
+	memset(&scan, 0, sizeof(scan));
+	scan.argc = argc;
+	scan.argv = argv;
+	scan.program = "tee";
+	scan.letters = "aip";
+	scan.names = names;
+	command_options_start(&scan);
 
 	/* Accept combined and repeated standard options. */
-	while ((option = getopt(argc, argv, "ai")) != -1) {
+	for (;;) {
+		option = command_options_next(&scan);
+		if (option == COMMAND_OPTION_END)
+			break;
+
 		/* Dispatch the selected command-line option. */
 		switch (option) {
 		case 'a':
@@ -189,14 +215,18 @@ tee_parse_options(
 		case 'i':
 			options->ignore_interrupt = 1;
 			break;
+		case 'p':
+			/* A failed output is reported and dropped anyway. */
+			break;
 		default:
 			/* Reports operation failure. */
 			return -1;
 		}
 	}
 
-	/* Returns the computed result. */
-	return optind;
+	/* Succeeded: the operands follow argv[0]. */
+	*count = scan.operand_count;
+	return 1;
 }
 
 /* Prints the standard option synopsis. */

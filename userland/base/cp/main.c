@@ -1,7 +1,14 @@
 /* -*- mode: c; c-basic-offset: 8; indent-tabs-mode: t; -*- */
 /* Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib */
 
-/* Copies regular files with explicit creation and metadata policies. */
+/*
+ * Copies regular files with explicit creation and metadata policies.
+ *
+ * The options are read by cp_read_options (ws045): POSIX's -R, -r, -f, -p,
+ * GNU's -a, -n, -T, -t directory, -v, --preserve[=list], --update[=WHEN],
+ * --attributes-only, the long forms, and zedBSD's --report-file; options
+ * may follow operands unless POSIXLY_CORRECT is set.
+ */
 #include "userland/base/common/command.h"
 #include <dirent.h>
 #include <errno.h>
@@ -39,9 +46,50 @@ struct copy_options {
 	int recursive;
 	int preserve_links;
 	int force;
+	/* -v: each copy is written before it is made. */
+	int verbose;
 	struct copy_link **links;
 	struct copy_report *report;
 };
+
+/* The codes of the long options that have no letter. */
+#define CP_OPTION_ATTRIBUTES	256
+#define CP_OPTION_PRESERVE	257
+#define CP_OPTION_NO_PRESERVE	258
+#define CP_OPTION_UPDATE	259
+#define CP_OPTION_REPORT	260
+#define CP_OPTION_HELP		261
+#define CP_OPTION_VERSION	262
+
+/*
+ * The options written in full.
+ *
+ * The table is read by the scan of the command line only; the letter a
+ * long option shares its code with makes the two forms one case.
+ */
+static const struct command_long_option cp_long_options[] = {
+	{"archive", COMMAND_VALUE_NONE, 'a'},
+	{"attributes-only", COMMAND_VALUE_NONE, CP_OPTION_ATTRIBUTES},
+	{"force", COMMAND_VALUE_NONE, 'f'},
+	{"help", COMMAND_VALUE_NONE, CP_OPTION_HELP},
+	{"no-clobber", COMMAND_VALUE_NONE, 'n'},
+	{"no-preserve", COMMAND_VALUE_REQUIRED, CP_OPTION_NO_PRESERVE},
+	{"no-target-directory", COMMAND_VALUE_NONE, 'T'},
+	{"preserve", COMMAND_VALUE_OPTIONAL, CP_OPTION_PRESERVE},
+	{"recursive", COMMAND_VALUE_NONE, 'R'},
+	{"report-file", COMMAND_VALUE_REQUIRED, CP_OPTION_REPORT},
+	{"target-directory", COMMAND_VALUE_REQUIRED, 't'},
+	{"update", COMMAND_VALUE_OPTIONAL, CP_OPTION_UPDATE},
+	{"verbose", COMMAND_VALUE_NONE, 'v'},
+	{"version", COMMAND_VALUE_NONE, CP_OPTION_VERSION},
+	{NULL, 0, 0}
+};
+static int cp_read_options(int argc, char **argv, struct copy_options *options, const char **report_path, const char **target_directory);
+static void cp_apply_preserve(struct copy_options *options, const char *list);
+static void cp_preserve_word(struct copy_options *options, const char *word, size_t length);
+static void cp_apply_update(struct copy_options *options, const char *word);
+static void cp_usage(void);
+static void copy_verbose(const struct copy_options *options, const char *source, const char *destination);
 static const char *leaf(const char *path);
 static int copy_file(const char *source, const char *destination,
 		     const struct copy_options *options,
@@ -70,12 +118,13 @@ main(int argc, char **argv)
 	struct stat status;
 	const char *operand;
 	const char *destination;
-	const char *option;
+	const char *target_directory;
 	char target[PATH_MAX + 1];
 	char source_name[PATH_MAX + 1];
 	size_t source_length;
 	int first, index, failed, isdir;
 	int copy_status;
+	int count;
 
 	memset(&options, 0, sizeof(options));
 	links = NULL;
@@ -86,57 +135,28 @@ main(int argc, char **argv)
 	report_path = NULL;
 	first = 1;
 	failed = 0;
-	while (first < argc && argv[first][0] == '-') {
-		option = argv[first++];
-		if (!strcmp(option, "--"))
-			break;
-		if (!strcmp(option, "-T") ||
-		    !strcmp(option, "--no-target-directory"))
-			options.literal = 1;
-		else if (!strcmp(option, "-n") ||
-			 !strcmp(option, "--no-clobber")) {
-			options.exclusive = 1;
-			options.conflict_fails = 0;
-		} else if (!strcmp(option, "--update=none-fail")) {
-			options.exclusive = 1;
-			options.conflict_fails = 1;
-		} else if (!strcmp(option, "--attributes-only"))
-			options.attributes_only = 1;
-		else if (!strcmp(option, "--preserve=mode"))
-			options.preserve_mode = 1;
-		else if (!strncmp(option, "--report-file=", 14))
-			report_path = option + 14;
-		else if (!strcmp(option, "-R") || !strcmp(option, "-r"))
-			options.recursive = 1;
-		else if (!strcmp(option, "-f"))
-			options.force = 1;
-		else if (!strcmp(option, "-a") || !strcmp(option, "--archive")) {
-			options.recursive = 1;
-			options.preserve_mode = 1;
-			options.preserve_owner = 1;
-			options.preserve_times = 1;
-			options.preserve_links = 1;
-		}
-		else if (!strcmp(option, "-p")) {
-			options.preserve_mode = 1;
-			options.preserve_owner = 1;
-			options.preserve_times = 1;
-		}
-		else {
-			fprintf(stderr, "cp: unsupported option: %s\n", option);
-			return 1;
-		}
+
+	/* The options; the operands follow argv[0], -t's directory after them. */
+	target_directory = NULL;
+	count = cp_read_options(argc, argv, &options, &report_path, &target_directory);
+	argc = first + count;
+	if (target_directory != NULL) {
+		argv[argc] = (char *)target_directory;
+		argc++;
 	}
-	if (argc - first < 2) {
-		fprintf(stderr, "usage: cp [-R|-a] [-f] [-T] [-n|--update=none-fail] "
-				"[--attributes-only] [-p|--preserve=mode] [--report-file=path] "
-				"source... destination\n");
-		return 1;
-	}
+	if (argc - first < 2)
+		cp_usage();
+
+	/* Whether the destination is a directory the sources go into. */
 	isdir = 0;
 	if (!options.literal)
 		isdir = stat(argv[argc - 1], &status) == 0 &&
 			S_ISDIR(status.st_mode);
+	if (target_directory != NULL && !isdir) {
+		fprintf(stderr, "cp: target '%s' is not a directory\n",
+			target_directory);
+		return 1;
+	}
 	if (argc - first > 2 && !isdir) {
 		fprintf(stderr, "cp: destination is not a directory\n");
 		return 1;
@@ -185,6 +205,7 @@ main(int argc, char **argv)
 			continue;
 		}
 
+		copy_verbose(&options, argv[index], destination);
 		copy_status = copy_file(argv[index], destination, &options, &operand);
 		if (copy_status < 0) {
 			command_error("cp", operand);
@@ -214,6 +235,222 @@ main(int argc, char **argv)
 		}
 	}
 	return failed;
+}
+
+/*
+ * Reads the options into the copy policy; returns the number of operands,
+ * which are left in argv from argv[1] on.  --report-file's path and -t's
+ * directory are set when given.
+ */
+static int
+cp_read_options(
+	int argc,
+	char **argv,
+	struct copy_options *options,
+	const char **report_path,
+	const char **target_directory)
+{
+	struct command_options scan;
+	int code;
+
+	/* The scan of the command line. */
+	memset(&scan, 0, sizeof(scan));
+	scan.argc = argc;
+	scan.argv = argv;
+	scan.program = "cp";
+	scan.letters = "RrfapnTvt:";
+	scan.names = cp_long_options;
+	command_options_start(&scan);
+
+	/* Each option in turn. */
+	for (;;) {
+		code = command_options_next(&scan);
+		if (code == COMMAND_OPTION_END)
+			break;
+		switch (code) {
+		case 'R':
+		case 'r':
+			options->recursive = 1;
+			break;
+		case 'f':
+			options->force = 1;
+			break;
+		case 'a':
+			/* -R and every attribute, and the links between files. */
+			options->recursive = 1;
+			cp_apply_preserve(options, "all");
+			break;
+		case 'p':
+			cp_apply_preserve(options, NULL);
+			break;
+		case CP_OPTION_PRESERVE:
+			cp_apply_preserve(options, scan.value);
+			break;
+		case CP_OPTION_NO_PRESERVE:
+			/* Nothing is kept that was not asked for. */
+			break;
+		case 'n':
+			options->exclusive = 1;
+			options->conflict_fails = 0;
+			break;
+		case CP_OPTION_UPDATE:
+			cp_apply_update(options, scan.value);
+			break;
+		case 'T':
+			options->literal = 1;
+			break;
+		case 't':
+			*target_directory = scan.value;
+			break;
+		case 'v':
+			options->verbose = 1;
+			break;
+		case CP_OPTION_ATTRIBUTES:
+			options->attributes_only = 1;
+			break;
+		case CP_OPTION_REPORT:
+			*report_path = scan.value;
+			break;
+		case CP_OPTION_VERSION:
+			printf("cp (zedBSD) 1.0\n");
+			exit(0);
+		default:
+			cp_usage();
+		}
+	}
+
+	/* Succeeded: the operands follow argv[0]. */
+	return scan.operand_count;
+}
+
+/*
+ * Applies --preserve[=list]: mode, ownership, timestamps, links and all
+ * (the list is words separated by commas); no list is mode, ownership and
+ * timestamps, as -p.
+ */
+static void
+cp_apply_preserve(
+	struct copy_options *options,
+	const char *list)
+{
+	const char *word;
+	size_t length;
+
+	/* No list: -p. */
+	if (list == NULL) {
+		options->preserve_mode = 1;
+		options->preserve_owner = 1;
+		options->preserve_times = 1;
+		return;
+	}
+
+	/* Each word of the list, and the comma after it. */
+	for (word = list; *word != '\0'; word += length) {
+		length = strcspn(word, ",");
+		cp_preserve_word(options, word, length);
+		if (word[length] == ',')
+			length++;
+	}
+}
+
+/* Applies one word of --preserve's list. */
+static void
+cp_preserve_word(
+	struct copy_options *options,
+	const char *word,
+	size_t length)
+{
+	static const char *const names[] = {"mode", "ownership", "timestamps", "links", "all"};
+	size_t index;
+	size_t name_length;
+	int differs;
+
+	/* The name the word is. */
+	for (index = 0; index < 5U; index++) {
+		name_length = strlen(names[index]);
+		if (name_length != length)
+			continue;
+		differs = strncmp(word, names[index], length);
+		if (differs == 0)
+			break;
+	}
+
+	/* The attribute of the name; all is every one. */
+	switch (index) {
+	case 0:
+		options->preserve_mode = 1;
+		break;
+	case 1:
+		options->preserve_owner = 1;
+		break;
+	case 2:
+		options->preserve_times = 1;
+		break;
+	case 3:
+		options->preserve_links = 1;
+		break;
+	case 4:
+		options->preserve_mode = 1;
+		options->preserve_owner = 1;
+		options->preserve_times = 1;
+		options->preserve_links = 1;
+		break;
+	default:
+		/* Other attributes are not kept. */
+		break;
+	}
+}
+
+/* Applies --update[=WHEN]: none (-n) and none-fail; all and older copy as usual. */
+static void
+cp_apply_update(
+	struct copy_options *options,
+	const char *word)
+{
+	int differs;
+
+	/* none: never replace, quietly. */
+	if (word == NULL)
+		return;
+	differs = strcmp(word, "none");
+	if (differs == 0) {
+		options->exclusive = 1;
+		options->conflict_fails = 0;
+		return;
+	}
+
+	/* none-fail: never replace, and fail. */
+	differs = strcmp(word, "none-fail");
+	if (differs == 0) {
+		options->exclusive = 1;
+		options->conflict_fails = 1;
+	}
+}
+
+/* Writes a copy about to be made, with -v, as GNU cp does. */
+static void
+copy_verbose(
+	const struct copy_options *options,
+	const char *source,
+	const char *destination)
+{
+	/* Only with -v. */
+	if (!options->verbose)
+		return;
+	printf("'%s' -> '%s'\n", source, destination);
+}
+
+/* Reports the usage and ends cp. */
+static void
+cp_usage(
+	void)
+{
+	/* The forms. */
+	fprintf(stderr, "usage: cp [-R|-a] [-fnpTv] [--preserve[=list]] "
+		"[--update=none|none-fail] [--attributes-only] [--report-file=path] "
+		"source... destination\n"
+		"       cp [options] -t directory source...\n");
+	exit(1);
 }
 
 static const char *
@@ -479,6 +716,9 @@ copy_tree(
 		tree_error(source);
 		return -1;
 	}
+
+	/* -v: the copy about to be made. */
+	copy_verbose(options, source, destination);
 
 	/* Reuse only a previously completed and still-identical archive object. */
 	if (options->preserve_links && !S_ISDIR(from.st_mode) && from.st_nlink > 1) {

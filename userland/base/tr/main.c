@@ -25,7 +25,14 @@
  * in string2; a shorter string2 is extended with its last character, as GNU
  * tr does.  -d deletes the characters of string1.  -s squeezes each run of
  * a character of the last string given into one.
+ *
+ * GNU's extensions: -t cuts string1 to the length of string2 instead of
+ * extending string2, the long options (--complement, --delete,
+ * --squeeze-repeats, --truncate-set1), and options after operands (unless
+ * POSIXLY_CORRECT is set).
  */
+
+#include "userland/base/common/command.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -37,6 +44,26 @@ struct set {
 	size_t length;
 	long fill_at;		/* index of the [x*] fill, or -1 */
 	unsigned char fill;
+};
+
+/* The codes of the long options that have no letter. */
+#define OPTION_HELP	256
+#define OPTION_VERSION	257
+
+/*
+ * The options written in full.
+ *
+ * The table is read by the scan of the command line only; the letter a
+ * long option shares its code with makes the two forms one case.
+ */
+static const struct command_long_option tr_long_options[] = {
+	{"complement", COMMAND_VALUE_NONE, 'c'},
+	{"delete", COMMAND_VALUE_NONE, 'd'},
+	{"help", COMMAND_VALUE_NONE, OPTION_HELP},
+	{"squeeze-repeats", COMMAND_VALUE_NONE, 's'},
+	{"truncate-set1", COMMAND_VALUE_NONE, 't'},
+	{"version", COMMAND_VALUE_NONE, OPTION_VERSION},
+	{NULL, 0, 0}
 };
 
 /* A character class and what it holds. */
@@ -84,6 +111,7 @@ static void add(struct set *set, unsigned char value);
 static void complement(struct set *set);
 static void fill(struct set *set, size_t length);
 static void fatal(const char *message);
+static void version(void);
 static void usage(void);
 
 /*
@@ -94,49 +122,59 @@ main(
 	int argc,
 	char **argv)
 {
+	struct command_options scan;
 	struct set first;
 	struct set second;
 	unsigned char map[256];
 	unsigned char remove[256];
 	unsigned char squeeze[256];
-	const char *letter;
 	size_t index;
 	int invert;
 	int delete;
 	int squeezing;
+	int truncate;
 	int translate;
+	int code;
 	int operands;
 	int value;
 	int last;
 	int argument;
 
-	/* The options. */
+	/* The options; the strings follow argv[0]. */
 	invert = 0;
 	delete = 0;
 	squeezing = 0;
-	for (argument = 1; argument < argc; argument++) {
-		if (argv[argument][0] != '-' || argv[argument][1] == '\0')
+	truncate = 0;
+	memset(&scan, 0, sizeof(scan));
+	scan.argc = argc;
+	scan.argv = argv;
+	scan.program = "tr";
+	scan.letters = "cCdst";
+	scan.names = tr_long_options;
+	command_options_start(&scan);
+	for (;;) {
+		code = command_options_next(&scan);
+		if (code == COMMAND_OPTION_END)
 			break;
-		if (argv[argument][1] == '-' && argv[argument][2] == '\0') {
-			argument++;
-			break;
-		}
-
-		/* Each letter of the options. */
-		for (letter = argv[argument] + 1; *letter != '\0'; letter++) {
-			if (*letter == 'c' || *letter == 'C')
-				invert = 1;
-			else if (*letter == 'd')
-				delete = 1;
-			else if (*letter == 's')
-				squeezing = 1;
-			else
-				usage();
-		}
+		if (code == 'c' || code == 'C')
+			invert = 1;
+		else if (code == 'd')
+			delete = 1;
+		else if (code == 's')
+			squeezing = 1;
+		else if (code == 't')
+			truncate = 1;
+		else if (code == OPTION_VERSION)
+			version();
+		else
+			usage();
 	}
 
+	/* The strings follow argv[0]. */
+	argument = 1;
+
 	/* One string, or two: translating needs two, -d alone takes one. */
-	operands = argc - argument;
+	operands = scan.operand_count;
 	translate = !delete && operands == 2;
 	if (operands < 1 || operands > 2)
 		usage();
@@ -162,7 +200,10 @@ main(
 	memset(remove, 0, sizeof(remove));
 	memset(squeeze, 0, sizeof(squeeze));
 	if (translate) {
-		if (second.length == 0 && second.fill_at < 0)
+		/* -t: string1 is cut to string2's length. */
+		if (truncate && second.fill_at < 0 && second.length < first.length)
+			first.length = second.length;
+		if (second.length == 0 && second.fill_at < 0 && !truncate)
 			fatal("when not truncating set1, string2 must be non-empty");
 		fill(&second, first.length);
 		for (index = 0; index < first.length; index++)
@@ -661,6 +702,16 @@ fatal(
 	/* The message. */
 	fprintf(stderr, "tr: %s\n", message);
 	exit(1);
+}
+
+/* Writes the version and ends tr. */
+static void
+version(
+	void)
+{
+	/* The name and where it comes from. */
+	printf("tr (zedBSD) 1.0\n");
+	exit(0);
 }
 
 /* Reports the usage and ends tr. */
