@@ -37,7 +37,7 @@
  * Wiseview, and a tile's close button closes its window.
  */
 
-#include "glass.h"
+#include "menu.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -140,6 +140,7 @@ static void draw_window(struct zwl_server *server, VkCommandBuffer command, stru
 static void draw_body(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, const struct shell_rect *body, unsigned docked, unsigned focused);
 static void draw_title_bar(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, const struct shell_rect *panel, float fade, float buttons, unsigned focused);
 static void draw_title(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, int32_t x, int32_t middle, int32_t limit, const float *ink);
+static int32_t title_end(struct zwl_server *server, struct zwl_object *surface, int32_t limit);
 static void draw_sign(struct zwl_server *server, VkCommandBuffer command, int button, int32_t cx, int32_t cy, unsigned restore, unsigned over, float fade, const float *ink);
 static void draw_system_bar(struct zwl_server *server, VkCommandBuffer command, const struct shell_bar *bar);
 static void draw_desktops(struct zwl_server *server, VkCommandBuffer command, const struct shell_bar *bar, const float *line);
@@ -205,6 +206,9 @@ zwl_glass_draw(
 	float home;
 	float position;
 	float shift;
+
+	/* The menus' places are those this frame draws them at (menu-shell.c). */
+	zwl_menu_frame(server);
 
 	/*
 	 * App Home, opening, open or closing, lies under the desktop layer,
@@ -289,6 +293,9 @@ zwl_glass_draw(
 	server->layer_on = 0;
 	draw_system_bar(server, command, &bar);
 
+	/* An open menu's popups over the system bar (menu-shell.c). */
+	zwl_menu_draw_popups(server, command);
+
 	/* A frame of the animation. */
 	if (server->anim != NULL && server->log_frames)
 		printf("ZWL GLASS anim surface=%u docking=%u t=%.2f\n", server->anim->id, server->anim_docking, (double)animation_progress(server));
@@ -320,6 +327,11 @@ zwl_glass_button(
 
 	/* App Home takes the launcher, the top-left corner, and every button while it shows. */
 	pressed = zwl_home_button(server, button, state);
+	if (pressed)
+		return 1;
+
+	/* The menus take a press on a window's menu, and every button while one is open (menu-shell.c). */
+	pressed = zwl_menu_button(server, button, state);
 	if (pressed)
 		return 1;
 
@@ -472,6 +484,11 @@ zwl_glass_motion(
 	if (taken)
 		return 1;
 
+	/* An open menu follows the pointer (menu-shell.c). */
+	taken = zwl_menu_motion(server);
+	if (taken)
+		return 1;
+
 	/* The desktops' swipe: past DESKTOP_START the windows follow the pointer (with resistance where there is no neighbour). */
 	if (server->desktop_press) {
 		dx = server->pointer_x - server->desktop_start_x;
@@ -541,6 +558,19 @@ zwl_glass_motion(
 
 	/* Succeeded: the motion was zdesktop's. */
 	return 1;
+}
+
+/*
+ * Brings a window to the top and gives it the focus (for the menus, whose
+ * press on a title bar does what a press on it does).
+ */
+void
+zwl_glass_raise(
+	struct zwl_server *server,
+	struct zwl_object *surface)
+{
+	/* The same as a press on the window. */
+	window_raise(server, surface);
 }
 
 /*
@@ -651,6 +681,9 @@ zwl_glass_tick(
 
 	/* App Home's animation, and the applications it started that have ended. */
 	zwl_home_tick(server);
+
+	/* An open menu closes when what it belongs to changed (menu-shell.c). */
+	zwl_menu_tick(server);
 
 	/* The desktops' slide draws every frame until it is done. */
 	if (server->desktop_moving) {
@@ -890,8 +923,12 @@ draw_title_bar(
 {
 	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
 	static const float faint[4] = { 0.40f, 0.46f, 0.56f, 1.0f };
+	struct zwl_menu_area area;
 	struct glass_shape shape;
 	const float *ink;
+	int32_t available;
+	int32_t limit;
+	int32_t end;
 	int32_t cx;
 	int32_t cy;
 	int button;
@@ -927,11 +964,22 @@ draw_title_bar(
 	shape.opacity = fade;
 	glass_shape_draw(server, command, &shape);
 
-	/* The mark and the title, darker for the focused window, cut short before the buttons. */
+	/* The mark and the title, darker for the focused window, cut short to share the room before the buttons with the menu. */
 	ink = faint;
 	if (focused)
 		ink = dark;
-	draw_title(server, command, surface, panel->x + 14, panel->y + panel->height / 2, panel->width - 44 - BUTTON_SPACING * BUTTON_COUNT - 12, ink);
+	available = panel->width - 44 - BUTTON_SPACING * BUTTON_COUNT - 12;
+	limit = zwl_menu_title_limit(server, surface, available);
+	draw_title(server, command, surface, panel->x + 14, panel->y + panel->height / 2, limit, ink);
+
+	/* The window's menu after the title, faded with the buttons (menu-shell.c). */
+	end = title_end(server, surface, limit);
+	area.x = panel->x + 44 + end + 18;
+	area.top = panel->y;
+	area.right = panel->x + 44 + available;
+	area.height = panel->height;
+	area.origin = panel->x;
+	zwl_menu_draw_bar(server, command, surface, 0, &area, ink, buttons);
 
 	/* The buttons, as they fade. */
 	if (buttons <= 0.0f)
@@ -980,6 +1028,30 @@ draw_title(
 
 	/* The title. */
 	glass_draw_text(server, command, SIZE_TITLE, x + 30, middle + 6, title, limit, ink);
+}
+
+/* Tells how far a window's title, drawn by draw_title within a limit, reaches after its start. */
+static int32_t
+title_end(
+	struct zwl_server *server,
+	struct zwl_object *surface,
+	int32_t limit)
+{
+	const char *title;
+	int32_t width;
+
+	/* The title as draw_title shows it. */
+	title = surface->title;
+	if (title[0] == '\0')
+		title = "Window";
+
+	/* Its width, or the limit it is cut at. */
+	width = glass_text_width(server, SIZE_TITLE, title);
+	if (width > limit)
+		width = limit;
+
+	/* Succeeded: where the title ends. */
+	return width;
 }
 
 /*
@@ -1083,8 +1155,12 @@ draw_system_bar(
 	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
 	static const float edge[4] = { 1.0f, 1.0f, 1.0f, 0.55f };
 	static const float line[4] = { 0.12f, 0.16f, 0.24f, 0.18f };
+	struct zwl_menu_area area;
 	struct glass_shape shape;
 	struct zwl_object *docked;
+	int32_t available;
+	int32_t limit;
+	int32_t end;
 	float label[4];
 	float progress;
 	float home;
@@ -1134,10 +1210,19 @@ draw_system_bar(
 	/* The system menu. */
 	glass_draw_text(server, command, SIZE_BAR, 44, 22, "zedBSD", 200, dark);
 
-	/* The docked window: a line, its mark and title, and its buttons with restore for maximize. */
+	/* The docked window: a line, its mark, title and menu, and its buttons with restore for maximize. */
 	if (docked != NULL) {
 		glass_draw_solid(server, command, (float)bar->menu_line, 9.0f, 1.0f, 16.0f, 0.0f, line);
-		draw_title(server, command, docked, bar->title_x, ZWL_GLASS_BAR / 2, bar->buttons[BUTTON_MINIMIZE] - 24 - bar->title_x - 30, dark);
+		available = bar->buttons[BUTTON_MINIMIZE] - 24 - bar->title_x - 30;
+		limit = zwl_menu_title_limit(server, docked, available);
+		draw_title(server, command, docked, bar->title_x, ZWL_GLASS_BAR / 2, limit, dark);
+		end = title_end(server, docked, limit);
+		area.x = bar->title_x + 30 + end + 18;
+		area.top = 0;
+		area.right = bar->title_x + 30 + available;
+		area.height = ZWL_GLASS_BAR;
+		area.origin = 0;
+		zwl_menu_draw_bar(server, command, docked, 1, &area, dark, 1.0f);
 		over = bar_button_at(bar, server->pointer_x, server->pointer_y);
 		for (button = 0; button < BUTTON_COUNT; button++)
 			draw_sign(server, command, button, bar->buttons[button], ZWL_GLASS_BAR / 2, 1, over == button, 1.0f, dark);

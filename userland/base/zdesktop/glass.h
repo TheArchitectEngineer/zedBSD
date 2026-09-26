@@ -18,6 +18,14 @@
 /* The atlas's index of the multiplication sign (the close button). */
 #define GLASS_CLOSE_GLYPH	95U
 
+/*
+ * The atlas's indices of the check mark and the single right angle quote
+ * (the System Menu's checked items and submenu arrows).  A font without
+ * them leaves them empty: glass_glyph_advance reports 0.
+ */
+#define GLASS_CHECK_GLYPH	96U
+#define GLASS_ARROW_GLYPH	97U
+
 /* The shapes the panel shader draws (shaders/panel.frag). */
 #define MODE_GLASS		0.0f
 #define MODE_SHADOW		1.0f
