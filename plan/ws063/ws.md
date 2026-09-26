@@ -8,8 +8,8 @@ Primary Milestone: MG004
 Related Milestones: MG002（fg011: configure の性能）
 Objectives: O1, O2
 Parent: [Master](../master.md)
-Queue: q443（finished）
-Resume point: p002（規約と回帰）
+Queue: 2026-09-27 の並列実行（ストレージ担当）
+Resume point: p002 cleared。WS の完了の処理
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -27,4 +27,4 @@ ws061-p006 で UFS を write cached にした結果、journal の無い volume �
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
 | [ws063-p001](phase001/phase.md) | journal の大きさを mkfs で記録（既定は ext4 の表で最大 128 MiB、指定で 1 GiB）、mount で `.ufs-journal` を再利用・確保し直し・作成、extent の一覧、名前の特別扱い（2026-09-26 ユーザー指示） | cleared（q443-i01。root 64 MiB・13 extent、1 GiB の作成 3.2 秒、確保し直し、名前の保護、crash の試験 UFS OK、configure 11.3 秒） | ws060-p003 |
-| [ws063-p002](phase002/phase.md) | 強制終了の試験、計測、全体の回帰、規約の適合 | planned | p001 |
+| [ws063-p002](phase002/phase.md) | 強制終了の試験、回帰、規約の適合（WS060 の変更を含む） | cleared（2026-09-27。v3 の強制終了 4 時点・v2 2 時点・root で UFS OK、journal の機能の試験、規約の指摘を WS060 の前より減らした） | p001 |
