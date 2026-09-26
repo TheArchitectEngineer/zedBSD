@@ -6,6 +6,8 @@
 #   [IMAGE=...] sh plan/tools/sh/guest-batches.sh [OUTPUT]
 #   (default OUTPUT build/ws042/guest-all.out; IMAGE the native guest image
 #   build/ws053-full-hal-guest/hdd-image.img, booted from NVMe)
+# With GUEST_SH=FILE (a sh built for the guest, e.g. by build-guest-sh.sh)
+# the guest's copy of the image gets that sh as /bin/sh after each start.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 out=${1:-build/ws042/guest-all.out}
@@ -30,6 +32,10 @@ for batch in "$work"/batch.*; do
 		python3 plan/tools/guest/guest.py stop >/dev/null 2>&1
 		python3 plan/tools/guest/guest.py start --disk nvme "$image" >/dev/null 2>&1
 		python3 plan/tools/guest/guest.py wait >/dev/null 2>&1
+		if [ -n "${GUEST_SH-}" ]; then
+			python3 plan/tools/guest/guest.py put "$GUEST_SH" /bin/sh.new
+			python3 plan/tools/guest/guest.py run 'chmod 755 /bin/sh.new && mv /bin/sh.new /bin/sh'
+		fi
 		python3 plan/tools/guest/guest.py put plan/tools/sh/guest-diff.sh /tmp/guest-diff.sh
 		python3 plan/tools/guest/guest.py put "$work/oils.tar" /root/oils.tar
 		python3 plan/tools/guest/guest.py run 'cd /root && rm -rf oils && pax -r -f oils.tar && rm -f oils.tar'

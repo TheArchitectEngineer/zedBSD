@@ -203,6 +203,7 @@ sh_set_builtin(
 		 */
 		sh_parameters_generation++;
 
+		/* getopts starts again at the first parameter. */
 		(void)sh_var_set("OPTIND", "1", 0);
 	}
 
