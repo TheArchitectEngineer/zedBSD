@@ -41,7 +41,7 @@ Wayland のクライアントがメニューの意味（階層・ラベル・状
 
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
-| ws070-p001 | 設計: protocol の定義（request・event・型・error）、libzdesktop の API、zdesktop の model・描画・入力・popup、試験 | planning | WS069-p008〜p010 |
+| [ws070-p001](phase001/phase.md) | 設計: protocol の定義（request・event・型・error）、libzdesktop の API、zdesktop の model・描画・入力・popup、試験。[design.md](design.md) | cleared | WS069-p008〜p010（2026-09-27 ユーザーがサブエージェントでの並行を指示） |
 | ws070-p002 | protocol（libwayland の client 側と zdesktop の server 側）と zdesktop の menu model（transaction・更新） | planning | p001 |
 | ws070-p003 | zdesktop の描画と操作: 浮いたタイトルバーとシステムバーの項目、popup、keyboard、activation | planning | p002 |
 | ws070-p004 | libzdesktop の API と zdesktop-terminal のメニュー（Shell・Edit・View・Session・Help） | planning | p002、p003 |
