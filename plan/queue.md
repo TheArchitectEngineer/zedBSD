@@ -1,11 +1,11 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
-# Queue: q488 active
+# Queue: q489 active
 
 <!-- awesome-plan-current:start -->
 Status: active（2026-09-27）
-Active Queue: [q488](history/queue-q488.md)（ws069-p008: zdesktop-x11server）
-Last finished Queue: [q487](history/queue-q487.md)（ws035-p074 cleared。非公開の header と libzdesktop の役割）
+Active Queue: [q489](history/queue-q489.md)（ws069-p010: BUG-057 の原因と修正）
+Last finished Queue: [q488](history/queue-q488.md)（ws069-p008 uncleared。zdesktop-x11server。x11-p005 の frame 数は BUG-057 待ち）
 Executor: メインセッション（サブエージェントは使わない）
 <!-- awesome-plan-current:end -->
 

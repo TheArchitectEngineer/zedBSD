@@ -53,6 +53,6 @@ GLX 拡張も実装する。
 | [ws069-p007](phase007/phase.md) | i915 実機での GLX の間欠の止まり（BUG-057）の段の特定 | uncleared・canceled（q485-i01。2026-09-27 ユーザーの判断で X server を作り直すため。p010 へ） | p005、WS068-p006 |
 | [ws069-p008](phase008/phase.md) | zdesktop-x11server: Xzed の X の核と Wayland・rootless・glyph・GLX を単体の rootless のプログラムへ移し、組み込める形の module に分ける。zdesktop-x11・試験・image を切り替え | uncleared（q488-i01。server は動く。x11-p005 の frame 数だけ BUG-057 で未達、p010 の後に再試験） | p005、ws035-p073（改名）、ws035-p074（libzdesktop） |
 | ws069-p009 | Xzed を ws069 の前（`cc4433d4`）へ戻す（レトロ用。build と `/dev/graphics` の道の確認） | planned | p008 |
-| ws069-p010 | BUG-057（GLX の間欠の止まり）を zdesktop-x11server の上で調べ直す | planned | p008 |
+| [ws069-p010](phase010/phase.md) | BUG-057（GLX の間欠の止まり）の原因と修正 | in-progress（q489-i01） | p008 |
 | ws069-p011 | zdesktop-x11server の窓を Vulkan で表示（top-level ごとの `VK_KHR_wayland_surface` の swapchain） | planned | p008 |
 | ws069-p006 | i915 実機、規約の全文との照合と回帰（最後） | planning | 全 Phase（p008〜p010 を含む） |
