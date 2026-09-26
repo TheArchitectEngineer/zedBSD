@@ -34,10 +34,26 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+/* The most bytes echo or printf may write into a pipe from the shell itself. */
+#define SH_INLINE_OUTPUT_MAX	4096U
+
 /*
  * A growing array of the words a command expanded to.  Every array it grows
  * through is a temporary allocation, freed with the command.
  */
+struct word_list {
+	char **words;
+	size_t count;
+	size_t capacity;
+};
+
+/* A growing line of trace output, written in one piece. */
+struct trace_buffer {
+	char *text;
+	size_t length;
+	size_t capacity;
+};
+
 /*
  * A process substitution whose pipe the shell holds for the command it
  * was written in: the shell's end, and the child running its commands.
@@ -45,29 +61,6 @@
 struct process_substitution {
 	int descriptor;
 	pid_t child;
-};
-
-/* The most bytes echo or printf may write into a pipe from the shell itself. */
-#define SH_INLINE_OUTPUT_MAX	4096U
-
-struct word_list {
-	char **words;
-	size_t count;
-	size_t capacity;
-};
-
-/* The process substitutions open now, newest last, and children not yet reaped. */
-static struct process_substitution *process_substitutions;
-static size_t process_substitution_count;
-static size_t process_substitution_capacity;
-static pid_t *process_children;
-static size_t process_child_count;
-
-/* A growing line of trace output, written in one piece. */
-struct trace_buffer {
-	char *text;
-	size_t length;
-	size_t capacity;
 };
 
 /* The status of the last command; $? expands to it. */
@@ -84,10 +77,14 @@ int sh_skip_count;
 /* How many loops, function calls and dot scripts are running. */
 int sh_loop_nest;
 int sh_function_nest;
-
-/* Counts the times set replaced the positional parameters. */
-int sh_parameters_generation;
 int sh_dot_nest;
+
+/*
+ * Counts the times set replaced the positional parameters.  A . or source
+ * with operands compares it before and after the file to learn whether
+ * the file set its own parameters.  It only ever increases.
+ */
+int sh_parameters_generation;
 
 /*
  * The status of the last command substitution of the command being run, or
@@ -110,8 +107,32 @@ struct sh_parameters sh_parameters;
  */
 static struct sh_arena *current_arena;
 
+/*
+ * The process substitutions whose pipes are open, newest last.
+ *
+ * Each is added when its word is expanded and closed when the command it
+ * was written in ends (sh_eval closes those newer than its mark).
+ */
+static struct process_substitution *process_substitutions;
+
+/* The number of entries of process_substitutions in use. */
+static size_t process_substitution_count;
+
+/* The number of entries process_substitutions has room for. */
+static size_t process_substitution_capacity;
+
+/*
+ * The children of closed process substitutions that have not ended yet.
+ * Each close reaps the ones that have ended and keeps the rest.
+ */
+static pid_t *process_children;
+
+/* The number of entries of process_children. */
+static size_t process_child_count;
+
 static int eval_simple(struct sh_node *node, int flags);
 static size_t command_prefix(struct word_list *arguments, int *find_flags);
+static size_t builtin_prefix(struct word_list *arguments, size_t index);
 static int run_external(struct sh_node *node, struct sh_command *entry, struct word_list *arguments, char **assignments, size_t assignment_count, int flags);
 static int run_in_shell(struct sh_command *entry, struct word_list *arguments, char **assignments, size_t assignment_count, int flags, int special);
 static void trace_command(char **assignments, size_t assignment_count, struct word_list *arguments);
@@ -143,6 +164,9 @@ static int loop_should_stop(void);
 static int eval_arith(const char *text);
 static int eval_arith_for(struct sh_node *node, int flags);
 static int arith_blank(const char *text);
+static int eval_arith_part(const char *text, long *value);
+static void process_substitution_child(const struct sh_token *token, const char *text, const int descriptors[2]) __attribute__((noreturn));
+static void process_substitution_remember(int descriptor, pid_t child);
 static void expand_words(struct sh_token **words, size_t count, struct word_list *list, int detect);
 static void expand_one(struct sh_token *word, struct word_list *list, int as_assignment);
 static int declaration_named(struct word_list *list, int *detect);
@@ -746,19 +770,19 @@ command_prefix(
 		function = sh_function_find(arguments->words[index]);
 		if (function != NULL)
 			break;
+
+		/* builtin and its -- take the name of a builtin after them. */
 		compare = strcmp(arguments->words[index], "builtin");
 		if (compare == 0) {
-			next = index + 1;
-			if (next < arguments->count &&
-			    strcmp(arguments->words[next], "--") == 0)
-				next++;
-			if (next >= arguments->count ||
-			    sh_builtin_find(arguments->words[next]) == NULL)
+			next = builtin_prefix(arguments, index);
+			if (next == 0)
 				break;
 			*find_flags = SH_FIND_BUILTIN_ONLY;
 			index = next;
 			continue;
 		}
+
+		/* Anything but command ends the prefix. */
 		compare = strcmp(arguments->words[index], "command");
 		if (compare != 0)
 			break;
@@ -792,6 +816,40 @@ command_prefix(
 
 	/* Succeeded: how many words the prefix took. */
 	return index;
+}
+
+/*
+ * Reads builtin [--] (bash) at index.  Returns the index of the builtin's
+ * name after it, or 0 when no builtin's name follows.
+ */
+static size_t
+builtin_prefix(
+	struct word_list *arguments,
+	size_t index)
+{
+	const struct sh_builtin *builtin;
+	size_t next;
+	int compare;
+
+	/* Steps over builtin, and a -- after it. */
+	next = index + 1;
+	if (next < arguments->count) {
+		compare = strcmp(arguments->words[next], "--");
+		if (compare == 0)
+			next++;
+	}
+
+	/* Refuses the end of the words. */
+	if (next >= arguments->count)
+		return 0;
+
+	/* Refuses a name that is no builtin's. */
+	builtin = sh_builtin_find(arguments->words[next]);
+	if (builtin == NULL)
+		return 0;
+
+	/* Succeeded: the index of the builtin's name. */
+	return next;
 }
 
 /*
@@ -1950,13 +2008,17 @@ eval_arith(
 	long value;
 	int ok;
 
-	/* The expression, expanded and evaluated. */
+	/* Expands and evaluates the expression; an error is status 1. */
 	ok = sh_eval_arith_text(text, &value);
 	if (!ok)
 		return 1;
 
-	/* Succeeded. */
-	return value != 0 ? 0 : 1;
+	/* A value of 0 is status 1. */
+	if (value == 0)
+		return 1;
+
+	/* Succeeded: the value is not 0. */
+	return 0;
 }
 
 /* Reports whether an expression of for (( )) is left out (only blanks). */
@@ -1964,10 +2026,43 @@ static int
 arith_blank(
 	const char *text)
 {
-	/* Blanks only. */
+	/* Skips the blanks. */
 	while (*text == ' ' || *text == '\t' || *text == '\n')
 		text++;
-	return *text == '\0';
+
+	/* Something after them is an expression. */
+	if (*text != '\0')
+		return 0;
+
+	/* Succeeded: the expression is left out. */
+	return 1;
+}
+
+/*
+ * Evaluates an expression of for (( )), unless it is left out.  Returns 1
+ * with the value (1 for one left out), or 0 after reporting an error.
+ */
+static int
+eval_arith_part(
+	const char *text,
+	long *value)
+{
+	int blank;
+	int ok;
+
+	/* An expression left out is true. */
+	*value = 1;
+	blank = arith_blank(text);
+	if (blank)
+		return 1;
+
+	/* Evaluates the expression; the error is already reported. */
+	ok = sh_eval_arith_text(text, value);
+	if (!ok)
+		return 0;
+
+	/* Succeeded: the value is stored. */
+	return 1;
 }
 
 /*
@@ -1984,26 +2079,25 @@ eval_arith_for(
 	int stop;
 	int ok;
 
-	/* The first expression. */
+	/* Evaluates the first expression once. */
 	status = 0;
-	if (!arith_blank(node->u.arith_for.init) &&
-	    !sh_eval_arith_text(node->u.arith_for.init, &value))
+	ok = eval_arith_part(node->u.arith_for.init, &value);
+	if (!ok)
 		return 1;
 
-	/* The loop. */
+	/* Runs the body while the test is true. */
 	sh_loop_nest++;
 	for (;;) {
-		if (!arith_blank(node->u.arith_for.test)) {
-			ok = sh_eval_arith_text(node->u.arith_for.test, &value);
-			if (!ok) {
-				status = 1;
-				break;
-			}
-			if (value == 0)
-				break;
+		/* Stops on an error in the test, or when it is 0. */
+		ok = eval_arith_part(node->u.arith_for.test, &value);
+		if (!ok) {
+			status = 1;
+			break;
 		}
+		if (value == 0)
+			break;
 
-		/* The body; break and continue count here. */
+		/* Runs the body; break and continue count here. */
 		status = sh_eval(node->u.arith_for.body, flags & ~SH_EV_EXIT);
 		if (sh_skip != SH_SKIP_NONE) {
 			stop = loop_should_stop();
@@ -2011,13 +2105,15 @@ eval_arith_for(
 				break;
 		}
 
-		/* The step. */
-		if (!arith_blank(node->u.arith_for.step) &&
-		    !sh_eval_arith_text(node->u.arith_for.step, &value)) {
+		/* Evaluates the step; an error in it ends the loop with status 1. */
+		ok = eval_arith_part(node->u.arith_for.step, &value);
+		if (!ok) {
 			status = 1;
 			break;
 		}
 	}
+
+	/* The loop has ended. */
 	sh_loop_nest--;
 
 	/* Succeeded: the status of the last pass of the body. */
@@ -2721,36 +2817,30 @@ expand_process_substitution(
 	const struct sh_token *token,
 	char **result)
 {
-	struct process_substitution *entry;
 	char *text;
 	char path[32];
 	pid_t child;
 	int descriptors[2];
+	int created;
 	int kept;
 
-	/* The commands, between the parentheses. */
 	(void)context;
-	text = sh_temp_own(sh_malloc(token->raw_length));
+
+	/* Copies the commands out from between the parentheses. */
+	text = sh_malloc(token->raw_length);
+	(void)sh_temp_own(text);
 	memcpy(text, token->raw + 2, token->raw_length - 3U);
 	text[token->raw_length - 3U] = '\0';
 
-	/* A pipe, and the child that runs the commands on one end of it. */
-	if (pipe(descriptors) != 0)
+	/* Creates the pipe. */
+	created = pipe(descriptors);
+	if (created != 0)
 		sh_error("cannot create pipe: %s", strerror(errno));
+
+	/* Starts the child that runs the commands on one end of it. */
 	child = sh_fork(SH_FORK_NO_JOB, NULL);
-	if (child == 0) {
-		if (token->process == '<') {
-			(void)close(descriptors[0]);
-			(void)dup2(descriptors[1], 1);
-			(void)close(descriptors[1]);
-		} else {
-			(void)close(descriptors[1]);
-			(void)dup2(descriptors[0], 0);
-			(void)close(descriptors[0]);
-		}
-		(void)sh_eval_string(text, SH_EV_EXIT);
-		sh_exit(sh_status);
-	}
+	if (child == 0)
+		process_substitution_child(token, text, descriptors);
 
 	/* The shell keeps the other end. */
 	if (token->process == '<') {
@@ -2761,21 +2851,70 @@ expand_process_substitution(
 		(void)close(descriptors[0]);
 	}
 
-	/* Remembered, to be closed when the command ends. */
-	if (process_substitution_count == process_substitution_capacity) {
-		process_substitution_capacity = process_substitution_capacity == 0 ?
-		    4 : process_substitution_capacity * 2U;
-		process_substitutions = sh_realloc(process_substitutions,
-		    process_substitution_capacity * sizeof(*process_substitutions));
-	}
-	entry = &process_substitutions[process_substitution_count++];
-	entry->descriptor = kept;
-	entry->child = child;
+	/* Remembers it, to be closed when the command ends. */
+	process_substitution_remember(kept, child);
 
-	/* Succeeded: the name of the kept end. */
+	/* Names the kept end. */
 	snprintf(path, sizeof(path), "/dev/fd/%d", kept);
 	*result = sh_strdup(path);
+
+	/* Succeeded: the word is the name of the kept end. */
 	return 1;
+}
+
+/*
+ * Runs the commands of a process substitution in its child: their
+ * standard output is the pipe for <( ), their standard input for >( ).
+ * It does not return.
+ */
+static void
+process_substitution_child(
+	const struct sh_token *token,
+	const char *text,
+	const int descriptors[2])
+{
+	/* Puts the child's end of the pipe on the standard output or input. */
+	if (token->process == '<') {
+		(void)close(descriptors[0]);
+		(void)dup2(descriptors[1], 1);
+		(void)close(descriptors[1]);
+	} else {
+		(void)close(descriptors[1]);
+		(void)dup2(descriptors[0], 0);
+		(void)close(descriptors[0]);
+	}
+
+	/* Runs the commands and exits with their status. */
+	(void)sh_eval_string(text, SH_EV_EXIT);
+	sh_exit(sh_status);
+}
+
+/* Adds an open process substitution, the newest, to the list. */
+static void
+process_substitution_remember(
+	int descriptor,
+	pid_t child)
+{
+	struct process_substitution *entry;
+	size_t capacity;
+
+	/* Grows the list, doubling it from four entries, when it is full. */
+	if (process_substitution_count == process_substitution_capacity) {
+		capacity = process_substitution_capacity * 2U;
+		if (capacity == 0)
+			capacity = 4;
+		process_substitutions = sh_realloc(process_substitutions,
+						   capacity * sizeof(*process_substitutions));
+		process_substitution_capacity = capacity;
+	}
+
+	/* Fills the new entry. */
+	entry = &process_substitutions[process_substitution_count];
+	entry->descriptor = descriptor;
+	entry->child = child;
+
+	/* The entry is in use until the command's end closes it. */
+	process_substitution_count++;
 }
 
 /*
@@ -2789,25 +2928,32 @@ process_substitutions_close(
 	struct process_substitution *entry;
 	size_t index;
 	size_t kept;
+	size_t size;
 	pid_t done;
 	int status;
 
-	/* Each newer one: its pipe closes and its child is to be reaped. */
+	/* Closes each newer pipe and keeps its child to be reaped. */
 	while (process_substitution_count > mark) {
-		entry = &process_substitutions[--process_substitution_count];
+		process_substitution_count--;
+		entry = &process_substitutions[process_substitution_count];
 		(void)close(entry->descriptor);
-		process_children = sh_realloc(process_children,
-		    (process_child_count + 1U) * sizeof(*process_children));
-		process_children[process_child_count++] = entry->child;
+
+		/* Adds the child to the ones not yet reaped. */
+		size = (process_child_count + 1U) * sizeof(*process_children);
+		process_children = sh_realloc(process_children, size);
+		process_children[process_child_count] = entry->child;
+		process_child_count++;
 	}
 
-	/* The children that have ended. */
+	/* Reaps the children that have ended and keeps the rest. */
 	kept = 0;
 	for (index = 0; index < process_child_count; index++) {
 		done = waitpid(process_children[index], &status, WNOHANG);
 		if (done == 0)
 			process_children[kept++] = process_children[index];
 	}
+
+	/* The children kept are the ones still running. */
 	process_child_count = kept;
 }
 
