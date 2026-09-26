@@ -9,6 +9,8 @@ Last finished Queue: q492（ws069-p006 cleared。WS069 completed）
 
 ## 最新: q443〜q492（2026-09-26〜27）
 
+WS068 の GLSL の merge（2026-09-27、Queue の外、サブエージェント）: 自前の GLSL compiler（`userland/base/libglesv2/glsl/`、GLSL ES 1.00・1.10〜1.50・3.30・ES 3.00、SPIR-V は i915 が受ける形）と libGLESv2 の接続、uniform block。main で glsl-host PASS、Venus の x11-p004・p005・egl-p008・p019・p020・zdesktop-p070 PASS。実機は未実施。
+
 [q492](queue-q492.md): ws069-p006 cleared、**WS069 completed**（zdesktop で X11 の app: 単体の rootless の zdesktop-x11server、窓は Vulkan、GLX と固定機能の GL 1.x、BUG-057 の修正）。規約の全文との照合で条件の分割・`--shm`・成功の return を直した。Venus と実機（2 run とも 6 検査）で確認。試験は plan/tools/x11/ へ。
 
 WS048 の merge（2026-09-27、Queue の外、サブエージェント）: Pi 4 の FDT、brcmstb の PCIe、firmware の mailbox と VL805 の firmware、非 coherent の DMA（dma.c）。p004 は hal.h の差分の承認待ち。main で amd64 の image と rpi4 の vmunix の build（warning 0）、boot test（amd64 と QEMU raspi4b）PASS。実機は未実施。

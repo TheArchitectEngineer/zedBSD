@@ -142,7 +142,7 @@ i915 の compiler（`spirv.c` の冒頭の説明と opcode の表）から決め
 | 実行 | host の Vulkan（lavapipe）で全画面の四角を描き、fragment の色を読んで期待の値と比べる（算術・built-in・制御・inline・uniform の配置） | 同上 |
 | i915 | i915 の compiler（host）で代表の shader が受けられること（`plan/ws068/tests/i915-shader-check/` の道具を使う） | 同上 |
 | Venus | egltest の `--scene=glsl`（GLSL の source で p008 の場面を描き glReadPixels と画面で確かめる） | `plan/ws068/tests/egl-p019.sh` |
-| 回帰 | `egl-p008.sh`、`plan/ws069/tests/x11-p005.sh`、`spirv-host/run.sh`、boot test | 既存 |
+| 回帰 | `egl-p008.sh`、`plan/tools/x11/x11-p005.sh`、`spirv-host/run.sh`、boot test | 既存 |
 
 ## 9. Phase の分け方（p003 を分ける）
 
