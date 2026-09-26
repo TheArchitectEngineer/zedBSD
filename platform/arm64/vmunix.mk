@@ -32,7 +32,8 @@ ARM64_BOOT_C := src/hal/cpu-up.c src/hal/arm64/asm.c src/hal/arm64/lib.c \
 	src/hal/arm64/page.c src/hal/arm64/space.c \
 	src/hal/arm64/int.c src/hal/arm64/irq.c \
 	src/hal/arm64/task.c \
-	src/hal/arm64/cmain.c src/hal/arm64/bsp-rpi4/uart.c \
+	src/hal/arm64/cmain.c src/hal/arm64/debug.c \
+	src/hal/arm64/bsp-rpi4/uart.c \
 	src/hal/arm64/bsp-rpi4/cons.c src/hal/arm64/bsp-rpi4/fdt.c \
 	src/hal/arm64/bsp-rpi4/mailbox.c src/hal/arm64/bsp-rpi4/framebuffer.c \
 	src/hal/arm64/bsp-rpi4/boot.c src/hal/arm64/bsp-rpi4/gic.c \
@@ -65,7 +66,7 @@ ARM64_KERNEL_SOURCES := \
 	src/kern/panic.c src/kern/entry.c src/kern/clock.c \
 	src/kern/timer.c src/kern/klog.c \
 	src/kern/lock.c src/kern/waitq.c \
-	src/kern/process.c src/kern/thread.c src/kern/sched.c src/kern/vmspace.c src/kern/vm-device.c \
+	src/kern/process.c src/kern/ptrace.c src/kern/thread.c src/kern/sched.c src/kern/vmspace.c src/kern/vm-device.c \
 	src/kern/vm.c src/kern/filedesc.c src/kern/handle.c src/kern/fd-object.c \
 	src/kern/record-lock.c \
 	src/kern/pipe.c src/kern/cred.c \

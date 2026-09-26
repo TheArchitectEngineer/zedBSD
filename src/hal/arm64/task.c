@@ -154,12 +154,15 @@ void hal_task_context_switch(hal_task_t h)
 	from->run_cpu=-1;to->run_cpu=0;
 	arm64_fp_save(from->fpregs);__asm__ volatile("mrs %0,tpidr_el0":"=r"(tls));from->tls=(uintptr_t)tls;
 	running_task=to;hal_space_switch(to->space);arm64_fp_restore(to->fpregs);
+	/* The processor takes the stepping and the debug points of the task it runs. */
+	arm64_debug_switch(to);
 	__asm__ volatile("msr tpidr_el0,%0"::"r"((uint64_t)to->tls));
 	asm_task_dispatch(&from->resume_sp,&to->resume_sp);
 }
 void arm64_task_returned(void){HAL_FATAL("arm64 task returned");for(;;)arm64_wfi();}
 void hal_cpu_idle(void){arm64_irq_unmask();arm64_wfi();arm64_irq_mask();}
 hal_task_t hal_task_get_current(void){return running_task;}
+struct arm64_task *arm64_task_running(void){return running_task;}
 void hal_task_set_tls(hal_task_t h,uintptr_t v){struct arm64_task*t=h;if(t){t->tls=v;if(t==running_task)__asm__ volatile("msr tpidr_el0,%0"::"r"((uint64_t)v));}}
 uintptr_t hal_task_get_tls(hal_task_t h){return h?((struct arm64_task*)h)->tls:0;}
 void hal_task_set_private(hal_task_t h,void*p){if(h)((struct arm64_task*)h)->private_data=p;}
