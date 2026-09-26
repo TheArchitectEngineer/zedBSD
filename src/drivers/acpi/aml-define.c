@@ -402,6 +402,8 @@ drv_acpi_create_buffer_field(
 	field->value.buffer_field.buffer = source;
 	field->value.buffer_field.bit_offset = offset;
 	field->value.buffer_field.bit_length = bits;
+	if (opcode == DRV_ACPI_OP_CREATE_FIELD)
+		field->value.buffer_field.reads_buffer = true;
 
 	/* Names it. */
 	error = create_named(eval, &name, field, &duplicate);

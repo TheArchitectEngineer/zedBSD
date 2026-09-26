@@ -287,12 +287,14 @@ struct drv_acpi_field {
 
 /*
  * One buffer field: a run of bits in a buffer object, which the field holds
- * a reference to.
+ * a reference to.  A field made by CreateField always reads as a buffer;
+ * the fixed-size Create*Field ones read as integers.
  */
 struct drv_acpi_buffer_field {
 	struct drv_acpi_object *buffer;
 	uint64_t bit_offset;
 	uint64_t bit_length;
+	bool reads_buffer;
 };
 
 /*
@@ -682,6 +684,7 @@ drv_acpi_invoke(
 
 int
 drv_acpi_index_read(
+	struct drv_acpi_eval *eval,
 	struct drv_acpi_object *reference,
 	struct drv_acpi_object **result);
 

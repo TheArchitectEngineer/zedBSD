@@ -338,7 +338,7 @@ drv_acpi_eval_data(
 		error = 0;
 		break;
 	case DRV_ACPI_REFERENCE_INDEX:
-		error = drv_acpi_index_read(object, &resolved);
+		error = drv_acpi_index_read(eval, object, &resolved);
 		break;
 	case DRV_ACPI_REFERENCE_NODE:
 		error = drv_acpi_read_node(eval, object->value.reference.node, &resolved);
@@ -367,7 +367,6 @@ drv_acpi_parse_target(
 	struct drv_acpi_target *target)
 {
 	struct drv_acpi_name name;
-	struct drv_acpi_object *object;
 	struct drv_acpi_node *node;
 	unsigned opcode;
 	uint8_t byte;
@@ -377,7 +376,10 @@ drv_acpi_parse_target(
 	/* Starts with a target that stores nowhere. */
 	kern_memset(target, 0, sizeof(*target));
 
-	/* A name is a namespace node, unless it is a method returning a reference. */
+	/*
+	 * A name is a namespace node.  A method named here is not invoked:
+	 * ObjectType, SizeOf, RefOf and the stores all name it as an object.
+	 */
 	named = drv_acpi_stream_at_name(eval);
 	if (named) {
 		error = drv_acpi_stream_name(eval, &name);
@@ -393,24 +395,6 @@ drv_acpi_parse_target(
 
 		/* An alias stands for the node it names. */
 		node = drv_acpi_ns_resolve_alias(node);
-
-		/* A method in a target position is invoked for the reference it returns. */
-		if (node->object != NULL && node->object->type == DRV_ACPI_TYPE_METHOD) {
-			error = eval_method_call(eval, node, &object);
-			if (error != 0)
-				return error;
-
-			/* Only a reference can be stored through. */
-			if (object == NULL || object->type != DRV_ACPI_TYPE_REFERENCE) {
-				drv_acpi_object_release(object);
-				return EINVAL;
-			}
-
-			/* Succeeded: the target stores through the returned reference. */
-			target->kind = DRV_ACPI_TARGET_REFERENCE;
-			target->reference = object;
-			return 0;
-		}
 
 		/* Succeeded: the target is the node. */
 		target->kind = DRV_ACPI_TARGET_NODE;
@@ -672,17 +656,22 @@ drv_acpi_read_node(
 /*
  * Reads the element an index reference points at.
  *
- * A package element is shared; a byte of a buffer or a character of a
- * string becomes an integer.  An element that was never set is an error.
+ * A package element is shared, and one that names an object reads as that
+ * object's value, as the reference interpreter does.  A byte of a buffer or
+ * a character of a string becomes an integer.  An element that was never
+ * set is an error.
  */
 int
 drv_acpi_index_read(
+	struct drv_acpi_eval *eval,
 	struct drv_acpi_object *reference,
 	struct drv_acpi_object **result)
 {
 	struct drv_acpi_object *container;
 	struct drv_acpi_object *element;
+	struct drv_acpi_node *node;
 	uint32_t index;
+	int error;
 
 	/* Finds the container and the element. */
 	container = reference->value.reference.target;
@@ -693,6 +682,15 @@ drv_acpi_index_read(
 		element = container->value.package.elements[index];
 		if (element == NULL)
 			return EINVAL;
+
+		/* An element that names an object reads as the object's value. */
+		node = drv_acpi_object_reference_node(element);
+		if (node != NULL) {
+			error = drv_acpi_read_node(eval, node, result);
+			return error;
+		}
+
+		/* Succeeded: the caller shares the element. */
 		drv_acpi_object_ref(element);
 		*result = element;
 		return 0;

@@ -352,7 +352,8 @@ drv_acpi_convert_buffer(
  * Converts an object to a string by the implicit rules.
  *
  * An integer gives all its hexadecimal digits; a buffer gives each byte
- * as two hexadecimal digits separated by spaces.  A string is shared.
+ * as 0x and two hexadecimal digits, separated by spaces.  A string is
+ * shared.
  */
 int
 drv_acpi_convert_string(
@@ -1408,7 +1409,7 @@ op_deref_of(
 		error = 0;
 		break;
 	case DRV_ACPI_REFERENCE_INDEX:
-		error = drv_acpi_index_read(operand, &value);
+		error = drv_acpi_index_read(eval, operand, &value);
 		break;
 	default:
 		error = EINVAL;
@@ -2112,7 +2113,7 @@ reference_object(
 		error = drv_acpi_read_node(eval, reference->value.reference.node, result);
 		return error;
 	case DRV_ACPI_REFERENCE_INDEX:
-		error = drv_acpi_index_read(reference, result);
+		error = drv_acpi_index_read(eval, reference, result);
 		return error;
 	case DRV_ACPI_REFERENCE_OBJECT:
 		object = reference->value.reference.target;
@@ -2335,9 +2336,9 @@ integer_string(
 }
 
 /*
- * Writes a buffer as a string: two hexadecimal digits per byte separated
- * by spaces for the implicit form, 0x-prefixed bytes separated by commas
- * for ToHexString, and decimal bytes separated by commas.
+ * Writes a buffer as a string: 0x-prefixed bytes separated by spaces for
+ * the implicit form and by commas for ToHexString, and decimal bytes
+ * separated by commas.
  */
 static int
 buffer_string(
@@ -2414,8 +2415,8 @@ byte_text(
 		return used;
 	}
 
-	/* ToHexString puts 0x before each byte. */
-	if (form == STRING_HEX) {
+	/* Hexadecimal bytes are written with 0x in front, implicit or not. */
+	if (form != STRING_DECIMAL) {
 		text[used] = '0';
 		text[used + 1U] = 'x';
 		used += 2U;

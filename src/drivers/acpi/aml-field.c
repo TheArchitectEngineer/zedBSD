@@ -285,9 +285,20 @@ drv_acpi_buffer_field_read(
 		return ENOMEM;
 	kern_memset(bits, 0, size + 1U);
 
-	/* Takes the bits out of the buffer and makes the value. */
+	/* Takes the bits out of the buffer. */
 	bits_extract(unit->buffer->value.buffer.bytes, unit->bit_offset, unit->bit_length, bits);
-	error = bits_to_object(bits, unit->bit_length, result);
+
+	/* A CreateField field is always a buffer; the others are integers when they fit. */
+	if (unit->reads_buffer) {
+		*result = drv_acpi_object_buffer_new(bits, size);
+		error = 0;
+		if (*result == NULL)
+			error = ENOMEM;
+	} else {
+		error = bits_to_object(bits, unit->bit_length, result);
+	}
+
+	/* Frees the staging bytes and reports a value that could not be made. */
 	drv_acpi_os_free(bits);
 	if (error != 0)
 		return error;
