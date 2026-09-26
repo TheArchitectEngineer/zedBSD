@@ -39,7 +39,12 @@ Wayland のクライアントがメニューの意味（階層・ラベル・状
 3. protocol の誤りは design.md §2.2 の error で返り、libzdesktop は送らずに errno で返す（Venus で済み、menu-probe）。
 4. 規約の全文との照合（p005: WS071 と共有しない file。共有する file は p006）。
 
-設計と未決は [design.md](design.md)（§11 の未決 5 点、§12 の context menu の余地）。
+設計は [design.md](design.md)（§11 の 5 点は 2026-09-27 ユーザーが既定のまま確定: F10、shortcut は zdesktop が実行、外の click は閉じるだけ、icon なし、ASCII の label。§12 の context menu の余地）。
+
+## Future Work の候補（main の session が future-work.md へ）
+
+- menu の item の icon（`icon_name`・role の icon を描く）。2026-09-27 ユーザー「アイコンはあとで追加を考えましょう」。icon theme が要る。
+- 非 ASCII（日本語）の label: zdesktop の glyph atlas を動的な cache に（WS035 の libtruetype の拡張）。
 
 ## Phase 一覧
 
