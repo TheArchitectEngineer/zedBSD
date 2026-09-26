@@ -1,10 +1,10 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
-# Queue: none active
+# Queue: q491 active
 
 <!-- awesome-plan-current:start -->
-Status: none active（2026-09-27）
-Active Queue: なし
+Status: active（2026-09-27）
+Active Queue: [q491](history/queue-q491.md)（ws069-p011: X の窓を Vulkan で表示）
 Last finished Queue: [q490](history/queue-q490.md)（ws069-p009 cleared。Xzed をレトロ用に戻した）
 Executor: メインセッション（サブエージェントは使わない）
 <!-- awesome-plan-current:end -->
