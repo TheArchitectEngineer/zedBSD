@@ -8,415 +8,314 @@
  */
 
 /*
- * Implements the zedBSD chmod userland command.
+ * Changes file mode bits (POSIX XCU chmod).
+ *
+ *	chmod [-R] mode file...
+ *
+ * The mode is octal or symbolic (see mode.c).  A file operand that is a
+ * symbolic link changes the file it refers to.  With -R a directory and
+ * everything below it change; symbolic links met inside are neither
+ * followed nor changed, since a link has no mode of its own.  A mode that
+ * starts with - (as in chmod -w file) is taken as the mode, not as an
+ * option.
  */
 
-#include "userland/base/common/command.h"
+#include "userland/base/chmod/mode.h"
 #include <dirent.h>
 #include <errno.h>
+#include <limits.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
-#define CHMOD_PATH_CAPACITY 1024U
-#define CHMOD_DEPTH_LIMIT 64
-
-static int apply_path(const char *path, const char *spec, int numeric, mode_t numeric_mode, mode_t mask, int recursive, int depth);
-static int symbolic_mode(const char *spec, mode_t original, mode_t umask_value, int directory, mode_t *result);
-static mode_t copied_bits(mode_t mode, char source, int who);
-static mode_t class_mask(int who);
-static int join_path(const char *a, const char *b, char *out, size_t cap);
+/* The deepest directory nesting -R follows. */
+#define CHMOD_DEPTH_MAX 128
 
 /*
- * Runs the chmod command.
+ * What one run of chmod applies.
+ *
+ * One instance lives for the run; mask is the file mode creation mask,
+ * read once at the start.
+ */
+struct chmod_request {
+	const char *mode;
+	mode_t mask;
+	int recursive;
+};
+
+static int read_options(int argc, char **argv, int *recursive);
+static int change_operand(const struct chmod_request *request, const char *path);
+static int change_file(const struct chmod_request *request, const char *path, const struct stat *status, unsigned depth);
+static int change_children(const struct chmod_request *request, const char *path, unsigned depth);
+static void usage(void);
+
+/*
+ * Runs chmod.
  */
 int
 main(
 	int argc,
 	char **argv)
 {
-	int recursive, index, failed, numeric;
-	unsigned parsed;
-	mode_t mask;
-	const char *spec;
+	struct chmod_request request;
+	int first;
+	int index;
+	int failed;
+	int status;
+	int valid;
 
-	recursive = 0;
-	index = 1;
-	failed = 0;
-	parsed = 0;
+	/* Reads -R; the mode and the files follow. */
+	first = read_options(argc, argv, &request.recursive);
+	if (argc - first < 2)
+		usage();
 
-	/* Handles the selected command-line operation. */
-	if (index < argc && !strcmp(argv[index], "-R")) {
-		recursive = 1;
-		index++;
-	}
-
-	/* Handles the selected command-line operation. */
-	if (index < argc && !strcmp(argv[index], "--"))
-		index++;
-
-	/* Validates the command-line arguments. */
-	if (index + 1 >= argc) {
-		fprintf(stderr, "usage: chmod [-R] mode file...\n");
-
-		/* Reports operation failure. */
+	/* Checks the mode before any file changes. */
+	request.mode = argv[first];
+	valid = mode_valid(request.mode);
+	if (!valid) {
+		fprintf(stderr, "chmod: invalid mode: '%s'\n", request.mode);
 		return 1;
 	}
-	spec = argv[index++];
-	numeric = command_parse_mode(spec, &parsed) == 0;
-	mask = umask(0);
-	(void)umask(mask);
 
-	/* Process each remaining command-line operand. */
-	for (; index < argc; index++) {
-		/* Validates the command-line arguments. */
-		if (!apply_path(argv[index], spec, numeric, (mode_t)parsed,
-				mask, recursive, 0))
+	/* Reads the creation mask, which modes without who letters respect. */
+	request.mask = umask(0);
+	umask(request.mask);
+
+	/* Changes each file; a failure is remembered and the rest go on. */
+	failed = 0;
+	for (index = first + 1; index < argc; index++) {
+		status = change_operand(&request, argv[index]);
+		if (status != 0)
 			failed = 1;
 	}
 
-	/* Returns the computed result. */
-	return failed;
-}
-
-/* Supports the apply path operation. */
-static int
-apply_path(
-	const char *path,
-	const char *spec,
-	int numeric,
-	mode_t numeric_mode,
-	mode_t mask,
-	int recursive,
-	int depth)
-{
-	char child[CHMOD_PATH_CAPACITY];
-	DIR *d;
-	struct dirent *entry;
-	struct stat status;
-	mode_t mode;
-	int ok;
-
-	ok = 1;
-
-	/* Handles the depth condition. */
-	if (depth > CHMOD_DEPTH_LIMIT) {
-		errno = ELOOP;
-		command_error("chmod", path);
-
-		/* Reports successful completion. */
-		return 0;
-	}
-
-	/* Handles the lstat condition. */
-	if (lstat(path, &status)) {
-		command_error("chmod", path);
-
-		/* Reports successful completion. */
-		return 0;
-	}
-
-	/* Checks the operation status. */
-	if (S_ISLNK(status.st_mode))
+	/* Reports whether any file could not be changed. */
+	if (failed)
 		return 1;
 
-	/* Handles the numeric condition. */
-	if (numeric)
-		mode = numeric_mode;
-	else if (!symbolic_mode(spec, status.st_mode, mask,
-				S_ISDIR(status.st_mode), &mode)) {
-		fprintf(stderr, "chmod: invalid mode: %s\n", spec);
-
-		/* Reports successful completion. */
-		return 0;
-	}
-
-	/* Handles the chmod condition. */
-	if (chmod(path, mode)) {
-		command_error("chmod", path);
-		ok = 0;
-	}
-
-	/* Handles the recursive condition. */
-	if (recursive && S_ISDIR(status.st_mode)) {
-		d = opendir(path);
-
-		/* Checks the current descriptor. */
-		if (!d) {
-			command_error("chmod", path);
-
-			/* Reports successful completion. */
-			return 0;
-		}
-		while ((entry = readdir(d)) != NULL) {
-			/* Selects the matching value. */
-			if (!strcmp(entry->d_name, ".") ||
-			    !strcmp(entry->d_name, ".."))
-				continue;
-
-			/* Handles a failed join path operation. */
-			if (!join_path(path, entry->d_name, child,
-				       sizeof(child)) ||
-			    !apply_path(child, spec, numeric, numeric_mode,
-					mask, 1, depth + 1))
-				ok = 0;
-		}
-
-		/* Handles the closedir condition. */
-		if (closedir(d)) {
-			command_error("chmod", path);
-			ok = 0;
-		}
-	}
-
-	/* Returns the computed result. */
-	return ok;
+	/* Succeeded: every file has its new mode. */
+	return 0;
 }
 
-/* Supports the symbolic mode operation. */
+/*
+ * Reads the options and returns the index of the mode operand.  An
+ * argument starting with - that is a valid mode is the mode operand.
+ */
 static int
-symbolic_mode(
-	const char *spec,
-	mode_t original,
-	mode_t umask_value,
-	int directory,
-	mode_t *result)
+read_options(
+	int argc,
+	char **argv,
+	int *recursive)
 {
-	int who, explicit_who;
-	char operation;
-	mode_t bits, affected;
-	const char *p;
-	mode_t mode;
+	const char *letter;
+	int index;
+	int compare;
+	int valid;
 
-	/* Continue while the operation condition remains true. */
-	p = spec;
-	mode = original;
-	while (*p) {
-		/* Continue while the operation condition remains true. */
-		who = 0;
-		explicit_who = 0;
-		bits = 0;
-		while (*p == 'u' || *p == 'g' || *p == 'o' || *p == 'a') {
-			explicit_who = 1;
+	/* Reads options until the mode. */
+	*recursive = 0;
+	for (index = 1; index < argc; index++) {
+		if (argv[index][0] != '-' || argv[index][1] == '\0')
+			break;
 
-			/* Checks the current pointer. */
-			if (*p == 'u')
-				who |= 1;
-			else if (*p == 'g')
-				who |= 2;
-			else if (*p == 'o')
-				who |= 4;
-			else
-				who = 7;
-			p++;
+		/* -- ends the options. */
+		compare = strcmp(argv[index], "--");
+		if (compare == 0) {
+			index++;
+			break;
 		}
 
-		/* Checks the selected user entry. */
-		if (!who)
-			who = 7;
-		operation = *p++;
+		/* A mode such as -w is the mode operand, not an option. */
+		valid = mode_valid(argv[index]);
+		if (valid)
+			break;
 
-		/* Validates the selected operation. */
-		if (operation != '+' && operation != '-' && operation != '=')
-			return 0;
-
-		/* Continue while the operation condition remains true. */
-		while (*p && *p != ',') {
-			/* Dispatch the selected operation case. */
-			switch (*p) {
-			case 'r':
-				/* Checks the selected user entry. */
-				if (who & 1)
-					bits |= S_IRUSR;
-
-				/* Checks the selected user entry. */
-				if (who & 2)
-					bits |= S_IRGRP;
-
-				/* Checks the selected user entry. */
-				if (who & 4)
-					bits |= S_IROTH;
-				break;
-			case 'w':
-				/* Checks the selected user entry. */
-				if (who & 1)
-					bits |= S_IWUSR;
-
-				/* Checks the selected user entry. */
-				if (who & 2)
-					bits |= S_IWGRP;
-
-				/* Checks the selected user entry. */
-				if (who & 4)
-					bits |= S_IWOTH;
-				break;
-			case 'x':
-				/* Checks the selected user entry. */
-				if (who & 1)
-					bits |= S_IXUSR;
-
-				/* Checks the selected user entry. */
-				if (who & 2)
-					bits |= S_IXGRP;
-
-				/* Checks the selected user entry. */
-				if (who & 4)
-					bits |= S_IXOTH;
-				break;
-			case 'X':
-				/* Handles the directory condition. */
-				if (directory ||
-				    (original &
-				     (S_IXUSR | S_IXGRP | S_IXOTH))) {
-					/* Checks the selected user entry. */
-					if (who & 1)
-						bits |= S_IXUSR;
-
-					/* Checks the selected user entry. */
-					if (who & 2)
-						bits |= S_IXGRP;
-
-					/* Checks the selected user entry. */
-					if (who & 4)
-						bits |= S_IXOTH;
-				}
-				break;
-			case 's':
-				/* Checks the selected user entry. */
-				if (who & 1)
-					bits |= S_ISUID;
-
-				/* Checks the selected user entry. */
-				if (who & 2)
-					bits |= S_ISGID;
-				break;
-			case 't':
-				/* Checks the selected user entry. */
-				if (who & 4)
-					bits |= S_ISVTX;
-				break;
-			case 'u':
-			case 'g':
-			case 'o':
-				bits |= copied_bits(mode, *p, who);
-				break;
-			default:
-				/* Reports successful completion. */
-				return 0;
+		/* Otherwise every letter must be R. */
+		for (letter = argv[index] + 1; *letter != '\0'; letter++) {
+			if (*letter != 'R') {
+				fprintf(stderr, "chmod: unknown option -%c\n", *letter);
+				usage();
 			}
-			p++;
-		}
-		affected = class_mask(who);
-
-		/* Handles the explicit who condition. */
-		if (!explicit_who)
-			bits &= ~umask_value;
-
-		/* Validates the selected operation. */
-		if (operation == '+')
-			mode |= bits;
-		else if (operation == '-') {
-			mode &= ~bits;
-		} else {
-			mode &= ~affected;
-			mode |= bits;
 		}
 
-		/* Checks the current pointer. */
-		if (*p == ',') {
-			p++;
-
-			/* Checks the current pointer. */
-			if (!*p)
-				return 0;
-		}
+		/* The argument was -R. */
+		*recursive = 1;
 	}
-	*result = mode;
-	/* Reports operation failure. */
-	return 1;
+
+	/* Reports where the mode is. */
+	return index;
 }
 
-/* Supports the copied bits operation. */
-static mode_t
-copied_bits(
-	mode_t mode,
-	char source,
-	int who)
-{
-	mode_t triad = source == 'u'   ? (mode & S_IRWXU) >> 6
-		       : source == 'g' ? (mode & S_IRWXG) >> 3
-				       : mode & S_IRWXO;
-	mode_t out;
-
-	out = 0;
-
-	/* Checks the selected user entry. */
-	if (who & 1)
-		out |= triad << 6;
-
-	/* Checks the selected user entry. */
-	if (who & 2)
-		out |= triad << 3;
-
-	/* Checks the selected user entry. */
-	if (who & 4)
-		out |= triad;
-
-	/* Returns the computed result. */
-	return out;
-}
-
-/* Supports the class mask operation. */
-static mode_t
-class_mask(
-	int who)
-{
-	mode_t mask;
-
-	mask = 0;
-
-	/* Checks the selected user entry. */
-	if (who & 1)
-		mask |= S_IRWXU | S_ISUID;
-
-	/* Checks the selected user entry. */
-	if (who & 2)
-		mask |= S_IRWXG | S_ISGID;
-
-	/* Checks the selected user entry. */
-	if (who & 4)
-		mask |= S_IRWXO | S_ISVTX;
-
-	/* Returns the computed result. */
-	return mask;
-}
-
-/* Supports the join path operation. */
+/* Changes one file operand, following a symbolic link it names. */
 static int
-join_path(
-	const char *a,
-	const char *b,
-	char *out,
-	size_t cap)
+change_operand(
+	const struct chmod_request *request,
+	const char *path)
 {
-	size_t x = strlen(a), y = strlen(b);
-	int slash = x && a[x - 1] != '/';
+	struct stat status_of_file;
+	int status;
 
-	/* Checks the current horizontal value. */
-	if (x + (size_t)slash + y + 1U > cap) {
-		errno = ENAMETOOLONG;
-
-		/* Reports successful completion. */
-		return 0;
+	/* Reads the file the operand names. */
+	status = stat(path, &status_of_file);
+	if (status != 0) {
+		fprintf(stderr, "chmod: %s: %s\n", path, strerror(errno));
+		return -1;
 	}
-	memcpy(out, a, x);
 
-	/* Handles the slash condition. */
-	if (slash)
-		out[x++] = '/';
-	memcpy(out + x, b, y + 1U);
+	/* Changes it and, with -R, what is below it. */
+	status = change_file(request, path, &status_of_file, 0);
+	if (status != 0)
+		return -1;
 
-	/* Reports operation failure. */
-	return 1;
+	/* Succeeded: the file has its new mode. */
+	return 0;
+}
+
+/*
+ * Changes one file and, with -R and a directory, everything below it.
+ * The directory changes first, so that a mode giving access lets the
+ * traversal in.
+ */
+static int
+change_file(
+	const struct chmod_request *request,
+	const char *path,
+	const struct stat *status_of_file,
+	unsigned depth)
+{
+	mode_t mode;
+	int directory;
+	int failed;
+	int status;
+
+	/* Bounds the nesting -R follows. */
+	if (depth >= CHMOD_DEPTH_MAX) {
+		fprintf(stderr, "chmod: %s: %s\n", path, strerror(ELOOP));
+		return -1;
+	}
+
+	/* Computes the new bits from the current ones. */
+	directory = S_ISDIR(status_of_file->st_mode);
+	status = mode_apply(request->mode, status_of_file->st_mode, request->mask, directory, &mode);
+	if (status != 0) {
+		fprintf(stderr, "chmod: invalid mode: '%s'\n", request->mode);
+		return -1;
+	}
+
+	/* Changes the file. */
+	failed = 0;
+	status = chmod(path, mode);
+	if (status != 0) {
+		fprintf(stderr, "chmod: %s: %s\n", path, strerror(errno));
+		failed = 1;
+	}
+
+	/* Goes below a directory with -R. */
+	if (request->recursive && directory) {
+		status = change_children(request, path, depth);
+		if (status != 0)
+			failed = 1;
+	}
+
+	/* Reports a failure. */
+	if (failed)
+		return -1;
+
+	/* Succeeded: the file and everything below it changed. */
+	return 0;
+}
+
+/* Changes every entry of a directory, skipping symbolic links. */
+static int
+change_children(
+	const struct chmod_request *request,
+	const char *path,
+	unsigned depth)
+{
+	char child[PATH_MAX + 1];
+	struct stat status_of_child;
+	struct dirent *entry;
+	DIR *stream;
+	int count;
+	int failed;
+	int status;
+	int dot;
+	int dot_dot;
+	int symbolic;
+
+	/* Opens the directory. */
+	stream = opendir(path);
+	if (stream == NULL) {
+		fprintf(stderr, "chmod: %s: %s\n", path, strerror(errno));
+		return -1;
+	}
+
+	/* Reads each entry, telling a read error from the end. */
+	failed = 0;
+	for (;;) {
+		errno = 0;
+		entry = readdir(stream);
+		if (entry == NULL) {
+			if (errno != 0) {
+				fprintf(stderr, "chmod: %s: %s\n", path, strerror(errno));
+				failed = 1;
+			}
+
+			/* The end of the directory ends the loop. */
+			break;
+		}
+
+		/* Skips the directory itself and its parent. */
+		dot = strcmp(entry->d_name, ".");
+		dot_dot = strcmp(entry->d_name, "..");
+		if (dot == 0 || dot_dot == 0)
+			continue;
+
+		/* Names the entry. */
+		count = snprintf(child, sizeof(child), "%s/%s", path, entry->d_name);
+		if (count < 0 || (size_t)count >= sizeof(child)) {
+			fprintf(stderr, "chmod: %s: %s\n", path, strerror(ENAMETOOLONG));
+			failed = 1;
+			continue;
+		}
+
+		/* Reads the entry itself, not what a link refers to. */
+		status = lstat(child, &status_of_child);
+		if (status != 0) {
+			fprintf(stderr, "chmod: %s: %s\n", child, strerror(errno));
+			failed = 1;
+			continue;
+		}
+
+		/* A symbolic link inside the tree is left alone. */
+		symbolic = S_ISLNK(status_of_child.st_mode);
+		if (symbolic)
+			continue;
+
+		/* Changes the entry and what is below it. */
+		status = change_file(request, child, &status_of_child, depth + 1);
+		if (status != 0)
+			failed = 1;
+	}
+
+	/* Closes the directory. */
+	closedir(stream);
+
+	/* Reports whether any entry failed. */
+	if (failed)
+		return -1;
+
+	/* Succeeded: every entry changed. */
+	return 0;
+}
+
+/* Writes the usage message and exits with an error status. */
+static void
+usage(void)
+{
+	/* Names the POSIX form. */
+	fprintf(stderr, "usage: chmod [-R] mode file...\n");
+	exit(1);
 }

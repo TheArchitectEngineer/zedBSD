@@ -16,9 +16,17 @@ extern "C" {
 #include <stdint.h>
 #include <sys/types.h>
 
+/*
+ * The kinds of record POSIX names.  LOGIN_PROCESS keeps the value it had;
+ * INIT_PROCESS takes the next free one (other systems number the two the
+ * other way round).
+ */
 #define EMPTY 0
 #define BOOT_TIME 2
+#define NEW_TIME 3
+#define OLD_TIME 4
 #define LOGIN_PROCESS 5
+#define INIT_PROCESS 6
 #define USER_PROCESS 7
 #define DEAD_PROCESS 8
 #define UT_LINESIZE 32
