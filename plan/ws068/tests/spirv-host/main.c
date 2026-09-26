@@ -60,7 +60,7 @@ int main(int argc, char **argv)
 		       spirv.uniforms[index].offset, spirv.uniforms[index].array_stride, spirv.uniforms[index].matrix_stride,
 		       spirv.uniforms[index].sampler, spirv.uniforms[index].binding);
 	gles_spirv_free(&spirv);
-	patched = gles_spirv_position(code, words, &patched_words);
+	patched = gles_spirv_position(code, words, 1, &patched_words);
 	if (patched == NULL) {
 		printf("position failed\n");
 		return 1;

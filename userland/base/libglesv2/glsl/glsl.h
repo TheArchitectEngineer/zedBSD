@@ -47,7 +47,9 @@
 /*
  * One active uniform of a linked program as the API reports it: a leaf of
  * the default uniform block (named the way libGLESv2's SPIR-V reflection
- * names it: "s.field", "a[1].field") or a sampler.
+ * names it: "s.field", "a[1].field"), a sampler, or a leaf of a named
+ * uniform block (named as the GL API names it: "Block.member" for a block
+ * with an instance name, "member" for one without).
  */
 struct glsl_uniform_info {
 	/* The name, allocated with the program. */
@@ -62,6 +64,34 @@ struct glsl_uniform_info {
 	/* GLSL_SAMPLER_* for a sampler, and whether it compares depth (a shadow sampler). */
 	unsigned sampler;
 	unsigned shadow;
+
+	/* The named block a block member is in (its index among the program's blocks), -1 for the default block and samplers. */
+	int block;
+
+	/* A block member's std140 offset in its block, its array and matrix strides (0 when not an array or a matrix), and whether its matrices are row-major. */
+	unsigned offset;
+	unsigned array_stride;
+	unsigned matrix_stride;
+	unsigned row_major;
+};
+
+/*
+ * One active named uniform block of a linked program: what the API
+ * reports of it, and where the SPIR-V reads it from.
+ */
+struct glsl_block_info {
+	/* The block's name (not its instance name), allocated with the program. */
+	char *name;
+
+	/* Its binding at descriptor set 0 in both stages' SPIR-V (32 on), and its std140 size in bytes. */
+	unsigned binding;
+	unsigned size;
+
+	/* The stages that read it: bit 0 the vertex stage, bit 1 the fragment stage. */
+	unsigned stages;
+
+	/* How many of the program's uniforms are its members. */
+	unsigned member_count;
 };
 
 /*
@@ -73,9 +103,13 @@ struct glsl_program {
 	uint32_t *code[2];
 	size_t words[2];
 
-	/* The active uniforms. */
+	/* The active uniforms: the default block's leaves and the samplers, then the named blocks' members. */
 	struct glsl_uniform_info *uniforms;
 	unsigned uniform_count;
+
+	/* The active named uniform blocks, in the order of their bindings. */
+	struct glsl_block_info *blocks;
+	unsigned block_count;
 };
 
 /*

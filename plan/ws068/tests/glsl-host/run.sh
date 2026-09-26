@@ -19,7 +19,7 @@ status=0
 fail() { echo "FAIL: $*"; status=1; }
 
 # The tools: the compiler's driver (with the sanitizers), libGLESv2's reflection, the i915 compiler.
-for h in EGL GLES2 KHR wayland-egl-core.h; do ln -sfn "$root/include/libc/$h" "$out/shim/$h"; done
+for h in EGL GLES2 GLES3 KHR wayland-egl-core.h; do ln -sfn "$root/include/libc/$h" "$out/shim/$h"; done
 cc -std=c11 -g -O1 -Wall -Wextra -Werror -Wdeclaration-after-statement -fsanitize=address,undefined \
 	-o "$out/glsl-test" "$here/glsl-test.c" "$root"/userland/base/libglesv2/glsl/*.c -lm || exit 1
 cc -std=c99 -Wall -Wextra -I"$out/shim" -o "$out/spirv-test" "$root/plan/ws068/tests/spirv-host/main.c" \
@@ -66,6 +66,17 @@ for vert in "$here"/pass/*.vert; do
 	done
 done
 echo "link: done"
+
+# 3b. What the link reports of the named uniform blocks (glGetActiveUniformBlockiv, glGetActiveUniformsiv): blocks330's.
+for want in "block 0 Scene binding=32 size=320 stages=3 members=11" \
+	"block 1 Object binding=33 size=80 stages=1 members=2" \
+	"uniform skew base=0 components=4 columns=3 size=1 sampler=0 block=0 offset=64 array_stride=0 matrix_stride=16 row_major=1" \
+	"uniform lights\[3\].colour base=0 components=4 columns=1 size=1 sampler=0 block=0 offset=240 " \
+	"uniform turns base=0 components=2 columns=2 size=2 sampler=0 block=0 offset=256 array_stride=32 matrix_stride=16 row_major=1" \
+	"uniform Object.visible base=3 components=1 columns=1 size=1 sampler=0 block=1 offset=64 "; do
+	grep -q "^$want" "$out/blocks330.link.txt" || fail "blocks330 reflection lacks: $want"
+done
+echo "blocks: done"
 
 # 4. The i915 compiler takes the shaders that stay inside what it supports.
 I915_PAIRS=${I915_PAIRS:-scene fixed scene300}
