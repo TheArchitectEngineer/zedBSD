@@ -574,6 +574,27 @@ zwl_glass_raise(
 }
 
 /*
+ * Finds the topmost window whose title bar or body is at a point (for the
+ * menus, whose items in a title bar another window may cover); NULL when
+ * there is none.
+ */
+struct zwl_object *
+zwl_glass_window_at(
+	struct zwl_server *server,
+	int32_t x,
+	int32_t y)
+{
+	struct zwl_object *surface;
+	enum shell_hit hit;
+
+	/* The same search a press makes. */
+	surface = window_at(server, x, y, &hit);
+
+	/* Succeeded: the window, or NULL. */
+	return surface;
+}
+
+/*
  * Places a new window in the glass look: centred in the space below the
  * system bar, cascaded like the plain look.
  */

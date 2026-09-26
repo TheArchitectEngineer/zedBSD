@@ -111,5 +111,6 @@ void zwl_menu_forget(struct zwl_server *server, struct zwl_object *object);
 
 /* The glass look's shell, for the menus (shell.c). */
 void zwl_glass_raise(struct zwl_server *server, struct zwl_object *surface);
+struct zwl_object *zwl_glass_window_at(struct zwl_server *server, int32_t x, int32_t y);
 
 #endif

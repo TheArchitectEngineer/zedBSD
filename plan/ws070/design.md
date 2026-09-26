@@ -166,6 +166,7 @@ struct zdesktop_window_menu_listener {
 };
 ```
 
+- `ZDESKTOP_VERSION` は 2（System Menu を足した版）。
 - 定数: `ZDESKTOP_MENU_ITEM_NORMAL`…`SUBMENU`、`ZDESKTOP_MENU_ROLE_*`、`ZDESKTOP_MENU_SHIFT`・`CTRL`・`ALT`・`SUPER`、
   `ZDESKTOP_MENU_ROOT`（0）。値は protocol の enum と同じ。
 - **戻り値**: 0 か errno の値。**局所の検査**: libzdesktop は ID・parent・型・transaction の鏡を持ち、protocol error になる呼び出し
@@ -248,9 +249,14 @@ struct zdesktop_window_menu_listener {
 
 ### 6.6 log（試験が読む）
 
-- `ZWL MENU bar surface=S where=floating|docked item=I x=X y=Y width=W height=H`（その窓の top-level の配置が変わった frame で）
-- `ZWL MENU open surface=S item=I depth=D x=X y=Y width=W height=H`、`ZWL MENU row item=I y=Y height=H`（popup を開いたとき）
-- `ZWL MENU close surface=S item=I`、`ZWL MENU activate ...`（§5）
+- `ZWL MENU bar client=C surface=S where=floating|docked item=I offset=X top=Y width=W height=H`（その窓の top-level の配置が
+  変わった frame で。offset は浮いた題名の bar の左端から、docked は出力の左端から。overflow は item=0）
+- `ZWL MENU open client=C surface=S item=I depth=D x=X y=Y width=W height=H`、`ZWL MENU row item=I depth=D y=Y height=H`
+  （popup を開いたとき）
+- `ZWL MENU close client=C surface=S item=I depth=D`、`ZWL MENU activate ...`（§5）
+
+実装で足した規則（p003）: 題名の bar の項目は、その点で一番上の窓がその窓のときだけ当たる（`zwl_glass_window_at`。上の窓の
+本体に隠れた題名の bar の項目は押せない）。submenu の開いた行の上の motion は開き直さない。
 
 ## 7. zdesktop-terminal の menu（p004）
 
@@ -305,3 +311,24 @@ activated は `ZTERM MENU item=I action=A` を log に出す。
 3. **menu の外の click を client に渡さない**: 閉じるだけ。代案: 閉じてから下の窓にも渡す（Windows 風）。
 4. **icon を描かない**（icon theme が無い）。role の icon を zdesktop の図形で描くかは icon theme の WS で決める。
 5. **非 ASCII の label**: atlas が ASCII だけ。日本語の label は glyph の cache（WS035 の libtruetype の拡張）が要る。
+
+## 12. 右 click の context menu（WS071 のための余地、2026-09-27 coordinator の連絡）
+
+WS071（ファイルマネージャ、main の tree の plan/ws071/spec.md §15）は、menubar に System Menu を使い、さらに zdesktop が描く右 click の
+context menu（Open、Open With、Cut、Copy、Paste、Rename、Duplicate、Move、Tags、Share、Get Info、Delete）を求める。WS070 の範囲は
+広げない（この節は設計の余地の記録だけで、実装しない）。
+
+- **今の protocol のままで使える所**: context menu の中身は `xdg_menu_v1` の木そのもの（根の子が行、submenu で「Open With ▸」、
+  enabled・visible・role・shortcut・separator も同じ）。client は context menu 用の `xdg_menu_v1` をもう 1 つ作り、transaction で
+  中身を差し替えればよい（選ばれた file に合わせて Paste の enabled 等）。zdesktop の描画と操作（menu-shell.c の popup、submenu、
+  keyboard、外の press で閉じる）も、top-level の popup を「根の子を行とする popup を任意の点に出す」ものとしてそのまま使える。
+- **足りない所（追加が要る）**: menu を「surface の点に、この入力（seat と serial）に答えて出す」request と、その popup の選択・
+  閉じたことを返す object が無い。`xdg_toplevel_menu_v1` は窓の menubar に結び付いた常設の表示先で、一度きりの popup ではない。
+- **追加の案（version 2、後の WS）**: `xdg_menu_manager_v1.get_context_menu(new_id<xdg_context_menu_v1> id, object<xdg_menu_v1> menu,
+  object<wl_surface> surface, int x, int y, object<wl_seat> seat, uint serial)`。zdesktop は serial が最近の press（右 button）の
+  ものかを確かめ、surface の座標 (x, y) に根の子の popup を開く。`xdg_context_menu_v1` の event は `activated(item_id, action,
+  serial)` と `done()`（選ばれても閉じられても最後に 1 回。client はその後 destroy する）、request は `destroy`（開いていれば閉じる）。
+  menubar と同じ `xdg_menu_v1` を渡してもよい（その場合は根の子＝top-level が行になる）。libzdesktop には
+  `zdesktop_menu_popup(service, menu, surface, x, y, seat, serial, listener, data)` のような 1 つの呼び出しで包む。
+- **zdesktop 側の変更の見込み**: menu-shell.c の state に「menubar からでない popup」（hit の無い anchor、parent = 根）を足し、
+  閉じたとき `done` を送る。popup の配置・行・keyboard・外の press の扱いは共有できる。

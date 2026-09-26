@@ -181,7 +181,7 @@ static void shell_step_top(struct zwl_server *server, int step);
 static void shell_menu_key(struct zwl_server *server, const struct zwl_menu_model *model, uint32_t key);
 static unsigned shell_selectable(const struct zwl_menu_item *item);
 static unsigned shell_usable(const struct zwl_menu_model *model, const struct zwl_menu_item *item);
-static const struct shell_hit *shell_hit_at(int32_t x, int32_t y);
+static const struct shell_hit *shell_hit_at(struct zwl_server *server, int32_t x, int32_t y);
 static const struct shell_hit *shell_first_hit(struct zwl_object *surface);
 static void shell_add_hit(struct zwl_object *surface, uint32_t item, unsigned docked, unsigned first_hidden, const struct zwl_menu_area *area, int32_t x, int32_t width);
 static void shell_log_bar(struct zwl_object *surface, unsigned docked, const struct zwl_menu_area *area, uint32_t checksum);
@@ -435,7 +435,7 @@ zwl_menu_button(
 	if (shell_menu.surface == NULL) {
 		if (state == 0U || button != ZWL_BUTTON_LEFT)
 			return 0;
-		hit = shell_hit_at(server->pointer_x, server->pointer_y);
+		hit = shell_hit_at(server, server->pointer_x, server->pointer_y);
 		if (hit == NULL)
 			return 0;
 
@@ -469,7 +469,7 @@ zwl_menu_button(
 	}
 
 	/* A press on a top-level item of the open menu closes it, or opens that item's popup. */
-	hit = shell_hit_at(server->pointer_x, server->pointer_y);
+	hit = shell_hit_at(server, server->pointer_x, server->pointer_y);
 	if (hit != NULL && hit->surface == shell_menu.surface && hit->docked == shell_menu.docked) {
 		if (hit->item == shell_menu.popups[0].parent) {
 			shell_close_from(server, 0U, 1U);
@@ -521,7 +521,7 @@ zwl_menu_motion(
 		return 1;
 
 	/* Another top-level item of the same bar opens instead. */
-	hit = shell_hit_at(server->pointer_x, server->pointer_y);
+	hit = shell_hit_at(server, server->pointer_x, server->pointer_y);
 	if (hit != NULL &&
 	    hit->surface == shell_menu.surface &&
 	    hit->docked == shell_menu.docked &&
@@ -1428,13 +1428,19 @@ shell_usable(
 	return 0;
 }
 
-/* Finds the top-level item at a point, where the last frame drew it; NULL when there is none. */
+/*
+ * Finds the top-level item at a point, where the last frame drew it; NULL
+ * when there is none, or when another window covers the title bar there
+ * (the system bar is over every window).
+ */
 static const struct shell_hit *
 shell_hit_at(
+	struct zwl_server *server,
 	int32_t x,
 	int32_t y)
 {
 	const struct shell_hit *hit;
+	struct zwl_object *top;
 	unsigned index;
 
 	/* Drawn later is drawn over, so the last one wins. */
@@ -1444,6 +1450,15 @@ shell_hit_at(
 			continue;
 		if (y < hit->y || y >= hit->y + hit->height)
 			continue;
+
+		/* An item in a title bar counts only where its window is the one on top. */
+		if (!hit->docked) {
+			top = zwl_glass_window_at(server, x, y);
+			if (top != hit->surface)
+				return NULL;
+		}
+
+		/* Succeeded: the item under the point. */
 		return hit;
 	}
 

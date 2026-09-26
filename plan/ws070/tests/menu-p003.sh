@@ -65,7 +65,7 @@ popup_x() {
 
 # Clicks a point and moves the pointer out of the way.
 click() {
-	pointer move "$1" "$2" sleep 300 down sleep 60 up sleep "${3:-700}"
+	pointer move $(($1 - 2)) "$2" sleep 150 move "$1" "$2" sleep 300 down sleep 60 up sleep "${3:-700}"
 }
 
 guest "$stop_all" >/dev/null
