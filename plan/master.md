@@ -106,7 +106,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS041](ws041/ws.md) | MG006 | 起きた thread の即時実行 | completed | — |
 | [WS042](ws042/ws.md) | MG002 | `/bin/sh` の POSIX 互換性 | completed | — |
 | [WS043](ws043/ws.md) | MG002 | base の utility を POSIX に（sed・grep・awk ほか） | completed | — |
-| [WS045](ws045/ws.md) | MG002 | base の text utility の GNU 拡張（sed・awk・grep ほか） | planning | WS043 が完了したので着手できる |
+| [WS045](ws045/ws.md) | MG002 | base の text utility の GNU 拡張（sed・awk・grep ほか） | incomplete | p001〜p009 cleared（サブエージェント、2026-09-27 に main へ merge）。GNU の case 515/515、POSIX 492/492、7 package の configure の比較が同じ。**判断待ち 3 点**（dirname の複数 operand、mktemp・install・base64 の追加、xargs の持ち主）。amd64 以外の image は未実施 |
 | [WS046](ws046/ws.md) | MG002 | GNU 互換の make（autotools の出力を実行できる範囲。並列・jobserver は WS064） | incomplete | p002〜p004・p006 cleared。p007 uncleared（BUG-033 の主因を直した）。p009・p012 cleared（BUG-033: configure 204〜252 → 91 秒、link 0.36 秒、file の fault 15 µs/page）。p013 cleared（libc の mount の一覧の API。coreutils の cross build が通った）。次は p014（p011 の当て直し）・p005 |
 | [WS047](ws047/ws.md) | MG001 | build.sh と Noct による build system（TUI・kernel・base・packages を別の system に。Makefile は当面残す） | planning | p001 調査と設計 |
 | [WS048](ws048/ws.md) | MG008 | Raspberry Pi 4 の USB（PCIe・VL805 の xHCI・USB キーボード） | incomplete | p001〜p003 cleared（FDT、brcmstb の PCIe、firmware の mailbox と VL805 の firmware。host 試験と QEMU の起動、実機は未実施）。**p004 は hal.h の差分（`hal_pmem_map_uncached`）の承認待ち**（ws048/proposed/）。2026-09-27 サブエージェント、main へ merge |
@@ -259,6 +259,7 @@ tick 周期は `include/hal/arch/<arch>.h` の `HAL_TIMER_FREQUENCY`。時間の
 | libvulkan の版 | desktop GL に要る Vulkan 1.1 以降の機能・拡張は libvulkan に足してよい（Venus で。i915 の実行器は後、F-023） | WS068 design.md §6 |
 | GL_VERSION | 実装した版を正直に名乗る（必須の機能が揃った所まで）。上の版の機能は GL_ARB_* の拡張で個別に出す | WS068 design.md §6 |
 | File Manager | ユーザー（同日）:「これもWSを追加しておいてください。Finder風だけどzedBSDらしいファイルマネージャとして、仕様書のベースになる形でまとめます。現在の作業は続けてください。」→ WS071（仕様案の原文は ws071/spec.md）。今の作業（WS069）は続ける | WS071、WS の優先順位 |
+| サブエージェントの拡大（2026-09-27、後から） | ユーザー:「依存関係を考慮して、最大7つのサブエージェントを併走させて、WSをcompleteさせていってください。なぜなら、あと10時間で次の週次リセットなのに、まだ使用量がいっぱい余っているからです。作業環境はエンタープライズサーバなので、負荷が高くなることは問題ないです。ただ、WS061のようにパフォーマンスを解析するワークロードがあるWSは、単一実行したいので、後回しでよいです。」→ 依存を満たす WS を最大 7 のサブエージェント（worktree）で完了へ進める。性能を測る WS（WS061、WS066、WS046 の BUG-033 の残り等）は後で単独に。サブエージェントは性能の数値を受け入れに使わない（並列の負荷で狂う）。記録と merge の分担は上の行と同じ | AGENTS.md の例外 |
 | System Menu の統合 | WS070 の p001〜p004（サブエージェント、Venus）を 2026-09-27 に main へ merge。既定で進めた 5 点（F10 で menu、shortcut は zdesktop が実行、外の click は下の窓へ渡さない、icon は描かない、label は ASCII）はユーザーの確認待ち（ws070 design.md §11）。WS071 の右 click の menu は protocol の version 2 の追加（design.md §12） | WS070 |
 | Raspberry Pi 4 の USB | WS048 の p001〜p003（サブエージェント）を 2026-09-27 に main へ merge。xHCI は PCIe の DMA が cache を snoop しないため、**hal.h の差分 `hal_pmem_map_uncached`・`hal_pmem_unmap_uncached`（plan/ws048/proposed/hal-pmem-uncached.diff、arm64 だけ実装）の承認待ち**。mailbox は起動後は kernel の driver が持つ（hal.h を変えない）ことの確認も待つ。実機の確認（lspci、dmesg の link up と VL805 の firmware）はユーザー | WS048、Guardrail |
 
