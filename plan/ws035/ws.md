@@ -9,7 +9,7 @@ Related Milestones: MG001, MG005
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 からサブエージェントが worktree の branch で実行。main への統合は main の session）
-Resume point: 2026-09-27: p014 cleared（Super+Tab の Wiseview）、p025・p027 canceled（p059 で置き換え済み）。次は p028 を分けた Phase（toolkit の Wayland の対応範囲）→ p055（damage）→ p057（背後のぼかし）→ p058
+Resume point: 2026-09-27: p014 cleared（Super+Tab の Wiseview）、p025・p027 canceled（p059 で置き換え済み）。p075 cleared（libwayland の汎用 dispatch と event の new_id）。次は p076〜p080（toolkit の Wayland の対応範囲、p028 を分けた）→ p055（damage）→ p057（背後のぼかし）→ p058
 <!-- awesome-plan-current:end -->
 
 ## 単一目標
@@ -264,7 +264,7 @@ p001で確かめる。
 | [ws035-p072](phase072/phase.md) | （2026-09-26 自律実行）窓の最小化と、窓をデスクトップ間で移す（Wiseview の drag、キー） | cleared（q483-i01、2026-09-26。Venus で最小化と Wiseview からの復帰、タイルの drag とキーでデスクトップ間の移動） | p065 | `userland/base/zwl` |
 | [ws035-p073](phase073/phase.md) | （2026-09-27 ユーザー指示）`userland/base/zwl` を `userland/base/zdesktop`（`/bin/zdesktop`）へ改名。build・script・試験の起動と process の名・文書。C の識別子と log の接頭辞 `ZWL` は変えない | cleared（q486-i01、2026-09-27。Venus と i915 実機、boot test） | p072 | zdesktop |
 | [ws035-p074](phase074/phase.md) | （2026-09-27 ユーザー指示）libzdesktop が zdesktop の非標準の Wayland 拡張（`zed_gpu_buffer_v1`）を包む。`zed-gpu-buffer-v1-client-protocol.h`（使い手は libvulkan の WSI と libwayland だけ）と `X11/Xzed.h` を公開 header から外す。libzdesktop の GPU の buffer の API は最初の使い手（zdesktop-x11server）と一緒に | cleared（q487-i01、2026-09-27） | p073 | zdesktop、libzdesktop |
-| ws035-p075 | （p028 から分割）libwayland: 未知の interface（toolkit が wayland-scanner で作る protocol の code）の event を listener へ渡す汎用の dispatch と、event の new_id（server が作る object、`wl_data_offer` 等）。host の libwayland-server の試験 compositor と試験 protocol で確かめる | planned | — | libwayland |
+| [ws035-p075](phase075/phase.md) | （p028 から分割）libwayland: 未知の interface（toolkit が wayland-scanner で作る protocol の code）の event を listener へ渡す汎用の dispatch と、event の new_id（server が作る object、`wl_data_offer` 等）。host の libwayland-server の試験 compositor と試験 protocol で確かめる | cleared（2026-09-27、host と Venus） | — | libwayland |
 | ws035-p076 | （p028 から分割）zdesktop: xdg-shell の残り（`xdg_positioner`・`xdg_popup` と grab・`popup_done`、`xdg_toplevel` の min/max size・maximized・minimized・move・resize・show_window_menu・set_parent、`set_window_geometry`、ping） | planned | p075 | zdesktop |
 | ws035-p077 | （p028 から分割）zdesktop: `wl_subcompositor`・`wl_subsurface`（位置、上下、sync・desync、親と一緒の合成と入力） | planned | p075 | zdesktop |
 | ws035-p078 | （p028 から分割）zdesktop: `wl_keyboard` の XKB keymap（US の text keymap を fd で）、`wl_output` v4（name・description・scale・done）、seat・pointer の新しい版（frame 等） | planned | p075 | zdesktop |

@@ -112,6 +112,7 @@ struct wl_display {
 struct wl_proxy *wlc_proxy_real(struct wl_proxy *proxy);
 struct wl_proxy *wlc_proxy_lookup(struct wl_display *display, uint32_t id);
 struct wl_proxy *wlc_proxy_allocate(struct wl_proxy *factory, const struct wl_interface *interface, uint32_t version);
+struct wl_proxy *wlc_proxy_insert_server(struct wl_proxy *factory, const struct wl_interface *interface, uint32_t id);
 void wlc_proxy_unref(struct wl_proxy *proxy);
 void wlc_proxy_remove(struct wl_proxy *proxy);
 void wlc_proxy_destroy(struct wl_proxy *proxy);

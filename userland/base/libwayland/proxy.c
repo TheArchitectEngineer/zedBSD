@@ -814,6 +814,63 @@ wlc_proxy_allocate(
 }
 
 /*
+ * Makes the proxy of an object the server created in an event (a new_id
+ * argument, such as wl_data_offer) while the display mutex is held.
+ *
+ * The identity is the server's, in its own range; the proxy has the event's
+ * proxy's queue and version.  It starts with three holds: the map's, the
+ * caller's (the listener's, dropped by wl_proxy_destroy) and the event's.
+ */
+struct wl_proxy *
+wlc_proxy_insert_server(
+	struct wl_proxy *factory,
+	const struct wl_interface *interface,
+	uint32_t id)
+{
+	struct wl_display *display;
+	struct wl_proxy *proxy;
+	uint32_t version;
+
+	/* Only an identity in the server's range, and one not in use. */
+	display = factory->display;
+	if (id < WLC_SERVER_ID_START) {
+		errno = EINVAL;
+		return NULL;
+	}
+
+	/* An identity the map still holds cannot be created again. */
+	proxy = wlc_proxy_lookup(display, id);
+	if (proxy != NULL) {
+		errno = EEXIST;
+		return NULL;
+	}
+
+	/* The creating object's version, within what the interface describes. */
+	version = factory->version;
+	if (interface->version >= 1 && version > (uint32_t)interface->version)
+		version = (uint32_t)interface->version;
+
+	/* The proxy's storage. */
+	proxy = calloc(1, sizeof(*proxy));
+	if (proxy == NULL)
+		return NULL;
+
+	/* The map, the listener and the event each hold this generation. */
+	proxy->interface = interface;
+	proxy->display = display;
+	proxy->queue = factory->queue;
+	proxy->id = id;
+	proxy->version = version;
+	proxy->references = 3;
+	proxy->in_map = 1;
+	proxy->next = display->objects;
+	display->objects = proxy;
+
+	/* Succeeded: later events can name the object, and the listener receives it. */
+	return proxy;
+}
+
+/*
  * Drops one proxy reference while the display mutex is held.
  */
 void
@@ -876,8 +933,14 @@ wlc_proxy_destroy(
 	if (proxy->destroyed)
 		return;
 
-	/* Destroyed suppresses callbacks; delete_id independently retires the map. */
+	/*
+	 * Destroyed suppresses callbacks; delete_id independently retires the
+	 * map.  The server never sends delete_id for an object it created, so
+	 * such an identity leaves the map at once.
+	 */
 	proxy->destroyed = 1;
+	if (proxy->id >= WLC_SERVER_ID_START)
+		wlc_proxy_remove(proxy);
 	wlc_proxy_unref(proxy);
 
 	/* Succeeded: any surviving references belong to protocol infrastructure. */

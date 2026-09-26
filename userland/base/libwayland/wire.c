@@ -991,8 +991,29 @@ wlc_wire_event(
 			event->objects[index] = object;
 			event->arguments[index].o = (struct wl_object *)object;
 			break;
+		case 'n':
+			/* A server-created object needs the interface the protocol names for it. */
+			expected = NULL;
+			if (message->types != NULL)
+				expected = message->types[index];
+
+			/* Its proxy, in the server's identity range, is made now so later events can name it. */
+			object = NULL;
+			if (expected != NULL)
+				object = wlc_proxy_insert_server(proxy, expected, word);
+
+			/* Without an interface, or with an identity outside the server's range or in use, the event is malformed. */
+			if (object == NULL) {
+				wlc_event_destroy(event);
+				return EPROTO;
+			}
+
+			/* The event holds it until dispatch, and hands it to the listener. */
+			event->objects[index] = object;
+			event->arguments[index].o = (struct wl_object *)object;
+			break;
 		default:
-			/* Selected protocols never create server-owned event objects. */
+			/* No other argument type exists in the wire format. */
 			goto fail;
 		}
 	}

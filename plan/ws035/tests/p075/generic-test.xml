@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="zed_generic_test_v1">
+  <copyright>
+    Copyright (C) 2026 Awe Morris
+    SPDX-License-Identifier: Zlib
+  </copyright>
+
+  <description summary="test protocol for libwayland's generic event dispatch (ws035-p075)">
+    Events of every argument type, more arguments than registers, a
+    server-created object (new_id in an event) and a nullable object, sent
+    to a client that has only the code wayland-scanner makes for them.
+  </description>
+
+  <interface name="zed_generic_test_v1" version="1">
+    <request name="emit">
+      <description summary="the server answers with every test event"/>
+      <arg name="round" type="uint"/>
+    </request>
+
+    <request name="destroy" type="destructor"/>
+
+    <event name="values">
+      <arg name="i" type="int"/>
+      <arg name="u" type="uint"/>
+      <arg name="f" type="fixed"/>
+      <arg name="s" type="string"/>
+      <arg name="n" type="string" allow-null="true"/>
+      <arg name="a" type="array"/>
+      <arg name="h" type="fd"/>
+    </event>
+
+    <event name="child">
+      <arg name="id" type="new_id" interface="zed_generic_child_v1"/>
+      <arg name="tag" type="uint"/>
+    </event>
+
+    <event name="reference">
+      <arg name="child" type="object" interface="zed_generic_child_v1" allow-null="true"/>
+    </event>
+
+    <event name="many">
+      <arg name="a0" type="int"/>
+      <arg name="a1" type="uint"/>
+      <arg name="a2" type="int"/>
+      <arg name="a3" type="uint"/>
+      <arg name="a4" type="int"/>
+      <arg name="a5" type="uint"/>
+      <arg name="a6" type="int"/>
+      <arg name="a7" type="fixed"/>
+      <arg name="a8" type="string"/>
+      <arg name="a9" type="int"/>
+      <arg name="a10" type="uint"/>
+      <arg name="a11" type="int"/>
+    </event>
+
+    <event name="round_done">
+      <arg name="round" type="uint"/>
+    </event>
+  </interface>
+
+  <interface name="zed_generic_child_v1" version="1">
+    <request name="destroy" type="destructor"/>
+
+    <request name="ping">
+      <arg name="value" type="uint"/>
+    </request>
+
+    <event name="pong">
+      <arg name="value" type="uint"/>
+    </event>
+  </interface>
+</protocol>
