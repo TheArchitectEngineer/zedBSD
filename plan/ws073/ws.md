@@ -36,7 +36,11 @@ BUG-027・BUG-033（性能。単独の計測を後で）。
 | Phase | Bug | 内容 | Status |
 | --- | --- | --- | --- |
 | [ws073-p001](phase001/phase.md) | BUG-061 | devfs の `/dev/fd/N`・`/dev/stdin` を lstat・readlink・readdir で symbolic link に | cleared |
-| ws073-p002 | BUG-065 | 同じ block device の 2 度目の mount を EBUSY に（優先度 高） | planned |
+| [ws073-p002](phase002/phase.md) | BUG-065 | 同じ block device の 2 度目の mount を EBUSY に（優先度 高） | cleared |
 | ws073-p003 | BUG-062 | i386 pcat の vmunix の `sched.c` の -Watomic-alignment | planned |
 | ws073-p004 | BUG-063 | `truncate -s N` が無い file を作る、`mount -o rw` を受ける | planned |
 | ws073-p005 | BUG-028 | 閉じた loopback の port への connect が返らない | planned |
+
+## 判断が要る点
+
+- ws073-p002: kernel が private に持つ boot の FAT（ESP）の公開の mount が EBUSY になった。ESP を running system から触るなら kernel の mount を公開する案（[phase](phase002/phase.md)）。
