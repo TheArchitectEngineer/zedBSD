@@ -15,8 +15,10 @@
  * frame being recorded already uses is never written again: a new one is
  * made and the old one waits in the garbage until the frame is done.
  *
- * Shaders are SPIR-V (glShaderBinary with GL_SHADER_BINARY_FORMAT_SPIR_V)
- * in the form plan/ws068/phase008/phase.md gives: the uniforms other than
+ * Shaders are GLSL (compiled by glsl/, WS068 p015-p019, into SPIR-V when
+ * the program links) or SPIR-V (glShaderBinary with
+ * GL_SHADER_BINARY_FORMAT_SPIR_V), both in the form
+ * plan/ws068/phase008/phase.md gives: the uniforms other than
  * samplers in one uniform block at set 0 binding 0, the samplers at set 0
  * from binding 1, attributes and varyings by location.  Linking reads the
  * names and locations out of the SPIR-V and rewrites the vertex shader so
@@ -124,8 +126,11 @@ struct gles_texture {
 	uint64_t used;
 };
 
+struct glsl_shader;
+
 /*
- * A shader: its SPIR-V, and what glGetShaderiv reports about it.
+ * A shader: its SPIR-V or its compiled GLSL, and what glGetShaderiv
+ * reports about it.
  */
 struct gles_shader {
 	/* GLES_KIND_SHADER, the GL name, and GL_VERTEX_SHADER or GL_FRAGMENT_SHADER. */
@@ -137,8 +142,9 @@ struct gles_shader {
 	uint32_t *code;
 	size_t words;
 
-	/* The source glShaderSource gave (NULL when none). */
+	/* The source glShaderSource gave (NULL when none), and the GLSL compiler's shader once it compiled. */
 	char *source;
+	struct glsl_shader *glsl;
 
 	/* Whether the last compile or binary succeeded, and its log. */
 	int compiled;

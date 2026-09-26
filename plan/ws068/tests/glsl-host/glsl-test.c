@@ -54,11 +54,15 @@ main(
 		status = test_compile(argc, argv);
 		return status;
 	}
+
+	/* A shader that must fail. */
 	differs = strcmp(argv[1], "expect");
 	if (differs == 0) {
 		status = test_expect(argc, argv);
 		return status;
 	}
+
+	/* Two shaders linked. */
 	differs = strcmp(argv[1], "link");
 	if (differs == 0) {
 		status = test_link(argc, argv);
@@ -94,6 +98,8 @@ test_read(
 		(void)fclose(file);
 		return NULL;
 	}
+
+	/* The bytes, terminated. */
 	got = fread(text, 1U, (size_t)size, file);
 	(void)fclose(file);
 	text[got] = '\0';
@@ -170,6 +176,7 @@ test_expect(
 	char *log;
 	char *line;
 	char *end;
+	char *found;
 	char want[256];
 	size_t length;
 	int missing;
@@ -195,6 +202,8 @@ test_expect(
 		free(source);
 		return 1;
 	}
+
+	/* A failure says why. */
 	if (log == NULL) {
 		printf("%s: failed without a log\n", argv[3]);
 		free(source);
@@ -213,7 +222,8 @@ test_expect(
 			length = sizeof(want) - 1U;
 		memcpy(want, line, length);
 		want[length] = '\0';
-		if (strstr(log, want) == NULL) {
+		found = strstr(log, want);
+		if (found == NULL) {
 			printf("%s: the log lacks \"%s\"\n", argv[3], want);
 			missing = 1;
 		}

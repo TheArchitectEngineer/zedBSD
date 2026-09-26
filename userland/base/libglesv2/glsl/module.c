@@ -165,6 +165,8 @@ glsl_module_declare(
 		if (index == result_at)
 			key[index + 1U] = 0U;
 	}
+
+	/* The key's hash. */
 	hash = module_hash(key, (size_t)count + 1U);
 
 	/* The same declaration made before. */
@@ -486,6 +488,8 @@ module_find(
 			if (operand != result_at && declared[operand] != words[operand])
 				same = 0;
 		}
+
+		/* The same declaration. */
 		if (same)
 			return entry->id;
 	}

@@ -204,6 +204,8 @@ glsl_emit_type(
 				operands[2] = 1U;
 			id = glsl_module_declare(state->module, SPV_OP_TYPE_INT, operands, 3U, 0);
 		}
+
+		/* The scalar type is declared. */
 		break;
 	case GLSL_KIND_VECTOR:
 		operands[1] = glsl_emit_type(state, glsl_type_scalar(type->base));
@@ -414,6 +416,8 @@ glsl_emit_expression(
 			value = emit_load(state, &path);
 			return value;
 		}
+
+		/* A part of a computed value. */
 		value = emit_selection(state, node);
 		return value;
 	case GLSL_N_CONVERT:
@@ -489,6 +493,8 @@ glsl_emit_convert(
 			operands[1] = glsl_emit_splat(state, glsl_module_constant(state->module, glsl_emit_type(state, glsl_type_scalar(to)), 1U), type);
 			operands[2] = glsl_emit_splat(state, glsl_module_constant(state->module, glsl_emit_type(state, glsl_type_scalar(to)), 0U), type);
 		}
+
+		/* Succeeded: the number. */
 		converted = emit_value_of(glsl_emit_op(state, SPV_OP_SELECT, result_type, operands, 3U), type);
 		return converted;
 	}
@@ -503,6 +509,8 @@ glsl_emit_convert(
 			opcode = SPV_OP_I_NOT_EQUAL;
 			operands[1] = glsl_emit_splat(state, glsl_module_constant(state->module, glsl_emit_type(state, glsl_type_scalar(from)), 0U), value.type);
 		}
+
+		/* Succeeded: the bool. */
 		converted = emit_value_of(glsl_emit_op(state, opcode, result_type, operands, 2U), type);
 		return converted;
 	}
@@ -595,6 +603,8 @@ glsl_emit_image_type(
 		operands[2] = 1U;
 		break;
 	}
+
+	/* A depth image for a shadow sampler; one level, not arrayed, sampled, no format. */
 	operands[3] = type->shadow;
 	operands[4] = 0U;
 	operands[5] = 0U;
@@ -653,6 +663,8 @@ emit_type_slot(
 			memcpy(ids, state->type_ids, state->type_count * sizeof(*ids));
 			memcpy(layouts, state->layout_ids, state->type_count * sizeof(*layouts));
 		}
+
+		/* The larger tables replace the old ones. */
 		state->type_keys = keys;
 		state->type_ids = ids;
 		state->layout_ids = layouts;
@@ -796,6 +808,8 @@ emit_constant_part(
 		} else {
 			id = glsl_module_constant(state->module, type_id, values[*at].u);
 		}
+
+		/* The scalar is used up. */
 		(*at)++;
 		return id;
 	}
@@ -810,6 +824,8 @@ emit_constant_part(
 	} else {
 		count = type->field_count;
 	}
+
+	/* At most the parts the table holds. */
 	if (count > EMIT_MAX_PARTS)
 		count = EMIT_MAX_PARTS;
 	for (index = 0U; index < count; index++) {
@@ -898,6 +914,8 @@ emit_globals(
 			} else {
 				value = emit_zero(state, symbol->type);
 			}
+
+			/* The first value stored. */
 			operands[0] = symbol->id;
 			operands[1] = value;
 			glsl_words_add(state->module, &state->module->body, SPV_OP_STORE, operands, 2U);
@@ -948,6 +966,8 @@ emit_block(
 		emit_layout_members(state, structure, (unsigned)state->members[index], state->uniforms[index].type,
 				    state->uniforms[index].offset, state->uniforms[index].name);
 	}
+
+	/* The struct is a block, named for the reflection. */
 	glsl_module_decorate(state->module, structure, SPV_DECORATION_BLOCK, NULL, 0U);
 	glsl_module_name(state->module, structure, "gl_DefaultUniformBlock");
 
@@ -1053,6 +1073,8 @@ emit_interface_decorations(
 	default:
 		break;
 	}
+
+	/* A built-in has no location, only its built-in and invariance. */
 	if (value != 0xffffffffU) {
 		glsl_module_decorate(state->module, variable, SPV_DECORATION_BUILT_IN, &value, 1U);
 		if (symbol->invariant)
@@ -1243,6 +1265,8 @@ emit_declaration(
 		} else {
 			value = emit_value_of(emit_zero(state, symbol->type), symbol->type);
 		}
+
+		/* The first value stored. */
 		operands[0] = symbol->id;
 		operands[1] = value.id;
 		glsl_words_add(state->module, &state->module->body, SPV_OP_STORE, operands, 2U);
@@ -1269,6 +1293,8 @@ emit_if(
 		} else if (node->child[2] != NULL) {
 			emit_statement(state, node->child[2]);
 		}
+
+		/* The branch not taken emits nothing. */
 		return;
 	}
 
@@ -1812,6 +1838,8 @@ emit_load_block(
 			operands[1] = glsl_emit_splat(state, glsl_module_constant(state->module, glsl_emit_type(state, glsl_type_scalar(GLSL_BASE_UINT)), 0U), stored);
 			value = emit_value_of(glsl_emit_op(state, SPV_OP_I_NOT_EQUAL, glsl_emit_type(state, type), operands, 2U), type);
 		}
+
+		/* Succeeded: the leaf. */
 		return value;
 	}
 
@@ -1832,6 +1860,8 @@ emit_load_block(
 		} else {
 			part.type = type->element;
 		}
+
+		/* The part read. */
 		value = emit_load_block(state, &part);
 		parts[index] = value.id;
 	}
@@ -1894,6 +1924,8 @@ emit_store(
 				operands[2U + component] = vector->components + index;
 		}
 	}
+
+	/* The shuffled vector. */
 	old = emit_value_of(glsl_emit_op(state, SPV_OP_VECTOR_SHUFFLE, glsl_emit_type(state, vector), operands, 2U + vector->components), vector);
 
 	/* The vector written back. */
@@ -2068,6 +2100,8 @@ emit_increment(
 			constant->values[index].u = 1U;
 		}
 	}
+
+	/* The one. */
 	one = emit_value_of(emit_constant(state, constant), node->type);
 
 	/* The new value, written back. */
@@ -2178,6 +2212,8 @@ emit_arithmetic(
 			operands[0] = right.id;
 			operands[1] = left.id;
 		}
+
+		/* Succeeded: the product. */
 		result = emit_value_of(glsl_emit_op(state, opcode, result_type, operands, 2U), type);
 		return result;
 	}
@@ -2198,6 +2234,8 @@ emit_arithmetic(
 				operands[0] = right.id;
 				operands[1] = left.id;
 			}
+
+			/* Succeeded: the scaled vector. */
 			result = emit_value_of(glsl_emit_op(state, SPV_OP_VECTOR_TIMES_SCALAR, result_type, operands, 2U), type);
 			return result;
 		}
@@ -2289,11 +2327,15 @@ emit_columns(
 		} else {
 			operands[0] = glsl_emit_splat(state, left.id, column_type);
 		}
+
+		/* The right side's column, or the scalar as one. */
 		if (right.type->kind == GLSL_KIND_MATRIX) {
 			operands[1] = glsl_emit_extract(state, right, column);
 		} else {
 			operands[1] = glsl_emit_splat(state, right.id, column_type);
 		}
+
+		/* The operation on the column. */
 		columns[column] = glsl_emit_op(state, opcode, glsl_emit_type(state, column_type), operands, 2U);
 	}
 
@@ -2413,6 +2455,7 @@ emit_logical(
 	uint32_t operands[2];
 	uint32_t variable;
 	uint32_t condition;
+	uint32_t opcode;
 	uint32_t run;
 	uint32_t merge;
 
@@ -2425,8 +2468,10 @@ emit_logical(
 		right = glsl_emit_expression(state, node->child[1]);
 		operands[0] = left.id;
 		operands[1] = right.id;
-		result = emit_value_of(glsl_emit_op(state, (node->op == GLSL_P_AND_AND) ? SPV_OP_LOGICAL_AND : SPV_OP_LOGICAL_OR,
-						  glsl_emit_type(state, type), operands, 2U), type);
+		opcode = SPV_OP_LOGICAL_OR;
+		if (node->op == GLSL_P_AND_AND)
+			opcode = SPV_OP_LOGICAL_AND;
+		result = emit_value_of(glsl_emit_op(state, opcode, glsl_emit_type(state, type), operands, 2U), type);
 		return result;
 	}
 
@@ -2552,6 +2597,8 @@ emit_ternary(
 		if (cheap)
 			cheap = emit_is_cheap(node->child[2]);
 	}
+
+	/* Two cheap choices are a select. */
 	if (cheap) {
 		operands[0] = glsl_emit_splat(state, condition.id, glsl_type_with_base(type, GLSL_BASE_BOOL));
 		operands[1] = glsl_emit_expression(state, node->child[1]).id;
@@ -2607,6 +2654,8 @@ emit_is_cheap(
 		cheap = emit_is_cheap(node->child[0]);
 		return cheap;
 	}
+
+	/* A subscript at a constant index of a cheap object. */
 	if (node->kind == GLSL_N_INDEX) {
 		if (node->child[1]->constant == NULL)
 			return 0;
@@ -2631,6 +2680,8 @@ emit_is_cheap(
 			if (!cheap)
 				return 0;
 		}
+
+		/* Succeeded: every argument is cheap. */
 		return 1;
 	}
 
@@ -2667,6 +2718,8 @@ emit_call(
 		arguments[count] = glsl_emit_expression(state, argument);
 		count++;
 	}
+
+	/* Succeeded: the built-in's instructions. */
 	result = glsl_emit_builtin(state, node, arguments, count);
 
 	/* Succeeded: the built-in's value. */
@@ -2703,6 +2756,8 @@ emit_constructor(
 			parts[count] = value.id;
 			count++;
 		}
+
+		/* Succeeded: the aggregate. */
 		result = emit_value_of(glsl_emit_op(state, SPV_OP_COMPOSITE_CONSTRUCT, glsl_emit_type(state, type), parts, count), type);
 		return result;
 	}
@@ -2738,6 +2793,8 @@ emit_constructor(
 			if (count > 1U)
 				parts[index] = scalars[index];
 		}
+
+		/* Succeeded: the vector. */
 		result = emit_value_of(glsl_emit_op(state, SPV_OP_COMPOSITE_CONSTRUCT, glsl_emit_type(state, type), parts, type->components), type);
 		return result;
 	}
@@ -2754,6 +2811,8 @@ emit_constructor(
 				parts[row] = scalars[column * type->components + row];
 			}
 		}
+
+		/* The column. */
 		columns[column] = glsl_emit_op(state, SPV_OP_COMPOSITE_CONSTRUCT, glsl_emit_type(state, glsl_type_column(type)), parts, type->components);
 	}
 
@@ -2792,6 +2851,8 @@ emit_scalars(
 			ids[count] = glsl_emit_extract(state, value, index);
 			count++;
 		}
+
+		/* Succeeded: the components. */
 		return count;
 	}
 
@@ -2835,6 +2896,8 @@ emit_matrix_resize(
 				parts[row] = glsl_emit_float(state, 0.0f);
 			}
 		}
+
+		/* The column. */
 		columns[index] = glsl_emit_op(state, SPV_OP_COMPOSITE_CONSTRUCT, glsl_emit_type(state, glsl_type_column(type)), parts, type->components);
 	}
 
@@ -2891,6 +2954,8 @@ emit_inline(
 			if (status == 0 && parameter->storage == GLSL_STORAGE_INOUT)
 				values[count] = emit_load(state, &paths[count]);
 		}
+
+		/* The next argument. */
 		count++;
 	}
 
@@ -2902,6 +2967,8 @@ emit_inline(
 			parameter->id_storage = SPV_STORAGE_UNIFORM_CONSTANT;
 			continue;
 		}
+
+		/* Any other parameter is a variable of its own. */
 		parameter->id = emit_variable(state, parameter->type);
 		parameter->id_storage = SPV_STORAGE_FUNCTION;
 		if (values[index].id == 0U)
@@ -2921,12 +2988,16 @@ emit_inline(
 		operands[1] = emit_zero(state, function->return_type);
 		glsl_words_add(state->module, &state->module->body, SPV_OP_STORE, operands, 2U);
 	}
+
+	/* The flag that says the function returned early. */
 	if (function->early_return) {
 		frame->returned = emit_variable(state, glsl_type_scalar(GLSL_BASE_BOOL));
 		operands[0] = frame->returned;
 		operands[1] = glsl_module_bool(state->module, glsl_emit_type(state, glsl_type_scalar(GLSL_BASE_BOOL)), 0);
 		glsl_words_add(state->module, &state->module->body, SPV_OP_STORE, operands, 2U);
 	}
+
+	/* The body runs in the frame. */
 	state->frame = frame;
 
 	/* A function with early returns runs inside a loop that runs once; a return leaves it. */
@@ -2958,6 +3029,8 @@ emit_inline(
 		emit_branch(state, header);
 		emit_label(state, merge);
 	}
+
+	/* Back in the caller's frame. */
 	state->frame = frame->outer;
 
 	/* The out and inout parameters copied back. */

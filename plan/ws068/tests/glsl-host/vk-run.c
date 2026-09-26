@@ -104,6 +104,7 @@ static void run_barrier(VkCommandBuffer commands, VkImage image, VkImageLayout f
 static int run_submit(struct run_context *context);
 static char *run_read(const char *path);
 static void run_parse(const char *source, struct run_test *test);
+static void run_parse_uniform(const char *text, struct run_test *test);
 static int run_one(struct run_context *context, const char *directory, const char *name);
 static int run_program(struct run_context *context, const struct run_test *test, struct glsl_program *program, const char *name);
 static void run_fill_uniforms(struct run_context *context, const struct run_test *test, struct gles_spirv *spirv);
@@ -128,12 +129,15 @@ main(
 	unsigned failures;
 	size_t length;
 	int status;
+	int differs;
 
 	/* The directory of tests, and the device. */
 	if (argc < 2) {
 		fprintf(stderr, "usage: vk-run DIRECTORY\n");
 		return 2;
 	}
+
+	/* The device. */
 	status = run_setup(&context);
 	if (status != 0) {
 		printf("vk-run: no Vulkan device\n");
@@ -146,13 +150,18 @@ main(
 		printf("vk-run: cannot read %s\n", argv[1]);
 		return 1;
 	}
+
+	/* The names ending in .frag. */
 	count = 0U;
 	for (;;) {
 		entry = readdir(directory);
 		if (entry == NULL || count == RUN_MAX_TESTS)
 			break;
 		length = strlen(entry->d_name);
-		if (length < 6U || strcmp(entry->d_name + length - 5U, ".frag") != 0)
+		if (length < 6U)
+			continue;
+		differs = strcmp(entry->d_name + length - 5U, ".frag");
+		if (differs != 0)
 			continue;
 		names[count] = malloc(length - 4U);
 		if (names[count] == NULL)
@@ -161,10 +170,13 @@ main(
 		names[count][length - 5U] = '\0';
 		count++;
 	}
+
+	/* Sorted by name. */
 	(void)closedir(directory);
 	for (index = 0U; index < count; index++) {
 		for (other = index + 1U; other < count; other++) {
-			if (strcmp(names[other], names[index]) < 0) {
+			differs = strcmp(names[other], names[index]);
+			if (differs < 0) {
 				swap = names[index];
 				names[index] = names[other];
 				names[other] = swap;
@@ -241,6 +253,8 @@ run_setup(
 			break;
 		}
 	}
+
+	/* One is needed. */
 	if (context->family == 0xffffffffU)
 		return -1;
 
@@ -628,7 +642,7 @@ run_parse(
 	const char *line;
 	char *end;
 	unsigned index;
-	unsigned slot;
+	int differs;
 
 	/* The defaults. */
 	memset(test, 0, sizeof(*test));
@@ -638,36 +652,69 @@ run_parse(
 	for (line = source; line != NULL; line = strchr(line, '\n')) {
 		while (*line == '\n')
 			line++;
-		if (strncmp(line, "// version:", 11U) == 0)
+
+		/* The version. */
+		differs = strncmp(line, "// version:", 11U);
+		if (differs == 0)
 			test->version = (unsigned)strtoul(line + 11, NULL, 10);
-		if (strncmp(line, "// expect:", 10U) == 0) {
+
+		/* The colour expected. */
+		differs = strncmp(line, "// expect:", 10U);
+		if (differs == 0) {
 			end = (char *)line + 10;
 			for (index = 0U; index < 4U; index++)
 				test->expect[index] = (unsigned)strtoul(end, &end, 10);
 			test->has_expect = 1;
 		}
-		if (strncmp(line, "// uniform:", 11U) == 0 && test->uniform_count < 16U) {
-			slot = test->uniform_count;
-			end = (char *)line + 11;
-			while (*end == ' ')
-				end++;
-			for (index = 0U; index < 63U && end[index] != ' ' && end[index] != '\n' && end[index] != '\0'; index++)
-				test->uniform_names[slot][index] = end[index];
-			test->uniform_names[slot][index] = '\0';
-			end += index;
-			for (index = 0U; index < 16U; index++) {
-				while (*end == ' ')
-					end++;
-				if (*end == '\n' || *end == '\0')
-					break;
-				test->uniform_values[slot][index] = strtof(end, &end);
-			}
-			test->uniform_counts[slot] = index;
-			test->uniform_count++;
-		}
+
+		/* A uniform's values. */
+		differs = strncmp(line, "// uniform:", 11U);
+		if (differs == 0 && test->uniform_count < 16U)
+			run_parse_uniform(line + 11, test);
+
+		/* The end of the source. */
 		if (*line == '\0')
 			break;
 	}
+}
+
+/* Reads one "// uniform: NAME v0 v1 ..." line (after the colon). */
+static void
+run_parse_uniform(
+	const char *text,
+	struct run_test *test)
+{
+	char *end;
+	unsigned index;
+	unsigned slot;
+
+	/* The name. */
+	slot = test->uniform_count;
+	end = (char *)text;
+	while (*end == ' ')
+		end++;
+	for (index = 0U; index < 63U; index++) {
+		if (end[index] == ' ' || end[index] == '\n' || end[index] == '\0')
+			break;
+		test->uniform_names[slot][index] = end[index];
+	}
+
+	/* The name ends there. */
+	test->uniform_names[slot][index] = '\0';
+	end += index;
+
+	/* The values up to the end of the line. */
+	for (index = 0U; index < 16U; index++) {
+		while (*end == ' ')
+			end++;
+		if (*end == '\n' || *end == '\0')
+			break;
+		test->uniform_values[slot][index] = strtof(end, &end);
+	}
+
+	/* The uniform is one more. */
+	test->uniform_counts[slot] = index;
+	test->uniform_count++;
 }
 
 /* Runs one test: compile, link, draw, compare. */
@@ -709,6 +756,8 @@ run_one(
 	} else {
 		vertex = glsl_compile(GLSL_STAGE_VERTEX, quad_100, test.version, &log);
 	}
+
+	/* The logs, then the fragment shader. */
 	if (log != NULL)
 		printf("%s.vert: %s", name, log);
 	free(log);
@@ -796,6 +845,7 @@ run_program(
 	unsigned position_location;
 	int has_block;
 	int status;
+	int differs;
 	VkResult result;
 
 	/* Each stage reflected as libGLESv2 does, the vertex stage's gl_Position rewritten. */
@@ -806,6 +856,8 @@ run_program(
 			return -1;
 		}
 	}
+
+	/* The vertex stage's gl_Position rewritten. */
 	patched = gles_spirv_position(program->code[0], program->words[0], &patched_words);
 	if (patched == NULL) {
 		printf("%s: FAIL (position)\n", name);
@@ -841,6 +893,8 @@ run_program(
 		bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 		count = 1U;
 	}
+
+	/* Each stage's samplers. */
 	for (stage = 0U; stage < 2U; stage++) {
 		for (index = 0U; index < spirv[stage].uniform_count && count < 17U; index++) {
 			if (!spirv[stage].uniforms[index].sampler)
@@ -852,16 +906,25 @@ run_program(
 			count++;
 		}
 	}
+
+	/* A binding both stages have is kept once. */
 	for (index = 1U; index < count; index++) {
 		for (stage = 0U; stage < index; stage++) {
 			if (bindings[stage].binding == bindings[index].binding)
 				bindings[index].stageFlags = 0U;
 		}
 	}
-	for (index = 0U, stage = 0U; index < count; index++) {
-		if (bindings[index].stageFlags != 0U)
-			bindings[stage++] = bindings[index];
+
+	/* The kept ones packed. */
+	stage = 0U;
+	for (index = 0U; index < count; index++) {
+		if (bindings[index].stageFlags == 0U)
+			continue;
+		bindings[stage] = bindings[index];
+		stage++;
 	}
+
+	/* The count of the kept ones. */
 	count = stage;
 	memset(&set_create, 0, sizeof(set_create));
 	set_create.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -915,14 +978,19 @@ run_program(
 		writes[index].pBufferInfo = &buffer_info;
 		writes[index].pImageInfo = &image_info;
 	}
+
+	/* The set written. */
 	vkUpdateDescriptorSets(context->device, count, writes, 0U, NULL);
 
 	/* The pipeline: a strip of the four corners at the position's location. */
 	position_location = 0U;
 	for (index = 0U; index < spirv[0].input_count; index++) {
-		if (strcmp(spirv[0].inputs[index].name, "a_position") == 0)
+		differs = strcmp(spirv[0].inputs[index].name, "a_position");
+		if (differs == 0)
 			position_location = spirv[0].inputs[index].location;
 	}
+
+	/* The stages. */
 	memset(stages, 0, sizeof(stages));
 	for (stage = 0U; stage < 2U; stage++) {
 		stages[stage].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -932,6 +1000,8 @@ run_program(
 		stages[stage].module = modules[stage];
 		stages[stage].pName = "main";
 	}
+
+	/* The vertices: two floats each at the position's location. */
 	memset(&vertex_binding, 0, sizeof(vertex_binding));
 	vertex_binding.stride = 8U;
 	memset(&vertex_attribute, 0, sizeof(vertex_attribute));
@@ -945,6 +1015,8 @@ run_program(
 		vertex_input.vertexAttributeDescriptionCount = 1U;
 		vertex_input.pVertexAttributeDescriptions = &vertex_attribute;
 	}
+
+	/* The fixed state: a strip, the whole target, no culling, no blending. */
 	memset(&assembly, 0, sizeof(assembly));
 	assembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
 	assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
@@ -1062,6 +1134,7 @@ run_fill_uniforms(
 	unsigned at;
 	float number;
 	int32_t integer;
+	int differs;
 
 	/* Each uniform the test gives a value. */
 	data = context->uniforms_mapped;
@@ -1070,7 +1143,8 @@ run_fill_uniforms(
 		if (uniform->sampler)
 			continue;
 		for (value = 0U; value < test->uniform_count; value++) {
-			if (strcmp(test->uniform_names[value], uniform->name) != 0)
+			differs = strcmp(test->uniform_names[value], uniform->name);
+			if (differs != 0)
 				continue;
 
 			/* The values in order: elements, columns, rows. */
@@ -1111,6 +1185,8 @@ run_compare(
 		printf("%s: FAIL (no expect line)\n", name);
 		return -1;
 	}
+
+	/* Each channel of each pixel. */
 	for (index = 0U; index < RUN_SIZE * RUN_SIZE; index++) {
 		for (channel = 0U; channel < 4U; channel++) {
 			difference = (int)pixels[index * 4U + channel] - (int)test->expect[channel];

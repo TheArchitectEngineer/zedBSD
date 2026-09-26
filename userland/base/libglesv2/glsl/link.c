@@ -239,12 +239,14 @@ link_uniforms(
 		if (!symbol->used || symbol->where != GLSL_VAR_UNIFORM)
 			continue;
 
-		/* One the other stage has: the same type. */
+		/* The uniform of the same name the other stage added, if any. */
 		for (index = 0U; index < state->uniform_count; index++) {
 			differs = strcmp(state->uniforms[index].name, symbol->name);
 			if (differs == 0)
 				break;
 		}
+
+		/* One the other stage has: the same type. */
 		if (index < state->uniform_count) {
 			same = link_same_type(state->uniforms[index].type, symbol->type);
 			if (!same)
@@ -258,6 +260,8 @@ link_uniforms(
 			link_error(state, "too many uniforms");
 			return;
 		}
+
+		/* The uniform, with its index. */
 		state->uniforms[state->uniform_count].name = symbol->name;
 		state->uniforms[state->uniform_count].type = symbol->type;
 		state->uniforms[state->uniform_count].sampler = (symbol->type->kind == GLSL_KIND_SAMPLER);
@@ -337,6 +341,8 @@ link_attributes(
 				link_error(state, "attribute '%s' is bound beyond the 16 locations", symbol->name);
 				break;
 			}
+
+			/* The bound location, taken. */
 			symbol->location = bindings[index].location;
 			for (slot = 0U; slot < locations; slot++)
 				taken[symbol->location + slot] = 1U;
@@ -358,6 +364,8 @@ link_attributes(
 				if (taken[location + slot])
 					free_run = 0;
 			}
+
+			/* A run of taken locations is passed over. */
 			if (!free_run)
 				continue;
 
@@ -367,6 +375,8 @@ link_attributes(
 				taken[location + slot] = 1U;
 			bound = 1;
 		}
+
+		/* No run fits it. */
 		if (!bound)
 			link_error(state, "too many attributes (16 locations)");
 	}
@@ -397,11 +407,15 @@ link_varyings(
 			link_error(state, "the fragment shader reads '%s', which the vertex shader does not declare", symbol->name);
 			continue;
 		}
+
+		/* Of the same type. */
 		same = link_same_type(output->type, symbol->type);
 		if (!same) {
 			link_error(state, "varying '%s' has different types in the two shaders", symbol->name);
 			continue;
 		}
+
+		/* The vertex output is declared even when the vertex shader does not use it. */
 		output->used = 1U;
 	}
 
@@ -413,6 +427,8 @@ link_varyings(
 		symbol->location = location;
 		location += glsl_type_locations(symbol->type);
 	}
+
+	/* Sixteen locations in all. */
 	if (location > 16U)
 		link_error(state, "too many varyings (16 locations)");
 
@@ -532,6 +548,8 @@ link_leaves(
 			(void)snprintf(member, sizeof(member), "%s.%s", name, type->fields[index].name);
 			link_leaves(state, type->fields[index].type, member, out, count, capacity);
 		}
+
+		/* The members are in. */
 		return;
 	}
 
@@ -541,6 +559,8 @@ link_leaves(
 			(void)snprintf(member, sizeof(member), "%s[%u]", name, index);
 			link_leaves(state, type->element, member, out, count, capacity);
 		}
+
+		/* The elements are in. */
 		return;
 	}
 

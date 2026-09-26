@@ -49,6 +49,8 @@ glsl_emit_builtin(
 		result = builtin_ext(state, node, arguments, count);
 		return result;
 	}
+
+	/* The ones made of several instructions. */
 	if (builtin->operation == GLSL_BI_SPECIAL) {
 		result = builtin_special(state, node, arguments, count);
 		return result;
@@ -147,6 +149,8 @@ builtin_special(
 		} else {
 			id = glsl_emit_op(state, SPV_OP_DOT, glsl_emit_type(state, type), operands, 2U);
 		}
+
+		/* Succeeded: the dot product. */
 		result = builtin_value(id, type);
 		return result;
 	case GLSL_SPECIAL_ANY:
@@ -173,6 +177,8 @@ builtin_special(
 			operands[1] = right_column.id;
 			columns[column] = glsl_emit_op(state, SPV_OP_F_MUL, glsl_emit_type(state, glsl_type_column(type)), operands, 2U);
 		}
+
+		/* Succeeded: the matrix. */
 		result = builtin_value(glsl_emit_op(state, SPV_OP_COMPOSITE_CONSTRUCT, glsl_emit_type(state, type), columns, type->columns), type);
 		return result;
 	case GLSL_SPECIAL_OUTER_PRODUCT:
@@ -196,6 +202,8 @@ builtin_special(
 	} else {
 		id = glsl_emit_op(state, SPV_OP_DOT, glsl_emit_type(state, glsl_type_scalar(GLSL_BASE_FLOAT)), operands, 2U);
 	}
+
+	/* Whether the reference faces away. */
 	operands[0] = id;
 	operands[1] = glsl_emit_float(state, 0.0f);
 	id = glsl_emit_op(state, SPV_OP_F_ORD_LESS_THAN, glsl_emit_type(state, bool_type), operands, 2U);
@@ -273,6 +281,8 @@ builtin_texture(
 		operands[2] = reference;
 		operand_count = 3U;
 	}
+
+	/* A level, or a bias. */
 	if (explicit_lod) {
 		operands[operand_count] = SPV_IMAGE_OPERAND_LOD;
 		operands[operand_count + 1U] = glsl_emit_float(state, 0.0f);
@@ -328,6 +338,8 @@ builtin_texture_query(
 			glsl_words_add(state->module, &state->module->capabilities, SPV_OP_CAPABILITY, operands, 1U);
 			state->module->image_query = 1U;
 		}
+
+		/* The size of the level. */
 		operands[0] = image;
 		operands[1] = arguments[1].id;
 		result = builtin_value(glsl_emit_op(state, SPV_OP_IMAGE_QUERY_SIZE_LOD, glsl_emit_type(state, node->type), operands, 2U), node->type);
@@ -400,6 +412,8 @@ builtin_coordinate(
 			operands[1] = divisor.id;
 			parts[index] = glsl_emit_op(state, SPV_OP_F_DIV, glsl_emit_type(state, float_type), operands, 2U);
 		}
+
+		/* The reference divided too. */
 		if (shadow) {
 			operands[0] = *reference;
 			operands[1] = divisor.id;
