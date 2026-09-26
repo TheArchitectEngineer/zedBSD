@@ -63,6 +63,7 @@ kernel の中に ACPI の AML interpreter を持ち、DSDT・SSDT を読み込�
 | ws049-p007 | SCI・GPE・固定 event・EC の kernel での確認: SCI の割り込み、event thread、QEMU の `system_powerdown`（固定の電源 button）と GPE | planned | p006、p011 | 同上 |
 | ws049-p008 | 対象機（Latitude 5330）の table と実機の確認 | planned | p007、対象機の table | 同上 |
 | ws049-p009 | 規約の全文の確認と最終の確認 | planned | p002〜p008、p010、p011 | WS の全 source |
+| [ws049-p014](phase014/phase.md) | FACS の Global Lock の hardware の手順（firmware と取り合い、pending・GBL_RLS・GBL_STS）。host の疑似の firmware で試験 | cleared（2026-09-27。kernel の上の実行は p007 で） | p011 | `src/drivers/acpi/` |
 | [ws049-p013](phase013/phase.md) | p006 のうち承認なしでできる部分: 診断の口 `/dev/acpi`（read で namespace、path を write して評価）と、kernel と harness で共有する出力の処理（`acpi-text.c`） | cleared（2026-09-27。kernel の上の実行は p006 で） | p010 | `src/drivers/acpi/` |
 | [ws049-p012](phase012/phase.md) | 壊れた table への堅牢性: AML の byte を変えた table を sanitizer の下で読み込み、全 method を走らせる（fuzz） | cleared（2026-09-27） | p011 | 試験 |
 | [ws049-p011](phase011/phase.md) | p007 のうち承認なしでできる部分: event の核（FADT、ACPI mode、PM1・GPE、`_Lxx`/`_Exx`、wake GPE、割り込みと thread の分担）と EC（`_CRS`・`_GPE`・`_GLK`、protocol、EmbeddedControl の region、`_Qxx`）。host の疑似の hardware で試験、kernel の側は compile | cleared（2026-09-27） | p010 | `src/drivers/acpi/` |

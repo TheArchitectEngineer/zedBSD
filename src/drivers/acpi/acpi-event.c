@@ -65,6 +65,14 @@
 #define PM1_CNT_SCI_EN		0x0001U
 
 /*
+ * The GBL_RLS bit of PM1_CNT: written as one, it tells firmware that the
+ * operating system let the Global Lock go while firmware waited for it.
+ * SLP_EN is written as one only to sleep, so writes keep it clear.
+ */
+#define PM1_CNT_GBL_RLS		0x0004U
+#define PM1_CNT_SLP_EN		0x2000U
+
+/*
  * The address space of a Generic Address Structure that is I/O ports.
  */
 #define GAS_SPACE_SYSTEM_IO	1U
@@ -161,6 +169,7 @@ static uint8_t port_read8(uint32_t port);
 static void port_write8(uint32_t port, uint8_t value);
 static uint16_t pm1_read(unsigned offset);
 static void pm1_write(unsigned offset, uint16_t value);
+static void pm1_control_set(const struct register_block *block, uint16_t bits);
 static void gpe_set_enable(unsigned gpe, bool enable);
 static void gpe_clear(unsigned gpe);
 static int gpe_method_visitor(struct drv_acpi_node *node, unsigned depth, void *argument);
@@ -234,6 +243,14 @@ drv_acpi_events_init(
 		gpe_set_enable(gpe, false);
 		gpe_clear(gpe);
 	}
+
+	/*
+	 * Enables the Global Lock event, which firmware raises when it lets
+	 * the lock go while the operating system waits; the waiter polls the
+	 * lock, so the event needs no handler beyond clearing it.
+	 */
+	events.fixed_enabled = (uint16_t)(1U << DRV_ACPI_EVENT_GLOBAL_LOCK);
+	pm1_write(events.pm1a_event.length / 2U, events.fixed_enabled);
 
 	/* The registers are known and quiet: the SCI may be taken now. */
 	events.ready = 1;
@@ -454,6 +471,27 @@ drv_acpi_events_process(void)
 	}
 }
 
+/*
+ * Tells firmware, with GBL_RLS, that the operating system let the Global
+ * Lock go while firmware waited for it.
+ */
+void
+drv_acpi_events_global_release(void)
+{
+	unsigned long state;
+
+	/* Nothing can be signalled before the registers are known. */
+	if (!events.ready)
+		return;
+
+	/* Sets GBL_RLS in each PM1 control block. */
+	state = drv_acpi_os_event_lock();
+	pm1_control_set(&events.pm1a_control, PM1_CNT_GBL_RLS);
+	if (events.pm1b_control.length != 0)
+		pm1_control_set(&events.pm1b_control, PM1_CNT_GBL_RLS);
+	drv_acpi_os_event_unlock(state);
+}
+
 /* Reads a little-endian 32-bit value. */
 static uint32_t
 load_u32(
@@ -623,6 +661,25 @@ pm1_write(
 	/* Writes the b block when there is one. */
 	if (events.pm1b_event.length != 0)
 		(void)drv_acpi_os_port_write(events.pm1b_event.port + offset, 16, value);
+}
+
+/* Writes bits as one into a PM1 control register, keeping its other bits. */
+static void
+pm1_control_set(
+	const struct register_block *block,
+	uint16_t bits)
+{
+	uint32_t value;
+	int error;
+
+	/* Reads the register. */
+	error = drv_acpi_os_port_read(block->port, 16, &value);
+	if (error != 0)
+		return;
+
+	/* Writes it back with the bits, and without SLP_EN. */
+	value = (value & ~(uint32_t)PM1_CNT_SLP_EN) | bits;
+	(void)drv_acpi_os_port_write(block->port, 16, value);
 }
 
 /* Sets or clears a GPE's enable bit. */

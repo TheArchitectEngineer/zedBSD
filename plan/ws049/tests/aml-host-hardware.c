@@ -10,10 +10,17 @@
  * and control registers, a GPE block, the SMI command port and an
  * Embedded Controller, at the ports QEMU's q35 uses.  Status registers
  * clear the bits written as one; the EC answers every command at once.
+ *
+ * The FACS Global Lock has a simulated firmware on its other side: at each
+ * tick (a sleep of the interpreter) it asks for a lock the operating system
+ * owns, or lets go of a lock it owns; it takes the lock when GBL_RLS says
+ * the operating system let it go, and raises the Global Lock event when it
+ * lets the lock go while the operating system waits.  It prints each step.
  */
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "aml-host-hardware.h"
@@ -33,6 +40,15 @@
 #define SCI_INTERRUPT	9U
 #define EC_DATA		0x0062U
 #define EC_COMMAND	0x0066U
+
+/*
+ * The Global Lock bits, the GBL_RLS bit of PM1_CNT, and the Global Lock
+ * event's bit of PM1_STS.
+ */
+#define LOCK_PENDING	0x1U
+#define LOCK_OWNED	0x2U
+#define PM1_GBL_RLS	0x04U
+#define PM1_GBL_STS	5U
 
 /*
  * The EC status bits and commands.
@@ -71,6 +87,14 @@ static uint8_t ec_address;
 static enum ec_phase ec_phase;
 static uint8_t ec_queries[64];
 static unsigned ec_query_count;
+
+/*
+ * The Global Lock's dword, whether the simulated firmware owns it, and
+ * whether it waits for the operating system to let it go.
+ */
+static volatile uint32_t global_lock;
+static bool firmware_owns;
+static bool firmware_waits;
 
 static int access_byte(uint32_t port, bool write, uint8_t *value);
 static int ec_data(bool write, uint8_t *value);
@@ -174,6 +198,47 @@ hardware_ec_ram_read(
 }
 
 /*
+ * Reports the Global Lock's dword, as the FACS would hold it.
+ */
+volatile uint32_t *
+hardware_global_lock(void)
+{
+	/* The lock lives in the harness. */
+	return &global_lock;
+}
+
+/*
+ * Plays the simulated firmware's side of the Global Lock at a sleep.
+ */
+void
+hardware_tick(void)
+{
+	uint32_t old;
+
+	/* Firmware owning the lock lets it go, and raises the event when the system waits. */
+	if (firmware_owns) {
+		old = __atomic_exchange_n(&global_lock, 0U, __ATOMIC_SEQ_CST);
+		firmware_owns = false;
+		if ((old & LOCK_PENDING) != 0) {
+			hardware_raise_fixed(PM1_GBL_STS);
+			printf("FIRMWARE released the Global Lock, GBL_STS\n");
+		} else {
+			printf("FIRMWARE released the Global Lock\n");
+		}
+
+		/* Nothing else happens in the same tick. */
+		return;
+	}
+
+	/* Firmware asks once for a lock the operating system owns. */
+	if (!firmware_waits && (global_lock & LOCK_OWNED) != 0) {
+		(void)__atomic_fetch_or(&global_lock, LOCK_PENDING, __ATOMIC_SEQ_CST);
+		firmware_waits = true;
+		printf("FIRMWARE waits for the Global Lock\n");
+	}
+}
+
+/*
  * Writes a FADT that describes the simulated hardware and reports its
  * length.
  */
@@ -232,6 +297,18 @@ access_byte(
 		status = port - PM1A_EVENT < PM1_EVENT_LEN / 2U;
 	} else if (port >= PM1A_CONTROL && port < PM1A_CONTROL + PM1_CONTROL_LEN) {
 		reg = &pm1_control[port - PM1A_CONTROL];
+
+		/* GBL_RLS hands the lock to the waiting firmware; the bit reads as zero. */
+		if (write && port == PM1A_CONTROL && (*value & PM1_GBL_RLS) != 0) {
+			*value = (uint8_t)(*value & ~PM1_GBL_RLS);
+			printf("FIRMWARE GBL_RLS\n");
+			if (firmware_waits && (global_lock & LOCK_OWNED) == 0) {
+				global_lock = LOCK_OWNED;
+				firmware_waits = false;
+				firmware_owns = true;
+				printf("FIRMWARE took the Global Lock\n");
+			}
+		}
 	} else if (port >= GPE0_BLOCK && port < GPE0_BLOCK + GPE0_LEN) {
 		reg = &gpe0[port - GPE0_BLOCK];
 		status = port - GPE0_BLOCK < GPE0_LEN / 2U;

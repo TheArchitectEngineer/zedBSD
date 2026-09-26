@@ -32,10 +32,27 @@
  */
 #define POLL_MILLISECONDS 1U
 
+/*
+ * The bits of the FACS Global Lock (ACPI 6.5 section 5.2.10.1): the lock
+ * is owned, and its other side waits for it.
+ */
+#define GLOBAL_LOCK_PENDING	0x1U
+#define GLOBAL_LOCK_OWNED	0x2U
+
+/*
+ * The Global Lock's dword in the FACS, which firmware takes too; NULL
+ * until drv_acpi_global_lock_attach(), and then \_GL_ is only an AML
+ * mutex among the operating system's threads.
+ */
+static volatile uint32_t *hardware_lock;
+
 static int sync_object(struct drv_acpi_eval *eval, enum drv_acpi_type type, struct drv_acpi_object **result);
 static int mutex_acquire(struct drv_acpi_eval *eval, struct drv_acpi_object *mutex, uint64_t timeout, bool *timed_out);
 static int mutex_release(struct drv_acpi_eval *eval, struct drv_acpi_object *mutex);
 static struct drv_acpi_object *global_lock_object(void);
+static bool is_hardware_lock(struct drv_acpi_object *mutex);
+static bool hardware_acquire(void);
+static bool hardware_release(void);
 static int event_wait(struct drv_acpi_object *event, uint64_t timeout, bool *timed_out);
 
 /*
@@ -112,6 +129,8 @@ drv_acpi_mutex_acquire(
 {
 	struct drv_acpi_mutex *state;
 	uint64_t waited;
+	bool hardware;
+	bool taken;
 
 	/* Refuses a mutex below the level the thread already holds. */
 	state = &mutex->value.mutex;
@@ -130,9 +149,23 @@ drv_acpi_mutex_acquire(
 		return 0;
 	}
 
-	/* Waits for the owner to release it, sleeping so that it can. */
+	/*
+	 * Waits for the owner to release it, sleeping so that it can.  The
+	 * Global Lock must also be free of firmware; a try that finds
+	 * firmware owning it asks firmware to signal its release.
+	 */
 	waited = 0;
-	while (state->owner != NULL) {
+	hardware = is_hardware_lock(mutex);
+	for (;;) {
+		/* Takes the mutex when no thread and no firmware owns it. */
+		if (state->owner == NULL) {
+			taken = true;
+			if (hardware)
+				taken = hardware_acquire();
+			if (taken)
+				break;
+		}
+
 		/* Gives up when the timeout has passed. */
 		if (timeout != TIMEOUT_FOREVER && waited >= timeout) {
 			*timed_out = true;
@@ -174,6 +207,8 @@ drv_acpi_mutex_release(
 {
 	struct drv_acpi_mutex *state;
 	struct drv_acpi_object **link;
+	bool hardware;
+	bool waiting;
 
 	/* Refuses a release by a thread that does not own the mutex. */
 	state = &mutex->value.mutex;
@@ -208,11 +243,21 @@ drv_acpi_mutex_release(
 
 	/*
 	 * The mutex is free and the thread is back at the level it had
-	 * before acquiring it; the list's reference goes.
+	 * before acquiring it.
 	 */
 	thread->sync_level = state->original_sync_level;
 	state->owner = NULL;
 	state->next_held = NULL;
+
+	/* Gives the Global Lock back to firmware, telling it when it waits. */
+	hardware = is_hardware_lock(mutex);
+	if (hardware) {
+		waiting = hardware_release();
+		if (waiting)
+			drv_acpi_events_global_release();
+	}
+
+	/* The list's reference goes. */
 	drv_acpi_object_release(mutex);
 
 	/* Succeeded. */
@@ -269,6 +314,29 @@ drv_acpi_global_lock(
 	error = drv_acpi_mutex_acquire(thread, lock, TIMEOUT_FOREVER, &timed_out);
 	if (error != 0)
 		return error;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Starts taking the FACS Global Lock with \_GL_, which firmware shares.
+ *
+ * The word is the lock's dword in the FACS, mapped for the life of the
+ * system.  It is attached after drv_acpi_events_init(), which enables the
+ * event firmware raises when it lets the lock go and knows where to
+ * signal firmware that the operating system let it go.
+ */
+int
+drv_acpi_global_lock_attach(
+	volatile uint32_t *word)
+{
+	/* Refuses a missing lock. */
+	if (word == NULL)
+		return EINVAL;
+
+	/* Uses it from the next Acquire of \_GL_ on. */
+	hardware_lock = word;
 
 	/* Succeeded. */
 	return 0;
@@ -458,6 +526,72 @@ global_lock_object(void)
 
 	/* Reports the mutex. */
 	return node->object;
+}
+
+/* Reports whether a mutex is \_GL_ backed by the FACS Global Lock. */
+static bool
+is_hardware_lock(
+	struct drv_acpi_object *mutex)
+{
+	/* Only an attached lock is shared with firmware. */
+	if (hardware_lock == NULL)
+		return false;
+
+	/* The mutex must be the one \_GL_ names. */
+	return mutex == global_lock_object();
+}
+
+/*
+ * Tries to take the FACS Global Lock (ACPI 6.5 section 5.2.10.1).  When
+ * firmware owns it, the try marks it pending instead, and firmware raises
+ * the Global Lock event when it lets it go; the caller tries again.
+ */
+static bool
+hardware_acquire(void)
+{
+	uint32_t old;
+	uint32_t new;
+	bool exchanged;
+
+	/* Sets owned, and pending when it was owned already, in one exchange. */
+	old = *hardware_lock;
+	for (;;) {
+		/* Computes the new value from the one read; a failed exchange rereads it. */
+		new = (old & ~GLOBAL_LOCK_PENDING) | GLOBAL_LOCK_OWNED;
+		if ((old & GLOBAL_LOCK_OWNED) != 0)
+			new |= GLOBAL_LOCK_PENDING;
+		exchanged = __atomic_compare_exchange_n(hardware_lock, &old, new, false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+		if (exchanged)
+			break;
+	}
+
+	/* It is taken when the new value is not pending. */
+	return (new & GLOBAL_LOCK_PENDING) == 0;
+}
+
+/*
+ * Lets the FACS Global Lock go and reports whether firmware was waiting
+ * for it, in which case the caller signals firmware with GBL_RLS.
+ */
+static bool
+hardware_release(void)
+{
+	uint32_t old;
+	uint32_t new;
+	bool exchanged;
+
+	/* Clears owned and pending in one exchange. */
+	old = *hardware_lock;
+	for (;;) {
+		/* Computes the new value from the one read; a failed exchange rereads it. */
+		new = old & ~(GLOBAL_LOCK_PENDING | GLOBAL_LOCK_OWNED);
+		exchanged = __atomic_compare_exchange_n(hardware_lock, &old, new, false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+		if (exchanged)
+			break;
+	}
+
+	/* Reports whether firmware waits. */
+	return (old & GLOBAL_LOCK_PENDING) != 0;
 }
 
 /* Takes one signal of an event, waiting up to the timeout in milliseconds. */

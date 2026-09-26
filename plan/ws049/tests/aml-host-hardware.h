@@ -44,6 +44,12 @@ uint8_t
 hardware_ec_ram_read(
 	uint8_t address);
 
+volatile uint32_t *
+hardware_global_lock(void);
+
+void
+hardware_tick(void);
+
 size_t
 hardware_default_fadt(
 	uint8_t *fadt,

@@ -896,6 +896,9 @@ drv_acpi_global_lock(
 	struct drv_acpi_eval *eval,
 	bool acquire);
 
+void
+drv_acpi_events_global_release(void);
+
 int
 drv_acpi_osi_install(void);
 

@@ -151,7 +151,7 @@ amd64 の kernel の thread の stack は 16 KiB（`src/hal/amd64/task.h` の `A
 interpreter 全体を一つの sleep できる mutex（`aml-os.h` の interpreter lock）で直列にする。`Sleep`・`Acquire` の待ち・`Wait` の待ちの間だけ
 lock を放す。Serialized の method は method ごとの mutex（SyncLevel 付き）を持ち、lock を放す間の再入を防ぐ。AML の Mutex は
 所有者（評価の文脈）と SyncLevel を持ち、SyncLevel の規則（ACPI 6.5 §19.6.2）を検査する。`_GL_`（Global Lock）は FACS の lock を使う
-（p007。それまでは内部の mutex として扱う）。
+（p014 で実装。kernel は event を始めた後に FACS を写して attach し、それまでは内部の mutex として扱う）。
 
 ## 5. OperationRegion と Field
 

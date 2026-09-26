@@ -48,6 +48,13 @@
 #define PAGE_SIZE 4096U
 
 /*
+ * The FACS Global Lock (ACPI 6.5 table 5.10): its offset, and the end of
+ * the dword, which the FACS must reach.
+ */
+#define FACS_GLOBAL_LOCK	16U
+#define FACS_LOCK_END		20U
+
+/*
  * How many pages of system memory the handler keeps mapped.
  */
 #define MEMORY_CACHE_SLOTS 16U
@@ -106,6 +113,7 @@ static struct wait_queue event_queue;
 static unsigned event_work;
 
 static int start_events(void);
+static int start_global_lock(void);
 static void sci_interrupt(int irq, kern_irq_ack_t acknowledge, void *argument);
 static void event_thread(void *argument);
 static void power_button(enum drv_acpi_fixed_event event, void *argument);
@@ -177,6 +185,13 @@ drv_acpi_attach(void)
 	error = start_events();
 	if (error != 0)
 		kern_logf("acpi: no ACPI events (error %d)\n", error);
+	if (error == 0) {
+		error = start_global_lock();
+		if (error != 0)
+			kern_logf("acpi: the FACS Global Lock is not shared (error %d)\n", error);
+	}
+
+	/* Attaches the Embedded Controller. */
 	error = drv_acpi_ec_attach();
 	if (error != 0 && error != ENODEV)
 		kern_logf("acpi: the Embedded Controller did not attach (error %d)\n", error);
@@ -493,6 +508,53 @@ start_events(void)
 
 	/* Succeeded. */
 	kern_logf("acpi: SCI on IRQ %u\n", irq);
+	return 0;
+}
+
+/*
+ * Maps the FACS and shares its Global Lock with firmware from now on.
+ * The amd64 device views are uncached; the locked exchange of the lock
+ * works on such a mapping too.
+ */
+static int
+start_global_lock(void)
+{
+	volatile uint8_t *facs;
+	uint64_t page;
+	uint64_t offset;
+	size_t size;
+	void *mapping;
+	uint32_t length;
+	int error;
+
+	/* A FADT without a FACS has no Global Lock. */
+	if (firmware.facs_address == 0)
+		return ENODEV;
+
+	/* Maps the pages the FACS header and lock lie in, for good. */
+	page = firmware.facs_address & ~(uint64_t)(PAGE_SIZE - 1U);
+	offset = firmware.facs_address - page;
+	size = (size_t)((offset + FACS_LOCK_END + PAGE_SIZE - 1U) & ~(uint64_t)(PAGE_SIZE - 1U));
+	error = hal_space_map_device((hal_physaddr_t)page, size, HAL_SPACE_READ | HAL_SPACE_WRITE, &mapping);
+	if (error != HAL_OK)
+		return EFAULT;
+	facs = (volatile uint8_t *)mapping + offset;
+
+	/* Refuses a table that is not a FACS. */
+	length = (uint32_t)facs[4] | (uint32_t)facs[5] << 8 | (uint32_t)facs[6] << 16 | (uint32_t)facs[7] << 24;
+	if (facs[0] != 'F' || facs[1] != 'A' || facs[2] != 'C' || facs[3] != 'S' || length < FACS_LOCK_END) {
+		(void)hal_space_unmap_device(mapping, size);
+		return EINVAL;
+	}
+
+	/* Hands the lock's dword to the interpreter. */
+	error = drv_acpi_global_lock_attach((volatile uint32_t *)(facs + FACS_GLOBAL_LOCK));
+	if (error != 0) {
+		(void)hal_space_unmap_device(mapping, size);
+		return error;
+	}
+
+	/* Succeeded. */
 	return 0;
 }
 

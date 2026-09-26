@@ -279,6 +279,10 @@ void
 drv_acpi_events_process(void);
 
 int
+drv_acpi_global_lock_attach(
+	volatile uint32_t *word);
+
+int
 drv_acpi_ec_attach(void);
 
 #endif

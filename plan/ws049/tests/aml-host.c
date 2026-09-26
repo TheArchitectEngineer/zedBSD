@@ -35,6 +35,9 @@
  *     --gpe N         raise GPE N and handle the SCI (repeatable, in order)
  *     --power-button  press the fixed power button and handle the SCI
  *     --ec-query Q@G  queue EC query Q, raise the EC's GPE G, handle the SCI
+ *     --global-lock   share a simulated FACS Global Lock with a simulated
+ *                     firmware (with --events); after MAIN, print the lock
+ *                     and handle the SCI firmware raised
  *     --stack         print the deepest stack use of the interpreter
  *     --budget BYTES  the stack budget (default 1 MiB)
  *     --quiet         do not print the interpreter's log
@@ -97,6 +100,7 @@ enum option_kind {
 	OPTION_GPE,
 	OPTION_POWER_BUTTON,
 	OPTION_EC_QUERY,
+	OPTION_GLOBAL_LOCK,
 	OPTION_REG,
 	OPTION_INIT,
 	OPTION_BUDGET,
@@ -134,6 +138,7 @@ struct harness_options {
 	int initialize;
 	int events;
 	int ec;
+	int global_lock;
 	const char *actions[OPTION_LIST_MAX];
 	enum option_kind action_kinds[OPTION_LIST_MAX];
 	unsigned action_count;
@@ -187,6 +192,7 @@ static const struct option_name option_names[] = {
 	{ "--gpe", OPTION_GPE, 1 },
 	{ "--power-button", OPTION_POWER_BUTTON, 0 },
 	{ "--ec-query", OPTION_EC_QUERY, 1 },
+	{ "--global-lock", OPTION_GLOBAL_LOCK, 0 },
 	{ "--reg", OPTION_REG, 0 },
 	{ "--init", OPTION_INIT, 0 },
 	{ "--budget", OPTION_BUDGET, 1 },
@@ -249,6 +255,7 @@ static void print_fixed_event(enum drv_acpi_fixed_event event, void *argument);
 static int load_tables(const struct harness_options *options);
 static int install_notifications(const struct harness_options *options);
 static int run_main(void);
+static void print_sci(void);
 static int read_file(const char *path, uint8_t **data, size_t *length);
 static int load_file(const char *path);
 static int load_firmware(const char *description);
@@ -323,6 +330,14 @@ main(
 		error = run_main();
 		if (error != 0)
 			status = 1;
+	}
+
+	/* Prints the Global Lock and handles the SCI its firmware raised. */
+	if (options.global_lock) {
+		printf("GLOBAL-LOCK 0x%x\n", (unsigned)*hardware_global_lock());
+		print_sci();
+		drv_acpi_events_process();
+		print_sci();
 	}
 
 	/* Evaluates the paths the options named, in order. */
@@ -429,8 +444,9 @@ void
 drv_acpi_os_sleep(
 	uint64_t milliseconds)
 {
-	/* Moves the clock without waiting. */
+	/* Moves the clock without waiting; the simulated firmware runs meanwhile. */
 	slept += milliseconds * 10000U;
+	hardware_tick();
 }
 
 /*
@@ -697,6 +713,9 @@ parse_arguments(
 		case OPTION_EC:
 			options->ec = 1;
 			break;
+		case OPTION_GLOBAL_LOCK:
+			options->global_lock = 1;
+			break;
 		case OPTION_EC_RAM:
 		case OPTION_GPE:
 		case OPTION_POWER_BUTTON:
@@ -849,6 +868,13 @@ start_events(
 			fprintf(stderr, "events: no fixed power button (error %d)\n", error);
 	}
 
+	/* Shares the simulated FACS Global Lock. */
+	if (options->global_lock) {
+		error = drv_acpi_global_lock_attach(hardware_global_lock());
+		if (error != 0)
+			return error;
+	}
+
 	/* Attaches the EC. */
 	if (options->ec) {
 		error = drv_acpi_ec_attach();
@@ -860,6 +886,21 @@ start_events(
 
 	/* Succeeded. */
 	return 0;
+}
+
+/* Prints whether the SCI has events pending, as the interrupt would find them. */
+static void
+print_sci(void)
+{
+	bool pending;
+
+	/* Runs the interrupt's part and prints what it found. */
+	pending = drv_acpi_sci_interrupt();
+	if (pending) {
+		printf("SCI pending\n");
+	} else {
+		printf("SCI none\n");
+	}
 }
 
 /* Raises the events the options ask for, in order, and handles each SCI. */
