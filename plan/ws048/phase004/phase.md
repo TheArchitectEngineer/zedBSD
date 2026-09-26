@@ -11,8 +11,8 @@ HAL の承認: **要る**。hal.h に `hal_pmem_map_uncached`・`hal_pmem_unmap_
 
 ## 範囲（承認の後）
 
-- hal.h の 2 関数と各 port の実装（arm64 は MAIR の Attr3 = Normal non-cacheable と uncached の窓。他は `HAL_ERR_UNSUPPORTED`）。
-- `kern_pmem_map_uncached`・`kern_pmem_unmap_uncached`（`src/kern/pmem.c`）。
+- hal.h の 2 関数と arm64 の実装（MAIR の Attr3 = Normal non-cacheable と uncached の窓）。他の port は実装しない（実行で決めた。kernel は weak で参照する）。
+- `kern_pmem_map_uncached`・`kern_pmem_unmap_uncached`（arm64 だけの `src/kern/uncached.c`。実行で決めた）。
 - `src/drivers/generic/dma.c`: 非 coherent な device の `alloc_coherent`・`free_coherent`・`drv_dma_map`・vector。
 
 ## 受け入れ条件
