@@ -197,7 +197,7 @@ sh_input_give_back_text(
 {
 	int index;
 
-	/* The characters leave the captures they were added to. */
+	/* Takes the characters out of every capture they were added to. */
 	for (index = 0; index < input_capture_count; index++) {
 		if (input_captures[index].length >= length)
 			input_captures[index].length -= length;
@@ -205,7 +205,7 @@ sh_input_give_back_text(
 			input_captures[index].length = 0;
 	}
 
-	/* Read again first. */
+	/* Pushes the text back so that it is read before anything else. */
 	sh_input_push_back_text(text, length);
 }
 

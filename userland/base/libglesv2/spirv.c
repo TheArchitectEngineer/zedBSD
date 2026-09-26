@@ -39,6 +39,9 @@
 #define OP_TYPE_VECTOR		23U
 #define OP_TYPE_MATRIX		24U
 #define OP_TYPE_IMAGE		25U
+
+/* OpTypeImage's Dim of a cube map. */
+#define SPIRV_DIM_CUBE		3U
 #define OP_TYPE_SAMPLED_IMAGE	27U
 #define OP_TYPE_ARRAY		28U
 #define OP_TYPE_STRUCT		30U
@@ -195,15 +198,18 @@ gles_spirv_free(
 
 /*
  * Returns a copy of a vertex shader that, before each return of its entry
- * point, turns gl_Position from GL's clip coordinates into Vulkan's: y
- * turned over (Vulkan's framebuffer y goes down) and z moved from
- * [-w, w] to [0, w].  Returns NULL when the module cannot be rewritten;
- * a module that never names gl_Position comes back unchanged.
+ * point, turns gl_Position from GL's clip coordinates into Vulkan's: z
+ * moved from [-w, w] to [0, w], and y turned over when flip is nonzero
+ * (a window's rows go down from its top; a framebuffer object's image
+ * keeps GL's rows from the bottom up, as textures do).  Returns NULL when
+ * the module cannot be rewritten; a module that never names gl_Position
+ * comes back unchanged.
  */
 uint32_t *
 gles_spirv_position(
 	const uint32_t *code,
 	size_t words,
+	int flip,
 	size_t *out_words)
 {
 	struct spirv_module module;
@@ -414,11 +420,13 @@ gles_spirv_position(
 			operands[3] = half;
 			spirv_emit(out, &count, OP_FMUL, 4U, operands);
 
-			/* The vector made again (x, -y, (z + w) / 2, w; no insert, which some compilers lack), and stored. */
+			/* The vector made again (x, -y or y, (z + w) / 2, w; no insert, which some compilers lack), and stored. */
 			operands[0] = vector_type;
 			operands[1] = ids[9];
 			operands[2] = ids[2];
-			operands[3] = ids[6];
+			operands[3] = ids[3];
+			if (flip)
+				operands[3] = ids[6];
 			operands[4] = ids[8];
 			operands[5] = ids[5];
 			spirv_emit(out, &count, OP_COMPOSITE_CONSTRUCT, 6U, operands);
@@ -757,6 +765,7 @@ spirv_leaf(
 	static const GLenum matrices[4] = { GL_FLOAT_MAT2, GL_FLOAT_MAT2, GL_FLOAT_MAT3, GL_FLOAT_MAT4 };
 	const uint32_t *code;
 	size_t at;
+	size_t image;
 	uint32_t opcode;
 	int status;
 
@@ -812,6 +821,15 @@ spirv_leaf(
 		uniform->components = 1U;
 		uniform->columns = 1U;
 		uniform->type = GL_SAMPLER_2D;
+
+		/* An image of Dim Cube is a cube map's sampler. */
+		image = 0U;
+		if (code[at + 2U] < module->bound)
+			image = module->defs[code[at + 2U]];
+		if (image != 0U &&
+		    (code[image] & 0xffffU) == OP_TYPE_IMAGE &&
+		    code[image + 3U] == SPIRV_DIM_CUBE)
+			uniform->type = GL_SAMPLER_CUBE;
 		return 0;
 	default:
 		break;
@@ -1025,6 +1043,15 @@ spirv_variable(
 		variable->type = leaf.type;
 		variable->size = (GLint)length;
 		variable->components = leaf.components;
+		return 0;
+	}
+
+	/* A uniform block other than the default one (binding 0): its binding is recorded. */
+	if (storage == STORAGE_UNIFORM && module->bindings[id] != SPIRV_NONE && module->bindings[id] != 0U) {
+		if (!module->blocks[pointee] || out->named_count == GLES_NAMED_BLOCKS)
+			return -1;
+		out->named_bindings[out->named_count] = module->bindings[id];
+		out->named_count++;
 		return 0;
 	}
 

@@ -38,10 +38,10 @@ static const struct builtin_arity builtin_arities[] = {
 	{ 0, 1 },	/* length */
 	{ 2, 3 },	/* substr */
 	{ 2, 2 },	/* index */
-	{ 2, 3 },	/* split */
+	{ 2, 3 },	/* split (gawk's fourth, the separators, is not kept) */
 	{ 2, 3 },	/* sub */
 	{ 2, 3 },	/* gsub */
-	{ 2, 2 },	/* match */
+	{ 2, 3 },	/* match (gawk's third, the array of groups) */
 	{ 1, 1000000 },	/* sprintf */
 	{ 1, 1 },	/* sin */
 	{ 1, 1 },	/* cos */
@@ -56,7 +56,19 @@ static const struct builtin_arity builtin_arities[] = {
 	{ 1, 1 },	/* toupper */
 	{ 1, 1 },	/* system */
 	{ 1, 1 },	/* close */
-	{ 0, 1 }	/* fflush */
+	{ 0, 1 },	/* fflush */
+	{ 3, 4 },	/* gensub */
+	{ 0, 0 },	/* systime */
+	{ 0, 3 },	/* strftime */
+	{ 1, 1 },	/* mktime */
+	{ 2, 1000000 },	/* and */
+	{ 2, 1000000 },	/* or */
+	{ 2, 1000000 },	/* xor */
+	{ 2, 2 },	/* lshift */
+	{ 2, 2 },	/* rshift */
+	{ 1, 1 },	/* compl */
+	{ 1, 2 },	/* asort */
+	{ 1, 2 }	/* asorti */
 };
 
 /*
@@ -1531,6 +1543,7 @@ parse_builtin(
 	void)
 {
 	struct node *call;
+	struct node *array_argument;
 	const struct builtin_arity *arity;
 	size_t count;
 
@@ -1563,6 +1576,18 @@ parse_builtin(
 	if (call->builtin == BUILTIN_SPLIT) {
 		if (call->arguments->next->kind != NODE_VARIABLE &&
 		    call->arguments->next->kind != NODE_LOCAL)
+			syntax_error();
+	}
+
+	/* asort and asorti take arrays, and so does match's third. */
+	array_argument = NULL;
+	if (call->builtin == BUILTIN_ASORT || call->builtin == BUILTIN_ASORTI)
+		array_argument = call->arguments;
+	if (call->builtin == BUILTIN_MATCH && count == 3U)
+		array_argument = call->arguments->next->next;
+	for (; array_argument != NULL; array_argument = array_argument->next) {
+		if (array_argument->kind != NODE_VARIABLE &&
+		    array_argument->kind != NODE_LOCAL)
 			syntax_error();
 	}
 

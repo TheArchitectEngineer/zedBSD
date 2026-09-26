@@ -10,6 +10,7 @@
  */
 
 #include "zwl.h"
+#include "menu.h"
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <errno.h>
@@ -224,6 +225,13 @@ zwl_object_destroy(
 	/* Seat leave events must name the surface before its identity is retired. */
 	if (object->kind == ZWL_SURFACE)
 		zwl_seat_surface_gone(object);
+
+	/* The System Menu's objects stop naming this one, and a menu open on it closes. */
+	if (object->kind == ZWL_SURFACE ||
+	    object->kind == ZWL_TOPLEVEL ||
+	    object->kind == ZWL_TOPLEVEL_MENU ||
+	    object->kind == ZWL_MENU)
+		zwl_menu_object_gone(object);
 
 	/* Destroyed IDs become reusable only through ordered delete_id notification. */
 	server = object->client->server;

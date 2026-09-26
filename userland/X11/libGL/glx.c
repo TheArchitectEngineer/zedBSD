@@ -182,7 +182,8 @@ glXQueryVersion(
 	/* The lower of the two. */
 	server_major = (int)glx_get32(reply + 8);
 	server_minor = (int)glx_get32(reply + 12);
-	if (server_major > GLX_CLIENT_MAJOR || (server_major == GLX_CLIENT_MAJOR && server_minor > GLX_CLIENT_MINOR)) {
+	if (server_major > GLX_CLIENT_MAJOR ||
+	    (server_major == GLX_CLIENT_MAJOR && server_minor > GLX_CLIENT_MINOR)) {
 		server_major = GLX_CLIENT_MAJOR;
 		server_minor = GLX_CLIENT_MINOR;
 	}
@@ -285,6 +286,7 @@ glXChooseVisual(
 	int screen,
 	int *attribList)
 {
+	XVisualInfo *info;
 	unsigned index;
 	int rgba;
 	int depth;
@@ -318,7 +320,14 @@ glXChooseVisual(
 	/* Colour index visuals are not there. */
 	if (!rgba)
 		return NULL;
-	return glx_visual_info(depth);
+
+	/* The description of the TrueColor visual, with or without depth. */
+	info = glx_visual_info(depth);
+	if (info == NULL)
+		return NULL;
+
+	/* Succeeded: the caller frees it with XFree. */
+	return info;
 }
 
 /*
@@ -335,7 +344,8 @@ glXGetConfig(
 
 	/* One of the two visuals. */
 	(void)dpy;
-	if (vis == NULL || (vis->visualid != GLX_VISUAL_PLAIN && vis->visualid != GLX_VISUAL_DEPTH))
+	if (vis == NULL ||
+	    (vis->visualid != GLX_VISUAL_PLAIN && vis->visualid != GLX_VISUAL_DEPTH))
 		return GLX_BAD_VISUAL;
 	depth = 0;
 	if (vis->visualid == GLX_VISUAL_DEPTH)
@@ -684,7 +694,8 @@ glXChooseFBConfig(
 	/* Whether a depth buffer is needed. */
 	depth = 0;
 	for (index = 0U; attribList != NULL && attribList[index] != None; index += 2U) {
-		if ((attribList[index] == GLX_DEPTH_SIZE || attribList[index] == GLX_STENCIL_SIZE) && attribList[index + 1U] > 0)
+		if ((attribList[index] == GLX_DEPTH_SIZE || attribList[index] == GLX_STENCIL_SIZE) &&
+		    attribList[index + 1U] > 0)
 			depth = 1;
 	}
 
@@ -980,7 +991,10 @@ glx_pbuffer(
 		height = 1U;
 
 	/* The same window at the same size keeps its pbuffer. */
-	if (ctx->pbuffer != EGL_NO_SURFACE && ctx->drawable == drawable && ctx->width == width && ctx->height == height)
+	if (ctx->pbuffer != EGL_NO_SURFACE &&
+	    ctx->drawable == drawable &&
+	    ctx->width == width &&
+	    ctx->height == height)
 		return 0;
 
 	/* The buffers a swap uses, when they are too small. */

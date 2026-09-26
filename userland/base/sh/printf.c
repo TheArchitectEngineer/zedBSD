@@ -44,15 +44,28 @@ struct printf_state {
 	int stop;
 };
 
-/* The output of printf -v, collected until printf ends. */
+/*
+ * The output of one printf -v, collected in a growing buffer until printf
+ * ends and gives it to the variable.
+ */
 struct printf_capture {
 	char *text;
 	size_t length;
 	size_t capacity;
 };
 
-/* The output printf -v collects, while collecting is set. */
+/*
+ * The output the running printf -v has collected.
+ *
+ * printf empties it when it starts and frees the text when it has set the
+ * variable; it is used only while printf_collecting is set.
+ */
 static struct printf_capture printf_capture;
+
+/*
+ * Whether the running printf sends its output to printf_capture (-v)
+ * rather than to the standard output.  0 outside printf.
+ */
 static int printf_collecting;
 
 static int echo_escape(const char **text);
@@ -75,6 +88,7 @@ static int is_flag(char value);
 static void out_char(int value);
 static void out_format(const char *spec, ...) __attribute__((format(printf, 1, 2)));
 static void capture_add(const char *text, size_t length);
+static int option_variable(int argc, char **argv, int *index, const char **variable);
 
 /*
  * Implements echo.
@@ -139,20 +153,12 @@ sh_builtin_printf(
 	int used;
 	int set;
 
-	/* -v name (or -vname) puts the output in the variable. */
+	/* Reads -v name (or -vname), which puts the output in the variable. */
 	index = 1;
 	variable = NULL;
-	if (index < argc && strncmp(argv[index], "-v", 2) == 0) {
-		variable = argv[index] + 2;
-		if (*variable == '\0' && index + 1 < argc)
-			variable = argv[++index];
-		index++;
-		if (!sh_var_name(variable)) {
-			fprintf(stderr, "printf: %s: not a valid identifier\n",
-				variable);
-			return 2;
-		}
-	}
+	used = option_variable(argc, argv, &index, &variable);
+	if (used != 0)
+		return used;
 
 	/* printf format [argument...]; otherwise it takes no options but --. */
 	if (index < argc && argv[index][0] == '-' && argv[index][1] != '\0') {
@@ -179,9 +185,11 @@ sh_builtin_printf(
 	state.status = 0;
 	state.stop = 0;
 
-	/* The output is collected for -v. */
+	/* Collects the output for -v instead of writing it. */
 	memset(&printf_capture, 0, sizeof(printf_capture));
-	printf_collecting = variable != NULL;
+	printf_collecting = 0;
+	if (variable != NULL)
+		printf_collecting = 1;
 
 	/* Applies the format until the arguments run out, or it uses none. */
 	do {
@@ -193,7 +201,11 @@ sh_builtin_printf(
 	/* -v: the variable takes what was collected (up to a NUL byte). */
 	if (variable != NULL) {
 		capture_add("", 1);
+
+		/* Output is written again from here on. */
 		printf_collecting = 0;
+
+		/* Sets the variable and frees the collected text. */
 		set = sh_var_set(variable, printf_capture.text, 0);
 		free(printf_capture.text);
 		printf_capture.text = NULL;
@@ -473,6 +485,7 @@ convert(
 	char conversion)
 {
 	const char *text;
+	const char *quoted;
 	intmax_t signed_value;
 	uintmax_t unsigned_value;
 	double real_value;
@@ -519,7 +532,9 @@ convert(
 	case 'q':
 		spec[out++] = 's';
 		spec[out] = '\0';
-		out_format(spec, quote_q(printf_next(state)));
+		text = printf_next(state);
+		quoted = quote_q(text);
+		out_format(spec, quoted);
 		return 1;
 	case 's':
 	case 'b':
@@ -731,17 +746,21 @@ quote_q(
 				      "\n" "n" "\r" "r" "\t" "t" "\v" "v";
 	const char *cursor;
 	const char *escape;
+	const char *is_special;
 	char *quoted;
 	size_t out;
 	int control;
 
-	/* Nothing is ''. */
+	/* An empty argument is ''. */
 	if (*text == '\0')
 		return "''";
 
-	/* At most four bytes for each, and $'' around them. */
-	quoted = sh_temp_own(sh_malloc(strlen(text) * 4U + 4U));
+	/* Allocates at most four bytes for each, and $'' around them. */
+	quoted = sh_malloc(strlen(text) * 4U + 4U);
+	(void)sh_temp_own(quoted);
 	out = 0;
+
+	/* Looks for a control character, which needs the $'...' form. */
 	control = 0;
 	for (cursor = text; *cursor != '\0'; cursor++) {
 		if ((unsigned char)*cursor < 0x20 || *cursor == 0x7f)
@@ -767,18 +786,30 @@ quote_q(
 				quoted[out++] = *cursor;
 			}
 		}
+
+		/* Closes the $'...'. */
 		quoted[out++] = '\'';
 		quoted[out] = '\0';
 		return quoted;
 	}
 
-	/* Otherwise a backslash before each special character. */
+	/*
+	 * Otherwise a backslash goes before each special character, and
+	 * before # and ~ at the start.
+	 */
 	for (cursor = text; *cursor != '\0'; cursor++) {
-		if (strchr(special, *cursor) != NULL ||
-		    (cursor == text && (*cursor == '#' || *cursor == '~')))
+		is_special = strchr(special, *cursor);
+		if (is_special != NULL) {
 			quoted[out++] = '\\';
+		} else if (cursor == text && (*cursor == '#' || *cursor == '~')) {
+			quoted[out++] = '\\';
+		}
+
+		/* Copies the character itself. */
 		quoted[out++] = *cursor;
 	}
+
+	/* Ends the quoted text. */
 	quoted[out] = '\0';
 
 	/* Succeeded: the text, freed with the command. */
@@ -890,11 +921,13 @@ out_char(
 {
 	char byte;
 
-	/* To the standard output, unless -v collects it. */
+	/* Writes to the standard output, unless -v collects the output. */
 	if (!printf_collecting) {
 		putchar(value);
 		return;
 	}
+
+	/* Collects the character for -v. */
 	byte = (char)value;
 	capture_add(&byte, 1);
 }
@@ -910,7 +943,7 @@ out_format(
 	char *large;
 	int length;
 
-	/* To the standard output, unless -v collects it. */
+	/* Writes to the standard output, unless -v collects the output. */
 	va_start(arguments, spec);
 	if (!printf_collecting) {
 		(void)vprintf(spec, arguments);
@@ -918,19 +951,25 @@ out_format(
 		return;
 	}
 
-	/* Formatted into a buffer, a larger one when it does not fit. */
+	/* Formats the conversion into a small buffer; a bad format adds nothing. */
 	length = vsnprintf(small, sizeof(small), spec, arguments);
 	va_end(arguments);
 	if (length < 0)
 		return;
+
+	/* Collects a conversion that fits. */
 	if ((size_t)length < sizeof(small)) {
 		capture_add(small, (size_t)length);
 		return;
 	}
+
+	/* Formats a longer conversion again into a buffer of its size. */
 	large = sh_malloc((size_t)length + 1U);
 	va_start(arguments, spec);
 	(void)vsnprintf(large, (size_t)length + 1U, spec, arguments);
 	va_end(arguments);
+
+	/* Collects it and frees the buffer. */
 	capture_add(large, (size_t)length);
 	free(large);
 }
@@ -944,17 +983,63 @@ capture_add(
 	struct printf_capture *capture;
 	size_t capacity;
 
-	/* Grows the buffer, doubling it. */
+	/* Grows the buffer, doubling it from 64 bytes, when the bytes do not fit. */
 	capture = &printf_capture;
 	if (capture->length + length > capture->capacity) {
-		capacity = capture->capacity == 0 ? 64 : capture->capacity;
+		capacity = capture->capacity;
+		if (capacity == 0)
+			capacity = 64;
 		while (capacity < capture->length + length)
 			capacity *= 2;
 		capture->text = sh_realloc(capture->text, capacity);
 		capture->capacity = capacity;
 	}
 
-	/* Appends them. */
+	/* Appends the bytes. */
 	memcpy(capture->text + capture->length, text, length);
 	capture->length += length;
+}
+
+/*
+ * Reads printf's -v name (or -vname) at *index, the first operand.
+ *
+ * Sets *variable to the name and moves *index past the option.  Returns 0,
+ * or 2 after reporting a name that is not a name.
+ */
+static int
+option_variable(
+	int argc,
+	char **argv,
+	int *index,
+	const char **variable)
+{
+	int is_option;
+	int is_name;
+
+	/* Leaves an operand that is not -v alone. */
+	if (*index >= argc)
+		return 0;
+	is_option = strncmp(argv[*index], "-v", 2);
+	if (is_option != 0)
+		return 0;
+
+	/* Takes the name from the option, or from the next operand. */
+	*variable = argv[*index] + 2;
+	if (**variable == '\0' && *index + 1 < argc) {
+		*index += 1;
+		*variable = argv[*index];
+	}
+
+	/* Steps past the option to the format. */
+	*index += 1;
+
+	/* Refuses a name that is not a name. */
+	is_name = sh_var_name(*variable);
+	if (!is_name) {
+		fprintf(stderr, "printf: %s: not a valid identifier\n", *variable);
+		return 2;
+	}
+
+	/* Succeeded: the output goes to the variable. */
+	return 0;
 }

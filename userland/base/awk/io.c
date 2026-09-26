@@ -22,6 +22,7 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/wait.h>
 
 /* The kinds of stream. */
 #define STREAM_OUTPUT_FILE	0	/* > file and >> file */
@@ -255,12 +256,32 @@ io_system(
 	const char *command)
 {
 	int status;
+	int signaled;
+	int exited;
 
 	/* What was written before comes out before the command's output. */
 	flush_all();
 
-	/* Succeeded: the status. */
+	/* The command. */
 	status = system(command);
+
+	/* POSIX: the status as wait gives it. */
+	if (awk.posix)
+		return status;
+
+	/* A command that could not run. */
+	if (status == -1)
+		return status;
+
+	/* A signal is 256 and its number, as gawk has it. */
+	signaled = WIFSIGNALED(status);
+	if (signaled)
+		return 256 + WTERMSIG(status);
+
+	/* Succeeded: the command's exit status. */
+	exited = WIFEXITED(status);
+	if (exited)
+		return WEXITSTATUS(status);
 	return status;
 }
 

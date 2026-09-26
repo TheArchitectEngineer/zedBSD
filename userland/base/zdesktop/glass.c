@@ -34,8 +34,12 @@
 #include <time.h>
 #include <unistd.h>
 
-/* The atlas holds printable ASCII and the multiplication sign (the close button) at five sizes. */
-#define GLASS_GLYPHS		96U
+/*
+ * The atlas holds printable ASCII, the multiplication sign (the close
+ * button), the check mark and the right angle quote (the System Menu) at
+ * five sizes.
+ */
+#define GLASS_GLYPHS		98U
 #define GLASS_SIZES		5U
 #define GLASS_ATLAS_WIDTH	1024U
 #define GLASS_ATLAS_HEIGHT	512U
@@ -515,7 +519,15 @@ atlas_fill(
 			codepoint = 32U + index;
 			if (index == GLASS_CLOSE_GLYPH)
 				codepoint = 0xd7U;
+			if (index == GLASS_CHECK_GLYPH)
+				codepoint = 0x2713U;
+			if (index == GLASS_ARROW_GLYPH)
+				codepoint = 0x203aU;
 			id = truetype_glyph_index(face, codepoint);
+
+			/* A menu sign the font lacks stays empty rather than showing the missing-glyph box. */
+			if (id == 0U && index > GLASS_CLOSE_GLYPH)
+				continue;
 			error = truetype_glyph_metrics(face, id, &metrics);
 			if (error != 0 || metrics.width > 64U || metrics.height > 64U)
 				continue;

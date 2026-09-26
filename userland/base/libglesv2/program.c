@@ -8,9 +8,10 @@
 /*
  * Shaders and programs of zedBSD's OpenGL ES (WS068 p008).
  *
- * A shader is SPIR-V given by glShaderBinary; there is no GLSL ES
- * compiler yet (WS068 p003), so glCompileShader of a source fails with a
- * log that says so.  Linking reads both shaders' interfaces, applies the
+ * A shader is GLSL compiled by glCompileShader (glsl/, WS068 p015-p019:
+ * checked when compiled, made SPIR-V when the program links, so that the
+ * uniform block has one layout in both stages), or SPIR-V given by
+ * glShaderBinary.  Linking reads both shaders' interfaces, applies the
  * attribute locations glBindAttribLocation gave, gives each fragment
  * input the location of the vertex output of the same name, rewrites the
  * vertex shader's gl_Position for Vulkan, merges the two uniform blocks
@@ -20,6 +21,7 @@
  */
 
 #include "gles.h"
+#include "glsl/glsl.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,12 +30,27 @@
 /* The length of a link or compile log. */
 #define PROGRAM_LOG		1024U
 
+/* The version of a GLSL source without #version: OpenGL ES's 1.00, desktop GL's 1.10 (libGL). */
+#define PROGRAM_ES_VERSION	100U
+#define PROGRAM_DESKTOP_VERSION	110U
+
+/* The first version of GLSL ES that needs an OpenGL ES 3 context. */
+#define PROGRAM_ES3_VERSION	300U
+
+/* GL's names of the sampler types reflection does not tell apart (OpenGL ES 3.0 and desktop GL values). */
+#define PROGRAM_SAMPLER_3D	0x8B5FU
+#define PROGRAM_SAMPLER_1D	0x8B5DU
+#define PROGRAM_SAMPLER_2D_SHADOW 0x8B62U
+
 /* The serial of the next link (0 is never one). */
 static uint64_t program_serial = 1U;
 
 static struct gles_shader *program_shader(struct zegl_context *context, GLuint name);
 static struct gles_program *program_get(struct zegl_context *context, GLuint name);
 static int program_link(struct gles_state *state, struct gles_program *program, char *log);
+static int program_link_code(struct gles_state *state, struct gles_program *program, const uint32_t *vertex_input, size_t vertex_words, const uint32_t *fragment_input, size_t fragment_words, char *log);
+static int program_link_glsl(struct gles_program *program, struct glsl_program *linked, char *log);
+static void program_glsl_types(struct gles_program *program, const struct glsl_program *linked);
 static int program_merge(struct gles_program *program, struct gles_spirv *spirv, char *log);
 static int program_layout(struct gles_state *state, struct gles_program *program);
 static int program_module(struct gles_state *state, const uint32_t *code, size_t words, VkShaderModule *module);
@@ -86,9 +103,10 @@ void
 gles_shader_release(
 	struct gles_shader *shader)
 {
-	/* The code, the source, the log and the shader. */
+	/* The code, the source, the compiled GLSL, the log and the shader. */
 	free(shader->code);
 	free(shader->source);
+	glsl_shader_free(shader->glsl);
 	free(shader->log);
 	free(shader);
 }
@@ -168,8 +186,8 @@ glDeleteShader(
 }
 
 /*
- * Gives a shader its GLSL source (kept for glGetShaderSource and the
- * compiler to come).
+ * Gives a shader its GLSL source (kept for glGetShaderSource and
+ * glCompileShader).
  */
 GL_APICALL void GL_APIENTRY
 glShaderSource(
@@ -233,8 +251,8 @@ glShaderSource(
 }
 
 /*
- * Compiles a shader's source: there is no GLSL ES compiler yet, so a
- * shader without a SPIR-V binary fails with a log saying so.
+ * Compiles a shader's GLSL source (a shader given only a SPIR-V binary
+ * stays compiled).  The log says what the compiler found.
  */
 GL_APICALL void GL_APIENTRY
 glCompileShader(
@@ -242,6 +260,12 @@ glCompileShader(
 {
 	struct zegl_context *context;
 	struct gles_shader *shader;
+	struct glsl_shader *compiled;
+	unsigned stage;
+	unsigned version;
+	unsigned shader_version;
+	int es;
+	char *log;
 
 	/* The shader. */
 	context = gles_context();
@@ -249,17 +273,59 @@ glCompileShader(
 	if (shader == NULL)
 		return;
 
-	/* A binary already given stays compiled. */
-	if (shader->code != NULL) {
-		shader->compiled = 1;
+	/* Without a source, a binary already given stays compiled. */
+	if (shader->source == NULL) {
+		shader->compiled = 0;
+		if (shader->code != NULL)
+			shader->compiled = 1;
+		program_log(&shader->log, "");
+		if (shader->code == NULL)
+			program_log(&shader->log, "the shader has no source\n");
 		return;
 	}
 
-	/* Without a compiler the source cannot become SPIR-V. */
-	shader->compiled = 0;
-	program_log(&shader->log,
-		    "zedBSD OpenGL ES has no GLSL ES compiler yet (plan/ws068 p003); "
-		    "give the shader as SPIR-V with glShaderBinary(GL_SHADER_BINARY_FORMAT_SPIR_V)\n");
+	/* The source compiled for the shader's stage, in OpenGL ES's GLSL or (libGL) desktop GL's. */
+	stage = GLSL_STAGE_VERTEX;
+	if (shader->type == GL_FRAGMENT_SHADER)
+		stage = GLSL_STAGE_FRAGMENT;
+	version = PROGRAM_ES_VERSION;
+	if (gles_fixed != NULL)
+		version = PROGRAM_DESKTOP_VERSION;
+	compiled = glsl_compile(stage, shader->source, version, &log);
+
+	/* The log (errors, or the warnings of a shader that compiled). */
+	if (log != NULL) {
+		program_log(&shader->log, log);
+		free(log);
+	} else if (compiled == NULL) {
+		program_log(&shader->log, "the compiler ran out of memory\n");
+	} else {
+		program_log(&shader->log, "");
+	}
+
+	/* GLSL ES 3.00 needs an OpenGL ES 3 context (EGL_CONTEXT_CLIENT_VERSION 3). */
+	if (compiled != NULL && gles_fixed == NULL) {
+		shader_version = glsl_shader_version(compiled, &es);
+		if (es && shader_version >= PROGRAM_ES3_VERSION && context->version < 3) {
+			program_log(&shader->log, "0:0: error: GLSL ES 3.00 needs an OpenGL ES 3 context\n");
+			glsl_shader_free(compiled);
+			compiled = NULL;
+		}
+	}
+
+	/* A failed compile leaves the shader without code. */
+	glsl_shader_free(shader->glsl);
+	shader->glsl = compiled;
+	if (compiled == NULL) {
+		shader->compiled = 0;
+		return;
+	}
+
+	/* Succeeded: the GLSL replaces any binary. */
+	free(shader->code);
+	shader->code = NULL;
+	shader->words = 0U;
+	shader->compiled = 1;
 }
 
 /*
@@ -304,9 +370,11 @@ glShaderBinary(
 			return;
 		}
 
-		/* The words replace any earlier ones; the shader counts as compiled. */
+		/* The words replace any earlier ones (and compiled GLSL); the shader counts as compiled. */
 		memcpy(code, binary, (size_t)length);
 		free(shader->code);
+		glsl_shader_free(shader->glsl);
+		shader->glsl = NULL;
 		shader->code = code;
 		shader->words = (size_t)length / 4U;
 		shader->compiled = 1;
@@ -315,7 +383,7 @@ glShaderBinary(
 }
 
 /*
- * Lets the compiler's resources go (there is no compiler).
+ * Lets the compiler's resources go (it keeps none between compiles).
  */
 GL_APICALL void GL_APIENTRY
 glReleaseShaderCompiler(void)
@@ -1419,24 +1487,19 @@ program_get(
 	return program;
 }
 
-/* Links a program; nonzero with a line in the log when it cannot be linked. */
+/*
+ * Links a program: its shaders' SPIR-V (made by the GLSL compiler's link
+ * when both are GLSL, or given as binaries), then the interfaces, the
+ * uniforms and the Vulkan objects.  Returns 0, or -1 with the log.
+ */
 static int
 program_link(
 	struct gles_state *state,
 	struct gles_program *program,
 	char *log)
 {
-	struct gles_spirv vertex;
-	struct gles_spirv fragment;
-	struct gles_spirv_variable *input;
-	uint32_t *vertex_code;
-	uint32_t *fragment_code;
-	uint32_t *patched;
-	size_t patched_words;
-	unsigned index;
-	unsigned other;
+	struct glsl_program linked;
 	int status;
-	int differs;
 
 	/* Two compiled shaders. */
 	if (program->vertex == NULL || program->fragment == NULL) {
@@ -1445,18 +1508,178 @@ program_link(
 	}
 
 	/* Both compiled. */
-	if (!program->vertex->compiled || !program->fragment->compiled || program->vertex->code == NULL || program->fragment->code == NULL) {
+	if (!program->vertex->compiled || !program->fragment->compiled) {
 		(void)snprintf(log, PROGRAM_LOG, "a shader of the program is not compiled\n");
 		return -1;
 	}
 
-	/* The two interfaces. */
-	status = gles_spirv_reflect(program->vertex->code, program->vertex->words, &vertex, log, PROGRAM_LOG);
+	/* Two binaries are linked as they are. */
+	if (program->vertex->glsl == NULL && program->fragment->glsl == NULL) {
+		status = program_link_code(state, program, program->vertex->code, program->vertex->words, program->fragment->code,
+					   program->fragment->words, log);
+		return status;
+	}
+
+	/* GLSL is made SPIR-V by the compiler's link first. */
+	status = program_link_glsl(program, &linked, log);
 	if (status != 0)
 		return -1;
-	status = gles_spirv_reflect(program->fragment->code, program->fragment->words, &fragment, log, PROGRAM_LOG);
+
+	/* The SPIR-V linked, then the uniforms' GL types the SPIR-V does not tell. */
+	status = program_link_code(state, program, linked.code[0], linked.words[0], linked.code[1], linked.words[1], log);
+	if (status == 0)
+		program_glsl_types(program, &linked);
+	glsl_program_free(&linked);
+
+	/* Reports why the link failed. */
+	if (status != 0)
+		return -1;
+
+	/* Succeeded: the program is linked. */
+	return 0;
+}
+
+/*
+ * Links both shaders' GLSL into SPIR-V, with the attribute locations
+ * glBindAttribLocation gave.  Returns 0, or -1 with the log.
+ */
+static int
+program_link_glsl(
+	struct gles_program *program,
+	struct glsl_program *linked,
+	char *log)
+{
+	struct glsl_binding bindings[GLES_ATTRIBS];
+	unsigned index;
+	char *glsl_log;
+	int status;
+
+	/* Both shaders GLSL (a GLSL shader does not link with a SPIR-V binary). */
+	if (program->vertex->glsl == NULL || program->fragment->glsl == NULL) {
+		(void)snprintf(log, PROGRAM_LOG, "a GLSL shader cannot be linked with a SPIR-V binary\n");
+		return -1;
+	}
+
+	/* The bound attribute locations. */
+	for (index = 0U; index < program->bound_count; index++) {
+		bindings[index].name = program->bound_names[index];
+		bindings[index].location = program->bound_locations[index];
+	}
+
+	/* The compiler's link. */
+	status = glsl_link(program->vertex->glsl, program->fragment->glsl, bindings, program->bound_count, linked, &glsl_log);
+	if (status != 0) {
+		if (glsl_log != NULL) {
+			(void)snprintf(log, PROGRAM_LOG, "%s", glsl_log);
+		} else {
+			(void)snprintf(log, PROGRAM_LOG, "the GLSL link ran out of memory\n");
+		}
+
+		/* The compiler's log is copied. */
+		free(glsl_log);
+		return -1;
+	}
+
+	/* Succeeded: the SPIR-V of both stages. */
+	return 0;
+}
+
+/*
+ * Gives the uniforms the GL types the SPIR-V does not say: bools (which
+ * the block holds as uints) and the kinds of samplers.
+ */
+static void
+program_glsl_types(
+	struct gles_program *program,
+	const struct glsl_program *linked)
+{
+	static const GLenum bools[4] = { GL_BOOL, GL_BOOL_VEC2, GL_BOOL_VEC3, GL_BOOL_VEC4 };
+	const struct glsl_uniform_info *info;
+	struct gles_uniform *uniform;
+	unsigned index;
+	unsigned other;
+	int differs;
+
+	/* Each uniform of the program, by its name among the compiler's. */
+	for (index = 0U; index < program->uniform_count; index++) {
+		uniform = &program->uniforms[index];
+		info = NULL;
+		for (other = 0U; other < linked->uniform_count; other++) {
+			differs = strcmp(linked->uniforms[other].name, uniform->name);
+			if (differs != 0)
+				continue;
+			info = &linked->uniforms[other];
+			break;
+		}
+
+		/* A uniform the compiler does not know needs nothing. */
+		if (info == NULL)
+			continue;
+
+		/* A bool: its values are bools. */
+		if (info->base == GLSL_INFO_BOOL && info->components >= 1U && info->components <= 4U) {
+			uniform->base = 3U;
+			uniform->type = bools[info->components - 1U];
+			continue;
+		}
+
+		/* A sampler: its dimension. */
+		if (info->sampler == GLSL_SAMPLER_CUBE) {
+			uniform->type = GL_SAMPLER_CUBE;
+		} else if (info->sampler == GLSL_SAMPLER_3D) {
+			uniform->type = PROGRAM_SAMPLER_3D;
+		} else if (info->sampler == GLSL_SAMPLER_1D) {
+			uniform->type = PROGRAM_SAMPLER_1D;
+		} else if (info->sampler == GLSL_SAMPLER_2D && info->shadow) {
+			uniform->type = PROGRAM_SAMPLER_2D_SHADOW;
+		}
+	}
+}
+
+/*
+ * Links SPIR-V of the two stages: the interfaces, the attribute and
+ * varying locations, gl_Position made Vulkan's, the uniforms, the shader
+ * modules and the layouts.  Returns 0, or -1 with the log.
+ */
+static int
+program_link_code(
+	struct gles_state *state,
+	struct gles_program *program,
+	const uint32_t *vertex_input,
+	size_t vertex_words,
+	const uint32_t *fragment_input,
+	size_t fragment_words,
+	char *log)
+{
+	struct gles_spirv vertex;
+	struct gles_spirv fragment;
+	struct gles_spirv_variable *input;
+	uint32_t *vertex_code;
+	uint32_t *fragment_code;
+	uint32_t *patched;
+	uint32_t *patched_fbo;
+	size_t patched_words;
+	size_t patched_fbo_words;
+	unsigned index;
+	unsigned other;
+	int status;
+	int differs;
+
+	/* The two interfaces. */
+	status = gles_spirv_reflect(vertex_input, vertex_words, &vertex, log, PROGRAM_LOG);
+	if (status != 0)
+		return -1;
+	status = gles_spirv_reflect(fragment_input, fragment_words, &fragment, log, PROGRAM_LOG);
 	if (status != 0) {
 		gles_spirv_free(&vertex);
+		return -1;
+	}
+
+	/* Uniform blocks of their own need the uniform buffers of OpenGL ES 3.0's API (WS068 p005). */
+	if (vertex.named_count != 0U || fragment.named_count != 0U) {
+		(void)snprintf(log, PROGRAM_LOG, "uniform blocks need the OpenGL ES 3.0 API, which is not there yet\n");
+		gles_spirv_free(&vertex);
+		gles_spirv_free(&fragment);
 		return -1;
 	}
 
@@ -1469,8 +1692,8 @@ program_link(
 	}
 
 	/* Copies of the code that the link may change. */
-	vertex_code = malloc(program->vertex->words * sizeof(uint32_t));
-	fragment_code = malloc(program->fragment->words * sizeof(uint32_t));
+	vertex_code = malloc(vertex_words * sizeof(uint32_t));
+	fragment_code = malloc(fragment_words * sizeof(uint32_t));
 	if (vertex_code == NULL || fragment_code == NULL) {
 		free(vertex_code);
 		free(fragment_code);
@@ -1481,8 +1704,8 @@ program_link(
 	}
 
 	/* The codes copied. */
-	memcpy(vertex_code, program->vertex->code, program->vertex->words * sizeof(uint32_t));
-	memcpy(fragment_code, program->fragment->code, program->fragment->words * sizeof(uint32_t));
+	memcpy(vertex_code, vertex_input, vertex_words * sizeof(uint32_t));
+	memcpy(fragment_code, fragment_input, fragment_words * sizeof(uint32_t));
 
 	/* The attribute locations glBindAttribLocation gave. */
 	for (index = 0U; index < vertex.input_count; index++) {
@@ -1520,10 +1743,22 @@ program_link(
 		program->attribute_count++;
 	}
 
-	/* The vertex shader's gl_Position made Vulkan's. */
-	patched = gles_spirv_position(vertex_code, program->vertex->words, &patched_words);
-	free(vertex_code);
+	/* The vertex shader's gl_Position made Vulkan's: for a window, y turned over. */
+	patched = gles_spirv_position(vertex_code, vertex_words, 1, &patched_words);
 	if (patched == NULL) {
+		free(vertex_code);
+		free(fragment_code);
+		gles_spirv_free(&vertex);
+		gles_spirv_free(&fragment);
+		(void)snprintf(log, PROGRAM_LOG, "the vertex shader's gl_Position could not be rewritten\n");
+		return -1;
+	}
+
+	/* And for a framebuffer object, whose image keeps GL's rows. */
+	patched_fbo = gles_spirv_position(vertex_code, vertex_words, 0, &patched_fbo_words);
+	free(vertex_code);
+	if (patched_fbo == NULL) {
+		free(patched);
 		free(fragment_code);
 		gles_spirv_free(&vertex);
 		gles_spirv_free(&fragment);
@@ -1542,8 +1777,11 @@ program_link(
 	if (status == 0)
 		status = program_module(state, patched, patched_words, &program->vertex_module);
 	if (status == 0)
-		status = program_module(state, fragment_code, program->fragment->words, &program->fragment_module);
+		status = program_module(state, patched_fbo, patched_fbo_words, &program->vertex_module_fbo);
+	if (status == 0)
+		status = program_module(state, fragment_code, fragment_words, &program->fragment_module);
 	free(patched);
+	free(patched_fbo);
 	free(fragment_code);
 	if (status != 0) {
 		if (log[0] == '\0')
@@ -1755,6 +1993,7 @@ program_unlink(
 	objects.set_layout = program->set_layout;
 	objects.modules[0] = program->vertex_module;
 	objects.modules[1] = program->fragment_module;
+	objects.modules[2] = program->vertex_module_fbo;
 	gles_garbage_keep(state, &objects);
 
 	/* The tables. */
@@ -1766,6 +2005,7 @@ program_unlink(
 	program->layout = VK_NULL_HANDLE;
 	program->set_layout = VK_NULL_HANDLE;
 	program->vertex_module = VK_NULL_HANDLE;
+	program->vertex_module_fbo = VK_NULL_HANDLE;
 	program->fragment_module = VK_NULL_HANDLE;
 	program->uniforms = NULL;
 	program->uniform_count = 0U;

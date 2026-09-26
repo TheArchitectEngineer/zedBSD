@@ -809,6 +809,14 @@ socket_enqueue_packet_wait(
 		sequence = waitq_sequence(&socket->receive_space_waitq);
 		error = waitq_sleep(&socket->receive_space_waitq,
 		    &socket->lock, sequence, deadline, WAITQ_INTERRUPTIBLE);
+
+		/* EAGAIN from the sleep is a wakeup that came before it: the room is looked at again (BUG-057). */
+		if (error == EAGAIN) {
+			error = 0;
+			continue;
+		}
+
+		/* The send timeout is EAGAIN; anything else ends the wait. */
 		if (error == ETIMEDOUT)
 			error = EAGAIN;
 		if (error != 0)

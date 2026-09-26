@@ -20,6 +20,7 @@
 #include <kern/platform.h>
 #include <kern/boot.h>
 #include "drivers/platform/rpi4/rpi4-console.h"
+#include "drivers/platform/rpi4/rpi4-pcie.h"
 #include "drivers/platform/rpi4/rpi4-sdhci.h"
 
 /*
@@ -71,6 +72,12 @@ kern_platform_init(
 		hal_puts("sdhci: using QEMU legacy-controller fallback\n");
 	}
 
+	/*
+	 * Brings up PCIe and what sits behind it.  A board or emulator without
+	 * a usable controller boots without PCI devices.
+	 */
+	(void)drv_rpi4_pcie_init(rpi4->fdt_phys);
+
 	/* Publishes the SD card as the boot device. */
 	device = &devices[0];
 	device->device_class = KERN_DEV_SD;
@@ -92,7 +99,10 @@ kern_platform_init(
 }
 
 /*
- * Refreshes the published devices; the Pi 4 has no hot-pluggable devices.
+ * Finishes device discovery once interrupts are enabled.
+ *
+ * The SD card is the boot device and is published already; the USB host
+ * controllers behind PCIe look at their root ports now.
  */
 void
 kern_platform_refresh_devices(
@@ -101,6 +111,9 @@ kern_platform_refresh_devices(
 {
 	(void)d;
 	(void)n;
+
+	/* Has the USB controllers behind PCIe find their devices. */
+	drv_rpi4_pcie_refresh();
 }
 
 /*

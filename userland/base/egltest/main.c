@@ -15,7 +15,11 @@
  * EGL pbuffer that nothing shows.  Each frame clears to one colour
  * (--color) or to a colour that changes with the frame, and swaps; with
  * --scene=draw each frame draws scene.c's shapes instead, and the first
- * frame reads its colours back (EGLTEST PIXEL and EGLTEST CHECK lines).
+ * frame reads its colours back (EGLTEST PIXEL and EGLTEST CHECK lines);
+ * --scene=glsl draws them with shaders compiled from GLSL ES 1.00 source,
+ * --scene=glsl3 with GLSL ES 3.00 source in an OpenGL ES 3 context, and
+ * --scene=fbo draws them into a framebuffer object's texture first;
+ * --scene=cube draws cube.c's squares, each sampling a cube map's face.
  *
  * Every outcome is one line: EGLTEST DONE on a clean end, EGLTEST FAILED
  * naming what failed otherwise.
@@ -27,6 +31,7 @@
 #include <wayland-egl.h>
 #include <xdg-shell-client-protocol.h>
 
+#include "cube.h"
 #include "scene.h"
 
 #include <stdio.h>
@@ -137,7 +142,7 @@ main(
 	/* The command line. */
 	status = egltest_parse(argc, argv, &options);
 	if (status != 0) {
-		fprintf(stderr, "usage: egltest [--display=NAME] [--platform=wayland|display|pbuffer] [--size=WxH] [--frames=N] [--delay-ms=N] [--color=RRGGBB] [--scene=draw] [--token=NAME]\n");
+		fprintf(stderr, "usage: egltest [--display=NAME] [--platform=wayland|display|pbuffer] [--size=WxH] [--frames=N] [--delay-ms=N] [--color=RRGGBB] [--scene=draw|glsl|glsl3|fbo|cube] [--token=NAME]\n");
 		return 2;
 	}
 
@@ -184,7 +189,7 @@ egltest_start(
 		EGL_DEPTH_SIZE, 0,
 		EGL_NONE
 	};
-	static const EGLint context_attributes[] = {
+	EGLint context_attributes[] = {
 		EGL_CONTEXT_CLIENT_VERSION, 2,
 		EGL_NONE
 	};
@@ -250,6 +255,8 @@ egltest_start(
 
 	/* An OpenGL ES 2 context. */
 	egl->operation = "eglCreateContext";
+	if (options->scene == 3)
+		context_attributes[1] = 3;
 	egl->context = eglCreateContext(egl->display, egl->config, EGL_NO_CONTEXT, context_attributes);
 	if (egl->context == EGL_NO_CONTEXT)
 		return -1;
@@ -272,7 +279,19 @@ egltest_start(
 	/* The scene's program, buffers and texture. */
 	egl->operation = "scene";
 	if (options->scene) {
-		status = egltest_scene_start();
+		if (options->scene == 5) {
+			status = egltest_cube_start();
+		} else if (options->scene == 4) {
+			status = egltest_scene_start_fbo();
+		} else if (options->scene == 3) {
+			status = egltest_scene_start_glsl3();
+		} else if (options->scene == 2) {
+			status = egltest_scene_start_glsl();
+		} else {
+			status = egltest_scene_start();
+		}
+
+		/* The scene is needed. */
 		if (status != 0)
 			return -1;
 	}
@@ -326,10 +345,20 @@ egltest_frames(
 				(void)eglQuerySurface(egl->display, egl->surface, EGL_HEIGHT, &height);
 			}
 
-			/* The scene. */
-			egltest_scene_draw(width, height);
-			if (frame == 1U)
-				egl->failures = egltest_scene_check(width, height, options->token);
+			/* The scene, through the framebuffer object for --scene=fbo, or the cube map's squares. */
+			if (options->scene == 5) {
+				egltest_cube_draw(width, height);
+				if (frame == 1U)
+					egl->failures = egltest_cube_check(width, height, options->token);
+			} else if (options->scene == 4) {
+				egltest_scene_draw_fbo(width, height);
+				if (frame == 1U)
+					egl->failures = egltest_scene_check_fbo(width, height, options->token);
+			} else {
+				egltest_scene_draw(width, height);
+				if (frame == 1U)
+					egl->failures = egltest_scene_check(width, height, options->token);
+			}
 		}
 
 		/* Without the scene: cleared to the frame's colour. */
@@ -455,10 +484,23 @@ egltest_parse(
 		/* The drawing scene. */
 		value = egltest_value(argv[index], "--scene=");
 		if (value != NULL) {
-			differs = strcmp(value, "draw");
-			if (differs != 0)
-				return -1;
+			/* draw: the shaders from SPIR-V; glsl: from GLSL ES 1.00 source; glsl3: from GLSL ES 3.00; fbo: GLSL ES 1.00 through a framebuffer object. */
 			options->scene = 1;
+			differs = strcmp(value, "glsl");
+			if (differs == 0)
+				options->scene = 2;
+			differs = strcmp(value, "glsl3");
+			if (differs == 0)
+				options->scene = 3;
+			differs = strcmp(value, "fbo");
+			if (differs == 0)
+				options->scene = 4;
+			differs = strcmp(value, "cube");
+			if (differs == 0)
+				options->scene = 5;
+			differs = strcmp(value, "draw");
+			if (differs != 0 && options->scene == 1)
+				return -1;
 			continue;
 		}
 

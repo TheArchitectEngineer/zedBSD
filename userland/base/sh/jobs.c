@@ -261,6 +261,7 @@ sh_spawn(
 	struct process *process;
 	sigset_t defaults;
 	char **environment;
+	size_t size;
 	pid_t child;
 	int error;
 
@@ -272,16 +273,18 @@ sh_spawn(
 	/* Output buffered now goes before the program's. */
 	fflush(NULL);
 
-	/* The signals the shell handles for itself go back to their default. */
-	sh_signals_shell_set(&defaults);
+	/* Prepares the attributes of the spawn. */
 	error = posix_spawnattr_init(&attributes);
 	if (error != 0)
 		return -1;
+
+	/* The signals the shell handles for itself go back to their default. */
+	sh_signals_shell_set(&defaults);
 	error = posix_spawnattr_setsigdefault(&attributes, &defaults);
 	if (error == 0)
 		error = posix_spawnattr_setflags(&attributes, POSIX_SPAWN_SETSIGDEF);
 
-	/* The program, with the exported variables. */
+	/* Starts the program with the exported variables; a failure is left to fork. */
 	environment = sh_var_environment();
 	if (error == 0)
 		error = posix_spawn(&child, path, actions, &attributes, argv, environment);
@@ -296,16 +299,17 @@ sh_spawn(
 			job->capacity = 4;
 		else
 			job->capacity *= 2;
-		job->processes = sh_realloc(job->processes,
-					    (size_t)job->capacity *
-					    sizeof(*job->processes));
+		size = (size_t)job->capacity * sizeof(*job->processes);
+		job->processes = sh_realloc(job->processes, size);
 	}
 
-	/* Succeeded: the process of the job. */
+	/* Records the child as a running process of the job. */
 	process = &job->processes[job->count++];
 	process->pid = child;
 	process->state = PROCESS_RUNNING;
 	process->status = 0;
+
+	/* Succeeded: the child. */
 	return child;
 }
 

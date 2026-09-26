@@ -193,7 +193,8 @@ gles_garbage_keep(
 	/* Nothing to keep. */
 	if (objects->buffer == VK_NULL_HANDLE && objects->image == VK_NULL_HANDLE && objects->view == VK_NULL_HANDLE &&
 	    objects->memory == VK_NULL_HANDLE && objects->pipeline == VK_NULL_HANDLE && objects->layout == VK_NULL_HANDLE &&
-	    objects->set_layout == VK_NULL_HANDLE && objects->modules[0] == VK_NULL_HANDLE && objects->modules[1] == VK_NULL_HANDLE)
+	    objects->set_layout == VK_NULL_HANDLE && objects->modules[0] == VK_NULL_HANDLE && objects->modules[1] == VK_NULL_HANDLE &&
+	    objects->modules[2] == VK_NULL_HANDLE && objects->pass == VK_NULL_HANDLE && objects->framebuffer == VK_NULL_HANDLE)
 		return;
 
 	/* The entry. */
@@ -232,6 +233,12 @@ gles_garbage_destroy(
 		vkDestroyShaderModule(device, objects->modules[0], NULL);
 	if (objects->modules[1] != VK_NULL_HANDLE)
 		vkDestroyShaderModule(device, objects->modules[1], NULL);
+	if (objects->modules[2] != VK_NULL_HANDLE)
+		vkDestroyShaderModule(device, objects->modules[2], NULL);
+	if (objects->framebuffer != VK_NULL_HANDLE)
+		vkDestroyFramebuffer(device, objects->framebuffer, NULL);
+	if (objects->pass != VK_NULL_HANDLE)
+		vkDestroyRenderPass(device, objects->pass, NULL);
 	if (objects->view != VK_NULL_HANDLE)
 		vkDestroyImageView(device, objects->view, NULL);
 	if (objects->image != VK_NULL_HANDLE)

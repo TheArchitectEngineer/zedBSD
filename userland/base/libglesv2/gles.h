@@ -15,8 +15,10 @@
  * frame being recorded already uses is never written again: a new one is
  * made and the old one waits in the garbage until the frame is done.
  *
- * Shaders are SPIR-V (glShaderBinary with GL_SHADER_BINARY_FORMAT_SPIR_V)
- * in the form plan/ws068/phase008/phase.md gives: the uniforms other than
+ * Shaders are GLSL (compiled by glsl/, WS068 p015-p019, into SPIR-V when
+ * the program links) or SPIR-V (glShaderBinary with
+ * GL_SHADER_BINARY_FORMAT_SPIR_V), both in the form
+ * plan/ws068/phase008/phase.md gives: the uniforms other than
  * samplers in one uniform block at set 0 binding 0, the samplers at set 0
  * from binding 1, attributes and varyings by location.  Linking reads the
  * names and locations out of the SPIR-V and rewrites the vertex shader so
@@ -52,8 +54,14 @@
 #define GLES_UNITS		16U
 #define GLES_LEVELS		15U
 
+/* The faces of a cube map (a 2D texture uses the first). */
+#define GLES_FACES		6U
+
 /* How many of Vulkan's core formats the vertex format cache covers. */
 #define GLES_FORMATS		192U
+
+/* The most uniform blocks besides the default one a shader's reflection records. */
+#define GLES_NAMED_BLOCKS	16U
 
 /* The longest name of an attribute or a uniform, with its terminator. */
 #define GLES_NAME		64U
@@ -96,16 +104,17 @@ struct gles_level {
 };
 
 /*
- * A 2D texture: its levels on the CPU, its sampling state, and the device
- * image made from the levels.
+ * A 2D texture or a cube map: its levels on the CPU, its sampling state,
+ * and the device image made from the levels (a cube map's has six
+ * layers).
  */
 struct gles_texture {
-	/* The GL name and the target it was first bound to. */
+	/* The GL name and the target it was first bound to (0 before its first bind). */
 	GLuint name;
 	GLenum target;
 
-	/* The levels (width 0 when a level is not specified). */
-	struct gles_level levels[GLES_LEVELS];
+	/* The levels of each face, face * GLES_LEVELS + level (a 2D texture has face 0 only; width 0 when a level is not specified). */
+	struct gles_level levels[GLES_FACES * GLES_LEVELS];
 
 	/* The filters and the wrap modes. */
 	GLenum min_filter;
@@ -122,10 +131,111 @@ struct gles_texture {
 	VkImageView view;
 	uint32_t level_count;
 	uint64_t used;
+
+	/* The views of each face's level 0 a framebuffer object draws into, made with the image. */
+	VkImageView attach_views[GLES_FACES];
+
+	/*
+	 * The faces a framebuffer object drew into since their levels were
+	 * last read (bit f: face f): their level 0 on the CPU is stale, and is
+	 * read back before the CPU changes the texture (gles_texture_fetch).
+	 */
+	unsigned gpu_written;
+};
+
+/* What an attachment point of a framebuffer object names. */
+#define GLES_ATTACH_NONE		0
+#define GLES_ATTACH_TEXTURE		1
+#define GLES_ATTACH_RENDERBUFFER	2
+
+/*
+ * A renderbuffer: an image a framebuffer object draws into and nothing
+ * samples.  A colour one is RGBA8 whatever format it was given; a depth or
+ * stencil one has the device's depth and stencil format.
+ */
+struct gles_renderbuffer {
+	/* The GL name, and the internal format its storage was given (0 before glRenderbufferStorage). */
+	GLuint name;
+	GLenum format;
+
+	/* The size, and nonzero for a depth or stencil format. */
+	int width;
+	int height;
+	int depth;
+
+	/* The device image, its memory and view, and the frame that last drew into it. */
+	VkImage image;
+	VkDeviceMemory memory;
+	VkImageView view;
+	uint64_t used;
 };
 
 /*
- * A shader: its SPIR-V, and what glGetShaderiv reports about it.
+ * One attachment point of a framebuffer object: the kind and name of what
+ * is attached, looked up at each use (a deleted object leaves the
+ * framebuffer incomplete).
+ */
+struct gles_attachment {
+	int kind;
+	GLuint name;
+
+	/* The face of a cube map drawn into (0 for a 2D texture). */
+	unsigned face;
+};
+
+/*
+ * A framebuffer object: its attachments, and the render pass and
+ * framebuffer made for the views they named when it was last drawn into
+ * (made again when a view changes).
+ */
+struct gles_framebuffer {
+	/* The GL name, and the colour, depth and stencil attachments. */
+	GLuint name;
+	struct gles_attachment color;
+	struct gles_attachment depth;
+	struct gles_attachment stencil;
+
+	/* The views the pass and framebuffer were made for (VK_NULL_HANDLE: none), the pass, the framebuffer and its size. */
+	VkImageView built_color;
+	VkImageView built_depth;
+	VkRenderPass pass;
+	VkFramebuffer framebuffer;
+	VkExtent2D extent;
+
+	/* The colour image (glReadPixels reads it) and the layout it rests in (a texture's is sampled, a renderbuffer's attached), and the depth image's aspects (0: none). */
+	VkImage color_image;
+	uint32_t color_layer;
+	VkImageLayout color_layout;
+	VkImageAspectFlags depth_aspects;
+};
+
+/*
+ * Where a draw, a clear or a read goes: the draw surface's frame, and in
+ * it the surface's own images or a framebuffer object's.
+ */
+struct gles_target {
+	/* The surface whose frame records it, and the framebuffer object (NULL: the surface's images). */
+	struct zegl_surface *surface;
+	struct gles_framebuffer *fbo;
+
+	/* The frame's command buffer, and the render pass pipelines are made with. */
+	VkCommandBuffer command;
+	VkRenderPass pass;
+
+	/* The size, and nonzero when rows go down from the top (a window; a framebuffer object keeps GL's rows). */
+	VkExtent2D extent;
+	int flip;
+
+	/* Nonzero with a colour image, and the aspects of the depth and stencil image (0: none). */
+	int has_color;
+	VkImageAspectFlags depth_aspects;
+};
+
+struct glsl_shader;
+
+/*
+ * A shader: its SPIR-V or its compiled GLSL, and what glGetShaderiv
+ * reports about it.
  */
 struct gles_shader {
 	/* GLES_KIND_SHADER, the GL name, and GL_VERTEX_SHADER or GL_FRAGMENT_SHADER. */
@@ -137,8 +247,9 @@ struct gles_shader {
 	uint32_t *code;
 	size_t words;
 
-	/* The source glShaderSource gave (NULL when none). */
+	/* The source glShaderSource gave (NULL when none), and the GLSL compiler's shader once it compiled. */
 	char *source;
+	struct glsl_shader *glsl;
 
 	/* Whether the last compile or binary succeeded, and its log. */
 	int compiled;
@@ -223,8 +334,9 @@ struct gles_program {
 	/* A number no other link had, so pipelines made for an earlier link are not taken for this one. */
 	uint64_t serial;
 
-	/* The Vulkan shaders, the descriptor set layout and the pipeline layout. */
+	/* The Vulkan shaders (the vertex one twice: for a window's rows, which go down, and for a framebuffer object's), the descriptor set layout and the pipeline layout. */
 	VkShaderModule vertex_module;
+	VkShaderModule vertex_module_fbo;
 	VkShaderModule fragment_module;
 	VkDescriptorSetLayout set_layout;
 	VkPipelineLayout layout;
@@ -294,7 +406,11 @@ struct gles_garbage {
 	VkPipeline pipeline;
 	VkPipelineLayout layout;
 	VkDescriptorSetLayout set_layout;
-	VkShaderModule modules[2];
+	VkShaderModule modules[3];
+
+	/* A framebuffer object's render pass and framebuffer. */
+	VkRenderPass pass;
+	VkFramebuffer framebuffer;
 
 	/* The next object waiting. */
 	struct gles_garbage *next;
@@ -439,9 +555,10 @@ struct gles_state {
 	/* The current program. */
 	struct gles_program *program;
 
-	/* The active texture unit and each unit's 2D texture. */
+	/* The active texture unit, and each unit's 2D texture and cube map. */
 	unsigned active_unit;
 	struct gles_texture *units[GLES_UNITS];
+	struct gles_texture *cube_units[GLES_UNITS];
 
 	/* Blending. */
 	int blend;
@@ -523,17 +640,33 @@ struct gles_state {
 	struct gles_pipeline *pipelines;
 	struct gles_sampler *samplers;
 
-	/* The framebuffer and renderbuffer bound (framebuffer objects are not there yet: only 0 draws), and the next names. */
+	/* The framebuffer (0: the draw surface's) and the renderbuffer bound, and their namespaces. */
 	GLuint framebuffer;
 	GLuint renderbuffer;
-	GLuint next_framebuffer;
-	GLuint next_renderbuffer;
+	struct gles_names framebuffers;
+	struct gles_names renderbuffers;
+
+	/*
+	 * The framebuffer object whose render pass is open in the draw
+	 * surface's frame (NULL: none); it is closed before anything else
+	 * records into the frame or the frame is submitted.
+	 */
+	struct gles_framebuffer *open_fbo;
+	struct zegl_surface *open_surface;
+
+	/* The render passes framebuffer objects' pipelines are made with, by [colour][depth], made at their first use. */
+	VkRenderPass fbo_passes[2][2];
+
+	/* The device's depth and stencil format and its aspects (renderbuffers), asked for at the first depth renderbuffer. */
+	VkFormat depth_format;
+	VkImageAspectFlags depth_aspects;
 
 	/* The fixed-function layer's state (libGL), NULL until it is made. */
 	void *fixed;
 
-	/* The texture sampled where a unit has no complete texture (black), made at its first use. */
+	/* The textures sampled where a unit has no complete texture (black), a 2D one and a cube map, made at their first use. */
 	struct gles_texture *black;
+	struct gles_texture *black_cube;
 };
 
 /*
@@ -587,9 +720,16 @@ int gles_upload_end(struct gles_state *state);
 int gles_texture_sync(struct gles_state *state, struct gles_texture *texture);
 int gles_texture_complete(struct gles_texture *texture);
 VkSampler gles_sampler_get(struct gles_state *state, struct gles_texture *texture);
-struct gles_texture *gles_texture_black(struct gles_state *state);
+struct gles_texture *gles_texture_black(struct gles_state *state, int cube);
 void gles_texture_free(struct gles_state *state, struct gles_texture *texture);
-void gles_texture_define(struct gles_texture *texture, GLint level, int width, int height, unsigned char *pixels);
+void gles_texture_define(struct gles_texture *texture, unsigned face, GLint level, int width, int height, unsigned char *pixels);
+
+/* framebuffer.c: framebuffer objects, renderbuffers, and the target of a draw. */
+int gles_target_open(struct zegl_context *context, struct gles_state *state, const VkClearValue *clear, struct gles_target *target);
+void gles_target_close(struct gles_state *state);
+void gles_framebuffers_forget(struct gles_state *state, int kind, GLuint name);
+void gles_framebuffers_release(struct gles_state *state);
+int gles_texture_fetch(struct zegl_context *context, struct gles_texture *texture);
 
 /* program.c: shaders and programs. */
 void gles_program_release(struct gles_state *state, struct gles_program *program);
@@ -629,11 +769,15 @@ struct gles_spirv {
 	uint32_t block_binding;
 	uint32_t block_size;
 	int has_block;
+
+	/* The bindings of the uniform blocks other than the default one (GLSL's named blocks). */
+	uint32_t named_bindings[GLES_NAMED_BLOCKS];
+	unsigned named_count;
 };
 
 /* spirv.c: reading SPIR-V and rewriting it. */
 int gles_spirv_reflect(const uint32_t *code, size_t words, struct gles_spirv *out, char *log, size_t log_size);
 void gles_spirv_free(struct gles_spirv *spirv);
-uint32_t *gles_spirv_position(const uint32_t *code, size_t words, size_t *out_words);
+uint32_t *gles_spirv_position(const uint32_t *code, size_t words, int flip, size_t *out_words);
 
 #endif

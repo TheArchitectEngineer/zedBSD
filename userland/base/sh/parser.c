@@ -81,6 +81,11 @@
 #define T_DLBRACKET	38
 #define T_FUNCTION	39
 
+/* What an escape of $'...' gives (dollar_single_escape). */
+#define DOLLAR_ESCAPE_NONE	0	/* nothing: the backslash stays */
+#define DOLLAR_ESCAPE_BYTE	1	/* one byte */
+#define DOLLAR_ESCAPE_CHARACTER	2	/* a character, written in UTF-8 */
+
 /* What next_token may do with the word it reads (its flags). */
 #define CHECK_NEWLINE	0x01	/* skip newlines first */
 #define CHECK_KEYWORD	0x02	/* recognize a reserved word */
@@ -187,15 +192,20 @@ static struct sh_redirection *parse_redirection(struct parser *parser, int token
 static void expect(struct parser *parser, int token);
 static void add_stderr_to_pipe(struct parser *parser, struct sh_node *command);
 static struct sh_node *parse_function_keyword(struct parser *parser);
-static struct sh_cond *parse_cond_or(struct parser *parser, int first);
+static struct sh_node *parse_cond_command(struct parser *parser);
+static struct sh_cond *parse_cond_or(struct parser *parser);
 static struct sh_cond *parse_cond_and(struct parser *parser);
 static struct sh_cond *parse_cond_not(struct parser *parser);
 static struct sh_cond *parse_cond_primary(struct parser *parser);
+static int cond_unary_operator(struct sh_token *word);
+static int cond_ends_after(struct parser *parser);
 static int cond_closing(struct parser *parser, int token);
 static const char *cond_binary_operator(struct parser *parser, int token);
 static struct sh_token *lex_regex_word(struct parser *parser);
 static struct sh_node *parse_arith_command(struct parser *parser);
 static struct sh_node *parse_arith_for(struct parser *parser);
+static int arith_for_opened(struct parser *parser);
+static int split_arith_for(char *text, char *parts[3]);
 static char *read_arith_text(int *complete);
 static void syntax_error(struct parser *parser, int token) __attribute__((noreturn));
 static struct sh_node *node_new(struct parser *parser, enum sh_node_kind kind);
@@ -212,6 +222,9 @@ static void lex_single(struct word_buffer *buffer);
 static int lex_process_substitution(struct parser *parser, int direction);
 static void lex_dollar_single(struct word_buffer *buffer);
 static int dollar_single_escape(unsigned long *code);
+static int dollar_single_letter(int letter, unsigned long *code);
+static int dollar_single_number(int next, unsigned long *code);
+static int digit_in_base(int value, int base);
 static void buffer_add_quoted(struct word_buffer *buffer, int value);
 static void buffer_add_utf8(struct word_buffer *buffer, unsigned long code);
 static void lex_double(struct parser *parser, struct word_buffer *buffer);
@@ -562,11 +575,7 @@ parse_command(
 			node = parse_group(parser, SH_NODE_SUBSHELL, T_RPAREN);
 		break;
 	case T_DLBRACKET:
-		node = node_new(parser, SH_NODE_COND);
-		node->u.cond = parse_cond_or(parser, 1);
-		token = next_token(parser, 0);
-		if (!cond_closing(parser, token))
-			syntax_error(parser, token);
+		node = parse_cond_command(parser);
 		break;
 	case T_FUNCTION:
 		node = parse_function_keyword(parser);
@@ -1041,7 +1050,7 @@ parse_function_keyword(
 	int token;
 	int valid;
 
-	/* The name, written plainly. */
+	/* Refuses a name that is not a name written plainly. */
 	token = next_token(parser, 0);
 	valid = 0;
 	if (token == T_WORD)
@@ -1058,16 +1067,41 @@ parse_function_keyword(
 		node = parse_function(parser, name);
 		return node;
 	}
-	push_token(parser);
 
 	/* Without (), the body follows after any newlines. */
+	push_token(parser);
 	(void)next_token(parser, CHECK_NEWLINE | CHECK_KEYWORD | CHECK_ALIAS);
 	push_token(parser);
+
+	/* Makes the definition of the body. */
 	node = node_new(parser, SH_NODE_FUNCTION);
 	node->u.function.name = name->raw;
 	node->u.function.body = parse_command(parser);
 
 	/* Succeeded: the definition. */
+	return node;
+}
+
+/* Parses [[ ... ]] after [[, up to the ]] that closes it. */
+static struct sh_node *
+parse_cond_command(
+	struct parser *parser)
+{
+	struct sh_node *node;
+	int closing;
+	int token;
+
+	/* Parses the expression. */
+	node = node_new(parser, SH_NODE_COND);
+	node->u.cond = parse_cond_or(parser);
+
+	/* Refuses anything but ]] after it. */
+	token = next_token(parser, 0);
+	closing = cond_closing(parser, token);
+	if (!closing)
+		syntax_error(parser, token);
+
+	/* Succeeded: the conditional command. */
 	return node;
 }
 
@@ -1077,15 +1111,13 @@ parse_function_keyword(
  */
 static struct sh_cond *
 parse_cond_or(
-	struct parser *parser,
-	int first)
+	struct parser *parser)
 {
 	struct sh_cond *node;
 	struct sh_cond *joined;
 	int token;
 
-	/* The first operand, then each one joined by ||. */
-	(void)first;
+	/* Parses the first operand, then each one joined by ||. */
 	node = parse_cond_and(parser);
 	for (;;) {
 		token = next_token(parser, 0);
@@ -1093,6 +1125,8 @@ parse_cond_or(
 			push_token(parser);
 			break;
 		}
+
+		/* Joins the operands so far and the next one. */
 		joined = sh_arena_alloc(parser->arena, sizeof(*joined));
 		joined->kind = SH_COND_OR;
 		joined->first = node;
@@ -1100,7 +1134,7 @@ parse_cond_or(
 		node = joined;
 	}
 
-	/* Succeeded. */
+	/* Succeeded: the expression. */
 	return node;
 }
 
@@ -1113,7 +1147,7 @@ parse_cond_and(
 	struct sh_cond *joined;
 	int token;
 
-	/* The first operand, then each one joined by &&. */
+	/* Parses the first operand, then each one joined by &&. */
 	node = parse_cond_not(parser);
 	for (;;) {
 		token = next_token(parser, 0);
@@ -1121,6 +1155,8 @@ parse_cond_and(
 			push_token(parser);
 			break;
 		}
+
+		/* Joins the operands so far and the next one. */
 		joined = sh_arena_alloc(parser->arena, sizeof(*joined));
 		joined->kind = SH_COND_AND;
 		joined->first = node;
@@ -1128,7 +1164,7 @@ parse_cond_and(
 		node = joined;
 	}
 
-	/* Succeeded. */
+	/* Succeeded: the expression. */
 	return node;
 }
 
@@ -1139,19 +1175,26 @@ parse_cond_not(
 {
 	struct sh_cond *node;
 	int token;
+	int bang;
 
-	/* ! negates what follows. */
+	/* ! written plainly negates what follows. */
 	token = next_token(parser, CHECK_NEWLINE);
-	if (token == T_WORD && is_plain_word(parser->word, "!")) {
+	bang = 0;
+	if (token == T_WORD)
+		bang = is_plain_word(parser->word, "!");
+	if (bang) {
 		node = sh_arena_alloc(parser->arena, sizeof(*node));
 		node->kind = SH_COND_NOT;
 		node->first = parse_cond_not(parser);
 		return node;
 	}
-	push_token(parser);
 
-	/* Succeeded: a primary. */
-	return parse_cond_primary(parser);
+	/* Otherwise a primary follows. */
+	push_token(parser);
+	node = parse_cond_primary(parser);
+
+	/* Succeeded: the primary. */
+	return node;
 }
 
 /*
@@ -1168,11 +1211,14 @@ parse_cond_primary(
 	const char *op;
 	int token;
 	int unary;
+	int closing;
+	int ends;
+	int compare;
 
-	/* ( expression ). */
+	/* ( expression ) groups. */
 	token = next_token(parser, CHECK_NEWLINE);
 	if (token == T_LPAREN) {
-		node = parse_cond_or(parser, 0);
+		node = parse_cond_or(parser);
 		token = next_token(parser, CHECK_NEWLINE);
 		if (token != T_RPAREN)
 			syntax_error(parser, token);
@@ -1180,59 +1226,127 @@ parse_cond_primary(
 	}
 
 	/* Otherwise a word, which may not be the closing ]]. */
-	if (token != T_WORD || cond_closing(parser, token))
+	closing = cond_closing(parser, token);
+	if (token != T_WORD || closing)
 		syntax_error(parser, token);
 	word = parser->word;
 	node = sh_arena_alloc(parser->arena, sizeof(*node));
 	node->left = word;
 
-	/*
-	 * A binary operator after the word, unless the word is a unary
-	 * operator and nothing follows the second word: [[ -f == ]] tests
-	 * a file named ==, as in bash.
-	 */
-	unary = is_plain_word(word, NULL) && word->raw_length == 2 &&
-		word->raw[0] == '-' &&
-		strchr("abcdefghknoprstuvwxzGLNOSR", word->raw[1]) != NULL;
+	/* Reads whether the word is a unary operator, and the token after it. */
+	unary = cond_unary_operator(word);
 	token = next_token(parser, 0);
 	op = cond_binary_operator(parser, token);
+
+	/*
+	 * A unary operator whose operand is spelled as a binary operator, with
+	 * nothing after it, is a unary test: [[ -f == ]] tests a file named
+	 * ==, as in bash.
+	 */
 	if (op != NULL && unary && token == T_WORD) {
 		operand = parser->word;
-		token = next_token(parser, 0);
-		push_token(parser);
-		if (token != T_WORD || cond_closing(parser, token)) {
+		ends = cond_ends_after(parser);
+		if (ends) {
 			node->kind = SH_COND_UNARY;
 			snprintf(node->op, sizeof(node->op), "%s", word->raw);
 			node->left = operand;
 			return node;
 		}
 	}
+
+	/* A binary operator takes the word after it. */
 	if (op != NULL) {
 		node->kind = SH_COND_BINARY;
 		snprintf(node->op, sizeof(node->op), "%s", op);
-		if (strcmp(op, "=~") == 0) {
+
+		/* =~ reads its regular expression as one word. */
+		compare = strcmp(op, "=~");
+		if (compare == 0) {
 			node->right = lex_regex_word(parser);
 			return node;
 		}
+
+		/* Refuses a missing operand, or the closing ]]. */
 		token = next_token(parser, 0);
-		if (token != T_WORD || cond_closing(parser, token))
+		closing = cond_closing(parser, token);
+		if (token != T_WORD || closing)
 			syntax_error(parser, token);
 		node->right = parser->word;
 		return node;
 	}
 
-	/* A unary operator and its operand. */
-	if (unary && token == T_WORD && !cond_closing(parser, token)) {
+	/* A unary operator takes the word after it. */
+	closing = cond_closing(parser, token);
+	if (unary && token == T_WORD && !closing) {
 		node->kind = SH_COND_UNARY;
 		snprintf(node->op, sizeof(node->op), "%s", word->raw);
 		node->left = parser->word;
 		return node;
 	}
 
-	/* A word alone. */
+	/* Otherwise the word stands alone. */
 	push_token(parser);
 	node->kind = SH_COND_WORD;
+
+	/* Succeeded: a word, true when it is not empty. */
 	return node;
+}
+
+/*
+ * Reports whether a word of [[ ... ]] is a unary operator, written
+ * plainly: - and one of the letters of the unary tests.
+ */
+static int
+cond_unary_operator(
+	struct sh_token *word)
+{
+	const char *letter;
+	int plain;
+
+	/* Refuses a word with quotes or expansions. */
+	plain = is_plain_word(word, NULL);
+	if (!plain)
+		return 0;
+
+	/* Refuses anything but - and one letter. */
+	if (word->raw_length != 2 || word->raw[0] != '-')
+		return 0;
+
+	/* Refuses a letter that names no test. */
+	letter = strchr("abcdefghknoprstuvwxzGLNOSR", word->raw[1]);
+	if (letter == NULL)
+		return 0;
+
+	/* Succeeded: a unary operator. */
+	return 1;
+}
+
+/*
+ * Reports whether a primary of [[ ... ]] ends after the word just read:
+ * the token after it, read and given back, is not a word, or is ]].
+ */
+static int
+cond_ends_after(
+	struct parser *parser)
+{
+	int closing;
+	int token;
+
+	/* Looks at the next token and gives it back. */
+	token = next_token(parser, 0);
+	push_token(parser);
+
+	/* Something other than a word ends the primary. */
+	if (token != T_WORD)
+		return 1;
+
+	/* ]] ends the primary. */
+	closing = cond_closing(parser, token);
+	if (closing)
+		return 1;
+
+	/* Succeeded: another word follows. */
+	return 0;
 }
 
 /* Reports whether a token is the ]] that closes [[. */
@@ -1241,10 +1355,17 @@ cond_closing(
 	struct parser *parser,
 	int token)
 {
-	/* ]] written plainly. */
+	int closing;
+
+	/* Refuses anything but a word. */
 	if (token != T_WORD)
 		return 0;
-	return is_plain_word(parser->word, "]]");
+
+	/* ]] closes when it is written plainly. */
+	closing = is_plain_word(parser->word, "]]");
+
+	/* Succeeded: whether the word is ]]. */
+	return closing;
 }
 
 /* Returns the binary operator a token is inside [[ ... ]], or NULL. */
@@ -1257,6 +1378,7 @@ cond_binary_operator(
 		"==", "=", "!=", "=~", "-eq", "-ne", "-lt", "-le", "-gt", "-ge",
 		"-nt", "-ot", "-ef", NULL
 	};
+	int matches;
 	int index;
 
 	/* < and > are read as redirection operators. */
@@ -1264,16 +1386,19 @@ cond_binary_operator(
 		return "<";
 	if (token == T_GREAT && parser->io_number < 0)
 		return ">";
+
+	/* Refuses any other token that is not a word. */
 	if (token != T_WORD)
 		return NULL;
 
-	/* The word operators. */
+	/* Looks for the word among the operators written as words. */
 	for (index = 0; operators[index] != NULL; index++) {
-		if (is_plain_word(parser->word, operators[index]))
+		matches = is_plain_word(parser->word, operators[index]);
+		if (matches)
 			return operators[index];
 	}
 
-	/* Not one. */
+	/* The word is no binary operator. */
 	return NULL;
 }
 
@@ -1291,11 +1416,11 @@ lex_regex_word(
 	int depth;
 
 	/* Skips the blanks before it. */
-	do
+	do {
 		value = getc_continued();
-	while (value == ' ' || value == '\t');
+	} while (value == ' ' || value == '\t');
 
-	/* The characters up to a blank or a newline at depth 0. */
+	/* Reads the characters up to a blank, ) or a newline at depth 0. */
 	memset(&buffer, 0, sizeof(buffer));
 	depth = 0;
 	for (;;) {
@@ -1305,6 +1430,8 @@ lex_regex_word(
 			break;
 		if (value == ')' && depth == 0)
 			break;
+
+		/* Keeps the character, with the quotation or expansion it starts. */
 		if (value == '(') {
 			depth++;
 			buffer_add(&buffer, value);
@@ -1328,17 +1455,23 @@ lex_regex_word(
 		} else {
 			buffer_add(&buffer, value);
 		}
+
+		/* Reads the next character. */
 		value = getc_continued();
 	}
+
+	/* Gives back the character that ended the word. */
 	sh_input_ungetc(value);
 
-	/* The word. */
+	/* Refuses an empty expression. */
 	if (buffer.text == NULL)
 		sh_error("syntax error: missing regular expression after =~");
+
+	/* Makes the word. */
 	word = make_word(parser, buffer.text, buffer.length);
 	free(buffer.text);
 
-	/* Succeeded. */
+	/* Succeeded: the regular expression as a word. */
 	return word;
 }
 
@@ -1353,6 +1486,7 @@ parse_arith_command(
 	struct parser *parser)
 {
 	struct sh_node *node;
+	size_t length;
 	char *text;
 	int value;
 	int complete;
@@ -1364,21 +1498,22 @@ parse_arith_command(
 		return NULL;
 	}
 
-	/* The text up to )). */
+	/* Reads the text up to )); without it, gives the text back. */
 	text = read_arith_text(&complete);
+	length = strlen(text);
 	if (!complete) {
-		sh_input_give_back_text(text, strlen(text));
+		sh_input_give_back_text(text, length);
 		sh_input_give_back_text("(", 1);
 		free(text);
 		return NULL;
 	}
 
-	/* The command. */
+	/* Makes the command of the text. */
 	node = node_new(parser, SH_NODE_ARITH);
-	node->u.arith = sh_arena_strndup(parser->arena, text, strlen(text));
+	node->u.arith = sh_arena_strndup(parser->arena, text, length);
 	free(text);
 
-	/* Succeeded. */
+	/* Succeeded: the arithmetic command. */
 	return node;
 }
 
@@ -1393,71 +1528,137 @@ parse_arith_for(
 	struct sh_node *node;
 	char *text;
 	char *parts[3];
-	char *cursor;
-	int value;
-	int second;
+	size_t length;
 	int complete;
-	int depth;
+	int opened;
+	int valid;
 	int index;
 	int token;
 
-	/* for, blanks, then (( directly. */
-	if (parser->pushed)
+	/* Leaves anything but (( after for to the loop over words. */
+	opened = arith_for_opened(parser);
+	if (!opened)
 		return NULL;
-	do
-		value = getc_continued();
-	while (value == ' ' || value == '\t');
-	if (value != '(') {
-		sh_input_ungetc(value);
-		return NULL;
-	}
-	second = sh_input_getc();
-	if (second != '(') {
-		sh_input_ungetc(second);
-		sh_input_ungetc(value);
-		return NULL;
-	}
+
+	/* Reads the text up to )). */
 	text = read_arith_text(&complete);
 	if (!complete)
 		sh_error("syntax error: bad for loop");
 
-	/* The three expressions, split at the semicolons outside parentheses. */
-	parts[0] = text;
-	index = 1;
-	depth = 0;
-	for (cursor = text; *cursor != '\0'; cursor++) {
-		if (*cursor == '(')
-			depth++;
-		else if (*cursor == ')')
-			depth--;
-		else if (*cursor == ';' && depth == 0 && index < 3) {
-			*cursor = '\0';
-			parts[index++] = cursor + 1;
-		}
-	}
-	if (index != 3)
+	/* Splits the three expressions at the semicolons outside parentheses. */
+	valid = split_arith_for(text, parts);
+	if (!valid)
 		sh_error("syntax error: bad for loop");
+
+	/* Makes the loop of the three expressions. */
 	node = node_new(parser, SH_NODE_ARITH_FOR);
-	node->u.arith_for.init = sh_arena_strndup(parser->arena, parts[0], strlen(parts[0]));
-	node->u.arith_for.test = sh_arena_strndup(parser->arena, parts[1], strlen(parts[1]));
-	node->u.arith_for.step = sh_arena_strndup(parser->arena, parts[2], strlen(parts[2]));
+	for (index = 0; index < 3; index++) {
+		length = strlen(parts[index]);
+		parts[index] = sh_arena_strndup(parser->arena, parts[index], length);
+	}
+
+	/* The copies are the loop's; the text read is freed. */
+	node->u.arith_for.init = parts[0];
+	node->u.arith_for.test = parts[1];
+	node->u.arith_for.step = parts[2];
 	free(text);
 
-	/* ; or newlines, then do ... done or { ... }. */
+	/* ; or newlines may follow. */
 	token = next_token(parser, CHECK_NEWLINE | CHECK_KEYWORD);
 	if (token == T_SEMI)
 		token = next_token(parser, CHECK_NEWLINE | CHECK_KEYWORD);
+
+	/* The body is { ... }, */
 	if (token == T_LBRACE) {
 		node->u.arith_for.body = parse_group(parser, SH_NODE_GROUP, T_RBRACE);
 		return node;
 	}
+
+	/* or do ... done. */
 	if (token != T_DO)
 		syntax_error(parser, token);
 	node->u.arith_for.body = parse_list(parser, LIST_COMPOUND, 0);
 	expect(parser, T_DONE);
 
-	/* Succeeded. */
+	/* Succeeded: the arithmetic loop. */
 	return node;
+}
+
+/*
+ * Reads the (( after for and its blanks, when it is there.  Returns 1
+ * having read it, or 0 having given back what was read.
+ */
+static int
+arith_for_opened(
+	struct parser *parser)
+{
+	int value;
+	int second;
+
+	/* A token given back means for was followed by a word. */
+	if (parser->pushed)
+		return 0;
+
+	/* Skips the blanks after for. */
+	do {
+		value = getc_continued();
+	} while (value == ' ' || value == '\t');
+
+	/* Refuses anything but (. */
+	if (value != '(') {
+		sh_input_ungetc(value);
+		return 0;
+	}
+
+	/* Refuses ( without a second ( directly after it. */
+	second = sh_input_getc();
+	if (second != '(') {
+		sh_input_ungetc(second);
+		sh_input_ungetc(value);
+		return 0;
+	}
+
+	/* Succeeded: (( is read. */
+	return 1;
+}
+
+/*
+ * Splits the text of for (( ... )) into its three expressions at the two
+ * semicolons outside parentheses, ending each in place.  Returns 0 when
+ * there are not two.
+ */
+static int
+split_arith_for(
+	char *text,
+	char *parts[3])
+{
+	char *cursor;
+	int depth;
+	int index;
+
+	/* Ends each expression at a semicolon at depth 0. */
+	parts[0] = text;
+	index = 1;
+	depth = 0;
+	for (cursor = text; *cursor != '\0'; cursor++) {
+		if (*cursor == '(') {
+			depth++;
+		} else if (*cursor == ')') {
+			depth--;
+		} else if (*cursor == ';' &&
+			   depth == 0 &&
+			   index < 3) {
+			*cursor = '\0';
+			parts[index++] = cursor + 1;
+		}
+	}
+
+	/* Refuses fewer than three expressions. */
+	if (index != 3)
+		return 0;
+
+	/* Succeeded: the three expressions. */
+	return 1;
 }
 
 /*
@@ -1471,10 +1672,11 @@ read_arith_text(
 	int *complete)
 {
 	struct word_buffer buffer;
+	char *text;
 	int value;
 	int depth;
 
-	/* The characters, keeping count of parentheses. */
+	/* Reads the characters, keeping count of parentheses. */
 	memset(&buffer, 0, sizeof(buffer));
 	depth = 0;
 	*complete = 0;
@@ -1484,6 +1686,8 @@ read_arith_text(
 			continue;
 		if (value == EOF)
 			unterminated("arithmetic command");
+
+		/* A ) at depth 0 either closes the command or ends the text. */
 		if (value == '(') {
 			depth++;
 		} else if (value == ')' && depth > 0) {
@@ -1494,17 +1698,25 @@ read_arith_text(
 				*complete = 1;
 				break;
 			}
+
+			/* Keeps the ) and the character after it, to give back. */
 			buffer_add(&buffer, ')');
 			if (value != EOF)
 				buffer_add(&buffer, value);
 			break;
 		}
+
+		/* Keeps the character. */
 		buffer_add(&buffer, value);
 	}
 
+	/* An empty text is still a string. */
+	if (buffer.text == NULL) {
+		text = sh_strdup("");
+		return text;
+	}
+
 	/* Succeeded: the text, which the caller frees. */
-	if (buffer.text == NULL)
-		return sh_strdup("");
 	return buffer.text;
 }
 
@@ -1521,11 +1733,13 @@ add_stderr_to_pipe(
 	struct sh_redirection *redirection;
 	struct sh_redirection **tail;
 
-	/* 2>&1, at the end of the command's redirections. */
+	/* Makes the redirection 2>&1. */
 	redirection = sh_arena_alloc(parser->arena, sizeof(*redirection));
 	redirection->op = SH_REDIR_DUP_OUTPUT;
 	redirection->descriptor = 2;
 	redirection->word = make_word(parser, "1", 1);
+
+	/* Appends it to the command's redirections, so that it applies last. */
 	tail = &command->redirections;
 	while (*tail != NULL)
 		tail = &(*tail)->next;
@@ -1831,6 +2045,8 @@ lex(
 			token = lex_process_substitution(parser, value);
 			return token;
 		}
+
+		/* Otherwise the character after < or > belongs to the operator. */
 		sh_input_ungetc(next);
 	}
 
@@ -2004,11 +2220,13 @@ lex_process_substitution(
 {
 	struct word_buffer buffer;
 
-	/* The text, as written, with its commands parsed for their errors. */
+	/* Reads the text as written, with its commands parsed for their errors. */
 	memset(&buffer, 0, sizeof(buffer));
 	buffer_add(&buffer, direction);
 	buffer_add(&buffer, '(');
 	lex_substitution(parser, &buffer);
+
+	/* Makes the word, marked with the direction expansion gives it. */
 	parser->word = make_word(parser, buffer.text, buffer.length);
 	parser->word->process = direction;
 	free(buffer.text);
@@ -2053,7 +2271,7 @@ lex_dollar_single(
 	int ended;
 	int kind;
 
-	/* The text, opened as a single quotation. */
+	/* Opens the text as a single quotation and reads up to the closing quote. */
 	buffer_add(buffer, '\'');
 	ended = 0;
 	for (;;) {
@@ -2065,44 +2283,150 @@ lex_dollar_single(
 		if (value == '\'')
 			break;
 
-		/* A plain character is itself. */
+		/* A plain character is itself, until a NUL has ended the text. */
 		if (value != '\\') {
 			if (!ended)
 				buffer_add_quoted(buffer, value);
 			continue;
 		}
 
-		/* An escape: a byte, or a character written in UTF-8. */
+		/* Reads the escape: a byte, or a character written in UTF-8. */
 		kind = dollar_single_escape(&code);
+
+		/* Drops everything after a NUL. */
 		if (ended)
 			continue;
-		if (kind == 0) {
+
+		/* A backslash that escapes nothing is kept with the character. */
+		if (kind == DOLLAR_ESCAPE_NONE) {
 			buffer_add_quoted(buffer, '\\');
 			buffer_add_quoted(buffer, (int)code);
 			continue;
 		}
-		if (kind == 2) {
+
+		/* \u and \U write the character in UTF-8. */
+		if (kind == DOLLAR_ESCAPE_CHARACTER) {
 			buffer_add_utf8(buffer, code);
 			continue;
 		}
+
+		/* A NUL byte ends the text. */
 		if (code == 0) {
 			ended = 1;
 			continue;
 		}
+
+		/* Any other byte is itself. */
 		buffer_add_quoted(buffer, (int)code);
 	}
 
-	/* The quotation closes. */
+	/* Closes the quotation. */
 	buffer_add(buffer, '\'');
 }
 
 /*
- * Reads the escape after a backslash in $'...'.  Returns 1 with a byte in
- * *code, 2 with a character to write in UTF-8, or 0 when the backslash
- * escapes nothing (*code is then the character after it, kept with it).
+ * Reads the escape after a backslash in $'...'.
+ *
+ * Returns DOLLAR_ESCAPE_BYTE with a byte in *code, DOLLAR_ESCAPE_CHARACTER
+ * with a character to write in UTF-8, or DOLLAR_ESCAPE_NONE when the
+ * backslash escapes nothing (*code is then the character after it, kept
+ * with it).
  */
 static int
 dollar_single_escape(
+	unsigned long *code)
+{
+	int known;
+	int kind;
+	int next;
+
+	/* Reads the character after the backslash. */
+	next = sh_input_getc();
+	if (next == EOF)
+		unterminated("quoted string");
+
+	/* The escapes of one letter give their byte. */
+	known = dollar_single_letter(next, code);
+	if (known)
+		return DOLLAR_ESCAPE_BYTE;
+
+	/* Octal, hexadecimal and Unicode escapes are numbers. */
+	kind = dollar_single_number(next, code);
+
+	/* Succeeded: what the escape gives. */
+	return kind;
+}
+
+/*
+ * Reads an escape of $'...' that is one letter, or \c and the letter
+ * after it.  Returns 1 with its byte in *code, or 0 when the letter is
+ * none of them.
+ */
+static int
+dollar_single_letter(
+	int letter,
+	unsigned long *code)
+{
+	int next;
+
+	/* Finds the byte the letter stands for. */
+	switch (letter) {
+	case 'a':
+		*code = 7;
+		break;
+	case 'b':
+		*code = 8;
+		break;
+	case 'e':
+	case 'E':
+		*code = 27;
+		break;
+	case 'f':
+		*code = 12;
+		break;
+	case 'n':
+		*code = 10;
+		break;
+	case 'r':
+		*code = 13;
+		break;
+	case 't':
+		*code = 9;
+		break;
+	case 'v':
+		*code = 11;
+		break;
+	case '\\':
+	case '\'':
+	case '"':
+	case '?':
+		*code = (unsigned long)letter;
+		break;
+	case 'c':
+		/* \cX is the control character of X; \c\\ is that of \. */
+		next = sh_input_getc();
+		if (next == EOF)
+			unterminated("quoted string");
+		if (next == '\\')
+			(void)sh_input_getc();
+		*code = (unsigned long)next & 0x1fU;
+		break;
+	default:
+		return 0;
+	}
+
+	/* Succeeded: the byte is stored. */
+	return 1;
+}
+
+/*
+ * Reads an escape of $'...' that is a number: \NNN (octal, up to three
+ * digits), \xHH, \uHHHH or \UHHHHHHHH.  Returns the kind of escape, as
+ * dollar_single_escape does, with its value in *code.
+ */
+static int
+dollar_single_number(
+	int next,
 	unsigned long *code)
 {
 	unsigned long value;
@@ -2110,65 +2434,14 @@ dollar_single_escape(
 	int limit;
 	int base;
 	int kind;
-	int next;
 	int digit;
 
-	/* The character after the backslash. */
-	next = sh_input_getc();
-	if (next == EOF)
-		unterminated("quoted string");
-
-	/* The single-letter escapes. */
-	kind = 1;
-	switch (next) {
-	case 'a':
-		*code = 7;
-		return 1;
-	case 'b':
-		*code = 8;
-		return 1;
-	case 'e':
-	case 'E':
-		*code = 27;
-		return 1;
-	case 'f':
-		*code = 12;
-		return 1;
-	case 'n':
-		*code = 10;
-		return 1;
-	case 'r':
-		*code = 13;
-		return 1;
-	case 't':
-		*code = 9;
-		return 1;
-	case 'v':
-		*code = 11;
-		return 1;
-	case '\\':
-	case '\'':
-	case '"':
-	case '?':
-		*code = (unsigned long)next;
-		return 1;
-	case 'c':
-		/* \cX: the control character of X. */
-		next = sh_input_getc();
-		if (next == EOF)
-			unterminated("quoted string");
-		if (next == '\\')
-			(void)sh_input_getc();
-		*code = (unsigned long)next & 0x1fU;
-		return 1;
-	default:
-		break;
-	}
-
-	/* Octal (up to three digits), hexadecimal and Unicode escapes. */
+	/* Finds the base and the most digits the escape takes. */
 	base = 0;
 	limit = 0;
+	kind = DOLLAR_ESCAPE_BYTE;
 	if (next >= '0' && next <= '7') {
+		/* The first octal digit is part of the number. */
 		base = 8;
 		limit = 3;
 		sh_input_ungetc(next);
@@ -2178,46 +2451,77 @@ dollar_single_escape(
 	} else if (next == 'u') {
 		base = 16;
 		limit = 4;
-		kind = 2;
+		kind = DOLLAR_ESCAPE_CHARACTER;
 	} else if (next == 'U') {
 		base = 16;
 		limit = 8;
-		kind = 2;
+		kind = DOLLAR_ESCAPE_CHARACTER;
 	}
 
 	/* Any other character is not an escape. */
 	if (base == 0) {
 		*code = (unsigned long)next;
-		return 0;
+		return DOLLAR_ESCAPE_NONE;
 	}
 
-	/* The digits. */
+	/* Reads the digits, up to the limit or the first that is none. */
 	value = 0;
 	for (digits = 0; digits < limit; digits++) {
 		next = sh_input_getc();
-		digit = -1;
-		if (next >= '0' && next <= '9')
-			digit = next - '0';
-		else if (base == 16 && next >= 'a' && next <= 'f')
-			digit = next - 'a' + 10;
-		else if (base == 16 && next >= 'A' && next <= 'F')
-			digit = next - 'A' + 10;
-		if (digit < 0 || digit >= base) {
+		digit = digit_in_base(next, base);
+		if (digit < 0) {
 			sh_input_ungetc(next);
 			break;
 		}
+
+		/* Adds the digit to the value. */
 		value = value * (unsigned long)base + (unsigned long)digit;
 	}
 
-	/* A \x or \u without digits is kept as written. */
+	/* A \x, \u or \U without digits is kept as written. */
 	if (digits == 0 && base == 16) {
-		*code = kind == 2 ? (limit == 4 ? 'u' : 'U') : 'x';
-		return 0;
+		if (kind == DOLLAR_ESCAPE_BYTE)
+			*code = 'x';
+		else if (limit == 4)
+			*code = 'u';
+		else
+			*code = 'U';
+		return DOLLAR_ESCAPE_NONE;
 	}
 
-	/* Succeeded. */
-	*code = value & (kind == 2 ? 0x1fffffUL : 0xffUL);
+	/* A byte keeps its low eight bits, a character its low 21. */
+	if (kind == DOLLAR_ESCAPE_CHARACTER)
+		*code = value & 0x1fffffUL;
+	else
+		*code = value & 0xffUL;
+
+	/* Succeeded: the value is stored. */
 	return kind;
+}
+
+/* Returns the value of a digit in base 8 or 16, or -1 when it is none. */
+static int
+digit_in_base(
+	int value,
+	int base)
+{
+	int digit;
+
+	/* Finds the value of a decimal or hexadecimal digit. */
+	digit = -1;
+	if (value >= '0' && value <= '9')
+		digit = value - '0';
+	else if (base == 16 && value >= 'a' && value <= 'f')
+		digit = value - 'a' + 10;
+	else if (base == 16 && value >= 'A' && value <= 'F')
+		digit = value - 'A' + 10;
+
+	/* Refuses a digit the base does not have (8 and 9 in octal). */
+	if (digit >= base)
+		return -1;
+
+	/* Succeeded: the digit's value, or -1. */
+	return digit;
 }
 
 /* Adds a character inside a single quotation, a quote as '\''. */
@@ -2245,7 +2549,7 @@ buffer_add_utf8(
 	struct word_buffer *buffer,
 	unsigned long code)
 {
-	/* One to four bytes by the size of the code. */
+	/* Writes one to four bytes by the size of the code. */
 	if (code < 0x80UL) {
 		buffer_add_quoted(buffer, (int)code);
 	} else if (code < 0x800UL) {
@@ -2314,12 +2618,17 @@ lex_dollar(
 	buffer_add(buffer, '$');
 	value = getc_continued();
 
-	/* $'...' (XCU 2.2.4, Issue 8) is written out as the quotation it means. */
+	/*
+	 * $'...' (XCU 2.2.4, Issue 8) is written out as the quotation it
+	 * means, in place of the $ just added.
+	 */
 	if (value == '\'' && !in_double) {
 		buffer->length--;
 		lex_dollar_single(buffer);
 		return;
 	}
+
+	/* ${ starts a parameter expansion in braces. */
 	if (value == '{') {
 		buffer_add(buffer, value);
 		lex_brace(parser, buffer, in_double);

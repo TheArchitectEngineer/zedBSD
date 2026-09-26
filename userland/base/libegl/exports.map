@@ -42,6 +42,7 @@
 		eglWaitGL;
 		eglWaitNative;
 		zegl_current_context;
+		zegl_depth_format;
 		zegl_frame_begin;
 		zegl_frame_flush;
 		zegl_frame_leave_pass;

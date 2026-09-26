@@ -9,6 +9,8 @@
 {
 	global:
 		zdesktop_version;
+		zdesktop_menu_*;
+		zdesktop_window_menu_*;
 	local:
 		*;
 };

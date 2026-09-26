@@ -21,7 +21,14 @@
  * total size of the regular files counted, and at least 7 when one of the
  * inputs is not a regular file (a pipe); one count of one input is not
  * padded.
+ *
+ * GNU's extensions: -L (--max-line-length) writes the width of the longest
+ * line (a tab moves to the next multiple of 8, a printable byte is one
+ * column), after the other counts; the long options; and options after
+ * operands (unless POSIXLY_CORRECT is set).
  */
+
+#include "userland/base/common/command.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -29,11 +36,33 @@
 #include <string.h>
 #include <sys/stat.h>
 
-/* The counts of one input. */
+/* The codes of the long options that have no letter. */
+#define OPTION_HELP	256
+#define OPTION_VERSION	257
+
+/*
+ * The options written in full.
+ *
+ * The table is read by the scan of the command line only; the letter a
+ * long option shares its code with makes the two forms one case.
+ */
+static const struct command_long_option wc_long_options[] = {
+	{"bytes", COMMAND_VALUE_NONE, 'c'},
+	{"chars", COMMAND_VALUE_NONE, 'm'},
+	{"help", COMMAND_VALUE_NONE, OPTION_HELP},
+	{"lines", COMMAND_VALUE_NONE, 'l'},
+	{"max-line-length", COMMAND_VALUE_NONE, 'L'},
+	{"version", COMMAND_VALUE_NONE, OPTION_VERSION},
+	{"words", COMMAND_VALUE_NONE, 'w'},
+	{NULL, 0, 0}
+};
+
+/* The counts of one input, and its longest line (-L). */
 struct counts {
 	unsigned long long lines;
 	unsigned long long words;
 	unsigned long long bytes;
+	unsigned long long longest;
 };
 
 /* What to write. */
@@ -42,6 +71,7 @@ struct options {
 	int words;
 	int characters;
 	int bytes;
+	int longest;
 	int width;
 };
 
@@ -49,6 +79,7 @@ static int read_options(int argc, char **argv, struct options *options);
 static int count_stream(FILE *stream, struct counts *counts);
 static int compute_width(int argc, char **argv, int first, const struct options *options);
 static int is_space(int value);
+static unsigned long long advance_column(unsigned long long column, int value, unsigned long long *longest);
 static void print_counts(const struct options *options, const struct counts *counts, const char *name);
 static void print_number(int *first, int width, unsigned long long value);
 
@@ -65,17 +96,20 @@ main(
 	struct counts total;
 	FILE *stream;
 	const char *name;
+	int count;
 	int first;
 	int index;
 	int status;
 	int compare;
 	int ok;
 
-	/* The options; none means -l -w -c. */
+	/* The options; none means -l -w -c.  The operands follow argv[0]. */
 	memset(&options, 0, sizeof(options));
-	first = read_options(argc, argv, &options);
+	count = read_options(argc, argv, &options);
+	first = 1;
+	argc = first + count;
 	if (!options.lines && !options.words && !options.characters &&
-	    !options.bytes) {
+	    !options.bytes && !options.longest) {
 		options.lines = 1;
 		options.words = 1;
 		options.bytes = 1;
@@ -123,6 +157,8 @@ main(
 		total.lines += counts.lines;
 		total.words += counts.words;
 		total.bytes += counts.bytes;
+		if (counts.longest > total.longest)
+			total.longest = counts.longest;
 	}
 
 	/* Succeeded: the total of several files. */
@@ -131,53 +167,60 @@ main(
 	return status;
 }
 
-/* Reads the options; returns the index of the first operand. */
+/*
+ * Reads the options; returns the number of operands, which are left in
+ * argv from argv[1] on.
+ */
 static int
 read_options(
 	int argc,
 	char **argv,
 	struct options *options)
 {
-	const char *letter;
-	const char *word;
-	int index;
+	struct command_options scan;
+	int code;
 
-	/* Each option word. */
-	for (index = 1; index < argc; index++) {
-		/* An operand, or - alone, ends the options; so does --. */
-		word = argv[index];
-		if (word[0] != '-' || word[1] == '\0')
+	/* The scan of the command line. */
+	memset(&scan, 0, sizeof(scan));
+	scan.argc = argc;
+	scan.argv = argv;
+	scan.program = "wc";
+	scan.letters = "lwmcL";
+	scan.names = wc_long_options;
+	command_options_start(&scan);
+
+	/* Each option in turn. */
+	for (;;) {
+		code = command_options_next(&scan);
+		if (code == COMMAND_OPTION_END)
 			break;
-		if (word[1] == '-' && word[2] == '\0')
-			return index + 1;
-
-		/* Each letter. */
-		for (letter = word + 1; *letter != '\0'; letter++) {
-			switch (*letter) {
-			case 'l':
-				options->lines = 1;
-				break;
-			case 'w':
-				options->words = 1;
-				break;
-			case 'm':
-				options->characters = 1;
-				break;
-			case 'c':
-				options->bytes = 1;
-				break;
-			default:
-				fprintf(stderr, "wc: invalid option -- '%c'\n",
-					*letter);
-				fprintf(stderr, "usage: wc [-c|-m] [-lw] "
-					"[file...]\n");
-				exit(1);
-			}
+		switch (code) {
+		case 'l':
+			options->lines = 1;
+			break;
+		case 'w':
+			options->words = 1;
+			break;
+		case 'm':
+			options->characters = 1;
+			break;
+		case 'c':
+			options->bytes = 1;
+			break;
+		case 'L':
+			options->longest = 1;
+			break;
+		case OPTION_VERSION:
+			printf("wc (zedBSD) 1.0\n");
+			exit(0);
+		default:
+			fprintf(stderr, "usage: wc [-c|-m] [-lwL] [file...]\n");
+			exit(1);
 		}
 	}
 
-	/* Succeeded: the first operand. */
-	return index;
+	/* Succeeded: the operands follow argv[0]. */
+	return scan.operand_count;
 }
 
 /* Counts one input.  Returns 0 when reading failed. */
@@ -186,6 +229,7 @@ count_stream(
 	FILE *stream,
 	struct counts *counts)
 {
+	unsigned long long column;
 	int value;
 	int in_word;
 	int space;
@@ -194,6 +238,7 @@ count_stream(
 	/* No counts yet. */
 	memset(counts, 0, sizeof(*counts));
 	in_word = 0;
+	column = 0;
 	for (;;) {
 		/* The next byte. */
 		value = getc(stream);
@@ -202,6 +247,9 @@ count_stream(
 		counts->bytes++;
 		if (value == '\n')
 			counts->lines++;
+
+		/* The column the byte leaves the line at, for -L. */
+		column = advance_column(column, value, &counts->longest);
 
 		/* A word starts at a non-space after a space. */
 		space = is_space(value);
@@ -213,11 +261,46 @@ count_stream(
 		}
 	}
 
+	/* A last line without a newline counts for -L too. */
+	if (column > counts->longest)
+		counts->longest = column;
+
 	/* Succeeded unless the stream failed. */
 	failed = ferror(stream);
 	if (failed)
 		return 0;
 	return 1;
+}
+
+/*
+ * Returns the column after a byte, as GNU's -L counts it: a line end (a
+ * newline, a return or a form feed) goes back to 0, remembering the widest
+ * line; a tab goes to the next multiple of 8; a printable byte is one
+ * column, and any other none.
+ */
+static unsigned long long
+advance_column(
+	unsigned long long column,
+	int value,
+	unsigned long long *longest)
+{
+	/* The end of a line. */
+	if (value == '\n' || value == '\r' || value == '\f') {
+		if (column > *longest)
+			*longest = column;
+		return 0;
+	}
+
+	/* A tab. */
+	if (value == '\t')
+		return column + 8U - column % 8U;
+
+	/* A printable byte. */
+	if (value >= 0x20 && value < 0x7f)
+		return column + 1U;
+
+	/* Succeeded: anything else takes no room. */
+	return column;
 }
 
 /*
@@ -245,7 +328,7 @@ compute_width(
 
 	/* One count of one input is written as it is. */
 	counts = options->lines + options->words + options->characters +
-	    options->bytes;
+	    options->bytes + options->longest;
 	inputs = argc - first;
 	if (counts == 1 && inputs <= 1)
 		return 1;
@@ -313,6 +396,8 @@ print_counts(
 		print_number(&first, options->width, counts->bytes);
 	if (options->bytes)
 		print_number(&first, options->width, counts->bytes);
+	if (options->longest)
+		print_number(&first, options->width, counts->longest);
 
 	/* The name. */
 	if (name != NULL)

@@ -20,6 +20,13 @@
  * escaped, stands for itself, \n is a newline, and a bracket expression is
  * copied whole (a delimiter inside one does not end the expression).  An
  * empty regular expression stands for the last one used, at run time.
+ *
+ * GNU's escapes that make a byte (\a, \f, \n, \r, \t, \v, \dNNN, \oNNN,
+ * \xHH and \cX) are made into the byte in a regex (inside a bracket
+ * expression too), a replacement, a string of y and the text of a, i and
+ * c.  In a regex the byte keeps its meaning (as in GNU sed); in a
+ * replacement & and a backslash made so stand for themselves.  \` and \'
+ * (the start and the end of the pattern space) become ^ and $.
  */
 
 #include "userland/base/sed/sed.h"
@@ -59,21 +66,28 @@ static void parse_name(struct parser *parser, size_t index);
 static void parse_block_end(struct parser *parser, size_t index);
 static void parse_comment(struct parser *parser, size_t index);
 static int parse_address(struct parser *parser, struct sed_address *address);
+static int parse_second_address(struct parser *parser, struct sed_address *address);
 static unsigned long parse_number(struct parser *parser);
 static void parse_regex_address(struct parser *parser, char delimiter, struct sed_address *address);
 static void read_delimited(struct parser *parser, char delimiter, int kind, struct text_buffer *out);
 static void read_escape(struct parser *parser, char delimiter, int kind, struct text_buffer *out);
+static int make_escape(struct parser *parser, char letter, char *made);
+static int escape_digits(struct parser *parser, unsigned int base, size_t most, unsigned int *value);
+static void add_made(struct text_buffer *out, char made, int kind);
 static void copy_bracket(struct parser *parser, struct text_buffer *out);
-static regex_t *compile_regex(struct parser *parser, const char *text, int ignore_case);
+static regex_t *compile_regex(struct parser *parser, const char *text, int ignore_case, int multiline);
 static char *parse_text(struct parser *parser);
 static char *parse_label(struct parser *parser);
 static char *parse_filename(struct parser *parser);
+static char *parse_command_line(struct parser *parser);
+static struct sed_reader *find_reader(struct parser *parser, const char *name);
 static void parse_substitute(struct parser *parser, struct sed_command *command);
-static void parse_substitute_flags(struct parser *parser, struct sed_command *command, int *ignore_case);
+static void parse_substitute_flags(struct parser *parser, struct sed_command *command, int *ignore_case, int *multiline);
 static void check_references(struct parser *parser, const struct sed_substitute *substitute);
 static void parse_translation(struct parser *parser, struct sed_command *command);
 static struct sed_output *open_output(struct parser *parser, const char *name);
 static void end_command(struct parser *parser);
+static void check_sandbox(const struct parser *parser);
 static void skip_blanks(struct parser *parser);
 static char peek(const struct parser *parser);
 static void resolve_labels(struct parser *parser);
@@ -182,10 +196,21 @@ parse_addresses(
 	if (found && value == ',') {
 		parser->position++;
 		skip_blanks(parser);
-		found = parse_address(parser, &command->second);
+		found = parse_second_address(parser, &command->second);
 		if (!found)
 			compile_error(parser, "unexpected `,'");
 		skip_blanks(parser);
+	}
+
+	/* A second address of 0 is no line at all. */
+	if (command->second.kind == SED_ADDRESS_ZERO)
+		compile_error(parser, "invalid usage of line address 0");
+
+	/* 0 only starts 0,/re/, whose range is open before the first line. */
+	if (command->first.kind == SED_ADDRESS_ZERO) {
+		if (command->second.kind != SED_ADDRESS_REGEX)
+			compile_error(parser, "invalid usage of line address 0");
+		command->in_range = 1;
 	}
 
 	/* ! selects the lines the addresses do not. */
@@ -206,6 +231,7 @@ parse_name(
 	size_t index)
 {
 	struct sed_command *command;
+	char *label;
 	char name;
 	char value;
 	int digit;
@@ -252,12 +278,37 @@ parse_name(
 		return;
 	case 'b':
 	case 't':
+	case 'T':
 		command->text = parse_label(parser);
 		break;
+	case 'v':
+		/* GNU's v [version]: the version asked for is not checked. */
+		label = parse_label(parser);
+		free(label);
+		break;
+	case 'e':
+		/* GNU's e [command]: the rest of the line. */
+		check_sandbox(parser);
+		command->text = parse_command_line(parser);
+		return;
+	case 'R':
+		/* GNU's R file: a line of the file at a time. */
+		check_sandbox(parser);
+		command->text = parse_filename(parser);
+		command->reader = find_reader(parser, command->text);
+		return;
+	case 'W':
+		/* GNU's W file: the first line of the pattern space. */
+		check_sandbox(parser);
+		command->text = parse_filename(parser);
+		command->output = open_output(parser, command->text);
+		return;
 	case 'r':
+		check_sandbox(parser);
 		command->text = parse_filename(parser);
 		return;
 	case 'w':
+		check_sandbox(parser);
 		command->text = parse_filename(parser);
 		command->output = open_output(parser, command->text);
 		return;
@@ -272,12 +323,17 @@ parse_name(
 		break;
 	case 'l':
 	case 'q':
+	case 'Q':
 		/* An optional number: the line length, or the exit status. */
 		skip_blanks(parser);
 		value = peek(parser);
 		digit = is_digit(value);
-		if (digit)
+		if (digit) {
 			command->exit_status = (int)parse_number(parser);
+			command->number_given = 1;
+		}
+
+		/* Only a separator may follow. */
 		break;
 	case '=':
 	case 'd':
@@ -291,6 +347,8 @@ parse_name(
 	case 'p':
 	case 'P':
 	case 'x':
+	case 'F':
+	case 'z':
 		break;
 	default:
 		compile_error(parser, "unknown command");
@@ -360,13 +418,22 @@ parse_address(
 	/* The character the address starts with. */
 	value = peek(parser);
 
-	/* A line number; 0 is not one. */
+	/* A line number, GNU's first~step, or the 0 of 0,/re/. */
 	digit = is_digit(value);
 	if (digit) {
 		address->kind = SED_ADDRESS_LINE;
 		address->line = parse_number(parser);
+		value = peek(parser);
+		if (value == '~') {
+			parser->position++;
+			address->kind = SED_ADDRESS_STEP;
+			address->step = parse_number(parser);
+			return 1;
+		}
+
+		/* 0 is checked with the address after it. */
 		if (address->line == 0)
-			compile_error(parser, "invalid usage of line address 0");
+			address->kind = SED_ADDRESS_ZERO;
 		return 1;
 	}
 
@@ -397,6 +464,40 @@ parse_address(
 
 	/* No address. */
 	return 0;
+}
+
+/*
+ * Parses the second address of a range: an address, or GNU's +N (N lines
+ * more) or ~N (up to the next line whose number is a multiple of N).
+ * Returns 0 when there is none.
+ */
+static int
+parse_second_address(
+	struct parser *parser,
+	struct sed_address *address)
+{
+	char value;
+	int digit;
+	int found;
+
+	/* +N and ~N. */
+	value = peek(parser);
+	if (value == '+' || value == '~') {
+		parser->position++;
+		address->kind = SED_ADDRESS_PLUS;
+		if (value == '~')
+			address->kind = SED_ADDRESS_MULTIPLE;
+		value = peek(parser);
+		digit = is_digit(value);
+		if (!digit)
+			compile_error(parser, "expected number after `+' or `~'");
+		address->line = parse_number(parser);
+		return 1;
+	}
+
+	/* Succeeded: an address of the first kind, or none. */
+	found = parse_address(parser, address);
+	return found;
 }
 
 /* Parses a decimal number. */
@@ -435,6 +536,7 @@ parse_regex_address(
 {
 	struct text_buffer text;
 	int ignore_case;
+	int multiline;
 	char value;
 
 	/* The regex. */
@@ -442,20 +544,24 @@ parse_regex_address(
 	read_delimited(parser, delimiter, KIND_REGEX, &text);
 	buffer_finish(&text);
 
-	/* I: case is ignored.  M (multi-line) is taken and ignored. */
+	/* I: case is ignored.  M: ^ and $ match at each newline too. */
 	ignore_case = 0;
+	multiline = 0;
 	for (;;) {
 		value = peek(parser);
 		if (value != 'I' && value != 'M')
 			break;
 		if (value == 'I')
 			ignore_case = 1;
+		if (value == 'M')
+			multiline = 1;
 		parser->position++;
 	}
 
 	/* Succeeded: the compiled regex, or NULL for the last one used. */
 	address->kind = SED_ADDRESS_REGEX;
-	address->regex = compile_regex(parser, text.data, ignore_case);
+	address->regex = compile_regex(parser, text.data, ignore_case,
+				       multiline);
 	free(text.data);
 }
 
@@ -516,6 +622,8 @@ read_escape(
 	struct text_buffer *out)
 {
 	char next;
+	char made;
+	int made_byte;
 	int special;
 
 	/* The character after the backslash. */
@@ -537,15 +645,28 @@ read_escape(
 		return;
 	}
 
-	/* A newline, and a tab. */
-	if (next == 'n' || next == '\n') {
+	/* A backslash-newline is a newline. */
+	if (next == '\n') {
 		buffer_add(out, '\n');
 		return;
 	}
 
-	/* A tab. */
-	if (next == 't') {
-		buffer_add(out, '\t');
+	/* An escape that makes a byte. */
+	made_byte = make_escape(parser, next, &made);
+	if (made_byte) {
+		add_made(out, made, kind);
+		return;
+	}
+
+	/* \` in a regex: the start of the pattern space. */
+	if (kind == KIND_REGEX && next == '`') {
+		buffer_add(out, '^');
+		return;
+	}
+
+	/* \' in a regex: the end of the pattern space. */
+	if (kind == KIND_REGEX && next == '\'') {
+		buffer_add(out, '$');
 		return;
 	}
 
@@ -561,9 +682,147 @@ read_escape(
 }
 
 /*
+ * Makes the byte of one of GNU's escapes, whose letter is at the position
+ * before the parser's (\a \f \n \r \t \v, \dNNN decimal, \oNNN octal,
+ * \xHH hexadecimal, \cX control).  The digits after the letter are taken.
+ * Returns 0 when the letter makes no byte.
+ */
+static int
+make_escape(
+	struct parser *parser,
+	char letter,
+	char *made)
+{
+	unsigned int value;
+	char control;
+	int found;
+
+	/* The escapes of one letter. */
+	switch (letter) {
+	case 'a':
+		*made = '\a';
+		return 1;
+	case 'f':
+		*made = '\f';
+		return 1;
+	case 'n':
+		*made = '\n';
+		return 1;
+	case 'r':
+		*made = '\r';
+		return 1;
+	case 't':
+		*made = '\t';
+		return 1;
+	case 'v':
+		*made = '\v';
+		return 1;
+	case 'd':
+		found = escape_digits(parser, 10U, 3U, &value);
+		break;
+	case 'o':
+		found = escape_digits(parser, 8U, 3U, &value);
+		break;
+	case 'x':
+		found = escape_digits(parser, 16U, 2U, &value);
+		break;
+	case 'c':
+		/* \cX: X as a control character. */
+		control = peek(parser);
+		if (control == '\0' || control == '\n')
+			return 0;
+		parser->position++;
+		if (control >= 'a' && control <= 'z')
+			control = (char)(control - 'a' + 'A');
+		*made = (char)(control ^ 0x40);
+		return 1;
+	default:
+		return 0;
+	}
+
+	/* A number escape without its digits makes nothing. */
+	if (!found)
+		return 0;
+
+	/* Succeeded: the byte of the number. */
+	*made = (char)(unsigned char)value;
+	return 1;
+}
+
+/*
+ * Reads up to most digits of a base at the parser's position.  Returns 0
+ * when there is not even one.
+ */
+static int
+escape_digits(
+	struct parser *parser,
+	unsigned int base,
+	size_t most,
+	unsigned int *value)
+{
+	unsigned int digit;
+	size_t count;
+	char next;
+
+	/* Each digit, up to the most. */
+	*value = 0;
+	for (count = 0; count < most; count++) {
+		/* The digit's value, or the end of the number. */
+		next = peek(parser);
+		if (next >= '0' && next <= '9') {
+			digit = (unsigned int)(next - '0');
+		} else if (next >= 'a' && next <= 'f') {
+			digit = (unsigned int)(next - 'a' + 10);
+		} else if (next >= 'A' && next <= 'F') {
+			digit = (unsigned int)(next - 'A' + 10);
+		} else {
+			break;
+		}
+
+		/* A digit of another base ends the number. */
+		if (digit >= base)
+			break;
+		*value = *value * base + digit;
+		parser->position++;
+	}
+
+	/* Succeeded: whether there was a digit. */
+	if (count == 0)
+		return 0;
+	return 1;
+}
+
+/*
+ * Adds a byte an escape made.  In a regex the byte keeps what it means
+ * there (GNU's \x2e is any character), except a backslash; in a
+ * replacement & and the backslash stand for themselves.
+ */
+static void
+add_made(
+	struct text_buffer *out,
+	char made,
+	int kind)
+{
+	int special;
+
+	/* Whether the byte is escaped where it goes. */
+	special = 0;
+	if (kind == KIND_REGEX && made == '\\')
+		special = 1;
+	if (kind == KIND_REPLACEMENT && (made == '&' || made == '\\'))
+		special = 1;
+
+	/* Succeeded: the byte, escaped when it must be. */
+	if (special)
+		buffer_add(out, '\\');
+	buffer_add(out, made);
+}
+
+/*
  * Copies a bracket expression: [ then an optional ^ or !, a ] that is first
  * in the set, and everything up to the closing ], including [:class:],
- * [=equivalence=] and [.collating.] elements.
+ * [=equivalence=] and [.collating.] elements.  GNU's escapes that make a
+ * byte (such as \t and \n) are made into it here too.
  */
 static void
 copy_bracket(
@@ -573,6 +832,9 @@ copy_bracket(
 	char value;
 	char kind;
 	char next;
+	char letter;
+	char made;
+	int made_byte;
 
 	/* [ and the start of the set. */
 	buffer_add(out, '[');
@@ -596,6 +858,22 @@ copy_bracket(
 		value = peek(parser);
 		if (value == '\0' || value == '\n')
 			compile_error(parser, "unterminated address regex");
+
+		/* An escape that makes a byte is the byte. */
+		if (value == '\\') {
+			letter = parser->text[parser->position + 1];
+			parser->position += 2;
+			made_byte = make_escape(parser, letter, &made);
+			if (made_byte) {
+				buffer_add(out, made);
+				continue;
+			}
+
+			/* Any other escape is copied as it is. */
+			parser->position -= 2;
+		}
+
+		/* Any other character, which the ] ends the set. */
 		buffer_add(out, value);
 		parser->position++;
 		if (value == ']')
@@ -624,14 +902,16 @@ copy_bracket(
 }
 
 /*
- * Compiles a regex (basic, or extended with -E).  An empty one is NULL,
+ * Compiles a regex (basic, or extended with -E), ignoring case or with ^
+ * and $ at each newline (GNU's I and M) when asked.  An empty one is NULL,
  * which stands for the last regex used.
  */
 static regex_t *
 compile_regex(
 	struct parser *parser,
 	const char *text,
-	int ignore_case)
+	int ignore_case,
+	int multiline)
 {
 	char message[256];
 	regex_t *regex;
@@ -648,6 +928,8 @@ compile_regex(
 		flags |= REG_EXTENDED;
 	if (ignore_case)
 		flags |= REG_ICASE;
+	if (multiline)
+		flags |= REG_NEWLINE;
 
 	/* The regex, compiled. */
 	regex = sed_malloc(sizeof(*regex));
@@ -673,6 +955,8 @@ parse_text(
 	struct text_buffer text;
 	char value;
 	char next;
+	char made;
+	int made_byte;
 	char *finished;
 
 	/* The form: a\ and a newline, a\text, or a text. */
@@ -705,9 +989,13 @@ parse_text(
 				break;
 			}
 
-			/* Any other escaped character is itself. */
-			buffer_add(&text, next);
+			/* An escape that makes a byte (GNU), or the character. */
 			parser->position += 2;
+			made_byte = make_escape(parser, next, &made);
+			if (made_byte)
+				buffer_add(&text, made);
+			else
+				buffer_add(&text, next);
 			continue;
 		}
 
@@ -790,6 +1078,68 @@ parse_filename(
 	return finished;
 }
 
+/*
+ * Reads the command of e, to the end of the line.  Returns NULL when there
+ * is none (e alone runs the pattern space).
+ */
+static char *
+parse_command_line(
+	struct parser *parser)
+{
+	struct text_buffer line;
+	char value;
+	char *finished;
+
+	/* The rest of the line. */
+	skip_blanks(parser);
+	memset(&line, 0, sizeof(line));
+	for (;;) {
+		value = peek(parser);
+		if (value == '\0')
+			break;
+		parser->position++;
+		if (value == '\n')
+			break;
+		buffer_add(&line, value);
+	}
+
+	/* No command. */
+	if (line.length == 0) {
+		free(line.data);
+		return NULL;
+	}
+
+	/* Succeeded: the command, as a string. */
+	finished = buffer_finish(&line);
+	return finished;
+}
+
+/* Returns the reader of R for a file, shared by every R that names it. */
+static struct sed_reader *
+find_reader(
+	struct parser *parser,
+	const char *name)
+{
+	struct sed_reader *reader;
+	int compare;
+
+	/* A file already named. */
+	for (reader = parser->program->readers; reader != NULL;
+	     reader = reader->next) {
+		compare = strcmp(reader->name, name);
+		if (compare == 0)
+			return reader;
+	}
+
+	/* Succeeded: a new one, opened when first read. */
+	reader = sed_malloc(sizeof(*reader));
+	memset(reader, 0, sizeof(*reader));
+	reader->name = sed_strndup(name, strlen(name));
+	reader->next = parser->program->readers;
+	parser->program->readers = reader;
+	return reader;
+}
+
 /* Parses s/regex/replacement/flags. */
 static void
 parse_substitute(
@@ -800,6 +1150,7 @@ parse_substitute(
 	struct text_buffer replacement;
 	char delimiter;
 	int ignore_case;
+	int multiline;
 
 	/* The delimiter: any character but a backslash or a newline. */
 	delimiter = peek(parser);
@@ -817,21 +1168,22 @@ parse_substitute(
 
 	/* The flags, then the regex compiled with them. */
 	command->substitute.occurrence = 1;
-	parse_substitute_flags(parser, command, &ignore_case);
+	parse_substitute_flags(parser, command, &ignore_case, &multiline);
 	command->substitute.regex = compile_regex(parser, regex.data,
-						  ignore_case);
+						  ignore_case, multiline);
 	free(regex.data);
 
 	/* Succeeded: the replacement names only groups the regex has. */
 	check_references(parser, &command->substitute);
 }
 
-/* Parses the flags of s: g, p, a number, I, and w file (last). */
+/* Parses the flags of s: g, p, a number, I, M, e, and w file (last). */
 static void
 parse_substitute_flags(
 	struct parser *parser,
 	struct sed_command *command,
-	int *ignore_case)
+	int *ignore_case,
+	int *multiline)
 {
 	struct sed_substitute *substitute;
 	char *name;
@@ -841,6 +1193,7 @@ parse_substitute_flags(
 	/* No flags yet. */
 	substitute = &command->substitute;
 	*ignore_case = 0;
+	*multiline = 0;
 	for (;;) {
 		value = peek(parser);
 		switch (value) {
@@ -856,9 +1209,15 @@ parse_substitute_flags(
 			break;
 		case 'm':
 		case 'M':
+			*multiline = 1;
+			break;
+		case 'e':
+			check_sandbox(parser);
+			substitute->evaluate = 1;
 			break;
 		case 'w':
 			/* w file takes the rest of the line. */
+			check_sandbox(parser);
 			parser->position++;
 			name = parse_filename(parser);
 			substitute->output = open_output(parser, name);
@@ -1009,6 +1368,19 @@ end_command(
 	compile_error(parser, "extra characters after command");
 }
 
+/* Refuses a command that runs a program or touches a file, with --sandbox. */
+static void
+check_sandbox(
+	const struct parser *parser)
+{
+	/* Anything goes outside the sandbox. */
+	if (!parser->program->sandbox)
+		return;
+
+	/* The refusal ends sed. */
+	compile_error(parser, "e/r/w commands disabled in sandbox mode");
+}
+
 /* Skips spaces and tabs. */
 static void
 skip_blanks(
@@ -1035,7 +1407,7 @@ peek(
 }
 
 /*
- * Resolves each b and t to the index of its label, or to the end of the
+ * Resolves each b, t and T to the index of its label, or to the end of the
  * script when it has none.
  */
 static void
@@ -1048,11 +1420,12 @@ resolve_labels(
 	size_t label;
 	int compare;
 
-	/* Each b and t, to the : of its label. */
+	/* Each b, t and T, to the : of its label. */
 	program = parser->program;
 	for (index = 0; index < program->count; index++) {
 		command = &program->commands[index];
-		if (command->name != 'b' && command->name != 't')
+		if (command->name != 'b' && command->name != 't' &&
+		    command->name != 'T')
 			continue;
 
 		/* No label: the end of the script. */
