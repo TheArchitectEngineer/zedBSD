@@ -161,7 +161,9 @@ lock を放す。Serialized の method は method ごとの mutex（SyncLevel �
   BufferAcc（GenericSerialBus など）は handler に buffer で渡す。
 - IndexField は index の field に byte offset を書いてから data の field を読み書きする。BankField は bank の field に値を書いてから読み書きする。
 - region の handler は `(space, 読むか書くか, 物理番地か offset, 幅 bit, 値)` を受ける関数と文脈。登録は space ごとに一つ。
-  handler を登録したとき、その space の region を持つ device の `_REG(space, 1)` を呼ぶ（SystemMemory・SystemIO・PCI_Config は常に有るとみなす）。
+  読み込みの後の `drv_acpi_region_connect_all()` と、その後の handler の登録で、その space の region ごとに同じ scope の `_REG(space, 1)` を呼ぶ
+  （p004 で実装）。SystemMemory・SystemIO は常に有るので呼ばない（ACPI 6.5 §6.5.4）。PCI_Config と EmbeddedControl は呼ぶ（acpiexec は
+  PCI_Config の `_REG` を呼ばないが、仕様どおりにした）。
 - 読み書きの失敗は method の評価を失敗させる。handler が無い space の access も失敗させる（誤った値を返さない）。
 
 ## 6. OS の口（`aml-os.h`）
@@ -189,9 +191,9 @@ interpreter が OS に求めるもの。kernel は `acpi-kern.c`、host 試験�
 
 ## 8. `_OSI`
 
-`_OSI("Windows 20xx")` に真を返す版の一覧を持つ。Alder Lake の laptop の firmware は Windows の版で機能（modern standby、USB-C、
+`_OSI("Windows 20xx")` に真を返す版の一覧を持つ（p004 の実装は `Windows 2022` までと `Extended Address Space Descriptor`。ACPICA の既定と同じ。ユーザーの判断までの仮の既定）。Alder Lake の laptop の firmware は Windows の版で機能（modern standby、USB-C、
 Thunderbolt）を切り替えるので、**Windows 10/11 の版まで（`Windows 2022` まで）真**を既定の案とする（Linux の既定と同じ考え方）。
-`Linux` と `Darwin` は偽。`Module Device`・`Processor Device`・`3.0 Thermal Model`・`Extended Address Space Descriptor` は真。
+`Linux` と `Darwin` は偽。`Module Device`・`Processor Device`・`3.0 Thermal Model`・`3.0 _SCP Extensions`・`Processor Aggregator Device` は、それを扱う driver ができるまで名乗らない（Linux は driver があるときに足す）。
 **どの Windows を名乗るかはユーザーの判断**（WS049 の ws.md の判断の点）。実装は一覧を一か所の表にして変えやすくする。
 
 ## 9. HAL の差分の案（承認が要る。適用しない）

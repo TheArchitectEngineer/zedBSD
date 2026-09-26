@@ -214,6 +214,9 @@ drv_acpi_region_install(
 	void *argument);
 
 int
+drv_acpi_region_connect_all(void);
+
+int
 drv_acpi_notify_install(
 	struct drv_acpi_node *node,
 	drv_acpi_notify_handler_t handler,

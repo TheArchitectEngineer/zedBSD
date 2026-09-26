@@ -1,5 +1,6 @@
 #!/bin/sh
-# WS049: compares the namespaces of every DSDT in QEMU's ACPI test data.
+# WS049: compares the namespaces and the device evaluations of every DSDT in
+# QEMU's ACPI test data.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 #
 #   plan/ws049/tests/compare-corpus.sh [QEMU_SOURCE]
@@ -25,7 +26,8 @@ for dsdt in $(find "$data" -name 'DSDT*' -type f | sort); do
 		set -- "$@" "$ssdt"
 	done
 	name=$(echo "${dsdt#$data/}" | tr '/' '_')
-	if "$repo/plan/ws049/tests/compare-namespace.sh" "$name" "$@" > /dev/null; then
+	if "$repo/plan/ws049/tests/compare-namespace.sh" "$name" "$@" > /dev/null &&
+	    python3 "$repo/plan/ws049/tests/compare-devices.py" "$name" "$@" > /dev/null; then
 		pass=$((pass + 1))
 	else
 		fail=$((fail + 1))

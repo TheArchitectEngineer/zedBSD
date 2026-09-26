@@ -10,8 +10,10 @@
  *
  * PC firmware enables features by the Windows release it is told it runs
  * on, so zedBSD answers true for the Windows releases up to the one named
- * last in the table, and for the feature strings it implements.  The
- * table is the one place to change that answer.
+ * last in the table, and for the feature strings it implements.  Optional
+ * features (Module Device, Processor Device, 3.0 Thermal Model, 3.0 _SCP
+ * Extensions, Processor Aggregator Device) are claimed only once a driver
+ * handles them.  The table is the one place to change that answer.
  */
 
 #include <kern/kcrt.h>
@@ -47,11 +49,6 @@ static const char *const osi_supported[] = {
 	"Windows 2020",
 	"Windows 2021",
 	"Windows 2022",
-	"Module Device",
-	"Processor Device",
-	"3.0 Thermal Model",
-	"3.0 _SCP Extensions",
-	"Processor Aggregator Device",
 	"Extended Address Space Descriptor",
 };
 

@@ -46,6 +46,15 @@ struct region_handler {
  */
 static struct region_handler region_handlers[DRV_ACPI_SPACE_COUNT];
 
+/*
+ * Whether the loaded namespace has had its regions connected.
+ *
+ * drv_acpi_region_connect_all() sets it once the tables are loaded; from
+ * then on a handler installed later (the embedded controller's) connects
+ * its space at once.  drv_acpi_region_reset() clears it.
+ */
+static bool regions_connected;
+
 static int region_access(struct drv_acpi_eval *eval, struct drv_acpi_object *region, uint64_t offset, unsigned bytes, bool write, uint64_t *value);
 static int region_resolve_pci(struct drv_acpi_object *region);
 static int evaluate_found(struct drv_acpi_node *device, const char *name, bool own, uint64_t *value);
@@ -59,6 +68,9 @@ static void bits_extract(const uint8_t *source, uint64_t bit_offset, uint64_t bi
 static void bits_insert(uint8_t *destination, uint64_t bit_offset, uint64_t bit_length, const uint8_t *source);
 static int named_field_write(struct drv_acpi_eval *eval, struct drv_acpi_node *node, uint64_t value);
 static int named_field_read(struct drv_acpi_eval *eval, struct drv_acpi_node *node, uint64_t *value);
+static int region_connect(enum drv_acpi_space space);
+static int connect_visitor(struct drv_acpi_node *node, unsigned depth, void *argument);
+static int run_reg(struct drv_acpi_node *region, unsigned space);
 
 /*
  * Installs the handler of an address space.
@@ -69,6 +81,8 @@ drv_acpi_region_install(
 	drv_acpi_region_handler_t handler,
 	void *argument)
 {
+	int error;
+
 	/* Refuses a space ACPI does not define. */
 	if ((unsigned)space >= DRV_ACPI_SPACE_COUNT)
 		return EINVAL;
@@ -81,6 +95,46 @@ drv_acpi_region_install(
 	region_handlers[space].handler = handler;
 	region_handlers[space].argument = argument;
 
+	/* A handler installed after the tables tells their regions at once. */
+	if (regions_connected) {
+		error = region_connect(space);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Tells firmware which address spaces have handlers, by running _REG
+ * (space, 1) for each region of those spaces, once the tables are loaded.
+ *
+ * System memory and system I/O are always available and get no _REG, as
+ * ACPI 6.5 section 6.5.4 lets the operating system choose.  A handler
+ * installed afterwards connects its space when it is installed.
+ */
+int
+drv_acpi_region_connect_all(void)
+{
+	unsigned space;
+	int error;
+
+	/* Handlers installed from now on connect at once. */
+	regions_connected = true;
+
+	/* Connects each space that has a handler. */
+	for (space = 0; space < DRV_ACPI_SPACE_COUNT; space++) {
+		/* Skips a space without a handler. */
+		if (region_handlers[space].handler == NULL)
+			continue;
+
+		/* Runs the _REG methods of the space's regions. */
+		error = region_connect((enum drv_acpi_space)space);
+		if (error != 0)
+			return error;
+	}
+
 	/* Succeeded. */
 	return 0;
 }
@@ -92,8 +146,9 @@ drv_acpi_region_install(
 void
 drv_acpi_region_reset(void)
 {
-	/* Forgets every handler. */
+	/* Forgets every handler, and that the regions were connected. */
 	kern_memset(region_handlers, 0, sizeof(region_handlers));
+	regions_connected = false;
 }
 
 /*
@@ -887,6 +942,96 @@ named_field_write(
 	drv_acpi_object_release(integer);
 	if (error != 0)
 		return error;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/* Runs _REG (space, 1) for each region of one space not yet connected. */
+static int
+region_connect(
+	enum drv_acpi_space space)
+{
+	unsigned wanted;
+	int error;
+
+	/* System memory and system I/O are always there and get no _REG. */
+	if (space == DRV_ACPI_SPACE_SYSTEM_MEMORY || space == DRV_ACPI_SPACE_SYSTEM_IO)
+		return 0;
+
+	/* Visits every region in the namespace. */
+	wanted = (unsigned)space;
+	error = drv_acpi_walk(NULL, connect_visitor, &wanted);
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/* Connects one region of the space the walk asks for. */
+static int
+connect_visitor(
+	struct drv_acpi_node *node,
+	unsigned depth,
+	void *argument)
+{
+	struct drv_acpi_object *region;
+	unsigned space;
+
+	UNUSED_PARAMETER(depth);
+
+	/* Only regions of the wanted space that are not connected yet matter. */
+	space = *(unsigned *)argument;
+	region = node->object;
+	if (region == NULL || region->type != DRV_ACPI_TYPE_REGION)
+		return 0;
+	if (region->value.region.space != space || region->value.region.connected)
+		return 0;
+
+	/*
+	 * The region is connected from now on, even when its _REG fails, so
+	 * that the method runs once.
+	 */
+	region->value.region.connected = 1;
+	run_reg(node, space);
+
+	/* Goes on with the walk. */
+	return 0;
+}
+
+/* Runs the _REG of the scope a region is in, if it has one. */
+static int
+run_reg(
+	struct drv_acpi_node *region,
+	unsigned space)
+{
+	struct drv_acpi_object *arguments[2];
+	struct drv_acpi_object *result;
+	struct drv_acpi_node *method;
+	int error;
+
+	/* _REG lives beside the region, in the device that contains it. */
+	error = drv_acpi_lookup(region->parent, "_REG", &method);
+	if (error != 0 || method->parent != region->parent)
+		return 0;
+
+	/* Makes the arguments: the space and "connected". */
+	arguments[0] = drv_acpi_object_integer_new(space);
+	arguments[1] = drv_acpi_object_integer_new(1);
+	if (arguments[0] == NULL || arguments[1] == NULL) {
+		drv_acpi_object_release(arguments[0]);
+		drv_acpi_object_release(arguments[1]);
+		return ENOMEM;
+	}
+
+	/* Runs it; a failing _REG is logged and ignored, as firmware expects. */
+	error = drv_acpi_evaluate(method, NULL, arguments, 2, &result);
+	if (error != 0)
+		drv_acpi_os_log("ACPI: _REG for space %u failed (error %d)\n", space, error);
+	drv_acpi_object_release(result);
+	drv_acpi_object_release(arguments[0]);
+	drv_acpi_object_release(arguments[1]);
 
 	/* Succeeded. */
 	return 0;

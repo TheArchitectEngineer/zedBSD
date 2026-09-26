@@ -19,6 +19,7 @@
  *     --main          evaluate \MAIN and exit with 0 when it returned 0
  *     --notify PATH   print the notifications PATH receives (repeatable)
  *     --dynamic FILE  a table LoadTable may load, not loaded at start
+ *     --reg           connect the address spaces (run _REG) after loading
  *     --stack         print the deepest stack use of the interpreter
  *     --budget BYTES  the stack budget (default 1 MiB)
  *     --quiet         do not print the interpreter's log
@@ -68,6 +69,7 @@ enum option_kind {
 	OPTION_NOTIFY,
 	OPTION_DYNAMIC,
 	OPTION_STACK,
+	OPTION_REG,
 	OPTION_BUDGET,
 	OPTION_QUIET
 };
@@ -97,6 +99,7 @@ struct harness_options {
 	int devices;
 	int run_main;
 	int stack;
+	int connect;
 };
 
 /*
@@ -128,6 +131,7 @@ static const struct option_name option_names[] = {
 	{ "--notify", OPTION_NOTIFY, 1 },
 	{ "--dynamic", OPTION_DYNAMIC, 1 },
 	{ "--stack", OPTION_STACK, 0 },
+	{ "--reg", OPTION_REG, 0 },
 	{ "--budget", OPTION_BUDGET, 1 },
 	{ "--quiet", OPTION_QUIET, 0 },
 };
@@ -210,6 +214,13 @@ main(
 	error = drv_acpi_initialize_objects();
 	if (error != 0)
 		fprintf(stderr, "initialize_objects: error %d\n", error);
+
+	/* Connects the address spaces as the kernel does, when asked to. */
+	if (options.connect) {
+		error = drv_acpi_region_connect_all();
+		if (error != 0)
+			status = 1;
+	}
 
 	/* Installs the notification printers. */
 	error = install_notifications(&options);
@@ -451,6 +462,9 @@ parse_arguments(
 			break;
 		case OPTION_STACK:
 			options->stack = 1;
+			break;
+		case OPTION_REG:
+			options->connect = 1;
 			break;
 		case OPTION_QUIET:
 			log_enabled = 0;
