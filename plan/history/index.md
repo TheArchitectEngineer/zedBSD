@@ -2,12 +2,14 @@
 
 <!-- awesome-plan-current:start -->
 Active Queue: なし
-Last finished Queue: q489（ws069-p010 cleared。BUG-057 の修正）
+Last finished Queue: q490（ws069-p009 cleared。Xzed をレトロ用に戻した）
 <!-- awesome-plan-current:end -->
 
 # Past Log
 
-## 最新: q443〜q489（2026-09-26〜27）
+## 最新: q443〜q490（2026-09-26〜27）
+
+[q490](queue-q490.md): ws069-p009 cleared。Xzed を ws069 の前（cc4433d4）へ戻し、amd64 の Wayland 版の build 規則と rootful の試験を消した。std VGA の QEMU で Xzed と zterm。
 
 [q489](queue-q489.md): ws069-p010 cleared。BUG-057 の原因は kernel: `waitq_sleep` の「眠る前の wakeup」の EAGAIN を unix socket の送りの待ちが失敗として返し、blocking の send が失敗して libX11 が要求を打ち切っていた。2 つの待ちを直し、Venus の x11-p005 と実機の zgears 5000 frame で確認。ws069-p008 も追記で clear。
 

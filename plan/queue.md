@@ -5,8 +5,8 @@
 <!-- awesome-plan-current:start -->
 Status: none active（2026-09-27）
 Active Queue: なし
-Last finished Queue: [q489](history/queue-q489.md)（ws069-p010 cleared。BUG-057 の修正）
+Last finished Queue: [q490](history/queue-q490.md)（ws069-p009 cleared。Xzed をレトロ用に戻した）
 Executor: メインセッション（サブエージェントは使わない）
 <!-- awesome-plan-current:end -->
 
-Upcoming Work Outlook: 2026-09-27 の順: ws069-p008（zdesktop-x11server）→ ws069-p009（Xzed の復元）→ WS070（System Menu、p001 の設計から）→ ws068-p003（自前の GLSL compiler）→ ws068-p012〜p014（desktop GL 3.0〜4.6）。
+Upcoming Work Outlook: ws069-p011（zdesktop-x11server の窓を Vulkan で表示）→ ws069-p006（WS069 の最後）。並行: サブエージェントの WS068（GLSL）・WS070（System Menu）・WS049・WS045・WS048・WS001（2026-09-27 ユーザーの例外）、終わり次第 merge。BUG-056・BUG-058 は再発時。
