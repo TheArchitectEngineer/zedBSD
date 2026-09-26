@@ -45,7 +45,8 @@ Ctrl+0、題名の double click、F10、Esc、F10・↓・Enter。terminal の�
   Zoom Out・Normal Size・Text Size ›・区切り・Fullscreen と shortcut の表示）、zoom-in（文字が大きい）、menu-docked（システムバーの
   「zedBSD | T Terminal Shell Edit View Session Help … — ▢ ×」、Shell の popup の New Window・Close Window と Ctrl+Shift+N・Q）、
   closed（terminal が消え、wl_shm の窓だけ）。
-- 2 回目（直しの後、build/ws070-p005-hw2/）: 下の「2 回目」に記録。
+- 2 回目（直しの後、libwayland の直しを含む。build/ws070-p005-hw2/）: 11 の check が全部 true、guest の log も 1 回目と同じ並び
+  （`via=key`・`via=shortcut`・docked の `y=40`・`ZTERM DONE reason=menu-close`）。sheet.png（8 枚）を見て 1 回目と同じ画面を確かめた。
 
 ### 規約の全文との照合
 
