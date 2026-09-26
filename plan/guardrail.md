@@ -57,6 +57,9 @@ zedBSD の貢献の規則と標準の索引。Queue・backlog・実行許可で�
 | 2026-09-25 | amd64 の `amd64_percpu_current()` を `rdmsr IA32_GS_BASE` から `%gs:0` の `self` の load に（`src/hal/amd64/percpu.c`、`percpu.h` に `self` が先頭の field である `_Static_assert`。hal.h は不変）。lock と `thread_current()` のたびの rdmsr が kernel の時間の約 24% だった。差分 `plan/ws046/phase009/hal-percpu-gs.md`、承認「承認待ちのHALの変更を許可します」 | WS046 p009 |
 
 | 2026-09-25 | amd64 の page table の owner PTE に子 table の present entry の数を bit 52〜62 に持ち、`hal_space_unmap` の空 table の切り離しを全 table の走査（`detach_empty_tables`）から O(1) の判定に（`src/hal/amd64/space.c`。hal.h は不変）。差分 `plan/ws061/phase002/hal-amd64-table-counts.diff`。2026-09-25 の規則の変更（実装は承認不要）により適用 | WS061 p002 |
+| 2026-09-27 | arm64 の `hal_pmem_map_uncached()`・`hal_pmem_unmap_uncached()`（hal.h に宣言を追加、arm64 だけ実装: MAIR の entry 3 を Normal non-cacheable、`0xffff_0080_0000_0000` の uncached の窓、`src/kern/uncached.c`）。PCIe の DMA が cache を snoop しない Pi 4 の xHCI のため（`plan/ws048/proposed/hal-pmem-uncached.diff`） | WS048 p004。ユーザー「HAL approvalsは3つとも承認します。」 |
+| 2026-09-27 | amd64 の `hal_get_arch_handoff("acpi.rsdp")`: HAL の ACPI の発見が受け入れた RSDP の物理 address を返す（hal.h は不変、HAL の責務の追加。`plan/ws049/proposed/hal-acpi-rsdp.diff`） | WS049 p006。同上 |
+| 2026-09-27 | aarch64 の `include/hal/arch/aarch64.h` に `hal_gpregs`・`hal_fpregs`・`hal_vregs` と `HAL_DEBUG_*`（amd64 と同じ形）、`src/hal/arm64/debug.c`（single step、hardware breakpoint・watchpoint、context switch ごとの debug state）。ptrace のため（commit 27831f19） | WS044 p010。同上 |
 
 2026-09-25 以降、hal.h を変えない `src/hal/` の実装の変更は承認を要しない（上の規則）。hal.h の変更はこの表の承認が要る。
 
