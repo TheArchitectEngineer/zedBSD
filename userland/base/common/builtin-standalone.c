@@ -55,42 +55,59 @@ sh_temp_own(
 	return memory;
 }
 
+/*
+ * Resizes memory, ending the command when there is none.
+ */
 void *
 sh_realloc(
 	void *memory,
 	size_t size)
 {
+	void *resized;
+
 	/* At least one byte, so that NULL means failure. */
 	if (size == 0)
 		size = 1;
-	memory = realloc(memory, size);
-	if (memory == NULL) {
+
+	/* Resizes the block; a command without memory ends. */
+	resized = realloc(memory, size);
+	if (resized == NULL) {
 		fprintf(stderr, "out of memory\n");
 		exit(2);
 	}
 
-	/* Succeeded. */
-	return memory;
+	/* Succeeded: the resized block. */
+	return resized;
 }
 
+/*
+ * Reports whether a string names a shell variable.
+ *
+ * A utility has no shell variables, so printf -v names none.
+ */
 int
 sh_var_name(
 	const char *name)
 {
-	/* A utility has no shell variables: printf -v names none. */
 	(void)name;
+
+	/* No string names a variable here. */
 	return 0;
 }
 
+/*
+ * Refuses to set a shell variable, since a utility has none.
+ */
 int
 sh_var_set(
 	const char *name,
 	const char *value,
 	int flags)
 {
-	/* Nothing to set outside a shell. */
 	(void)name;
 	(void)value;
 	(void)flags;
+
+	/* Reports the variable as one that cannot be set. */
 	return -1;
 }
