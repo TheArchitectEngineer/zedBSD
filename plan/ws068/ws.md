@@ -67,4 +67,6 @@ EGL と OpenGL ES（2.0、次に 3.0）を、zedBSD の libvulkan（Vulkan）と
 | [ws068-p008](phase008/phase.md) | GLES 2.0 の描画の核（SPIR-V の shader binary、変換層。compiler の方式に依らない部分） | cleared（q475-i01。Venus で strip・texture・blend・depth・cull、display 直接と窓と resize） | p002 |
 | ws068-p009 | frame を 2〜3 枚重ねる（EGL の frame in flight。Venus で clear だけ 125 ms/frame、WSI 直接は 50 ms） | planned | p008 |
 | [ws068-p010](phase010/phase.md) | EGL の pbuffer（offscreen。GLX の描画先） | cleared（q476-i01。Venus で 600 frame と 2048x1536） | p008 |
-| ws068-p011 | framebuffer object・renderbuffer・cube map（texture への描画） | planned | p008 |
+| ws068-p011 | framebuffer object・renderbuffer・cube map（texture への描画） | 2026-09-27 に p022（FBO・renderbuffer）と p023（cube map・mipmap の GPU 化・FBO からの copy）に分けた | p008 |
+| [ws068-p022](phase022/phase.md) | framebuffer object と renderbuffer（texture への描画、FBO の readback） | in-progress（q493-i01） | p008 |
+| ws068-p023 | cube map（texture・sample・面への描画）、GPU の描いた texture の `glGenerateMipmap`、FBO からの `glCopyTex*` | planned | p022 |
