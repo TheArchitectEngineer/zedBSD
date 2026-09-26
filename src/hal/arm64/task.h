@@ -21,6 +21,16 @@ struct arm64_task {
 	    __attribute__((aligned(16)));
 	uint32_t signal_token[HAL_SIGNAL_NEST_MAX];
 	unsigned signal_depth;
+
+	/*
+	 * What a debugger asked of the task (debug.c): whether it returns to
+	 * user one instruction at a time, and the hardware points it runs
+	 * with.  They are loaded into the processor when the task is switched
+	 * to.
+	 */
+	int single_step;
+	struct hal_debug_point debug_points[HAL_DEBUG_POINT_MAX];
+	unsigned debug_point_count;
 };
 void asm_task_dispatch(uintptr_t *save,const uintptr_t *load);
 void arm64_fp_save(void *state);
@@ -32,5 +42,8 @@ void arm64_task_returned(void) __attribute__((noreturn));
 void arm64_context_selftest(void);
 void arm64_task_enter_user_frame(void *);
 void arm64_task_leave_user_frame(void);
+struct arm64_task *arm64_task_running(void);
+void arm64_debug_init(void);
+void arm64_debug_switch(struct arm64_task *to);
 
 #endif

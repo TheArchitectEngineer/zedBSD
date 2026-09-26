@@ -61,6 +61,32 @@ struct xmmreg {
 	uint8_t xmm_register[16][16];
 };
 
+#elif defined(__aarch64__)
+
+/*
+ * The integer registers: the thirty-one general registers (x30 is the
+ * link register), the stack pointer, the address of the next instruction,
+ * the saved processor state, and the thread pointer (TPIDR_EL0).  Of the
+ * processor state a debugger may change only the condition flags.
+ */
+struct reg {
+	uint64_t r_x[31];
+	uint64_t r_sp;
+	uint64_t r_pc;
+	uint64_t r_pstate;
+	uint64_t r_tpidr;
+};
+
+/*
+ * The floating-point and SIMD state: the thirty-two 128-bit registers and
+ * the status and control registers.
+ */
+struct fpreg {
+	uint8_t fp_v[32][16];
+	uint32_t fp_fpsr;
+	uint32_t fp_fpcr;
+};
+
 #else
 
 #error "this architecture does not describe its registers yet"

@@ -9,7 +9,7 @@ Related Milestones: MG001, MG003
 Objectives: O2, O4
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001・p005〜p009 cleared（実機の結果待ち）。p002（FAT32）cleared。p010（aarch64 の ptrace）は cleared だが include/hal/arch/aarch64.h の追加が HAL の承認待ちで別 branch（`worktree-agent-a87f7d40f6b30a5e8` の 27831f19）。p011（aarch64 の package の基盤と libcxx）cleared。次は p003（lldb、p010 の承認が前提）
+Resume point: p001・p005〜p009 cleared（実機の結果待ち）。p002（FAT32）・p010（aarch64 の ptrace、HAL の追加は 2026-09-27 にユーザーが承認）・p011（aarch64 の package の基盤と libcxx）cleared（QEMU まで）。次は p003（lldb）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -43,7 +43,7 @@ user program の debugger を持つ開発機として使えるようにする。
 | [ws044-p001](phase001/phase.md) | console の font を PC/AT の 8x16（`vgafont`）の複製へ置き換える（HAL、承認済み） | cleared（q377-i01。QEMU raspi4b の画面で login prompt を読めた） | — |
 | [ws044-p002](phase002/phase.md) | SD の boot partition を FAT32 にする（`make-rpi4-hdd-image.py`、検査の script、kernel の FAT の読み取り） | cleared（2026-09-27。QEMU で起動と FAT32 の mount。実機は未実施） | rpi4 の kernel の安定化（仮の基準で着手、phase.md） |
 | ws044-p003 | aarch64 で lldb を動かす（lldb の zedBSD の plugin の aarch64 の register context、clang＋lldb の package の aarch64 の build、guest での breakpoint・backtrace）。2026-09-27 に p010・p011 を分けた | planning | p010、p011 |
-| ws044-p010 | aarch64 の ptrace（`struct reg`・`fpreg`、HAL の register・step・hardware の breakpoint と watchpoint、kernel の ptrace を aarch64 に） | cleared（2026-09-27。ptrace の試験 29/29。**include/hal/arch/aarch64.h の追加がユーザーの HAL 承認待ち**のため未 merge、記録と code は branch `worktree-agent-a87f7d40f6b30a5e8` の 27831f19） | ws036-p026 |
+| [ws044-p010](phase010/phase.md) | aarch64 の ptrace（`struct reg`・`fpreg`、HAL の register・step・hardware の breakpoint と watchpoint、kernel の ptrace を aarch64 に） | cleared（2026-09-27。ptrace の試験 29/29 を QEMU raspi4b と amd64 で。include/hal/arch/aarch64.h の追加は同日ユーザーが承認） | ws036-p026 |
 | [ws044-p011](phase011/phase.md) | 外部 package の aarch64 の cross build の基盤と libcxx（`ZEDBSD_EXTERNAL_TRIPLE`、arch ごとの work tree）。clang＋lldb の aarch64 は p003 | cleared（2026-09-27。aarch64 の libc++・libc++abi・libunwind） | ws036-p026、ws036-p029 |
 | [ws044-p005](phase005/phase.md) | 実機起動の準備: firmware の読み込み番地（`kernel_address=0x80000`）、EMMC2 の 32-bit だけの register access。実機との違いの洗い出し | cleared（q378-i01。QEMU で起動・SD の読み書き。実機はユーザー確認待ち） | p001 |
 | ws044-p004 | 変更した source の全文の規約確認と rpi4 の回帰 | planning | p001〜p003、p005 |
