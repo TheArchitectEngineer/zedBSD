@@ -129,9 +129,11 @@ main(
 	printf("MENUPROBE DONE failures=%u\n", failures);
 	fflush(stdout);
 
-	/* Reports whether every case passed. */
+	/* Reports a case that failed. */
 	if (failures != 0U)
 		return 1;
+
+	/* Succeeded: every case passed. */
 	return 0;
 }
 
@@ -224,10 +226,17 @@ probe_server_case(
 	interface = NULL;
 	id = 0;
 	code = wl_display_get_protocol_error(connection.display, &interface, &id);
+
+	/* The interface the error names, compared with the case's. */
 	same = 1;
 	if (interface != NULL)
 		same = strcmp(interface->name, test->interface);
-	if (status >= 0 || interface == NULL || same != 0 || code != test->code) {
+
+	/* A round trip that succeeded, no error, or another interface's or another code is a failure. */
+	if (status >= 0 ||
+	    interface == NULL ||
+	    same != 0 ||
+	    code != test->code) {
 		printf("MENUPROBE case=%s FAIL status=%d code=%u want=%u\n", test->name, status, code, test->code);
 		probe_disconnect(&connection);
 		return 1;
@@ -264,7 +273,9 @@ probe_connect(
 		return -1;
 
 	/* The compositor must have the System Menu. */
-	if (connection->manager == NULL || connection->compositor == NULL || connection->shell == NULL) {
+	if (connection->manager == NULL ||
+	    connection->compositor == NULL ||
+	    connection->shell == NULL) {
 		errno = ENOTSUP;
 		return -1;
 	}
@@ -464,6 +475,7 @@ probe_library(void)
 	unsigned index;
 	int status;
 	int failed;
+	int error;
 
 	/* The connection and the service. */
 	display = wl_display_connect(NULL);
@@ -528,7 +540,8 @@ probe_library(void)
 	/* Nothing refused was sent: the connection is still well. */
 	status = wl_display_roundtrip(display);
 	if (status < 0) {
-		printf("MENUPROBE case=library FAIL roundtrip error=%d\n", wl_display_get_error(display));
+		error = wl_display_get_error(display);
+		printf("MENUPROBE case=library FAIL roundtrip error=%d\n", error);
 		failed = 1;
 	}
 
@@ -537,9 +550,11 @@ probe_library(void)
 	zdesktop_menu_service_close(service);
 	wl_display_disconnect(display);
 
-	/* Reports the case. */
+	/* Reports a check that failed. */
 	if (failed)
 		return 1;
+
+	/* Succeeded: every check answered as the compositor would. */
 	printf("MENUPROBE case=library ok\n");
 	return 0;
 }

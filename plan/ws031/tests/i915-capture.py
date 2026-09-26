@@ -15,6 +15,10 @@ scenario:
   zdesktop-home WS035 p069: App Home opened by the launcher, then zdesktop-terminal and mview started
   zdesktop-x11 WS035 p070: Gears (GLX) and the X terminal from App Home, then desktop 2 and back
            from their icons (the run's ZDESKTOP_APP=home leaves the viewer's service idle)
+  zdesktop-menu WS070 p005: the System Menu of zdesktop-terminal (started from App Home): F10 opens Shell
+           in the floating title bar, Right twice moves to View, Enter chooses Zoom In, Ctrl+0 (a
+           shortcut) goes back to the normal size, a double click on the title docks the window, F10
+           opens the menu in the system bar, and Shell > Close Window ends the terminal
   zdesktop WS035 p066: zdesktop --glass (Wiseman Mode) at 1920x1080 with three 800x560 wl_shm windows: the
            desktop, the top one docked by a double click on its title bar, Wiseview opened by a
            drag up from the bottom edge, Wiseview closed, and the docked viewer closed with the bar's close
@@ -227,6 +231,38 @@ def write_sheet(paths, output, columns=3, gap=4):
                              chunk(b'IDAT', zlib.compress(raw, 9)) + chunk(b'IEND', b''))
 
 
+def colour_box(path, rgb, tolerance=2):
+    """The bounding box (left, top, right, bottom; right and bottom exclusive) of the pixels within a
+    tolerance of one colour, or None when there are none."""
+    width, height, pixels = read_ppm(path)
+    left, top, right, bottom = width, height, -1, -1
+    for y in range(height):
+        row = pixels[y * width * 3:(y + 1) * width * 3]
+        for x in range(width):
+            if (abs(row[x * 3] - rgb[0]) <= tolerance and abs(row[x * 3 + 1] - rgb[1]) <= tolerance and
+                    abs(row[x * 3 + 2] - rgb[2]) <= tolerance):
+                left, right = min(left, x), max(right, x)
+                top, bottom = min(top, y), max(bottom, y)
+    if right < 0:
+        return None
+    return left, top, right + 1, bottom + 1
+
+
+def region_difference(left, right, box):
+    """The share of the pixels in a box (left, top, right, bottom) that differ between two images of one size."""
+    width, height, a = read_ppm(left)
+    other_width, other_height, b = read_ppm(right)
+    if (width, height) != (other_width, other_height):
+        return 1.0
+    x0, y0, x1, y1 = box
+    changed = 0
+    for y in range(y0, y1):
+        start, end = (y * width + x0) * 3, (y * width + x1) * 3
+        line_a, line_b = a[start:end], b[start:end]
+        changed += sum(1 for index in range(0, len(line_a), 3) if line_a[index:index + 3] != line_b[index:index + 3])
+    return changed / max(1, (x1 - x0) * (y1 - y0))
+
+
 def coloured(path):
     """The share of pixels that are neither the most common colour (the clear colour) nor black."""
     width, height, pixels = read_ppm(path)
@@ -312,6 +348,8 @@ def run(args):
             zdesktop_home(args, qmp, capture, report)
         elif args.scenario == 'zdesktop-x11':
             zdesktop_x11(args, qmp, capture, report)
+        elif args.scenario == 'zdesktop-menu':
+            zdesktop_menu(args, qmp, capture, report)
         else:
             mview(args, qmp, capture, report, wait, settled)
         report['write_count'] = capture.write_count()
@@ -662,9 +700,134 @@ def zdesktop_x11(args, qmp, capture, report):
     report['sheet'] = str(sheet)
 
 
+def zdesktop_menu(args, qmp, capture, report):
+    """The System Menu (WS070 p005) on the capture display: zdesktop-terminal from App Home gives
+    zdesktop its menus through libzdesktop; the keyboard opens and walks them in the floating title
+    bar, a choice and a shortcut reach the terminal (its text changes size), and after a double click
+    on the title docks the window the same menus open from the system bar; Shell > Close Window ends
+    the terminal.  The terminal's body is found by its background colour (1d2230)."""
+    width, height = 1920, 1080
+    time_limit = time.monotonic() + args.timeout
+    left = (width - 6 * 144) // 2
+    icon_y = 34 + (height - 34 - 152) * 2 // 5 + 20 + 36
+    terminal = (left + 72, icon_y)
+
+    def events(items):
+        qmp.call('input-send-event', {'events': items})
+        time.sleep(0.03)
+
+    def move(x, y):
+        events([{'type': 'abs', 'data': {'axis': 'x', 'value': (int(x) * ABS_MAX + width - 2) // (width - 1)}},
+                {'type': 'abs', 'data': {'axis': 'y', 'value': (int(y) * ABS_MAX + height - 2) // (height - 1)}}])
+
+    def press():
+        events([{'type': 'btn', 'data': {'button': 'left', 'down': True}}])
+        time.sleep(0.05)
+        events([{'type': 'btn', 'data': {'button': 'left', 'down': False}}])
+
+    def click(x, y):
+        move(x - 2, y)
+        time.sleep(0.15)
+        move(x, y)
+        time.sleep(0.3)
+        press()
+
+    def keys(names):
+        for name in names:
+            events([{'type': 'key', 'data': {'down': True, 'key': {'type': 'qcode', 'data': name}}}])
+        for name in reversed(names):
+            events([{'type': 'key', 'data': {'down': False, 'key': {'type': 'qcode', 'data': name}}}])
+
+    def typed(names, pause=0.08):
+        for name in names:
+            keys(name)
+            time.sleep(pause)
+
+    def shot(tag, pause):
+        time.sleep(pause)
+        taken = capture.save(tag)
+        report['images'][tag] = taken
+        return Path(taken['path'])
+
+    # The desktop, once the compositor draws.
+    while capture.write_count() == 0:
+        if time.monotonic() > time_limit:
+            raise TimeoutError('first frame')
+        time.sleep(0.5)
+    move(width - 40, height - 200)
+    desktop = shot('desktop', 25.0)
+    report['checks']['desktop_drawn'] = coloured(desktop) > 0.02
+
+    # The terminal from Home, with its menus after its title; its body is found by its colour.
+    click(23, 17)
+    time.sleep(1.5)
+    click(*terminal)
+    move(width - 40, height - 200)
+    started = shot('terminal', 10.0)
+    report['checks']['terminal_starts'] = difference(desktop, started) > 0.05
+    body = colour_box(started, (0x1d, 0x22, 0x30))
+    report['terminal_body'] = body
+    report['checks']['terminal_found'] = body is not None and body[2] - body[0] > 300 and body[3] - body[1] > 200
+    if not report['checks']['terminal_found']:
+        return
+    region = (body[0] + 4, body[1] + 4, body[2] - 4, body[3] - 4)
+
+    # Text for the size changes to show on.
+    typed([['l'], ['s'], ['spc'], ['slash'], ['b'], ['i'], ['n'], ['ret']])
+    listing = shot('typed', 2.5)
+
+    # F10 opens Shell in the floating title bar; Right twice moves to View.
+    keys(['f10'])
+    floating = shot('menu-floating', 1.5)
+    report['checks']['menu_opens_floating'] = difference(listing, floating) > 0.003
+    typed([['right'], ['right']], 0.3)
+    view = shot('menu-view', 1.5)
+    report['checks']['menu_moves_to_view'] = difference(floating, view) > 0.003
+
+    # Enter chooses Zoom In (the first row): the terminal draws its text larger and the popup closes.
+    keys(['ret'])
+    zoomed = shot('zoom-in', 2.5)
+    report['checks']['zoom_in_by_menu'] = region_difference(listing, zoomed, region) > 0.01
+
+    # Ctrl+0 is Normal Size's shortcut, which zdesktop chooses for the focused window.
+    keys(['ctrl', '0'])
+    normal = shot('normal', 2.5)
+    report['checks']['shortcut_normal_size'] = region_difference(zoomed, normal, region) > 0.01
+
+    # A double click on the title docks the window: its menus move into the system bar.
+    title = (body[0] + 80, body[1] - 30)
+    click(*title)
+    time.sleep(0.12)
+    press()
+    move(width - 40, height - 200)
+    docked = shot('docked', 3.0)
+    report['checks']['docks'] = difference(normal, docked) > 0.05
+
+    # F10 opens the first menu under the system bar; Esc closes it.
+    keys(['f10'])
+    docked_menu = shot('menu-docked', 1.5)
+    report['checks']['menu_opens_docked'] = difference(docked, docked_menu) > 0.003
+    keys(['esc'])
+    closed_menu = shot('menu-docked-closed', 1.5)
+    report['checks']['menu_closes'] = difference(docked_menu, closed_menu) > 0.003
+
+    # Shell > Close Window (F10, Down past the separator, Enter) ends the terminal.
+    keys(['f10'])
+    time.sleep(0.5)
+    typed([['down'], ['ret']], 0.3)
+    ended = shot('closed', 3.0)
+    report['checks']['close_by_menu'] = difference(closed_menu, ended) > 0.05
+
+    sheet = Path(args.output) / 'sheet.png'
+    tags = ('terminal', 'menu-floating', 'menu-view', 'zoom-in', 'normal', 'docked', 'menu-docked', 'closed')
+    write_sheet([report['images'][tag]['path'] for tag in tags], sheet, columns=2)
+    report['sheet'] = str(sheet)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('scenario', choices=['vkdemo', 'wayland', 'mview', 'zdesktop', 'zdesktop-home', 'zdesktop-x11'])
+    parser.add_argument('scenario', choices=['vkdemo', 'wayland', 'mview', 'zdesktop', 'zdesktop-home', 'zdesktop-x11',
+                                             'zdesktop-menu'])
     parser.add_argument('--output', required=True)
     parser.add_argument('--serial', default='/home/awe/bigbang/run-parity-serial.log')
     parser.add_argument('--qmp', default='/home/awe/bigbang/qmp.sock')

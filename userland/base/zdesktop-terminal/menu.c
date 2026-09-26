@@ -145,10 +145,12 @@ terminal_menu_open(
 		return 0;
 	}
 
-	/* The menu and the window's place for it. */
+	/* The menu, empty until it is built. */
 	window->menu = zdesktop_menu_create(window->menu_service);
 	if (window->menu == NULL)
 		return -1;
+
+	/* The window's place for a menu, which tells the terminal what is chosen. */
 	window->window_menu = zdesktop_window_menu_create(window->menu_service, window->toplevel, &menu_listener, window);
 	if (window->window_menu == NULL)
 		return -1;
@@ -190,9 +192,11 @@ terminal_menu_refresh(
 	int same;
 	int error;
 
-	/* Without menus, or with nothing new, nothing is sent. */
+	/* Without menus nothing is sent. */
 	if (window->menu == NULL)
 		return;
+
+	/* Nor when the state is the one the menus show. */
 	same = memcmp(state, &window->menu_state, sizeof(*state));
 	if (same == 0)
 		return;
@@ -266,6 +270,8 @@ menu_activated(
 	/* A full queue drops the choice (the user has chosen sixteen things in one round). */
 	if (window->action_count == TERMINAL_ACTIONS)
 		return;
+
+	/* The count is how many choices wait for the main loop (terminal_menu_take). */
 	window->actions[window->action_count] = action;
 	window->action_count++;
 }

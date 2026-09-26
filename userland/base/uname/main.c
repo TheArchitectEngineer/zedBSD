@@ -8,103 +8,146 @@
  */
 
 /*
- * Implements the zedBSD uname userland command.
+ * Returns system name (POSIX XCU uname).
+ *
+ *	uname [-amnrsv]
+ *
+ * The fields asked for are written in the order system name, node name,
+ * release, version and machine, separated by spaces; -a asks for all of
+ * them and no option for the system name alone.  The PC-98 build adds
+ * "pc98" after the version, which tells it from a PC/AT on the same CPU.
  */
 
-#include "userland/base/common/command.h"
-
+#include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/utsname.h>
+#include <unistd.h>
+
+/* The fields uname writes, one bit each, in their order. */
+#define UNAME_SYSTEM 0x01
+#define UNAME_NODE 0x02
+#define UNAME_RELEASE 0x04
+#define UNAME_VERSION 0x08
+#define UNAME_MACHINE 0x10
+#define UNAME_ALL 0x1f
+
+static void write_field(int *written, const char *text);
+static void usage(void);
 
 /*
- * Runs the uname command.
+ * Runs uname.
  */
 int
 main(
 	int argc,
 	char **argv)
 {
-	int function_result;
-	const char *option;
-	int printed;
-	struct utsname value;
-	int all, system, node, release, version, machine;
-	int index;
+	struct utsname names;
+	int fields;
+	int option;
+	int written;
+	int status;
 
-	/* Process each remaining command-line operand. */
-	all = 0;
-	system = 0;
-	node = 0;
-	release = 0;
-	version = 0;
-	machine = 0;
-	for (index = 1; index < argc; index++) {
-		option = argv[index];
+	/* Reads the options; uname takes no operand. */
+	fields = 0;
+	for (;;) {
+		option = getopt(argc, argv, "amnrsv");
+		if (option == -1)
+			break;
 
-		/* Handles the option condition. */
-		if (option[0] != '-' || option[1] == '\0')
-			goto usage;
-
-		/* Continue while the operation condition remains true. */
-		while (*++option != '\0') {
-			/* Handles the option condition. */
-			if (*option == 'a')
-				all = 1;
-			else if (*option == 's')
-				system = 1;
-			else if (*option == 'n')
-				node = 1;
-			else if (*option == 'r')
-				release = 1;
-			else if (*option == 'v')
-				version = 1;
-			else if (*option == 'm')
-				machine = 1;
-			else
-				goto usage;
+		/* Adds the field the option names. */
+		switch (option) {
+		case 'a':
+			fields |= UNAME_ALL;
+			break;
+		case 's':
+			fields |= UNAME_SYSTEM;
+			break;
+		case 'n':
+			fields |= UNAME_NODE;
+			break;
+		case 'r':
+			fields |= UNAME_RELEASE;
+			break;
+		case 'v':
+			fields |= UNAME_VERSION;
+			break;
+		case 'm':
+			fields |= UNAME_MACHINE;
+			break;
+		default:
+			usage();
+			break;
 		}
 	}
 
-	/* Handles a failed uname operation. */
-	if (uname(&value) != 0) {
-		command_error("uname", NULL);
+	/* An operand is an error. */
+	if (optind < argc)
+		usage();
 
-		/* Reports operation failure. */
+	/* No option is the system name. */
+	if (fields == 0)
+		fields = UNAME_SYSTEM;
+
+	/* Asks the system for its names. */
+	status = uname(&names);
+	if (status != 0) {
+		fprintf(stderr, "uname: %s\n", strerror(errno));
 		return 1;
 	}
 
-	/* Handles the all condition. */
-	if (!all && !system && !node && !release && !version && !machine)
-		system = 1;
-#define FIELD(selected, member)                                                \
-	do {                                                                   \
-		if ((selected) || all) {                                       \
-			printf("%s%s", printed++ ? " " : "", value.member);    \
-		}                                                              \
-	} while (0)
-
-	printed = 0;
-	FIELD(system, sysname);
-	FIELD(node, nodename);
-	FIELD(release, release);
-	FIELD(version, version);
+	/* Writes the fields asked for, in order. */
+	written = 0;
+	if (fields & UNAME_SYSTEM)
+		write_field(&written, names.sysname);
+	if (fields & UNAME_NODE)
+		write_field(&written, names.nodename);
+	if (fields & UNAME_RELEASE)
+		write_field(&written, names.release);
+	if (fields & UNAME_VERSION) {
+		write_field(&written, names.version);
 #ifdef KERN_UNAME_PC98
-	/* Distinguishes the PC98 distribution from PC/AT on the same CPU ABI. */
-	if (version || all)
-		printf(" pc98");
+		write_field(&written, "pc98");
 #endif
-	FIELD(machine, machine);
+	}
+
+	/* The machine comes last. */
+	if (fields & UNAME_MACHINE)
+		write_field(&written, names.machine);
 	putchar('\n');
 
-	/* Computes the function result. */
-	function_result = ferror(stdout) ? 1 : 0;
+	/* A failed write is an error. */
+	fflush(stdout);
+	status = ferror(stdout);
+	if (status != 0) {
+		fprintf(stderr, "uname: write error\n");
+		return 1;
+	}
 
-	/* Returns the computed result. */
-	return function_result;
-usage:
+	/* Succeeded: the names were written. */
+	return 0;
+}
+
+/* Writes one field, after a space unless it is the first. */
+static void
+write_field(
+	int *written,
+	const char *text)
+{
+	/* A space separates the fields. */
+	if (*written)
+		putchar(' ');
+	fputs(text, stdout);
+	*written = 1;
+}
+
+/* Writes the usage message and exits with an error status. */
+static void
+usage(void)
+{
+	/* Names the POSIX form. */
 	fprintf(stderr, "usage: uname [-amnrsv]\n");
-
-	/* Reports operation failure. */
-	return 1;
+	exit(1);
 }
