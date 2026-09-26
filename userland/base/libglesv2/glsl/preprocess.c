@@ -167,6 +167,9 @@ struct pp_state {
 	/* Whether anything but #version was seen (the version's macros exist then), and whether #version was. */
 	unsigned started;
 	unsigned version_seen;
+
+	/* Whether #version asked for the compatibility profile. */
+	unsigned compatibility;
 };
 
 static void pp_line_of_source(struct pp_state *state, struct glsl_token *tokens, unsigned first, unsigned last);
@@ -315,11 +318,19 @@ pp_start(
 	pp_define_special(state, "__FILE__", PP_SPECIAL_FILE);
 	pp_define_special(state, "__VERSION__", PP_SPECIAL_VERSION);
 
-	/* OpenGL ES's macros: GL_ES, high precision in fragment shaders, and the derivatives extension. */
+	/* OpenGL ES's macros: GL_ES, high precision in fragment shaders, and (1.00) the derivatives extension. */
 	if (state->shader->es) {
 		pp_define_text(state, "GL_ES", "1");
 		pp_define_text(state, "GL_FRAGMENT_PRECISION_HIGH", "1");
-		pp_define_text(state, "GL_OES_standard_derivatives", "1");
+		if (state->shader->version < GLSL_VERSION_ES300)
+			pp_define_text(state, "GL_OES_standard_derivatives", "1");
+	}
+
+	/* The desktop profiles of 1.50 on (a shader that names none is core). */
+	if (!state->shader->es && state->shader->version >= GLSL_VERSION_150) {
+		pp_define_text(state, "GL_core_profile", "1");
+		if (state->compatibility)
+			pp_define_text(state, "GL_compatibility_profile", "1");
 	}
 }
 
@@ -508,29 +519,39 @@ pp_version(
 		is_compatibility = glsl_token_is(&line[1], "compatibility");
 		if (is_es) {
 			es = 1U;
-		} else if (!is_core && !is_compatibility) {
+		} else if (is_compatibility) {
+			state->compatibility = 1U;
+		} else if (!is_core) {
 			glsl_error(shader, directive_line, "unknown profile '%.*s'", (int)line[1].length, line[1].text);
 		}
 	}
 
-	/* OpenGL ES's language 1.00. */
-	if (version == GLSL_VERSION_ES100 && es == 0U) {
+	/* OpenGL ES's languages: 1.00 (no profile) and 3.00 es. */
+	if ((version == GLSL_VERSION_ES100 && es == 0U) || (version == GLSL_VERSION_ES300 && es != 0U)) {
 		shader->version = version;
 		shader->es = 1U;
 		return;
 	}
 
-	/* Desktop GLSL 1.10, 1.20 and 1.30. */
+	/* Desktop GLSL 1.10 to 3.30. */
 	if (es == 0U) {
-		if (version == GLSL_VERSION_110 || version == GLSL_VERSION_120 || version == GLSL_VERSION_130) {
+		switch (version) {
+		case GLSL_VERSION_110:
+		case GLSL_VERSION_120:
+		case GLSL_VERSION_130:
+		case GLSL_VERSION_140:
+		case GLSL_VERSION_150:
+		case GLSL_VERSION_330:
 			shader->version = version;
 			shader->es = 0U;
 			return;
+		default:
+			break;
 		}
 	}
 
 	/* Any other version is not taken (yet). */
-	glsl_error(shader, directive_line, "GLSL version %u is not supported (100, 110, 120 and 130 are)", version);
+	glsl_error(shader, directive_line, "GLSL version %u is not supported (100, 300 es, and 110 to 330 are)", version);
 }
 
 /* Carries out #define: an object-like or function-like macro. */

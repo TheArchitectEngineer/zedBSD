@@ -155,6 +155,7 @@
 #define SPV_BUILT_IN_FRONT_FACING	17U
 #define SPV_BUILT_IN_FRAG_DEPTH		22U
 #define SPV_BUILT_IN_VERTEX_INDEX	42U
+#define SPV_BUILT_IN_INSTANCE_INDEX	43U
 
 /* Storage classes. */
 #define SPV_STORAGE_UNIFORM_CONSTANT	0U
@@ -173,6 +174,8 @@
 #define SPV_MODE_DEPTH_REPLACING	12U
 #define SPV_IMAGE_OPERAND_BIAS		1U
 #define SPV_IMAGE_OPERAND_LOD		2U
+#define SPV_IMAGE_OPERAND_GRAD		4U
+#define SPV_IMAGE_OPERAND_CONST_OFFSET	8U
 
 /* The most words one instruction the back end writes has. */
 #define GLSL_MAX_OPERANDS		64U

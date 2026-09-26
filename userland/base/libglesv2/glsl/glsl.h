@@ -104,6 +104,9 @@ void glsl_shader_free(struct glsl_shader *shader);
 /* Reports a compiled shader's stage. */
 unsigned glsl_shader_stage(const struct glsl_shader *shader);
 
+/* Reports a compiled shader's GLSL version (100, 110 .. 330, 300) and whether it is OpenGL ES's language. */
+unsigned glsl_shader_version(const struct glsl_shader *shader, int *es);
+
 /*
  * Links a vertex and a fragment shader into SPIR-V.  Returns 0 and fills
  * *program, or -1 with *log a malloc'ed info log saying why.

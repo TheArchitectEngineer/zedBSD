@@ -76,15 +76,21 @@ builtin_ext(
 	uint32_t operands[10];
 	unsigned index;
 	struct emit_value result;
+	const char *generic;
 
 	/* The set and the instruction number. */
 	operands[0] = state->module->std450;
 	operands[1] = node->builtin->number;
 
-	/* The operands, a scalar one made a vector when the result is one. */
+	/* Whether the result is generic (a scalar operand is then made a vector like it; unpacking is not). */
+	generic = strchr("GIU", node->builtin->signature[0]);
+
+	/* The operands, a scalar one made a vector when the result is a generic vector. */
 	for (index = 0U; index < count; index++) {
 		operands[2U + index] = arguments[index].id;
 		if (node->builtin->number == BUILTIN_REFRACT && index == 2U)
+			continue;
+		if (generic == NULL)
 			continue;
 		if (arguments[index].type->kind == GLSL_KIND_SCALAR && node->type->kind == GLSL_KIND_VECTOR)
 			operands[2U + index] = glsl_emit_splat(state, arguments[index].id, glsl_type_with_base(node->type, arguments[index].type->base));
@@ -126,6 +132,10 @@ builtin_special(
 	case GLSL_SPECIAL_TEXTURE_PROJ_LOD:
 	case GLSL_SPECIAL_SHADOW:
 	case GLSL_SPECIAL_SHADOW_PROJ:
+	case GLSL_SPECIAL_TEXTURE_GRAD:
+	case GLSL_SPECIAL_TEXTURE_OFFSET:
+	case GLSL_SPECIAL_TEXTURE_OFFSET_BIAS:
+	case GLSL_SPECIAL_TEXTURE_LOD_OFFSET:
 		result = builtin_texture(state, node, arguments, count);
 		return result;
 	case GLSL_SPECIAL_TEXTURE_SIZE:
@@ -233,19 +243,25 @@ builtin_texture(
 	const struct glsl_type *sampler;
 	const struct glsl_type *texel;
 	struct emit_value result;
-	uint32_t operands[6];
+	uint32_t operands[10];
 	uint32_t coordinate;
 	uint32_t reference;
 	uint32_t opcode;
 	uint32_t parts[4];
 	unsigned special;
 	unsigned operand_count;
+	unsigned mask;
+	uint32_t bias;
+	uint32_t lod;
+	uint32_t gradient_x;
+	uint32_t gradient_y;
+	uint32_t offset;
 	int project;
 	int shadow;
 	int explicit_lod;
-	int has_extra;
 
 	/* What kind of lookup. */
+	(void)count;
 	special = node->builtin->number;
 	sampler = arguments[0].type;
 	shadow = (int)sampler->shadow;
@@ -253,16 +269,51 @@ builtin_texture(
 	if (special == GLSL_SPECIAL_TEXTURE_PROJ || special == GLSL_SPECIAL_TEXTURE_PROJ_BIAS ||
 	    special == GLSL_SPECIAL_TEXTURE_PROJ_LOD || special == GLSL_SPECIAL_SHADOW_PROJ)
 		project = 1;
-	has_extra = (count > 2U);
+
+	/* The operands after the coordinate, by the kind of lookup. */
+	bias = 0U;
+	lod = 0U;
+	gradient_x = 0U;
+	gradient_y = 0U;
+	offset = 0U;
+	switch (special) {
+	case GLSL_SPECIAL_TEXTURE_BIAS:
+	case GLSL_SPECIAL_TEXTURE_PROJ_BIAS:
+		bias = arguments[2].id;
+		break;
+	case GLSL_SPECIAL_TEXTURE_LOD:
+	case GLSL_SPECIAL_TEXTURE_PROJ_LOD:
+		lod = arguments[2].id;
+		break;
+	case GLSL_SPECIAL_TEXTURE_GRAD:
+		gradient_x = arguments[2].id;
+		gradient_y = arguments[3].id;
+		break;
+	case GLSL_SPECIAL_TEXTURE_OFFSET:
+		offset = arguments[2].id;
+		break;
+	case GLSL_SPECIAL_TEXTURE_OFFSET_BIAS:
+		offset = arguments[2].id;
+		bias = arguments[3].id;
+		break;
+	case GLSL_SPECIAL_TEXTURE_LOD_OFFSET:
+		lod = arguments[2].id;
+		offset = arguments[3].id;
+		break;
+	default:
+		break;
+	}
 
 	/* The coordinate (and the depth reference). */
 	reference = 0U;
 	coordinate = builtin_coordinate(state, arguments[1], builtin_dimension(sampler), project, &reference, shadow);
 
-	/* The instruction: an explicit level for Lod lookups and in vertex shaders. */
+	/* The instruction: an explicit level for level and gradient lookups, and in vertex shaders (a level 0). */
 	explicit_lod = 0;
-	if (special == GLSL_SPECIAL_TEXTURE_LOD || special == GLSL_SPECIAL_TEXTURE_PROJ_LOD || state->shader->stage == GLSL_STAGE_VERTEX)
+	if (lod != 0U || gradient_x != 0U || state->shader->stage == GLSL_STAGE_VERTEX)
 		explicit_lod = 1;
+	if (explicit_lod && lod == 0U && gradient_x == 0U)
+		lod = glsl_emit_float(state, 0.0f);
 	if (shadow) {
 		opcode = SPV_OP_IMAGE_SAMPLE_DREF_IMPLICIT_LOD;
 		if (explicit_lod)
@@ -282,17 +333,44 @@ builtin_texture(
 		operand_count = 3U;
 	}
 
-	/* A level, or a bias. */
-	if (explicit_lod) {
-		operands[operand_count] = SPV_IMAGE_OPERAND_LOD;
-		operands[operand_count + 1U] = glsl_emit_float(state, 0.0f);
-		if (has_extra)
-			operands[operand_count + 1U] = arguments[2].id;
+	/* The image operands in the order of their bits: a bias, a level, gradients, a constant offset. */
+	mask = 0U;
+	if (bias != 0U)
+		mask |= SPV_IMAGE_OPERAND_BIAS;
+	if (lod != 0U)
+		mask |= SPV_IMAGE_OPERAND_LOD;
+	if (gradient_x != 0U)
+		mask |= SPV_IMAGE_OPERAND_GRAD;
+	if (offset != 0U)
+		mask |= SPV_IMAGE_OPERAND_CONST_OFFSET;
+	if (mask != 0U) {
+		operands[operand_count] = mask;
+		operand_count++;
+	}
+
+	/* The bias. */
+	if (bias != 0U) {
+		operands[operand_count] = bias;
+		operand_count++;
+	}
+
+	/* The level. */
+	if (lod != 0U) {
+		operands[operand_count] = lod;
+		operand_count++;
+	}
+
+	/* The gradients. */
+	if (gradient_x != 0U) {
+		operands[operand_count] = gradient_x;
+		operands[operand_count + 1U] = gradient_y;
 		operand_count += 2U;
-	} else if (has_extra) {
-		operands[operand_count] = SPV_IMAGE_OPERAND_BIAS;
-		operands[operand_count + 1U] = arguments[2].id;
-		operand_count += 2U;
+	}
+
+	/* The offset. */
+	if (offset != 0U) {
+		operands[operand_count] = offset;
+		operand_count++;
 	}
 
 	/* A colour lookup gives its texel vector. */
@@ -380,6 +458,7 @@ builtin_coordinate(
 	uint32_t id;
 	unsigned components;
 	unsigned index;
+	unsigned reference_index;
 
 	/* The argument's components. */
 	float_type = glsl_type_scalar(GLSL_BASE_FLOAT);
@@ -387,9 +466,12 @@ builtin_coordinate(
 	if (coordinate.type->kind == GLSL_KIND_SCALAR)
 		components = 1U;
 
-	/* The reference of a shadow lookup: the third component. */
+	/* The reference of a shadow lookup: the component after the coordinate (the third, at least). */
+	reference_index = size;
+	if (reference_index < 2U)
+		reference_index = 2U;
 	if (shadow)
-		*reference = glsl_emit_extract(state, coordinate, 2U);
+		*reference = glsl_emit_extract(state, coordinate, reference_index);
 
 	/* A plain lookup whose argument is the coordinate. */
 	if (!project && components == size)
@@ -436,9 +518,11 @@ static unsigned
 builtin_dimension(
 	const struct glsl_type *sampler)
 {
-	/* 1D one, 2D two, 3D and cube three. */
+	/* 1D one, 2D two (and a layer for an array), 3D and cube three. */
 	if (sampler->sampler == GLSL_SAMPLER_1D)
 		return 1U;
+	if (sampler->sampler == GLSL_SAMPLER_2D && sampler->arrayed)
+		return 3U;
 	if (sampler->sampler == GLSL_SAMPLER_2D)
 		return 2U;
 

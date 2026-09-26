@@ -34,6 +34,10 @@
 #define GLSL_VERSION_110	110U
 #define GLSL_VERSION_120	120U
 #define GLSL_VERSION_130	130U
+#define GLSL_VERSION_140	140U
+#define GLSL_VERSION_150	150U
+#define GLSL_VERSION_ES300	300U
+#define GLSL_VERSION_330	330U
 
 /* The kinds of tokens. */
 #define GLSL_TOKEN_EOF		0U
@@ -132,7 +136,8 @@ enum glsl_keyword {
 	GLSL_K_FLAT,
 	GLSL_K_SMOOTH,
 	GLSL_K_NOPERSPECTIVE,
-	GLSL_K_CENTROID
+	GLSL_K_CENTROID,
+	GLSL_K_LAYOUT
 };
 
 /* The kinds of types. */
@@ -194,6 +199,7 @@ enum glsl_keyword {
 #define GLSL_BUILTIN_FRAG_COLOR	7U
 #define GLSL_BUILTIN_FRAG_DATA	8U
 #define GLSL_BUILTIN_FRAG_DEPTH	9U
+#define GLSL_BUILTIN_INSTANCE_ID 10U
 
 /* The kinds of symbols. */
 #define GLSL_SYMBOL_VARIABLE	1U
@@ -246,7 +252,10 @@ enum glsl_node_kind {
 	GLSL_N_BREAK,
 	GLSL_N_CONTINUE,
 	GLSL_N_DISCARD,
-	GLSL_N_EMPTY
+	GLSL_N_EMPTY,
+
+	/* An interface block: uniform, in or out NAME { members } [instance]. */
+	GLSL_N_INTERFACE
 };
 
 /* The flags of a node. */
@@ -321,6 +330,8 @@ struct glsl_token {
 struct glsl_field {
 	const char *name;
 	const struct glsl_type *type;
+	unsigned row_major;
+	unsigned interpolation;
 };
 
 /*
@@ -355,6 +366,12 @@ struct glsl_type {
 	/* An array's element type and length. */
 	const struct glsl_type *element;
 	unsigned length;
+
+	/* A sampler of an array of layers. */
+	unsigned arrayed;
+
+	/* An interface block's struct: in, out or uniform (GLSL_STORAGE_*), 0 for any other struct. */
+	unsigned block;
 };
 
 /*
@@ -410,12 +427,14 @@ struct glsl_node {
 	/* GLSL_NODE_* flags. */
 	unsigned flags;
 
-	/* The qualifiers of a type specifier or a parameter. */
+	/* The qualifiers of a type specifier or a parameter, and a layout's flags and location. */
 	unsigned storage;
 	unsigned interpolation;
 	unsigned precision;
 	unsigned centroid;
 	unsigned invariant;
+	unsigned layout;
+	unsigned location;
 
 	/* The type: a type specifier's built-in type as parsed, an expression's once checked. */
 	const struct glsl_type *type;
@@ -472,6 +491,9 @@ struct glsl_symbol {
 
 	/* The next global of the shader, in declaration order. */
 	struct glsl_symbol *next_global;
+
+	/* The location a layout qualifier gave (GLSL_NO_LOCATION: none). */
+	unsigned explicit_location;
 
 	/* What the link gave: an input's or output's location, a uniform's index among the program's uniforms. */
 	unsigned location;
@@ -530,16 +552,28 @@ struct glsl_builtin {
 };
 
 /* The versions a built-in exists in. */
-#define GLSL_IN_ES100		0x01U
-#define GLSL_IN_110		0x02U
-#define GLSL_IN_120		0x04U
-#define GLSL_IN_130		0x08U
-#define GLSL_IN_ALL		0x0fU
-#define GLSL_IN_DESKTOP		0x0eU
-#define GLSL_IN_120_UP		0x0cU
-#define GLSL_IN_130_UP		0x08U
-#define GLSL_IN_OLD		0x07U
-#define GLSL_IN_DERIVATIVES	0x10U
+#define GLSL_IN_ES100		0x001U
+#define GLSL_IN_110		0x002U
+#define GLSL_IN_120		0x004U
+#define GLSL_IN_130		0x008U
+#define GLSL_IN_DERIVATIVES	0x010U
+#define GLSL_IN_140		0x020U
+#define GLSL_IN_150		0x040U
+#define GLSL_IN_330		0x080U
+#define GLSL_IN_ES300		0x100U
+
+/* The versions that share a feature. */
+#define GLSL_IN_ALL		0x1efU
+#define GLSL_IN_DESKTOP		0x0eeU
+#define GLSL_IN_ES		0x101U
+#define GLSL_IN_120_UP		0x1ecU
+#define GLSL_IN_130_UP		0x1e8U
+#define GLSL_IN_DESKTOP_130_UP	0x0e8U
+#define GLSL_IN_140_UP		0x1e0U
+#define GLSL_IN_150_UP		0x0c0U
+#define GLSL_IN_330_UP		0x180U
+#define GLSL_IN_OLD		0x007U
+#define GLSL_IN_LEGACY		0x0efU
 
 /* How a built-in function is emitted. */
 #define GLSL_BI_EXT		1U
@@ -570,6 +604,21 @@ struct glsl_builtin {
 #define GLSL_SPECIAL_MODF	21U
 #define GLSL_SPECIAL_ATAN	22U
 #define GLSL_SPECIAL_OUTER_PRODUCT 23U
+#define GLSL_SPECIAL_TEXTURE_GRAD 24U
+#define GLSL_SPECIAL_TEXTURE_OFFSET 25U
+#define GLSL_SPECIAL_TEXTURE_OFFSET_BIAS 26U
+#define GLSL_SPECIAL_TEXTURE_LOD_OFFSET 27U
+
+/* The layout qualifiers of a declaration (glsl_node.layout). */
+#define GLSL_LAYOUT_STD140	0x01U
+#define GLSL_LAYOUT_SHARED	0x02U
+#define GLSL_LAYOUT_PACKED	0x04U
+#define GLSL_LAYOUT_ROW_MAJOR	0x08U
+#define GLSL_LAYOUT_COLUMN_MAJOR 0x10U
+#define GLSL_LAYOUT_LOCATION	0x20U
+
+/* No location given. */
+#define GLSL_NO_LOCATION	0xffffffffU
 
 /*
  * The compile of one shader, and what stays of it for the link: the
@@ -661,6 +710,8 @@ const struct glsl_type *glsl_type_scalar(unsigned base);
 const struct glsl_type *glsl_type_vector(unsigned base, unsigned components);
 const struct glsl_type *glsl_type_matrix(unsigned columns, unsigned rows);
 const struct glsl_type *glsl_type_sampler(unsigned base, unsigned sampler, unsigned shadow);
+unsigned glsl_version_mask(const struct glsl_shader *shader);
+int glsl_since(const struct glsl_shader *shader, unsigned desktop, unsigned es);
 const struct glsl_type *glsl_type_named(const char *name, unsigned length, unsigned *versions);
 const struct glsl_type *glsl_type_array(struct glsl_arena *arena, const struct glsl_type *element, unsigned length);
 const struct glsl_type *glsl_type_column(const struct glsl_type *type);

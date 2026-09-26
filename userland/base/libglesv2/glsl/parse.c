@@ -47,10 +47,10 @@ struct parse_keyword {
  * future (GLSL_K_RESERVED), with the versions each is one in.
  */
 static const struct parse_keyword parse_keywords[] = {
-	{ "attribute", GLSL_K_ATTRIBUTE, GLSL_IN_ALL },
+	{ "attribute", GLSL_K_ATTRIBUTE, GLSL_IN_LEGACY },
 	{ "const", GLSL_K_CONST, GLSL_IN_ALL },
 	{ "uniform", GLSL_K_UNIFORM, GLSL_IN_ALL },
-	{ "varying", GLSL_K_VARYING, GLSL_IN_ALL },
+	{ "varying", GLSL_K_VARYING, GLSL_IN_LEGACY },
 	{ "break", GLSL_K_BREAK, GLSL_IN_ALL },
 	{ "continue", GLSL_K_CONTINUE, GLSL_IN_ALL },
 	{ "do", GLSL_K_DO, GLSL_IN_ALL },
@@ -77,7 +77,24 @@ static const struct parse_keyword parse_keywords[] = {
 	{ "default", GLSL_K_DEFAULT, GLSL_IN_130_UP },
 	{ "flat", GLSL_K_FLAT, GLSL_IN_130_UP },
 	{ "smooth", GLSL_K_SMOOTH, GLSL_IN_130_UP },
-	{ "noperspective", GLSL_K_NOPERSPECTIVE, GLSL_IN_130_UP },
+	{ "noperspective", GLSL_K_NOPERSPECTIVE, GLSL_IN_DESKTOP_130_UP },
+	{ "layout", GLSL_K_LAYOUT, GLSL_IN_140_UP },
+	{ "attribute", GLSL_K_RESERVED, GLSL_IN_ES300 },
+	{ "varying", GLSL_K_RESERVED, GLSL_IN_ES300 },
+	{ "noperspective", GLSL_K_RESERVED, GLSL_IN_ES300 },
+	{ "coherent", GLSL_K_RESERVED, GLSL_IN_ES300 },
+	{ "restrict", GLSL_K_RESERVED, GLSL_IN_ES300 },
+	{ "readonly", GLSL_K_RESERVED, GLSL_IN_ES300 },
+	{ "writeonly", GLSL_K_RESERVED, GLSL_IN_ES300 },
+	{ "resource", GLSL_K_RESERVED, GLSL_IN_ES300 },
+	{ "atomic_uint", GLSL_K_RESERVED, GLSL_IN_ES300 },
+	{ "patch", GLSL_K_RESERVED, GLSL_IN_ES300 },
+	{ "sample", GLSL_K_RESERVED, GLSL_IN_ES300 },
+	{ "subroutine", GLSL_K_RESERVED, GLSL_IN_ES300 },
+	{ "common", GLSL_K_RESERVED, GLSL_IN_ES300 },
+	{ "partition", GLSL_K_RESERVED, GLSL_IN_ES300 },
+	{ "active", GLSL_K_RESERVED, GLSL_IN_ES300 },
+	{ "filter", GLSL_K_RESERVED, GLSL_IN_ES300 },
 	{ "switch", GLSL_K_RESERVED, GLSL_IN_OLD },
 	{ "default", GLSL_K_RESERVED, GLSL_IN_OLD },
 	{ "flat", GLSL_K_RESERVED, GLSL_IN_ES100 },
@@ -119,15 +136,15 @@ static const struct parse_keyword parse_keywords[] = {
 	{ "sampler2DRect", GLSL_K_RESERVED, GLSL_IN_ALL },
 	{ "sampler3DRect", GLSL_K_RESERVED, GLSL_IN_ALL },
 	{ "sampler2DRectShadow", GLSL_K_RESERVED, GLSL_IN_ALL },
-	{ "sampler1D", GLSL_K_RESERVED, GLSL_IN_ES100 },
+	{ "sampler1D", GLSL_K_RESERVED, GLSL_IN_ES },
 	{ "sampler3D", GLSL_K_RESERVED, GLSL_IN_ES100 },
-	{ "sampler1DShadow", GLSL_K_RESERVED, GLSL_IN_ES100 },
+	{ "sampler1DShadow", GLSL_K_RESERVED, GLSL_IN_ES },
 	{ "sampler2DShadow", GLSL_K_RESERVED, GLSL_IN_ES100 },
 	{ "sizeof", GLSL_K_RESERVED, GLSL_IN_ALL },
 	{ "cast", GLSL_K_RESERVED, GLSL_IN_ALL },
 	{ "namespace", GLSL_K_RESERVED, GLSL_IN_ALL },
 	{ "using", GLSL_K_RESERVED, GLSL_IN_ALL },
-	{ "layout", GLSL_K_RESERVED, GLSL_IN_ALL }
+	{ "layout", GLSL_K_RESERVED, GLSL_IN_ES100 | GLSL_IN_110 | GLSL_IN_120 | GLSL_IN_130 }
 };
 
 /*
@@ -147,7 +164,6 @@ struct glsl_parse_scope {
 	struct glsl_parse_scope *parent;
 };
 
-static unsigned parse_version_mask(const struct glsl_shader *shader);
 static unsigned parse_classify(struct glsl_shader *shader, struct glsl_token *token);
 static struct glsl_token *parse_peek(struct glsl_shader *shader, unsigned ahead);
 static struct glsl_token *parse_take(struct glsl_shader *shader);
@@ -170,6 +186,9 @@ static struct glsl_node *parse_precision(struct glsl_shader *shader);
 static struct glsl_node *parse_invariant(struct glsl_shader *shader);
 static struct glsl_node *parse_fully_specified_type(struct glsl_shader *shader);
 static void parse_qualifiers(struct glsl_shader *shader, struct glsl_node *type);
+static void parse_layout(struct glsl_shader *shader, struct glsl_node *type);
+static int parse_starts_block(struct glsl_shader *shader);
+static struct glsl_node *parse_interface(struct glsl_shader *shader);
 static void parse_type_specifier(struct glsl_shader *shader, struct glsl_node *type);
 static void parse_struct(struct glsl_shader *shader, struct glsl_node *type);
 static struct glsl_node *parse_array_size(struct glsl_shader *shader, struct glsl_node *owner);
@@ -237,23 +256,6 @@ glsl_parse(
 	shader->unit = first;
 }
 
-/* Returns the GLSL_IN_* bit of the shader's version. */
-static unsigned
-parse_version_mask(
-	const struct glsl_shader *shader)
-{
-	/* OpenGL ES 1.00, then desktop 1.10, 1.20 and 1.30. */
-	if (shader->es)
-		return GLSL_IN_ES100;
-	if (shader->version == GLSL_VERSION_110)
-		return GLSL_IN_110;
-	if (shader->version == GLSL_VERSION_120)
-		return GLSL_IN_120;
-
-	/* 1.30. */
-	return GLSL_IN_130;
-}
-
 /*
  * Classifies an identifier token once: a keyword of the version, a
  * built-in type name (GLSL_K_TYPE), a reserved word, or none.
@@ -276,7 +278,7 @@ parse_classify(
 		return token->keyword;
 	token->classified = 1U;
 	token->keyword = GLSL_K_NONE;
-	mask = parse_version_mask(shader);
+	mask = glsl_version_mask(shader);
 
 	/* A built-in type name of this version. */
 	type = glsl_type_named(token->text, token->length, &versions);
@@ -672,6 +674,7 @@ parse_external(
 	unsigned line;
 	int is_function;
 	int alone;
+	int block;
 
 	/* The precision statement. */
 	keyword = parse_keyword_at(shader, 0U);
@@ -688,6 +691,23 @@ parse_external(
 			declaration = parse_invariant(shader);
 			return declaration;
 		}
+	}
+
+	/* An interface block. */
+	block = parse_starts_block(shader);
+	if (block == 1) {
+		declaration = parse_interface(shader);
+		return declaration;
+	}
+
+	/* Qualifiers alone: a default layout, which changes nothing here. */
+	if (block == 2) {
+		token = parse_peek(shader, 0U);
+		declaration = parse_node(shader, GLSL_N_EMPTY, token->line);
+		declaration->child[0] = parse_node(shader, GLSL_N_TYPE, token->line);
+		parse_qualifiers(shader, declaration->child[0]);
+		parse_expect(shader, GLSL_P_SEMICOLON, "';'");
+		return declaration;
 	}
 
 	/* A type with its qualifiers. */
@@ -872,6 +892,9 @@ parse_qualifiers(
 		case GLSL_K_HIGHP:
 			type->precision = GLSL_PRECISION_HIGH;
 			break;
+		case GLSL_K_LAYOUT:
+			parse_layout(shader, type);
+			continue;
 		default:
 			return;
 		}
@@ -890,6 +913,195 @@ parse_qualifiers(
 		/* The qualifier is taken. */
 		(void)parse_take(shader);
 	}
+}
+
+/*
+ * Parses "layout ( qualifier [= value], ... )" into a type node: the
+ * block layouts, the matrix orders, and a location.
+ */
+static void
+parse_layout(
+	struct glsl_shader *shader,
+	struct glsl_node *type)
+{
+	struct glsl_token *token;
+	struct glsl_token *value;
+	int is_std140;
+	int is_shared;
+	int is_packed;
+	int is_row;
+	int is_column;
+	int is_location;
+	int closes;
+
+	/* The keyword and "(". */
+	(void)parse_take(shader);
+	parse_expect(shader, GLSL_P_LPAREN, "'('");
+
+	/* The qualifiers separated by commas. */
+	for (;;) {
+		token = parse_take(shader);
+		if (token->kind != GLSL_TOKEN_IDENTIFIER)
+			parse_unexpected(shader, "a layout qualifier");
+
+		/* Which one it is. */
+		is_std140 = glsl_token_is(token, "std140");
+		is_shared = glsl_token_is(token, "shared");
+		is_packed = glsl_token_is(token, "packed");
+		is_row = glsl_token_is(token, "row_major");
+		is_column = glsl_token_is(token, "column_major");
+		is_location = glsl_token_is(token, "location");
+		if (is_std140) {
+			type->layout |= GLSL_LAYOUT_STD140;
+		} else if (is_shared) {
+			type->layout |= GLSL_LAYOUT_SHARED;
+		} else if (is_packed) {
+			type->layout |= GLSL_LAYOUT_PACKED;
+		} else if (is_row) {
+			type->layout |= GLSL_LAYOUT_ROW_MAJOR;
+		} else if (is_column) {
+			type->layout |= GLSL_LAYOUT_COLUMN_MAJOR;
+		} else if (is_location) {
+			/* location = an integer. */
+			parse_expect(shader, GLSL_P_ASSIGN, "'='");
+			value = parse_take(shader);
+			if (value->kind != GLSL_TOKEN_INT && value->kind != GLSL_TOKEN_UINT)
+				glsl_fatal(shader, value->line, "a layout location must be an integer");
+			type->layout |= GLSL_LAYOUT_LOCATION;
+			type->location = value->integer;
+		} else {
+			glsl_error(shader, token->line, "unknown layout qualifier '%.*s'", (int)token->length, token->text);
+		}
+
+		/* A comma goes on, ")" ends. */
+		closes = parse_punct_at(shader, 0U, GLSL_P_RPAREN);
+		if (closes)
+			break;
+		parse_expect(shader, GLSL_P_COMMA, "',' or ')'");
+	}
+
+	/* The ")". */
+	(void)parse_take(shader);
+}
+
+/*
+ * Reports what a declaration starting at the current token is, looking
+ * past its qualifiers: 1 an interface block ("NAME {"), 2 qualifiers
+ * alone ("layout(std140) uniform;"), 0 anything else.
+ */
+static int
+parse_starts_block(
+	struct glsl_shader *shader)
+{
+	struct glsl_token *token;
+	unsigned keyword;
+	unsigned ahead;
+	unsigned depth;
+	int qualifier;
+	int opens;
+
+	/* Past the qualifiers and layouts. */
+	ahead = 0U;
+	for (;;) {
+		keyword = parse_keyword_at(shader, ahead);
+		qualifier = parse_is_qualifier(keyword);
+		if (qualifier) {
+			ahead++;
+			continue;
+		}
+
+		/* Anything but a layout ends the qualifiers. */
+		if (keyword != GLSL_K_LAYOUT)
+			break;
+
+		/* A layout's parenthesized list. */
+		ahead++;
+		depth = 0U;
+		for (;;) {
+			token = parse_peek(shader, ahead);
+			if (token->kind == GLSL_TOKEN_EOF)
+				return 0;
+			ahead++;
+			if (token->kind == GLSL_TOKEN_PUNCT && token->punct == GLSL_P_LPAREN)
+				depth++;
+			if (token->kind == GLSL_TOKEN_PUNCT && token->punct == GLSL_P_RPAREN)
+				depth--;
+			if (depth == 0U)
+				break;
+		}
+	}
+
+	/* Nothing after the qualifiers but ";". */
+	if (ahead > 0U) {
+		opens = parse_punct_at(shader, ahead, GLSL_P_SEMICOLON);
+		if (opens)
+			return 2;
+	}
+
+	/* A name that is not a type, then "{". */
+	token = parse_peek(shader, ahead);
+	keyword = parse_classify(shader, token);
+	if (ahead == 0U || token->kind != GLSL_TOKEN_IDENTIFIER || keyword != GLSL_K_NONE)
+		return 0;
+	opens = parse_punct_at(shader, ahead + 1U, GLSL_P_LBRACE);
+	if (!opens)
+		return 0;
+
+	/* Succeeded: a block. */
+	return 1;
+}
+
+/* Parses an interface block: qualifiers, its name, "{ members }", an optional instance name and array size, ";". */
+static struct glsl_node *
+parse_interface(
+	struct glsl_shader *shader)
+{
+	struct glsl_node *node;
+	struct glsl_node *member;
+	struct glsl_node *member_type;
+	struct glsl_node *last;
+	struct glsl_token *token;
+	const char *name;
+	int ends;
+	int bracket;
+
+	/* The qualifiers and the name. */
+	token = parse_peek(shader, 0U);
+	node = parse_node(shader, GLSL_N_INTERFACE, token->line);
+	node->child[0] = parse_node(shader, GLSL_N_TYPE, token->line);
+	parse_qualifiers(shader, node->child[0]);
+	node->name = parse_identifier(shader, "a block name");
+
+	/* The members up to "}". */
+	parse_expect(shader, GLSL_P_LBRACE, "'{'");
+	last = NULL;
+	for (;;) {
+		ends = parse_punct_at(shader, 0U, GLSL_P_RBRACE);
+		if (ends)
+			break;
+		token = parse_peek(shader, 0U);
+		member_type = parse_fully_specified_type(shader);
+		name = parse_identifier(shader, "a member name");
+		member = parse_declaration_rest(shader, member_type, name, token->line);
+		parse_append(&node->child[1], &last, member);
+	}
+
+	/* The "}". */
+	(void)parse_take(shader);
+
+	/* An instance name, with an array size. */
+	token = parse_peek(shader, 0U);
+	if (token->kind == GLSL_TOKEN_IDENTIFIER) {
+		node->child[2] = parse_node(shader, GLSL_N_VARIABLE, token->line);
+		node->child[2]->name = parse_identifier(shader, "an instance name");
+		bracket = parse_punct_at(shader, 0U, GLSL_P_LBRACKET);
+		if (bracket)
+			node->child[2]->child[0] = parse_array_size(shader, node->child[2]);
+	}
+
+	/* The end. */
+	parse_expect(shader, GLSL_P_SEMICOLON, "';'");
+	return node;
 }
 
 /* Parses a type specifier (a built-in type, a struct definition or a struct name, then optional "[size]"). */
@@ -913,10 +1125,12 @@ parse_type_specifier(
 		/* A struct definition. */
 		parse_struct(shader, type);
 	} else {
-		/* A struct's name. */
+		/* A struct's name (a reserved word is said to be one). */
 		named = 0;
 		if (keyword == GLSL_K_NONE)
 			named = parse_is_type_name(shader, token);
+		if (keyword == GLSL_K_RESERVED)
+			glsl_fatal(shader, token->line, "'%.*s' is a reserved word", (int)token->length, token->text);
 		if (!named)
 			parse_unexpected(shader, "a type");
 		(void)parse_take(shader);
@@ -1817,6 +2031,7 @@ parse_primary(
 	unsigned keyword;
 	int starts_type;
 	int is_call;
+	int allowed;
 
 	/* The literals. */
 	token = parse_peek(shader, 0U);
@@ -1827,14 +2042,16 @@ parse_primary(
 		node->integer = token->integer;
 		return node;
 	case GLSL_TOKEN_UINT:
-		if (shader->version < GLSL_VERSION_130 || shader->es)
+		allowed = glsl_since(shader, GLSL_VERSION_130, GLSL_VERSION_ES300);
+		if (!allowed)
 			glsl_error(shader, token->line, "unsigned integer constants need GLSL 1.30");
 		(void)parse_take(shader);
 		node = parse_node(shader, GLSL_N_UINT, token->line);
 		node->integer = token->integer;
 		return node;
 	case GLSL_TOKEN_FLOAT:
-		if (token->suffix && (shader->version < GLSL_VERSION_120 || shader->es))
+		allowed = glsl_since(shader, GLSL_VERSION_120, GLSL_VERSION_ES300);
+		if (token->suffix && !allowed)
 			glsl_error(shader, token->line, "the f suffix of floats needs GLSL 1.20");
 		(void)parse_take(shader);
 		node = parse_node(shader, GLSL_N_FLOAT, token->line);

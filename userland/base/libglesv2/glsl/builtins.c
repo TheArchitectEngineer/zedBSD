@@ -18,6 +18,8 @@
  *   a sampler1D  d sampler2D  e sampler3D  c samplerCube
  *   h sampler1DShadow  s sampler2DShadow
  *   A D E C a sampler of that dimension with any texel type, T its gvec4
+ *   R a 2D array sampler of any texel type
+ *   p sampler2DArrayShadow  q samplerCubeShadow
  *
  * Every generic code of one signature takes the same size, so a
  * signature is tried once for each size.
@@ -34,6 +36,7 @@
 
 /* The SPIR-V opcodes of the built-ins that are one instruction. */
 #define BI_OP_ANY		154U
+#define BI_OP_BITCAST		124U
 #define BI_OP_TRANSPOSE		84U
 #define BI_OP_ISNAN		156U
 #define BI_OP_ISINF		157U
@@ -145,6 +148,20 @@ static const struct glsl_builtin builtins_table[] = {
 	{ "matrixCompMult", "mmm", GLSL_BI_SPECIAL, GLSL_SPECIAL_MATRIX_COMP_MULT, BI_BOTH, GLSL_IN_ALL },
 	{ "outerProduct", "oVV", GLSL_BI_SPECIAL, GLSL_SPECIAL_OUTER_PRODUCT, BI_BOTH, GLSL_IN_120_UP },
 	{ "transpose", "tm", GLSL_BI_OP, BI_OP_TRANSPOSE, BI_BOTH, GLSL_IN_120_UP },
+	{ "determinant", "fM", GLSL_BI_EXT, 33U, BI_BOTH, GLSL_IN_140_UP },
+	{ "inverse", "MM", GLSL_BI_EXT, 34U, BI_BOTH, GLSL_IN_140_UP },
+
+	/* Bits of floats and packed values (3.30, OpenGL ES 3.00). */
+	{ "floatBitsToInt", "IG", GLSL_BI_OP, BI_OP_BITCAST, BI_BOTH, GLSL_IN_330_UP },
+	{ "floatBitsToUint", "UG", GLSL_BI_OP, BI_OP_BITCAST, BI_BOTH, GLSL_IN_330_UP },
+	{ "intBitsToFloat", "GI", GLSL_BI_OP, BI_OP_BITCAST, BI_BOTH, GLSL_IN_330_UP },
+	{ "uintBitsToFloat", "GU", GLSL_BI_OP, BI_OP_BITCAST, BI_BOTH, GLSL_IN_330_UP },
+	{ "packSnorm2x16", "u2", GLSL_BI_EXT, 56U, BI_BOTH, GLSL_IN_ES300 },
+	{ "packUnorm2x16", "u2", GLSL_BI_EXT, 57U, BI_BOTH, GLSL_IN_ES300 },
+	{ "packHalf2x16", "u2", GLSL_BI_EXT, 58U, BI_BOTH, GLSL_IN_ES300 },
+	{ "unpackSnorm2x16", "2u", GLSL_BI_EXT, 60U, BI_BOTH, GLSL_IN_ES300 },
+	{ "unpackUnorm2x16", "2u", GLSL_BI_EXT, 61U, BI_BOTH, GLSL_IN_ES300 },
+	{ "unpackHalf2x16", "2u", GLSL_BI_EXT, 62U, BI_BOTH, GLSL_IN_ES300 },
 
 	/* Vector relational functions. */
 	{ "lessThan", "YVV", GLSL_BI_OP, BI_OP_FLESS, BI_BOTH, GLSL_IN_ALL },
@@ -172,18 +189,18 @@ static const struct glsl_builtin builtins_table[] = {
 	{ "not", "YY", GLSL_BI_SPECIAL, GLSL_SPECIAL_NOT, BI_BOTH, GLSL_IN_ALL },
 
 	/* Texture lookups of OpenGL ES 1.00 and desktop 1.10 to 1.30. */
-	{ "texture2D", "4d2", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE, BI_BOTH, GLSL_IN_ALL },
-	{ "texture2D", "4d2f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_BIAS, BI_FRAGMENT, GLSL_IN_ALL },
-	{ "texture2DProj", "4d3", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_PROJ, BI_BOTH, GLSL_IN_ALL },
-	{ "texture2DProj", "4d4", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_PROJ, BI_BOTH, GLSL_IN_ALL },
-	{ "texture2DProj", "4d3f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_PROJ_BIAS, BI_FRAGMENT, GLSL_IN_ALL },
-	{ "texture2DProj", "4d4f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_PROJ_BIAS, BI_FRAGMENT, GLSL_IN_ALL },
-	{ "texture2DLod", "4d2f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_LOD, BI_VERTEX, GLSL_IN_ALL },
-	{ "texture2DProjLod", "4d3f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_PROJ_LOD, BI_VERTEX, GLSL_IN_ALL },
-	{ "texture2DProjLod", "4d4f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_PROJ_LOD, BI_VERTEX, GLSL_IN_ALL },
-	{ "textureCube", "4c3", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE, BI_BOTH, GLSL_IN_ALL },
-	{ "textureCube", "4c3f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_BIAS, BI_FRAGMENT, GLSL_IN_ALL },
-	{ "textureCubeLod", "4c3f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_LOD, BI_VERTEX, GLSL_IN_ALL },
+	{ "texture2D", "4d2", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE, BI_BOTH, GLSL_IN_LEGACY },
+	{ "texture2D", "4d2f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_BIAS, BI_FRAGMENT, GLSL_IN_LEGACY },
+	{ "texture2DProj", "4d3", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_PROJ, BI_BOTH, GLSL_IN_LEGACY },
+	{ "texture2DProj", "4d4", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_PROJ, BI_BOTH, GLSL_IN_LEGACY },
+	{ "texture2DProj", "4d3f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_PROJ_BIAS, BI_FRAGMENT, GLSL_IN_LEGACY },
+	{ "texture2DProj", "4d4f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_PROJ_BIAS, BI_FRAGMENT, GLSL_IN_LEGACY },
+	{ "texture2DLod", "4d2f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_LOD, BI_VERTEX, GLSL_IN_LEGACY },
+	{ "texture2DProjLod", "4d3f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_PROJ_LOD, BI_VERTEX, GLSL_IN_LEGACY },
+	{ "texture2DProjLod", "4d4f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_PROJ_LOD, BI_VERTEX, GLSL_IN_LEGACY },
+	{ "textureCube", "4c3", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE, BI_BOTH, GLSL_IN_LEGACY },
+	{ "textureCube", "4c3f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_BIAS, BI_FRAGMENT, GLSL_IN_LEGACY },
+	{ "textureCubeLod", "4c3f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_LOD, BI_VERTEX, GLSL_IN_LEGACY },
 	{ "texture1D", "4af", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE, BI_BOTH, GLSL_IN_DESKTOP },
 	{ "texture1D", "4aff", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_BIAS, BI_FRAGMENT, GLSL_IN_DESKTOP },
 	{ "texture1DProj", "4a2", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_PROJ, BI_BOTH, GLSL_IN_DESKTOP },
@@ -209,6 +226,10 @@ static const struct glsl_builtin builtins_table[] = {
 	{ "texture", "TC3f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_BIAS, BI_FRAGMENT, GLSL_IN_130_UP },
 	{ "texture", "fh3", GLSL_BI_SPECIAL, GLSL_SPECIAL_SHADOW, BI_BOTH, GLSL_IN_130_UP },
 	{ "texture", "fs3", GLSL_BI_SPECIAL, GLSL_SPECIAL_SHADOW, BI_BOTH, GLSL_IN_130_UP },
+	{ "texture", "TR3", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE, BI_BOTH, GLSL_IN_130_UP },
+	{ "texture", "TR3f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_BIAS, BI_FRAGMENT, GLSL_IN_130_UP },
+	{ "texture", "fp4", GLSL_BI_SPECIAL, GLSL_SPECIAL_SHADOW, BI_BOTH, GLSL_IN_130_UP },
+	{ "texture", "fq4", GLSL_BI_SPECIAL, GLSL_SPECIAL_SHADOW, BI_BOTH, GLSL_IN_130_UP },
 	{ "textureProj", "TA2", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_PROJ, BI_BOTH, GLSL_IN_130_UP },
 	{ "textureProj", "TA4", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_PROJ, BI_BOTH, GLSL_IN_130_UP },
 	{ "textureProj", "TD3", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_PROJ, BI_BOTH, GLSL_IN_130_UP },
@@ -218,13 +239,35 @@ static const struct glsl_builtin builtins_table[] = {
 	{ "textureLod", "TD2f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_LOD, BI_BOTH, GLSL_IN_130_UP },
 	{ "textureLod", "TE3f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_LOD, BI_BOTH, GLSL_IN_130_UP },
 	{ "textureLod", "TC3f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_LOD, BI_BOTH, GLSL_IN_130_UP },
+	{ "textureLod", "TR3f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_LOD, BI_BOTH, GLSL_IN_130_UP },
+	{ "textureProjLod", "TD3f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_PROJ_LOD, BI_BOTH, GLSL_IN_130_UP },
+	{ "textureProjLod", "TD4f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_PROJ_LOD, BI_BOTH, GLSL_IN_130_UP },
+	{ "textureProjLod", "TE4f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_PROJ_LOD, BI_BOTH, GLSL_IN_130_UP },
+	{ "textureGrad", "TD222", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_GRAD, BI_BOTH, GLSL_IN_130_UP },
+	{ "textureGrad", "TE333", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_GRAD, BI_BOTH, GLSL_IN_130_UP },
+	{ "textureGrad", "TC333", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_GRAD, BI_BOTH, GLSL_IN_130_UP },
+	{ "textureGrad", "TR322", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_GRAD, BI_BOTH, GLSL_IN_130_UP },
+	{ "textureGrad", "fs322", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_GRAD, BI_BOTH, GLSL_IN_130_UP },
+	{ "textureOffset", "TD2j", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_OFFSET, BI_BOTH, GLSL_IN_130_UP },
+	{ "textureOffset", "TD2jf", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_OFFSET_BIAS, BI_FRAGMENT, GLSL_IN_130_UP },
+	{ "textureOffset", "TE3k", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_OFFSET, BI_BOTH, GLSL_IN_130_UP },
+	{ "textureOffset", "TR3j", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_OFFSET, BI_BOTH, GLSL_IN_130_UP },
+	{ "textureOffset", "fs3j", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_OFFSET, BI_BOTH, GLSL_IN_130_UP },
+	{ "textureLodOffset", "TD2fj", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_LOD_OFFSET, BI_BOTH, GLSL_IN_130_UP },
+	{ "textureLodOffset", "TE3fk", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_LOD_OFFSET, BI_BOTH, GLSL_IN_130_UP },
+	{ "textureLodOffset", "TR3fj", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_LOD_OFFSET, BI_BOTH, GLSL_IN_130_UP },
 	{ "textureSize", "iAi", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_SIZE, BI_BOTH, GLSL_IN_130_UP },
 	{ "textureSize", "jDi", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_SIZE, BI_BOTH, GLSL_IN_130_UP },
 	{ "textureSize", "kEi", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_SIZE, BI_BOTH, GLSL_IN_130_UP },
 	{ "textureSize", "jCi", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_SIZE, BI_BOTH, GLSL_IN_130_UP },
+	{ "textureSize", "kRi", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_SIZE, BI_BOTH, GLSL_IN_130_UP },
+	{ "textureSize", "jsi", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_SIZE, BI_BOTH, GLSL_IN_130_UP },
+	{ "textureSize", "jqi", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_SIZE, BI_BOTH, GLSL_IN_130_UP },
+	{ "textureSize", "kpi", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_SIZE, BI_BOTH, GLSL_IN_130_UP },
 	{ "texelFetch", "TAii", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXEL_FETCH, BI_BOTH, GLSL_IN_130_UP },
 	{ "texelFetch", "TDji", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXEL_FETCH, BI_BOTH, GLSL_IN_130_UP },
 	{ "texelFetch", "TEki", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXEL_FETCH, BI_BOTH, GLSL_IN_130_UP },
+	{ "texelFetch", "TRki", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXEL_FETCH, BI_BOTH, GLSL_IN_130_UP },
 
 	/* Derivatives (OpenGL ES needs OES_standard_derivatives). */
 	{ "dFdx", "GG", GLSL_BI_OP, BI_OP_DPDX, BI_FRAGMENT, GLSL_IN_ALL | GLSL_IN_DERIVATIVES },
@@ -271,7 +314,6 @@ static const struct builtins_constant builtins_constants[] = {
 	{ "gl_MaxClipDistances", 8, GLSL_IN_130_UP }
 };
 
-static unsigned builtins_version_mask(const struct glsl_shader *shader);
 static int builtins_match_size(const struct glsl_builtin *builtin, const struct glsl_type **arguments, unsigned count, unsigned size, int convert, const struct glsl_type **parameters, const struct glsl_type **result);
 static const struct glsl_type *builtins_code_type(char code, unsigned size, const struct glsl_type **arguments, unsigned count, unsigned index);
 static int builtins_accepts(const struct glsl_type *parameter, const struct glsl_type *argument, int convert);
@@ -346,7 +388,7 @@ glsl_builtin_match(
 	int matched;
 
 	/* The version and the stage. */
-	mask = builtins_version_mask(shader);
+	mask = glsl_version_mask(shader);
 	if ((builtin->versions & mask) == 0U)
 		return 0;
 	stage = BI_VERTEX;
@@ -356,7 +398,7 @@ glsl_builtin_match(
 		return 0;
 
 	/* OpenGL ES's derivatives need their extension. */
-	if ((builtin->versions & GLSL_IN_DERIVATIVES) != 0U && shader->es && !shader->derivatives)
+	if ((builtin->versions & GLSL_IN_DERIVATIVES) != 0U && shader->es && shader->version < GLSL_VERSION_ES300 && !shader->derivatives)
 		return 0;
 
 	/* The number of arguments. */
@@ -390,7 +432,7 @@ glsl_builtin_variables(
 	size_t index;
 
 	/* The constants. */
-	mask = builtins_version_mask(shader);
+	mask = glsl_version_mask(shader);
 	for (index = 0U; index < sizeof(builtins_constants) / sizeof(builtins_constants[0]); index++) {
 		if ((builtins_constants[index].versions & mask) == 0U)
 			continue;
@@ -411,6 +453,8 @@ glsl_builtin_variables(
 		builtins_variable(shader, "gl_PointSize", glsl_type_scalar(GLSL_BASE_FLOAT), GLSL_VAR_OUTPUT, GLSL_BUILTIN_POINT_SIZE);
 		if ((mask & GLSL_IN_130_UP) != 0U)
 			builtins_variable(shader, "gl_VertexID", glsl_type_scalar(GLSL_BASE_INT), GLSL_VAR_INPUT, GLSL_BUILTIN_VERTEX_ID);
+		if ((mask & GLSL_IN_140_UP) != 0U)
+			builtins_variable(shader, "gl_InstanceID", glsl_type_scalar(GLSL_BASE_INT), GLSL_VAR_INPUT, GLSL_BUILTIN_INSTANCE_ID);
 		return;
 	}
 
@@ -420,29 +464,16 @@ glsl_builtin_variables(
 	if ((mask & (GLSL_IN_ES100 | GLSL_IN_120_UP)) != 0U)
 		builtins_variable(shader, "gl_PointCoord", glsl_type_vector(GLSL_BASE_FLOAT, 2U), GLSL_VAR_INPUT, GLSL_BUILTIN_POINT_COORD);
 
-	/* Its outputs: the colour, the draw buffers (one), and the depth (desktop). */
-	builtins_variable(shader, "gl_FragColor", glsl_type_vector(GLSL_BASE_FLOAT, 4U), GLSL_VAR_OUTPUT, GLSL_BUILTIN_FRAG_COLOR);
-	type = glsl_type_array(&shader->arena, glsl_type_vector(GLSL_BASE_FLOAT, 4U), 1U);
-	builtins_variable(shader, "gl_FragData", type, GLSL_VAR_OUTPUT, GLSL_BUILTIN_FRAG_DATA);
-	if (!shader->es)
+	/* Its outputs: the colour and the draw buffers (one; not in OpenGL ES 3.00), and the depth (not in OpenGL ES 1.00). */
+	if ((mask & GLSL_IN_LEGACY) != 0U) {
+		builtins_variable(shader, "gl_FragColor", glsl_type_vector(GLSL_BASE_FLOAT, 4U), GLSL_VAR_OUTPUT, GLSL_BUILTIN_FRAG_COLOR);
+		type = glsl_type_array(&shader->arena, glsl_type_vector(GLSL_BASE_FLOAT, 4U), 1U);
+		builtins_variable(shader, "gl_FragData", type, GLSL_VAR_OUTPUT, GLSL_BUILTIN_FRAG_DATA);
+	}
+
+	/* The depth, which OpenGL ES 1.00 does not have. */
+	if ((mask & GLSL_IN_ES100) == 0U)
 		builtins_variable(shader, "gl_FragDepth", glsl_type_scalar(GLSL_BASE_FLOAT), GLSL_VAR_OUTPUT, GLSL_BUILTIN_FRAG_DEPTH);
-}
-
-/* Returns the GLSL_IN_* bit of the shader's version. */
-static unsigned
-builtins_version_mask(
-	const struct glsl_shader *shader)
-{
-	/* OpenGL ES 1.00, then desktop 1.10, 1.20 and 1.30. */
-	if (shader->es)
-		return GLSL_IN_ES100;
-	if (shader->version == GLSL_VERSION_110)
-		return GLSL_IN_110;
-	if (shader->version == GLSL_VERSION_120)
-		return GLSL_IN_120;
-
-	/* 1.30. */
-	return GLSL_IN_130;
 }
 
 /* Matches a signature with its generic codes taking one size. */
@@ -635,11 +666,13 @@ builtins_sampler_code(
 {
 	unsigned sampler;
 	unsigned shadow;
+	unsigned arrayed;
 	int any_base;
 
-	/* The dimension, shadow and texel base each code wants. */
+	/* The dimension, shadow, layers and texel base each code wants. */
 	any_base = 0;
 	shadow = 0U;
+	arrayed = 0U;
 	switch (code) {
 	case 'a':
 		sampler = GLSL_SAMPLER_1D;
@@ -677,12 +710,28 @@ builtins_sampler_code(
 		sampler = GLSL_SAMPLER_CUBE;
 		any_base = 1;
 		break;
+	case 'R':
+		sampler = GLSL_SAMPLER_2D;
+		arrayed = 1U;
+		any_base = 1;
+		break;
+	case 'p':
+		sampler = GLSL_SAMPLER_2D;
+		arrayed = 1U;
+		shadow = 1U;
+		break;
+	case 'q':
+		sampler = GLSL_SAMPLER_CUBE;
+		shadow = 1U;
+		break;
 	default:
 		return 0;
 	}
 
 	/* The argument must be that sampler. */
 	if (argument->kind != GLSL_KIND_SAMPLER || argument->sampler != sampler || argument->shadow != shadow)
+		return -1;
+	if (argument->arrayed != arrayed)
 		return -1;
 	if (!any_base && argument->base != GLSL_BASE_FLOAT)
 		return -1;

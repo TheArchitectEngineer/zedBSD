@@ -22,7 +22,8 @@
  *
  * The shaders are SPIR-V (shaders/, shaders.h) given with glShaderBinary,
  * or (--scene=glsl, WS068 p019) GLSL ES 1.00 source compiled by
- * glCompileShader, which draws the same colours.
+ * glCompileShader, or (--scene=glsl3, WS068 p020) GLSL ES 3.00 source in
+ * an OpenGL ES 3 context; all draw the same colours.
  */
 
 #include "scene.h"
@@ -75,6 +76,46 @@ static const char scene_vertex_source[] =
 	"\tv_color = tinted(a_color);\n"
 	"\tv_uv = a_uv;\n"
 	"\tgl_Position = u_matrix * a_position;\n"
+	"}\n";
+
+/*
+ * The scene's vertex shader in GLSL ES 3.00: the attributes where the
+ * scene puts them by their layout locations.
+ */
+static const char scene_vertex_source3[] =
+	"#version 300 es\n"
+	"layout(location = 0) in vec4 a_position;\n"
+	"layout(location = 1) in vec4 a_color;\n"
+	"layout(location = 2) in vec2 a_uv;\n"
+	"out vec4 v_color;\n"
+	"out vec2 v_uv;\n"
+	"uniform mat4 u_matrix;\n"
+	"uniform vec4 u_tint;\n"
+	"\n"
+	"void main()\n"
+	"{\n"
+	"\tv_color = a_color * u_tint;\n"
+	"\tv_uv = a_uv;\n"
+	"\tgl_Position = u_matrix * a_position;\n"
+	"}\n";
+
+/*
+ * The scene's fragment shader in GLSL ES 3.00: a located output, texture().
+ */
+static const char scene_fragment_source3[] =
+	"#version 300 es\n"
+	"precision mediump float;\n"
+	"in vec4 v_color;\n"
+	"in vec2 v_uv;\n"
+	"uniform float u_textured;\n"
+	"uniform sampler2D u_texture;\n"
+	"layout(location = 0) out vec4 color;\n"
+	"\n"
+	"void main()\n"
+	"{\n"
+	"\tvec4 texel = texture(u_texture, v_uv);\n"
+	"\n"
+	"\tcolor = u_textured > 0.5 ? v_color * texel : v_color;\n"
 	"}\n";
 
 /*
@@ -276,7 +317,26 @@ egltest_scene_check(
 	return failures;
 }
 
-/* Makes the program (from SPIR-V or GLSL source), the buffers and the texture; -1 with a line when something fails. */
+/*
+ * Makes the program from GLSL ES 3.00 source in an OpenGL ES 3 context,
+ * the buffers and the texture.  Returns 0, or -1 with a line saying what
+ * failed.
+ */
+int
+egltest_scene_start_glsl3(void)
+{
+	int status;
+
+	/* The scene with GLSL ES 3.00 shaders. */
+	status = scene_start(2);
+	if (status != 0)
+		return -1;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/* Makes the program (from SPIR-V, GLSL ES 1.00 or GLSL ES 3.00 source), the buffers and the texture; -1 with a line when something fails. */
 static int
 scene_start(
 	int glsl)
@@ -300,7 +360,10 @@ scene_start(
 	char log[256];
 
 	/* The two shaders, from GLSL source or from SPIR-V. */
-	if (glsl) {
+	if (glsl == 2) {
+		vertex = scene_source(GL_VERTEX_SHADER, scene_vertex_source3);
+		fragment = scene_source(GL_FRAGMENT_SHADER, scene_fragment_source3);
+	} else if (glsl) {
 		vertex = scene_source(GL_VERTEX_SHADER, scene_vertex_source);
 		fragment = scene_source(GL_FRAGMENT_SHADER, scene_fragment_source);
 	} else {

@@ -51,6 +51,8 @@ static void link_attributes(struct link_state *state, struct glsl_shader *vertex
 static void link_varyings(struct link_state *state, struct glsl_shader *vertex, struct glsl_shader *fragment);
 static void link_outputs(struct link_state *state, struct glsl_shader *fragment);
 static struct glsl_symbol *link_find(struct glsl_shader *shader, const char *name, unsigned where);
+static struct glsl_symbol *link_find_varying(struct glsl_shader *vertex, struct glsl_symbol *input);
+static int link_take_output(struct link_state *state, struct glsl_symbol *symbol, unsigned char *taken);
 static void link_info(struct link_state *state, struct glsl_program *program);
 static void link_leaves(struct link_state *state, const struct glsl_type *type, const char *name, struct glsl_uniform_info *out, unsigned *count, unsigned capacity);
 static uint32_t *link_copy(const uint32_t *code, size_t words);
@@ -324,11 +326,31 @@ link_attributes(
 	int differs;
 	int free_run;
 
-	/* The bound attributes first. */
+	/* The attributes with a layout location first. */
 	memset(taken, 0, sizeof(taken));
 	for (symbol = vertex->globals; symbol != NULL; symbol = symbol->next_global) {
-		symbol->location = 0xffffffffU;
+		symbol->location = GLSL_NO_LOCATION;
 		if (!symbol->used || symbol->where != GLSL_VAR_INPUT || symbol->builtin != GLSL_BUILTIN_NONE)
+			continue;
+		if (symbol->explicit_location == GLSL_NO_LOCATION)
+			continue;
+		locations = glsl_type_locations(symbol->type);
+		if (symbol->explicit_location + locations > 16U) {
+			link_error(state, "attribute '%s' has a location beyond the 16", symbol->name);
+			continue;
+		}
+
+		/* The location, taken. */
+		symbol->location = symbol->explicit_location;
+		for (slot = 0U; slot < locations; slot++)
+			taken[symbol->location + slot] = 1U;
+	}
+
+	/* Then the bound attributes. */
+	for (symbol = vertex->globals; symbol != NULL; symbol = symbol->next_global) {
+		if (!symbol->used || symbol->where != GLSL_VAR_INPUT || symbol->builtin != GLSL_BUILTIN_NONE)
+			continue;
+		if (symbol->location != GLSL_NO_LOCATION)
 			continue;
 		for (index = 0U; index < binding_count; index++) {
 			differs = strcmp(bindings[index].name, symbol->name);
@@ -354,7 +376,7 @@ link_attributes(
 	for (symbol = vertex->globals; symbol != NULL; symbol = symbol->next_global) {
 		if (!symbol->used || symbol->where != GLSL_VAR_INPUT || symbol->builtin != GLSL_BUILTIN_NONE)
 			continue;
-		if (symbol->location != 0xffffffffU)
+		if (symbol->location != GLSL_NO_LOCATION)
 			continue;
 		locations = glsl_type_locations(symbol->type);
 		bound = 0;
@@ -402,7 +424,7 @@ link_varyings(
 	for (symbol = fragment->globals; symbol != NULL; symbol = symbol->next_global) {
 		if (!symbol->used || symbol->where != GLSL_VAR_INPUT || symbol->builtin != GLSL_BUILTIN_NONE)
 			continue;
-		output = link_find(vertex, symbol->name, GLSL_VAR_OUTPUT);
+		output = link_find_varying(vertex, symbol);
 		if (output == NULL) {
 			link_error(state, "the fragment shader reads '%s', which the vertex shader does not declare", symbol->name);
 			continue;
@@ -436,7 +458,7 @@ link_varyings(
 	for (symbol = fragment->globals; symbol != NULL; symbol = symbol->next_global) {
 		if (!symbol->used || symbol->where != GLSL_VAR_INPUT || symbol->builtin != GLSL_BUILTIN_NONE)
 			continue;
-		output = link_find(vertex, symbol->name, GLSL_VAR_OUTPUT);
+		output = link_find_varying(vertex, symbol);
 		if (output == NULL)
 			continue;
 		symbol->location = output->location;
@@ -452,8 +474,11 @@ link_outputs(
 	struct glsl_shader *fragment)
 {
 	struct glsl_symbol *symbol;
+	unsigned char taken[LINK_MAX_LOCATIONS];
 	unsigned location;
 	unsigned builtins;
+	unsigned outputs;
+	unsigned unlocated;
 
 	/* gl_FragColor and gl_FragData are colour output 0. */
 	builtins = 0U;
@@ -466,18 +491,112 @@ link_outputs(
 		}
 	}
 
-	/* The shader's own outputs in order. */
-	location = 0U;
+	/* The shader's own outputs: those with a layout location first. */
+	memset(taken, 0, sizeof(taken));
+	outputs = 0U;
+	unlocated = 0U;
 	for (symbol = fragment->globals; symbol != NULL; symbol = symbol->next_global) {
 		if (!symbol->used || symbol->where != GLSL_VAR_OUTPUT || symbol->builtin != GLSL_BUILTIN_NONE)
 			continue;
-		symbol->location = location;
-		location += glsl_type_locations(symbol->type);
+		outputs++;
+		symbol->location = GLSL_NO_LOCATION;
+		if (symbol->explicit_location == GLSL_NO_LOCATION) {
+			unlocated++;
+			continue;
+		}
+
+		/* The layout's location, taken. */
+		symbol->location = symbol->explicit_location;
+		(void)link_take_output(state, symbol, taken);
 	}
 
+	/* Then the others at the lowest free locations, in order. */
+	for (symbol = fragment->globals; symbol != NULL; symbol = symbol->next_global) {
+		if (!symbol->used || symbol->where != GLSL_VAR_OUTPUT || symbol->builtin != GLSL_BUILTIN_NONE)
+			continue;
+		if (symbol->location != GLSL_NO_LOCATION)
+			continue;
+		for (location = 0U; location < LINK_MAX_LOCATIONS; location++) {
+			if (taken[location])
+				continue;
+			symbol->location = location;
+			break;
+		}
+
+		/* The locations taken. */
+		(void)link_take_output(state, symbol, taken);
+	}
+
+	/* OpenGL ES 3.00 wants every output located when there are several. */
+	if (fragment->es && outputs > 1U && unlocated != 0U)
+		link_error(state, "with several fragment shader outputs, each needs a layout location");
+
 	/* Both kinds cannot be written together. */
-	if (builtins > 1U || (builtins != 0U && location != 0U))
+	if (builtins > 1U || (builtins != 0U && outputs != 0U))
 		link_error(state, "the fragment shader writes more than one of gl_FragColor, gl_FragData and its own outputs");
+}
+
+/* Marks the locations a fragment output takes; -1 (reported) when one is taken already or out of range. */
+static int
+link_take_output(
+	struct link_state *state,
+	struct glsl_symbol *symbol,
+	unsigned char *taken)
+{
+	unsigned locations;
+	unsigned slot;
+
+	/* Inside the range. */
+	locations = glsl_type_locations(symbol->type);
+	if (symbol->location + locations > LINK_MAX_LOCATIONS) {
+		link_error(state, "output '%s' has no room for its locations", symbol->name);
+		return -1;
+	}
+
+	/* Each location once. */
+	for (slot = 0U; slot < locations; slot++) {
+		if (taken[symbol->location + slot]) {
+			link_error(state, "two fragment shader outputs share location %u", symbol->location + slot);
+			return -1;
+		}
+
+		/* Taken now. */
+		taken[symbol->location + slot] = 1U;
+	}
+
+	/* Succeeded: taken. */
+	return 0;
+}
+
+/*
+ * Finds the vertex shader output a fragment shader input reads: a block
+ * by its block name, anything else by its name.
+ */
+static struct glsl_symbol *
+link_find_varying(
+	struct glsl_shader *vertex,
+	struct glsl_symbol *input)
+{
+	struct glsl_symbol *symbol;
+	int differs;
+
+	/* Anything but a block, by name. */
+	if (input->type->kind != GLSL_KIND_STRUCT || input->type->block == 0U) {
+		symbol = link_find(vertex, input->name, GLSL_VAR_OUTPUT);
+		return symbol;
+	}
+
+	/* A block: the output block of the same block name. */
+	for (symbol = vertex->globals; symbol != NULL; symbol = symbol->next_global) {
+		if (symbol->where != GLSL_VAR_OUTPUT || symbol->type->kind != GLSL_KIND_STRUCT || symbol->type->block == 0U)
+			continue;
+		differs = strcmp(symbol->type->name, input->type->name);
+		if (differs == 0)
+			return symbol;
+	}
+
+	/* None. */
+	return NULL;
 }
 
 /* Finds a global of a stage by name and kind (GLSL_VAR_*). */

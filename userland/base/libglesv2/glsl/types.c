@@ -27,19 +27,19 @@ struct types_name {
 };
 
 /* void, and the type of an expression that already had an error. */
-static const struct glsl_type types_void = { GLSL_KIND_VOID, GLSL_BASE_NONE, 0U, 0U, 0U, 0U, "void", NULL, 0U, NULL, 0U };
-static const struct glsl_type types_error = { GLSL_KIND_ERROR, GLSL_BASE_NONE, 0U, 0U, 0U, 0U, "<error>", NULL, 0U, NULL, 0U };
+static const struct glsl_type types_void = { GLSL_KIND_VOID, GLSL_BASE_NONE, 0U, 0U, 0U, 0U, "void", NULL, 0U, NULL, 0U, 0U, 0U };
+static const struct glsl_type types_error = { GLSL_KIND_ERROR, GLSL_BASE_NONE, 0U, 0U, 0U, 0U, "<error>", NULL, 0U, NULL, 0U, 0U, 0U };
 
 /*
  * The scalars, by base (GLSL_BASE_BOOL .. GLSL_BASE_FLOAT; index 0 is
  * not a type).
  */
 static const struct glsl_type types_scalars[5] = {
-	{ GLSL_KIND_ERROR, GLSL_BASE_NONE, 0U, 0U, 0U, 0U, "<error>", NULL, 0U, NULL, 0U },
-	{ GLSL_KIND_SCALAR, GLSL_BASE_BOOL, 1U, 1U, 0U, 0U, "bool", NULL, 0U, NULL, 0U },
-	{ GLSL_KIND_SCALAR, GLSL_BASE_INT, 1U, 1U, 0U, 0U, "int", NULL, 0U, NULL, 0U },
-	{ GLSL_KIND_SCALAR, GLSL_BASE_UINT, 1U, 1U, 0U, 0U, "uint", NULL, 0U, NULL, 0U },
-	{ GLSL_KIND_SCALAR, GLSL_BASE_FLOAT, 1U, 1U, 0U, 0U, "float", NULL, 0U, NULL, 0U }
+	{ GLSL_KIND_ERROR, GLSL_BASE_NONE, 0U, 0U, 0U, 0U, "<error>", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SCALAR, GLSL_BASE_BOOL, 1U, 1U, 0U, 0U, "bool", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SCALAR, GLSL_BASE_INT, 1U, 1U, 0U, 0U, "int", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SCALAR, GLSL_BASE_UINT, 1U, 1U, 0U, 0U, "uint", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SCALAR, GLSL_BASE_FLOAT, 1U, 1U, 0U, 0U, "float", NULL, 0U, NULL, 0U, 0U, 0U }
 };
 
 /*
@@ -47,29 +47,29 @@ static const struct glsl_type types_scalars[5] = {
  */
 static const struct glsl_type types_vectors[5][3] = {
 	{
-		{ GLSL_KIND_ERROR, GLSL_BASE_NONE, 0U, 0U, 0U, 0U, "<error>", NULL, 0U, NULL, 0U },
-		{ GLSL_KIND_ERROR, GLSL_BASE_NONE, 0U, 0U, 0U, 0U, "<error>", NULL, 0U, NULL, 0U },
-		{ GLSL_KIND_ERROR, GLSL_BASE_NONE, 0U, 0U, 0U, 0U, "<error>", NULL, 0U, NULL, 0U }
+		{ GLSL_KIND_ERROR, GLSL_BASE_NONE, 0U, 0U, 0U, 0U, "<error>", NULL, 0U, NULL, 0U, 0U, 0U },
+		{ GLSL_KIND_ERROR, GLSL_BASE_NONE, 0U, 0U, 0U, 0U, "<error>", NULL, 0U, NULL, 0U, 0U, 0U },
+		{ GLSL_KIND_ERROR, GLSL_BASE_NONE, 0U, 0U, 0U, 0U, "<error>", NULL, 0U, NULL, 0U, 0U, 0U }
 	},
 	{
-		{ GLSL_KIND_VECTOR, GLSL_BASE_BOOL, 2U, 1U, 0U, 0U, "bvec2", NULL, 0U, NULL, 0U },
-		{ GLSL_KIND_VECTOR, GLSL_BASE_BOOL, 3U, 1U, 0U, 0U, "bvec3", NULL, 0U, NULL, 0U },
-		{ GLSL_KIND_VECTOR, GLSL_BASE_BOOL, 4U, 1U, 0U, 0U, "bvec4", NULL, 0U, NULL, 0U }
+		{ GLSL_KIND_VECTOR, GLSL_BASE_BOOL, 2U, 1U, 0U, 0U, "bvec2", NULL, 0U, NULL, 0U, 0U, 0U },
+		{ GLSL_KIND_VECTOR, GLSL_BASE_BOOL, 3U, 1U, 0U, 0U, "bvec3", NULL, 0U, NULL, 0U, 0U, 0U },
+		{ GLSL_KIND_VECTOR, GLSL_BASE_BOOL, 4U, 1U, 0U, 0U, "bvec4", NULL, 0U, NULL, 0U, 0U, 0U }
 	},
 	{
-		{ GLSL_KIND_VECTOR, GLSL_BASE_INT, 2U, 1U, 0U, 0U, "ivec2", NULL, 0U, NULL, 0U },
-		{ GLSL_KIND_VECTOR, GLSL_BASE_INT, 3U, 1U, 0U, 0U, "ivec3", NULL, 0U, NULL, 0U },
-		{ GLSL_KIND_VECTOR, GLSL_BASE_INT, 4U, 1U, 0U, 0U, "ivec4", NULL, 0U, NULL, 0U }
+		{ GLSL_KIND_VECTOR, GLSL_BASE_INT, 2U, 1U, 0U, 0U, "ivec2", NULL, 0U, NULL, 0U, 0U, 0U },
+		{ GLSL_KIND_VECTOR, GLSL_BASE_INT, 3U, 1U, 0U, 0U, "ivec3", NULL, 0U, NULL, 0U, 0U, 0U },
+		{ GLSL_KIND_VECTOR, GLSL_BASE_INT, 4U, 1U, 0U, 0U, "ivec4", NULL, 0U, NULL, 0U, 0U, 0U }
 	},
 	{
-		{ GLSL_KIND_VECTOR, GLSL_BASE_UINT, 2U, 1U, 0U, 0U, "uvec2", NULL, 0U, NULL, 0U },
-		{ GLSL_KIND_VECTOR, GLSL_BASE_UINT, 3U, 1U, 0U, 0U, "uvec3", NULL, 0U, NULL, 0U },
-		{ GLSL_KIND_VECTOR, GLSL_BASE_UINT, 4U, 1U, 0U, 0U, "uvec4", NULL, 0U, NULL, 0U }
+		{ GLSL_KIND_VECTOR, GLSL_BASE_UINT, 2U, 1U, 0U, 0U, "uvec2", NULL, 0U, NULL, 0U, 0U, 0U },
+		{ GLSL_KIND_VECTOR, GLSL_BASE_UINT, 3U, 1U, 0U, 0U, "uvec3", NULL, 0U, NULL, 0U, 0U, 0U },
+		{ GLSL_KIND_VECTOR, GLSL_BASE_UINT, 4U, 1U, 0U, 0U, "uvec4", NULL, 0U, NULL, 0U, 0U, 0U }
 	},
 	{
-		{ GLSL_KIND_VECTOR, GLSL_BASE_FLOAT, 2U, 1U, 0U, 0U, "vec2", NULL, 0U, NULL, 0U },
-		{ GLSL_KIND_VECTOR, GLSL_BASE_FLOAT, 3U, 1U, 0U, 0U, "vec3", NULL, 0U, NULL, 0U },
-		{ GLSL_KIND_VECTOR, GLSL_BASE_FLOAT, 4U, 1U, 0U, 0U, "vec4", NULL, 0U, NULL, 0U }
+		{ GLSL_KIND_VECTOR, GLSL_BASE_FLOAT, 2U, 1U, 0U, 0U, "vec2", NULL, 0U, NULL, 0U, 0U, 0U },
+		{ GLSL_KIND_VECTOR, GLSL_BASE_FLOAT, 3U, 1U, 0U, 0U, "vec3", NULL, 0U, NULL, 0U, 0U, 0U },
+		{ GLSL_KIND_VECTOR, GLSL_BASE_FLOAT, 4U, 1U, 0U, 0U, "vec4", NULL, 0U, NULL, 0U, 0U, 0U }
 	}
 };
 
@@ -78,19 +78,19 @@ static const struct glsl_type types_vectors[5][3] = {
  */
 static const struct glsl_type types_matrices[3][3] = {
 	{
-		{ GLSL_KIND_MATRIX, GLSL_BASE_FLOAT, 2U, 2U, 0U, 0U, "mat2", NULL, 0U, NULL, 0U },
-		{ GLSL_KIND_MATRIX, GLSL_BASE_FLOAT, 3U, 2U, 0U, 0U, "mat2x3", NULL, 0U, NULL, 0U },
-		{ GLSL_KIND_MATRIX, GLSL_BASE_FLOAT, 4U, 2U, 0U, 0U, "mat2x4", NULL, 0U, NULL, 0U }
+		{ GLSL_KIND_MATRIX, GLSL_BASE_FLOAT, 2U, 2U, 0U, 0U, "mat2", NULL, 0U, NULL, 0U, 0U, 0U },
+		{ GLSL_KIND_MATRIX, GLSL_BASE_FLOAT, 3U, 2U, 0U, 0U, "mat2x3", NULL, 0U, NULL, 0U, 0U, 0U },
+		{ GLSL_KIND_MATRIX, GLSL_BASE_FLOAT, 4U, 2U, 0U, 0U, "mat2x4", NULL, 0U, NULL, 0U, 0U, 0U }
 	},
 	{
-		{ GLSL_KIND_MATRIX, GLSL_BASE_FLOAT, 2U, 3U, 0U, 0U, "mat3x2", NULL, 0U, NULL, 0U },
-		{ GLSL_KIND_MATRIX, GLSL_BASE_FLOAT, 3U, 3U, 0U, 0U, "mat3", NULL, 0U, NULL, 0U },
-		{ GLSL_KIND_MATRIX, GLSL_BASE_FLOAT, 4U, 3U, 0U, 0U, "mat3x4", NULL, 0U, NULL, 0U }
+		{ GLSL_KIND_MATRIX, GLSL_BASE_FLOAT, 2U, 3U, 0U, 0U, "mat3x2", NULL, 0U, NULL, 0U, 0U, 0U },
+		{ GLSL_KIND_MATRIX, GLSL_BASE_FLOAT, 3U, 3U, 0U, 0U, "mat3", NULL, 0U, NULL, 0U, 0U, 0U },
+		{ GLSL_KIND_MATRIX, GLSL_BASE_FLOAT, 4U, 3U, 0U, 0U, "mat3x4", NULL, 0U, NULL, 0U, 0U, 0U }
 	},
 	{
-		{ GLSL_KIND_MATRIX, GLSL_BASE_FLOAT, 2U, 4U, 0U, 0U, "mat4x2", NULL, 0U, NULL, 0U },
-		{ GLSL_KIND_MATRIX, GLSL_BASE_FLOAT, 3U, 4U, 0U, 0U, "mat4x3", NULL, 0U, NULL, 0U },
-		{ GLSL_KIND_MATRIX, GLSL_BASE_FLOAT, 4U, 4U, 0U, 0U, "mat4", NULL, 0U, NULL, 0U }
+		{ GLSL_KIND_MATRIX, GLSL_BASE_FLOAT, 2U, 4U, 0U, 0U, "mat4x2", NULL, 0U, NULL, 0U, 0U, 0U },
+		{ GLSL_KIND_MATRIX, GLSL_BASE_FLOAT, 3U, 4U, 0U, 0U, "mat4x3", NULL, 0U, NULL, 0U, 0U, 0U },
+		{ GLSL_KIND_MATRIX, GLSL_BASE_FLOAT, 4U, 4U, 0U, 0U, "mat4", NULL, 0U, NULL, 0U, 0U, 0U }
 	}
 };
 
@@ -99,20 +99,25 @@ static const struct glsl_type types_matrices[3][3] = {
  * shadow samplers.
  */
 static const struct glsl_type types_samplers[] = {
-	{ GLSL_KIND_SAMPLER, GLSL_BASE_FLOAT, 4U, 1U, GLSL_SAMPLER_1D, 0U, "sampler1D", NULL, 0U, NULL, 0U },
-	{ GLSL_KIND_SAMPLER, GLSL_BASE_FLOAT, 4U, 1U, GLSL_SAMPLER_2D, 0U, "sampler2D", NULL, 0U, NULL, 0U },
-	{ GLSL_KIND_SAMPLER, GLSL_BASE_FLOAT, 4U, 1U, GLSL_SAMPLER_3D, 0U, "sampler3D", NULL, 0U, NULL, 0U },
-	{ GLSL_KIND_SAMPLER, GLSL_BASE_FLOAT, 4U, 1U, GLSL_SAMPLER_CUBE, 0U, "samplerCube", NULL, 0U, NULL, 0U },
-	{ GLSL_KIND_SAMPLER, GLSL_BASE_INT, 4U, 1U, GLSL_SAMPLER_1D, 0U, "isampler1D", NULL, 0U, NULL, 0U },
-	{ GLSL_KIND_SAMPLER, GLSL_BASE_INT, 4U, 1U, GLSL_SAMPLER_2D, 0U, "isampler2D", NULL, 0U, NULL, 0U },
-	{ GLSL_KIND_SAMPLER, GLSL_BASE_INT, 4U, 1U, GLSL_SAMPLER_3D, 0U, "isampler3D", NULL, 0U, NULL, 0U },
-	{ GLSL_KIND_SAMPLER, GLSL_BASE_INT, 4U, 1U, GLSL_SAMPLER_CUBE, 0U, "isamplerCube", NULL, 0U, NULL, 0U },
-	{ GLSL_KIND_SAMPLER, GLSL_BASE_UINT, 4U, 1U, GLSL_SAMPLER_1D, 0U, "usampler1D", NULL, 0U, NULL, 0U },
-	{ GLSL_KIND_SAMPLER, GLSL_BASE_UINT, 4U, 1U, GLSL_SAMPLER_2D, 0U, "usampler2D", NULL, 0U, NULL, 0U },
-	{ GLSL_KIND_SAMPLER, GLSL_BASE_UINT, 4U, 1U, GLSL_SAMPLER_3D, 0U, "usampler3D", NULL, 0U, NULL, 0U },
-	{ GLSL_KIND_SAMPLER, GLSL_BASE_UINT, 4U, 1U, GLSL_SAMPLER_CUBE, 0U, "usamplerCube", NULL, 0U, NULL, 0U },
-	{ GLSL_KIND_SAMPLER, GLSL_BASE_FLOAT, 4U, 1U, GLSL_SAMPLER_1D, 1U, "sampler1DShadow", NULL, 0U, NULL, 0U },
-	{ GLSL_KIND_SAMPLER, GLSL_BASE_FLOAT, 4U, 1U, GLSL_SAMPLER_2D, 1U, "sampler2DShadow", NULL, 0U, NULL, 0U }
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_FLOAT, 4U, 1U, GLSL_SAMPLER_1D, 0U, "sampler1D", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_FLOAT, 4U, 1U, GLSL_SAMPLER_2D, 0U, "sampler2D", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_FLOAT, 4U, 1U, GLSL_SAMPLER_3D, 0U, "sampler3D", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_FLOAT, 4U, 1U, GLSL_SAMPLER_CUBE, 0U, "samplerCube", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_INT, 4U, 1U, GLSL_SAMPLER_1D, 0U, "isampler1D", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_INT, 4U, 1U, GLSL_SAMPLER_2D, 0U, "isampler2D", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_INT, 4U, 1U, GLSL_SAMPLER_3D, 0U, "isampler3D", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_INT, 4U, 1U, GLSL_SAMPLER_CUBE, 0U, "isamplerCube", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_UINT, 4U, 1U, GLSL_SAMPLER_1D, 0U, "usampler1D", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_UINT, 4U, 1U, GLSL_SAMPLER_2D, 0U, "usampler2D", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_UINT, 4U, 1U, GLSL_SAMPLER_3D, 0U, "usampler3D", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_UINT, 4U, 1U, GLSL_SAMPLER_CUBE, 0U, "usamplerCube", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_FLOAT, 4U, 1U, GLSL_SAMPLER_1D, 1U, "sampler1DShadow", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_FLOAT, 4U, 1U, GLSL_SAMPLER_2D, 1U, "sampler2DShadow", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_FLOAT, 4U, 1U, GLSL_SAMPLER_CUBE, 1U, "samplerCubeShadow", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_FLOAT, 4U, 1U, GLSL_SAMPLER_2D, 0U, "sampler2DArray", NULL, 0U, NULL, 0U, 1U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_INT, 4U, 1U, GLSL_SAMPLER_2D, 0U, "isampler2DArray", NULL, 0U, NULL, 0U, 1U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_UINT, 4U, 1U, GLSL_SAMPLER_2D, 0U, "usampler2DArray", NULL, 0U, NULL, 0U, 1U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_FLOAT, 4U, 1U, GLSL_SAMPLER_2D, 1U, "sampler2DArrayShadow", NULL, 0U, NULL, 0U, 1U, 0U }
 };
 
 /*
@@ -151,18 +156,23 @@ static const struct types_name types_names[] = {
 	{ "mat4x4", &types_matrices[2][2], GLSL_IN_120_UP },
 	{ "sampler1D", &types_samplers[0], GLSL_IN_DESKTOP },
 	{ "sampler2D", &types_samplers[1], GLSL_IN_ALL },
-	{ "sampler3D", &types_samplers[2], GLSL_IN_DESKTOP },
+	{ "sampler3D", &types_samplers[2], GLSL_IN_DESKTOP | GLSL_IN_ES300 },
 	{ "samplerCube", &types_samplers[3], GLSL_IN_ALL },
-	{ "isampler1D", &types_samplers[4], GLSL_IN_130_UP },
+	{ "isampler1D", &types_samplers[4], GLSL_IN_DESKTOP_130_UP },
 	{ "isampler2D", &types_samplers[5], GLSL_IN_130_UP },
 	{ "isampler3D", &types_samplers[6], GLSL_IN_130_UP },
 	{ "isamplerCube", &types_samplers[7], GLSL_IN_130_UP },
-	{ "usampler1D", &types_samplers[8], GLSL_IN_130_UP },
+	{ "usampler1D", &types_samplers[8], GLSL_IN_DESKTOP_130_UP },
 	{ "usampler2D", &types_samplers[9], GLSL_IN_130_UP },
 	{ "usampler3D", &types_samplers[10], GLSL_IN_130_UP },
 	{ "usamplerCube", &types_samplers[11], GLSL_IN_130_UP },
 	{ "sampler1DShadow", &types_samplers[12], GLSL_IN_DESKTOP },
-	{ "sampler2DShadow", &types_samplers[13], GLSL_IN_DESKTOP }
+	{ "sampler2DShadow", &types_samplers[13], GLSL_IN_DESKTOP | GLSL_IN_ES300 },
+	{ "samplerCubeShadow", &types_samplers[14], GLSL_IN_130_UP },
+	{ "sampler2DArray", &types_samplers[15], GLSL_IN_130_UP },
+	{ "isampler2DArray", &types_samplers[16], GLSL_IN_130_UP },
+	{ "usampler2DArray", &types_samplers[17], GLSL_IN_130_UP },
+	{ "sampler2DArrayShadow", &types_samplers[18], GLSL_IN_130_UP }
 };
 
 static unsigned types_round(unsigned value, unsigned alignment);
@@ -245,6 +255,64 @@ glsl_type_matrix(
 }
 
 /*
+ * Returns the GLSL_IN_* bit of a shader's version.
+ */
+unsigned
+glsl_version_mask(
+	const struct glsl_shader *shader)
+{
+	/* OpenGL ES 1.00 and 3.00. */
+	if (shader->es && shader->version >= GLSL_VERSION_ES300)
+		return GLSL_IN_ES300;
+	if (shader->es)
+		return GLSL_IN_ES100;
+
+	/* Desktop 1.10 to 3.30. */
+	switch (shader->version) {
+	case GLSL_VERSION_110:
+		return GLSL_IN_110;
+	case GLSL_VERSION_120:
+		return GLSL_IN_120;
+	case GLSL_VERSION_130:
+		return GLSL_IN_130;
+	case GLSL_VERSION_140:
+		return GLSL_IN_140;
+	case GLSL_VERSION_150:
+		return GLSL_IN_150;
+	default:
+		break;
+	}
+
+	/* 3.30. */
+	return GLSL_IN_330;
+}
+
+/*
+ * Reports whether a shader's version has a feature that came with a
+ * desktop version and an OpenGL ES version (0: never in OpenGL ES).
+ */
+int
+glsl_since(
+	const struct glsl_shader *shader,
+	unsigned desktop,
+	unsigned es)
+{
+	/* OpenGL ES from its version, when it has the feature at all. */
+	if (shader->es) {
+		if (es != 0U && shader->version >= es)
+			return 1;
+		return 0;
+	}
+
+	/* Desktop from its version. */
+	if (shader->version >= desktop)
+		return 1;
+
+	/* Too old. */
+	return 0;
+}
+
+/*
  * Returns the sampler type of a texel base, a dimension and shadow.
  */
 const struct glsl_type *
@@ -259,7 +327,7 @@ glsl_type_sampler(
 	/* The sampler of that kind. */
 	for (index = 0U; index < sizeof(types_samplers) / sizeof(types_samplers[0]); index++) {
 		type = &types_samplers[index];
-		if (type->base == base && type->sampler == sampler && type->shadow == shadow)
+		if (type->base == base && type->sampler == sampler && type->shadow == shadow && !type->arrayed)
 			return type;
 	}
 

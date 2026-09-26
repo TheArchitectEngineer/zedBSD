@@ -1,5 +1,5 @@
-#version 300 es
-// expect: 0:1: error: GLSL version 300 is not supported
+#version 310 es
+// expect: 0:1: error: GLSL version 310 is not supported
 void main()
 {
 }

@@ -101,6 +101,20 @@ glsl_shader_stage(
 	return shader->stage;
 }
 
+/*
+ * Reports a compiled shader's GLSL version and whether it is OpenGL ES's
+ * language.
+ */
+unsigned
+glsl_shader_version(
+	const struct glsl_shader *shader,
+	int *es)
+{
+	/* The version #version gave (or the default). */
+	*es = (int)shader->es;
+	return shader->version;
+}
+
 /* Hands the shader's log to the caller (NULL when empty), leaving the shader without one. */
 static void
 glsl_give_log(

@@ -51,6 +51,10 @@ static int check_reserved_name(struct glsl_shader *shader, const char *name, uns
 static void check_external(struct glsl_shader *shader, struct glsl_node *node, struct check_breakables *breakables);
 static void check_precision(struct glsl_shader *shader, struct glsl_node *node);
 static void check_invariant(struct glsl_shader *shader, struct glsl_node *node);
+static void check_interface(struct glsl_shader *shader, struct glsl_node *node);
+static const struct glsl_type *check_block_type(struct glsl_shader *shader, struct glsl_node *node, unsigned storage);
+static void check_block_variable(struct glsl_shader *shader, const char *name, const struct glsl_type *type, unsigned where, unsigned interpolation, unsigned line);
+static void check_location(struct glsl_shader *shader, struct glsl_node *type_node, struct glsl_symbol *symbol, unsigned line);
 static const struct glsl_type *check_type(struct glsl_shader *shader, struct glsl_node *type_node);
 static const struct glsl_type *check_struct(struct glsl_shader *shader, struct glsl_node *type_node);
 static const struct glsl_type *check_array(struct glsl_shader *shader, const struct glsl_type *element, struct glsl_node *owner, struct glsl_node *size, unsigned line);
@@ -170,11 +174,12 @@ glsl_declare(
 		return symbol;
 	}
 
-	/* The symbol. */
+	/* The symbol, without a location of its own. */
 	symbol = glsl_alloc(&shader->arena, sizeof(*symbol));
 	symbol->name = name;
 	symbol->kind = kind;
 	symbol->line = line;
+	symbol->explicit_location = GLSL_NO_LOCATION;
 
 	/* Its entry, first in the scope's list. */
 	entry = glsl_alloc(&shader->arena, sizeof(*entry));
@@ -336,6 +341,12 @@ check_external(
 	case GLSL_N_DECLARATION:
 		check_declaration(shader, node, 1);
 		break;
+	case GLSL_N_INTERFACE:
+		check_interface(shader, node);
+		break;
+	case GLSL_N_EMPTY:
+		/* A default layout ("layout(std140) uniform;"): std140 is the only layout. */
+		break;
 	default:
 		glsl_error(shader, node->line, "unexpected declaration");
 		break;
@@ -394,6 +405,193 @@ check_invariant(
 		/* The output is invariant. */
 		symbol->invariant = 1U;
 	}
+}
+
+/*
+ * Checks an interface block: a uniform block (uniform_block), or an in or
+ * out block of desktop GLSL 1.50 (its members are one struct variable
+ * when it has an instance name, separate variables otherwise).
+ */
+static void
+check_interface(
+	struct glsl_shader *shader,
+	struct glsl_node *node)
+{
+	struct glsl_node *type_node;
+	struct glsl_node *instance;
+	const struct glsl_type *type;
+	unsigned storage;
+	unsigned where;
+	unsigned index;
+	int allowed;
+
+	/* A uniform block. */
+	type_node = node->child[0];
+	storage = type_node->storage;
+	if (storage == GLSL_STORAGE_UNIFORM) {
+		glsl_error(shader, node->line, "uniform blocks are not supported yet (WS068 p021)");
+		return;
+	}
+
+	/* in and out blocks came with desktop GLSL 1.50: out of the vertex shader, into the fragment shader. */
+	allowed = glsl_since(shader, GLSL_VERSION_150, 0U);
+	if (!allowed) {
+		glsl_error(shader, node->line, "in and out blocks need desktop GLSL 1.50");
+		return;
+	}
+
+	/* Out of the vertex shader, into the fragment shader. */
+	where = GLSL_VAR_OUTPUT;
+	if (storage == GLSL_STORAGE_IN)
+		where = GLSL_VAR_INPUT;
+	if ((shader->stage == GLSL_STAGE_VERTEX && storage != GLSL_STORAGE_OUT) ||
+	    (shader->stage == GLSL_STAGE_FRAGMENT && storage != GLSL_STORAGE_IN)) {
+		glsl_error(shader, node->line, "a block can only be the vertex shader's output or the fragment shader's input");
+		return;
+	}
+
+	/* The block's struct. */
+	type = check_block_type(shader, node, storage);
+	if (type->kind == GLSL_KIND_ERROR)
+		return;
+
+	/* With an instance name: one variable of the struct. */
+	instance = node->child[2];
+	if (instance != NULL) {
+		if ((instance->flags & GLSL_NODE_ARRAY) != 0U)
+			glsl_error(shader, node->line, "arrays of in and out blocks are not supported");
+		check_block_variable(shader, instance->name, type, where, type_node->interpolation, node->line);
+		return;
+	}
+
+	/* Without one: each member a variable of its own. */
+	for (index = 0U; index < type->field_count; index++)
+		check_block_variable(shader, type->fields[index].name, type->fields[index].type, where, type->fields[index].interpolation, node->line);
+}
+
+/* Makes the struct type of an interface block's members, with their matrix orders and interpolations. */
+static const struct glsl_type *
+check_block_type(
+	struct glsl_shader *shader,
+	struct glsl_node *node,
+	unsigned storage)
+{
+	struct glsl_type *type;
+	struct glsl_node *member;
+	struct glsl_node *variable;
+	const struct glsl_type *member_type;
+	const struct glsl_type *field_type;
+	unsigned count;
+	unsigned index;
+	unsigned row_major;
+	unsigned interpolation;
+	int has_sampler;
+
+	/* How many members. */
+	count = 0U;
+	for (member = node->child[1]; member != NULL; member = member->next) {
+		for (variable = member->child[1]; variable != NULL; variable = variable->next)
+			count++;
+	}
+
+	/* The struct, named by the block. */
+	type = glsl_alloc(&shader->arena, sizeof(*type));
+	type->kind = GLSL_KIND_STRUCT;
+	type->name = node->name;
+	type->block = storage;
+	type->fields = glsl_alloc(&shader->arena, (count + 1U) * sizeof(*type->fields));
+
+	/* Each member: its type, its matrix order (the block's unless its own), its interpolation. */
+	index = 0U;
+	for (member = node->child[1]; member != NULL; member = member->next) {
+		member_type = check_type(shader, member->child[0]);
+		row_major = ((node->child[0]->layout | member->child[0]->layout) & GLSL_LAYOUT_ROW_MAJOR) != 0U;
+		if ((member->child[0]->layout & GLSL_LAYOUT_COLUMN_MAJOR) != 0U)
+			row_major = 0U;
+		interpolation = member->child[0]->interpolation;
+		if (interpolation == GLSL_INTERP_NONE)
+			interpolation = node->child[0]->interpolation;
+		for (variable = member->child[1]; variable != NULL; variable = variable->next) {
+			field_type = member_type;
+			if ((variable->flags & GLSL_NODE_ARRAY) != 0U)
+				field_type = check_array(shader, member_type, variable, variable->child[0], variable->line);
+
+			/* No samplers, no bools out of a stage, integers flat into a fragment shader. */
+			has_sampler = glsl_type_contains_sampler(field_type);
+			if (has_sampler)
+				glsl_error(shader, variable->line, "samplers cannot be block members");
+			if (storage != GLSL_STORAGE_UNIFORM && field_type->kind != GLSL_KIND_ARRAY && field_type->base == GLSL_BASE_BOOL)
+				glsl_error(shader, variable->line, "inputs and outputs cannot be bools");
+			if (storage == GLSL_STORAGE_IN && field_type->kind != GLSL_KIND_ARRAY && field_type->base != GLSL_BASE_FLOAT &&
+			    interpolation != GLSL_INTERP_FLAT)
+				glsl_error(shader, variable->line, "integer inputs of a fragment shader must be flat");
+
+			/* The field. */
+			type->fields[index].name = variable->name;
+			type->fields[index].type = field_type;
+			type->fields[index].row_major = row_major;
+			type->fields[index].interpolation = interpolation;
+			index++;
+		}
+	}
+
+	/* Succeeded: the struct. */
+	type->field_count = index;
+	return type;
+}
+
+/* Declares a global variable of an interface block (its instance, or one member). */
+static void
+check_block_variable(
+	struct glsl_shader *shader,
+	const char *name,
+	const struct glsl_type *type,
+	unsigned where,
+	unsigned interpolation,
+	unsigned line)
+{
+	struct glsl_symbol *symbol;
+
+	/* The name, then the symbol among the globals. */
+	check_reserved_name(shader, name, line);
+	symbol = glsl_declare(shader, name, GLSL_SYMBOL_VARIABLE, line);
+	if (symbol->type != NULL)
+		return;
+	symbol->type = type;
+	symbol->where = where;
+	symbol->interpolation = interpolation;
+	symbol->storage = GLSL_STORAGE_IN;
+	if (where == GLSL_VAR_OUTPUT)
+		symbol->storage = GLSL_STORAGE_OUT;
+	glsl_add_global(shader, symbol);
+}
+
+/* Checks a layout location: only a vertex shader's input or a fragment shader's output takes one (3.30, ES 3.00). */
+static void
+check_location(
+	struct glsl_shader *shader,
+	struct glsl_node *type_node,
+	struct glsl_symbol *symbol,
+	unsigned line)
+{
+	int allowed;
+
+	/* The version. */
+	allowed = glsl_since(shader, GLSL_VERSION_330, GLSL_VERSION_ES300);
+	if (!allowed) {
+		glsl_error(shader, line, "layout(location) needs GLSL 3.30 or OpenGL ES 3.00");
+		return;
+	}
+
+	/* A vertex input or a fragment output. */
+	if (!(shader->stage == GLSL_STAGE_VERTEX && symbol->where == GLSL_VAR_INPUT) &&
+	    !(shader->stage == GLSL_STAGE_FRAGMENT && symbol->where == GLSL_VAR_OUTPUT)) {
+		glsl_error(shader, line, "layout(location) is only for vertex shader inputs and fragment shader outputs");
+		return;
+	}
+
+	/* The location. */
+	symbol->explicit_location = type_node->location;
 }
 
 /* Resolves a type specifier node to a type: a built-in, a struct defined or named, and an array of it. */
@@ -668,6 +866,10 @@ check_variable(
 	if (global)
 		glsl_add_global(shader, symbol);
 
+	/* A location a layout gave. */
+	if ((type_node->layout & GLSL_LAYOUT_LOCATION) != 0U)
+		check_location(shader, type_node, symbol, variable->line);
+
 	/* The initializer, which also sizes an unsized array. */
 	check_initializer(shader, symbol, variable, global);
 
@@ -693,6 +895,7 @@ check_where(
 	unsigned storage;
 	unsigned vertex;
 	int has_sampler;
+	int allowed;
 
 	/* Samplers are uniforms (or parameters). */
 	storage = type_node->storage;
@@ -748,11 +951,18 @@ check_where(
 		return GLSL_VAR_GLOBAL;
 	}
 
-	/* in and out at global scope came with GLSL 1.30. */
-	if (shader->es || shader->version < GLSL_VERSION_130) {
+	/* in and out at global scope came with GLSL 1.30 and OpenGL ES 3.00. */
+	allowed = glsl_since(shader, GLSL_VERSION_130, GLSL_VERSION_ES300);
+	if (!allowed) {
 		glsl_error(shader, line, "global in and out need GLSL 1.30 (use attribute and varying)");
 		return GLSL_VAR_GLOBAL;
 	}
+
+	/* OpenGL ES 3.00: no arrays into a vertex shader, no matrices out of a fragment shader. */
+	if (shader->es && vertex && storage == GLSL_STORAGE_IN && type->kind == GLSL_KIND_ARRAY)
+		glsl_error(shader, line, "vertex shader inputs cannot be arrays");
+	if (!vertex && storage == GLSL_STORAGE_OUT && (type->kind == GLSL_KIND_MATRIX || type->base == GLSL_BASE_BOOL))
+		glsl_error(shader, line, "fragment shader outputs must be float, int or uint scalars, vectors or arrays of them");
 
 	/* Structs and bools do not cross stages; integers do, flat, into the fragment shader. */
 	if (type->kind == GLSL_KIND_STRUCT || (type->kind != GLSL_KIND_ARRAY && type->base == GLSL_BASE_BOOL))
@@ -1057,8 +1267,7 @@ check_parameter(
 	symbol->storage = storage;
 	symbol->precision = type_node->precision;
 	symbol->where = GLSL_VAR_PARAMETER;
-	if ((parameter->flags & GLSL_NODE_CONST_PARAM) != 0U)
-		symbol->where = GLSL_VAR_PARAMETER;
+	symbol->explicit_location = GLSL_NO_LOCATION;
 	if (parameter->name != NULL)
 		check_reserved_name(shader, parameter->name, parameter->line);
 
@@ -1561,6 +1770,7 @@ check_unary(
 {
 	const struct glsl_type *type;
 	int numeric;
+	int allowed;
 
 	/* The operand. */
 	type = check_expression(shader, node->child[0]);
@@ -1580,7 +1790,8 @@ check_unary(
 
 	/* ~ of an integer scalar or vector (1.30). */
 	if (node->op == GLSL_P_TILDE) {
-		if (shader->es || shader->version < GLSL_VERSION_130) {
+		allowed = glsl_since(shader, GLSL_VERSION_130, GLSL_VERSION_ES300);
+		if (!allowed) {
 			glsl_error(shader, node->line, "'~' needs GLSL 1.30");
 			return glsl_type_error();
 		}
@@ -1678,9 +1889,10 @@ check_operator(
 	unsigned version_130;
 	int same;
 	int has_sampler;
+	int arrays;
 
 	/* The logical operators take bool scalars. */
-	version_130 = (!shader->es && shader->version >= GLSL_VERSION_130);
+	version_130 = (unsigned)glsl_since(shader, GLSL_VERSION_130, GLSL_VERSION_ES300);
 	if (op == GLSL_P_AND_AND || op == GLSL_P_OR_OR || op == GLSL_P_XOR_XOR) {
 		left_type = (*left)->type;
 		right_type = (*right)->type;
@@ -1731,7 +1943,8 @@ check_operator(
 		}
 
 		/* Arrays compare from 1.20. */
-		if (left_type->kind == GLSL_KIND_ARRAY && (shader->es || shader->version < GLSL_VERSION_120)) {
+		arrays = glsl_since(shader, GLSL_VERSION_120, GLSL_VERSION_ES300);
+		if (left_type->kind == GLSL_KIND_ARRAY && !arrays) {
 			glsl_error(shader, node->line, "comparing arrays needs GLSL 1.20");
 			return glsl_type_error();
 		}
@@ -1887,6 +2100,7 @@ check_assign(
 	int status;
 	int same;
 	int has_sampler;
+	int arrays;
 
 	/* The two sides, the left one writable. */
 	left = check_expression(shader, node->child[0]);
@@ -1900,7 +2114,8 @@ check_assign(
 
 	/* A plain assignment: the right side converted to the left's type (arrays from 1.20). */
 	if (node->op == GLSL_P_ASSIGN) {
-		if (left->kind == GLSL_KIND_ARRAY && (shader->es || shader->version < GLSL_VERSION_120)) {
+		arrays = glsl_since(shader, GLSL_VERSION_120, GLSL_VERSION_ES300);
+		if (left->kind == GLSL_KIND_ARRAY && !arrays) {
 			glsl_error(shader, node->line, "assigning arrays needs GLSL 1.20");
 			return glsl_type_error();
 		}
@@ -2010,7 +2225,7 @@ check_ternary(
 	}
 
 	/* No arrays in OpenGL ES 1.00, no samplers anywhere. */
-	if (second->kind == GLSL_KIND_ARRAY && shader->es) {
+	if (second->kind == GLSL_KIND_ARRAY && shader->es && shader->version < GLSL_VERSION_ES300) {
 		glsl_error(shader, node->line, "'?:' cannot choose arrays in OpenGL ES");
 		return glsl_type_error();
 	}
@@ -2128,6 +2343,7 @@ check_constructor(
 	int error;
 	int status;
 	int has_sampler;
+	int arrays;
 
 	/* The type constructed, and the arguments. */
 	type = check_type(shader, node->child[0]);
@@ -2148,7 +2364,8 @@ check_constructor(
 
 	/* An array of a size given by the arguments ("float[](...)"), from 1.20. */
 	if (type->kind == GLSL_KIND_ARRAY) {
-		if (shader->es || shader->version < GLSL_VERSION_120) {
+		arrays = glsl_since(shader, GLSL_VERSION_120, GLSL_VERSION_ES300);
+		if (!arrays) {
 			glsl_error(shader, node->line, "array constructors need GLSL 1.20");
 			return glsl_type_error();
 		}
@@ -2594,12 +2811,14 @@ check_length(
 {
 	const struct glsl_type *type;
 	struct glsl_constant *value;
+	int allowed;
 
 	/* An array of a known size (1.20 on). */
 	type = check_expression(shader, node->child[0]);
 	if (type->kind == GLSL_KIND_ERROR)
 		return type;
-	if (shader->es || shader->version < GLSL_VERSION_120) {
+	allowed = glsl_since(shader, GLSL_VERSION_120, GLSL_VERSION_ES300);
+	if (!allowed) {
 		glsl_error(shader, node->line, "length() needs GLSL 1.20");
 		return glsl_type_error();
 	}

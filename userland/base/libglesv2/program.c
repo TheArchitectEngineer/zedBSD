@@ -34,6 +34,9 @@
 #define PROGRAM_ES_VERSION	100U
 #define PROGRAM_DESKTOP_VERSION	110U
 
+/* The first version of GLSL ES that needs an OpenGL ES 3 context. */
+#define PROGRAM_ES3_VERSION	300U
+
 /* GL's names of the sampler types reflection does not tell apart (OpenGL ES 3.0 and desktop GL values). */
 #define PROGRAM_SAMPLER_3D	0x8B5FU
 #define PROGRAM_SAMPLER_1D	0x8B5DU
@@ -260,6 +263,8 @@ glCompileShader(
 	struct glsl_shader *compiled;
 	unsigned stage;
 	unsigned version;
+	unsigned shader_version;
+	int es;
 	char *log;
 
 	/* The shader. */
@@ -296,6 +301,16 @@ glCompileShader(
 		program_log(&shader->log, "the compiler ran out of memory\n");
 	} else {
 		program_log(&shader->log, "");
+	}
+
+	/* GLSL ES 3.00 needs an OpenGL ES 3 context (EGL_CONTEXT_CLIENT_VERSION 3). */
+	if (compiled != NULL && gles_fixed == NULL) {
+		shader_version = glsl_shader_version(compiled, &es);
+		if (es && shader_version >= PROGRAM_ES3_VERSION && context->version < 3) {
+			program_log(&shader->log, "0:0: error: GLSL ES 3.00 needs an OpenGL ES 3 context\n");
+			glsl_shader_free(compiled);
+			compiled = NULL;
+		}
 	}
 
 	/* A failed compile leaves the shader without code. */

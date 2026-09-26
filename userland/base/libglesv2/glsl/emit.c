@@ -42,6 +42,7 @@ static void emit_block(struct emit_state *state);
 static void emit_sampler(struct emit_state *state, struct glsl_symbol *symbol);
 static void emit_interface(struct emit_state *state, struct glsl_symbol *symbol);
 static void emit_interface_decorations(struct emit_state *state, struct glsl_symbol *symbol, uint32_t variable);
+static void emit_block_members(struct emit_state *state, const struct glsl_type *type);
 static void emit_label(struct emit_state *state, uint32_t label);
 static void emit_branch(struct emit_state *state, uint32_t target);
 static void emit_conditional(struct emit_state *state, uint32_t condition, uint32_t if_true, uint32_t if_false);
@@ -606,7 +607,7 @@ glsl_emit_image_type(
 
 	/* A depth image for a shadow sampler; one level, not arrayed, sampled, no format. */
 	operands[3] = type->shadow;
-	operands[4] = 0U;
+	operands[4] = type->arrayed;
 	operands[5] = 0U;
 	operands[6] = 1U;
 	operands[7] = 0U;
@@ -1057,6 +1058,9 @@ emit_interface_decorations(
 	case GLSL_BUILTIN_VERTEX_ID:
 		value = SPV_BUILT_IN_VERTEX_INDEX;
 		break;
+	case GLSL_BUILTIN_INSTANCE_ID:
+		value = SPV_BUILT_IN_INSTANCE_INDEX;
+		break;
 	case GLSL_BUILTIN_FRAG_COORD:
 		value = SPV_BUILT_IN_FRAG_COORD;
 		break;
@@ -1094,11 +1098,48 @@ emit_interface_decorations(
 		glsl_module_decorate(state->module, variable, SPV_DECORATION_NO_PERSPECTIVE, NULL, 0U);
 	}
 
+	/* A block's members: flat when the member is (or holds an integer: a fragment shader's integer input must be). */
+	if (symbol->type->kind == GLSL_KIND_STRUCT)
+		emit_block_members(state, symbol->type);
+
 	/* Centroid and invariance. */
 	if (symbol->centroid)
 		glsl_module_decorate(state->module, variable, SPV_DECORATION_CENTROID, NULL, 0U);
 	if (symbol->invariant)
 		glsl_module_decorate(state->module, variable, SPV_DECORATION_INVARIANT, NULL, 0U);
+}
+
+/*
+ * Decorates an in or out block's struct: a Block (Vulkan takes the
+ * interpolation of members only in a Block), and its flat and
+ * noperspective members.
+ */
+static void
+emit_block_members(
+	struct emit_state *state,
+	const struct glsl_type *type)
+{
+	uint32_t structure;
+	unsigned index;
+	unsigned interpolation;
+
+	/* The Block. */
+	structure = glsl_emit_type(state, type);
+	glsl_module_decorate(state->module, structure, SPV_DECORATION_BLOCK, NULL, 0U);
+
+	/* Each member. */
+	for (index = 0U; index < type->field_count; index++) {
+		interpolation = type->fields[index].interpolation;
+		if (type->fields[index].type->kind != GLSL_KIND_ARRAY && type->fields[index].type->base != GLSL_BASE_FLOAT)
+			interpolation = GLSL_INTERP_FLAT;
+
+		/* The member's interpolation. */
+		if (interpolation == GLSL_INTERP_FLAT) {
+			glsl_module_member_decorate(state->module, structure, index, SPV_DECORATION_FLAT, 0xffffffffU);
+		} else if (interpolation == GLSL_INTERP_NOPERSPECTIVE) {
+			glsl_module_member_decorate(state->module, structure, index, SPV_DECORATION_NO_PERSPECTIVE, 0xffffffffU);
+		}
+	}
 }
 
 /* Starts a block. */
