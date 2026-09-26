@@ -1054,12 +1054,12 @@ $(BUILD)/bin/egltest: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
  -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
  -l:libEGL.so -l:libGLESv2.so -l:libwayland-egl.so -l:libwayland-client.so -l:libc.so -o $@
 
-# zdesktop's X11 server imports standard Wayland, TrueType and C library entry points (WS069 p008).
+# zdesktop's X11 server imports standard Wayland, Vulkan, TrueType and C library entry points (WS069 p008, p011).
 DYNAMIC_ZDESKTOP_X11SERVER_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,zdesktop-x11server)
 
 $(BUILD)/bin/zdesktop-x11server: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
-	$(DYNAMIC_ZDESKTOP_X11SERVER_OBJS) $(DYNAMIC_DIR)/libwayland-client.so $(DYNAMIC_DIR)/libtruetype.so \
-	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so
+	$(DYNAMIC_ZDESKTOP_X11SERVER_OBJS) $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libwayland-client.so \
+	$(DYNAMIC_DIR)/libtruetype.so $(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
  -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
@@ -1067,7 +1067,9 @@ $(BUILD)/bin/zdesktop-x11server: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_ZDESKTOP_X11SERVER_OBJS) \
  -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
- -l:libwayland-client.so -l:libtruetype.so -l:libc.so -o $@
+ -l:libvulkan.so -l:libwayland-client.so -l:libtruetype.so -l:libc.so -o $@
+	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
+ --needed libvulkan.so --needed libwayland-client.so --needed libtruetype.so --needed libc.so $@
 
 # The external-fence test uses only the installed standard Vulkan shared library.
 $(BUILD)/bin/gpu-fence-test: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \

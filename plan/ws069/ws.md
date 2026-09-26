@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: none
-Resume point: p011（窓を Vulkan で表示）、その後 p006（i915 実機、規約の全文と回帰、最後）。p008・p009・p010 は cleared
+Resume point: p006（i915 実機、規約の全文と回帰、最後）。p008〜p011 は cleared
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -54,5 +54,5 @@ GLX 拡張も実装する。
 | [ws069-p008](phase008/phase.md) | zdesktop-x11server: Xzed の X の核と Wayland・rootless・glyph・GLX を単体の rootless のプログラムへ移し、組み込める形の module に分ける。zdesktop-x11・試験・image を切り替え | uncleared（q488-i01）→ cleared（2026-09-27 の追記、p010 の後に x11-p005 と実機の run3 が PASS） | p005、ws035-p073（改名）、ws035-p074（libzdesktop） |
 | [ws069-p009](phase009/phase.md) | Xzed を ws069 の前（`cc4433d4`）へ戻す（レトロ用。build と `/dev/graphics` の道の確認） | cleared（q490-i01、2026-09-27） | p008 |
 | [ws069-p010](phase010/phase.md) | BUG-057（GLX の間欠の止まり）の原因と修正 | cleared（q489-i01、2026-09-27。kernel の socket の待ちが waitq の EAGAIN を失敗にしていた） | p008 |
-| [ws069-p011](phase011/phase.md) | zdesktop-x11server の窓を Vulkan で表示（top-level ごとの `VK_KHR_wayland_surface` の swapchain） | in-progress（q491-i01） | p008 |
+| [ws069-p011](phase011/phase.md) | zdesktop-x11server の窓を Vulkan で表示（top-level ごとの `VK_KHR_wayland_surface` の swapchain） | cleared（q491-i01、2026-09-27。Venus と実機の run1。Venus では Vulkan の道が wl_shm より遅い、F-021） | p008 |
 | ws069-p006 | i915 実機、規約の全文との照合と回帰（最後） | planning | 全 Phase（p008〜p010 を含む） |

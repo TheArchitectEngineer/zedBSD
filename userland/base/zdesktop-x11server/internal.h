@@ -11,7 +11,8 @@
  * server.c keeps the clients' connections, protocol.c answers their
  * requests, window.c keeps the windows, pixmaps and graphics contexts and
  * draws into them, rootless.c shows each top-level window as a window of
- * the desktop through wayland.c, and keymap.c, glyphs.c and glx.c are the
+ * the desktop through wayland.c (whose pixels vulkan.c shows through a
+ * swapchain when it can), and keymap.c, glyphs.c and glx.c are the
  * keyboard's table, the core font and the GLX extension.
  */
 
@@ -101,6 +102,10 @@
 struct truetype_face;
 struct x11_wayland;
 struct x11_wayland_window;
+struct x11_vulkan;
+struct x11_vulkan_window;
+struct wl_display;
+struct wl_surface;
 
 /*
  * One client's connection.
@@ -405,6 +410,14 @@ int x11_wayland_window_resize(struct x11_wayland_window *window, unsigned width,
 void x11_wayland_window_move(struct x11_wayland_window *window, int x, int y);
 void x11_wayland_window_title(struct x11_wayland_window *window, const char *title);
 void x11_wayland_window_close(struct x11_wayland_window *window);
+
+/* vulkan.c: a desktop window shown through a Vulkan swapchain. */
+struct x11_vulkan *x11_vulkan_open(void);
+void x11_vulkan_close(struct x11_vulkan *vulkan);
+struct x11_vulkan_window *x11_vulkan_window_open(struct x11_vulkan **shared, struct wl_display *display, struct wl_surface *surface, unsigned width, unsigned height);
+int x11_vulkan_window_present(struct x11_vulkan_window *window, const uint32_t *pixels);
+int x11_vulkan_window_resize(struct x11_vulkan_window *window, unsigned width, unsigned height);
+void x11_vulkan_window_close(struct x11_vulkan_window *window);
 
 /* keymap.c: the keyboard's table. */
 uint8_t x11_keymap_keycode(uint16_t code, int shifted, int caps_lock);

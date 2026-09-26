@@ -69,6 +69,9 @@ struct x11_wayland_window {
 	struct xdg_toplevel *toplevel;
 	int configured;
 
+	/* Its swapchain when Vulkan shows it (NULL: the wl_shm buffers below do). */
+	struct x11_vulkan_window *vulkan;
+
 	/* The buffers' size, their shared memory, and the buffers. */
 	unsigned width;
 	unsigned height;
@@ -105,6 +108,10 @@ struct x11_wayland {
 
 	/* The windows open. */
 	struct x11_wayland_window *windows;
+
+	/* The connection's Vulkan, made with the first window, and whether windows use wl_shm instead (Vulkan failed, or was turned off). */
+	struct x11_vulkan *vulkan;
+	int shm_only;
 
 	/* The server's callbacks. */
 	struct x11_wayland_callbacks callbacks;
@@ -190,6 +197,7 @@ x11_wayland_open(
 	void *context)
 {
 	struct x11_wayland *wayland;
+	const char *shm;
 	int status;
 
 	/* The connection's state, with the server's callbacks. */
@@ -199,6 +207,11 @@ x11_wayland_open(
 		return ENOMEM;
 	wayland->callbacks = *callbacks;
 	wayland->context = context;
+
+	/* X11SERVER_SHM=1 keeps every window on wl_shm (Vulkan is not tried). */
+	shm = getenv("X11SERVER_SHM");
+	if (shm != NULL && shm[0] == '1' && shm[1] == '\0')
+		wayland->shm_only = 1;
 
 	/* The pointer's events of version 1 (the listener has later members, left empty). */
 	wayland->pointer_listener.enter = wayland_pointer_enter;
@@ -275,9 +288,23 @@ x11_wayland_dispatch(
 {
 	int status;
 
-	/* The events that came, read and run. */
+	/*
+	 * The events that came, read without waiting: Vulkan's presentation
+	 * reads the same connection for its own queue, so what made the
+	 * descriptor readable may already have been taken, and a blocking
+	 * dispatch would then hold every client until the desktop spoke again.
+	 */
 	if (readable) {
-		status = wl_display_dispatch(wayland->display);
+		status = wl_display_prepare_read(wayland->display);
+		while (status != 0) {
+			status = wl_display_dispatch_pending(wayland->display);
+			if (status < 0)
+				return -1;
+			status = wl_display_prepare_read(wayland->display);
+		}
+
+		/* Whatever is there now (nothing is fine). */
+		status = wl_display_read_events(wayland->display);
 		if (status < 0)
 			return -1;
 	}
@@ -299,9 +326,10 @@ void
 x11_wayland_close(
 	struct x11_wayland *wayland)
 {
-	/* The windows. */
+	/* The windows, and then the Vulkan they used. */
 	while (wayland->windows != NULL)
 		x11_wayland_window_close(wayland->windows);
+	x11_vulkan_close(wayland->vulkan);
 
 	/* The input devices. */
 	if (wayland->keyboard != NULL)
@@ -391,11 +419,22 @@ x11_wayland_window_open(
 		return NULL;
 	}
 
-	/* The two buffers. */
-	status = wayland_buffers(window);
-	if (status != 0) {
-		x11_wayland_window_close(window);
-		return NULL;
+	/* A swapchain, unless Vulkan is off or has failed before. */
+	if (!wayland->shm_only) {
+		window->vulkan = x11_vulkan_window_open(&wayland->vulkan, wayland->display, window->surface, width, height);
+		if (window->vulkan == NULL) {
+			wayland->shm_only = 1;
+			fprintf(stderr, "X11SERVER PRESENT wl_shm (Vulkan cannot show windows)\n");
+		}
+	}
+
+	/* Without one, the two buffers. */
+	if (window->vulkan == NULL) {
+		status = wayland_buffers(window);
+		if (status != 0) {
+			x11_wayland_window_close(window);
+			return NULL;
+		}
 	}
 
 	/* Succeeded: the window can show the X window. */
@@ -419,6 +458,27 @@ x11_wayland_window_present(
 {
 	struct wayland_buffer *buffer;
 	unsigned index;
+	int status;
+
+	/* Through the swapchain: the whole image each frame. */
+	if (window->vulkan != NULL) {
+		status = x11_vulkan_window_present(window->vulkan, pixels);
+		if (status >= 0)
+			return status;
+
+		/* Vulkan failed: this window and later ones fall back to wl_shm. */
+		fprintf(stderr, "X11SERVER PRESENT wl_shm (Vulkan failed on window 0x%x)\n", (unsigned)window->id);
+		x11_vulkan_window_close(window->vulkan);
+		window->vulkan = NULL;
+		window->wayland->shm_only = 1;
+		status = wayland_buffers(window);
+		if (status != 0)
+			return -1;
+		x = 0;
+		y = 0;
+		width = (int)window->width;
+		height = (int)window->height;
+	}
 
 	/* The first buffer the desktop has given back. */
 	buffer = NULL;
@@ -462,10 +522,21 @@ x11_wayland_window_resize(
 	if (width == window->width && height == window->height)
 		return 0;
 
-	/* The old buffers go, and new ones of the size come. */
-	wayland_buffers_free(window);
+	/* A swapchain is made again at the size; one that cannot be falls back to wl_shm. */
 	window->width = width;
 	window->height = height;
+	if (window->vulkan != NULL) {
+		status = x11_vulkan_window_resize(window->vulkan, width, height);
+		if (status == 0)
+			return 0;
+		fprintf(stderr, "X11SERVER PRESENT wl_shm (Vulkan cannot resize window 0x%x)\n", (unsigned)window->id);
+		x11_vulkan_window_close(window->vulkan);
+		window->vulkan = NULL;
+		window->wayland->shm_only = 1;
+	}
+
+	/* The old buffers go, and new ones of the size come. */
+	wayland_buffers_free(window);
 	status = wayland_buffers(window);
 	if (status != 0)
 		return -1;
@@ -523,7 +594,9 @@ x11_wayland_window_close(
 	if (wayland->pointer_window == window)
 		wayland->pointer_window = NULL;
 
-	/* Its buffers, its roles and its surface. */
+	/* Its swapchain or buffers (before the surface they are on), its roles and its surface. */
+	if (window->vulkan != NULL)
+		x11_vulkan_window_close(window->vulkan);
 	wayland_buffers_free(window);
 	if (window->toplevel != NULL)
 		xdg_toplevel_destroy(window->toplevel);
