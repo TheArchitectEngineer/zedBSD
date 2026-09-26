@@ -222,11 +222,14 @@ terminal_screen_text(
 	kept = 0;
 	start = 0;
 	for (row = 0U; row < screen->rows; row++) {
+		/* Each cell of the row, as the character it shows. */
 		for (column = 0U; column < screen->columns; column++) {
 			/* A continuation is the right half of a wide character written already. */
 			cell = terminal_screen_cell(screen, column, row);
 			if (cell->continuation)
 				continue;
+
+			/* A cell never written shows a space. */
 			codepoint = cell->codepoint;
 			if (codepoint == 0U)
 				codepoint = ' ';
