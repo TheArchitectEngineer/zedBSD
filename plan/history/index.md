@@ -9,6 +9,8 @@ Last finished Queue: q494（ws068-p023 cleared。cube map）
 
 ## 最新: q443〜q494（2026-09-26〜27）
 
+WS049 の merge（2026-09-27、Queue の外、サブエージェント）: kernel の ACPI AML interpreter（host の試験で acpiexec と一致、fuzzing、SCI・GPE・EC の host の模擬、`/dev/acpi`、Global Lock、ECDT）。kernel への統合は HAL の差分の承認待ち。
+
 [q494](queue-q494.md): ws068-p023 cleared。cube map（6 layer の image、cube の束縛と sampler、FBO の面への描画、面ごとの読み戻し、mipmap）。Venus の egl-p023 と回帰 PASS。
 
 [q493](queue-q493.md): ws068-p022 cleared。libGLESv2 の framebuffer object と renderbuffer（texture の level 0 への描画、depth renderbuffer、FBO の readback、GPU の描いた texture の読み戻し）。FBO は GL の行の向きで描く（y を裏返さない vertex module、front face を逆）。Venus の egl-p022 と回帰 PASS。

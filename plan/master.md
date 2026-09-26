@@ -111,7 +111,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS047](ws047/ws.md) | MG001 | build.sh と Noct による build system（TUI・kernel・base・packages を別の system に。Makefile は当面残す） | planning | p001 調査と設計 |
 | [WS048](ws048/ws.md) | MG008 | Raspberry Pi 4 の USB（PCIe・VL805 の xHCI・USB キーボード） | incomplete | p001〜p003 cleared（FDT、brcmstb の PCIe、firmware の mailbox と VL805 の firmware。host 試験と QEMU の起動、実機は未実施）。**p004 は hal.h の差分（`hal_pmem_map_uncached`）の承認待ち**（ws048/proposed/）。2026-09-27 サブエージェント、main へ merge |
 | [WS044](ws044/ws.md) | MG008 | rpi4 を開発に使える形に（console の font、FAT32 の boot、lldb） | incomplete | p001 font・p005 実機起動の準備 cleared、実機の結果待ち。p002・p003 は kernel の安定化の後 |
-| [WS049](ws049/ws.md) | MG003 | kernel 内の ACPI AML interpreter | planning | p001 調査と設計（`hal_get_arch_handoff()` に ACPI の名前を足す差分に承認が要る） |
+| [WS049](ws049/ws.md) | MG003 | kernel 内の ACPI AML interpreter | incomplete | p001〜p005・p010〜p015 cleared（サブエージェント、host の試験で acpiexec と一致、2026-09-27 に main へ merge。kernel には未 link）。**p006（kernel への統合）は HAL の差分 `acpi.rsdp`（ws049/proposed/hal-acpi-rsdp.diff）の承認待ち**。判断待ち: 対象機（Dell Latitude 5330 の acpidump）、`_OSI` の答え、`/dev/acpi` の形 |
 | [WS050](ws050/ws.md) | MG003 | USB-C の UCSI driver | planning | WS049 が前提 |
 | [WS051](ws051/ws.md) | MG006 | USB-C の DisplayPort Alternate Mode | planning | WS050 と i915 の display が前提 |
 | [WS052](ws052/ws.md) | MG003 | 電源管理（S0i3、modern standby、`/dev/system` で制御。S3・S4 は対応しない） | planning | WS049 が前提 |
@@ -262,6 +262,7 @@ tick 周期は `include/hal/arch/<arch>.h` の `HAL_TIMER_FREQUENCY`。時間の
 | サブエージェントの拡大（2026-09-27、後から） | ユーザー:「依存関係を考慮して、最大7つのサブエージェントを併走させて、WSをcompleteさせていってください。なぜなら、あと10時間で次の週次リセットなのに、まだ使用量がいっぱい余っているからです。作業環境はエンタープライズサーバなので、負荷が高くなることは問題ないです。ただ、WS061のようにパフォーマンスを解析するワークロードがあるWSは、単一実行したいので、後回しでよいです。」→ 依存を満たす WS を最大 7 のサブエージェント（worktree）で完了へ進める。性能を測る WS（WS061、WS066、WS046 の BUG-033 の残り等）は後で単独に。サブエージェントは性能の数値を受け入れに使わない（並列の負荷で狂う）。記録と merge の分担は上の行と同じ | AGENTS.md の例外 |
 | System Menu の統合 | WS070 の p001〜p004（サブエージェント、Venus）を 2026-09-27 に main へ merge。既定で進めた 5 点（F10 で menu、shortcut は zdesktop が実行、外の click は下の窓へ渡さない、icon は描かない、label は ASCII）はユーザーの確認待ち（ws070 design.md §11）。WS071 の右 click の menu は protocol の version 2 の追加（design.md §12） | WS070 |
 | Raspberry Pi 4 の USB | WS048 の p001〜p003（サブエージェント）を 2026-09-27 に main へ merge。xHCI は PCIe の DMA が cache を snoop しないため、**hal.h の差分 `hal_pmem_map_uncached`・`hal_pmem_unmap_uncached`（plan/ws048/proposed/hal-pmem-uncached.diff、arm64 だけ実装）の承認待ち**。mailbox は起動後は kernel の driver が持つ（hal.h を変えない）ことの確認も待つ。実機の確認（lspci、dmesg の link up と VL805 の firmware）はユーザー | WS048、Guardrail |
+| ACPI の統合 | WS049 の p001〜p005・p010〜p015（サブエージェント）を 2026-09-27 に main へ merge（driver は未 link）。**判断待ち**: (1) HAL の差分 `hal_get_arch_handoff("acpi.rsdp")`（ws049/proposed/hal-acpi-rsdp.diff、hal.h は変えないが HAL の責務の追加）の承認、(2) 対象機を Dell Latitude 5330 とし Linux の `sudo acpidump -b` の table を得る、(3) `_OSI` は既定で Windows 2000〜2022 を名乗る（ACPICA と同じ）でよいか、(4) `/dev/acpi` は text の読み書き（UAPI を足さない、device 番号 0x000B0000）か ioctl か `/dev/system` への統合か | WS049、Guardrail |
 
 ### 主な依存関係
 
