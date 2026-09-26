@@ -208,3 +208,4 @@ entire production overlay/UFS translation units.
 | `ws001-p028` | cases `split`・`csplit`・`pr` |
 | `ws001-p029` | case `diff`、`diff-random-host-test.py`（乱数の組を GNU の patch と ed に当て、GNU `--minimal` と変更行数を比べる）、`diff-installer-compare.sh OLD_DIFF NEW_DIFF`（installer の `-r -q --metadata`） |
 | `ws001-p030` | cases `date`・`small`（sleep・uname・kill・pathchk・strings・link・unlink・tty・logname）、`pinned-cases.py`（期待値を書いた case、`pinned/*.sh`。GNU が POSIX と違う点と意図した違い。`guest-run.sh ... pinned` で guest にも流す） |
+| `ws001-p031` | 全 case の guest の回帰（`guest-run.sh` に case file を列べる）、`status-after-not-found.py SERIAL_SOCKET`（q136 の観察）、`plan/tools/boot-test.sh` |
