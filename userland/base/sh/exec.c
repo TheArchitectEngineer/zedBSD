@@ -140,6 +140,12 @@ static int eval_pipeline(struct sh_node *node, int background, int flags);
 static void *pipeline_start(struct sh_node *node, int background, int flags, int output, int output_other);
 static pid_t pipeline_spawn(struct sh_node *node, int input, int output, int other, int output_other, void *job);
 static int word_is_pure(const struct sh_token *word);
+static int words_are_pure(struct sh_node *node);
+static char *join_operands(struct word_list *arguments);
+static int unset_trial_eval(struct word_list *arguments, struct sh_node *subshell, int *status, int depth);
+static int unset_names_plain(struct word_list *arguments);
+static void unset_trial_restore(struct word_list *arguments, char **values, const int *flags, size_t count);
+static int brace_is_pure(const char *inner, const char *end);
 static int expand_process_substitution(void *context, const struct sh_token *token, char **result);
 static void process_substitutions_close(size_t mark);
 static int substitution_in_shell(const char *text, char **output, size_t *length, int *status, int depth);
@@ -402,10 +408,14 @@ sh_run_command_substitution(
 	int descriptors[2];
 	int status;
 	int piped;
+	int done;
 
 	/* A pipeline or a single program runs from this shell, which forks no subshell for it. */
-	if (substitution_in_shell(text, &output, &length, &status, 0)) {
+	done = substitution_in_shell(text, &output, &length, &status, 0);
+	if (done) {
 		sh_last_substitution_status = status;
+
+		/* Drops the trailing newlines of the output. */
 		while (length > 0 && output[length - 1] == '\n')
 			length--;
 		output[length] = '\0';
@@ -1042,6 +1052,7 @@ pipeline_start(
 	int previous;
 	int descriptors[2];
 	int piped;
+	int inline_output;
 	int last_output;
 	void *job;
 
@@ -1069,13 +1080,21 @@ pipeline_start(
 		last_output = descriptors[1];
 		if (last_output < 0)
 			last_output = output;
-		if (!background && index + 1 < count &&
-		    pipeline_inline(commands[index], descriptors[1]))
-			child = 0;
-		if (!background && child < 0)
-			child = pipeline_spawn(commands[index], previous,
-					       last_output, descriptors[0],
-					       output_other, job);
+		if (!background && index + 1 < count) {
+			inline_output = pipeline_inline(commands[index], descriptors[1]);
+			if (inline_output)
+				child = 0;
+		}
+
+		/* A program in the foreground starts with posix_spawn. */
+		if (!background && child < 0) {
+			child = pipeline_spawn(commands[index],
+					       previous,
+					       last_output,
+					       descriptors[0],
+					       output_other,
+					       job);
+		}
 
 		/* Anything else runs in a child of the job. */
 		if (child < 0) {
@@ -1083,9 +1102,18 @@ pipeline_start(
 				child = sh_fork(SH_FORK_BACKGROUND, job);
 			else
 				child = sh_fork(SH_FORK_FOREGROUND, job);
-			if (child == 0)
-				pipeline_child(commands, index, previous, descriptors,
-					       output, output_other, background, flags);
+
+			/* The child runs the command and does not return. */
+			if (child == 0) {
+				pipeline_child(commands,
+					       index,
+					       previous,
+					       descriptors,
+					       output,
+					       output_other,
+					       background,
+					       flags);
+			}
 		}
 
 		/* The shell keeps only the reading end for the next. */
@@ -1125,6 +1153,7 @@ pipeline_spawn(
 	size_t mark;
 	size_t index;
 	pid_t child;
+	int job_control;
 	int pure;
 	int error;
 
@@ -1134,8 +1163,14 @@ pipeline_spawn(
 	    node->u.simple.assignment_count != 0 ||
 	    node->u.simple.word_count == 0)
 		return -1;
-	if (sh_option[SH_OPT_NOUNSET] || sh_option[SH_OPT_XTRACE] ||
-	    sh_option[SH_OPT_NOEXEC] || sh_job_control_active())
+	if (sh_option[SH_OPT_NOUNSET] ||
+	    sh_option[SH_OPT_XTRACE] ||
+	    sh_option[SH_OPT_NOEXEC])
+		return -1;
+
+	/* Job control gives each job its own process group, which a fork sets up. */
+	job_control = sh_job_control_active();
+	if (job_control)
 		return -1;
 
 	/* Descriptors 0, 1 and 2 are where the command's own go. */
@@ -1149,46 +1184,60 @@ pipeline_spawn(
 			return -1;
 	}
 
-	/* The words, and what the name is; a subshell's lookup is not remembered. */
+	/* Expands the words; a command of no words is left to the subshell. */
 	mark = sh_temp_mark();
 	memset(&arguments, 0, sizeof(arguments));
-	expand_words(node->u.simple.words, node->u.simple.word_count,
-		     &arguments, 0);
+	expand_words(node->u.simple.words,
+		     node->u.simple.word_count,
+		     &arguments,
+		     0);
 	if (arguments.count == 0) {
 		sh_temp_release(mark);
 		return -1;
 	}
+
+	/* Finds what the name is; a subshell's lookup is not remembered. */
 	sh_find_command(arguments.words[0], SH_FIND_NO_REMEMBER, NULL, &entry);
 	if (entry.kind != SH_COMMAND_EXTERNAL) {
 		sh_temp_release(mark);
 		return -1;
 	}
 
-	/* Its descriptors, as a forked child of the pipeline would set them. */
+	/* Prepares its descriptors, as a forked child of the pipeline would set them. */
 	error = posix_spawn_file_actions_init(&actions);
 	if (error != 0) {
 		sh_temp_release(mark);
 		return -1;
 	}
+
+	/* The pipe before it becomes its standard input. */
 	if (input >= 0) {
 		(void)posix_spawn_file_actions_adddup2(&actions, input, 0);
 		(void)posix_spawn_file_actions_addclose(&actions, input);
 	}
+
+	/* The pipe after it becomes its standard output. */
 	if (output >= 0) {
 		(void)posix_spawn_file_actions_adddup2(&actions, output, 1);
 		(void)posix_spawn_file_actions_addclose(&actions, output);
 	}
+
+	/* The other ends of the pipes are not the command's. */
 	if (other >= 0)
 		(void)posix_spawn_file_actions_addclose(&actions, other);
 	if (output_other >= 0)
 		(void)posix_spawn_file_actions_addclose(&actions, output_other);
 
-	/* The program. */
+	/* Starts the program, then frees what starting it needed. */
 	child = sh_spawn(entry.path, arguments.words, job, &actions);
 	(void)posix_spawn_file_actions_destroy(&actions);
 	sh_temp_release(mark);
 
-	/* Succeeded or not: the child, or -1 for a fork. */
+	/* A program that could not be started is left to a fork. */
+	if (child < 0)
+		return -1;
+
+	/* Succeeded: the child. */
 	return child;
 }
 
@@ -1206,6 +1255,7 @@ word_is_pure(
 	const char *end;
 	const char *inner;
 	const char *limit;
+	int pure;
 
 	/* A process substitution starts a process. */
 	if (word->process != 0)
@@ -1214,39 +1264,83 @@ word_is_pure(
 	/* Each $ and ` of the text as written; a quoted one only makes this cautious. */
 	limit = word->raw + word->raw_length;
 	for (cursor = word->raw; cursor < limit; cursor++) {
+		/* A backquote is a command substitution. */
 		if (*cursor == '`')
 			return 0;
+
+		/* Only a $ with something after it may expand. */
 		if (*cursor != '$' || cursor + 1 >= limit)
 			continue;
+
+		/* $( is a command substitution or arithmetic. */
 		if (cursor[1] == '(')
 			return 0;
+
+		/* $name and the like cannot act; only ${ needs a closer look. */
 		if (cursor[1] != '{')
 			continue;
 
-		/* ${...}: a name, a length of a name, digits, or one special character. */
+		/* Finds the } that ends the ${...}; an unclosed or empty one may fail. */
 		inner = cursor + 2;
 		end = inner;
 		while (end < limit && *end != '}')
 			end++;
 		if (end >= limit || end == inner)
 			return 0;
-		if (*inner == '#' && end - inner > 1)
-			inner++;
-		if (end - inner == 1 && strchr("@*#?$!-0123456789", *inner) != NULL) {
-			cursor = end;
-			continue;
-		}
-		for (; inner < end; inner++) {
-			if (!(*inner == '_' ||
-			      (*inner >= 'a' && *inner <= 'z') ||
-			      (*inner >= 'A' && *inner <= 'Z') ||
-			      (*inner >= '0' && *inner <= '9')))
-				return 0;
-		}
+
+		/* Refuses anything in the braces but a parameter or its length. */
+		pure = brace_is_pure(inner, end);
+		if (!pure)
+			return 0;
+
+		/* Goes on after the }. */
 		cursor = end;
 	}
 
 	/* Succeeded: nothing in it acts. */
+	return 1;
+}
+
+/*
+ * Reports whether the text of ${...} between its braces (not empty) is a
+ * name, the length of a name (#name), digits, or one special character,
+ * whose expansion can neither change the shell nor fail.
+ */
+static int
+brace_is_pure(
+	const char *inner,
+	const char *end)
+{
+	const char *special;
+	const char *cursor;
+	char letter;
+
+	/* # before more is a length. */
+	if (*inner == '#' && end - inner > 1)
+		inner++;
+
+	/* One special character or digit is a parameter. */
+	if (end - inner == 1) {
+		special = strchr("@*#?$!-0123456789", *inner);
+		if (special != NULL)
+			return 1;
+	}
+
+	/* Anything else must be a name of letters, digits and underscores. */
+	for (cursor = inner; cursor < end; cursor++) {
+		letter = *cursor;
+		if (letter == '_')
+			continue;
+		if (letter >= 'a' && letter <= 'z')
+			continue;
+		if (letter >= 'A' && letter <= 'Z')
+			continue;
+		if (letter >= '0' && letter <= '9')
+			continue;
+		return 0;
+	}
+
+	/* Succeeded: a name, or its length. */
 	return 1;
 }
 
@@ -1266,37 +1360,68 @@ subshell_unset_trial(
 	struct word_list arguments;
 	struct sh_node *body;
 	size_t mark;
-	size_t index;
+	int trap_set;
 	int pure;
 	int done;
 
-	/* The body is one simple command of pure words, with nothing traced. */
+	/* The body is one simple command of two words or more, with nothing else. */
 	body = node->u.body;
-	if (body == NULL || body->kind != SH_NODE_SIMPLE ||
+	if (body == NULL ||
+	    body->kind != SH_NODE_SIMPLE ||
 	    body->redirections != NULL ||
 	    body->u.simple.assignment_count != 0 ||
-	    body->u.simple.word_count < 2 ||
-	    sh_option[SH_OPT_NOUNSET] || sh_option[SH_OPT_XTRACE] ||
-	    sh_option[SH_OPT_NOEXEC] || sh_trap_any_set())
+	    body->u.simple.word_count < 2)
 		return 0;
-	for (index = 0; index < body->u.simple.word_count; index++) {
-		pure = word_is_pure(body->u.simple.words[index]);
-		if (!pure)
-			return 0;
-	}
 
-	/* The words, and the trial. */
+	/* Options that trace or check the words need the subshell. */
+	if (sh_option[SH_OPT_NOUNSET] ||
+	    sh_option[SH_OPT_XTRACE] ||
+	    sh_option[SH_OPT_NOEXEC])
+		return 0;
+
+	/* A trap would run in the subshell, not here. */
+	trap_set = sh_trap_any_set();
+	if (trap_set)
+		return 0;
+
+	/* Every word must expand the same here as in the subshell. */
+	pure = words_are_pure(body);
+	if (!pure)
+		return 0;
+
+	/* Expands the words and tries the unset. */
 	mark = sh_temp_mark();
 	memset(&arguments, 0, sizeof(arguments));
-	expand_words(body->u.simple.words, body->u.simple.word_count,
-		     &arguments, 0);
+	expand_words(body->u.simple.words,
+		     body->u.simple.word_count,
+		     &arguments,
+		     0);
 	done = 0;
 	if (arguments.count > 0)
 		done = unset_trial(&arguments, node, status, 0);
 	sh_temp_release(mark);
 
-	/* Reports whether it ran. */
+	/* Succeeded: whether the trial ran in place of the subshell. */
 	return done;
+}
+
+/* Reports whether every word of a simple command is pure (word_is_pure). */
+static int
+words_are_pure(
+	struct sh_node *node)
+{
+	size_t index;
+	int pure;
+
+	/* Checks each word. */
+	for (index = 0; index < node->u.simple.word_count; index++) {
+		pure = word_is_pure(node->u.simple.words[index]);
+		if (!pure)
+			return 0;
+	}
+
+	/* Succeeded: every word is pure. */
+	return 1;
 }
 
 /*
@@ -1311,119 +1436,233 @@ unset_trial(
 	int depth)
 {
 	const struct sh_builtin *builtin;
-	struct word_list inner;
-	struct sh_arena *arena;
-	struct sh_node *node;
+	const char *value;
 	char **values;
 	int *flags;
-	char *joined;
-	size_t joined_length;
 	size_t index;
 	size_t count;
-	int pure;
 	int done;
+	int plain;
 	int redirected;
 	int compare;
 
 	/* eval: its words, joined by spaces, are the command (once). */
 	compare = strcmp(arguments->words[0], "eval");
 	if (compare == 0) {
-		if (depth > 0 || arguments->count < 2)
-			return 0;
-		joined_length = 0;
-		for (index = 1; index < arguments->count; index++)
-			joined_length += strlen(arguments->words[index]) + 1U;
-		joined = sh_malloc(joined_length);
-		joined[0] = '\0';
-		for (index = 1; index < arguments->count; index++) {
-			if (index > 1)
-				strcat(joined, " ");
-			strcat(joined, arguments->words[index]);
-		}
-
-		/* The command the words make: one simple command of pure words. */
-		arena = sh_arena_new();
-		node = parse_quietly(joined, arena);
-		free(joined);
-		done = 0;
-		if (node != NULL && node->kind == SH_NODE_SIMPLE &&
-		    node->redirections == NULL &&
-		    node->u.simple.assignment_count == 0 &&
-		    node->u.simple.word_count > 0) {
-			pure = 1;
-			for (index = 0; index < node->u.simple.word_count; index++) {
-				if (!word_is_pure(node->u.simple.words[index]))
-					pure = 0;
-			}
-			if (pure) {
-				memset(&inner, 0, sizeof(inner));
-				expand_words(node->u.simple.words,
-					     node->u.simple.word_count, &inner, 0);
-				if (inner.count > 0)
-					done = unset_trial(&inner, subshell, status,
-							   depth + 1);
-			}
-		}
-		sh_arena_release(arena);
+		done = unset_trial_eval(arguments, subshell, status, depth);
 		return done;
 	}
 
-	/* unset of names only: no options, no function, nothing the shell watches. */
+	/* Only unset of plain names can run here. */
 	compare = strcmp(arguments->words[0], "unset");
 	if (compare != 0 || arguments->count < 2)
 		return 0;
-	for (index = 1; index < arguments->count; index++) {
-		if (!sh_var_name(arguments->words[index]) ||
-		    sh_var_hooked(arguments->words[index]) ||
-		    sh_function_find(arguments->words[index]) != NULL)
-			return 0;
+	plain = unset_names_plain(arguments);
+	if (!plain)
+		return 0;
 
-		/* A read-only one makes unset raise an error, which only a subshell may take. */
-		if (sh_var_flags(arguments->words[index]) >= 0 &&
-		    (sh_var_flags(arguments->words[index]) & SH_VAR_READONLY) != 0)
-			return 0;
-	}
+	/* Finds the unset builtin. */
 	builtin = sh_builtin_find("unset");
 	if (builtin == NULL)
 		return 0;
 
-	/* What each variable is now, to be put back. */
+	/* Allocates room for what each variable is now, to be put back. */
 	count = arguments->count - 1U;
 	values = sh_malloc(count * sizeof(*values));
 	flags = sh_malloc(count * sizeof(*flags));
+
+	/* Saves each variable's value and attributes. */
 	for (index = 0; index < count; index++) {
 		values[index] = NULL;
-		if (sh_var_get(arguments->words[index + 1U]) != NULL)
-			values[index] = sh_strdup(sh_var_get(arguments->words[index + 1U]));
+		value = sh_var_get(arguments->words[index + 1U]);
+		if (value != NULL)
+			values[index] = sh_strdup(value);
 		flags[index] = sh_var_flags(arguments->words[index + 1U]);
 	}
 
-	/* The unset, under the subshell's redirections. */
+	/* Runs the unset under the subshell's redirections. */
 	redirected = sh_redirect(subshell->redirections, SH_REDIRECT_SAVE);
-	if (redirected == 0)
-		*status = sh_builtin_run(builtin, (int)arguments->count,
+	if (redirected == 0) {
+		*status = sh_builtin_run(builtin,
+					 (int)arguments->count,
 					 arguments->words);
-	else
+	} else {
 		*status = redirected;
+	}
+
+	/* Takes the subshell's redirections off again. */
 	sh_redirect_pop();
 
-	/* Each variable as it was. */
-	for (index = 0; index < count; index++) {
-		if (flags[index] >= 0) {
-			if (values[index] != NULL)
-				(void)sh_var_set(arguments->words[index + 1U],
-						 values[index], flags[index]);
-			else
-				sh_var_add_flags(arguments->words[index + 1U],
-						 flags[index]);
-		}
-		free(values[index]);
-	}
+	/* Puts each variable back as it was. */
+	unset_trial_restore(arguments, values, flags, count);
 	free(values);
 	free(flags);
 
-	/* Succeeded. */
+	/* Succeeded: the unset ran in place of the subshell. */
 	return 1;
+}
+
+/*
+ * Runs eval of words that make unset NAME... for unset_trial, once:
+ * the words joined by spaces must parse to one simple command of pure
+ * words.  Returns 1 with the status, or 0 to fork the subshell.
+ */
+static int
+unset_trial_eval(
+	struct word_list *arguments,
+	struct sh_node *subshell,
+	int *status,
+	int depth)
+{
+	struct word_list inner;
+	struct sh_arena *arena;
+	struct sh_node *node;
+	char *joined;
+	int pure;
+	int done;
+
+	/* Only one level of eval, and one with words. */
+	if (depth > 0 || arguments->count < 2)
+		return 0;
+
+	/* Joins the words by spaces. */
+	joined = join_operands(arguments);
+
+	/* Parses the command the words make, quietly. */
+	arena = sh_arena_new();
+	node = parse_quietly(joined, arena);
+	free(joined);
+
+	/* It must be one simple command of words and nothing else. */
+	done = 0;
+	if (node != NULL &&
+	    node->kind == SH_NODE_SIMPLE &&
+	    node->redirections == NULL &&
+	    node->u.simple.assignment_count == 0 &&
+	    node->u.simple.word_count > 0) {
+		/* Tries the command when its words are pure. */
+		pure = words_are_pure(node);
+		if (pure) {
+			memset(&inner, 0, sizeof(inner));
+			expand_words(node->u.simple.words,
+				     node->u.simple.word_count,
+				     &inner,
+				     0);
+			if (inner.count > 0)
+				done = unset_trial(&inner, subshell, status, depth + 1);
+		}
+	}
+
+	/* The parsed command is no longer needed. */
+	sh_arena_release(arena);
+
+	/* Succeeded: whether the trial ran. */
+	return done;
+}
+
+/*
+ * Reports whether every operand of unset is a plain variable that unset
+ * can take off here and put back: a name, not watched by the shell, not
+ * a function's, and not read-only (which only a subshell may fail on).
+ */
+static int
+unset_names_plain(
+	struct word_list *arguments)
+{
+	struct sh_function *function;
+	const char *name;
+	size_t index;
+	int is_name;
+	int hooked;
+	int flags;
+
+	/* Checks each name. */
+	for (index = 1; index < arguments->count; index++) {
+		name = arguments->words[index];
+
+		/* Refuses an operand that is not a name, or one the shell watches. */
+		is_name = sh_var_name(name);
+		if (!is_name)
+			return 0;
+		hooked = sh_var_hooked(name);
+		if (hooked)
+			return 0;
+
+		/* Refuses a function's name, which unset would take instead. */
+		function = sh_function_find(name);
+		if (function != NULL)
+			return 0;
+
+		/* A read-only one makes unset raise an error, which only a subshell may take. */
+		flags = sh_var_flags(name);
+		if (flags >= 0 && (flags & SH_VAR_READONLY) != 0)
+			return 0;
+	}
+
+	/* Succeeded: every name is a plain variable. */
+	return 1;
+}
+
+/*
+ * Puts back the variables unset_trial saved: the value with its
+ * attributes, or the attributes alone for one that had no value.  Frees
+ * the saved values.
+ */
+static void
+unset_trial_restore(
+	struct word_list *arguments,
+	char **values,
+	const int *flags,
+	size_t count)
+{
+	size_t index;
+
+	/* Restores each variable that existed before the unset. */
+	for (index = 0; index < count; index++) {
+		if (flags[index] >= 0) {
+			if (values[index] != NULL) {
+				(void)sh_var_set(arguments->words[index + 1U],
+						 values[index],
+						 flags[index]);
+			} else {
+				sh_var_add_flags(arguments->words[index + 1U],
+						 flags[index]);
+			}
+		}
+
+		/* The saved value is no longer needed. */
+		free(values[index]);
+	}
+}
+
+/*
+ * Joins the operands of a command (its words after the first) by spaces,
+ * as eval does.  The caller frees the text.
+ */
+static char *
+join_operands(
+	struct word_list *arguments)
+{
+	char *joined;
+	size_t joined_length;
+	size_t index;
+
+	/* Measures the operands, each with a space or the NUL after it. */
+	joined_length = 1;
+	for (index = 1; index < arguments->count; index++)
+		joined_length += strlen(arguments->words[index]) + 1U;
+
+	/* Copies them in, a space between each two. */
+	joined = sh_malloc(joined_length);
+	joined[0] = '\0';
+	for (index = 1; index < arguments->count; index++) {
+		if (index > 1)
+			strcat(joined, " ");
+		strcat(joined, arguments->words[index]);
+	}
+
+	/* Succeeded: the joined text. */
+	return joined;
 }
 
 /*
@@ -1444,12 +1683,21 @@ substitution_in_shell(
 {
 	struct sh_arena *arena;
 	struct sh_node *node;
+	const char *heredoc;
 	int descriptors[2];
+	int job_control;
+	int piped;
 	int done;
 	void *job;
 
-	/* A here-document, and job control, are left to the forked subshell. */
-	if (strstr(text, "<<") != NULL || sh_job_control_active())
+	/* A here-document is left to the forked subshell. */
+	heredoc = strstr(text, "<<");
+	if (heredoc != NULL)
+		return 0;
+
+	/* So is anything under job control. */
+	job_control = sh_job_control_active();
+	if (job_control)
 		return 0;
 
 	/* Parses the text; anything but one command is the subshell's. */
@@ -1466,13 +1714,16 @@ substitution_in_shell(
 		sh_arena_release(arena);
 		return done;
 	}
+
+	/* Anything but a pipeline is the subshell's. */
 	if (node->kind != SH_NODE_PIPELINE) {
 		sh_arena_release(arena);
 		return 0;
 	}
 
-	/* The pipeline, its last command writing into the substitution's pipe. */
-	if (pipe(descriptors) != 0)
+	/* Starts the pipeline, its last command writing into the substitution's pipe. */
+	piped = pipe(descriptors);
+	if (piped != 0)
 		sh_error("cannot create pipe: %s", strerror(errno));
 	job = pipeline_start(node, 0, 0, descriptors[1], descriptors[0]);
 	(void)close(descriptors[1]);
@@ -1483,7 +1734,7 @@ substitution_in_shell(
 	*status = sh_job_wait_foreground(job);
 	sh_arena_release(arena);
 
-	/* Succeeded. */
+	/* Succeeded: the output and the status are the pipeline's. */
 	return 1;
 }
 
@@ -1503,33 +1754,38 @@ substitution_simple(
 {
 	struct word_list arguments;
 	char *joined;
-	size_t joined_length;
 	size_t mark;
-	size_t index;
 	pid_t child;
 	int descriptors[2];
+	int piped;
 	int pure;
 	int done;
 	int compare;
 	void *job;
 
-	/* Words that expand without effects, and no assignments. */
+	/* Refuses assignments, and a command without words. */
 	if (node->u.simple.assignment_count != 0 ||
-	    node->u.simple.word_count == 0 ||
-	    sh_option[SH_OPT_NOUNSET] || sh_option[SH_OPT_XTRACE] ||
+	    node->u.simple.word_count == 0)
+		return 0;
+
+	/* Options that trace or check the words need the subshell. */
+	if (sh_option[SH_OPT_NOUNSET] ||
+	    sh_option[SH_OPT_XTRACE] ||
 	    sh_option[SH_OPT_NOEXEC])
 		return 0;
-	for (index = 0; index < node->u.simple.word_count; index++) {
-		pure = word_is_pure(node->u.simple.words[index]);
-		if (!pure)
-			return 0;
-	}
 
-	/* The words. */
+	/* Every word must expand without effects. */
+	pure = words_are_pure(node);
+	if (!pure)
+		return 0;
+
+	/* Expands the words; a command of no words is the subshell's. */
 	mark = sh_temp_mark();
 	memset(&arguments, 0, sizeof(arguments));
-	expand_words(node->u.simple.words, node->u.simple.word_count,
-		     &arguments, 0);
+	expand_words(node->u.simple.words,
+		     node->u.simple.word_count,
+		     &arguments,
+		     0);
 	if (arguments.count == 0) {
 		sh_temp_release(mark);
 		return 0;
@@ -1540,27 +1796,26 @@ substitution_simple(
 	if (compare == 0) {
 		done = 0;
 		if (depth == 0 && arguments.count > 1) {
-			joined_length = 0;
-			for (index = 1; index < arguments.count; index++)
-				joined_length += strlen(arguments.words[index]) + 1U;
-			joined = sh_malloc(joined_length);
-			joined[0] = '\0';
-			for (index = 1; index < arguments.count; index++) {
-				if (index > 1)
-					strcat(joined, " ");
-				strcat(joined, arguments.words[index]);
-			}
-			done = substitution_in_shell(joined, output, length,
-						     status, depth + 1);
+			joined = join_operands(&arguments);
+			done = substitution_in_shell(joined,
+						     output,
+						     length,
+						     status,
+						     depth + 1);
 			free(joined);
 		}
+
+		/* The expanded words are no longer needed. */
 		sh_temp_release(mark);
 		return done;
 	}
 
-	/* echo or printf writes into the pipe from this shell. */
-	if (pipe(descriptors) != 0)
+	/* Creates the substitution's pipe. */
+	piped = pipe(descriptors);
+	if (piped != 0)
 		sh_error("cannot create pipe: %s", strerror(errno));
+
+	/* echo or printf writes into the pipe from this shell. */
 	done = output_builtin(&arguments, descriptors[1], status);
 	sh_temp_release(mark);
 	if (done) {
@@ -1585,7 +1840,7 @@ substitution_simple(
 	(void)close(descriptors[0]);
 	*status = sh_job_wait_foreground(job);
 
-	/* Succeeded. */
+	/* Succeeded: the output and the status are the program's. */
 	return 1;
 }
 
@@ -1603,37 +1858,48 @@ pipeline_inline(
 {
 	struct word_list arguments;
 	size_t mark;
-	size_t index;
+	int job_control;
 	int pure;
 	int status;
 	int done;
 
-	/* A simple command of pure words, when pipefail does not ask for its status. */
+	/* Only a simple command of words, without assignments or redirections. */
 	if (node->kind != SH_NODE_SIMPLE ||
 	    node->redirections != NULL ||
 	    node->u.simple.assignment_count != 0 ||
-	    node->u.simple.word_count == 0 ||
-	    sh_option[SH_OPT_PIPEFAIL] || sh_option[SH_OPT_NOUNSET] ||
-	    sh_option[SH_OPT_XTRACE] || sh_option[SH_OPT_NOEXEC] ||
-	    sh_job_control_active())
+	    node->u.simple.word_count == 0)
 		return 0;
-	for (index = 0; index < node->u.simple.word_count; index++) {
-		pure = word_is_pure(node->u.simple.words[index]);
-		if (!pure)
-			return 0;
-	}
 
-	/* The words, then the builtin into the pipe. */
+	/* pipefail asks for its status; the others trace or check the words. */
+	if (sh_option[SH_OPT_PIPEFAIL] ||
+	    sh_option[SH_OPT_NOUNSET] ||
+	    sh_option[SH_OPT_XTRACE] ||
+	    sh_option[SH_OPT_NOEXEC])
+		return 0;
+
+	/* Job control puts every command of the pipeline in a child. */
+	job_control = sh_job_control_active();
+	if (job_control)
+		return 0;
+
+	/* Every word must expand without effects. */
+	pure = words_are_pure(node);
+	if (!pure)
+		return 0;
+
+	/* Expands the words, then runs the builtin into the pipe. */
 	mark = sh_temp_mark();
 	memset(&arguments, 0, sizeof(arguments));
-	expand_words(node->u.simple.words, node->u.simple.word_count,
-		     &arguments, 0);
+	expand_words(node->u.simple.words,
+		     node->u.simple.word_count,
+		     &arguments,
+		     0);
 	done = 0;
 	if (arguments.count > 0)
 		done = output_builtin(&arguments, output, &status);
 	sh_temp_release(mark);
 
-	/* Reports whether it ran. */
+	/* Succeeded: whether it ran in this shell. */
 	return done;
 }
 
@@ -1651,14 +1917,16 @@ output_builtin(
 	struct sh_command entry;
 	size_t bound;
 	int saved;
-	int echo;
-	int printf_name;
+	int compare_echo;
+	int compare_printf;
 
-	/* Only echo and printf, as the builtins. */
-	echo = strcmp(arguments->words[0], "echo") == 0;
-	printf_name = strcmp(arguments->words[0], "printf") == 0;
-	if (!echo && !printf_name)
+	/* Only echo and printf. */
+	compare_echo = strcmp(arguments->words[0], "echo");
+	compare_printf = strcmp(arguments->words[0], "printf");
+	if (compare_echo != 0 && compare_printf != 0)
 		return 0;
+
+	/* Only as the builtins, not as functions or files of those names. */
 	sh_find_command(arguments->words[0], SH_FIND_NO_REMEMBER, NULL, &entry);
 	if (entry.kind != SH_COMMAND_BUILTIN)
 		return 0;
@@ -1668,18 +1936,23 @@ output_builtin(
 	if (bound > SH_INLINE_OUTPUT_MAX)
 		return 0;
 
-	/* Its standard output is the descriptor while it runs. */
+	/* Saves the standard output out of the way. */
 	fflush(stdout);
 	saved = fcntl(1, F_DUPFD_CLOEXEC, 10);
 	if (saved < 0)
 		return 0;
+
+	/* Runs the builtin with the descriptor as its standard output. */
 	(void)dup2(output, 1);
-	*status = sh_builtin_run(entry.builtin, (int)arguments->count,
+	*status = sh_builtin_run(entry.builtin,
+				 (int)arguments->count,
 				 arguments->words);
+
+	/* Puts the standard output back. */
 	(void)dup2(saved, 1);
 	(void)close(saved);
 
-	/* Succeeded. */
+	/* Succeeded: the builtin ran. */
 	return 1;
 }
 
@@ -1702,22 +1975,34 @@ output_bound(
 	size_t conversions;
 	size_t operands;
 	size_t rounds;
+	int is_printf;
+	int is_echo;
+	int compare;
 
-	/* The operands' length. */
+	/* printf's operands start after -- and the format. */
 	first = 1;
-	if (strcmp(arguments->words[0], "printf") == 0) {
-		if (arguments->count > 1 && strcmp(arguments->words[1], "--") == 0)
-			first = 2;
+	is_printf = strcmp(arguments->words[0], "printf");
+	if (is_printf == 0) {
+		if (arguments->count > 1) {
+			compare = strcmp(arguments->words[1], "--");
+			if (compare == 0)
+				first = 2;
+		}
+
+		/* printf without a format writes nothing. */
 		if (first >= arguments->count)
 			return 0;
 		first++;
 	}
+
+	/* Measures the operands, each with a space after it. */
 	total = 0;
 	for (index = first; index < arguments->count; index++)
 		total += strlen(arguments->words[index]) + 1U;
 
 	/* echo: the operands, spaces and the newline. */
-	if (strcmp(arguments->words[0], "echo") == 0)
+	is_echo = strcmp(arguments->words[0], "echo");
+	if (is_echo == 0)
 		return total + 1U;
 
 	/* printf: only %s and %% among its conversions. */
@@ -1741,7 +2026,7 @@ output_bound(
 		rounds = (operands + conversions - 1U) / conversions;
 	total += rounds * strlen(format);
 
-	/* Succeeded. */
+	/* Succeeded: the most bytes printf can write. */
 	return total;
 }
 
@@ -1779,7 +2064,7 @@ parse_quietly(
 		return NULL;
 	}
 
-	/* One command, then the end of the text. */
+	/* Parses one command, then the end of the text. */
 	sh_input_push_string(text, strlen(text), sh_command_line);
 	pushed = 1;
 	node = sh_parse_command(arena, &eof);
@@ -1788,11 +2073,13 @@ parse_quietly(
 		if (!eof || next != NULL)
 			node = NULL;
 	}
+
+	/* Messages are shown again, and the text is read no more. */
 	sh_handler_pop(&handler);
 	sh_error_quiet--;
 	sh_input_pop();
 
-	/* Succeeded or not: the command. */
+	/* Succeeded: the command, or NULL when the text was not one. */
 	return node;
 }
 
@@ -1886,6 +2173,7 @@ eval_subshell(
 	int status;
 	int trapped;
 	int redirected;
+	int tried;
 	void *job;
 
 	/* The last command of a shell need not fork again. */
@@ -1900,7 +2188,8 @@ eval_subshell(
 	}
 
 	/* A subshell that only tries unset is tried in this shell and undone. */
-	if (subshell_unset_trial(node, &status))
+	tried = subshell_unset_trial(node, &status);
+	if (tried)
 		return status;
 
 	/* A child runs the body. */
@@ -2094,6 +2383,8 @@ eval_arith_for(
 			status = 1;
 			break;
 		}
+
+		/* A test of 0 ends the loop. */
 		if (value == 0)
 			break;
 
@@ -2824,9 +3115,8 @@ expand_process_substitution(
 	int created;
 	int kept;
 
-	(void)context;
-
 	/* Copies the commands out from between the parentheses. */
+	(void)context;
 	text = sh_malloc(token->raw_length);
 	(void)sh_temp_own(text);
 	memcpy(text, token->raw + 2, token->raw_length - 3U);
