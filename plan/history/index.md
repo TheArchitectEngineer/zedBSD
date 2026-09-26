@@ -2,12 +2,14 @@
 
 <!-- awesome-plan-current:start -->
 Active Queue: なし
-Last finished Queue: q487（ws035-p074 cleared。非公開の header と libzdesktop の役割）
+Last finished Queue: q488（ws069-p008 uncleared。zdesktop-x11server）
 <!-- awesome-plan-current:end -->
 
 # Past Log
 
-## 最新: q443〜q487（2026-09-26〜27）
+## 最新: q443〜q488（2026-09-26〜27）
+
+[q488](queue-q488.md): ws069-p008 uncleared。単体の rootless の X server `zdesktop-x11server`（組み込める形、出力の queue、絶対座標の一貫）が Venus と i915 実機で動く。x11-p005 の frame 数だけ BUG-057 で未達。BUG-057 は Venus でも再現し、kernel の unix socket で大きな send の送り手が起きない所まで特定。
 
 [q487](queue-q487.md): ws035-p074 cleared。`Xzed.h` と `zed-gpu-buffer-v1-client-protocol.h` を非公開に（libX11・libwayland の下へ）、libzdesktop の役割を 2 つに。p073 の build の変数の衝突を修正。
 
