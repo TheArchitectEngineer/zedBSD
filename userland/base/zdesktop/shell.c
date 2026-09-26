@@ -34,7 +34,9 @@
  * from its place to a tile of a grid over the blurred, darkened wallpaper,
  * the most recently raised first, with a glass label of its title under it.
  * A click on a tile brings that window to the top, a click elsewhere closes
- * Wiseview, and a tile's close button closes its window.
+ * Wiseview, and a tile's close button closes its window.  Super+Tab opens
+ * it from the keyboard (p014): Tab and the arrows move the current tile,
+ * Enter chooses it, Esc closes Wiseview.
  */
 
 #include "menu.h"
@@ -86,6 +88,9 @@
 #define SHORTCUT_RIGHT		106U
 #define MODIFIERS_CONTROL_ALT	(4U | 8U)
 #define MODIFIER_SHIFT		1U
+
+/* The Super (Windows) key's bit, for Super+Tab (Wiseview). */
+#define MODIFIER_SUPER		0x40U
 
 /* How far a Wiseview tile moves before it is dragged. */
 #define TILE_DRAG_START		8
@@ -172,6 +177,10 @@ static unsigned double_click(struct zwl_server *server, struct zwl_object *surfa
 static int bar_press(struct zwl_server *server);
 static float wiseview_progress(struct zwl_server *server);
 static void wiseview_settle(struct zwl_server *server, float from, float to);
+static int wiseview_showing(struct zwl_server *server);
+static void wiseview_open_key(struct zwl_server *server);
+static void wiseview_key(struct zwl_server *server, uint32_t key, uint32_t state);
+static void wiseview_close_key(struct zwl_server *server);
 static unsigned wiseview_windows(struct zwl_server *server, struct zwl_object **windows, unsigned capacity);
 static void wiseview_layout(struct zwl_server *server, struct zwl_object **windows, unsigned count, struct shell_rect *tiles);
 static void draw_wiseview(struct zwl_server *server, VkCommandBuffer command, struct zwl_object **stacked, unsigned stacked_count, float progress);
@@ -653,7 +662,8 @@ zwl_glass_mapped(
 
 /*
  * Handles zdesktop's shortcuts: Ctrl+Alt+Left and Right switch to the
- * desktop before and after.  Returns 1 when the key is zdesktop's.
+ * desktop before and after, Super+Tab opens Wiseview (and while it is open
+ * every key is Wiseview's).  Returns 1 when the key is zdesktop's.
  */
 int
 zwl_glass_key(
@@ -662,8 +672,23 @@ zwl_glass_key(
 	uint32_t state)
 {
 	struct zwl_object *surface;
+	int showing;
 	int target;
 	int step;
+
+	/* Wiseview, open or opening, takes every key (ws035-p014). */
+	showing = wiseview_showing(server);
+	if (showing) {
+		wiseview_key(server, key, state);
+		return 1;
+	}
+
+	/* Super+Tab opens Wiseview from the keyboard, as Windows+Tab does. */
+	if (key == KEY_TAB && (server->modifiers & MODIFIER_SUPER) != 0U) {
+		if (state != 0U)
+			wiseview_open_key(server);
+		return 1;
+	}
 
 	/* Only with Control and Alt held, and only the two arrows. */
 	if ((server->modifiers & MODIFIERS_CONTROL_ALT) != MODIFIERS_CONTROL_ALT)
@@ -1999,6 +2024,154 @@ wiseview_settle(
 	server->wiseview_moving = 1;
 	server->wiseview = from;
 	server->dirty = 1;
+}
+
+/* Tells whether Wiseview is open or on its way open (while it closes, keys go to the windows again). */
+static int
+wiseview_showing(
+	struct zwl_server *server)
+{
+	/* The gesture from the bottom edge holds it open. */
+	if (server->wiseview_gesture)
+		return 1;
+
+	/* On its way, it shows only when it is going open. */
+	if (server->wiseview_moving) {
+		if (server->wiseview_to > 0.0f)
+			return 1;
+		return 0;
+	}
+
+	/* Settled open. */
+	if (server->wiseview > 0.0f)
+		return 1;
+
+	/* Settled closed. */
+	return 0;
+}
+
+/* Opens Wiseview from the keyboard (Super+Tab), with the window on top as the current tile. */
+static void
+wiseview_open_key(
+	struct zwl_server *server)
+{
+	/* The window on top is the one Enter comes back to. */
+	server->wiseview_current = zwl_top_window(server);
+
+	/* Wiseview opens as it does at the end of the gesture. */
+	printf("ZWL WISEVIEW opening key\n");
+	wiseview_settle(server, 0.0f, 1.0f);
+}
+
+/*
+ * Carries out a key while Wiseview shows: Tab (Shift+Tab back), the arrows
+ * move the current tile, Enter and Space choose it, Esc and Super+Tab close
+ * Wiseview.  A release and any other key do nothing.
+ */
+static void
+wiseview_key(
+	struct zwl_server *server,
+	uint32_t key,
+	uint32_t state)
+{
+	struct zwl_object *windows[WISEVIEW_WINDOWS];
+	struct zwl_object *surface;
+	unsigned count;
+	unsigned index;
+	int position;
+	int step;
+
+	/* Only a press acts. */
+	if (state == 0U)
+		return;
+
+	/* Esc closes Wiseview where it is. */
+	if (key == KEY_ESC) {
+		wiseview_close_key(server);
+		return;
+	}
+
+	/* So does Super+Tab again. */
+	if (key == KEY_TAB && (server->modifiers & MODIFIER_SUPER) != 0U) {
+		wiseview_close_key(server);
+		return;
+	}
+
+	/* Enter and Space choose the current tile. */
+	if (key == KEY_ENTER || key == KEY_SPACE) {
+		surface = server->wiseview_current;
+
+		/* Without a current window there is nothing to come back to: Wiseview only closes. */
+		if (surface == NULL || surface->dead || !surface->mapped) {
+			wiseview_close_key(server);
+			return;
+		}
+
+		/* A minimized window comes back; it comes to the top and Wiseview closes. */
+		surface->minimized = 0;
+		window_raise(server, surface);
+		printf("ZWL WISEVIEW select surface=%u via=key\n", surface->id);
+		wiseview_settle(server, wiseview_progress(server), 0.0f);
+		return;
+	}
+
+	/* The direction: on for Tab, Right and Down (back for Shift+Tab), back for Left and Up. */
+	step = 0;
+	if (key == KEY_TAB) {
+		step = 1;
+		if ((server->modifiers & MODIFIER_SHIFT) != 0U)
+			step = -1;
+	} else if (key == KEY_RIGHT || key == KEY_DOWN) {
+		step = 1;
+	} else if (key == KEY_LEFT || key == KEY_UP) {
+		step = -1;
+	}
+
+	/* Any other key does nothing. */
+	if (step == 0)
+		return;
+
+	/* The tiles, in the order Wiseview lays them out; none, nothing to move. */
+	count = wiseview_windows(server, windows, WISEVIEW_WINDOWS);
+	if (count == 0U)
+		return;
+
+	/* The current tile's place (count when the current window is not among them). */
+	for (index = 0; index < count; index++) {
+		/* The current window's tile. */
+		if (windows[index] == server->wiseview_current)
+			break;
+	}
+
+	/* The next tile, round the ends; without a current tile, the first. */
+	position = 0;
+	if (index < count)
+		position = (int)index + step;
+	if (position < 0)
+		position = (int)count - 1;
+	if (position >= (int)count)
+		position = 0;
+
+	/* It becomes the current tile, which Wiseview draws marked. */
+	server->wiseview_current = windows[position];
+	server->dirty = 1;
+	printf("ZWL WISEVIEW current surface=%u\n", windows[position]->id);
+}
+
+/* Closes Wiseview from the keyboard, from wherever it is on its way. */
+static void
+wiseview_close_key(
+	struct zwl_server *server)
+{
+	float progress;
+
+	/* The gesture, if one was under way, ends with it. */
+	progress = wiseview_progress(server);
+	server->wiseview_gesture = 0;
+
+	/* Wiseview settles closed. */
+	printf("ZWL WISEVIEW close key\n");
+	wiseview_settle(server, progress, 0.0f);
 }
 
 /*

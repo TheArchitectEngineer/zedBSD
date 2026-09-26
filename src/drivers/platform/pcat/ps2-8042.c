@@ -721,6 +721,12 @@ scan_symbol(
 	case 0x53:
 		symbol = "delete";
 		break;
+	case 0x5b:
+		symbol = "leftmeta";
+		break;
+	case 0x5c:
+		symbol = "rightmeta";
+		break;
 	default:
 		break;
 	}

@@ -159,6 +159,8 @@ static const struct symbol_entry symbols[] = {
 	{"rightctrl", KEY_RIGHTCTRL, INPUT_KEY_CTRL_SYMBOL, 0, 0},
 	{"leftalt", KEY_LEFTALT, INPUT_KEY_GRAPH_SYMBOL, 0, 0},
 	{"rightalt", KEY_RIGHTALT, INPUT_KEY_GRAPH_SYMBOL, 0, 0},
+	{"leftmeta", KEY_LEFTMETA, 0, 0, 0},
+	{"rightmeta", KEY_RIGHTMETA, 0, 0, 0},
 	{"capslock", KEY_CAPSLOCK, INPUT_KEY_CAPS_LOCK, 0, 0},
 	{"kana", KEY_RESERVED, INPUT_KEY_KANA, 0, 0},
 	{"home", KEY_HOME, INPUT_KEY_HOME, 0, 0},
