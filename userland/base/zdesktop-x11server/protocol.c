@@ -231,7 +231,10 @@ x11_request(
 	opcode = request[0];
 
 	/* Every request but the three of one word names something in its second word. */
-	if (length < 8U && opcode != REQUEST_GET_INPUT_FOCUS && opcode != REQUEST_GET_POINTER_MAPPING && opcode != REQUEST_NO_OPERATION) {
+	if (length < 8U &&
+	    opcode != REQUEST_GET_INPUT_FOCUS &&
+	    opcode != REQUEST_GET_POINTER_MAPPING &&
+	    opcode != REQUEST_NO_OPERATION) {
 		protocol_error(server, client, X11_BAD_LENGTH, 0U, opcode);
 		return;
 	}
@@ -797,7 +800,9 @@ protocol_map_window(
 
 	/* Another client that redirects the parent's children is asked instead. */
 	parent = x11_window_find(server, window->parent);
-	if (parent != NULL && (parent->event_mask & X11_MASK_SUBSTRUCTURE_REDIRECT) != 0U && parent->owner != index) {
+	if (parent != NULL &&
+	    (parent->event_mask & X11_MASK_SUBSTRUCTURE_REDIRECT) != 0U &&
+	    parent->owner != index) {
 		protocol_map_request(server, parent, window);
 		return 0U;
 	}
@@ -1057,7 +1062,10 @@ protocol_change_property(
 	}
 
 	/* An 8-bit STRING that fits the request is kept, cut to the room there is. */
-	if (target != NULL && type == X11_ATOM_STRING && request[16] == 8U && count <= length - 24U) {
+	if (target != NULL &&
+	    type == X11_ATOM_STRING &&
+	    request[16] == 8U &&
+	    count <= length - 24U) {
 		copied = count;
 		if (copied > capacity - 1U)
 			copied = capacity - 1U;
@@ -1108,7 +1116,9 @@ protocol_get_property(
 	/* A set string of any type or STRING is given whole; otherwise the property has no value. */
 	memset(reply, 0, sizeof(reply));
 	padded = 0U;
-	if (value != NULL && value[0] != '\0' && (type == 0U || type == X11_ATOM_STRING)) {
+	if (value != NULL &&
+	    value[0] != '\0' &&
+	    (type == 0U || type == X11_ATOM_STRING)) {
 		count = strlen(value);
 		padded = (count + 3U) & ~(size_t)3U;
 		reply[1] = 8U;
@@ -1465,7 +1475,9 @@ protocol_copy_area(
 		return X11_BAD_LENGTH;
 	source = x11_pixmap_find(server, x11_read32(request + 4, msb));
 	target = x11_window_find(server, x11_read32(request + 8, msb));
-	if (source == NULL || target == NULL || target->pixels == NULL)
+	if (source == NULL ||
+	    target == NULL ||
+	    target->pixels == NULL)
 		return X11_BAD_WINDOW;
 
 	/* The rectangle. */
@@ -1483,9 +1495,15 @@ protocol_copy_area(
 			from_y = source_y + row;
 			to_x = target_x + column;
 			to_y = target_y + row;
-			if (from_x < 0 || from_y < 0 || from_x >= source->width || from_y >= source->height)
+			if (from_x < 0 ||
+			    from_y < 0 ||
+			    from_x >= source->width ||
+			    from_y >= source->height)
 				continue;
-			if (to_x < 0 || to_y < 0 || to_x >= target->width || to_y >= target->height)
+			if (to_x < 0 ||
+			    to_y < 0 ||
+			    to_x >= target->width ||
+			    to_y >= target->height)
 				continue;
 			target->pixels[(size_t)to_y * target->width + (size_t)to_x] = source->pixels[(size_t)from_y * source->width + (size_t)from_x];
 		}
@@ -1765,7 +1783,10 @@ protocol_put_image_rgb24(
 		for (column = 0; column < width; column++) {
 			to_x = x + column;
 			to_y = y + row;
-			if (to_x < 0 || to_y < 0 || to_x >= target_width || to_y >= target_height)
+			if (to_x < 0 ||
+			    to_y < 0 ||
+			    to_x >= target_width ||
+			    to_y >= target_height)
 				continue;
 			rgb = request + 16U + ((size_t)row * (size_t)width + (size_t)column) * 3U;
 			pixels[(size_t)to_y * (size_t)target_width + (size_t)to_x] = ((uint32_t)rgb[0] << 16) | ((uint32_t)rgb[1] << 8) | (uint32_t)rgb[2];
@@ -1838,7 +1859,10 @@ protocol_line(
 
 	/* Each pixel from the start to the end. */
 	for (;;) {
-		if (from_x >= 0 && from_y >= 0 && from_x < window->width && from_y < window->height)
+		if (from_x >= 0 &&
+		    from_y >= 0 &&
+		    from_x < window->width &&
+		    from_y < window->height)
 			window->pixels[(size_t)from_y * window->width + (size_t)from_x] = color;
 
 		/* The end is drawn last. */

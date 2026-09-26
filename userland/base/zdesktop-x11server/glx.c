@@ -94,10 +94,10 @@ x11_glx_request(
 		x11_write32(reply + 8, GLX_SERVER_MAJOR, client->order);
 		x11_write32(reply + 12, GLX_SERVER_MINOR, client->order);
 		x11_reply(server, client, reply, sizeof(reply));
-		return 0U;
+		break;
 	case GLX_QUERY_EXTENSIONS_STRING:
 		glx_string_reply(server, client, GLX_EXTENSIONS_STRING);
-		return 0U;
+		break;
 	case GLX_QUERY_SERVER_STRING:
 		if (length < 12U)
 			return X11_BAD_LENGTH;
@@ -111,15 +111,17 @@ x11_glx_request(
 		}
 
 		/* Answered. */
-		return 0U;
-	case GLX_CLIENT_INFO:
-		return 0U;
-	default:
 		break;
+	case GLX_CLIENT_INFO:
+		/* The client's own version and extensions need no answer. */
+		break;
+	default:
+		/* Indirect rendering and the rest are not there. */
+		return X11_BAD_REQUEST;
 	}
 
-	/* Indirect rendering and the rest are not there. */
-	return X11_BAD_REQUEST;
+	/* Succeeded: the request is answered. */
+	return 0U;
 }
 
 /* Sends a string reply (QueryServerString's and QueryExtensionsString's form): its length with the terminator, then the padded bytes. */

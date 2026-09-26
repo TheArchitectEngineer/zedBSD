@@ -145,7 +145,9 @@ glyphs_read(
 
 	/* Its size, which must be sensible. */
 	error = fstat(descriptor, &status);
-	if (error != 0 || status.st_size <= 0 || (unsigned long)status.st_size > GLYPHS_FILE_MAX) {
+	if (error != 0 ||
+	    status.st_size <= 0 ||
+	    (unsigned long)status.st_size > GLYPHS_FILE_MAX) {
 		(void)close(descriptor);
 		return EINVAL;
 	}

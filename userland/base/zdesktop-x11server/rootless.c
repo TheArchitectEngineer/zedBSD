@@ -423,7 +423,9 @@ rootless_pointer(
 		top = x11_window_top_level(server, window);
 		x11_window_raise(server, top);
 		window = x11_window_find(server, server->focus);
-		if (server->grab_owner < 0 && window != NULL && window->owner < X11_MAX_CLIENTS) {
+		if (server->grab_owner < 0 &&
+		    window != NULL &&
+		    window->owner < X11_MAX_CLIENTS) {
 			server->grab_owner = (int)window->owner;
 			server->grab_window = window->id;
 		}
@@ -473,7 +475,11 @@ rootless_configure(
 	/* The X window, at a size it can have. */
 	server = context;
 	resized = x11_window_find(server, window);
-	if (resized == NULL || width <= 0 || height <= 0 || width > ROOTLESS_SIZE_MAX || height > ROOTLESS_SIZE_MAX)
+	if (resized == NULL ||
+	    width <= 0 ||
+	    height <= 0 ||
+	    width > ROOTLESS_SIZE_MAX ||
+	    height > ROOTLESS_SIZE_MAX)
 		return;
 
 	/* Pixels of the new size. */

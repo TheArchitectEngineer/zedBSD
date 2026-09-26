@@ -44,6 +44,9 @@ struct x11server_options {
 	/* The root window's size (1280x800 when zero). */
 	unsigned width;
 	unsigned height;
+
+	/* Nonzero shows the windows through wl_shm instead of Vulkan (--shm). */
+	int shm;
 };
 
 int x11server_create(const struct x11server_options *options, struct x11server **result);

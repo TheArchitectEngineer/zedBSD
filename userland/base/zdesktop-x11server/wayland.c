@@ -193,11 +193,11 @@ int
 x11_wayland_open(
 	struct x11_wayland **result,
 	const char *display,
+	int shm,
 	const struct x11_wayland_callbacks *callbacks,
 	void *context)
 {
 	struct x11_wayland *wayland;
-	const char *shm;
 	int status;
 
 	/* The connection's state, with the server's callbacks. */
@@ -208,10 +208,8 @@ x11_wayland_open(
 	wayland->callbacks = *callbacks;
 	wayland->context = context;
 
-	/* X11SERVER_SHM=1 keeps every window on wl_shm (Vulkan is not tried). */
-	shm = getenv("X11SERVER_SHM");
-	if (shm != NULL && shm[0] == '1' && shm[1] == '\0')
-		wayland->shm_only = 1;
+	/* --shm keeps every window on wl_shm (Vulkan is not tried). */
+	wayland->shm_only = shm;
 
 	/* The pointer's events of version 1 (the listener has later members, left empty). */
 	wayland->pointer_listener.enter = wayland_pointer_enter;
@@ -250,7 +248,9 @@ x11_wayland_open(
 	}
 
 	/* Windows need a compositor, shared memory and a shell. */
-	if (wayland->compositor == NULL || wayland->shm == NULL || wayland->shell == NULL) {
+	if (wayland->compositor == NULL ||
+	    wayland->shm == NULL ||
+	    wayland->shell == NULL) {
 		x11_wayland_close(wayland);
 		return EOPNOTSUPP;
 	}
@@ -701,14 +701,18 @@ wayland_window_of(
 {
 	struct x11_wayland_window *window;
 
-	/* One of the connection's. */
+	/* The connection's window on the surface, if it is one of them. */
 	for (window = wayland->windows; window != NULL; window = window->next) {
 		if (window->surface == surface)
-			return window;
+			break;
 	}
 
 	/* Not one of them. */
-	return NULL;
+	if (window == NULL)
+		return NULL;
+
+	/* Succeeded: the window. */
+	return window;
 }
 
 /* Gives the server one pointer frame: the pointer's place, and a button's change when there is one. */

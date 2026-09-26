@@ -6,7 +6,7 @@
 #     draws its grid again at it.
 #  4. The close button ends zterm (the server keeps running).
 #
-#   plan/ws069/tests/x11-p003.sh [OUTDIR]
+#   plan/tools/x11/x11-p003.sh [OUTDIR]
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 cd "$(dirname -- "$0")/../../.."

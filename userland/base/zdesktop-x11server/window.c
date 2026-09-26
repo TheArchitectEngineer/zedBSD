@@ -32,16 +32,24 @@ x11_window_find(
 	struct x11server *server,
 	uint32_t id)
 {
+	struct x11_window *window;
 	unsigned slot;
 
-	/* Each window in the table. */
+	/* The window of the id, when the table has one. */
+	window = NULL;
 	for (slot = 0U; slot < server->window_count; slot++) {
-		if (server->windows[slot].id == id)
-			return &server->windows[slot];
+		if (server->windows[slot].id == id) {
+			window = &server->windows[slot];
+			break;
+		}
 	}
 
 	/* No such window. */
-	return NULL;
+	if (window == NULL)
+		return NULL;
+
+	/* Succeeded: the window. */
+	return window;
 }
 
 /*
@@ -52,16 +60,24 @@ x11_pixmap_find(
 	struct x11server *server,
 	uint32_t id)
 {
+	struct x11_pixmap *pixmap;
 	unsigned slot;
 
-	/* Each pixmap in the table. */
+	/* The pixmap of the id, when the table has one. */
+	pixmap = NULL;
 	for (slot = 0U; slot < server->pixmap_count; slot++) {
-		if (server->pixmaps[slot].id == id)
-			return &server->pixmaps[slot];
+		if (server->pixmaps[slot].id == id) {
+			pixmap = &server->pixmaps[slot];
+			break;
+		}
 	}
 
 	/* No such pixmap. */
-	return NULL;
+	if (pixmap == NULL)
+		return NULL;
+
+	/* Succeeded: the pixmap. */
+	return pixmap;
 }
 
 /*
@@ -72,16 +88,24 @@ x11_gc_find(
 	struct x11server *server,
 	uint32_t id)
 {
+	struct x11_gc *gc;
 	unsigned slot;
 
-	/* Each context in the table. */
+	/* The context of the id, when the table has one. */
+	gc = NULL;
 	for (slot = 0U; slot < server->gc_count; slot++) {
-		if (server->gcs[slot].id == id)
-			return &server->gcs[slot];
+		if (server->gcs[slot].id == id) {
+			gc = &server->gcs[slot];
+			break;
+		}
 	}
 
 	/* No such context. */
-	return NULL;
+	if (gc == NULL)
+		return NULL;
+
+	/* Succeeded: the context. */
+	return gc;
 }
 
 /*
@@ -306,27 +330,36 @@ x11_window_child_at(
 {
 	struct x11_window *window;
 	struct x11_window *child;
+	struct x11_window *found;
 	unsigned slot;
 
-	/* The children from the top of the stack down. */
+	/* The topmost child under the point: the children from the top of the stack down. */
+	found = NULL;
 	slot = server->window_count;
-	while (slot > 1U) {
+	while (slot > 1U && found == NULL) {
 		slot--;
 		window = &server->windows[slot];
 		if (!window->mapped || window->parent != parent)
 			continue;
-		if (x < window->x || y < window->y || x >= window->x + window->width || y >= window->y + window->height)
+		if (x < window->x ||
+		    y < window->y ||
+		    x >= window->x + window->width ||
+		    y >= window->y + window->height)
 			continue;
 
 		/* The deepest of its own children there, or the child itself. */
 		child = x11_window_child_at(server, window->id, x, y);
+		found = window;
 		if (child != NULL)
-			return child;
-		return window;
+			found = child;
 	}
 
 	/* No child is there. */
-	return NULL;
+	if (found == NULL)
+		return NULL;
+
+	/* Succeeded: the deepest window under the point. */
+	return found;
 }
 
 /*
@@ -467,7 +500,10 @@ x11_draw_text(
 			for (glyph_x = 0; glyph_x < (int)glyph.width; glyph_x++) {
 				pixel_x = x + glyph_x;
 				pixel_y = top + glyph_y;
-				if (pixel_x < 0 || pixel_y < 0 || pixel_x >= window->width || pixel_y >= window->height)
+				if (pixel_x < 0 ||
+				    pixel_y < 0 ||
+				    pixel_x >= window->width ||
+				    pixel_y >= window->height)
 					continue;
 				bits = glyph.bitmap[(size_t)glyph_y * glyph.stride + (unsigned)glyph_x / 8U];
 				if ((bits & (0x80U >> ((unsigned)glyph_x & 7U))) != 0U)

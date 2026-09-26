@@ -274,7 +274,9 @@ gears_parse(
 		differs = strncmp(argv[index], "--size=", 7U);
 		if (differs == 0) {
 			scanned = sscanf(argv[index] + 7, "%ux%u", &options->width, &options->height);
-			if (scanned != 2 || options->width == 0U || options->height == 0U)
+			if (scanned != 2 ||
+			    options->width == 0U ||
+			    options->height == 0U)
 				return -1;
 			continue;
 		}
@@ -594,7 +596,9 @@ gears_check(
 		red = pixel[0];
 		green = pixel[1];
 		blue = pixel[2];
-		if (red > 60U && red > 2U * green && red > 2U * blue)
+		if (red > 60U &&
+		    red > 2U * green &&
+		    red > 2U * blue)
 			counts[0]++;
 		else if (green > 60U && green > 2U * red && green > 2U * blue)
 			counts[1]++;

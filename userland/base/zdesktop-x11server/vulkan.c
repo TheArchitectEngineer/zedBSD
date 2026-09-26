@@ -471,10 +471,12 @@ vulkan_device(
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* Succeeded: the device, its queue and its memory types. */
+	/* Its queue and memory types, and a line in the log that windows are shown through Vulkan. */
 	vkGetDeviceQueue(vulkan->device, vulkan->family, 0U, &vulkan->queue);
 	vkGetPhysicalDeviceMemoryProperties(vulkan->physical, &vulkan->memory);
 	fprintf(stderr, "X11SERVER VULKAN device ready family=%u\n", (unsigned)vulkan->family);
+
+	/* Succeeded: the device can show windows. */
 	return VK_SUCCESS;
 }
 

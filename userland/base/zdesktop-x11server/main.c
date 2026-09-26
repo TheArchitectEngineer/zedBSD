@@ -9,7 +9,7 @@
  * The zdesktop-x11server program: the options, the signals, and the poll
  * loop around the server (x11server.h).
  *
- *   zdesktop-x11server [:0] [--size WIDTHxHEIGHT] [--socket=PATH] [--font=PATH]
+ *   zdesktop-x11server [:0] [--size WIDTHxHEIGHT] [--shm] [--socket=PATH] [--font=PATH]
  */
 
 #include "userland/base/zdesktop-x11server/x11server.h"
@@ -125,6 +125,13 @@ main_options(
 			continue;
 		}
 
+		/* The windows through wl_shm instead of Vulkan. */
+		differs = strcmp(argv[argument], "--shm");
+		if (differs == 0) {
+			options->shm = 1;
+			continue;
+		}
+
 		/* The socket's path. */
 		differs = strncmp(argv[argument], "--socket=", 9U);
 		if (differs == 0) {
@@ -160,12 +167,17 @@ main_size(
 
 	/* The width, then an x. */
 	across = strtoul(text, &end, 10);
-	if (end == text || (*end != 'x' && *end != 'X') || across == 0UL || across > MAIN_SIZE_MAX)
+	if (end == text ||
+	    (*end != 'x' && *end != 'X') ||
+	    across == 0UL ||
+	    across > MAIN_SIZE_MAX)
 		return 0;
 
 	/* The height, to the end. */
 	down = strtoul(end + 1, &end, 10);
-	if (*end != '\0' || down == 0UL || down > MAIN_SIZE_MAX)
+	if (*end != '\0' ||
+	    down == 0UL ||
+	    down > MAIN_SIZE_MAX)
 		return 0;
 
 	/* Succeeded: the size. */

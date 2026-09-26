@@ -99,7 +99,7 @@ x11server_create(
 		fprintf(stderr, "zdesktop-x11server: %s: %s (no text)\n", font, strerror(error));
 
 	/* The connection to the desktop, which shows the windows and gives the input. */
-	error = x11_wayland_open(&server->wayland, options->wayland_display, &x11_rootless_callbacks, server);
+	error = x11_wayland_open(&server->wayland, options->wayland_display, options->shm, &x11_rootless_callbacks, server);
 	if (error != 0) {
 		x11server_destroy(server);
 		return error;
@@ -522,7 +522,9 @@ server_read(
 	}
 
 	/* A failure other than having nothing more to read ends the connection. */
-	if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
+	if (errno != EAGAIN &&
+	    errno != EWOULDBLOCK &&
+	    errno != EINTR) {
 		x11_client_close(server, index);
 		return;
 	}

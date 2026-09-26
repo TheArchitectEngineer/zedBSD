@@ -397,10 +397,12 @@ void x11_rootless_present(struct x11server *server);
 void x11_rootless_closing(struct x11server *server);
 void x11_rootless_flush_motion(struct x11server *server);
 void x11_rootless_forget(struct x11_window *window);
+
+/* What the desktop's events call in the server: rootless.c's handlers, given to wayland.c when the connection opens. */
 extern const struct x11_wayland_callbacks x11_rootless_callbacks;
 
 /* wayland.c: the connection to the desktop and its windows. */
-int x11_wayland_open(struct x11_wayland **result, const char *display, const struct x11_wayland_callbacks *callbacks, void *context);
+int x11_wayland_open(struct x11_wayland **result, const char *display, int shm, const struct x11_wayland_callbacks *callbacks, void *context);
 int x11_wayland_fd(const struct x11_wayland *wayland);
 int x11_wayland_dispatch(struct x11_wayland *wayland, int readable);
 void x11_wayland_close(struct x11_wayland *wayland);

@@ -7,7 +7,7 @@
 #  2. docked.png: the window docked; libGL makes the pbuffer again at the new size and the scene follows.
 #  3. The close button ends glxtest.
 #
-#   plan/ws069/tests/x11-p004.sh [OUTDIR]
+#   plan/tools/x11/x11-p004.sh [OUTDIR]
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 cd "$(dirname -- "$0")/../../.."

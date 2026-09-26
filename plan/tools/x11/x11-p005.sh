@@ -8,7 +8,7 @@
 #     gears-later.png two seconds on, which must differ (WS068 p006: the window's frames reach the screen).
 #  2. The rate (ZGEARS FPS) is logged.
 #
-#   plan/ws069/tests/x11-p005.sh [OUTDIR]
+#   plan/tools/x11/x11-p005.sh [OUTDIR]
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 cd "$(dirname -- "$0")/../../.."
