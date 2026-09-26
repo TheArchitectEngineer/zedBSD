@@ -228,8 +228,8 @@ p001で確かめる。
 | [ws035-p041](phase041/phase.md) | 互換libpng（`userland/base/libpng-compat`、`/lib/libpng-compat.so`）: decode と encode。encode は filter にこだわらない。decode は試験用のRGBA32 PNGが読める正常系まで | planning | p040。**zdesktop が要るときに入れる** | `userland/base/libpng-compat`、`include/libc/compat/png.h` |
 | [ws035-p042](phase042/phase.md) | libzdesktop（`userland/base/libzdesktop`、`/lib/libzdesktop.so`）: **Vulkan 以外の OS 依存をここに閉じ込める**。zdesktop は networkd・audiod などと直接話さず、このライブラリを通す。**まずは空の枠だけ** | cleared（q325-i02） | p004 | `userland/base/libzdesktop`、`include/libc/zdesktop.h` |
 | ws035-p027 | zdesktop: タイトル等の文字描画をlibtruetypeへ移す | canceled（2026-09-27: p059 で置き換え済み。zdesktop の文字（題名、システムバー、App Home、Wiseview、System Menu）は最初から libtruetype の glyph atlas（`glass.c`）で描く） | p010, p025 | zdesktop |
-| ws035-p028 | zdesktop: toolkit（GTK・Qt）が要るWaylandの対応範囲（xdg-shellの残り、keymap、clipboard、subsurface、wl_output、cursor、xdg-decoration） | planning | p025 | zdesktop、libwayland |
-| ws035-p029 | Chromium: 依存とbuild環境（gn・ninja、NSS等の依存、クロスbuildの設定） | planning | p019, p028, WS034の依存ライブラリ | packages/network/chromium |
+| ws035-p028 | zdesktop: toolkit（GTK・Qt）が要るWaylandの対応範囲（xdg-shellの残り、keymap、clipboard、subsurface、wl_output、cursor、xdg-decoration）。**2026-09-27 に p075〜p080 へ分けた**（大きすぎるため）。この行は分けた Phase がすべて cleared になったら閉じる | planning（分割） | p059（p025 は canceled） | zdesktop、libwayland |
+| ws035-p029 | Chromium: 依存とbuild環境（gn・ninja、NSS等の依存、クロスbuildの設定） | planning | p019, p028（p075〜p080）, WS034の依存ライブラリ | packages/network/chromium |
 | ws035-p030 | Chromium: 最初のbuild（content_shell、headless） | planning | p029 | 同上 |
 | ws035-p031 | Chromium: Ozone Waylandの表示と入力 | planning | p030 | 同上 |
 | ws035-p032 | Chromium: 音声（libpulse）・フォント・ネットワークの統合 | planning | p031 | 同上 |
@@ -264,6 +264,12 @@ p001で確かめる。
 | [ws035-p072](phase072/phase.md) | （2026-09-26 自律実行）窓の最小化と、窓をデスクトップ間で移す（Wiseview の drag、キー） | cleared（q483-i01、2026-09-26。Venus で最小化と Wiseview からの復帰、タイルの drag とキーでデスクトップ間の移動） | p065 | `userland/base/zwl` |
 | [ws035-p073](phase073/phase.md) | （2026-09-27 ユーザー指示）`userland/base/zwl` を `userland/base/zdesktop`（`/bin/zdesktop`）へ改名。build・script・試験の起動と process の名・文書。C の識別子と log の接頭辞 `ZWL` は変えない | cleared（q486-i01、2026-09-27。Venus と i915 実機、boot test） | p072 | zdesktop |
 | [ws035-p074](phase074/phase.md) | （2026-09-27 ユーザー指示）libzdesktop が zdesktop の非標準の Wayland 拡張（`zed_gpu_buffer_v1`）を包む。`zed-gpu-buffer-v1-client-protocol.h`（使い手は libvulkan の WSI と libwayland だけ）と `X11/Xzed.h` を公開 header から外す。libzdesktop の GPU の buffer の API は最初の使い手（zdesktop-x11server）と一緒に | cleared（q487-i01、2026-09-27） | p073 | zdesktop、libzdesktop |
+| ws035-p075 | （p028 から分割）libwayland: 未知の interface（toolkit が wayland-scanner で作る protocol の code）の event を listener へ渡す汎用の dispatch と、event の new_id（server が作る object、`wl_data_offer` 等）。host の libwayland-server の試験 compositor と試験 protocol で確かめる | planned | — | libwayland |
+| ws035-p076 | （p028 から分割）zdesktop: xdg-shell の残り（`xdg_positioner`・`xdg_popup` と grab・`popup_done`、`xdg_toplevel` の min/max size・maximized・minimized・move・resize・show_window_menu・set_parent、`set_window_geometry`、ping） | planned | p075 | zdesktop |
+| ws035-p077 | （p028 から分割）zdesktop: `wl_subcompositor`・`wl_subsurface`（位置、上下、sync・desync、親と一緒の合成と入力） | planned | p075 | zdesktop |
+| ws035-p078 | （p028 から分割）zdesktop: `wl_keyboard` の XKB keymap（US の text keymap を fd で）、`wl_output` v4（name・description・scale・done）、seat・pointer の新しい版（frame 等） | planned | p075 | zdesktop |
+| ws035-p079 | （p028 から分割）zdesktop: `wl_data_device_manager`（client 間の clipboard の selection。drag and drop は最小）と zdesktop-terminal の Copy・Paste をそれへ | planned | p075 | zdesktop、zdesktop-terminal |
+| ws035-p080 | （p028 から分割）zdesktop: `zxdg_decoration_manager_v1`（既定は server-side）、`wp_cursor_shape_v1`、`wp_viewporter` | planned | p075、p076 | zdesktop |
 | ws035-p055 | （2026-09-25 承認）damage（buffer age と scissor） | planned（sq001） | p011 | 同上 |
 | ws035-p057 | （2026-09-25 承認）効果: すりガラス（背後のぼかし）と影 | planned（sq001） | p055 | 同上 |
 | ws035-p058 | zdesktop（secondary queue で変えた全 source）の規約の全文との照合と回帰（sq001 の締め） | planned（sq001） | sq001 の他の Phase | sq001 で変えた source |
