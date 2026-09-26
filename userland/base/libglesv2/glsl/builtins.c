@@ -1,0 +1,714 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The GLSL compiler's built-ins: the functions (a table of signatures),
+ * and the variables and constants each stage has.
+ *
+ * A signature is a string of type codes, the return type first:
+ *
+ *   G genType (float, vec2..4)     I genIType     U genUType     B genBType
+ *   V vec2..4   W ivec2..4   X uvec2..4   Y bvec2..4   (the same size as G)
+ *   f float  i int  u uint  b bool  2 3 4 vec2..4  j k ivec2..3
+ *   M a square matrix   m any matrix (the same one for every m)
+ *   a sampler1D  d sampler2D  e sampler3D  c samplerCube
+ *   h sampler1DShadow  s sampler2DShadow
+ *   A D E C a sampler of that dimension with any texel type, T its gvec4
+ *
+ * Every generic code of one signature takes the same size, so a
+ * signature is tried once for each size.
+ */
+
+#include "internal.h"
+
+#include <string.h>
+
+/* The stages a built-in exists in. */
+#define BI_VERTEX		1U
+#define BI_FRAGMENT		2U
+#define BI_BOTH			3U
+
+/* The SPIR-V opcodes of the built-ins that are one instruction. */
+#define BI_OP_ANY		154U
+#define BI_OP_TRANSPOSE		84U
+#define BI_OP_ISNAN		156U
+#define BI_OP_ISINF		157U
+#define BI_OP_IEQUAL		170U
+#define BI_OP_INOTEQUAL		171U
+#define BI_OP_UGREATER		172U
+#define BI_OP_SGREATER		173U
+#define BI_OP_UGREATER_EQUAL	174U
+#define BI_OP_SGREATER_EQUAL	175U
+#define BI_OP_ULESS		176U
+#define BI_OP_SLESS		177U
+#define BI_OP_ULESS_EQUAL	178U
+#define BI_OP_SLESS_EQUAL	179U
+#define BI_OP_FEQUAL		180U
+#define BI_OP_FNOTEQUAL		183U
+#define BI_OP_FLESS		184U
+#define BI_OP_FGREATER		186U
+#define BI_OP_FLESS_EQUAL	188U
+#define BI_OP_FGREATER_EQUAL	190U
+#define BI_OP_LOGICAL_EQUAL	164U
+#define BI_OP_LOGICAL_NOTEQUAL	165U
+#define BI_OP_DPDX		207U
+#define BI_OP_DPDY		208U
+#define BI_OP_FWIDTH		209U
+
+/*
+ * The built-in functions, grouped by name (glsl_builtin_first and
+ * glsl_builtin_next walk one name's group).
+ */
+static const struct glsl_builtin builtins_table[] = {
+	/* Angle and trigonometry. */
+	{ "radians", "GG", GLSL_BI_EXT, 11U, BI_BOTH, GLSL_IN_ALL },
+	{ "degrees", "GG", GLSL_BI_EXT, 12U, BI_BOTH, GLSL_IN_ALL },
+	{ "sin", "GG", GLSL_BI_EXT, 13U, BI_BOTH, GLSL_IN_ALL },
+	{ "cos", "GG", GLSL_BI_EXT, 14U, BI_BOTH, GLSL_IN_ALL },
+	{ "tan", "GG", GLSL_BI_EXT, 15U, BI_BOTH, GLSL_IN_ALL },
+	{ "asin", "GG", GLSL_BI_EXT, 16U, BI_BOTH, GLSL_IN_ALL },
+	{ "acos", "GG", GLSL_BI_EXT, 17U, BI_BOTH, GLSL_IN_ALL },
+	{ "atan", "GGG", GLSL_BI_EXT, 25U, BI_BOTH, GLSL_IN_ALL },
+	{ "atan", "GG", GLSL_BI_EXT, 18U, BI_BOTH, GLSL_IN_ALL },
+	{ "sinh", "GG", GLSL_BI_EXT, 19U, BI_BOTH, GLSL_IN_130_UP },
+	{ "cosh", "GG", GLSL_BI_EXT, 20U, BI_BOTH, GLSL_IN_130_UP },
+	{ "tanh", "GG", GLSL_BI_EXT, 21U, BI_BOTH, GLSL_IN_130_UP },
+	{ "asinh", "GG", GLSL_BI_EXT, 22U, BI_BOTH, GLSL_IN_130_UP },
+	{ "acosh", "GG", GLSL_BI_EXT, 23U, BI_BOTH, GLSL_IN_130_UP },
+	{ "atanh", "GG", GLSL_BI_EXT, 24U, BI_BOTH, GLSL_IN_130_UP },
+
+	/* Exponentials. */
+	{ "pow", "GGG", GLSL_BI_EXT, 26U, BI_BOTH, GLSL_IN_ALL },
+	{ "exp", "GG", GLSL_BI_EXT, 27U, BI_BOTH, GLSL_IN_ALL },
+	{ "log", "GG", GLSL_BI_EXT, 28U, BI_BOTH, GLSL_IN_ALL },
+	{ "exp2", "GG", GLSL_BI_EXT, 29U, BI_BOTH, GLSL_IN_ALL },
+	{ "log2", "GG", GLSL_BI_EXT, 30U, BI_BOTH, GLSL_IN_ALL },
+	{ "sqrt", "GG", GLSL_BI_EXT, 31U, BI_BOTH, GLSL_IN_ALL },
+	{ "inversesqrt", "GG", GLSL_BI_EXT, 32U, BI_BOTH, GLSL_IN_ALL },
+
+	/* Common functions. */
+	{ "abs", "GG", GLSL_BI_EXT, 4U, BI_BOTH, GLSL_IN_ALL },
+	{ "abs", "II", GLSL_BI_EXT, 5U, BI_BOTH, GLSL_IN_130_UP },
+	{ "sign", "GG", GLSL_BI_EXT, 6U, BI_BOTH, GLSL_IN_ALL },
+	{ "sign", "II", GLSL_BI_EXT, 7U, BI_BOTH, GLSL_IN_130_UP },
+	{ "floor", "GG", GLSL_BI_EXT, 8U, BI_BOTH, GLSL_IN_ALL },
+	{ "ceil", "GG", GLSL_BI_EXT, 9U, BI_BOTH, GLSL_IN_ALL },
+	{ "fract", "GG", GLSL_BI_EXT, 10U, BI_BOTH, GLSL_IN_ALL },
+	{ "trunc", "GG", GLSL_BI_EXT, 3U, BI_BOTH, GLSL_IN_130_UP },
+	{ "round", "GG", GLSL_BI_EXT, 1U, BI_BOTH, GLSL_IN_130_UP },
+	{ "roundEven", "GG", GLSL_BI_EXT, 2U, BI_BOTH, GLSL_IN_130_UP },
+	{ "mod", "GGG", GLSL_BI_SPECIAL, GLSL_SPECIAL_MOD, BI_BOTH, GLSL_IN_ALL },
+	{ "mod", "GGf", GLSL_BI_SPECIAL, GLSL_SPECIAL_MOD, BI_BOTH, GLSL_IN_ALL },
+	{ "min", "GGG", GLSL_BI_EXT, 37U, BI_BOTH, GLSL_IN_ALL },
+	{ "min", "GGf", GLSL_BI_EXT, 37U, BI_BOTH, GLSL_IN_ALL },
+	{ "min", "III", GLSL_BI_EXT, 39U, BI_BOTH, GLSL_IN_130_UP },
+	{ "min", "IIi", GLSL_BI_EXT, 39U, BI_BOTH, GLSL_IN_130_UP },
+	{ "min", "UUU", GLSL_BI_EXT, 38U, BI_BOTH, GLSL_IN_130_UP },
+	{ "min", "UUu", GLSL_BI_EXT, 38U, BI_BOTH, GLSL_IN_130_UP },
+	{ "max", "GGG", GLSL_BI_EXT, 40U, BI_BOTH, GLSL_IN_ALL },
+	{ "max", "GGf", GLSL_BI_EXT, 40U, BI_BOTH, GLSL_IN_ALL },
+	{ "max", "III", GLSL_BI_EXT, 42U, BI_BOTH, GLSL_IN_130_UP },
+	{ "max", "IIi", GLSL_BI_EXT, 42U, BI_BOTH, GLSL_IN_130_UP },
+	{ "max", "UUU", GLSL_BI_EXT, 41U, BI_BOTH, GLSL_IN_130_UP },
+	{ "max", "UUu", GLSL_BI_EXT, 41U, BI_BOTH, GLSL_IN_130_UP },
+	{ "clamp", "GGGG", GLSL_BI_EXT, 43U, BI_BOTH, GLSL_IN_ALL },
+	{ "clamp", "GGff", GLSL_BI_EXT, 43U, BI_BOTH, GLSL_IN_ALL },
+	{ "clamp", "IIII", GLSL_BI_EXT, 45U, BI_BOTH, GLSL_IN_130_UP },
+	{ "clamp", "IIii", GLSL_BI_EXT, 45U, BI_BOTH, GLSL_IN_130_UP },
+	{ "clamp", "UUUU", GLSL_BI_EXT, 44U, BI_BOTH, GLSL_IN_130_UP },
+	{ "clamp", "UUuu", GLSL_BI_EXT, 44U, BI_BOTH, GLSL_IN_130_UP },
+	{ "mix", "GGGG", GLSL_BI_EXT, 46U, BI_BOTH, GLSL_IN_ALL },
+	{ "mix", "GGGf", GLSL_BI_EXT, 46U, BI_BOTH, GLSL_IN_ALL },
+	{ "mix", "GGGB", GLSL_BI_SPECIAL, GLSL_SPECIAL_MIX_BOOL, BI_BOTH, GLSL_IN_130_UP },
+	{ "step", "GGG", GLSL_BI_EXT, 48U, BI_BOTH, GLSL_IN_ALL },
+	{ "step", "GfG", GLSL_BI_EXT, 48U, BI_BOTH, GLSL_IN_ALL },
+	{ "smoothstep", "GGGG", GLSL_BI_EXT, 49U, BI_BOTH, GLSL_IN_ALL },
+	{ "smoothstep", "GffG", GLSL_BI_EXT, 49U, BI_BOTH, GLSL_IN_ALL },
+	{ "isnan", "BG", GLSL_BI_OP, BI_OP_ISNAN, BI_BOTH, GLSL_IN_130_UP },
+	{ "isinf", "BG", GLSL_BI_OP, BI_OP_ISINF, BI_BOTH, GLSL_IN_130_UP },
+
+	/* Geometric functions. */
+	{ "length", "fG", GLSL_BI_EXT, 66U, BI_BOTH, GLSL_IN_ALL },
+	{ "distance", "fGG", GLSL_BI_EXT, 67U, BI_BOTH, GLSL_IN_ALL },
+	{ "dot", "fGG", GLSL_BI_SPECIAL, GLSL_SPECIAL_DOT, BI_BOTH, GLSL_IN_ALL },
+	{ "cross", "333", GLSL_BI_EXT, 68U, BI_BOTH, GLSL_IN_ALL },
+	{ "normalize", "GG", GLSL_BI_EXT, 69U, BI_BOTH, GLSL_IN_ALL },
+	{ "faceforward", "GGGG", GLSL_BI_SPECIAL, GLSL_SPECIAL_FACEFORWARD, BI_BOTH, GLSL_IN_ALL },
+	{ "reflect", "GGG", GLSL_BI_EXT, 71U, BI_BOTH, GLSL_IN_ALL },
+	{ "refract", "GGGf", GLSL_BI_EXT, 72U, BI_BOTH, GLSL_IN_ALL },
+
+	/* Matrix functions. */
+	{ "matrixCompMult", "mmm", GLSL_BI_SPECIAL, GLSL_SPECIAL_MATRIX_COMP_MULT, BI_BOTH, GLSL_IN_ALL },
+	{ "outerProduct", "oVV", GLSL_BI_SPECIAL, GLSL_SPECIAL_OUTER_PRODUCT, BI_BOTH, GLSL_IN_120_UP },
+	{ "transpose", "tm", GLSL_BI_OP, BI_OP_TRANSPOSE, BI_BOTH, GLSL_IN_120_UP },
+
+	/* Vector relational functions. */
+	{ "lessThan", "YVV", GLSL_BI_OP, BI_OP_FLESS, BI_BOTH, GLSL_IN_ALL },
+	{ "lessThan", "YWW", GLSL_BI_OP, BI_OP_SLESS, BI_BOTH, GLSL_IN_ALL },
+	{ "lessThan", "YXX", GLSL_BI_OP, BI_OP_ULESS, BI_BOTH, GLSL_IN_130_UP },
+	{ "lessThanEqual", "YVV", GLSL_BI_OP, BI_OP_FLESS_EQUAL, BI_BOTH, GLSL_IN_ALL },
+	{ "lessThanEqual", "YWW", GLSL_BI_OP, BI_OP_SLESS_EQUAL, BI_BOTH, GLSL_IN_ALL },
+	{ "lessThanEqual", "YXX", GLSL_BI_OP, BI_OP_ULESS_EQUAL, BI_BOTH, GLSL_IN_130_UP },
+	{ "greaterThan", "YVV", GLSL_BI_OP, BI_OP_FGREATER, BI_BOTH, GLSL_IN_ALL },
+	{ "greaterThan", "YWW", GLSL_BI_OP, BI_OP_SGREATER, BI_BOTH, GLSL_IN_ALL },
+	{ "greaterThan", "YXX", GLSL_BI_OP, BI_OP_UGREATER, BI_BOTH, GLSL_IN_130_UP },
+	{ "greaterThanEqual", "YVV", GLSL_BI_OP, BI_OP_FGREATER_EQUAL, BI_BOTH, GLSL_IN_ALL },
+	{ "greaterThanEqual", "YWW", GLSL_BI_OP, BI_OP_SGREATER_EQUAL, BI_BOTH, GLSL_IN_ALL },
+	{ "greaterThanEqual", "YXX", GLSL_BI_OP, BI_OP_UGREATER_EQUAL, BI_BOTH, GLSL_IN_130_UP },
+	{ "equal", "YVV", GLSL_BI_OP, BI_OP_FEQUAL, BI_BOTH, GLSL_IN_ALL },
+	{ "equal", "YWW", GLSL_BI_OP, BI_OP_IEQUAL, BI_BOTH, GLSL_IN_ALL },
+	{ "equal", "YXX", GLSL_BI_OP, BI_OP_IEQUAL, BI_BOTH, GLSL_IN_130_UP },
+	{ "equal", "YYY", GLSL_BI_OP, BI_OP_LOGICAL_EQUAL, BI_BOTH, GLSL_IN_ALL },
+	{ "notEqual", "YVV", GLSL_BI_OP, BI_OP_FNOTEQUAL, BI_BOTH, GLSL_IN_ALL },
+	{ "notEqual", "YWW", GLSL_BI_OP, BI_OP_INOTEQUAL, BI_BOTH, GLSL_IN_ALL },
+	{ "notEqual", "YXX", GLSL_BI_OP, BI_OP_INOTEQUAL, BI_BOTH, GLSL_IN_130_UP },
+	{ "notEqual", "YYY", GLSL_BI_OP, BI_OP_LOGICAL_NOTEQUAL, BI_BOTH, GLSL_IN_ALL },
+	{ "any", "bY", GLSL_BI_SPECIAL, GLSL_SPECIAL_ANY, BI_BOTH, GLSL_IN_ALL },
+	{ "all", "bY", GLSL_BI_SPECIAL, GLSL_SPECIAL_ALL, BI_BOTH, GLSL_IN_ALL },
+	{ "not", "YY", GLSL_BI_SPECIAL, GLSL_SPECIAL_NOT, BI_BOTH, GLSL_IN_ALL },
+
+	/* Texture lookups of OpenGL ES 1.00 and desktop 1.10 to 1.30. */
+	{ "texture2D", "4d2", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE, BI_BOTH, GLSL_IN_ALL },
+	{ "texture2D", "4d2f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_BIAS, BI_FRAGMENT, GLSL_IN_ALL },
+	{ "texture2DProj", "4d3", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_PROJ, BI_BOTH, GLSL_IN_ALL },
+	{ "texture2DProj", "4d4", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_PROJ, BI_BOTH, GLSL_IN_ALL },
+	{ "texture2DProj", "4d3f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_PROJ_BIAS, BI_FRAGMENT, GLSL_IN_ALL },
+	{ "texture2DProj", "4d4f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_PROJ_BIAS, BI_FRAGMENT, GLSL_IN_ALL },
+	{ "texture2DLod", "4d2f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_LOD, BI_VERTEX, GLSL_IN_ALL },
+	{ "texture2DProjLod", "4d3f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_PROJ_LOD, BI_VERTEX, GLSL_IN_ALL },
+	{ "texture2DProjLod", "4d4f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_PROJ_LOD, BI_VERTEX, GLSL_IN_ALL },
+	{ "textureCube", "4c3", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE, BI_BOTH, GLSL_IN_ALL },
+	{ "textureCube", "4c3f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_BIAS, BI_FRAGMENT, GLSL_IN_ALL },
+	{ "textureCubeLod", "4c3f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_LOD, BI_VERTEX, GLSL_IN_ALL },
+	{ "texture1D", "4af", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE, BI_BOTH, GLSL_IN_DESKTOP },
+	{ "texture1D", "4aff", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_BIAS, BI_FRAGMENT, GLSL_IN_DESKTOP },
+	{ "texture1DProj", "4a2", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_PROJ, BI_BOTH, GLSL_IN_DESKTOP },
+	{ "texture1DProj", "4a4", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_PROJ, BI_BOTH, GLSL_IN_DESKTOP },
+	{ "texture1DLod", "4aff", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_LOD, BI_VERTEX, GLSL_IN_DESKTOP },
+	{ "texture3D", "4e3", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE, BI_BOTH, GLSL_IN_DESKTOP },
+	{ "texture3D", "4e3f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_BIAS, BI_FRAGMENT, GLSL_IN_DESKTOP },
+	{ "texture3DProj", "4e4", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_PROJ, BI_BOTH, GLSL_IN_DESKTOP },
+	{ "texture3DLod", "4e3f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_LOD, BI_VERTEX, GLSL_IN_DESKTOP },
+	{ "shadow1D", "4h3", GLSL_BI_SPECIAL, GLSL_SPECIAL_SHADOW, BI_BOTH, GLSL_IN_DESKTOP },
+	{ "shadow2D", "4s3", GLSL_BI_SPECIAL, GLSL_SPECIAL_SHADOW, BI_BOTH, GLSL_IN_DESKTOP },
+	{ "shadow1DProj", "4h4", GLSL_BI_SPECIAL, GLSL_SPECIAL_SHADOW_PROJ, BI_BOTH, GLSL_IN_DESKTOP },
+	{ "shadow2DProj", "4s4", GLSL_BI_SPECIAL, GLSL_SPECIAL_SHADOW_PROJ, BI_BOTH, GLSL_IN_DESKTOP },
+
+	/* Texture lookups of GLSL 1.30. */
+	{ "texture", "TAf", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE, BI_BOTH, GLSL_IN_130_UP },
+	{ "texture", "TD2", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE, BI_BOTH, GLSL_IN_130_UP },
+	{ "texture", "TE3", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE, BI_BOTH, GLSL_IN_130_UP },
+	{ "texture", "TC3", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE, BI_BOTH, GLSL_IN_130_UP },
+	{ "texture", "TAff", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_BIAS, BI_FRAGMENT, GLSL_IN_130_UP },
+	{ "texture", "TD2f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_BIAS, BI_FRAGMENT, GLSL_IN_130_UP },
+	{ "texture", "TE3f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_BIAS, BI_FRAGMENT, GLSL_IN_130_UP },
+	{ "texture", "TC3f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_BIAS, BI_FRAGMENT, GLSL_IN_130_UP },
+	{ "texture", "fh3", GLSL_BI_SPECIAL, GLSL_SPECIAL_SHADOW, BI_BOTH, GLSL_IN_130_UP },
+	{ "texture", "fs3", GLSL_BI_SPECIAL, GLSL_SPECIAL_SHADOW, BI_BOTH, GLSL_IN_130_UP },
+	{ "textureProj", "TA2", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_PROJ, BI_BOTH, GLSL_IN_130_UP },
+	{ "textureProj", "TA4", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_PROJ, BI_BOTH, GLSL_IN_130_UP },
+	{ "textureProj", "TD3", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_PROJ, BI_BOTH, GLSL_IN_130_UP },
+	{ "textureProj", "TD4", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_PROJ, BI_BOTH, GLSL_IN_130_UP },
+	{ "textureProj", "TE4", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_PROJ, BI_BOTH, GLSL_IN_130_UP },
+	{ "textureLod", "TAff", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_LOD, BI_BOTH, GLSL_IN_130_UP },
+	{ "textureLod", "TD2f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_LOD, BI_BOTH, GLSL_IN_130_UP },
+	{ "textureLod", "TE3f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_LOD, BI_BOTH, GLSL_IN_130_UP },
+	{ "textureLod", "TC3f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_LOD, BI_BOTH, GLSL_IN_130_UP },
+	{ "textureSize", "iAi", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_SIZE, BI_BOTH, GLSL_IN_130_UP },
+	{ "textureSize", "jDi", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_SIZE, BI_BOTH, GLSL_IN_130_UP },
+	{ "textureSize", "kEi", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_SIZE, BI_BOTH, GLSL_IN_130_UP },
+	{ "textureSize", "jCi", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_SIZE, BI_BOTH, GLSL_IN_130_UP },
+	{ "texelFetch", "TAii", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXEL_FETCH, BI_BOTH, GLSL_IN_130_UP },
+	{ "texelFetch", "TDji", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXEL_FETCH, BI_BOTH, GLSL_IN_130_UP },
+	{ "texelFetch", "TEki", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXEL_FETCH, BI_BOTH, GLSL_IN_130_UP },
+
+	/* Derivatives (OpenGL ES needs OES_standard_derivatives). */
+	{ "dFdx", "GG", GLSL_BI_OP, BI_OP_DPDX, BI_FRAGMENT, GLSL_IN_ALL | GLSL_IN_DERIVATIVES },
+	{ "dFdy", "GG", GLSL_BI_OP, BI_OP_DPDY, BI_FRAGMENT, GLSL_IN_ALL | GLSL_IN_DERIVATIVES },
+	{ "fwidth", "GG", GLSL_BI_OP, BI_OP_FWIDTH, BI_FRAGMENT, GLSL_IN_ALL | GLSL_IN_DERIVATIVES },
+
+	/* Noise (desktop; the result is 0, which the specification allows). */
+	{ "noise1", "fG", GLSL_BI_SPECIAL, GLSL_SPECIAL_NOISE, BI_BOTH, GLSL_IN_DESKTOP },
+	{ "noise2", "2G", GLSL_BI_SPECIAL, GLSL_SPECIAL_NOISE, BI_BOTH, GLSL_IN_DESKTOP },
+	{ "noise3", "3G", GLSL_BI_SPECIAL, GLSL_SPECIAL_NOISE, BI_BOTH, GLSL_IN_DESKTOP },
+	{ "noise4", "4G", GLSL_BI_SPECIAL, GLSL_SPECIAL_NOISE, BI_BOTH, GLSL_IN_DESKTOP }
+};
+
+/*
+ * A built-in constant: its name, value and versions.
+ */
+struct builtins_constant {
+	const char *name;
+	int32_t value;
+	unsigned versions;
+};
+
+/*
+ * The built-in constants every stage has (the limits of zedBSD's
+ * translation layer: 16 attributes and texture units, one draw buffer).
+ */
+static const struct builtins_constant builtins_constants[] = {
+	{ "gl_MaxVertexAttribs", 16, GLSL_IN_ALL },
+	{ "gl_MaxVertexUniformVectors", 256, GLSL_IN_ES100 },
+	{ "gl_MaxVaryingVectors", 15, GLSL_IN_ES100 },
+	{ "gl_MaxVertexTextureImageUnits", 16, GLSL_IN_ALL },
+	{ "gl_MaxCombinedTextureImageUnits", 32, GLSL_IN_ALL },
+	{ "gl_MaxTextureImageUnits", 16, GLSL_IN_ALL },
+	{ "gl_MaxFragmentUniformVectors", 256, GLSL_IN_ES100 },
+	{ "gl_MaxDrawBuffers", 1, GLSL_IN_ALL },
+	{ "gl_MaxVertexUniformComponents", 1024, GLSL_IN_DESKTOP },
+	{ "gl_MaxFragmentUniformComponents", 1024, GLSL_IN_DESKTOP },
+	{ "gl_MaxVaryingFloats", 60, GLSL_IN_110 | GLSL_IN_120 },
+	{ "gl_MaxVaryingComponents", 60, GLSL_IN_130_UP },
+	{ "gl_MaxTextureCoords", 8, GLSL_IN_DESKTOP },
+	{ "gl_MaxTextureUnits", 16, GLSL_IN_DESKTOP },
+	{ "gl_MaxLights", 8, GLSL_IN_DESKTOP },
+	{ "gl_MaxClipPlanes", 8, GLSL_IN_DESKTOP },
+	{ "gl_MaxClipDistances", 8, GLSL_IN_130_UP }
+};
+
+static unsigned builtins_version_mask(const struct glsl_shader *shader);
+static int builtins_match_size(const struct glsl_builtin *builtin, const struct glsl_type **arguments, unsigned count, unsigned size, int convert, const struct glsl_type **parameters, const struct glsl_type **result);
+static const struct glsl_type *builtins_code_type(char code, unsigned size, const struct glsl_type **arguments, unsigned count, unsigned index);
+static int builtins_accepts(const struct glsl_type *parameter, const struct glsl_type *argument, int convert);
+static int builtins_sampler_code(char code, const struct glsl_type *argument);
+static void builtins_variable(struct glsl_shader *shader, const char *name, const struct glsl_type *type, unsigned where, unsigned builtin);
+
+/*
+ * Returns the first built-in function of a name, or NULL.
+ */
+const struct glsl_builtin *
+glsl_builtin_first(
+	const char *name)
+{
+	size_t index;
+	int differs;
+
+	/* The first entry of the name. */
+	for (index = 0U; index < sizeof(builtins_table) / sizeof(builtins_table[0]); index++) {
+		differs = strcmp(builtins_table[index].name, name);
+		if (differs == 0)
+			return &builtins_table[index];
+	}
+
+	/* No built-in of that name. */
+	return NULL;
+}
+
+/*
+ * Returns the next built-in function of the same name, or NULL.
+ */
+const struct glsl_builtin *
+glsl_builtin_next(
+	const struct glsl_builtin *builtin)
+{
+	const struct glsl_builtin *next;
+	const struct glsl_builtin *end;
+	int differs;
+
+	/* The entry after it, while it has the same name. */
+	next = builtin + 1;
+	end = builtins_table + sizeof(builtins_table) / sizeof(builtins_table[0]);
+	if (next >= end)
+		return NULL;
+	differs = strcmp(next->name, builtin->name);
+	if (differs != 0)
+		return NULL;
+
+	/* Succeeded: the next signature. */
+	return next;
+}
+
+/*
+ * Matches arguments against a built-in's signature, in the shader's
+ * version and stage.  With `convert`, int and uint arguments may become
+ * float parameters (desktop GLSL 1.20 on).  Returns 1 and the parameter
+ * and result types on a match, 0 otherwise.
+ */
+int
+glsl_builtin_match(
+	const struct glsl_shader *shader,
+	const struct glsl_builtin *builtin,
+	const struct glsl_type **arguments,
+	unsigned count,
+	int convert,
+	const struct glsl_type **parameters,
+	const struct glsl_type **result)
+{
+	unsigned mask;
+	unsigned stage;
+	unsigned size;
+	size_t length;
+	int matched;
+
+	/* The version and the stage. */
+	mask = builtins_version_mask(shader);
+	if ((builtin->versions & mask) == 0U)
+		return 0;
+	stage = BI_VERTEX;
+	if (shader->stage == GLSL_STAGE_FRAGMENT)
+		stage = BI_FRAGMENT;
+	if ((builtin->stages & stage) == 0U)
+		return 0;
+
+	/* OpenGL ES's derivatives need their extension. */
+	if ((builtin->versions & GLSL_IN_DERIVATIVES) != 0U && shader->es && !shader->derivatives)
+		return 0;
+
+	/* The number of arguments. */
+	length = strlen(builtin->signature);
+	if (length != count + 1U)
+		return 0;
+
+	/* Each size of the generic types. */
+	for (size = 1U; size <= 4U; size++) {
+		matched = builtins_match_size(builtin, arguments, count, size, convert, parameters, result);
+		if (matched)
+			return 1;
+	}
+
+	/* No size fits. */
+	return 0;
+}
+
+/*
+ * Declares the built-in variables and constants of the shader's stage
+ * and version in the current (global) scope.
+ */
+void
+glsl_builtin_variables(
+	struct glsl_shader *shader)
+{
+	struct glsl_symbol *symbol;
+	struct glsl_constant *value;
+	const struct glsl_type *type;
+	unsigned mask;
+	size_t index;
+
+	/* The constants. */
+	mask = builtins_version_mask(shader);
+	for (index = 0U; index < sizeof(builtins_constants) / sizeof(builtins_constants[0]); index++) {
+		if ((builtins_constants[index].versions & mask) == 0U)
+			continue;
+
+		/* A const int with its value. */
+		value = glsl_constant_new(&shader->arena, glsl_type_scalar(GLSL_BASE_INT));
+		value->values[0].i = builtins_constants[index].value;
+		symbol = glsl_declare(shader, builtins_constants[index].name, GLSL_SYMBOL_VARIABLE, 0U);
+		symbol->type = value->type;
+		symbol->storage = GLSL_STORAGE_CONST;
+		symbol->where = GLSL_VAR_CONST;
+		symbol->constant = value;
+	}
+
+	/* The vertex stage: the position and point size it writes, and the vertex's index (1.30). */
+	if (shader->stage == GLSL_STAGE_VERTEX) {
+		builtins_variable(shader, "gl_Position", glsl_type_vector(GLSL_BASE_FLOAT, 4U), GLSL_VAR_OUTPUT, GLSL_BUILTIN_POSITION);
+		builtins_variable(shader, "gl_PointSize", glsl_type_scalar(GLSL_BASE_FLOAT), GLSL_VAR_OUTPUT, GLSL_BUILTIN_POINT_SIZE);
+		if ((mask & GLSL_IN_130_UP) != 0U)
+			builtins_variable(shader, "gl_VertexID", glsl_type_scalar(GLSL_BASE_INT), GLSL_VAR_INPUT, GLSL_BUILTIN_VERTEX_ID);
+		return;
+	}
+
+	/* The fragment stage: its window position, facing and point coordinate. */
+	builtins_variable(shader, "gl_FragCoord", glsl_type_vector(GLSL_BASE_FLOAT, 4U), GLSL_VAR_INPUT, GLSL_BUILTIN_FRAG_COORD);
+	builtins_variable(shader, "gl_FrontFacing", glsl_type_scalar(GLSL_BASE_BOOL), GLSL_VAR_INPUT, GLSL_BUILTIN_FRONT_FACING);
+	if ((mask & (GLSL_IN_ES100 | GLSL_IN_120_UP)) != 0U)
+		builtins_variable(shader, "gl_PointCoord", glsl_type_vector(GLSL_BASE_FLOAT, 2U), GLSL_VAR_INPUT, GLSL_BUILTIN_POINT_COORD);
+
+	/* Its outputs: the colour, the draw buffers (one), and the depth (desktop). */
+	builtins_variable(shader, "gl_FragColor", glsl_type_vector(GLSL_BASE_FLOAT, 4U), GLSL_VAR_OUTPUT, GLSL_BUILTIN_FRAG_COLOR);
+	type = glsl_type_array(&shader->arena, glsl_type_vector(GLSL_BASE_FLOAT, 4U), 1U);
+	builtins_variable(shader, "gl_FragData", type, GLSL_VAR_OUTPUT, GLSL_BUILTIN_FRAG_DATA);
+	if (!shader->es)
+		builtins_variable(shader, "gl_FragDepth", glsl_type_scalar(GLSL_BASE_FLOAT), GLSL_VAR_OUTPUT, GLSL_BUILTIN_FRAG_DEPTH);
+}
+
+/* Returns the GLSL_IN_* bit of the shader's version. */
+static unsigned
+builtins_version_mask(
+	const struct glsl_shader *shader)
+{
+	/* OpenGL ES 1.00, then desktop 1.10, 1.20 and 1.30. */
+	if (shader->es)
+		return GLSL_IN_ES100;
+	if (shader->version == GLSL_VERSION_110)
+		return GLSL_IN_110;
+	if (shader->version == GLSL_VERSION_120)
+		return GLSL_IN_120;
+
+	/* 1.30. */
+	return GLSL_IN_130;
+}
+
+/* Matches a signature with its generic codes taking one size. */
+static int
+builtins_match_size(
+	const struct glsl_builtin *builtin,
+	const struct glsl_type **arguments,
+	unsigned count,
+	unsigned size,
+	int convert,
+	const struct glsl_type **parameters,
+	const struct glsl_type **result)
+{
+	const struct glsl_type *parameter;
+	unsigned index;
+	int accepted;
+	int sampler;
+	char code;
+
+	/* Each parameter's type for this size, and whether its argument fits. */
+	for (index = 0U; index < count; index++) {
+		code = builtin->signature[index + 1U];
+
+		/* A sampler code matches the argument's sampler kind. */
+		sampler = builtins_sampler_code(code, arguments[index]);
+		if (sampler < 0)
+			return 0;
+		if (sampler > 0) {
+			parameters[index] = arguments[index];
+			continue;
+		}
+
+		/* Any other code is a type the argument must be (or convert to). */
+		parameter = builtins_code_type(code, size, arguments, count, index);
+		if (parameter == NULL)
+			return 0;
+		accepted = builtins_accepts(parameter, arguments[index], convert);
+		if (!accepted)
+			return 0;
+		parameters[index] = parameter;
+	}
+
+	/* The result's type. */
+	*result = builtins_code_type(builtin->signature[0], size, arguments, count, count);
+	if (*result == NULL)
+		return 0;
+
+	/* Succeeded: every argument fits. */
+	return 1;
+}
+
+/*
+ * Returns the type a code stands for with the generic size, or NULL when
+ * the code does not exist in that size.  The matrix codes take their
+ * type from the arguments (index is the parameter being matched, or
+ * count for the result).
+ */
+static const struct glsl_type *
+builtins_code_type(
+	char code,
+	unsigned size,
+	const struct glsl_type **arguments,
+	unsigned count,
+	unsigned index)
+{
+	const struct glsl_type *matrix;
+	unsigned other;
+
+	/* The codes that stand for fixed types. */
+	switch (code) {
+	case 'f':
+		return glsl_type_scalar(GLSL_BASE_FLOAT);
+	case 'i':
+		return glsl_type_scalar(GLSL_BASE_INT);
+	case 'u':
+		return glsl_type_scalar(GLSL_BASE_UINT);
+	case 'b':
+		return glsl_type_scalar(GLSL_BASE_BOOL);
+	case '2':
+		return glsl_type_vector(GLSL_BASE_FLOAT, 2U);
+	case '3':
+		return glsl_type_vector(GLSL_BASE_FLOAT, 3U);
+	case '4':
+		return glsl_type_vector(GLSL_BASE_FLOAT, 4U);
+	case 'j':
+		return glsl_type_vector(GLSL_BASE_INT, 2U);
+	case 'k':
+		return glsl_type_vector(GLSL_BASE_INT, 3U);
+	case 'G':
+		return glsl_type_vector(GLSL_BASE_FLOAT, size);
+	case 'I':
+		return glsl_type_vector(GLSL_BASE_INT, size);
+	case 'U':
+		return glsl_type_vector(GLSL_BASE_UINT, size);
+	case 'B':
+		return glsl_type_vector(GLSL_BASE_BOOL, size);
+	default:
+		break;
+	}
+
+	/* The vector-only codes exist from size 2. */
+	if (code == 'V' || code == 'W' || code == 'X' || code == 'Y') {
+		if (size < 2U)
+			return NULL;
+		if (code == 'V')
+			return glsl_type_vector(GLSL_BASE_FLOAT, size);
+		if (code == 'W')
+			return glsl_type_vector(GLSL_BASE_INT, size);
+		if (code == 'X')
+			return glsl_type_vector(GLSL_BASE_UINT, size);
+		return glsl_type_vector(GLSL_BASE_BOOL, size);
+	}
+
+	/* A square matrix of the size. */
+	if (code == 'M') {
+		if (size < 2U)
+			return NULL;
+		return glsl_type_matrix(size, size);
+	}
+
+	/* Any matrix, taken from the first argument (size 1 only, so it is tried once). */
+	if (code == 'm' || code == 't') {
+		if (size != 1U || count == 0U || arguments[0]->kind != GLSL_KIND_MATRIX)
+			return NULL;
+		matrix = arguments[0];
+		if (code == 't')
+			return glsl_type_matrix(matrix->components, matrix->columns);
+		return matrix;
+	}
+
+	/* outerProduct's matrix: the second vector's size of columns, the first's of rows (sizes may differ). */
+	if (code == 'o') {
+		if (count != 2U)
+			return NULL;
+		other = arguments[1]->components;
+		return glsl_type_matrix(other, arguments[0]->components);
+	}
+
+	/* A sampler's texel vector: a gvec4 of the sampler argument's base. */
+	if (code == 'T') {
+		for (other = 0U; other < count; other++) {
+			if (arguments[other]->kind == GLSL_KIND_SAMPLER)
+				return glsl_type_vector(arguments[other]->base, 4U);
+		}
+
+		/* No sampler among the arguments. */
+		return NULL;
+	}
+
+	/* An unknown code (index is unused but for the matrix codes). */
+	(void)index;
+	return NULL;
+}
+
+/* Reports whether an argument fits a parameter type, converting int and uint to float when allowed. */
+static int
+builtins_accepts(
+	const struct glsl_type *parameter,
+	const struct glsl_type *argument,
+	int convert)
+{
+	int same;
+
+	/* The same type. */
+	same = glsl_type_equal(parameter, argument);
+	if (same)
+		return 1;
+
+	/* An int or uint scalar or vector to a float one of the same size. */
+	if (!convert)
+		return 0;
+	if (parameter->kind != GLSL_KIND_SCALAR && parameter->kind != GLSL_KIND_VECTOR)
+		return 0;
+	if (argument->kind != parameter->kind || argument->components != parameter->components)
+		return 0;
+	if (parameter->base != GLSL_BASE_FLOAT)
+		return 0;
+	if (argument->base != GLSL_BASE_INT && argument->base != GLSL_BASE_UINT)
+		return 0;
+
+	/* Succeeded: convertible. */
+	return 1;
+}
+
+/* Returns 1 when a sampler code matches its argument, -1 when it does not, 0 when the code is not a sampler code. */
+static int
+builtins_sampler_code(
+	char code,
+	const struct glsl_type *argument)
+{
+	unsigned sampler;
+	unsigned shadow;
+	int any_base;
+
+	/* The dimension, shadow and texel base each code wants. */
+	any_base = 0;
+	shadow = 0U;
+	switch (code) {
+	case 'a':
+		sampler = GLSL_SAMPLER_1D;
+		break;
+	case 'd':
+		sampler = GLSL_SAMPLER_2D;
+		break;
+	case 'e':
+		sampler = GLSL_SAMPLER_3D;
+		break;
+	case 'c':
+		sampler = GLSL_SAMPLER_CUBE;
+		break;
+	case 'h':
+		sampler = GLSL_SAMPLER_1D;
+		shadow = 1U;
+		break;
+	case 's':
+		sampler = GLSL_SAMPLER_2D;
+		shadow = 1U;
+		break;
+	case 'A':
+		sampler = GLSL_SAMPLER_1D;
+		any_base = 1;
+		break;
+	case 'D':
+		sampler = GLSL_SAMPLER_2D;
+		any_base = 1;
+		break;
+	case 'E':
+		sampler = GLSL_SAMPLER_3D;
+		any_base = 1;
+		break;
+	case 'C':
+		sampler = GLSL_SAMPLER_CUBE;
+		any_base = 1;
+		break;
+	default:
+		return 0;
+	}
+
+	/* The argument must be that sampler. */
+	if (argument->kind != GLSL_KIND_SAMPLER || argument->sampler != sampler || argument->shadow != shadow)
+		return -1;
+	if (!any_base && argument->base != GLSL_BASE_FLOAT)
+		return -1;
+
+	/* Succeeded: it matches. */
+	return 1;
+}
+
+/* Declares one built-in variable, and puts it among the shader's globals. */
+static void
+builtins_variable(
+	struct glsl_shader *shader,
+	const char *name,
+	const struct glsl_type *type,
+	unsigned where,
+	unsigned builtin)
+{
+	struct glsl_symbol *symbol;
+
+	/* The symbol. */
+	symbol = glsl_declare(shader, name, GLSL_SYMBOL_VARIABLE, 0U);
+	symbol->type = type;
+	symbol->where = where;
+	symbol->builtin = builtin;
+	symbol->precision = GLSL_PRECISION_HIGH;
+
+	/* Among the globals, so the emitter finds it when it is used. */
+	glsl_add_global(shader, symbol);
+}

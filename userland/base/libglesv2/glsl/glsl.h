@@ -1,0 +1,116 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * zedBSD's GLSL compiler (WS068 p015-p019): what libGLESv2, libGL and the
+ * host tests see of it.
+ *
+ * A shader is compiled on its own (preprocessed, parsed and checked), and
+ * the SPIR-V is made when a vertex and a fragment shader are linked
+ * together, because the default uniform block must have one layout in
+ * both stages.  The SPIR-V is in the form libGLESv2's translation layer
+ * takes (plan/ws068/phase008/phase.md): the uniforms other than samplers
+ * in one std140 block at set 0 binding 0, the samplers at set 0 from
+ * binding 1, attributes and varyings by location and name.
+ *
+ * Nothing here depends on the GL headers, so the compiler builds on the
+ * host as it is.
+ */
+
+#ifndef GLSL_H
+#define GLSL_H
+
+#include <stddef.h>
+#include <stdint.h>
+
+/* The stages a shader may be of. */
+#define GLSL_STAGE_VERTEX	0U
+#define GLSL_STAGE_FRAGMENT	1U
+
+/* The scalar kinds of an interface variable (the same numbers as libGLESv2's gles_uniform.base). */
+#define GLSL_INFO_FLOAT		0U
+#define GLSL_INFO_INT		1U
+#define GLSL_INFO_UINT		2U
+#define GLSL_INFO_BOOL		3U
+
+/* The kinds of samplers, by the dimension of the image they read. */
+#define GLSL_SAMPLER_NONE	0U
+#define GLSL_SAMPLER_1D		1U
+#define GLSL_SAMPLER_2D		2U
+#define GLSL_SAMPLER_3D		3U
+#define GLSL_SAMPLER_CUBE	4U
+
+/*
+ * One active uniform of a linked program as the API reports it: a leaf of
+ * the default uniform block (named the way libGLESv2's SPIR-V reflection
+ * names it: "s.field", "a[1].field") or a sampler.
+ */
+struct glsl_uniform_info {
+	/* The name, allocated with the program. */
+	char *name;
+
+	/* GLSL_INFO_*, the components of a column, the columns (1 unless a matrix), the elements (1 unless an array). */
+	unsigned base;
+	unsigned components;
+	unsigned columns;
+	unsigned size;
+
+	/* GLSL_SAMPLER_* for a sampler, and whether it compares depth (a shadow sampler). */
+	unsigned sampler;
+	unsigned shadow;
+};
+
+/*
+ * A linked program: the SPIR-V of both stages and what the API says of
+ * the uniforms.  glsl_program_free releases it.
+ */
+struct glsl_program {
+	/* The SPIR-V words of the vertex and the fragment stage. */
+	uint32_t *code[2];
+	size_t words[2];
+
+	/* The active uniforms. */
+	struct glsl_uniform_info *uniforms;
+	unsigned uniform_count;
+};
+
+/*
+ * A location glBindAttribLocation gave to an attribute name.
+ */
+struct glsl_binding {
+	const char *name;
+	unsigned location;
+};
+
+/* A compiled shader; opaque outside the compiler. */
+struct glsl_shader;
+
+/*
+ * Compiles a shader of a stage.  default_version is the version of a
+ * source without #version (100 for OpenGL ES, 110 for desktop GL).
+ * Returns the shader, or NULL when the source has errors.  *log receives
+ * a malloc'ed info log (errors, or warnings of a shader that compiled),
+ * or NULL when there is nothing to say.
+ */
+struct glsl_shader *glsl_compile(unsigned stage, const char *source, unsigned default_version, char **log);
+
+/* Frees a compiled shader. */
+void glsl_shader_free(struct glsl_shader *shader);
+
+/* Reports a compiled shader's stage. */
+unsigned glsl_shader_stage(const struct glsl_shader *shader);
+
+/*
+ * Links a vertex and a fragment shader into SPIR-V.  Returns 0 and fills
+ * *program, or -1 with *log a malloc'ed info log saying why.
+ */
+int glsl_link(const struct glsl_shader *vertex, const struct glsl_shader *fragment, const struct glsl_binding *bindings, unsigned binding_count, struct glsl_program *program, char **log);
+
+/* Frees what a successful link gave. */
+void glsl_program_free(struct glsl_program *program);
+
+#endif
