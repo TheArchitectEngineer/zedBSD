@@ -7,7 +7,8 @@
 #   sh plan/ws045/tests/target-check.sh [SYSROOT_BUILD] FILE.c...
 #
 # SYSROOT_BUILD is the build directory whose amd64/ and i386/ sysroots are
-# used (default /home/awe/zedBSD-rpi4/build, read only).
+# used (default /home/awe/zedBSD-rpi4/build, read only); arm64 compiles
+# against include/libc, as its image build does.
 set -eu
 build=/home/awe/zedBSD-rpi4/build
 case ${1:-} in
@@ -34,6 +35,15 @@ for file in "$@"; do
 		-c "$file" -o "$object.i386.o"; then
 		status=1
 	fi
+	# arm64 builds its userland against include/libc directly.
+	if ! "$clang" --target=aarch64-unknown-zedbsd -march=armv8-a \
+		-mno-outline-atomics -ffreestanding -fno-pic -fno-pie \
+		-fno-builtin -fno-common -Os -Wall -Wextra -Werror -nostdinc \
+		-Iinclude -Isrc -I. -Iinclude/libc -DHAL_ARCH_ARM64 \
+		-DKERN_USER_ABI_AARCH64 -DKERN_USER_ABI_LP64 -DKERN_UAPI_NATIVE \
+		-c "$file" -o "$object.arm64.o"; then
+		status=1
+	fi
 done
-[ $status -eq 0 ] && echo "target-check: $# files, amd64 and i386, no warning"
+[ $status -eq 0 ] && echo "target-check: $# files, amd64, i386 and arm64, no warning"
 exit $status

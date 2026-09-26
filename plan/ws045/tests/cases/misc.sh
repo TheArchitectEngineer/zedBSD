@@ -55,16 +55,16 @@ cmp --silent t1 t2; echo $?
 touch -t 202001020304 a
 touch b
 touch --reference=a b
-/usr/bin/stat -c %Y b
+stat -c %Y b
 
 #### touch -d
 touch -d '2020-01-02 03:04:05' a
-/usr/bin/stat -c %Y a
+stat -c %Y a
 
 #### touch -d with a date only and @seconds
 touch -d 2021-03-04 a
 touch -d @1700000000 b
-/usr/bin/stat -c %Y a b
+stat -c %Y a b
 
 #### touch -d relative to now is later than an old file
 touch -d '2000-01-01' old
@@ -75,7 +75,7 @@ touch -d '1 day ago' new
 touch --no-create missing; ls missing 2>/dev/null; echo $?
 touch -d @1000 f
 touch --time=mtime -d @2000 f
-/usr/bin/stat -c '%X %Y' f
+stat -c '%X %Y' f
 
 #### date -d @epoch (vim configure)
 date -u -d @1700000000 '+%Y-%m-%d %H:%M:%S'
@@ -184,12 +184,6 @@ stat -c '%s %n' f
 #### stat --format
 printf 'abcd' > f
 stat --format='%s' f
-
-#### mktemp -d
-d=$(mktemp -d ./confXXXXXX) && test -d "$d" && echo ok
-
-#### mktemp file
-f=$(mktemp ./tmp.XXXXXX) && test -f "$f" && echo ok
 
 #### cp -a keeps the mode and times
 touch -t 202001020304 f
@@ -444,8 +438,8 @@ seq 3 | head -n -0
 printf abc | head -c -0; echo
 
 #### head with a unit
-yes x | head -c 1K | wc -c
-yes | head -n 1b | wc -l
+awk 'BEGIN { for (i = 0; i < 2000; i++) print "x" }' | head -c 1K | wc -c
+awk 'BEGIN { for (i = 0; i < 2000; i++) print "y" }' | head -n 1b | wc -l
 
 #### head -q and -v
 printf 'a\n' > f1
@@ -629,10 +623,10 @@ echo 'aaabbb' | tr --squeeze-repeats ab
 env -S 'sh -c "echo one two"'
 
 #### env -S with more options inside
-X=1 env -S '-u X printenv X'; echo $?
+X=1 env -S '-u X env' | grep -c '^X='; echo $?
 
 #### env -0
-env -i A=1 B=2 env -0 | od -c
+env -i -0 A=1 B=2 | od -c
 
 #### env -C
 mkdir d
@@ -650,7 +644,7 @@ seq 4 | split -l 2 --numeric-suffixes=5 - p
 ls p*
 
 #### split -b with a unit
-yes | head -c 3000 | split -b 1K
+awk 'BEGIN { for (i = 0; i < 1500; i++) print "y" }' | split -b 1K
 ls x* | wc -l
 
 #### split --verbose

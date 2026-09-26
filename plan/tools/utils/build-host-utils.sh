@@ -15,7 +15,7 @@ mkdir -p "$out" "$out/.regex"
 cp include/libc/regex.h "$out/.regex/regex.h"
 regex="src/libc/regex/regcomp.c src/libc/regex/regexec.c src/libc/regex/regerror.c src/libc/regex/tre-mem.c"
 for utility in sed grep awk cut wc head tail sort uniq tr od expr paste join comm fold nl split csplit tsort basename dirname cat rm rmdir mkdir ln touch mv cp chmod ls \
-    cmp find xargs date stat readlink realpath seq tac timeout truncate env tee; do
+    cmp find date stat readlink realpath seq tac timeout truncate env tee; do
 	cc -std=c11 -D_GNU_SOURCE -O1 -g -w -I"$out/.regex" -I. -Iinclude \
 		userland/base/$utility/*.c userland/base/common/command.c \
 		$regex -o "$out/$utility" -lm

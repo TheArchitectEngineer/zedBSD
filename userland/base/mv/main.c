@@ -20,6 +20,11 @@
  * replaces only an older file.  -v writes each move.  The long options are
  * GNU's (--no-clobber, --update[=WHEN], --target-directory ...), and options
  * may follow operands unless POSIXLY_CORRECT is set.
+ *
+ * A regular file or a symbolic link on another file system, which rename
+ * cannot move, is copied there (with its mode, times and, as far as
+ * allowed, owner) and then removed.  A directory on another file system is
+ * not moved.
  */
 
 #include "userland/base/common/command.h"
@@ -30,6 +35,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
 /* What a move does when the new name exists. */
@@ -77,6 +83,8 @@ static int read_options(int argc, char **argv, struct options *options);
 static void apply_update(struct options *options, const char *word);
 static int move_one(const struct options *options, const char *source, const char *destination);
 static int keep_newer(const char *source, const char *destination);
+static int move_across(const char *source, const char *destination);
+static int copy_contents(const char *source, const char *destination, const struct stat *status);
 static int ask(const char *destination);
 static const char *leaf(const char *path);
 static void usage(void);
@@ -307,6 +315,26 @@ move_one(
 		result = renameat2(AT_FDCWD, source, AT_FDCWD, destination, RENAME_NOREPLACE);
 	else
 		result = rename(source, destination);
+
+	/* Another file system: a copy, then the source removed. */
+	if (result != 0 && errno == EXDEV) {
+		keep = 0;
+		if (options->replace == REPLACE_NEVER ||
+		    options->replace == REPLACE_NEVER_FAIL) {
+			result = access(destination, F_OK);
+			if (result == 0) {
+				keep = 1;
+				errno = EEXIST;
+			}
+		}
+
+		/* The copy, unless -n keeps the name there. */
+		result = -1;
+		if (!keep)
+			result = move_across(source, destination);
+	}
+
+	/* A rename that failed, or a name -n keeps. */
 	if (result != 0) {
 		if (errno == EEXIST && options->replace == REPLACE_NEVER)
 			return 0;
@@ -317,6 +345,124 @@ move_one(
 	/* Succeeded: said so with -v. */
 	if (options->verbose)
 		printf("renamed '%s' -> '%s'\n", source, destination);
+	return 0;
+}
+
+/*
+ * Moves a regular file or a symbolic link to another file system: a copy
+ * there, then the source removed.  Returns 0, or -1 with errno set.
+ */
+static int
+move_across(
+	const char *source,
+	const char *destination)
+{
+	struct stat status;
+	char target[4096];
+	ssize_t length;
+	int result;
+
+	/* What the source is. */
+	result = lstat(source, &status);
+	if (result != 0)
+		return -1;
+
+	/* A symbolic link is made again there. */
+	if ((status.st_mode & S_IFMT) == S_IFLNK) {
+		length = readlink(source, target, sizeof(target) - 1U);
+		if (length < 0)
+			return -1;
+		target[length] = '\0';
+		(void)unlink(destination);
+		result = symlink(target, destination);
+		if (result != 0)
+			return -1;
+	} else if ((status.st_mode & S_IFMT) == S_IFREG) {
+		/* A regular file is copied with its mode and times. */
+		result = copy_contents(source, destination, &status);
+		if (result != 0)
+			return -1;
+	} else {
+		/* Anything else stays. */
+		errno = EXDEV;
+		return -1;
+	}
+
+	/* Succeeded: the source goes. */
+	result = unlink(source);
+	if (result != 0)
+		return -1;
+	return 0;
+}
+
+/*
+ * Copies a regular file's bytes, mode, times and (as far as allowed) owner
+ * to a new file.  Returns 0, or -1 with errno set.
+ */
+static int
+copy_contents(
+	const char *source,
+	const char *destination,
+	const struct stat *status)
+{
+	struct timespec times[2];
+	char buffer[65536];
+	ssize_t count;
+	ssize_t written;
+	int input;
+	int output;
+	int saved;
+	int result;
+
+	/* The two files; the destination is made anew. */
+	input = open(source, O_RDONLY);
+	if (input < 0)
+		return -1;
+	output = open(destination, O_WRONLY | O_CREAT | O_TRUNC, status->st_mode & 07777);
+	if (output < 0) {
+		saved = errno;
+		close(input);
+		errno = saved;
+		return -1;
+	}
+
+	/* The bytes, a block at a time. */
+	result = 0;
+	for (;;) {
+		count = read(input, buffer, sizeof(buffer));
+		if (count == 0)
+			break;
+		if (count < 0) {
+			result = -1;
+			break;
+		}
+
+		/* The block, whole. */
+		written = write(output, buffer, (size_t)count);
+		if (written != count) {
+			result = -1;
+			break;
+		}
+	}
+
+	/* The mode, the owner and the times of the source. */
+	(void)fchmod(output, status->st_mode & 07777);
+	(void)fchown(output, status->st_uid, status->st_gid);
+	times[0] = status->st_atim;
+	times[1] = status->st_mtim;
+	(void)futimens(output, times);
+
+	/* The files are done with; a copy that failed goes. */
+	close(input);
+	saved = close(output);
+	if (result != 0 || saved != 0) {
+		saved = errno;
+		(void)unlink(destination);
+		errno = saved;
+		return -1;
+	}
+
+	/* Succeeded. */
 	return 0;
 }
 

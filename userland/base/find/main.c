@@ -13,7 +13,7 @@
  * GNU's extensions (ws045): -maxdepth, -mindepth, -regextype, -iname,
  * -ipath, -wholename, -iwholename, -regex, -iregex, -empty, -executable,
  * -readable, -writable, -false, -amin, -cmin, -mmin, -delete, -printf,
- * -quit, and -and and -or.
+ * -quit, and the operators -and and -or.
  */
 
 #include <dirent.h>
@@ -200,7 +200,7 @@ static void print_directive(char letter, char next, const char *path, const char
 static void print_time(char letter, char next, const struct stat *status);
 static char type_letter(mode_t mode);
 static void mode_text(mode_t mode, char *text);
-static void normalize_words(int argc, char **argv, int start);
+static int is_operator(const struct parser *parser, const char *letter_form, const char *word_form);
 
 /*
  * Runs the find command.
@@ -237,9 +237,6 @@ main(
 	while (parser.index < argc && !is_expression(argv[parser.index]))
 		parser.index++;
 	path_end = parser.index;
-
-	/* GNU's -and and -or are -a and -o. */
-	normalize_words(argc, argv, path_end);
 
 	/* Handles the path begin condition. */
 	if (path_begin == path_end)
@@ -365,7 +362,7 @@ parse_or(
 
 	/* Process each remaining command-line operand. */
 	while (!parser->failed && parser->index < parser->argc &&
-	       strcmp(parser->argv[parser->index], "-o") == 0) {
+	       is_operator(parser, "-o", "-or")) {
 		parent = new_node(NODE_OR);
 
 		parser->index++;
@@ -395,11 +392,11 @@ parse_and(
 	/* Process each remaining command-line operand. */
 	while (!parser->failed && parser->index < parser->argc &&
 	       strcmp(parser->argv[parser->index], ")") != 0 &&
-	       strcmp(parser->argv[parser->index], "-o") != 0) {
+	       !is_operator(parser, "-o", "-or")) {
 		parent = new_node(NODE_AND);
 
 		/* Handles the selected command-line operation. */
-		if (strcmp(parser->argv[parser->index], "-a") == 0)
+		if (is_operator(parser, "-a", "-and"))
 			parser->index++;
 
 		/* Handles the parent availability. */
@@ -1858,32 +1855,35 @@ mode_text(
 }
 
 /*
- * Turns GNU's -and and -or into -a and -o, which the parser reads, in the
- * expression that starts at start.
+ * Reports whether the word the parser is at is an operator: its POSIX form
+ * (-a, -o) or GNU's word (-and, -or).
  */
-static void
-normalize_words(
-	int argc,
-	char **argv,
-	int start)
+static int
+is_operator(
+	const struct parser *parser,
+	const char *letter_form,
+	const char *word_form)
 {
-	int index;
+	const char *word;
 	int differs;
 
-	/* Each word of the expression. */
-	for (index = start; index < argc; index++) {
-		/* -and is -a. */
-		differs = strcmp(argv[index], "-and");
-		if (differs == 0) {
-			argv[index] = (char *)"-a";
-			continue;
-		}
+	/* The word, when there is one. */
+	if (parser->index >= parser->argc)
+		return 0;
+	word = parser->argv[parser->index];
 
-		/* -or is -o. */
-		differs = strcmp(argv[index], "-or");
-		if (differs == 0)
-			argv[index] = (char *)"-o";
-	}
+	/* The POSIX form. */
+	differs = strcmp(word, letter_form);
+	if (differs == 0)
+		return 1;
+
+	/* GNU's word. */
+	differs = strcmp(word, word_form);
+	if (differs == 0)
+		return 1;
+
+	/* Neither. */
+	return 0;
 }
 
 /* Supports the file type operation. */
