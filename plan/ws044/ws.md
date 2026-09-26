@@ -9,7 +9,7 @@ Related Milestones: MG001, MG003
 Objectives: O2, O4
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001・p005 cleared。実機の起動の結果を待つ。p002・p003 は rpi4 の kernel の安定化の後
+Resume point: p001・p005〜p009 cleared（実機の結果待ち）。p002 cleared（2026-09-27、FAT32。QEMU まで）。p003（lldb）は p010（aarch64 の ptrace）・p011（aarch64 の外部 package）の後
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -41,7 +41,7 @@ user program の debugger を持つ開発機として使えるようにする。
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
 | [ws044-p001](phase001/phase.md) | console の font を PC/AT の 8x16（`vgafont`）の複製へ置き換える（HAL、承認済み） | cleared（q377-i01。QEMU raspi4b の画面で login prompt を読めた） | — |
-| ws044-p002 | SD の boot partition を FAT32 にする（`make-rpi4-hdd-image.py`、検査の script、kernel の FAT の読み取り） | planning | rpi4 の kernel の安定化 |
+| [ws044-p002](phase002/phase.md) | SD の boot partition を FAT32 にする（`make-rpi4-hdd-image.py`、検査の script、kernel の FAT の読み取り） | cleared（2026-09-27。QEMU で起動と FAT32 の mount。実機は未実施） | rpi4 の kernel の安定化（仮の基準で着手、phase.md） |
 | ws044-p003 | aarch64 で lldb を動かす（aarch64 の ptrace と `struct reg`、lldb の package の aarch64 build、guest での breakpoint・backtrace） | planning | rpi4 の kernel の安定化、ws036-p026 |
 | [ws044-p005](phase005/phase.md) | 実機起動の準備: firmware の読み込み番地（`kernel_address=0x80000`）、EMMC2 の 32-bit だけの register access。実機との違いの洗い出し | cleared（q378-i01。QEMU で起動・SD の読み書き。実機はユーザー確認待ち） | p001 |
 | ws044-p004 | 変更した source の全文の規約確認と rpi4 の回帰 | planning | p001〜p003、p005 |

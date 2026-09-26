@@ -9,7 +9,7 @@ Related Milestones: MG003, MG001
 Objectives: O2, O4
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: rpi4 は QEMU で login まで到達。残りは p021（最終回帰）、p026（LLVM の AArch64 zedbsd target）、p027（起動 parameter、HAL 差分の承認待ち）
+Resume point: p026 cleared（2026-09-27: LLVM の AArch64 zedbsd target と aarch64 の sysroot、rpi4 の build を sysroot と driver に）。残りは p028（Noct・zedinst を rpi4 に）、p027（起動 parameter、**実機の bootargs と parser の方針の判断待ち**）、p021（最終回帰）
 <!-- awesome-plan-current:end -->
 
 ## 単一目標
@@ -136,8 +136,9 @@ p009の「pc98はQEMUが無いのでbuildまで」は**前提が誤っていた*
 | ws036-p020 | x68k: build通過（QEMUが無いのでbuildまで。実機確認は人間） | canceled（2026-09-23 ユーザー決定: sun4u・x68k はコードを残してサポート外） | p018, p019 | 試験 |
 | ws036-p024 | 共通: 他platformのkcrt対応（各platformの `vmunix.mk` から `locale-record.c` を外し、kcrt・heapを足す）とmapファイル生成の追加（ws035-p034で判明）。**pcat・pc98分は2026-09-23に達成済み**。残りはrpi4・sun4u・x68kで、p025に含めて行う | cleared（rpi4 分は q366-i01。sun4u・x68k はサポート外） | p001, p025 | platformのmk、libc |
 | ws036-p021 | 全platform（amd64・pcat・pc98・rpi4）の回帰と全文規約確認（必須の最終確認） | planning | p007, p009, p012 | 全体 |
-| ws036-p026 | toolchain: LLVM の zedbsd target に AArch64 を足す（`__ZEDBSD__`、driver の link の emulation）と aarch64 の sysroot。rpi4 の `KERN_UAPI_NATIVE` 等と `ld.lld` の直接呼び出しを外し、Noct・zedinst・開発 file を rpi4 にも入れる（p012 で判明） | planning | p012 | `toolchain/llvm`、`platform/arm64` |
-| ws036-p027 | rpi4: 起動 parameter（DTB の `/chosen/bootargs`）を `hal_get_arch_handoff("boot.command-line")` で渡す。今は legacy autoroot。**HAL の差分が要る（承認待ち）** | planning | p012 | `src/hal/arm64`、HAL |
+| [ws036-p026](phase026/phase.md) | toolchain: LLVM の zedbsd target に AArch64 を足す（`__ZEDBSD__`、driver の link の emulation）と aarch64 の sysroot。rpi4 の `KERN_UAPI_NATIVE` 等と `ld.lld` の直接呼び出しを外し、開発 file を rpi4 にも入れる（p012 で判明）。Noct・zedinst は p028 に分けた | cleared（2026-09-27。patch level zedbsd7、`sysroot-arm64`、rpi4 は QEMU で login・`dyntest`、amd64 の回帰も PASS。rev-0 の cache の更新はユーザー） | p012 | `toolchain/llvm`、`platform/arm64` |
+| [ws036-p027](phase027/phase.md) | rpi4: 起動 parameter（DTB の `/chosen/bootargs`）を `hal_get_arch_handoff("boot.command-line")` で渡す。今は legacy autoroot。hal.h は変わらず、2026-09-25 の規則で実装の差分は承認不要と読めるが、**実機の firmware の bootargs（`rootwait` 等の `=` の無い token）を kernel の parser が拒み idle になる**ため、方針（parser を緩める・HAL で切り出す・別の file・据え置き）の判断待ち | planning（判断待ち） | p012 | `src/hal/arm64`、`src/kern/boot.c` |
+| [ws036-p028](phase028/phase.md) | rpi4: Noct（aarch64 の cmake toolchain、JIT）と zedinst を rpi4 の root に（p026 から分けた） | planning | p026 | `userland/base/noct`、`userland/base/zedinst` |
 
 toolchain（p022・p023）は2026-09-23のユーザー指示で加えた。LLVMのtarget追加を優先し、無ければGCCにfallbackする。
 今のLLVMは `AArch64;X86` だけをbuildしている。
