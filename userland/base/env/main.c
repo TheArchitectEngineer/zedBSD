@@ -17,8 +17,12 @@
  * installed as /usr/bin/env, the path that #! lines name; the shell has an
  * env builtin of its own.
  *
- * The new environment is an array of env's own, given to the utility with
- * execve, so that the C library's environment is never rebuilt under it.
+ * The new environment is an array of env's own.  It becomes the process
+ * environment just before the utility is run, so the utility is looked up
+ * with the PATH of the new environment, and a file without #! is run by
+ * the shell as execvp does.  env exits with 126 when the utility was found
+ * but could not be run, 127 when it could not be found, and 125 when env
+ * itself failed.
  */
 
 #include <errno.h>
@@ -27,12 +31,22 @@
 #include <string.h>
 #include <unistd.h>
 
+/* The status when env itself fails. */
+#define ENV_STATUS_FAILED 125
+
+/* The status when the utility was found but could not be run. */
+#define ENV_STATUS_NOT_RUNNABLE 126
+
+/* The status when the utility could not be found. */
+#define ENV_STATUS_NOT_FOUND 127
+
 /* The environment of the process. */
 extern char **environ;
 
+static int read_options(int argc, char **argv, int *empty);
 static void set_entry(char **entries, size_t *count, char *assignment);
+static int write_environment(char **entries);
 static int run_utility(char **arguments, char **entries);
-static int path_search(const char *name, char *path, size_t size);
 
 /*
  * Runs env.
@@ -49,40 +63,32 @@ main(
 	size_t size;
 	int index;
 	int empty;
-	int compare;
 	int status;
 
-	/* -i, or - alone, starts from nothing; -- ends the options. */
-	empty = 0;
-	for (index = 1; index < argc; index++) {
-		compare = strcmp(argv[index], "-i");
-		if (compare == 0 || (argv[index][0] == '-' && argv[index][1] == '\0')) {
-			empty = 1;
-			continue;
-		}
-
-		/* -- ends the options; anything else is the first operand. */
-		compare = strcmp(argv[index], "--");
-		if (compare == 0)
-			index++;
-		break;
-	}
+	/* Reads -i and --; the assignments follow them. */
+	index = read_options(argc, argv, &empty);
 
 	/* Room for the inherited entries and every assignment. */
 	size = (size_t)argc + 1U;
-	for (entry = environ; !empty && entry != NULL && *entry != NULL; entry++)
-		size++;
+	if (!empty) {
+		for (entry = environ; entry != NULL && *entry != NULL; entry++)
+			size++;
+	}
+
+	/* Allocates the new environment. */
 	entries = calloc(size, sizeof(*entries));
 	if (entries == NULL) {
 		fprintf(stderr, "env: out of memory\n");
-		return 125;
+		return ENV_STATUS_FAILED;
 	}
 
 	/* The inherited environment, unless -i. */
 	count = 0;
-	for (entry = environ; !empty && entry != NULL && *entry != NULL; entry++) {
-		entries[count] = *entry;
-		count++;
+	if (!empty) {
+		for (entry = environ; entry != NULL && *entry != NULL; entry++) {
+			entries[count] = *entry;
+			count++;
+		}
 	}
 
 	/* Each name=value before the utility, replacing an inherited one. */
@@ -93,16 +99,55 @@ main(
 		set_entry(entries, &count, argv[index]);
 	}
 
-	/* No utility: the environment. */
+	/* No utility: writes the environment. */
 	if (index >= argc) {
-		for (count = 0; entries[count] != NULL; count++)
-			printf("%s\n", entries[count]);
-		return 0;
+		status = write_environment(entries);
+		return status;
 	}
 
-	/* Succeeded or not: the utility, in env's place. */
+	/* The utility, in env's place; this returns only on failure. */
 	status = run_utility(argv + index, entries);
 	return status;
+}
+
+/*
+ * Reads the options: -i, or - alone, starts from nothing and -- ends them.
+ * Returns the index of the first operand.
+ */
+static int
+read_options(
+	int argc,
+	char **argv,
+	int *empty)
+{
+	int index;
+	int compare;
+
+	/* Reads options until the first operand. */
+	*empty = 0;
+	for (index = 1; index < argc; index++) {
+		/* - alone is the historical spelling of -i. */
+		if (argv[index][0] == '-' && argv[index][1] == '\0') {
+			*empty = 1;
+			continue;
+		}
+
+		/* -i starts from an empty environment. */
+		compare = strcmp(argv[index], "-i");
+		if (compare == 0) {
+			*empty = 1;
+			continue;
+		}
+
+		/* -- ends the options; anything else is the first operand. */
+		compare = strcmp(argv[index], "--");
+		if (compare == 0)
+			index++;
+		break;
+	}
+
+	/* Reports where the operands start. */
+	return index;
 }
 
 /* Sets name=value in the entries, replacing an entry of the same name. */
@@ -128,89 +173,61 @@ set_entry(
 		}
 	}
 
-	/* Succeeded: a new entry at the end. */
+	/* A new entry goes at the end. */
 	entries[*count] = assignment;
 	(*count)++;
 	entries[*count] = NULL;
 }
 
 /*
- * Runs a utility with the entries as its environment, found through PATH
- * when its name has no slash.  Returns only on failure: 127 when it cannot
- * be found, 126 when it cannot be run.
+ * Writes the environment, one entry to a line.  Returns 0, or 1 when
+ * standard output could not be written.
+ */
+static int
+write_environment(
+	char **entries)
+{
+	size_t index;
+	int failed;
+
+	/* Writes each entry. */
+	for (index = 0; entries[index] != NULL; index++)
+		printf("%s\n", entries[index]);
+
+	/* A write that failed, now or when flushed, is an error. */
+	failed = fflush(stdout);
+	if (failed == 0)
+		failed = ferror(stdout);
+	if (failed != 0) {
+		fprintf(stderr, "env: write error: %s\n", strerror(errno));
+		return 1;
+	}
+
+	/* Succeeded: the environment was written. */
+	return 0;
+}
+
+/*
+ * Runs a utility with the entries as its environment.  Returns only on
+ * failure: 127 when it cannot be found, 126 when it cannot be run.
  */
 static int
 run_utility(
 	char **arguments,
 	char **entries)
 {
-	char path[4096];
-	const char *slash;
-	int found;
+	int error;
 
-	/* A name with a slash is run as it is. */
-	slash = strchr(arguments[0], '/');
-	if (slash != NULL) {
-		execve(arguments[0], arguments, entries);
-	} else {
-		found = path_search(arguments[0], path, sizeof(path));
-		if (found)
-			execve(path, arguments, entries);
-		else
-			errno = ENOENT;
-	}
+	/* Installs the new environment and runs the utility through PATH. */
+	environ = entries;
+	execvp(arguments[0], arguments);
 
 	/* It could not be run. */
-	fprintf(stderr, "env: %s: %s\n", arguments[0], strerror(errno));
-	if (errno == ENOENT)
-		return 127;
+	error = errno;
+	fprintf(stderr, "env: %s: %s\n", arguments[0], strerror(error));
+	if (error == ENOENT)
+		return ENV_STATUS_NOT_FOUND;
 
 	/* Found but not runnable. */
-	return 126;
-}
-
-/* Finds an executable file of a name in PATH; returns whether it did. */
-static int
-path_search(
-	const char *name,
-	char *path,
-	size_t size)
-{
-	const char *directories;
-	const char *start;
-	const char *end;
-	size_t length;
-	int written;
-	int usable;
-
-	/* PATH, or the default search path. */
-	directories = getenv("PATH");
-	if (directories == NULL)
-		directories = "/bin:/usr/bin";
-
-	/* Each directory; an empty one is the current directory. */
-	start = directories;
-	for (;;) {
-		end = strchr(start, ':');
-		if (end == NULL)
-			end = start + strlen(start);
-		length = (size_t)(end - start);
-		if (length == 0)
-			written = snprintf(path, size, "%s", name);
-		else
-			written = snprintf(path, size, "%.*s/%s", (int)length, start, name);
-		if (written > 0 && (size_t)written < size) {
-			usable = access(path, X_OK);
-			if (usable == 0)
-				return 1;
-		}
-
-		/* The last directory has been looked at. */
-		if (*end == '\0')
-			break;
-		start = end + 1;
-	}
-
-	/* None. */
-	return 0;
+	return ENV_STATUS_NOT_RUNNABLE;
 }

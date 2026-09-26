@@ -34,12 +34,10 @@ static int builtin_alias(int argc, char **argv);
 static int builtin_unalias(int argc, char **argv);
 static int builtin_times(int argc, char **argv);
 static int builtin_clear(int argc, char **argv);
-static int builtin_env(int argc, char **argv);
 static int builtin_help(int argc, char **argv);
 static void alias_show(const char *name, int *status);
 static void alias_define(const char *word, const char *equals, int *status);
 static void print_time(clock_t value, long ticks, char after);
-static void env_child(int argc, char **argv, int index, int clean);
 
 /* Every builtin, sorted by name. */
 static const struct sh_builtin builtins[] = {
@@ -58,7 +56,6 @@ static const struct sh_builtin builtins[] = {
 	{ "declare", sh_builtin_declare, SH_BUILTIN_DECLARATION },
 	{ "dirs", sh_builtin_dirs, 0 },
 	{ "echo", sh_builtin_echo, 0 },
-	{ "env", builtin_env, 0 },
 	{ "eval", sh_builtin_eval, SH_BUILTIN_SPECIAL },
 	{ "exec", sh_builtin_exec, SH_BUILTIN_SPECIAL },
 	{ "exit", sh_builtin_exit, SH_BUILTIN_SPECIAL },
@@ -358,97 +355,6 @@ builtin_clear(
 
 	/* Succeeded. */
 	return 0;
-}
-
-/*
- * Implements env: env [-i] [name=value...] [command [argument...]].  With no
- * command, prints the environment.
- */
-static int
-builtin_env(
-	int argc,
-	char **argv)
-{
-	pid_t child;
-	void *job;
-	int index;
-	int clean;
-	int status;
-
-	/* -i (or -) starts from an empty environment. */
-	clean = 0;
-	index = 1;
-	if (index < argc && argv[index][0] == '-') {
-		if (argv[index][1] == '\0')
-			clean = 1;
-		else if (argv[index][1] == 'i' && argv[index][2] == '\0')
-			clean = 1;
-		if (clean)
-			index++;
-	}
-
-	/* The rest runs in a child, which changes its own variables. */
-	job = sh_job_new(0);
-	child = sh_fork(SH_FORK_FOREGROUND, job);
-	if (child == 0)
-		env_child(argc, argv, index, clean);
-	status = sh_job_wait_foreground(job);
-
-	/* Succeeded: the command's status. */
-	return status;
-}
-
-/*
- * The child of env: sets the variables, then prints the environment or runs
- * the command.  It does not return.
- */
-static void
-env_child(
-	int argc,
-	char **argv,
-	int index,
-	int clean)
-{
-	char path[PATH_MAX];
-	char **environment;
-	const char *equals;
-	int found;
-
-	/* -i clears what the shell exports. */
-	if (clean)
-		sh_var_clear_exports();
-
-	/* Each name=value, exported. */
-	for (; index < argc; index++) {
-		equals = strchr(argv[index], '=');
-		if (equals == NULL)
-			break;
-		(void)sh_var_set_assignment(argv[index], SH_VAR_EXPORT);
-	}
-
-	/* The environment the command runs with. */
-	environment = sh_var_environment();
-
-	/* With no command, the environment is printed. */
-	if (index >= argc) {
-		for (; *environment != NULL; environment++)
-			printf("%s\n", *environment);
-		fflush(stdout);
-		_exit(0);
-	}
-
-	/* The command, found on PATH. */
-	found = sh_find_command_path(argv[index], path, sizeof(path), 0);
-	if (!found) {
-		fprintf(stderr, "env: %s: not found\n", argv[index]);
-		_exit(127);
-	}
-
-	/* Run; failing that, the reason. */
-	sh_signals_for_exec();
-	execve(path, argv + index, environment);
-	fprintf(stderr, "env: %s: %s\n", argv[index], strerror(errno));
-	_exit(126);
 }
 
 /* Implements help: lists the builtins. */

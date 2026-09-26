@@ -9,7 +9,7 @@ Related Milestones: MG005
 Objectives: O1, O2, O3
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: POSIX 準拠性の台帳とコード規約の残件。本文の台帳から次の Phase を切り出す
+Resume point: p025（cp と mv）。p024 cleared。p031 まで順に実行する
 <!-- awesome-plan-current:end -->
 
 Shared tests: [WS001 test index](tests/README.md)
@@ -43,6 +43,14 @@ Shared tests: [WS001 test index](tests/README.md)
 | `ws001-p021` | [ANSI C declarations and semantic layout](phase021/phase.md) | Complete (`agent2-q006`, 2026-08-31) | All 214 implementations pass ANSI declaration, semantic paragraph, symmetric brace, loop block, entry spacing, indentation, build, automated audit, and user manual-review gates |
 | `ws001-p022` | [credential-aware VFS object creation](phase022/phase.md) | Complete (`q050`, 2026-09-01) | Production-linked UFS/overlay rollback faults, root/non-root backend matrix, and abrupt-stop/reopen/remount acceptance pass; tmpfs double link increment fixed |
 | `ws001-p023` | [truthful and durable directory fsync](phase023/phase.md) | Complete (`q050`, 2026-09-01) | VFS/UFS/overlay ordering and mutation gates plus five-launch abrupt-stop/remount durability pass; FAT/tmpfs directory sync stays explicitly unsupported |
+| `ws001-p024` | [実行系の utility（xargs・time・nohup・env・pwd）](phase024/phase.md) | cleared（2026-09-27） | host の差分 102/102・端末 7/7・amd64 guest 102/102、style 0。sh の `env` builtin を削除 |
+| `ws001-p025` | [cp と mv](phase025/phase.md) | planned | 2026-09-27 に計画 |
+| `ws001-p026` | [id・chown・chgrp・mkdir・mkfifo・rmdir](phase026/phase.md) | planned | 2026-09-27 に計画 |
+| `ws001-p027` | [expand・unexpand・fold・nl・comm](phase027/phase.md) | planned | 2026-09-27 に計画 |
+| `ws001-p028` | [split・csplit・pr](phase028/phase.md) | planned | 2026-09-27 に計画 |
+| `ws001-p029` | [diff](phase029/phase.md) | planned | 2026-09-27 に計画 |
+| `ws001-p030` | [date・sleep・uname・kill・pathchk・strings ほかの小さな utility](phase030/phase.md) | planned | 2026-09-27 に計画 |
+| `ws001-p031` | [guest の回帰と台帳の照合](phase031/phase.md) | planned | 2026-09-27 に計画 |
 
 ### q042 pre-merge identifier migration
 
@@ -71,6 +79,31 @@ WS001 is complete when every requirement in the declared profile is either
 `reviewed` with repeatable evidence or explicitly marked non-applicable by a
 documented profile decision; the utility/API matrices and this ledger agree;
 and the full declared POSIX test set passes on the supported zedBSD targets.
+
+## 2026-09-27 からの計画（p024〜p031）
+
+2026-09-27 ユーザー指示（サブエージェントで WS001 に取り組む）により、台帳（下の §12）から依存を満たす utility を選び、
+Phase に分けた。範囲の境界:
+
+- WS043（完了）が作り直した `sed`・`awk`・`grep`・`cut`・`wc`・`head`・`tail`・`sort`・`uniq`・`tr`・`od`・`paste`・`join`・
+  `rm`・`ln`・`touch`・`printf`・`echo`・`test`・`true`・`false` と、WS042（完了）の `sh` とその builtin は選ばない。
+  GNU 拡張は WS045 の範囲（`sed`・`grep`・`expr`・`awk`・`tail`・`echo` ほか）で、ここでは POSIX の要求だけを扱う。
+- 各 utility は `plan/coding-style.md` の全文で書き直す（`plan/tools/style-check.py` の違反 0）。
+- 試験は host の差分試験（`plan/tools/utils/util-diff.py`、GNU の POSIX mode と比べる）を主とし、case は
+  `plan/tools/utils/cases/<utility>.sh` に置く。host の build は [tests/build-host-ws001.sh](tests/build-host-ws001.sh)。
+  guest（amd64 QEMU）の回帰は p031 で export した case を流す。
+- 新しい program（`pwd`）は `userland/base/<name>/` と `config/ci/*.mk` の program の一覧に足す。
+
+| Phase | 対象の台帳の行 | 受け入れの核 |
+| --- | --- | --- |
+| p024 | #152 xargs、#122 time、#89 nohup、#39 env、#99 pwd | option・引用・状態 126/127 と 123/124/125・`-p`・stdout の失敗が XCU どおり。`/bin/pwd` の新設 |
+| p025 | #24 cp、#83 mv | `-R`・`-H`/`-L`/`-P`・`-p`・`-i`・`-f`、directory、同じ file の検出、別 device の mv |
+| p026 | #59 id、#18 chown、#16 chgrp、#79 mkdir、#80 mkfifo、#106 rmdir | 名前の解決、`-R`・`-H`/`-L`/`-P`・`-h`、記号の mode と umask |
+| p027 | #41 expand、#136 unexpand、#48 fold、#87 nl、#21 comm | tab の list、`-b`・`-s`、nl の全 option と節、comm の照合 |
+| p028 | #113 split、#26 csplit、#95 pr | 接尾辞の長さと尽き、regex の operand と繰り返し、pr の段と頁 |
+| p029 | #34 diff | 最長共通部分列の差分、`-b`・`-c`・`-C`・`-e`・`-f`・`-u`・`-U`・`-r`、状態 0/1/2 |
+| p030 | #30 date、#111 sleep、#134 uname、#64 kill、#93 pathchk、#114 strings、#66 link、#139 unlink、#129 tty、#71 logname | 各 utility の XCU の option と状態 |
+| p031 | 上の全部 | amd64 guest で export した case を流す。台帳の §12 と dashboard を照合する |
 
 ## 1. Project objective
 
@@ -433,7 +466,7 @@ The current register therefore contains 0 P0, 73 P1, and 38 P2 findings.
 | 36 | [du](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/du.html) | P1 known incompatibility | Only `-a` exists; `-s`/`-k`/`-x` and `-H`/`-L`, hard-link deduplication, mount/symlink/cycle rules, overflow, permissions, and traversal errors are absent. |
 | 37 | [echo](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/echo.html) | P2 incomplete proof | Simple joining/newline exists; implementation-defined `-n`/backslash cases must be documented, and NUL/locale/output-error behavior needs running-shell tests. |
 | 38 | [ed](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/ed.html) | P1 known incompatibility (P0 resolved 2026-08-24) | The independent local replacement provides a checked memory line store, basic addresses and edit commands, BRE substitution, `g`/`v`, single-operation undo, reads, and atomic sibling-file writes.  Relative/mark/BRE addresses, the remaining commands, temporary backing storage, signal recovery, exact newline/byte-count/diagnostic behavior, metadata preservation, and locale remain. |
-| 39 | [env](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/env.html) | P1 known incompatibility | Implemented as a shell builtin that only prints the environment and rejects arguments; `-i`, assignments, utility execution, PATH lookup, and 126/127 statuses are absent. |
+| 39 | [env](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/env.html) | implemented-unreviewed (`ws001-p024`) | `/usr/bin/env` handles `-i`/`-`/`--`, assignments, PATH of the new environment, scripts without `#!`, write errors, and 125/126/127 (18 host cases, amd64 guest); the incomplete sh `env` builtin was removed. |
 | 41 | [expand](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/expand.html) | P1 known incompatibility | Accepts only one tab width, not a tab list; multibyte/column handling, file-boundary state, malformed options, read/write errors, and locale semantics are incomplete. |
 | 43 | [false](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/false.html) | P2 incomplete proof | Status behavior is trivial, but operand handling in the real shell, redirection failure, traps, and special-builtin execution context are not cited or tested. |
 | 46 | [file](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/file.html) | P1 known incompatibility | Hard-coded recognition and `-L` only; required magic-file options and processing, MIME mode, default database, locale descriptions, special files, and error behavior are absent. |
@@ -464,7 +497,7 @@ The current register therefore contains 0 P0, 73 P1, and 38 P2 findings.
 | 84 | [newgrp](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/newgrp.html) | P2 incomplete proof | Membership/password and login mode paths exist; real set-ID/session behavior, supplementary groups, environment reset, shell replacement, audit/security failures, and interactive QEMU cases remain. |
 | 87 | [nl](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/nl.html) | P1 known incompatibility | Only a few body/start/increment options exist; header/footer styles, delimiters, width/format/separator, regex numbering, blank grouping, section resets, and locale/I/O behavior are absent. |
 | 88 | [nm](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/nm.html) | P1 known incompatibility | Checked ELF/archive parsing exists, but several accepted options are ignored or incomplete; standard output formats, radix/sort/undefined/dynamic symbols, archive labels, malformed objects, and non-ELF policy need review. |
-| 89 | [nohup](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/nohup.html) | P2 incomplete proof | Signal ignoring and execution exist; tty-dependent `nohup.out` redirection, mode/ownership, stderr duplication, HOME fallback, open failures, messages, and 126/127 statuses need tests. |
+| 89 | [nohup](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/nohup.html) | implemented-unreviewed (`ws001-p024`) | `nohup.out`/`$HOME/nohup.out` (0600, append), stderr routing, terminal stdin, and 126/127 pass 9 host cases, 6 pty cases, and the amd64 guest. |
 | 90 | [od](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/od.html) | P1 known incompatibility | Fixed hexadecimal dump only; `-A`, `-j`, `-N`, `-t`, `-v`, legacy operands, typed formats, duplicate suppression, endianness, offsets, and read/output failures are absent. |
 | 91 | [paste](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/paste.html) | P2 incomplete proof | Parallel/serial and a delimiter string exist; escaped delimiters, empty delimiter/list cycling, unequal/empty files, repeated stdin, long lines, descriptor limits, and I/O errors need proof. |
 | 92 | [patch](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/patch.html) | P1 known incompatibility | Minimal single-file unified-patch handling only; standard options, context/normal/ed formats, reversed/fuzzed hunks, pathname selection, rejects/backups, timestamps, safety, atomicity, and signals are absent. |
@@ -474,7 +507,7 @@ The current register therefore contains 0 P0, 73 P1, and 38 P2 findings.
 | 96 | [printf](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/printf.html) | P2 incomplete proof | Many conversions and escapes exist; format reuse, missing/extra arguments, numeric character constants, precision/width, locale, overflow/domain errors, `%b` corner cases, NUL, and output failure need running-shell tests. |
 | 97 | [prs](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/prs.html) | P1 known incompatibility | Only `-d` and `-r` are parsed and the data-spec set is partial; cutoff/all-delta selection, every keyword/escape, locale/time, malformed/classic histories, and diagnostics remain. |
 | 98 | [ps](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/ps.html) | P1 known incompatibility | A kernel snapshot and common selection/output fields exist; complete POSIX/XSI option semantics, default selection, tty/session/group/user lists, field widths/headings, time/state values, races, and permissions remain. |
-| 99 | [pwd](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/pwd.html) | P1 known incompatibility | Always calls `getcwd()` and accepts no options; `-L`/`-P`, valid logical `PWD`, removed/unsearchable directories, shell state, and output errors are absent. |
+| 99 | [pwd](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/pwd.html) | implemented-unreviewed (`ws001-p024`) | New `/bin/pwd` with `-L`/`-P` and `$PWD` validation passes 11 host cases and the amd64 guest; the shell builtin is WS042's. |
 | 100 | [read](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/read.html) | P1 known incompatibility | Reads one bounded line into one variable/`REPLY`; `-r`, `-d`, multiple variables, `IFS` splitting, backslash/continuation, NUL/EOF, long input, and current-shell semantics are absent. |
 | 104 | [rm](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/rm.html) | P1 known incompatibility | `-f` and recursive removal exist, but `-i`, `-d`, `-v`, write-protected prompting, root/dot protection, symlink traversal, deep/racing trees, locale prompts, and error aggregation are incomplete. |
 | 105 | [rmdel](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/rmdel.html) | P1 known incompatibility | Basic `-r` SID removal exists; full leaf/branch/release constraints, ownership, pending edits, MR/history preservation, classic weave, locking interruption, and diagnostics remain. |
@@ -492,7 +525,7 @@ The current register therefore contains 0 P0, 73 P1, and 38 P2 findings.
 | 118 | [tail](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/tail.html) | P1 known incompatibility | Buffers input and supports only `-n`; `-c`, `-f`, `-r`, origin/sign forms, legacy syntax, growing/truncated files, pipes, large inputs, overflow, and robust I/O are absent. |
 | 120 | [tee](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/tee.html) | implemented-unreviewed (`ws001-p018`) | `-a`/`-i`, dynamic output count, robust writes, open/write continuation, and final status pass; deterministic partial-I/O, allocation, close, descriptor, and locale review remain. |
 | 121 | [test](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/test.html) | P1 known incompatibility | Implements only small unary/binary arities; compound negation/parentheses/AND/OR, all primaries, precedence by argument count, integer errors, symlinks, permissions, and `[` form are incomplete. |
-| 122 | [time](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/time.html) | P1 known incompatibility | No `-p`, reports only elapsed time, omits user/system CPU, mishandles normalized time subtraction, and lacks signal/exec status, locale format, and redirection tests. |
+| 122 | [time](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/time.html) | implemented-unreviewed (`ws001-p024`) | `-p` format, user/system CPU from `wait4`, 126/127 and signal statuses pass 10 host cases and the amd64 guest. |
 | 124 | [touch](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/touch.html) | P1 known incompatibility | Sets both times to now and always permits create; `-a`/`-m`/`-c`, `-r`, `-t`, `-d`, parsing/ranges/timezones, permissions, symlink policy, and partial failures are absent. |
 | 125 | [tput](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/tput.html) | P1 known incompatibility | Shared checked terminfo lookup/expansion exists, but only the local capability vocabulary is supported; standard operand forms, `clear`/`init`/`reset`, booleans/numbers/statuses, parameter language, tty/output errors, and broad database compatibility remain. |
 | 126 | [tr](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/tr.html) | P1 known incompatibility | Byte ranges with `-d`/`-s` only; `-c`/`-C`, character classes, equivalence classes, repetitions, escaping, multibyte/locale semantics, empty sets, and robust I/O are absent or unsafe. |
@@ -512,7 +545,7 @@ The current register therefore contains 0 P0, 73 P1, and 38 P2 findings.
 | 148 | [wc](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/wc.html) | P1 known incompatibility | `-c`/`-l`/`-w` exist; `-m`, multibyte/locale word semantics, multiple-file totals/labels, repeated stdin, huge counts/overflow, read interruption, and output failure are absent. |
 | 149 | [what](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/what.html) | P2 incomplete proof | Identification scanning and `-s` exist; binary/NUL/chunk-boundary markers, stdin/multiple files, malformed/long text, read/write errors, and exact no-match status need review. |
 | 150 | [who](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/who.html) | P1 known incompatibility | Ignores options/operands and prints a narrow utmpx view with fixed UTC formatting; `am i`/`am I`, headings/state/writeability/idle/PID fields, locale/time, file operands, and errors are absent. |
-| 152 | [xargs](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/xargs.html) | P1 known incompatibility | Tokenizes input then executes exactly once; batching and size limits, quoting/escaping correctness, EOF strings, `-I`/`-L`/`-n`/`-s`/`-x`/`-p`/`-t`/`-r`/`-0`, empty input, and 123--127 statuses are absent. |
+| 152 | [xargs](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/xargs.html) | implemented-unreviewed (`ws001-p024`) | All options (`-0 -E -I -L -n -p -r -s -t -x`), quoting, logical lines, `-I` replacement, size limits counted both as `-s` and as the kernel counts, and statuses 123/124/125/126/127 pass 54 host cases, the `-p` pty case, and the amd64 guest. LC_MESSAGES yesexpr remains. |
 | 155 | [zcat](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/zcat.html) | P2 incomplete proof | `.Z` stdout decoding exists; multiple operands, suffix lookup, stdin, malformed/truncated streams, read/write interruption, broken pipe, diagnostics/status, and compatibility vectors remain. |
 
 ## 13. Update protocol
