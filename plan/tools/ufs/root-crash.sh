@@ -1,18 +1,18 @@
 #!/bin/sh
-# ws063-p002: cuts the machine off while the root (journal on by default)
+# ws063: cuts the machine off while the root (journal on by default)
 # is being changed, boots the disk it left, and checks that a file made
 # durable by sync survived and that the root partition checks clean after
 # the replay and a sync.
-#   sh plan/ws063/tests/root-crash.sh IMAGE SECONDS
+#   sh plan/tools/ufs/root-crash.sh IMAGE SECONDS   (an SSH guest image with the native layout)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 image=$1
 seconds=$2
 root=$(cd "$(dirname "$0")/../../.." && pwd)
 cd "$root" || exit 1
-export GUEST_RUNTIME=build/ws063-root-run
+export GUEST_RUNTIME=${GUEST_RUNTIME:-build/ufs-root-crash-run}
 guest=plan/tools/guest/guest.py
-work=build/ws063/root-crash
+work=${WORK:-build/ufs-root-crash}
 rm -rf "$work"
 mkdir -p "$work"
 

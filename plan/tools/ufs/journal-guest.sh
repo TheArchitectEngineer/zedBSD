@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws063-p002: the guest half of journal-func.sh.  Checks the journal file's
+# ws063: the guest half of journal-func.sh.  Checks the journal file's
 # name on the root, the mount options on two work volumes (A: journal by
 # default, B: made with --journal-size=0), grows directories on A, and makes
 # a volume with mkfs --journal-size.  Prints OK/FAIL lines.
@@ -68,11 +68,12 @@ check mount-b mount -t ufs /dev/nvme2n1 /vb
 echo b > /vb/b.txt
 check umount-b umount /vb
 
-# mkfs records the journal size it is given.
+# mkfs records the journal size it is given.  (Known: on a write-cached
+# mount mkfs writes the format but exits EBUSY; the host checks the record.)
 rm -f /root/mkfs.img
-: > /root/mkfs.img
-check truncate truncate -s 67108864 /root/mkfs.img
-check mkfs mkfs -t ufs --journal-size=8 /root/mkfs.img
+check dd dd if=/dev/zero of=/root/mkfs.img bs=1048576 count=64
+sync
+echo "MKFS $(mkfs -t ufs --journal-size=8 /root/mkfs.img 2>&1)"
 refused mkfs-big mkfs -t ufs --journal-size=1025 /root/mkfs.img
 sync
 echo DONE

@@ -1,12 +1,12 @@
 #!/bin/sh
-# ws063-p002: makes the same UFS images with an older zedimage-host (OLD) and
+# ws063: makes the same UFS images with an older zedimage-host (OLD) and
 # the current one (build/zedimage-host) and compares them byte for byte, then
 # checks the current ones with plan/tools/ufs/check-volume.py.  A style-only
 # change of the producer must leave its output unchanged.
-#   sh plan/ws063/tests/zedimage-compare.sh OLD
+#   sh plan/tools/ufs/zedimage-compare.sh OLD   (OLD: a zedimage-host built from an earlier tools/build/zedimage-host.c)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 old=$1
-work=build/ws063/zicmp
+work=${WORK:-build/ufs-zicmp}
 rm -rf "$work"
 mkdir -p "$work/tree/etc" "$work/tree/usr/bin"
 echo hello > "$work/tree/etc/motd"
