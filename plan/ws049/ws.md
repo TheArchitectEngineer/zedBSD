@@ -50,7 +50,7 @@ kernel の中に ACPI の AML interpreter を持ち、DSDT・SSDT を読み込�
 
 ## Phase 一覧
 
-設計: [design.md](design.md)（2026-09-27、p001）。p002〜p005、p010、p011 は host だけで進められる（完了）。p006 以降は HAL の差分の承認が前提。
+設計: [design.md](design.md)（2026-09-27、p001）。p002〜p005、p010〜p015 は host だけで進められる（完了）。p006〜p008 は HAL の差分の承認（と対象機の table）が前提、p009 はその後。
 
 | Phase | 内容 | Status | 依存 | 対象 |
 | --- | --- | --- | --- | --- |
