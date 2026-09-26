@@ -8,10 +8,11 @@ must equal that of GNU diff --minimal, so the common subsequence is a
 longest one.  -b is checked the same way on pairs that differ in blanks.
 Context hunks without context lines (-C 0) are not applied: a one-line
 range and an empty one print alike there, and patch misreads GNU diff's
-own -C 0 output in the same way.
+own -C 0 output in the same way.  --patch names another patch to apply
+the forms with (ws001-p033: zedBSD patch), which then applies -e too.
 
   python3 plan/ws001/tests/diff-random-host-test.py [--bin build/ws001/bin]
-      [--count 300] [--seed 1]
+      [--count 300] [--seed 1] [--patch build/ws001/bin/patch]
 """
 
 import argparse
@@ -57,6 +58,7 @@ def main() -> int:
 	parser.add_argument("--count", type=int, default=300)
 	parser.add_argument("--seed", type=int, default=1)
 	parser.add_argument("--keep")
+	parser.add_argument("--patch", default="/usr/bin/patch")
 	options = parser.parse_args()
 	ours = str(Path(options.bin, "diff").resolve())
 	rng = random.Random(options.seed)
@@ -91,13 +93,13 @@ def main() -> int:
 			for form in ([], ["-c"], ["-u"], ["-C", "1"], ["-U", "0"], ["-U", "1"]):
 				output = subprocess.run([ours] + form + [str(x), str(y)], capture_output=True, env=environment).stdout
 				(work / "p").write_bytes(output)
-				applied = subprocess.run(["/usr/bin/patch", "-s", "-o", str(z), str(x), str(work / "p")], capture_output=True, env=environment)
+				applied = subprocess.run([options.patch, "-o", str(z), str(x), str(work / "p")], capture_output=True, env=environment)
 				if output and (applied.returncode != 0 or z.read_bytes() != y.read_bytes()):
 					# -C 0 context hunks can be ambiguous to patch; that
 					# counts only when GNU diff's own hunks apply.
 					reference = subprocess.run(["/usr/bin/diff"] + form + [str(x), str(y)], capture_output=True, env=environment).stdout
 					(work / "p").write_bytes(reference)
-					checked = subprocess.run(["/usr/bin/patch", "-s", "-o", str(z), str(x), str(work / "p")], capture_output=True, env=environment)
+					checked = subprocess.run([options.patch, "-o", str(z), str(x), str(work / "p")], capture_output=True, env=environment)
 					if checked.returncode == 0 and z.read_bytes() == y.read_bytes():
 						problems.append("patch %s failed" % " ".join(form or ["normal"]))
 			if y.read_bytes().endswith(b"\n") or not y.read_bytes():
@@ -109,6 +111,13 @@ def main() -> int:
 				if x.read_bytes().endswith(b"\n") or not x.read_bytes():
 					if got != expected:
 						problems.append("ed -e failed")
+					# Another patch applies the ed script as well.
+					if options.patch != "/usr/bin/patch" and script:
+						(work / "p").write_bytes(script)
+						subprocess.run([options.patch, "-e", "-o", str(z), str(x), str(work / "p")], capture_output=True, env=environment)
+						if x.read_bytes().endswith(b"\n") or not x.read_bytes():
+							if z.read_bytes() != expected:
+								problems.append("patch -e failed")
 			if problems:
 				failures += 1
 				print("FAIL case %d: %s" % (case, "; ".join(problems)))

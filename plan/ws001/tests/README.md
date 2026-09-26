@@ -210,3 +210,4 @@ entire production overlay/UFS translation units.
 | `ws001-p030` | cases `date`・`small`（sleep・uname・kill・pathchk・strings・link・unlink・tty・logname）、`pinned-cases.py`（期待値を書いた case、`pinned/*.sh`。GNU が POSIX と違う点と意図した違い。`guest-run.sh ... pinned` で guest にも流す） |
 | `ws001-p031` | 全 case の guest の回帰（`guest-run.sh` に case file を列べる）、`status-after-not-found.py SERIAL_SOCKET`（q136 の観察）、`plan/tools/boot-test.sh` |
 | `ws001-p032` | case `stream`（cat・cksum・dd）、`tty-host-test.py` の dd の ^C、`pinned/posix.sh` の `cksum -a sha256` |
+| `ws001-p033` | case `patch`、`pinned/posix.sh` の patch（`-N`、normal の reject、標準出力）、`diff-random-host-test.py --patch build/ws001/bin/patch`（zedBSD diff の全形式を zedBSD patch で当てる） |

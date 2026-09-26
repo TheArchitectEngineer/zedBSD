@@ -9,7 +9,7 @@ Related Milestones: MG005
 Objectives: O1, O2, O3
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p024〜p031 cleared（2026-09-27）。p032 cleared。次は §12 の残りの P1/P2 から Phase を切り出す（候補: df・du・who・patch・find・ls・stty）
+Resume point: p024〜p031 cleared（2026-09-27）。p032・p033 cleared。次は §12 の残りの P1/P2 から Phase を切り出す（候補: df・du・who・find・ls・stty）
 <!-- awesome-plan-current:end -->
 
 Shared tests: [WS001 test index](tests/README.md)
@@ -52,6 +52,7 @@ Shared tests: [WS001 test index](tests/README.md)
 | `ws001-p030` | [date・sleep・uname・kill・pathchk・strings ほかの小さな utility](phase030/phase.md) | cleared（2026-09-27） | host の差分 44/44・期待値の case 5/5・amd64 guest 49/49、guest で date の時計の設定、style 0 |
 | `ws001-p031` | [guest の回帰と台帳の照合](phase031/phase.md) | cleared（2026-09-27） | host 945/945、amd64 guest 948/948、boot test PASS、§12 を WS042・WS043 と照合（P1 73→27、P2 38→17）、q136 は再現しない |
 | `ws001-p032` | [cat・cksum・dd](phase032/phase.md) | cleared（2026-09-27） | host 32/32・amd64 guest 38/38、dd の conv= と cbs= を全部、cksum は表の CRC、installer の `-a sha256` を保つ |
+| `ws001-p033` | [patch](phase033/phase.md) | cleared（2026-09-27） | 全形式・全 option の書き直し、host 32/32・期待値 9/9・乱数 2000/2000（zedBSD diff の全形式を当てる）・amd64 guest 70/70、style 0 |
 
 ### q042 pre-merge identifier migration
 
@@ -106,6 +107,7 @@ Phase に分けた。範囲の境界:
 | p030 | #30 date、#111 sleep、#134 uname、#64 kill、#93 pathchk、#114 strings、#66 link、#139 unlink、#129 tty、#71 logname | 各 utility の XCU の option と状態 |
 | p031 | 上の全部 | amd64 guest で export した case を流す。台帳の §12 と dashboard を照合する |
 | p032 | #13 cat、#19 cksum、#31 dd（p031 の後に追加） | 流れの utility。dd の全 conv と cbs、統計、SIGINT |
+| p033 | #92 patch（p032 の後に追加） | normal・context・unified・ed、file の決め方、`-p`・`-R`・`-N`・`-b`・`-o`・`-r`・`-D`・`-l`、fuzz と offset、reject、状態 0/1/2 |
 
 ## 1. Project objective
 
@@ -193,7 +195,7 @@ passes.  `5/5` replacement gates still does not mean full POSIX conformance.
 | `implemented-unreviewed` | 115 | includes the new local `at`, `batch`, `crontab`, and `logger` implementations |
 | `deferred-stub` | 1 | remaining service/provider blocker: `mailx` |
 | `option-disabled` | 20 | outside the selected option profile |
-| §12 の状態（2026-09-27、ws001-p031 の照合の後） | 111 | implemented-unreviewed 67、P1 27、P2 17。下の行は 2026-08-31 の値で、この行が新しい |
+| §12 の状態（2026-09-27、ws001-p033 の後） | 111 | implemented-unreviewed 71、P1 26、P2 14（表の行を数えた値。p032 で cat・cksum・dd、p033 で patch）。下の行は 2026-08-31 の値で、この行が新しい |
 | historical Phase 9 P0 findings | 3 | the imported `bc`, `ed`, and `m4` findings were resolved by Phase 10 on 2026-08-24 |
 | current policy conflicts | 0 | the declared `userland/base` provenance gate rejects the removed imported trees and fingerprints |
 | current P1 known incompatibilities | 75 | the prior 77 minus the bounded `cmp` and `tee` incompatibilities closed by `agent2-q001`; full reviews remain open |
@@ -504,7 +506,7 @@ The current register therefore contains 0 P0, 73 P1, and 38 P2 findings.
 | 89 | [nohup](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/nohup.html) | implemented-unreviewed (`ws001-p024`) | `nohup.out`/`$HOME/nohup.out` (0600, append), stderr routing, terminal stdin, and 126/127 pass 9 host cases, 6 pty cases, and the amd64 guest. |
 | 90 | [od](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/od.html) | implemented-unreviewed (WS043) | Rewritten by WS043 against the GNU POSIX-mode differential cases (`plan/tools/utils/cases/`), which pass on the host and on the amd64 guest (ws001-p031 rerun: 948/948 with the WS001 cases). |
 | 91 | [paste](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/paste.html) | implemented-unreviewed (WS043) | Rewritten by WS043 against the GNU POSIX-mode differential cases (`plan/tools/utils/cases/`), which pass on the host and on the amd64 guest (ws001-p031 rerun: 948/948 with the WS001 cases). |
-| 92 | [patch](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/patch.html) | P1 known incompatibility | Minimal single-file unified-patch handling only; standard options, context/normal/ed formats, reversed/fuzzed hunks, pathname selection, rejects/backups, timestamps, safety, atomicity, and signals are absent. |
+| 92 | [patch](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/patch.html) | implemented-unreviewed (`ws001-p033`) | Normal, context, unified and ed differences, several files per patch, filename determination with `-p` and `Index:`, `-b`/`-d`/`-D`/`-i`/`-l`/`-N`/`-o`/`-r`/`-R`, offset and fuzz, context-format rejects, atomic replacement keeping the mode, statuses 0/1/2, and diagnostics only on stderr pass the host cases against GNU patch, pinned POSIX cases, 2000 random diff/patch pairs, and the amd64 guest; SCCS retrieval and the interactive filename prompt are not done. |
 | 93 | [pathchk](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/pathchk.html) | implemented-unreviewed (`ws001-p030`) | System limits from `pathconf`, non-directory and unsearchable prefixes, `-p` portability limits and characters, and `-P` pass the host cases and the amd64 guest. |
 | 94 | [pax](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/pax.html) | P1 known incompatibility | Useful ustar/pax read/write/copy exists, but most standard options and formats, pattern selection, ownership/modes/times/links/specials, append/update semantics, substitutions, volume/error recovery, and security cases remain. |
 | 95 | [pr](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/pr.html) | implemented-unreviewed (`ws001-p028`) | All options, the POSIX header format and date, page filling/trailers/form feeds, balanced and across columns, merge, numbering, tab expansion/compression, offsets, and `+page` pass 28 host cases (header spacing and column tabs normalized against GNU) and the amd64 guest; terminal pauses (`-p`, `-f`) and multibyte widths remain unproved. |
