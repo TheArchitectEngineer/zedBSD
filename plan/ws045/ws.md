@@ -39,7 +39,7 @@ WS001（POSIX 準拠）が並行して utility と libc の POSIX の振る舞�
 | --- | --- | --- | --- |
 | [ws045-p001](phase001/phase.md) | 調査（実際の script の GNU 拡張の使われ方）と差分試験の土台（TRE の host build、GNU の case） | cleared | — |
 | [ws045-p002](phase002/phase.md) | `grep`: `-w`・`-o`・`-A`/`-B`/`-C`・`-r`/`-R`・`-h`/`-H`・`-L`・`-m`・`--include`/`--exclude`・long option・`--color`・`-Z`/`-z`・binary の扱い | cleared（GNU の case 98/98） | p001 |
-| [ws045-p003](phase003/phase.md) | `sed` の option: `-i`・`-s`・`-z`・long option・`-u`・`-l`・`--posix`・`--follow-symlinks` | planned | p001 |
+| [ws045-p003](phase003/phase.md) | `sed` の option: `-i`・`-s`・`-z`・long option・`-u`・`-l`・`--posix`・`--follow-symlinks` | cleared（option の case 全件） | p001 |
 | [ws045-p004](phase004/phase.md) | `sed` の script: bracket の中の escape、`\U`・`\L`・`\u`・`\l`・`\E`、`0,/re/`・`first~step`・`addr,+N`・`addr,~N`、`M`、`Q`・`T`・`F`・`z`・`W`・`R`・`e`・`v`、`l N` | planned | p003 |
 | [ws045-p005](phase005/phase.md) | build script が使う他の utility: `sort -V`/`-h`、`head`/`tail` の負の数と long option、`cmp -i`、`touch --reference`/`-d`、`date -d`/`-r`、`find -maxdepth` ほか、`xargs -0`/`-r`/`-d`、`readlink -f`/`-e`、`stat --format`、`/bin/echo -e`、`expr` の keyword | planned | p001 |
 | [ws045-p006](phase006/phase.md) | `awk`: gawk の拡張（`gensub`、`**`、`func`、`\x`、`systime`/`strftime`、RS の regex と `RT`、`match` の配列、`and` ほか、`--version`・`-e`・long option、`system` の値） | planned | p001 |

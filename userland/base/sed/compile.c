@@ -74,6 +74,7 @@ static void check_references(struct parser *parser, const struct sed_substitute 
 static void parse_translation(struct parser *parser, struct sed_command *command);
 static struct sed_output *open_output(struct parser *parser, const char *name);
 static void end_command(struct parser *parser);
+static void check_sandbox(const struct parser *parser);
 static void skip_blanks(struct parser *parser);
 static char peek(const struct parser *parser);
 static void resolve_labels(struct parser *parser);
@@ -255,9 +256,11 @@ parse_name(
 		command->text = parse_label(parser);
 		break;
 	case 'r':
+		check_sandbox(parser);
 		command->text = parse_filename(parser);
 		return;
 	case 'w':
+		check_sandbox(parser);
 		command->text = parse_filename(parser);
 		command->output = open_output(parser, command->text);
 		return;
@@ -276,8 +279,12 @@ parse_name(
 		skip_blanks(parser);
 		value = peek(parser);
 		digit = is_digit(value);
-		if (digit)
+		if (digit) {
 			command->exit_status = (int)parse_number(parser);
+			command->number_given = 1;
+		}
+
+		/* Only a separator may follow. */
 		break;
 	case '=':
 	case 'd':
@@ -859,6 +866,7 @@ parse_substitute_flags(
 			break;
 		case 'w':
 			/* w file takes the rest of the line. */
+			check_sandbox(parser);
 			parser->position++;
 			name = parse_filename(parser);
 			substitute->output = open_output(parser, name);
@@ -1007,6 +1015,19 @@ end_command(
 
 	/* Anything else. */
 	compile_error(parser, "extra characters after command");
+}
+
+/* Refuses a command that runs a program or touches a file, with --sandbox. */
+static void
+check_sandbox(
+	const struct parser *parser)
+{
+	/* Anything goes outside the sandbox. */
+	if (!parser->program->sandbox)
+		return;
+
+	/* The refusal ends sed. */
+	compile_error(parser, "e/r/w commands disabled in sandbox mode");
 }
 
 /* Skips spaces and tabs. */

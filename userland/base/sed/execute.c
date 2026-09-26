@@ -21,6 +21,13 @@
  *
  * Text queued by a and r is written at the end of the cycle, or when n or N
  * reads the next line.
+ *
+ * With -s (and -i) each file is a stream of its own: the read-ahead stops at
+ * the end of a file, so that $ is its last line, and the next cycle moves
+ * to the next file with the line number and the ranges started again.  With
+ * -i the output of each file goes to a temporary file beside it, which
+ * replaces the file when its last line is done (or when sed quits).  With
+ * -z a NUL byte takes the place of the newline between lines everywhere.
  */
 
 #include "userland/base/sed/sed.h"
@@ -29,6 +36,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 /* What running the script asks of the cycle. */
 #define ACTION_NEXT		0	/* go on with the next command */
@@ -41,8 +50,8 @@
 /* The groups a match reports: the whole match and \1 to \9. */
 #define MATCH_GROUPS 10
 
-/* How wide a line of l is, less its backslash. */
-#define LIST_WIDTH 69U
+/* The status of an input sed cannot edit in place (GNU's). */
+#define STATUS_PANIC 4
 
 /* A byte string that grows. */
 struct buffer {
@@ -60,6 +69,7 @@ struct queued {
 /* The state of a run. */
 struct state {
 	struct sed_program *program;
+	const struct sed_settings *settings;
 	int quiet;
 
 	/* The input files, the one open, and the line read ahead. */
@@ -71,6 +81,14 @@ struct state {
 	struct buffer ahead;
 	int have_ahead;
 	int ahead_newline;
+
+	/* The name of the file open, and of the file of the current line. */
+	const char *stream_name;
+	const char *line_name;
+
+	/* -i: the file being edited and the temporary file that replaces it. */
+	char *edit_target;
+	char *edit_temporary;
 
 	/* The pattern space (and whether its last line had a newline). */
 	struct buffer space;
@@ -108,8 +126,8 @@ static int regex_match(struct state *state, regex_t *regex, const char *text, re
 static void substitute(struct state *state, struct sed_command *command);
 static void add_replacement(struct buffer *out, const char *replacement, const char *text, const regmatch_t *matches);
 static void translate(struct state *state, const unsigned char *map);
-static void list(struct state *state);
-static void list_add(struct buffer *out, const char *text, size_t length, size_t *width);
+static void list(struct state *state, const struct sed_command *command);
+static void list_add(struct buffer *out, const char *text, size_t length, size_t *width, size_t limit);
 static void print_first_line(struct state *state);
 static void print_line_number(struct state *state);
 static int read_line(struct state *state, int append);
@@ -117,6 +135,11 @@ static int is_last(struct state *state);
 static void fill_ahead(struct state *state);
 static int read_ahead(struct state *state);
 static void open_next(struct state *state);
+static int next_file(struct state *state);
+static int start_edit(struct state *state);
+static void finish_edit(struct state *state);
+static char *backup_name(const char *target, const char *suffix);
+static char *directory_of(const char *path);
 static void queue_add(struct state *state, const char *text, int is_file);
 static void flush_queue(struct state *state);
 static void copy_file(struct state *state, const char *name);
@@ -129,6 +152,14 @@ static void buffer_reserve(struct buffer *buffer, size_t length);
 static void close_outputs(struct state *state);
 
 /*
+ * The byte that ends a line: a newline, or a NUL byte with -z.
+ *
+ * It is set once, when the run starts, and read by everything that reads
+ * or writes a line, including the files of w.
+ */
+static char line_delimiter = '\n';
+
+/*
  * Runs the script over the files (standard input when there are none).
  * Returns the exit status: 0, 2 when an input could not be read, or the
  * status given to q.
@@ -138,7 +169,7 @@ sed_execute(
 	struct sed_program *program,
 	char **files,
 	int count,
-	int quiet)
+	const struct sed_settings *settings)
 {
 	struct state state;
 	int action;
@@ -148,12 +179,18 @@ sed_execute(
 	/* The state; the pattern and hold spaces start empty. */
 	memset(&state, 0, sizeof(state));
 	state.program = program;
-	state.quiet = quiet;
+	state.settings = settings;
+	state.quiet = settings->quiet;
 	state.files = files;
 	state.file_count = count;
 	state.out.stream = stdout;
 	buffer_reserve(&state.space, 0);
 	buffer_reserve(&state.hold, 0);
+
+	/* -z: lines end with a NUL byte. */
+	line_delimiter = '\n';
+	if (settings->null_data)
+		line_delimiter = '\0';
 
 	/* Each cycle, until the input ends or q ends it. */
 	restart = 0;
@@ -174,13 +211,16 @@ sed_execute(
 		if ((action == ACTION_END || action == ACTION_QUIT) && !state.quiet)
 			output_line(&state.out, state.space.data, state.space.length, state.space_newline);
 		flush_queue(&state);
+		if (settings->unbuffered)
+			fflush(state.out.stream);
 		if (action == ACTION_RESTART)
 			restart = 1;
 		if (action == ACTION_QUIT || action == ACTION_QUIT_SILENT)
 			break;
 	}
 
-	/* Succeeded: the outputs flushed and the status. */
+	/* Succeeded: the file being edited replaced, the outputs flushed. */
+	finish_edit(&state);
 	close_outputs(&state);
 	if (state.quit_requested)
 		return state.exit_status;
@@ -265,14 +305,14 @@ run_command(
 		buffer_set(&state->space, state->hold.data, state->hold.length);
 		break;
 	case 'G':
-		buffer_add(&state->space, '\n');
+		buffer_add(&state->space, line_delimiter);
 		buffer_append(&state->space, state->hold.data, state->hold.length);
 		break;
 	case 'h':
 		buffer_set(&state->hold, state->space.data, state->space.length);
 		break;
 	case 'H':
-		buffer_add(&state->hold, '\n');
+		buffer_add(&state->hold, line_delimiter);
 		buffer_append(&state->hold, state->space.data, state->space.length);
 		break;
 	case 'x':
@@ -281,7 +321,7 @@ run_command(
 		state->hold = swap;
 		break;
 	case 'l':
-		list(state);
+		list(state, command);
 		break;
 	case 'n':
 		action = run_next(state);
@@ -358,7 +398,7 @@ run_delete_first(
 	size_t cut;
 
 	/* No newline: as d. */
-	newline = memchr(state->space.data, '\n', state->space.length);
+	newline = memchr(state->space.data, line_delimiter, state->space.length);
 	if (newline == NULL)
 		return ACTION_DELETE;
 
@@ -373,7 +413,8 @@ run_delete_first(
 
 /*
  * n: writes the pattern space (unless -n) and replaces it with the next
- * line.  With no next line, sed ends (writing the pattern space).
+ * line.  With no next line, the script ends and the pattern space is
+ * written; with -s the next file still follows.
  */
 static int
 run_next(
@@ -384,7 +425,7 @@ run_next(
 	/* No next line. */
 	last = is_last(state);
 	if (last)
-		return ACTION_QUIT;
+		return ACTION_END;
 
 	/* The pattern space out, the queue, and the next line in. */
 	if (!state->quiet)
@@ -398,7 +439,9 @@ run_next(
 
 /*
  * N: appends a newline and the next line to the pattern space.  With no
- * next line, sed ends without writing the pattern space (POSIX).
+ * next line, the script ends: GNU sed writes the pattern space, and POSIX
+ * (--posix or POSIXLY_CORRECT) deletes it unwritten.  With -s the next
+ * file still follows.
  */
 static int
 run_append_next(
@@ -406,10 +449,12 @@ run_append_next(
 {
 	int last;
 
-	/* No next line. */
+	/* No next line: written, or with POSIX not. */
 	last = is_last(state);
+	if (last && state->settings->posix)
+		return ACTION_DELETE;
 	if (last)
-		return ACTION_QUIT_SILENT;
+		return ACTION_END;
 
 	/* Succeeded: the queue, and the next line appended. */
 	flush_queue(state);
@@ -734,15 +779,26 @@ translate(
  */
 static void
 list(
-	struct state *state)
+	struct state *state,
+	const struct sed_command *command)
 {
 	static const char escapes[] = "\\\\\aa\bb\ff\nn\rr\tt\vv";
 	struct buffer out;
 	const char *found;
 	char text[8];
+	unsigned long length;
 	size_t index;
 	size_t width;
+	size_t limit;
 	unsigned char value;
+
+	/* The width: l's number, or -l's; 0 is no folding. */
+	length = state->settings->line_length;
+	if (command->number_given)
+		length = (unsigned long)command->exit_status;
+	limit = (size_t)-1;
+	if (length > 0)
+		limit = (size_t)length - 1U;
 
 	/* The line, wrapped and escaped. */
 	memset(&out, 0, sizeof(out));
@@ -757,17 +813,17 @@ list(
 		if (found != NULL && ((size_t)(found - escapes) % 2U) == 0) {
 			text[0] = '\\';
 			text[1] = found[1];
-			list_add(&out, text, 2, &width);
+			list_add(&out, text, 2, &width, limit);
 			continue;
 		}
 
 		/* An unprintable byte in octal, or a printable one as it is. */
 		if (value < 0x20U || value >= 0x7fU) {
 			(void)snprintf(text, sizeof(text), "\\%03o", value);
-			list_add(&out, text, 4, &width);
+			list_add(&out, text, 4, &width, limit);
 		} else {
 			text[0] = (char)value;
-			list_add(&out, text, 1, &width);
+			list_add(&out, text, 1, &width, limit);
 		}
 	}
 
@@ -777,16 +833,20 @@ list(
 	free(out.data);
 }
 
-/* Adds a piece of l's output, folding the line before it would be too wide. */
+/*
+ * Adds a piece of l's output, folding the line before it would be wider
+ * than limit (less the backslash that folds it).
+ */
 static void
 list_add(
 	struct buffer *out,
 	const char *text,
 	size_t length,
-	size_t *width)
+	size_t *width,
+	size_t limit)
 {
 	/* A backslash and a newline fold the line. */
-	if (*width + length > LIST_WIDTH) {
+	if (limit != (size_t)-1 && *width + length > limit) {
 		buffer_append(out, "\\\n", 2);
 		*width = 0;
 	}
@@ -804,7 +864,7 @@ print_first_line(
 	char *newline;
 
 	/* The whole space when it has one line. */
-	newline = memchr(state->space.data, '\n', state->space.length);
+	newline = memchr(state->space.data, line_delimiter, state->space.length);
 	if (newline == NULL) {
 		output_line(&state->out, state->space.data, state->space.length,
 			    state->space_newline);
@@ -838,14 +898,24 @@ read_line(
 	struct state *state,
 	int append)
 {
-	/* The line read ahead. */
+	int more;
+
+	/* The line read ahead; with -s a new cycle may go on to the next file. */
 	fill_ahead(state);
+	while (!state->have_ahead && state->settings->separate && !append) {
+		more = next_file(state);
+		if (!more)
+			return 0;
+		fill_ahead(state);
+	}
+
+	/* The end of the input. */
 	if (!state->have_ahead)
 		return 0;
 
 	/* Into the pattern space. */
 	if (append) {
-		buffer_add(&state->space, '\n');
+		buffer_add(&state->space, line_delimiter);
 		buffer_append(&state->space, state->ahead.data,
 			      state->ahead.length);
 	} else {
@@ -853,8 +923,9 @@ read_line(
 			   state->ahead.length);
 	}
 
-	/* The newline it had, and the count of lines. */
+	/* The newline it had, its file, and the count of lines. */
 	state->space_newline = state->ahead_newline;
+	state->line_name = state->stream_name;
 	state->have_ahead = 0;
 	state->line++;
 
@@ -885,8 +956,8 @@ fill_ahead(
 	if (state->have_ahead)
 		return;
 	for (;;) {
-		/* The next file that can be read. */
-		if (state->stream == NULL)
+		/* The next file that can be read; with -s only next_file opens one. */
+		if (state->stream == NULL && !state->settings->separate)
 			open_next(state);
 		if (state->stream == NULL)
 			return;
@@ -923,7 +994,7 @@ read_ahead(
 		value = getc(state->stream);
 		if (value == EOF)
 			break;
-		if (value == '\n') {
+		if (value == line_delimiter) {
 			state->ahead_newline = 1;
 			break;
 		}
@@ -954,6 +1025,7 @@ open_next(
 		if (!state->read_standard_input) {
 			state->read_standard_input = 1;
 			state->stream = stdin;
+			state->stream_name = "-";
 		}
 
 		/* Nothing more to open. */
@@ -967,20 +1039,266 @@ open_next(
 		state->next_file++;
 
 		/* - is standard input. */
+		state->stream_name = name;
 		compare = strcmp(name, "-");
 		if (compare == 0) {
 			state->stream = stdin;
 			return;
 		}
 
-		/* A file, or a message and the next one. */
+		/* A file (read a byte at a time with -u), or a message and the next. */
 		state->stream = fopen(name, "r");
+		if (state->stream != NULL && state->settings->unbuffered)
+			setvbuf(state->stream, NULL, _IONBF, 0);
 		if (state->stream != NULL)
 			return;
 		fprintf(stderr, "sed: can't read %s: %s\n", name,
 			strerror(errno));
 		state->status = 2;
 	}
+}
+
+/*
+ * Moves on to the next file with -s: the file being edited (-i) replaced,
+ * the next file that can be read opened (and, with -i, its temporary file
+ * made), and the line number and the ranges started again.  Returns 0 when
+ * there is no file left.
+ */
+static int
+next_file(
+	struct state *state)
+{
+	size_t index;
+	int started;
+
+	/* The file just done. */
+	finish_edit(state);
+
+	/* The next file that can be read, and with -i edited. */
+	for (;;) {
+		open_next(state);
+		if (state->stream == NULL)
+			return 0;
+		if (!state->settings->in_place)
+			break;
+		started = start_edit(state);
+		if (started)
+			break;
+	}
+
+	/* Succeeded: a new stream, numbered from its first line. */
+	state->line = 0;
+	for (index = 0; index < state->program->count; index++)
+		state->program->commands[index].in_range = 0;
+	return 1;
+}
+
+/*
+ * Starts editing the file just opened (-i): its output goes to a temporary
+ * file in the same directory, with the file's mode.  Returns 0 after a
+ * message, with the file closed, when it cannot be edited.
+ */
+static int
+start_edit(
+	struct state *state)
+{
+	struct stat status;
+	const char *name;
+	char *target;
+	char *directory;
+	char *temporary;
+	size_t length;
+	FILE *stream;
+	int descriptor;
+	int result;
+
+	/* Only a regular file can be edited in place. */
+	name = state->stream_name;
+	descriptor = fileno(state->stream);
+	result = fstat(descriptor, &status);
+	if (result != 0 || (status.st_mode & S_IFMT) != S_IFREG) {
+		fprintf(stderr, "sed: couldn't edit %s: not a regular file\n",
+			name);
+		if (state->stream != stdin)
+			fclose(state->stream);
+		state->stream = NULL;
+		state->status = STATUS_PANIC;
+		return 0;
+	}
+
+	/* The file replaced: the link's target with --follow-symlinks. */
+	target = NULL;
+	if (state->settings->follow_symlinks)
+		target = realpath(name, NULL);
+	if (target == NULL)
+		target = sed_strndup(name, strlen(name));
+
+	/* A temporary file beside it. */
+	directory = directory_of(target);
+	length = strlen(directory);
+	temporary = sed_malloc(length + 12U);
+	memcpy(temporary, directory, length);
+	memcpy(temporary + length, "/sedXXXXXX", 11U);
+	free(directory);
+	descriptor = mkstemp(temporary);
+	if (descriptor < 0) {
+		fprintf(stderr, "sed: couldn't open temporary file %s: %s\n",
+			temporary, strerror(errno));
+		free(temporary);
+		free(target);
+		fclose(state->stream);
+		state->stream = NULL;
+		state->status = STATUS_PANIC;
+		return 0;
+	}
+
+	/* The file's mode and owner (the owner only as far as allowed). */
+	(void)fchmod(descriptor, status.st_mode & 07777);
+	(void)fchown(descriptor, status.st_uid, status.st_gid);
+
+	/* The output of the cycles goes there. */
+	stream = fdopen(descriptor, "w");
+	if (stream == NULL) {
+		close(descriptor);
+		unlink(temporary);
+		sed_fatal("couldn't open temporary file", temporary);
+	}
+
+	/* Succeeded: the file is being edited. */
+	state->out.stream = stream;
+	state->out.missing_newline = 0;
+	state->edit_target = target;
+	state->edit_temporary = temporary;
+	return 1;
+}
+
+/*
+ * Finishes editing a file (-i): the original is renamed to the backup name
+ * when -i has a suffix, and the temporary file takes its place.
+ */
+static void
+finish_edit(
+	struct state *state)
+{
+	char *backup;
+	int result;
+
+	/* Nothing is being edited. */
+	if (state->edit_target == NULL)
+		return;
+
+	/* The output is complete. */
+	result = fclose(state->out.stream);
+	state->out.stream = stdout;
+	state->out.missing_newline = 0;
+	if (result != 0) {
+		fprintf(stderr, "sed: couldn't write %s: %s\n",
+			state->edit_temporary, strerror(errno));
+		state->status = STATUS_PANIC;
+	}
+
+	/* The original kept under the backup name. */
+	if (state->settings->suffix != NULL) {
+		backup = backup_name(state->edit_target, state->settings->suffix);
+		result = rename(state->edit_target, backup);
+		if (result != 0) {
+			fprintf(stderr, "sed: cannot rename %s: %s\n",
+				state->edit_target, strerror(errno));
+			state->status = STATUS_PANIC;
+		}
+
+		/* The name is done with. */
+		free(backup);
+	}
+
+	/* The output takes the file's place. */
+	result = rename(state->edit_temporary, state->edit_target);
+	if (result != 0) {
+		fprintf(stderr, "sed: cannot rename %s: %s\n",
+			state->edit_temporary, strerror(errno));
+		unlink(state->edit_temporary);
+		state->status = STATUS_PANIC;
+	}
+
+	/* Succeeded: nothing is being edited now. */
+	free(state->edit_target);
+	free(state->edit_temporary);
+	state->edit_target = NULL;
+	state->edit_temporary = NULL;
+}
+
+/*
+ * Returns the backup name of a file edited with -i SUFFIX, allocated: the
+ * name and the suffix, or, when the suffix holds a *, the suffix with each
+ * * made the file's base name (in the file's directory unless it names a
+ * directory of its own with a slash).
+ */
+static char *
+backup_name(
+	const char *target,
+	const char *suffix)
+{
+	struct buffer name;
+	const char *base;
+	const char *cursor;
+	const char *slash;
+	char *directory;
+
+	/* Without a *, the suffix follows the name. */
+	memset(&name, 0, sizeof(name));
+	slash = strchr(suffix, '*');
+	if (slash == NULL) {
+		buffer_append(&name, target, strlen(target));
+		buffer_append(&name, suffix, strlen(suffix));
+		return name.data;
+	}
+
+	/* The base name, which each * stands for. */
+	base = strrchr(target, '/');
+	if (base == NULL)
+		base = target;
+	else
+		base++;
+
+	/* The directory of the file, unless the suffix has one. */
+	slash = strchr(suffix, '/');
+	if (slash == NULL) {
+		directory = directory_of(target);
+		buffer_append(&name, directory, strlen(directory));
+		buffer_add(&name, '/');
+		free(directory);
+	}
+
+	/* The suffix with the base name for each *. */
+	for (cursor = suffix; *cursor != '\0'; cursor++) {
+		if (*cursor == '*')
+			buffer_append(&name, base, strlen(base));
+		else
+			buffer_add(&name, *cursor);
+	}
+
+	/* Succeeded: the name. */
+	return name.data;
+}
+
+/* Returns the directory part of a path ("." when it has none), allocated. */
+static char *
+directory_of(
+	const char *path)
+{
+	const char *slash;
+
+	/* No slash: the working directory. */
+	slash = strrchr(path, '/');
+	if (slash == NULL)
+		return sed_strndup(".", 1);
+
+	/* A file at the root. */
+	if (slash == path)
+		return sed_strndup("/", 1);
+
+	/* Succeeded: the part before the last slash. */
+	return sed_strndup(path, (size_t)(slash - path));
 }
 
 /* Queues text (a) or a file (r) for the end of the cycle. */
@@ -1067,7 +1385,7 @@ output_line(
 	output_pending_newline(output);
 	fwrite(data, 1, length, output->stream);
 	if (newline)
-		putc('\n', output->stream);
+		putc(line_delimiter, output->stream);
 	else
 		output->missing_newline = 1;
 }
@@ -1080,7 +1398,7 @@ output_pending_newline(
 	/* Only when owed. */
 	if (!output->missing_newline)
 		return;
-	putc('\n', output->stream);
+	putc(line_delimiter, output->stream);
 	output->missing_newline = 0;
 }
 

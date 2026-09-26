@@ -323,3 +323,147 @@ printf 'a\n' > target
 ln -s target link
 sed -i 's/a/b/' link
 cat target link; ls -l link | cut -c1
+
+#### -s: $ and line numbers per file
+printf 'a\nb\nc\n' > s1; printf 'd\ne\nf\n' > s2
+sed -s -n '$=' s1 s2
+sed -s -n '2,1p' s1 s2
+
+#### -s: ranges end with the file
+printf 'a\nb\nc\n' > s1; printf 'd\ne\nf\n' > s2
+sed -s -n '/b/,/e/p' s1 s2
+
+#### -s: the hold space goes on across files
+printf 'a\nb\n' > s1; printf 'c\nd\n' > s2
+sed -s -n '1h;2{x;p}' s1 s2
+
+#### -s: N at the end of a file writes it and goes on
+printf 'x\ny\n' > f1; printf 'z\n' > f2
+sed -s 'N;N;s/\n/+/g' f1 f2
+
+#### N at the end writes the pattern space (GNU)
+printf 'x\ny\nz\n' | sed 'N;s/\n/+/'
+
+#### N at the end with POSIXLY_CORRECT does not
+printf 'x\ny\nz\n' | POSIXLY_CORRECT=1 sed 'N;s/\n/+/'
+
+#### N at the end with --posix does not
+printf 'x\ny\nz\n' | sed --posix 'N;s/\n/+/'
+
+#### -s: n at the end of a file goes on with the next
+printf 'x\n' > h1; printf 'y\nz\n' > h2
+sed -s 'n;s/^/+/' h1 h2
+
+#### -s: q ends everything
+printf 'x\ny\n' > f1; printf 'z\n' > f2
+sed -s 2q f1 f2
+
+#### -s: $ skips an empty file
+printf 'x\ny\n' > f1; : > f3; printf 'z\n' > f2
+sed -s -n '$p' f1 f3 f2
+
+#### -s: a missing final newline is written when more follows
+printf 'a\nb' > u1; printf 'c\n' > u2
+sed -s p u1 u2 | od -c
+
+#### -i with q truncates the file and leaves the rest
+printf 'a\nb\nc\n' > t1; printf 'd\n' > t2
+sed -i 2q t1 t2
+cat t1; echo --; cat t2
+
+#### -i with 1d on each file
+printf 'x\ny\n' > g1; printf 'z\n' > g2
+sed -i 1d g1 g2
+cat g1 g2
+
+#### -i with r
+printf 'a\nb\n' > t1; printf 'R\n' > r
+sed -i '1r r' t1
+cat t1
+
+#### -i: the backup with * in the suffix
+printf 'a\n' > t1
+sed -i'old_*.b' 's/a/x/' t1
+cat t1 old_t1.b
+
+#### -i: the backup in another directory
+mkdir bk
+printf 'a\n' > t1
+sed -i'bk/*.old' 's/a/x/' t1
+cat t1 bk/t1.old
+
+#### -ie makes the suffix e
+printf 'a\n' > t1
+sed -ie 's/a/x/' t1
+cat t1 t1e
+
+#### -i with no file
+printf 'x\n' | sed -i 's/x/y/'; echo $?
+
+#### -i on a directory
+mkdir dd
+sed -i 's/x/y/' dd; echo $?
+
+#### -i on a file in another directory
+mkdir sub
+printf 'a\n' > sub/f
+sed -i 's/a/b/' sub/f
+cat sub/f; ls sub
+
+#### -n -i $=
+printf 'x\ny\n' > f
+sed -n -i '$=' f
+cat f
+
+#### -i -s with N at the end of a short file
+printf 'x\ny\n' > f
+sed -i -s 'N;N;s/\n/+/' f
+cat f
+
+#### -z: = and G and P and D
+printf 'a\0b\0' | sed -z '=' | od -c
+printf 'a\0b\0' | sed -z '1h;2G' | od -c
+printf 'a\0b\0c\0' | sed -z -n 'N;N;P' | od -c
+printf 'a\0b\0c\0' | sed -z 'N;D' | od -c
+
+#### -z: a file of lines is one record
+printf 'a\nb\n' | sed -z 's/a/b/' | od -c
+
+#### -z: l
+printf 'a\0b\0' | sed -z -n 'l' | od -c
+
+#### -z: missing final NUL
+printf 'a\0b' | sed -z 'p' | od -c
+
+#### -l widths
+printf 'abc\n' | sed -n -l 3 l
+printf 'abcdef\n' | sed -n -l 1 l
+printf 'abcdef\n' | sed -n 'l 0'
+printf 'abcdef\n' | sed -n 'l 4'
+
+#### --sandbox refuses w
+printf 'x\n' | sed --sandbox 'w out'; echo $?
+
+#### --sandbox refuses r
+printf 'x\n' | sed --sandbox 'r out'; echo $?
+
+#### --sandbox allows the rest
+printf 'x\n' | sed --sandbox 's/x/y/'
+
+#### -u and -z together with options after the script
+printf 'a\0' | sed 's/a/b/' -u -z | od -c
+
+#### -s with -n and F-less script on standard input
+printf 'a\nb\n' | sed -s -n '$p'
+
+#### unknown long option
+sed --nothing p </dev/null; echo $?
+
+#### ambiguous long option prefix
+printf 'x\n' | sed --qui p
+
+#### -- then a script that starts with -
+printf 'x\n' | sed -- -n; echo $?
+
+#### --expression twice
+printf 'x\n' | sed -n --expression=p --expression p

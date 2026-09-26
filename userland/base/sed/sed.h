@@ -83,8 +83,9 @@ struct sed_command {
 	unsigned char *map;
 	struct sed_output *output;
 
-	/* q: the exit status. */
+	/* q, Q: the exit status; l: the line length, when number_given. */
 	int exit_status;
+	int number_given;
 };
 
 /* A compiled script. */
@@ -101,13 +102,50 @@ struct sed_program {
 
 	/* Set by -E: the regexes are extended ones. */
 	int extended;
+
+	/* Set by --sandbox: commands that run programs or touch files fail. */
+	int sandbox;
+};
+
+/*
+ * What the command line asks of a run, besides the script.
+ *
+ * main.c fills it in from the options before the script runs; execute.c
+ * only reads it.
+ */
+struct sed_settings {
+	/* -n: the pattern space is written only when the script says so. */
+	int quiet;
+
+	/* -s: each file is a stream of its own; -i implies it. */
+	int separate;
+
+	/*
+	 * -i: each file is replaced by the output, keeping a backup named by
+	 * the suffix when there is one.
+	 */
+	int in_place;
+	const char *suffix;
+	int follow_symlinks;
+
+	/* -z: lines end with a NUL byte instead of a newline. */
+	int null_data;
+
+	/* -l: the width of the lines of l (0 for no folding). */
+	unsigned long line_length;
+
+	/* -u: input is read and output written a line at a time. */
+	int unbuffered;
+
+	/* --posix or POSIXLY_CORRECT: N at the end quits without writing. */
+	int posix;
 };
 
 /* Compiles a script (compile.c).  Returns 0 after a message for an error. */
 int sed_compile(const char *script, struct sed_program *program);
 
 /* Runs a compiled script over the files (execute.c).  Returns the status. */
-int sed_execute(struct sed_program *program, char **files, int count, int quiet);
+int sed_execute(struct sed_program *program, char **files, int count, const struct sed_settings *settings);
 
 /* Allocation that ends sed when there is no memory (main.c). */
 void *sed_malloc(size_t size);
