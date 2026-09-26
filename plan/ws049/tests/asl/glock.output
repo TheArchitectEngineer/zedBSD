@@ -1,0 +1,7 @@
+FIRMWARE waits for the Global Lock
+FIRMWARE GBL_RLS
+FIRMWARE took the Global Lock
+FIRMWARE released the Global Lock, GBL_STS
+GLOBAL-LOCK 0x0
+SCI pending
+SCI none
