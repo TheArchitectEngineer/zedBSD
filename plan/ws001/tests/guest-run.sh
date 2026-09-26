@@ -31,6 +31,11 @@ if [ $# -eq 0 ]; then
 		--export build/ws001/export > /dev/null
 else
 	for name in "$@"; do
+		# "pinned" names the cases with written-down expectations.
+		if [ "$name" = pinned ]; then
+			python3 plan/ws001/tests/pinned-cases.py --export build/ws001/export > /dev/null
+			continue
+		fi
 		python3 plan/tools/utils/util-diff.py --bin build/ws001/bin \
 			--only "$name" --export "build/ws001/export-$name" > /dev/null
 		mkdir -p build/ws001/export
