@@ -473,9 +473,13 @@ struct glsl_symbol {
 	/* The next global of the shader, in declaration order. */
 	struct glsl_symbol *next_global;
 
-	/* While emitting: the SPIR-V id of the variable, and of the pointer type to it. */
+	/* What the link gave: an input's or output's location, a uniform's index among the program's uniforms. */
+	unsigned location;
+	unsigned uniform;
+
+	/* While emitting: the SPIR-V id of the variable, and its storage class. */
 	uint32_t id;
-	uint32_t pointer_type;
+	unsigned id_storage;
 };
 
 /*

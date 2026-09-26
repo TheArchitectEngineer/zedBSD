@@ -28,7 +28,7 @@ glsl_compile(
 	unsigned default_version,
 	char **log)
 {
-	struct glsl_shader *shader;
+	struct glsl_shader *volatile shader;
 
 	/* No log until there is something to say. */
 	*log = NULL;
