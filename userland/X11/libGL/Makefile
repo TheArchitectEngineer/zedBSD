@@ -4,11 +4,17 @@ include $(dir $(lastword $(MAKEFILE_LIST)))../../base/package.mk
 # the fixed-function OpenGL 1.x over it, and GLX, which draws into an EGL pbuffer and puts each frame into
 # the X window; libX11 is built in (X programs build it into themselves too).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
+# libGLESv2's GLSL compiler (WS068 p015-p019), built in with the rest of libGLESv2's sources.
+LIBGL_GLSL_SOURCES := userland/base/libglesv2/glsl/arena.c userland/base/libglesv2/glsl/lex.c \
+	userland/base/libglesv2/glsl/preprocess.c userland/base/libglesv2/glsl/parse.c userland/base/libglesv2/glsl/types.c \
+	userland/base/libglesv2/glsl/builtins.c userland/base/libglesv2/glsl/check.c userland/base/libglesv2/glsl/fold.c \
+	userland/base/libglesv2/glsl/glsl.c userland/base/libglesv2/glsl/module.c userland/base/libglesv2/glsl/emit.c \
+	userland/base/libglesv2/glsl/emit-builtin.c userland/base/libglesv2/glsl/link.c
 LIBGL_SOURCES := userland/X11/libGL/glx.c userland/X11/libGL/fixed.c userland/X11/libGL/immediate.c \
 	userland/X11/libX11/xlib.c \
 	userland/base/libglesv2/gles.c userland/base/libglesv2/buffer.c userland/base/libglesv2/texture.c \
 	userland/base/libglesv2/spirv.c userland/base/libglesv2/program.c userland/base/libglesv2/draw.c \
-	userland/base/libglesv2/framebuffer.c
+	userland/base/libglesv2/framebuffer.c $(LIBGL_GLSL_SOURCES)
 
 # The public SONAME follows the standard spelling.
 LIBGL_IMAGE_DATA := $(if $(ZEDBSD_TOPLEVEL_BUILD),/lib/libGL.so=$(BUILD)/dynamic/libGL.so)

@@ -437,6 +437,8 @@ copy_entry(
 	regular = S_ISREG(from->st_mode);
 	symbolic = S_ISLNK(from->st_mode);
 	shared = 0;
+	if (options->verbose && (!directory || options->recursive))
+		printf("'%s' -> '%s'\n", source, destination);
 	if (options->preserve_links && !directory && from->st_nlink > 1)
 		shared = 1;
 	if (shared) {

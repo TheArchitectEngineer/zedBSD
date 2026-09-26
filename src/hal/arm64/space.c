@@ -34,6 +34,20 @@ static int next_space_id=1;
 static uint32_t space_count, page_table_count;
 static struct arm64_space *space_registry;
 
+/* The size of one level-2 block of the kernel's direct map. */
+#define ARM64_DEVICE_BLOCK_SIZE 0x200000ULL
+
+/* The physical span one level-1 entry of the direct map covers. */
+#define ARM64_DIRECT_L1_SPAN 0x40000000ULL
+
+/* The physical span the direct map's level-1 table can reach. */
+#define ARM64_DIRECT_LIMIT (512ULL * ARM64_DIRECT_L1_SPAN)
+
+static bool range_touches_ram(uint64_t physical, uint64_t size);
+static bool range_is_ram(uint64_t physical, uint64_t size);
+static int device_block_table(unsigned l1_index, uint64_t **table);
+static void map_one_device_block(uint64_t *table, unsigned l2_index, uint64_t physical);
+
 /* Allocates one zero-owner physical page for page-table use. */
 static int alloc_page(hal_physaddr_t *memory)
 {
@@ -319,9 +333,13 @@ void hal_arm64_space_memory_stats(uint32_t *s,uint32_t *t){bool enabled=hal_irq_
 /*
  * Maps one device range into the kernel's direct map.
  *
- * arm64 aliases all of physical space into the kernel half, so the
- * window already exists. Refreshing the attributes is best effort; the
- * alias itself is what the caller needs.
+ * arm64 aliases physical space into the kernel half at a fixed offset, so
+ * the address the caller receives is always the direct-map alias.  RAM is
+ * already mapped there as cacheable memory and is returned as it is.  A
+ * device range gets Device-nGnRE, never-execute entries for every 2 MiB
+ * block it touches; the boot mapping covers only the peripherals the HAL
+ * itself uses, and on a Pi with 4 GiB or more the peripheral hole below
+ * 4 GiB starts out mapped as cacheable memory.
  */
 int
 hal_space_map_device(
@@ -330,20 +348,67 @@ hal_space_map_device(
 	uint32_t attr,
 	void **vaddr)
 {
-	void *address;
+	uint64_t *table;
+	uint64_t first;
+	uint64_t end;
+	uint64_t block;
+	bool ram;
+	bool touches_ram;
+	bool enabled;
+	int error;
 
-	/* Requires a destination and a non-empty range. */
+	/* Requires a destination and a non-empty range the direct map reaches. */
 	if (vaddr == NULL || size == 0)
 		return HAL_ERR_INVALID;
-	address = arm64_phys_to_direct((uintptr_t)paddr);
-
-	/* Rejects an address the direct map does not cover. */
-	if (address == NULL)
+	if ((uint64_t)paddr >= ARM64_DIRECT_LIMIT)
 		return HAL_ERR_INVALID;
-	(void)hal_space_map(HAL_SPACE_SYS, address, paddr, size, attr);
+	if ((uint64_t)size > ARM64_DIRECT_LIMIT - (uint64_t)paddr)
+		return HAL_ERR_INVALID;
 
-	/* Reports the mapped window. */
-	*vaddr = address;
+	/* Refuses an executable device window and a write-combining one. */
+	if ((attr & HAL_SPACE_EXEC) != 0)
+		return HAL_ERR_INVALID;
+	if ((attr & HAL_SPACE_WC) != 0)
+		return HAL_ERR_UNSUPPORTED;
+
+	/* Returns RAM's existing cacheable alias. */
+	ram = range_is_ram((uint64_t)paddr, (uint64_t)size);
+	if (ram) {
+		*vaddr = arm64_phys_to_direct((uintptr_t)paddr);
+		return HAL_OK;
+	}
+
+	/* Refuses a range that mixes RAM and device space. */
+	touches_ram = range_touches_ram((uint64_t)paddr, (uint64_t)size);
+	if (touches_ram)
+		return HAL_ERR_INVALID;
+
+	/* Maps every 2 MiB block the range touches, with interrupts held off. */
+	first = (uint64_t)paddr & ~(ARM64_DEVICE_BLOCK_SIZE - 1U);
+	end = (uint64_t)paddr + (uint64_t)size;
+	enabled = hal_irq_disable();
+	for (block = first; block < end; block += ARM64_DEVICE_BLOCK_SIZE) {
+		/* Finds or creates the level-2 table that holds the block. */
+		error = device_block_table((unsigned)(block / ARM64_DIRECT_L1_SPAN), &table);
+		if (error != HAL_OK) {
+			if (enabled)
+				hal_irq_enable();
+
+			/* Reports why the block's table could not be made. */
+			return error;
+		}
+
+		/* Points the block at the device. */
+		map_one_device_block(table, (unsigned)((block % ARM64_DIRECT_L1_SPAN) / ARM64_DEVICE_BLOCK_SIZE), block);
+	}
+
+	/* Makes the new entries visible to the table walker and drops stale ones. */
+	arm64_flush_tlb();
+	if (enabled)
+		hal_irq_enable();
+
+	/* Succeeded: the device is reachable at its direct-map alias. */
+	*vaddr = arm64_phys_to_direct((uintptr_t)paddr);
 	return HAL_OK;
 }
 
@@ -357,4 +422,145 @@ hal_space_unmap_device(
 {
 	/* Releases the system-space window. */
 	return hal_space_unmap(HAL_SPACE_SYS, vaddr, size);
+}
+
+/* Reports whether a physical range overlaps any RAM the firmware described. */
+static bool
+range_touches_ram(
+	uint64_t physical,
+	uint64_t size)
+{
+	const struct rpi4_fdt_info *info;
+	uint64_t ram_end;
+	uint64_t end;
+	unsigned i;
+
+	/* Compares the range with every memory range of the firmware's tree. */
+	info = rpi4_boot_info();
+	end = physical + size;
+	for (i = 0; i < info->memory_count; i++) {
+		/* Skips a memory range that ends before the range starts. */
+		ram_end = info->memory[i].base + info->memory[i].size;
+		if (ram_end <= physical)
+			continue;
+
+		/* Skips a memory range that starts after the range ends. */
+		if (info->memory[i].base >= end)
+			continue;
+
+		/* Reports the overlap. */
+		return true;
+	}
+
+	/* Reports a range entirely outside RAM. */
+	return false;
+}
+
+/* Reports whether a physical range lies entirely inside one RAM range. */
+static bool
+range_is_ram(
+	uint64_t physical,
+	uint64_t size)
+{
+	const struct rpi4_fdt_info *info;
+	uint64_t ram_end;
+	unsigned i;
+
+	/* Looks for a memory range of the firmware's tree that holds it all. */
+	info = rpi4_boot_info();
+	for (i = 0; i < info->memory_count; i++) {
+		/* Skips a memory range that starts after the range. */
+		if (info->memory[i].base > physical)
+			continue;
+
+		/* Skips a memory range that ends before the range does. */
+		ram_end = info->memory[i].base + info->memory[i].size;
+		if (ram_end - physical < size)
+			continue;
+
+		/* Reports the memory range that holds it. */
+		return true;
+	}
+
+	/* Reports a range that is not wholly RAM. */
+	return false;
+}
+
+/*
+ * Finds the level-2 table of the direct map for one level-1 entry.
+ *
+ * An empty entry lies beyond RAM and gets a fresh table.  An entry that
+ * maps a whole gigabyte of RAM as one block cannot hold a device.
+ */
+static int
+device_block_table(
+	unsigned l1_index,
+	uint64_t **table)
+{
+	hal_physaddr_t memory;
+	uint64_t entry;
+	uint64_t *fresh;
+	int error;
+
+	/* Uses the table the entry already points at. */
+	entry = system_kernel_l1[l1_index];
+	if ((entry & (PTE_VALID | PTE_TABLE)) == (PTE_VALID | PTE_TABLE)) {
+		*table = arm64_phys_to_direct((uintptr_t)(entry & PTE_ADDR));
+		return HAL_OK;
+	}
+
+	/* Refuses to split a gigabyte block of RAM. */
+	if ((entry & PTE_VALID) != 0)
+		return HAL_ERR_INVALID;
+
+	/* Allocates an empty table for the unmapped gigabyte. */
+	error = alloc_page(&memory);
+	if (error != HAL_OK)
+		return error;
+
+	/* Clears the table so every block of the gigabyte starts unmapped. */
+	fresh = arm64_phys_to_direct((uintptr_t)memory);
+	hal_memset(fresh, 0, ARM64_PAGE_SIZE);
+	page_table_count++;
+
+	/*
+	 * Links the table.  The entry was invalid, so no stale translation of it
+	 * can exist and no break-before-make is needed; the store is ordered
+	 * before the walker's next use by the barrier in arm64_flush_tlb().
+	 */
+	system_kernel_l1[l1_index] = (uint64_t)memory | PTE_VALID | PTE_TABLE;
+
+	/* Succeeded: the caller fills blocks of the new table. */
+	*table = fresh;
+	return HAL_OK;
+}
+
+/*
+ * Makes one level-2 entry a Device-nGnRE block for the given physical block.
+ *
+ * An entry that already maps the block that way is left alone.  An entry
+ * that maps anything else is broken before it is remade, as the
+ * architecture requires when attributes change.
+ */
+static void
+map_one_device_block(
+	uint64_t *table,
+	unsigned l2_index,
+	uint64_t physical)
+{
+	uint64_t wanted;
+
+	/* Keeps a block that is already the wanted device mapping. */
+	wanted = physical | BLOCK_FLAGS | PTE_ATTR(1) | PTE_PXN | PTE_UXN;
+	if (table[l2_index] == wanted)
+		return;
+
+	/* Breaks a valid entry and drops its translation before remaking it. */
+	if ((table[l2_index] & PTE_VALID) != 0) {
+		table[l2_index] = 0;
+		arm64_flush_tlb();
+	}
+
+	/* Makes the block a device mapping. */
+	table[l2_index] = wanted;
 }

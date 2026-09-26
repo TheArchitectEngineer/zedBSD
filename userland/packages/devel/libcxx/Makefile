@@ -15,18 +15,14 @@ include $(ZEDBSD_LIBCXX_DIR)/../../../base/package.mk
 include $(ZEDBSD_LIBCXX_DIR)/../../external.mk
 include $(ZEDBSD_LIBCXX_DIR)/../../../../toolchain/llvm/version.mk
 
-# The compiler's own source tree is the source here; nothing is fetched again.
-ZEDBSD_LIBCXX_SOURCE := $(abspath $(ZEDBSD_EXTERNAL_ROOT)/build/llvm-source)
-ZEDBSD_LIBCXX_SOURCE_STAMP := \
-	$(ZEDBSD_LIBCXX_SOURCE)/.zedbsd-source-$(ZEDBSD_LLVM_VERSION)-$(ZEDBSD_LLVM_PATCH_LEVEL)
-# Patches applied to the shared LLVM source tree.  They are applied in place
-# and recorded, because the compiler's own build reads the same tree: a patch
-# here must be one the compiler can be built with too.
+# The compiler's own source is the source here; nothing is fetched again.
+# The package patches a copy of it (external.mk), never the toolchain's tree.
 ZEDBSD_LIBCXX_PATCHES := $(sort $(wildcard \
 	$(abspath $(ZEDBSD_LIBCXX_DIR))/patches/*.patch))
 ZEDBSD_LIBCXX_PATCH_LEVEL := zedbsd1
-ZEDBSD_LIBCXX_PATCHED := \
-	$(ZEDBSD_LIBCXX_SOURCE)/.zedbsd-libcxx-patched-$(ZEDBSD_LIBCXX_PATCH_LEVEL)
+ZEDBSD_LIBCXX_SOURCE := $(ZEDBSD_EXTERNAL_WORKROOT)/libcxx/src
+ZEDBSD_LIBCXX_SOURCE_STAMP := \
+	$(ZEDBSD_LIBCXX_SOURCE)/.zedbsd-libcxx-source-$(ZEDBSD_LLVM_VERSION)-$(ZEDBSD_LLVM_PATCH_LEVEL)-$(ZEDBSD_LIBCXX_PATCH_LEVEL)
 
 ZEDBSD_LIBCXX_BUILD := $(ZEDBSD_EXTERNAL_WORKROOT)/libcxx/build
 ZEDBSD_LIBCXX_STAGE := $(ZEDBSD_EXTERNAL_WORKROOT)/libcxx/stage
@@ -99,23 +95,14 @@ ZEDBSD_LIBCXX_CMAKE_OPTIONS := \
 # The options below are read when the build tree is configured, not when it is
 # built, so this file is one of the inputs: changing an option has to start a
 # new configuration rather than build the old one again.
-# Each patch is applied once; the record names the patch level so that a
-# changed set is noticed.  The source tree is the compiler's, which the
-# toolchain build extracts, so this adds to it rather than replacing it.
-$(ZEDBSD_LIBCXX_PATCHED): $(ZEDBSD_LIBCXX_SOURCE_STAMP) \
+# The record names the LLVM release and both patch levels, so a change to
+# any of them makes a new patched copy.
+$(ZEDBSD_LIBCXX_SOURCE_STAMP): $(ZEDBSD_EXTERNAL_LLVM_VERIFIED) \
 	$(ZEDBSD_LIBCXX_PATCHES)
-	@set -eu; for patch in $(ZEDBSD_LIBCXX_PATCHES); do \
-		if patch -p1 -R --dry-run -f -d '$(ZEDBSD_LIBCXX_SOURCE)' \
-			< "$$patch" >/dev/null 2>&1; then \
-			echo "libcxx: already applied: $$patch"; \
-		else \
-			patch -p1 -d '$(ZEDBSD_LIBCXX_SOURCE)' < "$$patch"; \
-		fi; \
-	done
+	$(call ZEDBSD_EXTERNAL_LLVM_COPY,$(ZEDBSD_LIBCXX_SOURCE),$(ZEDBSD_LIBCXX_PATCHES))
 	@touch '$@'
 
 $(ZEDBSD_LIBCXX_CONFIGURED): $(ZEDBSD_LIBCXX_SOURCE_STAMP) \
-	$(ZEDBSD_LIBCXX_PATCHED) \
 	$(ZEDBSD_EXTERNAL_CROSS_STAMP) $(ZEDBSD_LIBCXX_MAKEFILE)
 	@rm -rf '$(ZEDBSD_LIBCXX_BUILD)'
 	@mkdir -p '$(ZEDBSD_LIBCXX_BUILD)'

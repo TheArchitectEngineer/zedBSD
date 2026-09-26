@@ -20,7 +20,14 @@
  * bytes in the C locale, so -c is -b and -n changes nothing.  Fields are
  * separated by the delimiter (a tab by default) and written with it; a line
  * without the delimiter is written whole, unless -s.
+ *
+ * GNU's extensions: --complement selects what the list does not,
+ * --output-delimiter joins the fields (and the byte ranges) with a string
+ * of its own, -z reads and writes lines that end with a NUL byte, the long
+ * options, and options after operands (unless POSIXLY_CORRECT is set).
  */
+
+#include "userland/base/common/command.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -31,6 +38,32 @@
 #define MODE_NONE	0
 #define MODE_BYTES	1	/* -b and -c */
 #define MODE_FIELDS	2	/* -f */
+
+/* The codes of the long options that have no letter. */
+#define OPTION_COMPLEMENT	256
+#define OPTION_OUTPUT_DELIMITER	257
+#define OPTION_HELP		258
+#define OPTION_VERSION		259
+
+/*
+ * The options written in full.
+ *
+ * The table is read by the scan of the command line only; the letter a
+ * long option shares its code with makes the two forms one case.
+ */
+static const struct command_long_option cut_long_options[] = {
+	{"bytes", COMMAND_VALUE_REQUIRED, 'b'},
+	{"characters", COMMAND_VALUE_REQUIRED, 'c'},
+	{"complement", COMMAND_VALUE_NONE, OPTION_COMPLEMENT},
+	{"delimiter", COMMAND_VALUE_REQUIRED, 'd'},
+	{"fields", COMMAND_VALUE_REQUIRED, 'f'},
+	{"help", COMMAND_VALUE_NONE, OPTION_HELP},
+	{"only-delimited", COMMAND_VALUE_NONE, 's'},
+	{"output-delimiter", COMMAND_VALUE_REQUIRED, OPTION_OUTPUT_DELIMITER},
+	{"version", COMMAND_VALUE_NONE, OPTION_VERSION},
+	{"zero-terminated", COMMAND_VALUE_NONE, 'z'},
+	{NULL, 0, 0}
+};
 
 /* One range of the list; last is 0 for "to the end". */
 struct range {
@@ -45,6 +78,11 @@ struct options {
 	int suppress;
 	struct range *ranges;
 	size_t count;
+
+	/* GNU's: the selection turned round, the string between parts, and the end of a line. */
+	int complement;
+	const char *output_delimiter;
+	int end;
 };
 
 /* A line being read. */
@@ -55,13 +93,16 @@ struct line {
 };
 
 static int read_options(int argc, char **argv, struct options *options);
+static void apply_list(struct options *options, int code, const char *list);
+static void apply_delimiter(struct options *options, const char *text);
+static void write_delimiter(const struct options *options);
 static void parse_list(struct options *options, const char *list);
 static const char *parse_position(const char *cursor, unsigned long *value);
 static int selected(const struct options *options, unsigned long position);
 static void cut_stream(const struct options *options, FILE *stream);
 static void cut_bytes(const struct options *options, const struct line *line);
 static void cut_fields(const struct options *options, const struct line *line);
-static int read_line(FILE *stream, struct line *line);
+static int read_line(FILE *stream, struct line *line, int end);
 static void list_error(const char *message);
 static void usage(void);
 
@@ -75,6 +116,7 @@ main(
 {
 	struct options options;
 	FILE *stream;
+	int count;
 	int first;
 	int index;
 	int status;
@@ -83,12 +125,15 @@ main(
 	/* The options; one of -b, -c and -f is required. */
 	memset(&options, 0, sizeof(options));
 	options.delimiter = '\t';
-	first = read_options(argc, argv, &options);
+	options.end = '\n';
+	count = read_options(argc, argv, &options);
+	first = 1;
+	argc = first + count;
 	if (options.mode == MODE_NONE)
 		usage();
 
 	/* Standard input when there is no file. */
-	if (first >= argc) {
+	if (count == 0) {
 		cut_stream(&options, stdin);
 		return 0;
 	}
@@ -118,82 +163,118 @@ main(
 	return status;
 }
 
-/* Reads the options; returns the index of the first operand. */
+/*
+ * Reads the options; returns the number of operands, which are left in
+ * argv from argv[1] on.
+ */
 static int
 read_options(
 	int argc,
 	char **argv,
 	struct options *options)
 {
-	const char *word;
-	const char *letter;
-	const char *argument;
-	int index;
+	struct command_options scan;
+	int code;
 
-	/* Each option word. */
-	for (index = 1; index < argc; index++) {
-		/* An operand, or - alone, ends the options; so does --. */
-		word = argv[index];
-		if (word[0] != '-' || word[1] == '\0')
+	/* The scan of the command line. */
+	memset(&scan, 0, sizeof(scan));
+	scan.argc = argc;
+	scan.argv = argv;
+	scan.program = "cut";
+	scan.letters = "nszb:c:f:d:";
+	scan.names = cut_long_options;
+	command_options_start(&scan);
+
+	/* Each option in turn. */
+	for (;;) {
+		code = command_options_next(&scan);
+		if (code == COMMAND_OPTION_END)
 			break;
-		if (word[1] == '-' && word[2] == '\0')
-			return index + 1;
-
-		/* Each letter of the word. */
-		for (letter = word + 1; *letter != '\0'; letter++) {
-			/* -n and -s take nothing. */
-			if (*letter == 'n')
-				continue;
-			if (*letter == 's') {
-				options->suppress = 1;
-				continue;
-			}
-
-			/* Any other letter is not an option. */
-			if (*letter != 'b' && *letter != 'c' && *letter != 'f' &&
-			    *letter != 'd')
-				usage();
-
-			/* -b, -c, -f and -d take the rest or the next word. */
-			argument = letter + 1;
-			if (*argument == '\0') {
-				if (index + 1 >= argc)
-					usage();
-				index++;
-				argument = argv[index];
-			}
-
-			/* -d: one character. */
-			if (*letter == 'd') {
-				if (argument[0] == '\0' || argument[1] != '\0') {
-					fprintf(stderr, "cut: the delimiter must "
-						"be a single character\n");
-					exit(1);
-				}
-
-				/* The delimiter. */
-				options->delimiter = argument[0];
-				break;
-			}
-
-			/* Only one of -b, -c and -f. */
-			if (options->mode != MODE_NONE) {
-				fprintf(stderr, "cut: only one type of list "
-					"may be specified\n");
-				exit(1);
-			}
-
-			/* -b and -c select bytes, -f fields, from the list. */
-			options->mode = MODE_BYTES;
-			if (*letter == 'f')
-				options->mode = MODE_FIELDS;
-			parse_list(options, argument);
+		switch (code) {
+		case 'n':
+			/* Bytes are characters here. */
 			break;
+		case 's':
+			options->suppress = 1;
+			break;
+		case 'z':
+			options->end = '\0';
+			break;
+		case 'b':
+		case 'c':
+		case 'f':
+			apply_list(options, code, scan.value);
+			break;
+		case 'd':
+			apply_delimiter(options, scan.value);
+			break;
+		case OPTION_COMPLEMENT:
+			options->complement = 1;
+			break;
+		case OPTION_OUTPUT_DELIMITER:
+			options->output_delimiter = scan.value;
+			break;
+		case OPTION_VERSION:
+			printf("cut (zedBSD) 1.0\n");
+			exit(0);
+		default:
+			usage();
 		}
 	}
 
-	/* Succeeded: the first operand. */
-	return index;
+	/* Succeeded: the operands follow argv[0]. */
+	return scan.operand_count;
+}
+
+/* Applies -b, -c or -f: the kind of list, which may be given once. */
+static void
+apply_list(
+	struct options *options,
+	int code,
+	const char *list)
+{
+	/* Only one of -b, -c and -f. */
+	if (options->mode != MODE_NONE) {
+		fprintf(stderr, "cut: only one type of list may be specified\n");
+		exit(1);
+	}
+
+	/* Succeeded: -b and -c select bytes, -f fields, from the list. */
+	options->mode = MODE_BYTES;
+	if (code == 'f')
+		options->mode = MODE_FIELDS;
+	parse_list(options, list);
+}
+
+/* Applies -d: the delimiter, one character. */
+static void
+apply_delimiter(
+	struct options *options,
+	const char *text)
+{
+	/* One character. */
+	if (text[0] == '\0' || text[1] != '\0') {
+		fprintf(stderr, "cut: the delimiter must be a single character\n");
+		exit(1);
+	}
+
+	/* Succeeded. */
+	options->delimiter = text[0];
+}
+
+/* Writes what goes between two parts: --output-delimiter, or the delimiter. */
+static void
+write_delimiter(
+	const struct options *options)
+{
+	/* GNU's string of its own. */
+	if (options->output_delimiter != NULL) {
+		fputs(options->output_delimiter, stdout);
+		return;
+	}
+
+	/* The delimiter of the fields. */
+	putchar(options->delimiter);
 }
 
 /* Parses a list of positions and ranges. */
@@ -278,18 +359,18 @@ selected(
 {
 	size_t index;
 
-	/* Any range that holds it. */
+	/* Any range that holds it; --complement turns the answer round. */
 	for (index = 0; index < options->count; index++) {
 		if (position < options->ranges[index].first)
 			continue;
 		if (options->ranges[index].last == 0)
-			return 1;
+			return !options->complement;
 		if (position <= options->ranges[index].last)
-			return 1;
+			return !options->complement;
 	}
 
 	/* None. */
-	return 0;
+	return options->complement;
 }
 
 /* Cuts each line of an input. */
@@ -305,7 +386,7 @@ cut_stream(
 	memset(&line, 0, sizeof(line));
 	for (;;) {
 		/* The next line. */
-		read = read_line(stream, &line);
+		read = read_line(stream, &line, options->end);
 		if (!read)
 			break;
 
@@ -327,17 +408,27 @@ cut_bytes(
 	const struct line *line)
 {
 	size_t index;
+	size_t previous;
 	int chosen;
+	int written;
 
-	/* Each byte the list selects. */
+	/* Each byte the list selects; --output-delimiter between ranges. */
+	written = 0;
+	previous = 0;
 	for (index = 0; index < line->length; index++) {
 		chosen = selected(options, (unsigned long)index + 1UL);
-		if (chosen)
-			putchar(line->data[index]);
+		if (!chosen)
+			continue;
+		if (options->output_delimiter != NULL && written &&
+		    previous + 1U != index)
+			fputs(options->output_delimiter, stdout);
+		putchar(line->data[index]);
+		written = 1;
+		previous = index;
 	}
 
 	/* The line ends. */
-	putchar('\n');
+	putchar(options->end);
 }
 
 /*
@@ -362,7 +453,7 @@ cut_fields(
 		if (options->suppress)
 			return;
 		fwrite(line->data, 1, line->length, stdout);
-		putchar('\n');
+		putchar(options->end);
 		return;
 	}
 
@@ -377,7 +468,7 @@ cut_fields(
 		chosen = selected(options, field);
 		if (chosen) {
 			if (written)
-				putchar(options->delimiter);
+				write_delimiter(options);
 			fwrite(line->data + start, 1, end - start, stdout);
 			written = 1;
 		}
@@ -390,14 +481,15 @@ cut_fields(
 	}
 
 	/* The line ends. */
-	putchar('\n');
+	putchar(options->end);
 }
 
-/* Reads one line, without its newline.  Returns 0 at the end. */
+/* Reads one line, without its end (a newline, or NUL with -z).  Returns 0 at the end. */
 static int
 read_line(
 	FILE *stream,
-	struct line *line)
+	struct line *line,
+	int end)
 {
 	int value;
 	int newline;
@@ -410,7 +502,7 @@ read_line(
 		value = getc(stream);
 		if (value == EOF)
 			break;
-		if (value == '\n') {
+		if (value == end) {
 			newline = 1;
 			break;
 		}

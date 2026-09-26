@@ -3,10 +3,19 @@
 # that the difference tests run in seconds.  They use only POSIX interfaces
 # and userland/base/common.
 #   sh plan/tools/utils/build-host-utils.sh [OUTPUT_DIR]   (default build/ws043/bin)
+#
+# ws045: the regular expressions are zedBSD's (src/libc/regex, TRE), not
+# glibc's, because the GNU extensions of the regular expressions (\+, \|,
+# \w, \< and the others) come from the library the guest links.  The
+# program sees zedBSD's <regex.h> first on the include path, and the TRE
+# objects linked into the program take the place of glibc's functions.
 set -e
 out=${1:-build/ws043/bin}
-mkdir -p "$out"
-for utility in sed grep awk cut wc head tail sort uniq tr od expr paste join comm fold nl split csplit tsort basename dirname cat rm rmdir mkdir ln touch mv cp chmod ls; do
+mkdir -p "$out" "$out/.regex"
+cp include/libc/regex.h "$out/.regex/regex.h"
+regex="src/libc/regex/regcomp.c src/libc/regex/regexec.c src/libc/regex/regerror.c src/libc/regex/tre-mem.c"
+for utility in sed grep awk cut wc head tail sort uniq tr od expr paste join comm fold nl split csplit tsort basename dirname cat rm rmdir mkdir ln touch mv cp chmod ls \
+    cmp find date stat readlink realpath seq tac timeout truncate env tee; do
 	# mv shares cp's copy of file hierarchies (ws001-p025).
 	extra=
 	if [ "$utility" = mv ]; then
@@ -18,9 +27,9 @@ for utility in sed grep awk cut wc head tail sort uniq tr od expr paste join com
 		extra=userland/base/chmod/mode.c
 		;;
 	esac
-	cc -std=c11 -D_GNU_SOURCE -O1 -g -w -I. -Iinclude \
+	cc -std=c11 -D_GNU_SOURCE -O1 -g -w -I"$out/.regex" -I. -Iinclude \
 		userland/base/$utility/*.c $extra userland/base/common/command.c \
-		-o "$out/$utility" -lm
+		$regex -o "$out/$utility" -lm
 done
 # The shell's echo, printf and test built as commands, and true and false.
 for utility in echo printf test; do

@@ -16,6 +16,7 @@
  */
 
 #include "zwl.h"
+#include "menu.h"
 #include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
@@ -508,12 +509,22 @@ zwl_seat_key(
 	uint32_t words[4];
 	int taken;
 
-	/* App Home, while it shows, takes every key (home.c); zdesktop's shortcuts come next (shell.c). */
+	/*
+	 * App Home, while it shows, takes every key (home.c), and so does an
+	 * open menu (menu-shell.c); zdesktop's shortcuts come next (shell.c),
+	 * then the focused window's menu: F10 and its shortcuts.
+	 */
 	if (server->glass) {
 		taken = zwl_home_key(server, key, state);
 		if (taken)
 			return;
+		taken = zwl_menu_grab_key(server, key, state);
+		if (taken)
+			return;
 		taken = zwl_glass_key(server, key, state);
+		if (taken)
+			return;
+		taken = zwl_menu_key(server, key, state);
 		if (taken)
 			return;
 	}

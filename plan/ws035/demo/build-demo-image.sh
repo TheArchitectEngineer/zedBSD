@@ -1,7 +1,7 @@
 #!/bin/sh
 # Builds the zdesktop demo image for a real amd64 machine with an Intel GPU (i915): zdesktop --glass starts at
 # boot on the machine's own display, and App Home (the launcher at the top left, or a drag from the
-# top-left corner) starts the terminal, the model viewer, and the X11 terminal and Gears (Xzed --rootless
+# top-left corner) starts the terminal, the model viewer, and the X11 terminal and Gears (zdesktop-x11server
 # starts with the first of them).  The fonts and the wallpaper, kept out of
 # git, are put in from build/ws035-fonts/ and build/ws035-wallpaper/ when they are there.
 #

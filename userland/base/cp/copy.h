@@ -45,8 +45,9 @@ struct copy_link {
  * How one run of cp or mv copies.
  *
  * The caller fills the policy fields before the first copy_operand() and
- * zeroes the rest; the hard-link records and the report descriptor are
- * owned by the run and released by copy_finish().
+ * zeroes the rest; verbose (GNU's -v) writes each copy as it is made.  The
+ * hard-link records and the report descriptor are owned by the run and
+ * released by copy_finish().
  */
 struct copy_options {
 	const char *program;
@@ -61,6 +62,7 @@ struct copy_options {
 	int preserve_owner;
 	int preserve_times;
 	int preserve_links;
+	int verbose;
 	int report_descriptor;
 	int report_failed;
 	struct copy_link *links;

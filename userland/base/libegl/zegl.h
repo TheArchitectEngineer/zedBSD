@@ -204,6 +204,9 @@ struct zegl_gles {
 	/* Called by eglSwapBuffers once a frame is done, and by eglDestroyContext; NULL until libGLESv2 sets them. */
 	void (*frame_done)(struct zegl_context *context);
 	void (*release)(struct zegl_context *context);
+
+	/* Called before the draw surface's frame is submitted by eglSwapBuffers, and by eglMakeCurrent for the context current so far; NULL until libGLESv2 sets it. */
+	void (*frame_closing)(struct zegl_context *context);
 };
 
 /*
@@ -240,5 +243,8 @@ EGLint zegl_frame_begin(struct zegl_surface *surface);
 void zegl_frame_pass(struct zegl_surface *surface, const VkClearValue *clear);
 void zegl_frame_leave_pass(struct zegl_surface *surface);
 EGLint zegl_frame_flush(struct zegl_surface *surface);
+
+/* The depth and stencil format window surfaces and renderbuffers use, and its aspects (vulkan.c). */
+VkFormat zegl_depth_format(struct zegl_display *display, VkImageAspectFlags *aspects);
 
 #endif

@@ -50,3 +50,21 @@ tmpfs                 65536          0      65536       0% /dev/shm
 ## 残り
 
 - df の `-t` で総量以外の書式は作らない（`-P` と同じ書式）。
+
+## main の merge（2026-09-27、p034 の後）
+
+coordinator の指示で main（WS045 の GNU 拡張、WS036 の zedbsd7 toolchain ほか）を merge した。衝突 8 file の解き方:
+
+| file | 解き方 |
+| --- | --- |
+| `userland/base/{cp,mv,env,date,mkdir,split}/main.c` | WS001 の POSIX の書き直しを土台に、WS045 の GNU 拡張（`command_options` の走査による long option と operand の後の option、cp の `-v`・`-t`・`--preserve[=list]`・`--no-preserve`・`--update[=...]`、mv の `-v`・`-t`・`-u`・`--update[=...]`、env の `-u`・`-0`・`-C`・`-S`・`-v`、date の `-d`・`-r`・`-R`・`-I`・`%N`・`%s`・`%:z`、mkdir の `-v`、split の `-d`・`--numeric-suffixes`・`--additional-suffix`・`--verbose`・GNU の単位）を移した。WS045 の版は WS001 の POSIX の case の一部（cp の `-H`/`-L`/`-P`/`-i`、env の PATH と #! の無い script、date の時刻帯と時計の設定など）を落としていた |
+| `userland/base/cp/copy.{c,h}` | `verbose` を足し、cp `-v` は copy の各 entry を `'src' -> 'dst'` で書く |
+| `userland/base/sh/builtins.c` | WS001 の `env` builtin の削除を保つ（WS045 の builtin の GNU option の転送は `/usr/bin/env` が全部を持つので要らない） |
+| `plan/tools/utils/build-host-utils.sh` | WS045 の TRE の regex と一覧に、WS001 の追加の source（mv の copy.c、mkdir の mode.c）を足した |
+
+確認（host）: `util-diff.py --bin build/ws001/bin` 1024/1024、`util-diff.py --bin build/ws001/bin --cases plan/ws045/tests/cases --gnu` 515/515、
+`pinned-cases.py` 10/10、`tty-host-test.py` 11/11、`diff-random-host-test.py --count 300 --patch build/ws001/bin/patch` 300/300、style 0・warning 0。
+toolchain は `build/llvm` を llvm-zedbsd7 へ向け、`make sysroots` を流した。
+
+amd64 guest（zedbsd7 の toolchain で image を作り直し）: `guest-run.sh build/ws001/guest-merge.out cp mv env date mkdir split patch pinned` 187/187。
+1 回目は login の後の prompt を待つ間に時間切れになった（image を作り直した直後の起動。2 回目の起動と手での login では prompt `root@zedbsd:/root$ ` が出た）。image の build の warning は既存の `userland/base/noct/noct/src/core/interpreter.c:2395` の 1 件だけ。

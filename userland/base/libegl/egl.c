@@ -851,6 +851,10 @@ eglMakeCurrent(
 	/* The calling thread's EGL state. */
 	thread = egl_thread();
 
+	/* The context current so far closes what GLES keeps open in its draw surface's frame (a framebuffer object's pass). */
+	if (thread->current != NULL && thread->current->gles.frame_closing != NULL)
+		thread->current->gles.frame_closing(thread->current);
+
 	/* Releasing: no context, no surfaces. */
 	if (ctx == EGL_NO_CONTEXT) {
 		if (thread->current != NULL) {

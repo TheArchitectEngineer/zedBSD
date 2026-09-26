@@ -69,10 +69,11 @@ update_goal(
 	struct target *goal,
 	int report)
 {
+	size_t running;
 	int failed;
 	int present;
 
-	/* The goal, in the global scope, walked again each time a recipe ends. */
+	/* Walks the goal in the global scope, again each time a recipe ends. */
 	for (;;) {
 		failed = update_target(goal, &make_global_scope, NULL);
 		if (failed != UPDATE_PENDING)
@@ -81,13 +82,20 @@ update_goal(
 	}
 
 	/* A failure lets the recipes that are running finish, as GNU make does. */
-	if (failed && job_running() > 0) {
+	running = job_running();
+	if (failed && running > 0) {
 		if (!make_options.keep_going) {
 			fflush(stdout);
-			fprintf(stderr, "%s: *** Waiting for unfinished jobs....\n", make_program());
+			fprintf(stderr,
+				"%s: *** Waiting for unfinished jobs....\n",
+				make_program());
 		}
-		while (job_running() > 0)
+
+		/* Waits until none is running. */
+		while (running > 0) {
 			job_wait();
+			running = job_running();
+		}
 	}
 
 	/* The goal could not be made. */
@@ -185,22 +193,30 @@ update_target(
 	if (target->state == TARGET_UNVISITED)
 		first_visit(target, scope);
 
-	/* The target is on the walk's path while its prerequisites are walked. */
+	/*
+	 * in_walk marks the target as on the walk's path while its
+	 * prerequisites are walked: a prerequisite that meets it closes a
+	 * loop.
+	 */
 	target->in_walk = 1;
 	if (target->is_double_colon) {
 		result = update_double_colon(target);
 	} else {
 		result = update_rule(target, target->scope, parent, 0);
 	}
+
+	/* The target leaves the walk's path. */
 	target->in_walk = 0;
 
 	/* Still waiting, or its recipe started. */
 	if (result == UPDATE_PENDING)
 		return UPDATE_PENDING;
 
-	/* The target is done. */
+	/* The target is done, made or not. */
 	target->failed = result;
 	target->state = TARGET_DONE;
+
+	/* Succeeded: 0, or 1 when the target could not be made. */
 	return result;
 }
 
@@ -257,20 +273,25 @@ update_double_colon(
 
 	/* The rules were gathered newest first; they run oldest first. */
 	count = 0;
-	for (rule = target->double_colon; rule != NULL && count < sizeof(rules) / sizeof(rules[0]); rule = rule->double_colon) {
+	for (rule = target->double_colon;
+	     rule != NULL && count < sizeof(rules) / sizeof(rules[0]);
+	     rule = rule->double_colon) {
 		rules[count] = rule;
 		count++;
 	}
 
-	/* Each rule, against the target's file as it stands. */
+	/* Brings each rule up to date, against the target's file as it stands. */
 	failed = 0;
 	for (index = count; index > 0; index--) {
 		rule = rules[index - 1U];
 
-		/* A rule that is done counts as it ended. */
+		/* A rule whose recipe runs holds the later ones. */
 		if (rule->state == TARGET_RUNNING)
 			return UPDATE_PENDING;
+
+		/* A rule that is done counts as it ended; any other is walked. */
 		if (rule->state != TARGET_DONE) {
+			/* The first time, the rule takes the target's scope and its time. */
 			if (rule->state == TARGET_UNVISITED) {
 				rule->state = TARGET_PENDING;
 				rule->scope = target->scope;
@@ -339,7 +360,9 @@ update_rule(
 	must = always;
 	if (target->phony || !target->exists)
 		must = 1;
-	for (dependency = target->dependencies; dependency != NULL && !must; dependency = dependency->next) {
+	for (dependency = target->dependencies;
+	     dependency != NULL && !must;
+	     dependency = dependency->next) {
 		if (dependency->order_only)
 			continue;
 		newer = is_newer(dependency->target, target);
@@ -364,8 +387,10 @@ update_rule(
 		}
 	}
 
-	/* Succeeded or not: the recipe, or what -q and -t make of it. */
+	/* Runs the recipe, or does what -q and -t make of it. */
 	failed = remake(target, scope);
+
+	/* Succeeded: 0, 1 or UPDATE_PENDING as the remaking went. */
 	return failed;
 }
 
@@ -387,10 +412,12 @@ update_prerequisites(
 	int any_pending;
 	int slot;
 
-	/* Each one, left to right. */
+	/* Walks each one, left to right. */
 	any_failed = 0;
 	any_pending = 0;
-	for (dependency = target->dependencies; dependency != NULL; dependency = dependency->next) {
+	for (dependency = target->dependencies;
+	     dependency != NULL;
+	     dependency = dependency->next) {
 		/* A prerequisite that closed a loop is not followed again. */
 		if (dependency->dropped)
 			continue;
@@ -401,7 +428,9 @@ update_prerequisites(
 
 		/* One that is on the walk's path needs itself: the loop is dropped. */
 		if (dependency->target->in_walk) {
-			make_message("Circular %s <- %s dependency dropped.", target->name, dependency->target->name);
+			make_message("Circular %s <- %s dependency dropped.",
+				     target->name,
+				     dependency->target->name);
 			dependency->dropped = 1;
 			continue;
 		}
@@ -418,10 +447,12 @@ update_prerequisites(
 					job_want_slot();
 				break;
 			}
+
+			/* Otherwise the walk goes on to the next prerequisite. */
 			continue;
 		}
 
-		/* One that failed. */
+		/* One that failed stops the list, unless -k. */
 		if (!result)
 			continue;
 		any_failed = 1;
@@ -437,7 +468,7 @@ update_prerequisites(
 	if (any_failed)
 		return 1;
 
-	/* Succeeded. */
+	/* Succeeded: every prerequisite is up to date. */
 	return 0;
 }
 
@@ -461,11 +492,14 @@ is_newer(
 	if (!prerequisite->exists)
 		return 0;
 
-	/* Succeeded: by the times, to the nanosecond. */
+	/* Compares the times, to the nanosecond. */
 	if (prerequisite->seconds > target->seconds)
 		return 1;
-	if (prerequisite->seconds == target->seconds && prerequisite->nanoseconds > target->nanoseconds)
+	if (prerequisite->seconds == target->seconds &&
+	    prerequisite->nanoseconds > target->nanoseconds)
 		return 1;
+
+	/* Succeeded: the prerequisite is not newer. */
 	return 0;
 }
 
@@ -543,19 +577,36 @@ remake(
 		return UPDATE_PENDING;
 	}
 
-	/* The automatic variables, which the job owns from here. */
+	/* Fills the automatic variables, which the job owns from here. */
 	variables = make_malloc(sizeof(*variables));
 	memset(variables, 0, sizeof(*variables));
 	explicit_stem(target);
-	build_automatic(target, &variables->automatic, &variables->newer, &variables->unique, &variables->all, &variables->order_only);
+	build_automatic(target,
+			&variables->automatic,
+			&variables->newer,
+			&variables->unique,
+			&variables->all,
+			&variables->order_only);
 
 	/* A target that VPATH found elsewhere is made again where its name says. */
 	free(target->path);
 	target->path = NULL;
 
-	/* The recipe, which may still be running when this returns. */
-	ignore = make_options.ignore_errors || make_ignore_all || target->ignore_errors;
-	silent = make_options.silent || make_silent_all || target->silent;
+	/* Failures are ignored for -i, .IGNORE, or the target's own .IGNORE. */
+	ignore = 0;
+	if (make_options.ignore_errors ||
+	    make_ignore_all ||
+	    target->ignore_errors)
+		ignore = 1;
+
+	/* Commands are not echoed for -s, .SILENT, or the target's own .SILENT. */
+	silent = 0;
+	if (make_options.silent ||
+	    make_silent_all ||
+	    target->silent)
+		silent = 1;
+
+	/* Starts the recipe, which may still be running when this returns. */
 	failed = job_start(target, target->recipe, variables, scope, ignore, silent);
 	if (failed == UPDATE_PENDING) {
 		target->state = TARGET_RUNNING;
@@ -569,7 +620,7 @@ remake(
 	if (failed)
 		return 1;
 
-	/* Succeeded. */
+	/* Succeeded: the recipe made the target. */
 	return 0;
 }
 

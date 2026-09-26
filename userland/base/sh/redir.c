@@ -68,6 +68,8 @@ static int apply_one(struct sh_redirection *redirection, struct redirect_frame *
 static int descriptor_word(const char *text);
 static int apply_both_outputs(struct sh_redirection *redirection, const char *text, struct redirect_frame *frame);
 static int apply_duplicate(const char *text, int target, struct redirect_frame *frame);
+static int apply_move(const char *text, size_t length, int target, struct redirect_frame *frame);
+static int herestring_descriptor(const char *text);
 static void save_descriptor(struct redirect_frame *frame, int descriptor);
 static int open_file(struct sh_redirection *redirection, const char *path);
 static int open_noclobber(const char *path);
@@ -273,10 +275,10 @@ apply_one(
 	struct sh_expand_context context;
 	const char *error_text;
 	char *text;
-	char *line;
 	int descriptor;
 	int target;
 	int expanded;
+	int is_descriptor;
 	int moved;
 	int error;
 	int status;
@@ -299,13 +301,19 @@ apply_one(
 	 * output and standard error to the file, as bash does (XCU 2.7.6
 	 * leaves it unspecified); with another descriptor it is ambiguous.
 	 */
-	if (redirection->op == SH_REDIR_DUP_OUTPUT && !descriptor_word(text)) {
-		if (target != 1) {
-			sh_warn("%s: ambiguous redirect", text);
-			return 1;
+	if (redirection->op == SH_REDIR_DUP_OUTPUT) {
+		is_descriptor = descriptor_word(text);
+		if (!is_descriptor) {
+			/* Refuses n>& file for any n but 1, as bash does. */
+			if (target != 1) {
+				sh_warn("%s: ambiguous redirect", text);
+				return 1;
+			}
+
+			/* Sends both outputs to the file. */
+			status = apply_both_outputs(redirection, text, frame);
+			return status;
 		}
-		status = apply_both_outputs(redirection, text, frame);
-		return status;
 	}
 
 	/* <& and >& name a descriptor, or - to close. */
@@ -315,16 +323,19 @@ apply_one(
 		return status;
 	}
 
-	/* A here-document, and a here-string with its newline, are read from a pipe; anything else is a file. */
+	/*
+	 * A here-document, and a here-string with its newline, are read from
+	 * a pipe; anything else is a file.
+	 */
 	if (redirection->op == SH_REDIR_HEREDOC) {
 		descriptor = heredoc_descriptor(text);
 	} else if (redirection->op == SH_REDIR_HERESTRING) {
-		line = sh_temp_own(sh_malloc(strlen(text) + 2U));
-		strcpy(line, text);
-		strcat(line, "\n");
-		descriptor = heredoc_descriptor(line);
-	} else
+		descriptor = herestring_descriptor(text);
+	} else {
 		descriptor = open_file(redirection, text);
+	}
+
+	/* A descriptor that could not be opened is already reported. */
 	if (descriptor < 0)
 		return 2;
 
@@ -355,21 +366,25 @@ descriptor_word(
 {
 	const char *cursor;
 
-	/* - closes. */
+	/* A lone - closes the descriptor. */
 	if (text[0] == '-' && text[1] == '\0')
 		return 1;
 
-	/* Digits name a descriptor, and digits and - move one. */
+	/* An empty word names nothing. */
 	if (text[0] == '\0')
 		return 0;
+
+	/* Digits name a descriptor, and digits followed by - move one. */
 	for (cursor = text; *cursor != '\0'; cursor++) {
-		if (*cursor == '-' && cursor[1] == '\0' && cursor != text)
+		if (*cursor == '-' &&
+		    cursor[1] == '\0' &&
+		    cursor != text)
 			break;
 		if (*cursor < '0' || *cursor > '9')
 			return 0;
 	}
 
-	/* Succeeded. */
+	/* Succeeded: the word names a descriptor. */
 	return 1;
 }
 
@@ -385,9 +400,10 @@ apply_both_outputs(
 {
 	struct sh_redirection output;
 	int descriptor;
+	int moved;
 	int error;
 
-	/* The file, opened as > would open it. */
+	/* Opens the file as > would open it. */
 	output = *redirection;
 	output.op = SH_REDIR_OUTPUT;
 	output.descriptor = 1;
@@ -395,22 +411,55 @@ apply_both_outputs(
 	if (descriptor < 0)
 		return 2;
 
-	/* Standard output and standard error both become the file. */
+	/* Saves standard output and standard error to put them back later. */
 	if (frame != NULL) {
 		save_descriptor(frame, 1);
 		save_descriptor(frame, 2);
 	}
-	if (dup2(descriptor, 1) < 0 || dup2(descriptor, 2) < 0) {
+
+	/* Makes standard output the file, then standard error. */
+	moved = dup2(descriptor, 1);
+	if (moved >= 0)
+		moved = dup2(descriptor, 2);
+	if (moved < 0) {
 		error = errno;
 		(void)close(descriptor);
 		sh_warn("%s: %s", text, strerror(error));
 		return 2;
 	}
+
+	/* The opened descriptor is no longer needed under its own number. */
 	if (descriptor != 1 && descriptor != 2)
 		(void)close(descriptor);
 
-	/* Succeeded. */
+	/* Succeeded: both outputs go to the file. */
 	return 0;
+}
+
+/*
+ * Opens the pipe a here-string is read from: the expanded word and a
+ * newline, as bash gives it.
+ */
+static int
+herestring_descriptor(
+	const char *text)
+{
+	char *line;
+	int descriptor;
+
+	/* Appends the newline to a copy that is freed with the command. */
+	line = sh_malloc(strlen(text) + 2U);
+	(void)sh_temp_own(line);
+	strcpy(line, text);
+	strcat(line, "\n");
+
+	/* Writes the line into the pipe a here-document would use. */
+	descriptor = heredoc_descriptor(line);
+	if (descriptor < 0)
+		return -1;
+
+	/* Succeeded: the pipe's reading end. */
+	return descriptor;
 }
 
 /*
@@ -441,26 +490,8 @@ apply_duplicate(
 	/* n- moves descriptor n to the target, closing n (ksh and bash). */
 	length = strlen(text);
 	if (length > 1 && text[length - 1] == '-') {
-		source = strtol(text, &end, 10);
-		if (end != text + length - 1 || source > INT_MAX)
-			sh_error("Syntax error: Bad fd number");
-		if (fcntl((int)source, F_GETFD) < 0) {
-			sh_warn("%ld: Bad file descriptor", source);
-			return 2;
-		}
-		if (source == target)
-			return 0;
-		if (frame != NULL) {
-			save_descriptor(frame, target);
-			save_descriptor(frame, (int)source);
-		}
-		if (dup2((int)source, target) < 0) {
-			error = errno;
-			sh_warn("%ld: %s", source, strerror(error));
-			return 2;
-		}
-		(void)close((int)source);
-		return 0;
+		copied = apply_move(text, length, target, frame);
+		return copied;
 	}
 
 	/* Anything but a number is an error that stops the command. */
@@ -492,6 +523,60 @@ apply_duplicate(
 	}
 
 	/* Succeeded: the target is a copy of the source. */
+	return 0;
+}
+
+/*
+ * Applies <&n- or >&n-: moves descriptor n onto the target and closes n
+ * (ksh and bash).  A word that is no descriptor is a syntax error.
+ */
+static int
+apply_move(
+	const char *text,
+	size_t length,
+	int target,
+	struct redirect_frame *frame)
+{
+	char *end;
+	long source;
+	int flags;
+	int moved;
+	int error;
+
+	/* Anything but a number before the - is an error that stops the command. */
+	source = strtol(text, &end, 10);
+	if (end != text + length - 1 || source > INT_MAX)
+		sh_error("Syntax error: Bad fd number");
+
+	/* The source must be open. */
+	flags = fcntl((int)source, F_GETFD);
+	if (flags < 0) {
+		sh_warn("%ld: Bad file descriptor", source);
+		return 2;
+	}
+
+	/* A descriptor moved onto itself stays open. */
+	if (source == target)
+		return 0;
+
+	/* Saves the target and the source to put them back later. */
+	if (frame != NULL) {
+		save_descriptor(frame, target);
+		save_descriptor(frame, (int)source);
+	}
+
+	/* Copies the source onto the target. */
+	moved = dup2((int)source, target);
+	if (moved < 0) {
+		error = errno;
+		sh_warn("%ld: %s", source, strerror(error));
+		return 2;
+	}
+
+	/* Closes the source, which now lives on as the target. */
+	(void)close((int)source);
+
+	/* Succeeded: the source is moved to the target. */
 	return 0;
 }
 

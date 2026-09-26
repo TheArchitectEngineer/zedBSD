@@ -24,8 +24,16 @@
  * zedBSD also accepts -n, --no-clobber and --update=none (keep existing
  * destinations, atomically), --update=none-fail (refuse them), --force,
  * and -T and --no-target-directory (the target is always a pathname).
+ *
+ * GNU's extensions are taken too (ws045): -v (--verbose) writes each move,
+ * -t directory (--target-directory) names the directory before the
+ * sources, -u (--update, --update=older) keeps a destination that is not
+ * older than the source, --update=all replaces as usual,
+ * --strip-trailing-slashes is taken, and the long forms of the letters;
+ * options may follow operands unless POSIXLY_CORRECT is set.
  */
 
+#include "userland/base/common/command.h"
 #include "userland/base/cp/copy.h"
 #include <dirent.h>
 #include <errno.h>
@@ -37,23 +45,52 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+/* The codes of the long options that have no letter. */
+#define OPTION_HELP 256
+#define OPTION_IGNORED 257
+#define OPTION_UPDATE 258
+#define OPTION_VERSION 259
+
+/*
+ * The options written in full, read by the scan of the command line; a
+ * long option shares its code with its letter.
+ */
+static const struct command_long_option mv_long_options[] = {
+	{"force", COMMAND_VALUE_NONE, 'f'},
+	{"help", COMMAND_VALUE_NONE, OPTION_HELP},
+	{"interactive", COMMAND_VALUE_NONE, 'i'},
+	{"no-clobber", COMMAND_VALUE_NONE, 'n'},
+	{"no-target-directory", COMMAND_VALUE_NONE, 'T'},
+	{"strip-trailing-slashes", COMMAND_VALUE_NONE, OPTION_IGNORED},
+	{"target-directory", COMMAND_VALUE_REQUIRED, 't'},
+	{"update", COMMAND_VALUE_OPTIONAL, OPTION_UPDATE},
+	{"verbose", COMMAND_VALUE_NONE, 'v'},
+	{"version", COMMAND_VALUE_NONE, OPTION_VERSION},
+	{NULL, 0, 0}
+};
+
 /*
  * What the command line asks for.
  *
  * One instance lives for the run.  prompt is 1 for -i, 0 for -f and -1
  * when neither was given; terminal says whether standard input is one.
+ * keep_newer is -u; directory is -t's.
  */
 struct mv_options {
 	int prompt;
 	int no_replace;
 	int conflict_fails;
+	int keep_newer;
 	int literal;
+	int verbose;
 	int terminal;
+	const char *directory;
 };
 
 static int read_options(int argc, char **argv, struct mv_options *options);
-static int read_long_option(const char *option, struct mv_options *options);
-static int read_short_options(const char *cluster, struct mv_options *options);
+static int read_letter(int letter, const char *value, struct mv_options *options);
+static void apply_update(struct mv_options *options, const char *word);
+static int destination_newer(const struct stat *from, const struct stat *existing);
 static int move_into(const struct mv_options *options, const char *source, const char *directory);
 static int move_operand(const struct mv_options *options, const char *source, const char *destination);
 static int confirm_replace(const struct mv_options *options, const char *destination);
@@ -75,22 +112,32 @@ main(
 	struct mv_options options;
 	struct stat status_of_target;
 	const char *target;
-	int first;
 	int count;
+	int last;
 	int index;
 	int directory;
 	int failed;
 	int status;
 
-	/* Reads the options; the operands follow them. */
-	first = read_options(argc, argv, &options);
-	count = argc - first - 1;
+	/*
+	 * Reads the options; the operands are left from argv[1] on: the
+	 * sources, then the target unless -t named it.
+	 */
+	count = read_options(argc, argv, &options);
+	last = count;
+	target = options.directory;
+	if (target == NULL) {
+		target = argv[count];
+		last = count - 1;
+	}
+
+	/* The number of sources. */
+	count = last;
 	if (count < 1)
 		usage();
 	options.terminal = isatty(STDIN_FILENO);
 
 	/* Learns whether the target is an existing directory. */
-	target = argv[argc - 1];
 	directory = 0;
 	if (!options.literal) {
 		status = stat(target, &status_of_target);
@@ -98,15 +145,15 @@ main(
 			directory = S_ISDIR(status_of_target.st_mode);
 	}
 
-	/* Several sources need a directory to go into. */
-	if (count > 1 && !directory) {
+	/* Several sources, or -t, need a directory to go into. */
+	if ((count > 1 || options.directory != NULL) && !directory) {
 		fprintf(stderr, "mv: target '%s' is not a directory\n", target);
 		return 1;
 	}
 
 	/* Moves each source; a failure is remembered and the rest go on. */
 	failed = 0;
-	for (index = first; index < argc - 1; index++) {
+	for (index = 1; index <= last; index++) {
 		if (directory)
 			status = move_into(&options, argv[index], target);
 		else
@@ -124,8 +171,8 @@ main(
 }
 
 /*
- * Reads the options and returns the index of the first operand.  An
- * invalid option ends mv with a usage message.
+ * Reads the options and returns the number of operands, which are left in
+ * argv from argv[1] on.  An invalid option ends mv with a usage message.
  */
 static int
 read_options(
@@ -133,119 +180,142 @@ read_options(
 	char **argv,
 	struct mv_options *options)
 {
-	int index;
+	struct command_options scan;
+	int option;
 	int status;
-	int compare;
 
 	/* Nothing asked for yet. */
 	memset(options, 0, sizeof(*options));
 	options->prompt = -1;
 
-	/* Reads options until the first operand; - alone is an operand. */
-	for (index = 1; index < argc; index++) {
-		if (argv[index][0] != '-' || argv[index][1] == '\0')
+	/* Reads each option, and the long forms. */
+	memset(&scan, 0, sizeof(scan));
+	scan.argc = argc;
+	scan.argv = argv;
+	scan.program = "mv";
+	scan.letters = "finuvTt:";
+	scan.names = mv_long_options;
+	command_options_start(&scan);
+	for (;;) {
+		option = command_options_next(&scan);
+		if (option == COMMAND_OPTION_END)
 			break;
 
-		/* -- ends the options. */
-		compare = strcmp(argv[index], "--");
-		if (compare == 0) {
-			index++;
-			break;
-		}
-
-		/* A long option, or a cluster of letters. */
-		if (argv[index][1] == '-')
-			status = read_long_option(argv[index], options);
-		else
-			status = read_short_options(argv[index] + 1, options);
+		/* Records what the option asks for. */
+		status = read_letter(option, scan.value, options);
 		if (status != 0)
 			usage();
 	}
 
-	/* Reports where the operands start. */
-	return index;
+	/* Reports how many operands there are. */
+	return scan.operand_count;
 }
 
-/* Reads one long option; returns -1 for an unknown one. */
+/* Records one option; of -i, -f and -n the last wins.  Returns -1 for an unknown one. */
 static int
-read_long_option(
-	const char *option,
+read_letter(
+	int letter,
+	const char *value,
 	struct mv_options *options)
+{
+	/* Records what the option asks for. */
+	switch (letter) {
+	case 'f':
+		options->prompt = 0;
+		options->no_replace = 0;
+		options->conflict_fails = 0;
+		break;
+	case 'i':
+		options->prompt = 1;
+		break;
+	case 'n':
+		options->no_replace = 1;
+		options->conflict_fails = 0;
+		break;
+	case 'u':
+		options->keep_newer = 1;
+		break;
+	case 'v':
+		options->verbose = 1;
+		break;
+	case 'T':
+		options->literal = 1;
+		break;
+	case 't':
+		options->directory = value;
+		break;
+	case OPTION_UPDATE:
+		apply_update(options, value);
+		break;
+	case OPTION_IGNORED:
+		break;
+	case OPTION_VERSION:
+		printf("mv (zedBSD) 1.0\n");
+		exit(0);
+		break;
+	default:
+		return -1;
+	}
+
+	/* Succeeded: the option was known. */
+	return 0;
+}
+
+/*
+ * Applies --update[=when]: older (or no word) is -u, all replaces as
+ * usual, none keeps existing destinations and none-fail refuses them.
+ */
+static void
+apply_update(
+	struct mv_options *options,
+	const char *word)
 {
 	int compare;
 
-	/* The target is a pathname, never a directory to move into. */
-	compare = strcmp(option, "--no-target-directory");
-	if (compare == 0) {
-		options->literal = 1;
-		return 0;
-	}
+	/* No word, or older: -u. */
+	options->keep_newer = 1;
+	if (word == NULL)
+		return;
+	compare = strcmp(word, "older");
+	if (compare == 0)
+		return;
 
-	/* Existing destinations are kept. */
-	compare = strcmp(option, "--no-clobber");
-	if (compare != 0)
-		compare = strcmp(option, "--update=none");
+	/* all: replaces as usual. */
+	options->keep_newer = 0;
+	compare = strcmp(word, "all");
+	if (compare == 0)
+		return;
+
+	/* none and none-fail keep existing destinations. */
+	compare = strcmp(word, "none");
 	if (compare == 0) {
 		options->no_replace = 1;
 		options->conflict_fails = 0;
-		return 0;
+		return;
 	}
 
-	/* Existing destinations are refused. */
-	compare = strcmp(option, "--update=none-fail");
+	/* none-fail refuses them. */
+	compare = strcmp(word, "none-fail");
 	if (compare == 0) {
 		options->no_replace = 1;
 		options->conflict_fails = 1;
-		return 0;
 	}
-
-	/* Existing destinations are replaced without asking, as -f. */
-	compare = strcmp(option, "--force");
-	if (compare == 0) {
-		read_short_options("f", options);
-		return 0;
-	}
-
-	/* Anything else is unknown. */
-	fprintf(stderr, "mv: unknown option '%s'\n", option);
-	return -1;
 }
 
-/* Reads a cluster of one-letter options; returns -1 for an unknown one. */
+/* Tells whether a destination is not older than its source (-u keeps it). */
 static int
-read_short_options(
-	const char *cluster,
-	struct mv_options *options)
+destination_newer(
+	const struct stat *from,
+	const struct stat *existing)
 {
-	const char *letter;
+	/* Older by seconds, then by nanoseconds. */
+	if (existing->st_mtim.tv_sec < from->st_mtim.tv_sec)
+		return 0;
+	if (existing->st_mtim.tv_sec == from->st_mtim.tv_sec && existing->st_mtim.tv_nsec < from->st_mtim.tv_nsec)
+		return 0;
 
-	/* Takes each letter in turn. */
-	for (letter = cluster; *letter != '\0'; letter++) {
-		/* Records what the letter asks for; of -i and -f the last wins. */
-		switch (*letter) {
-		case 'f':
-			options->prompt = 0;
-			options->no_replace = 0;
-			options->conflict_fails = 0;
-			break;
-		case 'i':
-			options->prompt = 1;
-			break;
-		case 'n':
-			options->no_replace = 1;
-			options->conflict_fails = 0;
-			break;
-		case 'T':
-			options->literal = 1;
-			break;
-		default:
-			fprintf(stderr, "mv: unknown option -%c\n", *letter);
-			return -1;
-		}
-	}
-
-	/* Succeeded: every letter was known. */
-	return 0;
+	/* As new or newer: it stays. */
+	return 1;
 }
 
 /* Moves one source into a target directory under its last component. */
@@ -298,6 +368,7 @@ move_operand(
 	struct stat existing;
 	int status;
 	int answer;
+	int newer;
 
 	/* The source must exist; a link is moved, not followed. */
 	status = lstat(source, &from);
@@ -314,6 +385,13 @@ move_operand(
 			fprintf(stderr, "mv: '%s' and '%s' are the same file\n", source, destination);
 			return -1;
 		}
+
+		/* -u keeps a destination that is not older. */
+		newer = 0;
+		if (options->keep_newer)
+			newer = destination_newer(&from, &existing);
+		if (newer)
+			return 0;
 
 		/* -n keeps the destination; --update=none-fail refuses it. */
 		if (options->no_replace) {
@@ -333,8 +411,10 @@ move_operand(
 			return -1;
 	}
 
-	/* Renames the source, or copies it across file systems. */
+	/* Renames the source, or copies it across file systems; -v tells. */
 	status = rename_source(options, source, destination);
+	if (status == 0 && options->verbose)
+		printf("renamed '%s' -> '%s'\n", source, destination);
 	if (status == 0)
 		return 0;
 	if (errno != EXDEV) {
@@ -346,6 +426,8 @@ move_operand(
 	status = move_across(source, destination, &from);
 	if (status != 0)
 		return -1;
+	if (options->verbose)
+		printf("copied '%s' -> '%s'\n", source, destination);
 
 	/* Succeeded: the source was moved. */
 	return 0;

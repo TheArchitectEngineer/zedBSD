@@ -102,7 +102,9 @@ main(
 	done = glXQueryVersion(display, &major, &minor);
 	server_vendor = glXQueryServerString(display, 0, GLX_VENDOR);
 	server_version = glXQueryServerString(display, 0, GLX_VERSION);
-	if (!done || server_vendor == NULL || server_version == NULL) {
+	if (!done ||
+	    server_vendor == NULL ||
+	    server_version == NULL) {
 		printf("GLXTEST FAILED run=%s operation=glXQueryVersion\n", options.token);
 		return 1;
 	}
@@ -213,7 +215,9 @@ glxtest_parse(
 		differs = strncmp(argv[index], "--size=", 7U);
 		if (differs == 0) {
 			scanned = sscanf(argv[index] + 7, "%ux%u", &options->width, &options->height);
-			if (scanned != 2 || options->width == 0U || options->height == 0U)
+			if (scanned != 2 ||
+			    options->width == 0U ||
+			    options->height == 0U)
 				return -1;
 			continue;
 		}
@@ -267,7 +271,9 @@ glxtest_number(
 
 	/* Digits and nothing after them. */
 	*value = strtoul(text + length, &end, 10);
-	if (end == text + length || *end != '\0' || *value > maximum)
+	if (end == text + length ||
+	    *end != '\0' ||
+	    *value > maximum)
 		return -1;
 
 	/* Succeeded: the value. */

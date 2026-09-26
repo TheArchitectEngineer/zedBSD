@@ -2,12 +2,38 @@
 
 <!-- awesome-plan-current:start -->
 Active Queue: なし
-Last finished Queue: q487（ws035-p074 cleared。非公開の header と libzdesktop の役割）
+Last finished Queue: q494（ws068-p023 cleared。cube map）
 <!-- awesome-plan-current:end -->
 
 # Past Log
 
-## 最新: q443〜q487（2026-09-26〜27）
+## 最新: q443〜q494（2026-09-26〜27）
+
+WS071 p001 と WS036（p026）・WS044（p002）の merge（2026-09-27、Queue の外、サブエージェント）: File Manager の設計（`zdesktop-files`）。LLVM の AArch64 zedbsd target（patch zedbsd7）、sysroot-arm64、rpi4 の FAT32 の boot partition、rtld の PF_X の重複の修正。main の toolchain を zedbsd7 に切り替えた。
+
+WS049 の merge（2026-09-27、Queue の外、サブエージェント）: kernel の ACPI AML interpreter（host の試験で acpiexec と一致、fuzzing、SCI・GPE・EC の host の模擬、`/dev/acpi`、Global Lock、ECDT）。kernel への統合は HAL の差分の承認待ち。
+
+[q494](queue-q494.md): ws068-p023 cleared。cube map（6 layer の image、cube の束縛と sampler、FBO の面への描画、面ごとの読み戻し、mipmap）。Venus の egl-p023 と回帰 PASS。
+
+[q493](queue-q493.md): ws068-p022 cleared。libGLESv2 の framebuffer object と renderbuffer（texture の level 0 への描画、depth renderbuffer、FBO の readback、GPU の描いた texture の読み戻し）。FBO は GL の行の向きで描く（y を裏返さない vertex module、front face を逆）。Venus の egl-p022 と回帰 PASS。
+
+WS045 の merge（2026-09-27、Queue の外、サブエージェント）: sed・awk・grep ほかの GNU 拡張（p001〜p009）。判断待ち 3 点は ws045/ws.md。
+
+WS068 の GLSL の merge（2026-09-27、Queue の外、サブエージェント）: 自前の GLSL compiler（`userland/base/libglesv2/glsl/`、GLSL ES 1.00・1.10〜1.50・3.30・ES 3.00、SPIR-V は i915 が受ける形）と libGLESv2 の接続、uniform block。main で glsl-host PASS、Venus の x11-p004・p005・egl-p008・p019・p020・zdesktop-p070 PASS。実機は未実施。
+
+[q492](queue-q492.md): ws069-p006 cleared、**WS069 completed**（zdesktop で X11 の app: 単体の rootless の zdesktop-x11server、窓は Vulkan、GLX と固定機能の GL 1.x、BUG-057 の修正）。規約の全文との照合で条件の分割・`--shm`・成功の return を直した。Venus と実機（2 run とも 6 検査）で確認。試験は plan/tools/x11/ へ。
+
+WS048 の merge（2026-09-27、Queue の外、サブエージェント）: Pi 4 の FDT、brcmstb の PCIe、firmware の mailbox と VL805 の firmware、非 coherent の DMA（dma.c）。p004 は hal.h の差分の承認待ち。main で amd64 の image と rpi4 の vmunix の build（warning 0）、boot test（amd64 と QEMU raspi4b）PASS。実機は未実施。
+
+WS070 の merge（2026-09-27、Queue の外、ユーザーの例外の許可でサブエージェントが実行）: System Menu の p001〜p004（protocol、zdesktop の描画と操作、libzdesktop、zdesktop-terminal の menu）。main の Venus で x11-p003〜p005・zdesktop-p068（題名の double click を x+80 に直した）・p070・menu-p003 PASS。p005（実機・規約）は残り。
+
+[q491](queue-q491.md): ws069-p011 cleared。zdesktop-x11server の窓を top-level ごとの Vulkan の swapchain（MAILBOX）で表示し、wl_shm は fallback（`X11SERVER_SHM=1`）。libvulkan の present の worker と同じ接続を読むため、server の Wayland の dispatch を非 blocking に直した。Venus の x11-p003〜p005・zdesktop-p070、実機の run1 が PASS。Venus では Vulkan の道が約 3 倍遅い（F-021）。
+
+[q490](queue-q490.md): ws069-p009 cleared。Xzed を ws069 の前（cc4433d4）へ戻し、amd64 の Wayland 版の build 規則と rootful の試験を消した。std VGA の QEMU で Xzed と zterm。
+
+[q489](queue-q489.md): ws069-p010 cleared。BUG-057 の原因は kernel: `waitq_sleep` の「眠る前の wakeup」の EAGAIN を unix socket の送りの待ちが失敗として返し、blocking の send が失敗して libX11 が要求を打ち切っていた。2 つの待ちを直し、Venus の x11-p005 と実機の zgears 5000 frame で確認。ws069-p008 も追記で clear。
+
+[q488](queue-q488.md): ws069-p008 uncleared。単体の rootless の X server `zdesktop-x11server`（組み込める形、出力の queue、絶対座標の一貫）が Venus と i915 実機で動く。x11-p005 の frame 数だけ BUG-057 で未達。BUG-057 は Venus でも再現し、kernel の unix socket で大きな send の送り手が起きない所まで特定。
 
 [q487](queue-q487.md): ws035-p074 cleared。`Xzed.h` と `zed-gpu-buffer-v1-client-protocol.h` を非公開に（libX11・libwayland の下へ）、libzdesktop の役割を 2 つに。p073 の build の変数の衝突を修正。
 

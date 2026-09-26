@@ -21,14 +21,24 @@
  * that local time (month, day, hour, minute, and optionally the century
  * and year; a two-digit year of 69 to 99 is in the 1900s), which only a
  * privileged user may do.
+ *
+ * GNU's extensions are taken too (ws045): -d date (--date) writes that
+ * date instead of now (command_parse_date reads @SECONDS, ISO dates and
+ * times, YYYYMMDD and relative items), -r file (--reference) the time the
+ * file was last modified, -R (--rfc-email) the mail format and -I[spec]
+ * (--iso-8601) ISO 8601; the format also takes %N (nanoseconds), %s
+ * (seconds since the epoch) and %:z (the offset with a colon).  The long
+ * options are GNU's, and options may follow operands unless
+ * POSIXLY_CORRECT is set.
  */
 
+#include "userland/base/common/command.h"
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <time.h>
-#include <unistd.h>
 
 /* The format without a + operand. */
 #define DATE_DEFAULT_FORMAT "%a %b %e %H:%M:%S %Z %Y"
@@ -36,7 +46,45 @@
 /* The largest output of one format. */
 #define DATE_OUTPUT_SIZE 8192
 
-static int write_date(const char *format);
+/* The format of -R. */
+#define DATE_MAIL_FORMAT "%a, %d %b %Y %H:%M:%S %z"
+
+/* The codes of the long options that have no letter. */
+#define OPTION_HELP 256
+#define OPTION_VERSION 257
+
+/*
+ * The options written in full, read by the scan of the command line; a
+ * long option shares its code with its letter.
+ */
+static const struct command_long_option date_long_options[] = {
+	{"date", COMMAND_VALUE_REQUIRED, 'd'},
+	{"help", COMMAND_VALUE_NONE, OPTION_HELP},
+	{"iso-8601", COMMAND_VALUE_OPTIONAL, 'I'},
+	{"reference", COMMAND_VALUE_REQUIRED, 'r'},
+	{"rfc-email", COMMAND_VALUE_NONE, 'R'},
+	{"universal", COMMAND_VALUE_NONE, 'u'},
+	{"utc", COMMAND_VALUE_NONE, 'u'},
+	{"version", COMMAND_VALUE_NONE, OPTION_VERSION},
+	{NULL, 0, 0}
+};
+
+/*
+ * What the command line asks for: -u, the date of -d, the file of -r, and
+ * the format of -R or -I.
+ */
+struct date_options {
+	int utc;
+	const char *date;
+	const char *reference;
+	const char *format;
+};
+
+static int read_options(int argc, char **argv, struct date_options *options);
+static const char *iso_format(const char *spec);
+static int find_moment(const struct date_options *options, struct timespec *moment);
+static int write_date(const char *format, const struct timespec *moment);
+static int expand_format(const char *format, const struct timespec *moment, const struct tm *broken, char *out, size_t size);
 static int set_date(const char *operand);
 static int read_digits(const char *text, int count);
 static void strip_modifiers(const char *format, char *out, size_t size);
@@ -50,79 +98,223 @@ main(
 	int argc,
 	char **argv)
 {
-	const char *format;
-	int option;
+	struct date_options options;
+	struct timespec moment;
+	int count;
 	int status;
 
-	/* Reads -u, which puts the time zone at UTC. */
-	for (;;) {
-		option = getopt(argc, argv, "u");
-		if (option == -1)
-			break;
-
-		/* -u is the only option. */
-		if (option != 'u')
-			usage();
+	/* Reads the options; -u puts the time zone at UTC. */
+	count = read_options(argc, argv, &options);
+	if (options.utc)
 		setenv("TZ", "UTC0", 1);
-	}
 
 	/* Reads the time zone, now that -u may have set it. */
 	tzset();
 
 	/* At most one operand. */
-	if (argc - optind > 1)
+	if (count > 1)
 		usage();
 
-	/* No operand: the default format. */
-	format = DATE_DEFAULT_FORMAT;
-	if (optind == argc) {
-		status = write_date(format);
+	/* Anything but +format sets the clock, which -d and -r do not. */
+	if (count == 1 && argv[1][0] != '+') {
+		if (options.date != NULL || options.reference != NULL)
+			usage();
+		status = set_date(argv[1]);
 		return status;
 	}
 
 	/* + and a format: that format. */
-	if (argv[optind][0] == '+') {
-		status = write_date(argv[optind] + 1);
-		return status;
-	}
+	if (count == 1)
+		options.format = argv[1] + 1;
 
-	/* Anything else sets the clock. */
-	status = set_date(argv[optind]);
+	/* The moment: now, -d's date or -r's file. */
+	status = find_moment(&options, &moment);
+	if (status != 0)
+		return 1;
+
+	/* Writes it. */
+	status = write_date(options.format, &moment);
 	return status;
 }
 
-/* Writes the current time in a format. */
+/*
+ * Reads the options; returns the number of operands, which are left in
+ * argv from argv[1] on.
+ */
+static int
+read_options(
+	int argc,
+	char **argv,
+	struct date_options *options)
+{
+	struct command_options scan;
+	int option;
+
+	/* Now, in the default format. */
+	memset(options, 0, sizeof(*options));
+	options->format = DATE_DEFAULT_FORMAT;
+
+	/* Reads each option, and the long forms. */
+	memset(&scan, 0, sizeof(scan));
+	scan.argc = argc;
+	scan.argv = argv;
+	scan.program = "date";
+	scan.letters = "ud:r:RI::";
+	scan.names = date_long_options;
+	command_options_start(&scan);
+	for (;;) {
+		option = command_options_next(&scan);
+		if (option == COMMAND_OPTION_END)
+			break;
+
+		/* Records what the option asks for. */
+		switch (option) {
+		case 'u':
+			options->utc = 1;
+			break;
+		case 'd':
+			options->date = scan.value;
+			break;
+		case 'r':
+			options->reference = scan.value;
+			break;
+		case 'R':
+			options->format = DATE_MAIL_FORMAT;
+			break;
+		case 'I':
+			options->format = iso_format(scan.value);
+			break;
+		case OPTION_VERSION:
+			printf("date (zedBSD) 1.0\n");
+			exit(0);
+			break;
+		default:
+			usage();
+			break;
+		}
+	}
+
+	/* Reports how many operands there are. */
+	return scan.operand_count;
+}
+
+/* Returns the format of -I[spec]: date, hours, minutes, seconds or ns. */
+static const char *
+iso_format(
+	const char *spec)
+{
+	static const char *const specs[][2] = {
+		{"date", "%Y-%m-%d"},
+		{"hours", "%Y-%m-%dT%H%:z"},
+		{"minutes", "%Y-%m-%dT%H:%M%:z"},
+		{"seconds", "%Y-%m-%dT%H:%M:%S%:z"},
+		{"ns", "%Y-%m-%dT%H:%M:%S,%N%:z"}
+	};
+	size_t length;
+	size_t index;
+	int differs;
+
+	/* No spec is the date. */
+	if (spec == NULL)
+		return specs[0][1];
+
+	/* The spec, or the beginning of one. */
+	length = strlen(spec);
+	for (index = 0; index < sizeof(specs) / sizeof(specs[0]); index++) {
+		differs = strncmp(spec, specs[index][0], length);
+		if (differs == 0)
+			return specs[index][1];
+	}
+
+	/* Any other spec. */
+	fprintf(stderr, "date: invalid argument '%s' for '--iso-8601'\n", spec);
+	exit(1);
+}
+
+/*
+ * Finds the moment to write: now, the date of -d, or the modification
+ * time of -r's file.  Returns -1 after a message when there is none.
+ */
+static int
+find_moment(
+	const struct date_options *options,
+	struct timespec *moment)
+{
+	struct timespec now;
+	struct stat status_of_file;
+	int status;
+	int valid;
+
+	/* Now. */
+	status = clock_gettime(CLOCK_REALTIME, &now);
+	if (status != 0) {
+		fprintf(stderr, "date: cannot read the clock: %s\n", strerror(errno));
+		return -1;
+	}
+
+	/* -r: the time the file was last modified. */
+	if (options->reference != NULL) {
+		status = stat(options->reference, &status_of_file);
+		if (status != 0) {
+			fprintf(stderr, "date: %s: %s\n", options->reference, strerror(errno));
+			return -1;
+		}
+
+		/* The file's time. */
+		*moment = status_of_file.st_mtim;
+		return 0;
+	}
+
+	/* -d: the date given, in the time zone. */
+	if (options->date != NULL) {
+		valid = command_parse_date(options->date, &now, options->utc, moment);
+		if (!valid) {
+			fprintf(stderr, "date: invalid date '%s'\n", options->date);
+			return -1;
+		}
+
+		/* The date given. */
+		return 0;
+	}
+
+	/* Succeeded: now. */
+	*moment = now;
+	return 0;
+}
+
+/* Writes a moment in a format. */
 static int
 write_date(
-	const char *format)
+	const char *format,
+	const struct timespec *moment)
 {
+	char expanded[DATE_OUTPUT_SIZE];
 	char stripped[DATE_OUTPUT_SIZE];
 	char output[DATE_OUTPUT_SIZE];
-	struct timespec now;
 	struct tm *broken;
 	size_t length;
 	int status;
 
-	/* Reads the clock. */
-	status = clock_gettime(CLOCK_REALTIME, &now);
-	if (status != 0) {
-		fprintf(stderr, "date: cannot read the clock: %s\n", strerror(errno));
-		return 1;
-	}
-
 	/* Breaks it down in the time zone. */
-	broken = localtime(&now.tv_sec);
+	broken = localtime(&moment->tv_sec);
 	if (broken == NULL) {
 		fprintf(stderr, "date: cannot convert the time: %s\n", strerror(errno));
 		return 1;
 	}
 
 	/*
-	 * Formats it; the modifiers are dropped first.  strftime() gives 0
-	 * both for an empty result and for one too long, so an empty format
-	 * is told apart first.
+	 * Formats it; GNU's conversions are written out and the modifiers
+	 * dropped first.  strftime() gives 0 both for an empty result and for
+	 * one too long, so an empty format is told apart first.
 	 */
-	strip_modifiers(format, stripped, sizeof(stripped));
+	status = expand_format(format, moment, broken, expanded, sizeof(expanded));
+	if (status != 0) {
+		fprintf(stderr, "date: format too long\n");
+		return 1;
+	}
+
+	/* Then the modifiers go. */
+	strip_modifiers(expanded, stripped, sizeof(stripped));
 	length = 0;
 	if (stripped[0] != '\0') {
 		length = strftime(output, sizeof(output), stripped, broken);
@@ -143,6 +335,72 @@ write_date(
 	}
 
 	/* Succeeded: the date was written. */
+	return 0;
+}
+
+/*
+ * Copies a format with GNU's %N (nanoseconds, nine digits), %s (seconds
+ * since the epoch) and %:z (the offset as +hh:mm) written out, for
+ * strftime() to do the rest.  Returns -1 when it does not fit.
+ */
+static int
+expand_format(
+	const char *format,
+	const struct timespec *moment,
+	const struct tm *broken,
+	char *out,
+	size_t size)
+{
+	char number[32];
+	const char *cursor;
+	size_t length;
+	size_t used;
+	size_t zone;
+
+	/* Each character, and each conversion whole. */
+	used = 0;
+	for (cursor = format; *cursor != '\0'; cursor++) {
+		/* %N, %s and %:z become their text; %% stays whole. */
+		number[0] = '\0';
+		length = 0;
+		if (cursor[0] == '%' && cursor[1] == 'N') {
+			snprintf(number, sizeof(number), "%09ld", (long)moment->tv_nsec);
+		} else if (cursor[0] == '%' && cursor[1] == 's') {
+			snprintf(number, sizeof(number), "%lld", (long long)moment->tv_sec);
+		} else if (cursor[0] == '%' && cursor[1] == ':' && cursor[2] == 'z') {
+			zone = strftime(number, sizeof(number) - 1, "%z", broken);
+			if (zone == 5) {
+				memmove(number + 4, number + 3, 3);
+				number[3] = ':';
+			}
+
+			/* The conversion is one byte longer. */
+			cursor++;
+		} else if (cursor[0] == '%' && cursor[1] != '\0') {
+			number[0] = cursor[0];
+			number[1] = cursor[1];
+			number[2] = '\0';
+		} else {
+			number[0] = cursor[0];
+			number[1] = '\0';
+			length = 1;
+		}
+
+		/* The text in the conversion's place; a conversion is two bytes. */
+		if (length == 0) {
+			length = strlen(number);
+			cursor++;
+		}
+
+		/* It must fit with the end of the text. */
+		if (used + length + 1 > size)
+			return -1;
+		memcpy(out + used, number, length);
+		used += length;
+	}
+
+	/* Succeeded: the format, ended. */
+	out[used] = '\0';
 	return 0;
 }
 
@@ -281,7 +539,7 @@ set_date(
 	}
 
 	/* Writes the new date. */
-	status = write_date(DATE_DEFAULT_FORMAT);
+	status = write_date(DATE_DEFAULT_FORMAT, &now);
 	if (status != 0)
 		return 1;
 
@@ -313,7 +571,7 @@ usage(void)
 {
 	/* Names the POSIX forms. */
 	fprintf(stderr,
-		"usage: date [-u] [+format]\n"
+		"usage: date [-u] [-d date | -r file] [-R | -I[spec]] [+format]\n"
 		"       date [-u] mmddhhmm[[cc]yy]\n");
 	exit(1);
 }

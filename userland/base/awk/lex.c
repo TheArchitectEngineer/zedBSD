@@ -36,6 +36,7 @@ static const struct keyword keywords[] = {
 	{ "BEGIN", TOKEN_BEGIN, 0 },
 	{ "END", TOKEN_END, 0 },
 	{ "function", TOKEN_FUNCTION, 0 },
+	{ "func", TOKEN_FUNCTION, 0 },
 	{ "getline", TOKEN_GETLINE, 0 },
 	{ "print", TOKEN_PRINT, 0 },
 	{ "printf", TOKEN_PRINTF, 0 },
@@ -74,6 +75,18 @@ static const struct keyword keywords[] = {
 	{ "system", TOKEN_BUILTIN, BUILTIN_SYSTEM },
 	{ "close", TOKEN_BUILTIN, BUILTIN_CLOSE },
 	{ "fflush", TOKEN_BUILTIN, BUILTIN_FFLUSH },
+	{ "gensub", TOKEN_BUILTIN, BUILTIN_GENSUB },
+	{ "systime", TOKEN_BUILTIN, BUILTIN_SYSTIME },
+	{ "strftime", TOKEN_BUILTIN, BUILTIN_STRFTIME },
+	{ "mktime", TOKEN_BUILTIN, BUILTIN_MKTIME },
+	{ "and", TOKEN_BUILTIN, BUILTIN_AND },
+	{ "or", TOKEN_BUILTIN, BUILTIN_OR },
+	{ "xor", TOKEN_BUILTIN, BUILTIN_XOR },
+	{ "lshift", TOKEN_BUILTIN, BUILTIN_LSHIFT },
+	{ "rshift", TOKEN_BUILTIN, BUILTIN_RSHIFT },
+	{ "compl", TOKEN_BUILTIN, BUILTIN_COMPL },
+	{ "asort", TOKEN_BUILTIN, BUILTIN_ASORT },
+	{ "asorti", TOKEN_BUILTIN, BUILTIN_ASORTI },
 	{ NULL, 0, 0 }
 };
 
@@ -92,6 +105,8 @@ static void read_number(struct token *token);
 static void read_name(struct token *token);
 static void read_string(struct token *token);
 static int read_escape(struct buffer *buffer);
+static int hex_escape(int *value);
+static int hex_digit(int character);
 static int read_operator(struct token *token);
 static int is_letter(int character);
 static int is_digit(int character);
@@ -591,6 +606,7 @@ read_escape(
 	int character;
 	int value;
 	int count;
+	int found;
 
 	/* The character after the backslash. */
 	character = peek_character(1);
@@ -608,6 +624,15 @@ read_escape(
 		}
 
 		/* The character of the digits. */
+		buffer_append_byte(buffer, (char)value);
+		return 1;
+	}
+
+	/* gawk's \x escape: up to two hexadecimal digits. */
+	if (character == 'x') {
+		found = hex_escape(&value);
+		if (!found)
+			return 0;
 		buffer_append_byte(buffer, (char)value);
 		return 1;
 	}
@@ -654,6 +679,57 @@ read_escape(
 	return 1;
 }
 
+/*
+ * Reads gawk's \xHH at the position: up to two hexadecimal digits after
+ * the x.  Returns 0, reading nothing, when there is no digit.
+ */
+static int
+hex_escape(
+	int *value)
+{
+	int character;
+	int digit;
+	int count;
+
+	/* The first digit, which must be there. */
+	character = peek_character(2);
+	digit = hex_digit(character);
+	if (digit < 0)
+		return 0;
+
+	/* Past the backslash and the x, the digits. */
+	lex_position += 2;
+	*value = 0;
+	for (count = 0; count < 2; count++) {
+		character = peek_character(0);
+		digit = hex_digit(character);
+		if (digit < 0)
+			break;
+		*value = *value * 16 + digit;
+		lex_position++;
+	}
+
+	/* Succeeded. */
+	return 1;
+}
+
+/* Returns the value of a hexadecimal digit, or -1 for another character. */
+static int
+hex_digit(
+	int character)
+{
+	/* 0 to 9, a to f and A to F. */
+	if (character >= '0' && character <= '9')
+		return character - '0';
+	if (character >= 'a' && character <= 'f')
+		return character - 'a' + 10;
+	if (character >= 'A' && character <= 'F')
+		return character - 'A' + 10;
+
+	/* Not a digit. */
+	return -1;
+}
+
 /* Reads an operator or a punctuation mark; returns 0 for anything else. */
 static int
 read_operator(
@@ -661,6 +737,7 @@ read_operator(
 {
 	int character;
 	int following;
+	int third;
 	int kind;
 	size_t length;
 
@@ -734,6 +811,15 @@ read_operator(
 		if (following == '=') {
 			kind = TOKEN_MULTIPLY_ASSIGN;
 			length = 2;
+		} else if (following == '*') {
+			/* gawk's ** and **= are ^ and ^=. */
+			kind = TOKEN_CARET;
+			length = 2;
+			third = peek_character(2);
+			if (third == '=') {
+				kind = TOKEN_POWER_ASSIGN;
+				length = 3;
+			}
 		}
 
 		break;

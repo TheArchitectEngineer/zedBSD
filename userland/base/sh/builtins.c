@@ -10,7 +10,7 @@
 /*
  * The table of builtin utilities, how a builtin is run, and the small
  * builtins that have no file of their own: :, true, false, alias, unalias,
- * times, clear, env and help.  Every builtin returns its exit status.
+ * times, clear and help.  Every builtin returns its exit status.
  */
 
 #include "userland/base/sh/shell.h"

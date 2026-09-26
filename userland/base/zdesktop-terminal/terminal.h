@@ -13,8 +13,9 @@
  * keys.c turns the compositor's key codes into the bytes a shell reads;
  * font.c draws the glyphs of a monospaced TrueType font into an atlas;
  * render.c draws the grid from that atlas; window.c holds the Wayland
- * window and its keyboard; main.c runs the shell on a pseudo-terminal and
- * ties them together.
+ * window and its keyboard; menu.c gives zdesktop the window's menus
+ * (Shell, Edit, View, Session, Help) through libzdesktop; main.c runs the
+ * shell on a pseudo-terminal and ties them together.
  */
 
 #ifndef ZDESKTOP_TERMINAL_H
@@ -24,6 +25,7 @@
 #include <vulkan/vulkan.h>
 #include <wayland-client.h>
 #include <xdg-shell-client-protocol.h>
+#include <zdesktop.h>
 
 #include <stddef.h>
 #include <stdint.h>
@@ -41,6 +43,59 @@
 /* The default colours: light grey on a dark blue-grey, as 0xRRGGBB. */
 #define TERMINAL_FOREGROUND	0xdcdfe6U
 #define TERMINAL_BACKGROUND	0x1d2230U
+
+/* The background of selected cells, a muted blue. */
+#define TERMINAL_SELECTION	0x3a5a98U
+
+/* The font sizes zooming stays within, its step, and the sizes the View menu names. */
+#define TERMINAL_PIXELS_MIN	8U
+#define TERMINAL_PIXELS_MAX	32U
+#define TERMINAL_PIXELS_STEP	2U
+#define TERMINAL_PIXELS_SMALL	12U
+#define TERMINAL_PIXELS_MEDIUM	16U
+#define TERMINAL_PIXELS_LARGE	20U
+#define TERMINAL_PIXELS_HUGE	24U
+
+/* How many menu choices wait for the main loop at most. */
+#define TERMINAL_ACTIONS	16U
+
+/*
+ * The actions the menus' items report (menu.c); the main loop carries them
+ * out.  They are numbers of the terminal's own, apart from the items' IDs.
+ */
+enum terminal_action {
+	TERMINAL_ACTION_NONE,
+	TERMINAL_ACTION_NEW_WINDOW,
+	TERMINAL_ACTION_CLOSE,
+	TERMINAL_ACTION_COPY,
+	TERMINAL_ACTION_PASTE,
+	TERMINAL_ACTION_SELECT_ALL,
+	TERMINAL_ACTION_ZOOM_IN,
+	TERMINAL_ACTION_ZOOM_OUT,
+	TERMINAL_ACTION_ZOOM_NORMAL,
+	TERMINAL_ACTION_SIZE_SMALL,
+	TERMINAL_ACTION_SIZE_MEDIUM,
+	TERMINAL_ACTION_SIZE_LARGE,
+	TERMINAL_ACTION_SIZE_HUGE,
+	TERMINAL_ACTION_FULLSCREEN,
+	TERMINAL_ACTION_INTERRUPT,
+	TERMINAL_ACTION_END_OF_FILE,
+	TERMINAL_ACTION_CLEAR,
+	TERMINAL_ACTION_RESET,
+	TERMINAL_ACTION_ABOUT
+};
+
+/*
+ * What the menus show of the terminal's state: whether something is
+ * selected (Copy), whether the clipboard holds text (Paste), the font's
+ * size (Zoom, Text Size) and whether the window is fullscreen.
+ */
+struct terminal_menu_state {
+	int selection;
+	int clipboard;
+	unsigned pixels;
+	int fullscreen;
+};
 
 /* The modifier bits of wl_keyboard.modifiers, as zdesktop reports them. */
 #define TERMINAL_MODIFIER_SHIFT		0x01U
@@ -109,6 +164,9 @@ struct terminal_screen {
 
 	/* Nonzero once a change needs a new frame. */
 	int changed;
+
+	/* Nonzero while the whole screen is selected (Edit > Select All), until a key is typed. */
+	int selected;
 };
 
 /*
@@ -123,6 +181,9 @@ struct terminal_font {
 	void *data;
 	size_t size;
 	struct truetype_face *face;
+
+	/* The size glyphs are drawn at, in pixels. */
+	unsigned pixels_size;
 
 	/* The cell size in pixels and where the baseline is from the cell's top. */
 	unsigned cell_width;
@@ -247,6 +308,22 @@ struct terminal_window {
 	/* The repeat's first delay and its interval, in milliseconds (wl_keyboard.repeat_info). */
 	uint32_t repeat_delay;
 	uint32_t repeat_interval;
+
+	/* Whether the compositor last configured the window fullscreen. */
+	int fullscreen;
+
+	/*
+	 * The menus (menu.c): the connection's menu service (NULL when the
+	 * compositor has none), the menu and the window's place for it, the
+	 * state the menu last showed, and the actions chosen but not yet
+	 * carried out, oldest first.
+	 */
+	struct zdesktop_menu_service *menu_service;
+	struct zdesktop_menu *menu;
+	struct zdesktop_window_menu *window_menu;
+	struct terminal_menu_state menu_state;
+	uint32_t actions[TERMINAL_ACTIONS];
+	unsigned action_count;
 };
 
 /* The character grid (screen.c). */
@@ -254,6 +331,7 @@ void terminal_screen_init(struct terminal_screen *screen, unsigned columns, unsi
 void terminal_screen_resize(struct terminal_screen *screen, unsigned columns, unsigned rows);
 void terminal_screen_write(struct terminal_screen *screen, const unsigned char *bytes, size_t length);
 struct terminal_cell *terminal_screen_cell(struct terminal_screen *screen, unsigned column, unsigned row);
+size_t terminal_screen_text(struct terminal_screen *screen, char *text, size_t size);
 
 /* The key codes (keys.c). */
 size_t terminal_key_bytes(uint32_t key, uint32_t modifiers, unsigned char *bytes, size_t size);
@@ -261,6 +339,7 @@ size_t terminal_key_bytes(uint32_t key, uint32_t modifiers, unsigned char *bytes
 /* The glyph atlas (font.c). */
 int terminal_font_open(struct terminal_font *font, const char *path, unsigned pixels);
 int terminal_font_attach(struct terminal_font *font, unsigned char *pixels, size_t row_pitch, unsigned width, unsigned height);
+int terminal_font_resize(struct terminal_font *font, unsigned pixels);
 unsigned terminal_font_slot(struct terminal_font *font, uint32_t codepoint);
 void terminal_font_close(struct terminal_font *font);
 
@@ -275,6 +354,14 @@ int terminal_window_open(struct terminal_window *window, const char *display, ui
 int terminal_window_dispatch(struct terminal_window *window, int other, int timeout, int *other_ready);
 void terminal_window_repeat(struct terminal_window *window, uint64_t now);
 void terminal_window_close(struct terminal_window *window);
+void terminal_window_type(struct terminal_window *window, const char *bytes, size_t length);
+void terminal_window_set_fullscreen(struct terminal_window *window, int fullscreen);
 uint64_t terminal_clock(void);
+
+/* The menus (menu.c). */
+int terminal_menu_open(struct terminal_window *window, const struct terminal_menu_state *state);
+void terminal_menu_refresh(struct terminal_window *window, const struct terminal_menu_state *state);
+uint32_t terminal_menu_take(struct terminal_window *window);
+void terminal_menu_close(struct terminal_window *window);
 
 #endif

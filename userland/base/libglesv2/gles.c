@@ -34,6 +34,7 @@ const struct gles_fixed_hooks *gles_fixed;
 static const char *gles_reported[16];
 
 static void gles_frame_done(struct zegl_context *context);
+static void gles_frame_closing(struct zegl_context *context);
 static void gles_release(struct zegl_context *context);
 static int gles_capability(struct gles_state *state, GLenum cap, int **flag);
 static unsigned gles_integers(struct zegl_context *context, struct gles_state *state, GLenum pname, GLint *values);
@@ -132,6 +133,7 @@ gles_state(
 	context->gles.state = state;
 	context->gles.frame_done = gles_frame_done;
 	context->gles.release = gles_release;
+	context->gles.frame_closing = gles_frame_closing;
 	return state;
 }
 
@@ -1152,6 +1154,22 @@ gles_frame_done(
 	gles_collect(state);
 }
 
+/* Ends a framebuffer object's render pass left open in the frame, before libEGL submits the frame or the context stops being current. */
+static void
+gles_frame_closing(
+	struct zegl_context *context)
+{
+	struct gles_state *state;
+
+	/* The state, when there is one. */
+	state = context->gles.state;
+	if (state == NULL)
+		return;
+
+	/* The pass, if one is open. */
+	gles_target_close(state);
+}
+
 /* Frees a context's libGLESv2 state and every object and Vulkan object in it. */
 static void
 gles_release(
@@ -1205,9 +1223,14 @@ gles_release(
 			gles_texture_free(state, state->textures.objects[name]);
 	}
 
-	/* The black texture. */
+	/* The black textures. */
 	if (state->black != NULL)
 		gles_texture_free(state, state->black);
+	if (state->black_cube != NULL)
+		gles_texture_free(state, state->black_cube);
+
+	/* The framebuffer objects and renderbuffers. */
+	gles_framebuffers_release(state);
 
 	/* The garbage, which the frees above added to. */
 	gles_collect(state);
@@ -1383,6 +1406,12 @@ gles_integers(
 		if (texture != NULL)
 			values[0] = (GLint)texture->name;
 		return 1U;
+	case GL_TEXTURE_BINDING_CUBE_MAP:
+		texture = state->cube_units[state->active_unit];
+		values[0] = 0;
+		if (texture != NULL)
+			values[0] = (GLint)texture->name;
+		return 1U;
 	case GL_FRAMEBUFFER_BINDING:
 		values[0] = (GLint)state->framebuffer;
 		return 1U;
@@ -1431,7 +1460,7 @@ gles_integers(
 		values[0] = GL_SHADER_BINARY_FORMAT_SPIR_V;
 		return 1U;
 	case GL_SHADER_COMPILER:
-		values[0] = GL_FALSE;
+		values[0] = GL_TRUE;
 		return 1U;
 	case GL_IMPLEMENTATION_COLOR_READ_FORMAT:
 		values[0] = GL_RGBA;

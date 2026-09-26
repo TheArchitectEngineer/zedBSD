@@ -103,6 +103,9 @@ enum zwl_kind {
 	ZWL_KEYBOARD,
 	ZWL_SHM,
 	ZWL_SHM_POOL,
+	ZWL_MENU_MANAGER,
+	ZWL_MENU,
+	ZWL_TOPLEVEL_MENU,
 };
 
 /* The wl_shm formats (ARGB8888 has alpha; XRGB8888's top byte is unused). */
@@ -257,6 +260,15 @@ struct zwl_object {
 	/* When the queued fences were committed, and whether a pass found one still pending. */
 	uint64_t fence_ms;
 	unsigned fence_waited;
+	/*
+	 * The System Menu (menu.c): an xdg_menu_v1's model; a toplevel's
+	 * xdg_toplevel_menu_v1 (whose own top names the toplevel back); and the
+	 * xdg_menu_v1 an xdg_toplevel_menu_v1 shows.  Each link is cleared from
+	 * both ends when either object goes.
+	 */
+	struct zwl_menu_model *menu_model;
+	struct zwl_object *toplevel_menu;
+	struct zwl_object *shown_menu;
 };
 
 /* One stream has independent byte and fd FIFOs, plus its own protocol namespace. */
@@ -491,6 +503,7 @@ int zwl_flush(struct zwl_client *client);
 int zwl_read(struct zwl_client *client);
 int zwl_dispatch(struct zwl_client *client, uint32_t id, uint32_t opcode, const unsigned char *payload, size_t size);
 int zwl_error(struct zwl_client *client, uint32_t object, const char *reason);
+int zwl_error_code(struct zwl_client *client, uint32_t object, uint32_t code, const char *reason);
 int zwl_take_fd(struct zwl_client *client);
 void zwl_delete_id(struct zwl_client *client, uint32_t id);
 void zwl_client_destroy(struct zwl_client *client);

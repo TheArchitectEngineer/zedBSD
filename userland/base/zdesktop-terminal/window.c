@@ -25,6 +25,9 @@
 /* The seat and keyboard version the window understands. */
 #define WINDOW_SEAT_VERSION	5U
 
+/* The xdg_toplevel state that says the window is fullscreen. */
+#define WINDOW_STATE_FULLSCREEN	2U
+
 /* The repeat's delay and interval when the compositor gives none, in milliseconds. */
 #define WINDOW_REPEAT_DELAY	400U
 #define WINDOW_REPEAT_INTERVAL	40U
@@ -55,6 +58,7 @@ static void window_keyboard_key(void *data, struct wl_keyboard *keyboard, uint32
 static void window_keyboard_modifiers(void *data, struct wl_keyboard *keyboard, uint32_t serial, uint32_t depressed, uint32_t latched, uint32_t locked, uint32_t group);
 static void window_keyboard_repeat(void *data, struct wl_keyboard *keyboard, int32_t rate, int32_t delay);
 static void window_press(struct terminal_window *window, uint32_t key);
+static int window_state_fullscreen(struct wl_array *states);
 static int window_modifier_key(uint32_t key);
 
 /* The registry's callbacks, for as long as the registry lives. */
@@ -288,6 +292,9 @@ void
 terminal_window_close(
 	struct terminal_window *window)
 {
+	/* The menus, before the window they are shown on. */
+	terminal_menu_close(window);
+
 	/* The keyboard and the seat. */
 	if (window->keyboard != NULL)
 		wl_keyboard_destroy(window->keyboard);
@@ -312,6 +319,41 @@ terminal_window_close(
 	if (window->display != NULL)
 		wl_display_disconnect(window->display);
 	memset(window, 0, sizeof(*window));
+}
+
+/*
+ * Adds bytes to what the shell reads next, as if typed (the Session menu's
+ * interrupt and end of file); what does not fit is dropped.
+ */
+void
+terminal_window_type(
+	struct terminal_window *window,
+	const char *bytes,
+	size_t length)
+{
+	/* Only what fits in the buffer. */
+	if (length > sizeof(window->input) - window->input_length)
+		length = sizeof(window->input) - window->input_length;
+
+	/* The bytes after those typed before. */
+	memcpy(window->input + window->input_length, bytes, length);
+	window->input_length += length;
+}
+
+/*
+ * Asks the compositor to make the window fullscreen, or to end it; the
+ * configure that follows says what it did.
+ */
+void
+terminal_window_set_fullscreen(
+	struct terminal_window *window,
+	int fullscreen)
+{
+	/* On the default output, or back to a window. */
+	if (fullscreen)
+		xdg_toplevel_set_fullscreen(window->toplevel, NULL);
+	else
+		xdg_toplevel_unset_fullscreen(window->toplevel);
 }
 
 /*
@@ -425,10 +467,10 @@ window_toplevel_configure(
 {
 	struct terminal_window *window;
 
-	/* The states (maximized, activated) change nothing but the size. */
+	/* Of the states only fullscreen matters (the View menu shows it); the others change nothing but the size. */
 	(void)toplevel;
-	(void)states;
 	window = data;
+	window->fullscreen = window_state_fullscreen(states);
 
 	/* A new width or height marks the window resized. */
 	if (width > 0 && (uint32_t)width != window->width) {
@@ -633,6 +675,32 @@ window_press(
 	/* The bytes, if they fit in what is left of the buffer. */
 	length = terminal_key_bytes(key, window->modifiers, window->input + window->input_length, sizeof(window->input) - window->input_length);
 	window->input_length += length;
+}
+
+/* Tells whether a configure's states include fullscreen. */
+static int
+window_state_fullscreen(
+	struct wl_array *states)
+{
+	const uint32_t *state;
+	size_t count;
+	size_t index;
+
+	/* No array, no states. */
+	if (states == NULL || states->data == NULL)
+		return 0;
+
+	/* The states are 32-bit values. */
+	state = states->data;
+	count = states->size / sizeof(uint32_t);
+	for (index = 0; index < count; index++) {
+		/* Fullscreen is among them. */
+		if (state[index] == WINDOW_STATE_FULLSCREEN)
+			return 1;
+	}
+
+	/* Not fullscreen. */
+	return 0;
 }
 
 /* Tells whether a key is a modifier (which types nothing and does not repeat). */

@@ -5,7 +5,8 @@ include $(dir $(lastword $(MAKEFILE_LIST)))../package.mk
 LIBWAYLAND_SOURCES := userland/base/libwayland/client.c \
 	userland/base/libwayland/proxy.c userland/base/libwayland/wire.c \
 	userland/base/libwayland/event.c userland/base/libwayland/protocol.c \
-	userland/base/libwayland/utility.c
+	userland/base/libwayland/utility.c \
+	userland/base/libwayland/menu-protocol.c
 
 # The public SONAME follows the standard client library spelling.
 LIBWAYLAND_IMAGE_DATA := $(if $(ZEDBSD_TOPLEVEL_BUILD),/lib/libwayland-client.so=$(BUILD)/dynamic/libwayland-client.so)

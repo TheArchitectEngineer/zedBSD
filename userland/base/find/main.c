@@ -9,6 +9,11 @@
 
 /*
  * Implements the zedBSD find userland command.
+ *
+ * GNU's extensions (ws045): -maxdepth, -mindepth, -regextype, -iname,
+ * -ipath, -wholename, -iwholename, -regex, -iregex, -empty, -executable,
+ * -readable, -writable, -false, -amin, -cmin, -mmin, -delete, -printf,
+ * -quit, and the operators -and and -or.
  */
 
 #include <dirent.h>
@@ -17,6 +22,7 @@
 #include <grp.h>
 #include <limits.h>
 #include <pwd.h>
+#include <regex.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -50,6 +56,21 @@ enum node_kind {
 	NODE_FPRINT0,
 	NODE_PRUNE,
 	NODE_EXEC,
+	NODE_FALSE,
+	NODE_INAME,
+	NODE_IPATH,
+	NODE_REGEX,
+	NODE_IREGEX,
+	NODE_EMPTY,
+	NODE_EXECUTABLE,
+	NODE_READABLE,
+	NODE_WRITABLE,
+	NODE_AMIN,
+	NODE_CMIN,
+	NODE_MMIN,
+	NODE_DELETE,
+	NODE_PRINTF,
+	NODE_QUIT,
 };
 
 struct number {
@@ -72,6 +93,8 @@ struct node {
 	struct stat reference;
 	/* An explicit file-output action owns this stream until finalization. */
 	FILE *output;
+	/* -regex and -iregex own their compiled regex. */
+	regex_t *regex;
 };
 
 struct parser {
@@ -81,6 +104,10 @@ struct parser {
 	int failed;
 	int depth_first;
 	int same_device;
+	/* GNU's -maxdepth (-1 for none), -mindepth and -regextype. */
+	long max_depth;
+	long min_depth;
+	int regex_extended;
 };
 
 struct walk_state {
@@ -96,6 +123,51 @@ struct walk_state {
 	int prune;
 	int errors;
 	time_t now;
+	/* GNU's depth limits, -quit, and the starting point being walked (%P). */
+	long max_depth;
+	long min_depth;
+	int quit;
+	const char *start;
+};
+
+/*
+ * One of GNU's primaries: its name, the node it makes (NODE_TRUE for an
+ * option of the walk), and whether an operand follows it.
+ */
+struct gnu_primary {
+	const char *name;
+	enum node_kind kind;
+	int takes_operand;
+};
+
+/*
+ * GNU's primaries this find knows.
+ *
+ * The table is read by parse_gnu_primary only.  -wholename and
+ * -iwholename are GNU's older names of -path and -ipath.
+ */
+static const struct gnu_primary gnu_primaries[] = {
+	{"-maxdepth", NODE_TRUE, 1},
+	{"-mindepth", NODE_TRUE, 1},
+	{"-regextype", NODE_TRUE, 1},
+	{"-iname", NODE_INAME, 1},
+	{"-ipath", NODE_IPATH, 1},
+	{"-wholename", NODE_PATH, 1},
+	{"-iwholename", NODE_IPATH, 1},
+	{"-regex", NODE_REGEX, 1},
+	{"-iregex", NODE_IREGEX, 1},
+	{"-empty", NODE_EMPTY, 0},
+	{"-executable", NODE_EXECUTABLE, 0},
+	{"-readable", NODE_READABLE, 0},
+	{"-writable", NODE_WRITABLE, 0},
+	{"-false", NODE_FALSE, 0},
+	{"-amin", NODE_AMIN, 1},
+	{"-cmin", NODE_CMIN, 1},
+	{"-mmin", NODE_MMIN, 1},
+	{"-delete", NODE_DELETE, 0},
+	{"-printf", NODE_PRINTF, 1},
+	{"-quit", NODE_QUIT, 0},
+	{NULL, NODE_TRUE, 0}
 };
 
 static int is_expression(const char *text);
@@ -116,6 +188,19 @@ static int evaluate(struct node *node, const char *path, const char *name, const
 static int file_type(mode_t mode, char type);
 static int number_matches(const struct number *number, unsigned long long value);
 static int run_command(const struct node *node, const char *path);
+static struct node *parse_gnu_primary(struct parser *parser, const char *token, int *handled);
+static void parse_gnu_option(struct parser *parser, const char *token, const char *operand);
+static int compile_find_regex(struct parser *parser, struct node *node);
+static int evaluate_gnu(struct node *node, const char *path, const char *name, const struct stat *status, struct walk_state *state);
+static int file_empty(const char *path, const struct stat *status);
+static int delete_file(const char *path, const struct stat *status, struct walk_state *state);
+static void print_format(const char *format, const char *path, const char *name, const struct stat *status, struct walk_state *state);
+static void print_escape(char letter);
+static void print_directive(char letter, char next, const char *path, const char *name, const struct stat *status, struct walk_state *state);
+static void print_time(char letter, char next, const struct stat *status);
+static char type_letter(mode_t mode);
+static void mode_text(mode_t mode, char *text);
+static int is_operator(const struct parser *parser, const char *letter_form, const char *word_form);
 
 /*
  * Runs the find command.
@@ -137,6 +222,7 @@ main(
 	int output_error;
 
 	has_action = 0;
+	parser.max_depth = -1;
 
 	/* Process each remaining command-line operand. */
 	while (parser.index < argc && (strcmp(argv[parser.index], "-H") == 0 ||
@@ -173,6 +259,8 @@ main(
 	/* Process each remaining command-line operand. */
 	state.depth_first = parser.depth_first;
 	state.same_device = parser.same_device;
+	state.max_depth = parser.max_depth;
+	state.min_depth = parser.min_depth;
 	has_action = expression_has_action(expression);
 
 	/* Handles the action condition. */
@@ -197,15 +285,19 @@ main(
 	scan_walk_options(expression, &state);
 
 	/* Handles the path begin condition. */
-	if (path_begin < 0)
+	if (path_begin < 0) {
+		state.start = ".";
 		(void)walk_path(".", expression, &state);
-	else
-
-		/* Process each remaining element. */
-		for (index = path_begin; index < path_end; index++) {
+	} else {
+		/* Each starting point, until -quit. */
+		for (index = path_begin; index < path_end && !state.quit;
+		     index++) {
 			state.have_root_device = 0;
+			state.start = argv[index];
 			(void)walk_path(argv[index], expression, &state);
 		}
+	}
+
 	/* Buffered manifest failures must be observed before declaring success. */
 	output_error = finish_outputs(expression);
 	if (output_error != 0)
@@ -258,24 +350,28 @@ new_node(
 	return node;
 }
 
-/* Supports the parse or operation. */
+/* Parses the expressions joined by -o (or -or). */
 static struct node *
 parse_or(
 	struct parser *parser)
 {
 	struct node *parent;
 	struct node *left;
+	int joined;
 
+	/* The first operand. */
 	left = parse_and(parser);
 
-	/* Process each remaining command-line operand. */
-	while (!parser->failed && parser->index < parser->argc &&
-	       strcmp(parser->argv[parser->index], "-o") == 0) {
-		parent = new_node(NODE_OR);
-
+	/* Each further operand after an -o. */
+	for (;;) {
+		/* Whether an -o follows. */
+		joined = !parser->failed && is_operator(parser, "-o", "-or");
+		if (!joined)
+			break;
 		parser->index++;
 
-		/* Handles the parent availability. */
+		/* The node that joins the two. */
+		parent = new_node(NODE_OR);
 		if (parent == NULL)
 			return NULL;
 		parent->left = left;
@@ -287,27 +383,34 @@ parse_or(
 	return left;
 }
 
-/* Supports the parse and operation. */
+/* Parses the expressions joined by -a (or -and), or by nothing. */
 static struct node *
 parse_and(
 	struct parser *parser)
 {
 	struct node *parent;
 	struct node *left;
+	int stops;
+	int joined;
 
+	/* The first operand. */
 	left = parse_not(parser);
 
-	/* Process each remaining command-line operand. */
-	while (!parser->failed && parser->index < parser->argc &&
-	       strcmp(parser->argv[parser->index], ")") != 0 &&
-	       strcmp(parser->argv[parser->index], "-o") != 0) {
-		parent = new_node(NODE_AND);
+	/* Each further operand, until the end, a ")" or an -o. */
+	for (;;) {
+		/* Whether the expression ends here. */
+		stops = parser->failed || parser->index >= parser->argc ||
+		    is_operator(parser, ")", ")") || is_operator(parser, "-o", "-or");
+		if (stops)
+			break;
 
-		/* Handles the selected command-line operation. */
-		if (strcmp(parser->argv[parser->index], "-a") == 0)
+		/* An explicit -a is skipped; juxtaposition means the same. */
+		joined = is_operator(parser, "-a", "-and");
+		if (joined)
 			parser->index++;
 
-		/* Handles the parent availability. */
+		/* The node that joins the two. */
+		parent = new_node(NODE_AND);
 		if (parent == NULL)
 			return NULL;
 		parent->left = left;
@@ -369,6 +472,7 @@ parse_primary(
 	char *path;
 	int begin;
 	int prompt;
+	int handled;
 	struct node *node;
 	char *token;
 
@@ -376,6 +480,11 @@ parse_primary(
 	if (parser->index >= parser->argc)
 		return NULL;
 	token = parser->argv[parser->index++];
+
+	/* One of GNU's primaries. */
+	node = parse_gnu_primary(parser, token, &handled);
+	if (handled)
+		return node;
 
 	/* Selects the matching value. */
 	if (strcmp(token, "(") == 0) {
@@ -752,6 +861,12 @@ free_expression(
 	if (node->output != NULL)
 		(void)fclose(node->output);
 
+	/* The regex of -regex. */
+	if (node->regex != NULL) {
+		regfree(node->regex);
+		free(node->regex);
+	}
+
 	free(node);
 }
 
@@ -772,6 +887,8 @@ expression_has_action(
 	case NODE_PRINT0:
 	case NODE_FPRINT0:
 	case NODE_EXEC:
+	case NODE_DELETE:
+	case NODE_PRINTF:
 		return 1;
 	default:
 		break;
@@ -856,7 +973,12 @@ walk_path(
 	struct stat status;
 	const char *name;
 	int directory;
+	int in_depth;
 	int result;
+
+	/* -quit ends the walk. */
+	if (state->quit)
+		return 1;
 
 	name = strrchr(path, '/');
 	result = 1;
@@ -882,9 +1004,22 @@ walk_path(
 	}
 	state->prune = 0;
 
+	/* GNU's -mindepth: files above it are walked through, not tested. */
+	in_depth = 1;
+	if ((long)state->depth < state->min_depth)
+		in_depth = 0;
+
+	/* GNU's -maxdepth: a directory at it is not gone into. */
+	if (state->max_depth >= 0 && (long)state->depth >= state->max_depth)
+		directory = 0;
+
 	/* Handles the state condition. */
-	if (!state->depth_first)
+	if (!state->depth_first && in_depth)
 		result = evaluate(expression, path, name, &status, state);
+
+	/* -quit stops before going into the directory. */
+	if (state->quit)
+		directory = 0;
 
 	/* Handles the directory condition. */
 	if (directory && !state->prune &&
@@ -955,6 +1090,10 @@ walk_path(
 					continue;
 				}
 				(void)walk_path(child, expression, state);
+
+				/* -quit leaves the directory at once. */
+				if (state->quit)
+					break;
 			}
 
 			/* Handles a failed closedir operation. */
@@ -965,7 +1104,7 @@ walk_path(
 	}
 
 	/* Handles the state condition. */
-	if (state->depth_first)
+	if (state->depth_first && in_depth && !state->quit)
 		result = evaluate(expression, path, name, &status, state);
 
 	/* Handles an operation failure. */
@@ -986,6 +1125,7 @@ evaluate(
 	struct walk_state *state)
 {
 	int function_result;
+	int gnu_answer;
 	FILE *output;
 	size_t length;
 	size_t written;
@@ -1140,10 +1280,621 @@ evaluate(
 
 		/* Returns the computed result. */
 		return function_result;
+	case NODE_FALSE:
+	case NODE_INAME:
+	case NODE_IPATH:
+	case NODE_REGEX:
+	case NODE_IREGEX:
+	case NODE_EMPTY:
+	case NODE_EXECUTABLE:
+	case NODE_READABLE:
+	case NODE_WRITABLE:
+	case NODE_AMIN:
+	case NODE_CMIN:
+	case NODE_MMIN:
+	case NODE_DELETE:
+	case NODE_PRINTF:
+	case NODE_QUIT:
+		/* One of GNU's tests and actions. */
+		gnu_answer = evaluate_gnu(node, path, name, status, state);
+		return gnu_answer;
 	default:
 		/* Reports successful completion. */
 		return 0;
 	}
+}
+
+/*
+ * Parses one of GNU's primaries: the depth options (-maxdepth, -mindepth,
+ * -regextype), the tests (-iname, -ipath, -wholename, -iwholename, -regex,
+ * -iregex, -empty, -executable, -readable, -writable, -false, -amin,
+ * -cmin, -mmin) and the actions (-delete, -printf, -quit).  Sets handled
+ * when the token is one of them; the node is NULL after a message then.
+ */
+static struct node *
+parse_gnu_primary(
+	struct parser *parser,
+	const char *token,
+	int *handled)
+{
+	const struct gnu_primary *primary;
+	struct node *node;
+	char *operand;
+	size_t index;
+	int differs;
+	int valid;
+
+	/* The primary of the token. */
+	*handled = 0;
+	primary = NULL;
+	for (index = 0; gnu_primaries[index].name != NULL; index++) {
+		differs = strcmp(token, gnu_primaries[index].name);
+		if (differs == 0) {
+			primary = &gnu_primaries[index];
+			break;
+		}
+	}
+
+	/* Not one of GNU's. */
+	if (primary == NULL)
+		return NULL;
+	*handled = 1;
+
+	/* The operand, for the primaries that take one. */
+	operand = NULL;
+	if (primary->takes_operand) {
+		operand = take_operand(parser, token);
+		if (operand == NULL)
+			return NULL;
+	}
+
+	/* The options of the walk, which test nothing. */
+	if (primary->kind == NODE_TRUE) {
+		parse_gnu_option(parser, token, operand);
+		node = new_node(NODE_TRUE);
+		return node;
+	}
+
+	/* The node. */
+	node = new_node(primary->kind);
+	if (node == NULL) {
+		parser->failed = 1;
+		return NULL;
+	}
+
+	/* The operand is the node's text (a pattern, a regex or a format). */
+	node->text = operand;
+
+	/* The minutes of -amin, -cmin and -mmin. */
+	if (primary->kind == NODE_AMIN || primary->kind == NODE_CMIN ||
+	    primary->kind == NODE_MMIN) {
+		valid = parse_number(operand, &node->number);
+		if (!valid) {
+			fprintf(stderr, "find: %s: invalid number\n", operand);
+			parser->failed = 1;
+		}
+
+		/* The test, with its number. */
+		return node;
+	}
+
+	/* A regex, compiled once. */
+	if (primary->kind == NODE_REGEX || primary->kind == NODE_IREGEX) {
+		differs = compile_find_regex(parser, node);
+		if (differs)
+			parser->failed = 1;
+		return node;
+	}
+
+	/* -delete walks depth first, so that a directory is emptied first. */
+	if (primary->kind == NODE_DELETE)
+		parser->depth_first = 1;
+
+	/* Succeeded. */
+	return node;
+}
+
+/* Applies -maxdepth, -mindepth or -regextype to the parser. */
+static void
+parse_gnu_option(
+	struct parser *parser,
+	const char *token,
+	const char *operand)
+{
+	struct number number;
+	int valid;
+	int differs;
+
+	/* -regextype: posix-extended and egrep are ERE; the rest BRE. */
+	differs = strcmp(token, "-regextype");
+	if (differs == 0) {
+		parser->regex_extended = 0;
+		differs = strcmp(operand, "posix-extended");
+		if (differs != 0)
+			differs = strcmp(operand, "egrep");
+		if (differs == 0)
+			parser->regex_extended = 1;
+		return;
+	}
+
+	/* -maxdepth and -mindepth take a count without a sign. */
+	valid = parse_number(operand, &number);
+	if (!valid || number.comparison != 0) {
+		fprintf(stderr, "find: %s: invalid depth\n", operand);
+		parser->failed = 1;
+		return;
+	}
+
+	/* The depth. */
+	differs = strcmp(token, "-maxdepth");
+	if (differs == 0)
+		parser->max_depth = (long)number.value;
+	else
+		parser->min_depth = (long)number.value;
+}
+
+/*
+ * Compiles the regex of -regex or -iregex, which must match the whole
+ * path.  Returns nonzero after a message.
+ */
+static int
+compile_find_regex(
+	struct parser *parser,
+	struct node *node)
+{
+	char message[256];
+	int flags;
+	int error;
+
+	/* The kind of regex, and case. */
+	flags = 0;
+	if (parser->regex_extended)
+		flags |= REG_EXTENDED;
+	if (node->kind == NODE_IREGEX)
+		flags |= REG_ICASE;
+
+	/* The regex, kept in the node. */
+	node->regex = malloc(sizeof(*node->regex));
+	if (node->regex == NULL)
+		return 1;
+	error = regcomp(node->regex, node->text, flags);
+	if (error != 0) {
+		regerror(error, node->regex, message, sizeof(message));
+		fprintf(stderr, "find: %s: %s\n", node->text, message);
+		free(node->regex);
+		node->regex = NULL;
+		return 1;
+	}
+
+	/* Succeeded. */
+	return 0;
+}
+
+/* Evaluates one of GNU's tests and actions. */
+static int
+evaluate_gnu(
+	struct node *node,
+	const char *path,
+	const char *name,
+	const struct stat *status,
+	struct walk_state *state)
+{
+	regmatch_t match;
+	time_t stamp;
+	unsigned long long minutes;
+	size_t length;
+	int result;
+
+	/* The test or action of its kind. */
+	switch (node->kind) {
+	case NODE_FALSE:
+		return 0;
+	case NODE_INAME:
+		result = fnmatch(node->text, name, FNM_CASEFOLD);
+		break;
+	case NODE_IPATH:
+		result = fnmatch(node->text, path, FNM_CASEFOLD);
+		break;
+	case NODE_REGEX:
+	case NODE_IREGEX:
+		/* The match must be the whole path. */
+		result = regexec(node->regex, path, 1, &match, 0);
+		if (result != 0)
+			return 0;
+		length = strlen(path);
+		if (match.rm_so != 0 || (size_t)match.rm_eo != length)
+			return 0;
+		return 1;
+	case NODE_EMPTY:
+		result = file_empty(path, status);
+		return result;
+	case NODE_EXECUTABLE:
+		result = access(path, X_OK);
+		break;
+	case NODE_READABLE:
+		result = access(path, R_OK);
+		break;
+	case NODE_WRITABLE:
+		result = access(path, W_OK);
+		break;
+	case NODE_AMIN:
+	case NODE_CMIN:
+	case NODE_MMIN:
+		/* The minutes since the time, rounded up as GNU's -mmin counts. */
+		stamp = status->st_mtime;
+		if (node->kind == NODE_AMIN)
+			stamp = status->st_atime;
+		if (node->kind == NODE_CMIN)
+			stamp = status->st_ctime;
+		minutes = 0;
+		if (state->now > stamp)
+			minutes = ((unsigned long long)(state->now - stamp) + 59U) / 60U;
+		result = number_matches(&node->number, minutes);
+		return result;
+	case NODE_DELETE:
+		result = delete_file(path, status, state);
+		return result;
+	case NODE_PRINTF:
+		print_format(node->text, path, name, status, state);
+		return 1;
+	case NODE_QUIT:
+		state->quit = 1;
+		return 1;
+	default:
+		return 0;
+	}
+
+	/* The tests that report 0 for a match. */
+	if (result == 0)
+		return 1;
+	return 0;
+}
+
+/* Reports whether a file is empty: a regular file of no bytes, or a directory with no entries. */
+static int
+file_empty(
+	const char *path,
+	const struct stat *status)
+{
+	struct dirent *entry;
+	DIR *directory;
+	int dot;
+	int dotdot;
+	int empty;
+
+	/* A regular file: its size. */
+	if ((status->st_mode & S_IFMT) == S_IFREG) {
+		if (status->st_size == 0)
+			return 1;
+		return 0;
+	}
+
+	/* Anything but a directory is not empty. */
+	if ((status->st_mode & S_IFMT) != S_IFDIR)
+		return 0;
+
+	/* A directory: any entry but . and .. */
+	directory = opendir(path);
+	if (directory == NULL)
+		return 0;
+	empty = 1;
+	for (;;) {
+		entry = readdir(directory);
+		if (entry == NULL)
+			break;
+		dot = strcmp(entry->d_name, ".");
+		dotdot = strcmp(entry->d_name, "..");
+		if (dot != 0 && dotdot != 0) {
+			empty = 0;
+			break;
+		}
+	}
+
+	/* Succeeded: the directory is done with. */
+	closedir(directory);
+	return empty;
+}
+
+/* -delete: removes a file, or an (emptied) directory.  Returns 0 on failure. */
+static int
+delete_file(
+	const char *path,
+	const struct stat *status,
+	struct walk_state *state)
+{
+	int result;
+
+	/* The starting point . is never removed. */
+	result = strcmp(path, ".");
+	if (result == 0)
+		return 1;
+
+	/* A directory, or anything else. */
+	if ((status->st_mode & S_IFMT) == S_IFDIR)
+		result = rmdir(path);
+	else
+		result = unlink(path);
+	if (result != 0) {
+		fprintf(stderr, "find: cannot delete '%s': %s\n", path,
+			strerror(errno));
+		state->errors = 1;
+		return 0;
+	}
+
+	/* Succeeded. */
+	return 1;
+}
+
+/*
+ * -printf: writes a format with the file's details: %p the path, %f the
+ * name, %h the directory, %P the path below the starting point, %s the
+ * size, %m the permissions in octal, %M in the way ls writes them, %d the
+ * depth, %y the type, %u and %g the owner's and group's names, %U and %G
+ * their numbers, %T@ and %A@ and %C@ the times in seconds, %%; and the
+ * escapes \n, \t, \0 and \\.
+ */
+static void
+print_format(
+	const char *format,
+	const char *path,
+	const char *name,
+	const struct stat *status,
+	struct walk_state *state)
+{
+	const char *cursor;
+	char next;
+
+	/* Each character of the format. */
+	for (cursor = format; *cursor != '\0'; cursor++) {
+		/* An escape. */
+		if (*cursor == '\\' && cursor[1] != '\0') {
+			cursor++;
+			print_escape(*cursor);
+			continue;
+		}
+
+		/* An ordinary character. */
+		if (*cursor != '%' || cursor[1] == '\0') {
+			putchar(*cursor);
+			continue;
+		}
+
+		/* A directive, and the letter of %T@ and its kin. */
+		cursor++;
+		next = cursor[1];
+		print_directive(*cursor, next, path, name, status, state);
+		if ((*cursor == 'T' || *cursor == 'A' || *cursor == 'C') &&
+		    next == '@')
+			cursor++;
+	}
+}
+
+/* Writes the character of a -printf escape. */
+static void
+print_escape(
+	char letter)
+{
+	/* The escapes, and any other character as itself. */
+	switch (letter) {
+	case 'n':
+		putchar('\n');
+		break;
+	case 't':
+		putchar('\t');
+		break;
+	case '0':
+		putchar('\0');
+		break;
+	default:
+		putchar(letter);
+		break;
+	}
+}
+
+/* Writes one -printf directive; next is the character after its letter. */
+static void
+print_directive(
+	char letter,
+	char next,
+	const char *path,
+	const char *name,
+	const struct stat *status,
+	struct walk_state *state)
+{
+	struct passwd *account;
+	struct group *group;
+	const char *slash;
+	size_t length;
+	char mode[11];
+	int differs;
+
+	/* The directive of its letter. */
+	switch (letter) {
+	case 'p':
+		fputs(path, stdout);
+		break;
+	case 'f':
+		fputs(name, stdout);
+		break;
+	case 'h':
+		/* The directory part of the path (. when there is none). */
+		slash = strrchr(path, '/');
+		if (slash == NULL)
+			fputs(".", stdout);
+		else if (slash == path)
+			fputs("/", stdout);
+		else
+			fwrite(path, 1, (size_t)(slash - path), stdout);
+		break;
+	case 'P':
+		/* The path below the starting point. */
+		length = strlen(state->start);
+		differs = strncmp(path, state->start, length);
+		if (differs == 0) {
+			path += length;
+			if (*path == '/')
+				path++;
+		}
+
+		/* What is left of the path. */
+		fputs(path, stdout);
+		break;
+	case 's':
+		printf("%lld", (long long)status->st_size);
+		break;
+	case 'm':
+		printf("%o", (unsigned)(status->st_mode & 07777));
+		break;
+	case 'M':
+		mode_text(status->st_mode, mode);
+		fputs(mode, stdout);
+		break;
+	case 'd':
+		printf("%u", state->depth);
+		break;
+	case 'y':
+		putchar(type_letter(status->st_mode));
+		break;
+	case 'u':
+		account = getpwuid(status->st_uid);
+		if (account != NULL)
+			fputs(account->pw_name, stdout);
+		else
+			printf("%lu", (unsigned long)status->st_uid);
+		break;
+	case 'g':
+		group = getgrgid(status->st_gid);
+		if (group != NULL)
+			fputs(group->gr_name, stdout);
+		else
+			printf("%lu", (unsigned long)status->st_gid);
+		break;
+	case 'U':
+		printf("%lu", (unsigned long)status->st_uid);
+		break;
+	case 'G':
+		printf("%lu", (unsigned long)status->st_gid);
+		break;
+	case 'T':
+	case 'A':
+	case 'C':
+		print_time(letter, next, status);
+		break;
+	case '%':
+		putchar('%');
+		break;
+	default:
+		/* A directive not known is written as it is. */
+		putchar('%');
+		putchar(letter);
+		break;
+	}
+}
+
+/* Writes a time of %T@, %A@ or %C@ (seconds since the epoch). */
+static void
+print_time(
+	char letter,
+	char next,
+	const struct stat *status)
+{
+	time_t stamp;
+
+	/* Only the @ form, the seconds, is written. */
+	if (next != '@')
+		return;
+
+	/* The modification, access or change time. */
+	stamp = status->st_mtime;
+	if (letter == 'A')
+		stamp = status->st_atime;
+	if (letter == 'C')
+		stamp = status->st_ctime;
+	printf("%lld", (long long)stamp);
+}
+
+/* Returns the letter -type and %y use for a mode. */
+static char
+type_letter(
+	mode_t mode)
+{
+	/* The kind of file. */
+	switch (mode & S_IFMT) {
+	case S_IFDIR:
+		return 'd';
+	case S_IFLNK:
+		return 'l';
+	case S_IFBLK:
+		return 'b';
+	case S_IFCHR:
+		return 'c';
+	case S_IFIFO:
+		return 'p';
+	case S_IFSOCK:
+		return 's';
+	default:
+		break;
+	}
+
+	/* A regular file. */
+	return 'f';
+}
+
+/* Writes a mode as ls -l does (%M): the type and nine permission letters. */
+static void
+mode_text(
+	mode_t mode,
+	char *text)
+{
+	static const char letters[] = "rwxrwxrwx";
+	size_t index;
+
+	/* The type; a regular file is -. */
+	text[0] = type_letter(mode);
+	if (text[0] == 'f')
+		text[0] = '-';
+
+	/* Each permission, or -. */
+	for (index = 0; index < 9U; index++) {
+		text[1U + index] = '-';
+		if ((mode & (0400U >> index)) != 0)
+			text[1U + index] = letters[index];
+	}
+
+	/* Succeeded: the text, ended. */
+	text[10] = '\0';
+}
+
+/*
+ * Reports whether the word the parser is at is an operator: its POSIX form
+ * (-a, -o) or GNU's word (-and, -or).
+ */
+static int
+is_operator(
+	const struct parser *parser,
+	const char *letter_form,
+	const char *word_form)
+{
+	const char *word;
+	int differs;
+
+	/* The word, when there is one. */
+	if (parser->index >= parser->argc)
+		return 0;
+	word = parser->argv[parser->index];
+
+	/* The POSIX form. */
+	differs = strcmp(word, letter_form);
+	if (differs == 0)
+		return 1;
+
+	/* GNU's word. */
+	differs = strcmp(word, word_form);
+	if (differs == 0)
+		return 1;
+
+	/* Neither. */
+	return 0;
 }
 
 /* Supports the file type operation. */
