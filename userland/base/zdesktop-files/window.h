@@ -1,0 +1,154 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The parts of zdesktop-files that speak Wayland and Vulkan: the window
+ * (window.c), the presenter of drawn frames (present.c) and the menus
+ * (menu.c).  The host tests build the rest of the program without them.
+ */
+
+#ifndef ZDESKTOP_FILES_WINDOW_H
+#define ZDESKTOP_FILES_WINDOW_H
+
+#include "files.h"
+
+#define VK_USE_PLATFORM_WAYLAND_KHR 1
+#include <vulkan/vulkan.h>
+#include <wayland-client.h>
+#include <xdg-shell-client-protocol.h>
+
+/* How many inputs wait for the main loop at most. */
+#define FM_WINDOW_EVENTS	256U
+
+/*
+ * The Wayland window: its globals, its surface and roles, the size the
+ * compositor gave it, and the input waiting for the interface.
+ *
+ * One lives for the whole run.
+ */
+struct fm_window {
+	/* The connection and the globals bound from it. */
+	struct wl_display *display;
+	struct wl_registry *registry;
+	struct wl_compositor *compositor;
+	struct xdg_wm_base *shell;
+	struct wl_seat *seat;
+	struct wl_pointer *pointer;
+	struct wl_keyboard *keyboard;
+
+	/* The window: its surface and roles. */
+	struct wl_surface *surface;
+	struct xdg_surface *role;
+	struct xdg_toplevel *toplevel;
+
+	/* The size the compositor asked for, and whether it changed since it was last taken. */
+	uint32_t width;
+	uint32_t height;
+	int resized;
+
+	/* Whether the first configure arrived, the compositor asked to close, the window has the focus, is maximized. */
+	int configured;
+	int closed;
+	int activated;
+	int maximized;
+
+	/* The pointer's place, the serial of its last press, and the modifiers held (FM_MOD_*). */
+	int pointer_x;
+	int pointer_y;
+	uint32_t button_serial;
+	uint32_t modifiers;
+
+	/* The key held for repeating (0 when none), when it repeats next, and the repeat's delay and interval. */
+	uint32_t repeat_key;
+	uint64_t repeat_at;
+	uint32_t repeat_delay;
+	uint32_t repeat_interval;
+
+	/* The inputs waiting, a ring: the oldest's slot and how many. */
+	struct fm_event events[FM_WINDOW_EVENTS];
+	unsigned event_first;
+	unsigned event_count;
+};
+
+/*
+ * One swapchain image the presenter draws into; the image is the
+ * swapchain's.
+ */
+struct fm_present_target {
+	VkImage image;
+	VkImageView view;
+	VkFramebuffer framebuffer;
+	VkSemaphore rendered;
+};
+
+/*
+ * The Vulkan objects that show the drawn frames in the window: a
+ * swapchain, and a host-written canvas image the size of the window that
+ * one quad copies onto each swapchain image.
+ */
+struct fm_present {
+	/* The instance, the surface of the window, the device and its queue. */
+	VkInstance instance;
+	VkSurfaceKHR surface;
+	VkPhysicalDevice physical;
+	VkDevice device;
+	VkQueue queue;
+	uint32_t family;
+
+	/* The swapchain, its format and extent, and one target per image. */
+	VkSwapchainKHR swapchain;
+	VkFormat format;
+	VkExtent2D extent;
+	struct fm_present_target *targets;
+	uint32_t count;
+
+	/* The pass and the pipeline that draw the canvas, and what the pipeline binds. */
+	VkRenderPass pass;
+	VkDescriptorSetLayout set_layout;
+	VkPipelineLayout layout;
+	VkPipeline pipeline;
+	VkDescriptorPool descriptor_pool;
+	VkDescriptorSet set;
+	VkSampler sampler;
+
+	/* The canvas image (linear, host-written), its memory, view and map, and whether it was made ready. */
+	VkImage canvas;
+	VkDeviceMemory canvas_memory;
+	VkImageView canvas_view;
+	unsigned char *canvas_map;
+	size_t canvas_pitch;
+	int canvas_ready;
+
+	/* The quad's vertices, in host-visible memory. */
+	VkBuffer vertices;
+	VkDeviceMemory vertex_memory;
+
+	/* One command buffer, the fence that says it finished and the acquire semaphore. */
+	VkCommandPool pool;
+	VkCommandBuffer command;
+	VkFence fence;
+	VkSemaphore acquired;
+
+	/* The Vulkan call that failed last, for the error line. */
+	const char *operation;
+};
+
+/* The window (window.c). */
+int fm_window_open(struct fm_window *window, const char *display, uint32_t width, uint32_t height, const char *title, const char *application);
+int fm_window_dispatch(struct fm_window *window, int timeout);
+int fm_window_take(struct fm_window *window, struct fm_event *event);
+int fm_window_repeat(struct fm_window *window, uint64_t now);
+void fm_window_close(struct fm_window *window);
+uint64_t fm_clock(void);
+
+/* The presenter (present.c). */
+VkResult fm_present_open(struct fm_present *present, struct fm_window *window);
+VkResult fm_present_resize(struct fm_present *present, uint32_t width, uint32_t height);
+VkResult fm_present_frame(struct fm_present *present, const uint32_t *pixels, size_t stride);
+void fm_present_close(struct fm_present *present);
+
+#endif

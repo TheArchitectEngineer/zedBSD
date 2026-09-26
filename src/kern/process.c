@@ -1233,9 +1233,9 @@ process_create(
  * lives on the parent's kernel stack for as long as the parent waits.
  */
 struct process_vfork_wait {
-	struct spinlock lock;
-	struct wait_queue waitq;
-	int released;
+	struct spinlock lock;		/* guards released */
+	struct wait_queue waitq;	/* where the parent sleeps */
+	int released;			/* the child has execed or ended */
 	pid_t child;			/* noted before the child runs, which may end it at once */
 };
 
@@ -1294,10 +1294,14 @@ process_vfork(
 	 * where the child's exec or end finds this wait.
 	 */
 	irq = spin_lock_irqsave(&wait.lock);
+
+	/* Sleeps until the release; a wake without it sleeps again. */
 	while (!wait.released) {
 		sequence = waitq_sequence(&wait.waitq);
 		(void)waitq_sleep(&wait.waitq, &wait.lock, sequence, 0, 0);
 	}
+
+	/* Leaves the wait's lock; the wait is over. */
 	spin_unlock_irqrestore(&wait.lock, irq);
 
 	/* Succeeded: the child no longer uses this address space. */
@@ -1318,16 +1322,30 @@ process_vfork_release(
 
 	/* Takes the wait once, whichever of exec and the end comes first. */
 	irq = spin_lock_irqsave(&process->lock);
+
+	/* A NULL left behind makes the other of the two find nothing. */
 	wait = process->vfork_wait;
 	process->vfork_wait = NULL;
+
+	/* Leaves the process's lock. */
 	spin_unlock_irqrestore(&process->lock, irq);
+
+	/* A process that is no vfork child, or was released already, has nothing to end. */
 	if (wait == NULL)
 		return;
 
-	/* The parent may return as soon as the lock is let go; nothing here touches the wait after that. */
+	/*
+	 * Releases the parent.  It may return as soon as the lock is let go,
+	 * and the wait lives on its stack, so nothing here touches the wait
+	 * after that.
+	 */
 	irq = spin_lock_irqsave(&wait->lock);
+
+	/* released tells the parent's loop that the child no longer uses its memory. */
 	wait->released = 1;
 	waitq_wake_all(&wait->waitq);
+
+	/* Leaves the wait's lock, after which the wait may be gone. */
 	spin_unlock_irqrestore(&wait->lock, irq);
 }
 
@@ -1348,6 +1366,7 @@ fork_process(
 	hal_task_t task;
 	int error;
 
+	/* Nothing is made yet, so the cleanup has nothing to free. */
 	child = NULL;
 	files = NULL;
 	task = NULL;
@@ -1371,6 +1390,12 @@ fork_process(
 	filedesc_destroy(child->fd);
 	child->fd = files;
 	files = NULL;
+
+	/*
+	 * A vfork child borrows the parent's address space, holding a
+	 * reference, and notes its pid in the parent's wait before it runs;
+	 * a fork child gets a copy.
+	 */
 	if (vfork_wait != NULL) {
 		vmspace_ref(parent->vmspace);
 		child->vmspace = parent->vmspace;
@@ -1398,6 +1423,7 @@ fork_process(
 		goto fail;
 	}
 
+	/* Forks the calling thread into the task; the thread owns the task from here. */
 	error = thread_fork(child, task, &thread);
 	if (error != 0)
 		goto fail;

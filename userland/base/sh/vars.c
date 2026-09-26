@@ -216,20 +216,25 @@ sh_var_set(
 {
 	struct variable *variable;
 	char *copy;
+	int attributes;
 
 	/* A read-only variable keeps its value. */
 	variable = find_variable(name);
 	if (variable != NULL && (variable->flags & SH_VAR_READONLY) != 0)
 		return -1;
 
+	/* The value is converted as the new and the existing attributes say. */
+	attributes = flags;
+	if (variable != NULL)
+		attributes |= variable->flags;
+
 	/*
-	 * The value, converted as the attributes say (evaluating it may set
-	 * other variables, but frees no entry).
+	 * Converts the value (evaluating it may set other variables, but
+	 * frees no entry).
 	 */
 	copy = NULL;
 	if (value != NULL)
-		copy = converted_value(value, flags |
-				       (variable != NULL ? variable->flags : 0));
+		copy = converted_value(value, attributes);
 
 	/* Makes the entry when there is none. */
 	if (variable == NULL)
@@ -357,7 +362,7 @@ sh_var_remove_flags(
 	if (variable == NULL)
 		return;
 
-	/* Takes them off. */
+	/* Takes the attributes off, keeping read-only whatever was asked. */
 	variable->flags &= ~(flags & ~SH_VAR_READONLY);
 }
 
@@ -543,8 +548,10 @@ sh_var_print_declare(
 	if (variable == NULL)
 		return 0;
 
-	/* Succeeded: the line. */
+	/* Prints the variable's line. */
 	print_declare(variable);
+
+	/* Succeeded: the variable is printed. */
 	return 1;
 }
 
@@ -560,7 +567,7 @@ sh_var_print_declared(
 	size_t count;
 	size_t index;
 
-	/* In the order of their names. */
+	/* Prints each variable with the attributes, in the order of their names. */
 	sorted = sorted_variables(&count);
 	for (index = 0; index < count; index++) {
 		if ((sorted[index]->flags & flags) != flags)
@@ -968,17 +975,20 @@ converted_value(
 	long result;
 	int ok;
 
-	/* An integer: the value of the expression. */
+	/* An integer holds the value of the expression, in decimal. */
 	if ((flags & SH_VAR_INTEGER) != 0) {
 		sh_expand_context_fill(&context);
 		ok = sh_expand_arithmetic(value, &context, &result, &error_text);
 		if (!ok)
 			sh_error("%s", error_text);
+
+		/* Formats the value. */
 		snprintf(number, sizeof(number), "%ld", result);
-		return sh_strdup(number);
+		copy = sh_strdup(number);
+		return copy;
 	}
 
-	/* Lower or upper case, letter by letter. */
+	/* Makes the copy lower or upper case, letter by letter. */
 	copy = sh_strdup(value);
 	for (index = 0; copy[index] != '\0'; index++) {
 		if ((flags & SH_VAR_LOWER) != 0)
@@ -1027,7 +1037,7 @@ print_declare(
 		print_declare_value(value);
 	}
 
-	/* A line each. */
+	/* Ends the variable's line. */
 	putchar('\n');
 }
 
@@ -1042,7 +1052,7 @@ print_declare_value(
 	const char *escape;
 	int control;
 
-	/* Is there a control character? */
+	/* Looks for a control character, which needs the $'...' form. */
 	control = 0;
 	for (cursor = value; *cursor != '\0'; cursor++) {
 		if ((unsigned char)*cursor < 0x20 || *cursor == 0x7f)
@@ -1053,11 +1063,15 @@ print_declare_value(
 	if (!control) {
 		putchar('"');
 		for (cursor = value; *cursor != '\0'; cursor++) {
-			if (*cursor == '"' || *cursor == '\\' ||
-			    *cursor == '$' || *cursor == '`')
+			if (*cursor == '"' ||
+			    *cursor == '\\' ||
+			    *cursor == '$' ||
+			    *cursor == '`')
 				putchar('\\');
 			putchar(*cursor);
 		}
+
+		/* Closes the double quotes. */
 		putchar('"');
 		return;
 	}
@@ -1076,6 +1090,8 @@ print_declare_value(
 			putchar(*cursor);
 		}
 	}
+
+	/* Closes the $'...'. */
 	putchar('\'');
 }
 

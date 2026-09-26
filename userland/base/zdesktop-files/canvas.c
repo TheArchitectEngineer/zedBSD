@@ -1,0 +1,1245 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The CPU canvas of zdesktop-files: rectangles, rounded rectangles with
+ * soft edges, shadows, gradients, circles and rings, polygons, lines,
+ * coverage masks (glyphs) and scaled pictures, blended over premultiplied
+ * BGRA pixels.
+ *
+ * Rounded shapes are drawn from their signed distance: a pixel whose centre
+ * is half a pixel inside the edge is fully covered, half a pixel outside not
+ * at all, and the pixels between get the fraction, which is the one pixel
+ * of antialiasing a quiet interface needs.  Polygons are filled by scanlines:
+ * four sub-rows a pixel row, each crossing its edges exactly, so a sloped
+ * edge is smooth in both directions.
+ */
+
+#include "canvas.h"
+
+#include <errno.h>
+#include <math.h>
+#include <stdlib.h>
+#include <string.h>
+
+/* How many sub-rows a polygon's pixel row is sampled at. */
+#define CANVAS_SUBROWS		4
+
+/* The most edges one sub-row of a polygon crosses. */
+#define CANVAS_CROSSINGS	(FM_POLYGON_POINTS + 2)
+
+/* The corners given to one round end of a line. */
+#define CANVAS_CAP_POINTS	8
+
+/* Pi, which the ring and the round line ends need. */
+#define CANVAS_PI		3.14159265358979f
+
+/*
+ * One place where a polygon's edge crosses a sub-row, and which way the edge
+ * goes (up or down), which decides whether the span after it is inside.
+ */
+struct canvas_crossing {
+	float x;
+	int direction;
+};
+
+static int canvas_bounds(const struct fm_canvas *canvas, float x, float y, float width, float height, int *left, int *top, int *right, int *bottom);
+static float canvas_round_distance(float px, float py, float cx, float cy, float half_width, float half_height, float radius);
+static float canvas_clamp(float value);
+static void canvas_blend(uint32_t *pixel, fm_color color, float coverage);
+static void canvas_blend_premultiplied(uint32_t *pixel, uint32_t source);
+static void canvas_span(float *row, float from, float to, float weight, int low, int high);
+static int canvas_crossings(const float *points, int count, float y, struct canvas_crossing *crossings);
+static uint32_t canvas_sample(const struct fm_image *image, float u, float v);
+static uint32_t canvas_lerp_pixel(uint32_t first, uint32_t second, unsigned weight);
+
+/*
+ * Makes a canvas over pixels the caller owns.
+ *
+ * Returns 0, or ENOMEM when the polygon row cannot be allocated.
+ */
+int
+fm_canvas_init(
+	struct fm_canvas *canvas,
+	uint32_t *pixels,
+	size_t stride,
+	int width,
+	int height)
+{
+	/* The pixels and the whole canvas as the clip. */
+	memset(canvas, 0, sizeof(*canvas));
+	canvas->pixels = pixels;
+	canvas->stride = stride;
+	canvas->width = width;
+	canvas->height = height;
+	canvas->clip.width = width;
+	canvas->clip.height = height;
+
+	/* The polygon filler's row, one float a pixel and one past the end. */
+	canvas->coverage = calloc((size_t)width + 2U, sizeof(float));
+	if (canvas->coverage == NULL)
+		return ENOMEM;
+
+	/* Succeeded: the canvas can be drawn on. */
+	return 0;
+}
+
+/*
+ * Releases what the canvas allocated (not the pixels).
+ */
+void
+fm_canvas_release(
+	struct fm_canvas *canvas)
+{
+	/* The scratch row goes; the pixels stay with their owner. */
+	free(canvas->coverage);
+	memset(canvas, 0, sizeof(*canvas));
+}
+
+/*
+ * Narrows the clip to its intersection with a rectangle, until the
+ * matching fm_canvas_clip_pop.
+ */
+void
+fm_canvas_clip_push(
+	struct fm_canvas *canvas,
+	const struct fm_rect *rect)
+{
+	struct fm_rect clip;
+	int right;
+	int bottom;
+
+	/* The intersection of the clip in force and the rectangle. */
+	clip = canvas->clip;
+	right = clip.x + clip.width;
+	bottom = clip.y + clip.height;
+	if (rect->x > clip.x)
+		clip.x = rect->x;
+	if (rect->y > clip.y)
+		clip.y = rect->y;
+	if (rect->x + rect->width < right)
+		right = rect->x + rect->width;
+	if (rect->y + rect->height < bottom)
+		bottom = rect->y + rect->height;
+	clip.width = right - clip.x;
+	clip.height = bottom - clip.y;
+
+	/* An empty intersection draws nothing, but still nests. */
+	if (clip.width < 0)
+		clip.width = 0;
+	if (clip.height < 0)
+		clip.height = 0;
+
+	/* Keeps the clip being replaced, when there is room for it. */
+	if (canvas->clip_depth < FM_CANVAS_CLIPS) {
+		canvas->clips[canvas->clip_depth] = canvas->clip;
+		canvas->clip_depth++;
+	}
+
+	/* The intersection is the clip from now on. */
+	canvas->clip = clip;
+}
+
+/*
+ * Restores the clip that the last fm_canvas_clip_push replaced.
+ */
+void
+fm_canvas_clip_pop(
+	struct fm_canvas *canvas)
+{
+	/* An unmatched pop leaves the clip as it is. */
+	if (canvas->clip_depth == 0)
+		return;
+
+	/* The clip before the push. */
+	canvas->clip_depth--;
+	canvas->clip = canvas->clips[canvas->clip_depth];
+}
+
+/*
+ * Fills a rectangle with a color.
+ */
+void
+fm_canvas_fill(
+	struct fm_canvas *canvas,
+	const struct fm_rect *rect,
+	fm_color color)
+{
+	uint32_t *row;
+	int inside;
+	int left;
+	int top;
+	int right;
+	int bottom;
+	int x;
+	int y;
+
+	/* The part of the rectangle inside the clip. */
+	inside = canvas_bounds(canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, &left, &top, &right, &bottom);
+	if (inside == 0)
+		return;
+
+	/* Every pixel, blended with the color. */
+	for (y = top; y < bottom; y++) {
+		row = canvas->pixels + (size_t)y * canvas->stride;
+		for (x = left; x < right; x++)
+			canvas_blend(&row[x], color, 1.0f);
+	}
+}
+
+/*
+ * Fills a rectangle with a vertical gradient from the top color to the
+ * bottom one.
+ */
+void
+fm_canvas_gradient(
+	struct fm_canvas *canvas,
+	const struct fm_rect *rect,
+	fm_color top_color,
+	fm_color bottom_color)
+{
+	uint32_t *row;
+	fm_color color;
+	float amount;
+	int inside;
+	int left;
+	int top;
+	int right;
+	int bottom;
+	int x;
+	int y;
+
+	/* The part of the rectangle inside the clip. */
+	inside = canvas_bounds(canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, &left, &top, &right, &bottom);
+	if (inside == 0)
+		return;
+
+	/* Each row in the color of its place between the top and the bottom. */
+	for (y = top; y < bottom; y++) {
+		amount = 0.0f;
+		if (rect->height > 1)
+			amount = (float)(y - rect->y) / (float)(rect->height - 1);
+		color = fm_color_mix(top_color, bottom_color, amount);
+		row = canvas->pixels + (size_t)y * canvas->stride;
+		for (x = left; x < right; x++)
+			canvas_blend(&row[x], color, 1.0f);
+	}
+}
+
+/*
+ * Fills a rounded rectangle with a color, its edges antialiased.
+ */
+void
+fm_canvas_round(
+	struct fm_canvas *canvas,
+	float x,
+	float y,
+	float width,
+	float height,
+	float radius,
+	fm_color color)
+{
+	/* A single color is a gradient between the same two. */
+	fm_canvas_round_gradient(canvas, x, y, width, height, radius, color, color);
+}
+
+/*
+ * Fills a rounded rectangle with a vertical gradient, its edges
+ * antialiased.
+ */
+void
+fm_canvas_round_gradient(
+	struct fm_canvas *canvas,
+	float x,
+	float y,
+	float width,
+	float height,
+	float radius,
+	fm_color top_color,
+	fm_color bottom_color)
+{
+	uint32_t *row;
+	fm_color color;
+	float half_width;
+	float half_height;
+	float cx;
+	float cy;
+	float distance;
+	float coverage;
+	float amount;
+	int inside;
+	int left;
+	int top;
+	int right;
+	int bottom;
+	int px;
+	int py;
+
+	/* The pixels the shape may touch, inside the clip. */
+	inside = canvas_bounds(canvas, x, y, width, height, &left, &top, &right, &bottom);
+	if (inside == 0)
+		return;
+
+	/* The shape's centre and half sizes, and a radius no larger than half the short side. */
+	half_width = width * 0.5f;
+	half_height = height * 0.5f;
+	cx = x + half_width;
+	cy = y + half_height;
+	if (radius > half_width)
+		radius = half_width;
+	if (radius > half_height)
+		radius = half_height;
+
+	/* Each row in its color, each pixel as much as the shape covers it. */
+	for (py = top; py < bottom; py++) {
+		amount = 0.0f;
+		if (height > 1.0f)
+			amount = ((float)py + 0.5f - y) / height;
+		color = fm_color_mix(top_color, bottom_color, amount);
+		row = canvas->pixels + (size_t)py * canvas->stride;
+		for (px = left; px < right; px++) {
+			distance = canvas_round_distance((float)px + 0.5f, (float)py + 0.5f, cx, cy, half_width, half_height, radius);
+			coverage = canvas_clamp(0.5f - distance);
+			canvas_blend(&row[px], color, coverage);
+		}
+	}
+}
+
+/*
+ * Draws the outline of a rounded rectangle, a thickness inside its edge.
+ */
+void
+fm_canvas_round_border(
+	struct fm_canvas *canvas,
+	float x,
+	float y,
+	float width,
+	float height,
+	float radius,
+	float thickness,
+	fm_color color)
+{
+	uint32_t *row;
+	float half_width;
+	float half_height;
+	float cx;
+	float cy;
+	float distance;
+	float coverage;
+	int inside;
+	int left;
+	int top;
+	int right;
+	int bottom;
+	int px;
+	int py;
+
+	/* The pixels the outline may touch, inside the clip. */
+	inside = canvas_bounds(canvas, x, y, width, height, &left, &top, &right, &bottom);
+	if (inside == 0)
+		return;
+
+	/* The shape's centre and half sizes, and its radius. */
+	half_width = width * 0.5f;
+	half_height = height * 0.5f;
+	cx = x + half_width;
+	cy = y + half_height;
+	if (radius > half_width)
+		radius = half_width;
+	if (radius > half_height)
+		radius = half_height;
+
+	/* A pixel is covered as far as it is inside the edge and not deeper than the thickness. */
+	for (py = top; py < bottom; py++) {
+		row = canvas->pixels + (size_t)py * canvas->stride;
+		for (px = left; px < right; px++) {
+			distance = canvas_round_distance((float)px + 0.5f, (float)py + 0.5f, cx, cy, half_width, half_height, radius);
+			coverage = canvas_clamp(0.5f - distance) - canvas_clamp(0.5f - (distance + thickness));
+			canvas_blend(&row[px], color, coverage);
+		}
+	}
+}
+
+/*
+ * Draws the soft shadow of a rounded rectangle: the color fades out over
+ * the softness on both sides of the edge.
+ */
+void
+fm_canvas_shadow(
+	struct fm_canvas *canvas,
+	float x,
+	float y,
+	float width,
+	float height,
+	float radius,
+	float softness,
+	fm_color color)
+{
+	uint32_t *row;
+	float half_width;
+	float half_height;
+	float cx;
+	float cy;
+	float distance;
+	float amount;
+	int inside;
+	int left;
+	int top;
+	int right;
+	int bottom;
+	int px;
+	int py;
+
+	/* A shadow without softness is the shape itself. */
+	if (softness < 1.0f)
+		softness = 1.0f;
+
+	/* The pixels the shadow may reach, a softness around the shape. */
+	inside = canvas_bounds(canvas, x - softness, y - softness, width + 2.0f * softness, height + 2.0f * softness, &left, &top, &right, &bottom);
+	if (inside == 0)
+		return;
+
+	/* The shape's centre, half sizes and radius. */
+	half_width = width * 0.5f;
+	half_height = height * 0.5f;
+	cx = x + half_width;
+	cy = y + half_height;
+	if (radius > half_width)
+		radius = half_width;
+	if (radius > half_height)
+		radius = half_height;
+
+	/* A smooth step from full inside to nothing a softness outside. */
+	for (py = top; py < bottom; py++) {
+		row = canvas->pixels + (size_t)py * canvas->stride;
+		for (px = left; px < right; px++) {
+			distance = canvas_round_distance((float)px + 0.5f, (float)py + 0.5f, cx, cy, half_width, half_height, radius);
+			amount = canvas_clamp((distance + softness) / (2.0f * softness));
+			amount = 1.0f - amount * amount * (3.0f - 2.0f * amount);
+			canvas_blend(&row[px], color, amount);
+		}
+	}
+}
+
+/*
+ * Fills a circle.
+ */
+void
+fm_canvas_circle(
+	struct fm_canvas *canvas,
+	float cx,
+	float cy,
+	float radius,
+	fm_color color)
+{
+	/* A circle is a square whose radius is half its side. */
+	fm_canvas_round(canvas, cx - radius, cy - radius, 2.0f * radius, 2.0f * radius, radius, color);
+}
+
+/*
+ * Draws part of a ring, clockwise from twelve o'clock: a fraction of 1
+ * draws all of it (a progress indicator).
+ */
+void
+fm_canvas_ring(
+	struct fm_canvas *canvas,
+	float cx,
+	float cy,
+	float radius,
+	float thickness,
+	float fraction,
+	fm_color color)
+{
+	uint32_t *row;
+	float dx;
+	float dy;
+	float distance;
+	float angle;
+	float limit;
+	float coverage;
+	int inside;
+	int left;
+	int top;
+	int right;
+	int bottom;
+	int px;
+	int py;
+
+	/* The pixels the ring may touch, inside the clip. */
+	inside = canvas_bounds(canvas, cx - radius, cy - radius, 2.0f * radius, 2.0f * radius, &left, &top, &right, &bottom);
+	if (inside == 0)
+		return;
+
+	/* The angle the ring stops at. */
+	limit = fraction * 2.0f * CANVAS_PI;
+
+	/* A pixel is covered between the two circles and before the angle. */
+	for (py = top; py < bottom; py++) {
+		row = canvas->pixels + (size_t)py * canvas->stride;
+		for (px = left; px < right; px++) {
+			/* The distance from the centre decides the band. */
+			dx = (float)px + 0.5f - cx;
+			dy = (float)py + 0.5f - cy;
+			distance = sqrtf(dx * dx + dy * dy);
+			coverage = canvas_clamp(0.5f - (distance - radius)) - canvas_clamp(0.5f - (distance - (radius - thickness)));
+			if (coverage <= 0.0f)
+				continue;
+
+			/* The angle from twelve o'clock, clockwise, decides the arc. */
+			angle = atan2f(dx, -dy);
+			if (angle < 0.0f)
+				angle += 2.0f * CANVAS_PI;
+			if (angle > limit)
+				continue;
+
+			/* The pixel belongs to the drawn part of the ring. */
+			canvas_blend(&row[px], color, coverage);
+		}
+	}
+}
+
+/*
+ * Fills a polygon (x, y pairs; the nonzero rule), its edges antialiased.
+ */
+void
+fm_canvas_polygon(
+	struct fm_canvas *canvas,
+	const float *points,
+	int count,
+	fm_color color)
+{
+	struct canvas_crossing crossings[CANVAS_CROSSINGS];
+	uint32_t *row;
+	float coverage;
+	float min_x;
+	float min_y;
+	float max_x;
+	float max_y;
+	float sub_y;
+	int crossing_count;
+	int winding;
+	int inside;
+	int left;
+	int top;
+	int right;
+	int bottom;
+	int index;
+	int sub;
+	int px;
+	int py;
+
+	/* A polygon has three corners at least and no more than the filler keeps. */
+	if (count < 3 || count > FM_POLYGON_POINTS)
+		return;
+
+	/* The polygon's bounding box. */
+	min_x = points[0];
+	max_x = points[0];
+	min_y = points[1];
+	max_y = points[1];
+	for (index = 1; index < count; index++) {
+		if (points[2 * index] < min_x)
+			min_x = points[2 * index];
+		if (points[2 * index] > max_x)
+			max_x = points[2 * index];
+		if (points[2 * index + 1] < min_y)
+			min_y = points[2 * index + 1];
+		if (points[2 * index + 1] > max_y)
+			max_y = points[2 * index + 1];
+	}
+
+	/* The pixels the polygon may touch, inside the clip. */
+	inside = canvas_bounds(canvas, min_x, min_y, max_x - min_x, max_y - min_y, &left, &top, &right, &bottom);
+	if (inside == 0)
+		return;
+
+	/* Each pixel row: the coverage of its sub-rows' inside spans, then the blend. */
+	for (py = top; py < bottom; py++) {
+		memset(canvas->coverage + left, 0, (size_t)(right - left + 1) * sizeof(float));
+		for (sub = 0; sub < CANVAS_SUBROWS; sub++) {
+			/* Where the sub-row crosses the edges, left to right. */
+			sub_y = (float)py + ((float)sub + 0.5f) / (float)CANVAS_SUBROWS;
+			crossing_count = canvas_crossings(points, count, sub_y, crossings);
+
+			/* The spans after which the winding is not zero are inside. */
+			winding = 0;
+			for (index = 0; index + 1 < crossing_count; index++) {
+				winding += crossings[index].direction;
+				if (winding != 0) {
+					canvas_span(canvas->coverage, crossings[index].x, crossings[index + 1].x, 1.0f / (float)CANVAS_SUBROWS, left, right);
+				}
+			}
+		}
+
+		/* The row's pixels, as much as the spans covered them. */
+		row = canvas->pixels + (size_t)py * canvas->stride;
+		for (px = left; px < right; px++) {
+			coverage = canvas_clamp(canvas->coverage[px]);
+			canvas_blend(&row[px], color, coverage);
+		}
+	}
+}
+
+/*
+ * Draws a line of a thickness with round ends.
+ */
+void
+fm_canvas_line(
+	struct fm_canvas *canvas,
+	float x0,
+	float y0,
+	float x1,
+	float y1,
+	float thickness,
+	fm_color color)
+{
+	float points[2 * (2 * CANVAS_CAP_POINTS + 2)];
+	float length;
+	float nx;
+	float ny;
+	float angle;
+	float base;
+	float half;
+	int count;
+	int index;
+
+	/* The line's direction, and the half thickness across it. */
+	nx = x1 - x0;
+	ny = y1 - y0;
+	length = sqrtf(nx * nx + ny * ny);
+	half = thickness * 0.5f;
+
+	/* A point is a dot. */
+	if (length < 0.001f) {
+		fm_canvas_circle(canvas, x0, y0, half, color);
+		return;
+	}
+
+	/* The angle of the line, from which the round ends are laid out. */
+	base = atan2f(ny, nx);
+
+	/* The end at (x1, y1): a half circle from one side of the line round to the other. */
+	count = 0;
+	for (index = 0; index <= CANVAS_CAP_POINTS; index++) {
+		angle = base - CANVAS_PI * 0.5f + CANVAS_PI * (float)index / (float)CANVAS_CAP_POINTS;
+		points[2 * count] = x1 + half * cosf(angle);
+		points[2 * count + 1] = y1 + half * sinf(angle);
+		count++;
+	}
+
+	/* The end at (x0, y0), the other half circle, which closes the outline. */
+	for (index = 0; index <= CANVAS_CAP_POINTS; index++) {
+		angle = base + CANVAS_PI * 0.5f + CANVAS_PI * (float)index / (float)CANVAS_CAP_POINTS;
+		points[2 * count] = x0 + half * cosf(angle);
+		points[2 * count + 1] = y0 + half * sinf(angle);
+		count++;
+	}
+
+	/* The outline is filled as one polygon, so a translucent line is even. */
+	fm_canvas_polygon(canvas, points, count, color);
+}
+
+/*
+ * Blends a color through a coverage mask (a glyph): 255 is the full color.
+ */
+void
+fm_canvas_mask(
+	struct fm_canvas *canvas,
+	int x,
+	int y,
+	const uint8_t *mask,
+	int width,
+	int height,
+	size_t stride,
+	fm_color color)
+{
+	const uint8_t *source;
+	uint32_t *row;
+	int inside;
+	int left;
+	int top;
+	int right;
+	int bottom;
+	int px;
+	int py;
+
+	/* The part of the mask inside the clip. */
+	inside = canvas_bounds(canvas, (float)x, (float)y, (float)width, (float)height, &left, &top, &right, &bottom);
+	if (inside == 0)
+		return;
+
+	/* Each covered pixel, as much as the mask says. */
+	for (py = top; py < bottom; py++) {
+		row = canvas->pixels + (size_t)py * canvas->stride;
+		source = mask + (size_t)(py - y) * stride;
+		for (px = left; px < right; px++) {
+			if (source[px - x] != 0U)
+				canvas_blend(&row[px], color, (float)source[px - x] / 255.0f);
+		}
+	}
+}
+
+/*
+ * Draws a picture scaled into a rectangle (bilinear), with rounded corners
+ * and an opacity.
+ */
+void
+fm_canvas_image(
+	struct fm_canvas *canvas,
+	const struct fm_image *image,
+	float x,
+	float y,
+	float width,
+	float height,
+	float radius,
+	float opacity)
+{
+	uint32_t *row;
+	uint32_t sample;
+	float half_width;
+	float half_height;
+	float cx;
+	float cy;
+	float distance;
+	float coverage;
+	float u;
+	float v;
+	unsigned alpha;
+	unsigned red;
+	unsigned green;
+	unsigned blue;
+	unsigned weight;
+	int inside;
+	int left;
+	int top;
+	int right;
+	int bottom;
+	int px;
+	int py;
+
+	/* An empty picture or rectangle draws nothing. */
+	if (image->pixels == NULL ||
+	    image->width <= 0 ||
+	    image->height <= 0 ||
+	    width <= 0.0f ||
+	    height <= 0.0f)
+		return;
+
+	/* The pixels of the rectangle inside the clip. */
+	inside = canvas_bounds(canvas, x, y, width, height, &left, &top, &right, &bottom);
+	if (inside == 0)
+		return;
+
+	/* The rectangle's centre and half sizes, for the rounded corners. */
+	half_width = width * 0.5f;
+	half_height = height * 0.5f;
+	cx = x + half_width;
+	cy = y + half_height;
+	if (radius > half_width)
+		radius = half_width;
+	if (radius > half_height)
+		radius = half_height;
+
+	/* Each pixel: the picture sampled at its place, faded by the corner and the opacity. */
+	for (py = top; py < bottom; py++) {
+		row = canvas->pixels + (size_t)py * canvas->stride;
+		v = ((float)py + 0.5f - y) * (float)image->height / height - 0.5f;
+		for (px = left; px < right; px++) {
+			/* How much of the pixel the rounded rectangle covers. */
+			distance = canvas_round_distance((float)px + 0.5f, (float)py + 0.5f, cx, cy, half_width, half_height, radius);
+			coverage = canvas_clamp(0.5f - distance) * opacity;
+			if (coverage <= 0.0f)
+				continue;
+
+			/* The picture's color there, weighted by that coverage (it is premultiplied). */
+			u = ((float)px + 0.5f - x) * (float)image->width / width - 0.5f;
+			sample = canvas_sample(image, u, v);
+			weight = (unsigned)(coverage * 256.0f);
+			if (weight > 256U)
+				weight = 256U;
+			alpha = (((sample >> 24) & 0xffU) * weight) >> 8;
+			red = (((sample >> 16) & 0xffU) * weight) >> 8;
+			green = (((sample >> 8) & 0xffU) * weight) >> 8;
+			blue = ((sample & 0xffU) * weight) >> 8;
+			canvas_blend_premultiplied(&row[px], (alpha << 24) | (red << 16) | (green << 8) | blue);
+		}
+	}
+}
+
+/*
+ * Allocates a transparent picture of a size.
+ *
+ * Returns 0, EINVAL for an empty size, or ENOMEM.
+ */
+int
+fm_image_create(
+	struct fm_image *image,
+	int width,
+	int height)
+{
+	/* A picture has at least one pixel. */
+	memset(image, 0, sizeof(*image));
+	if (width <= 0 || height <= 0)
+		return EINVAL;
+
+	/* The pixels, cleared to transparent. */
+	image->pixels = calloc((size_t)width * (size_t)height, sizeof(uint32_t));
+	if (image->pixels == NULL)
+		return ENOMEM;
+
+	/* Succeeded: the picture's size and its row length. */
+	image->width = width;
+	image->height = height;
+	image->stride = (size_t)width;
+	return 0;
+}
+
+/*
+ * Frees a picture's pixels.
+ */
+void
+fm_image_release(
+	struct fm_image *image)
+{
+	/* The pixels go and the picture is empty. */
+	free(image->pixels);
+	memset(image, 0, sizeof(*image));
+}
+
+/*
+ * Scales a picture into another of the target's size: each target pixel is
+ * the average of the source pixels under it when shrinking, and a bilinear
+ * sample when growing.
+ */
+void
+fm_image_scale(
+	const struct fm_image *source,
+	struct fm_image *target)
+{
+	const uint32_t *row;
+	uint32_t pixel;
+	unsigned long sums[4];
+	unsigned long count;
+	int x0;
+	int x1;
+	int y0;
+	int y1;
+	int tx;
+	int ty;
+	int sx;
+	int sy;
+
+	/* An empty picture on either side scales nothing. */
+	if (source->pixels == NULL || target->pixels == NULL)
+		return;
+
+	/* Each target pixel covers a box of the source. */
+	for (ty = 0; ty < target->height; ty++) {
+		y0 = (int)((long)ty * source->height / target->height);
+		y1 = (int)((long)(ty + 1) * source->height / target->height);
+		if (y1 <= y0)
+			y1 = y0 + 1;
+		for (tx = 0; tx < target->width; tx++) {
+			x0 = (int)((long)tx * source->width / target->width);
+			x1 = (int)((long)(tx + 1) * source->width / target->width);
+			if (x1 <= x0)
+				x1 = x0 + 1;
+
+			/* A box of one source pixel is growing: a bilinear sample is smoother. */
+			if (x1 - x0 == 1 && y1 - y0 == 1 && (target->width > source->width || target->height > source->height)) {
+				target->pixels[(size_t)ty * target->stride + (size_t)tx] = canvas_sample(source,
+				    ((float)tx + 0.5f) * (float)source->width / (float)target->width - 0.5f,
+				    ((float)ty + 0.5f) * (float)source->height / (float)target->height - 0.5f);
+				continue;
+			}
+
+			/* The average of the box, channel by channel. */
+			memset(sums, 0, sizeof(sums));
+			count = 0;
+			for (sy = y0; sy < y1 && sy < source->height; sy++) {
+				row = source->pixels + (size_t)sy * source->stride;
+				for (sx = x0; sx < x1 && sx < source->width; sx++) {
+					pixel = row[sx];
+					sums[0] += (pixel >> 24) & 0xffU;
+					sums[1] += (pixel >> 16) & 0xffU;
+					sums[2] += (pixel >> 8) & 0xffU;
+					sums[3] += pixel & 0xffU;
+					count++;
+				}
+			}
+
+			/* The averaged pixel, when the box held any. */
+			if (count == 0)
+				continue;
+			pixel = (uint32_t)((sums[0] / count) << 24);
+			pixel |= (uint32_t)((sums[1] / count) << 16);
+			pixel |= (uint32_t)((sums[2] / count) << 8);
+			pixel |= (uint32_t)(sums[3] / count);
+			target->pixels[(size_t)ty * target->stride + (size_t)tx] = pixel;
+		}
+	}
+}
+
+/*
+ * Mixes two colors (alpha included): 0 is the first, 1 the second.
+ */
+fm_color
+fm_color_mix(
+	fm_color from,
+	fm_color to,
+	float amount)
+{
+	unsigned weight;
+	uint32_t mixed;
+	int shift;
+	unsigned first;
+	unsigned second;
+
+	/* The weight of the second color, from 0 to 256. */
+	if (amount <= 0.0f)
+		return from;
+	if (amount >= 1.0f)
+		return to;
+	weight = (unsigned)(amount * 256.0f);
+
+	/* Each channel moves that far from the first to the second. */
+	mixed = 0;
+	for (shift = 0; shift < 32; shift += 8) {
+		first = (from >> shift) & 0xffU;
+		second = (to >> shift) & 0xffU;
+		mixed |= (uint32_t)(((first * (256U - weight) + second * weight) >> 8) & 0xffU) << shift;
+	}
+
+	/* Reports the mixed color. */
+	return mixed;
+}
+
+/* Clips a rectangle of the canvas to the clip and to whole pixels; zero when nothing is left. */
+static int
+canvas_bounds(
+	const struct fm_canvas *canvas,
+	float x,
+	float y,
+	float width,
+	float height,
+	int *left,
+	int *top,
+	int *right,
+	int *bottom)
+{
+	/* The whole pixels the rectangle touches. */
+	*left = (int)floorf(x);
+	*top = (int)floorf(y);
+	*right = (int)ceilf(x + width);
+	*bottom = (int)ceilf(y + height);
+
+	/* Kept inside the clip. */
+	if (*left < canvas->clip.x)
+		*left = canvas->clip.x;
+	if (*top < canvas->clip.y)
+		*top = canvas->clip.y;
+	if (*right > canvas->clip.x + canvas->clip.width)
+		*right = canvas->clip.x + canvas->clip.width;
+	if (*bottom > canvas->clip.y + canvas->clip.height)
+		*bottom = canvas->clip.y + canvas->clip.height;
+
+	/* Nothing left to draw. */
+	if (*left >= *right || *top >= *bottom)
+		return 0;
+
+	/* Some pixels are left. */
+	return 1;
+}
+
+/* Reports how far a point is outside a rounded rectangle (negative inside). */
+static float
+canvas_round_distance(
+	float px,
+	float py,
+	float cx,
+	float cy,
+	float half_width,
+	float half_height,
+	float radius)
+{
+	float qx;
+	float qy;
+	float outside_x;
+	float outside_y;
+	float inside;
+
+	/* The point folded into one quarter, relative to the corner circle's centre. */
+	qx = fabsf(px - cx) - (half_width - radius);
+	qy = fabsf(py - cy) - (half_height - radius);
+
+	/* Beyond the corner circle's centre in both directions: the distance to the circle. */
+	if (qx > 0.0f && qy > 0.0f) {
+		inside = sqrtf(qx * qx + qy * qy);
+		return inside - radius;
+	}
+
+	/* Otherwise the distance to the nearer straight edge. */
+	outside_x = qx;
+	outside_y = qy;
+	inside = outside_x;
+	if (outside_y > inside)
+		inside = outside_y;
+
+	/* Reports that distance, the corner radius taken off. */
+	return inside - radius;
+}
+
+/* Keeps a coverage between 0 and 1. */
+static float
+canvas_clamp(
+	float value)
+{
+	/* Below nothing and above everything. */
+	if (value < 0.0f)
+		return 0.0f;
+	if (value > 1.0f)
+		return 1.0f;
+
+	/* Reports the value as it is. */
+	return value;
+}
+
+/* Blends a color over a pixel, as much as the coverage says. */
+static void
+canvas_blend(
+	uint32_t *pixel,
+	fm_color color,
+	float coverage)
+{
+	unsigned alpha;
+	unsigned red;
+	unsigned green;
+	unsigned blue;
+
+	/* The color's alpha, scaled by the coverage. */
+	alpha = (unsigned)((float)((color >> 24) & 0xffU) * coverage + 0.5f);
+	if (alpha == 0U)
+		return;
+
+	/* An opaque color replaces the pixel. */
+	if (alpha >= 255U) {
+		*pixel = 0xff000000U | (color & 0xffffffU);
+		return;
+	}
+
+	/* Otherwise the premultiplied color is laid over it. */
+	red = ((color >> 16) & 0xffU) * alpha / 255U;
+	green = ((color >> 8) & 0xffU) * alpha / 255U;
+	blue = (color & 0xffU) * alpha / 255U;
+	canvas_blend_premultiplied(pixel, (alpha << 24) | (red << 16) | (green << 8) | blue);
+}
+
+/* Lays a premultiplied color over a pixel. */
+static void
+canvas_blend_premultiplied(
+	uint32_t *pixel,
+	uint32_t source)
+{
+	uint32_t destination;
+	uint32_t result;
+	unsigned remaining;
+	unsigned channel;
+	int shift;
+
+	/* What the source leaves of the pixel under it. */
+	remaining = 255U - ((source >> 24) & 0xffU);
+	destination = *pixel;
+
+	/* Each channel: the source plus what shows through of the pixel. */
+	result = 0;
+	for (shift = 0; shift < 32; shift += 8) {
+		channel = ((source >> shift) & 0xffU) + (((destination >> shift) & 0xffU) * remaining + 127U) / 255U;
+		if (channel > 255U)
+			channel = 255U;
+		result |= (uint32_t)channel << shift;
+	}
+
+	/* The pixel takes the blended color. */
+	*pixel = result;
+}
+
+/* Adds a weight to the coverage of a span of a row, the partly covered end pixels in part. */
+static void
+canvas_span(
+	float *row,
+	float from,
+	float to,
+	float weight,
+	int low,
+	int high)
+{
+	int first;
+	int last;
+	int x;
+
+	/* The span, kept inside the row's pixels. */
+	if (from < (float)low)
+		from = (float)low;
+	if (to > (float)high)
+		to = (float)high;
+	if (to <= from)
+		return;
+
+	/* The whole pixels the span touches. */
+	first = (int)floorf(from);
+	last = (int)floorf(to);
+
+	/* A span inside one pixel covers its width of it. */
+	if (first == last) {
+		row[first] += (to - from) * weight;
+		return;
+	}
+
+	/* The first pixel in part, the ones between in full, the last in part. */
+	row[first] += ((float)(first + 1) - from) * weight;
+	for (x = first + 1; x < last; x++)
+		row[x] += weight;
+	row[last] += (to - (float)last) * weight;
+}
+
+/* Finds where a sub-row crosses a polygon's edges, sorted from left to right, and returns how many. */
+static int
+canvas_crossings(
+	const float *points,
+	int count,
+	float y,
+	struct canvas_crossing *crossings)
+{
+	struct canvas_crossing moving;
+	float x0;
+	float y0;
+	float x1;
+	float y1;
+	int crossing_count;
+	int index;
+	int next;
+	int place;
+
+	/* Each edge that spans the sub-row (its lower end included, its upper not). */
+	crossing_count = 0;
+	for (index = 0; index < count; index++) {
+		next = index + 1;
+		if (next == count)
+			next = 0;
+		x0 = points[2 * index];
+		y0 = points[2 * index + 1];
+		x1 = points[2 * next];
+		y1 = points[2 * next + 1];
+
+		/* A level edge crosses no sub-row. */
+		if (y0 == y1)
+			continue;
+
+		/* An edge going down counts +1, going up -1. */
+		if (y0 < y1) {
+			if (y < y0 || y >= y1)
+				continue;
+			crossings[crossing_count].direction = 1;
+		} else {
+			if (y < y1 || y >= y0)
+				continue;
+			crossings[crossing_count].direction = -1;
+		}
+
+		/* Where along the edge the sub-row is. */
+		crossings[crossing_count].x = x0 + (y - y0) * (x1 - x0) / (y1 - y0);
+		crossing_count++;
+		if (crossing_count == CANVAS_CROSSINGS)
+			break;
+	}
+
+	/* Sorted by x (insertion: there are few). */
+	for (index = 1; index < crossing_count; index++) {
+		moving = crossings[index];
+		place = index;
+		while (place > 0 && crossings[place - 1].x > moving.x) {
+			crossings[place] = crossings[place - 1];
+			place--;
+		}
+
+		/* The crossing goes into the gap it opened. */
+		crossings[place] = moving;
+	}
+
+	/* Reports how many crossings there are. */
+	return crossing_count;
+}
+
+/* Samples a picture between its pixels (bilinear), its edges repeated outward. */
+static uint32_t
+canvas_sample(
+	const struct fm_image *image,
+	float u,
+	float v)
+{
+	uint32_t top;
+	uint32_t bottom;
+	unsigned weight_x;
+	unsigned weight_y;
+	int x0;
+	int y0;
+	int x1;
+	int y1;
+
+	/* The four pixels around the point, kept inside the picture. */
+	x0 = (int)floorf(u);
+	y0 = (int)floorf(v);
+	weight_x = (unsigned)((u - (float)x0) * 256.0f);
+	weight_y = (unsigned)((v - (float)y0) * 256.0f);
+	x1 = x0 + 1;
+	y1 = y0 + 1;
+	if (x0 < 0)
+		x0 = 0;
+	if (y0 < 0)
+		y0 = 0;
+	if (x1 >= image->width)
+		x1 = image->width - 1;
+	if (y1 >= image->height)
+		y1 = image->height - 1;
+	if (x0 >= image->width)
+		x0 = image->width - 1;
+	if (y0 >= image->height)
+		y0 = image->height - 1;
+
+	/* Across each row, then down between the two rows. */
+	top = canvas_lerp_pixel(image->pixels[(size_t)y0 * image->stride + (size_t)x0], image->pixels[(size_t)y0 * image->stride + (size_t)x1], weight_x);
+	bottom = canvas_lerp_pixel(image->pixels[(size_t)y1 * image->stride + (size_t)x0], image->pixels[(size_t)y1 * image->stride + (size_t)x1], weight_x);
+
+	/* Reports the blend of the two rows. */
+	top = canvas_lerp_pixel(top, bottom, weight_y);
+	return top;
+}
+
+/* Blends two premultiplied pixels: weight 0 is the first, 256 the second. */
+static uint32_t
+canvas_lerp_pixel(
+	uint32_t first,
+	uint32_t second,
+	unsigned weight)
+{
+	uint32_t result;
+	int shift;
+
+	/* The weight beyond the ends is the end. */
+	if (weight > 256U)
+		weight = 256U;
+
+	/* Each channel moves that far. */
+	result = 0;
+	for (shift = 0; shift < 32; shift += 8) {
+		result |= (uint32_t)(((((first >> shift) & 0xffU) * (256U - weight) +
+		    ((second >> shift) & 0xffU) * weight) >> 8) & 0xffU) << shift;
+	}
+
+	/* Reports the blend. */
+	return result;
+}

@@ -774,20 +774,30 @@ sh_test_unary(
 	struct test_state state;
 	char name[3];
 	int kind;
+	int truth;
 
-	/* -a is -e here, where it is no conjunction. */
+	/* Spells the operator as test does; -a is -e here, where it is no conjunction. */
 	name[0] = '-';
 	name[1] = op[1];
 	name[2] = '\0';
 	if (op[1] == 'a')
 		name[1] = 'e';
+
+	/* Refuses an operator that is not one of test's unary tests. */
 	kind = test_word_kind(name);
 	if (kind != TEST_UNARY)
 		return -1;
 
-	/* Succeeded: the test. */
+	/* Runs the test with a fresh state. */
 	memset(&state, 0, sizeof(state));
-	return test_unary(name, operand, &state) != 0;
+	truth = test_unary(name, operand, &state);
+
+	/* A false test is 0. */
+	if (truth == 0)
+		return 0;
+
+	/* Succeeded: the test is true. */
+	return 1;
 }
 
 /*
@@ -801,13 +811,18 @@ sh_test_file_compare(
 	const char *right)
 {
 	int code;
+	int truth;
 
-	/* Only the file comparisons. */
+	/* Refuses an operator that is not one of the file comparisons. */
 	code = test_binary_op(op);
-	if (code != TEST_OP_NEWER && code != TEST_OP_OLDER &&
+	if (code != TEST_OP_NEWER &&
+	    code != TEST_OP_OLDER &&
 	    code != TEST_OP_SAME_FILE)
 		return -1;
 
-	/* Succeeded. */
-	return test_files(code, left, right);
+	/* Compares the two files. */
+	truth = test_files(code, left, right);
+
+	/* Succeeded: whether the comparison holds. */
+	return truth;
 }

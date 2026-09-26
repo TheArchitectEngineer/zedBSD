@@ -8216,6 +8216,8 @@ sys_vfork_call(
 	error = process_vfork(parent, &child);
 	if (error != 0)
 		return -error;
+
+	/* Succeeded: the parent learns the child's pid. */
 	return child;
 }
 

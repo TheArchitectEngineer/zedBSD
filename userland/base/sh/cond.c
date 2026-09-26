@@ -30,9 +30,37 @@
 #include <stdlib.h>
 #include <string.h>
 
+/*
+ * The integer comparisons of [[ ... ]], in the order of the values
+ * integer_compare_names gives them.
+ */
+enum integer_compare {
+	INTEGER_EQ,
+	INTEGER_NE,
+	INTEGER_LT,
+	INTEGER_LE,
+	INTEGER_GT,
+	INTEGER_GE
+};
+
+/*
+ * The operator words of the integer comparisons, indexed by enum
+ * integer_compare and ended by NULL.  The parser accepts no other
+ * operator that reaches the integer comparison.
+ */
+static const char *const integer_compare_names[] = {
+	"-eq", "-ne", "-lt", "-le", "-gt", "-ge", NULL
+};
+
 static int eval_node(const struct sh_cond *cond);
-static int eval_binary(const struct sh_cond *cond);
+static int eval_not(const struct sh_cond *cond);
+static int eval_and(const struct sh_cond *cond);
+static int eval_or(const struct sh_cond *cond);
+static int eval_word(const struct sh_cond *cond);
 static int eval_unary(const struct sh_cond *cond);
+static int eval_binary(const struct sh_cond *cond);
+static int eval_string_order(const char *op, const char *left, const char *right);
+static int eval_integer_compare(const char *op, const char *left, const char *right);
 static char *expand_operand(const struct sh_token *word);
 static int match_pattern(const struct sh_token *word, const char *subject);
 static int match_regex(const struct sh_token *word, const char *subject);
@@ -47,21 +75,28 @@ sh_eval_cond(
 	const struct sh_cond *cond)
 {
 	size_t mark;
-	int result;
+	int truth;
 
-	/* The expansions' allocations go when it ends. */
+	/* Evaluates the expression; its expansions are freed when it ends. */
 	mark = sh_temp_mark();
-	result = eval_node(cond);
+	truth = eval_node(cond);
 	sh_temp_release(mark);
 
-	/* 1 (true) is status 0; 0 (false) is 1; an error is 2. */
-	if (result < 0)
+	/* An expression that could not be evaluated is status 2. */
+	if (truth < 0)
 		return 2;
-	return result ? 0 : 1;
+
+	/* A false expression is status 1. */
+	if (truth == 0)
+		return 1;
+
+	/* Succeeded: the expression is true. */
+	return 0;
 }
 
 /*
  * Evaluates the text of an arithmetic command, expanded as $(( )) is.
+ *
  * Returns 1 with the value, or 0 after reporting the error.
  */
 int
@@ -73,7 +108,7 @@ sh_eval_arith_text(
 	const char *error_text;
 	int ok;
 
-	/* An empty expression is 0. */
+	/* Expands and evaluates the text; an error is reported, not fatal. */
 	sh_expand_context_fill(&context);
 	ok = sh_expand_arithmetic(text, &context, value, &error_text);
 	if (!ok) {
@@ -81,13 +116,15 @@ sh_eval_arith_text(
 		return 0;
 	}
 
-	/* Succeeded. */
+	/* Succeeded: the value is stored. */
 	return 1;
 }
 
 /*
- * Implements let (bash): evaluates each operand as an arithmetic
- * expression; the status is 0 when the last one is not 0.
+ * Implements let (bash).
+ *
+ * Each operand is evaluated as an arithmetic expression; the status is 0
+ * when the last one is not 0.
  */
 int
 sh_builtin_let(
@@ -98,13 +135,13 @@ sh_builtin_let(
 	int index;
 	int ok;
 
-	/* At least one expression. */
+	/* Refuses a let without an expression. */
 	if (argc < 2) {
 		fprintf(stderr, "let: expression expected\n");
 		return 1;
 	}
 
-	/* Each in turn; an error stops them with status 1. */
+	/* Evaluates each expression in turn; an error stops them with status 1. */
 	value = 0;
 	for (index = 1; index < argc; index++) {
 		ok = sh_eval_arith_text(argv[index], &value);
@@ -112,8 +149,12 @@ sh_builtin_let(
 			return 1;
 	}
 
-	/* Succeeded: whether the last was true. */
-	return value != 0 ? 0 : 1;
+	/* A last value of 0 is status 1. */
+	if (value == 0)
+		return 1;
+
+	/* Succeeded: the last value was not 0. */
+	return 0;
 }
 
 /* Evaluates a part of the expression: 1, 0, or -1 on an error. */
@@ -121,37 +162,108 @@ static int
 eval_node(
 	const struct sh_cond *cond)
 {
-	char *text;
-	int result;
+	int truth;
 
-	/* Dispatches on the kind of part. */
+	/* Evaluates the part by its kind. */
 	switch (cond->kind) {
 	case SH_COND_NOT:
-		result = eval_node(cond->first);
-		if (result < 0)
-			return result;
-		return !result;
+		truth = eval_not(cond);
+		break;
 	case SH_COND_AND:
-		result = eval_node(cond->first);
-		if (result <= 0)
-			return result;
-		return eval_node(cond->second);
+		truth = eval_and(cond);
+		break;
 	case SH_COND_OR:
-		result = eval_node(cond->first);
-		if (result != 0)
-			return result;
-		return eval_node(cond->second);
+		truth = eval_or(cond);
+		break;
 	case SH_COND_UNARY:
-		return eval_unary(cond);
+		truth = eval_unary(cond);
+		break;
 	case SH_COND_BINARY:
-		return eval_binary(cond);
+		truth = eval_binary(cond);
+		break;
 	default:
+		truth = eval_word(cond);
 		break;
 	}
 
-	/* A word alone is true when it is not empty. */
+	/* Reports the part's truth, or -1 when it could not be evaluated. */
+	return truth;
+}
+
+/* Evaluates ! expression: 1, 0, or -1. */
+static int
+eval_not(
+	const struct sh_cond *cond)
+{
+	int truth;
+
+	/* Evaluates the operand; an error passes through. */
+	truth = eval_node(cond->first);
+	if (truth < 0)
+		return truth;
+
+	/* A true operand makes the negation false. */
+	if (truth != 0)
+		return 0;
+
+	/* Succeeded: the operand was false, so the negation is true. */
+	return 1;
+}
+
+/* Evaluates expression && expression: 1, 0, or -1. */
+static int
+eval_and(
+	const struct sh_cond *cond)
+{
+	int truth;
+
+	/* A false or failed left side decides without the right side. */
+	truth = eval_node(cond->first);
+	if (truth <= 0)
+		return truth;
+
+	/* The left side was true, so the right side decides. */
+	truth = eval_node(cond->second);
+
+	/* Succeeded: the right side's truth, or -1. */
+	return truth;
+}
+
+/* Evaluates expression || expression: 1, 0, or -1. */
+static int
+eval_or(
+	const struct sh_cond *cond)
+{
+	int truth;
+
+	/* A true or failed left side decides without the right side. */
+	truth = eval_node(cond->first);
+	if (truth != 0)
+		return truth;
+
+	/* The left side was false, so the right side decides. */
+	truth = eval_node(cond->second);
+
+	/* Succeeded: the right side's truth, or -1. */
+	return truth;
+}
+
+/* Evaluates a word alone, which is true when it is not empty. */
+static int
+eval_word(
+	const struct sh_cond *cond)
+{
+	char *text;
+
+	/* Expands the word as one word. */
 	text = expand_operand(cond->left);
-	return text[0] != '\0';
+
+	/* An empty word is false. */
+	if (text[0] == '\0')
+		return 0;
+
+	/* Succeeded: the word is not empty. */
+	return 1;
 }
 
 /* Evaluates a unary test: 1, 0, or -1. */
@@ -159,29 +271,38 @@ static int
 eval_unary(
 	const struct sh_cond *cond)
 {
+	const char *value;
 	char *operand;
-	int result;
+	int truth;
 
-	/* The operand, expanded as one word. */
+	/* Expands the operand as one word. */
 	operand = expand_operand(cond->left);
 
-	/* -o: an option; -v: a variable that is set. */
+	/* -o is true when the named option is on; an unknown name is false. */
 	if (cond->op[1] == 'o') {
-		result = sh_option_named(operand);
-		return result > 0;
+		truth = sh_option_named(operand);
+		if (truth > 0)
+			return 1;
+		return 0;
 	}
-	if (cond->op[1] == 'v')
-		return sh_var_get(operand) != NULL;
 
-	/* The tests test knows. */
-	result = sh_test_unary(cond->op, operand);
-	if (result < 0) {
+	/* -v is true when the named variable is set. */
+	if (cond->op[1] == 'v') {
+		value = sh_var_get(operand);
+		if (value != NULL)
+			return 1;
+		return 0;
+	}
+
+	/* Runs the file and string tests that test knows. */
+	truth = sh_test_unary(cond->op, operand);
+	if (truth < 0) {
 		sh_warn("[[: %s: unary operator not supported", cond->op);
 		return -1;
 	}
 
-	/* Succeeded. */
-	return result;
+	/* Succeeded: the test's truth. */
+	return truth;
 }
 
 /* Evaluates a binary test: 1, 0, or -1. */
@@ -192,53 +313,157 @@ eval_binary(
 	const char *op;
 	char *left;
 	char *right;
-	long left_number;
-	long right_number;
-	int result;
+	int is_equal;
+	int is_assign;
+	int is_not_equal;
+	int is_regex;
+	int truth;
 
-	/* The left operand, expanded as one word. */
+	/* Expands the left operand as one word and names the operator. */
 	op = cond->op;
 	left = expand_operand(cond->left);
+	is_equal = strcmp(op, "==");
+	is_assign = strcmp(op, "=");
+	is_not_equal = strcmp(op, "!=");
+	is_regex = strcmp(op, "=~");
 
-	/* == = and != match a pattern; =~ a regular expression. */
-	if (strcmp(op, "==") == 0 || strcmp(op, "=") == 0)
-		return match_pattern(cond->right, left);
-	if (strcmp(op, "!=") == 0) {
-		result = match_pattern(cond->right, left);
-		if (result < 0)
-			return result;
-		return !result;
+	/* == and = are true when the left side matches the pattern on the right. */
+	if (is_equal == 0 || is_assign == 0) {
+		truth = match_pattern(cond->right, left);
+		return truth;
 	}
-	if (strcmp(op, "=~") == 0)
-		return match_regex(cond->right, left);
 
-	/* The string order, and the file comparisons. */
+	/* != is true when the left side does not match the pattern. */
+	if (is_not_equal == 0) {
+		truth = match_pattern(cond->right, left);
+		if (truth != 0)
+			return 0;
+		return 1;
+	}
+
+	/* =~ matches the left side against a regular expression. */
+	if (is_regex == 0) {
+		truth = match_regex(cond->right, left);
+		return truth;
+	}
+
+	/* < and > order the two strings as strcmp does. */
 	right = expand_operand(cond->right);
-	if (strcmp(op, "<") == 0)
-		return strcmp(left, right) < 0;
-	if (strcmp(op, ">") == 0)
-		return strcmp(left, right) > 0;
-	result = sh_test_file_compare(op, left, right);
-	if (result >= 0)
-		return result;
+	truth = eval_string_order(op, left, right);
+	if (truth >= 0)
+		return truth;
 
-	/* The integer comparisons, of arithmetic expressions. */
-	if (!integer_operand(left, &left_number) ||
-	    !integer_operand(right, &right_number))
+	/* -nt, -ot and -ef compare two files. */
+	truth = sh_test_file_compare(op, left, right);
+	if (truth >= 0)
+		return truth;
+
+	/* What remains are the integer comparisons. */
+	truth = eval_integer_compare(op, left, right);
+
+	/* Succeeded: the comparison's truth, or -1. */
+	return truth;
+}
+
+/*
+ * Evaluates < or >, which order two strings as strcmp does: 1, 0, or -1
+ * when the operator is neither.
+ */
+static int
+eval_string_order(
+	const char *op,
+	const char *left,
+	const char *right)
+{
+	int order;
+
+	/* Refuses any operator other than a lone < or >. */
+	if (op[0] != '<' && op[0] != '>')
 		return -1;
-	if (strcmp(op, "-eq") == 0)
-		return left_number == right_number;
-	if (strcmp(op, "-ne") == 0)
-		return left_number != right_number;
-	if (strcmp(op, "-lt") == 0)
-		return left_number < right_number;
-	if (strcmp(op, "-le") == 0)
-		return left_number <= right_number;
-	if (strcmp(op, "-gt") == 0)
-		return left_number > right_number;
+	if (op[1] != '\0')
+		return -1;
 
-	/* -ge. */
-	return left_number >= right_number;
+	/* Orders the two strings. */
+	order = strcmp(left, right);
+
+	/* < is true when the left string sorts first. */
+	if (op[0] == '<') {
+		if (order < 0)
+			return 1;
+		return 0;
+	}
+
+	/* > is true when the left string sorts last. */
+	if (order > 0)
+		return 1;
+
+	/* Succeeded: the left string does not sort last. */
+	return 0;
+}
+
+/*
+ * Evaluates -eq, -ne, -lt, -le, -gt or -ge, whose operands are arithmetic
+ * expressions: 1, 0, or -1 when an operand cannot be evaluated.
+ */
+static int
+eval_integer_compare(
+	const char *op,
+	const char *left,
+	const char *right)
+{
+	long left_number;
+	long right_number;
+	int compare;
+	int which;
+	int holds;
+	int ok;
+
+	/* Evaluates both operands, the left one first. */
+	ok = integer_operand(left, &left_number);
+	if (!ok)
+		return -1;
+	ok = integer_operand(right, &right_number);
+	if (!ok)
+		return -1;
+
+	/* Finds which comparison the operator names; the last one is -ge. */
+	for (which = INTEGER_EQ; which < INTEGER_GE; which++) {
+		compare = strcmp(op, integer_compare_names[which]);
+		if (compare == 0)
+			break;
+	}
+
+	/* Compares the two values. */
+	holds = 0;
+	switch (which) {
+	case INTEGER_EQ:
+		if (left_number == right_number)
+			holds = 1;
+		break;
+	case INTEGER_NE:
+		if (left_number != right_number)
+			holds = 1;
+		break;
+	case INTEGER_LT:
+		if (left_number < right_number)
+			holds = 1;
+		break;
+	case INTEGER_LE:
+		if (left_number <= right_number)
+			holds = 1;
+		break;
+	case INTEGER_GT:
+		if (left_number > right_number)
+			holds = 1;
+		break;
+	default:
+		if (left_number >= right_number)
+			holds = 1;
+		break;
+	}
+
+	/* Succeeded: whether the comparison holds. */
+	return holds;
 }
 
 /* Expands a word without splitting or pathname expansion. */
@@ -251,14 +476,15 @@ expand_operand(
 	char *text;
 	int ok;
 
-	/* One word; an error stops the command as any expansion's would. */
+	/* Expands one word; an error stops the command as any expansion's would. */
 	sh_expand_context_fill(&context);
 	ok = sh_expand_word(word, &context, &text, &error_text);
 	if (!ok)
 		sh_error("%s", error_text);
 
 	/* Succeeded: the word, freed with the command. */
-	return sh_temp_own(text);
+	text = sh_temp_own(text);
+	return text;
 }
 
 /* Matches a subject against a word read as a pattern: 1 or 0. */
@@ -274,17 +500,23 @@ match_pattern(
 	int ok;
 	int matched;
 
-	/* The pattern, with its quoted characters marked. */
+	/* Expands the pattern, with its quoted characters marked. */
 	sh_expand_context_fill(&context);
 	ok = sh_expand_pattern(word, &context, &pattern, &quoted, &error_text);
 	if (!ok)
 		sh_error("%s", error_text);
+
+	/* Matches the subject and frees the pattern. */
 	matched = sh_glob_match(pattern, quoted, subject);
 	free(pattern);
 	free(quoted);
 
-	/* Succeeded. */
-	return matched != 0;
+	/* A subject that does not match is false. */
+	if (matched == 0)
+		return 0;
+
+	/* Succeeded: the subject matches. */
+	return 1;
 }
 
 /*
@@ -299,6 +531,7 @@ match_regex(
 {
 	struct sh_expand_context context;
 	const char *error_text;
+	const char *special;
 	unsigned char *quoted;
 	char *pattern;
 	char *expression;
@@ -309,39 +542,54 @@ match_regex(
 	int ok;
 	int matched;
 
-	/* The expression, with its quoted characters marked. */
+	/* Expands the expression, with its quoted characters marked. */
 	sh_expand_context_fill(&context);
 	ok = sh_expand_pattern(word, &context, &pattern, &quoted, &error_text);
 	if (!ok)
 		sh_error("%s", error_text);
 
-	/* A quoted character that is special in an ERE gets a backslash. */
+	/* Gives each quoted character that is special in an ERE a backslash. */
 	length = strlen(pattern);
 	expression = sh_malloc(length * 2U + 1U);
 	out = 0;
 	for (index = 0; index < length; index++) {
-		if (quoted != NULL && quoted[index] &&
-		    strchr("\\.[]()*+?{}|^$", pattern[index]) != NULL)
+		special = NULL;
+		if (quoted != NULL && quoted[index])
+			special = strchr("\\.[]()*+?{}|^$", pattern[index]);
+		if (special != NULL)
 			expression[out++] = '\\';
 		expression[out++] = pattern[index];
 	}
+
+	/* Ends the expression and frees the expanded pattern. */
 	expression[out] = '\0';
 	free(pattern);
 	free(quoted);
 
-	/* The expression; an invalid one is status 2, as in bash. */
+	/* Compiles the expression; an invalid one is status 2, as in bash. */
 	ok = regcomp(&regex, expression, REG_EXTENDED | REG_NOSUB);
 	free(expression);
 	if (ok != 0)
 		return -1;
-	matched = regexec(&regex, subject, 0, NULL, 0) == 0;
+
+	/* Matches the subject and frees the expression. */
+	matched = regexec(&regex, subject, 0, NULL, 0);
 	regfree(&regex);
 
-	/* Succeeded. */
-	return matched;
+	/* A subject that does not match is false. */
+	if (matched != 0)
+		return 0;
+
+	/* Succeeded: the subject matches. */
+	return 1;
 }
 
-/* Evaluates an operand of an integer comparison as an arithmetic expression. */
+/*
+ * Evaluates an operand of an integer comparison as an arithmetic
+ * expression.
+ *
+ * Returns 1 with the value, or 0 after reporting the error.
+ */
 static int
 integer_operand(
 	const char *text,
@@ -354,8 +602,12 @@ integer_operand(
 		*value = 0;
 		return 1;
 	}
-	ok = sh_eval_arith_text(text, value);
 
-	/* Succeeded or not. */
-	return ok;
+	/* Evaluates the operand; the error is already reported. */
+	ok = sh_eval_arith_text(text, value);
+	if (!ok)
+		return 0;
+
+	/* Succeeded: the value is stored. */
+	return 1;
 }
