@@ -18,13 +18,45 @@
  * the -v assignments are made, and then the BEGIN rules run, the main
  * rules run on each record of the input (when there are main or END
  * rules), and the END rules run.
+ *
+ * gawk's options are taken too: -e program-text (--source), which may be
+ * given with -f, the long forms (--field-separator, --assign, --file),
+ * --version, --posix (system() then gives the status as wait does, as
+ * with POSIXLY_CORRECT), and --traditional, which changes nothing here.
+ * The options end at the program or the first operand, as in gawk.
  */
 
 #include "userland/base/awk/awk.h"
+#include "userland/base/common/command.h"
 
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* The codes of the long options that have no letter. */
+#define OPTION_VERSION	256
+#define OPTION_IGNORED	257
+#define OPTION_HELP	258
+#define OPTION_POSIX	259
+
+/*
+ * The options written in full.
+ *
+ * The table is read by the scan of the command line only; the letter a
+ * long option shares its code with makes the two forms one case.
+ */
+static const struct command_long_option awk_long_options[] = {
+	{"assign", COMMAND_VALUE_REQUIRED, 'v'},
+	{"field-separator", COMMAND_VALUE_REQUIRED, 'F'},
+	{"file", COMMAND_VALUE_REQUIRED, 'f'},
+	{"help", COMMAND_VALUE_NONE, OPTION_HELP},
+	{"posix", COMMAND_VALUE_NONE, OPTION_POSIX},
+	{"re-interval", COMMAND_VALUE_NONE, OPTION_IGNORED},
+	{"source", COMMAND_VALUE_REQUIRED, 'e'},
+	{"traditional", COMMAND_VALUE_NONE, OPTION_IGNORED},
+	{"version", COMMAND_VALUE_NONE, OPTION_VERSION},
+	{NULL, 0, 0}
+};
 
 /* A special variable, and the value it starts with. */
 struct special_default {
@@ -82,6 +114,8 @@ main(
 	int argc,
 	char **argv)
 {
+	struct command_options scan;
+	const char *posix;
 	struct buffer program;
 	struct buffer record;
 	struct value separator;
@@ -95,51 +129,74 @@ main(
 	int flow;
 	int more;
 	int first;
+	int code;
 
-	/* The variables awk gives a meaning to. */
+	/* The variables awk gives a meaning to, and whether POSIX is asked. */
 	set_specials();
+	posix = getenv("POSIXLY_CORRECT");
+	if (posix != NULL)
+		awk.posix = 1;
 
-	/* The options: -F, -v and -f, until an operand or --. */
+	/* The options: -F, -v, -f and -e, until the program or --. */
 	memset(&program, 0, sizeof(program));
 	memset(&separator, 0, sizeof(separator));
 	assignments = awk_allocate(sizeof(*assignments) * (size_t)argc);
 	assignment_count = 0;
 	have_file = 0;
-	for (first = 1; first < argc; first++) {
-		word = argv[first];
-		if (word[0] != '-' || word[1] == '\0')
+	memset(&scan, 0, sizeof(scan));
+	scan.argc = argc;
+	scan.argv = argv;
+	scan.program = "awk";
+	scan.letters = "F:v:f:e:";
+	scan.names = awk_long_options;
+	command_options_start(&scan);
+	scan.permute = 0;
+	for (;;) {
+		code = command_options_next(&scan);
+		if (code == COMMAND_OPTION_END)
 			break;
-		if (word[1] == '-' && word[2] == '\0') {
-			first++;
-			break;
-		}
 
-		/* Only -F, -v and -f are options. */
-		if (word[1] != 'F' && word[1] != 'v' && word[1] != 'f')
-			usage();
-
-		/* The option's argument: the rest of the word, or the next. */
-		argument = word + 2;
-		if (*argument == '\0') {
-			if (first + 1 >= argc)
-				usage();
-			first++;
-			argument = argv[first];
-		}
-
-		/* The option. */
-		if (word[1] == 'F') {
+		/* The option of its code. */
+		argument = scan.value;
+		switch (code) {
+		case 'F':
 			value_set_text(&separator, argument, strlen(argument));
-		} else if (word[1] == 'v') {
+			break;
+		case 'v':
 			assignments[assignment_count] = (char *)argument;
 			assignment_count++;
-		} else {
+			break;
+		case 'f':
+			/* A file of the program, after a newline. */
 			if (have_file)
 				buffer_append_byte(&program, '\n');
 			read_program_file(argument, &program);
 			have_file = 1;
+			break;
+		case 'e':
+			/* gawk's -e: program text, after a newline. */
+			if (have_file)
+				buffer_append_byte(&program, '\n');
+			buffer_append(&program, argument, strlen(argument));
+			have_file = 1;
+			break;
+		case OPTION_VERSION:
+			printf("awk (zedBSD) 1.0\n");
+			exit(0);
+		case OPTION_POSIX:
+			awk.posix = 1;
+			break;
+		case OPTION_IGNORED:
+			/* Nothing changes. */
+			break;
+		default:
+			usage();
 		}
 	}
+
+	/* The operands follow argv[0]. */
+	first = 1;
+	argc = first + scan.operand_count;
 
 	/* The program text, when no -f gave it. */
 	if (!have_file) {

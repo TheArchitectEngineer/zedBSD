@@ -42,7 +42,7 @@ WS001（POSIX 準拠）が並行して utility と libc の POSIX の振る舞�
 | [ws045-p003](phase003/phase.md) | `sed` の option: `-i`・`-s`・`-z`・long option・`-u`・`-l`・`--posix`・`--follow-symlinks` | cleared（option の case 全件） | p001 |
 | [ws045-p004](phase004/phase.md) | `sed` の script: bracket の中の escape、`\U`・`\L`・`\u`・`\l`・`\E`、`0,/re/`・`first~step`・`addr,+N`・`addr,~N`、`M`、`Q`・`T`・`F`・`z`・`W`・`R`・`e`・`v`、`l N` | cleared（sed の GNU の case 174/174） | p003 |
 | [ws045-p005](phase005/phase.md) | build script が使う他の utility: `sort -V`/`-h`、`head`/`tail` の負の数と long option、`cmp -i`、`touch --reference`/`-d`、`date -d`/`-r`、`find -maxdepth` ほか、`xargs -0`/`-r`/`-d`、`readlink -f`/`-e`、`stat --format`、`/bin/echo -e`、`expr` の keyword | cleared（p005 の case 全件） | p001 |
-| [ws045-p006](phase006/phase.md) | `awk`: gawk の拡張（`gensub`、`**`、`func`、`\x`、`systime`/`strftime`、RS の regex と `RT`、`match` の配列、`and` ほか、`--version`・`-e`・long option、`system` の値） | planned | p001 |
+| [ws045-p006](phase006/phase.md) | `awk`: gawk の拡張（`gensub`、`**`、`func`、`\x`、`systime`/`strftime`、RS の regex と `RT`、`match` の配列、`and` ほか、`--version`・`-e`・long option、`system` の値） | cleared（gawk の case 58/58。IGNORECASE・switch・BEGINFILE は範囲外） | p001 |
 | [ws045-p007](phase007/phase.md) | file utility の long option と小さな拡張（`cp -v`/`-t`、`mv -v`/`-n`、`rm -v`、`mkdir -v`、`ln -n`/`-r`、`basename -s`/`-a`、`cut --complement` ほか） | planned | p001 |
 | [ws045-p008](phase008/phase.md) | 実際の script と guest の回帰（GNU の case を guest で、configure-diff を拡張を使う package で） | planned | p002〜p007 |
 | [ws045-p009](phase009/phase.md) | 全文の規約確認（WS の全 source 変更） | planned | p002〜p008 |
