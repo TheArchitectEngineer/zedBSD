@@ -3,13 +3,13 @@
 # WS048: Raspberry Pi 4 の USB（PCIe・VL805 の xHCI・USB キーボード）
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: incomplete
 Primary Milestone: MG008
 Related Milestones: MG003, MG006
 Objectives: O2, O4
 Parent: [Master](../master.md)
-Queue: なし
-Resume point: p001（調査と設計）から。2026-09-24 ユーザー判断「後で（今の計画を続ける）」
+Queue: なし（2026-09-27 ユーザー指示でサブエージェントが worktree の branch で実行。main session が merge する）
+Resume point: **ユーザーの判断待ち**: p004 の hal.h の差分（design.md §6、[proposed/hal-pmem-uncached.diff](proposed/hal-pmem-uncached.diff)）の承認。承認の後、p004 を当てて clear → p005 の config を有効に → p006 → 実機（ユーザー）→ p007
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -32,14 +32,41 @@ Resume point: p001（調査と設計）から。2026-09-24 ユーザー判断「
 
 有線 LAN（GENET）も driver が無い。今の実機の入力はシリアルだけ。
 
+## 設計
+
+[design.md](design.md)（ws048-p001）。
+
 ## Phase 一覧
 
-| Phase | 内容 | Status | 依存 | 対象 |
-| --- | --- | --- | --- | --- |
-| ws048-p001 | 調査と設計: brcmstb の PCIe の初期化の手順（Linux の `pcie-brcmstb.c` の振る舞いを文書と register の説明から。code は写さない）、window と DMA の番地、VL805 の firmware、割り込み、cache の扱い、HAL に要る口（承認が要る差分の案） | planning | — | 設計文書 |
-| ws048-p002 | PCIe の root complex の driver と PCI の層の rpi4 の backend: VL805（1106:3483）が列挙される | planning | p001、HAL の承認 | `src/drivers/platform/rpi4` |
-| ws048-p003 | xHCI を rpi4 で: VL805 の firmware の読み込み、DMA の cache の扱い、controller の起動と port の検出 | planning | p002 | `src/drivers/pci/pci-xhci.c` |
-| ws048-p004 | USB の hub と HID（キーボード）を rpi4 で有効にし、console に入力する | planning | p003 | config、`src/drivers/usb` |
-| ws048-p005 | 変更した source の全文の規約確認と、QEMU と実機の回帰 | planning | p002〜p004 | — |
+2026-09-27 の p001 で分け直した（旧 p002〜p005 は実行前だったので番号を振り直した）。
 
-注: QEMU の raspi4b は PCIe を持たないので、p002〜p004 の確かめは実機が中心になる（ユーザーの手を借りる。シリアルがつながると速い）。
+| Phase | 内容 | Status | 依存 | HAL の承認 |
+| --- | --- | --- | --- | --- |
+| [ws048-p001](phase001/phase.md) | 調査と設計 | cleared | — | 不要 |
+| [ws048-p002](phase002/phase.md) | FDT の reader、arm64 の device mapping の実装の修正、brcmstb の host bridge と PCI の backend（VL805 が列挙される） | cleared（実機は未実施） | p001 | 不要 |
+| [ws048-p003](phase003/phase.md) | firmware の mailbox と VL805 の firmware の通知 | cleared（実機は未実施） | p002 | 不要 |
+| [ws048-p004](phase004/phase.md) | 非 coherent な DMA（`hal_pmem_map_uncached` と `dma.c`） | uncleared（`dma.c` は済み。hal.h の差分の承認待ち） | p001 | **要る**（design.md §6） |
+| [ws048-p005](phase005/phase.md) | xHCI を rpi4 で | uncleared（build と glue の準備は済み。有効にするのは p004 の後） | p002・p003・p004 | 不要 |
+| [ws048-p006](phase006/phase.md) | USB の hub と HID キーボードで console に入力 | planned | p005 | 不要 |
+| [ws048-p007](phase007/phase.md) | 規約の全文の確認と回帰、実機の結果の取りまとめ | planned | p002〜p006 | 不要 |
+
+注: QEMU の raspi4b は PCIe を持たない（DTB の PCIe の node を disabled にする）。p002〜p006 の動作の確認は実機だけで、
+このリポジトリに実機の試験の仕組みは無い。実機の確認はユーザーに頼み、行うまで「未実施」と書く。
+
+## 2026-09-27 の実行のまとめ（サブエージェント、worktree の branch）
+
+- p001〜p003 cleared（実機の確認は未実施）。p004・p005 は承認を要らない部分まで進め、uncleared（hal.h の差分の承認待ち）。p006・p007 は planned。
+- host 試験: `make -f plan/ws048/tests/host-test.mk run DTB=<firmware の bcm2711-rpi-4-b.dtb>`（FDT・brcmstb の register model・mailbox の model・DMA の 2 通り。ASan・UBSan）。
+- QEMU raspi4b は PCIe を disabled にするので、QEMU で確かめたのは「起動を壊さない」ことだけ。PCIe・VL805・USB の動作は実機だけ。
+- rpi4 の image の `make -j16` はこの branch の起点で userland（`src/rtld/rtld.c` と `include/libc/elf.h` の macro の再定義）で止まる（WS048 の外）。
+  boot test は main の `build/ws053-rpi4-full/hdd-image.img`（2026-09-25）を SD にし、kernel だけをこの branch の build にした。
+
+## Future Work の候補（main session が `plan/future-work.md` へ移す）
+
+| 候補 | 理由・きっかけ |
+| --- | --- |
+| brcmstb の spread spectrum（`brcm,enable-ssc`、design.md §2.4） | DT が求めるが、link と USB には要らない。実機で link を確かめた後 |
+| brcmstb の MSI（SPI 148 の受け口） | INTx で足りる。PCI の core の MSI の経路は HAL の LAPIC 向けの口を使うので、host bridge が address と data を出す形が要る |
+| arm64 の `hal_space_unmap_device()` | 今も `hal_space_unmap(HAL_SPACE_SYS, ...)` で失敗を返す。PCIe は対応を外さないので影響は無い |
+| HAL の mailbox の FULL の確認の register | `src/hal/arm64/bsp-rpi4/mailbox.c` が mailbox 0 の status（`+0x18`）を読む。正しくは mailbox 1（`+0x38`）。実害は出ていない（design.md §7） |
+| 有線 LAN（GENET） | きっかけの報告（2026-09-24）で、有線 LAN の driver も無いと分かった。別の WS |

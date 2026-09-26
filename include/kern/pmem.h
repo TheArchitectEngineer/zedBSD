@@ -75,6 +75,17 @@ int kern_device_map(uint64_t address, size_t size,
 		    unsigned attributes, void **mapped);
 int kern_device_unmap(void *mapped, size_t size);
 
+/*
+ * Map and unmap a physical run a second time, without caching.
+ *
+ * For memory shared with a device that does not snoop the CPU caches.  The
+ * run must be page aligned; while the uncached view exists the run is not
+ * touched through its direct-map address.  Only architectures that have such
+ * devices provide these calls, so callers declare them weak and test them.
+ */
+int kern_pmem_map_uncached(const struct kern_pmem *run, void **mapped);
+int kern_pmem_unmap_uncached(void *mapped, size_t size);
+
 /* Report the page size of one translation level; 1 is the smallest. */
 size_t kern_page_size(int level);
 

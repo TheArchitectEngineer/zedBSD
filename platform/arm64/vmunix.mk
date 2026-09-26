@@ -60,6 +60,10 @@ ARM64_KERNEL_SOURCES := \
 	src/kern/platform/rpi4.c \
 	src/drivers/platform/rpi4/rpi4-sdhci.c \
 	src/drivers/platform/rpi4/rpi4-console.c \
+	src/drivers/platform/rpi4/rpi4-pcie.c \
+	src/drivers/platform/rpi4/rpi4-firmware.c src/kern/dcache.c \
+	src/drivers/generic/fdt.c src/drivers/generic/dma.c \
+	src/drivers/pci/pci.c src/drivers/pci/pci-brcmstb.c \
 	src/kern/panic.c src/kern/entry.c src/kern/clock.c \
 	src/kern/timer.c src/kern/klog.c \
 	src/kern/lock.c src/kern/waitq.c \
@@ -79,6 +83,21 @@ ARM64_KERNEL_SOURCES := \
 	src/kern/tty.c \
  src/drivers/generic/system-device.c src/drivers/generic/memory-device.c src/kern/shutdown.c \
 	src/kern/init.c
+# USB behind the Pi 4's PCIe (ws048): the core comes with any USB driver.
+ARM64_USB_SOURCES :=
+ifneq ($(filter y,$(CONFIG_DRIVER_PCI_XHCI) $(CONFIG_DRIVER_USB_HID) $(CONFIG_DRIVER_USB_HUB)),)
+ARM64_USB_SOURCES += src/drivers/usb/usb.c
+endif
+ifeq ($(CONFIG_DRIVER_PCI_XHCI),y)
+ARM64_USB_SOURCES += src/drivers/pci/pci-xhci.c
+endif
+ifeq ($(CONFIG_DRIVER_USB_HID),y)
+ARM64_USB_SOURCES += src/drivers/usb/usb-hid.c
+endif
+ifeq ($(CONFIG_DRIVER_USB_HUB),y)
+ARM64_USB_SOURCES += src/drivers/usb/usb-hub.c
+endif
+ARM64_KERNEL_SOURCES += $(ARM64_USB_SOURCES)
 ARM64_KERNEL_SOURCES += $(KERN_NET_SOURCES) $(KERN_BLOCK_IDENTITY_SOURCES) \
 	$(KERN_UFS_SOURCES)
 ARM64_KERNEL_SOURCES += $(KERN_BOOT_SOURCES)
@@ -257,7 +276,7 @@ $(BUILD)/POSIX-R1.ELF: $(BUILD)/user/src/libc/crt/crt0-aarch64.o \
 	@# A weak undefined symbol is an optional hook, not a link error.
 	@# GNU nm drops those from -u; llvm-nm reports them, so the strong
 	@# references are selected explicitly.
-	@test -z "$$($(ARM64_NM) -u $@ | $(AWK) '$$1 == \"U\"')" || \
+	@test -z "$$($(ARM64_NM) -u $@ | $(AWK) '$$1 == "U"')" || \
 		{ $(ARM64_NM) -u $@; exit 1; }
 	$(PYTHON) tools/build/check-user-elf.py --machine aarch64 $@
 
@@ -273,7 +292,7 @@ $(BUILD)/POSIX-R2.ELF: $(BUILD)/user/src/libc/crt/crt0-aarch64.o \
 	@# A weak undefined symbol is an optional hook, not a link error.
 	@# GNU nm drops those from -u; llvm-nm reports them, so the strong
 	@# references are selected explicitly.
-	@test -z "$$($(ARM64_NM) -u $@ | $(AWK) '$$1 == \"U\"')" || \
+	@test -z "$$($(ARM64_NM) -u $@ | $(AWK) '$$1 == "U"')" || \
 		{ $(ARM64_NM) -u $@; exit 1; }
 	$(PYTHON) tools/build/check-user-elf.py --machine aarch64 $@
 
@@ -289,7 +308,7 @@ $(BUILD)/POSIX-R2-REMAINING.ELF: \
 	@# A weak undefined symbol is an optional hook, not a link error.
 	@# GNU nm drops those from -u; llvm-nm reports them, so the strong
 	@# references are selected explicitly.
-	@test -z "$$($(ARM64_NM) -u $@ | $(AWK) '$$1 == \"U\"')" || \
+	@test -z "$$($(ARM64_NM) -u $@ | $(AWK) '$$1 == "U"')" || \
 		{ $(ARM64_NM) -u $@; exit 1; }
 	$(PYTHON) tools/build/check-user-elf.py --machine aarch64 $@
 
@@ -494,7 +513,7 @@ $(BUILD)/kernel.elf: $(ARM64_VMUNIX_OBJS) $(ARM64_PLATFORM)/vmunix.ld \
 	@# A weak undefined symbol is an optional hook, not a link error.
 	@# GNU nm drops those from -u; llvm-nm reports them, so the strong
 	@# references are selected explicitly.
-	@test -z "$$($(ARM64_NM) -u $@ | $(AWK) '$$1 == \"U\"')" || \
+	@test -z "$$($(ARM64_NM) -u $@ | $(AWK) '$$1 == "U"')" || \
 		{ $(ARM64_NM) -u $@; exit 1; }
 	$(PYTHON) platform/arm64/tools/check-arm64-vmunix.py --elf $@
 
