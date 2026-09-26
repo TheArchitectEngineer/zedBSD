@@ -35,10 +35,10 @@ static VkFormat draw_format(GLint size, GLenum type, GLboolean normalized, size_
 static int draw_format_ok(struct gles_state *state, VkFormat format);
 static float draw_component(const unsigned char *source, GLenum type, GLboolean normalized);
 static void draw_raster(struct gles_state *state, uint32_t topology, struct gles_raster *raster);
-static VkPipeline draw_pipeline(struct gles_state *state, struct zegl_surface *surface, const struct gles_raster *raster, const struct gles_vertex_layout *layout);
+static VkPipeline draw_pipeline(struct gles_state *state, const struct gles_target *target, const struct gles_raster *raster, const struct gles_vertex_layout *layout);
 static VkDescriptorSet draw_descriptors(struct gles_state *state, uint32_t *offset);
-static void draw_dynamic(struct gles_state *state, struct zegl_context *context, struct zegl_surface *surface);
-static VkRect2D draw_scissor_rect(struct gles_state *state, struct zegl_surface *surface);
+static void draw_dynamic(struct gles_state *state, struct zegl_context *context, const struct gles_target *target);
+static VkRect2D draw_scissor_rect(struct gles_state *state, const struct gles_target *target);
 static VkBlendFactor draw_blend_factor(GLenum factor);
 static VkBlendOp draw_blend_op(GLenum equation);
 static VkStencilOp draw_stencil_op(GLenum op);
@@ -75,9 +75,10 @@ gles_pipelines_forget(
 }
 
 /*
- * Reads a rectangle of the read surface as RGBA8 rows from the bottom up,
- * waiting for what the frame drew.  Pixels outside the surface are
- * black.  Returns 0, or -1 with the error recorded.
+ * Reads a rectangle of the framebuffer (the read surface's, or the bound
+ * framebuffer object's colour image) as RGBA8 rows from the bottom up,
+ * waiting for what the frame drew.  Pixels outside it are black.  Returns
+ * 0, or -1 with the error recorded.
  */
 int
 gles_read_rgba(
@@ -90,10 +91,14 @@ gles_read_rgba(
 {
 	struct zegl_surface *surface;
 	struct gles_state *state;
+	struct gles_target target;
 	VkImageMemoryBarrier barrier;
 	VkBufferImageCopy copy;
 	VkBuffer buffer;
 	VkDeviceSize offset;
+	VkImage image;
+	VkImageLayout rest_layout;
+	VkExtent2D extent;
 	unsigned char *mapped;
 	unsigned char *pixel;
 	const unsigned char *source;
@@ -104,23 +109,70 @@ gles_read_rgba(
 	GLint row;
 	GLint column;
 	int swizzle;
+	int flip;
+	int status;
 	EGLint error;
 
-	/* A read surface whose images can be copied from. */
+	/* A context with its state. */
 	state = gles_state(context);
-	surface = context->read;
-	if (state == NULL || surface == NULL || state->framebuffer != 0U) {
-		gles_error(context, GL_INVALID_FRAMEBUFFER_OPERATION);
+	if (state == NULL)
 		return -1;
+
+	/* A framebuffer object: its colour image, with GL's rows, in the draw surface's frame (its pass ends for the copy). */
+	if (state->framebuffer != 0U) {
+		status = gles_target_open(context, state, NULL, &target);
+		if (status != 0)
+			return -1;
+
+		/* Its pass ends, and it must have a colour image. */
+		gles_target_close(state);
+		if (!target.has_color) {
+			gles_error(context, GL_INVALID_OPERATION);
+			return -1;
+		}
+
+		/* Its image and size. */
+		surface = target.surface;
+		image = target.fbo->color_image;
+		rest_layout = target.fbo->color_layout;
+		extent = target.extent;
+		flip = 0;
+		swizzle = 0;
+	} else {
+		/* The read surface, whose images must be copyable. */
+		surface = context->read;
+		if (surface == NULL) {
+			gles_error(context, GL_INVALID_FRAMEBUFFER_OPERATION);
+			return -1;
+		}
+
+		/* Its images must be copyable. */
+		if (!surface->readable) {
+			gles_error(context, GL_INVALID_OPERATION);
+			return -1;
+		}
+
+		/* The frame, with its image drawn by at least one pass (a first pass clears it); no framebuffer object's pass open. */
+		gles_target_close(state);
+		error = zegl_frame_begin(surface);
+		if (error != EGL_SUCCESS) {
+			gles_error(context, GL_OUT_OF_MEMORY);
+			return -1;
+		}
+
+		/* The pass ends so the image can be copied. */
+		zegl_frame_pass(surface, NULL);
+		zegl_frame_leave_pass(surface);
+		image = surface->images[surface->image];
+		rest_layout = surface->rest_layout;
+		extent = surface->extent;
+		flip = 1;
+		swizzle = 0;
+		if (surface->format == VK_FORMAT_B8G8R8A8_UNORM)
+			swizzle = 1;
 	}
 
-	/* The images must be copyable. */
-	if (!surface->readable) {
-		gles_error(context, GL_INVALID_OPERATION);
-		return -1;
-	}
-
-	/* Everything starts black; only the part inside the surface is copied. */
+	/* Everything starts black; only the part inside the image is copied. */
 	memset(rows, 0, (size_t)width * (size_t)height * 4U);
 	left = x;
 	if (left < 0)
@@ -129,24 +181,13 @@ gles_read_rgba(
 	if (bottom < 0)
 		bottom = 0;
 	right = x + width;
-	if (right > (GLint)surface->extent.width)
-		right = (GLint)surface->extent.width;
+	if (right > (GLint)extent.width)
+		right = (GLint)extent.width;
 	top = y + height;
-	if (top > (GLint)surface->extent.height)
-		top = (GLint)surface->extent.height;
+	if (top > (GLint)extent.height)
+		top = (GLint)extent.height;
 	if (left >= right || bottom >= top)
 		return 0;
-
-	/* The frame, with its image drawn by at least one pass (a first pass clears it). */
-	error = zegl_frame_begin(surface);
-	if (error != EGL_SUCCESS) {
-		gles_error(context, GL_OUT_OF_MEMORY);
-		return -1;
-	}
-
-	/* The pass ends so the image can be copied. */
-	zegl_frame_pass(surface, NULL);
-	zegl_frame_leave_pass(surface);
 
 	/* Room in the stream for the copy. */
 	mapped = gles_stream(state, (size_t)(right - left) * (size_t)(top - bottom) * 4U, 16U, &buffer, &offset);
@@ -155,37 +196,44 @@ gles_read_rgba(
 		return -1;
 	}
 
-	/* The image copied out between two layout changes (Vulkan's rows go down from the top). */
+	/* The image copied out between two layout changes. */
 	memset(&barrier, 0, sizeof(barrier));
 	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
 	barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 	barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-	barrier.oldLayout = surface->rest_layout;
+	barrier.oldLayout = rest_layout;
 	barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	barrier.image = surface->images[surface->image];
+	barrier.image = image;
 	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	barrier.subresourceRange.levelCount = 1U;
 	barrier.subresourceRange.layerCount = 1U;
 	vkCmdPipelineBarrier(surface->command, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
 			     0U, 0U, NULL, 0U, NULL, 1U, &barrier);
+
+	/* The rectangle (a window's rows go down from its top, a framebuffer object's are GL's). */
 	memset(&copy, 0, sizeof(copy));
 	copy.bufferOffset = offset;
 	copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	copy.imageSubresource.layerCount = 1U;
 	copy.imageOffset.x = left;
-	copy.imageOffset.y = (int32_t)surface->extent.height - top;
+	copy.imageOffset.y = bottom;
+	if (flip)
+		copy.imageOffset.y = (int32_t)extent.height - top;
 	copy.imageExtent.width = (uint32_t)(right - left);
 	copy.imageExtent.height = (uint32_t)(top - bottom);
 	copy.imageExtent.depth = 1U;
-	vkCmdCopyImageToBuffer(surface->command, surface->images[surface->image], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, buffer, 1U, &copy);
+	vkCmdCopyImageToBuffer(surface->command, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, buffer, 1U, &copy);
+
+	/* Back to where the image rests. */
 	barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
 	barrier.dstAccessMask = 0U;
 	barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-	barrier.newLayout = surface->rest_layout;
+	barrier.newLayout = rest_layout;
 	vkCmdPipelineBarrier(surface->command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
 			     0U, 0U, NULL, 0U, NULL, 1U, &barrier);
+	surface->recorded = 1;
 
 	/* Done before the bytes are read. */
 	error = zegl_frame_flush(surface);
@@ -195,11 +243,10 @@ gles_read_rgba(
 	}
 
 	/* Each row into GL's order (bottom up), each pixel as RGBA. */
-	swizzle = 0;
-	if (surface->format == VK_FORMAT_B8G8R8A8_UNORM)
-		swizzle = 1;
 	for (row = bottom; row < top; row++) {
-		source = mapped + (size_t)(top - 1 - row) * (size_t)(right - left) * 4U;
+		source = mapped + (size_t)(row - bottom) * (size_t)(right - left) * 4U;
+		if (flip)
+			source = mapped + (size_t)(top - 1 - row) * (size_t)(right - left) * 4U;
 		for (column = left; column < right; column++) {
 			pixel = rows + ((size_t)(row - y) * (size_t)width + (size_t)(column - x)) * 4U;
 			pixel[0] = source[0];
@@ -265,12 +312,14 @@ glClear(
 	struct zegl_context *context;
 	struct gles_state *state;
 	struct zegl_surface *surface;
+	struct gles_target target;
 	VkClearAttachment attachments[2];
 	VkClearValue values[2];
 	VkClearRect rect;
+	const VkClearValue *clear;
 	uint32_t count;
 	EGLint error;
-	int whole;
+	int status;
 
 	/* A context with its state, and a mask of the three buffers. */
 	context = gles_context();
@@ -282,9 +331,9 @@ glClear(
 		return;
 	}
 
-	/* A window surface to clear. */
+	/* A draw surface, whose frame records the clear. */
 	surface = context->draw;
-	if (surface == NULL || state->framebuffer != 0U) {
+	if (surface == NULL) {
 		gles_error(context, GL_INVALID_FRAMEBUFFER_OPERATION);
 		return;
 	}
@@ -302,49 +351,56 @@ glClear(
 	values[1].depthStencil.depth = state->clear_depth;
 	values[1].depthStencil.stencil = (uint32_t)state->clear_stencil & 0xffU;
 
-	/* A whole clear at the frame's start is the first pass's own. */
-	whole = 0;
-	if (surface->passes == 0U && !state->scissor_test && state->color_mask[0] && state->color_mask[1] &&
-	    state->color_mask[2] && state->color_mask[3])
-		whole = 1;
-	if (whole) {
-		zegl_frame_pass(surface, values);
-		return;
-	}
+	/* A whole clear of the surface at the frame's start is the first pass's own. */
+	clear = NULL;
+	if (state->framebuffer == 0U &&
+	    surface->passes == 0U &&
+	    !state->scissor_test &&
+	    state->color_mask[0] &&
+	    state->color_mask[1] &&
+	    state->color_mask[2] &&
+	    state->color_mask[3])
+		clear = values;
 
-	/* Otherwise the attachments in the mask, inside the pass. */
+	/* The target's pass, which a whole clear has just cleared. */
+	status = gles_target_open(context, state, clear, &target);
+	if (status != 0)
+		return;
+	if (clear != NULL)
+		return;
+
+	/* The colour, when the target has one. */
 	count = 0U;
 	memset(attachments, 0, sizeof(attachments));
-	if ((mask & GL_COLOR_BUFFER_BIT) != 0U) {
+	if ((mask & GL_COLOR_BUFFER_BIT) != 0U && target.has_color) {
 		attachments[count].aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		attachments[count].colorAttachment = 0U;
 		attachments[count].clearValue = values[0];
 		count++;
 	}
 
-	/* The depth and stencil aspects in the mask, when the surface has a depth buffer. */
-	if (surface->depth_format != VK_FORMAT_UNDEFINED && (mask & (GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT)) != 0U) {
+	/* The depth and stencil aspects in the mask, when the target has a depth buffer. */
+	if (target.depth_aspects != 0U && (mask & (GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT)) != 0U) {
 		if ((mask & GL_DEPTH_BUFFER_BIT) != 0U && state->depth_mask)
 			attachments[count].aspectMask |= VK_IMAGE_ASPECT_DEPTH_BIT;
 		if ((mask & GL_STENCIL_BUFFER_BIT) != 0U)
-			attachments[count].aspectMask |= surface->depth_aspects & VK_IMAGE_ASPECT_STENCIL_BIT;
+			attachments[count].aspectMask |= target.depth_aspects & VK_IMAGE_ASPECT_STENCIL_BIT;
 		attachments[count].clearValue = values[1];
 		if (attachments[count].aspectMask != 0U)
 			count++;
 	}
 
-	/* Nothing in the mask the surface has. */
+	/* Nothing in the mask the target has. */
 	if (count == 0U)
 		return;
 
-	/* The clear over the scissor box or the whole surface. */
-	zegl_frame_pass(surface, NULL);
+	/* The clear over the scissor box or the whole target. */
 	memset(&rect, 0, sizeof(rect));
-	rect.rect = draw_scissor_rect(state, surface);
+	rect.rect = draw_scissor_rect(state, &target);
 	rect.layerCount = 1U;
 	if (rect.rect.extent.width == 0U || rect.rect.extent.height == 0U)
 		return;
-	vkCmdClearAttachments(surface->command, count, attachments, 1U, &rect);
+	vkCmdClearAttachments(target.command, count, attachments, 1U, &rect);
 }
 
 /*
@@ -796,7 +852,7 @@ draw_program(
 {
 	struct zegl_context *context;
 	struct gles_state *state;
-	struct zegl_surface *surface;
+	struct gles_target target;
 	struct gles_raster raster;
 	struct gles_vertex_layout layout;
 	VkBuffer buffers[GLES_ATTRIBS];
@@ -813,7 +869,6 @@ draw_program(
 	uint32_t largest;
 	uint32_t expanded;
 	uint32_t topology;
-	EGLint error;
 	int strip;
 	int status;
 
@@ -840,9 +895,8 @@ draw_program(
 		return;
 	}
 
-	/* A window surface. */
-	surface = context->draw;
-	if (surface == NULL || state->framebuffer != 0U) {
+	/* A draw surface. */
+	if (context->draw == NULL) {
 		gles_error(context, GL_INVALID_FRAMEBUFFER_OPERATION);
 		return;
 	}
@@ -903,20 +957,14 @@ draw_program(
 		return;
 	}
 
-	/* The frame, open and in a pass. */
-	error = zegl_frame_begin(surface);
-	if (error != EGL_SUCCESS) {
-		gles_report("the frame", error);
-		gles_error(context, GL_OUT_OF_MEMORY);
+	/* The frame, open and in the target's pass (the surface's or the framebuffer object's). */
+	status = gles_target_open(context, state, NULL, &target);
+	if (status != 0)
 		return;
-	}
-
-	/* Its first pass, or the one open. */
-	zegl_frame_pass(surface, NULL);
 
 	/* The pipeline for the state, and the descriptors. */
 	draw_raster(state, topology, &raster);
-	pipeline = draw_pipeline(state, surface, &raster, &layout);
+	pipeline = draw_pipeline(state, &target, &raster, &layout);
 	if (pipeline == VK_NULL_HANDLE) {
 		gles_error(context, GL_OUT_OF_MEMORY);
 		return;
@@ -931,20 +979,20 @@ draw_program(
 	}
 
 	/* The recording: pipeline, dynamic state, descriptors, vertices, indices, the draw. */
-	vkCmdBindPipeline(surface->command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-	draw_dynamic(state, context, surface);
+	vkCmdBindPipeline(target.command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+	draw_dynamic(state, context, &target);
 	dynamic_count = 0U;
 	if (state->program->uniform_data != NULL)
 		dynamic_count = 1U;
-	vkCmdBindDescriptorSets(surface->command, VK_PIPELINE_BIND_POINT_GRAPHICS, state->program->layout, 0U, 1U, &set,
+	vkCmdBindDescriptorSets(target.command, VK_PIPELINE_BIND_POINT_GRAPHICS, state->program->layout, 0U, 1U, &set,
 				dynamic_count, &dynamic_offset);
 	if (layout.count != 0U)
-		vkCmdBindVertexBuffers(surface->command, 0U, layout.count, buffers, offsets);
+		vkCmdBindVertexBuffers(target.command, 0U, layout.count, buffers, offsets);
 	if (index_buffer != VK_NULL_HANDLE) {
-		vkCmdBindIndexBuffer(surface->command, index_buffer, index_offset, VK_INDEX_TYPE_UINT32);
-		vkCmdDrawIndexed(surface->command, expanded, 1U, 0U, 0, 0U);
+		vkCmdBindIndexBuffer(target.command, index_buffer, index_offset, VK_INDEX_TYPE_UINT32);
+		vkCmdDrawIndexed(target.command, expanded, 1U, 0U, 0, 0U);
 	} else {
-		vkCmdDraw(surface->command, (uint32_t)count, 1U, (uint32_t)first, 0U);
+		vkCmdDraw(target.command, (uint32_t)count, 1U, (uint32_t)first, 0U);
 	}
 }
 
@@ -1518,11 +1566,11 @@ draw_raster(
 	raster->polygon_offset = (uint32_t)state->polygon_offset;
 }
 
-/* Returns the pipeline for the program, the surface's pass, the state and the vertex layout, making it the first time. */
+/* Returns the pipeline for the program, the target's pass, the state and the vertex layout, making it the first time. */
 static VkPipeline
 draw_pipeline(
 	struct gles_state *state,
-	struct zegl_surface *surface,
+	const struct gles_target *target,
 	const struct gles_raster *raster,
 	const struct gles_vertex_layout *layout)
 {
@@ -1554,13 +1602,14 @@ draw_pipeline(
 	VkGraphicsPipelineCreateInfo create;
 	unsigned index;
 	unsigned face;
+	int clockwise;
 	int differs;
 	VkResult result;
 
 	/* The key. */
 	memset(&key, 0, sizeof(key));
 	key.program = state->program->serial;
-	key.pass = surface->pass;
+	key.pass = target->pass;
 	key.raster = *raster;
 	key.vertex = *layout;
 
@@ -1576,6 +1625,8 @@ draw_pipeline(
 	stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 	stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
 	stages[0].module = state->program->vertex_module;
+	if (!target->flip)
+		stages[0].module = state->program->vertex_module_fbo;
 	stages[0].pName = "main";
 	stages[1] = stages[0];
 	stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
@@ -1623,9 +1674,14 @@ draw_pipeline(
 			rasterization.cullMode = VK_CULL_MODE_FRONT_AND_BACK;
 	}
 
-	/* The front face. */
-	rasterization.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+	/* The front face: GL's winding, turned over for a framebuffer object (its y is not turned over as a window's is). */
+	clockwise = 0;
 	if (raster->front_face == GL_CW)
+		clockwise = 1;
+	if (!target->flip)
+		clockwise = !clockwise;
+	rasterization.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+	if (clockwise)
 		rasterization.frontFace = VK_FRONT_FACE_CLOCKWISE;
 	rasterization.depthBiasEnable = raster->polygon_offset;
 	rasterization.lineWidth = 1.0f;
@@ -1669,7 +1725,9 @@ draw_pipeline(
 	blend_attachment.colorWriteMask = raster->color_mask;
 	memset(&blend, 0, sizeof(blend));
 	blend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-	blend.attachmentCount = 1U;
+	blend.attachmentCount = 0U;
+	if (target->has_color)
+		blend.attachmentCount = 1U;
 	blend.pAttachments = &blend_attachment;
 
 	/* The dynamic states. */
@@ -1695,7 +1753,7 @@ draw_pipeline(
 	create.pColorBlendState = &blend;
 	create.pDynamicState = &dynamic;
 	create.layout = state->program->layout;
-	create.renderPass = surface->pass;
+	create.renderPass = target->pass;
 	result = vkCreateGraphicsPipelines(state->device, VK_NULL_HANDLE, 1U, &create, NULL, &entry->pipeline);
 	if (result != VK_SUCCESS) {
 		gles_report("vkCreateGraphicsPipelines", (int)result);
@@ -1887,14 +1945,14 @@ static void
 draw_dynamic(
 	struct gles_state *state,
 	struct zegl_context *context,
-	struct zegl_surface *surface)
+	const struct gles_target *target)
 {
 	VkViewport viewport;
 	VkRect2D scissor;
 	float width;
 	float height;
 
-	/* The viewport, from the top (a zero size is made one pixel so Vulkan takes it). */
+	/* The viewport, from the top of a window (a zero size is made one pixel so Vulkan takes it). */
 	width = (float)context->gles.viewport[2];
 	height = (float)context->gles.viewport[3];
 	if (width < 1.0f)
@@ -1902,36 +1960,38 @@ draw_dynamic(
 	if (height < 1.0f)
 		height = 1.0f;
 	viewport.x = (float)context->gles.viewport[0];
-	viewport.y = (float)surface->extent.height - (float)context->gles.viewport[1] - height;
+	viewport.y = (float)context->gles.viewport[1];
+	if (target->flip)
+		viewport.y = (float)target->extent.height - (float)context->gles.viewport[1] - height;
 	viewport.width = width;
 	viewport.height = height;
 	viewport.minDepth = state->depth_near;
 	viewport.maxDepth = state->depth_far;
-	vkCmdSetViewport(surface->command, 0U, 1U, &viewport);
+	vkCmdSetViewport(target->command, 0U, 1U, &viewport);
 
 	/* The scissor box, or the whole surface. */
-	scissor = draw_scissor_rect(state, surface);
-	vkCmdSetScissor(surface->command, 0U, 1U, &scissor);
+	scissor = draw_scissor_rect(state, target);
+	vkCmdSetScissor(target->command, 0U, 1U, &scissor);
 
 	/* Lines are one pixel wide (the device is made without wide lines). */
-	vkCmdSetLineWidth(surface->command, 1.0f);
+	vkCmdSetLineWidth(target->command, 1.0f);
 
 	/* The polygon offset, the blend colour, and the stencil values of both faces. */
-	vkCmdSetDepthBias(surface->command, state->polygon_units, 0.0f, state->polygon_factor);
-	vkCmdSetBlendConstants(surface->command, state->blend_color);
-	vkCmdSetStencilCompareMask(surface->command, VK_STENCIL_FACE_FRONT_BIT, state->stencil_value_mask[0]);
-	vkCmdSetStencilCompareMask(surface->command, VK_STENCIL_FACE_BACK_BIT, state->stencil_value_mask[1]);
-	vkCmdSetStencilWriteMask(surface->command, VK_STENCIL_FACE_FRONT_BIT, state->stencil_write_mask[0]);
-	vkCmdSetStencilWriteMask(surface->command, VK_STENCIL_FACE_BACK_BIT, state->stencil_write_mask[1]);
-	vkCmdSetStencilReference(surface->command, VK_STENCIL_FACE_FRONT_BIT, (uint32_t)state->stencil_ref[0]);
-	vkCmdSetStencilReference(surface->command, VK_STENCIL_FACE_BACK_BIT, (uint32_t)state->stencil_ref[1]);
+	vkCmdSetDepthBias(target->command, state->polygon_units, 0.0f, state->polygon_factor);
+	vkCmdSetBlendConstants(target->command, state->blend_color);
+	vkCmdSetStencilCompareMask(target->command, VK_STENCIL_FACE_FRONT_BIT, state->stencil_value_mask[0]);
+	vkCmdSetStencilCompareMask(target->command, VK_STENCIL_FACE_BACK_BIT, state->stencil_value_mask[1]);
+	vkCmdSetStencilWriteMask(target->command, VK_STENCIL_FACE_FRONT_BIT, state->stencil_write_mask[0]);
+	vkCmdSetStencilWriteMask(target->command, VK_STENCIL_FACE_BACK_BIT, state->stencil_write_mask[1]);
+	vkCmdSetStencilReference(target->command, VK_STENCIL_FACE_FRONT_BIT, (uint32_t)state->stencil_ref[0]);
+	vkCmdSetStencilReference(target->command, VK_STENCIL_FACE_BACK_BIT, (uint32_t)state->stencil_ref[1]);
 }
 
-/* Returns the scissor box in Vulkan's coordinates inside the surface, or the whole surface when the test is off. */
+/* Returns the scissor box in Vulkan's coordinates inside the target, or the whole target when the test is off. */
 static VkRect2D
 draw_scissor_rect(
 	struct gles_state *state,
-	struct zegl_surface *surface)
+	const struct gles_target *target)
 {
 	VkRect2D rect;
 	int32_t left;
@@ -1939,26 +1999,32 @@ draw_scissor_rect(
 	int32_t top;
 	int32_t bottom;
 
-	/* The whole surface. */
+	/* The whole target. */
 	rect.offset.x = 0;
 	rect.offset.y = 0;
-	rect.extent = surface->extent;
+	rect.extent = target->extent;
 	if (!state->scissor_test)
 		return rect;
 
-	/* The box from GL's bottom-left origin to Vulkan's top-left, clipped to the surface. */
+	/* The box, from GL's bottom-left origin to a window's top-left one (a framebuffer object keeps GL's rows). */
 	left = state->scissor[0];
 	right = state->scissor[0] + state->scissor[2];
-	top = (int32_t)surface->extent.height - (state->scissor[1] + state->scissor[3]);
-	bottom = (int32_t)surface->extent.height - state->scissor[1];
+	top = state->scissor[1];
+	bottom = state->scissor[1] + state->scissor[3];
+	if (target->flip) {
+		top = (int32_t)target->extent.height - (state->scissor[1] + state->scissor[3]);
+		bottom = (int32_t)target->extent.height - state->scissor[1];
+	}
+
+	/* Clipped to the target. */
 	if (left < 0)
 		left = 0;
 	if (top < 0)
 		top = 0;
-	if (right > (int32_t)surface->extent.width)
-		right = (int32_t)surface->extent.width;
-	if (bottom > (int32_t)surface->extent.height)
-		bottom = (int32_t)surface->extent.height;
+	if (right > (int32_t)target->extent.width)
+		right = (int32_t)target->extent.width;
+	if (bottom > (int32_t)target->extent.height)
+		bottom = (int32_t)target->extent.height;
 	if (right < left)
 		right = left;
 	if (bottom < top)

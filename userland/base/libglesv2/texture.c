@@ -21,6 +21,7 @@
 #include <string.h>
 
 static struct gles_texture *texture_bound(struct zegl_context *context, GLenum target);
+static struct gles_texture *texture_changing(struct zegl_context *context, GLenum target);
 static struct gles_texture *texture_new(GLuint name);
 static unsigned char *texture_convert(struct zegl_context *context, GLenum format, GLenum type, GLsizei width, GLsizei height, const void *pixels);
 static int texture_parameter(struct zegl_context *context, struct gles_texture *texture, GLenum pname, GLint value);
@@ -49,6 +50,7 @@ gles_texture_sync(
 	VkImage image;
 	VkDeviceMemory memory;
 	VkImageView image_view;
+	VkImageView attach_view;
 	unsigned char *mapped;
 	void *pointer;
 	size_t total;
@@ -81,7 +83,8 @@ gles_texture_sync(
 	create.arrayLayers = 1U;
 	create.samples = VK_SAMPLE_COUNT_1_BIT;
 	create.tiling = VK_IMAGE_TILING_OPTIMAL;
-	create.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+	create.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+		       VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 	create.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	create.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	result = vkCreateImage(state->device, &create, NULL, &image);
@@ -122,10 +125,19 @@ gles_texture_sync(
 		return -1;
 	}
 
+	/* A view of level 0 alone, which a framebuffer object draws into. */
+	view.subresourceRange.levelCount = 1U;
+	result = vkCreateImageView(state->device, &view, NULL, &attach_view);
+	if (result != VK_SUCCESS) {
+		gles_throw_away(state, VK_NULL_HANDLE, image, image_view, memory);
+		return -1;
+	}
+
 	/* The staging buffer with the levels one after another. */
 	status = gles_device_buffer(state, total, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &staging, &staging_memory, &pointer);
 	if (status != 0) {
 		gles_throw_away(state, VK_NULL_HANDLE, image, image_view, memory);
+		gles_throw_away(state, VK_NULL_HANDLE, VK_NULL_HANDLE, attach_view, VK_NULL_HANDLE);
 		return -1;
 	}
 
@@ -175,14 +187,17 @@ gles_texture_sync(
 	vkFreeMemory(state->device, staging_memory, NULL);
 	if (status != 0) {
 		gles_throw_away(state, VK_NULL_HANDLE, image, image_view, memory);
+		gles_throw_away(state, VK_NULL_HANDLE, VK_NULL_HANDLE, attach_view, VK_NULL_HANDLE);
 		return -1;
 	}
 
 	/* Succeeded: the new image replaces the old one, which waits for the frame. */
 	gles_throw_away(state, VK_NULL_HANDLE, texture->image, texture->view, texture->memory);
+	gles_throw_away(state, VK_NULL_HANDLE, VK_NULL_HANDLE, texture->attach_view, VK_NULL_HANDLE);
 	texture->image = image;
 	texture->memory = memory;
 	texture->view = image_view;
+	texture->attach_view = attach_view;
 	texture->level_count = levels;
 	texture->dirty = 0;
 	return 0;
@@ -308,6 +323,7 @@ gles_texture_free(
 
 	/* The device image, then the levels and the object. */
 	gles_throw_away(state, VK_NULL_HANDLE, texture->image, texture->view, texture->memory);
+	gles_throw_away(state, VK_NULL_HANDLE, VK_NULL_HANDLE, texture->attach_view, VK_NULL_HANDLE);
 	for (level = 0U; level < GLES_LEVELS; level++)
 		free(texture->levels[level].pixels);
 	free(texture);
@@ -415,7 +431,8 @@ glDeleteTextures(
 				state->units[unit] = NULL;
 		}
 
-		/* The name and the texture go. */
+		/* Detached from the bound framebuffer object; the name and the texture go (its image waits for the frame). */
+		gles_framebuffers_forget(state, GLES_ATTACH_TEXTURE, textures[index]);
 		gles_names_remove(&state->textures, textures[index]);
 		gles_texture_free(state, texture);
 	}
@@ -515,7 +532,7 @@ glTexImage2D(
 
 	/* The bound texture, a level and a size it can have. */
 	context = gles_context();
-	texture = texture_bound(context, target);
+	texture = texture_changing(context, target);
 	if (texture == NULL)
 		return;
 	if (level < 0 || level >= (GLint)GLES_LEVELS || width < 0 || height < 0 || width > 16384 || height > 16384 || border != 0) {
@@ -558,7 +575,7 @@ glTexSubImage2D(
 
 	/* The bound texture and a rectangle inside a specified level. */
 	context = gles_context();
-	texture = texture_bound(context, target);
+	texture = texture_changing(context, target);
 	if (texture == NULL)
 		return;
 	if (level < 0 || level >= (GLint)GLES_LEVELS) {
@@ -611,7 +628,7 @@ glCopyTexImage2D(
 
 	/* The bound texture, a level and a size. */
 	context = gles_context();
-	texture = texture_bound(context, target);
+	texture = texture_changing(context, target);
 	if (texture == NULL)
 		return;
 	if (level < 0 || level >= (GLint)GLES_LEVELS || width <= 0 || height <= 0 || border != 0) {
@@ -664,7 +681,7 @@ glCopyTexSubImage2D(
 
 	/* The bound texture and a rectangle inside a specified level. */
 	context = gles_context();
-	texture = texture_bound(context, target);
+	texture = texture_changing(context, target);
 	if (texture == NULL)
 		return;
 	if (level < 0 || level >= (GLint)GLES_LEVELS) {
@@ -934,7 +951,7 @@ glGenerateMipmap(
 
 	/* The bound texture with a level 0. */
 	context = gles_context();
-	texture = texture_bound(context, target);
+	texture = texture_changing(context, target);
 	if (texture == NULL)
 		return;
 	complete = gles_texture_complete(texture);
@@ -1009,6 +1026,33 @@ texture_bound(
 	if (state->units[state->active_unit] == NULL)
 		gles_error(context, GL_INVALID_OPERATION);
 	return state->units[state->active_unit];
+}
+
+/*
+ * Returns the bound texture for a call that changes it on the CPU, its
+ * level 0 first read back when a framebuffer object drew into it; NULL
+ * with the error recorded.
+ */
+static struct gles_texture *
+texture_changing(
+	struct zegl_context *context,
+	GLenum target)
+{
+	struct gles_texture *texture;
+	int status;
+
+	/* The bound texture. */
+	texture = texture_bound(context, target);
+	if (texture == NULL)
+		return NULL;
+
+	/* What the device drew into it, on the CPU before the change. */
+	status = gles_texture_fetch(context, texture);
+	if (status != 0)
+		return NULL;
+
+	/* Succeeded: the texture, newest on the CPU. */
+	return texture;
 }
 
 /* Makes a texture with GL's initial sampling state and no levels; NULL when there is no memory. */
@@ -1180,6 +1224,7 @@ texture_parameter(
 {
 	GLenum mode;
 	int mipmapped;
+	int status;
 
 	/* The value as an enum. */
 	mode = (GLenum)value;
@@ -1190,8 +1235,16 @@ texture_parameter(
 		mipmapped = texture_mipmapped(mode);
 		if (mode != GL_NEAREST && mode != GL_LINEAR && !mipmapped)
 			break;
-		if (texture->min_filter != mode)
+
+		/* A new filter may change the image's levels: what the device drew is read back first. */
+		if (texture->min_filter != mode) {
+			status = gles_texture_fetch(context, texture);
+			if (status != 0)
+				return -1;
 			texture->dirty = 1;
+		}
+
+		/* The filter. */
 		texture->min_filter = mode;
 		return 0;
 	case GL_TEXTURE_MAG_FILTER:

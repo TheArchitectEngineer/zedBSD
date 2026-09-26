@@ -195,15 +195,18 @@ gles_spirv_free(
 
 /*
  * Returns a copy of a vertex shader that, before each return of its entry
- * point, turns gl_Position from GL's clip coordinates into Vulkan's: y
- * turned over (Vulkan's framebuffer y goes down) and z moved from
- * [-w, w] to [0, w].  Returns NULL when the module cannot be rewritten;
- * a module that never names gl_Position comes back unchanged.
+ * point, turns gl_Position from GL's clip coordinates into Vulkan's: z
+ * moved from [-w, w] to [0, w], and y turned over when flip is nonzero
+ * (a window's rows go down from its top; a framebuffer object's image
+ * keeps GL's rows from the bottom up, as textures do).  Returns NULL when
+ * the module cannot be rewritten; a module that never names gl_Position
+ * comes back unchanged.
  */
 uint32_t *
 gles_spirv_position(
 	const uint32_t *code,
 	size_t words,
+	int flip,
 	size_t *out_words)
 {
 	struct spirv_module module;
@@ -414,11 +417,13 @@ gles_spirv_position(
 			operands[3] = half;
 			spirv_emit(out, &count, OP_FMUL, 4U, operands);
 
-			/* The vector made again (x, -y, (z + w) / 2, w; no insert, which some compilers lack), and stored. */
+			/* The vector made again (x, -y or y, (z + w) / 2, w; no insert, which some compilers lack), and stored. */
 			operands[0] = vector_type;
 			operands[1] = ids[9];
 			operands[2] = ids[2];
-			operands[3] = ids[6];
+			operands[3] = ids[3];
+			if (flip)
+				operands[3] = ids[6];
 			operands[4] = ids[8];
 			operands[5] = ids[5];
 			spirv_emit(out, &count, OP_COMPOSITE_CONSTRUCT, 6U, operands);

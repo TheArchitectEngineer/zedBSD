@@ -17,7 +17,8 @@
  * --scene=draw each frame draws scene.c's shapes instead, and the first
  * frame reads its colours back (EGLTEST PIXEL and EGLTEST CHECK lines);
  * --scene=glsl draws them with shaders compiled from GLSL ES 1.00 source,
- * --scene=glsl3 with GLSL ES 3.00 source in an OpenGL ES 3 context.
+ * --scene=glsl3 with GLSL ES 3.00 source in an OpenGL ES 3 context, and
+ * --scene=fbo draws them into a framebuffer object's texture first.
  *
  * Every outcome is one line: EGLTEST DONE on a clean end, EGLTEST FAILED
  * naming what failed otherwise.
@@ -139,7 +140,7 @@ main(
 	/* The command line. */
 	status = egltest_parse(argc, argv, &options);
 	if (status != 0) {
-		fprintf(stderr, "usage: egltest [--display=NAME] [--platform=wayland|display|pbuffer] [--size=WxH] [--frames=N] [--delay-ms=N] [--color=RRGGBB] [--scene=draw|glsl|glsl3] [--token=NAME]\n");
+		fprintf(stderr, "usage: egltest [--display=NAME] [--platform=wayland|display|pbuffer] [--size=WxH] [--frames=N] [--delay-ms=N] [--color=RRGGBB] [--scene=draw|glsl|glsl3|fbo] [--token=NAME]\n");
 		return 2;
 	}
 
@@ -276,7 +277,9 @@ egltest_start(
 	/* The scene's program, buffers and texture. */
 	egl->operation = "scene";
 	if (options->scene) {
-		if (options->scene == 3) {
+		if (options->scene == 4) {
+			status = egltest_scene_start_fbo();
+		} else if (options->scene == 3) {
 			status = egltest_scene_start_glsl3();
 		} else if (options->scene == 2) {
 			status = egltest_scene_start_glsl();
@@ -338,10 +341,16 @@ egltest_frames(
 				(void)eglQuerySurface(egl->display, egl->surface, EGL_HEIGHT, &height);
 			}
 
-			/* The scene. */
-			egltest_scene_draw(width, height);
-			if (frame == 1U)
-				egl->failures = egltest_scene_check(width, height, options->token);
+			/* The scene, through the framebuffer object for --scene=fbo. */
+			if (options->scene == 4) {
+				egltest_scene_draw_fbo(width, height);
+				if (frame == 1U)
+					egl->failures = egltest_scene_check_fbo(width, height, options->token);
+			} else {
+				egltest_scene_draw(width, height);
+				if (frame == 1U)
+					egl->failures = egltest_scene_check(width, height, options->token);
+			}
 		}
 
 		/* Without the scene: cleared to the frame's colour. */
@@ -467,7 +476,7 @@ egltest_parse(
 		/* The drawing scene. */
 		value = egltest_value(argv[index], "--scene=");
 		if (value != NULL) {
-			/* draw: the shaders from SPIR-V; glsl: from GLSL ES 1.00 source; glsl3: from GLSL ES 3.00. */
+			/* draw: the shaders from SPIR-V; glsl: from GLSL ES 1.00 source; glsl3: from GLSL ES 3.00; fbo: GLSL ES 1.00 through a framebuffer object. */
 			options->scene = 1;
 			differs = strcmp(value, "glsl");
 			if (differs == 0)
@@ -475,6 +484,9 @@ egltest_parse(
 			differs = strcmp(value, "glsl3");
 			if (differs == 0)
 				options->scene = 3;
+			differs = strcmp(value, "fbo");
+			if (differs == 0)
+				options->scene = 4;
 			differs = strcmp(value, "draw");
 			if (differs != 0 && options->scene == 1)
 				return -1;

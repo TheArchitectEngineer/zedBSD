@@ -1657,7 +1657,9 @@ program_link_code(
 	uint32_t *vertex_code;
 	uint32_t *fragment_code;
 	uint32_t *patched;
+	uint32_t *patched_fbo;
 	size_t patched_words;
+	size_t patched_fbo_words;
 	unsigned index;
 	unsigned other;
 	int status;
@@ -1741,10 +1743,22 @@ program_link_code(
 		program->attribute_count++;
 	}
 
-	/* The vertex shader's gl_Position made Vulkan's. */
-	patched = gles_spirv_position(vertex_code, vertex_words, &patched_words);
-	free(vertex_code);
+	/* The vertex shader's gl_Position made Vulkan's: for a window, y turned over. */
+	patched = gles_spirv_position(vertex_code, vertex_words, 1, &patched_words);
 	if (patched == NULL) {
+		free(vertex_code);
+		free(fragment_code);
+		gles_spirv_free(&vertex);
+		gles_spirv_free(&fragment);
+		(void)snprintf(log, PROGRAM_LOG, "the vertex shader's gl_Position could not be rewritten\n");
+		return -1;
+	}
+
+	/* And for a framebuffer object, whose image keeps GL's rows. */
+	patched_fbo = gles_spirv_position(vertex_code, vertex_words, 0, &patched_fbo_words);
+	free(vertex_code);
+	if (patched_fbo == NULL) {
+		free(patched);
 		free(fragment_code);
 		gles_spirv_free(&vertex);
 		gles_spirv_free(&fragment);
@@ -1763,8 +1777,11 @@ program_link_code(
 	if (status == 0)
 		status = program_module(state, patched, patched_words, &program->vertex_module);
 	if (status == 0)
+		status = program_module(state, patched_fbo, patched_fbo_words, &program->vertex_module_fbo);
+	if (status == 0)
 		status = program_module(state, fragment_code, fragment_words, &program->fragment_module);
 	free(patched);
+	free(patched_fbo);
 	free(fragment_code);
 	if (status != 0) {
 		if (log[0] == '\0')
@@ -1976,6 +1993,7 @@ program_unlink(
 	objects.set_layout = program->set_layout;
 	objects.modules[0] = program->vertex_module;
 	objects.modules[1] = program->fragment_module;
+	objects.modules[2] = program->vertex_module_fbo;
 	gles_garbage_keep(state, &objects);
 
 	/* The tables. */
@@ -1987,6 +2005,7 @@ program_unlink(
 	program->layout = VK_NULL_HANDLE;
 	program->set_layout = VK_NULL_HANDLE;
 	program->vertex_module = VK_NULL_HANDLE;
+	program->vertex_module_fbo = VK_NULL_HANDLE;
 	program->fragment_module = VK_NULL_HANDLE;
 	program->uniforms = NULL;
 	program->uniform_count = 0U;

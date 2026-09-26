@@ -45,7 +45,6 @@ static EGLint vulkan_depth(struct zegl_surface *surface);
 static EGLint vulkan_pbuffer_image(struct zegl_surface *surface);
 static void vulkan_pbuffer_layouts(struct zegl_surface *surface);
 static EGLint vulkan_frame_objects(struct zegl_surface *surface);
-static VkFormat vulkan_depth_format(struct zegl_display *display, VkImageAspectFlags *aspects);
 static EGLint vulkan_pass(struct zegl_surface *surface, VkFormat format, VkAttachmentLoadOp load, VkRenderPass *pass);
 static EGLint vulkan_submit(struct zegl_surface *surface, int present);
 static uint32_t vulkan_memory_type(struct zegl_display *display, uint32_t bits, VkMemoryPropertyFlags flags);
@@ -336,6 +335,10 @@ zegl_surface_present(
 	VkClearValue clear[2];
 	EGLint error;
 
+	/* GLES closes what it keeps open in the frame (a framebuffer object's pass) before the frame is submitted. */
+	if (context->gles.frame_closing != NULL)
+		context->gles.frame_closing(context);
+
 	/*
 	 * A pbuffer shows nothing: what it drew is submitted and waited for
 	 * (an empty recording, after a readback submitted the rest, is
@@ -558,6 +561,45 @@ zegl_frame_flush(
 	/* Succeeded: the frame is open again. */
 	surface->frame_open = 1;
 	return EGL_SUCCESS;
+}
+
+/*
+ * Returns the first depth and stencil format the device can attach, and
+ * its aspects; VK_FORMAT_UNDEFINED when none.  Window surfaces' depth
+ * buffers and libGLESv2's renderbuffers use it.
+ */
+VkFormat
+zegl_depth_format(
+	struct zegl_display *display,
+	VkImageAspectFlags *aspects)
+{
+	static const VkFormat formats[] = {
+		VK_FORMAT_D24_UNORM_S8_UINT,
+		VK_FORMAT_D32_SFLOAT_S8_UINT,
+		VK_FORMAT_D16_UNORM_S8_UINT,
+		VK_FORMAT_D32_SFLOAT,
+		VK_FORMAT_X8_D24_UNORM_PACK32,
+		VK_FORMAT_D16_UNORM
+	};
+	VkFormatProperties properties;
+	unsigned index;
+
+	/* The first one with a stencil the device can attach, else one without. */
+	for (index = 0U; index < sizeof(formats) / sizeof(formats[0]); index++) {
+		vkGetPhysicalDeviceFormatProperties(display->physical, formats[index], &properties);
+		if ((properties.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) == 0U)
+			continue;
+
+		/* The first three have a stencil. */
+		*aspects = VK_IMAGE_ASPECT_DEPTH_BIT;
+		if (index < 3U)
+			*aspects |= VK_IMAGE_ASPECT_STENCIL_BIT;
+		return formats[index];
+	}
+
+	/* The device has none. */
+	*aspects = 0U;
+	return VK_FORMAT_UNDEFINED;
 }
 
 /* Makes a display-direct surface: the first display's first mode on the first plane that can show it. */
@@ -869,7 +911,7 @@ vulkan_frame_objects(
 	surface->depth_format = VK_FORMAT_UNDEFINED;
 	surface->depth_aspects = 0U;
 	if (surface->config != NULL && (surface->config->depth > 0 || surface->config->stencil > 0))
-		surface->depth_format = vulkan_depth_format(display, &surface->depth_aspects);
+		surface->depth_format = zegl_depth_format(display, &surface->depth_aspects);
 
 	/* The pass that clears, then the one that loads. */
 	error = vulkan_pass(surface, format, VK_ATTACHMENT_LOAD_OP_CLEAR, &surface->pass);
@@ -987,41 +1029,6 @@ vulkan_depth(
 
 	/* Succeeded: the depth buffer. */
 	return EGL_SUCCESS;
-}
-
-/* Returns the first depth and stencil format the device can attach, and its aspects; VK_FORMAT_UNDEFINED when none. */
-static VkFormat
-vulkan_depth_format(
-	struct zegl_display *display,
-	VkImageAspectFlags *aspects)
-{
-	static const VkFormat formats[] = {
-		VK_FORMAT_D24_UNORM_S8_UINT,
-		VK_FORMAT_D32_SFLOAT_S8_UINT,
-		VK_FORMAT_D16_UNORM_S8_UINT,
-		VK_FORMAT_D32_SFLOAT,
-		VK_FORMAT_X8_D24_UNORM_PACK32,
-		VK_FORMAT_D16_UNORM
-	};
-	VkFormatProperties properties;
-	unsigned index;
-
-	/* The first one with a stencil the device can attach, else one without. */
-	for (index = 0U; index < sizeof(formats) / sizeof(formats[0]); index++) {
-		vkGetPhysicalDeviceFormatProperties(display->physical, formats[index], &properties);
-		if ((properties.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) == 0U)
-			continue;
-
-		/* The first three have a stencil. */
-		*aspects = VK_IMAGE_ASPECT_DEPTH_BIT;
-		if (index < 3U)
-			*aspects |= VK_IMAGE_ASPECT_STENCIL_BIT;
-		return formats[index];
-	}
-
-	/* The device has none. */
-	*aspects = 0U;
-	return VK_FORMAT_UNDEFINED;
 }
 
 /*

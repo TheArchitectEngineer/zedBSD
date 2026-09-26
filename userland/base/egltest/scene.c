@@ -23,7 +23,10 @@
  * The shaders are SPIR-V (shaders/, shaders.h) given with glShaderBinary,
  * or (--scene=glsl, WS068 p019) GLSL ES 1.00 source compiled by
  * glCompileShader, or (--scene=glsl3, WS068 p020) GLSL ES 3.00 source in
- * an OpenGL ES 3 context; all draw the same colours.
+ * an OpenGL ES 3 context; all draw the same colours.  With --scene=fbo
+ * (WS068 p022) the scene is drawn into a framebuffer object's texture
+ * (with a depth renderbuffer), and that texture over the whole window, so
+ * the window shows the same colours in the same places.
  */
 
 #include "scene.h"
@@ -38,6 +41,9 @@
 /* SPIR-V's binary format for glShaderBinary (GL 4.6's value). */
 #define SCENE_SPIR_V		0x9551
 
+/* The size of the framebuffer object's texture and depth renderbuffer. */
+#define SCENE_FBO_SIZE		256
+
 /* The program, its uniforms, the buffers and the texture. */
 static GLuint scene_program;
 static GLint scene_matrix;
@@ -47,6 +53,11 @@ static GLint scene_sampler;
 static GLuint scene_vertices;
 static GLuint scene_elements;
 static GLuint scene_texture;
+
+/* The framebuffer object of --scene=fbo, the texture it draws into and its depth renderbuffer (0 without --scene=fbo). */
+static GLuint scene_fbo;
+static GLuint scene_fbo_texture;
+static GLuint scene_fbo_depth;
 
 /* The attribute locations the program is linked with. */
 #define SCENE_POSITION		0U
@@ -181,6 +192,136 @@ egltest_scene_start_glsl(void)
 
 	/* Succeeded. */
 	return 0;
+}
+
+/*
+ * Makes the scene with GLSL ES 1.00 shaders, and a framebuffer object that
+ * draws into a texture of SCENE_FBO_SIZE with a 16-bit depth
+ * renderbuffer.  Returns 0, or -1 with a line saying what failed.
+ */
+int
+egltest_scene_start_fbo(void)
+{
+	GLenum status;
+	GLenum error;
+	int started;
+
+	/* The scene with GLSL shaders. */
+	started = scene_start(1);
+	if (started != 0)
+		return -1;
+
+	/* The texture the framebuffer object draws into, sampled nearest and clamped. */
+	glGenTextures(1, &scene_fbo_texture);
+	glBindTexture(GL_TEXTURE_2D, scene_fbo_texture);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, SCENE_FBO_SIZE, SCENE_FBO_SIZE, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+	/* Its depth buffer. */
+	glGenRenderbuffers(1, &scene_fbo_depth);
+	glBindRenderbuffer(GL_RENDERBUFFER, scene_fbo_depth);
+	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, SCENE_FBO_SIZE, SCENE_FBO_SIZE);
+
+	/* The framebuffer object with both attached. */
+	glGenFramebuffers(1, &scene_fbo);
+	glBindFramebuffer(GL_FRAMEBUFFER, scene_fbo);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, scene_fbo_texture, 0);
+	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, scene_fbo_depth);
+
+	/* It must be complete. */
+	status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+	printf("EGLTEST FBO status=0x%x\n", (unsigned)status);
+	if (status != GL_FRAMEBUFFER_COMPLETE)
+		return -1;
+
+	/* The window's framebuffer and the scene's own texture again. */
+	glBindFramebuffer(GL_FRAMEBUFFER, 0U);
+	glBindTexture(GL_TEXTURE_2D, scene_texture);
+
+	/* GL reported no error. */
+	error = glGetError();
+	if (error != GL_NO_ERROR) {
+		printf("EGLTEST FBO setup glerror=0x%x\n", (unsigned)error);
+		return -1;
+	}
+
+	/* Succeeded: the scene can be drawn through the framebuffer object. */
+	return 0;
+}
+
+/*
+ * Draws the scene into the framebuffer object's texture, then that
+ * texture over the whole window (so the window shows the scene).
+ */
+void
+egltest_scene_draw_fbo(
+	int width,
+	int height)
+{
+	static const GLfloat fan[] = {
+		-1.0f, -1.0f, 1.0f, -1.0f, 1.0f, 1.0f, -1.0f, 1.0f
+	};
+	static const GLfloat fan_uv[] = {
+		0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f
+	};
+
+	/* The scene into the texture, with its depth buffer. */
+	glBindFramebuffer(GL_FRAMEBUFFER, scene_fbo);
+	egltest_scene_draw(SCENE_FBO_SIZE, SCENE_FBO_SIZE);
+
+	/* The window, cleared to black. */
+	glBindFramebuffer(GL_FRAMEBUFFER, 0U);
+	glViewport(0, 0, width, height);
+	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+	/* The texture over all of it, untinted. */
+	glUseProgram(scene_program);
+	scene_place(0.0f, 0.0f, 1.0f);
+	scene_colour(1.0f, 1.0f, 1.0f, 1.0f);
+	glUniform1f(scene_textured, 1.0f);
+	glBindTexture(GL_TEXTURE_2D, scene_fbo_texture);
+	glDisableVertexAttribArray(SCENE_COLOR);
+	glVertexAttrib4f(SCENE_COLOR, 1.0f, 1.0f, 1.0f, 1.0f);
+	glVertexAttribPointer(SCENE_POSITION, 2, GL_FLOAT, GL_FALSE, 0, fan);
+	glVertexAttribPointer(SCENE_UV, 2, GL_FLOAT, GL_FALSE, 0, fan_uv);
+	glEnableVertexAttribArray(SCENE_POSITION);
+	glEnableVertexAttribArray(SCENE_UV);
+	glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+
+	/* The scene's own state again for the next frame. */
+	glDisableVertexAttribArray(SCENE_UV);
+	glUniform1f(scene_textured, 0.0f);
+	glBindTexture(GL_TEXTURE_2D, scene_texture);
+}
+
+/*
+ * Reads back the scene's colours from the framebuffer object (a line of
+ * its own, run TOKEN-fbo) and from the window.  Returns how many differ.
+ */
+int
+egltest_scene_check_fbo(
+	int width,
+	int height,
+	const char *token)
+{
+	char fbo_token[64];
+	int failures;
+
+	/* The framebuffer object's texture, read through the framebuffer object. */
+	(void)snprintf(fbo_token, sizeof(fbo_token), "%s-fbo", token);
+	glBindFramebuffer(GL_FRAMEBUFFER, scene_fbo);
+	failures = egltest_scene_check(SCENE_FBO_SIZE, SCENE_FBO_SIZE, fbo_token);
+
+	/* The window, which shows the texture. */
+	glBindFramebuffer(GL_FRAMEBUFFER, 0U);
+	failures += egltest_scene_check(width, height, token);
+
+	/* Succeeded: how many of both differed. */
+	return failures;
 }
 
 /*
