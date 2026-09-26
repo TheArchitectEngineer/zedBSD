@@ -12,6 +12,12 @@ for utility in sed grep awk cut wc head tail sort uniq tr od expr paste join com
 	if [ "$utility" = mv ]; then
 		extra=userland/base/cp/copy.c
 	fi
+	# mkdir and mkfifo share chmod's mode operand (ws001-p026).
+	case $utility in
+	mkdir|mkfifo)
+		extra=userland/base/chmod/mode.c
+		;;
+	esac
 	cc -std=c11 -D_GNU_SOURCE -O1 -g -w -I. -Iinclude \
 		userland/base/$utility/*.c $extra userland/base/common/command.c \
 		-o "$out/$utility" -lm

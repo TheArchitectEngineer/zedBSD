@@ -26,6 +26,15 @@ for utility in $list; do
 	if [ "$utility" = mv ]; then
 		extra=userland/base/cp/copy.c
 	fi
+	# mkdir and mkfifo share chmod's mode operand (ws001-p026).
+	case $utility in
+	mkdir|mkfifo)
+		extra=userland/base/chmod/mode.c
+		;;
+	chgrp)
+		extra=userland/base/chown/change.c
+		;;
+	esac
 	if ! cc -std=c11 -D_GNU_SOURCE -O1 -g -w -I. -Iinclude \
 		userland/base/$utility/*.c $extra userland/base/common/command.c \
 		-o "$out/$utility" -lm; then

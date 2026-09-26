@@ -69,7 +69,7 @@ python3 plan/tools/guest/serial.py --socket "$socket" run \
 	'rm -rf /root/c && mkdir /root/c && cd /root/c && pax -r -f /root/ws001-cases.tar && cd /'
 status=0
 python3 plan/tools/guest/serial.py --socket "$socket" --timeout 7200 run \
-	'sh /root/guest-cases.sh /root/c 2>&1 | grep -v "^$"' > "$out" || status=$?
+	"DUMP=${DUMP-} sh /root/guest-cases.sh /root/c 2>&1 | grep -v '^$'" > "$out" || status=$?
 python3 plan/tools/guest/guest.py stop > /dev/null 2>&1 || true
 tail -1 "$out"
 exit $status
