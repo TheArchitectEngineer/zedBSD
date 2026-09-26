@@ -348,11 +348,15 @@ post_request(void)
 		/* Stops when the word is this request's. */
 		answer = kern_mmio_read32(mailbox + MAILBOX_READ);
 		if (answer == request)
-			return 0;
+			break;
 	}
 
 	/* Reports a firmware that answered only other channels. */
-	return ETIMEDOUT;
+	if (attempts == MAILBOX_POLL_LIMIT)
+		return ETIMEDOUT;
+
+	/* Succeeded: the firmware has written its answer. */
+	return 0;
 }
 
 /*
@@ -374,15 +378,20 @@ wait_mailbox(
 		/* Stops as soon as the mailbox is ready. */
 		status = kern_mmio_read32(mailbox + status_offset);
 		if ((status & busy_bit) == 0)
-			return 0;
+			break;
 
 		/* Waits one polling interval before looking again. */
 		kern_usleep_range(MAILBOX_POLL_US, MAILBOX_POLL_MAX_US);
 	}
 
 	/* Reports a mailbox that never became ready. */
-	kern_logf("rpi4-firmware: mailbox status %x stayed busy\n", status);
-	return ETIMEDOUT;
+	if (polls == MAILBOX_POLL_LIMIT) {
+		kern_logf("rpi4-firmware: mailbox status %x stayed busy\n", status);
+		return ETIMEDOUT;
+	}
+
+	/* Succeeded: the mailbox is ready for the next step. */
+	return 0;
 }
 
 /*

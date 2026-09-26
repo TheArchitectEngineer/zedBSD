@@ -9,7 +9,7 @@ Related Milestones: MG003, MG006
 Objectives: O2, O4
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 ユーザー指示でサブエージェントが worktree の branch で実行。main session が merge する）
-Resume point: p004（非 coherent な DMA）は HAL の承認待ち（design.md §6、差分 proposed/hal-pmem-uncached.diff）。p005 以降は p004 の後
+Resume point: **ユーザーの判断待ち**: p004 の hal.h の差分（design.md §6、[proposed/hal-pmem-uncached.diff](proposed/hal-pmem-uncached.diff)）の承認。承認の後、p004 を当てて clear → p005 の config を有効に → p006 → 実機（ユーザー）→ p007
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -52,3 +52,21 @@ Resume point: p004（非 coherent な DMA）は HAL の承認待ち（design.md 
 
 注: QEMU の raspi4b は PCIe を持たない（DTB の PCIe の node を disabled にする）。p002〜p006 の動作の確認は実機だけで、
 このリポジトリに実機の試験の仕組みは無い。実機の確認はユーザーに頼み、行うまで「未実施」と書く。
+
+## 2026-09-27 の実行のまとめ（サブエージェント、worktree の branch）
+
+- p001〜p003 cleared（実機の確認は未実施）。p004・p005 は承認を要らない部分まで進め、uncleared（hal.h の差分の承認待ち）。p006・p007 は planned。
+- host 試験: `make -f plan/ws048/tests/host-test.mk run DTB=<firmware の bcm2711-rpi-4-b.dtb>`（FDT・brcmstb の register model・mailbox の model・DMA の 2 通り。ASan・UBSan）。
+- QEMU raspi4b は PCIe を disabled にするので、QEMU で確かめたのは「起動を壊さない」ことだけ。PCIe・VL805・USB の動作は実機だけ。
+- rpi4 の image の `make -j16` はこの branch の起点で userland（`src/rtld/rtld.c` と `include/libc/elf.h` の macro の再定義）で止まる（WS048 の外）。
+  boot test は main の `build/ws053-rpi4-full/hdd-image.img`（2026-09-25）を SD にし、kernel だけをこの branch の build にした。
+
+## Future Work の候補（main session が `plan/future-work.md` へ移す）
+
+| 候補 | 理由・きっかけ |
+| --- | --- |
+| brcmstb の spread spectrum（`brcm,enable-ssc`、design.md §2.4） | DT が求めるが、link と USB には要らない。実機で link を確かめた後 |
+| brcmstb の MSI（SPI 148 の受け口） | INTx で足りる。PCI の core の MSI の経路は HAL の LAPIC 向けの口を使うので、host bridge が address と data を出す形が要る |
+| arm64 の `hal_space_unmap_device()` | 今も `hal_space_unmap(HAL_SPACE_SYS, ...)` で失敗を返す。PCIe は対応を外さないので影響は無い |
+| HAL の mailbox の FULL の確認の register | `src/hal/arm64/bsp-rpi4/mailbox.c` が mailbox 0 の status（`+0x18`）を読む。正しくは mailbox 1（`+0x38`）。実害は出ていない（design.md §7） |
+| 有線 LAN（GENET） | きっかけの報告（2026-09-24）で、有線 LAN の driver も無いと分かった。別の WS |
