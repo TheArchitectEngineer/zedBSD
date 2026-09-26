@@ -91,3 +91,31 @@ d
 0
 1
 
+
+#### who lists the user logged in on the console
+# Guest only: the serial console login of guest-run.sh is the one user.
+who | awk '{ print $1, NF }'; who -q; test "$(who | awk '{ print $3 }')" = "$(date +%b)" && echo month
+## expect
+root 5
+root
+# users=1
+month
+
+#### who reads a copy of the database
+cp /var/run/utmp u; who u | awk '{ print $1 }'; who -s u | wc -l
+## expect
+root
+1
+
+#### who -H, -u and -T
+who -H | sed -n 1p; who -u | awk '{ print $1, ($NF ~ /^[0-9]+$/) }'; who -T | awk '{ print $1, $2 }'
+## expect
+NAME     LINE         TIME         COMMENT
+root 1
+root +
+
+#### who -m without a terminal, and a missing file
+who -m; echo "st=$?"; who nothere 2> /dev/null; echo "st=$?"
+## expect
+st=0
+st=1
