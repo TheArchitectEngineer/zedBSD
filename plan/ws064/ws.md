@@ -3,28 +3,48 @@
 # WS064: base の make の並列（`-j`）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete
+Status: completed
 Primary Milestone: MG002
 Related Milestones: MG001
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001・p002・p004 cleared（`make -j4` 4.18〜4.38 秒、host 5.14〜5.18 秒）。残りは規約の p003（ユーザーの指示で最後）
+Resume point: —（2026-09-27 完了）
 <!-- awesome-plan-current:end -->
 
 ## 目標
 
 2026-09-26 ユーザー指示: 「makeは-jに対応させて、並列makeの実行時間もホストと同等以上にしてください。」（[F-016](../future-work.md) の昇格）
 
-base の make（`userland/base/make/`）は `-j` を受け付けて無視し、command を 1 つずつ走らせる。POSIX と GNU make の慣習に沿って `-j N` で job を並列に走らせる。子の make（再帰の `$(MAKE)`）との job の数の分け合い（jobserver）も要る（automake の Makefile は再帰する）。
+base の make（`userland/base/make/`）で `-j N` の job を並列に走らせ、再帰の make と job の数を分け合い（jobserver）、guest の expat の `make -j4` を host の `make -j4` と同等以上にする。
 
-受け入れ: expat の `make -j4` が guest で host の `make -j4`（5.2 秒）と同等以上。make の差分試験（`plan/ws046/tests/make-diff.py`、91 件）が通り、`-j` の case を足す。並列の失敗（1 つの job の失敗で止まる、`-k`）と出力の扱い。規約。
+## 結果
+
+- make: `-j N`・`-j`・`--jobs`、GNU make 互換の jobserver（`MAKEFLAGS` の `-jN --jobserver-auth=R,W`、pipe の token）、`.WAIT`・`.NOTPARALLEL`、失敗の後の待ちと `-k -j`（p001）。
+- 並列の費用（p002）: kernel の mutex の短い回転と 3 状態の速い道、system call `vfork` と libc の `vfork`・`posix_spawn`（amd64 は専用 stack の vfork）、make と sh の外部 command の `posix_spawn`、fork の private page の 32 page ずつの共有、`vmspace_destroy` の解放を lock の外へ、object page の逆写像の O(1) の外し。
+- sh の process の生成（p004）: pipeline の要素・command substitution・`unset` の試しの subshell を fork せずに。fork は expat の make で 1417 → 214、configure で 966 → 423。
+- 計測（p002・p004、QEMU 8 GiB 4 vCPU NVMe）: expat の `make -j4` 4.18〜4.38 秒（host の GNU make 5.14〜5.18 秒）、configure 7.1 秒（host 10.7 秒）、直列の make 10.7 秒（host 15.5 秒）。
+- 規約（p003、2026-09-27）: WS064 の新しい file と関数は style-check 0。make の差分試験 host・guest 100/100、guest の fork・vfork・posix_spawn の試験、sh の差分試験、expat の configure・`make -j4`・runtests が変わらないことを確かめた。
+
+## 制限・移管
+
+- `make check` の試験の driver は bash を要り、guest では走らない（WS046 の既知の制限）。`tests/runtests` は 4932/4932。
+- p003 は時間を測っていない（受け入れの時間は p002・p004 で達成済み）。`smpstress`・`lock-stress`・swap の試験は道具が残っておらず未実施。
+- 既存の大きな file（`vmspace.c`・`vm.c`・`process.c`・`posix.c`・`syscall.c`）の WS064 の外の指摘は残る（WS064 の関数だけを直した）。
+- 実機は未実施（QEMU だけ）。
 
 ## Phase 一覧
 
-| Phase | 内容 | Status | 依存 |
-| --- | --- | --- | --- |
-| [ws064-p001](phase001/phase.md) | 設計と実装: job の並列、jobserver（pipe の token、`MAKEFLAGS`）、失敗と `-k`、差分試験の `-j` の case | cleared（q448-i01。差分試験 100/100（guest）、host の expat `-j4` 5.08 秒（GNU 5.06）、guest 7.3〜7.8 秒） | — |
-| [ws064-p002](phase002/phase.md) | 並列の make の性能（expat の `make -j4` を host と比べ、kernel・libc の並列の費用を詰める） | cleared（q449-i01。4.94〜5.00 秒、host 5.14〜5.18 秒。mutex の速い道、vfork と posix_spawn、fork・destroy の lock の保持） | p001 |
-| [ws064-p003](phase003/phase.md) | WS064 の変更の規約の適合（ユーザーの指示で最後） | planned | p002 |
-| [ws064-p004](phase004/phase.md) | `/bin/sh` の process の生成を posix_spawn（vfork）に広げる（2026-09-26 ユーザー指示） | cleared（q450-i01。fork: make 1417 → 214、configure 966 → 423。configure 7.1 秒、`make -j4` 4.2〜4.4 秒） | p002 |
+Phase の記録は完了に伴い削除した（git の履歴に残る）。
+
+| Phase | 内容 | Status |
+| --- | --- | --- |
+| ws064-p001 | 設計と実装: job の並列、jobserver、失敗と `-k`、差分試験の `-j` の case | cleared（q448-i01） |
+| ws064-p002 | 並列の make の性能（mutex、vfork・posix_spawn、fork・destroy の lock） | cleared（q449-i01） |
+| ws064-p003 | 規約の適合 | cleared（2026-09-27、サブエージェント） |
+| ws064-p004 | `/bin/sh` の process の生成を posix_spawn（vfork）に広げる | cleared（q450-i01） |
+
+## 試験と道具
+
+- make の差分試験は `plan/ws046/tests/make-diff.py`（`cases/parallel.sh` を含む 100 件）。
+- p003 で `plan/tools/` に置いた: `guest/hybrid-image.sh`（main の guest image の複写にこの tree の kernel・libc・make・sh を入れる）、`guest/make-cases.sh`（guest で make の差分試験）、`process/vfork-test.c`・`process/guest-vfork.sh`（fork の copy on write、vfork、posix_spawn、同時の fork）。

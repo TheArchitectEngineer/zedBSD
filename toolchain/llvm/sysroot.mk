@@ -1,9 +1,10 @@
-# Deterministic zedBSD x86 target sysroots.
+# Deterministic zedBSD target sysroots (amd64, i386 and arm64).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
 ZEDBSD_SYSROOT_MAKEFILE := $(lastword $(MAKEFILE_LIST))
 ZEDBSD_SYSROOT_AMD64 := $(abspath $(ZEDBSD_LLVM_ROOT)/build/amd64/sysroot)
 ZEDBSD_SYSROOT_I386 := $(abspath $(ZEDBSD_LLVM_ROOT)/build/i386/sysroot)
+ZEDBSD_SYSROOT_ARM64 := $(abspath $(ZEDBSD_LLVM_ROOT)/build/arm64/sysroot)
 ZEDBSD_SYSROOT_CLANG := $(ZEDBSD_LLVM_INSTALL)/bin/clang
 ZEDBSD_SYSROOT_AR := $(ZEDBSD_LLVM_INSTALL)/bin/llvm-ar
 ZEDBSD_SYSROOT_LD := $(ZEDBSD_LLVM_INSTALL)/bin/ld.lld
@@ -40,6 +41,13 @@ ZEDBSD_SYSROOT_COMPILER_RT_SOURCES := \
 	src/libc/compiler-runtime.c \
 	src/libc/math.c src/libc/float-parse.c
 
+# AArch64 differs from x86 in two places.  clang has no __builtin_setjmp
+# there, so the C library carries setjmp in assembly; and long double is
+# IEEE binary128, whose arithmetic the compiler runtime supplies in software.
+ZEDBSD_SYSROOT_ARM64_LIBC_SOURCES := src/libc/setjmp-aarch64.S
+ZEDBSD_SYSROOT_ARM64_COMPILER_RT_SOURCES := \
+	src/libc/softfloat128.c src/libc/compiler-runtime128.c
+
 # zedBSD owns its floating-point compiler ABI so i386 kernels do not acquire
 # an x87 dependency. Integer compiler builtins come from the same verified LLVM
 # release used to build Clang. This explicit manifest is the supported ABI and
@@ -64,11 +72,18 @@ ZEDBSD_SYSROOT_LLVM_BUILTIN_NAMES := \
 ZEDBSD_SYSROOT_LLVM_BUILTIN_SOURCES := $(addprefix \
 	$(ZEDBSD_LLVM_SOURCE)/compiler-rt/lib/builtins/,\
 	$(ZEDBSD_SYSROOT_LLVM_BUILTIN_NAMES))
+# AArch64 keeps its instruction cache coherent with data only on request, so
+# a program that writes code (a JIT) calls __clear_cache, which the compiler
+# runtime provides.  The kernel lets user code clean and invalidate the
+# caches itself (SCTLR_EL1.UCI and UCT).
+ZEDBSD_SYSROOT_ARM64_LLVM_BUILTIN_SOURCES := \
+	$(ZEDBSD_LLVM_SOURCE)/compiler-rt/lib/builtins/clear_cache.c
 
 # A clean cache-based bootstrap has build/llvm but no extracted LLVM source.
 # Give each compiler-rt input a real generating prerequisite so parallel Make
 # completes the verified source extraction before it diagnoses a missing file.
-$(ZEDBSD_SYSROOT_LLVM_BUILTIN_SOURCES): | $(ZEDBSD_LLVM_SOURCE_STAMP)
+$(ZEDBSD_SYSROOT_LLVM_BUILTIN_SOURCES) \
+$(ZEDBSD_SYSROOT_ARM64_LLVM_BUILTIN_SOURCES): | $(ZEDBSD_LLVM_SOURCE_STAMP)
 	@test -f '$@'
 
 ZEDBSD_SYSROOT_PUBLIC_HEADERS := $(shell \
@@ -77,19 +92,32 @@ ZEDBSD_SYSROOT_LINKER_SCRIPTS := \
 	platform/amd64/user.ld platform/amd64/vmunix.ld \
 	platform/pcat/user.ld platform/pcat/vmunix.ld \
 	platform/pc98/noct-user.ld platform/pc98/user-init.ld \
-	platform/pc98/stage2.ld \
+	platform/pc98/stage2.ld platform/arm64/user.ld \
 	bootloader/pcat/stage1.ld bootloader/pcat/stage2.ld \
 	bootloader/pcat/bootzbsd.ld \
 	bootloader/pc98/stage1.ld bootloader/pc98/stage2.ld
 ZEDBSD_SYSROOT_INPUTS := $(ZEDBSD_SYSROOT_LIBC_SOURCES) \
 	$(ZEDBSD_SYSROOT_COMPILER_RT_SOURCES) \
+	$(ZEDBSD_SYSROOT_ARM64_LIBC_SOURCES) \
+	$(ZEDBSD_SYSROOT_ARM64_COMPILER_RT_SOURCES) \
 	$(ZEDBSD_SYSROOT_LLVM_BUILTIN_SOURCES) \
+	$(ZEDBSD_SYSROOT_ARM64_LLVM_BUILTIN_SOURCES) \
 	$(ZEDBSD_SYSROOT_PUBLIC_HEADERS) $(ZEDBSD_SYSROOT_LINKER_SCRIPTS) \
 	src/libc/crt/crt0-amd64.S src/libc/crt/crt1-amd64.S \
 	src/libc/crt/crt0-i386.S src/libc/crt/crt1-i386.S \
-	include/hal/arch.h include/hal/arch/amd64.h include/hal/arch/i386.h
+	src/libc/crt/crt0-aarch64.S src/libc/crt/crt1-aarch64.S \
+	include/hal/arch.h include/hal/arch/amd64.h include/hal/arch/i386.h \
+	include/hal/arch/aarch64.h
 
-define ZEDBSD_BUILD_X86_SYSROOT
+# $(1) sysroot, $(2) its name, $(3) target triple, $(4) code generation
+# flags, $(5) HAL architecture macro, $(6) crt0 and $(7) crt1 sources,
+# $(8) and $(9) the linker script the smoke program is linked with, $(10) the
+# ELF machine llvm-readelf names, $(11) user ABI macros, $(12) the C library's
+# assembly sources, $(13) the compiler runtime's floating-point ABI flags and
+# $(14) its sources beyond the common ones and $(15) the LLVM builtins beyond
+# the common ones.
+
+define ZEDBSD_BUILD_SYSROOT
 $(1)/.zedbsd-sysroot-complete: $(ZEDBSD_SYSROOT_INPUTS) \
 	$(ZEDBSD_LLVM_INSTALL_STAMP)
 	@set -eu; \
@@ -101,7 +129,8 @@ $(1)/.zedbsd-sysroot-complete: $(ZEDBSD_SYSROOT_INPUTS) \
 	mkdir -p "$$$$temporary/usr/include" "$$$$temporary/usr/lib" \
 		"$$$$temporary/usr/lib/zedbsd/amd64" \
 		"$$$$temporary/usr/lib/zedbsd/pcat" \
-		"$$$$temporary/usr/lib/zedbsd/pc98" "$$$$temporary/obj"; \
+		"$$$$temporary/usr/lib/zedbsd/pc98" \
+		"$$$$temporary/usr/lib/zedbsd/arm64" "$$$$temporary/obj"; \
 	for header in $$(ZEDBSD_SYSROOT_PUBLIC_HEADERS); do \
 		case "$$$$header" in \
 		include/libc/*) relative=$$$${header#include/libc/} ;; \
@@ -112,7 +141,7 @@ $(1)/.zedbsd-sysroot-complete: $(ZEDBSD_SYSROOT_INPUTS) \
 		case "$$$$relative" in */*) mkdir -p "$$$$temporary/usr/include/$$$${relative%/*}" ;; esac; \
 		cp "$$$$header" "$$$$temporary/usr/include/$$$$relative"; \
 	done; \
-	for source in $$(ZEDBSD_SYSROOT_LIBC_SOURCES); do \
+	for source in $$(ZEDBSD_SYSROOT_LIBC_SOURCES) $(12); do \
 		object="$$$$temporary/obj/$$$$source.o"; mkdir -p "$$$${object%/*}"; \
 		'$(ZEDBSD_SYSROOT_CLANG)' --target='$(3)' --sysroot="$$$$temporary" \
 			$(4) -D$(5) $(11) -DZEDBSD_STATIC_TLS -nostdinc -Iinclude/libc -Iinclude -Isrc -I. \
@@ -123,28 +152,28 @@ $(1)/.zedbsd-sysroot-complete: $(ZEDBSD_SYSROOT_INPUTS) \
 			-c "$$$$source" -o "$$$$object"; \
 	done; \
 	'$(ZEDBSD_SYSROOT_AR)' rcsD "$$$$temporary/usr/lib/libc.a" \
-		$$$$(find "$$$$temporary/obj" -type f -name '*.c.o' -print | LC_ALL=C sort); \
+		$$$$(find "$$$$temporary/obj" -type f -name '*.o' -print | LC_ALL=C sort); \
 	'$(ZEDBSD_SYSROOT_LD)' -r --whole-archive \
 		"$$$$temporary/usr/lib/libc.a" --no-whole-archive \
 		-o "$$$$temporary/usr/lib/libc.o"; \
 	find "$$$$temporary/obj" -depth -delete; mkdir -p "$$$$temporary/obj"; \
-	for source in $$(ZEDBSD_SYSROOT_COMPILER_RT_SOURCES); do \
+	for source in $$(ZEDBSD_SYSROOT_COMPILER_RT_SOURCES) $(14); do \
 		object="$$$$temporary/obj/$$$$source.o"; mkdir -p "$$$${object%/*}"; \
 		'$(ZEDBSD_SYSROOT_CLANG)' --target='$(3)' --sysroot="$$$$temporary" \
 			$(4) -D$(5) $(11) -DZEDBSD_STATIC_TLS -nostdinc -Iinclude/libc -Iinclude -Isrc -I. \
 			-ffreestanding -fno-builtin -fno-pic -fno-pie \
 			-fno-stack-protector -fno-asynchronous-unwind-tables \
 			-fno-unwind-tables -fno-common -fno-strict-aliasing \
-			-mlong-double-64 -ffunction-sections -fdata-sections \
+			$(13) -ffunction-sections -fdata-sections \
 			-Os -Wall -Wextra -Werror -c "$$$$source" -o "$$$$object"; \
 	done; \
 	'$(ZEDBSD_SYSROOT_AR)' rcsD "$$$$temporary/usr/lib/libzedbsd-compiler-rt.a" \
-		$$$$(find "$$$$temporary/obj" -type f -name '*.c.o' -print | LC_ALL=C sort); \
+		$$$$(find "$$$$temporary/obj" -type f -name '*.o' -print | LC_ALL=C sort); \
 	'$(ZEDBSD_SYSROOT_LD)' -r --whole-archive \
 		"$$$$temporary/usr/lib/libzedbsd-compiler-rt.a" --no-whole-archive \
 		-o "$$$$temporary/usr/lib/libzedbsd-compiler-rt.o"; \
 	find "$$$$temporary/obj" -depth -delete; mkdir -p "$$$$temporary/obj"; \
-	for source in $$(ZEDBSD_SYSROOT_LLVM_BUILTIN_SOURCES); do \
+	for source in $$(ZEDBSD_SYSROOT_LLVM_BUILTIN_SOURCES) $(15); do \
 		object="$$$$temporary/obj/$$$${source##*/}.o"; \
 		'$(ZEDBSD_SYSROOT_CLANG)' --target='$(3)' --sysroot="$$$$temporary" \
 			$(4) -D$(5) $(11) -nostdinc -isystem "$$$$temporary/usr/include" \
@@ -181,6 +210,7 @@ $(1)/.zedbsd-sysroot-complete: $(ZEDBSD_SYSROOT_INPUTS) \
 		bootloader/pc98/stage1.ld "$$$$temporary/usr/lib/zedbsd/pc98/"; \
 	cp platform/pc98/stage2.ld \
 		"$$$$temporary/usr/lib/zedbsd/pc98/platform-stage2.ld"; \
+	cp platform/arm64/user.ld "$$$$temporary/usr/lib/zedbsd/arm64/"; \
 	cp bootloader/pc98/stage2.ld \
 		"$$$$temporary/usr/lib/zedbsd/pc98/bootloader-stage2.ld"; \
 	printf '%s\n' 'arch=$(2)' 'triple=$(3)' \
@@ -220,13 +250,15 @@ $(1)/.zedbsd-sysroot-complete: $(ZEDBSD_SYSROOT_INPUTS) \
 	mv "$$$$temporary" "$$$$destination"; temporary=; trap - EXIT HUP INT TERM
 endef
 
-$(eval $(call ZEDBSD_BUILD_X86_SYSROOT,$(ZEDBSD_SYSROOT_AMD64),amd64,x86_64-unknown-zedbsd,-m64 -march=x86-64 -mno-red-zone,HAL_ARCH_AMD64,src/libc/crt/crt0-amd64.S,src/libc/crt/crt1-amd64.S,amd64,user.ld,Advanced Micro Devices X86-64,-DKERN_USER_ABI_LP64))
-$(eval $(call ZEDBSD_BUILD_X86_SYSROOT,$(ZEDBSD_SYSROOT_I386),i386,i386-unknown-zedbsd,-m32 -march=i386 -msoft-float -mno-mmx -mno-sse -mno-sse2,HAL_ARCH_I386,src/libc/crt/crt0-i386.S,src/libc/crt/crt1-i386.S,pcat,user.ld,Intel 80386,))
+$(eval $(call ZEDBSD_BUILD_SYSROOT,$(ZEDBSD_SYSROOT_AMD64),amd64,x86_64-unknown-zedbsd,-m64 -march=x86-64 -mno-red-zone,HAL_ARCH_AMD64,src/libc/crt/crt0-amd64.S,src/libc/crt/crt1-amd64.S,amd64,user.ld,Advanced Micro Devices X86-64,-DKERN_USER_ABI_LP64,,-mlong-double-64,))
+$(eval $(call ZEDBSD_BUILD_SYSROOT,$(ZEDBSD_SYSROOT_I386),i386,i386-unknown-zedbsd,-m32 -march=i386 -msoft-float -mno-mmx -mno-sse -mno-sse2,HAL_ARCH_I386,src/libc/crt/crt0-i386.S,src/libc/crt/crt1-i386.S,pcat,user.ld,Intel 80386,,,-mlong-double-64,))
+$(eval $(call ZEDBSD_BUILD_SYSROOT,$(ZEDBSD_SYSROOT_ARM64),arm64,aarch64-unknown-zedbsd,-march=armv8-a -mno-outline-atomics,HAL_ARCH_ARM64,src/libc/crt/crt0-aarch64.S,src/libc/crt/crt1-aarch64.S,arm64,user.ld,AArch64,-DKERN_USER_ABI_AARCH64 -DKERN_USER_ABI_LP64,$(ZEDBSD_SYSROOT_ARM64_LIBC_SOURCES),,$(ZEDBSD_SYSROOT_ARM64_COMPILER_RT_SOURCES),$(ZEDBSD_SYSROOT_ARM64_LLVM_BUILTIN_SOURCES)))
 
-.PHONY: sysroot-amd64 sysroot-i386 sysroots
+.PHONY: sysroot-amd64 sysroot-i386 sysroot-arm64 sysroots
 sysroot-amd64: $(ZEDBSD_SYSROOT_AMD64)/.zedbsd-sysroot-complete
 sysroot-i386: $(ZEDBSD_SYSROOT_I386)/.zedbsd-sysroot-complete
-sysroots: sysroot-amd64 sysroot-i386
+sysroot-arm64: $(ZEDBSD_SYSROOT_ARM64)/.zedbsd-sysroot-complete
+sysroots: sysroot-amd64 sysroot-i386 sysroot-arm64
 
 $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt0.o \
 $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
@@ -246,4 +278,14 @@ $(ZEDBSD_SYSROOT_I386)/usr/lib/libzedbsd-compiler-rt.a \
 $(ZEDBSD_SYSROOT_I386)/usr/lib/libzedbsd-compiler-rt.o \
 $(ZEDBSD_SYSROOT_I386)/usr/lib/libclang_rt.builtins.a: \
 	$(ZEDBSD_SYSROOT_I386)/.zedbsd-sysroot-complete
+	@test -f '$@'
+
+$(ZEDBSD_SYSROOT_ARM64)/usr/lib/crt0.o \
+$(ZEDBSD_SYSROOT_ARM64)/usr/lib/crt1.o \
+$(ZEDBSD_SYSROOT_ARM64)/usr/lib/libc.a \
+$(ZEDBSD_SYSROOT_ARM64)/usr/lib/libc.o \
+$(ZEDBSD_SYSROOT_ARM64)/usr/lib/libzedbsd-compiler-rt.a \
+$(ZEDBSD_SYSROOT_ARM64)/usr/lib/libzedbsd-compiler-rt.o \
+$(ZEDBSD_SYSROOT_ARM64)/usr/lib/libclang_rt.builtins.a: \
+	$(ZEDBSD_SYSROOT_ARM64)/.zedbsd-sysroot-complete
 	@test -f '$@'

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the Raspberry Pi 4 MBR/FAT16 image and boot payloads."""
+"""Validate the Raspberry Pi 4 MBR/FAT32 image and boot payloads."""
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
 import argparse
@@ -12,6 +12,7 @@ from pathlib import Path
 SECTOR = 512
 PARTITION_LBA = 2048
 PARTITION_BLOCKS = 262144
+PARTITION_TYPE = 0x0C
 IMAGE_BLOCKS = 524288
 ROOT_LBA = 264192
 
@@ -46,8 +47,8 @@ def check(args: argparse.Namespace) -> None:
             fail("missing MBR signature")
         entry = struct.unpack_from("<B3sB3sII", mbr, 0x1BE)
         if (entry[0], entry[2], entry[4], entry[5]) != \
-                (0x80, 0x06, PARTITION_LBA, PARTITION_BLOCKS):
-            fail("partition 1 is not the expected active FAT16 extent")
+                (0x80, PARTITION_TYPE, PARTITION_LBA, PARTITION_BLOCKS):
+            fail("partition 1 is not the expected active FAT32 extent")
         if args.ufs_root is None:
             if any(mbr[0x1CE:0x1FE]):
                 fail("unexpected additional MBR partition")
@@ -63,9 +64,14 @@ def check(args: argparse.Namespace) -> None:
                 fail("partition 2 differs from the UFS root image")
         stream.seek(PARTITION_LBA * SECTOR)
         bpb = stream.read(SECTOR)
+        # FAT32 has no fixed root directory and no 16-bit table size; its
+        # table size is the 32-bit field, and the type string says FAT32.
         if struct.unpack_from("<H", bpb, 11)[0] != SECTOR or \
-                struct.unpack_from("<H", bpb, 22)[0] == 0:
-            fail("partition 1 is not FAT16")
+                struct.unpack_from("<H", bpb, 17)[0] != 0 or \
+                struct.unpack_from("<H", bpb, 22)[0] != 0 or \
+                struct.unpack_from("<I", bpb, 36)[0] == 0 or \
+                bpb[82:90] != b"FAT32   " or bpb[510:512] != b"\x55\xaa":
+            fail("partition 1 is not FAT32")
 
     same_file(args.image, "vmunix", args.kernel)
     if args.arch_image is not None:

@@ -66,18 +66,18 @@ sigaction(
 	const struct sigaction *action,
 	struct sigaction *old_action)
 {
-	int function_result;
 	struct sigaction copy;
+	int valid;
+	int status;
 
-	/* Handles a failed public signal valid operation. */
-	if (!public_signal_valid(signo)) {
+	/* Refuses a signal a program may not handle. */
+	valid = public_signal_valid(signo);
+	if (!valid) {
 		errno = EINVAL;
-
-		/* Reports operation failure. */
 		return -1;
 	}
 
-	/* Handles the action availability. */
+	/* Hands the kernel a copy with the library's restorer and a public mask. */
 	if (action != NULL) {
 		copy = *action;
 		copy.sa_mask &= PUBLIC_SIGNAL_MASK;
@@ -86,17 +86,25 @@ sigaction(
 		action = &copy;
 	}
 
-	/* Computes the function result. */
-	function_result = (int)call(KERN_SYS_sigaction, signo, (uintptr_t)action,
-			 (uintptr_t)old_action);
+	/* Sets the action; the kernel sets errno on a failure. */
+	status = (int)call(KERN_SYS_sigaction,
+			   signo,
+			   (uintptr_t)action,
+			   (uintptr_t)old_action);
+	if (status != 0)
+		return status;
 
-	/* Notes a handler of the process's own. */
-	if (function_result == 0 && action != NULL &&
-	    action->sa_handler != SIG_DFL && action->sa_handler != SIG_IGN)
+	/*
+	 * __libc_caught_signals notes a handler of the process's own, which
+	 * a posix_spawn child puts back to its default before it execs.
+	 */
+	if (action != NULL &&
+	    action->sa_handler != SIG_DFL &&
+	    action->sa_handler != SIG_IGN)
 		(void)sigaddset(&__libc_caught_signals, signo);
 
-	/* Returns the computed result. */
-	return function_result;
+	/* Succeeded: the action is set. */
+	return 0;
 }
 
 /*

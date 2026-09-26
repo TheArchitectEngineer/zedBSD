@@ -168,16 +168,21 @@ static int posix_spawn_fork(pid_t *result, const char *path, const posix_spawn_f
 /* The size of the stack a posix_spawn child runs on until it execs. */
 #define SPAWN_CHILD_STACK 24576
 
-/* What a posix_spawn child reads, and where it leaves the error of an exec that failed. */
+/*
+ * What a posix_spawn child reads, and where it leaves the error of an
+ * exec that failed.  It lives on the parent's stack for one spawn: the
+ * child runs in the parent's memory and ends or execs before the parent
+ * goes on.
+ */
 struct spawn_request {
 	const char *path;
 	const posix_spawn_file_actions_t *actions;
 	const posix_spawnattr_t *attr;
 	char *const *argv;
 	char *const *environment;
-	int search;
-	sigset_t mask;
-	volatile int error;
+	int search;			/* look the program up on PATH (posix_spawnp) */
+	sigset_t mask;			/* the caller's signal mask, for the new program */
+	volatile int error;		/* set by the child when it could not exec */
 };
 
 long __vfork_spawn(void (*entry)(void *), void *argument, void *stack_top);
@@ -3957,13 +3962,13 @@ posix_spawn(
 	char *const argv[],
 	char *const envp[])
 {
-	int function_result;
+	int error;
 
-	/* Obtains the posix spawn common result. */
-	function_result = posix_spawn_common(result, path, actions, attr, argv, envp, 0);
+	/* Spawns the program at the path. */
+	error = posix_spawn_common(result, path, actions, attr, argv, envp, 0);
 
-	/* Returns the computed result. */
-	return function_result;
+	/* Succeeded: 0, or the error number of the failure. */
+	return error;
 }
 
 /*
@@ -3978,13 +3983,13 @@ posix_spawnp(
 	char *const argv[],
 	char *const envp[])
 {
-	int function_result;
+	int error;
 
-	/* Obtains the posix spawn common result. */
-	function_result = posix_spawn_common(result, file, actions, attr, argv, envp, 1);
+	/* Spawns the program, looked up on PATH. */
+	error = posix_spawn_common(result, file, actions, attr, argv, envp, 1);
 
-	/* Returns the computed result. */
-	return function_result;
+	/* Succeeded: 0, or the error number of the failure. */
+	return error;
 }
 
 #if defined(__x86_64__)
@@ -3996,8 +4001,10 @@ long
 __vfork_error(
 	long raw)
 {
-	/* The error, and the failure value. */
+	/* Stores the error, as a failed call does. */
 	errno = (int)-raw;
+
+	/* Reports the failure to vfork's caller. */
 	return -1;
 }
 #else
@@ -4009,13 +4016,13 @@ pid_t
 vfork(
 	void)
 {
-	pid_t function_result;
+	pid_t child;
 
-	/* A copy of the address space. */
-	function_result = fork();
+	/* Forks a copy of the address space. */
+	child = fork();
 
-	/* Returns the computed result. */
-	return function_result;
+	/* Succeeded: the child's pid, 0 in the child, or -1. */
+	return child;
 }
 #endif
 
@@ -8532,39 +8539,57 @@ posix_spawn_common(
 	struct spawn_request request;
 	unsigned char stack[SPAWN_CHILD_STACK] __attribute__((aligned(16)));
 	sigset_t every;
+	intptr_t blocked;
 	long child;
 	int saved_errno;
+	int error;
 
 	/* Validates the command-line arguments. */
 	if (result == NULL || path == NULL || argv == NULL)
 		return EINVAL;
 
-	/* What the child reads. */
+	/* Fills what the child reads. */
 	request.path = path;
 	request.actions = actions;
 	request.attr = attr;
 	request.argv = argv;
-	request.environment = envp != NULL ? envp : environ;
+	request.environment = environ;
+	if (envp != NULL)
+		request.environment = envp;
 	request.search = search;
 	request.error = 0;
 
 	/* Every signal, the library's own among them, waits until the child has execed. */
 	saved_errno = errno;
 	every = ~(sigset_t)0;
-	if (call(KERN_SYS_sigprocmask, SIG_BLOCK, (uintptr_t)&every,
-		 (uintptr_t)&request.mask, 0, 0, 0) < 0)
+	blocked = call(KERN_SYS_sigprocmask,
+		       SIG_BLOCK,
+		       (uintptr_t)&every,
+		       (uintptr_t)&request.mask,
+		       0,
+		       0,
+		       0);
+	if (blocked < 0)
 		return errno;
 
-	/* The child, which has execed or ended when this returns. */
+	/* Runs the child, which has execed or ended when this returns. */
 	child = __vfork_spawn(spawn_child, &request, stack + sizeof(stack));
-	(void)call(KERN_SYS_sigprocmask, SIG_SETMASK, (uintptr_t)&request.mask,
-		   0, 0, 0, 0);
+
+	/* Puts the caller's mask back. */
+	(void)call(KERN_SYS_sigprocmask,
+		   SIG_SETMASK,
+		   (uintptr_t)&request.mask,
+		   0,
+		   0,
+		   0,
+		   0);
 	errno = saved_errno;
 
 	/* A kernel without the vfork system call: a copy of the address space. */
-	if (child == -ENOSYS)
-		return posix_spawn_fork(result, path, actions, attr, argv, envp,
-		    search);
+	if (child == -ENOSYS) {
+		error = posix_spawn_fork(result, path, actions, attr, argv, envp, search);
+		return error;
+	}
 
 	/* The child could not be made. */
 	if (child < 0)
@@ -8577,7 +8602,7 @@ posix_spawn_common(
 		return request.error;
 	}
 
-	/* Succeeded. */
+	/* Succeeded: the child runs the program. */
 	*result = (pid_t)child;
 	return 0;
 }
@@ -8594,6 +8619,7 @@ spawn_child(
 	struct spawn_request *request;
 	struct sigaction action;
 	int signo;
+	int caught;
 	int error;
 
 	/* No handler of the parent may run here: those signals go back to their default. */
@@ -8601,24 +8627,36 @@ spawn_child(
 	memset(&action, 0, sizeof(action));
 	action.sa_handler = SIG_DFL;
 	for (signo = 1; signo <= SIGRTMAX; signo++) {
-		if (sigismember(&__libc_caught_signals, signo) == 1)
+		caught = sigismember(&__libc_caught_signals, signo);
+		if (caught == 1)
 			(void)sigaction(signo, &action, NULL);
 	}
 
 	/* The new program gets the caller's mask, unless the attributes set one. */
-	(void)call(KERN_SYS_sigprocmask, SIG_SETMASK, (uintptr_t)&request->mask,
-		   0, 0, 0, 0);
+	(void)call(KERN_SYS_sigprocmask,
+		   SIG_SETMASK,
+		   (uintptr_t)&request->mask,
+		   0,
+		   0,
+		   0,
+		   0);
 
-	/* The attributes and the file actions, then the program. */
+	/* Carries out the attributes and the file actions. */
 	error = spawn_child_setup(request->actions, request->attr);
+
+	/* Execs the program; returning means it could not. */
 	if (error == 0) {
 		if (request->search) {
-			(void)spawn_exec_search(request->path, request->argv,
-			    request->environment);
+			(void)spawn_exec_search(request->path,
+						request->argv,
+						request->environment);
 		} else {
-			(void)execve(request->path, request->argv,
-			    request->environment);
+			(void)execve(request->path,
+				     request->argv,
+				     request->environment);
 		}
+
+		/* Keeps why; an exec that fails without saying is EIO. */
 		error = errno;
 		if (error == 0)
 			error = EIO;
@@ -8639,14 +8677,13 @@ posix_spawn_common(
 	char *const envp[],
 	int search)
 {
-	int function_result;
+	int error;
 
-	/* A copy of the address space. */
-	function_result = posix_spawn_fork(result, path, actions, attr, argv,
-	    envp, search);
+	/* Spawns through a forked copy of the address space. */
+	error = posix_spawn_fork(result, path, actions, attr, argv, envp, search);
 
-	/* Returns the computed result. */
-	return function_result;
+	/* Succeeded: 0, or the error number of the failure. */
+	return error;
 }
 #endif
 

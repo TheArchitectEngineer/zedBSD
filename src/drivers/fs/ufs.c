@@ -188,6 +188,45 @@
 #define UFS_JOURNAL_GROUP_SECTORS 128U
 #define UFS_JOURNAL_IMAGE_BYTES ((UFS_JOURNAL_GROUP_SECTORS + 1U) * 512U)
 
+/*
+ * The batched metadata journal (v3).
+ *
+ * Metadata writes are pinned in the buffer cache and gathered into a
+ * running transaction; a commit writes their current contents into one of
+ * two slots of a journal file, flushes, writes a commit record, flushes,
+ * and unpins them for the flusher to write home.
+ *
+ * The name of the journal file, which the root directory keeps to itself.
+ */
+#define J3_NAME			".ufs-journal"
+/* The largest journal a volume gets without a size mkfs recorded, and at all. */
+#define J3_DEFAULT_MAX_MIB	128U
+#define J3_MAX_MIB		1024U
+/* The bounds of the ranges one transaction may name. */
+#define J3_RANGES_MIN		2048U
+#define J3_RANGES_LIMIT		65536U
+/* The fixed part of a descriptor and of a header, and one entry of each. */
+#define J3_DESC_HEADER		64U
+#define J3_DESC_ENTRY		16U
+#define J3_HEADER_FIXED		64U
+#define J3_EXTENT_ENTRY		16U
+/* The sectors a commit or a replay moves at a time. */
+#define J3_STAGING_SECTORS	128U
+/* The slots of the set of freed blocks, a power of two. */
+#define J3_FREED_MAX		16384U
+/* The magic numbers of the header, a descriptor, a commit record, the locator and the request. */
+#define J3_HEADER_MAGIC		0x334a555aU	/* "ZUJ3" */
+#define J3_DESC_MAGIC		0x33444a5aU	/* "ZJD3" */
+#define J3_COMMIT_MAGIC		0x33434a5aU	/* "ZJC3" */
+#define J3_LOCATOR_MAGIC	0x4c334a5aU	/* "ZJ3L" */
+#define J3_REQUEST_MAGIC	0x52334a5aU	/* "ZJ3R" */
+/* The format versions of the journal's records and of the request. */
+#define J3_VERSION		2U
+#define J3_REQUEST_VERSION	1U
+/* The byte offsets in the superblock of the locator and the request (spare words). */
+#define J3_LOCATOR_OFFSET	1220U
+#define J3_REQUEST_OFFSET	1248U
+
 struct ufs_super {
 	uint32_t sblkno;
 	uint32_t cblkno;
@@ -289,35 +328,6 @@ struct ufs_io_owner {
 	const struct io_context *context;
 };
 
-/*
- * The batched metadata journal (v3).
- *
- * Metadata writes are pinned in the buffer cache and gathered into a
- * running transaction; a commit writes their current contents into one of
- * two slots of a journal file, flushes, writes a commit record, flushes,
- * and unpins them for the flusher to write home.  See ws060-p002.
- */
-#define J3_NAME			".ufs-journal"
-#define J3_DEFAULT_MAX_MIB	128U
-#define J3_MAX_MIB		1024U
-#define J3_RANGES_MIN		2048U
-#define J3_RANGES_LIMIT		65536U
-#define J3_DESC_HEADER		64U
-#define J3_DESC_ENTRY		16U
-#define J3_EXTENT_ENTRY		16U
-#define J3_HEADER_FIXED		64U
-#define J3_STAGING_SECTORS	128U
-#define J3_FREED_MAX		16384U
-#define J3_HEADER_MAGIC		0x334a555aU	/* "ZUJ3" */
-#define J3_DESC_MAGIC		0x33444a5aU	/* "ZJD3" */
-#define J3_COMMIT_MAGIC		0x33434a5aU	/* "ZJC3" */
-#define J3_LOCATOR_MAGIC	0x4c334a5aU	/* "ZJ3L" */
-#define J3_REQUEST_MAGIC	0x52334a5aU	/* "ZJ3R" */
-#define J3_VERSION		2U
-#define J3_REQUEST_VERSION	1U
-#define J3_LOCATOR_OFFSET	1220U
-#define J3_REQUEST_OFFSET	1248U
-
 /* One range of a running transaction; a hold is pinned but not logged. */
 struct ufs_j3_range {
 	uint64_t lba;
@@ -332,33 +342,53 @@ struct ufs_j3_extent {
 	uint32_t count;
 };
 
+/*
+ * The batched metadata journal of one mount.
+ *
+ * It lives from the mount to the unmount inside the mount's state.  The
+ * layout (extents, sizes, identity) is fixed once the journal is loaded or
+ * made; the running transaction (ranges, index, freed set) changes under
+ * lock and is emptied by each commit.
+ */
 struct ufs_j3 {
 	/* The journal carries the metadata writes of the mount. */
 	int active;
 	/* The volume has a v3 journal: a locator names a valid header. */
 	int present;
-	/* The internal handling of the journal file may look the name up. */
+	/* The journal's own handling of its file may look the name up. */
 	int creating;
+	/* Serializes the running transaction and its commit. */
 	struct mutex lock;
+	/* The fragment of the header block, which the locator names. */
 	uint64_t header_fragment;
+	/* The journal's identity, which every record repeats. */
 	uint64_t nonce;
+	/* The sequence of the last commit written home and so recorded. */
 	uint64_t applied;
+	/* The sequence of the running transaction; its low bit picks the slot. */
 	uint64_t sequence;
+	/* The layout: the file's size, a block, the header and a slot, in sectors. */
 	uint64_t total_sectors;
 	uint32_t block_sectors;
 	uint32_t header_sectors;
 	uint32_t slot_sectors;
+	/* The most sectors, ranges and descriptor sectors a transaction may take. */
 	uint32_t payload_max;
 	uint32_t ranges_max;
 	uint32_t desc_sectors_max;
+	/* The runs of disk sectors the file occupies, in file order. */
 	struct ufs_j3_extent *extents;
 	unsigned extent_count;
+	/* The running transaction's ranges and the sectors it logs. */
 	struct ufs_j3_range *ranges;
 	unsigned range_count;
 	uint32_t logged_sectors;
+	/* An open-addressed index over the ranges: position plus one, zero empty. */
 	unsigned *index;
+	/* The blocks the running transaction freed, plus one, zero empty. */
 	uint64_t *freed;
 	unsigned freed_count;
+	/* The buffer a commit copies metadata through. */
 	uint8_t *staging;
 	/* The mount the flusher's hook commits for, while it is registered. */
 	struct mount *mountp;
@@ -650,6 +680,7 @@ static int write_cg(struct mount *mountp);
 static int write_cg_rollback(struct mount *mountp, int original_error);
 static int adjust_directory_count(struct mount *mountp, uint32_t ino, int delta);
 static uint64_t quota_now(void);
+static int zero_new_block(struct mount *mountp, struct ufs_mount_state *ms, uint64_t fragment);
 static int allocate_block_compat(struct mount *mountp, uid_t uid, gid_t gid, uint64_t *result);
 static void allocation_begin(struct ufs_allocation *context, struct mount *mountp, uid_t uid, gid_t gid);
 static int allocation_allocate(struct ufs_allocation *context, uint64_t *result);
@@ -779,16 +810,50 @@ static void ufs_identity_hex32(char output[8], uint32_t value);
 static void ufs_identity_label(char *output, size_t capacity, const uint8_t *input, size_t length);
 static int ufs_write_clean(struct mount *mountp, uint8_t clean);
 static int order_barrier(struct mount *mountp);
+static void write_cached_start(struct mount *mountp, struct ufs_mount_state *ms, struct inode *root);
+static int write_cached_intended(const struct mount *mountp, const struct ufs_mount_state *ms);
+static uint64_t j3_sector(const struct ufs_j3 *j3, uint64_t file_sector, uint32_t *run);
+static int j3_io(struct mount *mountp, const struct ufs_j3 *j3, uint64_t file_sector, uint32_t count, void *buffer, int write);
+static int j3_durable(struct mount *mountp);
+static unsigned j3_hash(uint64_t key, unsigned size);
+static void j3_range_add(struct ufs_j3 *j3, uint64_t lba, uint32_t count, uint32_t hold);
+static int j3_freed_test(const struct ufs_j3 *j3, uint64_t fragment);
+static void j3_freed_add(struct ufs_mount_state *ms, uint64_t fragment);
+static int j3_content_freed(const struct ufs_mount_state *ms, uint64_t lba, uint32_t count);
 static int j3_write(struct ufs_mount_state *ms, struct mount *mountp, uint64_t lba, uint32_t count, const void *buffer, int content);
+static int j3_geometry(struct ufs_j3 *j3);
+static int j3_write_header(struct mount *mountp, struct ufs_j3 *j3);
+static uint32_t j3_logged_ranges(const struct ufs_j3 *j3);
+static int j3_copy_range(struct mount *mountp, struct ufs_j3 *j3, const struct ufs_j3_range *range, uint64_t cursor, uint32_t *sum);
+static int j3_commit_payload(struct mount *mountp, struct ufs_j3 *j3, uint8_t *descriptor, uint32_t desc_sectors);
+static int j3_commit_seal(struct mount *mountp, struct ufs_j3 *j3, uint8_t *descriptor, uint32_t desc_sectors);
+static void j3_unpin_all(struct mount *mountp, struct ufs_j3 *j3);
 static int j3_commit_locked(struct ufs_mount_state *ms, struct mount *mountp);
 static int j3_commit(struct ufs_mount_state *ms, struct mount *mountp);
 static void j3_hook(void *argument);
+static int j3_super_read(struct mount *mountp, uint8_t sector[SECTOR_SIZE]);
+static int j3_locator_parse(const uint8_t sector[SECTOR_SIZE], uint64_t *fragment, uint64_t *nonce);
+static int j3_request_parse(const uint8_t sector[SECTOR_SIZE], uint32_t *mib);
+static int j3_header_check(const uint8_t *header, uint64_t nonce, uint32_t block_sectors, uint32_t block_bytes, uint32_t *count);
+static int j3_extents_read(struct mount *mountp, struct ufs_j3 *j3, const uint8_t *header, uint32_t count, uint64_t *total);
+static int j3_load(struct mount *mountp, struct ufs_mount_state *ms, uint64_t fragment, uint64_t nonce);
+static uint64_t j3_slot_sequence(struct mount *mountp, struct ufs_j3 *j3, unsigned slot, uint32_t *desc_sectors, uint32_t *desc_sum);
+static int j3_descriptor_check(const struct ufs_j3 *j3, const uint8_t *descriptor, uint32_t desc_sectors, uint64_t sequence, uint32_t desc_sum, uint32_t *entries);
+static int j3_payload_sum(struct mount *mountp, struct ufs_j3 *j3, uint64_t cursor, uint32_t count, uint8_t *payload, uint32_t *sum);
+static int j3_payload_home(struct mount *mountp, struct ufs_j3 *j3, uint64_t cursor, uint64_t lba, uint32_t count, uint8_t *payload);
+static int j3_payload_apply(struct mount *mountp, struct ufs_j3 *j3, const uint8_t *descriptor, uint32_t entries, uint64_t first, uint8_t *payload);
+static int j3_replay_slot(struct mount *mountp, struct ufs_j3 *j3, unsigned slot, uint64_t sequence, uint32_t desc_sectors, uint32_t desc_sum);
 static int j3_replay(struct mount *mountp, struct ufs_mount_state *ms);
+static uint64_t j3_wanted_sectors(struct mount *mountp, struct ufs_mount_state *ms);
+static int j3_locator_write(struct mount *mountp, struct ufs_j3 *j3);
+static unsigned mountp_disk_cached(struct mount *mountp);
+static int j3_file_open(struct ufs_mount_state *ms, struct inode *root, struct inode **inode);
+static int j3_file_fill(struct ufs_mount_state *ms, struct inode *inode, uint64_t blocks, struct ufs_j3_extent *extents, unsigned capacity, unsigned *count);
+static int j3_allocate(struct ufs_mount_state *ms, struct inode *root, uint64_t sectors);
+static int j3_make(struct mount *mountp, struct ufs_mount_state *ms, struct inode *root, uint64_t sectors);
 static int j3_open(struct mount *mountp, struct ufs_mount_state *ms, struct inode *root);
 static int j3_close(struct mount *mountp, struct ufs_mount_state *ms, int commit);
-static void j3_freed_add(struct ufs_mount_state *ms, uint64_t fragment);
 static int j3_hidden(const struct inode *directory, const struct componentname *component);
-static int write_cached_intended(const struct mount *mountp, const struct ufs_mount_state *ms);
 static int ufs_probe(struct disk *disk);
 static int ufs_quota_rebuild(struct mount *mountp);
 static int ufs_quota_load(struct mount *mountp, struct inode *root);
@@ -3315,8 +3380,12 @@ write_sectors_impl(
 		if (snapshot_locked)
 			mutex_unlock(&ms->snapshot_lock);
 
-		/* Reports how the write went. */
-		return error;
+		/* Reports why the journal could not take the write. */
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the journal holds the write. */
+		return 0;
 	}
 
 	/*
@@ -3407,12 +3476,18 @@ write_content_sectors_context(
 	error = io_context_child(&child, context, IO_CONTEXT_ORDERED);
 	if (error != 0)
 		return error;
+
+	/* Writes the sectors as content inside the mount's write epoch. */
 	io_epoch_begin(&mountp->m_write_epoch);
 	error = write_sectors_impl(mountp, lba, count, buffer, &child, 1);
 	io_epoch_end(&mountp->m_write_epoch);
 
-	/* Reports how the write went. */
-	return error;
+	/* Reports why the content could not be written. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the content is written. */
+	return 0;
 }
 
 /* Writes sectors through the mount's own ordering context. */
@@ -3638,15 +3713,21 @@ write_content_block(
 		/* Failed. */
 		return EIO;
 	}
+
+	/* Counts the block among the content writes. */
 	io_stats_record(IO_UFS_CONTENT_WRITE, s->bsize);
 
 	/* Writes the block the fragment names as content. */
 	error = write_content_sectors_context(mountp,
-	    (uint64_t)fragment << s->fsbtodb, s->bsize / UFS_SECTOR_SIZE,
-	    buffer, NULL);
+					      (uint64_t)fragment << s->fsbtodb,
+					      s->bsize / UFS_SECTOR_SIZE,
+					      buffer,
+					      NULL);
+	if (error != 0)
+		return error;
 
-	/* Reports how the write went. */
-	return error;
+	/* Succeeded: the block is written. */
+	return 0;
 }
 
 /* Writes one block of content in the caller's ordering context. */
@@ -3672,11 +3753,16 @@ write_content_context(
 
 	/* Writes the sectors the fragment covers. */
 	error = write_content_sectors_context(
-		mountp, fragment << super->fsbtodb,
-		super->bsize / UFS_SECTOR_SIZE, buffer, context);
+		mountp,
+		fragment << super->fsbtodb,
+		super->bsize / UFS_SECTOR_SIZE,
+		buffer,
+		context);
+	if (error != 0)
+		return error;
 
-	/* Reports how the write went. */
-	return error;
+	/* Succeeded: the block is written. */
+	return 0;
 }
 
 /* Asks whether one bit of a bitmap is set. */
@@ -4294,6 +4380,44 @@ quota_now(
 	return 0;
 }
 
+/*
+ * Zeroes a newly allocated block, because a caller may read it before
+ * writing.  The zeroes are content: a journal need not log them, and they
+ * reach the device before the commit that makes the block reachable.  The
+ * journal's own file, which nothing reads, is not zeroed.
+ */
+static int
+zero_new_block(
+	struct mount *mountp,
+	struct ufs_mount_state *ms,
+	uint64_t fragment)
+{
+	uint8_t *zero;
+	int error;
+
+	/* Leaves the journal's own blocks as they are. */
+	if (ms->j3.creating)
+		return 0;
+
+	/* Takes a block of zeroes. */
+	zero = kern_calloc(1, ms->super.bsize);
+	if (zero == NULL)
+		return ENOMEM;
+
+	/* Writes it over the new block. */
+	error = write_content_block(mountp, fragment, zero);
+
+	/* Gives the zeroes back, written or not. */
+	kern_free(zero);
+
+	/* Reports why the block could not be zeroed. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the block reads as zeroes. */
+	return 0;
+}
+
 /* Takes one block, charging it to an owner's quota. */
 static int
 allocate_block_compat(
@@ -4302,7 +4426,6 @@ allocate_block_compat(
 	gid_t gid,
 	uint64_t *result)
 {
-	uint8_t *zero;
 	uint64_t absolute;
 	uint32_t ndblk;
 	struct ufs_mount_state *ms;
@@ -4388,30 +4511,16 @@ allocate_block_compat(
 			 */
 			error = write_cg(mountp);
 
-			/*
-			 * Zeroes the block, because a caller may read it
-			 * before writing.  The zeroes are content: a journal
-			 * need not log them, and they reach the device before
-			 * the commit that makes the block reachable.  The
-			 * journal's own file, which nothing reads, is not
-			 * zeroed.
-			 */
+			/* Zeroes the block once the group records it as used. */
 			absolute = cgstart(&ms->super, cg) + fragment;
-			if (error == 0 && !ms->j3.creating) {
-				zero = kern_calloc(1, ms->super.bsize);
-				if (zero == NULL) {
-					error = ENOMEM;
-				} else {
-					error = write_content_block(mountp,
-					    absolute, zero);
-					kern_free(zero);
-				}
-			}
+			if (error == 0)
+				error = zero_new_block(mountp, ms, absolute);
+
+			/*
+			 * Puts the run back when the group could not be written
+			 * or the block could not be zeroed.
+			 */
 			if (error != 0) {
-				/*
-				 * Puts the run back when the block could not be
-				 * zeroed.
-				 */
 				for (n = 0; n < ms->super.frag; n++)
 					bit_set(map, fragment + n);
 				drv_ufs_put32(ms->cg, UFS_CG_NBFREE,
@@ -11165,20 +11274,20 @@ ufs_lookup(
 	struct inode **result)
 {
 	struct mutex *gate;
+	int hidden;
 	int entered;
 	int error;
 
-	/*
-	 * The caller may already hold the gate, in which case this call waits.
-	 */
 	/* The journal file is the volume's own and no one else's to name. */
-	if (j3_hidden(directory, component))
+	hidden = j3_hidden(directory, component);
+	if (hidden)
 		return EPERM;
 
+	/* The caller may already hold the gate; this call then does not take it. */
 	gate = &state(directory->i_mount)->namespace_lock;
 	entered = !mutex_owned(gate);
 
-	/* Releases the lock this call took. */
+	/* Takes the gate this call holds for the lookup. */
 	if (entered)
 		mutex_lock(gate);
 	error = ufs_lookup_locked(directory, component, result);
@@ -14027,6 +14136,7 @@ ufs_readdir(
 	uint8_t type;
 	char name[NAME_MAX + 1U];
 	struct componentname component;
+	int hidden;
 	int error = next_dirent(file->f_inode,
 				&file->f_offset,
 				&number,
@@ -14038,9 +14148,14 @@ ufs_readdir(
 		component.cn_nameptr = name;
 		component.cn_namelen = kern_strlen(name);
 		component.cn_flags = 0;
-		if (j3_hidden(file->f_inode, &component))
-			error = next_dirent(file->f_inode, &file->f_offset,
-			    &number, &type, name);
+		hidden = j3_hidden(file->f_inode, &component);
+		if (hidden) {
+			error = next_dirent(file->f_inode,
+					    &file->f_offset,
+					    &number,
+					    &type,
+					    name);
+		}
 	}
 
 	/* Succeeded: the walk reached the end of the directory. */
@@ -16548,6 +16663,7 @@ ufs_mount_impl(
 	int summaries_rebuilt = 0;
 	int free_bit;
 	int difference;
+	int cached;
 	off_t cursor = 0;
 	uint32_t number;
 	uint8_t type;
@@ -16582,6 +16698,8 @@ ufs_mount_impl(
 	/* Applies the last commit of a batched journal before reading metadata. */
 	if (error == 0 && !ms->journal_enabled)
 		error = j3_replay(mountp, ms);
+
+	/* Gives the mount up when a journal could not be read or applied. */
 	if (error != 0) {
 		mountp->m_data = NULL;
 		ufs_state_free(ms);
@@ -16688,7 +16806,8 @@ ufs_mount_impl(
 		 * leave the totals behind the groups' own counts, which are
 		 * then the truth, as after a journal replay.
 		 */
-		if (!ms->journal_enabled && !write_cached_intended(mountp, ms)) {
+		cached = write_cached_intended(mountp, ms);
+		if (!ms->journal_enabled && !cached) {
 			error = EINVAL;
 		} else {
 			ms->super.cstotal_ndir = total_ndir;
@@ -16823,25 +16942,11 @@ ufs_mount_impl(
 			return error;
 		}
 
-		/*
-		 * Delays the volume's writes from here on unless the mount
-		 * asked for write-through or the volume has a journal, whose
-		 * records must reach the device before the blocks they cover.
-		 */
-		if (write_cached_intended(mountp, ms) &&
-		    buf_flusher_start() == 0) {
-			/*
-			 * Journals the metadata unless the mount declines; a
-			 * volume whose journal cannot be opened or made goes
-			 * on without one.
-			 */
-			if ((mountp->m_flags & MOUNT_NO_JOURNAL) == 0)
-				(void)j3_open(mountp, ms, root);
-			ms->write_cached = 1;
-			mountp->m_disk->d_flags |= DISK_WRITE_CACHED;
-		}
+		/* Delays the volume's writes from here on, when the mount allows it. */
+		write_cached_start(mountp, ms, root);
 	}
 
+	/* Publishes the root inode as the mount's root. */
 	root->i_flags |= INODE_ROOT;
 	mountp->m_root = root;
 
@@ -17225,27 +17330,37 @@ ufs_prepare_unmount(
 	if (ms != NULL && ms->snapshot_disk != NULL)
 		return EBUSY;
 
-	/*
-	 * A writable volume is marked clean on the way out.  Its writes go
-	 * through from here on, and the clean marker's sync writes out what
-	 * was delayed.
-	 */
-	error = 0;
-	if (ms != NULL && ms->j3.active)
+	/* Takes the journal out of service with everything committed and home. */
+	if (ms != NULL && ms->j3.active) {
 		error = j3_close(mountp, ms, 1);
-	if (error != 0)
-		return error;
+		if (error != 0)
+			return error;
+	}
+
+	/* Lets the volume's writes go through from here on. */
 	if (ms != NULL && ms->write_cached)
 		mountp->m_disk->d_flags &= ~DISK_WRITE_CACHED;
+
+	/*
+	 * Marks a writable volume clean on the way out; the clean marker's
+	 * sync writes out what was delayed.
+	 */
+	error = 0;
 	if (ms != NULL && ms->writable)
 		error = ufs_write_clean(mountp, 1);
 
 	/* Delays the writes again when the volume stays mounted. */
-	if (error != 0 && ms != NULL && ms->write_cached)
+	if (error != 0 &&
+	    ms != NULL &&
+	    ms->write_cached)
 		mountp->m_disk->d_flags |= DISK_WRITE_CACHED;
 
-	/* Reports whether the volume could be left clean. */
-	return error;
+	/* Reports why the volume could not be left clean. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the volume is left clean. */
+	return 0;
 }
 
 /* Checks local ownership without marking a lost medium clean. */
@@ -17302,15 +17417,26 @@ ufs_unmount(
 	struct ufs_mount_state *ms;
 
 	/* A mount that was never set up has nothing to release. */
-	if (mountp && mountp->m_data) {
-		ms = state(mountp);
-		if (ms->j3.active)
-			(void)j3_close(mountp, ms, 0);
-		if (ms->write_cached && mountp->m_disk != NULL)
-			mountp->m_disk->d_flags &= ~DISK_WRITE_CACHED;
-		ufs_state_free(ms);
-		mountp->m_data = NULL;
-	}
+	if (mountp == NULL)
+		return;
+	if (mountp->m_data == NULL)
+		return;
+
+	/*
+	 * Drops a journal still in service without a commit; an orderly
+	 * unmount has already taken it out of service with everything home.
+	 */
+	ms = state(mountp);
+	if (ms->j3.active)
+		(void)j3_close(mountp, ms, 0);
+
+	/* Lets the disk's writes go through again. */
+	if (ms->write_cached && mountp->m_disk != NULL)
+		mountp->m_disk->d_flags &= ~DISK_WRITE_CACHED;
+
+	/* Gives the mount's state back. */
+	ufs_state_free(ms);
+	mountp->m_data = NULL;
 }
 
 /* Validates existing blocks without allocating or publishing metadata. */
@@ -18244,32 +18370,86 @@ static int
 order_barrier(
 	struct mount *mountp)
 {
+	int error;
+
 	/* Skips the barrier while the volume's writes are delayed. */
 	if ((mountp->m_disk->d_flags & DISK_WRITE_CACHED) != 0)
 		return 0;
 
 	/* Writes and flushes everything before the dependent write. */
-	return disk_sync(mountp->m_disk);
+	error = disk_sync(mountp->m_disk);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the earlier writes are on the device. */
+	return 0;
+}
+
+/*
+ * Delays a writable volume's writes in the cache from here on, unless the
+ * mount asked for write-through or the volume has the tail journal, whose
+ * records must reach the device before the blocks they cover.  The batched
+ * journal carries the metadata unless the mount declines it.
+ */
+static void
+write_cached_start(
+	struct mount *mountp,
+	struct ufs_mount_state *ms,
+	struct inode *root)
+{
+	int intended;
+	int error;
+
+	/* Leaves the writes going through when the mount is not to delay them. */
+	intended = write_cached_intended(mountp, ms);
+	if (!intended)
+		return;
+
+	/* Starts the flusher, without which delayed writes would never go out. */
+	error = buf_flusher_start();
+	if (error != 0)
+		return;
+
+	/*
+	 * Journals the metadata unless the mount declines; a volume whose
+	 * journal cannot be opened or made goes on without one.
+	 */
+	if ((mountp->m_flags & MOUNT_NO_JOURNAL) == 0)
+		(void)j3_open(mountp, ms, root);
+
+	/* Delays the volume's writes in the cache from here on. */
+	ms->write_cached = 1;
+	mountp->m_disk->d_flags |= DISK_WRITE_CACHED;
 }
 
 /*
  * Tests whether a writable mount is to delay its writes: a volume without
- * a journal, mounted without write-through, on a writable disk.
+ * the tail journal, mounted without write-through, on a writable disk.
  */
 static int
 write_cached_intended(
 	const struct mount *mountp,
 	const struct ufs_mount_state *ms)
 {
-	/* Only a writable mount of a writable disk writes at all. */
-	if ((mountp->m_flags & (MOUNT_READ_ONLY | MOUNT_WRITE_THROUGH)) != 0 ||
-	    (mountp->m_disk->d_flags & DISK_READ_ONLY) != 0)
+	/* A read-only mount writes nothing that could be delayed. */
+	if ((mountp->m_flags & MOUNT_READ_ONLY) != 0)
 		return 0;
 
-	/* Reports a volume without a journal. */
-	return !ms->journal_enabled;
-}
+	/* A write-through mount asked for every write to reach the device. */
+	if ((mountp->m_flags & MOUNT_WRITE_THROUGH) != 0)
+		return 0;
 
+	/* A read-only disk takes no writes at all. */
+	if ((mountp->m_disk->d_flags & DISK_READ_ONLY) != 0)
+		return 0;
+
+	/* The tail journal writes each change through itself, in order. */
+	if (ms->journal_enabled)
+		return 0;
+
+	/* Succeeded: reports that the mount's writes are to be delayed. */
+	return 1;
+}
 
 /*
  * The batched metadata journal (v3).
@@ -18280,6 +18460,12 @@ write_cached_intended(
  * superblock's spare words name the header (the locator) and hold the size
  * mkfs recorded for it (the request).  Journal I/O goes to those sectors
  * directly, never through the file layer.
+ *
+ * After the header come two slots, used in turn by the sequence number of
+ * the transaction they hold.  A slot is a descriptor listing the ranges the
+ * transaction logged, the ranges' contents (the payload), and in its last
+ * sector a commit record that seals the descriptor.  Replay applies the
+ * newest sealed transaction the header has not recorded as applied.
  */
 
 /* Names the disk sector of a sector of the journal file. */
@@ -18290,25 +18476,34 @@ j3_sector(
 	uint32_t *run)
 {
 	const struct ufs_j3_extent *extent;
+	uint64_t offset;
 	unsigned low;
 	unsigned high;
 	unsigned middle;
 
-	/* Finds the extent that holds the sector by its first file sector. */
+	/*
+	 * Searches the extents, which are in file order, for the last one that
+	 * starts at or before the sector.
+	 */
 	low = 0;
 	high = j3->extent_count;
 	while (high - low > 1U) {
 		middle = low + (high - low) / 2U;
+
+		/* Keeps the half that can still hold the sector. */
 		if (j3->extents[middle].file_sector <= file_sector)
 			low = middle;
 		else
 			high = middle;
 	}
-	extent = &j3->extents[low];
 
-	/* Reports how many sectors follow in the same extent. */
-	*run = extent->count - (uint32_t)(file_sector - extent->file_sector);
-	return extent->lba + (file_sector - extent->file_sector);
+	/* Locates the sector inside that extent, and the sectors after it there. */
+	extent = &j3->extents[low];
+	offset = file_sector - extent->file_sector;
+	*run = extent->count - (uint32_t)offset;
+
+	/* Reports the disk sector. */
+	return extent->lba + offset;
 }
 
 /* Reads or writes sectors of the journal file, an extent at a time. */
@@ -18333,23 +18528,40 @@ j3_io(
 	/* Transfers the run inside each extent in turn. */
 	bytes = buffer;
 	while (count != 0) {
+		/* Finds where the next sectors lie, and how many follow there. */
 		lba = j3_sector(j3, file_sector, &amount);
+
+		/* Takes no more of the run than the transfer still needs. */
 		if (amount > count)
 			amount = count;
-		if (write)
-			error = disk_write_filesystem_context(mountp->m_disk,
-			    lba, amount, bytes, NULL);
-		else
-			error = observed_disk_read(mountp->m_disk, lba, amount,
-			    bytes);
+
+		/* Moves the run between the buffer and the disk. */
+		if (write) {
+			error = disk_write_filesystem_context(
+				mountp->m_disk,
+				lba,
+				amount,
+				bytes,
+				NULL);
+		} else {
+			error = observed_disk_read(
+				mountp->m_disk,
+				lba,
+				amount,
+				bytes);
+		}
+
+		/* Reports why the run could not be moved. */
 		if (error != 0)
 			return error;
+
+		/* Steps past the run. */
 		bytes += (size_t)amount * SECTOR_SIZE;
 		file_sector += amount;
 		count -= amount;
 	}
 
-	/* Succeeded. */
+	/* Succeeded: every sector was moved. */
 	return 0;
 }
 
@@ -18358,8 +18570,15 @@ static int
 j3_durable(
 	struct mount *mountp)
 {
+	int error;
+
 	/* Writes the unpinned dirty buffers, then flushes the device. */
-	return disk_sync(mountp->m_disk);
+	error = disk_sync(mountp->m_disk);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the writes so far are durable. */
+	return 0;
 }
 
 /* Hashes a key into a power-of-two table. */
@@ -18368,9 +18587,13 @@ j3_hash(
 	uint64_t key,
 	unsigned size)
 {
-	/* A multiplicative hash spreads neighbouring keys. */
-	return (unsigned)((key * UINT64_C(0x9e3779b97f4a7c15)) >> 40) &
-	    (size - 1U);
+	unsigned mixed;
+
+	/* Spreads neighbouring keys with a multiplicative hash. */
+	mixed = (unsigned)((key * UINT64_C(0x9e3779b97f4a7c15)) >> 40);
+
+	/* Reports the slot the hash names in the table. */
+	return mixed & (size - 1U);
 }
 
 /* Adds a range to the running transaction, once for each exact range. */
@@ -18386,27 +18609,38 @@ j3_range_add(
 	unsigned slot;
 	unsigned position;
 
-	/* Finds the range already recorded, or the empty slot for it. */
+	/* Probes the index for the range already recorded, or an empty slot. */
 	size = 2U * j3->ranges_max;
 	slot = j3_hash(lba, size);
 	for (;;) {
+		/* An empty slot ends the probe: the range is new. */
 		position = j3->index[slot];
 		if (position == 0)
 			break;
+
+		/* The same range is already in the transaction. */
 		range = &j3->ranges[position - 1U];
-		if (range->lba == lba && range->count == count &&
+		if (range->lba == lba &&
+		    range->count == count &&
 		    range->hold == hold)
 			return;
+
+		/* Probes the next slot. */
 		slot = (slot + 1U) & (size - 1U);
 	}
 
-	/* Records the new range. */
+	/*
+	 * Records the new range.  The index holds the range's position plus
+	 * one, so that zero marks an empty slot.
+	 */
 	range = &j3->ranges[j3->range_count];
 	range->lba = lba;
 	range->count = count;
 	range->hold = hold;
 	j3->range_count++;
 	j3->index[slot] = j3->range_count;
+
+	/* Counts the sectors the commit copies; a held range is only pinned. */
 	if (!hold)
 		j3->logged_sectors += count;
 }
@@ -18419,19 +18653,32 @@ j3_freed_test(
 {
 	unsigned slot;
 
-	/* Probes the open-addressed set from the block's hash. */
+	/*
+	 * Probes the open-addressed set from the block's hash.  The set holds
+	 * each block plus one, so that zero marks an empty slot.
+	 */
 	slot = j3_hash(fragment, J3_FREED_MAX);
 	while (j3->freed[slot] != 0) {
+		/* The block is in the set. */
 		if (j3->freed[slot] == fragment + 1U)
 			return 1;
+
+		/* Probes the next slot. */
 		slot = (slot + 1U) & (J3_FREED_MAX - 1U);
 	}
 
-	/* The block was not freed. */
+	/* The block was not freed by the running transaction. */
 	return 0;
 }
 
-/* Records a block the running transaction freed. */
+/*
+ * Records a block the running transaction freed.
+ *
+ * The set takes blocks only while it is less than half full, which keeps
+ * every probe short.  A block freed after that is not held back: content
+ * written into it before the commit can reach the disk while a crash would
+ * still give the block to its old owner.
+ */
 static void
 j3_freed_add(
 	struct ufs_mount_state *ms,
@@ -18441,19 +18688,30 @@ j3_freed_add(
 	unsigned slot;
 	int known;
 
-	/* Adds the block under the journal lock; a half-full set takes no more. */
+	/* Adds the block to the set under the journal lock. */
 	j3 = &ms->j3;
 	mutex_lock(&j3->lock);
+
+	/*
+	 * A journal out of service tracks nothing and a full set takes no
+	 * more; either way the block counts as known.
+	 */
 	known = 1;
 	if (j3->active && j3->freed_count < J3_FREED_MAX / 2U)
 		known = j3_freed_test(j3, fragment);
+
+	/* Stores a block not yet in the set. */
 	if (!known) {
+		/* Finds the first empty slot of the block's probe. */
 		slot = j3_hash(fragment, J3_FREED_MAX);
 		while (j3->freed[slot] != 0)
 			slot = (slot + 1U) & (J3_FREED_MAX - 1U);
+
+		/* Stores the block plus one, since zero marks an empty slot. */
 		j3->freed[slot] = fragment + 1U;
 		j3->freed_count++;
 	}
+
 	mutex_unlock(&j3->lock);
 }
 
@@ -18469,11 +18727,13 @@ j3_content_freed(
 	uint64_t block;
 	int freed;
 
-	/* Visits each block the sectors touch. */
+	/* Visits each block the sectors touch, from the block of the first. */
 	fragment = lba >> ms->super.fsbtodb;
 	last = (lba + count - 1U) >> ms->super.fsbtodb;
-	for (block = fragment - fragment % ms->super.frag; block <= last;
+	for (block = fragment - fragment % ms->super.frag;
+	     block <= last;
 	     block += ms->super.frag) {
+		/* Content in a freed block waits for the commit. */
 		freed = j3_freed_test(&ms->j3, block);
 		if (freed)
 			return 1;
@@ -18501,45 +18761,65 @@ j3_write(
 	int content)
 {
 	struct ufs_j3 *j3;
+	uint64_t bytes;
 	int hold;
 	int error;
 
+	/* Takes the write under the journal lock. */
 	j3 = &ms->j3;
+	bytes = (uint64_t)count * mountp->m_disk->d_block_size;
 	mutex_lock(&j3->lock);
 
-	/* Content that does not touch a freed block needs no journal. */
+	/* Holds content that lands in a block the running transaction freed. */
 	hold = 0;
 	if (content && j3->freed_count != 0)
 		hold = j3_content_freed(ms, lba, count);
+
+	/* Writes other content as an ordinary delayed write, outside the journal. */
 	if (content && !hold) {
 		mutex_unlock(&j3->lock);
-		io_stats_record(IO_UFS_WRITE,
-		    (uint64_t)count * mountp->m_disk->d_block_size);
 
-		/* Writes the content as an ordinary delayed write. */
-		return disk_write_filesystem_context(mountp->m_disk, lba, count,
-		    buffer, NULL);
+		/* Writes the content into the cache, where it waits for the flusher. */
+		io_stats_record(IO_UFS_WRITE, bytes);
+		error = disk_write_filesystem_context(mountp->m_disk, lba, count, buffer, NULL);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the content waits in the cache. */
+		return 0;
 	}
 
-	/* Commits first when the transaction could not hold this write. */
+	/* Commits first when the transaction has no room for the write. */
 	error = 0;
-	if (j3->range_count >= j3->ranges_max ||
-	    (!hold && j3->logged_sectors + count > j3->payload_max))
+	if (j3->range_count >= j3->ranges_max) {
+		/* The descriptor lists no more ranges. */
 		error = j3_commit_locked(ms, mountp);
-
-	/* Pins the sectors in the cache and records them. */
-	if (error == 0)
-		error = buf_write_pinned(mountp->m_disk, lba, count, buffer);
-	if (error == 0) {
-		io_stats_record(IO_UFS_WRITE,
-		    (uint64_t)count * mountp->m_disk->d_block_size);
-		j3_range_add(j3, lba, count, (uint32_t)hold);
+	} else if (!hold && j3->logged_sectors + count > j3->payload_max) {
+		/* The slot's payload holds no more sectors. */
+		error = j3_commit_locked(ms, mountp);
 	}
+
+	/* Reports why the transaction could not make room. */
+	if (error != 0) {
+		mutex_unlock(&j3->lock);
+		return error;
+	}
+
+	/* Pins the sectors in the cache, where they wait for the commit. */
+	error = buf_write_pinned(mountp->m_disk, lba, count, buffer);
+	if (error != 0) {
+		mutex_unlock(&j3->lock);
+		return error;
+	}
+
+	/* Records the pinned sectors in the running transaction. */
+	io_stats_record(IO_UFS_WRITE, bytes);
+	j3_range_add(j3, lba, count, (uint32_t)hold);
 
 	mutex_unlock(&j3->lock);
 
-	/* Reports how the write went. */
-	return error;
+	/* Succeeded: the write is part of the running transaction. */
+	return 0;
 }
 
 /*
@@ -18553,26 +18833,38 @@ j3_geometry(
 	uint64_t slot;
 	uint32_t ranges;
 
-	/* Splits what follows the header into two slots. */
+	/* Refuses a journal too small for a header and two slots. */
 	if (j3->total_sectors <= j3->header_sectors + 4U)
 		return EINVAL;
+
+	/* Splits what follows the header into two equal slots. */
 	slot = (j3->total_sectors - j3->header_sectors) / 2U;
+
+	/* Refuses a slot whose sectors cannot be counted in 32 bits. */
 	if (slot > UINT32_MAX)
 		return EINVAL;
 
-	/* Lets a larger slot name more ranges, a power of two in bounds. */
+	/*
+	 * Lets a larger slot name more ranges: doubles them while the slot
+	 * still has 32 sectors for each, up to the limit.
+	 */
 	ranges = J3_RANGES_MIN;
 	while (ranges < J3_RANGES_LIMIT && (uint64_t)ranges * 2U * 16U <= slot)
 		ranges *= 2U;
+
+	/* Sizes the descriptor, in whole sectors, for that many ranges. */
 	j3->ranges_max = ranges;
-	j3->desc_sectors_max = (J3_DESC_HEADER + ranges * J3_DESC_ENTRY +
-	    SECTOR_SIZE - 1U) / SECTOR_SIZE;
+	j3->desc_sectors_max = (J3_DESC_HEADER + ranges * J3_DESC_ENTRY + SECTOR_SIZE - 1U) / SECTOR_SIZE;
+
+	/* Refuses a slot with no payload after the descriptor and the commit record. */
 	if (slot <= (uint64_t)j3->desc_sectors_max + 2U)
 		return EINVAL;
+
+	/* Gives the payload what the descriptor and the commit record leave. */
 	j3->slot_sectors = (uint32_t)slot;
 	j3->payload_max = j3->slot_sectors - j3->desc_sectors_max - 1U;
 
-	/* Succeeded. */
+	/* Succeeded: the slots are laid out. */
 	return 0;
 }
 
@@ -18583,15 +18875,24 @@ j3_write_header(
 	struct ufs_j3 *j3)
 {
 	uint8_t *header;
+	uint8_t *entry;
 	size_t bytes;
+	uint32_t sum;
 	unsigned n;
 	int error;
 
-	/* Builds the header in a zeroed image of its sectors. */
+	/* Takes an image of the header's sectors. */
 	bytes = (size_t)j3->header_sectors * SECTOR_SIZE;
 	header = kern_malloc(bytes);
 	if (header == NULL)
 		return ENOMEM;
+
+	/*
+	 * Stores the fixed words: the magic and the version, the journal's
+	 * identity (the nonce), the sequence of the last applied commit, the
+	 * journal's size in sectors, the slot size, the number of extents,
+	 * and the block and header sizes in sectors.
+	 */
 	kern_memset(header, 0, bytes);
 	put32(header, J3_HEADER_MAGIC);
 	put32(header + 4, J3_VERSION);
@@ -18602,22 +18903,232 @@ j3_write_header(
 	put32(header + 36, j3->extent_count);
 	put32(header + 40, j3->block_sectors);
 	put32(header + 44, j3->header_sectors);
-	for (n = 0; n < j3->extent_count; n++) {
-		put64(header + J3_HEADER_FIXED + J3_EXTENT_ENTRY * n,
-		    j3->extents[n].lba);
-		put32(header + J3_HEADER_FIXED + J3_EXTENT_ENTRY * n + 8,
-		    j3->extents[n].count);
-	}
-	put32(header + 48, checksum(header + J3_HEADER_FIXED,
-	    (size_t)J3_EXTENT_ENTRY * j3->extent_count));
-	put32(header + 52, checksum(header, 52));
 
-	/* Writes it where the first journal sectors lie. */
+	/* Lists each extent: its first disk sector and its length. */
+	for (n = 0; n < j3->extent_count; n++) {
+		entry = header + J3_HEADER_FIXED + J3_EXTENT_ENTRY * n;
+		put64(entry, j3->extents[n].lba);
+		put32(entry + 8, j3->extents[n].count);
+	}
+
+	/* Seals the extent list, then the fixed words, each with a checksum. */
+	sum = checksum(header + J3_HEADER_FIXED, (size_t)J3_EXTENT_ENTRY * j3->extent_count);
+	put32(header + 48, sum);
+	sum = checksum(header, 52);
+	put32(header + 52, sum);
+
+	/* Writes the header where the journal's first sectors lie. */
 	error = j3_io(mountp, j3, 0, j3->header_sectors, header, 1);
+
+	/* Gives the image back, written or not. */
 	kern_free(header);
 
-	/* Reports how the write went. */
-	return error;
+	/* Reports why the header could not be written. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the header is written, though not yet durable. */
+	return 0;
+}
+
+/* Counts the ranges of the running transaction that a commit logs. */
+static uint32_t
+j3_logged_ranges(
+	const struct ufs_j3 *j3)
+{
+	uint32_t logged;
+	unsigned n;
+
+	/* Counts every range that is not merely held. */
+	logged = 0;
+	for (n = 0; n < j3->range_count; n++) {
+		if (!j3->ranges[n].hold)
+			logged++;
+	}
+
+	/* Reports the count. */
+	return logged;
+}
+
+/*
+ * Copies one range's current contents into the journal, a staging buffer
+ * at a time, and reports the sum replay checks them by.
+ */
+static int
+j3_copy_range(
+	struct mount *mountp,
+	struct ufs_j3 *j3,
+	const struct ufs_j3_range *range,
+	uint64_t cursor,
+	uint32_t *sum)
+{
+	uint32_t done;
+	uint32_t amount;
+	uint32_t chunk_sum;
+	int error;
+
+	/* Moves the range through the staging buffer in chunks. */
+	*sum = 0;
+	for (done = 0; done < range->count; done += amount) {
+		/* Takes no more than the staging buffer holds. */
+		amount = range->count - done;
+		if (amount > J3_STAGING_SECTORS)
+			amount = J3_STAGING_SECTORS;
+
+		/* Reads the sectors' current contents, which the cache holds pinned. */
+		error = observed_disk_read(mountp->m_disk, range->lba + done, amount, j3->staging);
+		if (error != 0)
+			return error;
+
+		/* Folds the chunk into the range's sum. */
+		chunk_sum = checksum(j3->staging, (size_t)amount * SECTOR_SIZE);
+		*sum = (*sum * 16777619U) ^ chunk_sum;
+
+		/* Writes the chunk into the slot. */
+		error = j3_io(mountp, j3, cursor + done, amount, j3->staging, 1);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the range is in the slot. */
+	return 0;
+}
+
+/*
+ * Copies every logged range into the slot of the running transaction and
+ * fills in the descriptor that lists them.
+ */
+static int
+j3_commit_payload(
+	struct mount *mountp,
+	struct ufs_j3 *j3,
+	uint8_t *descriptor,
+	uint32_t desc_sectors)
+{
+	const struct ufs_j3_range *range;
+	uint8_t *entry;
+	uint64_t cursor;
+	uint32_t logged;
+	uint32_t sum;
+	unsigned n;
+	int error;
+
+	/* Places the payload after the descriptor, in the slot the sequence picks. */
+	cursor = j3->header_sectors + (j3->sequence & 1U) * j3->slot_sectors + desc_sectors;
+	logged = 0;
+	for (n = 0; n < j3->range_count; n++) {
+		/* A held range is pinned until the commit but not logged. */
+		range = &j3->ranges[n];
+		if (range->hold)
+			continue;
+
+		/* Copies the range after the ones before it. */
+		error = j3_copy_range(mountp, j3, range, cursor, &sum);
+		if (error != 0)
+			return error;
+
+		/* Lists the range: its home, its length and its sum. */
+		entry = descriptor + J3_DESC_HEADER + J3_DESC_ENTRY * logged;
+		put64(entry, range->lba);
+		put32(entry + 8, range->count);
+		put32(entry + 12, sum);
+		logged++;
+		cursor += range->count;
+	}
+
+	/*
+	 * Stores the fixed words: the magic and the version, the sequence and
+	 * the journal's identity, the number of ranges, the descriptor's
+	 * sectors, and the payload's sectors.
+	 */
+	put32(descriptor, J3_DESC_MAGIC);
+	put32(descriptor + 4, J3_VERSION);
+	put64(descriptor + 8, j3->sequence);
+	put64(descriptor + 16, j3->nonce);
+	put32(descriptor + 24, logged);
+	put32(descriptor + 28, desc_sectors);
+	put32(descriptor + 32, j3->logged_sectors);
+
+	/* Seals the list of ranges, then the fixed words, each with a checksum. */
+	sum = checksum(descriptor + J3_DESC_HEADER, (size_t)logged * J3_DESC_ENTRY);
+	put32(descriptor + 36, sum);
+	sum = checksum(descriptor, 40);
+	put32(descriptor + 40, sum);
+
+	/* Succeeded: the payload is in the slot and the descriptor lists it. */
+	return 0;
+}
+
+/*
+ * Seals the running transaction: writes the descriptor at the head of its
+ * slot, makes the slot durable, then writes and makes durable the commit
+ * record in the slot's last sector.  From then on replay applies it.
+ */
+static int
+j3_commit_seal(
+	struct mount *mountp,
+	struct ufs_j3 *j3,
+	uint8_t *descriptor,
+	uint32_t desc_sectors)
+{
+	uint8_t commit[SECTOR_SIZE];
+	uint64_t base;
+	uint32_t desc_sum;
+	uint32_t sum;
+	int error;
+
+	/* Writes the descriptor at the head of the slot the sequence picks. */
+	base = j3->header_sectors + (j3->sequence & 1U) * j3->slot_sectors;
+	error = j3_io(mountp, j3, base, desc_sectors, descriptor, 1);
+	if (error != 0)
+		return error;
+
+	/* Makes the slot durable before anything seals it. */
+	error = j3_durable(mountp);
+	if (error != 0)
+		return error;
+
+	/*
+	 * Builds the commit record: the magic and the version, the sequence
+	 * and the journal's identity, and the checksum and size of the
+	 * descriptor it seals, all under a checksum of its own.
+	 */
+	desc_sum = get32(descriptor + 40);
+	kern_memset(commit, 0, sizeof(commit));
+	put32(commit, J3_COMMIT_MAGIC);
+	put32(commit + 4, J3_VERSION);
+	put64(commit + 8, j3->sequence);
+	put64(commit + 16, j3->nonce);
+	put32(commit + 24, desc_sum);
+	put32(commit + 28, desc_sectors);
+	sum = checksum(commit, 32);
+	put32(commit + 32, sum);
+
+	/* Writes the record, which makes the transaction the current one. */
+	error = j3_io(mountp, j3, base + j3->slot_sectors - 1U, 1, commit, 1);
+	if (error != 0)
+		return error;
+
+	/* Makes the record durable. */
+	error = j3_durable(mountp);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the transaction is committed. */
+	return 0;
+}
+
+/* Releases the pins of every range of the running transaction. */
+static void
+j3_unpin_all(
+	struct mount *mountp,
+	struct ufs_j3 *j3)
+{
+	unsigned n;
+
+	/* Lets the flusher write each range home from here on. */
+	for (n = 0; n < j3->range_count; n++)
+		(void)buf_unpin(mountp->m_disk, j3->ranges[n].lba, j3->ranges[n].count);
 }
 
 /*
@@ -18629,23 +19140,14 @@ j3_commit_locked(
 	struct mount *mountp)
 {
 	struct ufs_j3 *j3;
-	struct ufs_j3_range *range;
 	uint8_t *descriptor;
-	uint8_t commit[SECTOR_SIZE];
-	uint8_t *entry;
-	uint64_t base;
-	uint64_t cursor;
-	uint32_t desc_sectors;
+	size_t bytes;
 	uint32_t logged;
-	uint32_t done;
-	uint32_t amount;
-	uint32_t sum;
-	unsigned n;
+	uint32_t desc_sectors;
 	int error;
 
+	/* A transaction with nothing in it has nothing to commit. */
 	j3 = &ms->j3;
-
-	/* A transaction with nothing logged has nothing to commit. */
 	if (j3->range_count == 0)
 		return 0;
 
@@ -18657,104 +19159,53 @@ j3_commit_locked(
 	if (error != 0)
 		return error;
 
-	/* Lays the descriptor out before the payload of the slot. */
-	logged = 0;
-	for (n = 0; n < j3->range_count; n++) {
-		if (!j3->ranges[n].hold)
-			logged++;
-	}
-	desc_sectors = (J3_DESC_HEADER + logged * J3_DESC_ENTRY +
-	    SECTOR_SIZE - 1U) / SECTOR_SIZE;
-	descriptor = kern_malloc((size_t)desc_sectors * SECTOR_SIZE);
+	/* Sizes the descriptor, in whole sectors, for the ranges the commit logs. */
+	logged = j3_logged_ranges(j3);
+	desc_sectors = (J3_DESC_HEADER + logged * J3_DESC_ENTRY + SECTOR_SIZE - 1U) / SECTOR_SIZE;
+	bytes = (size_t)desc_sectors * SECTOR_SIZE;
+
+	/* Takes the descriptor. */
+	descriptor = kern_malloc(bytes);
 	if (descriptor == NULL)
 		return ENOMEM;
-	kern_memset(descriptor, 0, (size_t)desc_sectors * SECTOR_SIZE);
-	put32(descriptor, J3_DESC_MAGIC);
-	put32(descriptor + 4, J3_VERSION);
-	put64(descriptor + 8, j3->sequence);
-	put64(descriptor + 16, j3->nonce);
-	put32(descriptor + 24, logged);
-	put32(descriptor + 28, desc_sectors);
-	put32(descriptor + 32, j3->logged_sectors);
 
-	/* Copies each logged range's current contents into the slot. */
-	base = j3->header_sectors + (j3->sequence & 1U) * j3->slot_sectors;
-	cursor = base + desc_sectors;
-	logged = 0;
-	for (n = 0; error == 0 && n < j3->range_count; n++) {
-		range = &j3->ranges[n];
-		if (range->hold)
-			continue;
-		sum = 0;
-		for (done = 0; error == 0 && done < range->count; done += amount) {
-			amount = range->count - done;
-			if (amount > J3_STAGING_SECTORS)
-				amount = J3_STAGING_SECTORS;
-			error = observed_disk_read(mountp->m_disk,
-			    range->lba + done, amount, j3->staging);
-			if (error == 0) {
-				sum = sum * 16777619U ^ checksum(j3->staging,
-				    (size_t)amount * SECTOR_SIZE);
-				error = j3_io(mountp, j3, cursor, amount,
-				    j3->staging, 1);
-			}
-			cursor += amount;
-		}
-		entry = descriptor + J3_DESC_HEADER + J3_DESC_ENTRY * logged;
-		put64(entry, range->lba);
-		put32(entry + 8, range->count);
-		put32(entry + 12, sum);
-		logged++;
-	}
-	put32(descriptor + 36, checksum(descriptor + J3_DESC_HEADER,
-	    (size_t)logged * J3_DESC_ENTRY));
-	put32(descriptor + 40, checksum(descriptor, 40));
+	/* Starts it empty, so that the sectors past its last range are zero. */
+	kern_memset(descriptor, 0, bytes);
 
-	/* Writes the descriptor and makes the slot durable. */
-	if (error == 0)
-		error = j3_io(mountp, j3, base, desc_sectors, descriptor, 1);
-	if (error == 0)
-		error = j3_durable(mountp);
+	/* Copies the logged ranges into the slot and lists them. */
+	error = j3_commit_payload(mountp, j3, descriptor, desc_sectors);
 
-	/* Writes the commit record, which makes the transaction the current one. */
-	if (error == 0) {
-		kern_memset(commit, 0, sizeof(commit));
-		put32(commit, J3_COMMIT_MAGIC);
-		put32(commit + 4, J3_VERSION);
-		put64(commit + 8, j3->sequence);
-		put64(commit + 16, j3->nonce);
-		put32(commit + 24, get32(descriptor + 40));
-		put32(commit + 28, desc_sectors);
-		put32(commit + 32, checksum(commit, 32));
-		error = j3_io(mountp, j3, base + j3->slot_sectors - 1U, 1,
-		    commit, 1);
-	}
+	/* Seals the slot once the payload is in it. */
 	if (error == 0)
-		error = j3_durable(mountp);
+		error = j3_commit_seal(mountp, j3, descriptor, desc_sectors);
+
+	/* Gives the descriptor back, sealed or not. */
 	kern_free(descriptor);
 
 	/* A commit that did not complete leaves the volume unwritable. */
 	if (error != 0) {
 		ms->writable = 0;
-
-		/* Failed. */
 		return error;
 	}
 
-	/* Lets the committed sectors go home, and starts a new transaction. */
-	for (n = 0; n < j3->range_count; n++)
-		(void)buf_unpin(mountp->m_disk, j3->ranges[n].lba,
-		    j3->ranges[n].count);
+	/* Lets the committed sectors go home. */
+	j3_unpin_all(mountp, j3);
+
+	/* Empties the ranges and their index for the next transaction. */
 	j3->range_count = 0;
 	j3->logged_sectors = 0;
 	kern_memset(j3->index, 0, sizeof(unsigned) * 2U * j3->ranges_max);
+
+	/* Forgets the freed blocks, whose frees are now committed. */
 	if (j3->freed_count != 0) {
 		kern_memset(j3->freed, 0, sizeof(uint64_t) * J3_FREED_MAX);
 		j3->freed_count = 0;
 	}
+
+	/* The next transaction takes the next sequence, and so the other slot. */
 	j3->sequence++;
 
-	/* Succeeded. */
+	/* Succeeded: the transaction is committed. */
 	return 0;
 }
 
@@ -18766,15 +19217,21 @@ j3_commit(
 {
 	int error;
 
-	/* Commits only while the journal is in service. */
+	/* Commits the running transaction while the journal is in service. */
 	mutex_lock(&ms->j3.lock);
+
 	error = 0;
 	if (ms->j3.active)
 		error = j3_commit_locked(ms, mountp);
+
 	mutex_unlock(&ms->j3.lock);
 
-	/* Reports how the commit went. */
-	return error;
+	/* Reports why the commit failed. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: what ran is committed. */
+	return 0;
 }
 
 /*
@@ -18787,12 +19244,18 @@ j3_hook(
 {
 	struct ufs_mount_state *ms;
 
-	/* Takes the locks a metadata operation holds, lowest first. */
+	/*
+	 * Takes the locks a metadata operation holds, lowest first, so that no
+	 * operation is half done when the commit runs.
+	 */
 	ms = argument;
 	mutex_lock(&ms->namespace_lock);
 	mutex_lock(&ms->lock);
+
+	/* Commits for the mount the hook was registered for. */
 	if (ms->j3.mountp != NULL)
 		(void)j3_commit(ms, ms->j3.mountp);
+
 	mutex_unlock(&ms->lock);
 	mutex_unlock(&ms->namespace_lock);
 }
@@ -18803,9 +19266,17 @@ j3_super_read(
 	struct mount *mountp,
 	uint8_t sector[SECTOR_SIZE])
 {
+	uint64_t lba;
+	int error;
+
 	/* Both live in the superblock's spare words, in one sector. */
-	return observed_disk_read(mountp->m_disk,
-	    (UFS_SBLOCK_OFFSET + J3_LOCATOR_OFFSET) / SECTOR_SIZE, 1, sector);
+	lba = (UFS_SBLOCK_OFFSET + J3_LOCATOR_OFFSET) / SECTOR_SIZE;
+	error = observed_disk_read(mountp->m_disk, lba, 1, sector);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the sector is read. */
+	return 0;
 }
 
 /* Parses the locator; reports whether the volume names a journal header. */
@@ -18816,17 +19287,33 @@ j3_locator_parse(
 	uint64_t *nonce)
 {
 	const uint8_t *locator;
+	uint32_t word;
+	uint32_t sum;
 
-	/* Accepts only a sealed locator of this version. */
+	/* Finds the locator in the sector. */
 	locator = sector + (UFS_SBLOCK_OFFSET + J3_LOCATOR_OFFSET) % SECTOR_SIZE;
-	if (get32(locator) != J3_LOCATOR_MAGIC ||
-	    get32(locator + 4) != J3_VERSION ||
-	    get32(locator + 24) != checksum(locator, 24))
+
+	/* A locator names its kind first; a volume that never had one has zeroes. */
+	word = get32(locator);
+	if (word != J3_LOCATOR_MAGIC)
 		return 0;
+
+	/* Only this version's locator is understood. */
+	word = get32(locator + 4);
+	if (word != J3_VERSION)
+		return 0;
+
+	/* A locator whose checksum fails was not completely written. */
+	word = get32(locator + 24);
+	sum = checksum(locator, 24);
+	if (word != sum)
+		return 0;
+
+	/* Takes the header's fragment and the journal's identity. */
 	*fragment = get64(locator + 8);
 	*nonce = get64(locator + 16);
 
-	/* The volume names a journal. */
+	/* Succeeded: the volume names a journal. */
 	return 1;
 }
 
@@ -18837,19 +19324,143 @@ j3_request_parse(
 	uint32_t *mib)
 {
 	const uint8_t *request;
+	uint32_t word;
+	uint32_t sum;
 
-	/* Accepts only a sealed record of this version. */
+	/* Finds the record in the sector. */
 	request = sector + (UFS_SBLOCK_OFFSET + J3_REQUEST_OFFSET) % SECTOR_SIZE;
-	if (get32(request) != J3_REQUEST_MAGIC ||
-	    get32(request + 4) != J3_REQUEST_VERSION ||
-	    get32(request + 12) != checksum(request, 12))
+
+	/* A record names its kind first; an older volume has none. */
+	word = get32(request);
+	if (word != J3_REQUEST_MAGIC)
 		return 0;
+
+	/* Only this version's record is understood. */
+	word = get32(request + 4);
+	if (word != J3_REQUEST_VERSION)
+		return 0;
+
+	/* A record whose checksum fails is not trusted. */
+	word = get32(request + 12);
+	sum = checksum(request, 12);
+	if (word != sum)
+		return 0;
+
+	/* Takes the size, no more than the largest journal. */
 	*mib = get32(request + 8);
 	if (*mib > J3_MAX_MIB)
 		*mib = J3_MAX_MIB;
 
-	/* The volume carries a record. */
+	/* Succeeded: the volume carries a record. */
 	return 1;
+}
+
+/*
+ * Checks a header block against the journal the locator names and the
+ * block size of the mount, and reports how many extents it lists.
+ */
+static int
+j3_header_check(
+	const uint8_t *header,
+	uint64_t nonce,
+	uint32_t block_sectors,
+	uint32_t block_bytes,
+	uint32_t *count)
+{
+	uint64_t identity;
+	uint32_t word;
+	uint32_t sum;
+	uint32_t extents;
+
+	/* A header names its kind and version first. */
+	word = get32(header);
+	if (word != J3_HEADER_MAGIC)
+		return EINVAL;
+	word = get32(header + 4);
+	if (word != J3_VERSION)
+		return EINVAL;
+
+	/* It belongs to the journal the locator names. */
+	identity = get64(header + 8);
+	if (identity != nonce)
+		return EINVAL;
+
+	/* Its fixed words are as they were written. */
+	word = get32(header + 52);
+	sum = checksum(header, 52);
+	if (word != sum)
+		return EINVAL;
+
+	/* Its blocks, and the header itself, are one block of this volume. */
+	word = get32(header + 40);
+	if (word != block_sectors)
+		return EINVAL;
+	word = get32(header + 44);
+	if (word != block_sectors)
+		return EINVAL;
+
+	/* It lists at least one extent, and no more than its block holds. */
+	extents = get32(header + 36);
+	if (extents == 0)
+		return EINVAL;
+	if (J3_HEADER_FIXED + (uint64_t)extents * J3_EXTENT_ENTRY > block_bytes)
+		return EINVAL;
+
+	/* Its extent list is as it was written. */
+	word = get32(header + 48);
+	sum = checksum(header + J3_HEADER_FIXED, (size_t)J3_EXTENT_ENTRY * extents);
+	if (word != sum)
+		return EINVAL;
+
+	/* Succeeded: reports the number of extents. */
+	*count = extents;
+	return 0;
+}
+
+/*
+ * Takes the extents a checked header lists, numbering the file's sectors
+ * as it goes, and reports how many sectors they cover.
+ */
+static int
+j3_extents_read(
+	struct mount *mountp,
+	struct ufs_j3 *j3,
+	const uint8_t *header,
+	uint32_t count,
+	uint64_t *total)
+{
+	struct ufs_j3_extent *extent;
+	const uint8_t *entry;
+	uint64_t file_sector;
+	uint32_t n;
+
+	/* Takes the table of extents. */
+	j3->extents = kern_malloc(sizeof(struct ufs_j3_extent) * count);
+	if (j3->extents == NULL)
+		return ENOMEM;
+
+	/* Reads each extent: its first disk sector and its length. */
+	file_sector = 0;
+	for (n = 0; n < count; n++) {
+		extent = &j3->extents[n];
+		entry = header + J3_HEADER_FIXED + J3_EXTENT_ENTRY * n;
+		extent->file_sector = file_sector;
+		extent->lba = get64(entry);
+		extent->count = get32(entry + 8);
+
+		/* An empty extent, or one past the end of the disk, is not the journal's. */
+		if (extent->count == 0)
+			return EINVAL;
+		if (extent->lba + extent->count > mountp->m_disk->d_block_count)
+			return EINVAL;
+
+		/* The next extent continues the file. */
+		file_sector += extent->count;
+	}
+
+	/* Succeeded: reports the sectors the extents cover. */
+	*total = file_sector;
+	return 0;
 }
 
 /*
@@ -18865,57 +19476,33 @@ j3_load(
 {
 	struct ufs_j3 *j3;
 	uint8_t *header;
-	uint64_t file_sector;
+	uint64_t covered;
 	uint32_t block_sectors;
 	uint32_t count;
-	uint32_t n;
+	uint32_t slot_sectors;
 	int error;
 
-	/* Reads the first block, which is the header. */
+	/* Takes a buffer for the first block of the file, which is the header. */
 	j3 = &ms->j3;
 	block_sectors = ms->super.bsize / SECTOR_SIZE;
 	header = kern_malloc(ms->super.bsize);
 	if (header == NULL)
 		return ENOMEM;
-	error = observed_disk_read(mountp->m_disk,
-	    fragment << ms->super.fsbtodb, block_sectors, header);
 
-	/* Checks the header's identity and its own checksum. */
+	/* Reads the header where the locator says it is. */
+	error = observed_disk_read(mountp->m_disk, fragment << ms->super.fsbtodb, block_sectors, header);
+
+	/* Checks that it is the named journal's header, laid out for this volume. */
 	count = 0;
-	if (error == 0 && (get32(header) != J3_HEADER_MAGIC ||
-	    get32(header + 4) != J3_VERSION || get64(header + 8) != nonce ||
-	    get32(header + 52) != checksum(header, 52) ||
-	    get32(header + 40) != block_sectors ||
-	    get32(header + 44) != block_sectors))
-		error = EINVAL;
-	if (error == 0) {
-		count = get32(header + 36);
-		if (count == 0 || J3_HEADER_FIXED +
-		    (uint64_t)count * J3_EXTENT_ENTRY > ms->super.bsize ||
-		    get32(header + 48) != checksum(header + J3_HEADER_FIXED,
-		    (size_t)J3_EXTENT_ENTRY * count))
-			error = EINVAL;
-	}
+	if (error == 0)
+		error = j3_header_check(header, nonce, block_sectors, ms->super.bsize, &count);
 
-	/* Takes the extents, numbering the file's sectors as it goes. */
-	if (error == 0) {
-		j3->extents = kern_malloc(sizeof(struct ufs_j3_extent) * count);
-		if (j3->extents == NULL)
-			error = ENOMEM;
-	}
-	file_sector = 0;
-	for (n = 0; error == 0 && n < count; n++) {
-		j3->extents[n].file_sector = file_sector;
-		j3->extents[n].lba = get64(header + J3_HEADER_FIXED +
-		    J3_EXTENT_ENTRY * n);
-		j3->extents[n].count = get32(header + J3_HEADER_FIXED +
-		    J3_EXTENT_ENTRY * n + 8);
-		if (j3->extents[n].count == 0 ||
-		    j3->extents[n].lba + j3->extents[n].count >
-		    mountp->m_disk->d_block_count)
-			error = EINVAL;
-		file_sector += j3->extents[n].count;
-	}
+	/* Takes the extents it lists. */
+	covered = 0;
+	if (error == 0)
+		error = j3_extents_read(mountp, j3, header, count, &covered);
+
+	/* Takes the journal's identity, its progress and its size. */
 	if (error == 0) {
 		j3->extent_count = count;
 		j3->header_fragment = fragment;
@@ -18925,13 +19512,22 @@ j3_load(
 		j3->block_sectors = block_sectors;
 		j3->header_sectors = block_sectors;
 		j3->sequence = j3->applied + 1U;
-		if (file_sector != j3->total_sectors)
-			error = EINVAL;
 	}
+
+	/* The extents cover exactly the sectors the journal has. */
+	if (error == 0 && covered != j3->total_sectors)
+		error = EINVAL;
+
+	/* Lays the slots out. */
 	if (error == 0)
 		error = j3_geometry(j3);
-	if (error == 0 && j3->slot_sectors != get32(header + 32))
+
+	/* The slots are as the header recorded them. */
+	slot_sectors = get32(header + 32);
+	if (error == 0 && j3->slot_sectors != slot_sectors)
 		error = EINVAL;
+
+	/* Gives the header block back. */
 	kern_free(header);
 
 	/* A header that does not hold together keeps no extents. */
@@ -18939,10 +19535,11 @@ j3_load(
 		kern_free(j3->extents);
 		j3->extents = NULL;
 		j3->extent_count = 0;
+		return error;
 	}
 
-	/* Reports how the load went. */
-	return error;
+	/* Succeeded: the journal is loaded. */
+	return 0;
 }
 
 /*
@@ -18959,25 +19556,295 @@ j3_slot_sequence(
 {
 	uint8_t commit[SECTOR_SIZE];
 	uint64_t base;
+	uint64_t value;
+	uint32_t word;
+	uint32_t sum;
 	int error;
 
-	/* Reads the record at the end of the slot. */
+	/* Reads the record at the end of the slot; an unreadable one seals nothing. */
 	base = j3->header_sectors + (uint64_t)slot * j3->slot_sectors;
 	error = j3_io(mountp, j3, base + j3->slot_sectors - 1U, 1, commit, 0);
 	if (error != 0)
 		return 0;
 
-	/* Accepts only a sealed record of this journal for this slot. */
-	if (get32(commit) != J3_COMMIT_MAGIC || get32(commit + 4) != J3_VERSION ||
-	    get64(commit + 16) != j3->nonce ||
-	    get32(commit + 32) != checksum(commit, 32) ||
-	    (get64(commit + 8) & 1U) != slot)
+	/* A record names its kind and version first; a cleared one has zeroes. */
+	word = get32(commit);
+	if (word != J3_COMMIT_MAGIC)
 		return 0;
+	word = get32(commit + 4);
+	if (word != J3_VERSION)
+		return 0;
+
+	/* It belongs to this journal, not to a former one in the same blocks. */
+	value = get64(commit + 16);
+	if (value != j3->nonce)
+		return 0;
+
+	/* It was completely written. */
+	word = get32(commit + 32);
+	sum = checksum(commit, 32);
+	if (word != sum)
+		return 0;
+
+	/* Its sequence picks this slot. */
+	value = get64(commit + 8);
+	if ((value & 1U) != slot)
+		return 0;
+
+	/* Takes the size and the checksum of the descriptor the record seals. */
 	*desc_sectors = get32(commit + 28);
 	*desc_sum = get32(commit + 24);
 
-	/* Reports the sequence the record seals. */
-	return get64(commit + 8);
+	/* Succeeded: reports the sequence the record seals. */
+	return value;
+}
+
+/*
+ * Checks that a descriptor is the one a commit record sealed, and reports
+ * how many ranges it lists.
+ */
+static int
+j3_descriptor_check(
+	const struct ufs_j3 *j3,
+	const uint8_t *descriptor,
+	uint32_t desc_sectors,
+	uint64_t sequence,
+	uint32_t desc_sum,
+	uint32_t *entries)
+{
+	uint64_t value;
+	uint32_t word;
+	uint32_t sum;
+	uint32_t count;
+
+	/* A descriptor names its kind first. */
+	word = get32(descriptor);
+	if (word != J3_DESC_MAGIC)
+		return EINVAL;
+
+	/* It belongs to the sealed transaction of this journal. */
+	value = get64(descriptor + 8);
+	if (value != sequence)
+		return EINVAL;
+	value = get64(descriptor + 16);
+	if (value != j3->nonce)
+		return EINVAL;
+
+	/* Its fixed words are as written, and the record sealed that checksum. */
+	word = get32(descriptor + 40);
+	sum = checksum(descriptor, 40);
+	if (word != sum)
+		return EINVAL;
+	if (word != desc_sum)
+		return EINVAL;
+
+	/* Its list of ranges fits in its sectors and is as it was written. */
+	count = get32(descriptor + 24);
+	if (J3_DESC_HEADER + (uint64_t)count * J3_DESC_ENTRY > (uint64_t)desc_sectors * SECTOR_SIZE)
+		return EINVAL;
+	word = get32(descriptor + 36);
+	sum = checksum(descriptor + J3_DESC_HEADER, (size_t)count * J3_DESC_ENTRY);
+	if (word != sum)
+		return EINVAL;
+
+	/* Succeeded: reports the number of ranges. */
+	*entries = count;
+	return 0;
+}
+
+/* Sums a range's payload in the journal the way the commit summed it. */
+static int
+j3_payload_sum(
+	struct mount *mountp,
+	struct ufs_j3 *j3,
+	uint64_t cursor,
+	uint32_t count,
+	uint8_t *payload,
+	uint32_t *sum)
+{
+	uint32_t done;
+	uint32_t amount;
+	uint32_t chunk_sum;
+	int error;
+
+	/* Reads the payload through the buffer in chunks. */
+	*sum = 0;
+	for (done = 0; done < count; done += amount) {
+		/* Takes no more than the buffer holds. */
+		amount = count - done;
+		if (amount > J3_STAGING_SECTORS)
+			amount = J3_STAGING_SECTORS;
+
+		/* Reads the chunk from the slot. */
+		error = j3_io(mountp, j3, cursor + done, amount, payload, 0);
+		if (error != 0)
+			return error;
+
+		/* Folds the chunk into the range's sum. */
+		chunk_sum = checksum(payload, (size_t)amount * SECTOR_SIZE);
+		*sum = (*sum * 16777619U) ^ chunk_sum;
+	}
+
+	/* Succeeded: reports the sum. */
+	return 0;
+}
+
+/* Copies a range's payload from the journal to its home. */
+static int
+j3_payload_home(
+	struct mount *mountp,
+	struct ufs_j3 *j3,
+	uint64_t cursor,
+	uint64_t lba,
+	uint32_t count,
+	uint8_t *payload)
+{
+	uint32_t done;
+	uint32_t amount;
+	int error;
+
+	/* Copies the payload through the buffer in chunks. */
+	for (done = 0; done < count; done += amount) {
+		/* Takes no more than the buffer holds. */
+		amount = count - done;
+		if (amount > J3_STAGING_SECTORS)
+			amount = J3_STAGING_SECTORS;
+
+		/* Reads the chunk from the slot. */
+		error = j3_io(mountp, j3, cursor + done, amount, payload, 0);
+		if (error != 0)
+			return error;
+
+		/* Writes it home. */
+		error = disk_write_filesystem_context(mountp->m_disk, lba + done, amount, payload, NULL);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the range is home. */
+	return 0;
+}
+
+/*
+ * Applies the ranges a checked descriptor lists: checks every payload
+ * against its sum before writing any, then writes each range home and
+ * makes the homes durable.
+ */
+static int
+j3_payload_apply(
+	struct mount *mountp,
+	struct ufs_j3 *j3,
+	const uint8_t *descriptor,
+	uint32_t entries,
+	uint64_t first,
+	uint8_t *payload)
+{
+	const uint8_t *entry;
+	uint64_t cursor;
+	uint64_t lba;
+	uint32_t count;
+	uint32_t sum;
+	uint32_t stored;
+	uint32_t n;
+	int error;
+
+	/* Checks each payload, in the order the commit wrote them. */
+	cursor = first;
+	for (n = 0; n < entries; n++) {
+		/* Sums the range's payload. */
+		entry = descriptor + J3_DESC_HEADER + J3_DESC_ENTRY * n;
+		count = get32(entry + 8);
+		error = j3_payload_sum(mountp, j3, cursor, count, payload, &sum);
+		if (error != 0)
+			return error;
+
+		/* A payload that does not match its sum was not completely written. */
+		stored = get32(entry + 12);
+		if (sum != stored)
+			return EINVAL;
+
+		/* The next payload follows this one. */
+		cursor += count;
+	}
+
+	/* Writes each range home. */
+	cursor = first;
+	for (n = 0; n < entries; n++) {
+		/* Copies the range's payload to the home it lists. */
+		entry = descriptor + J3_DESC_HEADER + J3_DESC_ENTRY * n;
+		lba = get64(entry);
+		count = get32(entry + 8);
+		error = j3_payload_home(mountp, j3, cursor, lba, count, payload);
+		if (error != 0)
+			return error;
+
+		/* The next payload follows this one. */
+		cursor += count;
+	}
+
+	/* Makes the homes durable. */
+	error = j3_durable(mountp);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the transaction is home. */
+	return 0;
+}
+
+/*
+ * Applies the transaction a slot's commit record seals: reads and checks
+ * its descriptor, then applies its ranges.
+ */
+static int
+j3_replay_slot(
+	struct mount *mountp,
+	struct ufs_j3 *j3,
+	unsigned slot,
+	uint64_t sequence,
+	uint32_t desc_sectors,
+	uint32_t desc_sum)
+{
+	uint8_t *descriptor;
+	uint8_t *payload;
+	uint64_t base;
+	uint32_t entries;
+	int error;
+
+	/* Takes a buffer for the descriptor. */
+	descriptor = kern_malloc((size_t)desc_sectors * SECTOR_SIZE);
+	if (descriptor == NULL)
+		return ENOMEM;
+
+	/* Takes the buffer the payload passes through. */
+	payload = kern_malloc((size_t)J3_STAGING_SECTORS * SECTOR_SIZE);
+	if (payload == NULL) {
+		kern_free(descriptor);
+		return ENOMEM;
+	}
+
+	/* Reads the descriptor at the head of the slot. */
+	base = j3->header_sectors + (uint64_t)slot * j3->slot_sectors;
+	error = j3_io(mountp, j3, base, desc_sectors, descriptor, 0);
+
+	/* Checks that it is the descriptor the record sealed. */
+	entries = 0;
+	if (error == 0)
+		error = j3_descriptor_check(j3, descriptor, desc_sectors, sequence, desc_sum, &entries);
+
+	/* Applies the ranges it lists, whose payloads follow it. */
+	if (error == 0)
+		error = j3_payload_apply(mountp, j3, descriptor, entries, base + desc_sectors, payload);
+
+	/* Gives the buffers back, applied or not. */
+	kern_free(descriptor);
+	kern_free(payload);
+
+	/* Reports why the transaction could not be applied. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the transaction is home. */
+	return 0;
 }
 
 /*
@@ -18992,50 +19859,50 @@ j3_replay(
 {
 	struct ufs_j3 *j3;
 	uint8_t sector[SECTOR_SIZE];
-	uint8_t *descriptor;
-	uint8_t *payload;
-	uint8_t *entry;
 	uint64_t fragment;
 	uint64_t nonce;
 	uint64_t sequence[2];
-	uint64_t base;
-	uint64_t cursor;
-	uint64_t lba;
 	uint32_t desc_sectors[2];
 	uint32_t desc_sum[2];
-	uint32_t count;
-	uint32_t entries;
-	uint32_t n;
-	uint32_t done;
-	uint32_t amount;
-	uint32_t sum;
 	unsigned slot;
 	int named;
 	int error;
 
-	/* A volume whose superblock names no usable journal has nothing to apply. */
+	/* Reads the locator. */
 	j3 = &ms->j3;
 	error = j3_super_read(mountp, sector);
 	if (error != 0)
 		return error;
+
+	/* A volume whose superblock names no journal has nothing to apply. */
 	named = j3_locator_parse(sector, &fragment, &nonce);
 	if (!named)
 		return 0;
+
+	/* Loads the journal; one that does not hold together is made again. */
 	error = j3_load(mountp, ms, fragment, nonce);
 	if (error == EINVAL)
 		return 0;
 	if (error != 0)
 		return error;
+
+	/* The volume has a journal. */
 	j3->present = 1;
 
-	/* Picks the newer of the two slots' commits. */
+	/* Reads both slots' commit records; a slot that seals nothing reports zero. */
 	sequence[0] = j3_slot_sequence(mountp, j3, 0, &desc_sectors[0], &desc_sum[0]);
 	sequence[1] = j3_slot_sequence(mountp, j3, 1, &desc_sectors[1], &desc_sum[1]);
+
+	/* Picks the newer of the two. */
 	slot = 0;
 	if (sequence[1] > sequence[0])
 		slot = 1;
+
+	/* Numbers the next transaction after anything either slot holds. */
 	if (sequence[slot] >= j3->sequence)
 		j3->sequence = sequence[slot] + 1U;
+
+	/* A commit the header records as applied is already home. */
 	if (sequence[slot] <= j3->applied)
 		return 0;
 
@@ -19043,84 +19910,28 @@ j3_replay(
 	if ((mountp->m_disk->d_flags & DISK_READ_ONLY) != 0)
 		return EROFS;
 
-	/* Reads and checks the descriptor the commit seals. */
-	if (desc_sectors[slot] == 0 || desc_sectors[slot] > j3->desc_sectors_max)
+	/* Refuses a record naming a descriptor no commit could have written. */
+	if (desc_sectors[slot] == 0)
 		return EINVAL;
-	descriptor = kern_malloc((size_t)desc_sectors[slot] * SECTOR_SIZE);
-	payload = kern_malloc((size_t)J3_STAGING_SECTORS * SECTOR_SIZE);
-	error = 0;
-	if (descriptor == NULL || payload == NULL)
-		error = ENOMEM;
-	base = j3->header_sectors + (uint64_t)slot * j3->slot_sectors;
-	if (error == 0)
-		error = j3_io(mountp, j3, base, desc_sectors[slot], descriptor, 0);
-	entries = 0;
-	if (error == 0) {
-		entries = get32(descriptor + 24);
-		if (get32(descriptor) != J3_DESC_MAGIC ||
-		    get64(descriptor + 8) != sequence[slot] ||
-		    get64(descriptor + 16) != j3->nonce ||
-		    get32(descriptor + 40) != checksum(descriptor, 40) ||
-		    get32(descriptor + 40) != desc_sum[slot] ||
-		    J3_DESC_HEADER + (uint64_t)entries * J3_DESC_ENTRY >
-		    (uint64_t)desc_sectors[slot] * SECTOR_SIZE ||
-		    get32(descriptor + 36) != checksum(descriptor + J3_DESC_HEADER,
-		    (size_t)entries * J3_DESC_ENTRY))
-			error = EINVAL;
-	}
+	if (desc_sectors[slot] > j3->desc_sectors_max)
+		return EINVAL;
 
-	/* Checks every payload before writing any home. */
-	cursor = base + desc_sectors[slot];
-	for (n = 0; error == 0 && n < entries; n++) {
-		entry = descriptor + J3_DESC_HEADER + J3_DESC_ENTRY * n;
-		count = get32(entry + 8);
-		sum = 0;
-		for (done = 0; error == 0 && done < count; done += amount) {
-			amount = count - done;
-			if (amount > J3_STAGING_SECTORS)
-				amount = J3_STAGING_SECTORS;
-			error = j3_io(mountp, j3, cursor + done, amount, payload, 0);
-			if (error == 0)
-				sum = sum * 16777619U ^ checksum(payload,
-				    (size_t)amount * SECTOR_SIZE);
-		}
-		if (error == 0 && sum != get32(entry + 12))
-			error = EINVAL;
-		cursor += count;
-	}
+	/* Applies the transaction. */
+	error = j3_replay_slot(mountp, j3, slot, sequence[slot], desc_sectors[slot], desc_sum[slot]);
+	if (error != 0)
+		return error;
 
-	/* Writes every range home, then makes the homes durable. */
-	cursor = base + desc_sectors[slot];
-	for (n = 0; error == 0 && n < entries; n++) {
-		entry = descriptor + J3_DESC_HEADER + J3_DESC_ENTRY * n;
-		lba = get64(entry);
-		count = get32(entry + 8);
-		for (done = 0; error == 0 && done < count; done += amount) {
-			amount = count - done;
-			if (amount > J3_STAGING_SECTORS)
-				amount = J3_STAGING_SECTORS;
-			error = j3_io(mountp, j3, cursor + done, amount, payload, 0);
-			if (error == 0)
-				error = disk_write_filesystem_context(mountp->m_disk,
-				    lba + done, amount, payload, NULL);
-		}
-		cursor += count;
-	}
-	if (error == 0)
-		error = j3_durable(mountp);
+	/* Records the transaction as applied, durably. */
+	j3->applied = sequence[slot];
+	error = j3_write_header(mountp, j3);
+	if (error != 0)
+		return error;
+	error = j3_durable(mountp);
+	if (error != 0)
+		return error;
 
-	/* Records the transaction as applied. */
-	if (error == 0) {
-		j3->applied = sequence[slot];
-		error = j3_write_header(mountp, j3);
-	}
-	if (error == 0)
-		error = j3_durable(mountp);
-	kern_free(descriptor);
-	kern_free(payload);
-
-	/* Reports how the replay went. */
-	return error;
+	/* Succeeded: the volume holds the newest committed transaction. */
+	return 0;
 }
 
 /*
@@ -19143,35 +19954,40 @@ j3_wanted_sectors(
 	int error;
 
 	/* Takes the size mkfs recorded, when there is one. */
-	error = j3_super_read(mountp, sector);
+	mib = 0;
 	recorded = 0;
+	error = j3_super_read(mountp, sector);
 	if (error == 0)
 		recorded = j3_request_parse(sector, &mib);
 
-	/* Otherwise follows the ext4 table for the volume's size. */
+	/* Otherwise follows the ext4 table for the volume's size in MiB. */
 	if (!recorded) {
-		volume = ms->super.size * ms->super.fsize;
-		if (volume < 8ULL << 20)
+		volume = (ms->super.size * ms->super.fsize) >> 20;
+		if (volume < 8U)
 			mib = 0;
-		else if (volume < 128ULL << 20)
+		else if (volume < 128U)
 			mib = 4;
-		else if (volume < 1ULL << 30)
+		else if (volume < 1024U)
 			mib = 16;
-		else if (volume < 2ULL << 30)
+		else if (volume < 2048U)
 			mib = 32;
-		else if (volume < 16ULL << 30)
+		else if (volume < 16384U)
 			mib = 64;
 		else
 			mib = J3_DEFAULT_MAX_MIB;
 	}
 
-	/* Keeps the journal to an eighth of the room it may take. */
+	/* Measures the room: the free blocks and the journal's own. */
 	bytes = (uint64_t)mib << 20;
 	room = ms->super.cstotal_nbfree * ms->super.bsize;
 	if (ms->j3.present)
 		room += ms->j3.total_sectors * SECTOR_SIZE;
+
+	/* Keeps the journal to an eighth of the room, in whole MiB. */
 	if (bytes > room / 8U)
-		bytes = (room / 8U) & ~((1ULL << 20) - 1U);
+		bytes = (room / 8U) & ~((UINT64_C(1) << 20) - 1U);
+
+	/* Rounds the size down to whole blocks. */
 	bytes -= bytes % ms->super.bsize;
 
 	/* Reports the size in sectors. */
@@ -19186,23 +20002,36 @@ j3_locator_write(
 {
 	uint8_t sector[SECTOR_SIZE];
 	uint8_t *locator;
+	uint64_t lba;
+	uint32_t sum;
 	int error;
 
-	/* Rewrites the locator in place, keeping the rest of the sector. */
+	/* Reads the sector, so that the rest of it is kept. */
 	error = j3_super_read(mountp, sector);
 	if (error != 0)
 		return error;
+
+	/*
+	 * Stores the locator: the magic and the version, the header's
+	 * fragment and the journal's identity, under a checksum.
+	 */
 	locator = sector + (UFS_SBLOCK_OFFSET + J3_LOCATOR_OFFSET) % SECTOR_SIZE;
 	kern_memset(locator, 0, 28);
 	put32(locator, J3_LOCATOR_MAGIC);
 	put32(locator + 4, J3_VERSION);
 	put64(locator + 8, j3->header_fragment);
 	put64(locator + 16, j3->nonce);
-	put32(locator + 24, checksum(locator, 24));
+	sum = checksum(locator, 24);
+	put32(locator + 24, sum);
 
 	/* Writes it, before the journal carries any metadata. */
-	return write_sectors(mountp,
-	    (UFS_SBLOCK_OFFSET + J3_LOCATOR_OFFSET) / SECTOR_SIZE, 1, sector);
+	lba = (UFS_SBLOCK_OFFSET + J3_LOCATOR_OFFSET) / SECTOR_SIZE;
+	error = write_sectors(mountp, lba, 1, sector);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the locator is written, though not yet durable. */
+	return 0;
 }
 
 /*
@@ -19214,10 +20043,134 @@ mountp_disk_cached(
 {
 	unsigned cached;
 
-	/* Sets the flag, remembering what it was. */
-	cached = (mountp->m_disk->d_flags & DISK_WRITE_CACHED) != 0;
+	/* Remembers whether the writes were delayed already. */
+	cached = 0;
+	if ((mountp->m_disk->d_flags & DISK_WRITE_CACHED) != 0)
+		cached = 1;
+
+	/* Delays them from here on. */
 	mountp->m_disk->d_flags |= DISK_WRITE_CACHED;
+
+	/* Reports what the flag was. */
 	return cached;
+}
+
+/*
+ * Finds the journal file in the root directory, or creates it.  The name
+ * is refused to everyone else, so the lookup and the creation are done as
+ * the journal's own.
+ */
+static int
+j3_file_open(
+	struct ufs_mount_state *ms,
+	struct inode *root,
+	struct inode **inode)
+{
+	struct componentname component;
+	struct inode_creation_request request;
+	int error;
+
+	/* Names the file, and lets the journal's own lookups see the name. */
+	component.cn_nameptr = J3_NAME;
+	component.cn_namelen = kern_strlen(J3_NAME);
+	component.cn_flags = 0;
+	ms->j3.creating = 1;
+
+	/* Finds the file the volume already has. */
+	error = ufs_lookup(root, &component, inode);
+
+	/* Creates it, closed to everyone but the system, when there is none. */
+	if (error == ENOENT) {
+		error = inode_creation_request_system(INODE_REG, 0600, 0, 0, 0, &request);
+		if (error == 0)
+			error = ufs_create(root, &component, &request, inode);
+	}
+
+	/* The name is refused again from here on. */
+	ms->j3.creating = 0;
+
+	/* Reports why the file could not be found or created. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caller holds the file. */
+	return 0;
+}
+
+/*
+ * Gives the journal file its blocks, one after another, and merges blocks
+ * that follow each other on the disk into extents.
+ */
+static int
+j3_file_fill(
+	struct ufs_mount_state *ms,
+	struct inode *inode,
+	uint64_t blocks,
+	struct ufs_j3_extent *extents,
+	unsigned capacity,
+	unsigned *count)
+{
+	struct ufs_j3_extent *last;
+	uint64_t fragment;
+	uint64_t lba;
+	uint64_t n;
+	unsigned used;
+	int error;
+
+	/*
+	 * Allocates the blocks as the journal's own, which the allocator does
+	 * not zero: nothing reads the journal through the file.
+	 */
+	ms->j3.creating = 1;
+	error = 0;
+	used = 0;
+	for (n = 0; n < blocks; n++) {
+		/* Allocates the file's next block. */
+		mutex_lock(&inode->i_lock);
+
+		error = bmap_ensure(inode, n, &fragment);
+
+		mutex_unlock(&inode->i_lock);
+
+		/* Stops at a block that could not be allocated. */
+		if (error != 0)
+			break;
+
+		/* The first block is the header, which the locator will name. */
+		lba = fragment << ms->super.fsbtodb;
+		if (n == 0)
+			ms->j3.header_fragment = fragment;
+
+		/* Extends the last extent when the block follows it, or starts one. */
+		last = NULL;
+		if (used != 0)
+			last = &extents[used - 1U];
+		if (last != NULL && last->lba + last->count == lba) {
+			last->count += ms->j3.block_sectors;
+		} else if (used < capacity) {
+			extents[used].file_sector = n * ms->j3.block_sectors;
+			extents[used].lba = lba;
+			extents[used].count = ms->j3.block_sectors;
+			used++;
+		} else {
+			/* The header block lists no more extents. */
+			error = ENOSPC;
+			break;
+		}
+	}
+
+	/* The journal's own allocations are over. */
+	ms->j3.creating = 0;
+
+	/* Reports how many extents the blocks took. */
+	*count = used;
+
+	/* Reports why the file could not be given all its blocks. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the file has its blocks. */
+	return 0;
 }
 
 /*
@@ -19232,14 +20185,9 @@ j3_allocate(
 	uint64_t sectors)
 {
 	struct ufs_j3 *j3;
-	struct componentname component;
-	struct inode_creation_request request;
 	struct inode *inode;
 	struct ufs_j3_extent *extents;
-	uint64_t fragment;
-	uint64_t lba;
 	uint64_t blocks;
-	uint64_t n;
 	unsigned capacity;
 	unsigned count;
 	unsigned cached;
@@ -19250,24 +20198,15 @@ j3_allocate(
 	j3->block_sectors = ms->super.bsize / SECTOR_SIZE;
 	j3->header_sectors = j3->block_sectors;
 	capacity = (ms->super.bsize - J3_HEADER_FIXED) / J3_EXTENT_ENTRY;
+
+	/* Takes the table the new extents are gathered in. */
 	extents = kern_malloc(sizeof(struct ufs_j3_extent) * capacity);
 	if (extents == NULL)
 		return ENOMEM;
 
-	/* Finds the file, or creates it; the name is the volume's own. */
-	component.cn_nameptr = J3_NAME;
-	component.cn_namelen = kern_strlen(J3_NAME);
-	component.cn_flags = 0;
+	/* Finds the file, or creates it. */
 	inode = NULL;
-	j3->creating = 1;
-	error = ufs_lookup(root, &component, &inode);
-	if (error == ENOENT) {
-		error = inode_creation_request_system(INODE_REG, 0600, 0, 0, 0,
-		    &request);
-		if (error == 0)
-			error = ufs_create(root, &component, &request, &inode);
-	}
-	j3->creating = 0;
+	error = j3_file_open(ms, root, &inode);
 
 	/*
 	 * Delays the allocation's metadata writes and makes them durable once
@@ -19278,60 +20217,47 @@ j3_allocate(
 	 */
 	cached = mountp_disk_cached(root->i_mount);
 
-	/* Gives the old blocks back, then takes the wanted number again. */
+	/* Gives the old blocks back. */
 	if (error == 0)
 		error = ufs_truncate(inode, 0);
-	j3->creating = 1;
+
+	/* Takes the wanted number of blocks again. */
 	blocks = sectors / j3->block_sectors;
 	count = 0;
-	for (n = 0; error == 0 && n < blocks; n++) {
-		mutex_lock(&inode->i_lock);
-		error = bmap_ensure(inode, n, &fragment);
-		mutex_unlock(&inode->i_lock);
-		if (error != 0)
-			break;
-		lba = fragment << ms->super.fsbtodb;
-		if (n == 0)
-			j3->header_fragment = fragment;
+	if (error == 0)
+		error = j3_file_fill(ms, inode, blocks, extents, capacity, &count);
 
-		/* Extends the last extent, or starts one. */
-		if (count != 0 &&
-		    extents[count - 1U].lba + extents[count - 1U].count == lba) {
-			extents[count - 1U].count += j3->block_sectors;
-		} else if (count < capacity) {
-			extents[count].file_sector = n * j3->block_sectors;
-			extents[count].lba = lba;
-			extents[count].count = j3->block_sectors;
-			count++;
-		} else {
-			error = ENOSPC;
-		}
-	}
-	j3->creating = 0;
+	/* Records the file's new size in its inode. */
 	if (error == 0) {
 		inode->i_size = (off_t)(blocks * ms->super.bsize);
 		error = persist_inode(inode);
 	}
+
+	/* Lets the file go; the journal reaches its blocks through the extents. */
 	if (inode != NULL)
 		inode_release(inode);
+
+	/* Stops delaying the writes when they were not delayed before. */
 	if (!cached)
 		root->i_mount->m_disk->d_flags &= ~DISK_WRITE_CACHED;
+
+	/* Makes the allocation durable in one pass. */
 	if (error == 0)
 		error = j3_durable(root->i_mount);
 
-	/* Publishes the extents, or gives up the new ones. */
+	/* Gives up the new extents when the file could not be given its size. */
 	if (error != 0) {
 		kern_free(extents);
-
-		/* Failed. */
 		return error;
 	}
+
+	/* Publishes the extents in place of the old ones. */
 	kern_free(j3->extents);
 	j3->extents = extents;
 	j3->extent_count = count;
 	j3->total_sectors = blocks * j3->block_sectors;
 
-	/* Succeeded. */
+	/* Succeeded: the file has the wanted size. */
 	return 0;
 }
 
@@ -19348,42 +20274,65 @@ j3_make(
 {
 	struct ufs_j3 *j3;
 	uint8_t sector[SECTOR_SIZE];
+	uint64_t ticks;
+	uint64_t record;
 	unsigned slot;
 	int error;
 
-	/* Allocates the file and lays the slots out. */
+	/* Allocates the file; the volume has no journal until the locator names it. */
 	j3 = &ms->j3;
 	j3->present = 0;
 	error = j3_allocate(ms, root, sectors);
-	if (error == 0)
-		error = j3_geometry(j3);
+	if (error != 0)
+		return error;
 
-	/* Writes a header that has applied nothing, and empty commit records. */
-	if (error == 0) {
-		j3->nonce = (sched_ticks() + 1U) * UINT64_C(0x9e3779b97f4a7c15) ^
-		    ms->super.size ^ ((uint64_t)j3->header_fragment << 20) ^
-		    j3->nonce;
-		j3->applied = 0;
-		j3->sequence = 1;
-		error = j3_write_header(mountp, j3);
-	}
+	/* Lays the slots out. */
+	error = j3_geometry(j3);
+	if (error != 0)
+		return error;
+
+	/*
+	 * Gives the journal a new identity, so that records a former journal
+	 * left in the same blocks are not taken for this one's.
+	 */
+	ticks = sched_ticks();
+	j3->nonce = ((ticks + 1U) * UINT64_C(0x9e3779b97f4a7c15)) ^
+	    ms->super.size ^
+	    ((uint64_t)j3->header_fragment << 20) ^
+	    j3->nonce;
+
+	/* Writes a header that has applied nothing. */
+	j3->applied = 0;
+	j3->sequence = 1;
+	error = j3_write_header(mountp, j3);
+	if (error != 0)
+		return error;
+
+	/* Clears both slots' commit records, so that neither seals anything. */
 	kern_memset(sector, 0, sizeof(sector));
-	for (slot = 0; error == 0 && slot < 2U; slot++)
-		error = j3_io(mountp, j3, j3->header_sectors +
-		    (uint64_t)(slot + 1U) * j3->slot_sectors - 1U, 1, sector, 1);
-	if (error == 0)
-		error = j3_durable(mountp);
+	for (slot = 0; slot < 2U; slot++) {
+		record = j3->header_sectors + (uint64_t)(slot + 1U) * j3->slot_sectors - 1U;
+		error = j3_io(mountp, j3, record, 1, sector, 1);
+		if (error != 0)
+			return error;
+	}
 
-	/* Names the journal in the superblock, last. */
-	if (error == 0)
-		error = j3_locator_write(mountp, j3);
-	if (error == 0)
-		error = j3_durable(mountp);
-	if (error == 0)
-		j3->present = 1;
+	/* Makes the empty journal durable before anything names it. */
+	error = j3_durable(mountp);
+	if (error != 0)
+		return error;
 
-	/* Reports how the making went. */
-	return error;
+	/* Names the journal in the superblock, last, and makes the name durable. */
+	error = j3_locator_write(mountp, j3);
+	if (error != 0)
+		return error;
+	error = j3_durable(mountp);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the volume has the new journal. */
+	j3->present = 1;
+	return 0;
 }
 
 /*
@@ -19400,49 +20349,67 @@ j3_open(
 	uint64_t wanted;
 	int error;
 
-	/* A volume that wants no journal keeps none in service. */
+	/* A volume too small for more than a few blocks of journal keeps none. */
 	j3 = &ms->j3;
 	wanted = j3_wanted_sectors(mountp, ms);
 	if (wanted <= (uint64_t)ms->super.bsize / SECTOR_SIZE * 8U)
 		return ENOENT;
 
 	/* Makes the journal again when there is none or it has another size. */
-	error = 0;
-	if (!j3->present || j3->total_sectors != wanted)
+	if (!j3->present || j3->total_sectors != wanted) {
 		error = j3_make(mountp, ms, root, wanted);
-	if (error != 0)
-		return error;
+		if (error != 0)
+			return error;
+	}
 
-	/* Takes the memory of the running transaction. */
+	/* Takes the table of the running transaction's ranges. */
 	j3->ranges = kern_malloc(sizeof(struct ufs_j3_range) * j3->ranges_max);
-	j3->index = kern_malloc(sizeof(unsigned) * 2U * j3->ranges_max);
-	j3->freed = kern_malloc(sizeof(uint64_t) * J3_FREED_MAX);
-	j3->staging = kern_malloc((size_t)J3_STAGING_SECTORS * SECTOR_SIZE);
-	if (j3->ranges == NULL || j3->index == NULL || j3->freed == NULL ||
-	    j3->staging == NULL) {
+	if (j3->ranges == NULL) {
 		(void)j3_close(mountp, ms, 0);
-
-		/* Failed. */
 		return ENOMEM;
 	}
+
+	/* Takes the hash index over the ranges. */
+	j3->index = kern_malloc(sizeof(unsigned) * 2U * j3->ranges_max);
+	if (j3->index == NULL) {
+		(void)j3_close(mountp, ms, 0);
+		return ENOMEM;
+	}
+
+	/* Takes the set of blocks the transaction frees. */
+	j3->freed = kern_malloc(sizeof(uint64_t) * J3_FREED_MAX);
+	if (j3->freed == NULL) {
+		(void)j3_close(mountp, ms, 0);
+		return ENOMEM;
+	}
+
+	/* Takes the buffer a commit copies the metadata through. */
+	j3->staging = kern_malloc((size_t)J3_STAGING_SECTORS * SECTOR_SIZE);
+	if (j3->staging == NULL) {
+		(void)j3_close(mountp, ms, 0);
+		return ENOMEM;
+	}
+
+	/* Starts an empty transaction. */
 	kern_memset(j3->index, 0, sizeof(unsigned) * 2U * j3->ranges_max);
 	kern_memset(j3->freed, 0, sizeof(uint64_t) * J3_FREED_MAX);
 	j3->range_count = 0;
 	j3->logged_sectors = 0;
 	j3->freed_count = 0;
 
-	/* Carries metadata from here on, and commits on the flusher's interval. */
+	/*
+	 * Carries the metadata writes from here on, and commits them on the
+	 * flusher's interval for this mount.
+	 */
 	j3->active = 1;
 	j3->mountp = mountp;
 	error = buf_flusher_hook(j3_hook, ms, 1);
 	if (error != 0) {
 		(void)j3_close(mountp, ms, 1);
-
-		/* Failed. */
 		return error;
 	}
 
-	/* Succeeded. */
+	/* Succeeded: the journal is in service. */
 	return 0;
 }
 
@@ -19457,7 +20424,6 @@ j3_close(
 	int commit)
 {
 	struct ufs_j3 *j3;
-	unsigned n;
 	int error;
 
 	/* Stops the interval commits before taking the journal down. */
@@ -19465,30 +20431,41 @@ j3_close(
 	(void)buf_flusher_hook(j3_hook, ms, 0);
 	j3->mountp = NULL;
 
-	/* Commits the running transaction, then carries no more writes. */
-	error = 0;
+	/*
+	 * Ends the running transaction -- committed when asked, else its
+	 * pinned sectors let go unlogged -- and carries no more writes.
+	 */
 	mutex_lock(&j3->lock);
-	if (commit && j3->active && j3->ranges != NULL)
+
+	error = 0;
+	if (commit &&
+	    j3->active &&
+	    j3->ranges != NULL) {
 		error = j3_commit_locked(ms, mountp);
-	if (!commit && j3->ranges != NULL) {
-		for (n = 0; n < j3->range_count; n++)
-			(void)buf_unpin(mountp->m_disk, j3->ranges[n].lba,
-			    j3->ranges[n].count);
+	} else if (!commit && j3->ranges != NULL) {
+		j3_unpin_all(mountp, j3);
 	}
+
+	/* Carries no more writes. */
 	j3->active = 0;
+
 	mutex_unlock(&j3->lock);
 
-	/* Writes the homes and records every commit as applied. */
+	/* Writes the committed homes, when the journal was asked to commit. */
 	if (commit && error == 0)
 		error = j3_durable(mountp);
-	if (commit && error == 0 && j3->extents != NULL) {
+
+	/* Records every commit as applied, so that the next mount replays none. */
+	if (commit &&
+	    error == 0 &&
+	    j3->extents != NULL) {
 		j3->applied = j3->sequence - 1U;
 		error = j3_write_header(mountp, j3);
 		if (error == 0)
 			error = j3_durable(mountp);
 	}
 
-	/* Returns the memory of the running transaction. */
+	/* Gives back the memory of the running transaction. */
 	kern_free(j3->ranges);
 	kern_free(j3->index);
 	kern_free(j3->freed);
@@ -19499,8 +20476,12 @@ j3_close(
 	j3->staging = NULL;
 	j3->range_count = 0;
 
-	/* Reports how the last commit went. */
-	return error;
+	/* Reports why the last commit failed. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the journal is out of service with everything home. */
+	return 0;
 }
 
 /*
@@ -19515,14 +20496,29 @@ j3_hidden(
 {
 	struct ufs_mount_state *ms;
 	size_t length;
+	int differs;
 
-	/* Only the root directory holds the journal, and only it is special. */
-	ms = state(directory->i_mount);
-	if (directory->i_ino != UFS_ROOT_INO || ms == NULL || ms->j3.creating)
+	/* Only the root directory holds the journal. */
+	if (directory->i_ino != UFS_ROOT_INO)
 		return 0;
-	length = kern_strlen(J3_NAME);
 
-	/* Reports whether the name is the journal's. */
-	return component->cn_namelen == length &&
-	    kern_memcmp(component->cn_nameptr, J3_NAME, length) == 0;
+	/* A mount without state has no journal. */
+	ms = state(directory->i_mount);
+	if (ms == NULL)
+		return 0;
+
+	/* The journal's own lookups see the name. */
+	if (ms->j3.creating)
+		return 0;
+
+	/* Compares the name with the journal's, length first. */
+	length = kern_strlen(J3_NAME);
+	if (component->cn_namelen != length)
+		return 0;
+	differs = kern_memcmp(component->cn_nameptr, J3_NAME, length);
+	if (differs != 0)
+		return 0;
+
+	/* Succeeded: the name is the journal's. */
+	return 1;
 }

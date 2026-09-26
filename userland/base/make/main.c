@@ -36,12 +36,21 @@ struct make_options make_options;
 int make_level;
 
 /*
- * The jobserver MAKEFLAGS named (--jobserver-auth=R,W), whether -j was
- * given on this make's own command line, and whether MAKEFLAGS is being
- * read now.
+ * The jobserver MAKEFLAGS named (the R,W of --jobserver-auth=R,W), or
+ * NULL.  Set while the options are read, and handed to job_server_start.
  */
 static char *jobserver_auth;
+
+/*
+ * Whether -j was given on this make's own command line (not in
+ * MAKEFLAGS): such a make starts a jobserver of its own.
+ */
 static int jobs_on_command_line;
+
+/*
+ * Whether the options being read come from MAKEFLAGS, so that a -j there
+ * is not taken for one on the command line.
+ */
 static int reading_makeflags;
 
 /*
@@ -450,6 +459,8 @@ long_option(
 		jobserver_auth = make_strdup(value);
 		return 0;
 	}
+
+	/* The older name of the same option. */
 	compare = strncmp(argument, "--jobserver-fds", name_length);
 	if (compare == 0 && name_length == 15 && value != NULL) {
 		free(jobserver_auth);
@@ -553,10 +564,17 @@ short_options(
 				set_jobs(letter + 1);
 				return 0;
 			}
-			if (letter[1] == '\0' && next != NULL && next[0] >= '0' && next[0] <= '9') {
+
+			/* A count in the next argument is taken with it. */
+			if (letter[1] == '\0' &&
+			    next != NULL &&
+			    next[0] >= '0' &&
+			    next[0] <= '9') {
 				set_jobs(next);
 				return 1;
 			}
+
+			/* -j alone is any number of jobs; anything else after it is wrong. */
 			set_jobs(NULL);
 			if (letter[1] != '\0')
 				usage();
@@ -601,7 +619,7 @@ set_jobs(
 	char *end;
 	long value;
 
-	/* Where the option came from. */
+	/* Notes a -j of this make's own command line. */
 	if (!reading_makeflags)
 		jobs_on_command_line = 1;
 
@@ -611,12 +629,15 @@ set_jobs(
 		return;
 	}
 
-	/* A count, which must be a positive number. */
+	/* A count, which must be a number from 1 to 4096. */
 	value = strtol(count, &end, 10);
-	if (end == count || *end != '\0' || value < 1 || value > 4096)
+	if (end == count ||
+	    *end != '\0' ||
+	    value < 1 ||
+	    value > 4096)
 		usage();
 
-	/* Succeeded. */
+	/* Succeeded: the count is the limit. */
 	make_options.jobs = (int)value;
 }
 
@@ -782,6 +803,8 @@ define_makeflags(
 		buffer_add_char(&flags, ' ');
 		buffer_add_string(&flags, jobs);
 	}
+
+	/* The variables, each with its blanks and backslashes escaped. */
 	if (request->variable_count > 0)
 		buffer_add_string(&flags, " --");
 	for (index = 0; index < request->variable_count; index++) {
@@ -794,7 +817,11 @@ define_makeflags(
 	}
 
 	/* MAKEFLAGS goes to every recipe's environment. */
-	variable = variable_set_value(&make_global_variables, "MAKEFLAGS", buffer_text(&flags), FLAVOR_SIMPLE, ORIGIN_FILE);
+	variable = variable_set_value(&make_global_variables,
+				      "MAKEFLAGS",
+				      buffer_text(&flags),
+				      FLAVOR_SIMPLE,
+				      ORIGIN_FILE);
 	variable->export_state = 1;
 	free(flags.text);
 

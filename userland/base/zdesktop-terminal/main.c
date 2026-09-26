@@ -210,14 +210,9 @@ main_parse(
 	int index;
 	int status;
 
-	/* The defaults; a new window runs the program the way this one was run. */
+	/* The defaults. */
 	memset(options, 0, sizeof(*options));
 	options->program = MAIN_PROGRAM;
-	slash = NULL;
-	if (argc > 0 && argv[0] != NULL)
-		slash = strchr(argv[0], '/');
-	if (slash != NULL)
-		options->program = argv[0];
 	options->display = NULL;
 	options->font = MAIN_FONT;
 	options->command = NULL;
@@ -226,6 +221,15 @@ main_parse(
 	options->columns = MAIN_COLUMNS;
 	options->rows = MAIN_ROWS;
 	options->timeout = 0U;
+
+	/* A program run by a path is run by the same path for a new window (a bare name is looked up as MAIN_PROGRAM). */
+	slash = NULL;
+	if (argc > 0 && argv[0] != NULL)
+		slash = strchr(argv[0], '/');
+
+	/* The path it was run by. */
+	if (slash != NULL)
+		options->program = argv[0];
 
 	/* Each option in turn; the first name that matches takes it. */
 	for (index = 1; index < argc; index++) {
@@ -441,8 +445,10 @@ main_loop(
 			}
 		}
 
-		/* The held key repeats; a key typed ends the selection. */
+		/* The held key repeats. */
 		terminal_window_repeat(&main_window, terminal_clock());
+
+		/* A key typed ends the selection (Edit > Select All). */
 		if (main_window.input_length != 0U && main_screen.selected) {
 			main_screen.selected = 0;
 			main_screen.changed = 1;
@@ -669,8 +675,12 @@ main_write_shell(
 	/* Text being pasted goes first, as much as the terminal takes. */
 	if (main_paste_written < main_paste_length) {
 		count = write(master, main_paste + main_paste_written, main_paste_length - main_paste_written);
-		if (count < 0 && errno != EAGAIN && errno != EINTR)
+		if (count < 0 &&
+		    errno != EAGAIN &&
+		    errno != EINTR)
 			return 1;
+
+		/* What was written is not written again; a full terminal takes the rest later. */
 		if (count > 0)
 			main_paste_written += (size_t)count;
 	}
@@ -718,15 +728,18 @@ main_menu_actions(
 		status = 0;
 		switch (action) {
 		case TERMINAL_ACTION_NEW_WINDOW:
+			/* Another terminal, in a window of its own. */
 			main_new_window(options, run);
 			break;
 		case TERMINAL_ACTION_CLOSE:
 			/* The terminal ends. */
 			return 1;
 		case TERMINAL_ACTION_COPY:
+			/* The selected text into the terminal's clipboard. */
 			main_copy();
 			break;
 		case TERMINAL_ACTION_PASTE:
+			/* The clipboard's text to the shell, as if typed. */
 			main_start_paste();
 			break;
 		case TERMINAL_ACTION_SELECT_ALL:
@@ -735,6 +748,7 @@ main_menu_actions(
 			main_screen.changed = 1;
 			break;
 		case TERMINAL_ACTION_ZOOM_IN:
+			/* The text a step larger, or one of the fixed sizes below. */
 			status = main_zoom(options, run, run->pixels + TERMINAL_PIXELS_STEP);
 			break;
 		case TERMINAL_ACTION_ZOOM_OUT:
@@ -790,6 +804,8 @@ main_menu_actions(
 		/* A failed action ends the terminal. */
 		if (status != 0)
 			return -1;
+
+		/* The log line the tests read. */
 		printf("ZTERM ACTION run=%s action=%u\n", options->token, action);
 		fflush(stdout);
 	}
@@ -836,18 +852,22 @@ main_new_window(
 	if (child < 0)
 		return;
 	if (child == 0) {
-		/* The terminal's process, which keeps nothing of this terminal's. */
+		/* The terminal's process; the child that made it ends (as does a child whose fork failed). */
 		grandchild = fork();
 		if (grandchild != 0)
 			_exit(0);
+
+		/* It keeps nothing of this terminal's: not the shell's pseudo-terminal. */
 		if (run->master >= 0)
 			(void)close(run->master);
 
-		/* The same program and display, its log lines named after this run's. */
+		/* The same program, its log lines named after this run's. */
 		(void)snprintf(token, sizeof(token), "--token=%s-new", options->token);
 		arguments[0] = (char *)options->program;
 		arguments[1] = token;
 		arguments[2] = NULL;
+
+		/* The same display, when this one was given one. */
 		if (options->display != NULL) {
 			(void)snprintf(display, sizeof(display), "--display=%s", options->display);
 			arguments[2] = display;
@@ -876,11 +896,13 @@ main_zoom(
 {
 	int error;
 
-	/* The size stays within the bounds, and an unchanged size does nothing. */
+	/* The size stays within the bounds. */
 	if (pixels < TERMINAL_PIXELS_MIN)
 		pixels = TERMINAL_PIXELS_MIN;
 	if (pixels > TERMINAL_PIXELS_MAX)
 		pixels = TERMINAL_PIXELS_MAX;
+
+	/* An unchanged size does nothing. */
 	if (pixels == run->pixels)
 		return 0;
 
@@ -895,6 +917,8 @@ main_zoom(
 	/* A size the font cannot be measured at is not taken. */
 	if (error != 0)
 		return 0;
+
+	/* The size the menus show and Zoom In and Out step from. */
 	run->pixels = pixels;
 
 	/* The grid that fits the window at the new size, told to the shell. */
@@ -934,9 +958,11 @@ main_start_paste(void)
 
 	/* The clipboard's text, line breaks turned into what Enter sends. */
 	for (index = 0; index < main_clipboard_length; index++) {
-		main_paste[index] = main_clipboard[index];
-		if (main_paste[index] == '\n')
+		/* A line break is what Enter sends; every other byte is itself. */
+		if (main_clipboard[index] == '\n')
 			main_paste[index] = '\r';
+		else
+			main_paste[index] = main_clipboard[index];
 	}
 
 	/* The main loop writes it as the shell takes it. */

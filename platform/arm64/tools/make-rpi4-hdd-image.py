@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build an MBR/FAT16 SD image bootable by Raspberry Pi 4 firmware."""
+"""Build an MBR/FAT32 SD image bootable by Raspberry Pi 4 firmware."""
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
 import argparse
@@ -13,6 +13,10 @@ SECTOR = 512
 PARTITION_LBA = 2048
 PARTITION_BLOCKS = 262144
 IMAGE_BLOCKS = 524288
+# The boot partition is FAT32 (the user's decision of 2026-09-24), the type
+# the firmware and every SD card tool expect of it.  0x0C is FAT32 addressed
+# by LBA.
+PARTITION_TYPE = 0x0C
 FIRMWARE_FILES = ("start4.elf", "fixup4.dat", "bcm2711-rpi-4-b.dtb",
                   "LICENCE.broadcom")
 
@@ -49,13 +53,14 @@ def create(args: argparse.Namespace) -> None:
             image.truncate(total_blocks * SECTOR)
             mbr = bytearray(SECTOR)
             mbr[0x1BE:0x1CE] = struct.pack(
-                "<B3sB3sII", 0x80, b"\xfe\xff\xff", 0x06,
+                "<B3sB3sII", 0x80, b"\xfe\xff\xff", PARTITION_TYPE,
                 b"\xfe\xff\xff", PARTITION_LBA, PARTITION_BLOCKS)
             mbr[510:512] = b"\x55\xaa"
             image.write(mbr)
 
         spec = f"{temporary}@@{PARTITION_LBA * SECTOR}"
-        run("mformat", "-i", spec, "-T", str(PARTITION_BLOCKS),
+        run("mformat", "-i", spec, "-F", "-T", str(PARTITION_BLOCKS),
+            "-H", str(PARTITION_LBA),
             "-v", "ZEDRPI4", "::")
         run("mmd", "-i", spec, "::/overlays")
         for name in FIRMWARE_FILES:

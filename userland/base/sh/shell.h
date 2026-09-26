@@ -140,7 +140,6 @@ struct sh_cond {
 	struct sh_cond *second;		/* the right of && and || */
 };
 
-
 /*
  * A block of memory that one parse allocates its tree and its words from.
  *
