@@ -467,3 +467,151 @@ printf 'x\n' | sed -- -n; echo $?
 
 #### --expression twice
 printf 'x\n' | sed -n --expression=p --expression p
+
+#### \d \o \x escapes in the regex
+echo 'A.B' | sed 's/\d065/a/; s/\o056/-/; s/\x42/b/'
+
+#### \x of a special character is literal in the regex
+echo 'a^b.c' | sed 's/\x5e/X/; s/\x2e/Y/'
+
+#### \x26 in the replacement is a literal &
+echo 'ab' | sed 's/a/[\x26]/'
+
+#### \cX
+printf 'a\001b\n' | sed 's/\cA/-/'
+
+#### \0 in the replacement
+echo 'ab' | sed 's/a/[\0]/'
+
+#### \u with a group and \U with &
+echo 'foo bar' | sed -E 's/(\w+) (\w+)/\u\1 \U&/'
+
+#### \l then \U
+echo 'ABC def' | sed 's/\(ABC\) \(def\)/\l\1-\U\2/'
+
+#### \E ends \U in the middle
+echo 'abc' | sed 's/\(a\)\(b\)\(c\)/\U\1\E\2\U\3/'
+
+#### \n and \t in the replacement
+echo 'a,b' | sed 's/,/\t\n/' | od -c
+
+#### y with \t and \n
+printf 'a b\tc\n' | sed 'y/ \t/\t_/' | od -c
+
+#### 0,/re/ when the first line does not match
+printf 'y\nx\nx\n' | sed '0,/x/s//X/'
+
+#### 0,/re/ with -s starts again in each file
+printf 'x\nx\n' > f1; printf 'x\nx\n' > f2
+sed -s '0,/x/s//X/' f1 f2
+
+#### 0,5 is refused
+printf 'x\n' | sed -n '0,5p'; echo $?
+
+#### 0p is refused
+printf 'x\n' | sed -n '0p'; echo $?
+
+#### 2~0
+seq 5 | sed -n '2~0p'
+
+#### first~step with a range
+seq 10 | sed -n '2~4,+1p'
+
+#### addr,+0
+seq 5 | sed -n '/2/,+0p'
+
+#### addr,~N on a multiple
+seq 10 | sed -n '4,~4p'
+
+#### /re/,~N
+seq 10 | sed -n '/3/,~4p'
+
+#### M address flag
+printf 'a\nb\n' | sed -n 'N;/^b/Mp'
+
+#### s///M with $
+printf 'a\nb\n' | sed 'N;s/a$/A/M'
+
+#### T resets the flag when something was replaced
+printf 'ab\n' | sed -n 's/a/A/;T;p;s/q/Q/;T;p'
+
+#### t then T
+printf 'ab\n' | sed -e 's/a/A/;tx' -e ':x' -e 'T;s/$/!/'
+
+#### e in -i mode writes into the file
+printf 'a\n' > f
+sed -i '1e echo top' f
+cat f
+
+#### e runs with the pattern space
+printf 'echo one; echo two\n' | sed e
+
+#### s///e with g
+printf 'x x\n' | sed 's/x/echo/ge'
+
+#### R past the end of the file
+printf '1\n' > lines
+printf 'a\nb\nc\n' | sed 'R lines'
+
+#### R of a missing file
+printf 'a\n' | sed 'R nothere'
+
+#### two R share the file
+printf '1\n2\n3\n' > lines
+printf 'a\nb\n' | sed 'R lines
+R lines'
+
+#### W to /dev/stdout
+printf 'a\nb\n' | sed -n 'N;W /dev/stdout'
+
+#### F with -s
+printf 'a\n' > f1; printf 'b\n' > f2
+sed -s F f1 f2
+
+#### F with one stream across files
+printf 'a\n' > f1; printf 'b\n' > f2
+sed -n '$F' f1 f2
+
+#### z then G
+printf 'a\n' | sed 'h;z;G' | od -c
+
+#### Q in -i leaves what was written
+printf 'a\nb\nc\n' > f
+sed -i 2Q f
+cat f
+
+#### v with no version
+printf 'a\n' | sed v
+
+#### --sandbox refuses e
+printf 'a\n' | sed --sandbox e; echo $?
+
+#### --sandbox refuses R and W
+printf 'a\n' | sed --sandbox 'R x'; echo $?
+printf 'a\n' | sed --sandbox 'W x'; echo $?
+
+#### l with a tab and -l
+printf 'a\tb\n' | sed -n 'l 5'
+
+#### text of a with \t and a continuation line
+printf 'x\n' | sed 'a\
+one\ttwo\
+three'
+
+#### i one-liner keeps the text after blanks
+printf 'x\n' | sed 'i\   indented'
+
+#### c one-liner on a range
+printf '1\n2\n3\n' | sed '1,2c gone'
+
+#### [\t] in an address
+printf 'a\tb\nab\n' | sed -n '/a[\t]b/p'
+
+#### [^\n] after N
+printf 'ab\ncd\n' | sed 'N;s/[^\n]*$/X/'
+
+#### escaped delimiter and \n in a y
+printf 'a/b\n' | sed 'y/\//|/'
+
+#### ERE with \d decimal escape
+echo 'aA' | sed -E 's/\d065+/<&>/'

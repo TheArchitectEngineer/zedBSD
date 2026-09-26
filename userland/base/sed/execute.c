@@ -60,10 +60,29 @@ struct buffer {
 	size_t capacity;
 };
 
-/* Text or a file queued by a or r. */
+/* What a queued item is. */
+#define QUEUED_TEXT		0	/* the text of a */
+#define QUEUED_FILE		1	/* the file of r */
+#define QUEUED_LINE		2	/* a line R read, freed once written */
+
+/* Case conversions of a replacement (GNU's \U, \L, \u, \l and \E). */
+#define CASE_NONE	0
+#define CASE_UPPER	1
+#define CASE_LOWER	2
+
+/* Text or a file queued by a, r or R. */
 struct queued {
 	const char *text;
-	int is_file;
+	int kind;
+};
+
+/*
+ * The case conversion of a replacement being built: the mode \U or \L
+ * set until \E, and the one character \u or \l changes.
+ */
+struct case_state {
+	int mode;
+	int next;
 };
 
 /* The state of a run. */
@@ -122,9 +141,17 @@ static int run_append_next(struct state *state);
 static int command_selected(struct state *state, struct sed_command *command);
 static int range_selected(struct state *state, struct sed_command *command);
 static int address_matches(struct state *state, const struct sed_address *address);
+static int step_matches(unsigned long line, const struct sed_address *address);
 static int regex_match(struct state *state, regex_t *regex, const char *text, regmatch_t *matches, int flags);
 static void substitute(struct state *state, struct sed_command *command);
 static void add_replacement(struct buffer *out, const char *replacement, const char *text, const regmatch_t *matches);
+static void add_converted(struct buffer *out, const char *text, size_t length, struct case_state *conversion);
+static int to_upper(int value);
+static int to_lower(int value);
+static void run_program(struct state *state, const char *program, struct buffer *output);
+static void run_evaluate(struct state *state, const char *program);
+static void read_reader(struct state *state, struct sed_reader *reader);
+static void print_file_name(struct state *state);
 static void translate(struct state *state, const unsigned char *map);
 static void list(struct state *state, const struct sed_command *command);
 static void list_add(struct buffer *out, const char *text, size_t length, size_t *width, size_t limit);
@@ -140,7 +167,7 @@ static int start_edit(struct state *state);
 static void finish_edit(struct state *state);
 static char *backup_name(const char *target, const char *suffix);
 static char *directory_of(const char *path);
-static void queue_add(struct state *state, const char *text, int is_file);
+static void queue_add(struct state *state, const char *text, int kind);
 static void flush_queue(struct state *state);
 static void copy_file(struct state *state, const char *name);
 static void output_line(struct sed_output *output, const char *data, size_t length, int newline);
@@ -273,6 +300,7 @@ run_command(
 	size_t *index)
 {
 	struct buffer swap;
+	char *newline;
 	int action;
 
 	/* The command of its name. */
@@ -285,10 +313,13 @@ run_command(
 		print_line_number(state);
 		break;
 	case 'a':
-		queue_add(state, command->text, 0);
+		queue_add(state, command->text, QUEUED_TEXT);
 		break;
 	case 'r':
-		queue_add(state, command->text, 1);
+		queue_add(state, command->text, QUEUED_FILE);
+		break;
+	case 'R':
+		read_reader(state, command->reader);
 		break;
 	case 'i':
 		output_line(&state->out, command->text, strlen(command->text), 1);
@@ -340,6 +371,11 @@ run_command(
 		state->exit_status = command->exit_status;
 		state->quit_requested = 1;
 		return ACTION_QUIT;
+	case 'Q':
+		/* GNU's Q: quits without writing the pattern space. */
+		state->exit_status = command->exit_status;
+		state->quit_requested = 1;
+		return ACTION_QUIT_SILENT;
 	case 's':
 		substitute(state, command);
 		break;
@@ -350,8 +386,40 @@ run_command(
 		}
 
 		break;
+	case 'T':
+		/* GNU's T: branches when nothing was replaced (t's opposite). */
+		if (state->replaced)
+			state->replaced = 0;
+		else
+			*index = command->jump;
+		break;
 	case 'b':
 		*index = command->jump;
+		break;
+	case 'F':
+		print_file_name(state);
+		break;
+	case 'z':
+		/* GNU's z: empties the pattern space. */
+		state->space.length = 0;
+		state->space.data[0] = '\0';
+		break;
+	case 'W':
+		/* GNU's W: writes the first line of the pattern space. */
+		newline = memchr(state->space.data, line_delimiter,
+				 state->space.length);
+		if (newline == NULL) {
+			output_line(command->output, state->space.data,
+				    state->space.length, state->space_newline);
+		} else {
+			output_line(command->output, state->space.data,
+				    (size_t)(newline - state->space.data), 1);
+		}
+
+		/* On to the next command. */
+		break;
+	case 'e':
+		run_evaluate(state, command->text);
 		break;
 	case 'w':
 		output_line(command->output, state->space.data,
@@ -515,6 +583,24 @@ range_selected(
 			return 1;
 		}
 
+		/* +N ends the range N lines on; +0 is the one line. */
+		if (second->kind == SED_ADDRESS_PLUS) {
+			command->range_end = state->line + second->line;
+			if (second->line > 0)
+				command->in_range = 1;
+			return 1;
+		}
+
+		/* ~N ends it at the next line whose number is a multiple of N. */
+		if (second->kind == SED_ADDRESS_MULTIPLE) {
+			if (second->line == 0)
+				return 1;
+			command->range_end = (state->line / second->line + 1UL) *
+					     second->line;
+			command->in_range = 1;
+			return 1;
+		}
+
 		/* $ ends the range on the last line itself. */
 		if (second->kind == SED_ADDRESS_LAST) {
 			matched = is_last(state);
@@ -531,6 +617,14 @@ range_selected(
 	/* In the range: this line is in it, and may end it. */
 	if (second->kind == SED_ADDRESS_LINE) {
 		if (state->line >= second->line)
+			command->in_range = 0;
+		return 1;
+	}
+
+	/* +N and ~N end it at the line worked out when it started. */
+	if (second->kind == SED_ADDRESS_PLUS ||
+	    second->kind == SED_ADDRESS_MULTIPLE) {
+		if (state->line >= command->range_end)
 			command->in_range = 0;
 		return 1;
 	}
@@ -565,12 +659,43 @@ address_matches(
 	case SED_ADDRESS_REGEX:
 		matched = regex_match(state, address->regex, state->space.data, NULL, 0);
 		break;
+	case SED_ADDRESS_STEP:
+		matched = step_matches(state->line, address);
+		break;
 	default:
 		break;
 	}
 
 	/* Succeeded: whether it matched (no address matches nothing). */
 	return matched;
+}
+
+/*
+ * Reports whether a line is one of GNU's first~step: the first, then every
+ * step lines after it (0~4 is 4, 8, ...); a step of 0 is the first only.
+ */
+static int
+step_matches(
+	unsigned long line,
+	const struct sed_address *address)
+{
+	/* A step of 0: the first line only. */
+	if (address->step == 0) {
+		if (line == address->line)
+			return 1;
+		return 0;
+	}
+
+	/* The lines before the first are not. */
+	if (line < address->line)
+		return 0;
+
+	/* Only every step lines from the first. */
+	if ((line - address->line) % address->step != 0)
+		return 0;
+
+	/* Succeeded: a line of the step. */
+	return 1;
 }
 
 /*
@@ -705,6 +830,10 @@ substitute(
 	free(out.data);
 	state->replaced = 1;
 
+	/* GNU's e flag: the result is a command, whose output replaces it. */
+	if (s->evaluate)
+		run_evaluate(state, NULL);
+
 	/* p and w write the result. */
 	if (s->print)
 		output_line(&state->out, state->space.data, state->space.length, state->space_newline);
@@ -715,8 +844,10 @@ substitute(
 }
 
 /*
- * Adds a replacement: & is the match, \1 to \9 the groups, \& and \\ the
- * characters themselves; text is where the match's offsets start.
+ * Adds a replacement: & (and GNU's \0) is the match, \1 to \9 the groups,
+ * \& and \\ the characters themselves; text is where the match's offsets
+ * start.  GNU's \U and \L turn what follows to upper or lower case until
+ * \E, and \u and \l the next character only.
  */
 static void
 add_replacement(
@@ -725,36 +856,252 @@ add_replacement(
 	const char *text,
 	const regmatch_t *matches)
 {
+	struct case_state conversion;
 	const char *cursor;
 	const regmatch_t *group;
+
+	/* No conversion at the start. */
+	conversion.mode = CASE_NONE;
+	conversion.next = CASE_NONE;
 
 	/* Each character of the replacement. */
 	for (cursor = replacement; *cursor != '\0'; cursor++) {
 		/* & is the whole match. */
 		if (*cursor == '&') {
-			buffer_append(out, text + matches[0].rm_so,
-				      (size_t)(matches[0].rm_eo - matches[0].rm_so));
+			add_converted(out, text + matches[0].rm_so,
+				      (size_t)(matches[0].rm_eo - matches[0].rm_so),
+				      &conversion);
 			continue;
 		}
 
 		/* An ordinary character. */
 		if (*cursor != '\\' || cursor[1] == '\0') {
-			buffer_add(out, *cursor);
+			add_converted(out, cursor, 1, &conversion);
 			continue;
 		}
 
-		/* \1 to \9: a group, empty when it did not take part. */
+		/* \0 to \9: the match or a group, empty when it did not take part. */
 		cursor++;
-		if (*cursor >= '1' && *cursor <= '9') {
+		if (*cursor >= '0' && *cursor <= '9') {
 			group = &matches[*cursor - '0'];
-			if (group->rm_so >= 0)
-				buffer_append(out, text + group->rm_so, (size_t)(group->rm_eo - group->rm_so));
+			if (group->rm_so >= 0) {
+				add_converted(out, text + group->rm_so,
+					      (size_t)(group->rm_eo - group->rm_so),
+					      &conversion);
+			}
+
+			/* On to the next character. */
 			continue;
+		}
+
+		/* The case conversions. */
+		switch (*cursor) {
+		case 'U':
+			conversion.mode = CASE_UPPER;
+			conversion.next = CASE_NONE;
+			continue;
+		case 'L':
+			conversion.mode = CASE_LOWER;
+			conversion.next = CASE_NONE;
+			continue;
+		case 'E':
+			conversion.mode = CASE_NONE;
+			conversion.next = CASE_NONE;
+			continue;
+		case 'u':
+			conversion.next = CASE_UPPER;
+			continue;
+		case 'l':
+			conversion.next = CASE_LOWER;
+			continue;
+		default:
+			break;
 		}
 
 		/* Any other escaped character is itself. */
-		buffer_add(out, *cursor);
+		add_converted(out, cursor, 1, &conversion);
 	}
+}
+
+/* Adds bytes of a replacement, in the case the conversion asks for. */
+static void
+add_converted(
+	struct buffer *out,
+	const char *text,
+	size_t length,
+	struct case_state *conversion)
+{
+	size_t index;
+	int value;
+
+	/* Each byte. */
+	for (index = 0; index < length; index++) {
+		/* The mode of \U or \L. */
+		value = (unsigned char)text[index];
+		if (conversion->mode == CASE_UPPER)
+			value = to_upper(value);
+		if (conversion->mode == CASE_LOWER)
+			value = to_lower(value);
+
+		/* \u or \l, for this byte only. */
+		if (conversion->next == CASE_UPPER)
+			value = to_upper(value);
+		if (conversion->next == CASE_LOWER)
+			value = to_lower(value);
+		conversion->next = CASE_NONE;
+
+		/* The byte. */
+		buffer_add(out, (char)value);
+	}
+}
+
+/* Returns an ASCII letter in upper case. */
+static int
+to_upper(
+	int value)
+{
+	/* a to z. */
+	if (value >= 'a' && value <= 'z')
+		return value - 'a' + 'A';
+	return value;
+}
+
+/* Returns an ASCII letter in lower case. */
+static int
+to_lower(
+	int value)
+{
+	/* A to Z. */
+	if (value >= 'A' && value <= 'Z')
+		return value - 'A' + 'a';
+	return value;
+}
+
+/*
+ * Runs a command with the shell and gathers its standard output (GNU's e).
+ * The output written so far goes out first, so that it comes before
+ * anything the command writes elsewhere.
+ */
+static void
+run_program(
+	struct state *state,
+	const char *program,
+	struct buffer *output)
+{
+	char chunk[4096];
+	size_t count;
+	FILE *stream;
+
+	/* What sed has written so far. */
+	fflush(state->out.stream);
+	fflush(stdout);
+
+	/* The command, with its output read back. */
+	stream = popen(program, "r");
+	if (stream == NULL)
+		sed_fatal("couldn't run", program);
+
+	/* Its whole output. */
+	output->length = 0;
+	buffer_reserve(output, 0);
+	output->data[0] = '\0';
+	for (;;) {
+		count = fread(chunk, 1, sizeof(chunk), stream);
+		if (count == 0)
+			break;
+		buffer_append(output, chunk, count);
+	}
+
+	/* Succeeded: the command is done with. */
+	(void)pclose(stream);
+}
+
+/*
+ * GNU's e: with a command, runs it and writes its output now; without,
+ * runs the pattern space as a command and puts its output (less a final
+ * newline) in the pattern space's place.
+ */
+static void
+run_evaluate(
+	struct state *state,
+	const char *program)
+{
+	struct buffer output;
+
+	/* e command: its output goes out before the pattern space. */
+	memset(&output, 0, sizeof(output));
+	if (program != NULL) {
+		run_program(state, program, &output);
+		output_pending_newline(&state->out);
+		fwrite(output.data, 1, output.length, state->out.stream);
+		free(output.data);
+		return;
+	}
+
+	/* e alone: the pattern space runs. */
+	run_program(state, state->space.data, &output);
+	if (output.length > 0 && output.data[output.length - 1U] == '\n')
+		output.length--;
+
+	/* Succeeded: the output is the pattern space. */
+	buffer_set(&state->space, output.data, output.length);
+	free(output.data);
+}
+
+/*
+ * GNU's R: queues the next line of the reader's file, to be written at the
+ * end of the cycle; a file that is done (or cannot be read) adds nothing.
+ */
+static void
+read_reader(
+	struct state *state,
+	struct sed_reader *reader)
+{
+	struct buffer line;
+	int value;
+
+	/* The file, opened when first read. */
+	if (!reader->opened) {
+		reader->opened = 1;
+		reader->stream = fopen(reader->name, "r");
+	}
+
+	/* A file that cannot be read gives no lines. */
+	if (reader->stream == NULL)
+		return;
+
+	/* The next line, without its end. */
+	memset(&line, 0, sizeof(line));
+	buffer_reserve(&line, 0);
+	for (;;) {
+		value = getc(reader->stream);
+		if (value == EOF || value == line_delimiter)
+			break;
+		buffer_add(&line, (char)value);
+	}
+
+	/* No line left. */
+	if (value == EOF && line.length == 0) {
+		free(line.data);
+		return;
+	}
+
+	/* Succeeded: the line, which the queue frees once written. */
+	queue_add(state, line.data, QUEUED_LINE);
+}
+
+/* GNU's F: writes the name of the current line's file (- for standard input). */
+static void
+print_file_name(
+	struct state *state)
+{
+	const char *name;
+
+	/* The name, as the file was named. */
+	name = state->line_name;
+	if (name == NULL)
+		name = "-";
+	output_line(&state->out, name, strlen(name), 1);
 }
 
 /* y: maps each byte of the pattern space. */
@@ -1068,6 +1415,7 @@ static int
 next_file(
 	struct state *state)
 {
+	struct sed_command *command;
 	size_t index;
 	int started;
 
@@ -1086,10 +1434,16 @@ next_file(
 			break;
 	}
 
-	/* Succeeded: a new stream, numbered from its first line. */
+	/* A new stream, numbered from its first line, with its ranges closed. */
 	state->line = 0;
-	for (index = 0; index < state->program->count; index++)
-		state->program->commands[index].in_range = 0;
+	for (index = 0; index < state->program->count; index++) {
+		command = &state->program->commands[index];
+		command->in_range = 0;
+		if (command->first.kind == SED_ADDRESS_ZERO)
+			command->in_range = 1;
+	}
+
+	/* Succeeded: the file is open. */
 	return 1;
 }
 
@@ -1301,12 +1655,12 @@ directory_of(
 	return sed_strndup(path, (size_t)(slash - path));
 }
 
-/* Queues text (a) or a file (r) for the end of the cycle. */
+/* Queues text (a), a file (r) or a line (R) for the end of the cycle. */
 static void
 queue_add(
 	struct state *state,
 	const char *text,
-	int is_file)
+	int kind)
 {
 	/* Room for one more. */
 	if (state->queue_count == state->queue_capacity) {
@@ -1317,7 +1671,7 @@ queue_add(
 
 	/* The item. */
 	state->queue[state->queue_count].text = text;
-	state->queue[state->queue_count].is_file = is_file;
+	state->queue[state->queue_count].kind = kind;
 	state->queue_count++;
 }
 
@@ -1330,12 +1684,16 @@ flush_queue(
 
 	/* Each item, in order. */
 	for (index = 0; index < state->queue_count; index++) {
-		if (state->queue[index].is_file) {
+		if (state->queue[index].kind == QUEUED_FILE) {
 			copy_file(state, state->queue[index].text);
 		} else {
 			output_line(&state->out, state->queue[index].text,
 				    strlen(state->queue[index].text), 1);
 		}
+
+		/* A line of R is the queue's own. */
+		if (state->queue[index].kind == QUEUED_LINE)
+			free((char *)state->queue[index].text);
 	}
 
 	/* The queue is empty again. */

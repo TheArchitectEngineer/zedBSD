@@ -29,11 +29,20 @@
 #define SED_ADDRESS_LINE	1	/* a line number */
 #define SED_ADDRESS_LAST	2	/* $, the last line */
 #define SED_ADDRESS_REGEX	3	/* a regular expression */
+#define SED_ADDRESS_ZERO	4	/* GNU 0 of 0,/re/: before the first line */
+#define SED_ADDRESS_STEP	5	/* GNU first~step */
+#define SED_ADDRESS_PLUS	6	/* GNU addr,+N: N lines more */
+#define SED_ADDRESS_MULTIPLE	7	/* GNU addr,~N: up to a multiple of N */
 
-/* An address: a line, the last line, or the lines a regex matches. */
+/*
+ * An address: a line, the last line, the lines a regex matches, or one of
+ * GNU's forms.  line is the number of a line address, the first of
+ * first~step, and the N of +N and ~N.
+ */
 struct sed_address {
 	int kind;
 	unsigned long line;
+	unsigned long step;
 
 	/* The regex; NULL for an empty one, which is the last regex used. */
 	regex_t *regex;
@@ -52,6 +61,18 @@ struct sed_output {
 	struct sed_output *next;
 };
 
+/*
+ * A file that R reads a line at a time, shared by every R that names it,
+ * so that each reads the line after the one the last read.  It is opened
+ * when first read; a file that cannot be read gives no lines.
+ */
+struct sed_reader {
+	char *name;
+	FILE *stream;
+	int opened;
+	struct sed_reader *next;
+};
+
 /* The s command: the regex, the replacement and the flags. */
 struct sed_substitute {
 	regex_t *regex;
@@ -60,6 +81,9 @@ struct sed_substitute {
 	unsigned long occurrence;
 	int print;
 	struct sed_output *output;
+
+	/* GNU's e flag: the result is run as a command, and its output kept. */
+	int evaluate;
 };
 
 /* One command of the script, with its addresses. */
@@ -69,8 +93,12 @@ struct sed_command {
 	int negate;
 	char name;
 
-	/* Set while a range of two addresses is between them. */
+	/*
+	 * Set while a range of two addresses is between them; a range of +N
+	 * or ~N ends at range_end.  A range from 0 starts set.
+	 */
 	int in_range;
+	unsigned long range_end;
 
 	/* a, i, c: the text; b, t, :: the label; r: the file name. */
 	char *text;
@@ -78,10 +106,13 @@ struct sed_command {
 	/* {: the index of the matching }; b, t: the index of the label. */
 	size_t jump;
 
-	/* s: the substitution; y: the map of every byte; w: the file. */
+	/* s: the substitution; y: the map of every byte; w, W: the file. */
 	struct sed_substitute substitute;
 	unsigned char *map;
 	struct sed_output *output;
+
+	/* R: the file a line is read from. */
+	struct sed_reader *reader;
 
 	/* q, Q: the exit status; l: the line length, when number_given. */
 	int exit_status;
@@ -97,8 +128,9 @@ struct sed_program {
 	/* Set when the script began with #n, which is as -n. */
 	int quiet;
 
-	/* The files of w commands and flags. */
+	/* The files of w commands and flags, and of R. */
 	struct sed_output *outputs;
+	struct sed_reader *readers;
 
 	/* Set by -E: the regexes are extended ones. */
 	int extended;
