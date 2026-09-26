@@ -9,7 +9,7 @@ Related Milestones: MG003, MG001
 Objectives: O2, O4
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p026 cleared（2026-09-27: LLVM の AArch64 zedbsd target と aarch64 の sysroot、rpi4 の build を sysroot と driver に）。残りは p028（Noct・zedinst を rpi4 に）、p027（起動 parameter、**実機の bootargs と parser の方針の判断待ち**）、p021（最終回帰）
+Resume point: p026 cleared（2026-09-27: LLVM の AArch64 zedbsd target と aarch64 の sysroot、rpi4 の build を sysroot と driver に）。p028（Noct）・p029（package が LLVM の source を書き換えない）cleared。残りは p027（起動 parameter、**実機の bootargs と parser の方針の判断待ち**）、p021（最終回帰）
 <!-- awesome-plan-current:end -->
 
 ## 単一目標
@@ -139,7 +139,7 @@ p009の「pc98はQEMUが無いのでbuildまで」は**前提が誤っていた*
 | [ws036-p026](phase026/phase.md) | toolchain: LLVM の zedbsd target に AArch64 を足す（`__ZEDBSD__`、driver の link の emulation）と aarch64 の sysroot。rpi4 の `KERN_UAPI_NATIVE` 等と `ld.lld` の直接呼び出しを外し、開発 file を rpi4 にも入れる（p012 で判明）。Noct・zedinst は p028 に分けた | cleared（2026-09-27。patch level zedbsd7、`sysroot-arm64`、rpi4 は QEMU で login・`dyntest`、amd64 の回帰も PASS。rev-0 の cache の更新はユーザー） | p012 | `toolchain/llvm`、`platform/arm64` |
 | [ws036-p027](phase027/phase.md) | rpi4: 起動 parameter（DTB の `/chosen/bootargs`）を `hal_get_arch_handoff("boot.command-line")` で渡す。今は legacy autoroot。hal.h は変わらず、2026-09-25 の規則で実装の差分は承認不要と読めるが、**実機の firmware の bootargs（`rootwait` 等の `=` の無い token）を kernel の parser が拒み idle になる**ため、方針（parser を緩める・HAL で切り出す・別の file・据え置き）の判断待ち | planning（判断待ち） | p012 | `src/hal/arm64`、`src/kern/boot.c` |
 | [ws036-p029](phase029/phase.md) | toolchain: libcxx と clang の package が `build/llvm-source` に patch を当てず、hard link の写しに当てる（p026 の merge で main session が見つけた、patch level を上げた既存の tree の検査の失敗） | cleared（2026-09-27。libcxx の build、clang の写し、その後の `llvm-source-verify` が通る） | p026 | `userland/packages/external.mk`、libcxx・clang の package |
-| [ws036-p028](phase028/phase.md) | rpi4: Noct（aarch64 の cmake toolchain、JIT）と zedinst を rpi4 の root に（p026 から分けた） | planning | p026 | `userland/base/noct`、`userland/base/zedinst` |
+| [ws036-p028](phase028/phase.md) | rpi4: Noct（aarch64 の cmake toolchain、JIT）と zedinst を rpi4 の root に（p026 から分けた） | cleared（2026-09-27。Noct は rpi4 で JIT 付きで動く。既定では選ばない。zedinst は SD の配置を知らないので据え置き） | p026 | `userland/base/noct`、`userland/base/zedinst` |
 
 toolchain（p022・p023）は2026-09-23のユーザー指示で加えた。LLVMのtarget追加を優先し、無ければGCCにfallbackする。
 今のLLVMは `AArch64;X86` だけをbuildしている。
