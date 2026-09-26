@@ -21,7 +21,9 @@ LDFLAGS := -fsanitize=address,undefined
 all: run
 
 run: $(OUT)/fdt-host-test $(OUT)/brcmstb-host-test $(OUT)/firmware-host-test \
-	$(OUT)/disabled.dtb
+	$(OUT)/dma-host-test $(OUT)/dma-uncached-host-test $(OUT)/disabled.dtb
+	$(OUT)/dma-host-test
+	$(OUT)/dma-uncached-host-test
 	$(OUT)/fdt-host-test $(DTB) $(OUT)/disabled.dtb
 	$(OUT)/brcmstb-host-test $(DTB) $(OUT)/disabled.dtb
 	$(OUT)/firmware-host-test $(DTB)
@@ -54,3 +56,15 @@ $(OUT)/disabled.dtb: $(DTB)
 	$(DTC) -q -I dtb -O dts $(DTB) | \
 		sed '/compatible = "brcm,bcm2711-pcie";/a status = "disabled";' | \
 		$(DTC) -q -I dts -O dtb -o $@
+
+$(OUT)/dma-host-test: $(TESTS)/dma-host-test.c $(REPO)/src/drivers/generic/dma.c \
+	$(REPO)/include/drivers/generic/dma.h $(REPO)/include/kern/pmem.h
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(TESTS)/dma-host-test.c \
+		$(REPO)/src/drivers/generic/dma.c $(LDFLAGS) -o $@
+
+$(OUT)/dma-uncached-host-test: $(TESTS)/dma-host-test.c $(REPO)/src/drivers/generic/dma.c \
+	$(REPO)/include/drivers/generic/dma.h $(REPO)/include/kern/pmem.h
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) -DWS048_UNCACHED $(CFLAGS) $(TESTS)/dma-host-test.c \
+		$(REPO)/src/drivers/generic/dma.c $(LDFLAGS) -o $@

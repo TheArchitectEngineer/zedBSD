@@ -203,15 +203,16 @@ HAL の実装（同じ差分に含める）:
   uncached の窓にし、要求ごとに page 単位で対応を作る（L1〜L3 の table は必要に応じて確保）。対応を作る前に direct map の範囲を
   `dc civac` で書き出して捨てる。窓の番地は増やすだけで再利用しない（DMA の buffer は attach で取り detach で返す程度で、512 GiB を使い切らない）。
   direct map の cache のある別名は残る（投機的な読みで clean な line が入りうるが、書き出されない。Linux の arm64 と同じ前提）。
-- amd64・i386・sparcv9・m68k: 呼ばれない（その bus は coherent で、kernel は coherent な device に対して呼ばない）が、link のために
-  `HAL_ERR_UNSUPPORTED` を返す実装を置く。
+- amd64・i386・sparcv9・m68k: 実装しない（その bus は coherent で、kernel は coherent な device に対して呼ばない）。
 
-kernel の側（HAL の承認の後、driver の変更として。hal.h ではない）:
+kernel の側:
 
-- `kern_pmem_map_uncached()`・`kern_pmem_unmap_uncached()`（`src/kern/pmem.c`）。
-- `dma.c`: `constraints.coherent == 0` の device の `alloc_coherent` は uncached の番地を返し、`free_coherent` で外す。
-  `drv_dma_map()` の探索は返した番地で行う。`drv_dma_vector_create()` は非 coherent でも許す（中身が `alloc_coherent` なので）。
-- `drv_dma_sync_*` は非 coherent で `drv_dma_map()` の範囲が coherent の確保の中にしか無いので、何もしなくてよいまま（uncached）。
+- `kern_pmem_map_uncached()`・`kern_pmem_unmap_uncached()`（宣言は `include/kern/pmem.h`、実装は arm64 だけの `src/kern/uncached.c`。
+  実装は HAL の差分と一緒に承認の後に入れる）。
+- `dma.c`（p004 で当てた。HAL ではない）: `constraints.coherent == 0` の device の `alloc_coherent` は uncached の番地を返し、
+  `free_coherent` で外す。上の 2 関数は weak で参照し、無い kernel では ENOTSUP。`drv_dma_map()` の探索は返した番地で行う。
+  `drv_dma_vector_create()` は非 coherent でも許す（中身が `alloc_coherent` なので）。
+- `drv_dma_sync_*` は、`drv_dma_map()` の範囲が coherent の確保の中にしか無く、それが uncached なので、何もしなくてよいまま。
 
 ## 7. VL805 の firmware（mailbox）
 

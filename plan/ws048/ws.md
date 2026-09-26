@@ -45,7 +45,7 @@ Resume point: p004（非 coherent な DMA）は HAL の承認待ち（design.md 
 | [ws048-p001](phase001/phase.md) | 調査と設計 | cleared | — | 不要 |
 | [ws048-p002](phase002/phase.md) | FDT の reader、arm64 の device mapping の実装の修正、brcmstb の host bridge と PCI の backend（VL805 が列挙される） | cleared（実機は未実施） | p001 | 不要 |
 | [ws048-p003](phase003/phase.md) | firmware の mailbox と VL805 の firmware の通知 | cleared（実機は未実施） | p002 | 不要 |
-| [ws048-p004](phase004/phase.md) | 非 coherent な DMA（`hal_pmem_map_uncached` と `dma.c`） | planned | p001 | **要る**（design.md §6） |
+| [ws048-p004](phase004/phase.md) | 非 coherent な DMA（`hal_pmem_map_uncached` と `dma.c`） | uncleared（`dma.c` は済み。hal.h の差分の承認待ち） | p001 | **要る**（design.md §6） |
 | [ws048-p005](phase005/phase.md) | xHCI を rpi4 で | planned | p002・p003・p004 | 不要 |
 | [ws048-p006](phase006/phase.md) | USB の hub と HID キーボードで console に入力 | planned | p005 | 不要 |
 | [ws048-p007](phase007/phase.md) | 規約の全文の確認と回帰、実機の結果の取りまとめ | planned | p002〜p006 | 不要 |
