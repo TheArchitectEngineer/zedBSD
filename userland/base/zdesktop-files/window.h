@@ -133,8 +133,12 @@ struct fm_present {
 	VkFence fence;
 	VkSemaphore acquired;
 
-	/* The Vulkan call that failed last, for the error line. */
+	/* The Vulkan call that failed last, for the error line; the last frame's copy, acquire, present and wait times (milliseconds). */
 	const char *operation;
+	unsigned copy_ms;
+	unsigned acquire_ms;
+	unsigned present_ms;
+	unsigned wait_ms;
 };
 
 /* The window (window.c). */

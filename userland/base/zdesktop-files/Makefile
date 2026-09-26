@@ -7,5 +7,7 @@ ZDESKTOP_FILES_SOURCES := userland/base/zdesktop-files/main.c \
 	userland/base/zdesktop-files/canvas.c userland/base/zdesktop-files/text.c \
 	userland/base/zdesktop-files/icons.c userland/base/zdesktop-files/ui.c \
 	userland/base/zdesktop-files/ui-grid.c userland/base/zdesktop-files/dir.c \
-	userland/base/zdesktop-files/mime.c userland/base/zdesktop-files/places.c
+	userland/base/zdesktop-files/mime.c userland/base/zdesktop-files/places.c \
+	userland/base/zdesktop-files/ui-input.c userland/base/zdesktop-files/ui-list.c \
+	userland/base/zdesktop-files/ui-field.c userland/base/zdesktop-files/select.c
 $(eval $(call ZEDBSD_USERLAND_PACKAGE,zdesktop-files,File manager,amd64,y,basic,$(ZDESKTOP_FILES_SOURCES),y,base,base/zdesktop-files,base/libvulkan base/libwayland base/libzdesktop base/libtruetype,0755,program,,,bin))

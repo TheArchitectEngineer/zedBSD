@@ -216,6 +216,10 @@ host_type(
 			character = '-';
 			modifiers = FM_MOD_SHIFT;
 		}
+		if (character == '~') {
+			character = '`';
+			modifiers = FM_MOD_SHIFT;
+		}
 		code = 57;
 		if (character != ' ') {
 			for (code = 0; code < sizeof(host_keys) - 1; code++) {

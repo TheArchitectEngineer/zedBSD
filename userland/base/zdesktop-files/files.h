@@ -36,11 +36,18 @@
 #define FM_TABS			8
 #define FM_HISTORY		64
 
+/* The most parts the path in the toolbar has. */
+#define FM_CRUMBS		32
+
 /* How many clickable regions one frame records. */
 #define FM_HITS			1024
 
 /* How many places the sidebar lists. */
 #define FM_PLACES		40
+
+/* The list view's header and row heights (ui-list.c; the keyboard and the rubber band use them too). */
+#define FM_LIST_HEADER		30
+#define FM_LIST_ROW		28
 
 /* The window's size when the compositor leaves it to the program. */
 #define FM_WIDTH		1120
@@ -251,6 +258,14 @@ struct fm_place {
 };
 
 /*
+ * One part of the path in the toolbar: its label and the place it leads to.
+ */
+struct fm_crumb {
+	char label[FM_NAME_MAX];
+	struct fm_location location;
+};
+
+/*
  * The sidebar's places, in their order.
  */
 struct fm_places {
@@ -267,13 +282,66 @@ enum fm_view {
 };
 
 /*
- * What the items are sorted by.
+ * What the items are sorted by (FM_SORT_COUNT is none).
  */
 enum fm_sort {
 	FM_SORT_NAME,
 	FM_SORT_KIND,
 	FM_SORT_SIZE,
-	FM_SORT_MODIFIED
+	FM_SORT_MODIFIED,
+	FM_SORT_COUNT
+};
+
+/*
+ * The columns of the list view; the app's columns are a mask of their
+ * bits.  Location and Date Deleted are added by the places that need them.
+ */
+enum fm_column {
+	FM_COLUMN_NAME,
+	FM_COLUMN_KIND,
+	FM_COLUMN_SIZE,
+	FM_COLUMN_MODIFIED,
+	FM_COLUMN_CHANGED,
+	FM_COLUMN_TAGS,
+	FM_COLUMN_OWNER,
+	FM_COLUMN_LOCATION,
+	FM_COLUMN_DELETED,
+	FM_COLUMN_COUNT
+};
+
+/* The columns shown unless the user chooses others. */
+#define FM_COLUMNS_DEFAULT	((1U << FM_COLUMN_KIND) | (1U << FM_COLUMN_SIZE) | (1U << FM_COLUMN_MODIFIED))
+
+/*
+ * Where the keyboard's input goes inside the window.
+ */
+enum fm_focus {
+	FM_FOCUS_CONTENT,
+	FM_FOCUS_LOCATION,
+	FM_FOCUS_SEARCH,
+	FM_FOCUS_RENAME
+};
+
+/*
+ * What a key did to a text field.
+ */
+enum fm_field_result {
+	FM_FIELD_NONE,
+	FM_FIELD_MOVED,
+	FM_FIELD_CHANGED,
+	FM_FIELD_ENTER,
+	FM_FIELD_CANCEL
+};
+
+/*
+ * A one-line text field: UTF-8 text, the cursor and the other end of the
+ * selection (byte offsets on character boundaries).
+ */
+struct fm_field {
+	char text[FM_PATH_MAX];
+	size_t length;
+	size_t cursor;
+	size_t anchor;
 };
 
 /*
@@ -324,6 +392,8 @@ struct fm_layout {
 	struct fm_rect sidebar;
 	struct fm_rect content;
 	struct fm_rect preview;
+	struct fm_rect items;
+	int grid_left;
 	int columns;
 	int cell_width;
 	int cell_height;
@@ -343,6 +413,7 @@ struct fm_app {
 	int width;
 	int height;
 	uint64_t now;
+	time_t wall;
 	int dirty;
 	int focused;
 
@@ -357,6 +428,7 @@ struct fm_app {
 	int show_sidebar;
 	int show_preview;
 	int show_hidden;
+	unsigned columns;
 
 	/* The sidebar and the tabs. */
 	struct fm_places places;
@@ -386,6 +458,26 @@ struct fm_app {
 
 	/* The modifiers held. */
 	uint32_t modifiers;
+
+	/* Where typing goes, and the location field (Ctrl+L). */
+	unsigned focus;
+	struct fm_field location;
+
+	/* A rubber band being dragged over the items: its corners in the items' coordinates (scroll included). */
+	int band;
+	int band_x0;
+	int band_y0;
+	int band_x1;
+	int band_y1;
+
+	/* What was typed to find an item by its name, and when it was typed last. */
+	char typed[64];
+	size_t typed_length;
+	uint64_t typed_at;
+
+	/* A short message in the status pill, and until when it shows. */
+	char message[160];
+	uint64_t message_until;
 };
 
 /* The interface (ui.c). */
@@ -398,10 +490,47 @@ void fm_ui_hit(struct fm_app *app, const struct fm_rect *rect, unsigned kind, in
 struct fm_tab *fm_ui_tab(struct fm_app *app);
 void fm_ui_go(struct fm_app *app, const struct fm_location *location);
 void fm_log(const char *format, ...);
+int fm_ui_crumbs(struct fm_app *app, struct fm_crumb *crumbs, int capacity);
+void fm_ui_reload(struct fm_app *app, struct fm_tab *tab);
+void fm_ui_back(struct fm_app *app);
+void fm_ui_forward(struct fm_app *app);
+void fm_ui_open(struct fm_app *app, int index);
+void fm_ui_message(struct fm_app *app, const char *message);
 
-/* The icon and list views (ui-grid.c). */
+/* The pointer and the keyboard (ui-input.c). */
+void fm_input_motion(struct fm_app *app, const struct fm_event *event);
+void fm_input_button(struct fm_app *app, const struct fm_event *event);
+void fm_input_scroll(struct fm_app *app, int amount);
+void fm_input_key(struct fm_app *app, const struct fm_event *event);
+int fm_input_hit_at(struct fm_app *app, int x, int y, unsigned *kind, int *index);
+
+/* The content panel and the icon view (ui-grid.c). */
 void fm_grid_draw(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *area);
 void fm_grid_entry_icon(struct fm_app *app, struct fm_canvas *canvas, const struct fm_entry *entry, float x, float y, float size);
+void fm_view_item_rect(struct fm_app *app, int index, struct fm_rect *rect);
+
+/* The list view (ui-list.c). */
+void fm_list_draw(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *inner);
+void fm_time_text(time_t when, time_t now, char *text, size_t size);
+int fm_list_sort_at(struct fm_app *app, int index);
+
+/* The text fields (ui-field.c). */
+char fm_key_character(uint32_t key, uint32_t modifiers);
+void fm_field_set(struct fm_field *field, const char *text);
+void fm_field_select(struct fm_field *field, size_t start, size_t end);
+unsigned fm_field_key(struct fm_field *field, uint32_t key, uint32_t modifiers);
+void fm_field_insert(struct fm_field *field, const char *text, size_t length);
+void fm_field_draw(struct fm_app *app, struct fm_canvas *canvas, const struct fm_field *field, const struct fm_rect *rect, unsigned pixels, const char *placeholder);
+
+/* The selection (select.c). */
+void fm_select_none(struct fm_tab *tab);
+void fm_select_only(struct fm_tab *tab, int index);
+void fm_select_toggle(struct fm_tab *tab, int index);
+void fm_select_range(struct fm_tab *tab, int from, int to);
+void fm_select_all(struct fm_tab *tab);
+size_t fm_select_count(struct fm_tab *tab, uint64_t *bytes);
+int fm_select_first(struct fm_tab *tab);
+int fm_select_find(struct fm_tab *tab, const char *name);
 
 /* The listing of a place (dir.c). */
 int fm_dir_read(struct fm_listing *listing, const char *path, int hidden);
@@ -411,6 +540,7 @@ struct fm_entry *fm_dir_add(struct fm_listing *listing, const char *folder, cons
 int fm_dir_count(const char *path, int hidden);
 void fm_dir_size_text(uint64_t size, char *text, size_t length);
 void fm_dir_items_text(long count, char *text, size_t length);
+void fm_owner_text(uid_t uid, gid_t gid, char *text, size_t length);
 
 /* The file types (mime.c). */
 const struct fm_mime *fm_mime_guess(const char *name, mode_t mode);
@@ -421,5 +551,6 @@ void fm_mime_label(const char *name, char *label, size_t size);
 /* The sidebar's places (places.c). */
 void fm_places_init(struct fm_places *places, const char *home);
 const char *fm_location_name(const struct fm_location *location, const char *home);
+void fm_tags_text(struct fm_app *app, unsigned tags, char *text, size_t length);
 
 #endif

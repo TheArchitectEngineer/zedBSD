@@ -43,6 +43,8 @@ static void grid_items(struct fm_app *app, struct fm_canvas *canvas, const struc
 static void grid_cell(struct fm_app *app, struct fm_canvas *canvas, struct fm_entry *entry, int index, int x, int y);
 static int grid_name(struct fm_app *app, struct fm_canvas *canvas, const struct fm_entry *entry, int x, int y, int selected);
 static void grid_message(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *inner, const char *message);
+static void grid_band(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *inner);
+static void grid_status(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *area);
 
 /*
  * Draws the content panel for the place the tab shows.
@@ -67,6 +69,7 @@ fm_grid_draw(
 	inner.width = area->width - 2 * GRID_PADDING;
 	inner.height = area->height - GRID_TITLE_HEIGHT - 4;
 	app->layout.content_height = 0;
+	app->layout.items = inner;
 
 	/* The whole panel's background can be clicked (it clears the selection later). */
 	fm_ui_hit(app, area, FM_HIT_CONTENT, 0);
@@ -85,10 +88,53 @@ fm_grid_draw(
 		return;
 	}
 
-	/* The items. */
+	/* The items, as a list or a grid, and the rubber band over them. */
 	fm_canvas_clip_push(canvas, &inner);
-	grid_items(app, canvas, &inner);
+	if (app->view == FM_VIEW_LIST) {
+		fm_list_draw(app, canvas, &inner);
+	} else {
+		grid_items(app, canvas, &inner);
+	}
+
+	/* The rubber band over the items. */
+	grid_band(app, canvas, &inner);
 	fm_canvas_clip_pop(canvas);
+
+	/* The status pill, when there is something to say. */
+	grid_status(app, canvas, area);
+}
+
+/*
+ * Reports where an item is drawn in the last frame's layout (scroll
+ * included), for the keyboard and the rubber band.
+ */
+void
+fm_view_item_rect(
+	struct fm_app *app,
+	int index,
+	struct fm_rect *rect)
+{
+	struct fm_tab *tab;
+	int columns;
+
+	/* The list: one row an item under the header. */
+	tab = fm_ui_tab(app);
+	if (app->view == FM_VIEW_LIST) {
+		rect->x = app->layout.items.x;
+		rect->y = app->layout.items.y + FM_LIST_HEADER + index * FM_LIST_ROW - tab->scroll;
+		rect->width = app->layout.items.width;
+		rect->height = FM_LIST_ROW;
+		return;
+	}
+
+	/* The grid: the cell of its row and column. */
+	columns = app->layout.columns;
+	if (columns < 1)
+		columns = 1;
+	rect->x = app->layout.grid_left + (index % columns) * GRID_CELL_WIDTH + 4;
+	rect->y = app->layout.items.y + (index / columns) * GRID_CELL_HEIGHT - tab->scroll + 2;
+	rect->width = GRID_CELL_WIDTH - 8;
+	rect->height = GRID_CELL_HEIGHT - 4;
 }
 
 /*
@@ -186,6 +232,7 @@ grid_items(
 
 	/* The grid's measure, which scrolling and the keyboard use. */
 	app->layout.columns = columns;
+	app->layout.grid_left = left;
 	app->layout.cell_width = GRID_CELL_WIDTH;
 	app->layout.cell_height = GRID_CELL_HEIGHT;
 	app->layout.content_height = rows * GRID_CELL_HEIGHT + GRID_TITLE_HEIGHT + 8;
@@ -330,4 +377,93 @@ grid_message(
 	/* Centred, faint. */
 	width = fm_text_width(app->text, message, strlen(message), 15U, 0);
 	(void)fm_text_draw(app->text, canvas, inner->x + (inner->width - width) / 2, inner->y + inner->height / 2 - 20, message, strlen(message), 15U, 0, FM_COLOR_TEXT_FAINT);
+}
+
+/* Draws the rubber band being dragged: a faint accent box with an edge. */
+static void
+grid_band(
+	struct fm_app *app,
+	struct fm_canvas *canvas,
+	const struct fm_rect *inner)
+{
+	struct fm_tab *tab;
+	int left;
+	int top;
+	int right;
+	int bottom;
+
+	/* No band is being dragged. */
+	if (app->band == 0)
+		return;
+
+	/* Its corners in order, on the screen. */
+	tab = fm_ui_tab(app);
+	left = app->band_x0;
+	right = app->band_x1;
+	if (left > right) {
+		left = app->band_x1;
+		right = app->band_x0;
+	}
+
+	/* And its top and bottom. */
+	top = app->band_y0;
+	bottom = app->band_y1;
+	if (top > bottom) {
+		top = app->band_y1;
+		bottom = app->band_y0;
+	}
+
+	/* On the screen, the scroll taken off. */
+	top -= tab->scroll;
+	bottom -= tab->scroll;
+
+	/* The box and its edge. */
+	(void)inner;
+	fm_canvas_round(canvas, (float)left, (float)top, (float)(right - left), (float)(bottom - top), 3.0f, FM_RGBA(0x2f7cf6, 30));
+	fm_canvas_round_border(canvas, (float)left, (float)top, (float)(right - left), (float)(bottom - top), 3.0f, 1.0f, FM_RGBA(0x2f7cf6, 150));
+}
+
+/* Draws the status pill at the bottom of the panel: a message, or the selection's count and size. */
+static void
+grid_status(
+	struct fm_app *app,
+	struct fm_canvas *canvas,
+	const struct fm_rect *area)
+{
+	struct fm_tab *tab;
+	uint64_t bytes;
+	size_t count;
+	char text[256];
+	char size[32];
+	int width;
+	int x;
+	int y;
+
+	/* A message while it lasts. */
+	tab = fm_ui_tab(app);
+	text[0] = '\0';
+	if (app->message[0] != '\0' && app->now < app->message_until)
+		snprintf(text, sizeof(text), "%s", app->message);
+
+	/* Otherwise two or more selected items: how many and how large. */
+	if (text[0] == '\0') {
+		count = fm_select_count(tab, &bytes);
+		if (count < 2U)
+			return;
+		snprintf(text, sizeof(text), "%lu items selected", (unsigned long)count);
+
+		/* The size, when files (not only folders) are among them. */
+		if (bytes != 0U) {
+			fm_dir_size_text(bytes, size, sizeof(size));
+			snprintf(text, sizeof(text), "%lu items selected \xe2\x80\x94 %s", (unsigned long)count, size);
+		}
+	}
+
+	/* A soft pill, centred at the bottom. */
+	width = fm_text_width(app->text, text, strlen(text), 12U, 0) + 32;
+	x = area->x + (area->width - width) / 2;
+	y = area->y + area->height - 44;
+	fm_canvas_shadow(canvas, (float)x, (float)y + 2.0f, (float)width, 28.0f, 14.0f, 8.0f, FM_COLOR_SHADOW);
+	fm_canvas_round(canvas, (float)x, (float)y, (float)width, 28.0f, 14.0f, FM_RGBA(0x2a3345, 225));
+	(void)fm_text_draw(app->text, canvas, x + 16, fm_text_center(12U, y, 28), text, strlen(text), 12U, 0, FM_RGB(0xffffff));
 }

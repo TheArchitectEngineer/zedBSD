@@ -17,6 +17,8 @@
 #include "files.h"
 
 #include <dirent.h>
+#include <grp.h>
+#include <pwd.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -348,6 +350,38 @@ fm_dir_items_text(
 
 	/* Any other count is plural. */
 	snprintf(text, length, "%ld items", count);
+}
+
+/*
+ * Writes an owner as "user:group", by name where the accounts know them
+ * and by number otherwise.
+ */
+void
+fm_owner_text(
+	uid_t uid,
+	gid_t gid,
+	char *text,
+	size_t length)
+{
+	struct passwd *account;
+	struct group *group;
+	char user_name[64];
+	char group_name[64];
+
+	/* The user's name, or number. */
+	snprintf(user_name, sizeof(user_name), "%lu", (unsigned long)uid);
+	account = getpwuid(uid);
+	if (account != NULL && account->pw_name != NULL)
+		snprintf(user_name, sizeof(user_name), "%s", account->pw_name);
+
+	/* The group's name, or number. */
+	snprintf(group_name, sizeof(group_name), "%lu", (unsigned long)gid);
+	group = getgrgid(gid);
+	if (group != NULL && group->gr_name != NULL)
+		snprintf(group_name, sizeof(group_name), "%s", group->gr_name);
+
+	/* Both, joined. */
+	snprintf(text, length, "%s:%s", user_name, group_name);
 }
 
 /* Orders two entries: folders first, then the sort's key, then the names. */
