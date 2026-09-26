@@ -119,9 +119,8 @@ main(
 		return 2;
 	}
 
+	/* Two to four operands: the files and their skips. */
 	operand_count = options.operand_count;
-
-	/* Handles the operand count condition. */
 	if (operand_count < 2 || operand_count > 4) {
 		cmp_usage();
 

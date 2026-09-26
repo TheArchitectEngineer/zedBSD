@@ -350,24 +350,28 @@ new_node(
 	return node;
 }
 
-/* Supports the parse or operation. */
+/* Parses the expressions joined by -o (or -or). */
 static struct node *
 parse_or(
 	struct parser *parser)
 {
 	struct node *parent;
 	struct node *left;
+	int joined;
 
+	/* The first operand. */
 	left = parse_and(parser);
 
-	/* Process each remaining command-line operand. */
-	while (!parser->failed && parser->index < parser->argc &&
-	       is_operator(parser, "-o", "-or")) {
-		parent = new_node(NODE_OR);
-
+	/* Each further operand after an -o. */
+	for (;;) {
+		/* Whether an -o follows. */
+		joined = !parser->failed && is_operator(parser, "-o", "-or");
+		if (!joined)
+			break;
 		parser->index++;
 
-		/* Handles the parent availability. */
+		/* The node that joins the two. */
+		parent = new_node(NODE_OR);
 		if (parent == NULL)
 			return NULL;
 		parent->left = left;
@@ -379,27 +383,34 @@ parse_or(
 	return left;
 }
 
-/* Supports the parse and operation. */
+/* Parses the expressions joined by -a (or -and), or by nothing. */
 static struct node *
 parse_and(
 	struct parser *parser)
 {
 	struct node *parent;
 	struct node *left;
+	int stops;
+	int joined;
 
+	/* The first operand. */
 	left = parse_not(parser);
 
-	/* Process each remaining command-line operand. */
-	while (!parser->failed && parser->index < parser->argc &&
-	       strcmp(parser->argv[parser->index], ")") != 0 &&
-	       !is_operator(parser, "-o", "-or")) {
-		parent = new_node(NODE_AND);
+	/* Each further operand, until the end, a ")" or an -o. */
+	for (;;) {
+		/* Whether the expression ends here. */
+		stops = parser->failed || parser->index >= parser->argc ||
+		    is_operator(parser, ")", ")") || is_operator(parser, "-o", "-or");
+		if (stops)
+			break;
 
-		/* Handles the selected command-line operation. */
-		if (is_operator(parser, "-a", "-and"))
+		/* An explicit -a is skipped; juxtaposition means the same. */
+		joined = is_operator(parser, "-a", "-and");
+		if (joined)
 			parser->index++;
 
-		/* Handles the parent availability. */
+		/* The node that joins the two. */
+		parent = new_node(NODE_AND);
 		if (parent == NULL)
 			return NULL;
 		parent->left = left;

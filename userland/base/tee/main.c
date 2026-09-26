@@ -79,9 +79,8 @@ main(
 		return 1;
 	}
 
+	/* One output per operand. */
 	output_count = (size_t)operand_count;
-
-	/* Handles the output count condition. */
 	if (output_count > SIZE_MAX / sizeof(*outputs)) {
 		errno = EOVERFLOW;
 		command_error("tee", "output list");

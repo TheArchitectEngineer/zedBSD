@@ -144,6 +144,8 @@ main(int argc, char **argv)
 		argv[argc] = (char *)target_directory;
 		argc++;
 	}
+
+	/* A source and a destination at least. */
 	if (argc - first < 2)
 		cp_usage();
 
@@ -205,6 +207,7 @@ main(int argc, char **argv)
 			continue;
 		}
 
+		/* One file: -v's line, then the copy. */
 		copy_verbose(&options, argv[index], destination);
 		copy_status = copy_file(argv[index], destination, &options, &operand);
 		if (copy_status < 0) {
