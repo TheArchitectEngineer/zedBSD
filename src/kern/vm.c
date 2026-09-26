@@ -4532,8 +4532,12 @@ vm_private_page_in_owned(
 	 * dirty until a later reclaim writes it to an active source.
 	 */
 	backing->flags |= VM_PAGE_RESIDENT | VM_PAGE_DIRTY;
-	tracked = (backing->flags & VM_PAGE_TRACKED) != 0;
 	private_page_advance_locked(backing);
+
+	/* Notes whether the reclaim lists hold the backing. */
+	tracked = 0;
+	if ((backing->flags & VM_PAGE_TRACKED) != 0)
+		tracked = 1;
 
 	spin_unlock_irqrestore(&backing->state_lock, irq);
 
@@ -4541,12 +4545,15 @@ vm_private_page_in_owned(
 	if (tracked) {
 		vm_metadata_enter();
 		mutex_lock(&reclaim_lock);
+
 		queue_remove(backing);
 		queue_insert(backing);
+
 		mutex_unlock(&reclaim_lock);
 		vm_metadata_leave();
 	}
 
+	/* Counts the page-in in the page's statistics. */
 	vm_page_note_in(accounting_page);
 
 	/* Reports the paged-in backing. */
@@ -4594,7 +4601,11 @@ vm_page_track(
 
 	/* Notes whether the page is in memory, for the count kept below. */
 	resident = (backing->flags & VM_PAGE_RESIDENT) != 0;
-	swapped = (backing->flags & VM_PAGE_SWAPPED) != 0;
+
+	/* Notes whether the page is on swap, which decides the list it joins. */
+	swapped = 0;
+	if ((backing->flags & VM_PAGE_SWAPPED) != 0)
+		swapped = 1;
 
 	spin_unlock_irqrestore(&backing->state_lock, irq);
 
@@ -4660,6 +4671,7 @@ vm_page_untrack(
 	backing->mapping_count--;
 	last_mapping = backing->mapping_count == 0;
 
+	/* Notes what the backing holds, for the counters below. */
 	resident = (backing->flags & VM_PAGE_RESIDENT) != 0;
 	swapped = (backing->flags & VM_PAGE_SWAPPED) != 0;
 	tracked = (backing->flags & VM_PAGE_TRACKED) != 0;
@@ -4780,7 +4792,7 @@ vm_page_replace_private(
 	/* Links the page into the fresh backing's reverse mapping list. */
 	fresh->mappings = page;
 
-	/* Puts the fresh backing at the head of the reclaim queue. */
+	/* Puts a resident fresh backing at the head of the reclaim queue. */
 	if (fresh_resident)
 		queue_insert(fresh);
 
@@ -9025,6 +9037,8 @@ queue_insert(
 	if (page_queue != NULL)
 		page_queue->queue_prev = backing;
 	page_queue = backing;
+
+	/* Records the list, which is how queue_remove() knows the head to fix. */
 	backing->queue_kind = VM_QUEUE_RECLAIM;
 
 	/* The first backing is also the oldest. */
@@ -9047,6 +9061,8 @@ swapped_insert(
 	if (swapped_queue != NULL)
 		swapped_queue->queue_prev = backing;
 	swapped_queue = backing;
+
+	/* Records the list, which is how queue_remove() knows the head to fix. */
 	backing->queue_kind = VM_QUEUE_SWAPPED;
 }
 
