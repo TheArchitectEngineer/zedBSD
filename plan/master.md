@@ -133,6 +133,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS068](ws068/ws.md) | MG006 | EGL と OpenGL ES（と desktop GL 3.0〜4.6）を Vulkan と display 拡張の上に実装する（Wayland とディスプレイ直接の両方）（2026-09-26・27 ユーザー指示） | incomplete | p003（自前の GLSL compiler、2026-09-27 方式 A に決定）→ desktop GL。p002・p008・p010・p006 cleared |
 | [WS069](ws069/ws.md) | MG006 | zdesktop で X11 の app を動かす（単体の `zdesktop-x11server`、rootless、GLX）（2026-09-26・27 ユーザー指示） | incomplete | p008（zdesktop-x11server へ移す）→ p009（Xzed の復元）。p002〜p005 cleared（Xzed の上で。p008 で移す） |
 | [WS070](ws070/ws.md) | MG006 | zdesktop の System Menu: client がメニューの意味を渡し、zdesktop が浮いたタイトルバーとシステムバーに描く（`xdg_toplevel_menu_v1`、libzdesktop で包む）（2026-09-27 ユーザー指示） | planning | p001（設計）。WS069 の後、WS068 の GLSL より前 |
+| [WS071](ws071/ws.md) | MG006 | zedBSD File Manager: Finder 風で zedBSD らしいファイルマネージャ（ホームのダッシュボード、サイドバー、タグ、Quick Look、System Menu）（2026-09-27 ユーザー指示、仕様案は ws071/spec.md） | planning | p001（設計）。WS070 の後 |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 
@@ -152,6 +153,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 8. **WS066**（`ld.so` の最適化。2026-09-26 ユーザー「あとでやるリスト」）。
 9. **WS068**（EGL と GLES を Vulkan の上に）・**WS069**（X11）: 2026-09-26 ユーザー「デスクトップ関連を優先」で WS035 と並ぶ。
    2026-09-27 の順: ws035-p073（改名）→ libzdesktop（ws035-p074）→ WS069（zdesktop-x11server、Xzed の復元）→ **WS070（System Menu）** → WS068（GLSL compiler、desktop GL）。
+   **WS071**（File Manager、2026-09-27 追加）は WS070 の System Menu を使うので、その後。WS068 との前後は指示を待つ（それまでは WS068 を先に読む）。
 
 ## Upcoming Work Outlook
 
@@ -255,6 +257,7 @@ tick 周期は `include/hal/arch/<arch>.h` の `HAL_TIMER_FREQUENCY`。時間の
 | zdesktop-x11server の形 | rootless だけ（rootful は持たない）。「zdesktop本体に組み込む可能性が高いので、再利用できるモジュラリティを保っておくと、あとで組み込みが楽です。」 | WS069 design.md §0 |
 | libvulkan の版 | desktop GL に要る Vulkan 1.1 以降の機能・拡張は libvulkan に足してよい（Venus で。i915 の実行器は後、F-023） | WS068 design.md §6 |
 | GL_VERSION | 実装した版を正直に名乗る（必須の機能が揃った所まで）。上の版の機能は GL_ARB_* の拡張で個別に出す | WS068 design.md §6 |
+| File Manager | ユーザー（同日）:「これもWSを追加しておいてください。Finder風だけどzedBSDらしいファイルマネージャとして、仕様書のベースになる形でまとめます。現在の作業は続けてください。」→ WS071（仕様案の原文は ws071/spec.md）。今の作業（WS069）は続ける | WS071、WS の優先順位 |
 
 ### 主な依存関係
 
