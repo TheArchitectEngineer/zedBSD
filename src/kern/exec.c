@@ -1459,6 +1459,7 @@ process_exec_file(
 	/* A vfork child no longer uses its parent's address space. */
 	process_vfork_release(process);
 
+	/* The new address space is the process's now, not this function's to free. */
 	new_vm = NULL;
 
 	/*

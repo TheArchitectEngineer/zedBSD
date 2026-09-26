@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: none（p001〜p004 は 2026-09-27 ユーザーの指示でサブエージェントが worktree の branch で実行。main への統合は main の session）
-Resume point: p005（i915 実機、規約の全文との照合と回帰）。p001〜p004 cleared（Venus）
+Resume point: p006（WS071 と共有する menu の file への規約の直し。WS071 の merge の後）。p001〜p005 cleared（p005: i915 実機と回帰、共有しない file の規約）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -34,10 +34,10 @@ Wayland のクライアントがメニューの意味（階層・ラベル・状
 ## 受け入れ（p001 で決めた）
 
 1. zdesktop-terminal のメニューが浮いたタイトルバーと docked のシステムバーに出て、pointer・keyboard（F10）・shortcut で選ぶと
-   terminal の action が動く（Venus: p003・p004 で済み。i915 実機: p005、未実施）。
+   terminal の action が動く（Venus: p003・p004 で済み。i915 実機: p005 で済み、capture display）。
 2. 動的な更新（enabled・checked）が commit の単位で反映される。focus の窓のメニューがシステムバーに出る（Venus で済み）。
 3. protocol の誤りは design.md §2.2 の error で返り、libzdesktop は送らずに errno で返す（Venus で済み、menu-probe）。
-4. 規約の全文との照合（p005）。
+4. 規約の全文との照合（p005: WS071 と共有しない file。共有する file は p006）。
 
 設計と未決は [design.md](design.md)（§11 の未決 5 点、§12 の context menu の余地）。
 
@@ -49,7 +49,8 @@ Wayland のクライアントがメニューの意味（階層・ラベル・状
 | [ws070-p002](phase002/phase.md) | protocol（libwayland の client 側と zdesktop の server 側）と zdesktop の menu model（transaction・更新）、menu-probe | cleared | p001 |
 | [ws070-p003](phase003/phase.md) | zdesktop の描画と操作: 浮いたタイトルバーとシステムバーの項目、popup、keyboard、shortcut、activation | cleared | p002 |
 | [ws070-p004](phase004/phase.md) | libzdesktop の API と zdesktop-terminal のメニュー（Shell・Edit・View・Session・Help） | cleared | p002、p003 |
-| ws070-p005 | i915 実機、規約の全文との照合と回帰（最後） | planned | p001〜p004 |
+| [ws070-p005](phase005/phase.md) | i915 実機、規約の全文との照合（WS071 と共有しない file）と回帰。libwayland の flush の EPIPE で protocol error を読み落とす不具合を直した | cleared | p001〜p004 |
+| ws070-p006 | 規約の全文との照合の残り: WS071 と共有する file（`zdesktop/menu.c`・`menu-shell.c`・`menu.h`、`libzdesktop/menu.c`、`zdesktop.h`、`libwayland/menu-protocol.c`）への p005 の指摘の直しと回帰（最後） | planned | p005、WS071 の menu の変更の merge（衝突を避ける分割、2026-09-27） |
 
 ## 試験の道具（plan/ws070/tests/）
 
@@ -62,3 +63,4 @@ Wayland のクライアントがメニューの意味（階層・ラベル・状
 | menu-occlude.sh | 隠れた題名の bar の項目は押せない |
 | menu-regress.sh、zdesktop-p068-menu.sh | WS035 の zdesktop の回帰（p068 は題名の double click の位置を直した版） |
 | style-compare.sh | 既存の file の style-check の件数を変更前と比べる |
+| menu-hw.sh | i915 実機（5330）の System Menu（capture の scenario `zdesktop-menu`）。lock の中で走らせ、/tmp の結果を OUTDIR に写す |

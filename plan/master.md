@@ -63,7 +63,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 
 | WS | Primary | 内容 | 状態 | 再開点 |
 | --- | --- | --- | --- | --- |
-| [WS001](ws001/ws.md) | MG002 | POSIX.1-2024 準拠 | incomplete | 準拠性の台帳の残件 |
+| [WS001](ws001/ws.md) | MG002 | POSIX.1-2024 準拠 | incomplete | 準拠性の台帳の残件。p033（patch の書き直し）・p034（df・du の書き直し）cleared、WS045 の GNU 拡張と統合して 2026-09-27 に main へ merge。サブエージェントが続行 |
 | [WS002](ws002/ws.md) | MG005 | システムサービス | completed | — |
 | [WS003](ws003/ws.md) | MG003 | 旧実機 bring-up（終了・再利用禁止） | completed（ユーザー判断で終了） | 未完了は WS027・WS028・F-004 へ |
 | [WS004](ws004/ws.md) | MG003 | ハードウェア拡張 | incomplete | NVMe 実機・転送・driver 共通化 |
@@ -98,7 +98,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS033](ws033/ws.md) | MG005 | networking サービスと有線インタフェースの管理 | incomplete | 抜き差しの実機確認 |
 | [WS034](ws034/ws.md) | MG002 | アプリケーション拡充と kernel・libc の是正 | incomplete | package の導入 |
 | [WS035](ws035/ws.md) | MG006 | デスクトップ環境とアプリケーション | incomplete | **fg010**: zdesktop の合成・タスクバー |
-| [WS036](ws036/ws.md) | MG008 | amd64 の成果を他 platform へ（aarch64 を含む） | incomplete | p026（LLVM の AArch64 zedbsd target、patch zedbsd7、sysroot-arm64）cleared（サブエージェント、2026-09-27 に main へ merge）。p028 実行中。**p027（Pi の firmware の bootargs）は方針の判断待ち（案 A〜D、既定 D）**。実機は未実施 |
+| [WS036](ws036/ws.md) | MG008 | amd64 の成果を他 platform へ（aarch64 を含む） | incomplete | p026（AArch64 zedbsd target、zedbsd7）・p028（Noct の aarch64 JIT）・p029（package は LLVM の source を書き換えない、hard link の copy）cleared、2026-09-27 に main へ merge。**p027 は方針の判断待ち**。実機は未実施 |
 | [WS037](ws037/ws.md) | MG006 | NVIDIA GPU（予約） | planning | 番号のみ |
 | [WS038](ws038/ws.md) | MG006 | Intel Arc dGPU（予約） | planning | 番号のみ |
 | [WS039](ws039/ws.md) | MG006 | AMD RDNA GPU（予約） | planning | 番号のみ |
@@ -122,18 +122,20 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS057](ws057/ws.md) | MG004 | 仮想メモリの reserve と commit の分離と commit の swap の裏打ち（over commit 禁止）の確認と修正（design policy 10） | completed | 分離と拒否は実装済み、BUG-048 を修正。裏打ちは物理 + swap のまま（ユーザーの決定） |
 | [WS058](ws058/ws.md) | MG004 | cache の大きさを現代の機械向けに見直す（主記憶 4 GB・swap 16 GB 前提、design policy 10） | completed | p001・p002 cleared。buffer 物理/8、page cache 物理/2、object cache 256、file 2048、inode 2048、overlay 4096、I/O pool 64 MiB。8192 級は F-013（動的確保と hash）の後 |
 | [WS059](ws059/ws.md) | MG004 | disk の無い mount にも `st_dev` を与える（BUG-047） | completed | p001 cleared。`mount_device_number()`。`df` が全 mount を出す |
-| [WS060](ws060/ws.md) | MG004 | UFS の journal の commit を batch にして名前の操作を速くする（BUG-040）。journal を既定にする前提（WS063） | incomplete | p003 cleared（v3: 200 の作成 20.6 → 0.36 秒、crash の試験 UFS OK）。規約は WS063-p002 |
+| [WS060](ws060/ws.md) | MG004 | UFS の journal の commit を batch にして名前の操作を速くする（BUG-040）。journal を既定にする前提（WS063） | completed | 2026-09-27 完了（規約は WS063-p002 で）。p001 は p002・p003 に置き換えて canceled |
 | [WS061](ws061/ws.md) | MG002 | expat の configure と compile を Linux と同等の水準にする（fg011） | incomplete | 受け入れの計測は達成（q449 の後）: configure 8.2〜8.9 秒（host 10.7）、make（直列）11.3 秒（host `-j1` 15.5）、`cc t.c -o t` 76〜84 ms（host 83〜85）。残り: 規約の Phase ws061-p011（最後） |
-| [WS062](ws062/ws.md) | MG004 | amd64 の disk image を ESP の vmunix・UFS の root partition・swap partition に（2026-09-25 ユーザー指示） | incomplete | p001・p002 cleared（q436・q437）。p003（既定の切り替え）q439 提案 |
-| [WS063](ws063/ws.md) | MG004 | UFS の journal を既定にする（journal の無い image は mount の時に作る、`nojournal`）（2026-09-26 ユーザー指示） | incomplete | 既定の有効化・作成・`nojournal` は ws060-p003 で入れ、root の強制終了の試験は UFS OK。残り: p001（v2 の tail の volume）、p002（規約と回帰） |
-| [WS064](ws064/ws.md) | MG002 | base の make の並列（`-j`）と、並列の make の時間を host と同等以上に（2026-09-26 ユーザー指示） | incomplete | p001・p002・p004 cleared（`-j`・jobserver、sh の posix_spawn。`make -j4` 4.18〜4.38 秒・host 5.14〜5.18 秒）。残り: 規約 p003（最後） |
-| [WS065](ws065/ws.md) | MG002 | `/bin/sh` に POSIX が未規定とする bash 拡張を足す（2026-09-26 ユーザー指示） | incomplete | p001（構文）・p002（展開）・p003（builtin）cleared。p004（規約）は最後 |
+| [WS062](ws062/ws.md) | MG004 | amd64 の disk image を ESP の vmunix・UFS の root partition・swap partition に（2026-09-25 ユーザー指示） | completed | 2026-09-27 完了（p004: 規約の全文。zedimage-host の出力が同じ） |
+| [WS063](ws063/ws.md) | MG004 | UFS の journal を既定にする（journal の無い image は mount の時に作る、`nojournal`）（2026-09-26 ユーザー指示） | completed | 2026-09-27 完了（p002: 規約の全文と回帰、crash の試験 v3・v2・root）。v2 の tail の journal は v2 のまま（判断待ち、既定）。制限: transaction ごとの解放 block の追跡は 8192 まで |
+| [WS064](ws064/ws.md) | MG002 | base の make の並列（`-j`）と、並列の make の時間を host と同等以上に（2026-09-26 ユーザー指示） | completed | 2026-09-27 完了（p003: 規約の全文、make・sh・kernel の lock・vmspace の fork・libc の posix_spawn。guest の make-diff 100/100、fork・vfork・posix_spawn の試験、expat の configure が同じ。時間は未測定） |
+| [WS065](ws065/ws.md) | MG002 | `/bin/sh` に POSIX が未規定とする bash 拡張を足す（2026-09-26 ユーザー指示） | completed | 2026-09-27 完了（p004: 規約の全文、host の sh-diff と guest の expat の configure が同じ） |
 | [WS067](ws067/ws.md) | MG002 | `/dev/fd` を呼んだ process の descriptor に合わせる（BUG-054、2026-09-26 ユーザー「最優先」） | completed | BUG-054 resolved（QEMU）。p001・p002 cleared |
 | [WS066](ws066/ws.md) | MG002 | 動的 link の program の起動を速くする（`ld.so` の最適化）（2026-09-26 ユーザー「あとでやるリスト」） | planning | p001（費用の内訳と設計）。優先度は低い |
 | [WS068](ws068/ws.md) | MG006 | EGL と OpenGL ES（と desktop GL 3.0〜4.6）を Vulkan と display 拡張の上に実装する（Wayland とディスプレイ直接の両方）（2026-09-26・27 ユーザー指示） | incomplete | 自前の GLSL compiler（p003 = p015〜p019、GLSL 1.40〜3.30・ES 3.00 と uniform block の p012 = p020・p021）cleared（2026-09-27、サブエージェント、main へ merge）。次は p013（desktop GL 3.0 の context）・p005（GLES 3.0 の API）・p014（GL 3.3〜4.6）。p002・p008・p010・p006 cleared |
 | [WS069](ws069/ws.md) | MG006 | zdesktop で X11 の app を動かす（単体の `zdesktop-x11server`、rootless、GLX）（2026-09-26・27 ユーザー指示） | completed | 2026-09-27 完了（q492）。zdesktop-x11server（rootless、窓は Vulkan、GLX）、BUG-057 の修正、Xzed はレトロ用に戻した。残りは F-021・F-024・F-030 |
-| [WS070](ws070/ws.md) | MG006 | zdesktop の System Menu: client がメニューの意味を渡し、zdesktop が浮いたタイトルバーとシステムバーに描く（`xdg_toplevel_menu_v1`、libzdesktop で包む）（2026-09-27 ユーザー指示） | incomplete | p001〜p004 cleared（Venus、サブエージェント、2026-09-27 に main へ merge）。p005（i915 実機、規約の全文、最後）。design.md §11 の 5 つの既定はユーザーの確認待ち |
-| [WS071](ws071/ws.md) | MG006 | zedBSD File Manager: Finder 風で zedBSD らしいファイルマネージャ（ホームのダッシュボード、サイドバー、タグ、Quick Look、System Menu）（2026-09-27 ユーザー指示、仕様案は ws071/spec.md） | incomplete | p001（設計、`zdesktop-files`、既定の判断は design.md §15）cleared、2026-09-27 に main へ merge。p002〜p011 をサブエージェントが実行中 |
+| [WS070](ws070/ws.md) | MG006 | zdesktop の System Menu: client がメニューの意味を渡し、zdesktop が浮いたタイトルバーとシステムバーに描く（`xdg_toplevel_menu_v1`、libzdesktop で包む）（2026-09-27 ユーザー指示） | incomplete | p001〜p005 cleared（p005: i915 実機の zdesktop-menu 11/11 を 2 回、規約の照合）。共有の menu の file の規約の修正は WS071 の merge の後の p006。**design.md §11 の 5 つの既定はユーザーの確認待ち** |
+| [WS071](ws071/ws.md) | MG006 | zedBSD File Manager: Finder 風で zedBSD らしいファイルマネージャ（ホームのダッシュボード、サイドバー、タグ、Quick Look、System Menu）（2026-09-27 ユーザー指示、仕様案は ws071/spec.md） | incomplete | p001（設計）・p002（`/bin/zdesktop-files` の骨格: CPU の canvas と Vulkan の表示、toolbar・sidebar・icon の格子、戻る・進む・ホーム・パンくず）cleared、2026-09-27 に main へ merge。p003〜 をサブエージェントが実行中 |
+| WS072 | MG004 | write cached の UFS の format の lease（BUG-060）と、NVMe の timeout の後の回復で root の mount が ETIMEDOUT になる（BUG-059）（2026-09-27、サブエージェント） | incomplete | storage のサブエージェントが実行中（記録は ws072/、merge で入る） |
+| WS073 | MG002 | Bug Board の bug の解消（2026-09-27 ユーザー「バグリストに載っているものを解決するサブエージェントを1つ追加しましょう。」）。WS072・WS056（BUG-046）・WS001（BUG-050）の担当と性能の bug（BUG-027・033）を除く | incomplete | bug のサブエージェントが実行中（記録は ws073/、merge で入る） |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 
@@ -184,6 +186,9 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [latency/](tools/latency/) | interactive の応答の測定（起床の遅れ、端末の echo）。WS041 から移した | `run-echo-qemu.sh`、`run-wakebench-qemu.sh`、`pc98-wakebench.py`、`config-*-bench.mk` |
 | [clock/](tools/clock/) | guest の時計の進み（`sleep 5` の実時間）。WS040 から移した | `clock-check.py`、`pc98-sleep.py` |
 | [ufs/](tools/ufs/) | UFS の directory の試験と volume の検査。`dir-grow.sh` は mount した volume で directory を 12 block まで育て（作成・削除・rename・rmdir・上限）、`verify` で確かめる（`LONG`・`SHORT`・`MOVE`・`GONE` で数）。`check-volume.py` は guest が書いた volume を host で fsck 相当に検査する。`crash-test.sh` は journal の volume の成長の途中で QEMU を止めて replay を確かめる。WS054 から移した | `sh dir-grow.sh DIR make\|verify`（guest）、`check-volume.py IMAGE`、`crash-test.sh IMAGE SECONDS...`（host）。作業の volume は `zedimage-host ufs SIZE EMPTYDIR IMAGE --inodes=16384 [--profile=journal-snapshot]` で作り、NVMe（`-device nvme`）でつなぐ |
+| UFS の journal の試験（[tools/ufs](tools/ufs/)、WS063 から移した） | `crash-test.sh`（既定は v3・NVMe の作業 volume、`PROFILE=journal-snapshot` で v2）、`journal-func.sh`＋`journal-guest.sh`（guest での journal の機能: 隠しの `.ufs-journal`、最初の mount での作成、`nojournal`・`writethru`）、`root-crash.sh`（root の強制終了と replay）、`zedimage-compare.sh`（2 つの zedimage-host の UFS の出力の byte 比較） | 各 script の先頭の使い方。`GUEST_RUNTIME`・`VOLUME` を上書きできる |
+| SSH の guest image（[guest/](tools/guest/)、WS063 から） | clang の無い SSH の guest image: `config-amd64-ssh.mk`、`build-ssh-image.sh`（package が build/amd64/dynamic に link するので build/amd64 に作る） | `plan/tools/guest/build-ssh-image.sh` |
+| 組み合わせの guest image と process の試験（WS064 から） | `guest/hybrid-image.sh BUILD OUT [BASE]`（full の guest image にこの tree の vmunix・BOOTX64.EFI・libc.so・make・sh を入れる）、`guest/make-cases.sh IMAGE`（guest の make-diff）、`process/vfork-test.c`＋`guest-vfork.sh IMAGE`（fork の COW、vfork、posix_spawn、並行の fork） | 各 script の先頭 |
 | [kbench/](tools/kbench/) | kernel の microbenchmark（system call、pipe の往復、fork、exec、cached の read、anonymous と file の fault）。kernel の build（LTO・最適化）の比較に使う。WS053 から移した | `kbench/build.sh BUILD OUTPUT`（amd64 の guest 用）で作って guest で `kbench [file]`。予熱の 1 回の後に数回走らせ、中央値で比べる |
 | [driver-fragments/prepare.py](tools/driver-fragments/prepare.py) | 統合した driver の source から host 試験用の断片を切り出す（出力は `build/driver-fragments`）。WS025 から移した | WS004 の AX211・xHCI と WS001 の UFS の host 試験が呼ぶ |
 | [packages/](tools/packages/) | 外部 package の試験: ライセンス監査、未解決 symbol、取得機構とクロスビルドの host 試験。WS032 から移した | `audit-licenses.sh`、`check-unresolved-symbols.py`、`run-external-host-test.sh`、`run-cross-host-test.sh` |
@@ -191,7 +196,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [boot-parameter-image-tool.c](tools/boot-parameter-image-tool.c) | image の boot parameter の読み書きと、pc98 の text VRAM の解読（`decode-pc98-vram`）。WS003 から移した | WS005・WS013 の試験が compile して使う |
 | [venus-console.c](tools/venus-console.c) | Venus の console の試験 client。WS030 から移した | WS014 p009 の試験が build する |
 | [sync.py](tools/sync.py)（[README](tools/README.md)） | GitHub との同期（GitHub mode） | `plan/tools/README.md` |
-| sh の試験（[tools/sh](tools/sh/)） | `/bin/sh` を dash と比べる（oils の spec と自前の case）。guest では 40 件ずつ。対話（serial console）と行編集（host の pty） | `build-host-sh.sh`、`sh-diff.py --shell build/ws042/host-sh`（`fetch-oils.sh` で oils を取得）。guest は `--export build/ws042/guest-export` の後 `guest-batches.sh`（中で `guest-diff.sh`）。対話は `sh-interactive.py SOCKET`、行編集は `vi-host.py build/ws042/host-sh` |
+| sh の試験（[tools/sh](tools/sh/)） | `/bin/sh` を dash と比べる（oils の spec と自前の case）。guest では 40 件ずつ。対話（serial console）と行編集（host の pty） | `build-host-sh.sh`、`sh-diff.py --shell build/ws042/host-sh`（`fetch-oils.sh` で oils を取得）。guest は `--export build/ws042/guest-export` の後 `guest-batches.sh`（中で `guest-diff.sh`）。対話は `sh-interactive.py SOCKET`、行編集は `vi-host.py build/ws042/host-sh`。WS065 から: `build-guest-sh.sh`（この tree の sh を guest の image の libc.so で build）、`guest-batches.sh` の `GUEST_SH=FILE`（guest の copy の /bin/sh を置き換える）、`guest-expat.sh SH`（guest で expat の configure・make・runtests を走らせ configure の生成物の checksum を出す） |
 | utility の差分試験（[tools/utils](tools/utils/)） | base の utility を GNU（POSIX mode）と比べる（`cases/` の 484 件、guest へは `--export` と `plan/tools/sh/guest-diff.sh`）。実際の configure（expat・coreutils）を GNU の道具と我々の道具で走らせて生成物を比べる。libc の浮動小数の書式を glibc と比べる | `build-host-utils.sh`、`util-diff.py`、`configure-diff.sh`、`float-format.c`。書き直しの前後の ls の比較は `ls-compare.sh OLD NEW` |
 | X11 の回帰（[tools/x11](tools/x11/)） | zdesktop-x11server の上の X11 の app（Venus、`plan/ws035/tests/zdesktop-guest.sh start` の guest）: x11-p003（zterm の rootless の窓、入力、docked）、x11-p004（glxtest の GLX、docked の大きさの変化）、x11-p005（zgears 300 frame、回る、fps）。WS069 から移した | `sh plan/tools/x11/x11-p00N.sh [OUTDIR]`（`GUEST_RUNTIME` の既定は build/ws035-sq-run）。画面を目で確かめる |
 | 規約の検査（[style-check.py](tools/style-check.py)） | `plan/coding-style.md` のうち機械的に確かめられる規則（条件の中の呼び出し、閉じ括弧の後の空行、段落の comment、入れ子の宣言、条件演算子、goto、前方宣言、comment の形、名前、複数行の本体の括弧） | `python3 plan/tools/style-check.py FILE... [--summary] [--rule NAME]` |
@@ -261,10 +266,12 @@ tick 周期は `include/hal/arch/<arch>.h` の `HAL_TIMER_FREQUENCY`。時間の
 | File Manager | ユーザー（同日）:「これもWSを追加しておいてください。Finder風だけどzedBSDらしいファイルマネージャとして、仕様書のベースになる形でまとめます。現在の作業は続けてください。」→ WS071（仕様案の原文は ws071/spec.md）。今の作業（WS069）は続ける | WS071、WS の優先順位 |
 | サブエージェントの拡大（2026-09-27、後から） | ユーザー:「依存関係を考慮して、最大7つのサブエージェントを併走させて、WSをcompleteさせていってください。なぜなら、あと10時間で次の週次リセットなのに、まだ使用量がいっぱい余っているからです。作業環境はエンタープライズサーバなので、負荷が高くなることは問題ないです。ただ、WS061のようにパフォーマンスを解析するワークロードがあるWSは、単一実行したいので、後回しでよいです。」→ 依存を満たす WS を最大 7 のサブエージェント（worktree）で完了へ進める。性能を測る WS（WS061、WS066、WS046 の BUG-033 の残り等）は後で単独に。サブエージェントは性能の数値を受け入れに使わない（並列の負荷で狂う）。記録と merge の分担は上の行と同じ | AGENTS.md の例外 |
 | メインは計画と merge（2026-09-27、後から） | ユーザー:「現在の作業をサブエージェントにまかせましょう。メインエージェントは、サブエージェントたちの成果を、なるべくまとまりのよう単位でこまめにマージする、プランナーの役割にしましょう。」→ WS068（p024〜）もサブエージェントへ。メインは WS の割り当て・依存の管理・master/queue/history の記録・branch の merge（Phase の区切りなどまとまりのよい単位でこまめに）と merge 後の回帰だけを行う | AGENTS.md の例外 |
+| bug のサブエージェント（2026-09-27、後から） | ユーザー:「バグリストに載っているものを解決するサブエージェントを1つ追加しましょう。」→ WS073（8 つ目のサブエージェント） | WS073 |
 | System Menu の統合 | WS070 の p001〜p004（サブエージェント、Venus）を 2026-09-27 に main へ merge。既定で進めた 5 点（F10 で menu、shortcut は zdesktop が実行、外の click は下の窓へ渡さない、icon は描かない、label は ASCII）はユーザーの確認待ち（ws070 design.md §11）。WS071 の右 click の menu は protocol の version 2 の追加（design.md §12） | WS070 |
 | Raspberry Pi 4 の USB | WS048 の p001〜p003（サブエージェント）を 2026-09-27 に main へ merge。xHCI は PCIe の DMA が cache を snoop しないため、**hal.h の差分 `hal_pmem_map_uncached`・`hal_pmem_unmap_uncached`（plan/ws048/proposed/hal-pmem-uncached.diff、arm64 だけ実装）の承認待ち**。mailbox は起動後は kernel の driver が持つ（hal.h を変えない）ことの確認も待つ。実機の確認（lspci、dmesg の link up と VL805 の firmware）はユーザー | WS048、Guardrail |
 | ACPI の統合 | WS049 の p001〜p005・p010〜p015（サブエージェント）を 2026-09-27 に main へ merge（driver は未 link）。**判断待ち**: (1) HAL の差分 `hal_get_arch_handoff("acpi.rsdp")`（ws049/proposed/hal-acpi-rsdp.diff、hal.h は変えないが HAL の責務の追加）の承認、(2) 対象機を Dell Latitude 5330 とし Linux の `sudo acpidump -b` の table を得る、(3) `_OSI` は既定で Windows 2000〜2022 を名乗る（ACPICA と同じ）でよいか、(4) `/dev/acpi` は text の読み書き（UAPI を足さない、device 番号 0x000B0000）か ioctl か `/dev/system` への統合か | WS049、Guardrail |
 | aarch64 の toolchain（WS036） | WS036 の p026 を 2026-09-27 に main へ merge: LLVM の patch が zedbsd6 → zedbsd7（AArch64 zedbsd target）。main の `build/llvm` は `build/llvm-zedbsd7`（symlink）、作業中のサブエージェントは main を merge するまで `build/llvm-zedbsd6`。**判断待ち**: (1) GitHub の Release rev-0 の toolchain cache が zedbsd6 のままで、`make toolchain-cache` と CI の identity 検査が落ちる。zedbsd7 の archive（`make llvm-host-archive`）の upload と `ZEDBSD_LLVM_CACHE_SHA256` の更新（push・公開はユーザーの指示で）。(2) ws036-p027: Pi の firmware の bootargs には `=` の無い token（rootwait 等）があり kernel の parser が拒む。案 A（parser を緩める、全 platform）・B（rpi4 の HAL が区切りの後を渡す）・C（boot partition の file を読む）・D（今のまま、既定） | WS036、Guardrail |
+| UFS の v2 の journal（WS063） | `--profile=journal-snapshot` の v2 の tail の journal の volume は v2 のまま（v3 へ移さない。v2 の locator が volume の末尾の snapshot の領域と並ぶため）。移すなら Future Work に（判断待ち、既定で進めた） | WS063 |
 
 ### 主な依存関係
 
