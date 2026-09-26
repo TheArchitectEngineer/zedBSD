@@ -16,8 +16,19 @@ cp include/libc/regex.h "$out/.regex/regex.h"
 regex="src/libc/regex/regcomp.c src/libc/regex/regexec.c src/libc/regex/regerror.c src/libc/regex/tre-mem.c"
 for utility in sed grep awk cut wc head tail sort uniq tr od expr paste join comm fold nl split csplit tsort basename dirname cat rm rmdir mkdir ln touch mv cp chmod ls \
     cmp find date stat readlink realpath seq tac timeout truncate env tee; do
+	# mv shares cp's copy of file hierarchies (ws001-p025).
+	extra=
+	if [ "$utility" = mv ]; then
+		extra=userland/base/cp/copy.c
+	fi
+	# mkdir and mkfifo share chmod's mode operand (ws001-p026).
+	case $utility in
+	mkdir|mkfifo)
+		extra=userland/base/chmod/mode.c
+		;;
+	esac
 	cc -std=c11 -D_GNU_SOURCE -O1 -g -w -I"$out/.regex" -I. -Iinclude \
-		userland/base/$utility/*.c userland/base/common/command.c \
+		userland/base/$utility/*.c $extra userland/base/common/command.c \
 		$regex -o "$out/$utility" -lm
 done
 # The shell's echo, printf and test built as commands, and true and false.
