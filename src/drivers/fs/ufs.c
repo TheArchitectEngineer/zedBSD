@@ -820,7 +820,7 @@ static void j3_range_add(struct ufs_j3 *j3, uint64_t lba, uint32_t count, uint32
 static int j3_freed_test(const struct ufs_j3 *j3, uint64_t fragment);
 static void j3_freed_add(struct ufs_mount_state *ms, uint64_t fragment);
 static int j3_content_freed(const struct ufs_mount_state *ms, uint64_t lba, uint32_t count);
-static int j3_write(struct ufs_mount_state *ms, struct mount *mountp, uint64_t lba, uint32_t count, const void *buffer, int content);
+static int j3_write(struct ufs_mount_state *ms, struct mount *mountp, uint64_t lba, uint32_t count, const void *buffer, const struct io_context *context, int content);
 static int j3_geometry(struct ufs_j3 *j3);
 static int j3_write_header(struct mount *mountp, struct ufs_j3 *j3);
 static uint32_t j3_logged_ranges(const struct ufs_j3 *j3);
@@ -3374,7 +3374,7 @@ write_sectors_impl(
 
 	/* The batched journal takes the write into its running transaction. */
 	if (ms != NULL && ms->j3.active) {
-		error = j3_write(ms, mountp, lba, count, buffer, content);
+		error = j3_write(ms, mountp, lba, count, buffer, context, content);
 
 		/* Releases the snapshot hold the preservation took. */
 		if (snapshot_locked)
@@ -18758,6 +18758,7 @@ j3_write(
 	uint64_t lba,
 	uint32_t count,
 	const void *buffer,
+	const struct io_context *context,
 	int content)
 {
 	struct ufs_j3 *j3;
@@ -18779,9 +18780,13 @@ j3_write(
 	if (content && !hold) {
 		mutex_unlock(&j3->lock);
 
-		/* Writes the content into the cache, where it waits for the flusher. */
+		/*
+		 * Writes the content in the caller's context, whose backing claim
+		 * (a formatter's lease) authorizes the write; the buffer cache
+		 * keeps it for the flusher unless the claim needs it written now.
+		 */
 		io_stats_record(IO_UFS_WRITE, bytes);
-		error = disk_write_filesystem_context(mountp->m_disk, lba, count, buffer, NULL);
+		error = disk_write_filesystem_context(mountp->m_disk, lba, count, buffer, context);
 		if (error != 0)
 			return error;
 

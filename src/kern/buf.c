@@ -274,7 +274,7 @@ static void stat_add(volatile uint64_t *counter, uint64_t value);
 static void flusher(void *argument);
 static struct buf *oldest_aged(uint64_t cutoff);
 static int flush_aged(uint64_t cutoff);
-static int writes_delayed(const struct disk *disk);
+static int writes_delayed(const struct disk *disk, const struct io_context *context);
 static int write_lines(struct disk *disk, uint64_t block, uint32_t count, const void *data, int pin);
 static void flusher_hooks_init(void);
 static int reserve_bytes(size_t size, int metadata);
@@ -843,7 +843,7 @@ buf_write_context(
 		 * to the device.
 		 */
 		run_blocks = 0;
-		delayed = writes_delayed(disk);
+		delayed = writes_delayed(disk, context);
 		error = 0;
 		if (!delayed)
 			error = transfer_run(leaf, mapped, end - mapped, (void *)in, 1, &run_blocks, context);
@@ -886,7 +886,7 @@ buf_write_context(
 		 * unless dirty memory is already at its bound.
 		 */
 		buf_mark_dirty(buffer);
-		delayed = writes_delayed(disk);
+		delayed = writes_delayed(disk, context);
 		error = 0;
 		if (!delayed)
 			error = buf_writeback_context(buffer, context);
@@ -2712,16 +2712,26 @@ flush_aged(
 
 /*
  * Asks whether a write to a disk may stay in the cache: the disk is
- * write-cached and dirty memory is within its bound.
+ * write-cached, the write is not made under a backing claim, and dirty
+ * memory is within its bound.
  */
 static int
 writes_delayed(
-	const struct disk *disk)
+	const struct disk *disk,
+	const struct io_context *context)
 {
 	uint64_t dirty;
 
 	/* A write-through disk sends every write to the device. */
 	if ((disk->d_flags & DISK_WRITE_CACHED) == 0)
+		return 0;
+
+	/*
+	 * A write made under a backing claim (a formatter's lease, a loop
+	 * device's file) goes to the device while the claim authorizes it: a
+	 * later write-back carries no claim, and the claimed range refuses it.
+	 */
+	if (context != NULL && context->claim != NULL)
 		return 0;
 
 	/* Past the bound a write goes through at once, which bounds dirty memory. */
