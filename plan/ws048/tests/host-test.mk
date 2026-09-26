@@ -20,9 +20,20 @@ LDFLAGS := -fsanitize=address,undefined
 .PHONY: all run
 all: run
 
-run: $(OUT)/fdt-host-test $(OUT)/brcmstb-host-test $(OUT)/disabled.dtb
+run: $(OUT)/fdt-host-test $(OUT)/brcmstb-host-test $(OUT)/firmware-host-test \
+	$(OUT)/disabled.dtb
 	$(OUT)/fdt-host-test $(DTB) $(OUT)/disabled.dtb
 	$(OUT)/brcmstb-host-test $(DTB) $(OUT)/disabled.dtb
+	$(OUT)/firmware-host-test $(DTB)
+
+$(OUT)/firmware-host-test: $(TESTS)/firmware-host-test.c \
+	$(REPO)/src/drivers/platform/rpi4/rpi4-firmware.c \
+	$(REPO)/src/drivers/platform/rpi4/rpi4-firmware.h \
+	$(REPO)/src/drivers/generic/fdt.c $(REPO)/include/drivers/generic/fdt.h
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(TESTS)/firmware-host-test.c \
+		$(REPO)/src/drivers/platform/rpi4/rpi4-firmware.c \
+		$(REPO)/src/drivers/generic/fdt.c $(LDFLAGS) -o $@
 
 $(OUT)/brcmstb-host-test: $(TESTS)/brcmstb-host-test.c \
 	$(REPO)/src/drivers/pci/pci-brcmstb.c $(REPO)/src/drivers/generic/fdt.c \

@@ -68,6 +68,10 @@ drv_pci_brcmstb_config_read(
 	uint32_t *value);
 
 int
+drv_pci_brcmstb_reassign(
+	struct drv_pci_brcmstb *host);
+
+int
 drv_pci_brcmstb_publish(
 	struct drv_pci_brcmstb *host);
 

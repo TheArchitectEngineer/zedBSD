@@ -310,6 +310,13 @@ test_start_sequence(void)
 	CHECK(endpoint_bar1[0] == 0);
 	CHECK(bytes_read(endpoint_config[0], 0x04U, 2U) == 0);
 
+	/* An endpoint reset between start and publish gets its BAR back at the same place. */
+	endpoint_bar0[0] = 0;
+	CHECK(drv_pci_brcmstb_reassign(host) == 0);
+	CHECK(endpoint_bar0[0] == WINDOW_PCI);
+	CHECK(bytes_read(rc_config, 0x20U, 4U) == 0xc000c000U);
+	CHECK(drv_pci_brcmstb_reassign(NULL) == EINVAL);
+
 	/* Publishing creates bus 0 with non-coherent 31-bit DMA and enumerates it. */
 	CHECK(drv_pci_brcmstb_publish(host) == 0);
 	CHECK(published_ops != NULL);
@@ -318,6 +325,7 @@ test_start_sequence(void)
 	CHECK(published_constraints.coherent == 0);
 	CHECK(scans == 1U);
 	CHECK(drv_pci_brcmstb_publish(host) == EBUSY);
+	CHECK(drv_pci_brcmstb_reassign(host) == EBUSY);
 	CHECK(lock_depth == 0);
 }
 

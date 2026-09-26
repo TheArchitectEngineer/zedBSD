@@ -384,6 +384,36 @@ drv_pci_brcmstb_config_read(
 }
 
 /*
+ * Places the endpoints' BARs again, before publication.
+ *
+ * Something the platform does between start and publish, such as the
+ * Raspberry Pi firmware loading the VL805's own firmware, may reset an
+ * endpoint and lose its BARs.  The placement starts again from the beginning
+ * of the window, so an endpoint that kept its BARs gets the same addresses.
+ */
+int
+drv_pci_brcmstb_reassign(
+	struct drv_pci_brcmstb *host)
+{
+	int error;
+
+	/* Refuses a missing host and one the PCI core already enumerated. */
+	if (host == NULL)
+		return EINVAL;
+	if (host->root != NULL)
+		return EBUSY;
+
+	/* Empties the window and places every BAR again. */
+	host->window_next = host->config.outbound_pci_base;
+	error = assign_resources(host);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the endpoints decode their places again. */
+	return 0;
+}
+
+/*
  * Hands a started host to the PCI core, which enumerates and binds its tree.
  */
 int

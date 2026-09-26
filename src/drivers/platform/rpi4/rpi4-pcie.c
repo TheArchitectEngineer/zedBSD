@@ -15,9 +15,12 @@
  */
 
 #include "drivers/platform/rpi4/rpi4-pcie.h"
+#include "drivers/platform/rpi4/rpi4-firmware.h"
 #include <drivers/generic/fdt.h>
 #include <drivers/pci/pci.h>
 #include <drivers/pci/pci-brcmstb.h>
+#include <kern/clock.h>
+#include <kern/kcrt.h>
 #include <kern/klog.h>
 #include <kern/pmem.h>
 #include <uapi/errno.h>
@@ -29,6 +32,15 @@
  * and the tree's header states its real size inside it.
  */
 #define RPI4_FDT_READ_LIMIT	(2U * 1024U * 1024U)
+
+/* The VL805 USB controller's PCI identity, as vendor and device in one word. */
+#define RPI4_VL805_IDENTITY	0x34831106U
+
+/* How long the VL805 is given to start its new firmware, in microseconds. */
+#define RPI4_VL805_START_US	1000U
+#define RPI4_VL805_START_MAX_US	2000U
+
+static void load_usb_firmware(const struct drv_fdt *fdt, struct drv_pci_brcmstb *host);
 
 /*
  * Starts the PCI core and the BCM2711 root complex.
@@ -86,6 +98,9 @@ drv_rpi4_pcie_init(
 		return error;
 	}
 
+	/* Has the firmware load the USB controller before its driver attaches. */
+	load_usb_firmware(&fdt, host);
+
 	/* Enumerates the bus, which binds the registered drivers. */
 	error = drv_pci_brcmstb_publish(host);
 	if (error != 0) {
@@ -95,4 +110,54 @@ drv_rpi4_pcie_init(
 
 	/* Succeeded: the PCI core owns the controller's tree. */
 	return 0;
+}
+
+/*
+ * Has the VideoCore firmware load the VL805's firmware.
+ *
+ * Most Pi 4 boards carry no EEPROM for the VL805; the firmware loads it
+ * after each PCIe reset when asked.  Older firmware does not know the
+ * request and boards with an EEPROM do not need it, so a failure is
+ * recorded and the boot goes on.
+ */
+static void
+load_usb_firmware(
+	const struct drv_fdt *fdt,
+	struct drv_pci_brcmstb *host)
+{
+	struct drv_pci_address address;
+	uint32_t identity;
+	int error;
+
+	/* Looks at the one device the root port leads to. */
+	kern_memset(&address, 0, sizeof(address));
+	address.bus = 1U;
+	error = drv_pci_brcmstb_config_read(host, &address, 0, 4U, &identity);
+	if (error != 0)
+		return;
+
+	/* Leaves any other device alone. */
+	if (identity != RPI4_VL805_IDENTITY)
+		return;
+
+	/* Reaches the firmware through its mailbox. */
+	error = drv_rpi4_firmware_init(fdt);
+	if (error != 0) {
+		kern_logf("pcie: no firmware mailbox for the VL805 (%d)\n", error);
+		return;
+	}
+
+	/* Asks for the load and records the outcome. */
+	error = drv_rpi4_firmware_notify_xhci_reset(&address);
+	if (error != 0) {
+		kern_logf("pcie: VL805 firmware load not confirmed (%d)\n", error);
+		return;
+	}
+
+	/* Gives the controller time to start and places its BARs again. */
+	kern_logf("pcie: VL805 firmware loaded\n");
+	kern_usleep_range(RPI4_VL805_START_US, RPI4_VL805_START_MAX_US);
+	error = drv_pci_brcmstb_reassign(host);
+	if (error != 0)
+		kern_logf("pcie: VL805 BARs not placed again (%d)\n", error);
 }
