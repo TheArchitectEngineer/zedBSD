@@ -11,13 +11,11 @@ AWK ?= awk
 ARM64_PLATFORM := platform/arm64
 
 # The kernel and the HAL read the compiler's freestanding headers and the
-# tree's include/ and src/, never the C library (as on amd64).  The compiler's
-# aarch64 target does not know zedBSD and does not define __ZEDBSD__, so the
-# build asks for the zedBSD definitions itself (include/uapi/hosted.h,
-# include/kern/kcrt.h).
+# tree's include/ and src/, never the C library (as on amd64).  The compiler
+# knows the zedBSD target and defines __ZEDBSD__, which selects the zedBSD
+# definitions (include/uapi/hosted.h, include/kern/kcrt.h).
 ARM64_CPPFLAGS := -nostdlibinc -Iinclude -Isrc -I. \
 	-Isrc/hal/arm64 -DHAL_ARCH_ARM64 -DHAL_BOARD_RPI4 \
-	-DKERN_UAPI_NATIVE -DKERN_KCRT_NATIVE \
 	-DKERN_USER_ABI_AARCH64 -DKERN_USER_ABI_LP64
 ARM64_CPPFLAGS += $(ZEDBSD_CONFIG_CPPFLAGS)
 ARM64_CFLAGS := -march=armv8-a -mno-outline-atomics -mgeneral-regs-only -ffreestanding \
@@ -110,28 +108,27 @@ ARM64_VMUNIX_OBJS := $(ARM64_BOOT_OBJS) $(ARM64_KERNEL_OBJS)
 $(ARM64_VMUNIX_OBJS): $(ZEDBSD_PLATFORM_CONFIG_STAMP)
 $(ARM64_VMUNIX_OBJS): $(ZEDBSD_KERNEL_LTO_STAMP)
 
-ARM64_USER_CPPFLAGS := -nostdinc -Iinclude -Isrc -I. \
-	-Iinclude/libc -DHAL_ARCH_ARM64 -DKERN_USER_ABI_AARCH64 \
-	-DKERN_USER_ABI_LP64 -DKERN_UAPI_NATIVE
+# User programs read the C library headers from the target sysroot
+# (toolchain/llvm/sysroot.mk), as on amd64.
+ARM64_USER_CPPFLAGS := -nostdinc \
+	-isystem $(ZEDBSD_SYSROOT_ARM64)/usr/include \
+	-Iinclude -Isrc -I. -DHAL_ARCH_ARM64 -DKERN_USER_ABI_AARCH64 \
+	-DKERN_USER_ABI_LP64
 ARM64_USER_CFLAGS := -march=armv8-a -mno-outline-atomics \
 	-ffreestanding -fno-pic -fno-pie \
 	-fno-stack-protector -fno-asynchronous-unwind-tables -fno-unwind-tables \
 	-fno-builtin -fno-common -ffunction-sections -fdata-sections \
 	-Os -Wall -Wextra -Werror
-# The static C library is the sysroot's manifest (toolchain/llvm/sysroot.mk)
-# and the one assembly source clang needs on this target.
-ARM64_USER_RUNTIME_SOURCES := $(ZEDBSD_SYSROOT_LIBC_SOURCES)
-ARM64_USER_RUNTIME_ASM := src/libc/setjmp-aarch64.S
+# The static programs link the sysroot's start file and its relocatable C
+# library, as on amd64.
+ARM64_USER_RUNTIME_OBJS := $(ZEDBSD_SYSROOT_ARM64)/usr/lib/crt0.o \
+	$(ZEDBSD_SYSROOT_ARM64)/usr/lib/libc.o
 ARM64_USER_SH_SOURCES := $(USERLAND_sh_SOURCES)
-ARM64_USER_RUNTIME_OBJS := \
-	$(patsubst %.c,$(BUILD)/user/%.o,$(ARM64_USER_RUNTIME_SOURCES)) \
-	$(patsubst %.S,$(BUILD)/user/%.o,$(ARM64_USER_RUNTIME_ASM))
 ARM64_USER_SH_OBJS := \
 	$(patsubst %.c,$(BUILD)/user/%.o,$(ARM64_USER_SH_SOURCES))
 ARM64_USER_READLINE_OBJ := $(BUILD)/user/userland/base/libedit/readline.o
 ARM64_USER_READLINE_LIB := $(BUILD)/lib/libreadline.a
-ARM64_USER_OBJS := $(BUILD)/user/src/libc/crt/crt0-aarch64.o \
-	$(ARM64_USER_RUNTIME_OBJS) $(ARM64_USER_SH_OBJS)
+ARM64_USER_OBJS := $(ARM64_USER_SH_OBJS)
 
 vmunix: $(BUILD)/vmunix
 $(BUILD)/tests/rpi4-fdt-host-test: tests/rpi4-fdt-host-test.c \
@@ -173,19 +170,10 @@ $(BUILD)/kernel/libc/%.o: src/libc/%.c
 	$(ARM64_CC) $(ARM64_CPPFLAGS) $(filter-out -mgeneral-regs-only,$(ARM64_CFLAGS)) \
  -fno-builtin -fno-strict-aliasing $(ARM64_KERNEL_LTO_CFLAGS) -MMD -MP -c $< -o $@
 
-$(BUILD)/user/%.o: %.c
+$(BUILD)/user/%.o: %.c $(ZEDBSD_SYSROOT_ARM64)/.zedbsd-sysroot-complete
 	@mkdir -p $(dir $@)
 	$(ARM64_CC) $(ARM64_USER_CPPFLAGS) $(ARM64_USER_CFLAGS) \
  -fno-strict-aliasing -MMD -MP -c $< -o $@
-
-$(BUILD)/user/%.o: %.S
-	@mkdir -p $(dir $@)
-	$(ARM64_CC) $(ARM64_USER_CPPFLAGS) $(ARM64_USER_CFLAGS) -D_ASM_SRC_ -c $< -o $@
-
-$(BUILD)/user/src/libc/crt/crt0-aarch64.o: src/libc/crt/crt0-aarch64.S \
-	include/hal/arch.h include/hal/arch/aarch64.h
-	@mkdir -p $(dir $@)
-	$(ARM64_CC) $(ARM64_USER_CPPFLAGS) $(ARM64_USER_CFLAGS) -c $< -o $@
 
 $(ARM64_USER_SH_OBJS) $(ARM64_USER_READLINE_OBJ): \
 	ARM64_USER_CPPFLAGS += -Iuserland/base/libedit
@@ -202,15 +190,17 @@ $(BUILD)/lib/libcurses.a: $(ARM64_USER_CURSES_OBJS)
 # The base programs are position-independent executables that load
 # /lib/libc.so through /lib/ld.so; their objects are the -fPIC ones built
 # under $(BUILD)/dynamic/obj.  (The POSIX-R test ELF files stay static.)
+# They are linked by the compiler driver, which knows zedBSD's link on this
+# target as on amd64 (the loader, the hash style, 4 KiB pages).
 ARM64_APP_OBJ := $(BUILD)/dynamic/obj
-ARM64_APP_INPUTS := $(BUILD)/dynamic/obj/src/libc/crt/crt1.o \
+ARM64_APP_INPUTS := $(ZEDBSD_SYSROOT_ARM64)/usr/lib/crt1.o \
 	$(BUILD)/dynamic/libc.so $(BUILD)/dynamic/ld.so \
 	tools/build/check-dynamic-elf.py
-ARM64_APP_LINK = $(ARM64_LD) -pie --no-relax --gc-sections --hash-style=sysv \
- -z now -z relro -z separate-code -z max-page-size=4096 -z stack-size=0x100000 \
- --allow-shlib-undefined --dynamic-linker=/lib/ld.so \
- $(BUILD)/dynamic/obj/src/libc/crt/crt1.o
-ARM64_APP_LIBS = -L$(BUILD)/dynamic -rpath-link $(BUILD)/dynamic -l:libc.so
+ARM64_APP_LINK = $(CC) -nostdlib -pie -Wl,--no-relax -Wl,--gc-sections \
+ -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
+ -Wl,--dynamic-linker=/lib/ld.so $(ZEDBSD_SYSROOT_ARM64)/usr/lib/crt1.o
+ARM64_APP_LIBS = -L$(BUILD)/dynamic -Wl,-rpath-link,$(BUILD)/dynamic -l:libc.so
 ARM64_APP_CHECK = $(PYTHON) tools/build/check-dynamic-elf.py --machine aarch64 \
  --role application --needed libc.so
 ARM64_APP_SH_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(ARM64_APP_OBJ),sh) \
@@ -264,13 +254,11 @@ $(BUILD)/bin/$(1): $(ARM64_APP_INPUTS) $(addprefix $(ARM64_APP_OBJ)/userland/bas
 endef
 $(foreach command,$(ARM64_USER_NET_COMMANDS),\
 	$(eval $(call ARM64_USER_NET_COMMAND,$(command))))
-$(BUILD)/POSIX-R1.ELF: $(BUILD)/user/src/libc/crt/crt0-aarch64.o \
-	$(ARM64_USER_RUNTIME_OBJS) \
+$(BUILD)/POSIX-R1.ELF: $(ARM64_USER_RUNTIME_OBJS) \
 	$(BUILD)/user/userland/base/tests/syscall-smoke.o \
 	$(ARM64_PLATFORM)/user.ld tools/build/check-user-elf.py
 	$(ARM64_LD) --gc-sections -nostdlib -static -z max-page-size=4096 \
  -z stack-size=0x100000 -T $(ARM64_PLATFORM)/user.ld \
- $(BUILD)/user/src/libc/crt/crt0-aarch64.o \
  $(ARM64_USER_RUNTIME_OBJS) \
  $(BUILD)/user/userland/base/tests/syscall-smoke.o -o $@
 	@# A weak undefined symbol is an optional hook, not a link error.
@@ -280,13 +268,11 @@ $(BUILD)/POSIX-R1.ELF: $(BUILD)/user/src/libc/crt/crt0-aarch64.o \
 		{ $(ARM64_NM) -u $@; exit 1; }
 	$(PYTHON) tools/build/check-user-elf.py --machine aarch64 $@
 
-$(BUILD)/POSIX-R2.ELF: $(BUILD)/user/src/libc/crt/crt0-aarch64.o \
-	$(ARM64_USER_RUNTIME_OBJS) \
+$(BUILD)/POSIX-R2.ELF: $(ARM64_USER_RUNTIME_OBJS) \
 	$(BUILD)/user/userland/base/tests/posix-r2.o \
 	$(ARM64_PLATFORM)/user.ld tools/build/check-user-elf.py
 	$(ARM64_LD) --gc-sections -nostdlib -static -z max-page-size=4096 \
  -z stack-size=0x100000 -T $(ARM64_PLATFORM)/user.ld \
- $(BUILD)/user/src/libc/crt/crt0-aarch64.o \
  $(ARM64_USER_RUNTIME_OBJS) \
  $(BUILD)/user/userland/base/tests/posix-r2.o -o $@
 	@# A weak undefined symbol is an optional hook, not a link error.
@@ -297,12 +283,11 @@ $(BUILD)/POSIX-R2.ELF: $(BUILD)/user/src/libc/crt/crt0-aarch64.o \
 	$(PYTHON) tools/build/check-user-elf.py --machine aarch64 $@
 
 $(BUILD)/POSIX-R2-REMAINING.ELF: \
-	$(BUILD)/user/src/libc/crt/crt0-aarch64.o $(ARM64_USER_RUNTIME_OBJS) \
+	$(ARM64_USER_RUNTIME_OBJS) \
 	$(BUILD)/user/userland/base/tests/posix-r2-remaining.o \
 	$(ARM64_PLATFORM)/user.ld tools/build/check-user-elf.py
 	$(ARM64_LD) --gc-sections -nostdlib -static -z max-page-size=4096 \
  -z stack-size=0x100000 -T $(ARM64_PLATFORM)/user.ld \
- $(BUILD)/user/src/libc/crt/crt0-aarch64.o \
  $(ARM64_USER_RUNTIME_OBJS) \
  $(BUILD)/user/userland/base/tests/posix-r2-remaining.o -o $@
 	@# A weak undefined symbol is an optional hook, not a link error.
@@ -314,9 +299,10 @@ $(BUILD)/POSIX-R2-REMAINING.ELF: \
 
 # ELF64 runtime linker and shared libc for the aarch64 architecture overlay.
 DYNAMIC_DIR := $(BUILD)/dynamic
-DYNAMIC_CPPFLAGS := -nostdinc -I. -Iinclude -Iinclude/libc \
+DYNAMIC_CPPFLAGS := -nostdinc -I. -Iinclude \
+	-isystem $(ZEDBSD_SYSROOT_ARM64)/usr/include \
 	-DHAL_ARCH_ARM64 -DKERN_USER_ABI_AARCH64 -DKERN_USER_ABI_LP64 \
-	-DKERN_DYNAMIC_LIBC -DKERN_UAPI_NATIVE
+	-DKERN_DYNAMIC_LIBC
 DYNAMIC_CFLAGS := -march=armv8-a -mno-outline-atomics -Os -ffreestanding \
 	-fPIC -fno-builtin -fno-stack-protector \
 	-fno-asynchronous-unwind-tables -fno-unwind-tables \
@@ -346,7 +332,7 @@ DYNAMIC_FLOAT_PARSE_OBJS := $(DYNAMIC_FLOAT_DIR)/softfloat.o \
 	$(DYNAMIC_FLOAT_DIR)/float-parse.o
 DYNAMIC_LIBC_OBJS += $(DYNAMIC_LIBM_OBJ) $(DYNAMIC_FLOAT_PARSE_OBJS)
 
-$(DYNAMIC_DIR)/obj/%.o: %.c
+$(DYNAMIC_DIR)/obj/%.o: %.c $(ZEDBSD_SYSROOT_ARM64)/.zedbsd-sysroot-complete
 	@mkdir -p $(dir $@)
 	$(ARM64_CC) $(DYNAMIC_CPPFLAGS) $(DYNAMIC_CFLAGS) -MMD -MP -c $< -o $@
 $(DYNAMIC_DIR)/obj/userland/base/libc/syscall.o: \
@@ -361,9 +347,6 @@ $(DYNAMIC_DIR)/obj/src/rtld/entry.o: src/rtld/entry-aarch64.S
 	@mkdir -p $(dir $@)
 	$(ARM64_CC) -c $< -o $@
 $(DYNAMIC_DIR)/obj/src/rtld/tlsdesc.o: src/rtld/tlsdesc-arm64.S
-	@mkdir -p $(dir $@)
-	$(ARM64_CC) -c $< -o $@
-$(DYNAMIC_DIR)/obj/src/libc/crt/crt1.o: src/libc/crt/crt1-aarch64.S
 	@mkdir -p $(dir $@)
 	$(ARM64_CC) -c $< -o $@
 $(DYNAMIC_LIBM_OBJ): src/libc/math.c src/libc/softfloat.h
@@ -396,8 +379,6 @@ $(DYNAMIC_FLOAT_DIR)/float-parse.o: src/libc/float-parse.c src/libc/softfloat.h
 $(DYNAMIC_DIR)/ld.so: $(DYNAMIC_RTLD_OBJS)
 	$(ARM64_LD) -shared -Bsymbolic -e _rtld_start --hash-style=sysv \
  -z now -z relro -z separate-code -z max-page-size=4096 $^ -o $@
-# The compiler driver does not know zedBSD's aarch64 link, so ld.lld is
-# called directly.
 $(DYNAMIC_DIR)/libc.so: $(DYNAMIC_LIBC_OBJS)
 	$(ARM64_LD) -shared -soname libc.so --hash-style=both -z now -z relro \
  -z separate-code -z max-page-size=4096 -z stack-size=0x100000 \
@@ -433,15 +414,18 @@ $(DYNAMIC_DIR)/versuse.so: \
 	$(ARM64_LD) -shared -soname versuse.so --hash-style=gnu \
  -z now -z relro -z separate-code -z max-page-size=4096 \
  $< -L$(DYNAMIC_DIR) -l:verstest.so -o $@
-$(DYNAMIC_DIR)/dyntest: $(DYNAMIC_DIR)/obj/src/libc/crt/crt1.o \
+$(DYNAMIC_DIR)/dyntest: $(ZEDBSD_SYSROOT_ARM64)/usr/lib/crt1.o \
 	$(DYNAMIC_DIR)/obj/userland/base/tests/dyntest.o $(DYNAMIC_DIR)/libc.so \
 	$(DYNAMIC_DIR)/ld.so $(DYNAMIC_DIR)/tlstest.so \
 	$(DYNAMIC_DIR)/versuse.so
-	$(ARM64_LD) -pie --no-relax --hash-style=sysv -z now -z relro \
- -z separate-code -z stack-size=0x100000 --allow-shlib-undefined \
- --dynamic-linker=/lib/ld.so $(DYNAMIC_DIR)/obj/src/libc/crt/crt1.o \
- $(DYNAMIC_DIR)/obj/userland/base/tests/dyntest.o -L$(DYNAMIC_DIR) \
- -rpath-link $(DYNAMIC_DIR) -l:libc.so -o $@
+	$(CC) -nostdlib -pie -Wl,--no-relax \
+ -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
+ -Wl,--dynamic-linker=/lib/ld.so \
+ $(ZEDBSD_SYSROOT_ARM64)/usr/lib/crt1.o \
+ $(DYNAMIC_DIR)/obj/userland/base/tests/dyntest.o \
+ -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
+ -l:libc.so -o $@
 dynamic-userland-check: $(DYNAMIC_DIR)/ld.so $(DYNAMIC_DIR)/libc.so \
 	$(DYNAMIC_DIR)/dyntest $(DYNAMIC_DIR)/tlstest.so \
 	$(DYNAMIC_DIR)/rpathtest.so $(DYNAMIC_DIR)/verstest.so \
