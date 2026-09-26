@@ -215,3 +215,4 @@ entire production overlay/UFS translation units.
 | `ws001-p035` | case `who`（host だけ。glibc の記録の file を python で作る）、`pinned/guest.sh` の who、`pinned/posix.sh` の読めない file |
 | `ws001-p036` | `stty-host-test.py [--bin DIR]`（pty の上で zedBSD stty を試し、termios と GNU stty で読み戻す）、`pinned/guest.sh` の stty（console に設定して戻す） |
 | `ws001-p037` | `dirname-test.sh`（複数の operand と `-z` に更新）、case `dirname` |
+| `ws001-p038` | cases `mktemp`・`base64`・`install`（GNU coreutils と比べる） |

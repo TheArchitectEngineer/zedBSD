@@ -9,7 +9,7 @@ Related Milestones: MG005
 Objectives: O1, O2, O3
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p024〜p031 cleared（2026-09-27）。p032〜p037 cleared、main を merge（2026-09-27、phase034 の記録）。次はユーザーの決めた WS045 の残り 2 件（mktemp・install・base64 を p038、xargs の GNU option を p039）、その後 §12 の残り（mesg・tabs・find・ls）
+Resume point: p024〜p031 cleared（2026-09-27）。p032〜p038 cleared、main を merge（2026-09-27、phase034 の記録）。次はユーザーの決めた WS045 の残り 1 件（xargs の GNU option と host の build 一覧、p039）、その後 §12 の残り（mesg・tabs・find・ls）
 <!-- awesome-plan-current:end -->
 
 Shared tests: [WS001 test index](tests/README.md)
@@ -57,6 +57,7 @@ Shared tests: [WS001 test index](tests/README.md)
 | `ws001-p035` | [who](phase035/phase.md) | cleared（2026-09-27） | 全 option と `am i`・file operand、`<utmpx.h>` に POSIX の定数、host who 5/5（glibc の記録を GNU と）・amd64 guest 28/28、style 0 |
 | `ws001-p036` | [stty](phase036/phase.md) | cleared（2026-09-27） | 全 operand・`-a`・`-g`・窓の大きさ、`<termios.h>` に XSI の遅延、`<unistd.h>` に `_POSIX_VDISABLE`、host pty 89/89・amd64 guest 30/30、style 0 |
 | `ws001-p037` | [dirname の複数の operand](phase037/phase.md) | cleared（2026-09-27） | ユーザーの決定（WS045 から）。各結果を 1 行ずつ、`-z`、dirname-test PASS・host 5/5・amd64 guest 28/28、style 0 |
+| `ws001-p038` | [mktemp・install・base64](phase038/phase.md) | cleared（2026-09-27） | ユーザーの決定（WS045 から）。3 つの base utility を新設し package の一覧へ、host 11/11・11/11・13/13（GNU と）・amd64 guest 35/35、style 0 |
 
 ### q042 pre-merge identifier migration
 
@@ -116,6 +117,7 @@ Phase に分けた。範囲の境界:
 | p035 | #150 who（p034 の後に追加） | option の全部、`am i`、file operand、端末の状態と idle、`<utmpx.h>` の定数 |
 | p036 | #116 stty（p035 の後に追加） | 全 operand、`-a`・`-g`、設定の読み戻し、窓の大きさ |
 | p037 | #35 dirname（ユーザーの決定、WS045 から） | 複数の operand、`-z`、dirname-test の更新 |
+| p038 | 台帳の外（POSIX でない）: mktemp・install・base64（ユーザーの決定、WS045 から） | GNU の option、image に入れる、GNU と比べる case |
 
 ## 1. Project objective
 
