@@ -607,6 +607,13 @@ wlc_event_dispatch(
 		}
 	}
 
+	/* Dispatches xdg_toplevel_menu_v1 events (the System Menu, menu-protocol.c). */
+	same = strcmp(proxy->interface->name, "xdg_toplevel_menu_v1");
+	if (same == 0) {
+		error = wlc_menu_dispatch(event, listener, data);
+		return error;
+	}
+
 	/* Unknown typed listeners require an explicit generic dispatcher binding. */
 	return ENOTSUP;
 }

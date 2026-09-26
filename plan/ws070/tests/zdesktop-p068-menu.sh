@@ -1,5 +1,6 @@
 #!/bin/sh
-# ws035-p068: zdesktop-terminal in zdesktop --glass on the Venus guest.
+# ws070: WS035's p068 test (zdesktop-terminal in zdesktop --glass on the Venus guest) with the title-bar
+# double click on the title (x+80) instead of x+150, where the terminal's Shell menu now is (WS070).
 #
 # zdesktop runs at 1280x800 with the wallpaper; the terminal opens a window with
 # /bin/sh on a pseudo-terminal.  Keys typed through QMP (qmp-keys.py) run
@@ -16,8 +17,8 @@
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 cd "$(dirname -- "$0")/../../.."
-export GUEST_RUNTIME="${GUEST_RUNTIME:-$PWD/build/ws035-sq-run}"
-out=${1:-build/ws035-p068}
+export GUEST_RUNTIME="${GUEST_RUNTIME:-$PWD/build/ws070-run}"
+out=${1:-build/ws070-p068}
 mkdir -p "$out"
 guest() { timeout 90 python3 plan/tools/guest/guest.py run "$1" 2>&1; }
 check() { python3 plan/ws035/tests/zdesktop-check.py "$@" --runtime "$GUEST_RUNTIME"; }
@@ -58,7 +59,6 @@ sleep 3
 check "$out/output.png" >/dev/null
 
 # 3. Docked: the terminal takes the full size.
-# The double click is on the title (x+80): x+150 is the terminal's Shell menu since WS070.
 pointer move $((tx + 80)) $((ty - 8 - 22)) sleep 400 down sleep 60 up sleep 60 down sleep 60 up sleep 100
 sleep 3
 pointer move 1250 780 sleep 500

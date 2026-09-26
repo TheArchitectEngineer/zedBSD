@@ -10,6 +10,7 @@
  */
 
 #include "zwl.h"
+#include "menu.h"
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <errno.h>
@@ -32,6 +33,7 @@ static const struct zwl_global globals[] = {
 	{ 4, "wl_output", 2, ZWL_OUTPUT },
 	{ 5, "wl_seat", 5, ZWL_SEAT },
 	{ 6, "wl_shm", 1, ZWL_SHM },
+	{ 7, "xdg_menu_manager_v1", 1, ZWL_MENU_MANAGER },
 };
 
 static uint32_t word_at(const unsigned char *bytes, size_t offset);
@@ -157,6 +159,12 @@ zwl_dispatch(
 	case ZWL_POINTER:
 	case ZWL_KEYBOARD:
 		error = zwl_seat_request(object, opcode, bytes, size);
+		break;
+	case ZWL_MENU_MANAGER:
+	case ZWL_MENU:
+	case ZWL_TOPLEVEL_MENU:
+		/* The System Menu (menu.c). */
+		error = zwl_menu_request(object, opcode, bytes, size);
 		break;
 	default:
 		/* Callback objects and version-2 outputs have no client requests. */

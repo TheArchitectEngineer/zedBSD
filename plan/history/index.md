@@ -9,6 +9,8 @@ Last finished Queue: q491（ws069-p011 cleared。X の窓を Vulkan で表示）
 
 ## 最新: q443〜q491（2026-09-26〜27）
 
+WS070 の merge（2026-09-27、Queue の外、ユーザーの例外の許可でサブエージェントが実行）: System Menu の p001〜p004（protocol、zdesktop の描画と操作、libzdesktop、zdesktop-terminal の menu）。main の Venus で x11-p003〜p005・zdesktop-p068（題名の double click を x+80 に直した）・p070・menu-p003 PASS。p005（実機・規約）は残り。
+
 [q491](queue-q491.md): ws069-p011 cleared。zdesktop-x11server の窓を top-level ごとの Vulkan の swapchain（MAILBOX）で表示し、wl_shm は fallback（`X11SERVER_SHM=1`）。libvulkan の present の worker と同じ接続を読むため、server の Wayland の dispatch を非 blocking に直した。Venus の x11-p003〜p005・zdesktop-p070、実機の run1 が PASS。Venus では Vulkan の道が約 3 倍遅い（F-021）。
 
 [q490](queue-q490.md): ws069-p009 cleared。Xzed を ws069 の前（cc4433d4）へ戻し、amd64 の Wayland 版の build 規則と rootful の試験を消した。std VGA の QEMU で Xzed と zterm。

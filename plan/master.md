@@ -132,7 +132,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS066](ws066/ws.md) | MG002 | 動的 link の program の起動を速くする（`ld.so` の最適化）（2026-09-26 ユーザー「あとでやるリスト」） | planning | p001（費用の内訳と設計）。優先度は低い |
 | [WS068](ws068/ws.md) | MG006 | EGL と OpenGL ES（と desktop GL 3.0〜4.6）を Vulkan と display 拡張の上に実装する（Wayland とディスプレイ直接の両方）（2026-09-26・27 ユーザー指示） | incomplete | p003（自前の GLSL compiler、2026-09-27 方式 A に決定）→ desktop GL。p002・p008・p010・p006 cleared |
 | [WS069](ws069/ws.md) | MG006 | zdesktop で X11 の app を動かす（単体の `zdesktop-x11server`、rootless、GLX）（2026-09-26・27 ユーザー指示） | incomplete | p006（i915 実機、規約の全文と回帰、最後）。p002〜p005・p008〜p011 cleared（zdesktop-x11server、窓は Vulkan、Xzed はレトロ用に戻した） |
-| [WS070](ws070/ws.md) | MG006 | zdesktop の System Menu: client がメニューの意味を渡し、zdesktop が浮いたタイトルバーとシステムバーに描く（`xdg_toplevel_menu_v1`、libzdesktop で包む）（2026-09-27 ユーザー指示） | planning | p001（設計）。WS069 の後、WS068 の GLSL より前 |
+| [WS070](ws070/ws.md) | MG006 | zdesktop の System Menu: client がメニューの意味を渡し、zdesktop が浮いたタイトルバーとシステムバーに描く（`xdg_toplevel_menu_v1`、libzdesktop で包む）（2026-09-27 ユーザー指示） | incomplete | p001〜p004 cleared（Venus、サブエージェント、2026-09-27 に main へ merge）。p005（i915 実機、規約の全文、最後）。design.md §11 の 5 つの既定はユーザーの確認待ち |
 | [WS071](ws071/ws.md) | MG006 | zedBSD File Manager: Finder 風で zedBSD らしいファイルマネージャ（ホームのダッシュボード、サイドバー、タグ、Quick Look、System Menu）（2026-09-27 ユーザー指示、仕様案は ws071/spec.md） | planning | p001（設計）。WS070 の後 |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
@@ -258,6 +258,7 @@ tick 周期は `include/hal/arch/<arch>.h` の `HAL_TIMER_FREQUENCY`。時間の
 | libvulkan の版 | desktop GL に要る Vulkan 1.1 以降の機能・拡張は libvulkan に足してよい（Venus で。i915 の実行器は後、F-023） | WS068 design.md §6 |
 | GL_VERSION | 実装した版を正直に名乗る（必須の機能が揃った所まで）。上の版の機能は GL_ARB_* の拡張で個別に出す | WS068 design.md §6 |
 | File Manager | ユーザー（同日）:「これもWSを追加しておいてください。Finder風だけどzedBSDらしいファイルマネージャとして、仕様書のベースになる形でまとめます。現在の作業は続けてください。」→ WS071（仕様案の原文は ws071/spec.md）。今の作業（WS069）は続ける | WS071、WS の優先順位 |
+| System Menu の統合 | WS070 の p001〜p004（サブエージェント、Venus）を 2026-09-27 に main へ merge。既定で進めた 5 点（F10 で menu、shortcut は zdesktop が実行、外の click は下の窓へ渡さない、icon は描かない、label は ASCII）はユーザーの確認待ち（ws070 design.md §11）。WS071 の右 click の menu は protocol の version 2 の追加（design.md §12） | WS070 |
 
 ### 主な依存関係
 

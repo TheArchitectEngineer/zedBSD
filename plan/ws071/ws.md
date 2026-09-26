@@ -29,6 +29,9 @@ Finder の操作モデル（左のサイドバー、浮いたツールバー、�
 - メニューバー（File・Edit・View・Go・Window・Help、spec §36〜37）は WS070 の System Menu で出す。右クリックの context menu（spec §15）は
   「compositor 側のシステムメニュー仕様に合わせる」ので、WS070 の protocol が context menu（popup を位置で開く）を持つかを p001 で確かめ、
   無ければ WS070 への追加として扱う（WS070 の範囲を変える判断なのでユーザーに示す）。
+  2026-09-27 WS070 の回答（[design.md §12](../ws070/design.md)）: 中身は `xdg_menu_v1` の木と zdesktop の popup をそのまま使えるが、
+  「surface の点に seat・serial に答えて出す」request が要る（version 2 の `get_context_menu` と `xdg_context_menu_v1`、libzdesktop の
+  `zdesktop_menu_popup`）。WS071 の Phase として足すか WS070 に足すかは p001 で決める。
 - 最初の版の範囲（spec の「最低限」）: ホームのダッシュボード、サイドバー（よく使う項目・その他・タグ）、戻る・進む・ホーム・パンくず、
   アイコン表示・リスト表示、選択、開く、名前変更、ゴミ箱、コピー・移動・削除（background の task と進捗）、検索（名前・拡張子・タグ）、
   プレビューのペイン・Quick Look、ファイル情報（owner・権限を含む）、キーボード操作（spec §35）、タブ・複数窓、Undo。
