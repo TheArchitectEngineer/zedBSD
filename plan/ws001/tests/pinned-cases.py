@@ -6,6 +6,8 @@ or zedBSD chose otherwise on purpose (each case says why).
 The cases are plan/ws001/tests/pinned/*.sh, split at lines "#### name";
 each has its code, then a line "## expect" and the exact expected output.
 A line "## status N" before "## expect" expects status N (0 otherwise).
+The cases of pinned/guest.sh need zedBSD itself (its mount table, UFS
+block counts) and are only exported for the guest.
 Each case runs under dash in an empty directory with the utilities under
 test first on PATH, as plan/tools/utils/util-diff.py runs its cases.
 
@@ -102,7 +104,11 @@ def main() -> int:
 		return 0
 
 	failed = 0
+	skipped = 0
 	for label, name, code, expect, status in cases:
+		if label == "guest.sh":
+			skipped += 1
+			continue
 		output, got = run(code, ours + ":/usr/bin:/bin")
 		if output == expect and got == status:
 			continue
@@ -110,7 +116,7 @@ def main() -> int:
 		print("FAIL %s :: %s\n--- expected (status %d)\n%s--- got (status %d)\n%s"
 		      % (label, name, status, expect.decode(errors="replace"), got,
 			 output.decode(errors="replace")))
-	print("TOTAL %d/%d" % (len(cases) - failed, len(cases)))
+	print("TOTAL %d/%d (%d guest-only cases not run)" % (len(cases) - skipped - failed, len(cases) - skipped, skipped))
 	return 1 if failed else 0
 
 

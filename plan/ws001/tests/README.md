@@ -211,3 +211,4 @@ entire production overlay/UFS translation units.
 | `ws001-p031` | 全 case の guest の回帰（`guest-run.sh` に case file を列べる）、`status-after-not-found.py SERIAL_SOCKET`（q136 の観察）、`plan/tools/boot-test.sh` |
 | `ws001-p032` | case `stream`（cat・cksum・dd）、`tty-host-test.py` の dd の ^C、`pinned/posix.sh` の `cksum -a sha256` |
 | `ws001-p033` | case `patch`、`pinned/posix.sh` の patch（`-N`、normal の reject、標準出力）、`diff-random-host-test.py --patch build/ws001/bin/patch`（zedBSD diff の全形式を zedBSD patch で当てる） |
+| `ws001-p034` | case `du`（host だけ。block の数は file system で違う）、`pinned/guest.sh`（guest だけの期待値。df と、UFS の上の du。`pinned-cases.py` は host では流さず export だけ）、`pinned/posix.sh` の `du -L` の loop |

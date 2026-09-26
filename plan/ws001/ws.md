@@ -9,7 +9,7 @@ Related Milestones: MG005
 Objectives: O1, O2, O3
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p024〜p031 cleared（2026-09-27）。p032・p033 cleared。次は §12 の残りの P1/P2 から Phase を切り出す（候補: df・du・who・find・ls・stty）
+Resume point: p024〜p031 cleared（2026-09-27）。p032〜p034 cleared。次は §12 の残りの P1/P2 から Phase を切り出す（候補: who・stty・find・ls）
 <!-- awesome-plan-current:end -->
 
 Shared tests: [WS001 test index](tests/README.md)
@@ -53,6 +53,7 @@ Shared tests: [WS001 test index](tests/README.md)
 | `ws001-p031` | [guest の回帰と台帳の照合](phase031/phase.md) | cleared（2026-09-27） | host 945/945、amd64 guest 948/948、boot test PASS、§12 を WS042・WS043 と照合（P1 73→27、P2 38→17）、q136 は再現しない |
 | `ws001-p032` | [cat・cksum・dd](phase032/phase.md) | cleared（2026-09-27） | host 32/32・amd64 guest 38/38、dd の conv= と cbs= を全部、cksum は表の CRC、installer の `-a sha256` を保つ |
 | `ws001-p033` | [patch](phase033/phase.md) | cleared（2026-09-27） | 全形式・全 option の書き直し、host 32/32・期待値 9/9・乱数 2000/2000（zedBSD diff の全形式を当てる）・amd64 guest 70/70、style 0 |
+| `ws001-p034` | [df・du](phase034/phase.md) | cleared（2026-09-27） | df は mount 表の全部と operand の file system、du は全 option と hard link・loop、host du 15/15・amd64 guest 23/23、style 0 |
 
 ### q042 pre-merge identifier migration
 
@@ -108,6 +109,7 @@ Phase に分けた。範囲の境界:
 | p031 | 上の全部 | amd64 guest で export した case を流す。台帳の §12 と dashboard を照合する |
 | p032 | #13 cat、#19 cksum、#31 dd（p031 の後に追加） | 流れの utility。dd の全 conv と cbs、統計、SIGINT |
 | p033 | #92 patch（p032 の後に追加） | normal・context・unified・ed、file の決め方、`-p`・`-R`・`-N`・`-b`・`-o`・`-r`・`-D`・`-l`、fuzz と offset、reject、状態 0/1/2 |
+| p034 | #33 df、#36 du（p033 の後に追加） | df の全 file system と operand の解決、du の `-a`/`-s`/`-k`/`-x`/`-H`/`-L`、hard link、loop |
 
 ## 1. Project objective
 
@@ -195,7 +197,7 @@ passes.  `5/5` replacement gates still does not mean full POSIX conformance.
 | `implemented-unreviewed` | 115 | includes the new local `at`, `batch`, `crontab`, and `logger` implementations |
 | `deferred-stub` | 1 | remaining service/provider blocker: `mailx` |
 | `option-disabled` | 20 | outside the selected option profile |
-| §12 の状態（2026-09-27、ws001-p033 の後） | 111 | implemented-unreviewed 71、P1 26、P2 14（表の行を数えた値。p032 で cat・cksum・dd、p033 で patch）。下の行は 2026-08-31 の値で、この行が新しい |
+| §12 の状態（2026-09-27、ws001-p034 の後） | 111 | implemented-unreviewed 73、P1 24、P2 14（表の行を数えた値。p032 で cat・cksum・dd、p033 で patch、p034 で df・du）。下の行は 2026-08-31 の値で、この行が新しい |
 | historical Phase 9 P0 findings | 3 | the imported `bc`, `ed`, and `m4` findings were resolved by Phase 10 on 2026-08-24 |
 | current policy conflicts | 0 | the declared `userland/base` provenance gate rejects the removed imported trees and fingerprints |
 | current P1 known incompatibilities | 75 | the prior 77 minus the bounded `cmp` and `tee` incompatibilities closed by `agent2-q001`; full reviews remain open |
@@ -466,10 +468,10 @@ The current register therefore contains 0 P0, 73 P1, and 38 P2 findings.
 | 30 | [date](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/date.html) | implemented-unreviewed (`ws001-p030`) | `-u`, every `strftime()` conversion of the libc with E/O modifiers, the default format, TZ zones, and clock setting from `mmddhhmm[[cc]yy]` with range checks pass 12 host cases, the amd64 guest, and a guest clock-setting check; Issue 8 field widths/flags and LC_TIME remain. |
 | 31 | [dd](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/dd.html) | implemented-unreviewed (`ws001-p032`) | Every operand and `conv=` value (POSIX conversion tables, block/unblock with truncation counts, swab, case, sync, notrunc, noerror), expressions, seek truncation, statistics, and SIGINT reporting pass the host cases, a pty case, and the amd64 guest; read-error recovery with noerror is unproved. |
 | 32 | [delta](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/delta.html) | P1 known incompatibility | Only `-y` is parsed; required options, MR/comment rules, p-file selection, SID/permission cases, weave interoperability, signals, and transactional recovery are incomplete. |
-| 33 | [df](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/df.html) | P1 known incompatibility | Only `-k` exists; `-P`/`-t`, correct filesystem/device identity, block accounting, operand resolution, default operand safety, locale formatting, and errors are incomplete. |
+| 33 | [df](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/df.html) | implemented-unreviewed (`ws001-p034`) | Every mounted file system from the kernel mount table without operands, the file system of each operand (same device, or a mounted device special file), `-k`, `-P`, `-t` (XSI, same output), 512/1024-byte units without overflow, rounded-up capacity, and failures pass guest cases; non-`-P` formats beyond the portable one are not provided. |
 | 34 | [diff](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/diff.html) | implemented-unreviewed (`ws001-p029`) | A minimal longest-common-subsequence difference (Myers, linear space) with normal, `-c`/`-C`, `-u`/`-U`, `-e`, and `-f` output, `-b`, `-r` headers, directory/file pairing, stdin, missing-newline notes, and statuses 0/1/2 passes 29 host cases, 2000 random pairs applied by GNU patch/ed with GNU `--minimal` change counts, and the amd64 guest; the installer's `-r -q --metadata` output is unchanged. |
 | 35 | [dirname](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/dirname.html) | implemented-unreviewed (`ws001-p012`) | Empty/no-slash, chosen double-slash, all/trailing/repeated slash, long operand, `--`, usage, and host broken-stdout cases pass. Localized diagnostics, allocation-failure injection, and direct guest failure evidence remain. |
-| 36 | [du](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/du.html) | P1 known incompatibility | Only `-a` exists; `-s`/`-k`/`-x` and `-H`/`-L`, hard-link deduplication, mount/symlink/cycle rules, overflow, permissions, and traversal errors are absent. |
+| 36 | [du](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/du.html) | implemented-unreviewed (`ws001-p034`) | `-a`/`-s`, `-k` (rounded up), `-x`, `-H`/`-L`, post-order directories, hard links and followed links counted once across operands, loop diagnostics, unreadable directories, and statuses pass host cases against GNU du, a pinned loop case, and guest cases on UFS/devfs/tmpfs; devfs `/dev/fd/N` appears as a loop (finding in phase034). |
 | 37 | [echo](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/echo.html) | implemented-unreviewed (WS043) | Rewritten by WS043 against the GNU POSIX-mode differential cases (`plan/tools/utils/cases/`), which pass on the host and on the amd64 guest (ws001-p031 rerun: 948/948 with the WS001 cases). Also a command built from the shell's source. |
 | 38 | [ed](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/ed.html) | P1 known incompatibility (P0 resolved 2026-08-24) | The independent local replacement provides a checked memory line store, basic addresses and edit commands, BRE substitution, `g`/`v`, single-operation undo, reads, and atomic sibling-file writes.  Relative/mark/BRE addresses, the remaining commands, temporary backing storage, signal recovery, exact newline/byte-count/diagnostic behavior, metadata preservation, and locale remain. |
 | 39 | [env](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/env.html) | implemented-unreviewed (`ws001-p024`) | `/usr/bin/env` handles `-i`/`-`/`--`, assignments, PATH of the new environment, scripts without `#!`, write errors, and 125/126/127 (18 host cases, amd64 guest); the incomplete sh `env` builtin was removed. |

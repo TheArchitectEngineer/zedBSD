@@ -78,3 +78,12 @@ st=1
 printf 'a\n' > x; printf 'b\n' > y; diff x y > p; patch x p 2> /dev/null | wc -c
 ## expect
 0
+
+#### du -L reports a directory loop
+# POSIX: du detects infinite loops and writes a diagnostic; GNU skips the
+# directory met again silently and exits with 0.
+mkdir -p d/e; ln -s .. d/e/up; du -L d 2> err | cut -f2; grep -c loop err
+## expect
+d/e
+d
+1
