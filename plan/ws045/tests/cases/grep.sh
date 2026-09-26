@@ -244,8 +244,145 @@ grep -rn hit d
 printf 'a.c\nabc\n' | fgrep a.c
 printf 'ab\nabb\n' | egrep -c 'b+'
 
-#### -P is refused or works
-printf 'a1\n' | grep -P '\d' >/dev/null 2>&1; echo $?
-
 #### -y is -i
 printf 'A\n' | grep -y a
+
+#### -w where a shorter match is the word
+printf 'foobar foo\nfoox\n' | grep -ow 'foo[a-z]*'
+
+#### -w with a later word after a failed one
+printf 'xfoo foo\n' | grep -bow foo
+
+#### -c with -A counts only selected lines
+printf 'a\nb\na\n' | grep -c -A1 a
+
+#### -v with -A
+printf 'a\nb\nc\n' | grep -v -A1 a
+
+#### -B at the start of the file and -n -b prefixes
+printf 'a\nb\nc\n' | grep -nb -B2 b
+
+#### context lines with names
+printf 'x\ny\n' > f1
+printf 'y\n' > f2
+grep -n -B1 y f1 f2
+
+#### -l -Z and -L -Z
+printf 'a\n' > f1
+printf 'b\n' > f2
+grep -lZ a f1 f2 | od -c
+grep -LZ a f1 f2 | od -c
+
+#### -c -Z
+printf 'a\n' > f1
+printf 'b\n' > f2
+grep -cZ a f1 f2 | od -c
+
+#### directory operand without -r
+mkdir d
+grep x d; echo $?
+
+#### -d skip
+mkdir d
+printf 'x\n' > f
+grep -d skip x d f; echo $?
+
+#### -s silences a directory operand
+mkdir d
+grep -s x d; echo $?
+
+#### missing file with a match elsewhere
+printf 'x\n' > f
+grep x missing f 2>/dev/null; echo $?
+
+#### -q with a missing file and a match
+printf 'x\n' > f
+grep -q x missing f 2>/dev/null; echo $?
+
+#### -c on a binary file
+printf 'a\0b\na\n' > bin
+grep -c a bin
+
+#### -I -c on a binary file
+printf 'a\0b\na\n' > bin
+grep -I -c a bin; echo $?
+
+#### -l on a binary file
+printf 'a\0b\n' > bin
+grep -l a bin
+
+#### -z with -o
+printf 'one two\0three\0' | grep -z -o 't[a-z]*' | od -c
+
+#### empty pattern with -o and -c
+printf 'a\n\nb\n' | grep -c ''
+printf 'a\n' | grep -o -e '' -e a
+
+#### -x with -w
+printf 'foo\nfoo bar\n' | grep -xw foo
+
+#### -F -w -i
+printf 'FOO bar\nfoobar\n' | grep -Fwi foo
+
+#### -e twice with -o picks the leftmost longest
+printf 'abcdef\n' | grep -o -e bcd -e bc -e def
+
+#### options after operands
+printf 'a\nb\n' > f
+grep a f -n
+
+#### -- ends the options
+printf -- '-v\n' > f
+grep -- -v f
+
+#### -m 0
+printf 'a\n' | grep -m 0 a; echo $?
+
+#### --max-count with -v
+printf 'a\nb\nc\n' | grep -v -m1 a
+
+#### -r with --include on an operand file
+printf 'hit\n' > a.txt
+grep -r --include='*.c' hit a.txt; echo $?
+
+#### -r on a file operand has no names
+mkdir d
+printf 'hit\n' > d/f
+grep -r hit d/f
+
+#### -rh
+mkdir d
+printf 'hit\n' > d/f
+grep -rh hit d
+
+#### -r -c
+mkdir -p d/e
+printf 'hit\n' > d/e/f
+grep -rc hit d
+
+#### -r with a trailing slash
+mkdir d
+printf 'hit\n' > d/f
+grep -r hit d/
+
+#### -r skips symbolic links below
+mkdir d
+printf 'hit\n' > t
+ln -s ../t d/l
+grep -r hit d; echo $?
+
+#### --exclude on operands
+printf 'hit\n' > a.o
+printf 'hit\n' > b.c
+grep --exclude='*.o' hit a.o b.c
+
+#### -NUM combined letters
+printf '1\n2\n3\n' | grep -n1 2
+
+#### -A with a long line
+awk 'BEGIN { for (i = 0; i < 50000; i++) printf "x"; print ""; print "y" }' | grep -A1 x | wc -c
+
+#### -h with -c
+printf 'a\n' > f1
+printf 'a\n' > f2
+grep -hc a f1 f2

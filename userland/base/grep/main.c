@@ -8,89 +8,151 @@
  */
 
 /*
- * Searches files for lines that match patterns (POSIX XCU grep).
+ * Searches files for lines that match patterns (POSIX XCU grep, with the
+ * GNU extensions that scripts use).
  *
- *	grep [-E|-F] [-c|-l|-q] [-insvx] -e pattern_list [-e ...] [-f file]... [file...]
- *	grep [-E|-F] [-c|-l|-q] [-insvx] pattern_list [file...]
+ *	grep [options] pattern_list [file...]
+ *	grep [options] -e pattern_list [-e ...] [-f file]... [file...]
  *
  * A pattern list is patterns separated by newlines; a line is selected when
  * any pattern matches it.  Patterns are basic regular expressions, extended
  * ones with -E, or fixed strings with -F.  An empty pattern matches every
- * line.  With -x a pattern must match the whole line: the regex matcher is
- * leftmost-longest, so a whole-line match is one that starts at the start
- * of the line and ends at its end.
+ * line.
+ *
+ * This file reads the command line and walks the files: the operands, and
+ * with -r the files below the directories among them (a walk that the
+ * --include, --exclude and --exclude-dir globs prune).  search.c searches
+ * each file.  Options may follow operands, as GNU grep takes them, unless
+ * POSIXLY_CORRECT is set.
  *
  * The exit status is 0 when a line was selected, 1 when none was, and 2 for
  * an error (a file that could not be read, a bad pattern); with -q a
  * selected line makes it 0 whatever else happened.
  */
 
+#include "userland/base/grep/grep.h"
+#include "userland/base/common/command.h"
+
+#include <dirent.h>
 #include <errno.h>
-#include <regex.h>
+#include <fcntl.h>
+#include <fnmatch.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
-/* How patterns are read. */
-#define MODE_BASIC	0	/* basic regular expressions */
-#define MODE_EXTENDED	1	/* -E: extended regular expressions */
-#define MODE_FIXED	2	/* -F: fixed strings */
+/* The codes of the long options that have no letter. */
+#define OPTION_INCLUDE		256
+#define OPTION_EXCLUDE		257
+#define OPTION_EXCLUDE_DIR	258
+#define OPTION_EXCLUDE_FROM	259
+#define OPTION_LABEL		260
+#define OPTION_COLOR		261
+#define OPTION_BINARY_FILES	262
+#define OPTION_GROUP_SEPARATOR	263
+#define OPTION_NO_SEPARATOR	264
+#define OPTION_LINE_BUFFERED	265
+#define OPTION_HELP		266
+#define OPTION_NO_IGNORE_CASE	267
 
-/* What is written for the selected lines. */
-#define OUTPUT_LINES	0	/* the lines */
-#define OUTPUT_COUNT	1	/* -c: how many */
-#define OUTPUT_NAMES	2	/* -l: the names of the files with any */
-#define OUTPUT_QUIET	3	/* -q: nothing */
+/* The letters grep takes, as command_options_next reads them. */
+#define GREP_LETTERS "A:B:C:D:EFGHIJLPRTUVZabcd:e:f:hilm:noqrsuvwxyz"
 
-/* A pattern: its text, and the compiled regex when it is one. */
-struct pattern {
-	char *text;
-	size_t length;
-	regex_t regex;
-	int empty;
+/*
+ * The options written in full.
+ *
+ * The table is read by the scan of the command line only; the letter a
+ * long option shares its code with makes the two forms one case.
+ */
+static const struct command_long_option grep_long_options[] = {
+	{"after-context", COMMAND_VALUE_REQUIRED, 'A'},
+	{"basic-regexp", COMMAND_VALUE_NONE, 'G'},
+	{"before-context", COMMAND_VALUE_REQUIRED, 'B'},
+	{"binary-files", COMMAND_VALUE_REQUIRED, OPTION_BINARY_FILES},
+	{"byte-offset", COMMAND_VALUE_NONE, 'b'},
+	{"color", COMMAND_VALUE_OPTIONAL, OPTION_COLOR},
+	{"colour", COMMAND_VALUE_OPTIONAL, OPTION_COLOR},
+	{"context", COMMAND_VALUE_REQUIRED, 'C'},
+	{"count", COMMAND_VALUE_NONE, 'c'},
+	{"dereference-recursive", COMMAND_VALUE_NONE, 'R'},
+	{"devices", COMMAND_VALUE_REQUIRED, 'D'},
+	{"directories", COMMAND_VALUE_REQUIRED, 'd'},
+	{"exclude", COMMAND_VALUE_REQUIRED, OPTION_EXCLUDE},
+	{"exclude-dir", COMMAND_VALUE_REQUIRED, OPTION_EXCLUDE_DIR},
+	{"exclude-from", COMMAND_VALUE_REQUIRED, OPTION_EXCLUDE_FROM},
+	{"extended-regexp", COMMAND_VALUE_NONE, 'E'},
+	{"file", COMMAND_VALUE_REQUIRED, 'f'},
+	{"files-with-matches", COMMAND_VALUE_NONE, 'l'},
+	{"files-without-match", COMMAND_VALUE_NONE, 'L'},
+	{"fixed-strings", COMMAND_VALUE_NONE, 'F'},
+	{"group-separator", COMMAND_VALUE_REQUIRED, OPTION_GROUP_SEPARATOR},
+	{"help", COMMAND_VALUE_NONE, OPTION_HELP},
+	{"ignore-case", COMMAND_VALUE_NONE, 'i'},
+	{"include", COMMAND_VALUE_REQUIRED, OPTION_INCLUDE},
+	{"invert-match", COMMAND_VALUE_NONE, 'v'},
+	{"label", COMMAND_VALUE_REQUIRED, OPTION_LABEL},
+	{"line-buffered", COMMAND_VALUE_NONE, OPTION_LINE_BUFFERED},
+	{"line-number", COMMAND_VALUE_NONE, 'n'},
+	{"line-regexp", COMMAND_VALUE_NONE, 'x'},
+	{"max-count", COMMAND_VALUE_REQUIRED, 'm'},
+	{"no-filename", COMMAND_VALUE_NONE, 'h'},
+	{"no-group-separator", COMMAND_VALUE_NONE, OPTION_NO_SEPARATOR},
+	{"no-ignore-case", COMMAND_VALUE_NONE, OPTION_NO_IGNORE_CASE},
+	{"no-messages", COMMAND_VALUE_NONE, 's'},
+	{"null", COMMAND_VALUE_NONE, 'Z'},
+	{"null-data", COMMAND_VALUE_NONE, 'z'},
+	{"only-matching", COMMAND_VALUE_NONE, 'o'},
+	{"perl-regexp", COMMAND_VALUE_NONE, 'P'},
+	{"quiet", COMMAND_VALUE_NONE, 'q'},
+	{"recursive", COMMAND_VALUE_NONE, 'r'},
+	{"regexp", COMMAND_VALUE_REQUIRED, 'e'},
+	{"silent", COMMAND_VALUE_NONE, 'q'},
+	{"text", COMMAND_VALUE_NONE, 'a'},
+	{"version", COMMAND_VALUE_NONE, 'V'},
+	{"with-filename", COMMAND_VALUE_NONE, 'H'},
+	{"word-regexp", COMMAND_VALUE_NONE, 'w'},
+	{NULL, 0, 0}
 };
 
-/* The options and the patterns. */
-struct options {
-	int mode;
-	int output;
-	int ignore_case;
-	int line_numbers;
-	int no_messages;
-	int invert;
-	int whole_line;
-	int show_names;
+/*
+ * What the walk over the files has found so far: whether a line was
+ * selected, and whether an error was met.  -q ends the walk at the first
+ * selected line, so the walk asks whether it is done before each file.
+ */
+struct walk_state {
+	const struct grep_options *options;
+	int selected;
+	int error;
+	int done;
 
-	struct pattern *patterns;
-	size_t count;
-	size_t capacity;
-	int have_patterns;
+	/* -d skip: directory operands are passed over without a message. */
+	int skip_directories;
 };
 
-/* A line being read. */
-struct line {
-	char *data;
-	size_t length;
-	size_t capacity;
-};
-
-static int read_options(int argc, char **argv, struct options *options);
-static int option_letters(int argc, char **argv, int *index, struct options *options);
-static const char *option_argument(int argc, char **argv, int *index, const char *rest);
-static void add_pattern_list(struct options *options, const char *list, size_t length);
-static void add_pattern_file(struct options *options, const char *name);
-static void add_pattern(struct options *options, const char *text, size_t length);
-static int compile_patterns(struct options *options);
-static int search(struct options *options, FILE *stream, const char *name);
-static int line_selected(const struct options *options, const struct line *line);
-static int pattern_matches(const struct options *options, const struct pattern *pattern, const struct line *line);
-static int fixed_matches(const struct options *options, const struct pattern *pattern, const struct line *line);
-static int same_text(const char *left, const char *right, size_t length, int ignore_case);
-static int read_line(FILE *stream, struct line *line);
-static void print_line(const struct options *options, const char *name, unsigned long number, const struct line *line);
-static int lower(int value);
-static void *allocate(void *memory, size_t size);
-static void usage(void);
+static int read_options(int argc, char **argv, struct grep_options *options, struct walk_state *walk);
+static int apply_option(struct grep_options *options, struct walk_state *walk, int code, const char *value);
+static int apply_context(struct grep_options *options, int code, const char *value);
+static int apply_mode_value(struct grep_options *options, struct walk_state *walk, int code, const char *value);
+static int parse_count(const char *text, unsigned long *count);
+static void add_glob(struct grep_globs *globs, const char *glob);
+static int add_glob_file(struct grep_globs *globs, const char *name);
+static void add_pattern_list(struct grep_options *options, const char *list, size_t length);
+static int add_pattern_file(struct grep_options *options, const char *name);
+static void add_pattern(struct grep_options *options, const char *text, size_t length);
+static int compile_patterns(struct grep_options *options);
+static void search_operand(struct walk_state *walk, const char *name);
+static void search_file(struct walk_state *walk, const char *path, int show_names);
+static void search_standard_input(struct walk_state *walk);
+static void walk_directory(struct walk_state *walk, const char *path, int implicit);
+static void walk_entry(struct walk_state *walk, const char *path, const char *base);
+static char *join_path(const char *directory, const char *name, int implicit);
+static int glob_matches(const struct grep_globs *globs, const char *name, int suffixes);
+static int file_chosen(const struct grep_options *options, const char *name, int suffixes);
+static void report(const struct grep_options *options, const char *name, int error);
+static void version(void);
+static void usage(int status);
 
 /*
  * Runs grep.
@@ -100,25 +162,26 @@ main(
 	int argc,
 	char **argv)
 {
-	struct options options;
-	FILE *stream;
-	const char *name;
+	struct grep_options options;
+	struct walk_state walk;
+	int operands;
 	int index;
-	int selected;
-	int error;
-	int status;
-	int files;
-	int compare;
 	int ok;
 
 	/* The options, and the pattern list when no -e or -f gave one. */
 	memset(&options, 0, sizeof(options));
-	index = read_options(argc, argv, &options);
+	memset(&walk, 0, sizeof(walk));
+	options.names = GREP_NAMES_AUTO;
+	options.max_count = -1;
+	options.group_separator = "--";
+	operands = read_options(argc, argv, &options, &walk);
+	index = 1;
 	if (!options.have_patterns) {
-		if (index >= argc)
-			usage();
+		if (operands == 0)
+			usage(2);
 		add_pattern_list(&options, argv[index], strlen(argv[index]));
 		index++;
+		operands--;
 	}
 
 	/* The patterns, compiled. */
@@ -127,186 +190,453 @@ main(
 		return 2;
 
 	/* Names go before the lines when there are several files. */
-	files = argc - index;
-	if (files > 1)
+	options.show_names = 0;
+	if (operands > 1)
 		options.show_names = 1;
+	if (options.names == GREP_NAMES_ALWAYS)
+		options.show_names = 1;
+	if (options.names == GREP_NAMES_NEVER)
+		options.show_names = 0;
 
-	/* Standard input when there is no file. */
-	selected = 0;
-	error = 0;
-	if (files == 0)
-		selected = search(&options, stdin, "(standard input)");
-
-	/* Each file named. */
-	for (; index < argc; index++) {
-		/* - is standard input. */
-		name = argv[index];
-		compare = strcmp(name, "-");
-		if (compare == 0) {
-			selected |= search(&options, stdin, "(standard input)");
-			continue;
-		}
-
-		/* A file, or a message (unless -s) and an error. */
-		stream = fopen(name, "r");
-		if (stream == NULL) {
-			if (!options.no_messages)
-				fprintf(stderr, "grep: %s: %s\n", name, strerror(errno));
-			error = 1;
-			continue;
-		}
-
-		/* The lines of the file. */
-		selected |= search(&options, stream, name);
-		fclose(stream);
-
-		/* -q stops at the first selected line. */
-		if (selected && options.output == OUTPUT_QUIET)
-			break;
+	/* The walk over the files. */
+	walk.options = &options;
+	if (operands == 0 && options.recursive != GREP_RECURSE_NONE) {
+		/* -r with no operand searches the working directory. */
+		walk_directory(&walk, ".", 1);
+	} else if (operands == 0) {
+		/* Otherwise standard input. */
+		search_standard_input(&walk);
 	}
 
-	/* Succeeded: the status. */
+	/* Each operand, until -q has its answer. */
+	for (; operands > 0 && !walk.done; operands--) {
+		search_operand(&walk, argv[index]);
+		index++;
+	}
+
+	/* A selected line with -q hides an error. */
 	fflush(stdout);
-	status = 1;
-	if (selected)
-		status = 0;
-	if (error && !(selected && options.output == OUTPUT_QUIET))
-		status = 2;
-	return status;
+	if (walk.selected && options.output == GREP_OUTPUT_QUIET)
+		return 0;
+
+	/* An error. */
+	if (walk.error)
+		return 2;
+
+	/* No line selected. */
+	if (!walk.selected)
+		return 1;
+
+	/* Succeeded: a line was selected. */
+	return 0;
 }
 
-/* Reads the options; returns the index of the first operand. */
+/*
+ * Allocates or resizes memory, ending grep when there is none.
+ */
+void *
+grep_allocate(
+	void *memory,
+	size_t size)
+{
+	void *resized;
+
+	/* The memory, at least one byte of it. */
+	if (size == 0)
+		size = 1;
+	resized = realloc(memory, size);
+	if (resized == NULL) {
+		fprintf(stderr, "grep: out of memory\n");
+		exit(2);
+	}
+
+	/* Succeeded. */
+	return resized;
+}
+
+/*
+ * Reads the options; returns the number of operands, which are left in
+ * argv from argv[1] on.
+ */
 static int
 read_options(
 	int argc,
 	char **argv,
-	struct options *options)
+	struct grep_options *options,
+	struct walk_state *walk)
 {
-	const char *word;
-	int index;
+	struct command_options scan;
+	int code;
 	int ok;
 
-	/* Each option word. */
-	for (index = 1; index < argc; index++) {
-		/* An operand, or - alone, ends the options. */
-		word = argv[index];
-		if (word[0] != '-' || word[1] == '\0')
-			break;
+	/* The scan of the command line. */
+	memset(&scan, 0, sizeof(scan));
+	scan.argc = argc;
+	scan.argv = argv;
+	scan.program = "grep";
+	scan.letters = GREP_LETTERS;
+	scan.names = grep_long_options;
+	scan.numbers = 1;
+	command_options_start(&scan);
 
-		/* -- ends them too. */
-		if (word[1] == '-' && word[2] == '\0') {
-			index++;
+	/* Each option in turn. */
+	for (;;) {
+		code = command_options_next(&scan);
+		if (code == COMMAND_OPTION_END)
 			break;
-		}
+		if (code == COMMAND_OPTION_ERROR)
+			usage(2);
 
-		/* The letters of the word. */
-		ok = option_letters(argc, argv, &index, options);
+		/* The option's effect. */
+		ok = apply_option(options, walk, code, scan.value);
 		if (!ok)
-			usage();
+			usage(2);
 	}
 
-	/* Succeeded: the first operand. */
-	return index;
+	/* Succeeded: the operands follow argv[0]. */
+	return scan.operand_count;
 }
 
-/*
- * Reads the letters of one option word; -e and -f take the rest of the
- * word or the next word.  Returns 0 for an unknown letter.
- */
+/* Applies one option.  Returns 0 for a value it cannot take. */
 static int
-option_letters(
-	int argc,
-	char **argv,
-	int *index,
-	struct options *options)
+apply_option(
+	struct grep_options *options,
+	struct walk_state *walk,
+	int code,
+	const char *value)
 {
-	const char *letter;
-	const char *argument;
+	int ok;
 
-	/* Each letter of the word. */
-	for (letter = argv[*index] + 1; *letter != '\0'; letter++) {
-		switch (*letter) {
-		case 'E':
-			options->mode = MODE_EXTENDED;
-			break;
-		case 'F':
-			options->mode = MODE_FIXED;
-			break;
-		case 'c':
-			options->output = OUTPUT_COUNT;
-			break;
-		case 'l':
-			options->output = OUTPUT_NAMES;
-			break;
-		case 'q':
-			options->output = OUTPUT_QUIET;
-			break;
-		case 'i':
-			options->ignore_case = 1;
-			break;
-		case 'n':
-			options->line_numbers = 1;
-			break;
-		case 's':
-			options->no_messages = 1;
-			break;
-		case 'v':
-			options->invert = 1;
-			break;
-		case 'x':
-			options->whole_line = 1;
-			break;
-		case 'e':
-			/* A pattern list. */
-			argument = option_argument(argc, argv, index, letter + 1);
-			add_pattern_list(options, argument, strlen(argument));
-			options->have_patterns = 1;
-			return 1;
-		case 'f':
-			/* A file of patterns. */
-			argument = option_argument(argc, argv, index, letter + 1);
-			add_pattern_file(options, argument);
-			options->have_patterns = 1;
-			return 1;
-		default:
-			fprintf(stderr, "grep: invalid option -- '%c'\n", *letter);
-			return 0;
-		}
+	/* The option of its code. */
+	switch (code) {
+	case 'E':
+		options->mode = GREP_MODE_EXTENDED;
+		break;
+	case 'F':
+		options->mode = GREP_MODE_FIXED;
+		break;
+	case 'G':
+		options->mode = GREP_MODE_BASIC;
+		break;
+	case 'P':
+		fprintf(stderr, "grep: Perl matching not supported\n");
+		exit(2);
+	case 'c':
+		options->output = GREP_OUTPUT_COUNT;
+		break;
+	case 'l':
+		options->output = GREP_OUTPUT_NAMES;
+		break;
+	case 'L':
+		options->output = GREP_OUTPUT_UNMATCHED;
+		break;
+	case 'q':
+		options->output = GREP_OUTPUT_QUIET;
+		break;
+	case 'i':
+	case 'y':
+		options->ignore_case = 1;
+		break;
+	case OPTION_NO_IGNORE_CASE:
+		options->ignore_case = 0;
+		break;
+	case 'n':
+		options->line_numbers = 1;
+		break;
+	case 'b':
+		options->byte_offset = 1;
+		break;
+	case 's':
+		options->no_messages = 1;
+		break;
+	case 'v':
+		options->invert = 1;
+		break;
+	case 'x':
+		options->whole_line = 1;
+		break;
+	case 'w':
+		options->whole_word = 1;
+		break;
+	case 'o':
+		options->only_matching = 1;
+		break;
+	case 'H':
+		options->names = GREP_NAMES_ALWAYS;
+		break;
+	case 'h':
+		options->names = GREP_NAMES_NEVER;
+		break;
+	case 'Z':
+		options->null_after_name = 1;
+		break;
+	case 'z':
+		options->null_data = 1;
+		break;
+	case 'a':
+		options->binary_files = GREP_BINARY_TEXT;
+		break;
+	case 'I':
+		options->binary_files = GREP_BINARY_SKIP;
+		break;
+	case 'r':
+		options->recursive = GREP_RECURSE;
+		break;
+	case 'R':
+		options->recursive = GREP_RECURSE_FOLLOW;
+		break;
+	case 'e':
+		/* A pattern list. */
+		add_pattern_list(options, value, strlen(value));
+		options->have_patterns = 1;
+		break;
+	case 'f':
+		/* A file of patterns. */
+		ok = add_pattern_file(options, value);
+		if (!ok)
+			exit(2);
+		options->have_patterns = 1;
+		break;
+	case OPTION_INCLUDE:
+		add_glob(&options->include, value);
+		break;
+	case OPTION_EXCLUDE:
+		add_glob(&options->exclude, value);
+		break;
+	case OPTION_EXCLUDE_DIR:
+		add_glob(&options->exclude_dir, value);
+		break;
+	case OPTION_EXCLUDE_FROM:
+		ok = add_glob_file(&options->exclude, value);
+		if (!ok)
+			exit(2);
+		break;
+	case OPTION_LABEL:
+		options->label = value;
+		break;
+	case OPTION_GROUP_SEPARATOR:
+		options->group_separator = value;
+		break;
+	case OPTION_NO_SEPARATOR:
+		options->group_separator = NULL;
+		break;
+	case OPTION_LINE_BUFFERED:
+		setvbuf(stdout, NULL, _IOLBF, 0);
+		break;
+	case 'U':
+	case 'u':
+	case 'J':
+	case 'T':
+		/* Binary-mode and tab options of other systems change nothing. */
+		break;
+	case 'V':
+		version();
+		break;
+	case OPTION_HELP:
+		usage(0);
+		break;
+	case 'A':
+	case 'B':
+	case 'C':
+	case 'm':
+	case COMMAND_OPTION_NUMBER:
+		ok = apply_context(options, code, value);
+		return ok;
+	case 'd':
+	case 'D':
+	case OPTION_COLOR:
+	case OPTION_BINARY_FILES:
+		ok = apply_mode_value(options, walk, code, value);
+		return ok;
+	default:
+		return 0;
 	}
 
 	/* Succeeded. */
 	return 1;
 }
 
-/* Returns an option's argument: the rest of its word, or the next word. */
-static const char *
-option_argument(
-	int argc,
-	char **argv,
-	int *index,
-	const char *rest)
+/* Applies -A, -B, -C, -NUM or -m, which take a count. */
+static int
+apply_context(
+	struct grep_options *options,
+	int code,
+	const char *value)
 {
-	/* The rest of the word. */
-	if (*rest != '\0')
-		return rest;
+	unsigned long count;
+	int ok;
 
-	/* The next word. */
-	if (*index + 1 >= argc) {
-		fprintf(stderr, "grep: option requires an argument\n");
-		usage();
+	/* The count. */
+	ok = parse_count(value, &count);
+	if (!ok) {
+		fprintf(stderr, "grep: %s: invalid context length argument\n",
+			value);
+		return 0;
 	}
 
-	/* The next word is the argument. */
-	(*index)++;
+	/* -m: the most lines to select in each file. */
+	if (code == 'm') {
+		options->max_count = (long)count;
+		return 1;
+	}
+
+	/* The lines after, before, or both. */
+	options->context = 1;
+	if (code == 'A') {
+		options->after = count;
+	} else if (code == 'B') {
+		options->before = count;
+	} else {
+		options->after = count;
+		options->before = count;
+	}
 
 	/* Succeeded. */
-	return argv[*index];
+	return 1;
+}
+
+/*
+ * Applies the options that take a word: -d and -D (what to do with
+ * directories and devices), --color and --binary-files.
+ */
+static int
+apply_mode_value(
+	struct grep_options *options,
+	struct walk_state *walk,
+	int code,
+	const char *value)
+{
+	int differs;
+
+	/* --color: colours are never written, whatever is asked. */
+	if (code == OPTION_COLOR)
+		return 1;
+
+	/* -D: devices are read (the only way this grep has). */
+	if (code == 'D')
+		return 1;
+
+	/* -d recurse is -r, -d skip passes directories over. */
+	if (code == 'd') {
+		differs = strcmp(value, "recurse");
+		if (differs == 0)
+			options->recursive = GREP_RECURSE;
+		differs = strcmp(value, "skip");
+		if (differs == 0)
+			walk->skip_directories = 1;
+		return 1;
+	}
+
+	/* --binary-files=text, without-match or binary. */
+	differs = strcmp(value, "text");
+	if (differs == 0) {
+		options->binary_files = GREP_BINARY_TEXT;
+		return 1;
+	}
+
+	/* -I's word. */
+	differs = strcmp(value, "without-match");
+	if (differs == 0) {
+		options->binary_files = GREP_BINARY_SKIP;
+		return 1;
+	}
+
+	/* The default's word. */
+	differs = strcmp(value, "binary");
+	if (differs == 0) {
+		options->binary_files = GREP_BINARY_REPORT;
+		return 1;
+	}
+
+	/* Any other word. */
+	fprintf(stderr, "grep: unknown binary-files type\n");
+	return 0;
+}
+
+/* Reads a decimal count.  Returns 0 when the text is not one. */
+static int
+parse_count(
+	const char *text,
+	unsigned long *count)
+{
+	unsigned long value;
+	const char *cursor;
+
+	/* At least one digit, and nothing but digits. */
+	if (*text == '\0')
+		return 0;
+	value = 0;
+	for (cursor = text; *cursor != '\0'; cursor++) {
+		if (*cursor < '0' || *cursor > '9')
+			return 0;
+		value = value * 10UL + (unsigned long)(*cursor - '0');
+	}
+
+	/* Succeeded. */
+	*count = value;
+	return 1;
+}
+
+/* Adds a glob to a list. */
+static void
+add_glob(
+	struct grep_globs *globs,
+	const char *glob)
+{
+	/* Room for one more. */
+	if (globs->count == globs->capacity) {
+		globs->capacity = globs->capacity * 2U + 8U;
+		globs->items = grep_allocate(globs->items,
+		    globs->capacity * sizeof(*globs->items));
+	}
+
+	/* The glob; the argument it points into lives as long as grep. */
+	globs->items[globs->count] = glob;
+	globs->count++;
+}
+
+/* Adds the globs of a file, one per line.  Returns 0 after a message. */
+static int
+add_glob_file(
+	struct grep_globs *globs,
+	const char *name)
+{
+	char *line;
+	size_t capacity;
+	long length;
+	FILE *stream;
+
+	/* The file. */
+	stream = fopen(name, "r");
+	if (stream == NULL) {
+		fprintf(stderr, "grep: %s: %s\n", name, strerror(errno));
+		return 0;
+	}
+
+	/* Each line a glob, less its newline; the copies live as long as grep. */
+	line = NULL;
+	capacity = 0;
+	for (;;) {
+		length = command_read_line(stream, &line, &capacity);
+		if (length <= 0)
+			break;
+		if (line[length - 1] == '\n')
+			line[length - 1] = '\0';
+		add_glob(globs, line);
+		line = NULL;
+		capacity = 0;
+	}
+
+	/* Succeeded: the file is done with. */
+	free(line);
+	fclose(stream);
+	return 1;
 }
 
 /* Adds each pattern of a newline-separated list. */
 static void
 add_pattern_list(
-	struct options *options,
+	struct grep_options *options,
 	const char *list,
 	size_t length)
 {
@@ -330,16 +660,17 @@ add_pattern_list(
 	}
 }
 
-/* Adds the patterns of a file, one per line. */
-static void
+/* Adds the patterns of a file, one per line.  Returns 0 after a message. */
+static int
 add_pattern_file(
-	struct options *options,
+	struct grep_options *options,
 	const char *name)
 {
-	struct line line;
+	char *line;
+	size_t capacity;
+	long length;
 	FILE *stream;
 	int compare;
-	int read;
 
 	/* The file; - is standard input. */
 	stream = stdin;
@@ -348,44 +679,48 @@ add_pattern_file(
 		stream = fopen(name, "r");
 	if (stream == NULL) {
 		fprintf(stderr, "grep: %s: %s\n", name, strerror(errno));
-		exit(2);
+		return 0;
 	}
 
-	/* Each line a pattern. */
-	memset(&line, 0, sizeof(line));
+	/* Each line a pattern, less its newline. */
+	line = NULL;
+	capacity = 0;
 	for (;;) {
-		read = read_line(stream, &line);
-		if (!read)
+		length = command_read_line(stream, &line, &capacity);
+		if (length <= 0)
 			break;
-		add_pattern(options, line.data, line.length);
+		if (line[length - 1] == '\n')
+			length--;
+		add_pattern(options, line, (size_t)length);
 	}
 
-	/* The file is done with. */
-	free(line.data);
+	/* Succeeded: the file is done with. */
+	free(line);
 	if (stream != stdin)
 		fclose(stream);
+	return 1;
 }
 
 /* Adds one pattern. */
 static void
 add_pattern(
-	struct options *options,
+	struct grep_options *options,
 	const char *text,
 	size_t length)
 {
-	struct pattern *pattern;
+	struct grep_pattern *pattern;
 
 	/* Room for one more. */
 	if (options->count == options->capacity) {
 		options->capacity = options->capacity * 2U + 8U;
-		options->patterns = allocate(options->patterns,
+		options->patterns = grep_allocate(options->patterns,
 		    options->capacity * sizeof(*options->patterns));
 	}
 
 	/* The pattern's text. */
 	pattern = &options->patterns[options->count];
 	memset(pattern, 0, sizeof(*pattern));
-	pattern->text = allocate(NULL, length + 1U);
+	pattern->text = grep_allocate(NULL, length + 1U);
 	memcpy(pattern->text, text, length);
 	pattern->text[length] = '\0';
 	pattern->length = length;
@@ -397,21 +732,21 @@ add_pattern(
 /* Compiles the patterns as regexes (not -F).  Returns 0 after a message. */
 static int
 compile_patterns(
-	struct options *options)
+	struct grep_options *options)
 {
 	char message[256];
-	struct pattern *pattern;
+	struct grep_pattern *pattern;
 	size_t index;
 	int flags;
 	int error;
 
 	/* Fixed strings need no compiling. */
-	if (options->mode == MODE_FIXED)
+	if (options->mode == GREP_MODE_FIXED)
 		return 1;
 
 	/* The flags. */
 	flags = 0;
-	if (options->mode == MODE_EXTENDED)
+	if (options->mode == GREP_MODE_EXTENDED)
 		flags |= REG_EXTENDED;
 	if (options->ignore_case)
 		flags |= REG_ICASE;
@@ -435,307 +770,351 @@ compile_patterns(
 }
 
 /*
- * Searches one input, writing what the options ask for.  Returns 1 when a
- * line was selected.
+ * Searches one operand: standard input for -, the files below a directory
+ * with -r, or a file.
  */
-static int
-search(
-	struct options *options,
-	FILE *stream,
+static void
+search_operand(
+	struct walk_state *walk,
 	const char *name)
 {
-	struct line line;
-	unsigned long number;
-	unsigned long count;
-	int selected;
-	int read;
-
-	/* No lines yet. */
-	memset(&line, 0, sizeof(line));
-	number = 0;
-	count = 0;
-	for (;;) {
-		/* The next line. */
-		read = read_line(stream, &line);
-		if (!read)
-			break;
-		number++;
-
-		/* Selected: matched, or not matched with -v. */
-		selected = line_selected(options, &line);
-		if (!selected)
-			continue;
-		count++;
-
-		/* -q and -l need only the first. */
-		if (options->output == OUTPUT_QUIET)
-			break;
-		if (options->output == OUTPUT_NAMES)
-			break;
-		if (options->output == OUTPUT_LINES)
-			print_line(options, name, number, &line);
-	}
-
-	/* The line's buffer goes. */
-	free(line.data);
-
-	/* The count, or the name. */
-	if (options->output == OUTPUT_COUNT) {
-		if (options->show_names)
-			printf("%s:", name);
-		printf("%lu\n", count);
-	}
-
-	/* -l writes the name of a file with a selected line. */
-	if (options->output == OUTPUT_NAMES && count > 0)
-		printf("%s\n", name);
-
-	/* Succeeded: whether any line was selected. */
-	if (count > 0)
-		return 1;
-	return 0;
-}
-
-/* Reports whether a line is selected: any pattern matches (none, with -v). */
-static int
-line_selected(
-	const struct options *options,
-	const struct line *line)
-{
-	size_t index;
-	int matched;
-
-	/* Any pattern. */
-	matched = 0;
-	for (index = 0; index < options->count; index++) {
-		matched = pattern_matches(options, &options->patterns[index],
-					  line);
-		if (matched)
-			break;
-	}
-
-	/* -v turns the answer round. */
-	if (options->invert && matched)
-		return 0;
-	if (options->invert)
-		return 1;
-
-	/* Succeeded: whether a pattern matched. */
-	return matched;
-}
-
-/* Reports whether one pattern matches a line (the whole of it, with -x). */
-static int
-pattern_matches(
-	const struct options *options,
-	const struct pattern *pattern,
-	const struct line *line)
-{
-	regmatch_t match;
+	const struct grep_options *options;
+	struct stat status;
+	int compare;
+	int chosen;
 	int result;
-	int fixed;
 
-	/* An empty pattern matches every line (only empty ones with -x). */
-	if (pattern->empty) {
-		if (options->whole_line && line->length != 0)
-			return 0;
-		return 1;
+	/* - is standard input. */
+	options = walk->options;
+	compare = strcmp(name, "-");
+	if (compare == 0) {
+		search_standard_input(walk);
+		return;
 	}
 
-	/* A fixed string. */
-	if (options->mode == MODE_FIXED) {
-		fixed = fixed_matches(options, pattern, line);
-		return fixed;
-	}
+	/* The operand's type: a directory is walked with -r. */
+	result = stat(name, &status);
+	if (result == 0 && (status.st_mode & S_IFMT) == S_IFDIR) {
+		/* --exclude-dir passes it over. */
+		chosen = glob_matches(&options->exclude_dir, name, 1);
+		if (chosen)
+			return;
 
-	/* A regex; with -x the leftmost-longest match must be the line. */
-	result = regexec(&pattern->regex, line->data, 1, &match, 0);
-	if (result != 0)
-		return 0;
-	if (!options->whole_line)
-		return 1;
-	if (match.rm_so != 0)
-		return 0;
-	if ((size_t)match.rm_eo != line->length)
-		return 0;
+		/* -d skip passes it over without a word. */
+		if (walk->skip_directories)
+			return;
 
-	/* Succeeded: the whole line. */
-	return 1;
-}
-
-/* Reports whether a fixed string is in a line (is the line, with -x). */
-static int
-fixed_matches(
-	const struct options *options,
-	const struct pattern *pattern,
-	const struct line *line)
-{
-	size_t start;
-	int same;
-	int whole;
-
-	/* -x: the line is the string. */
-	if (options->whole_line) {
-		if (line->length != pattern->length)
-			return 0;
-		whole = same_text(line->data, pattern->text, pattern->length, options->ignore_case);
-		return whole;
-	}
-
-	/* Anywhere in the line. */
-	if (pattern->length > line->length)
-		return 0;
-	for (start = 0; start + pattern->length <= line->length; start++) {
-		same = same_text(line->data + start, pattern->text,
-				 pattern->length, options->ignore_case);
-		if (same)
-			return 1;
-	}
-
-	/* Not found. */
-	return 0;
-}
-
-/* Compares length bytes, ignoring case when asked. */
-static int
-same_text(
-	const char *left,
-	const char *right,
-	size_t length,
-	int ignore_case)
-{
-	size_t index;
-	int a;
-	int b;
-
-	/* Each byte in turn. */
-	for (index = 0; index < length; index++) {
-		/* Each byte, folded when case is ignored. */
-		a = (unsigned char)left[index];
-		b = (unsigned char)right[index];
-		if (ignore_case) {
-			a = lower(a);
-			b = lower(b);
+		/* Walked with -r; searched, which reports it, without. */
+		if (options->recursive != GREP_RECURSE_NONE) {
+			walk_directory(walk, name, 0);
+			return;
 		}
-
-		/* Bytes that differ. */
-		if (a != b)
-			return 0;
 	}
 
-	/* Succeeded: the same. */
-	return 1;
+	/* --include and --exclude choose among the files named. */
+	chosen = file_chosen(options, name, 1);
+	if (!chosen)
+		return;
+
+	/* The file, named when there are several operands or -H. */
+	search_file(walk, name, options->show_names);
+}
+
+/* Searches a file, named or not, and records what came of it. */
+static void
+search_file(
+	struct walk_state *walk,
+	const char *path,
+	int show_names)
+{
+	int descriptor;
+	int result;
+
+	/* The file. */
+	descriptor = open(path, O_RDONLY);
+	if (descriptor < 0) {
+		report(walk->options, path, errno);
+		walk->error = 1;
+		return;
+	}
+
+	/* Its lines. */
+	result = grep_search(walk->options, descriptor, path, show_names);
+	close(descriptor);
+
+	/* What came of it; -q needs no more once a line is selected. */
+	if (result < 0)
+		walk->error = 1;
+	if (result > 0)
+		walk->selected = 1;
+	if (result > 0 && walk->options->output == GREP_OUTPUT_QUIET)
+		walk->done = 1;
+}
+
+/* Searches standard input, under its --label name. */
+static void
+search_standard_input(
+	struct walk_state *walk)
+{
+	const char *name;
+	int result;
+
+	/* The name it goes by. */
+	name = "(standard input)";
+	if (walk->options->label != NULL)
+		name = walk->options->label;
+
+	/* Its lines. */
+	result = grep_search(walk->options, STDIN_FILENO, name,
+			     walk->options->show_names);
+
+	/* What came of it; -q needs no more once a line is selected. */
+	if (result < 0)
+		walk->error = 1;
+	if (result > 0)
+		walk->selected = 1;
+	if (result > 0 && walk->options->output == GREP_OUTPUT_QUIET)
+		walk->done = 1;
 }
 
 /*
- * Reads one line, without its newline.  A last line without a newline is
- * still a line.  Returns 0 at the end of the input.
+ * Walks a directory for -r: every file below it, in the order the
+ * directory lists them.  implicit is set for the working directory that -r
+ * searches when there is no operand, whose files are named without ./.
+ */
+static void
+walk_directory(
+	struct walk_state *walk,
+	const char *path,
+	int implicit)
+{
+	struct dirent *entry;
+	DIR *directory;
+	char *child;
+	int dot;
+	int dotdot;
+
+	/* The directory. */
+	directory = opendir(path);
+	if (directory == NULL) {
+		report(walk->options, path, errno);
+		walk->error = 1;
+		return;
+	}
+
+	/* Each entry but . and .., until -q has its answer. */
+	while (!walk->done) {
+		entry = readdir(directory);
+		if (entry == NULL)
+			break;
+		dot = strcmp(entry->d_name, ".");
+		dotdot = strcmp(entry->d_name, "..");
+		if (dot == 0 || dotdot == 0)
+			continue;
+
+		/* The entry, by the path from the operand. */
+		child = join_path(path, entry->d_name, implicit);
+		walk_entry(walk, child, entry->d_name);
+		free(child);
+	}
+
+	/* The directory is done with. */
+	closedir(directory);
+}
+
+/*
+ * Searches one entry found by the walk: a directory is walked in turn, a
+ * regular file searched; a symbolic link is followed only with -R, and
+ * devices, FIFOs and sockets are passed over.
+ */
+static void
+walk_entry(
+	struct walk_state *walk,
+	const char *path,
+	const char *base)
+{
+	const struct grep_options *options;
+	struct stat status;
+	int show_names;
+	int result;
+	int chosen;
+
+	/* The entry's type, through a link with -R only. */
+	options = walk->options;
+	if (options->recursive == GREP_RECURSE_FOLLOW)
+		result = stat(path, &status);
+	else
+		result = lstat(path, &status);
+	if (result != 0) {
+		report(options, path, errno);
+		walk->error = 1;
+		return;
+	}
+
+	/* A directory, unless --exclude-dir names it. */
+	if ((status.st_mode & S_IFMT) == S_IFDIR) {
+		chosen = glob_matches(&options->exclude_dir, base, 0);
+		if (!chosen)
+			walk_directory(walk, path, 0);
+		return;
+	}
+
+	/* Anything but a regular file is passed over. */
+	if ((status.st_mode & S_IFMT) != S_IFREG)
+		return;
+
+	/* A file that --include and --exclude choose. */
+	chosen = file_chosen(options, base, 0);
+	if (!chosen)
+		return;
+
+	/* Succeeded: searched, and named unless -h. */
+	show_names = 1;
+	if (options->names == GREP_NAMES_NEVER)
+		show_names = 0;
+	search_file(walk, path, show_names);
+}
+
+/* Returns a directory's path joined with an entry's name, allocated. */
+static char *
+join_path(
+	const char *directory,
+	const char *name,
+	int implicit)
+{
+	char *path;
+	size_t directory_length;
+	size_t name_length;
+
+	/* The working directory of an implicit -r adds nothing. */
+	name_length = strlen(name);
+	if (implicit) {
+		path = grep_allocate(NULL, name_length + 1U);
+		memcpy(path, name, name_length + 1U);
+		return path;
+	}
+
+	/* The directory without a trailing slash, a slash, and the name. */
+	directory_length = strlen(directory);
+	while (directory_length > 1 && directory[directory_length - 1U] == '/')
+		directory_length--;
+	path = grep_allocate(NULL, directory_length + name_length + 2U);
+	memcpy(path, directory, directory_length);
+	path[directory_length] = '/';
+	if (directory_length == 1 && directory[0] == '/')
+		directory_length = 0;
+
+	/* Succeeded: the name after the slash. */
+	memcpy(path + directory_length + 1U, name, name_length + 1U);
+	return path;
+}
+
+/*
+ * Reports whether a glob of a list matches a name.  With suffixes, as for
+ * an operand, a glob may match any part of the name that follows a slash.
  */
 static int
-read_line(
-	FILE *stream,
-	struct line *line)
+glob_matches(
+	const struct grep_globs *globs,
+	const char *name,
+	int suffixes)
 {
-	int value;
-	int newline;
+	const char *part;
+	size_t index;
+	int result;
 
-	/* Bytes up to the newline. */
-	line->length = 0;
-	newline = 0;
-	for (;;) {
-		/* The next byte. */
-		value = getc(stream);
-		if (value == EOF)
-			break;
-		if (value == '\n') {
-			newline = 1;
-			break;
+	/* Each glob, against the name and, with suffixes, each tail of it. */
+	for (index = 0; index < globs->count; index++) {
+		part = name;
+		for (;;) {
+			result = fnmatch(globs->items[index], part, 0);
+			if (result == 0)
+				return 1;
+
+			/* The next part after a slash, when suffixes count. */
+			if (!suffixes)
+				break;
+			part = strchr(part, '/');
+			if (part == NULL)
+				break;
+			part++;
 		}
-
-		/* Room for it and a NUL. */
-		if (line->length + 2U > line->capacity) {
-			line->capacity = line->capacity * 2U + 128U;
-			line->data = allocate(line->data, line->capacity);
-		}
-
-		/* The byte. */
-		line->data[line->length] = (char)value;
-		line->length++;
 	}
 
-	/* The end of the input. */
-	if (line->length == 0 && !newline)
+	/* No glob matches. */
+	return 0;
+}
+
+/*
+ * Reports whether --include and --exclude let a file be searched: no
+ * --exclude glob matches it, and an --include glob does when there are any.
+ */
+static int
+file_chosen(
+	const struct grep_options *options,
+	const char *name,
+	int suffixes)
+{
+	int matched;
+
+	/* An excluded file. */
+	matched = glob_matches(&options->exclude, name, suffixes);
+	if (matched)
 		return 0;
 
-	/* Succeeded: the line, terminated. */
-	if (line->data == NULL) {
-		line->capacity = 128U;
-		line->data = allocate(NULL, line->capacity);
-	}
+	/* With --include, only the files it names. */
+	if (options->include.count == 0)
+		return 1;
+	matched = glob_matches(&options->include, name, suffixes);
+	if (!matched)
+		return 0;
 
-	/* Succeeded: the line, ending with a NUL. */
-	line->data[line->length] = '\0';
+	/* Succeeded: an included file. */
 	return 1;
 }
 
-/* Writes a selected line, after its file name and number when asked. */
+/* Reports a file that could not be searched, unless -s. */
 static void
-print_line(
-	const struct options *options,
+report(
+	const struct grep_options *options,
 	const char *name,
-	unsigned long number,
-	const struct line *line)
+	int error)
 {
-	/* The name and the number. */
-	if (options->show_names)
-		printf("%s:", name);
-	if (options->line_numbers)
-		printf("%lu:", number);
-
-	/* The line. */
-	fwrite(line->data, 1, line->length, stdout);
-	putchar('\n');
+	/* Messages about files are what -s silences. */
+	if (options->no_messages)
+		return;
+	fflush(stdout);
+	fprintf(stderr, "grep: %s: %s\n", name, strerror(error));
 }
 
-/* Folds an ASCII letter to lower case. */
-static int
-lower(
-	int value)
-{
-	/* A to Z. */
-	if (value >= 'A' && value <= 'Z')
-		return value - 'A' + 'a';
-	return value;
-}
-
-/* Allocates or resizes memory, ending grep when there is none. */
-static void *
-allocate(
-	void *memory,
-	size_t size)
-{
-	void *result;
-
-	/* The memory. */
-	result = realloc(memory, size);
-	if (result == NULL) {
-		fprintf(stderr, "grep: out of memory\n");
-		exit(2);
-	}
-
-	/* Succeeded. */
-	return result;
-}
-
-/* Reports the usage and ends grep. */
+/* Writes the version and ends grep. */
 static void
-usage(
+version(
 	void)
 {
-	/* The two forms. */
-	fprintf(stderr, "usage: grep [-E|-F] [-c|-l|-q] [-insvx] "
-		"-e pattern_list [-f pattern_file] [file...]\n"
-		"       grep [-E|-F] [-c|-l|-q] [-insvx] pattern_list "
-		"[file...]\n");
-	exit(2);
+	/* The name and where it comes from. */
+	printf("grep (zedBSD) 1.0\n");
+	exit(0);
+}
+
+/* Reports the usage (on standard output for --help) and ends grep. */
+static void
+usage(
+	int status)
+{
+	FILE *stream;
+
+	/* --help writes to standard output and succeeds. */
+	stream = stderr;
+	if (status == 0)
+		stream = stdout;
+
+	/* The two forms and the options. */
+	fprintf(stream, "usage: grep [-EFGHILRZabchilnoqrsvwxz] [-A num] "
+		"[-B num] [-C num] [-m num]\n"
+		"            [--include=glob] [--exclude=glob] "
+		"[--exclude-dir=glob] [--label=name]\n"
+		"            -e pattern_list [-f pattern_file] [file...]\n"
+		"       grep [options] pattern_list [file...]\n");
+	exit(status);
 }
