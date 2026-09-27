@@ -49,6 +49,7 @@ static void grid_trash_buttons(struct fm_app *app, struct fm_canvas *canvas, con
 static void grid_scope_chips(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *area);
 static void grid_tag_badges(struct fm_app *app, struct fm_canvas *canvas, unsigned tags, float right, float y);
 static void grid_button(struct fm_app *app, struct fm_canvas *canvas, int right, int y, const char *label, int index, int enabled);
+static void grid_thumbnail(struct fm_canvas *canvas, const struct fm_image *thumb, float x, float y, float size);
 
 /*
  * Draws the content panel for the place the tab shows.
@@ -156,8 +157,8 @@ fm_view_item_rect(
 }
 
 /*
- * Draws an entry's icon in a square box: a folder, or a page of its kind's
- * color.
+ * Draws an entry's icon in a square box: a folder, a picture's thumbnail
+ * once it is made, or a page of its kind's color.
  */
 void
 fm_grid_entry_icon(
@@ -168,11 +169,21 @@ fm_grid_entry_icon(
 	float y,
 	float size)
 {
+	const struct fm_image *thumb;
 	char label[8];
 
 	/* A folder is blue. */
 	if (entry->folder != 0) {
 		fm_icon_folder(canvas, x, y, size, FM_COLOR_FOLDER);
+		return;
+	}
+
+	/* A picture with a path shows its thumbnail, once it is made (it is asked for until then). */
+	thumb = NULL;
+	if (entry->path != NULL && entry->mime->category == FM_CATEGORY_IMAGE)
+		thumb = fm_thumb_get(app, entry->path, entry->modified);
+	if (thumb != NULL) {
+		grid_thumbnail(canvas, thumb, x, y, size);
 		return;
 	}
 
@@ -672,4 +683,39 @@ grid_tag_badges(
 		fm_icon_tag(canvas, x, y, 5.0f, app->tags.items[index].color);
 		x -= 8.0f;
 	}
+}
+
+/* Draws a thumbnail fitted in an icon's square: a large one in a white frame with a shadow, a small one bare. */
+static void
+grid_thumbnail(
+	struct fm_canvas *canvas,
+	const struct fm_image *thumb,
+	float x,
+	float y,
+	float size)
+{
+	float left;
+	float top;
+	float frame;
+	int width;
+	int height;
+
+	/* The frame's width: none for a small icon (a list's row). */
+	frame = 0.0f;
+	if (size >= 48.0f)
+		frame = 3.0f;
+
+	/* The picture fitted in the square inside the frame, in its middle. */
+	fm_image_fit(thumb->width, thumb->height, (int)(size - 2.0f * frame), (int)(size - 2.0f * frame), &width, &height);
+	left = x + (size - (float)width) * 0.5f;
+	top = y + (size - (float)height) * 0.5f;
+
+	/* A large icon's white frame and soft shadow. */
+	if (frame > 0.0f) {
+		fm_canvas_shadow(canvas, left - frame, top - frame + 2.0f, (float)width + 2.0f * frame, (float)height + 2.0f * frame, 5.0f, 6.0f, FM_COLOR_SHADOW);
+		fm_canvas_round(canvas, left - frame, top - frame, (float)width + 2.0f * frame, (float)height + 2.0f * frame, 5.0f, FM_COLOR_PANEL);
+	}
+
+	/* The picture. */
+	fm_canvas_image(canvas, thumb, left, top, (float)width, (float)height, 3.0f, 1.0f);
 }

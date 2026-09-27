@@ -148,10 +148,12 @@ fm_app_release(
 {
 	int index;
 
-	/* The operations, stopped and let go, and the hero's pictures. */
+	/* The operations, stopped and let go, the hero's pictures, the thumbnails and what the preview read. */
 	fm_actions_release(app);
 	fm_image_release(&app->hero_source);
 	fm_image_release(&app->hero);
+	fm_thumb_release(app);
+	fm_peek_release(&app->peek);
 
 	/* Each tab's listing, then the tab. */
 	for (index = 0; index < app->tab_count; index++) {
@@ -218,6 +220,7 @@ fm_ui_tick(
 	struct fm_tab *tab;
 	struct fm_visit *visit;
 	struct stat status;
+	int made;
 	int error;
 
 	/* The time now, which the lists' dates and the messages are measured by. */
@@ -227,6 +230,11 @@ fm_ui_tick(
 	/* The tasks and the search move on. */
 	(void)fm_actions_tick(app);
 	fm_search_tick(app);
+
+	/* The thumbnail asked for is made, and shown in a new frame. */
+	made = fm_thumb_tick(app);
+	if (made != 0)
+		app->dirty = 1;
 
 	/* A message that has run its time goes. */
 	if (app->message[0] != '\0' && now >= app->message_until) {
@@ -282,15 +290,18 @@ fm_ui_draw(
 	if (app->show_sidebar != 0)
 		ui_draw_sidebar(app, canvas);
 
-	/* The content panel, drawn by the view of the place. */
+	/* The content panel, drawn by the view of the place, and the preview beside it when shown. */
 	fm_grid_draw(app, canvas, &app->layout.content);
+	if (app->show_preview != 0)
+		fm_preview_draw(app, canvas, &app->layout.preview);
 
 	/* The toolbar over everything, the tasks' list under it when open. */
 	ui_draw_toolbar(app, canvas);
 	if (app->show_tasks != 0 && app->task_count > 0)
 		fm_tasks_draw(app, canvas, app->layout.toolbar.x + app->layout.toolbar.width - 8, app->layout.toolbar.y + app->layout.toolbar.height + 6);
 
-	/* A question over all of it. */
+	/* Quick Look over all of it, and a question over that. */
+	fm_look_draw(app, canvas);
 	fm_overlay_draw(app, canvas);
 
 	/* The frame is up to date. */
@@ -393,6 +404,32 @@ fm_ui_message(
 	app->message_until = app->now + 3000U;
 	app->dirty = 1;
 	fm_log("MESSAGE %s", message);
+}
+
+/*
+ * Reports how long the main loop may sleep before the file manager has
+ * work again: 0 while a thumbnail, an operation or a search is waiting to
+ * move on, a short while when a search is about to start, and -1 when
+ * nothing waits (only input wakes it).
+ */
+int
+fm_ui_wait(
+	struct fm_app *app)
+{
+	/* A thumbnail asked for, an operation or a search walking: no sleep. */
+	if (app->thumb_wanted[0] != '\0')
+		return 0;
+	if (app->task_count > 0)
+		return 0;
+	if (app->search.active != 0)
+		return 0;
+
+	/* A search typed a moment ago starts soon. */
+	if (app->search_typed_at != 0U)
+		return 20;
+
+	/* Nothing waits. */
+	return -1;
 }
 
 /*

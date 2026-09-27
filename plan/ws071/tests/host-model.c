@@ -274,6 +274,81 @@ main(
 		fm_paths_free(tagged, tagged_count);
 	}
 
+	/* 16. Pictures (p007): PPM and PGM read, damaged headers refused, thumbnails fitted; the peek of text. */
+	{
+		static struct fm_app pictures;
+		struct fm_image image;
+		struct fm_entry entry;
+		const struct fm_image *thumb;
+		unsigned char big[54 + 300 * 200 * 3];
+		int width;
+		int height;
+		int header;
+		int made;
+
+		snprintf(path, sizeof(path), "%s/tiny.ppm", root);
+		{
+			static const char tiny[] = "P6\n# a comment\n2 1\n255\n\xff\x00\x00\x00\x00\xff";
+			FILE *file = fopen(path, "wb");
+			fwrite(tiny, 1, sizeof(tiny) - 1, file);
+			fclose(file);
+		}
+		check(fm_image_load(path, &image) == 0 && image.width == 2 && image.height == 1 && image.pixels[0] == 0xffff0000U && image.pixels[1] == 0xff0000ffU, "picture: a PPM with a comment read, red then blue");
+		fm_image_release(&image);
+		snprintf(path, sizeof(path), "%s/grey.pgm", root);
+		make_file(path, "P5 1 1 255\n\x80");
+		check(fm_image_load(path, &image) == 0 && image.pixels[0] == 0xff808080U, "picture: a PGM read as grey");
+		fm_image_release(&image);
+		snprintf(path, sizeof(path), "%s/short.ppm", root);
+		make_file(path, "P6\n4 4\n255\n\x01\x02");
+		check(fm_image_load(path, &image) == EINVAL, "picture: missing pixels refused");
+		snprintf(path, sizeof(path), "%s/deep.ppm", root);
+		make_file(path, "P6\n1 1\n65535\n\x01\x02\x03\x04\x05\x06");
+		check(fm_image_load(path, &image) == EINVAL, "picture: 16-bit values refused");
+		snprintf(path, sizeof(path), "%s/huge.ppm", root);
+		make_file(path, "P6\n99999999 1\n255\n\x01\x02\x03");
+		check(fm_image_load(path, &image) == EINVAL, "picture: a huge width refused");
+		snprintf(path, sizeof(path), "%s/a.png", root);
+		make_file(path, "\x89PNG\r\n\x1a\n....");
+		check(fm_image_load(path, &image) == ENOTSUP, "picture: PNG not read yet (ENOTSUP)");
+
+		header = snprintf((char *)big, sizeof(big), "P6\n300 200\n255\n");
+		memset(big + header, 0x40, 300 * 200 * 3);
+		snprintf(path, sizeof(path), "%s/big.ppm", root);
+		{
+			FILE *file = fopen(path, "wb");
+			fwrite(big, 1, (size_t)header + 300 * 200 * 3, file);
+			fclose(file);
+		}
+		check(fm_image_thumbnail(path, 256, &image) == 0 && image.width == 256 && image.height == 170, "thumbnail: 300x200 shrunk to 256x170");
+		fm_image_release(&image);
+		fm_image_fit(10, 40, 100, 100, &width, &height);
+		check(width == 25 && height == 100, "fit: a tall picture fills the box's height");
+		fm_image_fit(400, 100, 200, 200, &width, &height);
+		check(width == 200 && height == 50, "fit: a wide picture fills the box's width");
+
+		thumb = fm_thumb_get(&pictures, path, 7);
+		check(thumb == NULL && strcmp(pictures.thumb_wanted, path) == 0, "thumbs: a new file is asked for");
+		made = fm_thumb_tick(&pictures);
+		thumb = fm_thumb_get(&pictures, path, 7);
+		check(made == 1 && thumb != NULL && thumb->width == 256 && pictures.thumb_wanted[0] == '\0', "thumbs: made in a round, then kept");
+		thumb = fm_thumb_get(&pictures, path, 8);
+		check(thumb == NULL && pictures.thumb_wanted[0] != '\0', "thumbs: a changed file is asked for again");
+		fm_thumb_release(&pictures);
+
+		snprintf(path, sizeof(path), "%s/notes", root);
+		make_file(path, "one\ttwo\r\nthree\nfour");
+		memset(&entry, 0, sizeof(entry));
+		entry.path = path;
+		entry.name = "notes";
+		entry.modified = 5;
+		entry.mime = fm_mime_guess("notes", 0100644);
+		fm_peek_read(&pictures.peek, &entry);
+		check(pictures.peek.text != NULL && strcmp(pictures.peek.text, "one two\nthree\nfour") == 0 && pictures.peek.line_count == 3, "peek: text without an extension sniffed, its lines kept (tab a space, CR gone)");
+		check(strcmp(pictures.peek.mime->type, "text/plain") == 0, "peek: its type is text/plain");
+		fm_peek_release(&pictures.peek);
+	}
+
 	printf("files-model: %s\n", failures == 0 ? "PASS" : "FAIL");
 	return failures != 0;
 }

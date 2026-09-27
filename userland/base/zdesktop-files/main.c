@@ -470,16 +470,24 @@ main_canvas_make(void)
 	return 0;
 }
 
-/* Reports how long the loop may sleep: until a key repeats, or the idle limit. */
+/* Reports how long the loop may sleep: until a key repeats, the file manager's work moves on, or the idle limit. */
 static int
 main_timeout(
 	uint64_t now)
 {
 	uint64_t wait;
+	int limit;
+	int busy;
 
-	/* No key is held: the idle limit. */
+	/* The idle limit, shortened while the file manager has work waiting. */
+	limit = MAIN_IDLE_MS;
+	busy = fm_ui_wait(&main_app);
+	if (busy >= 0 && busy < limit)
+		limit = busy;
+
+	/* No key is held: the limit. */
 	if (main_window.repeat_key == 0U)
-		return MAIN_IDLE_MS;
+		return limit;
 
 	/* A repeat already due is due now. */
 	if (main_window.repeat_at <= now)
@@ -487,9 +495,9 @@ main_timeout(
 
 	/* A held key repeats soon. */
 	wait = main_window.repeat_at - now;
-	if (wait < (uint64_t)MAIN_IDLE_MS)
+	if (wait < (uint64_t)limit)
 		return (int)wait;
 
-	/* Otherwise the idle limit. */
-	return MAIN_IDLE_MS;
+	/* Otherwise the limit. */
+	return limit;
 }
