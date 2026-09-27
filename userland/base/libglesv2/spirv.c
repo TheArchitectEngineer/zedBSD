@@ -43,6 +43,7 @@
 /* OpTypeImage's Dim of a cube map. */
 #define SPIRV_DIM_3D		2U
 #define SPIRV_DIM_CUBE		3U
+#define SPIRV_DIM_BUFFER	5U
 #define OP_TYPE_SAMPLED_IMAGE	27U
 #define OP_TYPE_ARRAY		28U
 #define OP_TYPE_STRUCT		30U
@@ -874,6 +875,15 @@ spirv_leaf(
 		if (image != 0U && (code[image] & 0xffffU) == OP_TYPE_IMAGE)
 			uniform->type = spirv_sampler_type(module, image);
 		return 0;
+	case OP_TYPE_IMAGE:
+		/* An image read without a sampler: a buffer texture's texels (desktop GL's samplerBuffer). */
+		if (code[at + 3U] != SPIRV_DIM_BUFFER)
+			return -1;
+		uniform->sampler = 1;
+		uniform->components = 1U;
+		uniform->columns = 1U;
+		uniform->type = spirv_sampler_type(module, at);
+		return 0;
 	default:
 		break;
 	}
@@ -1181,6 +1191,15 @@ spirv_sampler_type(
 		base = 2U;
 		if (code[sampled + 3U] != 0U)
 			base = 1U;
+	}
+
+	/* A buffer texture's texels. */
+	if (dimension == SPIRV_DIM_BUFFER) {
+		if (base == 1U)
+			return GL_INT_SAMPLER_BUFFER;
+		if (base == 2U)
+			return GL_UNSIGNED_INT_SAMPLER_BUFFER;
+		return GL_SAMPLER_BUFFER;
 	}
 
 	/* A cube map. */

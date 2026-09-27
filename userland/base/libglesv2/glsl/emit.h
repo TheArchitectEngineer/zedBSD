@@ -68,6 +68,7 @@
 #define SPV_OP_IMAGE_FETCH		95U
 #define SPV_OP_IMAGE			100U
 #define SPV_OP_IMAGE_QUERY_SIZE_LOD	103U
+#define SPV_OP_IMAGE_QUERY_SIZE		104U
 #define SPV_OP_CONVERT_F_TO_U		109U
 #define SPV_OP_CONVERT_F_TO_S		110U
 #define SPV_OP_CONVERT_S_TO_F		111U
@@ -171,6 +172,7 @@
 #define SPV_CAPABILITY_SHADER		1U
 #define SPV_CAPABILITY_SAMPLED_1D	43U
 #define SPV_CAPABILITY_IMAGE_QUERY	50U
+#define SPV_CAPABILITY_SAMPLED_BUFFER	46U
 #define SPV_MODEL_VERTEX		0U
 #define SPV_MODEL_FRAGMENT		4U
 #define SPV_MODE_ORIGIN_UPPER_LEFT	7U
@@ -236,6 +238,7 @@ struct glsl_module {
 	uint32_t std450;
 	unsigned sampled_1d;
 	unsigned image_query;
+	unsigned sampled_buffer;
 };
 
 /*

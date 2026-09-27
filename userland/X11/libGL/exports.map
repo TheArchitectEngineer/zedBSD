@@ -100,8 +100,11 @@
 		glDrawBuffer;
 		glDrawBuffers;
 		glDrawElements;
+		glDrawElementsBaseVertex;
 		glDrawElementsInstanced;
+		glDrawElementsInstancedBaseVertex;
 		glDrawRangeElements;
+		glDrawRangeElementsBaseVertex;
 		glEnable;
 		glEnableClientState;
 		glEnableVertexAttribArray;
@@ -136,6 +139,7 @@
 		glGetActiveUniform;
 		glGetActiveUniformBlockName;
 		glGetActiveUniformBlockiv;
+		glGetActiveUniformName;
 		glGetActiveUniformsiv;
 		glGetAttachedShaders;
 		glGetAttribLocation;
@@ -240,8 +244,10 @@
 		glPolygonOffset;
 		glPopAttrib;
 		glPopMatrix;
+		glPrimitiveRestartIndex;
 		glProgramBinary;
 		glProgramParameteri;
+		glProvokingVertex;
 		glPushAttrib;
 		glPushMatrix;
 		glReadBuffer;
@@ -270,6 +276,7 @@
 		glStencilMaskSeparate;
 		glStencilOp;
 		glStencilOpSeparate;
+		glTexBuffer;
 		glTexCoord1f;
 		glTexCoord2f;
 		glTexCoord2fv;

@@ -238,6 +238,13 @@ glsl_emit_type(
 		id = glsl_module_declare(state->module, SPV_OP_TYPE_MATRIX, operands, 3U, 0);
 		break;
 	case GLSL_KIND_SAMPLER:
+		/* A buffer sampler is the image itself (a texel buffer); the others are sampled images. */
+		if (type->sampler == GLSL_SAMPLER_BUFFER) {
+			id = glsl_emit_image_type(state, type);
+			break;
+		}
+
+		/* The sampled image of the image type. */
 		operands[1] = glsl_emit_image_type(state, type);
 		id = glsl_module_declare(state->module, SPV_OP_TYPE_SAMPLED_IMAGE, operands, 2U, 0);
 		break;
@@ -619,7 +626,12 @@ glsl_emit_image_type(
 	case GLSL_SAMPLER_CUBE:
 		operands[2] = 3U;
 		break;
+	case GLSL_SAMPLER_BUFFER:
+		operands[2] = 5U;
+		emit_capability(state, SPV_CAPABILITY_SAMPLED_BUFFER, &state->module->sampled_buffer);
+		break;
 	default:
+		/* 2D, and a rectangle's 2D image (Vulkan has no Rect images; its coordinates are made 2D's). */
 		operands[2] = 1U;
 		break;
 	}

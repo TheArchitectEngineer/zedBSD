@@ -237,6 +237,8 @@ gles_garbage_destroy(
 
 	/* Views before images, objects before their memory. */
 	device = state->device;
+	if (objects->buffer_view != VK_NULL_HANDLE)
+		vkDestroyBufferView(device, objects->buffer_view, NULL);
 	if (objects->pipeline != VK_NULL_HANDLE)
 		vkDestroyPipeline(device, objects->pipeline, NULL);
 	if (objects->layout != VK_NULL_HANDLE)
@@ -328,11 +330,11 @@ gles_buffer_sync(
 		return 0;
 	}
 
-	/* A new device buffer (for any use a draw makes of a buffer object), the old one kept for the frame. */
+	/* A new device buffer (for any use a draw makes of a buffer object, texels too), the old one kept for the frame. */
 	status = gles_device_buffer(state, buffer->size,
 				    VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
 				    VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
-				    VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+				    VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT,
 				    &device_buffer, &memory, &mapped);
 	if (status != 0)
 		return -1;
@@ -538,6 +540,7 @@ glDeleteBuffers(
 	struct gles_buffer *buffer;
 	struct gles_buffer **slot;
 	struct gles_vertex_array *array;
+	struct gles_texture *texture;
 	GLsizei index;
 	GLuint name;
 	unsigned target;
@@ -589,6 +592,17 @@ glDeleteBuffers(
 			array = state->vertex_arrays.objects[name];
 			if (array != NULL)
 				buffer_forget(array->attribs, &array->element_buffer, buffer);
+		}
+
+		/* Unbound from desktop GL's buffer texture target. */
+		if (state->texture_buffer == buffer)
+			state->texture_buffer = NULL;
+
+		/* Taken out of the buffer textures (desktop GL), which read nothing then. */
+		for (name = 1U; name < state->textures.capacity; name++) {
+			texture = state->textures.objects[name];
+			if (texture != NULL && texture->texel_buffer == buffer)
+				texture->texel_buffer = NULL;
 		}
 
 		/* The name and the object go. */
@@ -1342,6 +1356,10 @@ buffer_slot(
 	default:
 		break;
 	}
+
+	/* Desktop GL's buffer texture target (libGL). */
+	if (target == GL_TEXTURE_BUFFER && gles_fixed != NULL)
+		return &state->texture_buffer;
 
 	/* Not a target. */
 	return NULL;

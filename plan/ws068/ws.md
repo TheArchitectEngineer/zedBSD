@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: none
-Resume point: p013（desktop GL 3.0 の context、GLX）cleared（2026-09-27、Venus で glx-p013 PASS、回帰 PASS）。次は p014（desktop GL 3.3〜4.6。着手前に ws.md で分ける）、その後 p009、p004、p007（最後）
+Resume point: p031（desktop GL 3.1 と 3.2 の stage の要らない API）cleared（2026-09-27、Venus で glx-p031 PASS、回帰 PASS）。次は p032（GLSL の geometry shader）、p033〜p036、その後 p009、p004、p007（最後）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -59,7 +59,13 @@ EGL と OpenGL ES（2.0、次に 3.0）を、zedBSD の libvulkan（Vulkan）と
 | [ws068-p020](phase020/phase.md) | GLSL 1.40〜3.30・ES 3.00 の言語（`#version`、`layout(location)`、in/out の block、整数の varying、複数の出力、新しい sampler と built-in） | cleared（2026-09-27。host の試験 PASS、Venus で egl-p020 PASS（ES 3 の context）。i915 実機は未実施） | p019 |
 | [ws068-p021](phase021/phase.md) | GLSL の uniform block（std140、row_major、binding の約束）と libGLESv2 の反射の対応（API は p005・p013） | cleared（2026-09-27。host で std140 の offset を lavapipe で確認。libGLESv2 は API（p005）まで断る） | p020 |
 | [ws068-p013](phase013/phase.md) | desktop GL 3.0 の context（`glXCreateContextAttribsARB`、core と compatibility の profile、VAO、GL 3.0 の API） | cleared（2026-09-27。Venus で glx-p013 PASS、回帰 x11-p004・p005・egl-p022〜p030・boot test PASS。i915 実機は未実施） | p003、ws069-p008 |
-| ws068-p014 | desktop GL 3.3〜4.6 の出来る範囲（Venus 先。geometry・tessellation・compute・SSBO は device の feature で。i915 の不足は F-023） | planning | p012、p013 |
+| ws068-p014 | desktop GL 3.1〜4.6 の出来る範囲（Venus 先。geometry・tessellation・compute・SSBO は device の feature で。i915 の不足は F-023） | 2026-09-27 に p031〜p036 に分けた（GL_VERSION は実装した版を名乗り、上の版の機能は GL_ARB_* で個別に出す。design.md §6） | p012、p013 |
+| [ws068-p031](phase031/phase.md) | desktop GL 3.1: texture buffer（glTexBuffer、samplerBuffer）、rectangle texture（sampler2DRect）、glPrimitiveRestartIndex、glGetActiveUniformName、GLSL 1.40 と context の版による GLSL の版の上限、3.1 の context（GL_ARB_compatibility）。3.2 の shader の stage の要らない API（glDraw*BaseVertex、glProvokingVertex、GL_DEPTH_CLAMP、GL_TEXTURE_CUBE_MAP_SEAMLESS） | cleared（2026-09-27。Venus で glx-p031 PASS、回帰 PASS。i915 実機は未実施） | p013 |
+| ws068-p032 | GLSL compiler の geometry shader（`#version 150`、layout の in/out の primitive、EmitVertex・EndPrimitive、`gl_in[]`、`gl_Layer`・`gl_PrimitiveID`）、3 stage の link と SPIR-V、host の試験（spirv-val・lavapipe） | planning | p031 |
+| ws068-p033 | desktop GL 3.2・3.3: libGLESv2 の geometry の stage の pipeline、layered の framebuffer（glFramebufferTexture）、multisample texture（glTexImage2DMultisample、sampler2DMS、glSampleMaski）、core と compatibility の profile（core は固定機能を断り VAO が要る）、timer query（GL_TIME_ELAPSED・glQueryCounter）、dual-source blend、GL_INT_2_10_10_10_REV 等、3.2・3.3 の context と GL_VERSION 3.3 | planning | p032 |
+| ws068-p034 | tessellation（GLSL の control・evaluation の stage、patch、glPatchParameteri）: GL_ARB_tessellation_shader | planning | p033 |
+| ws068-p035 | compute shader、SSBO、image load/store、atomic counter（GLSL の compute の stage、glDispatchCompute、glMemoryBarrier）: GL_ARB_compute_shader 等 | planning | p033 |
+| ws068-p036 | GL 4.x の残り（fp64、sample shading、draw indirect、cube map 配列、texture gather、separate shader objects、vertex attrib binding、KHR_debug、DSA の部分、clip control、SPIR-V の shader）と版の名乗り。着手前に更に分ける | planning | p034、p035 |
 | ws068-p004 | GLES 2.0 の残りと試験の充実 | planning | p003 |
 | ws068-p005 | GLES 3.0 | 2026-09-27 に p024〜p027 に分けた | p004 |
 | [ws068-p024](phase024/phase.md) | GLES 3.0 の API（1）: VAO、buffer の map・copy、instancing、整数の属性と uniform、uniform buffer、glGetStringi | cleared（q495-i01、2026-09-27。Venus で egl-p024、回帰 PASS） | p020、p021、p022 |

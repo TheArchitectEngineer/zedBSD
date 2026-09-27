@@ -970,6 +970,7 @@ glFramebufferTexture2D(
 	struct gles_state *state;
 	struct gles_texture *object;
 	unsigned face;
+	int rectangle;
 	GLenum kind;
 
 	/* A context with its state. */
@@ -984,10 +985,20 @@ glFramebufferTexture2D(
 		return;
 	}
 
-	/* A 2D texture, or a face of a cube map. */
+	/* A 2D texture, a face of a cube map, or (desktop GL, libGL) a rectangle texture's one level. */
+	rectangle = 0;
+	if (textarget == GL_TEXTURE_RECTANGLE && gles_fixed != NULL)
+		rectangle = 1;
 	if (textarget != GL_TEXTURE_2D &&
+	    !rectangle &&
 	    (textarget < GL_TEXTURE_CUBE_MAP_POSITIVE_X || textarget > GL_TEXTURE_CUBE_MAP_NEGATIVE_Z)) {
 		gles_error(context, GL_INVALID_ENUM);
+		return;
+	}
+
+	/* A rectangle texture has level 0 only. */
+	if (rectangle && level != 0) {
+		gles_error(context, GL_INVALID_VALUE);
 		return;
 	}
 
@@ -1004,10 +1015,12 @@ glFramebufferTexture2D(
 		return;
 	}
 
-	/* A face needs a cube map, GL_TEXTURE_2D a 2D texture. */
+	/* A face needs a cube map, GL_TEXTURE_2D a 2D texture, GL_TEXTURE_RECTANGLE a rectangle texture. */
 	face = 0U;
 	kind = GL_TEXTURE_2D;
-	if (textarget != GL_TEXTURE_2D) {
+	if (rectangle) {
+		kind = GL_TEXTURE_RECTANGLE;
+	} else if (textarget != GL_TEXTURE_2D) {
 		face = textarget - GL_TEXTURE_CUBE_MAP_POSITIVE_X;
 		kind = GL_TEXTURE_CUBE_MAP;
 	}

@@ -26,6 +26,8 @@ static struct emit_value builtin_texture_query(struct emit_state *state, struct 
 static uint32_t builtin_coordinate(struct emit_state *state, struct emit_value coordinate, unsigned size, int project, uint32_t *reference, int shadow);
 static unsigned builtin_dimension(const struct glsl_type *sampler);
 static uint32_t builtin_image(struct emit_state *state, struct emit_value sampler);
+static uint32_t builtin_rect_coordinate(struct emit_state *state, struct emit_value sampler, uint32_t coordinate);
+static void builtin_image_query(struct emit_state *state);
 static struct emit_value builtin_value(uint32_t id, const struct glsl_type *type);
 
 /*
@@ -304,9 +306,11 @@ builtin_texture(
 		break;
 	}
 
-	/* The coordinate (and the depth reference). */
+	/* The coordinate (and the depth reference); a rectangle's, in texels, made 2D's. */
 	reference = 0U;
 	coordinate = builtin_coordinate(state, arguments[1], builtin_dimension(sampler), project, &reference, shadow);
+	if (sampler->sampler == GLSL_SAMPLER_RECT)
+		coordinate = builtin_rect_coordinate(state, arguments[0], coordinate);
 
 	/* The instruction: an explicit level for level and gradient lookups, and in vertex shaders (a level 0). */
 	explicit_lod = 0;
@@ -402,33 +406,56 @@ builtin_texture_query(
 	struct glsl_node *node,
 	struct emit_value *arguments)
 {
+	const struct glsl_type *sampler;
 	struct emit_value result;
 	uint32_t operands[4];
 	uint32_t image;
+	uint32_t level;
 
-	/* The image. */
+	/* The image, and the level asked for (a rectangle's one level is 0; a buffer has none). */
+	sampler = arguments[0].type;
 	image = builtin_image(state, arguments[0]);
+	level = 0U;
+	if (sampler->sampler == GLSL_SAMPLER_RECT) {
+		level = glsl_emit_int(state, 0);
+	} else if (sampler->sampler == GLSL_SAMPLER_BUFFER) {
+		/* A buffer has no levels. */
+		level = 0U;
+	} else if (node->builtin->number == GLSL_SPECIAL_TEXTURE_SIZE) {
+		/* textureSize's level is its second argument. */
+		level = arguments[1].id;
+	} else {
+		/* texelFetch's is its third. */
+		level = arguments[2].id;
+	}
 
-	/* textureSize: the level's size. */
+	/* textureSize: a buffer's texels, or the level's size. */
 	if (node->builtin->number == GLSL_SPECIAL_TEXTURE_SIZE) {
-		if (!state->module->image_query) {
-			operands[0] = SPV_CAPABILITY_IMAGE_QUERY;
-			glsl_words_add(state->module, &state->module->capabilities, SPV_OP_CAPABILITY, operands, 1U);
-			state->module->image_query = 1U;
+		builtin_image_query(state);
+		operands[0] = image;
+		if (level == 0U) {
+			result = builtin_value(glsl_emit_op(state, SPV_OP_IMAGE_QUERY_SIZE, glsl_emit_type(state, node->type), operands, 1U),
+					       node->type);
+			return result;
 		}
 
 		/* The size of the level. */
-		operands[0] = image;
-		operands[1] = arguments[1].id;
+		operands[1] = level;
 		result = builtin_value(glsl_emit_op(state, SPV_OP_IMAGE_QUERY_SIZE_LOD, glsl_emit_type(state, node->type), operands, 2U), node->type);
 		return result;
 	}
 
-	/* texelFetch: the texel at the coordinate of the level. */
+	/* texelFetch of a buffer: the texel at the index. */
 	operands[0] = image;
 	operands[1] = arguments[1].id;
+	if (level == 0U) {
+		result = builtin_value(glsl_emit_op(state, SPV_OP_IMAGE_FETCH, glsl_emit_type(state, node->type), operands, 2U), node->type);
+		return result;
+	}
+
+	/* texelFetch: the texel at the coordinate of the level. */
 	operands[2] = SPV_IMAGE_OPERAND_LOD;
-	operands[3] = arguments[2].id;
+	operands[3] = level;
 	result = builtin_value(glsl_emit_op(state, SPV_OP_IMAGE_FETCH, glsl_emit_type(state, node->type), operands, 4U), node->type);
 
 	/* Succeeded: the texel. */
@@ -518,9 +545,11 @@ static unsigned
 builtin_dimension(
 	const struct glsl_type *sampler)
 {
-	/* 1D one, 2D two (and a layer for an array), 3D and cube three. */
-	if (sampler->sampler == GLSL_SAMPLER_1D)
+	/* 1D and buffer one, 2D and rectangle two (and a layer for an array), 3D and cube three. */
+	if (sampler->sampler == GLSL_SAMPLER_1D || sampler->sampler == GLSL_SAMPLER_BUFFER)
 		return 1U;
+	if (sampler->sampler == GLSL_SAMPLER_RECT)
+		return 2U;
 	if (sampler->sampler == GLSL_SAMPLER_2D && sampler->arrayed)
 		return 3U;
 	if (sampler->sampler == GLSL_SAMPLER_2D)
@@ -538,6 +567,10 @@ builtin_image(
 {
 	uint32_t image_type;
 	uint32_t id;
+
+	/* A buffer sampler is its image already. */
+	if (sampler.type->sampler == GLSL_SAMPLER_BUFFER)
+		return sampler.id;
 
 	/* OpImage of the sampler's image type. */
 	image_type = glsl_emit_image_type(state, sampler.type);
@@ -561,4 +594,55 @@ builtin_value(
 
 	/* Succeeded: the value. */
 	return value;
+}
+
+/* Divides a rectangle lookup's coordinate (in texels) by its image's size, which makes it a 2D lookup's. */
+static uint32_t
+builtin_rect_coordinate(
+	struct emit_state *state,
+	struct emit_value sampler,
+	uint32_t coordinate)
+{
+	const struct glsl_type *size_type;
+	const struct glsl_type *float_type;
+	uint32_t operands[2];
+	uint32_t image;
+	uint32_t size;
+	uint32_t scale;
+	uint32_t id;
+
+	/* The image's size (level 0) as floats. */
+	size_type = glsl_type_vector(GLSL_BASE_INT, 2U);
+	float_type = glsl_type_vector(GLSL_BASE_FLOAT, 2U);
+	builtin_image_query(state);
+	image = builtin_image(state, sampler);
+	operands[0] = image;
+	operands[1] = glsl_emit_int(state, 0);
+	size = glsl_emit_op(state, SPV_OP_IMAGE_QUERY_SIZE_LOD, glsl_emit_type(state, size_type), operands, 2U);
+	scale = glsl_emit_op(state, SPV_OP_CONVERT_S_TO_F, glsl_emit_type(state, float_type), &size, 1U);
+
+	/* The coordinate over it. */
+	operands[0] = coordinate;
+	operands[1] = scale;
+	id = glsl_emit_op(state, SPV_OP_F_DIV, glsl_emit_type(state, float_type), operands, 2U);
+
+	/* Succeeded: the normalized coordinate. */
+	return id;
+}
+
+/* Declares the ImageQuery capability once (textureSize and rectangle lookups ask images their sizes). */
+static void
+builtin_image_query(
+	struct emit_state *state)
+{
+	uint32_t capability;
+
+	/* Once. */
+	if (state->module->image_query)
+		return;
+	state->module->image_query = 1U;
+
+	/* OpCapability ImageQuery. */
+	capability = SPV_CAPABILITY_IMAGE_QUERY;
+	glsl_words_add(state->module, &state->module->capabilities, SPV_OP_CAPABILITY, &capability, 1U);
 }

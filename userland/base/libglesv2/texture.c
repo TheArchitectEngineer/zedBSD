@@ -20,12 +20,24 @@
  * buffer (pixels.c).  Samplers are made once per set of sampling state
  * and level count; a sampler object bound to a unit replaces its
  * textures' own sampling state.
+ *
+ * Desktop GL (libGL, WS068 p031) adds rectangle textures (a 2D texture of
+ * one level under its own target) and buffer textures: a buffer object's
+ * bytes read as texels of a format through a view of its device copy
+ * (a Vulkan uniform texel buffer).
  */
 
 #include "gles.h"
 
 #include <stdlib.h>
 #include <string.h>
+
+/* Desktop GL's 16-bit normalized formats, which a buffer texture may have (OpenGL ES has none). */
+#ifndef GL_R16
+#define GL_R16			0x822A
+#define GL_RG16			0x822C
+#define GL_RGBA16		0x805B
+#endif
 
 /* The largest level of detail GL starts with (MAX_LOD and MAX_LEVEL's initial values). */
 #define TEXTURE_LOD_MAX		1000.0f
@@ -34,19 +46,26 @@
 /*
  * The targets a call takes, as bits: GL_TEXTURE_2D, a cube map's faces
  * (the calls that give a face's level texels), GL_TEXTURE_CUBE_MAP as a
- * whole, GL_TEXTURE_3D and GL_TEXTURE_2D_ARRAY.
+ * whole, GL_TEXTURE_3D, GL_TEXTURE_2D_ARRAY, and desktop GL's
+ * GL_TEXTURE_RECTANGLE (libGL).
  */
 #define TEXTURE_TAKES_2D	1U
 #define TEXTURE_TAKES_FACES	2U
 #define TEXTURE_TAKES_CUBE	4U
 #define TEXTURE_TAKES_3D	8U
 #define TEXTURE_TAKES_ARRAY	16U
+#define TEXTURE_TAKES_RECT	32U
 
-/* The targets of the calls that give a 2D image, a 3D image, fixed 2D levels, and of the calls on a texture as a whole. */
-#define TEXTURE_IMAGE_2D	(TEXTURE_TAKES_2D | TEXTURE_TAKES_FACES)
+/*
+ * The targets of the calls that give a 2D image, a 3D image, fixed 2D
+ * levels, of the calls on a texture's parameters, and of mipmaps (not a
+ * rectangle texture's: it has one level).
+ */
+#define TEXTURE_IMAGE_2D	(TEXTURE_TAKES_2D | TEXTURE_TAKES_FACES | TEXTURE_TAKES_RECT)
 #define TEXTURE_IMAGE_3D	(TEXTURE_TAKES_3D | TEXTURE_TAKES_ARRAY)
-#define TEXTURE_STORAGE_2D	(TEXTURE_TAKES_2D | TEXTURE_TAKES_CUBE)
-#define TEXTURE_WHOLE		(TEXTURE_TAKES_2D | TEXTURE_TAKES_CUBE | TEXTURE_TAKES_3D | TEXTURE_TAKES_ARRAY)
+#define TEXTURE_STORAGE_2D	(TEXTURE_TAKES_2D | TEXTURE_TAKES_CUBE | TEXTURE_TAKES_RECT)
+#define TEXTURE_WHOLE		(TEXTURE_TAKES_2D | TEXTURE_TAKES_CUBE | TEXTURE_TAKES_3D | TEXTURE_TAKES_ARRAY | TEXTURE_TAKES_RECT)
+#define TEXTURE_MIPMAPS		(TEXTURE_TAKES_2D | TEXTURE_TAKES_CUBE | TEXTURE_TAKES_3D | TEXTURE_TAKES_ARRAY)
 
 static struct gles_texture *texture_bound(struct zegl_context *context, GLenum target, unsigned takes, unsigned *face);
 static struct gles_texture *texture_changing(struct zegl_context *context, GLenum target, unsigned takes, unsigned *face);
@@ -58,6 +77,8 @@ static uint32_t texture_faces(const struct gles_texture *texture);
 static int texture_mipmaps(struct gles_texture *texture, unsigned face, GLint last);
 static int texture_mipmaps_kept(struct gles_texture *texture, unsigned face, GLint last);
 static void texture_views_free(struct gles_state *state, struct gles_texture *texture);
+static int texture_buffer_format(GLenum internal, VkFormat *format, unsigned *bytes, unsigned *kind);
+static VkBufferView texture_black_buffer(struct gles_state *state, unsigned kind);
 static void texture_opaque(const struct gles_format *format, VkComponentMapping *components);
 static unsigned char *texture_convert(struct zegl_context *context, GLenum format, GLenum type, GLsizei width, GLsizei height, const void *pixels);
 static unsigned char *texture_texels(struct zegl_context *context, const struct gles_format *storage, GLenum format, GLenum type, GLsizei width, GLsizei height, GLsizei depth, const void *pixels);
@@ -535,6 +556,84 @@ gles_texture_black(
 }
 
 /*
+ * Returns the view of a buffer texture's buffer that a draw reads as texels
+ * of a kind (0 float, 1 int, 2 unsigned), the buffer's device copy brought
+ * up to date and marked as read by this frame; a view of four zero words
+ * when the unit has no buffer texture, its buffer is empty or gone, its
+ * texels are of another kind, or the device cannot read its format.
+ * VK_NULL_HANDLE when even that cannot be made.
+ */
+VkBufferView
+gles_texture_buffer_view(
+	struct gles_state *state,
+	struct gles_texture *texture,
+	unsigned kind)
+{
+	VkBufferViewCreateInfo create;
+	struct gles_garbage objects;
+	struct gles_buffer *buffer;
+	VkDeviceSize range;
+	VkDeviceSize largest;
+	VkBufferView black;
+	VkResult result;
+	int status;
+
+	/* A buffer texture with a buffer of texels of the kind the sampler reads, in a format the device reads. */
+	black = texture_black_buffer(state, kind);
+	if (texture == NULL || texture->texel_buffer == NULL)
+		return black;
+	if (texture->texel_kind != kind || texture->texel_vk == VK_FORMAT_UNDEFINED)
+		return black;
+
+	/* The buffer's device copy, up to date, read by this frame. */
+	buffer = texture->texel_buffer;
+	status = gles_buffer_sync(state, buffer);
+	if (status != 0 || buffer->buffer == VK_NULL_HANDLE)
+		return black;
+	buffer->used = state->frame;
+
+	/* Whole texels, at most as many as the device reads. */
+	range = (VkDeviceSize)buffer->size / texture->texel_bytes * texture->texel_bytes;
+	largest = (VkDeviceSize)state->limits.maxTexelBufferElements * texture->texel_bytes;
+	if (range > largest)
+		range = largest;
+	if (range == 0U)
+		return black;
+
+	/* The view made for this device buffer and range stays. */
+	if (texture->texel_view != VK_NULL_HANDLE &&
+	    texture->texel_view_buffer == buffer->buffer &&
+	    texture->texel_view_range == range)
+		return texture->texel_view;
+
+	/* The old view waits for the frame. */
+	if (texture->texel_view != VK_NULL_HANDLE) {
+		memset(&objects, 0, sizeof(objects));
+		objects.buffer_view = texture->texel_view;
+		gles_garbage_keep(state, &objects);
+		texture->texel_view = VK_NULL_HANDLE;
+	}
+
+	/* A view of the buffer's texels. */
+	memset(&create, 0, sizeof(create));
+	create.sType = VK_STRUCTURE_TYPE_BUFFER_VIEW_CREATE_INFO;
+	create.buffer = buffer->buffer;
+	create.format = texture->texel_vk;
+	create.offset = 0U;
+	create.range = range;
+	result = vkCreateBufferView(state->device, &create, NULL, &texture->texel_view);
+	if (result != VK_SUCCESS) {
+		texture->texel_view = VK_NULL_HANDLE;
+		return black;
+	}
+
+	/* Succeeded: the view, kept with what it was made for. */
+	texture->texel_view_buffer = buffer->buffer;
+	texture->texel_view_range = range;
+	return texture->texel_view;
+}
+
+/*
  * Frees a texture; its device image waits for the frame.
  */
 void
@@ -542,11 +641,19 @@ gles_texture_free(
 	struct gles_state *state,
 	struct gles_texture *texture)
 {
+	struct gles_garbage objects;
 	unsigned level;
 
 	/* The device image and the views of its faces. */
 	gles_throw_away(state, VK_NULL_HANDLE, texture->image, texture->view, texture->memory);
 	texture_views_free(state, texture);
+
+	/* A buffer texture's view of its buffer. */
+	if (texture->texel_view != VK_NULL_HANDLE) {
+		memset(&objects, 0, sizeof(objects));
+		objects.buffer_view = texture->texel_view;
+		gles_garbage_keep(state, &objects);
+	}
 
 	/* The levels of every face, then the object. */
 	for (level = 0U; level < GLES_FACES * GLES_LEVELS; level++)
@@ -765,6 +872,10 @@ glDeleteTextures(
 				state->volume_units[unit] = NULL;
 			if (state->array_units[unit] == texture)
 				state->array_units[unit] = NULL;
+			if (state->rect_units[unit] == texture)
+				state->rect_units[unit] = NULL;
+			if (state->buffer_units[unit] == texture)
+				state->buffer_units[unit] = NULL;
 		}
 
 		/* Detached from the bound framebuffer object; the name and the texture go (its image waits for the frame). */
@@ -795,13 +906,19 @@ glBindTexture(
 	if (state == NULL)
 		return;
 
-	/* One of the four targets. */
+	/* One of the four targets, or desktop GL's rectangle and buffer textures (libGL). */
 	switch (target) {
 	case GL_TEXTURE_2D:
 	case GL_TEXTURE_CUBE_MAP:
 	case GL_TEXTURE_3D:
 	case GL_TEXTURE_2D_ARRAY:
 		break;
+	case GL_TEXTURE_RECTANGLE:
+	case GL_TEXTURE_BUFFER:
+		if (gles_fixed != NULL)
+			break;
+		gles_error(context, GL_INVALID_ENUM);
+		return;
 	default:
 		gles_error(context, GL_INVALID_ENUM);
 		return;
@@ -846,6 +963,12 @@ glBindTexture(
 		break;
 	case GL_TEXTURE_2D_ARRAY:
 		state->array_units[state->active_unit] = texture;
+		break;
+	case GL_TEXTURE_RECTANGLE:
+		state->rect_units[state->active_unit] = texture;
+		break;
+	case GL_TEXTURE_BUFFER:
+		state->buffer_units[state->active_unit] = texture;
 		break;
 	default:
 		state->units[state->active_unit] = texture;
@@ -1798,6 +1921,75 @@ glGetTexParameterfv(
 }
 
 /*
+ * Makes a buffer object's bytes the texels of the bound buffer texture
+ * (desktop GL 3.1, libGL): texels of an internal format, or none for
+ * buffer 0.
+ */
+GL_APICALL void GL_APIENTRY
+glTexBuffer(
+	GLenum target,
+	GLenum internalformat,
+	GLuint buffer)
+{
+	struct zegl_context *context;
+	struct gles_state *state;
+	struct gles_texture *texture;
+	struct gles_buffer *object;
+	VkFormatProperties properties;
+	VkFormat format;
+	unsigned bytes;
+	unsigned kind;
+	int status;
+
+	/* A context with its state, and the buffer texture target. */
+	context = gles_context();
+	state = gles_state(context);
+	if (state == NULL)
+		return;
+	if (target != GL_TEXTURE_BUFFER || gles_fixed == NULL) {
+		gles_error(context, GL_INVALID_ENUM);
+		return;
+	}
+
+	/* The unit's buffer texture. */
+	texture = state->buffer_units[state->active_unit];
+	if (texture == NULL) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return;
+	}
+
+	/* A format a buffer texture may have. */
+	status = texture_buffer_format(internalformat, &format, &bytes, &kind);
+	if (status != 0) {
+		gles_error(context, GL_INVALID_ENUM);
+		return;
+	}
+
+	/* A buffer object, or none. */
+	object = NULL;
+	if (buffer != 0U) {
+		object = gles_names_get(&state->buffers, buffer);
+		if (object == NULL) {
+			gles_error(context, GL_INVALID_OPERATION);
+			return;
+		}
+	}
+
+	/* The device reads the format from a buffer, or the texture reads as zeros. */
+	memset(&properties, 0, sizeof(properties));
+	vkGetPhysicalDeviceFormatProperties(state->display->physical, format, &properties);
+	if ((properties.bufferFeatures & VK_FORMAT_FEATURE_UNIFORM_TEXEL_BUFFER_BIT) == 0U)
+		format = VK_FORMAT_UNDEFINED;
+
+	/* Succeeded: the buffer and its texels' format (the view is made at the next draw that reads it). */
+	texture->texel_buffer = object;
+	texture->texel_internal = internalformat;
+	texture->texel_vk = format;
+	texture->texel_bytes = bytes;
+	texture->texel_kind = kind;
+}
+
+/*
  * Reports whether a name is a texture.
  */
 GL_APICALL GLboolean GL_APIENTRY
@@ -1842,7 +2034,7 @@ glGenerateMipmap(
 
 	/* The bound texture (a cube map as a whole) with a base level. */
 	context = gles_context();
-	texture = texture_changing(context, target, TEXTURE_WHOLE, &face);
+	texture = texture_changing(context, target, TEXTURE_MIPMAPS, &face);
 	if (texture == NULL)
 		return;
 	format = texture->levels[texture->base_level].format;
@@ -2215,6 +2407,9 @@ texture_bound(
 	} else if (target == GL_TEXTURE_2D_ARRAY) {
 		texture = state->array_units[state->active_unit];
 		taken = TEXTURE_TAKES_ARRAY;
+	} else if (target == GL_TEXTURE_RECTANGLE && gles_fixed != NULL) {
+		texture = state->rect_units[state->active_unit];
+		taken = TEXTURE_TAKES_RECT;
 	}
 
 	/* A target the call does not take. */
@@ -2286,6 +2481,14 @@ texture_new(
 	texture->swizzle[1] = GL_GREEN;
 	texture->swizzle[2] = GL_BLUE;
 	texture->swizzle[3] = GL_ALPHA;
+
+	/* A rectangle texture has one level, filtered linearly, clamped to its edges. */
+	if (target == GL_TEXTURE_RECTANGLE) {
+		texture->sampling.min_filter = GL_LINEAR;
+		texture->sampling.wrap_s = GL_CLAMP_TO_EDGE;
+		texture->sampling.wrap_t = GL_CLAMP_TO_EDGE;
+		texture->sampling.wrap_r = GL_CLAMP_TO_EDGE;
+	}
 
 	/* Succeeded: the texture. */
 	return texture;
@@ -3290,4 +3493,127 @@ texture_opaque(
 		if (index == 3U && *channels[index] == VK_COMPONENT_SWIZZLE_IDENTITY)
 			*channels[index] = VK_COMPONENT_SWIZZLE_ONE;
 	}
+}
+
+/*
+ * Finds the Vulkan format, texel bytes and kind (0 float, 1 int, 2
+ * unsigned) of an internal format a buffer texture may have; nonzero for
+ * one it may not.
+ */
+static int
+texture_buffer_format(
+	GLenum internal,
+	VkFormat *format,
+	unsigned *bytes,
+	unsigned *kind)
+{
+	/*
+	 * One internal format's texels in a buffer: its Vulkan format, its
+	 * bytes and kind.
+	 */
+	static const struct {
+		GLenum internal;
+		VkFormat format;
+		unsigned bytes;
+		unsigned kind;
+	} formats[] = {
+		{ GL_R8, VK_FORMAT_R8_UNORM, 1U, 0U },
+		{ GL_R16, VK_FORMAT_R16_UNORM, 2U, 0U },
+		{ GL_R16F, VK_FORMAT_R16_SFLOAT, 2U, 0U },
+		{ GL_R32F, VK_FORMAT_R32_SFLOAT, 4U, 0U },
+		{ GL_R8I, VK_FORMAT_R8_SINT, 1U, 1U },
+		{ GL_R16I, VK_FORMAT_R16_SINT, 2U, 1U },
+		{ GL_R32I, VK_FORMAT_R32_SINT, 4U, 1U },
+		{ GL_R8UI, VK_FORMAT_R8_UINT, 1U, 2U },
+		{ GL_R16UI, VK_FORMAT_R16_UINT, 2U, 2U },
+		{ GL_R32UI, VK_FORMAT_R32_UINT, 4U, 2U },
+		{ GL_RG8, VK_FORMAT_R8G8_UNORM, 2U, 0U },
+		{ GL_RG16, VK_FORMAT_R16G16_UNORM, 4U, 0U },
+		{ GL_RG16F, VK_FORMAT_R16G16_SFLOAT, 4U, 0U },
+		{ GL_RG32F, VK_FORMAT_R32G32_SFLOAT, 8U, 0U },
+		{ GL_RG8I, VK_FORMAT_R8G8_SINT, 2U, 1U },
+		{ GL_RG16I, VK_FORMAT_R16G16_SINT, 4U, 1U },
+		{ GL_RG32I, VK_FORMAT_R32G32_SINT, 8U, 1U },
+		{ GL_RG8UI, VK_FORMAT_R8G8_UINT, 2U, 2U },
+		{ GL_RG16UI, VK_FORMAT_R16G16_UINT, 4U, 2U },
+		{ GL_RG32UI, VK_FORMAT_R32G32_UINT, 8U, 2U },
+		{ GL_RGB32F, VK_FORMAT_R32G32B32_SFLOAT, 12U, 0U },
+		{ GL_RGB32I, VK_FORMAT_R32G32B32_SINT, 12U, 1U },
+		{ GL_RGB32UI, VK_FORMAT_R32G32B32_UINT, 12U, 2U },
+		{ GL_RGBA8, VK_FORMAT_R8G8B8A8_UNORM, 4U, 0U },
+		{ GL_RGBA16, VK_FORMAT_R16G16B16A16_UNORM, 8U, 0U },
+		{ GL_RGBA16F, VK_FORMAT_R16G16B16A16_SFLOAT, 8U, 0U },
+		{ GL_RGBA32F, VK_FORMAT_R32G32B32A32_SFLOAT, 16U, 0U },
+		{ GL_RGBA8I, VK_FORMAT_R8G8B8A8_SINT, 4U, 1U },
+		{ GL_RGBA16I, VK_FORMAT_R16G16B16A16_SINT, 8U, 1U },
+		{ GL_RGBA32I, VK_FORMAT_R32G32B32A32_SINT, 16U, 1U },
+		{ GL_RGBA8UI, VK_FORMAT_R8G8B8A8_UINT, 4U, 2U },
+		{ GL_RGBA16UI, VK_FORMAT_R16G16B16A16_UINT, 8U, 2U },
+		{ GL_RGBA32UI, VK_FORMAT_R32G32B32A32_UINT, 16U, 2U }
+	};
+	unsigned index;
+
+	/* The internal format's entry. */
+	for (index = 0U; index < sizeof(formats) / sizeof(formats[0]); index++) {
+		if (formats[index].internal != internal)
+			continue;
+		*format = formats[index].format;
+		*bytes = formats[index].bytes;
+		*kind = formats[index].kind;
+		return 0;
+	}
+
+	/* Not a buffer texture's format. */
+	return -1;
+}
+
+/*
+ * Returns the view of four zero words as texels of a kind (0 float, 1
+ * int, 2 unsigned), which a sampler of a unit without a buffer texture
+ * reads, making the buffer and its views at the first use;
+ * VK_NULL_HANDLE when they cannot be made.
+ */
+static VkBufferView
+texture_black_buffer(
+	struct gles_state *state,
+	unsigned kind)
+{
+	static const VkFormat formats[3] = {
+		VK_FORMAT_R32G32B32A32_SFLOAT, VK_FORMAT_R32G32B32A32_SINT, VK_FORMAT_R32G32B32A32_UINT
+	};
+	VkBufferViewCreateInfo create;
+	VkResult result;
+	void *mapped;
+	int status;
+
+	/* One of the three kinds, made already. */
+	if (kind > 2U)
+		kind = 0U;
+	if (state->black_buffer_views[kind] != VK_NULL_HANDLE)
+		return state->black_buffer_views[kind];
+
+	/* The buffer of four zero words, made once. */
+	if (state->black_buffer == VK_NULL_HANDLE) {
+		status = gles_device_buffer(state, 16U, VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT, &state->black_buffer,
+					    &state->black_buffer_memory, &mapped);
+		if (status != 0)
+			return VK_NULL_HANDLE;
+		memset(mapped, 0, 16U);
+	}
+
+	/* The kind's view of it. */
+	memset(&create, 0, sizeof(create));
+	create.sType = VK_STRUCTURE_TYPE_BUFFER_VIEW_CREATE_INFO;
+	create.buffer = state->black_buffer;
+	create.format = formats[kind];
+	create.offset = 0U;
+	create.range = 16U;
+	result = vkCreateBufferView(state->device, &create, NULL, &state->black_buffer_views[kind]);
+	if (result != VK_SUCCESS) {
+		state->black_buffer_views[kind] = VK_NULL_HANDLE;
+		return VK_NULL_HANDLE;
+	}
+
+	/* Succeeded: the view. */
+	return state->black_buffer_views[kind];
 }
