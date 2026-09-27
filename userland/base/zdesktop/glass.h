@@ -83,6 +83,10 @@ VkDescriptorSet glass_wallpaper_set(struct zwl_server *server);
 /* The login screen in place of the desktop (greeter.c). */
 void zwl_greeter_draw(struct zwl_server *server, VkCommandBuffer command);
 
+/* The network's icon in the system bar and its menu (network.c). */
+void zwl_network_draw_icon(struct zwl_server *server, VkCommandBuffer command, int32_t x, const float *ink);
+void zwl_network_draw_menu(struct zwl_server *server, VkCommandBuffer command);
+
 /* App Home under the desktop layer (home.c). */
 void zwl_home_draw(struct zwl_server *server, VkCommandBuffer command, float progress);
 

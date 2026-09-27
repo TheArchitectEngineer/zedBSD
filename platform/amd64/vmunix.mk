@@ -951,11 +951,13 @@ $(BUILD)/bin/vkdemo: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
  --needed libvulkan.so --needed libc.so $@
 
-# The compositor draws window mode with standard Vulkan (WS035 p052).
+# The compositor draws window mode with standard Vulkan (WS035 p052), and
+# reaches the system (the network, ws035-p013) through libzdesktop.
 DYNAMIC_ZDESKTOP_PROGRAM_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,zdesktop)
 
 $(BUILD)/bin/zdesktop: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
-	$(DYNAMIC_ZDESKTOP_PROGRAM_OBJS) $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libtruetype.so $(DYNAMIC_DIR)/libc.so \
+	$(DYNAMIC_ZDESKTOP_PROGRAM_OBJS) $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libtruetype.so \
+	$(DYNAMIC_DIR)/libzdesktop.so $(DYNAMIC_DIR)/libc.so \
 	$(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
@@ -964,9 +966,9 @@ $(BUILD)/bin/zdesktop: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_ZDESKTOP_PROGRAM_OBJS) \
  -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
- -l:libvulkan.so -l:libtruetype.so -l:libc.so -o $@
+ -l:libvulkan.so -l:libtruetype.so -l:libzdesktop.so -l:libc.so -o $@
 	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
- --needed libvulkan.so --needed libtruetype.so --needed libc.so $@
+ --needed libvulkan.so --needed libtruetype.so --needed libzdesktop.so --needed libc.so $@
 
 # The test application imports only standard Wayland and Vulkan entry points.
 DYNAMIC_WLTEST_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,wltest)

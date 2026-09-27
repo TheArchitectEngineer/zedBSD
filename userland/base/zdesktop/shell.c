@@ -24,8 +24,8 @@
  *
  * The system bar has three zones: on the left the launcher, "zedBSD" and the
  * docked window; towards the right four virtual desktops; at the right edge
- * the signal, the battery and the clock.  The launcher, the desktops, the
- * status and minimize are drawn only (a mock-up).
+ * the network, the battery and the clock.  The network's icon opens its
+ * menu (network.c, ws035-p013); the battery is drawn only (a mock-up).
  *
  * Wiseview (p063, plan/ws035/wiseman-design.md) is the overview of the
  * windows: dragging up from the bottom edge opens it, following the pointer
@@ -352,6 +352,9 @@ zwl_glass_draw(
 	/* An open menu's popups over the system bar (menu-shell.c). */
 	zwl_menu_draw_popups(server, command);
 
+	/* The network's menu, when open (network.c). */
+	zwl_network_draw_menu(server, command);
+
 	/* A frame of the animation. */
 	if (server->anim != NULL && server->log_frames)
 		printf("ZWL GLASS anim surface=%u docking=%u t=%.2f\n", server->anim->id, server->anim_docking, (double)animation_progress(server));
@@ -389,6 +392,11 @@ zwl_glass_button(
 
 	/* App Home takes the launcher, the top-left corner, and every button while it shows. */
 	pressed = zwl_home_button(server, button, state);
+	if (pressed)
+		return 1;
+
+	/* The network takes a press on its icon, and every button while its menu is open (network.c). */
+	pressed = zwl_network_button(server, button, state);
 	if (pressed)
 		return 1;
 
@@ -557,6 +565,11 @@ zwl_glass_motion(
 
 	/* App Home follows its gesture, and hears the pointer while it shows. */
 	taken = zwl_home_motion(server);
+	if (taken)
+		return 1;
+
+	/* The network's open menu lights the row under the pointer (network.c). */
+	taken = zwl_network_motion(server);
 	if (taken)
 		return 1;
 
@@ -758,6 +771,9 @@ zwl_glass_still(
 	if (open > 0U)
 		return 0;
 	open = zwl_menu_is_open();
+	if (open)
+		return 0;
+	open = (unsigned)zwl_network_is_open();
 	if (open)
 		return 0;
 
@@ -1281,6 +1297,9 @@ zwl_glass_tick(
 
 	/* An open menu closes when what it belongs to changed (menu-shell.c). */
 	zwl_menu_tick(server);
+
+	/* What the network watch brought (network.c). */
+	zwl_network_tick(server);
 
 	/* The desktops' slide draws every frame until it is done. */
 	if (server->desktop_moving) {
@@ -2170,8 +2189,8 @@ draw_desktops(
 }
 
 /*
- * Draws the status at the right edge (a mock-up but for the clock): the
- * signal as four rising bars, the battery, and the date and time.
+ * Draws the status at the right edge: the network (network.c), the battery
+ * (a mock-up) and the date and time.
  */
 static void
 draw_status(
@@ -2181,7 +2200,6 @@ draw_status(
 	const float *ink)
 {
 	struct glass_shape shape;
-	int step;
 
 	/* The date and time. */
 	glass_draw_text(server, command, SIZE_BAR, bar->clock_x, 22, bar->clock, 400, ink);
@@ -2200,9 +2218,8 @@ draw_status(
 	glass_draw_solid(server, command, (float)(bar->battery_x + 3), 14.0f, 14.0f, 6.0f, 1.5f, ink);
 	glass_draw_solid(server, command, (float)(bar->battery_x + 23), 15.0f, 2.0f, 4.0f, 1.0f, ink);
 
-	/* The signal. */
-	for (step = 0; step < 4; step++)
-		glass_draw_solid(server, command, (float)(bar->signal_x + step * 5), (float)(19 - step * 3), 3.0f, (float)(4 + step * 3), 1.0f, ink);
+	/* The network: Wi-Fi's bars or the wired tree, which opens its menu (network.c). */
+	zwl_network_draw_icon(server, command, bar->signal_x, ink);
 }
 
 /*

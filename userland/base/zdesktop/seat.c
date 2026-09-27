@@ -749,6 +749,9 @@ zwl_seat_key(
 		taken = zwl_home_key(server, key, state);
 		if (taken)
 			return;
+		taken = zwl_network_key(server, key, state);
+		if (taken)
+			return;
 		taken = zwl_menu_grab_key(server, key, state);
 		if (taken)
 			return;

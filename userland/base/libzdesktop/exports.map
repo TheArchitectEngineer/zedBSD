@@ -15,6 +15,7 @@
 		zdesktop_recent_*;
 		zdesktop_titlebar_*;
 		zdesktop_glass_*;
+		zdesktop_network_*;
 	local:
 		*;
 };
