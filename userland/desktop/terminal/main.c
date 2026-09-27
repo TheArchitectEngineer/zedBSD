@@ -63,8 +63,8 @@
 #define MAIN_CLIPBOARD_MAX	(TERMINAL_MAX_COLUMNS * TERMINAL_MAX_ROWS * 4U + TERMINAL_MAX_ROWS)
 
 /* What Help > About Terminal writes on the screen. */
-#define MAIN_ABOUT		"\r\n\033[1mTerminal\033[0m: a VT100 terminal for zdesktop (zedBSD), drawn with Vulkan.\r\n" \
-				"Its menus are drawn by zdesktop's System Menu (xdg_toplevel_menu_v1, through libkeiland).\r\n"
+#define MAIN_ABOUT		"\r\n\033[1mTerminal\033[0m: a VT100 terminal for Kei, drawn with Vulkan.\r\n" \
+				"Its menus are drawn by Keiland's System Menu (xdg_toplevel_menu_v1, through libkeiland).\r\n"
 
 /*
  * What the command line asked for.
