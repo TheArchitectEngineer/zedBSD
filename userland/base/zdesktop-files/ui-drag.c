@@ -302,6 +302,15 @@ fm_drop_event(
 				app->drop_operation = FM_TASK_COPY;
 			app->request = FM_REQUEST_DROP;
 			fm_log("DROP drop self=%d destination=%s action=%u", app->drop_self, app->drop_folder, app->drop_action);
+
+			/* "Ask": the choice in a context menu at the drop's place first. */
+			if (app->drop_action == FM_DND_ASK) {
+				app->request = FM_REQUEST_DROP_ASK;
+				app->context_where = FM_CONTEXT_DROP;
+				app->context_x = app->drop_x;
+				app->context_y = app->drop_y;
+				app->drop_asking = 1;
+			}
 		} else {
 			fm_log("DROP drop target=none");
 		}

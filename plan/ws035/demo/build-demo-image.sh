@@ -1,9 +1,10 @@
 #!/bin/sh
 # Builds the zdesktop demo image for a real amd64 machine with an Intel GPU (i915): zdesktop --glass starts at
 # boot on the machine's own display, and App Home (the launcher at the top left, or a drag from the
-# top-left corner) starts the terminal, the model viewer, and the X11 terminal and Gears (zdesktop-x11server
-# starts with the first of them).  The fonts and the wallpaper, kept out of
-# git, are put in from build/ws035-fonts/ and build/ws035-wallpaper/ when they are there.
+# top-left corner; its list is plan/ws035/demo/apps.conf) starts Files, the terminal, the browser (when its
+# start page is there), the model viewer, and the X11 terminal and Gears (zdesktop-x11server starts with the
+# first of them).  The session's home is /root with the usual folders (run-zdesktop.sh).  The fonts and the
+# wallpaper, kept out of git, are put in from build/ws035-fonts/ and build/ws035-wallpaper/ when they are there.
 #
 #   plan/ws035/demo/build-demo-image.sh [BUILD]     (default build/zdesktop-demo)
 #
@@ -13,7 +14,7 @@ set -eu
 cd "$(dirname -- "$0")/../../.."
 build=${1:-build/zdesktop-demo}
 demo=plan/ws035/demo
-extra="--file /etc/service.d/zdesktop=$demo/zdesktop --file /etc/zdesktop/run-zdesktop.sh=$demo/run-zdesktop.sh"
+extra="--file /etc/service.d/zdesktop=$demo/zdesktop --file /etc/zdesktop/run-zdesktop.sh=$demo/run-zdesktop.sh --file /etc/zdesktop/apps.conf=$demo/apps.conf"
 [ -f build/ws035-fonts/Inter.ttf ] && extra="$extra --file /usr/share/fonts/zdesktop.ttf=build/ws035-fonts/Inter.ttf"
 [ -f build/ws035-fonts/OFL.txt ] && extra="$extra --file /usr/share/fonts/zdesktop-OFL.txt=build/ws035-fonts/OFL.txt"
 [ -f build/ws035-fonts/JetBrainsMono-Regular.ttf ] && extra="$extra --file /usr/share/fonts/zdesktop-mono.ttf=build/ws035-fonts/JetBrainsMono-Regular.ttf"

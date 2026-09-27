@@ -68,5 +68,10 @@
     <event name="pong">
       <arg name="value" type="uint"/>
     </event>
+
+    <event name="data">
+      <description summary="after each pong: a pipe with fd-ok in it (the zombie test counts the client's fds)"/>
+      <arg name="h" type="fd"/>
+    </event>
   </interface>
 </protocol>

@@ -838,12 +838,16 @@ wlc_proxy_insert_server(
 		return NULL;
 	}
 
-	/* An identity the map still holds cannot be created again. */
+	/* An identity the map still holds cannot be created again, unless it is a zombie the client destroyed. */
 	proxy = wlc_proxy_lookup(display, id);
-	if (proxy != NULL) {
+	if (proxy != NULL && !proxy->destroyed) {
 		errno = EEXIST;
 		return NULL;
 	}
+
+	/* The zombie leaves the map; the new object takes its identity. */
+	if (proxy != NULL)
+		wlc_proxy_remove(proxy);
 
 	/* The creating object's version, within what the interface describes. */
 	version = factory->version;
@@ -935,12 +939,12 @@ wlc_proxy_destroy(
 
 	/*
 	 * Destroyed suppresses callbacks; delete_id independently retires the
-	 * map.  The server never sends delete_id for an object it created, so
-	 * such an identity leaves the map at once.
+	 * map.  The server never sends delete_id for an object it created: such
+	 * an identity stays in the map as a zombie, so events the server sent
+	 * before it saw the destroy are dropped (their fds closed) instead of
+	 * naming an unknown object, until the server creates the identity again.
 	 */
 	proxy->destroyed = 1;
-	if (proxy->id >= WLC_SERVER_ID_START)
-		wlc_proxy_remove(proxy);
 	wlc_proxy_unref(proxy);
 
 	/* Succeeded: any surviving references belong to protocol infrastructure. */

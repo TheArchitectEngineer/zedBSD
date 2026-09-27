@@ -1,0 +1,18 @@
+arith 9 5 14 3.5 1 -1 1024 0.5 Infinity -Infinity NaN
+int32 2147483648 -2147483649 4294967296 true -Infinity
+bits 1 7 6 -6 -2147483648 -4 15 2 -1
+unary -3 0 12 31 1000 NaN true false undefined
+concat a1 1a atruenullundefined 33 123
+less true true true true false false false true true
+loose true true true false false true true false
+strict true true false true false
+not true true
+typeof number string boolean undefined object object object function function
+primitive 43 84 named! 1 3 true true
+order LRLRLRLR
+compound 196 22 2
+update 5 7 7 1 -1 -1
+logical-assign set set set 3
+comma 3 yes no
+in true false true false true
+instanceof true false

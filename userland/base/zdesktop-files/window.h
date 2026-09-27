@@ -54,6 +54,8 @@ struct fm_window {
 	struct wl_data_source *drag_source;
 	char *drag_uris;
 	size_t drag_uris_length;
+	char *drag_text;
+	size_t drag_text_length;
 	struct wl_data_offer *offer_new;
 	int offer_new_files;
 	struct wl_data_offer *drop_offer;
@@ -226,14 +228,15 @@ void fm_dnd_close(struct fm_window *window);
 int fm_dnd_start(struct fm_window *window, char *const *paths, size_t count);
 void fm_dnd_answer(struct fm_window *window, int accept, uint32_t preferred);
 int fm_dnd_receive(struct fm_window *window, char ***paths, size_t *count);
-void fm_dnd_finish(struct fm_window *window);
+void fm_dnd_finish(struct fm_window *window, uint32_t action);
+void fm_dnd_abort(struct fm_window *window);
 uint64_t fm_clock(void);
 
 /* The menus (menu.c). */
 int fm_menu_open(struct fm_menu *menu, struct fm_window *window, const struct fm_menu_state *state);
 void fm_menu_refresh(struct fm_menu *menu, const struct fm_menu_state *state);
 void fm_menu_close(struct fm_menu *menu);
-void fm_menu_context(struct fm_menu *menu, const struct fm_context *context, int x, int y);
+void fm_menu_context(struct fm_menu *menu, const struct fm_context *context, int x, int y, uint32_t context_serial);
 
 /* The window's titlebar in zdesktop (titlebar.c). */
 int fm_titlebar_open(struct fm_titlebar *titlebar, struct fm_window *window, const struct fm_titlebar_state *state);

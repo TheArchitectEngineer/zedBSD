@@ -126,6 +126,7 @@ enum fm_event_type {
 /* The drag and drop actions zdesktop chooses between (wl_data_device_manager's dnd_action). */
 #define FM_DND_COPY		1U
 #define FM_DND_MOVE		2U
+#define FM_DND_ASK		4U
 
 /*
  * One input: where the pointer is, which button or key, and the modifiers
@@ -729,6 +730,10 @@ enum fm_action {
 	FM_ACTION_EMPTY_TRASH,
 	FM_ACTION_PLACE_NEW_TAB,
 	FM_ACTION_PLACE_REMOVE,
+	FM_ACTION_DROP_MOVE,
+	FM_ACTION_DROP_COPY,
+	FM_ACTION_DROP_LINK,
+	FM_ACTION_DROP_CANCEL,
 	FM_ACTION_COLUMN_FIRST = 100,
 	FM_ACTION_OPEN_WITH_FIRST = 200,
 	FM_ACTION_TAG_FIRST = 300
@@ -747,7 +752,9 @@ enum fm_request {
 	FM_REQUEST_CLOSE,
 	FM_REQUEST_CONTEXT,
 	FM_REQUEST_DRAG_OUT,
-	FM_REQUEST_DROP
+	FM_REQUEST_DROP,
+	FM_REQUEST_DROP_ASK,
+	FM_REQUEST_DROP_CANCEL
 };
 
 /* How many rows a context menu has at most, and the longest label. */
@@ -758,6 +765,7 @@ enum fm_request {
 #define FM_CONTEXT_ITEMS	0U
 #define FM_CONTEXT_EMPTY	1U
 #define FM_CONTEXT_PLACE	2U
+#define FM_CONTEXT_DROP		3U
 
 /* What a drag of items is over (ui-drag.c): nothing that takes them, a folder, a tag's place, the Trash. */
 #define FM_DRAG_NONE		0U
@@ -1040,6 +1048,9 @@ struct fm_app {
 	int drop_answer;
 	char drop_folder[FM_PATH_MAX];
 	unsigned drop_operation;
+
+	/* Whether a drop dropped with "ask" waits for its choice in the context menu (ws035-p088). */
+	int drop_asking;
 
 	/* What was typed to find an item by its name, and when it was typed last. */
 	char typed[64];

@@ -6,3 +6,5 @@
 include plan/ws035/tests/config-amd64-guest.mk
 CONFIG_DRIVER_PCI_VENUS := y
 ZEDBSD_USER_PROGRAMS += libvulkan libwayland-client libwayland-egl libegl libglesv2 libtruetype wltest wlshm vkdemo mview zdesktop-terminal egltest libgl glxtest zgears zdesktop zdesktop-x11server acquire-fence-test
+# ws035-p090: App Home's Files and Browser (the browser shows when its start page is there).
+ZEDBSD_USER_PROGRAMS += libz-compat libpng-compat zdesktop-files zdesktop-browser

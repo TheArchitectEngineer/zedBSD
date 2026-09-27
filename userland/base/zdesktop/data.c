@@ -25,7 +25,7 @@
  * is told the part first (zed_titlebar_v1 version 2) -- hears enter with a
  * new offer of the source's types and actions, then motion, and leave when
  * the pointer goes elsewhere.  The target accepts a type and says the
- * actions it takes; zdesktop chooses one (Ctrl prefers copy) and tells the
+ * actions it takes; zdesktop chooses one (Ctrl prefers copy, Alt asks) and tells the
  * offer and the source.  The release drops on a target that accepted a
  * type with an action (the source hears dnd_drop_performed, and
  * dnd_finished when the target finishes); otherwise the target hears leave
@@ -90,8 +90,9 @@
 #define OFFER_ERROR_INVALID_ACTION_MASK		1U
 #define OFFER_ERROR_INVALID_ACTION		2U
 
-/* Ctrl in the seat's modifiers (seat.c). */
+/* Ctrl and Alt in the seat's modifiers (seat.c). */
 #define DATA_SEAT_CTRL			0x04U
+#define DATA_SEAT_ALT			0x08U
 
 /* The requests and events of wl_data_offer. */
 #define OFFER_ACCEPT			0U
@@ -233,6 +234,13 @@ zwl_data_object_gone(
 			server->dnd_titlebar = NULL;
 	}
 
+	/* A dropped offer that goes without its finish (the target gave up, the "ask" cancelled): its source is cancelled. */
+	if (object->kind == ZWL_DATA_OFFER && object->dnd_dropped && object->data_source != NULL && !object->data_source->dead) {
+		printf("ZWL DATA drag unfinished client=%llu\n", (unsigned long long)object->client->number);
+		(void)zwl_emit(object->data_source->client, object->data_source->id, SOURCE_CANCELLED, NULL, 0U);
+		object->dnd_dropped = 0;
+	}
+
 	/* Only a source has anything more to untie. */
 	if (object->kind != ZWL_DATA_SOURCE)
 		return;
@@ -321,8 +329,10 @@ zwl_data_drag_release(
 		return;
 	}
 
-	/* The drop: the target's device hears it, and its offer awaits the finish. */
+	/* The drop: the target's device hears it, and its offer awaits the finish; its enter's serial may open a context menu (ask). */
 	(void)zwl_emit(device->client, device->id, DEVICE_DROP, NULL, 0U);
+	server->dnd_drop_client = device->client->number;
+	server->dnd_drop_serial = server->dnd_enter_serial;
 	action = ACTION_NONE;
 	if (offer != NULL) {
 		offer->dnd_dropped = 1;
@@ -976,6 +986,21 @@ offer_set_actions(
 	offer->dnd_actions = actions;
 	offer->dnd_preferred = preferred;
 
+	/*
+	 * After a drop with "ask", the target says the action the user chose;
+	 * the offer and the source hear it (a target that destroyed the offer
+	 * at once drops the offer's event).
+	 */
+	if (offer->dnd_dropped && offer->dnd_action == ACTION_ASK && preferred != ACTION_NONE && preferred != ACTION_ASK) {
+		offer->dnd_action = preferred;
+		printf("ZWL DATA drag chosen client=%llu action=%u\n", (unsigned long long)offer->client->number, preferred);
+		if (offer->version >= DATA_ACTIONS_VERSION)
+			(void)zwl_emit(offer->client, offer->id, OFFER_ACTION, &preferred, sizeof(preferred));
+		if (offer->data_source != NULL && !offer->data_source->dead && offer->data_source->version >= DATA_ACTIONS_VERSION)
+			(void)zwl_emit(offer->data_source->client, offer->data_source->id, SOURCE_ACTION, &preferred, sizeof(preferred));
+		return 0;
+	}
+
 	/* Succeeded: the drag's action is chosen again when this is its offer. */
 	server = offer->client->server;
 	if (server->dnd_active && offer == server->dnd_offer)
@@ -1207,8 +1232,9 @@ drag_enter(
 			(void)zwl_emit(device->client, offer->id, OFFER_SOURCE_ACTIONS, &word, sizeof(word));
 	}
 
-	/* Enter: a serial, the surface, the pointer's place on it and the offer. */
+	/* Enter: a serial (kept: a context menu may answer it after a drop), the surface, the pointer's place on it and the offer. */
 	words[0] = zwl_next_serial(server);
+	server->dnd_enter_serial = words[0];
 	words[1] = surface->id;
 	drag_place(server, surface, &words[2], &words[3]);
 	words[4] = 0;
@@ -1332,8 +1358,9 @@ drag_action(
 }
 
 /*
- * Chooses one action both sides take: copy while Ctrl is held, otherwise
- * the target's preferred one, otherwise copy, move and ask in that order.
+ * Chooses one action both sides take: copy while Ctrl is held, ask while
+ * Alt is, otherwise the target's preferred one, otherwise copy, move and
+ * ask in that order.
  * ACTION_NONE when they share none.
  */
 static uint32_t
@@ -1351,6 +1378,10 @@ drag_choose(
 	/* Ctrl asks for a copy. */
 	if ((modifiers & DATA_SEAT_CTRL) != 0U && (both & ACTION_COPY) != 0U)
 		return ACTION_COPY;
+
+	/* Alt asks the target to ask (it offers the choice after the drop). */
+	if ((modifiers & DATA_SEAT_ALT) != 0U && (both & ACTION_ASK) != 0U)
+		return ACTION_ASK;
 
 	/* The target's preference. */
 	if (preferred != ACTION_NONE && (both & preferred) != 0U)

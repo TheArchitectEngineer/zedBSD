@@ -31,12 +31,18 @@ ZDESKTOP_BROWSER_SOURCES := $(ZDESKTOP_BROWSER_DIR)/main.c \
 	$(ZDESKTOP_BROWSER_DIR)/vm/realm.c \
 	$(ZDESKTOP_BROWSER_DIR)/vm/code.c \
 	$(ZDESKTOP_BROWSER_DIR)/vm/operation.c \
+	$(ZDESKTOP_BROWSER_DIR)/vm/access.c \
 	$(ZDESKTOP_BROWSER_DIR)/vm/interpreter.c \
 	$(ZDESKTOP_BROWSER_DIR)/js/lexer.c \
 	$(ZDESKTOP_BROWSER_DIR)/js/parser.c \
 	$(ZDESKTOP_BROWSER_DIR)/js/parse_expr.c \
 	$(ZDESKTOP_BROWSER_DIR)/js/parse_stmt.c \
 	$(ZDESKTOP_BROWSER_DIR)/js/dump.c \
+	$(ZDESKTOP_BROWSER_DIR)/js/scope.c \
+	$(ZDESKTOP_BROWSER_DIR)/js/emit.c \
+	$(ZDESKTOP_BROWSER_DIR)/js/compile.c \
+	$(ZDESKTOP_BROWSER_DIR)/js/compile_expr.c \
+	$(ZDESKTOP_BROWSER_DIR)/js/script.c \
 	$(ZDESKTOP_BROWSER_DIR)/html/input.c \
 	$(ZDESKTOP_BROWSER_DIR)/html/tokenizer.c \
 	$(ZDESKTOP_BROWSER_DIR)/html/parser.c \
@@ -84,4 +90,10 @@ $(ZDESKTOP_BROWSER_ENTITIES_C): $(ZDESKTOP_BROWSER_ENTITIES_JSON) $(ZDESKTOP_BRO
 ZEDBSD_USERLAND_DOWNLOAD_TARGETS += $(ZDESKTOP_BROWSER_ENTITIES_JSON)
 endif
 
-$(eval $(call ZEDBSD_USERLAND_PACKAGE,zdesktop-browser,Web browser,amd64,n,basic,$(ZDESKTOP_BROWSER_SOURCES),y,base,base/zdesktop-browser,base/libtruetype base/libvulkan base/libwayland base/libzdesktop,0755,program,,,bin))
+# The pages the browser brings: the start page it opens without an argument (App Home starts it with
+# the same page) and the pages it links to.
+ZDESKTOP_BROWSER_DATA := /usr/share/zdesktop-browser/start.html=$(ZDESKTOP_BROWSER_DIR)/data/start.html \
+	/usr/share/zdesktop-browser/about.html=$(ZDESKTOP_BROWSER_DIR)/data/about.html \
+	/usr/share/zdesktop-browser/text.html=$(ZDESKTOP_BROWSER_DIR)/data/text.html
+
+$(eval $(call ZEDBSD_USERLAND_PACKAGE,zdesktop-browser,Web browser,amd64,n,basic,$(ZDESKTOP_BROWSER_SOURCES),y,base,base/zdesktop-browser,base/libtruetype base/libvulkan base/libwayland base/libzdesktop,0755,program,$(ZDESKTOP_BROWSER_DATA),,bin))

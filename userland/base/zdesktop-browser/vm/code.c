@@ -28,6 +28,7 @@ static int code_check(const struct vm_code *code, uint32_t *bad_offset);
 static int code_check_operands(const struct vm_code *code, uint32_t offset, const uint8_t *starts);
 static int code_is_start(const uint8_t *starts, uint32_t word_count, uint32_t offset);
 static int code_falls_off(const struct vm_code *code, const uint8_t *starts);
+static int code_is_unit(vm_value value);
 
 /* The cell type of code units: they hold their constants and their name. */
 const struct vm_cell_type vm_code_type = {
@@ -60,6 +61,52 @@ const struct vm_opcode_info vm_opcodes[VM_OPCODE_COUNT] = {
 	{ "put_elem", 3, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
 	{ "get_global", 2, { VM_OPERAND_REGISTER, VM_OPERAND_CONSTANT } },
 	{ "put_global", 2, { VM_OPERAND_CONSTANT, VM_OPERAND_REGISTER } },
+	{ "div", 3, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
+	{ "mod", 3, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
+	{ "exp", 3, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
+	{ "bit_and", 3, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
+	{ "bit_or", 3, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
+	{ "bit_xor", 3, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
+	{ "shl", 3, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
+	{ "sar", 3, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
+	{ "shr", 3, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
+	{ "less_eq", 3, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
+	{ "greater", 3, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
+	{ "greater_eq", 3, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
+	{ "loose_eq", 3, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
+	{ "instanceof", 3, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
+	{ "in", 3, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
+	{ "neg", 2, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
+	{ "to_number", 2, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
+	{ "bit_not", 2, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
+	{ "not", 2, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
+	{ "typeof", 2, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
+	{ "inc", 2, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
+	{ "dec", 2, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
+	{ "get_global_typeof", 2, { VM_OPERAND_REGISTER, VM_OPERAND_CONSTANT } },
+	{ "define_global_var", 1, { VM_OPERAND_CONSTANT } },
+	{ "define_global_function", 2, { VM_OPERAND_CONSTANT, VM_OPERAND_REGISTER } },
+	{ "delete_prop", 3, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER, VM_OPERAND_CONSTANT } },
+	{ "delete_elem", 3, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
+	{ "delete_global", 2, { VM_OPERAND_REGISTER, VM_OPERAND_CONSTANT } },
+	{ "define_prop", 3, { VM_OPERAND_REGISTER, VM_OPERAND_CONSTANT, VM_OPERAND_REGISTER } },
+	{ "define_elem", 3, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
+	{ "define_getter", 3, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
+	{ "define_setter", 3, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
+	{ "set_proto", 2, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
+	{ "array_push", 2, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
+	{ "array_hole", 1, { VM_OPERAND_REGISTER } },
+	{ "new_env", 3, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER, VM_OPERAND_IMMEDIATE } },
+	{ "get_env", 4, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER, VM_OPERAND_IMMEDIATE, VM_OPERAND_IMMEDIATE } },
+	{ "put_env", 4, { VM_OPERAND_REGISTER, VM_OPERAND_IMMEDIATE, VM_OPERAND_IMMEDIATE, VM_OPERAND_REGISTER } },
+	{ "load_closure_env", 1, { VM_OPERAND_REGISTER } },
+	{ "load_this", 1, { VM_OPERAND_REGISTER } },
+	{ "load_callee", 1, { VM_OPERAND_REGISTER } },
+	{ "new_closure", 3, { VM_OPERAND_REGISTER, VM_OPERAND_CONSTANT, VM_OPERAND_REGISTER } },
+	{ "construct", 5, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER, VM_OPERAND_REGISTER, VM_OPERAND_REGISTER, VM_OPERAND_COUNT } },
+	{ "for_in_start", 2, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
+	{ "for_in_next", 3, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER, VM_OPERAND_JUMP } },
+	{ "to_property_key", 2, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
 	{ "i32.const", 2, { VM_OPERAND_REGISTER, VM_OPERAND_IMMEDIATE } },
 	{ "i32.add", 3, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
 	{ "i32.sub", 3, { VM_OPERAND_REGISTER, VM_OPERAND_REGISTER, VM_OPERAND_REGISTER } },
@@ -107,6 +154,8 @@ vm_code_create(
 	made->parameter_count = model->parameter_count;
 	made->constant_count = model->constant_count;
 	made->handler_count = model->handler_count;
+	made->flags = model->flags;
+	made->arguments_register = model->arguments_register;
 	made->name = model->name;
 
 	/* A copy of the words. */
@@ -149,8 +198,8 @@ vm_code_dump(
 	int error;
 
 	/* The unit's counts. */
-	error = wb_buffer_printf(out, "code registers=%u parameters=%u constants=%u handlers=%u\n",
-	    code->register_count, code->parameter_count, code->constant_count, code->handler_count);
+	error = wb_buffer_printf(out, "code registers=%u parameters=%u constants=%u handlers=%u flags=%u\n",
+	    code->register_count, code->parameter_count, code->constant_count, code->handler_count, code->flags);
 
 	/* Each instruction: its offset, name and operands. */
 	offset = 0;
@@ -241,6 +290,10 @@ code_check(
 	if (code->word_count == 0 || code->register_count < code->parameter_count)
 		return EINVAL;
 
+	/* The arguments object's register is the frame's. */
+	if ((code->flags & VM_CODE_ARGUMENTS) != 0U && code->arguments_register >= code->register_count)
+		return EINVAL;
+
 	/* One mark a word: whether an instruction starts there. */
 	starts = calloc(code->word_count, 1);
 	if (starts == NULL)
@@ -326,6 +379,7 @@ code_check_operands(
 	uint32_t first;
 	uint32_t count;
 	int start;
+	int is_code;
 
 	/* Each operand by its kind. */
 	info = &vm_opcodes[code->words[offset]];
@@ -338,9 +392,16 @@ code_check_operands(
 				return EINVAL;
 			break;
 		case VM_OPERAND_CONSTANT:
-			/* A constant of the table. */
+			/* A constant of the table; new_closure's must be a code unit. */
 			if (word >= code->constant_count)
 				return EINVAL;
+			if (code->words[offset] == VM_OP_NEW_CLOSURE) {
+				is_code = code_is_unit(code->constants[word]);
+				if (!is_code)
+					return EINVAL;
+			}
+
+			/* The constant is sound. */
 			break;
 		case VM_OPERAND_JUMP:
 			/* A jump lands on the start of an instruction. */
@@ -408,4 +469,26 @@ code_falls_off(
 
 	/* Anything else would run off the end. */
 	return 1;
+}
+
+/* Tells whether a constant is a code unit (what new_closure makes a function of). */
+static int
+code_is_unit(
+	vm_value value)
+{
+	struct vm_cell *cell;
+	int is_cell;
+
+	/* Only cells are code units. */
+	is_cell = vm_value_is_cell(value);
+	if (!is_cell)
+		return 0;
+
+	/* A code cell. */
+	cell = vm_value_as_cell(value);
+	if (cell->type == &vm_code_type)
+		return 1;
+
+	/* Another cell. */
+	return 0;
 }

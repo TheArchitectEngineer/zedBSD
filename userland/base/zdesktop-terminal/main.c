@@ -163,6 +163,7 @@ static void main_new_window(const struct main_options *options, const struct mai
 static int main_zoom(const struct main_options *options, struct main_run *run, unsigned pixels);
 static void main_copy(void);
 static void main_start_paste(void);
+static void main_drop_paste(void);
 static int main_tab_new(const struct main_options *options, struct main_run *run);
 static void main_tab_switch(struct main_run *run, unsigned index);
 static int main_tab_close(const struct main_options *options, struct main_run *run, unsigned index);
@@ -496,6 +497,10 @@ main_loop(
 				}
 			}
 		}
+
+		/* A drop on the window is pasted into the active shell (clipboard.c). */
+		if (main_window.drop_pending)
+			main_drop_paste();
 
 		/* The held key repeats. */
 		terminal_window_repeat(&main_window, terminal_clock());
@@ -1272,4 +1277,18 @@ main_tabs_show(void)
 	/* With the active one. */
 	if (main_tab_count > 0U)
 		terminal_tabs_show(&main_window, views, main_tab_count, main_tabs[main_active].id);
+}
+
+/* Pastes what was dropped on the window into the active shell, as a paste is. */
+static void
+main_drop_paste(void)
+{
+	size_t length;
+
+	/* The dropped text (file names as quoted words). */
+	length = terminal_clipboard_drop(&main_window, main_paste, sizeof(main_paste));
+
+	/* The main loop writes it as the shell takes it. */
+	main_paste_length = length;
+	main_paste_written = 0;
 }
