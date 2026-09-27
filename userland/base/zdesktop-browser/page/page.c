@@ -1,0 +1,468 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Loading a page: bytes to text, text to a DOM, the DOM's <style> elements
+ * to the style engine; and the text dumps the tests read.
+ */
+
+#include "page/page.h"
+
+#include <errno.h>
+#include <stdlib.h>
+#include <string.h>
+
+/* The most bytes of live cells a page's heap may hold. */
+#define PAGE_HEAP_LIMIT		((size_t)1024U * 1024U * 1024U)
+
+/* The deepest element nesting the style dump descends (the parser caps nesting too). */
+#define PAGE_DUMP_DEPTH		512
+
+static int page_collect_styles(struct page *page, struct dom_node *node);
+static int page_text_of(const struct dom_node *node, struct wb_units *units);
+static int page_dump_node(const struct dom_node *node, int depth, struct wb_buffer *out);
+static int page_dump_style_node(struct page *page, struct dom_element *element, const struct css_style *parent, int depth, struct wb_buffer *out);
+static void page_indent(struct wb_buffer *out, int depth);
+static void page_append_string(struct wb_buffer *out, const struct vm_string *string);
+static void page_append_length(struct wb_buffer *out, const struct css_length *length);
+
+/*
+ * Makes an empty page: a heap whose C stack ends at stack_base, and an
+ * empty document.
+ */
+int
+page_create(
+	struct page **page,
+	const void *stack_base)
+{
+	struct page *created;
+	int error;
+
+	/* Allocates the page and its heap. */
+	created = calloc(1, sizeof(*created));
+	if (created == NULL)
+		return ENOMEM;
+	error = vm_heap_create(&created->heap, PAGE_HEAP_LIMIT);
+	if (error != 0) {
+		free(created);
+		return error;
+	}
+
+	/* Its stack ends where the caller says. */
+	vm_heap_set_stack_base(created->heap, stack_base);
+
+	/* Makes the document and keeps it alive as a root. */
+	created->document = dom_document_create(created->heap);
+	if (created->document == NULL) {
+		vm_heap_destroy(created->heap);
+		free(created);
+		return ENOMEM;
+	}
+
+	/* Keeps the document alive as a root. */
+	error = vm_heap_add_root(created->heap, (struct vm_cell **)&created->document);
+	if (error != 0) {
+		vm_heap_destroy(created->heap);
+		free(created);
+		return error;
+	}
+
+	/* Succeeded: the page is empty. */
+	*page = created;
+	return 0;
+}
+
+/*
+ * Destroys a page, its styles and its heap.
+ */
+void
+page_destroy(
+	struct page *page)
+{
+	/* A NULL page is nothing to destroy. */
+	if (page == NULL)
+		return;
+
+	/* Frees the style engine, then every cell with the heap. */
+	css_engine_destroy(page->css);
+	vm_heap_destroy(page->heap);
+	free(page);
+}
+
+/*
+ * Loads an HTML document from its bytes (UTF-8 in this pass) and gathers
+ * its style sheets.
+ */
+int
+page_load_html(
+	struct page *page,
+	const unsigned char *bytes,
+	size_t length)
+{
+	struct html_parser *parser;
+	struct wb_units units;
+	int error;
+
+	/* Decodes the bytes, dropping a UTF-8 byte order mark. */
+	if (length >= 3 && bytes[0] == 0xefU && bytes[1] == 0xbbU && bytes[2] == 0xbfU) {
+		bytes += 3;
+		length -= 3;
+	}
+
+	/* Decodes the text. */
+	wb_units_init(&units);
+	error = wb_utf8_to_units(bytes, length, &units);
+	if (error != 0) {
+		wb_units_release(&units);
+		return error;
+	}
+
+	/* Parses the text into the document. */
+	error = html_parser_create(&parser, page->document, 0);
+	if (error != 0) {
+		wb_units_release(&units);
+		return error;
+	}
+
+	/* Feeds it all and finishes. */
+	error = html_parser_feed(parser, units.data, units.length);
+	if (error == 0)
+		error = html_parser_finish(parser);
+	html_parser_destroy(parser);
+	wb_units_release(&units);
+	if (error != 0)
+		return error;
+
+	/* Makes the style engine and gives it the document's <style> sheets in order. */
+	css_engine_destroy(page->css);
+	page->css = NULL;
+	error = css_engine_create(&page->css, page->heap);
+	if (error != 0)
+		return error;
+	error = page_collect_styles(page, &page->document->node);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the page holds the document and its styles. */
+	return 0;
+}
+
+/*
+ * Loads an HTML document from a file.
+ */
+int
+page_load_file(
+	struct page *page,
+	const char *path)
+{
+	struct wb_buffer buffer;
+	int error;
+
+	/* Reads the file. */
+	wb_buffer_init(&buffer);
+	error = wb_file_read(path, &buffer);
+	if (error != 0) {
+		wb_buffer_release(&buffer);
+		return error;
+	}
+
+	/* Loads its bytes. */
+	error = page_load_html(page, buffer.data, buffer.length);
+	wb_buffer_release(&buffer);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the page is loaded. */
+	return 0;
+}
+
+/*
+ * Writes the document tree in html5lib's test format.
+ */
+int
+page_dump_dom(
+	const struct page *page,
+	struct wb_buffer *out)
+{
+	int error;
+
+	/* Dumps the document's children. */
+	error = page_dump_node(&page->document->node, 0, out);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the tree is in the buffer. */
+	return 0;
+}
+
+/*
+ * Writes every element's computed style, one line each, indented by depth.
+ */
+int
+page_dump_style(
+	struct page *page,
+	struct wb_buffer *out)
+{
+	struct dom_node *node;
+	int error;
+
+	/* Styles from each element child of the document. */
+	for (node = page->document->node.first_child; node != NULL; node = node->next) {
+		if (node->type != DOM_ELEMENT)
+			continue;
+		error = page_dump_style_node(page, (struct dom_element *)node, NULL, 0, out);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the styles are in the buffer. */
+	return 0;
+}
+
+/* Adds the text of every HTML <style> element under a node to the style engine, in document order. */
+static int
+page_collect_styles(
+	struct page *page,
+	struct dom_node *node)
+{
+	struct dom_node *child;
+	struct wb_units text;
+	int is_style;
+	int error;
+
+	/* A <style> element's text is a sheet. */
+	is_style = dom_element_is(node, DOM_NS_HTML, DOM_TAG_STYLE);
+	if (is_style) {
+		wb_units_init(&text);
+		error = page_text_of(node, &text);
+		if (error == 0)
+			error = css_engine_add_sheet(page->css, text.data, text.length);
+		wb_units_release(&text);
+		if (error == ENOMEM)
+			return error;
+		return 0;
+	}
+
+	/* Otherwise its children are searched. */
+	for (child = node->first_child; child != NULL; child = child->next) {
+		error = page_collect_styles(page, child);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the node's sheets are added. */
+	return 0;
+}
+
+/* Appends the text of a node's text children. */
+static int
+page_text_of(
+	const struct dom_node *node,
+	struct wb_units *units)
+{
+	const struct dom_node *child;
+	const struct dom_character_data *text;
+	int error;
+
+	/* Joins the text children. */
+	for (child = node->first_child; child != NULL; child = child->next) {
+		if (child->type != DOM_TEXT)
+			continue;
+		text = (const struct dom_character_data *)child;
+		error = wb_units_append(units, text->data.data, text->data.length);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the text is appended. */
+	return 0;
+}
+
+/* Dumps a node's children at a depth. */
+static int
+page_dump_node(
+	const struct dom_node *node,
+	int depth,
+	struct wb_buffer *out)
+{
+	const struct dom_node *child;
+	const struct dom_element *element;
+	const struct dom_character_data *text;
+	size_t index;
+	int error;
+
+	/* One line per child, elements followed by their attributes and children. */
+	for (child = node->first_child; child != NULL; child = child->next) {
+		page_indent(out, depth);
+		switch (child->type) {
+		case DOM_ELEMENT:
+			element = (const struct dom_element *)child;
+			wb_buffer_append_string(out, "<");
+			if (element->ns == DOM_NS_SVG)
+				wb_buffer_append_string(out, "svg ");
+			if (element->ns == DOM_NS_MATHML)
+				wb_buffer_append_string(out, "math ");
+			page_append_string(out, element->local_name);
+			wb_buffer_append_string(out, ">\n");
+			for (index = 0; index < element->attribute_count; index++) {
+				page_indent(out, depth + 1);
+				page_append_string(out, element->attributes[index].name);
+				wb_buffer_append_string(out, "=\"");
+				page_append_string(out, element->attributes[index].value);
+				wb_buffer_append_string(out, "\"\n");
+			}
+
+			/* Then its children. */
+			error = page_dump_node(child, depth + 1, out);
+			if (error != 0)
+				return error;
+			break;
+		case DOM_TEXT:
+			text = (const struct dom_character_data *)child;
+			wb_buffer_append_string(out, "\"");
+			wb_units_to_utf8(text->data.data, text->data.length, out);
+			wb_buffer_append_string(out, "\"\n");
+			break;
+		case DOM_COMMENT:
+			text = (const struct dom_character_data *)child;
+			wb_buffer_append_string(out, "<!-- ");
+			wb_units_to_utf8(text->data.data, text->data.length, out);
+			wb_buffer_append_string(out, " -->\n");
+			break;
+		case DOM_DOCUMENT_TYPE:
+			wb_buffer_append_string(out, "<!DOCTYPE ");
+			page_append_string(out, ((const struct dom_doctype *)child)->name);
+			wb_buffer_append_string(out, ">\n");
+			break;
+		default:
+			wb_buffer_append_string(out, "?\n");
+			break;
+		}
+	}
+
+	/* Succeeded: the children are dumped. */
+	return 0;
+}
+
+/* Computes and dumps an element's style, then its element children's. */
+static int
+page_dump_style_node(
+	struct page *page,
+	struct dom_element *element,
+	const struct css_style *parent,
+	int depth,
+	struct wb_buffer *out)
+{
+	static const char *const displays[] = {
+		"inline", "block", "inline-block", "list-item", "none", "table", "table-row", "table-cell", "flex", "contents"
+	};
+	struct css_style *style;
+	struct dom_node *child;
+	int side;
+	int error;
+
+	/* Computes the style (on the heap: the recursion would otherwise use much stack). */
+	style = malloc(sizeof(*style));
+	if (style == NULL)
+		return ENOMEM;
+	error = css_engine_compute(page->css, element, parent, style);
+	if (error != 0) {
+		free(style);
+		return error;
+	}
+
+	/* One line: the element and the main properties. */
+	page_indent(out, depth);
+	page_append_string(out, element->local_name);
+	wb_buffer_printf(out, " display=%s font-size=%.2f weight=%d italic=%d color=#%08x background=#%08x",
+	    displays[style->display], (double)style->font_size, style->font_weight, style->font_italic,
+	    (unsigned)style->color, (unsigned)style->background_color);
+	wb_buffer_append_string(out, " margin=");
+	for (side = 0; side < 4; side++) {
+		if (side > 0)
+			wb_buffer_append_string(out, ",");
+		page_append_length(out, &style->margin[side]);
+	}
+
+	/* The paddings, the borders and the width. */
+	wb_buffer_append_string(out, " padding=");
+	for (side = 0; side < 4; side++) {
+		if (side > 0)
+			wb_buffer_append_string(out, ",");
+		page_append_length(out, &style->padding[side]);
+	}
+
+	/* The borders and the width. */
+	wb_buffer_printf(out, " border=%.1f,%.1f,%.1f,%.1f width=", (double)style->border_width[0], (double)style->border_width[1],
+	    (double)style->border_width[2], (double)style->border_width[3]);
+	page_append_length(out, &style->width);
+	wb_buffer_append_string(out, "\n");
+
+	/* The element children, below the depth limit. */
+	error = 0;
+	if (depth < PAGE_DUMP_DEPTH) {
+		for (child = element->node.first_child; child != NULL && error == 0; child = child->next) {
+			if (child->type == DOM_ELEMENT)
+				error = page_dump_style_node(page, (struct dom_element *)child, style, depth + 1, out);
+		}
+	}
+
+	/* The style is no longer needed. */
+	free(style);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the subtree's styles are dumped. */
+	return 0;
+}
+
+/* Appends two spaces per level. */
+static void
+page_indent(
+	struct wb_buffer *out,
+	int depth)
+{
+	int level;
+
+	/* The html5lib format's prefix and the indentation. */
+	wb_buffer_append_string(out, "| ");
+	for (level = 0; level < depth; level++)
+		wb_buffer_append_string(out, "  ");
+}
+
+/* Appends a VM string as UTF-8. */
+static void
+page_append_string(
+	struct wb_buffer *out,
+	const struct vm_string *string)
+{
+	/* Converts the string. */
+	vm_string_to_utf8(string, out);
+}
+
+/* Appends a computed length as text. */
+static void
+page_append_length(
+	struct wb_buffer *out,
+	const struct css_length *length)
+{
+	/* The unit decides the form. */
+	switch (length->unit) {
+	case CSS_UNIT_PX:
+		wb_buffer_printf(out, "%.2f", (double)length->value);
+		break;
+	case CSS_UNIT_PERCENT:
+		wb_buffer_printf(out, "%.2f%%", (double)length->value);
+		break;
+	case CSS_UNIT_AUTO:
+		wb_buffer_append_string(out, "auto");
+		break;
+	default:
+		wb_buffer_append_string(out, "?");
+		break;
+	}
+}

@@ -9,6 +9,7 @@
  * zdesktop-browser: the Web browser of the zedBSD desktop.
  *
  *   zdesktop-browser [--display=NAME] [--width=N] [--height=N] [URL]
+ *   zdesktop-browser --dump=dom|style FILE
  *   zdesktop-browser --version | --help
  *
  * Without a headless mode it opens a zdesktop window on URL.  The headless
@@ -19,6 +20,7 @@
  */
 
 #include "base/base.h"
+#include "page/page.h"
 #include "shell/shell.h"
 
 #include <errno.h>
@@ -43,7 +45,9 @@
 enum main_mode {
 	MAIN_MODE_WINDOW,
 	MAIN_MODE_VERSION,
-	MAIN_MODE_HELP
+	MAIN_MODE_HELP,
+	MAIN_MODE_DUMP_DOM,
+	MAIN_MODE_DUMP_STYLE
 };
 
 /*
@@ -55,6 +59,7 @@ struct main_options {
 };
 
 static int main_parse(int argc, char **argv, struct main_options *options);
+static int main_dump(const struct main_options *options);
 static int main_parse_size(const char *text, unsigned *size);
 static const char *main_value(const char *argument, const char *name);
 static void main_usage(FILE *stream);
@@ -86,6 +91,10 @@ main(
 	case MAIN_MODE_HELP:
 		main_usage(stdout);
 		return 0;
+	case MAIN_MODE_DUMP_DOM:
+	case MAIN_MODE_DUMP_STYLE:
+		status = main_dump(&options);
+		return status;
 	case MAIN_MODE_WINDOW:
 		break;
 	}
@@ -96,6 +105,58 @@ main(
 		return status;
 
 	/* Succeeded: the window was closed. */
+	return 0;
+}
+
+/* Loads the page the command line names and writes one of its dumps to standard output. */
+static int
+main_dump(
+	const struct main_options *options)
+{
+	struct wb_buffer out;
+	struct page *page;
+	int error;
+
+	/* A dump needs a page. */
+	if (options->shell.start == NULL) {
+		fprintf(stderr, "zdesktop-browser: --dump needs a file\n");
+		return 2;
+	}
+
+	/* Loads the page; its heap's stack ends at this frame. */
+	error = page_create(&page, __builtin_frame_address(0));
+	if (error != 0) {
+		fprintf(stderr, "zdesktop-browser: cannot make a page: %s\n", strerror(error));
+		return 1;
+	}
+
+	/* Loads the file. */
+	error = page_load_file(page, options->shell.start);
+	if (error != 0) {
+		fprintf(stderr, "zdesktop-browser: cannot load %s: %s\n", options->shell.start, strerror(error));
+		page_destroy(page);
+		return 1;
+	}
+
+	/* Writes the dump. */
+	wb_buffer_init(&out);
+	if (options->mode == MAIN_MODE_DUMP_DOM) {
+		error = page_dump_dom(page, &out);
+	} else {
+		error = page_dump_style(page, &out);
+	}
+
+	/* Writes the dump out. */
+	if (error == 0)
+		fwrite(wb_buffer_string(&out), 1, out.length, stdout);
+	wb_buffer_release(&out);
+	page_destroy(page);
+	if (error != 0) {
+		fprintf(stderr, "zdesktop-browser: cannot dump %s: %s\n", options->shell.start, strerror(error));
+		return 1;
+	}
+
+	/* Succeeded: the dump is written. */
 	return 0;
 }
 
@@ -130,6 +191,25 @@ main_parse(
 		differs = strcmp(argv[index], "--help");
 		if (differs == 0) {
 			options->mode = MAIN_MODE_HELP;
+			continue;
+		}
+
+		/* The headless dumps of a page. */
+		value = main_value(argv[index], "--dump=");
+		if (value != NULL) {
+			differs = strcmp(value, "dom");
+			options->mode = MAIN_MODE_DUMP_DOM;
+			if (differs != 0) {
+				differs = strcmp(value, "style");
+				options->mode = MAIN_MODE_DUMP_STYLE;
+			}
+
+			/* Anything but dom and style is refused. */
+			if (differs != 0) {
+				fprintf(stderr, "zdesktop-browser: unknown dump %s\n", value);
+				return EINVAL;
+			}
+
 			continue;
 		}
 
@@ -237,5 +317,6 @@ main_usage(
 	/* Lists the forms of the command line. */
 	fprintf(stream,
 		"usage: zdesktop-browser [--display=NAME] [--width=N] [--height=N] [URL]\n"
+		"       zdesktop-browser --dump=dom|style FILE\n"
 		"       zdesktop-browser --version | --help\n");
 }

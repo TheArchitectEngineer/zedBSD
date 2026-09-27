@@ -33,6 +33,12 @@ ZDESKTOP_BROWSER_SOURCES := $(ZDESKTOP_BROWSER_DIR)/main.c \
 	$(ZDESKTOP_BROWSER_DIR)/html/foreign.c \
 	$(ZDESKTOP_BROWSER_DIR)/dom/node.c \
 	$(ZDESKTOP_BROWSER_DIR)/dom/names.c \
+	$(ZDESKTOP_BROWSER_DIR)/css/tokenizer.c \
+	$(ZDESKTOP_BROWSER_DIR)/css/parser.c \
+	$(ZDESKTOP_BROWSER_DIR)/css/values.c \
+	$(ZDESKTOP_BROWSER_DIR)/css/cascade.c \
+	$(ZDESKTOP_BROWSER_DIR)/css/ua.c \
+	$(ZDESKTOP_BROWSER_DIR)/page/page.c \
 	$(ZDESKTOP_BROWSER_DIR)/shell/shell.c
 
 ifdef ZEDBSD_TOPLEVEL_BUILD
