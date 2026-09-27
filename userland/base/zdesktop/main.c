@@ -19,6 +19,9 @@
 #include <signal.h>
 #include <fcntl.h>
 #include <unistd.h>
+
+/* How long a login session goes without input before it locks, unless --lock-idle says (ws035-p102). */
+#define MAIN_LOCK_IDLE_MS	(10U * 60U * 1000U)
 #include <errno.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -70,9 +73,14 @@ main(
 	setvbuf(stdout, NULL, _IOLBF, 0);
 	error = parse_options(&server, count, arguments);
 	if (error != 0) {
-		fprintf(stderr, "usage: zdesktop [--socket=/path] [--gpu=/dev/gpu0] [--width=N] [--height=N] [--timeout=seconds] [--max-frames=N] [--log-frames] [--direct] [--glass] [--font=/path] [--fallback-font=/path] [--wallpaper=/path.ppm] [--window-opacity=1..100] [--session [--control-fd=N] | --greeter --auth-fd=N]\n");
+		fprintf(stderr, "usage: zdesktop [--socket=/path] [--gpu=/dev/gpu0] [--width=N] [--height=N] [--timeout=seconds] [--max-frames=N] [--log-frames] [--direct] [--glass] [--font=/path] [--fallback-font=/path] [--wallpaper=/path.ppm] [--window-opacity=1..100] [--session [--control-fd=N] [--lock-idle=seconds] | --greeter --auth-fd=N]\n");
 		return 2;
 	}
+
+	/* A login session locks after ten minutes without input unless told otherwise (ws035-p102). */
+	if (server.session && !server.lock_idle_given)
+		server.lock_idle_ms = MAIN_LOCK_IDLE_MS;
+	server.lock_input_ms = zwl_milliseconds();
 
 	/* The session's descriptor to zsessiond does not go to the programs zdesktop starts, and is read without waiting. */
 	if (server.control_fd >= 0) {
@@ -323,6 +331,17 @@ parse_options(
 			if (error != 0)
 				return error;
 			server->control_fd = (int)number;
+			continue;
+		}
+
+		/* How long a login session goes without input before it locks (ws035-p102; 0: never). */
+		match = strncmp(argument, "--lock-idle=", 12);
+		if (match == 0) {
+			error = unsigned_option(argument + 12, 86400, &number);
+			if (error != 0)
+				return error;
+			server->lock_idle_ms = (uint64_t)number * 1000U;
+			server->lock_idle_given = 1U;
 			continue;
 		}
 

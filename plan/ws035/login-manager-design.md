@@ -138,4 +138,5 @@ uid で動くこと（`ps`）、log out で greeter に戻ること。i915 実�
   `login=`・sysctl `kern.boot.login`、`ZEDBSD_GRAPHICAL_BOOT`（既定 y、kernel の開発は n）、試験の構成は n）。
 - 残り: g4（継ぎ目の無い引き継ぎ）、g5（画面の lock）、kernel の revoke、BIOS の loader の logo。
 - p099（BIOS の loader の logo）。p101（g4 の一通り）: 文字 console を出さない引き継ぎ（隠れた console の snapshot は黒、
-  READY・GO・RELEASED の手順、Log Out でも greeter を先に起こす）。§5 の fd の受け渡し（黒の約 1.1 秒も無くす）は残り。
+  READY・GO・RELEASED の手順、Log Out でも greeter を先に起こす）。§5 の fd の受け渡し（黒の約 1.1 秒も無くす）は残り（Future Work F-048）。
+- p102（g5）: 画面の lock（Super+L・Lock Screen・入力の無い時間）、解除は zsessiond の `UNLOCK`（§7-7 のとおり）。
