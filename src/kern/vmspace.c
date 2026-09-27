@@ -5888,8 +5888,13 @@ detach_vm_page(
 {
 	struct vm_private_page *backing;
 
-	/* An object mapping only leaves the object's reverse mapping list. */
+	/*
+	 * An object mapping only leaves the object's reverse mapping list,
+	 * once a writable one has left its stores to be written back (a space
+	 * torn down at exit comes here with its hardware mappings kept).
+	 */
 	if (page->object_page != NULL) {
+		object_mapping_note_dirty(page);
 		vm_object_mapping_remove(page->object_page, page);
 		page->object_page = NULL;
 		page->object_next = NULL;
