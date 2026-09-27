@@ -229,3 +229,37 @@ p011 の実機ビッグバンで残った **EU スレッド実行ハング**（P
 - 設計メモ・増分結果・生成ツール・Linux 陽性対照 VM 資材: [handover/notes/](handover/notes/), [handover/increment-results/](handover/increment-results/), [handover/tools/](handover/tools/), [handover/linuxvm/](handover/linuxvm/)
 
 修正後は元の担当（Claude）に戻し、parity の残作業（DRM object model 要の部分、runtime suspend/resume、描画）を継続する。git add/commit/push はユーザ。
+
+## i915 の高度化の計画（2026-09-27 提案、graphics のサブエージェント）
+
+2026-09-27 ユーザー「OpenGL 3.2が問題なければ、それ以降のOpenGLはいったん保留して、i915の高度化に進んでください。」（main の中継）。
+目標: 今の desktop と graphics（zdesktop の glass・backdrop・tab・menu、zdesktop-files・terminal・mview 等の Vulkan の client、
+EGL/GLES 2・3 の egltest、X11 の GLX と GL 3.0〜3.2）を 5330 の i915 の native 実行器で動かす。WS031 の単一目標（vkdemo）とは
+別の到達目標なので、**新しい WS**（番号は main が決める）に置き、WS031 の planning の Phase のうち同じ範囲のもの
+（p030・p031・p034・p038・p040・p041・p044・p045 等）はその WS へ移す（ここでは移した印を付ける）。
+
+2026-09-27 の host の事実（i915 の compiler を host で走らせる `plan/ws068/tests/i915-shader-check` の道具で、最初の拒否だけ）:
+
+| shader | i915 の compiler |
+| --- | --- |
+| zdesktop の `panel.frag`（glass・backdrop の blur） | 拒否: OpFunctionCall（関数呼出しの inline 化が無い、p041） |
+| zdesktop の quad、zdesktop-files・terminal、mview、vkdemo | 通る |
+| libGLESv2 の生成（GLSL ES 1.00 の scene・固定機能・ES 3.00 の scene300・GLSL 1.50・blocks330） | 通る |
+| GLSL ES 3.00・3.30・1.40・1.50 の言語の試験（es300・modern・glsl330・glsl140・language・glsl150-ms・geometry） | 拒否: decoration（Flat 等）、member decoration、Function/Private の配列の変数、struct・配列の定数、OpImage、geometry の stage 無し |
+
+提案の順（各 Phase は着手前に設計を書く。実機は `flock /tmp/i915-hw.lock`、Venus の証拠と分ける）:
+
+1. 調査: 不足の一覧を作る（host）。i915-shader-check を最初の拒否で止めない形にし、今の desktop・client・libGLESv2 の生成する
+   shader（egltest・glxtest の場面を含む）の全ての不足を数える。実行器の opcode は libvulkan の client ごとに Venus で記録し、
+   `render/dispatch.c` の表と突き合わせる。今の zdesktop（`CAPTURE=zdesktop`）を実機で 1 回撮って出発点にする。
+2. zdesktop を実機で: compiler の関数呼出しの inline 化（panel.frag）と、調査で出た desktop の不足。受け入れは capture の
+   zdesktop・zdesktop-menu（ws070）と glass・backdrop・tab の絵。
+3. F-023 の残り: `gl_VertexIndex`・`gl_FragCoord`、OpSwitch、OpCompositeInsert、triangle strip、vkFreeDescriptorSets、
+   `GPU_CAP_FENCE`・`GPU_CAP_ALLOCATION_SHARE`（一般の Vulkan の client のため）。
+4. GLES 2・3（egltest の es2・es3 の場面を実機で）: compiler の Flat・member decoration・local の配列・定数の composite、
+   実行器の MRT（p031）、mip level・layer への描画（p030）、compare の sampler（p034）、3D・配列の texture、vertex の store（transform feedback）。
+5. GL 3.0〜3.2（glxtest --gl3・--gl31・--gl32 を実機で）: texel buffer、geometry の stage（3DSTATE_GS と compiler）、layered、
+   multisample の texture。大きいので設計で分ける。
+6. 性能と安定: 完了待ちの割込み化と非同期の実行器（p044・p045）、vsync の present mode（p027）、BUG-056・BUG-057。
+
+WS029（driver の基盤）は、この計画で見つかった driver の不足（fence、allocation の共有、割込み）を受ける先として残す。

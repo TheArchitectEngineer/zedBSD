@@ -644,10 +644,12 @@ glsl_emit_image_type(
 		break;
 	}
 
-	/* A depth image for a shadow sampler; one level, not arrayed, sampled, no format. */
+	/* A depth image for a shadow sampler; one level, not arrayed, multisampled for a multisample sampler, sampled, no format. */
 	operands[3] = type->shadow;
 	operands[4] = type->arrayed;
 	operands[5] = 0U;
+	if (type->sampler == GLSL_SAMPLER_MS)
+		operands[5] = 1U;
 	operands[6] = 1U;
 	operands[7] = 0U;
 	id = glsl_module_declare(state->module, SPV_OP_TYPE_IMAGE, operands, 8U, 0);

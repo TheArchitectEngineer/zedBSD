@@ -468,7 +468,7 @@ glGetTexImage(
 	if (state == NULL)
 		return;
 	texture = gl3_texture(state, target, &face, &layered);
-	if (texture == NULL) {
+	if (texture == NULL || target == GL_TEXTURE_2D_MULTISAMPLE) {
 		gles_error(context, GL_INVALID_ENUM);
 		return;
 	}
@@ -512,6 +512,96 @@ glGetTexImage(
 		/* The next one's place. */
 		place += stride;
 	}
+}
+
+/*
+ * Reports a parameter of a level of the bound texture of a target: its
+ * size, internal format, samples and fixed sample locations.
+ */
+GL_APICALL void GL_APIENTRY
+glGetTexLevelParameteriv(
+	GLenum target,
+	GLint level,
+	GLenum pname,
+	GLint *params)
+{
+	struct zegl_context *context;
+	struct gles_state *state;
+	struct gles_texture *texture;
+	struct gles_level *image;
+	unsigned face;
+	int layered;
+
+	/* A context with its state, a texture of the target bound, and a level. */
+	context = gles_context();
+	state = gles_state(context);
+	if (state == NULL)
+		return;
+	texture = gl3_texture(state, target, &face, &layered);
+	if (texture == NULL) {
+		gles_error(context, GL_INVALID_ENUM);
+		return;
+	}
+
+	/* A level there can be. */
+	if (level < 0 || level >= (GLint)GLES_LEVELS) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* The parameter asked for (a level not specified is 0 by 0 of GL_RGBA). */
+	image = &texture->levels[face * GLES_LEVELS + (unsigned)level];
+	switch (pname) {
+	case GL_TEXTURE_WIDTH:
+		params[0] = image->width;
+		return;
+	case GL_TEXTURE_HEIGHT:
+		params[0] = image->height;
+		return;
+	case GL_TEXTURE_DEPTH:
+		params[0] = image->depth;
+		if (image->width == 0)
+			params[0] = 0;
+		return;
+	case GL_TEXTURE_INTERNAL_FORMAT:
+		params[0] = GL_RGBA;
+		if (image->format != NULL)
+			params[0] = (GLint)image->format->internal;
+		return;
+	case GL_TEXTURE_SAMPLES:
+		params[0] = 0;
+		if (texture->samples > 1U)
+			params[0] = (GLint)texture->samples;
+		return;
+	case GL_TEXTURE_FIXED_SAMPLE_LOCATIONS:
+		params[0] = GL_TRUE;
+		if (texture->samples > 1U)
+			params[0] = texture->fixed_locations;
+		return;
+	default:
+		break;
+	}
+
+	/* Not a level's parameter. */
+	gles_error(context, GL_INVALID_ENUM);
+}
+
+/*
+ * Reports a parameter of a level of the bound texture as a float.
+ */
+GL_APICALL void GL_APIENTRY
+glGetTexLevelParameterfv(
+	GLenum target,
+	GLint level,
+	GLenum pname,
+	GLfloat *params)
+{
+	GLint value;
+
+	/* The integer (left as it was when the call is refused), converted. */
+	value = (GLint)params[0];
+	glGetTexLevelParameteriv(target, level, pname, &value);
+	params[0] = (GLfloat)value;
 }
 
 /*
@@ -597,6 +687,8 @@ gl3_texture(
 		return state->array_units[state->active_unit];
 	case GL_TEXTURE_RECTANGLE:
 		return state->rect_units[state->active_unit];
+	case GL_TEXTURE_2D_MULTISAMPLE:
+		return state->ms_units[state->active_unit];
 	default:
 		break;
 	}

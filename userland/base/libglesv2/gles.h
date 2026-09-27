@@ -66,6 +66,9 @@
 #ifndef GL_CONTEXT_FLAGS
 #define GL_CONTEXT_FLAGS	0x821E
 #endif
+#ifndef GL_CONTEXT_PROFILE_MASK
+#define GL_CONTEXT_PROFILE_MASK	0x9126
+#endif
 
 /* Desktop GL 3.1 and 3.2's rectangle and buffer textures, primitive restart, depth clamp, seamless cube maps and provoking vertex (libGL). */
 #ifndef GL_TEXTURE_RECTANGLE
@@ -96,6 +99,41 @@
 #ifndef GL_TEXTURE_CUBE_MAP_SEAMLESS
 #define GL_TEXTURE_CUBE_MAP_SEAMLESS	0x884F
 #endif
+#ifndef GL_GEOMETRY_SHADER
+#define GL_GEOMETRY_SHADER		0x8DD9
+#define GL_GEOMETRY_VERTICES_OUT	0x8916
+#define GL_GEOMETRY_INPUT_TYPE		0x8917
+#define GL_GEOMETRY_OUTPUT_TYPE		0x8918
+#define GL_LINES_ADJACENCY		0x000A
+#define GL_LINE_STRIP_ADJACENCY		0x000B
+#define GL_TRIANGLES_ADJACENCY		0x000C
+#define GL_TRIANGLE_STRIP_ADJACENCY	0x000D
+#define GL_MAX_GEOMETRY_OUTPUT_VERTICES	0x8DE0
+#define GL_MAX_GEOMETRY_UNIFORM_COMPONENTS 0x8DDF
+#define GL_MAX_GEOMETRY_TEXTURE_IMAGE_UNITS 0x8C29
+#define GL_MAX_GEOMETRY_INPUT_COMPONENTS 0x9123
+#define GL_MAX_GEOMETRY_OUTPUT_COMPONENTS 0x9124
+#endif
+#ifndef GL_SAMPLER_2D_MULTISAMPLE
+#define GL_SAMPLE_POSITION		0x8E50
+#define GL_SAMPLE_MASK			0x8E51
+#define GL_SAMPLE_MASK_VALUE		0x8E52
+#define GL_MAX_SAMPLE_MASK_WORDS	0x8E59
+#define GL_TEXTURE_2D_MULTISAMPLE	0x9100
+#define GL_TEXTURE_BINDING_2D_MULTISAMPLE 0x9104
+#define GL_TEXTURE_SAMPLES		0x9106
+#define GL_TEXTURE_FIXED_SAMPLE_LOCATIONS 0x9107
+#define GL_SAMPLER_2D_MULTISAMPLE	0x9108
+#define GL_INT_SAMPLER_2D_MULTISAMPLE	0x9109
+#define GL_UNSIGNED_INT_SAMPLER_2D_MULTISAMPLE 0x910A
+#define GL_MAX_COLOR_TEXTURE_SAMPLES	0x910E
+#define GL_MAX_DEPTH_TEXTURE_SAMPLES	0x910F
+#define GL_MAX_INTEGER_SAMPLES		0x9110
+#endif
+#ifndef GL_FRAMEBUFFER_ATTACHMENT_LAYERED
+#define GL_FRAMEBUFFER_ATTACHMENT_LAYERED	0x8DA7
+#define GL_FRAMEBUFFER_INCOMPLETE_LAYER_TARGETS	0x8DA8
+#endif
 #ifndef GL_PROVOKING_VERTEX
 #define GL_FIRST_VERTEX_CONVENTION	0x8E4D
 #define GL_LAST_VERTEX_CONVENTION	0x8E4E
@@ -125,6 +163,9 @@
  */
 #define GLES_SHAPE_RECT		4U
 #define GLES_SHAPE_BUFFER	5U
+
+/* Desktop GL 3.2's multisample textures (read by texelFetch of one sample; black as their own kind). */
+#define GLES_SHAPE_MS		6U
 
 /* The largest 3D texture side and the most layers of a 2D array texture (at most the device's). */
 #define GLES_MAX_3D_SIZE	2048
@@ -359,6 +400,10 @@ struct gles_texture {
 	uint64_t used;
 	const struct gles_format *image_format;
 
+	/* A multisample texture's samples a pixel (1 for any other) and whether GL was asked for fixed sample locations. */
+	uint32_t samples;
+	GLboolean fixed_locations;
+
 	/*
 	 * A buffer texture's buffer object and texel format (glTexBuffer: the
 	 * internal format, its Vulkan format, bytes and kind, 0 float, 1 int,
@@ -400,6 +445,9 @@ struct gles_attach_view {
 	VkImageView view;
 	struct gles_attach_view *next;
 };
+
+/* The layer of a layered attachment (glFramebufferTexture, desktop GL): every layer of the level, a geometry shader's gl_Layer choosing. */
+#define GLES_LAYER_ALL		0xffffffffU
 
 /* What an attachment point of a framebuffer object names. */
 #define GLES_ATTACH_NONE		0
@@ -519,6 +567,9 @@ struct gles_framebuffer {
 	VkFramebuffer framebuffer;
 	VkExtent2D extent;
 
+	/* The framebuffer's layers (a layered object's: the fewest its attachments have; 1 otherwise). */
+	uint32_t layers;
+
 	/* The formats of the pass's attachments, and the compatible pass pipelines are made with. */
 	struct gles_pass_format format;
 	VkRenderPass compatible;
@@ -561,6 +612,9 @@ struct gles_target {
 	/* The aspects of the depth and stencil image (0: none), and the samples per pixel of every image. */
 	VkImageAspectFlags depth_aspects;
 	uint32_t samples;
+
+	/* The layers a clear covers (a layered framebuffer object's; 1 otherwise). */
+	uint32_t layers;
 };
 
 /*
@@ -722,9 +776,10 @@ struct gles_program {
 	int kind;
 	GLuint name;
 
-	/* The attached shaders. */
+	/* The attached shaders (a geometry shader only in desktop GL, libGL). */
 	struct gles_shader *vertex;
 	struct gles_shader *fragment;
+	struct gles_shader *geometry;
 
 	/* The locations glBindAttribLocation gave, by name, for the next link. */
 	char bound_names[GLES_ATTRIBS][GLES_NAME];
@@ -744,6 +799,20 @@ struct gles_program {
 	VkShaderModule fragment_module;
 	VkDescriptorSetLayout set_layout;
 	VkPipelineLayout layout;
+
+	/*
+	 * A geometry shader's modules (for a window and for a framebuffer
+	 * object, which rewrite its gl_Position as the vertex shader's is
+	 * rewritten without one; VK_NULL_HANDLE without one), its input and
+	 * output primitives (GL's modes) and most vertices, and the stages
+	 * the descriptors are read by.
+	 */
+	VkShaderModule geometry_module;
+	VkShaderModule geometry_module_fbo;
+	GLenum geometry_input;
+	GLenum geometry_output;
+	GLint geometry_vertices;
+	VkShaderStageFlags stages;
 
 	/* The attributes. */
 	struct gles_attribute attributes[GLES_ATTRIBS];
@@ -864,7 +933,7 @@ struct gles_garbage {
 	VkPipeline pipeline;
 	VkPipelineLayout layout;
 	VkDescriptorSetLayout set_layout;
-	VkShaderModule modules[3];
+	VkShaderModule modules[5];
 
 	/* A framebuffer object's render pass and framebuffer. */
 	VkRenderPass pass;
@@ -928,6 +997,9 @@ struct gles_raster {
 
 	/* Depths clamped rather than clipped (desktop GL's GL_DEPTH_CLAMP, when the device can). */
 	uint32_t depth_clamp;
+
+	/* The samples a fragment may cover (desktop GL's GL_SAMPLE_MASK: its value; every sample otherwise). */
+	uint32_t sample_mask;
 };
 
 /*
@@ -1076,6 +1148,13 @@ struct gles_state {
 	/* Each unit's rectangle texture and buffer texture (desktop GL, libGL). */
 	struct gles_texture *rect_units[GLES_UNITS];
 	struct gles_texture *buffer_units[GLES_UNITS];
+
+	/* Each unit's multisample texture (desktop GL 3.2, libGL). */
+	struct gles_texture *ms_units[GLES_UNITS];
+
+	/* Desktop GL's sample mask: on (GL_SAMPLE_MASK), and the samples it keeps (glSampleMaski's word 0). */
+	int sample_mask;
+	GLbitfield sample_mask_value;
 
 	/* Each unit's sampler object (NULL: its textures' own sampling), and their namespace. */
 	struct gles_sampler_object *unit_samplers[GLES_UNITS];
@@ -1246,6 +1325,9 @@ struct gles_state {
 	VkBuffer black_buffer;
 	VkDeviceMemory black_buffer_memory;
 	VkBufferView black_buffer_views[3];
+
+	/* The multisample textures sampled where a unit has none (float, int, uint), made at their first use. */
+	struct gles_texture *black_ms[3];
 };
 
 /*
@@ -1275,6 +1357,9 @@ struct gles_fixed_hooks {
 	/* How many extensions the context names (-1: OpenGL ES's list), and each one's name (glGetStringi). */
 	int (*extension_count)(void);
 	const char *(*extension)(GLuint index);
+
+	/* Whether the context is a core profile's (draws need a vertex array object of the application's). */
+	int (*core_profile)(void);
 };
 
 /* The fixed-function layer, NULL without one (gles.c; libGL sets it). */
@@ -1310,6 +1395,7 @@ int gles_texture_complete(struct gles_texture *texture, const struct gles_sampli
 VkSampler gles_sampler_get(struct gles_state *state, struct gles_texture *texture, const struct gles_sampling *sampling);
 struct gles_texture *gles_texture_black(struct gles_state *state, unsigned shape, unsigned kind);
 VkBufferView gles_texture_buffer_view(struct gles_state *state, struct gles_texture *texture, unsigned kind);
+struct gles_texture *gles_texture_black_ms(struct gles_state *state, unsigned kind);
 void gles_texture_free(struct gles_state *state, struct gles_texture *texture);
 void gles_texture_define(struct gles_texture *texture, unsigned face, GLint level, int width, int height, unsigned char *pixels, const struct gles_format *format);
 void gles_texture_define_volume(struct gles_texture *texture, GLint level, int width, int height, int depth, unsigned char *pixels, const struct gles_format *format);
@@ -1340,6 +1426,7 @@ int gles_read_source(struct zegl_context *context, struct gles_state *state, str
 const struct gles_format *gles_read_buffer_format(struct gles_state *state);
 uint32_t gles_framebuffer_samples(struct gles_state *state, GLuint name);
 uint32_t gles_samples_max(struct gles_state *state);
+uint32_t gles_samples_for(struct gles_state *state, uint32_t samples);
 VkImageView gles_texture_attach_view(struct gles_state *state, struct gles_texture *texture, uint32_t level, uint32_t layer);
 void gles_framebuffers_forget(struct gles_state *state, int kind, GLuint name);
 void gles_framebuffers_release(struct gles_state *state);

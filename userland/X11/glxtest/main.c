@@ -19,6 +19,8 @@
  * its own version, and that a forward-compatible 3.0 context reports its
  * flag; the scene is gl3.c's.  With --gl31 (WS068 p031) the context is
  * an OpenGL 3.1 one after the same checks, and the scene is gl31.c's.
+ * With --gl32 (WS068 p033) it is an OpenGL 3.2 compatibility one, after
+ * checking a core profile's context too, and the scene is gl32.c's.
  *
  * Every outcome is one line: GLXTEST DONE on a clean end, GLXTEST FAILED
  * naming what failed otherwise.
@@ -29,6 +31,7 @@
 #include "../../base/egltest/scene.h"
 #include "gl3.h"
 #include "gl31.h"
+#include "gl32.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -52,6 +55,7 @@ static int glxtest_parse(int argc, char **argv, struct glxtest_options *options)
 static int glxtest_number(const char *text, const char *name, unsigned long maximum, unsigned long *value);
 static void glxtest_sleep(unsigned milliseconds);
 static GLXContext glxtest_gl3_context(Display *display, Window window, int minor, int *checks);
+static int glxtest_core_context(Display *display, Window window, GLXFBConfig config, PFNGLXCREATECONTEXTATTRIBSARBPROC create);
 
 /*
  * Runs the test.
@@ -91,7 +95,7 @@ main(
 	/* The command line. */
 	status = glxtest_parse(argc, argv, &options);
 	if (status != 0) {
-		fprintf(stderr, "usage: glxtest [--size=WxH] [--frames=N] [--delay-ms=N] [--token=NAME] [--gl3|--gl31]\n");
+		fprintf(stderr, "usage: glxtest [--size=WxH] [--frames=N] [--delay-ms=N] [--token=NAME] [--gl3|--gl31|--gl32]\n");
 		return 2;
 	}
 
@@ -172,7 +176,9 @@ main(
 	fflush(stdout);
 
 	/* The scene's program, buffers and texture (OpenGL 3.0's or 3.1's checks). */
-	if (options.gl3 && options.gl3_minor == 1) {
+	if (options.gl3 && options.gl3_minor == 2) {
+		status = glxtest_gl32_start();
+	} else if (options.gl3 && options.gl3_minor == 1) {
 		status = glxtest_gl31_start();
 	} else if (options.gl3) {
 		status = glxtest_gl3_start();
@@ -202,7 +208,9 @@ main(
 		(void)XGetGeometry(display, window, &root, &x, &y, &width, &height, &border, &depth);
 
 		/* The scene. */
-		if (options.gl3 && options.gl3_minor == 1) {
+		if (options.gl3 && options.gl3_minor == 2) {
+			glxtest_gl32_draw((int)width, (int)height);
+		} else if (options.gl3 && options.gl3_minor == 1) {
 			glxtest_gl31_draw((int)width, (int)height);
 		} else if (options.gl3) {
 			glxtest_gl3_draw((int)width, (int)height);
@@ -211,6 +219,8 @@ main(
 		}
 
 		/* The first frame's colours read back. */
+		if (frame == 1U && options.gl3 && options.gl3_minor == 2)
+			failures = glxtest_gl32_check((int)width, (int)height, options.token) + checks;
 		if (frame == 1U && options.gl3 && options.gl3_minor == 1)
 			failures = glxtest_gl31_check((int)width, (int)height, options.token) + checks;
 		if (frame == 1U && options.gl3 && options.gl3_minor == 0)
@@ -295,6 +305,14 @@ glxtest_parse(
 		if (differs == 0) {
 			options->gl3 = 1;
 			options->gl3_minor = 1;
+			continue;
+		}
+
+		/* An OpenGL 3.2 context and its scene. */
+		differs = strcmp(argv[index], "--gl32");
+		if (differs == 0) {
+			options->gl3 = 1;
+			options->gl3_minor = 2;
 			continue;
 		}
 
@@ -454,6 +472,10 @@ glxtest_gl3_context(
 	if (forward_flags != GL_CONTEXT_FLAG_FORWARD_COMPATIBLE_BIT)
 		(*checks)++;
 
+	/* For 3.2, a core profile's context: its profile, no GL_ARB_compatibility, no fixed function, no draw without a vertex array object. */
+	if (minor == 2)
+		*checks += glxtest_core_context(display, window, config, create);
+
 	/* The context of the scene, of the minor version asked for. */
 	attributes[3] = minor;
 	context = create(display, config, NULL, True, attributes);
@@ -462,4 +484,75 @@ glxtest_gl3_context(
 
 	/* Succeeded: the OpenGL 3.0 context. */
 	return context;
+}
+
+/*
+ * Checks an OpenGL 3.2 core profile's context: GL_CONTEXT_PROFILE_MASK
+ * says core, GL_EXTENSIONS has no GL_ARB_compatibility, glBegin and a
+ * draw without a vertex array object (or a program) are refused.  Prints
+ * a line; returns how many checks failed.
+ */
+static int
+glxtest_core_context(
+	Display *display,
+	Window window,
+	GLXFBConfig config,
+	PFNGLXCREATECONTEXTATTRIBSARBPROC create)
+{
+	static const int attributes[] = {
+		GLX_CONTEXT_MAJOR_VERSION_ARB, 3, GLX_CONTEXT_MINOR_VERSION_ARB, 2,
+		GLX_CONTEXT_PROFILE_MASK_ARB, GLX_CONTEXT_CORE_PROFILE_BIT_ARB, None
+	};
+	GLXContext context;
+	const char *extensions;
+	const char *found;
+	GLint profile;
+	GLenum begin_error;
+	GLenum draw_error;
+	int failed;
+
+	/* The context, current on the window. */
+	context = create(display, config, NULL, True, attributes);
+	if (context == NULL) {
+		printf("GLXTEST GL32 core context refused\n");
+		return 1;
+	}
+
+	/* Current on the window. */
+	(void)glXMakeCurrent(display, window, context);
+
+	/* Its profile and extensions. */
+	profile = 0;
+	glGetIntegerv(GL_CONTEXT_PROFILE_MASK, &profile);
+	extensions = (const char *)glGetString(GL_EXTENSIONS);
+	found = NULL;
+	if (extensions != NULL)
+		found = strstr(extensions, "GL_ARB_compatibility");
+
+	/* The fixed function and a draw without a vertex array object, refused. */
+	(void)glGetError();
+	glBegin(GL_TRIANGLES);
+	begin_error = glGetError();
+	glDrawArrays(GL_POINTS, 0, 1);
+	draw_error = glGetError();
+
+	/* The context goes. */
+	(void)glXMakeCurrent(display, None, NULL);
+	glXDestroyContext(display, context);
+
+	/* The line; each check that failed counts. */
+	printf("GLXTEST GL32 core profile=%d compatibility=%d begin=0x%x draw=0x%x\n", (int)profile, (int)(found != NULL),
+	       (unsigned)begin_error, (unsigned)draw_error);
+	failed = 0;
+	if (profile != GL_CONTEXT_CORE_PROFILE_BIT)
+		failed++;
+	if (found != NULL)
+		failed++;
+	if (begin_error != GL_INVALID_OPERATION)
+		failed++;
+	if (draw_error != GL_INVALID_OPERATION)
+		failed++;
+
+	/* Succeeded: the failures counted. */
+	return failed;
 }

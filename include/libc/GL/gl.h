@@ -197,6 +197,40 @@ extern "C" {
 #define GL_LAST_VERTEX_CONVENTION	0x8E4E
 #define GL_PROVOKING_VERTEX		0x8E4F
 
+/* OpenGL 3.2's and 1.0's level parameters that OpenGL ES 3.0 does not have. */
+#define GL_GEOMETRY_SHADER		0x8DD9
+#define GL_GEOMETRY_VERTICES_OUT	0x8916
+#define GL_GEOMETRY_INPUT_TYPE		0x8917
+#define GL_GEOMETRY_OUTPUT_TYPE		0x8918
+#define GL_LINES_ADJACENCY		0x000A
+#define GL_LINE_STRIP_ADJACENCY		0x000B
+#define GL_TRIANGLES_ADJACENCY		0x000C
+#define GL_TRIANGLE_STRIP_ADJACENCY	0x000D
+#define GL_MAX_GEOMETRY_OUTPUT_VERTICES	0x8DE0
+#define GL_FRAMEBUFFER_ATTACHMENT_LAYERED 0x8DA7
+#define GL_FRAMEBUFFER_INCOMPLETE_LAYER_TARGETS 0x8DA8
+#define GL_SAMPLE_POSITION		0x8E50
+#define GL_SAMPLE_MASK			0x8E51
+#define GL_SAMPLE_MASK_VALUE		0x8E52
+#define GL_MAX_SAMPLE_MASK_WORDS	0x8E59
+#define GL_TEXTURE_2D_MULTISAMPLE	0x9100
+#define GL_TEXTURE_BINDING_2D_MULTISAMPLE 0x9104
+#define GL_TEXTURE_SAMPLES		0x9106
+#define GL_TEXTURE_FIXED_SAMPLE_LOCATIONS 0x9107
+#define GL_SAMPLER_2D_MULTISAMPLE	0x9108
+#define GL_INT_SAMPLER_2D_MULTISAMPLE	0x9109
+#define GL_UNSIGNED_INT_SAMPLER_2D_MULTISAMPLE 0x910A
+#define GL_MAX_COLOR_TEXTURE_SAMPLES	0x910E
+#define GL_MAX_DEPTH_TEXTURE_SAMPLES	0x910F
+#define GL_MAX_INTEGER_SAMPLES		0x9110
+#define GL_CONTEXT_PROFILE_MASK		0x9126
+#define GL_CONTEXT_CORE_PROFILE_BIT	0x00000001
+#define GL_CONTEXT_COMPATIBILITY_PROFILE_BIT 0x00000002
+#define GL_TEXTURE_WIDTH		0x1000
+#define GL_TEXTURE_HEIGHT		0x1001
+#define GL_TEXTURE_INTERNAL_FORMAT	0x1003
+#define GL_TEXTURE_DEPTH		0x8071
+
 /* Matrices. */
 GLAPI void APIENTRY glMatrixMode(GLenum mode);
 GLAPI void APIENTRY glLoadIdentity(void);
@@ -344,6 +378,15 @@ GLAPI void APIENTRY glDrawElementsBaseVertex(GLenum mode, GLsizei count, GLenum 
 GLAPI void APIENTRY glDrawRangeElementsBaseVertex(GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type, const void *indices, GLint basevertex);
 GLAPI void APIENTRY glDrawElementsInstancedBaseVertex(GLenum mode, GLsizei count, GLenum type, const void *indices, GLsizei instancecount, GLint basevertex);
 GLAPI void APIENTRY glProvokingVertex(GLenum mode);
+
+/* OpenGL 3.2's calls that OpenGL ES 3.0 does not have, and 1.0's level parameters. */
+GLAPI void APIENTRY glFramebufferTexture(GLenum target, GLenum attachment, GLuint texture, GLint level);
+GLAPI void APIENTRY glTexImage2DMultisample(GLenum target, GLsizei samples, GLenum internalformat, GLsizei width, GLsizei height, GLboolean fixedsamplelocations);
+GLAPI void APIENTRY glTexStorage2DMultisample(GLenum target, GLsizei samples, GLenum internalformat, GLsizei width, GLsizei height, GLboolean fixedsamplelocations);
+GLAPI void APIENTRY glSampleMaski(GLuint maskNumber, GLbitfield mask);
+GLAPI void APIENTRY glGetMultisamplefv(GLenum pname, GLuint index, GLfloat *val);
+GLAPI void APIENTRY glGetTexLevelParameteriv(GLenum target, GLint level, GLenum pname, GLint *params);
+GLAPI void APIENTRY glGetTexLevelParameterfv(GLenum target, GLint level, GLenum pname, GLfloat *params);
 
 #ifdef __cplusplus
 }
