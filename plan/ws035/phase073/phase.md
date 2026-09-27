@@ -34,7 +34,7 @@ Queue: q486-i01
 - build: `platform/amd64/vmunix.mk`（`$(BUILD)/bin/wayland`、`DYNAMIC_ZDESKTOP_OBJS`）、`ZEDBSD_USER_PROGRAMS` の `zwl` を
   `zdesktop` に（`config/ci/config-amd64.mk`、現行の試験の config 5 つ）。
 - 試験・道具: `/bin/zwl` → `/bin/wayland`、実機の rc の service `zwl` → `zdesktop`（file の名も）、`run-zwl.sh` → `run-zdesktop.sh`、
-  log `/var/log/zwl.log` → `/var/log/zdesktop.log`、`ps` の一致 `[z]wl` → `[z]desktop( |$)`（`terminal`・`zdesktop-x11` と
+  log `/var/log/zwl.log` → `/var/log/zdesktop.log`、`ps` の一致 `[z]wl` → `[w]ayland( |$)`（`terminal`・`zdesktop-x11` と
   混ざらない）。他の program の注釈、README。
 - 変えなかったもの: C の識別子 `zwl_*`、log の接頭辞 `ZWL`、試験の shell 変数（`frames_zwl`）、完了した Phase の記録と履歴、
   以前の文書（WS014 の記録、results、bug ticket の観察）。

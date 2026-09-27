@@ -81,7 +81,7 @@ main(
 	mkdir(path, 0755);
 	snprintf(path, sizeof(path), "%s/src/Report.pdf", root);
 	make_file(path, "report");
-	error = setxattr(path, "user.zdesktop.tags", "Work", 4, 0);
+	error = setxattr(path, "user.keiland.tags", "Work", 4, 0);
 	check(error == 0, "xattr set on the source (the host's file system has user xattrs)");
 	snprintf(path, sizeof(path), "%s/src/Folder.v1", root);
 	mkdir(path, 0755);
@@ -107,7 +107,7 @@ main(
 	check(task->files_done == 4, "copy: four items (the top file, two nested files, a link)");
 	snprintf(path, sizeof(path), "%s/dst/Report.pdf", root);
 	check(file_is(path, "report"), "copy: the file's contents");
-	length = getxattr(path, "user.zdesktop.tags", value, sizeof(value));
+	length = getxattr(path, "user.keiland.tags", value, sizeof(value));
 	check(length == 4 && memcmp(value, "Work", 4) == 0, "copy: the tag (xattr) came along");
 	snprintf(path, sizeof(path), "%s/dst/Folder.v1/deep/leaf.txt", root);
 	check(file_is(path, "leaf"), "copy: a nested file");
@@ -260,11 +260,11 @@ main(
 		fm_tags_load(&tags);
 		check(tags.count == 5 && strcmp(tags.items[0].name, "Work") == 0, "tags: the five defaults");
 		snprintf(path, sizeof(path), "%s/src/Report.pdf", root);
-		setxattr(path, "user.zdesktop.tags", "Work\nMine\n", 10, 0);
+		setxattr(path, "user.keiland.tags", "Work\nMine\n", 10, 0);
 		mask = fm_tags_of(&tags, path);
 		check(mask == 1U, "tags: Work read (Mine unknown)");
 		check(fm_tags_write(&tags, path, (1U << 2) | 1U) == 0, "tags: write Work and Ideas");
-		length = getxattr(path, "user.zdesktop.tags", value, sizeof(value));
+		length = getxattr(path, "user.keiland.tags", value, sizeof(value));
 		value[length > 0 ? length : 0] = '\0';
 		check(strstr(value, "Mine") != NULL && strstr(value, "Ideas") != NULL, "tags: the unknown name kept");
 		check(fm_tags_paths(&tags, 2, &tagged, &tagged_count) == 0 && tagged_count == 1 && strcmp(tagged[0], path) == 0, "tags: the index lists the file under Ideas");

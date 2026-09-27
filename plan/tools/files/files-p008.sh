@@ -29,7 +29,7 @@ guest() { timeout 90 python3 plan/tools/guest/guest.py run "$1" 2>&1; }
 check() { python3 plan/ws035/tests/zdesktop-check.py "$@" --runtime "$GUEST_RUNTIME"; }
 pointer() { python3 plan/ws035/tests/qmp-pointer.py "$GUEST_RUNTIME/qmp.sock" "$@"; }
 keys() { python3 plan/ws035/tests/qmp-keys.py "$GUEST_RUNTIME/qmp.sock" "$@"; sleep 0.8; }
-stop_all='for p in $(ps -A -o pid,args | grep -E "[z]desktop( |$)|[z]desktop-files|[z]desktop-terminal" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[z]desktop( |$)|[z]desktop-files|[z]desktop-terminal" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
+stop_all='for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)|[f]iles|[t]erminal" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[w]ayland( |$)|[f]iles|[t]erminal" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
 status=0
 
 # Fails the run unless a log has a line matching a pattern (within a few seconds).
@@ -153,7 +153,7 @@ sleep 2
 shot two-windows.png
 keys '<ctrl-shift-w>'
 expect_log /tmp/f.log 'ZFILES DONE reason=close'
-windows=$(guest "i=0; while [ \$(ps -A -o args | grep -c '[z]desktop-files') -gt 1 ] && [ \$i -lt 50 ]; do sleep 0.2; i=\$((i+1)); done; ps -A -o args | grep -c '[z]desktop-files'" | tail -1)
+windows=$(guest "i=0; while [ \$(ps -A -o args | grep -c '[f]iles') -gt 1 ] && [ \$i -lt 50 ]; do sleep 0.2; i=\$((i+1)); done; ps -A -o args | grep -c '[f]iles'" | tail -1)
 [ "${windows:-0}" = 1 ] && echo "second window: closed, the first stays" || { echo "second window: $windows running"; status=1; }
 
 # 10. Minimize the first window.

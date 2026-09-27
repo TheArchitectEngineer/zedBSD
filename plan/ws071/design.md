@@ -221,7 +221,7 @@ zdesktop が描く浮いたタイトルバーに題名「Files」と menubar（F
 
 ### 6.1 タグ
 
-- **決定: file のタグは extended attribute `user.zdesktop.tags`**（値はタグの名前を改行で区切った UTF-8）。UFS と tmpfs は xattr を
+- **決定: file のタグは extended attribute `user.keiland.tags`**（値はタグの名前を改行で区切った UTF-8）。UFS と tmpfs は xattr を
   持つ（`src/drivers/fs/ufs.c` の `ufs_getxattr` 等、libc の `getxattr`）。理由: タグが rename・move で file と一緒に動き、database
   との食い違いが起きない（macOS の Finder のタグと同じ考え）。copy は xattr を写す（§5.3）。xattr の無い file system では
   タグを付けられない（エラーを出す）。
@@ -246,7 +246,7 @@ int keiland_recent_list(struct keiland_recent_item *items, size_t capacity, size
 int keiland_recent_remove(const char *path);
 ```
 
-- 保存: `$XDG_DATA_HOME/zdesktop/recent`（既定 `~/.local/share/zdesktop/recent`）、`time<TAB>application<TAB>path` の行、古い順。
+- 保存: `$XDG_DATA_HOME/zdesktop/recent`（既定 `~/.local/share/keiland/recent`）、`time<TAB>application<TAB>path` の行、古い順。
   追加は同じ path を消して末尾へ、256 件まで。書き込みは lock file の `flock` の中で一時 file に書いて `rename`（読み手は常に完全な
   file を見る）。`KEILAND_VERSION` を 3 に上げる（context menu と recent）。
 - files は file を開いたとき `keiland_recent_add(path, "files")`。**変更（p005・p006）**: 最近開いた folder は
@@ -425,8 +425,8 @@ void keiland_context_menu_destroy(struct keiland_context_menu *popup);
 
 1. **program の名前と置き場所・描画の共有**（ws.md の 1）: `files`（`/bin/files`、題名 Files）。描画は CPU の canvas
    を Vulkan で貼る（§2）。共有の UI library は 2 つ目の使い手が出るまで作らない。
-2. **タグ・最近のファイルの保存先**（ws.md の 2）: タグは xattr `user.zdesktop.tags` + 定義と索引の file（§6.1、アプリの中）。recent は
-   libkeiland の新しい API と `~/.local/share/zdesktop/recent`（§6.2、アプリ横断）。
+2. **タグ・最近のファイルの保存先**（ws.md の 2）: タグは xattr `user.keiland.tags` + 定義と索引の file（§6.1、アプリの中）。recent は
+   libkeiland の新しい API と `~/.local/share/keiland/recent`（§6.2、アプリ横断）。
 3. **ゴミ箱の形式**（ws.md の 3）: freedesktop.org Trash specification の home trash（§5.4）。
 4. **既定のアプリ**（ws.md の 4）: 拡張子の表 + 小さな magic（`file` の database を使わない）、関連付けは `open-with` の file（§7）。
 5. **サムネイルの decoder**（ws.md の 5）: PNG と PPM。PNG は WS035 の決定どおり libz-compat と libpng-compat の decode を自前で作る

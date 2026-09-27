@@ -10,8 +10,8 @@
  * section 6.2): one list for all applications, so that the file manager's
  * Recents and any application's "open recent" show the same files.
  *
- * The list is a text file, $XDG_DATA_HOME/zdesktop/recent (by default
- * ~/.local/share/zdesktop/recent), a line an entry, oldest first:
+ * The list is a text file, $XDG_DATA_HOME/keiland/recent (by default
+ * ~/.local/share/keiland/recent), a line an entry, oldest first:
  *
  *     TIME<TAB>APPLICATION<TAB>PATH
  *
@@ -269,13 +269,13 @@ recent_file(
 	const char *home;
 	int written;
 
-	/* $XDG_DATA_HOME/zdesktop, or ~/.local/share/zdesktop. */
+	/* $XDG_DATA_HOME/keiland, or ~/.local/share/keiland. */
 	data = getenv("XDG_DATA_HOME");
 	home = getenv("HOME");
 	if (data != NULL && data[0] == '/') {
-		written = snprintf(folder, sizeof(folder), "%s/zdesktop", data);
+		written = snprintf(folder, sizeof(folder), "%s/keiland", data);
 	} else if (home != NULL && home[0] == '/') {
-		written = snprintf(folder, sizeof(folder), "%s/.local/share/zdesktop", home);
+		written = snprintf(folder, sizeof(folder), "%s/.local/share/keiland", home);
 	} else {
 		return ENOENT;
 	}

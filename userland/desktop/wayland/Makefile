@@ -17,4 +17,4 @@ KEILAND_SOURCES := userland/desktop/wayland/main.c userland/desktop/wayland/wire
 # App Home starts X11 applications through zdesktop-x11, which starts xserver when it is needed.
 ZEDBSD_PACKAGE_INPUTS += userland/desktop/wayland/keiland-x11
 ZEDBSD_PACKAGE_FILES += $(if $(filter wayland,$(ZEDBSD_USER_PROGRAMS)),--file /usr/libexec/keiland-x11=userland/desktop/wayland/keiland-x11)
-$(eval $(call ZEDBSD_USERLAND_PACKAGE,wayland,Wayland compositor (zdesktop),amd64,y,basic,$(KEILAND_SOURCES),y,base,desktop/wayland,desktop/libvulkan desktop/libtruetype desktop/libkeiland desktop/sessiond,0755,program,,,bin))
+$(eval $(call ZEDBSD_USERLAND_PACKAGE,wayland,Wayland compositor,amd64,y,basic,$(KEILAND_SOURCES),y,base,desktop/wayland,desktop/libvulkan desktop/libtruetype desktop/libkeiland desktop/sessiond,0755,program,,,bin))

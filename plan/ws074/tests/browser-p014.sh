@@ -24,7 +24,7 @@ check() { python3 plan/ws035/tests/zdesktop-check.py "$@" --runtime "$GUEST_RUNT
 pointer() { python3 plan/ws035/tests/qmp-pointer.py "$GUEST_RUNTIME/qmp.sock" "$@"; }
 keys() { python3 plan/ws035/tests/qmp-keys.py "$GUEST_RUNTIME/qmp.sock" "$@"; }
 pages=/usr/share/browser-tests
-stop_all='for p in $(ps -A -o pid,args | grep -E "[z]desktop( |$)|[z]desktop-browser" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[z]desktop( |$)|[z]desktop-browser" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
+stop_all='for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)|[b]rowser" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[w]ayland( |$)|[b]rowser" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
 status=0
 
 # Fails the run unless a log has a line matching a pattern.
@@ -50,7 +50,7 @@ wait_gone() {
 	left=1
 	for wait in 1 2 3 4 5 6 7 8 9 10; do
 		sleep 1
-		left=$(guest "ps -A -o args | grep -c '[z]desktop-browser'" | tail -1)
+		left=$(guest "ps -A -o args | grep -c '[b]rowser'" | tail -1)
 		[ "${left:-1}" = 0 ] && break
 	done
 	if [ "${left:-1}" = 0 ]; then
@@ -58,7 +58,7 @@ wait_gone() {
 	else
 		echo "$1: the browser is still running"
 		status=1
-		guest 'for p in $(ps -A -o pid,args | grep "[z]desktop-browser" | awk "{print \$1}"); do kill $p; done' >/dev/null
+		guest 'for p in $(ps -A -o pid,args | grep "[b]rowser" | awk "{print \$1}"); do kill $p; done' >/dev/null
 	fi
 }
 

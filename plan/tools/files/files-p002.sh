@@ -22,7 +22,7 @@ guest() { timeout 90 python3 plan/tools/guest/guest.py run "$1" 2>&1; }
 check() { python3 plan/ws035/tests/zdesktop-check.py "$@" --runtime "$GUEST_RUNTIME"; }
 pointer() { python3 plan/ws035/tests/qmp-pointer.py "$GUEST_RUNTIME/qmp.sock" "$@"; }
 keys() { python3 plan/ws035/tests/qmp-keys.py "$GUEST_RUNTIME/qmp.sock" "$@"; }
-stop_all='for p in $(ps -A -o pid,args | grep -E "[z]desktop( |$)|[z]desktop-files" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[z]desktop( |$)|[z]desktop-files" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
+stop_all='for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)|[f]iles" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[w]ayland( |$)|[f]iles" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
 status=0
 
 # Fails the run unless a log has a line matching a pattern.
@@ -88,7 +88,7 @@ found=$(guest "grep -c 'LOCATION kind=folder path=/tmp/fhome/Documents ' /tmp/f.
 [ "${found:-0}" -ge 3 ] && echo "forward: ok" || { echo "forward: MISSING"; status=1; }
 
 # 5. The close request ends the program.
-guest 'kill $(ps -A -o pid,args | grep "[z]desktop-files" | awk "{print \$1}") 2>/dev/null; sleep 1' >/dev/null
+guest 'kill $(ps -A -o pid,args | grep "[f]iles" | awk "{print \$1}") 2>/dev/null; sleep 1' >/dev/null
 errors=$(guest "grep -c ERROR /tmp/zdesktop.log" | tail -1)
 [ "${errors:-1}" = 0 ] && echo "zdesktop: no ERROR" || { echo "zdesktop: ERROR lines"; status=1; }
 guest "$stop_all" >/dev/null

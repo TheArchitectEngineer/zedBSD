@@ -17,7 +17,7 @@ guest() { timeout 120 python3 plan/tools/guest/guest.py run "$1" 2>&1; }
 check() { python3 plan/ws035/tests/zdesktop-check.py "$@" --runtime "$GUEST_RUNTIME"; }
 pointer() { python3 plan/ws035/tests/qmp-pointer.py "$GUEST_RUNTIME/qmp.sock" "$@"; }
 keys() { python3 plan/ws035/tests/qmp-keys.py "$GUEST_RUNTIME/qmp.sock" "$@"; }
-stop_all='for p in $(ps -A -o pid,args | grep -E "[z]desktop( |$)|[z]desktop-x11server|[z]term" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[z]desktop( |$)|[z]desktop-x11server|[z]term" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
+stop_all='for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)|[x]server|[z]term" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[w]ayland( |$)|[x]server|[z]term" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
 status=0
 
 # Fails the run unless zdesktop's log has a line matching a pattern.
@@ -62,7 +62,7 @@ pointer move ${close:-0} 17 sleep 500 down sleep 60 up sleep 3000
 running=$(guest 'ps -A -o args | grep -c "[z]term"' | tail -1)
 echo "zterm processes after close: $running"
 [ "${running:-1}" = 0 ] || status=1
-servers=$(guest 'ps -A -o args | grep -c "[z]desktop-x11server"' | tail -1)
+servers=$(guest 'ps -A -o args | grep -c "[x]server"' | tail -1)
 echo "xserver processes after close: $servers"
 guest 'grep -E "FAILED|ERROR" /tmp/zdesktop.log; cat /tmp/x11server.log' | tee "$out/logs.txt"
 guest "$stop_all" >/dev/null
