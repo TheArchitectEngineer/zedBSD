@@ -127,4 +127,11 @@ fs_getcwd(
 	char *buffer,
 	size_t capacity);
 
+int
+fs_path_of(
+	const struct cwdinfo *context,
+	const struct path *target,
+	char *buffer,
+	size_t capacity);
+
 #endif

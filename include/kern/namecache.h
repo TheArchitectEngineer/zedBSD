@@ -33,6 +33,12 @@ namecache_enter(
 	struct inode *child,
 	uint64_t observed_sequence);
 
+int
+namecache_parent(
+	struct inode *child,
+	struct inode **parent,
+	char *name);
+
 void
 namecache_remove(
 	struct inode *parent,
