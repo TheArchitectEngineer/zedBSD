@@ -82,6 +82,18 @@ struct i915_gfx_blend {
 };
 
 /*
+ * One vertex attribute format the fetcher reads: the VkFormat, its genxml
+ * SURFACE_FORMAT, how many components it has and whether they are integers
+ * (a missing w is then the integer 1, not 1.0).
+ */
+struct i915_gfx_vertex_format {
+	uint32_t vk_format;
+	uint32_t surface_format;
+	uint32_t components;
+	uint32_t integer;
+};
+
+/*
  * The EU instructions of a thread that only ends itself.
  *
  * They are a null render target write with end-of-thread: a thread that
@@ -169,9 +181,90 @@ static const uint32_t i915_gfx_blend_functions[5] = {
 	GEN12_BLENDFUNCTION_MAX,
 };
 
+/*
+ * The vertex formats the draw takes: the 32-bit floats and integers, and the
+ * 8-, 16- and 10-bit ones libGLESv2 hands the executor (normalized, scaled
+ * and integer; 16-bit floats).  The SURFACE_FORMAT values are Mesa 25.0.7's
+ * enum isl_format (src/intel/isl/isl.h, sha256
+ * 71099bdc5b8657541525bdab4824d43f20ad169f8d7570b60ba6b251fdb6431a); Vulkan's
+ * A2B10G10R10 packs red in the low bits, isl's R10G10B10A2 (anv's mapping).
+ * The table is constant and lives for the kernel's lifetime.
+ */
+static const struct i915_gfx_vertex_format i915_gfx_vertex_formats[] = {
+	{ VK_FORMAT_R32_SFLOAT, 0x0d8U, 1U, 0U },
+	{ VK_FORMAT_R32G32_SFLOAT, 0x085U, 2U, 0U },
+	{ VK_FORMAT_R32G32B32_SFLOAT, 0x040U, 3U, 0U },
+	{ VK_FORMAT_R32G32B32A32_SFLOAT, 0x000U, 4U, 0U },
+	{ VK_FORMAT_R32_SINT, 0x0d6U, 1U, 1U },
+	{ VK_FORMAT_R32_UINT, 0x0d7U, 1U, 1U },
+	{ VK_FORMAT_R32G32_SINT, 0x086U, 2U, 1U },
+	{ VK_FORMAT_R32G32_UINT, 0x087U, 2U, 1U },
+	{ VK_FORMAT_R32G32B32_SINT, 0x041U, 3U, 1U },
+	{ VK_FORMAT_R32G32B32_UINT, 0x042U, 3U, 1U },
+	{ VK_FORMAT_R32G32B32A32_SINT, 0x001U, 4U, 1U },
+	{ VK_FORMAT_R32G32B32A32_UINT, 0x002U, 4U, 1U },
+	{ VK_FORMAT_B8G8R8A8_UNORM, 0x0c0U, 4U, 0U },
+	{ VK_FORMAT_R8_UNORM, 320U, 1U, 0U },
+	{ VK_FORMAT_R8_SNORM, 321U, 1U, 0U },
+	{ VK_FORMAT_R8_SINT, 322U, 1U, 1U },
+	{ VK_FORMAT_R8_UINT, 323U, 1U, 1U },
+	{ VK_FORMAT_R8_SSCALED, 329U, 1U, 0U },
+	{ VK_FORMAT_R8_USCALED, 330U, 1U, 0U },
+	{ VK_FORMAT_R8G8_UNORM, 262U, 2U, 0U },
+	{ VK_FORMAT_R8G8_SNORM, 263U, 2U, 0U },
+	{ VK_FORMAT_R8G8_SINT, 264U, 2U, 1U },
+	{ VK_FORMAT_R8G8_UINT, 265U, 2U, 1U },
+	{ VK_FORMAT_R8G8_SSCALED, 284U, 2U, 0U },
+	{ VK_FORMAT_R8G8_USCALED, 285U, 2U, 0U },
+	{ VK_FORMAT_R8G8B8_UNORM, 403U, 3U, 0U },
+	{ VK_FORMAT_R8G8B8_SNORM, 404U, 3U, 0U },
+	{ VK_FORMAT_R8G8B8_SSCALED, 405U, 3U, 0U },
+	{ VK_FORMAT_R8G8B8_USCALED, 406U, 3U, 0U },
+	{ VK_FORMAT_R8G8B8_UINT, 456U, 3U, 1U },
+	{ VK_FORMAT_R8G8B8_SINT, 457U, 3U, 1U },
+	{ VK_FORMAT_R8G8B8A8_UNORM, 199U, 4U, 0U },
+	{ VK_FORMAT_R8G8B8A8_SNORM, 201U, 4U, 0U },
+	{ VK_FORMAT_R8G8B8A8_SINT, 202U, 4U, 1U },
+	{ VK_FORMAT_R8G8B8A8_UINT, 203U, 4U, 1U },
+	{ VK_FORMAT_R8G8B8A8_SSCALED, 244U, 4U, 0U },
+	{ VK_FORMAT_R8G8B8A8_USCALED, 245U, 4U, 0U },
+	{ VK_FORMAT_R16_UNORM, 266U, 1U, 0U },
+	{ VK_FORMAT_R16_SNORM, 267U, 1U, 0U },
+	{ VK_FORMAT_R16_SINT, 268U, 1U, 1U },
+	{ VK_FORMAT_R16_UINT, 269U, 1U, 1U },
+	{ VK_FORMAT_R16_SFLOAT, 270U, 1U, 0U },
+	{ VK_FORMAT_R16_SSCALED, 286U, 1U, 0U },
+	{ VK_FORMAT_R16_USCALED, 287U, 1U, 0U },
+	{ VK_FORMAT_R16G16_UNORM, 204U, 2U, 0U },
+	{ VK_FORMAT_R16G16_SNORM, 205U, 2U, 0U },
+	{ VK_FORMAT_R16G16_SINT, 206U, 2U, 1U },
+	{ VK_FORMAT_R16G16_UINT, 207U, 2U, 1U },
+	{ VK_FORMAT_R16G16_SFLOAT, 208U, 2U, 0U },
+	{ VK_FORMAT_R16G16_SSCALED, 246U, 2U, 0U },
+	{ VK_FORMAT_R16G16_USCALED, 247U, 2U, 0U },
+	{ VK_FORMAT_R16G16B16_SFLOAT, 411U, 3U, 0U },
+	{ VK_FORMAT_R16G16B16_UNORM, 412U, 3U, 0U },
+	{ VK_FORMAT_R16G16B16_SNORM, 413U, 3U, 0U },
+	{ VK_FORMAT_R16G16B16_SSCALED, 414U, 3U, 0U },
+	{ VK_FORMAT_R16G16B16_USCALED, 415U, 3U, 0U },
+	{ VK_FORMAT_R16G16B16_UINT, 432U, 3U, 1U },
+	{ VK_FORMAT_R16G16B16_SINT, 433U, 3U, 1U },
+	{ VK_FORMAT_R16G16B16A16_UNORM, 128U, 4U, 0U },
+	{ VK_FORMAT_R16G16B16A16_SNORM, 129U, 4U, 0U },
+	{ VK_FORMAT_R16G16B16A16_SINT, 130U, 4U, 1U },
+	{ VK_FORMAT_R16G16B16A16_UINT, 131U, 4U, 1U },
+	{ VK_FORMAT_R16G16B16A16_SFLOAT, 132U, 4U, 0U },
+	{ VK_FORMAT_R16G16B16A16_SSCALED, 147U, 4U, 0U },
+	{ VK_FORMAT_R16G16B16A16_USCALED, 148U, 4U, 0U },
+	{ VK_FORMAT_A2B10G10R10_UNORM_PACK32, 194U, 4U, 0U },
+	{ VK_FORMAT_A2B10G10R10_UINT_PACK32, 196U, 4U, 1U },
+	{ VK_FORMAT_A2B10G10R10_SNORM_PACK32, 435U, 4U, 0U },
+	{ VK_FORMAT_A2B10G10R10_USCALED_PACK32, 436U, 4U, 0U },
+	{ VK_FORMAT_A2B10G10R10_SSCALED_PACK32, 437U, 4U, 0U },
+};
+
 static int i915_surface_format(uint32_t format, uint32_t *surface_format);
-static int i915_format_integer(uint32_t format);
-static uint32_t i915_format_components(uint32_t format);
+static int i915_vertex_format(uint32_t format, const struct i915_gfx_vertex_format **entry);
 static int i915_image_surface_write(uint32_t *rss, const struct i915_gfx_image *image, uint32_t base_level, uint32_t level_count, uint32_t mocs);
 static uint32_t i915_sampler_mip_filter(uint32_t mipmap_mode);
 static int i915_state_write_surfaces(uint32_t *surface, uint32_t *dynamic, const struct i915_gfx_draw_state *state, const struct i915_gfx_kernels *kernels, const struct i915_gfx_image *target, uint32_t mocs);
@@ -575,14 +668,12 @@ drv_i915_gfx_emit_vertex_input(
 	uint32_t count;
 	uint32_t binding;
 	uint32_t attribute;
-	uint32_t format;
-	uint32_t components;
+	const struct i915_gfx_vertex_format *vertex_format;
 	uint32_t component_y;
 	uint32_t component_z;
 	uint32_t component_w;
 	uint32_t topology;
 	uint32_t sgvs;
-	int integer;
 	uint64_t va;
 	int error;
 
@@ -675,8 +766,8 @@ drv_i915_gfx_emit_vertex_input(
 			continue;
 		}
 
-		/* Refuses a vertex format the surface formats do not cover. */
-		error = i915_surface_format(pipeline->attributes[attribute].format, &format);
+		/* Refuses a vertex format the fetcher is not given. */
+		error = i915_vertex_format(pipeline->attributes[attribute].format, &vertex_format);
 		if (error != 0)
 			return ENOTSUP;
 
@@ -684,25 +775,23 @@ drv_i915_gfx_emit_vertex_input(
 		 * Stores the components the format has; a missing y or z is 0 and
 		 * a missing w is 1.0 (the integer 1 for an integer format).
 		 */
-		components = i915_format_components(pipeline->attributes[attribute].format);
 		component_y = GEN12_VFCOMP_STORE_0;
-		if (components > 1U)
+		if (vertex_format->components > 1U)
 			component_y = GEN12_VFCOMP_STORE_SRC;
 		component_z = GEN12_VFCOMP_STORE_0;
-		if (components > 2U)
+		if (vertex_format->components > 2U)
 			component_z = GEN12_VFCOMP_STORE_SRC;
 		component_w = GEN12_VFCOMP_STORE_1_FP;
-		integer = i915_format_integer(pipeline->attributes[attribute].format);
-		if (integer)
+		if (vertex_format->integer != 0U)
 			component_w = GEN12_VFCOMP_STORE_1_INT;
-		if (components > 3U)
+		if (vertex_format->components > 3U)
 			component_w = GEN12_VFCOMP_STORE_SRC;
 
 		/* Writes the binding, valid bit, format and offset; the component controls. */
 		drv_i915_batch_emit(batch,
 				    (pipeline->attributes[attribute].binding << 26) |
 				    (1U << 25) |
-				    (format << 16) |
+				    (vertex_format->surface_format << 16) |
 				    (pipeline->attributes[attribute].offset & 0xfffU));
 		drv_i915_batch_emit(batch,
 				    (GEN12_VFCOMP_STORE_SRC << 28) |
@@ -1469,52 +1558,25 @@ i915_surface_format(
 	return ENOTSUP;
 }
 
-/* Reports whether a vertex format holds 32-bit integers. */
+/* Finds the vertex format of a VkFormat in the table; ENOTSUP for a format the fetcher is not given. */
 static int
-i915_format_integer(
-	uint32_t format)
+i915_vertex_format(
+	uint32_t format,
+	const struct i915_gfx_vertex_format **entry)
 {
-	/* The signed and unsigned 32-bit formats. */
-	switch (format) {
-	case VK_FORMAT_R32_SINT:
-	case VK_FORMAT_R32_UINT:
-	case VK_FORMAT_R32G32_SINT:
-	case VK_FORMAT_R32G32_UINT:
-	case VK_FORMAT_R32G32B32_SINT:
-	case VK_FORMAT_R32G32B32_UINT:
-	case VK_FORMAT_R32G32B32A32_SINT:
-	case VK_FORMAT_R32G32B32A32_UINT:
-		return 1;
-	default:
-		break;
+	uint32_t index;
+
+	/* Looks the format up. */
+	for (index = 0U; index < sizeof(i915_gfx_vertex_formats) / sizeof(i915_gfx_vertex_formats[0]); index++) {
+		if (i915_gfx_vertex_formats[index].vk_format == format) {
+			/* Succeeded: the format's entry. */
+			*entry = &i915_gfx_vertex_formats[index];
+			return 0;
+		}
 	}
 
-	/* Floats, or normalized integers read as floats. */
-	return 0;
-}
-
-/* Reports how many components a vertex format has; any other format counts as four. */
-static uint32_t
-i915_format_components(
-	uint32_t format)
-{
-	/* Picks the component count of the 32-bit vertex formats, float or integer. */
-	switch (format) {
-	case VK_FORMAT_R32_SFLOAT:
-	case VK_FORMAT_R32_SINT:
-	case VK_FORMAT_R32_UINT:
-		return 1U;
-	case VK_FORMAT_R32G32_SFLOAT:
-	case VK_FORMAT_R32G32_SINT:
-	case VK_FORMAT_R32G32_UINT:
-		return 2U;
-	case VK_FORMAT_R32G32B32_SFLOAT:
-	case VK_FORMAT_R32G32B32_SINT:
-	case VK_FORMAT_R32G32B32_UINT:
-		return 3U;
-	default:
-		return 4U;
-	}
+	/* Any other format. */
+	return ENOTSUP;
 }
 
 /* Translates a VkSamplerMipmapMode to the SAMPLER_STATE mip filter, as anv does; any other mode takes the nearest level. */
