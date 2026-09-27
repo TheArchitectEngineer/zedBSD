@@ -274,6 +274,7 @@ zwl_seat_focus(
 		server->focus = target;
 		if (target != NULL) {
 			zwl_data_focus(server, target);
+			zwl_primary_focus(server, target);
 			send_enter(target);
 		}
 	}

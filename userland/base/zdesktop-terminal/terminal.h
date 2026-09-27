@@ -31,6 +31,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* The primary selection's objects (primary.c includes their protocol's header). */
+struct zwp_primary_selection_device_manager_v1;
+struct zwp_primary_selection_device_v1;
+struct zwp_primary_selection_source_v1;
+struct zwp_primary_selection_offer_v1;
+
 /* The largest grid the terminal keeps, whatever the window's size. */
 #define TERMINAL_MAX_COLUMNS	240U
 #define TERMINAL_MAX_ROWS	100U
@@ -75,6 +81,7 @@
 #define TERMINAL_POINTER_PRESS		1U
 #define TERMINAL_POINTER_RELEASE	2U
 #define TERMINAL_POINTER_MOTION		3U
+#define TERMINAL_POINTER_MIDDLE		4U
 
 /* What the titlebar asks of the tabs (tabs.c): none, a new tab, one chosen, one to close. */
 #define TERMINAL_TAB_NONE	0U
@@ -455,6 +462,22 @@ struct terminal_window {
 	struct wl_data_source *drag_source;
 	char drag_text[4096];
 	size_t drag_length;
+
+	/*
+	 * The primary selection (primary.c, ws035-p100): the manager and the
+	 * seat's device (NULL without them), the terminal's source while its
+	 * selected text is the primary selection, the selection's offer and
+	 * whether it has text, whether the offer being described has text, and
+	 * the text the source sends (owned by main.c).
+	 */
+	struct zwp_primary_selection_device_manager_v1 *primary_manager;
+	struct zwp_primary_selection_device_v1 *primary_device;
+	struct zwp_primary_selection_source_v1 *primary_source;
+	struct zwp_primary_selection_offer_v1 *primary_offer;
+	int primary_offer_text;
+	int primary_pending_text;
+	const char *primary_text;
+	size_t primary_length;
 };
 
 /* The clipboard through zdesktop's (clipboard.c). */
@@ -467,6 +490,13 @@ size_t terminal_clipboard_receive(struct terminal_window *window, char *text, si
 void terminal_clipboard_close(struct terminal_window *window);
 size_t terminal_clipboard_drop(struct terminal_window *window, char *text, size_t size);
 void terminal_clipboard_drag(struct terminal_window *window, const char *text, size_t length, uint32_t serial);
+
+/* The primary selection through zdesktop's (primary.c). */
+void terminal_primary_bind(struct terminal_window *window, struct wl_registry *registry, uint32_t name);
+void terminal_primary_start(struct terminal_window *window);
+void terminal_primary_set(struct terminal_window *window, const char *text, size_t length, uint32_t serial);
+size_t terminal_primary_receive(struct terminal_window *window, char *text, size_t size);
+void terminal_primary_close(struct terminal_window *window);
 
 /* The character grid (screen.c). */
 void terminal_screen_init(struct terminal_screen *screen, unsigned columns, unsigned rows);
