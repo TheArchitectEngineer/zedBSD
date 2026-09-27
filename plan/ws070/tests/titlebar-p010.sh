@@ -3,7 +3,8 @@
 # /bin/titlebar-probe --show --mode=controls (a file manager's controls: back, forward (disabled), home,
 # a breadcrumb Home > Projects > 日本語, a search field, Icons/List, Preview):
 #  1. floating.png: the controls in the floating titlebar (ZWL TITLEBAR control ... where=floating).
-#  2. Back clicked (event activated id=1); the breadcrumb's first part (detail=0); the search field
+#  2. Back clicked (event activated id=1); the breadcrumb's "..." (the nearest part left out) and its last
+#     part (detail=2); the search field
 #     clicked, "abc" typed (text events), Enter (done how=0 text=abc): search.png while typing; List
 #     clicked (id=7).
 #  3. docked.png: docked by a double click on the title, the controls in the system bar
@@ -89,9 +90,11 @@ shot floating.png
 # 2. Back, the breadcrumb's first part, the search field, List.
 set -- $(control 1 floating 1); click "$1" "$2"
 expect_log /tmp/probe.log 'TITLEBARPROBE event=activated id=1 detail=0'
-set -- $(guest "grep 'ZWL TITLEBAR control client=1 .* where=floating id=4 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
-click $(( $1 + 12 )) $(( $2 + 15 ))
-expect_log /tmp/probe.log 'TITLEBARPROBE event=activated id=4 detail=0'
+set -- $(guest "grep 'ZWL TITLEBAR control client=1 .* where=floating id=4 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\) width=\([0-9]*\).*/\1 \2 \3/p')
+click $(( $1 + 8 )) $(( $2 + 15 ))
+expect_log /tmp/probe.log 'TITLEBARPROBE event=activated id=4 detail=[01] '
+click $(( $1 + 60 )) $(( $2 + 15 ))
+expect_log /tmp/probe.log 'TITLEBARPROBE event=activated id=4 detail=2 '
 set -- $(control 1 floating 5); click "$1" "$2"
 expect_log /tmp/zdesktop.log 'ZWL TITLEBAR focus client=1 surface=[0-9]+ id=5 edit=0'
 keys 'abc'
@@ -99,6 +102,10 @@ shot search.png
 expect_log /tmp/probe.log 'TITLEBARPROBE event=text id=5 text=abc'
 keys '<ret>'
 expect_log /tmp/probe.log 'TITLEBARPROBE event=done id=5 how=0 text=abc'
+set -- $(control 1 floating 5); click "$1" "$2"
+keys 'x'
+keys '<esc>'
+expect_log /tmp/probe.log 'TITLEBARPROBE event=done id=5 how=1 '
 set -- $(control 1 floating 7); click "$1" "$2"
 expect_log /tmp/probe.log 'TITLEBARPROBE event=activated id=7 detail=0'
 

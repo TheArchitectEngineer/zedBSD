@@ -1177,12 +1177,14 @@ shell_draw_crumbs(
 		total += CRUMB_ARROW + widths[first];
 	}
 
-	/* "..." for the parts left out. */
+	/* "..." for the parts left out; it goes to the nearest of them. */
 	pen = x;
 	if (first > 0U) {
 		shell_colour(colour, ink, fade);
 		colour[3] *= 0.6f;
 		glass_draw_text(server, command, SIZE_BAR, pen + CRUMB_PADDING / 2, baseline, ellipsis, more, colour);
+		if (recording != 0U)
+			shell_add_hit(surface, docked, KIND_CRUMB, control->id, first - 1U, pen, y, more - CRUMB_ARROW, size);
 		pen += more - CRUMB_ARROW;
 		glass_draw_glyph(server, command, SIZE_BAR, GLASS_ARROW_GLYPH, pen + 2, baseline, colour);
 		pen += CRUMB_ARROW;

@@ -109,6 +109,8 @@ struct zwl_glass {
 	struct truetype_face *faces[GLASS_FACES];
 	void *font_data[GLASS_FACES];
 	unsigned face_count;
+	const char *fallback_path;
+	unsigned fallback_tried;
 	struct glass_cached cache[GLASS_CELLS];
 	uint32_t cache_top;
 	unsigned cache_count;
@@ -516,10 +518,13 @@ atlas_create(
 	if (error != 0)
 		return error;
 
-	/* The fallback font, when there is one; without it a character the first font lacks shows its box. */
-	error = glass_open_face(glass, server->fallback_font_path);
-	if (error != 0)
-		printf("ZWL GLASS no fallback font: path=%s errno=%d\n", server->fallback_font_path, error);
+	/*
+	 * The fallback font is opened on the first character the first font
+	 * lacks (glass_cache_glyph): reading its megabytes here would delay
+	 * zdesktop's start.
+	 */
+	glass->fallback_path = server->fallback_font_path;
+	glass->fallback_tried = 0;
 
 	/* The atlas image, transparent where nothing is drawn. */
 	result = zwl_host_image_create(server->compose, GLASS_ATLAS_WIDTH, GLASS_ATLAS_HEIGHT, server->compose->sampler, &glass->atlas);
@@ -1305,6 +1310,21 @@ glass_cache_glyph(
 		if (id != 0U) {
 			face = glass->faces[which];
 			break;
+		}
+	}
+
+	/* No font open has it: the fallback font, opened once on the first such character. */
+	if (id == 0U && glass->fallback_tried == 0U) {
+		glass->fallback_tried = 1;
+		error = glass_open_face(glass, glass->fallback_path);
+		if (error != 0) {
+			printf("ZWL GLASS no fallback font: path=%s errno=%d\n", glass->fallback_path, error);
+		} else {
+			printf("ZWL GLASS fallback font: path=%s faces=%u\n", glass->fallback_path, glass->face_count);
+			which = glass->face_count - 1U;
+			id = truetype_glyph_index(glass->faces[which], codepoint);
+			if (id != 0U)
+				face = glass->faces[which];
 		}
 	}
 
