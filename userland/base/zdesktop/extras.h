@@ -21,7 +21,6 @@ void zwl_decoration_object_gone(struct zwl_object *object);
 
 int zwl_cursor_shape_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
 void zwl_cursor_shape_object_gone(struct zwl_object *object);
-int zwl_cursor_images_create(struct zwl_server *server);
 void zwl_cursor_images_destroy(struct zwl_server *server);
 const struct zwl_import *zwl_cursor_image(const struct zwl_server *server, int32_t *hotspot_x, int32_t *hotspot_y);
 

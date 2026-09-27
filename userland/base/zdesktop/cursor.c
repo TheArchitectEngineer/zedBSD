@@ -187,30 +187,6 @@ zwl_cursor_shape_object_gone(
 }
 
 /*
- * Makes the images of the cursor shapes (with zdesktop's arrow).  Returns
- * 0, or EIO when an image could not be made (the shapes are then drawn as
- * the arrow).
- */
-int
-zwl_cursor_images_create(
-	struct zwl_server *server)
-{
-	unsigned index;
-	int error;
-
-	/* Each image. */
-	for (index = 0; index < ZWL_CURSOR_IMAGES; index++) {
-		/* Its figure, drawn. */
-		error = image_make(server, index);
-		if (error != 0)
-			return error;
-	}
-
-	/* Succeeded: the shapes can be drawn. */
-	return 0;
-}
-
-/*
  * Releases the images of the cursor shapes.
  */
 void
@@ -295,6 +271,8 @@ device_set_shape(
 {
 	struct zwl_server *server;
 	uint32_t shape;
+	unsigned index;
+	int error;
 
 	/* The serial and the shape, which must be one. */
 	if (size != 8U)
@@ -311,6 +289,20 @@ device_set_shape(
 	    server->pointer_surface == NULL ||
 	    server->pointer_surface->client != device->client)
 		return 0;
+
+	/*
+	 * The shape's image is made the first time it is asked for (making all
+	 * of them at start-up would delay zdesktop's READY); without it the
+	 * shape is drawn as the arrow.
+	 */
+	index = shape_image(shape);
+	if (index != IMAGE_NONE &&
+	    server->cursor_images[index] == NULL &&
+	    server->compose != NULL) {
+		error = image_make(server, index);
+		if (error != 0)
+			printf("ZWL CURSOR image=%u errno=%d\n", index, error);
+	}
 
 	/* The shape replaces a cursor surface, and is drawn from the next frame. */
 	if (server->cursor_surface != NULL)

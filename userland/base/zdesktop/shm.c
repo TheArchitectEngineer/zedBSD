@@ -224,7 +224,6 @@ zwl_arrow_create(
 	uint32_t x;
 	uint32_t y;
 	VkResult result;
-	int error;
 
 	/* A linear, host-visible image the CPU writes once. */
 	arrow = calloc(1, sizeof(*arrow));
@@ -250,16 +249,9 @@ zwl_arrow_create(
 		}
 	}
 
-	/* Drawn with alpha. */
+	/* Succeeded: drawn with alpha (the other cursor shapes are made when first asked for, cursor.c). */
 	arrow->draw = ZWL_DRAW_ALPHA;
 	server->arrow = arrow;
-
-	/* The other cursor shapes clients may ask for (cursor.c); without them every shape is the arrow. */
-	error = zwl_cursor_images_create(server);
-	if (error != 0)
-		printf("ZWL CURSOR images errno=%d\n", error);
-
-	/* Succeeded: the arrow is ready. */
 	return 0;
 }
 
