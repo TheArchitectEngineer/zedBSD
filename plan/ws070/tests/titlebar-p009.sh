@@ -2,7 +2,8 @@
 # ws070-p009: the glass look's glyph cache (UTF-8, the fallback font) on the Venus guest (the lean
 # image with build/ws071-fonts' fallback font).  zdesktop --glass shows /bin/titlebar-probe --show with a
 # Japanese title:
-#  1. zdesktop opened both fonts and the atlas's cache (GLASS atlas ... faces=2), and rendered the
+#  1. zdesktop made the atlas's cache (GLASS atlas), opened the fallback font on the first character
+#     the first font lacks (GLASS fallback font ... faces=2; lazily since ws070-p010), and rendered the
 #     title's Japanese characters into it (GLASS glyph codepoint=U+65E5 ... face=1).
 #  2. floating.png: the title in the floating titlebar; docked.png: docked by a double click on the
 #     title, the title in the system bar.
@@ -43,7 +44,8 @@ surface=${1:-0}; wx=${2:-0}; wy=${3:-0}
 echo "probe: surface $surface at $wx,$wy"
 
 # 1. The fonts, the cache and the Japanese glyphs.
-expect_log /tmp/zdesktop.log 'ZWL GLASS atlas cache-top=[0-9]+ cells=[0-9]+ faces=2'
+expect_log /tmp/zdesktop.log 'ZWL GLASS atlas cache-top=[0-9]+ cells=[0-9]+ faces=1'
+expect_log /tmp/zdesktop.log 'ZWL GLASS fallback font: path=[^ ]+ faces=2'
 expect_log /tmp/zdesktop.log 'ZWL GLASS glyph codepoint=U\+65E5 size=[0-9]+ face=1 '
 expect_log /tmp/probe.log 'TITLEBARPROBE show ready mode=menu'
 

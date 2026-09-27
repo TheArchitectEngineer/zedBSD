@@ -19,6 +19,7 @@
 
 #include "zwl.h"
 #include "menu.h"
+#include "titlebar.h"
 #include "popup.h"
 #include "toplevel.h"
 #include "subsurface.h"
@@ -662,14 +663,18 @@ zwl_seat_key(
 
 	/*
 	 * App Home, while it shows, takes every key (home.c), and so does an
-	 * open menu (menu-shell.c); zdesktop's shortcuts come next (shell.c),
-	 * then the focused window's menu: F10 and its shortcuts.
+	 * open menu (menu-shell.c), then a titlebar's text field with the
+	 * keyboard (titlebar-shell.c); zdesktop's shortcuts come next
+	 * (shell.c), then the focused window's menu: F10 and its shortcuts.
 	 */
 	if (server->glass) {
 		taken = zwl_home_key(server, key, state);
 		if (taken)
 			return;
 		taken = zwl_menu_grab_key(server, key, state);
+		if (taken)
+			return;
+		taken = zwl_titlebar_key(server, key, state);
 		if (taken)
 			return;
 		taken = zwl_glass_key(server, key, state);

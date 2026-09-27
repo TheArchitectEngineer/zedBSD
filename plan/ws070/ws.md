@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: none（p001〜p004 は 2026-09-27 ユーザーの指示でサブエージェントが worktree の branch で実行。main への統合は main の session）
-Resume point: p010（CONTROLS の presentation）。p007（設計）・p008（protocol と model）・p009（glyph cache と icon）cleared 2026-09-27。順序は titlebar-design.md §14（WS071 と合わせた計画）。p006 は titlebar の Phase の後
+Resume point: p011（TABS の presentation、WS071 p014・WS035 の後の合わせた順序で）。p007（設計）・p008（protocol と model）・p009（glyph cache と icon）・p010（CONTROLS の presentation）cleared 2026-09-27。順序は titlebar-design.md §14（WS071 と合わせた計画）。p006 は titlebar の Phase の後
 Executor: WS071 の作業用のサブエージェント（2026-09-27 ユーザー「WS071のサブエージェントでスケジューリングするのがいいと思います。」）
 <!-- awesome-plan-current:end -->
 
@@ -79,7 +79,7 @@ Phase の分け方・順序・受け入れは p007（設計）で決める。WS0
 | [ws070-p007](phase007/phase.md) | Titlebar Presentation の設計（[titlebar-design.md](titlebar-design.md)）: protocol `zed_titlebar_v1`、libzdesktop、zdesktop の配置・縮退・描画・入力・animation、overflow、glyph cache、試験、Phase の分割 | cleared | p005、[titlebar-spec.md](titlebar-spec.md) |
 | [ws070-p008](phase008/phase.md) | titlebar の protocol と model: libwayland の `zed_titlebar_*`、zdesktop の titlebar.c（request・model・transaction・error・寿命・log）、libzdesktop の `zdesktop_titlebar_*`、titlebar-probe。描画は変えない | cleared | p007 |
 | [ws070-p009](phase009/phase.md) | glass の UTF-8 と動的 glyph cache（fallback font）、role の icon の rasterize。題名・menu の label の日本語（zdesktop の glass.c: WS035 と調整） | cleared | p007 |
-| ws070-p010 | CONTROLS の presentation: 配置と縮退、button・segment・検索とパンくずの欄・輪、pointer・keyboard、overflow の popup（隠れた control と窓の menu）、docked の Application Zone、animation の補間（shell.c・menu-shell.c・seat.c: WS035 と調整） | planned | p008、p009 |
+| [ws070-p010](phase010/phase.md) | CONTROLS の presentation: 配置と縮退、button・segment・検索とパンくずの欄・輪、pointer・keyboard、overflow の popup（隠れた control と窓の menu）、docked の Application Zone、animation の補間（shell.c・menu-shell.c・seat.c: WS035 と調整） | cleared | p008、p009 |
 | ws070-p011 | TABS の presentation: strip、active・attention・×・＋、縮退、mode の atomic な切替（titlebar-probe で） | planned | p010 |
 | ws070-p012 | titlebar の規約の全文との照合、回帰（menu・files・zdesktop）、boot test、i915 実機（任意） | planned | p006、p011、WS071-p014 |
 | ws070-p006 | 規約の全文との照合の残り: WS071 と共有する file（`zdesktop/menu.c`・`menu-shell.c`・`menu.h`、`libzdesktop/menu.c`、`zdesktop.h`、`libwayland/menu-protocol.c`）への p005 の指摘の直しと回帰（最後） | planned | p005、WS071 の menu の変更の merge（衝突を避ける分割、2026-09-27） |

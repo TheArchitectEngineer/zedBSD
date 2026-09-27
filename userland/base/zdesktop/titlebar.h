@@ -15,7 +15,7 @@
 #ifndef ZWL_TITLEBAR_H
 #define ZWL_TITLEBAR_H
 
-#include "glass.h"
+#include "menu.h"
 
 /* The presentation modes. */
 #define ZWL_TITLEBAR_MENU		0U
@@ -133,6 +133,16 @@ void zwl_titlebar_send_activated(struct zwl_object *titlebar, uint32_t id, uint3
 void zwl_titlebar_send_text(struct zwl_object *titlebar, uint32_t id, const char *text, int done, uint32_t how);
 void zwl_titlebar_send_tab(struct zwl_object *titlebar, uint32_t id, unsigned event);
 void zwl_titlebar_send_overflow(struct zwl_object *titlebar);
+
+/* The presentation (titlebar-shell.c). */
+void zwl_titlebar_frame(struct zwl_server *server);
+int32_t zwl_titlebar_title_limit(struct zwl_server *server, struct zwl_object *surface, int32_t available);
+void zwl_titlebar_draw(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, unsigned docked, const struct zwl_menu_area *area, const float *ink, float fade);
+int zwl_titlebar_button(struct zwl_server *server, uint32_t button, uint32_t state);
+int zwl_titlebar_key(struct zwl_server *server, uint32_t key, uint32_t state);
+void zwl_titlebar_overflow_chosen(struct zwl_server *server, struct zwl_object *surface, uint32_t id);
+void zwl_titlebar_overflow_opened(struct zwl_object *surface);
+void zwl_titlebar_forget(struct zwl_server *server, struct zwl_object *object);
 
 /* The tab events zwl_titlebar_send_tab sends. */
 #define ZWL_TAB_EVENT_ACTIVATED		0U
