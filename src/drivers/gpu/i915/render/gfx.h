@@ -606,7 +606,9 @@ struct i915_gfx_draw_state {
 	struct i915_gfx_dset *dset[I915_GFX_BOUND_SETS];
 
 	/* The dynamic offset of each dynamic uniform buffer of each bound set, by binding number. */
-	uint32_t dynamic_offsets[I915_GFX_BOUND_SETS][I915_GFX_MAX_BINDINGS];
+	uint32_t dynamic_count[I915_GFX_BOUND_SETS];
+	uint32_t dynamic_bindings[I915_GFX_BOUND_SETS][I915_GFX_MAX_DYNAMIC_BUFFERS];
+	uint32_t dynamic_offsets[I915_GFX_BOUND_SETS][I915_GFX_MAX_DYNAMIC_BUFFERS];
 
 	/* The push constants. */
 	uint8_t push[I915_GFX_PUSH_BYTES];

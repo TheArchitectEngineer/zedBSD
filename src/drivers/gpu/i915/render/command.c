@@ -2600,11 +2600,13 @@ i915_command_buffer_execute(
 			/* A set past the tracked ones is ignored; a bound set brings its dynamic offsets. */
 			if (op->u.descriptor.set < I915_GFX_MAX_SETS) {
 				state.dset[op->u.descriptor.set] = op->u.descriptor.dset;
-				kern_memset(state.dynamic_offsets[op->u.descriptor.set], 0,
+				state.dynamic_count[op->u.descriptor.set] = op->u.descriptor.dynamic_count;
+				kern_memcpy(state.dynamic_bindings[op->u.descriptor.set],
+				       op->u.descriptor.dynamic_bindings,
+				       sizeof(state.dynamic_bindings[op->u.descriptor.set]));
+				kern_memcpy(state.dynamic_offsets[op->u.descriptor.set],
+				       op->u.descriptor.dynamic_offsets,
 				       sizeof(state.dynamic_offsets[op->u.descriptor.set]));
-				for (index = 0U; index < op->u.descriptor.dynamic_count; index++)
-					state.dynamic_offsets[op->u.descriptor.set][op->u.descriptor.dynamic_bindings[index]] =
-					    op->u.descriptor.dynamic_offsets[index];
 			}
 
 			break;

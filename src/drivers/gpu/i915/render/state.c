@@ -302,6 +302,7 @@ struct i915_image_range {
 
 static int i915_image_surface_write(uint32_t *rss, const struct i915_gfx_image *image, const struct i915_image_range *range, uint32_t mocs);
 static void i915_state_target_range(const struct i915_gfx_draw_state *state, struct i915_image_range *range);
+static uint32_t i915_state_dynamic_offset(const struct i915_gfx_draw_state *state, uint32_t set, uint32_t binding);
 static uint32_t i915_sampler_mip_filter(uint32_t mipmap_mode);
 static int i915_state_write_surfaces(uint32_t *surface, uint32_t *dynamic, const struct i915_gfx_draw_state *state, const struct i915_gfx_kernels *kernels, const struct i915_gfx_image *target, uint32_t mocs);
 static int i915_state_viewport_source(const struct i915_gfx_draw_state *state, const uint32_t **viewport, const VkRect2D **scissor);
@@ -1993,6 +1994,25 @@ i915_state_write_surfaces(
 	return 0;
 }
 
+/* Finds the dynamic offset the bind of a set gave the dynamic uniform buffer at a binding; 0 for none. */
+static uint32_t
+i915_state_dynamic_offset(
+	const struct i915_gfx_draw_state *state,
+	uint32_t set,
+	uint32_t binding)
+{
+	uint32_t index;
+
+	/* Looks the binding up among the set's dynamic buffers. */
+	for (index = 0U; index < state->dynamic_count[set] && index < I915_GFX_MAX_DYNAMIC_BUFFERS; index++) {
+		if (state->dynamic_bindings[set][index] == binding)
+			return state->dynamic_offsets[set][index];
+	}
+
+	/* Succeeded: not a dynamic buffer, no offset. */
+	return 0U;
+}
+
 /*
  * Finds what the draw's render target writes: the level and the layer (a
  * 3D image's slice) its colour attachment view starts at; level 0 of layer
@@ -2082,7 +2102,7 @@ i915_state_write_push(
 		/* The descriptor's offset, moved by the bind's dynamic offset for a dynamic uniform buffer. */
 		descriptor_offset = set->slots[block->binding].offset;
 		if (set->slots[block->binding].dynamic != 0)
-			descriptor_offset += state->dynamic_offsets[block->set][block->binding];
+			descriptor_offset += i915_state_dynamic_offset(state, block->set, block->binding);
 
 		/* The descriptor's range: to the buffer's end for VK_WHOLE_SIZE, nothing past it. */
 		range = set->slots[block->binding].range;
