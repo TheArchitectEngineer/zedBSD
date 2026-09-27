@@ -137,6 +137,10 @@ mbr_scan(
 		/* Handles the raw condition. */
 		if (raw[0] == 0x80U)
 			entry->p_flags |= PARTITION_BOOTABLE;
+
+		/* Type 0xEF is an EFI system partition. */
+		if (type == 0xefU)
+			entry->p_flags |= PARTITION_EFI_SYSTEM;
 	}
 
 	/* Returns the computed result. */

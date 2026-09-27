@@ -43,7 +43,9 @@ BUG-027・BUG-033（性能。単独の計測を後で）。
 | [ws073-p006](phase006/phase.md) | BUG-067 | devfs の文字 device の node が chmod・chown を受ける（`mesg n`） | cleared |
 | [ws073-p007](phase007/phase.md) | BUG-068 | 多 thread の process の execve が、joiner に先に reap された兄弟を待ち続ける | cleared |
 | [ws073-p008](phase008/phase.md) | BUG-069 | 端末と pty の読み書きが waitq_sleep の EAGAIN を失敗として返す（console の POSIX-R2 10 回連続 status 0） | cleared |
-| ws073-p009 | — | kernel の boot の FAT を公開する: BOOT を /boot、ESP を /boot/esp（ユーザーの判断 2026-09-27） | planned |
+| [ws073-p009](phase009/phase.md) | — | kernel の boot の FAT を公開する: BOOT を /boot、ESP を /boot/esp（ユーザーの判断 2026-09-27） | cleared |
+| ws073-p010 | BUG-071 | FAT に mount の見せる mode と違う mode で file を作れない（EOPNOTSUPP） | planned |
+| ws073-p011 | BUG-070 | USB HID の keyboard が keypad・NumLock・PrintScreen などの usage を持たない | planned |
 
 ## 判断が要る点
 
