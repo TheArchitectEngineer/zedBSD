@@ -366,6 +366,8 @@ static void i915_compile_move(struct i915_compile_state *state, const struct i91
 static void i915_compile_loop_begin(struct i915_compile_state *state);
 static void i915_compile_loop_end(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
 static int i915_compile_rank(const uint32_t *list, uint32_t count, uint32_t location, uint32_t *rank);
+static uint32_t i915_compile_flat_mask(const struct i915_compile_state *state);
+static int i915_compile_input_flat(const struct i915_compile_state *state, uint32_t location);
 static void i915_compile_note(struct i915_compile_state *state, uint32_t *list, uint32_t *count, uint32_t limit, uint32_t location);
 static void i915_compile_interface(struct i915_compile_state *state);
 static void i915_compile_blocks(struct i915_compile_state *state);
@@ -1565,7 +1567,9 @@ i915_compile_load_input(
 	uint32_t plane;
 	uint32_t first;
 	uint32_t dst;
+	struct i915_eu_reg facing;
 	int found;
+	int flat;
 
 	/* Emits into the shader's encoder buffer. */
 	code = &state->code;
@@ -1573,6 +1577,20 @@ i915_compile_load_input(
 	/* A component beyond w is not lowered. */
 	if (inst->component > 3U) {
 		state->unsupported = 1;
+		return;
+	}
+
+	/*
+	 * gl_FrontFacing: bit 15 of the payload's r1.1 word (bit 31 of r1.0) is
+	 * set for a back face; its sign spread over the channel, inverted, is the
+	 * all-ones or zero Boolean (brw's Gen12 lowering).
+	 */
+	if (state->ir->stage == I915_STAGE_FRAGMENT && inst->location == I915_SHADER_LOCATION_FRONT_FACING) {
+		dst = i915_compile_define(state, inst->dst, 1U);
+		facing = drv_i915_eu_grf_scalar(COMPILE_FS_DISPATCH_GRF, 0U);
+		facing.type = drv_i915_eu_grf_d(COMPILE_FS_DISPATCH_GRF).type;
+		drv_i915_eu_alu2(code, I915_EU_ASR, drv_i915_eu_grf_d(dst), facing, drv_i915_eu_imm_d(31U));
+		drv_i915_eu_alu1(code, I915_EU_NOT, drv_i915_eu_grf_d(dst), drv_i915_eu_grf_d(dst));
 		return;
 	}
 
@@ -1595,6 +1613,13 @@ i915_compile_load_input(
 	/* Locates the component's plane (see the conventions). */
 	plane = COMPILE_FS_SETUP_GRF + state->push_regs + 2U * rank + inst->component / 2U;
 	first = (inst->component & 1U) * 16U;
+
+	/* A Flat input is the plane's origin, the provoking vertex's value, moved bit for bit (an integer stays one). */
+	flat = i915_compile_input_flat(state, inst->location);
+	if (flat) {
+		drv_i915_eu_mov(code, drv_i915_eu_grf(dst), drv_i915_eu_grf_scalar(plane, first + 12U));
+		return;
+	}
 
 	/* origin + d1 * bary1 + d2 * bary2, written out: Gen11+ has no PLN. */
 	drv_i915_eu_alu2(code, I915_EU_MUL, drv_i915_eu_grf(dst),
@@ -2468,6 +2493,46 @@ i915_compile_loop_end(
 	drv_i915_eu_while(&state->code, I915_EU_FLAG_F0_0, state->loop_tops[state->loop_depth]);
 }
 
+
+/* Reports whether the IR input of a location is Flat. */
+static int
+i915_compile_input_flat(
+	const struct i915_compile_state *state,
+	uint32_t location)
+{
+	uint32_t index;
+
+	/* The input of the location. */
+	for (index = 0U; index < state->ir->input_count; index++) {
+		if (state->ir->inputs[index].location == location && state->ir->inputs[index].flat != 0U)
+			return 1;
+	}
+
+	/* Interpolated. */
+	return 0;
+}
+
+/* Returns the Flat inputs of a kernel: bit n for its n-th input in payload order whose IR input is Flat. */
+static uint32_t
+i915_compile_flat_mask(
+	const struct i915_compile_state *state)
+{
+	uint32_t mask;
+	uint32_t rank;
+	uint32_t index;
+
+	/* Each input the kernel reads, by the IR input of its location. */
+	mask = 0U;
+	for (rank = 0U; rank < state->input_count; rank++) {
+		for (index = 0U; index < state->ir->input_count; index++) {
+			if (state->ir->inputs[index].location == state->inputs[rank] && state->ir->inputs[index].flat != 0U)
+				mask |= 1U << rank;
+		}
+	}
+
+	/* Succeeded: the mask. */
+	return mask;
+}
 /* Finds the position of `location` in an ascending list. */
 static int
 i915_compile_rank(
@@ -2542,7 +2607,10 @@ i915_compile_interface(
 	/* Lists every input read and, for a vertex shader, every varying written; notes a discard. */
 	for (index = 0U; index < state->ir->instruction_count; index++) {
 		inst = &state->ir->instructions[index];
-		if (inst->op == I915_IR_LOAD_INPUT) {
+		if (inst->op == I915_IR_LOAD_INPUT && inst->location == I915_SHADER_LOCATION_FRONT_FACING) {
+			/* The facing bit is in the payload's fixed registers, not an input of its own. */
+			continue;
+		} else if (inst->op == I915_IR_LOAD_INPUT) {
 			i915_compile_note(state, state->inputs, &state->input_count, COMPILE_MAX_INPUTS, inst->location);
 		} else if (inst->op == I915_IR_STORE_OUTPUT &&
 		    state->ir->stage == I915_STAGE_VERTEX &&
@@ -2951,9 +3019,10 @@ i915_compile_describe(
 	binary->push_regs = state->push_regs;
 	binary->push_constant_bytes = state->push_constant_regs * 32U;
 
-	/* The inputs in payload order. */
+	/* The inputs in payload order, and which of them are Flat. */
 	binary->input_count = state->input_count;
 	kern_memcpy(binary->input_locations, state->inputs, sizeof(state->inputs));
+	binary->input_flat_mask = i915_compile_flat_mask(state);
 
 	/* The sampled images in the order the kernel numbers them. */
 	for (index = 0U; index < state->ir->uniform_count; index++) {

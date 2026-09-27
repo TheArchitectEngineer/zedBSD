@@ -1,0 +1,120 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Text (plan/ws074/design.md §7): the fonts, the glyphs of a code point at
+ * a size, their advances and coverage bitmaps, and where a line may break.
+ *
+ * The first pass uses the fonts of the zdesktop image through libtruetype
+ * at whole pixel sizes: a sans font (Inter), a monospace font (JetBrains
+ * Mono) and a fallback for the characters the others lack (Droid Sans
+ * Fallback, for Japanese).  Serif maps to the sans font until the image has
+ * a serif font.  Bold is the regular glyph widened by a pixel; there is no
+ * kerning or shaping yet.
+ */
+
+#ifndef ZDESKTOP_BROWSER_TEXT_H
+#define ZDESKTOP_BROWSER_TEXT_H
+
+#include "base/base.h"
+
+/* The faces a text system holds: sans, monospace and the fallback. */
+#define TEXT_FACE_SANS		0
+#define TEXT_FACE_MONO		1
+#define TEXT_FACE_FALLBACK	2
+#define TEXT_FACES		3
+
+/* The fonts the zdesktop image installs. */
+#define TEXT_DEFAULT_SANS	"/usr/share/fonts/zdesktop.ttf"
+#define TEXT_DEFAULT_MONO	"/usr/share/fonts/zdesktop-mono.ttf"
+#define TEXT_DEFAULT_FALLBACK	"/usr/share/fonts/zdesktop-fallback.ttf"
+
+struct truetype_face;
+struct text_glyph_entry;
+
+/*
+ * The paths of the fonts to open (NULL leaves a face out; the sans face is
+ * required).
+ */
+struct text_font_paths {
+	const char *sans;
+	const char *mono;
+	const char *fallback;
+};
+
+/*
+ * One font file and its face.
+ */
+struct text_face {
+	struct wb_buffer data;
+	struct truetype_face *face;
+	int open;
+};
+
+/*
+ * A font as a style selects it: a face, its size (in pixels, fractional:
+ * the layout measures with it), the whole pixel size its glyphs are drawn
+ * at, and whether it is drawn bold.
+ */
+struct text_font {
+	int face;
+	float size;
+	unsigned pixels;
+	int bold;
+};
+
+/*
+ * The vertical measures of a font, in pixels.
+ */
+struct text_metrics {
+	int ascent;
+	int descent;
+	int line_height;
+};
+
+/*
+ * One glyph as the layout and the painting use it: the face that has it,
+ * its index, its advance (in whole pixels, and in 1/64 pixels from the
+ * font's design units at the font's fractional size) and, once drawn, its
+ * coverage bitmap (one byte a pixel, width by height, placed left and top
+ * from the pen and baseline).
+ */
+struct text_glyph {
+	int face;
+	unsigned index;
+	int advance;
+	int32_t advance_units;
+	int width;
+	int height;
+	int left;
+	int top;
+	const uint8_t *bitmap;
+};
+
+/*
+ * The fonts of a page and the cache of the glyphs drawn from them.
+ */
+struct text_system {
+	struct text_face faces[TEXT_FACES];
+	struct text_glyph_entry **cache;
+	size_t cache_capacity;
+	size_t cache_count;
+};
+
+/* Fonts (font.c). */
+int text_system_open(struct text_system *system, const struct text_font_paths *paths);
+void text_system_close(struct text_system *system);
+void text_select_font(const struct text_system *system, int monospace, float size, int weight, struct text_font *font);
+int text_font_metrics(struct text_system *system, const struct text_font *font, struct text_metrics *metrics);
+int text_glyph(struct text_system *system, const struct text_font *font, uint32_t code_point, int with_bitmap, struct text_glyph *glyph);
+int text_glyph_advance(struct text_system *system, const struct text_font *font, uint32_t code_point, int *advance);
+
+/* Line breaking (linebreak.c). */
+int text_is_space(uint32_t code_point);
+int text_break_between(uint32_t before, uint32_t after);
+
+#endif

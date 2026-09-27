@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>zdesktop-browser: the first page</title>
+<style>
+body { font-family: sans-serif; background-color: #f4f1ea; color: #222; }
+h1 { color: #1f4e79; border-bottom: 2px solid #1f4e79; padding-bottom: 4px; }
+.note { background: #fff8d6; border: 1px solid #d9c36a; padding: 8px 12px; margin: 12px 0; }
+#footer { color: gray; font-size: 12px; margin-top: 24px; }
+ul li { margin: 2px 0; }
+p.lead { font-size: 18px; }
+em { color: #8b1a1a; }
+</style>
+</head>
+<body>
+<h1>Hello from zdesktop-browser</h1>
+<p class="lead">This page goes through the whole pipeline: <strong>HTML</strong>, <em>CSS</em>, layout and painting.</p>
+<div class="note">A note with a <a href="second.html">link to the second page</a> and some <code>code</code>.</div>
+<h2>What works</h2>
+<ul>
+<li>The HTML tokenizer and tree builder</li>
+<li>Selectors: type, <b>class</b>, <i>id</i> and descendants</li>
+<li>Block and inline layout with line breaking across several lines of text that is long enough to wrap in a normal window</li>
+</ul>
+<p>日本語の文も表示できるはずです。改行もされます。</p>
+<p id="footer">zedBSD, 2026</p>
+</body>
+</html>

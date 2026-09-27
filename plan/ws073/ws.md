@@ -9,7 +9,7 @@ Related Milestones: MG004, MG006
 Objectives: O1
 Parent: [Master](../master.md)
 Executor: WS073 のサブエージェント（branch `worktree-agent-a4f5b29b09938aa63`。p001・p002 は `worktree-agent-aefedcaf4a52a0507`）。main が merge する
-Resume point: 下の Phase 一覧の最初の planned
+Resume point: 「残りの bug」の表（2026-09-27 21 時、p018 まで cleared。次は BUG-075 の設計）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -50,10 +50,26 @@ BUG-027・BUG-033（性能。単独の計測を後で）。
 | [ws073-p011](phase011/phase.md) | BUG-070 | USB HID の keyboard が keypad・Num Lock・Print Screen・日本語の key などを出す | cleared |
 | [ws073-p014](phase014/phase.md) | — | amd64 は /boot・/boot/esp を自動で見せず fstab に任せる。fstab の ESP の mount は kernel の hold を adopt する | cleared |
 | [ws073-p015](phase015/phase.md) | BUG-073 | 最終の layout: `bootN:` の file を持つ boot の slot を /boot/boot0〜3 に自動で mount（amd64 UEFI も、起動後の `swapon bootN:` も）、ESP は fstab、使用中の file は読めるが書けない。claim のある FAT の line の書き戻し（BUG-073）を修正 | cleared |
+| [ws073-p018](phase018/phase.md) | BUG-026 | 共有の file の mapping への store が munmap・exit で dirty にならず書き戻されない（ld.lld の出力が disk で空）を修正 | cleared |
 | [ws073-p017](phase017/phase.md) | BUG-036・BUG-031（030・041） | 起動時の USB の root port の列挙を ETIMEDOUT・EIO で 3 回まで再試行、kernel の console への写しを record 単位で排他、間欠の bug の再現の試み | cleared |
 | [ws073-p016](phase016/phase.md) | BUG-074・BUG-076 | FAT の readdir の位置を record の番号にし走査中の unlink で entry を飛ばさない（`rm -r`）。FAT の inode の pool が満ちたら cache だけの inode を追い出す | cleared |
 
+## 残りの bug（2026-09-27 21 時の時点）
+
+| Bug | 状態 | 次の手 |
+| --- | --- | --- |
+| BUG-075 | 原因の見込みあり（read の page cache の object が inode に handle を持ち、unlink の後も orphan の chain が残る） | unlink で DEAD になった inode の cache だけの object を捨てる設計の Phase（VM の object の寿命） |
+| BUG-031 | 修正あり、確認は部分的 | 起動の途中の画面を撮る試験で 20 回 |
+| BUG-036 | 緩和（列挙の再試行） | 時間切れの原因（xHCI の event か QEMU か）、hub の下の port |
+| BUG-030・041・051 | 再現せず | 再現したとき |
+| BUG-039 | VFS の fixture だけ修正 | host 試験の土台の WS（overlay・UFS の fixture） |
+| BUG-024 | ユーザーの判断待ち（A 説明だけ／B PC-98 の PCI・USB の移植） | 判断の後 |
+| BUG-023・013・025 | PC-98・実機が要る（amd64 だけの方針で未実施） | 試験が許されたとき |
+| BUG-026 の workaround | kernel は修正済み。clang の package の `--mmap-output-file` は main の判断で当面残す | WS032 の受け入れを無しで通したら外す |
+
 ## 判断が要る点
+
+- BUG-024（PC-98 の menuconfig の PCI・USB）: A 説明だけ／B 移植の WS（main 経由でユーザーへ、2026-09-27）。既定: どちらもせず tracking。
 
 - （解決 2026-09-27）ws073-p002: kernel が private に持つ boot の FAT（ESP）の公開の mount が EBUSY になった。ESP を running system から触るなら
   kernel の mount を公開する案（[phase](phase002/phase.md)）。ユーザーの判断（原文）: 「ESPは/boot/espにします。/bootはBOOTという名前のFATパーティションですね。

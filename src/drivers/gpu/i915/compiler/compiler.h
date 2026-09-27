@@ -32,6 +32,21 @@
 #define I915_SHADER_MAX_INPUTS		16U
 
 /*
+ * The input locations a vertex kernel reads gl_VertexIndex and
+ * gl_InstanceIndex at: past every attribute location, so they come last in
+ * the payload order; the draw fills them from the vertex fetcher's
+ * generated values (3DSTATE_VF_SGVS) instead of a vertex buffer.
+ */
+#define I915_SHADER_LOCATION_VERTEX_INDEX	64U
+#define I915_SHADER_LOCATION_INSTANCE_INDEX	65U
+
+/*
+ * The input location a fragment kernel reads gl_FrontFacing at: not an
+ * interpolated input, but the thread payload's back-facing bit.
+ */
+#define I915_SHADER_LOCATION_FRONT_FACING	66U
+
+/*
  * Why a SPIR-V module was refused.
  *
  * `reason` is a static string; `opcode` and `word_offset` name the refused
@@ -103,6 +118,9 @@ struct i915_shader_binary {
 
 	/* The input locations in ascending order: the payload order. */
 	uint32_t input_locations[I915_SHADER_MAX_INPUTS];
+
+	/* Fragment: bit n is set when input n (in payload order) is Flat, set up as the provoking vertex's value. */
+	uint32_t input_flat_mask;
 
 	/* Vertex: VUE slots after the position; fragment: equal to input_count. */
 	uint32_t varying_count;

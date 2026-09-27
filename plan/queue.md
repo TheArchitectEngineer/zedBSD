@@ -6,7 +6,7 @@
 Status: なし（2026-09-27 11:52 から、ユーザーの指示でサブエージェントが worktree の branch で Phase を実行し、メインは計画と merge）
 Active Queue: なし
 Last finished Queue: [q495](history/queue-q495.md)（ws068-p024 cleared。GLES 3.0 の API（1））
-Executor: 作業用のサブエージェント N=4（2026-09-27 19:35 から、36% で reset まで 2 時間 12 分）: デスクトップ（WS071・WS070・WS035）、WS068（i915 の高度化へ）、WS074（ブラウザ）、WS073（p015 `/boot/bootN` と bug）
+Executor: 作業用のサブエージェント N=1（2026-09-27 21:15 に WS074・WS075 を停止、使用量）: デスクトップ（締めの Phase）。reset（21:51）の後に N=3 で再開の予定（WS074 は p011、WS075 は p004、WS073 は BUG-075 の設計から）
 <!-- awesome-plan-current:end -->
 
 Upcoming Work Outlook: WS071 p007〜（File Manager）、WS035 p076〜p080 → p055・p057・p058（compositor）、WS073 p003〜（バグ）。salvage の片付けの後、枠が空けば WS068 p025〜（GLES 3.0 の API）→ p013（desktop GL）を作業用のサブエージェントへ。ACPI（WS049）と Arm64（WS044・WS048）はデスクトップが片付くかリミットが余るとき、WS001 はユーザーの指示のときだけ。

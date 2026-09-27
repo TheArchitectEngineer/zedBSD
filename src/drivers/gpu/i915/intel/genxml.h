@@ -59,7 +59,8 @@
  *   src/intel/genxml/gen70.xml (3D_Prim_Topo_Type)
  *     dd7c942fc12afd2defdc435997ccdb5b48841d344f40625dbb2b4e746eca09ef
  *   src/intel/genxml/gen120.xml (3DSTATE_SF, the file above)
- *   src/intel/genxml/gen80.xml (3DSTATE_CLIP, which gen120.xml imports through gen110.xml and gen90.xml)
+ *   src/intel/genxml/gen80.xml (3DSTATE_CLIP, which gen120.xml imports through gen110.xml and gen90.xml;
+ *   and VFCOMP_STORE_1_INT of 3D_Vertex_Component_Control, and 3DSTATE_VF_SGVS)
  *     2962677cf69dc947345fd88bd7010427900160eb7a7b076463e6e8d28772439d
  * The genxml files carry no notice of their own; the notice above is the one
  * Mesa's generator (src/intel/genxml/gen_pack_header.py) puts on the headers
@@ -231,6 +232,16 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 #define GEN12_VFCOMP_STORE_SRC			1U
 #define GEN12_VFCOMP_STORE_0			2U
 #define GEN12_VFCOMP_STORE_1_FP			3U
+#define GEN12_VFCOMP_STORE_1_INT		4U
+
+/*
+ * 3DSTATE_VF_SGVS dword 1: the vertex ID into component 0 of the element
+ * at bits 5:0 (enable bit 15), the instance ID into component 0 of the
+ * element at bits 21:16 (enable bit 31).
+ */
+#define GEN12_SGVS_VERTEX_ID_ENABLE		(1U << 15)
+#define GEN12_SGVS_INSTANCE_ID_SHIFT		16U
+#define GEN12_SGVS_INSTANCE_ID_ENABLE		(1U << 31)
 
 /* Surface formats (isl_format numbering). */
 #define GEN12_FORMAT_R32G32B32A32_FLOAT		0U

@@ -38,6 +38,22 @@
 #define I915_GFX_SURFACE_R32G32B32_FLOAT	0x040U
 #define I915_GFX_SURFACE_R32G32B32A32_FLOAT	0x000U
 
+/*
+ * The 32-bit integer ones, for integer vertex attributes (Mesa 25.0.7
+ * src/intel/isl/isl.h, enum isl_format, which is genxml's SURFACE_FORMAT).
+ */
+#define I915_GFX_SURFACE_R32_SINT		0x0d6U
+#define I915_GFX_SURFACE_R32_UINT		0x0d7U
+#define I915_GFX_SURFACE_R32G32_SINT		0x086U
+#define I915_GFX_SURFACE_R32G32_UINT		0x087U
+#define I915_GFX_SURFACE_R32G32B32_SINT		0x041U
+#define I915_GFX_SURFACE_R32G32B32_UINT		0x042U
+#define I915_GFX_SURFACE_R32G32B32A32_SINT	0x001U
+#define I915_GFX_SURFACE_R32G32B32A32_UINT	0x002U
+
+/* The attribute of a vertex kernel's input that the fetcher generates instead of reading (gl_VertexIndex, gl_InstanceIndex). */
+#define I915_GFX_NO_ATTRIBUTE			0xffffffffU
+
 /* SAMPLER_STATE texture coordinate mode for an address mode past the table: CLAMP. */
 #define I915_GFX_SAMPLER_CLAMP			2U
 
@@ -154,6 +170,7 @@ static const uint32_t i915_gfx_blend_functions[5] = {
 };
 
 static int i915_surface_format(uint32_t format, uint32_t *surface_format);
+static int i915_format_integer(uint32_t format);
 static uint32_t i915_format_components(uint32_t format);
 static int i915_image_surface_write(uint32_t *rss, const struct i915_gfx_image *image, uint32_t base_level, uint32_t level_count, uint32_t mocs);
 static uint32_t i915_sampler_mip_filter(uint32_t mipmap_mode);
@@ -564,17 +581,34 @@ drv_i915_gfx_emit_vertex_input(
 	uint32_t component_z;
 	uint32_t component_w;
 	uint32_t topology;
+	uint32_t sgvs;
+	int integer;
 	uint64_t va;
 	int error;
 
-	/* A draw needs at least one attribute and one vertex buffer binding. */
+	/* A draw needs at least one input: an attribute, or a generated index. */
 	pipeline = state->pipeline;
 	count = kernels->vs_input_count;
-	if (count == 0U || pipeline->binding_count == 0U)
+	if (count == 0U)
 		return EINVAL;
 
-	/* Finds the pipeline attribute of every location the kernel reads. */
+	/* Finds the pipeline attribute of every location the kernel reads; a generated index has none. */
+	sgvs = 0U;
 	for (index = 0U; index < count; index++) {
+		/* gl_VertexIndex and gl_InstanceIndex: the fetcher writes component x of the element (3DSTATE_VF_SGVS). */
+		if (kernels->vs_inputs[index] == I915_SHADER_LOCATION_VERTEX_INDEX) {
+			sgvs |= index | GEN12_SGVS_VERTEX_ID_ENABLE;
+			order[index] = I915_GFX_NO_ATTRIBUTE;
+			continue;
+		}
+
+		/* gl_InstanceIndex likewise, its element named in the instance half of the dword. */
+		if (kernels->vs_inputs[index] == I915_SHADER_LOCATION_INSTANCE_INDEX) {
+			sgvs |= (index << GEN12_SGVS_INSTANCE_ID_SHIFT) | GEN12_SGVS_INSTANCE_ID_ENABLE;
+			order[index] = I915_GFX_NO_ATTRIBUTE;
+			continue;
+		}
+
 		/* Looks the location up among the pipeline's attributes. */
 		for (other = 0U; other < pipeline->attribute_count; other++) {
 			if (pipeline->attributes[other].location == kernels->vs_inputs[index])
@@ -591,8 +625,9 @@ drv_i915_gfx_emit_vertex_input(
 		order[index] = other;
 	}
 
-	/* Emits one VERTEX_BUFFER_STATE for each binding of the pipeline. */
-	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_VERTEX_BUFFERS, 1U + pipeline->binding_count * GEN12_VERTEX_BUFFER_STATE_DWORDS));
+	/* Emits one VERTEX_BUFFER_STATE for each binding of the pipeline (none for a pipeline without). */
+	if (pipeline->binding_count != 0U)
+		drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_VERTEX_BUFFERS, 1U + pipeline->binding_count * GEN12_VERTEX_BUFFER_STATE_DWORDS));
 	for (index = 0U; index < pipeline->binding_count; index++) {
 		/* Refuses a binding number past the bindings a command buffer tracks. */
 		binding = pipeline->bindings[index].binding;
@@ -628,15 +663,26 @@ drv_i915_gfx_emit_vertex_input(
 	/* Emits one VERTEX_ELEMENT_STATE for each attribute, in payload order. */
 	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_VERTEX_ELEMENTS, 1U + count * GEN12_VERTEX_ELEMENT_STATE_DWORDS));
 	for (index = 0U; index < count; index++) {
-		/* Refuses a vertex format the surface formats do not cover. */
+		/* A generated index: an element of zeros the fetcher writes the index into. */
 		attribute = order[index];
+		if (attribute == I915_GFX_NO_ATTRIBUTE) {
+			drv_i915_batch_emit(batch, (1U << 25) | (I915_GFX_SURFACE_R32G32B32A32_FLOAT << 16));
+			drv_i915_batch_emit(batch,
+					    (GEN12_VFCOMP_STORE_0 << 28) |
+					    (GEN12_VFCOMP_STORE_0 << 24) |
+					    (GEN12_VFCOMP_STORE_0 << 20) |
+					    (GEN12_VFCOMP_STORE_0 << 16));
+			continue;
+		}
+
+		/* Refuses a vertex format the surface formats do not cover. */
 		error = i915_surface_format(pipeline->attributes[attribute].format, &format);
 		if (error != 0)
 			return ENOTSUP;
 
 		/*
 		 * Stores the components the format has; a missing y or z is 0 and
-		 * a missing w is 1.0.
+		 * a missing w is 1.0 (the integer 1 for an integer format).
 		 */
 		components = i915_format_components(pipeline->attributes[attribute].format);
 		component_y = GEN12_VFCOMP_STORE_0;
@@ -646,6 +692,9 @@ drv_i915_gfx_emit_vertex_input(
 		if (components > 2U)
 			component_z = GEN12_VFCOMP_STORE_SRC;
 		component_w = GEN12_VFCOMP_STORE_1_FP;
+		integer = i915_format_integer(pipeline->attributes[attribute].format);
+		if (integer)
+			component_w = GEN12_VFCOMP_STORE_1_INT;
 		if (components > 3U)
 			component_w = GEN12_VFCOMP_STORE_SRC;
 
@@ -665,7 +714,8 @@ drv_i915_gfx_emit_vertex_input(
 	/* Enables the vertex fetch statistics and clears the fetcher's other state. */
 	drv_i915_batch_emit(batch, (GEN12_CMD_3DSTATE_VF_STATISTICS << 16) | 1U);
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_VF, GEN12_3DSTATE_VF_DWORDS);
-	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_VF_SGVS, GEN12_3DSTATE_VF_SGVS_DWORDS);
+	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_VF_SGVS, GEN12_3DSTATE_VF_SGVS_DWORDS));
+	drv_i915_batch_emit(batch, sgvs);
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_VF_SGVS_2, GEN12_3DSTATE_VF_SGVS_2_DWORDS);
 
 	/* Turns instancing off for every vertex element. */
@@ -1093,7 +1143,8 @@ drv_i915_gfx_emit_pixel_shader(
 	/*
 	 * Programs SBE: the attribute swizzle and the read offset override, the
 	 * number of attributes, the read length and the read offset of slot 2;
-	 * every attribute with all four components active.
+	 * the Flat inputs' constant interpolation; every attribute with all four
+	 * components active.
 	 */
 	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_SBE, GEN12_3DSTATE_SBE_DWORDS));
 	drv_i915_batch_emit(batch,
@@ -1104,7 +1155,7 @@ drv_i915_gfx_emit_pixel_shader(
 			    (read_length << 11) |
 			    (1U << 5));
 	drv_i915_batch_emit(batch, 0U);
-	drv_i915_batch_emit(batch, 0U);
+	drv_i915_batch_emit(batch, kernels->ps_flat_mask);
 	drv_i915_batch_emit(batch, 0xffffffffU);
 	drv_i915_batch_emit(batch, 0xffffffffU);
 
@@ -1354,8 +1405,65 @@ i915_surface_format(
 		*surface_format = I915_GFX_SURFACE_R32G32B32A32_FLOAT;
 		return 0;
 	default:
-		return ENOTSUP;
+		break;
 	}
+
+	/* The 32-bit integers, delivered to the vertex kernel bit for bit. */
+	switch (format) {
+	case VK_FORMAT_R32_SINT:
+		*surface_format = I915_GFX_SURFACE_R32_SINT;
+		return 0;
+	case VK_FORMAT_R32_UINT:
+		*surface_format = I915_GFX_SURFACE_R32_UINT;
+		return 0;
+	case VK_FORMAT_R32G32_SINT:
+		*surface_format = I915_GFX_SURFACE_R32G32_SINT;
+		return 0;
+	case VK_FORMAT_R32G32_UINT:
+		*surface_format = I915_GFX_SURFACE_R32G32_UINT;
+		return 0;
+	case VK_FORMAT_R32G32B32_SINT:
+		*surface_format = I915_GFX_SURFACE_R32G32B32_SINT;
+		return 0;
+	case VK_FORMAT_R32G32B32_UINT:
+		*surface_format = I915_GFX_SURFACE_R32G32B32_UINT;
+		return 0;
+	case VK_FORMAT_R32G32B32A32_SINT:
+		*surface_format = I915_GFX_SURFACE_R32G32B32A32_SINT;
+		return 0;
+	case VK_FORMAT_R32G32B32A32_UINT:
+		*surface_format = I915_GFX_SURFACE_R32G32B32A32_UINT;
+		return 0;
+	default:
+		break;
+	}
+
+	/* Any other format. */
+	return ENOTSUP;
+}
+
+/* Reports whether a vertex format holds 32-bit integers. */
+static int
+i915_format_integer(
+	uint32_t format)
+{
+	/* The signed and unsigned 32-bit formats. */
+	switch (format) {
+	case VK_FORMAT_R32_SINT:
+	case VK_FORMAT_R32_UINT:
+	case VK_FORMAT_R32G32_SINT:
+	case VK_FORMAT_R32G32_UINT:
+	case VK_FORMAT_R32G32B32_SINT:
+	case VK_FORMAT_R32G32B32_UINT:
+	case VK_FORMAT_R32G32B32A32_SINT:
+	case VK_FORMAT_R32G32B32A32_UINT:
+		return 1;
+	default:
+		break;
+	}
+
+	/* Floats, or normalized integers read as floats. */
+	return 0;
 }
 
 /* Reports how many components a vertex format has; any other format counts as four. */
@@ -1363,13 +1471,19 @@ static uint32_t
 i915_format_components(
 	uint32_t format)
 {
-	/* Picks the component count of the float vertex formats. */
+	/* Picks the component count of the 32-bit vertex formats, float or integer. */
 	switch (format) {
 	case VK_FORMAT_R32_SFLOAT:
+	case VK_FORMAT_R32_SINT:
+	case VK_FORMAT_R32_UINT:
 		return 1U;
 	case VK_FORMAT_R32G32_SFLOAT:
+	case VK_FORMAT_R32G32_SINT:
+	case VK_FORMAT_R32G32_UINT:
 		return 2U;
 	case VK_FORMAT_R32G32B32_SFLOAT:
+	case VK_FORMAT_R32G32B32_SINT:
+	case VK_FORMAT_R32G32B32_UINT:
 		return 3U;
 	default:
 		return 4U;

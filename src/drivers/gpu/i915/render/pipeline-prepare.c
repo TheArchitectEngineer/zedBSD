@@ -173,6 +173,7 @@ drv_i915_gfx_pipeline_kernels(
 	 */
 	kernels->ps_inputs_mapped = 1U;
 	kernels->ps_input_count = fragment->input_count;
+	kernels->ps_flat_mask = fragment->input_flat_mask;
 	for (index = 0U; index < fragment->input_count && index < I915_GFX_MAX_VARYINGS; index++) {
 		slot = 0U;
 		found = i915_pipeline_input_slot(vertex, fragment->input_locations[index], &slot);

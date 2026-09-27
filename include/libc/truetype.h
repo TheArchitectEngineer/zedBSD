@@ -67,6 +67,17 @@ struct truetype_metrics {
  * index selects a face inside a TrueType collection; it is zero for an
  * ordinary font file.  Returns zero, or an errno value.
  */
+/*
+ * The face's own vertical measures, in its design units (descent is
+ * negative), and the size of its em in the same units.
+ */
+struct truetype_design_metrics {
+	unsigned units_per_em;
+	int ascent;
+	int descent;
+	int line_gap;
+};
+
 int truetype_open(const void *data, size_t size, unsigned index,
 		  struct truetype_face **face);
 
@@ -115,6 +126,19 @@ int truetype_glyph_metrics(struct truetype_face *face, unsigned glyph,
 int truetype_render_glyph(struct truetype_face *face, unsigned glyph,
 			  struct truetype_glyph *metrics,
 			  uint8_t *bitmap, size_t stride, size_t size);
+
+/*
+ * Reports the face's design measures (the units a fractional-size layout
+ * scales itself).
+ */
+int truetype_design_metrics(const struct truetype_face *face,
+			    struct truetype_design_metrics *metrics);
+
+/*
+ * Reports a glyph's advance width in design units.
+ */
+int truetype_glyph_design_advance(const struct truetype_face *face,
+				  unsigned glyph, int *advance);
 
 #ifdef __cplusplus
 }

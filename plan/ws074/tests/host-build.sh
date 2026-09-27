@@ -18,7 +18,7 @@ variant=${1:-plain}
 out=build/ws074-host/$variant
 src=userland/base/zdesktop-browser
 cc=${CC:-cc}
-flags="-std=gnu11 -O1 -g -Wall -Wextra -Werror -D_GNU_SOURCE -I$src -Iplan/ws074/tests"
+flags="-std=gnu11 -O1 -g -Wall -Wextra -Werror -D_GNU_SOURCE -I$src -Iplan/ws074/tests -Ibuild/ws074-host/include"
 case $variant in
 plain) ;;
 asan) flags="$flags -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=undefined" ;;
@@ -30,6 +30,20 @@ mkdir -p "$out/obj"
 sources=$(sh plan/ws074/tests/list-sources.sh | grep -v '/shell/')
 objects=""
 engine=""
+
+# The base libraries the engine links on zedBSD, built from their sources (their public headers
+# are linked into build/ws074-host/include, since the host's C library does not have them).
+mkdir -p build/ws074-host/include
+ln -sf "$(pwd)/include/libc/truetype.h" build/ws074-host/include/truetype.h
+for file in userland/base/libtruetype/face.c userland/base/libtruetype/cmap.c userland/base/libtruetype/outline.c \
+    userland/base/libtruetype/render.c userland/base/libtruetype/glyph.c userland/base/libtruetype/design.c; do
+	object=$out/obj/truetype-$(basename "$file" .c).o
+	if [ ! -f "$object" ] || [ "$file" -nt "$object" ]; then
+		"$cc" $flags -Wno-error -Iuserland/base/libtruetype -c "$file" -o "$object"
+	fi
+	engine="$engine $object"
+	objects="$objects $object"
+done
 
 # The tables generated from downloaded lists, made the way the package's Makefile makes them.
 mkdir -p "$out/gen"

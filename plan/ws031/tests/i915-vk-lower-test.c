@@ -604,7 +604,7 @@ test_refusals(void)
 	op(56U, 0U);
 	assert(drv_i915_shader_parse(mod, mod_n, I915_STAGE_VERTEX, &ir, &diag) == ENOTSUP && ir == NULL && diag.opcode == 252U);
 
-	/* a decoration that would qualify data (Flat = 14, Component = 31) is not ignored */
+	/* a decoration that would place data (Component = 31) is not ignored (Flat is kept for the draw, ws075-p004) */
 	begin_module();
 	/* the decoration goes before the function: lift the OpFunction / OpLabel tail and put it back */
 	{
@@ -613,12 +613,12 @@ test_refusals(void)
 
 		memcpy(tail, mod + function_at, sizeof(tail));
 		mod_n = function_at;
-		op(71U, 2U, U(V_IN0), U(14));           /* OpDecorate %in0 Flat */
+		op(71U, 3U, U(V_IN0), U(31), U(0));     /* OpDecorate %in0 Component 0 */
 		memcpy(mod + mod_n, tail, sizeof(tail));
 		mod_n += 7U;
 	}
 	assert(end_module(&ir, &diag) == ENOTSUP && ir == NULL && diag.opcode == 71U);
-	printf("  refusals: unset local, partial local, dynamic index, initializer, size mismatch, input store, back edge, return in a loop, switch, vertex OpKill, Flat\n");
+	printf("  refusals: unset local, partial local, dynamic index, initializer, size mismatch, input store, back edge, return in a loop, switch, vertex OpKill, Component\n");
 }
 
 /* RelaxedPrecision (no effect on this lowering) is accepted by name. */
@@ -635,6 +635,22 @@ test_harmless_decoration(void)
 	memcpy(tail, mod + function_at, sizeof(tail));
 	mod_n = function_at;
 	op(71U, 2U, U(V_IN0), U(0));                    /* OpDecorate %in0 RelaxedPrecision */
+	memcpy(mod + mod_n, tail, sizeof(tail));
+	mod_n += 7U;
+	assert(end_module(&ir, &diag) == 0);
+	drv_i915_shader_ir_free(ir);
+
+	/*
+	 * Flat and Centroid (ws075-p004) are accepted.  The decorations go after
+	 * the variables here, so Flat does not reach the input record; that it
+	 * does in a real module is checked by the draws on the hardware.
+	 */
+	begin_module();
+	function_at = mod_n - 7U;
+	memcpy(tail, mod + function_at, sizeof(tail));
+	mod_n = function_at;
+	op(71U, 2U, U(V_IN0), U(14));                   /* OpDecorate %in0 Flat */
+	op(71U, 2U, U(V_IN0), U(16));                   /* OpDecorate %in0 Centroid */
 	memcpy(mod + mod_n, tail, sizeof(tail));
 	mod_n += 7U;
 	assert(end_module(&ir, &diag) == 0);
