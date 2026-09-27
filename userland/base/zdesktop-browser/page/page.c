@@ -12,6 +12,7 @@
  */
 
 #include "page/page.h"
+#include "net/net.h"
 
 #include <errno.h>
 #include <stdlib.h>
@@ -201,6 +202,65 @@ page_load_file(
 	/* Loads its bytes. */
 	error = page_load_html(page, buffer.data, buffer.length);
 	wb_buffer_release(&buffer);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the page is loaded. */
+	return 0;
+}
+
+/*
+ * Loads an HTML document from a location: a file's path (relative to the
+ * working directory, or absolute), or a URL (file:, data: or http:).
+ * The page's location becomes the file's path, or the URL after its
+ * redirects.
+ */
+int
+page_load_location(
+	struct page *page,
+	const char *location)
+{
+	struct net_url url;
+	struct wb_buffer bytes;
+	struct wb_buffer final_url;
+	struct wb_buffer where;
+	int error;
+
+	/* What is not a URL is a file's path. */
+	error = net_url_parse(location, strlen(location), NULL, &url);
+	if (error == EINVAL) {
+		error = page_load_file(page, location);
+		return error;
+	}
+
+	/* A URL that cannot be parsed for another reason (memory). */
+	if (error != 0)
+		return error;
+	net_url_release(&url);
+
+	/* The document's bytes and its final URL. */
+	wb_buffer_init(&bytes);
+	wb_buffer_init(&final_url);
+	wb_buffer_init(&where);
+	error = page_fetch(location, location, &bytes, &final_url);
+
+	/* The page's location: a file's path, or the final URL. */
+	if (error == 0)
+		error = page_resolve_location(wb_buffer_string(&final_url), wb_buffer_string(&final_url), &where);
+	free(page->base);
+	page->base = NULL;
+	if (error == 0) {
+		page->base = strdup(wb_buffer_string(&where));
+		if (page->base == NULL)
+			error = ENOMEM;
+	}
+
+	/* The document. */
+	if (error == 0)
+		error = page_load_html(page, bytes.data, bytes.length);
+	wb_buffer_release(&bytes);
+	wb_buffer_release(&final_url);
+	wb_buffer_release(&where);
 	if (error != 0)
 		return error;
 

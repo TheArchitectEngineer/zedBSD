@@ -287,7 +287,7 @@ shell_absolute(
 	strcat(directory, "/");
 
 	/* The start resolved against it, as a link would be. */
-	error = page_resolve_file(directory, start, path);
+	error = page_resolve_location(directory, start, path);
 	if (error != 0)
 		return error;
 
@@ -322,7 +322,7 @@ shell_open_page(
 	state->open_epoch = shell_clock();
 
 	/* The file. */
-	error = page_load_file(loaded, path);
+	error = page_load_location(loaded, path);
 	if (error == 0)
 		error = page_open_fonts(loaded, state->fonts);
 	if (error != 0) {
@@ -703,7 +703,7 @@ shell_follow(
 
 	/* The target's path. */
 	wb_buffer_init(&path);
-	error = page_resolve_file(state->path, target, &path);
+	error = page_resolve_location(state->path, target, &path);
 	if (error != 0) {
 		printf("ZBROWSER ERROR follow target=%s error=%s\n", target, strerror(error));
 		fflush(stdout);
