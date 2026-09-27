@@ -150,6 +150,44 @@ fm_location_name(
 	return slash + 1;
 }
 
+/*
+ * Writes the names of the tags of a mask (the sidebar's tags in order,
+ * bit n for the n-th), separated by commas.
+ */
+void
+fm_tags_text(
+	struct fm_app *app,
+	unsigned tags,
+	char *text,
+	size_t length)
+{
+	const struct fm_place *place;
+	size_t used;
+	int number;
+	int index;
+
+	/* Each tag of the sidebar whose bit is set. */
+	text[0] = '\0';
+	used = 0;
+	number = 0;
+	for (index = 0; index < app->places.count; index++) {
+		place = &app->places.items[index];
+		if (place->section != FM_SECTION_TAGS)
+			continue;
+
+		/* A tag in the mask is named, after a comma when others came before. */
+		if ((tags & (1U << number)) != 0U && used + 1U < length) {
+			if (used != 0U)
+				used += (size_t)snprintf(text + used, length - used, ", ");
+			if (used < length)
+				used += (size_t)snprintf(text + used, length - used, "%s", place->label);
+		}
+
+		/* The next tag of the sidebar has the next bit. */
+		number++;
+	}
+}
+
 /* Adds a place to a section of the sidebar; NULL when the sidebar is full. */
 static struct fm_place *
 places_add(

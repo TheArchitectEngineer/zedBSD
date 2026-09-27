@@ -32,6 +32,9 @@
 /* How many frames in a row may find the swapchain out of date before the program gives up. */
 #define MAIN_STALE_LIMIT	8U
 
+/* A frame that takes longer than this is logged, in milliseconds. */
+#define MAIN_SLOW_FRAME_MS	250U
+
 /* The longest the loop sleeps when nothing is due, in milliseconds (folders are checked for changes). */
 #define MAIN_IDLE_MS		500
 
@@ -382,16 +385,26 @@ static int
 main_frame(void)
 {
 	VkResult result;
+	uint64_t started;
+	uint64_t drawn;
+	uint64_t shown;
 	unsigned stale;
 	int status;
 
 	/* Tries until the frame is shown, remaking a stale swapchain a few times. */
 	for (stale = 0; stale < MAIN_STALE_LIMIT; stale++) {
 		/* The frame on the CPU. */
+		started = fm_clock();
 		fm_ui_draw(&main_app, &main_canvas);
+		drawn = fm_clock();
 
 		/* Shown in the window. */
 		result = fm_present_frame(&main_present, main_pixels, (size_t)main_present.extent.width);
+		shown = fm_clock();
+
+		/* A slow frame is logged (a diagnostic: where the time of a frame goes). */
+		if (shown - started > MAIN_SLOW_FRAME_MS)
+			fm_log("SLOW-FRAME draw=%lu present=%lu copy=%u acquire=%u queue=%u wait=%u", (unsigned long)(drawn - started), (unsigned long)(shown - drawn), main_present.copy_ms, main_present.acquire_ms, main_present.present_ms, main_present.wait_ms);
 		if (result == VK_SUCCESS)
 			return 0;
 

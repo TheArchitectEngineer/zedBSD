@@ -17,10 +17,11 @@
  *   --start=PATH                  the folder shown first (default: the home dashboard)
  *
  * Actions, run in order (each one 150 ms after the one before):
- *   move=X,Y  click=X,Y  double=X,Y  right=X,Y  press=X,Y  release=X,Y  scroll=PIXELS
+ *   move=X,Y  click=X,Y[:MODS]  double=X,Y  right=X,Y  press=X,Y  release=X,Y  scroll=PIXELS
  *   key=CODE[:MODS]  (evdev code; MODS a sum of 1 shift, 2 ctrl, 4 alt)
  *   text=STRING      (types ASCII letters, digits, '.', '-', '_' and ' ' as keys)
  *   wait=MS          (lets time pass and runs the ticks)
+ *   hits             (prints the clickable regions of the last frame)
  *   draw=PATH        (draws the frame into a PPM picture)
  *   focus=0|1
  */
@@ -100,9 +101,12 @@ main(
 		now += 150;
 		if (sscanf(argv[index], "move=%d,%d", &x, &y) == 2) {
 			host_event(&app, FM_EVENT_MOTION, x, y, 0, 0, 0, 0, &now);
+		} else if (sscanf(argv[index], "click=%d,%d:%u", &x, &y, &modifiers) == 3) {
+			host_event(&app, FM_EVENT_BUTTON, x, y, FM_BUTTON_LEFT, 1, 0, modifiers, &now);
+			host_event(&app, FM_EVENT_BUTTON, x, y, FM_BUTTON_LEFT, 0, 0, modifiers, &now);
 		} else if (sscanf(argv[index], "click=%d,%d", &x, &y) == 2) {
-			host_event(&app, FM_EVENT_BUTTON, x, y, FM_BUTTON_LEFT, 1, 0, app.modifiers, &now);
-			host_event(&app, FM_EVENT_BUTTON, x, y, FM_BUTTON_LEFT, 0, 0, app.modifiers, &now);
+			host_event(&app, FM_EVENT_BUTTON, x, y, FM_BUTTON_LEFT, 1, 0, 0, &now);
+			host_event(&app, FM_EVENT_BUTTON, x, y, FM_BUTTON_LEFT, 0, 0, 0, &now);
 		} else if (sscanf(argv[index], "double=%d,%d", &x, &y) == 2) {
 			host_event(&app, FM_EVENT_BUTTON, x, y, FM_BUTTON_LEFT, 1, 0, 0, &now);
 			host_event(&app, FM_EVENT_BUTTON, x, y, FM_BUTTON_LEFT, 0, 0, 0, &now);
@@ -129,6 +133,9 @@ main(
 				modifiers = 0;
 			host_event(&app, FM_EVENT_KEY, 0, 0, 0, 1, code, modifiers, &now);
 			host_event(&app, FM_EVENT_KEY, 0, 0, 0, 0, code, modifiers, &now);
+		} else if (strcmp(argv[index], "hits") == 0) {
+			for (x = 0; x < app.hit_count; x++)
+				printf("hit kind=%u index=%d x=%d y=%d width=%d height=%d\n", app.hits[x].kind, app.hits[x].index, app.hits[x].rect.x, app.hits[x].rect.y, app.hits[x].rect.width, app.hits[x].rect.height);
 		} else if (strncmp(argv[index], "text=", 5) == 0) {
 			host_type(&app, argv[index] + 5, &now);
 		} else if (sscanf(argv[index], "wait=%d", &x) == 1) {
@@ -214,6 +221,10 @@ host_type(
 		}
 		if (character == '_') {
 			character = '-';
+			modifiers = FM_MOD_SHIFT;
+		}
+		if (character == '~') {
+			character = '`';
 			modifiers = FM_MOD_SHIFT;
 		}
 		code = 57;

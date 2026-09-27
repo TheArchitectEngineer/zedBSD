@@ -200,17 +200,22 @@ fm_present_frame(
 	VkSubmitInfo submit;
 	VkPresentInfoKHR info;
 	VkPipelineStageFlags stage;
+	uint64_t started;
 	uint32_t image;
 	uint32_t row;
 	VkResult error;
 
 	/* The frame's rows into the canvas image. */
+	started = fm_clock();
 	for (row = 0; row < present->extent.height; row++)
 		memcpy(present->canvas_map + (size_t)row * present->canvas_pitch, pixels + (size_t)row * stride, (size_t)present->extent.width * 4U);
+	present->copy_ms = (unsigned)(fm_clock() - started);
 
 	/* The image to draw into, once the compositor has given one back. */
+	started = fm_clock();
 	present->operation = "vkAcquireNextImageKHR";
 	error = vkAcquireNextImageKHR(present->device, present->swapchain, PRESENT_TIMEOUT, present->acquired, VK_NULL_HANDLE, &image);
+	present->acquire_ms = (unsigned)(fm_clock() - started);
 	if (error != VK_SUCCESS && error != VK_SUBOPTIMAL_KHR)
 		return error;
 
@@ -257,14 +262,18 @@ fm_present_frame(
 	info.swapchainCount = 1U;
 	info.pSwapchains = &present->swapchain;
 	info.pImageIndices = &image;
+	started = fm_clock();
 	present->operation = "vkQueuePresentKHR";
 	error = vkQueuePresentKHR(present->queue, &info);
+	present->present_ms = (unsigned)(fm_clock() - started);
 	if (error != VK_SUCCESS && error != VK_SUBOPTIMAL_KHR)
 		return error;
 
 	/* The frame is finished before the host writes the canvas again. */
+	started = fm_clock();
 	present->operation = "vkWaitForFences";
 	error = vkWaitForFences(present->device, 1U, &present->fence, VK_TRUE, PRESENT_TIMEOUT);
+	present->wait_ms = (unsigned)(fm_clock() - started);
 	if (error != VK_SUCCESS)
 		return error;
 

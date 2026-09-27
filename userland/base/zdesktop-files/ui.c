@@ -48,21 +48,7 @@
 /* A second click this soon after the first on the same region is a double click, in milliseconds. */
 #define UI_DOUBLE_CLICK_MS	400U
 
-/* The most crumbs the path shows. */
-#define UI_CRUMBS		32
 
-/* The evdev codes of the keys the frame handles itself. */
-#define UI_KEY_BACKSPACE	14U
-#define UI_KEY_LEFT		105U
-#define UI_KEY_RIGHT		106U
-
-/*
- * One part of the path in the toolbar: its label and the place it leads to.
- */
-struct ui_crumb {
-	char label[FM_NAME_MAX];
-	struct fm_location location;
-};
 
 static void ui_layout(struct fm_app *app);
 static void ui_draw_toolbar(struct fm_app *app, struct fm_canvas *canvas);
@@ -71,20 +57,12 @@ static void ui_draw_crumbs(struct fm_app *app, struct fm_canvas *canvas, int x, 
 static void ui_draw_search(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *field);
 static void ui_draw_views(struct fm_app *app, struct fm_canvas *canvas, int x, int y);
 static void ui_draw_sidebar(struct fm_app *app, struct fm_canvas *canvas);
-static int ui_crumbs(struct fm_app *app, struct ui_crumb *crumbs, int capacity);
+static void ui_draw_progress(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *rect);
 static int ui_place_current(struct fm_app *app, const struct fm_place *place);
-static int ui_hit_at(struct fm_app *app, int x, int y, unsigned *kind, int *index);
-static int ui_contains(const struct fm_rect *rect, int x, int y);
-static void ui_motion(struct fm_app *app, const struct fm_event *event);
-static void ui_button(struct fm_app *app, const struct fm_event *event);
-static void ui_click(struct fm_app *app, unsigned kind, int index, int double_click);
-static void ui_scroll(struct fm_app *app, int amount);
-static void ui_key(struct fm_app *app, const struct fm_event *event);
-static void ui_load(struct fm_app *app, struct fm_tab *tab);
-static void ui_back(struct fm_app *app);
-static void ui_forward(struct fm_app *app);
-static void ui_open_entry(struct fm_app *app, int index);
 static const char *ui_location_kind_name(unsigned kind);
+static void ui_leave(struct fm_tab *tab);
+static void ui_mark_cut(struct fm_tab *tab);
+static void ui_select_paths(struct fm_app *app, struct fm_tab *tab);
 
 /*
  * Sets up the file manager: the home folder, the sidebar, one tab showing
@@ -110,6 +88,8 @@ fm_app_init(
 	app->view = FM_VIEW_ICONS;
 	app->sort = FM_SORT_NAME;
 	app->show_sidebar = 1;
+	app->columns = FM_COLUMNS_DEFAULT;
+	app->wall = time(NULL);
 	app->focused = 1;
 	app->dirty = 1;
 	app->hover_index = -1;
@@ -166,6 +146,9 @@ fm_app_release(
 {
 	int index;
 
+	/* The operations, stopped and let go. */
+	fm_actions_release(app);
+
 	/* Each tab's listing, then the tab. */
 	for (index = 0; index < app->tab_count; index++) {
 		fm_dir_free(&app->tabs[index]->listing);
@@ -192,14 +175,14 @@ fm_ui_event(
 	/* Each kind of input. */
 	switch (event->type) {
 	case FM_EVENT_MOTION:
-		ui_motion(app, event);
+		fm_input_motion(app, event);
 		break;
 	case FM_EVENT_BUTTON:
-		ui_motion(app, event);
-		ui_button(app, event);
+		fm_input_motion(app, event);
+		fm_input_button(app, event);
 		break;
 	case FM_EVENT_AXIS:
-		ui_scroll(app, event->scroll);
+		fm_input_scroll(app, event->scroll);
 		break;
 	case FM_EVENT_LEAVE:
 		app->pointer_inside = 0;
@@ -208,7 +191,7 @@ fm_ui_event(
 		app->dirty = 1;
 		break;
 	case FM_EVENT_KEY:
-		ui_key(app, event);
+		fm_input_key(app, event);
 		break;
 	case FM_EVENT_FOCUS:
 		app->focused = event->focused;
@@ -233,8 +216,20 @@ fm_ui_tick(
 	struct stat status;
 	int error;
 
-	/* The tab shown, checked no more often than every two seconds. */
+	/* The time now, which the lists' dates and the messages are measured by. */
 	app->now = now;
+	app->wall = time(NULL);
+
+	/* The tasks move on. */
+	(void)fm_actions_tick(app);
+
+	/* A message that has run its time goes. */
+	if (app->message[0] != '\0' && now >= app->message_until) {
+		app->message[0] = '\0';
+		app->dirty = 1;
+	}
+
+	/* The tab shown, checked no more often than every two seconds. */
 	tab = fm_ui_tab(app);
 	if (now < tab->checked_at + 2000U)
 		return;
@@ -251,7 +246,7 @@ fm_ui_tick(
 		return;
 
 	/* Reads it again. */
-	ui_load(app, tab);
+	fm_ui_reload(app, tab);
 	app->dirty = 1;
 }
 
@@ -285,8 +280,13 @@ fm_ui_draw(
 	/* The content panel, drawn by the view of the place. */
 	fm_grid_draw(app, canvas, &app->layout.content);
 
-	/* The toolbar over everything. */
+	/* The toolbar over everything, the tasks' list under it when open. */
 	ui_draw_toolbar(app, canvas);
+	if (app->show_tasks != 0 && app->task_count > 0)
+		fm_tasks_draw(app, canvas, app->layout.toolbar.x + app->layout.toolbar.width - 8, app->layout.toolbar.y + app->layout.toolbar.height + 6);
+
+	/* A question over all of it. */
+	fm_overlay_draw(app, canvas);
 
 	/* The frame is up to date. */
 	app->dirty = 0;
@@ -337,10 +337,10 @@ fm_ui_go(
 	struct fm_visit *visit;
 	int index;
 
-	/* The place being left keeps its scroll. */
+	/* The place being left keeps its scroll and its cursor. */
 	tab = fm_ui_tab(app);
 	if (tab->history_count > 0)
-		tab->history[tab->history_index].scroll = tab->scroll;
+		ui_leave(tab);
 
 	/* A full history drops its oldest step. */
 	index = tab->history_index + 1;
@@ -358,10 +358,28 @@ fm_ui_go(
 	tab->history_index = index;
 	tab->history_count = index + 1;
 
-	/* The place's items, from the top. */
+	/* The place's items, from the top, with nothing selected. */
 	tab->scroll = 0;
-	ui_load(app, tab);
+	fm_dir_free(&tab->listing);
+	fm_ui_reload(app, tab);
+	app->focus = FM_FOCUS_CONTENT;
+	app->band = 0;
 	app->dirty = 1;
+}
+
+/*
+ * Shows a short message in the status pill for a few seconds.
+ */
+void
+fm_ui_message(
+	struct fm_app *app,
+	const char *message)
+{
+	/* The message, until three seconds from now. */
+	snprintf(app->message, sizeof(app->message), "%s", message);
+	app->message_until = app->now + 3000U;
+	app->dirty = 1;
+	fm_log("MESSAGE %s", message);
 }
 
 /*
@@ -382,6 +400,272 @@ fm_log(
 	va_end(arguments);
 	fputc('\n', stderr);
 	fflush(stderr);
+}
+
+/*
+ * Fills the parts of the path shown in the toolbar and returns how many there are.
+ */
+int
+fm_ui_crumbs(
+	struct fm_app *app,
+	struct fm_crumb *crumbs,
+	int capacity)
+{
+	struct fm_tab *tab;
+	const struct fm_location *location;
+	const char *path;
+	const char *part;
+	const char *end;
+	size_t home_length;
+	size_t length;
+	size_t done;
+	int prefix;
+	int count;
+	int inside;
+
+	/* A place that is not a folder is a single part. */
+	tab = fm_ui_tab(app);
+	location = &tab->history[tab->history_index].location;
+	if (location->kind != FM_LOCATION_FOLDER) {
+		snprintf(crumbs[0].label, sizeof(crumbs[0].label), "%s", fm_location_name(location, app->home));
+		crumbs[0].location = *location;
+		return 1;
+	}
+
+	/* A folder under the home folder starts from Home, any other from Computer. */
+	path = location->path;
+	home_length = strlen(app->home);
+	inside = 0;
+	prefix = strncmp(path, app->home, home_length);
+	if (prefix == 0 &&
+	    home_length > 1U &&
+	    (path[home_length] == '/' ||
+	     path[home_length] == '\0'))
+		inside = 1;
+	count = 1;
+	crumbs[0].location.kind = FM_LOCATION_FOLDER;
+	if (inside != 0) {
+		snprintf(crumbs[0].label, sizeof(crumbs[0].label), "Home");
+		snprintf(crumbs[0].location.path, sizeof(crumbs[0].location.path), "%s", app->home);
+		done = home_length;
+	} else {
+		snprintf(crumbs[0].label, sizeof(crumbs[0].label), "Computer");
+		snprintf(crumbs[0].location.path, sizeof(crumbs[0].location.path), "/");
+		done = 0;
+	}
+
+	/* Each further part of the path, leading to the path up to it. */
+	part = path + done;
+	while (*part != '\0' && count < capacity) {
+		/* Slashes between parts. */
+		while (*part == '/')
+			part++;
+		if (*part == '\0')
+			break;
+
+		/* The part runs to the next slash. */
+		end = strchr(part, '/');
+		if (end == NULL)
+			end = part + strlen(part);
+		length = (size_t)(end - part);
+
+		/* Its label and the path up to it. */
+		if (length >= sizeof(crumbs[count].label))
+			length = sizeof(crumbs[count].label) - 1U;
+		memcpy(crumbs[count].label, part, length);
+		crumbs[count].label[length] = '\0';
+		crumbs[count].location.kind = FM_LOCATION_FOLDER;
+		length = (size_t)(end - path);
+		if (length >= sizeof(crumbs[count].location.path))
+			length = sizeof(crumbs[count].location.path) - 1U;
+		memcpy(crumbs[count].location.path, path, length);
+		crumbs[count].location.path[length] = '\0';
+		count++;
+		part = end;
+	}
+
+	/* Reports how many parts there are. */
+	return count;
+}
+
+/*
+ * Reads the items of the place a tab shows, sorted, and logs the place.
+ *
+ * The items selected before (and the cursor) stay selected when they are
+ * still there, so a folder read again after a change keeps its selection;
+ * a place come back to by the history gets its cursor back.
+ */
+void
+fm_ui_reload(
+	struct fm_app *app,
+	struct fm_tab *tab)
+{
+	const struct fm_location *location;
+	struct fm_visit *visit;
+	const char *path;
+	char trash[FM_PATH_MAX];
+	char **kept;
+	char *cursor_name;
+	size_t kept_count;
+	size_t index;
+	int found;
+	int error;
+
+	/* The place, and the folder its items come from. */
+	visit = &tab->history[tab->history_index];
+	location = &visit->location;
+	path = NULL;
+	if (location->kind == FM_LOCATION_FOLDER || location->kind == FM_LOCATION_HOME)
+		path = location->path;
+
+	/* The names of the selected items and of the cursor's, taken from the old listing. */
+	kept_count = 0;
+	kept = NULL;
+	cursor_name = NULL;
+	if (tab->listing.count != 0U)
+		kept = calloc(tab->listing.count, sizeof(kept[0]));
+	for (index = 0; kept != NULL && index < tab->listing.count; index++) {
+		if (tab->listing.entries[index].selected == 0)
+			continue;
+		kept[kept_count] = tab->listing.entries[index].name;
+		tab->listing.entries[index].name = NULL;
+		kept_count++;
+	}
+
+	/* The cursor's name, taken the same way. */
+	if (tab->cursor >= 0 &&
+	    (size_t)tab->cursor < tab->listing.count &&
+	    tab->listing.entries[tab->cursor].name != NULL) {
+		cursor_name = tab->listing.entries[tab->cursor].name;
+		tab->listing.entries[tab->cursor].name = NULL;
+	}
+
+	/* A folder's items, the trash's, or none for places the later phases fill. */
+	fm_dir_free(&tab->listing);
+	if (path != NULL) {
+		(void)fm_dir_read(&tab->listing, path, app->show_hidden);
+	} else if (location->kind == FM_LOCATION_TRASH) {
+		error = fm_trash_path(trash, sizeof(trash));
+		if (error == 0)
+			(void)fm_dir_read_trash(&tab->listing, trash);
+	}
+
+	/* The items in the window's order, the cut ones marked. */
+	fm_dir_sort(&tab->listing, app->sort, app->sort_reverse);
+	ui_mark_cut(tab);
+
+	/* Nothing has the cursor yet, and the folder was just checked. */
+	tab->cursor = -1;
+	tab->anchor = -1;
+	tab->checked_at = app->now;
+
+	/* The kept names selected again where they are still there. */
+	for (index = 0; index < kept_count; index++) {
+		found = fm_select_find(tab, kept[index]);
+		if (found >= 0)
+			tab->listing.entries[found].selected = 1;
+		free(kept[index]);
+	}
+
+	/* The names are not needed any more. */
+	free(kept);
+
+	/* The cursor on its item again. */
+	if (cursor_name != NULL) {
+		found = fm_select_find(tab, cursor_name);
+		tab->cursor = found;
+		tab->anchor = found;
+		free(cursor_name);
+	}
+
+	/* A place come back to gets the cursor it was left with. */
+	if (kept_count == 0U && tab->cursor < 0 && visit->cursor[0] != '\0') {
+		found = fm_select_find(tab, visit->cursor);
+		fm_select_only(tab, found);
+	}
+
+	/* What a finished operation made is selected instead, the first one with the cursor. */
+	ui_select_paths(app, tab);
+
+	/* The log line the tests wait for. */
+	fm_log("LOCATION kind=%s path=%s items=%lu error=%d", ui_location_kind_name(location->kind), location->path, (unsigned long)tab->listing.count, tab->listing.error);
+}
+
+/*
+ * Goes one step back in the tab's history.
+ */
+void
+fm_ui_back(
+	struct fm_app *app)
+{
+	struct fm_tab *tab;
+
+	/* The first step has nothing behind it. */
+	tab = fm_ui_tab(app);
+	if (tab->history_index == 0)
+		return;
+
+	/* The step before, at the scroll it was left with. */
+	ui_leave(tab);
+	tab->history_index--;
+	fm_dir_free(&tab->listing);
+	fm_ui_reload(app, tab);
+	tab->scroll = tab->history[tab->history_index].scroll;
+	app->dirty = 1;
+}
+
+/*
+ * Goes one step forward in the tab's history.
+ */
+void
+fm_ui_forward(
+	struct fm_app *app)
+{
+	struct fm_tab *tab;
+
+	/* The last step has nothing after it. */
+	tab = fm_ui_tab(app);
+	if (tab->history_index + 1 >= tab->history_count)
+		return;
+
+	/* The step after, at the scroll it was left with. */
+	ui_leave(tab);
+	tab->history_index++;
+	fm_dir_free(&tab->listing);
+	fm_ui_reload(app, tab);
+	tab->scroll = tab->history[tab->history_index].scroll;
+	app->dirty = 1;
+}
+
+/*
+ * Opens an item of the listing: a folder in the tab (a file opens in a later phase).
+ */
+void
+fm_ui_open(
+	struct fm_app *app,
+	int index)
+{
+	struct fm_location location;
+	struct fm_tab *tab;
+	struct fm_entry *entry;
+
+	/* The item. */
+	tab = fm_ui_tab(app);
+	if (index < 0 || (size_t)index >= tab->listing.count)
+		return;
+	entry = &tab->listing.entries[index];
+
+	/* A folder opens in this tab. */
+	if (entry->folder != 0) {
+		memset(&location, 0, sizeof(location));
+		location.kind = FM_LOCATION_FOLDER;
+		snprintf(location.path, sizeof(location.path), "%s", entry->path);
+		fm_ui_go(app, &location);
+		return;
+	}
+
+	/* A file is only logged for now. */
+	fm_log("OPEN path=%s", entry->path);
 }
 
 /* Places the toolbar, the sidebar, the content and the preview for the window's size. */
@@ -441,9 +725,11 @@ ui_draw_toolbar(
 {
 	const struct fm_rect *bar;
 	struct fm_rect field;
+	struct fm_rect ring;
 	struct fm_tab *tab;
 	int crumbs_x;
 	int views_x;
+	int right;
 	int y;
 
 	/* The bar: a white pill with a soft shadow. */
@@ -472,9 +758,20 @@ ui_draw_toolbar(
 	field.y = y;
 	ui_draw_search(app, canvas, &field);
 
+	/* The progress ring left of the search field while operations run. */
+	right = field.x - 16;
+	if (app->task_count > 0) {
+		ring.x = field.x - 12 - UI_BUTTON_SIZE;
+		ring.y = y;
+		ring.width = UI_BUTTON_SIZE;
+		ring.height = UI_BUTTON_SIZE;
+		ui_draw_progress(app, canvas, &ring);
+		right = ring.x - 8;
+	}
+
 	/* The path between home and the search field. */
 	crumbs_x = bar->x + 8 + 3 * (UI_BUTTON_SIZE + 4) + 16;
-	ui_draw_crumbs(app, canvas, crumbs_x, field.x - 16 - crumbs_x);
+	ui_draw_crumbs(app, canvas, crumbs_x, right - crumbs_x);
 }
 
 /* Draws a round toolbar button with its icon, lit under the pointer, and records it. */
@@ -527,10 +824,11 @@ ui_draw_crumbs(
 	int x,
 	int width)
 {
-	static struct ui_crumb crumbs[UI_CRUMBS];
+	static struct fm_crumb crumbs[FM_CRUMBS];
+	struct fm_rect field;
 	struct fm_rect rect;
 	fm_color color;
-	int widths[UI_CRUMBS];
+	int widths[FM_CRUMBS];
 	int count;
 	int first;
 	int total;
@@ -539,8 +837,22 @@ ui_draw_crumbs(
 	int bold;
 	int pen;
 
+	/* While a path is typed (Ctrl+L), the field takes the parts' place. */
+	if (app->focus == FM_FOCUS_LOCATION) {
+		field.x = x;
+		field.y = app->layout.toolbar.y + 7;
+		field.width = width;
+		field.height = app->layout.toolbar.height - 14;
+		fm_canvas_round(canvas, (float)field.x, (float)field.y, (float)field.width, (float)field.height, 8.0f, FM_RGB(0xf1f4f8));
+		fm_canvas_round_border(canvas, (float)field.x, (float)field.y, (float)field.width, (float)field.height, 8.0f, 1.5f, FM_RGBA(0x2f7cf6, 150));
+		field.x += 10;
+		field.width -= 20;
+		fm_field_draw(app, canvas, &app->location, &field, UI_TEXT_TOOLBAR, "Go to folder");
+		return;
+	}
+
 	/* The parts and their widths (the last part bold). */
-	count = ui_crumbs(app, crumbs, UI_CRUMBS);
+	count = fm_ui_crumbs(app, crumbs, FM_CRUMBS);
 	if (count == 0 || width <= 0)
 		return;
 	for (index = 0; index < count; index++) {
@@ -664,6 +976,40 @@ ui_draw_views(
 	fm_ui_hit(app, &rect, FM_HIT_VIEW_LIST, 0);
 }
 
+/* Draws the progress ring of the running operations: the first one's share done, lit under the pointer. */
+static void
+ui_draw_progress(
+	struct fm_app *app,
+	struct fm_canvas *canvas,
+	const struct fm_rect *rect)
+{
+	const struct fm_task *task;
+	float fraction;
+	float cx;
+	float cy;
+
+	/* The first task's share of its bytes and items. */
+	task = app->tasks[0];
+	fraction = 0.0f;
+	if (task->bytes_total + task->files_total != 0U)
+		fraction = (float)(task->bytes_done + task->files_done * 4096U) / (float)(task->bytes_total + task->files_total * 4096U);
+	if (fraction < 0.03f)
+		fraction = 0.03f;
+	if (fraction > 1.0f)
+		fraction = 1.0f;
+
+	/* A faint whole ring and the part done in the accent. */
+	cx = (float)rect->x + (float)rect->width * 0.5f;
+	cy = (float)rect->y + (float)rect->height * 0.5f;
+	if (app->hover_kind == FM_HIT_PROGRESS || app->show_tasks != 0)
+		fm_canvas_circle(canvas, cx, cy, (float)rect->width * 0.5f, FM_COLOR_HOVER);
+	fm_canvas_ring(canvas, cx, cy, 9.0f, 2.5f, 1.0f, FM_RGB(0xdfe5ee));
+	fm_canvas_ring(canvas, cx, cy, 9.0f, 2.5f, fraction, FM_COLOR_ACCENT);
+
+	/* It opens the list of operations. */
+	fm_ui_hit(app, rect, FM_HIT_PROGRESS, 0);
+}
+
 /* Draws the sidebar: Favorites, Locations and Tags, the place shown lit. */
 static void
 ui_draw_sidebar(
@@ -734,90 +1080,6 @@ ui_draw_sidebar(
 	fm_canvas_clip_pop(canvas);
 }
 
-/* Fills the parts of the path shown in the toolbar and returns how many there are. */
-static int
-ui_crumbs(
-	struct fm_app *app,
-	struct ui_crumb *crumbs,
-	int capacity)
-{
-	struct fm_tab *tab;
-	const struct fm_location *location;
-	const char *path;
-	const char *part;
-	const char *end;
-	size_t home_length;
-	size_t length;
-	size_t done;
-	int prefix;
-	int count;
-	int inside;
-
-	/* A place that is not a folder is a single part. */
-	tab = fm_ui_tab(app);
-	location = &tab->history[tab->history_index].location;
-	if (location->kind != FM_LOCATION_FOLDER) {
-		snprintf(crumbs[0].label, sizeof(crumbs[0].label), "%s", fm_location_name(location, app->home));
-		crumbs[0].location = *location;
-		return 1;
-	}
-
-	/* A folder under the home folder starts from Home, any other from Computer. */
-	path = location->path;
-	home_length = strlen(app->home);
-	inside = 0;
-	prefix = strncmp(path, app->home, home_length);
-	if (prefix == 0 &&
-	    home_length > 1U &&
-	    (path[home_length] == '/' ||
-	     path[home_length] == '\0'))
-		inside = 1;
-	count = 1;
-	crumbs[0].location.kind = FM_LOCATION_FOLDER;
-	if (inside != 0) {
-		snprintf(crumbs[0].label, sizeof(crumbs[0].label), "Home");
-		snprintf(crumbs[0].location.path, sizeof(crumbs[0].location.path), "%s", app->home);
-		done = home_length;
-	} else {
-		snprintf(crumbs[0].label, sizeof(crumbs[0].label), "Computer");
-		snprintf(crumbs[0].location.path, sizeof(crumbs[0].location.path), "/");
-		done = 0;
-	}
-
-	/* Each further part of the path, leading to the path up to it. */
-	part = path + done;
-	while (*part != '\0' && count < capacity) {
-		/* Slashes between parts. */
-		while (*part == '/')
-			part++;
-		if (*part == '\0')
-			break;
-
-		/* The part runs to the next slash. */
-		end = strchr(part, '/');
-		if (end == NULL)
-			end = part + strlen(part);
-		length = (size_t)(end - part);
-
-		/* Its label and the path up to it. */
-		if (length >= sizeof(crumbs[count].label))
-			length = sizeof(crumbs[count].label) - 1U;
-		memcpy(crumbs[count].label, part, length);
-		crumbs[count].label[length] = '\0';
-		crumbs[count].location.kind = FM_LOCATION_FOLDER;
-		length = (size_t)(end - path);
-		if (length >= sizeof(crumbs[count].location.path))
-			length = sizeof(crumbs[count].location.path) - 1U;
-		memcpy(crumbs[count].location.path, path, length);
-		crumbs[count].location.path[length] = '\0';
-		count++;
-		part = end;
-	}
-
-	/* Reports how many parts there are. */
-	return count;
-}
-
 /* Tells whether a sidebar place is the place shown. */
 static int
 ui_place_current(
@@ -849,318 +1111,6 @@ ui_place_current(
 	return 1;
 }
 
-/* Finds the region of the last frame under a point (the last drawn wins); zero when there is none. */
-static int
-ui_hit_at(
-	struct fm_app *app,
-	int x,
-	int y,
-	unsigned *kind,
-	int *index)
-{
-	int hit;
-	int inside;
-
-	/* From the last region drawn to the first. */
-	for (hit = app->hit_count - 1; hit >= 0; hit--) {
-		inside = ui_contains(&app->hits[hit].rect, x, y);
-		if (inside != 0) {
-			*kind = app->hits[hit].kind;
-			*index = app->hits[hit].index;
-			return 1;
-		}
-	}
-
-	/* Nothing clickable is there. */
-	*kind = FM_HIT_NONE;
-	*index = -1;
-	return 0;
-}
-
-/* Tells whether a rectangle holds a point. */
-static int
-ui_contains(
-	const struct fm_rect *rect,
-	int x,
-	int y)
-{
-	/* Left of it or above it. */
-	if (x < rect->x || y < rect->y)
-		return 0;
-
-	/* Right of it or below it. */
-	if (x >= rect->x + rect->width || y >= rect->y + rect->height)
-		return 0;
-
-	/* Inside. */
-	return 1;
-}
-
-/* Follows the pointer: the region under it is lit. */
-static void
-ui_motion(
-	struct fm_app *app,
-	const struct fm_event *event)
-{
-	unsigned kind;
-	int index;
-
-	/* The pointer's place. */
-	app->pointer_x = event->x;
-	app->pointer_y = event->y;
-	app->pointer_inside = 1;
-
-	/* A new region under it needs a new frame. */
-	(void)ui_hit_at(app, event->x, event->y, &kind, &index);
-	if (kind != app->hover_kind || index != app->hover_index) {
-		app->hover_kind = kind;
-		app->hover_index = index;
-		app->dirty = 1;
-	}
-}
-
-/* Handles a button: the left button clicks the region under the pointer when it is let go over the one it was pressed on. */
-static void
-ui_button(
-	struct fm_app *app,
-	const struct fm_event *event)
-{
-	unsigned kind;
-	int index;
-	int double_click;
-
-	/* Only the left button clicks (the right one opens context menus later). */
-	if (event->button != FM_BUTTON_LEFT)
-		return;
-
-	/* The region under the pointer. */
-	(void)ui_hit_at(app, event->x, event->y, &kind, &index);
-
-	/* A press remembers what it pressed, and clicks at once (items select on the press). */
-	if (event->pressed != 0) {
-		app->pressing = 1;
-		app->press_kind = kind;
-		app->press_index = index;
-		app->dirty = 1;
-
-		/* A second press soon on the same region is a double click. */
-		double_click = 0;
-		if (kind == app->click_kind && index == app->click_index && event->time - app->click_time < UI_DOUBLE_CLICK_MS)
-			double_click = 1;
-		app->click_kind = kind;
-		app->click_index = index;
-		app->click_time = event->time;
-		if (double_click != 0)
-			app->click_time = 0;
-		ui_click(app, kind, index, double_click);
-		return;
-	}
-
-	/* The release ends the press. */
-	app->pressing = 0;
-	app->dirty = 1;
-}
-
-/* Carries out a click on a region. */
-static void
-ui_click(
-	struct fm_app *app,
-	unsigned kind,
-	int index,
-	int double_click)
-{
-	static struct ui_crumb crumbs[UI_CRUMBS];
-	struct fm_location location;
-	int count;
-
-	/* What each region does. */
-	switch (kind) {
-	case FM_HIT_BACK:
-		ui_back(app);
-		break;
-	case FM_HIT_FORWARD:
-		ui_forward(app);
-		break;
-	case FM_HIT_HOME:
-		memset(&location, 0, sizeof(location));
-		location.kind = FM_LOCATION_HOME;
-		snprintf(location.path, sizeof(location.path), "%s", app->home);
-		fm_ui_go(app, &location);
-		break;
-	case FM_HIT_CRUMB:
-		count = ui_crumbs(app, crumbs, UI_CRUMBS);
-		if (index >= 0 && index < count - 1)
-			fm_ui_go(app, &crumbs[index].location);
-		break;
-	case FM_HIT_PLACE:
-		if (index >= 0 && index < app->places.count)
-			fm_ui_go(app, &app->places.items[index].location);
-		break;
-	case FM_HIT_VIEW_ICONS:
-		app->view = FM_VIEW_ICONS;
-		app->dirty = 1;
-		break;
-	case FM_HIT_VIEW_LIST:
-		app->view = FM_VIEW_LIST;
-		app->dirty = 1;
-		break;
-	case FM_HIT_PREVIEW:
-		app->show_preview = !app->show_preview;
-		app->dirty = 1;
-		break;
-	case FM_HIT_ITEM:
-		if (double_click != 0)
-			ui_open_entry(app, index);
-		break;
-	default:
-		break;
-	}
-}
-
-/* Scrolls the content by an amount of pixels (positive is down), kept within what there is. */
-static void
-ui_scroll(
-	struct fm_app *app,
-	int amount)
-{
-	struct fm_tab *tab;
-	int limit;
-
-	/* The furthest the content scrolls. */
-	tab = fm_ui_tab(app);
-	limit = app->layout.content_height - app->layout.content.height;
-	if (limit < 0)
-		limit = 0;
-
-	/* The new scroll, inside the range. */
-	tab->scroll += amount;
-	if (tab->scroll > limit)
-		tab->scroll = limit;
-	if (tab->scroll < 0)
-		tab->scroll = 0;
-	app->dirty = 1;
-}
-
-/* Handles a key press: going back and forward. */
-static void
-ui_key(
-	struct fm_app *app,
-	const struct fm_event *event)
-{
-	/* Releases do nothing. */
-	if (event->pressed == 0)
-		return;
-
-	/* Backspace and Alt+Left go back, Alt+Right forward (spec §35). */
-	if (event->key == UI_KEY_BACKSPACE && event->modifiers == 0U) {
-		ui_back(app);
-	} else if (event->key == UI_KEY_LEFT && event->modifiers == FM_MOD_ALT) {
-		ui_back(app);
-	} else if (event->key == UI_KEY_RIGHT && event->modifiers == FM_MOD_ALT) {
-		ui_forward(app);
-	}
-}
-
-/* Reads the items of the place a tab shows, sorted, and logs the place. */
-static void
-ui_load(
-	struct fm_app *app,
-	struct fm_tab *tab)
-{
-	const struct fm_location *location;
-	const char *path;
-
-	/* The place, and the folder its items come from. */
-	location = &tab->history[tab->history_index].location;
-	path = NULL;
-	if (location->kind == FM_LOCATION_FOLDER || location->kind == FM_LOCATION_HOME)
-		path = location->path;
-
-	/* A folder's items, or none for places the later phases fill. */
-	fm_dir_free(&tab->listing);
-	if (path != NULL) {
-		(void)fm_dir_read(&tab->listing, path, app->show_hidden);
-		fm_dir_sort(&tab->listing, app->sort, app->sort_reverse);
-	}
-
-	/* Nothing has the cursor yet, and the folder was just checked. */
-	tab->cursor = -1;
-	tab->anchor = -1;
-	tab->checked_at = app->now;
-
-	/* The log line the tests wait for. */
-	fm_log("LOCATION kind=%s path=%s items=%lu error=%d", ui_location_kind_name(location->kind), location->path, (unsigned long)tab->listing.count, tab->listing.error);
-}
-
-/* Goes one step back in the tab's history. */
-static void
-ui_back(
-	struct fm_app *app)
-{
-	struct fm_tab *tab;
-
-	/* The first step has nothing behind it. */
-	tab = fm_ui_tab(app);
-	if (tab->history_index == 0)
-		return;
-
-	/* The step before, at the scroll it was left with. */
-	tab->history[tab->history_index].scroll = tab->scroll;
-	tab->history_index--;
-	ui_load(app, tab);
-	tab->scroll = tab->history[tab->history_index].scroll;
-	app->dirty = 1;
-}
-
-/* Goes one step forward in the tab's history. */
-static void
-ui_forward(
-	struct fm_app *app)
-{
-	struct fm_tab *tab;
-
-	/* The last step has nothing after it. */
-	tab = fm_ui_tab(app);
-	if (tab->history_index + 1 >= tab->history_count)
-		return;
-
-	/* The step after, at the scroll it was left with. */
-	tab->history[tab->history_index].scroll = tab->scroll;
-	tab->history_index++;
-	ui_load(app, tab);
-	tab->scroll = tab->history[tab->history_index].scroll;
-	app->dirty = 1;
-}
-
-/* Opens an item of the listing: a folder in the tab (a file opens in a later phase). */
-static void
-ui_open_entry(
-	struct fm_app *app,
-	int index)
-{
-	struct fm_location location;
-	struct fm_tab *tab;
-	struct fm_entry *entry;
-
-	/* The item. */
-	tab = fm_ui_tab(app);
-	if (index < 0 || (size_t)index >= tab->listing.count)
-		return;
-	entry = &tab->listing.entries[index];
-
-	/* A folder opens in this tab. */
-	if (entry->folder != 0) {
-		memset(&location, 0, sizeof(location));
-		location.kind = FM_LOCATION_FOLDER;
-		snprintf(location.path, sizeof(location.path), "%s", entry->path);
-		fm_ui_go(app, &location);
-		return;
-	}
-
-	/* A file is only logged for now. */
-	fm_log("OPEN path=%s", entry->path);
-}
-
 /* Names a kind of place for the log. */
 static const char *
 ui_location_kind_name(
@@ -1186,4 +1136,93 @@ ui_location_kind_name(
 
 	/* A kind this program does not know. */
 	return "unknown";
+}
+
+/* Keeps, in the tab's current step, its scroll and the name of the item with the cursor. */
+static void
+ui_leave(
+	struct fm_tab *tab)
+{
+	struct fm_visit *visit;
+
+	/* The scroll. */
+	visit = &tab->history[tab->history_index];
+	visit->scroll = tab->scroll;
+
+	/* The cursor's item by name (the items may be listed in another order when the tab comes back). */
+	visit->cursor[0] = '\0';
+	if (tab->cursor >= 0 && (size_t)tab->cursor < tab->listing.count)
+		snprintf(visit->cursor, sizeof(visit->cursor), "%s", tab->listing.entries[tab->cursor].name);
+}
+
+/* Marks the items that are cut on the clipboard (they are drawn faded until the paste). */
+static void
+ui_mark_cut(
+	struct fm_tab *tab)
+{
+	char **paths;
+	unsigned mode;
+	size_t count;
+	size_t index;
+	size_t cut;
+	int error;
+	int match;
+
+	/* The clipboard; only a cut marks anything. */
+	error = fm_clip_get(&mode, &paths, &count);
+	if (error != 0 || mode != FM_CLIP_CUT) {
+		fm_paths_free(paths, count);
+		return;
+	}
+
+	/* Each item whose path is on it. */
+	for (index = 0; index < tab->listing.count; index++) {
+		for (cut = 0; cut < count; cut++) {
+			match = strcmp(tab->listing.entries[index].path, paths[cut]);
+			if (match == 0)
+				tab->listing.entries[index].cut = 1;
+		}
+	}
+
+	/* The clipboard's paths are not needed any more. */
+	fm_paths_free(paths, count);
+}
+
+/* Selects the items of the paths a finished operation left (and drops them). */
+static void
+ui_select_paths(
+	struct fm_app *app,
+	struct fm_tab *tab)
+{
+	size_t index;
+	size_t wanted;
+	int first;
+	int match;
+
+	/* Nothing waits to be selected. */
+	if (app->select_count == 0U)
+		return;
+
+	/* The items of those paths, and nothing else. */
+	first = -1;
+	fm_select_none(tab);
+	for (index = 0; index < tab->listing.count; index++) {
+		for (wanted = 0; wanted < app->select_count; wanted++) {
+			match = strcmp(tab->listing.entries[index].path, app->select_paths[wanted]);
+			if (match != 0)
+				continue;
+			tab->listing.entries[index].selected = 1;
+			if (first < 0)
+				first = (int)index;
+		}
+	}
+
+	/* The first has the cursor. */
+	tab->cursor = first;
+	tab->anchor = first;
+
+	/* The paths were used. */
+	fm_paths_free(app->select_paths, app->select_count);
+	app->select_paths = NULL;
+	app->select_count = 0;
 }

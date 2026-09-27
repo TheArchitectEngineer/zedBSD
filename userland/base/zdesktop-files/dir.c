@@ -17,6 +17,8 @@
 #include "files.h"
 
 #include <dirent.h>
+#include <grp.h>
+#include <pwd.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -110,6 +112,51 @@ fm_dir_read(
 		return listing->error;
 
 	/* Succeeded: the listing holds the folder's items. */
+	return 0;
+}
+
+/*
+ * Reads the trash's items into a listing (emptied first): each item of
+ * its files folder, with where it was (its folder, as detail) and when it
+ * was trashed (extra_time) from its record.
+ *
+ * Returns 0, or the errno value of a trash that cannot be read.
+ */
+int
+fm_dir_read_trash(
+	struct fm_listing *listing,
+	const char *trash)
+{
+	struct fm_entry *entry;
+	char files[FM_PATH_MAX];
+	char original[FM_PATH_MAX];
+	char *slash;
+	size_t index;
+	time_t deleted;
+	int error;
+
+	/* The items of the trash's files folder, hidden ones too (they were trashed like any other). */
+	snprintf(files, sizeof(files), "%s/files", trash);
+	error = fm_dir_read(listing, files, 1);
+	if (error != 0)
+		return error;
+
+	/* Each item's record: the folder it was in and the time it was trashed. */
+	for (index = 0; index < listing->count; index++) {
+		entry = &listing->entries[index];
+		error = fm_trash_info_read(trash, entry->name, original, sizeof(original), &deleted);
+		if (error != 0)
+			continue;
+
+		/* The folder is the original path without its last part. */
+		slash = strrchr(original, '/');
+		if (slash != NULL && slash != original)
+			*slash = '\0';
+		entry->detail = strdup(original);
+		entry->extra_time = deleted;
+	}
+
+	/* Succeeded: the listing holds the trash's items. */
 	return 0;
 }
 
@@ -348,6 +395,38 @@ fm_dir_items_text(
 
 	/* Any other count is plural. */
 	snprintf(text, length, "%ld items", count);
+}
+
+/*
+ * Writes an owner as "user:group", by name where the accounts know them
+ * and by number otherwise.
+ */
+void
+fm_owner_text(
+	uid_t uid,
+	gid_t gid,
+	char *text,
+	size_t length)
+{
+	struct passwd *account;
+	struct group *group;
+	char user_name[64];
+	char group_name[64];
+
+	/* The user's name, or number. */
+	snprintf(user_name, sizeof(user_name), "%lu", (unsigned long)uid);
+	account = getpwuid(uid);
+	if (account != NULL && account->pw_name != NULL)
+		snprintf(user_name, sizeof(user_name), "%s", account->pw_name);
+
+	/* The group's name, or number. */
+	snprintf(group_name, sizeof(group_name), "%lu", (unsigned long)gid);
+	group = getgrgid(gid);
+	if (group != NULL && group->gr_name != NULL)
+		snprintf(group_name, sizeof(group_name), "%s", group->gr_name);
+
+	/* Both, joined. */
+	snprintf(text, length, "%s:%s", user_name, group_name);
 }
 
 /* Orders two entries: folders first, then the sort's key, then the names. */

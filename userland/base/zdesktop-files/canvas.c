@@ -56,6 +56,8 @@ static void canvas_span(float *row, float from, float to, float weight, int low,
 static int canvas_crossings(const float *points, int count, float y, struct canvas_crossing *crossings);
 static uint32_t canvas_sample(const struct fm_image *image, float u, float v);
 static uint32_t canvas_lerp_pixel(uint32_t first, uint32_t second, unsigned weight);
+static int canvas_inner_span(float x, float y, float width, float height, float radius, float band, int py, int *from, int *to);
+static void canvas_run(uint32_t *row, int from, int to, fm_color color);
 
 /*
  * Makes a canvas over pixels the caller owns.
@@ -276,6 +278,8 @@ fm_canvas_round_gradient(
 	int top;
 	int right;
 	int bottom;
+	int from;
+	int to;
 	int px;
 	int py;
 
@@ -301,7 +305,24 @@ fm_canvas_round_gradient(
 			amount = ((float)py + 0.5f - y) / height;
 		color = fm_color_mix(top_color, bottom_color, amount);
 		row = canvas->pixels + (size_t)py * canvas->stride;
+
+		/* The part of the row wholly inside is filled at once; only the edges are measured. */
+		(void)canvas_inner_span(x, y, width, height, radius, 0.0f, py, &from, &to);
+		if (from < left)
+			from = left;
+		if (to > right)
+			to = right;
+		if (to < from)
+			to = from;
+		canvas_run(row, from, to, color);
 		for (px = left; px < right; px++) {
+			/* The filled part is skipped. */
+			if (px == from)
+				px = to;
+			if (px >= right)
+				break;
+
+			/* An edge pixel, as much as the shape covers it. */
 			distance = canvas_round_distance((float)px + 0.5f, (float)py + 0.5f, cx, cy, half_width, half_height, radius);
 			coverage = canvas_clamp(0.5f - distance);
 			canvas_blend(&row[px], color, coverage);
@@ -335,6 +356,8 @@ fm_canvas_round_border(
 	int top;
 	int right;
 	int bottom;
+	int from;
+	int to;
 	int px;
 	int py;
 
@@ -356,7 +379,15 @@ fm_canvas_round_border(
 	/* A pixel is covered as far as it is inside the edge and not deeper than the thickness. */
 	for (py = top; py < bottom; py++) {
 		row = canvas->pixels + (size_t)py * canvas->stride;
+		(void)canvas_inner_span(x, y, width, height, radius, thickness + 0.5f, py, &from, &to);
 		for (px = left; px < right; px++) {
+			/* The inside, deeper than the thickness, is not touched. */
+			if (px == from && to > from)
+				px = to;
+			if (px >= right)
+				break;
+
+			/* A pixel near the edge. */
 			distance = canvas_round_distance((float)px + 0.5f, (float)py + 0.5f, cx, cy, half_width, half_height, radius);
 			coverage = canvas_clamp(0.5f - distance) - canvas_clamp(0.5f - (distance + thickness));
 			canvas_blend(&row[px], color, coverage);
@@ -391,6 +422,8 @@ fm_canvas_shadow(
 	int top;
 	int right;
 	int bottom;
+	int from;
+	int to;
 	int px;
 	int py;
 
@@ -416,7 +449,24 @@ fm_canvas_shadow(
 	/* A smooth step from full inside to nothing a softness outside. */
 	for (py = top; py < bottom; py++) {
 		row = canvas->pixels + (size_t)py * canvas->stride;
+
+		/* Deeper inside than the softness the shadow is the full color, filled at once. */
+		(void)canvas_inner_span(x, y, width, height, radius, softness, py, &from, &to);
+		if (from < left)
+			from = left;
+		if (to > right)
+			to = right;
+		if (to < from)
+			to = from;
+		canvas_run(row, from, to, color);
 		for (px = left; px < right; px++) {
+			/* The filled part is skipped. */
+			if (px == from)
+				px = to;
+			if (px >= right)
+				break;
+
+			/* A pixel of the soft edge. */
 			distance = canvas_round_distance((float)px + 0.5f, (float)py + 0.5f, cx, cy, half_width, half_height, radius);
 			amount = canvas_clamp((distance + softness) / (2.0f * softness));
 			amount = 1.0f - amount * amount * (3.0f - 2.0f * amount);
@@ -916,6 +966,90 @@ fm_color_mix(
 
 	/* Reports the mixed color. */
 	return mixed;
+}
+
+/*
+ * Finds the pixels of a row that are inside a rounded rectangle by more
+ * than a band (so wholly covered by it); returns zero, with an empty range,
+ * when there are none.  The corners' rows keep out of the whole corner
+ * square, which is simple and costs a few pixels measured one by one.
+ */
+static int
+canvas_inner_span(
+	float x,
+	float y,
+	float width,
+	float height,
+	float radius,
+	float band,
+	int py,
+	int *from,
+	int *to)
+{
+	float centre;
+	float depth;
+	float margin;
+
+	/* How far the row's centre is from the nearer of the top and bottom edges. */
+	centre = (float)py + 0.5f;
+	depth = centre - y;
+	if (y + height - centre < depth)
+		depth = y + height - centre;
+
+	/* A row near the top or the bottom has nothing that deep inside. */
+	*from = 0;
+	*to = 0;
+	if (depth <= band + 0.5f)
+		return 0;
+
+	/* In the corners' rows the corner squares stay out; below them only the sides do. */
+	margin = band + 0.5f;
+	if (depth < radius + band + 0.5f)
+		margin = radius + band + 0.5f;
+
+	/* The pixels whose centres are that far from both sides. */
+	*from = (int)ceilf(x + margin - 0.5f);
+	*to = (int)floorf(x + width - margin - 0.5f) + 1;
+	if (*to <= *from) {
+		*to = *from;
+		return 0;
+	}
+
+	/* Some pixels are that deep inside. */
+	return 1;
+}
+
+/* Fills pixels of a row wholly with a color: stored when opaque, blended otherwise. */
+static void
+canvas_run(
+	uint32_t *row,
+	int from,
+	int to,
+	fm_color color)
+{
+	uint32_t premultiplied;
+	unsigned alpha;
+	int px;
+
+	/* An opaque color is stored. */
+	alpha = (color >> 24) & 0xffU;
+	if (alpha == 255U) {
+		for (px = from; px < to; px++)
+			row[px] = color;
+		return;
+	}
+
+	/* A transparent one draws nothing. */
+	if (alpha == 0U)
+		return;
+
+	/* Another is premultiplied once and laid over each pixel. */
+	premultiplied = alpha << 24;
+	premultiplied |= (((color >> 16) & 0xffU) * alpha / 255U) << 16;
+	premultiplied |= (((color >> 8) & 0xffU) * alpha / 255U) << 8;
+	premultiplied |= (color & 0xffU) * alpha / 255U;
+	for (px = from; px < to; px++)
+		canvas_blend_premultiplied(&row[px], premultiplied);
 }
 
 /* Clips a rectangle of the canvas to the clip and to whole pixels; zero when nothing is left. */
