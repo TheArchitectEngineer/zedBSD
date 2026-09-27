@@ -69,7 +69,18 @@ Phase disposition: normal
 
 ### 検証（QEMU の Venus。i915 実機は未実施）
 
-（回帰の実行中。結果を書く）
+| 確認 | 結果 |
+| --- | --- |
+| build（lean image、`plan/ws068/tests/build-glsl-image.sh build/amd64`、main を merge した後） | status 0。libGLESv2・libGL・egltest は -Werror で warning 0 |
+| style-check（`framebuffer.c`・`draw.c`・`texture.c`・`format.c`・`gles.c`・`gles.h`、libGL の `fixed.c`、egltest の `targets.c`・`.h`・`main.c`） | 0 |
+| egl-p026（新しく起こした guest、`GUEST_RUNTIME=build/ws068-run`） | **PASS**: API の検査 24 件 failures=0、readback 13 点 failures=0（display と Wayland）、display と Wayland の画面の点 14 点が全て期待どおり（画面を目で確かめた） |
+| 回帰 egl-p008・egl-p019・egl-p020・egl-p022・egl-p023・egl-p024・egl-p025・egl-p028（同じ guest） | 全て PASS |
+| 回帰 x11-p005 | PASS（zgears 300 frame、failures 0。gears.png を目で確かめた） |
+| GLSL の host 試験 | PASS |
+| boot test（`build/ws068-p026-regress/boot/login.png`） | PASS（login prompt、PNG を目で確かめた） |
+| i915 実機 | 未実施 |
+
+画面: `build/ws068-shots/p026-20260927-targets-display.png`、`build/ws068-shots/p026-20260927-targets-wayland.png`（main の tree）。
 
 ### 観察
 
