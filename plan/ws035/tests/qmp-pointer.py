@@ -7,6 +7,7 @@ Each step is one word and its numbers, run in order:
     move X Y      the pointer to output pixel (X, Y)
     down / up     the left button
     right-down / right-up   the right button
+    middle-down / middle-up the middle button (ws035-p100)
     wheel-down / wheel-up   one notch of the wheel
     sleep MS      a pause
 Pixels are output pixels of an output of --width x --height; zdesktop takes the
@@ -67,6 +68,10 @@ def main():
 		elif word in ("right-down", "right-up"):
 			send(stream, "input-send-event", {"events": [
 				{"type": "btn", "data": {"down": word == "right-down", "button": "right"}}]})
+			index += 1
+		elif word in ("middle-down", "middle-up"):
+			send(stream, "input-send-event", {"events": [
+				{"type": "btn", "data": {"down": word == "middle-down", "button": "middle"}}]})
 			index += 1
 		elif word in ("wheel-down", "wheel-up"):
 			for down in (True, False):

@@ -108,7 +108,7 @@ guest 'grep -A3 "received" /tmp/c.log' > "$out/terminal-text.txt"
 keys 's'
 expect_log /tmp/c.log 'DATAPROBE set selection'
 set -- $(window_of 3); tx=${1:-0}; ty=${2:-0}
-click $((tx + 100)) $((ty + 100))
+click $((tx + 600)) $((ty + 400))
 keys '<ctrl-shift-v>'
 expect_log /tmp/c.log 'DATAPROBE send mime=text/plain;charset=utf-8 bytes=23'
 sleep 2
