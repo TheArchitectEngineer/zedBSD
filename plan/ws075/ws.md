@@ -81,6 +81,13 @@ Wiseview を開閉、dock した窓の閉じる button で終える（9 検査�
 
 Files まで進んだ 4 回のうち 2 回が BUG-077。実機の証拠のみ（QEMU は未実施）。
 
+## 初期のグラフィックの試験の削除（main の依頼、2026-09-28）
+
+ユーザーの判断（`plan/master.md` の「古いグラフィックの試験の driver」）により、初期の Venus・WSI の host 試験（build できない
+ものと Venus だけのもの、参照の無い 2 つ）と `plan/tools/venus-console.c` を削除した。一覧と理由、残したもの（GPU core の host 試験、
+QEMU の遠隔の harness、`vkdemo_oracle.py`）は [`plan/ws014/tests/README.md`](../ws014/tests/README.md) の 2026-09-28 の節。
+i915 の executor の試験（vkx・vke1・vke2・vkc、gentool、capture の場面、`plan/ws031/tests/run-vk-host-tests.sh`）は残す。
+
 ## WS031 から移した Phase
 
 2026-09-27 に移した（WS031 の表に印）。範囲の正本は WS031 の元の Phase の記述（`phase016`・`phase017`・`phase018/phase.md`）。

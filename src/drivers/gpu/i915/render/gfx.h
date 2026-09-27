@@ -201,6 +201,12 @@ struct i915_gfx_view {
 	uint32_t view_type;
 	uint32_t base_layer;
 	uint32_t layer_count;
+
+	/*
+	 * The component swizzle as the surface state's shader channel select
+	 * word (RENDER_SURFACE_STATE dword 7); 0 reads as the identity.
+	 */
+	uint32_t channel_select;
 };
 
 /*
@@ -332,11 +338,12 @@ struct i915_gfx_pipeline {
 	struct i915_gfx_shader *vertex;
 	struct i915_gfx_shader *fragment;
 
-	/* The vertex buffer bindings: the binding number and the stride. */
+	/* The vertex buffer bindings: the binding number, the stride and the VkVertexInputRate. */
 	uint32_t binding_count;
 	struct {
 		uint32_t binding;
 		uint32_t stride;
+		uint32_t input_rate;
 	} bindings[I915_GFX_MAX_VERTEX_BINDINGS];
 
 	/* The vertex attributes: the location, binding, VkFormat and offset. */
@@ -676,12 +683,13 @@ void drv_i915_gfx_memory_release(struct i915_gfx_memory *memory);
 uint64_t drv_i915_gfx_memory_va(struct i915_gfx_memory *memory, uint64_t offset);
 
 /*
- * Lays an image out from its format, extent and levels, and describes one
- * of its levels as a linear surface (image.c).
+ * Lays an image out from its format, extent and levels, describes one of
+ * its levels as a surface, and reports a format's bytes to a texel (image.c).
  */
 int drv_i915_gfx_image_layout(struct i915_gfx_image *image);
 int drv_i915_gfx_image_level(const struct i915_gfx_image *image, uint32_t level, struct i915_gfx_surface *surface);
 int drv_i915_gfx_image_slice(const struct i915_gfx_image *image, uint32_t level, uint32_t slice, struct i915_gfx_surface *surface);
+uint32_t drv_i915_gfx_format_bytes(uint32_t format);
 uint32_t drv_i915_gfx_image_slices(const struct i915_gfx_image *image, uint32_t level);
 uint32_t drv_i915_gfx_depth_clear_word(uint32_t format, uint32_t depth);
 

@@ -351,6 +351,7 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 
 #define GEN12_CMD_3DSTATE_VF_INSTANCING		0x7849U
 #define GEN12_3DSTATE_VF_INSTANCING_DWORDS	3U
+#define GEN12_VF_INSTANCING_ENABLE_SHIFT	8U
 
 /*
  * A disabled depth buffer is still a typed one: Mesa's isl always pairs

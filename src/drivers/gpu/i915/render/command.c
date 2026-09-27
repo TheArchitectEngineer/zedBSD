@@ -163,6 +163,7 @@ static int i915_record_command(struct i915_render_session *session, uint32_t opc
 static int i915_image_surface(const struct i915_gfx_image *image, uint32_t level, uint32_t slice, struct i915_gfx_surface *surface);
 static int i915_blit_order(int32_t *first, int32_t *second, int mirror);
 static int i915_attachment_surface(const struct i915_gfx_view *view, struct i915_gfx_surface *surface);
+static void i915_depth_words_surface(const struct i915_gfx_image *image, struct i915_gfx_surface *surface);
 static int i915_execute_clear(struct i915_render_session *session, const struct i915_gfx_op *op);
 static int i915_execute_buffer_image_copy(struct i915_render_session *session, const struct i915_gfx_op *op);
 static int i915_execute_clear_image(struct i915_render_session *session, const struct i915_gfx_op *op);
@@ -1846,12 +1847,35 @@ i915_attachment_surface(
 }
 
 /*
+ * Turns the surface of a D32 image's slice into the R32_FLOAT view of the
+ * slice's bytes, padding rows included: a whole-slice clear writes the same
+ * float everywhere, so the Y tiling does not matter.  The slice is the
+ * image's slice rows, or all its rows for an image of one slice.  A D16
+ * image is not cleared this way: its word of two values (1.0 is
+ * 0xffffffff) is a NaN as a float, which the fill does not carry as it is;
+ * it is drawn into as the Y-tiled R16_UNORM target instead.
+ */
+static void
+i915_depth_words_surface(
+	const struct i915_gfx_image *image,
+	struct i915_gfx_surface *surface)
+{
+	/* Every word of the slice, the surface's address kept. */
+	surface->format = VK_FORMAT_R32_SFLOAT;
+	surface->width = image->pitch / 4U;
+	surface->height = image->slice_rows;
+	if (surface->height == 0U)
+		surface->height = (uint32_t)(image->bytes / image->pitch);
+}
+
+/*
  * Runs the clears of a render pass's begin (loadOp CLEAR), one GPU fill for
  * each attachment.
  *
- * A depth clear writes the depth value's bits through an R32_FLOAT view of
- * the whole allocation: every word gets the same value, so the depth
- * buffer's tiling does not matter.
+ * A D32 clear writes the depth value through an R32_FLOAT view of the
+ * attachment's slice (i915_depth_words_surface()): every word gets the same
+ * value, so the depth buffer's tiling does not matter.  A D16 clear draws
+ * the depth into the Y-tiled R16_UNORM surface of the attachment.
  * XXX: the stencil value is not written, and the whole attachment is
  * cleared, not the render area.
  */
@@ -1895,13 +1919,13 @@ i915_execute_clear(
 		if (error != 0)
 			return error;
 
-		/* Takes the value: the depth bits through the R32_FLOAT view, or the four colour words. */
+		/* Takes the value: D32 through the R32_FLOAT view, D16 as the target's colour, or the four colour words. */
 		kern_memset(words, 0, sizeof(words));
-		if (op->u.begin.clear_is_depth[index] != 0U) {
-			surface.format = VK_FORMAT_R32_SFLOAT;
-			surface.width = image->pitch / 4U;
-			surface.height = (uint32_t)(image->bytes / image->pitch);
+		if (op->u.begin.clear_is_depth[index] != 0U && image->format == VK_FORMAT_D32_SFLOAT) {
+			i915_depth_words_surface(image, &surface);
 			words[0] = drv_i915_gfx_depth_clear_word(image->format, op->u.begin.clear_words[index][0]);
+		} else if (op->u.begin.clear_is_depth[index] != 0U) {
+			words[0] = op->u.begin.clear_words[index][0];
 		} else {
 			kern_memcpy(words, op->u.begin.clear_words[index], sizeof(words));
 		}
@@ -1924,11 +1948,11 @@ i915_execute_clear(
  * Runs one vkCmdClearAttachments rectangle on the attachment of the pass in
  * progress.
  *
- * The rectangle is clipped to the attachment.  A depth clear fills the
- * rectangle of the R32_FLOAT view of the depth buffer's bytes, as the pass
- * begin does.
- * XXX: the stencil value is not written, and a depth rectangle is cleared in
- * the linear view, which matches the tiled layout only for the whole buffer.
+ * The rectangle is clipped to the attachment.  A D32 clear of the whole
+ * attachment fills the R32_FLOAT view of the slice's bytes, as the pass
+ * begin does; a smaller D32 rectangle and any D16 one are drawn into the
+ * Y-tiled depth surface.
+ * XXX: the stencil value is not written.
  */
 static int
 i915_execute_clear_attachment(
@@ -1958,21 +1982,33 @@ i915_execute_clear_attachment(
 	if (attachment >= framebuffer->view_count || framebuffer->views[attachment] == NULL)
 		return 0;
 
-	/* Describes the attachment's image; a depth clear writes the R32_FLOAT view of its bytes. */
+	/* Describes the attachment's image. */
 	image = framebuffer->views[attachment]->image;
 	error = i915_attachment_surface(framebuffer->views[attachment], &surface);
 	if (error != 0)
 		return error;
 	kern_memcpy(words, op->u.clear_attachment.words, sizeof(words));
-	if (op->u.clear_attachment.is_depth != 0U) {
-		surface.format = VK_FORMAT_R32_SFLOAT;
-		surface.width = image->pitch / 4U;
-		surface.height = (uint32_t)(image->bytes / image->pitch);
+
+	/*
+	 * A D32 rectangle covering the attachment fills the words of its whole
+	 * slice, padding included, as the pass begin does; a smaller one, and
+	 * any D16 one, is drawn into the Y-tiled R32_FLOAT or R16_UNORM
+	 * surface of the depth buffer with the depth as the colour.
+	 */
+	rect = op->u.clear_attachment.rect;
+	if (op->u.clear_attachment.is_depth != 0U && image->format == VK_FORMAT_D32_SFLOAT &&
+	    rect.x <= 0 && rect.y <= 0 &&
+	    (int64_t)rect.x + rect.w >= (int64_t)surface.width &&
+	    (int64_t)rect.y + rect.h >= (int64_t)surface.height) {
+		i915_depth_words_surface(image, &surface);
 		words[0] = drv_i915_gfx_depth_clear_word(image->format, words[0]);
+		rect.x = 0;
+		rect.y = 0;
+		rect.w = surface.width;
+		rect.h = surface.height;
 	}
 
 	/* Clips the rectangle to the surface; an empty one clears nothing. */
-	rect = op->u.clear_attachment.rect;
 	right = (int64_t)rect.x + rect.w;
 	bottom = (int64_t)rect.y + rect.h;
 	if (rect.x < 0)
@@ -1998,8 +2034,8 @@ i915_execute_clear_attachment(
  * copy.
  *
  * The buffer region is a linear surface of the image's format with the
- * region's row length; the image side is the mip level the region names.
- * A copy to or from a depth image is not implemented.
+ * region's row length (a depth image's values as R32_FLOAT or R16_UNORM);
+ * the image side is the mip level the region names.
  */
 static int
 i915_execute_buffer_image_copy(
@@ -2017,6 +2053,8 @@ i915_execute_buffer_image_copy(
 	uint64_t image_rows;
 	uint64_t needed;
 	uint64_t slice_bytes;
+	uint32_t buffer_format;
+	uint32_t texel_bytes;
 	uint32_t first_slice;
 	uint32_t slice_count;
 	uint32_t slice;
@@ -2046,10 +2084,18 @@ i915_execute_buffer_image_copy(
 	if (error != 0)
 		return EINVAL;
 
-	/* Refuses a depth image. */
-	if (image->format == VK_FORMAT_D32_SFLOAT || image->format == VK_FORMAT_D16_UNORM) {
-		kern_logf("i915: vk: XXX unimplemented path: a copy to or from a depth image\n");
-		return ENOTSUP;
+	/*
+	 * The buffer holds the image's texels in the image's format, or a depth
+	 * image's R32_FLOAT or R16_UNORM values, which the copy moves between
+	 * the linear buffer and the Y-tiled image.
+	 */
+	buffer_format = image->format;
+	texel_bytes = drv_i915_gfx_format_bytes(image->format);
+	if (image->format == VK_FORMAT_D32_SFLOAT) {
+		buffer_format = VK_FORMAT_R32_SFLOAT;
+	} else if (image->format == VK_FORMAT_D16_UNORM) {
+		buffer_format = VK_FORMAT_R16_UNORM;
+		texel_bytes = 2U;
 	}
 
 	/* A zero row length means rows as long as the region. */
@@ -2073,9 +2119,9 @@ i915_execute_buffer_image_copy(
 		return EINVAL;
 
 	/* Refuses a region that runs past the end of the buffer. */
-	slice_bytes = image_rows * row_pixels * 4U;
+	slice_bytes = image_rows * row_pixels * texel_bytes;
 	needed = region->bufferOffset + (uint64_t)(slice_count - 1U) * slice_bytes +
-	    ((uint64_t)(region->imageExtent.height - 1U) * row_pixels + region->imageExtent.width) * 4U;
+	    ((uint64_t)(region->imageExtent.height - 1U) * row_pixels + region->imageExtent.width) * texel_bytes;
 	if (needed > buffer->size)
 		return EINVAL;
 
@@ -2083,8 +2129,8 @@ i915_execute_buffer_image_copy(
 	buffer_surface.va = drv_i915_gfx_memory_va(buffer->memory, buffer->offset + region->bufferOffset);
 	buffer_surface.width = region->imageExtent.width;
 	buffer_surface.height = region->imageExtent.height;
-	buffer_surface.pitch = (uint32_t)(row_pixels * 4U);
-	buffer_surface.format = image->format;
+	buffer_surface.pitch = (uint32_t)(row_pixels * texel_bytes);
+	buffer_surface.format = buffer_format;
 	if (buffer_surface.va == 0U)
 		return EINVAL;
 
