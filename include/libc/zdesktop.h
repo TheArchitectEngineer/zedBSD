@@ -247,6 +247,7 @@ void zdesktop_window_menu_destroy(struct zdesktop_window_menu *window_menu);
  * looks and the input as for the menubar.  activated: the user chose an
  * item (its ID and action); done: the context menu closed, after a choice
  * or without one -- told once, last; the application destroys it then.
+ * Either member may be NULL.
  */
 struct wl_surface;
 struct zdesktop_context_menu;
@@ -257,7 +258,8 @@ struct zdesktop_context_menu_listener {
 
 /*
  * Opens a menu as a context menu at (x, y) of a surface; NULL with errno
- * set: ENOTSUP for a compositor without context menus.
+ * set: ENOTSUP for a compositor without context menus, ENOMEM, or EINVAL
+ * when the listener cannot be installed.
  */
 struct zdesktop_context_menu *zdesktop_menu_popup(struct zdesktop_menu_service *service, struct zdesktop_menu *menu, struct wl_surface *surface,
 						  int32_t x, int32_t y, struct wl_seat *seat, uint32_t serial,
@@ -333,6 +335,13 @@ struct zdesktop_titlebar;
  * (detail is a breadcrumb's part, 0 otherwise), a text control's text as
  * it is typed and when its editing ends, a tab chosen or closed, the
  * new-tab button, and the overflow popup opening.  Any may be NULL.
+ *
+ * zdesktop gives tabs the keyboard too, when the window's menu has no
+ * shortcut for the key: Ctrl+Tab and Ctrl+PageDown activate the next tab,
+ * Ctrl+Shift+Tab and Ctrl+PageUp the one before (tab_activated), Ctrl+W
+ * asks to close the active tab when it is closable (tab_close_requested),
+ * and Ctrl+T asks for a new one when the strip has the new-tab button
+ * (new_tab_requested).
  */
 struct zdesktop_titlebar_listener {
 	void (*control_activated)(void *data, struct zdesktop_titlebar *titlebar, uint32_t id, uint32_t detail, struct wl_seat *seat, uint32_t serial);
@@ -491,7 +500,6 @@ int zdesktop_recent_remove(const char *path);
  * nothing: EINVAL (an empty panel, a radius past the largest, an unknown
  * kind), E2BIG (too many panels).
  */
-struct wl_surface;
 struct zdesktop_glass;
 
 /* The kind of panel (the only one so far): a card floating in the window. */

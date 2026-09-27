@@ -51,6 +51,10 @@ struct fm_window {
 	uint32_t height;
 	int resized;
 
+	/* The largest size the window may choose for itself (xdg-shell's bounds; 0 when not known). */
+	uint32_t bounds_width;
+	uint32_t bounds_height;
+
 	/* Whether the first configure arrived, the compositor asked to close, the window has the focus, is maximized. */
 	int configured;
 	int closed;

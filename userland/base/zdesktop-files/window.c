@@ -59,6 +59,7 @@ static void window_ping(void *data, struct xdg_wm_base *shell, uint32_t serial);
 static void window_configure(void *data, struct xdg_surface *surface, uint32_t serial);
 static void window_toplevel_configure(void *data, struct xdg_toplevel *toplevel, int32_t width, int32_t height, struct wl_array *states);
 static void window_toplevel_close(void *data, struct xdg_toplevel *toplevel);
+static void window_toplevel_bounds(void *data, struct xdg_toplevel *toplevel, int32_t width, int32_t height);
 static void window_seat_capabilities(void *data, struct wl_seat *seat, uint32_t capabilities);
 static void window_seat_name(void *data, struct wl_seat *seat, const char *name);
 static void window_pointer_enter(void *data, struct wl_pointer *pointer, uint32_t serial, struct wl_surface *surface, wl_fixed_t x, wl_fixed_t y);
@@ -95,9 +96,9 @@ static const struct xdg_surface_listener surface_listener = {
 	window_configure
 };
 
-/* The size the compositor gives the window, and its request to close. */
+/* The size the compositor gives the window, its request to close, and the largest size it may choose. */
 static const struct xdg_toplevel_listener toplevel_listener = {
-	window_toplevel_configure, window_toplevel_close
+	window_toplevel_configure, window_toplevel_close, window_toplevel_bounds
 };
 
 /* The seat's devices and name. */
@@ -466,10 +467,12 @@ window_global(
 		return;
 	}
 
-	/* The shell gives the surface its window role. */
+	/* The shell gives the surface its window role; version 4 tells the largest size the window may choose. */
 	match = strcmp(interface, "xdg_wm_base");
 	if (match == 0 && window->shell == NULL) {
-		window->shell = wl_registry_bind(registry, name, &xdg_wm_base_interface, 1U);
+		if (version > 4U)
+			version = 4U;
+		window->shell = wl_registry_bind(registry, name, &xdg_wm_base_interface, version);
 		if (window->shell != NULL)
 			(void)xdg_wm_base_add_listener(window->shell, &shell_listener, window);
 		return;
@@ -542,6 +545,14 @@ window_toplevel_configure(
 	window = data;
 	window->maximized = window_has_state(states, WINDOW_STATE_MAXIMIZED);
 
+	/* A width left to the window is its own, kept within the compositor's bounds. */
+	if (width <= 0 && window->bounds_width > 0U && window->width > window->bounds_width)
+		width = (int32_t)window->bounds_width;
+
+	/* And so is a height. */
+	if (height <= 0 && window->bounds_height > 0U && window->height > window->bounds_height)
+		height = (int32_t)window->bounds_height;
+
 	/* A new width marks the window resized. */
 	if (width > 0 && (uint32_t)width != window->width) {
 		window->width = (uint32_t)width;
@@ -567,6 +578,33 @@ window_toplevel_close(
 	(void)toplevel;
 	window = data;
 	window->closed = 1;
+}
+
+/*
+ * Keeps the largest size the compositor lets the window choose for itself
+ * (xdg-shell version 4: the space it can be seen whole in); the configure
+ * that follows applies it.  A zero is a size the compositor does not know.
+ */
+static void
+window_toplevel_bounds(
+	void *data,
+	struct xdg_toplevel *toplevel,
+	int32_t width,
+	int32_t height)
+{
+	struct fm_window *window;
+
+	/* The width, when known. */
+	(void)toplevel;
+	window = data;
+	window->bounds_width = 0U;
+	if (width > 0)
+		window->bounds_width = (uint32_t)width;
+
+	/* The height, when known. */
+	window->bounds_height = 0U;
+	if (height > 0)
+		window->bounds_height = (uint32_t)height;
 }
 
 /* Takes the seat's pointer and keyboard when it has them. */

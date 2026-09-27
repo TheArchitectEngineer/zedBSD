@@ -757,6 +757,7 @@ void zwl_compose_poll(struct zwl_server *server);
 int zwl_glass_button(struct zwl_server *server, uint32_t button, uint32_t state);
 int zwl_glass_motion(struct zwl_server *server);
 void zwl_glass_place(struct zwl_server *server, struct zwl_object *surface, int32_t width, int32_t height, int32_t step);
+void zwl_glass_space(struct zwl_server *server, int32_t *width, int32_t *height);
 void zwl_glass_tick(struct zwl_server *server);
 float zwl_home_progress(struct zwl_server *server);
 void zwl_home_layer(struct zwl_server *server, float progress, float *x, float *y, float *scale);

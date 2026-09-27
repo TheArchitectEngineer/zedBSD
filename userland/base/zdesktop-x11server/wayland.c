@@ -172,7 +172,7 @@ static const struct xdg_surface_listener wayland_surface_listener = {
 
 /* A toplevel's size and close request. */
 static const struct xdg_toplevel_listener wayland_toplevel_listener = {
-	wayland_toplevel_configure, wayland_toplevel_close
+	wayland_toplevel_configure, wayland_toplevel_close, NULL
 };
 
 /* A buffer given back by the desktop. */
