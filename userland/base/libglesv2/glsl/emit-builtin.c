@@ -144,6 +144,16 @@ builtin_special(
 	case GLSL_SPECIAL_TEXEL_FETCH:
 		result = builtin_texture_query(state, node, arguments);
 		return result;
+	case GLSL_SPECIAL_EMIT_VERTEX:
+		/* A geometry shader emits a vertex of its outputs' values: no operands, no value. */
+		glsl_words_add(state->module, &state->module->body, SPV_OP_EMIT_VERTEX, NULL, 0U);
+		result = builtin_value(0U, type);
+		return result;
+	case GLSL_SPECIAL_END_PRIMITIVE:
+		/* A geometry shader ends the strip it emits. */
+		glsl_words_add(state->module, &state->module->body, SPV_OP_END_PRIMITIVE, NULL, 0U);
+		result = builtin_value(0U, type);
+		return result;
 	case GLSL_SPECIAL_MOD:
 		/* x - y * floor(x / y) is OpFMod (a scalar y spread first). */
 		operands[0] = arguments[0].id;
@@ -314,7 +324,7 @@ builtin_texture(
 
 	/* The instruction: an explicit level for level and gradient lookups, and in vertex shaders (a level 0). */
 	explicit_lod = 0;
-	if (lod != 0U || gradient_x != 0U || state->shader->stage == GLSL_STAGE_VERTEX)
+	if (lod != 0U || gradient_x != 0U || state->shader->stage != GLSL_STAGE_FRAGMENT)
 		explicit_lod = 1;
 	if (explicit_lod && lod == 0U && gradient_x == 0U)
 		lod = glsl_emit_float(state, 0.0f);

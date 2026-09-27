@@ -202,6 +202,23 @@ enum glsl_keyword {
 #define GLSL_BUILTIN_FRAG_DATA	8U
 #define GLSL_BUILTIN_FRAG_DEPTH	9U
 #define GLSL_BUILTIN_INSTANCE_ID 10U
+#define GLSL_BUILTIN_PER_VERTEX	11U
+#define GLSL_BUILTIN_PRIMITIVE_ID_IN 12U
+#define GLSL_BUILTIN_PRIMITIVE_ID 13U
+#define GLSL_BUILTIN_LAYER	14U
+
+/*
+ * A geometry shader's primitives (the layouts "in" and "out" give), and
+ * how many vertices each input primitive has, by its number.
+ */
+#define GLSL_PRIMITIVE_NONE	0U
+#define GLSL_PRIMITIVE_POINTS	1U
+#define GLSL_PRIMITIVE_LINES	2U
+#define GLSL_PRIMITIVE_LINES_ADJACENCY 3U
+#define GLSL_PRIMITIVE_TRIANGLES 4U
+#define GLSL_PRIMITIVE_TRIANGLES_ADJACENCY 5U
+#define GLSL_PRIMITIVE_LINE_STRIP 6U
+#define GLSL_PRIMITIVE_TRIANGLE_STRIP 7U
 
 /* The kinds of symbols. */
 #define GLSL_SYMBOL_VARIABLE	1U
@@ -429,7 +446,7 @@ struct glsl_node {
 	/* GLSL_NODE_* flags. */
 	unsigned flags;
 
-	/* The qualifiers of a type specifier or a parameter, and a layout's flags and location. */
+	/* The qualifiers of a type specifier or a parameter, and a layout's flags, location, primitive (GLSL_PRIMITIVE_*) and most vertices. */
 	unsigned storage;
 	unsigned interpolation;
 	unsigned precision;
@@ -437,6 +454,8 @@ struct glsl_node {
 	unsigned invariant;
 	unsigned layout;
 	unsigned location;
+	unsigned primitive;
+	unsigned max_vertices;
 
 	/* The type: a type specifier's built-in type as parsed, an expression's once checked. */
 	const struct glsl_type *type;
@@ -553,7 +572,7 @@ struct glsl_builtin {
 	unsigned operation;
 	unsigned number;
 
-	/* The stages it exists in (bit 0 vertex, bit 1 fragment), and the versions. */
+	/* The stages it exists in (bit 0 vertex, bit 1 fragment, bit 2 geometry), and the versions. */
 	unsigned stages;
 	unsigned versions;
 };
@@ -616,6 +635,8 @@ struct glsl_builtin {
 #define GLSL_SPECIAL_TEXTURE_OFFSET 25U
 #define GLSL_SPECIAL_TEXTURE_OFFSET_BIAS 26U
 #define GLSL_SPECIAL_TEXTURE_LOD_OFFSET 27U
+#define GLSL_SPECIAL_EMIT_VERTEX 28U
+#define GLSL_SPECIAL_END_PRIMITIVE 29U
 
 /* The layout qualifiers of a declaration (glsl_node.layout). */
 #define GLSL_LAYOUT_STD140	0x01U
@@ -624,6 +645,8 @@ struct glsl_builtin {
 #define GLSL_LAYOUT_ROW_MAJOR	0x08U
 #define GLSL_LAYOUT_COLUMN_MAJOR 0x10U
 #define GLSL_LAYOUT_LOCATION	0x20U
+#define GLSL_LAYOUT_PRIMITIVE	0x40U
+#define GLSL_LAYOUT_MAX_VERTICES 0x80U
 
 /* No location given. */
 #define GLSL_NO_LOCATION	0xffffffffU
@@ -648,6 +671,16 @@ struct glsl_shader {
 
 	/* The extensions the shader enabled. */
 	unsigned derivatives;
+
+	/*
+	 * A geometry shader's layouts: the input primitive (GLSL_PRIMITIVE_*)
+	 * and its vertices (which size the unsized inputs), the output
+	 * primitive and the most vertices it emits (0 until given).
+	 */
+	unsigned geometry_input;
+	unsigned geometry_vertices;
+	unsigned geometry_output;
+	unsigned max_vertices;
 
 	/* The preprocessed tokens, and the parser's position in them. */
 	struct glsl_token *tokens;

@@ -8,14 +8,16 @@
 /*
  * ws068-p016..p018: runs zedBSD's GLSL compiler on the host.
  *
- *   glsl-test compile vert|frag FILE [DEFAULT_VERSION]
+ *   glsl-test compile vert|frag|geom FILE [DEFAULT_VERSION]
  *       compiles one shader and prints "compiled" or the info log
  *   glsl-test expect vert|frag FILE [DEFAULT_VERSION]
  *       compiles a shader that must fail, and checks the log against the
  *       file's "// expect: TEXT" lines (each TEXT must be in the log)
  *   glsl-test link VERT FRAG OUT_PREFIX [DEFAULT_VERSION] [NAME=LOCATION ...]
- *       compiles and links two shaders, writes OUT_PREFIX.vert.spv and
- *       OUT_PREFIX.frag.spv, and prints the uniforms
+ *       compiles and links two shaders (and the geometry shader of VERT's
+ *       name with .geom when there is one, WS068 p032), writes
+ *       OUT_PREFIX.vert.spv and OUT_PREFIX.frag.spv (and
+ *       OUT_PREFIX.geom.spv), and prints the uniforms
  */
 
 #include "../../../../userland/base/libglesv2/glsl/glsl.h"
@@ -115,10 +117,13 @@ test_stage(
 {
 	int differs;
 
-	/* "frag" is the fragment stage; anything else the vertex stage. */
+	/* "frag" is the fragment stage, "geom" the geometry stage; anything else the vertex stage. */
 	differs = strcmp(name, "frag");
 	if (differs == 0)
 		return GLSL_STAGE_FRAGMENT;
+	differs = strcmp(name, "geom");
+	if (differs == 0)
+		return GLSL_STAGE_GEOMETRY;
 
 	/* The vertex stage. */
 	return GLSL_STAGE_VERTEX;
@@ -248,11 +253,13 @@ test_link(
 	struct glsl_binding bindings[16];
 	struct glsl_program program;
 	struct glsl_shader *vertex;
+	struct glsl_shader *geometry;
 	struct glsl_shader *fragment;
 	unsigned version;
 	unsigned count;
 	unsigned index;
 	char path[1024];
+	char *dot;
 	char *source;
 	char *log;
 	char *equals;
@@ -298,9 +305,29 @@ test_link(
 		return 1;
 	}
 
+	/* The geometry shader of the vertex shader's name, when there is one. */
+	geometry = NULL;
+	(void)snprintf(path, sizeof(path), "%s", argv[2]);
+	dot = strrchr(path, '.');
+	if (dot != NULL)
+		(void)snprintf(dot, sizeof(path) - (size_t)(dot - path), ".geom");
+	source = test_read(path);
+	if (source != NULL) {
+		geometry = glsl_compile(GLSL_STAGE_GEOMETRY, source, version, &log);
+		free(source);
+		if (log != NULL)
+			printf("%s", log);
+		free(log);
+		if (geometry == NULL) {
+			printf("link: the geometry shader did not compile\n");
+			return 1;
+		}
+	}
+
 	/* The link. */
-	status = glsl_link(vertex, fragment, bindings, count, &program, &log);
+	status = glsl_link_stages(vertex, geometry, fragment, bindings, count, NULL, 0U, &program, &log);
 	glsl_shader_free(vertex);
+	glsl_shader_free(geometry);
 	glsl_shader_free(fragment);
 	if (status != 0) {
 		printf("link FAILED: %s", log);
@@ -337,6 +364,12 @@ test_link(
 	status = test_write(path, program.code[0], program.words[0]);
 	(void)snprintf(path, sizeof(path), "%s.frag.spv", argv[4]);
 	status |= test_write(path, program.code[1], program.words[1]);
+	if (program.code[GLSL_STAGE_GEOMETRY] != NULL) {
+		(void)snprintf(path, sizeof(path), "%s.geom.spv", argv[4]);
+		status |= test_write(path, program.code[GLSL_STAGE_GEOMETRY], program.words[GLSL_STAGE_GEOMETRY]);
+	}
+
+	/* The program goes. */
 	glsl_program_free(&program);
 	if (status != 0)
 		return 1;

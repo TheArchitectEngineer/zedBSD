@@ -41,15 +41,15 @@ version_of() {
 }
 
 # 1. Every pass shader compiles.
-for f in "$here"/pass/*.vert "$here"/pass/*.frag; do
-	stage=vert; case $f in *.frag) stage=frag;; esac
+for f in "$here"/pass/*.vert "$here"/pass/*.frag "$here"/pass/*.geom; do
+	stage=vert; case $f in *.frag) stage=frag;; *.geom) stage=geom;; esac
 	"$out/glsl-test" compile $stage "$f" "$(version_of "$f")" > "$out/compile.txt" 2>&1 || { cat "$out/compile.txt"; fail "compile $f"; }
 done
 echo "compile: done"
 
 # 2. Every fail shader fails as it expects.
 for f in "$here"/fail/*; do
-	stage=vert; case $f in *.frag) stage=frag;; esac
+	stage=vert; case $f in *.frag) stage=frag;; *.geom) stage=geom;; esac
 	"$out/glsl-test" expect $stage "$f" 100 > "$out/expect.txt" 2>&1 || { cat "$out/expect.txt"; fail "expect $f"; }
 done
 echo "expect: done"
@@ -65,6 +65,10 @@ for vert in "$here"/pass/*.vert; do
 		"$out/spirv-test" "$out/$name.$stage.spv" "$out/$name.$stage.linked.spv" > "$out/$name.$stage.reflect.txt" 2>&1 || { cat "$out/$name.$stage.reflect.txt"; fail "reflect $name.$stage"; }
 		spirv-val --target-env vulkan1.0 "$out/$name.$stage.linked.spv" || fail "spirv-val linked $name.$stage"
 	done
+	# A geometry stage (WS068 p032), when the pair has one.
+	if [ -f "$here/pass/$name.geom" ]; then
+		spirv-val --target-env vulkan1.0 "$out/$name.geom.spv" || fail "spirv-val $name.geom"
+	fi
 done
 echo "link: done"
 

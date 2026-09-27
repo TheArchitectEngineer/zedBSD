@@ -6,12 +6,14 @@
  */
 
 /*
- * The GLSL compiler's link: a vertex and a fragment shader are matched
- * (uniforms of one name must agree, every varying the fragment shader
- * reads must be one the vertex shader declares), the program's uniforms
- * are laid out once for both (std140 offsets in the default uniform
- * block, sampler bindings from 1), attributes and varyings get their
- * locations, and each stage is emitted as SPIR-V.
+ * The GLSL compiler's link: a vertex and a fragment shader, and a
+ * geometry shader between them when there is one, are matched (uniforms
+ * of one name must agree, every input a stage reads must be an output
+ * the stage before declares: a geometry shader's inputs are arrays of
+ * the vertex shader's outputs), the program's uniforms are laid out once
+ * for all (std140 offsets in the default uniform block, sampler bindings
+ * from 1), attributes and varyings get their locations, and each stage
+ * is emitted as SPIR-V.
  *
  * The link writes what it decides into the shaders' symbols (locations,
  * uniform indices, emission ids), so two links of the same shader must
@@ -64,12 +66,13 @@ static void link_error(struct link_state *state, const char *format, ...);
 static int link_same_type(const struct glsl_type *left, const struct glsl_type *right);
 static void link_uniforms(struct link_state *state, struct glsl_shader *shader);
 static void link_layout(struct link_state *state);
-static void link_blocks(struct link_state *state, struct glsl_shader *vertex, struct glsl_shader *fragment);
+static void link_blocks(struct link_state *state, struct glsl_shader **stages, unsigned count);
 static void link_attributes(struct link_state *state, struct glsl_shader *vertex, const struct glsl_binding *bindings, unsigned binding_count);
-static void link_varyings(struct link_state *state, struct glsl_shader *vertex, struct glsl_shader *fragment);
+static void link_varyings(struct link_state *state, struct glsl_shader *producer, struct glsl_shader *consumer);
+static const struct glsl_type *link_input_type(const struct glsl_shader *consumer, const struct glsl_symbol *input);
 static void link_outputs(struct link_state *state, struct glsl_shader *fragment);
 static struct glsl_symbol *link_find(struct glsl_shader *shader, const char *name, unsigned where);
-static struct glsl_symbol *link_find_varying(struct glsl_shader *vertex, struct glsl_symbol *input);
+static struct glsl_symbol *link_find_varying(struct glsl_shader *producer, struct glsl_symbol *input, const struct glsl_type *type);
 static int link_take_output(struct link_state *state, struct glsl_symbol *symbol, unsigned char *taken);
 static void link_info(struct link_state *state, struct glsl_program *program);
 static void link_leaves(struct link_state *state, const struct glsl_type *type, const char *name, struct glsl_uniform_info *out, unsigned *count, unsigned capacity);
@@ -119,11 +122,42 @@ glsl_link_captured(
 	struct glsl_program *program,
 	char **log)
 {
+	int status;
+
+	/* A link without a geometry shader. */
+	status = glsl_link_stages(vertex_shader, NULL, fragment_shader, bindings, binding_count, captures, capture_count, program, log);
+	if (status != 0)
+		return -1;
+
+	/* Succeeded: the program. */
+	return 0;
+}
+
+/*
+ * Links a vertex shader, a geometry shader (NULL for none) and a fragment
+ * shader into SPIR-V, the vertex shader capturing the outputs of the
+ * names given (only without a geometry shader).
+ */
+int
+glsl_link_stages(
+	const struct glsl_shader *vertex_shader,
+	const struct glsl_shader *geometry_shader,
+	const struct glsl_shader *fragment_shader,
+	const struct glsl_binding *bindings,
+	unsigned binding_count,
+	const char *const *captures,
+	unsigned capture_count,
+	struct glsl_program *program,
+	char **log)
+{
 	struct link_state *volatile state;
 	struct glsl_shader *vertex;
+	struct glsl_shader *geometry;
 	struct glsl_shader *fragment;
+	struct glsl_shader *stages[3];
 	uint32_t *code;
 	size_t words;
+	unsigned count;
 
 	/* Nothing yet. */
 	*log = NULL;
@@ -135,6 +169,7 @@ glsl_link_captured(
 
 	/* The link records its decisions in the shaders' symbols. */
 	vertex = (struct glsl_shader *)vertex_shader;
+	geometry = (struct glsl_shader *)geometry_shader;
 	fragment = (struct glsl_shader *)fragment_shader;
 
 	/*
@@ -153,19 +188,41 @@ glsl_link_captured(
 		return -1;
 	}
 
-	/* The stages, and one language for both. */
+	/* The stages, and one language for all. */
 	if (vertex->stage != GLSL_STAGE_VERTEX || fragment->stage != GLSL_STAGE_FRAGMENT)
 		link_error(state, "a program needs a vertex and a fragment shader");
+	if (geometry != NULL && geometry->stage != GLSL_STAGE_GEOMETRY)
+		link_error(state, "the shader between the vertex and the fragment shader is not a geometry shader");
 	if (vertex->es != fragment->es)
 		link_error(state, "OpenGL ES and desktop GLSL shaders cannot be linked together");
+	if (geometry != NULL && capture_count != 0U)
+		link_error(state, "transform feedback with a geometry shader is not supported");
+	if (state->errors != 0U)
+		longjmp(state->failure, 1);
+
+	/* The stages in order: the vertex, the geometry (if any) and the fragment shader. */
+	count = 0U;
+	stages[count++] = vertex;
+	if (geometry != NULL)
+		stages[count++] = geometry;
+	stages[count++] = fragment;
 
 	/* The uniforms, laid out; the attributes, varyings and outputs, located. */
 	link_uniforms(state, vertex);
+	if (geometry != NULL)
+		link_uniforms(state, geometry);
 	link_uniforms(state, fragment);
 	link_layout(state);
-	link_blocks(state, vertex, fragment);
+	link_blocks(state, stages, count);
 	link_attributes(state, vertex, bindings, binding_count);
-	link_varyings(state, vertex, fragment);
+	if (geometry != NULL) {
+		link_varyings(state, vertex, geometry);
+		link_varyings(state, geometry, fragment);
+	} else {
+		link_varyings(state, vertex, fragment);
+	}
+
+	/* The fragment outputs and the captured outputs. */
 	link_outputs(state, fragment);
 	link_captures(state, vertex, captures, capture_count);
 	if (state->errors != 0U)
@@ -182,10 +239,21 @@ glsl_link_captured(
 	if (program->code[0] == NULL || program->code[1] == NULL)
 		longjmp(state->failure, 1);
 
+	/* The geometry stage's, when there is one. */
+	if (geometry != NULL) {
+		code = glsl_emit(geometry, &state->arena, state->uniforms, state->uniform_count, NULL, 0U, 0U, &words);
+		program->code[GLSL_STAGE_GEOMETRY] = link_copy(code, words);
+		program->words[GLSL_STAGE_GEOMETRY] = words;
+		if (program->code[GLSL_STAGE_GEOMETRY] == NULL)
+			longjmp(state->failure, 1);
+	}
+
 	/* What the API reports of the uniforms, the uniform blocks and the captured outputs. */
 	link_info(state, program);
-	link_block_infos(state, vertex, 0U, program);
-	link_block_infos(state, fragment, 1U, program);
+	link_block_infos(state, vertex, GLSL_STAGE_VERTEX, program);
+	link_block_infos(state, fragment, GLSL_STAGE_FRAGMENT, program);
+	if (geometry != NULL)
+		link_block_infos(state, geometry, GLSL_STAGE_GEOMETRY, program);
 	link_capture_infos(state, program);
 
 	/* Succeeded: the program. */
@@ -204,11 +272,12 @@ glsl_program_free(
 {
 	unsigned index;
 
-	/* The SPIR-V. */
-	free(program->code[0]);
-	free(program->code[1]);
-	program->code[0] = NULL;
-	program->code[1] = NULL;
+	/* The SPIR-V of each stage. */
+	for (index = 0U; index < 3U; index++) {
+		free(program->code[index]);
+		program->code[index] = NULL;
+		program->words[index] = 0U;
+	}
 
 	/* The uniforms' names and the list. */
 	for (index = 0U; index < program->uniform_count; index++)
@@ -380,54 +449,56 @@ link_layout(
 }
 
 /*
- * Gives the uniform blocks their bindings: 32 on, in the order the vertex
- * shader and then the fragment shader use them; a block of one name in
- * both stages is one block (and must be the same).
+ * Gives the uniform blocks their bindings: 32 on, in the order the stages
+ * (vertex, geometry, fragment) use them; a block of one name in several
+ * stages is one block (and must be the same).
  */
 static void
 link_blocks(
 	struct link_state *state,
-	struct glsl_shader *vertex,
-	struct glsl_shader *fragment)
+	struct glsl_shader **stages,
+	unsigned count)
 {
 	struct glsl_symbol *symbol;
 	struct glsl_symbol *other;
 	unsigned binding;
+	unsigned stage;
+	unsigned earlier;
 	int differs;
 	int same;
 
-	/* The vertex shader's blocks in order. */
+	/* Each stage's blocks in order: an earlier stage's binding for a block of the same name, the next for a new one. */
 	binding = LINK_FIRST_BLOCK_BINDING;
-	for (symbol = vertex->globals; symbol != NULL; symbol = symbol->next_global) {
-		if (!symbol->used || symbol->where != GLSL_VAR_BLOCK)
-			continue;
-		symbol->binding = binding;
-		binding++;
-	}
+	for (stage = 0U; stage < count; stage++) {
+		for (symbol = stages[stage]->globals; symbol != NULL; symbol = symbol->next_global) {
+			if (!symbol->used || symbol->where != GLSL_VAR_BLOCK)
+				continue;
 
-	/* The fragment shader's: the vertex shader's binding for a block of the same name, the next for a new one. */
-	for (symbol = fragment->globals; symbol != NULL; symbol = symbol->next_global) {
-		if (!symbol->used || symbol->where != GLSL_VAR_BLOCK)
-			continue;
-		symbol->binding = binding;
-		for (other = vertex->globals; other != NULL; other = other->next_global) {
-			if (!other->used || other->where != GLSL_VAR_BLOCK)
+			/* The same block in an earlier stage. */
+			other = NULL;
+			for (earlier = 0U; earlier < stage && other == NULL; earlier++) {
+				for (other = stages[earlier]->globals; other != NULL; other = other->next_global) {
+					if (!other->used || other->where != GLSL_VAR_BLOCK)
+						continue;
+					differs = strcmp(other->type->name, symbol->type->name);
+					if (differs == 0)
+						break;
+				}
+			}
+
+			/* A new block takes the next binding. */
+			if (other == NULL) {
+				symbol->binding = binding;
+				binding++;
 				continue;
-			differs = strcmp(other->type->name, symbol->type->name);
-			if (differs != 0)
-				continue;
+			}
 
 			/* The same block: its binding, and the same members. */
 			same = link_same_type(other->type, symbol->type);
 			if (!same)
-				link_error(state, "uniform block '%s' differs between the two shaders", symbol->type->name);
+				link_error(state, "uniform block '%s' differs between the shaders", symbol->type->name);
 			symbol->binding = other->binding;
-			break;
 		}
-
-		/* A new block takes the next binding. */
-		if (other == NULL)
-			binding++;
 	}
 }
 
@@ -528,45 +599,48 @@ link_attributes(
 }
 
 /*
- * Gives the varyings their locations: the vertex shader's outputs in
- * declaration order (those either stage uses), and each fragment input
- * the location of the vertex output of its name.
+ * Gives the varyings between two stages their locations: the producer's
+ * outputs in declaration order (those either stage uses), and each input
+ * of the consumer the location of the output of its name (a geometry
+ * shader's input is an array of the output's type).
  */
 static void
 link_varyings(
 	struct link_state *state,
-	struct glsl_shader *vertex,
-	struct glsl_shader *fragment)
+	struct glsl_shader *producer,
+	struct glsl_shader *consumer)
 {
 	struct glsl_symbol *symbol;
 	struct glsl_symbol *output;
+	const struct glsl_type *type;
 	unsigned location;
 	int same;
 
-	/* A fragment input needs a vertex output of its name and type, which is then declared. */
-	for (symbol = fragment->globals; symbol != NULL; symbol = symbol->next_global) {
+	/* An input needs an output of its name and type, which is then declared. */
+	for (symbol = consumer->globals; symbol != NULL; symbol = symbol->next_global) {
 		if (!symbol->used || symbol->where != GLSL_VAR_INPUT || symbol->builtin != GLSL_BUILTIN_NONE)
 			continue;
-		output = link_find_varying(vertex, symbol);
+		type = link_input_type(consumer, symbol);
+		output = link_find_varying(producer, symbol, type);
 		if (output == NULL) {
-			link_error(state, "the fragment shader reads '%s', which the vertex shader does not declare", symbol->name);
+			link_error(state, "a shader reads '%s', which the shader before it does not declare", symbol->name);
 			continue;
 		}
 
 		/* Of the same type. */
-		same = link_same_type(output->type, symbol->type);
+		same = link_same_type(output->type, type);
 		if (!same) {
 			link_error(state, "varying '%s' has different types in the two shaders", symbol->name);
 			continue;
 		}
 
-		/* The vertex output is declared even when the vertex shader does not use it. */
+		/* The output is declared even when the producer does not use it. */
 		output->used = 1U;
 	}
 
-	/* The vertex outputs in order. */
+	/* The producer's outputs in order. */
 	location = 0U;
-	for (symbol = vertex->globals; symbol != NULL; symbol = symbol->next_global) {
+	for (symbol = producer->globals; symbol != NULL; symbol = symbol->next_global) {
 		if (!symbol->used || symbol->where != GLSL_VAR_OUTPUT || symbol->builtin != GLSL_BUILTIN_NONE)
 			continue;
 		symbol->location = location;
@@ -577,17 +651,32 @@ link_varyings(
 	if (location > 16U)
 		link_error(state, "too many varyings (16 locations)");
 
-	/* The fragment inputs take their outputs' locations (and interpolation). */
-	for (symbol = fragment->globals; symbol != NULL; symbol = symbol->next_global) {
+	/* The inputs take their outputs' locations (and interpolation). */
+	for (symbol = consumer->globals; symbol != NULL; symbol = symbol->next_global) {
 		if (!symbol->used || symbol->where != GLSL_VAR_INPUT || symbol->builtin != GLSL_BUILTIN_NONE)
 			continue;
-		output = link_find_varying(vertex, symbol);
+		type = link_input_type(consumer, symbol);
+		output = link_find_varying(producer, symbol, type);
 		if (output == NULL)
 			continue;
 		symbol->location = output->location;
 		if (output->interpolation == GLSL_INTERP_FLAT)
 			symbol->interpolation = GLSL_INTERP_FLAT;
 	}
+}
+
+/* Returns the type of the output an input reads: its own, or a geometry shader's input array's element. */
+static const struct glsl_type *
+link_input_type(
+	const struct glsl_shader *consumer,
+	const struct glsl_symbol *input)
+{
+	/* A geometry shader reads an array of the vertices' values. */
+	if (consumer->stage == GLSL_STAGE_GEOMETRY && input->type->kind == GLSL_KIND_ARRAY)
+		return input->type->element;
+
+	/* Succeeded: the input's own type. */
+	return input->type;
 }
 
 /* Gives the fragment shader's outputs their locations: gl_FragColor and gl_FragData 0, the others in order. */
@@ -692,28 +781,30 @@ link_take_output(
 }
 
 /*
- * Finds the vertex shader output a fragment shader input reads: a block
- * by its block name, anything else by its name.
+ * Finds the output of the stage before that an input (of the type it
+ * reads: a geometry shader's input array's element) reads: a block by
+ * its block name, anything else by its name.
  */
 static struct glsl_symbol *
 link_find_varying(
-	struct glsl_shader *vertex,
-	struct glsl_symbol *input)
+	struct glsl_shader *producer,
+	struct glsl_symbol *input,
+	const struct glsl_type *type)
 {
 	struct glsl_symbol *symbol;
 	int differs;
 
 	/* Anything but a block, by name. */
-	if (input->type->kind != GLSL_KIND_STRUCT || input->type->block == 0U) {
-		symbol = link_find(vertex, input->name, GLSL_VAR_OUTPUT);
+	if (type->kind != GLSL_KIND_STRUCT || type->block == 0U) {
+		symbol = link_find(producer, input->name, GLSL_VAR_OUTPUT);
 		return symbol;
 	}
 
 	/* A block: the output block of the same block name. */
-	for (symbol = vertex->globals; symbol != NULL; symbol = symbol->next_global) {
+	for (symbol = producer->globals; symbol != NULL; symbol = symbol->next_global) {
 		if (symbol->where != GLSL_VAR_OUTPUT || symbol->type->kind != GLSL_KIND_STRUCT || symbol->type->block == 0U)
 			continue;
-		differs = strcmp(symbol->type->name, input->type->name);
+		differs = strcmp(symbol->type->name, type->name);
 		if (differs == 0)
 			return symbol;
 	}
