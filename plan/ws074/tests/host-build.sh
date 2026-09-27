@@ -8,7 +8,9 @@
 # The outputs, in build/ws074-host/<variant>/:
 #   zdesktop-browser   the program with its headless modes (the same main.c as on zedBSD)
 #   host-NAME          each plan/ws074/tests/host-NAME.c unit test, linked with the engine
-# The asan variant adds -fsanitize=address,undefined; the runners use it to find crashes.
+# The asan variant adds -fsanitize=address,undefined; the runners use it to find crashes.  Run it with
+# ASAN_OPTIONS=detect_stack_use_after_return=0: the collector scans the real stack, and the sanitizer's
+# separate stacks for address-taken locals would hide cells from it.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
 cd "$(dirname -- "$0")/../../.."
