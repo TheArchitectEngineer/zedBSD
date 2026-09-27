@@ -177,6 +177,8 @@ js_builtin_install_array(
 		if (error != 0)
 			return error;
 	}
+
+	/* The prototype's methods. */
 	for (entry = array_methods; entry->name != NULL; entry++) {
 		error = js_builtin_method(realm, realm->array_prototype, entry->name, entry->length, entry->native);
 		if (error != 0)
@@ -215,6 +217,8 @@ array_call(
 		if (status != 0)
 			return status;
 	}
+
+	/* The array. */
 	made = vm_array_create(realm->heap, prototype);
 	if (made == NULL)
 		return ENOMEM;
@@ -229,6 +233,8 @@ array_call(
 			status = vm_throw_range_error(realm, "Invalid array length");
 			return status;
 		}
+
+		/* The length. */
 		status = vm_array_set_length(realm->heap, made, length);
 		return status;
 	}
@@ -331,6 +337,8 @@ array_from(
 			call_args[1] = vm_value_int32((int32_t)index);
 			status = vm_call(realm, mapper, js_argument(args, count, 2), call_args, 2, &value);
 		}
+
+		/* The value at the end. */
 		if (status == 0)
 			status = array_append(realm, *result, value);
 		if (status != 0)
@@ -419,6 +427,8 @@ array_concat(
 			next++;
 			continue;
 		}
+
+		/* An array's length. */
 		status = js_builtin_length(realm, item, &length);
 		if (status != 0)
 			return status;
@@ -429,9 +439,13 @@ array_concat(
 				if (status == 0)
 					status = array_set(realm, *result, next + index, value);
 			}
+
+			/* A failure ends the copy. */
 			if (status != 0)
 				return status;
 		}
+
+		/* The next items go after these. */
 		next += length;
 	}
 
@@ -497,6 +511,8 @@ array_copy_within(
 		} else if (status == 0) {
 			status = array_remove(realm, object, to);
 		}
+
+		/* A failure ends the copy. */
 		if (status != 0)
 			return status;
 		if (backwards) {
@@ -506,6 +522,8 @@ array_copy_within(
 			from++;
 			to++;
 		}
+
+		/* One fewer to go. */
 		remaining--;
 	}
 
@@ -657,6 +675,7 @@ array_flat(
 	vm_value *result)
 {
 	vm_value object;
+	vm_value depth_value;
 	uint32_t length;
 	double depth;
 	int status;
@@ -666,8 +685,9 @@ array_flat(
 	if (status != 0)
 		return status;
 	depth = 1.0;
-	if (js_argument(args, count, 0) != VM_VALUE_UNDEFINED) {
-		status = js_builtin_integer(realm, args[0], &depth);
+	depth_value = js_argument(args, count, 0);
+	if (depth_value != VM_VALUE_UNDEFINED) {
+		status = js_builtin_integer(realm, depth_value, &depth);
 		if (status != 0)
 			return status;
 	}
@@ -738,6 +758,7 @@ array_includes(
 	uint32_t length;
 	uint32_t index;
 	int same;
+	int numbers;
 	int status;
 
 	/* The object, its length and where to start. */
@@ -756,7 +777,8 @@ array_includes(
 		if (status != 0)
 			return status;
 		same = vm_same_value(value, wanted);
-		if (!same && vm_value_is_number(value) && vm_value_is_number(wanted))
+		numbers = vm_value_is_number(value) && vm_value_is_number(wanted);
+		if (!same && numbers)
 			same = vm_value_as_number(value) == vm_value_as_number(wanted);
 		if (same) {
 			*result = VM_VALUE_TRUE;
@@ -825,6 +847,7 @@ array_join(
 {
 	struct vm_string *separator;
 	vm_value object;
+	vm_value separator_value;
 	uint32_t length;
 	int status;
 
@@ -832,7 +855,8 @@ array_join(
 	status = array_this(realm, this_value, &object, &length);
 	if (status != 0)
 		return status;
-	if (js_argument(args, count, 0) == VM_VALUE_UNDEFINED) {
+	separator_value = js_argument(args, count, 0);
+	if (separator_value == VM_VALUE_UNDEFINED) {
 		separator = vm_string_from_utf8(realm->heap, ",", 1);
 		if (separator == NULL)
 			return ENOMEM;
@@ -876,6 +900,8 @@ array_last_index_of(
 		if (status != 0)
 			return status;
 	}
+
+	/* From the end when negative, at most the last index. */
 	index = from;
 	if (from < 0.0)
 		index = (double)length + from;
@@ -1032,6 +1058,8 @@ array_reduce(
 			started = 1;
 			continue;
 		}
+
+		/* The callback on the accumulator and the element. */
 		call_args[0] = *result;
 		call_args[1] = value;
 		call_args[2] = vm_value_int32((int32_t)index);
@@ -1094,6 +1122,8 @@ array_reduce_right(
 			started = 1;
 			continue;
 		}
+
+		/* The callback on the accumulator and the element. */
 		call_args[0] = *result;
 		call_args[1] = value;
 		call_args[2] = vm_value_int32((int32_t)(index - 1U));
@@ -1208,6 +1238,8 @@ array_shift(
 			status = array_remove(realm, object, index - 1U);
 		}
 	}
+
+	/* The last one goes, and the length shrinks. */
 	if (status == 0)
 		status = array_remove(realm, object, length - 1U);
 	if (status == 0)
@@ -1252,6 +1284,8 @@ array_slice(
 			if (status == 0)
 				status = array_set(realm, *result, index - start, value);
 		}
+
+		/* A failure ends the reversal. */
 		if (status != 0)
 			return status;
 	}
@@ -1320,6 +1354,8 @@ array_sort(
 		if (status != 0)
 			return status;
 	}
+
+	/* Then the holes. */
 	for (index = items; index < length; index++) {
 		status = array_remove(realm, object, index);
 		if (status != 0)
@@ -1384,6 +1420,8 @@ array_splice(
 				status = array_set(realm, *result, index, value);
 		}
 	}
+
+	/* The result's length. */
 	if (status == 0)
 		status = array_set_length(realm, *result, (double)deleted);
 	if (status != 0)
@@ -1401,6 +1439,8 @@ array_splice(
 				status = array_remove(realm, object, index + inserted);
 			}
 		}
+
+		/* The ones left past the new end go. */
 		for (index = length; status == 0 && index > length - deleted + inserted; index--)
 			status = array_remove(realm, object, index - 1U);
 	} else if (inserted > deleted) {
@@ -1479,6 +1519,8 @@ array_to_reversed(
 		if (status == 0)
 			status = array_set(realm, *result, index, value);
 	}
+
+	/* Reports whether the splice succeeded. */
 	return status;
 }
 
@@ -1561,16 +1603,22 @@ array_to_spliced(
 			status = array_set(realm, *result, next, value);
 		next++;
 	}
+
+	/* The new items. */
 	for (index = 2; status == 0 && index < count; index++) {
 		status = array_set(realm, *result, next, args[index]);
 		next++;
 	}
+
+	/* The rest after the skipped ones. */
 	for (index = start + skipped; status == 0 && index < length; index++) {
 		status = array_get(realm, object, index, &value);
 		if (status == 0)
 			status = array_set(realm, *result, next, value);
 		next++;
 	}
+
+	/* Reports whether the copy succeeded. */
 	return status;
 }
 
@@ -1610,6 +1658,8 @@ array_to_string(
 		status = vm_call(realm, join, object, NULL, 0, result);
 		return status;
 	}
+
+	/* Object.prototype.toString, called on the object. */
 	key = vm_key_from_ascii(realm->heap, "toString");
 	if (key == VM_VALUE_EMPTY)
 		return ENOMEM;
@@ -1652,6 +1702,8 @@ array_unshift(
 			status = array_remove(realm, object, index - 1U + count);
 		}
 	}
+
+	/* The items at the start. */
 	for (index = 0; status == 0 && index < count; index++)
 		status = array_set(realm, object, index, args[index]);
 
@@ -1702,6 +1754,8 @@ array_with(
 		if (status == 0)
 			status = array_set(realm, *result, index, value);
 	}
+
+	/* Reports whether the copy succeeded. */
 	return status;
 }
 
@@ -1853,6 +1907,8 @@ array_callback(
 		status = vm_throw_type_error(realm, "The callback is not a function");
 		return status;
 	}
+
+	/* The callback. */
 	return 0;
 }
 
@@ -1896,6 +1952,8 @@ array_each(
 		if (status != 0)
 			return status;
 	}
+
+	/* map's result is as long. */
 	if (mode == ARRAY_MAP) {
 		status = array_set_length(realm, *result, (double)length);
 		if (status != 0)
@@ -1925,16 +1983,22 @@ array_each(
 			*result = VM_VALUE_FALSE;
 			return 0;
 		}
+
+		/* some stops at the first true. */
 		if (mode == ARRAY_SOME && truth) {
 			*result = VM_VALUE_TRUE;
 			return 0;
 		}
+
+		/* map keeps each answer at its index. */
 		if (mode == ARRAY_MAP) {
 			status = vm_object_define(realm->heap, (struct vm_object *)vm_value_as_cell(*result), vm_value_int32((int32_t)index),
 			    answer, VM_PROPERTY_DEFAULT);
 			if (status != 0)
 				return status;
 		}
+
+		/* filter keeps the accepted values in order. */
 		if (mode == ARRAY_FILTER && truth) {
 			status = vm_object_define(realm->heap, (struct vm_object *)vm_value_as_cell(*result), vm_value_int32((int32_t)kept),
 			    value, VM_PROPERTY_DEFAULT);
@@ -2084,6 +2148,8 @@ array_flatten(
 		} else {
 			status = array_append(realm, target, value);
 		}
+
+		/* A failure ends the flattening. */
 		if (status != 0)
 			return status;
 	}
@@ -2136,6 +2202,8 @@ array_compare(
 		*order = 1;
 		return 0;
 	}
+
+	/* The same for the right. */
 	if (right == VM_VALUE_UNDEFINED) {
 		*order = -1;
 		return 0;
@@ -2209,6 +2277,8 @@ array_merge_sort(
 					scratch[out] = items[right];
 					right++;
 				}
+
+				/* The next place. */
 				out++;
 			}
 			while (left < middle) {
@@ -2222,6 +2292,8 @@ array_merge_sort(
 				out++;
 			}
 		}
+
+		/* The merged runs back in the items. */
 		memcpy(items, scratch, (size_t)count * sizeof(vm_value));
 	}
 
@@ -2265,6 +2337,8 @@ array_sorted_items(
 				status = array_append(realm, *list, value);
 		}
 	}
+
+	/* A failure to read. */
 	if (status != 0)
 		return status;
 	items = (struct vm_object *)vm_value_as_cell(*list);
@@ -2317,11 +2391,15 @@ array_join_with(
 			if (status == 0)
 				status = vm_call(realm, method, value, NULL, 0, &value);
 		}
+
+		/* Its string. */
 		if (status == 0)
 			status = vm_to_string(realm, value, &part);
 		if (status == 0)
 			status = vm_string_append_units(part, &text);
 	}
+
+	/* A failure leaves nothing. */
 	if (status != 0) {
 		wb_units_release(&text);
 		return status;
