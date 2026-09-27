@@ -28,7 +28,13 @@
  *    bindings of set 0 and one of set 1 with a linear and two nearest
  *    samplers, the two sets bound by one vkCmdBindDescriptorSets;
  *  - TEXOPS (ws075-p004): texture() with and without a bias, textureLod(),
- *    textureOffset() and textureLodOffset() of a texture of two levels.
+ *    textureOffset() and textureLodOffset() of a texture of two levels;
+ *  - TEXKINDS (ws075-p005): a 2D array, a 3D texture, a cube map, a 1D
+ *    texture, texelFetch() of an integer texture, a depth comparison,
+ *    textureGrad() (with the fine y derivative), textureSize(),
+ *    textureQueryLevels(), textureProj() and texelFetch() of a level;
+ *  - LEVELDRAW (ws075-p005): a draw into mip level 1 of array layer 2 of
+ *    a texture, through a framebuffer of a view of that level and layer.
  *
  * Each step logs "VKE1-<name> PASS" or "FAIL", then the thread logs the
  * verdict and closes the session.
@@ -90,6 +96,34 @@
 #define I915_VKE1_MIP_LEVELS		2U
 #define I915_VKE1_MIP_OFFSET		0x34000U
 
+/*
+ * The texture kinds step's textures (feature-shaders/texkinds.frag), in
+ * binding order: a 2D array of 3 layers, a 3D texture 4 deep, a cube map,
+ * a 1D texture, an RGBA8_UINT texture and an R32 float texture compared
+ * against, each 4 texels wide, KINDS_STRIDE apart from KINDS_OFFSET on.
+ */
+#define I915_VKE1_KINDS			6U
+#define I915_VKE1_KINDS_SIDE		4U
+#define I915_VKE1_KINDS_OFFSET		0x38000U
+#define I915_VKE1_KINDS_STRIDE		0x00400U
+#define I915_VKE1_KIND_ARRAY		0U
+#define I915_VKE1_KIND_VOLUME		1U
+#define I915_VKE1_KIND_CUBE		2U
+#define I915_VKE1_KIND_LINE		3U
+#define I915_VKE1_KIND_INTEGER		4U
+#define I915_VKE1_KIND_DEPTH		5U
+
+/*
+ * The level drawing step's texture: 8x8 RGBA8 of two levels and three
+ * layers, filled with LEVEL_FILL; the draw writes level 1 (4x4) of layer
+ * 2 through a view of that level and layer.
+ */
+#define I915_VKE1_LEVEL_OFFSET		0x3a000U
+#define I915_VKE1_LEVEL_SIDE		8U
+#define I915_VKE1_LEVEL_LEVELS		2U
+#define I915_VKE1_LEVEL_LAYERS		3U
+#define I915_VKE1_LEVEL_FILL		0x11223344U
+
 /* The floats of one transform block and of one material block (feature-shaders/ubo.vert, ubo.frag). */
 #define I915_VKE1_TRANSFORM_FLOATS	20U
 #define I915_VKE1_MATERIAL_FLOATS	28U
@@ -120,6 +154,9 @@
 #define I915_VKE1_ID_TEX_SET1		(I915_VKE1_IDENTITY + 14U)
 #define I915_VKE1_ID_TEXOPS_PIPELINE	(I915_VKE1_IDENTITY + 15U)
 #define I915_VKE1_ID_MIP_SET		(I915_VKE1_IDENTITY + 16U)
+#define I915_VKE1_ID_KINDS_PIPELINE	(I915_VKE1_IDENTITY + 17U)
+#define I915_VKE1_ID_KINDS_SET		(I915_VKE1_IDENTITY + 18U)
+#define I915_VKE1_ID_LEVEL_FRAMEBUFFER	(I915_VKE1_IDENTITY + 19U)
 #define I915_VKE1_ID_BLEND_PIPELINE	(I915_VKE1_IDENTITY + 0x100U)
 
 /* The wire opcodes the scenario sends, as libvulkan numbers them. */
@@ -242,12 +279,14 @@ struct i915_vke1 {
 	struct i915_gfx_shader ubo_frag;
 	struct i915_gfx_shader tex3_frag;
 	struct i915_gfx_shader texops_frag;
+	struct i915_gfx_shader texkinds_frag;
 
 	/* The pipelines: one per blend case, the uniform one and the texturing one. */
 	struct i915_gfx_pipeline blend_pipelines[I915_VKE1_BLEND_CASES];
 	struct i915_gfx_pipeline ubo_pipeline;
 	struct i915_gfx_pipeline tex_pipeline;
 	struct i915_gfx_pipeline texops_pipeline;
+	struct i915_gfx_pipeline texkinds_pipeline;
 
 	/*
 	 * The uniform step's layouts and sets: both have a uniform buffer at
@@ -271,6 +310,17 @@ struct i915_vke1 {
 	struct i915_gfx_view mip_view;
 	struct i915_gfx_sampler mip_sampler;
 	struct i915_gfx_dset mip_set;
+
+	/* The texture kinds step's textures, views and samplers, and its set (binding 6 the mip texture). */
+	struct i915_gfx_image kinds[I915_VKE1_KINDS];
+	struct i915_gfx_view kind_views[I915_VKE1_KINDS];
+	struct i915_gfx_sampler kind_samplers[I915_VKE1_KINDS];
+	struct i915_gfx_dset kinds_set;
+
+	/* The level drawing step's texture, the view of level 1 of layer 2 and the framebuffer of it. */
+	struct i915_gfx_image level_texture;
+	struct i915_gfx_view level_view;
+	struct i915_gfx_framebuffer level_framebuffer;
 
 	/* Nonzero once the objects are published, and once the command pool exists. */
 	int published;
@@ -346,6 +396,18 @@ static void i915_vke1_step_tex3(struct i915_vke1 *x);
 static void i915_vke1_mip_init(struct i915_vke1 *x);
 static void i915_vke1_mip_write(struct i915_vke1 *x);
 static void i915_vke1_step_texops(struct i915_vke1 *x);
+static void i915_vke1_kinds_init(struct i915_vke1 *x);
+static void i915_vke1_kinds_write(struct i915_vke1 *x);
+static uint32_t i915_vke1_kind_texel(uint32_t kind, uint32_t slice, uint32_t i, uint32_t j);
+static uint32_t i915_vke1_sixteenth(uint32_t n);
+static uint32_t i915_vke1_mip_pixel(uint32_t level, uint32_t i, uint32_t j);
+static uint32_t i915_vke1_kinds_expected(uint32_t px, uint32_t py);
+static void i915_vke1_step_texkinds(struct i915_vke1 *x);
+static void i915_vke1_level_init(struct i915_vke1 *x);
+static void i915_vke1_level_write(struct i915_vke1 *x);
+static int i915_vke1_level_check(struct i915_vke1 *x, uint32_t level, uint32_t layer, uint32_t pixel);
+static void i915_vke1_step_leveldraw(struct i915_vke1 *x);
+static void i915_vke1_begin_pass_on(struct i915_vke1 *x, uint64_t framebuffer, uint32_t side, const uint32_t clear[4]);
 
 /*
  * Starts the feature scenario.
@@ -406,6 +468,8 @@ i915_vke1_thread(
 	i915_vke1_step_ubo(x);
 	i915_vke1_step_tex3(x);
 	i915_vke1_step_texops(x);
+	i915_vke1_step_texkinds(x);
+	i915_vke1_step_leveldraw(x);
 
 	/* Gives everything back and says how the steps went. */
 	i915_vke1_teardown(x);
@@ -623,6 +687,7 @@ i915_vke1_objects_init(
 	i915_vke1_shader_init(&x->ubo_frag, i915_vke1_ubo_frag, sizeof(i915_vke1_ubo_frag));
 	i915_vke1_shader_init(&x->tex3_frag, i915_vke1_tex3_frag, sizeof(i915_vke1_tex3_frag));
 	i915_vke1_shader_init(&x->texops_frag, i915_vke1_texops_frag, sizeof(i915_vke1_texops_frag));
+	i915_vke1_shader_init(&x->texkinds_frag, i915_vke1_texkinds_frag, sizeof(i915_vke1_texkinds_frag));
 
 	/* One pipeline per blend case, with the case's blend. */
 	for (index = 0U; index < I915_VKE1_BLEND_CASES; index++) {
@@ -634,6 +699,7 @@ i915_vke1_objects_init(
 	i915_vke1_pipeline_init(&x->ubo_pipeline, &x->ubo_vert, &x->ubo_frag);
 	i915_vke1_pipeline_init(&x->tex_pipeline, &x->pass_vert, &x->tex3_frag);
 	i915_vke1_pipeline_init(&x->texops_pipeline, &x->pass_vert, &x->texops_frag);
+	i915_vke1_pipeline_init(&x->texkinds_pipeline, &x->pass_vert, &x->texkinds_frag);
 
 	/* The uniform layouts: binding 0 a uniform buffer; binding 1 a plain one, or a dynamic one. */
 	x->ubo_layout.count = 2U;
@@ -666,6 +732,20 @@ i915_vke1_objects_init(
 	i915_vke1_mip_init(x);
 	x->mip_set.slots[0].view = &x->mip_view;
 	x->mip_set.slots[0].sampler = &x->mip_sampler;
+
+	/* The texture kinds step's textures at bindings 0 .. 5, the texture of two levels at 6. */
+	i915_vke1_kinds_init(x);
+	for (index = 0U; index < I915_VKE1_KINDS; index++) {
+		x->kinds_set.slots[index].view = &x->kind_views[index];
+		x->kinds_set.slots[index].sampler = &x->kind_samplers[index];
+	}
+
+	/* The texture of two levels at the binding after them. */
+	x->kinds_set.slots[I915_VKE1_KINDS].view = &x->mip_view;
+	x->kinds_set.slots[I915_VKE1_KINDS].sampler = &x->mip_sampler;
+
+	/* The level drawing step's texture, view and framebuffer. */
+	i915_vke1_level_init(x);
 }
 
 /* Describes one buffer bound at an offset of the storage. */
@@ -849,6 +929,12 @@ i915_vke1_objects_publish(
 		error = drv_i915_object_insert(session, I915_VK_OBJ_PIPELINE, I915_VKE1_ID_TEXOPS_PIPELINE, &x->texops_pipeline);
 	if (error == 0)
 		error = drv_i915_object_insert(session, I915_VK_OBJ_DESCRIPTOR_SET, I915_VKE1_ID_MIP_SET, &x->mip_set);
+	if (error == 0)
+		error = drv_i915_object_insert(session, I915_VK_OBJ_PIPELINE, I915_VKE1_ID_KINDS_PIPELINE, &x->texkinds_pipeline);
+	if (error == 0)
+		error = drv_i915_object_insert(session, I915_VK_OBJ_DESCRIPTOR_SET, I915_VKE1_ID_KINDS_SET, &x->kinds_set);
+	if (error == 0)
+		error = drv_i915_object_insert(session, I915_VK_OBJ_FRAMEBUFFER, I915_VKE1_ID_LEVEL_FRAMEBUFFER, &x->level_framebuffer);
 
 	/* Publishes the blend pipelines, one identity each. */
 	for (index = 0U; error == 0 && index < I915_VKE1_BLEND_CASES; index++)
@@ -889,6 +975,9 @@ i915_vke1_objects_withdraw(
 	drv_i915_object_remove(session, I915_VK_OBJ_DESCRIPTOR_SET, I915_VKE1_ID_TEX_SET1);
 	drv_i915_object_remove(session, I915_VK_OBJ_PIPELINE, I915_VKE1_ID_TEXOPS_PIPELINE);
 	drv_i915_object_remove(session, I915_VK_OBJ_DESCRIPTOR_SET, I915_VKE1_ID_MIP_SET);
+	drv_i915_object_remove(session, I915_VK_OBJ_PIPELINE, I915_VKE1_ID_KINDS_PIPELINE);
+	drv_i915_object_remove(session, I915_VK_OBJ_DESCRIPTOR_SET, I915_VKE1_ID_KINDS_SET);
+	drv_i915_object_remove(session, I915_VK_OBJ_FRAMEBUFFER, I915_VKE1_ID_LEVEL_FRAMEBUFFER);
 	for (index = 0U; index < I915_VKE1_BLEND_CASES; index++)
 		drv_i915_object_remove(session, I915_VK_OBJ_PIPELINE, I915_VKE1_ID_BLEND_PIPELINE + index);
 	x->published = 0;
@@ -924,6 +1013,11 @@ i915_vke1_pipelines_prepare(
 	if (error != 0)
 		return error;
 
+	/* The texture kinds pipeline. */
+	error = drv_i915_gfx_pipeline_prepare(x->render, &x->texkinds_pipeline);
+	if (error != 0)
+		return error;
+
 	/* Says how the uniform pipeline receives its blocks and how many images the texturing one samples. */
 	kern_logf("i915: vke1: uniform push registers: vertex %u (blocks %u), fragment %u (blocks %u); texture step samplers %u\n",
 		  x->ubo_pipeline.vs_binary->push_regs,
@@ -948,6 +1042,8 @@ i915_vke1_pipelines_release(
 		drv_i915_gfx_pipeline_release(&x->blend_pipelines[index]);
 	drv_i915_gfx_pipeline_release(&x->ubo_pipeline);
 	drv_i915_gfx_pipeline_release(&x->tex_pipeline);
+	drv_i915_gfx_pipeline_release(&x->texops_pipeline);
+	drv_i915_gfx_pipeline_release(&x->texkinds_pipeline);
 }
 
 /*
@@ -1014,8 +1110,10 @@ i915_vke1_data_write(
 		drv_i915_gt_clflush(texels, (size_t)x->textures[index].bytes);
 	}
 
-	/* The texture operand step's two levels. */
+	/* The texture operand step's two levels, and the texture kinds step's textures. */
 	i915_vke1_mip_write(x);
+	i915_vke1_kinds_write(x);
+	i915_vke1_level_write(x);
 }
 
 /* Writes the four vertices of an axis-aligned quad between NDC steps (left, top) and (right, bottom) in one colour. */
@@ -1255,14 +1353,26 @@ i915_vke1_begin(
 	i915_vke1_put64(x, 0U);
 }
 
-/*
- * Appends vkCmdBeginRenderPass of the whole target, cleared to a colour
- * given as float bits: [present][sType 43][no chain][pass][framebuffer]
- * [area][present][1]{[colour][tag][4][r g b a]}[inline].
- */
+/* Appends vkCmdBeginRenderPass of the whole target, cleared to a colour given as float bits. */
 static void
 i915_vke1_begin_pass(
 	struct i915_vke1 *x,
+	const uint32_t clear[4])
+{
+	/* The target's framebuffer, all of it. */
+	i915_vke1_begin_pass_on(x, I915_VKE1_ID_FRAMEBUFFER, I915_VKE1_SIZE, clear);
+}
+
+/*
+ * Appends vkCmdBeginRenderPass of a square framebuffer, cleared to a
+ * colour given as float bits: [present][sType 43][no chain][pass]
+ * [framebuffer][area][present][1]{[colour][tag][4][r g b a]}[inline].
+ */
+static void
+i915_vke1_begin_pass_on(
+	struct i915_vke1 *x,
+	uint64_t framebuffer,
+	uint32_t side,
 	const uint32_t clear[4])
 {
 	uint32_t index;
@@ -1273,13 +1383,13 @@ i915_vke1_begin_pass(
 	i915_vke1_put32(x, 43U);
 	i915_vke1_put64(x, 0U);
 	i915_vke1_put64(x, I915_VKE1_ID_PASS);
-	i915_vke1_put64(x, I915_VKE1_ID_FRAMEBUFFER);
+	i915_vke1_put64(x, framebuffer);
 
-	/* The render area: the whole target. */
+	/* The render area: the whole framebuffer. */
 	i915_vke1_put32(x, 0U);
 	i915_vke1_put32(x, 0U);
-	i915_vke1_put32(x, I915_VKE1_SIZE);
-	i915_vke1_put32(x, I915_VKE1_SIZE);
+	i915_vke1_put32(x, side);
+	i915_vke1_put32(x, side);
 
 	/* One colour clear value. */
 	i915_vke1_put32(x, 1U);
@@ -1925,4 +2035,408 @@ i915_vke1_step_texops(
 
 	/* Logs the verdict. */
 	i915_vke1_verdict(x, "TEXOPS", error);
+}
+
+/*
+ * Describes the texture kinds step's textures, laid out as the executor
+ * lays out created images of their kinds, their views and their samplers:
+ * nearest texels of level 0, clamped to the edge in every direction; the
+ * depth texture's sampler compares LESS_OR_EQUAL.
+ */
+static void
+i915_vke1_kinds_init(
+	struct i915_vke1 *x)
+{
+	static const uint32_t types[I915_VKE1_KINDS] = {
+		VK_IMAGE_TYPE_2D, VK_IMAGE_TYPE_3D, VK_IMAGE_TYPE_2D, VK_IMAGE_TYPE_1D, VK_IMAGE_TYPE_2D, VK_IMAGE_TYPE_2D,
+	};
+	static const uint32_t view_types[I915_VKE1_KINDS] = {
+		VK_IMAGE_VIEW_TYPE_2D_ARRAY, VK_IMAGE_VIEW_TYPE_3D, VK_IMAGE_VIEW_TYPE_CUBE,
+		VK_IMAGE_VIEW_TYPE_1D, VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_VIEW_TYPE_2D,
+	};
+	static const uint32_t formats[I915_VKE1_KINDS] = {
+		VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM,
+		VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R8G8B8A8_UINT, VK_FORMAT_R32_SFLOAT,
+	};
+	static const uint32_t layers[I915_VKE1_KINDS] = { 3U, 1U, 6U, 1U, 1U, 1U };
+	struct i915_gfx_image *image;
+	struct i915_gfx_sampler *sampler;
+	uint32_t kind;
+
+	/* Each texture, its view and its sampler. */
+	for (kind = 0U; kind < I915_VKE1_KINDS; kind++) {
+		/* The texture, 4 texels wide, 4 high but the 1D one, 4 deep the 3D one. */
+		image = &x->kinds[kind];
+		image->format = formats[kind];
+		image->type = types[kind];
+		image->width = I915_VKE1_KINDS_SIDE;
+		image->height = I915_VKE1_KINDS_SIDE;
+		if (kind == I915_VKE1_KIND_LINE)
+			image->height = 1U;
+		image->depth = 1U;
+		if (kind == I915_VKE1_KIND_VOLUME)
+			image->depth = I915_VKE1_KINDS_SIDE;
+		image->layers = layers[kind];
+		image->cube = 0U;
+		if (kind == I915_VKE1_KIND_CUBE)
+			image->cube = 1U;
+		image->usage = VK_IMAGE_USAGE_SAMPLED_BIT;
+		image->levels = 1U;
+		(void)drv_i915_gfx_image_layout(image);
+		image->memory = &x->memory;
+		image->offset = I915_VKE1_KINDS_OFFSET + kind * I915_VKE1_KINDS_STRIDE;
+
+		/* A view of its one level and all its layers. */
+		x->kind_views[kind].image = image;
+		x->kind_views[kind].format = formats[kind];
+		x->kind_views[kind].level_count = 1U;
+		x->kind_views[kind].view_type = view_types[kind];
+		x->kind_views[kind].layer_count = layers[kind];
+
+		/* Nearest texels of level 0, clamped to the edge. */
+		sampler = &x->kind_samplers[kind];
+		sampler->mag_filter = VK_FILTER_NEAREST;
+		sampler->min_filter = VK_FILTER_NEAREST;
+		sampler->address_u = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+		sampler->address_v = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+		sampler->address_w = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+		sampler->mipmap_mode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+		if (kind == I915_VKE1_KIND_DEPTH) {
+			sampler->compare_enable = 1U;
+			sampler->compare_op = VK_COMPARE_OP_LESS_OR_EQUAL;
+		}
+	}
+}
+
+/*
+ * Writes the texture kinds step's texels: every slice of every texture row
+ * after row at the place the executor's layout gives it
+ * (drv_i915_gfx_image_slice()); the depth texture holds (i + 4 j) / 16.
+ */
+static void
+i915_vke1_kinds_write(
+	struct i915_vke1 *x)
+{
+	struct i915_gfx_surface surface;
+	struct i915_gfx_image *image;
+	uint32_t *row;
+	uint64_t base;
+	uint32_t kind;
+	uint32_t slice;
+	uint32_t slices;
+	uint32_t i;
+	uint32_t j;
+	int error;
+
+	/* Each texture, cleared first, then each slice at its place. */
+	base = drv_i915_gfx_memory_va(&x->memory, 0U);
+	for (kind = 0U; kind < I915_VKE1_KINDS; kind++) {
+		image = &x->kinds[kind];
+		kern_memset(x->cpu + image->offset, 0, (size_t)image->bytes);
+		slices = drv_i915_gfx_image_slices(image, 0U);
+		for (slice = 0U; slice < slices; slice++) {
+			error = drv_i915_gfx_image_slice(image, 0U, slice, &surface);
+			if (error != 0)
+				return;
+
+			/* The slice's rows, the image's pitch apart. */
+			for (j = 0U; j < surface.height; j++) {
+				row = (uint32_t *)(void *)(x->cpu + (surface.va - base) + (size_t)j * surface.pitch);
+				for (i = 0U; i < surface.width; i++) {
+					row[i] = i915_vke1_kind_texel(kind, slice, i, j);
+					if (kind == I915_VKE1_KIND_DEPTH)
+						row[i] = i915_vke1_sixteenth(i + 4U * j);
+				}
+			}
+		}
+
+		/* Makes the texels visible to the sampler. */
+		drv_i915_gt_clflush(x->cpu + image->offset, (size_t)image->bytes);
+	}
+}
+
+/* The texel (i, j) of a slice of a texture kind: red from i, green from j and the slice, blue from both. */
+static uint32_t
+i915_vke1_kind_texel(
+	uint32_t kind,
+	uint32_t slice,
+	uint32_t i,
+	uint32_t j)
+{
+	uint32_t red;
+	uint32_t green;
+	uint32_t blue;
+
+	/* Every byte stays below 256 for the six kinds, six slices and four texels a side. */
+	red = 16U + i * 48U + kind * 2U;
+	green = 16U + j * 48U + slice * 4U;
+	blue = 20U + kind * 30U + slice * 5U;
+
+	/* Succeeded: the pixel, alpha opaque. */
+	return red | (green << 8) | (blue << 16) | 0xff000000U;
+}
+
+/* The float bits of n / 16 for n of 0 .. 15, made without a float. */
+static uint32_t
+i915_vke1_sixteenth(
+	uint32_t n)
+{
+	uint32_t top;
+
+	/* Zero is all zero bits. */
+	if (n == 0U)
+		return 0U;
+
+	/* n / 16 = 1.m * 2^(top - 4), top the highest set bit of n. */
+	top = 0U;
+	while ((n >> (top + 1U)) != 0U)
+		top++;
+
+	/* Succeeded: the exponent and the bits below the leading one. */
+	return ((127U + top - 4U) << 23) | ((n << (23U - top)) & 0x007fffffU);
+}
+
+/* The texel (i, j) of a level of the texture of two levels, as regenerate.py's mip_texel() makes it. */
+static uint32_t
+i915_vke1_mip_pixel(
+	uint32_t level,
+	uint32_t i,
+	uint32_t j)
+{
+	uint32_t step;
+
+	/* Red and green from its place, blue from its level. */
+	step = 32U << level;
+
+	/* Succeeded: the pixel, alpha opaque. */
+	return (i * step + 8U * (level + 1U)) |
+	    ((j * step + 8U * (level + 1U)) << 8) |
+	    ((64U + 128U * level) << 16) |
+	    0xff000000U;
+}
+
+/*
+ * The pixel (px, py) of the texture kinds step, as texkinds.frag makes it:
+ * the band of 8 rows chooses the texture, the 16-pixel region its texel
+ * column (or the cube map's direction), every 2 rows of the band the next
+ * texel row.
+ */
+static uint32_t
+i915_vke1_kinds_expected(
+	uint32_t px,
+	uint32_t py)
+{
+	/* The cube map's face and texel in each region's direction: +X, -X, +Y, -Z. */
+	static const uint32_t cube[4][3] = { { 0U, 1U, 1U }, { 1U, 2U, 1U }, { 2U, 2U, 2U }, { 5U, 1U, 1U } };
+	uint32_t band;
+	uint32_t region;
+	uint32_t j;
+
+	/* The band, the region and the texel row. */
+	band = py >> 3;
+	region = px >> 4;
+	j = (py & 7U) >> 1;
+
+	/* Each band's texture and texel. */
+	switch (band) {
+	case 0U:
+		/* Layer 1 of the array. */
+		return i915_vke1_kind_texel(I915_VKE1_KIND_ARRAY, 1U, region, j);
+	case 1U:
+		/* Slice 2 of the 3D texture. */
+		return i915_vke1_kind_texel(I915_VKE1_KIND_VOLUME, 2U, region, j);
+	case 2U:
+		/* The face the region's direction points at. */
+		return i915_vke1_kind_texel(I915_VKE1_KIND_CUBE, cube[region][0], cube[region][1], cube[region][2]);
+	case 3U:
+		/* The 1D texture's texel. */
+		return i915_vke1_kind_texel(I915_VKE1_KIND_LINE, 0U, region, 0U);
+	case 4U:
+		/* The integer texel, as bytes. */
+		return i915_vke1_kind_texel(I915_VKE1_KIND_INTEGER, 0U, region, j);
+	case 5U:
+		/* White where 0.5 <= (i + 4 j) / 16, black elsewhere. */
+		if (region + 4U * j >= 8U)
+			return 0xffffffffU;
+		return 0xff000000U;
+	case 6U:
+		/* Level 1, which the gradients choose. */
+		return i915_vke1_mip_pixel(1U, region, j);
+	default:
+		break;
+	}
+
+	/* The last band: the size and levels, level 0 through textureProj(), texelFetch() of level 1. */
+	if (region == 0U)
+		return 8U | (8U << 8) | (2U << 16) | 0xff000000U;
+	if (region == 1U)
+		return i915_vke1_mip_pixel(0U, px >> 3, py & 7U);
+	return i915_vke1_mip_pixel(1U, region, j);
+}
+
+/*
+ * TEXKINDS: the texture kinds pipeline over the whole target, its set as
+ * set 0; every pixel the texel its band picks, exact (nearest filtering).
+ */
+static void
+i915_vke1_step_texkinds(
+	struct i915_vke1 *x)
+{
+	static const uint32_t black[4] = { I915_VKE1_F_0, I915_VKE1_F_0, I915_VKE1_F_0, I915_VKE1_F_1 };
+	uint64_t sets[1];
+	uint32_t index;
+	int error;
+
+	/* Records the pass on black, the pipeline, its set and the quad over the whole target. */
+	sets[0] = I915_VKE1_ID_KINDS_SET;
+	i915_vke1_begin(x);
+	i915_vke1_begin_pass(x, black);
+	i915_vke1_bind_pipeline(x, I915_VKE1_ID_KINDS_PIPELINE);
+	i915_vke1_bind_buffers(x);
+	i915_vke1_bind_sets(x, 0U, sets, 1U, NULL, 0U);
+	i915_vke1_draw_quad(x, I915_VKE1_TEXOPS_VERTEX);
+	i915_vke1_record(x, I915_VKE1_OP_END_RENDER_PASS);
+
+	/* Runs it and compares every pixel with the rules above. */
+	error = i915_vke1_finish(x, "TEXKINDS");
+	if (error == 0) {
+		for (index = 0U; index < I915_VKE1_SIZE * I915_VKE1_SIZE; index++) {
+			x->expected[index] = i915_vke1_kinds_expected(index % I915_VKE1_SIZE, index / I915_VKE1_SIZE);
+			x->tolerance[index] = 0U;
+		}
+
+		/* Compares with the expected image. */
+		error = i915_vke1_compare(x, "TEXKINDS");
+	}
+
+	/* Logs the verdict. */
+	i915_vke1_verdict(x, "TEXKINDS", error);
+}
+
+/*
+ * Describes the level drawing step's texture (laid out as a created 2D
+ * image of two levels and three layers), the view of level 1 of layer 2
+ * and the 4x4 framebuffer of that view.
+ */
+static void
+i915_vke1_level_init(
+	struct i915_vke1 *x)
+{
+	struct i915_gfx_image *image;
+
+	/* The texture. */
+	image = &x->level_texture;
+	image->format = VK_FORMAT_R8G8B8A8_UNORM;
+	image->type = VK_IMAGE_TYPE_2D;
+	image->width = I915_VKE1_LEVEL_SIDE;
+	image->height = I915_VKE1_LEVEL_SIDE;
+	image->depth = 1U;
+	image->layers = I915_VKE1_LEVEL_LAYERS;
+	image->usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+	image->levels = I915_VKE1_LEVEL_LEVELS;
+	(void)drv_i915_gfx_image_layout(image);
+	image->memory = &x->memory;
+	image->offset = I915_VKE1_LEVEL_OFFSET;
+
+	/* The view of level 1 of layer 2. */
+	x->level_view.image = image;
+	x->level_view.format = VK_FORMAT_R8G8B8A8_UNORM;
+	x->level_view.view_type = VK_IMAGE_VIEW_TYPE_2D;
+	x->level_view.base_level = 1U;
+	x->level_view.level_count = 1U;
+	x->level_view.base_layer = 2U;
+	x->level_view.layer_count = 1U;
+
+	/* The framebuffer of that view, as large as the level. */
+	x->level_framebuffer.width = I915_VKE1_LEVEL_SIDE / 2U;
+	x->level_framebuffer.height = I915_VKE1_LEVEL_SIDE / 2U;
+	x->level_framebuffer.view_count = 1U;
+	x->level_framebuffer.views[0] = &x->level_view;
+}
+
+/* Fills the level drawing step's whole texture with LEVEL_FILL, so a write to the wrong level or layer shows. */
+static void
+i915_vke1_level_write(
+	struct i915_vke1 *x)
+{
+	uint32_t *words;
+	uint64_t index;
+
+	/* Every word of the texture. */
+	words = (uint32_t *)(void *)(x->cpu + I915_VKE1_LEVEL_OFFSET);
+	for (index = 0U; index < x->level_texture.bytes / 4U; index++)
+		words[index] = I915_VKE1_LEVEL_FILL;
+	drv_i915_gt_clflush(words, (size_t)x->level_texture.bytes);
+}
+
+/* Checks that every texel of one level of one layer of the level drawing step's texture holds a pixel; EIO with the first difference logged. */
+static int
+i915_vke1_level_check(
+	struct i915_vke1 *x,
+	uint32_t level,
+	uint32_t layer,
+	uint32_t pixel)
+{
+	struct i915_gfx_surface surface;
+	const uint32_t *row;
+	uint64_t base;
+	uint32_t i;
+	uint32_t j;
+	int error;
+
+	/* Finds the level of the layer. */
+	error = drv_i915_gfx_image_slice(&x->level_texture, level, layer, &surface);
+	if (error != 0)
+		return error;
+
+	/* Reads each row past any line the CPU still caches. */
+	base = drv_i915_gfx_memory_va(&x->memory, 0U);
+	for (j = 0U; j < surface.height; j++) {
+		row = (const uint32_t *)(const void *)(x->cpu + (surface.va - base) + (size_t)j * surface.pitch);
+		drv_i915_gt_clflush(row, surface.width * 4U);
+		for (i = 0U; i < surface.width; i++) {
+			if (row[i] != pixel) {
+				kern_logf("i915: vke1: LEVELDRAW: level %u layer %u texel (%u,%u): 0x%08x, expected 0x%08x\n",
+					  level, layer, i, j, row[i], pixel);
+				return EIO;
+			}
+		}
+	}
+
+	/* Succeeded: the level of the layer holds the pixel. */
+	return 0;
+}
+
+/*
+ * LEVELDRAW: the first blend case's pipeline (no blending) draws its cell,
+ * which covers the whole 4x4 level, into level 1 of layer 2 of the level
+ * texture, cleared to black first; that level of that layer must hold the
+ * case's pixel, and level 0 of layer 2 and level 1 of layer 1 the fill.
+ */
+static void
+i915_vke1_step_leveldraw(
+	struct i915_vke1 *x)
+{
+	static const uint32_t black[4] = { I915_VKE1_F_0, I915_VKE1_F_0, I915_VKE1_F_0, I915_VKE1_F_1 };
+	int error;
+
+	/* Records the pass over the level's framebuffer, the pipeline and the first cell's quad. */
+	i915_vke1_begin(x);
+	i915_vke1_begin_pass_on(x, I915_VKE1_ID_LEVEL_FRAMEBUFFER, I915_VKE1_LEVEL_SIDE / 2U, black);
+	i915_vke1_bind_pipeline(x, I915_VKE1_ID_BLEND_PIPELINE);
+	i915_vke1_bind_buffers(x);
+	i915_vke1_draw_quad(x, 0U);
+	i915_vke1_record(x, I915_VKE1_OP_END_RENDER_PASS);
+
+	/* Runs it, then checks the level drawn and two it must not touch. */
+	error = i915_vke1_finish(x, "LEVELDRAW");
+	if (error == 0)
+		error = i915_vke1_level_check(x, 1U, 2U, i915_vke1_blend_cases[0].expected);
+	if (error == 0)
+		error = i915_vke1_level_check(x, 0U, 2U, I915_VKE1_LEVEL_FILL);
+	if (error == 0)
+		error = i915_vke1_level_check(x, 1U, 1U, I915_VKE1_LEVEL_FILL);
+
+	/* Logs the verdict. */
+	i915_vke1_verdict(x, "LEVELDRAW", error);
 }

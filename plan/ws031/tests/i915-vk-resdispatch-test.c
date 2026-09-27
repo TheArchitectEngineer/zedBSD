@@ -477,11 +477,13 @@ test_format_properties(void)
 	features = fixture_format_features(VK_FORMAT_B8G8R8A8_UNORM, 1);
 	assert(features == colour_features);
 
-	/* D32 is an optimal-tiled depth attachment only; an unknown format has nothing. */
+	/* D32 and D16 are optimal-tiled depth attachments that may be sampled (ws075-p005); an unknown format has nothing. */
 	features = fixture_format_features(VK_FORMAT_D32_SFLOAT, 1);
-	assert(features == VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
+	assert(features == (VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT));
 	features = fixture_format_features(VK_FORMAT_D32_SFLOAT, 0);
 	assert(features == 0U);
+	features = fixture_format_features(VK_FORMAT_D16_UNORM, 1);
+	assert(features == (VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT));
 	features = fixture_format_features(VK_FORMAT_R16G16B16A16_SFLOAT, 1);
 	assert(features == 0U);
 
@@ -510,13 +512,13 @@ test_format_properties(void)
 	assert(result == VK_SUCCESS);
 	assert(levels == 1U);
 
-	/* A sampled depth image, a linear depth image and a colour storage image are not supported. */
+	/* A sampled depth image is supported (ws075-p005); a linear depth image and a colour storage image are not. */
 	result = fixture_image_format(VK_FORMAT_D32_SFLOAT,
 				      VK_IMAGE_TYPE_2D,
 				      VK_IMAGE_TILING_OPTIMAL,
 				      VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
 				      &levels);
-	assert(result == (uint32_t)VK_ERROR_FORMAT_NOT_SUPPORTED);
+	assert(result == VK_SUCCESS);
 	result = fixture_image_format(VK_FORMAT_D32_SFLOAT,
 				      VK_IMAGE_TYPE_2D,
 				      VK_IMAGE_TILING_LINEAR,
@@ -530,11 +532,17 @@ test_format_properties(void)
 				      &levels);
 	assert(result == (uint32_t)VK_ERROR_FORMAT_NOT_SUPPORTED);
 
-	/* A 3D image is not supported. */
+	/* A 3D colour image is supported (ws075-p005), a 3D depth image is not. */
 	result = fixture_image_format(VK_FORMAT_R8G8B8A8_UNORM,
 				      VK_IMAGE_TYPE_3D,
 				      VK_IMAGE_TILING_OPTIMAL,
 				      VK_IMAGE_USAGE_SAMPLED_BIT,
+				      &levels);
+	assert(result == VK_SUCCESS);
+	result = fixture_image_format(VK_FORMAT_D32_SFLOAT,
+				      VK_IMAGE_TYPE_3D,
+				      VK_IMAGE_TILING_OPTIMAL,
+				      VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
 				      &levels);
 	assert(result == (uint32_t)VK_ERROR_FORMAT_NOT_SUPPORTED);
 
