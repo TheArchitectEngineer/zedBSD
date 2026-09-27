@@ -546,8 +546,7 @@ static int join_path(const char *parent, const struct componentname *name,
 	char output[KERN_PATH_MAX]);
 static int fat_creation_collision(struct fat_mount_state *state,
 	const char *path);
-static int fat_created_inode_matches(const struct fat_mount_state *state,
-	const char *path, const struct inode *inode);
+static int fat_present_created_inode(const struct fat_mount_state *state, const char *path, struct inode *inode);
 static time_t fat_decode_time(uint16_t date, uint16_t time);
 static FAT_MUTATION int fat_encode_time(time_t seconds, uint16_t *date,
 	uint16_t *time);
@@ -8307,11 +8306,13 @@ fat_creation_representation(
 }
 
 /*
- * Tests whether FAT can represent the file a creation request asks for.
+ * Tests whether FAT can store the file a creation request asks for.
  *
  * FAT stores no owner and no permission bits of its own; a mount presents
- * fixed ones instead.  A request is representable only when it asks for
- * exactly what the mount would present anyway.
+ * fixed ones instead (0755 and root, or what the metadata file records for
+ * the path).  A request for any mode or owner is accepted, as msdosfs does,
+ * and the new file shows what the mount presents; see
+ * fat_present_created_inode().  Only a kind FAT cannot store is refused.
  */
 static int
 fat_creation_representable(
@@ -8320,13 +8321,8 @@ fat_creation_representable(
 	const struct inode_creation_request *request,
 	enum inode_type type)
 {
-	mode_t mode;
-	uid_t uid;
-	gid_t gid;
-	int error;
-
-	/* A call that names no request has nothing to create. */
-	if (request == NULL)
+	/* A call that names no mount, path or request has nothing to create. */
+	if (state == NULL || path == NULL || request == NULL)
 		return EINVAL;	/* Failed. */
 
 	/* An origin outside the range this kernel defines. */
@@ -8346,54 +8342,39 @@ fat_creation_representable(
 	if (request->special != NULL || request->rdev != 0)
 		return EINVAL;	/* Failed. */
 
-	/* Asks what this mount would present for a file at that path. */
-	error = fat_creation_representation(state, path, &mode, &uid, &gid);
-	if (error != 0)
-		return error;
-
-	/* Refuses a mode the mount would not present. */
-	if (mode != (request->mode & 07777U))
-		return EOPNOTSUPP;
-
-	/* Refuses an owner the mount would not present. */
-	if (uid != request->uid || gid != request->gid)
-		return EOPNOTSUPP;
-
-	/* Succeeded: the request asks for exactly what FAT will show. */
+	/* Succeeded: FAT can store the file; it shows the mount's mode. */
 	return 0;
 }
 
 /*
- * Tests whether a created inode carries what this mount presents.
+ * Gives a created inode the mode and owner this mount presents.
  *
- * It is the check that runs after a creation, against the inode that now
- * exists rather than against the request that asked for it.
+ * It runs after the generic layer has applied the request, and replaces
+ * what the request asked for with what a later lookup of the path will
+ * show, so that this inode and every later one agree.
  */
 static int
-fat_created_inode_matches(
+fat_present_created_inode(
 	const struct fat_mount_state *state,
 	const char *path,
-	const struct inode *inode)
+	struct inode *inode)
 {
 	mode_t mode;
 	uid_t uid;
 	gid_t gid;
 	int error;
 
-	/* Asks what this mount would present for a file at that path. */
+	/* Asks what this mount presents for a file at that path. */
 	error = fat_creation_representation(state, path, &mode, &uid, &gid);
 	if (error != 0)
 		return error;
 
-	/* Refuses an inode whose mode is not the one the mount presents. */
-	if ((inode->i_mode & 07777U) != mode)
-		return EOPNOTSUPP;
+	/* Shows that mode and owner, keeping the file type. */
+	inode->i_mode = (inode->i_mode & S_IFMT) | mode;
+	inode->i_uid = uid;
+	inode->i_gid = gid;
 
-	/* Refuses an inode whose owner is not the one the mount presents. */
-	if (inode->i_uid != uid || inode->i_gid != gid)
-		return EOPNOTSUPP;
-
-	/* Succeeded: the inode is the one this mount would present. */
+	/* Succeeded: the inode shows what the mount presents. */
 	return 0;
 }
 
@@ -10048,10 +10029,10 @@ fat_create_unlocked(
 	/* Points the new inode at the open file that created it. */
 	fat_sync_inode_state(created, &file);
 
-	/* Lets the generic layer apply the request, then checks the result. */
+	/* Lets the generic layer apply the request, then shows the mount's mode. */
 	error = inode_creation_prepare(directory, created, request);
 	if (error == 0) {
-		error = fat_created_inode_matches(state,
+		error = fat_present_created_inode(state,
 						  fat_path(created),
 						  created);
 	}
@@ -10237,10 +10218,10 @@ fat_mkdir_unlocked(
 	if (error != 0)
 		goto rollback_raw;
 
-	/* Gives the new inode the identity the request asked for. */
+	/* Lets the generic layer apply the request, then shows the mount's mode. */
 	error = inode_creation_prepare(directory, created, request);
 	if (error == 0) {
-		error = fat_created_inode_matches(state,
+		error = fat_present_created_inode(state,
 						  fat_path(created),
 						  created);
 	}
