@@ -174,7 +174,8 @@ zwl_compose_output_close(
 	/* No frame may still use the swapchain's images. */
 	(void)vkDeviceWaitIdle(compose->device);
 
-	/* The targets, then the swapchain and surface. */
+	/* The backdrop, the targets, then the swapchain and surface. */
+	zwl_backdrop_destroy(compose);
 	compose_targets_destroy(compose);
 	vkdemo_display_close(compose->instance, compose->device, &compose->output);
 	compose->output_open = 0;
@@ -1326,6 +1327,8 @@ compose_record(
 	pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
 	pass.renderPass = compose->pass;
 	pass.framebuffer = compose->framebuffers[image];
+	compose->framebuffer_now = compose->framebuffers[image];
+	compose->backdrop_set = VK_NULL_HANDLE;
 	pass.renderArea.extent.width = compose->output.width;
 	pass.renderArea.extent.height = compose->output.height;
 	pass.clearValueCount = 1U;

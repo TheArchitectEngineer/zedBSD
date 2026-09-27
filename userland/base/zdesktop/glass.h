@@ -34,6 +34,7 @@
 #define MODE_SOLID		3.0f
 #define MODE_RING		4.0f
 #define MODE_TEXT		5.0f
+#define MODE_BLUR		6.0f
 
 /* The corner radius of title bars and bodies. */
 #define GLASS_RADIUS		14.0f

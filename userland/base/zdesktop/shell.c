@@ -148,6 +148,10 @@ struct shell_bar {
 
 static void bar_layout(struct zwl_server *server, struct shell_bar *bar);
 static void draw_window(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, unsigned focused, const struct shell_bar *bar);
+static int window_shown(struct zwl_server *server, struct zwl_object *surface, float home, float position);
+static void window_layer(struct zwl_server *server, struct zwl_object *surface, float home, float position);
+static void draw_backdrop(struct zwl_server *server, VkCommandBuffer command, struct zwl_object **windows, unsigned below, float position);
+static void draw_window_blurred(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface);
 static void draw_body(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, const struct shell_rect *body, unsigned docked, unsigned focused);
 static void draw_title_bar(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, const struct shell_rect *panel, float fade, float buttons, unsigned focused);
 static void draw_title(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, int32_t x, int32_t middle, int32_t limit, const float *ink);
@@ -218,10 +222,11 @@ zwl_glass_draw(
 	struct shell_bar bar;
 	unsigned index;
 	unsigned focused;
+	unsigned drawn;
+	int shown;
 	float progress;
 	float home;
 	float position;
-	float shift;
 
 	/* The menus' and the controls' places are those this frame draws them at (menu-shell.c, titlebar-shell.c). */
 	zwl_menu_frame(server);
@@ -280,22 +285,19 @@ zwl_glass_draw(
 	 */
 	top = zwl_top_window(server);
 	position = desktop_position(server);
+	drawn = 0;
 	for (index = 0; index < count; index++) {
-		shift = ((float)windows[index]->desktop - position) * (float)server->width;
-		if (shift <= -(float)server->width || shift >= (float)server->width || windows[index]->minimized)
-			continue;
-		if (home > 0.0f && windows[index]->desktop != server->desktop)
+		shown = window_shown(server, windows[index], home, position);
+		if (!shown)
 			continue;
 
+		/* The glass of a window over others shows them blurred (backdrop.c), not only the wallpaper (not while Home has the layer). */
+		if (drawn > 0U && home <= 0.0f)
+			draw_backdrop(server, command, windows, index, position);
+		drawn++;
+
 		/* Shifted with the layer, when Home does not have it. */
-		if (home <= 0.0f) {
-			server->layer_on = 0;
-			if (shift != 0.0f)
-				server->layer_on = 1;
-			server->layer_x = shift;
-			server->layer_y = 0.0f;
-			server->layer_scale = 1.0f;
-		}
+		window_layer(server, windows[index], home, position);
 
 		/* The window. */
 		focused = 0;
@@ -306,8 +308,9 @@ zwl_glass_draw(
 		draw_window(server, command, windows[index], focused, &bar);
 	}
 
-	/* The windows' popups over all the windows (popup.c). */
+	/* The windows' popups over all the windows (popup.c); the glass from here is on the blurred wallpaper. */
 	server->layer_on = 0;
+	zwl_backdrop_reset(server);
 	zwl_popup_draw(server, command);
 
 	/* The system bar over everything but the cursor, where it always is. */
@@ -898,6 +901,135 @@ bar_layout(
 	/* On the left, after the launcher and "zedBSD", a line and the docked title. */
 	bar->menu_line = 44 + glass_text_width(server, SIZE_BAR, "zedBSD") + 16;
 	bar->title_x = bar->menu_line + 17;
+}
+
+/*
+ * Tells whether a window is drawn in this frame: not minimized, on the
+ * desktop shown or on one sliding in beside it (only the desktop shown
+ * while Home is open).
+ */
+static int
+window_shown(
+	struct zwl_server *server,
+	struct zwl_object *surface,
+	float home,
+	float position)
+{
+	float shift;
+
+	/* A minimized window, or one a screen or more to the side. */
+	shift = ((float)surface->desktop - position) * (float)server->width;
+	if (shift <= -(float)server->width || shift >= (float)server->width || surface->minimized)
+		return 0;
+
+	/* With Home open, only the desktop shown. */
+	if (home > 0.0f && surface->desktop != server->desktop)
+		return 0;
+
+	/* The window is drawn. */
+	return 1;
+}
+
+/* Moves the layer with a window's desktop while the desktops slide (Home, when open, has the layer instead). */
+static void
+window_layer(
+	struct zwl_server *server,
+	struct zwl_object *surface,
+	float home,
+	float position)
+{
+	float shift;
+
+	/* Home keeps its own layer. */
+	if (home > 0.0f)
+		return;
+
+	/* The window's desktop's place beside the one shown. */
+	shift = ((float)surface->desktop - position) * (float)server->width;
+	server->layer_on = 0;
+	if (shift != 0.0f)
+		server->layer_on = 1;
+	server->layer_x = shift;
+	server->layer_y = 0.0f;
+	server->layer_scale = 1.0f;
+}
+
+/*
+ * Draws the scene under a window into the backdrop (backdrop.c): the
+ * wallpaper and the windows below it, whose own glass is on the blurred
+ * wallpaper.  The glass drawn after it is on this scene, blurred.
+ */
+static void
+draw_backdrop(
+	struct zwl_server *server,
+	VkCommandBuffer command,
+	struct zwl_object **windows,
+	unsigned below,
+	float position)
+{
+	struct glass_shape shape;
+	unsigned index;
+	int started;
+	int shown;
+
+	/* The backdrop's pass; a device without it keeps the blurred wallpaper. */
+	started = zwl_backdrop_begin(server, command);
+	if (!started)
+		return;
+
+	/* The wallpaper, not moved. */
+	server->layer_on = 0;
+	glass_shape_init(&shape, 0.0f, 0.0f, (float)server->width, (float)server->height);
+	shape.mode = MODE_IMAGE;
+	shape.opaque = 1.0f;
+	shape.set = glass_wallpaper_set(server);
+	glass_shape_draw(server, command, &shape);
+
+	/* The windows below, as the blur will show them. */
+	for (index = 0; index < below; index++) {
+		shown = window_shown(server, windows[index], 0.0f, position);
+		if (!shown)
+			continue;
+		window_layer(server, windows[index], 0.0f, position);
+		draw_window_blurred(server, command, windows[index]);
+	}
+
+	/* The output's pass again, and the scene blurred for the glass. */
+	zwl_backdrop_end(server, command);
+}
+
+/*
+ * Draws a window for the backdrop, where it is only seen blurred: its body
+ * and a floating title bar's glass, without the title, the menu, the
+ * controls or the buttons (which would also record their places twice).
+ */
+static void
+draw_window_blurred(
+	struct zwl_server *server,
+	VkCommandBuffer command,
+	struct zwl_object *surface)
+{
+	struct shell_rect body;
+	struct shell_rect panel;
+	struct glass_shape shape;
+
+	/* The body where it is now (docked, its lower corners below the output). */
+	body_rect(server, surface, &body);
+	draw_body(server, command, surface, &body, surface->maximized, 0U);
+	if (surface->maximized)
+		return;
+
+	/* A floating title bar's glass. */
+	floating_title(&body, &panel);
+	glass_shape_init(&shape, (float)panel.x, (float)panel.y, (float)panel.width, (float)panel.height);
+	shape.mode = MODE_GLASS;
+	shape.radius = GLASS_RADIUS;
+	shape.color[0] = 1.0f;
+	shape.color[1] = 1.0f;
+	shape.color[2] = 1.0f;
+	shape.color[3] = 0.38f;
+	shape.edge = 0.85f;
+	glass_shape_draw(server, command, &shape);
 }
 
 /*
