@@ -15,7 +15,7 @@ mkdir -p "$out" "$out/.regex"
 cp include/libc/regex.h "$out/.regex/regex.h"
 regex="src/libc/regex/regcomp.c src/libc/regex/regexec.c src/libc/regex/regerror.c src/libc/regex/tre-mem.c"
 for utility in sed grep awk cut wc head tail sort uniq tr od expr paste join comm fold nl split csplit tsort basename dirname cat rm rmdir mkdir ln touch mv cp chmod ls \
-    cmp find date stat readlink realpath seq tac timeout truncate env tee; do
+    cmp find date stat readlink realpath seq tac timeout truncate env tee xargs; do
 	# mv shares cp's copy of file hierarchies (ws001-p025).
 	extra=
 	if [ "$utility" = mv ]; then
