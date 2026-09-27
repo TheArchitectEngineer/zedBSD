@@ -87,3 +87,10 @@ mkdir -p d/e; ln -s .. d/e/up; du -L d 2> err | cut -f2; grep -c loop err
 d/e
 d
 1
+
+#### who diagnoses a database file that cannot be read
+# GNU who writes nothing and exits with 0.
+who nothere 2> err; echo "st=$?"; test -s err && echo diagnosed
+## expect
+st=1
+diagnosed

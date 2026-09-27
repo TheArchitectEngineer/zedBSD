@@ -72,6 +72,12 @@ extern "C" {
 #define _PC_VDISABLE 9
 #define _PC_TEXTDOMAIN_MAX 10
 
+/*
+ * The value of a terminal control character that is disabled; the
+ * terminal driver uses the same byte (src/kern/tty.c, TTY_VDISABLE).
+ */
+#define _POSIX_VDISABLE ((unsigned char)0xff)
+
 #define _CS_PATH 1
 
 int access(const char *path, int mode);

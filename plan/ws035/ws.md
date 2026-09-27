@@ -8,8 +8,8 @@ Primary Milestone: MG006
 Related Milestones: MG001, MG005
 Objectives: O1, O2
 Parent: [Master](../master.md)
-Queue: なし（q465 finished）
-Resume point: fg010: p052・p053 cleared（2 つのモードの核、`wl_shm` と cursor）。p054 cleared（acquire fence）。p059 cleared（look and feel の疎通確認: 浮いたタイトルバー、すりガラス、`zwl --glass`）→ p011 → p055 … → p058。元の続き: タスクバー・タイトル描画
+Queue: なし（2026-09-27 からサブエージェントが worktree の branch で実行。main への統合は main の session）
+Resume point: 2026-09-27: p014 cleared（Super+Tab の Wiseview）、p025・p027 canceled（p059 で置き換え済み）。次は p028 を分けた Phase（toolkit の Wayland の対応範囲）→ p055（damage）→ p057（背後のぼかし）→ p058
 <!-- awesome-plan-current:end -->
 
 ## 単一目標
@@ -210,11 +210,11 @@ p001で確かめる。
 | ws035-p005 | `/dev/graphics` の共通層: ファームウェアFB・機種VRAMをbackend化（pcat、pc98を移行） | planning | p004, p020 | graphics、platform |
 | ws035-p024 | `/dev/graphics` のGPU scanoutへの切替えと戻し（i915、補助にvirtio-gpu） | planning | p005 | graphics、gpu core、i915 display |
 | [ws035-p011](phase011/phase.md) | zdesktop: `zwl` を `/bin/zdesktop` へ改名、基本のウィンドウ管理（focus、移動、リサイズ、z-order、最小化・最大化） | uncleared・canceled（2026-09-27: 改名は p073、窓の管理は p059・p062〜p072 で済んだ） | p004、p051（合成の設計）、**p052〜p054（承認後）** | `userland/base/zwl` |
-| ws035-p025 | zdesktop: コンポジタでのタイトル・フレーム描画（`/dev/graphics` のASCII glyph） | planning | p011 | zdesktop |
+| ws035-p025 | zdesktop: コンポジタでのタイトル・フレーム描画（`/dev/graphics` のASCII glyph） | canceled（2026-09-27: p059・p062 で置き換え済み。glass の look の浮いたタイトルバー・ドッキングのシステムバー・角丸と影を zdesktop が描き、題名は libtruetype の glyph atlas。`/dev/graphics` の glyph の案は使わない。glass でない plain の mode は装飾を持たない試験用の mode のまま） | p011 | zdesktop |
 | [ws035-p018](phase018/phase.md) | networkdの状態push通知（購読）（WS005-p016から移管） | cleared（q325-i01。q323-i07 は uncleared） | p004 | networkd、net |
 | ws035-p012 | zdesktop: X11サーバ機能（Xzedから移植） | canceled（2026-09-27 ユーザーの判断: X11 server は単体の zdesktop-x11server、WS069-p008） | p011 | zdesktop、X11 |
-| ws035-p013 | zdesktop: タスクバーとWiFiの表示・操作。**WiFi の状態は libzdesktop 経由で取る**（p042、networkd と直接話さない） | planning | p025, p018, p042 | zdesktop、libzdesktop |
-| ws035-p014 | zdesktop: ウィンドウ一覧のタイル表示（Windows+Tab） | planning | p011 | zdesktop |
+| ws035-p013 | zdesktop: タスクバーとWiFiの表示・操作。**WiFi の状態は libzdesktop 経由で取る**（p042、networkd と直接話さない） | planning | p059（システムバー。p025 は canceled で置き換え）, p018, p042 | zdesktop、libzdesktop |
+| [ws035-p014](phase014/phase.md) | zdesktop: ウィンドウ一覧のタイル表示（Windows+Tab）。タイル表示は p063 の Wiseview、この Phase は Super+Tab と keyboard の操作（USB HID・PS/2 の Super key も足した） | cleared（2026-09-27、Venus） | p063 | zdesktop、input driver |
 | [ws035-p021](phase021/phase.md) | 設計: audioフレームワークと `/dev/dsp`（OSS互換寄りのAPI、driver ops、DMAリング、録音） | cleared（q323-i05） | p001 | 文書 |
 | [ws035-p022](phase022/phase.md) | 設計: hdaドライバ（codec列挙、stream DMA、再生・録音、QEMUとVFIO実機） | cleared（q341-i01） | p021 | 文書（[hda-design.md](hda-design.md)） |
 | [ws035-p006](phase006/phase.md) | audioフレームワークと `/dev/dsp`・mixer | cleared（q340-i01） | p004, p021 | `src/drivers/audio`、`include/drivers/audio`、`include/uapi/audio.h` |
@@ -227,7 +227,7 @@ p001で確かめる。
 | [ws035-p040](phase040/phase.md) | 互換libz（`userland/base/libz-compat`、`/lib/libz-compat.so`）: deflate/inflate を素直に実装する。zlib の全機能は要らない。最適化より読みやすさ。baseのプログラムはこれに依存する | planning | p004。**zdesktop が要るときに入れる** | `userland/base/libz-compat`、`include/libc/compat/zlib.h` |
 | [ws035-p041](phase041/phase.md) | 互換libpng（`userland/base/libpng-compat`、`/lib/libpng-compat.so`）: decode と encode。encode は filter にこだわらない。decode は試験用のRGBA32 PNGが読める正常系まで | planning | p040。**zdesktop が要るときに入れる** | `userland/base/libpng-compat`、`include/libc/compat/png.h` |
 | [ws035-p042](phase042/phase.md) | libzdesktop（`userland/base/libzdesktop`、`/lib/libzdesktop.so`）: **Vulkan 以外の OS 依存をここに閉じ込める**。zdesktop は networkd・audiod などと直接話さず、このライブラリを通す。**まずは空の枠だけ** | cleared（q325-i02） | p004 | `userland/base/libzdesktop`、`include/libc/zdesktop.h` |
-| ws035-p027 | zdesktop: タイトル等の文字描画をlibtruetypeへ移す | planning | p010, p025 | zdesktop |
+| ws035-p027 | zdesktop: タイトル等の文字描画をlibtruetypeへ移す | canceled（2026-09-27: p059 で置き換え済み。zdesktop の文字（題名、システムバー、App Home、Wiseview、System Menu）は最初から libtruetype の glyph atlas（`glass.c`）で描く） | p010, p025 | zdesktop |
 | ws035-p028 | zdesktop: toolkit（GTK・Qt）が要るWaylandの対応範囲（xdg-shellの残り、keymap、clipboard、subsurface、wl_output、cursor、xdg-decoration） | planning | p025 | zdesktop、libwayland |
 | ws035-p029 | Chromium: 依存とbuild環境（gn・ninja、NSS等の依存、クロスbuildの設定） | planning | p019, p028, WS034の依存ライブラリ | packages/network/chromium |
 | ws035-p030 | Chromium: 最初のbuild（content_shell、headless） | planning | p029 | 同上 |

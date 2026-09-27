@@ -9,7 +9,7 @@ Related Milestones: MG005
 Objectives: O1, O2, O3
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p024〜p031 cleared（2026-09-27）。p032〜p034 cleared。次は §12 の残りの P1/P2 から Phase を切り出す（候補: who・stty・find・ls）
+Resume point: p024〜p031 cleared（2026-09-27）。p032〜p036 cleared、main を merge（2026-09-27、phase034 の記録）。次はユーザーの決めた WS045 の 3 件（dirname の複数 operand、mktemp・install・base64、xargs の GNU option）を p037〜p039 で、その後 §12 の残り（mesg・tabs・find・ls）
 <!-- awesome-plan-current:end -->
 
 Shared tests: [WS001 test index](tests/README.md)
@@ -54,6 +54,8 @@ Shared tests: [WS001 test index](tests/README.md)
 | `ws001-p032` | [cat・cksum・dd](phase032/phase.md) | cleared（2026-09-27） | host 32/32・amd64 guest 38/38、dd の conv= と cbs= を全部、cksum は表の CRC、installer の `-a sha256` を保つ |
 | `ws001-p033` | [patch](phase033/phase.md) | cleared（2026-09-27） | 全形式・全 option の書き直し、host 32/32・期待値 9/9・乱数 2000/2000（zedBSD diff の全形式を当てる）・amd64 guest 70/70、style 0 |
 | `ws001-p034` | [df・du](phase034/phase.md) | cleared（2026-09-27） | df は mount 表の全部と operand の file system、du は全 option と hard link・loop、host du 15/15・amd64 guest 23/23、style 0 |
+| `ws001-p035` | [who](phase035/phase.md) | cleared（2026-09-27） | 全 option と `am i`・file operand、`<utmpx.h>` に POSIX の定数、host who 5/5（glibc の記録を GNU と）・amd64 guest 28/28、style 0 |
+| `ws001-p036` | [stty](phase036/phase.md) | cleared（2026-09-27） | 全 operand・`-a`・`-g`・窓の大きさ、`<termios.h>` に XSI の遅延、`<unistd.h>` に `_POSIX_VDISABLE`、host pty 89/89・amd64 guest 30/30、style 0 |
 
 ### q042 pre-merge identifier migration
 
@@ -110,6 +112,8 @@ Phase に分けた。範囲の境界:
 | p032 | #13 cat、#19 cksum、#31 dd（p031 の後に追加） | 流れの utility。dd の全 conv と cbs、統計、SIGINT |
 | p033 | #92 patch（p032 の後に追加） | normal・context・unified・ed、file の決め方、`-p`・`-R`・`-N`・`-b`・`-o`・`-r`・`-D`・`-l`、fuzz と offset、reject、状態 0/1/2 |
 | p034 | #33 df、#36 du（p033 の後に追加） | df の全 file system と operand の解決、du の `-a`/`-s`/`-k`/`-x`/`-H`/`-L`、hard link、loop |
+| p035 | #150 who（p034 の後に追加） | option の全部、`am i`、file operand、端末の状態と idle、`<utmpx.h>` の定数 |
+| p036 | #116 stty（p035 の後に追加） | 全 operand、`-a`・`-g`、設定の読み戻し、窓の大きさ |
 
 ## 1. Project objective
 
@@ -197,7 +201,7 @@ passes.  `5/5` replacement gates still does not mean full POSIX conformance.
 | `implemented-unreviewed` | 115 | includes the new local `at`, `batch`, `crontab`, and `logger` implementations |
 | `deferred-stub` | 1 | remaining service/provider blocker: `mailx` |
 | `option-disabled` | 20 | outside the selected option profile |
-| §12 の状態（2026-09-27、ws001-p034 の後） | 111 | implemented-unreviewed 73、P1 24、P2 14（表の行を数えた値。p032 で cat・cksum・dd、p033 で patch、p034 で df・du）。下の行は 2026-08-31 の値で、この行が新しい |
+| §12 の状態（2026-09-27、ws001-p036 の後） | 111 | implemented-unreviewed 75、P1 22、P2 14（表の行を数えた値。p032 で cat・cksum・dd、p033 で patch、p034 で df・du、p035 で who、p036 で stty）。下の行は 2026-08-31 の値で、この行が新しい |
 | historical Phase 9 P0 findings | 3 | the imported `bc`, `ed`, and `m4` findings were resolved by Phase 10 on 2026-08-24 |
 | current policy conflicts | 0 | the declared `userland/base` provenance gate rejects the removed imported trees and fingerprints |
 | current P1 known incompatibilities | 75 | the prior 77 minus the bounded `cmp` and `tee` incompatibilities closed by `agent2-q001`; full reviews remain open |
@@ -528,7 +532,7 @@ The current register therefore contains 0 P0, 73 P1, and 38 P2 findings.
 | 112 | [sort](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/sort.html) | implemented-unreviewed (WS043) | Rewritten by WS043 against the GNU POSIX-mode differential cases (`plan/tools/utils/cases/`), which pass on the host and on the amd64 guest (ws001-p031 rerun: 948/948 with the WS001 cases). Locale collation beyond the POSIX locale remains (LIBC-COLLATE-01). |
 | 113 | [split](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/split.html) | implemented-unreviewed (`ws001-p028`) | `-l`, `-b` with k/m, `-a`, prefixes, suffix exhaustion (status 1, pieces kept), empty input, stdin, and missing final newlines pass 13 host cases and the amd64 guest. |
 | 114 | [strings](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/strings.html) | implemented-unreviewed (`ws001-p030`) | `-a`, `-n`, `-t d/o/x`, stdin, and invalid options pass the host cases and the amd64 guest; multibyte printability remains. |
-| 116 | [stty](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/stty.html) | P1 known incompatibility | Only a few flags and `raw` are handled; `-g`, speeds, control characters, rows/columns, complete modes, parse/application atomicity, non-tty errors, and exact restorable output are absent. |
+| 116 | [stty](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/stty.html) | implemented-unreviewed (`ws001-p036`) | Every mode and its negation, the character-size and delay groups, speeds, control characters (`^X`, `^?`, `^-`, `undef`), `min`/`time`, every combination mode, `-g` round trips, `-a`, `rows`/`cols`/`size`, applying all operands at once with read-back verification, and errors pass a host pty test (cross-checked with GNU stty) and guest cases on the console; `<termios.h>` gained the XSI fill/delay bits and `<unistd.h>` `_POSIX_VDISABLE`; the kernel accepts CS8 only. |
 | 117 | [tabs](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/tabs.html) | P2 incomplete proof | Major predefined forms, explicit lists, `-T`, and terminfo output exist; exact historical layouts, `+m`, terminal width/margins, tty errors, malformed data, output interruption, and runtime terminal tests remain. |
 | 118 | [tail](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/tail.html) | implemented-unreviewed (WS043) | Rewritten by WS043 against the GNU POSIX-mode differential cases (`plan/tools/utils/cases/`), which pass on the host and on the amd64 guest (ws001-p031 rerun: 948/948 with the WS001 cases). `-f` on growing files is not covered by the cases. |
 | 120 | [tee](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/tee.html) | implemented-unreviewed (`ws001-p018`) | `-a`/`-i`, dynamic output count, robust writes, open/write continuation, and final status pass; deterministic partial-I/O, allocation, close, descriptor, and locale review remain. |
@@ -552,7 +556,7 @@ The current register therefore contains 0 P0, 73 P1, and 38 P2 findings.
 | 147 | [wait](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/wait.html) | implemented-unreviewed (WS042) | The shell and its builtins were rewritten by WS042 against dash (`plan/tools/sh/sh-diff.py`: host 1417/1425 at WS042 completion, 1437/1458 in the ws001-p024 rerun; amd64 guest 1388/1425 with environment differences only). |
 | 148 | [wc](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/wc.html) | implemented-unreviewed (WS043) | Rewritten by WS043 against the GNU POSIX-mode differential cases (`plan/tools/utils/cases/`), which pass on the host and on the amd64 guest (ws001-p031 rerun: 948/948 with the WS001 cases). `-m` multibyte counting remains (LIBC-CTYPE-01). |
 | 149 | [what](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/what.html) | P2 incomplete proof | Identification scanning and `-s` exist; binary/NUL/chunk-boundary markers, stdin/multiple files, malformed/long text, read/write errors, and exact no-match status need review. |
-| 150 | [who](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/who.html) | P1 known incompatibility | Ignores options/operands and prints a narrow utmpx view with fixed UTC formatting; `am i`/`am I`, headings/state/writeability/idle/PID fields, locale/time, file operands, and errors are absent. |
+| 150 | [who](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/who.html) | implemented-unreviewed (`ws001-p035`) | Every option (`-abdHlmpqrstTu`), `am i`, the file operand, `%b %e %H:%M` local times, terminal state and idle time, headings, `-q`, and diagnostics pass host cases against GNU who on generated records, a pinned case, and guest cases on the live database; `<utmpx.h>` gained NEW_TIME/OLD_TIME/INIT_PROCESS, and nothing on zedBSD writes boot, clock or init records yet. |
 | 152 | [xargs](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/xargs.html) | implemented-unreviewed (`ws001-p024`) | All options (`-0 -E -I -L -n -p -r -s -t -x`), quoting, logical lines, `-I` replacement, size limits counted both as `-s` and as the kernel counts, and statuses 123/124/125/126/127 pass 54 host cases, the `-p` pty case, and the amd64 guest. LC_MESSAGES yesexpr remains. |
 | 155 | [zcat](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/utilities/zcat.html) | P2 incomplete proof | `.Z` stdout decoding exists; multiple operands, suffix lookup, stdin, malformed/truncated streams, read/write interruption, broken pipe, diagnostics/status, and compatibility vectors remain. |
 

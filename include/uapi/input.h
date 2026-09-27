@@ -145,6 +145,8 @@ struct input_absinfo {
 #define KEY_PAGEDOWN	109
 #define KEY_INSERT	110
 #define KEY_DELETE	111
+#define KEY_LEFTMETA	125
+#define KEY_RIGHTMETA	126
 #define KEY_MAX		0x2ff
 
 #define BTN_MOUSE	0x110
