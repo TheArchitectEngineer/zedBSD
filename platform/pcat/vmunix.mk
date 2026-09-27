@@ -565,10 +565,11 @@ DYNAMIC_RTLD_OBJS := $(DYNAMIC_DIR)/obj/src/rtld/entry.o \
 DYNAMIC_SOFTFLOAT_DIR := $(DYNAMIC_DIR)/softfloat
 DYNAMIC_COMPILER_RT_OBJS := $(addprefix $(DYNAMIC_SOFTFLOAT_DIR)/,\
 	softfloat.o compiler-runtime.o)
-DYNAMIC_LIBM_OBJ := $(DYNAMIC_SOFTFLOAT_DIR)/math.o
+DYNAMIC_LIBM_OBJS := $(patsubst src/libc/math/%.c,\
+	$(DYNAMIC_SOFTFLOAT_DIR)/math/%.o,$(ZEDBSD_LIBM_SOURCES))
 DYNAMIC_FLOAT_PARSE_OBJ := $(DYNAMIC_SOFTFLOAT_DIR)/float-parse.o
 DYNAMIC_SOFTFLOAT_OBJS := $(DYNAMIC_COMPILER_RT_OBJS) \
-	$(DYNAMIC_LIBM_OBJ) $(DYNAMIC_FLOAT_PARSE_OBJ)
+	$(DYNAMIC_LIBM_OBJS) $(DYNAMIC_FLOAT_PARSE_OBJ)
 DYNAMIC_LIBC_OBJS += $(DYNAMIC_SOFTFLOAT_OBJS)
 
 $(DYNAMIC_DIR)/obj/%.o: %.c $(ZEDBSD_SYSROOT_I386)/.zedbsd-sysroot-complete
@@ -597,7 +598,8 @@ $(DYNAMIC_FLOAT_PARSE_OBJ): src/libc/float-parse.c \
 	$(CC) -nostdinc -Iinclude/libc -Iinclude -I. $(DYNAMIC_CFLAGS) \
  -mlong-double-64 -c $< -o $@
 
-$(DYNAMIC_LIBM_OBJ): src/libc/math.c src/libc/softfloat.h
+$(DYNAMIC_LIBM_OBJS): $(DYNAMIC_SOFTFLOAT_DIR)/math/%.o: src/libc/math/%.c \
+	$(ZEDBSD_LIBM_HEADERS)
 	@mkdir -p $(dir $@)
 	$(CC) -nostdinc -Iinclude/libc -Iinclude -I. $(DYNAMIC_CFLAGS) \
  -mlong-double-64 -c $< -o $@
