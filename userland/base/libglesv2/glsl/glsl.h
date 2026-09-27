@@ -44,6 +44,10 @@
 #define GLSL_SAMPLER_3D		3U
 #define GLSL_SAMPLER_CUBE	4U
 
+/* Desktop GLSL 1.40's rectangle samplers (a 2D image read in texels) and buffer samplers (a texel buffer). */
+#define GLSL_SAMPLER_RECT	5U
+#define GLSL_SAMPLER_BUFFER	6U
+
 /*
  * One active uniform of a linked program as the API reports it: a leaf of
  * the default uniform block (named the way libGLESv2's SPIR-V reflection

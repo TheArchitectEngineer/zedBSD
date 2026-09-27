@@ -577,6 +577,7 @@ struct glsl_builtin {
 #define GLSL_IN_130_UP		0x1e8U
 #define GLSL_IN_DESKTOP_130_UP	0x0e8U
 #define GLSL_IN_140_UP		0x1e0U
+#define GLSL_IN_DESKTOP_140_UP	0x0e0U
 #define GLSL_IN_150_UP		0x0c0U
 #define GLSL_IN_330_UP		0x180U
 #define GLSL_IN_OLD		0x007U

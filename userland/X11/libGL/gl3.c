@@ -6,8 +6,9 @@
  */
 
 /*
- * libGL's calls of OpenGL 1.5 to 3.0 that OpenGL ES 3.0 does not have
- * (WS068 p013), made of OpenGL ES 3.0's: the integer vertex attributes of
+ * libGL's calls of OpenGL 1.5 to 3.1 that OpenGL ES 3.0 does not have
+ * (WS068 p013, p031), made of OpenGL ES 3.0's: a uniform's name alone,
+ * the integer vertex attributes of
  * fewer than four components and of small types, the texture parameters
  * of integer border colours, the framebuffer attachments of 1D and 3D
  * textures, a whole buffer mapped and a buffer range read, a texture
@@ -24,6 +25,26 @@
 
 static struct gles_texture *gl3_texture(struct gles_state *state, GLenum target, unsigned *face, int *layered);
 static int gl3_read_level(GLenum target, GLuint name, GLint level, GLint layer, int layered, GLsizei width, GLsizei height, GLenum format, GLenum type, void *pixels);
+
+/*
+ * Returns the name of an active uniform of a program (desktop GL 3.1).
+ */
+GL_APICALL void GL_APIENTRY
+glGetActiveUniformName(
+	GLuint program,
+	GLuint uniformIndex,
+	GLsizei bufSize,
+	GLsizei *length,
+	GLchar *uniformName)
+{
+	GLint size;
+	GLenum type;
+
+	/* The uniform's description, of which only the name is kept. */
+	size = 0;
+	type = GL_NONE;
+	glGetActiveUniform(program, uniformIndex, bufSize, length, &size, &type, uniformName);
+}
 
 /*
  * Sets an integer vertex attribute's current value from one integer.
@@ -574,6 +595,8 @@ gl3_texture(
 	case GL_TEXTURE_2D_ARRAY:
 		*layered = 1;
 		return state->array_units[state->active_unit];
+	case GL_TEXTURE_RECTANGLE:
+		return state->rect_units[state->active_unit];
 	default:
 		break;
 	}

@@ -60,6 +60,8 @@ static int program_link_glsl(struct gles_program *program, struct glsl_program *
 static void program_glsl_captures(struct gles_program *program, const struct glsl_program *linked);
 static void program_glsl_types(struct gles_program *program, const struct glsl_program *linked);
 static GLenum program_sampler_type(const struct glsl_uniform_info *info);
+static int program_buffer_sampler(GLenum type);
+static int program_flat_inputs(const uint32_t *code, size_t words);
 static int program_glsl_blocks(struct gles_program *program, const struct glsl_program *linked, char *log);
 static int program_spirv_blocks(struct gles_program *program, const struct gles_spirv *spirv, unsigned stage, char *log);
 static int program_merge(struct gles_program *program, struct gles_spirv *spirv, char *log);
@@ -278,6 +280,8 @@ glCompileShader(
 	unsigned stage;
 	unsigned version;
 	unsigned shader_version;
+	unsigned latest;
+	char message[96];
 	int es;
 	char *log;
 
@@ -315,6 +319,19 @@ glCompileShader(
 		program_log(&shader->log, "the compiler ran out of memory\n");
 	} else {
 		program_log(&shader->log, "");
+	}
+
+	/* A desktop GLSL version no later than the context's (libGL). */
+	if (compiled != NULL && gles_fixed != NULL) {
+		shader_version = glsl_shader_version(compiled, &es);
+		latest = gles_fixed->glsl_version();
+		if (!es && latest != 0U && shader_version > latest) {
+			(void)snprintf(message, sizeof(message), "0:0: error: GLSL %u is later than the context's %u\n", shader_version,
+				       latest);
+			program_log(&shader->log, message);
+			glsl_shader_free(compiled);
+			compiled = NULL;
+		}
 	}
 
 	/* GLSL ES 3.00 needs an OpenGL ES 3 context (EGL_CONTEXT_CLIENT_VERSION 3). */
@@ -2370,7 +2387,7 @@ program_sampler_type(
 	const struct glsl_uniform_info *info)
 {
 	/* A shadow sampler compares depth. */
-	if (info->shadow) {
+	if (info->shadow && info->sampler != GLSL_SAMPLER_RECT) {
 		if (info->sampler == GLSL_SAMPLER_CUBE)
 			return GL_SAMPLER_CUBE_SHADOW;
 		if (info->sampler == GLSL_SAMPLER_1D)
@@ -2380,8 +2397,22 @@ program_sampler_type(
 		return GL_SAMPLER_2D_SHADOW;
 	}
 
-	/* The dimension, for each kind of texel. */
+	/* The dimension, for each kind of texel (desktop GL's rectangle and buffer samplers too). */
 	switch (info->sampler) {
+	case GLSL_SAMPLER_RECT:
+		if (info->shadow)
+			return GL_SAMPLER_2D_RECT_SHADOW;
+		if (info->base == GLSL_INFO_INT)
+			return GL_INT_SAMPLER_2D_RECT;
+		if (info->base == GLSL_INFO_UINT)
+			return GL_UNSIGNED_INT_SAMPLER_2D_RECT;
+		return GL_SAMPLER_2D_RECT;
+	case GLSL_SAMPLER_BUFFER:
+		if (info->base == GLSL_INFO_INT)
+			return GL_INT_SAMPLER_BUFFER;
+		if (info->base == GLSL_INFO_UINT)
+			return GL_UNSIGNED_INT_SAMPLER_BUFFER;
+		return GL_SAMPLER_BUFFER;
 	case GLSL_SAMPLER_CUBE:
 		if (info->base == GLSL_INFO_INT)
 			return GL_INT_SAMPLER_CUBE;
@@ -2625,6 +2656,9 @@ program_link_code(
 		}
 	}
 
+	/* Whether a fragment input is flat, so draws follow GL's provoking vertex. */
+	program->flat_inputs = program_flat_inputs(fragment_code, fragment_words);
+
 	/* The fragment shader's outputs, by name and location. */
 	program->output_count = 0U;
 	for (index = 0U; index < fragment.output_count && program->output_count < GLES_DRAW_BUFFERS; index++) {
@@ -2832,6 +2866,7 @@ program_layout(
 	uint32_t count;
 	unsigned index;
 	VkResult result;
+	int buffer;
 
 	/* The block, when the program has one (dynamic: each draw's copy is at its own offset). */
 	count = 0U;
@@ -2852,6 +2887,9 @@ program_layout(
 			return -1;
 		bindings[count].binding = program->uniforms[index].binding;
 		bindings[count].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		buffer = program_buffer_sampler(program->uniforms[index].type);
+		if (buffer)
+			bindings[count].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER;
 		bindings[count].descriptorCount = 1U;
 		bindings[count].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 		count++;
@@ -3342,4 +3380,45 @@ program_log(
 		memcpy(copy, text, strlen(text) + 1U);
 	free(*log);
 	*log = copy;
+}
+
+/* Reports whether a sampler type reads a buffer texture (desktop GL's samplerBuffer of each kind), which is a texel buffer. */
+static int
+program_buffer_sampler(
+	GLenum type)
+{
+	/* The three kinds of buffer samplers. */
+	switch (type) {
+	case GL_SAMPLER_BUFFER:
+	case GL_INT_SAMPLER_BUFFER:
+	case GL_UNSIGNED_INT_SAMPLER_BUFFER:
+		return 1;
+	default:
+		break;
+	}
+
+	/* A sampler of an image. */
+	return 0;
+}
+
+/* Reports whether a fragment shader's SPIR-V decorates anything Flat (an input taking the provoking vertex's value). */
+static int
+program_flat_inputs(
+	const uint32_t *code,
+	size_t words)
+{
+	size_t at;
+	uint32_t length;
+
+	/* Each instruction after the header: an OpDecorate (71) of Flat (14). */
+	for (at = 5U; at < words; at += length) {
+		length = code[at] >> 16;
+		if (length == 0U)
+			return 0;
+		if ((code[at] & 0xffffU) == 71U && length >= 3U && code[at + 2U] == 14U)
+			return 1;
+	}
+
+	/* None is flat. */
+	return 0;
 }

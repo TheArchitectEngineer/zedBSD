@@ -96,7 +96,8 @@ static const struct glsl_type types_matrices[3][3] = {
 
 /*
  * The samplers: float, int and uint texels of each dimension, then the
- * shadow samplers.
+ * shadow samplers, the 2D arrays, and desktop GLSL 1.40's rectangle and
+ * buffer samplers.
  */
 static const struct glsl_type types_samplers[] = {
 	{ GLSL_KIND_SAMPLER, GLSL_BASE_FLOAT, 4U, 1U, GLSL_SAMPLER_1D, 0U, "sampler1D", NULL, 0U, NULL, 0U, 0U, 0U },
@@ -117,7 +118,14 @@ static const struct glsl_type types_samplers[] = {
 	{ GLSL_KIND_SAMPLER, GLSL_BASE_FLOAT, 4U, 1U, GLSL_SAMPLER_2D, 0U, "sampler2DArray", NULL, 0U, NULL, 0U, 1U, 0U },
 	{ GLSL_KIND_SAMPLER, GLSL_BASE_INT, 4U, 1U, GLSL_SAMPLER_2D, 0U, "isampler2DArray", NULL, 0U, NULL, 0U, 1U, 0U },
 	{ GLSL_KIND_SAMPLER, GLSL_BASE_UINT, 4U, 1U, GLSL_SAMPLER_2D, 0U, "usampler2DArray", NULL, 0U, NULL, 0U, 1U, 0U },
-	{ GLSL_KIND_SAMPLER, GLSL_BASE_FLOAT, 4U, 1U, GLSL_SAMPLER_2D, 1U, "sampler2DArrayShadow", NULL, 0U, NULL, 0U, 1U, 0U }
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_FLOAT, 4U, 1U, GLSL_SAMPLER_2D, 1U, "sampler2DArrayShadow", NULL, 0U, NULL, 0U, 1U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_FLOAT, 4U, 1U, GLSL_SAMPLER_RECT, 0U, "sampler2DRect", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_INT, 4U, 1U, GLSL_SAMPLER_RECT, 0U, "isampler2DRect", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_UINT, 4U, 1U, GLSL_SAMPLER_RECT, 0U, "usampler2DRect", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_FLOAT, 4U, 1U, GLSL_SAMPLER_RECT, 1U, "sampler2DRectShadow", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_FLOAT, 4U, 1U, GLSL_SAMPLER_BUFFER, 0U, "samplerBuffer", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_INT, 4U, 1U, GLSL_SAMPLER_BUFFER, 0U, "isamplerBuffer", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_UINT, 4U, 1U, GLSL_SAMPLER_BUFFER, 0U, "usamplerBuffer", NULL, 0U, NULL, 0U, 0U, 0U }
 };
 
 /*
@@ -172,7 +180,14 @@ static const struct types_name types_names[] = {
 	{ "sampler2DArray", &types_samplers[15], GLSL_IN_130_UP },
 	{ "isampler2DArray", &types_samplers[16], GLSL_IN_130_UP },
 	{ "usampler2DArray", &types_samplers[17], GLSL_IN_130_UP },
-	{ "sampler2DArrayShadow", &types_samplers[18], GLSL_IN_130_UP }
+	{ "sampler2DArrayShadow", &types_samplers[18], GLSL_IN_130_UP },
+	{ "sampler2DRect", &types_samplers[19], GLSL_IN_DESKTOP_140_UP },
+	{ "isampler2DRect", &types_samplers[20], GLSL_IN_DESKTOP_140_UP },
+	{ "usampler2DRect", &types_samplers[21], GLSL_IN_DESKTOP_140_UP },
+	{ "sampler2DRectShadow", &types_samplers[22], GLSL_IN_DESKTOP_140_UP },
+	{ "samplerBuffer", &types_samplers[23], GLSL_IN_DESKTOP_140_UP },
+	{ "isamplerBuffer", &types_samplers[24], GLSL_IN_DESKTOP_140_UP },
+	{ "usamplerBuffer", &types_samplers[25], GLSL_IN_DESKTOP_140_UP }
 };
 
 static unsigned types_round(unsigned value, unsigned alignment);

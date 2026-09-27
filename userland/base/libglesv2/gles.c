@@ -61,6 +61,7 @@ static GLenum gles_read_buffer(struct gles_state *state);
 static GLenum gles_read_pair(struct gles_state *state, GLenum pname);
 static void gles_blend_buffer(GLenum target, GLuint index, int on);
 static int gles_version_three(struct zegl_context *context);
+static unsigned gles_desktop_integers(struct gles_state *state, GLenum pname, GLint *values);
 static unsigned gles_floats(struct zegl_context *context, struct gles_state *state, GLenum pname, GLfloat *values);
 
 /*
@@ -1394,6 +1395,8 @@ glGetStringi(
 	GLuint index)
 {
 	struct zegl_context *context;
+	const char *extension;
+	int count;
 
 	/* Without a current context there are no strings. */
 	context = gles_context();
@@ -1404,6 +1407,21 @@ glGetStringi(
 	if (name != GL_EXTENSIONS) {
 		gles_error(context, GL_INVALID_ENUM);
 		return NULL;
+	}
+
+	/* Desktop GL's own list (libGL), when the context has one. */
+	if (gles_fixed != NULL) {
+		count = gles_fixed->extension_count();
+		if (count >= 0 && index >= (GLuint)count) {
+			gles_error(context, GL_INVALID_VALUE);
+			return NULL;
+		}
+
+		/* The name at the index. */
+		if (count >= 0) {
+			extension = gles_fixed->extension(index);
+			return (const GLubyte *)extension;
+		}
 	}
 
 	/* An index inside it. */
@@ -1554,6 +1572,18 @@ gles_release(
 		}
 	}
 
+	/* The black texel buffer's views (buffer textures; nothing runs any more). */
+	for (kind = 0U; kind < 3U; kind++) {
+		if (state->black_buffer_views[kind] != VK_NULL_HANDLE)
+			vkDestroyBufferView(state->device, state->black_buffer_views[kind], NULL);
+	}
+
+	/* The buffer, after its views. */
+	if (state->black_buffer != VK_NULL_HANDLE) {
+		vkDestroyBuffer(state->device, state->black_buffer, NULL);
+		vkFreeMemory(state->device, state->black_buffer_memory, NULL);
+	}
+
 	/* The sampler objects, the query objects and fence syncs, and the transform feedback objects. */
 	gles_samplers_release(state);
 	gles_queries_release(state);
@@ -1657,9 +1687,26 @@ gles_capability(
 		break;
 	}
 
-	/* One of the fixed-function layer's, when there is the layer. */
+	/* Without the fixed-function layer there are no more (OpenGL ES). */
 	if (gles_fixed == NULL)
 		return -1;
+
+	/* Desktop GL's primitive restart, depth clamping and seamless cube maps (libGL). */
+	switch (cap) {
+	case GL_PRIMITIVE_RESTART:
+		*flag = &state->primitive_restart_any;
+		return 0;
+	case GL_DEPTH_CLAMP:
+		*flag = &state->depth_clamp;
+		return 0;
+	case GL_TEXTURE_CUBE_MAP_SEAMLESS:
+		*flag = &state->cube_seamless;
+		return 0;
+	default:
+		break;
+	}
+
+	/* One of the fixed-function layer's. */
 	status = gles_fixed->capability(state->context, cap, flag);
 	return status;
 }
@@ -1691,6 +1738,13 @@ gles_integers(
 	if (gles_fixed != NULL &&
 	    (pname == GL_MAJOR_VERSION || pname == GL_MINOR_VERSION || pname == GL_CONTEXT_FLAGS))
 		return 0U;
+
+	/* Desktop GL's own integer states (libGL). */
+	if (gles_fixed != NULL) {
+		count = gles_desktop_integers(state, pname, values);
+		if (count != 0U)
+			return count;
+	}
 
 	/* The rest, one by one. */
 	config = context->config;
@@ -2168,6 +2222,110 @@ gles_version_three(
 
 	/* Succeeded: OpenGL ES 3.0. */
 	return 1;
+}
+
+/* Writes one of desktop GL's integer states (libGL); returns how many values, 0 when the name is not one. */
+static unsigned
+gles_desktop_integers(
+	struct gles_state *state,
+	GLenum pname,
+	GLint *values)
+{
+	struct gles_texture *texture;
+	int count;
+
+	/* The context's own list of extensions (-1: OpenGL ES's). */
+	if (pname == GL_NUM_EXTENSIONS) {
+		count = gles_fixed->extension_count();
+		if (count < 0)
+			return 0U;
+		values[0] = count;
+		return 1U;
+	}
+
+	/* The state asked for. */
+	switch (pname) {
+	case GL_PRIMITIVE_RESTART_INDEX:
+		values[0] = (GLint)state->restart_index;
+		return 1U;
+	case GL_PROVOKING_VERTEX:
+		values[0] = GL_LAST_VERTEX_CONVENTION;
+		if (state->provoking_vertex == GL_FIRST_VERTEX_CONVENTION)
+			values[0] = GL_FIRST_VERTEX_CONVENTION;
+		return 1U;
+	case GL_TEXTURE_BINDING_RECTANGLE:
+		texture = state->rect_units[state->active_unit];
+		values[0] = 0;
+		if (texture != NULL)
+			values[0] = (GLint)texture->name;
+		return 1U;
+	case GL_TEXTURE_BINDING_BUFFER:
+		texture = state->buffer_units[state->active_unit];
+		values[0] = 0;
+		if (texture != NULL)
+			values[0] = (GLint)texture->name;
+		return 1U;
+	case GL_TEXTURE_BUFFER:
+		values[0] = gles_buffer_name(state->texture_buffer);
+		return 1U;
+	case GL_MAX_RECTANGLE_TEXTURE_SIZE:
+		values[0] = (GLint)state->limits.maxImageDimension2D;
+		return 1U;
+	case GL_MAX_TEXTURE_BUFFER_SIZE:
+		values[0] = (GLint)state->limits.maxTexelBufferElements;
+		return 1U;
+	default:
+		break;
+	}
+
+	/* Not one of desktop GL's. */
+	return 0U;
+}
+
+/*
+ * Sets the index that restarts primitives while GL_PRIMITIVE_RESTART is
+ * on (desktop GL 3.1, libGL).
+ */
+GL_APICALL void GL_APIENTRY
+glPrimitiveRestartIndex(
+	GLuint index)
+{
+	struct zegl_context *context;
+	struct gles_state *state;
+
+	/* A context with its state. */
+	context = gles_context();
+	state = gles_state(context);
+	if (state == NULL)
+		return;
+
+	/* Succeeded: the index draws compare with. */
+	state->restart_index = index;
+}
+
+/*
+ * Chooses the vertex of each primitive whose values flat inputs take
+ * (desktop GL 3.2, libGL): the first, or the last as GL starts with.
+ */
+GL_APICALL void GL_APIENTRY
+glProvokingVertex(
+	GLenum mode)
+{
+	struct zegl_context *context;
+	struct gles_state *state;
+
+	/* A context with its state, and one of the two conventions. */
+	context = gles_context();
+	state = gles_state(context);
+	if (state == NULL)
+		return;
+	if (mode != GL_FIRST_VERTEX_CONVENTION && mode != GL_LAST_VERTEX_CONVENTION) {
+		gles_error(context, GL_INVALID_ENUM);
+		return;
+	}
+
+	/* Succeeded: the convention the draws follow. */
+	state->provoking_vertex = mode;
 }
 
 /* Turns blending on or off for one draw buffer (glEnablei, glDisablei). */

@@ -171,6 +171,32 @@ extern "C" {
 #define GL_QUERY_BY_REGION_WAIT		0x8E15
 #define GL_QUERY_BY_REGION_NO_WAIT	0x8E16
 
+/* OpenGL 3.1 and 3.2's names that OpenGL ES 3.0 does not have. */
+#define GL_TEXTURE_RECTANGLE		0x84F5
+#define GL_TEXTURE_BINDING_RECTANGLE	0x84F6
+#define GL_MAX_RECTANGLE_TEXTURE_SIZE	0x84F8
+#define GL_SAMPLER_2D_RECT		0x8B63
+#define GL_SAMPLER_2D_RECT_SHADOW	0x8B64
+#define GL_INT_SAMPLER_2D_RECT		0x8DCD
+#define GL_UNSIGNED_INT_SAMPLER_2D_RECT	0x8DD5
+#define GL_TEXTURE_BUFFER		0x8C2A
+#define GL_MAX_TEXTURE_BUFFER_SIZE	0x8C2B
+#define GL_TEXTURE_BINDING_BUFFER	0x8C2C
+#define GL_TEXTURE_BUFFER_DATA_STORE_BINDING 0x8C2D
+#define GL_SAMPLER_BUFFER		0x8DC2
+#define GL_INT_SAMPLER_BUFFER		0x8DD0
+#define GL_UNSIGNED_INT_SAMPLER_BUFFER	0x8DD8
+#define GL_R16				0x822A
+#define GL_RG16				0x822C
+#define GL_RGBA16			0x805B
+#define GL_PRIMITIVE_RESTART		0x8F9D
+#define GL_PRIMITIVE_RESTART_INDEX	0x8F9E
+#define GL_DEPTH_CLAMP			0x864F
+#define GL_TEXTURE_CUBE_MAP_SEAMLESS	0x884F
+#define GL_FIRST_VERTEX_CONVENTION	0x8E4D
+#define GL_LAST_VERTEX_CONVENTION	0x8E4E
+#define GL_PROVOKING_VERTEX		0x8E4F
+
 /* Matrices. */
 GLAPI void APIENTRY glMatrixMode(GLenum mode);
 GLAPI void APIENTRY glLoadIdentity(void);
@@ -309,6 +335,15 @@ GLAPI void APIENTRY glVertexAttribI4bv(GLuint index, const GLbyte *v);
 GLAPI void APIENTRY glVertexAttribI4sv(GLuint index, const GLshort *v);
 GLAPI void APIENTRY glVertexAttribI4ubv(GLuint index, const GLubyte *v);
 GLAPI void APIENTRY glVertexAttribI4usv(GLuint index, const GLushort *v);
+
+/* OpenGL 3.1 and 3.2's calls that OpenGL ES 3.0 does not have. */
+GLAPI void APIENTRY glTexBuffer(GLenum target, GLenum internalformat, GLuint buffer);
+GLAPI void APIENTRY glPrimitiveRestartIndex(GLuint index);
+GLAPI void APIENTRY glGetActiveUniformName(GLuint program, GLuint uniformIndex, GLsizei bufSize, GLsizei *length, GLchar *uniformName);
+GLAPI void APIENTRY glDrawElementsBaseVertex(GLenum mode, GLsizei count, GLenum type, const void *indices, GLint basevertex);
+GLAPI void APIENTRY glDrawRangeElementsBaseVertex(GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type, const void *indices, GLint basevertex);
+GLAPI void APIENTRY glDrawElementsInstancedBaseVertex(GLenum mode, GLsizei count, GLenum type, const void *indices, GLsizei instancecount, GLint basevertex);
+GLAPI void APIENTRY glProvokingVertex(GLenum mode);
 
 #ifdef __cplusplus
 }

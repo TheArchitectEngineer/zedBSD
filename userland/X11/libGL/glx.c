@@ -24,8 +24,8 @@
  * Every EGL context is an OpenGL ES 3 one.  glXCreateContext and
  * glXCreateNewContext make OpenGL 1.4 contexts (the fixed function, and
  * the rest of the calls as they are); glXCreateContextAttribsARB
- * (WS068 p013) makes OpenGL 3.0 ones, whose version and flags GL reports
- * (fixed.c asks glx_version).
+ * (WS068 p013, p031) makes OpenGL 3.0 and 3.1 ones, whose version and
+ * flags GL reports (fixed.c asks glx_version).
  */
 
 #include "fixed.h"
@@ -52,6 +52,7 @@
 /* The desktop GL versions of a context, major * 10 + minor: glXCreateContext's and glXCreateContextAttribsARB's. */
 #define GLX_GL_LEGACY			14U
 #define GLX_GL_THREE			30U
+#define GLX_GL_THREE_ONE		31U
 
 /* GL's GL_CONTEXT_FLAGS bits. */
 #define GLX_GL_FORWARD_COMPATIBLE	0x1
@@ -132,7 +133,7 @@ static pthread_once_t glx_current_once = PTHREAD_ONCE_INIT;
 static int glx_setup(Display *dpy);
 static XVisualInfo *glx_visual_info(int depth);
 static GLXContext glx_context(Display *dpy, int depth, unsigned version, GLint flags);
-static int glx_attributes(const int *attribList, GLint *flags);
+static int glx_attributes(const int *attribList, GLint *flags, unsigned *version);
 static int glx_pbuffer(GLXContext ctx, GLXDrawable drawable);
 static GLXContext glx_current(void);
 static void glx_set_current(GLXContext ctx);
@@ -819,10 +820,11 @@ glXCreateNewContext(
 
 /*
  * Makes a context for a config with attributes (GLX_ARB_create_context):
- * an OpenGL 3.0 context for any version up to 3.0 of either profile (3.0
- * is compatible with the earlier versions, and a profile is only chosen
- * from 3.2 on); NULL for a later version or an attribute not understood.
- * Sharing is not there yet.
+ * an OpenGL 3.1 context (with GL_ARB_compatibility) for version 3.1, an
+ * OpenGL 3.0 one for any version up to 3.0 (3.0 is compatible with the
+ * earlier versions), of either profile (a profile is only chosen from 3.2
+ * on); NULL for a later version or an attribute not understood.  Sharing
+ * is not there yet.
  */
 GLXContext
 glXCreateContextAttribsARB(
@@ -834,6 +836,7 @@ glXCreateContextAttribsARB(
 {
 	GLXContext ctx;
 	GLint flags;
+	unsigned version;
 	int status;
 
 	/* A config, and attributes asking for what there is. */
@@ -841,12 +844,12 @@ glXCreateContextAttribsARB(
 	(void)direct;
 	if (config == NULL)
 		return NULL;
-	status = glx_attributes(attribList, &flags);
+	status = glx_attributes(attribList, &flags, &version);
 	if (status != 0)
 		return NULL;
 
 	/* An OpenGL 3.0 context. */
-	ctx = glx_context(dpy, config->depth, GLX_GL_THREE, flags);
+	ctx = glx_context(dpy, config->depth, version, flags);
 	return ctx;
 }
 
@@ -972,15 +975,16 @@ glx_visual_info(
 }
 
 /*
- * Reads glXCreateContextAttribsARB's attributes: a version up to 3.0,
+ * Reads glXCreateContextAttribsARB's attributes: a version up to 3.1,
  * either profile, the debug and forward-compatible flags (the latter from
- * 3.0), RGBA.  Returns 0 with the context's GL_CONTEXT_FLAGS, or -1 for
- * anything else.
+ * 3.0), RGBA.  Returns 0 with the context's version (GLX_GL_*) and
+ * GL_CONTEXT_FLAGS, or -1 for anything else.
  */
 static int
 glx_attributes(
 	const int *attribList,
-	GLint *flags)
+	GLint *flags,
+	unsigned *version)
 {
 	unsigned index;
 	int major;
@@ -1018,15 +1022,20 @@ glx_attributes(
 		}
 	}
 
-	/* A version there is: 1.0 to 1.5, 2.0, 2.1 or 3.0. */
+	/* A version there is: 1.0 to 1.5, 2.0, 2.1, 3.0 or 3.1. */
 	if (major < 1 ||
 	    major > 3 ||
 	    minor < 0)
 		return -1;
 	if ((major == 1 && minor > 5) ||
 	    (major == 2 && minor > 1) ||
-	    (major == 3 && minor > 0))
+	    (major == 3 && minor > 1))
 		return -1;
+
+	/* The context's: 3.1 when asked for, else 3.0. */
+	*version = GLX_GL_THREE;
+	if (major == 3 && minor == 1)
+		*version = GLX_GL_THREE_ONE;
 
 	/* Known flags, forward compatibility from 3.0 only, and one known profile. */
 	if ((bits & ~(GLX_CONTEXT_DEBUG_BIT_ARB | GLX_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB)) != 0)
