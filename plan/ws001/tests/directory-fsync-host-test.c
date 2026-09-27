@@ -493,14 +493,14 @@ main(void)
 struct fixture_overlay_identity {
 	ino_t ino;
 	uint8_t state;
-	char path[ZEDBSD_PATH_MAX];
+	char path[KERN_PATH_MAX];
 };
 
 struct fixture_overlay_metadata {
 	uint8_t used;
 	uint8_t flags;
 	uint64_t sequence;
-	char path[ZEDBSD_PATH_MAX];
+	char path[KERN_PATH_MAX];
 };
 
 struct fixture_overlay_mount_state {
@@ -525,7 +525,7 @@ struct fixture_overlay_inode_info {
 	struct path upper;
 	struct path lower;
 	unsigned identity_index;
-	char path[ZEDBSD_PATH_MAX];
+	char path[KERN_PATH_MAX];
 };
 
 static char events[32];
@@ -737,8 +737,13 @@ main(void)
 #error select one WS001 p016 fixture
 #endif
 
-/* Models the explicit lower backend drain without a VM layer in this fixture. */
+/*
+ * Models the explicit lower backend drain without a VM layer in this
+ * fixture.  The VFS fixture links the production file.c, which has its own.
+ */
+#if !defined(WS001_P016_VFS)
 int file_fsync_backend(struct file *file) { return file_fsync(file); }
+#endif
 
 /* Synchronous media adapter retains the production context validation. */
 int
