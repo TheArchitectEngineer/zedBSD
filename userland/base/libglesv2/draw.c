@@ -37,6 +37,7 @@ static void draw_primitives(GLenum mode, GLint first, GLsizei count, GLenum type
 static int draw_indices(struct zegl_context *context, GLsizei count, GLenum type, const void *indices, uint32_t **out, uint32_t *largest, int *restarted);
 static uint32_t *draw_restart(GLenum mode, const uint32_t *indices, GLsizei count, uint32_t restart, int rotate, uint32_t *expanded);
 static uint32_t draw_restart_index(const struct gles_state *state, GLenum type);
+static int draw_geometry_mode(const struct gles_program *program, GLenum mode);
 static void draw_base_vertex(GLenum mode, GLsizei count, GLenum type, const void *indices, GLsizei instances, GLint basevertex);
 static void draw_program(GLenum mode, GLint first, GLsizei count, GLenum type, const void *indices, GLsizei instances, int flat);
 static int draw_topology(GLenum mode, uint32_t *topology, int *strip);
@@ -568,7 +569,7 @@ glClear(
 	/* The clear over the scissor box or the whole target. */
 	memset(&rect, 0, sizeof(rect));
 	rect.rect = draw_scissor_rect(state, &target);
-	rect.layerCount = 1U;
+	rect.layerCount = target.layers;
 	if (rect.rect.extent.width == 0U || rect.rect.extent.height == 0U)
 		return;
 	vkCmdClearAttachments(target.command, count, attachments, 1U, &rect);
@@ -1345,6 +1346,7 @@ draw_primitives(
 		if (state->program != NULL &&
 		    state->program->flat_inputs &&
 		    state->program->capture_count == 0U &&
+		    state->program->geometry_module == VK_NULL_HANDLE &&
 		    state->provoking_vertex != GL_FIRST_VERTEX_CONVENTION)
 			flat = 1;
 		draw_program(mode, first, count, type, indices, instances, flat);
@@ -1432,6 +1434,13 @@ draw_program(
 
 	/* A linked program. */
 	if (state->program == NULL || !state->program->linked) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return;
+	}
+
+	/* A mode the geometry shader takes as its input primitive. */
+	status = draw_geometry_mode(state->program, mode);
+	if (status != 0) {
 		gles_error(context, GL_INVALID_OPERATION);
 		return;
 	}
@@ -1933,6 +1942,26 @@ draw_topology(
 		*topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 		*strip = 1;
 		return 0;
+	}
+
+	/* Desktop GL's primitives with adjacency (for geometry shaders), drawn as they are. */
+	if (gles_fixed != NULL) {
+		switch (mode) {
+		case GL_LINES_ADJACENCY:
+			*topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST_WITH_ADJACENCY;
+			return 0;
+		case GL_LINE_STRIP_ADJACENCY:
+			*topology = VK_PRIMITIVE_TOPOLOGY_LINE_STRIP_WITH_ADJACENCY;
+			return 0;
+		case GL_TRIANGLES_ADJACENCY:
+			*topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST_WITH_ADJACENCY;
+			return 0;
+		case GL_TRIANGLE_STRIP_ADJACENCY:
+			*topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP_WITH_ADJACENCY;
+			return 0;
+		default:
+			break;
+		}
 	}
 
 	/* Not a mode. */
@@ -2742,7 +2771,8 @@ draw_pipeline(
 	};
 	struct gles_pipeline_key key;
 	struct gles_pipeline *entry;
-	VkPipelineShaderStageCreateInfo stages[2];
+	VkPipelineShaderStageCreateInfo stages[3];
+	uint32_t stage_count;
 	VkVertexInputBindingDescription bindings[GLES_ATTRIBS];
 	VkVertexInputAttributeDescription attributes[GLES_ATTRIBS];
 	VkPipelineVertexInputStateCreateInfo vertex;
@@ -2787,6 +2817,17 @@ draw_pipeline(
 	stages[1] = stages[0];
 	stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
 	stages[1].module = state->program->fragment_module;
+	stage_count = 2U;
+
+	/* A geometry stage (desktop GL), which writes the gl_Position the rasterizer takes. */
+	if (state->program->geometry_module != VK_NULL_HANDLE) {
+		stages[2] = stages[0];
+		stages[2].stage = VK_SHADER_STAGE_GEOMETRY_BIT;
+		stages[2].module = state->program->geometry_module;
+		if (!target->flip)
+			stages[2].module = state->program->geometry_module_fbo;
+		stage_count = 3U;
+	}
 
 	/* One binding per attribute at its rate (per vertex or per instance), the attribute at offset 0 of it. */
 	memset(bindings, 0, sizeof(bindings));
@@ -2904,7 +2945,7 @@ draw_pipeline(
 		return VK_NULL_HANDLE;
 	memset(&create, 0, sizeof(create));
 	create.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-	create.stageCount = 2U;
+	create.stageCount = stage_count;
 	create.pStages = stages;
 	create.pVertexInputState = &vertex;
 	create.pInputAssemblyState = &assembly;
@@ -3426,7 +3467,7 @@ draw_clear_buffer(
 	/* The clear over the scissor box or the whole target. */
 	memset(&rect, 0, sizeof(rect));
 	rect.rect = draw_scissor_rect(state, &target);
-	rect.layerCount = 1U;
+	rect.layerCount = target.layers;
 	if (rect.rect.extent.width == 0U || rect.rect.extent.height == 0U)
 		return;
 	vkCmdClearAttachments(target.command, 1U, &attachment, 1U, &rect);
@@ -3627,4 +3668,44 @@ draw_base_vertex(
 	state->base_vertex = basevertex;
 	draw_primitives(mode, 0, count, type, indices, instances);
 	state->base_vertex = 0;
+}
+
+/* Reports whether a draw's mode gives a program's geometry shader its input primitive: 0 when it does (or there is none), -1 when not. */
+static int
+draw_geometry_mode(
+	const struct gles_program *program,
+	GLenum mode)
+{
+	/* No geometry shader takes any mode. */
+	if (program->geometry_module == VK_NULL_HANDLE)
+		return 0;
+
+	/* The modes of each input primitive. */
+	switch (program->geometry_input) {
+	case GL_POINTS:
+		if (mode == GL_POINTS)
+			return 0;
+		break;
+	case GL_LINES:
+		if (mode == GL_LINES || mode == GL_LINE_STRIP || mode == GL_LINE_LOOP)
+			return 0;
+		break;
+	case GL_LINES_ADJACENCY:
+		if (mode == GL_LINES_ADJACENCY || mode == GL_LINE_STRIP_ADJACENCY)
+			return 0;
+		break;
+	case GL_TRIANGLES:
+		if (mode == GL_TRIANGLES || mode == GL_TRIANGLE_STRIP || mode == GL_TRIANGLE_FAN)
+			return 0;
+		break;
+	case GL_TRIANGLES_ADJACENCY:
+		if (mode == GL_TRIANGLES_ADJACENCY || mode == GL_TRIANGLE_STRIP_ADJACENCY)
+			return 0;
+		break;
+	default:
+		break;
+	}
+
+	/* Another primitive than the shader takes. */
+	return -1;
 }

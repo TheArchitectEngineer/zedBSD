@@ -96,6 +96,25 @@
 #ifndef GL_TEXTURE_CUBE_MAP_SEAMLESS
 #define GL_TEXTURE_CUBE_MAP_SEAMLESS	0x884F
 #endif
+#ifndef GL_GEOMETRY_SHADER
+#define GL_GEOMETRY_SHADER		0x8DD9
+#define GL_GEOMETRY_VERTICES_OUT	0x8916
+#define GL_GEOMETRY_INPUT_TYPE		0x8917
+#define GL_GEOMETRY_OUTPUT_TYPE		0x8918
+#define GL_LINES_ADJACENCY		0x000A
+#define GL_LINE_STRIP_ADJACENCY		0x000B
+#define GL_TRIANGLES_ADJACENCY		0x000C
+#define GL_TRIANGLE_STRIP_ADJACENCY	0x000D
+#define GL_MAX_GEOMETRY_OUTPUT_VERTICES	0x8DE0
+#define GL_MAX_GEOMETRY_UNIFORM_COMPONENTS 0x8DDF
+#define GL_MAX_GEOMETRY_TEXTURE_IMAGE_UNITS 0x8C29
+#define GL_MAX_GEOMETRY_INPUT_COMPONENTS 0x9123
+#define GL_MAX_GEOMETRY_OUTPUT_COMPONENTS 0x9124
+#endif
+#ifndef GL_FRAMEBUFFER_ATTACHMENT_LAYERED
+#define GL_FRAMEBUFFER_ATTACHMENT_LAYERED	0x8DA7
+#define GL_FRAMEBUFFER_INCOMPLETE_LAYER_TARGETS	0x8DA8
+#endif
 #ifndef GL_PROVOKING_VERTEX
 #define GL_FIRST_VERTEX_CONVENTION	0x8E4D
 #define GL_LAST_VERTEX_CONVENTION	0x8E4E
@@ -401,6 +420,9 @@ struct gles_attach_view {
 	struct gles_attach_view *next;
 };
 
+/* The layer of a layered attachment (glFramebufferTexture, desktop GL): every layer of the level, a geometry shader's gl_Layer choosing. */
+#define GLES_LAYER_ALL		0xffffffffU
+
 /* What an attachment point of a framebuffer object names. */
 #define GLES_ATTACH_NONE		0
 #define GLES_ATTACH_TEXTURE		1
@@ -519,6 +541,9 @@ struct gles_framebuffer {
 	VkFramebuffer framebuffer;
 	VkExtent2D extent;
 
+	/* The framebuffer's layers (a layered object's: the fewest its attachments have; 1 otherwise). */
+	uint32_t layers;
+
 	/* The formats of the pass's attachments, and the compatible pass pipelines are made with. */
 	struct gles_pass_format format;
 	VkRenderPass compatible;
@@ -561,6 +586,9 @@ struct gles_target {
 	/* The aspects of the depth and stencil image (0: none), and the samples per pixel of every image. */
 	VkImageAspectFlags depth_aspects;
 	uint32_t samples;
+
+	/* The layers a clear covers (a layered framebuffer object's; 1 otherwise). */
+	uint32_t layers;
 };
 
 /*
@@ -722,9 +750,10 @@ struct gles_program {
 	int kind;
 	GLuint name;
 
-	/* The attached shaders. */
+	/* The attached shaders (a geometry shader only in desktop GL, libGL). */
 	struct gles_shader *vertex;
 	struct gles_shader *fragment;
+	struct gles_shader *geometry;
 
 	/* The locations glBindAttribLocation gave, by name, for the next link. */
 	char bound_names[GLES_ATTRIBS][GLES_NAME];
@@ -744,6 +773,20 @@ struct gles_program {
 	VkShaderModule fragment_module;
 	VkDescriptorSetLayout set_layout;
 	VkPipelineLayout layout;
+
+	/*
+	 * A geometry shader's modules (for a window and for a framebuffer
+	 * object, which rewrite its gl_Position as the vertex shader's is
+	 * rewritten without one; VK_NULL_HANDLE without one), its input and
+	 * output primitives (GL's modes) and most vertices, and the stages
+	 * the descriptors are read by.
+	 */
+	VkShaderModule geometry_module;
+	VkShaderModule geometry_module_fbo;
+	GLenum geometry_input;
+	GLenum geometry_output;
+	GLint geometry_vertices;
+	VkShaderStageFlags stages;
 
 	/* The attributes. */
 	struct gles_attribute attributes[GLES_ATTRIBS];
@@ -864,7 +907,7 @@ struct gles_garbage {
 	VkPipeline pipeline;
 	VkPipelineLayout layout;
 	VkDescriptorSetLayout set_layout;
-	VkShaderModule modules[3];
+	VkShaderModule modules[5];
 
 	/* A framebuffer object's render pass and framebuffer. */
 	VkRenderPass pass;

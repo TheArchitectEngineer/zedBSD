@@ -62,6 +62,10 @@ struct framebuffer_image {
 	/* The samples per pixel, and nonzero for a 3D texture's slice (layer is the slice, drawn through a gles_slice_image). */
 	uint32_t samples;
 	int volume;
+
+	/* A layered attachment (desktop GL): nonzero, with its layers (layer is 0). */
+	int layered;
+	uint32_t layers;
 };
 
 /*
@@ -75,6 +79,9 @@ struct framebuffer_images {
 	struct framebuffer_image depth;
 	int has_depth;
 	uint32_t samples;
+
+	/* The layers the framebuffer has: the fewest of its layered attachments' (every attachment is layered then), 1 otherwise. */
+	uint32_t layers;
 };
 
 /*
@@ -121,6 +128,8 @@ static GLenum framebuffer_status(struct gles_state *state, struct gles_framebuff
 static GLenum framebuffer_build(struct gles_state *state, struct gles_framebuffer *fbo, struct framebuffer_images *images);
 static unsigned framebuffer_slot_attachment(const struct gles_framebuffer *fbo, unsigned slot);
 static void framebuffer_mark(struct gles_state *state, struct framebuffer_images *images);
+static GLenum framebuffer_layered_of(struct gles_texture *texture, const struct gles_attachment *point, struct framebuffer_image *image);
+static GLenum framebuffer_layers(struct framebuffer_images *images);
 static void framebuffer_forget_views(struct gles_state *state, struct gles_framebuffer *fbo);
 static void framebuffer_leave(struct gles_state *state, struct zegl_surface *surface);
 static VkImageView framebuffer_slice(struct gles_state *state, struct gles_slice_image *slice, const struct framebuffer_image *image);
@@ -187,10 +196,11 @@ gles_target_open(
 		return -1;
 	}
 
-	/* The target starts as the surface's own images. */
+	/* The target starts as the surface's own images, of one layer. */
 	memset(target, 0, sizeof(*target));
 	target->surface = surface;
 	target->command = surface->command;
+	target->layers = 1U;
 
 	/* Framebuffer 0: the surface's pass, after any framebuffer object's, with its one colour image. */
 	if (state->framebuffer == 0U) {
@@ -250,6 +260,7 @@ gles_target_open(
 	target->color_count = fbo->format.color_count;
 	target->depth_aspects = fbo->depth_aspects;
 	target->samples = fbo->format.samples;
+	target->layers = fbo->layers;
 
 	/* Each colour attachment a draw buffer writes, and those holding integers or that cannot blend. */
 	for (index = 0U; index < fbo->format.color_count; index++) {
@@ -1033,6 +1044,69 @@ glFramebufferTexture2D(
 
 	/* Attached by name. */
 	framebuffer_attach(context, target, attachment, GLES_ATTACH_TEXTURE, texture, face, level, 0);
+}
+
+/*
+ * Attaches a level of a texture to an attachment point of a bound
+ * framebuffer object (desktop GL 3.2, libGL): a 2D or rectangle texture's
+ * level as glFramebufferTexture2D does, every layer of a 2D array
+ * texture's or every face of a cube map's level as a layered attachment
+ * (a geometry shader's gl_Layer chooses the layer); texture 0 detaches.
+ */
+GL_APICALL void GL_APIENTRY
+glFramebufferTexture(
+	GLenum target,
+	GLenum attachment,
+	GLuint texture,
+	GLint level)
+{
+	struct zegl_context *context;
+	struct gles_state *state;
+	struct gles_texture *object;
+
+	/* A context with its state (desktop GL). */
+	context = gles_context();
+	state = gles_state(context);
+	if (state == NULL)
+		return;
+	if (gles_fixed == NULL) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return;
+	}
+
+	/* Texture 0 detaches. */
+	if (texture == 0U) {
+		framebuffer_attach(context, target, attachment, GLES_ATTACH_NONE, 0U, 0U, 0, 0);
+		return;
+	}
+
+	/* A level a texture has, of a name that is a texture. */
+	if (level < 0 || level >= (GLint)GLES_LEVELS) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* The texture of the name. */
+	object = gles_names_get(&state->textures, texture);
+	if (object == NULL) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return;
+	}
+
+	/* A 2D or rectangle texture's level, as itself. */
+	if (object->target == GL_TEXTURE_2D || object->target == GL_TEXTURE_RECTANGLE) {
+		framebuffer_attach(context, target, attachment, GLES_ATTACH_TEXTURE, texture, 0U, level, 0);
+		return;
+	}
+
+	/* Layered: a 2D array texture's or a cube map's level (a 3D texture's slices are not). */
+	if (object->target != GL_TEXTURE_2D_ARRAY && object->target != GL_TEXTURE_CUBE_MAP) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return;
+	}
+
+	/* Attached with every layer. */
+	framebuffer_attach(context, target, attachment, GLES_ATTACH_TEXTURE, texture, 0U, level, (GLint)GLES_LAYER_ALL);
 }
 
 /*
@@ -2129,6 +2203,7 @@ framebuffer_image_of(
 	const struct gles_level *level;
 	uint32_t features;
 	uint32_t wanted;
+	GLenum status;
 	int is_depth;
 
 	/* Nothing found yet. */
@@ -2161,14 +2236,19 @@ framebuffer_image_of(
 	if (image->texture == NULL)
 		return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
 
-	/* The level is specified, with the layer or the slice. */
+	/* The level is specified, with the layer or the slice (a layered one: every face of a cube map's level). */
 	level = &image->texture->levels[point->face * GLES_LEVELS + (unsigned)point->level];
 	if (level->width <= 0 || level->height <= 0 || level->format == NULL)
 		return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
-	if (image->texture->target == GL_TEXTURE_2D_ARRAY && point->layer >= level->depth)
+	if ((uint32_t)point->layer == GLES_LAYER_ALL) {
+		status = framebuffer_layered_of(image->texture, point, image);
+		if (status != GL_FRAMEBUFFER_COMPLETE)
+			return status;
+	} else if (image->texture->target == GL_TEXTURE_2D_ARRAY && point->layer >= level->depth) {
 		return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
-	if (image->texture->target == GL_TEXTURE_3D && point->layer >= level->depth)
+	} else if (image->texture->target == GL_TEXTURE_3D && point->layer >= level->depth) {
 		return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
+	}
 
 	/* A format a framebuffer draws into, of the point's kind. */
 	is_depth = 0;
@@ -2199,10 +2279,12 @@ framebuffer_image_of(
 	image->layer = point->face;
 	if (image->texture->target == GL_TEXTURE_2D_ARRAY)
 		image->layer = (uint32_t)point->layer;
+	if (image->layered)
+		image->layer = 0U;
 	image->width = level->width;
 	image->height = level->height;
 	image->layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-	if (image->texture->target == GL_TEXTURE_3D) {
+	if (image->texture->target == GL_TEXTURE_3D && !image->layered) {
 		image->volume = 1;
 		image->layer = (uint32_t)point->layer;
 		image->layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
@@ -2286,6 +2368,11 @@ framebuffer_status(
 	/* Nothing attached at all. */
 	if (!attached)
 		return GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT;
+
+	/* Every attachment layered, or none; the framebuffer has the fewest layers. */
+	status = framebuffer_layers(images);
+	if (status != GL_FRAMEBUFFER_COMPLETE)
+		return status;
 
 	/* Every image has as many samples per pixel. */
 	samples = 0U;
@@ -2451,7 +2538,7 @@ framebuffer_build(
 	create.pAttachments = views;
 	create.width = extent.width;
 	create.height = extent.height;
-	create.layers = 1U;
+	create.layers = images->layers;
 	result = vkCreateFramebuffer(state->device, &create, NULL, &fbo->framebuffer);
 	if (result != VK_SUCCESS) {
 		gles_report("vkCreateFramebuffer", (int)result);
@@ -2459,10 +2546,11 @@ framebuffer_build(
 		return GL_FRAMEBUFFER_UNSUPPORTED;
 	}
 
-	/* Made for these views, formats and size. */
+	/* Made for these views, formats, size and layers. */
 	memcpy(fbo->built_colors, color_views, sizeof(color_views));
 	fbo->built_depth = depth_view;
 	fbo->extent = extent;
+	fbo->layers = images->layers;
 	fbo->format = format;
 	fbo->compatible = compatible;
 	for (index = 0U; index < GLES_COLOR_ATTACHMENTS; index++) {
@@ -2483,6 +2571,89 @@ framebuffer_build(
 	}
 
 	/* Succeeded: the pass and framebuffer are made. */
+	return GL_FRAMEBUFFER_COMPLETE;
+}
+
+/*
+ * Finds a layered attachment's layers: a 2D array texture's level's
+ * layers, or a cube map's six faces (each of the level specified at the
+ * same size).  Returns GL_FRAMEBUFFER_COMPLETE, or why not.
+ */
+static GLenum
+framebuffer_layered_of(
+	struct gles_texture *texture,
+	const struct gles_attachment *point,
+	struct framebuffer_image *image)
+{
+	const struct gles_level *level;
+	const struct gles_level *face_level;
+	unsigned face;
+
+	/* A 2D array texture: its level's layers. */
+	level = &texture->levels[(unsigned)point->level];
+	image->layered = 1;
+	if (texture->target == GL_TEXTURE_2D_ARRAY) {
+		image->layers = (uint32_t)level->depth;
+		return GL_FRAMEBUFFER_COMPLETE;
+	}
+
+	/* A cube map: every face of the level, alike. */
+	for (face = 1U; face < GLES_FACES; face++) {
+		face_level = &texture->levels[face * GLES_LEVELS + (unsigned)point->level];
+		if (face_level->width != level->width ||
+		    face_level->height != level->height ||
+		    face_level->format != level->format)
+			return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
+	}
+
+	/* Succeeded: six layers. */
+	image->layers = GLES_FACES;
+	return GL_FRAMEBUFFER_COMPLETE;
+}
+
+/*
+ * Finds the layers of a framebuffer object's framebuffer: 1 when no
+ * attachment is layered, the fewest of theirs when every one is.  Returns
+ * GL_FRAMEBUFFER_COMPLETE, or GL_FRAMEBUFFER_INCOMPLETE_LAYER_TARGETS when
+ * some are layered and some not.
+ */
+static GLenum
+framebuffer_layers(
+	struct framebuffer_images *images)
+{
+	struct framebuffer_image *image;
+	unsigned index;
+	unsigned layered;
+	unsigned flat;
+
+	/* Each attachment, layered or not. */
+	images->layers = 0U;
+	layered = 0U;
+	flat = 0U;
+	for (index = 0U; index <= GLES_COLOR_ATTACHMENTS; index++) {
+		image = &images->depth;
+		if (index < GLES_COLOR_ATTACHMENTS)
+			image = &images->colors[index];
+		if (image->format == NULL)
+			continue;
+		if (!image->layered) {
+			flat++;
+			continue;
+		}
+
+		/* A layered one: the fewest layers. */
+		layered++;
+		if (images->layers == 0U || image->layers < images->layers)
+			images->layers = image->layers;
+	}
+
+	/* Both kinds together. */
+	if (layered != 0U && flat != 0U)
+		return GL_FRAMEBUFFER_INCOMPLETE_LAYER_TARGETS;
+
+	/* Succeeded: one layer when none is layered. */
+	if (layered == 0U)
+		images->layers = 1U;
 	return GL_FRAMEBUFFER_COMPLETE;
 }
 
@@ -2521,6 +2692,7 @@ framebuffer_mark(
 {
 	struct framebuffer_image *image;
 	unsigned index;
+	unsigned face;
 
 	/* Each attachment, the colour ones and the depth one. */
 	for (index = 0U; index <= GLES_COLOR_ATTACHMENTS; index++) {
@@ -2530,10 +2702,12 @@ framebuffer_mark(
 		if (image->format == NULL)
 			continue;
 
-		/* A texture's level on the CPU is older than the image from now on (a 3D slice's once it is copied back). */
+		/* A texture's level on the CPU is older than the image from now on (a 3D slice's once it is copied back; every face of a layered cube map's). */
 		if (image->texture != NULL) {
 			image->texture->used = state->frame;
 			image->texture->gpu_levels[image->face] |= 1U << (unsigned)image->gl_level;
+			for (face = 0U; image->layered && image->texture->target == GL_TEXTURE_CUBE_MAP && face < GLES_FACES; face++)
+				image->texture->gpu_levels[face] |= 1U << (unsigned)image->gl_level;
 		}
 
 		/* A renderbuffer waits for the frame before it may go. */

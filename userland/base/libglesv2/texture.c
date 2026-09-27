@@ -737,11 +737,13 @@ gles_texture_attach_view(
 	if (entry == NULL)
 		return VK_NULL_HANDLE;
 
-	/* A 2D view of the level and layer, every aspect the format draws. */
+	/* A 2D view of the level and layer (a 2D array view of every layer for GLES_LAYER_ALL), every aspect the format draws. */
 	memset(&create, 0, sizeof(create));
 	create.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 	create.image = texture->image;
 	create.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	if (layer == GLES_LAYER_ALL)
+		create.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
 	create.format = texture->image_format->vk;
 	create.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	if (texture->image_format->kind == GLES_TEXEL_DEPTH)
@@ -752,6 +754,12 @@ gles_texture_attach_view(
 	create.subresourceRange.levelCount = 1U;
 	create.subresourceRange.baseArrayLayer = layer;
 	create.subresourceRange.layerCount = 1U;
+	if (layer == GLES_LAYER_ALL) {
+		create.subresourceRange.baseArrayLayer = 0U;
+		create.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
+	}
+
+	/* The view. */
 	result = vkCreateImageView(state->device, &create, NULL, &entry->view);
 	if (result != VK_SUCCESS) {
 		free(entry);

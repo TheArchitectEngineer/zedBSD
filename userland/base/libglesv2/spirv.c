@@ -1059,6 +1059,7 @@ spirv_variable(
 	uint32_t id;
 	uint32_t storage;
 	uint32_t pointee;
+	uint32_t element;
 	uint32_t length;
 	int status;
 
@@ -1077,6 +1078,13 @@ spirv_variable(
 		if (module->builtins[id] != SPIRV_NONE)
 			return 0;
 		if ((code[module->defs[pointee]] & 0xffffU) == OP_TYPE_STRUCT)
+			return 0;
+
+		/* A geometry shader's array of blocks (gl_in, an input block's vertices) is left out too. */
+		element = pointee;
+		if ((code[module->defs[pointee]] & 0xffffU) == OP_TYPE_ARRAY)
+			element = code[module->defs[pointee] + 2U];
+		if (element < module->bound && module->defs[element] != 0U && (code[module->defs[element]] & 0xffffU) == OP_TYPE_STRUCT)
 			return 0;
 		if (module->locations[id] == SPIRV_NONE)
 			return -1;
