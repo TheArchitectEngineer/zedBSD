@@ -48,6 +48,8 @@ BUG-027・BUG-033（性能。単独の計測を後で）。
 | [ws073-p012](phase012/phase.md) | BUG-072 | FAT32 の metadata を仕様どおりに（`..`、FSInfo、日時）、boot の FAT の sync | cleared |
 | [ws073-p013](phase013/phase.md) | BUG-029（BUG-052 の node） | 多くの tmpfs の file が system 全体の inode を尽くさない（heap の inode、cache 16384、tmpfs の共有の上限） | cleared |
 | [ws073-p011](phase011/phase.md) | BUG-070 | USB HID の keyboard が keypad・Num Lock・Print Screen・日本語の key などを出す | cleared |
+| [ws073-p014](phase014/phase.md) | — | amd64 は /boot・/boot/esp を自動で見せず fstab に任せる。fstab の ESP の mount は kernel の hold を adopt する | cleared |
+| ws073-p015 | — | 最終の layout: `bootN:` の file を持つ boot の slot を /boot/boot0〜3 に自動で mount（amd64 UEFI も）、ESP は fstab、使用中の file は読めるが書けない | planned |
 
 ## 判断が要る点
 
@@ -55,5 +57,9 @@ BUG-027・BUG-033（性能。単独の計測を後で）。
   kernel の mount を公開する案（[phase](phase002/phase.md)）。ユーザーの判断（原文）: 「ESPは/boot/espにします。/bootはBOOTという名前のFATパーティションですね。
   UEFIのみのイメージでBOOTパーティションがない場合もあります。」→ BOOT の FAT を `/boot`、ESP を `/boot/esp` に公開する。BOOT が無い UEFI だけの image では
   `/boot` はただの directory で ESP は `/boot/esp`。ws073-p009 で行う。
+- （解決 2026-09-27）amd64 の /boot・/boot/esp: ユーザーの判断（原文）「amd64 のUEFIおよびハイブリッドのイメージでは、カーネルが特殊な処理で/bootや/boot/espを
+  マウントせず、fstabに任せてください。つまり、デフォルトの配布イメージではマウントしなくていいです。インストーラがfstabに書けば済むことです。」→ ws073-p014。
+- （解決 2026-09-27、最終の layout、p009・p014 の公開を置き換える）ユーザーの判断（原文）「amd64 UEFIでも、/boot/boot0みたいなマウントは自動でやりましょう。
+  ESPはfstabです。スワップだけでもマウントします。rootfs.imgは読み込み専用なので、書き込みできなくても、読み込めていいと思います。」→ ws073-p015（planned）。
 - ws073-p010（既定を選んだ、可逆）: FAT での file の作成は要求の mode を捨て、mount が見せる mode（0755 root:wheel）で見せる（msdosfs と同じ）。
   以前の「一致しなければ EOPNOTSUPP」に戻すなら fat.c の 2 つの関数を戻す（[phase](phase010/phase.md)）。

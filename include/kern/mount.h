@@ -250,6 +250,10 @@ unmount_private(
 	struct mount *mountp);
 
 int
+mount_private_allow_adoption(
+	struct mount *mountp);
+
+int
 mount_is_private(
 	const struct mount *mountp);
 
