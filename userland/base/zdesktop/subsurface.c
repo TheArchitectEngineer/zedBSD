@@ -24,6 +24,7 @@
 #include "subsurface.h"
 #include "glass.h"
 #include "popup.h"
+#include "extras.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -61,7 +62,7 @@ static void drop_cached(struct zwl_object *surface);
 static void unlink_child(struct zwl_object *surface);
 static void insert_child(struct zwl_object *parent, struct zwl_object *surface, struct zwl_object *before, unsigned above);
 static void draw_tree(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, float x, float y, float scale_x, float scale_y, unsigned depth);
-static void draw_image(struct zwl_server *server, VkCommandBuffer command, const struct zwl_import *image, float x, float y, float scale_x, float scale_y);
+static void draw_image(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, const struct zwl_import *image, float x, float y, float scale_x, float scale_y);
 static void draw_group(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *parent, float x, float y, float scale_x, float scale_y, unsigned above, unsigned depth);
 static struct zwl_object *tree_at(struct zwl_object *surface, int32_t x, int32_t y, unsigned depth);
 static struct zwl_object *group_at(struct zwl_object *parent, int32_t x, int32_t y, unsigned above, unsigned depth);
@@ -716,7 +717,7 @@ draw_tree(
 	if (surface->current != NULL)
 		image = zwl_compose_surface_image(surface);
 	if (image != NULL)
-		draw_image(server, command, image, x, y, scale_x, scale_y);
+		draw_image(server, command, surface, image, x, y, scale_x, scale_y);
 
 	/* The children above it. */
 	draw_group(server, command, surface, x, y, scale_x, scale_y, 1U, depth + 1U);
@@ -756,11 +757,16 @@ draw_group(
 	}
 }
 
-/* Draws one sub-surface's image: in the glass look as a scaled shape, otherwise as a plain quad. */
+/*
+ * Draws one sub-surface's image: in the glass look as a scaled shape (its
+ * viewport's source at its size, viewport.c), otherwise as a plain quad at
+ * the image's own size.
+ */
 static void
 draw_image(
 	struct zwl_server *server,
 	VkCommandBuffer command,
+	struct zwl_object *surface,
 	const struct zwl_import *image,
 	float x,
 	float y,
@@ -768,6 +774,8 @@ draw_image(
 	float scale_y)
 {
 	struct glass_shape shape;
+	uint32_t width;
+	uint32_t height;
 
 	/* The plain look draws at the image's own size. */
 	if (!server->glass) {
@@ -776,7 +784,9 @@ draw_image(
 	}
 
 	/* The glass look scales it with its window, square-cornered, as opaque as the window. */
-	glass_shape_init(&shape, x, y, (float)image->width * scale_x, (float)image->height * scale_y);
+	zwl_surface_size(surface, &width, &height);
+	glass_shape_init(&shape, x, y, (float)width * scale_x, (float)height * scale_y);
+	zwl_viewport_source(surface, shape.uv);
 	shape.opacity = server->window_opacity;
 	shape.mode = MODE_IMAGE;
 	shape.radius = 0.0f;
@@ -803,9 +813,18 @@ tree_at(
 	if (found != NULL)
 		return found;
 
-	/* Then its own image. */
+	/*
+	 * Then its own image: a sub-surface at its viewport's size (viewport.c),
+	 * a window or a popup at its buffer's (as they are drawn, p081).
+	 */
 	if (surface->current != NULL) {
-		zwl_buffer_size(surface->current, &width, &height);
+		if (surface->sub_role != NULL) {
+			zwl_surface_size(surface, &width, &height);
+		} else {
+			zwl_buffer_size(surface->current, &width, &height);
+		}
+
+		/* The point inside that size from its place. */
 		if (x >= surface->x &&
 		    y >= surface->y &&
 		    x < surface->x + (int32_t)width &&

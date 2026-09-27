@@ -47,6 +47,7 @@ static const char *program_name(const char *path);
 static int run_unmount(int argc, char **argv);
 static int mount_all(void);
 static int mount_fstab_entry(const char *source, const char *target, const char *type, char *options);
+static const char *kernel_type_name(const char *type);
 
 static int
 list_mounts(void)
@@ -135,7 +136,7 @@ main(
 		if (strcmp(argv[i], "-r") == 0) {
 			flags |= MNT_RDONLY;
 		} else if (strcmp(argv[i], "-t") == 0 && i + 1 < argc) {
-			type = argv[++i];
+			type = kernel_type_name(argv[++i]);
 		} else if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
 			i++;
 
@@ -279,6 +280,32 @@ apply_command_options(
 
 	/* Succeeded: every option was applied. */
 	return 0;
+}
+
+/*
+ * Translates a filesystem type name other systems use into the kernel's.
+ *
+ * The kernel calls its FAT filesystem "fat"; an fstab line or a command
+ * written for another system says msdosfs (the BSDs), vfat or msdos
+ * (Linux).  Any other name is passed on unchanged.
+ */
+static const char *
+kernel_type_name(
+	const char *type)
+{
+	static const char *const fat_names[] = { "msdosfs", "vfat", "msdos" };
+	size_t index;
+	int differs;
+
+	/* Compares the name with each FAT alias in turn. */
+	for (index = 0; index < sizeof(fat_names) / sizeof(fat_names[0]); index++) {
+		differs = strcmp(type, fat_names[index]);
+		if (differs == 0)
+			return "fat";
+	}
+
+	/* Succeeded: the name is the kernel's already. */
+	return type;
 }
 
 /* Finds the mount(2) flag an option names; reports 0 when it names none. */
@@ -451,6 +478,7 @@ mount_fstab_entry(
 	}
 
 	/* Handles the reported system error. */
+	type = kernel_type_name(type);
 	if (mount(type, target, flags, &arguments) == 0 ||
 	    (nofail && (errno == ENOENT || errno == ENODEV)))
 

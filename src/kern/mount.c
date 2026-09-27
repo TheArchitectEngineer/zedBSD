@@ -39,6 +39,11 @@
 #define MOUNT_DEVICE_SYNTHETIC 0x80000000U
 #define FILESYSTEM_MAX 8U
 #define MOUNT_BIND_INTERNAL 0x00000001U
+/*
+ * A private mount that a mount of its own disk may show instead of
+ * refusing (the kernel's boot filesystems, see mount_adopt_private()).
+ */
+#define MOUNT_ADOPTABLE_INTERNAL 0x00000004U
 #define MOUNT_HIGH __attribute__((section(".hightext")))
 #ifdef KERN_STORAGE_HOST_TEST
 #undef MOUNT_HIGH
@@ -96,6 +101,8 @@ static void link_global(struct mount *mountp);
 static int set_mount_path(struct mount *mountp, const struct path *directory, const char *name);
 static MOUNT_HIGH int valid_private_path(const char *path);
 static void mount_info_private_source(struct kern_mount_info *info, const struct mount *source);
+static struct mount *mount_sync_target(struct mount *mountp);
+static int mount_adopt_private(const char *type_name, int flags, void *data, const struct path *parent, const char *name);
 static void unlink_child(struct mount *mountp);
 static int prepare_filesystem_destroy(struct mount *mountp, unsigned expected_refs);
 static void finalize_filesystem_destroy(struct mount *mountp);
@@ -780,6 +787,40 @@ mount_private_lookup(
 }
 
 /*
+ * Lets a mount of a private mount's disk show it instead of refusing.
+ *
+ * The kernel keeps each boot partition's filesystem mounted privately for
+ * the system's lifetime, and a second mount of the same partition is
+ * refused (BUG-065).  A boot filesystem marked here is shown instead where
+ * an ordinary mount of its disk (an fstab line for /boot/esp) asks for it,
+ * so that the kernel and the namespace share one filesystem state.
+ */
+MOUNT_HIGH int
+mount_private_allow_adoption(
+	struct mount *mountp)
+{
+	unsigned long irq;
+	int private;
+
+	/* Only a private mount can be adopted. */
+	private = mount_is_private(mountp);
+	if (!private)
+		return EINVAL;
+
+	/* Marks it under the namespace lock that mount lookups take. */
+	irq = spin_lock_irqsave(&namespace_lock);
+
+	/* ADOPTABLE lets mount_adopt_private() bind it for a mount of its disk. */
+	mountp->m_internal_flags |= MOUNT_ADOPTABLE_INTERNAL;
+
+	/* Lets mount lookups see the mark. */
+	spin_unlock_irqrestore(&namespace_lock, irq);
+
+	/* Succeeded: a mount of its disk now shows it. */
+	return 0;
+}
+
+/*
  * Tests whether a mount is private.
  */
 MOUNT_HIGH int
@@ -910,8 +951,10 @@ mount_sync_all(
 	unsigned index;
 	unsigned long irq;
 	struct mount *mountp;
+	struct mount *target;
 	int first_error;
 	int error;
+	int taken;
 
 	count = 0;
 	first_error = 0;
@@ -920,11 +963,24 @@ mount_sync_all(
 	/* References keep the snapshot valid while slow filesystem sync runs. */
 	for (mountp = mount_head; mountp != NULL && count < MOUNT_MAX;
 	     mountp = mountp->m_next) {
-		if (mountp->m_state != MOUNT_STATE_LIVE ||
-		    mountp->m_bind_source != NULL)
+		if (mountp->m_state != MOUNT_STATE_LIVE)
 			continue;
-		mount_ref(mountp);
-		snapshot[count++] = mountp;
+
+		/* Picks the filesystem this entry stands for, once. */
+		target = mount_sync_target(mountp);
+		if (target == NULL)
+			continue;
+		taken = 0;
+		for (index = 0; index < count; index++) {
+			if (snapshot[index] == target)
+				taken = 1;
+		}
+
+		/* Skips a filesystem an earlier entry already stands for. */
+		if (taken)
+			continue;
+		mount_ref(target);
+		snapshot[count++] = target;
 	}
 
 	spin_unlock_irqrestore(&namespace_lock, irq);
@@ -1205,9 +1261,16 @@ mount_context(
 	if (error == 0)
 		error = namei_parent_path_at(snapshot, canonical, &parent,
 		    &component, name);
-	if (error == 0)
-		error = mount_at_target(type_name, &parent, name, flags, data,
-		    NULL, target.p_inode);
+
+	/* A disk the kernel holds for booting is shown rather than mounted again. */
+	if (error == 0) {
+		error = mount_adopt_private(type_name, flags, data, &parent,
+		    name);
+		if (error == ENOENT) {
+			error = mount_at_target(type_name, &parent, name, flags,
+			    data, NULL, target.p_inode);
+		}
+	}
 
 	/* Reservation checked the covered identity before publishing or unwinding. */
 	path_release(&parent);
@@ -2220,6 +2283,142 @@ set_mount_path(
 
 	/* Reports the recorded path. */
 	return 0;
+}
+
+/*
+ * Shows an adoptable private mount where a mount of its disk asks for it.
+ *
+ * Reports ENOENT when no adoptable private mount holds the named disk, so
+ * that the caller mounts normally; 0 when the private mount's root is now
+ * bound under the name; EBUSY when the request does not fit the mount the
+ * kernel holds (another type, or read-only over a writable mount, which a
+ * bind could not enforce).
+ */
+static int
+mount_adopt_private(
+	const char *type_name,
+	int flags,
+	void *data,
+	const struct path *parent,
+	const char *name)
+{
+	const struct fat_mount_args *args;
+	const struct filesystem_type *type;
+	struct mount *held;
+	struct mount *other;
+	struct disk *disk;
+	struct path source;
+	unsigned long irq;
+	unsigned index;
+	int probe_error;
+	int differs;
+	int error;
+
+	/* A request that names no disk has nothing to adopt. */
+	args = data;
+	if (type_name == NULL || args == NULL || args->fspec == NULL)
+		return ENOENT;
+
+	/* A nodev filesystem reads its data as something else. */
+	for (index = 0; index < filesystem_count; index++) {
+		differs = kern_strcmp(type_name, filesystems[index]->fs_name);
+		if (differs != 0)
+			continue;
+		if ((filesystems[index]->fs_flags & FILESYSTEM_NODEV) != 0)
+			return ENOENT;
+	}
+
+	/* Finds the disk the request names. */
+	disk = disk_find(args->fspec);
+	if (disk == NULL)
+		return ENOENT;
+
+	/* Looks for an adoptable private mount of exactly that disk. */
+	held = NULL;
+	irq = spin_lock_irqsave(&namespace_lock);
+
+	/* Takes the first live one, with a reference. */
+	for (index = 0; index < MOUNT_MAX; index++) {
+		other = &mounts[index];
+		if (!mount_used[index] || other->m_disk != disk)
+			continue;
+		if (other->m_state != MOUNT_STATE_LIVE)
+			continue;
+		if ((other->m_internal_flags & MOUNT_ADOPTABLE_INTERNAL) == 0)
+			continue;
+		mount_ref(other);
+		held = other;
+		break;
+	}
+
+	/* Lets other mounts proceed. */
+	spin_unlock_irqrestore(&namespace_lock, irq);
+
+	/* No boot filesystem holds the disk: an ordinary mount follows. */
+	if (held == NULL) {
+		disk_release(disk);
+		return ENOENT;
+	}
+
+	/* The requested type has to be the one the kernel mounted. */
+	type = find_type(type_name, disk, &probe_error);
+	disk_release(disk);
+	error = 0;
+	if (type != held->m_type)
+		error = EBUSY;
+
+	/* A read-only request over a writable mount cannot be honoured. */
+	if ((flags & MOUNT_READ_ONLY) != 0 &&
+	    (held->m_flags & MOUNT_READ_ONLY) == 0)
+		error = EBUSY;
+
+	/* Binds the private mount's root under the name. */
+	if (error == 0) {
+		path_init(&source);
+		path_set(&source, held, held->m_root);
+		error = mount_bind_at(&source, parent, name, NULL);
+		path_release(&source);
+	}
+
+	/* The bind holds its own reference; the lookup's goes. */
+	mount_release(held);
+
+	/* Reports why the adoption was refused. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the kernel's boot filesystem is visible under the name. */
+	return 0;
+}
+
+/*
+ * Tells which filesystem a namespace entry stands for when everything is
+ * synced; the caller holds the namespace lock.
+ *
+ * A mount stands for itself.  A bind of a public mount stands for nothing,
+ * because its source is an entry of its own.  A bind of a private mount
+ * (the kernel's boot filesystems shown at /boot and /boot/esp) stands for
+ * that private mount, which no other entry reaches.
+ */
+static struct mount *
+mount_sync_target(
+	struct mount *mountp)
+{
+	struct mount *source;
+	int private;
+
+	/* A mount that is no bind is its own filesystem. */
+	source = mountp->m_bind_source;
+	if (source == NULL)
+		return mountp;
+
+	/* A bind of a public mount is synced through that mount. */
+	private = mount_is_private(source);
+	if (!private)
+		return NULL;
+
+	/* Succeeded: the bind stands for the private mount behind it. */
+	return source;
 }
 
 /*

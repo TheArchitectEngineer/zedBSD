@@ -11,9 +11,12 @@
 
 #include "zwl.h"
 #include "menu.h"
+#include "titlebar.h"
 #include "popup.h"
 #include "toplevel.h"
 #include "subsurface.h"
+#include "data.h"
+#include "extras.h"
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <errno.h>
@@ -42,6 +45,11 @@ static const struct zwl_global globals[] = {
 	{ 6, "wl_shm", 1, ZWL_SHM },
 	{ 7, "xdg_menu_manager_v1", 1, ZWL_MENU_MANAGER },
 	{ 8, "wl_subcompositor", 1, ZWL_SUBCOMPOSITOR },
+	{ 9, "wl_data_device_manager", 3, ZWL_DATA_MANAGER },
+	{ 10, "zxdg_decoration_manager_v1", 1, ZWL_DECORATION_MANAGER },
+	{ 11, "wp_cursor_shape_manager_v1", 1, ZWL_CURSOR_SHAPE_MANAGER },
+	{ 12, "wp_viewporter", 1, ZWL_VIEWPORTER },
+	{ 16, "zed_titlebar_manager_v1", 1, ZWL_TITLEBAR_MANAGER },
 };
 
 static uint32_t word_at(const unsigned char *bytes, size_t offset);
@@ -175,6 +183,11 @@ zwl_dispatch(
 		/* The System Menu (menu.c). */
 		error = zwl_menu_request(object, opcode, bytes, size);
 		break;
+	case ZWL_TITLEBAR_MANAGER:
+	case ZWL_TITLEBAR:
+		/* The Titlebar Presentation (titlebar.c). */
+		error = zwl_titlebar_request(object, opcode, bytes, size);
+		break;
 	case ZWL_POSITIONER:
 	case ZWL_POPUP:
 		/* xdg_positioner and xdg_popup (popup.c). */
@@ -188,6 +201,28 @@ zwl_dispatch(
 		}
 
 		/* Any other output request stays refused. */
+		break;
+	case ZWL_DATA_MANAGER:
+	case ZWL_DATA_SOURCE:
+	case ZWL_DATA_DEVICE:
+	case ZWL_DATA_OFFER:
+		/* The clipboard (data.c). */
+		error = zwl_data_request(object, opcode, bytes, size);
+		break;
+	case ZWL_DECORATION_MANAGER:
+	case ZWL_DECORATION:
+		/* xdg-decoration (decoration.c). */
+		error = zwl_decoration_request(object, opcode, bytes, size);
+		break;
+	case ZWL_CURSOR_SHAPE_MANAGER:
+	case ZWL_CURSOR_SHAPE_DEVICE:
+		/* cursor-shape (cursor.c). */
+		error = zwl_cursor_shape_request(object, opcode, bytes, size);
+		break;
+	case ZWL_VIEWPORTER:
+	case ZWL_VIEWPORT:
+		/* viewporter (viewport.c). */
+		error = zwl_viewport_request(object, opcode, bytes, size);
 		break;
 	case ZWL_SUBCOMPOSITOR:
 		/* wl_subcompositor (subsurface.c). */
@@ -632,6 +667,9 @@ surface_commit(
 	unsigned attached;
 	uint32_t replaced;
 	int error;
+
+	/* The viewport's pending source and destination apply with the commit (viewport.c). */
+	zwl_viewport_commit(surface);
 
 	/* A sub-surface's commit waits for its parent's when it is synchronized (subsurface.c). */
 	if (surface->sub_role != NULL) {

@@ -19,6 +19,7 @@
  */
 
 #include "compose.h"
+#include "extras.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -248,7 +249,7 @@ zwl_arrow_create(
 		}
 	}
 
-	/* Succeeded: drawn with alpha. */
+	/* Succeeded: drawn with alpha (the other cursor shapes are made when first asked for, cursor.c). */
 	arrow->draw = ZWL_DRAW_ALPHA;
 	server->arrow = arrow;
 	return 0;
@@ -264,6 +265,9 @@ zwl_arrow_destroy(
 	/* No arrow was made. */
 	if (server->arrow == NULL || server->compose == NULL)
 		return;
+
+	/* The shapes' images first (cursor.c). */
+	zwl_cursor_images_destroy(server);
 
 	/* Its Vulkan objects, then the record. */
 	image_release(server->compose, server->arrow);

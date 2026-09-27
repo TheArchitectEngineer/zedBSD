@@ -19,9 +19,12 @@
 
 #include "zwl.h"
 #include "menu.h"
+#include "titlebar.h"
 #include "popup.h"
 #include "toplevel.h"
 #include "subsurface.h"
+#include "data.h"
+#include "extras.h"
 #include "keymap.h"
 #include <fcntl.h>
 #include <unistd.h>
@@ -223,11 +226,12 @@ void
 zwl_cursor_default(
 	struct zwl_server *server)
 {
-	/* The arrow, shown. */
+	/* The arrow, shown (no client's surface or shape). */
 	if (server->cursor_surface != NULL)
 		server->cursor_surface->cursor_role = 0;
 	server->cursor_surface = NULL;
 	server->cursor_hidden = 0;
+	server->cursor_shape = 0;
 	server->dirty = 1;
 }
 
@@ -262,8 +266,10 @@ zwl_seat_focus(
 		 * all been told enter; it is cleared before that surface is freed.
 		 */
 		server->focus = target;
-		if (target != NULL)
+		if (target != NULL) {
+			zwl_data_focus(server, target);
 			send_enter(target);
+		}
 	}
 
 	/* Succeeded: the pointer follows (the focused window, or the surface of it under the pointer). */
@@ -657,14 +663,18 @@ zwl_seat_key(
 
 	/*
 	 * App Home, while it shows, takes every key (home.c), and so does an
-	 * open menu (menu-shell.c); zdesktop's shortcuts come next (shell.c),
-	 * then the focused window's menu: F10 and its shortcuts.
+	 * open menu (menu-shell.c), then a titlebar's text field with the
+	 * keyboard (titlebar-shell.c); zdesktop's shortcuts come next
+	 * (shell.c), then the focused window's menu: F10 and its shortcuts.
 	 */
 	if (server->glass) {
 		taken = zwl_home_key(server, key, state);
 		if (taken)
 			return;
 		taken = zwl_menu_grab_key(server, key, state);
+		if (taken)
+			return;
+		taken = zwl_titlebar_key(server, key, state);
 		if (taken)
 			return;
 		taken = zwl_glass_key(server, key, state);
@@ -1015,8 +1025,9 @@ set_cursor(
 	if (server->cursor_surface != NULL && server->cursor_surface != surface)
 		server->cursor_surface->cursor_role = 0;
 
-	/* No surface hides the cursor. */
+	/* A cursor surface (or none) replaces a shape the client asked for; no surface hides the cursor. */
 	server->dirty = 1;
+	server->cursor_shape = 0;
 	if (surface == NULL) {
 		server->cursor_surface = NULL;
 		server->cursor_hidden = 1;

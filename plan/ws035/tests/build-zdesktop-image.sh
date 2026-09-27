@@ -1,7 +1,9 @@
 #!/bin/sh
 # Builds the zdesktop guest image for the Venus tests (build/ws035-sq): the guest harness's files
 # (SSH keys, net.conf) and, when they are present, the files kept out of git: the fonts
-# (build/ws035-fonts/: Inter for zdesktop, JetBrains Mono for zdesktop-terminal, both OFL) and the
+# (build/ws035-fonts/: Inter for zdesktop, JetBrains Mono for zdesktop-terminal, both OFL; Droid Sans
+# Fallback Full for the characters Inter lacks (Japanese), Apache-2.0, from Debian's fonts-droid-fallback,
+# /usr/share/fonts/truetype/droid/, with its copyright file as DroidSansFallback-LICENSE.txt) and the
 # wallpaper (build/ws035-wallpaper/wallpaper.ppm, the user's picture).
 #
 #   plan/ws035/tests/build-zdesktop-image.sh [BUILD]
@@ -15,6 +17,8 @@ extra=$(python3 plan/tools/guest/guest.py extra-files | sed -n "s/^ZEDBSD_TEST_E
 [ -f build/ws035-fonts/OFL.txt ] && extra="$extra --file /usr/share/fonts/zdesktop-OFL.txt=build/ws035-fonts/OFL.txt"
 [ -f build/ws035-fonts/JetBrainsMono-Regular.ttf ] && extra="$extra --file /usr/share/fonts/zdesktop-mono.ttf=build/ws035-fonts/JetBrainsMono-Regular.ttf"
 [ -f build/ws035-fonts/JetBrainsMono-OFL.txt ] && extra="$extra --file /usr/share/fonts/zdesktop-mono-OFL.txt=build/ws035-fonts/JetBrainsMono-OFL.txt"
+[ -f build/ws035-fonts/DroidSansFallbackFull.ttf ] && extra="$extra --file /usr/share/fonts/zdesktop-fallback.ttf=build/ws035-fonts/DroidSansFallbackFull.ttf"
+[ -f build/ws035-fonts/DroidSansFallback-LICENSE.txt ] && extra="$extra --file /usr/share/fonts/zdesktop-fallback-LICENSE.txt=build/ws035-fonts/DroidSansFallback-LICENSE.txt"
 [ -f build/ws035-wallpaper/wallpaper.ppm ] && extra="$extra --file /usr/share/zdesktop/wallpaper.ppm=build/ws035-wallpaper/wallpaper.ppm"
 exec make -j"$(nproc)" ZEDBSD_CONFIG=plan/ws035/tests/config-amd64-zdesktop.mk BUILD="$build" \
     "ZEDBSD_TEST_EXTRA_FILES=$extra" disk-image

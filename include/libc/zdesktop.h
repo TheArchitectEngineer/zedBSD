@@ -39,7 +39,7 @@ extern "C" {
 #endif
 
 /* The interface version this header describes (2: the System Menu; 3: the recent files). */
-#define ZDESKTOP_VERSION	3U
+#define ZDESKTOP_VERSION	4U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -239,6 +239,169 @@ int zdesktop_window_menu_set(struct zdesktop_window_menu *window_menu, struct zd
  * Destroys a window's place for a menu; the window shows none.
  */
 void zdesktop_window_menu_destroy(struct zdesktop_window_menu *window_menu);
+
+/*
+ * The Titlebar Presentation (WS070 p008, plan/ws070/titlebar-design.md).
+ *
+ * zdesktop draws a window's titlebar: its mark and title, a presentation,
+ * and the window's buttons, in the floating titlebar or, while the window
+ * is maximized, in the system bar.  The presentation is one of three
+ * models the application gives: the menu (the System Menu above, the
+ * default), controls (back, forward, a breadcrumb, a search field, a view
+ * selector...), or tabs.  The application gives only what they mean;
+ * zdesktop decides how they look and where they go, and tells the
+ * application what the user does with them.  Changes are made in
+ * transactions, like a menu's.  Every call that returns an int returns 0
+ * or an errno value.
+ */
+struct zdesktop_titlebar;
+
+/* The presentation modes. */
+#define ZDESKTOP_TITLEBAR_MENU		0U
+#define ZDESKTOP_TITLEBAR_CONTROLS	1U
+#define ZDESKTOP_TITLEBAR_TABS		2U
+
+/* The controls' roles, which decide how zdesktop draws them. */
+#define ZDESKTOP_CONTROL_BACK		1U
+#define ZDESKTOP_CONTROL_FORWARD	2U
+#define ZDESKTOP_CONTROL_HOME		3U
+#define ZDESKTOP_CONTROL_UP		4U
+#define ZDESKTOP_CONTROL_BREADCRUMB	5U
+#define ZDESKTOP_CONTROL_SEARCH		6U
+#define ZDESKTOP_CONTROL_VIEW_GRID	7U
+#define ZDESKTOP_CONTROL_VIEW_LIST	8U
+#define ZDESKTOP_CONTROL_VIEW_COLUMNS	9U
+#define ZDESKTOP_CONTROL_SORT		10U
+#define ZDESKTOP_CONTROL_FILTER		11U
+#define ZDESKTOP_CONTROL_SIDEBAR	12U
+#define ZDESKTOP_CONTROL_PREVIEW	13U
+#define ZDESKTOP_CONTROL_PROGRESS	14U
+#define ZDESKTOP_CONTROL_PRIMARY_ACTION	15U
+#define ZDESKTOP_CONTROL_GENERIC	16U
+
+/* The controls' priorities: the order they give way in when the room runs short. */
+#define ZDESKTOP_PRIORITY_PRIMARY	0U
+#define ZDESKTOP_PRIORITY_NORMAL	1U
+#define ZDESKTOP_PRIORITY_SECONDARY	2U
+
+/* A progress control's value that says the share done is not known. */
+#define ZDESKTOP_PROGRESS_UNKNOWN	1001U
+
+/* The tabs' flags, and the tab strip's options. */
+#define ZDESKTOP_TAB_ACTIVE		1U
+#define ZDESKTOP_TAB_ATTENTION		2U
+#define ZDESKTOP_TAB_CLOSABLE		4U
+#define ZDESKTOP_TABS_NEW_BUTTON	1U
+
+/* How a text control takes the keyboard, and how its editing ended. */
+#define ZDESKTOP_FOCUS_FIELD		0U
+#define ZDESKTOP_FOCUS_EDIT		1U
+#define ZDESKTOP_TEXT_SUBMITTED		0U
+#define ZDESKTOP_TEXT_CANCELLED		1U
+#define ZDESKTOP_TEXT_LEFT		2U
+
+/*
+ * What zdesktop tells the application about its titlebar: a control chosen
+ * (detail is a breadcrumb's part, 0 otherwise), a text control's text as
+ * it is typed and when its editing ends, a tab chosen or closed, the
+ * new-tab button, and the overflow popup opening.  Any may be NULL.
+ */
+struct zdesktop_titlebar_listener {
+	void (*control_activated)(void *data, struct zdesktop_titlebar *titlebar, uint32_t id, uint32_t detail, struct wl_seat *seat, uint32_t serial);
+	void (*text_changed)(void *data, struct zdesktop_titlebar *titlebar, uint32_t id, const char *text);
+	void (*text_done)(void *data, struct zdesktop_titlebar *titlebar, uint32_t id, const char *text, unsigned how);
+	void (*tab_activated)(void *data, struct zdesktop_titlebar *titlebar, uint32_t id, uint32_t serial);
+	void (*tab_close_requested)(void *data, struct zdesktop_titlebar *titlebar, uint32_t id);
+	void (*new_tab_requested)(void *data, struct zdesktop_titlebar *titlebar, uint32_t serial);
+	void (*overflow_menu_opened)(void *data, struct zdesktop_titlebar *titlebar);
+};
+
+/*
+ * Gives a window its titlebar presentation, in menu mode until changed;
+ * NULL with errno set (ENOTSUP for a compositor without it).
+ */
+struct zdesktop_titlebar *zdesktop_titlebar_create(struct wl_display *display, struct xdg_toplevel *toplevel,
+						   const struct zdesktop_titlebar_listener *listener, void *data);
+
+/*
+ * Takes the titlebar presentation away; the window shows its menu again.
+ */
+void zdesktop_titlebar_destroy(struct zdesktop_titlebar *titlebar);
+
+/*
+ * Starts a transaction; the changes until zdesktop_titlebar_commit are shown together.
+ */
+int zdesktop_titlebar_begin(struct zdesktop_titlebar *titlebar);
+
+/*
+ * Ends a transaction; zdesktop shows its changes at once.
+ */
+int zdesktop_titlebar_commit(struct zdesktop_titlebar *titlebar);
+
+/*
+ * Chooses the presentation (ZDESKTOP_TITLEBAR_*).
+ */
+int zdesktop_titlebar_set_mode(struct zdesktop_titlebar *titlebar, unsigned mode);
+
+/*
+ * Adds a control at the end: its ID (not 0), role, priority, the segmented group it joins (0 for none) and label.
+ */
+int zdesktop_titlebar_add_control(struct zdesktop_titlebar *titlebar, uint32_t id, unsigned role, unsigned priority, unsigned group, const char *label);
+
+/*
+ * Removes a control.
+ */
+int zdesktop_titlebar_remove_control(struct zdesktop_titlebar *titlebar, uint32_t id);
+
+/*
+ * Sets a control's label.
+ */
+int zdesktop_titlebar_set_control_label(struct zdesktop_titlebar *titlebar, uint32_t id, const char *label);
+
+/*
+ * Sets whether a control works now and whether it is checked.
+ */
+int zdesktop_titlebar_set_control_state(struct zdesktop_titlebar *titlebar, uint32_t id, int enabled, int checked);
+
+/*
+ * Sets a progress control's share done, in thousandths (ZDESKTOP_PROGRESS_UNKNOWN when not known).
+ */
+int zdesktop_titlebar_set_control_value(struct zdesktop_titlebar *titlebar, uint32_t id, unsigned value);
+
+/*
+ * Sets a search's or a breadcrumb's text and what it shows when empty.
+ */
+int zdesktop_titlebar_set_control_text(struct zdesktop_titlebar *titlebar, uint32_t id, const char *text, const char *placeholder);
+
+/*
+ * Sets a breadcrumb's parts, from the first (the outermost) to the last.
+ */
+int zdesktop_titlebar_set_breadcrumb(struct zdesktop_titlebar *titlebar, uint32_t id, const char *const *segments, size_t count);
+
+/*
+ * Adds a tab at the end, closable and not active.
+ */
+int zdesktop_titlebar_add_tab(struct zdesktop_titlebar *titlebar, uint32_t id, const char *title);
+
+/*
+ * Removes a tab.
+ */
+int zdesktop_titlebar_remove_tab(struct zdesktop_titlebar *titlebar, uint32_t id);
+
+/*
+ * Sets a tab's title and flags (ZDESKTOP_TAB_*).
+ */
+int zdesktop_titlebar_set_tab(struct zdesktop_titlebar *titlebar, uint32_t id, const char *title, unsigned flags);
+
+/*
+ * Sets the tab strip's options (ZDESKTOP_TABS_NEW_BUTTON).
+ */
+int zdesktop_titlebar_set_tabs_options(struct zdesktop_titlebar *titlebar, unsigned options);
+
+/*
+ * Gives the keyboard to a committed search or breadcrumb control (ZDESKTOP_FOCUS_*), outside a transaction.
+ */
+int zdesktop_titlebar_focus_control(struct zdesktop_titlebar *titlebar, uint32_t id, unsigned mode);
 
 /*
  * The recent files (WS071).

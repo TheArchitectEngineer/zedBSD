@@ -54,6 +54,12 @@
 #define ZWL_OBJECT_MAX		4096U
 #define ZWL_OUTPUT_MAX		1048576U
 
+/* The first ID of the range the compositor gives the objects it makes for a client. */
+#define ZWL_SERVER_ID_FIRST	0xff000000U
+
+/* How many cursor images zdesktop draws for the shapes clients ask for (cursor.c). */
+#define ZWL_CURSOR_IMAGES	10U
+
 /* Bound the evdev nodes the seat reads and the events one report may carry. */
 #define ZWL_INPUT_MAX		16U
 #define ZWL_INPUT_FRAME_MAX	64U
@@ -110,6 +116,18 @@ enum zwl_kind {
 	ZWL_POPUP,
 	ZWL_SUBCOMPOSITOR,
 	ZWL_SUBSURFACE,
+	ZWL_TITLEBAR_MANAGER,
+	ZWL_TITLEBAR,
+	ZWL_DATA_MANAGER,
+	ZWL_DATA_SOURCE,
+	ZWL_DATA_DEVICE,
+	ZWL_DATA_OFFER,
+	ZWL_DECORATION_MANAGER,
+	ZWL_DECORATION,
+	ZWL_CURSOR_SHAPE_MANAGER,
+	ZWL_CURSOR_SHAPE_DEVICE,
+	ZWL_VIEWPORTER,
+	ZWL_VIEWPORT,
 };
 
 /* The wl_shm formats (ARGB8888 has alpha; XRGB8888's top byte is unused). */
@@ -274,6 +292,14 @@ struct zwl_object {
 	struct zwl_object *toplevel_menu;
 	struct zwl_object *shown_menu;
 	/*
+	 * The Titlebar Presentation (titlebar.c, WS070 p008): a
+	 * zed_titlebar_v1's model, and a toplevel's zed_titlebar_v1 (whose own
+	 * top names the toplevel back).  Each link is cleared from both ends
+	 * when either object goes.
+	 */
+	struct zwl_titlebar_model *titlebar_model;
+	struct zwl_object *titlebar;
+	/*
 	 * xdg_popup (popup.c, ws035-p076): an xdg_positioner's rules; a popup's
 	 * parent surface (NULL once the parent has gone), its place relative to
 	 * the parent's window geometry and its size, the order it was made in
@@ -339,6 +365,33 @@ struct zwl_object {
 	struct zwl_object *sub_cached_buffer;
 	unsigned sub_cached_attached;
 	struct zwl_object *sub_cached_callbacks;
+	/*
+	 * The clipboard (data.c, ws035-p079): a wl_data_source's MIME types
+	 * (allocated strings, freed with it); a wl_data_offer's source (NULL
+	 * once the source has gone).
+	 */
+	char **mime_types;
+	unsigned mime_count;
+	struct zwl_object *data_source;
+	/*
+	 * ws035-p080: a toplevel's zxdg_toplevel_decoration_v1 and the
+	 * decoration's toplevel (each cleared from both ends when either
+	 * goes); a wp_cursor_shape_device_v1's wl_pointer (NULL once it has
+	 * gone).  A surface's wp_viewport (whose own surface field names it
+	 * back), and the viewport's state, pending and applied by the commit:
+	 * the source rectangle in 24.8 fixed point (x, y, width, height; a
+	 * width of 0 for none) and the destination size (0 for none), and
+	 * whether the pending state changed since the last commit.
+	 */
+	struct zwl_object *decoration;
+	struct zwl_object *decoration_toplevel;
+	struct zwl_object *shape_pointer;
+	struct zwl_object *viewport;
+	int32_t pending_source[4];
+	int32_t source[4];
+	int32_t pending_destination[2];
+	int32_t destination[2];
+	unsigned viewport_changed;
 };
 
 /* One stream has independent byte and fd FIFOs, plus its own protocol namespace. */
@@ -366,6 +419,11 @@ struct zwl_client {
 	uint32_t ping_serial;
 	uint64_t ping_ms;
 	unsigned unresponsive;
+	/*
+	 * The next ID from the server's range (0xff000000 and up) for an object
+	 * the compositor makes for this client (a wl_data_offer, data.c).
+	 */
+	uint32_t server_id_next;
 };
 
 /* The compositor alone owns the GPU context and the currently scanned-out image. */
@@ -453,6 +511,7 @@ struct zwl_server {
 	/* The glass look: on, its font, the window being moved and where it was taken, the clock's minute. */
 	unsigned glass;
 	const char *font_path;
+	const char *fallback_font_path;
 	const char *wallpaper_path;
 	float window_opacity;
 	struct zwl_object *drag;
@@ -599,6 +658,22 @@ struct zwl_server {
 	 */
 	uint32_t buttons_down;
 	uint32_t press_serial;
+	/*
+	 * The clipboard (data.c): the wl_data_source set as the selection (NULL
+	 * for an empty clipboard), and the number of the client last told it
+	 * (the keyboard's client; 0 for none), so a focus change tells the new
+	 * one.
+	 */
+	struct zwl_object *selection;
+	uint64_t selection_client;
+	/*
+	 * The cursor shape the pointer's client asked for (wp_cursor_shape_v1,
+	 * cursor.c, ws035-p080; 0 for zdesktop's arrow), and the images of the
+	 * shapes zdesktop draws, by the index cursor.c gives them (NULL until
+	 * made).
+	 */
+	uint32_t cursor_shape;
+	struct zwl_import *cursor_images[ZWL_CURSOR_IMAGES];
 	struct zwl_object *resize;
 	int32_t resize_pointer_x;
 	int32_t resize_pointer_y;
@@ -620,6 +695,7 @@ void zwl_delete_id(struct zwl_client *client, uint32_t id);
 void zwl_client_destroy(struct zwl_client *client);
 struct zwl_object *zwl_find(struct zwl_client *client, uint32_t id);
 struct zwl_object *zwl_create(struct zwl_client *client, uint32_t id, enum zwl_kind kind, uint32_t version);
+struct zwl_object *zwl_create_server(struct zwl_client *client, enum zwl_kind kind, uint32_t version);
 void zwl_object_destroy(struct zwl_object *object);
 void zwl_buffer_get(struct zwl_object *buffer);
 void zwl_buffer_put(struct zwl_object *buffer);

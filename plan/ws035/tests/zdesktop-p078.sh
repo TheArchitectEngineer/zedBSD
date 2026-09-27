@@ -41,7 +41,7 @@ expect_log() {
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/zdesktop/wallpaper.ppm ] && picture=--wallpaper=/usr/share/zdesktop/wallpaper.ppm
 /bin/zdesktop --timeout=120 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
-/bin/seat-probe --timeout-s=25 --token=k > /tmp/k.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
+/bin/seat-probe --timeout-s=40 --token=k > /tmp/k.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
 expect_log /tmp/zdesktop.log 'ZWL KEYMAP format=xkb_v1 errno=0'
 expect_log /tmp/k.log 'SEATPROBE ready run=k'
 
@@ -58,14 +58,18 @@ expect_log /tmp/k.log 'SEATPROBE output done'
 expect_log /tmp/k.log 'SEATPROBE focus'
 check "$out/seat.png" >/dev/null
 
-# Shift held: depressed 0x1 around the key; Caps Lock: locked 0x2, then off again.  (Num Lock does not reach the
-# guest's USB keyboard driver, BUG-070, so its lock 0x10 is not tried.)
+# Shift held: depressed 0x1 around the key; Caps Lock and Num Lock: locked 0x2, 0x12, then off again (Num Lock reaches
+# the guest since BUG-070 was fixed; the keypad's 7 then comes as its own key, 71).
 keys 'A'
 expect_log /tmp/k.log 'SEATPROBE modifiers depressed=1 latched=0 locked=0 group=0'
 expect_log /tmp/k.log 'SEATPROBE key 30 state=1'
 keys '<caps_lock>'
 expect_log /tmp/k.log 'SEATPROBE modifiers depressed=0 latched=0 locked=2 group=0'
-keys '<caps_lock>'
+keys '<num_lock>'
+expect_log /tmp/k.log 'SEATPROBE modifiers depressed=0 latched=0 locked=18 group=0'
+keys '<kp_7>'
+expect_log /tmp/k.log 'SEATPROBE key 71 state=1'
+keys '<caps_lock>' '<num_lock>'
 expect_log /tmp/k.log 'SEATPROBE modifiers depressed=0 latched=0 locked=0 group=0' 2
 
 # The probe ends by itself, releasing its output (a version 3 request), without an error.
