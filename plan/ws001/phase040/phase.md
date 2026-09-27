@@ -32,6 +32,6 @@ guest の case は失敗するので commit していない（salvage の `plan/
 
 ## 残り・再開の条件
 
-- devfs の端末の node が chmod（少なくとも group・other の write bit）を受けること。kernel の変更で、WS001 の範囲の外（bug として追跡する。ID の割り当ては main）。
+- devfs の端末の node が chmod（少なくとも group・other の write bit）を受けること。kernel の変更で、WS001 の範囲の外（[BUG-067](../../bugs/BUG-067.md) で追跡）。
 - それが出来たら、上の guest の case を `pinned/guest.sh` に戻して `guest-run.sh ... pinned` で PASS を確かめ、この Phase を clear する。
 - WS001 はユーザーの指示があるときだけ進める（2026-09-27）。
