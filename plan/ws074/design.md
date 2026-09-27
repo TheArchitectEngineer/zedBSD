@@ -50,6 +50,9 @@ Status: 設計（2026-09-27、ws074-p001）。ユーザーの指示の原文は 
 - **thread**: main thread が Wayland・入力・engine・JS・network の非同期 I/O（`poll`）をすべて回す。別の thread は DNS の resolver
   だけ（`getaddrinfo` が block するため。結果は pipe で main へ）。画像の decode は最初は main thread で同期（後で decoder thread）。
   JS は仕様どおり単一の thread（Worker は後）。
+  main thread の stack は kernel の上限の 1 MiB（`EXEC_STACK_HARD_MAX`、ELF の `PT_GNU_STACK` はそれ以上を拒む）なので、再帰の深い処理
+  （parser、layout、JS）が要るようになったら、main は大きな stack（例 16 MiB）の thread を 1 つ作ってそこで program の全体を回す。
+  再帰にはそれぞれ深さの上限を置く。
 - **タブ = 1 つの agent**: タブごとに VM の heap・realm・document を持つ（タブの間で GC の object を共有しない）。1 つのタブの GC は
   他のタブを止めない。`window.open` の opener の関係は後（同じ agent cluster が要る）。
 - **headless の mode**: 同じ program に command line の mode を持たせる（試験と guest での計測のため。別の command 名を増やさない）。
