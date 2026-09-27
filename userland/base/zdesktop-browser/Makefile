@@ -15,6 +15,15 @@ ZDESKTOP_BROWSER_ENTITIES_SHA256 := d741d877ac77c4194c4ad526b5b4a19aef8dfe411ab8
 ZDESKTOP_BROWSER_GENDIR := $(BUILD)/zdesktop-browser-gen
 ZDESKTOP_BROWSER_ENTITIES_C := $(ZDESKTOP_BROWSER_GENDIR)/html-entities.c
 
+# The Unicode Character Database's case mappings (Unicode License V3; the notice is in the generated file).
+ZDESKTOP_BROWSER_UNICODE_DATA := $(ZDESKTOP_BROWSER_DISTDIR)/UnicodeData-16.0.0.txt
+ZDESKTOP_BROWSER_UNICODE_DATA_URL := https://www.unicode.org/Public/16.0.0/ucd/UnicodeData.txt
+ZDESKTOP_BROWSER_UNICODE_DATA_SHA256 := ff58e5823bd095166564a006e47d111130813dcf8bf234ef79fa51a870edb48f
+ZDESKTOP_BROWSER_SPECIAL_CASING := $(ZDESKTOP_BROWSER_DISTDIR)/SpecialCasing-16.0.0.txt
+ZDESKTOP_BROWSER_SPECIAL_CASING_URL := https://www.unicode.org/Public/16.0.0/ucd/SpecialCasing.txt
+ZDESKTOP_BROWSER_SPECIAL_CASING_SHA256 := 8d5de354eef79f2395a54c9c7dcebbaf3d30fc962d0f85611ea97aa973a0c451
+ZDESKTOP_BROWSER_UNICODE_CASE_C := $(ZDESKTOP_BROWSER_GENDIR)/unicode-case.c
+
 ZDESKTOP_BROWSER_SOURCES := $(ZDESKTOP_BROWSER_DIR)/main.c \
 	$(ZDESKTOP_BROWSER_DIR)/base/arena.c \
 	$(ZDESKTOP_BROWSER_DIR)/base/buffer.c \
@@ -22,6 +31,7 @@ ZDESKTOP_BROWSER_SOURCES := $(ZDESKTOP_BROWSER_DIR)/main.c \
 	$(ZDESKTOP_BROWSER_DIR)/base/utf.c \
 	$(ZDESKTOP_BROWSER_DIR)/base/hash.c \
 	$(ZDESKTOP_BROWSER_DIR)/base/file.c \
+	$(ZDESKTOP_BROWSER_DIR)/base/unicode.c \
 	$(ZDESKTOP_BROWSER_DIR)/vm/heap.c \
 	$(ZDESKTOP_BROWSER_DIR)/vm/string.c \
 	$(ZDESKTOP_BROWSER_DIR)/vm/atom.c \
@@ -48,6 +58,7 @@ ZDESKTOP_BROWSER_SOURCES := $(ZDESKTOP_BROWSER_DIR)/main.c \
 	$(ZDESKTOP_BROWSER_DIR)/js/builtin_error.c \
 	$(ZDESKTOP_BROWSER_DIR)/js/builtin_object.c \
 	$(ZDESKTOP_BROWSER_DIR)/js/builtin_function.c \
+	$(ZDESKTOP_BROWSER_DIR)/js/builtin_array.c \
 	$(ZDESKTOP_BROWSER_DIR)/js/builtin_number.c \
 	$(ZDESKTOP_BROWSER_DIR)/js/builtin_math.c \
 	$(ZDESKTOP_BROWSER_DIR)/js/builtin_global.c \
@@ -96,6 +107,28 @@ $(ZDESKTOP_BROWSER_ENTITIES_C): $(ZDESKTOP_BROWSER_ENTITIES_JSON) $(ZDESKTOP_BRO
 	$(PYTHON) $(ZDESKTOP_BROWSER_DIR)/tools/gen-entities.py $< $@
 
 ZEDBSD_USERLAND_DOWNLOAD_TARGETS += $(ZDESKTOP_BROWSER_ENTITIES_JSON)
+
+ZDESKTOP_BROWSER_SOURCES += $(ZDESKTOP_BROWSER_UNICODE_CASE_C)
+
+$(ZDESKTOP_BROWSER_UNICODE_DATA):
+	@mkdir -p $(dir $@)
+	curl --fail --location --silent --show-error --output '$@.part' '$(ZDESKTOP_BROWSER_UNICODE_DATA_URL)'
+	@if test "$$(sha256sum '$@.part' | cut -d' ' -f1)" != '$(ZDESKTOP_BROWSER_UNICODE_DATA_SHA256)'; then \
+		echo 'zdesktop-browser: $@ does not have the pinned SHA-256' >&2; rm -f '$@.part'; exit 1; fi
+	@mv '$@.part' '$@'
+
+$(ZDESKTOP_BROWSER_SPECIAL_CASING):
+	@mkdir -p $(dir $@)
+	curl --fail --location --silent --show-error --output '$@.part' '$(ZDESKTOP_BROWSER_SPECIAL_CASING_URL)'
+	@if test "$$(sha256sum '$@.part' | cut -d' ' -f1)" != '$(ZDESKTOP_BROWSER_SPECIAL_CASING_SHA256)'; then \
+		echo 'zdesktop-browser: $@ does not have the pinned SHA-256' >&2; rm -f '$@.part'; exit 1; fi
+	@mv '$@.part' '$@'
+
+$(ZDESKTOP_BROWSER_UNICODE_CASE_C): $(ZDESKTOP_BROWSER_UNICODE_DATA) $(ZDESKTOP_BROWSER_SPECIAL_CASING) $(ZDESKTOP_BROWSER_DIR)/tools/gen-unicode-case.py
+	@mkdir -p $(dir $@)
+	$(PYTHON) $(ZDESKTOP_BROWSER_DIR)/tools/gen-unicode-case.py $(ZDESKTOP_BROWSER_UNICODE_DATA) $(ZDESKTOP_BROWSER_SPECIAL_CASING) $@
+
+ZEDBSD_USERLAND_DOWNLOAD_TARGETS += $(ZDESKTOP_BROWSER_UNICODE_DATA) $(ZDESKTOP_BROWSER_SPECIAL_CASING)
 endif
 
 # The pages the browser brings: the start page it opens without an argument (App Home starts it with

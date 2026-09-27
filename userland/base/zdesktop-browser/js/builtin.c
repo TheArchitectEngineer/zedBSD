@@ -38,6 +38,8 @@ js_install_builtins(
 	if (error == 0)
 		error = js_builtin_install_function(realm);
 	if (error == 0)
+		error = js_builtin_install_array(realm);
+	if (error == 0)
 		error = js_builtin_install_boolean(realm);
 	if (error == 0)
 		error = js_builtin_install_number(realm);
