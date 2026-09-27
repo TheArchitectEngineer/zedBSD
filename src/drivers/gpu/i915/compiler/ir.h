@@ -286,6 +286,12 @@ enum i915_shader_ir_op {
 	I915_IR_DDX_FINE,
 	I915_IR_DDY,
 
+	/* dst = src[0] and src[1] as 16-bit floats, the low half and the high half. */
+	I915_IR_PACK_HALF,
+
+	/* dst = the float of the 16-bit float at bits 16 * `component` + 15 .. 16 * `component` of src[0]. */
+	I915_IR_UNPACK_HALF,
+
 	I915_IR_OP_COUNT
 };
 

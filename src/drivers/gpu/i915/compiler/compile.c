@@ -410,6 +410,7 @@ static void i915_compile_convert(struct i915_compile_state *state, const struct 
 static void i915_compile_integer_compare(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
 static void i915_compile_move(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
 static void i915_compile_derivative(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
+static void i915_compile_half(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
 static void i915_compile_loop_begin(struct i915_compile_state *state);
 static void i915_compile_loop_end(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
 static int i915_compile_rank(const uint32_t *list, uint32_t count, uint32_t location, uint32_t *rank);
@@ -736,6 +737,7 @@ i915_compile_sources(
 	case I915_IR_DDX:
 	case I915_IR_DDX_FINE:
 	case I915_IR_DDY:
+	case I915_IR_UNPACK_HALF:
 		return 1U;
 
 	case I915_IR_FADD:
@@ -769,6 +771,7 @@ i915_compile_sources(
 	case I915_IR_UGE:
 	case I915_IR_IEQ:
 	case I915_IR_INE:
+	case I915_IR_PACK_HALF:
 		return 2U;
 
 	case I915_IR_SELECT:
@@ -1653,6 +1656,11 @@ i915_compile_instruction(
 	case I915_IR_DDX_FINE:
 	case I915_IR_DDY:
 		i915_compile_derivative(state, inst);
+		break;
+
+	case I915_IR_PACK_HALF:
+	case I915_IR_UNPACK_HALF:
+		i915_compile_half(state, inst);
 		break;
 
 	default:
@@ -2833,6 +2841,46 @@ i915_compile_derivative(
 
 	/* Emits the difference. */
 	drv_i915_eu_alu2(&state->code, I915_EU_ADD, drv_i915_eu_grf(dst), minuend, drv_i915_eu_negate(subtrahend));
+}
+
+/*
+ * Lowers the half-float packing as Mesa does (brw_lower_pack.cpp,
+ * brw_fs_nir.cpp): a pack moves each float into its 16-bit half of the
+ * destination's channels (an HF destination of stride two, the conversion
+ * the move makes), an unpack moves the half the instruction names (an HF
+ * source of stride two) into a float.
+ */
+static void
+i915_compile_half(
+	struct i915_compile_state *state,
+	const struct i915_shader_ir_inst *inst)
+{
+	uint32_t low_grf;
+	uint32_t high_grf;
+	uint32_t dst;
+
+	/* An unpack converts one half of each channel. */
+	if (inst->op == I915_IR_UNPACK_HALF) {
+		low_grf = i915_compile_grf(state, inst->src[0]);
+		dst = i915_compile_define(state, inst->dst, 1U);
+		drv_i915_eu_mov(&state->code,
+				drv_i915_eu_grf(dst),
+				drv_i915_eu_grf_region(low_grf, 2U * (inst->component & 1U), EU_TYPE_HF, EU_VSTRIDE_16, EU_WIDTH_8, EU_HSTRIDE_2));
+		return;
+	}
+
+	/* Reads both floats and gives the packed word its register. */
+	low_grf = i915_compile_grf(state, inst->src[0]);
+	high_grf = i915_compile_grf(state, inst->src[1]);
+	dst = i915_compile_define(state, inst->dst, 1U);
+
+	/* Converts the first into the low halves, the second into the high ones. */
+	drv_i915_eu_mov(&state->code,
+			drv_i915_eu_grf_region(dst, 0U, EU_TYPE_HF, EU_VSTRIDE_16, EU_WIDTH_8, EU_HSTRIDE_2),
+			drv_i915_eu_grf(low_grf));
+	drv_i915_eu_mov(&state->code,
+			drv_i915_eu_grf_region(dst, 2U, EU_TYPE_HF, EU_VSTRIDE_16, EU_WIDTH_8, EU_HSTRIDE_2),
+			drv_i915_eu_grf(high_grf));
 }
 
 /* Lowers the start of a loop: remembers where the WHILE at its end jumps back to. */
