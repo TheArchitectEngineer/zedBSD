@@ -43,7 +43,11 @@ BODY = {'OpReturn', 'OpUnreachable', 'OpBranch', 'OpBranchConditional', 'OpSelec
         'OpMatrixTimesScalar', 'OpVectorTimesMatrix', 'OpMatrixTimesVector', 'OpMatrixTimesMatrix', 'OpTranspose',
         'OpOuterProduct', 'OpFNegate', 'OpDot', 'OpCompositeConstruct', 'OpCompositeExtract', 'OpCompositeInsert',
         'OpCopyObject', 'OpVectorShuffle', 'OpExtInst',
-        'OpImageSampleImplicitLod', 'OpLabel', 'OpFunction', 'OpFunctionEnd', 'OpNop', 'OpLine', 'OpNoLine'}
+        'OpImageSampleImplicitLod', 'OpImageSampleExplicitLod', 'OpLabel', 'OpFunction', 'OpFunctionEnd', 'OpNop', 'OpLine',
+        'OpNoLine'}
+
+# i915_spirv_lower_sample: the image operands of a sample that are lowered.
+SAMPLE_OPERANDS = {'Bias', 'Lod', 'ConstOffset'}
 
 # i915_spirv_lower_extended: GLSL.std.450.
 EXTENDED = {'Round', 'RoundEven', 'Trunc', 'FAbs', 'SAbs', 'FSign', 'SSign', 'Floor', 'Ceil', 'Fract', 'Radians', 'Degrees',
@@ -188,9 +192,9 @@ def survey(path):
 			gap('GLSL.std.450 %s' % operands[2])
 		if opcode == 'OpLoad':
 			loads[result] = operands[0]
-		if opcode == 'OpImageSampleImplicitLod':
-			# i915_spirv_lower_sample: texture(sampler2D, vec2) of four floats, without operands.
-			if len(operands) > 3:
+		if opcode in ('OpImageSampleImplicitLod', 'OpImageSampleExplicitLod'):
+			# i915_spirv_lower_sample: texture(sampler2D, vec2) of four floats, with a Bias, a Lod and a ConstOffset.
+			if len(operands) > 3 and not set(operands[3].split('|')) <= SAMPLE_OPERANDS:
 				gap('texture() with operands (%s)' % operands[3])
 			sampled = types.get(loads.get(operands[1], ''), ['?', ''])
 			image = types.get(sampled[1], ['?', '', '?', '0', '0', '0'])

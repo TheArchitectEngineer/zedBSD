@@ -359,6 +359,11 @@
  */
 #define IR_PER_INSTRUCTION 8U
 
+/* The image operands of a sample (Khronos SPIR-V spec, Image Operands) that are lowered. */
+#define IMAGE_OPERAND_BIAS 0x1U
+#define IMAGE_OPERAND_LOD 0x2U
+#define IMAGE_OPERAND_CONST_OFFSET 0x8U
+
 /* Pointer target kinds. */
 #define PTR_NONE 0U
 #define PTR_INPUT 1U
@@ -763,6 +768,7 @@ static int i915_spirv_lower_integer_compare(struct i915_spirv_parser *parser, co
 static int i915_spirv_lower_logical(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int i915_spirv_lower_select(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int i915_spirv_lower_sample(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
+static int i915_spirv_texel_offset(struct i915_spirv_parser *parser, uint32_t id, uint32_t *bits, uint32_t opcode, uint32_t offset);
 static int i915_spirv_lower_label(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int i915_spirv_find_loop_merge(struct i915_spirv_parser *parser, uint32_t offset, uint32_t *merge, uint32_t *continue_target);
 static int i915_spirv_loop_open(struct i915_spirv_parser *parser, uint32_t header, uint32_t merge, uint32_t continue_target, uint32_t *predicate, uint32_t opcode, uint32_t offset);
@@ -2064,6 +2070,7 @@ i915_spirv_lower(
 		return i915_spirv_lower_extended(parser, word, count, opcode, offset);
 
 	case OP_IMAGE_SAMPLE_IMPLICIT_LOD:
+	case OP_IMAGE_SAMPLE_EXPLICIT_LOD:
 		return i915_spirv_lower_sample(parser, word, count, opcode, offset);
 
 	default:
@@ -5058,7 +5065,13 @@ i915_spirv_lower_select(
 	return 0;
 }
 
-/* Lowers texture(sampler2D, vec2): one instruction, four result scalars dst .. dst + 3. */
+/*
+ * Lowers a sample of a 2D combined image sampler at a two-float coordinate,
+ * four float results dst .. dst + 3: OpImageSampleImplicitLod (texture(),
+ * with a Bias or not) and OpImageSampleExplicitLod with a Lod
+ * (textureLod()), either with a ConstOffset (textureOffset()) of -8 .. 7
+ * texels.  Any other image operand is refused.
+ */
 static int
 i915_spirv_lower_sample(
 	struct i915_spirv_parser *parser,
@@ -5070,9 +5083,17 @@ i915_spirv_lower_sample(
 	struct i915_spirv_id *sampler;
 	struct i915_spirv_id *record;
 	struct i915_shader_ir_inst *inst;
+	enum i915_shader_ir_op op;
 	uint32_t coordinate[4];
+	uint32_t scalars[4];
 	uint32_t coordinate_count;
+	uint32_t scalar_count;
 	uint32_t components;
+	uint32_t operands;
+	uint32_t next;
+	uint32_t level;
+	uint32_t texel_offset;
+	int error;
 
 	/* The instruction must carry the sampler and the coordinate. */
 	if (count < 5U)
@@ -5082,18 +5103,67 @@ i915_spirv_lower_sample(
 	sampler = i915_spirv_id(parser, word[3]);
 	coordinate_count = i915_spirv_operand(parser, word[4], coordinate);
 
-	/*
-	 * Only a loaded combined sampler at a two-float coordinate, with no image
-	 * operands, giving a four-float result, is lowered.
-	 */
+	/* Only a loaded combined sampler at a two-float coordinate, giving a four-float result, is lowered. */
 	if (sampler == NULL ||
 	    sampler->kind != ID_SAMPLED_IMAGE ||
-	    coordinate_count != 2U ||
-	    count != 5U)
-		return i915_spirv_refuse(parser, opcode, offset, "sample that is not texture(sampler2D, vec2) without operands");
+	    coordinate_count != 2U)
+		return i915_spirv_refuse(parser, opcode, offset, "sample that is not of a sampler2D at a vec2");
 	components = i915_spirv_float_components(parser, word[1]);
 	if (components != 4U)
-		return i915_spirv_refuse(parser, opcode, offset, "sample that is not texture(sampler2D, vec2) without operands");
+		return i915_spirv_refuse(parser, opcode, offset, "sample that is not of a sampler2D at a vec2");
+
+	/* The image operands, and their values in the order of their bits. */
+	operands = 0U;
+	if (count > 5U)
+		operands = word[5];
+	if ((operands & ~(IMAGE_OPERAND_BIAS | IMAGE_OPERAND_LOD | IMAGE_OPERAND_CONST_OFFSET)) != 0U)
+		return i915_spirv_refuse(parser, opcode, offset, "sample with image operands other than Bias, Lod and ConstOffset");
+	next = 6U;
+
+	/* A bias moves the level of detail texture() chooses. */
+	op = I915_IR_SAMPLE;
+	level = 0U;
+	if ((operands & IMAGE_OPERAND_BIAS) != 0U) {
+		if (opcode != OP_IMAGE_SAMPLE_IMPLICIT_LOD || next >= count)
+			return EINVAL;
+		scalar_count = i915_spirv_operand(parser, word[next], scalars);
+		if (scalar_count != 1U)
+			return i915_spirv_refuse(parser, opcode, offset, "sample with a bias that is not a float");
+		op = I915_IR_SAMPLE_BIAS;
+		level = scalars[0];
+		next++;
+	}
+
+	/* A level of detail replaces the one the derivatives would choose. */
+	if ((operands & IMAGE_OPERAND_LOD) != 0U) {
+		if (opcode != OP_IMAGE_SAMPLE_EXPLICIT_LOD || next >= count)
+			return EINVAL;
+		scalar_count = i915_spirv_operand(parser, word[next], scalars);
+		if (scalar_count != 1U)
+			return i915_spirv_refuse(parser, opcode, offset, "sample with a level of detail that is not a float");
+		op = I915_IR_SAMPLE_LOD;
+		level = scalars[0];
+		next++;
+	}
+
+	/* An explicit sample without a level of detail takes gradients, which are not lowered. */
+	if (opcode == OP_IMAGE_SAMPLE_EXPLICIT_LOD && op != I915_IR_SAMPLE_LOD)
+		return i915_spirv_refuse(parser, opcode, offset, "sample with gradients");
+
+	/* A constant offset moves the texel grid. */
+	texel_offset = 0U;
+	if ((operands & IMAGE_OPERAND_CONST_OFFSET) != 0U) {
+		if (next >= count)
+			return EINVAL;
+		error = i915_spirv_texel_offset(parser, word[next], &texel_offset, opcode, offset);
+		if (error != 0)
+			return error;
+		next++;
+	}
+
+	/* Every operand must have been read. */
+	if (count > 5U && next != count)
+		return EINVAL;
 
 	/* Declares the result as four fresh scalars. */
 	record = i915_spirv_result(parser, word[2], word[1], 4U, 1);
@@ -5104,14 +5174,58 @@ i915_spirv_lower_sample(
 	if (record->comp[1] != record->comp[0] + 1U || record->comp[3] != record->comp[0] + 3U)
 		return EINVAL;
 
-	/* Emits the sample: set in `location`, binding in `immediate`. */
-	inst = i915_spirv_emit(parser, I915_IR_SAMPLE, record->comp[0], coordinate[0], coordinate[1]);
+	/* Emits the sample: set in `location`, binding in `immediate`, the offset in `component`, a level in src[2]. */
+	inst = i915_spirv_emit(parser, op, record->comp[0], coordinate[0], coordinate[1]);
 	if (inst != NULL) {
 		inst->immediate = sampler->binding;
 		inst->location = sampler->set;
+		inst->component = texel_offset;
+		if (op != I915_IR_SAMPLE)
+			inst->src[2] = level;
 	}
 
 	/* Succeeded: the sample is lowered. */
+	return 0;
+}
+
+/*
+ * Packs a constant texel offset (an integer vector of two components, each
+ * -8 .. 7) the way the sampler message header takes it (Mesa's
+ * brw_texture_offset(), brw_fs_nir.cpp): u in bits 11:8, v in bits 7:4.
+ */
+static int
+i915_spirv_texel_offset(
+	struct i915_spirv_parser *parser,
+	uint32_t id,
+	uint32_t *bits,
+	uint32_t opcode,
+	uint32_t offset)
+{
+	struct i915_spirv_id *record;
+	struct i915_spirv_id *component;
+	int32_t value;
+	uint32_t index;
+
+	/* The offset must be a constant integer vector of two components. */
+	record = i915_spirv_id(parser, id);
+	if (record == NULL || record->kind != ID_CONSTANT_COMPOSITE || record->count != 2U)
+		return i915_spirv_refuse(parser, opcode, offset, "texel offset that is not a constant ivec2");
+
+	/* Packs each component, u first. */
+	*bits = 0U;
+	for (index = 0U; index < 2U; index++) {
+		component = i915_spirv_id(parser, record->member_type[index]);
+		if (component == NULL || component->kind != ID_CONSTANT)
+			return i915_spirv_refuse(parser, opcode, offset, "texel offset that is not a constant ivec2");
+
+		/* The hardware takes -8 .. 7. */
+		value = (int32_t)component->constant;
+		if (value < -8 || value > 7)
+			return i915_spirv_refuse(parser, opcode, offset, "texel offset outside -8 .. 7");
+		*bits |= ((uint32_t)value & 0xFU) << (8U - 4U * index);
+	}
+
+	/* Succeeded: the offset bits. */
 	return 0;
 }
 

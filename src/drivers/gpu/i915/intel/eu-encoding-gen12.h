@@ -81,6 +81,10 @@
  *                                          0x11001010, the x and y read back <8;4,1>:uw from words 0 and 4
  *   - brw_generator.cpp                    generate_ddx() / generate_ddy(): the coarse derivatives as one add of
  *                                          <4;4,0> regions one float (x) or two floats (y) apart
+ *   - brw_lower_logical_sends.cpp          (sha256 8cb9e28f322fd80a3e144815d116337bf7c2f0e7f8b63c04819a54659cda1428)
+ *                                          lower_sampler_logical_send(): the header of a message with texel
+ *                                          offsets, the bias or the lod before the coordinate, and
+ *                                          sampler_msg_type()'s sample, sample_b and sample_l
  * and checked against Mesa 25.0.7's brw_asm / brw_disasm (--gen=adl) for each new form, among them the
  * 16-bit strided source <16;8,2>:uw of the 32 x 16-bit multiply Mesa lowers a 32-bit integer multiply to
  * on Tiger Lake (has_integer_dword_mul false, brw_lower_integer_multiplication.cpp).
@@ -296,6 +300,30 @@
 #define EU_DP_OWORD_BLOCK_READ		0U
 #define EU_DP_OWORD_BLOCK_WRITE		8U
 #define EU_DP_OWORD_BLOCK_2_OWORDS	2U
+
+/*
+ * A sampler descriptor (brw_sampler_desc(), brw_eu.h, before Xe2): the
+ * binding table index in bits 7:0, the sampler in 11:8, the message type in
+ * 16:12 and the SIMD mode in 18:17 (1: SIMD8, BRW_SAMPLER_SIMD_MODE_SIMD8).
+ * The message types are brw_eu_defines.h's GFX5_SAMPLER_MESSAGE_SAMPLE,
+ * _SAMPLE_BIAS and _SAMPLE_LOD.
+ */
+#define EU_SAMPLER_INDEX_SHIFT		8
+#define EU_SAMPLER_TYPE_SHIFT		12
+#define EU_SAMPLER_SIMD_SHIFT		17
+#define EU_SAMPLER_SIMD8		1U
+#define EU_SAMPLER_MESSAGE_SAMPLE	0U
+#define EU_SAMPLER_MESSAGE_SAMPLE_BIAS	1U
+#define EU_SAMPLER_MESSAGE_SAMPLE_LOD	2U
+
+/*
+ * The sampler message header of Gfx11+ (lower_sampler_logical_send(),
+ * brw_lower_logical_sends.cpp): cleared, the texel offsets in dword 2, the
+ * sampler state pointer in dword 3 -- r0.3 with its low five bits cleared.
+ */
+#define EU_SAMPLER_HEADER_OFFSET_DWORD	2U
+#define EU_SAMPLER_HEADER_STATE_DWORD	3U
+#define EU_SAMPLER_STATE_POINTER_MASK	0xffffffe0U
 
 /* The binding table index of stateless, non-coherent accesses: the scratch space. */
 #define EU_BTI_STATELESS_NON_COHERENT	253U

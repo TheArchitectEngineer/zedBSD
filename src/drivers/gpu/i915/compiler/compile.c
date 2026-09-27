@@ -376,6 +376,7 @@ static void i915_compile_keep_outputs(struct i915_compile_state *state);
 static uint32_t i915_compile_grf(struct i915_compile_state *state, uint32_t value);
 static uint32_t i915_compile_define(struct i915_compile_state *state, uint32_t value, uint32_t count);
 static uint32_t i915_compile_temporary(struct i915_compile_state *state);
+static uint32_t i915_compile_temporaries(struct i915_compile_state *state, uint32_t count);
 static void i915_compile_exhausted(struct i915_compile_state *state);
 static uint32_t i915_compile_choose_victim(const struct i915_compile_state *state);
 static int i915_compile_involves(const struct i915_shader_ir_inst *inst, uint32_t value);
@@ -400,6 +401,8 @@ static void i915_compile_logic(struct i915_compile_state *state, const struct i9
 static void i915_compile_select(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
 static void i915_compile_kill(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
 static void i915_compile_sample(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
+static int i915_compile_sampler_index(const struct i915_compile_state *state, const struct i915_shader_ir_inst *inst, uint32_t *sampler);
+static void i915_compile_sample_message(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst, uint32_t sampler);
 static void i915_compile_integer(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
 static void i915_compile_multiply(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
 static void i915_compile_divide(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
@@ -765,6 +768,8 @@ i915_compile_sources(
 		return 2U;
 
 	case I915_IR_SELECT:
+	case I915_IR_SAMPLE_BIAS:
+	case I915_IR_SAMPLE_LOD:
 		return 3U;
 
 	default:
@@ -783,6 +788,8 @@ i915_compile_results(
 	/* A sample defines four; a store, a discard, a loop mark or a no-op none; anything else one. */
 	switch (inst->op) {
 	case I915_IR_SAMPLE:
+	case I915_IR_SAMPLE_BIAS:
+	case I915_IR_SAMPLE_LOD:
 		return 4U;
 
 	case I915_IR_STORE_OUTPUT:
@@ -1120,6 +1127,47 @@ i915_compile_temporary(
 	}
 
 	/* No register is free: the next attempt spills a value. */
+	i915_compile_exhausted(state);
+	return state->first_value_grf;
+}
+
+/*
+ * Takes `count` consecutive free value registers as temporaries of the
+ * instruction being lowered (a message payload is consecutive registers) and
+ * returns the first; the caller frees them (grf_busy) before the lowering
+ * ends.  None free ends the attempt as a value would.
+ */
+static uint32_t
+i915_compile_temporaries(
+	struct i915_compile_state *state,
+	uint32_t count)
+{
+	uint32_t grf;
+	uint32_t run;
+
+	/* Takes the lowest run of `count` free value registers. */
+	for (grf = state->first_value_grf; grf + count <= state->last_value_grf + 1U; grf++) {
+		/* Measures how many free registers start here. */
+		for (run = 0U; run < count && state->grf_busy[grf + run] == 0U; run++)
+			;
+
+		/* A run cut short by a busy register is not taken. */
+		if (run != count)
+			continue;
+
+		/* Marks the run busy. */
+		for (run = 0U; run < count; run++)
+			state->grf_busy[grf + run] = 1U;
+
+		/* Remembers the highest register the kernel uses. */
+		if (grf + count > state->grf_high)
+			state->grf_high = grf + count;
+
+		/* Succeeded: the temporaries start here. */
+		return grf;
+	}
+
+	/* No run is free: the next attempt spills a value. */
 	i915_compile_exhausted(state);
 	return state->first_value_grf;
 }
@@ -1540,6 +1588,8 @@ i915_compile_instruction(
 		break;
 
 	case I915_IR_SAMPLE:
+	case I915_IR_SAMPLE_BIAS:
+	case I915_IR_SAMPLE_LOD:
 		i915_compile_sample(state, inst);
 		break;
 
@@ -2257,7 +2307,9 @@ i915_compile_kill(
 /*
  * Lowers texture(): u and v are the two payload runs, the reply is four
  * registers (see the conventions).  The n-th sampled image of the shader's
- * uniforms is binding table entry 1 + n and sampler n.
+ * uniforms is binding table entry 1 + n and sampler n.  A sample with a bias,
+ * a level of detail or a texel offset builds a longer message
+ * (i915_compile_sample_message()).
  */
 static void
 i915_compile_sample(
@@ -2266,39 +2318,30 @@ i915_compile_sample(
 {
 	struct i915_eu_reg u;
 	struct i915_eu_reg v;
-	const struct i915_shader_ir_uniform *uniform;
 	uint32_t u_grf;
 	uint32_t v_grf;
-	uint32_t index;
 	uint32_t sampler;
 	uint32_t dst;
 	int found;
+
+	/* Finds the sampled image the instruction names. */
+	found = i915_compile_sampler_index(state, inst, &sampler);
+	if (found == 0) {
+		state->unsupported = 1;
+		return;
+	}
+
+	/* A sample with more than a coordinate builds its message. */
+	if (inst->op != I915_IR_SAMPLE || inst->component != 0U) {
+		i915_compile_sample_message(state, inst, sampler);
+		return;
+	}
 
 	/* Reads the coordinate. */
 	u_grf = i915_compile_grf(state, inst->src[0]);
 	u = drv_i915_eu_grf(u_grf);
 	v_grf = i915_compile_grf(state, inst->src[1]);
 	v = drv_i915_eu_grf(v_grf);
-
-	/* Finds the sampled image the instruction names by set and binding, counting the sampled images before it. */
-	found = 0;
-	sampler = 0U;
-	for (index = 0U; index < state->ir->uniform_count; index++) {
-		uniform = &state->ir->uniforms[index];
-		if (uniform->kind != I915_IR_UNIFORM_SAMPLED_IMAGE)
-			continue;
-		if (uniform->set == inst->location && uniform->binding == inst->immediate) {
-			found = 1;
-			break;
-		}
-		sampler++;
-	}
-
-	/* An unknown image, or one past what the descriptor can name, is not lowered. */
-	if (found == 0 || sampler > COMPILE_MAX_SAMPLER) {
-		state->unsupported = 1;
-		return;
-	}
 
 	/* Gives the four reply values four consecutive registers. */
 	dst = i915_compile_define(state, inst->dst, 4U);
@@ -2313,6 +2356,148 @@ i915_compile_sample(
 			 COMPILE_EX_MLEN(1U),
 			 0,
 			 0);
+}
+
+/*
+ * Finds the sampled image a sample names by its set and binding: its place
+ * n among the shader's sampled images, which is its sampler.  Returns
+ * nonzero when found and the descriptor can name it.
+ */
+static int
+i915_compile_sampler_index(
+	const struct i915_compile_state *state,
+	const struct i915_shader_ir_inst *inst,
+	uint32_t *sampler)
+{
+	const struct i915_shader_ir_uniform *uniform;
+	uint32_t index;
+
+	/* Counts the sampled images before the one named. */
+	*sampler = 0U;
+	for (index = 0U; index < state->ir->uniform_count; index++) {
+		uniform = &state->ir->uniforms[index];
+		if (uniform->kind != I915_IR_UNIFORM_SAMPLED_IMAGE)
+			continue;
+		if (uniform->set == inst->location && uniform->binding == inst->immediate)
+			break;
+		(*sampler)++;
+	}
+
+	/* An unknown image, or one past what the descriptor can name, is not found. */
+	if (index == state->ir->uniform_count || *sampler > COMPILE_MAX_SAMPLER)
+		return 0;
+
+	/* Succeeded: the image is the sampler-th. */
+	return 1;
+}
+
+/*
+ * Lowers a sample whose message carries more than the coordinate, as Mesa
+ * builds it on Gen12.0 (lower_sampler_logical_send(),
+ * brw_lower_logical_sends.cpp): a header when there is a texel offset
+ * (cleared, the offset in dword 2, r0.3's sampler state pointer in dword
+ * 3), then the bias (sample_b) or the level of detail (sample_l), then u
+ * and v, one register each, copied into consecutive temporaries and sent
+ * as one run.
+ */
+static void
+i915_compile_sample_message(
+	struct i915_compile_state *state,
+	const struct i915_shader_ir_inst *inst,
+	uint32_t sampler)
+{
+	struct i915_eu_reg dword;
+	struct i915_eu_reg thread;
+	uint32_t u_grf;
+	uint32_t v_grf;
+	uint32_t level_grf;
+	uint32_t payload;
+	uint32_t length;
+	uint32_t header;
+	uint32_t message;
+	uint32_t descriptor;
+	uint32_t next;
+	uint32_t dst;
+	uint32_t index;
+
+	/* Reads the coordinate and the bias or the level of detail. */
+	u_grf = i915_compile_grf(state, inst->src[0]);
+	v_grf = i915_compile_grf(state, inst->src[1]);
+	level_grf = COMPILE_NO_GRF;
+	if (inst->op != I915_IR_SAMPLE)
+		level_grf = i915_compile_grf(state, inst->src[2]);
+
+	/* Gives the four reply values four consecutive registers. */
+	dst = i915_compile_define(state, inst->dst, 4U);
+
+	/* The message: a header for an offset, the bias or the level, u and v. */
+	header = 0U;
+	if (inst->component != 0U)
+		header = 1U;
+	length = header + 2U;
+	if (level_grf != COMPILE_NO_GRF)
+		length++;
+
+	/* Takes the message's registers. */
+	payload = i915_compile_temporaries(state, length);
+	if (state->out_of_registers != 0)
+		return;
+
+	/* Writes the header: zeros, the offset, the sampler state pointer without its low bits. */
+	next = payload;
+	if (header != 0U) {
+		drv_i915_eu_mov_all(&state->code, drv_i915_eu_grf_ud(payload), drv_i915_eu_imm_ud(0U));
+		dword = drv_i915_eu_grf_ud(payload);
+		dword.subnr = 4U * EU_SAMPLER_HEADER_OFFSET_DWORD;
+		drv_i915_eu_mov_scalar(&state->code, dword, drv_i915_eu_imm_ud(inst->component));
+		dword.subnr = 4U * EU_SAMPLER_HEADER_STATE_DWORD;
+		thread = drv_i915_eu_grf_scalar(0U, 4U * EU_SAMPLER_HEADER_STATE_DWORD);
+		thread.type = COMPILE_TYPE_UD;
+		drv_i915_eu_alu2_scalar(&state->code, I915_EU_AND, dword, thread, drv_i915_eu_imm_ud(EU_SAMPLER_STATE_POINTER_MASK));
+		next++;
+	}
+
+	/* Copies the bias or the level, then u and v, after it. */
+	if (level_grf != COMPILE_NO_GRF) {
+		drv_i915_eu_mov(&state->code, drv_i915_eu_grf(next), drv_i915_eu_grf(level_grf));
+		next++;
+	}
+	drv_i915_eu_mov(&state->code, drv_i915_eu_grf(next), drv_i915_eu_grf(u_grf));
+	drv_i915_eu_mov(&state->code, drv_i915_eu_grf(next + 1U), drv_i915_eu_grf(v_grf));
+
+	/* The message type: sample_b with a bias, sample_l with a level, sample otherwise. */
+	if (inst->op == I915_IR_SAMPLE_BIAS) {
+		message = EU_SAMPLER_MESSAGE_SAMPLE_BIAS;
+	} else if (inst->op == I915_IR_SAMPLE_LOD) {
+		message = EU_SAMPLER_MESSAGE_SAMPLE_LOD;
+	} else {
+		message = EU_SAMPLER_MESSAGE_SAMPLE;
+	}
+
+	/* The descriptor: the message's length, a four-register reply, the header, SIMD8, the type, sampler n and entry 1 + n. */
+	descriptor = (length << EU_DESC_MLEN_SHIFT) |
+		     (4U << EU_DESC_RLEN_SHIFT) |
+		     (EU_SAMPLER_SIMD8 << EU_SAMPLER_SIMD_SHIFT) |
+		     (message << EU_SAMPLER_TYPE_SHIFT) |
+		     (sampler << EU_SAMPLER_INDEX_SHIFT) |
+		     (1U + sampler);
+	if (header != 0U)
+		descriptor |= EU_DESC_HEADER_PRESENT;
+
+	/* Emits the sample. */
+	drv_i915_eu_send(&state->code,
+			 drv_i915_eu_grf(dst),
+			 drv_i915_eu_grf(payload),
+			 drv_i915_eu_null(),
+			 COMPILE_SFID_SAMPLER,
+			 descriptor,
+			 0U,
+			 0,
+			 0);
+
+	/* The message's registers are free again. */
+	for (index = 0U; index < length; index++)
+		state->grf_busy[payload + index] = 0U;
 }
 
 /*

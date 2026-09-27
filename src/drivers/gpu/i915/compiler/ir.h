@@ -114,7 +114,12 @@ enum i915_shader_ir_op {
 	/* dst = cos(src[0]). */
 	I915_IR_COS,
 
-	/* dst .. dst + 3 = texture(set `location`, binding `immediate`) at (src[0], src[1]). */
+	/*
+	 * dst .. dst + 3 = texture(set `location`, binding `immediate`) at
+	 * (src[0], src[1]), the level of detail the pixel's derivatives choose;
+	 * `component` is the constant texel offset (u in bits 11:8, v in 7:4,
+	 * each -8 .. 7), 0 for none.
+	 */
 	I915_IR_SAMPLE,
 
 	/* dst = 1 / src[0]. */
@@ -264,6 +269,12 @@ enum i915_shader_ir_op {
 
 	/* dst = src[0] rounded to the nearest integer, a tie to the even one (a float). */
 	I915_IR_FROUND_EVEN,
+
+	/* As SAMPLE, the level of detail the derivatives choose moved by the bias src[2]. */
+	I915_IR_SAMPLE_BIAS,
+
+	/* As SAMPLE, at the level of detail src[2]. */
+	I915_IR_SAMPLE_LOD,
 
 	I915_IR_OP_COUNT
 };
