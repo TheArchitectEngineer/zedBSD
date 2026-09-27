@@ -362,7 +362,9 @@ shell_navigate(
 			return error;
 	}
 
-	/* The path is kept for the history and for resolving links. */
+	/* The page's own location (a URL's after its redirects) is kept for the history and for resolving links. */
+	if (page->base != NULL)
+		path = page->base;
 	copy = strdup(path);
 	if (copy == NULL) {
 		if (page != state->page)
