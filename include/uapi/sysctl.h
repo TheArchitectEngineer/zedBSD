@@ -73,6 +73,8 @@ struct memory_stats {
 #define KERN_BOOT_CONFIGURATION 6
 #define KERN_BOOT_CONFIG_MATCHES 7
 #define KERN_BOOT_ROOT_IMAGE 8
+/* The login= boot parameter (ws035-p098): "graphical", "console", or "" when it was not given. */
+#define KERN_BOOT_LOGIN 9
 #define ROOT_IMAGE_VERSION 1U
 #define ROOT_IMAGE_OVERLAY 1U
 #define ROOT_IMAGE_MOUNTED 2U

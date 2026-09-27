@@ -100,6 +100,7 @@ struct layout_box {
 	struct layout_box *next;
 	int children_inline;
 	int out_of_flow;
+	int floating;
 	layout_unit static_x;
 	layout_unit static_y;
 
@@ -131,7 +132,10 @@ struct layout_box {
 
 /*
  * A laid out page: the box tree, the arena the boxes live in and the size
- * the layout was made for.
+ * the layout was made for.  While a layout runs, floats is the current
+ * block formatting context's list of floats (float.c) and origin_x,
+ * origin_y the content box of the block being laid out in that context's
+ * coordinates.
  */
 struct layout_tree {
 	struct wb_arena arena;
@@ -140,13 +144,35 @@ struct layout_tree {
 	layout_unit viewport_width;
 	layout_unit viewport_height;
 	layout_unit document_height;
+	struct wb_vector *floats;
+	layout_unit origin_x;
+	layout_unit origin_y;
 };
 
-/* The layout (box.c, block.c, inline.c, position.c, dump.c, hit.c). */
+/*
+ * The block formatting context a box's layout started a new one inside of
+ * (float.c): its floats and the origin of the box's content box in it.
+ */
+struct layout_context {
+	struct wb_vector *floats;
+	layout_unit origin_x;
+	layout_unit origin_y;
+};
+
+/* The layout (box.c, block.c, inline.c, float.c, position.c, dump.c, hit.c). */
 int layout_build(struct layout_tree *tree, struct css_engine *css, struct text_system *text, struct dom_document *document, int width, int height);
 void layout_absolute(struct layout_box *box, layout_unit x, layout_unit y);
 int layout_is_positioned(const struct layout_box *box);
 int layout_position(struct layout_tree *tree);
+layout_unit layout_content_width(const struct layout_box *box, int depth);
+void layout_context_begin(struct layout_tree *tree, struct layout_context *context, struct wb_vector *floats);
+void layout_context_end(struct layout_tree *tree, const struct layout_context *context);
+int layout_place_float(struct layout_tree *tree, struct layout_box *box, layout_unit y_min, layout_unit width);
+void layout_line_room(const struct layout_tree *tree, layout_unit top, layout_unit bottom, layout_unit width, layout_unit *left, layout_unit *right);
+layout_unit layout_below_float(const struct layout_tree *tree, layout_unit top);
+layout_unit layout_clearance(const struct layout_tree *tree, int clear);
+layout_unit layout_floats_bottom(const struct layout_tree *tree);
+int layout_shrink_to_fit(struct layout_tree *tree, struct layout_box *box, layout_unit room);
 int layout_stacking_order(const struct layout_tree *tree, struct wb_vector *boxes, size_t *flow_index);
 void layout_release(struct layout_tree *tree);
 int layout_block(struct layout_tree *tree, struct layout_box *box, layout_unit containing_width);

@@ -25,6 +25,7 @@ static const struct layout_box *hit_box(const struct layout_box *box, layout_uni
 static const struct layout_box *hit_block(const struct layout_box *box, layout_unit x, layout_unit y, int depth);
 static const struct layout_box *hit_lines(const struct layout_box *box, layout_unit x, layout_unit y);
 static const struct layout_box *hit_in(const struct layout_box *box, layout_unit x, layout_unit y, int what);
+static const struct layout_box *hit_inline_floats(const struct layout_box *box, layout_unit x, layout_unit y, int depth);
 static const struct layout_box *hit_ordered(const struct layout_tree *tree, layout_unit x, layout_unit y, int what);
 
 /*
@@ -98,8 +99,11 @@ hit_box(
 	if (box->kind != LAYOUT_BLOCK && box->kind != LAYOUT_ANONYMOUS_BLOCK)
 		return NULL;
 
-	/* A block of lines: the fragment under the point. */
+	/* A block of lines: a float among its content, or the fragment under the point. */
 	if (box->children_inline) {
+		found = hit_inline_floats(box, x, y, depth);
+		if (found != NULL)
+			return found;
 		found = hit_lines(box, x, y);
 		return found;
 	}
@@ -258,4 +262,39 @@ hit_ordered(
 	/* The box found, or NULL. */
 	wb_vector_release(&order);
 	return found;
+}
+
+
+/* Searches the floats among a block's inline content for the text under a point. */
+static const struct layout_box *
+hit_inline_floats(
+	const struct layout_box *box,
+	layout_unit x,
+	layout_unit y,
+	int depth)
+{
+	const struct layout_box *child;
+	const struct layout_box *found;
+
+	/* Stops at the depth the layout stops at. */
+	if (depth > LAYOUT_DEPTH_MAX)
+		return NULL;
+
+	/* A float is searched like a block; an inline box is searched through. */
+	for (child = box->first_child; child != NULL; child = child->next) {
+		if (child->out_of_flow)
+			continue;
+		if (child->floating != CSS_FLOAT_NONE) {
+			found = hit_box(child, x, y, depth + 1);
+		} else {
+			found = hit_inline_floats(child, x, y, depth + 1);
+		}
+
+		/* The first text found. */
+		if (found != NULL)
+			return found;
+	}
+
+	/* No float has text under the point. */
+	return NULL;
 }

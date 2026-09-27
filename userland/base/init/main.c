@@ -71,12 +71,22 @@ struct service {
 	int notify_fd3;
 	unsigned notify_timeout;
 	unsigned failures;
+	/*
+	 * The service this one stands in for (replaces=, ws035-p098): while
+	 * this one is enabled the other is not started; when this one ends and
+	 * is not started again, the other is.  The graphical login's greeter
+	 * replaces the console's getty this way.
+	 */
+	char replaces[64];
 };
 
 static struct service services[SERVICE_MAX];
 static size_t service_count;
 static volatile sig_atomic_t reload_requested;
 static volatile sig_atomic_t action_requested;
+
+/* Set when the system is being stopped: a replaced service is not started then. */
+static int services_stopping;
 
 enum dependency_result {
 	DEPENDENCIES_WAIT,
@@ -98,6 +108,8 @@ static int open_control_socket(void);
 static void start_enabled_services(void);
 static enum dependency_result dependencies_state(const struct service *service);
 static struct service *find_service(const char *name);
+static struct service *replacer_of(const struct service *service);
+static void release_replaced(const struct service *service);
 static int terminal_state(enum service_state state);
 static int spawn_service(struct service *service);
 static int wait_for_notification(struct service *service, int descriptor);
@@ -387,6 +399,7 @@ load_one_service(
 	char path[320], value[64];
 	size_t after_count, requires_count;
 	int enabled;
+	int replaces_error;
 
 	/* Handles a failed service name valid operation. */
 	if (!service_name_valid(name) || service_count == SERVICE_MAX ||
@@ -410,6 +423,12 @@ load_one_service(
 
 	(void)assignment_get(path, "arguments", service->arguments,
 			     sizeof(service->arguments));
+
+	/* The service this one stands in for, when it names one. */
+	replaces_error = assignment_get(path, "replaces", service->replaces,
+					sizeof(service->replaces));
+	if (replaces_error != 0)
+		service->replaces[0] = '\0';
 
 	/* Handles the reported system error. */
 	if ((assignment_get(path, "after", service->after,
@@ -589,6 +608,7 @@ start_enabled_services(
 	void)
 {
 	struct service *service;
+	struct service *replacer;
 	enum dependency_result dependencies;
 	size_t pass, index;
 
@@ -602,6 +622,17 @@ start_enabled_services(
 			if (!service->enabled ||
 			    service->state != SERVICE_STOPPED)
 				continue;
+
+			/* A service another enabled one stands in for waits until that one gives up (replaces=). */
+			replacer = replacer_of(service);
+			if (replacer != NULL) {
+				service->state = SERVICE_SKIPPED;
+				fprintf(stderr, "init: %s replaced by %s\n",
+					service->name, replacer->name);
+				continue;
+			}
+
+			/* The dependencies decide whether it starts now. */
 			dependencies = dependencies_state(service);
 
 			/* Handles the dependencies condition. */
@@ -706,6 +737,51 @@ find_service(
 
 	/* Reports that no result is available. */
 	return NULL;
+}
+
+/* Finds the enabled service that stands in for a service (replaces=), or NULL. */
+static struct service *
+replacer_of(
+	const struct service *service)
+{
+	size_t index;
+	int same;
+
+	/* Each other enabled service that names this one. */
+	for (index = 0; index < service_count; index++) {
+		if (&services[index] == service || !services[index].enabled)
+			continue;
+		if (services[index].replaces[0] == '\0')
+			continue;
+		same = strcmp(services[index].replaces, service->name);
+		if (same == 0)
+			return &services[index];
+	}
+
+	/* No service stands in for it. */
+	return NULL;
+}
+
+/* Starts the service an ended one stood in for, unless the system is being stopped. */
+static void
+release_replaced(
+	const struct service *service)
+{
+	struct service *replaced;
+
+	/* Nothing named, or the system is stopping. */
+	if (service->replaces[0] == '\0' || services_stopping)
+		return;
+
+	/* The service it stood in for, when that one is enabled and was held back. */
+	replaced = find_service(service->replaces);
+	if (replaced == NULL || !replaced->enabled || replaced->state != SERVICE_SKIPPED)
+		return;
+
+	/* Starts it. */
+	fprintf(stderr, "init: %s ended; starting %s\n", service->name, replaced->name);
+	replaced->state = SERVICE_STOPPED;
+	(void)spawn_service(replaced);
 }
 
 /* Supports the terminal state operation. */
@@ -1091,6 +1167,9 @@ reap_children(
 				service->failures++;
 				sleep(1);
 				(void)spawn_service(service);
+			} else {
+				/* Not started again: the service it stands in for starts now (replaces=). */
+				release_replaced(service);
 			}
 
 			break;
@@ -1108,6 +1187,7 @@ shutdown_system(
 	int system_descriptor, system_action;
 
 	index = service_count;
+	services_stopping = 1;
 
 	printf("init: stopping services\n");
 
