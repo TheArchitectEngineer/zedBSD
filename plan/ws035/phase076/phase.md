@@ -84,4 +84,36 @@ main の session の伝達による要約）
 
 ## 結果（2026-09-27）
 
-（記入中）
+cleared。commit 6d69feb7（code・試験）と、この記録の commit。
+
+### 確認（QEMU・Venus、lean image `plan/ws070/tests/build-menu-image.sh`、runtime `build/ws035-run`）
+
+- `plan/ws035/tests/zdesktop-p076.sh` PASS（`build/ws035-p076/`: menu.png・submenu.png・chosen.png・flipped.png・dismissed.png・
+  repositioned.png・moved.png・resized.png・narrowed.png・widened.png・unresponsive.png）。submenu が開く間 keyboard は menu から
+  submenu へ直接（window へ戻らない）、外の press は client に届かない、reposition は token 1 で repositioned と configure、resize は
+  resizing の状態の configure の後に状態なしの configure、左の辺では右の辺が固定（settled の x）、min 200 と max 800 で止まる、
+  pong を止めると 5 秒で「(not responding)」がタイトルに出て（unresponsive.png）、pong で戻る。
+- 取り込んだ直後の salvage の版（`build/ws035-p076-salvage/`）は上の不具合 1〜3 を log で示していた（menu → window → submenu の
+  focus、submenu の pointer の enter が -260,10）。
+- 回帰（`plan/ws070/tests/menu-regress.sh`、`build/ws035-p076-regress/`）: p059・p062・p063・p064・p065・p068・p069・p070・p071・
+  p072・p014 すべて PASS。`plan/ws070/tests/menu-p002.sh`・`menu-p003.sh` PASS。X11: x11-p003・x11-p005 PASS（`build/ws035-p076-x11/`）。
+  x11-p004 は lean image に `/bin/glxtest` が無いため未実施（FAIL は「not found」。full image での確認は p058 で）。
+- libwayland の host 試験 `plan/ws035/tests/p075/run-host.sh` PASS。
+- boot test PASS（`build/ws035-p076-boot/login.png`、p076 の commit の lean image）。
+- i915 実機: 未実施（Wayland の protocol と合成の変更で、GPU の経路は変えていない）。
+- 途中で 1 度、guest の Venus の device が失われ（zdesktop の `VULKAN_ERROR operation=device result=-4`）、guest を起動し直して
+  直った。同じ binary で再現しないので host の renderer の一時的な不調とみる（記録のみ）。
+
+### 規約
+
+- style-check: 新しい file（popup.c・popup.h・toplevel.c・toplevel.h・popup-probe/main.c）0。変えた既存の file は変更前と同数
+  （seat.c 3、main.c 8、protocol.c 5、libwayland の protocol.c 0・event.c 3、xdg-shell-client-protocol.h 10、ほかは 0）。
+- build warning 0（zdesktop、libwayland-client、popup-probe）。
+
+### 制限
+
+- popup は窓の上に作られた順に描く（背後の窓の popup も手前の窓の上に出る。popup は普通は手前の窓のもの）。
+- grab の間に別の client の窓が前に出ても popup は閉じない。popup の grab の serial は検査しない（move・resize は検査する）。
+- window geometry は popup の位置と resize の大きさに使うが、glass の look の枠（タイトルバーの幅・影）は image 全体に付く
+  （client 側の影を持つ toolkit の見た目は p080 の xdg-decoration で）。
+- show_window_menu・set_parent は受け付けるだけ（上の「判断が要る点」）。
