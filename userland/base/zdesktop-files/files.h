@@ -905,6 +905,9 @@ struct fm_app {
 	 */
 	int glass;
 
+	/* Whether the window is docked (maximized): its panels keep a gap from the screen's edges on glass. */
+	int docked;
+
 	/* The user's home folder and name. */
 	char home[FM_PATH_MAX];
 	char user[64];

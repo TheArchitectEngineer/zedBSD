@@ -41,7 +41,8 @@ static void compose_quad(struct zwl_server *server, VkCommandBuffer command, con
 static void compose_quad_part(struct zwl_server *server, VkCommandBuffer command, const struct zwl_import *import, int32_t x, int32_t y, uint32_t quad_width, uint32_t quad_height, const float *uv);
 static const struct zwl_import *surface_image(const struct zwl_object *surface);
 static void compose_cursor(struct zwl_server *server, VkCommandBuffer command);
-static VkResult compose_record(struct zwl_server *server, uint32_t image, struct zwl_object **windows, unsigned count);
+static VkResult compose_record(struct zwl_server *server, uint32_t image, struct zwl_object **windows, unsigned count, const VkRect2D *region);
+static int compose_region(struct zwl_server *server, uint32_t image, VkRect2D *region);
 static VkResult compose_submit(struct zwl_server *server, uint32_t image);
 static void compose_hold(struct zwl_server *server, struct zwl_object **windows, unsigned count);
 
@@ -149,6 +150,9 @@ zwl_compose_output_open(
 		return EIO;
 	}
 
+	/* No image has been drawn yet: the first frame of each is drawn whole. */
+	memset(compose->image_frames, 0, sizeof(compose->image_frames));
+
 	/* Succeeded: window mode owns the display through the swapchain. */
 	compose->output_open = 1;
 	server->dirty = 1;
@@ -192,11 +196,14 @@ zwl_compose_draw(
 {
 	struct zwl_object *windows[ZWL_FRAME_WINDOWS];
 	struct zwl_compose *compose;
+	const VkRect2D *region_drawn;
+	VkRect2D region;
 	uint64_t mark;
 	uint32_t image;
 	unsigned count;
 	unsigned popups;
 	unsigned subsurfaces;
+	int partial;
 	VkResult result;
 
 	/* One frame at a time, and only with an output. */
@@ -224,8 +231,14 @@ zwl_compose_draw(
 		return EIO;
 	}
 
+	/* The part of the image to draw: all of it, or the damage it has missed (its buffer age). */
+	partial = compose_region(server, image, &region);
+
 	/* The frame's commands. */
-	result = compose_record(server, image, windows, count);
+	region_drawn = NULL;
+	if (partial)
+		region_drawn = &region;
+	result = compose_record(server, image, windows, count, region_drawn);
 	if (result != VK_SUCCESS) {
 		printf("ZWL VULKAN_ERROR operation=record result=%d\n", (int)result);
 		return EIO;
@@ -246,6 +259,7 @@ zwl_compose_draw(
 	/* The frame holds what it sampled until its fence signals, the popups and sub-surfaces too. */
 	compose_hold(server, windows, count + popups + subsurfaces);
 	server->dirty = 0;
+	server->damaged = 0;
 	server->frame++;
 	if (server->log_frames)
 		printf("ZWL COMPOSE frame=%llu image=%u windows=%u\n", (unsigned long long)server->frame, image, count);
@@ -1287,13 +1301,103 @@ compose_quad_part(
 	vkCmdDraw(command, ZWL_QUAD_VERTICES, 1U, 0U, 0U);
 }
 
+/*
+ * Works out the part of a swapchain image a frame draws: the damage of
+ * this frame and of every frame since the image was last drawn (its buffer
+ * age).  Returns 1 with that part, or 0 when the whole image is drawn: a
+ * change of unknown extent, an image not drawn lately, or damage over most
+ * of the output.
+ */
+static int
+compose_region(
+	struct zwl_server *server,
+	uint32_t image,
+	VkRect2D *region)
+{
+	struct zwl_compose *compose;
+	int32_t box[4];
+	uint64_t frame;
+	uint64_t last;
+	uint64_t index;
+	unsigned slot;
+	VkResult result;
+
+	/* This frame's number and its damage, kept for the images that miss it. */
+	compose = server->compose;
+	frame = server->frame + 1U;
+	slot = (unsigned)(frame % ZWL_DAMAGE_HISTORY);
+	compose->history_whole[slot] = 1;
+	if (!server->dirty && server->damaged) {
+		compose->history_whole[slot] = 0;
+		memcpy(compose->history[slot], server->damage, sizeof(compose->history[slot]));
+	}
+
+	/* The image is drawn in this frame. */
+	last = 0;
+	if (image < ZWL_SWAPCHAIN_MAX) {
+		last = compose->image_frames[image];
+		compose->image_frames[image] = frame;
+	}
+
+	/* An image never drawn, or not for longer than the history, is drawn whole. */
+	if (last == 0U || frame - last >= ZWL_DAMAGE_HISTORY)
+		return 0;
+
+	/* The damage of each frame it missed and of this one; a whole one makes it whole. */
+	memcpy(box, compose->history[slot], sizeof(box));
+	for (index = last + 1U; index <= frame; index++) {
+		slot = (unsigned)(index % ZWL_DAMAGE_HISTORY);
+		if (compose->history_whole[slot])
+			return 0;
+		if (compose->history[slot][0] < box[0])
+			box[0] = compose->history[slot][0];
+		if (compose->history[slot][1] < box[1])
+			box[1] = compose->history[slot][1];
+		if (compose->history[slot][2] > box[2])
+			box[2] = compose->history[slot][2];
+		if (compose->history[slot][3] > box[3])
+			box[3] = compose->history[slot][3];
+	}
+
+	/* Inside the output. */
+	if (box[0] < 0)
+		box[0] = 0;
+	if (box[1] < 0)
+		box[1] = 0;
+	if (box[2] > (int32_t)compose->output.width)
+		box[2] = (int32_t)compose->output.width;
+	if (box[3] > (int32_t)compose->output.height)
+		box[3] = (int32_t)compose->output.height;
+	if (box[2] <= box[0] || box[3] <= box[1])
+		return 0;
+
+	/* Most of the output is drawn whole (the loading pass costs more than it saves). */
+	if ((int64_t)(box[2] - box[0]) * (box[3] - box[1]) * 10 > (int64_t)compose->output.width * compose->output.height * 7)
+		return 0;
+
+	/* The pass that keeps the image's pixels, made the first time. */
+	result = zwl_compose_load_pass(compose);
+	if (result != VK_SUCCESS)
+		return 0;
+
+	/* Succeeded: the part, logged when frames are. */
+	region->offset.x = box[0];
+	region->offset.y = box[1];
+	region->extent.width = (uint32_t)(box[2] - box[0]);
+	region->extent.height = (uint32_t)(box[3] - box[1]);
+	if (server->log_frames)
+		printf("ZWL DAMAGE frame=%llu image=%u x=%d y=%d width=%u height=%u\n", (unsigned long long)frame, image, box[0], box[1], region->extent.width, region->extent.height);
+	return 1;
+}
+
 /* Records a frame: the background, then each window from the bottom. */
 static VkResult
 compose_record(
 	struct zwl_server *server,
 	uint32_t image,
 	struct zwl_object **windows,
-	unsigned count)
+	unsigned count,
+	const VkRect2D *region)
 {
 	struct zwl_compose *compose;
 	VkCommandBufferBeginInfo begin;
@@ -1326,6 +1430,8 @@ compose_record(
 	memset(&pass, 0, sizeof(pass));
 	pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
 	pass.renderPass = compose->pass;
+	if (region != NULL)
+		pass.renderPass = compose->pass_load;
 	pass.framebuffer = compose->framebuffers[image];
 	compose->framebuffer_now = compose->framebuffers[image];
 	compose->backdrop_set = VK_NULL_HANDLE;
@@ -1335,7 +1441,7 @@ compose_record(
 	pass.pClearValues = &clear;
 	vkCmdBeginRenderPass(compose->command, &pass, VK_SUBPASS_CONTENTS_INLINE);
 
-	/* The whole output is drawn (the first implementation, design D4). */
+	/* The whole output is placed; the drawing is kept to the damage when there is one (design D4). */
 	memset(&viewport, 0, sizeof(viewport));
 	viewport.width = (float)compose->output.width;
 	viewport.height = (float)compose->output.height;
@@ -1344,6 +1450,9 @@ compose_record(
 	memset(&scissor, 0, sizeof(scissor));
 	scissor.extent.width = compose->output.width;
 	scissor.extent.height = compose->output.height;
+	if (region != NULL)
+		scissor = *region;
+	compose->scissor_now = scissor;
 	vkCmdSetScissor(compose->command, 0U, 1U, &scissor);
 
 	/* Every quad's corners. */

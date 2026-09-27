@@ -44,7 +44,6 @@
 
 static VkResult backdrop_create(struct zwl_compose *compose, uint32_t width, uint32_t height);
 static VkResult backdrop_pass(struct zwl_compose *compose);
-static VkResult backdrop_resume_pass(struct zwl_compose *compose);
 static VkResult backdrop_target(struct zwl_compose *compose, struct zwl_backdrop_target *target);
 static void backdrop_begin_small(struct zwl_server *server, VkCommandBuffer command, const struct zwl_backdrop_target *target);
 static void backdrop_blur(struct zwl_server *server, VkCommandBuffer command, const struct zwl_backdrop_target *from, const struct zwl_backdrop_target *to, float step_x, float step_y);
@@ -107,7 +106,6 @@ zwl_backdrop_end(
 	struct zwl_compose *compose;
 	struct zwl_backdrop *backdrop;
 	VkRenderPassBeginInfo pass;
-	VkRect2D scissor;
 	unsigned round;
 
 	/* The scene's pass ends. */
@@ -124,16 +122,13 @@ zwl_backdrop_end(
 	/* The output's pass again, keeping what was drawn. */
 	memset(&pass, 0, sizeof(pass));
 	pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-	pass.renderPass = backdrop->resume;
+	pass.renderPass = compose->pass_load;
 	pass.framebuffer = compose->framebuffer_now;
 	pass.renderArea.extent.width = compose->output.width;
 	pass.renderArea.extent.height = compose->output.height;
 	vkCmdBeginRenderPass(command, &pass, VK_SUBPASS_CONTENTS_INLINE);
 	backdrop_viewport(command, compose->output.width, compose->output.height);
-	memset(&scissor, 0, sizeof(scissor));
-	scissor.extent.width = compose->output.width;
-	scissor.extent.height = compose->output.height;
-	vkCmdSetScissor(command, 0U, 1U, &scissor);
+	vkCmdSetScissor(command, 0U, 1U, &compose->scissor_now);
 
 	/* The glass from now on is on the blurred scene. */
 	compose->backdrop_set = backdrop->targets[0].set;
@@ -176,11 +171,12 @@ zwl_backdrop_destroy(
 			zwl_compose_set_put(compose, backdrop->targets[index].set);
 	}
 
-	/* The passes. */
+	/* The passes (the output's loading one is the damage's too, made again with the next output). */
 	if (backdrop->pass != VK_NULL_HANDLE)
 		vkDestroyRenderPass(compose->device, backdrop->pass, NULL);
-	if (backdrop->resume != VK_NULL_HANDLE)
-		vkDestroyRenderPass(compose->device, backdrop->resume, NULL);
+	if (compose->pass_load != VK_NULL_HANDLE)
+		vkDestroyRenderPass(compose->device, compose->pass_load, NULL);
+	compose->pass_load = VK_NULL_HANDLE;
 
 	/* Nothing is left, and the next frame may try again. */
 	memset(backdrop, 0, sizeof(*backdrop));
@@ -211,7 +207,7 @@ backdrop_create(
 	result = backdrop_pass(compose);
 	if (result != VK_SUCCESS)
 		return result;
-	result = backdrop_resume_pass(compose);
+	result = zwl_compose_load_pass(compose);
 	if (result != VK_SUCCESS)
 		return result;
 
@@ -295,11 +291,12 @@ backdrop_pass(
 }
 
 /*
- * Makes the output's pass that takes up a frame again: the pixels drawn
- * so far are loaded, and the image is presented as before.
+ * Makes, the first time, the output's pass that keeps the image's pixels:
+ * a frame taken up again after the backdrop, and a frame drawn only in its
+ * damage (compose.c).  The image is presented as before.
  */
-static VkResult
-backdrop_resume_pass(
+VkResult
+zwl_compose_load_pass(
 	struct zwl_compose *compose)
 {
 	VkAttachmentDescription attachment;
@@ -308,6 +305,10 @@ backdrop_resume_pass(
 	VkSubpassDependency dependency;
 	VkRenderPassCreateInfo pass;
 	VkResult result;
+
+	/* Made already. */
+	if (compose->pass_load != VK_NULL_HANDLE)
+		return VK_SUCCESS;
 
 	/* The output's color attachment, loaded and presented. */
 	memset(&attachment, 0, sizeof(attachment));
@@ -345,7 +346,7 @@ backdrop_resume_pass(
 	pass.pSubpasses = &subpass;
 	pass.dependencyCount = 1U;
 	pass.pDependencies = &dependency;
-	result = vkCreateRenderPass(compose->device, &pass, NULL, &compose->backdrop.resume);
+	result = vkCreateRenderPass(compose->device, &pass, NULL, &compose->pass_load);
 	if (result != VK_SUCCESS)
 		return result;
 
