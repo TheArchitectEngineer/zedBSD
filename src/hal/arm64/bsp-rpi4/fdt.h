@@ -25,6 +25,12 @@ struct rpi4_fdt_info {
 	uint64_t gic_cpu_base;
 	uint64_t sdhci_base;
 	uint32_t sdhci_irq;
+	/*
+	 * Where /chosen/bootargs is in the blob (the firmware's command line,
+	 * cmdline.txt), and its length with the terminator.  Zero when absent.
+	 */
+	uint32_t bootargs_offset;
+	uint32_t bootargs_length;
 };
 
 int rpi4_fdt_parse(const void *blob, size_t available,

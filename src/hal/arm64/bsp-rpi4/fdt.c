@@ -24,6 +24,7 @@ struct fdt_node {
 	uint8_t is_mailbox;
 	uint8_t is_gic;
 	uint8_t is_sdhci;
+	uint8_t is_chosen;
 	uint32_t reg[FDT_MAX_CELLS];
 	uint32_t reg_count;
 	uint32_t ranges[FDT_MAX_CELLS];
@@ -205,6 +206,7 @@ rpi4_fdt_parse(const void *blob, size_t available, struct rpi4_fdt_info *info)
 	uint32_t total, off_struct, off_strings, off_reserve, size_struct, size_strings;
 	struct fdt_node stack[FDT_MAX_DEPTH];
 	int depth = -1, error = FDT_OK;
+	int chosen, bootargs;
 	unsigned i;
 
 	if (blob == NULL || info == NULL || available < 40) return FDT_E_HEADER;
@@ -248,6 +250,9 @@ rpi4_fdt_parse(const void *blob, size_t available, struct rpi4_fdt_info *info)
 				stack[depth].addr_cells = stack[depth - 1].addr_cells;
 				stack[depth].size_cells = stack[depth - 1].size_cells;
 			}
+			/* The /chosen node carries the firmware's command line. */
+			chosen = string_equal(p, n, "chosen");
+			stack[depth].is_chosen = (uint8_t)(depth == 1 && chosen);
 			p += (n + 1 + 3) & ~(size_t)3;
 		} else if (token == FDT_PROP) {
 			uint32_t length, nameoff, count;
@@ -262,6 +267,14 @@ rpi4_fdt_parse(const void *blob, size_t available, struct rpi4_fdt_info *info)
 			error = bounded_string(name, strings + size_strings, &name_length);
 			if (error != FDT_OK) return error;
 			node = &stack[depth];
+			/* Notes where the firmware's command line is. */
+			bootargs = string_equal(name, name_length, "bootargs");
+			if (node->is_chosen && bootargs) {
+				info->bootargs_offset = (uint32_t)(value - data);
+				info->bootargs_length = length;
+			}
+
+			/* Records what the node's other properties say about it. */
 			if (string_equal(name, name_length, "#address-cells") && length == 4)
 				node->addr_cells = (uint8_t)read_be32(value);
 			else if (string_equal(name, name_length, "#size-cells") && length == 4)

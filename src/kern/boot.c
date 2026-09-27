@@ -60,6 +60,8 @@ static int parse_error(struct kern_boot_parameters *parameters, int error);
 static int name_matches(const char *name, size_t length, const struct parameter_name *candidate);
 static int parameter_key(const char *name, size_t length, enum kern_boot_parameter_key *key);
 static void record_unknown(struct kern_boot_parameters *parameters, const char *name, size_t length);
+static int parameter_separator(char character);
+static size_t skip_separators(const char *text, size_t position, size_t length);
 static int selector_text(const char *text, size_t maximum, int device_name);
 static int context_fail(struct kern_boot_source_context *context, unsigned slot, enum kern_boot_source_failure_stage stage, int error);
 static int runtime_mount_lookup(struct kern_boot_source_slot *source, const char *relative, struct path *result);
@@ -110,10 +112,15 @@ kern_boot_config_matches(void)
 /*
  * Parses a boot parameter string into a parameter record.
  *
- * The input must be terminated ASCII within the storage size.  Tokens
- * are name=value pairs of printable characters separated by spaces; a
- * known name may appear once, and the first unknown name is remembered
- * for diagnostics.  Any error leaves the record empty.
+ * The input must be terminated ASCII within the storage size.  Tokens are
+ * printable characters separated by spaces, tabs or line ends.  A token of
+ * the form name=value with a known name sets that parameter, which may
+ * appear once and needs a value.  Anything else -- an unknown name, or a
+ * token with no equals sign, such as the rootwait or quiet a firmware adds
+ * for Linux -- is ignored and counted, and the first such name is
+ * remembered for diagnostics (2026-09-27 user decision: the line a board's
+ * firmware passes is not zedBSD's alone).  Any error leaves the record
+ * empty.
  */
 int
 kern_boot_parameters_parse(
@@ -135,6 +142,7 @@ kern_boot_parameters_parse(
 	unsigned char token_byte;
 	int terminated;
 	int known;
+	int separator;
 	int error;
 
 	length = 0;
@@ -187,17 +195,22 @@ kern_boot_parameters_parse(
 	/* Walks the tokens. */
 	position = 0;
 	while (position < length) {
-		/* Skips the spaces before the token. */
-		while (position < length &&
-		       parameters->storage[position] == ' ')
-			position++;
+		/* Skips the separators before the token. */
+		position = skip_separators(parameters->storage, position,
+		    length);
 		if (position == length)
 			break;
 
 		/* Delimits a token of printable characters. */
 		token_start = position;
-		while (position < length &&
-		       parameters->storage[position] != ' ') {
+		while (position < length) {
+			/* A separator ends the token. */
+			separator = parameter_separator(
+			    parameters->storage[position]);
+			if (separator)
+				break;
+
+			/* Refuses a control or non-ASCII character in a token. */
 			token_byte =
 			    (unsigned char)parameters->storage[position];
 			if (token_byte < 0x21U || token_byte > 0x7eU) {
@@ -208,37 +221,47 @@ kern_boot_parameters_parse(
 			position++;
 		}
 
+		/* Finds where the next token may start. */
 		token_end = position;
-		next = token_end;
-		while (next < length && parameters->storage[next] == ' ')
-			next++;
+		next = skip_separators(parameters->storage, token_end, length);
 
-		/* Splits the token at its equals sign; both sides must be non-empty. */
+		/* Finds the equals sign that splits a name from its value. */
 		equal = token_start;
 		while (equal < token_end && parameters->storage[equal] != '=')
 			equal++;
-		if (equal == token_start ||
-		    equal == token_end ||
-		    equal + 1U == token_end) {
+
+		/* A token that names nothing known is counted and passed over. */
+		known = 0;
+		if (equal != token_start && equal != token_end) {
+			known = parameter_key(parameters->storage + token_start,
+					      equal - token_start,
+					      &key);
+		}
+
+		if (!known) {
+			record_unknown(parameters,
+				       parameters->storage + token_start,
+				       equal - token_start);
+			position = next;
+			continue;
+		}
+
+		/* A known name needs a value. */
+		if (equal + 1U == token_end) {
 			error = parse_error(parameters, EINVAL);
 			return error;
 		}
 
-		known = parameter_key(parameters->storage + token_start,
-				      equal - token_start,
-				      &key);
-
 		/* A known name may appear once. */
 		value_start = equal + 1U;
 		value_length = token_end - value_start;
-		if (known &&
-		    parameters->value_offset[key] != KERN_BOOT_PARAMETER_OFFSET_ABSENT) {
+		if (parameters->value_offset[key] != KERN_BOOT_PARAMETER_OFFSET_ABSENT) {
 			error = parse_error(parameters, EEXIST);
 			return error;
 		}
 
 		/* The init path must be absolute and bounded. */
-		if (known && key == KERN_BOOT_PARAMETER_INIT) {
+		if (key == KERN_BOOT_PARAMETER_INIT) {
 			if (parameters->storage[value_start] != '/') {
 				error = parse_error(parameters, EINVAL);
 				return error;
@@ -255,14 +278,8 @@ kern_boot_parameters_parse(
 			parameters->storage[token_end] = '\0';
 		parameters->storage[equal] = '\0';
 
-		/* Records the value, or the first unknown name. */
-		if (known) {
-			parameters->value_offset[key] = (uint16_t)value_start;
-		} else {
-			record_unknown(parameters,
-				       parameters->storage + token_start,
-				       equal - token_start);
-		}
+		/* Records the value. */
+		parameters->value_offset[key] = (uint16_t)value_start;
 
 		position = next;
 	}
@@ -1260,6 +1277,42 @@ record_unknown(
 	for (index = 0; index < copy_length; index++)
 		parameters->unknown_name[index] = name[index];
 	parameters->unknown_name[copy_length] = '\0';
+}
+
+/* Tells whether a character separates two parameters. */
+static int
+parameter_separator(
+	char character)
+{
+	/* A space, a tab and either line end separate parameters. */
+	if (character == ' ' || character == '\t')
+		return 1;
+	if (character == '\n' || character == '\r')
+		return 1;
+
+	/* Reports a character that belongs to a token. */
+	return 0;
+}
+
+/* Returns the position of the first character from position on that is not a separator. */
+static size_t
+skip_separators(
+	const char *text,
+	size_t position,
+	size_t length)
+{
+	int separator;
+
+	/* Passes over separators until a token or the end. */
+	while (position < length) {
+		separator = parameter_separator(text[position]);
+		if (!separator)
+			break;
+		position++;
+	}
+
+	/* Reports where the token, or the end, is. */
+	return position;
 }
 
 /* Validates selector text: printable, no slash, bounded, no '=' in a name. */

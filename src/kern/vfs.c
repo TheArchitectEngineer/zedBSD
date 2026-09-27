@@ -237,6 +237,11 @@ kern_vfs_init(
 	unsigned i;
 	int error;
 	int legacy_autoroot;
+#if defined(VFS_LEGACY_NULL_AUTOROOT)
+	int names_rootpart;
+	int names_overlay_root;
+	int names_overlay_data;
+#endif
 	int cleanup_error;
 	int swap_error;
 	uint32_t total;
@@ -269,9 +274,19 @@ kern_vfs_init(
 		return error;
 	}
 
-	/* Selects the root mode, or the legacy autoroot without a parameter source. */
+	/*
+	 * Selects the root mode, or the legacy autoroot.  The legacy autoroot
+	 * is used without a parameter source, and also with one that names no
+	 * root: a board's firmware passes its own line (on the Raspberry Pi,
+	 * one written for Linux), which says nothing about zedBSD's root.
+	 */
 #if defined(VFS_LEGACY_NULL_AUTOROOT)
 	legacy_autoroot = !kern_boot_parameters_source_present();
+	names_rootpart = kern_boot_parameters_rootpart(parameters) != NULL;
+	names_overlay_root = kern_boot_parameters_overlay_root(parameters) != NULL;
+	names_overlay_data = kern_boot_parameters_overlay_data(parameters) != NULL;
+	if (!names_rootpart && !names_overlay_root && !names_overlay_data)
+		legacy_autoroot = 1;
 #endif
 	if (!legacy_autoroot) {
 		error = kern_boot_source_root_mode(
@@ -283,7 +298,7 @@ kern_vfs_init(
 			return error;
 		}
 	} else {
-		VFS_LOG("vfs: absent parameter source; using legacy autoroot\n");
+		VFS_LOG("vfs: no root named by the parameters; using legacy autoroot\n");
 	}
 
 	/* Logs the handoff and finds the physical disk the loader booted from. */
