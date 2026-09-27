@@ -21,6 +21,7 @@
 #include "kern/cred.h"
 #include "kern/atomic.h"
 #include "kern/mount.h"
+#include "kern/kmem.h"
 #include "kern/namecache.h"
 #include "kern/namei.h"
 #include "kern/clock.h"
@@ -51,7 +52,16 @@ extern int vm_object_discard_mount_refs(struct mount *, struct inode *, unsigned
     __attribute__((weak));
 
 #define INODE_COMMON_MAX 512U
-#define INODE_CACHE_MAX 2048U
+/*
+ * The inode cache's slots.  A tmpfs file keeps its inode for as long as the
+ * file exists, so this is also the ceiling on the files all tmpfs mounts
+ * hold together (BUG-029).  A 32-bit machine keeps a smaller table.
+ */
+#if defined(HAL_ARCH_I386)
+#define INODE_CACHE_MAX 4096U
+#else
+#define INODE_CACHE_MAX 16384U
+#endif
 #define VFS_BSS __attribute__((section(".vfs_bss")))
 #define INODE_HIGH __attribute__((section(".hightext")))
 #define INODE_CACHE_RESERVED ((struct inode *)(uintptr_t)1U)
@@ -59,6 +69,15 @@ extern int vm_object_discard_mount_refs(struct mount *, struct inode *, unsigned
 static struct inode common_pool[INODE_COMMON_MAX] VFS_BSS;
 static uint8_t common_used[INODE_COMMON_MAX] VFS_BSS;
 static struct inode *inode_cache[INODE_CACHE_MAX] VFS_BSS;
+
+/*
+ * The mount of each cache slot's inode, kept beside inode_cache under
+ * inode_cache_lock and set whenever a slot is published or cleared.  A
+ * lookup compares it before touching the inode, so it walks a dense array
+ * of pointers rather than every inode in the cache.  NULL for an empty or
+ * reserved slot, and for an inode without a mount.
+ */
+static struct mount *inode_cache_mount[INODE_CACHE_MAX] VFS_BSS;
 static struct spinlock inode_cache_lock = {
 	{ 0 }, LOCK_RANK_INODE, "inode cache", 0, 0
 };
@@ -72,6 +91,8 @@ static int inode_rename_locked(struct inode *od, const struct componentname *on,
 static int inode_link_locked(struct inode *directory, const struct componentname *name, struct inode *target);
 static int inode_symlink_locked(struct inode *directory, const struct componentname *name, const char *target, const struct inode_creation_request *request, struct inode **result);
 static int common_index(const struct inode *inode);
+static struct inode *inode_storage_take(struct mount *mountp);
+static void inode_cache_clear_slot(unsigned slot);
 static int cache_index(const struct inode *inode);
 static void destroy_inode(struct inode *inode);
 static int reserve_cache_slot(struct inode **victim);
@@ -124,9 +145,9 @@ inode_alloc(
 {
 	struct inode *inode;
 	struct inode *victim;
+	enum inode_storage storage;
 	unsigned long irq;
 	int slot;
-	unsigned i;
 
 	inode = NULL;
 
@@ -137,32 +158,19 @@ inode_alloc(
 	if (victim != NULL)
 		destroy_inode(victim);
 
-	/* The filesystem allocates its own inodes; others come from the pool. */
-	if (mountp != NULL && mountp->m_type != NULL &&
-	    mountp->m_type->alloc_inode != NULL) {
-		inode = mountp->m_type->alloc_inode(mountp);
-	} else {
-		irq = spin_lock_irqsave(&inode_cache_lock);
-		for (i = 0; i < INODE_COMMON_MAX; i++) {
-			if (!common_used[i]) {
-				common_used[i] = 1;
-				inode = &common_pool[i];
-				break;
-			}
-		}
-
-		spin_unlock_irqrestore(&inode_cache_lock, irq);
-	}
-
+	/* Takes storage from the filesystem, the pool, or the heap. */
+	inode = inode_storage_take(mountp);
 	if (inode == NULL) {
 		irq = spin_lock_irqsave(&inode_cache_lock);
-		inode_cache[slot] = NULL;
+		inode_cache_clear_slot((unsigned)slot);
 		spin_unlock_irqrestore(&inode_cache_lock, irq);
 		return NULL;
 	}
 
 	/* One cache reference and one reference returned to the caller. */
+	storage = inode->i_storage;
 	kern_memset(inode, 0, sizeof(*inode));
+	inode->i_storage = storage;
 	inode->i_mount = mountp;
 	inode->i_dirseq = 1;
 	refcount_init(&inode->i_refs, 2);
@@ -173,6 +181,7 @@ inode_alloc(
 	irq = spin_lock_irqsave(&inode_cache_lock);
 
 	inode_cache[slot] = inode;
+	inode_cache_mount[slot] = mountp;
 
 	spin_unlock_irqrestore(&inode_cache_lock, irq);
 
@@ -203,7 +212,8 @@ inode_free(
 		return;
 	}
 
-	inode_cache[cindex] = NULL;
+	/* Takes the inode and the cache's reference out of the cache. */
+	inode_cache_clear_slot((unsigned)cindex);
 	(void)refcount_put(&inode->i_refs);
 
 	spin_unlock_irqrestore(&inode_cache_lock, irq);
@@ -232,6 +242,9 @@ inode_get(
 	irq = spin_lock_irqsave(&inode_cache_lock);
 
 	for (i = 0; i < INODE_CACHE_MAX; i++) {
+		/* Skips a slot of another mount without touching its inode. */
+		if (inode_cache_mount[i] != mountp)
+			continue;
 		inode = inode_cache[i];
 		if (inode != NULL &&
 		    inode != INODE_CACHE_RESERVED &&
@@ -380,7 +393,7 @@ inode_cache_purge_mount(
 			    inode->i_mount == mountp &&
 			    refcount_load(&inode->i_refs) == 1 &&
 			    (inode->i_flags & INODE_DIRTY) == 0) {
-				inode_cache[i] = NULL;
+				inode_cache_clear_slot(i);
 				(void)refcount_put(&inode->i_refs);
 				victim = inode;
 				break;
@@ -601,7 +614,7 @@ inode_cache_reset(
 			    inode != INODE_CACHE_RESERVED &&
 			    refcount_load(&inode->i_refs) == 1 &&
 			    (inode->i_flags & INODE_DIRTY) == 0) {
-				inode_cache[i] = NULL;
+				inode_cache_clear_slot(i);
 				(void)refcount_put(&inode->i_refs);
 				victim = inode;
 				break;
@@ -2335,6 +2348,89 @@ common_index(
 	return -1;
 }
 
+/*
+ * Takes storage for a new inode.
+ *
+ * A filesystem that allocates its own inodes is asked first.  Any other
+ * inode comes from the static pool, which serves the filesystems mounted
+ * before the general allocator exists, and from the heap once the pool is
+ * used up, so that many tmpfs files or open pipes do not leave the rest of
+ * the system without inodes (BUG-029).  The storage's origin is recorded
+ * in i_storage for destroy_inode.
+ */
+static struct inode *
+inode_storage_take(
+	struct mount *mountp)
+{
+	struct inode *inode;
+	unsigned long irq;
+	unsigned i;
+
+	/* A filesystem with its own inodes provides the storage. */
+	if (mountp != NULL && mountp->m_type != NULL &&
+	    mountp->m_type->alloc_inode != NULL) {
+		inode = mountp->m_type->alloc_inode(mountp);
+		if (inode != NULL)
+			inode->i_storage = INODE_STORAGE_FILESYSTEM;
+		return inode;
+	}
+
+	/* Takes a free slot of the pool. */
+	inode = NULL;
+	irq = spin_lock_irqsave(&inode_cache_lock);
+
+	/* Looks for the first slot nobody uses. */
+	for (i = 0; i < INODE_COMMON_MAX; i++) {
+		if (!common_used[i]) {
+			common_used[i] = 1;
+			inode = &common_pool[i];
+			break;
+		}
+	}
+
+	/* Lets other allocations look at the pool again. */
+	spin_unlock_irqrestore(&inode_cache_lock, irq);
+
+	/* Records a pool slot as such. */
+	if (inode != NULL) {
+		inode->i_storage = INODE_STORAGE_POOL;
+		return inode;
+	}
+
+	/* A full pool falls back to the heap. */
+	inode = kern_calloc(1, sizeof(*inode));
+	if (inode == NULL)
+		return NULL;
+
+	/* Succeeded: the heap inode is freed to the heap again. */
+	inode->i_storage = INODE_STORAGE_HEAP;
+	return inode;
+}
+
+/* Empties one cache slot and its mount; the caller holds the cache lock. */
+static void
+inode_cache_clear_slot(
+	unsigned slot)
+{
+	/* The slot neither holds an inode nor names a mount any more. */
+	inode_cache[slot] = NULL;
+	inode_cache_mount[slot] = NULL;
+}
+
+/*
+ * Reports how many inodes the cache can hold.
+ *
+ * A filesystem whose inodes stay cached for as long as its files exist
+ * (tmpfs) keeps its total below this, so that other filesystems still
+ * find slots.
+ */
+unsigned
+inode_cache_capacity(void)
+{
+	/* The number of cache slots, fixed at build time. */
+	return INODE_CACHE_MAX;
+}
+
 /* Reports the cache slot of an inode, or -1. */
 static int
 cache_index(
@@ -2356,6 +2452,7 @@ destroy_inode(
 	struct inode *inode)
 {
 	struct mount *mountp;
+	enum inode_storage storage;
 	void *special;
 	int pindex;
 	unsigned long irq;
@@ -2378,10 +2475,13 @@ destroy_inode(
 	if (inode->i_op != NULL && inode->i_op->reclaim != NULL)
 		inode->i_op->reclaim(inode);
 
-	/* Returns the storage to the pool or to the filesystem. */
+	/* Returns the storage to the pool, the heap, or the filesystem. */
 	mountp = inode->i_mount;
+	storage = inode->i_storage;
 	pindex = common_index(inode);
-	if (pindex >= 0) {
+	if (storage == INODE_STORAGE_HEAP) {
+		kern_free(inode);
+	} else if (pindex >= 0) {
 		kern_memset(inode, 0, sizeof(*inode));
 		irq = spin_lock_irqsave(&inode_cache_lock);
 		common_used[pindex] = 0;
@@ -2420,6 +2520,7 @@ reserve_cache_slot(
 		if (inode != INODE_CACHE_RESERVED && refcount_load(&inode->i_refs) == 1 &&
 		    !(inode->i_flags & (INODE_DIRTY | INODE_ROOT))) {
 			inode_cache[i] = INODE_CACHE_RESERVED;
+			inode_cache_mount[i] = NULL;
 			(void)refcount_put(&inode->i_refs);
 			*victim = inode;
 			spin_unlock_irqrestore(&inode_cache_lock, irq);
