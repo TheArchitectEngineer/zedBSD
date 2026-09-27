@@ -55,6 +55,7 @@ kern_free(void *pointer)
 
 struct machine {
 	float input[SLOTS][4];
+	float frag_coord[4];            /* gl_FragCoord of the pixel (ws075-p004) */
 	uint8_t push[128];
 	uint8_t ubo[4][256];            /* the words of uniform blocks 0 .. 3 of the IR's uniform list */
 	float output[SLOTS][4];
@@ -139,6 +140,7 @@ run_ir(const struct i915_shader_ir *ir, struct machine *m)
 		case I915_IR_FABS: case I915_IR_FLOOR: case I915_IR_FRACT: case I915_IR_NOT:
 		case I915_IR_FTRUNC: case I915_IR_INEG: case I915_IR_INOT: case I915_IR_I2F: case I915_IR_U2F:
 		case I915_IR_F2I: case I915_IR_F2U: case I915_IR_MOVE: case I915_IR_FROUND_EVEN:
+		case I915_IR_UNPACK_HALF:
 			sources = 1U; break;
 		case I915_IR_FADD: case I915_IR_FSUB: case I915_IR_FMUL: case I915_IR_FMIN: case I915_IR_FMAX:
 		case I915_IR_FLT: case I915_IR_FGE: case I915_IR_FEQ: case I915_IR_FNEU: case I915_IR_AND: case I915_IR_OR:
@@ -146,6 +148,7 @@ run_ir(const struct i915_shader_ir *ir, struct machine *m)
 		case I915_IR_IDIV: case I915_IR_IREM:
 		case I915_IR_IAND: case I915_IR_IOR: case I915_IR_IXOR: case I915_IR_SHL: case I915_IR_SHR: case I915_IR_ASR:
 		case I915_IR_ILT: case I915_IR_IGE: case I915_IR_ULT: case I915_IR_UGE: case I915_IR_IEQ: case I915_IR_INE:
+		case I915_IR_PACK_HALF:
 			sources = 2U; break;
 		case I915_IR_SELECT: sources = 3U; break;
 		case I915_IR_SAMPLE: sources = 2U; results = 4U; break;
@@ -184,9 +187,31 @@ run_ir(const struct i915_shader_ir *ir, struct machine *m)
 		case I915_IR_BOOL: value[inst->dst] = inst->immediate; break;
 		case I915_IR_ICONST: value[inst->dst] = inst->immediate; break;
 		case I915_IR_LOAD_INPUT:
+			if (inst->location == I915_SHADER_LOCATION_FRAG_COORD) {
+				assert(inst->component < 4U);
+				value[inst->dst] = float_to_bits(m->frag_coord[inst->component]);
+				break;
+			}
 			assert(inst->location < SLOTS && inst->component < 4U);
 			value[inst->dst] = float_to_bits(m->input[inst->location][inst->component]);
 			break;
+		case I915_IR_PACK_HALF: {
+			_Float16 low = (_Float16)fa, high = (_Float16)fb;
+			uint16_t low_bits, high_bits;
+
+			memcpy(&low_bits, &low, 2U);
+			memcpy(&high_bits, &high, 2U);
+			value[inst->dst] = (uint32_t)low_bits | ((uint32_t)high_bits << 16);
+			break;
+		}
+		case I915_IR_UNPACK_HALF: {
+			uint16_t half_bits = (uint16_t)(a >> (16U * (inst->component & 1U)));
+			_Float16 half;
+
+			memcpy(&half, &half_bits, 2U);
+			value[inst->dst] = float_to_bits((float)half);
+			break;
+		}
 		case I915_IR_LOAD_PUSH:
 			assert(inst->immediate + 4U <= sizeof(m->push) && inst->immediate + 4U <= ir->push_bytes);
 			memcpy(&value[inst->dst], m->push + inst->immediate, 4U);
@@ -1489,6 +1514,65 @@ test_generality_fragment_shaders(void)
 }
 
 /*
+ * The generality test's fragment shaders of ws075-p004 at every pixel of 64 x 64, against regenerate.py: local
+ * arrays and structures through dynamic indices (agg), determinants, inverses and half floats (matfn), gl_FragCoord
+ * (coord: the pixel centre, depth 0, w 1) and a flat input array copied and indexed (vformat: the twelve words its
+ * vertex shader makes of the attributes, here the expected words themselves).
+ */
+static void
+test_p004_fragment_shaders(void)
+{
+	static const struct {
+		const char *name;
+		const uint32_t *words;
+		size_t bytes;
+		const uint32_t *expected;
+	} steps[4] = {
+		{ "agg.frag", i915_vke2_agg_frag, sizeof(i915_vke2_agg_frag), i915_vke2_agg_expected },
+		{ "matfn.frag", i915_vke2_matfn_frag, sizeof(i915_vke2_matfn_frag), i915_vke2_matfn_expected },
+		{ "coord.frag", i915_vke2_coord_frag, sizeof(i915_vke2_coord_frag), i915_vke2_coord_expected },
+		{ "vformat.frag", i915_vke2_vformat_frag, sizeof(i915_vke2_vformat_frag), i915_vke2_vformat_expected },
+	};
+	struct i915_shader_ir *ir;
+	struct machine m;
+	unsigned step, x, y, k;
+
+	for (step = 0U; step < 4U; step++) {
+		ir = parse_words(steps[step].name, steps[step].words, steps[step].bytes, I915_STAGE_FRAGMENT);
+		for (y = 0U; y < 64U; y++) {
+			for (x = 0U; x < 64U; x++) {
+				uint32_t got, want;
+
+				memset(&m, 0, sizeof(m));
+				m.input[0][0] = (float)x + 0.5f;
+				m.input[0][1] = (float)y + 0.5f;
+				m.frag_coord[0] = (float)x + 0.5f;
+				m.frag_coord[1] = (float)y + 0.5f;
+				m.frag_coord[2] = 0.0f;
+				m.frag_coord[3] = 1.0f;
+				if (step == 3U) {
+					/* the flat array: word k of the twelve at location k / 4, component k % 4 */
+					for (k = 0U; k < 12U; k++)
+						m.input[k / 4U][k % 4U] = bits_to_float(i915_vke2_vformat_expected[k]);
+				}
+				run_ir(ir, &m);
+				got = target_word(&m);
+				want = steps[step].expected[y * 64U + x];
+				/* a zero of either sign is the same result (the kernel test compares matfn as floats) */
+				if (step == 1U && (got & 0x7fffffffU) == 0U && (want & 0x7fffffffU) == 0U)
+					continue;
+				if (got != want) {
+					printf("  %s at (%u, %u): 0x%08x, want 0x%08x\n", steps[step].name, x, y, got, want);
+					assert(!"ws075-p004 fragment shader differs from regenerate.py");
+				}
+			}
+		}
+		drv_i915_shader_ir_free(ir);
+	}
+	printf("  generality (ws075-p004): agg / matfn / coord / vformat fragment shaders match regenerate.py at 4 x 4096 pixels\n");
+}
+
+/*
  * The generality test's vertex shaders and the varying / attribute fragment shaders: vary16.vert writes sixteen
  * varyings, vary16.frag reads them all and subset.frag five of them; vin16.vert reads sixteen attributes; the
  * matrix step's placement chain; vio16.vert (sixteen attributes and sixteen varyings) parses.
@@ -1657,6 +1741,7 @@ main(void)
 	test_mview_shaders();
 	test_feature_shaders();
 	test_generality_fragment_shaders();
+	test_p004_fragment_shaders();
 	test_generality_interfaces();
 	test_remainders();
 	assert(fixture_live == 0U);
