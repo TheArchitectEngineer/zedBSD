@@ -4,55 +4,44 @@
 
 Phase ID: `ws036-p027`
 Parent: [WS036](../ws.md)
-Status: planning（人間の判断待ち）
+Status: **cleared**（2026-09-27、WS036 の subagent）
 Phase disposition: normal
-Queue: なし
 
 ## 目的
 
-rpi4 の kernel は起動 parameter を受け取らず、`kern_boot_parameters_initialize(NULL, 0)` の既定（legacy autoroot:
-FAT の boot partition の隣の UFS root）で起動している。firmware が `cmdline.txt` から作る DTB の `/chosen/bootargs` を
-`hal_get_arch_handoff("boot.command-line")` で kernel に渡し、amd64・pcat・pc98 と同じ parameter（`root=`・`init=`・
-`overlay-*`・`swap0=` 等）で起動を選べるようにする。
+rpi4 の kernel は起動 parameter を受け取らず、legacy autoroot（FAT の boot partition の隣の UFS root）で起動していた。firmware が
+`cmdline.txt` から作る DTB の `/chosen/bootargs` を `hal_get_arch_handoff("boot.command-line")` で kernel に渡し、amd64・pcat・pc98 と同じ
+parameter（`rootpart=`・`init=`・`overlay-*`・`swap0=` 等）で起動を選べるようにする。
 
-## 調査（2026-09-27、WS036 の subagent）
+## 判断（2026-09-27 ユーザー）
 
-### HAL の差分の扱い
+調査（下の旧記録の要約）で、firmware の bootargs は Linux 向けの token（`rootwait`・`quiet` 等の `=` の無いもの）を含み、kernel の厳格な
+parser が拒んで idle になると分かり、方針を尋ねた。ユーザーは **案 A（kernel の parser を全 platform で緩める: `=` の無い token と未知の名前は
+無視して数える）** を選んだ（main session 経由、2026-09-27）。hal.h は変えない。
 
-- `include/hal/hal.h` は変わらない。`hal_get_arch_handoff()` の契約（名前で handoff の object を返す。無いものは NULL）の中で、
-  `src/hal/arm64/bsp-rpi4/boot.c` が `"boot.command-line"` を返すようにする実装の補完である。`"boot.command-line"` は
-  amd64・pcat・pc98 の HAL が既に返し、`src/kern/main.c` が全 platform で読む名前である。
-- 2026-09-25 の規則（Guardrail「hal.h を変えない `src/hal/` の実装の変更は承認を要しない」）により、差分そのものは承認なしで
-  適用できると読める。「HAL の差分が要る（承認待ち）」という p012 の記録は規則の変更の前（2026-09-24）に書かれた。
+## 変更
 
-### 止める理由: 実機の bootargs を kernel の parser が受け付けない
+| 所在 | 変更 |
+| --- | --- |
+| `src/kern/boot.c` の `kern_boot_parameters_parse()` | 区切りは空白・tab・CR・LF。`=` の無い token と未知の名前は数えて無視（最初の名前を診断用に残す）。既知の名前は従来どおり 1 回だけ、値が要る（空は `EINVAL`、重複は `EEXIST`）。非 ASCII と他の制御文字は従来どおり拒む。区切りの判定（`parameter_separator`・`skip_separators`） |
+| `src/kern/vfs.c` | legacy autoroot（x86 以外）は、parameter が無いときに加え、**root を名指さない**（`rootpart`・`overlay-root`・`overlay-data` のどれも無い）parameter のときにも使う。firmware の行だけの起動は従来どおり |
+| `src/hal/arm64/bsp-rpi4/fdt.c`・`fdt.h` | `/chosen` の `bootargs` の blob の中の位置と長さを記録 |
+| `src/hal/arm64/bsp-rpi4/boot.c` | 起動の早い段階（DTB が確かに残っている間）に bootargs を HAL の buffer（`KERN_BOOT_PARAMETERS_STORAGE_SIZE`）へ写し、`"boot.command-line"` で返す。長すぎる行は収まる最後の空白で切る。無いときは NULL（従来どおり） |
+| `plan/ws044/tests/rpi4-serial.sh` | `APPEND` で QEMU の `-append`（DTB の `/chosen/bootargs` になる） |
 
-kernel の parser（`src/kern/boot.c` の `kern_boot_parameters_parse()`）は厳格で、次のどれかで **parse の失敗 → idle**
-（`boot: parameter parsing failed; entering idle.`）になり、起動しない:
+## 検証
 
-- `=` の無い token（`rootwait`・`quiet`・`splash` 等）。
-- 空白以外の制御文字（`cmdline.txt` の末尾の改行が firmware の版によって残る）。
-- 既知の名前の重複。
+| 試験 | 結果 |
+| --- | --- |
+| rpi4・amd64・pc98・pcat の `disk-image` | warning 0（pc98 は外部の Noct の既存の 1 件だけ） |
+| `plan/ws036/tests/bootargs-rpi4.sh`（QEMU raspi4b） | firmware 風の Linux の行（9 個を数えて無視、legacy autoroot で UFS root）、tab と改行の区切り（2 個を無視）、`rootpart=/dev/mmcblk0p2`（native root で mount）、`-append` 無し（vendor の DTB 自身の bootargs `coherent_pool=1M 8250.nr_uarts=1 …` を受け取り legacy autoroot）。すべて login して guest で確かめた |
+| `boot-test.sh` rpi4（raspi4b）・amd64（UEFI・NVMe） | PASS |
+| pc98（`pc98-boot.py`） | login と `uname -a` |
+| pcat（`BOOT_MODE=bios-ide`） | **login に届かない**。parameter の行は正しく解釈される（画面に `boot: parameters: boot0=UUID=… overlay-root=… overlay-data=… swap0=…`）が、VFS の overlay-data の mount が `loop1: write … error=17` で止まる。**この Phase の変更の無い tree（f6735de4）でも同じ**で、main の 3231b05f と e2750963 の間の他の WS の変更による回帰。main session が BUG-066 として WS073 に割り当てた（2026-09-27） |
+| style-check | `src/kern/boot.c` 39 → 38、`fdt.c` 30 → 30、`vfs.c` 変わらず、bsp の `boot.c` 0 |
+| 実機（Raspberry Pi 4 の firmware の実際の bootargs） | 未実施（ユーザー）。QEMU の vendor DTB の bootargs で同じ形の行を確かめた |
 
-Raspberry Pi の firmware は `/chosen/bootargs` に自分の parameter（`coherent_pool=1M 8250.nr_uarts=0 snd_bcm2835.* video=...
-vc_mem.* smsc95xx.macaddr=...`）を前置し、`cmdline.txt` が無いときは Linux 向けの既定の行（`console=... root=/dev/mmcblk0p2
-rootfstype=ext4 rootwait` 等）を使う。したがって bootargs をそのまま渡すと、**実機では cmdline.txt の中身に関わらず起動しなくなる
-見込みが高い**。QEMU（`-dtb` で `-append` 無し）は bootargs を作らないので、QEMU の試験ではこの失敗が見えない。
+## 旧記録（2026-09-27 の調査の要約）
 
-### 選択肢（人間の判断が要る）
-
-| 案 | 内容 | 影響 |
-| --- | --- | --- |
-| A | kernel の parser を緩める: `=` の無い token と未知の名前は無視して数えるだけにする（全 platform 共通の振る舞いの変更） | 他の platform の boot の契約（「誤りがあれば記録を空にして idle」）が変わる |
-| B | rpi4 の HAL が区切り（例: `--` の後、または `zedbsd.` の接頭辞の token だけ）を切り出して渡す | HAL が parameter の方針を持つ。cmdline.txt の書き方が rpi4 だけ特殊になる |
-| C | rpi4 は bootargs を使わず、FAT の boot partition の file（例 `zedbsd.txt`）を kernel が読む | firmware に依存しないが、kernel の起動の流れに rpi4 だけの経路が増える |
-| D | 今のまま（legacy autoroot）。parameter は image の既定で固定 | 変更なし。root・init を起動時に選べない |
-
-既定（可逆）: **D のまま据え置き**、この Phase は planning に置く。A〜C のどれにするかをユーザーに尋ねる。
-どの案でも、実機での確認（firmware の実際の bootargs を読んだ起動）はユーザーが行う。
-
-## 完了の条件（案が決まった後に確定する）
-
-- rpi4 の kernel が `/chosen/bootargs`（または決めた経路）から parameter を受け取り、`root=`・`init=` で起動を選べる。
-- parameter が無い・壊れているときに、今の legacy autoroot で起動できることが変わらない（QEMU）。
-- 実機: 未実施（ユーザー）。
+firmware の bootargs をそのまま渡すと、`=` の無い token・行末の制御文字で旧 parser が失敗し idle になる見込みだったため、
+案 A（parser を緩める）・B（HAL で切り出す）・C（別 file）・D（据え置き）をユーザーに尋ねた。ユーザーは A を選んだ。

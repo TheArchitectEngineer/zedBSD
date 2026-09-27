@@ -9,7 +9,7 @@ Related Milestones: MG003, MG001
 Objectives: O2, O4
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p026 cleared（2026-09-27: LLVM の AArch64 zedbsd target と aarch64 の sysroot、rpi4 の build を sysroot と driver に）。p028（Noct）・p029（package が LLVM の source を書き換えない）cleared。残りは p027（起動 parameter、**実機の bootargs と parser の方針の判断待ち**）、p021（最終回帰）
+Resume point: 全 Phase を終えた（2026-09-27）。完了の形への書き直しは WS の完了の commit で
 <!-- awesome-plan-current:end -->
 
 ## 単一目標
@@ -137,7 +137,7 @@ p009の「pc98はQEMUが無いのでbuildまで」は**前提が誤っていた*
 | ws036-p024 | 共通: 他platformのkcrt対応（各platformの `vmunix.mk` から `locale-record.c` を外し、kcrt・heapを足す）とmapファイル生成の追加（ws035-p034で判明）。**pcat・pc98分は2026-09-23に達成済み**。残りはrpi4・sun4u・x68kで、p025に含めて行う | cleared（rpi4 分は q366-i01。sun4u・x68k はサポート外） | p001, p025 | platformのmk、libc |
 | [ws036-p021](phase021/phase.md) | 全platform（amd64・pcat・pc98・rpi4）の回帰と全文規約確認（必須の最終確認） | cleared（2026-09-27。4 platform で build と QEMU の起動。i386 の build を止めていた `sched.c` の 64-bit atomic を直し、`rpi4-console.c` を全文の規約に） | p007, p009, p012 | 全体 |
 | [ws036-p026](phase026/phase.md) | toolchain: LLVM の zedbsd target に AArch64 を足す（`__ZEDBSD__`、driver の link の emulation）と aarch64 の sysroot。rpi4 の `KERN_UAPI_NATIVE` 等と `ld.lld` の直接呼び出しを外し、開発 file を rpi4 にも入れる（p012 で判明）。Noct・zedinst は p028 に分けた | cleared（2026-09-27。patch level zedbsd7、`sysroot-arm64`、rpi4 は QEMU で login・`dyntest`、amd64 の回帰も PASS。rev-0 の cache の更新はユーザー） | p012 | `toolchain/llvm`、`platform/arm64` |
-| [ws036-p027](phase027/phase.md) | rpi4: 起動 parameter（DTB の `/chosen/bootargs`）を `hal_get_arch_handoff("boot.command-line")` で渡す。今は legacy autoroot。hal.h は変わらず、2026-09-25 の規則で実装の差分は承認不要と読めるが、**実機の firmware の bootargs（`rootwait` 等の `=` の無い token）を kernel の parser が拒み idle になる**ため、方針（parser を緩める・HAL で切り出す・別の file・据え置き）の判断待ち | planning（判断待ち） | p012 | `src/hal/arm64`、`src/kern/boot.c` |
+| [ws036-p027](phase027/phase.md) | rpi4: 起動 parameter（DTB の `/chosen/bootargs`）を `hal_get_arch_handoff("boot.command-line")` で渡す。firmware の Linux 向けの行のため kernel の parser を緩めた（2026-09-27 ユーザーの判断: 案 A） | cleared（2026-09-27。rpi4 で firmware の行・`rootpart=`・区切り。amd64・pc98 の起動。pcat は BUG-066（他の WS の回帰）で起動しない） | p012 | `src/hal/arm64`、`src/kern/boot.c`・`vfs.c` |
 | [ws036-p029](phase029/phase.md) | toolchain: libcxx と clang の package が `build/llvm-source` に patch を当てず、hard link の写しに当てる（p026 の merge で main session が見つけた、patch level を上げた既存の tree の検査の失敗） | cleared（2026-09-27。libcxx の build、clang の写し、その後の `llvm-source-verify` が通る） | p026 | `userland/packages/external.mk`、libcxx・clang の package |
 | [ws036-p028](phase028/phase.md) | rpi4: Noct（aarch64 の cmake toolchain、JIT）と zedinst を rpi4 の root に（p026 から分けた） | cleared（2026-09-27。Noct は rpi4 で JIT 付きで動く。既定では選ばない。zedinst は SD の配置を知らないので据え置き） | p026 | `userland/base/noct`、`userland/base/zedinst` |
 
