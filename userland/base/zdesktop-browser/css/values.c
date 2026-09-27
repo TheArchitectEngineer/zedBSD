@@ -114,6 +114,11 @@ static const struct values_name values_names[] = {
 	{ "white-space", CSS_PROP_WHITE_SPACE },
 	{ "text-decoration-line", CSS_PROP_TEXT_DECORATION_LINE },
 	{ "list-style-type", CSS_PROP_LIST_STYLE_TYPE },
+	{ "top", CSS_PROP_TOP },
+	{ "right", CSS_PROP_RIGHT },
+	{ "bottom", CSS_PROP_BOTTOM },
+	{ "left", CSS_PROP_LEFT },
+	{ "z-index", CSS_PROP_Z_INDEX },
 	{ "margin", SHORT_MARGIN },
 	{ "padding", SHORT_PADDING },
 	{ "border", SHORT_BORDER },
@@ -155,13 +160,13 @@ static const struct values_keyword values_display[] = {
 	{ NULL, 0 }
 };
 
-/* The keywords of position (only static is laid out in this pass). */
+/* The keywords of position. */
 static const struct values_keyword values_position[] = {
-	{ "static", 0 },
-	{ "relative", 1 },
-	{ "absolute", 2 },
-	{ "fixed", 3 },
-	{ "sticky", 4 },
+	{ "static", CSS_POSITION_STATIC },
+	{ "relative", CSS_POSITION_RELATIVE },
+	{ "absolute", CSS_POSITION_ABSOLUTE },
+	{ "fixed", CSS_POSITION_FIXED },
+	{ "sticky", CSS_POSITION_STICKY },
 	{ NULL, 0 }
 };
 
@@ -925,6 +930,7 @@ values_single(
 {
 	const struct values_keyword *table;
 	int keyword;
+	int is_auto;
 	int found;
 	int error;
 
@@ -1002,6 +1008,23 @@ values_single(
 			return EINVAL;
 		value->kind = CSS_VALUE_KEYWORD;
 		value->keyword = keyword;
+		return 0;
+	}
+
+	/* z-index: auto or an integer. */
+	if (property == CSS_PROP_Z_INDEX) {
+		is_auto = css_ident_equal(&tokens[0], "auto");
+		if (is_auto) {
+			value->kind = CSS_VALUE_KEYWORD;
+			value->keyword = 0;
+			return 0;
+		}
+
+		/* An integer (a number token without a fraction). */
+		if (tokens[0].type != CSS_TOKEN_NUMBER || !tokens[0].integer)
+			return EINVAL;
+		value->kind = CSS_VALUE_NUMBER;
+		value->number = (float)tokens[0].number;
 		return 0;
 	}
 

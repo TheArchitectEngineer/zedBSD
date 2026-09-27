@@ -9,7 +9,8 @@
  * Block layout: the widths of CSS 2's visual formatting model, block boxes
  * stacked in normal flow, and the collapsing of their vertical margins
  * (between siblings, through empty blocks, and between a block and its
- * first and last children).
+ * first and last children).  Boxes out of the flow are passed by, with the
+ * static position they would have had.
  */
 
 #include "layout/layout.h"
@@ -208,6 +209,15 @@ block_children(
 	pending = 0;
 	first = 1;
 	for (child = box->first_child; child != NULL; child = child->next) {
+		/* A box out of the flow takes no room; its static position is where the next block would start. */
+		if (child->out_of_flow) {
+			child->static_x = 0;
+			child->static_y = cursor + pending;
+			if (first && collapse_top)
+				child->static_y = 0;
+			continue;
+		}
+
 		/* Lays the child out in this box's content width. */
 		error = layout_block(tree, child, box->width);
 		if (error != 0)

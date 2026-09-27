@@ -116,6 +116,10 @@ inline_collect(
 {
 	struct layout_box *child;
 
+	/* A box out of the flow is no part of the lines. */
+	if (box->out_of_flow)
+		return;
+
 	/* Text is cut into words and spaces. */
 	if (box->kind == LAYOUT_TEXT) {
 		inline_cut_text(cutter, box);
