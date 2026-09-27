@@ -63,5 +63,9 @@ int backing_claim_check_disk(struct disk *, uint64_t, uint64_t,
 			     const struct backing_claim *);
 int backing_claim_check_mount(struct disk *, unsigned);
 int backing_claim_check_teardown(struct disk *);
+/* Finds a claim other than one named whose published extent touches a range. */
+int backing_claim_find_extent_owner(struct disk *, uint64_t, uint64_t,
+				    const struct backing_claim *,
+				    const struct backing_claim **);
 
 #endif
