@@ -743,7 +743,8 @@ targets_depth_and_stencil(void)
 /*
  * Checks the limits, and the errors and statuses of wrong framebuffers:
  * a draw buffer naming another attachment, GL_BACK read from an object,
- * a layer of a 2D texture, a 3D texture's slice, an empty framebuffer.
+ * a layer of a 2D texture, an empty framebuffer; a 3D texture's slice is
+ * complete.
  */
 static void
 targets_errors(void)
@@ -776,12 +777,12 @@ targets_errors(void)
 	status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
 	targets_expect("empty-status", (long)status, (long)GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT);
 
-	/* A 3D texture's slice is not drawn into yet (WS068 p029). */
+	/* A 3D texture's slice is drawn into (through a 2D image, WS068 p029). */
 	targets_texture(TARGETS_T_VOLUME, GL_TEXTURE_3D);
 	glTexImage3D(GL_TEXTURE_3D, 0, GL_RGBA8, 4, 4, 2, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 	glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, targets_textures[TARGETS_T_VOLUME], 0, 1);
 	status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-	targets_expect("volume-slice-status", (long)status, (long)GL_FRAMEBUFFER_UNSUPPORTED);
+	targets_expect("volume-slice-status", (long)status, (long)GL_FRAMEBUFFER_COMPLETE);
 }
 
 /* Prints one of the start's checks, counting it when the value is not the one expected. */
