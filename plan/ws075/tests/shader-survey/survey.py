@@ -156,7 +156,11 @@ def survey(path):
 					gap('module variable in %s' % storage)
 				elif storage == 'Input' and result in builtins:
 					# i915_spirv_declare_variable: a vertex shader's VertexIndex and InstanceIndex are generated inputs.
-					if not (stage == 'Vertex' and builtins[result] in ('VertexIndex', 'InstanceIndex')):
+					# A fragment shader's FrontFacing is the payload's facing bit.
+					generated = stage == 'Vertex' and builtins[result] in ('VertexIndex', 'InstanceIndex')
+					if stage == 'Fragment' and builtins[result] == 'FrontFacing':
+						generated = True
+					if not generated:
 						gap('input builtin %s' % builtins[result])
 				elif storage == 'Input':
 					# i915_spirv_lower_load: an input is floats, or integers in a vertex shader or a Flat fragment input.

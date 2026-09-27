@@ -226,6 +226,7 @@
 
 /* BuiltIn values (SPIR-V spec, section 3.21). */
 #define BUILTIN_POSITION 0U
+#define BUILTIN_FRONT_FACING 17U
 #define BUILTIN_VERTEX_INDEX 42U
 #define BUILTIN_INSTANCE_INDEX 43U
 
@@ -1499,6 +1500,13 @@ i915_spirv_declare_variable(
 		}
 	}
 
+	/* A fragment shader's gl_FrontFacing is an input at the location of the payload's facing bit. */
+	if (storage == SC_INPUT && record->has_builtin != 0U && record->builtin == BUILTIN_FRONT_FACING &&
+	    parser->ir->stage == I915_STAGE_FRAGMENT) {
+		record->has_location = 1U;
+		record->location = I915_SHADER_LOCATION_FRONT_FACING;
+	}
+
 	/* The storage class, and a location, decide what the variable is to the shader. */
 	if (storage == SC_INPUT && record->has_location != 0U) {
 		record->ptr_kind = PTR_INPUT;
@@ -2225,6 +2233,8 @@ i915_spirv_lower_load(
 		floats = i915_spirv_float_components(parser, word[1]);
 		raw = 0;
 		if (parser->ir->stage == I915_STAGE_VERTEX || variable->flat != 0U)
+			raw = 1;
+		if (variable->location == I915_SHADER_LOCATION_FRONT_FACING)
 			raw = 1;
 		if (floats != components && raw == 0)
 			return i915_spirv_refuse(parser, opcode, offset, "load of an input that is not a float scalar or vector");

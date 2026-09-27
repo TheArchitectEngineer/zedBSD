@@ -41,6 +41,12 @@
 #define I915_SHADER_LOCATION_INSTANCE_INDEX	65U
 
 /*
+ * The input location a fragment kernel reads gl_FrontFacing at: not an
+ * interpolated input, but the thread payload's back-facing bit.
+ */
+#define I915_SHADER_LOCATION_FRONT_FACING	66U
+
+/*
  * Why a SPIR-V module was refused.
  *
  * `reason` is a static string; `opcode` and `word_offset` name the refused

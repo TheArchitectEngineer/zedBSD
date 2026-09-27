@@ -1567,6 +1567,7 @@ i915_compile_load_input(
 	uint32_t plane;
 	uint32_t first;
 	uint32_t dst;
+	struct i915_eu_reg facing;
 	int found;
 	int flat;
 
@@ -1576,6 +1577,20 @@ i915_compile_load_input(
 	/* A component beyond w is not lowered. */
 	if (inst->component > 3U) {
 		state->unsupported = 1;
+		return;
+	}
+
+	/*
+	 * gl_FrontFacing: bit 15 of the payload's r1.1 word (bit 31 of r1.0) is
+	 * set for a back face; its sign spread over the channel, inverted, is the
+	 * all-ones or zero Boolean (brw's Gen12 lowering).
+	 */
+	if (state->ir->stage == I915_STAGE_FRAGMENT && inst->location == I915_SHADER_LOCATION_FRONT_FACING) {
+		dst = i915_compile_define(state, inst->dst, 1U);
+		facing = drv_i915_eu_grf_scalar(COMPILE_FS_DISPATCH_GRF, 0U);
+		facing.type = drv_i915_eu_grf_d(COMPILE_FS_DISPATCH_GRF).type;
+		drv_i915_eu_alu2(code, I915_EU_ASR, drv_i915_eu_grf_d(dst), facing, drv_i915_eu_imm_d(31U));
+		drv_i915_eu_alu1(code, I915_EU_NOT, drv_i915_eu_grf_d(dst), drv_i915_eu_grf_d(dst));
 		return;
 	}
 
@@ -2592,7 +2607,10 @@ i915_compile_interface(
 	/* Lists every input read and, for a vertex shader, every varying written; notes a discard. */
 	for (index = 0U; index < state->ir->instruction_count; index++) {
 		inst = &state->ir->instructions[index];
-		if (inst->op == I915_IR_LOAD_INPUT) {
+		if (inst->op == I915_IR_LOAD_INPUT && inst->location == I915_SHADER_LOCATION_FRONT_FACING) {
+			/* The facing bit is in the payload's fixed registers, not an input of its own. */
+			continue;
+		} else if (inst->op == I915_IR_LOAD_INPUT) {
 			i915_compile_note(state, state->inputs, &state->input_count, COMPILE_MAX_INPUTS, inst->location);
 		} else if (inst->op == I915_IR_STORE_OUTPUT &&
 		    state->ir->stage == I915_STAGE_VERTEX &&
