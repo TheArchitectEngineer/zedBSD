@@ -50,6 +50,7 @@ BUG-027・BUG-033（性能。単独の計測を後で）。
 | [ws073-p011](phase011/phase.md) | BUG-070 | USB HID の keyboard が keypad・Num Lock・Print Screen・日本語の key などを出す | cleared |
 | [ws073-p014](phase014/phase.md) | — | amd64 は /boot・/boot/esp を自動で見せず fstab に任せる。fstab の ESP の mount は kernel の hold を adopt する | cleared |
 | [ws073-p015](phase015/phase.md) | BUG-073 | 最終の layout: `bootN:` の file を持つ boot の slot を /boot/boot0〜3 に自動で mount（amd64 UEFI も、起動後の `swapon bootN:` も）、ESP は fstab、使用中の file は読めるが書けない。claim のある FAT の line の書き戻し（BUG-073）を修正 | cleared |
+| [ws073-p018](phase018/phase.md) | BUG-026 | 共有の file の mapping への store が munmap・exit で dirty にならず書き戻されない（ld.lld の出力が disk で空）を修正 | cleared |
 | [ws073-p017](phase017/phase.md) | BUG-036・BUG-031（030・041） | 起動時の USB の root port の列挙を ETIMEDOUT・EIO で 3 回まで再試行、kernel の console への写しを record 単位で排他、間欠の bug の再現の試み | cleared |
 | [ws073-p016](phase016/phase.md) | BUG-074・BUG-076 | FAT の readdir の位置を record の番号にし走査中の unlink で entry を飛ばさない（`rm -r`）。FAT の inode の pool が満ちたら cache だけの inode を追い出す | cleared |
 
