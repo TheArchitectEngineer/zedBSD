@@ -121,3 +121,19 @@ init ── zsessiond (root、小さい: 認証・device の持ち主・session 
 
 試験: QEMU（Venus）で zsessiond を起こし、greeter の画面を撮る（QMP）、user を選び password を打ち（qmp-keys）、desktop が user の
 uid で動くこと（`ps`）、log out で greeter に戻ること。i915 実機は任意。
+
+## 10. 決定と実装（2026-09-28）
+
+ユーザーの承認（2026-09-28）「ログインマネージャーの提案は承認します。1点だけ、コンソールログインでなくグラフィカルログインを
+デフォルトにします。ブートローダにロゴを表示させます。カーネルパラメータでメッセージをコンソールに出さずにdmesgのような方法で
+保存だけする指定をします。これにより完全なグラフィカル起動を実現します。これはデフォルトではありますが、カーネル自体の開発の
+ときは無効にして、コンソールにメッセージを表示させ、コンソールログインにします。ブートローダはppmのようなシンプルな画像
+ファイルを読みます。」
+
+- §8-1〜8-2・8-4〜8-5 は案のとおり。§8-3 は変更: **グラフィカルログインが既定**（rc.conf の `greeter` は enabled、
+  image の zedbsd.cfg に `login=graphical`）。「1 人の user の機械」に限る（revoke は別の WS）。
+- 実装: p094（zsessiond、g1・g3）、p095（`zdesktop --greeter`・`--session`、g2。GPU の open を root か device の持ち主に）、
+  p096（UEFI loader の PPM の logo）、p097（`kmsg=quiet`、lease の間の keyboard。HAL の早期 console は提案
+  [proposed/hal-quiet-console.md](proposed/hal-quiet-console.md)）、p098（既定と切り替え: init の `replaces=`、
+  `login=`・sysctl `kern.boot.login`、`ZEDBSD_GRAPHICAL_BOOT`（既定 y、kernel の開発は n）、試験の構成は n）。
+- 残り: g4（継ぎ目の無い引き継ぎ）、g5（画面の lock）、kernel の revoke、BIOS の loader の logo。

@@ -1490,7 +1490,10 @@ ifeq ($(ZEDBSD_VARIANT),native)
 # layout's rootfs.img, with room and inodes to be written to.  The root and
 # swap are 1 GiB each, a 2 GiB image that CI publishes gzip-compressed
 # (2026-09-26 user direction).
-AMD64_NATIVE_UEFI_ZEDBSD_CONFIG := $(AMD64_PLATFORM)/zedbsd-native-uefi.cfg
+# ws035-p098: the lines of the graphical boot are added when ZEDBSD_GRAPHICAL_BOOT is y (the value is in
+# the name, so switching it makes the image again).
+AMD64_NATIVE_UEFI_ZEDBSD_CONFIG := $(BUILD)/zedbsd-native-uefi-graphical-$(ZEDBSD_GRAPHICAL_BOOT).cfg
+AMD64_GRAPHICAL_BOOT_LINES := logo=logo.ppm kmsg=quiet login=graphical
 AMD64_NATIVE_ROOT_MIB ?= 1024
 AMD64_NATIVE_ROOT_INODES ?= 65536
 AMD64_NATIVE_SWAP_MIB ?= 1024
@@ -1508,6 +1511,12 @@ $(AMD64_NATIVE_ROOT_IMAGE): $(BUILD)/rootfs/.stamp $(ARCH_UFS_IMAGE_TOOLS)
  --backend $(abspath $(ZEDBSD_IMAGE_HOST)) --force \
  --profile amd64 --output $@ --tree $(BUILD)/rootfs \
  --size-mib $(AMD64_NATIVE_ROOT_MIB) --min-inodes $(AMD64_NATIVE_ROOT_INODES)
+
+$(AMD64_NATIVE_UEFI_ZEDBSD_CONFIG): $(AMD64_PLATFORM)/zedbsd-native-uefi.cfg
+	@mkdir -p $(dir $@)
+	cp $< $@.tmp
+	$(if $(filter y,$(ZEDBSD_GRAPHICAL_BOOT)),printf '%s\n' $(AMD64_GRAPHICAL_BOOT_LINES) >> $@.tmp)
+	mv -f $@.tmp $@
 
 $(AMD64_NATIVE_SWAP_IMAGE): $(BUILD_TOOLS_DIR)/make-swapfile.noct
 	@mkdir -p $(dir $@)
