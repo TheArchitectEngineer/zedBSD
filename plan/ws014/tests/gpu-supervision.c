@@ -45,6 +45,9 @@ static unsigned raw_commands;
 /* Counts per-context isolations; each ends the isolated context's callbacks without a device fault. */
 static unsigned isolations;
 
+/* Nonzero models a backend (i915) whose stop poll counts an unpublished reservation as pending work. */
+static unsigned poll_counts_reserved;
+
 static int capacity_snapshot(void *opaque, void *session, uint32_t domain, unsigned *available);
 static int supervised_reserve(void *opaque, void *session, uint32_t domain, struct drv_gpu_completion *completion, void **reservation);
 static int local_begin(void *opaque, void *session, int error);
@@ -53,6 +56,7 @@ static void global_fault(void *opaque, int error);
 static int checked_reset(void *opaque);
 static int local_isolate(void *opaque, void *session);
 static void supervised_close(void *opaque, void *session);
+static void supervised_drain(void *opaque, void *session);
 static int raw_command(void *opaque, void *session, const void *buffer, uint32_t bytes);
 static void raw_submit(struct test_file *file);
 static int raw_interleave(struct wait_queue *queue, struct spinlock *lock, uint64_t observed, uint64_t deadline, unsigned flags);
@@ -108,7 +112,7 @@ main(
 	job_operations.cancel = job_cancel;
 	job_operations.capacity = capacity_snapshot;
 	commands.submit = fence_submit;
-	commands.drain = job_drain;
+	commands.drain = supervised_drain;
 
 	/* Local confirmation and global quarantine remain separate operations. */
 	memset(&recovery, 0, sizeof(recovery));
@@ -371,6 +375,27 @@ main(
 	error = job_observe(&first, second_sequence, 1U, &status);
 	assert(error == 0 && status == ETIMEDOUT);
 	close_file(&first);
+
+	/*
+	 * BUG-077: a producer that reached the GPU closes between reserve and
+	 * commit.  Close withdraws the reservation itself, so a backend whose stop
+	 * poll counts it as pending still confirms the stop without isolation.
+	 */
+	error = open_file(&first, "gpu0", O_RDWR);
+	assert(error == 0);
+	first_sequence = submit_job(&first, 1U);
+	deliver_session(&first, 0);
+	error = job_observe(&first, first_sequence, 1U, &status);
+	assert(error == 0 && status == 0);
+	(void)submit_job(&first, 0U);
+	before = isolations;
+	poll_counts_reserved = 1U;
+	close_file(&first);
+	poll_counts_reserved = 0U;
+	assert(isolations == before && global_faults == 1U && job_device->error == 0);
+	assert(job_device->quarantined == 0U);
+	for (index = 0U; index < 4U; index++)
+		assert(jobs[index].completion == NULL);
 	error = drv_gpu_unregister(job_device);
 	assert(error == 0);
 
@@ -444,7 +469,7 @@ main(
 	filedesc_destroy(process.fd);
 	gpu_test_set_process(NULL);
 	assert(allocations == 0U && held_spinlocks == 0U);
-	puts("GPU supervision: foreign capacity, 64-record self-reap, observer pin, backend domain, 10s/60s policy, local drain, late callback, global fallback, reset gate, per-context isolation, idle reset reclaim, reservation reclaim and metadata-only close PASS");
+	puts("GPU supervision: foreign capacity, 64-record self-reap, observer pin, backend domain, 10s/60s policy, local drain, late callback, global fallback, reset gate, per-context isolation, idle reset reclaim, reservation reclaim, reserved close and metadata-only close PASS");
 
 	/* Succeeded: all production ownership retired at explicitly observed boundaries. */
 	return 0;
@@ -539,16 +564,37 @@ local_poll(
 	if (raw_session == session && raw_released == 0U)
 		return EAGAIN;
 
-	/* Published peer jobs remain retained until actual completion; unpublished reservations do not block idle. */
+	/* Published peer jobs remain retained until actual completion; unpublished reservations block idle only when modeled. */
 	for (index = 0U; index < 4U; index++) {
 		if (jobs[index].session == session &&
 		    jobs[index].completion != NULL &&
-		    jobs[index].committed != 0U)
+		    (jobs[index].committed != 0U || poll_counts_reserved != 0U))
 			return EAGAIN;
 	}
 
 	/* Succeeded: this bounded peer retains no native or callback owner. */
 	return 0;
+}
+
+/* Models i915's drain, which waits for every pending request: an uncommitted reservation would never retire. */
+static void
+supervised_drain(
+	void *opaque,
+	void *session)
+{
+	unsigned index;
+
+	/* Close must have withdrawn the reservation before draining (BUG-077). */
+	if (poll_counts_reserved != 0U) {
+		for (index = 0U; index < 4U; index++) {
+			assert(jobs[index].session != session ||
+			    jobs[index].completion == NULL ||
+			    jobs[index].committed != 0U);
+		}
+	}
+
+	/* The shared peer delivers the remaining callbacks. */
+	job_drain(opaque, session);
 }
 
 /* Models transport-wide quarantine and ends every retained peer callback. */
