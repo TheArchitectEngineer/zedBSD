@@ -437,14 +437,24 @@ drv_i915_gfx_image_layout(
 	if (image->levels == 0U || image->levels > max_levels)
 		return EINVAL;
 
-	/* Counts the slices; a depth image has one. */
+	/* Counts the slices. */
 	slices = drv_i915_gfx_image_slices(image, 0U);
 	if (slices > I915_GFX_IMAGE_MAX_SLICES)
 		return EINVAL;
 	depth = i915_gfx_is_depth(image->format);
-	if (depth != 0 && slices != 1U)
-		return EINVAL;
 	image->slice_rows = 0U;
+
+	/*
+	 * Several layers of a depth image: each a whole number of Y tiles
+	 * (32 rows), so every layer starts on a tile row and the QPitch is the
+	 * layer's rows.
+	 */
+	if (depth != 0 && image->levels == 1U && slices > 1U) {
+		image->pitch = (image->width * texel_bytes + 127U) & ~127U;
+		image->slice_rows = (image->height + 31U) & ~31U;
+		image->bytes = (uint64_t)image->pitch * image->slice_rows * slices;
+		return 0;
+	}
 
 	/* One level of one slice is linear rows of whole texels. */
 	if (image->levels == 1U && slices == 1U) {
@@ -681,10 +691,9 @@ i915_gfx_image_supported(
 	if (info->mipLevels == 0U || info->mipLevels > max_levels)
 		return 0;
 
-	/* Only one level and one layer of a 2D depth image. */
+	/* Only one level of a 2D depth image. */
 	depth = i915_gfx_is_depth(info->format);
-	if (depth != 0 &&
-	    (info->mipLevels != 1U || info->arrayLayers != 1U || info->imageType != VK_IMAGE_TYPE_2D))
+	if (depth != 0 && (info->mipLevels != 1U || info->imageType != VK_IMAGE_TYPE_2D))
 		return 0;
 
 	/* Succeeded: the image has the supported layout. */

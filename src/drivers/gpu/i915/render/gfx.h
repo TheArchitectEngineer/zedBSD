@@ -45,8 +45,15 @@ struct i915_shader_binary;
 struct i915_wire_reader;
 struct i915_wire_writer;
 
-/* How many bindings one descriptor set layout, and so one set, holds. */
-#define I915_GFX_MAX_BINDINGS		8U
+/*
+ * The binding numbers one descriptor set holds (0 .. MAX_BINDINGS - 1:
+ * libGLESv2 numbers its uniform blocks from 32 and its capture buffer 48),
+ * how many bindings one layout lists, and how many of them may be dynamic
+ * uniform buffers.
+ */
+#define I915_GFX_MAX_BINDINGS		64U
+#define I915_GFX_MAX_LAYOUT_BINDINGS	32U
+#define I915_GFX_MAX_DYNAMIC_BUFFERS	8U
 
 /* How many attachments one render pass and one framebuffer hold. */
 #define I915_GFX_MAX_ATTACHMENTS	4U
@@ -243,7 +250,7 @@ struct i915_gfx_dsl {
 		uint32_t binding;
 		uint32_t type;
 		uint32_t stages;
-	} bindings[I915_GFX_MAX_BINDINGS];
+	} bindings[I915_GFX_MAX_LAYOUT_BINDINGS];
 };
 
 /*
@@ -506,13 +513,15 @@ struct i915_gfx_op {
 		} vertex;
 
 		/*
-		 * A descriptor set bind, with the dynamic offset of each dynamic
-		 * uniform buffer of the set, indexed by binding number.
+		 * A descriptor set bind, with the binding number and the dynamic
+		 * offset of each dynamic uniform buffer of the set.
 		 */
 		struct {
 			uint32_t set;
 			struct i915_gfx_dset *dset;
-			uint32_t dynamic_offsets[I915_GFX_MAX_BINDINGS];
+			uint32_t dynamic_count;
+			uint32_t dynamic_bindings[I915_GFX_MAX_DYNAMIC_BUFFERS];
+			uint32_t dynamic_offsets[I915_GFX_MAX_DYNAMIC_BUFFERS];
 		} descriptor;
 
 		/* A push constant update. */
@@ -597,7 +606,9 @@ struct i915_gfx_draw_state {
 	struct i915_gfx_dset *dset[I915_GFX_BOUND_SETS];
 
 	/* The dynamic offset of each dynamic uniform buffer of each bound set, by binding number. */
-	uint32_t dynamic_offsets[I915_GFX_BOUND_SETS][I915_GFX_MAX_BINDINGS];
+	uint32_t dynamic_count[I915_GFX_BOUND_SETS];
+	uint32_t dynamic_bindings[I915_GFX_BOUND_SETS][I915_GFX_MAX_DYNAMIC_BUFFERS];
+	uint32_t dynamic_offsets[I915_GFX_BOUND_SETS][I915_GFX_MAX_DYNAMIC_BUFFERS];
 
 	/* The push constants. */
 	uint8_t push[I915_GFX_PUSH_BYTES];
