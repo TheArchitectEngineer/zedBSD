@@ -36,6 +36,13 @@
 #define NVME_IO_QUEUE_ID 1U
 #define NVME_IO_BOUNCE_SIZE 4096U
 #define NVME_IO_MAX_SLOTS (NVME_IO_QUEUE_REQUESTED_DEPTH - 1U)
+
+/*
+ * How many more times a request runs after it timed out.  A timeout stops the
+ * queue and the driver resets it; a slow device (or an emulator starved by
+ * its host) makes the same request succeed on the recovered queue.
+ */
+#define NVME_IO_TIMEOUT_RETRIES 3U
 #ifndef NVME_IO_PIPELINE_DEPTH
 #define NVME_IO_PIPELINE_DEPTH 4U
 #endif
@@ -321,6 +328,7 @@ static void nvme_io_fail_all_locked(struct nvme_controller *controller, int erro
 static int nvme_attach(struct drv_pci_device *device, const struct drv_pci_id *id);
 static int nvme_detach(struct drv_pci_device *device, unsigned flags);
 static int nvme_disk_submit(struct disk *disk, struct bio *bio);
+static int nvme_disk_run(struct nvme_controller *controller, struct bio *bio, size_t *transferred);
 static void nvme_lifecycle_bar_release(void *context);
 static int nvme_lifecycle_bar_restore(void *context);
 static void nvme_lifecycle_bar_unmap(void *context);
@@ -4436,8 +4444,10 @@ nvme_disk_submit(
 	struct bio *bio)
 {
 	struct nvme_controller *controller;
-	size_t transferred = 0;
+	size_t transferred;
+	unsigned retries;
 	int owned;
+	int admitted;
 	int error;
 
 	/* Handles the disk availability. */
@@ -4472,18 +4482,62 @@ nvme_disk_submit(
 	if (!owned)
 		return EIO;
 
-	/* Handles the bio condition. */
-	if (bio->b_op == BIO_FLUSH) {
-		error = nvme_io_execute(controller, DRV_NVME_NVM_FLUSH, 0U, 0U,
-					NULL);
-	} else {
-		error = nvme_io_pipeline(controller, bio, &transferred);
+	/*
+	 * Runs the request, and runs it again when it timed out: the timeout
+	 * reset the queue, and the request is admitted again once the queue
+	 * is back.  Reads, writes of the same data and flushes are all safe to
+	 * repeat.
+	 */
+	retries = 0;
+	for (;;) {
+		/* Runs the request once on the admitted queue. */
+		error = nvme_disk_run(controller, bio, &transferred);
+		nvme_io_end_bio(controller, bio->b_op);
+
+		/* Only a timeout, and only a bounded number of them, is tried again. */
+		if (error != ETIMEDOUT)
+			break;
+		if (retries >= NVME_IO_TIMEOUT_RETRIES)
+			break;
+		retries++;
+
+		/* Waits for the recovered queue; a queue that did not come back ends the request. */
+		admitted = nvme_io_begin_bio(controller, bio->b_op, &owned);
+		if (admitted != 0)
+			break;
+		if (!owned)
+			break;
 	}
 
-	nvme_io_end_bio(controller, bio->b_op);
+	/* Completes the request with what the last run reported. */
 	bio_complete(bio, error, transferred);
 
-	/* Succeeded. */
+	/* Succeeded: the request is completed. */
+	return 0;
+}
+
+/* Runs one admitted request once: a flush, or a read or write pipeline. */
+static int
+nvme_disk_run(
+	struct nvme_controller *controller,
+	struct bio *bio,
+	size_t *transferred)
+{
+	int error;
+
+	/* A flush moves no data. */
+	*transferred = 0;
+	if (bio->b_op == BIO_FLUSH) {
+		error = nvme_io_execute(controller, DRV_NVME_NVM_FLUSH, 0U, 0U, NULL);
+	} else {
+		error = nvme_io_pipeline(controller, bio, transferred);
+	}
+
+	/* Reports why the request failed. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the request ran. */
 	return 0;
 }
 

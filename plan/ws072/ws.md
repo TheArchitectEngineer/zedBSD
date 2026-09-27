@@ -8,7 +8,7 @@ Primary Milestone: MG004
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: 2026-09-27 の並列実行（ストレージ担当のサブエージェント、main session の割り当て）
-Resume point: p001 cleared。p002（BUG-059）
+Resume point: p002 cleared。WS の完了の処理
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -27,7 +27,7 @@ write cached の UFS（ws061-p006・WS063 の既定）と、host の負荷の下
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
 | [ws072-p001](phase001/phase.md) | BUG-060: format の lease と write cached | cleared（2026-09-27。write cached の root で `mkfs -t ufs` が成功、sync・書き込みも正常。強制終了・journal・root の試験 UFS OK） | — |
-| [ws072-p002](phase002/phase.md) | BUG-059: NVMe の queue の回復の後の root の mount の ETIMEDOUT | planned | — |
+| [ws072-p002](phase002/phase.md) | BUG-059: NVMe の queue の回復の後の root の mount の ETIMEDOUT | cleared（2026-09-27。timeout の要求を回復した queue で走らせ直す。QMP の絞りの再現で直す前 4/4 ETIMEDOUT → 後 4/4 成功） | — |
 
 ## 判断が要る点
 

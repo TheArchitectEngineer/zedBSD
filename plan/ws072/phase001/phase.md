@@ -39,7 +39,7 @@ write cached の root（journal あり）で、書いたばかりの file（sync
 | 確認 | 結果 |
 | --- | --- |
 | build | amd64 warning 0（我々の source）、rpi4 の vmunix warning 0 |
-| 直す前（`build/ws063/new.img`・`p004.img`） | probe（`plan/ws072/tests/format-lease-probe.c`: lease → pwrite → fsync）で fsync が EBUSY。`mkfs` は EBUSY、その後 `sync` も EBUSY |
+| 直す前（`build/ws063/new.img`・`p004.img`） | probe（`plan/tools/ufs/format-lease-probe.c`: lease → pwrite → fsync）で fsync が EBUSY。`mkfs` は EBUSY、その後 `sync` も EBUSY |
 | 途中（claim の書き込みの遅延なしだけ） | 変わらず EBUSY（原因 1・2 が残る） |
 | 修正の後 | probe の fsync が成功。`dd` の直後（sync なし）の file への `mkfs -t ufs --journal-size=8` が `ufs initialized`、`sync` が成功、続く書き込みも成功。2 つ目の file にも成功。host の検査で UFS OK |
 | journal の機能（`plan/tools/ufs/journal-func.sh`） | 25 の検査が OK、mkfs が `ufs initialized`、`ZJ3R` 8 MiB、全 volume UFS OK |
