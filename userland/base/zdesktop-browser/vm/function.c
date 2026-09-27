@@ -62,6 +62,8 @@ vm_function_create_native(
 		return NULL;
 	function->realm = realm;
 	function->native = native;
+	function->object.kind = VM_KIND_FUNCTION;
+	function->data = VM_VALUE_UNDEFINED;
 
 	/* Its length: how many arguments it expects. */
 	key = vm_key_from_ascii(realm->heap, "length");
@@ -110,6 +112,8 @@ vm_function_create(
 		return NULL;
 	function->realm = realm;
 	function->code = code;
+	function->object.kind = VM_KIND_FUNCTION;
+	function->data = VM_VALUE_UNDEFINED;
 
 	/* Its length: how many parameters it declares. */
 	key = vm_key_from_ascii(realm->heap, "length");
@@ -241,7 +245,7 @@ vm_value_is_callable(
 
 /*
  * Tells whether a value can be called with new (a bytecode function whose
- * code can construct; the native constructors arrive with the built-ins).
+ * code can construct, or a native function with a construct behaviour).
  */
 int
 vm_value_is_constructor(
@@ -255,12 +259,49 @@ vm_value_is_constructor(
 	if (!callable)
 		return 0;
 
-	/* A code unit that can. */
+	/* A code unit that can, or a native constructor. */
 	function = (struct vm_function *)vm_value_as_cell(value);
 	if (function->code != NULL && (function->code->flags & VM_CODE_CONSTRUCTOR) != 0U)
 		return 1;
+	if (function->construct != NULL)
+		return 1;
 
 	/* Anything else. */
+	return 0;
+}
+
+/*
+ * Finds the prototype of an object new makes (GetPrototypeFromConstructor):
+ * new.target's prototype property, or a fallback when that is not an
+ * object.
+ */
+int
+vm_construct_prototype(
+	struct vm_realm *realm,
+	vm_value new_target,
+	struct vm_object *fallback,
+	struct vm_object **prototype)
+{
+	vm_value key;
+	vm_value value;
+	int is_object;
+	int status;
+
+	/* new.target's prototype property. */
+	*prototype = fallback;
+	key = vm_key_from_ascii(realm->heap, "prototype");
+	if (key == VM_VALUE_EMPTY)
+		return ENOMEM;
+	status = vm_get(realm, new_target, key, &value);
+	if (status != 0)
+		return status;
+
+	/* An object is the prototype; anything else leaves the fallback. */
+	is_object = vm_value_is_object(value);
+	if (is_object)
+		*prototype = (struct vm_object *)vm_value_as_cell(value);
+
+	/* Succeeded: the prototype. */
 	return 0;
 }
 
@@ -277,24 +318,12 @@ vm_construct_this(
 {
 	struct vm_object *prototype;
 	struct vm_object *made;
-	vm_value key;
-	vm_value value;
-	int is_object;
 	int status;
 
-	/* The constructor's prototype property. */
-	key = vm_key_from_ascii(realm->heap, "prototype");
-	if (key == VM_VALUE_EMPTY)
-		return ENOMEM;
-	status = vm_get(realm, constructor, key, &value);
+	/* The prototype. */
+	status = vm_construct_prototype(realm, constructor, realm->object_prototype, &prototype);
 	if (status != 0)
 		return status;
-
-	/* An object is the new object's prototype; anything else leaves Object.prototype. */
-	prototype = realm->object_prototype;
-	is_object = vm_value_is_object(value);
-	if (is_object)
-		prototype = (struct vm_object *)vm_value_as_cell(value);
 
 	/* The object. */
 	made = vm_object_create(realm->heap, prototype);
@@ -342,7 +371,9 @@ vm_call(
 	if (function->native == NULL)
 		return ENOSYS;
 
-	/* Runs the native code in the function's own realm. */
+	/* Runs the native code in the function's own realm (which tells it which function it is). */
+	function->realm->callee = callee;
+	function->realm->new_target = VM_VALUE_UNDEFINED;
 	status = function->native(function->realm, this_value, args, count, result);
 	if (status == VM_THROWN)
 		return VM_THROWN;
@@ -350,6 +381,60 @@ vm_call(
 		return status;
 
 	/* Succeeded: the result is stored. */
+	return 0;
+}
+
+/*
+ * Constructs with a constructor and a new.target (new, from C): a bytecode
+ * constructor runs with a new object from new.target's prototype; a native
+ * one makes its own.  Returns 0, VM_THROWN or an errno value.
+ */
+int
+vm_construct(
+	struct vm_realm *realm,
+	vm_value constructor,
+	const vm_value *args,
+	unsigned count,
+	vm_value new_target,
+	vm_value *result)
+{
+	struct vm_function *function;
+	struct vm_object *prototype;
+	struct vm_object *made;
+	int is_constructor;
+	int status;
+
+	/* Only a constructor. */
+	*result = VM_VALUE_UNDEFINED;
+	is_constructor = vm_value_is_constructor(constructor);
+	if (!is_constructor) {
+		status = vm_throw_type_error(realm, "value is not a constructor");
+		return status;
+	}
+
+	/* A native constructor makes its object itself. */
+	function = (struct vm_function *)vm_value_as_cell(constructor);
+	if (function->code == NULL) {
+		function->realm->callee = constructor;
+		function->realm->new_target = new_target;
+		status = function->construct(function->realm, VM_VALUE_UNDEFINED, args, count, result);
+		if (status != 0)
+			return status;
+		return 0;
+	}
+
+	/* A bytecode one runs on a new object. */
+	status = vm_construct_prototype(realm, new_target, realm->object_prototype, &prototype);
+	if (status != 0)
+		return status;
+	made = vm_object_create(realm->heap, prototype);
+	if (made == NULL)
+		return ENOMEM;
+	status = vm_interpret_construct(function->realm, function, vm_value_cell(made), args, count, result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the object made. */
 	return 0;
 }
 
@@ -380,12 +465,13 @@ function_trace(
 	/* The object's shape, prototype, slots and elements. */
 	vm_object_trace(heap, cell);
 
-	/* The code unit it runs and the environment it runs in. */
+	/* The code unit it runs, the environment it runs in, and its data. */
 	function = (struct vm_function *)cell;
 	if (function->code != NULL)
 		vm_heap_mark(heap, (struct vm_cell *)function->code);
 	if (function->env != NULL)
 		vm_heap_mark(heap, &function->env->cell);
+	vm_heap_mark_value(heap, function->data);
 }
 
 /* Marks what an environment refers to: its parent and the values in its slots. */

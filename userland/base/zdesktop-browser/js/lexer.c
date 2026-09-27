@@ -912,14 +912,12 @@ lexer_number(
 	if (follows)
 		lexer_fail(lexer, "an identifier starts right after a numeral");
 
-	/* The value: decimal through strtod, the other bases digit by digit. */
+	/* The value, read exactly and rounded once: a decimal numeral, or the digits of another base. */
 	numeral[count] = '\0';
-	value = 0.0;
 	if (decimal && base == 10) {
-		value = strtod(numeral, NULL);
+		value = vm_number_parse(numeral, count);
 	} else {
-		for (index = 0; index < count; index++)
-			value = value * (double)base + (double)lexer_hex((uint32_t)(unsigned char)numeral[index]);
+		value = vm_number_parse_radix(numeral, count, (int)base);
 	}
 
 	/* The token. */

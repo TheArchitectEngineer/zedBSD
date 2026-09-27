@@ -19,6 +19,7 @@
 #include "vm/internal.h"
 
 #include <errno.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -47,6 +48,12 @@ static int access_refuse(struct vm_realm *realm, int strict, const char *message
 static int access_collect(struct vm_heap *heap, struct vm_object *object, struct wb_vector *keys);
 static int access_key_listed(const struct wb_vector *keys, size_t count, vm_value key);
 static int access_is_symbol(vm_value value);
+static struct vm_object *access_primitive_prototype(struct vm_realm *realm, vm_value value);
+static int access_set_primitive(struct vm_realm *realm, vm_value base, vm_value key, vm_value value, int strict);
+static int access_wrap_string(struct vm_realm *realm, struct vm_object *wrapper, struct vm_string *string);
+static int access_descriptor_allowed(const struct vm_object *object, int found, const struct vm_descriptor *current, const struct vm_descriptor *descriptor);
+static int access_define_length(struct vm_realm *realm, struct vm_object *array, const struct vm_descriptor *current, const struct vm_descriptor *descriptor, int *done);
+static void access_get_length_attributes(struct vm_object *array, vm_value length_key, uint32_t *attributes);
 
 /* The cell type of for-in states: they hold their object and keys. */
 static const struct vm_cell_type access_for_in_type = {
@@ -67,8 +74,9 @@ vm_get(
 {
 	struct vm_property property;
 	struct vm_accessor *accessor;
-	struct vm_cell *cell;
-	int is_cell;
+	struct vm_object *holder;
+	int is_object;
+	int is_string;
 	int found;
 	int status;
 
@@ -79,26 +87,31 @@ vm_get(
 		return status;
 	}
 
-	/* Other primitives' prototypes arrive with the built-ins. */
-	is_cell = vm_value_is_cell(base);
-	if (!is_cell)
-		return 0;
-
-	/* A string's length and its characters. */
-	cell = vm_value_as_cell(base);
-	if (cell->type == &vm_string_type) {
-		status = access_string_property(realm, (struct vm_string *)cell, key, result, &found);
+	/* A string's own length and characters. */
+	is_string = vm_value_is_string(base);
+	if (is_string) {
+		status = access_string_property(realm, (struct vm_string *)vm_value_as_cell(base), key, result, &found);
 		if (status != 0)
 			return status;
-		return 0;
+		if (found)
+			return 0;
 	}
 
-	/* A symbol's prototype arrives with the built-ins. */
-	if (cell->type == &vm_symbol_type)
+	/* An object's chain, or a primitive's prototype's (the realm has none before its built-ins). */
+	is_object = vm_value_is_object(base);
+	holder = NULL;
+	if (is_object) {
+		holder = (struct vm_object *)vm_value_as_cell(base);
+	} else {
+		holder = access_primitive_prototype(realm, base);
+	}
+
+	/* Nothing to look in. */
+	if (holder == NULL)
 		return 0;
 
-	/* An object's property, wherever on its chain. */
-	found = vm_object_find((struct vm_object *)cell, key, &property);
+	/* The property, wherever on the chain. */
+	found = vm_object_find(holder, key, &property);
 	if (!found)
 		return 0;
 
@@ -173,10 +186,10 @@ vm_set(
 		return status;
 	}
 
-	/* A primitive takes no property. */
+	/* A primitive takes no property, but its prototype's setter is called with it. */
 	is_object = vm_value_is_object(base);
 	if (!is_object) {
-		status = access_refuse(realm, strict, "Cannot create property on primitive value");
+		status = access_set_primitive(realm, base, key, value, strict);
 		return status;
 	}
 
@@ -640,6 +653,275 @@ vm_delete_global(
 }
 
 /*
+ * Converts a value to an object (ToObject): an object is itself; a
+ * boolean, a number, a string or a symbol gets a wrapper object from its
+ * prototype; undefined and null throw.
+ */
+int
+vm_to_object(
+	struct vm_realm *realm,
+	vm_value value,
+	vm_value *object)
+{
+	struct vm_object *wrapper;
+	struct vm_object *prototype;
+	int is_object;
+	int is_string;
+	int is_boolean;
+	int is_number;
+	int status;
+
+	/* An object is itself. */
+	is_object = vm_value_is_object(value);
+	if (is_object) {
+		*object = value;
+		return 0;
+	}
+
+	/* undefined and null have no object. */
+	if (value == VM_VALUE_UNDEFINED || value == VM_VALUE_NULL) {
+		status = vm_throw_type_error(realm, "Cannot convert undefined or null to object");
+		return status;
+	}
+
+	/* The wrapper, from the primitive's prototype (Object.prototype before the built-ins). */
+	prototype = access_primitive_prototype(realm, value);
+	if (prototype == NULL)
+		prototype = realm->object_prototype;
+	wrapper = vm_object_create(realm->heap, prototype);
+	if (wrapper == NULL)
+		return ENOMEM;
+	wrapper->internal = value;
+
+	/* Its kind by the primitive's type; a string's characters and length are its own properties. */
+	is_string = vm_value_is_string(value);
+	is_boolean = vm_value_is_boolean(value);
+	is_number = vm_value_is_number(value);
+	if (is_boolean) {
+		wrapper->kind = VM_KIND_BOOLEAN;
+	} else if (is_number) {
+		wrapper->kind = VM_KIND_NUMBER;
+	} else if (is_string) {
+		wrapper->kind = VM_KIND_STRING;
+		status = access_wrap_string(realm, wrapper, (struct vm_string *)vm_value_as_cell(value));
+		if (status != 0)
+			return status;
+	} else {
+		wrapper->kind = VM_KIND_SYMBOL;
+	}
+
+	/* Succeeded: the wrapper. */
+	*object = vm_value_cell(wrapper);
+	return 0;
+}
+
+/*
+ * Reads an object's own property as a descriptor; reports whether it has
+ * one.
+ */
+int
+vm_get_own_descriptor(
+	struct vm_object *object,
+	vm_value key,
+	struct vm_descriptor *descriptor)
+{
+	struct vm_property property;
+	struct vm_accessor *accessor;
+	int found;
+
+	/* The own property. */
+	memset(descriptor, 0, sizeof(*descriptor));
+	found = vm_object_get_own(object, key, &property);
+	if (!found)
+		return 0;
+
+	/* An accessor's getter and setter, or a data property's value and writability. */
+	descriptor->attributes = property.attributes & (VM_PROPERTY_WRITABLE | VM_PROPERTY_ENUMERABLE | VM_PROPERTY_CONFIGURABLE);
+	descriptor->has = VM_HAS_ENUMERABLE | VM_HAS_CONFIGURABLE;
+	if ((property.attributes & VM_PROPERTY_ACCESSOR) != 0U) {
+		accessor = (struct vm_accessor *)vm_value_as_cell(*property.value);
+		descriptor->getter = accessor->getter;
+		descriptor->setter = accessor->setter;
+		descriptor->has |= VM_HAS_GET | VM_HAS_SET;
+		descriptor->attributes &= ~VM_PROPERTY_WRITABLE;
+	} else {
+		descriptor->value = *property.value;
+		descriptor->has |= VM_HAS_VALUE | VM_HAS_WRITABLE;
+	}
+
+	/* It has the property. */
+	return 1;
+}
+
+/*
+ * Defines an object's own property from a descriptor as the language
+ * validates it (ValidateAndApplyPropertyDescriptor, and an array's length
+ * and indices); done says whether it was allowed.
+ */
+int
+vm_define_own_property(
+	struct vm_realm *realm,
+	struct vm_object *object,
+	vm_value key,
+	const struct vm_descriptor *descriptor,
+	int *done)
+{
+	struct vm_descriptor current;
+	struct vm_accessor *accessor;
+	vm_value length_key;
+	vm_value getter;
+	vm_value setter;
+	vm_value value;
+	uint32_t attributes;
+	uint32_t index;
+	int found;
+	int allowed;
+	int is_index;
+	int is_accessor;
+	int is_array;
+	int status;
+
+	/* The property there now. */
+	*done = 0;
+	found = vm_get_own_descriptor(object, key, &current);
+	length_key = vm_key_from_ascii(realm->heap, "length");
+	if (length_key == VM_VALUE_EMPTY)
+		return ENOMEM;
+
+	/* An array's length has rules of its own. */
+	is_array = 0;
+	if ((object->flags & VM_OBJECT_ARRAY) != 0U)
+		is_array = 1;
+	if (is_array && key == length_key) {
+		status = access_define_length(realm, object, &current, descriptor, done);
+		if (status != 0)
+			return status;
+		return 0;
+	}
+
+	/* An array takes no index past a length that cannot change. */
+	is_index = vm_value_is_array_index(key, &index);
+	if (is_array && is_index && !found && index >= object->length) {
+		access_get_length_attributes(object, length_key, &attributes);
+		if ((attributes & VM_PROPERTY_WRITABLE) == 0U)
+			return 0;
+	}
+
+	/* Whether the change is allowed from what is there. */
+	allowed = access_descriptor_allowed(object, found, &current, descriptor);
+	if (!allowed)
+		return 0;
+
+	/* The kind after the change: the descriptor's, or (for a generic one) what is there. */
+	is_accessor = 0;
+	if ((descriptor->has & (VM_HAS_GET | VM_HAS_SET)) != 0U)
+		is_accessor = 1;
+	if ((descriptor->has & (VM_HAS_VALUE | VM_HAS_WRITABLE | VM_HAS_GET | VM_HAS_SET)) == 0U && found && (current.has & VM_HAS_GET) != 0U)
+		is_accessor = 1;
+
+	/* The enumerability and configurability: given, or kept, or false. */
+	attributes = 0;
+	if (found)
+		attributes = current.attributes & (VM_PROPERTY_ENUMERABLE | VM_PROPERTY_CONFIGURABLE);
+	if ((descriptor->has & VM_HAS_ENUMERABLE) != 0U)
+		attributes = (attributes & ~VM_PROPERTY_ENUMERABLE) | (descriptor->attributes & VM_PROPERTY_ENUMERABLE);
+	if ((descriptor->has & VM_HAS_CONFIGURABLE) != 0U)
+		attributes = (attributes & ~VM_PROPERTY_CONFIGURABLE) | (descriptor->attributes & VM_PROPERTY_CONFIGURABLE);
+
+	/* An accessor: the getter and setter given, or those it had. */
+	if (is_accessor) {
+		getter = VM_VALUE_UNDEFINED;
+		setter = VM_VALUE_UNDEFINED;
+		if (found && (current.has & VM_HAS_GET) != 0U) {
+			getter = current.getter;
+			setter = current.setter;
+		}
+
+		/* The ones given. */
+		if ((descriptor->has & VM_HAS_GET) != 0U)
+			getter = descriptor->getter;
+		if ((descriptor->has & VM_HAS_SET) != 0U)
+			setter = descriptor->setter;
+		accessor = vm_accessor_create(realm->heap, getter, setter);
+		if (accessor == NULL)
+			return ENOMEM;
+		status = vm_object_define(realm->heap, object, key, vm_value_cell(accessor), attributes | VM_PROPERTY_ACCESSOR);
+		if (status != 0)
+			return status;
+		*done = 1;
+		return 0;
+	}
+
+	/* A data property: the value and writability given, or those it had. */
+	value = VM_VALUE_UNDEFINED;
+	if (found && (current.has & VM_HAS_VALUE) != 0U) {
+		value = current.value;
+		attributes |= current.attributes & VM_PROPERTY_WRITABLE;
+	}
+
+	/* The ones given. */
+	if ((descriptor->has & VM_HAS_VALUE) != 0U)
+		value = descriptor->value;
+	if ((descriptor->has & VM_HAS_WRITABLE) != 0U)
+		attributes = (attributes & ~VM_PROPERTY_WRITABLE) | (descriptor->attributes & VM_PROPERTY_WRITABLE);
+	status = vm_object_define(realm->heap, object, key, value, attributes);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the property is defined. */
+	*done = 1;
+	return 0;
+}
+
+/*
+ * Tells whether two values are the same value (SameValue: NaN is itself,
+ * +0 and -0 differ).
+ */
+int
+vm_same_value(
+	vm_value left,
+	vm_value right)
+{
+	double left_number;
+	double right_number;
+	int left_is_number;
+	int right_is_number;
+	int left_negative;
+	int right_negative;
+	int equal;
+
+	/* Numbers: NaN equals NaN, and the signs of zeros count. */
+	left_is_number = vm_value_is_number(left);
+	right_is_number = vm_value_is_number(right);
+	if (left_is_number && right_is_number) {
+		left_number = vm_value_as_number(left);
+		right_number = vm_value_as_number(right);
+		if (left_number != left_number && right_number != right_number)
+			return 1;
+		if (left_number == 0.0 && right_number == 0.0) {
+			left_negative = signbit(left_number) != 0;
+			right_negative = signbit(right_number) != 0;
+			if (left_negative == right_negative)
+				return 1;
+			return 0;
+		}
+
+		/* Other numbers by value. */
+		if (left_number == right_number)
+			return 1;
+		return 0;
+	}
+
+	/* Anything else as ===. */
+	equal = vm_strict_equals(left, right);
+	if (equal)
+		return 1;
+
+	/* Different values. */
+	return 0;
+}
+
+/*
  * Starts a for-in loop over a value: lists the enumerable string keys of
  * an object and its chain (a key shadowed by a nearer property is listed
  * once, by the nearer one), or a string's indices; undefined, null and the
@@ -981,4 +1263,270 @@ access_is_symbol(
 
 	/* Another cell. */
 	return 0;
+}
+
+/* Finds the prototype a primitive's properties come from (NULL for undefined and null, and before the built-ins). */
+static struct vm_object *
+access_primitive_prototype(
+	struct vm_realm *realm,
+	vm_value value)
+{
+	int is_boolean;
+	int is_number;
+	int is_string;
+	int is_symbol;
+
+	/* A boolean. */
+	is_boolean = vm_value_is_boolean(value);
+	if (is_boolean)
+		return realm->intrinsics[VM_INTRINSIC_BOOLEAN_PROTOTYPE];
+
+	/* A number. */
+	is_number = vm_value_is_number(value);
+	if (is_number)
+		return realm->intrinsics[VM_INTRINSIC_NUMBER_PROTOTYPE];
+
+	/* A string. */
+	is_string = vm_value_is_string(value);
+	if (is_string)
+		return realm->intrinsics[VM_INTRINSIC_STRING_PROTOTYPE];
+
+	/* A symbol. */
+	is_symbol = access_is_symbol(value);
+	if (is_symbol)
+		return realm->intrinsics[VM_INTRINSIC_SYMBOL_PROTOTYPE];
+
+	/* undefined, null. */
+	return NULL;
+}
+
+/* Assigns a property of a primitive: a setter on its prototype's chain is called with it; anything else is refused. */
+static int
+access_set_primitive(
+	struct vm_realm *realm,
+	vm_value base,
+	vm_value key,
+	vm_value value,
+	int strict)
+{
+	struct vm_property property;
+	struct vm_accessor *accessor;
+	struct vm_object *prototype;
+	vm_value ignored;
+	int found;
+	int status;
+
+	/* A setter on the prototype's chain. */
+	prototype = access_primitive_prototype(realm, base);
+	found = 0;
+	if (prototype != NULL)
+		found = vm_object_find(prototype, key, &property);
+	if (found && (property.attributes & VM_PROPERTY_ACCESSOR) != 0U) {
+		accessor = (struct vm_accessor *)vm_value_as_cell(*property.value);
+		if (accessor->setter != VM_VALUE_UNDEFINED) {
+			status = vm_call(realm, accessor->setter, base, &value, 1, &ignored);
+			return status;
+		}
+	}
+
+	/* Anything else: the primitive takes no property. */
+	status = access_refuse(realm, strict, "Cannot create property on primitive value");
+	return status;
+}
+
+/* Gives a String wrapper its characters (enumerable, read-only) and its length (read-only). */
+static int
+access_wrap_string(
+	struct vm_realm *realm,
+	struct vm_object *wrapper,
+	struct vm_string *string)
+{
+	struct vm_string *character;
+	vm_value key;
+	uint32_t index;
+	uint16_t unit;
+	int status;
+
+	/* Each character as an index property. */
+	for (index = 0; index < string->length; index++) {
+		unit = vm_string_at(string, index);
+		character = vm_string_from_units(realm->heap, &unit, 1);
+		if (character == NULL)
+			return ENOMEM;
+		status = vm_object_define(realm->heap, wrapper, vm_value_int32((int32_t)index), vm_value_cell(character),
+		    VM_PROPERTY_ENUMERABLE);
+		if (status != 0)
+			return status;
+	}
+
+	/* The length. */
+	key = vm_key_from_ascii(realm->heap, "length");
+	if (key == VM_VALUE_EMPTY)
+		return ENOMEM;
+	status = vm_object_define(realm->heap, wrapper, key, vm_value_int32((int32_t)string->length), 0);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the wrapper has the string's properties. */
+	return 0;
+}
+
+/* Tells whether a descriptor may be applied over what an object has (ValidateAndApplyPropertyDescriptor's refusals). */
+static int
+access_descriptor_allowed(
+	const struct vm_object *object,
+	int found,
+	const struct vm_descriptor *current,
+	const struct vm_descriptor *descriptor)
+{
+	int is_accessor;
+	int was_accessor;
+	int generic;
+	int same;
+
+	/* A new property needs an object that takes new ones. */
+	if (!found) {
+		if ((object->flags & VM_OBJECT_NOT_EXTENSIBLE) != 0U)
+			return 0;
+		return 1;
+	}
+
+	/* A configurable property may become anything. */
+	if ((current->attributes & VM_PROPERTY_CONFIGURABLE) != 0U)
+		return 1;
+
+	/* A property that is not configurable stays so and keeps its enumerability. */
+	if ((descriptor->has & VM_HAS_CONFIGURABLE) != 0U && (descriptor->attributes & VM_PROPERTY_CONFIGURABLE) != 0U)
+		return 0;
+	if ((descriptor->has & VM_HAS_ENUMERABLE) != 0U &&
+	    (descriptor->attributes & VM_PROPERTY_ENUMERABLE) != (current->attributes & VM_PROPERTY_ENUMERABLE))
+		return 0;
+
+	/* It keeps its kind. */
+	is_accessor = 0;
+	if ((descriptor->has & (VM_HAS_GET | VM_HAS_SET)) != 0U)
+		is_accessor = 1;
+	generic = 0;
+	if ((descriptor->has & (VM_HAS_VALUE | VM_HAS_WRITABLE | VM_HAS_GET | VM_HAS_SET)) == 0U)
+		generic = 1;
+	was_accessor = 0;
+	if ((current->has & VM_HAS_GET) != 0U)
+		was_accessor = 1;
+	if (!generic && is_accessor != was_accessor)
+		return 0;
+
+	/* An accessor keeps its getter and setter. */
+	if (was_accessor) {
+		if ((descriptor->has & VM_HAS_GET) != 0U) {
+			same = vm_same_value(descriptor->getter, current->getter);
+			if (!same)
+				return 0;
+		}
+
+		/* The setter too. */
+		if ((descriptor->has & VM_HAS_SET) != 0U) {
+			same = vm_same_value(descriptor->setter, current->setter);
+			if (!same)
+				return 0;
+		}
+
+		/* It keeps them. */
+		return 1;
+	}
+
+	/* A read-only data property stays read-only with its value. */
+	if ((current->attributes & VM_PROPERTY_WRITABLE) == 0U) {
+		if ((descriptor->has & VM_HAS_WRITABLE) != 0U && (descriptor->attributes & VM_PROPERTY_WRITABLE) != 0U)
+			return 0;
+		if ((descriptor->has & VM_HAS_VALUE) != 0U) {
+			same = vm_same_value(descriptor->value, current->value);
+			if (!same)
+				return 0;
+		}
+	}
+
+	/* Allowed. */
+	return 1;
+}
+
+/* Defines an array's length (ArraySetLength): a valid length, the elements past it removed, and its writability. */
+static int
+access_define_length(
+	struct vm_realm *realm,
+	struct vm_object *array,
+	const struct vm_descriptor *current,
+	const struct vm_descriptor *descriptor,
+	int *done)
+{
+	struct vm_descriptor rest;
+	vm_value length_key;
+	double number;
+	uint32_t length;
+	int allowed;
+	int status;
+
+	/* The new length, when given: a whole number in uint32's range (and int32's for now). */
+	*done = 0;
+	length_key = vm_key_from_ascii(realm->heap, "length");
+	if (length_key == VM_VALUE_EMPTY)
+		return ENOMEM;
+	rest = *descriptor;
+	length = array->length;
+	if ((descriptor->has & VM_HAS_VALUE) != 0U) {
+		status = vm_to_uint32(realm, descriptor->value, &length);
+		if (status != 0)
+			return status;
+		status = vm_to_number(realm, descriptor->value, &number);
+		if (status != 0)
+			return status;
+		if ((double)length != number || length > 0x7fffffffU) {
+			status = vm_throw_range_error(realm, "Invalid array length");
+			return status;
+		}
+
+		/* The value as the number it is. */
+		rest.value = vm_value_number((double)length);
+	}
+
+	/* The change must be allowed as for any property, and a read-only length cannot change. */
+	allowed = access_descriptor_allowed(array, 1, current, &rest);
+	if (!allowed)
+		return 0;
+	if ((current->attributes & VM_PROPERTY_WRITABLE) == 0U && length != array->length)
+		return 0;
+
+	/* The new length (the elements past it go). */
+	if (length != array->length) {
+		status = vm_array_set_length(realm->heap, array, length);
+		if (status != 0)
+			return status;
+	}
+
+	/* A length made read-only stays so. */
+	if ((descriptor->has & VM_HAS_WRITABLE) != 0U && (descriptor->attributes & VM_PROPERTY_WRITABLE) == 0U) {
+		status = vm_object_define(realm->heap, array, length_key, vm_value_number((double)array->length), 0);
+		if (status != 0)
+			return status;
+	}
+
+	/* Succeeded: the length is defined. */
+	*done = 1;
+	return 0;
+}
+
+/* Reports the attributes of an array's length property. */
+static void
+access_get_length_attributes(
+	struct vm_object *array,
+	vm_value length_key,
+	uint32_t *attributes)
+{
+	struct vm_property property;
+	int found;
+
+	/* The property (an array always has it). */
+	*attributes = VM_PROPERTY_WRITABLE;
+	found = vm_object_get_own(array, length_key, &property);
+	if (found)
+		*attributes = property.attributes;
 }

@@ -291,6 +291,7 @@ vm_array_create(
 	if (error != 0)
 		return NULL;
 	array->flags |= VM_OBJECT_ARRAY;
+	array->kind = VM_KIND_ARRAY;
 
 	/* Its length, the first named property: writable, neither enumerable nor configurable. */
 	key = vm_key_from_ascii(heap, "length");
@@ -838,6 +839,9 @@ vm_object_trace(
 	/* The elements. */
 	for (index = 0; index < object->element_capacity; index++)
 		vm_heap_mark_value(heap, object->elements[index]);
+
+	/* The value a wrapper holds. */
+	vm_heap_mark_value(heap, object->internal);
 }
 
 /*

@@ -205,6 +205,9 @@ void js_program_release(struct js_program *program);
 int js_compile(struct vm_realm *realm, struct js_program *program, struct vm_function **function, struct js_syntax_error *error);
 int js_run_script(struct vm_realm *realm, const uint16_t *source, size_t length, unsigned how, vm_value *result, struct js_syntax_error *error);
 
+/* The built-in objects (builtin.c). */
+int js_install_builtins(struct vm_realm *realm);
+
 /* The script shell's own functions (script.c). */
 int js_define_print(struct vm_realm *realm);
 int js_exception_text(struct vm_realm *realm, vm_value exception, struct wb_buffer *out);
