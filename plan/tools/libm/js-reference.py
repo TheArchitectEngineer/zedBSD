@@ -2,7 +2,7 @@
 # zedBSD
 # Copyright (C) 2026 Awe Morris
 # SPDX-License-Identifier: Zlib
-"""Makes and checks the expected output of plan/ws076/tests/js/*.js (WS076).
+"""Makes and checks the expected output of plan/tools/libm/js/*.js (WS076).
 
   js-reference.py --reference        NAME.expected from the host's headless Chromium
   js-reference.py --outputs DIR      compare DIR/NAME.out (the guest's) with NAME.expected

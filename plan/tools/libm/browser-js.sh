@@ -1,13 +1,13 @@
 #!/bin/sh
 # ws076: runs zdesktop-browser's JavaScript tests (plan/ws074/tests/js) and
-# WS076's libm lines (plan/ws076/tests/js) in the guest with the new libm and
+# WS076's libm lines (plan/tools/libm/js) in the guest with the new libm and
 # compares them with Chromium's output (NAME.expected) through
-# plan/ws074/tests/run-js-tests.py and plan/ws076/tests/js-reference.py.
+# plan/ws074/tests/run-js-tests.py and plan/tools/libm/js-reference.py.
 #
-#   plan/ws076/tests/browser-js.sh
+#   plan/tools/libm/browser-js.sh
 #
 # BUILD (default build/ws076-browser) is the build directory of the image
-# (plan/ws076/tests/config-amd64-browser-libm.mk), RUN the emulator's work
+# (plan/tools/libm/config-amd64-browser-libm.mk), RUN the emulator's work
 # directory (default build/ws076-browser-run).  The outputs go to
 # build/ws076-browser-js/NAME.out.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -19,10 +19,10 @@ mkdir -p "$out"
 
 # The image, with the tests in /root/js.
 extra=""
-for test in plan/ws074/tests/js/*.js plan/ws076/tests/js/*.js; do
+for test in plan/ws074/tests/js/*.js plan/tools/libm/js/*.js; do
 	extra="$extra --file /root/js/$(basename "$test")=$(pwd)/$test"
 done
-make -j48 ZEDBSD_CONFIG=plan/ws076/tests/config-amd64-browser-libm.mk \
+make -j48 ZEDBSD_CONFIG=plan/tools/libm/config-amd64-browser-libm.mk \
 	BUILD="$build" "ZEDBSD_TEST_EXTRA_FILES=$extra" disk-image
 
 # Runs every test, marking where each output and its standard error begin.
@@ -65,5 +65,5 @@ EOF
 # The browser's own tests, then WS076's libm lines, both against Chromium.
 status=0
 python3 plan/ws074/tests/run-js-tests.py --outputs "$out" || status=1
-python3 plan/ws076/tests/js-reference.py --outputs "$out" || status=1
+python3 plan/tools/libm/js-reference.py --outputs "$out" || status=1
 exit $status
