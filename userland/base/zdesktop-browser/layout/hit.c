@@ -17,6 +17,7 @@
 #include "layout/layout.h"
 
 static const struct layout_box *hit_box(const struct layout_box *box, layout_unit x, layout_unit y, int depth);
+static const struct layout_box *hit_block(const struct layout_box *box, layout_unit x, layout_unit y, int depth);
 static const struct layout_box *hit_lines(const struct layout_box *box, layout_unit x, layout_unit y);
 
 /*
@@ -40,6 +41,37 @@ layout_hit(
 
 	/* Reports the box, or NULL. */
 	return found;
+}
+
+/*
+ * Finds the DOM node under a point in document coordinates (layout
+ * units): the text there, or else the deepest block whose border box holds
+ * the point (NULL outside the root's box).  A click's target is this
+ * node's element.
+ */
+struct dom_node *
+layout_hit_node(
+	const struct layout_tree *tree,
+	layout_unit x,
+	layout_unit y)
+{
+	const struct layout_box *found;
+
+	/* The text under the point, when there is some. */
+	found = layout_hit(tree, x, y);
+
+	/* Otherwise the deepest block around the point. */
+	if (found == NULL && tree->root != NULL)
+		found = hit_block(tree->root, x, y, 0);
+
+	/* An anonymous block stands for its parent's node. */
+	while (found != NULL && found->node == NULL)
+		found = found->parent;
+	if (found == NULL)
+		return NULL;
+
+	/* The node. */
+	return found->node;
 }
 
 /* Searches a block and its descendants for the text under a point. */
@@ -117,4 +149,42 @@ hit_lines(
 
 	/* The point is on none of the lines. */
 	return NULL;
+}
+
+/* Finds the deepest block box whose border box holds a point, from a block down. */
+static const struct layout_box *
+hit_block(
+	const struct layout_box *box,
+	layout_unit x,
+	layout_unit y,
+	int depth)
+{
+	const struct layout_box *child;
+	const struct layout_box *found;
+	layout_unit width;
+	layout_unit height;
+
+	/* Stops at the depth the layout stops at, and at boxes that are not blocks. */
+	if (depth > LAYOUT_DEPTH_MAX)
+		return NULL;
+	if (box->kind != LAYOUT_BLOCK && box->kind != LAYOUT_ANONYMOUS_BLOCK)
+		return NULL;
+
+	/* The border box must hold the point. */
+	width = box->border[CSS_LEFT] + box->padding[CSS_LEFT] + box->width + box->padding[CSS_RIGHT] + box->border[CSS_RIGHT];
+	height = box->border[CSS_TOP] + box->padding[CSS_TOP] + box->height + box->padding[CSS_BOTTOM] + box->border[CSS_BOTTOM];
+	if (x < box->x || x >= box->x + width)
+		return NULL;
+	if (y < box->y || y >= box->y + height)
+		return NULL;
+
+	/* A child block that holds it is deeper. */
+	for (child = box->first_child; !box->children_inline && child != NULL; child = child->next) {
+		found = hit_block(child, x, y, depth + 1);
+		if (found != NULL)
+			return found;
+	}
+
+	/* The block itself. */
+	return box;
 }

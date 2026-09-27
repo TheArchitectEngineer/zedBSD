@@ -12,7 +12,8 @@
  * The first pass makes the skeleton: Object.prototype (the end of every
  * chain), Function.prototype and Array.prototype, and a global object
  * with globalThis.  The constructors and their methods arrive with the
- * built-ins (ws074-p026).
+ * built-ins (ws074-p026).  A realm also keeps the queue of microtasks its
+ * embedder's checkpoints run (ws074-p030).
  */
 
 #include "vm/internal.h"
@@ -60,6 +61,7 @@ vm_realm_create(
 
 	/* The stack's size, empty. */
 	made->stack_capacity = REALM_STACK_SLOTS;
+	wb_vector_init(&made->jobs, sizeof(struct vm_job));
 
 	/* The tracer. */
 	error = vm_heap_add_tracer(heap, realm_trace, made);
@@ -95,8 +97,76 @@ vm_realm_destroy(
 
 	/* The tracer, then the stack and the realm. */
 	vm_heap_remove_tracer(realm->heap, realm_trace, realm);
+	wb_vector_release(&realm->jobs);
 	free(realm->stack);
 	free(realm);
+}
+
+/*
+ * Adds a microtask to the end of a realm's queue: a call of callback with
+ * one argument at the next checkpoint.
+ */
+int
+vm_enqueue_job(
+	struct vm_realm *realm,
+	vm_value callback,
+	vm_value argument)
+{
+	struct vm_job job;
+	int error;
+
+	/* The job goes to the end of the queue, which the realm's tracer keeps alive. */
+	job.callback = callback;
+	job.argument = argument;
+	error = wb_vector_push(&realm->jobs, &job);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the job waits for the next checkpoint. */
+	return 0;
+}
+
+/*
+ * Runs a microtask checkpoint: every queued job in order, including the
+ * jobs the jobs queue, until the queue is empty.
+ *
+ * A job that throws is reported to report (with context) and the rest
+ * still run.  Returns 0, or ENOMEM when a job ran out of memory.
+ */
+int
+vm_run_jobs(
+	struct vm_realm *realm,
+	vm_job_report report,
+	void *context)
+{
+	struct vm_job *queued;
+	struct vm_job job;
+	vm_value ignored;
+	size_t next;
+	int status;
+
+	/* Takes the jobs from the front while there are any (a job may queue more at the end). */
+	next = 0;
+	while (next < realm->jobs.count) {
+		queued = wb_vector_at(&realm->jobs, next);
+		job = *queued;
+		next++;
+
+		/* Calls the job; an exception is reported and cleared. */
+		status = vm_call(realm, job.callback, VM_VALUE_UNDEFINED, &job.argument, 1, &ignored);
+		if (status == VM_THROWN) {
+			if (report != NULL)
+				report(realm, realm->exception, context);
+			realm->exception = VM_VALUE_UNDEFINED;
+		} else if (status != 0) {
+			wb_vector_clear(&realm->jobs);
+			return status;
+		}
+	}
+
+	/* Succeeded: the queue is empty. */
+	wb_vector_clear(&realm->jobs);
+	return 0;
 }
 
 /* Makes the intrinsic objects and the global object, each held by the realm as soon as it is made. */
@@ -163,6 +233,7 @@ realm_trace(
 	void *context)
 {
 	struct vm_realm *realm;
+	struct vm_job *job;
 	uint32_t slot;
 	uint32_t index;
 
@@ -187,6 +258,13 @@ realm_trace(
 	vm_heap_mark_value(heap, realm->exception);
 	vm_heap_mark_value(heap, realm->callee);
 	vm_heap_mark_value(heap, realm->new_target);
+
+	/* The microtasks waiting for a checkpoint. */
+	for (index = 0; index < realm->jobs.count; index++) {
+		job = wb_vector_at(&realm->jobs, index);
+		vm_heap_mark_value(heap, job->callback);
+		vm_heap_mark_value(heap, job->argument);
+	}
 
 	/* Every word of the used stack that could point at a cell (boxed and raw values share it). */
 	for (slot = 0; slot < realm->stack_top; slot++)

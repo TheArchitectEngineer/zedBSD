@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head><title>Collection</title></head>
+<body>
+<div id="box"></div>
+<script>
+// Makes enough garbage for the collector to run many times while nodes, their objects' properties and
+// their listeners must survive: through the tree, through a script's variable, and detached.
+var box = document.getElementById("box");
+box.marker = "kept";
+var detached = document.createElement("span");
+detached.marker = "detached";
+var clicks = 0;
+detached.addEventListener("click", function () { clicks++; });
+for (var round = 0; round < 200; round++) {
+  var junk = [];
+  for (var i = 0; i < 200; i++) {
+    var element = document.createElement("p");
+    element.textContent = "garbage " + i;
+    element.extra = { round: round, list: [i, i + 1] };
+    junk.push(element);
+  }
+  if (round % 20 === 0) {
+    var kept = document.createElement("div");
+    kept.appendChild(document.createTextNode("round " + round));
+    kept.number = round;
+    box.appendChild(kept);
+  }
+}
+var sum = 0;
+for (var child = box.firstChild; child !== null; child = child.nextSibling)
+  sum += child.number;
+detached.click();
+detached.click();
+console.log("kept", box.children.length, sum, box.marker, document.getElementById("box").marker, detached.marker, clicks);
+console.log("text", box.firstChild.textContent, box.lastChild.firstChild.data);
+setTimeout(function () {
+  var again = document.getElementById("box");
+  console.log("later", again === box, again.marker, again.lastChild.number);
+}, 10);
+</script>
+</body>
+</html>

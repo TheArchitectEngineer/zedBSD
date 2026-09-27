@@ -1,0 +1,16 @@
+attributes list menu main 3 null
+has true false list menu main
+set 4 yes true
+removed false null
+reflect renamed menu null true
+byTag 3 3 3 1
+byClass LI.item first,LI.item,LI.item last LI.item last 0
+children LI.item first,LI.item,LI.item last a
+html true tip P
+html2 false false new tip
+html3 
+svg svg circle false true
+expando expando true
+body BODY HEAD HTML 4
+ready loading true true true true
+size number true true

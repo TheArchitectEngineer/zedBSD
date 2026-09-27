@@ -208,6 +208,36 @@ int js_run_script(struct vm_realm *realm, const uint16_t *source, size_t length,
 /* The built-in objects (builtin.c). */
 int js_install_builtins(struct vm_realm *realm);
 
+/* The attributes of a built-in method: writable and configurable, not enumerable. */
+#define JS_BUILTIN_METHOD	(VM_PROPERTY_WRITABLE | VM_PROPERTY_CONFIGURABLE)
+
+/* Reports an argument of a native call, undefined when the call has fewer. */
+static __inline vm_value
+js_argument(
+	const vm_value *args,
+	unsigned count,
+	unsigned index)
+{
+	/* A missing argument. */
+	if (index >= count)
+		return VM_VALUE_UNDEFINED;
+
+	/* The argument. */
+	return args[index];
+}
+
+/* Making built-ins, and the host's objects made like them (builtin.c). */
+int js_builtin_function(struct vm_realm *realm, const char *name, unsigned length, vm_native native, vm_native construct, struct vm_function **function);
+int js_builtin_method(struct vm_realm *realm, struct vm_object *object, const char *name, unsigned length, vm_native native);
+int js_builtin_value(struct vm_realm *realm, struct vm_object *object, const char *name, vm_value value, uint32_t attributes);
+int js_builtin_accessor(struct vm_realm *realm, struct vm_object *object, const char *name, vm_native getter, vm_native setter);
+int js_builtin_constructor(struct vm_realm *realm, const char *name, unsigned length, vm_native native, vm_native construct, struct vm_object *prototype, struct vm_function **function);
+struct vm_function *js_builtin_callee(const struct vm_realm *realm);
+int js_builtin_string(struct vm_realm *realm, const char *text, vm_value *value);
+int js_builtin_array(struct vm_realm *realm, const vm_value *values, uint32_t count, vm_value *array);
+int js_builtin_integer(struct vm_realm *realm, vm_value value, double *integer);
+int js_builtin_length(struct vm_realm *realm, vm_value object, uint32_t *length);
+
 /* The script shell's own functions (script.c). */
 int js_define_print(struct vm_realm *realm);
 int js_exception_text(struct vm_realm *realm, vm_value exception, struct wb_buffer *out);

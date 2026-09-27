@@ -1,0 +1,28 @@
+head script loading null
+external script late null loading
+javascript in capitals
+body script late null
+queueMicrotask type true
+end of body script
+microtask 1
+microtask 2
+microtask nested
+DOMContentLoaded interactive
+load complete true
+body onload
+start
+ids number true number
+end of start
+timeout 0
+end of timeout 0
+microtask after timeout 0
+timeout 10
+string timer
+timeout 20 x 2
+interval 1
+interval 2
+interval 3
+outer of nested
+nested timeout
+Uncaught Error: timer error
+after the error

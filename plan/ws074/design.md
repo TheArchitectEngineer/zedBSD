@@ -405,6 +405,10 @@ DataView、BigInt、Iterator の helper（後）、Intl は後（§16）。
 - 自前で書いた WebIDL の file（仕様の IDL の断片を写さず、使う interface・attribute・operation を書く）を build のときに python3 の
   生成器（`userland/base/zdesktop-browser/tools/gen-bindings.py`、build は既に python3 を使う）で C に変換する。生成物は
   `build/` に出て commit しない。生成器の出力は coding-style の特別な範囲（generated）として扱い、生成器の側を規約に合わせる。
+- ws074-p030 の最初の版は、生成器が出すのと同じ形の interface の表（`bind/internal.h` の `struct bind_interface`: 名前、親、
+  attribute の getter・setter、operation、定数）を手で書き、`bind/window.c` が表から interface object と prototype を作る。
+  interface が増えたとき（p031・p032）に生成器へ移すかを決める。DOM の node の object は node が持ち（`dom_node.wrapper`）、
+  object の `internal` が node を指す（`VM_KIND_PLATFORM`）。event handler（onclick 等）は listener の列の中の listener。
 - window（global object）、document、Node の類、Event・EventTarget、console、timer、location・history、CSSOM（inline style、
   `getComputedStyle`）、geometry（`getBoundingClientRect`・`offset*`・`scroll*`）、XHR・fetch、localStorage、Canvas 2D（後）。
 
@@ -493,7 +497,7 @@ libcrypto の互換品（別の WS）、GPU の合成、sync・password の管�
 | D1 | process の構成 | 1 process（UI・engine・network）、窓ごとに process、DNS だけ別の thread | 最初から renderer の process を分ける | 境界を関数の interface で分けておけば後で IPC にできる。**最初の版は敵意のある site に対して安全ではない**（sandbox は後） |
 | D2 | TLS の繋ぎ方 | OpenSSL の package の `libssl.so` を実行時に `dlopen`（base の build は OpenSSL に依存しない。package が無ければ https は error の page） | build のときに link する（base の build が package の OpenSSL の cross build に依存し、image に package が必須になる） | base と package の境界を保ち、将来の base の互換品へ読む名前を変えるだけで移れる |
 | D3 | titlebar の使い方 | ws070-p011 の前は CONTROLS（URL の欄を titlebar に、1 窓 1 タブ）。後は TABS（タブを titlebar に）+ 窓の中の toolbar | CONTROLS のまま窓の中にタブ | 仕様（titlebar-spec §4.3）が browser を TABS の主な用途としている |
-| D4 | 仕様や Unicode から作る表（文字参照 2231 件は WHATWG の HTML 標準の一覧（CC BY 4.0）、日本語の encoding の表は WHATWG Encoding 標準の index、Unicode の性質は UCD（Unicode License v3）） | 生成の script（`tools/`）と生成した `.c` を commit し、出典とライセンスの表示を file の先頭と `userland/base/licenses/` の notice に置く | build のたびに取得して生成（base の build が network に依存する） | どれも許容的なライセンスで表示を保てば再配布できる。base の build を offline に保つ |
+| D4 | 仕様や Unicode から作る表（文字参照 2231 件は WHATWG の HTML 標準の一覧（CC BY 4.0、source に取り込んだ部分は BSD 3-Clause）、日本語の encoding の表は WHATWG Encoding 標準の index、Unicode の性質は UCD（Unicode License v3）） | **決定（2026-09-28 ユーザー「文字の表は、生成した表をコミットしていいてす。」）**: 生成の script（`tools/`）と生成した `.c` を commit し、出典とライセンスの表示を file の先頭と `userland/base/licenses/zdesktop-browser/` の notice に置く。`tools/regenerate.sh` が固定の SHA-256 で一覧を取得して再生成する | build のたびに取得して生成（base の build が network に依存する） | どれも許容的なライセンスで表示を保てば再配布できる。base の build を offline に保つ |
 | D5 | GIF の decoder の置き場 | browser の中（`image/gif.c`） | `libgif-compat` を base の library に | 今 GIF を要る base の program は browser だけ |
 | D6 | 窓の提示と描画 | **決定（2026-09-27 ユーザー「ブラウザはWaylandとVulkanで実装してください。」）**: Wayland の上の Vulkan。display list を GPU で描く。CPU の参照の描画は headless と試験だけ（§8.2） | （既定だった wl_shm は取り消し） | — |
 | D7 | libpng-compat の範囲 | ws071-p010 の simplified API に `png_image_begin_read_from_memory` を含めてもらう（browser は memory から読む） | browser が一時 file に書いて `from_file` | 仕様の simplified API の一部で、実装はほぼ同じ |

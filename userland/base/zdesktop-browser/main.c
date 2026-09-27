@@ -10,6 +10,7 @@
  *
  *   zdesktop-browser [--display=NAME] [--width=N] [--height=N] [URL]
  *   zdesktop-browser --dump=dom|style|layout|paint [--width=N] [--height=N] [--font=PATH] FILE
+ *   zdesktop-browser --run [--width=N] [--height=N] FILE
  *   zdesktop-browser --dump=ast [--module] [--strict] FILE.js
  *   zdesktop-browser --js [--strict] FILE.js
  *   zdesktop-browser --dump=code [--strict] FILE.js
@@ -20,8 +21,11 @@
  * start page the package installs (MAIN_START_PAGE).  The headless
  * modes (added with the engine, one per phase) draw or dump a page, or run
  * a script, without a window; the tests use them on the host and in the
- * guest.  Every mode reports failure with a non-zero exit status and one
- * line on standard error.
+ * guest.  A page's scripts run in every mode that loads a page, and its
+ * timers on a virtual clock up to MAIN_SETTLE_BUDGET before the page is
+ * shown; --run writes the page's console to standard output (the other
+ * modes write it to standard error).  Every mode reports failure with a
+ * non-zero exit status and one line on standard error.
  */
 
 #include "base/base.h"
@@ -50,6 +54,12 @@
 /* The page the window opens when the command line names none. */
 #define MAIN_START_PAGE		"/usr/share/zdesktop-browser/start.html"
 
+/*
+ * How long the headless modes let a page's timers run, in virtual
+ * milliseconds (the budget the Chromium references are made with).
+ */
+#define MAIN_SETTLE_BUDGET	5000.0
+
 /* The most live bytes a script run by --js may keep in its heap. */
 #define MAIN_SCRIPT_HEAP_LIMIT	((size_t)1024U * 1024U * 1024U)
 
@@ -68,7 +78,8 @@ enum main_mode {
 	MAIN_MODE_RUN_JS,
 	MAIN_MODE_DUMP_CODE,
 	MAIN_MODE_RENDER,
-	MAIN_MODE_RENDER_GPU
+	MAIN_MODE_RENDER_GPU,
+	MAIN_MODE_RUN_PAGE
 };
 
 /*
@@ -109,6 +120,8 @@ static int main_dump(const struct main_options *options);
 static int main_render(const struct main_options *options);
 static int main_dump_ast(const struct main_options *options);
 static int main_run_js(const struct main_options *options);
+static int main_run_page(const struct main_options *options);
+static void main_console_out(void *context, int level, const char *text, size_t length);
 static int main_read_script(const char *path, struct wb_units *units);
 static int main_dump_code(struct vm_realm *realm, const struct wb_units *units, unsigned how, struct js_syntax_error *error);
 static int main_dump_unit(const struct vm_code *code, struct wb_buffer *out);
@@ -160,6 +173,9 @@ main(
 	case MAIN_MODE_RUN_JS:
 	case MAIN_MODE_DUMP_CODE:
 		status = main_run_js(&options);
+		return status;
+	case MAIN_MODE_RUN_PAGE:
+		status = main_run_page(&options);
 		return status;
 	case MAIN_MODE_WINDOW:
 		break;
@@ -428,6 +444,43 @@ main_run_js(
 	return 0;
 }
 
+/* Loads a page, runs its scripts and timers, and writes its console to standard output. */
+static int
+main_run_page(
+	const struct main_options *options)
+{
+	struct page *page;
+	int status;
+
+	/* The page, loaded and settled with its console on standard output. */
+	status = main_prepare(options, __builtin_frame_address(0), &page, 0);
+	if (status != 0)
+		return status;
+
+	/* The page is no longer needed. */
+	page_destroy(page);
+
+	/* Succeeded: the page ran. */
+	return 0;
+}
+
+/* Writes a page's console line to standard output (--run). */
+static void
+main_console_out(
+	void *context,
+	int level,
+	const char *text,
+	size_t length)
+{
+	UNUSED_PARAMETER(context);
+	UNUSED_PARAMETER(level);
+
+	/* The line as it is. */
+	fwrite(text, 1, length, stdout);
+	fputc('\n', stdout);
+	fflush(stdout);
+}
+
 /* Compiles a script and writes its code units (the program's, then each function's inside it). */
 static int
 main_dump_code(
@@ -561,7 +614,12 @@ main_prepare(
 		return 1;
 	}
 
-	/* Loads the file. */
+	/* The scripts see the viewport's size, and --run's console goes to standard output. */
+	bind_window_set_viewport(loaded->window, (int)options->shell.width, (int)options->shell.height);
+	if (options->mode == MAIN_MODE_RUN_PAGE)
+		loaded->console = main_console_out;
+
+	/* Loads the file, running its scripts. */
 	error = page_load_file(loaded, options->shell.start);
 	if (error != 0) {
 		fprintf(stderr, "zdesktop-browser: cannot load %s: %s\n", options->shell.start, strerror(error));
@@ -569,9 +627,17 @@ main_prepare(
 		return 1;
 	}
 
-	/* The DOM and style dumps need no layout. */
+	/* Runs its timers on the virtual clock. */
+	error = page_settle(loaded, MAIN_SETTLE_BUDGET);
+	if (error != 0) {
+		fprintf(stderr, "zdesktop-browser: cannot run the scripts of %s: %s\n", options->shell.start, strerror(error));
+		page_destroy(loaded);
+		return 1;
+	}
+
+	/* The DOM and style dumps and --run need no layout. */
 	layout = 1;
-	if (options->mode == MAIN_MODE_DUMP_DOM || options->mode == MAIN_MODE_DUMP_STYLE)
+	if (options->mode == MAIN_MODE_DUMP_DOM || options->mode == MAIN_MODE_DUMP_STYLE || options->mode == MAIN_MODE_RUN_PAGE)
 		layout = 0;
 
 	/* Lays the page out in the viewport's width. */
@@ -636,6 +702,13 @@ main_parse(
 		differs = strcmp(argv[index], "--help");
 		if (differs == 0) {
 			options->mode = MAIN_MODE_HELP;
+			continue;
+		}
+
+		/* Running a page for its console. */
+		differs = strcmp(argv[index], "--run");
+		if (differs == 0) {
+			options->mode = MAIN_MODE_RUN_PAGE;
 			continue;
 		}
 
@@ -829,6 +902,7 @@ main_usage(
 		"usage: zdesktop-browser [--display=NAME] [--width=N] [--height=N] [URL]\n"
 		"       zdesktop-browser --dump=dom|style|layout|paint [--width=N] [--height=N] [--font=PATH]\n"
 		"                        [--mono-font=PATH] [--fallback-font=PATH] FILE\n"
+		"       zdesktop-browser --run [--width=N] [--height=N] FILE\n"
 		"       zdesktop-browser --render|--render-gpu --output=OUT.ppm [--width=N] [--height=N] [--font=PATH]\n"
 		"                        [--mono-font=PATH] [--fallback-font=PATH] FILE\n"
 		"       zdesktop-browser --dump=ast [--module] [--strict] FILE.js\n"

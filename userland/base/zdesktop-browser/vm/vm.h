@@ -466,7 +466,8 @@ enum vm_object_kind {
 	VM_KIND_STRING,
 	VM_KIND_SYMBOL,
 	VM_KIND_DATE,
-	VM_KIND_REGEXP
+	VM_KIND_REGEXP,
+	VM_KIND_PLATFORM
 };
 
 /*
@@ -479,8 +480,9 @@ enum vm_object_kind {
  * array, length is the array's length; for other objects it is one past
  * the highest element in use.  kind is an enum vm_object_kind, and
  * internal the value a wrapper holds (a Boolean's, Number's or String's
- * primitive).  Every kind of object (functions, and later DOM nodes and
- * Wasm instances) begins with this structure.
+ * primitive, or a platform object's cell: the DOM node or the event it
+ * stands for).  Every kind of object (functions, the DOM's wrappers, and
+ * later Wasm instances) begins with this structure.
  */
 struct vm_object {
 	struct vm_cell cell;
@@ -574,7 +576,9 @@ struct vm_function {
  * marks every word of the used stack conservatively (Wasm's raw values sit
  * beside JavaScript's boxed ones there), and lives until vm_realm_destroy.
  * depth counts how many times the interpreter is entered from C, which a
- * native function calling a script function does.
+ * native function calling a script function does.  host is what the
+ * embedder keeps with the realm (the DOM binding's window), and jobs the
+ * queue of microtasks (struct vm_job) the next checkpoint runs.
  */
 struct vm_realm {
 	struct vm_heap *heap;
@@ -590,7 +594,25 @@ struct vm_realm {
 	uint32_t stack_capacity;
 	uint32_t stack_top;
 	unsigned depth;
+	void *host;
+	struct wb_vector jobs;
 };
+
+/*
+ * One microtask: a function to call with one argument (queueMicrotask's
+ * callback, and later a promise's reaction).
+ */
+struct vm_job {
+	vm_value callback;
+	vm_value argument;
+};
+
+/*
+ * What a microtask checkpoint does with an exception a job threw: the
+ * embedder reports it (the console's "Uncaught ...") and the checkpoint
+ * goes on with the next job.
+ */
+typedef void (*vm_job_report)(struct vm_realm *realm, vm_value exception, void *context);
 
 /* Values and keys (object.c). */
 void vm_heap_mark_value(struct vm_heap *heap, vm_value value);
@@ -642,6 +664,8 @@ int vm_throw(struct vm_realm *realm, vm_value exception);
 /* Realms (realm.c). */
 int vm_realm_create(struct vm_heap *heap, struct vm_realm **realm);
 void vm_realm_destroy(struct vm_realm *realm);
+int vm_enqueue_job(struct vm_realm *realm, vm_value callback, vm_value argument);
+int vm_run_jobs(struct vm_realm *realm, vm_job_report report, void *context);
 
 /* Numbers and their decimal text (number.c). */
 int vm_number_to_text(double number, int radix, struct wb_buffer *out);

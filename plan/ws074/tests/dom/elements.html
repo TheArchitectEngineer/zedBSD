@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head><title>Elements</title></head>
+<body>
+<ul id="list" class="menu main" data-count="3">
+<li class="item first">a</li>
+<li class="item">b</li>
+<li class="item last">c</li>
+</ul>
+<p hidden title="tip">para</p>
+<svg><circle r="1"></circle></svg>
+<script>
+function names(list) {
+  var out = [];
+  for (var i = 0; i < list.length; i++)
+    out.push(list[i].nodeName + (list[i].className ? "." + list[i].className : ""));
+  return out.join(",");
+}
+var list = document.getElementById("list");
+console.log("attributes", list.getAttribute("id"), list.getAttribute("CLASS"), list.getAttribute("data-count"), list.getAttribute("missing"));
+console.log("has", list.hasAttribute("data-count"), list.hasAttribute("nope"), list.id, list.className);
+list.setAttribute("data-count", 4);
+list.setAttribute("Data-New", "yes");
+console.log("set", list.getAttribute("data-count"), list.getAttribute("data-new"), list.hasAttribute("DATA-NEW"));
+list.removeAttribute("data-new");
+list.removeAttribute("never-there");
+console.log("removed", list.hasAttribute("data-new"), list.getAttribute("data-new"));
+list.id = "renamed";
+list.className = "menu";
+console.log("reflect", list.getAttribute("id"), list.getAttribute("class"), document.getElementById("list"), document.getElementById("renamed") === list);
+console.log("byTag", document.getElementsByTagName("li").length, document.getElementsByTagName("LI").length, list.getElementsByTagName("*").length, document.getElementsByTagName("circle").length);
+console.log("byClass", names(document.getElementsByClassName("item")), names(document.getElementsByClassName("last item")), document.getElementsByClassName("  ").length);
+console.log("children", names(list.children), list.children[0].textContent);
+var p = document.getElementsByTagName("p")[0];
+console.log("html", p.hidden, p.title, p.tagName);
+p.hidden = false;
+p.title = "new tip";
+console.log("html2", p.hidden, p.hasAttribute("hidden"), p.getAttribute("title"));
+p.hidden = true;
+console.log("html3", p.getAttribute("hidden"));
+var svg = document.getElementsByTagName("svg")[0];
+console.log("svg", svg.tagName, svg.firstChild.tagName, svg instanceof HTMLElement, svg instanceof Element);
+var made = document.createElement("DIV");
+made.innerTextLike = "expando";
+list.appendChild(made);
+console.log("expando", list.lastChild.innerTextLike, list.lastChild === made);
+console.log("body", document.body.tagName, document.head.tagName, document.documentElement.tagName, document.body.children.length);
+console.log("ready", document.readyState, document.defaultView === window, window.window === window, self === window, window.document === document);
+console.log("size", typeof innerWidth, innerWidth > 0, innerHeight > 0);
+</script>
+</body>
+</html>

@@ -129,6 +129,10 @@ struct html_parser {
 	/* The fragment case: the context element (NULL for a whole document). */
 	struct dom_element *context;
 
+	/* What runs a script element when its end tag is parsed (NULL: nothing runs). */
+	html_script_hook script_hook;
+	void *script_context;
+
 	/* Whether parsing stopped, and how many parse errors the tree builder saw. */
 	int stopped;
 	size_t error_count;

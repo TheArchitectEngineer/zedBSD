@@ -544,6 +544,9 @@ tb_mode_text(
 	struct html_parser *p,
 	const struct tb_token *token)
 {
+	struct dom_element *element;
+	int is_script;
+
 	/* Characters are the element's text. */
 	if (token->type == HTML_TOKEN_CHARACTERS) {
 		tb_insert_characters(p, token->text, token->length);
@@ -560,10 +563,18 @@ tb_mode_text(
 	}
 
 	/* An end tag (the tokenizer only lets the right one through) closes the element. */
-	if (token->type == HTML_TOKEN_END_TAG) {
-		tb_pop(p);
-		p->mode = p->original_mode;
-	}
+	if (token->type != HTML_TOKEN_END_TAG)
+		return;
+	element = tb_current(p);
+	tb_pop(p);
+	p->mode = p->original_mode;
+
+	/* A script element's end runs the script, while the parser waits. */
+	if (element == NULL)
+		return;
+	is_script = dom_element_is(&element->node, DOM_NS_HTML, DOM_TAG_SCRIPT);
+	if (is_script && p->script_hook != NULL)
+		p->script_hook(p->script_context, element);
 }
 
 /*
