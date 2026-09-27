@@ -133,6 +133,7 @@ LIBM_HIDDEN struct libm_dd __libm_expm1_kernel(struct libm_dd reduced);
 LIBM_HIDDEN struct libm_dd __libm_exp_dd(struct libm_dd x, int *exponent);
 LIBM_HIDDEN struct libm_dd __libm_log_parts(double x, int *exponent);
 LIBM_HIDDEN struct libm_dd __libm_log_dd(double x);
+LIBM_HIDDEN struct libm_dd __libm_atan_dd(struct libm_dd u);
 
 /* The tables of src/libc/math/tables.c; their comments say what they hold. */
 LIBM_HIDDEN extern const struct libm_dd __libm_exp_table[128];
@@ -140,6 +141,12 @@ LIBM_HIDDEN extern const double __libm_exp_coefficients[5];
 LIBM_HIDDEN extern const double __libm_log_inverse[128];
 LIBM_HIDDEN extern const struct libm_dd __libm_log_table[128];
 LIBM_HIDDEN extern const double __libm_log_coefficients[8];
+LIBM_HIDDEN extern const uint32_t __libm_two_over_pi_bits[40];
+LIBM_HIDDEN extern const struct libm_dd __libm_sin_cos_table[104];
+LIBM_HIDDEN extern const double __libm_sin_coefficients[4];
+LIBM_HIDDEN extern const double __libm_cos_coefficients[4];
+LIBM_HIDDEN extern const struct libm_dd __libm_atan_table[65];
+LIBM_HIDDEN extern const double __libm_atan_coefficients[6];
 
 /*
  * Returns the encoding of a binary64 value.
@@ -431,6 +438,13 @@ libm_dd_sqrt(
 	struct libm_dd corrected;
 	double root;
 	double correction;
+
+	/* The root of zero is zero; the correction below would divide by it. */
+	if (a.high <= 0.0) {
+		corrected.high = 0.0;
+		corrected.low = 0.0;
+		return corrected;
+	}
 
 	/* The root of the high part, correctly rounded. */
 	root = sqrt(a.high);

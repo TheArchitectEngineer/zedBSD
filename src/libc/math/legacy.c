@@ -27,61 +27,6 @@
 #define ZM_LN2 0.69314718055994530941723212145817657
 
 int signgam;
-static double
-reduce_angle(double x, int *quadrant)
-{
-	double q = rint(x / ZM_PI_2);
-	*quadrant = (int)q & 3;
-	return x - q * ZM_PI_2;
-}
-
-static double
-sin_kernel(double x)
-{
-	double x2=x*x;
-	return x*(1.0+x2*(-1.0/6.0+x2*(1.0/120.0+x2*(-1.0/5040.0+
-	    x2*(1.0/362880.0+x2*(-1.0/39916800.0+x2/6227020800.0))))));
-}
-static double
-cos_kernel(double x)
-{
-	double x2=x*x;
-	return 1.0+x2*(-1.0/2.0+x2*(1.0/24.0+x2*(-1.0/720.0+
-	    x2*(1.0/40320.0+x2*(-1.0/3628800.0+x2/479001600.0)))));
-}
-double sin(double x){int q;double r;if(isnan(x))return x;if(isinf(x)){errno=EDOM;return NAN;}r=reduce_angle(x,&q);return q==0?sin_kernel(r):q==1?cos_kernel(r):q==2?-sin_kernel(r):-cos_kernel(r);}
-double cos(double x){int q;double r;if(isnan(x))return x;if(isinf(x)){errno=EDOM;return NAN;}r=reduce_angle(x,&q);return q==0?cos_kernel(r):q==1?-sin_kernel(r):q==2?-cos_kernel(r):sin_kernel(r);}
-double tan(double x){return sin(x)/cos(x);} float sinf(float x){return (float)sin(x);} float cosf(float x){return (float)cos(x);} float tanf(float x){return (float)tan(x);} long double sinl(long double x){return (long double)sin((double)x);} long double cosl(long double x){return (long double)cos((double)x);} long double tanl(long double x){return (long double)tan((double)x);}
-
-double
-atan(double x)
-{
-	double sign=1.0, result, term, x2;
-	int i;
-	if (isnan(x))
-		return x;
-	if (x < 0) {
-		sign = -1;
-		x = -x;
-	}
-	if(x>1.0)return sign*(ZM_PI_2-atan(1.0/x));
-	if(x>0.4142135623730950)return sign*(ZM_PI_4+atan((x-1.0)/(x+1.0)));
-	x2=x*x;term=x;result=x;for(i=3;i<=39;i+=2){term*=-x2;result+=term/i;}return sign*result;
-}
-float atanf(float x){return (float)atan(x);} long double atanl(long double x){return (long double)atan((double)x);}
-double atan2(double y,double x){if(isnan(x)||isnan(y))return NAN;if(x>0)return atan(y/x);if(x<0)return y>=0?atan(y/x)+ZM_PI:atan(y/x)-ZM_PI;if(y>0)return ZM_PI_2;if(y<0)return -ZM_PI_2;return y;}
-float atan2f(float y,float x){return (float)atan2(y,x);} long double atan2l(long double y,long double x){return (long double)atan2((double)y,(double)x);}
-double asin(double x){if(fabs(x)>1){errno=EDOM;return NAN;}return atan2(x,sqrt((1.0-x)*(1.0+x)));}
-float asinf(float x){return (float)asin(x);} long double asinl(long double x){return (long double)asin((double)x);}
-double acos(double x){return ZM_PI_2-asin(x);} float acosf(float x){return (float)acos(x);} long double acosl(long double x){return (long double)acos((double)x);}
-
-double sinh(double x){double e=exp(x),i=1.0/e;return 0.5*(e-i);} float sinhf(float x){return (float)sinh(x);} long double sinhl(long double x){return (long double)sinh((double)x);}
-double cosh(double x){double e=exp(fabs(x));return 0.5*(e+1.0/e);} float coshf(float x){return (float)cosh(x);} long double coshl(long double x){return (long double)cosh((double)x);}
-double tanh(double x){if(x>20)return 1;if(x<-20)return -1;{double e=exp(2*x);return(e-1)/(e+1);}} float tanhf(float x){return (float)tanh(x);} long double tanhl(long double x){return (long double)tanh((double)x);}
-double asinh(double x){return log(x+sqrt(x*x+1));} float asinhf(float x){return (float)asinh(x);} long double asinhl(long double x){return (long double)asinh((double)x);}
-double acosh(double x){if(x<1){errno=EDOM;return NAN;}return log(x+sqrt((x-1)*(x+1)));} float acoshf(float x){return (float)acosh(x);} long double acoshl(long double x){return (long double)acosh((double)x);}
-double atanh(double x){if(fabs(x)>=1){errno=EDOM;return x<0?-INFINITY:INFINITY;}return 0.5*log((1+x)/(1-x));} float atanhf(float x){return (float)atanh(x);} long double atanhl(long double x){return (long double)atanh((double)x);}
-
 double cbrt(double x){double a=fabs(x),g;int i;if(a==0||isinf(a)||isnan(a))return x;g=exp(log(a)/3);for(i=0;i<4;i++)g=(2*g+a/(g*g))/3;return x<0?-g:g;}
 float cbrtf(float x){return (float)cbrt(x);} long double cbrtl(long double x){return (long double)cbrt((double)x);}
 double hypot(double x,double y){x=fabs(x);y=fabs(y);if(x<y){double t=x;x=y;y=t;}if(isinf(x))return x;if(x==0)return 0;y/=x;return x*sqrt(1+y*y);}
