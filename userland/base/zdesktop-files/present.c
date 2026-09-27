@@ -466,7 +466,15 @@ present_swapchain(
 	present->extent.width = width;
 	present->extent.height = height;
 
-	/* Three images when the surface allows, opaque, replacing the old chain. */
+	/*
+	 * See-through when the surface takes premultiplied alpha (zdesktop that
+	 * can draw glass under the window), else opaque.
+	 */
+	present->premultiplied = 0;
+	if ((capabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR) != 0U)
+		present->premultiplied = 1;
+
+	/* Three images when the surface allows, replacing the old chain. */
 	memset(&create, 0, sizeof(create));
 	create.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
 	create.surface = present->surface;
@@ -483,6 +491,8 @@ present_swapchain(
 	create.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	create.preTransform = capabilities.currentTransform;
 	create.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+	if (present->premultiplied != 0)
+		create.compositeAlpha = VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR;
 	create.presentMode = VK_PRESENT_MODE_FIFO_KHR;
 	create.clipped = VK_TRUE;
 	create.oldSwapchain = old;
@@ -1062,7 +1072,7 @@ present_pipeline(
 	multisample.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
 	multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
-	/* The canvas is opaque: no blending. */
+	/* The canvas replaces the image, its alpha too: no blending. */
 	memset(&blend_attachment, 0, sizeof(blend_attachment));
 	blend_attachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
 	    VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;

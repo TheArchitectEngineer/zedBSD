@@ -17,6 +17,7 @@
 #include "userland/base/libwayland/zed-gpu-buffer-v1-client-protocol.h"
 #include "userland/base/libwayland/xdg-toplevel-menu-v1-client-protocol.h"
 #include "userland/base/libwayland/zed-titlebar-v1-client-protocol.h"
+#include "userland/base/libwayland/zed-glass-v1-client-protocol.h"
 #include <errno.h>
 #include <limits.h>
 #include <pthread.h>

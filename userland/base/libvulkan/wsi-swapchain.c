@@ -750,6 +750,15 @@ swapchain_create(
 	if (error != VK_SUCCESS)
 		goto cleanup;
 
+	/* A see-through alpha mode is told to the native backend, which advertised it, before any image is shared. */
+	if (info->compositeAlpha != VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR) {
+		error = VK_ERROR_INITIALIZATION_FAILED;
+		if (surface->platform->composite_alpha != NULL)
+			error = surface->platform->composite_alpha(chain->lease, info->compositeAlpha);
+		if (error != VK_SUCCESS)
+			goto cleanup;
+	}
+
 	/* Every chain has independent acquisition state even when its images are shared. */
 	bytes = (size_t)info->minImageCount;
 	chain->states = vulkan_allocate(
@@ -880,9 +889,14 @@ swapchain_validate(
 			return VK_ERROR_INITIALIZATION_FAILED;
 	}
 
-	/* Refuses transforms, alpha modes or presentation modes absent from native capabilities. */
-	if (info->preTransform != VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR ||
-	    info->compositeAlpha != VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR)
+	/* Refuses transforms absent from native capabilities. */
+	if (info->preTransform != VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR)
+		return VK_ERROR_INITIALIZATION_FAILED;
+
+	/* The alpha mode is exactly one of those the native backend advertises. */
+	if ((info->compositeAlpha & capabilities.supportedCompositeAlpha) == 0U)
+		return VK_ERROR_INITIALIZATION_FAILED;
+	if ((info->compositeAlpha & (info->compositeAlpha - 1U)) != 0U)
 		return VK_ERROR_INITIALIZATION_FAILED;
 
 	/* Selects only modes actually implemented by the native presentation backend. */

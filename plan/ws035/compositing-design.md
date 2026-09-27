@@ -234,6 +234,9 @@ cursor が隠れている」などの条件を frame ごとに調べて自動で
   窓ごとに render pass を区切る必要があるので、効果のある窓の数だけ pass が増える。
 - **影・角の丸め**: 窓の quad の外側に影の quad、fragment shader で角を切る。背後を読まないので pass を区切らない。
 - **タイル表示の縮小**（p014）: 窓の quad を縮小して並べるだけ（D1 の quad で足りる）。
+- 2026-09-27（ws035-p083）: client が窓の中の「すりガラスの card」を `zed_glass_v1` で名指しし、窓の alpha を Vulkan の PRE_MULTIPLIED
+  （`zed_gpu_buffer_v1` revision 3）で渡す仕組みを足した。ガラスの見た目は zdesktop が決める（[glass-design.md](glass-design.md)）。
+  ガラスの中身は今はぼかした壁紙で、上の「背後のぼかし」は p057 の残り。
 - 効果は窓の属性（zdesktop の設定、または将来の protocol）で決め、client は関与しない。damage（D4 の 2 回目）では、
   すりガラスの窓の背後が変わったらその窓の範囲も描き直す（ぼかしの半径の分だけ広げる）。
 

@@ -278,22 +278,22 @@ fm_ui_draw(
 	ui_layout(app);
 	app->hit_count = 0;
 
-	/* The window's ground: a quiet light gradient. */
+	/* The window's ground: clear on glass (the desktop shows between the panels), else a quiet light gradient. */
 	whole.x = 0;
 	whole.y = 0;
 	whole.width = canvas->width;
 	whole.height = canvas->height;
-	fm_canvas_gradient(canvas, &whole, FM_COLOR_BACKGROUND_TOP, FM_COLOR_BACKGROUND_BOTTOM);
+	if (app->glass != 0) {
+		fm_canvas_clear(canvas);
+	} else {
+		fm_canvas_gradient(canvas, &whole, FM_COLOR_BACKGROUND_TOP, FM_COLOR_BACKGROUND_BOTTOM);
+	}
 
 	/* The sidebar, when shown. */
 	if (app->show_sidebar != 0)
 		ui_draw_sidebar(app, canvas);
 
-	/*
-	 * The content panel, drawn by the view of the place, then its tabs on
-	 * its top edge (the shown tab covers the edge it joins), and the
-	 * preview beside it when shown.
-	 */
+	/* The content's card, drawn by the view of the place, the row of tabs at its top, and the preview beside it when shown. */
 	fm_grid_draw(app, canvas, &app->layout.content);
 	fm_tabs_draw(app, canvas);
 	if (app->show_preview != 0)
@@ -311,6 +311,43 @@ fm_ui_draw(
 
 	/* The frame is up to date. */
 	app->dirty = 0;
+}
+
+/*
+ * Lists the parts of the last frame that stand on zdesktop's glass: the
+ * sidebar, the content's card (with its tabs) and the preview, into up to
+ * capacity panels.  Returns how many there are.
+ */
+size_t
+fm_ui_panels(
+	struct fm_app *app,
+	struct fm_panel *panels,
+	size_t capacity)
+{
+	const struct fm_rect *cards[3];
+	size_t count;
+	unsigned index;
+
+	/* The three cards of the layout, in the order they are drawn. */
+	cards[0] = &app->layout.sidebar;
+	cards[1] = &app->layout.card;
+	cards[2] = &app->layout.preview;
+	count = 0;
+
+	/* Each card that is shown (a hidden one has no size). */
+	for (index = 0; index < 3U; index++) {
+		if (cards[index]->width <= 0 || cards[index]->height <= 0)
+			continue;
+		if (count == capacity)
+			break;
+		panels[count].rect = *cards[index];
+		panels[count].radius = (int)UI_PANEL_RADIUS;
+		panels[count].kind = FM_PANEL_CARD;
+		count++;
+	}
+
+	/* The cards. */
+	return count;
 }
 
 /*
@@ -744,6 +781,7 @@ ui_layout(
 	int top;
 	int left;
 	int right;
+	int row;
 
 	/* The panels start at the top margin (the titlebar is zdesktop's, above the window). */
 	layout = &app->layout;
@@ -771,14 +809,17 @@ ui_layout(
 		right -= UI_PREVIEW_WIDTH + UI_GAP;
 	}
 
-	/* The tab bar on the content's top edge while the window has two tabs or more (ui-tabs.c). */
-	top += fm_tabs_layout(app, top, left, right);
+	/* The content's card between the sidebar and the preview. */
+	layout->card.x = left;
+	layout->card.y = top;
+	layout->card.width = right - left;
+	layout->card.height = app->height - top - UI_MARGIN;
 
-	/* The content between the sidebar and the preview, under its tabs. */
-	layout->content.x = left;
-	layout->content.y = top;
-	layout->content.width = right - left;
-	layout->content.height = app->height - top - UI_MARGIN;
+	/* The content in the card, under the row of tabs while the window has two tabs or more (ui-tabs.c). */
+	layout->content = layout->card;
+	row = fm_tabs_layout(app, top, left, right);
+	layout->content.y += row;
+	layout->content.height -= row;
 }
 
 /* Draws the sidebar: Favorites, Locations and Tags, the place shown lit. */
@@ -792,6 +833,7 @@ ui_draw_sidebar(
 	const struct fm_place *place;
 	struct fm_rect row;
 	struct fm_rect remove;
+	fm_color header;
 	fm_color ink;
 	unsigned section;
 	int current;
@@ -800,10 +842,21 @@ ui_draw_sidebar(
 	int index;
 	int y;
 
-	/* The panel: a light veil over the ground. */
+	/* The sections' titles: faint, a little darker on glass (the desktop shows through it). */
+	header = FM_COLOR_TEXT_FAINT;
+	if (app->glass != 0)
+		header = FM_COLOR_TEXT_SECONDARY;
+
+	/* The panel: a light veil over zdesktop's glass, or over the window's ground with a bright edge. */
 	panel = &app->layout.sidebar;
-	fm_canvas_round(canvas, (float)panel->x, (float)panel->y, (float)panel->width, (float)panel->height, UI_PANEL_RADIUS, FM_COLOR_SIDEBAR);
-	fm_canvas_round_border(canvas, (float)panel->x, (float)panel->y, (float)panel->width, (float)panel->height, UI_PANEL_RADIUS, 1.0f, FM_RGBA(0xffffff, 170));
+	if (app->glass != 0) {
+		fm_canvas_round(canvas, (float)panel->x, (float)panel->y, (float)panel->width, (float)panel->height, UI_PANEL_RADIUS, FM_COLOR_GLASS_SIDEBAR);
+	} else {
+		fm_canvas_round(canvas, (float)panel->x, (float)panel->y, (float)panel->width, (float)panel->height, UI_PANEL_RADIUS, FM_COLOR_SIDEBAR);
+		fm_canvas_round_border(canvas, (float)panel->x, (float)panel->y, (float)panel->width, (float)panel->height, UI_PANEL_RADIUS, 1.0f, FM_RGBA(0xffffff, 170));
+	}
+
+	/* The rows stay inside the panel. */
 	fm_canvas_clip_push(canvas, panel);
 
 	/* Each place under its section's title, the list scrolled when it is taller than the panel. */
@@ -817,7 +870,7 @@ ui_draw_sidebar(
 			section = place->section;
 			if (index > 0)
 				y += 8;
-			(void)fm_text_draw(app->text, canvas, panel->x + 16, y + UI_SIDEBAR_HEADER - 10, titles[section], strlen(titles[section]), UI_TEXT_HEADER, 1, FM_COLOR_TEXT_FAINT);
+			(void)fm_text_draw(app->text, canvas, panel->x + 16, y + UI_SIDEBAR_HEADER - 10, titles[section], strlen(titles[section]), UI_TEXT_HEADER, 1, header);
 			y += UI_SIDEBAR_HEADER;
 		}
 

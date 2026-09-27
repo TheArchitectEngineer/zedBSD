@@ -4,7 +4,7 @@
 
 // box: the rounded rectangle in output pixels (x, y, width, height).
 // color: a straight color and its opacity.
-// shape: corner radius, mode, softness or thickness, opaque image (1).
+// shape: corner radius, mode, softness or thickness (flatness for glass), opaque image (1).
 // screen: output width and height, edge highlight, the opacity of the whole shape.
 layout(push_constant) uniform Panel {
 	vec4 rect;
@@ -52,7 +52,8 @@ void main()
 		float depth = clamp((point.y - panel.box.y) / max(panel.box.w, 1.0), 0.0, 1.0);
 		float edge = clamp(1.0 - abs(distance + 1.0), 0.0, 1.0);
 
-		glass += vec3(0.05) * (1.0 - depth);
+		// A sheen from the top, except on flat glass (shape.z 1: a window's panels).
+		glass += vec3(0.05) * (1.0 - depth) * (1.0 - clamp(panel.shape.z, 0.0, 1.0));
 		glass = mix(glass, vec3(1.0), edge * panel.screen.z);
 		colour = vec4(glass * cover, cover);
 	} else if (mode < 1.5) {

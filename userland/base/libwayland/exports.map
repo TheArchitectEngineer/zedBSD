@@ -5,6 +5,8 @@
 		zed_gpu_buffer_v1_*;
 		zed_titlebar_manager_v1_*;
 		zed_titlebar_v1_*;
+		zed_glass_manager_v1_*;
+		zed_glass_v1_*;
 	local:
 		*;
 };

@@ -126,6 +126,11 @@ struct vulkan_wsi_platform_ops {
 	int (*wait_descriptor)(void *);
 	/* Nonzero when a commit may precede the producer's completion (it travels with the fence). */
 	VkBool32 (*commit_early)(void *);
+	/*
+	 * Tells a lease the alpha mode of its images other than opaque, one the
+	 * backend advertised; NULL when only opaque images are presented.
+	 */
+	VkResult (*composite_alpha)(void *, VkCompositeAlphaFlagBitsKHR);
 };
 
 VkResult vulkan_wsi_display_node_query(struct VkPhysicalDevice_T *physical, uint32_t index, uint32_t *count, struct gpu_display_info *request, uint64_t *device_id, char *path);

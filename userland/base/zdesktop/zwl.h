@@ -89,6 +89,7 @@ struct zwl_client;
 struct zwl_object;
 struct zwl_compose;
 struct zwl_import;
+struct zwl_panels;
 
 /* Each live protocol identity has one immutable interface and negotiated version. */
 enum zwl_kind {
@@ -128,6 +129,8 @@ enum zwl_kind {
 	ZWL_CURSOR_SHAPE_DEVICE,
 	ZWL_VIEWPORTER,
 	ZWL_VIEWPORT,
+	ZWL_GLASS_MANAGER,
+	ZWL_GLASS,
 };
 
 /* The wl_shm formats (ARGB8888 has alpha; XRGB8888's top byte is unused). */
@@ -392,6 +395,14 @@ struct zwl_object {
 	int32_t pending_destination[2];
 	int32_t destination[2];
 	unsigned viewport_changed;
+	/*
+	 * ws035-p083 (panels.c): a surface's zed_glass_v1 (whose own surface
+	 * field names it back; each cleared from both ends when either goes),
+	 * and the record of its glass panels, pending and applied by the
+	 * commit, which the surface owns from its first glass to its end.
+	 */
+	struct zwl_object *glass;
+	struct zwl_panels *panels;
 };
 
 /* One stream has independent byte and fd FIFOs, plus its own protocol namespace. */
@@ -716,6 +727,7 @@ void zwl_compose_quiesce(struct zwl_server *server);
 void zwl_compose_close(struct zwl_server *server);
 int zwl_import_create(struct zwl_object *buffer, int descriptor);
 void zwl_import_destroy(struct zwl_object *buffer);
+void zwl_import_set_alpha(struct zwl_object *buffer, uint32_t alpha);
 int zwl_shm_upload(struct zwl_server *server);
 void zwl_shm_image_destroy(struct zwl_server *server, struct zwl_object *surface);
 void zwl_pool_put(struct zwl_pool *pool);
