@@ -139,6 +139,9 @@ terminal_window_open(
 		return -1;
 	}
 
+	/* The seat's data device, for the clipboard (clipboard.c). */
+	terminal_clipboard_start(window);
+
 	/* The surface and its toplevel role. */
 	window->surface = wl_compositor_create_surface(window->compositor);
 	if (window->surface == NULL)
@@ -292,8 +295,9 @@ void
 terminal_window_close(
 	struct terminal_window *window)
 {
-	/* The menus, before the window they are shown on. */
+	/* The menus, before the window they are shown on, and the clipboard before the seat. */
 	terminal_menu_close(window);
+	terminal_clipboard_close(window);
 
 	/* The keyboard and the seat. */
 	if (window->keyboard != NULL)
@@ -413,7 +417,13 @@ window_global(
 		window->seat = wl_registry_bind(registry, name, &wl_seat_interface, version);
 		if (window->seat != NULL)
 			(void)wl_seat_add_listener(window->seat, &seat_listener, window);
+		return;
 	}
+
+	/* The data device manager shares the clipboard with other clients (clipboard.c). */
+	match = strcmp(interface, "wl_data_device_manager");
+	if (match == 0 && window->data_manager == NULL)
+		terminal_clipboard_bind(window, registry, name, version);
 }
 
 /* A global going away does not matter to a terminal that already bound what it needs. */
@@ -600,11 +610,11 @@ window_keyboard_key(
 	struct terminal_window *window;
 	int modifier;
 
-	/* The serial and the time are not needed. */
+	/* The serial names a selection the key sets (Copy); the time is not needed. */
 	(void)keyboard;
-	(void)serial;
 	(void)time;
 	window = data;
+	window->serial = serial;
 
 	/* A release of the repeating key stops it. */
 	if (state != WL_KEYBOARD_KEY_STATE_PRESSED) {

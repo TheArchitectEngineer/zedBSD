@@ -22,6 +22,7 @@
 #include "popup.h"
 #include "toplevel.h"
 #include "subsurface.h"
+#include "data.h"
 #include "keymap.h"
 #include <fcntl.h>
 #include <unistd.h>
@@ -262,8 +263,10 @@ zwl_seat_focus(
 		 * all been told enter; it is cleared before that surface is freed.
 		 */
 		server->focus = target;
-		if (target != NULL)
+		if (target != NULL) {
+			zwl_data_focus(server, target);
 			send_enter(target);
+		}
 	}
 
 	/* Succeeded: the pointer follows (the focused window, or the surface of it under the pointer). */

@@ -8,7 +8,8 @@ LIBWAYLAND_SOURCES := userland/base/libwayland/client.c \
 	userland/base/libwayland/utility.c \
 	userland/base/libwayland/menu-protocol.c \
 	userland/base/libwayland/titlebar-protocol.c \
-	userland/base/libwayland/subsurface-protocol.c
+	userland/base/libwayland/subsurface-protocol.c \
+	userland/base/libwayland/data-device-protocol.c
 
 # The public SONAME follows the standard client library spelling.
 LIBWAYLAND_IMAGE_DATA := $(if $(ZEDBSD_TOPLEVEL_BUILD),/lib/libwayland-client.so=$(BUILD)/dynamic/libwayland-client.so)
