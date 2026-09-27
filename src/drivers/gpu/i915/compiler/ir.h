@@ -46,6 +46,12 @@
 #define I915_IR_LOCATION_POSITION	0xFFFFFFFFU
 
 /*
+ * The STORE_OUTPUT location of the PointSize builtin, component 0: the
+ * point width of the VUE header.
+ */
+#define I915_IR_LOCATION_POINT_SIZE	0xFFFFFFFEU
+
+/*
  * The kinds of bound resource (struct i915_shader_ir_uniform.kind): a
  * combined image sampler, or a uniform buffer block whose words the shader
  * reads at constant offsets.
@@ -108,7 +114,12 @@ enum i915_shader_ir_op {
 	/* dst = cos(src[0]). */
 	I915_IR_COS,
 
-	/* dst .. dst + 3 = texture(set `location`, binding `immediate`) at (src[0], src[1]). */
+	/*
+	 * dst .. dst + 3 = texture(set `location`, binding `immediate`) at
+	 * (src[0], src[1]), the level of detail the pixel's derivatives choose;
+	 * `component` is the constant texel offset (u in bits 11:8, v in 7:4,
+	 * each -8 .. 7), 0 for none.
+	 */
 	I915_IR_SAMPLE,
 
 	/* dst = 1 / src[0]. */
@@ -259,14 +270,37 @@ enum i915_shader_ir_op {
 	/* dst = src[0] rounded to the nearest integer, a tie to the even one (a float). */
 	I915_IR_FROUND_EVEN,
 
+	/* As SAMPLE, the level of detail the derivatives choose moved by the bias src[2]. */
+	I915_IR_SAMPLE_BIAS,
+
+	/* As SAMPLE, at the level of detail src[2]. */
+	I915_IR_SAMPLE_LOD,
+
+	/*
+	 * dst = the difference of src[0] across the pixel's 2x2 quad (fragment
+	 * only): right minus left, bottom minus top.  DDX and DDY take the quad's
+	 * top left pixel's difference for all four (coarse); DDX_FINE each
+	 * row's own.
+	 */
+	I915_IR_DDX,
+	I915_IR_DDX_FINE,
+	I915_IR_DDY,
+
+	/* dst = src[0] and src[1] as 16-bit floats, the low half and the high half. */
+	I915_IR_PACK_HALF,
+
+	/* dst = the float of the 16-bit float at bits 16 * `component` + 15 .. 16 * `component` of src[0]. */
+	I915_IR_UNPACK_HALF,
+
 	I915_IR_OP_COUNT
 };
 
 /*
- * One input or output slot of a shader's interface.
+ * One input or output location of a shader's interface.
  *
- * The parser records one per located interface variable; the list lives as
- * long as the IR that owns it.
+ * The parser records one per location a located interface variable takes
+ * (an array or a block several); the list lives as long as the IR that owns
+ * it.
  */
 struct i915_shader_ir_io {
 	uint32_t location;
@@ -275,6 +309,9 @@ struct i915_shader_ir_io {
 
 	/* Nonzero for a Flat input: the draw sets it up as the provoking vertex's value. */
 	uint32_t flat;
+
+	/* Nonzero for a NoPerspective input: interpolated linearly in screen space. */
+	uint32_t noperspective;
 };
 
 /*

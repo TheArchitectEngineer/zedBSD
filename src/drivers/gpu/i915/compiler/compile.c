@@ -59,10 +59,13 @@
  *                          two at a time from the end (Mesa's emit_urb_writes() writes eight registers of a
  *                          SIMD8 VUE at most); every write but the last takes the handles from r1.
  * Fragment shader payload: r0 header, r1 pixel positions, r2 / r3 the two perspective barycentrics of
- *                          each pixel, the push data, then two registers to an input (ascending
+ *                          each pixel, then only when the kernel reads them the two linear barycentrics,
+ *                          the source depth and the source w, a register each (brw_fs_thread_payload.cpp),
+ *                          the push data, then two registers to an input (ascending
  *                          location): component c keeps its plane in floats 4 * (c & 1) .. + 3 of
  *                          register c / 2 as [d/d bary1, d/d bary2, -, value at the origin].
- *                          Gen11+ has no PLN: value = origin + d1 * bary1 + d2 * bary2, written out.
+ *                          Gen11+ has no PLN: value = origin + d1 * bary1 + d2 * bary2, written out,
+ *                          with the linear barycentrics for an input without perspective.
  * Fragment shader output:  location 0 in r124..r127, the render-target write that ends the thread.
  * Texture:                 one SIMD8 "sample" message, u and v each its own payload run, the reply
  *                          four registers; binding table entry 1 + n, sampler n for the n-th
@@ -103,8 +106,27 @@
 #define COMPILE_FS_BARY1_GRF	2U
 #define COMPILE_FS_BARY2_GRF	3U
 
-/* Fragment: the push data, then the input planes. */
+/*
+ * Fragment: the register after the perspective barycentrics, where the
+ * payload goes on with what the kernel asked for, then the push data and the
+ * input planes.
+ */
 #define COMPILE_FS_SETUP_GRF	4U
+
+/*
+ * Fragment: the subspan coordinates of r1 (words 4 .. 7: x and y of
+ * subspan 0, then of subspan 1), and the offsets of the four pixels of a
+ * subspan (x 0 1 0 1, y 0 0 1 1) as an immediate of eight nibbles
+ * (brw_compile_fs.cpp, Gen12.0).
+ */
+#define COMPILE_FS_SUBSPAN_BYTE		8U
+#define COMPILE_FS_PIXEL_OFFSETS	0x11001010U
+
+/* Fragment: where the y of the pixels starts among the sixteen words of positions. */
+#define COMPILE_FS_PIXEL_Y_BYTE		8U
+
+/* The bits of the float 0.5: the centre of a pixel. */
+#define COMPILE_FLOAT_HALF		0x3F000000U
 
 /*
  * Fragment: the dispatched pixels, the low 16 bits of dword 7 of r1 (byte
@@ -136,6 +158,9 @@
 
 /* Vertex, gathered VUE: the two slots of each write, and the handles of the last one in r127. */
 #define COMPILE_GATHER_GRF	119U
+
+/* Vertex: the point size is dword 3 of the VUE header (component 3 of slot 0). */
+#define COMPILE_VUE_POINT_SIZE	3U
 
 /* The spilled values one instruction reads at most (three sources), and defines at most (a sample's four). */
 #define COMPILE_MAX_FILLS	3U
@@ -291,6 +316,24 @@ struct i915_compile_state {
 	/* Fragment: nonzero when the shader discards, so f1.0 holds the live pixels. */
 	int uses_kill;
 
+	/*
+	 * Fragment: nonzero when the kernel reads an input without perspective,
+	 * gl_FragCoord.z and gl_FragCoord.w, so the payload carries the linear
+	 * barycentrics, the source depth and the source w; the registers they
+	 * land in, and the register the push data and the planes start at after
+	 * them.
+	 */
+	int uses_linear;
+	int uses_depth;
+	int uses_w;
+	uint32_t fs_linear_grf;
+	uint32_t fs_depth_grf;
+	uint32_t fs_w_grf;
+	uint32_t fs_setup_grf;
+
+	/* Vertex: nonzero when the shader writes the point size into its VUE header. */
+	int writes_point_size;
+
 	int error;
 
 	/* The IR asks for something this compiler cannot lower. */
@@ -333,6 +376,7 @@ static void i915_compile_keep_outputs(struct i915_compile_state *state);
 static uint32_t i915_compile_grf(struct i915_compile_state *state, uint32_t value);
 static uint32_t i915_compile_define(struct i915_compile_state *state, uint32_t value, uint32_t count);
 static uint32_t i915_compile_temporary(struct i915_compile_state *state);
+static uint32_t i915_compile_temporaries(struct i915_compile_state *state, uint32_t count);
 static void i915_compile_exhausted(struct i915_compile_state *state);
 static uint32_t i915_compile_choose_victim(const struct i915_compile_state *state);
 static int i915_compile_involves(const struct i915_shader_ir_inst *inst, uint32_t value);
@@ -357,19 +401,26 @@ static void i915_compile_logic(struct i915_compile_state *state, const struct i9
 static void i915_compile_select(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
 static void i915_compile_kill(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
 static void i915_compile_sample(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
+static int i915_compile_sampler_index(const struct i915_compile_state *state, const struct i915_shader_ir_inst *inst, uint32_t *sampler);
+static void i915_compile_sample_message(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst, uint32_t sampler);
 static void i915_compile_integer(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
 static void i915_compile_multiply(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
 static void i915_compile_divide(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
 static void i915_compile_convert(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
 static void i915_compile_integer_compare(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
 static void i915_compile_move(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
+static void i915_compile_derivative(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
+static void i915_compile_half(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
 static void i915_compile_loop_begin(struct i915_compile_state *state);
 static void i915_compile_loop_end(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
 static int i915_compile_rank(const uint32_t *list, uint32_t count, uint32_t location, uint32_t *rank);
 static uint32_t i915_compile_flat_mask(const struct i915_compile_state *state);
 static int i915_compile_input_flat(const struct i915_compile_state *state, uint32_t location);
+static int i915_compile_input_linear(const struct i915_compile_state *state, uint32_t location);
 static void i915_compile_note(struct i915_compile_state *state, uint32_t *list, uint32_t *count, uint32_t limit, uint32_t location);
 static void i915_compile_interface(struct i915_compile_state *state);
+static void i915_compile_fragment_payload(struct i915_compile_state *state);
+static void i915_compile_frag_coord(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
 static void i915_compile_blocks(struct i915_compile_state *state);
 static void i915_compile_prologue(struct i915_compile_state *state);
 static void i915_compile_terminate(struct i915_compile_state *state);
@@ -639,6 +690,7 @@ i915_compile_reset(
 	}
 
 	/* The registers start where the conventions put them; the interface may move the values up. */
+	state->fs_setup_grf = COMPILE_FS_SETUP_GRF;
 	state->scratch_grf = COMPILE_SCRATCH_GRF;
 	state->first_value_grf = COMPILE_FIRST_VALUE_GRF;
 	state->last_value_grf = COMPILE_LAST_VALUE_GRF;
@@ -682,6 +734,10 @@ i915_compile_sources(
 	case I915_IR_F2U:
 	case I915_IR_MOVE:
 	case I915_IR_LOOP_END:
+	case I915_IR_DDX:
+	case I915_IR_DDX_FINE:
+	case I915_IR_DDY:
+	case I915_IR_UNPACK_HALF:
 		return 1U;
 
 	case I915_IR_FADD:
@@ -715,9 +771,12 @@ i915_compile_sources(
 	case I915_IR_UGE:
 	case I915_IR_IEQ:
 	case I915_IR_INE:
+	case I915_IR_PACK_HALF:
 		return 2U;
 
 	case I915_IR_SELECT:
+	case I915_IR_SAMPLE_BIAS:
+	case I915_IR_SAMPLE_LOD:
 		return 3U;
 
 	default:
@@ -736,6 +795,8 @@ i915_compile_results(
 	/* A sample defines four; a store, a discard, a loop mark or a no-op none; anything else one. */
 	switch (inst->op) {
 	case I915_IR_SAMPLE:
+	case I915_IR_SAMPLE_BIAS:
+	case I915_IR_SAMPLE_LOD:
 		return 4U;
 
 	case I915_IR_STORE_OUTPUT:
@@ -1078,6 +1139,47 @@ i915_compile_temporary(
 }
 
 /*
+ * Takes `count` consecutive free value registers as temporaries of the
+ * instruction being lowered (a message payload is consecutive registers) and
+ * returns the first; the caller frees them (grf_busy) before the lowering
+ * ends.  None free ends the attempt as a value would.
+ */
+static uint32_t
+i915_compile_temporaries(
+	struct i915_compile_state *state,
+	uint32_t count)
+{
+	uint32_t grf;
+	uint32_t run;
+
+	/* Takes the lowest run of `count` free value registers. */
+	for (grf = state->first_value_grf; grf + count <= state->last_value_grf + 1U; grf++) {
+		/* Measures how many free registers start here. */
+		for (run = 0U; run < count && state->grf_busy[grf + run] == 0U; run++)
+			;
+
+		/* A run cut short by a busy register is not taken. */
+		if (run != count)
+			continue;
+
+		/* Marks the run busy. */
+		for (run = 0U; run < count; run++)
+			state->grf_busy[grf + run] = 1U;
+
+		/* Remembers the highest register the kernel uses. */
+		if (grf + count > state->grf_high)
+			state->grf_high = grf + count;
+
+		/* Succeeded: the temporaries start here. */
+		return grf;
+	}
+
+	/* No run is free: the next attempt spills a value. */
+	i915_compile_exhausted(state);
+	return state->first_value_grf;
+}
+
+/*
  * Ends the attempt for want of a register, choosing at this point the value
  * the next attempt keeps in scratch memory; only the first shortage of an
  * attempt chooses.
@@ -1396,7 +1498,7 @@ i915_compile_instruction(
 	if (state->ir->stage == I915_STAGE_VERTEX) {
 		payload_inputs = COMPILE_PAYLOAD_GRF + state->push_regs;
 	} else {
-		payload_inputs = COMPILE_FS_SETUP_GRF + state->push_regs;
+		payload_inputs = state->fs_setup_grf + state->push_regs;
 	}
 
 	/* Lowers by the operation. */
@@ -1493,6 +1595,8 @@ i915_compile_instruction(
 		break;
 
 	case I915_IR_SAMPLE:
+	case I915_IR_SAMPLE_BIAS:
+	case I915_IR_SAMPLE_LOD:
 		i915_compile_sample(state, inst);
 		break;
 
@@ -1548,6 +1652,17 @@ i915_compile_instruction(
 		i915_compile_loop_end(state, inst);
 		break;
 
+	case I915_IR_DDX:
+	case I915_IR_DDX_FINE:
+	case I915_IR_DDY:
+		i915_compile_derivative(state, inst);
+		break;
+
+	case I915_IR_PACK_HALF:
+	case I915_IR_UNPACK_HALF:
+		i915_compile_half(state, inst);
+		break;
+
 	default:
 		/* An IR operation this compiler does not know is never dropped. */
 		state->unsupported = 1;
@@ -1568,8 +1683,11 @@ i915_compile_load_input(
 	uint32_t first;
 	uint32_t dst;
 	struct i915_eu_reg facing;
+	uint32_t bary1;
+	uint32_t bary2;
 	int found;
 	int flat;
+	int linear;
 
 	/* Emits into the shader's encoder buffer. */
 	code = &state->code;
@@ -1594,6 +1712,12 @@ i915_compile_load_input(
 		return;
 	}
 
+	/* gl_FragCoord comes from the payload's pixel position, depth and w. */
+	if (state->ir->stage == I915_STAGE_FRAGMENT && inst->location == I915_SHADER_LOCATION_FRAG_COORD) {
+		i915_compile_frag_coord(state, inst);
+		return;
+	}
+
 	/* Finds the input's place in the payload order. */
 	found = i915_compile_rank(state->inputs, state->input_count, inst->location, &rank);
 	if (found != 0) {
@@ -1611,7 +1735,7 @@ i915_compile_load_input(
 	}
 
 	/* Locates the component's plane (see the conventions). */
-	plane = COMPILE_FS_SETUP_GRF + state->push_regs + 2U * rank + inst->component / 2U;
+	plane = state->fs_setup_grf + state->push_regs + 2U * rank + inst->component / 2U;
 	first = (inst->component & 1U) * 16U;
 
 	/* A Flat input is the plane's origin, the provoking vertex's value, moved bit for bit (an integer stays one). */
@@ -1621,19 +1745,99 @@ i915_compile_load_input(
 		return;
 	}
 
+	/* An input without perspective is interpolated with the linear barycentrics. */
+	bary1 = COMPILE_FS_BARY1_GRF;
+	bary2 = COMPILE_FS_BARY2_GRF;
+	linear = i915_compile_input_linear(state, inst->location);
+	if (linear) {
+		bary1 = state->fs_linear_grf;
+		bary2 = state->fs_linear_grf + 1U;
+	}
+
 	/* origin + d1 * bary1 + d2 * bary2, written out: Gen11+ has no PLN. */
 	drv_i915_eu_alu2(code, I915_EU_MUL, drv_i915_eu_grf(dst),
 		drv_i915_eu_grf_scalar(plane, first + 4U),
-		drv_i915_eu_grf(COMPILE_FS_BARY2_GRF));
+		drv_i915_eu_grf(bary2));
 	drv_i915_eu_alu2(code, I915_EU_ADD, drv_i915_eu_grf(dst),
 		drv_i915_eu_grf(dst),
 		drv_i915_eu_grf_scalar(plane, first + 12U));
 	drv_i915_eu_alu2(code, I915_EU_MUL, drv_i915_eu_grf(state->scratch_grf),
 		drv_i915_eu_grf_scalar(plane, first),
-		drv_i915_eu_grf(COMPILE_FS_BARY1_GRF));
+		drv_i915_eu_grf(bary1));
 	drv_i915_eu_alu2(code, I915_EU_ADD, drv_i915_eu_grf(dst),
 		drv_i915_eu_grf(dst),
 		drv_i915_eu_grf(state->scratch_grf));
+}
+
+/*
+ * Lowers a component of gl_FragCoord as Mesa does on Gen12.0
+ * (brw_compile_fs.cpp, with anv's nir_lower_wpos_center): x and y are the
+ * pixel's integer position plus 0.5 -- the x and y of each subspan (words
+ * 4 .. 7 of r1) replicated to its four pixels and the offsets of the pixels
+ * in the subspan added, sixteen words at once, then the x or the y of each
+ * pixel converted to a float; z is the payload's source depth; w is the
+ * reciprocal of the payload's source w.
+ */
+static void
+i915_compile_frag_coord(
+	struct i915_compile_state *state,
+	const struct i915_shader_ir_inst *inst)
+{
+	struct i915_eu_reg subspans;
+	struct i915_eu_reg pixels;
+	uint32_t positions;
+	uint32_t byte;
+	uint32_t dst;
+
+	/* Gives the component its register. */
+	dst = i915_compile_define(state, inst->dst, 1U);
+
+	/* z: the interpolated depth, moved. */
+	if (inst->component == 2U) {
+		drv_i915_eu_mov(&state->code, drv_i915_eu_grf(dst), drv_i915_eu_grf(state->fs_depth_grf));
+		return;
+	}
+
+	/* w: the reciprocal of the interpolated w. */
+	if (inst->component == 3U) {
+		drv_i915_eu_math(&state->code, I915_EU_MATH_INV, drv_i915_eu_grf(dst), drv_i915_eu_grf(state->fs_w_grf), drv_i915_eu_null());
+		return;
+	}
+
+	/* A component beyond w is not lowered. */
+	if (inst->component > 3U) {
+		state->unsupported = 1;
+		return;
+	}
+
+	/* Takes a temporary for the sixteen words of positions. */
+	positions = i915_compile_temporary(state);
+	if (state->out_of_registers != 0)
+		return;
+
+	/*
+	 * Makes the positions: each subspan's x four times, its y four times,
+	 * subspan 0 then 1 (<1;4,0> from word 4), plus the pixel offsets.
+	 */
+	subspans = drv_i915_eu_grf_region(COMPILE_FS_DISPATCH_GRF, COMPILE_FS_SUBSPAN_BYTE, EU_TYPE_UW, EU_VSTRIDE_1, EU_WIDTH_4, EU_HSTRIDE_0);
+	drv_i915_eu_alu2_sixteen(&state->code,
+				 I915_EU_ADD,
+				 drv_i915_eu_grf_region(positions, 0U, EU_TYPE_UW, EU_VSTRIDE_8, EU_WIDTH_8, EU_HSTRIDE_1),
+				 subspans,
+				 drv_i915_eu_imm_v(COMPILE_FS_PIXEL_OFFSETS));
+
+	/* Picks the x, or the y, of the eight pixels: four words of each subspan's eight. */
+	byte = 0U;
+	if (inst->component == 1U)
+		byte = COMPILE_FS_PIXEL_Y_BYTE;
+	pixels = drv_i915_eu_grf_region(positions, byte, EU_TYPE_UW, EU_VSTRIDE_8, EU_WIDTH_4, EU_HSTRIDE_1);
+	drv_i915_eu_mov(&state->code, drv_i915_eu_grf(dst), pixels);
+
+	/* The centre of the pixel. */
+	drv_i915_eu_alu2(&state->code, I915_EU_ADD, drv_i915_eu_grf(dst), drv_i915_eu_grf(dst), drv_i915_eu_imm_f(COMPILE_FLOAT_HALF));
+
+	/* The temporary is free again. */
+	state->grf_busy[positions] = 0U;
 }
 
 /*
@@ -1728,8 +1932,20 @@ i915_compile_store_output(
 		return;
 	}
 
+	/* The point size is the vertex's only: component 3 of the VUE header. */
+	if (inst->location == I915_IR_LOCATION_POINT_SIZE && state->ir->stage != I915_STAGE_VERTEX) {
+		state->unsupported = 1;
+		return;
+	}
+
 	/* A gathered VUE only remembers the value; the end of the shader writes it. */
 	if (state->ir->stage == I915_STAGE_VERTEX && state->late_vue != 0) {
+		/* The point size is slot 0's (the header's) last component. */
+		if (inst->location == I915_IR_LOCATION_POINT_SIZE) {
+			state->output_value[COMPILE_VUE_POINT_SIZE] = inst->src[0];
+			return;
+		}
+
 		/* The position is slot 1; a varying follows it, in ascending location order. */
 		if (inst->location == I915_IR_LOCATION_POSITION) {
 			rank = 0U;
@@ -1744,6 +1960,13 @@ i915_compile_store_output(
 
 		/* The last store in program order is the one the end writes. */
 		state->output_value[4U * (1U + rank) + inst->component] = inst->src[0];
+		return;
+	}
+
+	/* The point size is the staged header's last dword. */
+	if (inst->location == I915_IR_LOCATION_POINT_SIZE) {
+		source_grf = i915_compile_grf(state, inst->src[0]);
+		drv_i915_eu_mov(&state->code, drv_i915_eu_grf(state->vue_grf + COMPILE_VUE_POINT_SIZE), drv_i915_eu_grf(source_grf));
 		return;
 	}
 
@@ -2102,7 +2325,9 @@ i915_compile_kill(
 /*
  * Lowers texture(): u and v are the two payload runs, the reply is four
  * registers (see the conventions).  The n-th sampled image of the shader's
- * uniforms is binding table entry 1 + n and sampler n.
+ * uniforms is binding table entry 1 + n and sampler n.  A sample with a bias,
+ * a level of detail or a texel offset builds a longer message
+ * (i915_compile_sample_message()).
  */
 static void
 i915_compile_sample(
@@ -2111,39 +2336,30 @@ i915_compile_sample(
 {
 	struct i915_eu_reg u;
 	struct i915_eu_reg v;
-	const struct i915_shader_ir_uniform *uniform;
 	uint32_t u_grf;
 	uint32_t v_grf;
-	uint32_t index;
 	uint32_t sampler;
 	uint32_t dst;
 	int found;
+
+	/* Finds the sampled image the instruction names. */
+	found = i915_compile_sampler_index(state, inst, &sampler);
+	if (found == 0) {
+		state->unsupported = 1;
+		return;
+	}
+
+	/* A sample with more than a coordinate builds its message. */
+	if (inst->op != I915_IR_SAMPLE || inst->component != 0U) {
+		i915_compile_sample_message(state, inst, sampler);
+		return;
+	}
 
 	/* Reads the coordinate. */
 	u_grf = i915_compile_grf(state, inst->src[0]);
 	u = drv_i915_eu_grf(u_grf);
 	v_grf = i915_compile_grf(state, inst->src[1]);
 	v = drv_i915_eu_grf(v_grf);
-
-	/* Finds the sampled image the instruction names by set and binding, counting the sampled images before it. */
-	found = 0;
-	sampler = 0U;
-	for (index = 0U; index < state->ir->uniform_count; index++) {
-		uniform = &state->ir->uniforms[index];
-		if (uniform->kind != I915_IR_UNIFORM_SAMPLED_IMAGE)
-			continue;
-		if (uniform->set == inst->location && uniform->binding == inst->immediate) {
-			found = 1;
-			break;
-		}
-		sampler++;
-	}
-
-	/* An unknown image, or one past what the descriptor can name, is not lowered. */
-	if (found == 0 || sampler > COMPILE_MAX_SAMPLER) {
-		state->unsupported = 1;
-		return;
-	}
 
 	/* Gives the four reply values four consecutive registers. */
 	dst = i915_compile_define(state, inst->dst, 4U);
@@ -2158,6 +2374,150 @@ i915_compile_sample(
 			 COMPILE_EX_MLEN(1U),
 			 0,
 			 0);
+}
+
+/*
+ * Finds the sampled image a sample names by its set and binding: its place
+ * n among the shader's sampled images, which is its sampler.  Returns
+ * nonzero when found and the descriptor can name it.
+ */
+static int
+i915_compile_sampler_index(
+	const struct i915_compile_state *state,
+	const struct i915_shader_ir_inst *inst,
+	uint32_t *sampler)
+{
+	const struct i915_shader_ir_uniform *uniform;
+	uint32_t index;
+
+	/* Counts the sampled images before the one named. */
+	*sampler = 0U;
+	for (index = 0U; index < state->ir->uniform_count; index++) {
+		uniform = &state->ir->uniforms[index];
+		if (uniform->kind != I915_IR_UNIFORM_SAMPLED_IMAGE)
+			continue;
+		if (uniform->set == inst->location && uniform->binding == inst->immediate)
+			break;
+		(*sampler)++;
+	}
+
+	/* An unknown image, or one past what the descriptor can name, is not found. */
+	if (index == state->ir->uniform_count || *sampler > COMPILE_MAX_SAMPLER)
+		return 0;
+
+	/* Succeeded: the image is the sampler-th. */
+	return 1;
+}
+
+/*
+ * Lowers a sample whose message carries more than the coordinate, as Mesa
+ * builds it on Gen12.0 (lower_sampler_logical_send(),
+ * brw_lower_logical_sends.cpp): a header when there is a texel offset
+ * (cleared, the offset in dword 2, r0.3's sampler state pointer in dword
+ * 3), then the bias (sample_b) or the level of detail (sample_l), then u
+ * and v, one register each, copied into consecutive temporaries and sent
+ * as one run.
+ */
+static void
+i915_compile_sample_message(
+	struct i915_compile_state *state,
+	const struct i915_shader_ir_inst *inst,
+	uint32_t sampler)
+{
+	struct i915_eu_reg dword;
+	struct i915_eu_reg thread;
+	uint32_t u_grf;
+	uint32_t v_grf;
+	uint32_t level_grf;
+	uint32_t payload;
+	uint32_t length;
+	uint32_t header;
+	uint32_t message;
+	uint32_t descriptor;
+	uint32_t next;
+	uint32_t dst;
+	uint32_t index;
+
+	/* Reads the coordinate and the bias or the level of detail. */
+	u_grf = i915_compile_grf(state, inst->src[0]);
+	v_grf = i915_compile_grf(state, inst->src[1]);
+	level_grf = COMPILE_NO_GRF;
+	if (inst->op != I915_IR_SAMPLE)
+		level_grf = i915_compile_grf(state, inst->src[2]);
+
+	/* Gives the four reply values four consecutive registers. */
+	dst = i915_compile_define(state, inst->dst, 4U);
+
+	/* The message: a header for an offset, the bias or the level, u and v. */
+	header = 0U;
+	if (inst->component != 0U)
+		header = 1U;
+	length = header + 2U;
+	if (level_grf != COMPILE_NO_GRF)
+		length++;
+
+	/* Takes the message's registers. */
+	payload = i915_compile_temporaries(state, length);
+	if (state->out_of_registers != 0)
+		return;
+
+	/* Writes the header: zeros, the offset, the sampler state pointer without its low bits. */
+	next = payload;
+	if (header != 0U) {
+		drv_i915_eu_mov_all(&state->code, drv_i915_eu_grf_ud(payload), drv_i915_eu_imm_ud(0U));
+		dword = drv_i915_eu_grf_ud(payload);
+		dword.subnr = 4U * EU_SAMPLER_HEADER_OFFSET_DWORD;
+		drv_i915_eu_mov_scalar(&state->code, dword, drv_i915_eu_imm_ud(inst->component));
+		dword.subnr = 4U * EU_SAMPLER_HEADER_STATE_DWORD;
+		thread = drv_i915_eu_grf_scalar(0U, 4U * EU_SAMPLER_HEADER_STATE_DWORD);
+		thread.type = COMPILE_TYPE_UD;
+		drv_i915_eu_alu2_scalar(&state->code, I915_EU_AND, dword, thread, drv_i915_eu_imm_ud(EU_SAMPLER_STATE_POINTER_MASK));
+		next++;
+	}
+
+	/* Copies the bias or the level, then u and v, after it. */
+	if (level_grf != COMPILE_NO_GRF) {
+		drv_i915_eu_mov(&state->code, drv_i915_eu_grf(next), drv_i915_eu_grf(level_grf));
+		next++;
+	}
+
+	/* u and v after them. */
+	drv_i915_eu_mov(&state->code, drv_i915_eu_grf(next), drv_i915_eu_grf(u_grf));
+	drv_i915_eu_mov(&state->code, drv_i915_eu_grf(next + 1U), drv_i915_eu_grf(v_grf));
+
+	/* The message type: sample_b with a bias, sample_l with a level, sample otherwise. */
+	if (inst->op == I915_IR_SAMPLE_BIAS) {
+		message = EU_SAMPLER_MESSAGE_SAMPLE_BIAS;
+	} else if (inst->op == I915_IR_SAMPLE_LOD) {
+		message = EU_SAMPLER_MESSAGE_SAMPLE_LOD;
+	} else {
+		message = EU_SAMPLER_MESSAGE_SAMPLE;
+	}
+
+	/* The descriptor: the message's length, a four-register reply, the header, SIMD8, the type, sampler n and entry 1 + n. */
+	descriptor = (length << EU_DESC_MLEN_SHIFT) |
+		     (4U << EU_DESC_RLEN_SHIFT) |
+		     (EU_SAMPLER_SIMD8 << EU_SAMPLER_SIMD_SHIFT) |
+		     (message << EU_SAMPLER_TYPE_SHIFT) |
+		     (sampler << EU_SAMPLER_INDEX_SHIFT) |
+		     (1U + sampler);
+	if (header != 0U)
+		descriptor |= EU_DESC_HEADER_PRESENT;
+
+	/* Emits the sample. */
+	drv_i915_eu_send(&state->code,
+			 drv_i915_eu_grf(dst),
+			 drv_i915_eu_grf(payload),
+			 drv_i915_eu_null(),
+			 COMPILE_SFID_SAMPLER,
+			 descriptor,
+			 0U,
+			 0,
+			 0);
+
+	/* The message's registers are free again. */
+	for (index = 0U; index < length; index++)
+		state->grf_busy[payload + index] = 0U;
 }
 
 /*
@@ -2439,6 +2799,92 @@ i915_compile_move(
 	drv_i915_eu_mov(&state->code, drv_i915_eu_grf_ud(dst), drv_i915_eu_grf_ud(source_grf));
 }
 
+/*
+ * Lowers a derivative as Mesa does (generate_ddx() and generate_ddy(),
+ * brw_generator.cpp): one ADD of two regions of the source that pick, in
+ * each 2x2 quad of pixels, the right and the left pixel (x) or the bottom
+ * and the top one (y) -- the quad's top row for all four pixels (coarse),
+ * or each row its own (fine x).  A vertex shader has no quads.
+ */
+static void
+i915_compile_derivative(
+	struct i915_compile_state *state,
+	const struct i915_shader_ir_inst *inst)
+{
+	struct i915_eu_reg minuend;
+	struct i915_eu_reg subtrahend;
+	uint32_t source_grf;
+	uint32_t dst;
+
+	/* Only pixels come in quads. */
+	if (state->ir->stage != I915_STAGE_FRAGMENT) {
+		state->unsupported = 1;
+		return;
+	}
+
+	/* Reads the source and gives the result its register. */
+	source_grf = i915_compile_grf(state, inst->src[0]);
+	dst = i915_compile_define(state, inst->dst, 1U);
+
+	/* Picks the two pixels of each quad. */
+	if (inst->op == I915_IR_DDX_FINE) {
+		/* Each row: its right pixel (one float on) less its left one, <2;2,0>. */
+		minuend = drv_i915_eu_grf_region(source_grf, 4U, EU_TYPE_F, EU_VSTRIDE_2, EU_WIDTH_2, EU_HSTRIDE_0);
+		subtrahend = drv_i915_eu_grf_region(source_grf, 0U, EU_TYPE_F, EU_VSTRIDE_2, EU_WIDTH_2, EU_HSTRIDE_0);
+	} else if (inst->op == I915_IR_DDX) {
+		/* The top row: its right pixel less its left one, <4;4,0>. */
+		minuend = drv_i915_eu_grf_region(source_grf, 4U, EU_TYPE_F, EU_VSTRIDE_4, EU_WIDTH_4, EU_HSTRIDE_0);
+		subtrahend = drv_i915_eu_grf_region(source_grf, 0U, EU_TYPE_F, EU_VSTRIDE_4, EU_WIDTH_4, EU_HSTRIDE_0);
+	} else {
+		/* The left column: its bottom pixel (two floats on) less its top one, <4;4,0>. */
+		minuend = drv_i915_eu_grf_region(source_grf, 8U, EU_TYPE_F, EU_VSTRIDE_4, EU_WIDTH_4, EU_HSTRIDE_0);
+		subtrahend = drv_i915_eu_grf_region(source_grf, 0U, EU_TYPE_F, EU_VSTRIDE_4, EU_WIDTH_4, EU_HSTRIDE_0);
+	}
+
+	/* Emits the difference. */
+	drv_i915_eu_alu2(&state->code, I915_EU_ADD, drv_i915_eu_grf(dst), minuend, drv_i915_eu_negate(subtrahend));
+}
+
+/*
+ * Lowers the half-float packing as Mesa does (brw_lower_pack.cpp,
+ * brw_fs_nir.cpp): a pack moves each float into its 16-bit half of the
+ * destination's channels (an HF destination of stride two, the conversion
+ * the move makes), an unpack moves the half the instruction names (an HF
+ * source of stride two) into a float.
+ */
+static void
+i915_compile_half(
+	struct i915_compile_state *state,
+	const struct i915_shader_ir_inst *inst)
+{
+	uint32_t low_grf;
+	uint32_t high_grf;
+	uint32_t dst;
+
+	/* An unpack converts one half of each channel. */
+	if (inst->op == I915_IR_UNPACK_HALF) {
+		low_grf = i915_compile_grf(state, inst->src[0]);
+		dst = i915_compile_define(state, inst->dst, 1U);
+		drv_i915_eu_mov(&state->code,
+				drv_i915_eu_grf(dst),
+				drv_i915_eu_grf_region(low_grf, 2U * (inst->component & 1U), EU_TYPE_HF, EU_VSTRIDE_16, EU_WIDTH_8, EU_HSTRIDE_2));
+		return;
+	}
+
+	/* Reads both floats and gives the packed word its register. */
+	low_grf = i915_compile_grf(state, inst->src[0]);
+	high_grf = i915_compile_grf(state, inst->src[1]);
+	dst = i915_compile_define(state, inst->dst, 1U);
+
+	/* Converts the first into the low halves, the second into the high ones. */
+	drv_i915_eu_mov(&state->code,
+			drv_i915_eu_grf_region(dst, 0U, EU_TYPE_HF, EU_VSTRIDE_16, EU_WIDTH_8, EU_HSTRIDE_2),
+			drv_i915_eu_grf(low_grf));
+	drv_i915_eu_mov(&state->code,
+			drv_i915_eu_grf_region(dst, 2U, EU_TYPE_HF, EU_VSTRIDE_16, EU_WIDTH_8, EU_HSTRIDE_2),
+			drv_i915_eu_grf(high_grf));
+}
+
 /* Lowers the start of a loop: remembers where the WHILE at its end jumps back to. */
 static void
 i915_compile_loop_begin(
@@ -2509,6 +2955,24 @@ i915_compile_input_flat(
 	}
 
 	/* Interpolated. */
+	return 0;
+}
+
+/* Reports whether the IR input of a location is interpolated without perspective. */
+static int
+i915_compile_input_linear(
+	const struct i915_compile_state *state,
+	uint32_t location)
+{
+	uint32_t index;
+
+	/* The input of the location. */
+	for (index = 0U; index < state->ir->input_count; index++) {
+		if (state->ir->inputs[index].location == location && state->ir->inputs[index].noperspective != 0U)
+			return 1;
+	}
+
+	/* With perspective. */
 	return 0;
 }
 
@@ -2600,6 +3064,7 @@ i915_compile_interface(
 	uint32_t payload_end;
 	uint32_t index;
 	uint32_t vue_slots;
+	int linear;
 
 	/* Lays out the push data: the push constants, then the uniform blocks. */
 	i915_compile_blocks(state);
@@ -2610,8 +3075,21 @@ i915_compile_interface(
 		if (inst->op == I915_IR_LOAD_INPUT && inst->location == I915_SHADER_LOCATION_FRONT_FACING) {
 			/* The facing bit is in the payload's fixed registers, not an input of its own. */
 			continue;
+		} else if (inst->op == I915_IR_LOAD_INPUT && inst->location == I915_SHADER_LOCATION_FRAG_COORD) {
+			/* The pixel position needs no input; its depth and w come in the payload when read. */
+			if (inst->component == 2U)
+				state->uses_depth = 1;
+			if (inst->component == 3U)
+				state->uses_w = 1;
 		} else if (inst->op == I915_IR_LOAD_INPUT) {
+			/* An input, which the linear barycentrics interpolate when it has no perspective. */
 			i915_compile_note(state, state->inputs, &state->input_count, COMPILE_MAX_INPUTS, inst->location);
+			linear = i915_compile_input_linear(state, inst->location);
+			if (linear != 0 && state->ir->stage == I915_STAGE_FRAGMENT)
+				state->uses_linear = 1;
+		} else if (inst->op == I915_IR_STORE_OUTPUT && inst->location == I915_IR_LOCATION_POINT_SIZE) {
+			/* The point size is in the VUE header, not a varying of its own. */
+			state->writes_point_size = 1;
 		} else if (inst->op == I915_IR_STORE_OUTPUT &&
 		    state->ir->stage == I915_STAGE_VERTEX &&
 		    inst->location != I915_IR_LOCATION_POSITION) {
@@ -2625,11 +3103,15 @@ i915_compile_interface(
 	if (state->uses_kill != 0 && state->ir->stage != I915_STAGE_FRAGMENT)
 		state->unsupported = 1;
 
+	/* A fragment payload carries, after the perspective barycentrics, what the kernel asked for, in the order of the conventions. */
+	if (state->ir->stage == I915_STAGE_FRAGMENT)
+		i915_compile_fragment_payload(state);
+
 	/* Finds where the payload ends: four registers to an attribute, two to an interpolated input. */
 	if (state->ir->stage == I915_STAGE_VERTEX) {
 		payload_end = COMPILE_PAYLOAD_GRF + state->push_regs + 4U * state->input_count;
 	} else {
-		payload_end = COMPILE_FS_SETUP_GRF + state->push_regs + 2U * state->input_count;
+		payload_end = state->fs_setup_grf + state->push_regs + 2U * state->input_count;
 	}
 
 	/*
@@ -2675,6 +3157,43 @@ i915_compile_interface(
 		state->out_of_registers = 1;
 	if (state->spill_count != 0U && state->header_grf == COMPILE_NO_GRF)
 		state->out_of_registers = 1;
+}
+
+/*
+ * Lays out the fragment payload after the perspective barycentrics: the
+ * linear barycentrics, the source depth and the source w, each only when
+ * the kernel reads it, in that order (brw_fs_thread_payload.cpp,
+ * setup_fs_payload_gfx9()), then the push data and the input planes.
+ */
+static void
+i915_compile_fragment_payload(
+	struct i915_compile_state *state)
+{
+	uint32_t next;
+
+	/* Starts after the perspective barycentrics. */
+	next = COMPILE_FS_SETUP_GRF;
+
+	/* The two linear barycentrics of each pixel. */
+	if (state->uses_linear != 0) {
+		state->fs_linear_grf = next;
+		next += 2U;
+	}
+
+	/* The interpolated depth of each pixel. */
+	if (state->uses_depth != 0) {
+		state->fs_depth_grf = next;
+		next++;
+	}
+
+	/* The interpolated w of each pixel. */
+	if (state->uses_w != 0) {
+		state->fs_w_grf = next;
+		next++;
+	}
+
+	/* The push data and the planes follow. */
+	state->fs_setup_grf = next;
 }
 
 /*
@@ -2939,8 +3458,9 @@ i915_compile_gather(
 		for (component = 0U; component < 4U; component++) {
 			grf = COMPILE_GATHER_GRF + 4U * (slot - first) + component;
 
-			/* The header (point size, layer, viewport index) is integer zeros. */
-			if (slot == 0U) {
+			/* The header (layer, viewport index, and a point size never stored) is integer zeros. */
+			value = state->output_value[4U * slot + component];
+			if (slot == 0U && value == COMPILE_NO_VALUE) {
 				header = drv_i915_eu_grf_ud(grf);
 				header.type = COMPILE_TYPE_D;
 				drv_i915_eu_mov(&state->code, header, drv_i915_eu_imm_d(0U));
@@ -2948,7 +3468,6 @@ i915_compile_gather(
 			}
 
 			/* A component never stored is zero, as a staged one starts. */
-			value = state->output_value[4U * slot + component];
 			if (value == COMPILE_NO_VALUE) {
 				drv_i915_eu_mov(&state->code, drv_i915_eu_grf(grf), drv_i915_eu_imm_f(0U));
 				continue;
@@ -3051,6 +3570,10 @@ i915_compile_describe(
 	if (state->uses_kill != 0)
 		binary->uses_kill = 1U;
 
+	/* A vertex kernel that writes the point size has the setup read it from the VUE. */
+	if (state->writes_point_size != 0)
+		binary->writes_point_size = 1U;
+
 	/* A vertex shader passes its varyings on; a fragment shader's varyings are its inputs. */
 	if (state->ir->stage == I915_STAGE_VERTEX) {
 		binary->varying_count = state->varying_count;
@@ -3058,6 +3581,14 @@ i915_compile_describe(
 		binary->dispatch_grf_start = COMPILE_PAYLOAD_GRF;
 	} else {
 		binary->varying_count = state->input_count;
-		binary->dispatch_grf_start = COMPILE_FS_SETUP_GRF;
+		binary->dispatch_grf_start = state->fs_setup_grf;
 	}
+
+	/* A fragment kernel has the draw put in its payload what it reads beyond the perspective barycentrics. */
+	if (state->uses_linear != 0)
+		binary->uses_linear_barycentrics = 1U;
+	if (state->uses_depth != 0)
+		binary->uses_source_depth = 1U;
+	if (state->uses_w != 0)
+		binary->uses_source_w = 1U;
 }

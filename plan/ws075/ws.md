@@ -9,7 +9,7 @@ Related Milestones: MG003
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: none（サブエージェント、WS068 から続けて）
-Resume point: p001（調査）cleared（2026-09-27）。desktop は実機で動く。p002 cleared（desktop の新しい機能も実機で動く）。p003（topology）cleared。p004（GLES 2 の compiler）in-progress: 増分 1〜4 を commit（host 試験と実機の vkx・vke2・vkc 回帰 PASS）。2026-09-27 21 時に rate limit の wrap-up で停止。再開は [phase004](phase004/phase.md) の「再開の手順」から（未 commit の作業なし）
+Resume point: p001〜p004 cleared（2026-09-27。p004: GLES 2 の compiler の核、実機の vke2 17/17・vke1 4/4・vkx・vkc 9/9）。zdesktop-files の実機の場面を足した（2026-09-28、下の節。BUG-077 の render engine の hang が 4 回中 2 回）。p005（texture の種類）の実装中
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -53,7 +53,7 @@ QEMU（Venus）の証拠と実機（i915）の証拠は分けて書く。実機�
 | [ws075-p001](phase001/phase.md) | 調査: shader の全ての不足（host の survey、122 module）、client ごとの実行器の command（静的）、今の zdesktop の実機の capture | cleared（2026-09-27。実機の zdesktop 6/6 PASS、client の shader・command は全て通る。不足は GL/GLES の側） | — |
 | [ws075-p002](phase002/phase.md) | desktop の新しい機能を実機で確かめる: tab、System Menu（`plan/tools/titlebar/menu-hw.sh`）、zdesktop-files・zdesktop-terminal（App Home）。出た不足を直す（zdesktop は直さず i915 の側で） | cleared（2026-09-27。実機で home 4/4・menu 11/11・x11 6/6。zdesktop-files の scenario は desktop の変更が落ち着いてから） | p001 |
 | [ws075-p003](phase003/phase.md) | 実行器: primitive topology（triangle strip・fan、line list・strip、point list。今は triangle list だけ）、幅 1 以外の線、index の型、vkFreeDescriptorSets（F-023）。GL の app の大半が要る | cleared（2026-09-27。strip・fan・line・point を描く、実機の vkx 9/9。幅・PointSize・vkFreeDescriptorSets は後） | p001 |
-| [ws075-p004](phase004/phase.md) | compiler（GLES 2 の核）: 補間の Flat・NoPerspective・Centroid（ws031-p038）、input builtin（FragCoord・FrontFacing・PointCoord・VertexIndex・InstanceIndex）、output PointSize、texture() の bias・offset と textureLod、local の配列・struct・配列の定数（ws031-p040）、OpFwidth、Determinant・MatrixInverse・pack half | in-progress（2026-09-27 着手。増分 1〜4: Flat・Centroid、整数の入力、VertexIndex・InstanceIndex、FrontFacing。2026-09-27 21 時に wrap-up で停止、再開の手順は phase004） | p001 |
+| [ws075-p004](phase004/phase.md) | compiler（GLES 2 の核）: 補間の Flat・NoPerspective・Centroid、input builtin（FragCoord・FrontFacing・PointCoord・VertexIndex・InstanceIndex）、output PointSize、texture() の bias・offset と textureLod、local・interface の配列・struct と配列の定数、微分、Determinant・MatrixInverse・pack half、8・16 bit の vertex format | cleared（2026-09-27。実機 vke2 17/17・vke1 4/4・vkx 9/9・vkc 9/9、zdesktop・x11 の capture 6/6。Grad・fine の y 微分は p005） | p001 |
 | ws075-p005 | texture の種類: compiler の texelFetch（OpImage・OpImageFetch）・textureSize、shadow（Dref）、integer sampler、cube・配列・3D の sampler。実行器の cube・配列・3D の image、mip level・layer への描画（ws031-p030）、depth の copy、sampler の compare 等（ws031-p034）、descriptor 配列（ws031-p035） | planning | p004 |
 | ws075-p006 | 実行器と compiler: MRT（ws031-p031）、occlusion query（sync の module）、texel buffer（buffer view）、storage buffer（transform feedback の VS の store）、multisample の image と resolve | planning | p005 |
 | ws075-p007 | GL 3.2 の stage: geometry shader（compiler の stage と 3DSTATE_GS）、gl_Layer と layered の描画、PrimitiveId。着手前に分ける | planning | p006 |
@@ -64,6 +64,22 @@ QEMU（Venus）の証拠と実機（i915）の証拠は分けて書く。実機�
 各 Phase の受け入れは、host の survey（`plan/ws075/tests/shader-survey/run.sh`）の該当の不足が 0 になることと、実機の capture
 （egltest・glxtest の場面の capture の scenario は p003 で足す）。
 
+
+## zdesktop-files の実機の場面（main の依頼、2026-09-28）
+
+`plan/ws031/tests/i915-capture.py` の `zdesktop-files`（`ZDESKTOP_APP=home plan/ws075/tests/capture-hw.sh zdesktop-files zdesktop OUTDIR`）:
+Home から Files を起動し、Ctrl+T・Ctrl+Tab・Ctrl+W でタブを開閉・切り替え、title bar の double click で dock、下端からの drag で
+Wiseview を開閉、dock した窓の閉じる button で終える（9 検査）。Files の窓の位置は先に map された窓の数で変わるので、desktop との
+差分から窓を見つける（`changed_box()`）。`config-zdesktop-hw.mk` に zdesktop-files とその library を足した。
+
+| run | 結果 |
+| --- | --- |
+| hw-1 | image に /bin/zdesktop-files が無い（config を直した） |
+| hw-2 | Files の glass・タブ・Wiseview は PASS、dock は固定の座標の誤りで FAIL（窓の検出に替えた） |
+| hw-3・hw-4 | [BUG-077](../bugs/BUG-077.md): render engine の hang（engine_recover 未実装、device lost）で compositor が停止 |
+| hw-5 | 9/9 PASS。画面 `build/ws031-shots/ws075-files-20260928-*.png`（sheet・desktop・files・tab-new・tab-first・tab-closed・docked・wiseview・wiseview-closed・ended） |
+
+Files まで進んだ 4 回のうち 2 回が BUG-077。実機の証拠のみ（QEMU は未実施）。
 
 ## WS031 から移した Phase
 

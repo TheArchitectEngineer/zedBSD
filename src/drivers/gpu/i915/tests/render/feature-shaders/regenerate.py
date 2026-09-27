@@ -28,6 +28,7 @@ SHADERS = (
     ('ubo.vert', 'vertex', 'i915_vke1_ubo_vert'),
     ('ubo.frag', 'fragment', 'i915_vke1_ubo_frag'),
     ('tex3.frag', 'fragment', 'i915_vke1_tex3_frag'),
+    ('texops.frag', 'fragment', 'i915_vke1_texops_frag'),
 )
 
 SIZE = 64
@@ -246,6 +247,36 @@ def tex3_expected():
     return image
 
 
+# ws075-p004: the texture operand step's texture, 8 x 8 texels on level 0 and 4 x 4 on level 1, every texel its own.
+MIP_SIDE = 8
+
+
+def mip_texel(level, i, j):
+    """Texel (i, j) of a level: red and green from its place, blue from its level."""
+    step = 32 << level
+    return (i * step + 8 * (level + 1), j * step + 8 * (level + 1), 64 + 128 * level, 255)
+
+
+def texops_expected():
+    """Every pixel of the texture operand step: the nearest texel of the level and at the offset its band asks."""
+    image = []
+    for py in range(SIZE):
+        for px in range(SIZE):
+            band = py >> 4
+            level = 0 if band == 0 or (band == 3 and (px & 32) == 0) else 1
+            side = MIP_SIDE >> level
+            i = px * side // SIZE
+            j = py * side // SIZE
+            if band == 3 and level == 0:
+                i, j = i + 1, j - 1
+            elif band == 3:
+                i, j = i - 1, j + 1
+            i = min(max(i, 0), side - 1)
+            j = min(max(j, 0), side - 1)
+            image.append(pixel(mip_texel(level, i, j)))
+    return image
+
+
 def c_words(lines, symbol, words, kind='uint32_t', per_line=6, fmt='0x{:08x}U'):
     lines.append(f'static const {kind} {symbol}[{len(words)}] = {{')
     for offset in range(0, len(words), per_line):
@@ -332,6 +363,13 @@ def main():
     c_words(lines, 'i915_vke1_texture_linear', [linear for _, linear in TEXTURES], per_line=3, fmt='{}U')
     lines.extend(['', '/* Every pixel of the texture step. */'])
     c_words(lines, 'i915_vke1_tex3_expected', tex3_expected(), per_line=8)
+    lines.extend(['', '/* The texture operand step\'s texels: level 0 row after row, then level 1 (ws075-p004). */'])
+    c_words(lines, 'i915_vke1_mip_level0', [pixel(mip_texel(0, i, j)) for j in range(MIP_SIDE) for i in range(MIP_SIDE)],
+            per_line=8)
+    c_words(lines, 'i915_vke1_mip_level1',
+            [pixel(mip_texel(1, i, j)) for j in range(MIP_SIDE // 2) for i in range(MIP_SIDE // 2)], per_line=4)
+    lines.extend(['', '/* Every pixel of the texture operand step. */'])
+    c_words(lines, 'i915_vke1_texops_expected', texops_expected(), per_line=8)
     lines.append('')
     (fixtures / 'feature-shaders-gen.inc').write_text('\n'.join(lines))
 
