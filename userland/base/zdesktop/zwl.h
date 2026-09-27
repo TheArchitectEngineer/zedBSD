@@ -503,6 +503,17 @@ struct zwl_server {
 	unsigned log_frames;
 	/* Nonzero with --direct: no window mode; one surface is shown directly, as before WS035. */
 	unsigned direct;
+	/*
+	 * The graphical login (ws035-p095): with --greeter zdesktop draws the
+	 * login screen (greeter.c), opens no socket and asks zsessiond on
+	 * auth_fd; with --session it is a login session, which has no deadline
+	 * and ends with App Home's Log Out.  size_given: --width or --height
+	 * was given, so the display's preferred size is not used.
+	 */
+	unsigned greeter;
+	unsigned session;
+	int auth_fd;
+	unsigned size_given;
 	unsigned failed;
 	struct zwl_input_device inputs[ZWL_INPUT_MAX];
 	uint64_t input_scan_time;
@@ -749,6 +760,11 @@ struct zwl_server {
 };
 
 uint64_t zwl_milliseconds(void);
+void zwl_request_stop(void);
+int zwl_greeter_open(struct zwl_server *server);
+int zwl_greeter_button(struct zwl_server *server, uint32_t button, uint32_t state);
+int zwl_greeter_key(struct zwl_server *server, uint32_t key, uint32_t state);
+void zwl_greeter_tick(struct zwl_server *server);
 int zwl_emit(struct zwl_client *client, uint32_t object, uint32_t opcode, const void *payload, size_t size);
 int zwl_emit_fd(struct zwl_client *client, uint32_t object, uint32_t opcode, const void *payload, size_t size, int descriptor);
 void zwl_packet_free(struct zwl_packet *packet);
