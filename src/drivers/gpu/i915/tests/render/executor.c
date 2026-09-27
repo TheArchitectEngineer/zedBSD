@@ -71,8 +71,10 @@
 #define I915_VKX_TEXTURE_OFFSET		0x90000U
 #define I915_VKX_CHAIN_OFFSET		0xa0000U
 
-/* Where the 32-bit indices sit in the index buffer, after the 16-bit ones. */
+/* Where the 32-bit indices sit in the index buffer, after the 16-bit ones, and the strip's and the fan's after them. */
 #define I915_VKX_INDEX32_OFFSET		256U
+#define I915_VKX_STRIP_OFFSET		512U
+#define I915_VKX_FAN_OFFSET		528U
 
 /*
  * The mipmapped images of the mip steps: 64x64 RGBA8 with all 7 levels,
@@ -111,6 +113,8 @@
 #define I915_VKX_ID_SET_LOD5		(I915_VKX_IDENTITY + 20U)
 #define I915_VKX_ID_SET_LOD5_HALF	(I915_VKX_IDENTITY + 21U)
 #define I915_VKX_ID_SET_LOD6		(I915_VKX_IDENTITY + 22U)
+#define I915_VKX_ID_STRIP_PIPELINE	(I915_VKX_IDENTITY + 23U)
+#define I915_VKX_ID_FAN_PIPELINE	(I915_VKX_IDENTITY + 24U)
 
 /* The wire opcodes the scenario sends, as libvulkan numbers them. */
 #define I915_VKX_OP_QUEUE_SUBMIT		18U
@@ -199,13 +203,15 @@ struct i915_vkx {
 	struct i915_gfx_buffer source;
 	struct i915_gfx_buffer destination;
 
-	/* The shader modules and the three pipelines made from them. */
+	/* The shader modules and the pipelines made from them (the colour one also as a triangle strip and a fan). */
 	struct i915_gfx_shader place;
 	struct i915_gfx_shader color;
 	struct i915_gfx_shader push;
 	struct i915_gfx_pipeline color_pipeline;
 	struct i915_gfx_pipeline dynamic_pipeline;
 	struct i915_gfx_pipeline push_pipeline;
+	struct i915_gfx_pipeline strip_pipeline;
+	struct i915_gfx_pipeline fan_pipeline;
 
 	/*
 	 * The mip steps' objects: the sampled texture and the blitted chain;
@@ -360,6 +366,7 @@ static int i915_vkx_compare_target(struct i915_vkx *x, const char *what);
 static void i915_vkx_verdict(struct i915_vkx *x, const char *what, int error);
 static void i915_vkx_step_index16(struct i915_vkx *x);
 static void i915_vkx_step_index32(struct i915_vkx *x);
+static void i915_vkx_step_topology(struct i915_vkx *x);
 static void i915_vkx_step_viewport(struct i915_vkx *x);
 static void i915_vkx_step_copy(struct i915_vkx *x);
 static void i915_vkx_step_grid(struct i915_vkx *x);
@@ -436,6 +443,7 @@ i915_vkx_thread(
 	/* Runs every step; each logs its own verdict. */
 	i915_vkx_step_index16(x);
 	i915_vkx_step_index32(x);
+	i915_vkx_step_topology(x);
 	i915_vkx_step_viewport(x);
 	i915_vkx_step_copy(x);
 	i915_vkx_step_grid(x);
@@ -553,6 +561,8 @@ i915_vkx_teardown(
 	drv_i915_gfx_pipeline_release(&x->color_pipeline);
 	drv_i915_gfx_pipeline_release(&x->dynamic_pipeline);
 	drv_i915_gfx_pipeline_release(&x->push_pipeline);
+	drv_i915_gfx_pipeline_release(&x->strip_pipeline);
+	drv_i915_gfx_pipeline_release(&x->fan_pipeline);
 	drv_i915_gfx_pipeline_release(&x->tex_pipeline);
 
 	/* Unbinds and destroys the storage. */
@@ -683,6 +693,12 @@ i915_vkx_objects_init(
 	i915_vkx_pipeline_init(x, &x->dynamic_pipeline, &x->color, 1);
 	i915_vkx_pipeline_init(x, &x->push_pipeline, &x->push, 0);
 
+	/* The colour pipeline as a triangle strip and as a triangle fan. */
+	i915_vkx_pipeline_init(x, &x->strip_pipeline, &x->color, 0);
+	x->strip_pipeline.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
+	i915_vkx_pipeline_init(x, &x->fan_pipeline, &x->color, 0);
+	x->fan_pipeline.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN;
+
 	/* The mip steps' images, views, samplers, sets and pipeline. */
 	i915_vkx_mip_objects_init(x);
 }
@@ -714,6 +730,10 @@ i915_vkx_objects_publish(
 		error = drv_i915_object_insert(session, I915_VK_OBJ_PIPELINE, I915_VKX_ID_DYNAMIC_PIPELINE, &x->dynamic_pipeline);
 	if (error == 0)
 		error = drv_i915_object_insert(session, I915_VK_OBJ_PIPELINE, I915_VKX_ID_PUSH_PIPELINE, &x->push_pipeline);
+	if (error == 0)
+		error = drv_i915_object_insert(session, I915_VK_OBJ_PIPELINE, I915_VKX_ID_STRIP_PIPELINE, &x->strip_pipeline);
+	if (error == 0)
+		error = drv_i915_object_insert(session, I915_VK_OBJ_PIPELINE, I915_VKX_ID_FAN_PIPELINE, &x->fan_pipeline);
 	if (error == 0)
 		error = drv_i915_object_insert(session, I915_VK_OBJ_IMAGE, I915_VKX_ID_TEXTURE, &x->texture);
 	if (error == 0)
@@ -766,6 +786,8 @@ i915_vkx_objects_withdraw(
 	drv_i915_object_remove(session, I915_VK_OBJ_PIPELINE, I915_VKX_ID_COLOR_PIPELINE);
 	drv_i915_object_remove(session, I915_VK_OBJ_PIPELINE, I915_VKX_ID_DYNAMIC_PIPELINE);
 	drv_i915_object_remove(session, I915_VK_OBJ_PIPELINE, I915_VKX_ID_PUSH_PIPELINE);
+	drv_i915_object_remove(session, I915_VK_OBJ_PIPELINE, I915_VKX_ID_STRIP_PIPELINE);
+	drv_i915_object_remove(session, I915_VK_OBJ_PIPELINE, I915_VKX_ID_FAN_PIPELINE);
 	drv_i915_object_remove(session, I915_VK_OBJ_IMAGE, I915_VKX_ID_TEXTURE);
 	drv_i915_object_remove(session, I915_VK_OBJ_IMAGE, I915_VKX_ID_CHAIN);
 	drv_i915_object_remove(session, I915_VK_OBJ_PIPELINE, I915_VKX_ID_TEX_PIPELINE);
@@ -852,6 +874,14 @@ i915_vkx_pipelines_prepare(
 
 	/* The pipeline whose fragment shader reads the pushed colour. */
 	error = drv_i915_gfx_pipeline_prepare(x->render, &x->push_pipeline);
+	if (error != 0)
+		return error;
+
+	/* The colour pipeline as a triangle strip and as a triangle fan. */
+	error = drv_i915_gfx_pipeline_prepare(x->render, &x->strip_pipeline);
+	if (error != 0)
+		return error;
+	error = drv_i915_gfx_pipeline_prepare(x->render, &x->fan_pipeline);
 	if (error != 0)
 		return error;
 
@@ -960,6 +990,9 @@ i915_vkx_quad_write(
  * bind starts at byte 4), two more the first index skips, then the two
  * quads 0 and 1 of a draw with vertex offset 4.  At byte 256, thirty-two-bit
  * indices: one quad, for draws that pick the quad with their vertex offset.
+ * At bytes 512 and 528, one quad's four corners as a triangle strip (top
+ * left, top right, bottom left, bottom right) and as a fan (in turn round
+ * the quad).
  */
 static void
 i915_vkx_indices_write(
@@ -974,12 +1007,20 @@ i915_vkx_indices_write(
 	static const uint32_t long_indices[6] = {
 		0U, 1U, 2U, 0U, 2U, 3U,
 	};
+	static const uint32_t strip_indices[4] = {
+		0U, 1U, 3U, 2U,
+	};
+	static const uint32_t fan_indices[4] = {
+		0U, 1U, 2U, 3U,
+	};
 	uint8_t *indices;
 
 	/* Writes both kinds and flushes them before the GPU reads them. */
 	indices = x->cpu + I915_VKX_INDEX_OFFSET;
 	kern_memcpy(indices, short_indices, sizeof(short_indices));
 	kern_memcpy(indices + I915_VKX_INDEX32_OFFSET, long_indices, sizeof(long_indices));
+	kern_memcpy(indices + I915_VKX_STRIP_OFFSET, strip_indices, sizeof(strip_indices));
+	kern_memcpy(indices + I915_VKX_FAN_OFFSET, fan_indices, sizeof(fan_indices));
 	drv_i915_gt_clflush(indices, I915_VKX_INDEX_BYTES);
 }
 
@@ -1519,6 +1560,42 @@ i915_vkx_step_index32(
 	}
 
 	i915_vkx_verdict(x, "INDEX32", error);
+}
+
+/*
+ * TOPOLOGY: the same two squares as INDEX32, the red one drawn as a
+ * triangle strip of four indices and the green one as a triangle fan of
+ * four (each with its quad's vertex offset).
+ */
+static void
+i915_vkx_step_topology(
+	struct i915_vkx *x)
+{
+	int error;
+
+	/* Records the pass, the strip's draw of the red quad, then the fan's draw of the green one. */
+	i915_vkx_begin(x);
+	i915_vkx_begin_pass(x);
+	i915_vkx_bind_pipeline(x, I915_VKX_ID_STRIP_PIPELINE);
+	i915_vkx_bind_vertices(x);
+	i915_vkx_bind_indices(x, I915_VKX_STRIP_OFFSET, VK_INDEX_TYPE_UINT32);
+	i915_vkx_draw_indexed(x, 4U, 1U, 0U, 4, 0U);
+	i915_vkx_bind_pipeline(x, I915_VKX_ID_FAN_PIPELINE);
+	i915_vkx_bind_indices(x, I915_VKX_FAN_OFFSET, VK_INDEX_TYPE_UINT32);
+	i915_vkx_draw_indexed(x, 4U, 1U, 0U, 8, 0U);
+	i915_vkx_record(x, I915_VKX_OP_END_RENDER_PASS);
+
+	/* Runs it and compares the target with the two squares on black. */
+	error = i915_vkx_finish(x, "TOPOLOGY");
+	if (error == 0) {
+		i915_vkx_expect_clear(x);
+		i915_vkx_expect_rect(x, 8U, 8U, 24U, 24U, I915_VKX_RED);
+		i915_vkx_expect_rect(x, 40U, 40U, 56U, 56U, I915_VKX_GREEN);
+		error = i915_vkx_compare_target(x, "TOPOLOGY");
+	}
+
+	/* Says how the step went. */
+	i915_vkx_verdict(x, "TOPOLOGY", error);
 }
 
 /*
