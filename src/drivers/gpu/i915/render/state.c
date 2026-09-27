@@ -1235,6 +1235,8 @@ drv_i915_gfx_emit_depth(
 	uint32_t write_enable;
 	uint32_t test_enable;
 	uint32_t format;
+	uint32_t layer;
+	uint32_t rows;
 	uint32_t index;
 	uint64_t va;
 
@@ -1272,18 +1274,30 @@ drv_i915_gfx_emit_depth(
 			return EINVAL;
 		}
 
+		/* The layer the pass's depth view writes, and the rows from layer to layer. */
+		layer = 0U;
+		if (state->framebuffer != NULL && state->pass != NULL &&
+		    state->pass->depth_attachment < state->framebuffer->view_count &&
+		    state->framebuffer->views[state->pass->depth_attachment] != NULL)
+			layer = state->framebuffer->views[state->pass->depth_attachment]->base_layer;
+		rows = depth->slice_rows;
+		if (rows == 0U)
+			rows = (depth->height + 3U) & ~3U;
+
 		/*
-		 * Writes what isl_emit_depth_stencil_hiz_s() writes: 2D, D32_FLOAT,
-		 * write enable and the pitch (Y-tiled: Gen9+ depth always is); the
-		 * address; the extent; MOCS; the QPitch.
+		 * Writes what isl_emit_depth_stencil_hiz_s() writes: 2D, the
+		 * format, write enable and the pitch (Y-tiled: Gen9+ depth always
+		 * is); the address; the extent; MOCS, the first array element (the
+		 * layer written) and the depth (the layers less one); the QPitch.
 		 */
 		drv_i915_batch_emit(batch, (GEN12_SURFTYPE_2D << 29) | (1U << 28) | (format << 24) | (depth->pitch - 1U));
 		drv_i915_batch_emit(batch, (uint32_t)va);
 		drv_i915_batch_emit(batch, (uint32_t)(va >> 32));
 		drv_i915_batch_emit(batch, ((depth->width - 1U) << 1) | ((depth->height - 1U) << 17));
-		drv_i915_batch_emit(batch, mocs);
+		drv_i915_batch_emit(batch, mocs | ((layer & GEN12_RSS_DEPTH_MASK) << 8) |
+		    (((drv_i915_gfx_image_slices(depth, 0U) - 1U) & GEN12_RSS_DEPTH_MASK) << 20));
 		drv_i915_batch_emit(batch, 0U);
-		drv_i915_batch_emit(batch, ((depth->height + 3U) & ~3U) / 4U);
+		drv_i915_batch_emit(batch, rows / 4U);
 	} else {
 		/* A null depth buffer is still typed D32_FLOAT. */
 		drv_i915_batch_emit(batch, (GEN12_SURFTYPE_NULL << 29) | (GEN12_DEPTH_FORMAT_D32_FLOAT << 24));

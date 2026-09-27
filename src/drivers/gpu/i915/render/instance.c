@@ -725,10 +725,8 @@ i915_instance_image_format_properties(
 	image.maxArrayLayers = 2048U;
 	if (type == VK_IMAGE_TYPE_3D)
 		image.maxArrayLayers = 1U;
-	if (depth != 0) {
+	if (depth != 0)
 		image.maxMipLevels = 1U;
-		image.maxArrayLayers = 1U;
-	}
 
 	/* One sample, and a resource of up to 1 GiB. */
 	image.sampleCounts = VK_SAMPLE_COUNT_1_BIT;
