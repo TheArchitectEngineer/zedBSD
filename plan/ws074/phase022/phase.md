@@ -26,6 +26,34 @@ Queue: なし（サブエージェントが worktree の branch で実行）
    own keys の順、GC の後も生きる・死ぬ、native の関数の呼び出し）を plain・ASan で。golden と前の host の試験が下がらない。
 3. guest で `host-object` が同じ結果。boot test。
 
+## 結果（2026-09-27）
+
+cleared。
+
+- 書いたもの:
+  - `vm/vm.h`: `vm_value`（NaN-boxing の定数と inline の作り方・判定・取り出し。`vm_value_number` は -0 でない整数を int32 に）、
+    `vm_symbol`・`vm_object`・`vm_accessor`・`vm_property`・`vm_function`・`vm_realm`、native の関数の型（`VM_THROWN` で例外）。
+  - `vm/shape.c`: shape の遷移の木（heap の root の shape は登録した root。親は子を強く持つ）、key の検索（chain を辿る）、key の列挙。
+  - `vm/object.c`: key（atom・symbol・int32 の index。`"17"` は 17、`"017"` と 2^31 以上は atom）、object と配列の作成、own の検索と
+    prototype の chain、define（配列の length、既定の属性の index は elements、疎な index（今の長さ + 1024 より先）と既定でない属性は
+    shape の整数の key、属性の変更と削除は root から shape を作り直す）、get（accessor は cell を返す）、set（通常の [[Set]] の data の
+    部分: read-only と accessor は拒む、prototype の read-only が影を作らせない、拡張不可）、delete（configurable でないものは残る、
+    element は穴）、`vm_array_set_length`、own keys の順、trace・finalize。
+  - `vm/function.c`: native の関数（`name`・`length` は configurable だけ）、`vm_call`（native だけ。callable でなければ throw）、
+    `vm_throw`。
+  - `vm/realm.c`: Object.prototype、Function.prototype（呼べる）、Array.prototype（配列）、global object と `globalThis`。realm は
+    cell でなく、tracer で自分の object を保つ。
+- 試験:
+  - `plan/ws074/tests/host-object.c` 98 検査（値の往復と判定（int32 の端、double の bit、-0、∞、NaN の正規化、pointer）、property の
+    定義・読み・書き・属性・削除、同じ順の object が shape を共有、prototype の chain（読み・影・read-only の遮り）、accessor、
+    拡張不可、200 個の property、配列（100 要素、穴、疎な index、属性のある index、length を縮める）、key の正規形、own keys の順、
+    native の関数（name・length・呼び出し・throw・数を呼ぶと throw）、realm の chain、GC（1307 cell を回収、global から届く object は
+    生き残る））: host plain・ASan（UBSan 込み）98/98、guest（QEMU、plain）98/98（回収の数も host と同じ）。
+  - 前の試験: golden 12/12（ASan）、host-base 2038/2038、host-heap 31/31。
+  - amd64 の build: warning 0。boot test: PASS（`/home/awe/zedBSD-rpi4/build/ws074-shots/p022-20260927-boot-login.png`）。実機: 未実施。
+  - `plan/ws074/tests/guest-build.sh` は p014 から engine が使う libvulkan を link するように直した。
+- commit: `564a27fa`（code・試験）と、この記録の commit。
+
 ## 後回し（follow-up）
 
 - 遷移の弱い参照（今は親が子を強く持つ）、大きな object の shape の hash の表（今は chain を辿る）、辞書 mode。
