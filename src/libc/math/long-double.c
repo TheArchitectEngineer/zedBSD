@@ -687,3 +687,212 @@ powl(
 	/* Succeeded: the double result stands for the long double one. */
 	return (long double)result;
 }
+
+/*
+ * Returns the sine of x, in radians.
+ */
+long double
+sinl(
+	long double x)
+{
+	double result;
+
+	/* Computes the operation in double. */
+	result = sin((double)x);
+
+	/* Succeeded: the double result stands for the long double one. */
+	return (long double)result;
+}
+
+/*
+ * Returns the cosine of x, in radians.
+ */
+long double
+cosl(
+	long double x)
+{
+	double result;
+
+	/* Computes the operation in double. */
+	result = cos((double)x);
+
+	/* Succeeded: the double result stands for the long double one. */
+	return (long double)result;
+}
+
+/*
+ * Returns the tangent of x, in radians.
+ */
+long double
+tanl(
+	long double x)
+{
+	double result;
+
+	/* Computes the operation in double. */
+	result = tan((double)x);
+
+	/* Succeeded: the double result stands for the long double one. */
+	return (long double)result;
+}
+
+/*
+ * Returns the arcsine of x, in radians.
+ */
+long double
+asinl(
+	long double x)
+{
+	double result;
+
+	/* Computes the operation in double. */
+	result = asin((double)x);
+
+	/* Succeeded: the double result stands for the long double one. */
+	return (long double)result;
+}
+
+/*
+ * Returns the arccosine of x, in radians.
+ */
+long double
+acosl(
+	long double x)
+{
+	double result;
+
+	/* Computes the operation in double. */
+	result = acos((double)x);
+
+	/* Succeeded: the double result stands for the long double one. */
+	return (long double)result;
+}
+
+/*
+ * Returns the arctangent of x, in radians.
+ */
+long double
+atanl(
+	long double x)
+{
+	double result;
+
+	/* Computes the operation in double. */
+	result = atan((double)x);
+
+	/* Succeeded: the double result stands for the long double one. */
+	return (long double)result;
+}
+
+/*
+ * Returns the angle of the point (x, y), in radians.
+ */
+long double
+atan2l(
+	long double y,
+	long double x)
+{
+	double result;
+
+	/* Computes the operation in double. */
+	result = atan2((double)y, (double)x);
+
+	/* Succeeded: the double result stands for the long double one. */
+	return (long double)result;
+}
+
+/*
+ * Returns the hyperbolic sine of x.
+ */
+long double
+sinhl(
+	long double x)
+{
+	double result;
+
+	/* Computes the operation in double. */
+	result = sinh((double)x);
+
+	/* Succeeded: the double result stands for the long double one. */
+	return (long double)result;
+}
+
+/*
+ * Returns the hyperbolic cosine of x.
+ */
+long double
+coshl(
+	long double x)
+{
+	double result;
+
+	/* Computes the operation in double. */
+	result = cosh((double)x);
+
+	/* Succeeded: the double result stands for the long double one. */
+	return (long double)result;
+}
+
+/*
+ * Returns the hyperbolic tangent of x.
+ */
+long double
+tanhl(
+	long double x)
+{
+	double result;
+
+	/* Computes the operation in double. */
+	result = tanh((double)x);
+
+	/* Succeeded: the double result stands for the long double one. */
+	return (long double)result;
+}
+
+/*
+ * Returns the inverse hyperbolic sine of x.
+ */
+long double
+asinhl(
+	long double x)
+{
+	double result;
+
+	/* Computes the operation in double. */
+	result = asinh((double)x);
+
+	/* Succeeded: the double result stands for the long double one. */
+	return (long double)result;
+}
+
+/*
+ * Returns the inverse hyperbolic cosine of x.
+ */
+long double
+acoshl(
+	long double x)
+{
+	double result;
+
+	/* Computes the operation in double. */
+	result = acosh((double)x);
+
+	/* Succeeded: the double result stands for the long double one. */
+	return (long double)result;
+}
+
+/*
+ * Returns the inverse hyperbolic tangent of x.
+ */
+long double
+atanhl(
+	long double x)
+{
+	double result;
+
+	/* Computes the operation in double. */
+	result = atanh((double)x);
+
+	/* Succeeded: the double result stands for the long double one. */
+	return (long double)result;
+}

@@ -534,6 +534,126 @@ def gen_pow(w: Writer, rng: random.Random, count: int) -> None:
 		w.ulp("powf", (x, y), high(power, x, y), host_powf, True)
 
 
+def near_quarter_turns(rng: random.Random, count: int) -> list[float]:
+	"""Doubles next to multiples of pi/2, small and large."""
+	values = []
+	with gmpy2.context(HIGH):
+		half_pi = gmpy2.const_pi() / 2
+		for _ in range(count):
+			k = rng.choice([rng.randint(1, 100), rng.randint(1, 10 ** 6),
+				rng.randint(1, 2 ** 60), rng.randint(1, 2 ** 200)])
+			with gmpy2.context(IEEE64):
+				value = float(+(half_pi * k))
+			if math.isinf(value):
+				continue
+			values.append(value)
+			values.append(math.nextafter(value, math.inf))
+	return values
+
+
+def gen_trig(w: Writer, rng: random.Random, count: int) -> None:
+	"""sin, cos, tan and their float versions."""
+	values = [rng.uniform(-10.0, 10.0) for _ in range(count // 4)]
+	values += [random_double(rng, -30, 1023) for _ in range(count // 4)]
+	values += [random_double(rng, -1074, 0) for _ in range(count // 8)]
+	values += [rng.uniform(-1e6, 1e6) for _ in range(count // 8)]
+	values += near_quarter_turns(rng, count // 8)
+	# The double closest to a multiple of pi/2 (J.-M. Muller, Elementary
+	# Functions, table of worst cases for the reduction).
+	values += [6381956970095103.0 * 2.0 ** 797, 5.319372648326541e+255, 1.0, 0.5, 22.0]
+	for name, function in (("sin", gmpy2.sin), ("cos", gmpy2.cos), ("tan", gmpy2.tan)):
+		host = host_function(name)
+		for x in values:
+			w.ulp(name, (x,), high(function, x), host)
+	for name, function in (("sinf", gmpy2.sin), ("cosf", gmpy2.cos), ("tanf", gmpy2.tan)):
+		host = host_function(name, 1, True)
+		for _ in range(count // 2):
+			x = random_float(rng, -149, 127)
+			w.ulp(name, (x,), high(function, x), host, True)
+
+
+def gen_atrig(w: Writer, rng: random.Random, count: int) -> None:
+	"""asin, acos, atan, atan2 and their float versions."""
+	values = [rng.uniform(-1.0, 1.0) for _ in range(count // 2)]
+	values += [math.copysign(1.0 - 2.0 ** -rng.randint(1, 53), rng.random() - 0.5) for _ in range(count // 8)]
+	values += [random_double(rng, -1074, -1) for _ in range(count // 4)]
+	values += [0.5, -0.5, 1.0, -1.0, math.sqrt(0.5), -math.sqrt(0.5)]
+	for name, function in (("asin", gmpy2.asin), ("acos", gmpy2.acos)):
+		host = host_function(name)
+		for x in values:
+			w.ulp(name, (x,), high(function, x), host)
+	host = host_function("atan")
+	for _ in range(count):
+		x = random_double(rng, -1074, 1023)
+		w.ulp("atan", (x,), high(gmpy2.atan, x), host)
+	host = host_function("atan2", 2)
+	for _ in range(count):
+		y = random_double(rng, -1074, 1023)
+		if rng.random() < 0.7:
+			exponent = min(max(math.frexp(y)[1] + rng.randint(-70, 70), -1074), 1023)
+			x = random_double(rng, exponent, exponent)
+		else:
+			x = random_double(rng, -1074, 1023)
+		w.ulp("atan2", (y, x), high(gmpy2.atan2, y, x), host)
+	for name, function in (("asinf", gmpy2.asin), ("acosf", gmpy2.acos)):
+		host = host_function(name, 1, True)
+		for _ in range(count // 2):
+			x = to_float32(rng.uniform(-1.0, 1.0))
+			w.ulp(name, (x,), high(function, x), host, True)
+	host = host_function("atanf", 1, True)
+	for _ in range(count // 2):
+		x = random_float(rng, -149, 127)
+		w.ulp("atanf", (x,), high(gmpy2.atan, x), host, True)
+	host = host_function("atan2f", 2, True)
+	for _ in range(count // 2):
+		y = random_float(rng, -149, 127)
+		x = random_float(rng, -149, 127)
+		w.ulp("atan2f", (y, x), high(gmpy2.atan2, y, x), host, True)
+
+
+def gen_hyperbolic(w: Writer, rng: random.Random, count: int) -> None:
+	"""sinh, cosh, tanh, asinh, acosh, atanh and their float versions."""
+	values = [rng.uniform(-720.0, 720.0) for _ in range(count // 4)]
+	values += [rng.uniform(-45.0, 45.0) for _ in range(count // 4)]
+	values += [random_double(rng, -1074, 3) for _ in range(count // 4)]
+	values += [710.4758600739439, -710.4758600739439, 710.475860073944, 709.8]
+	for name, function in (("sinh", gmpy2.sinh), ("cosh", gmpy2.cosh), ("tanh", gmpy2.tanh)):
+		host = host_function(name)
+		for x in values:
+			w.ulp(name, (x,), high(function, x), host)
+	host = host_function("asinh")
+	for _ in range(count):
+		x = random_double(rng, -1074, 1023)
+		w.ulp("asinh", (x,), high(gmpy2.asinh, x), host)
+	host = host_function("acosh")
+	values = [1.0 + abs(random_double(rng, -1074, 1023)) for _ in range(count // 2)]
+	values += [1.0 + abs(random_double(rng, -52, 3)) for _ in range(count // 2)]
+	values += [1.0000000000000002, 1.0]
+	for x in values:
+		w.ulp("acosh", (x,), high(gmpy2.acosh, x), host)
+	host = host_function("atanh")
+	values = [rng.uniform(-1.0, 1.0) for _ in range(count // 2)]
+	values += [math.copysign(1.0 - 2.0 ** -rng.randint(1, 53), rng.random() - 0.5) for _ in range(count // 8)]
+	values += [random_double(rng, -1074, -1) for _ in range(count // 4)]
+	for x in values:
+		if abs(x) < 1.0:
+			w.ulp("atanh", (x,), high(gmpy2.atanh, x), host)
+	for name, function in (("sinhf", gmpy2.sinh), ("coshf", gmpy2.cosh), ("tanhf", gmpy2.tanh), ("asinhf", gmpy2.asinh)):
+		host = host_function(name, 1, True)
+		for _ in range(count // 2):
+			x = to_float32(rng.uniform(-100.0, 100.0)) if rng.random() < 0.5 else random_float(rng, -149, 6)
+			w.ulp(name, (x,), high(function, x), host, True)
+	host = host_function("acoshf", 1, True)
+	for _ in range(count // 2):
+		x = to_float32(1.0 + abs(random_float(rng, -23, 60)))
+		w.ulp("acoshf", (x,), high(gmpy2.acosh, x), host, True)
+	host = host_function("atanhf", 1, True)
+	for _ in range(count // 2):
+		x = to_float32(rng.uniform(-1.0, 1.0))
+		if abs(x) < 1.0:
+			w.ulp("atanhf", (x,), high(gmpy2.atanh, x), host, True)
+
+
 GENERATORS = {
 	"remainders": gen_remainders,
 	"fma": gen_fma,
@@ -543,6 +663,9 @@ GENERATORS = {
 	"exp": gen_exp,
 	"log": gen_log,
 	"pow": gen_pow,
+	"trig": gen_trig,
+	"atrig": gen_atrig,
+	"hyperbolic": gen_hyperbolic,
 }
 
 
