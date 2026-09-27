@@ -56,7 +56,8 @@ cleared。
   `touch /tmp/p079-pasted` と改行を terminal の Paste が受けて shell が実行（file ができた）。画面 two.png・terminal-copy.png・
   terminal-paste.png。
 - 回帰: p076 PASS、menu-regress の p059・p062〜p065・p068〜p072・p014 PASS、menu-p002・p003 PASS（terminal の menu の Paste の
-  有効を含む）、x11-p003・x11-p005 PASS（x11-p004 は lean image に glxtest が無く未実施）、p075 の host 試験 PASS。boot test は commit の後に。
+  有効を含む）、x11-p003・x11-p005 PASS（x11-p004 は lean image に glxtest が無く未実施）、p075 の host 試験 PASS。boot test PASS
+  （`build/ws035-p079-boot/login.png`、commit 223642f1 と main（8a3914ce）の lean image）。その image の guest でも p079 PASS。
 - i915 実機: 未実施。
 
 ### 規約
