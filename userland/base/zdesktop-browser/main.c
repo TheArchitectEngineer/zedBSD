@@ -378,6 +378,8 @@ main_run_js(
 	vm_heap_set_stack_base(heap, __builtin_frame_address(0));
 	status = vm_realm_create(heap, &realm);
 	if (status == 0)
+		status = js_install_builtins(realm);
+	if (status == 0)
 		status = js_define_print(realm);
 	if (status != 0) {
 		fprintf(stderr, "zdesktop-browser: cannot make a realm: %s\n", strerror(status));

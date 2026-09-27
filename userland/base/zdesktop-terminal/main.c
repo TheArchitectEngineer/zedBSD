@@ -143,6 +143,32 @@ static struct terminal_screen *main_screen;
 static char main_clipboard[MAIN_CLIPBOARD_MAX];
 static size_t main_clipboard_length;
 static char main_paste[MAIN_CLIPBOARD_MAX];
+
+/*
+ * The pointer's selection (ws035-p093): whether the left button is held
+ * for a selection, or was pressed inside the range (a move then drags the
+ * text out), where and with which serial, the press before (for double and
+ * triple clicks: its time, its cell and how many clicks it made), and the
+ * cell a drag of the range started at.
+ */
+static int main_selecting;
+static int main_drag_armed;
+static int32_t main_press_x;
+static int32_t main_press_y;
+static uint32_t main_press_serial;
+static uint32_t main_click_time;
+static unsigned main_click_column;
+static unsigned main_click_row;
+static unsigned main_clicks;
+static unsigned main_anchor_column;
+static unsigned main_anchor_row;
+
+/* How close in time a click makes a double or triple click, and how far a press moves before it drags, in milliseconds and pixels. */
+#define MAIN_CLICK_MS		400U
+#define MAIN_DRAG_DISTANCE	6
+
+/* The window's title as last set: the active tab's (OSC 0 or 2), or "Terminal" (ws035-p091). */
+static char main_window_title[TERMINAL_TITLE];
 static size_t main_paste_length;
 static size_t main_paste_written;
 
@@ -170,6 +196,15 @@ static int main_tab_close(const struct main_options *options, struct main_run *r
 static int main_tab_find(uint32_t id);
 static int main_tab_requests(const struct main_options *options, struct main_run *run);
 static void main_tabs_show(void);
+static void main_title_copy(char *to, size_t size, const char *from);
+static void main_pointer(void);
+static void main_pointer_press(const struct terminal_pointer_event *event);
+static void main_pointer_motion(const struct terminal_pointer_event *event);
+static void main_pointer_release(void);
+static void main_cell(int32_t x, int32_t y, unsigned *column, unsigned *row);
+static void main_range(unsigned from_column, unsigned from_row, unsigned to_column, unsigned to_row);
+static int main_word_character(unsigned column, unsigned row);
+static void main_selected_log(const char *how);
 
 /*
  * Runs the terminal.
@@ -502,12 +537,16 @@ main_loop(
 		if (main_window.drop_pending)
 			main_drop_paste();
 
+		/* The pointer selects, or drags the selected text out (ws035-p093). */
+		main_pointer();
+
 		/* The held key repeats. */
 		terminal_window_repeat(&main_window, terminal_clock());
 
-		/* A key typed ends the selection (Edit > Select All). */
-		if (main_window.input_length != 0U && main_screen->selected) {
+		/* A key typed ends the selection (Edit > Select All, or the pointer's range). */
+		if (main_window.input_length != 0U && (main_screen->selected || main_screen->range)) {
 			main_screen->selected = 0;
+			main_screen->range = 0;
 			main_screen->changed = 1;
 		}
 
@@ -897,7 +936,7 @@ main_menu_state(
 {
 	/* The selection, the clipboard, the font's size, and fullscreen. */
 	memset(state, 0, sizeof(*state));
-	state->selection = main_screen->selected;
+	state->selection = main_screen->selected || main_screen->range;
 	state->clipboard = terminal_clipboard_has_text(&main_window);
 	state->pixels = run->pixels;
 	state->fullscreen = main_window.fullscreen;
@@ -1013,12 +1052,12 @@ main_zoom(
 	return 0;
 }
 
-/* Copies the screen's text to the clipboard (Edit > Copy, with the whole screen selected). */
+/* Copies the selected text to the clipboard (Edit > Copy: the pointer's range, or the whole screen selected). */
 static void
 main_copy(void)
 {
 	/* Nothing is copied without a selection. */
-	if (!main_screen->selected)
+	if (!main_screen->selected && !main_screen->range)
 		return;
 
 	/* The text, as it is on the screen now. */
@@ -1261,22 +1300,66 @@ main_tab_requests(
 	return 0;
 }
 
-/* Shows the tabs in the titlebar (tabs.c sends only a change). */
+/*
+ * Shows the tabs in the titlebar (tabs.c sends only a change): each tab's
+ * title is the one its shell set (OSC 0 or 2), else "Shell N".  The
+ * window's title follows the active tab's.
+ */
 static void
 main_tabs_show(void)
 {
 	struct terminal_tab_view views[TERMINAL_TABS];
+	const char *title;
 	unsigned index;
+	int same;
 
 	/* Each tab's ID and title. */
 	for (index = 0; index < main_tab_count; index++) {
 		views[index].id = main_tabs[index].id;
-		(void)snprintf(views[index].title, sizeof(views[index].title), "%s", main_tabs[index].title);
+		title = main_tabs[index].title;
+		if (main_tabs[index].screen->title[0] != '\0')
+			title = main_tabs[index].screen->title;
+		main_title_copy(views[index].title, sizeof(views[index].title), title);
 	}
 
 	/* With the active one. */
-	if (main_tab_count > 0U)
-		terminal_tabs_show(&main_window, views, main_tab_count, main_tabs[main_active].id);
+	if (main_tab_count == 0U)
+		return;
+	terminal_tabs_show(&main_window, views, main_tab_count, main_tabs[main_active].id);
+
+	/* The window's title: the active tab's, or the application's name; only a change is sent. */
+	title = "Terminal";
+	if (main_tabs[main_active].screen->title[0] != '\0')
+		title = main_tabs[main_active].screen->title;
+	same = strcmp(title, main_window_title);
+	if (same == 0)
+		return;
+	main_title_copy(main_window_title, sizeof(main_window_title), title);
+	xdg_toplevel_set_title(main_window.toplevel, main_window_title);
+	printf("ZTERM TITLE tab=%u title=%s\n", main_tabs[main_active].id, main_window_title);
+	fflush(stdout);
+}
+
+/* Copies a title as far as it fits, never cutting a UTF-8 character in two. */
+static void
+main_title_copy(
+	char *to,
+	size_t size,
+	const char *from)
+{
+	size_t length;
+
+	/* The bytes that fit, less a character's leading part the cut would leave. */
+	length = strlen(from);
+	if (length >= size) {
+		length = size - 1U;
+		while (length > 0U && ((unsigned char)from[length] & 0xc0U) == 0x80U)
+			length--;
+	}
+
+	/* Succeeded: the copy, ended. */
+	memcpy(to, from, length);
+	to[length] = '\0';
 }
 
 /* Pastes what was dropped on the window into the active shell, as a paste is. */
@@ -1291,4 +1374,256 @@ main_drop_paste(void)
 	/* The main loop writes it as the shell takes it. */
 	main_paste_length = length;
 	main_paste_written = 0;
+}
+
+/* Takes the pointer's events: the left button selects, or drags the selected text out (ws035-p093). */
+static void
+main_pointer(void)
+{
+	const struct terminal_pointer_event *event;
+	unsigned index;
+
+	/* Each event, oldest first. */
+	for (index = 0U; index < main_window.pointer_event_count; index++) {
+		event = &main_window.pointer_events[index];
+		if (event->kind == TERMINAL_POINTER_PRESS)
+			main_pointer_press(event);
+		else if (event->kind == TERMINAL_POINTER_MOTION)
+			main_pointer_motion(event);
+		else
+			main_pointer_release();
+	}
+
+	/* Succeeded: all taken. */
+	main_window.pointer_event_count = 0U;
+}
+
+/*
+ * A press of the left button: inside the range it may start a drag;
+ * otherwise one click starts a selection, two select a word, three a line.
+ */
+static void
+main_pointer_press(
+	const struct terminal_pointer_event *event)
+{
+	unsigned column;
+	unsigned row;
+	unsigned from;
+	unsigned to;
+	int again;
+	int inside;
+	int word;
+
+	/* The cell, and whether the press repeats the last click there. */
+	main_cell(event->x, event->y, &column, &row);
+	again = main_clicks > 0U && event->time - main_click_time <= MAIN_CLICK_MS && column == main_click_column && row == main_click_row;
+	main_click_time = event->time;
+	main_click_column = column;
+	main_click_row = row;
+
+	/* A press inside the range, not a repeated click, may drag it out. */
+	inside = terminal_screen_in_range(main_screen, column, row);
+	if (inside && !again) {
+		main_drag_armed = 1;
+		main_press_x = event->x;
+		main_press_y = event->y;
+		main_press_serial = event->serial;
+		main_clicks = 1U;
+		return;
+	}
+
+	/* How many clicks, up to three (a fourth starts again at one). */
+	if (again)
+		main_clicks = main_clicks % 3U + 1U;
+	else
+		main_clicks = 1U;
+	main_screen->selected = 0;
+	main_screen->changed = 1;
+
+	/* One: the selection starts here and follows the pointer. */
+	if (main_clicks == 1U) {
+		main_screen->range = 0;
+		main_anchor_column = column;
+		main_anchor_row = row;
+		main_selecting = 1;
+		return;
+	}
+
+	/* Two: the word under the pointer (its letters, or the one character that is not one). */
+	main_selecting = 0;
+	if (main_clicks == 2U) {
+		from = column;
+		to = column;
+		word = main_word_character(column, row);
+		while (word && from > 0U) {
+			word = main_word_character(from - 1U, row);
+			if (word)
+				from--;
+		}
+
+		/* And to its right. */
+		word = main_word_character(column, row);
+		while (word && to + 1U < main_screen->columns) {
+			word = main_word_character(to + 1U, row);
+			if (word)
+				to++;
+		}
+
+		/* The word is the range. */
+		main_range(from, row, to, row);
+		main_selected_log("word");
+		return;
+	}
+
+	/* Three: the whole line. */
+	main_range(0U, row, main_screen->columns - 1U, row);
+	main_selected_log("line");
+}
+
+/* A motion: it drags the range out once it moves far enough from a press inside it, or extends a selection. */
+static void
+main_pointer_motion(
+	const struct terminal_pointer_event *event)
+{
+	char text[4096];
+	size_t length;
+	unsigned column;
+	unsigned row;
+	int32_t dx;
+	int32_t dy;
+
+	/* A press inside the range, moved far enough: the range's text is dragged out. */
+	if (main_drag_armed) {
+		dx = event->x - main_press_x;
+		dy = event->y - main_press_y;
+		if (dx > -MAIN_DRAG_DISTANCE && dx < MAIN_DRAG_DISTANCE && dy > -MAIN_DRAG_DISTANCE && dy < MAIN_DRAG_DISTANCE)
+			return;
+		main_drag_armed = 0;
+		length = terminal_screen_text(main_screen, text, sizeof(text));
+		terminal_clipboard_drag(&main_window, text, length, main_press_serial);
+		return;
+	}
+
+	/* A selection follows the pointer from where it started. */
+	if (!main_selecting)
+		return;
+	main_cell(event->x, event->y, &column, &row);
+	if (column == main_anchor_column && row == main_anchor_row && !main_screen->range)
+		return;
+	main_range(main_anchor_column, main_anchor_row, column, row);
+}
+
+/* A release: a press inside the range that did not drag clears it (a click); a selection ends. */
+static void
+main_pointer_release(void)
+{
+	/* A click inside the range. */
+	if (main_drag_armed) {
+		main_drag_armed = 0;
+		main_screen->range = 0;
+		main_screen->changed = 1;
+		return;
+	}
+
+	/* A selection made by the pointer's move. */
+	if (!main_selecting)
+		return;
+	main_selecting = 0;
+	if (main_screen->range)
+		main_selected_log("drag");
+}
+
+/* Gives the cell under a point of the surface, the nearest one for a point outside the grid. */
+static void
+main_cell(
+	int32_t x,
+	int32_t y,
+	unsigned *column,
+	unsigned *row)
+{
+	/* From the grid's padded top left, a cell's size at a time. */
+	x -= (int32_t)TERMINAL_PADDING;
+	y -= (int32_t)TERMINAL_PADDING;
+	if (x < 0)
+		x = 0;
+	if (y < 0)
+		y = 0;
+	*column = (unsigned)x / main_font.cell_width;
+	*row = (unsigned)y / main_font.cell_height;
+
+	/* Succeeded: inside the grid. */
+	if (*column >= main_screen->columns)
+		*column = main_screen->columns - 1U;
+	if (*row >= main_screen->rows)
+		*row = main_screen->rows - 1U;
+}
+
+/* Selects the cells from one to another, in whichever order they come. */
+static void
+main_range(
+	unsigned from_column,
+	unsigned from_row,
+	unsigned to_column,
+	unsigned to_row)
+{
+	int later;
+
+	/* The first in reading order first. */
+	later = from_row > to_row || (from_row == to_row && from_column > to_column);
+	if (later) {
+		main_screen->range_from[0] = to_column;
+		main_screen->range_from[1] = to_row;
+		main_screen->range_to[0] = from_column;
+		main_screen->range_to[1] = from_row;
+	} else {
+		main_screen->range_from[0] = from_column;
+		main_screen->range_from[1] = from_row;
+		main_screen->range_to[0] = to_column;
+		main_screen->range_to[1] = to_row;
+	}
+
+	/* Succeeded: drawn anew. */
+	main_screen->range = 1;
+	main_screen->changed = 1;
+}
+
+/* Tells whether a cell's character belongs to a word (not a space nor one of the characters that part words in a shell). */
+static int
+main_word_character(
+	unsigned column,
+	unsigned row)
+{
+	const struct terminal_cell *cell;
+	uint32_t codepoint;
+	const char *found;
+
+	/* A blank or a space parts words. */
+	cell = terminal_screen_cell(main_screen, column, row);
+	codepoint = cell->codepoint;
+	if (codepoint == 0U || codepoint == ' ' || codepoint == '\t')
+		return 0;
+
+	/* Any other character but the shell's punctuation is a word's. */
+	if (codepoint >= 0x80U)
+		return 1;
+	found = strchr("\"'`()[]{}<>|;&,", (int)codepoint);
+	if (found != NULL)
+		return 0;
+
+	/* Succeeded: a word's. */
+	return 1;
+}
+
+/* Logs what the pointer selected: how, where, and how many bytes of text. */
+static void
+main_selected_log(
+	const char *how)
+{
+	char text[4096];
+	size_t length;
+
+	/* The range's text, for its length. */
+	length = terminal_screen_text(main_screen, text, sizeof(text));
+	printf("ZTERM SELECT how=%s from=%u,%u to=%u,%u bytes=%lu\n", how, main_screen->range_from[0], main_screen->range_from[1], main_screen->range_to[0], main_screen->range_to[1], (unsigned long)length);
+	fflush(stdout);
 }

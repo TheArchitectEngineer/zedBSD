@@ -98,6 +98,7 @@ main(
 	struct gears_options options;
 	struct sigaction watchdog;
 	XVisualInfo *visual;
+	XClassHint class_hint;
 	GLXContext context;
 	Display *display;
 	Window window;
@@ -147,6 +148,11 @@ main(
 	window = XCreateSimpleWindow(display, DefaultRootWindow(display), 0, 0, options.width, options.height, 0,
 				     BlackPixel(display, DefaultScreen(display)), BlackPixel(display, DefaultScreen(display)));
 	(void)XStoreName(display, window, "Gears");
+
+	/* The class the desktop knows the window's application by. */
+	class_hint.res_name = "zgears";
+	class_hint.res_class = "Gears";
+	(void)XSetClassHint(display, window, &class_hint);
 	(void)XSelectInput(display, window, ExposureMask | StructureNotifyMask | KeyPressMask);
 	(void)XMapWindow(display, window);
 

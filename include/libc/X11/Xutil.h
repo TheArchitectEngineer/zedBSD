@@ -30,6 +30,15 @@ typedef struct {
 
 #define TrueColor 4
 
+/* A window's WM_CLASS: its instance's name and its class (ws035-p092; the desktop's application ID). */
+typedef struct {
+	char *res_name;
+	char *res_class;
+} XClassHint;
+
+/* Sets a window's WM_CLASS. */
+int XSetClassHint(Display *, Window, XClassHint *);
+
 #ifdef __cplusplus
 }
 #endif

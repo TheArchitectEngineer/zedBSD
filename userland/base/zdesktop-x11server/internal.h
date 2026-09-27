@@ -61,6 +61,7 @@
 
 /* The atoms of the properties kept: WM_NAME, STRING, and zedBSD's icon path. */
 #define X11_ATOM_WM_NAME	39U
+#define X11_ATOM_WM_CLASS	67U
 #define X11_ATOM_STRING		31U
 #define X11_ATOM_ICON_PATH	0x5a000001U
 
@@ -460,6 +461,7 @@ void x11_selection_init(struct x11server *server);
 uint32_t x11_atom_intern(struct x11server *server, const char *name, int only_if_exists);
 unsigned x11_request_intern_atom(struct x11server *server, unsigned index, const uint8_t *request, size_t length);
 unsigned x11_request_get_atom_name(struct x11server *server, unsigned index, const uint8_t *request, size_t length);
+int x11_window_class(struct x11server *server, uint32_t window, char *name, size_t size);
 unsigned x11_request_change_property(struct x11server *server, unsigned index, const uint8_t *request, size_t length);
 unsigned x11_request_get_property(struct x11server *server, unsigned index, const uint8_t *request, size_t length);
 unsigned x11_request_delete_property(struct x11server *server, unsigned index, const uint8_t *request, size_t length);
@@ -485,7 +487,7 @@ int x11_wayland_open(struct x11_wayland **result, const char *display, int shm, 
 int x11_wayland_fd(const struct x11_wayland *wayland);
 int x11_wayland_dispatch(struct x11_wayland *wayland, int readable);
 void x11_wayland_close(struct x11_wayland *wayland);
-struct x11_wayland_window *x11_wayland_window_open(struct x11_wayland *wayland, uint32_t id, const char *title, unsigned width, unsigned height);
+struct x11_wayland_window *x11_wayland_window_open(struct x11_wayland *wayland, uint32_t id, const char *title, const char *app_id, unsigned width, unsigned height);
 int x11_wayland_window_present(struct x11_wayland_window *window, const uint32_t *pixels, int x, int y, int width, int height);
 int x11_wayland_window_resize(struct x11_wayland_window *window, unsigned width, unsigned height);
 void x11_wayland_window_move(struct x11_wayland_window *window, int x, int y);
