@@ -15,6 +15,7 @@
  *   --font=PATH --fallback=PATH   the fonts (default build/ws035-fonts/Inter.ttf)
  *   --size=WxH                    the window's size (default 1120x720)
  *   --start=PATH                  the folder shown first (default: the home dashboard)
+ *   --wallpaper=PATH              the dashboard's picture (default /usr/share/zdesktop/wallpaper.ppm)
  *
  * Actions, run in order (each one 150 ms after the one before):
  *   move=X,Y  click=X,Y[:MODS]  double=X,Y  right=X,Y  press=X,Y  release=X,Y  scroll=PIXELS
@@ -51,6 +52,7 @@ main(
 	const char *font;
 	const char *fallback;
 	const char *start;
+	const char *wallpaper;
 	uint32_t *pixels;
 	uint64_t now;
 	unsigned code;
@@ -65,6 +67,7 @@ main(
 	font = "build/ws035-fonts/Inter.ttf";
 	fallback = NULL;
 	start = NULL;
+	wallpaper = NULL;
 	width = FM_WIDTH;
 	height = FM_HEIGHT;
 	for (index = 1; index < argc && strncmp(argv[index], "--", 2) == 0; index++) {
@@ -74,6 +77,8 @@ main(
 			fallback = argv[index] + 11;
 		else if (strncmp(argv[index], "--start=", 8) == 0)
 			start = argv[index] + 8;
+		else if (strncmp(argv[index], "--wallpaper=", 12) == 0)
+			wallpaper = argv[index] + 12;
 		else if (sscanf(argv[index], "--size=%dx%d", &width, &height) != 2) {
 			fprintf(stderr, "files-render: unknown option %s\n", argv[index]);
 			return 2;
@@ -94,6 +99,8 @@ main(
 		return 1;
 	app.width = width;
 	app.height = height;
+	if (wallpaper != NULL)
+		snprintf(app.wallpaper, sizeof(app.wallpaper), "%s", wallpaper);
 	fm_ui_draw(&app, &canvas);
 
 	/* The actions. */

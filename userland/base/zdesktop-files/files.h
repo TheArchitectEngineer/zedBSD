@@ -50,6 +50,9 @@
 #define FM_LIST_HEADER		30
 #define FM_LIST_ROW		28
 
+/* The desktop's wallpaper, which the dashboard's hero card shows (a binary PPM). */
+#define FM_WALLPAPER		"/usr/share/zdesktop/wallpaper.ppm"
+
 /* The window's size when the compositor leaves it to the program. */
 #define FM_WIDTH		1120
 #define FM_HEIGHT		720
@@ -467,6 +470,44 @@ enum fm_scope {
 	FM_SCOPE_COMPUTER
 };
 
+/* How many recent files and folders the dashboard shows. */
+#define FM_HOME_RECENTS		6
+#define FM_HOME_FOLDERS		6
+#define FM_HOME_CARDS		6
+
+/*
+ * A folder card of the dashboard: the folder, its name and how many items
+ * it holds.
+ */
+struct fm_home_card {
+	char path[FM_PATH_MAX];
+	char label[64];
+	int count;
+};
+
+/*
+ * A recent file of the dashboard: its path and when it was opened.
+ */
+struct fm_home_recent {
+	char path[FM_PATH_MAX];
+	time_t time;
+};
+
+/*
+ * What the home dashboard shows, gathered when it is shown: the folder
+ * cards, the recent files and folders, and the hero card's words.
+ */
+struct fm_dashboard {
+	struct fm_home_card cards[FM_HOME_CARDS];
+	int card_count;
+	struct fm_home_recent recents[FM_HOME_RECENTS];
+	int recent_count;
+	char folders[FM_HOME_FOLDERS][FM_PATH_MAX];
+	int folder_count;
+	char greeting[128];
+	char summary[160];
+};
+
 /*
  * The file manager of one window: its settings, its tabs, what the last
  * frame drew and what the pointer and the keyboard are doing.
@@ -580,6 +621,13 @@ struct fm_app {
 
 	/* How far the sidebar is scrolled (when its places do not fit). */
 	int sidebar_scroll;
+
+	/* The dashboard: what it shows, the hero's picture as read and as scaled for the card, and whether it was read. */
+	struct fm_dashboard dashboard;
+	struct fm_image hero_source;
+	struct fm_image hero;
+	int hero_tried;
+	char wallpaper[FM_PATH_MAX];
 };
 
 /*
@@ -652,6 +700,12 @@ int fm_tags_find(const struct fm_tags *tags, const char *name);
 void fm_search_start(struct fm_search *search, const struct fm_tags *tags, const char *query, const char *base, int hidden);
 int fm_search_step(struct fm_search *search, const struct fm_tags *tags, struct fm_listing *listing, uint64_t budget_ms);
 void fm_search_stop(struct fm_search *search);
+
+/* The home dashboard (ui-home.c). */
+void fm_home_gather(struct fm_app *app);
+void fm_home_folder_opened(const char *folder);
+void fm_home_draw(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *inner);
+void fm_home_click(struct fm_app *app, unsigned kind, int index, int double_click);
 
 /* The places that are not one folder and the search field (ui-search.c). */
 void fm_search_focus(struct fm_app *app);

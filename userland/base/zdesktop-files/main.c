@@ -10,7 +10,7 @@
  * window drawn on the CPU and shown with Vulkan.
  *
  *   zdesktop-files [--display=NAME] [--font=PATH] [--fallback-font=PATH]
- *                  [--width=N] [--height=N] [--token=NAME] [--timeout-s=N] [FOLDER]
+ *                  [--width=N] [--height=N] [--wallpaper=PATH] [--token=NAME] [--timeout-s=N] [FOLDER]
  *
  * It opens on the home dashboard, or on FOLDER.  Its outcome is one line
  * on standard error: ZFILES DONE with the reason, or ZFILES FAILED naming
@@ -47,6 +47,7 @@ struct main_options {
 	const char *fallback;
 	const char *token;
 	const char *start;
+	const char *wallpaper;
 	unsigned width;
 	unsigned height;
 	unsigned timeout;
@@ -92,7 +93,7 @@ main(
 	/* The command line. */
 	status = main_parse(argc, argv, &options);
 	if (status != 0) {
-		fprintf(stderr, "usage: zdesktop-files [--display=NAME] [--font=PATH] [--fallback-font=PATH] [--width=N] [--height=N] [--token=NAME] [--timeout-s=N] [FOLDER]\n");
+		fprintf(stderr, "usage: zdesktop-files [--display=NAME] [--font=PATH] [--fallback-font=PATH] [--width=N] [--height=N] [--wallpaper=PATH] [--token=NAME] [--timeout-s=N] [FOLDER]\n");
 		return 2;
 	}
 
@@ -131,6 +132,10 @@ main(
 		fm_text_close(&main_text);
 		return 1;
 	}
+
+	/* The dashboard's picture, when another was asked for. */
+	if (options.wallpaper != NULL)
+		snprintf(main_app.wallpaper, sizeof(main_app.wallpaper), "%s", options.wallpaper);
 
 	/* The loop, until the window closes. */
 	status = main_loop(&options);
@@ -189,6 +194,13 @@ main_parse(
 		value = main_value(argv[index], "--fallback-font=");
 		if (value != NULL) {
 			options->fallback = value;
+			continue;
+		}
+
+		/* The picture of the dashboard's hero card (the desktop's wallpaper by default). */
+		value = main_value(argv[index], "--wallpaper=");
+		if (value != NULL) {
+			options->wallpaper = value;
 			continue;
 		}
 

@@ -627,8 +627,8 @@ fm_actions_release(
 }
 
 /*
- * Returns the folder the tab shows (the home folder on the dashboard), or
- * NULL for a place that is not one folder.
+ * Returns the folder the tab shows, or NULL for a place that is not one
+ * folder.
  */
 const char *
 fm_current_folder(
@@ -637,10 +637,10 @@ fm_current_folder(
 	struct fm_tab *tab;
 	const struct fm_location *location;
 
-	/* A folder, or the home dashboard's home folder. */
+	/* A folder (the home dashboard is not one: its items are cards). */
 	tab = fm_ui_tab(app);
 	location = &tab->history[tab->history_index].location;
-	if (location->kind == FM_LOCATION_FOLDER || location->kind == FM_LOCATION_HOME)
+	if (location->kind == FM_LOCATION_FOLDER)
 		return location->path;
 
 	/* Another kind of place. */
