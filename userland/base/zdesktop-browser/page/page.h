@@ -86,5 +86,6 @@ int page_needs_layout(const struct page *page);
 /* Links (link.c). */
 int page_link_at(struct page *page, int x, int y, struct wb_buffer *href, int *found);
 int page_resolve_file(const char *base, const char *href, struct wb_buffer *out);
+int page_fetch(const char *base, const char *href, struct wb_buffer *bytes);
 
 #endif
