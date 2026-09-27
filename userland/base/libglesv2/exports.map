@@ -28,6 +28,10 @@
 		glBufferSubData;
 		glCheckFramebufferStatus;
 		glClear;
+		glClearBufferfi;
+		glClearBufferfv;
+		glClearBufferiv;
+		glClearBufferuiv;
 		glClearColor;
 		glClearDepthf;
 		glClearStencil;
@@ -60,6 +64,7 @@
 		glDisableVertexAttribArray;
 		glDrawArrays;
 		glDrawArraysInstanced;
+		glDrawBuffers;
 		glDrawElements;
 		glDrawElementsInstanced;
 		glDrawRangeElements;
@@ -70,6 +75,7 @@
 		glFlushMappedBufferRange;
 		glFramebufferRenderbuffer;
 		glFramebufferTexture2D;
+		glFramebufferTextureLayer;
 		glFrontFace;
 		glGenBuffers;
 		glGenFramebuffers;
@@ -121,6 +127,8 @@
 		glGetVertexAttribfv;
 		glGetVertexAttribiv;
 		glHint;
+		glInvalidateFramebuffer;
+		glInvalidateSubFramebuffer;
 		glIsBuffer;
 		glIsEnabled;
 		glIsFramebuffer;
@@ -135,6 +143,7 @@
 		glMapBufferRange;
 		glPixelStorei;
 		glPolygonOffset;
+		glReadBuffer;
 		glReadPixels;
 		glReleaseShaderCompiler;
 		glRenderbufferStorage;

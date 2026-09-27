@@ -1009,17 +1009,6 @@ glDrawBuffer(
 }
 
 /*
- * Selects the buffer glReadPixels reads: the window's back buffer always.
- */
-GL_APICALL void GL_APIENTRY
-glReadBuffer(
-	GLenum mode)
-{
-	/* There is one colour buffer. */
-	(void)mode;
-}
-
-/*
  * Pushes state groups (not kept: glPopAttrib restores nothing).
  */
 GL_APICALL void GL_APIENTRY

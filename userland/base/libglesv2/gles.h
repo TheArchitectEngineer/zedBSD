@@ -168,6 +168,9 @@ struct gles_format {
 	int filterable;
 	int legacy;
 	int stencil;
+
+	/* Whether a framebuffer object may draw into it (OpenGL ES 3.0's colour- and depth-renderable formats, and EXT_color_buffer_float's). */
+	int renderable;
 };
 
 /*
@@ -254,15 +257,30 @@ struct gles_texture {
 	uint64_t used;
 	const struct gles_format *image_format;
 
-	/* The views of each face's level 0 a framebuffer object draws into, made with the image (a 2D texture's and a cube map's). */
-	VkImageView attach_views[GLES_FACES];
+	/*
+	 * The views of single levels and layers framebuffer objects draw
+	 * into, made at their first use and let go with the image.
+	 */
+	struct gles_attach_view *attach_views;
 
 	/*
-	 * The faces a framebuffer object drew into since their levels were
-	 * last read (bit f: face f): their level 0 on the CPU is stale, and is
-	 * read back before the CPU changes the texture (gles_texture_fetch).
+	 * The levels framebuffer objects drew into since they were last read,
+	 * by face (bit l: level l, with every layer): their texels on the CPU
+	 * are stale, and are read back before the CPU changes the texture
+	 * (gles_texture_fetch).
 	 */
-	unsigned gpu_written;
+	uint32_t gpu_levels[GLES_FACES];
+};
+
+/*
+ * A view of one level and one layer (a cube map's face, a 2D array's
+ * layer) of a texture's image, which a framebuffer object draws into.
+ */
+struct gles_attach_view {
+	uint32_t level;
+	uint32_t layer;
+	VkImageView view;
+	struct gles_attach_view *next;
 };
 
 /* What an attachment point of a framebuffer object names. */
@@ -270,20 +288,30 @@ struct gles_texture {
 #define GLES_ATTACH_TEXTURE		1
 #define GLES_ATTACH_RENDERBUFFER	2
 
+/* How many colour attachments a framebuffer object has, and draw buffers a fragment shader writes. */
+#define GLES_COLOR_ATTACHMENTS	4U
+#define GLES_DRAW_BUFFERS	4U
+
 /*
  * A renderbuffer: an image a framebuffer object draws into and nothing
- * samples.  A colour one is RGBA8 whatever format it was given; a depth or
- * stencil one has the device's depth and stencil format.
+ * samples, of the format its storage was given (format.c's table: a
+ * colour format, or a depth and stencil one).
  */
 struct gles_renderbuffer {
-	/* The GL name, and the internal format its storage was given (0 before glRenderbufferStorage). */
+	/* The GL name, whether it has been bound (glIsRenderbuffer is false before), and the internal format its storage was given (0 before glRenderbufferStorage). */
 	GLuint name;
+	int bound;
 	GLenum format;
 
 	/* The size, and nonzero for a depth or stencil format. */
 	int width;
 	int height;
 	int depth;
+
+	/* The format its image has, and the aspects of that image. */
+	const struct gles_format *kept;
+	VkFormat vk;
+	VkImageAspectFlags aspects;
 
 	/* The device image, its memory and view, and the frame that last drew into it. */
 	VkImage image;
@@ -295,39 +323,68 @@ struct gles_renderbuffer {
 /*
  * One attachment point of a framebuffer object: the kind and name of what
  * is attached, looked up at each use (a deleted object leaves the
- * framebuffer incomplete).
+ * framebuffer incomplete), and the part of a texture it names.
  */
 struct gles_attachment {
 	int kind;
 	GLuint name;
 
-	/* The face of a cube map drawn into (0 for a 2D texture). */
+	/* The face of a cube map drawn into (0 otherwise), the level, and the layer of a 2D array or the slice of a 3D texture. */
 	unsigned face;
+	GLint level;
+	GLint layer;
 };
 
 /*
- * A framebuffer object: its attachments, and the render pass and
- * framebuffer made for the views they named when it was last drawn into
- * (made again when a view changes).
+ * The formats of a render pass's attachments, by which framebuffer
+ * objects' passes and the pipelines made with them are compatible.
+ */
+struct gles_pass_format {
+	uint32_t color_count;
+	uint32_t colors[GLES_COLOR_ATTACHMENTS];
+	uint32_t depth;
+};
+
+/*
+ * A render pass framebuffer objects' pipelines of one set of formats are
+ * made with, made at its first use and kept for the context.
+ */
+struct gles_compatible_pass {
+	struct gles_pass_format format;
+	VkRenderPass pass;
+	struct gles_compatible_pass *next;
+};
+
+/*
+ * A framebuffer object: its attachments and draw and read buffers, and
+ * the render pass and framebuffer made for the views they named when it
+ * was last drawn into (made again when a view changes).
  */
 struct gles_framebuffer {
-	/* The GL name, and the colour, depth and stencil attachments. */
+	/* The GL name, whether it has been bound (glIsFramebuffer is false before), and the colour, depth and stencil attachments. */
 	GLuint name;
-	struct gles_attachment color;
+	int bound;
+	struct gles_attachment colors[GLES_COLOR_ATTACHMENTS];
 	struct gles_attachment depth;
 	struct gles_attachment stencil;
 
+	/* The attachment each draw buffer writes (GL_COLOR_ATTACHMENTi or GL_NONE), and the one reads read. */
+	GLenum draw_buffers[GLES_DRAW_BUFFERS];
+	GLenum read_buffer;
+
 	/* The views the pass and framebuffer were made for (VK_NULL_HANDLE: none), the pass, the framebuffer and its size. */
-	VkImageView built_color;
+	VkImageView built_colors[GLES_COLOR_ATTACHMENTS];
 	VkImageView built_depth;
 	VkRenderPass pass;
 	VkFramebuffer framebuffer;
 	VkExtent2D extent;
 
-	/* The colour image (glReadPixels reads it) and the layout it rests in (a texture's is sampled, a renderbuffer's attached), and the depth image's aspects (0: none). */
-	VkImage color_image;
-	uint32_t color_layer;
-	VkImageLayout color_layout;
+	/* The formats of the pass's attachments, and the compatible pass pipelines are made with. */
+	struct gles_pass_format format;
+	VkRenderPass compatible;
+
+	/* Each colour attachment's format, and the depth image's aspects (0: none). */
+	const struct gles_format *color_formats[GLES_COLOR_ATTACHMENTS];
 	VkImageAspectFlags depth_aspects;
 };
 
@@ -348,9 +405,36 @@ struct gles_target {
 	VkExtent2D extent;
 	int flip;
 
-	/* Nonzero with a colour image, and the aspects of the depth and stencil image (0: none). */
-	int has_color;
+	/*
+	 * The colour attachments the pass has (the surface's: one), which of
+	 * them the draw buffers write (bit i: attachment i), which hold
+	 * integers, and which cannot blend.
+	 */
+	unsigned color_count;
+	unsigned draw_mask;
+	unsigned integer_mask;
+	unsigned opaque_mask;
+
+	/* The aspects of the depth and stencil image (0: none). */
 	VkImageAspectFlags depth_aspects;
+};
+
+/*
+ * Where a read of the read framebuffer's read buffer comes from: the
+ * frame it is recorded in, the image with the layer and level, the layout
+ * it rests in, its format and size, and whether its rows go down from the
+ * top and its bytes are BGRA (a window's).
+ */
+struct gles_read {
+	struct zegl_surface *surface;
+	VkImage image;
+	uint32_t layer;
+	uint32_t level;
+	VkImageLayout layout;
+	const struct gles_format *format;
+	VkExtent2D extent;
+	int flip;
+	int swizzle;
 };
 
 struct glsl_shader;
@@ -605,7 +689,7 @@ struct gles_raster {
 	/* The primitive topology (after strips, loops and fans became lists). */
 	uint32_t topology;
 
-	/* Blending: on, the factors, the equations. */
+	/* Blending: on (bit i: colour attachment i blends), the factors, the equations. */
 	uint32_t blend;
 	uint32_t blend_src_rgb;
 	uint32_t blend_dst_rgb;
@@ -614,7 +698,8 @@ struct gles_raster {
 	uint32_t blend_equation_rgb;
 	uint32_t blend_equation_alpha;
 
-	/* The colour channels written. */
+	/* The colour attachments, and the channels written: four bits per attachment (attachment i's at bits 4i to 4i + 3). */
+	uint32_t color_count;
 	uint32_t color_mask;
 
 	/* The depth test: on, its function, whether it writes. */
@@ -865,8 +950,9 @@ struct gles_state {
 	struct gles_pipeline *pipelines;
 	struct gles_sampler *samplers;
 
-	/* The framebuffer (0: the draw surface's) and the renderbuffer bound, and their namespaces. */
+	/* The draw framebuffer and the read framebuffer (0: the surfaces'), the renderbuffer bound, and their namespaces. */
 	GLuint framebuffer;
+	GLuint read_framebuffer;
 	GLuint renderbuffer;
 	struct gles_names framebuffers;
 	struct gles_names renderbuffers;
@@ -879,8 +965,12 @@ struct gles_state {
 	struct gles_framebuffer *open_fbo;
 	struct zegl_surface *open_surface;
 
-	/* The render passes framebuffer objects' pipelines are made with, by [colour][depth], made at their first use. */
-	VkRenderPass fbo_passes[2][2];
+	/* The render passes framebuffer objects' pipelines are made with, one per set of formats, made at their first use. */
+	struct gles_compatible_pass *compatible_passes;
+
+	/* The draw surface's draw buffer and the read surface's read buffer (GL_BACK or GL_NONE). */
+	GLenum default_draw_buffer;
+	GLenum default_read_buffer;
 
 	/* The device's depth and stencil format and its aspects (renderbuffers), asked for at the first depth renderbuffer. */
 	VkFormat depth_format;
@@ -960,6 +1050,10 @@ GLenum gles_texels_from_rgba8(const struct gles_format *storage, const unsigned 
 int gles_texels_halve(const struct gles_format *format, const unsigned char *source, int source_width, int source_height, int source_depth, int halve_depth, unsigned char **out, int *width, int *height, int *depth);
 float gles_half_float(uint16_t half);
 size_t gles_pixel_size(GLenum format, GLenum type);
+const struct gles_format *gles_format_renderable(struct gles_state *state, GLenum internal);
+int gles_read_format_ok(const struct gles_format *storage, GLenum format, GLenum type);
+void gles_read_format(const struct gles_format *storage, GLenum *format, GLenum *type);
+void gles_texels_read(const struct gles_format *storage, const unsigned char *kept, size_t count, GLenum format, GLenum type, unsigned char *out);
 
 /* pixels.c: the pixel store and the pixel buffers of the application's pixels. */
 GLenum gles_unpack(struct gles_state *state, GLenum format, GLenum type, GLsizei width, GLsizei height, GLsizei depth, const void *pixels, const void **packed, unsigned char **owned);
@@ -968,6 +1062,9 @@ GLenum gles_pack_target(struct gles_state *state, GLenum format, GLenum type, GL
 /* framebuffer.c: framebuffer objects, renderbuffers, and the target of a draw. */
 int gles_target_open(struct zegl_context *context, struct gles_state *state, const VkClearValue *clear, struct gles_target *target);
 void gles_target_close(struct gles_state *state);
+int gles_read_source(struct zegl_context *context, struct gles_state *state, struct gles_read *read);
+const struct gles_format *gles_read_buffer_format(struct gles_state *state);
+VkImageView gles_texture_attach_view(struct gles_state *state, struct gles_texture *texture, uint32_t level, uint32_t layer);
 void gles_framebuffers_forget(struct gles_state *state, int kind, GLuint name);
 void gles_framebuffers_release(struct gles_state *state);
 int gles_texture_fetch(struct zegl_context *context, struct gles_texture *texture);
@@ -979,6 +1076,7 @@ void gles_shader_release(struct gles_shader *shader);
 /* draw.c: pipelines, the frame, and readback. */
 void gles_pipelines_forget(struct gles_state *state, uint64_t program);
 int gles_read_rgba(struct zegl_context *context, GLint x, GLint y, GLsizei width, GLsizei height, unsigned char *rows);
+int gles_read_pixels(struct zegl_context *context, GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type, int clamped, unsigned char *rows);
 uint32_t *gles_expand(GLenum mode, const uint32_t *indices, uint32_t first, GLsizei count, int rotate, uint32_t *expanded);
 
 /*

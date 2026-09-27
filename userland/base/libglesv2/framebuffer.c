@@ -7,16 +7,24 @@
 
 /*
  * Framebuffer and renderbuffer objects of zedBSD's OpenGL ES (WS068
- * p022), and the target every draw, clear and read goes to.
+ * p022, p026), and the target every draw, clear and read goes to.
  *
- * A framebuffer object draws into the level 0 of a 2D texture or into a
- * renderbuffer, in the draw surface's frame: its render pass is recorded
- * into the same command buffer as the surface's own passes, and stays
+ * A framebuffer object draws into up to four colour attachments and one
+ * depth and stencil attachment: a level of a 2D texture, a face of a cube
+ * map, a layer of a 2D array texture, or a renderbuffer, each of any
+ * format a framebuffer may draw into.  Its render pass is recorded into
+ * the draw surface's frame, as the surface's own passes are, and stays
  * open until something else records into the frame or the frame is
  * submitted (libEGL's frame_closing).  Its images keep GL's rows from the
  * bottom up, as textures do, so its draws do not turn y over.  A texture
  * drawn into this way is newer on the device than on the CPU until
  * gles_texture_fetch reads it back.
+ *
+ * The draw framebuffer and the read framebuffer are bound apart (OpenGL
+ * ES 3); draws and clears go to the draw framebuffer's draw buffers,
+ * reads come from the read framebuffer's read buffer.  Pipelines are made
+ * with one render pass per set of attachment formats (compatible with
+ * every framebuffer object's pass of those formats).
  */
 
 #include "gles.h"
@@ -27,24 +35,72 @@
 /* The size a renderbuffer may have (GL_MAX_RENDERBUFFER_SIZE is at most this). */
 #define FRAMEBUFFER_SIZE_MAX	16384
 
-static struct gles_framebuffer *framebuffer_bound(struct gles_state *state);
-static GLenum framebuffer_status(struct gles_state *state, struct gles_framebuffer *fbo, struct gles_texture **texture, struct gles_renderbuffer **color, struct gles_renderbuffer **depth);
-static GLenum framebuffer_build(struct gles_state *state, struct gles_framebuffer *fbo);
-static void framebuffer_mark(struct gles_state *state, struct gles_framebuffer *fbo);
+/*
+ * What one attachment point of a complete framebuffer object names: the
+ * texture (with the face, the level GL named and the image's level and
+ * layer) or the renderbuffer, the format and size, and the layout the
+ * image rests in between passes.
+ */
+struct framebuffer_image {
+	struct gles_texture *texture;
+	struct gles_renderbuffer *renderbuffer;
+	const struct gles_format *format;
+	VkFormat vk;
+	VkImageLayout layout;
+	unsigned face;
+	GLint gl_level;
+	uint32_t level;
+	uint32_t layer;
+	int width;
+	int height;
+};
+
+/*
+ * What every attachment point of a complete framebuffer object names, and
+ * how many colour attachments its pass has (the last one attached, plus
+ * one).
+ */
+struct framebuffer_images {
+	struct framebuffer_image colors[GLES_COLOR_ATTACHMENTS];
+	unsigned color_count;
+	struct framebuffer_image depth;
+	int has_depth;
+};
+
+/*
+ * The format a stencil-only renderbuffer (GL_STENCIL_INDEX8) is kept in:
+ * an attachment of stencil and no colour, whose image has the Vulkan
+ * format the renderbuffer chose.  It never changes.
+ */
+static const struct gles_format framebuffer_stencil = {
+	GL_STENCIL_INDEX8, GL_STENCIL_INDEX8, VK_FORMAT_S8_UINT, 1U, 1U, GLES_TEXEL_DEPTH, 0, 0, 1, 1
+};
+
+static struct gles_framebuffer *framebuffer_named(struct gles_state *state, GLuint name);
+static int framebuffer_target(struct zegl_context *context, GLenum target, int *read);
+static struct gles_framebuffer *framebuffer_for(struct zegl_context *context, struct gles_state *state, GLenum target, int bound, GLuint *name);
+static struct gles_framebuffer *framebuffer_new(GLuint name);
+static GLenum framebuffer_image_of(struct gles_state *state, const struct gles_attachment *point, int depth, struct framebuffer_image *image);
+static GLenum framebuffer_status(struct gles_state *state, struct gles_framebuffer *fbo, struct framebuffer_images *images);
+static GLenum framebuffer_build(struct gles_state *state, struct gles_framebuffer *fbo, struct framebuffer_images *images);
+static void framebuffer_mark(struct gles_state *state, struct framebuffer_images *images);
 static void framebuffer_forget_views(struct gles_state *state, struct gles_framebuffer *fbo);
-static VkResult framebuffer_pass(struct gles_state *state, int has_color, int has_depth, VkImageLayout color_layout, VkRenderPass *pass);
-static VkRenderPass framebuffer_compatible(struct gles_state *state, int has_color, int has_depth);
+static VkResult framebuffer_pass(struct gles_state *state, const struct gles_pass_format *format, const VkImageLayout *color_layouts, VkImageLayout depth_layout, VkRenderPass *pass);
+static VkRenderPass framebuffer_compatible(struct gles_state *state, const struct gles_pass_format *format);
+static void framebuffer_attach(struct zegl_context *context, GLenum target, GLenum attachment, int kind, GLuint name, unsigned face, GLint level, GLint layer);
+static int framebuffer_point(GLenum attachment, struct gles_attachment **point, struct gles_framebuffer *fbo);
+static GLint framebuffer_bits(const struct gles_format *format, VkFormat vk, GLenum pname);
+static GLint framebuffer_attachment_value(struct gles_state *state, const struct gles_attachment *point, GLenum pname, int *known);
 static struct gles_renderbuffer *renderbuffer_bound(struct zegl_context *context, GLenum target);
-static int renderbuffer_depth_format(GLenum format);
+static int renderbuffer_format(struct gles_state *state, GLenum internal, struct gles_renderbuffer *renderbuffer);
 static int renderbuffer_image(struct gles_state *state, struct gles_renderbuffer *renderbuffer);
 static void renderbuffer_discard(struct gles_state *state, struct gles_renderbuffer *renderbuffer);
 static void renderbuffer_free(struct gles_state *state, struct gles_renderbuffer *renderbuffer);
-static int framebuffer_point(GLenum attachment, struct gles_attachment **point, struct gles_framebuffer *fbo);
 
 /*
  * Opens where a draw, clear or read goes: the draw surface's frame, and
  * in it the surface's render pass (clearing with clear when it is the
- * frame's first) or the bound framebuffer object's.  Returns 0, or -1 with
+ * frame's first) or the draw framebuffer object's.  Returns 0, or -1 with
  * the error recorded (no draw surface, an incomplete framebuffer, no
  * memory).
  */
@@ -55,10 +111,13 @@ gles_target_open(
 	const VkClearValue *clear,
 	struct gles_target *target)
 {
+	struct framebuffer_images images;
 	struct zegl_surface *surface;
 	struct gles_framebuffer *fbo;
 	VkRenderPassBeginInfo begin;
-	VkRenderPass pass;
+	const struct gles_format *format;
+	uint32_t features;
+	unsigned index;
 	GLenum status;
 	EGLint error;
 
@@ -82,33 +141,28 @@ gles_target_open(
 	target->surface = surface;
 	target->command = surface->command;
 
-	/* Framebuffer 0: the surface's pass, after any framebuffer object's. */
+	/* Framebuffer 0: the surface's pass, after any framebuffer object's, with its one colour image. */
 	if (state->framebuffer == 0U) {
 		gles_target_close(state);
 		zegl_frame_pass(surface, clear);
 		target->pass = surface->pass;
 		target->extent = surface->extent;
 		target->flip = 1;
-		target->has_color = 1;
+		target->color_count = 1U;
+		if (state->default_draw_buffer == GL_BACK)
+			target->draw_mask = 1U;
 		if (surface->depth_format != VK_FORMAT_UNDEFINED)
 			target->depth_aspects = surface->depth_aspects;
 		return 0;
 	}
 
 	/* A framebuffer object: complete, with its pass and framebuffer made for what is attached now. */
-	fbo = framebuffer_bound(state);
+	fbo = framebuffer_named(state, state->framebuffer);
 	status = GL_FRAMEBUFFER_UNSUPPORTED;
 	if (fbo != NULL)
-		status = framebuffer_build(state, fbo);
+		status = framebuffer_build(state, fbo, &images);
 	if (status != GL_FRAMEBUFFER_COMPLETE) {
 		gles_error(context, GL_INVALID_FRAMEBUFFER_OPERATION);
-		return -1;
-	}
-
-	/* The pass its pipelines are made with. */
-	pass = framebuffer_compatible(state, fbo->built_color != VK_NULL_HANDLE, fbo->built_depth != VK_NULL_HANDLE);
-	if (pass == VK_NULL_HANDLE) {
-		gles_error(context, GL_OUT_OF_MEMORY);
 		return -1;
 	}
 
@@ -134,14 +188,36 @@ gles_target_open(
 	}
 
 	/* The attached objects are drawn into by this frame. */
-	framebuffer_mark(state, fbo);
+	framebuffer_mark(state, &images);
 
-	/* Succeeded: the framebuffer object, with GL's rows. */
+	/* The framebuffer object, with GL's rows and the pass its pipelines are made with. */
 	target->fbo = fbo;
-	target->pass = pass;
+	target->pass = fbo->compatible;
 	target->extent = fbo->extent;
-	target->has_color = fbo->built_color != VK_NULL_HANDLE;
+	target->color_count = fbo->format.color_count;
 	target->depth_aspects = fbo->depth_aspects;
+
+	/* Each colour attachment a draw buffer writes, and those holding integers or that cannot blend. */
+	for (index = 0U; index < fbo->format.color_count; index++) {
+		format = fbo->color_formats[index];
+		if (format == NULL)
+			continue;
+
+		/* Written when the draw buffer of its number names it. */
+		if (index < GLES_DRAW_BUFFERS && fbo->draw_buffers[index] == GL_COLOR_ATTACHMENT0 + index)
+			target->draw_mask |= 1U << index;
+
+		/* Integers are neither blended nor cleared with floats. */
+		if (format->kind == GLES_TEXEL_INT || format->kind == GLES_TEXEL_UINT)
+			target->integer_mask |= 1U << index;
+
+		/* A format the device does not blend is written as it comes. */
+		features = gles_image_features(state, format->vk);
+		if ((features & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT) == 0U)
+			target->opaque_mask |= 1U << index;
+	}
+
+	/* Succeeded: the framebuffer object's target. */
 	return 0;
 }
 
@@ -164,9 +240,159 @@ gles_target_close(
 }
 
 /*
- * Detaches a deleted texture or renderbuffer from the bound framebuffer
- * object (GL detaches it only there; elsewhere its name is looked up again
- * and finds nothing).
+ * Finds what a read of the read framebuffer's read buffer copies: the
+ * read surface's image, or the read framebuffer object's colour
+ * attachment, in a frame with no pass open (the copy is recorded there).
+ * Returns 0, or -1 with the error recorded (no surface, no read buffer,
+ * an incomplete framebuffer).
+ */
+int
+gles_read_source(
+	struct zegl_context *context,
+	struct gles_state *state,
+	struct gles_read *read)
+{
+	struct framebuffer_images images;
+	struct framebuffer_image *image;
+	struct zegl_surface *surface;
+	struct gles_framebuffer *fbo;
+	unsigned index;
+	GLenum status;
+	EGLint error;
+
+	/* Nothing found yet. */
+	memset(read, 0, sizeof(*read));
+
+	/* The read surface, whose images must be copyable and whose read buffer is its image. */
+	if (state->read_framebuffer == 0U) {
+		surface = context->read;
+		if (surface == NULL) {
+			gles_error(context, GL_INVALID_FRAMEBUFFER_OPERATION);
+			return -1;
+		}
+
+		/* A read buffer, and images that can be copied. */
+		if (state->default_read_buffer == GL_NONE || !surface->readable) {
+			gles_error(context, GL_INVALID_OPERATION);
+			return -1;
+		}
+
+		/* The frame, with its image drawn by at least one pass (a first pass clears it); no framebuffer object's pass open. */
+		gles_target_close(state);
+		error = zegl_frame_begin(surface);
+		if (error != EGL_SUCCESS) {
+			gles_error(context, GL_OUT_OF_MEMORY);
+			return -1;
+		}
+
+		/* The pass ends so the image can be copied. */
+		zegl_frame_pass(surface, NULL);
+		zegl_frame_leave_pass(surface);
+
+		/* Succeeded: the surface's image, with rows from the top, as RGBA8 (or BGRA8). */
+		read->surface = surface;
+		read->image = surface->images[surface->image];
+		read->layout = surface->rest_layout;
+		read->format = gles_format_rgba8();
+		read->extent = surface->extent;
+		read->flip = 1;
+		if (surface->format == VK_FORMAT_B8G8R8A8_UNORM)
+			read->swizzle = 1;
+		return 0;
+	}
+
+	/* The read framebuffer object, complete, with its views made. */
+	fbo = framebuffer_named(state, state->read_framebuffer);
+	status = GL_FRAMEBUFFER_UNSUPPORTED;
+	if (fbo != NULL)
+		status = framebuffer_build(state, fbo, &images);
+	if (status != GL_FRAMEBUFFER_COMPLETE) {
+		gles_error(context, GL_INVALID_FRAMEBUFFER_OPERATION);
+		return -1;
+	}
+
+	/* A read buffer that names a colour attachment with something attached. */
+	if (fbo->read_buffer == GL_NONE) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return -1;
+	}
+
+	/* The attachment the read buffer names, which must have something attached. */
+	index = fbo->read_buffer - GL_COLOR_ATTACHMENT0;
+	image = &images.colors[index];
+	if (index >= images.color_count || image->format == NULL) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return -1;
+	}
+
+	/* The draw surface's frame records the copy, with no pass open in it. */
+	surface = context->draw;
+	if (surface == NULL) {
+		gles_error(context, GL_INVALID_FRAMEBUFFER_OPERATION);
+		return -1;
+	}
+
+	/* The frame, opened when this is its first command. */
+	error = zegl_frame_begin(surface);
+	if (error != EGL_SUCCESS) {
+		gles_error(context, GL_OUT_OF_MEMORY);
+		return -1;
+	}
+
+	/* No pass open in it. */
+	gles_target_close(state);
+	zegl_frame_leave_pass(surface);
+
+	/* Succeeded: the attachment's image (a renderbuffer's or a texture's), level and layer, with GL's rows. */
+	read->surface = surface;
+	if (image->renderbuffer != NULL) {
+		read->image = image->renderbuffer->image;
+	} else {
+		read->image = image->texture->image;
+	}
+
+	/* The copy's layer. */
+	read->layer = image->layer;
+	read->level = image->level;
+	read->layout = image->layout;
+	read->format = image->format;
+	read->extent = fbo->extent;
+	return 0;
+}
+
+/*
+ * Returns the format of the read framebuffer's read buffer: a framebuffer
+ * object's colour attachment's (NULL when it has none there), or the
+ * surfaces' RGBA8.
+ */
+const struct gles_format *
+gles_read_buffer_format(
+	struct gles_state *state)
+{
+	struct framebuffer_image image;
+	struct gles_framebuffer *fbo;
+	GLenum status;
+
+	/* The surfaces' image is RGBA8 (or BGRA8, read as RGBA8). */
+	if (state->read_framebuffer == 0U)
+		return gles_format_rgba8();
+
+	/* The object's read buffer names an attachment with something attached. */
+	fbo = framebuffer_named(state, state->read_framebuffer);
+	if (fbo == NULL || fbo->read_buffer == GL_NONE)
+		return NULL;
+	status = framebuffer_image_of(state, &fbo->colors[fbo->read_buffer - GL_COLOR_ATTACHMENT0], 0, &image);
+	if (status != GL_FRAMEBUFFER_COMPLETE)
+		return NULL;
+
+	/* Succeeded: its format (NULL when nothing is attached). */
+	return image.format;
+}
+
+/*
+ * Detaches a deleted texture or renderbuffer from the bound draw and read
+ * framebuffer objects (GL detaches it only there; elsewhere its name is
+ * looked up again and finds nothing).
  */
 void
 gles_framebuffers_forget(
@@ -174,20 +400,31 @@ gles_framebuffers_forget(
 	int kind,
 	GLuint name)
 {
+	struct gles_framebuffer *bound[2];
 	struct gles_framebuffer *fbo;
+	unsigned which;
+	unsigned index;
 
-	/* The bound framebuffer object, if there is one. */
-	fbo = framebuffer_bound(state);
-	if (fbo == NULL)
-		return;
+	/* The draw and the read framebuffer objects. */
+	bound[0] = framebuffer_named(state, state->framebuffer);
+	bound[1] = framebuffer_named(state, state->read_framebuffer);
+	for (which = 0U; which < 2U; which++) {
+		fbo = bound[which];
+		if (fbo == NULL)
+			continue;
 
-	/* Each attachment point that names the object. */
-	if (fbo->color.kind == kind && fbo->color.name == name)
-		fbo->color.kind = GLES_ATTACH_NONE;
-	if (fbo->depth.kind == kind && fbo->depth.name == name)
-		fbo->depth.kind = GLES_ATTACH_NONE;
-	if (fbo->stencil.kind == kind && fbo->stencil.name == name)
-		fbo->stencil.kind = GLES_ATTACH_NONE;
+		/* Each colour attachment point that names the object. */
+		for (index = 0U; index < GLES_COLOR_ATTACHMENTS; index++) {
+			if (fbo->colors[index].kind == kind && fbo->colors[index].name == name)
+				fbo->colors[index].kind = GLES_ATTACH_NONE;
+		}
+
+		/* The depth and stencil points. */
+		if (fbo->depth.kind == kind && fbo->depth.name == name)
+			fbo->depth.kind = GLES_ATTACH_NONE;
+		if (fbo->stencil.kind == kind && fbo->stencil.name == name)
+			fbo->stencil.kind = GLES_ATTACH_NONE;
+	}
 }
 
 /*
@@ -200,9 +437,8 @@ gles_framebuffers_release(
 {
 	struct gles_framebuffer *fbo;
 	struct gles_renderbuffer *renderbuffer;
+	struct gles_compatible_pass *compatible;
 	GLuint name;
-	unsigned color;
-	unsigned depth;
 
 	/* The framebuffer objects, whose passes and framebuffers wait for the garbage. */
 	state->open_fbo = NULL;
@@ -230,12 +466,11 @@ gles_framebuffers_release(
 	}
 
 	/* The passes pipelines were made with. */
-	for (color = 0U; color < 2U; color++) {
-		for (depth = 0U; depth < 2U; depth++) {
-			if (state->fbo_passes[color][depth] != VK_NULL_HANDLE)
-				vkDestroyRenderPass(state->device, state->fbo_passes[color][depth], NULL);
-			state->fbo_passes[color][depth] = VK_NULL_HANDLE;
-		}
+	while (state->compatible_passes != NULL) {
+		compatible = state->compatible_passes;
+		state->compatible_passes = compatible->next;
+		vkDestroyRenderPass(state->device, compatible->pass, NULL);
+		free(compatible);
 	}
 
 	/* The name tables. */
@@ -246,9 +481,9 @@ gles_framebuffers_release(
 }
 
 /*
- * Brings the level 0 on the CPU of each face framebuffer objects drew into
- * up to date with the texture's image, before the CPU changes the
- * texture.  Returns 0, or -1 with the error recorded.
+ * Brings the levels on the CPU that framebuffer objects drew into (every
+ * layer of each) up to date with the texture's image, before the CPU
+ * changes the texture.  Returns 0, or -1 with the error recorded.
  */
 int
 gles_texture_fetch(
@@ -259,30 +494,49 @@ gles_texture_fetch(
 	struct zegl_surface *surface;
 	VkImageMemoryBarrier barrier;
 	VkBufferImageCopy copy;
-	VkBuffer buffers[GLES_FACES];
+	VkBuffer buffer;
 	VkDeviceSize offset;
-	unsigned char *mapped[GLES_FACES];
-	unsigned char *pixels;
+	VkImageAspectFlags copy_aspect;
+	VkImageAspectFlags whole_aspect;
+	const struct gles_format *format;
 	struct gles_level *level;
+	unsigned char *mapped[GLES_FACES * GLES_LEVELS];
+	unsigned char *pixels;
 	size_t bytes;
+	uint32_t layers;
+	uint32_t base_layer;
 	unsigned face;
+	unsigned index;
+	GLint image_level;
+	int written;
 	EGLint error;
 
-	/* Nothing was drawn into it since its levels were read. */
-	if (texture->gpu_written == 0U)
-		return 0;
-
-	/* The frame that drew into it is the draw surface's; without one there is nothing to read. */
+	/* A context with its state. */
 	state = gles_state(context);
-	surface = context->draw;
-	if (state == NULL ||
-	    surface == NULL ||
-	    texture->image == VK_NULL_HANDLE) {
-		texture->gpu_written = 0U;
+	if (state == NULL)
+		return -1;
+
+	/* Nothing drawn into since the last read, or no image. */
+	written = 0;
+	for (face = 0U; face < GLES_FACES; face++) {
+		if (texture->gpu_levels[face] != 0U)
+			written = 1;
+	}
+
+	/* Nothing to read back. */
+	if (!written || texture->image == VK_NULL_HANDLE) {
+		memset(texture->gpu_levels, 0, sizeof(texture->gpu_levels));
 		return 0;
 	}
 
-	/* The frame, with no pass open. */
+	/* The frame of the draw surface, which drew into it, with no pass open. */
+	surface = context->draw;
+	if (surface == NULL) {
+		memset(texture->gpu_levels, 0, sizeof(texture->gpu_levels));
+		return 0;
+	}
+
+	/* No pass open in the frame. */
 	gles_target_close(state);
 	error = zegl_frame_begin(surface);
 	if (error != EGL_SUCCESS) {
@@ -290,20 +544,45 @@ gles_texture_fetch(
 		return -1;
 	}
 
-	/* No pass of the surface either. */
+	/* Nor the surface's. */
 	zegl_frame_leave_pass(surface);
 
-	/* Level 0 of each face drawn into, copied out between two layout changes (its rows are GL's already). */
+	/* A depth format is copied from its depth aspect; a barrier names every aspect it has. */
+	format = texture->image_format;
+	copy_aspect = VK_IMAGE_ASPECT_COLOR_BIT;
+	whole_aspect = VK_IMAGE_ASPECT_COLOR_BIT;
+	if (format->kind == GLES_TEXEL_DEPTH) {
+		copy_aspect = VK_IMAGE_ASPECT_DEPTH_BIT;
+		whole_aspect = VK_IMAGE_ASPECT_DEPTH_BIT;
+		if (format->stencil)
+			whole_aspect |= VK_IMAGE_ASPECT_STENCIL_BIT;
+	}
+
+	/* Each level drawn into, copied out with every layer between two layout changes (its rows are GL's already). */
 	memset(mapped, 0, sizeof(mapped));
-	for (face = 0U; face < GLES_FACES; face++) {
-		if ((texture->gpu_written & (1U << face)) == 0U)
+	for (index = 0U; index < GLES_FACES * GLES_LEVELS; index++) {
+		face = index / GLES_LEVELS;
+		if ((texture->gpu_levels[face] & (1U << (index % GLES_LEVELS))) == 0U)
 			continue;
 
-		/* Room in the stream for the face. */
-		level = &texture->levels[face * GLES_LEVELS];
-		bytes = (size_t)level->width * (size_t)level->height * 4U;
-		mapped[face] = gles_stream(state, bytes, 16U, &buffers[face], &offset);
-		if (mapped[face] == NULL) {
+		/* The level, which the image has from the base level on. */
+		level = &texture->levels[index];
+		image_level = (GLint)(index % GLES_LEVELS) - texture->base_level;
+		if (image_level < 0 || (uint32_t)image_level >= texture->level_count || level->format != format)
+			continue;
+
+		/* A cube map's face is a layer; a 2D array's level has all its layers. */
+		layers = 1U;
+		base_layer = 0U;
+		if (texture->target == GL_TEXTURE_CUBE_MAP)
+			base_layer = face;
+		if (texture->target == GL_TEXTURE_2D_ARRAY)
+			layers = (uint32_t)level->depth;
+
+		/* Room in the stream for the level. */
+		bytes = (size_t)level->width * (size_t)level->height * (size_t)layers * format->bytes;
+		mapped[index] = gles_stream(state, bytes, 16U, &buffer, &offset);
+		if (mapped[index] == NULL) {
 			gles_error(context, GL_OUT_OF_MEMORY);
 			return -1;
 		}
@@ -311,30 +590,40 @@ gles_texture_fetch(
 		/* Ready to be copied. */
 		memset(&barrier, 0, sizeof(barrier));
 		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-		barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 		barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
 		barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 		barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 		barrier.image = texture->image;
-		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		barrier.subresourceRange.aspectMask = whole_aspect;
+		barrier.subresourceRange.baseMipLevel = (uint32_t)image_level;
 		barrier.subresourceRange.levelCount = 1U;
-		barrier.subresourceRange.baseArrayLayer = face;
-		barrier.subresourceRange.layerCount = 1U;
-		vkCmdPipelineBarrier(surface->command, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
-				     0U, 0U, NULL, 0U, NULL, 1U, &barrier);
+		barrier.subresourceRange.baseArrayLayer = base_layer;
+		barrier.subresourceRange.layerCount = layers;
+		vkCmdPipelineBarrier(surface->command,
+				     VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+				     VK_PIPELINE_STAGE_TRANSFER_BIT,
+				     0U,
+				     0U,
+				     NULL,
+				     0U,
+				     NULL,
+				     1U,
+				     &barrier);
 
-		/* The copy of the face's level 0. */
+		/* The copy of the level's layers. */
 		memset(&copy, 0, sizeof(copy));
 		copy.bufferOffset = offset;
-		copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		copy.imageSubresource.baseArrayLayer = face;
-		copy.imageSubresource.layerCount = 1U;
+		copy.imageSubresource.aspectMask = copy_aspect;
+		copy.imageSubresource.mipLevel = (uint32_t)image_level;
+		copy.imageSubresource.baseArrayLayer = base_layer;
+		copy.imageSubresource.layerCount = layers;
 		copy.imageExtent.width = (uint32_t)level->width;
 		copy.imageExtent.height = (uint32_t)level->height;
 		copy.imageExtent.depth = 1U;
-		vkCmdCopyImageToBuffer(surface->command, texture->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, buffers[face], 1U, &copy);
+		vkCmdCopyImageToBuffer(surface->command, texture->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, buffer, 1U, &copy);
 
 		/* Back to be sampled. */
 		barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
@@ -353,17 +642,17 @@ gles_texture_fetch(
 		return -1;
 	}
 
-	/* Each face's bytes into its level 0 (a level made without data has no pixels yet). */
-	for (face = 0U; face < GLES_FACES; face++) {
-		if (mapped[face] == NULL)
+	/* Each level's bytes into place (a level made without data has no pixels yet). */
+	for (index = 0U; index < GLES_FACES * GLES_LEVELS; index++) {
+		if (mapped[index] == NULL)
 			continue;
 
 		/* The level's pixels. */
-		level = &texture->levels[face * GLES_LEVELS];
-		bytes = (size_t)level->width * (size_t)level->height * 4U;
+		level = &texture->levels[index];
+		bytes = (size_t)level->width * (size_t)level->height * (size_t)level->depth * format->bytes;
 		pixels = level->pixels;
 		if (pixels == NULL) {
-			pixels = malloc(bytes);
+			pixels = malloc(bytes + 1U);
 			if (pixels == NULL) {
 				gles_error(context, GL_OUT_OF_MEMORY);
 				return -1;
@@ -374,17 +663,17 @@ gles_texture_fetch(
 		}
 
 		/* The bytes. */
-		memcpy(pixels, mapped[face], bytes);
+		memcpy(pixels, mapped[index], bytes);
 	}
 
 	/* The CPU's copy is the newest again. */
-	texture->gpu_written = 0U;
+	memset(texture->gpu_levels, 0, sizeof(texture->gpu_levels));
 
 	/* Everything recorded before is done: the frame's resources are free again. */
 	state->frame++;
 	gles_collect(state);
 
-	/* Succeeded: level 0 of each face is what the device drew. */
+	/* Succeeded: each level drawn into is what the device drew. */
 	return 0;
 }
 
@@ -398,8 +687,10 @@ glGenFramebuffers(
 {
 	struct zegl_context *context;
 	struct gles_state *state;
+	struct gles_framebuffer *fbo;
 	GLsizei index;
 	GLuint name;
+	int status;
 
 	/* A context with its state and a count. */
 	context = gles_context();
@@ -411,9 +702,24 @@ glGenFramebuffers(
 		return;
 	}
 
-	/* Free names; the objects are made at their first bind. */
+	/* Each name gets its object now, so the next name is another; it becomes a framebuffer at its first bind. */
 	for (index = 0; index < n; index++) {
 		name = gles_names_free(&state->framebuffers);
+		fbo = framebuffer_new(name);
+		if (fbo == NULL) {
+			gles_error(context, GL_OUT_OF_MEMORY);
+			return;
+		}
+
+		/* Under the name. */
+		status = gles_names_add(&state->framebuffers, name, fbo);
+		if (status != 0) {
+			free(fbo);
+			gles_error(context, GL_OUT_OF_MEMORY);
+			return;
+		}
+
+		/* The name goes back to the application. */
 		framebuffers[index] = name;
 	}
 }
@@ -447,11 +753,13 @@ glDeleteFramebuffers(
 		if (fbo == NULL)
 			continue;
 
-		/* Its pass ends if it is open, the bound one goes back to 0. */
+		/* Its pass ends if it is open; a binding of it goes back to 0. */
 		if (state->open_fbo == fbo)
 			gles_target_close(state);
 		if (state->framebuffer == framebuffers[index])
 			state->framebuffer = 0U;
+		if (state->read_framebuffer == framebuffers[index])
+			state->read_framebuffer = 0U;
 
 		/* The name, the pass and framebuffer (they wait for the frame), and the object go. */
 		gles_names_remove(&state->framebuffers, framebuffers[index]);
@@ -461,8 +769,8 @@ glDeleteFramebuffers(
 }
 
 /*
- * Binds a framebuffer (0: the draw surface's), making the object when the
- * name is new.
+ * Binds a framebuffer (0: the surfaces') for drawing, reading or both,
+ * making the object when the name is new.
  */
 GL_APICALL void GL_APIENTRY
 glBindFramebuffer(
@@ -472,31 +780,30 @@ glBindFramebuffer(
 	struct zegl_context *context;
 	struct gles_state *state;
 	struct gles_framebuffer *fbo;
+	int read;
 	int status;
 
-	/* A context with its state and the one target. */
+	/* A context with its state and a framebuffer target. */
 	context = gles_context();
 	state = gles_state(context);
 	if (state == NULL)
 		return;
-	if (target != GL_FRAMEBUFFER) {
-		gles_error(context, GL_INVALID_ENUM);
+	status = framebuffer_target(context, target, &read);
+	if (status != 0)
 		return;
-	}
 
 	/* A name seen for the first time gets its object, with nothing attached. */
 	fbo = NULL;
 	if (framebuffer != 0U)
 		fbo = gles_names_get(&state->framebuffers, framebuffer);
 	if (framebuffer != 0U && fbo == NULL) {
-		fbo = calloc(1U, sizeof(*fbo));
+		fbo = framebuffer_new(framebuffer);
 		if (fbo == NULL) {
 			gles_error(context, GL_OUT_OF_MEMORY);
 			return;
 		}
 
 		/* The name finds it from now on. */
-		fbo->name = framebuffer;
 		status = gles_names_add(&state->framebuffers, framebuffer, fbo);
 		if (status != 0) {
 			free(fbo);
@@ -505,8 +812,13 @@ glBindFramebuffer(
 		}
 	}
 
-	/* Bound; draws go there from now on. */
-	state->framebuffer = framebuffer;
+	/* Bound for reading, for drawing, or for both (GL_FRAMEBUFFER); a named object is a framebuffer from now on. */
+	if (fbo != NULL)
+		fbo->bound = 1;
+	if (read != 0)
+		state->read_framebuffer = framebuffer;
+	if (read != 1)
+		state->framebuffer = framebuffer;
 }
 
 /*
@@ -526,7 +838,7 @@ glIsFramebuffer(
 
 	/* A name that was bound once. */
 	fbo = gles_names_get(&state->framebuffers, framebuffer);
-	if (fbo == NULL)
+	if (fbo == NULL || !fbo->bound)
 		return GL_FALSE;
 
 	/* Succeeded: it is one. */
@@ -534,8 +846,8 @@ glIsFramebuffer(
 }
 
 /*
- * Reports whether the bound framebuffer can be drawn into, and when not,
- * why.
+ * Reports whether a bound framebuffer can be drawn into or read from, and
+ * when not, why.
  */
 GL_APICALL GLenum GL_APIENTRY
 glCheckFramebufferStatus(
@@ -544,38 +856,36 @@ glCheckFramebufferStatus(
 	struct zegl_context *context;
 	struct gles_state *state;
 	struct gles_framebuffer *fbo;
-	struct gles_texture *texture;
-	struct gles_renderbuffer *color;
-	struct gles_renderbuffer *depth;
+	struct framebuffer_images images;
+	GLuint name;
 	GLenum status;
 
-	/* A context with its state and the one target. */
+	/* A context with its state, and the framebuffer bound to the target. */
 	context = gles_context();
 	state = gles_state(context);
 	if (state == NULL)
 		return 0U;
-	if (target != GL_FRAMEBUFFER) {
-		gles_error(context, GL_INVALID_ENUM);
+	name = 0U;
+	fbo = framebuffer_for(context, state, target, 0, &name);
+	if (fbo == NULL && name == (GLuint)-1)
 		return 0U;
-	}
 
-	/* The draw surface's framebuffer is complete. */
-	if (state->framebuffer == 0U)
+	/* The surfaces' framebuffer is complete. */
+	if (name == 0U)
 		return GL_FRAMEBUFFER_COMPLETE;
 
 	/* A framebuffer object's attachments decide. */
-	fbo = framebuffer_bound(state);
 	status = GL_FRAMEBUFFER_UNSUPPORTED;
 	if (fbo != NULL)
-		status = framebuffer_status(state, fbo, &texture, &color, &depth);
+		status = framebuffer_status(state, fbo, &images);
 
 	/* Succeeded: the status. */
 	return status;
 }
 
 /*
- * Attaches level 0 of a 2D texture to the bound framebuffer object's
- * colour attachment (texture 0 detaches).
+ * Attaches a level of a 2D texture or of a cube map's face to an
+ * attachment point of a bound framebuffer object (texture 0 detaches).
  */
 GL_APICALL void GL_APIENTRY
 glFramebufferTexture2D(
@@ -587,40 +897,19 @@ glFramebufferTexture2D(
 {
 	struct zegl_context *context;
 	struct gles_state *state;
-	struct gles_framebuffer *fbo;
-	struct gles_attachment *point;
 	struct gles_texture *object;
 	unsigned face;
 	GLenum kind;
-	int status;
 
-	/* A context with its state and the one target. */
+	/* A context with its state. */
 	context = gles_context();
 	state = gles_state(context);
 	if (state == NULL)
 		return;
-	if (target != GL_FRAMEBUFFER) {
-		gles_error(context, GL_INVALID_ENUM);
-		return;
-	}
-
-	/* A framebuffer object bound (the draw surface's takes no attachments). */
-	fbo = framebuffer_bound(state);
-	if (fbo == NULL) {
-		gles_error(context, GL_INVALID_OPERATION);
-		return;
-	}
-
-	/* An attachment point. */
-	status = framebuffer_point(attachment, &point, fbo);
-	if (status != 0) {
-		gles_error(context, GL_INVALID_ENUM);
-		return;
-	}
 
 	/* Texture 0 detaches. */
 	if (texture == 0U) {
-		point->kind = GLES_ATTACH_NONE;
+		framebuffer_attach(context, target, attachment, GLES_ATTACH_NONE, 0U, 0U, 0, 0);
 		return;
 	}
 
@@ -631,13 +920,13 @@ glFramebufferTexture2D(
 		return;
 	}
 
-	/* Level 0 only (OpenGL ES 2). */
-	if (level != 0) {
+	/* A level a texture has. */
+	if (level < 0 || level >= (GLint)GLES_LEVELS) {
 		gles_error(context, GL_INVALID_VALUE);
 		return;
 	}
 
-	/* A name that is a texture of the target's kind. */
+	/* A name that is a texture. */
 	object = gles_names_get(&state->textures, texture);
 	if (object == NULL) {
 		gles_error(context, GL_INVALID_OPERATION);
@@ -658,17 +947,59 @@ glFramebufferTexture2D(
 		return;
 	}
 
-	/* Attached by name; the pass is made again at the next draw. */
-	if (state->open_fbo == fbo)
-		gles_target_close(state);
-	point->kind = GLES_ATTACH_TEXTURE;
-	point->name = texture;
-	point->face = face;
+	/* Attached by name. */
+	framebuffer_attach(context, target, attachment, GLES_ATTACH_TEXTURE, texture, face, level, 0);
 }
 
 /*
- * Attaches a renderbuffer to the bound framebuffer object (renderbuffer 0
- * detaches).
+ * Attaches a layer of a level of a 2D array texture, or a slice of a 3D
+ * texture's, to an attachment point of a bound framebuffer object
+ * (texture 0 detaches).
+ */
+GL_APICALL void GL_APIENTRY
+glFramebufferTextureLayer(
+	GLenum target,
+	GLenum attachment,
+	GLuint texture,
+	GLint level,
+	GLint layer)
+{
+	struct zegl_context *context;
+	struct gles_state *state;
+	struct gles_texture *object;
+
+	/* A context with its state. */
+	context = gles_context();
+	state = gles_state(context);
+	if (state == NULL)
+		return;
+
+	/* Texture 0 detaches. */
+	if (texture == 0U) {
+		framebuffer_attach(context, target, attachment, GLES_ATTACH_NONE, 0U, 0U, 0, 0);
+		return;
+	}
+
+	/* A level and a layer a texture has. */
+	if (level < 0 || level >= (GLint)GLES_LEVELS || layer < 0 || layer >= GLES_MAX_LAYERS) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* A name that is a 2D array or 3D texture. */
+	object = gles_names_get(&state->textures, texture);
+	if (object == NULL || (object->target != GL_TEXTURE_2D_ARRAY && object->target != GL_TEXTURE_3D)) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return;
+	}
+
+	/* Attached by name. */
+	framebuffer_attach(context, target, attachment, GLES_ATTACH_TEXTURE, texture, 0U, level, layer);
+}
+
+/*
+ * Attaches a renderbuffer to an attachment point of a bound framebuffer
+ * object (renderbuffer 0 detaches).
  */
 GL_APICALL void GL_APIENTRY
 glFramebufferRenderbuffer(
@@ -679,38 +1010,17 @@ glFramebufferRenderbuffer(
 {
 	struct zegl_context *context;
 	struct gles_state *state;
-	struct gles_framebuffer *fbo;
-	struct gles_attachment *point;
 	struct gles_renderbuffer *object;
-	int status;
 
-	/* A context with its state and the one target. */
+	/* A context with its state. */
 	context = gles_context();
 	state = gles_state(context);
 	if (state == NULL)
 		return;
-	if (target != GL_FRAMEBUFFER) {
-		gles_error(context, GL_INVALID_ENUM);
-		return;
-	}
-
-	/* A framebuffer object bound (the draw surface's takes no attachments). */
-	fbo = framebuffer_bound(state);
-	if (fbo == NULL) {
-		gles_error(context, GL_INVALID_OPERATION);
-		return;
-	}
-
-	/* An attachment point. */
-	status = framebuffer_point(attachment, &point, fbo);
-	if (status != 0) {
-		gles_error(context, GL_INVALID_ENUM);
-		return;
-	}
 
 	/* Renderbuffer 0 detaches. */
 	if (renderbuffer == 0U) {
-		point->kind = GLES_ATTACH_NONE;
+		framebuffer_attach(context, target, attachment, GLES_ATTACH_NONE, 0U, 0U, 0, 0);
 		return;
 	}
 
@@ -727,15 +1037,13 @@ glFramebufferRenderbuffer(
 		return;
 	}
 
-	/* Attached by name; the pass is made again at the next draw. */
-	if (state->open_fbo == fbo)
-		gles_target_close(state);
-	point->kind = GLES_ATTACH_RENDERBUFFER;
-	point->name = renderbuffer;
+	/* Attached by name. */
+	framebuffer_attach(context, target, attachment, GLES_ATTACH_RENDERBUFFER, renderbuffer, 0U, 0, 0);
 }
 
 /*
- * Reports what an attachment point of the bound framebuffer object has.
+ * Reports what an attachment point of a bound framebuffer has: an object
+ * attached to a framebuffer object's, or the surfaces' own buffers.
  */
 GL_APICALL void GL_APIENTRY
 glGetFramebufferAttachmentParameteriv(
@@ -748,64 +1056,258 @@ glGetFramebufferAttachmentParameteriv(
 	struct gles_state *state;
 	struct gles_framebuffer *fbo;
 	struct gles_attachment *point;
-	struct gles_texture *object;
+	struct gles_attachment *other;
+	const struct gles_format *format;
+	GLuint name;
+	int known;
 	int status;
 
-	/* A context with its state and the one target. */
+	/* A context with its state, and the framebuffer bound to the target. */
 	context = gles_context();
 	state = gles_state(context);
 	if (state == NULL)
 		return;
-	if (target != GL_FRAMEBUFFER) {
+	name = 0U;
+	fbo = framebuffer_for(context, state, target, 0, &name);
+	if (fbo == NULL && name == (GLuint)-1)
+		return;
+
+	/* The surfaces' framebuffer: its colour buffer (GL_BACK) and depth and stencil buffers, RGBA8 and the depth format. */
+	if (name == 0U) {
+		if (attachment != GL_BACK && attachment != GL_DEPTH && attachment != GL_STENCIL) {
+			gles_error(context, GL_INVALID_ENUM);
+			return;
+		}
+
+		/* The parameter. */
+		format = gles_format_rgba8();
+		switch (pname) {
+		case GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE:
+			*params = GL_FRAMEBUFFER_DEFAULT;
+			break;
+		case GL_FRAMEBUFFER_ATTACHMENT_COMPONENT_TYPE:
+			*params = GL_UNSIGNED_NORMALIZED;
+			break;
+		case GL_FRAMEBUFFER_ATTACHMENT_COLOR_ENCODING:
+			*params = GL_LINEAR;
+			break;
+		case GL_FRAMEBUFFER_ATTACHMENT_RED_SIZE:
+		case GL_FRAMEBUFFER_ATTACHMENT_GREEN_SIZE:
+		case GL_FRAMEBUFFER_ATTACHMENT_BLUE_SIZE:
+		case GL_FRAMEBUFFER_ATTACHMENT_ALPHA_SIZE:
+			*params = 0;
+			if (attachment == GL_BACK)
+				*params = framebuffer_bits(format, format->vk, pname);
+			break;
+		case GL_FRAMEBUFFER_ATTACHMENT_DEPTH_SIZE:
+			*params = 0;
+			if (attachment == GL_DEPTH && context->config != NULL)
+				*params = context->config->depth;
+			break;
+		case GL_FRAMEBUFFER_ATTACHMENT_STENCIL_SIZE:
+			*params = 0;
+			if (attachment == GL_STENCIL && context->config != NULL)
+				*params = context->config->stencil;
+			break;
+		default:
+			gles_error(context, GL_INVALID_ENUM);
+			break;
+		}
+
+		/* The surfaces' buffers are done. */
+		return;
+	}
+
+	/* An attachment point of the framebuffer object (depth and stencil must name the same object to be asked together). */
+	if (attachment == GL_DEPTH_STENCIL_ATTACHMENT) {
+		point = &fbo->depth;
+		other = &fbo->stencil;
+		if (point->kind != other->kind || point->name != other->name) {
+			gles_error(context, GL_INVALID_OPERATION);
+			return;
+		}
+	} else {
+		status = framebuffer_point(attachment, &point, fbo);
+		if (status != 0) {
+			gles_error(context, GL_INVALID_ENUM);
+			return;
+		}
+	}
+
+	/* The parameter, when the point has something attached or asks what it has. */
+	known = 1;
+	*params = framebuffer_attachment_value(state, point, pname, &known);
+	if (!known)
+		gles_error(context, GL_INVALID_ENUM);
+}
+
+/*
+ * Chooses the colour attachments the draw buffers of the draw framebuffer
+ * write (draw buffer i writes GL_COLOR_ATTACHMENTi or nothing; the
+ * surfaces' one writes GL_BACK or nothing).
+ */
+GL_APICALL void GL_APIENTRY
+glDrawBuffers(
+	GLsizei n,
+	const GLenum *bufs)
+{
+	struct zegl_context *context;
+	struct gles_state *state;
+	struct gles_framebuffer *fbo;
+	GLenum buffers[GLES_DRAW_BUFFERS];
+	GLsizei index;
+
+	/* A context with its state, and no more buffers than there are. */
+	context = gles_context();
+	state = gles_state(context);
+	if (state == NULL)
+		return;
+	if (n < 0 || n > (GLsizei)GLES_DRAW_BUFFERS) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* The surfaces' framebuffer: one buffer, GL_BACK or GL_NONE. */
+	if (state->framebuffer == 0U) {
+		if (n != 1 || (bufs[0] != GL_BACK && bufs[0] != GL_NONE)) {
+			gles_error(context, GL_INVALID_OPERATION);
+			return;
+		}
+
+		/* Succeeded: the surface's buffer. */
+		state->default_draw_buffer = bufs[0];
+		return;
+	}
+
+	/* Each buffer of a framebuffer object: its own attachment or none. */
+	for (index = 0; index < (GLsizei)GLES_DRAW_BUFFERS; index++) {
+		buffers[index] = GL_NONE;
+		if (index >= n)
+			continue;
+
+		/* GL_BACK and the other attachments are not this buffer's. */
+		if (bufs[index] != GL_NONE && bufs[index] != GL_COLOR_ATTACHMENT0 + (GLenum)index) {
+			gles_error(context, GL_INVALID_OPERATION);
+			return;
+		}
+
+		/* The buffer. */
+		buffers[index] = bufs[index];
+	}
+
+	/* Succeeded: the object's draw buffers (pipelines follow them). */
+	fbo = framebuffer_named(state, state->framebuffer);
+	if (fbo != NULL)
+		memcpy(fbo->draw_buffers, buffers, sizeof(buffers));
+}
+
+/*
+ * Chooses the colour buffer reads of the read framebuffer read.
+ */
+GL_APICALL void GL_APIENTRY
+glReadBuffer(
+	GLenum src)
+{
+	struct zegl_context *context;
+	struct gles_state *state;
+	struct gles_framebuffer *fbo;
+
+	/* A context with its state; desktop GL's front buffer (libGL's) is the one colour buffer, GL_BACK. */
+	context = gles_context();
+	state = gles_state(context);
+	if (state == NULL)
+		return;
+	if (gles_fixed != NULL && src == GL_FRONT)
+		src = GL_BACK;
+
+	/* A name of a colour buffer. */
+	if (src != GL_NONE &&
+	    src != GL_BACK &&
+	    (src < GL_COLOR_ATTACHMENT0 || src > GL_COLOR_ATTACHMENT15)) {
 		gles_error(context, GL_INVALID_ENUM);
 		return;
 	}
 
-	/* A framebuffer object bound. */
-	fbo = framebuffer_bound(state);
-	if (fbo == NULL) {
+	/* The surfaces' framebuffer reads GL_BACK or nothing. */
+	if (state->read_framebuffer == 0U) {
+		if (src != GL_BACK && src != GL_NONE) {
+			gles_error(context, GL_INVALID_OPERATION);
+			return;
+		}
+
+		/* Succeeded: the surface's read buffer. */
+		state->default_read_buffer = src;
+		return;
+	}
+
+	/* A framebuffer object reads one of its colour attachments or nothing. */
+	if (src == GL_BACK || src >= GL_COLOR_ATTACHMENT0 + GLES_COLOR_ATTACHMENTS) {
 		gles_error(context, GL_INVALID_OPERATION);
 		return;
 	}
 
-	/* An attachment point. */
-	status = framebuffer_point(attachment, &point, fbo);
-	if (status != 0) {
-		gles_error(context, GL_INVALID_ENUM);
-		return;
-	}
+	/* Succeeded: the object's read buffer. */
+	fbo = framebuffer_named(state, state->read_framebuffer);
+	if (fbo != NULL)
+		fbo->read_buffer = src;
+}
 
-	/* The parameter. */
-	switch (pname) {
-	case GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE:
-		*params = GL_NONE;
-		if (point->kind == GLES_ATTACH_TEXTURE)
-			*params = GL_TEXTURE;
-		if (point->kind == GLES_ATTACH_RENDERBUFFER)
-			*params = GL_RENDERBUFFER;
-		break;
-	case GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME:
-		*params = 0;
-		if (point->kind != GLES_ATTACH_NONE)
-			*params = (GLint)point->name;
-		break;
-	case GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_LEVEL:
-		/* Level 0 is all that is attached. */
-		*params = 0;
-		break;
-	case GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_CUBE_MAP_FACE:
-		/* A cube map's face, 0 for a 2D texture. */
-		*params = 0;
-		object = NULL;
-		if (point->kind == GLES_ATTACH_TEXTURE)
-			object = gles_names_get(&state->textures, point->name);
-		if (object != NULL && object->target == GL_TEXTURE_CUBE_MAP)
-			*params = (GLint)(GL_TEXTURE_CUBE_MAP_POSITIVE_X + point->face);
-		break;
-	default:
-		gles_error(context, GL_INVALID_ENUM);
-		break;
-	}
+/*
+ * Lets the contents of a framebuffer's attachments become undefined;
+ * they are kept as they are.
+ */
+GL_APICALL void GL_APIENTRY
+glInvalidateFramebuffer(
+	GLenum target,
+	GLsizei numAttachments,
+	const GLenum *attachments)
+{
+	struct zegl_context *context;
+	int read;
+	int status;
+
+	/* A framebuffer target and a count. */
+	(void)attachments;
+	context = gles_context();
+	if (context == NULL)
+		return;
+	status = framebuffer_target(context, target, &read);
+	if (status != 0)
+		return;
+	if (numAttachments < 0)
+		gles_error(context, GL_INVALID_VALUE);
+}
+
+/*
+ * Lets a rectangle of a framebuffer's attachments become undefined; it is
+ * kept as it is.
+ */
+GL_APICALL void GL_APIENTRY
+glInvalidateSubFramebuffer(
+	GLenum target,
+	GLsizei numAttachments,
+	const GLenum *attachments,
+	GLint x,
+	GLint y,
+	GLsizei width,
+	GLsizei height)
+{
+	struct zegl_context *context;
+	int read;
+	int status;
+
+	/* A framebuffer target, a count and a size. */
+	(void)attachments;
+	(void)x;
+	(void)y;
+	context = gles_context();
+	if (context == NULL)
+		return;
+	status = framebuffer_target(context, target, &read);
+	if (status != 0)
+		return;
+	if (numAttachments < 0 || width < 0 || height < 0)
+		gles_error(context, GL_INVALID_VALUE);
 }
 
 /*
@@ -818,8 +1320,10 @@ glGenRenderbuffers(
 {
 	struct zegl_context *context;
 	struct gles_state *state;
+	struct gles_renderbuffer *object;
 	GLsizei index;
 	GLuint name;
+	int status;
 
 	/* A context with its state and a count. */
 	context = gles_context();
@@ -831,15 +1335,32 @@ glGenRenderbuffers(
 		return;
 	}
 
-	/* Free names; the objects are made at their first bind. */
+	/* Each name gets its object now, so the next name is another; it becomes a renderbuffer at its first bind. */
 	for (index = 0; index < n; index++) {
 		name = gles_names_free(&state->renderbuffers);
+		object = calloc(1U, sizeof(*object));
+		if (object == NULL) {
+			gles_error(context, GL_OUT_OF_MEMORY);
+			return;
+		}
+
+		/* Under the name. */
+		object->name = name;
+		status = gles_names_add(&state->renderbuffers, name, object);
+		if (status != 0) {
+			free(object);
+			gles_error(context, GL_OUT_OF_MEMORY);
+			return;
+		}
+
+		/* The name goes back to the application. */
 		renderbuffers[index] = name;
 	}
 }
 
 /*
- * Deletes renderbuffers, detaching them from the bound framebuffer object.
+ * Deletes renderbuffers, detaching them from the bound framebuffer
+ * objects.
  */
 GL_APICALL void GL_APIENTRY
 glDeleteRenderbuffers(
@@ -923,7 +1444,9 @@ glBindRenderbuffer(
 		}
 	}
 
-	/* Bound; glRenderbufferStorage gives it storage. */
+	/* Bound (a named object is a renderbuffer from now on); glRenderbufferStorage gives it storage. */
+	if (object != NULL)
+		object->bound = 1;
 	state->renderbuffer = renderbuffer;
 }
 
@@ -944,7 +1467,7 @@ glIsRenderbuffer(
 
 	/* A name that was bound once. */
 	object = gles_names_get(&state->renderbuffers, renderbuffer);
-	if (object == NULL)
+	if (object == NULL || !object->bound)
 		return GL_FALSE;
 
 	/* Succeeded: it is one. */
@@ -965,7 +1488,6 @@ glRenderbufferStorage(
 	struct zegl_context *context;
 	struct gles_state *state;
 	struct gles_renderbuffer *renderbuffer;
-	int depth;
 	int status;
 
 	/* The bound renderbuffer. */
@@ -974,13 +1496,6 @@ glRenderbufferStorage(
 	renderbuffer = renderbuffer_bound(context, target);
 	if (renderbuffer == NULL)
 		return;
-
-	/* A format OpenGL ES 2 renders into: colour, or depth and stencil. */
-	depth = renderbuffer_depth_format(internalformat);
-	if (depth < 0) {
-		gles_error(context, GL_INVALID_ENUM);
-		return;
-	}
 
 	/* A size that fits. */
 	if (width < 0 ||
@@ -995,11 +1510,17 @@ glRenderbufferStorage(
 	gles_target_close(state);
 	renderbuffer_discard(state, renderbuffer);
 
+	/* A format a framebuffer draws into: colour, or depth and stencil. */
+	status = renderbuffer_format(state, internalformat, renderbuffer);
+	if (status != 0) {
+		gles_error(context, GL_INVALID_ENUM);
+		return;
+	}
+
 	/* The new storage (a zero size has no image and leaves a framebuffer incomplete). */
 	renderbuffer->format = internalformat;
 	renderbuffer->width = width;
 	renderbuffer->height = height;
-	renderbuffer->depth = depth;
 	if (width == 0 || height == 0)
 		return;
 
@@ -1020,28 +1541,12 @@ glGetRenderbufferParameteriv(
 {
 	struct zegl_context *context;
 	struct gles_renderbuffer *renderbuffer;
-	GLint colour;
-	GLint depth;
-	GLint stencil;
 
 	/* The bound renderbuffer. */
 	context = gles_context();
 	renderbuffer = renderbuffer_bound(context, target);
 	if (renderbuffer == NULL)
 		return;
-
-	/* The bits of each component its format was given (the image keeps at least these). */
-	colour = 0;
-	depth = 0;
-	stencil = 0;
-	if (renderbuffer->format != 0U && !renderbuffer->depth)
-		colour = 8;
-	if (renderbuffer->format == GL_DEPTH_COMPONENT16)
-		depth = 16;
-	if (renderbuffer->format == GL_DEPTH_COMPONENT24_OES || renderbuffer->format == GL_DEPTH24_STENCIL8_OES)
-		depth = 24;
-	if (renderbuffer->format == GL_STENCIL_INDEX8 || renderbuffer->format == GL_DEPTH24_STENCIL8_OES)
-		stencil = 8;
 
 	/* The parameter. */
 	switch (pname) {
@@ -1056,17 +1561,16 @@ glGetRenderbufferParameteriv(
 		if (renderbuffer->format != 0U)
 			*params = (GLint)renderbuffer->format;
 		break;
+	case GL_RENDERBUFFER_SAMPLES:
+		*params = 0;
+		break;
 	case GL_RENDERBUFFER_RED_SIZE:
 	case GL_RENDERBUFFER_GREEN_SIZE:
 	case GL_RENDERBUFFER_BLUE_SIZE:
 	case GL_RENDERBUFFER_ALPHA_SIZE:
-		*params = colour;
-		break;
 	case GL_RENDERBUFFER_DEPTH_SIZE:
-		*params = depth;
-		break;
 	case GL_RENDERBUFFER_STENCIL_SIZE:
-		*params = stencil;
+		*params = framebuffer_bits(renderbuffer->kept, renderbuffer->vk, pname);
 		break;
 	default:
 		gles_error(context, GL_INVALID_ENUM);
@@ -1074,19 +1578,20 @@ glGetRenderbufferParameteriv(
 	}
 }
 
-/* Returns the bound framebuffer object, or NULL for framebuffer 0. */
+/* Returns the framebuffer object of a name, or NULL for name 0 or a name that has none. */
 static struct gles_framebuffer *
-framebuffer_bound(
-	struct gles_state *state)
+framebuffer_named(
+	struct gles_state *state,
+	GLuint name)
 {
 	struct gles_framebuffer *fbo;
 
-	/* Framebuffer 0 is the draw surface's. */
-	if (state->framebuffer == 0U)
+	/* Name 0 is the surfaces'. */
+	if (name == 0U)
 		return NULL;
 
-	/* The object of the bound name. */
-	fbo = gles_names_get(&state->framebuffers, state->framebuffer);
+	/* The object of the name. */
+	fbo = gles_names_get(&state->framebuffers, name);
 	if (fbo == NULL)
 		return NULL;
 
@@ -1094,115 +1599,264 @@ framebuffer_bound(
 	return fbo;
 }
 
+/* Reads a framebuffer target: *read is 1 for GL_READ_FRAMEBUFFER, 0 for GL_DRAW_FRAMEBUFFER, 2 for GL_FRAMEBUFFER (both); nonzero with the error recorded for any other. */
+static int
+framebuffer_target(
+	struct zegl_context *context,
+	GLenum target,
+	int *read)
+{
+	/* The three targets. */
+	switch (target) {
+	case GL_READ_FRAMEBUFFER:
+		*read = 1;
+		return 0;
+	case GL_DRAW_FRAMEBUFFER:
+		*read = 0;
+		return 0;
+	case GL_FRAMEBUFFER:
+		*read = 2;
+		return 0;
+	default:
+		break;
+	}
+
+	/* Not a framebuffer target. */
+	*read = 0;
+	gles_error(context, GL_INVALID_ENUM);
+	return -1;
+}
+
 /*
- * Reports whether a framebuffer object can be drawn into, finding what its
- * attachment points name: the colour texture or renderbuffer, and the one
- * depth and stencil renderbuffer.  Returns GL_FRAMEBUFFER_COMPLETE or why
- * not.
+ * Returns the framebuffer object bound to a target (GL_FRAMEBUFFER is the
+ * draw one) and its name in *name; NULL for the surfaces' framebuffer
+ * (name 0).  With bound nonzero the call needs an object: framebuffer 0
+ * records GL_INVALID_OPERATION.  A wrong target records GL_INVALID_ENUM
+ * and sets *name to (GLuint)-1.
+ */
+static struct gles_framebuffer *
+framebuffer_for(
+	struct zegl_context *context,
+	struct gles_state *state,
+	GLenum target,
+	int bound,
+	GLuint *name)
+{
+	struct gles_framebuffer *fbo;
+	int read;
+	int status;
+
+	/* The target. */
+	status = framebuffer_target(context, target, &read);
+	if (status != 0) {
+		*name = (GLuint)-1;
+		return NULL;
+	}
+
+	/* The name bound to it and its object. */
+	*name = state->framebuffer;
+	if (read == 1)
+		*name = state->read_framebuffer;
+	fbo = framebuffer_named(state, *name);
+	if (fbo == NULL && bound) {
+		gles_error(context, GL_INVALID_OPERATION);
+		*name = (GLuint)-1;
+		return NULL;
+	}
+
+	/* Succeeded: the object, or NULL for the surfaces'. */
+	return fbo;
+}
+
+/* Makes a framebuffer object of a name with nothing attached, drawing and reading its first colour attachment; NULL without memory. */
+static struct gles_framebuffer *
+framebuffer_new(
+	GLuint name)
+{
+	struct gles_framebuffer *fbo;
+	unsigned index;
+
+	/* The object. */
+	fbo = calloc(1U, sizeof(*fbo));
+	if (fbo == NULL)
+		return NULL;
+
+	/* GL's initial draw and read buffers. */
+	fbo->name = name;
+	for (index = 0U; index < GLES_DRAW_BUFFERS; index++)
+		fbo->draw_buffers[index] = GL_NONE;
+	fbo->draw_buffers[0] = GL_COLOR_ATTACHMENT0;
+	fbo->read_buffer = GL_COLOR_ATTACHMENT0;
+
+	/* Succeeded: the object. */
+	return fbo;
+}
+
+/*
+ * Finds what an attachment point names, for a colour point or (depth
+ * nonzero) the depth or stencil point: the texture's level and layer or
+ * the renderbuffer, which must have storage of a format a framebuffer
+ * draws into of the point's kind.  Returns GL_FRAMEBUFFER_COMPLETE (with
+ * image->format NULL when nothing is attached), or why not.
+ */
+static GLenum
+framebuffer_image_of(
+	struct gles_state *state,
+	const struct gles_attachment *point,
+	int depth,
+	struct framebuffer_image *image)
+{
+	const struct gles_level *level;
+	uint32_t features;
+	uint32_t wanted;
+	int is_depth;
+
+	/* Nothing found yet. */
+	memset(image, 0, sizeof(*image));
+	if (point->kind == GLES_ATTACH_NONE)
+		return GL_FRAMEBUFFER_COMPLETE;
+
+	/* A renderbuffer with storage of the point's kind. */
+	if (point->kind == GLES_ATTACH_RENDERBUFFER) {
+		image->renderbuffer = gles_names_get(&state->renderbuffers, point->name);
+		if (image->renderbuffer == NULL || image->renderbuffer->image == VK_NULL_HANDLE)
+			return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
+		if ((image->renderbuffer->depth != 0) != (depth != 0))
+			return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
+
+		/* Succeeded: the renderbuffer, resting as an attachment. */
+		image->format = image->renderbuffer->kept;
+		image->vk = image->renderbuffer->vk;
+		image->width = image->renderbuffer->width;
+		image->height = image->renderbuffer->height;
+		image->layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		if (depth)
+			image->layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+		return GL_FRAMEBUFFER_COMPLETE;
+	}
+
+	/* A texture. */
+	image->texture = gles_names_get(&state->textures, point->name);
+	if (image->texture == NULL)
+		return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
+
+	/* A 3D texture's slice cannot be viewed as a 2D image (Vulkan 1.0, WS068 p029). */
+	if (image->texture->target == GL_TEXTURE_3D)
+		return GL_FRAMEBUFFER_UNSUPPORTED;
+
+	/* The level is specified, with the layer. */
+	level = &image->texture->levels[point->face * GLES_LEVELS + (unsigned)point->level];
+	if (level->width <= 0 || level->height <= 0 || level->format == NULL)
+		return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
+	if (image->texture->target == GL_TEXTURE_2D_ARRAY && point->layer >= level->depth)
+		return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
+
+	/* A format a framebuffer draws into, of the point's kind. */
+	is_depth = 0;
+	if (level->format->kind == GLES_TEXEL_DEPTH)
+		is_depth = 1;
+	if (!level->format->renderable || is_depth != (depth != 0))
+		return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
+
+	/* The image starts at the base level. */
+	if (point->level < image->texture->base_level)
+		return GL_FRAMEBUFFER_UNSUPPORTED;
+
+	/* A format the device draws into. */
+	wanted = VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
+	if (depth)
+		wanted = VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
+	features = gles_image_features(state, level->format->vk);
+	if ((features & wanted) == 0U)
+		return GL_FRAMEBUFFER_UNSUPPORTED;
+
+	/* Succeeded: the level and layer (a cube map's face is its layer), resting to be sampled. */
+	image->format = level->format;
+	image->vk = level->format->vk;
+	image->face = point->face;
+	image->gl_level = point->level;
+	image->level = (uint32_t)(point->level - image->texture->base_level);
+	image->layer = point->face;
+	if (image->texture->target == GL_TEXTURE_2D_ARRAY)
+		image->layer = (uint32_t)point->layer;
+	image->width = level->width;
+	image->height = level->height;
+	image->layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	return GL_FRAMEBUFFER_COMPLETE;
+}
+
+/*
+ * Reports whether a framebuffer object can be drawn into, finding what
+ * its attachment points name: the colour images and the one depth and
+ * stencil image.  Returns GL_FRAMEBUFFER_COMPLETE or why not.
  */
 static GLenum
 framebuffer_status(
 	struct gles_state *state,
 	struct gles_framebuffer *fbo,
-	struct gles_texture **texture,
-	struct gles_renderbuffer **color,
-	struct gles_renderbuffer **depth)
+	struct framebuffer_images *images)
 {
-	struct gles_renderbuffer *depth_object;
-	struct gles_renderbuffer *stencil_object;
-	const struct gles_level *level;
-	int width;
-	int height;
+	struct framebuffer_image stencil;
+	unsigned index;
+	int attached;
+	GLenum status;
 
 	/* Nothing found yet. */
-	*texture = NULL;
-	*color = NULL;
-	*depth = NULL;
-	depth_object = NULL;
-	stencil_object = NULL;
-	width = 0;
-	height = 0;
+	memset(images, 0, sizeof(*images));
+	attached = 0;
 
-	/* Nothing attached at all. */
-	if (fbo->color.kind == GLES_ATTACH_NONE &&
-	    fbo->depth.kind == GLES_ATTACH_NONE &&
-	    fbo->stencil.kind == GLES_ATTACH_NONE)
-		return GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT;
+	/* Each colour attachment. */
+	for (index = 0U; index < GLES_COLOR_ATTACHMENTS; index++) {
+		status = framebuffer_image_of(state, &fbo->colors[index], 0, &images->colors[index]);
+		if (status != GL_FRAMEBUFFER_COMPLETE)
+			return status;
 
-	/* The colour: a texture with level 0 on the face, or a colour renderbuffer with storage. */
-	if (fbo->color.kind == GLES_ATTACH_TEXTURE) {
-		*texture = gles_names_get(&state->textures, fbo->color.name);
-		if (*texture == NULL)
-			return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
-
-		/* The face's level 0 is specified. */
-		level = &(*texture)->levels[fbo->color.face * GLES_LEVELS];
-		if (level->width <= 0 || level->height <= 0)
-			return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
-
-		/* Drawn into: RGBA8 kept texels whose image starts at level 0 (other formats are ws068-p026's). */
-		if (level->format == NULL ||
-		    level->format->vk != VK_FORMAT_R8G8B8A8_UNORM ||
-		    (*texture)->base_level != 0)
-			return GL_FRAMEBUFFER_UNSUPPORTED;
-		width = level->width;
-		height = level->height;
-	} else if (fbo->color.kind == GLES_ATTACH_RENDERBUFFER) {
-		*color = gles_names_get(&state->renderbuffers, fbo->color.name);
-		if (*color == NULL ||
-		    (*color)->image == VK_NULL_HANDLE ||
-		    (*color)->depth)
-			return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
-		width = (*color)->width;
-		height = (*color)->height;
+		/* Attached: the pass has it and every one before. */
+		if (images->colors[index].format != NULL) {
+			images->color_count = index + 1U;
+			attached = 1;
+		}
 	}
 
-	/* Depth: a renderbuffer with a depth format (depth textures are not there). */
-	if (fbo->depth.kind == GLES_ATTACH_TEXTURE)
-		return GL_FRAMEBUFFER_UNSUPPORTED;
-	if (fbo->depth.kind == GLES_ATTACH_RENDERBUFFER) {
-		depth_object = gles_names_get(&state->renderbuffers, fbo->depth.name);
-		if (depth_object == NULL ||
-		    depth_object->image == VK_NULL_HANDLE ||
-		    !depth_object->depth ||
-		    depth_object->format == GL_STENCIL_INDEX8)
-			return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
-	}
+	/* The depth and the stencil attachments. */
+	status = framebuffer_image_of(state, &fbo->depth, 1, &images->depth);
+	if (status != GL_FRAMEBUFFER_COMPLETE)
+		return status;
+	status = framebuffer_image_of(state, &fbo->stencil, 1, &stencil);
+	if (status != GL_FRAMEBUFFER_COMPLETE)
+		return status;
 
-	/* Stencil: a renderbuffer with a stencil format, on a device whose depth format has one. */
-	if (fbo->stencil.kind == GLES_ATTACH_TEXTURE)
+	/* A depth attachment's format has depth, a stencil attachment's stencil. */
+	if (images->depth.format != NULL && images->depth.renderbuffer != NULL &&
+	    (images->depth.renderbuffer->aspects & VK_IMAGE_ASPECT_DEPTH_BIT) == 0U)
 		return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
-	if (fbo->stencil.kind == GLES_ATTACH_RENDERBUFFER) {
-		stencil_object = gles_names_get(&state->renderbuffers, fbo->stencil.name);
-		if (stencil_object == NULL || stencil_object->image == VK_NULL_HANDLE)
-			return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
-		if (stencil_object->format != GL_STENCIL_INDEX8 && stencil_object->format != GL_DEPTH24_STENCIL8_OES)
-			return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
-		if ((state->depth_aspects & VK_IMAGE_ASPECT_STENCIL_BIT) == 0U)
-			return GL_FRAMEBUFFER_UNSUPPORTED;
-	}
+	if (stencil.format != NULL && stencil.renderbuffer != NULL &&
+	    (stencil.renderbuffer->aspects & VK_IMAGE_ASPECT_STENCIL_BIT) == 0U)
+		return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
+	if (stencil.format != NULL && stencil.texture != NULL && !stencil.format->stencil)
+		return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
 
 	/* Separate depth and stencil images cannot be one Vulkan attachment. */
-	if (depth_object != NULL &&
-	    stencil_object != NULL &&
-	    depth_object != stencil_object)
-		return GL_FRAMEBUFFER_UNSUPPORTED;
-
-	/* The one depth and stencil image. */
-	*depth = depth_object;
-	if (*depth == NULL)
-		*depth = stencil_object;
-
-	/* Every attachment the same size (OpenGL ES 2). */
-	if (*depth != NULL && width == 0) {
-		width = (*depth)->width;
-		height = (*depth)->height;
+	if (images->depth.format != NULL && stencil.format != NULL) {
+		if (fbo->depth.kind != fbo->stencil.kind ||
+		    fbo->depth.name != fbo->stencil.name ||
+		    fbo->depth.level != fbo->stencil.level ||
+		    fbo->depth.layer != fbo->stencil.layer ||
+		    fbo->depth.face != fbo->stencil.face)
+			return GL_FRAMEBUFFER_UNSUPPORTED;
 	}
 
-	/* The depth and stencil image the size of the colour image. */
-	if (*depth != NULL &&
-	    ((*depth)->width != width || (*depth)->height != height))
-		return GL_FRAMEBUFFER_INCOMPLETE_DIMENSIONS;
+	/* The one depth and stencil image. */
+	if (images->depth.format == NULL)
+		images->depth = stencil;
+	if (images->depth.format != NULL) {
+		images->has_depth = 1;
+		attached = 1;
+	}
+
+	/* Nothing attached at all. */
+	if (!attached)
+		return GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT;
 
 	/* Succeeded: it can be drawn into. */
 	return GL_FRAMEBUFFER_COMPLETE;
@@ -1210,76 +1864,101 @@ framebuffer_status(
 
 /*
  * Makes a complete framebuffer object's render pass and framebuffer for
- * the views its attachments have now, unless they were made for them.
- * Returns GL_FRAMEBUFFER_COMPLETE, why it is not, or
- * GL_FRAMEBUFFER_UNSUPPORTED when the device refused.
+ * the views its attachments have now, unless they were made for them,
+ * and finds the compatible pass pipelines are made with.  Returns
+ * GL_FRAMEBUFFER_COMPLETE, why it is not, or GL_FRAMEBUFFER_UNSUPPORTED
+ * when the device refused.
  */
 static GLenum
 framebuffer_build(
 	struct gles_state *state,
-	struct gles_framebuffer *fbo)
+	struct gles_framebuffer *fbo,
+	struct framebuffer_images *images)
 {
-	struct gles_texture *texture;
-	struct gles_renderbuffer *color;
-	struct gles_renderbuffer *depth;
+	struct framebuffer_image *image;
+	struct gles_pass_format format;
 	VkFramebufferCreateInfo create;
-	VkImageView views[2];
-	VkImage color_image;
-	uint32_t color_layer;
-	VkImageView color_view;
+	VkImageView views[GLES_COLOR_ATTACHMENTS + 1U];
+	VkImageView color_views[GLES_COLOR_ATTACHMENTS];
 	VkImageView depth_view;
-	VkImageLayout color_layout;
+	VkImageLayout color_layouts[GLES_COLOR_ATTACHMENTS];
+	VkImageLayout depth_layout;
 	VkExtent2D extent;
+	VkRenderPass compatible;
 	uint32_t count;
+	unsigned index;
 	GLenum status;
 	VkResult result;
 	int synced;
+	int differs;
 
 	/* Complete. */
-	status = framebuffer_status(state, fbo, &texture, &color, &depth);
+	status = framebuffer_status(state, fbo, images);
 	if (status != GL_FRAMEBUFFER_COMPLETE)
 		return status;
 
-	/* A colour texture's image made (or brought up to date) from its levels. */
-	if (texture != NULL) {
-		synced = gles_texture_sync(state, texture);
-		if (synced != 0)
-			return GL_FRAMEBUFFER_UNSUPPORTED;
-	}
-
-	/* The views and size of what is attached, the colour image and where it rests. */
-	color_image = VK_NULL_HANDLE;
-	color_view = VK_NULL_HANDLE;
-	color_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	/* Each attachment's view (a texture's image made or brought up to date from its levels first), format and size. */
+	memset(&format, 0, sizeof(format));
+	memset(color_views, 0, sizeof(color_views));
+	memset(color_layouts, 0, sizeof(color_layouts));
 	depth_view = VK_NULL_HANDLE;
-	extent.width = 0U;
-	extent.height = 0U;
-	color_layer = 0U;
-	if (texture != NULL) {
-		color_image = texture->image;
-		color_view = texture->attach_views[fbo->color.face];
-		color_layer = fbo->color.face;
-		color_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		extent.width = (uint32_t)texture->levels[fbo->color.face * GLES_LEVELS].width;
-		extent.height = (uint32_t)texture->levels[fbo->color.face * GLES_LEVELS].height;
-	} else if (color != NULL) {
-		color_image = color->image;
-		color_view = color->view;
-		extent.width = (uint32_t)color->width;
-		extent.height = (uint32_t)color->height;
+	depth_layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+	extent.width = UINT32_MAX;
+	extent.height = UINT32_MAX;
+	format.color_count = images->color_count;
+	for (index = 0U; index <= GLES_COLOR_ATTACHMENTS; index++) {
+		image = &images->depth;
+		if (index < GLES_COLOR_ATTACHMENTS)
+			image = &images->colors[index];
+		if (image->format == NULL)
+			continue;
+
+		/* A texture's image, with the level. */
+		if (image->texture != NULL) {
+			synced = gles_texture_sync(state, image->texture);
+			if (synced != 0)
+				return GL_FRAMEBUFFER_UNSUPPORTED;
+		}
+
+		/* The view of the level and layer, or the renderbuffer's. */
+		if (image->texture != NULL) {
+			views[0] = gles_texture_attach_view(state, image->texture, image->level, image->layer);
+		} else {
+			views[0] = image->renderbuffer->view;
+		}
+
+		/* A view the device made. */
+		if (views[0] == VK_NULL_HANDLE)
+			return GL_FRAMEBUFFER_UNSUPPORTED;
+
+		/* The colour or the depth attachment, its format and resting layout. */
+		if (index < GLES_COLOR_ATTACHMENTS) {
+			color_views[index] = views[0];
+			color_layouts[index] = image->layout;
+			format.colors[index] = (uint32_t)image->vk;
+		} else {
+			depth_view = views[0];
+			depth_layout = image->layout;
+			format.depth = (uint32_t)image->vk;
+		}
+
+		/* The framebuffer is as large as the smallest attachment. */
+		if ((uint32_t)image->width < extent.width)
+			extent.width = (uint32_t)image->width;
+		if ((uint32_t)image->height < extent.height)
+			extent.height = (uint32_t)image->height;
 	}
 
-	/* The depth and stencil image. */
-	if (depth != NULL) {
-		depth_view = depth->view;
-		extent.width = (uint32_t)depth->width;
-		extent.height = (uint32_t)depth->height;
-	}
+	/* The pass pipelines are made with. */
+	compatible = framebuffer_compatible(state, &format);
+	if (compatible == VK_NULL_HANDLE)
+		return GL_FRAMEBUFFER_UNSUPPORTED;
 
-	/* Made for these already. */
-	if (fbo->framebuffer != VK_NULL_HANDLE &&
-	    fbo->built_color == color_view &&
-	    fbo->built_depth == depth_view)
+	/* Made for these views and this size already. */
+	differs = 1;
+	if (fbo->framebuffer != VK_NULL_HANDLE && fbo->built_depth == depth_view)
+		differs = memcmp(fbo->built_colors, color_views, sizeof(color_views));
+	if (differs == 0 && extent.width == fbo->extent.width && extent.height == fbo->extent.height)
 		return GL_FRAMEBUFFER_COMPLETE;
 
 	/* The old ones go (an open pass over them ends first); they wait for the frame. */
@@ -1288,16 +1967,20 @@ framebuffer_build(
 	framebuffer_forget_views(state, fbo);
 
 	/* The render pass, which loads and keeps what is there. */
-	result = framebuffer_pass(state, color_view != VK_NULL_HANDLE, depth_view != VK_NULL_HANDLE, color_layout, &fbo->pass);
+	result = framebuffer_pass(state, &format, color_layouts, depth_layout, &fbo->pass);
 	if (result != VK_SUCCESS) {
 		gles_report("vkCreateRenderPass", (int)result);
 		return GL_FRAMEBUFFER_UNSUPPORTED;
 	}
 
-	/* The framebuffer over the views. */
+	/* The framebuffer over the views, the colour ones in order, then the depth one. */
 	count = 0U;
-	if (color_view != VK_NULL_HANDLE)
-		views[count++] = color_view;
+	for (index = 0U; index < GLES_COLOR_ATTACHMENTS; index++) {
+		if (color_views[index] != VK_NULL_HANDLE)
+			views[count++] = color_views[index];
+	}
+
+	/* The depth view last. */
 	if (depth_view != VK_NULL_HANDLE)
 		views[count++] = depth_view;
 	memset(&create, 0, sizeof(create));
@@ -1315,46 +1998,56 @@ framebuffer_build(
 		return GL_FRAMEBUFFER_UNSUPPORTED;
 	}
 
-	/* Succeeded: made for these views. */
-	fbo->built_color = color_view;
+	/* Made for these views, formats and size. */
+	memcpy(fbo->built_colors, color_views, sizeof(color_views));
 	fbo->built_depth = depth_view;
 	fbo->extent = extent;
-	fbo->color_image = color_image;
-	fbo->color_layer = color_layer;
-	fbo->color_layout = color_layout;
+	fbo->format = format;
+	fbo->compatible = compatible;
+	for (index = 0U; index < GLES_COLOR_ATTACHMENTS; index++)
+		fbo->color_formats[index] = images->colors[index].format;
+
+	/* The depth image's aspects: depth, and stencil when its format has it. */
 	fbo->depth_aspects = 0U;
-	if (depth_view != VK_NULL_HANDLE)
-		fbo->depth_aspects = state->depth_aspects;
+	if (depth_view != VK_NULL_HANDLE) {
+		fbo->depth_aspects = VK_IMAGE_ASPECT_DEPTH_BIT;
+		if (images->depth.renderbuffer != NULL)
+			fbo->depth_aspects = images->depth.renderbuffer->aspects;
+		if (images->depth.texture != NULL && images->depth.format->stencil)
+			fbo->depth_aspects |= VK_IMAGE_ASPECT_STENCIL_BIT;
+	}
+
+	/* Succeeded: the pass and framebuffer are made. */
 	return GL_FRAMEBUFFER_COMPLETE;
 }
 
-/* Marks what a framebuffer object's pass draws into as used by this frame, and a texture as newer on the device. */
+/* Marks what a framebuffer object's pass draws into as used by this frame, and the textures' levels as newer on the device. */
 static void
 framebuffer_mark(
 	struct gles_state *state,
-	struct gles_framebuffer *fbo)
+	struct framebuffer_images *images)
 {
-	struct gles_texture *texture;
-	struct gles_renderbuffer *color;
-	struct gles_renderbuffer *depth;
-	GLenum status;
+	struct framebuffer_image *image;
+	unsigned index;
 
-	/* What is attached (the framebuffer was found complete just before). */
-	status = framebuffer_status(state, fbo, &texture, &color, &depth);
-	if (status != GL_FRAMEBUFFER_COMPLETE)
-		return;
+	/* Each attachment, the colour ones and the depth one. */
+	for (index = 0U; index <= GLES_COLOR_ATTACHMENTS; index++) {
+		image = &images->depth;
+		if (index < GLES_COLOR_ATTACHMENTS)
+			image = &images->colors[index];
+		if (image->format == NULL)
+			continue;
 
-	/* The face's level 0 on the CPU is older than the image from now on. */
-	if (texture != NULL) {
-		texture->used = state->frame;
-		texture->gpu_written |= 1U << fbo->color.face;
+		/* A texture's level on the CPU is older than the image from now on. */
+		if (image->texture != NULL) {
+			image->texture->used = state->frame;
+			image->texture->gpu_levels[image->face] |= 1U << (unsigned)image->gl_level;
+		}
+
+		/* A renderbuffer waits for the frame before it may go. */
+		if (image->renderbuffer != NULL)
+			image->renderbuffer->used = state->frame;
 	}
-
-	/* The renderbuffers wait for the frame before they may go. */
-	if (color != NULL)
-		color->used = state->frame;
-	if (depth != NULL)
-		depth->used = state->frame;
 }
 
 /* Lets a framebuffer object's render pass and framebuffer go (they wait for the frame), and forgets what they were made for. */
@@ -1374,77 +2067,79 @@ framebuffer_forget_views(
 	/* Nothing is made for any views now. */
 	fbo->pass = VK_NULL_HANDLE;
 	fbo->framebuffer = VK_NULL_HANDLE;
-	fbo->built_color = VK_NULL_HANDLE;
+	memset(fbo->built_colors, 0, sizeof(fbo->built_colors));
 	fbo->built_depth = VK_NULL_HANDLE;
 }
 
 /*
- * Makes a render pass over an RGBA8 colour image resting in color_layout
- * and the device's depth and stencil image, each optional, that loads and
- * keeps both, and waits for (and makes later work wait for) the draws,
- * copies and samples around it.
+ * Makes a render pass over colour images of formats (a slot of
+ * VK_FORMAT_UNDEFINED is an unused attachment) and a depth and stencil
+ * image, each resting in its layout, that loads and keeps them, and waits
+ * for (and makes later work wait for) the draws, copies and samples
+ * around it.
  */
 static VkResult
 framebuffer_pass(
 	struct gles_state *state,
-	int has_color,
-	int has_depth,
-	VkImageLayout color_layout,
+	const struct gles_pass_format *format,
+	const VkImageLayout *color_layouts,
+	VkImageLayout depth_layout,
 	VkRenderPass *pass)
 {
-	VkAttachmentDescription attachments[2];
-	VkAttachmentReference color_reference;
+	VkAttachmentDescription attachments[GLES_COLOR_ATTACHMENTS + 1U];
+	VkAttachmentReference color_references[GLES_COLOR_ATTACHMENTS];
 	VkAttachmentReference depth_reference;
 	VkSubpassDescription subpass;
 	VkSubpassDependency dependencies[2];
 	VkRenderPassCreateInfo create;
 	uint32_t count;
+	unsigned index;
 	VkResult result;
 
-	/* The colour attachment, loaded and kept in its resting layout. */
+	/* Each colour attachment, loaded and kept in its resting layout (an unused slot has none). */
 	memset(attachments, 0, sizeof(attachments));
-	memset(&color_reference, 0, sizeof(color_reference));
 	memset(&depth_reference, 0, sizeof(depth_reference));
 	count = 0U;
-	if (has_color) {
-		attachments[count].format = VK_FORMAT_R8G8B8A8_UNORM;
+	for (index = 0U; index < format->color_count; index++) {
+		color_references[index].attachment = VK_ATTACHMENT_UNUSED;
+		color_references[index].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		if (format->colors[index] == (uint32_t)VK_FORMAT_UNDEFINED)
+			continue;
+
+		/* The attachment. */
+		attachments[count].format = (VkFormat)format->colors[index];
 		attachments[count].samples = VK_SAMPLE_COUNT_1_BIT;
 		attachments[count].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
 		attachments[count].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 		attachments[count].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 		attachments[count].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		attachments[count].initialLayout = color_layout;
-		attachments[count].finalLayout = color_layout;
-		color_reference.attachment = count;
-		color_reference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		attachments[count].initialLayout = color_layouts[index];
+		attachments[count].finalLayout = color_layouts[index];
+		color_references[index].attachment = count;
 		count++;
 	}
 
 	/* The depth and stencil attachment, loaded and kept. */
-	if (has_depth) {
-		attachments[count].format = state->depth_format;
+	if (format->depth != (uint32_t)VK_FORMAT_UNDEFINED) {
+		attachments[count].format = (VkFormat)format->depth;
 		attachments[count].samples = VK_SAMPLE_COUNT_1_BIT;
 		attachments[count].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
 		attachments[count].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 		attachments[count].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
 		attachments[count].stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
-		attachments[count].initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-		attachments[count].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+		attachments[count].initialLayout = depth_layout;
+		attachments[count].finalLayout = depth_layout;
 		depth_reference.attachment = count;
 		depth_reference.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 		count++;
 	}
 
-	/* One subpass over both. */
+	/* One subpass over them, fragment output i into colour slot i. */
 	memset(&subpass, 0, sizeof(subpass));
 	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-	if (has_color) {
-		subpass.colorAttachmentCount = 1U;
-		subpass.pColorAttachments = &color_reference;
-	}
-
-	/* The depth and stencil reference. */
-	if (has_depth)
+	subpass.colorAttachmentCount = format->color_count;
+	subpass.pColorAttachments = color_references;
+	if (format->depth != (uint32_t)VK_FORMAT_UNDEFINED)
 		subpass.pDepthStencilAttachment = &depth_reference;
 
 	/* Earlier draws, copies and samples of the images finish before the pass writes them. */
@@ -1494,35 +2189,333 @@ framebuffer_pass(
 }
 
 /*
- * Returns the render pass framebuffer objects' pipelines of a kind are
- * made with (colour and depth each present or not; every such pass is
- * compatible with it), making it the first time; VK_NULL_HANDLE when the
- * device refused.
+ * Returns the render pass framebuffer objects' pipelines of a set of
+ * formats are made with (every framebuffer object's pass of the formats
+ * is compatible with it), making it the first time; VK_NULL_HANDLE when
+ * the device refused.
  */
 static VkRenderPass
 framebuffer_compatible(
 	struct gles_state *state,
-	int has_color,
-	int has_depth)
+	const struct gles_pass_format *format)
 {
-	VkRenderPass *pass;
+	VkImageLayout color_layouts[GLES_COLOR_ATTACHMENTS];
+	struct gles_compatible_pass *compatible;
+	unsigned index;
 	VkResult result;
+	int differs;
 
 	/* Made before. */
-	pass = &state->fbo_passes[has_color != 0][has_depth != 0];
-	if (*pass != VK_NULL_HANDLE)
-		return *pass;
+	for (compatible = state->compatible_passes; compatible != NULL; compatible = compatible->next) {
+		differs = memcmp(&compatible->format, format, sizeof(*format));
+		if (differs == 0)
+			return compatible->pass;
+	}
+
+	/* A new entry. */
+	compatible = calloc(1U, sizeof(*compatible));
+	if (compatible == NULL)
+		return VK_NULL_HANDLE;
 
 	/* Made now (the layouts do not matter to compatibility). */
-	result = framebuffer_pass(state, has_color, has_depth, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, pass);
+	for (index = 0U; index < GLES_COLOR_ATTACHMENTS; index++)
+		color_layouts[index] = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	result = framebuffer_pass(state, format, color_layouts, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, &compatible->pass);
 	if (result != VK_SUCCESS) {
 		gles_report("vkCreateRenderPass", (int)result);
-		*pass = VK_NULL_HANDLE;
+		free(compatible);
 		return VK_NULL_HANDLE;
 	}
 
 	/* Succeeded: the pass, kept. */
-	return *pass;
+	compatible->format = *format;
+	compatible->next = state->compatible_passes;
+	state->compatible_passes = compatible;
+	return compatible->pass;
+}
+
+/*
+ * Attaches (or with kind GLES_ATTACH_NONE detaches) an object to an
+ * attachment point of the framebuffer object bound to a target;
+ * GL_DEPTH_STENCIL_ATTACHMENT is both the depth and the stencil point.
+ */
+static void
+framebuffer_attach(
+	struct zegl_context *context,
+	GLenum target,
+	GLenum attachment,
+	int kind,
+	GLuint name,
+	unsigned face,
+	GLint level,
+	GLint layer)
+{
+	struct gles_state *state;
+	struct gles_framebuffer *fbo;
+	struct gles_attachment *points[2];
+	struct gles_attachment made;
+	GLuint bound;
+	unsigned index;
+	int status;
+
+	/* A framebuffer object bound to the target (the surfaces' takes no attachments). */
+	state = gles_state(context);
+	bound = 0U;
+	fbo = framebuffer_for(context, state, target, 1, &bound);
+	if (fbo == NULL)
+		return;
+
+	/* The point, or both depth and stencil. */
+	points[1] = NULL;
+	if (attachment == GL_DEPTH_STENCIL_ATTACHMENT) {
+		points[0] = &fbo->depth;
+		points[1] = &fbo->stencil;
+	} else {
+		status = framebuffer_point(attachment, &points[0], fbo);
+		if (status != 0) {
+			gles_error(context, GL_INVALID_ENUM);
+			return;
+		}
+	}
+
+	/* The attachment, by name. */
+	memset(&made, 0, sizeof(made));
+	made.kind = kind;
+	made.name = name;
+	made.face = face;
+	made.level = level;
+	made.layer = layer;
+
+	/* An open pass over the object ends; the pass is made again at the next draw. */
+	if (state->open_fbo == fbo)
+		gles_target_close(state);
+	for (index = 0U; index < 2U; index++) {
+		if (points[index] != NULL)
+			*points[index] = made;
+	}
+}
+
+/* Finds a framebuffer object's attachment point for GL's name of it; nonzero when it is not one (GL_DEPTH_STENCIL_ATTACHMENT is its callers'). */
+static int
+framebuffer_point(
+	GLenum attachment,
+	struct gles_attachment **point,
+	struct gles_framebuffer *fbo)
+{
+	/* The colour attachments. */
+	if (attachment >= GL_COLOR_ATTACHMENT0 && attachment < GL_COLOR_ATTACHMENT0 + GLES_COLOR_ATTACHMENTS) {
+		*point = &fbo->colors[attachment - GL_COLOR_ATTACHMENT0];
+		return 0;
+	}
+
+	/* The depth and the stencil points. */
+	switch (attachment) {
+	case GL_DEPTH_ATTACHMENT:
+		*point = &fbo->depth;
+		return 0;
+	case GL_STENCIL_ATTACHMENT:
+		*point = &fbo->stencil;
+		return 0;
+	default:
+		break;
+	}
+
+	/* Not one. */
+	*point = NULL;
+	return -1;
+}
+
+/*
+ * Returns the bits of a component a format has (GL_*_SIZE of a
+ * framebuffer attachment or a renderbuffer): the kept Vulkan format's, 0
+ * for a component GL's format does not have.
+ */
+static GLint
+framebuffer_bits(
+	const struct gles_format *format,
+	VkFormat vk,
+	GLenum pname)
+{
+	GLint sizes[6];
+	unsigned components;
+	unsigned index;
+	GLint each;
+
+	/* Nothing without a format. */
+	memset(sizes, 0, sizeof(sizes));
+	if (format == NULL && vk == VK_FORMAT_UNDEFINED)
+		return 0;
+
+	/* The kept format's component sizes: red, green, blue, alpha, depth, stencil. */
+	switch (vk) {
+	case VK_FORMAT_A2B10G10R10_UNORM_PACK32:
+	case VK_FORMAT_A2B10G10R10_UINT_PACK32:
+		sizes[0] = 10;
+		sizes[1] = 10;
+		sizes[2] = 10;
+		sizes[3] = 2;
+		break;
+	case VK_FORMAT_B10G11R11_UFLOAT_PACK32:
+		sizes[0] = 11;
+		sizes[1] = 11;
+		sizes[2] = 10;
+		break;
+	case VK_FORMAT_D16_UNORM:
+		sizes[4] = 16;
+		break;
+	case VK_FORMAT_X8_D24_UNORM_PACK32:
+		sizes[4] = 24;
+		break;
+	case VK_FORMAT_D32_SFLOAT:
+		sizes[4] = 32;
+		break;
+	case VK_FORMAT_D24_UNORM_S8_UINT:
+		sizes[4] = 24;
+		sizes[5] = 8;
+		break;
+	case VK_FORMAT_D32_SFLOAT_S8_UINT:
+		sizes[4] = 32;
+		sizes[5] = 8;
+		break;
+	case VK_FORMAT_S8_UINT:
+		sizes[5] = 8;
+		break;
+	default:
+		/* Components of equal size, as many as GL's format has (the fourth of an RGB format is not GL's). */
+		if (format == NULL || format->components == 0U)
+			break;
+		each = (GLint)(format->bytes * 8U / format->components);
+		components = format->components;
+		if (format->base == GL_RGB || format->base == GL_RGB_INTEGER)
+			components = 3U;
+		for (index = 0U; index < components; index++)
+			sizes[index] = each;
+		break;
+	}
+
+	/* The component asked for. */
+	switch (pname) {
+	case GL_RENDERBUFFER_RED_SIZE:
+	case GL_FRAMEBUFFER_ATTACHMENT_RED_SIZE:
+		return sizes[0];
+	case GL_RENDERBUFFER_GREEN_SIZE:
+	case GL_FRAMEBUFFER_ATTACHMENT_GREEN_SIZE:
+		return sizes[1];
+	case GL_RENDERBUFFER_BLUE_SIZE:
+	case GL_FRAMEBUFFER_ATTACHMENT_BLUE_SIZE:
+		return sizes[2];
+	case GL_RENDERBUFFER_ALPHA_SIZE:
+	case GL_FRAMEBUFFER_ATTACHMENT_ALPHA_SIZE:
+		return sizes[3];
+	case GL_RENDERBUFFER_DEPTH_SIZE:
+	case GL_FRAMEBUFFER_ATTACHMENT_DEPTH_SIZE:
+		return sizes[4];
+	default:
+		break;
+	}
+
+	/* Succeeded: the stencil bits. */
+	return sizes[5];
+}
+
+/*
+ * Returns a parameter of a framebuffer object's attachment point (GL's
+ * glGetFramebufferAttachmentParameteriv); *known is 0 when the name is
+ * not a parameter the point has.
+ */
+static GLint
+framebuffer_attachment_value(
+	struct gles_state *state,
+	const struct gles_attachment *point,
+	GLenum pname,
+	int *known)
+{
+	struct gles_texture *texture;
+	struct gles_renderbuffer *renderbuffer;
+	const struct gles_format *format;
+	VkFormat vk;
+
+	/* What is attached: its kind first. */
+	*known = 1;
+	if (pname == GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE) {
+		if (point->kind == GLES_ATTACH_TEXTURE)
+			return GL_TEXTURE;
+		if (point->kind == GLES_ATTACH_RENDERBUFFER)
+			return GL_RENDERBUFFER;
+		return GL_NONE;
+	}
+
+	/* Nothing attached has a name and nothing else. */
+	if (pname == GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME) {
+		if (point->kind == GLES_ATTACH_NONE)
+			return 0;
+		return (GLint)point->name;
+	}
+
+	/* Nothing attached has nothing else. */
+	if (point->kind == GLES_ATTACH_NONE) {
+		*known = 0;
+		return 0;
+	}
+
+	/* The format of the object, and the texture's level and layer. */
+	texture = NULL;
+	renderbuffer = NULL;
+	format = NULL;
+	vk = VK_FORMAT_UNDEFINED;
+	if (point->kind == GLES_ATTACH_TEXTURE)
+		texture = gles_names_get(&state->textures, point->name);
+	if (point->kind == GLES_ATTACH_RENDERBUFFER)
+		renderbuffer = gles_names_get(&state->renderbuffers, point->name);
+	if (texture != NULL)
+		format = texture->levels[point->face * GLES_LEVELS + (unsigned)point->level].format;
+	if (renderbuffer != NULL) {
+		format = renderbuffer->kept;
+		vk = renderbuffer->vk;
+	}
+
+	/* A texture's format is its Vulkan one. */
+	if (format != NULL && vk == VK_FORMAT_UNDEFINED)
+		vk = format->vk;
+
+	/* The parameter. */
+	switch (pname) {
+	case GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_LEVEL:
+		return point->level;
+	case GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_CUBE_MAP_FACE:
+		if (texture != NULL && texture->target == GL_TEXTURE_CUBE_MAP)
+			return (GLint)(GL_TEXTURE_CUBE_MAP_POSITIVE_X + point->face);
+		return 0;
+	case GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_LAYER:
+		return point->layer;
+	case GL_FRAMEBUFFER_ATTACHMENT_COLOR_ENCODING:
+		if (vk == VK_FORMAT_R8G8B8A8_SRGB)
+			return GL_SRGB;
+		return GL_LINEAR;
+	case GL_FRAMEBUFFER_ATTACHMENT_COMPONENT_TYPE:
+		if (format == NULL)
+			return GL_NONE;
+		if (format->kind == GLES_TEXEL_INT)
+			return GL_INT;
+		if (format->kind == GLES_TEXEL_UINT)
+			return GL_UNSIGNED_INT;
+		if (format->kind == GLES_TEXEL_FLOAT || vk == VK_FORMAT_D32_SFLOAT || vk == VK_FORMAT_D32_SFLOAT_S8_UINT)
+			return GL_FLOAT;
+		return GL_UNSIGNED_NORMALIZED;
+	case GL_FRAMEBUFFER_ATTACHMENT_RED_SIZE:
+	case GL_FRAMEBUFFER_ATTACHMENT_GREEN_SIZE:
+	case GL_FRAMEBUFFER_ATTACHMENT_BLUE_SIZE:
+	case GL_FRAMEBUFFER_ATTACHMENT_ALPHA_SIZE:
+	case GL_FRAMEBUFFER_ATTACHMENT_DEPTH_SIZE:
+	case GL_FRAMEBUFFER_ATTACHMENT_STENCIL_SIZE:
+		return framebuffer_bits(format, vk, pname);
+	default:
+		break;
+	}
+
+	/* Not a parameter. */
+	*known = 0;
+	return 0;
 }
 
 /* Returns the bound renderbuffer, recording the error when the target is wrong or none is bound. */
@@ -1556,30 +2549,60 @@ renderbuffer_bound(
 	return renderbuffer;
 }
 
-/* Reports whether a renderbuffer format is a depth or stencil one (1) or a colour one (0); -1 when OpenGL ES 2 has no such format. */
+/*
+ * Chooses the image format of a renderbuffer of an internal format: a
+ * colour or depth format a framebuffer draws into (format.c), or for
+ * GL_STENCIL_INDEX8 the device's stencil format.  Returns 0, or -1 when
+ * the internal format is not one or the device has none.
+ */
 static int
-renderbuffer_depth_format(
-	GLenum format)
+renderbuffer_format(
+	struct gles_state *state,
+	GLenum internal,
+	struct gles_renderbuffer *renderbuffer)
 {
-	/* The formats, colour first. */
-	switch (format) {
-	case GL_RGBA4:
-	case GL_RGB565:
-	case GL_RGB5_A1:
-	case GL_RGB8_OES:
-	case GL_RGBA8_OES:
+	const struct gles_format *kept;
+	uint32_t features;
+
+	/* Stencil only: an 8-bit stencil format, else the device's depth and stencil one. */
+	if (internal == GL_STENCIL_INDEX8) {
+		features = gles_image_features(state, VK_FORMAT_S8_UINT);
+		renderbuffer->kept = &framebuffer_stencil;
+		renderbuffer->depth = 1;
+		renderbuffer->vk = VK_FORMAT_S8_UINT;
+		renderbuffer->aspects = VK_IMAGE_ASPECT_STENCIL_BIT;
+		if ((features & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) != 0U)
+			return 0;
+
+		/* The device's depth and stencil format, asked for once, with stencil. */
+		if (state->depth_format == VK_FORMAT_UNDEFINED)
+			state->depth_format = zegl_depth_format(state->display, &state->depth_aspects);
+		if ((state->depth_aspects & VK_IMAGE_ASPECT_STENCIL_BIT) == 0U)
+			return -1;
+		renderbuffer->vk = state->depth_format;
+		renderbuffer->aspects = state->depth_aspects;
 		return 0;
-	case GL_DEPTH_COMPONENT16:
-	case GL_DEPTH_COMPONENT24_OES:
-	case GL_DEPTH24_STENCIL8_OES:
-	case GL_STENCIL_INDEX8:
-		return 1;
-	default:
-		break;
 	}
 
-	/* Not one. */
-	return -1;
+	/* A format of the table a framebuffer draws into. */
+	kept = gles_format_renderable(state, internal);
+	if (kept == NULL || kept->legacy)
+		return -1;
+
+	/* Succeeded: its Vulkan format and aspects. */
+	renderbuffer->kept = kept;
+	renderbuffer->vk = kept->vk;
+	renderbuffer->depth = 0;
+	renderbuffer->aspects = VK_IMAGE_ASPECT_COLOR_BIT;
+	if (kept->kind == GLES_TEXEL_DEPTH) {
+		renderbuffer->depth = 1;
+		renderbuffer->aspects = VK_IMAGE_ASPECT_DEPTH_BIT;
+		if (kept->stencil)
+			renderbuffer->aspects |= VK_IMAGE_ASPECT_STENCIL_BIT;
+	}
+
+	/* Succeeded: the format is chosen. */
+	return 0;
 }
 
 /*
@@ -1596,31 +2619,15 @@ renderbuffer_image(
 	VkMemoryAllocateInfo allocate;
 	VkImageViewCreateInfo view;
 	VkImageMemoryBarrier barrier;
-	VkImageAspectFlags aspects;
-	VkFormat format;
 	uint32_t type;
 	VkResult result;
 	int status;
 
-	/* A colour image is RGBA8, a depth one the device's depth and stencil format (asked for once). */
-	format = VK_FORMAT_R8G8B8A8_UNORM;
-	aspects = VK_IMAGE_ASPECT_COLOR_BIT;
-	if (renderbuffer->depth && state->depth_format == VK_FORMAT_UNDEFINED)
-		state->depth_format = zegl_depth_format(state->display, &state->depth_aspects);
-	if (renderbuffer->depth) {
-		format = state->depth_format;
-		aspects = state->depth_aspects;
-	}
-
-	/* A device with no depth format has no depth renderbuffers. */
-	if (format == VK_FORMAT_UNDEFINED)
-		return -1;
-
-	/* The image. */
+	/* The image, drawn into and copied from. */
 	memset(&create, 0, sizeof(create));
 	create.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 	create.imageType = VK_IMAGE_TYPE_2D;
-	create.format = format;
+	create.format = renderbuffer->vk;
 	create.extent.width = (uint32_t)renderbuffer->width;
 	create.extent.height = (uint32_t)renderbuffer->height;
 	create.extent.depth = 1U;
@@ -1630,7 +2637,7 @@ renderbuffer_image(
 	create.tiling = VK_IMAGE_TILING_OPTIMAL;
 	create.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 	if (renderbuffer->depth)
-		create.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+		create.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 	create.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	create.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	result = vkCreateImage(state->device, &create, NULL, &renderbuffer->image);
@@ -1667,8 +2674,8 @@ renderbuffer_image(
 	view.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 	view.image = renderbuffer->image;
 	view.viewType = VK_IMAGE_VIEW_TYPE_2D;
-	view.format = format;
-	view.subresourceRange.aspectMask = aspects;
+	view.format = renderbuffer->vk;
+	view.subresourceRange.aspectMask = renderbuffer->aspects;
 	view.subresourceRange.levelCount = 1U;
 	view.subresourceRange.layerCount = 1U;
 	result = vkCreateImageView(state->device, &view, NULL, &renderbuffer->view);
@@ -1700,7 +2707,7 @@ renderbuffer_image(
 	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 	barrier.image = renderbuffer->image;
-	barrier.subresourceRange.aspectMask = aspects;
+	barrier.subresourceRange.aspectMask = renderbuffer->aspects;
 	barrier.subresourceRange.levelCount = 1U;
 	barrier.subresourceRange.layerCount = 1U;
 	vkCmdPipelineBarrier(state->upload, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT,
@@ -1741,31 +2748,4 @@ renderbuffer_free(
 	/* The image, its view and memory, then the object. */
 	renderbuffer_discard(state, renderbuffer);
 	free(renderbuffer);
-}
-
-/* Finds a framebuffer object's attachment point for GL's name of it; nonzero when it is not one of the three. */
-static int
-framebuffer_point(
-	GLenum attachment,
-	struct gles_attachment **point,
-	struct gles_framebuffer *fbo)
-{
-	/* The three points of OpenGL ES 2. */
-	switch (attachment) {
-	case GL_COLOR_ATTACHMENT0:
-		*point = &fbo->color;
-		return 0;
-	case GL_DEPTH_ATTACHMENT:
-		*point = &fbo->depth;
-		return 0;
-	case GL_STENCIL_ATTACHMENT:
-		*point = &fbo->stencil;
-		return 0;
-	default:
-		break;
-	}
-
-	/* Not one. */
-	*point = NULL;
-	return -1;
 }

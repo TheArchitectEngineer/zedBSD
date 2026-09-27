@@ -57,7 +57,8 @@ static unsigned texture_shape(const struct gles_texture *texture);
 static uint32_t texture_faces(const struct gles_texture *texture);
 static int texture_mipmaps(struct gles_texture *texture, unsigned face, GLint last);
 static int texture_mipmaps_kept(struct gles_texture *texture, unsigned face, GLint last);
-static void texture_views_free(struct gles_state *state, VkImageView *views);
+static void texture_views_free(struct gles_state *state, struct gles_texture *texture);
+static void texture_opaque(const struct gles_format *format, VkComponentMapping *components);
 static unsigned char *texture_convert(struct zegl_context *context, GLenum format, GLenum type, GLsizei width, GLsizei height, const void *pixels);
 static unsigned char *texture_texels(struct zegl_context *context, const struct gles_format *storage, GLenum format, GLenum type, GLsizei width, GLsizei height, GLsizei depth, const void *pixels);
 static unsigned char *texture_from_framebuffer(struct zegl_context *context, const struct gles_format *storage, GLint x, GLint y, GLsizei width, GLsizei height);
@@ -97,7 +98,6 @@ gles_texture_sync(
 	VkImage image;
 	VkDeviceMemory memory;
 	VkImageView image_view;
-	VkImageView attach_views[GLES_FACES];
 	VkImageAspectFlags copy_aspect;
 	VkImageAspectFlags whole_aspect;
 	const struct gles_format *format;
@@ -179,8 +179,8 @@ gles_texture_sync(
 	create.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	create.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
-	/* A 2D texture or a cube map is drawn into when its format can be. */
-	if (shape == GLES_SHAPE_2D || shape == GLES_SHAPE_CUBE) {
+	/* A 2D texture, a cube map or a 2D array is drawn into when its format can be (a 3D texture's slices cannot be viewed as 2D images). */
+	if (shape != GLES_SHAPE_3D) {
 		if (format->kind != GLES_TEXEL_DEPTH && (features & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT) != 0U)
 			create.usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 		if (format->kind == GLES_TEXEL_DEPTH && (features & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) != 0U)
@@ -224,6 +224,7 @@ gles_texture_sync(
 	view.components.g = texture_swizzle(texture->swizzle[1], VK_COMPONENT_SWIZZLE_G);
 	view.components.b = texture_swizzle(texture->swizzle[2], VK_COMPONENT_SWIZZLE_B);
 	view.components.a = texture_swizzle(texture->swizzle[3], VK_COMPONENT_SWIZZLE_A);
+	texture_opaque(format, &view.components);
 	view.subresourceRange.aspectMask = copy_aspect;
 	view.subresourceRange.levelCount = levels;
 	view.subresourceRange.layerCount = layers;
@@ -236,27 +237,9 @@ gles_texture_sync(
 		return -1;
 	}
 
-	/* A 2D view of each face's first level, which a framebuffer object draws into (colour formats it can draw). */
-	memset(attach_views, 0, sizeof(attach_views));
-	memset(&view.components, 0, sizeof(view.components));
-	view.viewType = VK_IMAGE_VIEW_TYPE_2D;
-	view.subresourceRange.levelCount = 1U;
-	view.subresourceRange.layerCount = 1U;
-	for (face = 0U; face < faces && (create.usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) != 0U; face++) {
-		view.subresourceRange.baseArrayLayer = face;
-		result = vkCreateImageView(state->device, &view, NULL, &attach_views[face]);
-		if (result != VK_SUCCESS) {
-			attach_views[face] = VK_NULL_HANDLE;
-			texture_views_free(state, attach_views);
-			gles_throw_away(state, VK_NULL_HANDLE, image, image_view, memory);
-			return -1;
-		}
-	}
-
 	/* The staging buffer with the levels one after another. */
 	status = gles_device_buffer(state, total, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &staging, &staging_memory, &pointer);
 	if (status != 0) {
-		texture_views_free(state, attach_views);
 		gles_throw_away(state, VK_NULL_HANDLE, image, image_view, memory);
 		return -1;
 	}
@@ -320,18 +303,16 @@ gles_texture_sync(
 	vkDestroyBuffer(state->device, staging, NULL);
 	vkFreeMemory(state->device, staging_memory, NULL);
 	if (status != 0) {
-		texture_views_free(state, attach_views);
 		gles_throw_away(state, VK_NULL_HANDLE, image, image_view, memory);
 		return -1;
 	}
 
-	/* The new image replaces the old one, which waits for the frame with its views. */
+	/* The new image replaces the old one, which waits for the frame with the views of it framebuffer objects drew into. */
 	gles_throw_away(state, VK_NULL_HANDLE, texture->image, texture->view, texture->memory);
-	texture_views_free(state, texture->attach_views);
+	texture_views_free(state, texture);
 	texture->image = image;
 	texture->memory = memory;
 	texture->view = image_view;
-	memcpy(texture->attach_views, attach_views, sizeof(attach_views));
 	texture->level_count = levels;
 	texture->image_format = format;
 	texture->dirty = 0;
@@ -565,7 +546,7 @@ gles_texture_free(
 
 	/* The device image and the views of its faces. */
 	gles_throw_away(state, VK_NULL_HANDLE, texture->image, texture->view, texture->memory);
-	texture_views_free(state, texture->attach_views);
+	texture_views_free(state, texture);
 
 	/* The levels of every face, then the object. */
 	for (level = 0U; level < GLES_FACES * GLES_LEVELS; level++)
@@ -614,6 +595,68 @@ gles_texture_define_volume(
 {
 	/* The level of the only face. */
 	texture_level_set(texture, 0U, level, width, height, depth, pixels, format);
+}
+
+/*
+ * Returns the view of one level and one layer (a cube map's face, a 2D
+ * array's layer) of a texture's image that a framebuffer object draws
+ * into, making it at its first use; VK_NULL_HANDLE when the image has no
+ * such level or layer, or the device refused.  The level is the image's
+ * (0: the base level).
+ */
+VkImageView
+gles_texture_attach_view(
+	struct gles_state *state,
+	struct gles_texture *texture,
+	uint32_t level,
+	uint32_t layer)
+{
+	VkImageViewCreateInfo create;
+	struct gles_attach_view *entry;
+	VkResult result;
+
+	/* An image with the level. */
+	if (texture->image == VK_NULL_HANDLE || level >= texture->level_count)
+		return VK_NULL_HANDLE;
+
+	/* One made before. */
+	for (entry = texture->attach_views; entry != NULL; entry = entry->next) {
+		if (entry->level == level && entry->layer == layer)
+			return entry->view;
+	}
+
+	/* A new entry. */
+	entry = calloc(1U, sizeof(*entry));
+	if (entry == NULL)
+		return VK_NULL_HANDLE;
+
+	/* A 2D view of the level and layer, every aspect the format draws. */
+	memset(&create, 0, sizeof(create));
+	create.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	create.image = texture->image;
+	create.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	create.format = texture->image_format->vk;
+	create.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	if (texture->image_format->kind == GLES_TEXEL_DEPTH)
+		create.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+	if (texture->image_format->stencil)
+		create.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+	create.subresourceRange.baseMipLevel = level;
+	create.subresourceRange.levelCount = 1U;
+	create.subresourceRange.baseArrayLayer = layer;
+	create.subresourceRange.layerCount = 1U;
+	result = vkCreateImageView(state->device, &create, NULL, &entry->view);
+	if (result != VK_SUCCESS) {
+		free(entry);
+		return VK_NULL_HANDLE;
+	}
+
+	/* Succeeded: the view, kept with the image. */
+	entry->level = level;
+	entry->layer = layer;
+	entry->next = texture->attach_views;
+	texture->attach_views = entry;
+	return entry->view;
 }
 
 /*
@@ -2619,7 +2662,6 @@ texture_parameter(
 	GLfloat number)
 {
 	GLenum mode;
-	int mipmapped;
 	int status;
 
 	/* The value as an enum. */
@@ -2667,21 +2709,6 @@ texture_parameter(
 		texture->swizzle[pname - GL_TEXTURE_SWIZZLE_R] = mode;
 		texture->dirty = 1;
 		return 0;
-	case GL_TEXTURE_MIN_FILTER:
-		mipmapped = texture_mipmapped(mode);
-		if (mode != GL_NEAREST && mode != GL_LINEAR && !mipmapped)
-			break;
-
-		/* A new filter may change the image's levels: what the device drew is read back first. */
-		if (texture->sampling.min_filter != mode) {
-			status = gles_texture_fetch(context, texture);
-			if (status != 0)
-				return -1;
-			texture->dirty = 1;
-		}
-
-		/* The filter is set. */
-		break;
 	default:
 		break;
 	}
@@ -2922,7 +2949,9 @@ texture_nearest(
  * Returns how many levels a texture's image has: from the base level, the
  * chain of halving sizes (on every face, of the base level's format, up
  * to the most level; a 3D texture's depth halves too, a 2D array's layers
- * stay as many) when it mipmaps, else 1.
+ * stay as many).  The image has the chain whatever the filter, so a
+ * framebuffer object can draw into any of its levels; a sampler without
+ * mipmaps reads the first only.
  */
 static uint32_t
 texture_levels(
@@ -2938,13 +2967,7 @@ texture_levels(
 	int height;
 	int depth;
 	int halve_depth;
-	int mipmapped;
 	int whole;
-
-	/* The base level only, unless the filter mipmaps. */
-	mipmapped = texture_mipmapped(texture->sampling.min_filter);
-	if (!mipmapped)
-		return 1U;
 
 	/* No more than the levels from the base to the most one. */
 	limit = GLES_LEVELS - (uint32_t)texture->base_level;
@@ -3220,17 +3243,51 @@ texture_swizzle(
 	return swizzle;
 }
 
-/* Lets the per-face views of an image go (they wait for the frame), leaving the array empty. */
+/* Lets the views of a texture's image framebuffer objects drew into go (they wait for the frame), leaving none. */
 static void
 texture_views_free(
 	struct gles_state *state,
-	VkImageView *views)
+	struct gles_texture *texture)
 {
-	unsigned face;
+	struct gles_attach_view *entry;
 
-	/* Each face's view (none is VK_NULL_HANDLE, which throws nothing away). */
-	for (face = 0U; face < GLES_FACES; face++) {
-		gles_throw_away(state, VK_NULL_HANDLE, VK_NULL_HANDLE, views[face], VK_NULL_HANDLE);
-		views[face] = VK_NULL_HANDLE;
+	/* Each view, then its entry. */
+	while (texture->attach_views != NULL) {
+		entry = texture->attach_views;
+		texture->attach_views = entry->next;
+		gles_throw_away(state, VK_NULL_HANDLE, VK_NULL_HANDLE, entry->view, VK_NULL_HANDLE);
+		free(entry);
+	}
+}
+
+/*
+ * Makes a view read alpha as 1 where it would read the kept alpha of a
+ * format GL has none for (an RGB format kept in four channels, which a
+ * framebuffer object may have drawn alpha into).
+ */
+static void
+texture_opaque(
+	const struct gles_format *format,
+	VkComponentMapping *components)
+{
+	VkComponentSwizzle *channels[4];
+	unsigned index;
+
+	/* Only the formats with three channels of GL's kept in four. */
+	if (format->base != GL_RGB && format->base != GL_RGB_INTEGER)
+		return;
+	if (format->components != 4U)
+		return;
+
+	/* Each channel that reads alpha (its own, the identity, for the fourth) reads 1. */
+	channels[0] = &components->r;
+	channels[1] = &components->g;
+	channels[2] = &components->b;
+	channels[3] = &components->a;
+	for (index = 0U; index < 4U; index++) {
+		if (*channels[index] == VK_COMPONENT_SWIZZLE_A)
+			*channels[index] = VK_COMPONENT_SWIZZLE_ONE;
+		if (index == 3U && *channels[index] == VK_COMPONENT_SWIZZLE_IDENTITY)
+			*channels[index] = VK_COMPONENT_SWIZZLE_ONE;
 	}
 }

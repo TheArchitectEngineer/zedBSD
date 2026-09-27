@@ -47,78 +47,78 @@ struct format_texel {
  */
 static const struct gles_format format_table[] = {
 	/* OpenGL ES 2's unsized formats: RGBA8, converted by texture.c. */
-	{ GL_RGBA, GL_RGBA, VK_FORMAT_R8G8B8A8_UNORM, 4U, 4U, GLES_TEXEL_NORM, 1, 1, 0 },
-	{ GL_RGB, GL_RGB, VK_FORMAT_R8G8B8A8_UNORM, 4U, 4U, GLES_TEXEL_NORM, 1, 1, 0 },
-	{ GL_LUMINANCE_ALPHA, GL_LUMINANCE_ALPHA, VK_FORMAT_R8G8B8A8_UNORM, 4U, 4U, GLES_TEXEL_NORM, 1, 1, 0 },
-	{ GL_LUMINANCE, GL_LUMINANCE, VK_FORMAT_R8G8B8A8_UNORM, 4U, 4U, GLES_TEXEL_NORM, 1, 1, 0 },
-	{ GL_ALPHA, GL_ALPHA, VK_FORMAT_R8G8B8A8_UNORM, 4U, 4U, GLES_TEXEL_NORM, 1, 1, 0 },
-	{ GL_BGRA_EXT, GL_BGRA_EXT, VK_FORMAT_R8G8B8A8_UNORM, 4U, 4U, GLES_TEXEL_NORM, 1, 1, 0 },
+	{ GL_RGBA, GL_RGBA, VK_FORMAT_R8G8B8A8_UNORM, 4U, 4U, GLES_TEXEL_NORM, 1, 1, 0, 1 },
+	{ GL_RGB, GL_RGB, VK_FORMAT_R8G8B8A8_UNORM, 4U, 4U, GLES_TEXEL_NORM, 1, 1, 0, 1 },
+	{ GL_LUMINANCE_ALPHA, GL_LUMINANCE_ALPHA, VK_FORMAT_R8G8B8A8_UNORM, 4U, 4U, GLES_TEXEL_NORM, 1, 1, 0, 0 },
+	{ GL_LUMINANCE, GL_LUMINANCE, VK_FORMAT_R8G8B8A8_UNORM, 4U, 4U, GLES_TEXEL_NORM, 1, 1, 0, 0 },
+	{ GL_ALPHA, GL_ALPHA, VK_FORMAT_R8G8B8A8_UNORM, 4U, 4U, GLES_TEXEL_NORM, 1, 1, 0, 0 },
+	{ GL_BGRA_EXT, GL_BGRA_EXT, VK_FORMAT_R8G8B8A8_UNORM, 4U, 4U, GLES_TEXEL_NORM, 1, 1, 0, 1 },
 
 	/* Normalized formats. */
-	{ GL_R8, GL_RED, VK_FORMAT_R8_UNORM, 1U, 1U, GLES_TEXEL_NORM, 1, 0, 0 },
-	{ GL_R8_SNORM, GL_RED, VK_FORMAT_R8_SNORM, 1U, 1U, GLES_TEXEL_NORM, 1, 0, 0 },
-	{ GL_RG8, GL_RG, VK_FORMAT_R8G8_UNORM, 2U, 2U, GLES_TEXEL_NORM, 1, 0, 0 },
-	{ GL_RG8_SNORM, GL_RG, VK_FORMAT_R8G8_SNORM, 2U, 2U, GLES_TEXEL_NORM, 1, 0, 0 },
-	{ GL_RGB8, GL_RGB, VK_FORMAT_R8G8B8A8_UNORM, 4U, 4U, GLES_TEXEL_NORM, 1, 0, 0 },
-	{ GL_SRGB8, GL_RGB, VK_FORMAT_R8G8B8A8_SRGB, 4U, 4U, GLES_TEXEL_NORM, 1, 0, 0 },
-	{ GL_RGB565, GL_RGB, VK_FORMAT_R8G8B8A8_UNORM, 4U, 4U, GLES_TEXEL_NORM, 1, 0, 0 },
-	{ GL_RGB8_SNORM, GL_RGB, VK_FORMAT_R8G8B8A8_SNORM, 4U, 4U, GLES_TEXEL_NORM, 1, 0, 0 },
-	{ GL_RGBA8, GL_RGBA, VK_FORMAT_R8G8B8A8_UNORM, 4U, 4U, GLES_TEXEL_NORM, 1, 0, 0 },
-	{ GL_SRGB8_ALPHA8, GL_RGBA, VK_FORMAT_R8G8B8A8_SRGB, 4U, 4U, GLES_TEXEL_NORM, 1, 0, 0 },
-	{ GL_RGBA8_SNORM, GL_RGBA, VK_FORMAT_R8G8B8A8_SNORM, 4U, 4U, GLES_TEXEL_NORM, 1, 0, 0 },
-	{ GL_RGB5_A1, GL_RGBA, VK_FORMAT_R8G8B8A8_UNORM, 4U, 4U, GLES_TEXEL_NORM, 1, 0, 0 },
-	{ GL_RGBA4, GL_RGBA, VK_FORMAT_R8G8B8A8_UNORM, 4U, 4U, GLES_TEXEL_NORM, 1, 0, 0 },
-	{ GL_RGB10_A2, GL_RGBA, VK_FORMAT_A2B10G10R10_UNORM_PACK32, 4U, 4U, GLES_TEXEL_NORM, 1, 0, 0 },
+	{ GL_R8, GL_RED, VK_FORMAT_R8_UNORM, 1U, 1U, GLES_TEXEL_NORM, 1, 0, 0, 1 },
+	{ GL_R8_SNORM, GL_RED, VK_FORMAT_R8_SNORM, 1U, 1U, GLES_TEXEL_NORM, 1, 0, 0, 0 },
+	{ GL_RG8, GL_RG, VK_FORMAT_R8G8_UNORM, 2U, 2U, GLES_TEXEL_NORM, 1, 0, 0, 1 },
+	{ GL_RG8_SNORM, GL_RG, VK_FORMAT_R8G8_SNORM, 2U, 2U, GLES_TEXEL_NORM, 1, 0, 0, 0 },
+	{ GL_RGB8, GL_RGB, VK_FORMAT_R8G8B8A8_UNORM, 4U, 4U, GLES_TEXEL_NORM, 1, 0, 0, 1 },
+	{ GL_SRGB8, GL_RGB, VK_FORMAT_R8G8B8A8_SRGB, 4U, 4U, GLES_TEXEL_NORM, 1, 0, 0, 0 },
+	{ GL_RGB565, GL_RGB, VK_FORMAT_R8G8B8A8_UNORM, 4U, 4U, GLES_TEXEL_NORM, 1, 0, 0, 1 },
+	{ GL_RGB8_SNORM, GL_RGB, VK_FORMAT_R8G8B8A8_SNORM, 4U, 4U, GLES_TEXEL_NORM, 1, 0, 0, 0 },
+	{ GL_RGBA8, GL_RGBA, VK_FORMAT_R8G8B8A8_UNORM, 4U, 4U, GLES_TEXEL_NORM, 1, 0, 0, 1 },
+	{ GL_SRGB8_ALPHA8, GL_RGBA, VK_FORMAT_R8G8B8A8_SRGB, 4U, 4U, GLES_TEXEL_NORM, 1, 0, 0, 1 },
+	{ GL_RGBA8_SNORM, GL_RGBA, VK_FORMAT_R8G8B8A8_SNORM, 4U, 4U, GLES_TEXEL_NORM, 1, 0, 0, 0 },
+	{ GL_RGB5_A1, GL_RGBA, VK_FORMAT_R8G8B8A8_UNORM, 4U, 4U, GLES_TEXEL_NORM, 1, 0, 0, 1 },
+	{ GL_RGBA4, GL_RGBA, VK_FORMAT_R8G8B8A8_UNORM, 4U, 4U, GLES_TEXEL_NORM, 1, 0, 0, 1 },
+	{ GL_RGB10_A2, GL_RGBA, VK_FORMAT_A2B10G10R10_UNORM_PACK32, 4U, 4U, GLES_TEXEL_NORM, 1, 0, 0, 1 },
 
 	/* Float formats (32-bit floats cannot be filtered in OpenGL ES 3). */
-	{ GL_R16F, GL_RED, VK_FORMAT_R16_SFLOAT, 2U, 1U, GLES_TEXEL_FLOAT, 1, 0, 0 },
-	{ GL_R32F, GL_RED, VK_FORMAT_R32_SFLOAT, 4U, 1U, GLES_TEXEL_FLOAT, 0, 0, 0 },
-	{ GL_RG16F, GL_RG, VK_FORMAT_R16G16_SFLOAT, 4U, 2U, GLES_TEXEL_FLOAT, 1, 0, 0 },
-	{ GL_RG32F, GL_RG, VK_FORMAT_R32G32_SFLOAT, 8U, 2U, GLES_TEXEL_FLOAT, 0, 0, 0 },
-	{ GL_R11F_G11F_B10F, GL_RGB, VK_FORMAT_B10G11R11_UFLOAT_PACK32, 4U, 3U, GLES_TEXEL_FLOAT, 1, 0, 0 },
-	{ GL_RGB9_E5, GL_RGB, VK_FORMAT_E5B9G9R9_UFLOAT_PACK32, 4U, 3U, GLES_TEXEL_FLOAT, 1, 0, 0 },
-	{ GL_RGB16F, GL_RGB, VK_FORMAT_R16G16B16A16_SFLOAT, 8U, 4U, GLES_TEXEL_FLOAT, 1, 0, 0 },
-	{ GL_RGB32F, GL_RGB, VK_FORMAT_R32G32B32A32_SFLOAT, 16U, 4U, GLES_TEXEL_FLOAT, 0, 0, 0 },
-	{ GL_RGBA16F, GL_RGBA, VK_FORMAT_R16G16B16A16_SFLOAT, 8U, 4U, GLES_TEXEL_FLOAT, 1, 0, 0 },
-	{ GL_RGBA32F, GL_RGBA, VK_FORMAT_R32G32B32A32_SFLOAT, 16U, 4U, GLES_TEXEL_FLOAT, 0, 0, 0 },
+	{ GL_R16F, GL_RED, VK_FORMAT_R16_SFLOAT, 2U, 1U, GLES_TEXEL_FLOAT, 1, 0, 0, 1 },
+	{ GL_R32F, GL_RED, VK_FORMAT_R32_SFLOAT, 4U, 1U, GLES_TEXEL_FLOAT, 0, 0, 0, 1 },
+	{ GL_RG16F, GL_RG, VK_FORMAT_R16G16_SFLOAT, 4U, 2U, GLES_TEXEL_FLOAT, 1, 0, 0, 1 },
+	{ GL_RG32F, GL_RG, VK_FORMAT_R32G32_SFLOAT, 8U, 2U, GLES_TEXEL_FLOAT, 0, 0, 0, 1 },
+	{ GL_R11F_G11F_B10F, GL_RGB, VK_FORMAT_B10G11R11_UFLOAT_PACK32, 4U, 3U, GLES_TEXEL_FLOAT, 1, 0, 0, 1 },
+	{ GL_RGB9_E5, GL_RGB, VK_FORMAT_E5B9G9R9_UFLOAT_PACK32, 4U, 3U, GLES_TEXEL_FLOAT, 1, 0, 0, 0 },
+	{ GL_RGB16F, GL_RGB, VK_FORMAT_R16G16B16A16_SFLOAT, 8U, 4U, GLES_TEXEL_FLOAT, 1, 0, 0, 0 },
+	{ GL_RGB32F, GL_RGB, VK_FORMAT_R32G32B32A32_SFLOAT, 16U, 4U, GLES_TEXEL_FLOAT, 0, 0, 0, 0 },
+	{ GL_RGBA16F, GL_RGBA, VK_FORMAT_R16G16B16A16_SFLOAT, 8U, 4U, GLES_TEXEL_FLOAT, 1, 0, 0, 1 },
+	{ GL_RGBA32F, GL_RGBA, VK_FORMAT_R32G32B32A32_SFLOAT, 16U, 4U, GLES_TEXEL_FLOAT, 0, 0, 0, 1 },
 
 	/* Unsigned integer formats. */
-	{ GL_R8UI, GL_RED_INTEGER, VK_FORMAT_R8_UINT, 1U, 1U, GLES_TEXEL_UINT, 0, 0, 0 },
-	{ GL_R16UI, GL_RED_INTEGER, VK_FORMAT_R16_UINT, 2U, 1U, GLES_TEXEL_UINT, 0, 0, 0 },
-	{ GL_R32UI, GL_RED_INTEGER, VK_FORMAT_R32_UINT, 4U, 1U, GLES_TEXEL_UINT, 0, 0, 0 },
-	{ GL_RG8UI, GL_RG_INTEGER, VK_FORMAT_R8G8_UINT, 2U, 2U, GLES_TEXEL_UINT, 0, 0, 0 },
-	{ GL_RG16UI, GL_RG_INTEGER, VK_FORMAT_R16G16_UINT, 4U, 2U, GLES_TEXEL_UINT, 0, 0, 0 },
-	{ GL_RG32UI, GL_RG_INTEGER, VK_FORMAT_R32G32_UINT, 8U, 2U, GLES_TEXEL_UINT, 0, 0, 0 },
-	{ GL_RGB8UI, GL_RGB_INTEGER, VK_FORMAT_R8G8B8A8_UINT, 4U, 4U, GLES_TEXEL_UINT, 0, 0, 0 },
-	{ GL_RGB16UI, GL_RGB_INTEGER, VK_FORMAT_R16G16B16A16_UINT, 8U, 4U, GLES_TEXEL_UINT, 0, 0, 0 },
-	{ GL_RGB32UI, GL_RGB_INTEGER, VK_FORMAT_R32G32B32A32_UINT, 16U, 4U, GLES_TEXEL_UINT, 0, 0, 0 },
-	{ GL_RGBA8UI, GL_RGBA_INTEGER, VK_FORMAT_R8G8B8A8_UINT, 4U, 4U, GLES_TEXEL_UINT, 0, 0, 0 },
-	{ GL_RGB10_A2UI, GL_RGBA_INTEGER, VK_FORMAT_A2B10G10R10_UINT_PACK32, 4U, 4U, GLES_TEXEL_UINT, 0, 0, 0 },
-	{ GL_RGBA16UI, GL_RGBA_INTEGER, VK_FORMAT_R16G16B16A16_UINT, 8U, 4U, GLES_TEXEL_UINT, 0, 0, 0 },
-	{ GL_RGBA32UI, GL_RGBA_INTEGER, VK_FORMAT_R32G32B32A32_UINT, 16U, 4U, GLES_TEXEL_UINT, 0, 0, 0 },
+	{ GL_R8UI, GL_RED_INTEGER, VK_FORMAT_R8_UINT, 1U, 1U, GLES_TEXEL_UINT, 0, 0, 0, 1 },
+	{ GL_R16UI, GL_RED_INTEGER, VK_FORMAT_R16_UINT, 2U, 1U, GLES_TEXEL_UINT, 0, 0, 0, 1 },
+	{ GL_R32UI, GL_RED_INTEGER, VK_FORMAT_R32_UINT, 4U, 1U, GLES_TEXEL_UINT, 0, 0, 0, 1 },
+	{ GL_RG8UI, GL_RG_INTEGER, VK_FORMAT_R8G8_UINT, 2U, 2U, GLES_TEXEL_UINT, 0, 0, 0, 1 },
+	{ GL_RG16UI, GL_RG_INTEGER, VK_FORMAT_R16G16_UINT, 4U, 2U, GLES_TEXEL_UINT, 0, 0, 0, 1 },
+	{ GL_RG32UI, GL_RG_INTEGER, VK_FORMAT_R32G32_UINT, 8U, 2U, GLES_TEXEL_UINT, 0, 0, 0, 1 },
+	{ GL_RGB8UI, GL_RGB_INTEGER, VK_FORMAT_R8G8B8A8_UINT, 4U, 4U, GLES_TEXEL_UINT, 0, 0, 0, 0 },
+	{ GL_RGB16UI, GL_RGB_INTEGER, VK_FORMAT_R16G16B16A16_UINT, 8U, 4U, GLES_TEXEL_UINT, 0, 0, 0, 0 },
+	{ GL_RGB32UI, GL_RGB_INTEGER, VK_FORMAT_R32G32B32A32_UINT, 16U, 4U, GLES_TEXEL_UINT, 0, 0, 0, 0 },
+	{ GL_RGBA8UI, GL_RGBA_INTEGER, VK_FORMAT_R8G8B8A8_UINT, 4U, 4U, GLES_TEXEL_UINT, 0, 0, 0, 1 },
+	{ GL_RGB10_A2UI, GL_RGBA_INTEGER, VK_FORMAT_A2B10G10R10_UINT_PACK32, 4U, 4U, GLES_TEXEL_UINT, 0, 0, 0, 1 },
+	{ GL_RGBA16UI, GL_RGBA_INTEGER, VK_FORMAT_R16G16B16A16_UINT, 8U, 4U, GLES_TEXEL_UINT, 0, 0, 0, 1 },
+	{ GL_RGBA32UI, GL_RGBA_INTEGER, VK_FORMAT_R32G32B32A32_UINT, 16U, 4U, GLES_TEXEL_UINT, 0, 0, 0, 1 },
 
 	/* Signed integer formats. */
-	{ GL_R8I, GL_RED_INTEGER, VK_FORMAT_R8_SINT, 1U, 1U, GLES_TEXEL_INT, 0, 0, 0 },
-	{ GL_R16I, GL_RED_INTEGER, VK_FORMAT_R16_SINT, 2U, 1U, GLES_TEXEL_INT, 0, 0, 0 },
-	{ GL_R32I, GL_RED_INTEGER, VK_FORMAT_R32_SINT, 4U, 1U, GLES_TEXEL_INT, 0, 0, 0 },
-	{ GL_RG8I, GL_RG_INTEGER, VK_FORMAT_R8G8_SINT, 2U, 2U, GLES_TEXEL_INT, 0, 0, 0 },
-	{ GL_RG16I, GL_RG_INTEGER, VK_FORMAT_R16G16_SINT, 4U, 2U, GLES_TEXEL_INT, 0, 0, 0 },
-	{ GL_RG32I, GL_RG_INTEGER, VK_FORMAT_R32G32_SINT, 8U, 2U, GLES_TEXEL_INT, 0, 0, 0 },
-	{ GL_RGB8I, GL_RGB_INTEGER, VK_FORMAT_R8G8B8A8_SINT, 4U, 4U, GLES_TEXEL_INT, 0, 0, 0 },
-	{ GL_RGB16I, GL_RGB_INTEGER, VK_FORMAT_R16G16B16A16_SINT, 8U, 4U, GLES_TEXEL_INT, 0, 0, 0 },
-	{ GL_RGB32I, GL_RGB_INTEGER, VK_FORMAT_R32G32B32A32_SINT, 16U, 4U, GLES_TEXEL_INT, 0, 0, 0 },
-	{ GL_RGBA8I, GL_RGBA_INTEGER, VK_FORMAT_R8G8B8A8_SINT, 4U, 4U, GLES_TEXEL_INT, 0, 0, 0 },
-	{ GL_RGBA16I, GL_RGBA_INTEGER, VK_FORMAT_R16G16B16A16_SINT, 8U, 4U, GLES_TEXEL_INT, 0, 0, 0 },
-	{ GL_RGBA32I, GL_RGBA_INTEGER, VK_FORMAT_R32G32B32A32_SINT, 16U, 4U, GLES_TEXEL_INT, 0, 0, 0 },
+	{ GL_R8I, GL_RED_INTEGER, VK_FORMAT_R8_SINT, 1U, 1U, GLES_TEXEL_INT, 0, 0, 0, 1 },
+	{ GL_R16I, GL_RED_INTEGER, VK_FORMAT_R16_SINT, 2U, 1U, GLES_TEXEL_INT, 0, 0, 0, 1 },
+	{ GL_R32I, GL_RED_INTEGER, VK_FORMAT_R32_SINT, 4U, 1U, GLES_TEXEL_INT, 0, 0, 0, 1 },
+	{ GL_RG8I, GL_RG_INTEGER, VK_FORMAT_R8G8_SINT, 2U, 2U, GLES_TEXEL_INT, 0, 0, 0, 1 },
+	{ GL_RG16I, GL_RG_INTEGER, VK_FORMAT_R16G16_SINT, 4U, 2U, GLES_TEXEL_INT, 0, 0, 0, 1 },
+	{ GL_RG32I, GL_RG_INTEGER, VK_FORMAT_R32G32_SINT, 8U, 2U, GLES_TEXEL_INT, 0, 0, 0, 1 },
+	{ GL_RGB8I, GL_RGB_INTEGER, VK_FORMAT_R8G8B8A8_SINT, 4U, 4U, GLES_TEXEL_INT, 0, 0, 0, 0 },
+	{ GL_RGB16I, GL_RGB_INTEGER, VK_FORMAT_R16G16B16A16_SINT, 8U, 4U, GLES_TEXEL_INT, 0, 0, 0, 0 },
+	{ GL_RGB32I, GL_RGB_INTEGER, VK_FORMAT_R32G32B32A32_SINT, 16U, 4U, GLES_TEXEL_INT, 0, 0, 0, 0 },
+	{ GL_RGBA8I, GL_RGBA_INTEGER, VK_FORMAT_R8G8B8A8_SINT, 4U, 4U, GLES_TEXEL_INT, 0, 0, 0, 1 },
+	{ GL_RGBA16I, GL_RGBA_INTEGER, VK_FORMAT_R16G16B16A16_SINT, 8U, 4U, GLES_TEXEL_INT, 0, 0, 0, 1 },
+	{ GL_RGBA32I, GL_RGBA_INTEGER, VK_FORMAT_R32G32B32A32_SINT, 16U, 4U, GLES_TEXEL_INT, 0, 0, 0, 1 },
 
 	/* Depth formats, as their depth aspect is copied (24-bit depth in the low bits of a word). */
-	{ GL_DEPTH_COMPONENT16, GL_DEPTH_COMPONENT, VK_FORMAT_D16_UNORM, 2U, 1U, GLES_TEXEL_DEPTH, 0, 0, 0 },
-	{ GL_DEPTH_COMPONENT24, GL_DEPTH_COMPONENT, VK_FORMAT_X8_D24_UNORM_PACK32, 4U, 1U, GLES_TEXEL_DEPTH, 0, 0, 0 },
-	{ GL_DEPTH_COMPONENT24, GL_DEPTH_COMPONENT, VK_FORMAT_D32_SFLOAT, 4U, 1U, GLES_TEXEL_DEPTH, 0, 0, 0 },
-	{ GL_DEPTH_COMPONENT32F, GL_DEPTH_COMPONENT, VK_FORMAT_D32_SFLOAT, 4U, 1U, GLES_TEXEL_DEPTH, 0, 0, 0 },
-	{ GL_DEPTH24_STENCIL8, GL_DEPTH_STENCIL, VK_FORMAT_D24_UNORM_S8_UINT, 4U, 1U, GLES_TEXEL_DEPTH, 0, 0, 1 },
-	{ GL_DEPTH24_STENCIL8, GL_DEPTH_STENCIL, VK_FORMAT_D32_SFLOAT_S8_UINT, 4U, 1U, GLES_TEXEL_DEPTH, 0, 0, 1 },
-	{ GL_DEPTH32F_STENCIL8, GL_DEPTH_STENCIL, VK_FORMAT_D32_SFLOAT_S8_UINT, 4U, 1U, GLES_TEXEL_DEPTH, 0, 0, 1 }
+	{ GL_DEPTH_COMPONENT16, GL_DEPTH_COMPONENT, VK_FORMAT_D16_UNORM, 2U, 1U, GLES_TEXEL_DEPTH, 0, 0, 0, 1 },
+	{ GL_DEPTH_COMPONENT24, GL_DEPTH_COMPONENT, VK_FORMAT_X8_D24_UNORM_PACK32, 4U, 1U, GLES_TEXEL_DEPTH, 0, 0, 0, 1 },
+	{ GL_DEPTH_COMPONENT24, GL_DEPTH_COMPONENT, VK_FORMAT_D32_SFLOAT, 4U, 1U, GLES_TEXEL_DEPTH, 0, 0, 0, 1 },
+	{ GL_DEPTH_COMPONENT32F, GL_DEPTH_COMPONENT, VK_FORMAT_D32_SFLOAT, 4U, 1U, GLES_TEXEL_DEPTH, 0, 0, 0, 1 },
+	{ GL_DEPTH24_STENCIL8, GL_DEPTH_STENCIL, VK_FORMAT_D24_UNORM_S8_UINT, 4U, 1U, GLES_TEXEL_DEPTH, 0, 0, 1, 1 },
+	{ GL_DEPTH24_STENCIL8, GL_DEPTH_STENCIL, VK_FORMAT_D32_SFLOAT_S8_UINT, 4U, 1U, GLES_TEXEL_DEPTH, 0, 0, 1, 1 },
+	{ GL_DEPTH32F_STENCIL8, GL_DEPTH_STENCIL, VK_FORMAT_D32_SFLOAT_S8_UINT, 4U, 1U, GLES_TEXEL_DEPTH, 0, 0, 1, 1 }
 };
 
 static int format_valid(const struct gles_format *storage, GLenum format, GLenum type, size_t *texel);
@@ -129,6 +129,7 @@ static void format_decode(GLenum format, GLenum type, int integer, const unsigne
 static void format_place(GLenum format, int integer, const float *values, const uint32_t *bits, unsigned count, struct format_texel *texel);
 static void format_encode(const struct gles_format *storage, const struct format_texel *texel, unsigned char *out);
 static void format_read_kept(const struct gles_format *storage, const unsigned char *kept, float *values);
+static void format_read_integers(const struct gles_format *storage, const unsigned char *kept, uint32_t *values);
 static uint16_t format_half(float value);
 static uint32_t format_small_float(float value, unsigned mantissa_bits);
 static float format_from_small_float(uint32_t bits, unsigned mantissa_bits);
@@ -482,6 +483,152 @@ gles_pixel_size(
 
 	/* Succeeded: the components' bytes (0 when either is not one). */
 	return format_type_size(type) * components;
+}
+
+/*
+ * Returns the format a renderbuffer of an internal format is kept in: the
+ * first entry a framebuffer object may draw into whose Vulkan format the
+ * device can attach (as colour, or as depth and stencil); NULL when the
+ * internal format is not a renderable one or the device has none.
+ */
+const struct gles_format *
+gles_format_renderable(
+	struct gles_state *state,
+	GLenum internal)
+{
+	uint32_t features;
+	uint32_t wanted;
+	unsigned index;
+
+	/* The first renderable entry of the format the device attaches. */
+	for (index = 0U; index < sizeof(format_table) / sizeof(format_table[0]); index++) {
+		if (format_table[index].internal != internal || !format_table[index].renderable)
+			continue;
+
+		/* A colour attachment, or a depth and stencil one. */
+		wanted = VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
+		if (format_table[index].kind == GLES_TEXEL_DEPTH)
+			wanted = VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
+		features = gles_image_features(state, format_table[index].vk);
+		if ((features & wanted) != 0U)
+			return &format_table[index];
+	}
+
+	/* None. */
+	return NULL;
+}
+
+/*
+ * Reports whether glReadPixels may read texels of a kept format as a
+ * format and type: normalized ones as RGBA and unsigned bytes (RGB10_A2
+ * also packed), float ones as RGBA floats, integer ones as RGBA_INTEGER
+ * ints or unsigned ints.
+ */
+int
+gles_read_format_ok(
+	const struct gles_format *storage,
+	GLenum format,
+	GLenum type)
+{
+	GLenum own_format;
+	GLenum own_type;
+
+	/* Normalized texels as unsigned bytes. */
+	if (storage->kind == GLES_TEXEL_NORM && format == GL_RGBA && type == GL_UNSIGNED_BYTE)
+		return 1;
+
+	/* The format's own pair. */
+	gles_read_format(storage, &own_format, &own_type);
+	if (format == own_format && type == own_type)
+		return 1;
+
+	/* Any other pair is refused. */
+	return 0;
+}
+
+/*
+ * Returns the format and type glReadPixels reads a kept format's texels
+ * as besides RGBA and unsigned bytes (GL_IMPLEMENTATION_COLOR_READ_FORMAT
+ * and _TYPE).
+ */
+void
+gles_read_format(
+	const struct gles_format *storage,
+	GLenum *format,
+	GLenum *type)
+{
+	/* Normalized texels: bytes, or RGB10_A2's own packing. */
+	*format = GL_RGBA;
+	*type = GL_UNSIGNED_BYTE;
+	if (storage->vk == VK_FORMAT_A2B10G10R10_UNORM_PACK32)
+		*type = GL_UNSIGNED_INT_2_10_10_10_REV;
+
+	/* Floats, and integers as 32-bit ones. */
+	if (storage->kind == GLES_TEXEL_FLOAT)
+		*type = GL_FLOAT;
+	if (storage->kind == GLES_TEXEL_INT) {
+		*format = GL_RGBA_INTEGER;
+		*type = GL_INT;
+	}
+
+	/* Unsigned integers as 32-bit ones. */
+	if (storage->kind == GLES_TEXEL_UINT) {
+		*format = GL_RGBA_INTEGER;
+		*type = GL_UNSIGNED_INT;
+	}
+}
+
+/*
+ * Converts kept texels into the application's pixels of a format and type
+ * glReadPixels may read them as (gles_read_format_ok): RGBA unsigned
+ * bytes, packed 2_10_10_10_REV, floats, or 32-bit integers.
+ */
+void
+gles_texels_read(
+	const struct gles_format *storage,
+	const unsigned char *kept,
+	size_t count,
+	GLenum format,
+	GLenum type,
+	unsigned char *out)
+{
+	float values[4];
+	uint32_t integers[4];
+	uint32_t word;
+	size_t index;
+	unsigned channel;
+
+	/* Each texel. */
+	(void)format;
+	for (index = 0U; index < count; index++) {
+		/* Integers as 32-bit words. */
+		if (type == GL_INT || type == GL_UNSIGNED_INT) {
+			format_read_integers(storage, kept + index * storage->bytes, integers);
+			memcpy(out + index * 16U, integers, 16U);
+			continue;
+		}
+
+		/* The others through floats (a format without alpha reads it as 1, though four channels are kept). */
+		format_read_kept(storage, kept + index * storage->bytes, values);
+		if (storage->base == GL_RGB)
+			values[3] = 1.0f;
+		switch (type) {
+		case GL_FLOAT:
+			memcpy(out + index * 16U, values, 16U);
+			break;
+		case GL_UNSIGNED_INT_2_10_10_10_REV:
+			word = format_round(format_clamp(values[0], 0.0f, 1.0f) * 1023.0f);
+			word |= format_round(format_clamp(values[1], 0.0f, 1.0f) * 1023.0f) << 10;
+			word |= format_round(format_clamp(values[2], 0.0f, 1.0f) * 1023.0f) << 20;
+			word |= format_round(format_clamp(values[3], 0.0f, 1.0f) * 3.0f) << 30;
+			memcpy(out + index * 4U, &word, 4U);
+			break;
+		default:
+			for (channel = 0U; channel < 4U; channel++)
+				out[index * 4U + channel] = (unsigned char)format_round(format_clamp(values[channel], 0.0f, 1.0f) * 255.0f);
+			break;
+		}
+	}
 }
 
 /*
@@ -1017,6 +1164,59 @@ format_read_kept(
 	/* An 8-bit unsigned normalized format (sRGB kept as its bytes). */
 	for (index = 0U; index < storage->components; index++)
 		values[index] = (float)kept[index] / 255.0f;
+}
+
+/* Reads a kept texel of an integer format as four 32-bit integers (missing colours 0, alpha 1; signed ones extended). */
+static void
+format_read_integers(
+	const struct gles_format *storage,
+	const unsigned char *kept,
+	uint32_t *values)
+{
+	uint16_t half_word;
+	uint32_t word;
+	int16_t signed_half;
+	int8_t signed_byte;
+	unsigned size;
+	unsigned index;
+
+	/* Missing colours 0, alpha 1. */
+	values[0] = 0U;
+	values[1] = 0U;
+	values[2] = 0U;
+	values[3] = 1U;
+
+	/* The packed 10-bit format. */
+	if (storage->vk == VK_FORMAT_A2B10G10R10_UINT_PACK32) {
+		memcpy(&word, kept, 4U);
+		for (index = 0U; index < 3U; index++)
+			values[index] = (word >> (index * 10U)) & 1023U;
+		values[3] = word >> 30;
+		return;
+	}
+
+	/* Each component of 8, 16 or 32 bits (a three-component format keeps four: the fourth is not GL's). */
+	size = storage->bytes / storage->components;
+	for (index = 0U; index < storage->components; index++) {
+		if (size == 1U && storage->kind == GLES_TEXEL_INT) {
+			memcpy(&signed_byte, kept + index, 1U);
+			values[index] = (uint32_t)(int32_t)signed_byte;
+		} else if (size == 1U) {
+			values[index] = kept[index];
+		} else if (size == 2U && storage->kind == GLES_TEXEL_INT) {
+			memcpy(&signed_half, kept + index * 2U, 2U);
+			values[index] = (uint32_t)(int32_t)signed_half;
+		} else if (size == 2U) {
+			memcpy(&half_word, kept + index * 2U, 2U);
+			values[index] = half_word;
+		} else {
+			memcpy(&values[index], kept + index * 4U, 4U);
+		}
+	}
+
+	/* A format without alpha reads it as 1. */
+	if (storage->base == GL_RGB_INTEGER)
+		values[3] = 1U;
 }
 
 /* Converts a float to a half float, rounding to the nearest. */
