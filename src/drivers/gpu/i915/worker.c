@@ -28,6 +28,7 @@
 #include "ppgtt.h"
 #include "request-queue.h"
 #include "request.h"
+#include "session.h"
 #include "submit.h"
 #include "sync.h"
 #include "worker.h"
@@ -153,6 +154,9 @@ struct i915_worker {
 	/* The requests the kick handed over, oldest first. */
 	struct i915_request *run_head;
 	struct i915_request *run_tail;
+
+	/* The request the worker is running on the engine now, or NULL (under the IRQ lock). */
+	struct i915_request *current;
 
 	/* The synchronous batches waiting to run, oldest first. */
 	struct i915_worker_sync *sync_head;
@@ -688,10 +692,15 @@ drv_i915_worker_engine_reset(
 }
 
 /*
- * Ends a session's work on one engine record and recovers the engine.
+ * Ends a session's work on one engine record (BUG-077).
  *
- * XXX: unimplemented path.  The intended sequence is: stop the engine, fail
- * the requests of the session, reset, resume.  Logs and returns ENOTSUP.
+ * The session's requests that never reached the engine -- reserved,
+ * queued, or handed to the worker but not yet taken -- fail with `error`
+ * and their completions are delivered; the other sessions go on.  A
+ * request of the session that the engine is running now cannot be taken
+ * back without a reset: that is the XXX unimplemented path (stop the
+ * engine, reset, resume), which logs and returns ENOTSUP, so the caller
+ * falls back to the device fault.
  */
 int
 drv_i915_worker_engine_recover(
@@ -699,15 +708,98 @@ drv_i915_worker_engine_recover(
 	struct i915_session *session,
 	int error)
 {
-	UNUSED_PARAMETER(session);
+	struct i915_device *device;
+	struct i915_worker *worker;
+	struct i915_request *retired;
+	struct i915_request *request;
+	struct i915_request *previous;
+	struct i915_request *next;
+	unsigned long irq;
+	unsigned taken;
+	unsigned states[6];
+	unsigned index;
 
-	/* Names the missing path in the log. */
-	kern_logf("i915: resident shim: XXX unimplemented path: engine_recover(engine %u, error %d)\n",
+	/* Nothing is taken or counted yet. */
+	kern_memset(states, 0, sizeof(states));
+	device = engine->device;
+	worker = device->worker;
+	retired = NULL;
+	taken = 0U;
+
+	/* Everything is decided under the IRQ lock, which the worker takes around each request. */
+	irq = spin_lock_irqsave(&device->irq_lock);
+
+	/* A request of the session on the engine now needs the reset that is not implemented. */
+	if (worker != NULL && worker->current != NULL &&
+	    worker->current->session == session && worker->current->context != NULL &&
+	    worker->current->context->engine == engine) {
+		spin_unlock_irqrestore(&device->irq_lock, irq);
+		kern_logf("i915: resident shim: XXX unimplemented path: engine_recover(engine %u, error %d) "
+		    "of a session whose request seqno=%u is running\n",
+		    engine->index,
+		    error,
+		    worker->current->seqno);
+		return ENOTSUP;
+	}
+
+	/* Takes the session's requests of this engine off the worker's run list. */
+	previous = NULL;
+	request = NULL;
+	if (worker != NULL)
+		request = worker->run_head;
+	while (request != NULL) {
+		next = request->next;
+		if (request->session != session || request->context == NULL || request->context->engine != engine) {
+			previous = request;
+			request = next;
+			continue;
+		}
+
+		/* Unlinks it, keeping the tail right. */
+		if (previous == NULL) {
+			worker->run_head = next;
+		} else {
+			previous->next = next;
+		}
+
+		/* The tail moves back when it was the tail. */
+		if (worker->run_tail == request)
+			worker->run_tail = previous;
+
+		/* It ends with the error, never having run. */
+		request->state = I915_REQUEST_DONE;
+		request->error = error;
+		request->next = retired;
+		retired = request;
+		taken++;
+		request = next;
+	}
+
+	/* Counts the session's slots by state for the report, then fails its queued and reserved requests. */
+	for (index = 0U; index < I915_REQUEST_SLOTS; index++) {
+		if (engine->slots[index].session == session && engine->slots[index].state < 6U)
+			states[engine->slots[index].state]++;
+	}
+	drv_i915_request_fail(engine, session, error, &retired);
+
+	/* The rest is done without the lock. */
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+
+	/* Delivers their completions outside the lock. */
+	drv_i915_request_complete_list(engine, retired);
+	kern_logf("i915: engine %u: session %u isolated (%u of its requests taken from the worker; "
+	    "slots queued %u active %u done %u reserved %u retained %u)\n",
 	    engine->index,
-	    error);
+	    session->identifier,
+	    taken,
+	    states[I915_REQUEST_QUEUED],
+	    states[I915_REQUEST_ACTIVE],
+	    states[I915_REQUEST_DONE],
+	    states[I915_REQUEST_RESERVED],
+	    states[I915_REQUEST_RETAINED]);
 
-	/* The recovery is not implemented. */
-	return ENOTSUP;
+	/* Succeeded: the session has no work left on the engine record. */
+	return 0;
 }
 
 /*
@@ -804,12 +896,14 @@ i915_worker_loop(
 			worker->run_tail = NULL;
 
 		request->next = NULL;
+		worker->current = request;
 
 		spin_unlock_irqrestore(&device->irq_lock, irq);
 
 		i915_worker_run_request(worker, request);
 
 		irq = spin_lock_irqsave(&device->irq_lock);
+		worker->current = NULL;
 	}
 
 	spin_unlock_irqrestore(&device->irq_lock, irq);
