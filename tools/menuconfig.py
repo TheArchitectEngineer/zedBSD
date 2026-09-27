@@ -76,6 +76,7 @@ PACKAGE_CATEGORIES = [
     ("Languages", "packages/lang"),
     ("Editors", "packages/editors"),
     ("Development", "packages/devel"),
+    ("Libraries", "packages/libs"),
     ("Network", "packages/network"),
     ("Security", "packages/security"),
 ]

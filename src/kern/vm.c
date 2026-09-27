@@ -392,6 +392,8 @@ static void object_page_index_remove(struct vm_object *object, struct vm_object_
 static int object_reference_locked(struct vm_object *object, struct file *file, int cache_only);
 static int object_cache_retainable(struct vm_object *object);
 static int object_cache_evict_one(struct mount *mount);
+static int object_cache_idle_locked(struct vm_object *object);
+static int inode_unnamed(const struct inode *inode);
 static int object_discard_mount_check_locked(struct mount *mount);
 static int object_discard_file_check(struct vm_object *, struct mount *, struct file *);
 static int object_mount_reserved(const struct vm_object *);
@@ -732,7 +734,7 @@ retry_mapping:
 	    (object->flags & VM_OBJECT_CACHE_REFERENCE) == 0 &&
 	    object->file != NULL &&
 	    cache_objects < VM_OBJECT_CACHE_OBJECTS &&
-	    destroyable) {
+	    destroyable && !inode_unnamed(object->inode)) {
 		object->flags |= VM_OBJECT_CACHE_REFERENCE;
 		cache_objects++;
 		object->last_use = ++object_use_generation;
@@ -2589,6 +2591,7 @@ vm_object_cache_prepare(
 	struct vm_object *object;
 	struct inode *inode;
 	int error;
+	int unnamed;
 
 	/*
 	 * Excludes non-files and internal backing owners from optional caching.
@@ -2602,6 +2605,11 @@ vm_object_cache_prepare(
 	inode = file_vm_inode(file);
 	if (inode == NULL ||
 	    (inode->i_flags & (INODE_LOOPFILE | INODE_SWAPFILE)) != 0)
+		return;
+
+	/* A removed file is not cached: the cache would keep its storage (BUG-075). */
+	unnamed = inode_unnamed(inode);
+	if (unnamed)
 		return;
 
 	/*
@@ -8379,6 +8387,113 @@ object_cache_retainable(
 }
 
 /*
+ * Tests whether a file has lost its last name.  Its storage goes back when
+ * the last holder lets go, so an optional cache of it must not be one.
+ */
+static int
+inode_unnamed(
+	const struct inode *inode)
+{
+	/* An object without an inode names nothing to keep. */
+	if (inode == NULL)
+		return 0;
+
+	/*
+	 * Reports a removed inode.  The filesystems mark the last name's
+	 * removal DEAD; the link count is not kept by all of them (FAT).
+	 */
+	return (inode->i_flags & INODE_DEAD) != 0;
+}
+
+/*
+ * Tests, under the registry lock, whether a cache-only object is idle: only
+ * the registry holds it, and it has no mapping, operation, waiter, dirty or
+ * busy page, failure or transition, on a mount that is not being removed.
+ */
+static int
+object_cache_idle_locked(
+	struct vm_object *object)
+{
+	unsigned refs;
+	int reserved;
+	int clean;
+
+	/* An object on a mount that unmount has closed is unmount's. */
+	reserved = object_mount_reserved(object);
+	if (reserved)
+		return 0;
+
+	/* Only the cache reference may remain, with nothing in progress. */
+	refs = refcount_load(&object->refs);
+	if ((object->flags & VM_OBJECT_CACHE_REFERENCE) == 0 ||
+	    (object->flags & (VM_OBJECT_DETACHING | VM_OBJECT_RESIZING |
+	    VM_OBJECT_CONTENT | VM_OBJECT_RETAINED_WRITEBACK)) != 0 ||
+	    object->active_operations != 0 || object->registry_waiters != 0 ||
+	    refs != 1)
+		return 0;
+
+	/* Reports whether every page is clean and idle. */
+	clean = object_can_destroy(object);
+	return clean;
+}
+
+/*
+ * Discards the idle cache-only object of one inode (BUG-075).  A file's
+ * page cache opens a read handle of its own on the inode; an unlinked file
+ * whose data only the cache still holds keeps its storage until that
+ * handle closes.  A filesystem calls this when a removal leaves the inode
+ * without names, so the storage goes back as the last other holder lets
+ * go.  An object that is mapped, dirty or in use is left for its owners.
+ * Returns 1 when an object was discarded.
+ */
+int
+vm_object_cache_discard_inode(
+	struct inode *inode)
+{
+	struct vm_object *object;
+	bool enabled;
+	int idle;
+	int unlinked;
+	int last;
+
+	/* A missing inode has no object. */
+	if (inode == NULL)
+		return 0;
+
+	/* The inode's object, if the cache alone holds it. */
+	enabled = registry_lock();
+	for (object = object_hash[object_hash_index(inode)]; object != NULL;
+	     object = object->hash_next) {
+		if (object->inode == inode)
+			break;
+	}
+
+	/* Handles the object that is absent or still owned. */
+	idle = 0;
+	if (object != NULL)
+		idle = object_cache_idle_locked(object);
+	if (!idle) {
+		registry_unlock(enabled);
+		return 0;
+	}
+
+	/* Takes it out of the registry, which closes admission. */
+	unlinked = unlink_object_locked(object);
+	if (!unlinked)
+		HAL_FATAL("VM cache discard lost registry entry");
+	registry_unlock(enabled);
+
+	/* Releases the sole registry reference and closes the handle outside locks. */
+	last = refcount_put(&object->refs);
+	if (!last)
+		HAL_FATAL("discarded VM cache retained an unknown reference");
+	destroy_object(object);
+
+	/* Reports the discarded object. */
+	return 1;
+}
+
+/*
  * Unlinks one idle cache under the registry lock, then closes it outside locks.
  */
 static int
@@ -8389,6 +8504,7 @@ object_cache_evict_one(
 	struct vm_object *oldest;
 	bool enabled;
 	int unlinked;
+	int idle;
 
 	/*
 	 * Leaves every mandatory mapping, operation, pin and failure owner
@@ -8398,14 +8514,9 @@ object_cache_evict_one(
 	oldest = NULL;
 
 	for (object = shared_objects; object != NULL; object = object->next) {
-		if (object_mount_reserved(object))
-			continue;
 		/* Skips an object anything still owns. */
-		if ((object->flags & VM_OBJECT_CACHE_REFERENCE) == 0 ||
-		    (object->flags & (VM_OBJECT_DETACHING | VM_OBJECT_RESIZING |
-		    VM_OBJECT_CONTENT | VM_OBJECT_RETAINED_WRITEBACK)) != 0 ||
-		    object->active_operations != 0 || object->registry_waiters != 0 ||
-		    refcount_load(&object->refs) != 1 || !object_can_destroy(object))
+		idle = object_cache_idle_locked(object);
+		if (!idle)
 			continue;
 
 		/* Skips an object outside the mount the caller named. */

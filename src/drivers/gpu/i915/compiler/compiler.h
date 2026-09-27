@@ -89,6 +89,13 @@ struct i915_shader_block {
 	uint32_t offset;
 	uint32_t bytes;
 	uint32_t push_offset;
+
+	/*
+	 * Nonzero for a storage buffer: the draw puts the 64-bit GPU address of
+	 * the buffer's descriptor range at push_offset (the low word first)
+	 * instead of a copy of its words.
+	 */
+	uint32_t address;
 };
 
 /*

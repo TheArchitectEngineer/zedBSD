@@ -1,0 +1,254 @@
+diff --git a/src/kern/vmspace.c b/src/kern/vmspace.c
+index c7b3c591..4a423dce 100644
+--- a/src/kern/vmspace.c
++++ b/src/kern/vmspace.c
+@@ -22,6 +22,7 @@
+ #include "kern/kmem.h"
+ #include "kern/lock.h"
+ #include "kern/page.h"
++#include "kern/sched.h"
+ #include "kern/swap.h"
+ #include "kern/vm-commit.h"
+ #include "kern/vm-lock.h"
+@@ -702,6 +703,8 @@ vmspace_object_page_revoke(
+ 	unsigned long irq;
+ 	int error;
+ 	int was_mapped;
++	int acquired;
++	uint64_t sequence;
+ 	struct vm_page **link;
+ 	uint32_t flags;
+ 
+@@ -738,9 +741,23 @@ vmspace_object_page_revoke(
+ 
+ 		vm = mapping->vm;
+ 		region = mapping->region;
+-		if (vm == NULL || region == NULL || !vmspace_tryref(vm))
++		if (vm == NULL || region == NULL)
+ 			HAL_FATAL("invalid shared VM reverse mapping");
+ 
++		/*
++		 * A space whose last reference is gone is being torn down: its
++		 * threads are gone, and vmspace_destroy() takes its mappings
++		 * off the page region by region, between which it leaves the
++		 * metadata lock.  The mapping is waited out rather than revoked.
++		 */
++		acquired = vmspace_tryref(vm);
++		if (!acquired) {
++			spin_unlock_irqrestore(&object->lock, irq);
++			vm_metadata_leave();
++			sched_yield();
++			continue;
++		}
++
+ 		spin_unlock_irqrestore(&object->lock, irq);
+ 
+ 		/* Pins the mapping in metadata. */
+@@ -749,10 +766,24 @@ vmspace_object_page_revoke(
+ 
+ 		if (mapping->object_page != object_page ||
+ 		    mapping->vm != vm ||
+-		    mapping->region != region ||
+-		    (mapping->flags & VM_MAPPING_BUSY) != 0)
++		    mapping->region != region)
+ 			HAL_FATAL("shared VM reverse mapping changed while pinned");
+ 
++		/*
++		 * A copy-on-write fault holds the mapping reserved.  It gives the
++		 * reservation up rather than wait for this page, so it is waited
++		 * out (BUG-082).
++		 */
++		if ((mapping->flags & VM_MAPPING_BUSY) != 0) {
++			sequence = waitq_sequence(&vm->fault_waitq);
++			spin_unlock_irqrestore(&object->lock, irq);
++			mutex_unlock(&vm->lock);
++			vm_metadata_leave();
++			vmspace_wait_fault_event(vm, sequence);
++			vmspace_put_deferred(vm);
++			continue;
++		}
++
+ 		mapping->flags |= VM_MAPPING_BUSY;
+ 		region->hold_count++;
+ 		readonly = region->prot & ~HAL_SPACE_WRITE;
+@@ -827,8 +858,13 @@ vmspace_object_page_revoke(
+ 		mutex_unlock(&vm->lock);
+ 		vm_metadata_leave();
+ 
++		/*
++		 * The space may have ended meanwhile.  Its teardown syncs the
++		 * objects it maps, which waits for the pages this caller holds
++		 * BUSY, so the last reference goes to the reaper (BUG-082).
++		 */
+ 		vm_page_free_metadata(mapping);
+-		vmspace_put(vm);
++		vmspace_put_deferred(vm);
+ 	}
+ 
+ 	if (observed_flags != NULL)
+@@ -6916,6 +6952,7 @@ vmspace_exec_cache_fault(
+ 	unsigned long irq;
+ 	int error, writing, unmapped;
+ 	int pinned;
++	int waiting;
+ 
+ 	/* The region's snapshot pins the immutable source during allocation and copy. */
+ 	source = page->object_page;
+@@ -6925,6 +6962,7 @@ vmspace_exec_cache_fault(
+ 	fresh = NULL;
+ 	error = 0;
+ 	unmapped = 0;
++	waiting = 0;
+ 	if (writing) {
+ 		fresh = private_page_alloc();
+ 		if (fresh == NULL)
+@@ -6950,9 +6988,18 @@ vmspace_exec_cache_fault(
+ 					pinned = 1;
+ 			}
+ 
+-			/* Copies the page into the private one. */
++			/*
++			 * Copies the page into the private one.  A sync that owns
++			 * the page may be revoking its mappings, and waits for this
++			 * reserved one (BUG-082): the reservation is given up
++			 * first, and the page is waited out with a pin of its own.
++			 */
+ 			if (error == 0)
+-				error = vm_object_page_pin_read(source, 0, hal_pmem_to_kernel(fresh->pmem.paddr), PAGE_SIZE);
++				error = vm_object_page_pin_read_nowait(source, 0, hal_pmem_to_kernel(fresh->pmem.paddr), PAGE_SIZE);
++			if (error == EBUSY) {
++				waiting = vm_object_page_pin(source) == 0;
++				error = EAGAIN;
++			}
+ 			if (pinned)
+ 				vm_object_page_unpin(source);
+ 			if (error == 0)
+@@ -7016,6 +7063,12 @@ vmspace_exec_cache_fault(
+ 	if (fresh != NULL)
+ 		vm_private_page_put(fresh);
+ 
++	/* Waits out the write-back with no reservation held, then retries. */
++	if (waiting) {
++		(void)vm_object_page_pin_wait(source);
++		vm_object_page_unpin(source);
++	}
++
+ 	/* Reports the failure. */
+ 	if (error != 0)
+ 		return error;
+--- a/src/kern/vm.c
++++ b/src/kern/vm.c
+@@ -364,7 +364,7 @@
+ static void content_release_pages_locked(struct vm_object *object, uint64_t generation);
+ static void vm_object_content_finish(struct vm_object_content *content, const void *buffer, size_t committed, int commit);
+ static void vm_object_resize_finish(struct vm_object_resize *resize, off_t logical_size, int commit);
+-static int vm_object_page_pin_copy(struct vm_object_page *page, size_t offset, void *buffer, size_t length, int write);
++static int vm_object_page_pin_copy(struct vm_object_page *page, size_t offset, void *buffer, size_t length, int write, int nowait);
+ static int range_has_wired_mapping(struct vm_object *object, uint64_t start, uint64_t end);
+ static int vm_object_sync_range_internal(struct vm_object *object, off_t offset, size_t size, int flags, int detaching, int resize_owner, off_t resize_target);
+ static int vm_object_sync_range_buffer(struct vm_object *object, off_t offset, size_t size, int flags, int detaching, int resize_owner, off_t resize_target, void *scratch, size_t capacity);
+@@ -1969,7 +1969,7 @@
+ 	int error;
+ 
+ 	/* Reports why the copy failed. */
+-	error = vm_object_page_pin_copy(page, offset, buffer, length, 0);
++	error = vm_object_page_pin_copy(page, offset, buffer, length, 0, 0);
+ 	if (error != 0)
+ 		return error;
+ 
+@@ -1990,7 +1990,49 @@
+ 	int error;
+ 
+ 	/* Reports why the copy failed. */
+-	error = vm_object_page_pin_copy(page, offset, (void *)buffer, length, 1);
++	error = vm_object_page_pin_copy(page, offset, (void *)buffer, length, 1, 0);
++	if (error != 0)
++		return error;
++
++	/* Succeeded. */
++	return 0;
++}
++
++/*
++ * Copies out of a pinned page unless a write-back owns it (EBUSY).  A fault
++ * that holds a mapping reserved uses it: a sync that owns the page waits
++ * for that reservation while revoking the page's mappings (BUG-082).
++ */
++int
++vm_object_page_pin_read_nowait(
++	struct vm_object_page *page,
++	size_t offset,
++	void *buffer,
++	size_t length)
++{
++	int error;
++
++	/* Reports why the copy failed. */
++	error = vm_object_page_pin_copy(page, offset, buffer, length, 0, 1);
++	if (error != 0)
++		return error;
++
++	/* Succeeded. */
++	return 0;
++}
++
++/*
++ * Waits until no write-back owns a pinned page, holding no VM lock.
++ */
++int
++vm_object_page_pin_wait(
++	struct vm_object_page *page)
++{
++	uint8_t unused;
++	int error;
++
++	/* A zero-length copy waits and moves nothing. */
++	error = vm_object_page_pin_copy(page, 0, &unused, 0, 0, 0);
+ 	if (error != 0)
+ 		return error;
+ 
+@@ -7169,7 +7211,8 @@
+ 	size_t offset,
+ 	void *buffer,
+ 	size_t length,
+-	int write)
++	int write,
++	int nowait)
+ {
+ 	struct vm_object *object;
+ 	unsigned long irq;
+@@ -7209,6 +7252,12 @@
+ 		if ((page->flags & (VM_OBJECT_PAGE_BUSY | VM_OBJECT_PAGE_WRITEBACK)) == 0)
+ 			break;
+ 
++		/* A caller that may not wait is told the page is taken. */
++		if (nowait) {
++			spin_unlock_irqrestore(&object->lock, irq);
++			return EBUSY;
++		}
++
+ 		sequence = waitq_sequence(&object->page_waitq);
+ 		error = waitq_sleep(&object->page_waitq, &object->lock, sequence, 0, 0);
+ 
+--- a/include/kern/vm-object.h
++++ b/include/kern/vm-object.h
+@@ -299,6 +299,19 @@
+ 	const void *buffer,
+ 	size_t length);
+ 
++/* As vm_object_page_pin_read(), but EBUSY instead of waiting out a write-back. */
++int
++vm_object_page_pin_read_nowait(
++	struct vm_object_page *page,
++	size_t offset,
++	void *buffer,
++	size_t length);
++
++/* Waits, holding a pin, until a write-back no longer owns the page. */
++int
++vm_object_page_pin_wait(
++	struct vm_object_page *page);
++
+ int
+ vm_object_fault_resident(
+ 	struct vm_object *object,

@@ -53,11 +53,13 @@
 
 /*
  * The kinds of bound resource (struct i915_shader_ir_uniform.kind): a
- * combined image sampler, or a uniform buffer block whose words the shader
- * reads at constant offsets.
+ * combined image sampler, a uniform buffer block whose words the shader
+ * reads at constant offsets, or a storage buffer the shader reads and
+ * writes in memory at offsets it computes.
  */
 #define I915_IR_UNIFORM_SAMPLED_IMAGE	1U
 #define I915_IR_UNIFORM_BLOCK		2U
+#define I915_IR_UNIFORM_STORAGE		3U
 
 /*
  * The sampler messages of a TEXTURE instruction, numbered as the message
@@ -337,6 +339,19 @@ enum i915_shader_ir_op {
 	 * 8), no header when the offset is 0.
 	 */
 	I915_IR_TEXTURE,
+
+	/*
+	 * dst = the word at byte offset src[0] (a value) of storage buffer
+	 * `location` (an index of the uniform list), read from memory.
+	 */
+	I915_IR_LOAD_STORAGE,
+
+	/*
+	 * The word at byte offset src[0] of storage buffer `location` = src[1],
+	 * written to memory; with `component` 1 only where the Boolean src[2]
+	 * (the predicate of the block the store is in) holds.
+	 */
+	I915_IR_STORE_STORAGE,
 
 	I915_IR_OP_COUNT
 };

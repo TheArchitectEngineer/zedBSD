@@ -205,6 +205,7 @@
 #define COMPILE_SFID_SAMPLER		2U
 #define COMPILE_SFID_RENDER_CACHE	5U
 #define COMPILE_SFID_URB		6U
+#define COMPILE_SFID_DATA_CACHE_1	12U
 
 /*
  * Message descriptors (gentool's reading of Mesa's kernels for the same shaders).
@@ -220,6 +221,16 @@
 #define COMPILE_DESC_RT_LAST		0x00001000U
 #define COMPILE_EX_MLEN(n)		((uint32_t)(n) << 6)
 #define COMPILE_EX_RT_INDEX(n)		((uint32_t)(n) << 12)
+
+/*
+ * A64 untyped surface read and write of one channel, SIMD8, stateless
+ * (Mesa's brw_dp_a64_untyped_surface_rw_desc(): message type 0x11 / 0x19,
+ * channel mask 0xe, SIMD mode 2, binding table entry 253): the 64-bit
+ * addresses in two registers, the read's word in one reply register, the
+ * write's in one register of the second run.
+ */
+#define COMPILE_DESC_A64_READ		((2U << 25) | (1U << 20) | (0x11U << 14) | (0x2eU << 8) | 253U)
+#define COMPILE_DESC_A64_WRITE		((2U << 25) | (0x19U << 14) | (0x2eU << 8) | 253U)
 
 /*
  * The scratch messages (Mesa's emit_spill() and emit_unspill() before LSC):
@@ -369,6 +380,9 @@ struct i915_compile_state {
 	uint32_t block_bytes[I915_SHADER_MAX_BLOCKS];
 	uint32_t block_count;
 
+	/* Nonzero for a block that is a storage buffer's address (see struct i915_shader_block). */
+	uint8_t block_address[I915_SHADER_MAX_BLOCKS];
+
 	/* The instruction position of each loop being lowered, innermost last. */
 	uint32_t loop_tops[COMPILE_MAX_LOOPS];
 	uint32_t loop_depth;
@@ -399,6 +413,7 @@ static void i915_compile_instruction(struct i915_compile_state *state, const str
 static void i915_compile_load_input(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst, uint32_t payload_inputs);
 static void i915_compile_load_push(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst, uint32_t payload_inputs);
 static void i915_compile_load_block(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst, uint32_t payload_inputs);
+static void i915_compile_storage(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst, uint32_t payload_inputs);
 static void i915_compile_store_output(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
 static void i915_compile_arithmetic(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
 static void i915_compile_negate(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
@@ -750,6 +765,7 @@ i915_compile_sources(
 	case I915_IR_DDY:
 	case I915_IR_DDY_FINE:
 	case I915_IR_UNPACK_HALF:
+	case I915_IR_LOAD_STORAGE:
 		return 1U;
 
 	case I915_IR_FADD:
@@ -795,6 +811,10 @@ i915_compile_sources(
 		/* A texture message reads its run of parameters. */
 		return inst->src[1];
 
+	case I915_IR_STORE_STORAGE:
+		/* The offset and the word, and the predicate of a predicated store. */
+		return 2U + inst->component;
+
 	default:
 		break;
 	}
@@ -834,6 +854,7 @@ i915_compile_results(
 		return 4U;
 
 	case I915_IR_STORE_OUTPUT:
+	case I915_IR_STORE_STORAGE:
 	case I915_IR_KILL:
 	case I915_IR_NOP:
 	case I915_IR_LOOP_BEGIN:
@@ -1566,6 +1587,11 @@ i915_compile_instruction(
 		i915_compile_load_block(state, inst, payload_inputs);
 		break;
 
+	case I915_IR_LOAD_STORAGE:
+	case I915_IR_STORE_STORAGE:
+		i915_compile_storage(state, inst, payload_inputs);
+		break;
+
 	case I915_IR_STORE_OUTPUT:
 		i915_compile_store_output(state, inst);
 		break;
@@ -1954,6 +1980,149 @@ i915_compile_load_block(
 	source = drv_i915_eu_grf_scalar(push_grf, byte % 32U);
 	source.type = COMPILE_TYPE_UD;
 	drv_i915_eu_mov(&state->code, drv_i915_eu_grf_ud(dst), source);
+}
+
+/*
+ * Lowers a storage buffer word's load or store: an A64 untyped message of
+ * one channel to the buffer's address, which the push data carries (see
+ * i915_compile_blocks()), plus each channel's byte offset.
+ *
+ * The 64-bit address of each channel is the low word plus the offset, the
+ * high word plus the carry (a CMP writes -1 where the sum is below the
+ * offset, which the ADD subtracts: Tiger Lake has no 64-bit integer
+ * arithmetic), the two interleaved into the two registers of the address
+ * payload (Mesa's A64 payload).  A store under a predicate writes only the
+ * channels whose predicate holds (f0.0).
+ */
+static void
+i915_compile_storage(
+	struct i915_compile_state *state,
+	const struct i915_shader_ir_inst *inst,
+	uint32_t payload_inputs)
+{
+	struct i915_eu_reg low;
+	struct i915_eu_reg high;
+	struct i915_eu_reg interleaved;
+	struct i915_eu_reg null;
+	uint32_t block;
+	uint32_t push_grf;
+	uint32_t offset_grf;
+	uint32_t data_grf;
+	uint32_t predicate_grf;
+	uint32_t payload;
+	uint32_t sum;
+	uint32_t carry;
+	uint32_t dst;
+
+	/* Finds the storage buffer's address among the push data's blocks. */
+	for (block = 0U; block < state->block_count; block++) {
+		if (state->block_uniform[block] == inst->location && state->block_address[block] != 0U)
+			break;
+	}
+
+	/* A storage buffer the interface did not lay out is inconsistent IR. */
+	if (block >= state->block_count) {
+		state->error = 1;
+		return;
+	}
+
+	/* The address's two words in the push data. */
+	push_grf = payload_inputs - state->push_regs + state->block_push_offset[block] / 32U;
+	low = drv_i915_eu_grf_scalar(push_grf, 0U);
+	low.type = COMPILE_TYPE_UD;
+	high = drv_i915_eu_grf_scalar(push_grf, 4U);
+	high.type = COMPILE_TYPE_UD;
+
+	/* Reads the offset, and for a store the word and its predicate. */
+	offset_grf = i915_compile_grf(state, inst->src[0]);
+	data_grf = 0U;
+	predicate_grf = 0U;
+	if (inst->op == I915_IR_STORE_STORAGE) {
+		data_grf = i915_compile_grf(state, inst->src[1]);
+		if (inst->component != 0U)
+			predicate_grf = i915_compile_grf(state, inst->src[2]);
+	}
+
+	/* A load's word gets its register. */
+	dst = 0U;
+	if (inst->op == I915_IR_LOAD_STORAGE)
+		dst = i915_compile_define(state, inst->dst, 1U);
+
+	/* Takes the address payload and the sum and carry registers. */
+	payload = i915_compile_temporaries(state, 2U);
+	sum = i915_compile_temporary(state);
+	carry = i915_compile_temporary(state);
+	if (state->out_of_registers != 0)
+		return;
+
+	/* The low word of each address, and its carry into the high word. */
+	drv_i915_eu_alu2(&state->code, I915_EU_ADD, drv_i915_eu_grf_ud(sum), low, drv_i915_eu_grf_ud(offset_grf));
+	drv_i915_eu_cmp(&state->code,
+			I915_EU_COND_LT,
+			I915_EU_FLAG_F0_0,
+			0,
+			drv_i915_eu_grf_ud(carry),
+			drv_i915_eu_grf_ud(sum),
+			drv_i915_eu_grf_ud(offset_grf));
+	drv_i915_eu_alu2(&state->code, I915_EU_ADD, drv_i915_eu_grf_ud(carry), high, drv_i915_eu_negate(drv_i915_eu_grf_ud(carry)));
+
+	/* Interleaves them: low words at the even dwords of the payload, high words at the odd ones. */
+	interleaved = drv_i915_eu_grf_ud(payload);
+	interleaved.hstride = EU_HSTRIDE_2;
+	drv_i915_eu_mov(&state->code, interleaved, drv_i915_eu_grf_ud(sum));
+	interleaved.subnr = 4U;
+	drv_i915_eu_mov(&state->code, interleaved, drv_i915_eu_grf_ud(carry));
+
+	/* A load reads the word into its register. */
+	if (inst->op == I915_IR_LOAD_STORAGE) {
+		drv_i915_eu_send(&state->code,
+				 drv_i915_eu_grf(dst),
+				 drv_i915_eu_grf(payload),
+				 drv_i915_eu_null(),
+				 COMPILE_SFID_DATA_CACHE_1,
+				 COMPILE_DESC_A64_READ,
+				 0U,
+				 0,
+				 0);
+	} else if (inst->component != 0U) {
+		/* A predicated store writes where the predicate is not zero. */
+		null = drv_i915_eu_null();
+		null.type = COMPILE_TYPE_D;
+		drv_i915_eu_cmp(&state->code,
+				I915_EU_COND_NE,
+				I915_EU_FLAG_F0_0,
+				0,
+				null,
+				drv_i915_eu_grf_d(predicate_grf),
+				drv_i915_eu_imm_d(0U));
+		drv_i915_eu_send_masked(&state->code,
+					I915_EU_FLAG_F0_0,
+					drv_i915_eu_null(),
+					drv_i915_eu_grf(payload),
+					drv_i915_eu_grf(data_grf),
+					COMPILE_SFID_DATA_CACHE_1,
+					COMPILE_DESC_A64_WRITE,
+					COMPILE_EX_MLEN(1U),
+					0,
+					0);
+	} else {
+		/* A store writes every channel. */
+		drv_i915_eu_send(&state->code,
+				 drv_i915_eu_null(),
+				 drv_i915_eu_grf(payload),
+				 drv_i915_eu_grf(data_grf),
+				 COMPILE_SFID_DATA_CACHE_1,
+				 COMPILE_DESC_A64_WRITE,
+				 COMPILE_EX_MLEN(1U),
+				 0,
+				 0);
+	}
+
+	/* The temporaries are free again. */
+	state->grf_busy[payload] = 0U;
+	state->grf_busy[payload + 1U] = 0U;
+	state->grf_busy[sum] = 0U;
+	state->grf_busy[carry] = 0U;
 }
 
 /* Lowers an output store: the component leaves through its staging register. */
@@ -3386,10 +3555,11 @@ i915_compile_blocks(
 	state->push_constant_regs = (state->ir->push_bytes + 31U) / 32U;
 	bytes = state->push_constant_regs * 32U;
 
-	/* Places each uniform block that is read after what comes before it. */
+	/* Places each uniform block that is read, and each storage buffer's address, after what comes before it. */
 	for (index = 0U; index < state->ir->uniform_count; index++) {
 		uniform = &state->ir->uniforms[index];
-		if (uniform->kind != I915_IR_UNIFORM_BLOCK || uniform->size == 0U)
+		if (uniform->kind != I915_IR_UNIFORM_STORAGE &&
+		    (uniform->kind != I915_IR_UNIFORM_BLOCK || uniform->size == 0U))
 			continue;
 
 		/* More blocks than a binary describes are refused. */
@@ -3398,9 +3568,15 @@ i915_compile_blocks(
 			return;
 		}
 
-		/* The block's range, widened to whole registers. */
+		/* The block's range, widened to whole registers; a storage buffer's address takes one register. */
 		first = uniform->offset & ~31U;
 		end = (uniform->offset + uniform->size + 31U) & ~31U;
+		state->block_address[state->block_count] = 0U;
+		if (uniform->kind == I915_IR_UNIFORM_STORAGE) {
+			first = 0U;
+			end = 32U;
+			state->block_address[state->block_count] = 1U;
+		}
 
 		/* Records where the range lands in the push data. */
 		state->block_uniform[state->block_count] = index;
@@ -3779,6 +3955,7 @@ i915_compile_describe(
 		binary->blocks[block].offset = state->block_first_byte[block];
 		binary->blocks[block].bytes = state->block_bytes[block];
 		binary->blocks[block].push_offset = state->block_push_offset[block];
+		binary->blocks[block].address = state->block_address[block];
 	}
 
 	/* A fragment kernel that discards has the draw say so. */

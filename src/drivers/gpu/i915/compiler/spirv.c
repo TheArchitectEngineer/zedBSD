@@ -104,6 +104,7 @@
 #define OP_TYPE_SAMPLER 26U
 #define OP_TYPE_SAMPLED_IMAGE 27U
 #define OP_TYPE_ARRAY 28U
+#define OP_TYPE_RUNTIME_ARRAY 29U
 #define OP_TYPE_STRUCT 30U
 #define OP_TYPE_POINTER 32U
 #define OP_TYPE_FUNCTION 33U
@@ -230,10 +231,12 @@
 #define SC_OUTPUT 3U
 #define SC_FUNCTION 7U
 #define SC_PUSH_CONSTANT 9U
+#define SC_STORAGE_BUFFER 12U
 
 /* Decorations (SPIR-V spec, section 3.20). */
 #define DEC_RELAXED_PRECISION 0U
 #define DEC_BLOCK 2U
+#define DEC_BUFFER_BLOCK 3U
 #define DEC_ROW_MAJOR 4U
 #define DEC_COL_MAJOR 5U
 #define DEC_ARRAY_STRIDE 6U
@@ -246,6 +249,8 @@
 #define DEC_BINDING 33U
 #define DEC_DESCRIPTOR_SET 34U
 #define DEC_OFFSET 35U
+#define DEC_NON_WRITABLE 24U
+#define DEC_NON_READABLE 25U
 
 /* BuiltIn values (SPIR-V spec, section 3.21). */
 #define BUILTIN_POSITION 0U
@@ -394,6 +399,7 @@
 #define PTR_SAMPLER 5U
 #define PTR_LOCAL 6U
 #define PTR_UBO 7U
+#define PTR_SSBO 8U	/* a storage buffer: words in memory at offsets the shader computes */
 
 /* What the scalars of a value are, as a type says. */
 #define SCALAR_NONE 0U
@@ -479,6 +485,9 @@ struct i915_spirv_id {
 	/* An image type: its Dim and whether it is Arrayed. */
 	uint8_t image_dim;
 	uint8_t image_arrayed;
+
+	/* A structure type decorated BufferBlock: a storage buffer's block. */
+	uint8_t buffer_block;
 
 	/* Pointer type or variable storage class. */
 	uint16_t storage;
@@ -761,6 +770,9 @@ static uint32_t i915_spirv_index_is(struct i915_spirv_parser *parser, uint32_t i
 static int i915_spirv_lower_load_block(struct i915_spirv_parser *parser, const uint32_t *word, struct i915_spirv_id *pointer, struct i915_spirv_id *variable, uint32_t opcode, uint32_t offset);
 static uint32_t i915_spirv_load_word(struct i915_spirv_parser *parser, const struct i915_spirv_id *pointer, const struct i915_spirv_id *variable, uint32_t byte);
 static int i915_spirv_lower_store(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
+static int i915_spirv_lower_storage(struct i915_spirv_parser *parser, const uint32_t *word, const struct i915_spirv_id *pointer, const struct i915_spirv_id *variable, const uint32_t *scalars, uint32_t components, uint32_t opcode, uint32_t offset);
+static uint32_t i915_spirv_storage_offset(struct i915_spirv_parser *parser, const struct i915_spirv_id *pointer, uint32_t byte);
+static int i915_spirv_is_buffer_block(struct i915_spirv_parser *parser, uint32_t type_id);
 static int i915_spirv_lower_store_local(struct i915_spirv_parser *parser, const struct i915_spirv_id *pointer, const struct i915_spirv_id *variable, const uint32_t *scalars, uint32_t components);
 static int i915_spirv_lower_store_output(struct i915_spirv_parser *parser, const struct i915_spirv_id *pointer, const struct i915_spirv_id *variable, const uint32_t *scalars, uint32_t count, uint32_t opcode, uint32_t offset);
 static int i915_spirv_lower_arithmetic(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
@@ -1115,6 +1127,7 @@ i915_spirv_declare(
 	case OP_TYPE_MATRIX:
 	case OP_TYPE_SAMPLED_IMAGE:
 	case OP_TYPE_ARRAY:
+	case OP_TYPE_RUNTIME_ARRAY:
 	case OP_TYPE_STRUCT:
 	case OP_TYPE_POINTER:
 		return i915_spirv_declare_type(parser, word, count, opcode, offset);
@@ -1242,6 +1255,8 @@ i915_spirv_declare_decoration(
 		record->flat = 1U;
 	} else if (word[2] == DEC_NO_PERSPECTIVE) {
 		record->noperspective = 1U;
+	} else if (word[2] == DEC_BUFFER_BLOCK) {
+		record->buffer_block = 1U;
 	} else {
 		/* A decoration without effect, or one that is refused. */
 		ignored = i915_spirv_decoration_ignored(word[2]);
@@ -1256,7 +1271,7 @@ i915_spirv_declare_decoration(
 /*
  * Reports whether a decoration has no effect on this lowering: Block,
  * RelaxedPrecision and Centroid (one sample per pixel, whose centre is the
- * centroid).
+ * centroid), NonWritable and NonReadable.
  */
 static int
 i915_spirv_decoration_ignored(
@@ -1264,6 +1279,10 @@ i915_spirv_decoration_ignored(
 {
 	/* Those without effect in every stage. */
 	if (decoration == DEC_BLOCK || decoration == DEC_RELAXED_PRECISION || decoration == DEC_CENTROID)
+		return 1;
+
+	/* A storage buffer's access qualifiers change nothing the lowering does. */
+	if (decoration == DEC_NON_WRITABLE || decoration == DEC_NON_READABLE)
 		return 1;
 
 	/* Anything else has an effect. */
@@ -1317,7 +1336,8 @@ i915_spirv_declare_member_decoration(
 		record->member_flat[member] = 1U;
 	} else if (word[3] == DEC_NO_PERSPECTIVE) {
 		record->member_noperspective[member] = 1U;
-	} else if (word[3] != DEC_RELAXED_PRECISION && word[3] != DEC_CENTROID) {
+	} else if (word[3] != DEC_RELAXED_PRECISION && word[3] != DEC_CENTROID &&
+		   word[3] != DEC_NON_WRITABLE && word[3] != DEC_NON_READABLE) {
 		return i915_spirv_refuse(parser, opcode, offset, "member decoration that is not interpreted");
 	}
 
@@ -1430,6 +1450,15 @@ i915_spirv_declare_type(
 		record->length = 0U;
 		if (length->kind == ID_CONSTANT)
 			record->length = length->constant;
+		break;
+
+	case OP_TYPE_RUNTIME_ARRAY:
+		/* An array of a storage buffer whose length the buffer decides: length 0. */
+		if (count < 3U)
+			return EINVAL;
+		record->kind = ID_TYPE_ARRAY;
+		record->type = word[2];
+		record->length = 0U;
 		break;
 
 	case OP_TYPE_STRUCT:
@@ -1586,6 +1615,7 @@ i915_spirv_declare_variable(
 	uint32_t storage;
 	uint32_t scalars;
 	uint32_t locations;
+	int buffer_block;
 	int error;
 
 	/* Resolves the variable and its pointer type. */
@@ -1604,8 +1634,9 @@ i915_spirv_declare_variable(
 	if (count > 4U)
 		return i915_spirv_refuse(parser, opcode, offset, "variable initializer is not lowered");
 
-	/* Records the variable as a pointer to its pointee, nothing selected yet. */
+	/* Records the variable as a pointer to its pointee, nothing selected yet; a BufferBlock pointee is a storage buffer. */
 	storage = word[3];
+	buffer_block = i915_spirv_is_buffer_block(parser, type->type);
 	record->kind = ID_VARIABLE;
 	record->storage = (uint16_t)storage;
 	record->type = word[1];
@@ -1664,6 +1695,10 @@ i915_spirv_declare_variable(
 	} else if (storage == SC_UNIFORM_CONSTANT) {
 		record->ptr_kind = PTR_SAMPLER;
 		i915_spirv_add_uniform(parser, word[2], I915_IR_UNIFORM_SAMPLED_IMAGE);
+	} else if (storage == SC_STORAGE_BUFFER || (storage == SC_UNIFORM && buffer_block != 0)) {
+		record->ptr_kind = PTR_SSBO;
+		record->uniform = parser->ir->uniform_count;
+		i915_spirv_add_uniform(parser, word[2], I915_IR_UNIFORM_STORAGE);
 	} else if (storage == SC_UNIFORM) {
 		record->ptr_kind = PTR_UBO;
 		record->uniform = parser->ir->uniform_count;
@@ -2271,7 +2306,7 @@ i915_spirv_lower_access_chain(
 			return EINVAL;
 
 		/* Memory the draw delivers is addressed in bytes; anything else in scalars. */
-		if (record->ptr_kind == PTR_PUSH || record->ptr_kind == PTR_UBO) {
+		if (record->ptr_kind == PTR_PUSH || record->ptr_kind == PTR_UBO || record->ptr_kind == PTR_SSBO) {
 			error = i915_spirv_chain_block(parser, record, pointee, index_record, word[index], opcode, offset);
 		} else {
 			error = i915_spirv_chain_scalars(parser, record, pointee, index_record, word[index], opcode, offset);
@@ -2345,10 +2380,11 @@ i915_spirv_chain_block(
 				return EINVAL;
 			record->byte_offset += selected * pointee->stride;
 		} else {
-			/* One dynamic index, over an array short enough to select from. */
+			/* One dynamic index, over an array short enough to select from (a storage buffer's is an address). */
 			if (record->dynamic_index != NO_VALUE)
 				return i915_spirv_refuse(parser, opcode, offset, "access chain with more than one dynamic index");
-			if (pointee->length == 0U || pointee->length > MAX_DYNAMIC_ELEMENTS)
+			if (record->ptr_kind != PTR_SSBO &&
+			    (pointee->length == 0U || pointee->length > MAX_DYNAMIC_ELEMENTS))
 				return i915_spirv_refuse(parser, opcode, offset, "dynamic index into an array longer than supported");
 			scalar_count = i915_spirv_operand(parser, index_id, scalars);
 			if (scalar_count != 1U)
@@ -2617,6 +2653,8 @@ i915_spirv_lower_load(
 		error = i915_spirv_lower_load_input(parser, word, base, variable, components, opcode, offset);
 	} else if (base->ptr_kind == PTR_PUSH || base->ptr_kind == PTR_UBO) {
 		error = i915_spirv_lower_load_block(parser, word, base, variable, opcode, offset);
+	} else if (base->ptr_kind == PTR_SSBO) {
+		error = i915_spirv_lower_storage(parser, word, base, variable, NULL, components, opcode, offset);
 	} else {
 		return i915_spirv_refuse(parser, opcode, offset, "load through a pointer that is not an input, push constant, uniform block, sampler or local");
 	}
@@ -3060,7 +3098,117 @@ i915_spirv_load_word(
 	return value;
 }
 
-/* Lowers OpStore to a local or an output. */
+/*
+ * Lowers a load from (`scalars` NULL) or a store to (`scalars` the stored
+ * values) a storage buffer: one LOAD_STORAGE or STORE_STORAGE of each
+ * scalar of a scalar or a vector, at the pointer's byte offset plus the
+ * component's, plus the dynamic index times its stride.  A store under a
+ * predicate carries it.
+ */
+static int
+i915_spirv_lower_storage(
+	struct i915_spirv_parser *parser,
+	const uint32_t *word,
+	const struct i915_spirv_id *pointer,
+	const struct i915_spirv_id *variable,
+	const uint32_t *scalars,
+	uint32_t components,
+	uint32_t opcode,
+	uint32_t offset)
+{
+	struct i915_spirv_id *record;
+	struct i915_spirv_id *type;
+	struct i915_shader_ir_inst *inst;
+	uint32_t index;
+	uint32_t place;
+	uint32_t value;
+
+	/* Only a scalar or a vector is moved at once. */
+	type = i915_spirv_id(parser, pointer->pointee);
+	if (type == NULL)
+		return EINVAL;
+	if (type->kind != ID_TYPE_INT && type->kind != ID_TYPE_FLOAT && type->kind != ID_TYPE_VECTOR)
+		return i915_spirv_refuse(parser, opcode, offset, "load or store of something that is not a scalar or a vector in a storage buffer");
+
+	/* A load's result names fresh scalars. */
+	record = NULL;
+	if (scalars == NULL) {
+		record = i915_spirv_result(parser, word[2], word[1], components, 0);
+		if (record == NULL)
+			return EINVAL;
+	}
+
+	/* Each scalar at its byte. */
+	for (index = 0U; index < components; index++) {
+		place = i915_spirv_storage_offset(parser, pointer, pointer->byte_offset + index * pointer->component_stride);
+		if (scalars == NULL) {
+			value = i915_spirv_new_value(parser);
+			inst = i915_spirv_emit(parser, I915_IR_LOAD_STORAGE, value, place, 0U);
+			if (inst != NULL)
+				inst->location = variable->uniform;
+			record->comp[index] = value;
+			continue;
+		}
+
+		/* A store, predicated when the block is. */
+		inst = i915_spirv_emit(parser, I915_IR_STORE_STORAGE, 0U, place, scalars[index]);
+		if (inst == NULL)
+			continue;
+		inst->location = variable->uniform;
+		if (parser->predicate != PREDICATE_ALWAYS) {
+			inst->src[2] = parser->predicate;
+			inst->component = 1U;
+		}
+	}
+
+	/* A value the parser could not make fails the lowering. */
+	if (parser->error != 0)
+		return parser->error;
+
+	/* Succeeded: the words are loaded or stored. */
+	return 0;
+}
+
+/* Returns an IR integer of a storage buffer pointer's byte offset `byte`, plus its dynamic index times the stride. */
+static uint32_t
+i915_spirv_storage_offset(
+	struct i915_spirv_parser *parser,
+	const struct i915_spirv_id *pointer,
+	uint32_t byte)
+{
+	uint32_t constant;
+	uint32_t scaled;
+
+	/* The constant part. */
+	constant = i915_spirv_integer_constant(parser, byte);
+	if (pointer->dynamic_index == NO_VALUE)
+		return constant;
+
+	/* Plus the element the index names. */
+	scaled = i915_spirv_emit_value(parser, I915_IR_IMUL, pointer->dynamic_index, i915_spirv_integer_constant(parser, pointer->dynamic_stride));
+	return i915_spirv_emit_value(parser, I915_IR_IADD, scaled, constant);
+}
+
+/* Reports 1 when a type is a structure decorated BufferBlock: an old-style storage buffer in the Uniform class. */
+static int
+i915_spirv_is_buffer_block(
+	struct i915_spirv_parser *parser,
+	uint32_t type_id)
+{
+	struct i915_spirv_id *type;
+
+	/* The pointee structure. */
+	type = i915_spirv_id(parser, type_id);
+	if (type == NULL || type->kind != ID_TYPE_STRUCT)
+		return 0;
+
+	/* Succeeded: decorated or not. */
+	if (type->buffer_block != 0U)
+		return 1;
+	return 0;
+}
+
+/* Lowers OpStore to a local, an output or a storage buffer. */
 static int
 i915_spirv_lower_store(
 	struct i915_spirv_parser *parser,
@@ -3105,8 +3253,10 @@ i915_spirv_lower_store(
 		error = i915_spirv_lower_store_local(parser, base, variable, scalars, components);
 	} else if (base->ptr_kind == PTR_OUTPUT || base->ptr_kind == PTR_OUTPUT_BLOCK) {
 		error = i915_spirv_lower_store_output(parser, base, variable, scalars, components, opcode, offset);
+	} else if (base->ptr_kind == PTR_SSBO) {
+		error = i915_spirv_lower_storage(parser, word, base, variable, scalars, components, opcode, offset);
 	} else {
-		return i915_spirv_refuse(parser, opcode, offset, "store through a pointer that is not an output or a local");
+		return i915_spirv_refuse(parser, opcode, offset, "store through a pointer that is not an output, a local or a storage buffer");
 	}
 
 	/* Reports why the store could not be lowered. */
