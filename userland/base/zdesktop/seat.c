@@ -169,6 +169,7 @@ zwl_seat_request(
 			zwl_object_destroy(object);
 			error = 0;
 		}
+
 		break;
 	case ZWL_POINTER:
 		/* A pointer names a cursor image or retires its own binding. */
@@ -197,6 +198,7 @@ zwl_seat_request(
 			zwl_object_destroy(object);
 			error = 0;
 		}
+
 		break;
 	case ZWL_KEYBOARD:
 		/* release, from version 3, is the only keyboard request. */
@@ -204,6 +206,7 @@ zwl_seat_request(
 			zwl_object_destroy(object);
 			error = 0;
 		}
+
 		break;
 	default:
 		/* The dispatcher routes only seat interfaces here. */

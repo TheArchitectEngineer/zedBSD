@@ -712,6 +712,7 @@ home_read_apps(void)
 		home_add_app("Shared memory", "/bin/wlshm --size=480x320 --frames=6000", "wlshm shm test", 0x5aa87aU);
 		home_add_app("X terminal", "/bin/sh /usr/libexec/zdesktop-x11 /bin/zterm", "x11 xterm zterm", 0x4a4a78U);
 		home_add_app("Gears", "/bin/sh /usr/libexec/zdesktop-x11 /bin/zgears --frames=0", "gears opengl glx x11 3d", 0xd05a3aU);
+		home_add_app("Files", "/bin/zdesktop-files", "files file manager folder finder browse", 0x2f7cf6U);
 	}
 }
 

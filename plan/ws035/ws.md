@@ -9,7 +9,7 @@ Related Milestones: MG001, MG005
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 からサブエージェントが worktree の branch で実行。main への統合は main の session）
-Resume point: 2026-09-27: p075〜p081・p083・p057・p055 cleared。ws071-p010 で p040・p041 の decode の半分（inflate・PNG の読み）を作った。2026-09-27 p083（窓の中のすりガラスの card、ws071-p015 と一緒）cleared。合わせた順序（WS035・WS070・WS071 を 1 つのサブエージェントで、2026-09-27 承認）: ~~ws035-p081~~ → ~~ws071-p013~~ → ~~ws071-p016・p015 / ws035-p083~~ → ws071-p009（context menu）→ ~~ws071-p009~~ → ~~ws035-p057 の残り（背後の窓のぼかし）~~ → ~~ws035-p055（damage）~~ → ~~ws071-p010（PNG・DnD、libz/libpng-compat は ws035-p040/p041）~~ → ~~ws070-p011（TABS）~~ → ~~ws035-p082（ログインマネージャの検討、設計のみ）~~ → ws070-p006（style）→ 締め（ws071-p011、ws070-p012、ws035-p058、ws035-p028）
+Resume point: 2026-09-27: p075〜p081・p083・p057・p055 cleared。ws071-p010 で p040・p041 の decode の半分（inflate・PNG の読み）を作った。2026-09-27 p083（窓の中のすりガラスの card、ws071-p015 と一緒）cleared。合わせた順序（WS035・WS070・WS071 を 1 つのサブエージェントで、2026-09-27 承認）: ~~ws035-p081~~ → ~~ws071-p013~~ → ~~ws071-p016・p015 / ws035-p083~~ → ws071-p009（context menu）→ ~~ws071-p009~~ → ~~ws035-p057 の残り（背後の窓のぼかし）~~ → ~~ws035-p055（damage）~~ → ~~ws071-p010（PNG・DnD、libz/libpng-compat は ws035-p040/p041）~~ → ~~ws070-p011（TABS）~~ → ~~ws035-p082（ログインマネージャの検討、設計のみ）~~ → ~~ws070-p006~~ → ~~締め（ws071-p011、ws070-p012、ws035-p058、ws035-p028）~~。この順序はすべて済み（2026-09-27）。
 <!-- awesome-plan-current:end -->
 
 ## 単一目標
@@ -228,7 +228,7 @@ p001で確かめる。
 | [ws035-p041](phase041/phase.md) | 互換libpng（`userland/base/libpng-compat`、`/lib/libpng-compat.so`）: decode と encode。encode は filter にこだわらない。decode は試験用のRGBA32 PNGが読める正常系まで | planning | p040。**zdesktop が要るときに入れる** | `userland/base/libpng-compat`、`include/libc/compat/png.h` |
 | [ws035-p042](phase042/phase.md) | libzdesktop（`userland/base/libzdesktop`、`/lib/libzdesktop.so`）: **Vulkan 以外の OS 依存をここに閉じ込める**。zdesktop は networkd・audiod などと直接話さず、このライブラリを通す。**まずは空の枠だけ** | cleared（q325-i02） | p004 | `userland/base/libzdesktop`、`include/libc/zdesktop.h` |
 | ws035-p027 | zdesktop: タイトル等の文字描画をlibtruetypeへ移す | canceled（2026-09-27: p059 で置き換え済み。zdesktop の文字（題名、システムバー、App Home、Wiseview、System Menu）は最初から libtruetype の glyph atlas（`glass.c`）で描く） | p010, p025 | zdesktop |
-| ws035-p028 | zdesktop: toolkit（GTK・Qt）が要るWaylandの対応範囲（xdg-shellの残り、keymap、clipboard、subsurface、wl_output、cursor、xdg-decoration）。**2026-09-27 に p075〜p080 へ分けた**（大きすぎるため）。この行は分けた Phase がすべて cleared になったら閉じる | planning（分割） | p059（p025 は canceled） | zdesktop、libwayland |
+| ws035-p028 | zdesktop: toolkit（GTK・Qt）が要るWaylandの対応範囲（xdg-shellの残り、keymap、clipboard、subsurface、wl_output、cursor、xdg-decoration）。**2026-09-27 に p075〜p080 へ分けた**（大きすぎるため）。この行は分けた Phase がすべて cleared になったら閉じる | cleared（2026-09-27、分けた p075〜p080 がすべて cleared） | p059（p025 は canceled） | zdesktop、libwayland |
 | ws035-p029 | Chromium: 依存とbuild環境（gn・ninja、NSS等の依存、クロスbuildの設定） | planning | p019, p028（p075〜p080）, WS034の依存ライブラリ | packages/network/chromium |
 | ws035-p030 | Chromium: 最初のbuild（content_shell、headless） | planning | p029 | 同上 |
 | ws035-p031 | Chromium: Ozone Waylandの表示と入力 | planning | p030 | 同上 |
@@ -275,7 +275,7 @@ p001で確かめる。
 | [ws035-p055](phase055/phase.md) | （2026-09-25 承認）damage（buffer age と scissor）。保守的: 窓の本体の上の pointer の移動と、近くにガラスの無い窓の同じ大きさの新しい画像だけを部分に、他は全画面 | cleared（2026-09-27、zdesktop-p055・回帰・boot test） | p011 | 同上 |
 | [ws035-p083](phase083/phase.md) | （2026-09-27、p057 から分割、ws071-p015 のため）窓の中のすりガラスの card: `zed_glass_v1`（client が card の角丸の矩形を渡し、zdesktop がぼかした壁紙のガラス・縁・影を下に描く）と see-through の Vulkan swapchain（WSI の PRE_MULTIPLIED、`zed_gpu_buffer_v1` revision 3 の `set_alpha`）。設計 [glass-design.md](glass-design.md) | cleared（2026-09-27、files-p015・menu-regress・files-regress・boot test） | p080 | zdesktop・libvulkan・libwayland・libzdesktop |
 | [ws035-p057](phase057/phase.md) | （2026-09-25 承認）効果: すりガラス（背後のぼかし）と影。2026-09-27: client の card のガラスと窓の alpha は p083 へ分けた。残りの**背後の窓のぼかし**: 下に窓がある窓の前に下の scene を 1/8 に描き直し、2 回の Gaussian をガラスの標本に（title bar・panel・see-through の body）、遅延で作り失敗なら壁紙。damage で広げるのは p055 | cleared（2026-09-27、zdesktop-p057・menu・titlebar・files の回帰・boot test） | p083 | 同上 |
-| ws035-p058 | zdesktop（secondary queue で変えた全 source）の規約の全文との照合と回帰（sq001 の締め） | planned（sq001） | sq001 の他の Phase | sq001 で変えた source |
+| [ws035-p058](phase058/phase.md) | zdesktop（secondary queue で変えた全 source）の規約の全文との照合と回帰（sq001 の締め） | cleared（2026-09-27、style-check 0、zdesktop・menu・titlebar・files の回帰。boot test はユーザーの指示で無し） | sq001 の他の Phase | sq001 で変えた source |
 | [ws035-p038](phase038/phase.md) | SSHハーネス: ゲストへ SSH で入り、コマンド実行・ファイル転送・ゲスト内 lldb・QEMU gdbstub でのデバッグを行う道具を仕上げる（`plan/tools/guest/` は着手済みで未完成） | cleared（q347-i01。networkd が USB の interface を UP にしないため設定されなかった → RAISE を追加） | p037、USB CDC-ECM が上がること（p039） | `plan/tools/guest/` |
 | [ws035-p039](phase039/phase.md) | USB CDC-ECM の実機確認: 実績のないまま入っている ECM driver が QEMU で実際に link し address を得るかを、シリアルコンソールで観察しながら確かめる。**ECM は USB 2.0 の device なので EHCI と xHCI の両方で確かめる**（ws004-p019 の記録との食い違いの照合を含む）。USB storage と同居したときの挙動も切り分ける | cleared（q343-i01。xHCI の IMAN の競合を直した。UHCI は p044、TCP は ws034-p046 へ） | p037 | `src/drivers/usb/usb-cdc-ecm.c`、試験 |
 | ws035-p015 | システム是正の受け皿（アプリ導入で見つかったGPU・カーネル・libc等の問題。GPU基盤の問題はWS031へ） | planning | p004 | 随時 |

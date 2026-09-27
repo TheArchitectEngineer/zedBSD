@@ -132,6 +132,7 @@ wlc_event_dispatch(
 		return 0;
 	}
 
+	/* What the event is delivered with, read while the display is locked. */
 	listener = proxy->listener;
 	dispatcher = proxy->dispatcher;
 	implementation = proxy->dispatcher_data;
@@ -146,6 +147,7 @@ wlc_event_dispatch(
 		}
 	}
 
+	/* The lock is not held while the client's code runs. */
 	pthread_mutex_unlock(&display->mutex);
 
 	/* A custom binding interprets its own event arguments directly. */
@@ -155,6 +157,7 @@ wlc_event_dispatch(
 		if (error != 0)
 			return EPROTO;
 
+		/* Succeeded: the binding took the event. */
 		return 0;
 	}
 
