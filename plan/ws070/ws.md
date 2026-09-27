@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: none（p001〜p004 は 2026-09-27 ユーザーの指示でサブエージェントが worktree の branch で実行。main への統合は main の session）
-Resume point: p011（TABS）cleared 2026-09-27（端の場合の補強は phase011 の「残り」）。ws035-p082・p006・p012 も cleared。全 Phase cleared。WS の完了の書き直しと補強（p011・p006 の「残り」）の扱いは main の判断待ち。p007（設計）・p008（protocol と model）・p009（glyph cache と icon）・p010（CONTROLS の presentation）cleared 2026-09-27。順序は titlebar-design.md §14（WS071 と合わせた計画）。p006 は titlebar の Phase の後
+Resume point: 補強 p013（TABS の見え方・中央の切り方・題名の配分・keyboard・wheel、menu の comment の照合）cleared 2026-09-27（残りは phase013 の「残り」）。WS の完了の書き直しは main の判断待ち。以前: p011（TABS）cleared 2026-09-27（端の場合の補強は phase011 の「残り」）。ws035-p082・p006・p012 も cleared。全 Phase cleared。WS の完了の書き直しと補強（p011・p006 の「残り」）の扱いは main の判断待ち。p007（設計）・p008（protocol と model）・p009（glyph cache と icon）・p010（CONTROLS の presentation）cleared 2026-09-27。順序は titlebar-design.md §14（WS071 と合わせた計画）。p006 は titlebar の Phase の後
 Executor: WS071 の作業用のサブエージェント（2026-09-27 ユーザー「WS071のサブエージェントでスケジューリングするのがいいと思います。」）
 <!-- awesome-plan-current:end -->
 
@@ -82,6 +82,7 @@ Phase の分け方・順序・受け入れは p007（設計）で決める。WS0
 | [ws070-p010](phase010/phase.md) | CONTROLS の presentation: 配置と縮退、button・segment・検索とパンくずの欄・輪、pointer・keyboard、overflow の popup（隠れた control と窓の menu）、docked の Application Zone、animation の補間（shell.c・menu-shell.c・seat.c: WS035 と調整） | cleared | p008、p009 |
 | [ws070-p011](phase011/phase.md) | TABS の presentation: strip、active・attention・×・＋、縮退、mode の atomic な切替（titlebar-probe で） | cleared（2026-09-27、titlebar-p011・titlebar-p010・files-p017。端の場合は phase.md の「残り」） | p010 |
 | [ws070-p012](phase012/phase.md) | titlebar の規約の全文との照合、回帰（menu・files・zdesktop）、boot test（2026-09-27 のユーザーの指示で無し）、i915 実機（任意、未実施） | cleared（2026-09-27、build/closeout の回帰） | p006、p011、WS071-p014 |
+| [ws070-p013](phase013/phase.md) | （補強、p011・p012 の残り）TABS: 白い bar でも見える tab の地、題名の中央の切り方と窓の題名が先に譲る配分、dock の途中の確認、Ctrl+Tab・Ctrl+PageUp/Down・Ctrl+W・Ctrl+T、strip の wheel。`menu-shell.c` の段落の comment と `libzdesktop/menu.c`・`menu-protocol.c`・`zdesktop.h` の手の照合 | cleared（2026-09-27、titlebar-p013・p010・p011・menu-p002・p003、files の回帰） | p011、p012 |
 | [ws070-p006](phase006/phase.md) | 規約の全文との照合の残り: WS071 と共有する file（`zdesktop/menu.c`・`menu-shell.c`・`menu.h`、`libzdesktop/menu.c`、`zdesktop.h`、`libwayland/menu-protocol.c`）への p005 の指摘の直しと回帰（最後） | cleared（2026-09-27、menu-p002・menu-p003・files-p009。手の照合の残りは p012） | p005、WS071 の menu の変更の merge（衝突を避ける分割、2026-09-27） |
 
 ## 試験の道具（plan/ws070/tests/）
@@ -95,4 +96,5 @@ Phase の分け方・順序・受け入れは p007（設計）で決める。WS0
 | menu-occlude.sh | 隠れた題名の bar の項目は押せない |
 | menu-regress.sh、zdesktop-p068-menu.sh | WS035 の zdesktop の回帰（p068 は題名の double click の位置を直した版） |
 | style-compare.sh | 既存の file の style-check の件数を変更前と比べる |
+| titlebar-p013.sh | TABS の補強（tab の key、dock の途中の画面、長い題名の配分、strip の wheel）。GUEST_RUNTIME の既定は build/ws071-run |
 | menu-hw.sh | i915 実機（5330）の System Menu（capture の scenario `zdesktop-menu`）。lock の中で走らせ、/tmp の結果を OUTDIR に写す |

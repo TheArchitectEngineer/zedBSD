@@ -39,7 +39,7 @@ struct zwl_global {
 /* Stable global names are scoped to one compositor process generation. */
 static const struct zwl_global globals[] = {
 	{ 1, "wl_compositor", 4, ZWL_COMPOSITOR },
-	{ 2, "xdg_wm_base", 3, ZWL_WM },
+	{ 2, "xdg_wm_base", 4, ZWL_WM },
 	{ 3, "zed_gpu_buffer_v1", 3, ZWL_FACTORY },
 	{ 4, "wl_output", 4, ZWL_OUTPUT },
 	{ 5, "wl_seat", 5, ZWL_SEAT },
@@ -70,6 +70,7 @@ static int factory_fence(struct zwl_object *factory, const unsigned char *bytes,
 static int factory_alpha(struct zwl_object *factory, const unsigned char *bytes, size_t size);
 static void commit_fence(struct zwl_object *surface, unsigned attached);
 static void commit_damage(struct zwl_object *surface);
+static int send_bounds(struct zwl_object *surface);
 
 /*
  * Dispatches one validated frame through its client-local interface identity.
@@ -1211,6 +1212,13 @@ zwl_window_send_configure(
 		size = 4U * sizeof(uint32_t);
 	}
 
+	/* A window of xdg-shell version 4 learns first how large it may make itself. */
+	if (!surface->fullscreen && !surface->maximized && role->top->version >= 4U) {
+		error = send_bounds(surface);
+		if (error != 0)
+			return error;
+	}
+
 	/* The toplevel configure. */
 	error = zwl_emit(surface->client, role->top->id, 0, configure, size);
 	if (error != 0)
@@ -1229,6 +1237,42 @@ zwl_window_send_configure(
 
 	/* Succeeded. */
 	printf("ZWL CONFIGURE client=%llu surface=%u serial=%u width=%u height=%u fullscreen=%u\n", (unsigned long long)surface->client->number, surface->id, surface->configure_serial, configure[0], configure[1], surface->fullscreen);
+	return 0;
+}
+
+/*
+ * Sends a window its bounds (xdg_toplevel.configure_bounds, version 4): the
+ * largest size it should choose for itself, the space for window bodies in
+ * the glass look (under the system bar and a floating title bar, shell.c)
+ * and the output otherwise.  A client that chooses its own size keeps within
+ * it, so that its window is seen whole.
+ */
+static int
+send_bounds(
+	struct zwl_object *surface)
+{
+	struct zwl_server *server;
+	int32_t width;
+	int32_t height;
+	int32_t bounds[2];
+	int error;
+
+	/* The space the look leaves for a body. */
+	server = surface->client->server;
+	width = (int32_t)server->width;
+	height = (int32_t)server->height;
+	if (server->glass)
+		zwl_glass_space(server, &width, &height);
+
+	/* The width and the height, in that order. */
+	bounds[0] = width;
+	bounds[1] = height;
+	error = zwl_emit(surface->client, surface->role->top->id, 2, bounds, sizeof(bounds));
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	printf("ZWL BOUNDS client=%llu surface=%u width=%d height=%d\n", (unsigned long long)surface->client->number, surface->id, width, height);
 	return 0;
 }
 

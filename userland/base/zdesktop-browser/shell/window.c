@@ -91,7 +91,7 @@ static const struct xdg_surface_listener surface_listener = {
 
 /* The size the compositor gives the window, and its request to close. */
 static const struct xdg_toplevel_listener toplevel_listener = {
-	window_toplevel_configure, window_toplevel_close
+	window_toplevel_configure, window_toplevel_close, NULL
 };
 
 /* The seat's devices and name. */

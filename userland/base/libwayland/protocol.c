@@ -589,9 +589,9 @@ static const struct wl_message xdg_wm_base_events[] = {
 	{ "ping", "u", xdg_wm_base_events_0_types },
 };
 
-/* Exposes the immutable selected xdg_wm_base protocol description (version 3: xdg_popup.reposition). */
+/* Exposes the immutable selected xdg_wm_base protocol description (version 3: xdg_popup.reposition; version 4: xdg_toplevel.configure_bounds). */
 const struct wl_interface xdg_wm_base_interface = {
-	"xdg_wm_base", 3, 4, xdg_wm_base_requests,
+	"xdg_wm_base", 4, 4, xdg_wm_base_requests,
 	1, xdg_wm_base_events
 };
 
@@ -707,7 +707,7 @@ static const struct wl_message xdg_surface_events[] = {
 
 /* Exposes the immutable selected xdg_surface protocol description. */
 const struct wl_interface xdg_surface_interface = {
-	"xdg_surface", 3, 5, xdg_surface_requests,
+	"xdg_surface", 4, 5, xdg_surface_requests,
 	1, xdg_surface_events
 };
 
@@ -789,16 +789,23 @@ static const struct wl_interface *xdg_toplevel_events_0_types[] = {
 	NULL,
 };
 
+/* Identifies object arguments in xdg_toplevel.configure_bounds (version 4) for validation. */
+static const struct wl_interface *xdg_toplevel_events_2_types[] = {
+	NULL,
+	NULL,
+};
+
 /* Preserves the wire opcode order for xdg_toplevel events. */
 static const struct wl_message xdg_toplevel_events[] = {
 	{ "configure", "iia", xdg_toplevel_events_0_types },
 	{ "close", "", NULL },
+	{ "configure_bounds", "4ii", xdg_toplevel_events_2_types },
 };
 
 /* Exposes the immutable selected xdg_toplevel protocol description. */
 const struct wl_interface xdg_toplevel_interface = {
-	"xdg_toplevel", 3, 14, xdg_toplevel_requests,
-	2, xdg_toplevel_events
+	"xdg_toplevel", 4, 14, xdg_toplevel_requests,
+	3, xdg_toplevel_events
 };
 
 /* Identifies object arguments in xdg_popup.grab for validation. */

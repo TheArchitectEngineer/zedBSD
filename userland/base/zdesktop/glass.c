@@ -1036,6 +1036,124 @@ glass_draw_text(
 	}
 }
 
+/*
+ * Draws a line of UTF-8 text from x on a baseline, cut in the middle (with
+ * an ellipsis of dots between its start and its end) where it would pass
+ * x + limit.  Names that differ only at their end (Document 1, Document 2)
+ * stay told apart.
+ */
+void
+glass_draw_text_middle(
+	struct zwl_server *server,
+	VkCommandBuffer command,
+	enum glass_size size,
+	int32_t x,
+	int32_t baseline,
+	const char *text,
+	int32_t limit,
+	const float *color)
+{
+	const struct glass_glyph *glyph;
+	struct zwl_glass *glass;
+	const char *tail;
+	const char *next;
+	uint32_t codepoint;
+	int32_t width;
+	int32_t dots;
+	int32_t room;
+	int32_t before;
+	int32_t tail_width;
+	int32_t head_end;
+	unsigned index;
+
+	/* Nothing without glyphs. */
+	glass = server->compose->glass;
+	if (!glass->text)
+		return;
+
+	/* A text that fits is drawn whole. */
+	width = glass_text_width(server, size, text);
+	if (width <= limit) {
+		glass_draw_text(server, command, size, x, baseline, text, limit, color);
+		return;
+	}
+
+	/* The room besides the ellipsis; without any, the ordinary cut. */
+	dots = 3 * glass->glyphs[size]['.' - 32].advance;
+	room = limit - dots;
+	if (room <= 0) {
+		glass_draw_text(server, command, size, x, baseline, text, limit, color);
+		return;
+	}
+
+	/* The end kept: the last characters within half the room (before is the width ahead of it). */
+	before = 0;
+	next = text;
+	while (*next != '\0') {
+		/* The rest from here fits in half the room. */
+		if (width - before <= room / 2)
+			break;
+
+		/* Otherwise this character is ahead of the end. */
+		codepoint = glass_utf8_next(&next);
+		glyph = glass_glyph_of(glass, size, codepoint);
+		if (glyph != NULL)
+			before += glyph->advance;
+	}
+
+	/* The end starts there. */
+	tail = next;
+
+	/* An end that starts with a dot starts after it (the ellipsis would run into it: "REA....md"). */
+	if (*tail == '.') {
+		codepoint = glass_utf8_next(&next);
+		glyph = glass_glyph_of(glass, size, codepoint);
+		if (glyph != NULL)
+			before += glyph->advance;
+		tail = next;
+	}
+
+	/* The start, while it fits before the ellipsis and the end. */
+	tail_width = width - before;
+	head_end = x + room - tail_width;
+	next = text;
+	while (next < tail) {
+		/* The next character there is a glyph for. */
+		codepoint = glass_utf8_next(&next);
+		glyph = glass_glyph_of(glass, size, codepoint);
+		if (glyph == NULL)
+			continue;
+
+		/* The start stops where the ellipsis must go. */
+		if (x + glyph->advance > head_end)
+			break;
+
+		/* The glyph, and the pen after it. */
+		glass_draw_glyph_at(server, command, glyph, x, baseline, color);
+		x += glyph->advance;
+	}
+
+	/* The ellipsis. */
+	for (index = 0; index < 3U; index++) {
+		glass_draw_glyph(server, command, size, '.' - 32, x, baseline, color);
+		x += glass->glyphs[size]['.' - 32].advance;
+	}
+
+	/* The end, each character there is a glyph for. */
+	next = tail;
+	while (*next != '\0') {
+		/* The next character's glyph. */
+		codepoint = glass_utf8_next(&next);
+		glyph = glass_glyph_of(glass, size, codepoint);
+		if (glyph == NULL)
+			continue;
+
+		/* The glyph, and the pen after it. */
+		glass_draw_glyph_at(server, command, glyph, x, baseline, color);
+		x += glyph->advance;
+	}
+}
+
 /* Draws one glyph of the atlas with its origin at x on the baseline. */
 void
 glass_draw_glyph(
