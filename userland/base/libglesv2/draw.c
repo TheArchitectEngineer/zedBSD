@@ -50,13 +50,14 @@ static uint32_t draw_integer(const unsigned char *element, GLenum type, GLint co
 static unsigned draw_sampler_shape(GLenum type);
 static unsigned draw_sampler_kind(GLenum type);
 static int draw_texture_matches(const struct gles_texture *texture, unsigned kind);
-static void draw_raster(struct gles_state *state, uint32_t topology, struct gles_raster *raster);
+static void draw_raster(struct gles_state *state, const struct gles_target *target, uint32_t topology, struct gles_raster *raster);
 static VkPipeline draw_pipeline(struct gles_state *state, const struct gles_target *target, const struct gles_raster *raster, const struct gles_vertex_layout *layout);
 static int draw_blocks(struct zegl_context *context, struct gles_state *state, VkDescriptorBufferInfo *blocks);
 static VkDescriptorSet draw_descriptors(struct gles_state *state, const VkDescriptorBufferInfo *blocks, uint32_t *offset);
 static void draw_vertex_attrib_integer(GLuint index, GLenum type, const uint32_t *values);
 static void draw_dynamic(struct gles_state *state, struct zegl_context *context, const struct gles_target *target);
 static VkRect2D draw_scissor_rect(struct gles_state *state, const struct gles_target *target);
+static void draw_clear_buffer(GLenum buffer, GLint drawbuffer, const VkClearValue *value, VkImageAspectFlags aspects);
 static VkBlendFactor draw_blend_factor(GLenum factor);
 static VkBlendOp draw_blend_op(GLenum equation);
 static VkStencilOp draw_stencil_op(GLenum op);
@@ -93,10 +94,11 @@ gles_pipelines_forget(
 }
 
 /*
- * Reads a rectangle of the framebuffer (the read surface's, or the bound
- * framebuffer object's colour image) as RGBA8 rows from the bottom up,
- * waiting for what the frame drew.  Pixels outside it are black.  Returns
- * 0, or -1 with the error recorded.
+ * Reads a rectangle of the read framebuffer's read buffer (the read
+ * surface's image, or a framebuffer object's colour attachment) as RGBA8
+ * rows from the bottom up, waiting for what the frame drew.  Pixels
+ * outside it are black.  Returns 0, or -1 with the error recorded (an
+ * integer attachment cannot be read so).
  */
 int
 gles_read_rgba(
@@ -107,28 +109,58 @@ gles_read_rgba(
 	GLsizei height,
 	unsigned char *rows)
 {
-	struct zegl_surface *surface;
+	int status;
+
+	/* The rows as RGBA unsigned bytes (a float buffer's clamped). */
+	status = gles_read_pixels(context, x, y, width, height, GL_RGBA, GL_UNSIGNED_BYTE, 1, rows);
+	if (status != 0)
+		return -1;
+
+	/* Succeeded: the rows. */
+	return 0;
+}
+
+/*
+ * Reads a rectangle of the read framebuffer's read buffer as tight rows
+ * of the application's pixels of a format and type (which the read
+ * buffer's format must allow, gles_read_format_ok, unless clamped is
+ * nonzero and they are RGBA bytes of a normalized or float buffer: a
+ * copy into a texture's) from the bottom up, waiting for what the frame
+ * drew.  Pixels outside it are zeros.  Returns 0, or -1 with the error
+ * recorded.
+ */
+int
+gles_read_pixels(
+	struct zegl_context *context,
+	GLint x,
+	GLint y,
+	GLsizei width,
+	GLsizei height,
+	GLenum format,
+	GLenum type,
+	int clamped,
+	unsigned char *rows)
+{
 	struct gles_state *state;
-	struct gles_target target;
+	struct gles_read read;
 	VkImageMemoryBarrier barrier;
 	VkBufferImageCopy copy;
 	VkBuffer buffer;
 	VkDeviceSize offset;
-	VkImage image;
-	uint32_t layer;
-	VkImageLayout rest_layout;
-	VkExtent2D extent;
 	unsigned char *mapped;
-	unsigned char *pixel;
+	unsigned char *swapped;
+	unsigned char red;
 	const unsigned char *source;
+	size_t texel;
+	size_t pixel;
+	size_t span;
 	GLint left;
 	GLint bottom;
 	GLint right;
 	GLint top;
 	GLint row;
 	GLint column;
-	int swizzle;
-	int flip;
+	int allowed;
 	int status;
 	EGLint error;
 
@@ -137,64 +169,24 @@ gles_read_rgba(
 	if (state == NULL)
 		return -1;
 
-	/* A framebuffer object: its colour image, with GL's rows, in the draw surface's frame (its pass ends for the copy). */
-	if (state->framebuffer != 0U) {
-		status = gles_target_open(context, state, NULL, &target);
-		if (status != 0)
-			return -1;
+	/* What the read buffer is, in a frame with no pass open. */
+	status = gles_read_source(context, state, &read);
+	if (status != 0)
+		return -1;
 
-		/* Its pass ends, and it must have a colour image. */
-		gles_target_close(state);
-		if (!target.has_color) {
-			gles_error(context, GL_INVALID_OPERATION);
-			return -1;
-		}
-
-		/* Its image and size. */
-		surface = target.surface;
-		image = target.fbo->color_image;
-		layer = target.fbo->color_layer;
-		rest_layout = target.fbo->color_layout;
-		extent = target.extent;
-		flip = 0;
-		swizzle = 0;
-	} else {
-		/* The read surface, whose images must be copyable. */
-		surface = context->read;
-		if (surface == NULL) {
-			gles_error(context, GL_INVALID_FRAMEBUFFER_OPERATION);
-			return -1;
-		}
-
-		/* Its images must be copyable. */
-		if (!surface->readable) {
-			gles_error(context, GL_INVALID_OPERATION);
-			return -1;
-		}
-
-		/* The frame, with its image drawn by at least one pass (a first pass clears it); no framebuffer object's pass open. */
-		gles_target_close(state);
-		error = zegl_frame_begin(surface);
-		if (error != EGL_SUCCESS) {
-			gles_error(context, GL_OUT_OF_MEMORY);
-			return -1;
-		}
-
-		/* The pass ends so the image can be copied. */
-		zegl_frame_pass(surface, NULL);
-		zegl_frame_leave_pass(surface);
-		image = surface->images[surface->image];
-		layer = 0U;
-		rest_layout = surface->rest_layout;
-		extent = surface->extent;
-		flip = 1;
-		swizzle = 0;
-		if (surface->format == VK_FORMAT_B8G8R8A8_UNORM)
-			swizzle = 1;
+	/* A format and type its texels can be read as (a copy reads any colour that is not integers as bytes). */
+	allowed = gles_read_format_ok(read.format, format, type);
+	if (clamped && read.format->kind == GLES_TEXEL_FLOAT)
+		allowed = 1;
+	if (!allowed) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return -1;
 	}
 
-	/* Everything starts black; only the part inside the image is copied. */
-	memset(rows, 0, (size_t)width * (size_t)height * 4U);
+	/* Everything starts as zeros; only the part inside the image is copied. */
+	texel = read.format->bytes;
+	pixel = gles_pixel_size(format, type);
+	memset(rows, 0, (size_t)width * (size_t)height * pixel);
 	left = x;
 	if (left < 0)
 		left = 0;
@@ -202,16 +194,17 @@ gles_read_rgba(
 	if (bottom < 0)
 		bottom = 0;
 	right = x + width;
-	if (right > (GLint)extent.width)
-		right = (GLint)extent.width;
+	if (right > (GLint)read.extent.width)
+		right = (GLint)read.extent.width;
 	top = y + height;
-	if (top > (GLint)extent.height)
-		top = (GLint)extent.height;
+	if (top > (GLint)read.extent.height)
+		top = (GLint)read.extent.height;
 	if (left >= right || bottom >= top)
 		return 0;
 
 	/* Room in the stream for the copy. */
-	mapped = gles_stream(state, (size_t)(right - left) * (size_t)(top - bottom) * 4U, 16U, &buffer, &offset);
+	span = (size_t)(right - left);
+	mapped = gles_stream(state, span * (size_t)(top - bottom) * texel, 16U, &buffer, &offset);
 	if (mapped == NULL) {
 		gles_error(context, GL_OUT_OF_MEMORY);
 		return -1;
@@ -222,68 +215,72 @@ gles_read_rgba(
 	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
 	barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 	barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-	barrier.oldLayout = rest_layout;
+	barrier.oldLayout = read.layout;
 	barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	barrier.image = image;
+	barrier.image = read.image;
 	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	barrier.subresourceRange.baseMipLevel = read.level;
 	barrier.subresourceRange.levelCount = 1U;
-	barrier.subresourceRange.baseArrayLayer = layer;
+	barrier.subresourceRange.baseArrayLayer = read.layer;
 	barrier.subresourceRange.layerCount = 1U;
-	vkCmdPipelineBarrier(surface->command, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+	vkCmdPipelineBarrier(read.surface->command, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
 			     0U, 0U, NULL, 0U, NULL, 1U, &barrier);
 
 	/* The rectangle (a window's rows go down from its top, a framebuffer object's are GL's). */
 	memset(&copy, 0, sizeof(copy));
 	copy.bufferOffset = offset;
 	copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	copy.imageSubresource.baseArrayLayer = layer;
+	copy.imageSubresource.mipLevel = read.level;
+	copy.imageSubresource.baseArrayLayer = read.layer;
 	copy.imageSubresource.layerCount = 1U;
 	copy.imageOffset.x = left;
 	copy.imageOffset.y = bottom;
-	if (flip)
-		copy.imageOffset.y = (int32_t)extent.height - top;
+	if (read.flip)
+		copy.imageOffset.y = (int32_t)read.extent.height - top;
 	copy.imageExtent.width = (uint32_t)(right - left);
 	copy.imageExtent.height = (uint32_t)(top - bottom);
 	copy.imageExtent.depth = 1U;
-	vkCmdCopyImageToBuffer(surface->command, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, buffer, 1U, &copy);
+	vkCmdCopyImageToBuffer(read.surface->command, read.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, buffer, 1U, &copy);
 
 	/* Back to where the image rests. */
 	barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
 	barrier.dstAccessMask = 0U;
 	barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-	barrier.newLayout = rest_layout;
-	vkCmdPipelineBarrier(surface->command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+	barrier.newLayout = read.layout;
+	vkCmdPipelineBarrier(read.surface->command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
 			     0U, 0U, NULL, 0U, NULL, 1U, &barrier);
-	surface->recorded = 1;
+	read.surface->recorded = 1;
 
 	/* Done before the bytes are read. */
-	error = zegl_frame_flush(surface);
+	error = zegl_frame_flush(read.surface);
 	if (error != EGL_SUCCESS) {
 		gles_error(context, GL_OUT_OF_MEMORY);
 		return -1;
 	}
 
-	/* Each row into GL's order (bottom up), each pixel as RGBA. */
-	for (row = bottom; row < top; row++) {
-		source = mapped + (size_t)(row - bottom) * (size_t)(right - left) * 4U;
-		if (flip)
-			source = mapped + (size_t)(top - 1 - row) * (size_t)(right - left) * 4U;
-		for (column = left; column < right; column++) {
-			pixel = rows + ((size_t)(row - y) * (size_t)width + (size_t)(column - x)) * 4U;
-			pixel[0] = source[0];
-			pixel[1] = source[1];
-			pixel[2] = source[2];
-			pixel[3] = source[3];
-			if (swizzle) {
-				pixel[0] = source[2];
-				pixel[2] = source[0];
-			}
-
-			/* The next pixel. */
-			source += 4;
+	/* A window's BGRA bytes become RGBA, in place. */
+	if (read.swizzle) {
+		for (swapped = mapped; swapped < mapped + span * (size_t)(top - bottom) * texel; swapped += 4) {
+			red = swapped[2];
+			swapped[2] = swapped[0];
+			swapped[0] = red;
 		}
+	}
+
+	/* Each row into GL's order (bottom up), its texels in the application's form. */
+	for (row = bottom; row < top; row++) {
+		source = mapped + (size_t)(row - bottom) * span * texel;
+		if (read.flip)
+			source = mapped + (size_t)(top - 1 - row) * span * texel;
+		column = left;
+		gles_texels_read(read.format,
+				 source,
+				 span,
+				 format,
+				 type,
+				 rows + ((size_t)(row - y) * (size_t)width + (size_t)(column - x)) * pixel);
 	}
 
 	/* Everything recorded before is done: the frame's resources are free again. */
@@ -293,7 +290,6 @@ gles_read_rgba(
 	/* Succeeded: the rows. */
 	return 0;
 }
-
 /*
  * Draws primitives from the enabled arrays, vertices first to first +
  * count - 1.
@@ -388,7 +384,8 @@ glDrawElementsInstanced(
 
 /*
  * Clears the buffers of the frame in the mask (inside the scissor box
- * when the scissor test is on).
+ * when the scissor test is on): every colour attachment a draw buffer
+ * writes, and the depth and stencil buffer.
  */
 GL_APICALL void GL_APIENTRY
 glClear(
@@ -398,11 +395,13 @@ glClear(
 	struct gles_state *state;
 	struct zegl_surface *surface;
 	struct gles_target target;
-	VkClearAttachment attachments[2];
+	VkClearAttachment attachments[GLES_COLOR_ATTACHMENTS + 1U];
 	VkClearValue values[2];
 	VkClearRect rect;
 	const VkClearValue *clear;
 	uint32_t count;
+	unsigned index;
+	unsigned channel;
 	EGLint error;
 	int status;
 
@@ -439,6 +438,7 @@ glClear(
 	/* A whole clear of the surface at the frame's start is the first pass's own. */
 	clear = NULL;
 	if (state->framebuffer == 0U &&
+	    state->default_draw_buffer == GL_BACK &&
 	    surface->passes == 0U &&
 	    !state->scissor_test &&
 	    state->color_mask[0] &&
@@ -454,20 +454,30 @@ glClear(
 	if (clear != NULL)
 		return;
 
-	/* The colour, when the target has one. */
+	/* Each colour attachment a draw buffer writes (integers get the colour's values as integers). */
 	count = 0U;
 	memset(attachments, 0, sizeof(attachments));
-	if ((mask & GL_COLOR_BUFFER_BIT) != 0U && target.has_color) {
+	for (index = 0U; (mask & GL_COLOR_BUFFER_BIT) != 0U && index < target.color_count; index++) {
+		if ((target.draw_mask & (1U << index)) == 0U)
+			continue;
+
+		/* The attachment and its value. */
 		attachments[count].aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		attachments[count].colorAttachment = 0U;
+		attachments[count].colorAttachment = index;
 		attachments[count].clearValue = values[0];
+		if ((target.integer_mask & (1U << index)) != 0U) {
+			for (channel = 0U; channel < 4U; channel++)
+				attachments[count].clearValue.color.int32[channel] = (int32_t)values[0].color.float32[channel];
+		}
+
+		/* Counted. */
 		count++;
 	}
 
 	/* The depth and stencil aspects in the mask, when the target has a depth buffer. */
 	if (target.depth_aspects != 0U && (mask & (GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT)) != 0U) {
 		if ((mask & GL_DEPTH_BUFFER_BIT) != 0U && state->depth_mask)
-			attachments[count].aspectMask |= VK_IMAGE_ASPECT_DEPTH_BIT;
+			attachments[count].aspectMask |= target.depth_aspects & VK_IMAGE_ASPECT_DEPTH_BIT;
 		if ((mask & GL_STENCIL_BUFFER_BIT) != 0U)
 			attachments[count].aspectMask |= target.depth_aspects & VK_IMAGE_ASPECT_STENCIL_BIT;
 		attachments[count].clearValue = values[1];
@@ -489,7 +499,103 @@ glClear(
 }
 
 /*
- * Reads a rectangle of the framebuffer as RGBA bytes.
+ * Clears the colour attachment a draw buffer writes to float values, or
+ * (GL_DEPTH) the depth buffer.
+ */
+GL_APICALL void GL_APIENTRY
+glClearBufferfv(
+	GLenum buffer,
+	GLint drawbuffer,
+	const GLfloat *value)
+{
+	VkClearValue clear;
+
+	/* A colour's four floats, or the depth. */
+	memset(&clear, 0, sizeof(clear));
+	if (buffer == GL_COLOR) {
+		memcpy(clear.color.float32, value, 4U * sizeof(float));
+		draw_clear_buffer(buffer, drawbuffer, &clear, VK_IMAGE_ASPECT_COLOR_BIT);
+		return;
+	}
+
+	/* The depth (GL_STENCIL and the others are not float buffers). */
+	clear.depthStencil.depth = value[0];
+	if (buffer != GL_DEPTH)
+		buffer = GL_INVALID_ENUM;
+	draw_clear_buffer(buffer, drawbuffer, &clear, VK_IMAGE_ASPECT_DEPTH_BIT);
+}
+
+/*
+ * Clears the colour attachment a draw buffer writes to signed integers,
+ * or (GL_STENCIL) the stencil buffer.
+ */
+GL_APICALL void GL_APIENTRY
+glClearBufferiv(
+	GLenum buffer,
+	GLint drawbuffer,
+	const GLint *value)
+{
+	VkClearValue clear;
+
+	/* A colour's four integers, or the stencil. */
+	memset(&clear, 0, sizeof(clear));
+	if (buffer == GL_COLOR) {
+		memcpy(clear.color.int32, value, 4U * sizeof(int32_t));
+		draw_clear_buffer(buffer, drawbuffer, &clear, VK_IMAGE_ASPECT_COLOR_BIT);
+		return;
+	}
+
+	/* The stencil (GL_DEPTH and the others are not integer buffers). */
+	clear.depthStencil.stencil = (uint32_t)value[0] & 0xffU;
+	if (buffer != GL_STENCIL)
+		buffer = GL_INVALID_ENUM;
+	draw_clear_buffer(buffer, drawbuffer, &clear, VK_IMAGE_ASPECT_STENCIL_BIT);
+}
+
+/*
+ * Clears the colour attachment a draw buffer writes to unsigned integers.
+ */
+GL_APICALL void GL_APIENTRY
+glClearBufferuiv(
+	GLenum buffer,
+	GLint drawbuffer,
+	const GLuint *value)
+{
+	VkClearValue clear;
+
+	/* A colour's four unsigned integers (the others are not unsigned buffers). */
+	memset(&clear, 0, sizeof(clear));
+	memcpy(clear.color.uint32, value, 4U * sizeof(uint32_t));
+	if (buffer != GL_COLOR)
+		buffer = GL_INVALID_ENUM;
+	draw_clear_buffer(buffer, drawbuffer, &clear, VK_IMAGE_ASPECT_COLOR_BIT);
+}
+
+/*
+ * Clears the depth and the stencil buffer together (GL_DEPTH_STENCIL).
+ */
+GL_APICALL void GL_APIENTRY
+glClearBufferfi(
+	GLenum buffer,
+	GLint drawbuffer,
+	GLfloat depth,
+	GLint stencil)
+{
+	VkClearValue clear;
+
+	/* The depth and the stencil. */
+	memset(&clear, 0, sizeof(clear));
+	clear.depthStencil.depth = depth;
+	clear.depthStencil.stencil = (uint32_t)stencil & 0xffU;
+	if (buffer != GL_DEPTH_STENCIL)
+		buffer = GL_INVALID_ENUM;
+	draw_clear_buffer(buffer, drawbuffer, &clear, VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT);
+}
+
+/*
+ * Reads a rectangle of the read framebuffer's read buffer as pixels of a
+ * format and type: RGBA unsigned bytes from a normalized buffer, or the
+ * buffer format's own pair (GL_IMPLEMENTATION_COLOR_READ_FORMAT, _TYPE).
  */
 GL_APICALL void GL_APIENTRY
 glReadPixels(
@@ -506,17 +612,19 @@ glReadPixels(
 	unsigned char *rows;
 	unsigned char *base;
 	size_t stride;
+	size_t pixel;
 	GLsizei row;
 	GLenum error;
 	int status;
 
-	/* A context with its state, RGBA bytes, and a size. */
+	/* A context with its state, and a format and type there are. */
 	context = gles_context();
 	state = gles_state(context);
 	if (state == NULL)
 		return;
-	if (format != GL_RGBA || type != GL_UNSIGNED_BYTE) {
-		gles_error(context, GL_INVALID_OPERATION);
+	pixel = gles_pixel_size(format, type);
+	if (pixel == 0U) {
+		gles_error(context, GL_INVALID_ENUM);
 		return;
 	}
 
@@ -531,14 +639,14 @@ glReadPixels(
 		return;
 
 	/* The pixels, tightly packed. */
-	rows = malloc((size_t)width * (size_t)height * 4U);
+	rows = malloc((size_t)width * (size_t)height * pixel);
 	if (rows == NULL) {
 		gles_error(context, GL_OUT_OF_MEMORY);
 		return;
 	}
 
-	/* The rectangle. */
-	status = gles_read_rgba(context, x, y, width, height, rows);
+	/* The rectangle, in the format and type the read buffer allows. */
+	status = gles_read_pixels(context, x, y, width, height, format, type, 0, rows);
 	if (status != 0) {
 		free(rows);
 		return;
@@ -554,10 +662,9 @@ glReadPixels(
 
 	/* Each row into place. */
 	for (row = 0; row < height; row++)
-		memcpy(base + (size_t)row * stride, rows + (size_t)row * (size_t)width * 4U, (size_t)width * 4U);
+		memcpy(base + (size_t)row * stride, rows + (size_t)row * (size_t)width * pixel, (size_t)width * pixel);
 	free(rows);
 }
-
 /*
  * Describes a vertex attribute's array.
  */
@@ -1331,7 +1438,7 @@ draw_program(
 		return;
 
 	/* The pipeline for the state, and the descriptors. */
-	draw_raster(state, topology, &raster);
+	draw_raster(state, &target, topology, &raster);
 	pipeline = draw_pipeline(state, &target, &raster, &layout);
 	if (pipeline == VK_NULL_HANDLE) {
 		gles_error(context, GL_OUT_OF_MEMORY);
@@ -2378,18 +2485,22 @@ draw_texture_matches(
 static void
 draw_raster(
 	struct gles_state *state,
+	const struct gles_target *target,
 	uint32_t topology,
 	struct gles_raster *raster)
 {
 	unsigned face;
+	unsigned index;
+	uint32_t channels;
 
 	/* Everything not set is 0, so equal states compare equal. */
 	memset(raster, 0, sizeof(*raster));
 	raster->topology = topology;
 
-	/* Blending. */
-	raster->blend = (uint32_t)state->blend;
+	/* Blending, on each attachment that blends (not integers, not formats the device does not blend). */
+	raster->color_count = target->color_count;
 	if (state->blend) {
+		raster->blend = ((1U << target->color_count) - 1U) & ~(target->integer_mask | target->opaque_mask);
 		raster->blend_src_rgb = state->blend_src_rgb;
 		raster->blend_dst_rgb = state->blend_dst_rgb;
 		raster->blend_src_alpha = state->blend_src_alpha;
@@ -2398,10 +2509,17 @@ draw_raster(
 		raster->blend_equation_alpha = state->blend_equation_alpha;
 	}
 
-	/* The colour mask as four bits. */
+	/* The colour mask as four bits, on each attachment a draw buffer writes. */
+	channels = 0U;
 	for (face = 0U; face < 4U; face++) {
 		if (state->color_mask[face])
-			raster->color_mask |= 1U << face;
+			channels |= 1U << face;
+	}
+
+	/* The mask on each attachment written. */
+	for (index = 0U; index < target->color_count; index++) {
+		if ((target->draw_mask & (1U << index)) != 0U)
+			raster->color_mask |= channels << (index * 4U);
 	}
 
 	/* Depth. */
@@ -2461,7 +2579,7 @@ draw_pipeline(
 	VkPipelineMultisampleStateCreateInfo multisample;
 	VkPipelineDepthStencilStateCreateInfo depth;
 	VkStencilOpState *faces[2];
-	VkPipelineColorBlendAttachmentState blend_attachment;
+	VkPipelineColorBlendAttachmentState blend_attachments[GLES_COLOR_ATTACHMENTS];
 	VkPipelineColorBlendStateCreateInfo blend;
 	VkPipelineDynamicStateCreateInfo dynamic;
 	VkGraphicsPipelineCreateInfo create;
@@ -2578,22 +2696,24 @@ draw_pipeline(
 	/* The depth bounds test is off. */
 	depth.maxDepthBounds = 1.0f;
 
-	/* Blending and the colour mask. */
-	memset(&blend_attachment, 0, sizeof(blend_attachment));
-	blend_attachment.blendEnable = raster->blend;
-	blend_attachment.srcColorBlendFactor = draw_blend_factor(raster->blend_src_rgb);
-	blend_attachment.dstColorBlendFactor = draw_blend_factor(raster->blend_dst_rgb);
-	blend_attachment.colorBlendOp = draw_blend_op(raster->blend_equation_rgb);
-	blend_attachment.srcAlphaBlendFactor = draw_blend_factor(raster->blend_src_alpha);
-	blend_attachment.dstAlphaBlendFactor = draw_blend_factor(raster->blend_dst_alpha);
-	blend_attachment.alphaBlendOp = draw_blend_op(raster->blend_equation_alpha);
-	blend_attachment.colorWriteMask = raster->color_mask;
+	/* Blending and the colour mask of each colour attachment. */
+	memset(blend_attachments, 0, sizeof(blend_attachments));
+	for (index = 0U; index < raster->color_count; index++) {
+		blend_attachments[index].blendEnable = (raster->blend >> index) & 1U;
+		blend_attachments[index].srcColorBlendFactor = draw_blend_factor(raster->blend_src_rgb);
+		blend_attachments[index].dstColorBlendFactor = draw_blend_factor(raster->blend_dst_rgb);
+		blend_attachments[index].colorBlendOp = draw_blend_op(raster->blend_equation_rgb);
+		blend_attachments[index].srcAlphaBlendFactor = draw_blend_factor(raster->blend_src_alpha);
+		blend_attachments[index].dstAlphaBlendFactor = draw_blend_factor(raster->blend_dst_alpha);
+		blend_attachments[index].alphaBlendOp = draw_blend_op(raster->blend_equation_alpha);
+		blend_attachments[index].colorWriteMask = (raster->color_mask >> (index * 4U)) & 15U;
+	}
+
+	/* The attachments' states. */
 	memset(&blend, 0, sizeof(blend));
 	blend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-	blend.attachmentCount = 0U;
-	if (target->has_color)
-		blend.attachmentCount = 1U;
-	blend.pAttachments = &blend_attachment;
+	blend.attachmentCount = raster->color_count;
+	blend.pAttachments = blend_attachments;
 
 	/* The dynamic states. */
 	memset(&dynamic, 0, sizeof(dynamic));
@@ -3006,6 +3126,75 @@ draw_dynamic(
 	vkCmdSetStencilWriteMask(target->command, VK_STENCIL_FACE_BACK_BIT, state->stencil_write_mask[1]);
 	vkCmdSetStencilReference(target->command, VK_STENCIL_FACE_FRONT_BIT, (uint32_t)state->stencil_ref[0]);
 	vkCmdSetStencilReference(target->command, VK_STENCIL_FACE_BACK_BIT, (uint32_t)state->stencil_ref[1]);
+}
+
+/*
+ * Clears one buffer of the draw framebuffer to a value (glClearBuffer*):
+ * the colour attachment draw buffer drawbuffer writes (GL_COLOR), or the
+ * aspects of the depth and stencil buffer (drawbuffer 0), inside the
+ * scissor box when the test is on; a buffer of GL_INVALID_ENUM is an
+ * error of that name.
+ */
+static void
+draw_clear_buffer(
+	GLenum buffer,
+	GLint drawbuffer,
+	const VkClearValue *value,
+	VkImageAspectFlags aspects)
+{
+	struct zegl_context *context;
+	struct gles_state *state;
+	struct gles_target target;
+	VkClearAttachment attachment;
+	VkClearRect rect;
+	int status;
+
+	/* A context with its state, and a buffer of the call's kind. */
+	context = gles_context();
+	state = gles_state(context);
+	if (state == NULL)
+		return;
+	if (buffer == GL_INVALID_ENUM) {
+		gles_error(context, GL_INVALID_ENUM);
+		return;
+	}
+
+	/* A draw buffer there is (the depth and stencil buffer is draw buffer 0). */
+	if (drawbuffer < 0 ||
+	    (buffer == GL_COLOR && drawbuffer >= (GLint)GLES_DRAW_BUFFERS) ||
+	    (buffer != GL_COLOR && drawbuffer != 0)) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* The target's pass. */
+	status = gles_target_open(context, state, NULL, &target);
+	if (status != 0)
+		return;
+
+	/* The colour attachment the draw buffer writes (none: nothing), or the depth and stencil aspects the target has and writes. */
+	memset(&attachment, 0, sizeof(attachment));
+	attachment.clearValue = *value;
+	if (buffer == GL_COLOR) {
+		if ((target.draw_mask & (1U << (unsigned)drawbuffer)) == 0U)
+			return;
+		attachment.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		attachment.colorAttachment = (uint32_t)drawbuffer;
+	} else {
+		attachment.aspectMask = aspects & target.depth_aspects;
+		if (!state->depth_mask)
+			attachment.aspectMask &= ~(VkImageAspectFlags)VK_IMAGE_ASPECT_DEPTH_BIT;
+		if (attachment.aspectMask == 0U)
+			return;
+	}
+
+	/* The clear over the scissor box or the whole target. */
+	memset(&rect, 0, sizeof(rect));
+	rect.rect = draw_scissor_rect(state, &target);
+	rect.layerCount = 1U;
+	if (rect.rect.extent.width == 0U || rect.rect.extent.height == 0U)
+		return;
+	vkCmdClearAttachments(target.command, 1U, &attachment, 1U, &rect);
 }
 
 /* Returns the scissor box in Vulkan's coordinates inside the target, or the whole target when the test is off. */
