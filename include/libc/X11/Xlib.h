@@ -34,10 +34,15 @@ typedef struct { int type; unsigned long serial; Bool send_event; Display *displ
 typedef struct { int type; unsigned long serial; Bool send_event; Display *display; Window event,window,above; int x,y,width,height,border_width; Bool override_redirect; } XConfigureEvent;
 typedef struct { int type; unsigned long serial; Bool send_event; Display *display; Window window,root,subwindow; Time time; int x,y,x_root,y_root; unsigned int state,keycode; Bool same_screen; } XKeyEvent;
 
+/* The selections' events: SelectionClear (the owner lost it), SelectionRequest (to the owner), SelectionNotify (to the requestor). */
+typedef struct { int type; unsigned long serial; Bool send_event; Display *display; Window window; Atom selection; Time time; } XSelectionClearEvent;
+typedef struct { int type; unsigned long serial; Bool send_event; Display *display; Window owner,requestor; Atom selection,target,property; Time time; } XSelectionRequestEvent;
+typedef struct { int type; unsigned long serial; Bool send_event; Display *display; Window requestor; Atom selection,target,property; Time time; } XSelectionEvent;
+
 typedef XKeyEvent XButtonEvent;
 typedef XKeyEvent XMotionEvent;
 
-typedef union _XEvent { int type; XAnyEvent xany; XExposeEvent xexpose; XKeyEvent xkey; XButtonEvent xbutton; XMotionEvent xmotion; XMapRequestEvent xmaprequest; XConfigureEvent xconfigure; long pad[24]; } XEvent;
+typedef union _XEvent { int type; XAnyEvent xany; XExposeEvent xexpose; XKeyEvent xkey; XButtonEvent xbutton; XMotionEvent xmotion; XMapRequestEvent xmaprequest; XConfigureEvent xconfigure; XSelectionClearEvent xselectionclear; XSelectionRequestEvent xselectionrequest; XSelectionEvent xselection; long pad[24]; } XEvent;
 
 Display *XOpenDisplay(const char *);
 int XCloseDisplay(Display *);
@@ -84,6 +89,14 @@ int XFlush(Display *);
 int XSync(Display *,Bool);
 KeySym XLookupKeysym(XKeyEvent *,int);
 Bool XQueryExtension(Display *,const char *,int *,int *,int *);
+Atom XInternAtom(Display *,const char *,Bool);
+int XSetSelectionOwner(Display *,Atom,Window,Time);
+Window XGetSelectionOwner(Display *,Atom);
+int XConvertSelection(Display *,Atom,Atom,Atom,Window,Time);
+int XChangeProperty(Display *,Window,Atom,Atom,int,int,const unsigned char *,int);
+int XGetWindowProperty(Display *,Window,Atom,long,long,Bool,Atom,Atom *,int *,unsigned long *,unsigned long *,unsigned char **);
+int XDeleteProperty(Display *,Window,Atom);
+int XSendEvent(Display *,Window,Bool,long,XEvent *);
 
 #ifdef __cplusplus
 }

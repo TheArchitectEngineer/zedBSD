@@ -15,12 +15,20 @@
  * changed rectangle as damage.  The pointer's events become pointer
  * frames on the root window (the place in the window plus the window's
  * corner there), and the keyboard's evdev codes become X keycodes.
+ *
+ * The clipboard (ws035-p087): the seat's data device tells the server when
+ * another client's text becomes the selection (selection.c then owns X's
+ * CLIPBOARD for it and reads the text when an X client asks); while an X
+ * client owns CLIPBOARD the server offers its text as a data source, and
+ * the desktop's requests for it are handed to selection.c with their
+ * descriptors.
  */
 
 #include "userland/base/zdesktop-x11server/internal.h"
 
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -43,6 +51,14 @@
 
 /* The application's identity on the desktop. */
 #define WAYLAND_APP_ID		"zdesktop-x11server"
+
+/* The text types the clipboard offers and takes, the one read first, and how long a read may wait (milliseconds) and hold. */
+#define WAYLAND_TEXT_UTF8	"text/plain;charset=utf-8"
+#define WAYLAND_TEXT_PLAIN	"text/plain"
+#define WAYLAND_TEXT_X11	"UTF8_STRING"
+#define WAYLAND_TEXT_STRING	"STRING"
+#define WAYLAND_READ_MS		2000
+#define WAYLAND_READ_MAX	(1024U * 1024U)
 
 /*
  * One wl_shm buffer of a window, and whether the desktop holds it.
@@ -129,6 +145,23 @@ struct x11_wayland {
 
 	/* The X keycode each evdev key was pressed as, so its release says the same. */
 	uint8_t keycodes[WAYLAND_KEYS];
+
+	/*
+	 * The clipboard (ws035-p087): the data device manager and the seat's
+	 * device (NULL without them), the server's own source while an X
+	 * client's text is the selection (NULL otherwise), the offer
+	 * introduced last and whether it has text, the selection's offer from
+	 * another client (NULL for none) and whether it has text, and the
+	 * serial of the last input (a selection is set with it).
+	 */
+	struct wl_data_device_manager *data_manager;
+	struct wl_data_device *data_device;
+	struct wl_data_source *source;
+	struct wl_data_offer *offer_new;
+	int offer_new_text;
+	struct wl_data_offer *selection;
+	int selection_text;
+	uint32_t serial;
 };
 
 static int wayland_buffers(struct x11_wayland_window *window);
@@ -154,6 +187,17 @@ static void wayland_keyboard_enter(void *data, struct wl_keyboard *keyboard, uin
 static void wayland_keyboard_leave(void *data, struct wl_keyboard *keyboard, uint32_t serial, struct wl_surface *surface);
 static void wayland_keyboard_key(void *data, struct wl_keyboard *keyboard, uint32_t serial, uint32_t time, uint32_t key, uint32_t state);
 static void wayland_keyboard_modifiers(void *data, struct wl_keyboard *keyboard, uint32_t serial, uint32_t depressed, uint32_t latched, uint32_t locked, uint32_t group);
+static void wayland_data_offer(void *data, struct wl_data_device *device, struct wl_data_offer *offer);
+static void wayland_data_enter(void *data, struct wl_data_device *device, uint32_t serial, struct wl_surface *surface, wl_fixed_t x, wl_fixed_t y, struct wl_data_offer *offer);
+static void wayland_data_leave(void *data, struct wl_data_device *device);
+static void wayland_data_motion(void *data, struct wl_data_device *device, uint32_t time, wl_fixed_t x, wl_fixed_t y);
+static void wayland_data_drop(void *data, struct wl_data_device *device);
+static void wayland_data_selection(void *data, struct wl_data_device *device, struct wl_data_offer *offer);
+static void wayland_offer_type(void *data, struct wl_data_offer *offer, const char *mime_type);
+static void wayland_source_target(void *data, struct wl_data_source *source, const char *mime_type);
+static void wayland_source_send(void *data, struct wl_data_source *source, const char *mime_type, int32_t fd);
+static void wayland_source_cancelled(void *data, struct wl_data_source *source);
+static int wayland_text_type(const char *mime_type);
 
 /* The registry's callbacks. */
 static const struct wl_registry_listener wayland_registry_listener = {
@@ -183,6 +227,21 @@ static const struct wl_buffer_listener wayland_buffer_listener = {
 /* The seat's devices. */
 static const struct wl_seat_listener wayland_seat_listener = {
 	wayland_seat_capabilities, wayland_seat_name
+};
+
+/* The seat's data device: the selection (drags over X windows are not taken). */
+static const struct wl_data_device_listener wayland_data_listener = {
+	wayland_data_offer, wayland_data_enter, wayland_data_leave, wayland_data_motion, wayland_data_drop, wayland_data_selection
+};
+
+/* An offer's types (its actions are not used). */
+static const struct wl_data_offer_listener wayland_offer_listener = {
+	wayland_offer_type, NULL, NULL
+};
+
+/* The server's source of an X client's text. */
+static const struct wl_data_source_listener wayland_source_listener = {
+	wayland_source_target, wayland_source_send, wayland_source_cancelled, NULL, NULL, NULL
 };
 
 /*
@@ -245,6 +304,13 @@ x11_wayland_open(
 	if (status < 0) {
 		x11_wayland_close(wayland);
 		return EIO;
+	}
+
+	/* The seat's data device for the clipboard, when the desktop has one. */
+	if (wayland->data_manager != NULL && wayland->seat != NULL) {
+		wayland->data_device = wl_data_device_manager_get_data_device(wayland->data_manager, wayland->seat);
+		if (wayland->data_device != NULL)
+			(void)wl_data_device_add_listener(wayland->data_device, &wayland_data_listener, wayland);
 	}
 
 	/* Windows need a compositor, shared memory and a shell. */
@@ -320,12 +386,203 @@ x11_wayland_dispatch(
 }
 
 /*
+ * Makes an X client's text the desktop's selection: the server's source
+ * offers the text types, and the desktop's requests for them go to
+ * selection.c (x11_wayland_callbacks.selection_send).  Returns 0, or an
+ * errno value (ENOTSUP without a data device).
+ */
+int
+x11_wayland_selection_own(
+	struct x11_wayland *wayland)
+{
+	struct wl_data_source *source;
+
+	/* Only with a data device; an own source already there is kept. */
+	if (wayland->data_device == NULL)
+		return ENOTSUP;
+	if (wayland->source != NULL)
+		return 0;
+
+	/* The source and its types. */
+	source = wl_data_device_manager_create_data_source(wayland->data_manager);
+	if (source == NULL)
+		return ENOMEM;
+	(void)wl_data_source_add_listener(source, &wayland_source_listener, wayland);
+	wl_data_source_offer(source, WAYLAND_TEXT_UTF8);
+	wl_data_source_offer(source, WAYLAND_TEXT_PLAIN);
+	wl_data_source_offer(source, WAYLAND_TEXT_X11);
+	wl_data_source_offer(source, WAYLAND_TEXT_STRING);
+
+	/* The selection, with the last input's serial; another client's offer is not the selection any more. */
+	wayland->source = source;
+	wl_data_device_set_selection(wayland->data_device, source, wayland->serial);
+	if (wayland->selection != NULL)
+		wl_data_offer_destroy(wayland->selection);
+	wayland->selection = NULL;
+	wayland->selection_text = 0;
+
+	/* Succeeded: sent at once. */
+	(void)wl_display_flush(wayland->display);
+	printf("X11 CLIPBOARD own\n");
+	fflush(stdout);
+	return 0;
+}
+
+/*
+ * Gives up the server's source (its X client gave up CLIPBOARD, or went):
+ * the desktop's selection is emptied.
+ */
+void
+x11_wayland_selection_drop(
+	struct x11_wayland *wayland)
+{
+	/* Only the server's own source. */
+	if (wayland->source == NULL)
+		return;
+
+	/* The source goes; the selection with it. */
+	wl_data_source_destroy(wayland->source);
+	wayland->source = NULL;
+	(void)wl_display_flush(wayland->display);
+	printf("X11 CLIPBOARD drop\n");
+	fflush(stdout);
+}
+
+/*
+ * Tells whether another client's text is the desktop's selection.
+ */
+int
+x11_wayland_selection_has_text(
+	const struct x11_wayland *wayland)
+{
+	/* A selection offer with text. */
+	if (wayland->selection != NULL && wayland->selection_text)
+		return 1;
+
+	/* None. */
+	return 0;
+}
+
+/*
+ * Reads the text of another client's selection (waiting at most
+ * WAYLAND_READ_MS for it).  Returns 0 with the text (the caller frees it;
+ * it has a NUL after its length), or an errno value.
+ */
+int
+x11_wayland_selection_read(
+	struct x11_wayland *wayland,
+	char **text,
+	size_t *length)
+{
+	struct pollfd descriptor;
+	char *buffer;
+	char *grown;
+	size_t used;
+	size_t capacity;
+	ssize_t got;
+	int pipes[2];
+	int status;
+	int error;
+
+	/* Nothing yet, and nothing without text. */
+	*text = NULL;
+	*length = 0;
+	status = x11_wayland_selection_has_text(wayland);
+	if (!status)
+		return ENOENT;
+
+	/* The pipe the source writes into. */
+	status = pipe(pipes);
+	if (status != 0)
+		return errno;
+
+	/* The request with the write end, which the server closes (the reader sees the end once the source closes its copy). */
+	wl_data_offer_receive(wayland->selection, WAYLAND_TEXT_UTF8, pipes[1]);
+	close(pipes[1]);
+	(void)wl_display_flush(wayland->display);
+
+	/* Everything written, up to the end, the limit or the time allowed. */
+	buffer = NULL;
+	used = 0;
+	capacity = 0;
+	error = 0;
+	for (;;) {
+		/* Waits for more. */
+		descriptor.fd = pipes[0];
+		descriptor.events = POLLIN;
+		descriptor.revents = 0;
+		status = poll(&descriptor, 1, WAYLAND_READ_MS);
+		if (status <= 0) {
+			error = ETIMEDOUT;
+			break;
+		}
+
+		/* Room for more and a NUL. */
+		if (used + 4096U + 1U > capacity) {
+			capacity = used + 4096U + 1U;
+			grown = realloc(buffer, capacity);
+			if (grown == NULL) {
+				error = ENOMEM;
+				break;
+			}
+
+			/* The larger buffer. */
+			buffer = grown;
+		}
+
+		/* The bytes; the end ends the reading. */
+		got = read(pipes[0], buffer + used, 4096U);
+		if (got <= 0)
+			break;
+		used += (size_t)got;
+		if (used > WAYLAND_READ_MAX) {
+			error = E2BIG;
+			break;
+		}
+	}
+
+	/* The pipe's read end. */
+	close(pipes[0]);
+
+	/* A failed read gives nothing. */
+	if (error != 0) {
+		free(buffer);
+		return error;
+	}
+
+	/* Empty text is still text. */
+	if (buffer == NULL) {
+		buffer = malloc(1U);
+		if (buffer == NULL)
+			return ENOMEM;
+	}
+
+	/* Succeeded: the text, ended by a NUL. */
+	buffer[used] = '\0';
+	*text = buffer;
+	*length = used;
+	printf("X11 CLIPBOARD read bytes=%lu\n", (unsigned long)used);
+	fflush(stdout);
+	return 0;
+}
+
+/*
  * Closes every window and disconnects.
  */
 void
 x11_wayland_close(
 	struct x11_wayland *wayland)
 {
+	/* The clipboard's objects. */
+	if (wayland->source != NULL)
+		wl_data_source_destroy(wayland->source);
+	if (wayland->selection != NULL)
+		wl_data_offer_destroy(wayland->selection);
+	if (wayland->data_device != NULL)
+		wl_data_device_destroy(wayland->data_device);
+	if (wayland->data_manager != NULL)
+		wl_data_device_manager_destroy(wayland->data_manager);
+
 	/* The windows, and then the Vulkan they used. */
 	while (wayland->windows != NULL)
 		x11_wayland_window_close(wayland->windows);
@@ -765,14 +1022,23 @@ wayland_global(
 	int shm;
 	int shell;
 	int seat;
+	int manager;
 
-	/* Which of the four this is. */
+	/* Which of the five this is. */
 	wayland = data;
-	(void)version;
 	compositor = strcmp(interface, "wl_compositor");
 	shm = strcmp(interface, "wl_shm");
 	shell = strcmp(interface, "xdg_wm_base");
 	seat = strcmp(interface, "wl_seat");
+	manager = strcmp(interface, "wl_data_device_manager");
+
+	/* The data device manager, for the clipboard (version 3 at most). */
+	if (manager == 0 && wayland->data_manager == NULL) {
+		if (version > 3U)
+			version = 3U;
+		wayland->data_manager = wl_registry_bind(registry, name, &wl_data_device_manager_interface, version);
+		return;
+	}
 
 	/* Each is bound once, at the version used. */
 	if (compositor == 0 && wayland->compositor == NULL) {
@@ -1006,10 +1272,10 @@ wayland_pointer_button(
 	struct x11_wayland *wayland;
 	int pressed;
 
-	/* The serial is not needed. */
+	/* The serial, which a selection is set with. */
 	(void)pointer;
-	(void)serial;
 	wayland = data;
+	wayland->serial = serial;
 	pressed = 0;
 	if (state == WL_POINTER_BUTTON_STATE_PRESSED)
 		pressed = 1;
@@ -1122,10 +1388,10 @@ wayland_keyboard_key(
 	uint8_t keycode;
 	int shifted;
 
-	/* The serial is not needed; a code past the table is ignored. */
+	/* The serial, which a selection is set with; a code past the table is ignored. */
 	(void)keyboard;
-	(void)serial;
 	wayland = data;
+	wayland->serial = serial;
 	if (key >= WAYLAND_KEYS)
 		return;
 	modifiers = (uint16_t)(wayland->modifiers & WAYLAND_MODIFIERS);
@@ -1180,4 +1446,239 @@ wayland_keyboard_modifiers(
 	(void)group;
 	wayland = data;
 	wayland->modifiers = depressed;
+}
+
+/* Notes a new offer introduced by the desktop; its types follow. */
+static void
+wayland_data_offer(
+	void *data,
+	struct wl_data_device *device,
+	struct wl_data_offer *offer)
+{
+	struct x11_wayland *wayland;
+
+	/* The last offer introduced, not known to have text yet. */
+	(void)device;
+	wayland = data;
+	wayland->offer_new = offer;
+	wayland->offer_new_text = 0;
+	(void)wl_data_offer_add_listener(offer, &wayland_offer_listener, wayland);
+}
+
+/* A drag over an X window is not taken: its offer goes. */
+static void
+wayland_data_enter(
+	void *data,
+	struct wl_data_device *device,
+	uint32_t serial,
+	struct wl_surface *surface,
+	wl_fixed_t x,
+	wl_fixed_t y,
+	struct wl_data_offer *offer)
+{
+	struct x11_wayland *wayland;
+
+	/* The offer (none is accepted). */
+	(void)device;
+	(void)serial;
+	(void)surface;
+	(void)x;
+	(void)y;
+	wayland = data;
+	if (offer == wayland->offer_new)
+		wayland->offer_new = NULL;
+	if (offer != NULL)
+		wl_data_offer_destroy(offer);
+}
+
+/* A drag leaves: nothing to do. */
+static void
+wayland_data_leave(
+	void *data,
+	struct wl_data_device *device)
+{
+	/* Nothing to do. */
+	(void)data;
+	(void)device;
+}
+
+/* A drag moves: nothing to do. */
+static void
+wayland_data_motion(
+	void *data,
+	struct wl_data_device *device,
+	uint32_t time,
+	wl_fixed_t x,
+	wl_fixed_t y)
+{
+	/* Nothing to do. */
+	(void)data;
+	(void)device;
+	(void)time;
+	(void)x;
+	(void)y;
+}
+
+/* A drop is never accepted here: nothing to do. */
+static void
+wayland_data_drop(
+	void *data,
+	struct wl_data_device *device)
+{
+	/* Nothing to do. */
+	(void)data;
+	(void)device;
+}
+
+/*
+ * The desktop's selection changed: another client's offer (or none).  The
+ * server's own source's offer is not taken; another's with text makes
+ * selection.c own X's CLIPBOARD for it.
+ */
+static void
+wayland_data_selection(
+	void *data,
+	struct wl_data_device *device,
+	struct wl_data_offer *offer)
+{
+	struct x11_wayland *wayland;
+	int text;
+
+	/* The offer's text, when it is the last introduced. */
+	(void)device;
+	wayland = data;
+	text = 0;
+	if (offer != NULL && offer == wayland->offer_new)
+		text = wayland->offer_new_text;
+	if (offer == wayland->offer_new)
+		wayland->offer_new = NULL;
+
+	/* While the server's own source is the selection, the offer is its own: not taken. */
+	if (wayland->source != NULL) {
+		if (offer != NULL)
+			wl_data_offer_destroy(offer);
+		return;
+	}
+
+	/* The offer before goes; this one is kept. */
+	if (wayland->selection != NULL && wayland->selection != offer)
+		wl_data_offer_destroy(wayland->selection);
+	wayland->selection = offer;
+	wayland->selection_text = text;
+	printf("X11 CLIPBOARD selection text=%d\n", text);
+	fflush(stdout);
+
+	/* Succeeded: the server hears whether there is text for X's CLIPBOARD. */
+	if (wayland->callbacks.selection != NULL)
+		wayland->callbacks.selection(wayland->context, text);
+}
+
+/* Notes whether a type of the last introduced offer is text. */
+static void
+wayland_offer_type(
+	void *data,
+	struct wl_data_offer *offer,
+	const char *mime_type)
+{
+	struct x11_wayland *wayland;
+	int text;
+
+	/* Only the last introduced offer's types matter. */
+	wayland = data;
+	if (offer != wayland->offer_new)
+		return;
+
+	/* One of the text types. */
+	text = wayland_text_type(mime_type);
+	if (text)
+		wayland->offer_new_text = 1;
+}
+
+/* The type a target took is not needed. */
+static void
+wayland_source_target(
+	void *data,
+	struct wl_data_source *source,
+	const char *mime_type)
+{
+	/* Nothing to do. */
+	(void)data;
+	(void)source;
+	(void)mime_type;
+}
+
+/*
+ * A client asks for the X client's text: its descriptor goes to
+ * selection.c, which asks the X owner and writes the text when it comes.
+ * A type that is not text is closed at once.
+ */
+static void
+wayland_source_send(
+	void *data,
+	struct wl_data_source *source,
+	const char *mime_type,
+	int32_t fd)
+{
+	struct x11_wayland *wayland;
+	int text;
+
+	/* Only text, and only with a server to answer. */
+	(void)source;
+	wayland = data;
+	text = wayland_text_type(mime_type);
+	if (!text || wayland->callbacks.selection_send == NULL) {
+		close(fd);
+		return;
+	}
+
+	/* Succeeded: selection.c owns the descriptor now. */
+	printf("X11 CLIPBOARD send mime=%s\n", mime_type);
+	fflush(stdout);
+	wayland->callbacks.selection_send(wayland->context, fd);
+}
+
+/* Another client took the selection: the server's source goes (the new selection follows). */
+static void
+wayland_source_cancelled(
+	void *data,
+	struct wl_data_source *source)
+{
+	struct x11_wayland *wayland;
+
+	/* The source. */
+	wayland = data;
+	wl_data_source_destroy(source);
+	if (wayland->source == source)
+		wayland->source = NULL;
+	printf("X11 CLIPBOARD cancelled\n");
+	fflush(stdout);
+}
+
+/* Tells whether a MIME type is one of the text types the clipboard takes. */
+static int
+wayland_text_type(
+	const char *mime_type)
+{
+	int same;
+
+	/* UTF-8 text. */
+	same = strcmp(mime_type, WAYLAND_TEXT_UTF8);
+	if (same == 0)
+		return 1;
+
+	/* Plain text. */
+	same = strcmp(mime_type, WAYLAND_TEXT_PLAIN);
+	if (same == 0)
+		return 1;
+
+	/* X's names. */
+	same = strcmp(mime_type, WAYLAND_TEXT_X11);
+	if (same == 0)
+		return 1;
+	same = strcmp(mime_type, WAYLAND_TEXT_STRING);
+	if (same == 0)
+		return 1;
+
+	/* Not text. */
+	return 0;
 }

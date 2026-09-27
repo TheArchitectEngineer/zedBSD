@@ -1756,6 +1756,337 @@ XLookupKeysym(
 	}
 }
 
+/*
+ * Finds a name's atom (InternAtom); a new name gets one unless only an
+ * existing one is asked for.  Returns the atom, or None.
+ */
+Atom
+XInternAtom(
+	Display *d,
+	const char *name,
+	Bool only_if_exists)
+{
+	uint8_t *q;
+	uint8_t r[32];
+	size_t length;
+	size_t size;
+	int error;
+
+	/* The name's length, and the request padded to words. */
+	length = strlen(name);
+	if (length > 0xffffU)
+		return None;
+	size = (8U + length + 3U) & ~(size_t)3U;
+	q = calloc(1, size);
+	if (q == NULL)
+		return None;
+
+	/* The request: whether only an existing one, the length, the name. */
+	q[0] = 16;
+	q[1] = 0;
+	if (only_if_exists)
+		q[1] = 1;
+	w16(q + 4, (uint16_t)length);
+	memcpy(q + 8, name, length);
+	error = req(d, q, size);
+	free(q);
+	if (error != 0)
+		return None;
+
+	/* The reply's atom. */
+	error = reply(d, r);
+	if (error != 0)
+		return None;
+
+	/* Succeeded: the atom (None when there is none). */
+	return r32(r + 8);
+}
+
+/*
+ * Makes a window the owner of a selection (SetSelectionOwner; None gives
+ * it up).  Returns 1, or 0 when the request could not be sent.
+ */
+int
+XSetSelectionOwner(
+	Display *d,
+	Atom selection,
+	Window owner,
+	Time time)
+{
+	uint8_t q[16] = {0};
+	int error;
+
+	/* The owner, the selection and the time. */
+	q[0] = 22;
+	w32(q + 4, owner);
+	w32(q + 8, selection);
+	w32(q + 12, time);
+	error = req(d, q, sizeof(q));
+	if (error != 0)
+		return 0;
+
+	/* Succeeded: sent. */
+	return 1;
+}
+
+/*
+ * Returns a selection's owner window (GetSelectionOwner), or None.
+ */
+Window
+XGetSelectionOwner(
+	Display *d,
+	Atom selection)
+{
+	uint8_t q[8] = {0};
+	uint8_t r[32];
+	int error;
+
+	/* The selection. */
+	q[0] = 23;
+	w32(q + 4, selection);
+	error = req(d, q, sizeof(q));
+	if (error != 0)
+		return None;
+
+	/* The reply's owner. */
+	error = reply(d, r);
+	if (error != 0)
+		return None;
+
+	/* Succeeded: the owner. */
+	return r32(r + 8);
+}
+
+/*
+ * Asks for a selection as a target in a property of a window
+ * (ConvertSelection); a SelectionNotify event says when it is there.
+ * Returns 1, or 0 when the request could not be sent.
+ */
+int
+XConvertSelection(
+	Display *d,
+	Atom selection,
+	Atom target,
+	Atom property,
+	Window requestor,
+	Time time)
+{
+	uint8_t q[24] = {0};
+	int error;
+
+	/* The requestor, the selection, the target, the property and the time. */
+	q[0] = 24;
+	w32(q + 4, requestor);
+	w32(q + 8, selection);
+	w32(q + 12, target);
+	w32(q + 16, property);
+	w32(q + 20, time);
+	error = req(d, q, sizeof(q));
+	if (error != 0)
+		return 0;
+
+	/* Succeeded: sent. */
+	return 1;
+}
+
+/*
+ * Sets a window's property (ChangeProperty): nelements units of format
+ * bits, replacing, or added before or after what is there.  Returns 1, or
+ * 0 when the request could not be sent.
+ */
+int
+XChangeProperty(
+	Display *d,
+	Window w,
+	Atom property,
+	Atom type,
+	int format,
+	int mode,
+	const unsigned char *data,
+	int nelements)
+{
+	uint8_t *q;
+	size_t bytes;
+	size_t size;
+	int error;
+
+	/* The data's bytes, and the request padded to words. */
+	if (nelements < 0 || (format != 8 && format != 16 && format != 32))
+		return 0;
+	bytes = (size_t)nelements * (size_t)(format / 8);
+	size = (24U + bytes + 3U) & ~(size_t)3U;
+	if (size > XZED_REQUEST_BYTES)
+		return 0;
+	q = calloc(1, size);
+	if (q == NULL)
+		return 0;
+
+	/* The request: the mode, the window, the property, its type and format, the units and the data. */
+	q[0] = 18;
+	q[1] = (uint8_t)mode;
+	w32(q + 4, w);
+	w32(q + 8, property);
+	w32(q + 12, type);
+	q[16] = (uint8_t)format;
+	w32(q + 20, (uint32_t)nelements);
+	memcpy(q + 24, data, bytes);
+	error = req(d, q, size);
+	free(q);
+	if (error != 0)
+		return 0;
+
+	/* Succeeded: sent. */
+	return 1;
+}
+
+/*
+ * Reads a window's property (GetProperty): its type and format, the units
+ * given from long_offset (at most long_length units of four bytes), what
+ * is left after them, and the data (malloc'd, with a NUL after it; XFree
+ * frees it).  Returns 0 (Success), or 1 when the request failed.
+ */
+int
+XGetWindowProperty(
+	Display *d,
+	Window w,
+	Atom property,
+	long long_offset,
+	long long_length,
+	Bool remove,
+	Atom req_type,
+	Atom *actual_type,
+	int *actual_format,
+	unsigned long *nitems,
+	unsigned long *bytes_after,
+	unsigned char **prop)
+{
+	uint8_t q[24] = {0};
+	uint8_t r[32];
+	unsigned char *data;
+	size_t extra;
+	size_t bytes;
+	int error;
+
+	/* Nothing yet. */
+	*actual_type = None;
+	*actual_format = 0;
+	*nitems = 0;
+	*bytes_after = 0;
+	*prop = NULL;
+
+	/* The request. */
+	q[0] = 20;
+	q[1] = 0;
+	if (remove)
+		q[1] = 1;
+	w32(q + 4, w);
+	w32(q + 8, property);
+	w32(q + 12, req_type);
+	w32(q + 16, (uint32_t)long_offset);
+	w32(q + 20, (uint32_t)long_length);
+	error = req(d, q, sizeof(q));
+	if (error != 0)
+		return 1;
+
+	/* The reply's header. */
+	error = reply(d, r);
+	if (error != 0)
+		return 1;
+	*actual_format = r[1];
+	*actual_type = r32(r + 8);
+	*bytes_after = r32(r + 12);
+	*nitems = r32(r + 16);
+
+	/* The data after it (its words), with a NUL. */
+	extra = (size_t)r32(r + 4) * 4U;
+	data = malloc(extra + 1U);
+	if (data == NULL)
+		return 1;
+	if (extra != 0U) {
+		error = rd(d->fd, data, extra);
+		if (error != 0) {
+			free(data);
+			return 1;
+		}
+	}
+
+	/* Succeeded: the data, ended after the units given. */
+	bytes = 0;
+	if (*actual_format != 0)
+		bytes = (size_t)*nitems * (size_t)(*actual_format / 8);
+	if (bytes > extra)
+		bytes = extra;
+	data[bytes] = 0;
+	*prop = data;
+	return 0;
+}
+
+/*
+ * Removes a window's property (DeleteProperty).  Returns 1, or 0 when the
+ * request could not be sent.
+ */
+int
+XDeleteProperty(
+	Display *d,
+	Window w,
+	Atom property)
+{
+	uint8_t q[12] = {0};
+	int error;
+
+	/* The window and the property. */
+	q[0] = 19;
+	w32(q + 4, w);
+	w32(q + 8, property);
+	error = req(d, q, sizeof(q));
+	if (error != 0)
+		return 0;
+
+	/* Succeeded: sent. */
+	return 1;
+}
+
+/*
+ * Sends an event to a window's client (SendEvent).  Only SelectionNotify
+ * is encoded (a selection's owner answers a request with it).  Returns 1,
+ * or 0 for another event or when the request could not be sent.
+ */
+int
+XSendEvent(
+	Display *d,
+	Window w,
+	Bool propagate,
+	long event_mask,
+	XEvent *e)
+{
+	uint8_t q[44] = {0};
+	int error;
+
+	/* Only SelectionNotify. */
+	if (e->type != SelectionNotify)
+		return 0;
+
+	/* The request: the destination, the mask and the event. */
+	q[0] = 25;
+	q[1] = 0;
+	if (propagate)
+		q[1] = 1;
+	w32(q + 4, w);
+	w32(q + 8, (uint32_t)event_mask);
+	q[12] = SelectionNotify;
+	w32(q + 16, e->xselection.time);
+	w32(q + 20, e->xselection.requestor);
+	w32(q + 24, e->xselection.selection);
+	w32(q + 28, e->xselection.target);
+	w32(q + 32, e->xselection.property);
+	error = req(d, q, sizeof(q));
+	if (error != 0)
+		return 0;
+
+	/* Succeeded: sent. */
+	return 1;
+}
+
 /* Supports the w16 operation. */
 static void
 w16(
@@ -2188,6 +2519,36 @@ event(
 	e->xany.display = d;
 	e->xany.window = r32(b + 12);
 	e->xany.serial = r16(b + 2);
+	e->xany.send_event = (b[0] & 0x80) != 0;
+
+	/* The selections' events. */
+	if (e->type == SelectionClear) {
+		e->xselectionclear.time = r32(b + 4);
+		e->xselectionclear.window = r32(b + 8);
+		e->xselectionclear.selection = r32(b + 12);
+		return;
+	}
+
+	/* A request for a selection this client owns. */
+	if (e->type == SelectionRequest) {
+		e->xselectionrequest.time = r32(b + 4);
+		e->xselectionrequest.owner = r32(b + 8);
+		e->xselectionrequest.requestor = r32(b + 12);
+		e->xselectionrequest.selection = r32(b + 16);
+		e->xselectionrequest.target = r32(b + 20);
+		e->xselectionrequest.property = r32(b + 24);
+		return;
+	}
+
+	/* A conversion this client asked for is done. */
+	if (e->type == SelectionNotify) {
+		e->xselection.time = r32(b + 4);
+		e->xselection.requestor = r32(b + 8);
+		e->xselection.selection = r32(b + 12);
+		e->xselection.target = r32(b + 16);
+		e->xselection.property = r32(b + 20);
+		return;
+	}
 
 	/* Handles the e condition. */
 	if (e->type == Expose) {
