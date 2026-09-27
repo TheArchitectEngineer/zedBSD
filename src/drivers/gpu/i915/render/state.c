@@ -2220,8 +2220,10 @@ i915_state_write_push(
 	uint64_t range;
 	uint64_t start;
 	uint64_t bytes;
+	uint64_t va;
 	uint32_t constant_bytes;
 	uint32_t index;
+	uint32_t words[2];
 
 	/* Refuses push data larger than its buffer. */
 	if (layout->regs * 32U > I915_GFX_PUSH_DATA_BYTES)
@@ -2249,7 +2251,7 @@ i915_state_write_push(
 		if (set != NULL)
 			buffer = set->slots[block->binding].buffer;
 		if (buffer == NULL) {
-			kern_logf("i915: vk: draw refused: set %u binding %u has no uniform buffer\n", block->set, block->binding);
+			kern_logf("i915: vk: draw refused: set %u binding %u has no uniform or storage buffer\n", block->set, block->binding);
 			return EINVAL;
 		}
 
@@ -2257,6 +2259,17 @@ i915_state_write_push(
 		descriptor_offset = set->slots[block->binding].offset;
 		if (set->slots[block->binding].dynamic != 0)
 			descriptor_offset += i915_state_dynamic_offset(state, block->set, block->binding);
+
+		/* A storage buffer is delivered as the GPU address of its range, the low word first. */
+		if (block->address != 0U) {
+			va = drv_i915_gfx_memory_va(buffer->memory, buffer->offset + descriptor_offset);
+			if (va == 0U)
+				return EINVAL;
+			words[0] = (uint32_t)va;
+			words[1] = (uint32_t)(va >> 32);
+			kern_memcpy(data + block->push_offset, words, sizeof(words));
+			continue;
+		}
 
 		/* The descriptor's range: to the buffer's end for VK_WHOLE_SIZE, nothing past it. */
 		range = set->slots[block->binding].range;
@@ -2463,6 +2476,8 @@ i915_state_write_blend(
 			if (pipeline->extra_blend_off[slot - 1U] != 0U)
 				blends = 0;
 		}
+
+		/* An integer target never blends. */
 		integer = i915_state_target_integer(state, slot);
 		if (integer != 0)
 			blends = 0;
