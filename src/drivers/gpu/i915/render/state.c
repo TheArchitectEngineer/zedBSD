@@ -1138,6 +1138,8 @@ drv_i915_gfx_emit_pixel_shader(
 	uint32_t has_varyings;
 	uint32_t push_enable;
 	uint32_t kills;
+	uint32_t barycentrics;
+	uint32_t source;
 	uint64_t scratch;
 
 	/* Reads the varyings in pairs of slots, at least one pair. */
@@ -1152,9 +1154,11 @@ drv_i915_gfx_emit_pixel_shader(
 
 	/*
 	 * Programs SBE: the attribute swizzle and the read offset override, the
-	 * number of attributes, the read length and the read offset of slot 2;
-	 * the Flat inputs' constant interpolation; every attribute with all four
-	 * components active.
+	 * number of attributes, the point sprite's origin at the upper left
+	 * (Vulkan's), the read length and the read offset of slot 2; the
+	 * attributes the point sprite's coordinate replaces; the Flat inputs'
+	 * constant interpolation; every attribute with all four components
+	 * active.
 	 */
 	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_SBE, GEN12_3DSTATE_SBE_DWORDS));
 	drv_i915_batch_emit(batch,
@@ -1162,9 +1166,10 @@ drv_i915_gfx_emit_pixel_shader(
 			    (1U << 28) |
 			    (inputs << 22) |
 			    (1U << 21) |
+			    (GEN12_SBE_POINT_SPRITE_ORIGIN_UPPER_LEFT << GEN12_SBE_POINT_SPRITE_ORIGIN_SHIFT) |
 			    (read_length << 11) |
 			    (1U << 5));
-	drv_i915_batch_emit(batch, 0U);
+	drv_i915_batch_emit(batch, kernels->ps_point_sprite_mask);
 	drv_i915_batch_emit(batch, kernels->ps_flat_mask);
 	drv_i915_batch_emit(batch, 0xffffffffU);
 	drv_i915_batch_emit(batch, 0xffffffffU);
@@ -1181,9 +1186,14 @@ drv_i915_gfx_emit_pixel_shader(
 	drv_i915_batch_emit(batch, 0U);
 	drv_i915_batch_emit(batch, 0U);
 
-	/* Programs WM: statistics, perspective pixel barycentrics, line AA width 1.0. */
+	/* The perspective barycentrics always; the linear ones when the kernel interpolates without perspective. */
+	barycentrics = GEN12_WM_BARYCENTRIC_PERSPECTIVE_PIXEL;
+	if (kernels->ps_linear_barycentrics != 0U)
+		barycentrics |= GEN12_WM_BARYCENTRIC_LINEAR_PIXEL;
+
+	/* Programs WM: statistics, the barycentrics, line AA width 1.0. */
 	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_WM, GEN12_3DSTATE_WM_DWORDS));
-	drv_i915_batch_emit(batch, (1U << 31) | (1U << 11) | (1U << 6));
+	drv_i915_batch_emit(batch, (1U << 31) | barycentrics | (1U << 6));
 
 	/* The sampler count is programmed in groups of four samplers. */
 	sampler_groups = (kernels->ps_samplers + 3U) / 4U;
@@ -1225,9 +1235,16 @@ drv_i915_gfx_emit_pixel_shader(
 	if (kernels->ps_kills != 0U)
 		kills = GEN12_3DSTATE_PS_EXTRA_KILLS_PIXEL;
 
-	/* Programs PS_EXTRA: valid, whether the kernel discards and whether it reads attributes. */
+	/* Notes whether the kernel reads the pixel's depth and w. */
+	source = 0U;
+	if (kernels->ps_source_depth != 0U)
+		source |= GEN12_3DSTATE_PS_EXTRA_USES_SOURCE_DEPTH;
+	if (kernels->ps_source_w != 0U)
+		source |= GEN12_3DSTATE_PS_EXTRA_USES_SOURCE_W;
+
+	/* Programs PS_EXTRA: valid, whether the kernel discards, reads the depth and w, and reads attributes. */
 	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_PS_EXTRA, GEN12_3DSTATE_PS_EXTRA_DWORDS));
-	drv_i915_batch_emit(batch, (1U << 31) | kills | (has_varyings << 8));
+	drv_i915_batch_emit(batch, (1U << 31) | kills | source | (has_varyings << 8));
 }
 
 /*

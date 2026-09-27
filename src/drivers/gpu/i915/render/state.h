@@ -91,6 +91,17 @@ struct i915_gfx_kernels {
 	/* Bit n: fragment input n is Flat, set up as the provoking vertex's value (0 for a rectangle). */
 	uint32_t ps_flat_mask;
 
+	/* Bit n: fragment input n is gl_PointCoord, the point sprite's texture coordinate (0 for a rectangle). */
+	uint32_t ps_point_sprite_mask;
+
+	/*
+	 * Nonzero when the pixel kernel's payload carries the linear
+	 * barycentrics, the source depth and the source w (0 for a rectangle).
+	 */
+	uint32_t ps_linear_barycentrics;
+	uint32_t ps_source_depth;
+	uint32_t ps_source_w;
+
 	/* The pixel kernel's first payload register and sampled images. */
 	uint32_t ps_grf_start;
 	uint32_t ps_samplers;

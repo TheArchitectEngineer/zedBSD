@@ -59,10 +59,13 @@
  *                          two at a time from the end (Mesa's emit_urb_writes() writes eight registers of a
  *                          SIMD8 VUE at most); every write but the last takes the handles from r1.
  * Fragment shader payload: r0 header, r1 pixel positions, r2 / r3 the two perspective barycentrics of
- *                          each pixel, the push data, then two registers to an input (ascending
+ *                          each pixel, then only when the kernel reads them the two linear barycentrics,
+ *                          the source depth and the source w, a register each (brw_fs_thread_payload.cpp),
+ *                          the push data, then two registers to an input (ascending
  *                          location): component c keeps its plane in floats 4 * (c & 1) .. + 3 of
  *                          register c / 2 as [d/d bary1, d/d bary2, -, value at the origin].
- *                          Gen11+ has no PLN: value = origin + d1 * bary1 + d2 * bary2, written out.
+ *                          Gen11+ has no PLN: value = origin + d1 * bary1 + d2 * bary2, written out,
+ *                          with the linear barycentrics for an input without perspective.
  * Fragment shader output:  location 0 in r124..r127, the render-target write that ends the thread.
  * Texture:                 one SIMD8 "sample" message, u and v each its own payload run, the reply
  *                          four registers; binding table entry 1 + n, sampler n for the n-th
@@ -103,8 +106,27 @@
 #define COMPILE_FS_BARY1_GRF	2U
 #define COMPILE_FS_BARY2_GRF	3U
 
-/* Fragment: the push data, then the input planes. */
+/*
+ * Fragment: the register after the perspective barycentrics, where the
+ * payload goes on with what the kernel asked for, then the push data and the
+ * input planes.
+ */
 #define COMPILE_FS_SETUP_GRF	4U
+
+/*
+ * Fragment: the subspan coordinates of r1 (words 4 .. 7: x and y of
+ * subspan 0, then of subspan 1), and the offsets of the four pixels of a
+ * subspan (x 0 1 0 1, y 0 0 1 1) as an immediate of eight nibbles
+ * (brw_compile_fs.cpp, Gen12.0).
+ */
+#define COMPILE_FS_SUBSPAN_BYTE		8U
+#define COMPILE_FS_PIXEL_OFFSETS	0x11001010U
+
+/* Fragment: where the y of the pixels starts among the sixteen words of positions. */
+#define COMPILE_FS_PIXEL_Y_BYTE		8U
+
+/* The bits of the float 0.5: the centre of a pixel. */
+#define COMPILE_FLOAT_HALF		0x3F000000U
 
 /*
  * Fragment: the dispatched pixels, the low 16 bits of dword 7 of r1 (byte
@@ -294,6 +316,21 @@ struct i915_compile_state {
 	/* Fragment: nonzero when the shader discards, so f1.0 holds the live pixels. */
 	int uses_kill;
 
+	/*
+	 * Fragment: nonzero when the kernel reads an input without perspective,
+	 * gl_FragCoord.z and gl_FragCoord.w, so the payload carries the linear
+	 * barycentrics, the source depth and the source w; the registers they
+	 * land in, and the register the push data and the planes start at after
+	 * them.
+	 */
+	int uses_linear;
+	int uses_depth;
+	int uses_w;
+	uint32_t fs_linear_grf;
+	uint32_t fs_depth_grf;
+	uint32_t fs_w_grf;
+	uint32_t fs_setup_grf;
+
 	/* Vertex: nonzero when the shader writes the point size into its VUE header. */
 	int writes_point_size;
 
@@ -377,6 +414,8 @@ static int i915_compile_input_flat(const struct i915_compile_state *state, uint3
 static int i915_compile_input_linear(const struct i915_compile_state *state, uint32_t location);
 static void i915_compile_note(struct i915_compile_state *state, uint32_t *list, uint32_t *count, uint32_t limit, uint32_t location);
 static void i915_compile_interface(struct i915_compile_state *state);
+static void i915_compile_fragment_payload(struct i915_compile_state *state);
+static void i915_compile_frag_coord(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
 static void i915_compile_blocks(struct i915_compile_state *state);
 static void i915_compile_prologue(struct i915_compile_state *state);
 static void i915_compile_terminate(struct i915_compile_state *state);
@@ -646,6 +685,7 @@ i915_compile_reset(
 	}
 
 	/* The registers start where the conventions put them; the interface may move the values up. */
+	state->fs_setup_grf = COMPILE_FS_SETUP_GRF;
 	state->scratch_grf = COMPILE_SCRATCH_GRF;
 	state->first_value_grf = COMPILE_FIRST_VALUE_GRF;
 	state->last_value_grf = COMPILE_LAST_VALUE_GRF;
@@ -1403,7 +1443,7 @@ i915_compile_instruction(
 	if (state->ir->stage == I915_STAGE_VERTEX) {
 		payload_inputs = COMPILE_PAYLOAD_GRF + state->push_regs;
 	} else {
-		payload_inputs = COMPILE_FS_SETUP_GRF + state->push_regs;
+		payload_inputs = state->fs_setup_grf + state->push_regs;
 	}
 
 	/* Lowers by the operation. */
@@ -1575,6 +1615,8 @@ i915_compile_load_input(
 	uint32_t first;
 	uint32_t dst;
 	struct i915_eu_reg facing;
+	uint32_t bary1;
+	uint32_t bary2;
 	int found;
 	int flat;
 	int linear;
@@ -1602,6 +1644,12 @@ i915_compile_load_input(
 		return;
 	}
 
+	/* gl_FragCoord comes from the payload's pixel position, depth and w. */
+	if (state->ir->stage == I915_STAGE_FRAGMENT && inst->location == I915_SHADER_LOCATION_FRAG_COORD) {
+		i915_compile_frag_coord(state, inst);
+		return;
+	}
+
 	/* Finds the input's place in the payload order. */
 	found = i915_compile_rank(state->inputs, state->input_count, inst->location, &rank);
 	if (found != 0) {
@@ -1618,15 +1666,8 @@ i915_compile_load_input(
 		return;
 	}
 
-	/* XXX: an input interpolated without perspective needs the linear barycentrics. */
-	linear = i915_compile_input_linear(state, inst->location);
-	if (linear) {
-		state->unsupported = 1;
-		return;
-	}
-
 	/* Locates the component's plane (see the conventions). */
-	plane = COMPILE_FS_SETUP_GRF + state->push_regs + 2U * rank + inst->component / 2U;
+	plane = state->fs_setup_grf + state->push_regs + 2U * rank + inst->component / 2U;
 	first = (inst->component & 1U) * 16U;
 
 	/* A Flat input is the plane's origin, the provoking vertex's value, moved bit for bit (an integer stays one). */
@@ -1636,19 +1677,99 @@ i915_compile_load_input(
 		return;
 	}
 
+	/* An input without perspective is interpolated with the linear barycentrics. */
+	bary1 = COMPILE_FS_BARY1_GRF;
+	bary2 = COMPILE_FS_BARY2_GRF;
+	linear = i915_compile_input_linear(state, inst->location);
+	if (linear) {
+		bary1 = state->fs_linear_grf;
+		bary2 = state->fs_linear_grf + 1U;
+	}
+
 	/* origin + d1 * bary1 + d2 * bary2, written out: Gen11+ has no PLN. */
 	drv_i915_eu_alu2(code, I915_EU_MUL, drv_i915_eu_grf(dst),
 		drv_i915_eu_grf_scalar(plane, first + 4U),
-		drv_i915_eu_grf(COMPILE_FS_BARY2_GRF));
+		drv_i915_eu_grf(bary2));
 	drv_i915_eu_alu2(code, I915_EU_ADD, drv_i915_eu_grf(dst),
 		drv_i915_eu_grf(dst),
 		drv_i915_eu_grf_scalar(plane, first + 12U));
 	drv_i915_eu_alu2(code, I915_EU_MUL, drv_i915_eu_grf(state->scratch_grf),
 		drv_i915_eu_grf_scalar(plane, first),
-		drv_i915_eu_grf(COMPILE_FS_BARY1_GRF));
+		drv_i915_eu_grf(bary1));
 	drv_i915_eu_alu2(code, I915_EU_ADD, drv_i915_eu_grf(dst),
 		drv_i915_eu_grf(dst),
 		drv_i915_eu_grf(state->scratch_grf));
+}
+
+/*
+ * Lowers a component of gl_FragCoord as Mesa does on Gen12.0
+ * (brw_compile_fs.cpp, with anv's nir_lower_wpos_center): x and y are the
+ * pixel's integer position plus 0.5 -- the x and y of each subspan (words
+ * 4 .. 7 of r1) replicated to its four pixels and the offsets of the pixels
+ * in the subspan added, sixteen words at once, then the x or the y of each
+ * pixel converted to a float; z is the payload's source depth; w is the
+ * reciprocal of the payload's source w.
+ */
+static void
+i915_compile_frag_coord(
+	struct i915_compile_state *state,
+	const struct i915_shader_ir_inst *inst)
+{
+	struct i915_eu_reg subspans;
+	struct i915_eu_reg pixels;
+	uint32_t positions;
+	uint32_t byte;
+	uint32_t dst;
+
+	/* Gives the component its register. */
+	dst = i915_compile_define(state, inst->dst, 1U);
+
+	/* z: the interpolated depth, moved. */
+	if (inst->component == 2U) {
+		drv_i915_eu_mov(&state->code, drv_i915_eu_grf(dst), drv_i915_eu_grf(state->fs_depth_grf));
+		return;
+	}
+
+	/* w: the reciprocal of the interpolated w. */
+	if (inst->component == 3U) {
+		drv_i915_eu_math(&state->code, I915_EU_MATH_INV, drv_i915_eu_grf(dst), drv_i915_eu_grf(state->fs_w_grf), drv_i915_eu_null());
+		return;
+	}
+
+	/* A component beyond w is not lowered. */
+	if (inst->component > 3U) {
+		state->unsupported = 1;
+		return;
+	}
+
+	/* Takes a temporary for the sixteen words of positions. */
+	positions = i915_compile_temporary(state);
+	if (state->out_of_registers != 0)
+		return;
+
+	/*
+	 * Makes the positions: each subspan's x four times, its y four times,
+	 * subspan 0 then 1 (<1;4,0> from word 4), plus the pixel offsets.
+	 */
+	subspans = drv_i915_eu_grf_region(COMPILE_FS_DISPATCH_GRF, COMPILE_FS_SUBSPAN_BYTE, EU_TYPE_UW, EU_VSTRIDE_1, EU_WIDTH_4, EU_HSTRIDE_0);
+	drv_i915_eu_alu2_sixteen(&state->code,
+				 I915_EU_ADD,
+				 drv_i915_eu_grf_region(positions, 0U, EU_TYPE_UW, EU_VSTRIDE_8, EU_WIDTH_8, EU_HSTRIDE_1),
+				 subspans,
+				 drv_i915_eu_imm_v(COMPILE_FS_PIXEL_OFFSETS));
+
+	/* Picks the x, or the y, of the eight pixels: four words of each subspan's eight. */
+	byte = 0U;
+	if (inst->component == 1U)
+		byte = COMPILE_FS_PIXEL_Y_BYTE;
+	pixels = drv_i915_eu_grf_region(positions, byte, EU_TYPE_UW, EU_VSTRIDE_8, EU_WIDTH_4, EU_HSTRIDE_1);
+	drv_i915_eu_mov(&state->code, drv_i915_eu_grf(dst), pixels);
+
+	/* The centre of the pixel. */
+	drv_i915_eu_alu2(&state->code, I915_EU_ADD, drv_i915_eu_grf(dst), drv_i915_eu_grf(dst), drv_i915_eu_imm_f(COMPILE_FLOAT_HALF));
+
+	/* The temporary is free again. */
+	state->grf_busy[positions] = 0U;
 }
 
 /*
@@ -2652,6 +2773,7 @@ i915_compile_interface(
 	uint32_t payload_end;
 	uint32_t index;
 	uint32_t vue_slots;
+	int linear;
 
 	/* Lays out the push data: the push constants, then the uniform blocks. */
 	i915_compile_blocks(state);
@@ -2662,12 +2784,18 @@ i915_compile_interface(
 		if (inst->op == I915_IR_LOAD_INPUT && inst->location == I915_SHADER_LOCATION_FRONT_FACING) {
 			/* The facing bit is in the payload's fixed registers, not an input of its own. */
 			continue;
-		} else if (inst->op == I915_IR_LOAD_INPUT &&
-		    (inst->location == I915_SHADER_LOCATION_FRAG_COORD || inst->location == I915_SHADER_LOCATION_POINT_COORD)) {
-			/* XXX: the pixel position and the point sprite coordinate are not delivered yet. */
-			state->unsupported = 1;
+		} else if (inst->op == I915_IR_LOAD_INPUT && inst->location == I915_SHADER_LOCATION_FRAG_COORD) {
+			/* The pixel position needs no input; its depth and w come in the payload when read. */
+			if (inst->component == 2U)
+				state->uses_depth = 1;
+			if (inst->component == 3U)
+				state->uses_w = 1;
 		} else if (inst->op == I915_IR_LOAD_INPUT) {
+			/* An input, which the linear barycentrics interpolate when it has no perspective. */
 			i915_compile_note(state, state->inputs, &state->input_count, COMPILE_MAX_INPUTS, inst->location);
+			linear = i915_compile_input_linear(state, inst->location);
+			if (linear != 0 && state->ir->stage == I915_STAGE_FRAGMENT)
+				state->uses_linear = 1;
 		} else if (inst->op == I915_IR_STORE_OUTPUT && inst->location == I915_IR_LOCATION_POINT_SIZE) {
 			/* The point size is in the VUE header, not a varying of its own. */
 			state->writes_point_size = 1;
@@ -2684,11 +2812,15 @@ i915_compile_interface(
 	if (state->uses_kill != 0 && state->ir->stage != I915_STAGE_FRAGMENT)
 		state->unsupported = 1;
 
+	/* A fragment payload carries, after the perspective barycentrics, what the kernel asked for, in the order of the conventions. */
+	if (state->ir->stage == I915_STAGE_FRAGMENT)
+		i915_compile_fragment_payload(state);
+
 	/* Finds where the payload ends: four registers to an attribute, two to an interpolated input. */
 	if (state->ir->stage == I915_STAGE_VERTEX) {
 		payload_end = COMPILE_PAYLOAD_GRF + state->push_regs + 4U * state->input_count;
 	} else {
-		payload_end = COMPILE_FS_SETUP_GRF + state->push_regs + 2U * state->input_count;
+		payload_end = state->fs_setup_grf + state->push_regs + 2U * state->input_count;
 	}
 
 	/*
@@ -2734,6 +2866,43 @@ i915_compile_interface(
 		state->out_of_registers = 1;
 	if (state->spill_count != 0U && state->header_grf == COMPILE_NO_GRF)
 		state->out_of_registers = 1;
+}
+
+/*
+ * Lays out the fragment payload after the perspective barycentrics: the
+ * linear barycentrics, the source depth and the source w, each only when
+ * the kernel reads it, in that order (brw_fs_thread_payload.cpp,
+ * setup_fs_payload_gfx9()), then the push data and the input planes.
+ */
+static void
+i915_compile_fragment_payload(
+	struct i915_compile_state *state)
+{
+	uint32_t next;
+
+	/* Starts after the perspective barycentrics. */
+	next = COMPILE_FS_SETUP_GRF;
+
+	/* The two linear barycentrics of each pixel. */
+	if (state->uses_linear != 0) {
+		state->fs_linear_grf = next;
+		next += 2U;
+	}
+
+	/* The interpolated depth of each pixel. */
+	if (state->uses_depth != 0) {
+		state->fs_depth_grf = next;
+		next++;
+	}
+
+	/* The interpolated w of each pixel. */
+	if (state->uses_w != 0) {
+		state->fs_w_grf = next;
+		next++;
+	}
+
+	/* The push data and the planes follow. */
+	state->fs_setup_grf = next;
 }
 
 /*
@@ -3121,6 +3290,14 @@ i915_compile_describe(
 		binary->dispatch_grf_start = COMPILE_PAYLOAD_GRF;
 	} else {
 		binary->varying_count = state->input_count;
-		binary->dispatch_grf_start = COMPILE_FS_SETUP_GRF;
+		binary->dispatch_grf_start = state->fs_setup_grf;
 	}
+
+	/* A fragment kernel has the draw put in its payload what it reads beyond the perspective barycentrics. */
+	if (state->uses_linear != 0)
+		binary->uses_linear_barycentrics = 1U;
+	if (state->uses_depth != 0)
+		binary->uses_source_depth = 1U;
+	if (state->uses_w != 0)
+		binary->uses_source_w = 1U;
 }

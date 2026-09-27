@@ -151,6 +151,16 @@ struct i915_shader_binary {
 	uint32_t writes_point_size;
 
 	/*
+	 * Fragment: nonzero when the kernel reads an input without perspective,
+	 * gl_FragCoord.z or gl_FragCoord.w, which the draw has the payload carry:
+	 * the linear barycentrics (3DSTATE_WM Barycentric Interpolation Mode),
+	 * the source depth and the source w (3DSTATE_PS_EXTRA).
+	 */
+	uint32_t uses_linear_barycentrics;
+	uint32_t uses_source_depth;
+	uint32_t uses_source_w;
+
+	/*
 	 * The scratch memory each thread of the kernel needs for the values it
 	 * spills: a power of two from 1 KiB to 2 MiB, or 0 for a kernel that
 	 * spills nothing.  The draw programs it, and a buffer of it for every

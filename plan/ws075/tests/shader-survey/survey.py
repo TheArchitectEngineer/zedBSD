@@ -13,11 +13,9 @@ import sys
 
 # i915_spirv_declare_decoration, i915_spirv_declare_member_decoration.
 DECORATIONS = {'Location', 'Binding', 'DescriptorSet', 'BuiltIn', 'ArrayStride', 'Block', 'RelaxedPrecision', 'Flat',
-               'Centroid'}
-# NoPerspective is recorded in every stage; i915_compile_load_input does not interpolate a fragment input without
-# perspective yet, so it stays a gap of a fragment shader.
-VERTEX_DECORATIONS = {'NoPerspective'}
-MEMBER_DECORATIONS = {'Offset', 'BuiltIn', 'MatrixStride', 'RowMajor', 'ColMajor', 'RelaxedPrecision', 'Flat', 'Centroid'}
+               'Centroid', 'NoPerspective'}
+MEMBER_DECORATIONS = {'Offset', 'BuiltIn', 'MatrixStride', 'RowMajor', 'ColMajor', 'RelaxedPrecision', 'Flat', 'Centroid',
+                      'NoPerspective'}
 
 # i915_spirv_declare_variable: module variables of these storage classes (Input and Output with a Location; an Output
 # without one is a block written only through its Position builtin).
@@ -113,7 +111,7 @@ def survey(path):
 
 		# Decorations; the builtins kept for the variables.
 		if opcode == 'OpDecorate':
-			if operands[1] not in DECORATIONS and not (stage == 'Vertex' and operands[1] in VERTEX_DECORATIONS):
+			if operands[1] not in DECORATIONS:
 				gap('decoration %s' % operands[1])
 			if operands[1] == 'BuiltIn':
 				builtins[operands[0]] = operands[2]
@@ -122,7 +120,7 @@ def survey(path):
 			if operands[1] == 'Flat':
 				flats.add(operands[0])
 		if opcode == 'OpMemberDecorate':
-			if operands[2] not in MEMBER_DECORATIONS and not (stage == 'Vertex' and operands[2] in VERTEX_DECORATIONS):
+			if operands[2] not in MEMBER_DECORATIONS:
 				gap('member decoration %s' % operands[2])
 			if operands[2] == 'BuiltIn':
 				member_builtins[(operands[0], int(operands[1]))] = operands[3]
@@ -159,9 +157,10 @@ def survey(path):
 					gap('module variable in %s' % storage)
 				elif storage == 'Input' and result in builtins:
 					# i915_spirv_declare_variable: a vertex shader's VertexIndex and InstanceIndex are generated inputs.
-					# A fragment shader's FrontFacing is the payload's facing bit.
+					# A fragment shader's FrontFacing, FragCoord and PointCoord are the payload's facing bit, pixel
+					# position, depth and w, and the point sprite's coordinate.
 					generated = stage == 'Vertex' and builtins[result] in ('VertexIndex', 'InstanceIndex')
-					if stage == 'Fragment' and builtins[result] == 'FrontFacing':
+					if stage == 'Fragment' and builtins[result] in ('FrontFacing', 'FragCoord', 'PointCoord'):
 						generated = True
 					if not generated:
 						gap('input builtin %s' % builtins[result])

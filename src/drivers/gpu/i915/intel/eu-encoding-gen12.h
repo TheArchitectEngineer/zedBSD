@@ -72,6 +72,15 @@
  *                                          generate_scratch_header(): the header cleared, then r0.3[3:0] (the
  *                                          per-thread scratch space) and r0.5[31:10] (the thread's scratch
  *                                          base) copied into its dwords 3 and 5
+ * and, for the pixel position, the derivatives, the half floats and the sampler messages of ws075-p004,
+ * the same release:
+ *   - src/intel/compiler/brw_reg_type.c    (sha256 acb63f401add3384b15e7d6bb4d148b7b60325c2e618abf2a727856a3138731b)
+ *                                          brw_type_encode(): the Gen12 encoding of the V immediate and of HF
+ *   - src/intel/compiler/brw_compile_fs.cpp (sha256 29552b8bc4a265eb86c125d6d85486577139f0edabbb018647298cd9a5ea5889)
+ *                                          the pixel centres of Gen12.0: add(16) of r1.4<1;4,0>:uw and the V
+ *                                          0x11001010, the x and y read back <8;4,1>:uw from words 0 and 4
+ *   - brw_generator.cpp                    generate_ddx() / generate_ddy(): the coarse derivatives as one add of
+ *                                          <4;4,0> regions one float (x) or two floats (y) apart
  * and checked against Mesa 25.0.7's brw_asm / brw_disasm (--gen=adl) for each new form, among them the
  * 16-bit strided source <16;8,2>:uw of the 32 x 16-bit multiply Mesa lowers a 32-bit integer multiply to
  * on Tiger Lake (has_integer_dword_mul false, brw_lower_integer_multiplication.cpp).
@@ -224,23 +233,36 @@
 #define EU_FILE_GRF			1U
 #define EU_FILE_IMM			3U
 
-/* Register / immediate types: [float 8 | signed 4 | log2(bytes)]. */
+/*
+ * Register / immediate types: [float 8 | signed 4 | log2(bytes)].  An
+ * immediate of eight signed 4-bit integers (V) is the signed byte encoding
+ * (brw_type_encode() of Mesa 25.0.7 brw_reg_type.c, Gen12: the vector
+ * immediate's size bits cleared); HF is the 16-bit float.
+ */
 #define EU_TYPE_UW			1U
 #define EU_TYPE_UD			2U
+#define EU_TYPE_V			4U
 #define EU_TYPE_D			6U
+#define EU_TYPE_HF			9U
 #define EU_TYPE_F			10U
 
 /* Exec size: log2 of the channel count. */
 #define EU_EXEC_SIZE_1			0U
 #define EU_EXEC_SIZE_8			3U
+#define EU_EXEC_SIZE_16			4U
 
 /* Regions.  hstride 0,1,2,4 -> 0..3; width 1,2,4,8,16 -> 0..4; vstride 0,1,2,4,8,16 -> 0..5. */
 #define EU_HSTRIDE_0			0U
 #define EU_HSTRIDE_1			1U
 #define EU_HSTRIDE_2			2U
 #define EU_WIDTH_1			0U
+#define EU_WIDTH_2			1U
+#define EU_WIDTH_4			2U
 #define EU_WIDTH_8			3U
 #define EU_VSTRIDE_0			0U
+#define EU_VSTRIDE_1			1U
+#define EU_VSTRIDE_2			2U
+#define EU_VSTRIDE_4			3U
 #define EU_VSTRIDE_8			4U
 #define EU_VSTRIDE_16			5U
 
