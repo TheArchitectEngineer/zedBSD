@@ -60,6 +60,7 @@ zedBSD の貢献の規則と標準の索引。Queue・backlog・実行許可で�
 | 2026-09-27 | arm64 の `hal_pmem_map_uncached()`・`hal_pmem_unmap_uncached()`（hal.h に宣言を追加、arm64 だけ実装: MAIR の entry 3 を Normal non-cacheable、`0xffff_0080_0000_0000` の uncached の窓、`src/kern/uncached.c`）。PCIe の DMA が cache を snoop しない Pi 4 の xHCI のため（`plan/ws048/proposed/hal-pmem-uncached.diff`） | WS048 p004。ユーザー「HAL approvalsは3つとも承認します。」 |
 | 2026-09-27 | amd64 の `hal_get_arch_handoff("acpi.rsdp")`: HAL の ACPI の発見が受け入れた RSDP の物理 address を返す（hal.h は不変、HAL の責務の追加。`plan/ws049/proposed/hal-acpi-rsdp.diff`） | WS049 p006。同上 |
 | 2026-09-27 | aarch64 の `include/hal/arch/aarch64.h` に `hal_gpregs`・`hal_fpregs`・`hal_vregs` と `HAL_DEBUG_*`（amd64 と同じ形）、`src/hal/arm64/debug.c`（single step、hardware breakpoint・watchpoint、context switch ごとの debug state）。ptrace のため（commit 27831f19） | WS044 p010。同上 |
+| 2026-09-28 | amd64 pcat の `src/hal/amd64/bsp-pcat/cons.c`: `kmsg=quiet` のとき framebuffer を消さず、右上の 136x40 の進捗の枠を logo の背景で塗り、`console_suspended=1` にする（HAL の責務の変更。hal.h は不変） | ユーザー「HALのdiffは承認します。」（2026-09-28） | `plan/ws035/proposed/hal-quiet-console.diff`（SHA256 3f63a8411d5b3684c8bb790e86e049a0d70122626c6f1aca579e5413cbb8566b） |
 
 2026-09-25 以降、hal.h を変えない `src/hal/` の実装の変更は承認を要しない（上の規則）。hal.h の変更はこの表の承認が要る。
 
