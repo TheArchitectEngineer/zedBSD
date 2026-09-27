@@ -323,9 +323,10 @@ SPARCV9_DYNAMIC_RTLD_OBJS := \
 	$(SPARCV9_DYNAMIC_DIR)/obj/src/rtld/rtld.o \
 	$(SPARCV9_DYNAMIC_DIR)/obj/src/rtld/string.o
 SPARCV9_DYNAMIC_FLOAT_DIR := $(SPARCV9_DYNAMIC_DIR)/float
-SPARCV9_DYNAMIC_LIBM_OBJ := $(SPARCV9_DYNAMIC_FLOAT_DIR)/math.o
+SPARCV9_DYNAMIC_LIBM_OBJS := $(patsubst src/libc/math/%.c,\
+	$(SPARCV9_DYNAMIC_FLOAT_DIR)/math/%.o,$(ZEDBSD_LIBM_SOURCES))
 SPARCV9_DYNAMIC_FLOAT_PARSE_OBJ := $(SPARCV9_DYNAMIC_FLOAT_DIR)/float-parse.o
-SPARCV9_DYNAMIC_LIBC_OBJS += $(SPARCV9_DYNAMIC_LIBM_OBJ) \
+SPARCV9_DYNAMIC_LIBC_OBJS += $(SPARCV9_DYNAMIC_LIBM_OBJS) \
 	$(SPARCV9_DYNAMIC_FLOAT_PARSE_OBJ) $(SPARCV9_DYNAMIC_SOFTFP_OBJS)
 
 $(SPARCV9_DYNAMIC_DIR)/softfp/%.o: src/libc/%.c
@@ -355,7 +356,8 @@ $(SPARCV9_DYNAMIC_DIR)/obj/src/libc/crt/crt1.o: src/libc/crt/crt1-sparcv9.S
 	@mkdir -p $(dir $@)
 	$(SPARCV9_CC) $(SPARCV9_DYNAMIC_CFLAGS) -c $< -o $@
 
-$(SPARCV9_DYNAMIC_LIBM_OBJ): src/libc/math.c src/libc/softfloat.h
+$(SPARCV9_DYNAMIC_LIBM_OBJS): $(SPARCV9_DYNAMIC_FLOAT_DIR)/math/%.o: \
+	src/libc/math/%.c $(ZEDBSD_LIBM_HEADERS)
 	@mkdir -p $(dir $@)
 	$(SPARCV9_CC) -nostdinc -Iinclude/libc -Iinclude -I. \
  $(SPARCV9_DYNAMIC_CFLAGS) -c $< -o $@

@@ -296,7 +296,7 @@ static int gpu_monitor_stop(struct drv_gpu_device *device);
 static void gpu_monitor(void *argument);
 static uint64_t gpu_monitor_step(struct drv_gpu_device *device);
 static void gpu_monitor_close(struct gpu_session *session);
-static void gpu_session_reclaim(struct drv_gpu_device *device, struct gpu_session *session);
+static unsigned gpu_session_reclaim(struct drv_gpu_device *device, struct gpu_session *session);
 static int gpu_recover_open(struct drv_gpu_device *device);
 static int gpu_job_action_ioctl(struct gpu_session *session, unsigned long command, uintptr_t argument);
 static int gpu_job_bind(struct gpu_session *session, struct drv_gpu_completion *completion, struct kernel_handle *handle, uint64_t generation);
@@ -1238,6 +1238,7 @@ gpu_close(
 	struct gpu_session *session;
 	struct drv_gpu_device *device;
 	struct gpu_resource *resource;
+	unsigned withdrawn;
 	unsigned long irq;
 	int error;
 
@@ -1264,6 +1265,16 @@ gpu_close(
 
 	/* Descriptor pollers observe local loss without waiting for native retirement. */
 	poll_notify();
+
+	/*
+	 * A reservation the departed producer never committed is not native work;
+	 * withdrawing it now keeps the drain and the stop below from waiting on it
+	 * until the stop deadline isolates the session (BUG-077: a client killed
+	 * between reserve and commit).  No ioctl races the final close.
+	 */
+	withdrawn = gpu_session_reclaim(device, session);
+	if (withdrawn != 0U)
+		kern_logf("gpu: close withdrew %u uncommitted job reservation(s)\n", withdrawn);
 
 	/* Raw native commands also require a supervisor before asynchronous stop begins. */
 	if (device->ops->recovery != NULL) {
@@ -6222,9 +6233,14 @@ gpu_monitor_step(
 		escalate = 1U;
 	}
 
-	/* Native idle proven: reservations the producer never published are withdrawn by the core. */
-	if (action == 2U && error == 0)
-		gpu_session_reclaim(device, selected);
+	/*
+	 * Reservations the producer never published are not native work: the core
+	 * withdraws them once the stop has begun (BUG-077: a backend that counts a
+	 * reservation as pending would otherwise never report idle), and again once
+	 * native idle is proven.
+	 */
+	if ((action == 1U || action == 2U) && error == 0)
+		(void)gpu_session_reclaim(device, selected);
 
 	/* A failed stop contract cannot turn an unconfirmed context into reusable storage. */
 	if (error != 0 && error != EAGAIN) {
@@ -6359,37 +6375,52 @@ gpu_monitor_close(
 	return;
 }
 
-/* Withdraws every unpublished reservation of a proven-idle context through the backend's own cancel. */
-static void
+/*
+ * Withdraws every unpublished reservation of a failed context through the
+ * backend's own cancel, and reports how many were withdrawn.
+ */
+static unsigned
 gpu_session_reclaim(
 	struct drv_gpu_device *device,
 	struct gpu_session *session)
 {
 	struct drv_gpu_completion *completion;
 	void *reservation;
+	unsigned withdrawn;
 	unsigned pending;
 	unsigned index;
 	unsigned long irq;
 	int error;
 
 	/* Backends without reservations retain nothing the core has to withdraw. */
+	withdrawn = 0U;
 	if (device->ops->jobs == NULL)
-		return;
+		return 0U;
 
 	/* Each retained token is withdrawn outside the registry lock, one exact callback at a time. */
 	for (index = 0U; index < GPU_SUBMIT_MAX; index++) {
 		completion = &session->completions[index];
 
-		/* Snapshot the token while the registry lock excludes a concurrent job action. */
+		/*
+		 * Snapshot the token and take the action pin, so a producer's commit or
+		 * cancel already in progress keeps the token and none can start.  Only a
+		 * failed generation is withdrawn; a healthy reservation stays the producer's.
+		 */
 		irq = spin_lock_irqsave(&gpu_registry_lock);
 
 		pending = 0U;
 		reservation = completion->job_reservation;
 		if (completion->sequence != 0U &&
 		    completion->backend_owned != 0U &&
+		    completion->completed != 0U &&
+		    completion->job_action == 0U &&
+		    completion->observers != UINT_MAX &&
 		    completion->reservation_pending != 0U &&
-		    reservation != NULL)
+		    reservation != NULL) {
+			completion->observers++;
+			completion->job_action = 1U;
 			pending = 1U;
+		}
 
 		spin_unlock_irqrestore(&gpu_registry_lock, irq);
 
@@ -6404,21 +6435,28 @@ gpu_session_reclaim(
 			reservation,
 			completion,
 			0U);
-		if (error != 0)
-			continue;
 
 		/* The withdrawn token retires like a late callback and keeps its earlier terminal error. */
 		irq = spin_lock_irqsave(&gpu_registry_lock);
 
-		completion->reservation_pending = 0U;
+		if (error == 0)
+			completion->reservation_pending = 0U;
+		completion->job_action = 0U;
+		waitq_wake_all(&device->monitor_waitq);
 
 		spin_unlock_irqrestore(&gpu_registry_lock, irq);
 
-		drv_gpu_complete(completion, ECANCELED);
+		if (error == 0) {
+			drv_gpu_complete(completion, ECANCELED);
+			withdrawn++;
+		}
+
+		/* The pin kept the slot through the callback; a refused cancel leaves the token to stop and isolate. */
+		gpu_completion_observer_leave(completion, 0U, 0U);
 	}
 
 	/* Succeeded: no unpublished reservation of this context retains a backend callback. */
-	return;
+	return withdrawn;
 }
 
 /* Invokes optional checked reset only for the sole fresh open without old external owners. */

@@ -13,10 +13,11 @@ ZEDBSD_COMPILER_RT_SOURCES := src/libc/softfloat.c \
 	src/libc/compiler-runtime.c
 ZEDBSD_COMPILER_RT_OBJECTS := $(patsubst src/libc/%.c,\
 	$(ZEDBSD_SOFTFLOAT_BUILD_DIR)/%.o,$(ZEDBSD_COMPILER_RT_SOURCES))
-ZEDBSD_LIBM_OBJECT := $(ZEDBSD_SOFTFLOAT_BUILD_DIR)/math.o
+ZEDBSD_LIBM_OBJECTS := $(patsubst src/libc/math/%.c,\
+	$(ZEDBSD_SOFTFLOAT_BUILD_DIR)/math/%.o,$(ZEDBSD_LIBM_SOURCES))
 ZEDBSD_FLOAT_PARSE_OBJECT := $(ZEDBSD_SOFTFLOAT_BUILD_DIR)/float-parse.o
 ZEDBSD_SOFTFLOAT_OBJECTS := $(ZEDBSD_COMPILER_RT_OBJECTS) \
-	$(ZEDBSD_LIBM_OBJECT) $(ZEDBSD_FLOAT_PARSE_OBJECT)
+	$(ZEDBSD_LIBM_OBJECTS) $(ZEDBSD_FLOAT_PARSE_OBJECT)
 
 ZEDBSD_SOFTFLOAT_CFLAGS := $(ZEDBSD_LIBC_CFLAGS) -mlong-double-64
 ZEDBSD_SOFTFLOAT_DEPFLAGS := -MMD -MP
@@ -41,8 +42,9 @@ $(ZEDBSD_FLOAT_PARSE_OBJECT): src/libc/float-parse.c \
 		$(ZEDBSD_SOFTFLOAT_CFLAGS) $(ZEDBSD_SOFTFLOAT_DEPFLAGS) \
 		-c $< -o $@
 
-$(ZEDBSD_LIBM_OBJECT): src/libc/math.c src/libc/softfloat.h
-	@mkdir -p $(ZEDBSD_SOFTFLOAT_BUILD_DIR)
+$(ZEDBSD_LIBM_OBJECTS): $(ZEDBSD_SOFTFLOAT_BUILD_DIR)/math/%.o: \
+	src/libc/math/%.c $(ZEDBSD_LIBM_HEADERS)
+	@mkdir -p $(dir $@)
 	$(ZEDBSD_SOFTFLOAT_CC) -nostdinc -Iinclude/libc -Iinclude -I. \
 		$(ZEDBSD_SOFTFLOAT_CFLAGS) $(ZEDBSD_SOFTFLOAT_DEPFLAGS) \
 		-c $< -o $@
@@ -87,11 +89,11 @@ float-parse-host-test: $(BUILD)/tests/float-parse-host-test
 	$(BUILD)/tests/float-parse-host-test
 	@echo "zedBSD floating string conversion tests: PASS"
 
-$(BUILD)/tests/math-host-test: tests/math-host-test.c src/libc/math.c \
-	src/libc/softfloat.c src/libc/softfloat.h src/libc/fenv.c
+$(BUILD)/tests/math-host-test: tests/math-host-test.c $(ZEDBSD_LIBM_SOURCES) \
+	$(ZEDBSD_LIBM_HEADERS) src/libc/softfloat.c src/libc/softfloat.h src/libc/fenv.c
 	@mkdir -p $(dir $@)
 	$(HOSTCC) -std=c11 -O2 -fno-builtin -Wall -Wextra -Werror \
-		-Iinclude/libc -DKERN_UAPI_NATIVE -Iinclude -I. tests/math-host-test.c src/libc/math.c \
+		-Iinclude/libc -DKERN_UAPI_NATIVE -Iinclude -I. tests/math-host-test.c $(ZEDBSD_LIBM_SOURCES) \
 		src/libc/softfloat.c src/libc/fenv.c -o $@
 
 math-host-test: $(BUILD)/tests/math-host-test
