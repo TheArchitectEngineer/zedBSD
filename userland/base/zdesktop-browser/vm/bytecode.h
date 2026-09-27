@@ -67,8 +67,54 @@ enum vm_opcode {
 	VM_OP_PUT_PROP,		/* R object, C key, R value */
 	VM_OP_GET_ELEM,		/* R dst, R object, R key */
 	VM_OP_PUT_ELEM,		/* R object, R key, R value */
-	VM_OP_GET_GLOBAL,	/* R dst, C key */
-	VM_OP_PUT_GLOBAL,	/* C key, R value */
+	VM_OP_GET_GLOBAL,	/* R dst, C key (a missing global is a ReferenceError) */
+	VM_OP_PUT_GLOBAL,	/* C key, R value (strict code may not make a global) */
+	VM_OP_DIV,		/* R dst, R left, R right */
+	VM_OP_MOD,		/* R dst, R left, R right */
+	VM_OP_EXP,		/* R dst, R left, R right */
+	VM_OP_BIT_AND,		/* R dst, R left, R right */
+	VM_OP_BIT_OR,		/* R dst, R left, R right */
+	VM_OP_BIT_XOR,		/* R dst, R left, R right */
+	VM_OP_SHL,		/* R dst, R left, R right */
+	VM_OP_SAR,		/* R dst, R left, R right */
+	VM_OP_SHR,		/* R dst, R left, R right */
+	VM_OP_LESS_EQ,		/* R dst, R left, R right */
+	VM_OP_GREATER,		/* R dst, R left, R right */
+	VM_OP_GREATER_EQ,	/* R dst, R left, R right */
+	VM_OP_LOOSE_EQ,		/* R dst, R left, R right */
+	VM_OP_INSTANCEOF,	/* R dst, R value, R constructor */
+	VM_OP_IN,		/* R dst, R key, R object */
+	VM_OP_NEG,		/* R dst, R value */
+	VM_OP_TO_NUMBER,	/* R dst, R value */
+	VM_OP_BIT_NOT,		/* R dst, R value */
+	VM_OP_NOT,		/* R dst, R value */
+	VM_OP_TYPEOF,		/* R dst, R value */
+	VM_OP_INC,		/* R dst, R value: ToNumber, plus one */
+	VM_OP_DEC,		/* R dst, R value: ToNumber, minus one */
+	VM_OP_GET_GLOBAL_TYPEOF,	/* R dst, C key (a missing global is undefined) */
+	VM_OP_DEFINE_GLOBAL_VAR,	/* C key: a var of the script, undefined unless it exists */
+	VM_OP_DEFINE_GLOBAL_FUNCTION,	/* C key, R function: a function declaration of the script */
+	VM_OP_DELETE_PROP,	/* R dst, R object, C key */
+	VM_OP_DELETE_ELEM,	/* R dst, R object, R key */
+	VM_OP_DELETE_GLOBAL,	/* R dst, C key */
+	VM_OP_DEFINE_PROP,	/* R object, C key, R value (an object literal's data property) */
+	VM_OP_DEFINE_ELEM,	/* R object, R key, R value (the same with a computed key) */
+	VM_OP_DEFINE_GETTER,	/* R object, R key, R function */
+	VM_OP_DEFINE_SETTER,	/* R object, R key, R function */
+	VM_OP_SET_PROTO,	/* R object, R value (__proto__ in an object literal) */
+	VM_OP_ARRAY_PUSH,	/* R array, R value: the next element */
+	VM_OP_ARRAY_HOLE,	/* R array: a hole as the next element */
+	VM_OP_NEW_ENV,		/* R dst, R parent environment (or undefined), I slot count */
+	VM_OP_GET_ENV,		/* R dst, R environment, I hops outwards, I slot */
+	VM_OP_PUT_ENV,		/* R environment, I hops outwards, I slot, R value */
+	VM_OP_LOAD_CLOSURE_ENV,	/* R dst: the running function's environment (or undefined) */
+	VM_OP_LOAD_THIS,	/* R dst: the this value (sloppy code's undefined or null is the global object) */
+	VM_OP_LOAD_CALLEE,	/* R dst: the running function */
+	VM_OP_NEW_CLOSURE,	/* R dst, C code, R environment (or undefined) */
+	VM_OP_CONSTRUCT,	/* R dst, R constructor, R new.target, R first argument, N argument count */
+	VM_OP_FOR_IN_START,	/* R dst, R object: an iterator over its enumerable keys */
+	VM_OP_FOR_IN_NEXT,	/* R dst, R iterator, J target when there is no next key */
+	VM_OP_TO_PROPERTY_KEY,	/* R dst, R value: a computed key, converted where it is written */
 
 	/* Wasm (raw values). */
 	VM_OP_I32_CONST,	/* R dst, I value */
@@ -129,8 +175,35 @@ struct vm_code {
 	vm_value *constants;
 	struct vm_handler *handlers;
 	uint32_t handler_count;
+	uint32_t flags;
+	uint32_t arguments_register;
 	uint32_t reserved;
 	struct vm_string *name;
+};
+
+/* The code is strict mode code (this is not replaced; a failed assignment throws). */
+#define VM_CODE_STRICT		0x1U
+
+/* A call makes an arguments object in arguments_register. */
+#define VM_CODE_ARGUMENTS	0x2U
+
+/* The function can be called with new: its closures get a prototype object. */
+#define VM_CODE_CONSTRUCTOR	0x4U
+
+/*
+ * An environment: the variables of one function (or script) that the
+ * functions made inside it can see, since those outlive the frame.
+ *
+ * The count slots follow the header (vm_env_slots finds them); parent is
+ * the environment of the code around it (NULL for the outermost).  The
+ * compiler knows which slot and how many hops outwards each captured
+ * variable is.
+ */
+struct vm_env {
+	struct vm_cell cell;
+	struct vm_env *parent;
+	uint32_t count;
+	uint32_t reserved;
 };
 
 /* The opcodes' table (code.c). */
@@ -141,7 +214,11 @@ extern const struct vm_cell_type vm_code_type;
 int vm_code_create(struct vm_heap *heap, const struct vm_code *model, struct vm_code **code, uint32_t *bad_offset);
 int vm_code_dump(const struct vm_code *code, struct wb_buffer *out);
 
-/* Bytecode functions (function.c). */
+/* Bytecode functions and environments (function.c). */
+extern const struct vm_cell_type vm_env_type;
 struct vm_function *vm_function_create(struct vm_realm *realm, struct vm_code *code);
+struct vm_function *vm_closure_create(struct vm_realm *realm, struct vm_code *code, struct vm_env *env);
+struct vm_env *vm_env_create(struct vm_heap *heap, struct vm_env *parent, uint32_t count);
+vm_value *vm_env_slots(struct vm_env *env);
 
 #endif

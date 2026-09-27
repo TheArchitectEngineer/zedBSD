@@ -18,6 +18,7 @@
 #include "vm/internal.h"
 
 #include <errno.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -27,6 +28,7 @@
 static int realm_fill(struct vm_realm *realm);
 static void realm_trace(struct vm_heap *heap, void *context);
 static int realm_empty_function(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int realm_define_value(struct vm_realm *realm, const char *name, vm_value value);
 
 /*
  * Makes a realm in a heap with its intrinsic objects and global object.
@@ -137,6 +139,17 @@ realm_fill(
 	if (error != 0)
 		return error;
 
+	/* The global values: undefined, NaN and Infinity, which cannot be changed. */
+	error = realm_define_value(realm, "undefined", VM_VALUE_UNDEFINED);
+	if (error != 0)
+		return error;
+	error = realm_define_value(realm, "NaN", vm_value_double(NAN));
+	if (error != 0)
+		return error;
+	error = realm_define_value(realm, "Infinity", vm_value_double(INFINITY));
+	if (error != 0)
+		return error;
+
 	/* Succeeded: the realm has its objects. */
 	return 0;
 }
@@ -185,5 +198,29 @@ realm_empty_function(
 
 	/* Succeeded: undefined. */
 	*result = VM_VALUE_UNDEFINED;
+	return 0;
+}
+
+/* Defines a global value that is neither writable, enumerable nor configurable. */
+static int
+realm_define_value(
+	struct vm_realm *realm,
+	const char *name,
+	vm_value value)
+{
+	vm_value key;
+	int error;
+
+	/* The name's key. */
+	key = vm_key_from_ascii(realm->heap, name);
+	if (key == VM_VALUE_EMPTY)
+		return ENOMEM;
+
+	/* The property. */
+	error = vm_object_define(realm->heap, realm->global, key, value, 0);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the value is defined. */
 	return 0;
 }

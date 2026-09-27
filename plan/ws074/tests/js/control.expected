@@ -1,0 +1,16 @@
+if negative zero positive
+loops 1357d[0,10][3,9][6,8]
+labels 00 01 10 11 20 21 in-block 
+switch one two  | two  | default string-three  | string-three  | four 
+try try catch:boom finally
+return-finally from-try 2
+finally-overrides finally
+jumps-finally body0 inner0 outer0 inner1 outer1 inner2 outer2 
+finally-before-rethrow
+rethrow caught first
+unwind bottom
+engine-error TypeError
+reference-error ReferenceError
+call-error TypeError
+stack RangeError
+logical b c undefined  default 0

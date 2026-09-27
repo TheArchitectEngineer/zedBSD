@@ -7,16 +7,17 @@
 
 /*
  * JavaScript's operations on values that the interpreter's instructions
- * use: the conversions (ToBoolean, ToNumber, ToString, ToPropertyKey), the
- * strict equality, addition and the less-than relation, and getting and
- * putting a property of any value.
+ * use: the conversions (ToBoolean, ToPrimitive, ToNumber, ToInt32,
+ * ToString, ToPropertyKey), the equalities, addition and the other
+ * numeric operators, the relations and typeof, and the errors the engine
+ * throws.
  *
- * The first pass covers primitives and plain objects.  An object's
- * conversion to a primitive (valueOf, toString, Symbol.toPrimitive) needs
- * the built-ins (ws074-p026) and is "NaN" or "[object Object]" until then;
- * a double's string is the shortest that reads back, in C's %g form, until
- * the Number-to-String algorithm arrives with them.  The errors are thrown
- * as strings until the Error objects exist.
+ * An object becomes a primitive through its valueOf and toString methods
+ * (Symbol.toPrimitive arrives with the symbols of ws074-p028).  A double's
+ * string is the shortest that reads back, in C's %g form, until the
+ * Number-to-String algorithm arrives with the built-ins (ws074-p026).  The
+ * errors are thrown as strings ("TypeError: ...") until the Error objects
+ * exist.
  */
 
 #include "vm/internal.h"
@@ -27,10 +28,34 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* The longest numeral a string is read as (longer strings are not numerals anyway). */
+#define OPERATION_NUMERAL_MAX	400U
+
+/*
+ * The types of the language, as the equality and typeof tell them apart.
+ */
+enum operation_type {
+	OPERATION_UNDEFINED,
+	OPERATION_NULL,
+	OPERATION_BOOLEAN,
+	OPERATION_NUMBER,
+	OPERATION_STRING,
+	OPERATION_SYMBOL,
+	OPERATION_OBJECT
+};
+
+static int operation_type(vm_value value);
+static int operation_call_method(struct vm_realm *realm, vm_value object, const char *name, int *done, vm_value *result);
 static int operation_number_string(struct vm_realm *realm, double number, struct vm_string **string);
 static double operation_parse_number(const struct vm_string *string);
-static int operation_is_string(vm_value value);
+static int operation_is_space(uint16_t unit);
+static double operation_parse_radix(const char *text, unsigned radix);
+static int operation_is_decimal(const char *text);
+static double operation_int32_of(double number);
+static int operation_compare(struct vm_realm *realm, vm_value left, vm_value right, int *order);
 static int operation_throw_text(struct vm_realm *realm, const char *text);
+static double operation_power(double base, double exponent);
+static int32_t operation_shift_signed(int32_t number, uint32_t count);
 
 /*
  * Converts a value to a truth value (ToBoolean).
@@ -60,7 +85,7 @@ vm_to_boolean(
 	}
 
 	/* A string is false when empty. */
-	is_string = operation_is_string(value);
+	is_string = vm_value_is_string(value);
 	if (is_string) {
 		string = (struct vm_string *)vm_value_as_cell(value);
 		if (string->length == 0)
@@ -73,6 +98,56 @@ vm_to_boolean(
 }
 
 /*
+ * Converts a value to a primitive (ToPrimitive): an object through its
+ * valueOf and toString methods, in the order the hint says.
+ */
+int
+vm_to_primitive(
+	struct vm_realm *realm,
+	vm_value value,
+	int hint,
+	vm_value *result)
+{
+	const char *first;
+	const char *second;
+	int is_object;
+	int done;
+	int status;
+
+	/* A primitive is itself. */
+	*result = value;
+	is_object = vm_value_is_object(value);
+	if (!is_object)
+		return 0;
+
+	/* A string hint tries toString first; the others valueOf. */
+	first = "valueOf";
+	second = "toString";
+	if (hint == VM_HINT_STRING) {
+		first = "toString";
+		second = "valueOf";
+	}
+
+	/* The first method, when it is callable and gives a primitive. */
+	status = operation_call_method(realm, value, first, &done, result);
+	if (status != 0)
+		return status;
+	if (done)
+		return 0;
+
+	/* Then the second. */
+	status = operation_call_method(realm, value, second, &done, result);
+	if (status != 0)
+		return status;
+	if (done)
+		return 0;
+
+	/* Neither gave a primitive. */
+	status = vm_throw_type_error(realm, "Cannot convert object to primitive value");
+	return status;
+}
+
+/*
  * Converts a value to a number (ToNumber).
  */
 int
@@ -82,8 +157,11 @@ vm_to_number(
 	double *number)
 {
 	struct vm_cell *cell;
+	vm_value primitive;
 	int is_number;
 	int is_cell;
+	int is_object;
+	int status;
 
 	/* A number is itself. */
 	is_number = vm_value_is_number(value);
@@ -111,6 +189,18 @@ vm_to_number(
 		return 0;
 	}
 
+	/* An object through its primitive. */
+	is_object = vm_value_is_object(value);
+	if (is_object) {
+		status = vm_to_primitive(realm, value, VM_HINT_NUMBER, &primitive);
+		if (status != 0)
+			return status;
+		status = vm_to_number(realm, primitive, number);
+		if (status != 0)
+			return status;
+		return 0;
+	}
+
 	/* A string is read as a numeral. */
 	cell = vm_value_as_cell(value);
 	if (cell->type == &vm_string_type) {
@@ -119,13 +209,61 @@ vm_to_number(
 	}
 
 	/* A symbol cannot become a number. */
-	if (cell->type == &vm_symbol_type) {
-		(void)vm_throw_type_error(realm, "Cannot convert a Symbol value to a number");
-		return VM_THROWN;
+	status = vm_throw_type_error(realm, "Cannot convert a Symbol value to a number");
+	return status;
+}
+
+/*
+ * Converts a value to a signed 32-bit integer (ToInt32).
+ */
+int
+vm_to_int32(
+	struct vm_realm *realm,
+	vm_value value,
+	int32_t *number)
+{
+	double real;
+	double wrapped;
+	int is_int32;
+	int status;
+
+	/* An int32 is itself. */
+	is_int32 = vm_value_is_int32(value);
+	if (is_int32) {
+		*number = vm_value_as_int32(value);
+		return 0;
 	}
 
-	/* An object is NaN until ToPrimitive arrives with the built-ins. */
-	*number = NAN;
+	/* Anything else as a number, wrapped modulo 2^32. */
+	status = vm_to_number(realm, value, &real);
+	if (status != 0)
+		return status;
+	wrapped = operation_int32_of(real);
+
+	/* Succeeded: the number in int32's range. */
+	*number = (int32_t)wrapped;
+	return 0;
+}
+
+/*
+ * Converts a value to an unsigned 32-bit integer (ToUint32).
+ */
+int
+vm_to_uint32(
+	struct vm_realm *realm,
+	vm_value value,
+	uint32_t *number)
+{
+	int32_t signed_number;
+	int status;
+
+	/* The same bits as ToInt32. */
+	status = vm_to_int32(realm, value, &signed_number);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: read as unsigned. */
+	*number = (uint32_t)signed_number;
 	return 0;
 }
 
@@ -140,14 +278,30 @@ vm_to_string(
 {
 	struct vm_cell *cell;
 	const char *text;
+	vm_value primitive;
 	int is_number;
-	int error;
+	int is_object;
+	int status;
 
 	/* A number's numeral. */
 	is_number = vm_value_is_number(value);
 	if (is_number) {
-		error = operation_number_string(realm, vm_value_as_number(value), string);
-		return error;
+		status = operation_number_string(realm, vm_value_as_number(value), string);
+		if (status != 0)
+			return status;
+		return 0;
+	}
+
+	/* An object through its primitive. */
+	is_object = vm_value_is_object(value);
+	if (is_object) {
+		status = vm_to_primitive(realm, value, VM_HINT_STRING, &primitive);
+		if (status != 0)
+			return status;
+		status = vm_to_string(realm, primitive, string);
+		if (status != 0)
+			return status;
+		return 0;
 	}
 
 	/* The constants' names. */
@@ -170,13 +324,8 @@ vm_to_string(
 		}
 
 		/* A symbol cannot become a string implicitly. */
-		if (cell->type == &vm_symbol_type) {
-			(void)vm_throw_type_error(realm, "Cannot convert a Symbol value to a string");
-			return VM_THROWN;
-		}
-
-		/* An object, until ToPrimitive arrives with the built-ins. */
-		text = "[object Object]";
+		status = vm_throw_type_error(realm, "Cannot convert a Symbol value to a string");
+		return status;
 	}
 
 	/* The name as a string. */
@@ -200,11 +349,12 @@ vm_to_key(
 {
 	struct vm_string *string;
 	struct vm_cell *cell;
+	vm_value primitive;
 	double number;
 	int32_t whole;
 	int is_number;
 	int is_cell;
-	int error;
+	int status;
 
 	/* A number that is an index below 2^31 is that index. */
 	is_number = vm_value_is_number(value);
@@ -219,23 +369,28 @@ vm_to_key(
 		}
 	}
 
+	/* An object through its primitive (with the string hint). */
+	status = vm_to_primitive(realm, value, VM_HINT_STRING, &primitive);
+	if (status != 0)
+		return status;
+
 	/* A symbol is itself. */
-	is_cell = vm_value_is_cell(value);
+	is_cell = vm_value_is_cell(primitive);
 	if (is_cell) {
-		cell = vm_value_as_cell(value);
+		cell = vm_value_as_cell(primitive);
 		if (cell->type == &vm_symbol_type) {
-			*key = value;
+			*key = primitive;
 			return 0;
 		}
 	}
 
 	/* Anything else through its string. */
-	error = vm_to_string(realm, value, &string);
-	if (error != 0)
-		return error;
-	error = vm_key_from_string(realm->heap, string, key);
-	if (error != 0)
-		return error;
+	status = vm_to_string(realm, primitive, &string);
+	if (status != 0)
+		return status;
+	status = vm_key_from_string(realm->heap, string, key);
+	if (status != 0)
+		return status;
 
 	/* Succeeded: the key. */
 	return 0;
@@ -257,6 +412,7 @@ vm_strict_equals(
 	int right_number;
 	int left_is_string;
 	int right_is_string;
+	int same;
 
 	/* Numbers compare by value (NaN is unequal to itself, +0 equals -0). */
 	left_number = vm_value_is_number(left);
@@ -270,12 +426,15 @@ vm_strict_equals(
 	}
 
 	/* Strings compare by their characters. */
-	left_is_string = operation_is_string(left);
-	right_is_string = operation_is_string(right);
+	left_is_string = vm_value_is_string(left);
+	right_is_string = vm_value_is_string(right);
 	if (left_is_string && right_is_string) {
 		left_string = (struct vm_string *)vm_value_as_cell(left);
 		right_string = (struct vm_string *)vm_value_as_cell(right);
-		return vm_string_equal(left_string, right_string);
+		same = vm_string_equal(left_string, right_string);
+		if (same)
+			return 1;
+		return 0;
 	}
 
 	/* Everything else is the same value or not. */
@@ -287,8 +446,101 @@ vm_strict_equals(
 }
 
 /*
- * Adds two values (+): strings join when either is a string, numbers add
- * otherwise.
+ * Tells whether two values are loosely equal (==): the same type compares
+ * strictly, null equals undefined, and otherwise the two are converted
+ * towards numbers (an object through its primitive).
+ */
+int
+vm_loose_equals(
+	struct vm_realm *realm,
+	vm_value left,
+	vm_value right,
+	int *equal)
+{
+	vm_value converted;
+	double number;
+	int left_type;
+	int right_type;
+	int status;
+
+	/* Each step converts one side and compares again, until the types agree or cannot. */
+	*equal = 0;
+	for (;;) {
+		left_type = operation_type(left);
+		right_type = operation_type(right);
+
+		/* The same type compares strictly. */
+		if (left_type == right_type) {
+			*equal = vm_strict_equals(left, right);
+			return 0;
+		}
+
+		/* null and undefined equal each other and nothing else. */
+		if (left_type <= OPERATION_NULL && right_type <= OPERATION_NULL) {
+			*equal = 1;
+			return 0;
+		}
+
+		/* Either one alone equals nothing but the other. */
+		if (left_type <= OPERATION_NULL || right_type <= OPERATION_NULL)
+			return 0;
+
+		/* A boolean becomes its number (either side). */
+		if (left_type == OPERATION_BOOLEAN) {
+			left = vm_value_int32(left == VM_VALUE_TRUE);
+			continue;
+		}
+
+		/* The same on the right. */
+		if (right_type == OPERATION_BOOLEAN) {
+			right = vm_value_int32(right == VM_VALUE_TRUE);
+			continue;
+		}
+
+		/* A string beside a number becomes a number. */
+		if (left_type == OPERATION_STRING && right_type == OPERATION_NUMBER) {
+			status = vm_to_number(realm, left, &number);
+			if (status != 0)
+				return status;
+			left = vm_value_number(number);
+			continue;
+		}
+
+		/* The same on the right. */
+		if (left_type == OPERATION_NUMBER && right_type == OPERATION_STRING) {
+			status = vm_to_number(realm, right, &number);
+			if (status != 0)
+				return status;
+			right = vm_value_number(number);
+			continue;
+		}
+
+		/* An object beside a primitive becomes its primitive. */
+		if (left_type == OPERATION_OBJECT) {
+			status = vm_to_primitive(realm, left, VM_HINT_DEFAULT, &converted);
+			if (status != 0)
+				return status;
+			left = converted;
+			continue;
+		}
+
+		/* The same on the right. */
+		if (right_type == OPERATION_OBJECT) {
+			status = vm_to_primitive(realm, right, VM_HINT_DEFAULT, &converted);
+			if (status != 0)
+				return status;
+			right = converted;
+			continue;
+		}
+
+		/* A symbol beside a number or a string is equal to neither. */
+		return 0;
+	}
+}
+
+/*
+ * Adds two values (+): after both become primitives, strings join when
+ * either is a string, numbers add otherwise.
  */
 int
 vm_add(
@@ -300,15 +552,17 @@ vm_add(
 	struct vm_string *left_string;
 	struct vm_string *right_string;
 	struct vm_string *joined;
+	vm_value left_primitive;
+	vm_value right_primitive;
 	double left_number;
 	double right_number;
 	int64_t sum;
 	int left_int32;
 	int right_int32;
 	int is_string;
-	int error;
+	int status;
 
-	/* Two int32s add without leaving int32 most of the time. */
+	/* Two int32s add without leaving the fast path. */
 	left_int32 = vm_value_is_int32(left);
 	right_int32 = vm_value_is_int32(right);
 	if (left_int32 && right_int32) {
@@ -317,17 +571,25 @@ vm_add(
 		return 0;
 	}
 
+	/* Both sides as primitives, the left first. */
+	status = vm_to_primitive(realm, left, VM_HINT_DEFAULT, &left_primitive);
+	if (status != 0)
+		return status;
+	status = vm_to_primitive(realm, right, VM_HINT_DEFAULT, &right_primitive);
+	if (status != 0)
+		return status;
+
 	/* A string on either side joins the two as strings. */
-	is_string = operation_is_string(left);
+	is_string = vm_value_is_string(left_primitive);
 	if (!is_string)
-		is_string = operation_is_string(right);
+		is_string = vm_value_is_string(right_primitive);
 	if (is_string) {
-		error = vm_to_string(realm, left, &left_string);
-		if (error != 0)
-			return error;
-		error = vm_to_string(realm, right, &right_string);
-		if (error != 0)
-			return error;
+		status = vm_to_string(realm, left_primitive, &left_string);
+		if (status != 0)
+			return status;
+		status = vm_to_string(realm, right_primitive, &right_string);
+		if (status != 0)
+			return status;
 		joined = vm_string_concat(realm->heap, left_string, right_string);
 		if (joined == NULL)
 			return ENOMEM;
@@ -336,12 +598,12 @@ vm_add(
 	}
 
 	/* Otherwise the numbers. */
-	error = vm_to_number(realm, left, &left_number);
-	if (error != 0)
-		return error;
-	error = vm_to_number(realm, right, &right_number);
-	if (error != 0)
-		return error;
+	status = vm_to_number(realm, left_primitive, &left_number);
+	if (status != 0)
+		return status;
+	status = vm_to_number(realm, right_primitive, &right_number);
+	if (status != 0)
+		return status;
 
 	/* Succeeded: the sum. */
 	*result = vm_value_number(left_number + right_number);
@@ -349,8 +611,86 @@ vm_add(
 }
 
 /*
- * Compares two values (<): strings by their code units, anything else as
- * numbers (NaN compares false).
+ * Applies a numeric operator other than + to two values: both become
+ * numbers (the left first); the bitwise operators work on their int32 (a
+ * shift's count on its low five bits, >>> on the uint32).
+ */
+int
+vm_numeric(
+	struct vm_realm *realm,
+	int operator,
+	vm_value left,
+	vm_value right,
+	vm_value *result)
+{
+	double left_number;
+	double right_number;
+	double answer;
+	int32_t left_int;
+	int32_t right_int;
+	uint32_t count;
+	int status;
+
+	/* Both sides as numbers, the left first. */
+	status = vm_to_number(realm, left, &left_number);
+	if (status != 0)
+		return status;
+	status = vm_to_number(realm, right, &right_number);
+	if (status != 0)
+		return status;
+
+	/* Their int32 values, for the bitwise operators. */
+	left_int = (int32_t)operation_int32_of(left_number);
+	right_int = (int32_t)operation_int32_of(right_number);
+	count = (uint32_t)right_int & 31U;
+
+	/* The operator. */
+	answer = NAN;
+	switch (operator) {
+	case VM_NUMERIC_SUB:
+		answer = left_number - right_number;
+		break;
+	case VM_NUMERIC_MUL:
+		answer = left_number * right_number;
+		break;
+	case VM_NUMERIC_DIV:
+		answer = left_number / right_number;
+		break;
+	case VM_NUMERIC_MOD:
+		answer = fmod(left_number, right_number);
+		break;
+	case VM_NUMERIC_EXP:
+		answer = operation_power(left_number, right_number);
+		break;
+	case VM_NUMERIC_AND:
+		answer = (double)(left_int & right_int);
+		break;
+	case VM_NUMERIC_OR:
+		answer = (double)(left_int | right_int);
+		break;
+	case VM_NUMERIC_XOR:
+		answer = (double)(left_int ^ right_int);
+		break;
+	case VM_NUMERIC_SHL:
+		answer = (double)(int32_t)((uint32_t)left_int << count);
+		break;
+	case VM_NUMERIC_SAR:
+		answer = (double)operation_shift_signed(left_int, count);
+		break;
+	case VM_NUMERIC_SHR:
+		answer = (double)((uint32_t)left_int >> count);
+		break;
+	default:
+		return EINVAL;
+	}
+
+	/* Succeeded: the answer as a value. */
+	*result = vm_value_number(answer);
+	return 0;
+}
+
+/*
+ * Compares two values (<).
  */
 int
 vm_less(
@@ -359,177 +699,111 @@ vm_less(
 	vm_value right,
 	vm_value *result)
 {
-	double left_number;
-	double right_number;
-	int left_is_string;
-	int right_is_string;
-	int order;
-	int error;
+	int status;
 
-	/* Two strings compare by their code units. */
-	left_is_string = operation_is_string(left);
-	right_is_string = operation_is_string(right);
-	if (left_is_string && right_is_string) {
-		order = vm_string_compare((struct vm_string *)vm_value_as_cell(left), (struct vm_string *)vm_value_as_cell(right));
-		*result = vm_value_boolean(order < 0);
-		return 0;
-	}
+	/* The less-than relation. */
+	status = vm_relation(realm, VM_RELATION_LESS, left, right, result);
+	if (status != 0)
+		return status;
 
-	/* Anything else as numbers. */
-	error = vm_to_number(realm, left, &left_number);
-	if (error != 0)
-		return error;
-	error = vm_to_number(realm, right, &right_number);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the comparison (false when either is NaN). */
-	*result = vm_value_boolean(left_number < right_number);
+	/* Succeeded: the comparison. */
 	return 0;
 }
 
 /*
- * Gets a property of any value: an object's through its chain (calling an
- * accessor's getter), a string's length and characters; reading from
- * undefined or null throws.
+ * Applies a relation (<, <=, >, >=): both sides become primitives (the
+ * left first), then two strings compare by code units and anything else as
+ * numbers, where NaN makes every relation false.
  */
 int
-vm_get(
+vm_relation(
 	struct vm_realm *realm,
-	vm_value base,
-	vm_value key,
+	int relation,
+	vm_value left,
+	vm_value right,
 	vm_value *result)
 {
-	struct vm_property property;
-	struct vm_accessor *accessor;
-	struct vm_string *string;
-	struct vm_string *character;
-	struct vm_cell *cell;
-	vm_value length_key;
-	uint32_t index;
-	uint16_t unit;
-	int is_index;
-	int is_cell;
-	int found;
+	vm_value left_primitive;
+	vm_value right_primitive;
+	int order;
 	int status;
 
-	/* undefined and null have no properties. */
-	*result = VM_VALUE_UNDEFINED;
-	if (base == VM_VALUE_UNDEFINED || base == VM_VALUE_NULL) {
-		status = vm_throw_type_error(realm, "Cannot read properties of undefined or null");
+	/* Both sides as primitives with the number hint, the left first. */
+	status = vm_to_primitive(realm, left, VM_HINT_NUMBER, &left_primitive);
+	if (status != 0)
 		return status;
-	}
-
-	/* Other primitives' prototypes arrive with the built-ins. */
-	is_cell = vm_value_is_cell(base);
-	if (!is_cell)
-		return 0;
-
-	/* A string's length and its characters. */
-	cell = vm_value_as_cell(base);
-	if (cell->type == &vm_string_type) {
-		string = (struct vm_string *)cell;
-		length_key = vm_key_from_ascii(realm->heap, "length");
-		if (key == length_key) {
-			*result = vm_value_int32((int32_t)string->length);
-			return 0;
-		}
-
-		/* A character is a one-unit string. */
-		is_index = vm_value_is_array_index(key, &index);
-		if (is_index && index < string->length) {
-			unit = vm_string_at(string, index);
-			character = vm_string_from_units(realm->heap, &unit, 1);
-			if (character == NULL)
-				return ENOMEM;
-			*result = vm_value_cell(character);
-		}
-
-		/* Any other key of a string reads undefined. */
-		return 0;
-	}
-
-	/* A symbol's prototype arrives with the built-ins. */
-	if (cell->type == &vm_symbol_type)
-		return 0;
-
-	/* An object's property, wherever on its chain. */
-	found = vm_object_find((struct vm_object *)cell, key, &property);
-	if (!found)
-		return 0;
-
-	/* A data property's value. */
-	if ((property.attributes & VM_PROPERTY_ACCESSOR) == 0U) {
-		*result = *property.value;
-		return 0;
-	}
-
-	/* An accessor's getter, called with the base as this (no getter reads undefined). */
-	accessor = (struct vm_accessor *)vm_value_as_cell(*property.value);
-	if (accessor->getter == VM_VALUE_UNDEFINED)
-		return 0;
-	status = vm_call(realm, accessor->getter, base, NULL, 0, result);
+	status = vm_to_primitive(realm, right, VM_HINT_NUMBER, &right_primitive);
 	if (status != 0)
 		return status;
 
-	/* Succeeded: the getter's result. */
+	/* Their order: below zero, zero, above zero, or unordered (a NaN). */
+	status = operation_compare(realm, left_primitive, right_primitive, &order);
+	if (status != 0)
+		return status;
+
+	/* The relation asked for; an unordered pair satisfies none. */
+	*result = VM_VALUE_FALSE;
+	if (order == 2)
+		return 0;
+	switch (relation) {
+	case VM_RELATION_LESS:
+		*result = vm_value_boolean(order < 0);
+		break;
+	case VM_RELATION_LESS_EQUAL:
+		*result = vm_value_boolean(order <= 0);
+		break;
+	case VM_RELATION_GREATER:
+		*result = vm_value_boolean(order > 0);
+		break;
+	case VM_RELATION_GREATER_EQUAL:
+		*result = vm_value_boolean(order >= 0);
+		break;
+	default:
+		return EINVAL;
+	}
+
+	/* Succeeded: the relation's truth. */
 	return 0;
 }
 
 /*
- * Puts a property of any value: an object's by assignment (calling an
- * accessor's setter); putting on undefined or null throws; on other
- * primitives nothing happens.  A refused assignment is ignored (sloppy
- * mode) until strict mode arrives with the compiler.
+ * Names the type of a value as typeof does.
  */
 int
-vm_put(
+vm_typeof(
 	struct vm_realm *realm,
-	vm_value base,
-	vm_value key,
-	vm_value value)
+	vm_value value,
+	vm_value *result)
 {
-	struct vm_property property;
-	struct vm_accessor *accessor;
-	struct vm_object *object;
-	struct vm_cell *cell;
-	vm_value ignored;
-	int is_cell;
-	int found;
-	int done;
-	int status;
+	const char *name;
+	vm_value key;
+	int type;
+	int callable;
 
-	/* undefined and null have no properties. */
-	if (base == VM_VALUE_UNDEFINED || base == VM_VALUE_NULL) {
-		status = vm_throw_type_error(realm, "Cannot set properties of undefined or null");
-		return status;
-	}
+	/* The type's name ("object" for null, "function" for anything callable). */
+	type = operation_type(value);
+	name = "object";
+	if (type == OPERATION_UNDEFINED)
+		name = "undefined";
+	if (type == OPERATION_BOOLEAN)
+		name = "boolean";
+	if (type == OPERATION_NUMBER)
+		name = "number";
+	if (type == OPERATION_STRING)
+		name = "string";
+	if (type == OPERATION_SYMBOL)
+		name = "symbol";
+	callable = vm_value_is_callable(value);
+	if (callable)
+		name = "function";
 
-	/* A primitive takes no property. */
-	is_cell = vm_value_is_cell(base);
-	if (!is_cell)
-		return 0;
-	cell = vm_value_as_cell(base);
-	if (cell->type == &vm_string_type || cell->type == &vm_symbol_type)
-		return 0;
+	/* The name as an atom (the same few strings every time). */
+	key = vm_key_from_ascii(realm->heap, name);
+	if (key == VM_VALUE_EMPTY)
+		return ENOMEM;
 
-	/* An accessor on the chain: its setter is called with the value. */
-	object = (struct vm_object *)cell;
-	found = vm_object_find(object, key, &property);
-	if (found && (property.attributes & VM_PROPERTY_ACCESSOR) != 0U) {
-		accessor = (struct vm_accessor *)vm_value_as_cell(*property.value);
-		if (accessor->setter == VM_VALUE_UNDEFINED)
-			return 0;
-		status = vm_call(realm, accessor->setter, base, &value, 1, &ignored);
-		return status;
-	}
-
-	/* Otherwise the ordinary assignment. */
-	status = vm_object_set(realm->heap, object, key, value, &done);
-	if (status != 0)
-		return status;
-
-	/* Succeeded: the value is put (or refused in silence). */
+	/* Succeeded: the name. */
+	*result = key;
 	return 0;
 }
 
@@ -569,6 +843,211 @@ vm_throw_range_error(
 
 	/* Reports the throw. */
 	return status;
+}
+
+/*
+ * Throws a ReferenceError with a message (a string until Error objects
+ * exist).
+ */
+int
+vm_throw_reference_error(
+	struct vm_realm *realm,
+	const char *message)
+{
+	char text[256];
+	int status;
+
+	/* The error's name and message. */
+	snprintf(text, sizeof(text), "ReferenceError: %s", message);
+	status = operation_throw_text(realm, text);
+
+	/* Reports the throw. */
+	return status;
+}
+
+/*
+ * Throws the ReferenceError of a name that has no binding.
+ */
+int
+vm_throw_not_defined(
+	struct vm_realm *realm,
+	vm_value key)
+{
+	struct wb_buffer name;
+	struct vm_string *string;
+	char text[200];
+	int is_string;
+	int status;
+
+	/* The name as UTF-8 (a key here is a name, never a symbol). */
+	wb_buffer_init(&name);
+	is_string = vm_value_is_string(key);
+	if (is_string) {
+		string = (struct vm_string *)vm_value_as_cell(key);
+		status = vm_string_to_utf8(string, &name);
+		if (status != 0) {
+			wb_buffer_release(&name);
+			return status;
+		}
+	}
+
+	/* The message, the name cut short when it is long. */
+	snprintf(text, sizeof(text), "%.120s is not defined", wb_buffer_string(&name));
+	wb_buffer_release(&name);
+	status = vm_throw_reference_error(realm, text);
+
+	/* Reports the throw. */
+	return status;
+}
+
+/* Reports the language type of a value. */
+static int
+operation_type(
+	vm_value value)
+{
+	struct vm_cell *cell;
+	int is_number;
+
+	/* The constants. */
+	if (value == VM_VALUE_UNDEFINED || value == VM_VALUE_EMPTY)
+		return OPERATION_UNDEFINED;
+	if (value == VM_VALUE_NULL)
+		return OPERATION_NULL;
+	if (value == VM_VALUE_TRUE || value == VM_VALUE_FALSE)
+		return OPERATION_BOOLEAN;
+
+	/* The numbers. */
+	is_number = vm_value_is_number(value);
+	if (is_number)
+		return OPERATION_NUMBER;
+
+	/* The cells by their type. */
+	cell = vm_value_as_cell(value);
+	if (cell->type == &vm_string_type)
+		return OPERATION_STRING;
+	if (cell->type == &vm_symbol_type)
+		return OPERATION_SYMBOL;
+
+	/* Everything else is an object. */
+	return OPERATION_OBJECT;
+}
+
+/* Calls an object's method by name for ToPrimitive: done when it was callable and gave a primitive. */
+static int
+operation_call_method(
+	struct vm_realm *realm,
+	vm_value object,
+	const char *name,
+	int *done,
+	vm_value *result)
+{
+	vm_value key;
+	vm_value method;
+	vm_value answer;
+	int callable;
+	int is_object;
+	int status;
+
+	/* The method, if the object has a callable one. */
+	*done = 0;
+	key = vm_key_from_ascii(realm->heap, name);
+	if (key == VM_VALUE_EMPTY)
+		return ENOMEM;
+	status = vm_get(realm, object, key, &method);
+	if (status != 0)
+		return status;
+	callable = vm_value_is_callable(method);
+	if (!callable)
+		return 0;
+
+	/* Its answer, with the object as this. */
+	status = vm_call(realm, method, object, NULL, 0, &answer);
+	if (status != 0)
+		return status;
+
+	/* An object answer does not count. */
+	is_object = vm_value_is_object(answer);
+	if (is_object)
+		return 0;
+
+	/* Succeeded: the primitive. */
+	*result = answer;
+	*done = 1;
+	return 0;
+}
+
+/* Compares two primitives: order is -1, 0 or 1, or 2 when a NaN leaves them unordered. */
+static int
+operation_compare(
+	struct vm_realm *realm,
+	vm_value left,
+	vm_value right,
+	int *order)
+{
+	double left_number;
+	double right_number;
+	int left_is_string;
+	int right_is_string;
+	int status;
+
+	/* Two strings compare by their code units. */
+	left_is_string = vm_value_is_string(left);
+	right_is_string = vm_value_is_string(right);
+	if (left_is_string && right_is_string) {
+		*order = vm_string_compare((struct vm_string *)vm_value_as_cell(left), (struct vm_string *)vm_value_as_cell(right));
+		if (*order < 0)
+			*order = -1;
+		if (*order > 0)
+			*order = 1;
+		return 0;
+	}
+
+	/* Anything else as numbers, the left first. */
+	status = vm_to_number(realm, left, &left_number);
+	if (status != 0)
+		return status;
+	status = vm_to_number(realm, right, &right_number);
+	if (status != 0)
+		return status;
+
+	/* NaN on either side leaves the two unordered. */
+	*order = 2;
+	if (left_number != left_number || right_number != right_number)
+		return 0;
+
+	/* Succeeded: the numbers' order. */
+	*order = 0;
+	if (left_number < right_number)
+		*order = -1;
+	if (left_number > right_number)
+		*order = 1;
+	return 0;
+}
+
+/* Wraps a number to int32's range as ToInt32 does (NaN and the infinities are zero). */
+static double
+operation_int32_of(
+	double number)
+{
+	double truncated;
+	double wrapped;
+	int infinite;
+
+	/* NaN and the infinities are zero. */
+	infinite = isinf(number);
+	if (number != number || infinite)
+		return 0.0;
+
+	/* The whole part, modulo 2^32, then into the signed range. */
+	truncated = trunc(number);
+	wrapped = fmod(truncated, 4294967296.0);
+	if (wrapped < 0.0)
+		wrapped += 4294967296.0;
+	if (wrapped >= 2147483648.0)
+		wrapped -= 4294967296.0;
+
+	/* The number in int32's range. */
+	return wrapped;
 }
 
 /* Makes a number's string: the int32 digits, or the shortest %g form that reads back. */
@@ -617,23 +1096,53 @@ operation_number_string(
 	return 0;
 }
 
-/* Reads a string as a numeral (StringToNumber's common forms): blank is 0, anything unreadable NaN. */
+/*
+ * Reads a string as a numeral (StringToNumber): blanks around it; empty is
+ * 0; Infinity with a sign; 0x, 0o and 0b integers; a decimal numeral with
+ * an optional sign, fraction and exponent.  Anything else is NaN.
+ */
 static double
 operation_parse_number(
 	const struct vm_string *string)
 {
-	char text[64];
-	char *end;
-	double number;
+	char text[OPERATION_NUMERAL_MAX + 1U];
+	uint32_t start;
+	uint32_t end;
 	uint32_t index;
 	uint16_t unit;
+	uint16_t prefix;
 	size_t length;
+	int blank;
+	int decimal;
+	int differs;
 
-	/* Only short ASCII numerals are read; anything else is NaN. */
-	if (string->length >= sizeof(text))
+	/* The blanks at both ends are not part of the numeral. */
+	start = 0;
+	end = string->length;
+	while (start < end) {
+		unit = vm_string_at(string, start);
+		blank = operation_is_space(unit);
+		if (!blank)
+			break;
+		start++;
+	}
+	while (end > start) {
+		unit = vm_string_at(string, end - 1U);
+		blank = operation_is_space(unit);
+		if (!blank)
+			break;
+		end--;
+	}
+
+	/* Nothing but blanks is zero. */
+	if (start == end)
+		return 0.0;
+
+	/* A numeral is ASCII and not too long. */
+	if (end - start > OPERATION_NUMERAL_MAX)
 		return NAN;
 	length = 0;
-	for (index = 0; index < string->length; index++) {
+	for (index = start; index < end; index++) {
 		unit = vm_string_at(string, index);
 		if (unit >= 0x80U)
 			return NAN;
@@ -644,44 +1153,184 @@ operation_parse_number(
 	/* The numeral ends there. */
 	text[length] = '\0';
 
-	/* Blank is zero; the numeral must be all there is besides blanks. */
-	number = strtod(text, &end);
-	if (end == text) {
-		while (*end == ' ' || *end == '\t' || *end == '\n')
-			end++;
-		if (*end == '\0')
-			return 0.0;
+	/* The infinities. */
+	differs = strcmp(text, "Infinity");
+	if (differs != 0)
+		differs = strcmp(text, "+Infinity");
+	if (differs == 0)
+		return INFINITY;
+	differs = strcmp(text, "-Infinity");
+	if (differs == 0)
+		return -INFINITY;
+
+	/* A prefixed integer (no sign is allowed before the prefix). */
+	prefix = 0;
+	if (length > 2U && text[0] == '0')
+		prefix = (uint16_t)(text[1] | 0x20);
+	if (prefix == 'x')
+		return operation_parse_radix(text + 2, 16);
+	if (prefix == 'o')
+		return operation_parse_radix(text + 2, 8);
+	if (prefix == 'b')
+		return operation_parse_radix(text + 2, 2);
+
+	/* A decimal numeral, checked before C reads it (strtod takes forms the language does not). */
+	decimal = operation_is_decimal(text);
+	if (!decimal)
 		return NAN;
+
+	/* The number read. */
+	return strtod(text, NULL);
+}
+
+/* Tells whether a code unit is white space or a line terminator for StringToNumber. */
+static int
+operation_is_space(
+	uint16_t unit)
+{
+	/* The ASCII blanks and line terminators. */
+	if (unit == 0x09U || unit == 0x0AU || unit == 0x0BU || unit == 0x0CU || unit == 0x0DU || unit == 0x20U)
+		return 1;
+
+	/* NBSP, the BOM, LS and PS. */
+	if (unit == 0xA0U || unit == 0xFEFFU || unit == 0x2028U || unit == 0x2029U)
+		return 1;
+
+	/* The other Unicode space separators (Zs). */
+	if (unit == 0x1680U || (unit >= 0x2000U && unit <= 0x200AU) || unit == 0x202FU || unit == 0x205FU || unit == 0x3000U)
+		return 1;
+
+	/* Anything else. */
+	return 0;
+}
+
+/* Reads the digits of a prefixed integer in a radix; NaN when there are none or one is not a digit. */
+static double
+operation_parse_radix(
+	const char *text,
+	unsigned radix)
+{
+	double number;
+	unsigned digit;
+	char character;
+
+	/* At least one digit. */
+	if (*text == '\0')
+		return NAN;
+
+	/* Each digit, the number growing in the radix. */
+	number = 0.0;
+	for (;
+	     *text != '\0';
+	     text++) {
+		character = *text;
+		if (character >= '0' && character <= '9') {
+			digit = (unsigned)(character - '0');
+		} else if ((character | 0x20) >= 'a' && (character | 0x20) <= 'z') {
+			digit = (unsigned)((character | 0x20) - 'a') + 10U;
+		} else {
+			return NAN;
+		}
+
+		/* A digit outside the radix makes no numeral. */
+		if (digit >= radix)
+			return NAN;
+		number = number * (double)radix + (double)digit;
 	}
-	while (*end == ' ' || *end == '\t' || *end == '\n')
-		end++;
-	if (*end != '\0')
-		return NAN;
 
 	/* The number read. */
 	return number;
 }
 
-/* Tells whether a value is a string. */
+/* Tells whether a text is a decimal numeral: a sign, digits with an optional point, and an optional exponent. */
 static int
-operation_is_string(
-	vm_value value)
+operation_is_decimal(
+	const char *text)
 {
-	struct vm_cell *cell;
-	int is_cell;
+	size_t digits;
+	size_t exponent_digits;
 
-	/* Only cells are strings. */
-	is_cell = vm_value_is_cell(value);
-	if (!is_cell)
+	/* An optional sign. */
+	if (*text == '+' || *text == '-')
+		text++;
+
+	/* The digits around an optional point; at least one digit in all. */
+	digits = 0;
+	while (*text >= '0' && *text <= '9') {
+		digits++;
+		text++;
+	}
+
+	/* A point, and the fraction's digits. */
+	if (*text == '.') {
+		text++;
+		while (*text >= '0' && *text <= '9') {
+			digits++;
+			text++;
+		}
+	}
+
+	/* At least one digit in all. */
+	if (digits == 0)
 		return 0;
 
-	/* A string cell. */
-	cell = vm_value_as_cell(value);
-	if (cell->type == &vm_string_type)
-		return 1;
+	/* An optional exponent with at least one digit. */
+	if (*text == 'e' || *text == 'E') {
+		text++;
+		if (*text == '+' || *text == '-')
+			text++;
+		exponent_digits = 0;
+		while (*text >= '0' && *text <= '9') {
+			exponent_digits++;
+			text++;
+		}
 
-	/* Another cell. */
-	return 0;
+		/* The exponent needs a digit. */
+		if (exponent_digits == 0)
+			return 0;
+	}
+
+	/* Nothing may follow. */
+	if (*text != '\0')
+		return 0;
+
+	/* A decimal numeral. */
+	return 1;
+}
+
+/* Raises a number to a power as ** does (C's pow says 1 for 1 ** NaN and for (+-1) ** Infinity; the language says NaN). */
+static double
+operation_power(
+	double base,
+	double exponent)
+{
+	int infinite;
+
+	/* A NaN exponent. */
+	if (exponent != exponent)
+		return NAN;
+
+	/* One (either sign) to an infinite power. */
+	infinite = isinf(exponent);
+	if (infinite && (base == 1.0 || base == -1.0))
+		return NAN;
+
+	/* Everything else as C computes it. */
+	return pow(base, exponent);
+}
+
+/* Shifts an int32 right keeping its sign (>>), spelled out since C leaves the right shift of a negative number to the compiler. */
+static int32_t
+operation_shift_signed(
+	int32_t number,
+	uint32_t count)
+{
+	/* A negative number: the complement shifted, then complemented back, fills with ones. */
+	if (number < 0)
+		return (int32_t)~(~(uint32_t)number >> count);
+
+	/* A positive one fills with zeros. */
+	return (int32_t)((uint32_t)number >> count);
 }
 
 /* Throws a text as a string value. */

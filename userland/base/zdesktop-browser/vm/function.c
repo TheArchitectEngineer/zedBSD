@@ -7,12 +7,13 @@
 
 /*
  * Functions (plan/ws074/design.md §11.6): the function cell, native
- * functions, calling one, and throwing.
+ * functions, bytecode functions and the closures a script makes with their
+ * environments, calling one, and throwing.
  *
- * A function is an object with its realm and what runs when it is called.
- * The first pass has native functions only; bytecode functions and the
- * interpreter's frames arrive in ws074-p023, where vm_call gains its
- * second kind of callee.
+ * A function is an object with its realm and what runs when it is called:
+ * a native function, or a code unit that the interpreter runs.  A closure
+ * also holds the environment of the code that made it, where the variables
+ * it shares with that code live.
  */
 
 #include "vm/bytecode.h"
@@ -22,10 +23,17 @@
 #include <string.h>
 
 static void function_trace(struct vm_heap *heap, struct vm_cell *cell);
+static void function_env_trace(struct vm_heap *heap, struct vm_cell *cell);
+static int function_add_prototype(struct vm_realm *realm, struct vm_function *function);
 
 /* The cell type of functions: objects that also hold their realm's objects through the realm's tracer. */
 const struct vm_cell_type vm_function_type = {
 	"function", function_trace, vm_object_finalize
+};
+
+/* The cell type of environments: they hold their parent and their slots. */
+const struct vm_cell_type vm_env_type = {
+	"environment", function_env_trace, NULL
 };
 
 /*
@@ -136,6 +144,78 @@ vm_function_create(
 }
 
 /*
+ * Makes a closure: a bytecode function of a realm that runs a code unit in
+ * an environment (NULL for none).  A code unit that can construct gives
+ * its closure a prototype object.  NULL when out of memory.
+ */
+struct vm_function *
+vm_closure_create(
+	struct vm_realm *realm,
+	struct vm_code *code,
+	struct vm_env *env)
+{
+	struct vm_function *function;
+	int error;
+
+	/* The function with its length and name. */
+	function = vm_function_create(realm, code);
+	if (function == NULL)
+		return NULL;
+	function->env = env;
+
+	/* A constructor's prototype object. */
+	if ((code->flags & VM_CODE_CONSTRUCTOR) != 0U) {
+		error = function_add_prototype(realm, function);
+		if (error != 0)
+			return NULL;
+	}
+
+	/* Succeeded: the closure. */
+	return function;
+}
+
+/*
+ * Makes an environment with a parent (NULL for none) and count slots, each
+ * undefined; NULL when out of memory.
+ */
+struct vm_env *
+vm_env_create(
+	struct vm_heap *heap,
+	struct vm_env *parent,
+	uint32_t count)
+{
+	struct vm_env *env;
+	vm_value *slots;
+	uint32_t index;
+
+	/* The cell, its slots after the header. */
+	env = vm_heap_alloc(heap, &vm_env_type, sizeof(*env) + (size_t)count * sizeof(vm_value));
+	if (env == NULL)
+		return NULL;
+	env->parent = parent;
+	env->count = count;
+
+	/* Every slot starts undefined. */
+	slots = vm_env_slots(env);
+	for (index = 0; index < count; index++)
+		slots[index] = VM_VALUE_UNDEFINED;
+
+	/* Succeeded: the environment. */
+	return env;
+}
+
+/*
+ * Finds the slots of an environment.
+ */
+vm_value *
+vm_env_slots(
+	struct vm_env *env)
+{
+	/* They follow the header. */
+	return (vm_value *)(env + 1);
+}
+
+/*
  * Tells whether a value can be called.
  */
 int
@@ -156,6 +236,73 @@ vm_value_is_callable(
 		return 1;
 
 	/* Any other cell. */
+	return 0;
+}
+
+/*
+ * Tells whether a value can be called with new (a bytecode function whose
+ * code can construct; the native constructors arrive with the built-ins).
+ */
+int
+vm_value_is_constructor(
+	vm_value value)
+{
+	struct vm_function *function;
+	int callable;
+
+	/* Only functions construct. */
+	callable = vm_value_is_callable(value);
+	if (!callable)
+		return 0;
+
+	/* A code unit that can. */
+	function = (struct vm_function *)vm_value_as_cell(value);
+	if (function->code != NULL && (function->code->flags & VM_CODE_CONSTRUCTOR) != 0U)
+		return 1;
+
+	/* Anything else. */
+	return 0;
+}
+
+/*
+ * Makes the object new makes for a constructor: its prototype is the
+ * constructor's prototype property, or Object.prototype when that is not
+ * an object.
+ */
+int
+vm_construct_this(
+	struct vm_realm *realm,
+	vm_value constructor,
+	vm_value *object)
+{
+	struct vm_object *prototype;
+	struct vm_object *made;
+	vm_value key;
+	vm_value value;
+	int is_object;
+	int status;
+
+	/* The constructor's prototype property. */
+	key = vm_key_from_ascii(realm->heap, "prototype");
+	if (key == VM_VALUE_EMPTY)
+		return ENOMEM;
+	status = vm_get(realm, constructor, key, &value);
+	if (status != 0)
+		return status;
+
+	/* An object is the new object's prototype; anything else leaves Object.prototype. */
+	prototype = realm->object_prototype;
+	is_object = vm_value_is_object(value);
+	if (is_object)
+		prototype = (struct vm_object *)vm_value_as_cell(value);
+
+	/* The object. */
+	made = vm_object_create(realm->heap, prototype);
+	if (made == NULL)
+		return ENOMEM;
+
+	/* Succeeded: the new object. */
+	*object = vm_value_cell(made);
 	return 0;
 }
 
@@ -233,8 +380,67 @@ function_trace(
 	/* The object's shape, prototype, slots and elements. */
 	vm_object_trace(heap, cell);
 
-	/* The code unit it runs. */
+	/* The code unit it runs and the environment it runs in. */
 	function = (struct vm_function *)cell;
 	if (function->code != NULL)
 		vm_heap_mark(heap, (struct vm_cell *)function->code);
+	if (function->env != NULL)
+		vm_heap_mark(heap, &function->env->cell);
+}
+
+/* Marks what an environment refers to: its parent and the values in its slots. */
+static void
+function_env_trace(
+	struct vm_heap *heap,
+	struct vm_cell *cell)
+{
+	struct vm_env *env;
+	vm_value *slots;
+	uint32_t index;
+
+	/* The parent. */
+	env = (struct vm_env *)cell;
+	if (env->parent != NULL)
+		vm_heap_mark(heap, &env->parent->cell);
+
+	/* Each slot's value. */
+	slots = vm_env_slots(env);
+	for (index = 0; index < env->count; index++)
+		vm_heap_mark_value(heap, slots[index]);
+}
+
+/* Gives a constructor its prototype object, whose constructor property points back. */
+static int
+function_add_prototype(
+	struct vm_realm *realm,
+	struct vm_function *function)
+{
+	struct vm_object *prototype;
+	vm_value key;
+	int error;
+
+	/* The object, from Object.prototype. */
+	prototype = vm_object_create(realm->heap, realm->object_prototype);
+	if (prototype == NULL)
+		return ENOMEM;
+
+	/* Its constructor: writable and configurable, not enumerable. */
+	key = vm_key_from_ascii(realm->heap, "constructor");
+	if (key == VM_VALUE_EMPTY)
+		return ENOMEM;
+	error = vm_object_define(realm->heap, prototype, key, vm_value_cell(function),
+	    VM_PROPERTY_WRITABLE | VM_PROPERTY_CONFIGURABLE);
+	if (error != 0)
+		return error;
+
+	/* The function's prototype property: writable only. */
+	key = vm_key_from_ascii(realm->heap, "prototype");
+	if (key == VM_VALUE_EMPTY)
+		return ENOMEM;
+	error = vm_object_define(realm->heap, &function->object, key, vm_value_cell(prototype), VM_PROPERTY_WRITABLE);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the constructor has its prototype. */
+	return 0;
 }

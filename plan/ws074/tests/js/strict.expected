@@ -1,0 +1,10 @@
+undeclared ReferenceError
+this true
+getter-only TypeError
+primitive TypeError
+array-length RangeError
+delete-length TypeError
+callee TypeError
+ordinary no error
+counter 1
+arguments 1:1
