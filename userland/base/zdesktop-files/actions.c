@@ -918,6 +918,16 @@ actions_undo_item(
 		else
 			(void)actions_start(app, FM_TASK_TRASH, item->to, item->count, trash, 1);
 		break;
+	case FM_UNDO_TAGS:
+		for (index = 0; index < item->count; index++) {
+			if (redo != 0)
+				(void)fm_tags_write(&app->tags, item->to[index], item->after[index]);
+			else
+				(void)fm_tags_write(&app->tags, item->to[index], item->before[index]);
+		}
+
+		/* Every item has its tags back (or again). */
+		break;
 	case FM_UNDO_NEW_FOLDER:
 		if (redo != 0) {
 			(void)mkdir(item->to[0], 0755);
@@ -1007,4 +1017,132 @@ actions_error(
 	else
 		snprintf(message, sizeof(message), "%s: %s", what, strerror(error));
 	fm_ui_message(app, message);
+}
+
+/*
+ * Turns a tag on for the selected items, or off when they all have it
+ * (Alt+1 to Alt+9); recorded for undo.
+ */
+void
+fm_action_toggle_tag(
+	struct fm_app *app,
+	int tag)
+{
+	struct fm_tab *tab;
+	unsigned *before;
+	unsigned *after;
+	char **paths;
+	char message[96];
+	size_t count;
+	size_t index;
+	int all;
+	int error;
+
+	/* A tag the window knows, and a selection. */
+	if (tag < 0 || tag >= app->tags.count)
+		return;
+	error = fm_selected_paths(app, &paths, &count);
+	if (error != 0 || count == 0) {
+		fm_paths_free(paths, count);
+		return;
+	}
+
+	/* The tags before, and whether every item has this one already. */
+	before = calloc(count, sizeof(unsigned));
+	after = calloc(count, sizeof(unsigned));
+	if (before == NULL || after == NULL) {
+		free(before);
+		free(after);
+		fm_paths_free(paths, count);
+		return;
+	}
+
+	/* Whether every item has the tag already. */
+	all = 1;
+	for (index = 0; index < count; index++) {
+		before[index] = fm_tags_of(&app->tags, paths[index]);
+		if ((before[index] & (1U << tag)) == 0U)
+			all = 0;
+	}
+
+	/* Each item gets the tag, or loses it when all had it. */
+	for (index = 0; index < count; index++) {
+		after[index] = before[index] | (1U << tag);
+		if (all != 0)
+			after[index] = before[index] & ~(1U << tag);
+		error = fm_tags_write(&app->tags, paths[index], after[index]);
+		if (error != 0) {
+			actions_error(app, "Couldn't tag", error, paths[index]);
+			after[index] = before[index];
+		}
+	}
+
+	/* Recorded for undo, said, and the items read again with their tags. */
+	fm_undo_push(&app->undo, FM_UNDO_TAGS, count, paths, paths, before, after);
+	if (all != 0)
+		snprintf(message, sizeof(message), "Removed the tag %s", app->tags.items[tag].name);
+	else
+		snprintf(message, sizeof(message), "Tagged %s", app->tags.items[tag].name);
+	fm_ui_message(app, message);
+	fm_log("TAG tag=%s on=%d items=%lu", app->tags.items[tag].name, all == 0, (unsigned long)count);
+	free(before);
+	free(after);
+	fm_paths_free(paths, count);
+	tab = fm_ui_tab(app);
+	fm_ui_reload(app, tab);
+}
+
+/*
+ * Adds the folder shown to the sidebar's Favorites (Ctrl+Alt+T).
+ */
+void
+fm_action_add_favorite(
+	struct fm_app *app)
+{
+	struct fm_tab *tab;
+	const struct fm_location *location;
+	int error;
+
+	/* Only a folder. */
+	tab = fm_ui_tab(app);
+	location = &tab->history[tab->history_index].location;
+	if (location->kind != FM_LOCATION_FOLDER)
+		return;
+
+	/* Added to the list, and the sidebar filled again. */
+	error = fm_places_add_favorite(&app->places, location->path);
+	if (error == EEXIST) {
+		fm_ui_message(app, "It is already in the sidebar");
+		return;
+	}
+
+	/* An error is told. */
+	if (error != 0) {
+		actions_error(app, "Couldn't change the sidebar", error, "");
+		return;
+	}
+
+	/* The sidebar with it. */
+	fm_places_init(&app->places, app->home, &app->tags);
+	fm_log("FAVORITE add path=%s", location->path);
+	app->dirty = 1;
+}
+
+/*
+ * Takes a favorite folder off the sidebar (its row's small button).
+ */
+void
+fm_action_remove_favorite(
+	struct fm_app *app,
+	int place)
+{
+	int error;
+
+	/* Taken off the list, and the sidebar filled again. */
+	error = fm_places_remove_favorite(&app->places, place);
+	if (error != 0)
+		return;
+	fm_log("FAVORITE remove path=%s", app->places.items[place].location.path);
+	fm_places_init(&app->places, app->home, &app->tags);
+	app->dirty = 1;
 }

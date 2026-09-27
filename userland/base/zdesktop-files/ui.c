@@ -110,7 +110,8 @@ fm_app_init(
 	snprintf(app->home, sizeof(app->home), "%s", home);
 
 	/* The sidebar. */
-	fm_places_init(&app->places, app->home);
+	fm_tags_load(&app->tags);
+	fm_places_init(&app->places, app->home, &app->tags);
 
 	/* The first tab. */
 	app->tabs[0] = calloc(1, sizeof(*app->tabs[0]));
@@ -220,8 +221,9 @@ fm_ui_tick(
 	app->now = now;
 	app->wall = time(NULL);
 
-	/* The tasks move on. */
+	/* The tasks and the search move on. */
 	(void)fm_actions_tick(app);
+	fm_search_tick(app);
 
 	/* A message that has run its time goes. */
 	if (app->message[0] != '\0' && now >= app->message_until) {
@@ -540,18 +542,25 @@ fm_ui_reload(
 		tab->listing.entries[tab->cursor].name = NULL;
 	}
 
-	/* A folder's items, the trash's, or none for places the later phases fill. */
+	/* A folder's items, the trash's, or the items of a place that is not one folder. */
 	fm_dir_free(&tab->listing);
+	if (location->kind != FM_LOCATION_SEARCH)
+		fm_search_stop(&app->search);
 	if (path != NULL) {
 		(void)fm_dir_read(&tab->listing, path, app->show_hidden);
 	} else if (location->kind == FM_LOCATION_TRASH) {
 		error = fm_trash_path(trash, sizeof(trash));
 		if (error == 0)
 			(void)fm_dir_read_trash(&tab->listing, trash);
+	} else {
+		fm_search_load(app, tab);
 	}
 
-	/* The items in the window's order, the cut ones marked. */
-	fm_dir_sort(&tab->listing, app->sort, app->sort_reverse);
+	/* The items in the window's order (the recent files stay newest first), with their tags, the cut ones marked. */
+	if (location->kind != FM_LOCATION_RECENTS)
+		fm_dir_sort(&tab->listing, app->sort, app->sort_reverse);
+	for (index = 0; index < tab->listing.count; index++)
+		tab->listing.entries[index].tags = fm_tags_of(&app->tags, tab->listing.entries[index].path);
 	ui_mark_cut(tab);
 
 	/* Nothing has the cursor yet, and the folder was just checked. */
@@ -664,8 +673,9 @@ fm_ui_open(
 		return;
 	}
 
-	/* A file is only logged for now. */
+	/* A file is logged and kept among the recent files (it is opened by an application in a later phase). */
 	fm_log("OPEN path=%s", entry->path);
+	fm_recent_add(entry->path);
 }
 
 /* Places the toolbar, the sidebar, the content and the preview for the window's size. */
@@ -918,6 +928,9 @@ ui_draw_search(
 	struct fm_canvas *canvas,
 	const struct fm_rect *field)
 {
+	const struct fm_location *location;
+	struct fm_tab *tab;
+	struct fm_rect text;
 	int baseline;
 
 	/* The field's ground, a little darker under the pointer. */
@@ -925,10 +938,26 @@ ui_draw_search(
 	if (app->hover_kind == FM_HIT_SEARCH)
 		fm_canvas_round(canvas, (float)field->x, (float)field->y, (float)field->width, (float)field->height, (float)field->height * 0.5f, FM_COLOR_HOVER);
 
-	/* The magnifier and the placeholder. */
+	/* The magnifier. */
 	fm_icon_draw(canvas, FM_ICON_SEARCH, (float)field->x + 9.0f, (float)field->y + 7.0f, 16.0f, FM_COLOR_TEXT_SECONDARY);
-	baseline = fm_text_center(13U, field->y, field->height);
-	(void)fm_text_draw(app->text, canvas, field->x + 32, baseline, "Search", 6, 13U, 0, FM_COLOR_TEXT_FAINT);
+	tab = fm_ui_tab(app);
+	location = &tab->history[tab->history_index].location;
+
+	/* Being typed in: an accent edge and the text with its cursor. */
+	if (app->focus == FM_FOCUS_SEARCH) {
+		fm_canvas_round_border(canvas, (float)field->x, (float)field->y, (float)field->width, (float)field->height, (float)field->height * 0.5f, 1.5f, FM_RGBA(0x2f7cf6, 150));
+		text.x = field->x + 32;
+		text.y = field->y;
+		text.width = field->width - 44;
+		text.height = field->height;
+		fm_field_draw(app, canvas, &app->search_field, &text, 13U, "Search");
+	} else if (location->kind == FM_LOCATION_SEARCH) {
+		baseline = fm_text_center(13U, field->y, field->height);
+		(void)fm_text_draw_fit(app->text, canvas, field->x + 32, baseline, location->path, 13U, 0, field->width - 44, FM_COLOR_TEXT);
+	} else {
+		baseline = fm_text_center(13U, field->y, field->height);
+		(void)fm_text_draw(app->text, canvas, field->x + 32, baseline, "Search", 6, 13U, 0, FM_COLOR_TEXT_FAINT);
+	}
 
 	/* The field can be clicked. */
 	fm_ui_hit(app, field, FM_HIT_SEARCH, 0);
@@ -1020,9 +1049,12 @@ ui_draw_sidebar(
 	const struct fm_rect *panel;
 	const struct fm_place *place;
 	struct fm_rect row;
+	struct fm_rect remove;
 	fm_color ink;
 	unsigned section;
 	int current;
+	int removable;
+	int hovered;
 	int index;
 	int y;
 
@@ -1032,9 +1064,9 @@ ui_draw_sidebar(
 	fm_canvas_round_border(canvas, (float)panel->x, (float)panel->y, (float)panel->width, (float)panel->height, UI_PANEL_RADIUS, 1.0f, FM_RGBA(0xffffff, 170));
 	fm_canvas_clip_push(canvas, panel);
 
-	/* Each place under its section's title. */
+	/* Each place under its section's title, the list scrolled when it is taller than the panel. */
 	section = FM_PLACES;
-	y = panel->y + 8;
+	y = panel->y + 8 - app->sidebar_scroll;
 	for (index = 0; index < app->places.count; index++) {
 		place = &app->places.items[index];
 
@@ -1073,8 +1105,32 @@ ui_draw_sidebar(
 		/* The label. */
 		(void)fm_text_draw_fit(app->text, canvas, row.x + 36, fm_text_center(UI_TEXT_SIDEBAR, row.y, row.height), place->label, UI_TEXT_SIDEBAR, current, row.width - 44, ink);
 		fm_ui_hit(app, &row, FM_HIT_PLACE, index);
+
+		/* A favorite folder under the pointer offers a small button that takes it off the sidebar. */
+		removable = 0;
+		if (place->section == FM_SECTION_FAVORITES && place->location.kind == FM_LOCATION_FOLDER)
+			removable = 1;
+		hovered = 0;
+		if (app->hover_kind == FM_HIT_PLACE && app->hover_index == index)
+			hovered = 1;
+		if (app->hover_kind == FM_HIT_BUTTON && app->hover_index == FM_BUTTON_REMOVE_PLACE + index)
+			hovered = 1;
+		if (removable != 0 && hovered != 0) {
+			remove.x = row.x + row.width - 26;
+			remove.y = row.y + 5;
+			remove.width = 20;
+			remove.height = 20;
+			fm_canvas_circle(canvas, (float)remove.x + 10.0f, (float)remove.y + 10.0f, 9.0f, FM_RGBA(0x5a6b85, 40));
+			fm_icon_draw(canvas, FM_ICON_CLOSE, (float)remove.x + 3.0f, (float)remove.y + 3.0f, 14.0f, FM_COLOR_TEXT_SECONDARY);
+			fm_ui_hit(app, &remove, FM_HIT_BUTTON, FM_BUTTON_REMOVE_PLACE + index);
+		}
+
+		/* The next row. */
 		y += UI_SIDEBAR_ROW;
 	}
+
+	/* How tall the list is, which the scrolling is kept within. */
+	app->layout.sidebar_height = y + app->sidebar_scroll - panel->y + 8;
 
 	/* The panel's clip ends. */
 	fm_canvas_clip_pop(canvas);

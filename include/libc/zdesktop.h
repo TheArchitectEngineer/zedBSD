@@ -31,14 +31,15 @@
 #ifndef ZDESKTOP_H
 #define ZDESKTOP_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* The interface version this header describes (2: the System Menu). */
-#define ZDESKTOP_VERSION	2U
+/* The interface version this header describes (2: the System Menu; 3: the recent files). */
+#define ZDESKTOP_VERSION	3U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -238,6 +239,48 @@ int zdesktop_window_menu_set(struct zdesktop_window_menu *window_menu, struct zd
  * Destroys a window's place for a menu; the window shows none.
  */
 void zdesktop_window_menu_destroy(struct zdesktop_window_menu *window_menu);
+
+/*
+ * The recent files (WS071).
+ *
+ * One list of recently used files for all applications, newest first: a
+ * file manager shows it as Recents, an application may offer it as "open
+ * recent".  An application adds a file when it opens or saves one.  Every
+ * call returns 0 or an errno value.
+ */
+
+/* The longest path and application name an entry holds, with the terminating NUL. */
+#define ZDESKTOP_RECENT_PATH_MAX	4096U
+#define ZDESKTOP_RECENT_NAME_MAX	64U
+
+/* How many entries the list keeps (the oldest go first). */
+#define ZDESKTOP_RECENT_KEPT		256U
+
+/*
+ * One entry of the recent list: the file's absolute path, the application
+ * that used it (its app_id) and when, in seconds since the epoch.
+ */
+struct zdesktop_recent_item {
+	char path[ZDESKTOP_RECENT_PATH_MAX];
+	char application[ZDESKTOP_RECENT_NAME_MAX];
+	int64_t time;
+};
+
+/*
+ * Adds a file (an absolute path) to the recent list, or makes it the
+ * newest when it is listed.
+ */
+int zdesktop_recent_add(const char *path, const char *application);
+
+/*
+ * Reads the recent list, newest first, into up to capacity items.
+ */
+int zdesktop_recent_list(struct zdesktop_recent_item *items, size_t capacity, size_t *count);
+
+/*
+ * Takes a file off the recent list.
+ */
+int zdesktop_recent_remove(const char *path);
 
 #ifdef __cplusplus
 }

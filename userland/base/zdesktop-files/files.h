@@ -399,6 +399,72 @@ struct fm_layout {
 	int cell_width;
 	int cell_height;
 	int content_height;
+	int sidebar_height;
+};
+
+/* How many tags the window knows at most. */
+#define FM_TAGS			16
+
+/* A search's longest query, how many words of a kind it keeps and how long a word is, and its most results. */
+#define FM_SEARCH_QUERY		256
+#define FM_SEARCH_WORDS		8
+#define FM_SEARCH_WORD		64
+#define FM_SEARCH_RESULTS	5000U
+
+/*
+ * One tag the window knows: its name and color.
+ */
+struct fm_tag {
+	char name[48];
+	fm_color color;
+};
+
+/*
+ * The tags the window knows, in the sidebar's order (bit n of a tag mask
+ * is the n-th).
+ */
+struct fm_tags {
+	struct fm_tag items[FM_TAGS];
+	int count;
+};
+
+/*
+ * A folder a search is walking: its open directory and its path.
+ */
+struct search_walk {
+	void *directory;
+	char path[FM_PATH_MAX];
+};
+
+/*
+ * A search in progress: what it wants (names, extensions, kinds, tags),
+ * where it looks, and the folders it is walking.
+ */
+struct fm_search {
+	int active;
+	char names[FM_SEARCH_WORDS][FM_SEARCH_WORD];
+	int name_count;
+	char extensions[FM_SEARCH_WORDS][FM_SEARCH_WORD];
+	int extension_count;
+	unsigned tag_mask;
+	int unknown_tag;
+	unsigned categories;
+	char base[FM_PATH_MAX];
+	int hidden;
+	unsigned long visited;
+	struct search_walk *walks;
+	size_t walk_count;
+	size_t walk_capacity;
+};
+
+/*
+ * Where a search looks: the folder it was started in, the home folder, or
+ * the whole computer.
+ */
+enum fm_scope {
+	FM_SCOPE_FOLDER,
+	FM_SCOPE_HOME,
+	FM_SCOPE_COMPUTER
 };
 
 /*
@@ -501,6 +567,19 @@ struct fm_app {
 	/* The paths to select once the folder is read again (a finished task's outcome). */
 	char **select_paths;
 	size_t select_count;
+
+	/* The tags the window knows. */
+	struct fm_tags tags;
+
+	/* The search: the field, when it was last typed in (0 when the search is up to date), the scope, the folder it was started from, and the walk. */
+	struct fm_field search_field;
+	uint64_t search_typed_at;
+	unsigned search_scope;
+	char search_folder[FM_PATH_MAX];
+	struct fm_search search;
+
+	/* How far the sidebar is scrolled (when its places do not fit). */
+	int sidebar_scroll;
 };
 
 /*
@@ -518,6 +597,7 @@ enum fm_dialog {
 #define FM_BUTTON_PUT_BACK	10
 #define FM_BUTTON_EMPTY_TRASH	11
 #define FM_BUTTON_TASK_CANCEL	100
+#define FM_BUTTON_REMOVE_PLACE	200
 
 /* The interface (ui.c). */
 int fm_app_init(struct fm_app *app, struct fm_text *text, const char *start);
@@ -561,6 +641,26 @@ unsigned fm_field_key(struct fm_field *field, uint32_t key, uint32_t modifiers);
 void fm_field_insert(struct fm_field *field, const char *text, size_t length);
 void fm_field_draw(struct fm_app *app, struct fm_canvas *canvas, const struct fm_field *field, const struct fm_rect *rect, unsigned pixels, const char *placeholder);
 
+/* The tags (tags.c). */
+void fm_tags_load(struct fm_tags *tags);
+unsigned fm_tags_of(const struct fm_tags *tags, const char *path);
+int fm_tags_write(const struct fm_tags *tags, const char *path, unsigned mask);
+int fm_tags_paths(const struct fm_tags *tags, int tag, char ***paths, size_t *count);
+int fm_tags_find(const struct fm_tags *tags, const char *name);
+
+/* The search (search.c). */
+void fm_search_start(struct fm_search *search, const struct fm_tags *tags, const char *query, const char *base, int hidden);
+int fm_search_step(struct fm_search *search, const struct fm_tags *tags, struct fm_listing *listing, uint64_t budget_ms);
+void fm_search_stop(struct fm_search *search);
+
+/* The places that are not one folder and the search field (ui-search.c). */
+void fm_search_focus(struct fm_app *app);
+void fm_search_key(struct fm_app *app, const struct fm_event *event);
+void fm_search_tick(struct fm_app *app);
+void fm_search_scope(struct fm_app *app, unsigned scope);
+void fm_search_load(struct fm_app *app, struct fm_tab *tab);
+void fm_recent_add(const char *path);
+
 /* The file operations (actions.c). */
 void fm_action_copy(struct fm_app *app, int cut);
 void fm_action_paste(struct fm_app *app);
@@ -575,6 +675,9 @@ void fm_action_rename_begin(struct fm_app *app);
 void fm_action_rename_end(struct fm_app *app, int commit);
 void fm_action_undo(struct fm_app *app, int redo);
 void fm_action_cancel_task(struct fm_app *app, int index);
+void fm_action_toggle_tag(struct fm_app *app, int tag);
+void fm_action_add_favorite(struct fm_app *app);
+void fm_action_remove_favorite(struct fm_app *app, int place);
 int fm_actions_tick(struct fm_app *app);
 void fm_actions_release(struct fm_app *app);
 const char *fm_current_folder(struct fm_app *app);
@@ -613,7 +716,9 @@ fm_color fm_mime_color(unsigned category);
 void fm_mime_label(const char *name, char *label, size_t size);
 
 /* The sidebar's places (places.c). */
-void fm_places_init(struct fm_places *places, const char *home);
+void fm_places_init(struct fm_places *places, const char *home, const struct fm_tags *tags);
+int fm_places_add_favorite(struct fm_places *places, const char *path);
+int fm_places_remove_favorite(struct fm_places *places, int removed);
 const char *fm_location_name(const struct fm_location *location, const char *home);
 void fm_tags_text(struct fm_app *app, unsigned tags, char *text, size_t length);
 

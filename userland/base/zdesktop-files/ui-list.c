@@ -46,6 +46,8 @@ static void list_row(struct fm_app *app, struct fm_canvas *canvas, struct fm_ent
 static void list_cell_text(struct fm_app *app, struct fm_entry *entry, unsigned column, char *text, size_t size);
 static const char *list_title(unsigned column);
 static unsigned list_sort_of(unsigned column);
+static int list_tag_count(unsigned tags);
+static void list_tag_dots(struct fm_app *app, struct fm_canvas *canvas, unsigned tags, int x, int y);
 
 /*
  * Draws the items as a list in the panel's inner rectangle, and records
@@ -316,6 +318,7 @@ list_row(
 	int baseline;
 	int column;
 	int width;
+	int drawn;
 
 	/* The ground: the accent when selected, faint under the pointer. */
 	ink = FM_COLOR_TEXT;
@@ -357,7 +360,8 @@ list_row(
 		field.width -= 8;
 		fm_field_draw(app, canvas, &app->rename, &field, LIST_TEXT, NULL);
 	} else {
-		(void)fm_text_draw_fit(app->text, canvas, columns[0].x + 30, baseline, entry->name, LIST_TEXT, 0, width, ink);
+		drawn = fm_text_draw_fit(app->text, canvas, columns[0].x + 30, baseline, entry->name, LIST_TEXT, 0, width - 8 * list_tag_count(entry->tags), ink);
+		list_tag_dots(app, canvas, entry->tags, columns[0].x + 30 + drawn + 10, row->y + row->height / 2);
 	}
 
 	/* The other columns' cells. */
@@ -478,4 +482,42 @@ list_sort_of(
 
 	/* The others do not. */
 	return FM_SORT_COUNT;
+}
+
+/* Counts the tags of a mask. */
+static int
+list_tag_count(
+	unsigned tags)
+{
+	int count;
+
+	/* Each bit set. */
+	count = 0;
+	while (tags != 0U) {
+		count += (int)(tags & 1U);
+		tags >>= 1;
+	}
+
+	/* Reports the count. */
+	return count;
+}
+
+/* Draws the dots of an item's tags after its name, overlapping. */
+static void
+list_tag_dots(
+	struct fm_app *app,
+	struct fm_canvas *canvas,
+	unsigned tags,
+	int x,
+	int y)
+{
+	int index;
+
+	/* Each tag's dot in the sidebar's order. */
+	for (index = 0; index < app->tags.count; index++) {
+		if ((tags & (1U << index)) == 0U)
+			continue;
+		fm_icon_tag(canvas, (float)x, (float)y, 4.5f, app->tags.items[index].color);
+		x += 8;
+	}
 }
