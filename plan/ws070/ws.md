@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: none（p001〜p004 は 2026-09-27 ユーザーの指示でサブエージェントが worktree の branch で実行。main への統合は main の session）
-Resume point: p006（WS071 と共有する menu の file への規約の直し。WS071 の merge の後）。p001〜p005 cleared（p005: i915 実機と回帰、共有しない file の規約）。2026-09-27 に Titlebar Presentation の仕様を追加（p007 の設計から。WS071 のサブエージェントが計画・実行）
+Resume point: p008（titlebar の protocol と model）。p007（Titlebar Presentation の設計）cleared 2026-09-27。順序は titlebar-design.md §14（WS071 と合わせた計画）。p006 は titlebar の Phase の後
 Executor: WS071 の作業用のサブエージェント（2026-09-27 ユーザー「WS071のサブエージェントでスケジューリングするのがいいと思います。」）
 <!-- awesome-plan-current:end -->
 
@@ -54,7 +54,7 @@ double click の対称、transaction の atomic な mode の切り替え、clien
 未対応の compositor では client 側の装飾へ fallback。
 
 既存の System Menu（p001〜p005 の `xdg_toplevel_menu_v1`）はこの仕様の `MENU` mode の model になる。`CONTROLS` の最初の使い手は
-zdesktop-files（WS071、仕様の §14 の File Manager の例）、`TABS` は WS071 の tab（p013）や zdesktop-terminal の候補。
+zdesktop-files（WS071、仕様の §14 の File Manager の例）、`TABS` の使い手は後で（zdesktop-files は CONTROLS なのでタブ（WS071 p013）は窓の中、titlebar-design.md §11）。
 同日のユーザーの補足:「つまり、今のファイラーのはウィンドウ内部の上部にナビゲーションバーを持っていますが、これをウィンドウのフローティングタイトルバーにマージします。」
 → 具体的な受け入れの一つ: zdesktop-files の窓の中の上部のナビゲーションバー（戻る・進む・ホーム・path・検索・表示の切り替え等）を
 `CONTROLS` の model として浮いたタイトルバー（最大化ではシステムバーの Application Zone）へ移し、窓の中の bar は消す。
@@ -75,7 +75,12 @@ Phase の分け方・順序・受け入れは p007（設計）で決める。WS0
 | [ws070-p003](phase003/phase.md) | zdesktop の描画と操作: 浮いたタイトルバーとシステムバーの項目、popup、keyboard、shortcut、activation | cleared | p002 |
 | [ws070-p004](phase004/phase.md) | libzdesktop の API と zdesktop-terminal のメニュー（Shell・Edit・View・Session・Help） | cleared | p002、p003 |
 | [ws070-p005](phase005/phase.md) | i915 実機、規約の全文との照合（WS071 と共有しない file）と回帰。libwayland の flush の EPIPE で protocol error を読み落とす不具合を直した | cleared | p001〜p004 |
-| ws070-p007 | （2026-09-27 追加）Titlebar Presentation の設計: protocol（mode・controls・tabs の model、transaction、error、MENU と既存の menu の model の関係）、libzdesktop の API、zdesktop の layout（Identity・Presentation・Window Management、System Bar の 5 zone）、縮退、docking と restore の animation、drag・swipe・double click、pointer と touch、fallback、試験。後の Phase の分割 | planning | p005、[titlebar-spec.md](titlebar-spec.md) |
+| [ws070-p007](phase007/phase.md) | Titlebar Presentation の設計（[titlebar-design.md](titlebar-design.md)）: protocol `zed_titlebar_v1`、libzdesktop、zdesktop の配置・縮退・描画・入力・animation、overflow、glyph cache、試験、Phase の分割 | cleared | p005、[titlebar-spec.md](titlebar-spec.md) |
+| ws070-p008 | titlebar の protocol と model: libwayland の `zed_titlebar_*`、zdesktop の titlebar.c（request・model・transaction・error・寿命・log）、libzdesktop の `zdesktop_titlebar_*`、titlebar-probe。描画は変えない | planned | p007 |
+| ws070-p009 | glass の UTF-8 と動的 glyph cache（fallback font）、role の icon の rasterize。題名・menu の label の日本語（zdesktop の glass.c: WS035 と調整） | planned | p007 |
+| ws070-p010 | CONTROLS の presentation: 配置と縮退、button・segment・検索とパンくずの欄・輪、pointer・keyboard、overflow の popup（隠れた control と窓の menu）、docked の Application Zone、animation の補間（shell.c・menu-shell.c・seat.c: WS035 と調整） | planned | p008、p009 |
+| ws070-p011 | TABS の presentation: strip、active・attention・×・＋、縮退、mode の atomic な切替（titlebar-probe で） | planned | p010 |
+| ws070-p012 | titlebar の規約の全文との照合、回帰（menu・files・zdesktop）、boot test、i915 実機（任意） | planned | p006、p011、WS071-p014 |
 | ws070-p006 | 規約の全文との照合の残り: WS071 と共有する file（`zdesktop/menu.c`・`menu-shell.c`・`menu.h`、`libzdesktop/menu.c`、`zdesktop.h`、`libwayland/menu-protocol.c`）への p005 の指摘の直しと回帰（最後） | planned | p005、WS071 の menu の変更の merge（衝突を避ける分割、2026-09-27） |
 
 ## 試験の道具（plan/ws070/tests/）
