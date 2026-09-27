@@ -13,6 +13,7 @@
 #include "menu.h"
 #include "popup.h"
 #include "toplevel.h"
+#include "subsurface.h"
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <errno.h>
@@ -36,6 +37,7 @@ static const struct zwl_global globals[] = {
 	{ 5, "wl_seat", 5, ZWL_SEAT },
 	{ 6, "wl_shm", 1, ZWL_SHM },
 	{ 7, "xdg_menu_manager_v1", 1, ZWL_MENU_MANAGER },
+	{ 8, "wl_subcompositor", 1, ZWL_SUBCOMPOSITOR },
 };
 
 static uint32_t word_at(const unsigned char *bytes, size_t offset);
@@ -172,6 +174,14 @@ zwl_dispatch(
 	case ZWL_POPUP:
 		/* xdg_positioner and xdg_popup (popup.c). */
 		error = zwl_popup_request(object, opcode, bytes, size);
+		break;
+	case ZWL_SUBCOMPOSITOR:
+		/* wl_subcompositor (subsurface.c). */
+		error = zwl_subcompositor_request(object, opcode, bytes, size);
+		break;
+	case ZWL_SUBSURFACE:
+		/* wl_subsurface (subsurface.c). */
+		error = zwl_subsurface_request(object, opcode, bytes, size);
 		break;
 	default:
 		/* Callback objects and version-2 outputs have no client requests. */
@@ -566,34 +576,28 @@ surface_commit(
 	uint32_t replaced;
 	int error;
 
+	/* A sub-surface's commit waits for its parent's when it is synchronized (subsurface.c). */
+	if (surface->sub_role != NULL) {
+		error = zwl_subsurface_commit(surface);
+		if (error != 0)
+			return error;
+		return 0;
+	}
+
 	/*
 	 * A cursor surface's content is used directly, with no configure; a
 	 * surface with no role yet keeps its content the same way, unshown
 	 * (a client commits its cursor surface before set_cursor names it).
+	 * Its sub-surfaces go with it.
 	 */
 	role = surface->role;
 	server = surface->client->server;
 	attached = surface->attached;
 	if (surface->cursor_role || role == NULL) {
-		previous = surface->queued;
-		if (surface->attached) {
-			surface->queued = surface->pending;
-			surface->pending = NULL;
-		} else {
-			surface->queued = surface->current;
-			zwl_buffer_get(surface->queued);
-		}
-
-		/* The content, its damage and its acquire fence are committed. */
-		surface->attached = 0;
-		surface->ready = 1;
-		if (surface->queued != NULL)
-			surface->queued->busy = 1;
-		commit_damage(surface);
-		commit_fence(surface, attached);
-		zwl_buffer_put(previous);
-		append_callbacks(&surface->committed_callbacks, surface->callbacks);
-		surface->callbacks = NULL;
+		error = zwl_surface_queue(surface);
+		if (error != 0)
+			return error;
+		zwl_subsurface_applied(surface);
 		return 0;
 	}
 
@@ -682,7 +686,49 @@ surface_commit(
 	append_callbacks(&surface->committed_callbacks, surface->callbacks);
 	surface->callbacks = NULL;
 
+	/* The window's sub-surfaces go with its state (subsurface.c). */
+	zwl_subsurface_applied(surface);
+
 	/* Succeeded: the scheduler owns the latest pending image and all frame callbacks. */
+	return 0;
+}
+
+/*
+ * Commits the pending state of a surface without a shell role now (a
+ * cursor, a sub-surface, a surface waiting for its role): the attached
+ * image, or the current one again, with its damage, acquire fences and
+ * frame callbacks, for the scheduler.
+ */
+int
+zwl_surface_queue(
+	struct zwl_object *surface)
+{
+	struct zwl_object *previous;
+	unsigned attached;
+
+	/* The attached image, or the current one kept. */
+	attached = surface->attached;
+	previous = surface->queued;
+	if (surface->attached) {
+		surface->queued = surface->pending;
+		surface->pending = NULL;
+	} else {
+		surface->queued = surface->current;
+		zwl_buffer_get(surface->queued);
+	}
+
+	/* The content, its damage and its acquire fence are committed. */
+	surface->attached = 0;
+	surface->ready = 1;
+	if (surface->queued != NULL)
+		surface->queued->busy = 1;
+	commit_damage(surface);
+	commit_fence(surface, attached);
+	zwl_buffer_put(previous);
+	append_callbacks(&surface->committed_callbacks, surface->callbacks);
+	surface->callbacks = NULL;
+
+	/* Succeeded: the scheduler takes the committed image. */
 	return 0;
 }
 
@@ -746,7 +792,10 @@ shell_request(
 		/* The role cannot be attached to a foreign object or an already assigned surface. */
 		id = word_at(bytes, 4);
 		surface = zwl_find(object->client, id);
-		if (surface == NULL || surface->kind != ZWL_SURFACE || surface->role != NULL)
+		if (surface == NULL ||
+		    surface->kind != ZWL_SURFACE ||
+		    surface->role != NULL ||
+		    surface->sub_role != NULL)
 			return EPROTO;
 
 		/* Publish both directions only after the role identity is allocated. */

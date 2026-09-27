@@ -137,6 +137,39 @@ void wl_region_set_user_data(struct wl_region *object, void *data);
 void *wl_region_get_user_data(struct wl_region *object);
 uint32_t wl_region_get_version(struct wl_region *object);
 
+/* wl_subcompositor (WS035 p077): gives surfaces the sub-surface role. */
+struct wl_subcompositor;
+struct wl_subsurface;
+extern const struct wl_interface wl_subcompositor_interface;
+#define WL_SUBCOMPOSITOR_ERROR_BAD_SURFACE 0U
+#define WL_SUBCOMPOSITOR_ERROR_BAD_PARENT 1U
+#define WL_SUBCOMPOSITOR_DESTROY 0U
+void wl_subcompositor_destroy(struct wl_subcompositor *object);
+#define WL_SUBCOMPOSITOR_GET_SUBSURFACE 1U
+struct wl_subsurface *wl_subcompositor_get_subsurface(struct wl_subcompositor *object, struct wl_surface *surface, struct wl_surface *parent);
+void wl_subcompositor_set_user_data(struct wl_subcompositor *object, void *data);
+void *wl_subcompositor_get_user_data(struct wl_subcompositor *object);
+uint32_t wl_subcompositor_get_version(struct wl_subcompositor *object);
+
+/* wl_subsurface (WS035 p077): a surface shown with its parent. */
+extern const struct wl_interface wl_subsurface_interface;
+#define WL_SUBSURFACE_ERROR_BAD_SURFACE 0U
+#define WL_SUBSURFACE_DESTROY 0U
+void wl_subsurface_destroy(struct wl_subsurface *object);
+#define WL_SUBSURFACE_SET_POSITION 1U
+void wl_subsurface_set_position(struct wl_subsurface *object, int32_t x, int32_t y);
+#define WL_SUBSURFACE_PLACE_ABOVE 2U
+void wl_subsurface_place_above(struct wl_subsurface *object, struct wl_surface *sibling);
+#define WL_SUBSURFACE_PLACE_BELOW 3U
+void wl_subsurface_place_below(struct wl_subsurface *object, struct wl_surface *sibling);
+#define WL_SUBSURFACE_SET_SYNC 4U
+void wl_subsurface_set_sync(struct wl_subsurface *object);
+#define WL_SUBSURFACE_SET_DESYNC 5U
+void wl_subsurface_set_desync(struct wl_subsurface *object);
+void wl_subsurface_set_user_data(struct wl_subsurface *object, void *data);
+void *wl_subsurface_get_user_data(struct wl_subsurface *object);
+uint32_t wl_subsurface_get_version(struct wl_subsurface *object);
+
 struct wl_buffer;
 extern const struct wl_interface wl_buffer_interface;
 

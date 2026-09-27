@@ -42,6 +42,7 @@
 #include "menu.h"
 #include "popup.h"
 #include "toplevel.h"
+#include "subsurface.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -980,6 +981,8 @@ draw_body(
 	const struct zwl_import *image;
 	struct glass_shape shape;
 	float soft;
+	float scale_x;
+	float scale_y;
 
 	/* The shadow, deeper for the focused window. */
 	soft = 22.0f;
@@ -1014,8 +1017,13 @@ draw_body(
 		glass_shape_draw(server, command, &shape);
 	}
 
-	/* The image, stretched to the rectangle while it changes, as opaque as asked. */
+	/* The sub-surfaces below the image, scaled with it (subsurface.c). */
 	image = zwl_compose_surface_image(surface);
+	scale_x = (float)body->width / (float)image->width;
+	scale_y = (float)body->height / (float)image->height;
+	zwl_subsurface_draw(server, command, surface, (float)body->x, (float)body->y, scale_x, scale_y, 0U);
+
+	/* The image, stretched to the rectangle while it changes, as opaque as asked. */
 	glass_shape_init(&shape, (float)body->x, (float)body->y, (float)body->width, (float)body->height);
 	if (docked)
 		shape.box[3] += 2.0f * GLASS_RADIUS;
@@ -1026,6 +1034,9 @@ draw_body(
 	if (image->draw == ZWL_DRAW_OPAQUE)
 		shape.opaque = 1.0f;
 	glass_shape_draw(server, command, &shape);
+
+	/* The sub-surfaces above the image. */
+	zwl_subsurface_draw(server, command, surface, (float)body->x, (float)body->y, scale_x, scale_y, 1U);
 }
 
 /*

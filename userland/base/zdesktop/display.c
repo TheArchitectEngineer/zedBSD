@@ -387,13 +387,17 @@ zwl_schedule(
 		}
 	}
 
-	/* Fullscreen mode when the topmost window is fullscreen with an image that can be the output. */
+	/*
+	 * Fullscreen mode when the topmost window is fullscreen with an image
+	 * that can be the output, and no sub-surface to draw with it.
+	 */
 	top = zwl_top_window(server);
 	fullscreen = 0;
 	if (top != NULL &&
 	    top->fullscreen &&
 	    top->current != NULL &&
-	    top->current->scanout)
+	    top->current->scanout &&
+	    top->sub_children == NULL)
 		fullscreen = 1;
 
 	/* The mode, switched when it changes. */

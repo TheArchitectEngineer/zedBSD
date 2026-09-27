@@ -13,6 +13,7 @@
 #include "menu.h"
 #include "popup.h"
 #include "toplevel.h"
+#include "subsurface.h"
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <errno.h>
@@ -235,6 +236,10 @@ zwl_object_destroy(
 	    object->kind == ZWL_POSITIONER ||
 	    object->kind == ZWL_POPUP)
 		zwl_popup_object_gone(object);
+
+	/* A sub-surface leaves its parent, a parent's sub-surfaces lose it (subsurface.c). */
+	if (object->kind == ZWL_SURFACE || object->kind == ZWL_SUBSURFACE)
+		zwl_subsurface_object_gone(object);
 
 	/* The System Menu's objects stop naming this one, and a menu open on it closes. */
 	if (object->kind == ZWL_SURFACE ||
