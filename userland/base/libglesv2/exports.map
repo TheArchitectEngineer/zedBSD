@@ -24,6 +24,7 @@
 		glBlendEquationSeparate;
 		glBlendFunc;
 		glBlendFuncSeparate;
+		glBlitFramebuffer;
 		glBufferData;
 		glBufferSubData;
 		glCheckFramebufferStatus;
@@ -102,6 +103,7 @@
 		glGetInteger64v;
 		glGetIntegeri_v;
 		glGetIntegerv;
+		glGetInternalformativ;
 		glGetProgramInfoLog;
 		glGetProgramiv;
 		glGetRenderbufferParameteriv;
@@ -147,6 +149,7 @@
 		glReadPixels;
 		glReleaseShaderCompiler;
 		glRenderbufferStorage;
+		glRenderbufferStorageMultisample;
 		glSampleCoverage;
 		glSamplerParameterf;
 		glSamplerParameterfv;

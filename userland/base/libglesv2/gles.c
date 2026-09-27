@@ -1496,6 +1496,7 @@ gles_integers(
 {
 	struct zegl_config *config;
 	struct gles_texture *texture;
+	uint32_t samples;
 	int *flag;
 	unsigned count;
 	int status;
@@ -1641,8 +1642,18 @@ gles_integers(
 	case GL_SUBPIXEL_BITS:
 		values[0] = 4;
 		return 1U;
-	case GL_SAMPLE_BUFFERS:
 	case GL_SAMPLES:
+		values[0] = (GLint)gles_framebuffer_samples(state, state->framebuffer);
+		return 1U;
+	case GL_SAMPLE_BUFFERS:
+		samples = gles_framebuffer_samples(state, state->framebuffer);
+		values[0] = 0;
+		if (samples > 1U)
+			values[0] = 1;
+		return 1U;
+	case GL_MAX_SAMPLES:
+		values[0] = (GLint)gles_samples_max(state);
+		return 1U;
 	case GL_NUM_COMPRESSED_TEXTURE_FORMATS:
 	case GL_COMPRESSED_TEXTURE_FORMATS:
 		values[0] = 0;

@@ -245,6 +245,7 @@ zegl_pbuffer_open(
 	surface->format = VK_FORMAT_R8G8B8A8_UNORM;
 	surface->rest_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 	surface->readable = 1;
+	surface->writable = 1;
 
 	/* The passes and the frame's objects. */
 	error = vulkan_frame_objects(surface);
@@ -761,6 +762,13 @@ vulkan_swapchain(
 		surface->readable = 1;
 	}
 
+	/* Copied into by a blit when the surface allows it. */
+	surface->writable = 0;
+	if ((capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT) != 0U) {
+		create.imageUsage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+		surface->writable = 1;
+	}
+
 	/* One queue family uses the images. */
 	create.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	create.preTransform = capabilities.currentTransform;
@@ -992,7 +1000,7 @@ vulkan_depth(
 	image.arrayLayers = 1U;
 	image.samples = VK_SAMPLE_COUNT_1_BIT;
 	image.tiling = VK_IMAGE_TILING_OPTIMAL;
-	image.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+	image.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 	image.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	image.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	result = vkCreateImage(display->device, &image, NULL, &surface->depth_image);
@@ -1256,7 +1264,7 @@ vulkan_pbuffer_image(
 	image.arrayLayers = 1U;
 	image.samples = VK_SAMPLE_COUNT_1_BIT;
 	image.tiling = VK_IMAGE_TILING_OPTIMAL;
-	image.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+	image.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 	image.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	image.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	result = vkCreateImage(display->device, &image, NULL, &surface->pbuffer_image);
