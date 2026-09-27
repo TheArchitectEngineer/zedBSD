@@ -83,6 +83,12 @@ struct shell_window {
 	uint32_t height;
 	int resized;
 
+	/* The largest size the window may choose for itself (xdg-shell's bounds; 0 when not known), and the size it would like. */
+	uint32_t bounds_width;
+	uint32_t bounds_height;
+	uint32_t preferred_width;
+	uint32_t preferred_height;
+
 	/* Whether the first configure arrived and whether the compositor asked to close. */
 	int configured;
 	int closed;
