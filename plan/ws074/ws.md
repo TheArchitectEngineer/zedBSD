@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 のユーザーの指示でサブエージェントが worktree の branch で実行。main の Queue への反映は統合する main）
-Resume point: p001〜p005・p007・p010・p011 cleared。次は p012（display list、CPU の参照の描画、`--render`）
+Resume point: p001〜p005・p007・p010〜p012 cleared。次は p014（Wayland と Vulkan の窓に実際の page）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -82,7 +82,7 @@ p009 → p018 → p027 → p028 → p029 → p031 → p032 → p033 → p034 →
 | ws074-p009 | CSS 3（後回し）: property の表の拡張、`var()`・`calc()`、`@media`、file の `<link>`、shorthand の全部 | planned | p008 |
 | [ws074-p010](phase010/phase.md) | font と text の最小: font の一覧（Inter、日本語は Droid の fallback）、libtruetype（関数を足すなら main に先に伝える）、advance、空白と CJK での改行 | cleared | p002 |
 | [ws074-p011](phase011/phase.md) | layout の最小: box tree（anonymous box）、block（幅・高さ・margin の基本）、inline（line box・text run・baseline）、`--dump=layout` | cleared | p009、p010 |
-| ws074-p012 | 描画の最小: display list（背景・border の solid・text）、CPU の参照の描画、`--render`（PPM → PNG）、画面の撮影 | planned | p011 |
+| [ws074-p012](phase012/phase.md) | 描画の最小: display list（背景・border の solid・text）、CPU の参照の描画、`--render`（PPM → PNG）、画面の撮影 | cleared | p011 |
 | ws074-p013 | layout 2: float・clear、position（relative・absolute・fixed）、overflow と clip、list と marker、replaced の大きさ、単位（em・rem・vw・%） | planned | p012 |
 | ws074-p014 | 窓: Wayland と Vulkan（swapchain、display list の GPU の描画: instance の四角と SDF、glyph の atlas）、CONTROLS の titlebar（URL）、scroll、link（file:）、guest で実際の page を表示。GPU と CPU の描画の比較の試験 | planned | p013 |
 | ws074-p015 | URL（WHATWG）、`data:`、WPT の urltestdata の runner | planned | p002 |
