@@ -12,9 +12,10 @@
  * zdesktop draws them (in the window's floating title bar, or in the
  * system bar while the window is docked) from the model given through
  * libzdesktop (the System Menu, WS070).  A choice arrives as an action
- * while the window's events are dispatched; it is queued here and carried
- * out by the main loop (fm_ui_action), which then tells the menus the
- * window's state in one transaction.  Without the System Menu the window
+ * while the window's events are dispatched; it is queued with the window's
+ * inputs (FM_EVENT_ACTION, so a shortcut and the keys typed after it are
+ * carried out in their order) and carried out by fm_ui_action, after which
+ * the main loop tells the menus the window's state in one transaction.  Without the System Menu the window
  * has no menus, and the keys still work.
  *
  * Only shortcuts with Ctrl or Alt are given to zdesktop, which takes such a
@@ -199,8 +200,9 @@ fm_menu_open(
 {
 	int error;
 
-	/* Nothing yet. */
+	/* Nothing yet but the window the choices go to. */
 	memset(menu, 0, sizeof(*menu));
+	menu->window = window;
 
 	/* The connection's menu service; a compositor without one leaves the window without menus. */
 	menu->service = zdesktop_menu_service_open(window->display);
@@ -266,29 +268,6 @@ fm_menu_refresh(
 }
 
 /*
- * Takes the oldest action chosen and not yet carried out (FM_ACTION_NONE
- * when there is none).
- */
-unsigned
-fm_menu_take(
-	struct fm_menu *menu)
-{
-	uint32_t action;
-
-	/* Nothing waits. */
-	if (menu->action_count == 0U)
-		return FM_ACTION_NONE;
-
-	/* The oldest leaves the queue. */
-	action = menu->actions[0];
-	menu->action_count--;
-	memmove(menu->actions, menu->actions + 1, menu->action_count * sizeof(menu->actions[0]));
-
-	/* Succeeded: the action to carry out. */
-	return action;
-}
-
-/*
  * Takes the menus away from zdesktop (before the window goes).
  */
 void
@@ -307,7 +286,7 @@ fm_menu_close(
 	memset(menu, 0, sizeof(*menu));
 }
 
-/* Queues a chosen action for the main loop. */
+/* Queues a chosen action among the window's inputs. */
 static void
 menu_activated(
 	void *data,
@@ -327,13 +306,8 @@ menu_activated(
 	/* The log line the tests read. */
 	fm_log("MENU item=%u action=%u serial=%u", item, action, serial);
 
-	/* A full queue drops the choice (sixteen choices in one round). */
-	if (menu->action_count == FM_MENU_ACTIONS)
-		return;
-
-	/* The count is how many choices wait for the main loop (fm_menu_take). */
-	menu->actions[menu->action_count] = action;
-	menu->action_count++;
+	/* After the inputs that came before it. */
+	fm_window_action(menu->window, action);
 }
 
 /* Gives zdesktop every item, with its role and shortcut, and the variable items' slots, in one transaction. */

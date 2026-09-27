@@ -890,8 +890,9 @@ zwl_menu_add_overflow(
 }
 
 /*
- * Finds the keysym a key types with the seat's modifiers on the US layout;
- * returns 1, or 0 for a key without one.
+ * Finds the keysym a key types with the seat's modifiers on the US layout
+ * (a letter with Shift is its capital); returns 1, or 0 for a key without
+ * one.
  */
 int
 zwl_menu_keysym(
@@ -902,10 +903,14 @@ zwl_menu_keysym(
 	uint32_t modifiers;
 	int known;
 
-	/* The menus' own table. */
+	/* The menus' own table (a shortcut keeps a letter small, with Shift beside it). */
 	known = shell_keysym(key, seat_modifiers, keysym, &modifiers);
 	if (known == 0)
 		return 0;
+
+	/* A letter typed with Shift is its capital. */
+	if ((modifiers & ZWL_MENU_SHIFT) != 0U && *keysym >= 'a' && *keysym <= 'z')
+		*keysym -= 'a' - 'A';
 
 	/* Succeeded: the keysym. */
 	return 1;

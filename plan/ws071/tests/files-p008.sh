@@ -2,7 +2,9 @@
 # ws071-p008: the menus of zdesktop-files (the System Menu, WS070) on the Venus guest (the lean
 # image, build-files-image.sh).  zdesktop --glass at 1280x800; zdesktop-files (f1) at 1000x640 on
 # the sample home (/tmp/fhome), opened on Documents.
-#  1. floating.png: File Edit View Go Window Help in the floating title bar (MENU ready, MENU bar).
+#  Since ws071-p014 the window's titlebar shows its controls, and File Edit View Go Window Help are
+#  in the titlebar's "..." popup (WS070's decision A); menu N below opens "..." and then the menu.
+#  1. floating.png: the controls and "..." in the floating title bar (MENU ready, TITLEBAR ready).
 #  2. file-menu.png: File by the pointer (Open, Open With pale: nothing selected).
 #  3. view-menu.png: View by the pointer; List chosen (ACTION 16, the list view).
 #  4. Meeting notes.txt selected; open-with.png: File > Open With lists Record and the built-in ways.
@@ -48,12 +50,6 @@ expect_log() {
 	fi
 }
 
-# The centre (x) of a top-level item of a client's floating bar, from the window's x.
-item_x() {
-	guest "grep 'MENU bar client=$1 .* where=floating item=$2 ' /tmp/zdesktop.log | tail -1" |
-	    sed -n 's/.* offset=\([-0-9]*\) top=[-0-9]* width=\([0-9]*\).*/\1 \2/p' | { read offset width; echo $(( ${3:-0} + ${offset:-0} + ${width:-0} / 2 )); }
-}
-
 # The middle (y) of the latest popup row of an item, and the latest popup's left edge.
 row_y() {
 	guest "grep 'MENU row item=$1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* y=\([0-9]*\) height=\([0-9]*\).*/\1 \2/p' | { read y h; echo $(( ${y:-0} + ${h:-0} / 2 )); }
@@ -69,6 +65,14 @@ click() {
 wclick() {
 	click $((wx + $1)) $((wy + $2)) "${3:-700}"
 }
+
+# Opens a top-level menu (its item) from the titlebar's "..." (its place from zdesktop's log).
+menu() {
+	item=$1
+	set -- $(guest "grep 'ZWL TITLEBAR control client=1 .* where=floating id=0 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p')
+	click $((${1:-0} + ${3:-0} / 2)) $((${2:-0} + ${4:-0} / 2)) 900
+	click $(( $(popup_x) + 60 )) "$(row_y "$item")" 900
+}
 shot() {
 	pointer move ${2:-1270} ${3:-790} sleep 400
 	check "$out/$1" >/dev/null
@@ -81,33 +85,34 @@ picture=; [ -f /usr/share/zdesktop/wallpaper.ppm ] && picture=--wallpaper=/usr/s
 /bin/zdesktop --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
 HOME=/tmp/fhome /bin/zdesktop-files --token=f1 --timeout-s=800 --width=1000 --height=640 /tmp/fhome/Documents > /tmp/f.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 set -- $(guest "grep 'ZWL MAP client=1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
-surface=${1:-0}; wx=${2:-0}; wy=${3:-0}; bar=$((wy - 30))
+surface=${1:-0}; wx=${2:-0}; wy=${3:-0}
 echo "files: surface $surface at $wx,$wy"
 
-# 1. The menus in the floating title bar.
+# 1. The controls and "..." in the floating title bar.
 expect_log /tmp/f.log 'ZFILES MENU ready items='
-expect_log /tmp/zdesktop.log "MENU bar client=1 surface=$surface where=floating item=6 "
+expect_log /tmp/f.log 'ZFILES TITLEBAR ready controls='
+expect_log /tmp/zdesktop.log "ZWL TITLEBAR control client=1 surface=$surface where=floating id=0 "
 shot floating.png
 
 # 2. File by the pointer.
-click "$(item_x 1 1 $wx)" $bar
-expect_log /tmp/zdesktop.log "MENU open client=1 surface=$surface item=1 depth=1"
+menu 1
+expect_log /tmp/zdesktop.log "MENU open client=1 surface=$surface item=1 depth="
 shot file-menu.png
-keys '<esc>'
+keys '<esc>' '<esc>'
 
 # 3. View, then List.
-click "$(item_x 1 3 $wx)" $bar
+menu 3
 shot view-menu.png
 click $(( $(popup_x) + 60 )) "$(row_y 1016)" 900
 expect_log /tmp/f.log 'ZFILES ACTION action=16'
 
 # 4. Meeting notes.txt (the third row), then File > Open With.
-wclick 400 222
+wclick 400 170
 expect_log /tmp/f.log 'ZFILES MENU state selection=1 .* openers=[1-9]'
-click "$(item_x 1 1 $wx)" $bar
+menu 1
 click $(( $(popup_x) + 60 )) "$(row_y 10)" 900
 shot open-with.png
-keys '<esc>' '<esc>'
+keys '<esc>' '<esc>' '<esc>'
 
 # 5. Get Info by its shortcut.
 keys '<ctrl-i>'
@@ -117,14 +122,14 @@ keys '<esc>'
 expect_log /tmp/f.log 'ZFILES INFO close'
 
 # 6. Edit > Tags > Work.
-click "$(item_x 1 2 $wx)" $bar
+menu 2
 click $(( $(popup_x) + 60 )) "$(row_y 11)" 900
 shot tags-menu.png
 click $(( $(popup_x) + 60 )) "$(row_y 1300)" 900
 expect_log /tmp/f.log 'ZFILES TAG tag=Work on=1 items=1'
 
 # 7. Help > Keyboard Shortcuts.
-click "$(item_x 1 6 $wx)" $bar
+menu 6
 click $(( $(popup_x) + 60 )) "$(row_y 1039)" 900
 expect_log /tmp/f.log 'ZFILES HELP open card=2'
 shot help-shortcuts.png
@@ -152,7 +157,7 @@ windows=$(guest "i=0; while [ \$(ps -A -o args | grep -c '[z]desktop-files') -gt
 [ "${windows:-0}" = 1 ] && echo "second window: closed, the first stays" || { echo "second window: $windows running"; status=1; }
 
 # 10. Minimize the first window.
-wclick 700 500
+wclick 700 448
 keys '<ctrl-m>'
 expect_log /tmp/f.log 'ZFILES WINDOW minimize'
 shot minimized.png

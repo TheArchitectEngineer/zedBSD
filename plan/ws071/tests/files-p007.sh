@@ -63,7 +63,7 @@ expect_log /tmp/f.log 'ZFILES THUMB path=/tmp/fhome/Pictures/Tiny.ppm error=0 wi
 
 # 2. The preview pane, and Sunset.ppm in it (the third item).
 keys '<ctrl-alt-p>'
-click 530 188
+click 530 136
 expect_log /tmp/f.log 'ZFILES PEEK path=/tmp/fhome/Pictures/Sunset.ppm type=image/x-portable-pixmap lines=0'
 shot preview.png
 
@@ -78,16 +78,16 @@ keys '<esc>'
 expect_log /tmp/f.log 'ZFILES LOOK close'
 
 # 4. Text: Documents in the list view, Meeting notes.txt (the third row), then Quick Look.
-click 100 177
+click 100 125
 expect_log /tmp/f.log 'ZFILES LOCATION kind=folder path=/tmp/fhome/Documents items=6 error=0'
 keys '<ctrl-2>'
-click 400 222
+click 400 170
 expect_log /tmp/f.log 'ZFILES PEEK path=/tmp/fhome/Documents/Meeting notes.txt type=text/plain lines=4'
 shot text.png
 keys '<spc>'
 expect_log /tmp/f.log 'ZFILES LOOK open path=/tmp/fhome/Documents/Meeting notes.txt'
 shot look-text.png
-click 30 620
+click 30 568
 closed=$(guest "grep -c 'ZFILES LOOK close' /tmp/f.log" | tail -1)
 [ "${closed:-0}" -ge 2 ] && echo "look: closed by a click on the window: ok" || { echo "look: click close MISSING"; status=1; }
 

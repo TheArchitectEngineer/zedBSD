@@ -8,7 +8,7 @@
 /*
  * The icons of zdesktop-files, made of the canvas's shapes.
  *
- * The sidebar and the toolbar use line icons in one color; items use a
+ * The sidebar and the panels use line icons in one color; items use a
  * filled folder and a page with a colored band that names the file's kind.
  * No icon theme or picture is read: every icon is drawn at the size asked,
  * so they stay sharp at any size.  Coordinates below are fractions of the

@@ -70,7 +70,7 @@ expect_log /tmp/f.log 'ZFILES LOCATION kind=folder path=/tmp/fhome/Documents ite
 trash=/tmp/fhome/.local/share/Trash
 
 # 1. Rename.
-click 443 172
+click 443 120
 keys '<f2>'
 sleep 0.5
 keys 'Costs'
@@ -88,16 +88,16 @@ expect_log /tmp/f.log 'ZFILES TASK done id=1 kind=trash state=done files=1 '
 expect_guest "[ -f $trash/files/Costs.csv ] && grep -q 'Path=/tmp/fhome/Documents/Costs.csv' $trash/info/Costs.csv.trashinfo" 'in the trash with its record'
 
 # 3. The Trash, and Put Back.
-click 100 395
+click 100 343
 expect_log /tmp/f.log 'ZFILES LOCATION kind=trash path= items=1 error=0'
-click 331 172
+click 331 120
 shot trash.png
-click 803 96 1200
+click 803 44 1200
 expect_log /tmp/f.log 'ZFILES TASK done id=2 kind=restore state=done files=1 '
 expect_guest '[ -f /tmp/fhome/Documents/Costs.csv ]' 'put back'
 
 # 4. Undo the put back, then the trash.
-click 100 177
+click 100 125
 keys '<ctrl-z>'
 sleep 1.5
 expect_log /tmp/f.log 'ZFILES TASK done id=3 kind=trash state=done files=1 '
@@ -108,11 +108,11 @@ expect_log /tmp/f.log 'ZFILES TASK done id=4 kind=restore state=done files=1 '
 expect_guest '[ -f /tmp/fhome/Documents/Costs.csv ]' 'undo trash: back again'
 
 # 5. Copy and paste into Downloads.
-click 779 172
+click 779 120
 keys '<ctrl-c>'
 sleep 0.5
 expect_log /tmp/f.log 'ZFILES CLIPBOARD mode=1 items=1'
-click 100 207
+click 100 155
 keys '<ctrl-v>'
 sleep 1.5
 expect_log /tmp/f.log 'ZFILES TASK done id=5 kind=copy state=done files=1 '

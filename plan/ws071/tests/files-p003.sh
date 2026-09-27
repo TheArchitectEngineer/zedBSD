@@ -47,6 +47,13 @@ shot() {
 	check "$out/$1" >/dev/null
 }
 
+# Clicks a control of the window's titlebar (drawn by zdesktop; its place from zdesktop's log, ws071-p014).
+control() {
+	set -- $(guest "grep 'ZWL TITLEBAR control client=1 .* where=floating id=$1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p')
+	set -- $((${1:-0} + ${3:-0} / 2)) $((${2:-0} + ${4:-0} / 2))
+	pointer move $(($1 - 2)) "$2" sleep 150 move "$1" "$2" sleep 300 down sleep 60 up sleep 900
+}
+
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; rm -rf /tmp/fhome; sh /usr/share/zdesktop-files-tests/make-home.sh /tmp/fhome >/dev/null
 picture=; [ -f /usr/share/zdesktop/wallpaper.ppm ] && picture=--wallpaper=/usr/share/zdesktop/wallpaper.ppm
@@ -64,20 +71,20 @@ expect_log /tmp/f.log 'ZFILES SELECT count=3 cursor=2 '
 shot keys.png
 
 # 2. Ctrl+click adds the fifth cell, a plain click selects the second alone.
-input "move $((wx + 779)) $((wy + 172)) sleep 300 hold ctrl click sleep 100 free ctrl sleep 600"
+input "move $((wx + 779)) $((wy + 120)) sleep 300 hold ctrl click sleep 100 free ctrl sleep 600"
 expect_log /tmp/f.log 'ZFILES SELECT count=4 cursor=4 '
-click 443 172
+click 443 120
 expect_log /tmp/f.log 'ZFILES SELECT count=1 cursor=1 '
 shot click.png
 
 # 3. The list view.
-click 925 32
+control 7
 shot list.png
 
 # 4. Sorting by size, and reversed.
-click 760 137
+click 760 85
 expect_log /tmp/f.log 'ZFILES SORT key=2 reverse=0'
-click 760 137
+click 760 85
 expect_log /tmp/f.log 'ZFILES SORT key=2 reverse=1'
 shot sorted.png
 
@@ -92,7 +99,7 @@ sleep 1
 expect_log /tmp/f.log 'ZFILES LOCATION kind=folder path=/tmp/fhome/Projects items=2 error=0'
 
 # 6. A rubber band over both rows, from the empty ground below them.
-pointer move $((wx + 600)) $((wy + 400)) sleep 300 down sleep 100 move $((wx + 500)) $((wy + 300)) sleep 100 move $((wx + 300)) $((wy + 165)) sleep 300
+pointer move $((wx + 600)) $((wy + 348)) sleep 300 down sleep 100 move $((wx + 500)) $((wy + 248)) sleep 100 move $((wx + 300)) $((wy + 113)) sleep 300
 check "$out/band.png" >/dev/null
 pointer up sleep 500
 expect_log /tmp/f.log 'ZFILES SELECT count=2 '

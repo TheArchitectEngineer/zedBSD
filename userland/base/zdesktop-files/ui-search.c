@@ -45,8 +45,9 @@ static void search_finish(struct fm_app *app, struct fm_tab *tab);
 static void search_home_text(struct fm_app *app, const char *folder, char *text, size_t size);
 
 /*
- * Gives the keyboard to the search field (a click on it, Ctrl+F), with
- * the query shown now selected.
+ * Gives the keyboard to the search field (Ctrl+F), with the query shown
+ * now selected: zdesktop is asked to give the titlebar's search field the
+ * keyboard (fm_titlebar_state).
  */
 void
 fm_search_focus(
@@ -63,6 +64,8 @@ fm_search_focus(
 	else
 		fm_field_set(&app->search_field, "");
 	app->focus = FM_FOCUS_SEARCH;
+	app->control_focus = FM_CONTROL_SEARCH;
+	app->control_focus_serial++;
 	app->dirty = 1;
 }
 
@@ -76,12 +79,10 @@ fm_search_key(
 	struct fm_app *app,
 	const struct fm_event *event)
 {
-	struct fm_tab *tab;
 	unsigned result;
 
 	/* The field's answer. */
 	result = fm_field_key(&app->search_field, event->key, event->modifiers);
-	tab = fm_ui_tab(app);
 
 	/* A change searches a moment later. */
 	if (result == FM_FIELD_CHANGED) {
@@ -95,15 +96,32 @@ fm_search_key(
 		return;
 	}
 
-	/* Esc: the field is emptied and the tab goes back from the search. */
-	if (result == FM_FIELD_CANCEL) {
-		fm_field_set(&app->search_field, "");
-		app->focus = FM_FOCUS_CONTENT;
-		app->search_typed_at = 0;
-		fm_search_stop(&app->search);
-		if (tab->history[tab->history_index].location.kind == FM_LOCATION_SEARCH)
-			fm_ui_back(app);
-	}
+	/* Esc: the search ends. */
+	if (result == FM_FIELD_CANCEL)
+		fm_search_cancel(app);
+}
+
+/*
+ * Ends the search (Esc in the search field): the field is emptied and the
+ * tab goes back from the search.
+ */
+void
+fm_search_cancel(
+	struct fm_app *app)
+{
+	struct fm_tab *tab;
+
+	/* The field, the typing and the walk. */
+	fm_field_set(&app->search_field, "");
+	app->focus = FM_FOCUS_CONTENT;
+	app->search_typed_at = 0;
+	fm_search_stop(&app->search);
+
+	/* The place before the search. */
+	tab = fm_ui_tab(app);
+	if (tab->history[tab->history_index].location.kind == FM_LOCATION_SEARCH)
+		fm_ui_back(app);
+	app->dirty = 1;
 }
 
 /*
