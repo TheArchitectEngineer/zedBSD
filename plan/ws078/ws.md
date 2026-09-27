@@ -3,13 +3,13 @@
 # WS078: Kei Operating System への名前の移行
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: incomplete
 Primary Milestone: MG006
 Related Milestones: MG002
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001（名前の棚卸しと対応表）から。ユーザーの判断待ちの点（下の「判断が要る点」）を先に確かめる
+Resume point: p003 は cleared（main）。次は Venus での graphical な確認、BUG-080 の Desktop の分類、p006・p002・p004
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-28 ユーザーの決定、要旨）
@@ -55,7 +55,8 @@ Resume point: p001（名前の棚卸しと対応表）から。ユーザーの�
 | --- | --- | --- | --- |
 | ws078-p001 | 棚卸しと対応表（識別子・path・見える文字列・protocol 名を分類し、新しい名前を決める。判断が要る点を列挙） | planning | なし |
 | ws078-p002 | kernel・driver・UAPI・libc・bootloader の識別子の改名（`KERN_` 等。機械的。build の warning 0 と boot test） | planning | p001 |
-| ws078-p003 | 実行ファイルの改名（`/bin/wayland`・`/bin/xserver`・`/bin/browser`）と参照（session.sh・zsessiond・App Home・試験） | planning | p001 |
+| [ws078-p003](phase003/phase.md) | 実行ファイルと source の directory の改名（userland/desktop/、`/bin/wayland` 等）と参照 | cleared（2026-09-28、6d8ca152。Venus の graphical な確認は未実施） | — |
+| ws078-p006 | データの path（/etc/zdesktop、/usr/share/zdesktop、font、zdesktop-x11）、API・protocol（`zdesktop_`→、`zed_*`→`keiland_*`）の改名 | planning | p003 |
 | ws078-p004 | 見える文字列: boot の logo（Kei）・greeter・lock・banner・os-release 等 | planning | p001 |
 | ws078-p005 | 全文規約確認と回帰（必須の最終確認） | planning | 全 Phase |
 
