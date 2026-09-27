@@ -19,6 +19,7 @@
  */
 
 #include "compose.h"
+#include "extras.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -223,6 +224,7 @@ zwl_arrow_create(
 	uint32_t x;
 	uint32_t y;
 	VkResult result;
+	int error;
 
 	/* A linear, host-visible image the CPU writes once. */
 	arrow = calloc(1, sizeof(*arrow));
@@ -248,9 +250,16 @@ zwl_arrow_create(
 		}
 	}
 
-	/* Succeeded: drawn with alpha. */
+	/* Drawn with alpha. */
 	arrow->draw = ZWL_DRAW_ALPHA;
 	server->arrow = arrow;
+
+	/* The other cursor shapes clients may ask for (cursor.c); without them every shape is the arrow. */
+	error = zwl_cursor_images_create(server);
+	if (error != 0)
+		printf("ZWL CURSOR images errno=%d\n", error);
+
+	/* Succeeded: the arrow is ready. */
 	return 0;
 }
 
@@ -264,6 +273,9 @@ zwl_arrow_destroy(
 	/* No arrow was made. */
 	if (server->arrow == NULL || server->compose == NULL)
 		return;
+
+	/* The shapes' images first (cursor.c). */
+	zwl_cursor_images_destroy(server);
 
 	/* Its Vulkan objects, then the record. */
 	image_release(server->compose, server->arrow);

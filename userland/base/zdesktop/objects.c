@@ -15,6 +15,7 @@
 #include "toplevel.h"
 #include "subsurface.h"
 #include "data.h"
+#include "extras.h"
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <errno.h>
@@ -293,6 +294,14 @@ zwl_object_destroy(
 	    object->kind == ZWL_POSITIONER ||
 	    object->kind == ZWL_POPUP)
 		zwl_popup_object_gone(object);
+
+	/* A toplevel and its decoration, a pointer and its cursor-shape devices, a surface and its viewport part (ws035-p080). */
+	if (object->kind == ZWL_TOPLEVEL || object->kind == ZWL_DECORATION)
+		zwl_decoration_object_gone(object);
+	if (object->kind == ZWL_POINTER)
+		zwl_cursor_shape_object_gone(object);
+	if (object->kind == ZWL_SURFACE || object->kind == ZWL_VIEWPORT)
+		zwl_viewport_object_gone(object);
 
 	/* A data source leaves the clipboard and its offers (data.c). */
 	if (object->kind == ZWL_DATA_SOURCE)
