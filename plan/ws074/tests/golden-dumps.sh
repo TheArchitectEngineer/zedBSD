@@ -1,7 +1,7 @@
 #!/bin/sh
 # ws074: compares zdesktop-browser's text dumps of the test pages with the reviewed golden files.
 #
-#   sh plan/ws074/tests/golden-dumps.sh [--update] [--program PATH] KIND...    (KIND: dom, style, layout)
+#   sh plan/ws074/tests/golden-dumps.sh [--update] [--program PATH] KIND...    (KIND: dom, style, layout, paint)
 #
 # For each plan/ws074/tests/pages/NAME.html and each KIND, `PROGRAM --dump=KIND` is compared with
 # plan/ws074/tests/golden/NAME.KIND (a golden file that does not exist yet is skipped with a note).

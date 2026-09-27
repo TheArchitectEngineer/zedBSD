@@ -87,7 +87,9 @@ page_destroy(
 	if (page == NULL)
 		return;
 
-	/* Frees the layout, the fonts and the style engine, then every cell with the heap. */
+	/* Frees the display list, the layout, the fonts and the style engine, then every cell with the heap. */
+	if (page->painted)
+		paint_release(&page->paint);
 	if (page->laid_out)
 		layout_release(&page->layout);
 	if (page->text_open)
@@ -218,7 +220,13 @@ page_layout(
 {
 	int error;
 
-	/* Throws the old layout away. */
+	/* Throws the old display list and layout away. */
+	if (page->painted) {
+		paint_release(&page->paint);
+		page->painted = 0;
+	}
+
+	/* The layout. */
 	if (page->laid_out) {
 		layout_release(&page->layout);
 		page->laid_out = 0;
@@ -231,6 +239,35 @@ page_layout(
 		return error;
 
 	/* Succeeded: the page is laid out. */
+	return 0;
+}
+
+/*
+ * Builds the display list of the laid out page.
+ */
+int
+page_paint(
+	struct page *page)
+{
+	int error;
+
+	/* A page that is not laid out has nothing to paint. */
+	if (!page->laid_out)
+		return EINVAL;
+
+	/* Throws the old display list away. */
+	if (page->painted) {
+		paint_release(&page->paint);
+		page->painted = 0;
+	}
+
+	/* Walks the layout into a new one. */
+	error = paint_build(&page->paint, &page->layout);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the page has its display list. */
+	page->painted = 1;
 	return 0;
 }
 

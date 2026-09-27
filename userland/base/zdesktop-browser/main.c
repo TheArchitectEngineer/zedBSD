@@ -9,7 +9,8 @@
  * zdesktop-browser: the Web browser of the zedBSD desktop.
  *
  *   zdesktop-browser [--display=NAME] [--width=N] [--height=N] [URL]
- *   zdesktop-browser --dump=dom|style|layout [--width=N] [--height=N] [--font=PATH] FILE
+ *   zdesktop-browser --dump=dom|style|layout|paint [--width=N] [--height=N] [--font=PATH] FILE
+ *   zdesktop-browser --render --output=OUT.ppm [--width=N] [--height=N] [--font=PATH] FILE
  *   zdesktop-browser --version | --help
  *
  * Without a headless mode it opens a zdesktop window on URL.  The headless
@@ -48,7 +49,9 @@ enum main_mode {
 	MAIN_MODE_HELP,
 	MAIN_MODE_DUMP_DOM,
 	MAIN_MODE_DUMP_STYLE,
-	MAIN_MODE_DUMP_LAYOUT
+	MAIN_MODE_DUMP_LAYOUT,
+	MAIN_MODE_DUMP_PAINT,
+	MAIN_MODE_RENDER
 };
 
 /*
@@ -58,10 +61,33 @@ struct main_options {
 	enum main_mode mode;
 	struct shell_options shell;
 	struct text_font_paths fonts;
+	const char *output;
+};
+
+/*
+ * One headless dump: the name --dump= takes and the mode it selects.
+ */
+struct main_dump_name {
+	const char *name;
+	enum main_mode mode;
+};
+
+/*
+ * The dumps --dump= knows, ending with a NULL name.  The table is constant
+ * for the life of the program.
+ */
+static const struct main_dump_name main_dumps[] = {
+	{ "dom", MAIN_MODE_DUMP_DOM },
+	{ "style", MAIN_MODE_DUMP_STYLE },
+	{ "layout", MAIN_MODE_DUMP_LAYOUT },
+	{ "paint", MAIN_MODE_DUMP_PAINT },
+	{ NULL, MAIN_MODE_WINDOW }
 };
 
 static int main_parse(int argc, char **argv, struct main_options *options);
 static int main_dump(const struct main_options *options);
+static int main_render(const struct main_options *options);
+static int main_prepare(const struct main_options *options, const void *stack_base, struct page **page, int paint);
 static int main_parse_size(const char *text, unsigned *size);
 static const char *main_value(const char *argument, const char *name);
 static void main_usage(FILE *stream);
@@ -96,7 +122,11 @@ main(
 	case MAIN_MODE_DUMP_DOM:
 	case MAIN_MODE_DUMP_STYLE:
 	case MAIN_MODE_DUMP_LAYOUT:
+	case MAIN_MODE_DUMP_PAINT:
 		status = main_dump(&options);
+		return status;
+	case MAIN_MODE_RENDER:
+		status = main_render(&options);
 		return status;
 	case MAIN_MODE_WINDOW:
 		break;
@@ -120,38 +150,12 @@ main_dump(
 	struct page *page;
 	int error;
 
-	/* A dump needs a page. */
-	if (options->shell.start == NULL) {
-		fprintf(stderr, "zdesktop-browser: --dump needs a file\n");
-		return 2;
-	}
+	int status;
 
-	/* Loads the page; its heap's stack ends at this frame. */
-	error = page_create(&page, __builtin_frame_address(0));
-	if (error != 0) {
-		fprintf(stderr, "zdesktop-browser: cannot make a page: %s\n", strerror(error));
-		return 1;
-	}
-
-	/* Loads the file. */
-	error = page_load_file(page, options->shell.start);
-	if (error != 0) {
-		fprintf(stderr, "zdesktop-browser: cannot load %s: %s\n", options->shell.start, strerror(error));
-		page_destroy(page);
-		return 1;
-	}
-
-	/* Lays the page out when the dump shows the layout. */
-	if (options->mode == MAIN_MODE_DUMP_LAYOUT) {
-		error = page_open_fonts(page, &options->fonts);
-		if (error == 0)
-			error = page_layout(page, (int)options->shell.width, (int)options->shell.height);
-		if (error != 0) {
-			fprintf(stderr, "zdesktop-browser: cannot lay out %s: %s\n", options->shell.start, strerror(error));
-			page_destroy(page);
-			return 1;
-		}
-	}
+	/* Loads the page, and lays it out and paints it when the dump shows that. */
+	status = main_prepare(options, __builtin_frame_address(0), &page, options->mode == MAIN_MODE_DUMP_PAINT);
+	if (status != 0)
+		return status;
 
 	/* Writes the dump. */
 	wb_buffer_init(&out);
@@ -159,8 +163,10 @@ main_dump(
 		error = page_dump_dom(page, &out);
 	} else if (options->mode == MAIN_MODE_DUMP_STYLE) {
 		error = page_dump_style(page, &out);
-	} else {
+	} else if (options->mode == MAIN_MODE_DUMP_LAYOUT) {
 		error = layout_dump(&page->layout, &out);
+	} else {
+		error = paint_dump(&page->paint, &out);
 	}
 
 	/* Writes the dump out. */
@@ -177,6 +183,124 @@ main_dump(
 	return 0;
 }
 
+/* Draws the page the command line names with the CPU renderer and writes it as a PPM file. */
+static int
+main_render(
+	const struct main_options *options)
+{
+	struct paint_bitmap bitmap;
+	struct page *page;
+	int status;
+	int error;
+
+	/* A picture needs a file to go to. */
+	if (options->output == NULL) {
+		fprintf(stderr, "zdesktop-browser: --render needs --output=FILE\n");
+		return 2;
+	}
+
+	/* Loads, lays out and paints the page. */
+	status = main_prepare(options, __builtin_frame_address(0), &page, 1);
+	if (status != 0)
+		return status;
+
+	/* Draws the viewport's worth of the page from its top. */
+	error = paint_bitmap_create(&bitmap, (int)options->shell.width, (int)options->shell.height);
+	if (error == 0)
+		error = paint_software(&page->paint, &page->text, 0, &bitmap);
+	if (error != 0) {
+		fprintf(stderr, "zdesktop-browser: cannot draw %s: %s\n", options->shell.start, strerror(error));
+		paint_bitmap_release(&bitmap);
+		page_destroy(page);
+		return 1;
+	}
+
+	/* Writes the picture. */
+	error = paint_write_ppm(&bitmap, options->output);
+	paint_bitmap_release(&bitmap);
+	page_destroy(page);
+	if (error != 0) {
+		fprintf(stderr, "zdesktop-browser: cannot write %s: %s\n", options->output, strerror(error));
+		return 1;
+	}
+
+	/* Succeeded: the picture is written. */
+	return 0;
+}
+
+/*
+ * Loads the page the command line names and, for every mode past the DOM
+ * and style dumps, opens the fonts and lays it out; paints it when asked.
+ * Reports the exit status of a failure after saying why, or 0.
+ *
+ * stack_base is the caller's frame: the page's heap scans the stack up to
+ * it, and the caller goes on using the page after this returns.
+ */
+static int
+main_prepare(
+	const struct main_options *options,
+	const void *stack_base,
+	struct page **page,
+	int paint)
+{
+	struct page *loaded;
+	int layout;
+	int error;
+
+	/* Every headless mode needs a page. */
+	*page = NULL;
+	if (options->shell.start == NULL) {
+		fprintf(stderr, "zdesktop-browser: a file to load is needed\n");
+		return 2;
+	}
+
+	/* Makes the page; its heap's stack ends at the caller's frame. */
+	error = page_create(&loaded, stack_base);
+	if (error != 0) {
+		fprintf(stderr, "zdesktop-browser: cannot make a page: %s\n", strerror(error));
+		return 1;
+	}
+
+	/* Loads the file. */
+	error = page_load_file(loaded, options->shell.start);
+	if (error != 0) {
+		fprintf(stderr, "zdesktop-browser: cannot load %s: %s\n", options->shell.start, strerror(error));
+		page_destroy(loaded);
+		return 1;
+	}
+
+	/* The DOM and style dumps need no layout. */
+	layout = 1;
+	if (options->mode == MAIN_MODE_DUMP_DOM || options->mode == MAIN_MODE_DUMP_STYLE)
+		layout = 0;
+
+	/* Lays the page out in the viewport's width. */
+	if (layout) {
+		error = page_open_fonts(loaded, &options->fonts);
+		if (error == 0)
+			error = page_layout(loaded, (int)options->shell.width, (int)options->shell.height);
+		if (error != 0) {
+			fprintf(stderr, "zdesktop-browser: cannot lay out %s: %s\n", options->shell.start, strerror(error));
+			page_destroy(loaded);
+			return 1;
+		}
+	}
+
+	/* Builds the display list. */
+	if (paint) {
+		error = page_paint(loaded);
+		if (error != 0) {
+			fprintf(stderr, "zdesktop-browser: cannot paint %s: %s\n", options->shell.start, strerror(error));
+			page_destroy(loaded);
+			return 1;
+		}
+	}
+
+	/* Succeeded: the page is ready for the mode. */
+	*page = loaded;
+	return 0;
+}
+
 /* Reads the command line into options; returns EINVAL for a word it does not know. */
 static int
 main_parse(
@@ -187,6 +311,7 @@ main_parse(
 	const char *value;
 	int differs;
 	int index;
+	int dump;
 	int error;
 
 	/* Starts from the window mode with the default size. */
@@ -217,23 +342,35 @@ main_parse(
 		/* The headless dumps of a page. */
 		value = main_value(argv[index], "--dump=");
 		if (value != NULL) {
-			differs = strcmp(value, "dom");
-			options->mode = MAIN_MODE_DUMP_DOM;
-			if (differs != 0) {
-				differs = strcmp(value, "style");
-				options->mode = MAIN_MODE_DUMP_STYLE;
-			}
-			if (differs != 0) {
-				differs = strcmp(value, "layout");
-				options->mode = MAIN_MODE_DUMP_LAYOUT;
+			/* Finds the dump's name among the known ones. */
+			for (dump = 0; main_dumps[dump].name != NULL; dump++) {
+				differs = strcmp(value, main_dumps[dump].name);
+				if (differs == 0)
+					break;
 			}
 
-			/* Anything but dom and style is refused. */
-			if (differs != 0) {
+			/* A name that is not known is refused. */
+			if (main_dumps[dump].name == NULL) {
 				fprintf(stderr, "zdesktop-browser: unknown dump %s\n", value);
 				return EINVAL;
 			}
 
+			/* The dump's mode. */
+			options->mode = main_dumps[dump].mode;
+			continue;
+		}
+
+		/* The headless drawing of a page. */
+		differs = strcmp(argv[index], "--render");
+		if (differs == 0) {
+			options->mode = MAIN_MODE_RENDER;
+			continue;
+		}
+
+		/* The file a drawing goes to. */
+		value = main_value(argv[index], "--output=");
+		if (value != NULL) {
+			options->output = value;
 			continue;
 		}
 
@@ -362,7 +499,9 @@ main_usage(
 	/* Lists the forms of the command line. */
 	fprintf(stream,
 		"usage: zdesktop-browser [--display=NAME] [--width=N] [--height=N] [URL]\n"
-		"       zdesktop-browser --dump=dom|style|layout [--width=N] [--height=N] [--font=PATH]\n"
+		"       zdesktop-browser --dump=dom|style|layout|paint [--width=N] [--height=N] [--font=PATH]\n"
+		"                        [--mono-font=PATH] [--fallback-font=PATH] FILE\n"
+		"       zdesktop-browser --render --output=OUT.ppm [--width=N] [--height=N] [--font=PATH]\n"
 		"                        [--mono-font=PATH] [--fallback-font=PATH] FILE\n"
 		"       zdesktop-browser --version | --help\n");
 }
