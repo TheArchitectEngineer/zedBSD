@@ -9,7 +9,7 @@ Related Milestones: MG006, MG008
 Objectives: O2, O4
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p006（kernel image への組み込みと QEMU での確認）。HAL の差分 `acpi.rsdp` の承認を待つ
+Resume point: p006 cleared（2026-09-27、承認済みの HAL の差分と統合を当て、QEMU の guest の namespace が host と一致）。次は p007（SCI・GPE・固定 event・EC の kernel での確認）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -59,7 +59,7 @@ kernel の中に ACPI の AML interpreter を持ち、DSDT・SSDT を読み込�
 | [ws049-p003](phase003/phase.md) | 評価器: method、制御、全ての式の opcode、参照、変換、Store の規則 | cleared（2026-09-27） | p002 | 同上 |
 | [ws049-p004](phase004/phase.md) | OperationRegion・Field・IndexField・BankField・BufferField、region の handler と `_REG` | cleared（2026-09-27） | p003 | 同上 |
 | [ws049-p005](phase005/phase.md) | 同期と OS の口: Mutex・Event・Sleep・Notify・`_OSI`・Load/LoadTable/Unload・`_INI`、stack の予算 | cleared（2026-09-27） | p004 | 同上 |
-| [ws049-p006](phase006/phase.md) | kernel への組み込み（amd64）: kernel image への link（`CONFIG_DRIVER_ACPI`、vmunix.mk、`pcat.c` の `drv_acpi_attach()`）、起動時の読み込み、診断の口、QEMU（q35・OVMF）での確認 | planned（**HAL の差分の承認待ち**。統合の差分は準備済みで、当てた kernel の build と boot test（ACPI は止まったまま）は PASS） | p010、**HAL の差分の承認** | `src/drivers/acpi/`、platform |
+| [ws049-p006](phase006/phase.md) | kernel への組み込み（amd64）: kernel image への link（`CONFIG_DRIVER_ACPI`、vmunix.mk、`pcat.c` の `drv_acpi_attach()`）、起動時の読み込み、診断の口、QEMU（q35・OVMF）での確認 | cleared（2026-09-27。承認済みの `acpi.rsdp` の差分と統合、boot test PASS、guest の `/dev/acpi` の namespace 278 行が host と同じ、device の評価の違い 11 行は firmware の設定する hardware の状態だけ） | p010、HAL の差分の承認（済） | `src/drivers/acpi/`、platform |
 | ws049-p007 | SCI・GPE・固定 event・EC の kernel での確認: SCI の割り込み、event thread、QEMU の `system_powerdown`（固定の電源 button）と GPE | planned | p006、p011 | 同上 |
 | ws049-p008 | 対象機（Latitude 5330）の table と実機の確認 | planned | p007、対象機の table | 同上 |
 | ws049-p009 | 規約の全文の確認と最終の確認 | planned | p002〜p008、p010、p011 | WS の全 source |

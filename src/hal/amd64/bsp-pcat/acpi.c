@@ -45,6 +45,15 @@ struct madt {
 	uint32_t flags;
 } __attribute__((packed));
 
+/*
+ * The physical address of the RSDP that discovery accepted.
+ *
+ * It is written once, by the boot processor during discovery, before the
+ * kernel starts, and never changes afterwards.  Zero means that no valid
+ * RSDP was found; the kernel's ACPI interpreter then stays disabled.
+ */
+static uint64_t discovered_rsdp_physical;
+
 static struct amd64_acpi_ecam discovered_ecam[AMD64_ECAM_MAX];
 static uint8_t *discovered_ecam_virtual[AMD64_ECAM_MAX];
 static unsigned discovered_ecam_count;
@@ -55,9 +64,9 @@ static uint16_t load_u16(const void *data);
 static uint32_t load_u32(const void *data);
 static uint64_t load_u64(const void *data);
 static const void *map_physical(uint64_t physical, size_t size);
-static const struct rsdp *scan_rsdp(uintptr_t start, uintptr_t end);
+static const struct rsdp *scan_rsdp(uintptr_t start, uintptr_t end, hal_physaddr_t *found);
 static const struct rsdp *rsdp_at(hal_physaddr_t physical);
-static const struct rsdp *find_rsdp(hal_physaddr_t supplied);
+static const struct rsdp *find_rsdp(hal_physaddr_t supplied, hal_physaddr_t *found);
 static const struct sdt *map_sdt_header(uint64_t physical);
 static const struct sdt *map_sdt(uint64_t physical);
 static const struct sdt *find_sdt(const struct rsdp *root_pointer, const char signature[4], size_t minimum, int report_root);
@@ -73,6 +82,7 @@ prekern_amd64_acpi_discover(
 	hal_physaddr_t rsdp_address)
 {
 	const struct rsdp *root_pointer;
+	hal_physaddr_t rsdp_found;
 	const struct madt *madt;
 	const uint8_t *entry;
 	struct amd64_acpi_ioapic *ioapic;
@@ -100,7 +110,7 @@ prekern_amd64_acpi_discover(
 	}
 
 	/* Locates and validates the supplied or firmware-scanned RSDP. */
-	root_pointer = find_rsdp(rsdp_address);
+	root_pointer = find_rsdp(rsdp_address, &rsdp_found);
 	if (root_pointer == NULL) {
 		hal_puts("A64 ACPI RSDP FAIL\n");
 		return HAL_ERR_UNSUPPORTED;
@@ -111,6 +121,9 @@ prekern_amd64_acpi_discover(
 		root_pointer->rsdt,
 		(uint32_t)(root_pointer->xsdt >> 32),
 		(uint32_t)root_pointer->xsdt);
+
+	/* Keeps the accepted RSDP address for the kernel's ACPI interpreter. */
+	discovered_rsdp_physical = rsdp_found;
 
 	/* Locates and validates the interrupt-controller table. */
 	madt = (const struct madt *)find_sdt(
@@ -245,6 +258,24 @@ prekern_amd64_acpi_discover(
 
 	/* Reports successful ACPI discovery. */
 	return HAL_OK;
+}
+
+/*
+ * Returns the accepted RSDP address as a boot handoff object.
+ *
+ * The object is the HAL-owned physical address of the RSDP that discovery
+ * validated, or NULL when discovery found none.
+ */
+uint64_t *
+amd64_acpi_rsdp_handoff(
+	void)
+{
+	/* Reports that no RSDP was accepted. */
+	if (discovered_rsdp_physical == 0)
+		return NULL;
+
+	/* Succeeded: the address stays valid for the life of the system. */
+	return &discovered_rsdp_physical;
 }
 
 /*
@@ -439,7 +470,8 @@ map_physical(
 static const struct rsdp *
 scan_rsdp(
 	uintptr_t start,
-	uintptr_t end)
+	uintptr_t end,
+	hal_physaddr_t *found)
 {
 	const struct rsdp *candidate;
 	uintptr_t address;
@@ -451,8 +483,10 @@ scan_rsdp(
 		/* Accepts legacy or range-contained extended RSDPs. */
 		if (candidate != NULL &&
 		    (candidate->revision < 2 ||
-		    candidate->length <= end - address))
+		    candidate->length <= end - address)) {
+			*found = address;
 			return candidate;
+		}
 	}
 
 	/* Reports no valid RSDP in the scanned range. */
@@ -512,7 +546,8 @@ rsdp_at(
 /* Finds the supplied or firmware-scanned RSDP. */
 static const struct rsdp *
 find_rsdp(
-	hal_physaddr_t supplied)
+	hal_physaddr_t supplied,
+	hal_physaddr_t *found)
 {
 	const uint16_t *ebda_segment;
 	const struct rsdp *result;
@@ -520,6 +555,7 @@ find_rsdp(
 
 	/* Uses an explicitly supplied handoff address when present. */
 	result = NULL;
+	*found = supplied;
 	if (supplied != 0) {
 		result = rsdp_at(supplied);
 
@@ -535,9 +571,9 @@ find_rsdp(
 
 	/* Searches a plausible EBDA before the high BIOS area. */
 	if (ebda >= 0x400U && ebda < 0xa0000U)
-		result = scan_rsdp(ebda, ebda + 1024U);
+		result = scan_rsdp(ebda, ebda + 1024U, found);
 	if (result == NULL)
-		result = scan_rsdp(0xe0000U, 0x100000U);
+		result = scan_rsdp(0xe0000U, 0x100000U, found);
 
 	/* Returns the first valid firmware RSDP. */
 	return result;

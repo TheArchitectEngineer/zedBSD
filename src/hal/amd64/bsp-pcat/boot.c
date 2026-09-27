@@ -17,6 +17,7 @@
 #include "../../x86/boot-parameters.h"
 #include "../bsp.h"
 #include "../defs.h"
+#include "acpi.h"
 #include "handoff-validation.h"
 
 #define VGA_FONT_HANDOFF       0x00007000U
@@ -378,6 +379,7 @@ void *
 hal_get_arch_handoff(
 	const char *name)
 {
+	uint64_t *rsdp;
 	int match;
 
 	/* Exposes the canonical boot command-line buffer. */
@@ -407,6 +409,14 @@ hal_get_arch_handoff(
 		match = handoff_name_is(name, "pcat.framebuffer");
 		if (match)
 			return &boot_framebuffer;
+	}
+
+	/* Exposes the RSDP address that ACPI discovery accepted. */
+	match = handoff_name_is(name, "acpi.rsdp");
+	if (match) {
+		/* Returns NULL when discovery found no valid RSDP. */
+		rsdp = amd64_acpi_rsdp_handoff();
+		return rsdp;
 	}
 
 	/* Reports an unavailable or unknown architecture handoff. */
