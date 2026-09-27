@@ -23,7 +23,7 @@
 #define HELP_LINE		21
 
 /* The width of the shortcuts' key column. */
-#define HELP_KEY_WIDTH		170
+#define HELP_KEY_WIDTH		200
 
 /* The text sizes. */
 #define HELP_TEXT_TITLE		18U
@@ -57,6 +57,8 @@ static const struct help_line help_guide[] = {
 /* The keyboard shortcuts. */
 static const struct help_line help_shortcuts[] = {
 	{ "Ctrl+N", "New window" },
+	{ "Ctrl+T  Ctrl+W", "New tab, close tab" },
+	{ "Ctrl+Tab  Ctrl+Shift+Tab", "Next tab, previous tab" },
 	{ "Ctrl+Shift+N", "New folder" },
 	{ "Ctrl+L", "Go to a location" },
 	{ "Ctrl+F", "Find" },

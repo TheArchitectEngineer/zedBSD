@@ -30,7 +30,7 @@ const char css_user_agent_sheet[] =
 	"td, th { display: table-cell; }\n"
 	"thead, tbody, tfoot { display: table-row-group; }\n"
 	"caption { display: table-caption; text-align: center; }\n"
-	"html { color: black; font-family: serif; font-size: 16px; line-height: normal; }\n"
+	"html { color: black; font-family: serif; font-size: medium; line-height: normal; }\n"
 	"body { margin: 8px; }\n"
 	"p, blockquote, figure, listing, plaintext, pre, xmp, dl { margin-top: 1em; margin-bottom: 1em; }\n"
 	"blockquote, figure { margin-left: 40px; margin-right: 40px; }\n"

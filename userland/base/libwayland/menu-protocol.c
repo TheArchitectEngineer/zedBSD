@@ -337,6 +337,8 @@ xdg_menu_v1_begin_update(
 
 	/* The serial the commit will name. */
 	arguments[0].u = serial;
+
+	/* Queues the request. */
 	wl_proxy_marshal_array_flags((struct wl_proxy *)object, XDG_MENU_V1_BEGIN_UPDATE, NULL, 0, 0, arguments);
 }
 
@@ -352,6 +354,8 @@ xdg_menu_v1_commit(
 
 	/* The serial begin_update named. */
 	arguments[0].u = serial;
+
+	/* Queues the request. */
 	wl_proxy_marshal_array_flags((struct wl_proxy *)object, XDG_MENU_V1_COMMIT, NULL, 0, 0, arguments);
 }
 
@@ -375,6 +379,8 @@ xdg_menu_v1_append_item(
 	arguments[2].u = type;
 	arguments[3].s = label;
 	arguments[4].u = action;
+
+	/* Queues the request. */
 	wl_proxy_marshal_array_flags((struct wl_proxy *)object, XDG_MENU_V1_APPEND_ITEM, NULL, 0, 0, arguments);
 }
 
@@ -400,6 +406,8 @@ xdg_menu_v1_insert_item(
 	arguments[3].u = type;
 	arguments[4].s = label;
 	arguments[5].u = action;
+
+	/* Queues the request. */
 	wl_proxy_marshal_array_flags((struct wl_proxy *)object, XDG_MENU_V1_INSERT_ITEM, NULL, 0, 0, arguments);
 }
 
@@ -415,6 +423,8 @@ xdg_menu_v1_remove_item(
 
 	/* The item removed. */
 	arguments[0].u = id;
+
+	/* Queues the request. */
 	wl_proxy_marshal_array_flags((struct wl_proxy *)object, XDG_MENU_V1_REMOVE_ITEM, NULL, 0, 0, arguments);
 }
 
@@ -432,6 +442,8 @@ xdg_menu_v1_set_label(
 	/* The item and its new label. */
 	arguments[0].u = id;
 	arguments[1].s = label;
+
+	/* Queues the request. */
 	wl_proxy_marshal_array_flags((struct wl_proxy *)object, XDG_MENU_V1_SET_LABEL, NULL, 0, 0, arguments);
 }
 
@@ -449,6 +461,8 @@ xdg_menu_v1_set_action(
 	/* The item and the action its activation names. */
 	arguments[0].u = id;
 	arguments[1].u = action;
+
+	/* Queues the request. */
 	wl_proxy_marshal_array_flags((struct wl_proxy *)object, XDG_MENU_V1_SET_ACTION, NULL, 0, 0, arguments);
 }
 
@@ -466,6 +480,8 @@ xdg_menu_v1_set_enabled(
 	/* The item and whether it can be chosen. */
 	arguments[0].u = id;
 	arguments[1].u = enabled;
+
+	/* Queues the request. */
 	wl_proxy_marshal_array_flags((struct wl_proxy *)object, XDG_MENU_V1_SET_ENABLED, NULL, 0, 0, arguments);
 }
 
@@ -483,6 +499,8 @@ xdg_menu_v1_set_visible(
 	/* The item and whether it is shown. */
 	arguments[0].u = id;
 	arguments[1].u = visible;
+
+	/* Queues the request. */
 	wl_proxy_marshal_array_flags((struct wl_proxy *)object, XDG_MENU_V1_SET_VISIBLE, NULL, 0, 0, arguments);
 }
 
@@ -500,6 +518,8 @@ xdg_menu_v1_set_checked(
 	/* The item and whether it is checked. */
 	arguments[0].u = id;
 	arguments[1].u = checked;
+
+	/* Queues the request. */
 	wl_proxy_marshal_array_flags((struct wl_proxy *)object, XDG_MENU_V1_SET_CHECKED, NULL, 0, 0, arguments);
 }
 
@@ -517,6 +537,8 @@ xdg_menu_v1_set_role(
 	/* The item and what it means to the system. */
 	arguments[0].u = id;
 	arguments[1].u = role;
+
+	/* Queues the request. */
 	wl_proxy_marshal_array_flags((struct wl_proxy *)object, XDG_MENU_V1_SET_ROLE, NULL, 0, 0, arguments);
 }
 
@@ -534,6 +556,8 @@ xdg_menu_v1_set_icon_name(
 	/* The item and the icon theme's name for its icon. */
 	arguments[0].u = id;
 	arguments[1].s = icon_name;
+
+	/* Queues the request. */
 	wl_proxy_marshal_array_flags((struct wl_proxy *)object, XDG_MENU_V1_SET_ICON_NAME, NULL, 0, 0, arguments);
 }
 
@@ -553,6 +577,8 @@ xdg_menu_v1_set_shortcut(
 	arguments[0].u = id;
 	arguments[1].u = modifiers;
 	arguments[2].u = keysym;
+
+	/* Queues the request. */
 	wl_proxy_marshal_array_flags((struct wl_proxy *)object, XDG_MENU_V1_SET_SHORTCUT, NULL, 0, 0, arguments);
 }
 
@@ -643,6 +669,8 @@ xdg_toplevel_menu_v1_set_menu(
 
 	/* The menu the window shows from now on. */
 	arguments[0].o = (struct wl_object *)menu;
+
+	/* Queues the request. */
 	wl_proxy_marshal_array_flags((struct wl_proxy *)object, XDG_TOPLEVEL_MENU_V1_SET_MENU, NULL, 0, 0, arguments);
 }
 
@@ -714,23 +742,29 @@ wlc_menu_dispatch(
 	/* Selects the callback by the event's opcode. */
 	switch (event->opcode) {
 	case 0:
-		/* An item was chosen: item, action, seat and serial. */
+		/* An item was chosen (item, action, seat and serial); a listener without the callback ignores it. */
 		if (callbacks->activated == NULL)
 			return 0;
+
+		/* The callback takes the event. */
 		event->delivered = 1;
 		callbacks->activated(data, object, arguments[0].u, arguments[1].u, (struct wl_seat *)arguments[2].o, arguments[3].u);
 		return 0;
 	case 1:
-		/* A submenu's popup opened. */
+		/* A submenu's popup opened; a listener without the callback ignores it. */
 		if (callbacks->opened == NULL)
 			return 0;
+
+		/* The callback takes the event. */
 		event->delivered = 1;
 		callbacks->opened(data, object, arguments[0].u);
 		return 0;
 	case 2:
-		/* A submenu's popup closed. */
+		/* A submenu's popup closed; a listener without the callback ignores it. */
 		if (callbacks->closed == NULL)
 			return 0;
+
+		/* The callback takes the event. */
 		event->delivered = 1;
 		callbacks->closed(data, object, arguments[0].u);
 		return 0;
@@ -766,16 +800,20 @@ wlc_context_menu_dispatch(
 	/* Selects the callback by the event's opcode. */
 	switch (event->opcode) {
 	case 0:
-		/* An item was chosen: item, action and serial. */
+		/* An item was chosen (item, action and serial); a listener without the callback ignores it. */
 		if (callbacks->activated == NULL)
 			return 0;
+
+		/* The callback takes the event. */
 		event->delivered = 1;
 		callbacks->activated(data, object, arguments[0].u, arguments[1].u, arguments[2].u);
 		return 0;
 	case 1:
-		/* The context menu closed (after a choice, or without one). */
+		/* The context menu closed (after a choice, or without one); a listener without the callback ignores it. */
 		if (callbacks->done == NULL)
 			return 0;
+
+		/* The callback takes the event. */
 		event->delivered = 1;
 		callbacks->done(data, object);
 		return 0;

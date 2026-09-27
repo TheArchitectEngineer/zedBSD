@@ -421,6 +421,15 @@ wlc_event_dispatch(
 			event->delivered = 1;
 			xdg_toplevel_callbacks->close(data, (struct xdg_toplevel *)proxy);
 			return 0;
+		case 2:
+			/* An optional listener slot deliberately ignores this event. */
+			if (xdg_toplevel_callbacks->configure_bounds == NULL)
+				return 0;
+
+			/* Delivers payload ownership according to this callback contract. */
+			event->delivered = 1;
+			xdg_toplevel_callbacks->configure_bounds(data, (struct xdg_toplevel *)proxy, arguments[0].i, arguments[1].i);
+			return 0;
 		default:
 			return EPROTO;
 		}

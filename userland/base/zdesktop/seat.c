@@ -565,6 +565,13 @@ zwl_seat_axis(
 	if (taken)
 		return;
 
+	/* A tab strip under the pointer scrolls with it (titlebar-shell.c). */
+	if (server->glass) {
+		taken = zwl_titlebar_axis(server, vertical, horizontal);
+		if (taken)
+			return;
+	}
+
 	/* Scrolling goes to the surface the pointer is on; without one it reaches nobody. */
 	target = server->pointer_surface;
 	if (target == NULL)
@@ -668,7 +675,8 @@ zwl_seat_key(
 	 * App Home, while it shows, takes every key (home.c), and so does an
 	 * open menu (menu-shell.c), then a titlebar's text field with the
 	 * keyboard (titlebar-shell.c); zdesktop's shortcuts come next
-	 * (shell.c), then the focused window's menu: F10 and its shortcuts.
+	 * (shell.c), then the focused window's menu: F10 and its shortcuts,
+	 * then the keys of its tabs (titlebar-shell.c).
 	 */
 	if (server->glass) {
 		taken = zwl_home_key(server, key, state);
@@ -684,6 +692,9 @@ zwl_seat_key(
 		if (taken)
 			return;
 		taken = zwl_menu_key(server, key, state);
+		if (taken)
+			return;
+		taken = zwl_titlebar_tab_key(server, key, state);
 		if (taken)
 			return;
 	}

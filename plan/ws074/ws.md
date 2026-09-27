@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 のユーザーの指示でサブエージェントが worktree の branch で実行。main の Queue への反映は統合する main）
-Resume point: p001〜p005・p007・p010 cleared、p011 in-progress（2026-09-27 21 時の wrap up。build は通る。再開の手順は phase011/phase.md）
+Resume point: p001〜p005・p007・p010〜p012・p014・p045 cleared。次は p022（VM の核 2: 値・object・shape・配列・関数）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -66,7 +66,7 @@ p001 で分け直した（2026-09-27。p002〜p013 の案は実行前の案だ�
 着手の時に大きすぎれば分ける。
 
 **実行の順**（2026-09-27 ユーザー「正常系でワンパス通すのを優先する」、design.md §18）: p005 → p007 → p010 → p011 → p012 → p014（窓に
-実際の page）→ p022 → p023 → p024 → p025 → p026 → p030（JS の接続）→ p013 → p015 → p016 → p017 → p019 → p020 → p021 → p006 → p008 →
+実際の page）→ p045（URL の欄と link）→ p022 → p023 → p024 → p025 → p026 → p030（JS の接続）→ p013 → p015 → p016 → p017 → p019 → p020 → p021 → p006 → p008 →
 p009 → p018 → p027 → p028 → p029 → p031 → p032 → p033 → p034 → p035 以降。各 Phase は最小の範囲で通し、残りは phase.md の「後回し」へ。
 
 | Phase | 内容 | Status | 依存 |
@@ -81,10 +81,10 @@ p009 → p018 → p027 → p028 → p029 → p031 → p032 → p033 → p034 →
 | ws074-p008 | CSS 2（後回し）: selector の残り（構造・状態・`:is`/`:not`/`:has`、pseudo-element）、rule の索引 | planned | p006、p007 |
 | ws074-p009 | CSS 3（後回し）: property の表の拡張、`var()`・`calc()`、`@media`、file の `<link>`、shorthand の全部 | planned | p008 |
 | [ws074-p010](phase010/phase.md) | font と text の最小: font の一覧（Inter、日本語は Droid の fallback）、libtruetype（関数を足すなら main に先に伝える）、advance、空白と CJK での改行 | cleared | p002 |
-| [ws074-p011](phase011/phase.md) | layout の最小: box tree（anonymous box）、block（幅・高さ・margin の基本）、inline（line box・text run・baseline）、`--dump=layout` | in-progress | p009、p010 |
-| ws074-p012 | 描画の最小: display list（背景・border の solid・text）、CPU の参照の描画、`--render`（PPM → PNG）、画面の撮影 | planned | p011 |
+| [ws074-p011](phase011/phase.md) | layout の最小: box tree（anonymous box）、block（幅・高さ・margin の基本）、inline（line box・text run・baseline）、`--dump=layout` | cleared | p009、p010 |
+| [ws074-p012](phase012/phase.md) | 描画の最小: display list（背景・border の solid・text）、CPU の参照の描画、`--render`（PPM → PNG）、画面の撮影 | cleared | p011 |
 | ws074-p013 | layout 2: float・clear、position（relative・absolute・fixed）、overflow と clip、list と marker、replaced の大きさ、単位（em・rem・vw・%） | planned | p012 |
-| ws074-p014 | 窓: Wayland と Vulkan（swapchain、display list の GPU の描画: instance の四角と SDF、glyph の atlas）、CONTROLS の titlebar（URL）、scroll、link（file:）、guest で実際の page を表示。GPU と CPU の描画の比較の試験 | planned | p013 |
+| [ws074-p014](phase014/phase.md) | 窓: Wayland と Vulkan（swapchain、display list の GPU の描画: instance の四角と glyph の atlas）、scroll、guest で実際の page を表示。GPU と CPU の描画の比較の試験（2026-09-27 に URL の欄と link を p045 へ分けた） | cleared | p012（p013 は後回しの順） |
 | ws074-p015 | URL（WHATWG）、`data:`、WPT の urltestdata の runner | planned | p002 |
 | ws074-p016 | HTTP/1.1（非同期、持続接続、chunked、redirect）、resolver の thread、loader、cookie、memory の cache、host の test server、guest の http | planned | p014、p015 |
 | ws074-p017 | TLS（OpenSSL の `dlopen`、D2）、https、自前の CA の host の server、guest で実在の site | planned | p016 |
@@ -115,6 +115,7 @@ p009 → p018 → p027 → p028 → p029 → p031 → p032 → p033 → p034 →
 | ws074-p042 | CSS の段階 M4: 失敗の塊から機能を選んで直す | planned | p040 |
 | ws074-p043 | JS・Chrome の段階 M4: test262 と比較の失敗の塊を直す。**M4 の計測** | planned | p042 |
 | ws074-p044 | 変更した source の規約の全文との照合、fuzz（時間を区切って）、回帰、boot test（最後） | planned | 全て |
+| [ws074-p045](phase045/phase.md) | 窓 2（p014 から分けた）: CONTROLS の titlebar の URL の欄、link の click（`file:`）、戻る・進む・再読み込み | cleared | p014 |
 
 ## 後の WS・Future Work の候補
 

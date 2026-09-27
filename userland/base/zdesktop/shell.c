@@ -829,7 +829,9 @@ zwl_glass_toplevel_request(
 
 /*
  * Places a new window in the glass look: centred in the space below the
- * system bar, cascaded like the plain look.
+ * system bar, cascaded like the plain look, and moved back into the space
+ * when the cascade would push a window that fits past its right or bottom
+ * edge.
  */
 void
 zwl_glass_place(
@@ -839,18 +841,61 @@ zwl_glass_place(
 	int32_t height,
 	int32_t step)
 {
-	int32_t space;
+	int32_t space_width;
+	int32_t space_height;
+	int32_t right;
+	int32_t bottom;
 
 	/* The space for bodies under the system bar and a title bar. */
-	space = (int32_t)server->height - ZWL_GLASS_TOP - ZWL_GLASS_MARGIN;
+	zwl_glass_space(server, &space_width, &space_height);
 	surface->x = ((int32_t)server->width - width) / 2 + step;
-	surface->y = ZWL_GLASS_TOP + (space - height) / 2 + step;
+	surface->y = ZWL_GLASS_TOP + (space_height - height) / 2 + step;
 
-	/* Never above the space, nor left of the output. */
+	/* A window that fits ends inside the space: its right edge. */
+	right = ZWL_GLASS_MARGIN + space_width;
+	if (surface->x + width > right)
+		surface->x = right - width;
+
+	/* And its bottom edge. */
+	bottom = ZWL_GLASS_TOP + space_height;
+	if (surface->y + height > bottom)
+		surface->y = bottom - height;
+
+	/* Never above the space, nor left of it (a window too large for it overhangs right and down). */
 	if (surface->x < ZWL_GLASS_MARGIN)
 		surface->x = ZWL_GLASS_MARGIN;
 	if (surface->y < ZWL_GLASS_TOP)
 		surface->y = ZWL_GLASS_TOP;
+}
+
+/*
+ * Gives the largest body a window can have and still be seen whole in the
+ * glass look: the output less the margins at its sides and bottom, the
+ * system bar, and a floating title bar above the body.  xdg-shell's
+ * configure_bounds tells windows this size (protocol.c).
+ */
+void
+zwl_glass_space(
+	struct zwl_server *server,
+	int32_t *width,
+	int32_t *height)
+{
+	int32_t space_width;
+	int32_t space_height;
+
+	/* The output less a margin at each side. */
+	space_width = (int32_t)server->width - 2 * ZWL_GLASS_MARGIN;
+	if (space_width < 0)
+		space_width = 0;
+
+	/* The output under the system bar and a title bar, less the bottom margin. */
+	space_height = (int32_t)server->height - ZWL_GLASS_TOP - ZWL_GLASS_MARGIN;
+	if (space_height < 0)
+		space_height = 0;
+
+	/* Both at once. */
+	*width = space_width;
+	*height = space_height;
 }
 
 /*

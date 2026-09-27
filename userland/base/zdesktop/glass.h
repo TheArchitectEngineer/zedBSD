@@ -74,6 +74,7 @@ void glass_shape_draw(struct zwl_server *server, VkCommandBuffer command, const 
 void glass_draw_solid(struct zwl_server *server, VkCommandBuffer command, float x, float y, float width, float height, float radius, const float *color);
 int32_t glass_text_width(struct zwl_server *server, enum glass_size size, const char *text);
 void glass_draw_text(struct zwl_server *server, VkCommandBuffer command, enum glass_size size, int32_t x, int32_t baseline, const char *text, int32_t limit, const float *color);
+void glass_draw_text_middle(struct zwl_server *server, VkCommandBuffer command, enum glass_size size, int32_t x, int32_t baseline, const char *text, int32_t limit, const float *color);
 void glass_draw_glyph(struct zwl_server *server, VkCommandBuffer command, enum glass_size size, unsigned index, int32_t x, int32_t baseline, const float *color);
 int32_t glass_glyph_advance(struct zwl_server *server, enum glass_size size, unsigned index);
 void glass_draw_icon(struct zwl_server *server, VkCommandBuffer command, unsigned icon, int32_t x, int32_t y, unsigned pixels, const float *color);

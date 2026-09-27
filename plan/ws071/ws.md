@@ -3,13 +3,13 @@
 # WS071: zedBSD File Manager（Finder 風で zedBSD らしいファイルマネージャ）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete
+Status: completed
 Primary Milestone: MG006
 Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
-Queue: なし（2026-09-27 ユーザーの指示でサブエージェントが worktree の branch で実行。main の Queue への反映は main の session）
-Resume point: p014（toolbar → CONTROLS）・p013（窓の中のタブ、メインのセッション）・p016（タブを content のペインへ、タブらしい見た目）cleared 2026-09-27。・p015（すりガラスの付箋とタブの作り直し、ws035-p083 と一緒）cleared 2026-09-27。ws035-p081・p009（context menu）も cleared。ws035-p057・p055・ws071-p017・p010（PNG・DnD）・p011（締め）も cleared。全 Phase cleared。WS の完了の書き直しと補強（p011 の「残り」）の扱いは main の判断待ち。合わせた順序（2026-09-27 承認）: ws035-p081（窓の body の viewporter、コードは書いた・未 build・未試験、plan/ws035/phase081/wip.patch）→ ~~ws071-p013~~（済み）→ ws071-p009（context menu）→ ws035-p057（ぼかしと影）→ ws035-p055（damage）→ ~~ws071-p010（PNG・DnD、libz/libpng-compat は ws035-p040/p041）~~ → ws070-p011（TABS）→ ws035-p082（ログインマネージャの検討）→ ws070-p006（style）→ 締め（ws071-p011、ws070-p012、ws035-p058、ws035-p028）
+Queue: なし（2026-09-27 ユーザーの指示でサブエージェントが worktree の branch で実行し、main が merge）
+Resume point: —（完了 2026-09-27。残りは下の「制限・移管」）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -17,101 +17,82 @@ Resume point: p014（toolbar → CONTROLS）・p013（窓の中のタブ、メ�
 2026-09-27 ユーザー: 「これもWSを追加しておいてください。Finder風だけどzedBSDらしいファイルマネージャとして、仕様書のベースになる形で
 まとめます。現在の作業は続けてください。」
 
-Finder の操作モデル（左のサイドバー、浮いたツールバー、パンくず、アイコン・リスト表示、プレビュー、タグ、最近のファイル、Quick Look）を
-元に、zedBSD のシステム UI（明るいすりガラス、大きい角丸、浮いたタイトルバー、system-owned menu）に合わせた GUI のファイルマネージャ。
-ホームは $HOME の一覧ではなく「ファイル作業のダッシュボード」（ヒーローカード、フォルダのカード、最近のファイル）にする。
-仕様案の原文とモックアップの画像の説明は [spec.md](spec.md)。
+Finder の操作モデル（サイドバー、ツールバー、パンくず、アイコン・リスト表示、プレビュー、タグ、最近のファイル、Quick Look）を元に、
+zedBSD のシステム UI（明るいすりガラス、大きい角丸、浮いたタイトルバー、system-owned menu）に合わせた GUI のファイルマネージャ。
+ホームは「ファイル作業のダッシュボード」。仕様案の原文は [spec.md](spec.md)、設計は [design.md](design.md)（§15 の既定の判断を含む）。
 
-## 方式（案、p001 で決める）
+同日のユーザーの追加の指示（結果に反映済み）:
 
-- zdesktop の Wayland client として `userland/base/` に置く（名前は p001 で決める。案: `zdesktop-files`）。描画は zdesktop-terminal と同じく
-  標準の Wayland と Vulkan、文字は libtruetype。zdesktop の非標準の拡張（System Menu 等）は libzdesktop の API だけを使う。
-- メニューバー（File・Edit・View・Go・Window・Help、spec §36〜37）は WS070 の System Menu で出す。右クリックの context menu（spec §15）は
-  「compositor 側のシステムメニュー仕様に合わせる」ので、WS070 の protocol が context menu（popup を位置で開く）を持つかを p001 で確かめ、
-  無ければ WS070 への追加として扱う（WS070 の範囲を変える判断なのでユーザーに示す）。
-  2026-09-27 WS070 の回答（[design.md §12](../ws070/design.md)）: 中身は `xdg_menu_v1` の木と zdesktop の popup をそのまま使えるが、
-  「surface の点に seat・serial に答えて出す」request が要る（version 2 の `get_context_menu` と `xdg_context_menu_v1`、libzdesktop の
-  `zdesktop_menu_popup`）。WS071 の Phase として足すか WS070 に足すかは p001 で決める。
-- 最初の版の範囲（spec の「最低限」）: ホームのダッシュボード、サイドバー（よく使う項目・その他・タグ）、戻る・進む・ホーム・パンくず、
-  アイコン表示・リスト表示、選択、開く、名前変更、ゴミ箱、コピー・移動・削除（background の task と進捗）、検索（名前・拡張子・タグ）、
-  プレビューのペイン・Quick Look、ファイル情報（owner・権限を含む）、キーボード操作（spec §35）、タブ・複数窓、Undo。
-- 後の版（Future Work の候補）: クラウド（spec §27）、SMB・NFS・WebDAV（§26）、カラム・ギャラリー表示、全体の indexer（§34）、
-  動画・PDF のサムネイル、デバイスの eject（§25、zedBSD の mount の仕組み次第）。
+- 「今のファイラーのはウィンドウ内部の上部にナビゲーションバーを持っていますが、これをウィンドウのフローティングタイトルバーにマージします。」
+  「ファイラーはこのcompositorでしか使えなくてOKです。」→ toolbar を WS070 の CONTROLS の titlebar へ（p014）、fallback なし。
+- 「ファイラーのタブは、右側のコンテントペインが所有するのがいいと思うなあ。…左側のペインと右側のペインで、背景をなくして、付箋メモのような
+  フローティングにして、すりガラスエフェクトで合成する…」「タブは複数あるときだけ表示することにしよう。」→ p016・p015（ws035-p083）。
+  p016 を見た指示（タブは文字の高さの約 2.2 倍、選択は青い文字・青い下線・明るい地、中央揃え、content も白で塗らない）→ p015。
+- card の外側をタイトルバーの幅に揃え、docking を確かめる → p017。
 
-## p001 で決めること（判断が要るものはユーザーに示す）
+## 受け入れと結果（2026-09-27、completed）
 
-1. program の名前と置き場所、zdesktop-terminal との描画の共有（部品を libzdesktop 等に出すか）。
-2. タグ・最近のファイル（アプリ横断の recent database、§19）の保存先: UFS の extended attributes の有無を確かめ、無ければ
-   per-user の database（例: `~/.local/share/`）。アプリ横断にするなら libzdesktop の API にする。
-3. ゴミ箱の形式（freedesktop.org Trash 仕様に合わせるか）。
-4. 既定のアプリで開く（§14）の仕組み: MIME の判定（`file` の magic）と関連付けの database。
-5. サムネイルの decoder（PNG・JPEG 等）: 既存の userland にあるか、外部 package を tarball で取り込むか（ライセンスの監査）。
-6. ドラッグ&ドロップ（§16）: zdesktop の `wl_data_device` の対応の有無。無ければ zdesktop の Phase が要る。
-7. Quick Look（§18）の「中央に大きなシステムプレビューをオーバーレイ」を client の窓（popup）で出すか、compositor の機能にするか。
-8. ホームのヒーローカードの絵・文言の出どころ（壁紙と同じく commit しない資産か）。
+受け入れ（p001 で決めた）: 1. 最初の版の範囲の機能が動く（host と guest の試験）、2. menubar が浮いたタイトルバーと docked のシステムバーに出て
+action が動き、context menu が system の UI で出る、3. 規約の全文との照合。
 
-## 受け入れ（案、p001 で決める）
+| 項目 | 結果 |
+| --- | --- |
+| program | `userland/base/zdesktop-files`（`/bin/zdesktop-files`）。標準の Wayland と Vulkan、CPU の canvas（canvas・text・icons）を Vulkan で貼る。zdesktop の拡張は libzdesktop だけを使う。App Home の項目 |
+| 画面 | Home の dashboard（hero、folder cards、recent）、sidebar（Favorites・Locations・Tags）、content（icon・list、並べ替え、選択、scroll）、preview の pane。3 つの pane は窓の中に浮いたすりガラスの card（`zed_glass_v1`、窓の地は透明、ws035-p083・p057）で、外側は浮いたタイトルバーの幅に揃う |
+| titlebar | 戻る・進む・Home・パンくず・検索・表示の切替・preview・進みの輪は WS070 の CONTROLS（浮いたタイトルバー、最大化ではシステムバーの Application Zone）。Ctrl+F・Ctrl+L で titlebar の欄へ。拡張が無ければ起動で失敗 |
+| 操作 | copy・move・delete・duplicate・link の background の task と進み、clipboard、new folder、rename、ゴミ箱（freedesktop.org Trash、Put Back・Empty）、undo・redo、検索（名前・拡張子・kind・tag）、タグ（xattr `user.zdesktop.tags`）、recent（libzdesktop の API）、Get Info（owner・権限・checksum・xattr）、開く・別のアプリで開く（関連付け）、Quick Look（窓の中の overlay）、サムネイル（PPM・PGM・PNG: libz-compat の inflate・libpng-compat の decode）、窓の中の DnD（folder・sidebar・tag・Trash・tab、Ctrl で copy・Ctrl+Shift で link） |
+| menu | File・Edit・View・Go・Window・Help（System Menu、状態の反映、CONTROLS の窓では右端の「…」）、shortcut（spec §35）、context menu（WS070 protocol version 2、項目・空き地・Trash・sidebar） |
+| タブ・窓 | 2 つ以上のときだけ content の card の中のタブの行（等幅・中央・選択は青い文字と下線）、New Tab・Close Tab・Previous/Next、Open in New Tab、New Window |
+| 大きさ | 新しい窓は zdesktop の `xdg_toplevel.configure_bounds`（xdg-shell v4）に収まる（p018: 1280x800 で 1120x690） |
+| 試験 | host（files-render の model と描画、PNG、host-p009・p010・p013・p014）と Venus の guest（files-p002〜p018、files-regress 14 本）。WS070 の menu・titlebar の回帰、WS035 の zdesktop の回帰 |
+| 規約 | 新しい file の style-check 0、全文の手の照合（p011、p018）。boot test は 2026-09-27 のユーザーの指示で締めでは無し（p016・p015・p017・p010 までは PASS） |
 
-1. 最初の版の範囲の機能が Venus の QEMU と i915 実機で動く（各機能の試験を host と guest で）。
-2. メニューバーが浮いたタイトルバーと docked のシステムバーに出て、選ぶと action が動く。context menu が system の UI で出る。
-3. 規約の全文との照合。
-
-## 設計（p001、2026-09-27）
-
-[design.md](design.md)。上の「p001 で決めること」8 点と設計中に出た判断は design.md §15「判断が要る点（既定で進めた）」に既定と理由が
-ある（戻せる既定。ユーザーの判断があれば変える）。要点: `zdesktop-files`（`/bin/zdesktop-files`）、CPU の canvas を Vulkan で貼る描画、
-タグは xattr `user.zdesktop.tags`、recent は libzdesktop の新しい API、ゴミ箱は freedesktop.org の Trash、context menu は WS070 の
-protocol の version 2（**WS070 の protocol の拡張を WS071 の p009 として実装**）、PNG は WS035 の D2〜D4 に従う libz-compat・
-libpng-compat の decode（WS035 p040・p041 の decode の半分を p010 で先に作る）、DnD は窓の中だけ、Quick Look は窓の中の overlay。
-
-## 2026-09-27 ユーザーの指示: toolbar を浮いたタイトルバーへ
-
-「今のファイラーのはウィンドウ内部の上部にナビゲーションバーを持っていますが、これをウィンドウのフローティングタイトルバーにマージします。」「ファイラーはこのcompositorでしか使えなくてOKです。」 → design §3 の toolbar（戻る・進む・Home・パンくず・検索・表示の切替・preview・進みの輪）は WS070 の titlebar 仕様（[titlebar-spec.md](../ws070/titlebar-spec.md)）の CONTROLS model で浮いたタイトルバー（最大化では System Bar の Application Zone）に移し、窓の中の bar は無くす。fallback（仕様 §27）は持たない: zdesktop の titlebar の拡張が無ければ起動で明示的に失敗してよい。設計は [ws070 titlebar-design.md](../ws070/titlebar-design.md)（ws070-p007、§11 が zdesktop-files）、実装は ws070-p008〜p010 と ws071-p014。タブ（p013）は CONTROLS と排他の TABS に出さず窓の中のまま。
-
-## 2026-09-27 ユーザーの指示: タブと付箋のすりガラス
-
-「ファイラーのタブは、右側のコンテントペインが所有するのがいいと思うなあ。あと、左側のペインと右側のペインで、背景をなくして、付箋メモのようなフローティングにして、
-すりガラスエフェクトで合成する、っていう指示、すでに出してあるけど、この2つを実装してみてくれる？」「タブは複数あるときだけ表示することにしよう。」
-「タブのデザインが若干ボタンっぽいので、タブっぽくしてほしいですね。もっとも、主観的なものですが。」→ p016。
-p016 を見て:「タブはこんな感じで、文字の高さの2.2倍くらいで、選択されたタブには青いアンダーラインと、青い文字、明るくする、にしましょう。文字は中央揃えに
-しましょう。…右側のペインは、すりガラスで透過するので、白く背景を塗りつぶす必要はないです。」（参考画像は著作権のためどこにも保存しない。main の言葉での
-要約: content の card の上端を横切る等幅のタブの行、名前は中央、選ばれたタブは青い文字・青い短い下線・他より少し明るい地、他は枠なしの灰の文字、
-タブの高さは文字の約 2.2 倍）→ p015 に含めた（タブの行は content の card の中、content も白で塗らないすりガラス）。
+QEMU（Venus）だけ。i915 実機は未実施（下の移管）。
 
 ## Phase 一覧
 
-| Phase | 内容 | Status | 依存 |
-| --- | --- | --- | --- |
-| [ws071-p001](phase001/phase.md) | 設計（design.md） | cleared | WS070-p001 |
-| [ws071-p002](phase002/phase.md) | 骨格: window（pointer・keyboard）、present（Vulkan の canvas）、canvas・text・icons、toolbar・sidebar・content の静的な配置、host の render 試験、guest の image と起動 | cleared | p001 |
-| [ws071-p003](phase003/phase.md) | 一覧と移動: dir、nav（履歴・パンくず・Back/Forward/Home）、icon・list 表示、並べ替え、選択、scroll、folder を開く、Ctrl+L | cleared | p002 |
-| [ws071-p004](phase004/phase.md) | file 操作: task（copy・move・delete・duplicate・link）、clipboard、new folder、rename、ゴミ箱（Put Back・Empty）、完全削除の確認、undo・redo、進みと status | cleared | p003 |
-| [ws071-p005](phase005/phase.md) | 検索、タグ（xattr・定義・索引・sidebar）、recent（libzdesktop の API）、Favorites の編集、Locations（mount） | cleared | p004 |
-| [ws071-p006](phase006/phase.md) | Home の dashboard（hero、folder cards、recent files・folders） | cleared | p005 |
-| [ws071-p007](phase007/phase.md) | preview pane、Quick Look、サムネイル（PPM・PGM、thumb.c の cache）、MIME の中身の判定を preview に | cleared | p005 |
-| [ws071-p012](phase012/phase.md) | Get Info（owner・権限・checksum・xattr）、開く・別のアプリで開く（apps.c の関連付けと起動） | cleared | p007 |
-| [ws071-p008](phase008/phase.md) | menubar（System Menu: File・Edit・View・Go・Window・Help、状態の反映）、New Window・Close Window・Minimize・Zoom、keyboard の shortcut の全体（spec §35）、Help の card | cleared | p012、WS070-p004 |
-| [ws071-p013](phase013/phase.md) | タブ（2 つ以上のときだけの tab bar、New Tab・Close Tab・Previous/Next Tab、Open in New Tab、menu の Window のタブの項目） | cleared（2026-09-27、メインのセッション。host-p013・files-p013、回帰 PASS） | p008 |
-| [ws071-p014](phase014/phase.md) | zdesktop-files の窓の中の toolbar → WS070 の CONTROLS の titlebar（toolbar を消す、control の model と event、Ctrl+F・Ctrl+L の focus、拡張が無ければ起動で失敗、host の試験は model の text、guest の試験は control の位置を zdesktop の log から）。[ws070 titlebar-design.md §11](../ws070/titlebar-design.md) | cleared | WS070-p010 |
-| [ws071-p016](phase016/phase.md) | （2026-09-27 ユーザー指示）タブを content（メイン）のペインが持つ（ペインの上端に付く tab bar、sidebar と preview は動かない）、タブらしい見た目（表示中のタブはペインと同じ面で縁なしに繋がる、他は静かな label と細い区切り、× 付き）。2 つ以上のときだけ | cleared（2026-09-27、host-p013・files-p013・files-regress・boot test PASS） | p013 |
-| [ws071-p009](phase009/phase.md) | context menu: WS070 protocol version 2（libwayland、zdesktop、libzdesktop `zdesktop_menu_popup`）と file manager の context menu（項目・空き地・Trash・sidebar） | cleared（2026-09-27、host-p009・files-p009・menu・titlebar・files の回帰・boot test） | p013 |
-| [ws071-p015](phase015/phase.md) | （2026-09-27 ユーザー指示）左・中央・右の pane を付箋のように浮いたすりガラスの card に（窓の地は透明、card の間はデスクトップ、card の中はぼかした壁紙のガラス、影と縁は zdesktop）。p016 を見た指示でタブを content の card の中の行に作り直し（等幅・中央・選択は青い文字と下線と明るい地、× は選択と hover だけ）、content も白で塗らない。compositor は ws035-p083 | cleared（2026-09-27、files-p015・menu-regress 16・files-regress・boot test） | p016、ws035-p083 |
-| [ws071-p017](phase017/phase.md) | （2026-09-27 ユーザー指示）card の外側の端を浮いたタイトルバーの幅に揃える（glass の余白 0、card の間とタイトルバーの間を 8 px、docked は画面の端から 8 px）、zdesktop-files の CONTROLS の docking と戻しを確かめる | cleared（2026-09-27、files-p017・files-regress・boot test） | p015、p014 |
-| [ws071-p010](phase010/phase.md) | サムネイル（libz-compat の inflate、libpng-compat の decode）と窓の中の DnD（folder・sidebar の folder・タグ・Trash・tab、Ctrl で copy・Ctrl+Shift で link、Favorites へ足す・並べ替え） | cleared（2026-09-27、host-png・host-p010・files-p010・files-regress・boot test） | p007 |
-| [ws071-p011](phase011/phase.md) | App Home の項目、規約の全文との照合、回帰（締め。boot test は 2026-09-27 のユーザーの指示で無し）、i915 実機（任意、未実施） | cleared（2026-09-27、files-p011・files-regress 14・titlebar・menu・zdesktop の回帰） | p002〜p010、p012〜p017 |
-
-## Future Work の候補（main session が future-work.md へ）
-
-| 候補 | 内容 | 出どころ |
+| Phase | 内容 | Status |
 | --- | --- | --- |
-| F-a | クラウド（spec §27）、SMB・NFS・WebDAV・「サーバーへ接続」（spec §26） | ws.md の後の版 |
-| F-b | カラム表示・ギャラリー表示（spec §10） | 同 |
-| F-c | 全体の indexer と file の中身の検索（spec §7、§34） | 同 |
-| F-d | 動画・PDF・JPEG のサムネイル、disk の thumbnail cache | 同、design §9 |
-| F-e | 装置の unmount・eject（spec §25） | 同、design §13 |
-| F-f | 描き直しを damage の矩形に絞る（CPU の canvas の最適化） | design §2 |
-| F-g | canvas・text・icons を共有の UI library へ（2 つ目の使い手のとき） | design §2 |
-| F-h | 窓ごとの本当のすりガラス（alpha の Vulkan surface の後ろに zdesktop が blur） | design §2、WS035 |
-| F-i | zdesktop の `wl_data_device`（窓・アプリの間の DnD と clipboard） | design §5.6、§12 |
-| F-j | compositor が描く system の Quick Look | design §9 |
-| F-k | 名前の衝突の Replace・Skip の dialog、日本語の UI 文言と IME、`$topdir/.Trash-$uid` | design §5.3、§5.4、§15 |
+| ws071-p001 | 設計（design.md） | cleared |
+| ws071-p002 | 骨格: window、present（Vulkan の canvas）、canvas・text・icons、静的な配置、host の render 試験、guest の image | cleared |
+| ws071-p003 | 一覧と移動: dir、履歴・パンくず、icon・list、並べ替え、選択、scroll、Ctrl+L | cleared |
+| ws071-p004 | file 操作: task、clipboard、new folder、rename、ゴミ箱、完全削除の確認、undo・redo | cleared |
+| ws071-p005 | 検索、タグ、recent（libzdesktop）、Favorites の編集、Locations | cleared |
+| ws071-p006 | Home の dashboard | cleared |
+| ws071-p007 | preview pane、Quick Look、サムネイル（PPM・PGM）、MIME の中身の判定 | cleared |
+| ws071-p012 | Get Info、開く・別のアプリで開く | cleared |
+| ws071-p008 | menubar（System Menu）、New/Close Window・Minimize・Zoom、shortcut の全体、Help の card | cleared |
+| ws071-p013 | タブ（New/Close/Previous/Next Tab、Open in New Tab）（main のセッション） | cleared |
+| ws071-p014 | 窓の中の toolbar → WS070 の CONTROLS の titlebar | cleared |
+| ws071-p016 | タブを content の pane が持つ、タブらしい見た目 | cleared（p015 で作り直し） |
+| ws071-p009 | context menu（WS070 protocol version 2 と file manager の項目） | cleared |
+| ws071-p015 | pane を浮いたすりガラスの card に、タブの行の作り直し（ws035-p083 と一緒） | cleared |
+| ws071-p017 | card の外側をタイトルバーの幅に揃える、CONTROLS の docking の確認 | cleared |
+| ws071-p010 | PNG のサムネイル（libz-compat・libpng-compat の decode）と窓の中の DnD | cleared |
+| ws071-p011 | App Home の項目、規約の全文との照合、回帰（締め） | cleared |
+| ws071-p018 | （補強）新しい窓が画面に収まる（configure_bounds と置き場所）、Help のタブの key | cleared |
+
+Phase の記録は git の履歴にある（WS の完了で削除した）。
+
+## 制限・移管
+
+- **i915 実機**: zdesktop-files の実機の capture の scenario は [WS075](../ws075/ws.md) の p002 で保留になっている（desktop の変更が
+  落ち着いたら main の合図で足す）。この WS の受け入れの実機の部分はそこへ移す。
+- **窓の外への DnD と titlebar のパンくずへの drop**（design の F-i）: WS035 の DnD の Phase（zdesktop の `wl_data_device` の
+  start_drag・enter・motion・drop、2026-09-27 main の割り当て）へ。
+- **libz-compat の deflate・libpng-compat の encode**: [ws035-p040](../ws035/ws.md)・p041 に残す。
+- Future Work（[future-work.md](../future-work.md)）: F-032（network の場所）、F-033（カラム・ギャラリー）、F-034（indexer・中身の検索）、
+  F-035（動画・PDF・JPEG のサムネイル、disk の cache）、F-036（unmount・eject）、F-037（damage の矩形の描き直し）、F-038（共有の UI
+  library）、F-039（DnD の自動 scroll・spring-loaded）、F-040（compositor の Quick Look）、F-041（衝突の dialog、日本語の UI と IME、
+  `$topdir/.Trash-$uid`）、F-044（他の client の configure_bounds）。
+- 見た目（tint、節の題の濃さ、タブの地）は主観なので、ユーザーの反応で直す。
+
+## 試験の道具（plan/tools/files へ移した）
+
+- `build-files-image.sh`・`config-amd64-files.mk`（lean な guest image、`plan/tools/titlebar/config-amd64-menu.mk` を含む）、
+  `files-guest.sh`（Venus の guest、runtime `build/ws071-run`、`build/ws035-sq-venus` の renderer が要る）、`make-home.sh`（試験の home）、
+  `qmp-input.py`（pointer と key を 1 つの QMP で、右 button・modifier を押したままの click）。
+- `files-regress.sh [OUTDIR] [PHASE...]`: guest の試験（files-p002〜p010・p012〜p015・p017）を順に。`files-p011.sh`（App Home）、
+  `files-p018.sh`（configure_bounds と置き場所）、`files-lag.sh`（最後の frame がすぐ出るか）。
+- host: `host-build.sh`・`host-run.sh`（files-render: `host-render.c`・`host-model.c`・`host-glass.c`）、`host-p009.sh`・`host-p010.sh`・
+  `host-p013.sh`・`host-p014.sh`、`host-png.sh`（libz-compat・libpng-compat を Python の zlib・PIL と比べる）。

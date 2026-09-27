@@ -10,7 +10,7 @@
 |       em display=inline font-size=18.00 weight=400 italic=1 color=#ff8b1a1a background=#00000000 margin=0.00,0.00,0.00,0.00 padding=0.00,0.00,0.00,0.00 border=0.0,0.0,0.0,0.0 width=auto
 |     div display=block font-size=16.00 weight=400 italic=0 color=#ff222222 background=#fffff8d6 margin=12.00,0.00,12.00,0.00 padding=8.00,12.00,8.00,12.00 border=1.0,1.0,1.0,1.0 width=auto
 |       a display=inline font-size=16.00 weight=400 italic=0 color=#ff0000ee background=#00000000 margin=0.00,0.00,0.00,0.00 padding=0.00,0.00,0.00,0.00 border=0.0,0.0,0.0,0.0 width=auto
-|       code display=inline font-size=16.00 weight=400 italic=0 color=#ff222222 background=#00000000 margin=0.00,0.00,0.00,0.00 padding=0.00,0.00,0.00,0.00 border=0.0,0.0,0.0,0.0 width=auto
+|       code display=inline font-size=13.00 weight=400 italic=0 color=#ff222222 background=#00000000 margin=0.00,0.00,0.00,0.00 padding=0.00,0.00,0.00,0.00 border=0.0,0.0,0.0,0.0 width=auto
 |     h2 display=block font-size=24.00 weight=700 italic=0 color=#ff222222 background=#00000000 margin=19.92,0.00,19.92,0.00 padding=0.00,0.00,0.00,0.00 border=0.0,0.0,0.0,0.0 width=auto
 |     ul display=block font-size=16.00 weight=400 italic=0 color=#ff222222 background=#00000000 margin=16.00,0.00,16.00,0.00 padding=0.00,0.00,0.00,40.00 border=0.0,0.0,0.0,0.0 width=auto
 |       li display=list-item font-size=16.00 weight=400 italic=0 color=#ff222222 background=#00000000 margin=2.00,0.00,2.00,0.00 padding=0.00,0.00,0.00,0.00 border=0.0,0.0,0.0,0.0 width=auto

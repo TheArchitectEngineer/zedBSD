@@ -138,7 +138,8 @@ static const struct xdg_surface_listener role_listener = {
 /* The window's toplevel. */
 static const struct xdg_toplevel_listener toplevel_listener = {
 	toplevel_configure,
-	toplevel_close
+	toplevel_close,
+	NULL
 };
 
 /* The seat's. */

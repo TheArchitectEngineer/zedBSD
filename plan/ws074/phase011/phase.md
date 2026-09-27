@@ -4,7 +4,7 @@
 
 Phase ID: `ws074-p011`
 Parent: [WS074](../ws.md)
-Status: in-progress（2026-09-27 21 時、rate limit の前の wrap up で中断。コードは build が通る状態で commit 済み）
+Status: cleared（2026-09-27）
 Phase disposition: normal
 Queue: なし（サブエージェントが worktree の branch で実行）
 
@@ -14,37 +14,55 @@ Queue: なし（サブエージェントが worktree の branch で実行）
 （幅、auto の margin の中央寄せ、min/max、兄弟・空の block・親と最初と最後の子の margin の相殺）、inline（空白の畳み込み、
 white-space、改行の機会での貪欲な行の分割、`<br>`、baseline と half-leading、text-align）、`--dump=layout`、Chrome の box との比較。
 
-## 今の状態（2026-09-27 21:15）
+## 受け入れ
 
-- 書いた: `layout/{layout.h,box.c,block.c,inline.c,dump.c}`、`page` の `page_open_fonts`・`page_layout`、`main.c` の
-  `--dump=layout` と `--font=`・`--mono-font=`・`--fallback-font=`。
-- libtruetype に関数を 2 つ足した（既存は変えない、main の了解済み）: `truetype_design_metrics`・`truetype_glyph_design_advance`
-  （新しい file `userland/base/libtruetype/design.c`、`include/libc/truetype.h`、`exports.map`、Makefile）。text は design unit から
-  小数の大きさの advance（1/64 px）と Chromium と同じ丸めの ascent・descent・line gap を出す（`text_font.size`、
-  `text_glyph.advance_units`）。
-- **p007 の回帰を直した**: p007 の style の手直し（values.c の表への置き換え）で dimension の単位が照合されなくなり、em・px の
-  長さが全部落ちていた（p007 の commit 10c63ac6 の golden はこの誤りを含んでいた）。`values_unit` で直し、golden の
-  `first.style` を作り直した（h1 32px・margin 21.44 などを再確認）。
-- Chrome との比較の道具: `plan/ws074/tests/chrome-fonts.sh`（Chromium に Inter・JetBrains Mono・Droid を使わせる fontconfig）、
-  `plan/ws074/tests/chrome-boxes.py`（Chromium の `getBoundingClientRect` と `--dump=layout` の block の box を ±1px で比べる）。
-  first.html: 5/12 が一致（html・body・h1・p・`#footer`）。残りの差は 2 つの原因:
-  1. Chromium は `font-family: monospace` で既定の大きさ（medium）を 13px にする（`<code>` の行が 1px 高い）。
-  2. line-height: normal の行は fallback の font（日本語の Droid）の ascent・descent も含める（日本語の行が 1px 低い）。
-- build: host（plain）と amd64（warning 0）が通る。golden `style`・`dom` 2/2。
+1. amd64 の build が通る（browser と libtruetype に warning 0）。style-check（layout/・text/・libtruetype/design.c）0 件。
+2. host の plain・ASan で golden（dom・style・layout）が一致。tree construction・tokenizer の率が下がらない。
+3. guest の `--dump=layout` が golden と一致。
+4. Chrome との box の比較（自前の page）で ±1 px の一致の率を記録。
+5. boot test。
 
-## 再開の手順
+## 結果（2026-09-27）
 
-1. `git merge main`。`python3 plan/tools/style-check.py userland/base/zdesktop-browser/layout/*.c userland/base/zdesktop-browser/text/*.c userland/base/libtruetype/design.c`
-   で規約の違反を直す（layout の file はまだ確かめていない。`/tmp/.../scratchpad/blanks.py` の方式: 閉じ括弧の後の空行、
-   段落の comment、条件の中の呼び出し、条件演算子）。
-2. monospace の 13px（css の cascade: font-size が medium の keyword から来たことを style に持ち、family が monospace だけなら
-   13px にする）と、fallback の font の行の高さ（inline.c: piece が fallback の face の glyph を含むなら、その face の metrics を
-   normal の行の高さに入れる）。`python3 plan/ws074/tests/chrome-boxes.py plan/ws074/tests/pages/first.html` で 12/12 近くを目標。
-3. `sh plan/ws074/tests/golden-dumps.sh --update layout` の後に値を確かめ、Phase の試験（host plain・ASan の golden、
-   tree construction の回帰、guest で `--dump=layout` が golden と一致、`sh plan/ws074/tests/boot-check.sh p011`）。
-4. phase.md を cleared にし、ws.md の表と Resume point を直して commit、main に報告。次は p012（display list と CPU の描画、`--render`）。
+cleared。
+
+- 書いたもの: `layout/{layout.h,box.c,block.c,inline.c,dump.c}`、`page` の `page_open_fonts`・`page_layout`、`main.c` の
+  `--dump=layout` と `--font=`・`--mono-font=`・`--fallback-font=`。libtruetype に関数を 2 つ足した（既存は変えない、main の了解済み）:
+  `truetype_design_metrics`・`truetype_glyph_design_advance`（`userland/base/libtruetype/design.c`）。
+- 21 時の中断の後に直したこと:
+  - style-check の違反（閉じ括弧の後の空行、段落の comment、条件の中の `memcmp`、条件演算子）と、同じ所の規約の逸脱（式で作る
+    Boolean）。
+  - **monospace の既定の大きさ 13px**（Chromium と同じ）: `css_style.font_size_keyword`（大きさが keyword の尺度から来たか。
+    初期値 medium、keyword、その em・% は 1、絶対の長さは 0）を持ち、font-family が `monospace` だけになった（またはそれをやめた）
+    element で 13/16（16/13）を掛ける。font-size と font-family を他の宣言より先に適用する。UA の sheet の `html { font-size: 16px }`
+    を `medium` に直した（16px は絶対の長さで、keyword の尺度を切っていた）。
+  - **fallback の font と line-height: normal**: piece が fallback の face の glyph を含むなら、その face の ascent・descent・line gap
+    （half-leading 込み）も行の高さに入れる（Chromium の used fonts と同じ）。
+  - **空の block（margin が通り抜ける block）の位置**: 前の margin と自分の上の margin の相殺の後に置く（前は cursor に置いていた）。
+  - p007 からの UB: 宣言の無い element で `qsort(NULL, 0, …)`（UBSan が止めた）。1 件以下なら並べない。
+- Chrome との比較（`plan/ws074/tests/chrome-boxes.py`、Chromium 153、Inter・JetBrains Mono・Droid の fontconfig）:
+  | page | 1024 | 800 | 520 |
+  | --- | --- | --- | --- |
+  | `pages/first.html`（12 box） | 12/12 | 12/12（前は 5/12） | 12/12 |
+  | `pages/blocks.html`（25 box、新規） | 25/25 | 25/25 | 25/25 |
+  `blocks.html` は margin の相殺（兄弟・空の block・親子）、auto の margin の中央寄せ、min/max-width・min-height、%、text-align、
+  `<br>`、line-height（数と px）、`pre`・`nowrap`・`pre-line`、入れ子の list、display: contents・none、anonymous block を含む。
+  比べる script は `display: contents` の element を数えない（box を持たない）ように直した。headless の Chromium の窓は幅 500 未満に
+  ならないので、幅は 520 以上で比べる。
+- golden: `plan/ws074/tests/golden/{first,blocks}.{dom,style,layout}`。`golden-dumps.sh` は `build/ws035-fonts` の font を渡す
+  （guest の既定の font と同じ file）。`first.style` は `<code>` の 16px → 13px だけが変わった（Chrome と同じ）。
+- 試験:
+  - host plain・ASan（UBSan 込み）: golden 6/6。host-base 2038/2038、host-heap 31/31、host-text 20/20（ASan）。
+  - html5lib: tokenizer 7032/7032（100%）、tree construction 1648/1753（94.0%、p005 と同じ）。
+  - amd64 の build: browser と libtruetype に warning 0（image の log の他の 476 件は別の package）。
+  - guest（plain、`build/amd64/hdd-image.img`）: `--dump=dom|style|layout` の 6 file が golden と一致（QEMU の証拠）。
+  - boot test: PASS（`/home/awe/zedBSD-rpi4/build/ws074-shots/p011-20260927-boot-login.png`）。
+  - 実機: 未実施。
+- commit: `84214b7c`（code・試験）と、この記録の commit。
 
 ## 後回し（follow-up）
 
 - float・position・table・flex・grid（block として扱う）、inline-block（block として扱う）、inline の box の border・padding・
   背景、vertical-align、text-align: justify、block の中の inline の分割（block-in-inline）、list の marker の block の子への付け替え。
+- keyword の font-size の monospace の表: medium 以外は 13/16 を掛けるだけ（Chromium は keyword ごとの表を持つ）。
+- 空の block の位置: 親の最初の子で親と margin が相殺する場合と、その後に続く clearance の細部。
