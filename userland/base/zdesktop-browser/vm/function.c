@@ -15,6 +15,7 @@
  * second kind of callee.
  */
 
+#include "vm/bytecode.h"
 #include "vm/internal.h"
 
 #include <errno.h>
@@ -78,6 +79,63 @@ vm_function_create_native(
 }
 
 /*
+ * Makes a bytecode function of a realm from a checked code unit, with its
+ * name (the code's) and length (its parameter count); NULL when out of
+ * memory.
+ */
+struct vm_function *
+vm_function_create(
+	struct vm_realm *realm,
+	struct vm_code *code)
+{
+	struct vm_function *function;
+	vm_value key;
+	vm_value name;
+	int error;
+
+	/* The cell, an object whose prototype is Function.prototype, running the code. */
+	function = vm_heap_alloc(realm->heap, &vm_function_type, sizeof(*function));
+	if (function == NULL)
+		return NULL;
+	error = vm_object_init(realm->heap, &function->object, realm->function_prototype);
+	if (error != 0)
+		return NULL;
+	function->realm = realm;
+	function->code = code;
+
+	/* Its length: how many parameters it declares. */
+	key = vm_key_from_ascii(realm->heap, "length");
+	if (key == VM_VALUE_EMPTY)
+		return NULL;
+	error = vm_object_define(realm->heap, &function->object, key, vm_value_int32((int32_t)code->parameter_count),
+	    VM_PROPERTY_CONFIGURABLE);
+	if (error != 0)
+		return NULL;
+
+	/* Its name: the code's, or the empty string. */
+	name = VM_VALUE_EMPTY;
+	if (code->name != NULL)
+		name = vm_value_cell(code->name);
+	if (name == VM_VALUE_EMPTY) {
+		code->name = vm_string_from_utf8(realm->heap, "", 0);
+		if (code->name == NULL)
+			return NULL;
+		name = vm_value_cell(code->name);
+	}
+
+	/* The name property. */
+	key = vm_key_from_ascii(realm->heap, "name");
+	if (key == VM_VALUE_EMPTY)
+		return NULL;
+	error = vm_object_define(realm->heap, &function->object, key, name, VM_PROPERTY_CONFIGURABLE);
+	if (error != 0)
+		return NULL;
+
+	/* Succeeded: the function. */
+	return function;
+}
+
+/*
  * Tells whether a value can be called.
  */
 int
@@ -126,8 +184,14 @@ vm_call(
 		return status;
 	}
 
-	/* A function without native code has nothing to run until the interpreter arrives. */
+	/* A bytecode function runs in the interpreter. */
 	function = (struct vm_function *)vm_value_as_cell(callee);
+	if (function->code != NULL) {
+		status = vm_interpret(function->realm, function, this_value, args, count, result);
+		return status;
+	}
+
+	/* A function with neither has nothing to run. */
 	if (function->native == NULL)
 		return ENOSYS;
 
@@ -158,12 +222,19 @@ vm_throw(
 	return VM_THROWN;
 }
 
-/* Marks what a function refers to: what every object refers to (its realm's objects are the realm's tracer's). */
+/* Marks what a function refers to: what every object refers to, and its code (its realm's objects are the realm's tracer's). */
 static void
 function_trace(
 	struct vm_heap *heap,
 	struct vm_cell *cell)
 {
+	struct vm_function *function;
+
 	/* The object's shape, prototype, slots and elements. */
 	vm_object_trace(heap, cell);
+
+	/* The code unit it runs. */
+	function = (struct vm_function *)cell;
+	if (function->code != NULL)
+		vm_heap_mark(heap, (struct vm_cell *)function->code);
 }
