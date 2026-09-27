@@ -140,3 +140,17 @@ st=1
 unchanged
 st=1
 st=1
+
+#### mesg on the console
+# Guest only: the state of /dev/console is put back at the end.
+m=$(mesg < /dev/console); mesg n < /dev/console; echo "st=$?"; mesg < /dev/console; echo "st=$?"; ls -l /dev/console | cut -c6,9; mesg y < /dev/console; echo "st=$?"; mesg < /dev/console; ls -l /dev/console | cut -c6; mesg < /dev/null; echo "st=$?"; case $m in "is y") mesg y < /dev/console;; *) mesg n < /dev/console;; esac
+## status 0
+## expect
+st=1
+is n
+st=1
+--
+st=0
+is y
+w
+st=2
