@@ -331,5 +331,7 @@ context menu（Open、Open With、Cut、Copy、Paste、Rename、Duplicate、Move
   serial)` と `done()`（選ばれても閉じられても最後に 1 回。client はその後 destroy する）、request は `destroy`（開いていれば閉じる）。
   menubar と同じ `xdg_menu_v1` を渡してもよい（その場合は根の子＝top-level が行になる）。libzdesktop には
   `zdesktop_menu_popup(service, menu, surface, x, y, seat, serial, listener, data)` のような 1 つの呼び出しで包む。
+- **2026-09-27 実装（ws071-p009）**: 上の version 2 の案のとおり（`bad_surface` の error は作らず、窓でない surface・古い serial は開かずに
+  `done`）。記録は [ws071 phase009](../ws071/phase009/phase.md)。
 - **zdesktop 側の変更の見込み**: menu-shell.c の state に「menubar からでない popup」（hit の無い anchor、parent = 根）を足し、
   閉じたとき `done` を送る。popup の配置・行・keyboard・外の press の扱いは共有できる。

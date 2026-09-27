@@ -705,6 +705,12 @@ enum fm_action {
 	FM_ACTION_CLOSE_TAB,
 	FM_ACTION_NEXT_TAB,
 	FM_ACTION_PREVIOUS_TAB,
+	FM_ACTION_OPEN_IN_NEW_TAB,
+	FM_ACTION_PUT_BACK,
+	FM_ACTION_DELETE_NOW,
+	FM_ACTION_EMPTY_TRASH,
+	FM_ACTION_PLACE_NEW_TAB,
+	FM_ACTION_PLACE_REMOVE,
 	FM_ACTION_COLUMN_FIRST = 100,
 	FM_ACTION_OPEN_WITH_FIRST = 200,
 	FM_ACTION_TAG_FIRST = 300
@@ -720,7 +726,47 @@ enum fm_request {
 	FM_REQUEST_NEW_WINDOW,
 	FM_REQUEST_MINIMIZE,
 	FM_REQUEST_ZOOM,
-	FM_REQUEST_CLOSE
+	FM_REQUEST_CLOSE,
+	FM_REQUEST_CONTEXT
+};
+
+/* How many rows a context menu has at most, and the longest label. */
+#define FM_CONTEXT_ROWS		64
+#define FM_CONTEXT_LABEL	64
+
+/* Where a context menu was asked for: on items, on the empty part of a folder, on a place of the sidebar. */
+#define FM_CONTEXT_ITEMS	0U
+#define FM_CONTEXT_EMPTY	1U
+#define FM_CONTEXT_PLACE	2U
+
+/* The kinds of a context menu's row. */
+#define FM_ROW_ITEM		0U
+#define FM_ROW_LINE		1U
+#define FM_ROW_CHECK		2U
+#define FM_ROW_SUBMENU		4U
+
+/*
+ * One row of a context menu: its number (from 1), the submenu it is in
+ * (0 for the top level), its kind, its label, the action it carries out,
+ * and whether it can be chosen and is checked.
+ */
+struct fm_context_row {
+	unsigned id;
+	unsigned parent;
+	unsigned kind;
+	char label[FM_CONTEXT_LABEL];
+	unsigned action;
+	int enabled;
+	int checked;
+};
+
+/*
+ * A context menu worked out for a right press (fm_ui_context): its rows,
+ * in order.  menu.c hands it to zdesktop, which shows it at the press.
+ */
+struct fm_context {
+	unsigned count;
+	struct fm_context_row rows[FM_CONTEXT_ROWS];
 };
 
 /*
@@ -987,6 +1033,16 @@ struct fm_app {
 	unsigned help;
 	unsigned request;
 
+	/*
+	 * The last right press, for its context menu (FM_REQUEST_CONTEXT):
+	 * where in the window, on what (FM_CONTEXT_*), and the sidebar's place
+	 * pressed (-1 for none), which the place's actions work on.
+	 */
+	int context_x;
+	int context_y;
+	unsigned context_where;
+	int context_place;
+
 	/* The ways to open the selection the menus last showed, kept for the file they were read for (its path and time). */
 	struct fm_opener menu_openers[FM_OPENERS];
 	int menu_opener_count;
@@ -1199,6 +1255,8 @@ void fm_open_with(struct fm_app *app, const struct fm_opener *opener, const char
 /* The menus' actions and state (ui-menu.c). */
 void fm_ui_action(struct fm_app *app, unsigned action);
 void fm_ui_menu_state(struct fm_app *app, struct fm_menu_state *state);
+void fm_ui_context(struct fm_app *app, struct fm_context *context);
+int fm_ui_context_action(struct fm_app *app, unsigned action);
 
 /* The tabs (ui-tabs.c). */
 void fm_tabs_new(struct fm_app *app, const struct fm_location *location);

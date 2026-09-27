@@ -4,7 +4,7 @@
 
 Phase ID: `ws035-p081`
 Parent: [WS035](../ws.md)
-Status: in-progress（2026-09-27）
+Status: cleared（2026-09-27、サブエージェント）
 Phase disposition: normal
 Queue: なし（2026-09-27 ユーザーの指示で WS035・WS070・WS071 を 1 つのサブエージェント（WS071 の agent）が進める。main の Queue
 への反映は main の session）
@@ -31,18 +31,14 @@ Queue: なし（2026-09-27 ユーザーの指示で WS035・WS070・WS071 を 1 
 2. 回帰: WS035 の p080（viewporter の sub-surface）・p076〜p079 の選んだもの、menu-regress の選んだもの、WS071 の files。
 3. warning 0、style: 変えた file は悪化させない。
 
-## 状態（2026-09-27、中断: main の wrap up の指示）
+## 結果（2026-09-27）
 
-in-progress。コードは範囲の全部を書いた（style 0、変えた file は悪化なし）が、**build も試験も未実施**。作業ツリーを汚さないよう、
-差分を [wip.patch](wip.patch)（shell.c・compose.c・popup.c・popup.h・subsurface.c・display.c・toplevel.c・protocol.c・
-extras-probe の `--body-viewport`・新しい `plan/ws035/tests/zdesktop-p081.sh`）に置き、ソースは元に戻した。
-
-再開の手順:
-1. `git merge main`、`git apply plan/ws035/phase081/wip.patch`（衝突したら shell.c・compose.c を手で合わせる）。
-2. build: `sh plan/ws071/tests/build-files-image.sh build/amd64`（files の image は menu の image の program を含み extras-probe もある）。
-3. guest: `GUEST_RUNTIME=$PWD/build/ws071-run plan/ws071/tests/files-guest.sh start build/amd64/hdd-image.img`、
-   `plan/ws035/tests/zdesktop-p081.sh`（glass と plain の画素、600 px の幅の閉じる button）。
-4. 回帰: `plan/ws035/tests/zdesktop-p080.sh`（sub-surface の viewport。plain の sub-surface も surface の大きさで描くようになった）、
-   p076〜p079 から選ぶ、`plan/ws070/tests/menu-regress.sh OUT p059 p064 p068 p072`、`plan/ws071/tests/files-regress.sh`、
-   `plan/ws070/tests/titlebar-p010.sh`。
-5. 結果を記録し、wip.patch を消して commit。
+- wip.patch を当てた（shell.c だけ ws035-p083 の glass の panel と衝突: `draw_body`・`draw_tile` で窓の大きさ（`window_size`、viewport の
+  destination）からの拡大率を先に求め、glass の panel・sub-surface の両方に使うように合わせた）。wip.patch は消した。
+- build: lean image（`build-files-image.sh build/amd64`）、warning 0（-Werror）。style: 変えた file（extras-probe・compose.c・display.c・popup.c・
+  popup.h・protocol.c・shell.c・subsurface.c・toplevel.c）は悪化なし。
+- guest（QEMU、Venus）: `zdesktop-p081.sh` PASS（glass と plain の look の画素、viewport の source を destination の大きさで、題名 bar の閉じる
+  button の位置）。
+- 回帰: menu-regress（p059 p064 p068 p072 p076 p077 p078 p079 p080）PASS、`titlebar-p010.sh` PASS、files-regress（p002〜p008・p012・p013・p014・
+  p015）PASS、boot test PASS（`build/ws035-p081-boot/login.png`）。
+- 実機（i915）: 未実施。

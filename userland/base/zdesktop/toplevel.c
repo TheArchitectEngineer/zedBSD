@@ -29,6 +29,7 @@
  */
 
 #include "toplevel.h"
+#include "extras.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -677,11 +678,11 @@ window_extent(
 		return;
 	}
 
-	/* Else the whole image. */
+	/* Else the whole image at its size (a viewport's, viewport.c). */
 	buffer_width = 0;
 	buffer_height = 0;
 	if (surface->current != NULL)
-		zwl_buffer_size(surface->current, &buffer_width, &buffer_height);
+		zwl_surface_size(surface, &buffer_width, &buffer_height);
 	*x = 0;
 	*y = 0;
 	*width = (int32_t)buffer_width;

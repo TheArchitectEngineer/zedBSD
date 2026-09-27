@@ -30,20 +30,27 @@ struct xdg_toplevel;
 struct xdg_menu_manager_v1;
 struct xdg_menu_v1;
 struct xdg_toplevel_menu_v1;
+struct xdg_context_menu_v1;
+struct wl_surface;
 
-/* The three interfaces' descriptions (menu-protocol.c). */
+/* The four interfaces' descriptions (menu-protocol.c). */
 extern const struct wl_interface xdg_menu_manager_v1_interface;
 extern const struct wl_interface xdg_menu_v1_interface;
 extern const struct wl_interface xdg_toplevel_menu_v1_interface;
+extern const struct wl_interface xdg_context_menu_v1_interface;
 
 /* xdg_menu_manager_v1: the global that makes menus and their places on windows. */
 #define XDG_MENU_MANAGER_V1_ERROR_ALREADY_EXISTS 0U
 #define XDG_MENU_MANAGER_V1_DESTROY 0U
 #define XDG_MENU_MANAGER_V1_CREATE_MENU 1U
 #define XDG_MENU_MANAGER_V1_GET_TOPLEVEL_MENU 2U
+#define XDG_MENU_MANAGER_V1_GET_CONTEXT_MENU 3U
+#define XDG_MENU_MANAGER_V1_GET_CONTEXT_MENU_SINCE_VERSION 2U
+#define XDG_MENU_MANAGER_V1_ERROR_BAD_SERIAL 1U
 void xdg_menu_manager_v1_destroy(struct xdg_menu_manager_v1 *object);
 struct xdg_menu_v1 *xdg_menu_manager_v1_create_menu(struct xdg_menu_manager_v1 *object);
 struct xdg_toplevel_menu_v1 *xdg_menu_manager_v1_get_toplevel_menu(struct xdg_menu_manager_v1 *object, struct xdg_toplevel *toplevel);
+struct xdg_context_menu_v1 *xdg_menu_manager_v1_get_context_menu(struct xdg_menu_manager_v1 *object, struct xdg_menu_v1 *menu, struct wl_surface *surface, int32_t x, int32_t y, struct wl_seat *seat, uint32_t serial);
 void xdg_menu_manager_v1_set_user_data(struct xdg_menu_manager_v1 *object, void *data);
 void *xdg_menu_manager_v1_get_user_data(struct xdg_menu_manager_v1 *object);
 uint32_t xdg_menu_manager_v1_get_version(struct xdg_menu_manager_v1 *object);
@@ -132,6 +139,15 @@ void xdg_toplevel_menu_v1_set_menu(struct xdg_toplevel_menu_v1 *object, struct x
 void xdg_toplevel_menu_v1_set_user_data(struct xdg_toplevel_menu_v1 *object, void *data);
 void *xdg_toplevel_menu_v1_get_user_data(struct xdg_toplevel_menu_v1 *object);
 uint32_t xdg_toplevel_menu_v1_get_version(struct xdg_toplevel_menu_v1 *object);
+
+/* xdg_context_menu_v1 (version 2): a menu opened once at a point of a surface; the choice, then the end. */
+struct xdg_context_menu_v1_listener {
+	void (*activated)(void *data, struct xdg_context_menu_v1 *object, uint32_t item_id, uint32_t action, uint32_t serial);
+	void (*done)(void *data, struct xdg_context_menu_v1 *object);
+};
+#define XDG_CONTEXT_MENU_V1_DESTROY 0U
+int xdg_context_menu_v1_add_listener(struct xdg_context_menu_v1 *object, const struct xdg_context_menu_v1_listener *listener, void *data);
+void xdg_context_menu_v1_destroy(struct xdg_context_menu_v1 *object);
 
 #ifdef __cplusplus
 }

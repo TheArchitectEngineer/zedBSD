@@ -88,6 +88,9 @@ static struct fm_titlebar main_titlebar;
  */
 static struct fm_glass main_glass;
 
+/* The context menu being opened (too large for the stack's taste). */
+static struct fm_context main_context;
+
 /* The titlebar's event being carried out, and its state being made (both too large for the stack's taste). */
 static struct fm_titlebar_event main_titlebar_event;
 static struct fm_titlebar_state main_titlebar_state;
@@ -433,7 +436,7 @@ main_loop(
 			inputs++;
 		}
 
-		/* What the window was asked to do: a new window, minimizing, zooming, closing. */
+		/* What the window was asked to do: a new window, minimizing, zooming, closing, a context menu. */
 		main_request(options);
 
 		/* Time passes for the file manager. */
@@ -619,6 +622,11 @@ main_request(
 		break;
 	case FM_REQUEST_CLOSE:
 		main_window.closed = 1;
+		break;
+	case FM_REQUEST_CONTEXT:
+		/* The context menu of the right press, at its place (ui-context.c, menu.c). */
+		fm_ui_context(&main_app, &main_context);
+		fm_menu_context(&main_menu, &main_context, main_app.context_x, main_app.context_y);
 		break;
 	default:
 		break;

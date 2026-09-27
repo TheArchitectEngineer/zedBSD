@@ -28,8 +28,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* The version of the protocol this library speaks. */
+/* The oldest version of the protocol this library speaks, and the newest (2: context menus). */
 #define MENU_VERSION		1U
+#define MENU_VERSION_CONTEXT	2U
 
 /* The compositor's bounds of one menu (plan/ws070/design.md section 2.2). */
 #define MENU_ITEMS_MAX		1024U
@@ -45,6 +46,7 @@
 struct zdesktop_menu_service {
 	struct wl_display *display;
 	struct xdg_menu_manager_v1 *manager;
+	uint32_t version;
 };
 
 /* One item as the mirror knows it: its ID, its parent and its type. */
@@ -74,9 +76,17 @@ struct zdesktop_window_menu {
 	void *data;
 };
 
-/* What the registry search found: the manager's global name, 0 for none. */
+/* A context menu: its xdg_context_menu_v1 and the application's listener. */
+struct zdesktop_context_menu {
+	struct xdg_context_menu_v1 *proxy;
+	const struct zdesktop_context_menu_listener *listener;
+	void *data;
+};
+
+/* What the registry search found: the manager's global name (0 for none) and its version. */
 struct menu_search {
 	uint32_t name;
+	uint32_t version;
 };
 
 static void menu_global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version);
@@ -84,6 +94,8 @@ static void menu_global_remove(void *data, struct wl_registry *registry, uint32_
 static void menu_activated(void *data, struct xdg_toplevel_menu_v1 *proxy, uint32_t item, uint32_t action, struct wl_seat *seat, uint32_t serial);
 static void menu_opened(void *data, struct xdg_toplevel_menu_v1 *proxy, uint32_t item);
 static void menu_closed(void *data, struct xdg_toplevel_menu_v1 *proxy, uint32_t item);
+static void menu_context_activated(void *data, struct xdg_context_menu_v1 *proxy, uint32_t item, uint32_t action, uint32_t serial);
+static void menu_context_done(void *data, struct xdg_context_menu_v1 *proxy);
 static int menu_find(const struct zdesktop_menu *menu, uint32_t id);
 static unsigned menu_depth(const struct zdesktop_menu *menu, uint32_t id);
 static int menu_check_add(const struct zdesktop_menu *menu, uint32_t id, uint32_t parent, uint32_t before, unsigned type, const char *label);
@@ -98,6 +110,11 @@ static const struct wl_registry_listener menu_registry_listener = {
 /* The window menu's events, handed on to the application's listener. */
 static const struct xdg_toplevel_menu_v1_listener menu_place_listener = {
 	menu_activated, menu_opened, menu_closed
+};
+
+/* A context menu's events, handed on to the application's listener. */
+static const struct xdg_context_menu_v1_listener menu_context_listener = {
+	menu_context_activated, menu_context_done
 };
 
 /*
@@ -131,6 +148,7 @@ zdesktop_menu_service_open(
 
 	/* The globals, announced to this search alone. */
 	search.name = 0;
+	search.version = 0;
 	registry = wl_display_get_registry(wrapper);
 	if (registry != NULL) {
 		status = wl_registry_add_listener(registry, &menu_registry_listener, &search);
@@ -144,7 +162,10 @@ zdesktop_menu_service_open(
 		service = calloc(1, sizeof(*service));
 	if (service != NULL) {
 		service->display = display;
-		service->manager = wl_registry_bind(registry, search.name, &xdg_menu_manager_v1_interface, MENU_VERSION);
+		service->version = MENU_VERSION;
+		if (search.version >= MENU_VERSION_CONTEXT)
+			service->version = MENU_VERSION_CONTEXT;
+		service->manager = wl_registry_bind(registry, search.name, &xdg_menu_manager_v1_interface, service->version);
 		if (service->manager != NULL)
 			wl_proxy_set_queue((struct wl_proxy *)service->manager, NULL);
 	}
@@ -674,6 +695,85 @@ zdesktop_window_menu_create(
 }
 
 /*
+ * Opens a menu as a context menu at a point of a surface, in answer to a
+ * press (its seat and serial).  Returns NULL with errno set: ENOTSUP for a
+ * compositor without context menus, ENOMEM or EINVAL.
+ */
+struct zdesktop_context_menu *
+zdesktop_menu_popup(
+	struct zdesktop_menu_service *service,
+	struct zdesktop_menu *menu,
+	struct wl_surface *surface,
+	int32_t x,
+	int32_t y,
+	struct wl_seat *seat,
+	uint32_t serial,
+	const struct zdesktop_context_menu_listener *listener,
+	void *data)
+{
+	struct zdesktop_context_menu *context_menu;
+	struct wl_event_queue *queue;
+	int status;
+
+	/* Context menus came with the protocol's version 2. */
+	if (service->version < MENU_VERSION_CONTEXT) {
+		errno = ENOTSUP;
+		return NULL;
+	}
+
+	/* The record with the application's listener. */
+	context_menu = calloc(1, sizeof(*context_menu));
+	if (context_menu == NULL) {
+		errno = ENOMEM;
+		return NULL;
+	}
+
+	/* The application's callbacks and their argument. */
+	context_menu->listener = listener;
+	context_menu->data = data;
+
+	/* The protocol object, which opens the menu. */
+	context_menu->proxy = xdg_menu_manager_v1_get_context_menu(service->manager, menu->proxy, surface, x, y, seat, serial);
+	if (context_menu->proxy == NULL) {
+		free(context_menu);
+		errno = ENOMEM;
+		return NULL;
+	}
+
+	/* Its events arrive with the surface's. */
+	queue = wl_proxy_get_queue((struct wl_proxy *)surface);
+	wl_proxy_set_queue((struct wl_proxy *)context_menu->proxy, queue);
+
+	/* The library's listener hands them on. */
+	status = xdg_context_menu_v1_add_listener(context_menu->proxy, &menu_context_listener, context_menu);
+	if (status != 0) {
+		xdg_context_menu_v1_destroy(context_menu->proxy);
+		free(context_menu);
+		errno = EINVAL;
+		return NULL;
+	}
+
+	/* Succeeded: the menu opens; the choice and the end come to the listener. */
+	return context_menu;
+}
+
+/*
+ * Destroys a context menu; one still open closes without telling.
+ */
+void
+zdesktop_context_menu_destroy(
+	struct zdesktop_context_menu *context_menu)
+{
+	/* No context menu, nothing to destroy. */
+	if (context_menu == NULL)
+		return;
+
+	/* The protocol object, then the record. */
+	xdg_context_menu_v1_destroy(context_menu->proxy);
+	free(context_menu);
+}
+
+/*
  * Shows a menu on the window (NULL shows none).
  */
 int
@@ -728,9 +828,11 @@ menu_global(
 	if (same != 0 || version < MENU_VERSION)
 		return;
 
-	/* The first one found is used. */
-	if (search->name == 0U)
+	/* The first one found is used, at the version it has. */
+	if (search->name == 0U) {
 		search->name = name;
+		search->version = version;
+	}
 }
 
 /* A global going away during the search changes nothing. */
@@ -946,4 +1048,37 @@ menu_change(
 
 	/* Succeeded: the change may be sent. */
 	return 0;
+}
+
+/* Hands a context menu's choice on to the application. */
+static void
+menu_context_activated(
+	void *data,
+	struct xdg_context_menu_v1 *proxy,
+	uint32_t item,
+	uint32_t action,
+	uint32_t serial)
+{
+	struct zdesktop_context_menu *context_menu;
+
+	/* The application's callback, when it has one. */
+	(void)proxy;
+	context_menu = data;
+	if (context_menu->listener != NULL && context_menu->listener->activated != NULL)
+		context_menu->listener->activated(context_menu->data, context_menu, item, action, serial);
+}
+
+/* Hands a context menu's end on to the application (which destroys it then). */
+static void
+menu_context_done(
+	void *data,
+	struct xdg_context_menu_v1 *proxy)
+{
+	struct zdesktop_context_menu *context_menu;
+
+	/* The application's callback, when it has one. */
+	(void)proxy;
+	context_menu = data;
+	if (context_menu->listener != NULL && context_menu->listener->done != NULL)
+		context_menu->listener->done(context_menu->data, context_menu);
 }

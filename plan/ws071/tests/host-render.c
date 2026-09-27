@@ -29,6 +29,7 @@
  *   focus=0|1
  *   action=N         (a menu's action, fm_ui_action; a request for the window is printed)
  *   state            (prints what the menus show, fm_ui_menu_state)
+ *   context          (prints the context menu of the last right press, fm_ui_context)
  *   titlebar         (prints what the titlebar shows, fm_ui_titlebar_state)
  *   tb=activated:ID:DETAIL  tb=changed:ID:TEXT  tb=done:ID:HOW:TEXT
  *                    (what zdesktop's titlebar tells the window, fm_ui_titlebar)
@@ -45,6 +46,7 @@ static const char host_keys[] = "\0\0" "1234567890-=\0\0" "qwertyuiop[]\0\0" "as
 
 static int host_write_ppm(const char *path, const uint32_t *pixels, int width, int height);
 int host_glass_compose(struct fm_app *app, const uint32_t *frame, uint32_t *out, int width, int height, const char *wallpaper);
+static void host_context(struct fm_app *app);
 static int host_picture(struct fm_app *app, const char *path, const uint32_t *pixels, uint32_t *composed, int width, int height, const char *glass);
 static void host_event(struct fm_app *app, unsigned type, int x, int y, uint32_t button, int pressed, uint32_t key, uint32_t modifiers, uint64_t *now);
 static void host_type(struct fm_app *app, const char *text, uint64_t *now);
@@ -178,6 +180,8 @@ main(
 			printf("state selection=%d folder=%d trash=%d field=%d paste=%d undo=%d redo=%d back=%d forward=%d enclose=%d view=%u sort=%u columns=%u sidebar=%d preview=%d hidden=%d openers=%d first=%s tags=%d checked=%u tabs=%d\n",
 			    state.selection, state.folder, state.trash, state.field, state.can_paste, state.can_undo, state.can_redo, state.can_back, state.can_forward, state.can_enclose,
 			    state.view, state.sort, state.columns, state.sidebar, state.preview, state.hidden, state.opener_count, state.opener_count > 0 ? state.openers[0] : "-", state.tag_count, state.tags_checked, state.tabs);
+		} else if (strcmp(argv[index], "context") == 0) {
+			host_context(&app);
 		} else if (strcmp(argv[index], "titlebar") == 0) {
 			static struct fm_titlebar_state bar;
 			fm_ui_titlebar_state(&app, &bar);
@@ -317,6 +321,31 @@ host_type(
 		}
 		host_event(app, FM_EVENT_KEY, 0, 0, 0, 1, code, modifiers, now);
 		host_event(app, FM_EVENT_KEY, 0, 0, 0, 0, code, modifiers, now);
+	}
+}
+
+/*
+ * Prints the context menu the last right press asked for (ws071-p009):
+ * the request, where it was, and each row (number, parent, kind, whether
+ * it can be chosen and is checked, action, label); the request is taken.
+ */
+static void
+host_context(
+	struct fm_app *app)
+{
+	static struct fm_context context;
+	const struct fm_context_row *row;
+	unsigned index;
+
+	/* The rows of the press's menu. */
+	fm_ui_context(app, &context);
+	printf("context request=%u where=%u place=%d x=%d y=%d count=%u\n", app->request, app->context_where, app->context_place, app->context_x, app->context_y, context.count);
+	app->request = FM_REQUEST_NONE;
+
+	/* Each row on a line. */
+	for (index = 0; index < context.count; index++) {
+		row = &context.rows[index];
+		printf("row id=%u parent=%u kind=%u enabled=%d checked=%d action=%u label=%s\n", row->id, row->parent, row->kind, row->enabled, row->checked, row->action, row->label);
 	}
 }
 

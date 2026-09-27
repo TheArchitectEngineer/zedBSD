@@ -131,6 +131,7 @@ enum zwl_kind {
 	ZWL_VIEWPORT,
 	ZWL_GLASS_MANAGER,
 	ZWL_GLASS,
+	ZWL_CONTEXT_MENU,
 };
 
 /* The wl_shm formats (ARGB8888 has alpha; XRGB8888's top byte is unused). */

@@ -96,6 +96,9 @@ const struct zwl_menu_item *zwl_menu_item(const struct zwl_menu_model *model, ui
 unsigned zwl_menu_children(const struct zwl_menu_model *model, uint32_t parent, const struct zwl_menu_item **children, unsigned capacity);
 void zwl_menu_send_activated(struct zwl_object *place, const struct zwl_menu_item *item, const char *via);
 void zwl_menu_send_popup(struct zwl_object *place, uint32_t item, unsigned opened);
+void zwl_menu_send_context_activated(struct zwl_object *context, const struct zwl_menu_item *item, const char *via);
+void zwl_menu_send_context_done(struct zwl_object *context);
+int zwl_menu_open_context(struct zwl_server *server, struct zwl_object *context, struct zwl_object *surface, int32_t x, int32_t y);
 
 /* The menus zdesktop draws and operates (menu-shell.c). */
 void zwl_menu_frame(struct zwl_server *server);

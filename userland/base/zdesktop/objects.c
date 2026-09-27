@@ -321,6 +321,7 @@ zwl_object_destroy(
 	if (object->kind == ZWL_SURFACE ||
 	    object->kind == ZWL_TOPLEVEL ||
 	    object->kind == ZWL_TOPLEVEL_MENU ||
+	    object->kind == ZWL_CONTEXT_MENU ||
 	    object->kind == ZWL_MENU)
 		zwl_menu_object_gone(object);
 

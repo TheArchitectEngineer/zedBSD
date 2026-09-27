@@ -13,6 +13,7 @@
 #include "zwl.h"
 #include "popup.h"
 #include "toplevel.h"
+#include "extras.h"
 #include <sys/ioctl.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -389,7 +390,8 @@ zwl_schedule(
 
 	/*
 	 * Fullscreen mode when the topmost window is fullscreen with an image
-	 * that can be the output, and no sub-surface to draw with it.
+	 * that can be the output, no sub-surface to draw with it, and no
+	 * viewport that would crop or scale it (viewport.c).
 	 */
 	top = zwl_top_window(server);
 	fullscreen = 0;
@@ -397,7 +399,9 @@ zwl_schedule(
 	    top->fullscreen &&
 	    top->current != NULL &&
 	    top->current->scanout &&
-	    top->sub_children == NULL)
+	    top->sub_children == NULL &&
+	    top->source[2] <= 0 &&
+	    top->destination[0] <= 0)
 		fullscreen = 1;
 
 	/* The mode, switched when it changes. */
@@ -641,11 +645,11 @@ place_window(
 		return;
 	}
 
-	/* Centred, then moved down and right by the number of windows placed so far (in a cycle of eight). */
+	/* Centred at its size (a viewport's, viewport.c), then moved down and right by the number of windows placed so far (in a cycle of eight). */
 	width = (int32_t)server->width;
 	height = (int32_t)server->height;
 	if (surface->current != NULL) {
-		zwl_buffer_size(surface->current, &buffer_width, &buffer_height);
+		zwl_surface_size(surface, &buffer_width, &buffer_height);
 		width = (int32_t)buffer_width;
 		height = (int32_t)buffer_height;
 	}

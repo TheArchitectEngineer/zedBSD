@@ -39,6 +39,7 @@ fm_ui_action(
 	unsigned action)
 {
 	struct fm_tab *tab;
+	int handled;
 	int item;
 
 	/* The log line the tests wait for, and a frame to show what changed. */
@@ -65,6 +66,11 @@ fm_ui_action(
 		fm_action_toggle_tag(app, (int)(action - FM_ACTION_TAG_FIRST));
 		return;
 	}
+
+	/* An action only the context menus have (ui-context.c). */
+	handled = fm_ui_context_action(app, action);
+	if (handled != 0)
+		return;
 
 	/* Each other action. */
 	switch (action) {

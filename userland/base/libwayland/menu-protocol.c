@@ -8,8 +8,10 @@
 /*
  * Describes and marshals zdesktop's System Menu protocol (WS070).
  *
- * xdg_menu_manager_v1 makes menu models (xdg_menu_v1) and the places on
- * windows that show them (xdg_toplevel_menu_v1).  The protocol is
+ * xdg_menu_manager_v1 makes menu models (xdg_menu_v1), the places on
+ * windows that show them (xdg_toplevel_menu_v1) and, from version 2, the
+ * one-time context menus opened at a point of a surface
+ * (xdg_context_menu_v1, ws071-p009).  The protocol is
  * zdesktop's own; its header is private and applications use it through
  * libzdesktop.  plan/ws070/design.md defines every request and event.
  */
@@ -42,16 +44,32 @@ static const struct wl_interface *menu_manager_toplevel_types[] = {
 	&xdg_toplevel_interface,
 };
 
+/*
+ * The arguments of xdg_menu_manager_v1.get_context_menu (version 2): the
+ * new context menu, the menu shown, the surface and the point on it, and
+ * the seat and serial of the press it answers.
+ */
+static const struct wl_interface *menu_manager_context_types[] = {
+	&xdg_context_menu_v1_interface,
+	&xdg_menu_v1_interface,
+	&wl_surface_interface,
+	NULL,
+	NULL,
+	&wl_seat_interface,
+	NULL,
+};
+
 /* The requests of xdg_menu_manager_v1, in wire order. */
 static const struct wl_message menu_manager_requests[] = {
 	{ "destroy", "", NULL },
 	{ "create_menu", "n", menu_manager_create_types },
 	{ "get_toplevel_menu", "no", menu_manager_toplevel_types },
+	{ "get_context_menu", "2nooiiou", menu_manager_context_types },
 };
 
-/* Describes the global that makes menus and their places on windows. */
+/* Describes the global that makes menus, their places on windows and context menus. */
 const struct wl_interface xdg_menu_manager_v1_interface = {
-	"xdg_menu_manager_v1", 1, 3, menu_manager_requests,
+	"xdg_menu_manager_v1", 2, 4, menu_manager_requests,
 	0, NULL
 };
 
@@ -111,6 +129,23 @@ const struct wl_interface xdg_toplevel_menu_v1_interface = {
 	3, toplevel_menu_events
 };
 
+/* The requests of xdg_context_menu_v1, in wire order. */
+static const struct wl_message context_menu_requests[] = {
+	{ "destroy", "", NULL },
+};
+
+/* The events of xdg_context_menu_v1, in wire order: a choice (item, action, serial), and the end. */
+static const struct wl_message context_menu_events[] = {
+	{ "activated", "uuu", menu_plain_types },
+	{ "done", "", NULL },
+};
+
+/* Describes one context menu opened at a point of a surface (version 2). */
+const struct wl_interface xdg_context_menu_v1_interface = {
+	"xdg_context_menu_v1", 2, 1, context_menu_requests,
+	2, context_menu_events
+};
+
 /*
  * Sends xdg_menu_manager_v1.destroy; the menus it made stay.
  */
@@ -166,6 +201,73 @@ xdg_menu_manager_v1_get_toplevel_menu(
 
 	/* Succeeded: the caller owns the new place. */
 	return (struct xdg_toplevel_menu_v1 *)created;
+}
+
+/*
+ * Sends xdg_menu_manager_v1.get_context_menu (version 2): opens a menu's
+ * top-level items as a popup at a point of a surface, answering a press,
+ * and returns the context menu that reports the choice and the end.
+ */
+struct xdg_context_menu_v1 *
+xdg_menu_manager_v1_get_context_menu(
+	struct xdg_menu_manager_v1 *object,
+	struct xdg_menu_v1 *menu,
+	struct wl_surface *surface,
+	int32_t x,
+	int32_t y,
+	struct wl_seat *seat,
+	uint32_t serial)
+{
+	union wl_argument arguments[7];
+	struct wl_proxy *created;
+
+	/* The new context menu, the menu, the surface and the point, the seat and the press's serial. */
+	arguments[0].n = 0;
+	arguments[1].o = (struct wl_object *)menu;
+	arguments[2].o = (struct wl_object *)surface;
+	arguments[3].i = x;
+	arguments[4].i = y;
+	arguments[5].o = (struct wl_object *)seat;
+	arguments[6].u = serial;
+
+	/* Queues the request together with the new proxy. */
+	created = wl_proxy_marshal_array_flags((struct wl_proxy *)object, XDG_MENU_MANAGER_V1_GET_CONTEXT_MENU, &xdg_context_menu_v1_interface, 2U, 0, arguments);
+	if (created == NULL)
+		return NULL;
+
+	/* Succeeded: the caller owns the new context menu. */
+	return (struct xdg_context_menu_v1 *)created;
+}
+
+/*
+ * Installs the typed listener of an xdg_context_menu_v1.
+ */
+int
+xdg_context_menu_v1_add_listener(
+	struct xdg_context_menu_v1 *object,
+	const struct xdg_context_menu_v1_listener *listener,
+	void *data)
+{
+	int error;
+
+	/* The typed callbacks receive the proxy's events from now on. */
+	error = wl_proxy_add_listener((struct wl_proxy *)object, (void (**)(void))listener, data);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the listener is installed. */
+	return 0;
+}
+
+/*
+ * Sends xdg_context_menu_v1.destroy: an open context menu closes.
+ */
+void
+xdg_context_menu_v1_destroy(
+	struct xdg_context_menu_v1 *object)
+{
+	/* Queues the destructor and retires the proxy. */
+	wl_proxy_marshal_array_flags((struct wl_proxy *)object, XDG_CONTEXT_MENU_V1_DESTROY, NULL, 0, WL_MARSHAL_FLAG_DESTROY, NULL);
 }
 
 /*
@@ -631,6 +733,51 @@ wlc_menu_dispatch(
 			return 0;
 		event->delivered = 1;
 		callbacks->closed(data, object, arguments[0].u);
+		return 0;
+	default:
+		break;
+	}
+
+	/* The interface has no other event. */
+	return EPROTO;
+}
+
+/*
+ * Calls the typed listener of an xdg_context_menu_v1 event.
+ *
+ * Returns 0 when the event was delivered or deliberately ignored, EPROTO for
+ * an opcode the interface does not have.
+ */
+int
+wlc_context_menu_dispatch(
+	struct wlc_event *event,
+	const void *listener,
+	void *data)
+{
+	const struct xdg_context_menu_v1_listener *callbacks;
+	struct xdg_context_menu_v1 *object;
+	union wl_argument *arguments;
+
+	/* The listener, the proxy and the decoded arguments. */
+	callbacks = listener;
+	object = (struct xdg_context_menu_v1 *)event->proxy;
+	arguments = event->arguments;
+
+	/* Selects the callback by the event's opcode. */
+	switch (event->opcode) {
+	case 0:
+		/* An item was chosen: item, action and serial. */
+		if (callbacks->activated == NULL)
+			return 0;
+		event->delivered = 1;
+		callbacks->activated(data, object, arguments[0].u, arguments[1].u, arguments[2].u);
+		return 0;
+	case 1:
+		/* The context menu closed (after a choice, or without one). */
+		if (callbacks->done == NULL)
+			return 0;
+		event->delivered = 1;
+		callbacks->done(data, object);
 		return 0;
 	default:
 		break;

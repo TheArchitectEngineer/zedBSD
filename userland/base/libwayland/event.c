@@ -658,6 +658,13 @@ wlc_event_dispatch(
 		return error;
 	}
 
+	/* Dispatches xdg_context_menu_v1 events (a context menu, menu-protocol.c). */
+	same = strcmp(proxy->interface->name, "xdg_context_menu_v1");
+	if (same == 0) {
+		error = wlc_context_menu_dispatch(event, listener, data);
+		return error;
+	}
+
 	/* Dispatches zed_titlebar_v1 events (the Titlebar Presentation, titlebar-protocol.c). */
 	same = strcmp(proxy->interface->name, "zed_titlebar_v1");
 	if (same == 0) {
