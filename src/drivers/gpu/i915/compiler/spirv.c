@@ -333,8 +333,11 @@
 /* The most scalars a value may have: a 4 x 4 matrix. */
 #define MAX_COMPONENTS 16U
 
-/* The most elements an array read through a dynamic index may have. */
+/* The most elements an array of a block read through a dynamic index may have. */
 #define MAX_DYNAMIC_ELEMENTS 16U
+
+/* The most parts a dynamic index into a local may choose among. */
+#define MAX_LOCAL_DYNAMIC 64U
 
 /*
  * The most scalars a local variable holds, and the most interface slots (four
@@ -725,10 +728,12 @@ static int i915_spirv_lower_variable(struct i915_spirv_parser *parser, const uin
 static int i915_spirv_lower_access_chain(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int i915_spirv_chain_block(struct i915_spirv_parser *parser, struct i915_spirv_id *record, struct i915_spirv_id *pointee, struct i915_spirv_id *index_record, uint32_t index_id, uint32_t opcode, uint32_t offset);
 static int i915_spirv_chain_scalars(struct i915_spirv_parser *parser, struct i915_spirv_id *record, struct i915_spirv_id *pointee, struct i915_spirv_id *index_record, uint32_t index_id, uint32_t opcode, uint32_t offset);
+static int i915_spirv_chain_dynamic(struct i915_spirv_parser *parser, struct i915_spirv_id *record, struct i915_spirv_id *pointee, uint32_t index_id, uint32_t opcode, uint32_t offset);
 static int i915_spirv_lower_load(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int i915_spirv_lower_load_local(struct i915_spirv_parser *parser, const uint32_t *word, const struct i915_spirv_id *pointer, const struct i915_spirv_id *variable, uint32_t components, uint32_t opcode, uint32_t offset);
 static int i915_spirv_lower_load_output(struct i915_spirv_parser *parser, const uint32_t *word, const struct i915_spirv_id *pointer, const struct i915_spirv_id *variable, uint32_t components, uint32_t opcode, uint32_t offset);
 static int i915_spirv_lower_load_input(struct i915_spirv_parser *parser, const uint32_t *word, const struct i915_spirv_id *pointer, const struct i915_spirv_id *variable, uint32_t components, uint32_t opcode, uint32_t offset);
+static uint32_t i915_spirv_local_scalar(struct i915_spirv_parser *parser, const struct i915_spirv_id *variable, uint32_t index, int zero_if_unstored);
 static int i915_spirv_input_flat(struct i915_spirv_parser *parser, uint32_t location);
 static uint32_t i915_spirv_index_is(struct i915_spirv_parser *parser, uint32_t index, uint32_t number);
 static int i915_spirv_lower_load_block(struct i915_spirv_parser *parser, const uint32_t *word, struct i915_spirv_id *pointer, struct i915_spirv_id *variable, uint32_t opcode, uint32_t offset);
@@ -760,6 +765,9 @@ static int i915_spirv_lower_shuffle(struct i915_spirv_parser *parser, const uint
 static int i915_spirv_lower_extended(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static uint32_t i915_spirv_lower_extended_component(struct i915_spirv_parser *parser, uint32_t function, uint32_t operand[3][4], uint32_t component);
 static uint32_t i915_spirv_smooth_step(struct i915_spirv_parser *parser, uint32_t edge0, uint32_t edge1, uint32_t x);
+static int i915_spirv_lower_matrix_function(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
+static uint32_t i915_spirv_minor_determinant(struct i915_spirv_parser *parser, const uint32_t *matrix, uint32_t rows, const uint32_t *columns_kept, const uint32_t *rows_kept, uint32_t size);
+static int i915_spirv_lower_half(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int i915_spirv_lower_geometric(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int i915_spirv_lower_divide(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int i915_spirv_lower_compare(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
@@ -2335,9 +2343,9 @@ i915_spirv_chain_block(
  * its interface slots, four to a location (i915_spirv_io_map()), so
  * `component` is the first scalar or slot the pointer addresses.  A
  * structure member, an array element, a matrix column or a vector component
- * is selected by a constant index; an element of a local array may also be
- * selected at run time, by one index of the chain, which the load or the
- * store then resolves.
+ * is selected by a constant index; a local's array element, matrix column
+ * or vector component may also be selected at run time
+ * (i915_spirv_chain_dynamic()), which the load or the store then resolves.
  */
 static int
 i915_spirv_chain_scalars(
@@ -2349,10 +2357,6 @@ i915_spirv_chain_scalars(
 	uint32_t opcode,
 	uint32_t offset)
 {
-	uint32_t scalars[MAX_COMPONENTS];
-	uint32_t scalar_count;
-	uint32_t element_scalars;
-	uint32_t element_locations;
 	uint32_t next_type;
 	uint32_t scalar_offset;
 	uint32_t io_offset;
@@ -2364,31 +2368,11 @@ i915_spirv_chain_scalars(
 	if (record->component >= 0)
 		first = (uint32_t)record->component;
 
-	/* A dynamic index selects an element of a local array, once in a chain; nothing else is selected at run time. */
+	/* An index known only at run time is resolved by the load or the store. */
 	if (index_record->kind != ID_CONSTANT) {
-		if (record->ptr_kind != PTR_LOCAL || pointee->kind != ID_TYPE_ARRAY)
-			return i915_spirv_refuse(parser, opcode, offset, "access chain with a dynamic index into something that is not a local array");
-		if (record->dynamic_index != NO_VALUE)
-			return i915_spirv_refuse(parser, opcode, offset, "access chain with more than one dynamic index");
-		if (pointee->length == 0U || pointee->length > MAX_DYNAMIC_ELEMENTS)
-			return i915_spirv_refuse(parser, opcode, offset, "dynamic index into an array longer than supported");
-
-		/* The elements are a run of scalars apart. */
-		error = i915_spirv_type_size(parser, pointee->type, 1U, &element_scalars, &element_locations);
+		error = i915_spirv_chain_dynamic(parser, record, pointee, index_id, opcode, offset);
 		if (error != 0)
-			return i915_spirv_refuse(parser, opcode, offset, "array of elements that are not made of scalars");
-
-		/* The index is one integer. */
-		scalar_count = i915_spirv_operand(parser, index_id, scalars);
-		if (scalar_count != 1U)
-			return i915_spirv_refuse(parser, opcode, offset, "dynamic index that is not an integer scalar");
-
-		/* The pointer addresses the first element's part; the index picks the element. */
-		record->dynamic_index = scalars[0];
-		record->dynamic_stride = element_scalars;
-		record->dynamic_length = pointee->length;
-		record->component = (int32_t)first;
-		record->pointee = pointee->type;
+			return error;
 		return 0;
 	}
 
@@ -2410,6 +2394,101 @@ i915_spirv_chain_scalars(
 	record->pointee = next_type;
 
 	/* Succeeded: the pointer names the selected part. */
+	return 0;
+}
+
+/*
+ * Steps a pointer into a local one index known only at run time down: an
+ * array's element, a matrix's column or a vector's component.  The pointer
+ * keeps the index as the run of candidate parts it may pick: the IR integer
+ * of the part, the scalars between two parts and how many parts there are.
+ * A second such index in the chain folds both into one flat scalar offset
+ * (the first index times its stride plus the second times its), its
+ * candidates every scalar of the span the two may reach; more candidates
+ * than MAX_LOCAL_DYNAMIC are refused.
+ */
+static int
+i915_spirv_chain_dynamic(
+	struct i915_spirv_parser *parser,
+	struct i915_spirv_id *record,
+	struct i915_spirv_id *pointee,
+	uint32_t index_id,
+	uint32_t opcode,
+	uint32_t offset)
+{
+	struct i915_spirv_id *column;
+	uint32_t scalars[MAX_COMPONENTS];
+	uint32_t scalar_count;
+	uint32_t element_scalars;
+	uint32_t element_locations;
+	uint32_t length;
+	uint32_t stride;
+	uint32_t next_type;
+	uint32_t span;
+	uint32_t factor;
+	uint32_t before;
+	uint32_t after;
+	int error;
+
+	/* Only a local's parts are chosen at run time. */
+	if (record->ptr_kind != PTR_LOCAL)
+		return i915_spirv_refuse(parser, opcode, offset, "access chain with a dynamic index into something that is not a local");
+
+	/* The parts the index chooses among: elements, columns or components. */
+	if (pointee->kind == ID_TYPE_ARRAY) {
+		error = i915_spirv_type_size(parser, pointee->type, 1U, &element_scalars, &element_locations);
+		if (error != 0)
+			return i915_spirv_refuse(parser, opcode, offset, "array of elements that are not made of scalars");
+		length = pointee->length;
+		stride = element_scalars;
+		next_type = pointee->type;
+	} else if (pointee->kind == ID_TYPE_MATRIX) {
+		column = i915_spirv_id(parser, pointee->type);
+		if (column == NULL)
+			return EINVAL;
+		length = pointee->count;
+		stride = column->count;
+		next_type = pointee->type;
+	} else if (pointee->kind == ID_TYPE_VECTOR) {
+		length = pointee->count;
+		stride = 1U;
+		next_type = pointee->type;
+	} else {
+		return i915_spirv_refuse(parser, opcode, offset, "dynamic index into a scalar or a structure");
+	}
+	if (length == 0U)
+		return EINVAL;
+
+	/* The index is one integer. */
+	scalar_count = i915_spirv_operand(parser, index_id, scalars);
+	if (scalar_count != 1U)
+		return i915_spirv_refuse(parser, opcode, offset, "dynamic index that is not an integer scalar");
+
+	/* The first index of the chain picks among its parts as they are. */
+	if (record->dynamic_index == NO_VALUE) {
+		if (length > MAX_LOCAL_DYNAMIC)
+			return i915_spirv_refuse(parser, opcode, offset, "dynamic index into more parts than supported");
+		record->dynamic_index = scalars[0];
+		record->dynamic_stride = stride;
+		record->dynamic_length = length;
+		record->pointee = next_type;
+		return 0;
+	}
+
+	/* A second one folds both into one scalar offset, which picks among every scalar of the span they reach. */
+	span = (record->dynamic_length - 1U) * record->dynamic_stride + (length - 1U) * stride + 1U;
+	if (span > MAX_LOCAL_DYNAMIC)
+		return i915_spirv_refuse(parser, opcode, offset, "dynamic index into more parts than supported");
+	factor = i915_spirv_integer_constant(parser, record->dynamic_stride);
+	before = i915_spirv_emit_value(parser, I915_IR_IMUL, record->dynamic_index, factor);
+	factor = i915_spirv_integer_constant(parser, stride);
+	after = i915_spirv_emit_value(parser, I915_IR_IMUL, scalars[0], factor);
+	record->dynamic_index = i915_spirv_emit_value(parser, I915_IR_IADD, before, after);
+	record->dynamic_stride = 1U;
+	record->dynamic_length = span;
+	record->pointee = next_type;
+
+	/* Succeeded: the pointer names the part the indices choose. */
 	return 0;
 }
 
@@ -2485,9 +2564,10 @@ i915_spirv_lower_load(
 
 /*
  * Lowers a load from a local: store-to-load forwarding, the scalars
- * currently stored in it.  Through a dynamic array index every element's
+ * currently stored in it.  Through a dynamic index every candidate part's
  * scalars are read and the ones the index names are selected channel by
- * channel, as a block load selects (i915_spirv_lower_load_block()).
+ * channel, as a block load selects (i915_spirv_lower_load_block()); a
+ * candidate never stored reads as zero bits, since no channel may read it.
  */
 static int
 i915_spirv_lower_load_local(
@@ -2500,13 +2580,13 @@ i915_spirv_lower_load_local(
 	uint32_t offset)
 {
 	struct i915_spirv_id *record;
-	uint32_t selects[MAX_DYNAMIC_ELEMENTS];
-	uint32_t *slot;
+	uint32_t selects[MAX_LOCAL_DYNAMIC];
 	uint32_t first;
 	uint32_t elements;
 	uint32_t element;
 	uint32_t index;
 	uint32_t value;
+	uint32_t candidate;
 
 	/* The first scalar the pointer addresses. */
 	first = 0U;
@@ -2526,23 +2606,55 @@ i915_spirv_lower_load_local(
 	if (record == NULL)
 		return EINVAL;
 
-	/* Reads each scalar: the first element's, then each later element's where the index names it. */
+	/* Reads each scalar: the first part's, then each later part's where the index names it. */
 	for (index = 0U; index < components; index++) {
-		slot = i915_spirv_variable_slot(parser, variable, first + index);
-		if (slot == NULL || *slot == NO_VALUE)
+		value = i915_spirv_local_scalar(parser, variable, first + index, elements > 1U);
+		if (value == NO_VALUE)
 			return i915_spirv_refuse(parser, opcode, offset, "load of a local or output component that was never stored");
-		value = *slot;
 		for (element = 1U; element < elements; element++) {
-			slot = i915_spirv_variable_slot(parser, variable, first + element * pointer->dynamic_stride + index);
-			if (slot == NULL || *slot == NO_VALUE)
-				return i915_spirv_refuse(parser, opcode, offset, "load of a local or output component that was never stored");
-			value = i915_spirv_select_value(parser, selects[element], *slot, value);
+			candidate = i915_spirv_local_scalar(parser, variable, first + element * pointer->dynamic_stride + index, 1);
+			if (candidate == NO_VALUE)
+				return EINVAL;
+			value = i915_spirv_select_value(parser, selects[element], candidate, value);
 		}
 		record->comp[index] = value;
 	}
 
 	/* Succeeded: the load names the stored scalars. */
 	return 0;
+}
+
+/*
+ * Returns the value a local's slot holds; a slot past the local, or never
+ * stored, is NO_VALUE -- or, when `zero_if_unstored` is set, a slot never
+ * stored reads as zero bits (a dynamic index's candidate no channel reads).
+ */
+static uint32_t
+i915_spirv_local_scalar(
+	struct i915_spirv_parser *parser,
+	const struct i915_spirv_id *variable,
+	uint32_t index,
+	int zero_if_unstored)
+{
+	uint32_t *slot;
+	uint32_t zero;
+
+	/* A slot past the local holds nothing. */
+	slot = i915_spirv_variable_slot(parser, variable, index);
+	if (slot == NULL)
+		return NO_VALUE;
+
+	/* A stored slot holds its value. */
+	if (*slot != NO_VALUE)
+		return *slot;
+
+	/* A slot never stored holds nothing, or zero bits for a candidate. */
+	if (zero_if_unstored == 0)
+		return NO_VALUE;
+	zero = i915_spirv_shared_constant(parser, &parser->zero_value, I915_IR_CONST, FLOAT_ZERO_BITS);
+
+	/* Succeeded: the zero bits. */
+	return zero;
 }
 
 /*
@@ -4216,6 +4328,12 @@ i915_spirv_lower_extended(
 	    function == GLSL_REFLECT)
 		return i915_spirv_lower_geometric(parser, word, count, opcode, offset);
 
+	/* So do those of whole matrices, and the half-float packing. */
+	if (function == GLSL_DETERMINANT || function == GLSL_MATRIX_INVERSE)
+		return i915_spirv_lower_matrix_function(parser, word, count, opcode, offset);
+	if (function == GLSL_PACK_HALF_2X16 || function == GLSL_UNPACK_HALF_2X16)
+		return i915_spirv_lower_half(parser, word, count, opcode, offset);
+
 	/* Counts the operands of each lowered function and notes the integer ones; any other is refused. */
 	integers = 0;
 	switch (function) {
@@ -4552,6 +4670,241 @@ i915_spirv_smooth_step(
 
 	/* Succeeded: the smooth step. */
 	return i915_spirv_emit_value(parser, I915_IR_FMUL, t, term);
+}
+
+/*
+ * Lowers the GLSL.std.450 functions of a whole square matrix: Determinant
+ * by cofactor expansion along the first row, MatrixInverse as the
+ * adjugate (each element's cofactor, transposed) times the reciprocal of
+ * the determinant -- the definitions Mesa lowers them by
+ * (vtn_glsl450.c, build_mat_det() and matrix_inverse()), the products
+ * perhaps associated otherwise.
+ */
+static int
+i915_spirv_lower_matrix_function(
+	struct i915_spirv_parser *parser,
+	const uint32_t *word,
+	uint32_t count,
+	uint32_t opcode,
+	uint32_t offset)
+{
+	struct i915_spirv_id *record;
+	uint32_t matrix[MAX_COMPONENTS];
+	uint32_t columns_left[4];
+	uint32_t rows_left[4];
+	uint32_t matrix_count;
+	uint32_t columns;
+	uint32_t rows;
+	uint32_t components;
+	uint32_t expected;
+	uint32_t determinant;
+	uint32_t reciprocal;
+	uint32_t cofactor;
+	uint32_t column;
+	uint32_t row;
+	uint32_t index;
+	uint32_t kept;
+
+	/* The instruction must carry the one matrix. */
+	if (count != 6U)
+		return EINVAL;
+
+	/* The operand must be a square float matrix. */
+	matrix_count = i915_spirv_operand_wide(parser, word[5], matrix);
+	i915_spirv_operand_shape(parser, word[5], &columns, &rows);
+	if (matrix_count == 0U || columns < 2U || columns != rows || matrix_count != columns * rows)
+		return i915_spirv_refuse(parser, opcode, offset, "matrix function of something that is not a square matrix");
+
+	/* The determinant is one float; the inverse a matrix of the operand's shape. */
+	if (word[4] == GLSL_DETERMINANT) {
+		components = i915_spirv_float_components(parser, word[1]);
+		expected = 1U;
+	} else {
+		components = i915_spirv_matrix_components(parser, word[1]);
+		expected = matrix_count;
+	}
+	if (components != expected)
+		return i915_spirv_refuse(parser, opcode, offset, "matrix function whose result is not of the operand's shape");
+
+	/* The whole matrix's determinant. */
+	for (index = 0U; index < columns; index++) {
+		columns_left[index] = index;
+		rows_left[index] = index;
+	}
+	determinant = i915_spirv_minor_determinant(parser, matrix, rows, columns_left, rows_left, columns);
+
+	/* Declares the result; its scalars are named below. */
+	record = i915_spirv_result(parser, word[2], word[1], components, 0);
+	if (record == NULL)
+		return EINVAL;
+
+	/* A determinant is the one value. */
+	if (word[4] == GLSL_DETERMINANT) {
+		record->comp[0] = determinant;
+		return 0;
+	}
+
+	/*
+	 * Element (row r, column c) of the inverse is the cofactor of the
+	 * operand's element (row c, column r) over the determinant: the
+	 * determinant of the operand without row c and column r, negated when
+	 * r + c is odd.
+	 */
+	reciprocal = i915_spirv_emit_value(parser, I915_IR_RCP, determinant, 0U);
+	for (column = 0U; column < columns; column++) {
+		for (row = 0U; row < rows; row++) {
+			/* The operand's columns but r and rows but c. */
+			kept = 0U;
+			for (index = 0U; index < columns; index++) {
+				if (index == row)
+					continue;
+				columns_left[kept] = index;
+				kept++;
+			}
+			kept = 0U;
+			for (index = 0U; index < rows; index++) {
+				if (index == column)
+					continue;
+				rows_left[kept] = index;
+				kept++;
+			}
+
+			/* The cofactor, with its sign, over the determinant. */
+			cofactor = i915_spirv_minor_determinant(parser, matrix, rows, columns_left, rows_left, columns - 1U);
+			if (((row + column) & 1U) != 0U)
+				cofactor = i915_spirv_emit_value(parser, I915_IR_FNEG, cofactor, 0U);
+			record->comp[column * rows + row] = i915_spirv_emit_value(parser, I915_IR_FMUL, cofactor, reciprocal);
+		}
+	}
+
+	/* Succeeded: the inverse is lowered. */
+	return 0;
+}
+
+/*
+ * Emits the determinant of the square part of a matrix (its scalars column
+ * after column, `rows` to a column) that the listed columns and rows keep,
+ * `size` of each: an element for one, ad - bc for two, and the expansion
+ * along the first kept row for more.  Returns its value.
+ */
+static uint32_t
+i915_spirv_minor_determinant(
+	struct i915_spirv_parser *parser,
+	const uint32_t *matrix,
+	uint32_t rows,
+	const uint32_t *columns_kept,
+	const uint32_t *rows_kept,
+	uint32_t size)
+{
+	uint32_t sub_columns[4];
+	uint32_t term;
+	uint32_t other;
+	uint32_t sum;
+	uint32_t index;
+	uint32_t kept;
+	uint32_t column;
+
+	/* One element is its own determinant. */
+	if (size == 1U)
+		return matrix[columns_kept[0] * rows + rows_kept[0]];
+
+	/* Two by two: a d - b c. */
+	if (size == 2U) {
+		term = i915_spirv_emit_value(parser,
+					     I915_IR_FMUL,
+					     matrix[columns_kept[0] * rows + rows_kept[0]],
+					     matrix[columns_kept[1] * rows + rows_kept[1]]);
+		other = i915_spirv_emit_value(parser,
+					      I915_IR_FMUL,
+					      matrix[columns_kept[1] * rows + rows_kept[0]],
+					      matrix[columns_kept[0] * rows + rows_kept[1]]);
+		sum = i915_spirv_emit_value(parser, I915_IR_FSUB, term, other);
+		return sum;
+	}
+
+	/* Larger: each element of the first row times its minor, the signs alternating. */
+	sum = NO_VALUE;
+	for (column = 0U; column < size; column++) {
+		/* The kept columns but this one, and every kept row but the first. */
+		kept = 0U;
+		for (index = 0U; index < size; index++) {
+			if (index == column)
+				continue;
+			sub_columns[kept] = columns_kept[index];
+			kept++;
+		}
+		other = i915_spirv_minor_determinant(parser, matrix, rows, sub_columns, rows_kept + 1, size - 1U);
+		term = i915_spirv_emit_value(parser, I915_IR_FMUL, matrix[columns_kept[column] * rows + rows_kept[0]], other);
+
+		/* Adds the even terms and subtracts the odd ones. */
+		if (sum == NO_VALUE) {
+			sum = term;
+		} else if ((column & 1U) != 0U) {
+			sum = i915_spirv_emit_value(parser, I915_IR_FSUB, sum, term);
+		} else {
+			sum = i915_spirv_emit_value(parser, I915_IR_FADD, sum, term);
+		}
+	}
+
+	/* Succeeded: the expansion. */
+	return sum;
+}
+
+/*
+ * Lowers PackHalf2x16 and UnpackHalf2x16: the two floats of a vec2 as the
+ * low and the high 16-bit halves of an unsigned integer, and back, which
+ * the EU converts (Mesa: pack_half_2x16_split and unpack_half_2x16_split,
+ * brw_lower_pack.cpp and brw_fs_nir.cpp).
+ */
+static int
+i915_spirv_lower_half(
+	struct i915_spirv_parser *parser,
+	const uint32_t *word,
+	uint32_t count,
+	uint32_t opcode,
+	uint32_t offset)
+{
+	struct i915_spirv_id *record;
+	struct i915_shader_ir_inst *inst;
+	uint32_t operand[4];
+	uint32_t operand_count;
+	uint32_t components;
+	uint32_t half;
+
+	/* The instruction must carry the one operand. */
+	if (count != 6U)
+		return EINVAL;
+	operand_count = i915_spirv_operand(parser, word[5], operand);
+
+	/* Packing: a vec2 into one unsigned integer. */
+	if (word[4] == GLSL_PACK_HALF_2X16) {
+		components = i915_spirv_int_components(parser, word[1]);
+		if (operand_count != 2U || components != 1U)
+			return i915_spirv_refuse(parser, opcode, offset, "PackHalf2x16 that is not of a vec2 into a uint");
+		record = i915_spirv_result(parser, word[2], word[1], 1U, 0);
+		if (record == NULL)
+			return EINVAL;
+		record->comp[0] = i915_spirv_emit_value(parser, I915_IR_PACK_HALF, operand[0], operand[1]);
+		return 0;
+	}
+
+	/* Unpacking: one unsigned integer into a vec2. */
+	components = i915_spirv_float_components(parser, word[1]);
+	if (operand_count != 1U || components != 2U)
+		return i915_spirv_refuse(parser, opcode, offset, "UnpackHalf2x16 that is not of a uint into a vec2");
+	record = i915_spirv_result(parser, word[2], word[1], 2U, 1);
+	if (record == NULL)
+		return EINVAL;
+
+	/* Converts the low half, then the high one. */
+	for (half = 0U; half < 2U; half++) {
+		inst = i915_spirv_emit(parser, I915_IR_UNPACK_HALF, record->comp[half], operand[0], 0U);
+		if (inst != NULL)
+			inst->component = half;
+	}
+
+	/* Succeeded: the halves are lowered. */
+	return 0;
 }
 
 /*
