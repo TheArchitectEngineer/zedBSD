@@ -39,6 +39,7 @@
  * Enter chooses it, Esc closes Wiseview.
  */
 
+#include "extras.h"
 #include "menu.h"
 #include "popup.h"
 #include "titlebar.h"
@@ -992,14 +993,23 @@ draw_body(
 	struct glass_shape shape;
 	float place[4];
 	unsigned panels;
+	int32_t width;
+	int32_t height;
 	float soft;
 	float scale_x;
 	float scale_y;
 
-	/* The image and its scale to the rectangle (it is stretched while the window changes size). */
+	/* The window's size (its viewport's, else its image's), whose scale to the rectangle stretches it while it changes size. */
 	image = zwl_compose_surface_image(surface);
-	scale_x = (float)body->width / (float)image->width;
-	scale_y = (float)body->height / (float)image->height;
+	window_size(surface, &width, &height);
+	if (width <= 0 || height <= 0) {
+		width = (int32_t)image->width;
+		height = (int32_t)image->height;
+	}
+
+	/* The body's scale from that size, for the panels and the sub-surfaces (in surface coordinates). */
+	scale_x = (float)body->width / (float)width;
+	scale_y = (float)body->height / (float)height;
 
 	/* A window with glass panels: their shadows and glass instead of the body's (panels.c). */
 	panels = zwl_panels_count(surface);
@@ -1045,13 +1055,14 @@ draw_body(
 		glass_shape_draw(server, command, &shape);
 	}
 
-	/* The sub-surfaces below the image, scaled with it (subsurface.c). */
+	/* The sub-surfaces below the image, scaled with it from the window's size (subsurface.c). */
 	zwl_subsurface_draw(server, command, surface, (float)body->x, (float)body->y, scale_x, scale_y, 0U);
 
-	/* The image, stretched to the rectangle while it changes, as opaque as asked. */
+	/* The image (its viewport's source), stretched to the rectangle while it changes, as opaque as asked. */
 	glass_shape_init(&shape, (float)body->x, (float)body->y, (float)body->width, (float)body->height);
 	if (docked)
 		shape.box[3] += 2.0f * GLASS_RADIUS;
+	zwl_viewport_source(surface, shape.uv);
 	shape.opacity = server->window_opacity;
 	shape.mode = MODE_IMAGE;
 	shape.radius = GLASS_RADIUS;
@@ -1712,15 +1723,15 @@ bar_title_slot(
 	slot->height = ZWL_GLASS_BAR;
 }
 
-/* The size of a window's image. */
+/* The size of a window's image: its viewport's size, else its buffer's (viewport.c); 0 by 0 without an image. */
 static void
 window_size(
 	const struct zwl_object *surface,
 	int32_t *width,
 	int32_t *height)
 {
-	uint32_t buffer_width;
-	uint32_t buffer_height;
+	uint32_t surface_width;
+	uint32_t surface_height;
 
 	/* No image, no size. */
 	*width = 0;
@@ -1728,10 +1739,10 @@ window_size(
 	if (surface->current == NULL)
 		return;
 
-	/* The buffer's. */
-	zwl_buffer_size(surface->current, &buffer_width, &buffer_height);
-	*width = (int32_t)buffer_width;
-	*height = (int32_t)buffer_height;
+	/* The surface's size (ws035-p081: a viewport's destination or source). */
+	zwl_surface_size(surface, &surface_width, &surface_height);
+	*width = (int32_t)surface_width;
+	*height = (int32_t)surface_height;
 }
 
 /* Tells whether a point is on a window's title bar, its body, or neither (the gap is neither). */
@@ -2587,6 +2598,8 @@ draw_tile(
 	struct shell_rect panel;
 	float place[4];
 	unsigned panels;
+	int32_t width;
+	int32_t height;
 	int32_t label_width;
 	int32_t label_x;
 	int32_t label_y;
@@ -2621,15 +2634,23 @@ draw_tile(
 	if (panels == 0U || current || over)
 		glass_shape_draw(server, command, &shape);
 
+	/* The window's size (its viewport's, else its image's), for its glass panels' scale. */
+	window_size(surface, &width, &height);
+	if (width <= 0 || height <= 0) {
+		width = (int32_t)image->width;
+		height = (int32_t)image->height;
+	}
+
 	/* A window's glass panels, small with the tile. */
 	place[0] = (float)tile->x;
 	place[1] = (float)tile->y;
-	place[2] = (float)tile->width / (float)image->width;
-	place[3] = (float)tile->height / (float)image->height;
+	place[2] = (float)tile->width / (float)width;
+	place[3] = (float)tile->height / (float)height;
 	zwl_panels_draw(server, command, surface, place, 1.0f, 0U);
 
-	/* The image, sampled linearly. */
+	/* The image (its viewport's source), sampled linearly. */
 	glass_shape_init(&shape, (float)tile->x, (float)tile->y, (float)tile->width, (float)tile->height);
+	zwl_viewport_source(surface, shape.uv);
 	shape.mode = MODE_IMAGE;
 	shape.radius = WISEVIEW_RADIUS;
 	shape.set = image->linear_set;

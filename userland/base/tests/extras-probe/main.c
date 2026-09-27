@@ -18,7 +18,11 @@
  * text shape; keys h and e ask for the pointing hand and the left-right
  * resize arrow.  Every event is one line: EXTRAS <what> ...
  *
- *   extras-probe [--timeout-s=N] [--token=NAME]
+ * With --body-viewport (WS035 p081) the window itself has a viewport too:
+ * its 400x300 buffer is four quarters, and the viewport shows its right
+ * half (green above white) at 600x300.
+ *
+ *   extras-probe [--timeout-s=N] [--token=NAME] [--body-viewport]
  */
 
 #include <wayland-client.h>
@@ -195,16 +199,19 @@ struct probe {
 	struct wl_surface *child;
 	struct wl_subsurface *subsurface;
 	struct wl_proxy *viewport;
+	struct wl_proxy *body_viewport;
 	struct wl_proxy *shape_device;
 	uint32_t enter_serial;
 	int configured;
 	int closed;
+	int viewport_body;
 	const char *token;
 };
 
 static int probe_options(int count, char **arguments, struct probe *probe, unsigned *timeout);
 static int probe_connect(struct probe *probe);
 static int probe_child(struct probe *probe);
+static int probe_body_viewport(struct probe *probe);
 static int probe_draw(struct probe *probe, struct wl_surface *surface, int32_t width, int32_t height, int quarters);
 static void probe_set_shape(struct probe *probe, uint32_t shape);
 static uint64_t probe_clock(void);
@@ -307,7 +314,7 @@ main(
 	memset(&probe, 0, sizeof(probe));
 	error = probe_options(count, arguments, &probe, &timeout);
 	if (error != 0) {
-		fprintf(stderr, "usage: extras-probe [--timeout-s=N] [--token=NAME]\n");
+		fprintf(stderr, "usage: extras-probe [--timeout-s=N] [--token=NAME] [--body-viewport]\n");
 		return 2;
 	}
 
@@ -352,7 +359,7 @@ main(
 	return 0;
 }
 
-/* Reads the options: --timeout-s=N (default 120) and --token=NAME. */
+/* Reads the options: --timeout-s=N (default 120), --token=NAME and --body-viewport. */
 static int
 probe_options(
 	int count,
@@ -375,6 +382,13 @@ probe_options(
 		same = strncmp(arguments[index], "--token=", 8);
 		if (same == 0) {
 			probe->token = arguments[index] + 8;
+			continue;
+		}
+
+		/* A viewport on the window itself. */
+		same = strcmp(arguments[index], "--body-viewport");
+		if (same == 0) {
+			probe->viewport_body = 1;
 			continue;
 		}
 
@@ -445,8 +459,14 @@ probe_connect(
 	if (status != 0)
 		return status;
 
-	/* The window's image shows it all. */
-	status = probe_draw(probe, probe->surface, PROBE_WIDTH, PROBE_HEIGHT, 0);
+	/* The window's image shows it all, or with --body-viewport a part of its quarters, larger. */
+	if (probe->viewport_body) {
+		status = probe_body_viewport(probe);
+	} else {
+		status = probe_draw(probe, probe->surface, PROBE_WIDTH, PROBE_HEIGHT, 0);
+	}
+
+	/* Reports a window that could not be shown. */
 	if (status != 0)
 		return status;
 
@@ -491,6 +511,42 @@ probe_child(
 
 	/* Succeeded: the sub-surface waits for the window's commit. */
 	printf("EXTRAS viewport source=0,0,%d,%d destination=200,100\n", PROBE_QUARTER, PROBE_QUARTER);
+	fflush(stdout);
+	return 0;
+}
+
+/* Gives the window a viewport (its buffer's right half at 600x300) and its image of four quarters. */
+static int
+probe_body_viewport(
+	struct probe *probe)
+{
+	union wl_argument arguments[4];
+	int status;
+
+	/* The window's viewport. */
+	arguments[0].n = 0;
+	arguments[1].o = (struct wl_object *)probe->surface;
+	probe->body_viewport = wl_proxy_marshal_array_flags(probe->viewporter, 1U, &probe_viewport_interface, 1U, 0, arguments);
+	if (probe->body_viewport == NULL)
+		return ENOMEM;
+
+	/* The right half of the buffer (24.8 fixed point), shown at 600x300. */
+	arguments[0].f = (PROBE_WIDTH / 2) * 256;
+	arguments[1].f = 0;
+	arguments[2].f = (PROBE_WIDTH / 2) * 256;
+	arguments[3].f = PROBE_HEIGHT * 256;
+	wl_proxy_marshal_array_flags(probe->body_viewport, 1U, NULL, 0, 0, arguments);
+	arguments[0].i = 600;
+	arguments[1].i = PROBE_HEIGHT;
+	wl_proxy_marshal_array_flags(probe->body_viewport, 2U, NULL, 0, 0, arguments);
+
+	/* The image, committed with the viewport. */
+	status = probe_draw(probe, probe->surface, PROBE_WIDTH, PROBE_HEIGHT, 1);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the log line of the window's viewport. */
+	printf("EXTRAS body-viewport source=%d,0,%d,%d destination=600,%d\n", PROBE_WIDTH / 2, PROBE_WIDTH / 2, PROBE_HEIGHT, PROBE_HEIGHT);
 	fflush(stdout);
 	return 0;
 }

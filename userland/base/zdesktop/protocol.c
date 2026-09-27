@@ -1035,7 +1035,7 @@ shell_request(
 			surface->window_width = 0;
 			surface->window_height = 0;
 			if (surface->current != NULL)
-				zwl_buffer_size(surface->current, &surface->window_width, &surface->window_height);
+				zwl_surface_size(surface, &surface->window_width, &surface->window_height);
 
 			/* It covers the output from the origin. */
 			surface->x = 0;

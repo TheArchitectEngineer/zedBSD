@@ -758,9 +758,9 @@ draw_group(
 }
 
 /*
- * Draws one sub-surface's image: in the glass look as a scaled shape (its
- * viewport's source at its size, viewport.c), otherwise as a plain quad at
- * the image's own size.
+ * Draws one sub-surface's image, its viewport's source at its size
+ * (viewport.c): in the glass look as a shape scaled with its window,
+ * otherwise as a plain quad.
  */
 static void
 draw_image(
@@ -777,9 +777,9 @@ draw_image(
 	uint32_t width;
 	uint32_t height;
 
-	/* The plain look draws at the image's own size. */
+	/* The plain look draws it unscaled. */
 	if (!server->glass) {
-		zwl_compose_quad_image(server, command, image, (int32_t)x, (int32_t)y);
+		zwl_compose_surface_quad(server, command, surface, image, (int32_t)x, (int32_t)y);
 		return;
 	}
 
@@ -813,16 +813,9 @@ tree_at(
 	if (found != NULL)
 		return found;
 
-	/*
-	 * Then its own image: a sub-surface at its viewport's size (viewport.c),
-	 * a window or a popup at its buffer's (as they are drawn, p081).
-	 */
+	/* Then its own image, at its size (a viewport's, viewport.c, as it is drawn). */
 	if (surface->current != NULL) {
-		if (surface->sub_role != NULL) {
-			zwl_surface_size(surface, &width, &height);
-		} else {
-			zwl_buffer_size(surface->current, &width, &height);
-		}
+		zwl_surface_size(surface, &width, &height);
 
 		/* The point inside that size from its place. */
 		if (x >= surface->x &&
