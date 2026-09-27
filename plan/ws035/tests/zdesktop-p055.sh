@@ -1,6 +1,6 @@
 #!/bin/sh
 # ws035-p055: window mode draws only the damage (damage.c, compose.c) on the Venus guest (the lean image of
-# plan/ws071/tests/build-files-image.sh).  zdesktop --log-frames at 1280x800 with /bin/wlshm --band (a
+# plan/tools/files/build-files-image.sh).  zdesktop --log-frames at 1280x800 with /bin/wlshm --band (a
 # 400x300 blue window with a yellow band moving down it, a new image every frame).
 # In the glass look and then the plain look:
 #  1. The window's new images are drawn in its body alone (ZWL DAMAGE lines of the body's size).
@@ -10,7 +10,7 @@
 #     body there is one band 20 rows high and the window's blue elsewhere -- no band left behind by an
 #     image drawn in part -- and where the pointer was the blue has no cursor left behind.
 #
-#   plan/ws071/tests/files-guest.sh start     (the guest must be up)
+#   plan/tools/files/files-guest.sh start     (the guest must be up)
 #   plan/ws035/tests/zdesktop-p055.sh [OUTDIR]
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u

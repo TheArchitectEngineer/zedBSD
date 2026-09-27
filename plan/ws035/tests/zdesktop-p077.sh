@@ -11,7 +11,7 @@
 #  6. The pointer over a, over c, over the window: each hears enter with its own surface-local position.
 #  7. Key x: a's wl_subsurface is destroyed: a and c are gone (destroyed.png).
 #
-#   plan/ws070/tests/menu-guest.sh start   (the lean image with /bin/subsurface-probe)
+#   plan/tools/titlebar/menu-guest.sh start   (the lean image with /bin/subsurface-probe)
 #   plan/ws035/tests/zdesktop-p077.sh [OUTDIR]
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u

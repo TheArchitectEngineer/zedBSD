@@ -7,7 +7,7 @@
 #  3. The pointer enters the window: the cursor is the text I-beam; keys h and e: the pointing hand and the left-right
 #     arrow.  Each is told from zdesktop's arrow by pixels near the pointer (white where the arrow is black or clear).
 #
-#   plan/ws070/tests/menu-guest.sh start   (the lean image with /bin/extras-probe)
+#   plan/tools/titlebar/menu-guest.sh start   (the lean image with /bin/extras-probe)
 #   plan/ws035/tests/zdesktop-p080.sh [OUTDIR]
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u

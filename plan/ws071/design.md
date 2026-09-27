@@ -2,7 +2,7 @@
 
 # WS071 設計: zedBSD File Manager（`zdesktop-files`）
 
-Parent: [WS071](ws.md) / Phase: [ws071-p001](phase001/phase.md)
+Parent: [WS071](ws.md) / Phase: ws071-p001（[WS071](ws.md) の Phase 一覧）
 Status: 設計（2026-09-27、ws071-p001）。仕様案は [spec.md](spec.md)（ユーザー提供、§番号は spec.md の節）。仕様案と違える所・仕様案に
 無い所は各節に**決定**と理由を書いた。人間の判断が要る点は §15「判断が要る点（既定で進めた）」に置き、戻せる既定を選んで先へ進める。
 
@@ -40,7 +40,7 @@ zdesktop-files
 
 - **決定: 描画は CPU（canvas）、表示は Vulkan。** 各 frame は canvas（窓と同じ大きさの BGRA）を CPU で描き、Vulkan の linear image に
   写して（host-visible の map に直接描く）、fragment shader が nearest で 1 枚の四角として swapchain に貼る。理由:
-  1. **host で画面を試験できる**: UI の描画と入力の解釈が Wayland と Vulkan から切り離され、host の試験（`plan/ws071/tests/`）が同じ
+  1. **host で画面を試験できる**: UI の描画と入力の解釈が Wayland と Vulkan から切り離され、host の試験（`plan/tools/files/`）が同じ
      code で窓の絵を PNG に描いて比べ、目で見られる。guest を起動する前に大半の不具合を見つけられる。
   2. file manager の絵（角丸・影・gradient・文字・縮小画像）は GPU の頂点の組より CPU の図形の方が素直に書け、Venus と i915 の
      shader compiler の差（i915 の native compiler は `gl_VertexIndex` 等を取らない）に触れない。shader は texture を 1 枚貼るだけ。
@@ -403,21 +403,21 @@ void zdesktop_context_menu_destroy(struct zdesktop_context_menu *popup);
 
 ## 14. 試験
 
-- **host**（`plan/ws071/tests/`、guest を起動しない）:
+- **host**（`plan/tools/files/`、guest を起動しない）:
   - `host-build.sh`: model と UI の file を host の cc で `build/ws071-host/` に build（window.c・present.c・menu.c は除き、試験の
     `host-main.c` が event を与える）。libtruetype も host で build（その source は host の libc で compile できる）。
   - `host-model`: dir・nav・select・task（copy・move・trash・restore・delete・衝突・自分の中への copy の拒否・xattr の copy）・undo・
     tags・mime・apps（関連付けの読み込み）・search・recent（libzdesktop の recent.c を host で）を一時 directory で確かめる。
   - `host-render`: 決まった内容の一時の `$HOME` で、場面（dashboard、icon、list、選択、rename、検索、preview、Quick Look、Info、
     dialog、進み）を PNG に描き（`build/ws071-host/*.png`）、目で見る。数値の比較は画素の粗い検査（背景・選択の色の画素がある等）まで。
-- **guest（Venus、QEMU）**: lean な image（`plan/ws071/tests/config-amd64-files.mk`、`build-files-image.sh`、ws070 の構成に
+- **guest（Venus、QEMU）**: lean な image（`plan/tools/files/config-amd64-files.mk`、`build-files-image.sh`、ws070 の構成に
   zdesktop-files と試験の file を足す）。`files-guest.sh start` の後、Phase ごとの `files-p00N.sh` が zdesktop --glass と zdesktop-files
   を起動し、QMP の pointer・key で操作し、zdesktop-files の log（`ZFILES READY`、`ZFILES LOCATION`、`ZFILES TASK`、`ZFILES MENU` 等、
   guest の中の file を SSH で読む）で待ち合わせ、画面（QMP の screendump）を Read で自分で見て判定する。QEMU の console・serial の
   log では判定しない。
 - 起動の確認は `plan/tools/boot-test.sh`（最後の Phase）。i915 の実機は `flock /tmp/i915-hw.lock` の下でだけ（しなければ「未実施」）。
 - 規約: 新しい file は `python3 plan/tools/style-check.py` が 0。変える既存の file（zdesktop の menu.c・menu-shell.c・protocol.c・
-  home.c、libwayland の menu-protocol.c、libzdesktop）は悪化させない（`plan/ws070/tests/style-compare.sh` の方法）。
+  home.c、libwayland の menu-protocol.c、libzdesktop）は悪化させない（`plan/tools/titlebar/style-compare.sh` の方法）。
 
 ## 15. 判断が要る点（既定で進めた）
 
@@ -449,7 +449,7 @@ void zdesktop_context_menu_destroy(struct zdesktop_context_menu *popup);
 
 | Phase | 内容 | 主な file |
 | --- | --- | --- |
-| p002 | 骨格: window（pointer・keyboard）、present（Vulkan の canvas）、canvas、text、icons、toolbar・sidebar・content の静的な配置、host の render 試験、guest の image と起動 | `zdesktop-files/{main,window,present,canvas,text,icons,ui}.c`、`plan/ws071/tests/` |
+| p002 | 骨格: window（pointer・keyboard）、present（Vulkan の canvas）、canvas、text、icons、toolbar・sidebar・content の静的な配置、host の render 試験、guest の image と起動 | `zdesktop-files/{main,window,present,canvas,text,icons,ui}.c`、`plan/tools/files/` |
 | p003 | 一覧と移動: dir、nav（履歴・パンくず・Back/Forward/Home）、icon・list 表示、並べ替え、選択（click・Ctrl・Shift・矩形・keyboard）、scroll、開く（folder）、Ctrl+L | `dir.c`、`nav.c`、`select.c`、`ui-grid.c`、`ui-list.c` |
 | p004 | file 操作: task（copy・move・delete・duplicate・link）、clipboard、new folder、rename（inline）、ゴミ箱（trash・Trash の場所・Put Back・Empty）、完全削除の確認、undo・redo、進みの輪と popover、status の pill | `task.c`、`clip.c`、`trash.c`、`undo.c`、`ui-dialog.c` |
 | p005 | 検索（scope、語、協調の走査）、タグ（xattr、定義、索引、sidebar の絞り込み）、recent（libzdesktop の API）、Favorites の編集、Locations（mount） | `search.c`、`tags.c`、`places.c`、`libzdesktop/recent.c` |

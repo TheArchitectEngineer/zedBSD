@@ -1,16 +1,15 @@
 <!-- awesome-plan project=zedbsd record=ws070 -->
 
-# WS070: zdesktop の System Menu（`xdg_toplevel_menu_v1`、libzdesktop で包む）
+# WS070: zdesktop の System Menu と Titlebar Presentation（`xdg_toplevel_menu_v1`・`zed_titlebar_v1`、libzdesktop で包む）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete
+Status: completed
 Primary Milestone: MG006
 Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
-Queue: none（p001〜p004 は 2026-09-27 ユーザーの指示でサブエージェントが worktree の branch で実行。main への統合は main の session）
-Resume point: 補強 p013（TABS の見え方・中央の切り方・題名の配分・keyboard・wheel、menu の comment の照合）cleared 2026-09-27（残りは phase013 の「残り」）。WS の完了の書き直しは main の判断待ち。以前: p011（TABS）cleared 2026-09-27（端の場合の補強は phase011 の「残り」）。ws035-p082・p006・p012 も cleared。全 Phase cleared。WS の完了の書き直しと補強（p011・p006 の「残り」）の扱いは main の判断待ち。p007（設計）・p008（protocol と model）・p009（glyph cache と icon）・p010（CONTROLS の presentation）cleared 2026-09-27。順序は titlebar-design.md §14（WS071 と合わせた計画）。p006 は titlebar の Phase の後
-Executor: WS071 の作業用のサブエージェント（2026-09-27 ユーザー「WS071のサブエージェントでスケジューリングするのがいいと思います。」）
+Queue: なし（p001〜p004 は 2026-09-27 ユーザーの指示でサブエージェントが worktree の branch で実行、以後も同じ。main が merge）
+Resume point: —（完了 2026-09-27。残りは下の「制限・移管」）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -21,80 +20,64 @@ X11サーバの実装が終わったら、OpenGLよりも、これを先に実�
 
 Wayland のクライアントがメニューの意味（階層・ラベル・状態・action・shortcut・role・icon name）を zdesktop に渡し、zdesktop が
 システムの UI として描き操作する。通常の窓では浮いたタイトルバーに、最大化（docked）ではシステムバーに同じメニューを出す。
-仕様案の原文と添付画像の説明は [spec.md](spec.md)。
+仕様案は [spec.md](spec.md)、設計は [design.md](design.md)（§11 の 5 点は 2026-09-27 ユーザーが既定のまま確定: F10、shortcut は zdesktop が
+実行、外の click は閉じるだけ、icon なし、ASCII の label。§12 の context menu）。
 
-## 方式
+追加の目標（2026-09-27）: ユーザー「WS070に仕様追加します。WS071のサブエージェントでスケジューリングするのがいいと思います。」と
+「zedBSD Titlebar Presentation Specification」（原文 [titlebar-spec.md](titlebar-spec.md)、設計 [titlebar-design.md](titlebar-design.md)）。
+タイトルバーを system-owned な presentation surface とし、client は `MENU`・`CONTROLS`・`TABS` のどれかの model（意味）だけを渡す。
+ユーザーの決定（§13-1）:「CONTROLS / TABS モードのウィンドウのアプリメニューの置き場所は、Aの推奨でお願いします。」→ 右端の「…」。
 
-- protocol は仕様案の `xdg_menu_manager_v1`・`xdg_menu_v1`・`xdg_toplevel_menu_v1`（item は数値の ID、transaction の commit）。
-  zdesktop の非標準の拡張なので、client は libzdesktop の API を使い protocol を直接話さない（2026-09-27 ユーザー決定）。
-  後で GTK4・Qt6 の native menubar の backend がこの API（または protocol）を使う。
-- zdesktop が描く: 浮いたタイトルバーの題名の右、docked のときはシステムバーの題名の右に top-level の項目（text だけ）、選ぶと
-  zdesktop の popup（submenu、checkbox・radio、separator、shortcut の表示、keyboard の操作、外の click で閉じる）。
-- 最初の使い手は zdesktop-terminal（Shell・Edit・View・Session・Help、画像のとおり）。
+## 受け入れと結果（2026-09-27、completed）
 
-## 受け入れ（p001 で決めた）
+| 受け入れ | 結果 |
+| --- | --- |
+| 1. zdesktop-terminal のメニューが浮いたタイトルバーと docked のシステムバーに出て、pointer・keyboard（F10）・shortcut で action が動く | Venus（p003・p004、menu-p003）と i915 実機（p005、capture の zdesktop-menu 11/11。WS075-p002 でも 11/11） |
+| 2. 動的な更新（enabled・checked）が commit の単位で反映、focus の窓のメニューがシステムバーに | Venus（p003・p004） |
+| 3. protocol の誤りは design §2.2 の error、libzdesktop は送らずに errno | menu-probe（menu-p002）、titlebar-probe（titlebar-p008） |
+| 4. 規約の全文との照合 | p005（WS071 と共有しない file）、p006・p012・p013（共有する file、`menu-shell.c` の段落の comment、`libzdesktop/menu.c`・`menu-protocol.c`・`zdesktop.h` の手の照合） |
+| Titlebar: CONTROLS | 配置と縮退（パンくずの前の段、検索が button に、priority の順に「…」へ）、button・segment・検索とパンくずの欄（zdesktop が持つ text field）・輪、docked の Application Zone、dock の animation の補間（p010）。最初の使い手 zdesktop-files の toolbar を移した（WS071-p014・p017） |
+| Titlebar: TABS | strip、active・attention・×・＋、縮退（窓の題名が先に譲る → tab が縮む（題名は中央で切る）→ 矢印で scroll と wheel、「…」に隠れた tab）、mode の atomic な切替（p011）、白い bar でも見える地、Ctrl+Tab・Ctrl+Shift+Tab・Ctrl+PageUp/Down・Ctrl+W・Ctrl+T（p013） |
+| Titlebar: glyph | glass の UTF-8 と動的 glyph cache（fallback font、日本語の題名と label）、role の icon（p009） |
+| context menu | protocol version 2 の `get_context_menu`・`xdg_context_menu_v1`、libzdesktop の `zdesktop_menu_popup`（WS071-p009 で実装） |
 
-1. zdesktop-terminal のメニューが浮いたタイトルバーと docked のシステムバーに出て、pointer・keyboard（F10）・shortcut で選ぶと
-   terminal の action が動く（Venus: p003・p004 で済み。i915 実機: p005 で済み、capture display）。
-2. 動的な更新（enabled・checked）が commit の単位で反映される。focus の窓のメニューがシステムバーに出る（Venus で済み）。
-3. protocol の誤りは design.md §2.2 の error で返り、libzdesktop は送らずに errno で返す（Venus で済み、menu-probe）。
-4. 規約の全文との照合（p005: WS071 と共有しない file。共有する file は p006）。
-
-設計は [design.md](design.md)（§11 の 5 点は 2026-09-27 ユーザーが既定のまま確定: F10、shortcut は zdesktop が実行、外の click は閉じるだけ、icon なし、ASCII の label。§12 の context menu の余地）。
-
-## 追加の目標: Titlebar Presentation（2026-09-27）
-
-ユーザー:「WS070に仕様追加します。WS071のサブエージェントでスケジューリングするのがいいと思います。」と
-「zedBSD Titlebar Presentation Specification」のたたき台（原文は [titlebar-spec.md](titlebar-spec.md)）。
-
-タイトルバーを system-owned な presentation surface とし、client は意味（identity・menu・controls・tabs の model）だけを渡し、
-zdesktop が浮いたタイトルバー（通常）とシステムバーの Application Zone（最大化）に描く。主の内容は `MENU`・`CONTROLS`・`TABS` の
-どれか 1 つ（排他）。幅の不足の段階的な縮退、docking と restore の animation（200〜300 ms）、docked からの下への drag・swipe で restore、
-double click の対称、transaction の atomic な mode の切り替え、client は pixel・font・色を指定しない、pointer と touch の適応、
-未対応の compositor では client 側の装飾へ fallback。
-
-既存の System Menu（p001〜p005 の `xdg_toplevel_menu_v1`）はこの仕様の `MENU` mode の model になる。`CONTROLS` の最初の使い手は
-zdesktop-files（WS071、仕様の §14 の File Manager の例）、`TABS` の使い手は後で（zdesktop-files は CONTROLS なのでタブ（WS071 p013）は窓の中、titlebar-design.md §11）。
-同日のユーザーの補足:「つまり、今のファイラーのはウィンドウ内部の上部にナビゲーションバーを持っていますが、これをウィンドウのフローティングタイトルバーにマージします。」
-→ 具体的な受け入れの一つ: zdesktop-files の窓の中の上部のナビゲーションバー（戻る・進む・ホーム・path・検索・表示の切り替え等）を
-`CONTROLS` の model として浮いたタイトルバー（最大化ではシステムバーの Application Zone）へ移し、窓の中の bar は消す。
-さらにユーザー:「ファイラーはこのcompositorでしか使えなくてOKです。」→ zdesktop-files には fallback（§27）を持たせない（拡張が無ければ起動時にはっきり失敗してよい）。
-Phase の分け方・順序・受け入れは p007（設計）で決める。WS071 の Phase と組み合わせて WS071 のサブエージェントが計画する。
-設計は [titlebar-design.md](titlebar-design.md)。2026-09-27 ユーザー決定（§13-1）:「CONTROLS / TABS モードのウィンドウのアプリメニューの置き場所は、Aの推奨でお願いします。」→ CONTROLS・TABS の窓の menu は右端の overflow「…」の popup に（隠れた control の行も同じ popup）、shortcut はそのまま効く。
-
-## Future Work の候補（main の session が future-work.md へ）
-
-- menu の item の icon（`icon_name`・role の icon を描く）。2026-09-27 ユーザー「アイコンはあとで追加を考えましょう」。icon theme が要る。
-- 非 ASCII（日本語）の label: zdesktop の glyph atlas を動的な cache に（WS035 の libtruetype の拡張）。
+Titlebar の部分は Venus だけ。boot test は System Menu の p002〜p005 で PASS、titlebar の Phase では 2026-09-27 のユーザーの指示で行っていない。
 
 ## Phase 一覧
 
-| Phase | 内容 | Status | 依存 |
-| --- | --- | --- | --- |
-| [ws070-p001](phase001/phase.md) | 設計: protocol の定義（request・event・型・error）、libzdesktop の API、zdesktop の model・描画・入力・popup、試験。[design.md](design.md) | cleared | WS069-p008〜p010（2026-09-27 ユーザーがサブエージェントでの並行を指示） |
-| [ws070-p002](phase002/phase.md) | protocol（libwayland の client 側と zdesktop の server 側）と zdesktop の menu model（transaction・更新）、menu-probe | cleared | p001 |
-| [ws070-p003](phase003/phase.md) | zdesktop の描画と操作: 浮いたタイトルバーとシステムバーの項目、popup、keyboard、shortcut、activation | cleared | p002 |
-| [ws070-p004](phase004/phase.md) | libzdesktop の API と zdesktop-terminal のメニュー（Shell・Edit・View・Session・Help） | cleared | p002、p003 |
-| [ws070-p005](phase005/phase.md) | i915 実機、規約の全文との照合（WS071 と共有しない file）と回帰。libwayland の flush の EPIPE で protocol error を読み落とす不具合を直した | cleared | p001〜p004 |
-| [ws070-p007](phase007/phase.md) | Titlebar Presentation の設計（[titlebar-design.md](titlebar-design.md)）: protocol `zed_titlebar_v1`、libzdesktop、zdesktop の配置・縮退・描画・入力・animation、overflow、glyph cache、試験、Phase の分割 | cleared | p005、[titlebar-spec.md](titlebar-spec.md) |
-| [ws070-p008](phase008/phase.md) | titlebar の protocol と model: libwayland の `zed_titlebar_*`、zdesktop の titlebar.c（request・model・transaction・error・寿命・log）、libzdesktop の `zdesktop_titlebar_*`、titlebar-probe。描画は変えない | cleared | p007 |
-| [ws070-p009](phase009/phase.md) | glass の UTF-8 と動的 glyph cache（fallback font）、role の icon の rasterize。題名・menu の label の日本語（zdesktop の glass.c: WS035 と調整） | cleared | p007 |
-| [ws070-p010](phase010/phase.md) | CONTROLS の presentation: 配置と縮退、button・segment・検索とパンくずの欄・輪、pointer・keyboard、overflow の popup（隠れた control と窓の menu）、docked の Application Zone、animation の補間（shell.c・menu-shell.c・seat.c: WS035 と調整） | cleared | p008、p009 |
-| [ws070-p011](phase011/phase.md) | TABS の presentation: strip、active・attention・×・＋、縮退、mode の atomic な切替（titlebar-probe で） | cleared（2026-09-27、titlebar-p011・titlebar-p010・files-p017。端の場合は phase.md の「残り」） | p010 |
-| [ws070-p012](phase012/phase.md) | titlebar の規約の全文との照合、回帰（menu・files・zdesktop）、boot test（2026-09-27 のユーザーの指示で無し）、i915 実機（任意、未実施） | cleared（2026-09-27、build/closeout の回帰） | p006、p011、WS071-p014 |
-| [ws070-p013](phase013/phase.md) | （補強、p011・p012 の残り）TABS: 白い bar でも見える tab の地、題名の中央の切り方と窓の題名が先に譲る配分、dock の途中の確認、Ctrl+Tab・Ctrl+PageUp/Down・Ctrl+W・Ctrl+T、strip の wheel。`menu-shell.c` の段落の comment と `libzdesktop/menu.c`・`menu-protocol.c`・`zdesktop.h` の手の照合 | cleared（2026-09-27、titlebar-p013・p010・p011・menu-p002・p003、files の回帰） | p011、p012 |
-| [ws070-p006](phase006/phase.md) | 規約の全文との照合の残り: WS071 と共有する file（`zdesktop/menu.c`・`menu-shell.c`・`menu.h`、`libzdesktop/menu.c`、`zdesktop.h`、`libwayland/menu-protocol.c`）への p005 の指摘の直しと回帰（最後） | cleared（2026-09-27、menu-p002・menu-p003・files-p009。手の照合の残りは p012） | p005、WS071 の menu の変更の merge（衝突を避ける分割、2026-09-27） |
+| Phase | 内容 | Status |
+| --- | --- | --- |
+| ws070-p001 | 設計: protocol、libzdesktop の API、zdesktop の model・描画・入力・popup、試験 | cleared |
+| ws070-p002 | protocol（libwayland と zdesktop）と menu model（transaction・更新）、menu-probe | cleared |
+| ws070-p003 | 描画と操作: 浮いたタイトルバーとシステムバーの項目、popup、keyboard、shortcut | cleared |
+| ws070-p004 | libzdesktop の API と zdesktop-terminal のメニュー | cleared |
+| ws070-p005 | i915 実機、規約の照合（WS071 と共有しない file）、回帰。libwayland の flush の EPIPE の不具合を直した | cleared |
+| ws070-p007 | Titlebar Presentation の設計 | cleared |
+| ws070-p008 | titlebar の protocol と model、libzdesktop の `zdesktop_titlebar_*`、titlebar-probe | cleared |
+| ws070-p009 | glass の UTF-8 と動的 glyph cache、role の icon | cleared |
+| ws070-p010 | CONTROLS の presentation | cleared |
+| ws070-p011 | TABS の presentation | cleared |
+| ws070-p006 | 規約の照合の残り（WS071 と共有する file） | cleared |
+| ws070-p012 | titlebar の規約の照合、回帰（締め） | cleared |
+| ws070-p013 | （補強）TABS の見え方・切り方・配分・keyboard・wheel、menu の comment の手の照合 | cleared |
 
-## 試験の道具（plan/ws070/tests/）
+Phase の記録は git の履歴にある（WS の完了で削除した）。
 
-| 道具 | 用途 |
-| --- | --- |
-| config-amd64-menu.mk、build-menu-image.sh | lean な guest image（guest harness から clang・lldb・libcxx を外した。BUILD は build/amd64） |
-| menu-guest.sh | Venus guest（runtime は build/ws070-run） |
-| menu-p002.sh | protocol の error と libzdesktop の検査（/bin/menu-probe） |
-| menu-p003.sh | terminal の menu の全体（浮いた・docked・popup・submenu・keyboard・shortcut・動的更新・新しい窓・終了） |
-| menu-occlude.sh | 隠れた題名の bar の項目は押せない |
-| menu-regress.sh、zdesktop-p068-menu.sh | WS035 の zdesktop の回帰（p068 は題名の double click の位置を直した版） |
-| style-compare.sh | 既存の file の style-check の件数を変更前と比べる |
-| titlebar-p013.sh | TABS の補強（tab の key、dock の途中の画面、長い題名の配分、strip の wheel）。GUEST_RUNTIME の既定は build/ws071-run |
-| menu-hw.sh | i915 実機（5330）の System Menu（capture の scenario `zdesktop-menu`）。lock の中で走らせ、/tmp の結果を OUTDIR に写す |
+## 制限・移管
+
+- **Titlebar（CONTROLS・TABS）の i915 実機**: [WS075](../ws075/ws.md) の p002 で保留の zdesktop-files の capture の scenario（CONTROLS）と一緒に。
+- Future Work（[future-work.md](../future-work.md)）: F-042（menu の item の icon、icon theme）、F-043（TABS の残り: drag での並べ替え、
+  矢印の長押し、touch の大きさ、scroll する strip の 1 tab の幅）、F-045（GTK4・Qt6 の native menubar の backend）。
+- 仕様の fallback（titlebar-spec §27、未対応の compositor での client 側の装飾）は zdesktop-files では持たない（ユーザーの決定）。
+  他の client の fallback は、その client を作るときに決める。
+
+## 試験の道具（plan/tools/titlebar へ移した）
+
+- `build-menu-image.sh`・`config-amd64-menu.mk`（lean な guest image、probe を含む。WS035・WS071・WS074 の image の元）、`menu-guest.sh`
+  （Venus の guest、runtime `build/ws070-run`）。
+- `menu-p002.sh`（protocol の error と libzdesktop、menu-probe）、`menu-p003.sh`（terminal の menu の全体）、`menu-occlude.sh`（隠れた題名の
+  項目は押せない）、`menu-regress.sh OUTDIR TEST...`（WS035 の zdesktop の試験、`zdesktop-p068-menu.sh` は題名の double click の位置を
+  直した版）、`menu-hw.sh`（i915 実機の System Menu、`flock /tmp/i915-hw.lock` の下で）。
+- `titlebar-p008.sh`（protocol と model）・`p009`（UTF-8 と glyph）・`p010`（CONTROLS）・`p011`（TABS）・`p013`（tab の key・dock の途中・
+  題名の配分・wheel）。`icons-host.c`（titlebar の icon を 4 つの大きさで描き、枠の中に収まるかを host で確かめる）、`style-compare.sh REV FILE...`（style-check の件数を前と比べる）。
+- menu-* を files の guest で走らせるときは `GUEST_RUNTIME=build/ws071-run`。

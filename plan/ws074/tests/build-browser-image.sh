@@ -1,6 +1,6 @@
 #!/bin/sh
 # ws074: builds the zdesktop guest image with zdesktop-browser (plan/ws074/tests/config-amd64-browser.mk),
-# the guest harness's files, the fonts and the wallpaper, like plan/ws071/tests/build-files-image.sh.
+# the guest harness's files, the fonts and the wallpaper, like plan/tools/files/build-files-image.sh.
 # The fonts and the wallpaper are not in git: build/ws035-fonts (Inter, JetBrains Mono, Droid Sans
 # Fallback) and build/ws035-wallpaper; a worktree links them from the main checkout's build/.
 # The browser's test pages (plan/ws074/tests/pages/) go to /usr/share/zdesktop-browser-tests/.

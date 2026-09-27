@@ -38,7 +38,7 @@ Queue: なし（2026-09-27 ユーザーの指示でサブエージェントが w
 
 ## 検証（amd64 だけ、2026-09-27）
 
-- build: lean image（`plan/ws071/tests/build-files-image.sh build/amd64`）、warning 0。style: `backdrop.c` 0、変えた file は悪化なし。
+- build: lean image（`plan/tools/files/build-files-image.sh build/amd64`）、warning 0。style: `backdrop.c` 0、変えた file は悪化なし。
 - guest（QEMU、Venus）: `zdesktop-p057.sh` PASS（`ZWL BACKDROP ready width=160 height=100`、extras-probe の赤い sub-surface の上の zdesktop-files の
   content の card の画素が (233,165,161)、probe を閉じた後は (211,227,223): 差 62、赤へ寄る）。画面 `build/ws035-p057/{over,gone}.png`。
   最初の版（1/4、1 回のぼかし）はぼけが弱く下の窓の縁がくっきり見えた → 1/8・2 回に。

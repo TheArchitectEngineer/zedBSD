@@ -8,7 +8,7 @@
 #  2. plain.png (zdesktop without --glass): the same pixels in the plain look (compose.c's quad with
 #     the source's uv), the sub-surface at 200x100 there too.
 #
-#   plan/ws071/tests/files-guest.sh start     (the lean image with /bin/extras-probe; GUEST_RUNTIME as for it)
+#   plan/tools/files/files-guest.sh start     (the lean image with /bin/extras-probe; GUEST_RUNTIME as for it)
 #   plan/ws035/tests/zdesktop-p081.sh [OUTDIR]
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u

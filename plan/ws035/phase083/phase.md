@@ -38,7 +38,7 @@ ws071-p015（ファイラーの付箋のようなすりガラスの pane）に�
 
 ## 検証（amd64 だけ、2026-09-27）
 
-- guest（QEMU、Venus、lean image、warning 0）: `plan/ws071/tests/files-p015.sh` PASS（[ws071-p015](../../ws071/phase015/phase.md)）。
+- guest（QEMU、Venus、lean image、warning 0）: `plan/tools/files/files-p015.sh` PASS（[ws071-p015](../../ws071/ws.md)）。
 - 回帰: menu-regress（p059 p062 p063 p064 p065 p068 p069 p070 p071 p072 p014 p076 p077 p078 p079 p080）PASS、files-regress PASS（p007 の
   1 回の時間の揺れは ws071-p015 に記録）、boot test PASS。
 - host の試験は無い（zdesktop は host で動かない）。wsi-wayland の新しい道は files-p015 が通す（GLASS on は PRE_MULTIPLIED が選ばれたとき）。

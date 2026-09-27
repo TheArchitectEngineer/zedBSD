@@ -254,7 +254,7 @@ bar の配置から docked の配置へ動かす: control ごとに両方の配�
 - 回帰: WS070 の `menu-regress.sh`（terminal の MENU は変わらない）、WS071 の `files-regress.sh`（座標を log から引く形に直した後）、
   boot test。i915 実機は最後の Phase（任意）。
 - 規約: 新しい file は `style-check.py` 0、既存の file（shell.c・menu-shell.c・glass.c・protocol.c・zwl.h、libwayland、libzdesktop）は
-  悪化させない（`plan/ws070/tests/style-compare.sh`）。
+  悪化させない（`plan/tools/titlebar/style-compare.sh`）。
 
 ## 13. 判断が要る点（既定で進める）
 
@@ -276,7 +276,7 @@ bar の配置から docked の配置へ動かす: control ごとに両方の配�
 | ws070-p008 | protocol と model: libwayland の `zed_titlebar_*`（表・wrapper・listener・非公開 header）、zdesktop の titlebar.c（request、model、transaction、error、寿命、log）、libzdesktop の `zdesktop_titlebar_*`（鏡と検査）、titlebar-probe（error と検査の試験）。描画は変えない | libwayland/titlebar-protocol.c、zdesktop/titlebar.c・protocol.c・zwl.h・objects.c、libzdesktop/titlebar.c、include/libc/zdesktop.h |
 | ws070-p009 | glass の UTF-8 と動的 glyph cache（fallback font）と role の icon の rasterize（atlas に足す）。窓の題名・menu の label が日本語でも描ける | zdesktop/glass.c・compose.c・glass.h（**WS035 と調整**） |
 | ws070-p010 | CONTROLS の presentation: 配置と縮退、描画（button・segment・欄・パンくず・輪）、pointer（click・hover）、SEARCH・BREADCRUMB の欄と keyboard、overflow の popup（隠れた control と menu）、docked の Application Zone、animation の補間、log。titlebar-probe の CONTROLS の場面 | zdesktop/titlebar-shell.c（新規）・shell.c・menu-shell.c・seat.c（**WS035 と調整**） |
-| ws071-p014 | zdesktop-files: 窓の中の toolbar → CONTROLS の titlebar（toolbar の描画・入力を消す、control の model と event、Ctrl+F・Ctrl+L の focus、起動の失敗、host の試験の model の text、guest の試験の座標を log から） | zdesktop-files（ui.c・ui-input.c・ui-search.c・main.c・新規 titlebar.c）、plan/ws071/tests |
+| ws071-p014 | zdesktop-files: 窓の中の toolbar → CONTROLS の titlebar（toolbar の描画・入力を消す、control の model と event、Ctrl+F・Ctrl+L の focus、起動の失敗、host の試験の model の text、guest の試験の座標を log から） | zdesktop-files（ui.c・ui-input.c・ui-search.c・main.c・新規 titlebar.c）、plan/tools/files |
 | ws070-p011 | TABS の presentation: strip、active・attention・×・＋、縮退（縮める、切る、scroll、overflow）、mode の atomic な切替の試験（titlebar-probe） | zdesktop/titlebar-shell.c |
 | ws070-p006 | 既存: WS071 と共有する menu の file への規約の直し（p008〜p011 の変更の後に一緒に） | zdesktop/menu*.c 等 |
 | ws070-p012 | 規約の全文との照合（titlebar の file 全部）、回帰（menu・files・zdesktop）、boot test、i915 実機（任意） | — |
