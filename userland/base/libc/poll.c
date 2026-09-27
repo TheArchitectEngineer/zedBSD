@@ -21,6 +21,9 @@
 
 extern void __pthread_cancel_point(void) __attribute__((weak));
 
+/* The whole mask a thread is to have, keeping the library's reserved signals (signal.c). */
+int __libc_signal_mask_keep_reserved(const sigset_t *set, sigset_t *result);
+
 static void cancel_point(void);
 static intptr_t call(uint32_t number, uintptr_t a0, uintptr_t a1, uintptr_t a2, uintptr_t a3, uintptr_t a4, uintptr_t a5);
 
@@ -34,8 +37,19 @@ ppoll(
 	const struct timespec *timeout,
 	const sigset_t *mask)
 {
+	sigset_t copy;
 	int result;
+	int kept;
 
+	/* The mask to wait with keeps the thread's reserved signals. */
+	if (mask != NULL) {
+		kept = __libc_signal_mask_keep_reserved(mask, &copy);
+		if (kept != 0)
+			return -1;
+		mask = &copy;
+	}
+
+	/* Waits for the descriptors, as a cancellation point. */
 	cancel_point();
 	result = (int)call(KERN_SYS_ppoll, (uintptr_t)fds, count,
 			   (uintptr_t)timeout, (uintptr_t)mask, 0, 0);
@@ -95,8 +109,19 @@ pselect(
 	const struct timespec *timeout,
 	const sigset_t *mask)
 {
+	sigset_t copy;
 	int result;
+	int kept;
 
+	/* The mask to wait with keeps the thread's reserved signals. */
+	if (mask != NULL) {
+		kept = __libc_signal_mask_keep_reserved(mask, &copy);
+		if (kept != 0)
+			return -1;
+		mask = &copy;
+	}
+
+	/* Waits for the descriptors, as a cancellation point. */
 	cancel_point();
 	result =
 	    (int)call(KERN_SYS_pselect, (uintptr_t)nfds, (uintptr_t)readfds,
