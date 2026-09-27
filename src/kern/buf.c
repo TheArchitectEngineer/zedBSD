@@ -276,6 +276,7 @@ static void flusher(void *argument);
 static struct buf *oldest_aged(uint64_t cutoff);
 static int flush_aged(uint64_t cutoff);
 static int writes_delayed(const struct disk *disk, const struct io_context *context);
+static int writeback_line(struct buf *buffer, const struct io_context *context, int delayed);
 static int write_lines(struct disk *disk, uint64_t block, uint32_t count, const void *data, int pin);
 static void flusher_hooks_init(void);
 static int reserve_bytes(size_t size, int metadata);
@@ -477,8 +478,8 @@ buf_writeback(
 {
 	int error;
 
-	/* Reports the failure. */
-	error = buf_writeback_context(buffer, NULL);
+	/* Writes the line back on behalf of whoever dirtied it earlier. */
+	error = writeback_line(buffer, NULL, 1);
 	if (error != 0)
 		return error;
 
@@ -492,90 +493,10 @@ buf_writeback_context(
 	struct buf *buffer,
 	const struct io_context *context)
 {
-	uint64_t generation;
-	struct io_context drain;
-	struct backing_mutation_guard guard;
 	int error;
-	unsigned long irq;
 
-	/* Rejects a missing buffer. */
-	if (buffer == NULL)
-		return EINVAL;
-
-	/* Rejects unsupported provenance before changing buffer completion state. */
-	error = io_context_child(&drain, context, IO_CONTEXT_DRAIN);
-	if (error != 0)
-		return error;
-
-	/* A clean buffer needs nothing; an invalid dirty one cannot be written. */
-	irq = spin_lock_irqsave(&buffer->b_lock);
-
-	if (!(buffer->b_flags & BUF_DIRTY)) {
-		spin_unlock_irqrestore(&buffer->b_lock, irq);
-		return 0;
-	}
-
-	/* A journal's pinned buffer waits for its commit. */
-	if (buffer->b_journal_pin) {
-		spin_unlock_irqrestore(&buffer->b_lock, irq);
-		return 0;
-	}
-
-	/* An invalid buffer holds nothing that could be written. */
-	if (!(buffer->b_flags & BUF_VALID)) {
-		spin_unlock_irqrestore(&buffer->b_lock, irq);
-		return EIO;
-	}
-
-	/* Writes the data unlocked, remembering which generation it was. */
-	generation = buffer->b_dirty_generation;
-	buffer->b_io_state = BUF_IO_WRITING;
-	buffer->b_io_inflight = 1;
-
-	spin_unlock_irqrestore(&buffer->b_lock, irq);
-
-	/*
-	 * Writes the line as the filesystem's write.  The data was admitted
-	 * when it dirtied the buffer; a delayed write-back runs on the flusher
-	 * or a sync, which holds no filesystem guard of its own, and a raw
-	 * write would be refused on a volume where a file is leased.
-	 */
-	stat_add(&stat_write_bios, 1);
-	error = backing_mutation_begin_disk_filesystem(buffer->b_disk,
-						       buffer->b_block,
-						       buffer->b_block_count,
-						       &guard);
-	if (error == 0) {
-		error = disk_write_direct_context(buffer->b_disk,
-						  buffer->b_block,
-						  buffer->b_block_count,
-						  buffer->b_data,
-						  &drain);
-		backing_mutation_end(&guard);
-	}
-
-	/* Records the outcome; only an unmodified buffer becomes clean. */
-	irq = spin_lock_irqsave(&buffer->b_lock);
-
-	/* Clears the dirty record on a write nothing raced, and keeps it on a failure. */
-	buffer->b_io_state = BUF_IO_IDLE;
-	buffer->b_io_inflight = 0;
-	buffer->b_error = error;
-	if (error == 0 && generation == buffer->b_dirty_generation) {
-		buffer->b_flags &= ~(BUF_DIRTY | BUF_ERROR);
-		dirty_clear(buffer);
-		stat_add(&cache_dirty_bytes,
-		    (uint64_t)-(int64_t)buffer->b_size);
-	} else if (error != 0) {
-		buffer->b_flags |= BUF_ERROR | BUF_DIRTY | BUF_VALID;
-		stat_add(&stat_writeback_errors, 1);
-	}
-
-	waitq_wake_all(&buffer->b_waitq);
-
-	spin_unlock_irqrestore(&buffer->b_lock, irq);
-
-	/* Reports why the write failed. */
+	/* Writes the line inside the caller's own write. */
+	error = writeback_line(buffer, context, 0);
 	if (error != 0)
 		return error;
 
@@ -2875,4 +2796,118 @@ flusher_hooks_init(
 	first = atomic_try_acquire_zero(&flusher_hooks_ready);
 	if (first)
 		(void)mutex_init(&flusher_hooks_lock, LOCK_RANK_WRITEBACK_CONTROL, "buffer flusher hooks");
+}
+
+/*
+ * Writes one dirty line to its disk.
+ *
+ * A delayed write-back (the flusher, a sync) runs apart from the write that
+ * dirtied the line and holds no filesystem guard of its own; it writes as
+ * the filesystem, since the data was admitted when it was written.  An
+ * immediate write-back runs inside its writer's guard and inherits it.
+ */
+static int
+writeback_line(
+	struct buf *buffer,
+	const struct io_context *context,
+	int delayed)
+{
+	uint64_t generation;
+	struct io_context drain;
+	struct backing_mutation_guard guard;
+	int error;
+	unsigned long irq;
+
+	/* Rejects a missing buffer. */
+	if (buffer == NULL)
+		return EINVAL;
+
+	/* Rejects unsupported provenance before changing buffer completion state. */
+	error = io_context_child(&drain, context, IO_CONTEXT_DRAIN);
+	if (error != 0)
+		return error;
+
+	/* A clean buffer needs nothing; an invalid dirty one cannot be written. */
+	irq = spin_lock_irqsave(&buffer->b_lock);
+
+	/* A clean buffer has nothing to write. */
+	if (!(buffer->b_flags & BUF_DIRTY)) {
+		spin_unlock_irqrestore(&buffer->b_lock, irq);
+		return 0;
+	}
+
+	/* A journal's pinned buffer waits for its commit. */
+	if (buffer->b_journal_pin) {
+		spin_unlock_irqrestore(&buffer->b_lock, irq);
+		return 0;
+	}
+
+	/* An invalid buffer holds nothing that could be written. */
+	if (!(buffer->b_flags & BUF_VALID)) {
+		spin_unlock_irqrestore(&buffer->b_lock, irq);
+		return EIO;
+	}
+
+	/* Writes the data unlocked, remembering which generation it was. */
+	generation = buffer->b_dirty_generation;
+	buffer->b_io_state = BUF_IO_WRITING;
+	buffer->b_io_inflight = 1;
+
+	spin_unlock_irqrestore(&buffer->b_lock, irq);
+
+	/*
+	 * Writes the line; a delayed write-back writes it as the filesystem,
+	 * because a raw write would be refused on a volume where a file is
+	 * leased.
+	 */
+	stat_add(&stat_write_bios, 1);
+	kern_memset(&guard, 0, sizeof(guard));
+	error = 0;
+	if (delayed) {
+		error = backing_mutation_begin_disk_filesystem(buffer->b_disk,
+							       buffer->b_block,
+							       buffer->b_block_count,
+							       &guard);
+	}
+
+	/* Sends the line to the device once the write is admitted. */
+	if (error == 0) {
+		error = disk_write_direct_context(buffer->b_disk,
+						  buffer->b_block,
+						  buffer->b_block_count,
+						  buffer->b_data,
+						  &drain);
+	}
+
+	/* Ends the filesystem's write a delayed write-back took. */
+	if (delayed)
+		backing_mutation_end(&guard);
+
+	/* Records the outcome; only an unmodified buffer becomes clean. */
+	irq = spin_lock_irqsave(&buffer->b_lock);
+
+	/* Clears the dirty record on a write nothing raced, and keeps it on a failure. */
+	buffer->b_io_state = BUF_IO_IDLE;
+	buffer->b_io_inflight = 0;
+	buffer->b_error = error;
+	if (error == 0 && generation == buffer->b_dirty_generation) {
+		buffer->b_flags &= ~(BUF_DIRTY | BUF_ERROR);
+		dirty_clear(buffer);
+		stat_add(&cache_dirty_bytes,
+		    (uint64_t)-(int64_t)buffer->b_size);
+	} else if (error != 0) {
+		buffer->b_flags |= BUF_ERROR | BUF_DIRTY | BUF_VALID;
+		stat_add(&stat_writeback_errors, 1);
+	}
+
+	waitq_wake_all(&buffer->b_waitq);
+
+	spin_unlock_irqrestore(&buffer->b_lock, irq);
+
+	/* Reports why the write failed. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
 }
