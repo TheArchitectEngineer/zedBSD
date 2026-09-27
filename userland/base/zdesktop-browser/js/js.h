@@ -20,6 +20,7 @@
 #define ZDESKTOP_BROWSER_JS_H
 
 #include "base/base.h"
+#include "vm/vm.h"
 
 /* How a source is parsed. */
 #define JS_PARSE_STRICT		0x1U
@@ -143,12 +144,16 @@ enum js_property_kind {
 	JS_PROPERTY_CONSTRUCTOR
 };
 
+struct js_scope;
+
 /*
  * One node of the syntax tree, in the parse's arena.
  *
  * What the fields hold depends on the kind (enum js_node_kind); next links
  * the members of a list.  offset and line say where the node starts.  word
  * is the parser's number for the word text spells (0 for most texts).
+ * scope is the compiler's note: the scope a function, the program or a
+ * catch clause opens (NULL until the compiler's scope pass).
  */
 struct js_node {
 	int kind;
@@ -168,6 +173,7 @@ struct js_node {
 	const uint16_t *raw;
 	size_t raw_length;
 	double number;
+	struct js_scope *scope;
 };
 
 /*
@@ -181,17 +187,27 @@ struct js_program {
 
 /*
  * Why a source is not a script: the place (1-based line and column) and a
- * message.
+ * message.  unsupported says the source is a script but uses what the
+ * compiler does not support yet.
  */
 struct js_syntax_error {
 	uint32_t line;
 	uint32_t column;
+	int unsupported;
 	char message[160];
 };
 
 /* Parsing (parser.c). */
 int js_parse(const uint16_t *source, size_t length, unsigned how, struct js_program *program, struct js_syntax_error *error);
 void js_program_release(struct js_program *program);
+
+/* Compiling and running (compile.c). */
+int js_compile(struct vm_realm *realm, struct js_program *program, struct vm_function **function, struct js_syntax_error *error);
+int js_run_script(struct vm_realm *realm, const uint16_t *source, size_t length, unsigned how, vm_value *result, struct js_syntax_error *error);
+
+/* The script shell's own functions (script.c). */
+int js_define_print(struct vm_realm *realm);
+int js_exception_text(struct vm_realm *realm, vm_value exception, struct wb_buffer *out);
 
 /* The tree as text (dump.c). */
 int js_dump(const struct js_node *node, struct wb_buffer *out);

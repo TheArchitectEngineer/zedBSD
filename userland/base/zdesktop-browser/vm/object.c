@@ -87,6 +87,59 @@ vm_heap_mark_value(
 }
 
 /*
+ * Tells whether a value is an object (a plain object, an array or a
+ * function), as opposed to a primitive.
+ */
+int
+vm_value_is_object(
+	vm_value value)
+{
+	struct vm_cell *cell;
+	int is_cell;
+
+	/* Numbers and constants are primitives. */
+	is_cell = vm_value_is_cell(value);
+	if (!is_cell)
+		return 0;
+
+	/* The cell types that are objects. */
+	cell = vm_value_as_cell(value);
+	if (cell->type == &vm_object_type)
+		return 1;
+	if (cell->type == &vm_array_type)
+		return 1;
+	if (cell->type == &vm_function_type)
+		return 1;
+
+	/* Strings and symbols are primitives. */
+	return 0;
+}
+
+/*
+ * Tells whether a value is a string.
+ */
+int
+vm_value_is_string(
+	vm_value value)
+{
+	struct vm_cell *cell;
+	int is_cell;
+
+	/* Only cells are strings. */
+	is_cell = vm_value_is_cell(value);
+	if (!is_cell)
+		return 0;
+
+	/* A string cell. */
+	cell = vm_value_as_cell(value);
+	if (cell->type == &vm_string_type)
+		return 1;
+
+	/* Another cell. */
+	return 0;
+}
+
+/*
  * Tells whether a key is an array index (an int32 key that is not
  * negative) and reports the index.
  */

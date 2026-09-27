@@ -31,12 +31,18 @@ ZDESKTOP_BROWSER_SOURCES := $(ZDESKTOP_BROWSER_DIR)/main.c \
 	$(ZDESKTOP_BROWSER_DIR)/vm/realm.c \
 	$(ZDESKTOP_BROWSER_DIR)/vm/code.c \
 	$(ZDESKTOP_BROWSER_DIR)/vm/operation.c \
+	$(ZDESKTOP_BROWSER_DIR)/vm/access.c \
 	$(ZDESKTOP_BROWSER_DIR)/vm/interpreter.c \
 	$(ZDESKTOP_BROWSER_DIR)/js/lexer.c \
 	$(ZDESKTOP_BROWSER_DIR)/js/parser.c \
 	$(ZDESKTOP_BROWSER_DIR)/js/parse_expr.c \
 	$(ZDESKTOP_BROWSER_DIR)/js/parse_stmt.c \
 	$(ZDESKTOP_BROWSER_DIR)/js/dump.c \
+	$(ZDESKTOP_BROWSER_DIR)/js/scope.c \
+	$(ZDESKTOP_BROWSER_DIR)/js/emit.c \
+	$(ZDESKTOP_BROWSER_DIR)/js/compile.c \
+	$(ZDESKTOP_BROWSER_DIR)/js/compile_expr.c \
+	$(ZDESKTOP_BROWSER_DIR)/js/script.c \
 	$(ZDESKTOP_BROWSER_DIR)/html/input.c \
 	$(ZDESKTOP_BROWSER_DIR)/html/tokenizer.c \
 	$(ZDESKTOP_BROWSER_DIR)/html/parser.c \

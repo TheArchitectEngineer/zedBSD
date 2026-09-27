@@ -12,18 +12,20 @@
  * A frame is FRAME_HEADER slots followed by the function's registers.  The
  * header says where the caller's frame is (0 for the frame a run was
  * entered with), where the caller goes on, which function runs, which of
- * the caller's registers takes the result, the this value and the number
- * of arguments.  A call from bytecode to bytecode pushes a frame and a
- * return pops it, both inside one loop, so script recursion does not
- * recurse in C; a native function runs as a C call, and when it calls a
- * script function the interpreter is entered again (vm_interpret), with
- * its own entry frame, up to INTERPRETER_DEPTH_MAX times.
+ * the caller's registers takes the result (and whether the frame is a
+ * construction, whose result is its this value unless it returns an
+ * object), the this value and the number of arguments.  A call from
+ * bytecode to bytecode pushes a frame and a return pops it, both inside
+ * one loop, so script recursion does not recurse in C; a native function
+ * runs as a C call, and when it calls a script function the interpreter is
+ * entered again (vm_interpret), with its own entry frame, up to
+ * INTERPRETER_DEPTH_MAX times.
  *
  * A thrown exception (VM_THROWN) unwinds through the frames of the run:
  * the first handler whose range holds the throwing instruction (for a
  * caller, its call instruction) takes it; a run whose entry frame has no
  * handler returns VM_THROWN to its C caller.  Any other failure (out of
- * memory) ends the run at once.
+ * memory, a fault in the code's use of environments) ends the run at once.
  */
 
 #include "vm/bytecode.h"
@@ -41,10 +43,13 @@
 #define FRAME_ARGC		5U
 #define FRAME_HEADER		6U
 
+/* The bit of the result slot that marks a construction's frame. */
+#define FRAME_CONSTRUCT		(1ULL << 32)
+
 /* How many times the interpreter may be entered from C at once. */
 #define INTERPRETER_DEPTH_MAX	256U
 
-/* The words of a call instruction (the opcode and five operands). */
+/* The words of a call or construct instruction (the opcode and five operands). */
 #define INTERPRETER_CALL_WORDS	6U
 
 /* What a step reports when the run's entry frame returned. */
@@ -64,15 +69,24 @@ struct interpreter {
 	vm_value result;
 };
 
-static int interpreter_push(struct vm_realm *realm, struct vm_function *function, vm_value this_value, const vm_value *args, unsigned count, uint32_t caller, uint32_t return_pc, uint32_t result_register, uint32_t *base);
+static int interpreter_push(struct vm_realm *realm, struct vm_function *function, vm_value this_value, const vm_value *args, unsigned count, uint32_t caller, uint32_t return_pc, uint64_t result_slot, uint32_t *base);
+static int interpreter_arguments(struct vm_realm *realm, struct vm_function *function, const vm_value *args, unsigned count, vm_value *arguments);
 static int interpreter_run(struct interpreter *run);
 static int interpreter_step(struct interpreter *run);
 static int interpreter_step_js(struct interpreter *run, const uint32_t *words, vm_value *registers);
+static int interpreter_operator(struct vm_realm *realm, const uint32_t *words, const vm_value *registers, vm_value *value);
+static int interpreter_unary(struct vm_realm *realm, uint32_t opcode, vm_value operand, vm_value *value);
+static int interpreter_property(struct interpreter *run, const uint32_t *words, vm_value *registers);
+static int interpreter_scope(struct interpreter *run, const uint32_t *words, vm_value *registers);
+static int interpreter_env(vm_value value, uint32_t hops, uint32_t slot, vm_value **place);
 static int interpreter_step_wasm(struct interpreter *run, const uint32_t *words, vm_value *registers);
 static int interpreter_call(struct interpreter *run, const uint32_t *words, vm_value *registers, uint32_t next);
+static int interpreter_construct(struct interpreter *run, const uint32_t *words, vm_value *registers, uint32_t next);
+static int interpreter_for_in_next(struct interpreter *run, const uint32_t *words, vm_value *registers, uint32_t next);
 static int interpreter_return(struct interpreter *run, vm_value value);
 static int interpreter_unwind(struct interpreter *run);
 static struct vm_function *interpreter_function(const struct vm_realm *realm, uint32_t base);
+static int interpreter_is_strict(const struct interpreter *run);
 static double interpreter_f64(vm_value bits);
 static vm_value interpreter_bits(double number);
 
@@ -124,9 +138,10 @@ vm_interpret(
 
 /*
  * Pushes a frame for a bytecode function: the header, the arguments in
- * the first registers (undefined for the missing ones) and every other
- * register undefined.  caller is the caller frame's base plus one (0 for
- * an entry frame).
+ * the first registers (undefined for the missing ones), every other
+ * register undefined, and the arguments object when the code asks for
+ * one.  caller is the caller frame's base plus one (0 for an entry frame);
+ * result_slot is the caller's register, with FRAME_CONSTRUCT for new.
  */
 static int
 interpreter_push(
@@ -137,11 +152,12 @@ interpreter_push(
 	unsigned count,
 	uint32_t caller,
 	uint32_t return_pc,
-	uint32_t result_register,
+	uint64_t result_slot,
 	uint32_t *base)
 {
 	struct vm_code *code;
 	vm_value *frame;
+	vm_value arguments;
 	uint32_t size;
 	uint32_t index;
 	int status;
@@ -163,7 +179,7 @@ interpreter_push(
 	frame[FRAME_CALLER] = caller;
 	frame[FRAME_RETURN] = return_pc;
 	frame[FRAME_FUNCTION] = vm_value_cell(function);
-	frame[FRAME_RESULT] = result_register;
+	frame[FRAME_RESULT] = result_slot;
 	frame[FRAME_THIS] = this_value;
 	frame[FRAME_ARGC] = count;
 
@@ -174,7 +190,75 @@ interpreter_push(
 			frame[FRAME_HEADER + index] = args[index];
 	}
 
+	/* The arguments object, made once the frame is whole (making it may collect). */
+	if ((code->flags & VM_CODE_ARGUMENTS) != 0U) {
+		status = interpreter_arguments(realm, function, args, count, &arguments);
+		if (status != 0) {
+			realm->stack_top = *base;
+			return status;
+		}
+
+		/* The object in its register. */
+		realm->stack[*base + FRAME_HEADER + code->arguments_register] = arguments;
+	}
+
 	/* Succeeded: the frame is pushed. */
+	return 0;
+}
+
+/*
+ * Makes the arguments object of a call: an object from Object.prototype
+ * with the arguments as its elements, its length, and (for sloppy code)
+ * the function as callee.  It does not follow the parameters (the mapped
+ * arguments of sloppy code come later).
+ */
+static int
+interpreter_arguments(
+	struct vm_realm *realm,
+	struct vm_function *function,
+	const vm_value *args,
+	unsigned count,
+	vm_value *arguments)
+{
+	struct vm_object *object;
+	vm_value key;
+	unsigned index;
+	int error;
+
+	/* The object. */
+	object = vm_object_create(realm->heap, realm->object_prototype);
+	if (object == NULL)
+		return ENOMEM;
+
+	/* Each argument as an element. */
+	for (index = 0; index < count; index++) {
+		error = vm_object_define(realm->heap, object, vm_value_int32((int32_t)index), args[index], VM_PROPERTY_DEFAULT);
+		if (error != 0)
+			return error;
+	}
+
+	/* The length: writable and configurable, not enumerable. */
+	key = vm_key_from_ascii(realm->heap, "length");
+	if (key == VM_VALUE_EMPTY)
+		return ENOMEM;
+	error = vm_object_define(realm->heap, object, key, vm_value_int32((int32_t)count),
+	    VM_PROPERTY_WRITABLE | VM_PROPERTY_CONFIGURABLE);
+	if (error != 0)
+		return error;
+
+	/* Sloppy code's callee: the function (strict code's throwing accessor comes with the built-ins). */
+	if ((function->code->flags & VM_CODE_STRICT) == 0U) {
+		key = vm_key_from_ascii(realm->heap, "callee");
+		if (key == VM_VALUE_EMPTY)
+			return ENOMEM;
+		error = vm_object_define(realm->heap, object, key, vm_value_cell(function),
+		    VM_PROPERTY_WRITABLE | VM_PROPERTY_CONFIGURABLE);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the arguments object. */
+	*arguments = vm_value_cell(object);
 	return 0;
 }
 
@@ -209,7 +293,7 @@ interpreter_run(
 	}
 }
 
-/* Runs one instruction: the shared ones here, the others by their group. */
+/* Runs one instruction: the shared ones and those that jump here, the others by their group. */
 static int
 interpreter_step(
 	struct interpreter *run)
@@ -225,7 +309,7 @@ interpreter_step(
 	next = run->pc + 1U + vm_opcodes[words[0]].operand_count;
 	registers = &run->realm->stack[run->base + FRAME_HEADER];
 
-	/* The shared instructions. */
+	/* The shared instructions, and the JavaScript ones that move the pc themselves. */
 	switch (words[0]) {
 	case VM_OP_NOP:
 	case VM_OP_LOOP_HINT:
@@ -263,6 +347,12 @@ interpreter_step(
 	case VM_OP_CALL:
 		status = interpreter_call(run, words, registers, next);
 		return status;
+	case VM_OP_CONSTRUCT:
+		status = interpreter_construct(run, words, registers, next);
+		return status;
+	case VM_OP_FOR_IN_NEXT:
+		status = interpreter_for_in_next(run, words, registers, next);
+		return status;
 	case VM_OP_RETURN:
 		status = interpreter_return(run, registers[words[1]]);
 		return status;
@@ -298,92 +388,353 @@ interpreter_step_js(
 	const uint32_t *words,
 	vm_value *registers)
 {
+	vm_value value;
+	int status;
+
+	/* The operators compute a value into their first register; the rest by what they touch. */
+	switch (words[0]) {
+	case VM_OP_ADD:
+	case VM_OP_SUB:
+	case VM_OP_MUL:
+	case VM_OP_DIV:
+	case VM_OP_MOD:
+	case VM_OP_EXP:
+	case VM_OP_BIT_AND:
+	case VM_OP_BIT_OR:
+	case VM_OP_BIT_XOR:
+	case VM_OP_SHL:
+	case VM_OP_SAR:
+	case VM_OP_SHR:
+	case VM_OP_LESS:
+	case VM_OP_LESS_EQ:
+	case VM_OP_GREATER:
+	case VM_OP_GREATER_EQ:
+	case VM_OP_STRICT_EQ:
+	case VM_OP_LOOSE_EQ:
+	case VM_OP_INSTANCEOF:
+	case VM_OP_IN:
+	case VM_OP_NEG:
+	case VM_OP_TO_NUMBER:
+	case VM_OP_BIT_NOT:
+	case VM_OP_NOT:
+	case VM_OP_TYPEOF:
+	case VM_OP_INC:
+	case VM_OP_DEC:
+		/* A failed operator writes nothing. */
+		status = interpreter_operator(run->realm, words, registers, &value);
+		if (status != 0)
+			return status;
+		registers[words[1]] = value;
+		return 0;
+	case VM_OP_NEW_OBJECT:
+	case VM_OP_NEW_ARRAY:
+	case VM_OP_GET_PROP:
+	case VM_OP_PUT_PROP:
+	case VM_OP_GET_ELEM:
+	case VM_OP_PUT_ELEM:
+	case VM_OP_DELETE_PROP:
+	case VM_OP_DELETE_ELEM:
+	case VM_OP_DEFINE_PROP:
+	case VM_OP_DEFINE_ELEM:
+	case VM_OP_DEFINE_GETTER:
+	case VM_OP_DEFINE_SETTER:
+	case VM_OP_SET_PROTO:
+	case VM_OP_ARRAY_PUSH:
+	case VM_OP_ARRAY_HOLE:
+	case VM_OP_FOR_IN_START:
+		status = interpreter_property(run, words, registers);
+		return status;
+	default:
+		break;
+	}
+
+	/* The globals, environments, closures and the frame's own values. */
+	status = interpreter_scope(run, words, registers);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the instruction ran. */
+	return 0;
+}
+
+/* Computes an operator's value from its operand registers. */
+static int
+interpreter_operator(
+	struct vm_realm *realm,
+	const uint32_t *words,
+	const vm_value *registers,
+	vm_value *value)
+{
+	vm_value left;
+	vm_value right;
+	int equal;
+	int status;
+
+	/* The operands (a unary operator has only the left). */
+	left = registers[words[2]];
+	right = VM_VALUE_UNDEFINED;
+	if (vm_opcodes[words[0]].operand_count == 3U)
+		right = registers[words[3]];
+
+	/* The operator. */
+	switch (words[0]) {
+	case VM_OP_ADD:
+		status = vm_add(realm, left, right, value);
+		break;
+	case VM_OP_SUB:
+		status = vm_numeric(realm, VM_NUMERIC_SUB, left, right, value);
+		break;
+	case VM_OP_MUL:
+		status = vm_numeric(realm, VM_NUMERIC_MUL, left, right, value);
+		break;
+	case VM_OP_DIV:
+		status = vm_numeric(realm, VM_NUMERIC_DIV, left, right, value);
+		break;
+	case VM_OP_MOD:
+		status = vm_numeric(realm, VM_NUMERIC_MOD, left, right, value);
+		break;
+	case VM_OP_EXP:
+		status = vm_numeric(realm, VM_NUMERIC_EXP, left, right, value);
+		break;
+	case VM_OP_BIT_AND:
+		status = vm_numeric(realm, VM_NUMERIC_AND, left, right, value);
+		break;
+	case VM_OP_BIT_OR:
+		status = vm_numeric(realm, VM_NUMERIC_OR, left, right, value);
+		break;
+	case VM_OP_BIT_XOR:
+		status = vm_numeric(realm, VM_NUMERIC_XOR, left, right, value);
+		break;
+	case VM_OP_SHL:
+		status = vm_numeric(realm, VM_NUMERIC_SHL, left, right, value);
+		break;
+	case VM_OP_SAR:
+		status = vm_numeric(realm, VM_NUMERIC_SAR, left, right, value);
+		break;
+	case VM_OP_SHR:
+		status = vm_numeric(realm, VM_NUMERIC_SHR, left, right, value);
+		break;
+	case VM_OP_LESS:
+		status = vm_relation(realm, VM_RELATION_LESS, left, right, value);
+		break;
+	case VM_OP_LESS_EQ:
+		status = vm_relation(realm, VM_RELATION_LESS_EQUAL, left, right, value);
+		break;
+	case VM_OP_GREATER:
+		status = vm_relation(realm, VM_RELATION_GREATER, left, right, value);
+		break;
+	case VM_OP_GREATER_EQ:
+		status = vm_relation(realm, VM_RELATION_GREATER_EQUAL, left, right, value);
+		break;
+	case VM_OP_STRICT_EQ:
+		*value = vm_value_boolean(vm_strict_equals(left, right));
+		status = 0;
+		break;
+	case VM_OP_LOOSE_EQ:
+		status = vm_loose_equals(realm, left, right, &equal);
+		*value = vm_value_boolean(equal);
+		break;
+	case VM_OP_INSTANCEOF:
+		status = vm_instanceof(realm, left, right, value);
+		break;
+	case VM_OP_IN:
+		status = vm_in(realm, left, right, value);
+		break;
+	default:
+		status = interpreter_unary(realm, words[0], left, value);
+		break;
+	}
+
+	/* A failed operator reports why. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the value. */
+	return 0;
+}
+
+/* Computes a unary operator's value. */
+static int
+interpreter_unary(
+	struct vm_realm *realm,
+	uint32_t opcode,
+	vm_value operand,
+	vm_value *value)
+{
+	double number;
+	int32_t whole;
+	int status;
+
+	/* The operators that work on a value as it is. */
+	if (opcode == VM_OP_NOT) {
+		*value = vm_value_boolean(!vm_to_boolean(operand));
+		return 0;
+	}
+
+	/* typeof names the type. */
+	if (opcode == VM_OP_TYPEOF) {
+		status = vm_typeof(realm, operand, value);
+		if (status != 0)
+			return status;
+		return 0;
+	}
+
+	/* ~ works on the int32. */
+	if (opcode == VM_OP_BIT_NOT) {
+		status = vm_to_int32(realm, operand, &whole);
+		if (status != 0)
+			return status;
+		*value = vm_value_int32(~whole);
+		return 0;
+	}
+
+	/* The others on the number. */
+	status = vm_to_number(realm, operand, &number);
+	if (status != 0)
+		return status;
+
+	/* The operator on the number. */
+	switch (opcode) {
+	case VM_OP_NEG:
+		*value = vm_value_number(-number);
+		break;
+	case VM_OP_TO_NUMBER:
+		*value = vm_value_number(number);
+		break;
+	case VM_OP_INC:
+		*value = vm_value_number(number + 1.0);
+		break;
+	case VM_OP_DEC:
+		*value = vm_value_number(number - 1.0);
+		break;
+	default:
+		return EINVAL;
+	}
+
+	/* Succeeded: the value. */
+	return 0;
+}
+
+/* Runs one instruction on objects' properties: making, reading, writing, deleting, defining and enumerating. */
+static int
+interpreter_property(
+	struct interpreter *run,
+	const uint32_t *words,
+	vm_value *registers)
+{
 	struct vm_realm *realm;
 	struct vm_object *object;
 	vm_value value;
 	vm_value key;
-	double left;
-	double right;
+	int strict;
+	int is_object;
 	int status;
 
-	/* Each instruction's result is written only when it succeeds. */
+	/* Each instruction; one that computes a value writes it only when it succeeds. */
 	realm = run->realm;
+	strict = interpreter_is_strict(run);
 	switch (words[0]) {
-	case VM_OP_ADD:
-		status = vm_add(realm, registers[words[2]], registers[words[3]], &value);
-		break;
-	case VM_OP_SUB:
-	case VM_OP_MUL:
-		/* Both sides as numbers. */
-		status = vm_to_number(realm, registers[words[2]], &left);
-		if (status == 0)
-			status = vm_to_number(realm, registers[words[3]], &right);
-		if (status == 0 && words[0] == VM_OP_SUB)
-			value = vm_value_number(left - right);
-		if (status == 0 && words[0] == VM_OP_MUL)
-			value = vm_value_number(left * right);
-		break;
-	case VM_OP_LESS:
-		status = vm_less(realm, registers[words[2]], registers[words[3]], &value);
-		break;
-	case VM_OP_STRICT_EQ:
-		value = vm_value_boolean(vm_strict_equals(registers[words[2]], registers[words[3]]));
-		status = 0;
-		break;
 	case VM_OP_NEW_OBJECT:
 		/* A plain object from Object.prototype. */
 		object = vm_object_create(realm->heap, realm->object_prototype);
-		status = ENOMEM;
-		if (object != NULL) {
-			value = vm_value_cell(object);
-			status = 0;
-		}
-
-		/* The object, or out of memory. */
-		break;
+		if (object == NULL)
+			return ENOMEM;
+		registers[words[1]] = vm_value_cell(object);
+		return 0;
 	case VM_OP_NEW_ARRAY:
 		/* An empty array from Array.prototype. */
 		object = vm_array_create(realm->heap, realm->array_prototype);
-		status = ENOMEM;
-		if (object != NULL) {
-			value = vm_value_cell(object);
-			status = 0;
-		}
-
-		/* The array, or out of memory. */
-		break;
+		if (object == NULL)
+			return ENOMEM;
+		registers[words[1]] = vm_value_cell(object);
+		return 0;
 	case VM_OP_GET_PROP:
 		status = vm_get(realm, registers[words[2]], run->code->constants[words[3]], &value);
 		break;
 	case VM_OP_PUT_PROP:
-		/* Nothing is written to a register. */
-		status = vm_put(realm, registers[words[1]], run->code->constants[words[2]], registers[words[3]]);
+		status = vm_set(realm, registers[words[1]], run->code->constants[words[2]], registers[words[3]], strict);
 		return status;
 	case VM_OP_GET_ELEM:
-		/* The key is converted first. */
+		/* The base must have properties before the key is converted. */
+		if (registers[words[2]] == VM_VALUE_UNDEFINED || registers[words[2]] == VM_VALUE_NULL) {
+			status = vm_throw_type_error(realm, "Cannot read properties of undefined or null");
+			return status;
+		}
+
+		/* The key, converted, then the read. */
 		status = vm_to_key(realm, registers[words[3]], &key);
 		if (status == 0)
 			status = vm_get(realm, registers[words[2]], key, &value);
 		break;
 	case VM_OP_PUT_ELEM:
-		/* The key is converted first; nothing is written to a register. */
-		status = vm_to_key(realm, registers[words[2]], &key);
-		if (status == 0)
-			status = vm_put(realm, registers[words[1]], key, registers[words[3]]);
-		return status;
-	case VM_OP_GET_GLOBAL:
-		status = vm_get(realm, vm_value_cell(realm->global), run->code->constants[words[2]], &value);
-		if (status == 0) {
-			registers[words[1]] = value;
-			return 0;
+		/* The base must have properties before the key is converted. */
+		if (registers[words[1]] == VM_VALUE_UNDEFINED || registers[words[1]] == VM_VALUE_NULL) {
+			status = vm_throw_type_error(realm, "Cannot set properties of undefined or null");
+			return status;
 		}
 
-		/* The global could not be read. */
+		/* The key, converted, then the write. */
+		status = vm_to_key(realm, registers[words[2]], &key);
+		if (status == 0)
+			status = vm_set(realm, registers[words[1]], key, registers[words[3]], strict);
 		return status;
-	case VM_OP_PUT_GLOBAL:
-		/* Nothing is written to a register. */
-		status = vm_put(realm, vm_value_cell(realm->global), run->code->constants[words[1]], registers[words[2]]);
+	case VM_OP_DELETE_PROP:
+		status = vm_delete(realm, registers[words[2]], run->code->constants[words[3]], strict, &value);
+		break;
+	case VM_OP_DELETE_ELEM:
+		/* The base must have properties before the key is converted. */
+		if (registers[words[2]] == VM_VALUE_UNDEFINED || registers[words[2]] == VM_VALUE_NULL) {
+			status = vm_throw_type_error(realm, "Cannot convert undefined or null to object");
+			return status;
+		}
+
+		/* The key, converted, then the deletion. */
+		status = vm_to_key(realm, registers[words[3]], &key);
+		if (status == 0)
+			status = vm_delete(realm, registers[words[2]], key, strict, &value);
+		break;
+	case VM_OP_DEFINE_PROP:
+		status = vm_define_data(realm, registers[words[1]], run->code->constants[words[2]], registers[words[3]]);
 		return status;
+	case VM_OP_DEFINE_ELEM:
+	case VM_OP_DEFINE_GETTER:
+	case VM_OP_DEFINE_SETTER:
+		/* The key as a property key, then the data property or the accessor half. */
+		status = vm_to_key(realm, registers[words[2]], &key);
+		if (status != 0)
+			return status;
+		if (words[0] == VM_OP_DEFINE_ELEM) {
+			status = vm_define_data(realm, registers[words[1]], key, registers[words[3]]);
+		} else {
+			status = vm_define_accessor(realm, registers[words[1]], key, registers[words[3]], words[0] == VM_OP_DEFINE_SETTER);
+		}
+
+		/* Reports whether the definition succeeded. */
+		return status;
+	case VM_OP_SET_PROTO:
+		/* An object or null becomes the literal's prototype; anything else is ignored. */
+		object = (struct vm_object *)vm_value_as_cell(registers[words[1]]);
+		value = registers[words[2]];
+		is_object = vm_value_is_object(value);
+		if (is_object)
+			object->prototype = (struct vm_object *)vm_value_as_cell(value);
+		if (value == VM_VALUE_NULL)
+			object->prototype = NULL;
+		return 0;
+	case VM_OP_ARRAY_PUSH:
+		/* The value at the array's end. */
+		object = (struct vm_object *)vm_value_as_cell(registers[words[1]]);
+		status = vm_object_define(realm->heap, object, vm_value_int32((int32_t)object->length), registers[words[2]],
+		    VM_PROPERTY_DEFAULT);
+		return status;
+	case VM_OP_ARRAY_HOLE:
+		/* The array one longer, with nothing at its end. */
+		object = (struct vm_object *)vm_value_as_cell(registers[words[1]]);
+		status = vm_array_set_length(realm->heap, object, object->length + 1U);
+		return status;
+	case VM_OP_FOR_IN_START:
+		status = vm_for_in_start(realm, registers[words[2]], &value);
+		break;
 	default:
 		return EINVAL;
 	}
@@ -392,8 +743,172 @@ interpreter_step_js(
 	if (status != 0)
 		return status;
 
-	/* Succeeded: the result in the first operand's register. */
+	/* Succeeded: the value in the first operand's register. */
 	registers[words[1]] = value;
+	return 0;
+}
+
+/* Runs one instruction on the scope: globals, environments, closures, this and the callee. */
+static int
+interpreter_scope(
+	struct interpreter *run,
+	const uint32_t *words,
+	vm_value *registers)
+{
+	struct vm_realm *realm;
+	struct vm_function *function;
+	struct vm_function *closure;
+	struct vm_env *env;
+	struct vm_env *parent;
+	vm_value *frame;
+	vm_value *place;
+	vm_value value;
+	int strict;
+	int status;
+
+	/* Each instruction; one that computes a value writes it only when it succeeds. */
+	realm = run->realm;
+	frame = &realm->stack[run->base];
+	function = interpreter_function(realm, run->base);
+	strict = interpreter_is_strict(run);
+	switch (words[0]) {
+	case VM_OP_GET_GLOBAL:
+	case VM_OP_GET_GLOBAL_TYPEOF:
+		status = vm_get_global(realm, run->code->constants[words[2]], words[0] == VM_OP_GET_GLOBAL_TYPEOF, &value);
+		break;
+	case VM_OP_PUT_GLOBAL:
+		status = vm_put_global(realm, run->code->constants[words[1]], registers[words[2]], strict);
+		return status;
+	case VM_OP_DEFINE_GLOBAL_VAR:
+		status = vm_define_global_var(realm, run->code->constants[words[1]]);
+		return status;
+	case VM_OP_DEFINE_GLOBAL_FUNCTION:
+		status = vm_define_global_function(realm, run->code->constants[words[1]], registers[words[2]]);
+		return status;
+	case VM_OP_DELETE_GLOBAL:
+		status = vm_delete_global(realm, run->code->constants[words[2]], &value);
+		break;
+	case VM_OP_NEW_ENV:
+		/* The parent is an environment or undefined. */
+		status = interpreter_env(registers[words[2]], 0, 0, &place);
+		if (status != 0)
+			return status;
+		parent = NULL;
+		if (registers[words[2]] != VM_VALUE_UNDEFINED)
+			parent = (struct vm_env *)vm_value_as_cell(registers[words[2]]);
+		env = vm_env_create(realm->heap, parent, words[3]);
+		if (env == NULL)
+			return ENOMEM;
+		value = vm_value_cell(env);
+		status = 0;
+		break;
+	case VM_OP_GET_ENV:
+		status = interpreter_env(registers[words[2]], words[3], words[4], &place);
+		if (status != 0)
+			return status;
+		value = *place;
+		break;
+	case VM_OP_PUT_ENV:
+		status = interpreter_env(registers[words[1]], words[2], words[3], &place);
+		if (status != 0)
+			return status;
+		*place = registers[words[4]];
+		return 0;
+	case VM_OP_LOAD_CLOSURE_ENV:
+		/* The running function's environment, undefined for none. */
+		value = VM_VALUE_UNDEFINED;
+		if (function->env != NULL)
+			value = vm_value_cell(function->env);
+		status = 0;
+		break;
+	case VM_OP_LOAD_THIS:
+		/* Sloppy code sees the global object for undefined and null. */
+		value = frame[FRAME_THIS];
+		if (!strict && (value == VM_VALUE_UNDEFINED || value == VM_VALUE_NULL))
+			value = vm_value_cell(realm->global);
+		status = 0;
+		break;
+	case VM_OP_LOAD_CALLEE:
+		value = vm_value_cell(function);
+		status = 0;
+		break;
+	case VM_OP_NEW_CLOSURE:
+		/* The environment is one or undefined; the constant is a code unit (the checker saw to it). */
+		status = interpreter_env(registers[words[3]], 0, 0, &place);
+		if (status != 0)
+			return status;
+		env = NULL;
+		if (registers[words[3]] != VM_VALUE_UNDEFINED)
+			env = (struct vm_env *)vm_value_as_cell(registers[words[3]]);
+		closure = vm_closure_create(realm, (struct vm_code *)vm_value_as_cell(run->code->constants[words[2]]), env);
+		if (closure == NULL)
+			return ENOMEM;
+		value = vm_value_cell(closure);
+		break;
+	default:
+		return EINVAL;
+	}
+
+	/* A failed instruction writes nothing. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the value in the first operand's register. */
+	registers[words[1]] = value;
+	return 0;
+}
+
+/*
+ * Finds a slot of an environment some hops out from one; EINVAL when the
+ * code's use does not fit what is there (the compiler's fault, not the
+ * script's).  With no hops and slot 0, it only checks that the value is an
+ * environment or undefined.
+ */
+static int
+interpreter_env(
+	vm_value value,
+	uint32_t hops,
+	uint32_t slot,
+	vm_value **place)
+{
+	struct vm_env *env;
+	struct vm_cell *cell;
+	int is_cell;
+
+	/* undefined is no environment, which only a check accepts. */
+	*place = NULL;
+	if (value == VM_VALUE_UNDEFINED) {
+		if (hops == 0 && slot == 0)
+			return 0;
+		return EINVAL;
+	}
+
+	/* The value must be an environment. */
+	is_cell = vm_value_is_cell(value);
+	if (!is_cell)
+		return EINVAL;
+	cell = vm_value_as_cell(value);
+	if (cell->type != &vm_env_type)
+		return EINVAL;
+	env = (struct vm_env *)cell;
+
+	/* Outwards by the hops. */
+	while (hops > 0) {
+		env = env->parent;
+		if (env == NULL)
+			return EINVAL;
+		hops--;
+	}
+
+	/* The slot must be one of its own (a check of an empty environment asks for none). */
+	if (slot >= env->count) {
+		if (env->count == 0 && slot == 0)
+			return 0;
+		return EINVAL;
+	}
+
+	/* Succeeded: the slot. */
+	*place = &vm_env_slots(env)[slot];
 	return 0;
 }
 
@@ -522,6 +1037,96 @@ interpreter_call(
 	return 0;
 }
 
+/*
+ * Constructs with new from bytecode: the new object from the constructor's
+ * prototype is the this value; a bytecode constructor gets a frame that
+ * returns it unless it returns an object; a native one runs now.
+ */
+static int
+interpreter_construct(
+	struct interpreter *run,
+	const uint32_t *words,
+	vm_value *registers,
+	uint32_t next)
+{
+	struct vm_function *function;
+	vm_value callee;
+	vm_value this_value;
+	vm_value value;
+	uint32_t base;
+	int constructor;
+	int is_object;
+	int status;
+
+	/* Only constructors can be used with new. */
+	callee = registers[words[2]];
+	constructor = vm_value_is_constructor(callee);
+	if (!constructor) {
+		status = vm_throw_type_error(run->realm, "value is not a constructor");
+		return status;
+	}
+
+	/* The new object. */
+	status = vm_construct_this(run->realm, callee, &this_value);
+	if (status != 0)
+		return status;
+
+	/* A bytecode constructor: its frame, marked as a construction. */
+	function = (struct vm_function *)vm_value_as_cell(callee);
+	if (function->code != NULL) {
+		status = interpreter_push(run->realm, function, this_value, &registers[words[4]], words[5], run->base + 1U, next,
+		    words[1] | FRAME_CONSTRUCT, &base);
+		if (status != 0)
+			return status;
+		run->base = base;
+		run->code = function->code;
+		run->pc = 0;
+		return 0;
+	}
+
+	/* A native constructor runs now; an object it returns replaces the new one. */
+	status = function->native(function->realm, this_value, &registers[words[4]], words[5], &value);
+	if (status != 0)
+		return status;
+	is_object = vm_value_is_object(value);
+	if (!is_object)
+		value = this_value;
+
+	/* Succeeded: the object is in the register and the caller goes on. */
+	registers[words[1]] = value;
+	run->pc = next;
+	return 0;
+}
+
+/* Moves a for-in loop to its next key, or jumps when the loop is over. */
+static int
+interpreter_for_in_next(
+	struct interpreter *run,
+	const uint32_t *words,
+	vm_value *registers,
+	uint32_t next)
+{
+	vm_value key;
+	int done;
+	int status;
+
+	/* The next key. */
+	status = vm_for_in_next(run->realm, registers[words[2]], &key, &done);
+	if (status != 0)
+		return status;
+
+	/* No key left: the loop ends. */
+	if (done) {
+		run->pc += words[3];
+		return 0;
+	}
+
+	/* Succeeded: the key in the register, and the body runs. */
+	registers[words[1]] = key;
+	run->pc = next;
+	return 0;
+}
+
 /* Returns from the running frame: to its caller's register, or out of the run from the entry frame. */
 static int
 interpreter_return(
@@ -531,16 +1136,28 @@ interpreter_return(
 	struct vm_realm *realm;
 	struct vm_function *function;
 	vm_value *frame;
+	uint64_t result_slot;
 	uint32_t caller;
 	uint32_t result_register;
 	uint32_t return_pc;
+	int is_object;
 
 	/* The frame's header, read before the frame is popped. */
 	realm = run->realm;
 	frame = &realm->stack[run->base];
 	caller = (uint32_t)frame[FRAME_CALLER];
-	result_register = (uint32_t)frame[FRAME_RESULT];
+	result_slot = frame[FRAME_RESULT];
+	result_register = (uint32_t)result_slot;
 	return_pc = (uint32_t)frame[FRAME_RETURN];
+
+	/* A construction returns its this value unless the code returned an object. */
+	if ((result_slot & FRAME_CONSTRUCT) != 0U) {
+		is_object = vm_value_is_object(value);
+		if (!is_object)
+			value = frame[FRAME_THIS];
+	}
+
+	/* The frame is popped. */
 	realm->stack_top = run->base;
 
 	/* The entry frame's return ends the run. */
@@ -615,6 +1232,19 @@ interpreter_function(
 {
 	/* The header's function slot holds its cell. */
 	return (struct vm_function *)vm_value_as_cell(realm->stack[base + FRAME_FUNCTION]);
+}
+
+/* Tells whether the running code is strict mode code. */
+static int
+interpreter_is_strict(
+	const struct interpreter *run)
+{
+	/* The code unit's flag. */
+	if ((run->code->flags & VM_CODE_STRICT) != 0U)
+		return 1;
+
+	/* Sloppy code. */
+	return 0;
 }
 
 /* Reads a raw f64's bits as a double. */

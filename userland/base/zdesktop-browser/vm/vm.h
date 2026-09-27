@@ -371,9 +371,43 @@ vm_value_as_cell(
 #define VM_OBJECT_ARRAY			0x1U
 #define VM_OBJECT_NOT_EXTENSIBLE	0x2U
 
+/* The hints of ToPrimitive: which of valueOf and toString is tried first. */
+#define VM_HINT_DEFAULT			0
+#define VM_HINT_NUMBER			1
+#define VM_HINT_STRING			2
+
+/*
+ * The operators of vm_numeric: the arithmetic ones on numbers and the
+ * bitwise ones on their int32 or uint32 values.
+ */
+enum vm_numeric_operator {
+	VM_NUMERIC_SUB,
+	VM_NUMERIC_MUL,
+	VM_NUMERIC_DIV,
+	VM_NUMERIC_MOD,
+	VM_NUMERIC_EXP,
+	VM_NUMERIC_AND,
+	VM_NUMERIC_OR,
+	VM_NUMERIC_XOR,
+	VM_NUMERIC_SHL,
+	VM_NUMERIC_SAR,
+	VM_NUMERIC_SHR
+};
+
+/*
+ * The relations of vm_relation.
+ */
+enum vm_relation {
+	VM_RELATION_LESS,
+	VM_RELATION_LESS_EQUAL,
+	VM_RELATION_GREATER,
+	VM_RELATION_GREATER_EQUAL
+};
+
 struct vm_shape;
 struct vm_realm;
 struct vm_code;
+struct vm_env;
 
 /*
  * A symbol: a unique property key with a description (a string or
@@ -436,13 +470,15 @@ typedef int (*vm_native)(struct vm_realm *realm, vm_value this_value, const vm_v
 
 /*
  * A function: an object that can be called, with its realm and what runs
- * when it is called: a code unit of bytecode, or a native function.
+ * when it is called: a code unit of bytecode (with the environment of the
+ * code it was made in, NULL for none), or a native function.
  */
 struct vm_function {
 	struct vm_object object;
 	struct vm_realm *realm;
 	vm_native native;
 	struct vm_code *code;
+	struct vm_env *env;
 };
 
 /*
@@ -471,6 +507,8 @@ struct vm_realm {
 
 /* Values and keys (object.c). */
 void vm_heap_mark_value(struct vm_heap *heap, vm_value value);
+int vm_value_is_object(vm_value value);
+int vm_value_is_string(vm_value value);
 int vm_value_is_array_index(vm_value key, uint32_t *index);
 int vm_key_from_string(struct vm_heap *heap, struct vm_string *string, vm_value *key);
 vm_value vm_key_from_ascii(struct vm_heap *heap, const char *ascii);
@@ -507,6 +545,8 @@ int vm_shape_keys(const struct vm_shape *shape, vm_value *keys, uint32_t *slots,
 extern const struct vm_cell_type vm_function_type;
 struct vm_function *vm_function_create_native(struct vm_realm *realm, const char *name, unsigned length, vm_native native);
 int vm_value_is_callable(vm_value value);
+int vm_value_is_constructor(vm_value value);
+int vm_construct_this(struct vm_realm *realm, vm_value constructor, vm_value *object);
 int vm_call(struct vm_realm *realm, vm_value callee, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 int vm_throw(struct vm_realm *realm, vm_value exception);
 
@@ -516,16 +556,40 @@ void vm_realm_destroy(struct vm_realm *realm);
 
 /* JavaScript's operations on values (operation.c). */
 int vm_to_boolean(vm_value value);
+int vm_to_primitive(struct vm_realm *realm, vm_value value, int hint, vm_value *result);
 int vm_to_number(struct vm_realm *realm, vm_value value, double *number);
+int vm_to_int32(struct vm_realm *realm, vm_value value, int32_t *number);
+int vm_to_uint32(struct vm_realm *realm, vm_value value, uint32_t *number);
 int vm_to_string(struct vm_realm *realm, vm_value value, struct vm_string **string);
 int vm_to_key(struct vm_realm *realm, vm_value value, vm_value *key);
 int vm_strict_equals(vm_value left, vm_value right);
+int vm_loose_equals(struct vm_realm *realm, vm_value left, vm_value right, int *equal);
 int vm_add(struct vm_realm *realm, vm_value left, vm_value right, vm_value *result);
+int vm_numeric(struct vm_realm *realm, int operator, vm_value left, vm_value right, vm_value *result);
 int vm_less(struct vm_realm *realm, vm_value left, vm_value right, vm_value *result);
-int vm_get(struct vm_realm *realm, vm_value base, vm_value key, vm_value *result);
-int vm_put(struct vm_realm *realm, vm_value base, vm_value key, vm_value value);
+int vm_relation(struct vm_realm *realm, int relation, vm_value left, vm_value right, vm_value *result);
+int vm_typeof(struct vm_realm *realm, vm_value value, vm_value *result);
 int vm_throw_type_error(struct vm_realm *realm, const char *message);
 int vm_throw_range_error(struct vm_realm *realm, const char *message);
+int vm_throw_reference_error(struct vm_realm *realm, const char *message);
+int vm_throw_not_defined(struct vm_realm *realm, vm_value key);
+
+/* Properties of any value, globals and enumeration (access.c). */
+int vm_get(struct vm_realm *realm, vm_value base, vm_value key, vm_value *result);
+int vm_put(struct vm_realm *realm, vm_value base, vm_value key, vm_value value);
+int vm_set(struct vm_realm *realm, vm_value base, vm_value key, vm_value value, int strict);
+int vm_delete(struct vm_realm *realm, vm_value base, vm_value key, int strict, vm_value *result);
+int vm_in(struct vm_realm *realm, vm_value key, vm_value object, vm_value *result);
+int vm_instanceof(struct vm_realm *realm, vm_value value, vm_value constructor, vm_value *result);
+int vm_define_data(struct vm_realm *realm, vm_value object, vm_value key, vm_value value);
+int vm_define_accessor(struct vm_realm *realm, vm_value object, vm_value key, vm_value function, int setter);
+int vm_get_global(struct vm_realm *realm, vm_value key, int for_typeof, vm_value *result);
+int vm_put_global(struct vm_realm *realm, vm_value key, vm_value value, int strict);
+int vm_define_global_var(struct vm_realm *realm, vm_value key);
+int vm_define_global_function(struct vm_realm *realm, vm_value key, vm_value function);
+int vm_delete_global(struct vm_realm *realm, vm_value key, vm_value *result);
+int vm_for_in_start(struct vm_realm *realm, vm_value value, vm_value *iterator);
+int vm_for_in_next(struct vm_realm *realm, vm_value iterator, vm_value *key, int *done);
 
 /* The interpreter (interpreter.c). */
 int vm_interpret(struct vm_realm *realm, struct vm_function *function, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
