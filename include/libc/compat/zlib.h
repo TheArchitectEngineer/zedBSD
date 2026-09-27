@@ -19,8 +19,8 @@
  * then hands out the output as there is room for it.
  */
 
-#ifndef ZEDBSD_COMPAT_ZLIB_H
-#define ZEDBSD_COMPAT_ZLIB_H
+#ifndef KERN_COMPAT_ZLIB_H
+#define KERN_COMPAT_ZLIB_H
 
 #include <stddef.h>
 

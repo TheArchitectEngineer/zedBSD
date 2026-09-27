@@ -15,8 +15,8 @@
  * protocol is defined in plan/ws070/titlebar-design.md.
  */
 
-#ifndef ZEDBSD_ZED_TITLEBAR_V1_CLIENT_PROTOCOL_H
-#define ZEDBSD_ZED_TITLEBAR_V1_CLIENT_PROTOCOL_H
+#ifndef KERN_KEILAND_TITLEBAR_V1_CLIENT_PROTOCOL_H
+#define KERN_KEILAND_TITLEBAR_V1_CLIENT_PROTOCOL_H
 
 #include <wayland/wayland-client-core.h>
 #include <wayland/wayland-client-protocol.h>

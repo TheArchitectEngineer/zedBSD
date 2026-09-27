@@ -54,7 +54,7 @@ void psiginfo(const siginfo_t *, const char *);
 void abort(void) __attribute__((__noreturn__));
 int killpg(pid_t, int);
 
-#if __ZEDBSD_LEGACY_VISIBLE
+#if __KERN_LEGACY_VISIBLE
 int sighold(int);
 int sigignore(int);
 int siginterrupt(int, int);

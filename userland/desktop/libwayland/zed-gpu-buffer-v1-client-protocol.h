@@ -7,8 +7,8 @@
 
 /* Declares the selected zed protocol objects and typed requests. */
 
-#ifndef ZEDBSD_ZED_GPU_BUFFER_V1_CLIENT_PROTOCOL_H
-#define ZEDBSD_ZED_GPU_BUFFER_V1_CLIENT_PROTOCOL_H
+#ifndef KERN_KEILAND_GPU_BUFFER_V1_CLIENT_PROTOCOL_H
+#define KERN_KEILAND_GPU_BUFFER_V1_CLIENT_PROTOCOL_H
 
 #include <wayland/wayland-client-core.h>
 #include <wayland/wayland-client-protocol.h>

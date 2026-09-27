@@ -2,7 +2,7 @@
 /* Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib */
 #include "bootloader/uefi/include/uefi.h"
 
-extern EFI_STATUS EFIAPI zedbsd_loader_main(EFI_HANDLE, EFI_SYSTEM_TABLE *);
+extern EFI_STATUS EFIAPI kern_loader_main(EFI_HANDLE, EFI_SYSTEM_TABLE *);
 
 static CHAR16 ignored_options[] = {
 	'b', 'o', 'o', 't', '0', '=', 'U', 'U', 'I', 'D', '=',
@@ -39,5 +39,5 @@ efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system)
 	loaded->LoadOptionsSize = sizeof(ignored_options);
 	debug_string("WS013 LoadOptions injected: "
 	    "boot0=UUID=DEAD-BEEF init=/bin/false\n");
-	return zedbsd_loader_main(image, system);
+	return kern_loader_main(image, system);
 }

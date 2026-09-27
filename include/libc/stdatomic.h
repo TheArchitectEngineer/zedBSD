@@ -17,55 +17,55 @@ extern "C" {
 #include <stdint.h>
 #include <atomic-compiler.h>
 
-#define ATOMIC_BOOL_LOCK_FREE	__ZEDBSD_ATOMIC_BOOL_LOCK_FREE
-#define ATOMIC_CHAR_LOCK_FREE	__ZEDBSD_ATOMIC_CHAR_LOCK_FREE
-#define ATOMIC_CHAR16_T_LOCK_FREE	__ZEDBSD_ATOMIC_CHAR16_T_LOCK_FREE
-#define ATOMIC_CHAR32_T_LOCK_FREE	__ZEDBSD_ATOMIC_CHAR32_T_LOCK_FREE
-#define ATOMIC_WCHAR_T_LOCK_FREE	__ZEDBSD_ATOMIC_WCHAR_T_LOCK_FREE
-#define ATOMIC_SHORT_LOCK_FREE	__ZEDBSD_ATOMIC_SHORT_LOCK_FREE
-#define ATOMIC_INT_LOCK_FREE	__ZEDBSD_ATOMIC_INT_LOCK_FREE
-#define ATOMIC_LONG_LOCK_FREE	__ZEDBSD_ATOMIC_LONG_LOCK_FREE
-#define ATOMIC_LLONG_LOCK_FREE	__ZEDBSD_ATOMIC_LLONG_LOCK_FREE
-#define ATOMIC_POINTER_LOCK_FREE	__ZEDBSD_ATOMIC_POINTER_LOCK_FREE
+#define ATOMIC_BOOL_LOCK_FREE	__KERN_ATOMIC_BOOL_LOCK_FREE
+#define ATOMIC_CHAR_LOCK_FREE	__KERN_ATOMIC_CHAR_LOCK_FREE
+#define ATOMIC_CHAR16_T_LOCK_FREE	__KERN_ATOMIC_CHAR16_T_LOCK_FREE
+#define ATOMIC_CHAR32_T_LOCK_FREE	__KERN_ATOMIC_CHAR32_T_LOCK_FREE
+#define ATOMIC_WCHAR_T_LOCK_FREE	__KERN_ATOMIC_WCHAR_T_LOCK_FREE
+#define ATOMIC_SHORT_LOCK_FREE	__KERN_ATOMIC_SHORT_LOCK_FREE
+#define ATOMIC_INT_LOCK_FREE	__KERN_ATOMIC_INT_LOCK_FREE
+#define ATOMIC_LONG_LOCK_FREE	__KERN_ATOMIC_LONG_LOCK_FREE
+#define ATOMIC_LLONG_LOCK_FREE	__KERN_ATOMIC_LLONG_LOCK_FREE
+#define ATOMIC_POINTER_LOCK_FREE	__KERN_ATOMIC_POINTER_LOCK_FREE
 
 typedef enum memory_order {
-	memory_order_relaxed = __ZEDBSD_MEMORY_ORDER_RELAXED,
-	memory_order_consume = __ZEDBSD_MEMORY_ORDER_CONSUME,
-	memory_order_acquire = __ZEDBSD_MEMORY_ORDER_ACQUIRE,
-	memory_order_release = __ZEDBSD_MEMORY_ORDER_RELEASE,
-	memory_order_acq_rel = __ZEDBSD_MEMORY_ORDER_ACQ_REL,
-	memory_order_seq_cst = __ZEDBSD_MEMORY_ORDER_SEQ_CST
+	memory_order_relaxed = __KERN_MEMORY_ORDER_RELAXED,
+	memory_order_consume = __KERN_MEMORY_ORDER_CONSUME,
+	memory_order_acquire = __KERN_MEMORY_ORDER_ACQUIRE,
+	memory_order_release = __KERN_MEMORY_ORDER_RELEASE,
+	memory_order_acq_rel = __KERN_MEMORY_ORDER_ACQ_REL,
+	memory_order_seq_cst = __KERN_MEMORY_ORDER_SEQ_CST
 } memory_order;
 
 #define ATOMIC_VAR_INIT(value)	(value)
 
 #define atomic_init(object, desired) \
-	__zedbsd_atomic_store((object), (desired), memory_order_relaxed)
+	__kern_atomic_store((object), (desired), memory_order_relaxed)
 #define kill_dependency(value)	(value)
-#define atomic_thread_fence(order)	__zedbsd_atomic_thread_fence(order)
-#define atomic_signal_fence(order)	__zedbsd_atomic_signal_fence(order)
+#define atomic_thread_fence(order)	__kern_atomic_thread_fence(order)
+#define atomic_signal_fence(order)	__kern_atomic_signal_fence(order)
 #define atomic_is_lock_free(object) \
-	__zedbsd_atomic_is_lock_free(object)
+	__kern_atomic_is_lock_free(object)
 
 #define atomic_store_explicit(object, desired, order) \
-	__zedbsd_atomic_store((object), (desired), (order))
+	__kern_atomic_store((object), (desired), (order))
 #define atomic_store(object, desired) \
 	atomic_store_explicit((object), (desired), memory_order_seq_cst)
 #define atomic_load_explicit(object, order) \
-	__zedbsd_atomic_load((object), (order))
+	__kern_atomic_load((object), (order))
 #define atomic_load(object) \
 	atomic_load_explicit((object), memory_order_seq_cst)
 #define atomic_exchange_explicit(object, desired, order) \
-	__zedbsd_atomic_exchange((object), (desired), (order))
+	__kern_atomic_exchange((object), (desired), (order))
 #define atomic_exchange(object, desired) \
 	atomic_exchange_explicit((object), (desired), memory_order_seq_cst)
 #define atomic_compare_exchange_strong_explicit(object, expected, desired, \
 	    success, failure) \
-	__zedbsd_atomic_compare_exchange((object), (expected), (desired), false, \
+	__kern_atomic_compare_exchange((object), (expected), (desired), false, \
 	    (success), (failure))
 #define atomic_compare_exchange_weak_explicit(object, expected, desired, \
 	    success, failure) \
-	__zedbsd_atomic_compare_exchange((object), (expected), (desired), true, \
+	__kern_atomic_compare_exchange((object), (expected), (desired), true, \
 	    (success), (failure))
 #define atomic_compare_exchange_strong(object, expected, desired) \
 	atomic_compare_exchange_strong_explicit((object), (expected), (desired), \
@@ -75,15 +75,15 @@ typedef enum memory_order {
 	    memory_order_seq_cst, memory_order_seq_cst)
 
 #define atomic_fetch_add_explicit(object, operand, order) \
-	__zedbsd_atomic_fetch_add((object), (operand), (order))
+	__kern_atomic_fetch_add((object), (operand), (order))
 #define atomic_fetch_sub_explicit(object, operand, order) \
-	__zedbsd_atomic_fetch_sub((object), (operand), (order))
+	__kern_atomic_fetch_sub((object), (operand), (order))
 #define atomic_fetch_or_explicit(object, operand, order) \
-	__zedbsd_atomic_fetch_or((object), (operand), (order))
+	__kern_atomic_fetch_or((object), (operand), (order))
 #define atomic_fetch_xor_explicit(object, operand, order) \
-	__zedbsd_atomic_fetch_xor((object), (operand), (order))
+	__kern_atomic_fetch_xor((object), (operand), (order))
 #define atomic_fetch_and_explicit(object, operand, order) \
-	__zedbsd_atomic_fetch_and((object), (operand), (order))
+	__kern_atomic_fetch_and((object), (operand), (order))
 #define atomic_fetch_add(object, operand) \
 	atomic_fetch_add_explicit((object), (operand), memory_order_seq_cst)
 #define atomic_fetch_sub(object, operand) \
@@ -141,11 +141,11 @@ typedef struct atomic_flag {
 
 #define ATOMIC_FLAG_INIT	{ false }
 #define atomic_flag_test_and_set_explicit(object, order) \
-	__zedbsd_atomic_flag_test_and_set(&(object)->value, (order))
+	__kern_atomic_flag_test_and_set(&(object)->value, (order))
 #define atomic_flag_test_and_set(object) \
 	atomic_flag_test_and_set_explicit((object), memory_order_seq_cst)
 #define atomic_flag_clear_explicit(object, order) \
-	__zedbsd_atomic_flag_clear(&(object)->value, (order))
+	__kern_atomic_flag_clear(&(object)->value, (order))
 #define atomic_flag_clear(object) \
 	atomic_flag_clear_explicit((object), memory_order_seq_cst)
 

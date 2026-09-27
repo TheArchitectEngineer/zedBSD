@@ -9,8 +9,8 @@
  * Defines display-locked ownership for the independent Wayland client.
  */
 
-#ifndef ZEDBSD_WAYLAND_INTERNAL_H
-#define ZEDBSD_WAYLAND_INTERNAL_H
+#ifndef KERN_WAYLAND_INTERNAL_H
+#define KERN_WAYLAND_INTERNAL_H
 
 #include <wayland/wayland-client.h>
 #include <wayland/xdg-shell-client-protocol.h>

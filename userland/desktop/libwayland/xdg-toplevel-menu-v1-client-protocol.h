@@ -14,8 +14,8 @@
  * protocol is defined in plan/ws070/design.md.
  */
 
-#ifndef ZEDBSD_XDG_TOPLEVEL_MENU_V1_CLIENT_PROTOCOL_H
-#define ZEDBSD_XDG_TOPLEVEL_MENU_V1_CLIENT_PROTOCOL_H
+#ifndef KERN_XDG_TOPLEVEL_MENU_V1_CLIENT_PROTOCOL_H
+#define KERN_XDG_TOPLEVEL_MENU_V1_CLIENT_PROTOCOL_H
 
 #include <wayland/wayland-client-core.h>
 #include <wayland/wayland-client-protocol.h>

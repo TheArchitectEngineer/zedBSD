@@ -29,8 +29,8 @@
  * exits.
  */
 
-#ifndef ZEDBSD_COMPAT_JPEGLIB_H
-#define ZEDBSD_COMPAT_JPEGLIB_H
+#ifndef KERN_COMPAT_JPEGLIB_H
+#define KERN_COMPAT_JPEGLIB_H
 
 #include <stddef.h>
 #include <stdio.h>

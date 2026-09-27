@@ -14,8 +14,8 @@
  * plan/ws035/glass-design.md.
  */
 
-#ifndef ZEDBSD_ZED_GLASS_V1_CLIENT_PROTOCOL_H
-#define ZEDBSD_ZED_GLASS_V1_CLIENT_PROTOCOL_H
+#ifndef KERN_KEILAND_GLASS_V1_CLIENT_PROTOCOL_H
+#define KERN_KEILAND_GLASS_V1_CLIENT_PROTOCOL_H
 
 #include <wayland/wayland-client-core.h>
 #include <wayland/wayland-client-protocol.h>
