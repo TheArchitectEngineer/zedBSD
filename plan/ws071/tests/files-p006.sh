@@ -3,7 +3,7 @@
 # build-files-image.sh).  zdesktop --glass at 1280x800 with the wallpaper; zdesktop-files at
 # 1000x640 on the sample home (/tmp/fhome), opened on the dashboard.
 #  1. dashboard.png: the hero card (the wallpaper, the greeting), the folder cards, no recent files.
-#  2. The Pictures card opens Pictures (LOCATION .../Pictures items=2).
+#  2. The Pictures card opens Pictures (LOCATION .../Pictures items=4; 2 before p007 added two pictures).
 #  3. Report.pdf opened in Documents (OPEN); the Home button: dashboard-recent.png shows it
 #     among the recent files.
 #  4. A click on the recent file shows it in its folder, selected (LOCATION Documents, SELECT count=1).
@@ -64,7 +64,7 @@ shot dashboard.png
 
 # 2. The Pictures card (the second).
 click 520 362
-expect_log /tmp/f.log 'ZFILES LOCATION kind=folder path=/tmp/fhome/Pictures items=2 error=0'
+expect_log /tmp/f.log 'ZFILES LOCATION kind=folder path=/tmp/fhome/Pictures items=4 error=0'
 
 # 3. A file opened, then Home.
 click 100 177

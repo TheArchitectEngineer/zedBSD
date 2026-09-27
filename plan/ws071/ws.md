@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 ユーザーの指示でサブエージェントが worktree の branch で実行。main の Queue への反映は main の session）
-Resume point: p007（preview pane・Quick Look・Get Info・MIME・開く）
+Resume point: p012（Get Info・開く・別のアプリで開く）。p007 は 2026-09-27 に大きさで 2 つに分けた（Get Info と開くは p012）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -74,11 +74,12 @@ libpng-compat の decode（WS035 p040・p041 の decode の半分を p010 で先
 | [ws071-p004](phase004/phase.md) | file 操作: task（copy・move・delete・duplicate・link）、clipboard、new folder、rename、ゴミ箱（Put Back・Empty）、完全削除の確認、undo・redo、進みと status | cleared | p003 |
 | [ws071-p005](phase005/phase.md) | 検索、タグ（xattr・定義・索引・sidebar）、recent（libzdesktop の API）、Favorites の編集、Locations（mount） | cleared | p004 |
 | [ws071-p006](phase006/phase.md) | Home の dashboard（hero、folder cards、recent files・folders） | cleared | p005 |
-| ws071-p007 | preview pane、Quick Look、Get Info（checksum・xattr）、MIME、開く・別のアプリで開く | planned | p005 |
-| ws071-p008 | menubar（System Menu）、タブ、New Window、keyboard の shortcut の全体、Help | planned | p007、WS070-p004 |
+| [ws071-p007](phase007/phase.md) | preview pane、Quick Look、サムネイル（PPM・PGM、thumb.c の cache）、MIME の中身の判定を preview に | cleared | p005 |
+| ws071-p012 | Get Info（owner・権限・checksum・xattr）、開く・別のアプリで開く（apps.c の関連付けと起動） | planned | p007 |
+| ws071-p008 | menubar（System Menu）、タブ、New Window、keyboard の shortcut の全体、Help | planned | p012、WS070-p004 |
 | ws071-p009 | context menu: WS070 protocol version 2（libwayland、zdesktop、libzdesktop `zdesktop_menu_popup`）と file manager の context menu | planned | p008 |
 | ws071-p010 | サムネイル（libz-compat の inflate、libpng-compat の decode）と窓の中の DnD | planned | p007 |
-| ws071-p011 | App Home の項目、規約の全文との照合、回帰、boot test、i915 実機（任意） | planned | p002〜p010 |
+| ws071-p011 | App Home の項目、規約の全文との照合、回帰、boot test、i915 実機（任意） | planned | p002〜p010、p012 |
 
 ## Future Work の候補（main session が future-work.md へ）
 
