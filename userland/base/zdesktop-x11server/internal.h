@@ -316,7 +316,8 @@ struct x11_pointer_frame {
  * a window given a size, a window asked to close, the desktop's selection
  * changed (whether it has text), and a client asking for the text of the
  * X client that owns CLIPBOARD (a descriptor to write it into, which the
- * callee owns).
+ * callee owns); the same two for the primary selection and PRIMARY
+ * (ws035-p103).
  */
 struct x11_wayland_callbacks {
 	void (*key)(void *context, uint8_t keycode, int pressed, uint32_t time, uint16_t state);
@@ -326,6 +327,8 @@ struct x11_wayland_callbacks {
 	void (*close)(void *context, uint32_t window);
 	void (*selection)(void *context, int text);
 	void (*selection_send)(void *context, int fd);
+	void (*primary)(void *context, int text);
+	void (*primary_send)(void *context, int fd);
 };
 
 /*
@@ -472,6 +475,8 @@ unsigned x11_request_send_event(struct x11server *server, unsigned index, const 
 void x11_selection_forget_window(struct x11server *server, uint32_t window);
 void x11_selection_wayland(void *context, int text);
 void x11_selection_send(void *context, int fd);
+void x11_selection_primary(void *context, int text);
+void x11_selection_primary_send(void *context, int fd);
 
 /* rootless.c: the top-level windows as desktop windows, and the desktop's input. */
 void x11_rootless_present(struct x11server *server);
@@ -497,6 +502,10 @@ int x11_wayland_selection_own(struct x11_wayland *wayland);
 void x11_wayland_selection_drop(struct x11_wayland *wayland);
 int x11_wayland_selection_has_text(const struct x11_wayland *wayland);
 int x11_wayland_selection_read(struct x11_wayland *wayland, char **text, size_t *length);
+int x11_wayland_primary_own(struct x11_wayland *wayland);
+void x11_wayland_primary_drop(struct x11_wayland *wayland);
+int x11_wayland_primary_has_text(const struct x11_wayland *wayland);
+int x11_wayland_primary_read(struct x11_wayland *wayland, char **text, size_t *length);
 
 /* vulkan.c: a desktop window shown through a Vulkan swapchain. */
 struct x11_vulkan *x11_vulkan_open(void);

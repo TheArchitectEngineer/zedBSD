@@ -41,7 +41,8 @@ static void rootless_close(void *context, uint32_t window);
  * What the desktop's connection tells the server.
  */
 const struct x11_wayland_callbacks x11_rootless_callbacks = {
-	rootless_key, rootless_pointer, rootless_enter, rootless_configure, rootless_close, x11_selection_wayland, x11_selection_send
+	rootless_key, rootless_pointer, rootless_enter, rootless_configure, rootless_close, x11_selection_wayland, x11_selection_send,
+	x11_selection_primary, x11_selection_primary_send
 };
 
 /*
