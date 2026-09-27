@@ -1009,7 +1009,7 @@ show_logo(
 	const struct zbl6_framebuffer *framebuffer)
 {
 	static CHAR16 wide[KERNEL_PATH_CHAR16_STORAGE];
-	char path[ZBL_UEFI_LOGO_PATH_MAX + 1U];
+	char path[ZBL_LOGO_PATH_MAX + 1U];
 	EFI_FILE_PROTOCOL *file;
 	EFI_STATUS status;
 	UINT64 size;
@@ -1019,7 +1019,7 @@ show_logo(
 	int failed;
 
 	/* The logo's path, when zedbsd.cfg names one. */
-	found = zbl_uefi_logo_path(configuration->parameter_record.text,
+	found = zbl_logo_path(configuration->parameter_record.text,
 	    configuration->parameter_record.length, path, sizeof(path));
 	if (found < 0)
 		console_ascii(context, "A64 LOGO rejected\n");
@@ -1453,7 +1453,7 @@ efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system)
 	logo_shown = show_logo(&context, &discovered, &configuration, &framebuffer);
 	if (logo_shown)
 		context.quiet_console = 1;
-	quiet_boot = zbl_uefi_parameter_present(
+	quiet_boot = zbl_parameter_present(
 	    configuration.parameter_record.text,
 	    configuration.parameter_record.length, "kmsg=quiet");
 
