@@ -53,6 +53,6 @@ image: `make -j48 ZEDBSD_CONFIG=plan/ws056/tests/config-amd64-serial.mk BUILD=bu
 
 - console で `POSIX-R2.ELF` は timer の試験・WNOWAIT・tmpfs・lock・NOFILE・`posix_spawn` まで通り（印 M1〜M6 を確認）、最後の `execve("/bin/sh")`
   （`R2_EXEC_FINAL=1` の自身。`R2:01-06:PASS` を書いて 0 で終わるはず）の後に何も出ずに止まる（2/2）。修正前は timer で落ちていたので、以前からあったかは不明。
-  多 thread（SIGEV_THREAD の worker が居る）の process の console での execve が疑わしい。**別の bug として追跡**（ID の割り当ては main）。
+  多 thread（SIGEV_THREAD の worker が居る）の process の console での execve が疑わしい。**別の bug [BUG-068](../../bugs/BUG-068.md) として追跡**。
   これが直るまで BUG-046 の受け入れ案「console で 5 回連続 status 0」と p001 の clear の条件は満たせない。
 - p001 の clear はユーザーの判断（この Phase は p001 を clear しない）。
