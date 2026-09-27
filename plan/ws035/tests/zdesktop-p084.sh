@@ -109,7 +109,7 @@ shot two.png
 # 2. Logo.png from A onto B's content.
 drag $((ax + 330)) $((ay + 110)) $((bx + 420)) $((by + 420))
 expect_log /tmp/a.log 'ZFILES DRAG out items=1$'
-expect_log /tmp/zdesktop.log 'ZWL DATA drag start client=1 source=[0-9]+ types=1 actions=3 '
+expect_log /tmp/zdesktop.log 'ZWL DATA drag start client=1 source=[0-9]+ types=2 actions=7 '
 expect_log /tmp/zdesktop.log 'ZWL DATA drag enter client=2 '
 expect_log /tmp/zdesktop.log 'ZWL DATA drag accept client=2 mime=text/uri-list'
 check "$out/over.png" >/dev/null

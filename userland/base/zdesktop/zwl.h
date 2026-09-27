@@ -724,6 +724,15 @@ struct zwl_server {
 	uint32_t dnd_part_id;
 	uint32_t dnd_part_detail;
 	/*
+	 * The serial of the enter the drag's target heard, and after a drop the
+	 * dropped-on client's number and that serial: a context menu answering
+	 * it (the "ask" action's choice, ws035-p088) is taken like one
+	 * answering a press (menu.c).
+	 */
+	uint32_t dnd_enter_serial;
+	uint64_t dnd_drop_client;
+	uint32_t dnd_drop_serial;
+	/*
 	 * The cursor shape the pointer's client asked for (wp_cursor_shape_v1,
 	 * cursor.c, ws035-p080; 0 for zdesktop's arrow), and the images of the
 	 * shapes zdesktop draws, by the index cursor.c gives them (NULL until

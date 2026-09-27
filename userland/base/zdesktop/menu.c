@@ -809,6 +809,7 @@ context_create(
 	uint32_t serial;
 	int32_t x;
 	int32_t y;
+	int answers;
 	int error;
 
 	/* New ID, menu, surface, x, y, seat and serial: seven words, from version 2. */
@@ -844,12 +845,21 @@ context_create(
 		return 0;
 	}
 
-	/* Only the latest press opens a menu; any other is told done at once. */
-	if (serial == 0U || serial != server->press_serial) {
+	/* Only the latest press opens a menu, or the last drop's enter for the client dropped on (ask, data.c); any other is told done at once. */
+	answers = 0;
+	if (serial != 0U && serial == server->press_serial)
+		answers = 1;
+	if (serial != 0U && serial == server->dnd_drop_serial && manager->client->number == server->dnd_drop_client)
+		answers = 1;
+	if (!answers) {
 		printf("ZWL MENU context-refused client=%llu context=%u serial=%u press=%u\n", (unsigned long long)manager->client->number, created->id, serial, server->press_serial);
 		zwl_menu_send_context_done(created);
 		return 0;
 	}
+
+	/* A drop's window comes to the top for its choice (a menu is only open on the window on top). */
+	if (server->glass && serial != server->press_serial)
+		zwl_glass_raise(server, surface);
 
 	/* The popup at the point (menu-shell.c); one with nothing to show is done at once. */
 	error = zwl_menu_open_context(server, created, surface, x, y);
