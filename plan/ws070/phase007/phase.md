@@ -31,7 +31,8 @@ cleared。
   pull で restore は WS035 p059〜p071 と WS070 p003 に既にある（shell.c・menu-shell.c を読んで確かめた）。新しいのは Presentation の
   場所の CONTROLS・TABS と、その入力・縮退。
 - 判断が要る点: [titlebar-design.md](../titlebar-design.md) §13。§13-1（CONTROLS・TABS の窓の menu の置き場、既定 A: overflow の
-  popup）を main 経由でユーザーに示した。他は技術の既定。
+  popup）を main 経由でユーザーに示し、2026-09-27 ユーザーが A に決めた（「CONTROLS / TABS モードのウィンドウのアプリメニューの
+  置き場所は、Aの推奨でお願いします。」）。他は技術の既定。
 - 分割: ws070-p008（protocol と model）→ p009（glyph cache と icon、WS035 と調整）→ p010（CONTROLS の presentation、WS035 と調整）→
   ws071-p014（zdesktop-files の toolbar → CONTROLS）→ … → ws070-p011（TABS）→ p006 → p012（規約・回帰・実機）。
 - 試験: 設計の Phase なので build・実行の試験は無い（未実施ではなく対象外）。

@@ -258,7 +258,7 @@ bar の配置から docked の配置へ動かす: control ごとに両方の配�
 
 ## 13. 判断が要る点（既定で進める）
 
-1. **CONTROLS・TABS の窓の menu の置き場**（ユーザーに示す）: 仕様案は排他だけを決め、menu の行き先を決めていない。
+1. **CONTROLS・TABS の窓の menu の置き場**（**2026-09-27 ユーザー決定: A**。「CONTROLS / TABS モードのウィンドウのアプリメニューの置き場所は、Aの推奨でお願いします。」）: 仕様案は排他だけを決め、menu の行き先を決めていない。
    - A（既定）: Presentation の右端の overflow「…」の popup に menu の top-level を submenu として入れる（隠れた control の行も同じ
      popup）。shortcut は効く。Windows 11 の Explorer の「…」、GNOME Files の hamburger に近い。
    - B: 識別（印と題名）の click で menu の popup（macOS の app 名の menu に近い）。overflow は隠れた control だけ。

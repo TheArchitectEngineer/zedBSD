@@ -463,6 +463,7 @@ struct zwl_server {
 	/* The glass look: on, its font, the window being moved and where it was taken, the clock's minute. */
 	unsigned glass;
 	const char *font_path;
+	const char *fallback_font_path;
 	const char *wallpaper_path;
 	float window_opacity;
 	struct zwl_object *drag;

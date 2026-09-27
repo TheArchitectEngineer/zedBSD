@@ -14,6 +14,7 @@
 #define ZWL_GLASS_H
 
 #include "compose.h"
+#include "icons.h"
 
 /* The atlas's index of the multiplication sign (the close button). */
 #define GLASS_CLOSE_GLYPH	95U
@@ -74,6 +75,7 @@ int32_t glass_text_width(struct zwl_server *server, enum glass_size size, const 
 void glass_draw_text(struct zwl_server *server, VkCommandBuffer command, enum glass_size size, int32_t x, int32_t baseline, const char *text, int32_t limit, const float *color);
 void glass_draw_glyph(struct zwl_server *server, VkCommandBuffer command, enum glass_size size, unsigned index, int32_t x, int32_t baseline, const float *color);
 int32_t glass_glyph_advance(struct zwl_server *server, enum glass_size size, unsigned index);
+void glass_draw_icon(struct zwl_server *server, VkCommandBuffer command, unsigned icon, int32_t x, int32_t y, unsigned pixels, const float *color);
 VkDescriptorSet glass_wallpaper_set(struct zwl_server *server);
 
 /* App Home under the desktop layer (home.c). */

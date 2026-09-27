@@ -18,7 +18,12 @@
  *
  * Text is drawn from a glyph atlas made with libtruetype from the font at
  * server->font_path (printable ASCII and the multiplication sign); without a
- * font the look is drawn without text.
+ * font the look is drawn without text.  Any other character (WS070 p009) is
+ * rendered when it is first drawn, from that font or else from the fallback
+ * font (server->fallback_font_path, for Japanese), into a cell of the
+ * atlas's cache, the least recently drawn cell making room; text is UTF-8.
+ * The titlebar's icons (icons.c) are rendered into the atlas once, at two
+ * sizes.
  */
 
 #include "glass.h"
@@ -42,8 +47,21 @@
 #define GLASS_GLYPHS		98U
 #define GLASS_SIZES		5U
 #define GLASS_ATLAS_WIDTH	1024U
-#define GLASS_ATLAS_HEIGHT	512U
+#define GLASS_ATLAS_HEIGHT	1024U
 #define GLASS_FILE_MAX		(16U * 1024U * 1024U)
+
+/* The fonts kept open: the first font and the fallback. */
+#define GLASS_FACES		2U
+
+/* The icons' two sizes in pixels, and how many there are. */
+#define GLASS_ICON_SIZES	2U
+
+/* A cached glyph's cell in the atlas, in pixels a side, and the most cells there are. */
+#define GLASS_CELL		48U
+#define GLASS_CELLS		512U
+
+/* The largest glyph rendered, in pixels a side. */
+#define GLASS_BITMAP		64U
 
 /* The blurred wallpaper is this many times smaller than the output. */
 #define GLASS_BLUR_SCALE	4U
@@ -61,16 +79,46 @@ struct glass_glyph {
 	int32_t advance;
 };
 
-/* The look's images and glyphs. */
+/*
+ * One cell of the atlas's cache: the character and size whose glyph it
+ * holds (a codepoint of 0 is a free cell), the glyph's place and metrics,
+ * and when it was last drawn.
+ */
+struct glass_cached {
+	uint32_t codepoint;
+	unsigned size;
+	struct glass_glyph glyph;
+	uint64_t used;
+};
+
+/*
+ * The look's images and glyphs: the wallpaper and its blur, the atlas with
+ * the ASCII glyphs at each size, the icons at their sizes, and the cache of
+ * other characters; the fonts stay open (with their files' bytes) to
+ * render the cache's glyphs.  cache_top is the atlas row the cache starts
+ * at, cache_count the cells that fit under it, clock the count of cached
+ * glyphs drawn (the cells' use is ordered by it).
+ */
 struct zwl_glass {
 	struct zwl_import wallpaper;
 	struct zwl_import blurred;
 	struct zwl_import atlas;
 	struct glass_glyph glyphs[GLASS_SIZES][GLASS_GLYPHS];
+	struct glass_glyph icons[GLASS_ICON_SIZES][GLASS_ICON_COUNT];
 	unsigned text;
+	struct truetype_face *faces[GLASS_FACES];
+	void *font_data[GLASS_FACES];
+	unsigned face_count;
+	struct glass_cached cache[GLASS_CELLS];
+	uint32_t cache_top;
+	unsigned cache_count;
+	uint64_t clock;
 };
 
 static const unsigned glass_pixels[GLASS_SIZES] = { 14U, 15U, 20U, 36U, 24U };
+
+/* The icons' sizes in pixels. */
+static const unsigned glass_icon_pixels[GLASS_ICON_SIZES] = { 16U, 20U };
 
 static int wallpaper_create(struct zwl_server *server, struct zwl_glass *glass);
 static void wallpaper_pixel(uint32_t x, uint32_t y, uint32_t width, uint32_t height, float *rgb);
@@ -80,6 +128,13 @@ static void blur_pass(float *pixels, float *scratch, uint32_t width, uint32_t he
 static uint32_t pack_pixel(const float *rgb);
 static int atlas_create(struct zwl_server *server, struct zwl_glass *glass);
 static int atlas_fill(struct zwl_glass *glass, struct truetype_face *face);
+static int atlas_icons(struct zwl_glass *glass, uint32_t *pen_y);
+static void atlas_put(struct zwl_glass *glass, const uint8_t *bitmap, uint32_t x, uint32_t y, uint32_t width, uint32_t height);
+static int glass_open_face(struct zwl_glass *glass, const char *path);
+static const struct glass_glyph *glass_glyph_of(struct zwl_glass *glass, enum glass_size size, uint32_t codepoint);
+static const struct glass_glyph *glass_cache_glyph(struct zwl_glass *glass, enum glass_size size, uint32_t codepoint);
+static uint32_t glass_utf8_next(const char **text);
+static void glass_draw_glyph_at(struct zwl_server *server, VkCommandBuffer command, const struct glass_glyph *glyph, int32_t x, int32_t baseline, const float *color);
 static void *file_read(const char *path, size_t *size);
 static float *wallpaper_load(const char *path, uint32_t width, uint32_t height);
 static int ppm_number(const unsigned char *data, size_t size, size_t *at, uint32_t *number);
@@ -123,13 +178,20 @@ zwl_glass_close(
 	struct zwl_server *server)
 {
 	struct zwl_glass *glass;
+	unsigned face;
 
 	/* Nothing was made. */
 	if (server->compose == NULL || server->compose->glass == NULL)
 		return;
 
-	/* The images, then the record. */
+	/* The fonts kept open for the cache. */
 	glass = server->compose->glass;
+	for (face = 0; face < glass->face_count; face++) {
+		truetype_close(glass->faces[face]);
+		free(glass->font_data[face]);
+	}
+
+	/* The images, then the record. */
 	zwl_host_image_release(server->compose, &glass->wallpaper);
 	zwl_host_image_release(server->compose, &glass->blurred);
 	zwl_host_image_release(server->compose, &glass->atlas);
@@ -446,34 +508,26 @@ atlas_create(
 	struct zwl_server *server,
 	struct zwl_glass *glass)
 {
-	struct truetype_face *face;
-	void *data;
-	size_t size;
 	VkResult result;
 	int error;
 
-	/* The font file. */
-	data = file_read(server->font_path, &size);
-	if (data == NULL)
-		return errno;
-	error = truetype_open(data, size, 0U, &face);
-	if (error != 0) {
-		free(data);
-		return EINVAL;
-	}
+	/* The first font, kept open for the cache's glyphs. */
+	error = glass_open_face(glass, server->font_path);
+	if (error != 0)
+		return error;
+
+	/* The fallback font, when there is one; without it a character the first font lacks shows its box. */
+	error = glass_open_face(glass, server->fallback_font_path);
+	if (error != 0)
+		printf("ZWL GLASS no fallback font: path=%s errno=%d\n", server->fallback_font_path, error);
 
 	/* The atlas image, transparent where nothing is drawn. */
 	result = zwl_host_image_create(server->compose, GLASS_ATLAS_WIDTH, GLASS_ATLAS_HEIGHT, server->compose->sampler, &glass->atlas);
-	if (result != VK_SUCCESS) {
-		truetype_close(face);
-		free(data);
+	if (result != VK_SUCCESS)
 		return EIO;
-	}
 
-	/* The glyphs at each size. */
-	error = atlas_fill(glass, face);
-	truetype_close(face);
-	free(data);
+	/* The glyphs at each size, the icons and the cache's place after them. */
+	error = atlas_fill(glass, glass->faces[0]);
 	if (error != 0)
 		return error;
 
@@ -574,6 +628,19 @@ atlas_fill(
 				line = metrics.height;
 		}
 	}
+
+	/* The icons in the rows after the glyphs. */
+	pen_y += line + 1U;
+	error = atlas_icons(glass, &pen_y);
+	if (error != 0)
+		return error;
+
+	/* The cache's cells in the rest of the atlas. */
+	glass->cache_top = pen_y;
+	glass->cache_count = (GLASS_ATLAS_WIDTH / GLASS_CELL) * ((GLASS_ATLAS_HEIGHT - pen_y) / GLASS_CELL);
+	if (glass->cache_count > GLASS_CELLS)
+		glass->cache_count = GLASS_CELLS;
+	printf("ZWL GLASS atlas cache-top=%u cells=%u faces=%u\n", glass->cache_top, glass->cache_count, glass->face_count);
 
 	/* Succeeded. */
 	return 0;
@@ -868,26 +935,30 @@ glass_draw_solid(
 	glass_shape_draw(server, command, &shape);
 }
 
-/* The width of a line of text in pixels (0 without text). */
+/* The width of a line of UTF-8 text in pixels (0 without text). */
 int32_t
 glass_text_width(
 	struct zwl_server *server,
 	enum glass_size size,
 	const char *text)
 {
+	const struct glass_glyph *glyph;
 	struct zwl_glass *glass;
+	uint32_t codepoint;
 	int32_t width;
-	unsigned index;
 
-	/* The sum of the advances of the glyphs the atlas has. */
+	/* Nothing without glyphs. */
 	glass = server->compose->glass;
 	width = 0;
 	if (!glass->text)
 		return 0;
-	for (; *text != '\0'; text++) {
-		index = (unsigned char)*text - 32U;
-		if (index < GLASS_CLOSE_GLYPH)
-			width += glass->glyphs[size][index].advance;
+
+	/* The sum of the advances of the characters there are glyphs for. */
+	while (*text != '\0') {
+		codepoint = glass_utf8_next(&text);
+		glyph = glass_glyph_of(glass, size, codepoint);
+		if (glyph != NULL)
+			width += glyph->advance;
 	}
 
 	/* Succeeded. */
@@ -895,8 +966,8 @@ glass_text_width(
 }
 
 /*
- * Draws a line of text from x on a baseline, cut short (with an ellipsis of
- * dots) where it would pass x + limit.
+ * Draws a line of UTF-8 text from x on a baseline, cut short (with an
+ * ellipsis of dots) where it would pass x + limit.
  */
 void
 glass_draw_text(
@@ -909,7 +980,9 @@ glass_draw_text(
 	int32_t limit,
 	const float *color)
 {
+	const struct glass_glyph *glyph;
 	struct zwl_glass *glass;
+	uint32_t codepoint;
 	int32_t start;
 	int32_t width;
 	int32_t dots;
@@ -926,16 +999,21 @@ glass_draw_text(
 	if (width <= limit)
 		dots = 0;
 
-	/* Each glyph the atlas has, while there is room. */
+	/* Each character there is a glyph for, while there is room. */
 	start = x;
-	for (; *text != '\0'; text++) {
-		index = (unsigned char)*text - 32U;
-		if (index >= GLASS_CLOSE_GLYPH)
+	while (*text != '\0') {
+		codepoint = glass_utf8_next(&text);
+		glyph = glass_glyph_of(glass, size, codepoint);
+		if (glyph == NULL)
 			continue;
-		if (dots != 0 && x + glass->glyphs[size][index].advance > start + limit - dots)
+
+		/* The text stops where the ellipsis must go. */
+		if (dots != 0 && x + glyph->advance > start + limit - dots)
 			break;
-		glass_draw_glyph(server, command, size, index, x, baseline, color);
-		x += glass->glyphs[size][index].advance;
+
+		/* The glyph, and the pen after it. */
+		glass_draw_glyph_at(server, command, glyph, x, baseline, color);
+		x += glyph->advance;
 	}
 
 	/* The ellipsis. */
@@ -958,26 +1036,11 @@ glass_draw_glyph(
 	int32_t baseline,
 	const float *color)
 {
-	struct glass_shape shape;
-	const struct glass_glyph *glyph;
 	struct zwl_glass *glass;
 
-	/* A space draws nothing. */
+	/* The atlas's glyph, drawn where it goes. */
 	glass = server->compose->glass;
-	glyph = &glass->glyphs[size][index];
-	if (glyph->width == 0U || glyph->height == 0U)
-		return;
-
-	/* The glyph's pixels, one to one with the atlas. */
-	glass_shape_init(&shape, (float)(x + glyph->left), (float)(baseline - glyph->top), (float)glyph->width, (float)glyph->height);
-	shape.mode = MODE_TEXT;
-	shape.uv[0] = (float)glyph->x / (float)GLASS_ATLAS_WIDTH;
-	shape.uv[1] = (float)glyph->y / (float)GLASS_ATLAS_HEIGHT;
-	shape.uv[2] = (float)(glyph->x + glyph->width) / (float)GLASS_ATLAS_WIDTH;
-	shape.uv[3] = (float)(glyph->y + glyph->height) / (float)GLASS_ATLAS_HEIGHT;
-	memcpy(shape.color, color, sizeof(shape.color));
-	shape.set = glass->atlas.set;
-	glass_shape_draw(server, command, &shape);
+	glass_draw_glyph_at(server, command, &glass->glyphs[size][index], x, baseline, color);
 }
 
 /* The advance of one glyph of the atlas (0 without text). */
@@ -998,6 +1061,48 @@ glass_glyph_advance(
 	return glass->glyphs[size][index].advance;
 }
 
+/*
+ * Draws a titlebar icon (GLASS_ICON_*) in a square of a size in pixels at
+ * (x, y): the atlas's icon of that size, or of the nearest one scaled.
+ */
+void
+glass_draw_icon(
+	struct zwl_server *server,
+	VkCommandBuffer command,
+	unsigned icon,
+	int32_t x,
+	int32_t y,
+	unsigned pixels,
+	const float *color)
+{
+	struct glass_shape shape;
+	const struct glass_glyph *glyph;
+	struct zwl_glass *glass;
+	unsigned size;
+
+	/* Nothing without the atlas, or for an icon there is not. */
+	glass = server->compose->glass;
+	if (!glass->text || icon >= GLASS_ICON_COUNT)
+		return;
+
+	/* The larger size for anything above the smaller. */
+	size = 0;
+	if (pixels > glass_icon_pixels[0])
+		size = 1;
+	glyph = &glass->icons[size][icon];
+
+	/* The icon's cell of the atlas, over the square. */
+	glass_shape_init(&shape, (float)x, (float)y, (float)pixels, (float)pixels);
+	shape.mode = MODE_TEXT;
+	shape.uv[0] = (float)glyph->x / (float)GLASS_ATLAS_WIDTH;
+	shape.uv[1] = (float)glyph->y / (float)GLASS_ATLAS_HEIGHT;
+	shape.uv[2] = (float)(glyph->x + glyph->width) / (float)GLASS_ATLAS_WIDTH;
+	shape.uv[3] = (float)(glyph->y + glyph->height) / (float)GLASS_ATLAS_HEIGHT;
+	memcpy(shape.color, color, sizeof(shape.color));
+	shape.set = glass->atlas.set;
+	glass_shape_draw(server, command, &shape);
+}
+
 /* The descriptor set of the wallpaper, for pictures of it (the desktops). */
 VkDescriptorSet
 glass_wallpaper_set(
@@ -1005,4 +1110,325 @@ glass_wallpaper_set(
 {
 	/* The full-size image. */
 	return server->compose->glass->wallpaper.set;
+}
+
+/*
+ * Renders every icon at each of its sizes into the atlas from a row on,
+ * and moves the row past them; returns 0, or ENOSPC when the atlas is full.
+ */
+static int
+atlas_icons(
+	struct zwl_glass *glass,
+	uint32_t *pen_y)
+{
+	static uint8_t bitmap[GLASS_BITMAP * GLASS_BITMAP];
+	struct glass_glyph *glyph;
+	uint32_t pen_x;
+	unsigned pixels;
+	unsigned tallest;
+	unsigned size;
+	unsigned icon;
+
+	/* The icons side by side, as tall as the largest size. */
+	pen_x = 0;
+	tallest = glass_icon_pixels[GLASS_ICON_SIZES - 1U];
+	for (size = 0; size < GLASS_ICON_SIZES; size++) {
+		pixels = glass_icon_pixels[size];
+		for (icon = 0; icon < GLASS_ICON_COUNT; icon++) {
+			/* A full row moves the pen down. */
+			if (pen_x + pixels + 1U > GLASS_ATLAS_WIDTH) {
+				pen_x = 0;
+				*pen_y += tallest + 1U;
+			}
+
+			/* The atlas must hold it. */
+			if (*pen_y + pixels > GLASS_ATLAS_HEIGHT)
+				return ENOSPC;
+
+			/* The icon's coverage, into the atlas. */
+			zwl_icon_raster(icon, pixels, bitmap, pixels);
+			atlas_put(glass, bitmap, pen_x, *pen_y, pixels, pixels);
+
+			/* Its place, square, drawn from its top left. */
+			glyph = &glass->icons[size][icon];
+			glyph->x = pen_x;
+			glyph->y = *pen_y;
+			glyph->width = pixels;
+			glyph->height = pixels;
+			glyph->left = 0;
+			glyph->top = 0;
+			glyph->advance = (int32_t)pixels;
+
+			/* The pen moves past it. */
+			pen_x += pixels + 1U;
+		}
+	}
+
+	/* The row after the icons. */
+	*pen_y += tallest + 1U;
+
+	/* Succeeded: the icons are in the atlas. */
+	return 0;
+}
+
+/* Writes a bitmap of coverage into the atlas at a place, as premultiplied white. */
+static void
+atlas_put(
+	struct zwl_glass *glass,
+	const uint8_t *bitmap,
+	uint32_t x,
+	uint32_t y,
+	uint32_t width,
+	uint32_t height)
+{
+	uint32_t *row;
+	uint32_t value;
+	uint32_t column;
+	uint32_t line;
+
+	/* Each row of the bitmap, onto its row of the atlas. */
+	for (line = 0; line < height; line++) {
+		row = (uint32_t *)((unsigned char *)glass->atlas.map + (size_t)(y + line) * glass->atlas.row_pitch);
+		for (column = 0; column < width; column++) {
+			value = bitmap[line * width + column];
+			row[x + column] = (value << 24) | (value << 16) | (value << 8) | value;
+		}
+	}
+}
+
+/*
+ * Opens a font and keeps it (and its file's bytes) for the cache; returns
+ * 0, ENOENT for no path, or the reason it could not be read.
+ */
+static int
+glass_open_face(
+	struct zwl_glass *glass,
+	const char *path)
+{
+	struct truetype_face *face;
+	void *data;
+	size_t size;
+	int error;
+
+	/* No path, or no room for another font. */
+	if (path == NULL || glass->face_count == GLASS_FACES)
+		return ENOENT;
+
+	/* The file. */
+	data = file_read(path, &size);
+	if (data == NULL)
+		return errno;
+
+	/* The font in it. */
+	error = truetype_open(data, size, 0U, &face);
+	if (error != 0) {
+		free(data);
+		return EINVAL;
+	}
+
+	/* Kept until the look closes. */
+	glass->faces[glass->face_count] = face;
+	glass->font_data[glass->face_count] = data;
+	glass->face_count++;
+
+	/* Succeeded: the font can render glyphs. */
+	return 0;
+}
+
+/* Finds the glyph of a character at a size: the atlas's for ASCII, the cache's for any other; NULL for none. */
+static const struct glass_glyph *
+glass_glyph_of(
+	struct zwl_glass *glass,
+	enum glass_size size,
+	uint32_t codepoint)
+{
+	const struct glass_glyph *glyph;
+
+	/* Control characters have none. */
+	if (codepoint < 32U || codepoint == 127U)
+		return NULL;
+
+	/* Printable ASCII is in the atlas. */
+	if (codepoint < 127U)
+		return &glass->glyphs[size][codepoint - 32U];
+
+	/* Any other character is in the cache, rendered on its first use. */
+	glyph = glass_cache_glyph(glass, size, codepoint);
+	return glyph;
+}
+
+/*
+ * Finds a character's glyph in the cache, rendering it into the least
+ * recently drawn cell when it is not there; NULL when it cannot be.
+ */
+static const struct glass_glyph *
+glass_cache_glyph(
+	struct zwl_glass *glass,
+	enum glass_size size,
+	uint32_t codepoint)
+{
+	static uint8_t bitmap[GLASS_BITMAP * GLASS_BITMAP];
+	struct truetype_glyph metrics;
+	struct truetype_face *face;
+	struct glass_cached *cell;
+	unsigned per_row;
+	unsigned oldest;
+	unsigned index;
+	unsigned which;
+	unsigned id;
+	int error;
+
+	/* No cache without room or fonts. */
+	if (glass->cache_count == 0U || glass->face_count == 0U)
+		return NULL;
+
+	/* The cell that holds it already, else the least recently drawn (a free one first). */
+	oldest = 0;
+	for (index = 0; index < glass->cache_count; index++) {
+		cell = &glass->cache[index];
+		if (cell->codepoint == codepoint && cell->size == (unsigned)size) {
+			glass->clock++;
+			cell->used = glass->clock;
+			return &cell->glyph;
+		}
+
+		/* Otherwise the oldest so far. */
+		if (cell->used < glass->cache[oldest].used)
+			oldest = index;
+	}
+
+	/* The first font that has the character, else the first font's missing-glyph box. */
+	face = glass->faces[0];
+	id = 0;
+	for (which = 0; which < glass->face_count; which++) {
+		id = truetype_glyph_index(glass->faces[which], codepoint);
+		if (id != 0U) {
+			face = glass->faces[which];
+			break;
+		}
+	}
+
+	/* No font has it: the first font's box. */
+	if (id == 0U)
+		which = 0;
+
+	/* Its metrics at the size, which must fit a cell. */
+	error = truetype_set_pixel_size(face, glass_pixels[size]);
+	if (error != 0)
+		return NULL;
+	error = truetype_glyph_metrics(face, id, &metrics);
+	if (error != 0)
+		return NULL;
+	if (metrics.width > GLASS_CELL || metrics.height > GLASS_CELL)
+		return NULL;
+
+	/* The cell's place in the atlas. */
+	cell = &glass->cache[oldest];
+	per_row = GLASS_ATLAS_WIDTH / GLASS_CELL;
+	cell->glyph.x = (oldest % per_row) * GLASS_CELL;
+	cell->glyph.y = glass->cache_top + (oldest / per_row) * GLASS_CELL;
+
+	/* The glyph's coverage, into the cell. */
+	memset(bitmap, 0, sizeof(bitmap));
+	if (metrics.width != 0U && metrics.height != 0U) {
+		error = truetype_render_glyph(face, id, &metrics, bitmap, metrics.width, sizeof(bitmap));
+		if (error != 0)
+			return NULL;
+	}
+
+	/* Into the cell. */
+	atlas_put(glass, bitmap, cell->glyph.x, cell->glyph.y, metrics.width, metrics.height);
+
+	/* The cell now holds this character's glyph. */
+	cell->codepoint = codepoint;
+	cell->size = (unsigned)size;
+	cell->glyph.width = metrics.width;
+	cell->glyph.height = metrics.height;
+	cell->glyph.left = metrics.left;
+	cell->glyph.top = metrics.top;
+	cell->glyph.advance = metrics.advance;
+	glass->clock++;
+	cell->used = glass->clock;
+	printf("ZWL GLASS glyph codepoint=U+%04X size=%u face=%u cell=%u\n", codepoint, (unsigned)size, which, oldest);
+
+	/* Succeeded: the glyph. */
+	return &cell->glyph;
+}
+
+/* Reads one UTF-8 character and moves past it; a malformed byte reads as U+FFFD and is passed alone. */
+static uint32_t
+glass_utf8_next(
+	const char **text)
+{
+	const unsigned char *bytes;
+	uint32_t codepoint;
+	unsigned count;
+	unsigned index;
+
+	/* The first byte says how many follow. */
+	bytes = (const unsigned char *)*text;
+	if (bytes[0] < 0x80U) {
+		*text += 1;
+		return bytes[0];
+	}
+
+	/* A lead byte of two, three or four. */
+	if ((bytes[0] & 0xe0U) == 0xc0U) {
+		codepoint = bytes[0] & 0x1fU;
+		count = 1;
+	} else if ((bytes[0] & 0xf0U) == 0xe0U) {
+		codepoint = bytes[0] & 0x0fU;
+		count = 2;
+	} else if ((bytes[0] & 0xf8U) == 0xf0U) {
+		codepoint = bytes[0] & 0x07U;
+		count = 3;
+	} else {
+		*text += 1;
+		return 0xfffdU;
+	}
+
+	/* Each continuation byte adds six bits; a missing one makes the lead byte malformed. */
+	for (index = 1; index <= count; index++) {
+		if ((bytes[index] & 0xc0U) != 0x80U) {
+			*text += 1;
+			return 0xfffdU;
+		}
+
+		/* The byte's bits. */
+		codepoint = (codepoint << 6) | (bytes[index] & 0x3fU);
+	}
+
+	/* Succeeded: the character, and the text after it. */
+	*text += 1U + count;
+	return codepoint;
+}
+
+/* Draws one glyph with its origin at x on the baseline, one to one with the atlas. */
+static void
+glass_draw_glyph_at(
+	struct zwl_server *server,
+	VkCommandBuffer command,
+	const struct glass_glyph *glyph,
+	int32_t x,
+	int32_t baseline,
+	const float *color)
+{
+	struct glass_shape shape;
+	struct zwl_glass *glass;
+
+	/* A space draws nothing. */
+	glass = server->compose->glass;
+	if (glyph->width == 0U || glyph->height == 0U)
+		return;
+
+	/* The glyph's pixels. */
+	glass_shape_init(&shape, (float)(x + glyph->left), (float)(baseline - glyph->top), (float)glyph->width, (float)glyph->height);
+	shape.mode = MODE_TEXT;
+	shape.uv[0] = (float)glyph->x / (float)GLASS_ATLAS_WIDTH;
+	shape.uv[1] = (float)glyph->y / (float)GLASS_ATLAS_HEIGHT;
+	shape.uv[2] = (float)(glyph->x + glyph->width) / (float)GLASS_ATLAS_WIDTH;
+	shape.uv[3] = (float)(glyph->y + glyph->height) / (float)GLASS_ATLAS_HEIGHT;
+	memcpy(shape.color, color, sizeof(shape.color));
+	shape.set = glass->atlas.set;
+	glass_shape_draw(server, command, &shape);
 }
