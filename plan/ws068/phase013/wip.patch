@@ -1,0 +1,626 @@
+diff --git a/userland/X11/libGL/exports.map b/userland/X11/libGL/exports.map
+index 702573b8..7a3856f2 100644
+--- a/userland/X11/libGL/exports.map
++++ b/userland/X11/libGL/exports.map
+@@ -12,26 +12,42 @@
+ 		glAlphaFunc;
+ 		glAttachShader;
+ 		glBegin;
++		glBeginConditionalRender;
++		glBeginQuery;
++		glBeginTransformFeedback;
+ 		glBindAttribLocation;
+ 		glBindBuffer;
++		glBindBufferBase;
++		glBindBufferRange;
++		glBindFragDataLocation;
+ 		glBindFramebuffer;
+ 		glBindRenderbuffer;
++		glBindSampler;
+ 		glBindTexture;
++		glBindTransformFeedback;
++		glBindVertexArray;
+ 		glBlendColor;
+ 		glBlendEquation;
+ 		glBlendEquationSeparate;
+ 		glBlendFunc;
+ 		glBlendFuncSeparate;
++		glBlitFramebuffer;
+ 		glBufferData;
+ 		glBufferSubData;
+ 		glCallList;
+ 		glCallLists;
+ 		glCheckFramebufferStatus;
++		glClampColor;
+ 		glClear;
++		glClearBufferfi;
++		glClearBufferfv;
++		glClearBufferiv;
++		glClearBufferuiv;
+ 		glClearColor;
+ 		glClearDepth;
+ 		glClearDepthf;
+ 		glClearStencil;
++		glClientWaitSync;
+ 		glColor3d;
+ 		glColor3f;
+ 		glColor3fv;
+@@ -43,11 +59,15 @@
+ 		glColor4ub;
+ 		glColor4ubv;
+ 		glColorMask;
++		glColorMaski;
+ 		glColorMaterial;
+ 		glColorPointer;
+ 		glCompileShader;
+ 		glCompressedTexImage2D;
++		glCompressedTexImage3D;
+ 		glCompressedTexSubImage2D;
++		glCompressedTexSubImage3D;
++		glCopyBufferSubData;
+ 		glCopyTexImage2D;
+ 		glCopyTexSubImage2D;
+ 		glCopyTexSubImage3D;
+@@ -58,9 +78,14 @@
+ 		glDeleteFramebuffers;
+ 		glDeleteLists;
+ 		glDeleteProgram;
++		glDeleteQueries;
+ 		glDeleteRenderbuffers;
++		glDeleteSamplers;
+ 		glDeleteShader;
++		glDeleteSync;
+ 		glDeleteTextures;
++		glDeleteTransformFeedbacks;
++		glDeleteVertexArrays;
+ 		glDepthFunc;
+ 		glDepthMask;
+ 		glDepthRange;
+@@ -69,62 +94,116 @@
+ 		glDisable;
+ 		glDisableClientState;
+ 		glDisableVertexAttribArray;
++		glDisablei;
+ 		glDrawArrays;
++		glDrawArraysInstanced;
+ 		glDrawBuffer;
++		glDrawBuffers;
+ 		glDrawElements;
++		glDrawElementsInstanced;
++		glDrawRangeElements;
+ 		glEnable;
+ 		glEnableClientState;
+ 		glEnableVertexAttribArray;
++		glEnablei;
+ 		glEnd;
++		glEndConditionalRender;
+ 		glEndList;
++		glEndQuery;
++		glEndTransformFeedback;
++		glFenceSync;
+ 		glFinish;
+ 		glFlush;
++		glFlushMappedBufferRange;
+ 		glFramebufferRenderbuffer;
++		glFramebufferTexture1D;
+ 		glFramebufferTexture2D;
++		glFramebufferTexture3D;
++		glFramebufferTextureLayer;
+ 		glFrontFace;
+ 		glFrustum;
+ 		glGenBuffers;
+ 		glGenFramebuffers;
+ 		glGenLists;
++		glGenQueries;
+ 		glGenRenderbuffers;
++		glGenSamplers;
+ 		glGenTextures;
++		glGenTransformFeedbacks;
++		glGenVertexArrays;
+ 		glGenerateMipmap;
+ 		glGetActiveAttrib;
+ 		glGetActiveUniform;
++		glGetActiveUniformBlockName;
++		glGetActiveUniformBlockiv;
++		glGetActiveUniformsiv;
+ 		glGetAttachedShaders;
+ 		glGetAttribLocation;
++		glGetBooleani_v;
+ 		glGetBooleanv;
++		glGetBufferParameteri64v;
+ 		glGetBufferParameteriv;
++		glGetBufferPointerv;
++		glGetBufferSubData;
+ 		glGetDoublev;
+ 		glGetError;
+ 		glGetFloatv;
++		glGetFragDataLocation;
+ 		glGetFramebufferAttachmentParameteriv;
++		glGetInteger64i_v;
++		glGetInteger64v;
++		glGetIntegeri_v;
+ 		glGetIntegerv;
++		glGetInternalformativ;
++		glGetProgramBinary;
+ 		glGetProgramInfoLog;
+ 		glGetProgramiv;
++		glGetQueryObjectuiv;
++		glGetQueryiv;
+ 		glGetRenderbufferParameteriv;
++		glGetSamplerParameterfv;
++		glGetSamplerParameteriv;
+ 		glGetShaderInfoLog;
+ 		glGetShaderPrecisionFormat;
+ 		glGetShaderSource;
+ 		glGetShaderiv;
+ 		glGetString;
++		glGetStringi;
++		glGetSynciv;
++		glGetTexImage;
++		glGetTexParameterIiv;
++		glGetTexParameterIuiv;
+ 		glGetTexParameterfv;
+ 		glGetTexParameteriv;
++		glGetTransformFeedbackVarying;
++		glGetUniformBlockIndex;
++		glGetUniformIndices;
+ 		glGetUniformLocation;
+ 		glGetUniformfv;
+ 		glGetUniformiv;
++		glGetUniformuiv;
++		glGetVertexAttribIiv;
++		glGetVertexAttribIuiv;
+ 		glGetVertexAttribPointerv;
+ 		glGetVertexAttribfv;
+ 		glGetVertexAttribiv;
+ 		glHint;
++		glInvalidateFramebuffer;
++		glInvalidateSubFramebuffer;
+ 		glIsBuffer;
+ 		glIsEnabled;
++		glIsEnabledi;
+ 		glIsFramebuffer;
+ 		glIsList;
+ 		glIsProgram;
++		glIsQuery;
+ 		glIsRenderbuffer;
++		glIsSampler;
+ 		glIsShader;
++		glIsSync;
+ 		glIsTexture;
++		glIsTransformFeedback;
++		glIsVertexArray;
+ 		glLightModelf;
+ 		glLightModelfv;
+ 		glLightModeli;
+@@ -138,6 +217,8 @@
+ 		glLoadIdentity;
+ 		glLoadMatrixd;
+ 		glLoadMatrixf;
++		glMapBuffer;
++		glMapBufferRange;
+ 		glMaterialf;
+ 		glMaterialfv;
+ 		glMateriali;
+@@ -151,12 +232,15 @@
+ 		glNormal3fv;
+ 		glNormalPointer;
+ 		glOrtho;
++		glPauseTransformFeedback;
+ 		glPixelStorei;
+ 		glPointSize;
+ 		glPolygonMode;
+ 		glPolygonOffset;
+ 		glPopAttrib;
+ 		glPopMatrix;
++		glProgramBinary;
++		glProgramParameteri;
+ 		glPushAttrib;
+ 		glPushMatrix;
+ 		glReadBuffer;
+@@ -164,9 +248,15 @@
+ 		glRectf;
+ 		glReleaseShaderCompiler;
+ 		glRenderbufferStorage;
++		glRenderbufferStorageMultisample;
++		glResumeTransformFeedback;
+ 		glRotated;
+ 		glRotatef;
+ 		glSampleCoverage;
++		glSamplerParameterf;
++		glSamplerParameterfv;
++		glSamplerParameteri;
++		glSamplerParameteriv;
+ 		glScaled;
+ 		glScalef;
+ 		glScissor;
+@@ -191,33 +281,54 @@
+ 		glTexEnviv;
+ 		glTexImage2D;
+ 		glTexImage3D;
++		glTexParameterIiv;
++		glTexParameterIuiv;
+ 		glTexParameterf;
+ 		glTexParameterfv;
+ 		glTexParameteri;
+ 		glTexParameteriv;
++		glTexStorage2D;
++		glTexStorage3D;
+ 		glTexSubImage2D;
+ 		glTexSubImage3D;
++		glTransformFeedbackVaryings;
+ 		glTranslated;
+ 		glTranslatef;
+ 		glUniform1f;
+ 		glUniform1fv;
+ 		glUniform1i;
+ 		glUniform1iv;
++		glUniform1ui;
++		glUniform1uiv;
+ 		glUniform2f;
+ 		glUniform2fv;
+ 		glUniform2i;
+ 		glUniform2iv;
++		glUniform2ui;
++		glUniform2uiv;
+ 		glUniform3f;
+ 		glUniform3fv;
+ 		glUniform3i;
+ 		glUniform3iv;
++		glUniform3ui;
++		glUniform3uiv;
+ 		glUniform4f;
+ 		glUniform4fv;
+ 		glUniform4i;
+ 		glUniform4iv;
++		glUniform4ui;
++		glUniform4uiv;
++		glUniformBlockBinding;
+ 		glUniformMatrix2fv;
++		glUniformMatrix2x3fv;
++		glUniformMatrix2x4fv;
+ 		glUniformMatrix3fv;
++		glUniformMatrix3x2fv;
++		glUniformMatrix3x4fv;
+ 		glUniformMatrix4fv;
++		glUniformMatrix4x2fv;
++		glUniformMatrix4x3fv;
++		glUnmapBuffer;
+ 		glUseProgram;
+ 		glValidateProgram;
+ 		glVertex2d;
+@@ -240,9 +351,32 @@
+ 		glVertexAttrib3fv;
+ 		glVertexAttrib4f;
+ 		glVertexAttrib4fv;
++		glVertexAttribDivisor;
++		glVertexAttribI1i;
++		glVertexAttribI1iv;
++		glVertexAttribI1ui;
++		glVertexAttribI1uiv;
++		glVertexAttribI2i;
++		glVertexAttribI2iv;
++		glVertexAttribI2ui;
++		glVertexAttribI2uiv;
++		glVertexAttribI3i;
++		glVertexAttribI3iv;
++		glVertexAttribI3ui;
++		glVertexAttribI3uiv;
++		glVertexAttribI4bv;
++		glVertexAttribI4i;
++		glVertexAttribI4iv;
++		glVertexAttribI4sv;
++		glVertexAttribI4ubv;
++		glVertexAttribI4ui;
++		glVertexAttribI4uiv;
++		glVertexAttribI4usv;
++		glVertexAttribIPointer;
+ 		glVertexAttribPointer;
+ 		glVertexPointer;
+ 		glViewport;
++		glWaitSync;
+ 		glXChooseFBConfig;
+ 		glXChooseVisual;
+ 		glXCreateContext;
+@@ -268,9 +402,9 @@
+ 		glXQueryServerString;
+ 		glXQueryVersion;
+ 		glXSwapBuffers;
+-		zglx_swap_step;
+ 		glXWaitGL;
+ 		glXWaitX;
++		zglx_swap_step;
+ 	local:
+ 		*;
+ };
+diff --git a/userland/base/libglesv2/draw.c b/userland/base/libglesv2/draw.c
+index 375e9d53..e17574c1 100644
+--- a/userland/base/libglesv2/draw.c
++++ b/userland/base/libglesv2/draw.c
+@@ -2531,15 +2531,22 @@ draw_raster(
+ 	unsigned face;
+ 	unsigned index;
+ 	uint32_t channels;
++	uint32_t own;
++	uint32_t buffers;
+ 
+ 	/* Everything not set is 0, so equal states compare equal. */
+ 	memset(raster, 0, sizeof(*raster));
+ 	raster->topology = topology;
+ 
+-	/* Blending, on each attachment that blends (not integers, not formats the device does not blend). */
++	/* Blending, on each attachment whose draw buffer blends (not integers, not formats the device does not blend). */
+ 	raster->color_count = target->color_count;
+-	if (state->blend) {
+-		raster->blend = ((1U << target->color_count) - 1U) & ~(target->integer_mask | target->opaque_mask);
++	buffers = 0U;
++	if (state->blend)
++		buffers = (1U << GLES_DRAW_BUFFERS) - 1U;
++	if (state->blend_indexed)
++		buffers = state->blend_buffers;
++	if (buffers != 0U) {
++		raster->blend = buffers & ((1U << target->color_count) - 1U) & ~(target->integer_mask | target->opaque_mask);
+ 		raster->blend_src_rgb = state->blend_src_rgb;
+ 		raster->blend_dst_rgb = state->blend_dst_rgb;
+ 		raster->blend_src_alpha = state->blend_src_alpha;
+@@ -2548,7 +2555,7 @@ draw_raster(
+ 		raster->blend_equation_alpha = state->blend_equation_alpha;
+ 	}
+ 
+-	/* The colour mask as four bits, on each attachment a draw buffer writes. */
++	/* The colour mask as four bits, on each attachment a draw buffer writes (its own mask once one was set). */
+ 	channels = 0U;
+ 	for (face = 0U; face < 4U; face++) {
+ 		if (state->color_mask[face])
+@@ -2557,8 +2564,17 @@ draw_raster(
+ 
+ 	/* The mask on each attachment written. */
+ 	for (index = 0U; index < target->color_count; index++) {
+-		if ((target->draw_mask & (1U << index)) != 0U)
+-			raster->color_mask |= channels << (index * 4U);
++		if ((target->draw_mask & (1U << index)) == 0U)
++			continue;
++		own = channels;
++		if (state->indexed_masked && index < GLES_DRAW_BUFFERS) {
++			own = 0U;
++			for (face = 0U; face < 4U; face++) {
++				if (state->indexed_masks[index][face])
++					own |= 1U << face;
++			}
++		}
++		raster->color_mask |= own << (index * 4U);
+ 	}
+ 
+ 	/* Depth. */
+diff --git a/userland/base/libglesv2/gles.c b/userland/base/libglesv2/gles.c
+index b233e2ed..499f8be3 100644
+--- a/userland/base/libglesv2/gles.c
++++ b/userland/base/libglesv2/gles.c
+@@ -59,6 +59,7 @@ static GLint gles_buffer_name(const struct gles_buffer *buffer);
+ static GLenum gles_draw_buffer(struct gles_state *state, GLenum index);
+ static GLenum gles_read_buffer(struct gles_state *state);
+ static GLenum gles_read_pair(struct gles_state *state, GLenum pname);
++static void gles_blend_buffer(GLenum target, GLuint index, int on);
+ static int gles_version_three(struct zegl_context *context);
+ static unsigned gles_floats(struct zegl_context *context, struct gles_state *state, GLenum pname, GLfloat *values);
+ 
+@@ -609,6 +610,148 @@ glColorMask(
+ 	state->color_mask[1] = green;
+ 	state->color_mask[2] = blue;
+ 	state->color_mask[3] = alpha;
++
++	/* Every draw buffer alike again. */
++	state->indexed_masked = 0;
++}
++
++/*
++ * Sets which colour channels draws write into one draw buffer.
++ */
++GL_APICALL void GL_APIENTRY
++glColorMaski(
++	GLuint buf,
++	GLboolean red,
++	GLboolean green,
++	GLboolean blue,
++	GLboolean alpha)
++{
++	struct zegl_context *context;
++	struct gles_state *state;
++	unsigned index;
++
++	/* A context with its state, and a draw buffer. */
++	context = gles_context();
++	state = gles_state(context);
++	if (state == NULL)
++		return;
++	if (buf >= GLES_DRAW_BUFFERS) {
++		gles_error(context, GL_INVALID_VALUE);
++		return;
++	}
++
++	/* Each buffer starts from the shared mask the first time. */
++	if (!state->indexed_masked) {
++		for (index = 0U; index < GLES_DRAW_BUFFERS; index++)
++			memcpy(state->indexed_masks[index], state->color_mask, sizeof(state->color_mask));
++		state->indexed_masked = 1;
++	}
++
++	/* The buffer's channels (buffer 0's are the shared mask glGet reports). */
++	state->indexed_masks[buf][0] = red;
++	state->indexed_masks[buf][1] = green;
++	state->indexed_masks[buf][2] = blue;
++	state->indexed_masks[buf][3] = alpha;
++	if (buf == 0U)
++		memcpy(state->color_mask, state->indexed_masks[0], sizeof(state->color_mask));
++}
++
++/*
++ * Turns blending on for one draw buffer.
++ */
++GL_APICALL void GL_APIENTRY
++glEnablei(
++	GLenum target,
++	GLuint index)
++{
++	/* Blending on. */
++	gles_blend_buffer(target, index, 1);
++}
++
++/*
++ * Turns blending off for one draw buffer.
++ */
++GL_APICALL void GL_APIENTRY
++glDisablei(
++	GLenum target,
++	GLuint index)
++{
++	/* Blending off. */
++	gles_blend_buffer(target, index, 0);
++}
++
++/*
++ * Reports whether blending is on for one draw buffer.
++ */
++GL_APICALL GLboolean GL_APIENTRY
++glIsEnabledi(
++	GLenum target,
++	GLuint index)
++{
++	struct zegl_context *context;
++	struct gles_state *state;
++
++	/* A context with its state, blending, and a draw buffer. */
++	context = gles_context();
++	state = gles_state(context);
++	if (state == NULL)
++		return GL_FALSE;
++	if (target != GL_BLEND) {
++		gles_error(context, GL_INVALID_ENUM);
++		return GL_FALSE;
++	}
++	if (index >= GLES_DRAW_BUFFERS) {
++		gles_error(context, GL_INVALID_VALUE);
++		return GL_FALSE;
++	}
++
++	/* The buffer's own, or the shared one. */
++	if (state->blend_indexed) {
++		if ((state->blend_buffers & (1U << index)) != 0U)
++			return GL_TRUE;
++		return GL_FALSE;
++	}
++	if (state->blend)
++		return GL_TRUE;
++
++	/* Off. */
++	return GL_FALSE;
++}
++
++/*
++ * Reports an indexed boolean state: a draw buffer's colour mask.
++ */
++GL_APICALL void GL_APIENTRY
++glGetBooleani_v(
++	GLenum target,
++	GLuint index,
++	GLboolean *data)
++{
++	struct zegl_context *context;
++	struct gles_state *state;
++
++	/* A context with its state, the colour mask, and a draw buffer. */
++	context = gles_context();
++	state = gles_state(context);
++	if (state == NULL)
++		return;
++	if (target != GL_COLOR_WRITEMASK) {
++		gles_error(context, GL_INVALID_ENUM);
++		return;
++	}
++	if (index >= GLES_DRAW_BUFFERS) {
++		gles_error(context, GL_INVALID_VALUE);
++		return;
++	}
++
++	/* The buffer's own, or the shared one. */
++	if (state->indexed_masked) {
++		memcpy(data, state->indexed_masks[index], 4U);
++		return;
++	}
++
++	/* Succeeded: the shared mask. */
++	memcpy(data, state->color_mask, 4U);
+ }
+ 
+ /*
+@@ -1994,6 +2137,49 @@ gles_version_three(
+ 	return 1;
+ }
+ 
++/* Turns blending on or off for one draw buffer (glEnablei, glDisablei). */
++static void
++gles_blend_buffer(
++	GLenum target,
++	GLuint index,
++	int on)
++{
++	struct zegl_context *context;
++	struct gles_state *state;
++
++	/* A context with its state, blending, and a draw buffer. */
++	context = gles_context();
++	state = gles_state(context);
++	if (state == NULL)
++		return;
++	if (target != GL_BLEND) {
++		gles_error(context, GL_INVALID_ENUM);
++		return;
++	}
++	if (index >= GLES_DRAW_BUFFERS) {
++		gles_error(context, GL_INVALID_VALUE);
++		return;
++	}
++
++	/* Each buffer starts from the shared state the first time. */
++	if (!state->blend_indexed) {
++		state->blend_buffers = 0U;
++		if (state->blend)
++			state->blend_buffers = (1U << GLES_DRAW_BUFFERS) - 1U;
++		state->blend_indexed = 1;
++	}
++
++	/* The buffer's bit; the shared flag says whether any blends. */
++	if (on) {
++		state->blend_buffers |= 1U << index;
++	} else {
++		state->blend_buffers &= ~(1U << index);
++	}
++	state->blend = 0;
++	if (state->blend_buffers != 0U)
++		state->blend = 1;
++}
++
+ /* Returns a buffer's name, 0 for none. */
+ static GLint
+ gles_buffer_name(
+diff --git a/userland/base/libglesv2/gles.h b/userland/base/libglesv2/gles.h
+index 8ae852c9..a0ba6d13 100644
+--- a/userland/base/libglesv2/gles.h
++++ b/userland/base/libglesv2/gles.h
+@@ -994,6 +994,16 @@ struct gles_state {
+ 	/* The colour mask. */
+ 	GLboolean color_mask[4];
+ 
++	/*
++	 * Each draw buffer's own colour mask (glColorMaski) and blending
++	 * (glEnablei), used once one was set so (indexed nonzero); glColorMask,
++	 * glEnable and glDisable make every buffer alike again.
++	 */
++	GLboolean indexed_masks[GLES_DRAW_BUFFERS][4];
++	int indexed_masked;
++	unsigned blend_buffers;
++	int blend_indexed;
++
+ 	/* The depth test and buffer. */
+ 	int depth_test;
+ 	GLenum depth_func;
