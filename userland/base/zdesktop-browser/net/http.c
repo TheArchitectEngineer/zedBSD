@@ -10,7 +10,8 @@
  * per request (Connection: close), the response read to the end of the
  * connection, its body cut by Content-Length or decoded from chunks,
  * redirects followed (twenty at most), and the cookies of each response
- * kept and sent back (cookie.c).
+ * kept and sent back (cookie.c).  An https URL's connection is TLS
+ * (tls.c) under the same requests.
  *
  * The fetch blocks the caller while it runs: the name lookup, the
  * connection and each read (a read waits NET_HTTP_TIMEOUT at most).  The
@@ -48,9 +49,6 @@
  */
 #define NET_HTTP_HEADERS	"Accept: *" "/" "*\r\nAccept-Encoding: identity\r\nConnection: close\r\n"
 
-/* The port of http: URLs without one. */
-#define NET_HTTP_PORT		80
-
 /*
  * What the headers of a response say that the fetch uses (besides the
  * Content-Type and the cookies, kept at once).
@@ -61,10 +59,21 @@ struct http_headers {
 	int chunked;
 };
 
+/*
+ * A request's connection: the socket, and its TLS for https (NULL for
+ * http).
+ */
+struct http_connection {
+	int descriptor;
+	struct net_tls *tls;
+};
+
 static int http_request(const struct net_url *url, struct net_response *response, struct wb_buffer *location);
 static int http_connect(const struct net_url *url, int *descriptor);
-static int http_send_all(int descriptor, const unsigned char *bytes, size_t length);
-static int http_receive_all(int descriptor, struct wb_buffer *raw);
+static int http_send_all(const struct http_connection *connection, const unsigned char *bytes, size_t length);
+static int http_receive_all(const struct http_connection *connection, struct wb_buffer *raw);
+static int http_receive(const struct http_connection *connection, unsigned char *bytes, size_t length, size_t *received);
+static int http_is_web(const char *scheme);
 static int http_parse(const struct net_url *url, const struct wb_buffer *raw, struct net_response *response, struct wb_buffer *location);
 static int http_header(const struct net_url *url, const char *line, size_t length, struct net_response *response, struct wb_buffer *location, struct http_headers *headers);
 static int http_header_value(const char *line, size_t length, const char *name, const char **value, size_t *value_length);
@@ -74,7 +83,9 @@ static int http_is_redirect(int status);
 /*
  * Fetches a URL with GET, following redirects: fills the response (its
  * final URL, status, Content-Type and body) or returns an errno value
- * (EPROTONOSUPPORT for a scheme other than http, EINVAL for a response
+ * (EPROTONOSUPPORT for a scheme other than http and https, or https
+ * without the OpenSSL package; EPROTO for a TLS failure, whose reason
+ * net_tls_error gives; EINVAL for a response
  * that is not HTTP, ELOOP for too many redirects).
  */
 int
@@ -86,11 +97,12 @@ net_http_fetch(
 	struct net_url next;
 	struct wb_buffer location;
 	int redirects;
-	int differs;
+	int is_web;
 	int redirected;
 	int error;
 
-	/* The URL. */
+	/* The URL (and no TLS failure yet). */
+	net_tls_clear_error();
 	memset(response, 0, sizeof(*response));
 	wb_buffer_init(&response->url);
 	wb_buffer_init(&response->content_type);
@@ -102,9 +114,9 @@ net_http_fetch(
 	/* Each request, then the next one a redirect names. */
 	wb_buffer_init(&location);
 	for (redirects = 0;; redirects++) {
-		/* Only http in this pass (https comes with TLS). */
-		differs = strcmp(url.scheme, "http");
-		if (differs != 0) {
+		/* Only http and https. */
+		is_web = http_is_web(url.scheme);
+		if (!is_web) {
 			error = EPROTONOSUPPORT;
 			break;
 		}
@@ -166,10 +178,11 @@ http_request(
 	struct net_response *response,
 	struct wb_buffer *location)
 {
+	struct http_connection connection;
 	struct wb_buffer request;
 	struct wb_buffer raw;
 	const char *target;
-	int descriptor;
+	int is_https;
 	int error;
 
 	/* The request line: the path (at least "/") and the query. */
@@ -198,14 +211,22 @@ http_request(
 		return error;
 	}
 
-	/* The connection, the request and everything the server sends until it closes. */
-	error = http_connect(url, &descriptor);
-	if (error == 0) {
-		error = http_send_all(descriptor, request.data, request.length);
-		if (error == 0)
-			error = http_receive_all(descriptor, &raw);
-		close(descriptor);
-	}
+	/* The connection, and TLS over it for https. */
+	connection.tls = NULL;
+	connection.descriptor = -1;
+	error = http_connect(url, &connection.descriptor);
+	is_https = !strcmp(url->scheme, "https");
+	if (error == 0 && is_https)
+		error = net_tls_open(connection.descriptor, url->host, &connection.tls);
+
+	/* The request and everything the server sends until it closes. */
+	if (error == 0)
+		error = http_send_all(&connection, request.data, request.length);
+	if (error == 0)
+		error = http_receive_all(&connection, &raw);
+	net_tls_close(connection.tls);
+	if (connection.descriptor >= 0)
+		close(connection.descriptor);
 
 	/* The request was sent. */
 	wb_buffer_release(&request);
@@ -247,8 +268,8 @@ http_connect(
 		host[length - 2U] = '\0';
 	}
 
-	/* The port, or http's. */
-	number = NET_HTTP_PORT;
+	/* The port, or the scheme's. */
+	number = net_url_default_port(url->scheme);
 	if (url->port >= 0)
 		number = url->port;
 	snprintf(port, sizeof(port), "%d", number);
@@ -293,19 +314,26 @@ http_connect(
 	return 0;
 }
 
-/* Sends all of a buffer (a closed connection does not raise SIGPIPE). */
+/* Sends all of a buffer, over TLS or the socket (a closed connection does not raise SIGPIPE). */
 static int
 http_send_all(
-	int descriptor,
+	const struct http_connection *connection,
 	const unsigned char *bytes,
 	size_t length)
 {
 	ssize_t sent;
 	size_t done;
+	int error;
+
+	/* TLS sends it all itself. */
+	if (connection->tls != NULL) {
+		error = net_tls_write(connection->tls, bytes, length);
+		return error;
+	}
 
 	/* Until everything is sent. */
 	for (done = 0; done < length; done += (size_t)sent) {
-		sent = send(descriptor, bytes + done, length - done, MSG_NOSIGNAL);
+		sent = send(connection->descriptor, bytes + done, length - done, MSG_NOSIGNAL);
 		if (sent < 0 && errno == EINTR) {
 			sent = 0;
 			continue;
@@ -323,45 +351,92 @@ http_send_all(
 /* Reads until the server closes the connection (or the response grows too large, or the server falls silent). */
 static int
 http_receive_all(
-	int descriptor,
+	const struct http_connection *connection,
 	struct wb_buffer *raw)
 {
 	struct pollfd waiting;
 	unsigned char chunk[16384];
-	ssize_t received;
+	size_t received;
+	int pending;
 	int ready;
 	int error;
 
-	/* Each read, after waiting for the connection to be readable. */
+	/* Each read, after waiting for the connection to be readable (unless TLS already holds bytes). */
 	for (;;) {
-		waiting.fd = descriptor;
-		waiting.events = POLLIN;
-		waiting.revents = 0;
-		ready = poll(&waiting, 1, NET_HTTP_TIMEOUT);
-		if (ready < 0 && errno == EINTR)
-			continue;
-		if (ready < 0)
-			return errno;
-		if (ready == 0)
-			return ETIMEDOUT;
+		pending = 0;
+		if (connection->tls != NULL)
+			pending = net_tls_pending(connection->tls);
+		if (!pending) {
+			waiting.fd = connection->descriptor;
+			waiting.events = POLLIN;
+			waiting.revents = 0;
+			ready = poll(&waiting, 1, NET_HTTP_TIMEOUT);
+			if (ready < 0 && errno == EINTR)
+				continue;
+			if (ready < 0)
+				return errno;
+			if (ready == 0)
+				return ETIMEDOUT;
+		}
 
 		/* The bytes, or the end of the response. */
-		received = recv(descriptor, chunk, sizeof(chunk), 0);
-		if (received < 0 && errno == EINTR)
+		error = http_receive(connection, chunk, sizeof(chunk), &received);
+		if (error == EINTR)
 			continue;
-		if (received < 0)
-			return errno;
+		if (error != 0)
+			return error;
 		if (received == 0)
 			break;
-		if (raw->length + (size_t)received > NET_HTTP_MAX_RESPONSE)
+		if (raw->length + received > NET_HTTP_MAX_RESPONSE)
 			return EFBIG;
-		error = wb_buffer_append(raw, chunk, (size_t)received);
+		error = wb_buffer_append(raw, chunk, received);
 		if (error != 0)
 			return error;
 	}
 
 	/* Succeeded: the whole response is read. */
 	return 0;
+}
+
+/* Reads what is there, over TLS or the socket; *received is 0 at the end of the connection. */
+static int
+http_receive(
+	const struct http_connection *connection,
+	unsigned char *bytes,
+	size_t length,
+	size_t *received)
+{
+	ssize_t count;
+	int error;
+
+	/* TLS decrypts. */
+	if (connection->tls != NULL) {
+		error = net_tls_read(connection->tls, bytes, length, received);
+		return error;
+	}
+
+	/* The socket's bytes. */
+	*received = 0;
+	count = recv(connection->descriptor, bytes, length, 0);
+	if (count < 0)
+		return errno;
+	*received = (size_t)count;
+	return 0;
+}
+
+/* Tells whether a scheme is one the fetch speaks: http or https. */
+static int
+http_is_web(
+	const char *scheme)
+{
+	int differs;
+
+	/* The two schemes. */
+	differs = strcmp(scheme, "http");
+	if (differs == 0)
+		return 1;
+	differs = strcmp(scheme, "https");
+	return differs == 0;
 }
 
 /* Parses a response: the status line, the headers (cookies kept, a redirect's Location), and the body. */

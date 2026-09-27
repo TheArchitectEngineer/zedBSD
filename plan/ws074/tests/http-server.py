@@ -2,9 +2,13 @@
 # zedBSD
 # Copyright (C) 2026 Awe Morris
 # SPDX-License-Identifier: Zlib
-"""The HTTP test server of zdesktop-browser (ws074-p016): serves the test pages and the cases the HTTP client meets.
+"""The HTTP test server of zdesktop-browser (ws074-p016, p017): serves the test pages and the cases the HTTP client meets.
 
-  http-server.py [--port N] [--bind ADDRESS]      (default 8074 on 0.0.0.0; the guest reaches the host as 10.0.2.2)
+  http-server.py [--port N] [--bind ADDRESS] [--tls-dir DIR --tls-port N --tls-wrong-port N]
+      (default 8074 on 0.0.0.0; the guest reaches the host as 10.0.2.2)
+
+With --tls-dir (made by make-test-ca.sh) the same paths are also served over HTTPS: on --tls-port with DIR/good.pem
+(localhost, 127.0.0.1, 10.0.2.2) and on --tls-wrong-port with DIR/wrong.pem (a name that matches nothing).
 
   /pages/NAME            a page of plan/ws074/tests/pages, with Content-Length
   /redirect/N            N redirects (302, 301, 307 in turn) and then /pages/first.html
@@ -14,19 +18,31 @@
   /cookie/echo           a page showing the Cookie header it was sent
   /script                a page whose script (/script.js, relative) writes into it
   /status/N              a page with status N
+  /to-https              a redirect to the same host's https port, /pages/first.html
+  /cookie/secure-set     sets s=1 (Secure) and p=2, then redirects to the http port's /cookie/echo
 """
 
 import argparse
 import http.server
 import os
 import socketserver
+import ssl
 import sys
+import threading
 
 PAGES = os.path.join(os.path.abspath(os.path.dirname(__file__)), "pages")
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
+    http_port = 0
+    tls_port = 0
+
+    def host_name(self):
+        host = self.headers.get("Host", "127.0.0.1")
+        if host.startswith("["):
+            return host[:host.index("]") + 1]
+        return host.split(":")[0]
 
     def log_message(self, fmt, *args):
         sys.stderr.write("http-server: %s\n" % (fmt % args))
@@ -101,6 +117,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(data)
             return
+        if path == "/to-https":
+            return self.redirect(302, "https://%s:%d/pages/first.html" % (self.host_name(), Handler.tls_port))
+        if path == "/cookie/secure-set":
+            return self.redirect(302, "http://%s:%d/cookie/echo" % (self.host_name(), Handler.http_port),
+                                 (("Set-Cookie", "s=1; Path=/; Secure"), ("Set-Cookie", "p=2; Path=/")))
         if path.startswith("/status/"):
             code = int(path.split("/")[2])
             return self.send_page("<!DOCTYPE html><title>status %d</title><p>status %d" % (code, code), code)
@@ -116,8 +137,20 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=8074)
     parser.add_argument("--bind", default="0.0.0.0")
+    parser.add_argument("--tls-dir")
+    parser.add_argument("--tls-port", type=int, default=8443)
+    parser.add_argument("--tls-wrong-port", type=int, default=8444)
     args = parser.parse_args()
     server = Server((args.bind, args.port), Handler)
+    Handler.http_port = server.server_address[1]
+    Handler.tls_port = args.tls_port
+    if args.tls_dir:
+        for port, name in ((args.tls_port, "good"), (args.tls_wrong_port, "wrong")):
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.load_cert_chain(os.path.join(args.tls_dir, name + ".pem"), os.path.join(args.tls_dir, name + ".key"))
+            secure = Server((args.bind, port), Handler)
+            secure.socket = context.wrap_socket(secure.socket, server_side=True)
+            threading.Thread(target=secure.serve_forever, daemon=True).start()
     print("http-server: listening on %s:%d" % (args.bind, server.server_address[1]), flush=True)
     server.serve_forever()
 

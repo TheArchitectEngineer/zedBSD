@@ -191,7 +191,7 @@ page_fetch(
 
 	/* A data: URL carries its bytes. */
 	is_data = link_named(target.scheme, "data");
-	is_http = link_named(target.scheme, "http");
+	is_http = link_named(target.scheme, "http") || link_named(target.scheme, "https");
 	if (error == 0 && is_data) {
 		error = net_data_parse(&target, &data);
 		if (error == 0)
