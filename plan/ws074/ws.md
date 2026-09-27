@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 のユーザーの指示でサブエージェントが worktree の branch で実行。main の Queue への反映は統合する main）
-Resume point: p001〜p005・p007・p010〜p012 cleared、p014 in-progress（窓と GPU の描画。URL の欄と link は p045 へ分けた）
+Resume point: p001〜p005・p007・p010〜p012・p014 cleared。次は p045（CONTROLS の titlebar の URL の欄、link、戻る・進む）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -84,7 +84,7 @@ p009 → p018 → p027 → p028 → p029 → p031 → p032 → p033 → p034 →
 | [ws074-p011](phase011/phase.md) | layout の最小: box tree（anonymous box）、block（幅・高さ・margin の基本）、inline（line box・text run・baseline）、`--dump=layout` | cleared | p009、p010 |
 | [ws074-p012](phase012/phase.md) | 描画の最小: display list（背景・border の solid・text）、CPU の参照の描画、`--render`（PPM → PNG）、画面の撮影 | cleared | p011 |
 | ws074-p013 | layout 2: float・clear、position（relative・absolute・fixed）、overflow と clip、list と marker、replaced の大きさ、単位（em・rem・vw・%） | planned | p012 |
-| [ws074-p014](phase014/phase.md) | 窓: Wayland と Vulkan（swapchain、display list の GPU の描画: instance の四角と glyph の atlas）、scroll、guest で実際の page を表示。GPU と CPU の描画の比較の試験（2026-09-27 に URL の欄と link を p045 へ分けた） | in-progress | p012（p013 は後回しの順） |
+| [ws074-p014](phase014/phase.md) | 窓: Wayland と Vulkan（swapchain、display list の GPU の描画: instance の四角と glyph の atlas）、scroll、guest で実際の page を表示。GPU と CPU の描画の比較の試験（2026-09-27 に URL の欄と link を p045 へ分けた） | cleared | p012（p013 は後回しの順） |
 | ws074-p015 | URL（WHATWG）、`data:`、WPT の urltestdata の runner | planned | p002 |
 | ws074-p016 | HTTP/1.1（非同期、持続接続、chunked、redirect）、resolver の thread、loader、cookie、memory の cache、host の test server、guest の http | planned | p014、p015 |
 | ws074-p017 | TLS（OpenSSL の `dlopen`、D2）、https、自前の CA の host の server、guest で実在の site | planned | p016 |
