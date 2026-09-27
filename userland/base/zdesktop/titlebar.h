@@ -137,6 +137,8 @@ void zwl_titlebar_send_activated(struct zwl_object *titlebar, uint32_t id, uint3
 void zwl_titlebar_send_text(struct zwl_object *titlebar, uint32_t id, const char *text, int done, uint32_t how);
 void zwl_titlebar_send_tab(struct zwl_object *titlebar, uint32_t id, unsigned event);
 void zwl_titlebar_send_overflow(struct zwl_object *titlebar);
+void zwl_titlebar_send_drop_target(struct zwl_object *titlebar, uint32_t id, uint32_t detail);
+int zwl_titlebar_drop_at(struct zwl_server *server, int32_t x, int32_t y, struct zwl_object **surface, struct zwl_object **titlebar, uint32_t *id, uint32_t *detail);
 
 /* The presentation (titlebar-shell.c). */
 void zwl_titlebar_frame(struct zwl_server *server);

@@ -38,8 +38,8 @@ zwl_damage_pointer(
 {
 	int calm;
 
-	/* A client's own cursor surface may be of any size. */
-	if (server->cursor_surface != NULL) {
+	/* A client's own cursor surface may be of any size, and so may a drag's icon. */
+	if (server->cursor_surface != NULL || server->dnd_active) {
 		server->dirty = 1;
 		return;
 	}

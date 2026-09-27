@@ -167,7 +167,8 @@ static const struct zdesktop_titlebar_listener probe_titlebar_listener = {
 	probe_tab_activated,
 	probe_tab_close,
 	probe_new_tab,
-	probe_overflow
+	probe_overflow,
+	NULL
 };
 
 /* The server cases, each on its own connection. */

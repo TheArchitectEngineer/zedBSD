@@ -78,6 +78,10 @@
 #define EVENT_TAB_CLOSE_REQUESTED	4U
 #define EVENT_NEW_TAB_REQUESTED		5U
 #define EVENT_OVERFLOW_MENU_OPENED	6U
+#define EVENT_DROP_TARGET		7U
+
+/* The version that has drop_target. */
+#define TITLEBAR_DROP_VERSION		2U
 
 static uint32_t titlebar_word(const unsigned char *bytes, size_t offset);
 static int titlebar_string(const unsigned char *bytes, size_t size, size_t offset, const char **text, size_t *next);
@@ -367,6 +371,34 @@ zwl_titlebar_send_overflow(
 
 	/* The event has no arguments. */
 	titlebar_emit(titlebar, EVENT_OVERFLOW_MENU_OPENED, NULL, 0U);
+}
+
+/*
+ * Tells a window's client the part of a breadcrumb a drag and drop is over
+ * (id 0: none now), before the drag's enter or motion (data.c).  A
+ * titlebar before version 2 is not told.
+ */
+void
+zwl_titlebar_send_drop_target(
+	struct zwl_object *titlebar,
+	uint32_t id,
+	uint32_t detail)
+{
+	uint32_t words[2];
+	int live;
+
+	/* A titlebar whose client has failed, or that is too old for it, hears nothing. */
+	live = titlebar_live(titlebar);
+	if (live == 0 || titlebar->version < TITLEBAR_DROP_VERSION)
+		return;
+
+	/* The control and its part. */
+	words[0] = id;
+	words[1] = detail;
+	titlebar_emit(titlebar, EVENT_DROP_TARGET, words, sizeof(words));
+
+	/* The log line the tests read. */
+	printf("ZWL TITLEBAR drop_target client=%llu id=%u detail=%u\n", (unsigned long long)titlebar->client->number, id, detail);
 }
 
 /* Reads one native-endian protocol word the caller has checked is there. */

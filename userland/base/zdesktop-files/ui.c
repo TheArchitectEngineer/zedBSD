@@ -97,6 +97,7 @@ fm_app_init(
 	app->drag_hit_index = -1;
 	app->drag_tag = -1;
 	app->drag_place = -1;
+	app->drop_part = -1;
 	snprintf(app->wallpaper, sizeof(app->wallpaper), "%s", FM_WALLPAPER);
 	app->click_index = -1;
 
@@ -209,6 +210,16 @@ fm_ui_event(
 		break;
 	case FM_EVENT_ACTION:
 		fm_ui_action(app, event->action);
+		break;
+	case FM_EVENT_DROP_ENTER:
+	case FM_EVENT_DROP_MOTION:
+	case FM_EVENT_DROP_LEAVE:
+	case FM_EVENT_DROP:
+	case FM_EVENT_DROP_PART:
+	case FM_EVENT_DROP_ACTION:
+	case FM_EVENT_DRAG_DONE:
+		/* A drag and drop from zdesktop (ui-drag.c). */
+		fm_drop_event(app, event);
 		break;
 	default:
 		break;

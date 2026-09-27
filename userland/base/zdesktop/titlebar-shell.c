@@ -265,6 +265,7 @@ static void shell_act_tabs(struct zwl_server *server, const struct shell_hit *hi
 static void shell_log_strip(struct zwl_object *surface, unsigned docked, const struct shell_tab *tabs, unsigned count, const int32_t *closes, int32_t y, int32_t size, const int32_t *buttons, uint32_t checksum);
 static unsigned shell_icon(uint32_t role);
 static int shell_hovered(struct zwl_server *server, int32_t x, int32_t y, int32_t width, int32_t height);
+static void shell_draw_drop_part(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, uint32_t id, uint32_t detail, int32_t x, int32_t y, int32_t width, int32_t size, float fade);
 static void shell_add_hit(struct zwl_object *surface, unsigned docked, unsigned kind, uint32_t id, uint32_t detail, int32_t x, int32_t y, int32_t width, int32_t height);
 static const struct shell_hit *shell_hit_at(int32_t x, int32_t y);
 static void shell_act(struct zwl_server *server, const struct shell_hit *hit);
@@ -722,6 +723,51 @@ zwl_titlebar_axis(
 	}
 
 	/* The wheel was the strip's. */
+	return 1;
+}
+
+/*
+ * Finds the part of a breadcrumb at a point, where the last frame drew it,
+ * for a drag and drop (data.c): its window, the window's titlebar, the
+ * control and the part.  A floating titlebar counts only where its window
+ * is the one on top.  Returns 1 when there is one.
+ */
+int
+zwl_titlebar_drop_at(
+	struct zwl_server *server,
+	int32_t x,
+	int32_t y,
+	struct zwl_object **surface,
+	struct zwl_object **titlebar,
+	uint32_t *id,
+	uint32_t *detail)
+{
+	const struct shell_hit *hit;
+	struct zwl_titlebar_model *model;
+	struct zwl_object *top;
+	unsigned mode;
+
+	/* A breadcrumb's part under the point. */
+	hit = shell_hit_at(x, y);
+	if (hit == NULL || hit->kind != KIND_CRUMB)
+		return 0;
+
+	/* A floating one covered by another window is not there. */
+	if (hit->docked == 0U) {
+		top = zwl_glass_window_at(server, x, y);
+		if (top != hit->surface)
+			return 0;
+	}
+
+	/* The window's titlebar, showing its controls. */
+	mode = shell_mode(hit->surface, &model, titlebar);
+	if (mode != ZWL_TITLEBAR_CONTROLS || *titlebar == NULL)
+		return 0;
+
+	/* Succeeded: the window, the control and the part. */
+	*surface = hit->surface;
+	*id = hit->id;
+	*detail = hit->detail;
 	return 1;
 }
 
@@ -1457,9 +1503,10 @@ shell_draw_crumbs(
 		total += CRUMB_ARROW + widths[first];
 	}
 
-	/* "..." for the parts left out; it goes to the nearest of them. */
+	/* "..." for the parts left out; it goes to the nearest of them (lit when a drag and drop is over it). */
 	pen = x;
 	if (first > 0U) {
+		shell_draw_drop_part(server, command, surface, control->id, first - 1U, pen, y, more - CRUMB_ARROW, size, fade);
 		shell_colour(colour, ink, fade);
 		colour[3] *= 0.6f;
 		glass_draw_text(server, command, SIZE_BAR, pen + CRUMB_PADDING / 2, baseline, ellipsis, more, colour);
@@ -1480,6 +1527,9 @@ shell_draw_crumbs(
 			ground[3] = 0.62f * fade;
 			glass_draw_solid(server, command, (float)pen, (float)y + 2.0f, (float)widths[part], (float)size - 4.0f, 8.0f, ground);
 		}
+
+		/* The part a drag and drop is over, lit as a target. */
+		shell_draw_drop_part(server, command, surface, control->id, part, pen, y, widths[part], size, fade);
 
 		/* The label. */
 		shell_colour(colour, ink, fade);
@@ -2130,6 +2180,47 @@ shell_hovered(
 
 	/* Inside. */
 	return 1;
+}
+
+/*
+ * Lights the part of a breadcrumb a drag and drop is over (data.c) as a
+ * target: a pale blue face with a blue edge.  Other parts are left alone.
+ */
+static void
+shell_draw_drop_part(
+	struct zwl_server *server,
+	VkCommandBuffer command,
+	struct zwl_object *surface,
+	uint32_t id,
+	uint32_t detail,
+	int32_t x,
+	int32_t y,
+	int32_t width,
+	int32_t size,
+	float fade)
+{
+	static const float edge[4] = { 0.18f, 0.49f, 0.96f, 0.9f };
+	static const float face[4] = { 0.86f, 0.92f, 1.0f, 0.95f };
+	struct zwl_titlebar_model *model;
+	struct zwl_object *titlebar;
+	float colour[4];
+
+	/* Only the part the drag is over, of this window's titlebar. */
+	if (!server->dnd_active || server->dnd_titlebar == NULL)
+		return;
+	if (server->dnd_part_id != id || server->dnd_part_detail != detail)
+		return;
+	(void)shell_mode(surface, &model, &titlebar);
+	if (titlebar != server->dnd_titlebar)
+		return;
+
+	/* The edge, then the face within it. */
+	memcpy(colour, edge, sizeof(colour));
+	colour[3] *= fade;
+	glass_draw_solid(server, command, (float)x - 1.0f, (float)y + 1.0f, (float)width + 2.0f, (float)size - 2.0f, 9.0f, colour);
+	memcpy(colour, face, sizeof(colour));
+	colour[3] *= fade;
+	glass_draw_solid(server, command, (float)x + 1.0f, (float)y + 3.0f, (float)width - 2.0f, (float)size - 6.0f, 7.0f, colour);
 }
 
 /* Records a region of the frame, when there is room. */

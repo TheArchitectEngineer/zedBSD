@@ -1502,6 +1502,21 @@ compose_cursor(
 	int32_t hotspot_x;
 	int32_t hotspot_y;
 
+	/* A drag and drop's icon under the cursor (its surface's corner at the pointer), or zdesktop's badge in the glass look (data.c). */
+	if (server->dnd_active) {
+		surface = server->dnd_icon;
+		image = NULL;
+		if (surface != NULL && !surface->dead)
+			image = surface_image(surface);
+		if (image != NULL) {
+			alpha = *image;
+			alpha.draw = ZWL_DRAW_ALPHA;
+			compose_quad(server, command, &alpha, server->pointer_x, server->pointer_y);
+		} else if (server->glass) {
+			zwl_glass_draw_drag_badge(server, command);
+		}
+	}
+
 	/* A hidden cursor is not drawn. */
 	if (server->cursor_hidden)
 		return;
@@ -1628,6 +1643,20 @@ compose_hold(
 			tail = &(*tail)->callback_next;
 		*tail = windows[index]->committed_callbacks;
 		windows[index]->committed_callbacks = NULL;
+	}
+
+	/* A drag's icon surface is held and told too. */
+	surface = server->dnd_icon;
+	if (server->dnd_active && surface != NULL && !surface->dead && surface->current != NULL) {
+		zwl_buffer_get(surface->current);
+		compose->held[compose->held_count++] = surface->current;
+
+		/* Its frame callbacks after the windows'. */
+		tail = &compose->callbacks;
+		while (*tail != NULL)
+			tail = &(*tail)->callback_next;
+		*tail = surface->committed_callbacks;
+		surface->committed_callbacks = NULL;
 	}
 
 	/* A client's cursor surface is held and told too. */

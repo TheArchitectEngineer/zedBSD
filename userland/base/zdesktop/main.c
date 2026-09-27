@@ -525,6 +525,9 @@ event_loop(
 		/* A client that has left a ping unanswered too long is not responding (toplevel.c). */
 		zwl_ping_check(server, now);
 
+		/* The windows hear new bounds when the space for bodies changed (the glass look given up, protocol.c). */
+		zwl_window_bounds_refresh(server);
+
 		/* Allocate exactly enough poll storage for the presently live client and device set. */
 		count = 1;
 		for (client = server->clients; client != NULL; client = client->next)

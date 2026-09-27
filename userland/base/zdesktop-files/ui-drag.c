@@ -15,8 +15,13 @@
  * title adds the dragged folders to the Favorites.  A favorite folder
  * dragged onto another one moves to its place in the list.  Esc gives up.
  *
- * The items travel as their paths inside this window only; a drag to
- * another window is not offered (it needs Wayland's data device).
+ * Items dragged out of the window go on as a drag and drop of zdesktop
+ * (ws035-p084, dnd.c): their file names travel to another window (of this
+ * program or another) or back to this one, where the drop comes in as the
+ * drop events.  A drop coming in has a folder as its target: a folder among
+ * the items, a folder of the sidebar, another tab's folder, a part of the
+ * titlebar's path, or else the folder shown; its action (move or copy) is
+ * zdesktop's choice, made a copy across devices.
  */
 
 #include "files.h"
@@ -59,6 +64,8 @@ static void drag_end(struct fm_app *app);
 static void drag_draw_target(struct fm_app *app, struct fm_canvas *canvas);
 static void drag_draw_badges(struct fm_app *app, struct fm_canvas *canvas, float x, float y);
 static void drag_draw_place(struct fm_app *app, struct fm_canvas *canvas);
+static void drag_go_out(struct fm_app *app);
+static void drop_find(struct fm_app *app);
 
 /*
  * Follows the pointer while the left button holds an item: the drag starts
@@ -74,6 +81,16 @@ fm_drag_motion(
 {
 	int dx;
 	int dy;
+
+	/* A drag carried by zdesktop is not the window's to follow. */
+	if (app->drag != 0 && app->drag_outside != 0)
+		return 1;
+
+	/* Items dragged out of the window go on as zdesktop's drag and drop. */
+	if (app->drag != 0 && app->drag_place < 0 && (x < 0 || y < 0 || x >= app->width || y >= app->height)) {
+		drag_go_out(app);
+		return 1;
+	}
 
 	/* A drag in progress follows the pointer. */
 	if (app->drag != 0) {
@@ -185,8 +202,14 @@ fm_drag_draw(
 	float x;
 	float y;
 
-	/* Only while dragging. */
-	if (app->drag == 0)
+	/* A drop coming in lights its target alone (zdesktop draws what is carried). */
+	if (app->drop_active != 0) {
+		drag_draw_target(app, canvas);
+		return;
+	}
+
+	/* Only while dragging within the window. */
+	if (app->drag == 0 || app->drag_outside != 0)
 		return;
 
 	/* A favorite: its own look. */
@@ -214,6 +237,146 @@ fm_drag_draw(
 
 	/* The count and the operation. */
 	drag_draw_badges(app, canvas, x, y);
+}
+
+/*
+ * Follows a drag and drop from zdesktop: it comes over the window, moves,
+ * is over a part of the titlebar's path, leaves, or is dropped; the action
+ * zdesktop chose; the end of the window's own drag that left it.
+ */
+void
+fm_drop_event(
+	struct fm_app *app,
+	const struct fm_event *event)
+{
+	/* Each event. */
+	switch (event->type) {
+	case FM_EVENT_DROP_ENTER:
+		/* A drag comes over the window: whose it is and what it carries. */
+		app->drop_active = 1;
+		app->drop_self = 0;
+		if (event->pressed != 0 && app->drag_outside != 0)
+			app->drop_self = 1;
+		app->drop_files = event->focused;
+		app->drop_x = event->x;
+		app->drop_y = event->y;
+		app->drag_target = FM_DRAG_NONE;
+		app->drag_hit_kind = FM_HIT_NONE;
+		app->drag_hit_index = -1;
+		fm_log("DROP enter self=%d files=%d x=%d y=%d", app->drop_self, app->drop_files, event->x, event->y);
+		drop_find(app);
+		break;
+	case FM_EVENT_DROP_MOTION:
+		/* It moves over the window. */
+		app->drop_x = event->x;
+		app->drop_y = event->y;
+		drop_find(app);
+		break;
+	case FM_EVENT_DROP_PART:
+		/* It is over a part of the titlebar's path, or none. */
+		app->drop_part = -1;
+		if (event->action == FM_CONTROL_PATH)
+			app->drop_part = (int)event->button;
+		if (app->drop_active != 0)
+			drop_find(app);
+		break;
+	case FM_EVENT_DROP_ACTION:
+		/* zdesktop's choice of move or copy. */
+		app->drop_action = event->action;
+		break;
+	case FM_EVENT_DROP_LEAVE:
+		/* It went elsewhere. */
+		app->drop_active = 0;
+		app->drag_target = FM_DRAG_NONE;
+		app->drag_hit_kind = FM_HIT_NONE;
+		app->drag_hit_index = -1;
+		fm_log("DROP leave");
+		break;
+	case FM_EVENT_DROP:
+		/* Dropped: a folder target's folder and operation go to the Wayland side, which fetches the names. */
+		app->drop_active = 0;
+		if (app->drag_target == FM_DRAG_FOLDER) {
+			snprintf(app->drop_folder, sizeof(app->drop_folder), "%s", app->drag_folder);
+			app->drop_operation = FM_TASK_MOVE;
+			if (app->drop_action == FM_DND_COPY)
+				app->drop_operation = FM_TASK_COPY;
+			app->request = FM_REQUEST_DROP;
+			fm_log("DROP drop self=%d destination=%s action=%u", app->drop_self, app->drop_folder, app->drop_action);
+		} else {
+			fm_log("DROP drop target=none");
+		}
+
+		/* The window has no target any more. */
+		app->drag_target = FM_DRAG_NONE;
+		app->drag_hit_kind = FM_HIT_NONE;
+		app->drag_hit_index = -1;
+		break;
+	case FM_EVENT_DRAG_DONE:
+		/* The window's own drag that left it is over (dropped somewhere, or cancelled). */
+		if (app->drag_outside != 0) {
+			fm_log("DRAG out done dropped=%d", event->pressed);
+			app->drag_outside = 0;
+			drag_end(app);
+			app->pressing = 0;
+		}
+
+		/* Nothing else to do. */
+		break;
+	default:
+		break;
+	}
+
+	/* A new frame shows it. */
+	app->dirty = 1;
+}
+
+/*
+ * Tells whether a drop coming in has a target the window takes (a folder).
+ */
+int
+fm_drop_accepts(
+	const struct fm_app *app)
+{
+	/* Only a folder, while a drop is over the window. */
+	if (app->drop_active == 0 || app->drag_target != FM_DRAG_FOLDER)
+		return 0;
+
+	/* It is taken. */
+	return 1;
+}
+
+/*
+ * Carries out a drop made: the dropped paths move (or are copied) into its
+ * folder; a move across devices is a copy.
+ */
+void
+fm_drop_perform(
+	struct fm_app *app,
+	char *const *paths,
+	size_t count)
+{
+	struct stat target;
+	struct stat source;
+	unsigned operation;
+	int error;
+
+	/* Nothing dropped. */
+	if (count == 0)
+		return;
+
+	/* A move to another device copies (as a drag within the window does). */
+	operation = app->drop_operation;
+	if (operation == FM_TASK_MOVE) {
+		error = stat(app->drop_folder, &target);
+		if (error == 0)
+			error = lstat(paths[0], &source);
+		if (error == 0 && target.st_dev != source.st_dev)
+			operation = FM_TASK_COPY;
+	}
+
+	/* Logged, and the task started. */
+	fm_log("DROP operation=%s items=%lu destination=%s first=%s", drag_verb(operation), (unsigned long)count, app->drop_folder, paths[0]);
+	(void)fm_action_transfer(app, operation, paths, count, app->drop_folder);
 }
 
 /* Starts dragging the selection, when there is one. */
@@ -691,6 +854,13 @@ drag_draw_target(
 	if (app->drag_target == FM_DRAG_NONE)
 		return;
 
+	/* A drop into the folder shown lights the content's edge. */
+	if (app->drop_active != 0 && app->drag_hit_kind == FM_HIT_NONE && app->drag_hit_index == -1) {
+		rect = &app->layout.content;
+		fm_canvas_round_border(canvas, (float)rect->x + 2.0f, (float)rect->y + 2.0f, (float)rect->width - 4.0f, (float)rect->height - 4.0f, 16.0f, 2.0f, FM_COLOR_ACCENT);
+		return;
+	}
+
 	/* The last region of the frame that is the target's (the last drawn is the one under the pointer). */
 	rect = NULL;
 	for (hit = app->hit_count - 1; hit >= 0; hit--) {
@@ -803,4 +973,84 @@ drag_draw_place(
 	fm_canvas_shadow(canvas, (float)x, (float)y + 2.0f, (float)width, 26.0f, 13.0f, 8.0f, FM_COLOR_SHADOW);
 	fm_canvas_round(canvas, (float)x, (float)y, (float)width, 26.0f, 13.0f, FM_RGBA(0xffffff, 235));
 	(void)fm_text_draw(app->text, canvas, x + 12, fm_text_center(13U, y, 26), place->label, strlen(place->label), 13U, 0, FM_COLOR_TEXT);
+}
+
+/*
+ * Hands the dragged items to zdesktop when the pointer leaves the window:
+ * the window's own target goes, and the Wayland side starts the drag and
+ * drop (FM_REQUEST_DRAG_OUT).
+ */
+static void
+drag_go_out(
+	struct fm_app *app)
+{
+	/* No target of the window's any more. */
+	app->drag_target = FM_DRAG_NONE;
+	app->drag_hit_kind = FM_HIT_NONE;
+	app->drag_hit_index = -1;
+
+	/* zdesktop carries the items from here on. */
+	app->drag_outside = 1;
+	app->request = FM_REQUEST_DRAG_OUT;
+	app->dirty = 1;
+	fm_log("DRAG out items=%lu", (unsigned long)app->drag_count);
+}
+
+/*
+ * Finds the target of a drop coming in, where it is now: the part of the
+ * titlebar's path it is over, or a folder under it (as for a drag within
+ * the window), or else the folder shown (for another window's items).
+ * Only folders are targets; a changed target is answered to zdesktop.
+ */
+static void
+drop_find(
+	struct fm_app *app)
+{
+	static struct fm_crumb crumbs[FM_CRUMBS];
+	const struct fm_rect *content;
+	const char *shown;
+	unsigned previous;
+	char folder[FM_PATH_MAX];
+	int count;
+	int same;
+
+	/* The target before, to tell a change. */
+	previous = app->drag_target;
+	snprintf(folder, sizeof(folder), "%s", app->drag_folder);
+
+	/* A drag without file names has no target here. */
+	if (app->drop_self == 0 && app->drop_files == 0) {
+		drag_target(app, FM_DRAG_NONE, FM_HIT_NONE, -1, -1, "");
+	} else if (app->drop_part >= 0) {
+		/* A part of the path: its folder (the folder shown is no target for the window's own items). */
+		count = fm_ui_crumbs(app, crumbs, FM_CRUMBS);
+		drag_target(app, FM_DRAG_NONE, FM_HIT_NONE, -1, -1, "");
+		if (app->drop_part < count && crumbs[app->drop_part].location.kind == FM_LOCATION_FOLDER) {
+			shown = fm_current_folder(app);
+			same = 1;
+			if (shown != NULL)
+				same = strcmp(shown, crumbs[app->drop_part].location.path);
+			if (app->drop_self == 0 || same != 0)
+				drag_target(app, FM_DRAG_FOLDER, FM_HIT_NONE, -2 - app->drop_part, -1, crumbs[app->drop_part].location.path);
+		}
+	} else {
+		/* Under the pointer as for a drag within the window; only a folder counts. */
+		drag_find(app, app->drop_x, app->drop_y);
+		if (app->drag_target != FM_DRAG_FOLDER)
+			drag_target(app, FM_DRAG_NONE, FM_HIT_NONE, -1, -1, "");
+
+		/* Another window's items can go into the folder shown, anywhere on the content. */
+		shown = fm_current_folder(app);
+		content = &app->layout.content;
+		if (app->drop_self == 0 && app->drag_target == FM_DRAG_NONE && shown != NULL &&
+		    app->drop_x >= content->x && app->drop_x < content->x + content->width &&
+		    app->drop_y >= content->y && app->drop_y < content->y + content->height)
+			drag_target(app, FM_DRAG_FOLDER, FM_HIT_NONE, -1, -1, shown);
+	}
+
+	/* A changed target is answered. */
+	same = strcmp(folder, app->drag_folder);
+	if (previous != app->drag_target || same != 0)
+		app->drop_answer = 1;
+	app->dirty = 1;
 }

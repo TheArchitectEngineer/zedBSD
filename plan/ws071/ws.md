@@ -78,8 +78,8 @@ Phase の記録は git の履歴にある（WS の完了で削除した）。
 
 - **i915 実機**: zdesktop-files の実機の capture の scenario は [WS075](../ws075/ws.md) の p002 で保留になっている（desktop の変更が
   落ち着いたら main の合図で足す）。この WS の受け入れの実機の部分はそこへ移す。
-- **窓の外への DnD と titlebar のパンくずへの drop**（design の F-i）: WS035 の DnD の Phase（zdesktop の `wl_data_device` の
-  start_drag・enter・motion・drop、2026-09-27 main の割り当て）へ。
+- **窓の外への DnD と titlebar のパンくずへの drop**（design の F-i）: [ws035-p084](../ws035/ws.md) へ移し、2026-09-27 に cleared
+  （窓の間の drag and drop、パンくずの段への drop）。
 - **libz-compat の deflate・libpng-compat の encode**: [ws035-p040](../ws035/ws.md)・p041 に残す。
 - Future Work（[future-work.md](../future-work.md)）: F-032（network の場所）、F-033（カラム・ギャラリー）、F-034（indexer・中身の検索）、
   F-035（動画・PDF・JPEG のサムネイル、disk の cache）、F-036（unmount・eject）、F-037（damage の矩形の描き直し）、F-038（共有の UI

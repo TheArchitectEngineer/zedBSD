@@ -378,6 +378,18 @@ struct zwl_object {
 	unsigned mime_count;
 	struct zwl_object *data_source;
 	/*
+	 * Drag and drop (data.c, ws035-p084): a source's actions (set_actions),
+	 * and for an offer made for a drag: the actions its target takes and
+	 * the one it prefers, the action last told, whether it accepted a type,
+	 * and whether it was dropped on (its finish is then awaited).
+	 */
+	uint32_t dnd_actions;
+	uint32_t dnd_preferred;
+	uint32_t dnd_action;
+	unsigned dnd_offer;
+	unsigned dnd_accepted;
+	unsigned dnd_dropped;
+	/*
 	 * ws035-p080: a toplevel's zxdg_toplevel_decoration_v1 and the
 	 * decoration's toplevel (each cleared from both ends when either
 	 * goes); a wp_cursor_shape_device_v1's wl_pointer (NULL once it has
@@ -686,6 +698,32 @@ struct zwl_server {
 	struct zwl_object *selection;
 	uint64_t selection_client;
 	/*
+	 * The bounds last sent to windows (xdg_toplevel.configure_bounds,
+	 * protocol.c): when the space for bodies no longer matches, the windows
+	 * hear the new one (0 before any was sent).
+	 */
+	int32_t bounds_width;
+	int32_t bounds_height;
+	/*
+	 * Drag and drop (data.c, ws035-p084), while dnd_active: the drag's
+	 * wl_data_source (NULL for a drag inside its own client), the surface
+	 * it started from, its icon surface (NULL for zdesktop's badge), the
+	 * surface under the pointer that heard enter and the data device it
+	 * heard it on, the offer made for it, and the titlebar told the part
+	 * of a breadcrumb the drag is over (NULL for none) with that part.
+	 * Each is cleared when its object goes.
+	 */
+	unsigned dnd_active;
+	struct zwl_object *dnd_source;
+	struct zwl_object *dnd_origin;
+	struct zwl_object *dnd_icon;
+	struct zwl_object *dnd_target;
+	struct zwl_object *dnd_target_device;
+	struct zwl_object *dnd_offer;
+	struct zwl_object *dnd_titlebar;
+	uint32_t dnd_part_id;
+	uint32_t dnd_part_detail;
+	/*
 	 * The cursor shape the pointer's client asked for (wp_cursor_shape_v1,
 	 * cursor.c, ws035-p080; 0 for zdesktop's arrow), and the images of the
 	 * shapes zdesktop draws, by the index cursor.c gives them (NULL until
@@ -750,6 +788,7 @@ int zwl_glass_body_damage(struct zwl_server *server, struct zwl_object *surface,
 int zwl_glass_pointer_calm(struct zwl_server *server, int32_t x, int32_t y);
 void zwl_damage_pointer(struct zwl_server *server, int32_t old_x, int32_t old_y);
 void zwl_damage_commit(struct zwl_server *server, struct zwl_object *surface, struct zwl_object *previous);
+void zwl_window_bounds_refresh(struct zwl_server *server);
 int zwl_window_send_configure(struct zwl_object *surface);
 int zwl_fence_ready(struct zwl_server *server, struct zwl_object *surface);
 int zwl_compose_waiting(struct zwl_server *server);

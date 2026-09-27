@@ -111,6 +111,8 @@ static int main_canvas_make(void);
 static int main_timeout(uint64_t now);
 static void main_request(const struct main_options *options);
 static void main_new_window(const struct main_options *options);
+static void main_drag_out(void);
+static void main_drop(void);
 static void main_menu_update(void);
 
 /*
@@ -436,8 +438,14 @@ main_loop(
 			inputs++;
 		}
 
-		/* What the window was asked to do: a new window, minimizing, zooming, closing, a context menu. */
+		/* What the window was asked to do: a new window, minimizing, zooming, closing, a context menu, a drag and drop. */
 		main_request(options);
+
+		/* A drag over the window whose target changed is answered: its file names taken (move preferred) or not (dnd.c). */
+		if (main_app.drop_answer != 0) {
+			main_app.drop_answer = 0;
+			fm_dnd_answer(&main_window, fm_drop_accepts(&main_app), FM_DND_MOVE);
+		}
 
 		/* Time passes for the file manager. */
 		fm_ui_tick(&main_app, now);
@@ -629,9 +637,86 @@ main_request(
 		fm_ui_context(&main_app, &main_context);
 		fm_menu_context(&main_menu, &main_context, main_app.context_x, main_app.context_y);
 		break;
+	case FM_REQUEST_DRAG_OUT:
+		/* The dragged items left the window: zdesktop carries them (dnd.c). */
+		main_drag_out();
+		break;
+	case FM_REQUEST_DROP:
+		/* A drop on the window: its names, the task, the finish (dnd.c, ui-drag.c). */
+		main_drop();
+		break;
 	default:
 		break;
 	}
+}
+
+/*
+ * Hands the selection dragged out of the window to zdesktop's drag and
+ * drop; when it cannot be, the window's drag ends as cancelled.
+ */
+static void
+main_drag_out(void)
+{
+	struct fm_event event;
+	char **paths;
+	size_t count;
+	int error;
+
+	/* The selection's paths, and the drag with them. */
+	paths = NULL;
+	count = 0;
+	error = fm_selected_paths(&main_app, &paths, &count);
+	if (error == 0 && count > 0)
+		error = fm_dnd_start(&main_window, paths, count);
+	if (error == 0 && count == 0)
+		error = ENOENT;
+	fm_paths_free(paths, count);
+
+	/* Succeeded: zdesktop has it (its end comes as FM_EVENT_DRAG_DONE). */
+	if (error == 0)
+		return;
+
+	/* Otherwise the window's drag ends here, as cancelled. */
+	fm_log("DND failed errno=%d", error);
+	memset(&event, 0, sizeof(event));
+	event.type = FM_EVENT_DRAG_DONE;
+	event.time = fm_clock();
+	fm_ui_event(&main_app, &event);
+}
+
+/*
+ * Carries out a drop on the window: the paths (the window's own selection
+ * for its own drag, else read from zdesktop), the task into the drop's
+ * folder, and the finish zdesktop tells the drag's source.
+ */
+static void
+main_drop(void)
+{
+	char **paths;
+	size_t count;
+	int error;
+
+	/* The paths dropped. */
+	paths = NULL;
+	count = 0;
+	if (main_app.drop_self != 0) {
+		error = fm_selected_paths(&main_app, &paths, &count);
+	} else {
+		error = fm_dnd_receive(&main_window, &paths, &count);
+	}
+
+	/* The task into the folder. */
+	if (error == 0) {
+		fm_drop_perform(&main_app, paths, count);
+	} else {
+		fm_log("DROP failed errno=%d", error);
+	}
+
+	/* The paths go. */
+	fm_paths_free(paths, count);
+
+	/* Succeeded or not, the drop is done. */
+	fm_dnd_finish(&main_window);
 }
 
 /*
