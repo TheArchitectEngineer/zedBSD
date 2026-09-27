@@ -92,8 +92,10 @@ js_parse_expression(
 	sequence->column = first->column;
 	last = NULL;
 	js_append(&sequence->first, &last, first);
-	while (js_eat(parser, JS_P_COMMA))
+	while (parser->lexer.token.punctuator == JS_P_COMMA) {
+		js_next(parser);
 		js_append(&sequence->first, &last, js_parse_assignment(parser));
+	}
 
 	/* Succeeded: the sequence. */
 	return sequence;
@@ -124,8 +126,10 @@ js_parse_expression_cover(
 	sequence->column = first->column;
 	last = NULL;
 	js_append(&sequence->first, &last, first);
-	while (js_eat(parser, JS_P_COMMA))
+	while (parser->lexer.token.punctuator == JS_P_COMMA) {
+		js_next(parser);
 		js_append(&sequence->first, &last, expr_assignment_cover(parser));
+	}
 
 	/* Succeeded: the sequence. */
 	return sequence;
@@ -205,6 +209,8 @@ js_parse_function(
 			js_check_binding_name(parser, name);
 			parser->context = saved;
 		}
+
+		/* The function takes the name. */
 		function->text = name->text;
 		function->word = name->word;
 		function->text_length = name->text_length;
@@ -318,7 +324,8 @@ js_parse_parameters(
 	last = NULL;
 	while (parser->lexer.token.punctuator != JS_P_RPAREN) {
 		/* A rest parameter ends the list. */
-		if (js_eat(parser, JS_P_ELLIPSIS)) {
+		if (parser->lexer.token.punctuator == JS_P_ELLIPSIS) {
+			js_next(parser);
 			parameter = js_node_new(parser, JS_NODE_REST);
 			parameter->first = js_parse_binding_target(parser);
 			js_append(&function->first, &last, parameter);
@@ -336,11 +343,14 @@ js_parse_parameters(
 			parameter->second = js_parse_assignment(parser);
 			element = parameter;
 		}
+
+		/* The parameter joins the list. */
 		js_append(&function->first, &last, element);
 
 		/* A comma, or the end. */
-		if (!js_eat(parser, JS_P_COMMA))
+		if (parser->lexer.token.punctuator != JS_P_COMMA)
 			break;
+		js_next(parser);
 	}
 
 	/* The closing parenthesis. */
@@ -452,7 +462,8 @@ js_parse_property_name(
 
 	/* A computed name (in is always the operator inside it). */
 	token = &parser->lexer.token;
-	if (js_eat(parser, JS_P_LBRACKET)) {
+	if (parser->lexer.token.punctuator == JS_P_LBRACKET) {
+		js_next(parser);
 		*flags |= JS_FLAG_COMPUTED;
 		no_in = parser->no_in;
 		parser->no_in = 0;
@@ -549,10 +560,14 @@ js_to_pattern(
 					js_fail_at(parser, item->line, item->column, "a rest element cannot have a default");
 				continue;
 			}
+
+			/* Any other element becomes a target. */
 			pattern = js_to_pattern(parser, item, binding);
 			if (pattern != item)
 				*item = *pattern;
 		}
+
+		/* The array is a pattern now. */
 		return node;
 	case JS_NODE_OBJECT:
 		/* Each property's value becomes a target; a spread becomes the rest, a plain name, last. */
@@ -567,10 +582,14 @@ js_to_pattern(
 				item->first = js_to_pattern(parser, item->second, binding);
 				continue;
 			}
+
+			/* Only a key: value property becomes a target. */
 			if (item->op != JS_PROPERTY_INIT)
 				js_fail_at(parser, item->line, item->column, "invalid destructuring target");
 			item->second = js_to_pattern(parser, item->second, binding);
 		}
+
+		/* The object is a pattern now. */
 		return node;
 	case JS_NODE_ASSIGN:
 		/* target = default becomes a pattern with a default. */
@@ -719,6 +738,8 @@ expr_arrow(
 		function->flags |= JS_FLAG_EXPRESSION_BODY;
 		js_check_parameters(parser, function, 0);
 	}
+
+	/* The context outside the arrow. */
 	parser->context = saved;
 
 	/* The arrow's start, for the caller's check. */
@@ -761,14 +782,20 @@ expr_yield(
 			break;
 		}
 	}
+
+	/* Nor before in and of (a for head's yield). */
 	if (parser->lexer.token.keyword == JS_W_IN || parser->lexer.token.keyword == JS_W_OF)
 		ends = 1;
 	if (ends && parser->lexer.token.punctuator != JS_P_STAR)
 		return node;
 
 	/* yield* delegates. */
-	if (js_eat(parser, JS_P_STAR))
+	if (parser->lexer.token.punctuator == JS_P_STAR) {
+		js_next(parser);
 		node->flags |= JS_FLAG_DELEGATE;
+	}
+
+	/* The argument, where an expression starts. */
 	js_next_regexp(parser);
 	node->first = js_parse_assignment(parser);
 
@@ -894,10 +921,14 @@ expr_precedence(
 		*op = JS_P_INSTANCEOF;
 		return EXPR_RELATIONAL;
 	}
+
+	/* in, unless a for head forbids it. */
 	if (parser->lexer.token.keyword == JS_W_IN && !parser->no_in) {
 		*op = JS_P_IN;
 		return EXPR_RELATIONAL;
 	}
+
+	/* The rest are punctuators. */
 	if (token->kind != JS_TOKEN_PUNCTUATOR)
 		return EXPR_NONE;
 
@@ -1097,7 +1128,8 @@ expr_new(
 	/* new.target inside a function. */
 	node = js_node_new(parser, JS_NODE_NEW);
 	js_next(parser);
-	if (js_eat(parser, JS_P_DOT)) {
+	if (parser->lexer.token.punctuator == JS_P_DOT) {
+		js_next(parser);
 		if (parser->lexer.token.keyword != JS_W_TARGET)
 			js_fail(parser, "new. must be followed by target");
 		if (!parser->context.new_target)
@@ -1125,6 +1157,8 @@ expr_new(
 		if (callee->kind == JS_NODE_FUNCTION && (callee->flags & JS_FLAG_ARROW) != 0U)
 			js_fail(parser, "an arrow function cannot be a constructor");
 	}
+
+	/* The callee's members, without calls. */
 	callee = expr_tail(parser, callee, 0);
 	node->first = callee;
 
@@ -1151,7 +1185,8 @@ expr_tail(
 	optional = 0;
 	for (;;) {
 		/* .name or .#private. */
-		if (js_eat(parser, JS_P_DOT)) {
+		if (parser->lexer.token.punctuator == JS_P_DOT) {
+			js_next(parser);
 			node = expr_member_name(parser, node, 0);
 			continue;
 		}
@@ -1168,7 +1203,8 @@ expr_tail(
 				next->first = node;
 				next->second = expr_arguments(parser);
 				node = next;
-			} else if (js_eat(parser, JS_P_LBRACKET)) {
+			} else if (parser->lexer.token.punctuator == JS_P_LBRACKET) {
+				js_next(parser);
 				next = js_node_new(parser, JS_NODE_MEMBER);
 				next->flags = JS_FLAG_COMPUTED | JS_FLAG_OPTIONAL;
 				next->first = node;
@@ -1180,11 +1216,14 @@ expr_tail(
 			} else {
 				node = expr_member_name(parser, node, JS_FLAG_OPTIONAL);
 			}
+
+			/* The chain goes on. */
 			continue;
 		}
 
 		/* [computed]. */
-		if (js_eat(parser, JS_P_LBRACKET)) {
+		if (parser->lexer.token.punctuator == JS_P_LBRACKET) {
+			js_next(parser);
 			next = js_node_new(parser, JS_NODE_MEMBER);
 			next->flags = JS_FLAG_COMPUTED;
 			next->offset = node->offset;
@@ -1267,6 +1306,8 @@ expr_member_name(
 		js_fail(parser, "a property name is expected after .");
 		return NULL;
 	}
+
+	/* The name's text and word. */
 	name->text = token->text;
 	name->word = token->word;
 	name->text_length = token->text_length;
@@ -1313,12 +1354,14 @@ expr_import(
 	struct js_parser *parser)
 {
 	struct js_node *node;
+	int comma;
 	int no_in;
 
 	/* import.meta. */
 	node = js_node_new(parser, JS_NODE_IMPORT_CALL);
 	js_next(parser);
-	if (js_eat(parser, JS_P_DOT)) {
+	if (parser->lexer.token.punctuator == JS_P_DOT) {
+		js_next(parser);
 		if (parser->lexer.token.keyword != JS_W_META || !parser->module)
 			js_fail(parser, "import.meta is only allowed in modules");
 		node->kind = JS_NODE_META_PROPERTY;
@@ -1336,10 +1379,13 @@ expr_import(
 	no_in = parser->no_in;
 	parser->no_in = 0;
 	node->first = js_parse_assignment(parser);
-	if (js_eat(parser, JS_P_COMMA) && parser->lexer.token.punctuator != JS_P_RPAREN) {
+	comma = js_eat(parser, JS_P_COMMA);
+	if (comma && parser->lexer.token.punctuator != JS_P_RPAREN) {
 		node->second = js_parse_assignment(parser);
 		js_eat(parser, JS_P_COMMA);
 	}
+
+	/* in is as before, then the closing parenthesis. */
 	parser->no_in = no_in;
 	js_expect(parser, JS_P_RPAREN);
 
@@ -1438,14 +1484,20 @@ expr_word(
 		node = expr_literal(parser, JS_NODE_THIS);
 		return node;
 	}
+
+	/* null. */
 	if (parser->lexer.token.keyword == JS_W_NULL) {
 		node = expr_literal(parser, JS_NODE_NULL);
 		return node;
 	}
+
+	/* true. */
 	if (parser->lexer.token.keyword == JS_W_TRUE) {
 		node = expr_literal(parser, JS_NODE_TRUE);
 		return node;
 	}
+
+	/* false. */
 	if (parser->lexer.token.keyword == JS_W_FALSE) {
 		node = expr_literal(parser, JS_NODE_FALSE);
 		return node;
@@ -1454,13 +1506,18 @@ expr_word(
 	/* function and class expressions. */
 	if (parser->lexer.token.keyword == JS_W_FUNCTION) {
 		js_next(parser);
-		if (js_eat(parser, JS_P_STAR)) {
+		if (parser->lexer.token.punctuator == JS_P_STAR) {
+			js_next(parser);
 			node = js_parse_function(parser, JS_FLAG_GENERATOR, 0, 1);
 			return node;
 		}
+
+		/* A plain function expression. */
 		node = js_parse_function(parser, 0, 0, 1);
 		return node;
 	}
+
+	/* A class expression. */
 	if (parser->lexer.token.keyword == JS_W_CLASS) {
 		node = js_parse_class(parser, 0);
 		return node;
@@ -1477,10 +1534,13 @@ expr_word(
 		node = js_parse_identifier_reference(parser);
 		if (parser->lexer.token.keyword == JS_W_FUNCTION && !parser->lexer.token.newline_before) {
 			js_next(parser);
-			if (js_eat(parser, JS_P_STAR)) {
+			if (parser->lexer.token.punctuator == JS_P_STAR) {
+				js_next(parser);
 				node = js_parse_function(parser, JS_FLAG_ASYNC | JS_FLAG_GENERATOR, 0, 1);
 				return node;
 			}
+
+			/* An async function expression. */
 			node = js_parse_function(parser, JS_FLAG_ASYNC, 0, 1);
 			return node;
 		}
@@ -1513,8 +1573,12 @@ expr_word(
 					} else {
 						item = js_to_pattern(parser, item, 1);
 					}
+
+					/* The parameter joins the list. */
 					js_append(&parameter, &last, item);
 				}
+
+				/* The async arrow function. */
 				node = expr_arrow(parser, parameter, JS_FLAG_ASYNC, start, line, column);
 				return node;
 			}
@@ -1528,6 +1592,8 @@ expr_word(
 			item->second = arguments;
 			return item;
 		}
+
+		/* The name async itself. */
 		return node;
 	}
 
@@ -1570,12 +1636,17 @@ expr_arguments(
 		} else {
 			argument = js_parse_assignment(parser);
 		}
+
+		/* The argument joins the list. */
 		js_append(&first, &last, argument);
 
 		/* A comma, or the end. */
-		if (!js_eat(parser, JS_P_COMMA))
+		if (parser->lexer.token.punctuator != JS_P_COMMA)
 			break;
+		js_next(parser);
 	}
+
+	/* The closing parenthesis, and in as before. */
 	js_expect(parser, JS_P_RPAREN);
 	parser->no_in = no_in;
 
@@ -1642,11 +1713,14 @@ expr_parenthesized(
 		count++;
 
 		/* A comma; one before ) is only an arrow's. */
-		if (!js_eat(parser, JS_P_COMMA))
+		if (parser->lexer.token.punctuator != JS_P_COMMA)
 			break;
+		js_next(parser);
 		if (parser->lexer.token.punctuator == JS_P_RPAREN)
 			must_be_arrow = 1;
 	}
+
+	/* The closing parenthesis, and in as before. */
 	js_expect(parser, JS_P_RPAREN);
 	parser->no_in = no_in;
 
@@ -1661,6 +1735,8 @@ expr_parenthesized(
 				element = js_to_pattern(parser, element, 1);
 			js_append(&parameters, &last, element);
 		}
+
+		/* The covers outside are as before. */
 		parser->cover_pending = outer;
 		node = expr_arrow(parser, parameters, 0, start, line, column);
 		return node;
@@ -1726,14 +1802,19 @@ expr_array(
 		} else {
 			element = expr_assignment_cover(parser);
 		}
+
+		/* The element joins the array. */
 		js_append(&array->first, &last, element);
 
 		/* A comma, or the end; a comma after a spread keeps it from being a rest. */
-		if (!js_eat(parser, JS_P_COMMA))
+		if (parser->lexer.token.punctuator != JS_P_COMMA)
 			break;
+		js_next(parser);
 		if (element->kind == JS_NODE_SPREAD)
 			element->flags |= JS_FLAG_DEFAULT;
 	}
+
+	/* The closing bracket, and in as before. */
 	js_expect(parser, JS_P_RBRACKET);
 	parser->no_in = no_in;
 
@@ -1773,9 +1854,12 @@ expr_object(
 		}
 
 		/* A comma, or the end. */
-		if (!js_eat(parser, JS_P_COMMA))
+		if (parser->lexer.token.punctuator != JS_P_COMMA)
 			break;
+		js_next(parser);
 	}
+
+	/* The closing brace, and in as before. */
 	js_expect(parser, JS_P_RBRACE);
 	parser->no_in = no_in;
 
@@ -1810,7 +1894,8 @@ expr_object_property(
 	/* A spread. */
 	property = js_node_new(parser, JS_NODE_PROPERTY);
 	token = &parser->lexer.token;
-	if (js_eat(parser, JS_P_ELLIPSIS)) {
+	if (parser->lexer.token.punctuator == JS_P_ELLIPSIS) {
+		js_next(parser);
 		property->op = JS_PROPERTY_SPREAD;
 		property->second = expr_assignment_cover(parser);
 		return property;
@@ -1829,10 +1914,15 @@ expr_object_property(
 			kind = JS_PROPERTY_METHOD;
 		}
 	}
-	if (js_eat(parser, JS_P_STAR)) {
+
+	/* * makes a generator method. */
+	if (parser->lexer.token.punctuator == JS_P_STAR) {
+		js_next(parser);
 		function_flags |= JS_FLAG_GENERATOR;
 		kind = JS_PROPERTY_METHOD;
 	}
+
+	/* get and set make accessors when a name follows them. */
 	if (kind == JS_PROPERTY_INIT && (parser->lexer.token.keyword == JS_W_GET || parser->lexer.token.keyword == JS_W_SET)) {
 		named = js_next_is_name(parser, 0);
 		if (named) {
@@ -1866,7 +1956,8 @@ expr_object_property(
 	property->op = JS_PROPERTY_INIT;
 
 	/* key: value. */
-	if (js_eat(parser, JS_P_COLON)) {
+	if (parser->lexer.token.punctuator == JS_P_COLON) {
+		js_next(parser);
 		property->second = expr_assignment_cover(parser);
 		return property;
 	}
@@ -1894,6 +1985,8 @@ expr_object_property(
 			parser->cover_line = parser->lexer.token.line;
 			parser->cover_column = parser->lexer.token.column;
 		}
+
+		/* The default after =. */
 		js_next(parser);
 		value = js_node_new(parser, JS_NODE_ASSIGN);
 		value->op = JS_P_ASSIGN;
@@ -1953,6 +2046,8 @@ expr_template(
 			js_fail(parser, "} is expected after a template substitution");
 		js_lexer_template_continue(&parser->lexer);
 	}
+
+	/* in is as before. */
 	parser->no_in = no_in;
 
 	/* Succeeded: the template. */
@@ -2084,6 +2179,7 @@ js_check_parameters(
 	size_t index;
 	size_t other;
 	int simple;
+	int same;
 
 	/* "use strict" in the body needs plain parameters. */
 	simple = expr_is_simple_parameters(function->first);
@@ -2100,9 +2196,8 @@ js_check_parameters(
 	list = names.items;
 	for (index = 0; index < names.count; index++) {
 		for (other = index + 1U; other < names.count; other++) {
-			if (list[index]->text_length != list[other]->text_length)
-				continue;
-			if (memcmp(list[index]->text, list[other]->text, list[index]->text_length * sizeof(uint16_t)) != 0)
+			same = js_text_equal(list[index]->text, list[index]->text_length, list[other]->text, list[other]->text_length);
+			if (!same)
 				continue;
 			line = list[other]->line;
 			column = list[other]->column;
@@ -2110,6 +2205,8 @@ js_check_parameters(
 			js_fail_at(parser, line, column, "duplicate parameter name");
 		}
 	}
+
+	/* The names are no longer needed. */
 	wb_vector_release(&names);
 }
 

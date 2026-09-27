@@ -143,11 +143,15 @@ dump_node(
 		if (error == 0)
 			error = wb_buffer_append_string(out, "\"");
 	}
+
+	/* A regular expression's flags after its pattern. */
 	if (error == 0 && node->raw != NULL && node->kind == JS_NODE_REGEXP) {
 		error = wb_buffer_append_string(out, " /");
 		if (error == 0)
 			error = dump_text(node->raw, node->raw_length, out);
 	}
+
+	/* The line's end. */
 	if (error == 0)
 		error = wb_buffer_append_string(out, "\n");
 

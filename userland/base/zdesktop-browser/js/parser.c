@@ -57,6 +57,8 @@ js_parse(
 		wb_arena_release(&program->arena);
 		return ENOMEM;
 	}
+
+	/* Its arena and error, and whether the source is a module. */
 	parser->arena = &program->arena;
 	parser->error = error;
 	parser->module = 0;
@@ -338,10 +340,12 @@ js_text_is(
 	size_t length,
 	const char *word)
 {
+	size_t word_length;
 	size_t index;
 
 	/* The lengths must agree. */
-	if (strlen(word) != length)
+	word_length = strlen(word);
+	if (word_length != length)
 		return 0;
 
 	/* Then every character. */
@@ -351,6 +355,31 @@ js_text_is(
 	}
 
 	/* The same word. */
+	return 1;
+}
+
+/*
+ * Tells whether two texts are the same characters.
+ */
+int
+js_text_equal(
+	const uint16_t *left,
+	size_t left_length,
+	const uint16_t *right,
+	size_t right_length)
+{
+	int differs;
+
+	/* The lengths must agree. */
+	if (left_length != right_length)
+		return 0;
+
+	/* Then the characters. */
+	differs = memcmp(left, right, left_length * sizeof(uint16_t));
+	if (differs != 0)
+		return 0;
+
+	/* The same text. */
 	return 1;
 }
 

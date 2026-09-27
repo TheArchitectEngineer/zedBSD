@@ -50,6 +50,7 @@ static struct js_node *stmt_module_string(struct js_parser *parser);
 static void stmt_import_attributes(struct js_parser *parser);
 static int stmt_is_lexical(struct js_parser *parser);
 static int stmt_next_is(struct js_parser *parser, int punctuator);
+static int stmt_is_async_function(struct js_parser *parser);
 static struct js_node *stmt_binding_array(struct js_parser *parser);
 static struct js_node *stmt_binding_object(struct js_parser *parser);
 static struct js_node *stmt_binding_element(struct js_parser *parser);
@@ -77,6 +78,7 @@ js_parse_function_body(
 	int this_octal;
 	int octal_seen;
 	int directive;
+	int spells_use_strict;
 
 	/* A function's body is between braces. */
 	if (function != NULL)
@@ -107,7 +109,8 @@ js_parse_function_body(
 		this_octal = 0;
 		string_start = token->start;
 		if (prologue) {
-			if (!token->escaped && js_text_is(token->text, token->text_length, "use strict"))
+			spells_use_strict = js_text_is(token->text, token->text_length, "use strict");
+			if (!token->escaped && spells_use_strict)
 				this_use_strict = 1;
 			this_octal = token->legacy_octal;
 		}
@@ -118,6 +121,8 @@ js_parse_function_body(
 		} else {
 			item = js_parse_statement_list_item(parser);
 		}
+
+		/* The item joins the list. */
 		js_append(&first, &last, item);
 
 		/* A statement that is the string alone is a directive; anything else ends the prologue. */
@@ -137,12 +142,16 @@ js_parse_function_body(
 			if (octal_seen)
 				js_fail(parser, "an octal escape before \"use strict\"");
 		}
+
+		/* An octal escape in the prologue is an error once the code is strict. */
 		if (this_octal) {
 			octal_seen = 1;
 			if (parser->context.strict)
 				js_fail(parser, "octal escapes are not allowed in strict code");
 		}
 	}
+
+	/* The nesting of the body ends. */
 	js_leave(parser);
 
 	/* A function's closing brace, its body, and the check of its parameters. */
@@ -167,6 +176,7 @@ js_parse_statement_list_item(
 {
 	struct js_node *node;
 	int lexical;
+	int async_function;
 
 	/* A function declaration. */
 	js_next_regexp(parser);
@@ -176,7 +186,8 @@ js_parse_statement_list_item(
 	}
 
 	/* An async function declaration. */
-	if (parser->lexer.token.keyword == JS_W_ASYNC && stmt_next_is(parser, -1)) {
+	async_function = stmt_is_async_function(parser);
+	if (async_function) {
 		node = stmt_function_declaration(parser, 1);
 		return node;
 	}
@@ -216,10 +227,14 @@ js_parse_binding_target(
 		node = stmt_binding_array(parser);
 		return node;
 	}
+
+	/* An object binding pattern. */
 	if (parser->lexer.token.punctuator == JS_P_LBRACE) {
 		node = stmt_binding_object(parser);
 		return node;
 	}
+
+	/* A plain name. */
 	node = stmt_binding_identifier(parser);
 
 	/* Succeeded: the name. */
@@ -275,11 +290,17 @@ js_parse_class(
 	last = NULL;
 	constructors = 0;
 	while (parser->lexer.token.punctuator != JS_P_RBRACE) {
-		if (js_eat(parser, JS_P_SEMICOLON))
+		if (parser->lexer.token.punctuator == JS_P_SEMICOLON) {
+			js_next(parser);
 			continue;
+		}
+
+		/* A method, a field or a static block. */
 		member = stmt_class_member(parser, &constructors);
 		js_append(&node->second, &last, member);
 	}
+
+	/* Past the closing brace. */
 	js_next(parser);
 
 	/* The context outside the class. */
@@ -381,6 +402,8 @@ stmt_statement(
 			node = stmt_expression(parser);
 		}
 	}
+
+	/* The nesting of the statement ends. */
 	js_leave(parser);
 
 	/* Succeeded: the statement. */
@@ -405,6 +428,8 @@ stmt_block(
 			break;
 		js_append(&block->first, &last, js_parse_statement_list_item(parser));
 	}
+
+	/* Past the closing brace. */
 	js_next(parser);
 
 	/* Succeeded: the block. */
@@ -449,8 +474,9 @@ stmt_variables(
 		js_append(&node->first, &last, declarator);
 
 		/* A comma, or the end. */
-		if (!js_eat(parser, JS_P_COMMA))
+		if (parser->lexer.token.punctuator != JS_P_COMMA)
 			break;
+		js_next(parser);
 	}
 
 	/* Succeeded: the declaration. */
@@ -510,6 +536,7 @@ stmt_for(
 	int covers;
 	int expression_init;
 	int becomes_target;
+	int arrow_after;
 
 	/* for, maybe await, then the head. */
 	node = js_node_new(parser, JS_NODE_FOR);
@@ -521,6 +548,8 @@ stmt_for(
 		awaiting = 1;
 		js_next(parser);
 	}
+
+	/* The head's parenthesis. */
 	js_expect(parser, JS_P_LPAREN);
 	js_next_regexp(parser);
 
@@ -540,13 +569,16 @@ stmt_for(
 	} else if (lexical) {
 		init = stmt_variables(parser, lexical, 1);
 	} else {
-		if (parser->lexer.token.keyword == JS_W_ASYNC && !stmt_next_is(parser, JS_P_ARROW))
+		arrow_after = stmt_next_is(parser, JS_P_ARROW);
+		if (parser->lexer.token.keyword == JS_W_ASYNC && !arrow_after)
 			starts_async = 1;
 		covers = parser->cover_pending;
 		parser->cover_pending = 0;
 		init = js_parse_expression_cover(parser);
 		expression_init = 1;
 	}
+
+	/* in is an operator again after the head. */
 	parser->no_in = no_in;
 
 	/* An expression head's pending shorthands are only valid when it becomes a for-in or for-of target. */
@@ -576,6 +608,8 @@ stmt_for(
 			init = js_to_pattern(parser, init, 0);
 			parser->no_in = no_in;
 		}
+
+		/* The for-of statement. */
 		node->kind = JS_NODE_FOR_OF;
 		if (awaiting)
 			node->flags |= JS_FLAG_AWAIT;
@@ -604,6 +638,8 @@ stmt_for(
 			init = js_to_pattern(parser, init, 0);
 			parser->no_in = no_in;
 		}
+
+		/* The for-in statement. */
 		node->kind = JS_NODE_FOR_IN;
 		js_next(parser);
 		node->first = init;
@@ -620,6 +656,8 @@ stmt_for(
 				js_fail(parser, "missing initializer in a declaration");
 		}
 	}
+
+	/* The init, then the test and the update. */
 	node->first = init;
 	js_expect(parser, JS_P_SEMICOLON);
 	if (parser->lexer.token.punctuator != JS_P_SEMICOLON)
@@ -719,12 +757,12 @@ stmt_jump(
 		node->word = token->word;
 		node->text_length = token->text_length;
 		for (label = parser->context.labels; label != NULL; label = label->outer) {
-			same = 0;
-			if (label->length == token->text_length && memcmp(label->name, token->text, token->text_length * sizeof(uint16_t)) == 0)
-				same = 1;
+			same = js_text_equal(label->name, label->length, token->text, token->text_length);
 			if (same)
 				break;
 		}
+
+		/* The label must be in force. */
 		if (label == NULL)
 			js_fail(parser, "undefined label");
 		if (kind == JS_NODE_CONTINUE && !label->loop)
@@ -735,6 +773,8 @@ stmt_jump(
 	} else if (kind == JS_NODE_BREAK && !parser->context.in_iteration && !parser->context.in_switch) {
 		js_fail(parser, "break must be inside a loop or a switch");
 	}
+
+	/* The end of the statement. */
 	js_semicolon(parser);
 
 	/* Succeeded: the jump. */
@@ -831,6 +871,8 @@ stmt_switch(
 		} else {
 			js_fail(parser, "case or default is expected");
 		}
+
+		/* The clause's colon. */
 		js_expect(parser, JS_P_COLON);
 
 		/* Its statements, up to the next clause or the end. */
@@ -841,8 +883,12 @@ stmt_switch(
 				break;
 			js_append(&clause->second, &last_statement, js_parse_statement_list_item(parser));
 		}
+
+		/* The clause joins the switch. */
 		js_append(&node->second, &last, clause);
 	}
+
+	/* Past the closing brace, outside the switch again. */
 	js_next(parser);
 	parser->context.in_switch = in_switch;
 
@@ -884,10 +930,13 @@ stmt_try(
 	/* The catch, with its optional parameter. */
 	if (parser->lexer.token.keyword == JS_W_CATCH) {
 		js_next(parser);
-		if (js_eat(parser, JS_P_LPAREN)) {
+		if (parser->lexer.token.punctuator == JS_P_LPAREN) {
+			js_next(parser);
 			node->second = js_parse_binding_target(parser);
 			js_expect(parser, JS_P_RPAREN);
 		}
+
+		/* The catch block. */
 		node->third = stmt_block(parser);
 	}
 
@@ -923,12 +972,12 @@ stmt_labeled(
 	node->word = name->word;
 	node->text_length = name->text_length;
 	for (outer = parser->context.labels; outer != NULL; outer = outer->outer) {
-		same = 0;
-		if (outer->length == name->text_length && memcmp(outer->name, name->text, name->text_length * sizeof(uint16_t)) == 0)
-			same = 1;
+		same = js_text_equal(outer->name, outer->length, name->text, name->text_length);
 		if (same)
 			js_fail_at(parser, name->line, name->column, "duplicate label");
 	}
+
+	/* The colon after the label. */
 	js_expect(parser, JS_P_COLON);
 
 	/* The label, a loop's when the body is one. */
@@ -951,6 +1000,8 @@ stmt_labeled(
 	} else {
 		node->fourth = stmt_statement(parser);
 	}
+
+	/* The label is out of force after its body. */
 	parser->context.labels = label->outer;
 
 	/* Succeeded: the labeled statement. */
@@ -963,13 +1014,17 @@ stmt_expression(
 	struct js_parser *parser)
 {
 	struct js_node *node;
+	int bracket_after;
+	int async_function;
 
 	/* The forms that would be read as declarations. */
 	if (parser->lexer.token.keyword == JS_W_FUNCTION || parser->lexer.token.keyword == JS_W_CLASS)
 		js_fail(parser, "a declaration is not allowed here");
-	if (parser->lexer.token.keyword == JS_W_LET && stmt_next_is(parser, JS_P_LBRACKET))
+	bracket_after = stmt_next_is(parser, JS_P_LBRACKET);
+	if (parser->lexer.token.keyword == JS_W_LET && bracket_after)
 		js_fail(parser, "a lexical declaration is not allowed here");
-	if (parser->lexer.token.keyword == JS_W_ASYNC && stmt_next_is(parser, -1))
+	async_function = stmt_is_async_function(parser);
+	if (async_function)
 		js_fail(parser, "an async function declaration is not allowed here");
 
 	/* The expression and the end of the statement. */
@@ -996,9 +1051,13 @@ stmt_function_declaration(
 		flags |= JS_FLAG_ASYNC;
 		js_next(parser);
 	}
+
+	/* function, then maybe * for a generator. */
 	js_next(parser);
-	if (js_eat(parser, JS_P_STAR))
+	if (parser->lexer.token.punctuator == JS_P_STAR) {
+		js_next(parser);
 		flags |= JS_FLAG_GENERATOR;
+	}
 
 	/* The rest. */
 	node = js_parse_function(parser, flags, 1, 0);
@@ -1021,6 +1080,7 @@ stmt_class_member(
 	int kind;
 	int is_static;
 	int named;
+	int broken;
 	int is_constructor;
 
 	/* static, when a name (or a block) follows it. */
@@ -1045,13 +1105,20 @@ stmt_class_member(
 	function_flags = 0;
 	if (parser->lexer.token.keyword == JS_W_ASYNC) {
 		named = js_next_is_name(parser, 1);
-		if (named && !stmt_next_is(parser, -2)) {
+		broken = stmt_next_is(parser, -2);
+		if (named && !broken) {
 			js_next(parser);
 			function_flags |= JS_FLAG_ASYNC;
 		}
 	}
-	if (js_eat(parser, JS_P_STAR))
+
+	/* * makes a generator method. */
+	if (parser->lexer.token.punctuator == JS_P_STAR) {
+		js_next(parser);
 		function_flags |= JS_FLAG_GENERATOR;
+	}
+
+	/* get and set make accessors. */
 	if (function_flags == 0 && (parser->lexer.token.keyword == JS_W_GET || parser->lexer.token.keyword == JS_W_SET)) {
 		named = js_next_is_name(parser, 0);
 		if (named) {
@@ -1086,6 +1153,8 @@ stmt_class_member(
 				js_fail_at(parser, key->line, key->column, "a class may only have one constructor");
 			kind = JS_PROPERTY_CONSTRUCTOR;
 		}
+
+		/* A static method cannot be named prototype. */
 		if (is_static && (flags & JS_FLAG_COMPUTED) == 0U && (key->kind == JS_NODE_IDENTIFIER || key->kind == JS_NODE_STRING) &&
 		    key->word == JS_W_PROTOTYPE)
 			js_fail_at(parser, key->line, key->column, "a static method cannot be named prototype");
@@ -1106,7 +1175,8 @@ stmt_class_member(
 	}
 
 	/* The initializer, in a function-like context of its own. */
-	if (js_eat(parser, JS_P_ASSIGN)) {
+	if (parser->lexer.token.punctuator == JS_P_ASSIGN) {
+		js_next(parser);
 		js_enter_function(parser, &saved, 0, 1);
 		parser->context.in_function = 0;
 		parser->context.in_class_field = 1;
@@ -1114,6 +1184,8 @@ stmt_class_member(
 		member->second = js_parse_assignment(parser);
 		parser->context = saved;
 	}
+
+	/* The end of the field. */
 	js_semicolon(parser);
 
 	/* Succeeded: the field. */
@@ -1144,6 +1216,8 @@ stmt_static_block(
 			break;
 		js_append(&block->first, &last, js_parse_statement_list_item(parser));
 	}
+
+	/* Past the closing brace, in the context outside again. */
 	js_next(parser);
 	parser->context = saved;
 
@@ -1190,19 +1264,24 @@ stmt_import(
 	/* * as name, or { specifiers }. */
 	if (!more) {
 		/* Only the default binding. */
-	} else if (js_eat(parser, JS_P_STAR)) {
+	} else if (parser->lexer.token.punctuator == JS_P_STAR) {
+		js_next(parser);
 		if (parser->lexer.token.keyword != JS_W_AS)
 			js_fail(parser, "as is expected after import *");
 		js_next(parser);
 		specifier = stmt_import_specifier(parser, 0);
 		js_append(&node->first, &last, specifier);
-	} else if (js_eat(parser, JS_P_LBRACE)) {
+	} else if (parser->lexer.token.punctuator == JS_P_LBRACE) {
+		js_next(parser);
 		while (parser->lexer.token.punctuator != JS_P_RBRACE) {
 			specifier = stmt_import_specifier(parser, 1);
 			js_append(&node->first, &last, specifier);
-			if (!js_eat(parser, JS_P_COMMA))
+			if (parser->lexer.token.punctuator != JS_P_COMMA)
 				break;
+			js_next(parser);
 		}
+
+		/* The closing brace. */
 		js_expect(parser, JS_P_RBRACE);
 	} else {
 		js_fail(parser, "an import clause is expected");
@@ -1228,6 +1307,7 @@ stmt_import_specifier(
 {
 	struct js_node *specifier;
 	struct js_node *imported;
+	int reserved;
 
 	/* A namespace's local name. */
 	specifier = js_node_new(parser, JS_NODE_IMPORT_SPECIFIER);
@@ -1246,7 +1326,8 @@ stmt_import_specifier(
 	}
 
 	/* Without as, the imported name must be a binding name itself. */
-	if (imported->kind != JS_NODE_IDENTIFIER || js_word_is_reserved(imported->text, imported->text_length, 1))
+	reserved = js_word_is_reserved(imported->text, imported->text_length, 1);
+	if (imported->kind != JS_NODE_IDENTIFIER || reserved)
 		js_fail_at(parser, imported->line, imported->column, "an imported name needs as a local name");
 	specifier->second = imported;
 
@@ -1264,16 +1345,20 @@ stmt_export(
 	struct js_node *specifier;
 	uint32_t flags;
 	int lexical;
+	int async_function;
 
 	/* export * [as name] from "module". */
 	node = js_node_new(parser, JS_NODE_EXPORT);
 	js_next(parser);
-	if (js_eat(parser, JS_P_STAR)) {
+	if (parser->lexer.token.punctuator == JS_P_STAR) {
+		js_next(parser);
 		node->flags |= JS_FLAG_ALL;
 		if (parser->lexer.token.keyword == JS_W_AS) {
 			js_next(parser);
 			node->first = stmt_module_name(parser);
 		}
+
+		/* from and the module. */
 		if (parser->lexer.token.keyword != JS_W_FROM)
 			js_fail(parser, "from is expected");
 		js_next(parser);
@@ -1288,18 +1373,27 @@ stmt_export(
 		node->flags |= JS_FLAG_DEFAULT;
 		js_next(parser);
 		js_next_regexp(parser);
+		async_function = stmt_is_async_function(parser);
 		flags = 0;
 		if (parser->lexer.token.keyword == JS_W_FUNCTION) {
 			js_next(parser);
-			if (js_eat(parser, JS_P_STAR))
+			if (parser->lexer.token.punctuator == JS_P_STAR) {
+				js_next(parser);
 				flags |= JS_FLAG_GENERATOR;
+			}
+
+			/* The function (a default export may have no name). */
 			node->first = js_parse_function(parser, flags, 1, 1);
-		} else if (parser->lexer.token.keyword == JS_W_ASYNC && stmt_next_is(parser, -1)) {
+		} else if (async_function) {
 			js_next(parser);
 			js_next(parser);
 			flags |= JS_FLAG_ASYNC;
-			if (js_eat(parser, JS_P_STAR))
+			if (parser->lexer.token.punctuator == JS_P_STAR) {
+				js_next(parser);
 				flags |= JS_FLAG_GENERATOR;
+			}
+
+			/* The async function. */
 			node->first = js_parse_function(parser, flags, 1, 1);
 		} else if (parser->lexer.token.keyword == JS_W_CLASS) {
 			node->first = js_parse_class(parser, 2);
@@ -1307,11 +1401,14 @@ stmt_export(
 			node->first = js_parse_assignment(parser);
 			js_semicolon(parser);
 		}
+
+		/* The default export. */
 		return node;
 	}
 
 	/* export { specifiers } [from "module"]. */
-	if (js_eat(parser, JS_P_LBRACE)) {
+	if (parser->lexer.token.punctuator == JS_P_LBRACE) {
+		js_next(parser);
 		last = NULL;
 		while (parser->lexer.token.punctuator != JS_P_RBRACE) {
 			specifier = js_node_new(parser, JS_NODE_EXPORT_SPECIFIER);
@@ -1321,16 +1418,23 @@ stmt_export(
 				js_next(parser);
 				specifier->second = stmt_module_name(parser);
 			}
+
+			/* The specifier joins the list. */
 			js_append(&node->first, &last, specifier);
-			if (!js_eat(parser, JS_P_COMMA))
+			if (parser->lexer.token.punctuator != JS_P_COMMA)
 				break;
+			js_next(parser);
 		}
+
+		/* The closing brace, then maybe the module re-exported from. */
 		js_expect(parser, JS_P_RBRACE);
 		if (parser->lexer.token.keyword == JS_W_FROM) {
 			js_next(parser);
 			node->second = stmt_module_string(parser);
 			stmt_import_attributes(parser);
 		}
+
+		/* The end of the export. */
 		js_semicolon(parser);
 		return node;
 	}
@@ -1338,6 +1442,7 @@ stmt_export(
 	/* export and a declaration. */
 	js_next_regexp(parser);
 	lexical = stmt_is_lexical(parser);
+	async_function = stmt_is_async_function(parser);
 	if (parser->lexer.token.keyword == JS_W_VAR) {
 		node->first = stmt_variables(parser, JS_P_VAR, 0);
 		js_semicolon(parser);
@@ -1346,7 +1451,7 @@ stmt_export(
 		js_semicolon(parser);
 	} else if (parser->lexer.token.keyword == JS_W_FUNCTION) {
 		node->first = stmt_function_declaration(parser, 0);
-	} else if (parser->lexer.token.keyword == JS_W_ASYNC && stmt_next_is(parser, -1)) {
+	} else if (async_function) {
 		node->first = stmt_function_declaration(parser, 1);
 	} else if (parser->lexer.token.keyword == JS_W_CLASS) {
 		node->first = js_parse_class(parser, 1);
@@ -1376,6 +1481,8 @@ stmt_module_name(
 		js_fail(parser, "a name is expected");
 		return NULL;
 	}
+
+	/* The name's text and word. */
 	node->text = token->text;
 	node->word = token->word;
 	node->text_length = token->text_length;
@@ -1422,9 +1529,12 @@ stmt_import_attributes(
 		(void)js_parse_property_name(parser, &flags);
 		js_expect(parser, JS_P_COLON);
 		(void)stmt_module_string(parser);
-		if (!js_eat(parser, JS_P_COMMA))
+		if (parser->lexer.token.punctuator != JS_P_COMMA)
 			break;
+		js_next(parser);
 	}
+
+	/* The closing brace. */
 	js_expect(parser, JS_P_RBRACE);
 }
 
@@ -1490,12 +1600,30 @@ stmt_next_is(
 		found = 1;
 	if (punctuator == -3 && (parser->lexer.token.punctuator == JS_P_COMMA || parser->lexer.token.keyword == JS_W_FROM))
 		found = 1;
-	if (punctuator >= 0 && js_is_punctuator(parser, punctuator))
+	if (punctuator >= 0 && parser->lexer.token.punctuator == punctuator)
 		found = 1;
 	js_lexer_restore(&parser->lexer, &saved);
 
 	/* Reports what was there. */
 	return found;
+}
+
+/* Tells whether an async function starts here: async, then function on the same line. */
+static int
+stmt_is_async_function(
+	struct js_parser *parser)
+{
+	int function_after;
+
+	/* The word async. */
+	if (parser->lexer.token.keyword != JS_W_ASYNC)
+		return 0;
+
+	/* function after it, without a line break. */
+	function_after = stmt_next_is(parser, -1);
+
+	/* Reports it. */
+	return function_after;
 }
 
 /* Parses [ binding elements ]. */
@@ -1518,6 +1646,8 @@ stmt_binding_array(
 			js_append(&pattern->first, &last, element);
 			continue;
 		}
+
+		/* A rest element ends the pattern. */
 		if (parser->lexer.token.punctuator == JS_P_ELLIPSIS) {
 			element = js_node_new(parser, JS_NODE_REST);
 			js_next(parser);
@@ -1527,11 +1657,16 @@ stmt_binding_array(
 				js_fail(parser, "a rest element must be last");
 			break;
 		}
+
+		/* A target with its default. */
 		element = stmt_binding_element(parser);
 		js_append(&pattern->first, &last, element);
-		if (!js_eat(parser, JS_P_COMMA))
+		if (parser->lexer.token.punctuator != JS_P_COMMA)
 			break;
+		js_next(parser);
 	}
+
+	/* The closing bracket. */
 	js_expect(parser, JS_P_RBRACKET);
 
 	/* Succeeded: the pattern. */
@@ -1550,6 +1685,7 @@ stmt_binding_object(
 	struct js_node *target;
 	struct js_node *with_default;
 	uint32_t flags;
+	int reserved;
 
 	/* The properties: a rest name last, key: element, or a shorthand name with a default. */
 	pattern = js_node_new(parser, JS_NODE_OBJECT_PATTERN);
@@ -1574,30 +1710,40 @@ stmt_binding_object(
 		property->flags = flags;
 		if (key->kind == JS_NODE_PRIVATE_NAME)
 			js_fail_at(parser, key->line, key->column, "a private name in a pattern");
-		if (js_eat(parser, JS_P_COLON)) {
+		if (parser->lexer.token.punctuator == JS_P_COLON) {
+			js_next(parser);
 			property->second = stmt_binding_element(parser);
 		} else {
 			if (key->kind != JS_NODE_IDENTIFIER || (flags & JS_FLAG_COMPUTED) != 0U)
 				js_fail(parser, "a binding property needs a target");
-			if (js_word_is_reserved(key->text, key->text_length, parser->context.strict))
+			reserved = js_word_is_reserved(key->text, key->text_length, parser->context.strict);
+			if (reserved)
 				js_fail_at(parser, key->line, key->column, "a reserved word cannot be bound");
 			js_check_binding_name(parser, key);
 			target = js_node_new(parser, JS_NODE_IDENTIFIER);
 			*target = *key;
 			target->next = NULL;
 			property->flags |= JS_FLAG_SHORTHAND;
-			if (js_eat(parser, JS_P_ASSIGN)) {
+			if (parser->lexer.token.punctuator == JS_P_ASSIGN) {
+				js_next(parser);
 				with_default = js_node_new(parser, JS_NODE_ASSIGNMENT_PATTERN);
 				with_default->first = target;
 				with_default->second = js_parse_assignment(parser);
 				target = with_default;
 			}
+
+			/* The shorthand's target. */
 			property->second = target;
 		}
+
+		/* The property joins the pattern. */
 		js_append(&pattern->first, &last, property);
-		if (!js_eat(parser, JS_P_COMMA))
+		if (parser->lexer.token.punctuator != JS_P_COMMA)
 			break;
+		js_next(parser);
 	}
+
+	/* The closing brace. */
 	js_expect(parser, JS_P_RBRACE);
 
 	/* Succeeded: the pattern. */

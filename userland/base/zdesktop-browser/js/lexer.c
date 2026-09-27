@@ -110,6 +110,8 @@ static void lexer_punctuator(struct js_lexer *lexer, struct js_token *token);
 static void lexer_finish(struct js_lexer *lexer, struct js_token *token, struct wb_units *units, const uint16_t *plain, size_t plain_length);
 static int lexer_hex(uint32_t unit);
 static void lexer_fail(struct js_lexer *lexer, const char *message);
+static int lexer_line_ends(const struct js_lexer *lexer);
+static int lexer_has_char(const char *text, size_t length, char wanted);
 
 /*
  * Starts a lexer at the beginning of a source; a hashbang comment on the
@@ -149,9 +151,11 @@ js_lexer_next(
 {
 	struct js_token *token;
 	uint32_t unit;
+	uint32_t second;
 	uint32_t size;
 	uint32_t code_point;
 	int starts_identifier;
+	int numeral;
 
 	/* The blanks and comments before the token, noting a line terminator among them. */
 	token = &lexer->token;
@@ -186,15 +190,22 @@ js_lexer_next(
 		lexer->position++;
 		code_point = lexer_code_point(lexer, lexer->position, &size);
 		starts_identifier = lexer_is_identifier_start(code_point);
-		if (!starts_identifier && lexer_peek(lexer, 0) != '\\')
+		unit = lexer_peek(lexer, 0);
+		if (!starts_identifier && unit != '\\')
 			lexer_fail(lexer, "# must start a private name");
 		lexer_identifier(lexer, token);
 		token->kind = JS_TOKEN_PRIVATE_NAME;
 		return;
 	}
 
-	/* A numeral. */
-	if ((unit >= '0' && unit <= '9') || (unit == '.' && lexer_peek(lexer, 1) >= '0' && lexer_peek(lexer, 1) <= '9')) {
+	/* A numeral: a digit, or . and a digit. */
+	second = lexer_peek(lexer, 1);
+	numeral = 0;
+	if (unit >= '0' && unit <= '9')
+		numeral = 1;
+	if (unit == '.' && second >= '0' && second <= '9')
+		numeral = 1;
+	if (numeral) {
 		lexer_number(lexer, token);
 		return;
 	}
@@ -480,6 +491,7 @@ lexer_is_identifier_start(
 	uint32_t code_point)
 {
 	int space;
+	int terminator;
 
 	/* The ASCII letters, $ and _. */
 	if ((code_point >= 'a' && code_point <= 'z') || (code_point >= 'A' && code_point <= 'Z'))
@@ -493,7 +505,8 @@ lexer_is_identifier_start(
 
 	/* Beyond ASCII, anything that is not a blank or a line terminator (until the Unicode tables). */
 	space = lexer_is_space(code_point);
-	if (space || lexer_is_line_terminator(code_point))
+	terminator = lexer_is_line_terminator(code_point);
+	if (space || terminator)
 		return 0;
 	if (code_point == LEXER_ZWNJ || code_point == LEXER_ZWJ)
 		return 0;
@@ -545,16 +558,26 @@ lexer_skip(
 	struct js_lexer *lexer)
 {
 	uint32_t unit;
+	uint32_t second;
+	uint32_t third;
+	uint32_t fourth;
 	uint32_t size;
 	uint32_t code_point;
 	int space;
+	int terminator;
+	int html_open;
+	int html_close;
 
 	/* Until something that is neither. */
 	while (lexer->position < lexer->length) {
 		unit = lexer->source[lexer->position];
+		second = lexer_peek(lexer, 1);
+		third = lexer_peek(lexer, 2);
+		fourth = lexer_peek(lexer, 3);
 
 		/* A line terminator comes before the token. */
-		if (lexer_is_line_terminator(unit)) {
+		terminator = lexer_is_line_terminator(unit);
+		if (terminator) {
 			lexer_newline(lexer, lexer->position);
 			lexer->token.newline_before = 1;
 			continue;
@@ -569,23 +592,25 @@ lexer_skip(
 		}
 
 		/* A comment to the end of the line. */
-		if (unit == '/' && lexer_peek(lexer, 1) == '/') {
+		if (unit == '/' && second == '/') {
 			lexer_skip_line(lexer);
 			continue;
 		}
 
 		/* A block comment. */
-		if (unit == '/' && lexer_peek(lexer, 1) == '*') {
+		if (unit == '/' && second == '*') {
 			lexer_skip_block(lexer);
 			continue;
 		}
 
 		/* A script's HTML-like comments: <!-- anywhere, --> at the start of a line. */
-		if (!lexer->module && unit == '<' && lexer_peek(lexer, 1) == '!' && lexer_peek(lexer, 2) == '-' && lexer_peek(lexer, 3) == '-') {
-			lexer_skip_line(lexer);
-			continue;
-		}
-		if (!lexer->module && !lexer->token_on_line && unit == '-' && lexer_peek(lexer, 1) == '-' && lexer_peek(lexer, 2) == '>') {
+		html_open = 0;
+		if (unit == '<' && second == '!' && third == '-' && fourth == '-')
+			html_open = 1;
+		html_close = 0;
+		if (!lexer->token_on_line && unit == '-' && second == '-' && third == '>')
+			html_close = 1;
+		if (!lexer->module && (html_open || html_close)) {
 			lexer_skip_line(lexer);
 			continue;
 		}
@@ -600,9 +625,15 @@ static void
 lexer_skip_line(
 	struct js_lexer *lexer)
 {
+	int terminator;
+
 	/* Every unit up to a line terminator. */
-	while (lexer->position < lexer->length && !lexer_is_line_terminator(lexer->source[lexer->position]))
+	while (lexer->position < lexer->length) {
+		terminator = lexer_is_line_terminator(lexer->source[lexer->position]);
+		if (terminator)
+			break;
 		lexer->position++;
+	}
 }
 
 /* Skips a block comment, counting its line terminators; an unclosed one is an error. */
@@ -610,17 +641,24 @@ static void
 lexer_skip_block(
 	struct js_lexer *lexer)
 {
+	uint32_t unit;
+	uint32_t second;
+	int terminator;
+
 	/* Past the opening. */
 	lexer->position += 2U;
 	while (lexer->position < lexer->length) {
 		/* The closing ends it. */
-		if (lexer->source[lexer->position] == '*' && lexer_peek(lexer, 1) == '/') {
+		unit = lexer->source[lexer->position];
+		second = lexer_peek(lexer, 1);
+		if (unit == '*' && second == '/') {
 			lexer->position += 2U;
 			return;
 		}
 
 		/* A line terminator inside counts as one before the next token. */
-		if (lexer_is_line_terminator(lexer->source[lexer->position])) {
+		terminator = lexer_is_line_terminator(unit);
+		if (terminator) {
 			lexer_newline(lexer, lexer->position);
 			lexer->token.newline_before = 1;
 			continue;
@@ -644,6 +682,8 @@ lexer_identifier(
 	uint32_t start;
 	uint32_t size;
 	uint32_t code_point;
+	uint32_t unit;
+	uint32_t second;
 	int first;
 	int allowed;
 	int valid;
@@ -655,8 +695,10 @@ lexer_identifier(
 	first = 1;
 	for (;;) {
 		/* An escape stands for the character it names, which must fit where it is. */
-		if (lexer_peek(lexer, 0) == '\\') {
-			if (lexer_peek(lexer, 1) != 'u')
+		unit = lexer_peek(lexer, 0);
+		second = lexer_peek(lexer, 1);
+		if (unit == '\\') {
+			if (second != 'u')
 				lexer_fail(lexer, "invalid escape in an identifier");
 			lexer->position += 2U;
 			code_point = lexer_unicode_escape(lexer, &valid);
@@ -708,12 +750,14 @@ lexer_unicode_escape(
 {
 	uint32_t code_point;
 	uint32_t digits;
+	uint32_t unit;
 	int value;
 
 	/* The braced form: one or more digits up to U+10FFFF. */
 	*valid = 0;
 	code_point = 0;
-	if (lexer_peek(lexer, 0) == '{') {
+	unit = lexer_peek(lexer, 0);
+	if (unit == '{') {
 		lexer->position++;
 		digits = 0;
 		for (;;) {
@@ -728,7 +772,8 @@ lexer_unicode_escape(
 		}
 
 		/* The brace must close a code point of at least one digit. */
-		if (digits == 0 || lexer_peek(lexer, 0) != '}')
+		unit = lexer_peek(lexer, 0);
+		if (digits == 0 || unit != '}')
 			return 0;
 		lexer->position++;
 		*valid = 1;
@@ -760,6 +805,8 @@ lexer_number(
 	uint32_t start;
 	uint32_t size;
 	uint32_t next;
+	uint32_t unit;
+	uint32_t second;
 	uint32_t prefix;
 	uint32_t index;
 	int base;
@@ -767,6 +814,9 @@ lexer_number(
 	int decimal;
 	int bigint;
 	int all_octal;
+	int fraction;
+	int exponent;
+	int follows;
 	double value;
 
 	/* The prefixed forms: 0x, 0o and 0b. */
@@ -775,8 +825,10 @@ lexer_number(
 	base = 10;
 	legacy = 0;
 	decimal = 1;
-	prefix = lexer_peek(lexer, 1) | 0x20U;
-	if (lexer_peek(lexer, 0) == '0' && (prefix == 'x' || prefix == 'o' || prefix == 'b')) {
+	unit = lexer_peek(lexer, 0);
+	second = lexer_peek(lexer, 1);
+	prefix = second | 0x20U;
+	if (unit == '0' && (prefix == 'x' || prefix == 'o' || prefix == 'b')) {
 		if (prefix == 'x')
 			base = 16;
 		if (prefix == 'o')
@@ -788,7 +840,7 @@ lexer_number(
 		if (count == 0)
 			lexer_fail(lexer, "a numeral's prefix without digits");
 		decimal = 0;
-	} else if (lexer_peek(lexer, 0) == '0' && lexer_peek(lexer, 1) >= '0' && lexer_peek(lexer, 1) <= '9') {
+	} else if (unit == '0' && second >= '0' && second <= '9') {
 		/* A leading zero followed by digits: legacy octal, or decimal when an 8 or a 9 is among them. */
 		legacy = 1;
 		lexer_digits(lexer, 10, numeral, &count, 0);
@@ -797,13 +849,15 @@ lexer_number(
 			if (numeral[index] > '7')
 				all_octal = 0;
 		}
+
+		/* All octal digits make an octal numeral. */
 		if (all_octal) {
 			base = 8;
 			decimal = 0;
 		}
 	} else {
 		/* A decimal integer part (possibly empty before a .); a separator never follows a leading 0. */
-		if (lexer_peek(lexer, 0) == '0' && lexer_peek(lexer, 1) == '_')
+		if (unit == '0' && second == '_')
 			lexer_fail(lexer, "a numeric separator after a leading 0");
 		lexer_digits(lexer, 10, numeral, &count, 1);
 	}
@@ -811,20 +865,25 @@ lexer_number(
 	/* A decimal numeral may have a fraction and an exponent. */
 	bigint = 0;
 	if (decimal) {
-		if (lexer_peek(lexer, 0) == '.') {
+		unit = lexer_peek(lexer, 0);
+		if (unit == '.') {
 			numeral[count++] = '.';
 			lexer->position++;
 			lexer_digits(lexer, 10, numeral, &count, 1);
 		}
 
 		/* The exponent. */
-		if ((lexer_peek(lexer, 0) | 0x20U) == 'e') {
+		unit = lexer_peek(lexer, 0);
+		if ((unit | 0x20U) == 'e') {
 			numeral[count++] = 'e';
 			lexer->position++;
-			if (lexer_peek(lexer, 0) == '+' || lexer_peek(lexer, 0) == '-') {
-				numeral[count++] = (char)lexer_peek(lexer, 0);
+			unit = lexer_peek(lexer, 0);
+			if (unit == '+' || unit == '-') {
+				numeral[count++] = (char)unit;
 				lexer->position++;
 			}
+
+			/* At least one digit. */
 			next = lexer_peek(lexer, 0);
 			if (next < '0' || next > '9')
 				lexer_fail(lexer, "an exponent without digits");
@@ -833,8 +892,13 @@ lexer_number(
 	}
 
 	/* A BigInt's n follows an integer without a fraction or an exponent, never a legacy one. */
-	if (lexer_peek(lexer, 0) == 'n') {
-		if (legacy || memchr(numeral, '.', count) != NULL || (decimal && memchr(numeral, 'e', count) != NULL))
+	unit = lexer_peek(lexer, 0);
+	if (unit == 'n') {
+		fraction = lexer_has_char(numeral, count, '.');
+		exponent = 0;
+		if (decimal)
+			exponent = lexer_has_char(numeral, count, 'e');
+		if (legacy || fraction || exponent)
 			lexer_fail(lexer, "invalid BigInt literal");
 		bigint = 1;
 		lexer->position++;
@@ -842,7 +906,10 @@ lexer_number(
 
 	/* The numeral must not run into an identifier or a digit. */
 	next = lexer_code_point(lexer, lexer->position, &size);
-	if (lexer_is_identifier_start(next) || (next >= '0' && next <= '9') || next == '\\')
+	follows = lexer_is_identifier_start(next);
+	if (next == '\\' || (next >= '0' && next <= '9'))
+		follows = 1;
+	if (follows)
 		lexer_fail(lexer, "an identifier starts right after a numeral");
 
 	/* The value: decimal through strtod, the other bases digit by digit. */
@@ -960,6 +1027,8 @@ lexer_string(
 		lexer_finish(lexer, token, units, &lexer->source[start], lexer->position - start);
 		lexer->position++;
 	}
+
+	/* The token ends after the quote. */
 	token->end = lexer->position;
 
 	/* The word it spells (a string key may be constructor or __proto__). */
@@ -979,9 +1048,11 @@ lexer_template(
 	struct wb_units *cooked;
 	struct wb_units *raw;
 	uint32_t unit;
+	uint32_t second;
 	uint32_t before;
 	uint16_t newline;
 	int valid;
+	int terminator;
 
 	/* Each character up to the end of the part. */
 	cooked = &lexer->cooked;
@@ -1004,7 +1075,8 @@ lexer_template(
 		}
 
 		/* ${ starts a substitution. */
-		if (unit == '$' && lexer_peek(lexer, 1) == '{') {
+		second = lexer_peek(lexer, 1);
+		if (unit == '$' && second == '{') {
 			lexer->position += 2U;
 			break;
 		}
@@ -1020,7 +1092,8 @@ lexer_template(
 		}
 
 		/* A line terminator is counted; CR and CR LF become LF. */
-		if (lexer_is_line_terminator(unit)) {
+		terminator = lexer_is_line_terminator(unit);
+		if (terminator) {
 			if (unit == 0x0DU) {
 				wb_units_append(cooked, &newline, 1);
 				wb_units_append(raw, &newline, 1);
@@ -1028,6 +1101,8 @@ lexer_template(
 				wb_units_append(cooked, &lexer->source[lexer->position], 1);
 				wb_units_append(raw, &lexer->source[lexer->position], 1);
 			}
+
+			/* The next line. */
 			lexer_newline(lexer, lexer->position);
 			continue;
 		}
@@ -1059,12 +1134,14 @@ lexer_escape(
 	struct js_token *token)
 {
 	uint32_t unit;
+	uint32_t next;
 	uint32_t code_point;
 	uint32_t value;
 	uint16_t single;
 	int high;
 	int low;
 	int valid;
+	int terminator;
 
 	/* The character after the backslash. */
 	lexer->position++;
@@ -1073,7 +1150,8 @@ lexer_escape(
 	unit = lexer->source[lexer->position];
 
 	/* A line continuation adds nothing. */
-	if (lexer_is_line_terminator(unit)) {
+	terminator = lexer_is_line_terminator(unit);
+	if (terminator) {
 		lexer_newline(lexer, lexer->position);
 		return 1;
 	}
@@ -1088,6 +1166,8 @@ lexer_escape(
 			lexer->position++;
 			return 0;
 		}
+
+		/* The byte they name. */
 		single = (uint16_t)(high * 16 + low);
 		wb_units_append(cooked, &single, 1);
 		lexer->position += 3U;
@@ -1103,12 +1183,15 @@ lexer_escape(
 				lexer_fail(lexer, "invalid \\u escape");
 			return 0;
 		}
+
+		/* The code point they name. */
 		wb_units_append_code_point(cooked, code_point);
 		return 1;
 	}
 
 	/* \0 not followed by a digit is NUL. */
-	if (unit == '0' && (lexer_peek(lexer, 1) < '0' || lexer_peek(lexer, 1) > '9')) {
+	next = lexer_peek(lexer, 1);
+	if (unit == '0' && (next < '0' || next > '9')) {
 		single = 0;
 		wb_units_append(cooked, &single, 1);
 		lexer->position++;
@@ -1121,6 +1204,8 @@ lexer_escape(
 			lexer->position++;
 			return 0;
 		}
+
+		/* \8 and \9 stand for themselves. */
 		token->legacy_octal = 1;
 		if (unit >= '8') {
 			single = (uint16_t)unit;
@@ -1128,16 +1213,22 @@ lexer_escape(
 			lexer->position++;
 			return 1;
 		}
+
+		/* One to three octal digits (three only from \0 to \3). */
 		value = unit - '0';
 		lexer->position++;
-		if (lexer_peek(lexer, 0) >= '0' && lexer_peek(lexer, 0) <= '7') {
-			value = value * 8U + (lexer_peek(lexer, 0) - '0');
+		next = lexer_peek(lexer, 0);
+		if (next >= '0' && next <= '7') {
+			value = value * 8U + (next - '0');
 			lexer->position++;
-			if (unit <= '3' && lexer_peek(lexer, 0) >= '0' && lexer_peek(lexer, 0) <= '7') {
-				value = value * 8U + (lexer_peek(lexer, 0) - '0');
+			next = lexer_peek(lexer, 0);
+			if (unit <= '3' && next >= '0' && next <= '7') {
+				value = value * 8U + (next - '0');
 				lexer->position++;
 			}
 		}
+
+		/* The character they name. */
 		single = (uint16_t)value;
 		wb_units_append(cooked, &single, 1);
 		return 1;
@@ -1188,6 +1279,7 @@ lexer_regexp(
 	uint32_t code_point;
 	int in_class;
 	int part;
+	int ended;
 
 	/* The body, up to a / outside a class. */
 	lexer->position++;
@@ -1195,14 +1287,16 @@ lexer_regexp(
 	in_class = 0;
 	for (;;) {
 		/* The body must end on its line. */
-		if (lexer->position >= lexer->length || lexer_is_line_terminator(lexer->source[lexer->position]))
+		ended = lexer_line_ends(lexer);
+		if (ended)
 			lexer_fail(lexer, "unterminated regular expression");
 		unit = lexer->source[lexer->position];
 
 		/* An escape takes the next character, which must not end the line. */
 		if (unit == '\\') {
 			lexer->position++;
-			if (lexer->position >= lexer->length || lexer_is_line_terminator(lexer->source[lexer->position]))
+			ended = lexer_line_ends(lexer);
+			if (ended)
 				lexer_fail(lexer, "unterminated regular expression");
 			lexer->position++;
 			continue;
@@ -1219,6 +1313,8 @@ lexer_regexp(
 			break;
 		lexer->position++;
 	}
+
+	/* The body ends before the closing /. */
 	end = lexer->position;
 	lexer->position++;
 
@@ -1231,7 +1327,10 @@ lexer_regexp(
 			break;
 		lexer->position += size;
 	}
-	if (lexer_peek(lexer, 0) == '\\')
+
+	/* An escape cannot spell a flag. */
+	unit = lexer_peek(lexer, 0);
+	if (unit == '\\')
 		lexer_fail(lexer, "an escape in a regular expression's flags");
 
 	/* The token. */
@@ -1249,6 +1348,8 @@ lexer_punctuator(
 	struct js_token *token)
 {
 	const struct lexer_punctuator *candidate;
+	uint32_t unit;
+	uint32_t third;
 	size_t length;
 	size_t index;
 	int matches;
@@ -1258,14 +1359,18 @@ lexer_punctuator(
 		length = strlen(candidate->text);
 		matches = 1;
 		for (index = 0; index < length; index++) {
-			if (lexer_peek(lexer, (uint32_t)index) != (uint32_t)(unsigned char)candidate->text[index])
+			unit = lexer_peek(lexer, (uint32_t)index);
+			if (unit != (uint32_t)(unsigned char)candidate->text[index])
 				matches = 0;
 		}
+
+		/* Another spelling. */
 		if (!matches)
 			continue;
 
 		/* ?. followed by a digit is ? and a numeral (a ? b ?.5 : c). */
-		if (candidate->punctuator == JS_P_OPTIONAL && lexer_peek(lexer, 2) >= '0' && lexer_peek(lexer, 2) <= '9')
+		third = lexer_peek(lexer, 2);
+		if (candidate->punctuator == JS_P_OPTIONAL && third >= '0' && third <= '9')
 			continue;
 
 		/* The token. */
@@ -1317,6 +1422,42 @@ lexer_hex(
 
 	/* Not a digit. */
 	return -1;
+}
+
+/* Tells whether a numeral's text has a character. */
+static int
+lexer_has_char(
+	const char *text,
+	size_t length,
+	char wanted)
+{
+	const char *found;
+
+	/* The first one, if any. */
+	found = memchr(text, wanted, length);
+	if (found == NULL)
+		return 0;
+
+	/* It has. */
+	return 1;
+}
+
+/* Tells whether the source or the line ends at the lexer's place. */
+static int
+lexer_line_ends(
+	const struct js_lexer *lexer)
+{
+	int terminator;
+
+	/* The source's end. */
+	if (lexer->position >= lexer->length)
+		return 1;
+
+	/* A line terminator. */
+	terminator = lexer_is_line_terminator(lexer->source[lexer->position]);
+
+	/* Reports it. */
+	return terminator;
 }
 
 /* Fails the parse at the lexer's place. */

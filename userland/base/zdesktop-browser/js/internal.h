@@ -256,6 +256,7 @@ int js_eat(struct js_parser *parser, int punctuator);
 void js_semicolon(struct js_parser *parser);
 void js_append(struct js_node **first, struct js_node **last, struct js_node *node);
 int js_text_is(const uint16_t *text, size_t length, const char *word);
+int js_text_equal(const uint16_t *left, size_t left_length, const uint16_t *right, size_t right_length);
 void js_enter(struct js_parser *parser);
 void js_leave(struct js_parser *parser);
 
