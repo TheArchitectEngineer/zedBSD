@@ -45,6 +45,8 @@ ZDESKTOP_BROWSER_SOURCES := $(ZDESKTOP_BROWSER_DIR)/main.c \
 	$(ZDESKTOP_BROWSER_DIR)/layout/block.c \
 	$(ZDESKTOP_BROWSER_DIR)/layout/inline.c \
 	$(ZDESKTOP_BROWSER_DIR)/layout/dump.c \
+	$(ZDESKTOP_BROWSER_DIR)/paint/list.c \
+	$(ZDESKTOP_BROWSER_DIR)/paint/software.c \
 	$(ZDESKTOP_BROWSER_DIR)/shell/shell.c
 
 ifdef ZEDBSD_TOPLEVEL_BUILD

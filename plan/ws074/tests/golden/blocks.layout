@@ -278,6 +278,7 @@ block <html> 0.00 0.00 1024.00 840.00
         anonymous 50.00 694.00 964.00 20.00
           line 50.00 694.00 height 20.00 baseline 710.00
             text 50.00 w 33.05 16px "First"
+            text 34.38 w 11.12 16px "1."
         block <ul> 50.00 714.00 964.00 40.00
           block <li> 90.00 714.00 924.00 20.00
             line 90.00 714.00 height 20.00 baseline 730.00

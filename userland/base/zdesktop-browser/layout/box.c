@@ -470,16 +470,39 @@ box_anonymous_style(
 /* Gives a list item its marker: a bullet, or its number and a period. */
 static void
 box_marker(
-	struct layout_box *box,
+	struct layout_box *item,
 	int ordinal)
 {
+	struct layout_box *box;
+	struct layout_box *child;
 	char digits[16];
 	size_t length;
 	size_t index;
 
+	/*
+	 * The marker goes on the first line of the item: its own when its
+	 * children are inline, otherwise that of its first block (anonymous or
+	 * not) with lines, as long as that block is not a list item itself.
+	 */
+	box = item;
+	while (!box->children_inline && box->first_child != NULL) {
+		child = box->first_child;
+
+		/* A nested list item keeps its own marker. */
+		if (child->style.display == CSS_DISPLAY_LIST_ITEM)
+			break;
+
+		/* The marker moves one block down. */
+		box = child;
+	}
+
+	/* A box that ends up without lines cannot show the marker; the item keeps it. */
+	if (!box->children_inline)
+		box = item;
+
 	/* The bullets are one character. */
 	box->marker_length = 0;
-	switch (box->style.list_style) {
+	switch (item->style.list_style) {
 	case CSS_LIST_DISC:
 		box->marker[0] = BOX_BULLET_DISC;
 		box->marker_length = 1;
