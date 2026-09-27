@@ -389,6 +389,19 @@ struct terminal_window {
 	uint32_t serial;
 	const char *clipboard;
 	size_t clipboard_length;
+
+	/*
+	 * Drops (clipboard.c, ws035-p088): whether the offer being described
+	 * has file names, the drag over the window (NULL for none), the serial
+	 * of its enter, whether it has text and file names, and whether it was
+	 * dropped and waits for the main loop to paste it.
+	 */
+	int pending_uris;
+	struct wl_data_offer *drop_offer;
+	uint32_t drop_serial;
+	int drop_text;
+	int drop_uris;
+	int drop_pending;
 };
 
 /* The clipboard through zdesktop's (clipboard.c). */
@@ -399,6 +412,7 @@ int terminal_clipboard_own(const struct terminal_window *window);
 int terminal_clipboard_has_text(const struct terminal_window *window);
 size_t terminal_clipboard_receive(struct terminal_window *window, char *text, size_t size);
 void terminal_clipboard_close(struct terminal_window *window);
+size_t terminal_clipboard_drop(struct terminal_window *window, char *text, size_t size);
 
 /* The character grid (screen.c). */
 void terminal_screen_init(struct terminal_screen *screen, unsigned columns, unsigned rows);

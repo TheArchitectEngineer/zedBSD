@@ -31,8 +31,9 @@
 #include <string.h>
 #include <unistd.h>
 
-/* The type that carries file names. */
+/* The type that carries file names, and the text of the paths (a line each) for applications that take text. */
 #define DND_URI_LIST		"text/uri-list"
+#define DND_TEXT		"text/plain;charset=utf-8"
 
 /* How long a drop's names may take to come, in milliseconds, and the most read. */
 #define DND_RECEIVE_MS		3000
@@ -59,6 +60,7 @@ static void dnd_source_action(void *data, struct wl_data_source *source, uint32_
 static void dnd_source_end(struct fm_window *window, int dropped);
 static int dnd_uris(char *const *paths, size_t count, char **text, size_t *length);
 static int dnd_parse(const char *text, size_t length, char ***paths, size_t *count);
+static int dnd_lines(char *const *paths, size_t count, char **text, size_t *length);
 static int dnd_hex(int character);
 
 /* The data device's events. */
@@ -114,6 +116,8 @@ fm_dnd_close(
 	window->drag_source = NULL;
 	free(window->drag_uris);
 	window->drag_uris = NULL;
+	free(window->drag_text);
+	window->drag_text = NULL;
 
 	/* The offers. */
 	if (window->drop_offer != NULL)
@@ -151,10 +155,16 @@ fm_dnd_start(
 	if (window->data_device == NULL || window->drag_source != NULL)
 		return ENOTSUP;
 
-	/* The names it offers. */
+	/* The names it offers, as URIs and as text. */
 	error = dnd_uris(paths, count, &window->drag_uris, &window->drag_uris_length);
 	if (error != 0)
 		return error;
+	error = dnd_lines(paths, count, &window->drag_text, &window->drag_text_length);
+	if (error != 0) {
+		free(window->drag_uris);
+		window->drag_uris = NULL;
+		return error;
+	}
 
 	/* The source. */
 	source = wl_data_device_manager_create_data_source(window->data_manager);
@@ -164,14 +174,15 @@ fm_dnd_start(
 		return ENOMEM;
 	}
 
-	/* Its events, and the one type. */
+	/* Its events, and the two types. */
 	(void)wl_data_source_add_listener(source, &dnd_source_listener, window);
 	wl_data_source_offer(source, DND_URI_LIST);
+	wl_data_source_offer(source, DND_TEXT);
 
-	/* Move or copy (version 3). */
+	/* Move, copy or ask (version 3). */
 	version = wl_proxy_get_version((struct wl_proxy *)source);
 	if (version >= DND_ACTIONS_VERSION)
-		wl_data_source_set_actions(source, WL_DATA_DEVICE_MANAGER_DND_ACTION_COPY | WL_DATA_DEVICE_MANAGER_DND_ACTION_MOVE);
+		wl_data_source_set_actions(source, WL_DATA_DEVICE_MANAGER_DND_ACTION_COPY | WL_DATA_DEVICE_MANAGER_DND_ACTION_MOVE | WL_DATA_DEVICE_MANAGER_DND_ACTION_ASK);
 
 	/* Succeeded: zdesktop carries it from the window's surface, with its own badge. */
 	window->drag_source = source;
@@ -210,7 +221,7 @@ fm_dnd_answer(
 	actions = 0;
 	taken = 0;
 	if (accept != 0) {
-		actions = WL_DATA_DEVICE_MANAGER_DND_ACTION_COPY | WL_DATA_DEVICE_MANAGER_DND_ACTION_MOVE;
+		actions = WL_DATA_DEVICE_MANAGER_DND_ACTION_COPY | WL_DATA_DEVICE_MANAGER_DND_ACTION_MOVE | WL_DATA_DEVICE_MANAGER_DND_ACTION_ASK;
 		taken = preferred;
 	}
 
@@ -312,10 +323,14 @@ fm_dnd_receive(
 	return 0;
 }
 
-/* Tells zdesktop that the drop is done, and lets its offer go. */
+/*
+ * Tells zdesktop that the drop is done with an action (the one chosen
+ * after "ask" is said first), and lets its offer go.
+ */
 void
 fm_dnd_finish(
-	struct fm_window *window)
+	struct fm_window *window,
+	uint32_t action)
 {
 	uint32_t version;
 
@@ -323,10 +338,32 @@ fm_dnd_finish(
 	if (window->drop_offer == NULL)
 		return;
 
-	/* Finished (version 3), then gone. */
+	/* The action carried out, then finished (version 3), then gone. */
 	version = wl_proxy_get_version((struct wl_proxy *)window->drop_offer);
-	if (version >= DND_ACTIONS_VERSION)
+	if (version >= DND_ACTIONS_VERSION) {
+		wl_data_offer_set_actions(window->drop_offer, action, action);
 		wl_data_offer_finish(window->drop_offer);
+	}
+
+	/* The offer is gone either way. */
+	wl_data_offer_destroy(window->drop_offer);
+	window->drop_offer = NULL;
+	(void)wl_display_flush(window->display);
+}
+
+/*
+ * Gives up a dropped drag (its "ask" was cancelled): the offer goes without
+ * its finish, and zdesktop cancels the drag's source.
+ */
+void
+fm_dnd_abort(
+	struct fm_window *window)
+{
+	/* Only a dropped offer. */
+	if (window->drop_offer == NULL)
+		return;
+
+	/* It goes unfinished. */
 	wl_data_offer_destroy(window->drop_offer);
 	window->drop_offer = NULL;
 	(void)wl_display_flush(window->display);
@@ -543,23 +580,40 @@ dnd_source_send(
 	int32_t fd)
 {
 	struct fm_window *window;
+	const char *text;
+	size_t length;
 	size_t done;
 	ssize_t wrote;
 	int same;
 
-	/* Only the file names' type is offered. */
+	/* The file names as URIs, or as text; another type gets nothing. */
 	(void)source;
 	window = data;
+	text = NULL;
+	length = 0;
 	same = strcmp(mime_type, DND_URI_LIST);
-	if (same != 0 || window->drag_uris == NULL) {
+	if (same == 0) {
+		text = window->drag_uris;
+		length = window->drag_uris_length;
+	}
+
+	/* Or the names as plain text, one per line. */
+	same = strcmp(mime_type, DND_TEXT);
+	if (same == 0) {
+		text = window->drag_text;
+		length = window->drag_text_length;
+	}
+
+	/* Another type gets nothing. */
+	if (text == NULL) {
 		close(fd);
 		return;
 	}
 
 	/* All of them (a short text; a failure leaves the reader what was written). */
 	done = 0;
-	while (done < window->drag_uris_length) {
-		wrote = write(fd, window->drag_uris + done, window->drag_uris_length - done);
+	while (done < length) {
+		wrote = write(fd, text + done, length - done);
 		if (wrote <= 0)
 			break;
 		done += (size_t)wrote;
@@ -632,6 +686,9 @@ dnd_source_end(
 	free(window->drag_uris);
 	window->drag_uris = NULL;
 	window->drag_uris_length = 0;
+	free(window->drag_text);
+	window->drag_text = NULL;
+	window->drag_text_length = 0;
 	fm_log("DND end dropped=%d", dropped);
 
 	/* The interface hears it. */
@@ -790,6 +847,47 @@ dnd_parse(
 	}
 
 	/* Succeeded: the paths. */
+	return 0;
+}
+
+/*
+ * Writes paths as text: each on a line of its own.  Returns 0 with the
+ * text (the caller frees it), or ENOMEM.
+ */
+static int
+dnd_lines(
+	char *const *paths,
+	size_t count,
+	char **text,
+	size_t *length)
+{
+	size_t capacity;
+	size_t used;
+	size_t size;
+	size_t index;
+	char *out;
+
+	/* Room for every path and its line break. */
+	capacity = 1;
+	for (index = 0; index < count; index++)
+		capacity += strlen(paths[index]) + 1U;
+	out = malloc(capacity);
+	if (out == NULL)
+		return ENOMEM;
+
+	/* Each path and its line break. */
+	used = 0;
+	for (index = 0; index < count; index++) {
+		size = strlen(paths[index]);
+		memcpy(out + used, paths[index], size);
+		used += size;
+		out[used++] = '\n';
+	}
+
+	/* Succeeded: the text. */
+	out[used] = '\0';
+	*text = out;
+	*length = used;
 	return 0;
 }
 

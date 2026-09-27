@@ -267,8 +267,10 @@ fm_menu_context(
 	struct fm_menu *menu,
 	const struct fm_context *context,
 	int x,
-	int y)
+	int y,
+	uint32_t context_serial)
 {
+	uint32_t serial;
 	int error;
 
 	/* Without menus, or with nothing to show, nothing opens. */
@@ -283,15 +285,18 @@ fm_menu_context(
 		return;
 	}
 
-	/* zdesktop shows it at the press. */
-	menu->context = zdesktop_menu_popup(menu->service, menu->context_model, menu->window->surface, x, y, menu->window->seat, menu->window->button_serial, &menu_context_listener, menu);
+	/* zdesktop shows it at the press (or, for a drop's choice, at the drop: its enter's serial). */
+	serial = menu->window->button_serial;
+	if (context_serial != 0U)
+		serial = context_serial;
+	menu->context = zdesktop_menu_popup(menu->service, menu->context_model, menu->window->surface, x, y, menu->window->seat, serial, &menu_context_listener, menu);
 	if (menu->context == NULL) {
 		fm_log("CONTEXT-MENU none errno=%d", errno);
 		return;
 	}
 
 	/* The log line the tests read. */
-	fm_log("CONTEXT-MENU open rows=%u x=%d y=%d serial=%u", context->count, x, y, menu->window->button_serial);
+	fm_log("CONTEXT-MENU open rows=%u x=%d y=%d serial=%u", context->count, x, y, serial);
 }
 
 /*

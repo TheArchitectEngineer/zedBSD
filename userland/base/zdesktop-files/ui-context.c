@@ -34,6 +34,7 @@ static void context_items(struct fm_app *app, const struct fm_menu_state *state,
 static void context_trash(const struct fm_menu_state *state, struct fm_context *context);
 static void context_empty(const struct fm_menu_state *state, struct fm_context *context);
 static void context_place(struct fm_app *app, struct fm_context *context);
+static void context_drop(struct fm_context *context);
 static void context_add(struct fm_context *context, unsigned parent, unsigned kind, const char *label, unsigned action, int enabled);
 static void context_submenu(struct fm_context *context, unsigned id, const char *label, int enabled);
 static void context_check(struct fm_context *context, unsigned parent, const char *label, unsigned action, int checked);
@@ -53,6 +54,12 @@ fm_ui_context(
 	/* Nothing yet, and the state the rows are enabled by. */
 	memset(context, 0, sizeof(*context));
 	fm_ui_menu_state(app, &state);
+
+	/* The choice of a drop dropped with "ask". */
+	if (app->context_where == FM_CONTEXT_DROP) {
+		context_drop(context);
+		return;
+	}
 
 	/* A place of the sidebar. */
 	if (app->context_where == FM_CONTEXT_PLACE) {
@@ -124,6 +131,25 @@ fm_ui_context_action(
 	if (action == FM_ACTION_PLACE_NEW_TAB) {
 		if (app->context_place >= 0 && app->context_place < app->places.count)
 			fm_tabs_new(app, &app->places.items[app->context_place].location);
+		return 1;
+	}
+
+	/* The choice of a drop dropped with "ask": the operation, then the drop is carried out; or none, and the drop is given up. */
+	if (action == FM_ACTION_DROP_MOVE || action == FM_ACTION_DROP_COPY || action == FM_ACTION_DROP_LINK) {
+		app->drop_operation = FM_TASK_MOVE;
+		if (action == FM_ACTION_DROP_COPY)
+			app->drop_operation = FM_TASK_COPY;
+		if (action == FM_ACTION_DROP_LINK)
+			app->drop_operation = FM_TASK_LINK;
+		app->drop_asking = 0;
+		app->request = FM_REQUEST_DROP;
+		return 1;
+	}
+
+	/* No operation. */
+	if (action == FM_ACTION_DROP_CANCEL) {
+		app->drop_asking = 0;
+		app->request = FM_REQUEST_DROP_CANCEL;
 		return 1;
 	}
 
@@ -265,6 +291,19 @@ context_place(
 		context_add(context, 0U, FM_ROW_LINE, "", 0U, 1);
 		context_add(context, 0U, FM_ROW_ITEM, "Remove from Sidebar", FM_ACTION_PLACE_REMOVE, 1);
 	}
+}
+
+/* The rows of a drop's choice ("ask"): move, copy or link here, or cancel. */
+static void
+context_drop(
+	struct fm_context *context)
+{
+	/* The three operations, a line, and none. */
+	context_add(context, 0U, FM_ROW_ITEM, "Move Here", FM_ACTION_DROP_MOVE, 1);
+	context_add(context, 0U, FM_ROW_ITEM, "Copy Here", FM_ACTION_DROP_COPY, 1);
+	context_add(context, 0U, FM_ROW_ITEM, "Link Here", FM_ACTION_DROP_LINK, 1);
+	context_add(context, 0U, FM_ROW_LINE, "", 0U, 1);
+	context_add(context, 0U, FM_ROW_ITEM, "Cancel", FM_ACTION_DROP_CANCEL, 1);
 }
 
 /* Adds a row at the end, when there is room; its number follows the last. */
