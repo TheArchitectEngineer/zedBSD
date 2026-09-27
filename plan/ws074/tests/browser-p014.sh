@@ -1,12 +1,14 @@
 #!/bin/sh
 # ws074-p014: zdesktop-browser's window and GPU renderer on the Venus guest (build-browser-image.sh).
-# zdesktop runs at 1280x800 with the wallpaper; the browser opens a test page at 900x640.  Checks:
+# zdesktop runs at 1280x800 with --glass and the wallpaper (the desktop tests' look, where it draws every window's titlebar); the browser opens a test page at 900x640.  Checks:
 #  1. first.png: the window shows first.html (ZBROWSER READY, then a frame).
 #  2. The GPU renderer (Venus) agrees with the CPU renderer: --render-gpu and --render of each test
 #     page, compared on the host by gpu-compare.py --pictures (channel <= 2, at most 0.1% over).
 #  3. blocks.html scrolls: End (scroll to the bottom), then the wheel up (scroll less), then Home;
 #     scrolled.png is taken at the bottom.
-#  4. Ctrl+Q closes the window; zdesktop's log has no ERROR line.
+#  4. Ctrl+Q closes the window; zdesktop draws the titlebar: a drag moves the window (moved.png) and the
+#     close button ends the browser.
+#  5. zdesktop's log has no ERROR line.
 #
 #   plan/ws074/tests/browser-guest.sh start      (the Venus guest must be up)
 #   plan/ws074/tests/browser-p014.sh [OUTDIR]
@@ -43,10 +45,8 @@ open_page() {
 	expect_log /tmp/b.log 'ZBROWSER FRAME scroll=0 '
 }
 
-# Ends the browser with Ctrl+Q (the pointer over the window, which gives it the keyboard) and checks that it went.
-close_page() {
-	pointer move 600 400 sleep 300
-	keys '<ctrl-q>'
+# Waits up to ten seconds for the browser to end (its Vulkan teardown takes a moment) and reports it as NAME.
+wait_gone() {
 	left=1
 	for wait in 1 2 3 4 5 6 7 8 9 10; do
 		sleep 1
@@ -54,18 +54,25 @@ close_page() {
 		[ "${left:-1}" = 0 ] && break
 	done
 	if [ "${left:-1}" = 0 ]; then
-		echo "close: ok"
+		echo "$1: ok"
 	else
-		echo "close: the browser is still running"
+		echo "$1: the browser is still running"
 		status=1
 		guest 'for p in $(ps -A -o pid,args | grep "[z]desktop-browser" | awk "{print \$1}"); do kill $p; done' >/dev/null
 	fi
 }
 
+# Ends the browser with Ctrl+Q (the pointer over the window, which gives it the keyboard) and checks that it went.
+close_page() {
+	pointer move 600 400 sleep 300
+	keys '<ctrl-q>'
+	wait_gone close
+}
+
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
 picture=; [ -f /usr/share/zdesktop/wallpaper.ppm ] && picture=--wallpaper=/usr/share/zdesktop/wallpaper.ppm
-/bin/zdesktop --timeout=900 --width=1280 --height=800 $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
+/bin/zdesktop --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
 
 # 1. The window on first.html.
 open_page first.html
@@ -103,7 +110,19 @@ top=$(guest "grep 'ZBROWSER FRAME' /tmp/b.log | tail -1" | sed -n 's/.*scroll=\(
 if [ "${top:-1}" = 0 ]; then echo "scroll: Home ok"; else echo "scroll: Home went to ${top:-?}"; status=1; fi
 close_page
 
-# 4. No error in zdesktop's log.
+# 4. zdesktop's titlebar: a drag moves the window by (100, 60), and its close button ends the browser.
+open_page first.html
+set -- $(guest "grep 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
+wx=${1:-0}; wy=${2:-0}
+pointer move $((wx + 310)) $((wy - 30)) sleep 300 down sleep 200 move $((wx + 360)) $((wy)) sleep 200 move $((wx + 410)) $((wy + 30)) sleep 300 up sleep 800
+expect_log /tmp/zdesktop.log "ZWL GLASS moved surface=[0-9]* x=$((wx + 100)) y=$((wy + 60))"
+pointer move 1270 790 sleep 400
+check "$out/moved.png" >/dev/null
+pointer move $((wx + 100 + 871)) $((wy + 60 - 30)) sleep 300 move $((wx + 100 + 873)) $((wy + 60 - 30)) sleep 300 down sleep 80 up sleep 1500
+expect_log /tmp/zdesktop.log 'ZWL GLASS close surface='
+wait_gone "titlebar close"
+
+# 5. No error in zdesktop's log.
 errors=$(guest "grep -c 'ERROR' /tmp/zdesktop.log" | tail -1)
 if [ "${errors:-1}" = 0 ]; then echo "zdesktop: no ERROR"; else echo "zdesktop: ERROR lines"; status=1; fi
 guest "$stop_all" >/dev/null
