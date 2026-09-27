@@ -191,7 +191,8 @@ enum css_declared_unit {
 	CSS_DUNIT_CM,
 	CSS_DUNIT_MM,
 	CSS_DUNIT_VW,
-	CSS_DUNIT_VH
+	CSS_DUNIT_VH,
+	CSS_DUNIT_FONT_KEYWORD
 };
 
 /*

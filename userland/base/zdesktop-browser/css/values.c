@@ -1025,9 +1025,10 @@ values_single(
 	if (property == CSS_PROP_FONT_SIZE) {
 		found = values_keyword(values_font_size, &tokens[0], &keyword);
 		if (found) {
+			/* A keyword's size at the default size, marked as a keyword so the monospace family can rescale it. */
 			value->kind = CSS_VALUE_LENGTH;
 			value->number = (float)keyword;
-			value->unit = CSS_DUNIT_PX;
+			value->unit = CSS_DUNIT_FONT_KEYWORD;
 			return 0;
 		}
 

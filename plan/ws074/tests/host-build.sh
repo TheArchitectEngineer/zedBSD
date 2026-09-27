@@ -5,6 +5,8 @@
 #
 # Every engine source listed in userland/base/zdesktop-browser/Makefile is built except the
 # shell/ directory (the zdesktop window); plan/ws074/tests/host-shell.c stands in for it.
+# The GPU renderer (paint/vulkan.c) links the host's libvulkan (Debian's libvulkan-dev; lavapipe
+# draws when there is no GPU).
 # The outputs, in build/ws074-host/<variant>/:
 #   zdesktop-browser   the program with its headless modes (the same main.c as on zedBSD)
 #   host-NAME          each plan/ws074/tests/host-NAME.c unit test, linked with the engine
@@ -66,13 +68,13 @@ done
 
 # The stand-in for the window.
 "$cc" $flags -c plan/ws074/tests/host-shell.c -o "$out/obj/host-shell.o"
-"$cc" $flags -o "$out/zdesktop-browser" $objects "$out/obj/host-shell.o" -lm
+"$cc" $flags -o "$out/zdesktop-browser" $objects "$out/obj/host-shell.o" -lvulkan -lm
 echo "built $out/zdesktop-browser"
 
 # The unit tests.
 for test in plan/ws074/tests/host-*.c; do
 	name=$(basename "$test" .c)
 	[ "$name" = host-shell ] && continue
-	"$cc" $flags -o "$out/$name" "$test" $engine "$out/obj/host-shell.o" -lm
+	"$cc" $flags -o "$out/$name" "$test" $engine "$out/obj/host-shell.o" -lvulkan -lm
 	echo "built $out/$name"
 done

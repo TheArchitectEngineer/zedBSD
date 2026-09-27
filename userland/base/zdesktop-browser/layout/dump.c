@@ -76,6 +76,8 @@ dump_box(
 		vm_string_to_utf8(element->local_name, out);
 		wb_buffer_append_string(out, ">");
 	}
+
+	/* The border box's position and size in pixels. */
 	width = box->border[CSS_LEFT] + box->padding[CSS_LEFT] + box->width + box->padding[CSS_RIGHT] + box->border[CSS_RIGHT];
 	height = box->border[CSS_TOP] + box->padding[CSS_TOP] + box->height + box->padding[CSS_BOTTOM] + box->border[CSS_BOTTOM];
 	wb_buffer_printf(out, " %.2f %.2f %.2f %.2f\n", (double)layout_to_px(box->x), (double)layout_to_px(box->y),
@@ -86,6 +88,8 @@ dump_box(
 		dump_lines(box, depth + 1, out);
 		return 0;
 	}
+
+	/* The child boxes, one level deeper. */
 	for (child = box->first_child; child != NULL; child = child->next) {
 		error = dump_box(child, depth + 1, out);
 		if (error != 0)

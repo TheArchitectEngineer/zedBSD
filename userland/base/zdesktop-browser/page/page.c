@@ -24,6 +24,7 @@
 
 static int page_collect_styles(struct page *page, struct dom_node *node);
 static int page_text_of(const struct dom_node *node, struct wb_units *units);
+static const struct dom_node *page_find_title(const struct dom_node *node, int depth);
 static int page_dump_node(const struct dom_node *node, int depth, struct wb_buffer *out);
 static int page_dump_style_node(struct page *page, struct dom_element *element, const struct css_style *parent, int depth, struct wb_buffer *out);
 static void page_indent(struct wb_buffer *out, int depth);
@@ -87,7 +88,9 @@ page_destroy(
 	if (page == NULL)
 		return;
 
-	/* Frees the layout, the fonts and the style engine, then every cell with the heap. */
+	/* Frees the display list, the layout, the fonts and the style engine, then every cell with the heap. */
+	if (page->painted)
+		paint_release(&page->paint);
 	if (page->laid_out)
 		layout_release(&page->layout);
 	if (page->text_open)
@@ -218,7 +221,13 @@ page_layout(
 {
 	int error;
 
-	/* Throws the old layout away. */
+	/* Throws the old display list and layout away. */
+	if (page->painted) {
+		paint_release(&page->paint);
+		page->painted = 0;
+	}
+
+	/* The layout. */
 	if (page->laid_out) {
 		layout_release(&page->layout);
 		page->laid_out = 0;
@@ -231,6 +240,99 @@ page_layout(
 		return error;
 
 	/* Succeeded: the page is laid out. */
+	return 0;
+}
+
+/*
+ * Builds the display list of the laid out page.
+ */
+int
+page_paint(
+	struct page *page)
+{
+	int error;
+
+	/* A page that is not laid out has nothing to paint. */
+	if (!page->laid_out)
+		return EINVAL;
+
+	/* Throws the old display list away. */
+	if (page->painted) {
+		paint_release(&page->paint);
+		page->painted = 0;
+	}
+
+	/* Walks the layout into a new one. */
+	error = paint_build(&page->paint, &page->layout);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the page has its display list. */
+	page->painted = 1;
+	return 0;
+}
+
+/*
+ * Writes the document's title (its first <title> element's text, with
+ * whitespace collapsed and trimmed) as UTF-8; empty when there is none.
+ */
+int
+page_title(
+	const struct page *page,
+	struct wb_buffer *out)
+{
+	const struct dom_node *title;
+	struct wb_units text;
+	struct wb_units collapsed;
+	uint16_t unit;
+	size_t index;
+	int space;
+	int error;
+
+	/* The first <title> in the document. */
+	title = page_find_title(&page->document->node, 0);
+	if (title == NULL)
+		return 0;
+
+	/* Its text. */
+	wb_units_init(&text);
+	wb_units_init(&collapsed);
+	error = page_text_of(title, &text);
+
+	/* Each run of whitespace becomes one space, and none at either end. */
+	space = 0;
+	for (index = 0; error == 0 && index < text.length; index++) {
+		unit = text.data[index];
+
+		/* A whitespace character is remembered until something follows it. */
+		if (unit == 0x20U ||
+		    unit == 0x09U ||
+		    unit == 0x0aU ||
+		    unit == 0x0cU ||
+		    unit == 0x0dU) {
+			space = 1;
+			continue;
+		}
+
+		/* The space before a character, when there is text before it. */
+		if (space && collapsed.length != 0)
+			error = wb_units_append_code_point(&collapsed, 0x20U);
+		space = 0;
+
+		/* The character itself. */
+		if (error == 0)
+			error = wb_units_append(&collapsed, &text.data[index], 1);
+	}
+
+	/* The UTF-8 of the collapsed text. */
+	if (error == 0)
+		error = wb_units_to_utf8(collapsed.data, collapsed.length, out);
+	wb_units_release(&text);
+	wb_units_release(&collapsed);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the title is written. */
 	return 0;
 }
 
@@ -519,4 +621,34 @@ page_append_length(
 		wb_buffer_append_string(out, "?");
 		break;
 	}
+}
+
+/* Finds the first HTML <title> element under a node, in document order. */
+static const struct dom_node *
+page_find_title(
+	const struct dom_node *node,
+	int depth)
+{
+	const struct dom_node *child;
+	const struct dom_node *found;
+	int is_title;
+
+	/* The search stops at the depth the dumps stop at. */
+	if (depth > PAGE_DUMP_DEPTH)
+		return NULL;
+
+	/* The node itself. */
+	is_title = dom_element_is(node, DOM_NS_HTML, DOM_TAG_TITLE);
+	if (is_title)
+		return node;
+
+	/* Otherwise its children, in order. */
+	for (child = node->first_child; child != NULL; child = child->next) {
+		found = page_find_title(child, depth + 1);
+		if (found != NULL)
+			return found;
+	}
+
+	/* No title under the node. */
+	return NULL;
 }
