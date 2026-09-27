@@ -8,17 +8,24 @@
 /*
  * Hit testing: the box under a point of the laid out page.
  *
- * The first pass looks at the text: a point on a line's fragment hits the
- * text box the fragment was cut from, which is what a click on a link
- * needs.  Without floats or positioning nothing overlaps, so the first
- * fragment found is the one on top.
+ * A point on a line's fragment hits the text box the fragment was cut
+ * from, which is what a click on a link needs; a point on no text hits the
+ * deepest block around it.  The positioned boxes are searched first, the
+ * one painted last first (layout_stacking_order), then the normal flow,
+ * then the positioned boxes painted below it.
  */
 
 #include "layout/layout.h"
 
+/* What a search looks for: text only, or text and then the deepest block. */
+#define HIT_TEXT	0
+#define HIT_ANY		1
+
 static const struct layout_box *hit_box(const struct layout_box *box, layout_unit x, layout_unit y, int depth);
 static const struct layout_box *hit_block(const struct layout_box *box, layout_unit x, layout_unit y, int depth);
 static const struct layout_box *hit_lines(const struct layout_box *box, layout_unit x, layout_unit y);
+static const struct layout_box *hit_in(const struct layout_box *box, layout_unit x, layout_unit y, int what);
+static const struct layout_box *hit_ordered(const struct layout_tree *tree, layout_unit x, layout_unit y, int what);
 
 /*
  * Finds the box of the text under a point in document coordinates (layout
@@ -36,8 +43,8 @@ layout_hit(
 	if (tree->root == NULL)
 		return NULL;
 
-	/* Searches from the root. */
-	found = hit_box(tree->root, x, y, 0);
+	/* Searches the layers from the top. */
+	found = hit_ordered(tree, x, y, HIT_TEXT);
 
 	/* Reports the box, or NULL. */
 	return found;
@@ -57,12 +64,10 @@ layout_hit_node(
 {
 	const struct layout_box *found;
 
-	/* The text under the point, when there is some. */
-	found = layout_hit(tree, x, y);
-
-	/* Otherwise the deepest block around the point. */
-	if (found == NULL && tree->root != NULL)
-		found = hit_block(tree->root, x, y, 0);
+	/* The text under the point, or the deepest block around it, from the top layer down. */
+	found = NULL;
+	if (tree->root != NULL)
+		found = hit_ordered(tree, x, y, HIT_ANY);
 
 	/* An anonymous block stands for its parent's node. */
 	while (found != NULL && found->node == NULL)
@@ -187,4 +192,70 @@ hit_block(
 
 	/* The block itself. */
 	return box;
+}
+
+/* Searches one layer (a positioned box, or the root's normal flow) for text, then for a block when asked. */
+static const struct layout_box *
+hit_in(
+	const struct layout_box *box,
+	layout_unit x,
+	layout_unit y,
+	int what)
+{
+	const struct layout_box *found;
+
+	/* The text first. */
+	found = hit_box(box, x, y, 0);
+	if (found != NULL)
+		return found;
+
+	/* Then the deepest block, when that is wanted. */
+	if (what == HIT_ANY)
+		found = hit_block(box, x, y, 0);
+
+	/* The box found, or NULL. */
+	return found;
+}
+
+/* Searches the layers from the one painted last down to the first, the normal flow in its place among them. */
+static const struct layout_box *
+hit_ordered(
+	const struct layout_tree *tree,
+	layout_unit x,
+	layout_unit y,
+	int what)
+{
+	const struct layout_box *found;
+	const struct layout_box *layer;
+	struct wb_vector order;
+	size_t flow_index;
+	size_t index;
+	int error;
+
+	/* The positioned boxes in painting order (without them, only the flow is searched). */
+	wb_vector_init(&order, sizeof(const struct layout_box *));
+	error = layout_stacking_order(tree, &order, &flow_index);
+	if (error != 0) {
+		wb_vector_clear(&order);
+		flow_index = 0;
+	}
+
+	/* From the top: the layers above the flow, the flow, then the layers below it. */
+	found = NULL;
+	for (index = order.count; found == NULL && index > flow_index; index--) {
+		layer = *(const struct layout_box **)wb_vector_at(&order, index - 1U);
+		found = hit_in(layer, x, y, what);
+	}
+
+	/* The flow, then the layers under it. */
+	if (found == NULL)
+		found = hit_in(tree->root, x, y, what);
+	for (index = flow_index; found == NULL && index > 0; index--) {
+		layer = *(const struct layout_box **)wb_vector_at(&order, index - 1U);
+		found = hit_in(layer, x, y, what);
+	}
+
+	/* The box found, or NULL. */
+	wb_vector_release(&order);
+	return found;
 }
