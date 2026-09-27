@@ -54,7 +54,7 @@ commit した（`1ba5c756`、`74d31749`、`2023c02e`、`d5221d7a`）。`74d31749
   `include/kern/**`・`include/drivers/**` には置換対象の呼出しが無かった。
 - `python3 plan/ws035/tests/kcrt-rewrite.py --check` → `files=658 would_change=0`（最終状態でも再確認）。
 - 生成器 `plan/ws031/handover/tools/gen_vk_server_codec.py` の emit 5行を `kern_memcpy(` に変更。変更前に、変更前の生成器が
-  tree の `vulkan-codec.inc` を再現することを確認し、変更後の再生成（`userland/base/libvulkan/codec.c` だけを置いた一時木）が
+  tree の `vulkan-codec.inc` を再現することを確認し、変更後の再生成（`userland/desktop/libvulkan/codec.c` だけを置いた一時木）が
   置換後の tree と `cmp` で一致（`kern_memcpy(` 21箇所）。
 
 ### 3. build（手順3、各 `timeout 1200`、`JOBS=32`）

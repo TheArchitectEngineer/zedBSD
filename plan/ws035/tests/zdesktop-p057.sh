@@ -2,7 +2,7 @@
 # ws035-p057: the glass shows the windows under it, blurred (backdrop.c), on the Venus guest (the lean
 # image of plan/tools/files/build-files-image.sh).  zdesktop --glass at 1280x800 with the wallpaper;
 # /bin/extras-probe --body-viewport (a 600x300 window of green and white with a red sub-surface) first,
-# then zdesktop-files (1000x640, glass cards) over it.
+# then files (1000x640, glass cards) over it.
 #  1. zdesktop makes the backdrop when a window is over another (ZWL BACKDROP ready).
 #  2. over.png: a point of the file manager's content card that lies over the probe's window; gone.png:
 #     the same point after the probe has closed.  The glass there differs by 12 or more (the blurred
@@ -48,11 +48,11 @@ place() {
 }
 
 guest "$stop_all" >/dev/null
-guest 'rm -f /tmp/wayland-0; rm -rf /tmp/fhome; sh /usr/share/zdesktop-files-tests/make-home.sh /tmp/fhome >/dev/null'
+guest 'rm -f /tmp/wayland-0; rm -rf /tmp/fhome; sh /usr/share/files-tests/make-home.sh /tmp/fhome >/dev/null'
 guest 'export XDG_RUNTIME_DIR=/tmp
-/bin/zdesktop --timeout=600 --width=1280 --height=800 --glass --wallpaper=/usr/share/zdesktop/wallpaper.ppm > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
+/bin/wayland --timeout=600 --width=1280 --height=800 --glass --wallpaper=/usr/share/zdesktop/wallpaper.ppm > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
 /bin/extras-probe --timeout-s=500 --token=v --body-viewport > /tmp/v.log 2>&1 </dev/null & sleep 4
-HOME=/tmp/fhome /bin/zdesktop-files --token=f1 --timeout-s=500 --width=1000 --height=640 /tmp/fhome/Documents > /tmp/f.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
+HOME=/tmp/fhome /bin/files --token=f1 --timeout-s=500 --width=1000 --height=640 /tmp/fhome/Documents > /tmp/f.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 set -- $(place 1); px=${1:-0}; py=${2:-0}
 set -- $(place 2); fx=${1:-0}; fy=${2:-0}
 echo "probe at $px,$py; files at $fx,$fy"

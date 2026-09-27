@@ -9,7 +9,7 @@
  * The desktop's library, with two jobs.
  *
  * It wraps zdesktop's non-standard Wayland (xdg) extensions: a client of the
- * desktop (zdesktop-x11server, an application) uses standard Wayland and
+ * desktop (xserver, an application) uses standard Wayland and
  * Vulkan, and reaches anything only zdesktop offers through this library,
  * never through a private protocol of its own.
  *

@@ -2,7 +2,7 @@
 # zedBSD
 # Copyright (C) 2026 Awe Morris
 # SPDX-License-Identifier: Zlib
-"""Runs zdesktop-browser's HTTP and HTTPS client against the test server (ws074-p016, p017).
+"""Runs browser's HTTP and HTTPS client against the test server (ws074-p016, p017).
 
   run-http-tests.py [--program PATH] [--port N]         makes the test CA (make-test-ca.sh), starts http-server.py
                                                         and runs the cases on the host
@@ -28,10 +28,10 @@ import time
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
 
 CASES = [
-    ("length", "/pages/first.html", "zdesktop-browser: the first page"),
+    ("length", "/pages/first.html", "browser: the first page"),
     ("chunked", "/chunked", '"second part"'),
     ("close", "/close", '"ended by closing"'),
-    ("redirects", "/redirect/6", "zdesktop-browser: the first page"),
+    ("redirects", "/redirect/6", "browser: the first page"),
     ("cookies", "/cookie/set", '"session=abc123; theme=dark"'),
     ("script", "/script", '"the script came over http"'),
     ("not-found", "/pages/none.html", '"no such page"'),
@@ -39,9 +39,9 @@ CASES = [
 
 # (name, scheme, port kind, path, trust the test CA, expected text)
 TLS_CASES = [
-    ("https-length", "https", "tls", "/pages/first.html", True, "zdesktop-browser: the first page"),
+    ("https-length", "https", "tls", "/pages/first.html", True, "browser: the first page"),
     ("https-chunked", "https", "tls", "/chunked", True, '"second part"'),
-    ("to-https", "http", "http", "/to-https", True, "zdesktop-browser: the first page"),
+    ("to-https", "http", "http", "/to-https", True, "browser: the first page"),
     ("secure-cookie", "https", "tls", "/cookie/secure-set", True, '"p=2"'),
     ("untrusted", "https", "tls", "/pages/first.html", False, "certificate verify failed"),
     ("wrong-name", "https", "wrong", "/pages/first.html", True, "mismatch"),
@@ -57,7 +57,7 @@ def run_case(program, base, path, expect, guest, ca=None):
         options.append("--ca-file=" + ca)
     if guest:
         command = ["python3", os.path.join(ROOT, "plan/tools/guest/guest.py"), "run",
-                   "/bin/zdesktop-browser --dump=dom %s '%s'" % (" ".join(options), url)]
+                   "/bin/browser --dump=dom %s '%s'" % (" ".join(options), url)]
     else:
         command = [program, "--dump=dom"] + options + [url]
     run = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, errors="replace",
@@ -67,7 +67,7 @@ def run_case(program, base, path, expect, guest, ca=None):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--program", default=os.path.join(ROOT, "build/ws074-host/plain/zdesktop-browser"))
+    parser.add_argument("--program", default=os.path.join(ROOT, "build/ws074-host/plain/browser"))
     parser.add_argument("--port", type=int, default=18074)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--guest", action="store_true")

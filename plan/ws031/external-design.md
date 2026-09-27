@@ -168,7 +168,7 @@ RCS の 3D 有効化（`CTX_R_PWR_CLK_STATE`、`PIPELINE_SELECT`、3D 用 LRC st
 - `include/hal/**`、HAL 実装（HAL 責務・`hal.h` 変更は別承認）。
 - `include/drivers/gpu.h`（UAPI layout/ioctl 番号は不変）。
 - WS029 core の上記以外のロジック、他 driver、libc、kern の無関係部分。
-- `userland/base/libvulkan/**`（原則無改造。capset 整合が必要なら p002 または p011 の計画で対象化し、その Phase のみが最小変更）。
+- `userland/desktop/libvulkan/**`（原則無改造。capset 整合が必要なら p002 または p011 の計画で対象化し、その Phase のみが最小変更）。
 - `.internal/`、無関係な作業ツリー。
 
 ---

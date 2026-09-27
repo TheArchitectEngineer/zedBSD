@@ -8,7 +8,7 @@
 /*
  * The wire codec of the Vulkan executor.
  *
- * libvulkan frames every value little endian (userland/base/libvulkan
+ * libvulkan frames every value little endian (userland/desktop/libvulkan
  * wire.c): a byte run is padded to four, a string is its length including
  * the terminator followed by its bytes, and a float travels as its 32 bits.
  * The readers and writers below latch the first failure in their cursor.

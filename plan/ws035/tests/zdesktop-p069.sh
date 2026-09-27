@@ -4,7 +4,7 @@
 # zdesktop --glass runs at 1280x800 with a wl_shm window.  Through QMP:
 #  1. home.png: the launcher opens Home (the desktop slides to the bottom
 #     right); zdesktop logs where the icons are.
-#  2. A click on the Terminal icon starts zdesktop-terminal and closes Home;
+#  2. A click on the Terminal icon starts terminal and closes Home;
 #     the terminal's window maps (terminal.png).
 #  3. gesture.png / home-drag.png: a drag from the top-left corner towards
 #     the bottom right opens Home, following the pointer.
@@ -45,7 +45,7 @@ icon() {
 
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/zdesktop/wallpaper.ppm ] && picture=--wallpaper=/usr/share/zdesktop/wallpaper.ppm
-/bin/zdesktop --timeout=600 --width=1280 --height=800 --glass $picture --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
+/bin/wayland --timeout=600 --width=1280 --height=800 --glass $picture --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
 /bin/wlshm --size=520x340 --color=ffe8eef8 --frames=20000 --token=b > /tmp/b.log 2>&1 </dev/null & sleep 3; echo started' >/dev/null
 
 # 1. The launcher opens Home.

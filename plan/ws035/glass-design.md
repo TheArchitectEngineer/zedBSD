@@ -59,7 +59,7 @@ Status: 実装済み（2026-09-27、サブエージェント）。背後の窓�
   `struct zwl_panels`、最初の get_glass で確保）を解放。
 - log（試験が読む）: `ZWL GLASS client=C surface=S panels=N card:x,y,w,h,r ...`（commit で変わったとき）。
 
-### 2.3 libzdesktop（`ZDESKTOP_VERSION` 5）
+### 2.3 libkeiland（`ZDESKTOP_VERSION` 5）
 
 ```c
 struct zdesktop_glass_panel { int32_t x, y, width, height, radius; unsigned kind; };   /* ZDESKTOP_GLASS_CARD */
@@ -79,7 +79,7 @@ void zdesktop_glass_destroy(struct zdesktop_glass *glass);
 - shader（`panel.frag`）: glass mode の上からの sheen（`0.05 × (1 − depth)`）に `(1 − clamp(shape.z))` を掛けた。title bar 等は `soft = 0` のままで
   変わらない。panel は `soft = 1`（flat）。`shaders.h` は `regenerate.py` で作り直し（panel.frag だけ変わる）。
 
-## 4. zdesktop-files（ws071-p015）
+## 4. files（ws071-p015）
 
 - `present.c`: surface が PRE_MULTIPLIED を持てばそれで swapchain を作る（`present->premultiplied`）。canvas の shader は texel の alpha もそのまま
   出す（以前は 1.0）。
@@ -99,4 +99,4 @@ zdesktop の起動の仕事は増やしていない（global の表に 1 行、p
 - G-a: 背後の窓のぼかし → **ws035-p057 で実装（2026-09-27）**: 下の scene を 1/8 に描き直して 2 回ぼかす（[phase057](phase057/phase.md)）。damage で広げるのは p055。
 - G-b: wayland-protocols の ext-background-effect を確かめて受ける（標準の toolkit の窓のため）。
 - G-c: 他の kind（例: 窓の中の浮いた toolbar、popover）と、kind ごとの白さ・影の深さ。
-- G-d: zdesktop-terminal 等の他の client の see-through。
+- G-d: terminal 等の他の client の see-through。

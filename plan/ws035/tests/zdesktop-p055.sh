@@ -41,7 +41,7 @@ run_look() {
 	look=$1
 	guest "$stop_all" >/dev/null
 	guest "export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
-/bin/zdesktop --timeout=300 --width=1280 --height=800 --log-frames $2 > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
+/bin/wayland --timeout=300 --width=1280 --height=800 --log-frames $2 > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
 /bin/wlshm --size=400x300 --color=ff3060c0 --band=ffe0e040 --frames=100000 --token=b > /tmp/b.log 2>&1 </dev/null & sleep 4; echo started" >/dev/null
 	set -- $(guest "grep 'ZWL MAP client=1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 	wx=${1:-0}; wy=${2:-0}

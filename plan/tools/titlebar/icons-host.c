@@ -6,7 +6,7 @@
  */
 
 /*
- * ws070-p009: draws every titlebar icon (userland/base/zdesktop/icons.c) at
+ * ws070-p009: draws every titlebar icon (userland/desktop/wayland/icons.c) at
  * 16, 20, 32 and 64 pixels into one PPM sheet, dark on white, a row a size,
  * and checks that each icon covers something and stays inside its square.
  *

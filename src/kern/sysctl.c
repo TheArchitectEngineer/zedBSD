@@ -181,7 +181,7 @@ kern_sysctl(
 		return sysctl_output(oldp, oldlenp, &root_image, sizeof(root_image));
 	}
 
-	/* The login= boot parameter, for the graphical login's zsessiond (ws035-p098). */
+	/* The login= boot parameter, for the graphical login's sessiond (ws035-p098). */
 	if (namelen == 2 && name[0] == CTL_KERN && name[1] == KERN_BOOT_LOGIN) {
 		if (newp != NULL || newlen != 0)
 			return EPERM;

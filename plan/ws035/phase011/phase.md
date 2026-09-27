@@ -11,7 +11,7 @@ Queue: q323（q323-i04）
 
 ## 範囲（計画時）
 
-`userland/base/zwl` を `/bin/zdesktop` へ改名し、基本のウィンドウ管理
+`userland/base/zwl` を `/bin/wayland` へ改名し、基本のウィンドウ管理
 （focus、移動、リサイズ、z-order、最小化・最大化）を実装する。
 
 ## 判明した前提の欠落

@@ -66,7 +66,7 @@ cleared。
   - JS の試験 7/7、golden 16/16（`pages/script.html` の 4 つを追加）、host-base 2038、html5lib tokenizer 7032/7032・tree 1648/1753
     （変わらず）、test262 14255/47792・ES5 6786/8087（p046 と同じ）。
   - guest（Venus、`plan/ws074/tests/browser-p030.sh`）: `pages/script.html` の script が行を書き換え list を作り、load の listener が
-    題名を「zdesktop-browser: scripts ran」に、interval が「Ticks: N」を 1 秒ごとに進め（10 frame）、「Click me」の click で
+    題名を「browser: scripts ran」に、interval が「Ticks: N」を 1 秒ごとに進め（10 frame）、「Click me」の click で
     listener が走り（CONSOLE clicked 1・2）、箱が緑になり list が伸びる。zdesktop と browser の log に ERROR 無し。
     画面: `/home/awe/zedBSD-rpi4/build/ws074-shots/p030-20260928-{start,ticks,clicked,clicked-twice}.png`。
   - 回帰: `browser-p045.sh` status 0、`browser-p014.sh` status 0（p045 で titlebar の中央が場所の control になったため、drag の
@@ -79,10 +79,10 @@ cleared。
 ## 同じ流れで行った D4 の切り替え（2026-09-28 ユーザー「文字の表は、生成した表をコミットしていいてす。」）
 
 - 生成した表を commit した: `html/entities-table.c`（WHATWG の entities.json）、`base/unicode-case-table.c`（UCD 16.0.0）。各 file の
-  先頭に出典・ライセンス・再生成の方法。`tools/regenerate.sh`（新）が一覧を `build/zdesktop-browser-lists/` に固定の SHA-256 で取得して
+  先頭に出典・ライセンス・再生成の方法。`tools/regenerate.sh`（新）が一覧を `build/browser-lists/` に固定の SHA-256 で取得して
   生成器を走らせる。package の Makefile から取得と生成の規則を外した（base の build は network に依存しない）。
-- notice: `userland/base/licenses/zdesktop-browser/`（`WHATWG-entities`: CC BY 4.0 と、source に取り込んだ部分の BSD 3-Clause、
-  `Unicode-License-V3`: 全文）。program と一緒に `/usr/share/licenses/zdesktop-browser/` へ入る。
+- notice: `userland/base/licenses/browser/`（`WHATWG-entities`: CC BY 4.0 と、source に取り込んだ部分の BSD 3-Clause、
+  `Unicode-License-V3`: 全文）。program と一緒に `/usr/share/licenses/browser/` へ入る。
 - `plan/ws074/tests/fetch-distfiles.sh` は不要になり削除、`host-build.sh`・`guest-build.sh` は commit した表を使う。
 - commit: `aa48a9ac`。
 

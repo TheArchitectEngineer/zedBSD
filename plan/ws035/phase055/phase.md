@@ -32,7 +32,7 @@ union を scissor に）。
 
 ## 実装（2026-09-27）
 
-- 新 `userland/base/zdesktop/damage.c`（`zwl_damage_pointer`・`zwl_damage_commit`）、`compose.c`（`compose_region`、`compose_record` の
+- 新 `userland/desktop/wayland/damage.c`（`zwl_damage_pointer`・`zwl_damage_commit`）、`compose.c`（`compose_region`、`compose_record` の
   region、出力を開くとき画像の記録を消す）、`compose.h`（履歴、`pass_load`、`scissor_now`）、`backdrop.c`（resume を `zwl_compose_load_pass`
   に、scissor を戻す）、`shell.c`（`zwl_glass_still`・`zwl_glass_body_damage`・`zwl_glass_pointer_calm`、`damage_near`、`DAMAGE_REACH`）、
   `menu-shell.c`（`zwl_menu_is_open`）、`display.c`（`adopt_commit` で `zwl_damage_commit`、描く条件に damaged）、`input.c`（移動で

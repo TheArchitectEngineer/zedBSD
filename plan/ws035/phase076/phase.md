@@ -54,12 +54,12 @@ main の session の伝達による要約）
 
 ## 実装
 
-- `userland/base/zdesktop/popup.c`（salvage から、直した）: 上の 1〜4 の不具合を直した。`popup_closed`（popup_done を送った popup は
+- `userland/desktop/wayland/popup.c`（salvage から、直した）: 上の 1〜4 の不具合を直した。`popup_closed`（popup_done を送った popup は
   描かず hit もしない、popup_done は 1 度だけ）、`grab_shown`（表示された一番上の grab の popup。未表示の submenu の間は menu）、
   `pointer_grabbed`（grab の最初の popup が表示されてから grab が終わるまで pointer は popup.c のもの。seat の focus の変化は keyboard
   だけを動かす）、`pointer_update`（chain の下の surface へ leave/enter、chain の外では leave して誰にも送らない）、grab の終わりで
   pointer を focus へ戻す。positioner の set_parent_size・set_parent_configure の大きさの検査を別々に。
-- `userland/base/zdesktop/toplevel.c`・`toplevel.h`（新規）: xdg_toplevel の window manager への要求（protocol.c の switch の default
+- `userland/desktop/wayland/toplevel.c`・`toplevel.h`（新規）: xdg_toplevel の window manager への要求（protocol.c の switch の default
   から）、interactive resize（pointer に従って resizing の状態付きの configure、離すと状態なしの configure。左・上の辺を引くときは
   反対の辺を固定する anchor を最後の大きさの image か、最後の configure の ack の後の commit まで保つ）、ping（送信、pong、5 秒の検査）。
 - `seat.c`: 押しているボタンの bit と最後に client へ送った press の serial（move・resize の検査）、press のたびの ping、resize の

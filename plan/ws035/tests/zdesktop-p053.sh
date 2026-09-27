@@ -36,7 +36,7 @@ point() {
 # Starts the compositor, then the given clients one after another.
 start() {
 	guest "$stop_all" >/dev/null
-	guest "export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; /bin/zdesktop --timeout=120 --width=1280 --height=800 --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & sleep 3; $1 sleep 4; echo started" >/dev/null
+	guest "export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; /bin/wayland --timeout=120 --width=1280 --height=800 --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & sleep 3; $1 sleep 4; echo started" >/dev/null
 }
 
 status=0

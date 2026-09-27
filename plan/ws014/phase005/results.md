@@ -1,6 +1,6 @@
 # WS014 p005 / q307 実行結果
 
-2026-09-13 JST。`userland/base/vkdemo/` を実装し、QEMU/Venusでテクスチャ付き非等辺直方体の回転、vertex/fragment shader、depth、連続frameと終了・再openを確認した。q307-vkdemo-002が受け入れ成功。p005をcleared、q307/q307-i01をfinished/clearedとする。p004はplanningのまま次の候補、p001の未決定を保持し、WS014はincomplete。
+2026-09-13 JST。`userland/desktop/vkdemo/` を実装し、QEMU/Venusでテクスチャ付き非等辺直方体の回転、vertex/fragment shader、depth、連続frameと終了・再openを確認した。q307-vkdemo-002が受け入れ成功。p005をcleared、q307/q307-i01をfinished/clearedとする。p004はplanningのまま次の候補、p001の未決定を保持し、WS014はincomplete。
 
 ## 実装
 
@@ -58,7 +58,7 @@ runtime hostは引き続きawe@10.0.10.25、QEMU10.0.11、virglrenderer1.1.0、I
 python3 -B plan/ws014/tests/run-vkdemo-remote.py --attempt q307-vkdemo-NNN
 ```
 
-NNNには未使用名を指定する。既定で専用configとbuild directoryから `make -j16 disk-image` を実行し、転送・画像取得・hash再照合まで行う。[実行手順](../tests/README-vkdemo-remote.md) と `userland/base/vkdemo/README.md` を参照。
+NNNには未使用名を指定する。既定で専用configとbuild directoryから `make -j16 disk-image` を実行し、転送・画像取得・hash再照合まで行う。[実行手順](../tests/README-vkdemo-remote.md) と `userland/desktop/vkdemo/README.md` を参照。
 
 - kernel: `61c0b6c502f6c848f5b99ddc64530427dcc61cb7de3d5e00eb2884dab7b201cf`
 - application: `70af6dd5304e031a2f77c8c3a3d49e39f93d176495a1f2adb16bd17f12a0bf56`

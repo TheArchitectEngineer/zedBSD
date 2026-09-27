@@ -6,7 +6,7 @@
  */
 
 /*
- * ws074-p010: the host test of zdesktop-browser's text: fonts, glyphs,
+ * ws074-p010: the host test of browser's text: fonts, glyphs,
  * the fallback, bold and line breaking.
  *
  *   host-text SANS MONO FALLBACK

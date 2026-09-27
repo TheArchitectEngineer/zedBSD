@@ -28,7 +28,7 @@ cleared。
 
 - 書いたもの: `layout/{layout.h,box.c,block.c,inline.c,dump.c}`、`page` の `page_open_fonts`・`page_layout`、`main.c` の
   `--dump=layout` と `--font=`・`--mono-font=`・`--fallback-font=`。libtruetype に関数を 2 つ足した（既存は変えない、main の了解済み）:
-  `truetype_design_metrics`・`truetype_glyph_design_advance`（`userland/base/libtruetype/design.c`）。
+  `truetype_design_metrics`・`truetype_glyph_design_advance`（`userland/desktop/libtruetype/design.c`）。
 - 21 時の中断の後に直したこと:
   - style-check の違反（閉じ括弧の後の空行、段落の comment、条件の中の `memcmp`、条件演算子）と、同じ所の規約の逸脱（式で作る
     Boolean）。

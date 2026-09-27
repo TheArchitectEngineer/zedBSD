@@ -12,10 +12,10 @@ scenario:
            each view to the Venus images of p013 when a reference directory is given (--no-venus skips
            that comparison, for a viewer run the p013 images do not describe, such as --shading=pixel);
            the six views are also laid out on one sheet, sheet.png
-  zdesktop-home WS035 p069: App Home opened by the launcher, then zdesktop-terminal and mview started
+  zdesktop-home WS035 p069: App Home opened by the launcher, then terminal and mview started
   zdesktop-x11 WS035 p070: Gears (GLX) and the X terminal from App Home, then desktop 2 and back
            from their icons (the run's ZDESKTOP_APP=home leaves the viewer's service idle)
-  zdesktop-menu WS070 p005: the System Menu of zdesktop-terminal (started from App Home): F10 opens Shell
+  zdesktop-menu WS070 p005: the System Menu of terminal (started from App Home): F10 opens Shell
            in the floating title bar, Right twice moves to View, Enter chooses Zoom In, Ctrl+0 (a
            shortcut) goes back to the normal size, a double click on the title docks the window, F10
            opens the menu in the system bar, and Shell > Close Window ends the terminal
@@ -370,7 +370,7 @@ def run(args):
             zdesktop_x11(args, qmp, capture, report)
         elif args.scenario == 'zdesktop-menu':
             zdesktop_menu(args, qmp, capture, report)
-        elif args.scenario == 'zdesktop-files':
+        elif args.scenario == 'files':
             zdesktop_files(args, qmp, capture, report)
         elif args.scenario == 'zdesktop-egltest':
             zdesktop_egltest(args, qmp, capture, report)
@@ -495,7 +495,7 @@ def zdesktop(args, qmp, capture, report, wait):
     time_limit = time.monotonic() + args.timeout
     # Where zdesktop places the window on top: all are 800x560 (plan/ws031/tests/zdesktop/), each mapped one
     # cascade step of 32 after the one before, centred under the system bar and a title bar
-    # (userland/base/zdesktop/shell.c zwl_glass_place).  The viewer is the fourth mapped: two wl_shm windows
+    # (userland/desktop/wayland/shell.c zwl_glass_place).  The viewer is the fourth mapped: two wl_shm windows
     # and the Vulkan window killed while it draws (wlkill) come before it.
     top = 34 + 12 + 44 + 8
     mview_x = (width - 800) // 2 + 32 * 3
@@ -580,10 +580,10 @@ def zdesktop(args, qmp, capture, report, wait):
 
 def zdesktop_home(args, qmp, capture, report):
     """App Home (WS035 p069) on the capture display: the launcher opens it, the Terminal icon starts
-    zdesktop-terminal, and the Model viewer icon starts mview; each view differs from the one before."""
+    terminal, and the Model viewer icon starts mview; each view differs from the one before."""
     width, height = 1920, 1080
     time_limit = time.monotonic() + args.timeout
-    # The icons of the built-in list (userland/base/zdesktop/home.c home_layout at 1920x1080, six
+    # The icons of the built-in list (userland/desktop/wayland/home.c home_layout at 1920x1080, six
     # applications in one row since WS035 p070): cells of 144 from x = (1920 - 6 * 144) / 2, the row's top
     # 34 + 2/5 of the space under the bar less the row, the icon 72 high 20 under the cell's top.
     left = (width - 6 * 144) // 2
@@ -648,7 +648,7 @@ def zdesktop_home(args, qmp, capture, report):
 
 def zdesktop_x11(args, qmp, capture, report):
     """X11 and GLX from App Home (WS035 p070, WS069 p005) on the capture display: Gears (zgears, OpenGL
-    1.x through GLX on zdesktop-x11server, which zdesktop-x11 starts) and the X terminal (zterm), then
+    1.x through GLX on xserver, which zdesktop-x11 starts) and the X terminal (zterm), then
     Ctrl+Alt+Right to the empty desktop 2 and Ctrl+Alt+Left back (WS035 p065)."""
     width, height = 1920, 1080
     time_limit = time.monotonic() + args.timeout
@@ -693,7 +693,7 @@ def zdesktop_x11(args, qmp, capture, report):
     desktop = shot('desktop', 25.0)
     report['checks']['desktop_drawn'] = coloured(desktop) > 0.02
 
-    # Gears from Home: zdesktop-x11server starts, then zgears draws through GLX.
+    # Gears from Home: xserver starts, then zgears draws through GLX.
     click(23, 17)
     time.sleep(1.5)
     click(*gears)
@@ -725,8 +725,8 @@ def zdesktop_x11(args, qmp, capture, report):
 
 
 def zdesktop_menu(args, qmp, capture, report):
-    """The System Menu (WS070 p005) on the capture display: zdesktop-terminal from App Home gives
-    zdesktop its menus through libzdesktop; the keyboard opens and walks them in the floating title
+    """The System Menu (WS070 p005) on the capture display: terminal from App Home gives
+    zdesktop its menus through libkeiland; the keyboard opens and walks them in the floating title
     bar, a choice and a shortcut reach the terminal (its text changes size), and after a double click
     on the title docks the window the same menus open from the system bar; Shell > Close Window ends
     the terminal.  The terminal's body is found by its background colour (1d2230)."""
@@ -849,13 +849,13 @@ def zdesktop_menu(args, qmp, capture, report):
 
 
 def zdesktop_files(args, qmp, capture, report):
-    """The file manager (WS071, WS070 p005, ws075) on the capture display: App Home starts zdesktop-files
+    """The file manager (WS071, WS070 p005, ws075) on the capture display: App Home starts files
     (the seventh icon, the first of the second row), Ctrl+T opens a second tab and Ctrl+Tab goes back to the
     first, Ctrl+W closes it, a double click on the title bar docks the window and Wiseview (a drag up from the
     bottom edge) shows it, then the close button of the docked window ends it."""
     width, height = 1920, 1080
     time_limit = time.monotonic() + args.timeout
-    # App Home's grid (userland/base/zdesktop/home.c home_layout): seven applications take two rows of six
+    # App Home's grid (userland/desktop/wayland/home.c home_layout): seven applications take two rows of six
     # columns of 144 x 152, the grid 2/5 of the way down the space under the 34-pixel bar, the icon 72 high
     # 20 under its cell's top.
     left = (width - 6 * 144) // 2
@@ -1016,7 +1016,7 @@ def zdesktop_egltest(args, qmp, capture, report):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('scenario', choices=['vkdemo', 'wayland', 'mview', 'zdesktop', 'zdesktop-home', 'zdesktop-x11',
-                                             'zdesktop-menu', 'zdesktop-files', 'zdesktop-egltest'])
+                                             'zdesktop-menu', 'files', 'zdesktop-egltest'])
     parser.add_argument('--output', required=True)
     parser.add_argument('--serial', default='/home/awe/bigbang/run-parity-serial.log')
     parser.add_argument('--qmp', default='/home/awe/bigbang/qmp.sock')

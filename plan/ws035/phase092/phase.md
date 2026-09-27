@@ -28,13 +28,13 @@ p090 の demo の画面（`p092-...-before-all.png`）: 新しい窓は作業域
 2. **非 active なタイトルバー**（`draw_title_bar`）: すりガラスの白を 0.38 → 0.54（active は 0.55 → 0.64、差を保つ）、
    非 active の文字を (0.40, 0.46, 0.56) → (0.30, 0.35, 0.44)。
 3. **mark の文字を app_id から**: zdesktop は `xdg_toplevel.set_app_id` を `app_id` として保ち（`protocol.c`・`zwl.h`）、
-   mark の文字は app_id の最後の語（最後の `.` か `-` の後。`zdesktop-files` → F、`zdesktop-terminal` → T、
-   `zdesktop-browser` → B、`mview` → M）の最初の文字、無ければ従来どおり題の最初の文字（`mark_name`）。
+   mark の文字は app_id の最後の語（最後の `.` か `-` の後。`files` → F、`terminal` → T、
+   `browser` → B、`mview` → M）の最初の文字、無ければ従来どおり題の最初の文字（`mark_name`）。
    Files・Terminal・Browser・mview の app_id は既にこの形なので変えない。
 4. **X の client の app_id**: libX11 に `XSetClassHint`（`XClassHint`、`Xutil.h`、`XA_WM_CLASS`）。zterm は
-   `zterm`/`XTerminal`、zgears は `zgears`/`Gears` を設定。zdesktop-x11server は WM_CLASS（ChangeProperty で保たれる）の
+   `zterm`/`XTerminal`、zgears は `zgears`/`Gears` を設定。xserver は WM_CLASS（ChangeProperty で保たれる）の
    class（無ければ instance）を desktop の窓の app_id にする（`x11_window_class`）。無い X の窓は従来の
-   `zdesktop-x11server`。窓を開いた後の WM_CLASS の変更は反映しない（最初の一回）。
+   `xserver`。窓を開いた後の WM_CLASS の変更は反映しない（最初の一回）。
 
 ## 検証（amd64、Venus の guest、2026-09-28。image は `plan/ws074/tests/build-browser-image.sh`）
 

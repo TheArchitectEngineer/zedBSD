@@ -11,7 +11,7 @@
  * commands.
  *
  * MINIMAL CONNECTION, HAPPY PATH ONLY.  This module exists so that the standard application
- * (userland/base/vkdemo) reaches the GPU through libvulkan and the ordinary ioctls.  What it does
+ * (userland/desktop/vkdemo) reaches the GPU through libvulkan and the ordinary ioctls.  What it does
  * not do is said where it does not do it (an `XXX:` comment and a kernel message); nothing is
  * accepted and then dropped.
  *

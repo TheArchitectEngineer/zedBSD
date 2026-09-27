@@ -1,7 +1,7 @@
 #!/bin/sh
-# ws035-p087: the clipboard between X and Wayland clients through zdesktop-x11server, on the Venus guest (the
-# lean image, plan/tools/files/build-files-image.sh).  zdesktop --glass at 1280x800 with zdesktop-terminal (a
-# Wayland client) and zdesktop-x11server with zterm (an X client):
+# ws035-p087: the clipboard between X and Wayland clients through xserver, on the Venus guest (the
+# lean image, plan/tools/files/build-files-image.sh).  zdesktop --glass at 1280x800 with terminal (a
+# Wayland client) and xserver with zterm (an X client):
 #  1. Wayland to X: the terminal copies its screen (Select All, Copy); zterm, clicked, gets the keyboard and the
 #     server owns CLIPBOARD for the desktop's text; Ctrl+Shift+V in zterm asks for it: the server reads it from
 #     the desktop and zterm pastes it (ZTERM-X PASTE bytes=N); x-paste.png.
@@ -58,15 +58,15 @@ shot() {
 
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0 /tmp/.X11-unix/X0; picture=; [ -f /usr/share/zdesktop/wallpaper.ppm ] && picture=--wallpaper=/usr/share/zdesktop/wallpaper.ppm
-/bin/zdesktop --timeout=600 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
-/bin/zdesktop-terminal --token=t1 --timeout-s=500 --columns=56 --rows=12 > /tmp/t.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
+/bin/wayland --timeout=600 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
+/bin/terminal --token=t1 --timeout-s=500 --columns=56 --rows=12 > /tmp/t.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
 
 # The terminal to the left by its titlebar, then zterm (started now) to the right.
 set -- $(window 1)
 tx=${1:-0}; ty=${2:-0}
 pointer move $((tx + 60)) $((ty - 30)) sleep 300 down sleep 100 move $((tx - 100)) $((ty - 60)) sleep 150 move $((tx - 300)) $((ty - 90)) sleep 400 up sleep 800
 tx=$((tx - 300)); ty=$((ty - 90))
-guest 'export XDG_RUNTIME_DIR=/tmp; DISPLAY=:0 /bin/zdesktop-x11server --size 640x420 > /tmp/x11server.log 2>&1 </dev/null & sleep 3; DISPLAY=:0 /bin/zterm > /tmp/zterm.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
+guest 'export XDG_RUNTIME_DIR=/tmp; DISPLAY=:0 /bin/xserver --size 640x420 > /tmp/x11server.log 2>&1 </dev/null & sleep 3; DISPLAY=:0 /bin/zterm > /tmp/zterm.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
 set -- $(window 2)
 xx=${1:-0}; xy=${2:-0}
 pointer move $((xx + 60)) $((xy - 30)) sleep 300 down sleep 100 move $((xx + 150)) $((xy + 30)) sleep 150 move $((xx + 300)) $((xy + 60)) sleep 400 up sleep 800

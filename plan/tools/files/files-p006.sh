@@ -1,6 +1,6 @@
 #!/bin/sh
-# ws071-p006: the home dashboard of zdesktop-files on the Venus guest (the lean image,
-# build-files-image.sh).  zdesktop --glass at 1280x800 with the wallpaper; zdesktop-files at
+# ws071-p006: the home dashboard of files on the Venus guest (the lean image,
+# build-files-image.sh).  zdesktop --glass at 1280x800 with the wallpaper; files at
 # 1000x640 on the sample home (/tmp/fhome), opened on the dashboard.
 #  1. dashboard.png: the hero card (the wallpaper, the greeting), the folder cards, no recent files.
 #  2. The Pictures card opens Pictures (LOCATION .../Pictures items=4; 2 before p007 added two pictures).
@@ -56,11 +56,11 @@ control() {
 }
 
 guest "$stop_all" >/dev/null
-guest 'rm -f /tmp/wayland-0 /tmp/zdesktop-files.clipboard; rm -rf /tmp/fhome; sh /usr/share/zdesktop-files-tests/make-home.sh /tmp/fhome >/dev/null'
+guest 'rm -f /tmp/wayland-0 /tmp/files.clipboard; rm -rf /tmp/fhome; sh /usr/share/files-tests/make-home.sh /tmp/fhome >/dev/null'
 guest 'export XDG_RUNTIME_DIR=/tmp
 picture=; [ -f /usr/share/zdesktop/wallpaper.ppm ] && picture=--wallpaper=/usr/share/zdesktop/wallpaper.ppm
-/bin/zdesktop --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
-HOME=/tmp/fhome /bin/zdesktop-files --token=f1 --timeout-s=800 --width=1000 --height=640 > /tmp/f.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
+/bin/wayland --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
+HOME=/tmp/fhome /bin/files --token=f1 --timeout-s=800 --width=1000 --height=640 > /tmp/f.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 set -- $(guest "grep 'ZWL MAP client=1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
 surface=${1:-0}; wx=${2:-0}; wy=${3:-0}
 echo "files: surface $surface at $wx,$wy"

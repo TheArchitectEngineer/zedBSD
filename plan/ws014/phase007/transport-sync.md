@@ -18,7 +18,7 @@ Venus の control queue は 4 request slot を持ち、それぞれが独立し�
 
 U の decoder transaction は通知後も shared reply trailer と応答を検証する。queue marker は実 native fence の状態観測を促すものであり、`drv_gpu_complete(..., 0)` が K fence payload を成功状態に変更することはない。transport error は関連する binding を error 終端できる。標準 external fence の成功 signal は U worker が実 native fence の完了を確認した後に行う。
 
-参考実装: [transport.c](../../../src/drivers/gpu/venus/transport.c)、[GPU command UAPI](../../../include/uapi/gpu.h)、[context.c](../../../userland/base/libvulkan/context.c)、[sync.c](../../../userland/base/libvulkan/sync.c)。
+参考実装: [transport.c](../../../src/drivers/gpu/venus/transport.c)、[GPU command UAPI](../../../include/uapi/gpu.h)、[context.c](../../../userland/desktop/libvulkan/context.c)、[sync.c](../../../userland/desktop/libvulkan/sync.c)。
 
 ## 待機と排他の範囲
 
@@ -59,7 +59,7 @@ IRQ 化は「polling が完全にゼロ」という意味ではない。通常 r
 
 標準 `VK_KHR_external_fence_fd` の OPAQUE_FD はこの guest 内の参照共有を実装する。Linux `sync_file` 互換や host Vulkan の OPAQUE fence fd の直接 import を主張するものではない。U の native fence/worker と K payload を接続しており、temporary import の復帰等は [U 検証記録](userland-final-verification.md) を参照する。
 
-参考実装: [fence.c](../../../src/kern/fence.c)、[fence UAPI](../../../include/uapi/gpu-fence.h)、[generic handle](../../../include/kern/handle.h)、[external-fence.c](../../../userland/base/libvulkan/external-fence.c)。
+参考実装: [fence.c](../../../src/kern/fence.c)、[fence UAPI](../../../include/uapi/gpu-fence.h)、[generic handle](../../../include/kern/handle.h)、[external-fence.c](../../../userland/desktop/libvulkan/external-fence.c)。
 
 ## Display topology 通知基盤
 

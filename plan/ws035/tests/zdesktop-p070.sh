@@ -2,7 +2,7 @@
 # ws035-p070: X11 applications from App Home on the Venus guest (the zdesktop image, built by
 # plan/ws035/tests/build-zdesktop-image.sh, run by plan/ws035/tests/zdesktop-guest.sh start).
 # zdesktop --glass runs alone; App Home's "X terminal" starts zterm through /usr/libexec/zdesktop-x11, which starts
-# zdesktop-x11server first; "Gears" then starts zgears on the same server.
+# xserver first; "Gears" then starts zgears on the same server.
 #  1. xterm.png: zterm's window (a Wiseman window) after the click on its icon.
 #  2. gears.png: the gears' window too; one server runs.
 #
@@ -16,7 +16,7 @@ mkdir -p "$out"
 guest() { timeout 90 python3 plan/tools/guest/guest.py run "$1" 2>&1; }
 check() { python3 plan/ws035/tests/zdesktop-check.py "$@" --runtime "$GUEST_RUNTIME"; }
 pointer() { python3 plan/ws035/tests/qmp-pointer.py "$GUEST_RUNTIME/qmp.sock" "$@"; }
-stop_all='ps -A -o pid,comm | awk "{ n = \$2; sub(\".*/\", \"\", n) } n == \"zdesktop\" || n == \"zdesktop-x11server\" || n == \"zgears\" || n == \"zterm\" {print \$1}" | while read p; do kill $p; done; sleep 1'
+stop_all='ps -A -o pid,comm | awk "{ n = \$2; sub(\".*/\", \"\", n) } n == \"zdesktop\" || n == \"xserver\" || n == \"zgears\" || n == \"zterm\" {print \$1}" | while read p; do kill $p; done; sleep 1'
 status=0
 
 # Fails the run unless zdesktop's log has a line matching a pattern.
@@ -43,8 +43,8 @@ icon() {
 # zdesktop alone (no X server yet).
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0 /tmp/x11server.pid; rmdir /tmp/x11server.lock 2>/dev/null; picture=; [ -f /usr/share/zdesktop/wallpaper.ppm ] && picture=--wallpaper=/usr/share/zdesktop/wallpaper.ppm
-/bin/zdesktop --timeout=600 --width=1280 --height=800 --glass $picture --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
-echo "zdesktop-x11server before: $(processes zdesktop-x11server)"
+/bin/wayland --timeout=600 --width=1280 --height=800 --glass $picture --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
+echo "xserver before: $(processes xserver)"
 
 # 1. Home, then the X terminal's icon.
 pointer move 23 17 sleep 300 down sleep 60 up sleep 1500
@@ -55,7 +55,7 @@ pointer move 1250 780 sleep 400
 check "$out/xterm.png" >/dev/null
 expect_log 'ZWL HOME launch name=X terminal pid='
 expect_log 'ZWL MAP client=1 '
-servers=$(processes zdesktop-x11server); zterm=$(processes zterm)
+servers=$(processes xserver); zterm=$(processes zterm)
 echo "after X terminal: x11server=$servers zterm=$zterm"
 [ "$servers" = 1 ] && [ "$zterm" = 1 ] || status=1
 
@@ -70,7 +70,7 @@ expect_log 'ZWL HOME launch name=Gears pid='
 maps=$(guest "grep -c 'ZWL MAP client=1 ' /tmp/zdesktop.log" | tail -1)
 echo "the server's windows mapped: $maps"
 [ "${maps:-0}" -ge 2 ] 2>/dev/null || status=1
-servers=$(processes zdesktop-x11server); gears=$(processes zgears)
+servers=$(processes xserver); gears=$(processes zgears)
 echo "after Gears: x11server=$servers zgears=$gears"
 [ "$servers" = 1 ] && [ "$gears" = 1 ] || status=1
 guest "$stop_all" >/dev/null

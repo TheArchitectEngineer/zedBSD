@@ -1,6 +1,6 @@
 #!/bin/sh
 # ws035-p084: drag and drop between windows (wl_data_device) on the Venus guest (the lean image,
-# plan/tools/files/build-files-image.sh).  zdesktop --glass at 1280x800; two zdesktop-files windows of
+# plan/tools/files/build-files-image.sh).  zdesktop --glass at 1280x800; two files windows of
 # 600x560 side by side on the sample home: A on Desktop (left), B on Documents (right).
 #  1. two.png: the windows moved apart by their titlebars.
 #  2. Logo.png (A's first item) dragged out of A over B's content: A starts the drag (DRAG out, DND start),
@@ -84,10 +84,10 @@ shot() {
 }
 
 guest "$stop_all" >/dev/null
-guest 'rm -f /tmp/zdesktop-files.clipboard; rm -rf /tmp/fhome; sh /usr/share/zdesktop-files-tests/make-home.sh /tmp/fhome >/dev/null'
+guest 'rm -f /tmp/files.clipboard; rm -rf /tmp/fhome; sh /usr/share/files-tests/make-home.sh /tmp/fhome >/dev/null'
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
-/bin/zdesktop --timeout=900 --width=1280 --height=800 --glass --wallpaper=/usr/share/zdesktop/wallpaper.ppm > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
-HOME=/tmp/fhome /bin/zdesktop-files --token=a --timeout-s=800 --width=600 --height=560 /tmp/fhome/Desktop > /tmp/a.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
+/bin/wayland --timeout=900 --width=1280 --height=800 --glass --wallpaper=/usr/share/zdesktop/wallpaper.ppm > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
+HOME=/tmp/fhome /bin/files --token=a --timeout-s=800 --width=600 --height=560 /tmp/fhome/Desktop > /tmp/a.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 
 # 1. A to the left by its title, then B, to the right.
 set -- $(window 1)
@@ -95,7 +95,7 @@ ax=${1:-0}; ay=${2:-0}
 ax0=$ax
 drag $((ax + 60)) $((ay - 30)) $((ax + 60 - 320)) $((ay - 30))
 release
-guest 'export XDG_RUNTIME_DIR=/tmp; HOME=/tmp/fhome /bin/zdesktop-files --token=b --timeout-s=800 --width=600 --height=560 /tmp/fhome/Documents > /tmp/b.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
+guest 'export XDG_RUNTIME_DIR=/tmp; HOME=/tmp/fhome /bin/files --token=b --timeout-s=800 --width=600 --height=560 /tmp/fhome/Documents > /tmp/b.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 set -- $(window 2)
 bx=${1:-0}; by=${2:-0}
 drag $((bx + 60)) $((by - 30)) $((bx + 60 + 288)) $((by - 30))

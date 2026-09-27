@@ -47,7 +47,7 @@ expect_log() {
 
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/zdesktop/wallpaper.ppm ] && picture=--wallpaper=/usr/share/zdesktop/wallpaper.ppm
-/bin/zdesktop --timeout=300 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
+/bin/wayland --timeout=300 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
 /bin/subsurface-probe --timeout-s=240 --token=s > /tmp/s.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
 expect_log /tmp/s.log 'SUBPROBE ready run=s'
 expect_log /tmp/zdesktop.log 'ZWL SUBSURFACE create client=1 ' 3

@@ -1,7 +1,7 @@
 #!/bin/sh
-# ws035-p091: the titles a shell sets (OSC 0 and 2) as zdesktop-terminal's tab titles and window title, on the
+# ws035-p091: the titles a shell sets (OSC 0 and 2) as terminal's tab titles and window title, on the
 # Venus guest (the lean image, plan/tools/files/build-files-image.sh, or the browser image).  zdesktop --glass at
-# 1280x800, zdesktop-terminal with its shell; plan/ws035/tests/p091-title.sh (copied to /tmp) sets the titles:
+# 1280x800, terminal with its shell; plan/ws035/tests/p091-title.sh (copied to /tmp) sets the titles:
 #  1. OSC 0 "Build logs" (BEL): the window's title (ZTERM TITLE tab=1 title=Build logs); one-tab.png.
 #  2. Ctrl+Shift+T: tab 2 has no title of its own ("Shell 2"; the window's is "Terminal"); OSC 2 "日本語 notes"
 #     (ESC \) there: its tab and the window take it; tabs.png shows both titles in the strip.
@@ -77,8 +77,8 @@ shot() {
 guest "$stop_all" >/dev/null
 timeout 60 python3 plan/tools/guest/guest.py put plan/ws035/tests/p091-title.sh /tmp/p091-title.sh >/dev/null 2>&1 </dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/zdesktop/wallpaper.ppm ] && picture=--wallpaper=/usr/share/zdesktop/wallpaper.ppm
-/bin/zdesktop --timeout=600 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
-/bin/zdesktop-terminal --token=t1 --timeout-s=500 > /tmp/t.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
+/bin/wayland --timeout=600 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
+/bin/terminal --token=t1 --timeout-s=500 > /tmp/t.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 
 # 1. OSC 0 in the only tab: the window's title.
 expect_log /tmp/t.log 'ZTERM TITLE tab=1 title=Terminal'

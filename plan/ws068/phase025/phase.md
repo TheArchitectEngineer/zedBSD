@@ -44,12 +44,12 @@ pixel buffer を p028 に分けた）
 
 | file | 内容 |
 | --- | --- |
-| `userland/base/libglesv2/format.c`（新） | sized の内部 format の表（保存の Vulkan の format、成分、種類）と、application の format・type から保存の形への変換と逆変換（`*_INTEGER`、HALF_FLOAT、FLOAT、2_10_10_10_REV、10F_11F_11F_REV、5_9_9_9_REV、24_8、FLOAT_32_UNSIGNED_INT_24_8_REV ほか） |
-| `userland/base/libglesv2/texture.c`・`gles.h`・`gles.c` | level の texel を format ごとの形で持つ、glTexStorage2D（immutable）、ES 3 の texture の parameter、sampler object（glGenSamplers ほか）、完全性と種類に合う黒 |
-| `userland/base/libglesv2/draw.c`・`program.c`・`spirv.c`・`framebuffer.c`・`exports.map` | unit の sampler object、shader の sampler の種類（isampler・usampler・shadow）の反射と view、新しい entry point |
-| `userland/base/libglesv2/glsl/glsl.h`・`link.c` | uniform の情報に `arrayed` |
+| `userland/desktop/libglesv2/format.c`（新） | sized の内部 format の表（保存の Vulkan の format、成分、種類）と、application の format・type から保存の形への変換と逆変換（`*_INTEGER`、HALF_FLOAT、FLOAT、2_10_10_10_REV、10F_11F_11F_REV、5_9_9_9_REV、24_8、FLOAT_32_UNSIGNED_INT_24_8_REV ほか） |
+| `userland/desktop/libglesv2/texture.c`・`gles.h`・`gles.c` | level の texel を format ごとの形で持つ、glTexStorage2D（immutable）、ES 3 の texture の parameter、sampler object（glGenSamplers ほか）、完全性と種類に合う黒 |
+| `userland/desktop/libglesv2/draw.c`・`program.c`・`spirv.c`・`framebuffer.c`・`exports.map` | unit の sampler object、shader の sampler の種類（isampler・usampler・shadow）の反射と view、新しい entry point |
+| `userland/desktop/libglesv2/glsl/glsl.h`・`link.c` | uniform の情報に `arrayed` |
 | `userland/X11/libGL/Makefile`・`fixed.c` | libGL にも `format.c`、`gles_texture_complete()` の引数の追従 |
-| `userland/base/egltest/formats.c`・`.h`（新）・`main.c`・`Makefile` | `--scene=formats`（12 の format の四角と API の検査） |
+| `userland/desktop/egltest/formats.c`・`.h`（新）・`main.c`・`Makefile` | `--scene=formats`（12 の format の四角と API の検査） |
 | `plan/ws068/tests/egl-p025.sh`（新） | display と Wayland の画面の点、readback、API の検査 |
 
 片付けのサブエージェントは style の違反 10 件（閉じ括弧の後の空行 7、文字列の配列の段落の comment 3）を comment と空行で直した（振る舞いは不変）。

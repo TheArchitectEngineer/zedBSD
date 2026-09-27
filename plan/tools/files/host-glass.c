@@ -7,7 +7,7 @@
 
 /*
  * ws071-p015: lays a glass window's frame over a desktop the way zdesktop
- * does (userland/base/zdesktop/panels.c), for the host's pictures: the
+ * does (userland/desktop/wayland/panels.c), for the host's pictures: the
  * wallpaper, the cards' shadows, each panel's frosted glass (the wallpaper
  * blurred and whitened, with a bright rim),
  * then the frame by its alpha.  The blur is a coarse stand-in for

@@ -1,6 +1,6 @@
 <!-- awesome-plan project=zedbsd record=ws035p100 -->
 
-# ws035-p100: primary selection（zwp_primary_selection_v1）と zdesktop-terminal の中 button の paste
+# ws035-p100: primary selection（zwp_primary_selection_v1）と terminal の中 button の paste
 
 Phase ID: `ws035-p100`
 Parent: [WS035](../ws.md)
@@ -19,7 +19,7 @@ Queue: なし（2026-09-28 main の割り当て「the terminal PRIMARY selection
   （と `<primary-selection-unstable-v1-client-protocol.h>`）: 4 つの interface の記述と要求、listener は generic の dispatch。
   exports に `zwp_primary_selection_*`。`API-PROVENANCE.md` に照合した記述（wayland-protocols 1.44 の
   primary-selection-unstable-v1.xml、SHA256 `d568482b…f52c`）と MIT の通知。
-- zdesktop-terminal `primary.c`（新）: pointer で選んだ範囲（語・行・drag）がその都度 primary selection（UTF-8 と plain の
+- terminal `primary.c`（新）: pointer で選んだ範囲（語・行・drag）がその都度 primary selection（UTF-8 と plain の
   source、`ZTERM PRIMARY set`）。中 button（BTN_MIDDLE）の press で primary selection を shell に paste（他の client のは pipe、
   自分のはそのまま。改行は Enter の CR）。
 - 試験の道具: `qmp-pointer.py` に `middle-down`・`middle-up`。p079 の試験の最後の click の場所を p092 の置き方に合わせて
@@ -38,5 +38,5 @@ Queue: なし（2026-09-28 main の割り当て「the terminal PRIMARY selection
 
 ## 残り
 
-- X11 の PRIMARY（zdesktop-x11server の橋）と zterm の中 button。→ [p103](../phase103/phase.md) で済み。
+- X11 の PRIMARY（xserver の橋）と zterm の中 button。→ [p103](../phase103/phase.md) で済み。
 - 選択を消したとき（click）に NULL の source を set しない（X と同じく最後の選択が残る）。

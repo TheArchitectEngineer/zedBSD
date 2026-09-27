@@ -723,7 +723,7 @@ $(BUILD)/bin/$(1): $(AMD64_APP_INPUTS) $(AMD64_USER_BASIC_COMMON_OBJ) \
  $(call ZEDBSD_USERLAND_OBJECTS,$(AMD64_APP_OBJ),$(1)) $(AMD64_APP_LIBS) -o $$@
 	$(AMD64_APP_CHECK) $$@
 endef
-$(foreach command,$(filter-out vkdemo wltest wlshm mview zdesktop zdesktop-terminal zdesktop-files zdesktop-browser zdesktop-x11server egltest glxtest zgears gpu-share-test gpu-fence-test acquire-fence-test menu-probe titlebar-probe popup-probe subsurface-probe seat-probe data-probe extras-probe,$(USER_BASIC_COMMANDS)),\
+$(foreach command,$(filter-out vkdemo wltest wlshm mview wayland terminal files browser xserver egltest glxtest zgears gpu-share-test gpu-fence-test acquire-fence-test menu-probe titlebar-probe popup-probe subsurface-probe seat-probe data-probe extras-probe,$(USER_BASIC_COMMANDS)),\
 	$(eval $(call AMD64_USER_BASIC_COMMAND,$(command))))
 # ELF64 runtime linker and shared libc.
 DYNAMIC_DIR := $(BUILD)/dynamic
@@ -827,10 +827,10 @@ $(DYNAMIC_DIR)/libutil.so: $(DYNAMIC_LIBUTIL_OBJS) $(DYNAMIC_DIR)/libc.so \
 DYNAMIC_WAYLAND_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libwayland-client)
 
 $(DYNAMIC_DIR)/libwayland-client.so: $(DYNAMIC_WAYLAND_OBJS) $(DYNAMIC_DIR)/libc.so \
-	userland/base/libwayland/exports.map tools/build/check-dynamic-elf.py
+	userland/desktop/libwayland/exports.map tools/build/check-dynamic-elf.py
 	$(LD) -m elf_x86_64 -shared -soname libwayland-client.so --hash-style=both \
  -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
- --version-script=userland/base/libwayland/exports.map \
+ --version-script=userland/desktop/libwayland/exports.map \
  $(DYNAMIC_WAYLAND_OBJS) -L$(DYNAMIC_DIR) -l:libc.so -o $@
 	$(PYTHON) tools/build/check-dynamic-elf.py --machine amd64 --role shared-library \
  --needed libc.so --soname libwayland-client.so $@
@@ -840,10 +840,10 @@ $(DYNAMIC_DIR)/libwayland-client.so: $(DYNAMIC_WAYLAND_OBJS) $(DYNAMIC_DIR)/libc
 DYNAMIC_TRUETYPE_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libtruetype)
 
 $(DYNAMIC_DIR)/libtruetype.so: $(DYNAMIC_TRUETYPE_OBJS) $(DYNAMIC_DIR)/libc.so \
-	userland/base/libtruetype/exports.map tools/build/check-dynamic-elf.py
+	userland/desktop/libtruetype/exports.map tools/build/check-dynamic-elf.py
 	$(LD) -m elf_x86_64 -shared -soname libtruetype.so --hash-style=both \
  -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
- --version-script=userland/base/libtruetype/exports.map \
+ --version-script=userland/desktop/libtruetype/exports.map \
  $(DYNAMIC_TRUETYPE_OBJS) -L$(DYNAMIC_DIR) -l:libc.so -o $@
 	$(PYTHON) tools/build/check-dynamic-elf.py --machine amd64 --role shared-library \
  --needed libc.so --soname libtruetype.so $@
@@ -889,10 +889,10 @@ $(DYNAMIC_DIR)/libjpeg-compat.so: $(DYNAMIC_JPEG_COMPAT_OBJS) $(DYNAMIC_DIR)/lib
 DYNAMIC_WAYLAND_EGL_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libwayland-egl)
 
 $(DYNAMIC_DIR)/libwayland-egl.so: $(DYNAMIC_WAYLAND_EGL_OBJS) $(DYNAMIC_DIR)/libc.so \
-	userland/base/libwayland-egl/exports.map tools/build/check-dynamic-elf.py
+	userland/desktop/libwayland-egl/exports.map tools/build/check-dynamic-elf.py
 	$(LD) -m elf_x86_64 -shared -soname libwayland-egl.so --hash-style=both \
  -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
- --version-script=userland/base/libwayland-egl/exports.map \
+ --version-script=userland/desktop/libwayland-egl/exports.map \
  $(DYNAMIC_WAYLAND_EGL_OBJS) -L$(DYNAMIC_DIR) -l:libc.so -o $@
 	$(PYTHON) tools/build/check-dynamic-elf.py --machine amd64 --role shared-library \
  --needed libc.so --soname libwayland-egl.so $@
@@ -901,10 +901,10 @@ $(DYNAMIC_DIR)/libwayland-egl.so: $(DYNAMIC_WAYLAND_EGL_OBJS) $(DYNAMIC_DIR)/lib
 DYNAMIC_EGL_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libegl)
 
 $(DYNAMIC_DIR)/libEGL.so: $(DYNAMIC_EGL_OBJS) $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libwayland-client.so \
-	$(DYNAMIC_DIR)/libc.so userland/base/libegl/exports.map tools/build/check-dynamic-elf.py
+	$(DYNAMIC_DIR)/libc.so userland/desktop/libegl/exports.map tools/build/check-dynamic-elf.py
 	$(LD) -m elf_x86_64 -shared -soname libEGL.so --hash-style=both \
  -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
- --version-script=userland/base/libegl/exports.map \
+ --version-script=userland/desktop/libegl/exports.map \
  $(DYNAMIC_EGL_OBJS) -L$(DYNAMIC_DIR) -l:libvulkan.so -l:libwayland-client.so -l:libc.so -o $@
 	$(PYTHON) tools/build/check-dynamic-elf.py --machine amd64 --role shared-library \
  --needed libvulkan.so --needed libwayland-client.so --needed libc.so --soname libEGL.so $@
@@ -913,26 +913,26 @@ $(DYNAMIC_DIR)/libEGL.so: $(DYNAMIC_EGL_OBJS) $(DYNAMIC_DIR)/libvulkan.so $(DYNA
 DYNAMIC_GLESV2_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libglesv2)
 
 $(DYNAMIC_DIR)/libGLESv2.so: $(DYNAMIC_GLESV2_OBJS) $(DYNAMIC_DIR)/libEGL.so $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libc.so \
-	userland/base/libglesv2/exports.map tools/build/check-dynamic-elf.py
+	userland/desktop/libglesv2/exports.map tools/build/check-dynamic-elf.py
 	$(LD) -m elf_x86_64 -shared -soname libGLESv2.so --hash-style=both \
  -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
- --version-script=userland/base/libglesv2/exports.map \
+ --version-script=userland/desktop/libglesv2/exports.map \
  $(DYNAMIC_GLESV2_OBJS) -L$(DYNAMIC_DIR) -l:libEGL.so -l:libvulkan.so -l:libc.so -o $@
 	$(PYTHON) tools/build/check-dynamic-elf.py --machine amd64 --role shared-library \
  --needed libEGL.so --needed libvulkan.so --needed libc.so --soname libGLESv2.so $@
 
 # The desktop's way into the system and zdesktop's Wayland extensions (the
 # System Menu, WS070): the C library and the Wayland client.
-DYNAMIC_ZDESKTOP_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libzdesktop)
+DYNAMIC_ZDESKTOP_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libkeiland)
 
-$(DYNAMIC_DIR)/libzdesktop.so: $(DYNAMIC_ZDESKTOP_OBJS) $(DYNAMIC_DIR)/libwayland-client.so $(DYNAMIC_DIR)/libc.so \
-	userland/base/libzdesktop/exports.map tools/build/check-dynamic-elf.py
-	$(LD) -m elf_x86_64 -shared -soname libzdesktop.so --hash-style=both \
+$(DYNAMIC_DIR)/libkeiland.so: $(DYNAMIC_ZDESKTOP_OBJS) $(DYNAMIC_DIR)/libwayland-client.so $(DYNAMIC_DIR)/libc.so \
+	userland/desktop/libkeiland/exports.map tools/build/check-dynamic-elf.py
+	$(LD) -m elf_x86_64 -shared -soname libkeiland.so --hash-style=both \
  -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
- --version-script=userland/base/libzdesktop/exports.map \
+ --version-script=userland/desktop/libkeiland/exports.map \
  $(DYNAMIC_ZDESKTOP_OBJS) -L$(DYNAMIC_DIR) -l:libwayland-client.so -l:libc.so -o $@
 	$(PYTHON) tools/build/check-dynamic-elf.py --machine amd64 --role shared-library \
- --needed libwayland-client.so --needed libc.so --soname libzdesktop.so $@
+ --needed libwayland-client.so --needed libc.so --soname libkeiland.so $@
 
 # Vulkan is an ordinary shared dependency of the portable base application.
 DYNAMIC_VULKAN_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libvulkan)
@@ -940,15 +940,15 @@ DYNAMIC_VKDEMO_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,vkdemo)
 DYNAMIC_VULKAN_CHECK := tools/build/check-dynamic-elf.py
 
 $(DYNAMIC_DIR)/libvulkan.so: $(DYNAMIC_VULKAN_OBJS) $(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/libwayland-client.so \
-	userland/base/libvulkan/exports.map userland/base/libvulkan/api-commands.tsv \
+	userland/desktop/libvulkan/exports.map userland/desktop/libvulkan/api-commands.tsv \
 	$(DYNAMIC_VULKAN_CHECK)
 	$(LD) -m elf_x86_64 -shared -soname libvulkan.so --hash-style=both \
  -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
- --version-script=userland/base/libvulkan/exports.map \
+ --version-script=userland/desktop/libvulkan/exports.map \
  $(DYNAMIC_VULKAN_OBJS) -L$(DYNAMIC_DIR) -l:libwayland-client.so -l:libc.so -o $@
 	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role shared-library \
  --needed libwayland-client.so --needed libc.so --soname libvulkan.so \
- --exports-tsv userland/base/libvulkan/api-commands.tsv $@
+ --exports-tsv userland/desktop/libvulkan/api-commands.tsv $@
 
 $(BUILD)/bin/vkdemo: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_VKDEMO_OBJS) $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libc.so \
@@ -965,12 +965,12 @@ $(BUILD)/bin/vkdemo: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
  --needed libvulkan.so --needed libc.so $@
 
 # The compositor draws window mode with standard Vulkan (WS035 p052), and
-# reaches the system (the network, ws035-p013) through libzdesktop.
-DYNAMIC_ZDESKTOP_PROGRAM_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,zdesktop)
+# reaches the system (the network, ws035-p013) through libkeiland.
+DYNAMIC_ZDESKTOP_PROGRAM_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,wayland)
 
-$(BUILD)/bin/zdesktop: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
+$(BUILD)/bin/wayland: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_ZDESKTOP_PROGRAM_OBJS) $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libtruetype.so \
-	$(DYNAMIC_DIR)/libzdesktop.so $(DYNAMIC_DIR)/libc.so \
+	$(DYNAMIC_DIR)/libkeiland.so $(DYNAMIC_DIR)/libc.so \
 	$(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
@@ -979,9 +979,9 @@ $(BUILD)/bin/zdesktop: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_ZDESKTOP_PROGRAM_OBJS) \
  -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
- -l:libvulkan.so -l:libtruetype.so -l:libzdesktop.so -l:libc.so -o $@
+ -l:libvulkan.so -l:libtruetype.so -l:libkeiland.so -l:libc.so -o $@
 	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
- --needed libvulkan.so --needed libtruetype.so --needed libzdesktop.so --needed libc.so $@
+ --needed libvulkan.so --needed libtruetype.so --needed libkeiland.so --needed libc.so $@
 
 # The test application imports only standard Wayland and Vulkan entry points.
 DYNAMIC_WLTEST_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,wltest)
@@ -1017,11 +1017,11 @@ $(BUILD)/bin/acquire-fence-test: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
  --needed libvulkan.so --needed libwayland-client.so --needed libc.so $@
 
-# The System Menu probe (WS070 p002): Wayland, libzdesktop and the C library.
+# The System Menu probe (WS070 p002): Wayland, libkeiland and the C library.
 DYNAMIC_MENU_PROBE_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,menu-probe)
 
 $(BUILD)/bin/menu-probe: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
-	$(DYNAMIC_MENU_PROBE_OBJS) $(DYNAMIC_DIR)/libwayland-client.so $(DYNAMIC_DIR)/libzdesktop.so \
+	$(DYNAMIC_MENU_PROBE_OBJS) $(DYNAMIC_DIR)/libwayland-client.so $(DYNAMIC_DIR)/libkeiland.so \
 	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
@@ -1030,15 +1030,15 @@ $(BUILD)/bin/menu-probe: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_MENU_PROBE_OBJS) \
  -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
- -l:libwayland-client.so -l:libzdesktop.so -l:libc.so -o $@
+ -l:libwayland-client.so -l:libkeiland.so -l:libc.so -o $@
 	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
- --needed libwayland-client.so --needed libzdesktop.so --needed libc.so $@
+ --needed libwayland-client.so --needed libkeiland.so --needed libc.so $@
 
-# The Titlebar Presentation probe (WS070 p008): Wayland, libzdesktop and the C library.
+# The Titlebar Presentation probe (WS070 p008): Wayland, libkeiland and the C library.
 DYNAMIC_TITLEBAR_PROBE_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,titlebar-probe)
 
 $(BUILD)/bin/titlebar-probe: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
-	$(DYNAMIC_TITLEBAR_PROBE_OBJS) $(DYNAMIC_DIR)/libwayland-client.so $(DYNAMIC_DIR)/libzdesktop.so \
+	$(DYNAMIC_TITLEBAR_PROBE_OBJS) $(DYNAMIC_DIR)/libwayland-client.so $(DYNAMIC_DIR)/libkeiland.so \
 	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
@@ -1047,9 +1047,9 @@ $(BUILD)/bin/titlebar-probe: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_TITLEBAR_PROBE_OBJS) \
  -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
- -l:libwayland-client.so -l:libzdesktop.so -l:libc.so -o $@
+ -l:libwayland-client.so -l:libkeiland.so -l:libc.so -o $@
 	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
- --needed libwayland-client.so --needed libzdesktop.so --needed libc.so $@
+ --needed libwayland-client.so --needed libkeiland.so --needed libc.so $@
 
 # The popup probe (WS035 p076): standard Wayland and the C library.
 DYNAMIC_POPUP_PROBE_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,popup-probe)
@@ -1171,12 +1171,12 @@ $(BUILD)/bin/mview: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
  --needed libvulkan.so --needed libwayland-client.so --needed libc.so $@
 
 # The terminal imports standard Wayland, Vulkan, TrueType and C library entry
-# points (WS035 p068), and zdesktop's System Menu through libzdesktop (WS070).
-DYNAMIC_ZDESKTOP_TERMINAL_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,zdesktop-terminal)
+# points (WS035 p068), and zdesktop's System Menu through libkeiland (WS070).
+DYNAMIC_ZDESKTOP_TERMINAL_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,terminal)
 
-$(BUILD)/bin/zdesktop-terminal: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
+$(BUILD)/bin/terminal: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_ZDESKTOP_TERMINAL_OBJS) $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libwayland-client.so \
-	$(DYNAMIC_DIR)/libzdesktop.so $(DYNAMIC_DIR)/libtruetype.so $(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
+	$(DYNAMIC_DIR)/libkeiland.so $(DYNAMIC_DIR)/libtruetype.so $(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
  -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
@@ -1184,17 +1184,17 @@ $(BUILD)/bin/zdesktop-terminal: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_ZDESKTOP_TERMINAL_OBJS) \
  -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
- -l:libvulkan.so -l:libwayland-client.so -l:libzdesktop.so -l:libtruetype.so -l:libc.so -o $@
+ -l:libvulkan.so -l:libwayland-client.so -l:libkeiland.so -l:libtruetype.so -l:libc.so -o $@
 	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
- --needed libvulkan.so --needed libwayland-client.so --needed libzdesktop.so --needed libtruetype.so --needed libc.so $@
+ --needed libvulkan.so --needed libwayland-client.so --needed libkeiland.so --needed libtruetype.so --needed libc.so $@
 
 # The file manager (WS071) imports standard Wayland, Vulkan, TrueType and C
-# library entry points, and zdesktop's own extensions through libzdesktop.
-DYNAMIC_ZDESKTOP_FILES_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,zdesktop-files)
+# library entry points, and zdesktop's own extensions through libkeiland.
+DYNAMIC_ZDESKTOP_FILES_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,files)
 
-$(BUILD)/bin/zdesktop-files: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
+$(BUILD)/bin/files: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_ZDESKTOP_FILES_OBJS) $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libwayland-client.so \
-	$(DYNAMIC_DIR)/libzdesktop.so $(DYNAMIC_DIR)/libtruetype.so $(DYNAMIC_DIR)/libpng-compat.so $(DYNAMIC_DIR)/libz-compat.so \
+	$(DYNAMIC_DIR)/libkeiland.so $(DYNAMIC_DIR)/libtruetype.so $(DYNAMIC_DIR)/libpng-compat.so $(DYNAMIC_DIR)/libz-compat.so \
 	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
@@ -1203,20 +1203,20 @@ $(BUILD)/bin/zdesktop-files: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_ZDESKTOP_FILES_OBJS) \
  -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
- -l:libvulkan.so -l:libwayland-client.so -l:libzdesktop.so -l:libtruetype.so -l:libpng-compat.so -l:libz-compat.so -l:libc.so -o $@
+ -l:libvulkan.so -l:libwayland-client.so -l:libkeiland.so -l:libtruetype.so -l:libpng-compat.so -l:libz-compat.so -l:libc.so -o $@
 	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
- --needed libvulkan.so --needed libwayland-client.so --needed libzdesktop.so --needed libtruetype.so \
+ --needed libvulkan.so --needed libwayland-client.so --needed libkeiland.so --needed libtruetype.so \
  --needed libpng-compat.so --needed libz-compat.so --needed libc.so $@
 
 # The Web browser (WS074) keeps its modules in subdirectories and includes their headers
 # from its own root; it imports standard Wayland and Vulkan for its window and GPU renderer
-# (ws074-p014), zdesktop's titlebar through libzdesktop (ws074-p045), and libtruetype for its text.
-DYNAMIC_ZDESKTOP_BROWSER_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,zdesktop-browser)
-$(DYNAMIC_ZDESKTOP_BROWSER_OBJS): DYNAMIC_CPPFLAGS += -Iuserland/base/zdesktop-browser
+# (ws074-p014), zdesktop's titlebar through libkeiland (ws074-p045), and libtruetype for its text.
+DYNAMIC_ZDESKTOP_BROWSER_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,browser)
+$(DYNAMIC_ZDESKTOP_BROWSER_OBJS): DYNAMIC_CPPFLAGS += -Iuserland/desktop/browser
 
-$(BUILD)/bin/zdesktop-browser: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
+$(BUILD)/bin/browser: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_ZDESKTOP_BROWSER_OBJS) $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libwayland-client.so \
-	$(DYNAMIC_DIR)/libzdesktop.so $(DYNAMIC_DIR)/libtruetype.so $(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
+	$(DYNAMIC_DIR)/libkeiland.so $(DYNAMIC_DIR)/libtruetype.so $(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
  -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
@@ -1224,9 +1224,9 @@ $(BUILD)/bin/zdesktop-browser: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_ZDESKTOP_BROWSER_OBJS) \
  -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
- -l:libvulkan.so -l:libwayland-client.so -l:libzdesktop.so -l:libtruetype.so -l:libc.so -o $@
+ -l:libvulkan.so -l:libwayland-client.so -l:libkeiland.so -l:libtruetype.so -l:libc.so -o $@
 	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
- --needed libvulkan.so --needed libwayland-client.so --needed libzdesktop.so --needed libtruetype.so --needed libc.so $@
+ --needed libvulkan.so --needed libwayland-client.so --needed libkeiland.so --needed libtruetype.so --needed libc.so $@
 
 # OpenGL with GLX for Xzed (WS069 p004): libGLESv2's translation with GLX and a private libX11 inside.
 DYNAMIC_GL_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libgl)
@@ -1284,9 +1284,9 @@ $(BUILD)/bin/egltest: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
  -l:libEGL.so -l:libGLESv2.so -l:libwayland-egl.so -l:libwayland-client.so -l:libc.so -o $@
 
 # zdesktop's X11 server imports standard Wayland, Vulkan, TrueType and C library entry points (WS069 p008, p011).
-DYNAMIC_ZDESKTOP_X11SERVER_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,zdesktop-x11server)
+DYNAMIC_ZDESKTOP_X11SERVER_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,xserver)
 
-$(BUILD)/bin/zdesktop-x11server: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
+$(BUILD)/bin/xserver: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_ZDESKTOP_X11SERVER_OBJS) $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libwayland-client.so \
 	$(DYNAMIC_DIR)/libtruetype.so $(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
@@ -1317,7 +1317,7 @@ $(BUILD)/bin/gpu-fence-test: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
  --needed libvulkan.so --needed libc.so $@
 
 # This finite fixture links private Vulkan helpers without exporting them from the public DSO.
-$(DYNAMIC_DIR)/obj/userland/base/tests/gpu-share/main.o: DYNAMIC_CPPFLAGS += -Iuserland/base/libvulkan
+$(DYNAMIC_DIR)/obj/userland/base/tests/gpu-share/main.o: DYNAMIC_CPPFLAGS += -Iuserland/desktop/libvulkan
 
 $(BUILD)/bin/gpu-share-test: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_DIR)/obj/userland/base/tests/gpu-share/main.o $(DYNAMIC_VULKAN_OBJS) \

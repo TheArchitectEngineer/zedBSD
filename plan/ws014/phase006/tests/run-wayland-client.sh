@@ -6,7 +6,7 @@ repo=$(CDPATH= cd -- "$(dirname -- "$0")/../../../.." && pwd)
 cd "$repo"
 output=${1:-build/q309-wayland-client}
 mkdir -p "$output"
-sources='userland/base/libwayland/client.c userland/base/libwayland/proxy.c userland/base/libwayland/wire.c userland/base/libwayland/event.c userland/base/libwayland/protocol.c userland/base/libwayland/utility.c'
+sources='userland/desktop/libwayland/client.c userland/desktop/libwayland/proxy.c userland/desktop/libwayland/wire.c userland/desktop/libwayland/event.c userland/desktop/libwayland/protocol.c userland/desktop/libwayland/utility.c'
 cc -std=c99 -D_GNU_SOURCE -Wall -Wextra -Werror -Wno-cast-function-type \
  -Ilibc/include/wayland -idirafter libc/include -pthread $sources \
  plan/ws014/phase006/tests/wayland-client.c -o "$output/wayland-client"

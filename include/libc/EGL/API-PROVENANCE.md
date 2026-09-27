@@ -2,8 +2,8 @@
 
 These are the Khronos Group's public API headers, copied unchanged.  They are
 declarations, not implementation code; zedBSD's libEGL, libGLESv2 and
-libwayland-egl are independent implementations (userland/base/libegl,
-userland/base/libglesv2, userland/base/libwayland-egl).
+libwayland-egl are independent implementations (userland/desktop/libegl,
+userland/desktop/libglesv2, userland/desktop/libwayland-egl).
 
 | Header | Registry, commit | SHA-256 | License |
 | --- | --- | --- | --- |

@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws035-p091: sets the terminal's title the way a shell or a program does (typed into zdesktop-terminal by
+# ws035-p091: sets the terminal's title the way a shell or a program does (typed into terminal by
 # plan/ws035/tests/zdesktop-p091.sh, which copies this file to the guest's /tmp).
 #   sh p091-title.sh 1     OSC 0 ended by BEL: "Build logs"
 #   sh p091-title.sh 2     OSC 2 ended by ESC \: "日本語 notes" (UTF-8)

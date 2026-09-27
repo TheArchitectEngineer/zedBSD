@@ -6,7 +6,7 @@
  */
 
 /*
- * ws071: checks zdesktop-files' model on the host in a temporary folder:
+ * ws071: checks files' model on the host in a temporary folder:
  * the tasks (copy, duplicate, move within and across file systems, trash
  * and put back, delete), the free names, the trash's records, the undo
  * history and the clipboard.
@@ -239,7 +239,7 @@ main(
 	snprintf(path, sizeof(path), "%s/src/Report 3.pdf", root);
 	check(error == 0 && strcmp(other, path) == 0, "free name: Report 3.pdf after Report.pdf and Report 2.pdf");
 
-	/* 14. The recent list (libzdesktop): newest first, a path once, removal. */
+	/* 14. The recent list (libkeiland): newest first, a path once, removal. */
 	{
 		static struct zdesktop_recent_item items[8];
 		struct fm_tags tags;

@@ -1,6 +1,6 @@
 <!-- awesome-plan project=zedbsd record=ws074 -->
 
-# WS074: zedBSD の Web ブラウザ（`userland/base/zdesktop-browser`）
+# WS074: zedBSD の Web ブラウザ（`userland/desktop/browser`）
 
 <!-- awesome-plan-current:start -->
 Status: incomplete
@@ -14,7 +14,7 @@ Resume point: p001〜p005・p007・p010〜p017・p022〜p026・p030・p045・p04
 
 ## 目標
 
-2026-09-27 ユーザー:「新しいWSを作ります。Webブラウザを作成します。userland/base/zdesktop-browserです。
+2026-09-27 ユーザー:「新しいWSを作ります。Webブラウザを作成します。userland/desktop/browserです。
 HTML5のレイアウトエンジンを大まかに作ったあと、JavaScript実行エンジンをあまり最適化にこだわらないで作成し、接続します。そのあと、CSSの互換性を、
 標準準拠テストで100%に近づけつつ、-webkitの拡張などはChromeと実際のレンダリング結果を比較しながら100%に近づけていきます。ただし、レイアウトを
 100％準拠にするのは無理だし、Chromeと100％互換にするのも無理ですので、目標値を徐々に上げるのがいいと思います。また、JavaScript実行エンジンは、
@@ -39,7 +39,7 @@ Wasm を base の中に自前で書く（外部の browser engine は取り込�
 
 ## 完了の条件（p001 で確定）
 
-- zdesktop で zdesktop-browser が起動し、URL を開き、HTML・CSS・画像・JavaScript を含む一般的な静的・動的な page を描いて操作できる
+- zdesktop で browser が起動し、URL を開き、HTML・CSS・画像・JavaScript を含む一般的な静的・動的な page を描いて操作できる
   （使える page の目安は [design.md](design.md) §15）。
 - CSS の準拠試験と Chrome との描画の比較で、段階 M4 までの目標値（design.md §15）を満たす。M5 以降の数は後の WS か Phase で決める。
 - JavaScript と Wasm が共通の実行 engine（値・GC・bytecode・interpreter・呼び出し規約、design.md §11）の上で動く。

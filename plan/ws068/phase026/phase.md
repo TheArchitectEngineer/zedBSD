@@ -58,13 +58,13 @@ Phase disposition: normal
 
 | file | 内容 |
 | --- | --- |
-| `userland/base/libglesv2/framebuffer.c` | 全面的に書き直した: 4 つの colour attachment と depth-stencil、level と layer、format ごとの pass と互換 pass、READ/DRAW の束縛、`glDrawBuffers`・`glReadBuffer`・`glFramebufferTextureLayer`・`glInvalidate*`、sized の renderbuffer、`gles_read_source`・`gles_read_buffer_format`、全ての level と layer の `gles_texture_fetch`、名前の予約 |
-| `userland/base/libglesv2/draw.c` | `gles_read_pixels`（read buffer の format から application の format・type へ）、`glReadPixels` の整数と float、`glClear` を全ての draw buffer に、`glClearBuffer*`、attachment ごとの blend と write mask |
-| `userland/base/libglesv2/texture.c` | 取り付けの view を必要な時に（`gles_texture_attach_view`）、image は全ての level、2D 配列も取り付けられる usage、RGB の alpha を 1 に |
-| `userland/base/libglesv2/format.c` | format ごとの `renderable`、`gles_format_renderable`、`gles_read_format_ok`・`gles_read_format`・`gles_texels_read`、整数の texel の読み |
-| `userland/base/libglesv2/gles.h`・`gles.c` | 上の構造、read framebuffer・既定の draw/read buffer、`glGetIntegerv`（READ_FRAMEBUFFER_BINDING、MAX_COLOR_ATTACHMENTS、MAX_DRAW_BUFFERS、DRAW_BUFFERi、READ_BUFFER、IMPLEMENTATION_COLOR_READ_*）、GL_EXT_color_buffer_float |
-| `userland/base/libglesv2/exports.map`、`userland/X11/libGL/fixed.c` | 新しい entry point、libGL の `glReadBuffer` の stub を削除 |
-| `userland/base/egltest/targets.c`・`.h`（新）・`main.c`・`Makefile` | `--scene=targets` |
+| `userland/desktop/libglesv2/framebuffer.c` | 全面的に書き直した: 4 つの colour attachment と depth-stencil、level と layer、format ごとの pass と互換 pass、READ/DRAW の束縛、`glDrawBuffers`・`glReadBuffer`・`glFramebufferTextureLayer`・`glInvalidate*`、sized の renderbuffer、`gles_read_source`・`gles_read_buffer_format`、全ての level と layer の `gles_texture_fetch`、名前の予約 |
+| `userland/desktop/libglesv2/draw.c` | `gles_read_pixels`（read buffer の format から application の format・type へ）、`glReadPixels` の整数と float、`glClear` を全ての draw buffer に、`glClearBuffer*`、attachment ごとの blend と write mask |
+| `userland/desktop/libglesv2/texture.c` | 取り付けの view を必要な時に（`gles_texture_attach_view`）、image は全ての level、2D 配列も取り付けられる usage、RGB の alpha を 1 に |
+| `userland/desktop/libglesv2/format.c` | format ごとの `renderable`、`gles_format_renderable`、`gles_read_format_ok`・`gles_read_format`・`gles_texels_read`、整数の texel の読み |
+| `userland/desktop/libglesv2/gles.h`・`gles.c` | 上の構造、read framebuffer・既定の draw/read buffer、`glGetIntegerv`（READ_FRAMEBUFFER_BINDING、MAX_COLOR_ATTACHMENTS、MAX_DRAW_BUFFERS、DRAW_BUFFERi、READ_BUFFER、IMPLEMENTATION_COLOR_READ_*）、GL_EXT_color_buffer_float |
+| `userland/desktop/libglesv2/exports.map`、`userland/X11/libGL/fixed.c` | 新しい entry point、libGL の `glReadBuffer` の stub を削除 |
+| `userland/desktop/egltest/targets.c`・`.h`（新）・`main.c`・`Makefile` | `--scene=targets` |
 | `plan/ws068/tests/egl-p026.sh`（新） | display と Wayland の画面の点、readback、API の検査 |
 
 ### 検証（QEMU の Venus。i915 実機は未実施）

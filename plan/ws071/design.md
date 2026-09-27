@@ -1,6 +1,6 @@
 <!-- awesome-plan project=zedbsd record=ws071-design -->
 
-# WS071 設計: zedBSD File Manager（`zdesktop-files`）
+# WS071 設計: zedBSD File Manager（`files`）
 
 Parent: [WS071](ws.md) / Phase: ws071-p001（[WS071](ws.md) の Phase 一覧）
 Status: 設計（2026-09-27、ws071-p001）。仕様案は [spec.md](spec.md)（ユーザー提供、§番号は spec.md の節）。仕様案と違える所・仕様案に
@@ -8,26 +8,26 @@ Status: 設計（2026-09-27、ws071-p001）。仕様案は [spec.md](spec.md)（
 
 ## 0. 前提（再確認しない決定）
 
-- client は標準の Wayland と Vulkan を使い、zdesktop の非標準の拡張（System Menu 等）は **libzdesktop の API だけ**で使う（ユーザーの規則）。
+- client は標準の Wayland と Vulkan を使い、zdesktop の非標準の拡張（System Menu 等）は **libkeiland の API だけ**で使う（ユーザーの規則）。
 - menubar（File・Edit・View・Go・Window・Help）は WS070 の System Menu。右 click の context menu は system が描く: WS070 の protocol に
   version 2 の `xdg_menu_manager_v1.get_context_menu` と `xdg_context_menu_v1` を足し（[ws070 design.md §12](../ws070/design.md) の案）、
-  libzdesktop の `zdesktop_menu_popup` で包む。**WS070 の protocol の拡張を WS071 の Phase（p009）として実装する**。
+  libkeiland の `zdesktop_menu_popup` で包む。**WS070 の protocol の拡張を WS071 の Phase（p009）として実装する**。
 - font と壁紙は commit しない（`build/ws035-fonts`、`build/ws035-wallpaper`。日本語の fallback font も同じ扱い、§4.3）。
 - 最初の版の範囲は [ws.md](ws.md) の「最初の版」。クラウド・SMB/NFS/WebDAV・カラム/ギャラリー表示・全体の indexer・動画/PDF の
   サムネイルは Future Work の候補（ws.md に列挙）。
 
 ## 1. program と置き場所
 
-- **決定**: `userland/base/zdesktop-files`、`/bin/zdesktop-files`。窓の題名 `Files`、app_id `zdesktop-files`。zdesktop の App Home に
-  「Files」を 1 行足す（`home.c` の `home_add_app`、p011）。理由: `zdesktop-terminal` と同じ命名（zdesktop の base の client）。
-- 1 process = 1 窓（中にタブ）。New Window（Ctrl+N）は自分を新しい process で起動する（zdesktop-terminal の New Window と同じ）。
+- **決定**: `userland/desktop/files`、`/bin/files`。窓の題名 `Files`、app_id `files`。zdesktop の App Home に
+  「Files」を 1 行足す（`home.c` の `home_add_app`、p011）。理由: `terminal` と同じ命名（zdesktop の base の client）。
+- 1 process = 1 窓（中にタブ）。New Window（Ctrl+N）は自分を新しい process で起動する（terminal の New Window と同じ）。
   理由: 窓ごとに Vulkan の swapchain と event の流れを分けずに済み、1 つの窓の不具合が他の窓を巻き込まない。process の間で共有するもの
   （clipboard、tag、recent、sidebar）は file に置く（§6）。
 
 ## 2. 描画の構成
 
 ```
-zdesktop-files
+files
   window.c   Wayland: registry、xdg_toplevel、wl_seat の pointer と keyboard、key の repeat → fm_event の列
   present.c  Vulkan: swapchain と、CPU が描いた canvas（host-visible の linear image）を 1 枚の四角で貼る pipeline
   canvas.c   CPU の 2D 描画: premultiplied BGRA、clip、矩形・角丸（AA）・影・gradient・多角形（AA）・画像の拡縮
@@ -35,7 +35,7 @@ zdesktop-files
   icons.c    folder・書類・種類別・sidebar・toolbar の icon を canvas の図形で描く（icon theme も画像資産も使わない）
   ui*.c      画面の配置・描画・hit test・入力の解釈（toolbar、sidebar、home、grid、list、preview、Quick Look、情報、dialog）
   model      dir.c・nav.c・select.c・task.c・trash.c・undo.c・tags.c・mime.c・apps.c・search.c・thumb.c・places.c・clip.c
-  menu.c     System Menu（menubar）と context menu（libzdesktop）
+  menu.c     System Menu（menubar）と context menu（libkeiland）
 ```
 
 - **決定: 描画は CPU（canvas）、表示は Vulkan。** 各 frame は canvas（窓と同じ大きさの BGRA）を CPU で描き、Vulkan の linear image に
@@ -47,11 +47,11 @@ zdesktop-files
   3. 描き直しは入力と task の進みのときだけ（animation は持たない）で、1 frame の CPU 時間は問題にならない見込み（性能の数値は
      受け入れに使わない）。問題になれば damage の矩形だけ描き直す（Future Work 候補 F-f）。
   代案（GPU の 2D renderer: SDF の角丸と glyph atlas）は後で present.c と canvas の境界を保ったまま差し替えられる。
-- zdesktop-terminal の Vulkan の骨格（device、swapchain、FIFO、fence で 1 frame ずつ、PREINITIALIZED→GENERAL）をそのまま使う。
+- terminal の Vulkan の骨格（device、swapchain、FIFO、fence で 1 frame ずつ、PREINITIALIZED→GENERAL）をそのまま使う。
   canvas の image は窓の大きさで作り、resize で作り直す（`vkDeviceWaitIdle` の後）。shader は `shaders/canvas.vert`・`canvas.frag`、
   `shaders/regenerate.py` が `shaders.h` を作る（terminal と同じ。build は shader compiler を要らない）。
-- **共有の UI library は作らない（今は）**: zdesktop-terminal と重なるのは Vulkan の初期化と Wayland の骨格だけで、描き方が違う
-  （terminal は cell の atlas）。2 つ目の CPU 描画の client が出たら canvas・text・icons を library（例 `libzdesktop-ui`）へ出す
+- **共有の UI library は作らない（今は）**: terminal と重なるのは Vulkan の初期化と Wayland の骨格だけで、描き方が違う
+  （terminal は cell の atlas）。2 つ目の CPU 描画の client が出たら canvas・text・icons を library（例 `libkeiland-ui`）へ出す
   （Future Work 候補 F-g）。
 - **窓の透明**: zdesktop は GPU buffer（Vulkan）の窓を不透明として合成し、角丸と影は zdesktop が付ける（`shell.c` の body の描画）。
   client の中で壁紙のすりガラスは見えないので、本体は明るく静かな不透明の面（淡い青灰の gradient）と、白に近い角丸の panel で
@@ -156,7 +156,7 @@ zdesktop が描く浮いたタイトルバーに題名「Files」と menubar（F
 - glyph は (face, 大きさ, glyph 番号) の hash の cache に coverage の bitmap で持つ。大きさは 11〜28 px の数段。太字は font が 1 本
   なので、coverage を横に 1 px 広げた擬似の太字（見出しだけ）。
 - UTF-8 の復号（不正な byte は U+FFFD）、幅の計測、幅に収める末尾の「…」、2 行の折り返し（icon の名前）。
-- 入力は US 配列の evdev → 文字（zdesktop-terminal の keys.c と同じ考え）。IME は無い（日本語の入力は Future Work、§15-9）。
+- 入力は US 配列の evdev → 文字（terminal の keys.c と同じ考え）。IME は無い（日本語の入力は Future Work、§15-9）。
 
 ### 4.3 icons
 
@@ -212,8 +212,8 @@ zdesktop が描く浮いたタイトルバーに題名「Files」と menubar（F
 
 ### 5.6 clipboard（spec §15 の Cut・Copy・Paste）
 
-- zdesktop に `wl_data_device` が無いので、**file の clipboard** `$XDG_RUNTIME_DIR/zdesktop-files.clipboard`（1 行目 `copy` か
-  `cut`、以後 path を 1 行ずつ）。同じ利用者の zdesktop-files の窓（process）の間で共有する。他のアプリとの clipboard は
+- zdesktop に `wl_data_device` が無いので、**file の clipboard** `$XDG_RUNTIME_DIR/files.clipboard`（1 行目 `copy` か
+  `cut`、以後 path を 1 行ずつ）。同じ利用者の files の窓（process）の間で共有する。他のアプリとの clipboard は
   zdesktop の data device の後（Future Work 候補 F-i）。
 - Cut は印を付けるだけで、Paste のときに move する（Finder・Explorer と同じ。切り取った項目は薄く描く）。
 
@@ -227,13 +227,13 @@ zdesktop が描く浮いたタイトルバーに題名「Files」と menubar（F
   タグを付けられない（エラーを出す）。
 - タグの定義（名前と色、任意の icon の名前）: `$XDG_CONFIG_HOME/zdesktop/tags`（`name<TAB>#rrggbb[<TAB>icon]` の行）。無ければ既定の
   5 つ（Work 青、Personal 紫、Ideas 桃、Reference 橙、Archive 灰。mockup の 仕事・プライベート・アイデア・参考・アーカイブ）。
-- sidebar のタグの絞り込みのための索引: `$XDG_DATA_HOME/zdesktop/tag-index`（`tag<TAB>path`）。zdesktop-files がタグを変えるたびに
+- sidebar のタグの絞り込みのための索引: `$XDG_DATA_HOME/zdesktop/tag-index`（`tag<TAB>path`）。files がタグを変えるたびに
   更新し、表示するときに各 path の xattr を確かめて食い違いを落とす。他の道具が付けたタグは、検索（`tag:name`）で見つかる。
-- API はアプリの中（`tags.c`）。2 つ目の使い手が出たら libzdesktop へ出す（libzdesktop の「最初の使い手と一緒に足す」方針）。
+- API はアプリの中（`tags.c`）。2 つ目の使い手が出たら libkeiland へ出す（libkeiland の「最初の使い手と一緒に足す」方針）。
 
 ### 6.2 最近の項目（アプリ横断の recent database、spec §19）
 
-- **決定: libzdesktop に recent の API を足す**（アプリ横断なので。libzdesktop は OS への道でもある）:
+- **決定: libkeiland に recent の API を足す**（アプリ横断なので。libkeiland は OS への道でもある）:
 
 ```c
 struct zdesktop_recent_item {
@@ -249,15 +249,15 @@ int zdesktop_recent_remove(const char *path);
 - 保存: `$XDG_DATA_HOME/zdesktop/recent`（既定 `~/.local/share/zdesktop/recent`）、`time<TAB>application<TAB>path` の行、古い順。
   追加は同じ path を消して末尾へ、256 件まで。書き込みは lock file の `flock` の中で一時 file に書いて `rename`（読み手は常に完全な
   file を見る）。`ZDESKTOP_VERSION` を 3 に上げる（context menu と recent）。
-- zdesktop-files は file を開いたとき `zdesktop_recent_add(path, "zdesktop-files")`。**変更（p005・p006）**: 最近開いた folder は
-  アプリ横断の list に入れず、file manager の中の list `$XDG_DATA_HOME/zdesktop-files/recent-folders`（新しい順に 12）に置く
+- files は file を開いたとき `zdesktop_recent_add(path, "files")`。**変更（p005・p006）**: 最近開いた folder は
+  アプリ横断の list に入れず、file manager の中の list `$XDG_DATA_HOME/files/recent-folders`（新しい順に 12）に置く
   （folder の移動のたびにアプリ横断の list が folder で埋まるのを避ける）。
 
 ### 6.3 sidebar と設定
 
-- Favorites の並び: `$XDG_CONFIG_HOME/zdesktop-files/sidebar`（path の行）。無ければ既定の 7 つ。drag で並べ替え・folder を足す、
+- Favorites の並び: `$XDG_CONFIG_HOME/files/sidebar`（path の行）。無ければ既定の 7 つ。drag で並べ替え・folder を足す、
   context menu の Remove from Sidebar（spec §9）。
-- 表示の設定（icon/list、列、並べ替え、preview、隠し file）: `$XDG_CONFIG_HOME/zdesktop-files/settings`（`key=value`）。
+- 表示の設定（icon/list、列、並べ替え、preview、隠し file）: `$XDG_CONFIG_HOME/files/settings`（`key=value`）。
 - 既定の folder（Desktop、Documents、Downloads、Pictures、Music、Movies）は `$HOME` の下の英語の名前。無い folder は sidebar に
   薄く出し、押すと作るかを聞かずに作らない（「Documents does not exist」を出す）。
 
@@ -281,9 +281,9 @@ int zdesktop_recent_remove(const char *path);
 | その他 | Terminal で `less` | — |
 
 - 起動は `fork` と `setsid` と `execl("/bin/sh", "sh", "-c", command)`（zdesktop の App Home と同じ）、Terminal は
-  `/bin/zdesktop-terminal --command=...`。開いた file は recent に足す（§6.2）。
+  `/bin/terminal --command=...`。開いた file は recent に足す（§6.2）。
 - **変更（p012、2026-09-27）**: 一覧の優先は利用者 → system → 内蔵（同じ名前は先のもの）。PATTERNS は `,` で区切った MIME の glob
-  （`fnmatch`）。command の先頭の `@terminal ` は残りを新しい zdesktop-terminal の `--command=` で（shell の quote が 2 重にならない）、
+  （`fnmatch`）。command の先頭の `@terminal ` は残りを新しい terminal の `--command=` で（shell の quote が 2 重にならない）、
   `@quicklook` は Quick Look。`%f` が無い command は末尾に path を足す。一覧は開くたびに読む（編集がすぐ効く）。起動は fork を 2 段に
   して孫が走らせる（file manager が待つ子を残さない、stdin・stdout・stderr は `/dev/null`）。内蔵の表は Quick Look（`image/*`）、
   Terminal (less)（text と source）、Remacs・Terminal (ed)（`/bin`・`/usr/bin`・`/usr/local/bin` に実行 file があるとき）、
@@ -315,7 +315,7 @@ int zdesktop_recent_remove(const char *path);
 
 ## 10. System Menu と context menu（spec §15、§36、§37）
 
-### 10.1 menubar（libzdesktop の `zdesktop_menu_*`）
+### 10.1 menubar（libkeiland の `zdesktop_menu_*`）
 
 label は ASCII（zdesktop の atlas の制限、WS070 §11-5）。shortcut を登録すると zdesktop がその key を取るので、
 **修飾 key の付いた組だけを登録**し、F2・Delete・Space・Backspace・Enter・矢印は client が自分で扱う（検索欄や名前の編集の中で
@@ -352,7 +352,7 @@ Rename は shortcut を登録しない（Delete・F2 は client が扱う）。
     （protocol error にしない: 古い serial の race で client を殺さない）。popup の行は `menu` の根の子。位置は surface の (x, y)、
     出力の端で押し戻す。keyboard・submenu・外の press で閉じる、は menubar の popup と同じ（menu-shell.c の共有）。
   - error（`xdg_menu_manager_v1`）: `bad_surface = 1`（toplevel の窓でない surface）。
-- libwayland: `menu-protocol.c` に interface と wrapper、非公開 header に宣言。libzdesktop:
+- libwayland: `menu-protocol.c` に interface と wrapper、非公開 header に宣言。libkeiland:
 
 ```c
 struct zdesktop_context_menu;
@@ -366,7 +366,7 @@ struct zdesktop_context_menu *zdesktop_menu_popup(struct zdesktop_menu_service *
 void zdesktop_context_menu_destroy(struct zdesktop_context_menu *popup);
 ```
 
-- zdesktop-files の context menu（spec §15、label は英語）: 項目の上: Open、Open in New Tab・Open in New Window（folder）、
+- files の context menu（spec §15、label は英語）: 項目の上: Open、Open in New Tab・Open in New Window（folder）、
   Open With ▸、— 、Cut、Copy、Paste（folder の中へ）、— 、Rename、Duplicate、Move To ▸（Favorites）、— 、Tags ▸、Share（無効、将来）、
   — 、Get Info、Move to Trash。空き地: New Folder、Paste、— 、View ▸、Sort By ▸、Show Hidden Files、— 、Get Info（今の folder）。
   Trash の中: Put Back、Delete Immediately、— 、Empty Trash。sidebar: Open in New Tab、Open in New Window、Remove from Sidebar、Get Info。
@@ -407,26 +407,26 @@ void zdesktop_context_menu_destroy(struct zdesktop_context_menu *popup);
   - `host-build.sh`: model と UI の file を host の cc で `build/ws071-host/` に build（window.c・present.c・menu.c は除き、試験の
     `host-main.c` が event を与える）。libtruetype も host で build（その source は host の libc で compile できる）。
   - `host-model`: dir・nav・select・task（copy・move・trash・restore・delete・衝突・自分の中への copy の拒否・xattr の copy）・undo・
-    tags・mime・apps（関連付けの読み込み）・search・recent（libzdesktop の recent.c を host で）を一時 directory で確かめる。
+    tags・mime・apps（関連付けの読み込み）・search・recent（libkeiland の recent.c を host で）を一時 directory で確かめる。
   - `host-render`: 決まった内容の一時の `$HOME` で、場面（dashboard、icon、list、選択、rename、検索、preview、Quick Look、Info、
     dialog、進み）を PNG に描き（`build/ws071-host/*.png`）、目で見る。数値の比較は画素の粗い検査（背景・選択の色の画素がある等）まで。
 - **guest（Venus、QEMU）**: lean な image（`plan/tools/files/config-amd64-files.mk`、`build-files-image.sh`、ws070 の構成に
-  zdesktop-files と試験の file を足す）。`files-guest.sh start` の後、Phase ごとの `files-p00N.sh` が zdesktop --glass と zdesktop-files
-  を起動し、QMP の pointer・key で操作し、zdesktop-files の log（`ZFILES READY`、`ZFILES LOCATION`、`ZFILES TASK`、`ZFILES MENU` 等、
+  files と試験の file を足す）。`files-guest.sh start` の後、Phase ごとの `files-p00N.sh` が zdesktop --glass と files
+  を起動し、QMP の pointer・key で操作し、files の log（`ZFILES READY`、`ZFILES LOCATION`、`ZFILES TASK`、`ZFILES MENU` 等、
   guest の中の file を SSH で読む）で待ち合わせ、画面（QMP の screendump）を Read で自分で見て判定する。QEMU の console・serial の
   log では判定しない。
 - 起動の確認は `plan/tools/boot-test.sh`（最後の Phase）。i915 の実機は `flock /tmp/i915-hw.lock` の下でだけ（しなければ「未実施」）。
 - 規約: 新しい file は `python3 plan/tools/style-check.py` が 0。変える既存の file（zdesktop の menu.c・menu-shell.c・protocol.c・
-  home.c、libwayland の menu-protocol.c、libzdesktop）は悪化させない（`plan/tools/titlebar/style-compare.sh` の方法）。
+  home.c、libwayland の menu-protocol.c、libkeiland）は悪化させない（`plan/tools/titlebar/style-compare.sh` の方法）。
 
 ## 15. 判断が要る点（既定で進めた）
 
 戻せる既定を選んで先へ進めた。ユーザーの判断があれば変える。
 
-1. **program の名前と置き場所・描画の共有**（ws.md の 1）: `zdesktop-files`（`/bin/zdesktop-files`、題名 Files）。描画は CPU の canvas
+1. **program の名前と置き場所・描画の共有**（ws.md の 1）: `files`（`/bin/files`、題名 Files）。描画は CPU の canvas
    を Vulkan で貼る（§2）。共有の UI library は 2 つ目の使い手が出るまで作らない。
 2. **タグ・最近のファイルの保存先**（ws.md の 2）: タグは xattr `user.zdesktop.tags` + 定義と索引の file（§6.1、アプリの中）。recent は
-   libzdesktop の新しい API と `~/.local/share/zdesktop/recent`（§6.2、アプリ横断）。
+   libkeiland の新しい API と `~/.local/share/zdesktop/recent`（§6.2、アプリ横断）。
 3. **ゴミ箱の形式**（ws.md の 3）: freedesktop.org Trash specification の home trash（§5.4）。
 4. **既定のアプリ**（ws.md の 4）: 拡張子の表 + 小さな magic（`file` の database を使わない）、関連付けは `open-with` の file（§7）。
 5. **サムネイルの decoder**（ws.md の 5）: PNG と PPM。PNG は WS035 の決定どおり libz-compat と libpng-compat の decode を自前で作る
@@ -449,22 +449,22 @@ void zdesktop_context_menu_destroy(struct zdesktop_context_menu *popup);
 
 | Phase | 内容 | 主な file |
 | --- | --- | --- |
-| p002 | 骨格: window（pointer・keyboard）、present（Vulkan の canvas）、canvas、text、icons、toolbar・sidebar・content の静的な配置、host の render 試験、guest の image と起動 | `zdesktop-files/{main,window,present,canvas,text,icons,ui}.c`、`plan/tools/files/` |
+| p002 | 骨格: window（pointer・keyboard）、present（Vulkan の canvas）、canvas、text、icons、toolbar・sidebar・content の静的な配置、host の render 試験、guest の image と起動 | `files/{main,window,present,canvas,text,icons,ui}.c`、`plan/tools/files/` |
 | p003 | 一覧と移動: dir、nav（履歴・パンくず・Back/Forward/Home）、icon・list 表示、並べ替え、選択（click・Ctrl・Shift・矩形・keyboard）、scroll、開く（folder）、Ctrl+L | `dir.c`、`nav.c`、`select.c`、`ui-grid.c`、`ui-list.c` |
 | p004 | file 操作: task（copy・move・delete・duplicate・link）、clipboard、new folder、rename（inline）、ゴミ箱（trash・Trash の場所・Put Back・Empty）、完全削除の確認、undo・redo、進みの輪と popover、status の pill | `task.c`、`clip.c`、`trash.c`、`undo.c`、`ui-dialog.c` |
-| p005 | 検索（scope、語、協調の走査）、タグ（xattr、定義、索引、sidebar の絞り込み）、recent（libzdesktop の API）、Favorites の編集、Locations（mount） | `search.c`、`tags.c`、`places.c`、`libzdesktop/recent.c` |
+| p005 | 検索（scope、語、協調の走査）、タグ（xattr、定義、索引、sidebar の絞り込み）、recent（libkeiland の API）、Favorites の編集、Locations（mount） | `search.c`、`tags.c`、`places.c`、`libkeiland/recent.c` |
 | p006 | Home の dashboard（hero、folder cards、recent files、recent folders） | `ui-home.c` |
 | p007 | preview pane、Quick Look、Get Info（checksum、xattr）、MIME、開く・別のアプリで開く（起動） | `ui-preview.c`、`mime.c`、`apps.c` |
 | p008 | menubar（System Menu）、タブ、New Window、keyboard の shortcut の全体（spec §35）、Help の card | `menu.c`、`ui-tabs.c` |
-| p009 | context menu: WS070 protocol version 2（libwayland、zdesktop の menu.c・menu-shell.c、libzdesktop `zdesktop_menu_popup`）と file manager の context menu | `libwayland/menu-protocol.c`、`zdesktop/menu*.c`、`libzdesktop/menu.c` |
+| p009 | context menu: WS070 protocol version 2（libwayland、zdesktop の menu.c・menu-shell.c、libkeiland `zdesktop_menu_popup`）と file manager の context menu | `libwayland/menu-protocol.c`、`zdesktop/menu*.c`、`libkeiland/menu.c` |
 | p010 | サムネイル（libz-compat の inflate、libpng-compat の decode、thumb.c）と窓の中の DnD（folder・sidebar・Trash・並べ替え） | `libz-compat/`、`libpng-compat/`、`thumb.c`、`ui-drag.c` |
 | p011 | App Home の項目、規約の全文との照合（変えた file 全部）、回帰（WS070 の menu、zdesktop の既存の試験の一部、boot test）、i915 実機（任意） | — |
 
 ## 17. 共有される file と衝突の危険（merge のとき）
 
-- `userland/base/zdesktop/`（menu.c・menu-shell.c・menu.h・protocol.c・zwl.h・home.c）: p009 と p011。WS035 の subagent（damage、blur、
+- `userland/desktop/wayland/`（menu.c・menu-shell.c・menu.h・protocol.c・zwl.h・home.c）: p009 と p011。WS035 の subagent（damage、blur、
   題名の文字、toolkit の protocol）も zdesktop を変える。変更は新しい関数・新しい object の種類の追加に留め、既存の code は並べ替えない。
-- `userland/base/libwayland/`（menu-protocol.c、xdg-toplevel-menu-v1-client-protocol.h、event.c）: p009。
-- `include/libc/zdesktop.h`、`userland/base/libzdesktop/`（menu.c、recent.c、exports.map、Makefile）: p005・p009。`ZDESKTOP_VERSION` を 3 に。
-- `platform/amd64/vmunix.mk`（zdesktop-files の link、libz-compat・libpng-compat の shared library）: p002・p010。
+- `userland/desktop/libwayland/`（menu-protocol.c、xdg-toplevel-menu-v1-client-protocol.h、event.c）: p009。
+- `include/libc/zdesktop.h`、`userland/desktop/libkeiland/`（menu.c、recent.c、exports.map、Makefile）: p005・p009。`ZDESKTOP_VERSION` を 3 に。
+- `platform/amd64/vmunix.mk`（files の link、libz-compat・libpng-compat の shared library）: p002・p010。
 - `include/libc/compat/`（zlib.h、png.h）: p010（WS035 p040・p041 と同じ置き場。WS035 の記録の更新は main session）。

@@ -38,7 +38,7 @@ producerのfd close・GPU session close・process終了後もreceiverのaliasで
 
 この経路にはCPU readback、CPU memcpyによる画素転送、`TRANSFER_TO_HOST_2D`による再uploadを必須としない。fdの受け渡し自体はGPU fenceではない。frame callbackもbuffer再利用の許可ではなく、表示中bufferは次の表示または明示解除まで保持する。コンポジタがrendererでsampling/copyする場合も、自分のcontextでmemory import・image bind・external ownership acquire/releaseが必要になる。
 
-[WSI image実装](../../../userland/base/libvulkan/wsi-image.c)はrendererのmemory requirementsとrow pitchを照会する。共有blobは`SHAREABLE | CROSS_DEVICE`で作成し、CPU用の`MAPPABLE`やMMIO apertureを要求しない。ホストVenus rendererが使用する外部memory種別にdma-bufを含むことと、ゲストがLinux dma-buf ABIやlinux-dmabuf-v1を採用することは別である。ゲストの公開契約はtyped kernel handle fdである。
+[WSI image実装](../../../userland/desktop/libvulkan/wsi-image.c)はrendererのmemory requirementsとrow pitchを照会する。共有blobは`SHAREABLE | CROSS_DEVICE`で作成し、CPU用の`MAPPABLE`やMMIO apertureを要求しない。ホストVenus rendererが使用する外部memory種別にdma-bufを含むことと、ゲストがLinux dma-buf ABIやlinux-dmabuf-v1を採用することは別である。ゲストの公開契約はtyped kernel handle fdである。
 
 [表示実装](../../../src/drivers/gpu/venus/display.c)の従来copy経路もGOP framebufferへの書き込みではない。従来はCPU pixelsをvirtio 2D resourceへ渡し、`TRANSFER_TO_HOST_2D`→`SET_SCANOUT`→`RESOURCE_FLUSH`で表示する。p006の共有blob経路と、既存console/vkdemo用のcopy経路を両方保持した。追加HAL変更はない。
 

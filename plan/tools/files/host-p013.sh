@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws071-p013: the tabs of zdesktop-files on the host (files-render, host-render.c).
+# ws071-p013: the tabs of files on the host (files-render, host-render.c).
 # Builds nothing: run host-build.sh first.  Each case runs files-render on a fresh sample home,
 # started in Documents, and checks the lines it prints:
 #  1. Ctrl+T twice: three tabs, the new one shown each time, all in Documents (two.png, three.png).

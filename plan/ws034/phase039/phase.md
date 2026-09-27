@@ -27,9 +27,9 @@ Queue: q349（q349-i01）
 base の group で既定 `n` だった 14 個（libvulkan、libwayland-client、mview、terminfo-extra、gpu-admission/fence/i915/recovery/share-test、
 vkdemo、wltest、zedinst、zwl、venus-frame）を `y` にした。
 
-ON にすると、**platform の欄が実際と合っていない** ことが分かった: libvulkan・libwayland-client・libtruetype・libzdesktop と、
+ON にすると、**platform の欄が実際と合っていない** ことが分かった: libvulkan・libwayland-client・libtruetype・libkeiland と、
 それらを link する vkdemo・wltest・mview・gpu-share-test・gpu-fence-test は amd64 の動的 link の規則しか無いのに `*` だった。
-libtruetype と libzdesktop は以前から既定 `y` なので、**既定の i386 の build は以前から壊れていた**
+libtruetype と libkeiland は以前から既定 `y` なので、**既定の i386 の build は以前から壊れていた**
 （`No rule to make target build/.../dynamic/libtruetype.so`）。この 9 個の platform を `amd64` にした。
 
 platform の欄は menu の表示を絞るだけで、既定の選択にも Makefile にも効いていなかった。次の 2 か所で効かせた:

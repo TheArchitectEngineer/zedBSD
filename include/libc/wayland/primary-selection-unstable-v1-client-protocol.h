@@ -29,7 +29,7 @@ struct zwp_primary_selection_device_v1;
 struct zwp_primary_selection_offer_v1;
 struct zwp_primary_selection_source_v1;
 
-/* The four interfaces' descriptions (userland/base/libwayland/primary-selection-protocol.c). */
+/* The four interfaces' descriptions (userland/desktop/libwayland/primary-selection-protocol.c). */
 extern const struct wl_interface zwp_primary_selection_device_manager_v1_interface;
 extern const struct wl_interface zwp_primary_selection_device_v1_interface;
 extern const struct wl_interface zwp_primary_selection_offer_v1_interface;

@@ -7,8 +7,8 @@
 ## 1. 呼出し経路
 
 ```
-Vulkan アプリ（例: userland/base/vkdemo、標準の <vulkan/vulkan.h>）
-  -> /lib/libvulkan.so（userland/base/libvulkan/、vk* 169 個、dispatch-table.inc）
+Vulkan アプリ（例: userland/desktop/vkdemo、標準の <vulkan/vulkan.h>）
+  -> /lib/libvulkan.so（userland/desktop/libvulkan/、vk* 169 個、dispatch-table.inc）
        vkXxx() -> family 別 encoder（codec.c, commands.c, pipeline.c …）= Venus wire format 1（opcodes.h）
        -> vulkan_context_execute/transaction（context.c:442/708）
             先頭に vkSetReplyCommandStreamMESA(178)、末尾に trailer（137 probe）
@@ -32,7 +32,7 @@ Vulkan アプリ（例: userland/base/vkdemo、標準の <vulkan/vulkan.h>）
 
 ## 2. libvulkan
 
-- 場所: `userland/base/libvulkan/`、`/lib/libvulkan.so`。公開 header は `include/libc/vulkan/`。
+- 場所: `userland/desktop/libvulkan/`、`/lib/libvulkan.so`。公開 header は `include/libc/vulkan/`。
 - **Khronos の loader ではない。** Venus wire protocol の client として Vulkan を実装する、プロジェクト固有のライブラリ。ICD も layer も無い。README は「現在の backend は amd64 zedBSD 上の Venus」とし、SPIR-V は native driver へそのまま渡すと書いている。
 - entry point: `api-commands.tsv` と `dispatch-table.inc` で 169 個（README の 155 とは不一致）。Vulkan 1.0 core 137、拡張 32（surface 5、display 7、swapchain 5、display_swapchain 1、wayland 2、properties2 7、external memory 3、external fence 3）。
 - 明らかな stub は見つからなかった（例: `vkQueueBindSparse` は実際に encode して enqueue、`queue.c:85`）。全数の監査はしていない。

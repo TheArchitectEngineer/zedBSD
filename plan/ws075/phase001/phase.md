@@ -12,7 +12,7 @@ main の WS075 の登録（2026-09-27）。試験は amd64 のみ、phase の最
 ## 範囲
 
 1. shader: i915 の compiler（`src/drivers/gpu/i915/compiler/spirv.c` の parser と lowering）が受けないものを、**最初の拒否で止めずに**
-   全て数える。対象は今の client の shader（zdesktop・zdesktop-files・zdesktop-terminal・mview・vkdemo）、libGL の固定機能、
+   全て数える。対象は今の client の shader（zdesktop・files・terminal・mview・vkdemo）、libGL の固定機能、
    libGLESv2 の GLSL compiler が作る shader（GLSL の host 試験の pass/ の組と、egltest・glxtest の場面の shader）。
 2. 実行器: client（zdesktop とその client、libEGL・libGLESv2 を通る GL の client）が使う Vulkan の command と、
    実行器（`src/drivers/gpu/i915/render/`）が受ける command の突き合わせ（静的）。
@@ -73,7 +73,7 @@ build の flag で作る形に直した）。
 **i915 の compiler と survey の最初の不足が全 module で一致**（compiler が通す module は survey も不足 0、拒む module は
 survey が同じ opcode の不足を最初に出す。`first.txt`）。
 
-- **client（zdesktop・zdesktop-files・zdesktop-terminal・mview・vkdemo）の shader は全て通る。**
+- **client（zdesktop・files・terminal・mview・vkdemo）の shader は全て通る。**
 - 不足のある module 43（全て libGLESv2 の生成する GL/GLES の shader）。不足ごとの module の数（`gaps.txt`）:
 
 | 不足 | module | 種類 |
@@ -96,7 +96,7 @@ survey が写さない形の規則（operand の大きさ、入れ子の深さ�
 
 ### 3. 実行器の command（静的、`plan/ws075/tests/vk-calls.py`、出力 `build/ws075-p001/vk-calls.txt`）
 
-client（zdesktop・zdesktop-files・zdesktop-terminal・mview・vkdemo・wltest・zdesktop-x11server・libEGL）の Vulkan の command は
+client（zdesktop・files・terminal・mview・vkdemo・wltest・xserver・libEGL）の Vulkan の command は
 **全て実行器が受ける**。libGLESv2 だけが受けられない command を使う: query（vkCreateQueryPool・vkCmdBeginQuery・vkCmdEndQuery・
 vkCmdResetQueryPool・vkGetQueryPoolResults・vkDestroyQueryPool。sync の module が未移植）、buffer view（vkCreateBufferView・
 vkDestroyBufferView、texel buffer）、vkCmdResolveImage（multisample）、vkCmdClearDepthStencilImage。
@@ -108,7 +108,7 @@ buffer の descriptor（storage buffer: transform feedback の VS の store）�
 
 ### 4. Phase への割り当て（ws.md の表を直した）
 
-desktop は今の実機で動くので、p002 は新しい desktop の機能（tab、System Menu、zdesktop-files・terminal）の実機の確認に縮め、
+desktop は今の実機で動くので、p002 は新しい desktop の機能（tab、System Menu、files・terminal）の実機の確認に縮め、
 GL/GLES の不足を先に数の多い順に並べた: p003 topology（全 GL の app）→ p004 GLES 2 の compiler（補間、builtin、texture の
 bias・lod・offset、local の配列、算術）→ p005 texture の種類（texelFetch・size、shadow、integer、cube・配列・3D の image と sampler、
 mip の描画）→ p006 MRT・query・texel buffer・storage buffer・multisample → p007 geometry と layered（GL 3.2）→ p008 性能 →

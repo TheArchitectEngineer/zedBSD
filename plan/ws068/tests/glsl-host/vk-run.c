@@ -30,8 +30,8 @@
  * offset o is o / 4, so a shader can check its members' std140 offsets.
  */
 
-#include "../../../../userland/base/libglesv2/gles.h"
-#include "../../../../userland/base/libglesv2/glsl/glsl.h"
+#include "../../../../userland/desktop/libglesv2/gles.h"
+#include "../../../../userland/desktop/libglesv2/glsl/glsl.h"
 
 #include <dirent.h>
 #include <stdio.h>

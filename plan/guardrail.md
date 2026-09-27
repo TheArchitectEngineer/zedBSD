@@ -19,7 +19,7 @@ zedBSD の貢献の規則と標準の索引。Queue・backlog・実行許可で�
 - RTL8822B の `.inc` はライセンスを分けるために独立させており、**別の file のまま保つ**。
 - kernel と libc（2026-09-23 ユーザー明確化）: kernel と libc はモノリシック。kernel・driver・HAL が include してよい libc の header は
   `libc/vulkan/*` だけ。ioctl・errno などの ABI は UAPI に分ける。kernel は標準 C の header 名を暗黙に読まず、libc の object を link
-  しない（kcrt を使う）。`userland/base/libvulkan` は必須の構成要素。SPIR-V の compile は kernel 空間の driver が行う。この構成は変えない。
+  しない（kcrt を使う）。`userland/desktop/libvulkan` は必須の構成要素。SPIR-V の compile は kernel 空間の driver が行う。この構成は変えない。
 - kernel の実装を userland の build の依存へ写さない。`mkfs` などの tool は単独で使える形を保つ。
 - base system の実装とライセンスの境界: [設計方針](master-design-policy.md)。
 - 外部 package（`userland/packages/`）はソースツリーへ取り込まず、tarball を取得・検証して patch する。ライセンスは

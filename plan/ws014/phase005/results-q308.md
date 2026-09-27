@@ -1,6 +1,6 @@
 # WS014 p005: 標準Vulkan APIへの訂正結果（q308）
 
-2026-09-13 JST。`userland/base/vkdemo/` は標準Vulkan1.0とdirect-display WSIだけを使い、`/lib/libvulkan.so` へ動的linkするアプリに訂正した。公開headerは `libc/include/vulkan/`、libraryの所有WSはWS030。アプリにGPU ioctl/device-node/Venus codecを置かない。EGLは今回cancel。
+2026-09-13 JST。`userland/desktop/vkdemo/` は標準Vulkan1.0とdirect-display WSIだけを使い、`/lib/libvulkan.so` へ動的linkするアプリに訂正した。公開headerは `libc/include/vulkan/`、libraryの所有WSはWS030。アプリにGPU ioctl/device-node/Venus codecを置かない。EGLは今回cancel。
 
 最終 `q308-lifecycle-003` で6枚のテクスチャ付き回転直方体を実VNC/GPU readback/独立oracleで照合し、不一致0。通常終了・再起動、SIGINT後の再起動、実console復帰、別processの表示競合拒否も通過した。source/対象build/155公開API、shader/CLI/portable offscreen試験を確認した。
 

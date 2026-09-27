@@ -5,7 +5,7 @@
 #
 # The page is shown at a device scale of 1 with no scroll bars, in a viewport of
 # WIDTH x HEIGHT (default 800 x 600), and only the fonts listed by
-# plan/ws074/tests/fonts.conf are visible to it, so the reference and zdesktop-browser
+# plan/ws074/tests/fonts.conf are visible to it, so the reference and browser
 # draw with the same faces.  Chromium is the Debian package (sudo apt-get install chromium).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu

@@ -6,7 +6,7 @@
 
 | 確認点 | コード上の根拠 |
 |---|---|
-| アプリには標準 Vulkan だけを見せる | README:「アプリは標準 Vulkan API を使います。zedBSD の GPU ioctl、resource ID、Venus wire をアプリへ公開しません」。`userland/base/vkdemo/` は標準 API だけで書かれ、別 OS の Vulkan 実装でもビルドできる |
+| アプリには標準 Vulkan だけを見せる | README:「アプリは標準 Vulkan API を使います。zedBSD の GPU ioctl、resource ID、Venus wire をアプリへ公開しません」。`userland/desktop/vkdemo/` は標準 API だけで書かれ、別 OS の Vulkan 実装でもビルドできる |
 | 公開 API | Vulkan 1.0 の core 137 command ＋ `VK_KHR_surface`／`display`／`swapchain`／`display_swapchain` の 18 command。ELF checker は 155 exports を照合（README）。dispatch 表には追加の拡張 entry も載っている（計 169） |
 | ICD／loader ではない | `/lib/libvulkan.so` 単体で、layer も ICD 探索も無い。instance／device／queue、動的 handle、allocator callback、WSI（direct display、FIFO 順序）を userland で実装 |
 | Venus から借りているのは番号 | `opcodes.h` 冒頭:「Numeric declarations selected from virglrenderer 1.1.0 Venus protocol … Maintained protocol IDs, no renderer implementation is included」。`LICENSE-PROTOCOL` に元の MIT 表示を保持。README:「実装は独立して記述し、Mesa、loader、virglrenderer の C 実装を移入していません」 |

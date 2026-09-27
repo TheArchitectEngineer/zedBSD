@@ -67,7 +67,7 @@ struct の member 16 まで、Flat 無し等）で出し、その制約は ws068
 
 ## 5. 試験
 
-- `egltest`（userland/base/egltest）: EGL＋GLES 2.0 の小さな試験 app。p002 は clear だけ（色を周期で変える）、p003 から
+- `egltest`（userland/desktop/egltest）: EGL＋GLES 2.0 の小さな試験 app。p002 は clear だけ（色を周期で変える）、p003 から
   三角形・texture・blend・depth・resize。Wayland（zwl --glass の窓）と display 直接（zwl の無い guest）の両方。
 - 判定は画面（Venus の VNC、i915 の capture）の読み取り。
 

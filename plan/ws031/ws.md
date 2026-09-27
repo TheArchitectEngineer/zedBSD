@@ -176,7 +176,7 @@ sudo -n timeout 360 qemu-system-x86_64 \
 | 1 file だけ compile | `plan/ws031/tests/i915-cc.sh <file.c>`（追加の flag は `I915_CC_CPPFLAGS`） | `i915-cc: ok` |
 | LCD の写真（Windows 側） | `powershell -ExecutionPolicy Bypass -File C:\Work\qemu-work\tools\capture_lcd.ps1 out.jpg` | 新しい QEMU が起動し `serving presentation` が `~/bigbang/run-parity-serial.log` に出てから撮る（古い log に反応しない） |
 | 性能の内訳 | mview の `MVIEW SPIN`・`MVIEW STAGES`、kernel の `i915: perf:`、zwl の `ZWL PERF`。scheduler の wakeup 遅延は `-DSCHED_WAKE_LATENCY=1` | phase014 §性能 第 2 回 |
-| モデルの再生成 | `python3 userland/base/mview/tools/fbx2mview.py userland/base/mview/models/qs40/source/qs40-r4.fbx userland/base/mview/models/qs40 --max-texture-side 1024 --date 2026-09-22` | 出力は byte 一致 |
+| モデルの再生成 | `python3 userland/desktop/mview/tools/fbx2mview.py userland/desktop/mview/models/qs40/source/qs40-r4.fbx userland/desktop/mview/models/qs40 --max-texture-side 1024 --date 2026-09-22` | 出力は byte 一致 |
 
 ### 統合回帰の一覧（p015 の最後に 1 回）
 offscreen hash、display `ended PASS`（写真）、`wayland`、`CAPTURE=vkdemo` / `CAPTURE=wayland` / `CAPTURE=mview`（per-vertex と `--shading=pixel`）、
@@ -233,7 +233,7 @@ p011 の実機ビッグバンで残った **EU スレッド実行ハング**（P
 ## i915 の高度化の計画（2026-09-27 提案、graphics のサブエージェント）
 
 2026-09-27 ユーザー「OpenGL 3.2が問題なければ、それ以降のOpenGLはいったん保留して、i915の高度化に進んでください。」（main の中継）。
-目標: 今の desktop と graphics（zdesktop の glass・backdrop・tab・menu、zdesktop-files・terminal・mview 等の Vulkan の client、
+目標: 今の desktop と graphics（zdesktop の glass・backdrop・tab・menu、files・terminal・mview 等の Vulkan の client、
 EGL/GLES 2・3 の egltest、X11 の GLX と GL 3.0〜3.2）を 5330 の i915 の native 実行器で動かす。WS031 の単一目標（vkdemo）とは
 別の到達目標なので、**新しい WS [WS075](../ws075/ws.md)**（2026-09-27 main が番号を決めた）に置き、WS031 の planning の Phase のうち
 同じ範囲のもの（p027・p030・p031・p034・p035・p038・p040・p041・p044・p045）はその WS へ移した（表に印）。以下の順は提案の時のもので、正本は WS075。
@@ -243,7 +243,7 @@ EGL/GLES 2・3 の egltest、X11 の GLX と GL 3.0〜3.2）を 5330 の i915 �
 | shader | i915 の compiler |
 | --- | --- |
 | zdesktop の `panel.frag`（glass・backdrop の blur） | 拒否: OpFunctionCall（**訂正 2026-09-27**: glslc を -O 無しで走らせた誤り。build の `glslc -O` の SPIR-V は通り、実機で動く。WS075 p001） |
-| zdesktop の quad、zdesktop-files・terminal、mview、vkdemo | 通る |
+| zdesktop の quad、files・terminal、mview、vkdemo | 通る |
 | libGLESv2 の生成（GLSL ES 1.00 の scene・固定機能・ES 3.00 の scene300・GLSL 1.50・blocks330） | 通る |
 | GLSL ES 3.00・3.30・1.40・1.50 の言語の試験（es300・modern・glsl330・glsl140・language・glsl150-ms・geometry） | 拒否: decoration（Flat 等）、member decoration、Function/Private の配列の変数、struct・配列の定数、OpImage、geometry の stage 無し |
 

@@ -21,14 +21,14 @@ mkdir -p "$out/apps" "$out/scenes" "$out/programs" "$out/shim"
 
 # The tools: zedBSD's GLSL compiler's driver, libGLESv2's gl_Position rewrite, the i915 compiler on the host.
 for h in EGL GLES2 GLES3 KHR wayland-egl-core.h; do ln -sfn "$root/include/libc/$h" "$out/shim/$h"; done
-cc -std=c11 -O1 -w -o "$out/glsl-test" "$root/plan/ws068/tests/glsl-host/glsl-test.c" "$root"/userland/base/libglesv2/glsl/*.c -lm || exit 1
-cc -std=c99 -w -I"$out/shim" -o "$out/spirv-test" "$root/plan/ws068/tests/spirv-host/main.c" "$root/userland/base/libglesv2/spirv.c" || exit 1
+cc -std=c11 -O1 -w -o "$out/glsl-test" "$root/plan/ws068/tests/glsl-host/glsl-test.c" "$root"/userland/desktop/libglesv2/glsl/*.c -lm || exit 1
+cc -std=c99 -w -I"$out/shim" -o "$out/spirv-test" "$root/plan/ws068/tests/spirv-host/main.c" "$root/userland/desktop/libglesv2/spirv.c" || exit 1
 cc -std=gnu99 -O0 -w -I"$root" -I"$root/include" -DHAL_ARCH_AMD64 -o "$out/i915-check" \
 	"$root/plan/ws068/tests/i915-shader-check/main.c" -lm || exit 1
 
 # The Vulkan clients' shaders.
-for f in "$root"/userland/base/zdesktop/shaders/*.[fv]*[gt] "$root"/userland/base/zdesktop-files/shaders/*.[fv]*[gt] \
-	"$root"/userland/base/zdesktop-terminal/shaders/*.[fv]*[gt] "$root"/userland/base/mview/shaders/*.[fv]*[gt] "$root"/userland/base/vkdemo/shaders/*.[fv]*[gt]; do
+for f in "$root"/userland/desktop/wayland/shaders/*.[fv]*[gt] "$root"/userland/desktop/files/shaders/*.[fv]*[gt] \
+	"$root"/userland/desktop/terminal/shaders/*.[fv]*[gt] "$root"/userland/desktop/mview/shaders/*.[fv]*[gt] "$root"/userland/desktop/vkdemo/shaders/*.[fv]*[gt]; do
 	name=$(echo "$f" | sed 's|.*/userland/base/||; s|/shaders/|-|')
 	# As the client is built: its checked-in SPIR-V, else glslc with the flags its regenerate.py gives (-O inlines calls).
 	if [ -f "$f.spv" ]; then
@@ -46,7 +46,7 @@ for f in "$host"/*.linked.spv "$host"/*.geom.spv; do
 done
 
 # egltest's and glxtest's scenes, linked as libGLESv2 links them.
-python3 "$here/extract.py" "$out/scenes/src" "$root"/userland/base/egltest/*.c "$root"/userland/X11/glxtest/*.c > "$out/extracted.txt"
+python3 "$here/extract.py" "$out/scenes/src" "$root"/userland/desktop/egltest/*.c "$root"/userland/X11/glxtest/*.c > "$out/extracted.txt"
 python3 "$here/pair.py" "$out/glsl-test" "$out/scenes" $(cat "$out/extracted.txt") > "$out/unpaired.txt"
 for f in "$out"/scenes/*.vert.spv; do
 	"$out/spirv-test" "$f" "${f%.spv}.linked.spv" > /dev/null 2>&1 && mv "${f%.spv}.linked.spv" "$f"

@@ -17,7 +17,7 @@
 #                                                      with a swapchain recreate) in place of vkdemo; services in plan/ws031/tests/wayland/
 #        plan/ws031/tests/vkloop-hw.sh mview           the model viewer (zdesktop + mview, services in plan/ws031/tests/mview/) in place of vkdemo;
 #                                                      MVIEW_ARGS="--spin=30" adds viewer options; MVIEW_MODEL=test shows
-#                                                      userland/base/mview/models/test/ (it has a blend material) in place of qs40
+#                                                      userland/desktop/mview/models/test/ (it has a blend material) in place of qs40
 #                                                      MVIEW_ARGS="--shading=pixel" (or MVIEW_NO_VENUS=1) makes a CAPTURE=mview run skip
 #                                                      the comparison with the p013 Venus images (i915-capture.py --no-venus);
 #                                                      the six views are also on one sheet, /tmp/capture-last/sheet.png
@@ -145,12 +145,12 @@ if [ "$MVIEW_RUN" = 1 ]; then
 	FILES="--file /etc/service.d/vkwait1=$WAIT1 --file /etc/service.d/poweroff=plan/ws031/tests/poweroff"
 	# MVIEW_ARGS adds viewer options (e.g. MVIEW_ARGS=--spin=30 for the turning demonstration); the service
 	# file changes (and the cached image is rebuilt) only when its text does
-	# MVIEW_MODEL=test ships the test model (userland/base/mview/models/test/: opaque, cutout and blend materials)
+	# MVIEW_MODEL=test ships the test model (userland/desktop/mview/models/test/: opaque, cutout and blend materials)
 	# to /usr/share/mview/test/ and shows it in place of qs40; the p013 Venus images are then no reference
 	if [ "${MVIEW_MODEL:-}" = test ]; then
 		MVIEW_ARGS="${MVIEW_ARGS:+$MVIEW_ARGS }--model=/usr/share/mview/test"
 		for n in model.txt tex/0.pam tex/1.pam; do
-			FILES="$FILES --file /usr/share/mview/test/$n=userland/base/mview/models/test/$n"
+			FILES="$FILES --file /usr/share/mview/test/$n=userland/desktop/mview/models/test/$n"
 		done
 	fi
 	MVIEW1=$BUILD/mview1.gen
@@ -174,7 +174,7 @@ if [ "$ZDESKTOP_RUN" = 1 ]; then
 	for n in run-zdesktop.sh run-wlkill.sh run-mview.sh run-poweroff.sh; do
 		FILES="$FILES --file /etc/zdesktop/$n=plan/ws031/tests/zdesktop/$n"
 	done
-	# ZDESKTOP_APP=terminal runs zdesktop-terminal (WS035 p068) where the model viewer runs, with the same log
+	# ZDESKTOP_APP=terminal runs terminal (WS035 p068) where the model viewer runs, with the same log
 	if [ "${ZDESKTOP_APP:-mview}" = terminal ]; then
 		FILES="$FILES --file /etc/zdesktop/run-mview.sh=plan/ws031/tests/zdesktop/run-terminal.sh"
 		FILES="$FILES --file /usr/share/fonts/zdesktop-mono.ttf=build/ws035-fonts/JetBrainsMono-Regular.ttf"

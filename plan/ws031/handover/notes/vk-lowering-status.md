@@ -1,6 +1,6 @@
 # SPIR-V lowering の項目別状態（vkdemo 固定 shader 基準）
 
-WS031 E-110（2026-09-19）。`vkdemo-dependency-table.md` §2 の続き。対象は **出荷版のまま**の `userland/base/vkdemo/shaders/cuboid.{vert,frag}.spv`（glslc `-O0`、SPIR-V 1.0）。shader の簡略化・`-O` での再生成・hash による既知 binary への置換はしていない。path は `agent-1:~/zedBSD/` 基点。
+WS031 E-110（2026-09-19）。`vkdemo-dependency-table.md` §2 の続き。対象は **出荷版のまま**の `userland/desktop/vkdemo/shaders/cuboid.{vert,frag}.spv`（glslc `-O0`、SPIR-V 1.0）。shader の簡略化・`-O` での再生成・hash による既知 binary への置換はしていない。path は `agent-1:~/zedBSD/` 基点。
 
 ## 0. 状態の定義（三段階。上の段は下の段を含まない）
 | 状態 | 意味 | 根拠になる試験 |

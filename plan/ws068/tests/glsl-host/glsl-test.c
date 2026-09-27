@@ -20,7 +20,7 @@
  *       OUT_PREFIX.geom.spv), and prints the uniforms
  */
 
-#include "../../../../userland/base/libglesv2/glsl/glsl.h"
+#include "../../../../userland/desktop/libglesv2/glsl/glsl.h"
 
 #include <stdio.h>
 #include <stdlib.h>

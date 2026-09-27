@@ -10,7 +10,7 @@
  * instance.h).
  *
  * Minimal connection, happy path only.  The wire of every command here was
- * read from the library that sends it (userland/base/libvulkan: instance.c,
+ * read from the library that sends it (userland/desktop/libvulkan: instance.c,
  * device.c, objects.c), and the records travel through the generated codec,
  * so the two ends cannot drift.
  *

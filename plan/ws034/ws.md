@@ -158,7 +158,7 @@ WS032と同じ形式（`/usr/share/licenses/<pkg>/`、版・SHA-256・パッチ�
 | ws034-p025 | meson・ninjaのクロスbuild契約（cross file生成）。GTK系の前提。gperf（host tool、sourceから）、pkg-config wrapper、package prefix、config.sub・libtoolの共通対応、symbol versioningの無効化 | planning | p001 | `packages/tools`、external.mk |
 | ws034-p026 | glib（libffi・pcre2を含む） | planning | p025, p021, p005（iconv） | `packages/libs` |
 | ws034-p027 | フォント系: freetype・harfbuzz・fontconfig（libpngを含む） | planning | p021, p025, p026 | `packages/libs` |
-| ws034-p034 | 独自libwayland（`userland/base/libwayland`）を拡張し、GTK・Qtが使うlibwayland-clientのAPIと互換にする（`libwayland-client.so`）。wayland-cursor・wayland-eglの扱いとwayland-scanner（host道具）を含む | planning | p001 | `packages/desktop/libwayland` |
+| ws034-p034 | 独自libwayland（`userland/desktop/libwayland`）を拡張し、GTK・Qtが使うlibwayland-clientのAPIと互換にする（`libwayland-client.so`）。wayland-cursor・wayland-eglの扱いとwayland-scanner（host道具）を含む | planning | p001 | `packages/desktop/libwayland` |
 | ws034-p028 | 描画系: pixman・cairo・pango・fribidi・gdk-pixbuf・libjpeg-turbo・graphene・libepoxy・libxkbcommon。libtiffを加える（GTK4が必須） | planning | p026, p027 | `packages/libs` |
 | ws034-p029 | GTK4（Wayland backend、GSKはVulkanまたはcairo） | planning | p028, p034, p038, WS035-p028 | `packages/desktop/gtk4` |
 | ws034-p030 | Qt6（qtbase＋qtwayland） | planning | p027, p028, p034, WS035-p028 | `packages/desktop/qt6` |
@@ -170,7 +170,7 @@ WS032と同じ形式（`/usr/share/licenses/<pkg>/`、版・SHA-256・パッチ�
 | [ws034-p004](phase004/phase.md) | USB列挙UAPI（`/dev/system`）とlsusb | cleared（q328-i01） | p003 | system-device、usb、`userland/base/lsusb` |
 | ws034-p014 | Rust: target spec・`libc` crate・stdのクロスbuild（host上） | planning | p005 | `packages/lang/rust` |
 | ws034-p033 | Rust: rustc・cargoをターゲットへ載せる | planning | p014 | 同上 |
-| ws034-p035 | 従来のテスト版libwayland（`userland/base/libwayland`、`/lib/libwayland-client.so`）の削除と、利用者の本家版への移行 | canceled（2026-09-23、独自libwaylandを拡張する方針に変わったため不要） | p034, WS031の完了 | `userland/base/libwayland`、libvulkan、wltest等 |
+| ws034-p035 | 従来のテスト版libwayland（`userland/desktop/libwayland`、`/lib/libwayland-client.so`）の削除と、利用者の本家版への移行 | canceled（2026-09-23、独自libwaylandを拡張する方針に変わったため不要） | p034, WS031の完了 | `userland/desktop/libwayland`、libvulkan、wltest等 |
 | [ws034-p036](phase036/phase.md) | rootfsのtree化: host上に `build/<arch>/rootfs` のツリーを正本として作り、UFSのdisk imageはそのツリーから作る（`rootfs.tar.gz` は作らない）。symlinkを扱えるようにする（SONAMEのsymlink等）。開発用ファイル（`/usr/include`、`.so`、`.pc`）をツリーへ入れる | cleared（q323-i03） | WS035のrefactor | Makefile、`tools/build/`、package.mk |
 | [ws034-p039](phase039/phase.md) | menuconfig: 開発用ファイル（`/usr/include`、`.so`、`.pc`）を入れるかのoption（組込み用に外せる。既定は入れる）と、baseのプログラムの既定を全部ONにする | cleared（q349-i01。amd64 専用の 9 個の platform を直し、既定を platform で絞る） | p036 | `tools/menuconfig.py`、config、`userland/base/*/Makefile` |
 | [ws034-p037](phase037/phase.md) | packagesの置き場所を `/usr` へ揃える: WS032のOpenSSL等が `/lib` に置くライブラリを `/usr/lib` へ移し、packageのinstall先の規則を `/usr`（`/usr/bin`、`/usr/lib`、`/usr/include`、`/usr/share`）にする | cleared（q348-i01。openssl の library と remacs の辞書を移した） | p036 | `userland/packages/`（WS032の各package） |
@@ -218,7 +218,7 @@ VLCの署名は鍵が得られず未検証（公開SHA-256とは一致）。
    git、VLC（字幕）、gdbも使う。
 2. ~~termcap API~~ → 決定: baseのcursesに足す。ncursesは使わない（p005）。
 3. ~~本家libwayland~~ → 方針変更（2026-09-23）: epoll・timerfd・signalfdはまだ実装しない。本家のpackageはやめ、独自の
-   `userland/base/libwayland` を拡張して `libwayland-client.so` でGTK・Qtに対応する（p034を変更、p035を取消し）。
+   `userland/desktop/libwayland` を拡張して `libwayland-client.so` でGTK・Qtに対応する（p034を変更、p035を取消し）。
    以前の「本家を `packages/desktop/libwayland` に入れる」決定はこれで置き換わった。
 4. ~~GTK3のatk~~ → 決定: 単体のatk 2.38.0を使う。置き場所は `packages/desktop/atk`。
 6. ~~SONAMEとimage~~ → 決定（2026-09-23）: `rootfs.tar.gz` は当面作らない。ツリーからUFSのimageを作る。開発用ファイルを
@@ -315,7 +315,7 @@ VLCの署名は鍵が得られず未検証（公開SHA-256とは一致）。
 ## GUI toolkit（2026-09-23追加）のリスク
 
 - **libwayland（2026-09-23ユーザー決定）**: 本家libwayland（MIT）を `packages/desktop/libwayland` に入れる。
-  `/usr/lib` にbuildされる。WS014で作った従来のテスト版（`userland/base/libwayland`、`/lib/libwayland-client.so`）は
+  `/usr/lib` にbuildされる。WS014で作った従来のテスト版（`userland/desktop/libwayland`、`/lib/libwayland-client.so`）は
   WS031がまだ使っているので残し、WS031が終わってから折を見て削除する（p035）。
   - **ローダの探索順**: 今の `src/rtld/rtld.c` は `LD_LIBRARY_PATH` → `/lib` → `/usr/lib` の順に探し、コメントにも
     「baseのライブラリは決して隠されない」とある。2026-09-23のユーザー決定で `/usr/lib` を先に変える（p007）。

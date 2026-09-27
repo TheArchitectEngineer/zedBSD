@@ -2,14 +2,14 @@
  -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
- /home/awe/zedBSD/build/amd64/sysroot/usr/lib/crt1.o /home/awe/zedBSD/build/vkdemo-amd64/dynamic/obj/userland/base/vkdemo/main.o /home/awe/zedBSD/build/vkdemo-amd64/dynamic/obj/userland/base/vkdemo/renderer.o /home/awe/zedBSD/build/vkdemo-amd64/dynamic/obj/userland/base/vkdemo/display.o /home/awe/zedBSD/build/vkdemo-amd64/dynamic/obj/userland/base/common/sha256.o  \
+ /home/awe/zedBSD/build/amd64/sysroot/usr/lib/crt1.o /home/awe/zedBSD/build/vkdemo-amd64/dynamic/obj/userland/desktop/vkdemo/main.o /home/awe/zedBSD/build/vkdemo-amd64/dynamic/obj/userland/desktop/vkdemo/renderer.o /home/awe/zedBSD/build/vkdemo-amd64/dynamic/obj/userland/desktop/vkdemo/display.o /home/awe/zedBSD/build/vkdemo-amd64/dynamic/obj/userland/base/common/sha256.o  \
  -L/home/awe/zedBSD/build/vkdemo-amd64/dynamic -Wl,-rpath-link,/home/awe/zedBSD/build/vkdemo-amd64/dynamic \
  -l:libvulkan.so -l:libc.so -o /home/awe/zedBSD/build/vkdemo-amd64/bin/vkdemo
 /home/awe/zedBSD/build/llvm/bin/clang --target=x86_64-unknown-zedbsd --sysroot=/home/awe/zedBSD/build/amd64/sysroot -m64 -nostdlib -pie -Wl,--no-relax \
  -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
- /home/awe/zedBSD/build/amd64/sysroot/usr/lib/crt1.o /home/awe/zedBSD/build/vkdemo-amd64/dynamic/obj/userland/base/wltest/main.o /home/awe/zedBSD/build/vkdemo-amd64/dynamic/obj/userland/base/wltest/window.o /home/awe/zedBSD/build/vkdemo-amd64/dynamic/obj/userland/base/wltest/renderer.o  \
+ /home/awe/zedBSD/build/amd64/sysroot/usr/lib/crt1.o /home/awe/zedBSD/build/vkdemo-amd64/dynamic/obj/userland/desktop/wltest/main.o /home/awe/zedBSD/build/vkdemo-amd64/dynamic/obj/userland/desktop/wltest/window.o /home/awe/zedBSD/build/vkdemo-amd64/dynamic/obj/userland/desktop/wltest/renderer.o  \
  -L/home/awe/zedBSD/build/vkdemo-amd64/dynamic -Wl,-rpath-link,/home/awe/zedBSD/build/vkdemo-amd64/dynamic \
  -l:libvulkan.so -l:libwayland-client.so -l:libc.so -o /home/awe/zedBSD/build/vkdemo-amd64/bin/wltest
 python3 tools/build/check-dynamic-elf.py --machine amd64 --role application \

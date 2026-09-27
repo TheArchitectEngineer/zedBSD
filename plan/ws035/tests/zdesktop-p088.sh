@@ -1,13 +1,13 @@
 #!/bin/sh
 # ws035-p088: drag and drop's "ask" action and a drop of files on the terminal, on the Venus guest (the lean image,
-# plan/tools/files/build-files-image.sh).  zdesktop --glass at 1280x800; zdesktop-files A (Desktop, left) and B
+# plan/tools/files/build-files-image.sh).  zdesktop --glass at 1280x800; files A (Desktop, left) and B
 # (Documents, right), 600x560, on the sample home:
 #  1. ask.png: Logo.png dragged from A to B with Alt held: zdesktop chooses "ask" (drag action ... action=4); on the
 #     drop B shows its choice (a context menu: Move Here, Copy Here, Link Here, Cancel) at the drop's place;
 #     Copy Here copies the file (it is in both folders; B finishes with the copy).
 #  2. Screenshot.png dragged the same way and Cancel chosen: B gives the drop up (DROP ask cancel), zdesktop
 #     cancels the source (drag unfinished), A's drag ends as not dropped; nothing moves.
-#  3. term-drop.png: zdesktop-terminal opened on the right (over B); Screenshot.png dragged from A onto it: the
+#  3. term-drop.png: terminal opened on the right (over B); Screenshot.png dragged from A onto it: the
 #     terminal takes the file names (accept mime=text/uri-list) and types the quoted path into its shell (ZTERM
 #     DROP bytes=N uris=1); the file stays (a copy).
 #
@@ -87,15 +87,15 @@ popup_x() {
 }
 
 guest "$stop_all" >/dev/null
-guest 'rm -f /tmp/zdesktop-files.clipboard; rm -rf /tmp/fhome; sh /usr/share/zdesktop-files-tests/make-home.sh /tmp/fhome >/dev/null'
+guest 'rm -f /tmp/files.clipboard; rm -rf /tmp/fhome; sh /usr/share/files-tests/make-home.sh /tmp/fhome >/dev/null'
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
-/bin/zdesktop --timeout=900 --width=1280 --height=800 --glass --wallpaper=/usr/share/zdesktop/wallpaper.ppm > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
-HOME=/tmp/fhome /bin/zdesktop-files --token=a --timeout-s=800 --width=600 --height=560 /tmp/fhome/Desktop > /tmp/a.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
+/bin/wayland --timeout=900 --width=1280 --height=800 --glass --wallpaper=/usr/share/zdesktop/wallpaper.ppm > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
+HOME=/tmp/fhome /bin/files --token=a --timeout-s=800 --width=600 --height=560 /tmp/fhome/Desktop > /tmp/a.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 set -- $(window 1)
 ax=${1:-0}; ay=${2:-0}
 drag $((ax + 60)) $((ay - 30)) $((ax + 60 - 320)) $((ay - 30))
 ax=$((ax - 320))
-guest 'export XDG_RUNTIME_DIR=/tmp; HOME=/tmp/fhome /bin/zdesktop-files --token=b --timeout-s=800 --width=600 --height=560 /tmp/fhome/Documents > /tmp/b.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
+guest 'export XDG_RUNTIME_DIR=/tmp; HOME=/tmp/fhome /bin/files --token=b --timeout-s=800 --width=600 --height=560 /tmp/fhome/Documents > /tmp/b.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 set -- $(window 2)
 bx=${1:-0}; by=${2:-0}
 drag $((bx + 60)) $((by - 30)) $((bx + 60 + 288)) $((by - 30))
@@ -126,7 +126,7 @@ expect_log /tmp/a.log 'ZFILES DRAG out done dropped=0'
 expect_guest '[ -f /tmp/fhome/Desktop/Screenshot.png ] && [ ! -e /tmp/fhome/Documents/Screenshot.png ]' 'Screenshot.png stayed'
 
 # 3. The terminal over B; a file dropped on it.
-guest 'export XDG_RUNTIME_DIR=/tmp; /bin/zdesktop-terminal --token=t1 --timeout-s=500 --columns=60 --rows=20 > /tmp/t.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
+guest 'export XDG_RUNTIME_DIR=/tmp; /bin/terminal --token=t1 --timeout-s=500 --columns=60 --rows=20 > /tmp/t.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
 set -- $(window 3)
 tx=${1:-0}; ty=${2:-0}
 drag $((tx + 60)) $((ty - 30)) $((tx + 60 + 300)) $((ty - 30))

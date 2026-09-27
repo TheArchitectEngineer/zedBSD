@@ -11,7 +11,7 @@ Queue: —（2026-09-27 ユーザーの指示でサブエージェントが実�
 
 ## 範囲
 
-1. `userland/base/libglesv2/glsl/`: `glsl.h`・`internal.h`・`arena.c`・`lex.c`・`preprocess.c`・`parse.c`。
+1. `userland/desktop/libglesv2/glsl/`: `glsl.h`・`internal.h`・`arena.c`・`lex.c`・`preprocess.c`・`parse.c`。
 2. 前処理: `#version`（100、110、120、130。`es` の profile）、`#define`（object と関数形式、`##`）、`#undef`、`#if`・`#ifdef`・`#ifndef`・
    `#elif`・`#else`・`#endif`、`defined`、`#error`、`#pragma`、`#extension`、`#line`、`__LINE__`・`__FILE__`・`__VERSION__`・`GL_ES`・
    `GL_FRAGMENT_PRECISION_HIGH`。
@@ -33,7 +33,7 @@ cleared。受け入れ 1・2 を満たした。
 
 ### 実装
 
-- `userland/base/libglesv2/glsl/`: `glsl.h`（公開の interface）、`internal.h`、`arena.c`（arena、失敗は longjmp、info log）、`lex.c`、
+- `userland/desktop/libglesv2/glsl/`: `glsl.h`（公開の interface）、`internal.h`、`arena.c`（arena、失敗は longjmp、info log）、`lex.c`、
   `preprocess.c`（directive、関数形式の macro、`##`、`defined`、`#if` の式、`#line`、`#extension`（`GL_OES_standard_derivatives`）、
   `__LINE__`・`__FILE__`・`__VERSION__`・`GL_ES`、expansion は「展開中の macro は再び展開しない」印の付いた frame の stack）、
   `parse.c`（再帰下降と precedence climbing、版ごとの keyword と予約語、struct の型名の scope）、`glsl.c`（`glsl_compile`）。

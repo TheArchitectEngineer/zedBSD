@@ -14,7 +14,7 @@ Queue: なし（サブエージェントが worktree の branch で実行）
   register）、ES5 の核の文と式、strict mode。
 - VM の拡張: ES5 の演算子（ToPrimitive を含む）、環境・closure・`this`・`arguments`・`new`、property の定義・削除・`in`・
   `instanceof`、global 変数、for-in の列挙、strict mode の誤り。
-- `zdesktop-browser --js [--strict] FILE.js`（`print` を持つ realm で走らせる）。
+- `browser --js [--strict] FILE.js`（`print` を持つ realm で走らせる）。
 - test262 の実行の runner（最初の数）と、自前の JS の試験（Chromium の出力を参照にする）。
 - 後の Phase の構文（let・const、arrow、class、分割代入、spread、template、generator、async、正規表現、module、`with`、
   直接の `eval`）は「not supported yet」の compile error で断る。
@@ -29,7 +29,7 @@ Queue: なし（サブエージェントが worktree の branch で実行）
 
 cleared。
 
-- 書いたもの（`userland/base/zdesktop-browser/`）:
+- 書いたもの（`userland/desktop/browser/`）:
   - `js/compile.h`（compiler の内部）、`js/scope.c`（scope の解析: 関数ごとの binding、巻き上げ、captured の印、`arguments`、
     名前付き関数式の自身の名前、catch の引数）、`js/emit.c`（code unit の組み立て: label と jump の patch、例外 handler、
     定数の表（値ごとに 1 つ）、一時 register）、`js/compile.c`（入口 `js_compile`・`js_run_script`、関数の prologue（環境、

@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws074-p014: zdesktop-browser's window and GPU renderer on the Venus guest (build-browser-image.sh).
+# ws074-p014: browser's window and GPU renderer on the Venus guest (build-browser-image.sh).
 # zdesktop runs at 1280x800 with --glass and the wallpaper (the desktop tests' look, where it draws every window's titlebar); the browser opens a test page at 900x640.  Checks:
 #  1. first.png: the window shows first.html (ZBROWSER READY, then a frame).
 #  2. The GPU renderer (Venus) agrees with the CPU renderer: --render-gpu and --render of each test
@@ -23,7 +23,7 @@ guest() { timeout 120 python3 plan/tools/guest/guest.py run "$1" 2>&1; }
 check() { python3 plan/ws035/tests/zdesktop-check.py "$@" --runtime "$GUEST_RUNTIME"; }
 pointer() { python3 plan/ws035/tests/qmp-pointer.py "$GUEST_RUNTIME/qmp.sock" "$@"; }
 keys() { python3 plan/ws035/tests/qmp-keys.py "$GUEST_RUNTIME/qmp.sock" "$@"; }
-pages=/usr/share/zdesktop-browser-tests
+pages=/usr/share/browser-tests
 stop_all='for p in $(ps -A -o pid,args | grep -E "[z]desktop( |$)|[z]desktop-browser" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[z]desktop( |$)|[z]desktop-browser" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
 status=0
 
@@ -40,7 +40,7 @@ expect_log() {
 
 # Starts the browser on a page (zdesktop must be running) and waits for its first frame.
 open_page() {
-	guest "export XDG_RUNTIME_DIR=/tmp; /bin/zdesktop-browser --width=900 --height=640 $pages/$1 > /tmp/b.log 2>&1 </dev/null & sleep 5; echo started" >/dev/null
+	guest "export XDG_RUNTIME_DIR=/tmp; /bin/browser --width=900 --height=640 $pages/$1 > /tmp/b.log 2>&1 </dev/null & sleep 5; echo started" >/dev/null
 	expect_log /tmp/b.log 'ZBROWSER READY width=900 height=640'
 	expect_log /tmp/b.log 'ZBROWSER FRAME scroll=0 '
 }
@@ -72,7 +72,7 @@ close_page() {
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
 picture=; [ -f /usr/share/zdesktop/wallpaper.ppm ] && picture=--wallpaper=/usr/share/zdesktop/wallpaper.ppm
-/bin/zdesktop --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
+/bin/wayland --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
 
 # 1. The window on first.html.
 open_page first.html
@@ -82,7 +82,7 @@ close_page
 
 # 2. The GPU renderer against the CPU renderer, in the guest.
 for page in first blocks; do
-	guest "/bin/zdesktop-browser --render-gpu --output=/tmp/$page-gpu.ppm --width=800 --height=600 $pages/$page.html; /bin/zdesktop-browser --render --output=/tmp/$page-cpu.ppm --width=800 --height=600 $pages/$page.html; echo drawn" >/dev/null
+	guest "/bin/browser --render-gpu --output=/tmp/$page-gpu.ppm --width=800 --height=600 $pages/$page.html; /bin/browser --render --output=/tmp/$page-cpu.ppm --width=800 --height=600 $pages/$page.html; echo drawn" >/dev/null
 	python3 plan/tools/guest/guest.py get "/tmp/$page-gpu.ppm" "$out/$page-gpu.ppm" >/dev/null 2>&1
 	python3 plan/tools/guest/guest.py get "/tmp/$page-cpu.ppm" "$out/$page-cpu.ppm" >/dev/null 2>&1
 	if ! python3 plan/ws074/tests/gpu-compare.py --pictures "$out/$page-gpu.ppm" "$out/$page-cpu.ppm" --out "$out"; then

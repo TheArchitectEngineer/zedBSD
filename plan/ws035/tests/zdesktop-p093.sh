@@ -1,7 +1,7 @@
 #!/bin/sh
-# ws035-p093: selecting text in zdesktop-terminal with the pointer, and dragging it out, on the Venus guest (the
+# ws035-p093: selecting text in terminal with the pointer, and dragging it out, on the Venus guest (the
 # lean image, plan/tools/files/build-files-image.sh, or the browser image).  zdesktop --glass at 1280x800 and
-# zdesktop-terminal; the screen is cleared and "alpha beta-gamma delta" is printed on its first row:
+# terminal; the screen is cleared and "alpha beta-gamma delta" is printed on its first row:
 #  1. word.png: a double click on "gamma" selects the word "beta-gamma" (ZTERM SELECT how=word from=6,0 to=15,0
 #     bytes=10); Ctrl+Shift+C copies it (ZTERM COPY bytes=10).
 #  2. A triple click selects the line (how=line bytes=22).
@@ -54,8 +54,8 @@ cy() { echo $((wy + 8 + $1 * ch + ch / 2)); }
 
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/zdesktop/wallpaper.ppm ] && picture=--wallpaper=/usr/share/zdesktop/wallpaper.ppm
-/bin/zdesktop --timeout=600 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
-/bin/zdesktop-terminal --token=t1 --timeout-s=500 > /tmp/t.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
+/bin/wayland --timeout=600 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
+/bin/terminal --token=t1 --timeout-s=500 > /tmp/t.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 set -- $(guest "grep 'ZWL MAP client=1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 wx=${1:-0}; wy=${2:-0}
 set -- $(guest "grep 'ZTERM START' /tmp/t.log | tail -1" | sed -n 's/.* cell=\([0-9]*\)x\([0-9]*\) .*/\1 \2/p')

@@ -18,6 +18,6 @@ extra=$(python3 plan/tools/guest/guest.py extra-files | sed -n "s/^ZEDBSD_TEST_E
 [ -f build/ws035-fonts/JetBrainsMono-Regular.ttf ] && extra="$extra --file /usr/share/fonts/zdesktop-mono.ttf=build/ws035-fonts/JetBrainsMono-Regular.ttf"
 [ -f build/ws035-fonts/JetBrainsMono-OFL.txt ] && extra="$extra --file /usr/share/fonts/zdesktop-mono-OFL.txt=build/ws035-fonts/JetBrainsMono-OFL.txt"
 [ -f build/ws035-wallpaper/wallpaper.ppm ] && extra="$extra --file /usr/share/zdesktop/wallpaper.ppm=build/ws035-wallpaper/wallpaper.ppm"
-extra="$extra --file /usr/share/zdesktop-files-tests/make-home.sh=plan/tools/files/make-home.sh"
+extra="$extra --file /usr/share/files-tests/make-home.sh=plan/tools/files/make-home.sh"
 exec make -j"$(nproc)" ZEDBSD_CONFIG=$config BUILD="$build" \
     "ZEDBSD_TEST_EXTRA_FILES=$extra" disk-image

@@ -24,7 +24,7 @@ intentional maintenance update uses the independent Noct tool:
 
 ```sh
 timeout 90 build/NoctLang/build-static/noct \
-  userland/base/libvulkan/tools/maintain-api.noct \
+  userland/desktop/libvulkan/tools/maintain-api.noct \
   /path/to/verified/pinned/vulkan_core.h \
   /tmp/vulkan_core.h
 ```
@@ -59,7 +59,7 @@ historical clearance.
 
 `vulkan_external.h` selects additional declaration data from the same pinned
 `vulkan_core.h` and input hash above. The independent Noct maintenance tool is
-`userland/base/libvulkan/tools/maintain-external.noct`; it accepts the verified
+`userland/desktop/libvulkan/tools/maintain-external.noct`; it accepts the verified
 input path and an output path. The declaration license remains Apache-2.0.
 
 The complete public command set is now 170: the existing 157 commands plus seven

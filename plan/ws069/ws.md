@@ -1,6 +1,6 @@
 <!-- awesome-plan project=zedbsd record=ws069 -->
 
-# WS069: Wayland デスクトップ（zdesktop）で X11 の app を動かす（単体の zdesktop-x11server、GLX）
+# WS069: Wayland デスクトップ（zdesktop）で X11 の app を動かす（単体の xserver、GLX）
 
 <!-- awesome-plan-current:start -->
 Status: completed（2026-09-27）
@@ -16,12 +16,12 @@ Resume point: なし（完了）
 
 2026-09-26 ユーザー: 「ホーム画面、EGL/GLES、WaylandコンポジタのX11機能など、デスクトップ関連の作業を優先しつつ…」
 「WaylandコンポジタのX11サーバ機能については、GLX拡張も実装しておいてください。」
-2026-09-27 ユーザーの判断（[design.md](design.md) §0）: X server は単体のプログラム `userland/base/zdesktop-x11server`、rootless だけ、
-標準の Wayland と Vulkan、非標準の拡張は libzdesktop、zdesktop に組み込める module の形。Xzed はレトロ用に戻す。
+2026-09-27 ユーザーの判断（[design.md](design.md) §0）: X server は単体のプログラム `userland/desktop/xserver`、rootless だけ、
+標準の Wayland と Vulkan、非標準の拡張は libkeiland、zdesktop に組み込める module の形。Xzed はレトロ用に戻す。
 
 ## 結果
 
-- **`/bin/zdesktop-x11server`**（`userland/base/zdesktop-x11server/`）: rootless の X11 server。X の top-level の窓それぞれが
+- **`/bin/xserver`**（`userland/desktop/xserver/`）: rootless の X11 server。X の top-level の窓それぞれが
   zdesktop の xdg_toplevel（Wiseman が装飾）。組み込める API（`x11server.h`: create・pollfds・dispatch・stopped・destroy、global な
   状態なし）と module（server・protocol・window・rootless・wayland・vulkan・keymap・glyphs・glx）。client ごとの出力の queue（POLLOUT で
   送る）、止まった client の報告。窓は top-level ごとの Vulkan の swapchain（MAILBOX、staging からの copy）で表示し、使えないときや
@@ -32,7 +32,7 @@ Resume point: なし（完了）
   失敗として返し、blocking の send が失敗していた。修正（p010）。
 - libX11 の XPending を MSG_PEEK で 32 byte の event 単位に、`wr()` の失敗の報告。
 - Xzed（`userland/X11/xzed`）は ws069 の前（`cc4433d4`）に戻した（`/dev/graphics` のレトロ用のデモ）。
-- App Home の `zdesktop-x11` が zdesktop-x11server を起動する。
+- App Home の `zdesktop-x11` が xserver を起動する。
 
 ## 受け入れの確認（p006、2026-09-27）
 
@@ -49,7 +49,7 @@ Resume point: なし（完了）
 ## 制限・移管
 
 - Venus では Vulkan の窓の道が wl_shm より約 3 倍遅い（zgears 2.4 fps と 7.8 fps。命令ごとの同期の往復）→ F-021。
-- GLX の画像は CPU で読み戻して PutImage で渡す。GPU の buffer のまま渡す段（DRI3/Present に当たる、libzdesktop の
+- GLX の画像は CPU で読み戻して PutImage で渡す。GPU の buffer のまま渡す段（DRI3/Present に当たる、libkeiland の
   `zed_gpu_buffer_v1`）→ F-030。
 - X の screen の大きさは `--size`（既定 1280x800）で、wl_output に合わせない → F-024。
 - zdesktop への内蔵はしていない（API はその形）。
@@ -66,7 +66,7 @@ Resume point: なし（完了）
 | ws069-p004 | GLX の核 | cleared（q477） |
 | ws069-p005 | 固定機能の GL 1.x と gears | cleared（q478） |
 | ws069-p007 | i915 実機での BUG-057 の段の特定 | uncleared・canceled（q485、X server を作り直すため p010 へ） |
-| ws069-p008 | zdesktop-x11server（単体の rootless のプログラム、組み込める module） | uncleared（q488）→ cleared（p010 の後の追記） |
+| ws069-p008 | xserver（単体の rootless のプログラム、組み込める module） | uncleared（q488）→ cleared（p010 の後の追記） |
 | ws069-p009 | Xzed をレトロ用に戻す | cleared（q490） |
 | ws069-p010 | BUG-057 の原因と修正（kernel の socket の待ち） | cleared（q489） |
 | ws069-p011 | 窓を Vulkan の swapchain で表示、Wayland の dispatch を非 blocking に | cleared（q491） |

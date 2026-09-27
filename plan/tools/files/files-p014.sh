@@ -1,6 +1,6 @@
 #!/bin/sh
-# ws071-p014: zdesktop-files' navigation in the window's titlebar (WS070's controls) on the Venus guest
-# (the lean image, build-files-image.sh).  zdesktop --glass at 1280x800; zdesktop-files (f1) at
+# ws071-p014: files' navigation in the window's titlebar (WS070's controls) on the Venus guest
+# (the lean image, build-files-image.sh).  zdesktop --glass at 1280x800; files (f1) at
 # 1000x640 on the sample home (/tmp/fhome), opened on Documents.  The controls' places come from
 # zdesktop's log (ZWL TITLEBAR control ...):
 #  1. floating.png: back, forward, home, the path (Home > Documents), the search field, Icons/List,
@@ -92,11 +92,11 @@ shot() {
 }
 
 guest "$stop_all" >/dev/null
-guest 'rm -f /tmp/wayland-0 /tmp/zdesktop-files.clipboard; rm -rf /tmp/fhome; sh /usr/share/zdesktop-files-tests/make-home.sh /tmp/fhome >/dev/null'
+guest 'rm -f /tmp/wayland-0 /tmp/files.clipboard; rm -rf /tmp/fhome; sh /usr/share/files-tests/make-home.sh /tmp/fhome >/dev/null'
 guest 'export XDG_RUNTIME_DIR=/tmp
 picture=; [ -f /usr/share/zdesktop/wallpaper.ppm ] && picture=--wallpaper=/usr/share/zdesktop/wallpaper.ppm
-/bin/zdesktop --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
-HOME=/tmp/fhome /bin/zdesktop-files --token=f1 --timeout-s=800 --width=1000 --height=640 /tmp/fhome/Documents > /tmp/f.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
+/bin/wayland --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
+HOME=/tmp/fhome /bin/files --token=f1 --timeout-s=800 --width=1000 --height=640 /tmp/fhome/Documents > /tmp/f.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 set -- $(guest "grep 'ZWL MAP client=1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
 surface=${1:-0}; wx=${2:-0}; wy=${3:-0}
 echo "files: surface $surface at $wx,$wy"
@@ -157,7 +157,7 @@ double 190 17
 expect_log /tmp/zdesktop.log "GLASS undock surface=$surface"
 
 # 7. A narrow window: its controls give way to "...", which holds them and the menus.
-guest 'export XDG_RUNTIME_DIR=/tmp; HOME=/tmp/fhome /bin/zdesktop-files --token=f2 --timeout-s=400 --width=420 --height=400 /tmp/fhome/Documents > /tmp/f2.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
+guest 'export XDG_RUNTIME_DIR=/tmp; HOME=/tmp/fhome /bin/files --token=f2 --timeout-s=400 --width=420 --height=400 /tmp/fhome/Documents > /tmp/f2.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 expect_log /tmp/f2.log 'ZFILES TITLEBAR ready controls=8'
 expect_log /tmp/zdesktop.log 'ZWL TITLEBAR control client=2 .* where=floating id=7 .* shown=0'
 shot narrow.png

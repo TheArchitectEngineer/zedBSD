@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws076: runs zdesktop-browser's JavaScript tests (plan/ws074/tests/js) and
+# ws076: runs browser's JavaScript tests (plan/ws074/tests/js) and
 # WS076's libm lines (plan/tools/libm/js) in the guest with the new libm and
 # compares them with Chromium's output (NAME.expected) through
 # plan/ws074/tests/run-js-tests.py and plan/tools/libm/js-reference.py.
@@ -26,7 +26,7 @@ make -j48 ZEDBSD_CONFIG=plan/tools/libm/config-amd64-browser-libm.mk \
 	BUILD="$build" "ZEDBSD_TEST_EXTRA_FILES=$extra" disk-image
 
 # Runs every test, marking where each output and its standard error begin.
-command='for f in /root/js/*.js; do n=${f##*/}; echo "@@@ ${n%.js}"; zdesktop-browser --js $f 2>/tmp/js.err; echo "@@@ stderr"; cat /tmp/js.err; done; echo "@@@ end"'
+command='for f in /root/js/*.js; do n=${f##*/}; echo "@@@ ${n%.js}"; browser --js $f 2>/tmp/js.err; echo "@@@ stderr"; cat /tmp/js.err; done; echo "@@@ end"'
 RUN=${RUN:-build/ws076-browser-run} TIMEOUT=${TIMEOUT:-600} \
 	sh plan/tools/guest/amd64-serial.sh "$build/hdd-image.img" "$command" > "$out/serial.txt"
 

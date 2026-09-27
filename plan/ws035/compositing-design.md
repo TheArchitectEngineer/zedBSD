@@ -242,7 +242,7 @@ cursor が隠れている」などの条件を frame ごとに調べて自動で
 
 ## 4. 部品の分け方（file）
 
-`userland/base/zwl` を `userland/base/zdesktop`（`/bin/zdesktop`）へ改名したうえで（p011）:
+`userland/base/zwl` を `userland/desktop/wayland`（`/bin/wayland`）へ改名したうえで（p011）:
 
 | file | 役割 |
 | --- | --- |

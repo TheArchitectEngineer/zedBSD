@@ -7,7 +7,7 @@ Parent: [WS035](../ws.md)
 Status: cleared（q469-i01、2026-09-26）
 Phase disposition: normal
 Queue: q469-i01
-承認: 2026-09-26 ユーザー「下記のアプリケーションランチャーも取り組んでほしいです。まずはPoCでよいです。私が実機で起動したときに、mviewやzdesktop-terminalを起動できるようにしたいからです。」
+承認: 2026-09-26 ユーザー「下記のアプリケーションランチャーも取り組んでほしいです。まずはPoCでよいです。私が実機で起動したときに、mviewやterminalを起動できるようにしたいからです。」
 設計: [app-home-design.md](../app-home-design.md)
 
 ## 範囲（PoC）

@@ -65,7 +65,7 @@ FIFO は EDID/validated mode に基づく guest の nominal refresh と、fenced
 | target compiler `-fsyntax-only -Wdeclaration-after-statement` | WSI6 source、K4 source、memory.cとgpu-share app、実target ABIと設定 | `/tmp/q310-wsi-target-final.log`、`/tmp/q310-topology-placement-target.log`、`/tmp/q310-memory-placement-target.log` |
 | host Clang 19 `--analyze`、同 target ABI/sysroot | WSI 6 source、警告なし。repo-built compiler は analyzer を含まないため host analyzer を使用 | `/tmp/q310-wsi-analyzer-final.log` |
 
-主な source は `userland/base/libvulkan/wsi-swapchain.c`、`wsi-display.c`、`wsi-display-nodes.c`、`wsi-internal.h`、`src/drivers/gpu/venus/display.c` と `include/{uapi,drivers}/gpu-scanout.h`。K query/import/fence と標準外部 memory/fence の全体契約は [gpu-uapi-contract.md](gpu-uapi-contract.md) を参照する。実 GPU の描画成功、公開 Vulkan 拡張の全受入、transport reset の実行結果は親タスクの統合記録が担当する。
+主な source は `userland/desktop/libvulkan/wsi-swapchain.c`、`wsi-display.c`、`wsi-display-nodes.c`、`wsi-internal.h`、`src/drivers/gpu/venus/display.c` と `include/{uapi,drivers}/gpu-scanout.h`。K query/import/fence と標準外部 memory/fence の全体契約は [gpu-uapi-contract.md](gpu-uapi-contract.md) を参照する。実 GPU の描画成功、公開 Vulkan 拡張の全受入、transport reset の実行結果は親タスクの統合記録が担当する。
 
 最終のgpu.c目的コメント2箇所の補完は、文字列/文字定数を保持しコメントと空白だけを除いた20,667 C tokenが変更前後で一致することを確認した。証拠は`/tmp/q310-gpu-final-style-equivalence.json`と`/tmp/q310-gpu-final-style.diff`。受入binaryとの再build照合は統合記録に従う。
 

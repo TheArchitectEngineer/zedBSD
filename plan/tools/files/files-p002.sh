@@ -1,6 +1,6 @@
 #!/bin/sh
-# ws071-p002: zdesktop-files' window on the Venus guest (the lean image, build-files-image.sh).
-# zdesktop --glass runs at 1280x800 with the wallpaper; zdesktop-files opens at 1000x640 on a
+# ws071-p002: files' window on the Venus guest (the lean image, build-files-image.sh).
+# zdesktop --glass runs at 1280x800 with the wallpaper; files opens at 1000x640 on a
 # sample home (make-home.sh in /tmp/fhome).  Every step checks the file manager's log, and the
 # screens are kept for reading:
 #  1. home.png: the window: toolbar, sidebar, the home dashboard.
@@ -52,10 +52,10 @@ control() {
 }
 
 guest "$stop_all" >/dev/null
-guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; rm -rf /tmp/fhome; sh /usr/share/zdesktop-files-tests/make-home.sh /tmp/fhome >/dev/null
+guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; rm -rf /tmp/fhome; sh /usr/share/files-tests/make-home.sh /tmp/fhome >/dev/null
 picture=; [ -f /usr/share/zdesktop/wallpaper.ppm ] && picture=--wallpaper=/usr/share/zdesktop/wallpaper.ppm
-/bin/zdesktop --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
-HOME=/tmp/fhome /bin/zdesktop-files --token=f1 --timeout-s=800 --width=1000 --height=640 > /tmp/f.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
+/bin/wayland --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
+HOME=/tmp/fhome /bin/files --token=f1 --timeout-s=800 --width=1000 --height=640 > /tmp/f.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
 set -- $(guest "grep 'ZWL MAP client=1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
 surface=${1:-0}; wx=${2:-0}; wy=${3:-0}
 echo "files: surface $surface at $wx,$wy"

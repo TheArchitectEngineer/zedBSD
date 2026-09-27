@@ -19,7 +19,7 @@ TrueType フォントを読み、グリフを anti-alias で描く独自実装�
 | ファイル | 内容 |
 | --- | --- |
 | `include/libc/truetype.h` | 公開 API 7個。sysroot 経由で `/usr/include/truetype.h` に入る |
-| `userland/base/libtruetype/internal.h` | face、outline、共有の宣言 |
+| `userland/desktop/libtruetype/internal.h` | face、outline、共有の宣言 |
 | `face.c` | table directory、`head`・`maxp`・`hhea`、collection、寸法 |
 | `cmap.c` | subtable の選択と、format 4・format 12 の探索 |
 | `outline.c` | `loca`/`glyf` の読み取り、単純グリフ・複合グリフ、`hmtx` の advance |

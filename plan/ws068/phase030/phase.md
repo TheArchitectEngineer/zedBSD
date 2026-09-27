@@ -50,12 +50,12 @@ Phase disposition: normal
 
 | file | 内容 |
 | --- | --- |
-| `userland/base/libglesv2/glsl/glsl.h`・`link.c`・`emit.c`・`emit.h` | `glsl_link_captured`、capture の出力の型と場所（`glsl_capture_info`）、capture の storage buffer と main の return の前の書き込み |
-| `userland/base/libglesv2/feedback.c`（新） | transform feedback の object と API、draw の確かめ・capture buffer・copy、`gles_buffer_fetch` |
-| `userland/base/libglesv2/program.c` | `glTransformFeedbackVaryings`・`glGetTransformFeedbackVarying`、link の capture、set layout の storage buffer、`glGetProgramiv` |
-| `userland/base/libglesv2/draw.c`・`buffer.c`・`query.c`・`spirv.c`・`gles.c`・`gles.h`・`exports.map`・`Makefile`、`userland/X11/libGL/Makefile` | draw の capture、descriptor の storage buffer、rasterizer discard、independentBlend の代わり、buffer の読み戻しと TF の binding の確かめ、stream の STORAGE usage、primitives written、反射、GL_VERSION と glGet |
-| `userland/base/libegl/vulkan.c`・`zegl.h` | device の optional な feature |
-| `userland/base/egltest/feedback.c`・`.h`（新）・`main.c`・`Makefile` | `--scene=feedback` |
+| `userland/desktop/libglesv2/glsl/glsl.h`・`link.c`・`emit.c`・`emit.h` | `glsl_link_captured`、capture の出力の型と場所（`glsl_capture_info`）、capture の storage buffer と main の return の前の書き込み |
+| `userland/desktop/libglesv2/feedback.c`（新） | transform feedback の object と API、draw の確かめ・capture buffer・copy、`gles_buffer_fetch` |
+| `userland/desktop/libglesv2/program.c` | `glTransformFeedbackVaryings`・`glGetTransformFeedbackVarying`、link の capture、set layout の storage buffer、`glGetProgramiv` |
+| `userland/desktop/libglesv2/draw.c`・`buffer.c`・`query.c`・`spirv.c`・`gles.c`・`gles.h`・`exports.map`・`Makefile`、`userland/X11/libGL/Makefile` | draw の capture、descriptor の storage buffer、rasterizer discard、independentBlend の代わり、buffer の読み戻しと TF の binding の確かめ、stream の STORAGE usage、primitives written、反射、GL_VERSION と glGet |
+| `userland/desktop/libegl/vulkan.c`・`zegl.h` | device の optional な feature |
+| `userland/desktop/egltest/feedback.c`・`.h`（新）・`main.c`・`Makefile` | `--scene=feedback` |
 | `plan/ws068/tests/egl-p030.sh`（新） | display と Wayland の画面の点、readback、API の検査 |
 
 ### 検証（QEMU の Venus。i915 実機は未実施）

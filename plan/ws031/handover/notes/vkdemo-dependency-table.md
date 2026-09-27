@@ -1,6 +1,6 @@
 # vkdemo／libvulkan が i915 executor に要求するもの（実 command 依存表）
 
-WS031 E-107（2026-09-18）。読取りだけの調査（source と埋込み SPIR-V の decode）。path は `agent-1:~/zedBSD/` 基点。R = `userland/base/vkdemo/renderer.c`、D = `userland/base/vkdemo/display.c`。
+WS031 E-107（2026-09-18）。読取りだけの調査（source と埋込み SPIR-V の decode）。path は `agent-1:~/zedBSD/` 基点。R = `userland/desktop/vkdemo/renderer.c`、D = `userland/desktop/vkdemo/display.c`。
 **実 stream の記録（実行しての採取）ではない**。libvulkan の送信 code と vkdemo の呼出しから導いた表で、実行時の確認は VK-1 以降で行う。通常 Vulkan の公開はまだ成功扱いにしない。
 
 ## 0. 結論: opcode の不足より手前にある 4 つの関門
@@ -35,7 +35,7 @@ vkFlush／InvalidateMappedMemoryRanges は HOST_COHERENT でない memory type �
 
 ## 2. Shader と compiler の不足範囲
 
-SPIR-V は `userland/base/vkdemo/shaders.h` の C 配列（`shaders/cuboid.{vert,frag}.spv` と byte 一致を確認）。glslc `-O0`、SPIR-V 1.0（`shaders/provenance.json`）。
+SPIR-V は `userland/desktop/vkdemo/shaders.h` の C 配列（`shaders/cuboid.{vert,frag}.spv` と byte 一致を確認）。glslc `-O0`、SPIR-V 1.0（`shaders/provenance.json`）。
 
 - **Vertex**（769 word、id bound 126）: OpExtInst×4（Sin×2、Cos×2）、OpConstant×13（float 9、int 4）、OpVariable×13（PushConstant 1、Input 2、Output 2、**Function 8**）、OpLoad×29、OpStore×10、OpAccessChain×17、OpCompositeConstruct×3、**OpFNegate×1**、OpFAdd×6、OpFSub×2、OpFMul×13、OpMemberDecorate×5（Offset、BuiltIn Position／PointSize／ClipDistance／CullDistance）。
 - **Fragment**（161 word）: OpExecutionMode OriginUpperLeft、OpTypeImage（2D sampled float）、OpTypeSampledImage、OpVariable×3、OpLoad×2、OpStore×1、**OpImageSampleImplicitLod×1**。

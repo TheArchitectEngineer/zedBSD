@@ -4,7 +4,7 @@ WS031 E-110（2026-09-19）。**コード適用前のレビュー資料**。こ�
 根拠の所在: `handover/notes/gpu-job-completion-contract.md`（GPU core と libvulkan の完了契約の調査）、`handover/notes/vkdemo-dependency-table.md` §5（libvulkan の node 受入条件）。path は `agent-1:~/zedBSD/` 基点。
 
 ## 0. 何が未確定か
-- flags の意味を述べる文書は libvulkan の comment 2 文だけ（`userland/base/libvulkan/context.c:176-184`）:
+- flags の意味を述べる文書は libvulkan の comment 2 文だけ（`userland/desktop/libvulkan/context.c:176-184`）:
   STRICT_QUEUE =「Device creation additionally requires success-only completion of its exact native fence.」
   QUIESCE =「Only this exact profile can retire raw native work without failing unrelated sessions.」
 - 168 byte の vendor capset を**書く側は tree に存在しない**（Venus backend は host の値を転送、i915 は 156 byte）。

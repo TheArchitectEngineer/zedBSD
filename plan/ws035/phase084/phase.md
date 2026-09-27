@@ -1,6 +1,6 @@
 <!-- awesome-plan project=zedbsd record=ws035p084 -->
 
-# ws035-p084: 窓の間の drag and drop（wl_data_device）と zdesktop-files の窓の外・パンくずへの drop
+# ws035-p084: 窓の間の drag and drop（wl_data_device）と files の窓の外・パンくずへの drop
 
 Phase ID: `ws035-p084`
 Parent: [WS035](../ws.md)
@@ -11,7 +11,7 @@ Queue: なし（2026-09-27 main の割り当て。サブエージェントが wo
 ## 範囲
 
 2026-09-27 main:「a new WS035 phase: drag and drop between windows — wl_data_device start_drag / enter / motion / drop / dnd
-actions in zdesktop (p079 cancels drags today), libwayland pieces, and zdesktop-files using it for drops outside its window and
+actions in zdesktop (p079 cancels drags today), libwayland pieces, and files using it for drops outside its window and
 onto the titlebar breadcrumb (the F-item from ws071-p010). One pass first.」
 
 1. zdesktop: `wl_data_device.start_drag`（ボタンを押している間だけ。source が無い drag は同じ client の中だけ）、pointer の下の
@@ -21,9 +21,9 @@ onto the titlebar breadcrumb (the F-item from ws071-p010). One pass first.」
    それ以外は target に leave・source に `cancelled`。Esc で取り消し。icon の面を pointer に、無ければ zdesktop の小さな紙の印。
 2. titlebar: `zed_titlebar_v1` version 2 の event `drop_target(id, detail)`（パンくずの段の上にある間、enter・motion の前に。
    id 0 で「どの段でもない」）。zdesktop は窓の本体の上の座標（負の y）で enter を送り、その段を青く光らせる。
-3. libwayland・libzdesktop: `drop_target` の記述と dispatch、`zdesktop_titlebar_listener.drop_target`（`ZDESKTOP_VERSION` 7）、
+3. libwayland・libkeiland: `drop_target` の記述と dispatch、`zdesktop_titlebar_listener.drop_target`（`ZDESKTOP_VERSION` 7）、
    version 2 の bind。data device の client 側は p079 で揃っていた。
-4. zdesktop-files: 窓の中の drag が窓の外へ出たら zdesktop の drag and drop に渡す（`text/uri-list`、copy・move）。drop を受ける
+4. files: 窓の中の drag が窓の外へ出たら zdesktop の drag and drop に渡す（`text/uri-list`、copy・move）。drop を受ける
    側: folder の項目・sidebar の folder・他の tab・titlebar のパンくずの段・表示中の folder（他の窓からのとき）が target。
    drop で名前を読み（自分の drag なら選択から）、move（別の device なら copy）か copy の task、`finish`。
 
@@ -43,15 +43,15 @@ onto the titlebar breadcrumb (the F-item from ws071-p010). One pass first.」
   印、icon の buffer の保持）、`shell.c`（`zwl_glass_body_at`、`zwl_glass_draw_drag_badge`、drag の間は `still` でない）、`damage.c`、
   `titlebar.c`（`zwl_titlebar_send_drop_target`、manager の version 2）、`titlebar-shell.c`（`zwl_titlebar_drop_at`、段の光）、`zwl.h`。
 - libwayland: `titlebar-protocol.c`（event と dispatch、titlebar の proxy を manager の version で作る。前は 1 固定で、version 2 の
-  event で client が切れた）、`zed-titlebar-v1-client-protocol.h`。libzdesktop `titlebar.c`、`include/libc/zdesktop.h`、
+  event で client が切れた）、`zed-titlebar-v1-client-protocol.h`。libkeiland `titlebar.c`、`include/libc/zdesktop.h`、
   `titlebar-probe`（listener に NULL）。
-- zdesktop-files: `dnd.c`（新規）、`window.c`・`window.h`（manager の bind、`fm_window_push` を公開）、`titlebar.c`（drop_target を
+- files: `dnd.c`（新規）、`window.c`・`window.h`（manager の bind、`fm_window_push` を公開）、`titlebar.c`（drop_target を
   窓の入力の列へ）、`ui-drag.c`（`fm_drop_event`・`fm_drop_accepts`・`fm_drop_perform`、窓の外へ出たら `FM_REQUEST_DRAG_OUT`、
   表示中の folder への drop は content の縁を光らせる）、`ui.c`、`files.h`、`main.c`（drag out・drop・答え）、`Makefile`。
 
 ## 検証（amd64 だけ、Venus の guest、lean image `plan/tools/files/build-files-image.sh`、2026-09-27）
 
-- `plan/ws035/tests/zdesktop-p084.sh` PASS: 2 つの zdesktop-files（A: Desktop、B: Documents）を titlebar で左右へ。A の Logo.png を
+- `plan/ws035/tests/zdesktop-p084.sh` PASS: 2 つの files（A: Desktop、B: Documents）を titlebar で左右へ。A の Logo.png を
   B の content へ（drag start・enter client=2・accept text/uri-list・drop・`DROP operation=move ... destination=/tmp/fhome/Documents`・
   finish・A の `DRAG out done dropped=1`、file が移る）。B の Logo.png を A の titlebar の「…」（Home）へ（`drop_target client=1
   id=4 detail=0`、home へ move）。A の Screenshot.png を A 自身のパンくずへ（`self=1`、home へ move）。B から壁紙の上で離す
@@ -65,7 +65,7 @@ onto the titlebar breadcrumb (the F-item from ws071-p010). One pass first.」
 
 ## 残り
 
-- drag の icon: zdesktop-files は icon の面を渡さない（zdesktop の印だけ）。項目の絵の icon は wl_shm の面が要る。
+- drag の icon: files は icon の面を渡さない（zdesktop の印だけ）。項目の絵の icon は wl_shm の面が要る。
 - 他の窓からの drop を tag・ゴミ箱・Favorites で受けること、他の app（terminal へ path の text、`text/plain`）との drop。
 - drop の座標の popup（ask の action）、drag の中の自動の scroll と spring-loaded（F-039）。
 - plain の look の target は窓の本体だけ（titlebar のパンくずは glass の look だけ）。

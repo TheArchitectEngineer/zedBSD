@@ -10,12 +10,12 @@ System Menu は [design.md](design.md)（`xdg_toplevel_menu_v1`、p001〜p005）
 ## 0. 前提（再確認しない決定）
 
 - タイトルバーは zdesktop が描く system-owned な面。client は意味（mode と model）だけを渡し、pixel・font・色・位置を指定しない
-  （仕様案 §1、§24、§28）。client は zdesktop の非標準の拡張を **libzdesktop の API だけ**で使う（WS070 の決定と同じ）。
+  （仕様案 §1、§24、§28）。client は zdesktop の非標準の拡張を **libkeiland の API だけ**で使う（WS070 の決定と同じ）。
 - `MENU`・`CONTROLS`・`TABS` は排他（仕様案 §5）。MENU の model は既存の `xdg_menu_v1`（仕様案 §23）。
 - 2026-09-27 ユーザー:「今のファイラーのはウィンドウ内部の上部にナビゲーションバーを持っていますが、これをウィンドウのフローティング
-  タイトルバーにマージします。」「ファイラーはこのcompositorでしか使えなくてOKです。」→ **zdesktop-files の窓の中の toolbar
+  タイトルバーにマージします。」「ファイラーはこのcompositorでしか使えなくてOKです。」→ **files の窓の中の toolbar
   （戻る・進む・Home・パンくず・検索・表示の切替・preview・進みの輪）は CONTROLS の model に移し、窓の中の bar は消す。
-  zdesktop-files は fallback（仕様案 §27）を持たない**: 拡張が無ければ起動で `ZFILES FAILED operation=titlebar` を出して終わる。
+  files は fallback（仕様案 §27）を持たない**: 拡張が無ければ起動で `ZFILES FAILED operation=titlebar` を出して終わる。
 - 既に zdesktop にある所（WS035 p059〜p071、WS070 p003）: 浮いたタイトルバー（高さ 44、本体との間 8）、システムバー（高さ 34）の
   zone（左から launcher と「zedBSD」＝System Identity、線、docked の窓の印・題名・menu＝Application Zone、窓の 3 つの button＝
   Window Management、仮想デスクトップ＝Workspace、signal・battery・時計＝System Status）、最大化で docked（本体が広がり題名の bar が
@@ -25,8 +25,8 @@ System Menu は [design.md](design.md)（`xdg_toplevel_menu_v1`、p001〜p005）
 ## 1. 全体の形
 
 ```
-application（zdesktop-files 等）
-   │  libzdesktop: zdesktop_titlebar_*（mode・controls・tabs の鏡と局所の検査、transaction）
+application（files 等）
+   │  libkeiland: zdesktop_titlebar_*（mode・controls・tabs の鏡と局所の検査、transaction）
    ▼
 libwayland-client: zed_titlebar_manager_v1 / zed_titlebar_v1（非公開 header）
    ▼
@@ -42,7 +42,7 @@ zdesktop
 ## 2. Protocol（version 1）
 
 **決定: 新しい global `zed_titlebar_manager_v1`**（既存の `xdg_menu_manager_v1` の version を上げない）。理由: mode・controls・tabs は
-menu と独立した model で、menu だけを使う client（zdesktop-terminal）は変えずに済む。名前は zedBSD 固有の拡張の慣例（`zed_gpu_buffer_v1`）。
+menu と独立した model で、menu だけを使う client（terminal）は変えずに済む。名前は zedBSD 固有の拡張の慣例（`zed_gpu_buffer_v1`）。
 
 ### 2.1 `zed_titlebar_manager_v1`（global、version 1）
 
@@ -96,10 +96,10 @@ event:
 - **overflow**（仕様案 §6 の common element の overflow button）: control ではなく zdesktop が CONTROLS・TABS の Presentation の右端に
   出す「…」。**決定**: その popup は (1) 幅が足りずに隠れた control の行、(2) separator、(3) 窓の menu（`xdg_toplevel_menu_v1` の model）
   の top-level を submenu の行として並べる。menu が無く隠れた control も無ければ出さない。理由: CONTROLS・TABS の窓も menu と
-  shortcut を失わない（zdesktop-files の File・Edit・View・Go・Window・Help、p008）。§13-1 でユーザーに示す。
+  shortcut を失わない（files の File・Edit・View・Go・Window・Help、p008）。§13-1 でユーザーに示す。
 - **MENU との関係**（仕様案 §23）: menu の model は今まで通り `xdg_toplevel_menu_v1.set_menu` で窓に付ける。mode が `menu` なら
   top-level の項目を Presentation に並べ（今と同じ）、`controls`・`tabs` なら overflow の popup に入れる。**shortcut は mode によらず
-  効く**（menu-shell.c の照合はそのまま）。`zed_titlebar_v1` を持たない窓は `menu` mode（zdesktop-terminal は何も変えない）。
+  効く**（menu-shell.c の照合はそのまま）。`zed_titlebar_v1` を持たない窓は `menu` mode（terminal は何も変えない）。
 - **決定（仕様案 §21 の「不整合は error としてもよい」）: error にしない**。controls と tabs の model は mode によらず持て、表示は
   active な mode のものだけ。理由: client が次の mode の model を先に作り、1 つの transaction で `set_mode` だけ変えられる（§22 の
   atomic な切替が簡単になる）。
@@ -116,11 +116,11 @@ zdesktop の object の退場の hook（menu.c と同じ `zwl_object_destroy` �
 
 ## 3. libwayland（client 側）
 
-`userland/base/libwayland/titlebar-protocol.c`（新規: 2 interface の表、wrapper、listener の dispatch）と非公開 header
+`userland/desktop/libwayland/titlebar-protocol.c`（新規: 2 interface の表、wrapper、listener の dispatch）と非公開 header
 `zed-titlebar-v1-client-protocol.h`（install しない。`xdg-toplevel-menu-v1-client-protocol.h` と同じ扱い）。`exports.map` に
 `zed_titlebar_*`。
 
-## 4. libzdesktop の API（`include/libc/zdesktop.h`、`ZDESKTOP_VERSION` を 4 に）
+## 4. libkeiland の API（`include/libc/zdesktop.h`、`ZDESKTOP_VERSION` を 4 に）
 
 ```c
 struct zdesktop_titlebar;
@@ -193,7 +193,7 @@ int zdesktop_titlebar_focus_control(struct zdesktop_titlebar *titlebar, uint32_t
 ## 8. 非 ASCII の文字（glass の glyph cache）
 
 - 今の glass の atlas は ASCII（と 3 つの記号）だけ。窓の題名・menu の label・パンくず・tab の題名の日本語が描けない（WS070 §11-5）。
-  zdesktop-files の窓の中のパンくずは fallback font で日本語を描けていたので、CONTROLS へ移すと**後退**になる。
+  files の窓の中のパンくずは fallback font で日本語を描けていたので、CONTROLS へ移すと**後退**になる。
 - **決定: CONTROLS へ移す前に glass に動的な glyph cache を足す**: `glass_draw_text` が UTF-8 を復号し、ASCII 以外の文字を
   (face, 大きさ, codepoint) の cache（atlas の空き領域の slot、LRU）で引き、無ければ libtruetype で描いて atlas の slot に upload。
   face は Inter の次に fallback font（`/usr/share/fonts/zdesktop-fallback.ttf`、無ければ □）。glass.c は WS035 の file なので、
@@ -222,7 +222,7 @@ int zdesktop_titlebar_focus_control(struct zdesktop_titlebar *titlebar, uint32_t
 bar の配置から docked の配置へ動かす: control ごとに両方の配置の矩形を計算し、進みで補間して描き、浮いた bar の glass が消える
 のと同時に docked の地が濃くなる。幅が違って片方で隠れる control は進みの前半で薄く消え後半で現れる。restore は逆。
 
-## 11. zdesktop-files の CONTROLS（WS071）
+## 11. files の CONTROLS（WS071）
 
 | control | role（priority） | 動作 |
 | --- | --- | --- |
@@ -246,14 +246,14 @@ bar の配置から docked の配置へ動かす: control ごとに両方の配�
 ## 12. 試験
 
 - **titlebar-probe**（`userland/base/titlebar-probe`、menu-probe と同じ役の小さな client）: protocol の error（範囲外、transaction の外、
-  重複）と libzdesktop の局所の検査、mode の切替、controls・tabs の組み立て、event の log。
-- **Venus（QEMU）**: WS070 の lean image に titlebar-probe と zdesktop-files。(1) CONTROLS の浮いた bar と docked の bar の画面、
+  重複）と libkeiland の局所の検査、mode の切替、controls・tabs の組み立て、event の log。
+- **Venus（QEMU）**: WS070 の lean image に titlebar-probe と files。(1) CONTROLS の浮いた bar と docked の bar の画面、
   (2) 幅を縮めたときの縮退（パンくずの畳み、検索の icon 化、overflow）の画面、(3) control の click・パンくずの段・検索の入力の
   event、(4) overflow の popup（隠れた control と menu）、(5) TABS の strip（active・attention・×・＋・scroll）、(6) mode の切替が
   1 frame で変わる（途中の frame の log が無い）、(7) dock・restore の animation の途中の画面、(8) 日本語の題名とパンくず（glyph cache）。
 - 回帰: WS070 の `menu-regress.sh`（terminal の MENU は変わらない）、WS071 の `files-regress.sh`（座標を log から引く形に直した後）、
   boot test。i915 実機は最後の Phase（任意）。
-- 規約: 新しい file は `style-check.py` 0、既存の file（shell.c・menu-shell.c・glass.c・protocol.c・zwl.h、libwayland、libzdesktop）は
+- 規約: 新しい file は `style-check.py` 0、既存の file（shell.c・menu-shell.c・glass.c・protocol.c・zwl.h、libwayland、libkeiland）は
   悪化させない（`plan/tools/titlebar/style-compare.sh`）。
 
 ## 13. 判断が要る点（既定で進める）
@@ -273,10 +273,10 @@ bar の配置から docked の配置へ動かす: control ごとに両方の配�
 
 | Phase | 内容 | 主な file |
 | --- | --- | --- |
-| ws070-p008 | protocol と model: libwayland の `zed_titlebar_*`（表・wrapper・listener・非公開 header）、zdesktop の titlebar.c（request、model、transaction、error、寿命、log）、libzdesktop の `zdesktop_titlebar_*`（鏡と検査）、titlebar-probe（error と検査の試験）。描画は変えない | libwayland/titlebar-protocol.c、zdesktop/titlebar.c・protocol.c・zwl.h・objects.c、libzdesktop/titlebar.c、include/libc/zdesktop.h |
+| ws070-p008 | protocol と model: libwayland の `zed_titlebar_*`（表・wrapper・listener・非公開 header）、zdesktop の titlebar.c（request、model、transaction、error、寿命、log）、libkeiland の `zdesktop_titlebar_*`（鏡と検査）、titlebar-probe（error と検査の試験）。描画は変えない | libwayland/titlebar-protocol.c、zdesktop/titlebar.c・protocol.c・zwl.h・objects.c、libkeiland/titlebar.c、include/libc/zdesktop.h |
 | ws070-p009 | glass の UTF-8 と動的 glyph cache（fallback font）と role の icon の rasterize（atlas に足す）。窓の題名・menu の label が日本語でも描ける | zdesktop/glass.c・compose.c・glass.h（**WS035 と調整**） |
 | ws070-p010 | CONTROLS の presentation: 配置と縮退、描画（button・segment・欄・パンくず・輪）、pointer（click・hover）、SEARCH・BREADCRUMB の欄と keyboard、overflow の popup（隠れた control と menu）、docked の Application Zone、animation の補間、log。titlebar-probe の CONTROLS の場面 | zdesktop/titlebar-shell.c（新規）・shell.c・menu-shell.c・seat.c（**WS035 と調整**） |
-| ws071-p014 | zdesktop-files: 窓の中の toolbar → CONTROLS の titlebar（toolbar の描画・入力を消す、control の model と event、Ctrl+F・Ctrl+L の focus、起動の失敗、host の試験の model の text、guest の試験の座標を log から） | zdesktop-files（ui.c・ui-input.c・ui-search.c・main.c・新規 titlebar.c）、plan/tools/files |
+| ws071-p014 | files: 窓の中の toolbar → CONTROLS の titlebar（toolbar の描画・入力を消す、control の model と event、Ctrl+F・Ctrl+L の focus、起動の失敗、host の試験の model の text、guest の試験の座標を log から） | files（ui.c・ui-input.c・ui-search.c・main.c・新規 titlebar.c）、plan/tools/files |
 | ws070-p011 | TABS の presentation: strip、active・attention・×・＋、縮退（縮める、切る、scroll、overflow）、mode の atomic な切替の試験（titlebar-probe） | zdesktop/titlebar-shell.c |
 | ws070-p006 | 既存: WS071 と共有する menu の file への規約の直し（p008〜p011 の変更の後に一緒に） | zdesktop/menu*.c 等 |
 | ws070-p012 | 規約の全文との照合（titlebar の file 全部）、回帰（menu・files・zdesktop）、boot test、i915 実機（任意） | — |
@@ -284,4 +284,4 @@ bar の配置から docked の配置へ動かす: control ごとに両方の配�
 順序（WS071 と合わせた計画）: ws070-p008 → ws070-p009 → ws070-p010 → ws071-p014 → ws071-p013（窓の中のタブ）→ ws071-p009
 （context menu）→ ws071-p010（PNG のサムネイル・DnD）→ ws070-p011（TABS）→ ws070-p006 → ws071-p011 → ws070-p012。
 理由: ユーザーの具体的な受け入れ（ファイラーの navigation bar のタイトルバーへの統合）を先に。TABS の最初の使い手は今は無い
-（zdesktop-files は CONTROLS）ので、TABS は titlebar-probe で試し、後で zdesktop-terminal 等が使う。
+（files は CONTROLS）ので、TABS は titlebar-probe で試し、後で terminal 等が使う。

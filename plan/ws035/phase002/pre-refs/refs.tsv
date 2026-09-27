@@ -3231,106 +3231,106 @@ p023	c-include	userland/base/libedit/readline.c	19	libc/include/stdlib.h	keep-ro
 p023	c-include	userland/base/libedit/readline.c	20	libc/include/string.h	keep-root libc/include->include	#include <string.h>
 p023	c-include	userland/base/libedit/readline.c	21	libc/include/termios.h	keep-root libc/include->include	#include <termios.h>
 p023	c-include	userland/base/libedit/readline.c	22	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
-p023	c-include	userland/base/libvulkan/commands.c	12	libc/include/string.h	keep-root libc/include->include	#include <string.h>
-p023	c-include	userland/base/libvulkan/context.c	12	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
-p023	c-include	userland/base/libvulkan/context.c	13	libc/include/fcntl.h	keep-root libc/include->include	#include <fcntl.h>
-p023	c-include	userland/base/libvulkan/context.c	14	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
-p023	c-include	userland/base/libvulkan/context.c	15	libc/include/string.h	keep-root libc/include->include	#include <string.h>
-p023	c-include	userland/base/libvulkan/context.c	16	libc/include/time.h	keep-root libc/include->include	#include <time.h>
-p023	c-include	userland/base/libvulkan/context.c	17	libc/include/sys/mman.h	keep-root libc/include->include	#include <sys/mman.h>
-p023	c-include	userland/base/libvulkan/context.c	18	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
-p023	c-include	userland/base/libvulkan/descriptors.c	15	libc/include/string.h	keep-root libc/include->include	#include <string.h>
-p023	c-include	userland/base/libvulkan/device.c	12	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
-p023	c-include	userland/base/libvulkan/device.c	13	libc/include/string.h	keep-root libc/include->include	#include <string.h>
-p023	c-include	userland/base/libvulkan/dispatch.c	12	libc/include/string.h	keep-root libc/include->include	#include <string.h>
-p023	c-include	userland/base/libvulkan/external-fence.c	12	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
-p023	c-include	userland/base/libvulkan/external-fence.c	13	libc/include/fcntl.h	keep-root libc/include->include	#include <fcntl.h>
-p023	c-include	userland/base/libvulkan/external-fence.c	14	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
-p023	c-include	userland/base/libvulkan/external-fence.c	15	libc/include/string.h	keep-root libc/include->include	#include <string.h>
-p023	c-include	userland/base/libvulkan/external-fence.c	16	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
-p023	c-include	userland/base/libvulkan/external-properties.c	12	libc/include/string.h	keep-root libc/include->include	#include <string.h>
-p023	c-include	userland/base/libvulkan/instance.c	12	libc/include/dirent.h	keep-root libc/include->include	#include <dirent.h>
-p023	c-include	userland/base/libvulkan/instance.c	13	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
-p023	c-include	userland/base/libvulkan/instance.c	14	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
-p023	c-include	userland/base/libvulkan/instance.c	15	libc/include/string.h	keep-root libc/include->include	#include <string.h>
-p023	c-include	userland/base/libvulkan/internal.h	15	libc/include/stddef.h	keep-root libc/include->include	#include <stddef.h>
-p023	c-include	userland/base/libvulkan/internal.h	16	libc/include/stdint.h	keep-root libc/include->include	#include <stdint.h>
-p023	c-include	userland/base/libvulkan/internal.h	17	libc/include/pthread.h	keep-root libc/include->include	#include <pthread.h>
-p023	c-include	userland/base/libvulkan/internal.h	18	libc/include/vulkan/vulkan.h	keep-root libc/include->include	#include <vulkan/vulkan.h>
-p023	c-include	userland/base/libvulkan/internal.h	19	libc/include/vulkan/vulkan_wayland.h	keep-root libc/include->include	#include <vulkan/vulkan_wayland.h>
-p023	c-include	userland/base/libvulkan/memory.c	17	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
-p023	c-include	userland/base/libvulkan/memory.c	18	libc/include/string.h	keep-root libc/include->include	#include <string.h>
-p023	c-include	userland/base/libvulkan/memory.c	19	libc/include/sys/ioctl.h	keep-root libc/include->include	#include <sys/ioctl.h>
-p023	c-include	userland/base/libvulkan/memory.c	20	libc/include/sys/mman.h	keep-root libc/include->include	#include <sys/mman.h>
-p023	c-include	userland/base/libvulkan/memory.c	21	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
-p023	c-include	userland/base/libvulkan/objects.c	16	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
-p023	c-include	userland/base/libvulkan/objects.c	17	libc/include/fcntl.h	keep-root libc/include->include	#include <fcntl.h>
-p023	c-include	userland/base/libvulkan/objects.c	18	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
-p023	c-include	userland/base/libvulkan/objects.c	19	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
-p023	c-include	userland/base/libvulkan/objects.c	20	libc/include/string.h	keep-root libc/include->include	#include <string.h>
-p023	c-include	userland/base/libvulkan/pipeline.c	14	libc/include/string.h	keep-root libc/include->include	#include <string.h>
-p023	c-include	userland/base/libvulkan/query.c	12	libc/include/string.h	keep-root libc/include->include	#include <string.h>
-p023	c-include	userland/base/libvulkan/queue.c	12	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
-p023	c-include	userland/base/libvulkan/queue.c	13	libc/include/string.h	keep-root libc/include->include	#include <string.h>
-p023	c-include	userland/base/libvulkan/resources.c	12	libc/include/string.h	keep-root libc/include->include	#include <string.h>
-p023	c-include	userland/base/libvulkan/sync.c	12	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
-p023	c-include	userland/base/libvulkan/sync.c	13	libc/include/stdio.h	keep-root libc/include->include	#include <stdio.h>
-p023	c-include	userland/base/libvulkan/sync.c	14	libc/include/string.h	keep-root libc/include->include	#include <string.h>
-p023	c-include	userland/base/libvulkan/sync.c	15	libc/include/time.h	keep-root libc/include->include	#include <time.h>
-p023	c-include	userland/base/libvulkan/sync.c	16	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
-p023	c-include	userland/base/libvulkan/sync.c	17	libc/include/poll.h	keep-root libc/include->include	#include <poll.h>
-p023	c-include	userland/base/libvulkan/wire.c	12	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
-p023	c-include	userland/base/libvulkan/wire.c	13	libc/include/string.h	keep-root libc/include->include	#include <string.h>
-p023	c-include	userland/base/libvulkan/wsi-display-nodes.c	15	libc/include/dirent.h	keep-root libc/include->include	#include <dirent.h>
-p023	c-include	userland/base/libvulkan/wsi-display-nodes.c	16	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
-p023	c-include	userland/base/libvulkan/wsi-display-nodes.c	17	libc/include/fcntl.h	keep-root libc/include->include	#include <fcntl.h>
-p023	c-include	userland/base/libvulkan/wsi-display-nodes.c	18	libc/include/string.h	keep-root libc/include->include	#include <string.h>
-p023	c-include	userland/base/libvulkan/wsi-display-nodes.c	19	libc/include/sys/ioctl.h	keep-root libc/include->include	#include <sys/ioctl.h>
-p023	c-include	userland/base/libvulkan/wsi-display-nodes.c	20	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
-p023	c-include	userland/base/libvulkan/wsi-display.c	19	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
-p023	c-include	userland/base/libvulkan/wsi-display.c	20	libc/include/fcntl.h	keep-root libc/include->include	#include <fcntl.h>
-p023	c-include	userland/base/libvulkan/wsi-display.c	21	libc/include/poll.h	keep-root libc/include->include	#include <poll.h>
-p023	c-include	userland/base/libvulkan/wsi-display.c	22	libc/include/string.h	keep-root libc/include->include	#include <string.h>
-p023	c-include	userland/base/libvulkan/wsi-display.c	23	libc/include/sys/ioctl.h	keep-root libc/include->include	#include <sys/ioctl.h>
-p023	c-include	userland/base/libvulkan/wsi-display.c	24	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
-p023	c-include	userland/base/libvulkan/wsi-image.c	14	libc/include/string.h	keep-root libc/include->include	#include <string.h>
-p023	c-include	userland/base/libvulkan/wsi-image.c	15	libc/include/sys/ioctl.h	keep-root libc/include->include	#include <sys/ioctl.h>
-p023	c-include	userland/base/libvulkan/wsi-image.c	16	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
-p023	c-include	userland/base/libvulkan/wsi-swapchain.c	19	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
-p023	c-include	userland/base/libvulkan/wsi-swapchain.c	20	libc/include/poll.h	keep-root libc/include->include	#include <poll.h>
-p023	c-include	userland/base/libvulkan/wsi-swapchain.c	22	libc/include/sys/ioctl.h	keep-root libc/include->include	#include <sys/ioctl.h>
-p023	c-include	userland/base/libvulkan/wsi-swapchain.c	23	libc/include/string.h	keep-root libc/include->include	#include <string.h>
-p023	c-include	userland/base/libvulkan/wsi-swapchain.c	24	libc/include/time.h	keep-root libc/include->include	#include <time.h>
-p023	c-include	userland/base/libvulkan/wsi-swapchain.c	25	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
-p023	c-include	userland/base/libvulkan/wsi-wayland.c	14	libc/include/wayland-client.h	keep-root libc/include->include	#include <wayland-client.h>
-p023	c-include	userland/base/libvulkan/wsi-wayland.c	15	libc/include/wayland/zed-gpu-buffer-v1-client-protocol.h	keep-root libc/include->include	#include <wayland/zed-gpu-buffer-v1-client-protocol.h>
-p023	c-include	userland/base/libvulkan/wsi-wayland.c	16	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
-p023	c-include	userland/base/libvulkan/wsi-wayland.c	17	libc/include/poll.h	keep-root libc/include->include	#include <poll.h>
-p023	c-include	userland/base/libvulkan/wsi-wayland.c	18	libc/include/string.h	keep-root libc/include->include	#include <string.h>
-p023	c-include	userland/base/libvulkan/wsi-wayland.c	19	libc/include/time.h	keep-root libc/include->include	#include <time.h>
-p023	c-include	userland/base/libvulkan/wsi.c	14	libc/include/limits.h	keep-root libc/include->include	#include <limits.h>
-p023	c-include	userland/base/libvulkan/wsi.c	15	libc/include/string.h	keep-root libc/include->include	#include <string.h>
-p023	c-include	userland/base/libwayland/client.c	13	libc/include/fcntl.h	keep-root libc/include->include	#include <fcntl.h>
-p023	c-include	userland/base/libwayland/client.c	14	libc/include/poll.h	keep-root libc/include->include	#include <poll.h>
-p023	c-include	userland/base/libwayland/client.c	15	libc/include/stdio.h	keep-root libc/include->include	#include <stdio.h>
-p023	c-include	userland/base/libwayland/client.c	16	libc/include/sys/socket.h	keep-root libc/include->include	#include <sys/socket.h>
-p023	c-include	userland/base/libwayland/client.c	17	libc/include/sys/un.h	keep-root libc/include->include	#include <sys/un.h>
-p023	c-include	userland/base/libwayland/client.c	18	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
-p023	c-include	userland/base/libwayland/event.c	13	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
-p023	c-include	userland/base/libwayland/internal.h	15	libc/include/wayland/wayland-client.h	keep-root libc/include->include	#include <wayland/wayland-client.h>
-p023	c-include	userland/base/libwayland/internal.h	16	libc/include/wayland/xdg-shell-client-protocol.h	keep-root libc/include->include	#include <wayland/xdg-shell-client-protocol.h>
-p023	c-include	userland/base/libwayland/internal.h	17	libc/include/wayland/zed-gpu-buffer-v1-client-protocol.h	keep-root libc/include->include	#include <wayland/zed-gpu-buffer-v1-client-protocol.h>
-p023	c-include	userland/base/libwayland/internal.h	18	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
-p023	c-include	userland/base/libwayland/internal.h	19	libc/include/limits.h	keep-root libc/include->include	#include <limits.h>
-p023	c-include	userland/base/libwayland/internal.h	20	libc/include/pthread.h	keep-root libc/include->include	#include <pthread.h>
-p023	c-include	userland/base/libwayland/internal.h	21	libc/include/stdarg.h	keep-root libc/include->include	#include <stdarg.h>
-p023	c-include	userland/base/libwayland/internal.h	22	libc/include/stdint.h	keep-root libc/include->include	#include <stdint.h>
-p023	c-include	userland/base/libwayland/internal.h	23	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
-p023	c-include	userland/base/libwayland/internal.h	24	libc/include/string.h	keep-root libc/include->include	#include <string.h>
-p023	c-include	userland/base/libwayland/wire.c	13	libc/include/fcntl.h	keep-root libc/include->include	#include <fcntl.h>
-p023	c-include	userland/base/libwayland/wire.c	14	libc/include/sys/socket.h	keep-root libc/include->include	#include <sys/socket.h>
-p023	c-include	userland/base/libwayland/wire.c	15	libc/include/sys/uio.h	keep-root libc/include->include	#include <sys/uio.h>
-p023	c-include	userland/base/libwayland/wire.c	16	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
+p023	c-include	userland/desktop/libvulkan/commands.c	12	libc/include/string.h	keep-root libc/include->include	#include <string.h>
+p023	c-include	userland/desktop/libvulkan/context.c	12	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
+p023	c-include	userland/desktop/libvulkan/context.c	13	libc/include/fcntl.h	keep-root libc/include->include	#include <fcntl.h>
+p023	c-include	userland/desktop/libvulkan/context.c	14	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
+p023	c-include	userland/desktop/libvulkan/context.c	15	libc/include/string.h	keep-root libc/include->include	#include <string.h>
+p023	c-include	userland/desktop/libvulkan/context.c	16	libc/include/time.h	keep-root libc/include->include	#include <time.h>
+p023	c-include	userland/desktop/libvulkan/context.c	17	libc/include/sys/mman.h	keep-root libc/include->include	#include <sys/mman.h>
+p023	c-include	userland/desktop/libvulkan/context.c	18	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
+p023	c-include	userland/desktop/libvulkan/descriptors.c	15	libc/include/string.h	keep-root libc/include->include	#include <string.h>
+p023	c-include	userland/desktop/libvulkan/device.c	12	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
+p023	c-include	userland/desktop/libvulkan/device.c	13	libc/include/string.h	keep-root libc/include->include	#include <string.h>
+p023	c-include	userland/desktop/libvulkan/dispatch.c	12	libc/include/string.h	keep-root libc/include->include	#include <string.h>
+p023	c-include	userland/desktop/libvulkan/external-fence.c	12	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
+p023	c-include	userland/desktop/libvulkan/external-fence.c	13	libc/include/fcntl.h	keep-root libc/include->include	#include <fcntl.h>
+p023	c-include	userland/desktop/libvulkan/external-fence.c	14	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
+p023	c-include	userland/desktop/libvulkan/external-fence.c	15	libc/include/string.h	keep-root libc/include->include	#include <string.h>
+p023	c-include	userland/desktop/libvulkan/external-fence.c	16	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
+p023	c-include	userland/desktop/libvulkan/external-properties.c	12	libc/include/string.h	keep-root libc/include->include	#include <string.h>
+p023	c-include	userland/desktop/libvulkan/instance.c	12	libc/include/dirent.h	keep-root libc/include->include	#include <dirent.h>
+p023	c-include	userland/desktop/libvulkan/instance.c	13	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
+p023	c-include	userland/desktop/libvulkan/instance.c	14	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
+p023	c-include	userland/desktop/libvulkan/instance.c	15	libc/include/string.h	keep-root libc/include->include	#include <string.h>
+p023	c-include	userland/desktop/libvulkan/internal.h	15	libc/include/stddef.h	keep-root libc/include->include	#include <stddef.h>
+p023	c-include	userland/desktop/libvulkan/internal.h	16	libc/include/stdint.h	keep-root libc/include->include	#include <stdint.h>
+p023	c-include	userland/desktop/libvulkan/internal.h	17	libc/include/pthread.h	keep-root libc/include->include	#include <pthread.h>
+p023	c-include	userland/desktop/libvulkan/internal.h	18	libc/include/vulkan/vulkan.h	keep-root libc/include->include	#include <vulkan/vulkan.h>
+p023	c-include	userland/desktop/libvulkan/internal.h	19	libc/include/vulkan/vulkan_wayland.h	keep-root libc/include->include	#include <vulkan/vulkan_wayland.h>
+p023	c-include	userland/desktop/libvulkan/memory.c	17	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
+p023	c-include	userland/desktop/libvulkan/memory.c	18	libc/include/string.h	keep-root libc/include->include	#include <string.h>
+p023	c-include	userland/desktop/libvulkan/memory.c	19	libc/include/sys/ioctl.h	keep-root libc/include->include	#include <sys/ioctl.h>
+p023	c-include	userland/desktop/libvulkan/memory.c	20	libc/include/sys/mman.h	keep-root libc/include->include	#include <sys/mman.h>
+p023	c-include	userland/desktop/libvulkan/memory.c	21	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
+p023	c-include	userland/desktop/libvulkan/objects.c	16	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
+p023	c-include	userland/desktop/libvulkan/objects.c	17	libc/include/fcntl.h	keep-root libc/include->include	#include <fcntl.h>
+p023	c-include	userland/desktop/libvulkan/objects.c	18	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
+p023	c-include	userland/desktop/libvulkan/objects.c	19	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
+p023	c-include	userland/desktop/libvulkan/objects.c	20	libc/include/string.h	keep-root libc/include->include	#include <string.h>
+p023	c-include	userland/desktop/libvulkan/pipeline.c	14	libc/include/string.h	keep-root libc/include->include	#include <string.h>
+p023	c-include	userland/desktop/libvulkan/query.c	12	libc/include/string.h	keep-root libc/include->include	#include <string.h>
+p023	c-include	userland/desktop/libvulkan/queue.c	12	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
+p023	c-include	userland/desktop/libvulkan/queue.c	13	libc/include/string.h	keep-root libc/include->include	#include <string.h>
+p023	c-include	userland/desktop/libvulkan/resources.c	12	libc/include/string.h	keep-root libc/include->include	#include <string.h>
+p023	c-include	userland/desktop/libvulkan/sync.c	12	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
+p023	c-include	userland/desktop/libvulkan/sync.c	13	libc/include/stdio.h	keep-root libc/include->include	#include <stdio.h>
+p023	c-include	userland/desktop/libvulkan/sync.c	14	libc/include/string.h	keep-root libc/include->include	#include <string.h>
+p023	c-include	userland/desktop/libvulkan/sync.c	15	libc/include/time.h	keep-root libc/include->include	#include <time.h>
+p023	c-include	userland/desktop/libvulkan/sync.c	16	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
+p023	c-include	userland/desktop/libvulkan/sync.c	17	libc/include/poll.h	keep-root libc/include->include	#include <poll.h>
+p023	c-include	userland/desktop/libvulkan/wire.c	12	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
+p023	c-include	userland/desktop/libvulkan/wire.c	13	libc/include/string.h	keep-root libc/include->include	#include <string.h>
+p023	c-include	userland/desktop/libvulkan/wsi-display-nodes.c	15	libc/include/dirent.h	keep-root libc/include->include	#include <dirent.h>
+p023	c-include	userland/desktop/libvulkan/wsi-display-nodes.c	16	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
+p023	c-include	userland/desktop/libvulkan/wsi-display-nodes.c	17	libc/include/fcntl.h	keep-root libc/include->include	#include <fcntl.h>
+p023	c-include	userland/desktop/libvulkan/wsi-display-nodes.c	18	libc/include/string.h	keep-root libc/include->include	#include <string.h>
+p023	c-include	userland/desktop/libvulkan/wsi-display-nodes.c	19	libc/include/sys/ioctl.h	keep-root libc/include->include	#include <sys/ioctl.h>
+p023	c-include	userland/desktop/libvulkan/wsi-display-nodes.c	20	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
+p023	c-include	userland/desktop/libvulkan/wsi-display.c	19	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
+p023	c-include	userland/desktop/libvulkan/wsi-display.c	20	libc/include/fcntl.h	keep-root libc/include->include	#include <fcntl.h>
+p023	c-include	userland/desktop/libvulkan/wsi-display.c	21	libc/include/poll.h	keep-root libc/include->include	#include <poll.h>
+p023	c-include	userland/desktop/libvulkan/wsi-display.c	22	libc/include/string.h	keep-root libc/include->include	#include <string.h>
+p023	c-include	userland/desktop/libvulkan/wsi-display.c	23	libc/include/sys/ioctl.h	keep-root libc/include->include	#include <sys/ioctl.h>
+p023	c-include	userland/desktop/libvulkan/wsi-display.c	24	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
+p023	c-include	userland/desktop/libvulkan/wsi-image.c	14	libc/include/string.h	keep-root libc/include->include	#include <string.h>
+p023	c-include	userland/desktop/libvulkan/wsi-image.c	15	libc/include/sys/ioctl.h	keep-root libc/include->include	#include <sys/ioctl.h>
+p023	c-include	userland/desktop/libvulkan/wsi-image.c	16	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
+p023	c-include	userland/desktop/libvulkan/wsi-swapchain.c	19	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
+p023	c-include	userland/desktop/libvulkan/wsi-swapchain.c	20	libc/include/poll.h	keep-root libc/include->include	#include <poll.h>
+p023	c-include	userland/desktop/libvulkan/wsi-swapchain.c	22	libc/include/sys/ioctl.h	keep-root libc/include->include	#include <sys/ioctl.h>
+p023	c-include	userland/desktop/libvulkan/wsi-swapchain.c	23	libc/include/string.h	keep-root libc/include->include	#include <string.h>
+p023	c-include	userland/desktop/libvulkan/wsi-swapchain.c	24	libc/include/time.h	keep-root libc/include->include	#include <time.h>
+p023	c-include	userland/desktop/libvulkan/wsi-swapchain.c	25	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
+p023	c-include	userland/desktop/libvulkan/wsi-wayland.c	14	libc/include/wayland-client.h	keep-root libc/include->include	#include <wayland-client.h>
+p023	c-include	userland/desktop/libvulkan/wsi-wayland.c	15	libc/include/wayland/zed-gpu-buffer-v1-client-protocol.h	keep-root libc/include->include	#include <wayland/zed-gpu-buffer-v1-client-protocol.h>
+p023	c-include	userland/desktop/libvulkan/wsi-wayland.c	16	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
+p023	c-include	userland/desktop/libvulkan/wsi-wayland.c	17	libc/include/poll.h	keep-root libc/include->include	#include <poll.h>
+p023	c-include	userland/desktop/libvulkan/wsi-wayland.c	18	libc/include/string.h	keep-root libc/include->include	#include <string.h>
+p023	c-include	userland/desktop/libvulkan/wsi-wayland.c	19	libc/include/time.h	keep-root libc/include->include	#include <time.h>
+p023	c-include	userland/desktop/libvulkan/wsi.c	14	libc/include/limits.h	keep-root libc/include->include	#include <limits.h>
+p023	c-include	userland/desktop/libvulkan/wsi.c	15	libc/include/string.h	keep-root libc/include->include	#include <string.h>
+p023	c-include	userland/desktop/libwayland/client.c	13	libc/include/fcntl.h	keep-root libc/include->include	#include <fcntl.h>
+p023	c-include	userland/desktop/libwayland/client.c	14	libc/include/poll.h	keep-root libc/include->include	#include <poll.h>
+p023	c-include	userland/desktop/libwayland/client.c	15	libc/include/stdio.h	keep-root libc/include->include	#include <stdio.h>
+p023	c-include	userland/desktop/libwayland/client.c	16	libc/include/sys/socket.h	keep-root libc/include->include	#include <sys/socket.h>
+p023	c-include	userland/desktop/libwayland/client.c	17	libc/include/sys/un.h	keep-root libc/include->include	#include <sys/un.h>
+p023	c-include	userland/desktop/libwayland/client.c	18	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
+p023	c-include	userland/desktop/libwayland/event.c	13	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
+p023	c-include	userland/desktop/libwayland/internal.h	15	libc/include/wayland/wayland-client.h	keep-root libc/include->include	#include <wayland/wayland-client.h>
+p023	c-include	userland/desktop/libwayland/internal.h	16	libc/include/wayland/xdg-shell-client-protocol.h	keep-root libc/include->include	#include <wayland/xdg-shell-client-protocol.h>
+p023	c-include	userland/desktop/libwayland/internal.h	17	libc/include/wayland/zed-gpu-buffer-v1-client-protocol.h	keep-root libc/include->include	#include <wayland/zed-gpu-buffer-v1-client-protocol.h>
+p023	c-include	userland/desktop/libwayland/internal.h	18	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
+p023	c-include	userland/desktop/libwayland/internal.h	19	libc/include/limits.h	keep-root libc/include->include	#include <limits.h>
+p023	c-include	userland/desktop/libwayland/internal.h	20	libc/include/pthread.h	keep-root libc/include->include	#include <pthread.h>
+p023	c-include	userland/desktop/libwayland/internal.h	21	libc/include/stdarg.h	keep-root libc/include->include	#include <stdarg.h>
+p023	c-include	userland/desktop/libwayland/internal.h	22	libc/include/stdint.h	keep-root libc/include->include	#include <stdint.h>
+p023	c-include	userland/desktop/libwayland/internal.h	23	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
+p023	c-include	userland/desktop/libwayland/internal.h	24	libc/include/string.h	keep-root libc/include->include	#include <string.h>
+p023	c-include	userland/desktop/libwayland/wire.c	13	libc/include/fcntl.h	keep-root libc/include->include	#include <fcntl.h>
+p023	c-include	userland/desktop/libwayland/wire.c	14	libc/include/sys/socket.h	keep-root libc/include->include	#include <sys/socket.h>
+p023	c-include	userland/desktop/libwayland/wire.c	15	libc/include/sys/uio.h	keep-root libc/include->include	#include <sys/uio.h>
+p023	c-include	userland/desktop/libwayland/wire.c	16	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
 p023	c-include	userland/base/link/main.c	15	libc/include/stdio.h	keep-root libc/include->include	#include <stdio.h>
 p023	c-include	userland/base/link/main.c	16	libc/include/string.h	keep-root libc/include->include	#include <string.h>
 p023	c-include	userland/base/link/main.c	17	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
@@ -3492,33 +3492,33 @@ p023	c-include	userland/base/mv/main.c	8	libc/include/stdio.h	keep-root libc/inc
 p023	c-include	userland/base/mv/main.c	9	libc/include/string.h	keep-root libc/include->include	#include <string.h>
 p023	c-include	userland/base/mv/main.c	10	libc/include/sys/stat.h	keep-root libc/include->include	#include <sys/stat.h>
 p023	c-include	userland/base/mv/main.c	11	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
-p023	c-include	userland/base/mview/camera.c	14	libc/include/math.h	keep-root libc/include->include	#include <math.h>
-p023	c-include	userland/base/mview/camera.c	15	libc/include/string.h	keep-root libc/include->include	#include <string.h>
-p023	c-include	userland/base/mview/input.c	14	libc/include/stdio.h	keep-root libc/include->include	#include <stdio.h>
-p023	c-include	userland/base/mview/input.c	15	libc/include/string.h	keep-root libc/include->include	#include <string.h>
-p023	c-include	userland/base/mview/main.c	15	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
-p023	c-include	userland/base/mview/main.c	16	libc/include/stdio.h	keep-root libc/include->include	#include <stdio.h>
-p023	c-include	userland/base/mview/main.c	17	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
-p023	c-include	userland/base/mview/main.c	18	libc/include/string.h	keep-root libc/include->include	#include <string.h>
-p023	c-include	userland/base/mview/main.c	19	libc/include/time.h	keep-root libc/include->include	#include <time.h>
-p023	c-include	userland/base/mview/model.c	14	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
-p023	c-include	userland/base/mview/model.c	15	libc/include/math.h	keep-root libc/include->include	#include <math.h>
-p023	c-include	userland/base/mview/model.c	16	libc/include/stdarg.h	keep-root libc/include->include	#include <stdarg.h>
-p023	c-include	userland/base/mview/model.c	17	libc/include/stdio.h	keep-root libc/include->include	#include <stdio.h>
-p023	c-include	userland/base/mview/model.c	18	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
-p023	c-include	userland/base/mview/model.c	19	libc/include/string.h	keep-root libc/include->include	#include <string.h>
-p023	c-include	userland/base/mview/model.h	16	libc/include/stddef.h	keep-root libc/include->include	#include <stddef.h>
-p023	c-include	userland/base/mview/model.h	17	libc/include/stdint.h	keep-root libc/include->include	#include <stdint.h>
-p023	c-include	userland/base/mview/mview.h	17	libc/include/vulkan/vulkan.h	keep-root libc/include->include	#include <vulkan/vulkan.h>
-p023	c-include	userland/base/mview/mview.h	18	libc/include/wayland-client.h	keep-root libc/include->include	#include <wayland-client.h>
-p023	c-include	userland/base/mview/mview.h	19	libc/include/xdg-shell-client-protocol.h	keep-root libc/include->include	#include <xdg-shell-client-protocol.h>
-p023	c-include	userland/base/mview/renderer.c	24	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
-p023	c-include	userland/base/mview/renderer.c	25	libc/include/string.h	keep-root libc/include->include	#include <string.h>
-p023	c-include	userland/base/mview/shaders.h	15	libc/include/stdint.h	keep-root libc/include->include	#include <stdint.h>
-p023	c-include	userland/base/mview/window.c	14	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
-p023	c-include	userland/base/mview/window.c	15	libc/include/poll.h	keep-root libc/include->include	#include <poll.h>
-p023	c-include	userland/base/mview/window.c	16	libc/include/string.h	keep-root libc/include->include	#include <string.h>
-p023	c-include	userland/base/mview/window.c	17	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
+p023	c-include	userland/desktop/mview/camera.c	14	libc/include/math.h	keep-root libc/include->include	#include <math.h>
+p023	c-include	userland/desktop/mview/camera.c	15	libc/include/string.h	keep-root libc/include->include	#include <string.h>
+p023	c-include	userland/desktop/mview/input.c	14	libc/include/stdio.h	keep-root libc/include->include	#include <stdio.h>
+p023	c-include	userland/desktop/mview/input.c	15	libc/include/string.h	keep-root libc/include->include	#include <string.h>
+p023	c-include	userland/desktop/mview/main.c	15	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
+p023	c-include	userland/desktop/mview/main.c	16	libc/include/stdio.h	keep-root libc/include->include	#include <stdio.h>
+p023	c-include	userland/desktop/mview/main.c	17	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
+p023	c-include	userland/desktop/mview/main.c	18	libc/include/string.h	keep-root libc/include->include	#include <string.h>
+p023	c-include	userland/desktop/mview/main.c	19	libc/include/time.h	keep-root libc/include->include	#include <time.h>
+p023	c-include	userland/desktop/mview/model.c	14	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
+p023	c-include	userland/desktop/mview/model.c	15	libc/include/math.h	keep-root libc/include->include	#include <math.h>
+p023	c-include	userland/desktop/mview/model.c	16	libc/include/stdarg.h	keep-root libc/include->include	#include <stdarg.h>
+p023	c-include	userland/desktop/mview/model.c	17	libc/include/stdio.h	keep-root libc/include->include	#include <stdio.h>
+p023	c-include	userland/desktop/mview/model.c	18	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
+p023	c-include	userland/desktop/mview/model.c	19	libc/include/string.h	keep-root libc/include->include	#include <string.h>
+p023	c-include	userland/desktop/mview/model.h	16	libc/include/stddef.h	keep-root libc/include->include	#include <stddef.h>
+p023	c-include	userland/desktop/mview/model.h	17	libc/include/stdint.h	keep-root libc/include->include	#include <stdint.h>
+p023	c-include	userland/desktop/mview/mview.h	17	libc/include/vulkan/vulkan.h	keep-root libc/include->include	#include <vulkan/vulkan.h>
+p023	c-include	userland/desktop/mview/mview.h	18	libc/include/wayland-client.h	keep-root libc/include->include	#include <wayland-client.h>
+p023	c-include	userland/desktop/mview/mview.h	19	libc/include/xdg-shell-client-protocol.h	keep-root libc/include->include	#include <xdg-shell-client-protocol.h>
+p023	c-include	userland/desktop/mview/renderer.c	24	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
+p023	c-include	userland/desktop/mview/renderer.c	25	libc/include/string.h	keep-root libc/include->include	#include <string.h>
+p023	c-include	userland/desktop/mview/shaders.h	15	libc/include/stdint.h	keep-root libc/include->include	#include <stdint.h>
+p023	c-include	userland/desktop/mview/window.c	14	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
+p023	c-include	userland/desktop/mview/window.c	15	libc/include/poll.h	keep-root libc/include->include	#include <poll.h>
+p023	c-include	userland/desktop/mview/window.c	16	libc/include/string.h	keep-root libc/include->include	#include <string.h>
+p023	c-include	userland/desktop/mview/window.c	17	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
 p023	c-include	userland/base/net/dhcp.c	16	libc/include/string.h	keep-root libc/include->include	#include <string.h>
 p023	c-include	userland/base/net/dhcp.h	17	libc/include/stddef.h	keep-root libc/include->include	#include <stddef.h>
 p023	c-include	userland/base/net/dhcp.h	18	libc/include/stdint.h	keep-root libc/include->include	#include <stdint.h>
@@ -4210,25 +4210,25 @@ p023	c-include	userland/base/uuencode/main.c	18	libc/include/stdio.h	keep-root l
 p023	c-include	userland/base/uuencode/main.c	19	libc/include/string.h	keep-root libc/include->include	#include <string.h>
 p023	c-include	userland/base/uuencode/main.c	20	libc/include/sys/stat.h	keep-root libc/include->include	#include <sys/stat.h>
 p023	c-include	userland/base/uuencode/main.c	21	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
-p023	c-include	userland/base/vkdemo/display.c	12	libc/include/stdint.h	keep-root libc/include->include	#include <stdint.h>
-p023	c-include	userland/base/vkdemo/display.c	13	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
-p023	c-include	userland/base/vkdemo/display.c	14	libc/include/string.h	keep-root libc/include->include	#include <string.h>
-p023	c-include	userland/base/vkdemo/display.h	15	libc/include/vulkan/vulkan.h	keep-root libc/include->include	#include <vulkan/vulkan.h>
-p023	c-include	userland/base/vkdemo/main.c	12	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
-p023	c-include	userland/base/vkdemo/main.c	13	libc/include/poll.h	keep-root libc/include->include	#include <poll.h>
-p023	c-include	userland/base/vkdemo/main.c	14	libc/include/stdint.h	keep-root libc/include->include	#include <stdint.h>
-p023	c-include	userland/base/vkdemo/main.c	15	libc/include/stdio.h	keep-root libc/include->include	#include <stdio.h>
-p023	c-include	userland/base/vkdemo/main.c	16	libc/include/string.h	keep-root libc/include->include	#include <string.h>
-p023	c-include	userland/base/vkdemo/main.c	17	libc/include/time.h	keep-root libc/include->include	#include <time.h>
-p023	c-include	userland/base/vkdemo/main.c	18	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
-p023	c-include	userland/base/vkdemo/renderer.c	12	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
-p023	c-include	userland/base/vkdemo/renderer.c	13	libc/include/stdint.h	keep-root libc/include->include	#include <stdint.h>
-p023	c-include	userland/base/vkdemo/renderer.c	14	libc/include/stdio.h	keep-root libc/include->include	#include <stdio.h>
-p023	c-include	userland/base/vkdemo/renderer.c	15	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
-p023	c-include	userland/base/vkdemo/renderer.c	16	libc/include/string.h	keep-root libc/include->include	#include <string.h>
-p023	c-include	userland/base/vkdemo/renderer.c	17	libc/include/vulkan/vulkan.h	keep-root libc/include->include	#include <vulkan/vulkan.h>
-p023	c-include	userland/base/vkdemo/renderer.h	15	libc/include/stdint.h	keep-root libc/include->include	#include <stdint.h>
-p023	c-include	userland/base/vkdemo/shaders.h	15	libc/include/stdint.h	keep-root libc/include->include	#include <stdint.h>
+p023	c-include	userland/desktop/vkdemo/display.c	12	libc/include/stdint.h	keep-root libc/include->include	#include <stdint.h>
+p023	c-include	userland/desktop/vkdemo/display.c	13	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
+p023	c-include	userland/desktop/vkdemo/display.c	14	libc/include/string.h	keep-root libc/include->include	#include <string.h>
+p023	c-include	userland/desktop/vkdemo/display.h	15	libc/include/vulkan/vulkan.h	keep-root libc/include->include	#include <vulkan/vulkan.h>
+p023	c-include	userland/desktop/vkdemo/main.c	12	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
+p023	c-include	userland/desktop/vkdemo/main.c	13	libc/include/poll.h	keep-root libc/include->include	#include <poll.h>
+p023	c-include	userland/desktop/vkdemo/main.c	14	libc/include/stdint.h	keep-root libc/include->include	#include <stdint.h>
+p023	c-include	userland/desktop/vkdemo/main.c	15	libc/include/stdio.h	keep-root libc/include->include	#include <stdio.h>
+p023	c-include	userland/desktop/vkdemo/main.c	16	libc/include/string.h	keep-root libc/include->include	#include <string.h>
+p023	c-include	userland/desktop/vkdemo/main.c	17	libc/include/time.h	keep-root libc/include->include	#include <time.h>
+p023	c-include	userland/desktop/vkdemo/main.c	18	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
+p023	c-include	userland/desktop/vkdemo/renderer.c	12	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
+p023	c-include	userland/desktop/vkdemo/renderer.c	13	libc/include/stdint.h	keep-root libc/include->include	#include <stdint.h>
+p023	c-include	userland/desktop/vkdemo/renderer.c	14	libc/include/stdio.h	keep-root libc/include->include	#include <stdio.h>
+p023	c-include	userland/desktop/vkdemo/renderer.c	15	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
+p023	c-include	userland/desktop/vkdemo/renderer.c	16	libc/include/string.h	keep-root libc/include->include	#include <string.h>
+p023	c-include	userland/desktop/vkdemo/renderer.c	17	libc/include/vulkan/vulkan.h	keep-root libc/include->include	#include <vulkan/vulkan.h>
+p023	c-include	userland/desktop/vkdemo/renderer.h	15	libc/include/stdint.h	keep-root libc/include->include	#include <stdint.h>
+p023	c-include	userland/desktop/vkdemo/shaders.h	15	libc/include/stdint.h	keep-root libc/include->include	#include <stdint.h>
 p023	c-include	userland/base/wc/main.c	15	libc/include/ctype.h	keep-root libc/include->include	#include <ctype.h>
 p023	c-include	userland/base/wc/main.c	16	libc/include/fcntl.h	keep-root libc/include->include	#include <fcntl.h>
 p023	c-include	userland/base/wc/main.c	17	libc/include/stdio.h	keep-root libc/include->include	#include <stdio.h>
@@ -4249,21 +4249,21 @@ p023	c-include	userland/base/wifi/main.c	22	libc/include/sys/ioctl.h	keep-root l
 p023	c-include	userland/base/wifi/main.c	23	libc/include/sys/socket.h	keep-root libc/include->include	#include <sys/socket.h>
 p023	c-include	userland/base/wifi/main.c	24	libc/include/time.h	keep-root libc/include->include	#include <time.h>
 p023	c-include	userland/base/wifi/main.c	25	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
-p023	c-include	userland/base/wltest/main.c	14	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
-p023	c-include	userland/base/wltest/main.c	15	libc/include/poll.h	keep-root libc/include->include	#include <poll.h>
-p023	c-include	userland/base/wltest/main.c	16	libc/include/stdio.h	keep-root libc/include->include	#include <stdio.h>
-p023	c-include	userland/base/wltest/main.c	17	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
-p023	c-include	userland/base/wltest/main.c	18	libc/include/string.h	keep-root libc/include->include	#include <string.h>
-p023	c-include	userland/base/wltest/main.c	19	libc/include/time.h	keep-root libc/include->include	#include <time.h>
-p023	c-include	userland/base/wltest/main.c	20	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
-p023	c-include	userland/base/wltest/renderer.c	14	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
-p023	c-include	userland/base/wltest/renderer.c	15	libc/include/string.h	keep-root libc/include->include	#include <string.h>
-p023	c-include	userland/base/wltest/window.c	14	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
-p023	c-include	userland/base/wltest/window.c	15	libc/include/poll.h	keep-root libc/include->include	#include <poll.h>
-p023	c-include	userland/base/wltest/window.c	16	libc/include/string.h	keep-root libc/include->include	#include <string.h>
-p023	c-include	userland/base/wltest/wltest.h	17	libc/include/vulkan/vulkan.h	keep-root libc/include->include	#include <vulkan/vulkan.h>
-p023	c-include	userland/base/wltest/wltest.h	18	libc/include/wayland-client.h	keep-root libc/include->include	#include <wayland-client.h>
-p023	c-include	userland/base/wltest/wltest.h	19	libc/include/xdg-shell-client-protocol.h	keep-root libc/include->include	#include <xdg-shell-client-protocol.h>
+p023	c-include	userland/desktop/wltest/main.c	14	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
+p023	c-include	userland/desktop/wltest/main.c	15	libc/include/poll.h	keep-root libc/include->include	#include <poll.h>
+p023	c-include	userland/desktop/wltest/main.c	16	libc/include/stdio.h	keep-root libc/include->include	#include <stdio.h>
+p023	c-include	userland/desktop/wltest/main.c	17	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
+p023	c-include	userland/desktop/wltest/main.c	18	libc/include/string.h	keep-root libc/include->include	#include <string.h>
+p023	c-include	userland/desktop/wltest/main.c	19	libc/include/time.h	keep-root libc/include->include	#include <time.h>
+p023	c-include	userland/desktop/wltest/main.c	20	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
+p023	c-include	userland/desktop/wltest/renderer.c	14	libc/include/stdlib.h	keep-root libc/include->include	#include <stdlib.h>
+p023	c-include	userland/desktop/wltest/renderer.c	15	libc/include/string.h	keep-root libc/include->include	#include <string.h>
+p023	c-include	userland/desktop/wltest/window.c	14	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
+p023	c-include	userland/desktop/wltest/window.c	15	libc/include/poll.h	keep-root libc/include->include	#include <poll.h>
+p023	c-include	userland/desktop/wltest/window.c	16	libc/include/string.h	keep-root libc/include->include	#include <string.h>
+p023	c-include	userland/desktop/wltest/wltest.h	17	libc/include/vulkan/vulkan.h	keep-root libc/include->include	#include <vulkan/vulkan.h>
+p023	c-include	userland/desktop/wltest/wltest.h	18	libc/include/wayland-client.h	keep-root libc/include->include	#include <wayland-client.h>
+p023	c-include	userland/desktop/wltest/wltest.h	19	libc/include/xdg-shell-client-protocol.h	keep-root libc/include->include	#include <xdg-shell-client-protocol.h>
 p023	c-include	userland/base/write/main.c	16	libc/include/errno.h	keep-root libc/include->include	#include <errno.h>
 p023	c-include	userland/base/write/main.c	17	libc/include/fcntl.h	keep-root libc/include->include	#include <fcntl.h>
 p023	c-include	userland/base/write/main.c	18	libc/include/pwd.h	keep-root libc/include->include	#include <pwd.h>
@@ -4346,18 +4346,18 @@ p023	c-include	userland/gpu/venus/venus-frame.c	19	libc/include/stdio.h	keep-roo
 p023	c-include	userland/gpu/venus/venus-frame.c	20	libc/include/string.h	keep-root libc/include->include	#include <string.h>
 p023	c-include	userland/gpu/venus/venus-frame.c	21	libc/include/time.h	keep-root libc/include->include	#include <time.h>
 p023	c-include	userland/gpu/venus/venus-frame.c	22	libc/include/unistd.h	keep-root libc/include->include	#include <unistd.h>
-p023	docs	AGENTS.md	172	libc/include/	path	User explicitly continues full Vulkan1.0 (137core) and direct-display WSI (KHR_surface/display/swapchain/display_swapchain), with standard headers libc/include/vulkan/, independent userland/base/libvulkan/ and /lib/libvulkan.so. New single-goal WS030 owns the standard library. Queue q308 selects WS0
-p023	docs	AGENTS.md	202	libc/include/	path	`libc/include/vulkan/` にVulkan1.0の公開header、`userland/base/libvulkan/` に独立した全137 core＋選択direct-display WSI18の実装を提供し、`/lib/libvulkan.so` に配置した。vkdemoは標準Vulkan/WSIだけを使い、GPU ioctl/Venus codecをアプリへ持ち込まない。ABI、Noct再生成、155実exportとproc-address、全familyの限定意味論試験、U/Kの所有権・権限・失敗回収、適用C規約の独立レビューを実施した。正式CTS認証は主張しない。
-p023	docs	AGENTS.md	212	libc/include/	path	ユーザー指定により[WS014 p006](https://github.com/awemorris/zedBSD/issues/393)を一つのplanned Phaseとして追加した。kernel_handle/handle_fd_*とSCM_RIGHTS、GPU/Venusの別context共有、GPU画像を扱えるWSI、VK_KHR_wayland_surface、最小client library、全画面zwl、標準APIのwltestを本Phaseで実装・検証する計画。コード配置はlibc/include/wayland/、userland/base/libwayland/・zwl/
+p023	docs	AGENTS.md	172	libc/include/	path	User explicitly continues full Vulkan1.0 (137core) and direct-display WSI (KHR_surface/display/swapchain/display_swapchain), with standard headers libc/include/vulkan/, independent userland/desktop/libvulkan/ and /lib/libvulkan.so. New single-goal WS030 owns the standard library. Queue q308 selects WS0
+p023	docs	AGENTS.md	202	libc/include/	path	`libc/include/vulkan/` にVulkan1.0の公開header、`userland/desktop/libvulkan/` に独立した全137 core＋選択direct-display WSI18の実装を提供し、`/lib/libvulkan.so` に配置した。vkdemoは標準Vulkan/WSIだけを使い、GPU ioctl/Venus codecをアプリへ持ち込まない。ABI、Noct再生成、155実exportとproc-address、全familyの限定意味論試験、U/Kの所有権・権限・失敗回収、適用C規約の独立レビューを実施した。正式CTS認証は主張しない。
+p023	docs	AGENTS.md	212	libc/include/	path	ユーザー指定により[WS014 p006](https://github.com/awemorris/zedBSD/issues/393)を一つのplanned Phaseとして追加した。kernel_handle/handle_fd_*とSCM_RIGHTS、GPU/Venusの別context共有、GPU画像を扱えるWSI、VK_KHR_wayland_surface、最小client library、全画面zwl、標準APIのwltestを本Phaseで実装・検証する計画。コード配置はlibc/include/wayland/、userland/desktop/libwayland/・zwl/
 p023	docs	docs/architecture/kernel-and-hal.md	62	libc/include/	path	Public C headers live in [libc/include](../../libc/include); zedBSD-specific
 p023	docs	src/drivers/gpu/i915/tests/contracts/README.md	44	libc/include/	path	`include/`, with the host C library preferred (`-idirafter libc/include`).
 p023	docs	src/drivers/gpu/i915/tests/contracts/README.md	49	libc/include/	path	the zedBSD C library headers (`-I libc/include`).
-p023	docs	userland/base/libvulkan/README.md	6	libc/include/	path	公開ヘッダは `libc/include/vulkan/`、インストール先は
-p023	docs	userland/base/libwayland/README.md	5	libc/include/	path	`libc/include/wayland/`; thin `<wayland-client.h>` and
-p023	docs	userland/base/vkdemo/README.md	21	libc/include/	path	a normal build. Public Vulkan headers are provided in `libc/include/vulkan/`
-p023	noct	userland/base/libvulkan/tools/maintain-dispatch.noct	20	libc/include/vulkan/vulkan_wayland.h	path	var source = lines(FileUtil.readText(args[0]) + FileUtil.readText("libc/include/vulkan/vulkan_wayland.h") + FileUtil.readText("libc/include/vulkan/vulkan_external.h"));
-p023	noct	userland/base/libvulkan/tools/maintain-dispatch.noct	20	libc/include/vulkan/vulkan_external.h	path	var source = lines(FileUtil.readText(args[0]) + FileUtil.readText("libc/include/vulkan/vulkan_wayland.h") + FileUtil.readText("libc/include/vulkan/vulkan_external.h"));
-p023	noct	userland/base/libvulkan/tools/maintain-dispatch.noct	22	libc/include/vulkan/API-PROVENANCE.md	path	var table = banner + "/*\n * Maintained declaration metadata, see libc/include/vulkan/API-PROVENANCE.md.\n */\n\n";
+p023	docs	userland/desktop/libvulkan/README.md	6	libc/include/	path	公開ヘッダは `libc/include/vulkan/`、インストール先は
+p023	docs	userland/desktop/libwayland/README.md	5	libc/include/	path	`libc/include/wayland/`; thin `<wayland-client.h>` and
+p023	docs	userland/desktop/vkdemo/README.md	21	libc/include/	path	a normal build. Public Vulkan headers are provided in `libc/include/vulkan/`
+p023	noct	userland/desktop/libvulkan/tools/maintain-dispatch.noct	20	libc/include/vulkan/vulkan_wayland.h	path	var source = lines(FileUtil.readText(args[0]) + FileUtil.readText("libc/include/vulkan/vulkan_wayland.h") + FileUtil.readText("libc/include/vulkan/vulkan_external.h"));
+p023	noct	userland/desktop/libvulkan/tools/maintain-dispatch.noct	20	libc/include/vulkan/vulkan_external.h	path	var source = lines(FileUtil.readText(args[0]) + FileUtil.readText("libc/include/vulkan/vulkan_wayland.h") + FileUtil.readText("libc/include/vulkan/vulkan_external.h"));
+p023	noct	userland/desktop/libvulkan/tools/maintain-dispatch.noct	22	libc/include/vulkan/API-PROVENANCE.md	path	var table = banner + "/*\n * Maintained declaration metadata, see libc/include/vulkan/API-PROVENANCE.md.\n */\n\n";
 p023	other	userland/base/noct/patches/0001-connect-zedbsd-target-adapter.patch	23	libc/include/stdint.h	path	libc/include/stdint.h
 p023	other	userland/base/noct/patches/0002-use-project-llvm-sysroot.patch	70	libc/include/	path	-  "${ZEDBSD_SOURCE_DIR}/libc/include"
 p023	plan-records/include	plan/ws014/phase007/renderer-opaque/evidence/native-image-query.c	1	libc/include/vulkan/vulkan.h	keep-root libc/include->include	#include <vulkan/vulkan.h>
@@ -4433,8 +4433,8 @@ p023	plan-tests	plan/ws014/phase006/tests/run-wayland-client.sh	15	libc/include/
 p023	plan-tests	plan/ws014/phase009/renderer-quiesce/tests/run-guest.py	52	libc/include/	path	"-idirafter", str(repo / "libc/include"), str(overlay / name), "-o", str(executable)]
 p023	plan-tests	plan/ws014/tests/run-venus-remote.py	38	libc/include/sys/socket.h	path	'userland/base/libc/pthread.c', 'libc/include/sys/socket.h',
 p023	plan-tests	plan/ws014/tests/run-venus-remote.py	75	libc/include/	path	'libc/include/vulkan'],
-p023	plan-tests	plan/ws014/tests/run-venus-remote.py	93	libc/include/	path	'userland/base/libwayland', 'libc/include/wayland',
-p023	plan-tests	plan/ws014/tests/run-venus-remote.py	94	libc/include/	path	'userland/base/libvulkan', 'libc/include/vulkan'],
+p023	plan-tests	plan/ws014/tests/run-venus-remote.py	93	libc/include/	path	'userland/desktop/libwayland', 'libc/include/wayland',
+p023	plan-tests	plan/ws014/tests/run-venus-remote.py	94	libc/include/	path	'userland/desktop/libvulkan', 'libc/include/vulkan'],
 p023	plan-tests	plan/ws014/tests/run-venus-remote.py	100	libc/include/wayland-client.h	path	'libc/include/wayland-client.h', 'libc/include/wayland-client-core.h',
 p023	plan-tests	plan/ws014/tests/run-venus-remote.py	100	libc/include/wayland-client-core.h	path	'libc/include/wayland-client.h', 'libc/include/wayland-client-core.h',
 p023	plan-tests	plan/ws014/tests/run-venus-remote.py	101	libc/include/wayland-client-protocol.h	path	'libc/include/wayland-client-protocol.h', 'libc/include/wayland-util.h',
@@ -4442,9 +4442,9 @@ p023	plan-tests	plan/ws014/tests/run-venus-remote.py	101	libc/include/wayland-ut
 p023	plan-tests	plan/ws014/tests/run-venus-remote.py	102	libc/include/xdg-shell-client-protocol.h	path	'libc/include/xdg-shell-client-protocol.h',
 p023	plan-tests	plan/ws014/tests/run-venus-remote.py	105	libc/include/errno.h	path	'include/drivers/gpu-share.h', 'libc/include/errno.h', 'libc/include/stddef.h', 'libc/string.c',
 p023	plan-tests	plan/ws014/tests/run-venus-remote.py	105	libc/include/stddef.h	path	'include/drivers/gpu-share.h', 'libc/include/errno.h', 'libc/include/stddef.h', 'libc/string.c',
-p023	plan-tests	plan/ws014/tests/run-venus-remote.py	128	libc/include/	path	'libc/include/wayland', 'userland/base/libvulkan', 'libc/include/vulkan'],
-p023	plan-tests	plan/ws014/tests/run-wayland-wsi-test.sh	14	libc/include/	path	cc $flags -I"$output/include" -Ilibc/include/wayland -Iuserland/base/libvulkan \
-p023	plan-tests	plan/ws014/tests/run-wayland-wsi-test.sh	17	libc/include/	path	cc $flags -I"$output/include" -Ilibc/include/wayland -Iuserland/base/libvulkan \
+p023	plan-tests	plan/ws014/tests/run-venus-remote.py	128	libc/include/	path	'libc/include/wayland', 'userland/desktop/libvulkan', 'libc/include/vulkan'],
+p023	plan-tests	plan/ws014/tests/run-wayland-wsi-test.sh	14	libc/include/	path	cc $flags -I"$output/include" -Ilibc/include/wayland -Iuserland/desktop/libvulkan \
+p023	plan-tests	plan/ws014/tests/run-wayland-wsi-test.sh	17	libc/include/	path	cc $flags -I"$output/include" -Ilibc/include/wayland -Iuserland/desktop/libvulkan \
 p023	plan-tests	plan/ws016/tests/run-system-swap-device-test.sh	13	libc/include/	path	"${CC:-cc}" -std=c11 -m32 -ffreestanding -Iinclude/uapi -Ilibc/include \
 p023	plan-tests	plan/ws016/tests/run-system-swap-device-test.sh	16	libc/include/	path	"${CC:-cc}" -std=c11 -m64 -ffreestanding -Iinclude/uapi -Ilibc/include \
 p023	plan-tests	plan/ws018/tests/run-storage-acceptance.py	48	libc/include/	path	"src/drivers/fs/fat.c"], ["-DKERN_USER_ABI_LP64", "-Ilibc/include"]),
@@ -6685,7 +6685,7 @@ p023	plan-tests/include	plan/ws033/tests/managed-lan-host-test.c	22	libc/include
 p023	source-text	libc/include/atomic-compiler.h	11	libc/include/	path	*  - Move this file under libc/include/
 p023	source-text	libc/include/features.h	9	libc/include/	path	* XXX: Move this file under libc/include/
 p023	source-text	libc/include/rtld-abi.h	11	libc/include/	path	*  - Move this file under libc/include/
-p023	source-text	userland/base/libvulkan/dispatch-table.inc	9	libc/include/vulkan/API-PROVENANCE.md	path	* Maintained declaration metadata, see libc/include/vulkan/API-PROVENANCE.md.
+p023	source-text	userland/desktop/libvulkan/dispatch-table.inc	9	libc/include/vulkan/API-PROVENANCE.md	path	* Maintained declaration metadata, see libc/include/vulkan/API-PROVENANCE.md.
 p023	sysroot	toolchain/llvm/sysroot.mk	75	libc/include/	path	find libc/include include/uapi -type f ! -name '*~' -print | LC_ALL=C sort)
 p023	sysroot	toolchain/llvm/sysroot.mk	107	libc/include/	path	libc/include/*) relative=$$$${header#libc/include/} ;; \
 p023	sysroot	toolchain/llvm/sysroot.mk	117	libc/include/	path	$(4) -D$(5) $(11) -DZEDBSD_STATIC_TLS -nostdinc -Ilibc/include -Iinclude -Isrc -I. \

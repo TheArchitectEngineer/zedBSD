@@ -60,7 +60,7 @@ expect_log /tmp/egl-d.log 'EGLTEST DONE run=d frames=200 glerror=0x0 failures=0'
 
 # 2. In a zdesktop window.
 guest "$stop_all" >/dev/null
-guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; /bin/zdesktop --timeout=600 --width=1280 --height=800 --glass --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
+guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; /bin/wayland --timeout=600 --width=1280 --height=800 --glass --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
 /bin/egltest --display=/tmp/wayland-0 --size=640x400 --scene=cube --frames=300 --delay-ms=30 --token=w > /tmp/egl-w.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 set -- $(guest "grep 'ZWL MAP client=1 ' /tmp/zdesktop.log" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 wx=${1:-0}; wy=${2:-0}

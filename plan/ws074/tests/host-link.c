@@ -6,7 +6,7 @@
  */
 
 /*
- * ws074-p045: the host test of zdesktop-browser's links: a link's target
+ * ws074-p045: the host test of browser's links: a link's target
  * resolved against the page's file, and the link under a point of a laid
  * out page.
  *
@@ -115,7 +115,7 @@ main(
 	/* The title. */
 	wb_buffer_init(&href);
 	error = page_title(page, &href);
-	check(error == 0 && strcmp(wb_buffer_string(&href), "zdesktop-browser: the first page") == 0, "title: first.html's");
+	check(error == 0 && strcmp(wb_buffer_string(&href), "browser: the first page") == 0, "title: first.html's");
 	wb_buffer_release(&href);
 
 	page_destroy(page);

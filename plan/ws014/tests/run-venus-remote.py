@@ -71,7 +71,7 @@ PROFILES = {
                            [f'oracle-{index}.json' for index in range(1, 7)] +
                            ['console-return.ppm', 'console-write.ppm',
                             'ordinary-1.ppm', 'ordinary-2.ppm'],
-               'source_directories': ['userland/base/vkdemo', 'userland/base/libvulkan',
+               'source_directories': ['userland/desktop/vkdemo', 'userland/desktop/libvulkan',
                                       'include/libc/vulkan'],
                'source_files': ['userland/base/common/sha256.c', 'userland/base/common/sha256.h',
                                 'plan/ws014/tests/vkdemo-qemu.py',
@@ -85,13 +85,13 @@ PROFILES = {
                             [f'oracle-{index}.json' for index in range(1, 13)] +
                             ['console-return.ppm', 'console-write.ppm', 'console-killed.ppm',
                              'wayland-observed.log'],
-                'source_directories': ['userland/base/wltest', 'userland/base/zdesktop',
+                'source_directories': ['userland/desktop/wltest', 'userland/desktop/wayland',
                                        'userland/base/tests/gpu-share',
                                        'userland/base/tests/gpu-fence',
                                        'userland/base/tests/gpu-admission',
                                        'userland/base/tests/gpu-recovery',
-                                       'userland/base/libwayland', 'include/libc/wayland',
-                                       'userland/base/libvulkan', 'include/libc/vulkan'],
+                                       'userland/desktop/libwayland', 'include/libc/wayland',
+                                       'userland/desktop/libvulkan', 'include/libc/vulkan'],
                 'source_files': ['include/kern/handle.h', 'include/kern/fd-object.h',
                                  'include/drivers/gpu/gpu-fence.h', 'src/drivers/gpu/gpu-fence.c',
                                  'include/uapi/gpu-fence.h', 'include/uapi/gpu-scanout.h',
@@ -109,7 +109,7 @@ PROFILES = {
                                  'plan/ws014/tests/run-wayland-remote.py'],
                 'additional_artifacts': {'vulkan_library': 'dynamic/libvulkan.so',
                                          'wayland_library': 'dynamic/libwayland-client.so',
-                                         'compositor': 'bin/zdesktop',
+                                         'compositor': 'bin/wayland',
                                          'sharing_test': 'bin/gpu-share-test',
                                          'fence_test': 'bin/gpu-fence-test',
                                          'recovery_test': 'bin/gpu-recovery-test',
@@ -124,13 +124,13 @@ PROFILES['mview'] = {
     'evidence': [name for name in EVIDENCE_FILES if name != 'frame.ppm'] +
                 ['initial.ppm', 'rotate.ppm', 'pan.ppm', 'zoom.ppm', 'keys.ppm', 'reset.ppm',
                  'mview-observed.log'],
-    'source_directories': ['userland/base/mview', 'userland/base/zdesktop', 'userland/base/libwayland',
-                           'include/libc/wayland', 'userland/base/libvulkan', 'include/libc/vulkan'],
+    'source_directories': ['userland/desktop/mview', 'userland/desktop/wayland', 'userland/desktop/libwayland',
+                           'include/libc/wayland', 'userland/desktop/libvulkan', 'include/libc/vulkan'],
     'source_files': ['plan/ws031/tests/mview-qemu.py', 'plan/ws031/tests/run-mview-remote.py',
                      'plan/ws031/tests/config-mview-amd64.mk'],
     'additional_artifacts': {'vulkan_library': 'dynamic/libvulkan.so',
                              'wayland_library': 'dynamic/libwayland-client.so',
-                             'compositor': 'bin/zdesktop'}}
+                             'compositor': 'bin/wayland'}}
 
 # The profiles whose harness runs its own guest commands with a token.
 TOKEN_PROFILES = ('vkdemo', 'wayland', 'mview')

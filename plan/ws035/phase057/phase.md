@@ -30,7 +30,7 @@ Queue: なし（2026-09-27 ユーザーの指示でサブエージェントが w
 
 ## 実装（2026-09-27）
 
-- 新 `userland/base/zdesktop/backdrop.c`（`zwl_backdrop_begin`・`_end`・`_reset`・`_destroy`、小さい pass、LOAD の resume pass、2 枚の image）、
+- 新 `userland/desktop/wayland/backdrop.c`（`zwl_backdrop_begin`・`_end`・`_reset`・`_destroy`、小さい pass、LOAD の resume pass、2 枚の image）、
   `compose.h`（`struct zwl_backdrop`、`framebuffer_now`、`backdrop_set`）、`compose.c`（frame ごとに framebuffer と backdrop_set、出力を閉じるとき
   解放）、`glass.c`（`backdrop_set` を先に）、`glass.h`（`MODE_BLUR`）、`shaders/panel.frag`・`shaders.h`、`shell.c`（窓の loop で `draw_backdrop`、
   `window_shown`・`window_layer` に分けた、`draw_window_blurred`）、`Makefile`。
@@ -39,7 +39,7 @@ Queue: なし（2026-09-27 ユーザーの指示でサブエージェントが w
 ## 検証（amd64 だけ、2026-09-27）
 
 - build: lean image（`plan/tools/files/build-files-image.sh build/amd64`）、warning 0。style: `backdrop.c` 0、変えた file は悪化なし。
-- guest（QEMU、Venus）: `zdesktop-p057.sh` PASS（`ZWL BACKDROP ready width=160 height=100`、extras-probe の赤い sub-surface の上の zdesktop-files の
+- guest（QEMU、Venus）: `zdesktop-p057.sh` PASS（`ZWL BACKDROP ready width=160 height=100`、extras-probe の赤い sub-surface の上の files の
   content の card の画素が (233,165,161)、probe を閉じた後は (211,227,223): 差 62、赤へ寄る）。画面 `build/ws035-p057/{over,gone}.png`。
   最初の版（1/4、1 回のぼかし）はぼけが弱く下の窓の縁がくっきり見えた → 1/8・2 回に。
 - 回帰（同じ image）: menu-regress（p059 p062 p063 p064 p065 p068 p069 p070 p071 p072 p014 p076 p077 p078 p079 p080 p081）・menu-p002・

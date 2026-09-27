@@ -33,17 +33,17 @@ Queue: q471-i01
 - header: Khronos の `EGL/egl.h`・`eglext.h`・`eglplatform.h`・`KHR/khrplatform.h`（EGL-Registry `db3425b8`）、`GLES2/gl2.h`・
   `gl2ext.h`・`gl2platform.h`・`GLES3/gl3.h`・`gl3platform.h`（OpenGL-Registry `1cdd228e`）を変えずに `include/libc/` へ、
   出典・SHA-256・ライセンス（Apache-2.0 と MIT）は `include/libc/EGL/API-PROVENANCE.md`。`wayland-egl.h`・`wayland-egl-core.h` は自前。
-- `libwayland-egl.so`（`userland/base/libwayland-egl`）: `wl_egl_window_*`。中身（`wayland-egl-backend.h`）は libEGL と共有。
-- `libEGL.so`（`userland/base/libegl`）: display（Wayland: `eglGetPlatformDisplay(EGL_PLATFORM_WAYLAND_KHR)`・`eglGetDisplay(wl_display)`、
+- `libwayland-egl.so`（`userland/desktop/libwayland-egl`）: `wl_egl_window_*`。中身（`wayland-egl-backend.h`）は libEGL と共有。
+- `libEGL.so`（`userland/desktop/libegl`）: display（Wayland: `eglGetPlatformDisplay(EGL_PLATFORM_WAYLAND_KHR)`・`eglGetDisplay(wl_display)`、
   display 直接: `EGL_DEFAULT_DISPLAY` → `VK_KHR_display` の最初の display・mode・plane、surfaceless）、initialize（VkInstance・VkDevice）、
   4 つの config（RGBA8／RGB8 × depth 無し／24+8。depth・stencil はまだ使われない）、window surface（swapchain、resize と
   OUT_OF_DATE で作り直し、swap interval 0 で MAILBOX）、context（ES 2・3）、make current（thread ごとの状態は pthread の key。
   `__thread` は共有 library で `__tls_get_addr` を要し `-z defs` で link できないため）、swap buffers（render pass の clear の色で
   frame を作り present、fence で待つ）、query、error、`eglGetProcAddress`（`dlopen(NULL)` の global scope から。loader に
   `RTLD_DEFAULT` が無い）。pbuffer・pixmap・EGLImage・fence sync は未。
-- `libGLESv2.so`（`userland/base/libglesv2`）の最小: `glClearColor`・`glClear`・`glViewport`・`glGetIntegerv`（viewport）・`glGetString`・
+- `libGLESv2.so`（`userland/desktop/libglesv2`）の最小: `glClearColor`・`glClear`・`glViewport`・`glGetIntegerv`（viewport）・`glGetString`・
   `glGetError`・`glFlush`・`glFinish`。
-- `egltest`（`userland/base/egltest`）: EGL＋GLES の clear の試験 app（Wayland の窓と display 直接）。
+- `egltest`（`userland/desktop/egltest`）: EGL＋GLES の clear の試験 app（Wayland の窓と display 直接）。
 - `platform/amd64/vmunix.mk` の link、zdesktop の 2 つの config に追加。
 
 確認（Venus、QEMU）: `plan/ws068/tests/egl-p002.sh` PASS（`build/ws068-p002/run2/`・`run3/`）:

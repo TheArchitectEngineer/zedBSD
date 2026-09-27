@@ -46,7 +46,7 @@ End後に`recording.opcode`が残ることは事実だが、この送信経路�
 
 既存fixtureにも、転送上限を69,632 byteへ下げて途中flushを起こす検証がある。追加する検証は、同じcommand bufferのEnd→Reset→再記録でのflushと、1MiBを超える合法な単一recordを実contextへ通すケースとする。例えば、独立したbuffer間の多数の非重複`VkBufferCopy`を使う。`vkCmdUpdateBuffer`のデータを64KiB超にするような、APIの制約に反する入力は再現手段にしない。
 
-根拠: [commands.c](../../userland/base/libvulkan/commands.c)、[wire.c](../../userland/base/libvulkan/wire.c)、[既存command fixture](../ws030/tests/libvulkan-commands.c)。
+根拠: [commands.c](../../userland/desktop/libvulkan/commands.c)、[wire.c](../../userland/desktop/libvulkan/wire.c)、[既存command fixture](../ws030/tests/libvulkan-commands.c)。
 
 ## A3: Kをsignalerにする
 
@@ -95,7 +95,7 @@ acquireのように、Uが画像利用可能を確認してその場で完了さ
 
 Wayland WSIの内部private fenceには現在通常fenceを使う経路もある。GPU完了確認をKへ揃える対象にこれも含め、K-backed fenceまたは同等の確定したK完了を用いる。表示・Wayland commit・後始末を行うpresent worker自体は維持する。
 
-根拠: [sync.c](../../userland/base/libvulkan/sync.c)、[external-fence.c](../../userland/base/libvulkan/external-fence.c)、[queue.c](../../userland/base/libvulkan/queue.c)、[K fence](../../src/kern/fence.c)、[GPU fence UAPI](../../include/uapi/gpu-fence.h)。
+根拠: [sync.c](../../userland/desktop/libvulkan/sync.c)、[external-fence.c](../../userland/desktop/libvulkan/external-fence.c)、[queue.c](../../userland/desktop/libvulkan/queue.c)、[K fence](../../src/kern/fence.c)、[GPU fence UAPI](../../include/uapi/gpu-fence.h)。
 
 ## A4〜A6: 転送・待機・資源再利用
 
@@ -121,7 +121,7 @@ workerが逐次処理していても、その前に呼出側で複数jobをGPU�
 
 queue family、allocator、未受理時のrollback、device loss、最後の資源回収を維持し、pending slotを再利用しないことを検証する。
 
-根拠: [transport.c](../../src/drivers/gpu/venus/transport.c)、[wsi-swapchain.c](../../userland/base/libvulkan/wsi-swapchain.c)、[pthread.c](../../userland/base/libc/pthread.c)。
+根拠: [transport.c](../../src/drivers/gpu/venus/transport.c)、[wsi-swapchain.c](../../userland/desktop/libvulkan/wsi-swapchain.c)、[pthread.c](../../userland/base/libc/pthread.c)。
 
 ## A7とworkerの扱い
 
@@ -152,7 +152,7 @@ present workerも同じpthreadなので、1本当たりの標準stackコスト�
 
 A3のGPU queue完了契約と、A8のdecoder reply検証は別の境界である。A3でKをsignalerにしても、通常のnative API応答のtrailer・opcode・`VkResult`の検証は維持する。
 
-根拠: [context.c](../../userland/base/libvulkan/context.c)と、virglrenderer 1.1.0の`server/render_context.c`、`src/venus/vkr_context.c`、`src/venus/vkr_cs.h`、`src/proxy/proxy_context.c`。
+根拠: [context.c](../../userland/desktop/libvulkan/context.c)と、virglrenderer 1.1.0の`server/render_context.c`、`src/venus/vkr_context.c`、`src/venus/vkr_cs.h`、`src/proxy/proxy_context.c`。
 
 ## ユーザー追補: fenceをGPUドライバフレームワークへ移す
 

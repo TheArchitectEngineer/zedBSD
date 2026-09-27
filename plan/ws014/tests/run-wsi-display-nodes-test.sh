@@ -14,9 +14,9 @@ for mode in ordinary sanitize; do
     fi
     cc -std=c11 -D_POSIX_C_SOURCE=200809L -O1 -g -Wall -Wextra -Werror \
         -Wdeclaration-after-statement -pthread -ffunction-sections -fdata-sections $extra \
-        -I"$work/include" -I"$repo/include" -I"$repo/userland/base/libvulkan" \
+        -I"$work/include" -I"$repo/include" -I"$repo/userland/desktop/libvulkan" \
         "$repo/plan/ws014/tests/wsi-display-nodes.c" \
-        "$repo/userland/base/libvulkan/wsi-display-nodes.c" \
-        "$repo/userland/base/libvulkan/objects.c" -Wl,--gc-sections -o "$work/$mode"
+        "$repo/userland/desktop/libvulkan/wsi-display-nodes.c" \
+        "$repo/userland/desktop/libvulkan/objects.c" -Wl,--gc-sections -o "$work/$mode"
     ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 timeout 30 "$work/$mode"
 done

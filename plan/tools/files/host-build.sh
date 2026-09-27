@@ -1,7 +1,7 @@
 #!/bin/sh
-# ws071: builds zdesktop-files' host tests with the host's C compiler into build/ws071-host/.
+# ws071: builds files' host tests with the host's C compiler into build/ws071-host/.
 #
-# The drawing (canvas, text, icons), the interface and the model of zdesktop-files are built
+# The drawing (canvas, text, icons), the interface and the model of files are built
 # without Wayland and Vulkan (window.c, present.c, menu.c and titlebar.c stay out); libtruetype is built
 # from its sources.  The test programs:
 #   files-render   draws scenes of the interface into PPM pictures (host-render.c)
@@ -12,7 +12,7 @@
 set -eu
 cd "$(dirname -- "$0")/../../.."
 out=build/ws071-host
-src=userland/base/zdesktop-files
+src=userland/desktop/files
 mkdir -p "$out/include" "$out/obj"
 ln -sf "$(pwd)/include/libc/truetype.h" "$out/include/truetype.h"
 ln -sf "$(pwd)/include/libc/zdesktop.h" "$out/include/zdesktop.h"
@@ -23,11 +23,11 @@ flags="-O2 -g -Wall -Wextra -Werror -Wno-unused-parameter -D_GNU_SOURCE -I$out/i
 
 # The libraries the program uses, from their sources.
 objects=""
-for file in userland/base/libtruetype/face.c userland/base/libtruetype/cmap.c \
-    userland/base/libtruetype/outline.c userland/base/libtruetype/render.c \
-    userland/base/libtruetype/glyph.c; do
+for file in userland/desktop/libtruetype/face.c userland/desktop/libtruetype/cmap.c \
+    userland/desktop/libtruetype/outline.c userland/desktop/libtruetype/render.c \
+    userland/desktop/libtruetype/glyph.c; do
 	object="$out/obj/truetype-$(basename "$file" .c).o"
-	"$cc" $flags -Wno-error -Iuserland/base/libtruetype -c "$file" -o "$object"
+	"$cc" $flags -Wno-error -Iuserland/desktop/libtruetype -c "$file" -o "$object"
 	objects="$objects $object"
 done
 # The C library's SHA-2 (the information's checksum), which the host's C library does not have.
@@ -39,12 +39,12 @@ for file in userland/base/libz-compat/inflate.c userland/base/libz-compat/checks
 	"$cc" $flags -c "$file" -o "$object"
 	objects="$objects $object"
 done
-if [ -f userland/base/libzdesktop/recent.c ]; then
-	"$cc" $flags -c userland/base/libzdesktop/recent.c -o "$out/obj/zdesktop-recent.o"
+if [ -f userland/desktop/libkeiland/recent.c ]; then
+	"$cc" $flags -c userland/desktop/libkeiland/recent.c -o "$out/obj/zdesktop-recent.o"
 	objects="$objects $out/obj/zdesktop-recent.o"
 fi
 
-# zdesktop-files without the window, the presenter, the menus, the titlebar and the glass.
+# files without the window, the presenter, the menus, the titlebar and the glass.
 for file in $src/*.c; do
 	case $(basename "$file") in
 	main.c|window.c|present.c|menu.c|titlebar.c|glass.c) continue ;;

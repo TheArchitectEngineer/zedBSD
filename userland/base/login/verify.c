@@ -6,7 +6,7 @@
  */
 
 /*
- * The password check that login and zsessiond share.
+ * The password check that login and sessiond share.
  *
  * An account logs in when passwd and shadow both know it, its shadow entry
  * is not locked ("!" or "*" at the front), and the password matches: an

@@ -2,11 +2,11 @@
 # ws071-p018: new windows are seen whole on a 1280x800 output (the Venus guest, the lean image).
 # zdesktop --glass tells windows of xdg-shell version 4 the space for bodies (configure_bounds: the output
 # less the system bar, a floating title bar and the margins, 1256x690) and keeps the cascade inside it:
-#  1. one.png: zdesktop-files at its own size (1120x720) takes the bounds' height (ZWL BOUNDS ... width=1256
+#  1. one.png: files at its own size (1120x720) takes the bounds' height (ZWL BOUNDS ... width=1256
 #     height=690, ZFILES READY width=1120 height=690) and maps under the title bar (y=98).
-#  2. two.png: a second zdesktop-files of 1000x640 would hide the first one's title at the centre, so it goes a
+#  2. two.png: a second files of 1000x640 would hide the first one's title at the centre, so it goes a
 #     cascade step (48) down and right of it (x=128 y=146, ws035-p092) and ends inside the space.
-#  3. home.png: zdesktop-files started from App Home fits too (the case of files-p011's files.png).
+#  3. home.png: files started from App Home fits too (the case of files-p011's files.png).
 #
 #   plan/tools/files/files-guest.sh start     (the guest must be up)
 #   plan/tools/files/files-p018.sh [OUTDIR]
@@ -23,7 +23,7 @@ pointer() { python3 plan/ws035/tests/qmp-pointer.py "$GUEST_RUNTIME/qmp.sock" "$
 stop_all='for p in $(ps -A -o pid,args | grep -E "[z]desktop( |$)|[z]desktop-files" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[z]desktop( |$)|[z]desktop-files" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
 start='export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
 picture=; [ -f /usr/share/zdesktop/wallpaper.ppm ] && picture=--wallpaper=/usr/share/zdesktop/wallpaper.ppm
-/bin/zdesktop --timeout=300 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started'
+/bin/wayland --timeout=300 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started'
 status=0
 
 # Fails the run unless a log has a line matching a pattern (within a few seconds).
@@ -49,16 +49,16 @@ shot() {
 }
 
 # 1. One window at its own size.
-guest "$stop_all; rm -f /etc/zdesktop/apps.conf; sh /usr/share/zdesktop-files-tests/make-home.sh /tmp/fhome >/dev/null 2>&1" >/dev/null
+guest "$stop_all; rm -f /etc/zdesktop/apps.conf; sh /usr/share/files-tests/make-home.sh /tmp/fhome >/dev/null 2>&1" >/dev/null
 guest "$start" >/dev/null
-guest 'export XDG_RUNTIME_DIR=/tmp; HOME=/tmp/fhome /bin/zdesktop-files --token=f1 --timeout-s=200 > /tmp/f1.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
+guest 'export XDG_RUNTIME_DIR=/tmp; HOME=/tmp/fhome /bin/files --token=f1 --timeout-s=200 > /tmp/f1.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 expect_log /tmp/zdesktop.log 'ZWL BOUNDS client=1 surface=[0-9]+ width=1256 height=690'
 expect_log /tmp/f1.log 'ZFILES READY width=1120 height=690'
 expect_log /tmp/zdesktop.log 'ZWL MAP client=1 surface=[0-9]+ x=80 y=98'
 shot one.png
 
 # 2. A second window, cascaded and kept inside.
-guest 'export XDG_RUNTIME_DIR=/tmp; HOME=/tmp/fhome /bin/zdesktop-files --token=f2 --timeout-s=200 --width=1000 --height=640 > /tmp/f2.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
+guest 'export XDG_RUNTIME_DIR=/tmp; HOME=/tmp/fhome /bin/files --token=f2 --timeout-s=200 --width=1000 --height=640 > /tmp/f2.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 expect_log /tmp/f2.log 'ZFILES READY width=1000 height=640'
 expect_log /tmp/zdesktop.log 'ZWL MAP client=2 surface=[0-9]+ x=128 y=146'
 shot two.png

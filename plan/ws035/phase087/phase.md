@@ -1,17 +1,17 @@
 <!-- awesome-plan project=zedbsd record=ws035p087 -->
 
-# ws035-p087: X11 と Wayland の clipboard の橋（zdesktop-x11server）
+# ws035-p087: X11 と Wayland の clipboard の橋（xserver）
 
 Phase ID: `ws035-p087`
 Parent: [WS035](../ws.md)
 Status: cleared（2026-09-28、サブエージェント）
 Phase disposition: normal
-Queue: なし（2026-09-27 main の割り当て「X11 ↔ Wayland clipboard bridge in zdesktop-x11server (CLIPBOARD/PRIMARY selections ↔
+Queue: なし（2026-09-27 main の割り当て「X11 ↔ Wayland clipboard bridge in xserver (CLIPBOARD/PRIMARY selections ↔
 wl_data_device selection, text/plain;charset=utf-8 ↔ UTF8_STRING/STRING), and configure_bounds for X toplevels if simple」）
 
 ## 範囲
 
-zdesktop-x11server は atom・一般の property・selection を持たず（InternAtom も BadRequest）、libX11（zedBSD の小さな Xlib）と zterm
+xserver は atom・一般の property・selection を持たず（InternAtom も BadRequest）、libX11（zedBSD の小さな Xlib）と zterm
 にも clipboard が無かった。
 
 1. x11server: InternAtom・GetAtomName・DeleteProperty・一般の ChangeProperty/GetProperty（mode、offset、delete）・SetSelectionOwner・
@@ -26,7 +26,7 @@ zdesktop-x11server は atom・一般の property・selection を持たず（Inte
 
 ## 実装（2026-09-28）
 
-- `userland/base/zdesktop-x11server/selection.c`（新規）: 上の 1・2 の X 側。`internal.h`（atom・property・selection の表と宣言）、
+- `userland/desktop/xserver/selection.c`（新規）: 上の 1・2 の X 側。`internal.h`（atom・property・selection の表と宣言）、
   `protocol.c`（request の振り分け、WM_NAME・icon 以外の property は selection.c へ）、`window.c`（window の破棄で property と
   selection を忘れる）、`server.c`（最初に atom を作る）、`rootless.c`（callback）、`Makefile`。
 - `wayland.c`: `wl_data_device_manager` の bind、seat の data device、selection の offer（自分の source のものは取らない）、
@@ -45,7 +45,7 @@ zdesktop-x11server は atom・一般の property・selection を持たず（Inte
 
 ## 検証（amd64、Venus の guest、2026-09-28）
 
-- `plan/ws035/tests/zdesktop-p087.sh` PASS: Wayland → X（zdesktop-terminal の Select All・Copy、zterm を click すると
+- `plan/ws035/tests/zdesktop-p087.sh` PASS: Wayland → X（terminal の Select All・Copy、zterm を click すると
   `X11 CLIPBOARD selection text=1`・CLIPBOARD の owner が desktop、zterm の Ctrl+Shift+V で `X11 CLIPBOARD read bytes=N`・
   `ZTERM-X PASTE bytes=N`）、X → Wayland（zterm の Ctrl+Shift+C で `X11 CLIPBOARD own`、terminal の Ctrl+Shift+V で
   `X11 CLIPBOARD send`・zterm の `SELECTION answered requestor=0x1`・`X11 SELECTION sent bytes=N`・`ZTERM PASTE bytes=N`）。

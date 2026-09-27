@@ -1,6 +1,6 @@
 #!/bin/sh
 # ws069-p004: GLX on the Venus guest (the zdesktop image, built by plan/ws035/tests/build-zdesktop-image.sh,
-# run by plan/ws035/tests/zdesktop-guest.sh start).  zdesktop-x11server runs under zdesktop; glxtest asks the server for
+# run by plan/ws035/tests/zdesktop-guest.sh start).  xserver runs under zdesktop; glxtest asks the server for
 # GLX (version 1.4 and the server's strings) and draws egltest's scene through GLX into its X window, which
 # is a Wiseman window.
 #  1. glx.png: the scene's colours on the screen, and glxtest's own readback (EGLTEST CHECK).
@@ -46,10 +46,10 @@ scene_expect() {
 	     "--expect $((x + w / 2)),$((y + h / 2)),202020"
 }
 
-# 1. zdesktop, zdesktop-x11server, glxtest.
+# 1. zdesktop, xserver, glxtest.
 guest "$stop_all" >/dev/null
-guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0 /tmp/.X11-unix/X0; /bin/zdesktop --timeout=600 --width=1280 --height=800 --glass --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
-DISPLAY=:0 /bin/zdesktop-x11server > /tmp/x11server.log 2>&1 </dev/null & sleep 6
+guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0 /tmp/.X11-unix/X0; /bin/wayland --timeout=600 --width=1280 --height=800 --glass --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
+DISPLAY=:0 /bin/xserver > /tmp/x11server.log 2>&1 </dev/null & sleep 6
 DISPLAY=:0 /bin/glxtest --frames=3000 --delay-ms=30 --token=g > /tmp/glx.log 2>&1 </dev/null & sleep 12; echo started' >/dev/null
 set -- $(guest "grep 'ZWL MAP client=1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 wx=${1:-0}; wy=${2:-0}

@@ -11,7 +11,7 @@ Queue: q461-i01
 
 ## 目的
 
-base の 3D model viewer（`userland/base/mview`、標準の Vulkan と Wayland の WSI で描く）が、`zwl --glass` の窓として Vulkan で描けることを確かめる。mview は全画面しか求めないので、窓で開く option を足す。
+base の 3D model viewer（`userland/desktop/mview`、標準の Vulkan と Wayland の WSI で描く）が、`zwl --glass` の窓として Vulkan で描けることを確かめる。mview は全画面しか求めないので、窓で開く option を足す。
 
 ## 範囲
 

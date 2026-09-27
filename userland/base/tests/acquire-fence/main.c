@@ -15,9 +15,9 @@
  * is signaled, HOLD milliseconds later, or never with --hold-ms=0.
  */
 
-#include "../../wltest/wltest.h"
+#include "../../../desktop/wltest/wltest.h"
 
-#include "userland/base/libwayland/zed-gpu-buffer-v1-client-protocol.h"
+#include "userland/desktop/libwayland/zed-gpu-buffer-v1-client-protocol.h"
 #include <uapi/gpu-fence.h>
 #include <sys/ioctl.h>
 #include <fcntl.h>

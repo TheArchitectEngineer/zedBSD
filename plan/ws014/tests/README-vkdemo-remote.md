@@ -37,4 +37,4 @@ python3 -B plan/ws014/tests/test-venus-rfb.py
 
 `plan/ws014/temp/remote/<attempt>/result.json` にbuild/source/shader/image/toolのhashとremote結果を保存する。`evidence/` に6枚の実PPM、各oracle診断、console、QMP、kernel/rendererログが入る。取得後にローカルでもhash・画像判定を再実行する。再利用buildは明示的な `--skip-build` の場合だけで、その事実を結果に残す。
 
-実測結果と完了判定は [p005本文](../phase005/phase.md) と実行結果を正とする。これは有限の独立Venus clientによるgraphics pipelineの検証であり、汎用libvulkan/ICDや全Vulkan適合試験ではない。shaderソース・生成SPIR-V・再生成手順は `userland/base/vkdemo/shaders/` に保存する。
+実測結果と完了判定は [p005本文](../phase005/phase.md) と実行結果を正とする。これは有限の独立Venus clientによるgraphics pipelineの検証であり、汎用libvulkan/ICDや全Vulkan適合試験ではない。shaderソース・生成SPIR-V・再生成手順は `userland/desktop/vkdemo/shaders/` に保存する。

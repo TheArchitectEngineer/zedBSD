@@ -28,7 +28,7 @@
 
 #include <GL/glx.h>
 
-#include "../../base/egltest/scene.h"
+#include "../../desktop/egltest/scene.h"
 #include "gl3.h"
 #include "gl31.h"
 #include "gl32.h"

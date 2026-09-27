@@ -9,7 +9,7 @@
  * Host fixture for the resource wire decode.  Encodes the libvulkan streams
  * for vkAllocateMemory/vkFreeMemory, vkCreateBuffer/vkBindBufferMemory/
  * vkDestroyBuffer and vkCreateImage/vkBindImageMemory/vkDestroyImage
- * exactly as userland/base/libvulkan does, drives them through the node's
+ * exactly as userland/desktop/libvulkan does, drives them through the node's
  * entry (render/vulkan.c) and the router into the resource objects
  * (render/objects.c, memory.c, image.c), and checks the object table and
  * the reply framing: opcode echo, VkResult, output identity, and a reply

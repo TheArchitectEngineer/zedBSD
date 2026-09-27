@@ -1,14 +1,14 @@
 #!/bin/sh
-# ws074: builds zdesktop-browser's engine and its host tests with the host's C compiler.
+# ws074: builds browser's engine and its host tests with the host's C compiler.
 #
 #   sh plan/ws074/tests/host-build.sh [plain|asan]     (default plain)
 #
-# Every engine source listed in userland/base/zdesktop-browser/Makefile is built except the
+# Every engine source listed in userland/desktop/browser/Makefile is built except the
 # shell/ directory (the zdesktop window); plan/ws074/tests/host-shell.c stands in for it.
 # The GPU renderer (paint/vulkan.c) links the host's libvulkan (Debian's libvulkan-dev; lavapipe
 # draws when there is no GPU).
 # The outputs, in build/ws074-host/<variant>/:
-#   zdesktop-browser   the program with its headless modes (the same main.c as on zedBSD)
+#   browser   the program with its headless modes (the same main.c as on zedBSD)
 #   host-NAME          each plan/ws074/tests/host-NAME.c unit test, linked with the engine
 # The asan variant adds -fsanitize=address,undefined; the runners use it to find crashes.  Run it with
 # ASAN_OPTIONS=detect_stack_use_after_return=0: the collector scans the real stack, and the sanitizer's
@@ -18,7 +18,7 @@ set -eu
 cd "$(dirname -- "$0")/../../.."
 variant=${1:-plain}
 out=build/ws074-host/$variant
-src=userland/base/zdesktop-browser
+src=userland/desktop/browser
 cc=${CC:-cc}
 flags="-std=gnu11 -O1 -g -Wall -Wextra -Werror -D_GNU_SOURCE -I$src -Iplan/ws074/tests -Ibuild/ws074-host/include"
 case $variant in
@@ -37,11 +37,11 @@ engine=""
 # are linked into build/ws074-host/include, since the host's C library does not have them).
 mkdir -p build/ws074-host/include
 ln -sf "$(pwd)/include/libc/truetype.h" build/ws074-host/include/truetype.h
-for file in userland/base/libtruetype/face.c userland/base/libtruetype/cmap.c userland/base/libtruetype/outline.c \
-    userland/base/libtruetype/render.c userland/base/libtruetype/glyph.c userland/base/libtruetype/design.c; do
+for file in userland/desktop/libtruetype/face.c userland/desktop/libtruetype/cmap.c userland/desktop/libtruetype/outline.c \
+    userland/desktop/libtruetype/render.c userland/desktop/libtruetype/glyph.c userland/desktop/libtruetype/design.c; do
 	object=$out/obj/truetype-$(basename "$file" .c).o
 	if [ ! -f "$object" ] || [ "$file" -nt "$object" ]; then
-		"$cc" $flags -Wno-error -Iuserland/base/libtruetype -c "$file" -o "$object"
+		"$cc" $flags -Wno-error -Iuserland/desktop/libtruetype -c "$file" -o "$object"
 	fi
 	engine="$engine $object"
 	objects="$objects $object"
@@ -61,8 +61,8 @@ done
 
 # The stand-in for the window.
 "$cc" $flags -c plan/ws074/tests/host-shell.c -o "$out/obj/host-shell.o"
-"$cc" $flags -o "$out/zdesktop-browser" $objects "$out/obj/host-shell.o" -lvulkan -lm
-echo "built $out/zdesktop-browser"
+"$cc" $flags -o "$out/browser" $objects "$out/obj/host-shell.o" -lvulkan -lm
+echo "built $out/browser"
 
 # The unit tests.
 for test in plan/ws074/tests/host-*.c; do

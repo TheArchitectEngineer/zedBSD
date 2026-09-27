@@ -1,7 +1,7 @@
 #!/bin/sh
-# ws071-p017: zdesktop-files' glass cards line up with the floating titlebar, and its controls dock into
+# ws071-p017: files' glass cards line up with the floating titlebar, and its controls dock into
 # the system bar and back, on the Venus guest (the lean image, build-files-image.sh).  zdesktop --glass at
-# 1280x800; zdesktop-files at 1000x640 on the sample home (/tmp/fhome), opened on Documents, two tabs.
+# 1280x800; files at 1000x640 on the sample home (/tmp/fhome), opened on Documents, two tabs.
 #  1. floating.png: the cards reach the window's edges (the sidebar's card from x 0, the content's to x 1000,
 #     from y 0 to 640; 8 pixels apart, the gap between the titlebar and the window); the titlebar is as
 #     wide as the window (zdesktop's floating_title; its controls, back to "...", inside x .. x+1000).
@@ -78,10 +78,10 @@ shot() {
 }
 
 guest "$stop_all" >/dev/null
-guest 'rm -f /tmp/wayland-0 /tmp/zdesktop-files.clipboard; rm -rf /tmp/fhome; sh /usr/share/zdesktop-files-tests/make-home.sh /tmp/fhome >/dev/null'
+guest 'rm -f /tmp/wayland-0 /tmp/files.clipboard; rm -rf /tmp/fhome; sh /usr/share/files-tests/make-home.sh /tmp/fhome >/dev/null'
 guest 'export XDG_RUNTIME_DIR=/tmp
-/bin/zdesktop --timeout=900 --width=1280 --height=800 --glass --wallpaper=/usr/share/zdesktop/wallpaper.ppm > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
-HOME=/tmp/fhome /bin/zdesktop-files --token=f1 --timeout-s=800 --width=1000 --height=640 /tmp/fhome/Documents > /tmp/f.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
+/bin/wayland --timeout=900 --width=1280 --height=800 --glass --wallpaper=/usr/share/zdesktop/wallpaper.ppm > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
+HOME=/tmp/fhome /bin/files --token=f1 --timeout-s=800 --width=1000 --height=640 /tmp/fhome/Documents > /tmp/f.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 set -- $(guest "grep 'ZWL MAP client=1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
 surface=${1:-0}; wx=${2:-0}; wy=${3:-0}
 echo "files: surface $surface at $wx,$wy"

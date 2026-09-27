@@ -1,0 +1,91 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The graphical login's session manager (plan/ws035/login-manager-design.md).
+ */
+
+#ifndef SESSIOND_H
+#define SESSIOND_H
+
+#include <pwd.h>
+#include <signal.h>
+#include <sys/types.h>
+#include <time.h>
+
+/* The greeter program and the session script sessiond starts by default. */
+#define SESSIOND_GREETER	"/bin/wayland"
+#define SESSIOND_SESSION	"/etc/zdesktop/session"
+
+/* The unprivileged account the greeter runs as. */
+#define SESSIOND_GREETER_USER	"_greeter"
+
+/* The wallpaper the greeter shows when the image has one. */
+#define SESSIOND_WALLPAPER	"/usr/share/zdesktop/wallpaper.ppm"
+
+/* The descriptor the greeter talks to sessiond on, and the one the session does (ws035-p101). */
+#define SESSIOND_AUTH_FD	3
+#define SESSIOND_CONTROL_FD	3
+
+/* The longest line of the greeter's protocol, and the longest user name. */
+#define SESSIOND_LINE_MAX	512U
+#define SESSIOND_NAME_MAX	64U
+
+/* The size of the buffer an account's strings are kept in. */
+#define SESSIOND_ACCOUNT_BUFFER	2048U
+
+/*
+ * How a greeter ended: a user logged in, it failed, it ended by itself, or
+ * sessiond is being stopped.
+ */
+enum sessiond_greeter_end {
+	SESSIOND_GREETER_LOGIN,
+	SESSIOND_GREETER_FAILED,
+	SESSIOND_GREETER_ENDED,
+	SESSIOND_GREETER_STOP
+};
+
+/*
+ * One seat's user: who owns the display and the input devices, and the
+ * buffer passwd's strings for the account live in.
+ */
+struct sessiond_account {
+	struct passwd passwd;
+	char buffer[SESSIOND_ACCOUNT_BUFFER];
+};
+
+/*
+ * What sessiond was started with: the greeter program and the session
+ * script.  A greeter that outlives the step that started it (ws035-p101:
+ * after a login it stays on the screen until the session is ready for the
+ * display; at a Log Out it starts while the session still shows): its
+ * process (0 for none), sessiond's end of its socket, and when it started.
+ */
+struct sessiond {
+	const char *greeter;
+	const char *session;
+	pid_t greeter_pid;
+	int greeter_socket;
+	time_t greeter_started;
+};
+
+/* Set by SIGTERM and SIGINT: sessiond ends its greeter or session and stops. */
+extern volatile sig_atomic_t sessiond_stopping;
+
+enum sessiond_greeter_end sessiond_greeter_run(struct sessiond *daemon, struct sessiond_account *account);
+void sessiond_greeter_finish(struct sessiond *daemon);
+void sessiond_greeter_release(struct sessiond *daemon);
+int sessiond_greeter_prepare(struct sessiond *daemon);
+void sessiond_greeter_go(struct sessiond *daemon);
+int sessiond_read_line(int descriptor, char *line, size_t size, int timeout_ms);
+long long sessiond_milliseconds(void);
+int sessiond_session_run(struct sessiond *daemon, struct sessiond_account *account);
+void sessiond_seat_give(uid_t uid, gid_t gid);
+void sessiond_seat_restore(void);
+void sessiond_log(const char *format, ...) __attribute__((format(printf, 1, 2)));
+
+#endif

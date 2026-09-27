@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws074-p016: zdesktop-browser opens pages over HTTP in its window on the Venus guest (build-browser-image.sh).
+# ws074-p016: browser opens pages over HTTP in its window on the Venus guest (build-browser-image.sh).
 # plan/ws074/tests/http-server.py runs on the host (0.0.0.0:PORT); the guest reaches it as 10.0.2.2.
 # zdesktop runs at 1280x800 with --glass and the wallpaper; the browser opens first.html over http at 900x640.
 # Checks, from the browser's ZBROWSER lines and zdesktop's log:
@@ -77,7 +77,7 @@ sleep 1
 
 # The link's middle in the page at 900 wide, from the host's layout: "x y".
 f=build/ws035-fonts
-link=$(build/ws074-host/plain/zdesktop-browser --dump=layout --width=900 --height=640 --font=$f/Inter.ttf \
+link=$(build/ws074-host/plain/browser --dump=layout --width=900 --height=640 --font=$f/Inter.ttf \
     --mono-font=$f/JetBrainsMono-Regular.ttf --fallback-font=$f/DroidSansFallbackFull.ttf plan/ws074/tests/pages/first.html |
     awk '$1 == "line" { y = $3; h = $5 } $1 == "text" && $NF == "\"link\"" { printf "%d %d\n", $2 + $4 / 2, y + h / 2; exit }')
 echo "link: at $link in the page"
@@ -85,22 +85,22 @@ echo "link: at $link in the page"
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
 picture=; [ -f /usr/share/zdesktop/wallpaper.ppm ] && picture=--wallpaper=/usr/share/zdesktop/wallpaper.ppm
-/bin/zdesktop --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
-guest "export XDG_RUNTIME_DIR=/tmp; /bin/zdesktop-browser --width=900 --height=640 $site/pages/first.html > /tmp/b.log 2>&1 </dev/null & sleep 5; echo started" >/dev/null
+/bin/wayland --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
+guest "export XDG_RUNTIME_DIR=/tmp; /bin/browser --width=900 --height=640 $site/pages/first.html > /tmp/b.log 2>&1 </dev/null & sleep 5; echo started" >/dev/null
 set -- $(guest "grep 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 wx=${1:-0}; wy=${2:-0}
 echo "browser: window at $wx,$wy"
 
 # 1. The first page over http.
 expect_log /tmp/b.log 'ZBROWSER READY width=900 height=640'
-expect_last NAVIGATE "path=$site/pages/first.html title=zdesktop-browser: the first page"
+expect_last NAVIGATE "path=$site/pages/first.html title=browser: the first page"
 shot http-first.png
 
 # 2. The link, relative to the http URL.
 set -- $link
 pointer move $((wx + $1 - 2)) $((wy + $2)) sleep 150 move $((wx + $1)) $((wy + $2)) sleep 300 down sleep 60 up sleep 2000
 expect_log /tmp/b.log 'ZBROWSER LINK href=second.html'
-expect_last NAVIGATE "path=$site/pages/second.html title=zdesktop-browser: the second page"
+expect_last NAVIGATE "path=$site/pages/second.html title=browser: the second page"
 expect_last TITLEBAR 'back=1 forward=0'
 shot http-link.png
 

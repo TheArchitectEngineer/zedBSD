@@ -77,7 +77,7 @@ cleared。受け入れ 1〜3 を満たした（i915 実機は未実施）。
     MAX_*_UNIFORM_BLOCKS・UNIFORM_BUFFER_OFFSET_ALIGNMENT・MAX_ELEMENT_INDEX・MAX_ELEMENTS_* ほか）、`glEnable` の
     `GL_PRIMITIVE_RESTART_FIXED_INDEX`。属性の初期値（size 4・GL_FLOAT）。
   - exports.map に 48 の関数。GL_VERSION は「OpenGL ES 2.0」のまま（ES 3.0 を名乗るのは p027）。
-- egltest `--scene=es3`（`userland/base/egltest/es3.c`）: OpenGL ES 3 の context、`#version 300 es`。VAO 4 つ（A: glDrawRangeElements と
+- egltest `--scene=es3`（`userland/desktop/egltest/es3.c`）: OpenGL ES 3 の context、`#version 300 es`。VAO 4 つ（A: glDrawRangeElements と
   整数の現在値、B: interleave の buffer の unsigned byte を int の入力へ（変換）、C: restart index で切った triangle strip と int の配列、
   D: glDrawElementsInstanced の 4 instance（gl_InstanceID、divisor 1 の色と divisor 2 の gain））。色は std140 の block（Palette、
   glBindBufferRange で offset alignment の位置、glMapBufferRange で書き glCopyBufferSubData で足す）と fragment の instance 名付きの

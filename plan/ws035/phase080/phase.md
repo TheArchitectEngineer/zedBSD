@@ -32,7 +32,7 @@ cleared。main（titlebar p008 と p079 の merge の解決）を合わせた tr
 
 ### 実装
 
-- `userland/base/zdesktop/decoration.c`・`cursor.c`・`viewport.c`・`extras.h`（新規）。protocol.c の globals に 10（decoration）・
+- `userland/desktop/wayland/decoration.c`・`cursor.c`・`viewport.c`・`extras.h`（新規）。protocol.c の globals に 10（decoration）・
   11（cursor-shape）・12（viewporter）、dispatch、surface の commit の最初で `zwl_viewport_commit`。objects.c で toplevel・decoration・
   pointer・surface・viewport の破棄を解く。seat.c の `zwl_cursor_default` と wl_pointer.set_cursor で shape を消す。shm.c の
   `zwl_arrow_destroy` で shape の image を消す（image は shape を初めて求められたときに作る）。compose.c の `compose_cursor` で shape の image を hotspot で描く

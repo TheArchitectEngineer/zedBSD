@@ -16,7 +16,7 @@ Queue: なし（サブエージェントが worktree の branch で実行）
 thread・持続接続・memory の cache は [p050](../ws.md) に分けた（2026-09-28）。
 
 - `net/http.c`（新）: `net_http_fetch`（GET、HTTP/1.1、`Connection: close`、`Accept-Encoding: identity`、User-Agent
-  `zdesktop-browser/0.1 (zedBSD)`）。`getaddrinfo` の各 address へ順に connect、`poll` で 30 秒の timeout、256 MiB の上限。
+  `browser/0.1 (zedBSD)`）。`getaddrinfo` の各 address へ順に connect、`poll` で 30 秒の timeout、256 MiB の上限。
   応答: status 行、Content-Type・Content-Length・Transfer-Encoding（chunked の復号、chunk の拡張と trailer は読み捨て）・
   Location・Set-Cookie。redirect（301・302・303・307・308、最大 20 回、Location は今の URL に対して解決）。http 以外の scheme は
   `EPROTONOSUPPORT`（https は p017）。

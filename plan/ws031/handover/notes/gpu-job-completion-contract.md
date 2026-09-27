@@ -1,6 +1,6 @@
 # GPU job の完了契約: 未完了／成功／失敗／取消（zedBSD GPU core と libvulkan の対応表）
 
-WS031 E-109（2026-09-19）。読取りだけの調査。path は `agent-1:~/zedBSD/` 基点、C = `src/drivers/gpu/gpu.c`、U = `userland/base/libvulkan/`。
+WS031 E-109（2026-09-19）。読取りだけの調査。path は `agent-1:~/zedBSD/` 基点、C = `src/drivers/gpu/gpu.c`、U = `userland/desktop/libvulkan/`。
 目的: i915 backend が何を実装すれば既存の契約を満たすかを決める。**Linux の dma-fence や新しい UAPI を持ち込む話ではない**（既存 core と libvulkan の契約に合わせる）。
 
 ## 0. 先に訂正

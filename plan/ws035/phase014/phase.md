@@ -29,7 +29,7 @@ cleared。
 
 ### 実装
 
-- `userland/base/zdesktop/shell.c`: `zwl_glass_key` の先頭で、Wiseview が開いている（開きつつある）間は `wiseview_key` がすべての
+- `userland/desktop/wayland/shell.c`: `zwl_glass_key` の先頭で、Wiseview が開いている（開きつつある）間は `wiseview_key` がすべての
   key を取る。Super+Tab で `wiseview_open_key`。新しい static 関数 `wiseview_showing`・`wiseview_open_key`・`wiseview_key`・
   `wiseview_close_key`（log `ZWL WISEVIEW opening key`・`current surface=N`・`select surface=N via=key`・`close key`）。
   `MODIFIER_SUPER`（0x40）。

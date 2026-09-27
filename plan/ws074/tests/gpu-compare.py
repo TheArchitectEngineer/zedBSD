@@ -2,7 +2,7 @@
 # zedBSD
 # Copyright (C) 2026 Awe Morris
 # SPDX-License-Identifier: Zlib
-"""Compares zdesktop-browser's GPU renderer with its CPU reference renderer (design.md §8.2).
+"""Compares browser's GPU renderer with its CPU reference renderer (design.md §8.2).
 
   gpu-compare.py PAGE.html... [--width W] [--height H] [--program PATH] [--out DIR]
   gpu-compare.py --pictures GPU.ppm CPU.ppm [--out DIR]
@@ -64,7 +64,7 @@ def main():
     parser.add_argument("--pictures", nargs=2)
     parser.add_argument("--width", type=int, default=800)
     parser.add_argument("--height", type=int, default=600)
-    parser.add_argument("--program", default=os.path.join(ROOT, "build/ws074-host/plain/zdesktop-browser"))
+    parser.add_argument("--program", default=os.path.join(ROOT, "build/ws074-host/plain/browser"))
     parser.add_argument("--out", default=os.path.join(ROOT, "build/ws074-gpu"))
     args = parser.parse_args()
     os.makedirs(args.out, exist_ok=True)

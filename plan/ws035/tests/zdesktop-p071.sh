@@ -18,7 +18,7 @@ guest() { timeout 90 python3 plan/tools/guest/guest.py run "$1" 2>&1; }
 check() { python3 plan/ws035/tests/zdesktop-check.py "$@" --runtime "$GUEST_RUNTIME"; }
 pointer() { python3 plan/ws035/tests/qmp-pointer.py "$GUEST_RUNTIME/qmp.sock" "$@"; }
 keys() { python3 plan/ws035/tests/qmp-keys.py "$GUEST_RUNTIME/qmp.sock" "$@"; }
-stop_all='ps -A -o pid,comm | awk "{ n = \$2; sub(\".*/\", \"\", n) } n == \"zdesktop\" || n == \"wlshm\" || n == \"zdesktop-x11server\" {print \$1}" | while read p; do kill $p; done; sleep 1'
+stop_all='ps -A -o pid,comm | awk "{ n = \$2; sub(\".*/\", \"\", n) } n == \"zdesktop\" || n == \"wlshm\" || n == \"xserver\" {print \$1}" | while read p; do kill $p; done; sleep 1'
 status=0
 
 # Fails the run unless zdesktop's log has a line matching a pattern.
@@ -44,8 +44,8 @@ icon() {
 
 # 30 applications: Terminal, 28 fillers, and a real one on page 2.
 guest "$stop_all" >/dev/null
-guest 'mkdir -p /etc/zdesktop; { echo "Terminal|/bin/zdesktop-terminal|term|323a4e"; i=2; while [ $i -le 29 ]; do echo "App $i|/bin/true|filler|$(printf "%02x%02x%02x" $((i*8)) $((200-i*4)) $((80+i*5)))"; i=$((i+1)); done; echo "Second page shm|/bin/wlshm --size=420x280 --color=ff5a8de0 --frames=20000|shm page|5aa87a"; } > /etc/zdesktop/apps.conf; wc -l < /etc/zdesktop/apps.conf'
-guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; /bin/zdesktop --timeout=600 --width=1280 --height=800 --glass --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
+guest 'mkdir -p /etc/zdesktop; { echo "Terminal|/bin/terminal|term|323a4e"; i=2; while [ $i -le 29 ]; do echo "App $i|/bin/true|filler|$(printf "%02x%02x%02x" $((i*8)) $((200-i*4)) $((80+i*5)))"; i=$((i+1)); done; echo "Second page shm|/bin/wlshm --size=420x280 --color=ff5a8de0 --frames=20000|shm page|5aa87a"; } > /etc/zdesktop/apps.conf; wc -l < /etc/zdesktop/apps.conf'
+guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; /bin/wayland --timeout=600 --width=1280 --height=800 --glass --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
 /bin/wlshm --size=520x340 --color=ffe8eef8 --frames=20000 --token=b > /tmp/b.log 2>&1 </dev/null & sleep 3; echo started' >/dev/null
 
 # 1. Home on page 1 of 2.

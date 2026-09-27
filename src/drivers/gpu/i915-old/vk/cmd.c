@@ -9,7 +9,7 @@
  * Command decoder, object/handle table and opcode routing.
  *
  * libvulkan frames every command as a little-endian u32 opcode, a u32
- * reply-request flag, then the encoded parameters (see userland/base/libvulkan
+ * reply-request flag, then the encoded parameters (see userland/desktop/libvulkan
  * wire.c vulkan_command_begin).  cmd reads the header, routes the opcode to the
  * owning module's dispatch entry, and offers the object table and the wire
  * reader/writer primitives every module shares.

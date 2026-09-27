@@ -16,7 +16,7 @@
 #ifndef LIBGL_FIXED_H
 #define LIBGL_FIXED_H
 
-#include "../../base/libglesv2/gles.h"
+#include "../../desktop/libglesv2/gles.h"
 
 #include <GL/gl.h>
 

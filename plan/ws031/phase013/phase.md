@@ -18,12 +18,12 @@ material 16（Phong）、埋込み PNG 20（最大 2048×2048、多くが RGBA�
 ## Module と所有ファイル
 | Module | 場所 | 内容 |
 | --- | --- | --- |
-| 変換器 | `userland/base/mview/tools/fbx2mview.py` | FBX binary 7.x の parser（zlib 配列）、mesh を三角形へ分割、法線・UV・material 割当、埋込み PNG の抽出・縮小（最大 1024）、出力 |
-| モデル資産 | `userland/base/mview/models/qs40/` | `model.txt`（テキストのポリゴンリスト）、`tex/*.pam`（非圧縮 RGBA、PAM P7）、`provenance.json`（元 FBX の SHA-256、変換器版、縮小規則、著作権者） |
-| ビューア | `userland/base/mview/`（`/bin/mview`） | Wayland＋Vulkan クライアント（wltest と同じ構成: `VK_KHR_wayland_surface`、xdg-shell）。モデル読込み、material ごとの描画、入力 |
-| shader | `userland/base/mview/shaders/` | GLSL と、オフラインで生成した SPIR-V（vkdemo と同じ provenance 方式）。centris に glslc を入れる |
+| 変換器 | `userland/desktop/mview/tools/fbx2mview.py` | FBX binary 7.x の parser（zlib 配列）、mesh を三角形へ分割、法線・UV・material 割当、埋込み PNG の抽出・縮小（最大 1024）、出力 |
+| モデル資産 | `userland/desktop/mview/models/qs40/` | `model.txt`（テキストのポリゴンリスト）、`tex/*.pam`（非圧縮 RGBA、PAM P7）、`provenance.json`（元 FBX の SHA-256、変換器版、縮小規則、著作権者） |
+| ビューア | `userland/desktop/mview/`（`/bin/mview`） | Wayland＋Vulkan クライアント（wltest と同じ構成: `VK_KHR_wayland_surface`、xdg-shell）。モデル読込み、material ごとの描画、入力 |
+| shader | `userland/desktop/mview/shaders/` | GLSL と、オフラインで生成した SPIR-V（vkdemo と同じ provenance 方式）。centris に glslc を入れる |
 | zwl 入力 | `userland/base/zwl/` | evdev（`/dev/input/event*`、Xzed と同じ読み方）→ `wl_seat` v1 / `wl_pointer`（enter/leave/motion/button/axis）/ `wl_keyboard`（keymap は no_keymap、evdev keycode、modifiers） |
-| client 入力 | `userland/base/libwayland/`、`libc/include/wayland/` | `wl_seat`・`wl_pointer`・`wl_keyboard` の proxy と event 配送 |
+| client 入力 | `userland/desktop/libwayland/`、`libc/include/wayland/` | `wl_seat`・`wl_pointer`・`wl_keyboard` の proxy と event 配送 |
 | 試験 | `plan/ws031/tests/mview-venus.py`、`plan/ws031/tests/config-mview-amd64.mk` | Venus QEMU（WS014 の wayland-qemu.py を基に）、`usb-tablet`（USB HID を有効化）、QMP `input-send-event` で入力を流し、VNC で画面を取得 |
 
 ## テキスト表現（案）
@@ -75,8 +75,8 @@ p013 のビューアを QEMU＋passthrough（5330）の i915 で動かす。ビ�
 - 性能（draw ごとの同期 batch、同期 present）は正しさの後。
 
 ## 完了（2026-09-22、Venus）
-- 変換器 `userland/base/mview/tools/fbx2mview.py`: qs40 を 4 mesh・25,861 頂点・37,000 三角形・material 16・texture 13（最大 1024、PAM）へ。
-  出力 34 MB、再実行で byte 一致。形式は `userland/base/mview/models/README.md`。
+- 変換器 `userland/desktop/mview/tools/fbx2mview.py`: qs40 を 4 mesh・25,861 頂点・37,000 三角形・material 16・texture 13（最大 1024、PAM）へ。
+  出力 34 MB、再実行で byte 一致。形式は `userland/desktop/mview/models/README.md`。
 - zwl/libwayland: `wl_seat` v5・`wl_pointer`・`wl_keyboard`（evdev、絶対/相対 pointer、wheel、NO_KEYMAP）。host 試験 PASS（通常＋ASan/UBSan）。
 - mview: material ごとの `vkCmdDrawIndexed`（opaque → cutout → blend）、mipmap、Lambert＋ambient、push constant のみ。host 試験 91/91。
 - 実 QEMU（Venus、5330 の iGPU を host i915 に切替）: `plan/ws031/tests/run-mview-remote.py` attempt `p013-mview-009` PASS。

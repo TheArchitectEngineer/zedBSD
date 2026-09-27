@@ -12,10 +12,10 @@ for mode in ordinary sanitize; do
         extra='-fsanitize=address,undefined -fno-omit-frame-pointer -no-pie'
     fi
     cc -std=c89 -D_GNU_SOURCE -Wall -Wextra -Werror -ffunction-sections -fdata-sections $extra \
-        -I"$work/include" -I"$repo/include" -I"$repo/userland/base/libvulkan" \
+        -I"$work/include" -I"$repo/include" -I"$repo/userland/desktop/libvulkan" \
         "$repo/plan/ws014/tests/libvulkan-external-properties.c" \
-        "$repo/userland/base/libvulkan/external-properties.c" \
-        "$repo/userland/base/libvulkan/objects.c" "$repo/userland/base/libvulkan/wire.c" \
+        "$repo/userland/desktop/libvulkan/external-properties.c" \
+        "$repo/userland/desktop/libvulkan/objects.c" "$repo/userland/desktop/libvulkan/wire.c" \
         -Wl,--gc-sections -pthread -o "$work/$mode"
     ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 timeout 20 "$work/$mode"
 done

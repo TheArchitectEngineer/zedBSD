@@ -1,18 +1,18 @@
 #!/bin/sh
-# ws074: compares zdesktop-browser's text dumps of the test pages with the reviewed golden files.
+# ws074: compares browser's text dumps of the test pages with the reviewed golden files.
 #
 #   sh plan/ws074/tests/golden-dumps.sh [--update] [--program PATH] KIND...    (KIND: dom, style, layout, paint)
 #
 # For each plan/ws074/tests/pages/NAME.html and each KIND, `PROGRAM --dump=KIND` is compared with
 # plan/ws074/tests/golden/NAME.KIND (a golden file that does not exist yet is skipped with a note).
 # --update rewrites the golden files; review the difference before committing them.
-# PROGRAM defaults to the host build, build/ws074-host/plain/zdesktop-browser.
+# PROGRAM defaults to the host build, build/ws074-host/plain/browser.
 # The layout is measured with the fonts of the guest image (build/ws035-fonts: Inter, JetBrains Mono,
 # Droid Sans Fallback), passed with --font= and the like, so the host and the guest agree.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
 cd "$(dirname -- "$0")/../../.."
-program=build/ws074-host/plain/zdesktop-browser
+program=build/ws074-host/plain/browser
 update=0
 while [ $# -gt 0 ]; do
 	case $1 in

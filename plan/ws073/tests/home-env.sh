@@ -36,10 +36,10 @@ launch() {
 }
 
 guest "$stop_all; rm -f /tmp/home-env.txt; mkdir -p /etc/zdesktop /tmp/dhome" >/dev/null
-guest "printf '%s\n' 'Env|/bin/sh -c \"env > /tmp/home-env.txt\"|env|3a8fd8' 'Terminal|/bin/zdesktop-terminal|term|323a4e' > /etc/zdesktop/apps.conf" >/dev/null
+guest "printf '%s\n' 'Env|/bin/sh -c \"env > /tmp/home-env.txt\"|env|3a8fd8' 'Terminal|/bin/terminal|term|323a4e' > /etc/zdesktop/apps.conf" >/dev/null
 library=
 [ -n "$libdir" ] && library="LD_LIBRARY_PATH=$libdir"
-guest "rm -f /tmp/wayland-0; env -i XDG_RUNTIME_DIR=/tmp PATH=/bin:/usr/bin HOME=/tmp/dhome FOO=bar $library /bin/zdesktop --timeout=600 --width=1280 --height=800 --glass --wallpaper=/usr/share/zdesktop/wallpaper.ppm > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started" >/dev/null
+guest "rm -f /tmp/wayland-0; env -i XDG_RUNTIME_DIR=/tmp PATH=/bin:/usr/bin HOME=/tmp/dhome FOO=bar $library /bin/wayland --timeout=600 --width=1280 --height=800 --glass --wallpaper=/usr/share/zdesktop/wallpaper.ppm > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started" >/dev/null
 
 # Env from its icon.
 launch Env

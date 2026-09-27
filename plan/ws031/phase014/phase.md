@@ -73,7 +73,7 @@ draw ごとの同期 batch を 1 command buffer 1 batch にまとめる、同期
 
 ## 依存・触れないファイル
 - 前段: p013（mview、zwl 入力）、E-133（i915 の Wayland）。
-- 触れる: `src/drivers/gpu/i915/render/**`、`compiler/**`、`tests/**`、`userland/base/mview/`（`--readback`、追加 shader）、
+- 触れる: `src/drivers/gpu/i915/render/**`、`compiler/**`、`tests/**`、`userland/desktop/mview/`（`--readback`、追加 shader）、
   `plan/ws031/tests/`、5330 の `~/bigbang/run-parity-vk.sh`（入力 device と QMP）。
 - 触れない: UAPI、libvulkan の wire（必要なら事前に提示）、Venus 経路。
 
@@ -300,7 +300,7 @@ descriptor.c の UNIFORM_BUFFER、state.c の push data への CPU copy、draw.c
 - **host**: `run-vk-host-tests.sh` 全 PASS、`run-vk-gentool-test.sh`（BRW_TOOLS=Mesa 25.0.7）PASS、analyzer 0 件。追加分は
   `plan/ws031/tests/README-vk-host-tests.md` の「段階 E3」（EU model の scratch memory・URB 記録、spill.frag と vio16.vert の実行、
   手組み IR の 16 + 16、pipe の VS/PS dword 4-5 と GSBA）。
-- **mview `--shading=pixel`**（`userland/base/mview/`）: `shaders/pixel.vert`・`pixel.frag`・`pixel-cutout.frag`（glslc、`regenerate.py` と
+- **mview `--shading=pixel`**（`userland/desktop/mview/`）: `shaders/pixel.vert`・`pixel.frag`・`pixel-cutout.frag`（glslc、`regenerate.py` と
   `provenance.json` を更新、既存 3 本の SPIR-V は byte 不変）。uniform buffer（binding 1、`struct mview_scene` std140 416 byte: model・view・
   projection・normal matrix、ambient、光源 3 つ）、fragment で 3 光源のループ（directional 1 + point 2、定数/1 次/2 次の減衰）の
   Blinn-Phong、texture × material 色、cutout は discard。既定は従来の per-vertex（p013 の参照画像はそのまま有効）。camera.c は

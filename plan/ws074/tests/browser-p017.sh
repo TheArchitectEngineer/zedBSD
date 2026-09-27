@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws074-p017: zdesktop-browser opens pages over HTTPS in its window on the Venus guest (build-browser-image.sh).
+# ws074-p017: browser opens pages over HTTPS in its window on the Venus guest (build-browser-image.sh).
 # plan/ws074/tests/http-server.py runs on the host with the test CA (make-test-ca.sh); the guest reaches it as 10.0.2.2
 # and trusts the CA with --ca-file.  zdesktop runs at 1280x800 with --glass and the wallpaper; the browser opens
 # first.html over https at 900x640.  Checks, from the browser's ZBROWSER lines and zdesktop's log:
@@ -80,7 +80,7 @@ python3 plan/tools/guest/guest.py put build/ws074-tls/ca.pem /tmp/ws074-ca.pem >
 
 # The link's middle in the page at 900 wide, from the host's layout: "x y".
 f=build/ws035-fonts
-link=$(build/ws074-host/plain/zdesktop-browser --dump=layout --width=900 --height=640 --font=$f/Inter.ttf \
+link=$(build/ws074-host/plain/browser --dump=layout --width=900 --height=640 --font=$f/Inter.ttf \
     --mono-font=$f/JetBrainsMono-Regular.ttf --fallback-font=$f/DroidSansFallbackFull.ttf plan/ws074/tests/pages/first.html |
     awk '$1 == "line" { y = $3; h = $5 } $1 == "text" && $NF == "\"link\"" { printf "%d %d\n", $2 + $4 / 2, y + h / 2; exit }')
 echo "link: at $link in the page"
@@ -88,22 +88,22 @@ echo "link: at $link in the page"
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
 picture=; [ -f /usr/share/zdesktop/wallpaper.ppm ] && picture=--wallpaper=/usr/share/zdesktop/wallpaper.ppm
-/bin/zdesktop --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
-guest "export XDG_RUNTIME_DIR=/tmp; /bin/zdesktop-browser --width=900 --height=640 --ca-file=/tmp/ws074-ca.pem $site/pages/first.html > /tmp/b.log 2>&1 </dev/null & sleep 5; echo started" >/dev/null
+/bin/wayland --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
+guest "export XDG_RUNTIME_DIR=/tmp; /bin/browser --width=900 --height=640 --ca-file=/tmp/ws074-ca.pem $site/pages/first.html > /tmp/b.log 2>&1 </dev/null & sleep 5; echo started" >/dev/null
 set -- $(guest "grep 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 wx=${1:-0}; wy=${2:-0}
 echo "browser: window at $wx,$wy"
 
 # 1. The first page over https.
 expect_log /tmp/b.log 'ZBROWSER READY width=900 height=640'
-expect_last NAVIGATE "path=$site/pages/first.html title=zdesktop-browser: the first page"
+expect_last NAVIGATE "path=$site/pages/first.html title=browser: the first page"
 shot https-first.png
 
 # 2. The link, relative to the https URL.
 set -- $link
 pointer move $((wx + $1 - 2)) $((wy + $2)) sleep 150 move $((wx + $1)) $((wy + $2)) sleep 300 down sleep 60 up sleep 2000
 expect_log /tmp/b.log 'ZBROWSER LINK href=second.html'
-expect_last NAVIGATE "path=$site/pages/second.html title=zdesktop-browser: the second page"
+expect_last NAVIGATE "path=$site/pages/second.html title=browser: the second page"
 shot https-link.png
 
 # 3. A certificate for another name is refused, and the page stays.
@@ -112,7 +112,7 @@ expect_log /tmp/b.log "ZBROWSER ERROR load path=https://10.0.2.2:$wrong/pages/fi
 expect_last NAVIGATE "path=$site/pages/second.html "
 
 # 4. A real site, when the guest reaches the Internet.
-reach=$(guest "/bin/zdesktop-browser --dump=dom https://example.com/ 2>&1 | grep -c 'Example Domain'" | tail -1)
+reach=$(guest "/bin/browser --dump=dom https://example.com/ 2>&1 | grep -c 'Example Domain'" | tail -1)
 if [ "${reach:-0}" -gt 0 ] 2>/dev/null; then
 	keys '<esc>'
 	open_location "https://example.com/" 4

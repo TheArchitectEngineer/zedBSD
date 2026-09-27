@@ -9,7 +9,7 @@
  * The opcode router of the Vulkan executor.
  *
  * libvulkan frames every command as a little-endian u32 opcode, a u32
- * reply-request flag, then the encoded parameters (userland/base/libvulkan
+ * reply-request flag, then the encoded parameters (userland/desktop/libvulkan
  * wire.c vulkan_command_begin).  The router reads that header, echoes the
  * opcode into the reply of a command that asks for one, and hands the
  * command to the one part that owns its opcode.

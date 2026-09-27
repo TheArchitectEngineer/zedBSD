@@ -3,8 +3,8 @@
 # (plan/ws035/tests/build-login-image.sh BUILD graphical; root's password is empty):
 #  1. root logs in; a terminal is started in the session.  Super+L locks (ZWL LOCK locked reason=key): locked.png.
 #     Keys typed while locked do not reach the terminal (unlocked.png: no "nope" in it).
-#  2. A wrong password: zsessiond says FAIL after its delay (ZSESSIOND UNLOCK fail): wrong.png.
-#  3. The right (empty) password unlocks (ZSESSIOND UNLOCK ok, ZWL LOCK unlocked): unlocked.png.
+#  2. A wrong password: sessiond says FAIL after its delay (SESSIOND UNLOCK fail): wrong.png.
+#  3. The right (empty) password unlocks (SESSIOND UNLOCK ok, ZWL LOCK unlocked): unlocked.png.
 #  4. App Home's Lock Screen locks (reason=home), Enter unlocks.
 #  5. Idle: the session script is given --lock-idle=20 for this run (restored after); without input the session
 #     locks by itself (reason=idle): idle.png; Enter unlocks.
@@ -50,7 +50,7 @@ expect_log /var/log/greeter.log 'ZWL GREETER open' 60
 sleep 2
 keys '\n'
 expect_log /run/user/0/session.log 'ZWL HANDOFF go=1' 20
-guest 'export XDG_RUNTIME_DIR=/run/user/0 WAYLAND_DISPLAY=wayland-0; /bin/zdesktop-terminal --token=t1 --timeout-s=300 > /tmp/t1.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
+guest 'export XDG_RUNTIME_DIR=/run/user/0 WAYLAND_DISPLAY=wayland-0; /bin/terminal --token=t1 --timeout-s=300 > /tmp/t1.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
 keys 'echo before-lock' '\n'
 keys '<super-l>'
 expect_log /run/user/0/session.log 'ZWL LOCK locked reason=key user=root' 5
@@ -59,13 +59,13 @@ check "$out/locked.png" >/dev/null
 
 # 2. A wrong password (typed while locked: the terminal hears nothing).
 keys 'nope' '\n'
-expect_log /var/log/zsessiond.log 'ZSESSIOND UNLOCK fail user=root wrong=1 delay=2' 6
+expect_log /var/log/sessiond.log 'SESSIOND UNLOCK fail user=root wrong=1 delay=2' 6
 sleep 3
 check "$out/wrong.png" >/dev/null
 
 # 3. The right one.
 keys '\n'
-expect_log /var/log/zsessiond.log 'ZSESSIOND UNLOCK ok user=root' 6
+expect_log /var/log/sessiond.log 'SESSIOND UNLOCK ok user=root' 6
 expect_log /run/user/0/session.log 'ZWL LOCK unlocked' 6
 sleep 1
 check "$out/unlocked.png" >/dev/null
@@ -77,7 +77,7 @@ if [ -n "${1:-}" ]; then
 	pointer move "$1" "$2" sleep 400 down sleep 60 up sleep 800
 	expect_log /run/user/0/session.log 'ZWL LOCK locked reason=home' 5
 	keys '\n'
-	expect_log /var/log/zsessiond.log 'ZSESSIOND UNLOCK ok user=root' 6
+	expect_log /var/log/sessiond.log 'SESSIOND UNLOCK ok user=root' 6
 else
 	echo "no Lock Screen icon"
 	status=1
@@ -94,7 +94,7 @@ unlocks=$(guest "grep -c 'ZWL LOCK unlocked' /run/user/0/session.log" | tail -1)
 
 # The session script as it was.
 guest 'cp /tmp/session.saved /etc/zdesktop/session' >/dev/null
-guest "cat /var/log/zsessiond.log" > "$out/zsessiond.log"
+guest "cat /var/log/sessiond.log" > "$out/sessiond.log"
 guest "cat /run/user/0/session.log" > "$out/session.log"
 echo "zdesktop-p102: status=$status"
 exit $status

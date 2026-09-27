@@ -1,9 +1,9 @@
 #!/bin/sh
-# ws074: builds the zdesktop guest image with zdesktop-browser (plan/ws074/tests/config-amd64-browser.mk),
+# ws074: builds the zdesktop guest image with browser (plan/ws074/tests/config-amd64-browser.mk),
 # the guest harness's files, the fonts and the wallpaper, like plan/tools/files/build-files-image.sh.
 # The fonts and the wallpaper are not in git: build/ws035-fonts (Inter, JetBrains Mono, Droid Sans
 # Fallback) and build/ws035-wallpaper; a worktree links them from the main checkout's build/.
-# The browser's test pages (plan/ws074/tests/pages/) go to /usr/share/zdesktop-browser-tests/.
+# The browser's test pages (plan/ws074/tests/pages/) go to /usr/share/browser-tests/.
 #
 #   plan/ws074/tests/build-browser-image.sh [BUILD]     (default build/amd64)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -21,10 +21,10 @@ fonts=build/ws035-fonts
 [ -f $fonts/DroidSansFallback-LICENSE.txt ] && extra="$extra --file /usr/share/fonts/zdesktop-fallback-LICENSE.txt=$fonts/DroidSansFallback-LICENSE.txt"
 [ -f build/ws035-wallpaper/wallpaper.ppm ] && extra="$extra --file /usr/share/zdesktop/wallpaper.ppm=build/ws035-wallpaper/wallpaper.ppm"
 # The File Manager tests' home maker, as the files image has it (the desktop regressions run on this image too).
-extra="$extra --file /usr/share/zdesktop-files-tests/make-home.sh=plan/tools/files/make-home.sh"
+extra="$extra --file /usr/share/files-tests/make-home.sh=plan/tools/files/make-home.sh"
 if [ -d plan/ws074/tests/pages ]; then
 	for page in plan/ws074/tests/pages/*; do
-		[ -f "$page" ] && extra="$extra --file /usr/share/zdesktop-browser-tests/$(basename "$page")=$page"
+		[ -f "$page" ] && extra="$extra --file /usr/share/browser-tests/$(basename "$page")=$page"
 	done
 fi
 exec make -j"$(nproc)" ZEDBSD_CONFIG=plan/ws074/tests/config-amd64-browser.mk BUILD="$build" \

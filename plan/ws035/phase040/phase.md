@@ -66,7 +66,7 @@ p041（libpng-compat）の前提なので、実際には p041 と一緒に入る
 
 ## 2026-09-27: decode の半分は ws071-p010 で
 
-zdesktop-files の PNG のサムネイルのために、inflate の側を [ws071-p010](../../ws071/ws.md) で先に作った:
+files の PNG のサムネイルのために、inflate の側を [ws071-p010](../../ws071/ws.md) で先に作った:
 `include/libc/compat/zlib.h`、`userland/base/libz-compat/`（`inflate.c`・`checksum.c`）、`/lib/libz-compat.so`。
 `inflateInit`・`inflateInit2`（zlib の stream と raw）・`inflate`・`inflateEnd`・`inflateReset`・`uncompress`・`adler32`・`crc32`・
 `zlibVersion`。host の試験 `plan/tools/files/host-png.sh`（Python の zlib と比べる）。**この Phase に残るのは deflate（圧縮）**。

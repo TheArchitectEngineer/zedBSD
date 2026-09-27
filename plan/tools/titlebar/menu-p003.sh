@@ -1,7 +1,7 @@
 #!/bin/sh
 # ws070 (p002-p004): the System Menu on the Venus guest (the lean image, plan/tools/titlebar/build-menu-image.sh).
-# zdesktop --glass runs at 1280x800 with the wallpaper, and zdesktop-terminal (t1) gives it its menus
-# (Shell, Edit, View, Session, Help) through libzdesktop.  Every step checks zdesktop's and the
+# zdesktop --glass runs at 1280x800 with the wallpaper, and terminal (t1) gives it its menus
+# (Shell, Edit, View, Session, Help) through libkeiland.  Every step checks zdesktop's and the
 # terminal's log lines, and the screens are kept for reading:
 #  1. floating.png: the menus in the floating title bar after the title.
 #  2. edit.png: Edit opened by the pointer: Copy and Paste pale (nothing selected, nothing copied).
@@ -78,8 +78,8 @@ click() {
 
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/zdesktop/wallpaper.ppm ] && picture=--wallpaper=/usr/share/zdesktop/wallpaper.ppm
-/bin/zdesktop --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
-/bin/zdesktop-terminal --token=t1 --timeout-s=800 > /tmp/t.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
+/bin/wayland --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
+/bin/terminal --token=t1 --timeout-s=800 > /tmp/t.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 set -- $(guest "grep 'ZWL MAP client=1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
 surface=${1:-0}; wx=${2:-0}; wy=${3:-0}; bar=$((wy - 30))
 echo "terminal: surface $surface at $wx,$wy"

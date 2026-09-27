@@ -7,8 +7,8 @@ CONFIG_GPU_JOB_EXECUTION_MS := 60000
 CONFIG_GPU_JOB_STOP_MS := 10000
 CONFIG_GPU_CONTROL_MS := 10000
 CONFIG_DRIVER_PCI_I915 := y
-ZEDBSD_USER_PROGRAMS += libvulkan libwayland-client libwayland-egl libegl libglesv2 libtruetype wltest wlshm mview zdesktop-terminal egltest libgl glxtest zgears zdesktop zdesktop-x11server i915-firmware
-# ws075: App Home's Files (WS071), for the i915 capture scenario zdesktop-files.
-ZEDBSD_USER_PROGRAMS += libz-compat libpng-compat zdesktop-files
+ZEDBSD_USER_PROGRAMS += libvulkan libwayland-client libwayland-egl libegl libglesv2 libtruetype wltest wlshm mview terminal egltest libgl glxtest zgears wayland xserver i915-firmware
+# ws075: App Home's Files (WS071), for the i915 capture scenario files.
+ZEDBSD_USER_PROGRAMS += libz-compat libpng-compat files
 # ws035-p090: the demo image's App Home (Files, Browser; the browser shows when its start page is there).
-ZEDBSD_USER_PROGRAMS += zdesktop-browser
+ZEDBSD_USER_PROGRAMS += browser

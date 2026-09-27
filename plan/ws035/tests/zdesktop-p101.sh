@@ -3,7 +3,7 @@
 # login image (plan/ws035/tests/build-login-image.sh BUILD graphical), photographed several times a second
 # (frames.py; each picture is black, text (the text console) or picture):
 #  1. Login: root logs in with Enter; the greeter stays ("Starting session...") until the session's zdesktop says
-#     READY, zsessiond ends the greeter and answers GO (ZSESSIOND HANDOFF session ready=1, ZWL HANDOFF go=1).
+#     READY, sessiond ends the greeter and answers GO (SESSIOND HANDOFF session ready=1, ZWL HANDOFF go=1).
 #     No picture is the text console (before p101 the console's text showed for about 3 seconds).
 #  2. Log Out: the session ends and the greeter comes back; no picture is the text console.
 # The pictures are kept in OUTDIR/login and OUTDIR/logout, the lists in OUTDIR/login.txt and OUTDIR/logout.txt.
@@ -62,10 +62,10 @@ frames login 16 &
 sleep 2
 keys '\n'
 wait
-expect_log /var/log/zsessiond.log 'ZSESSIOND GREETER stays pid=' 5
-expect_log /var/log/zsessiond.log 'ZSESSIOND HANDOFF session ready=1' 5
-expect_log /var/log/zsessiond.log 'ZSESSIOND HANDOFF greeter released=1' 5
-expect_log /var/log/zsessiond.log 'ZSESSIOND HANDOFF go written=3' 5
+expect_log /var/log/sessiond.log 'SESSIOND GREETER stays pid=' 5
+expect_log /var/log/sessiond.log 'SESSIOND HANDOFF session ready=1' 5
+expect_log /var/log/sessiond.log 'SESSIOND HANDOFF greeter released=1' 5
+expect_log /var/log/sessiond.log 'SESSIOND HANDOFF go written=3' 5
 expect_log /run/user/0/session.log 'ZWL HANDOFF go=1' 5
 expect_log /var/log/greeter.log 'ZWL GREETER starting' 5
 no_text login
@@ -82,21 +82,21 @@ else
 	echo "no Log Out icon"
 	status=1
 fi
-expect_log /var/log/zsessiond.log 'SESSION end user=root' 10
-expect_log /var/log/zsessiond.log 'ZSESSIOND HANDOFF greeter ready: waits' 5
-expect_log /var/log/zsessiond.log 'ZSESSIOND HANDOFF session released=1' 5
-expect_log /var/log/zsessiond.log 'ZSESSIOND HANDOFF greeter go written=3' 5
-expect_log /var/log/zsessiond.log 'ZSESSIOND GREETER adopt pid=' 5
+expect_log /var/log/sessiond.log 'SESSION end user=root' 10
+expect_log /var/log/sessiond.log 'SESSIOND HANDOFF greeter ready: waits' 5
+expect_log /var/log/sessiond.log 'SESSIOND HANDOFF session released=1' 5
+expect_log /var/log/sessiond.log 'SESSIOND HANDOFF greeter go written=3' 5
+expect_log /var/log/sessiond.log 'SESSIOND GREETER adopt pid=' 5
 no_text logout
 
 # The greeter after the Log Out takes a login again (the adopted greeter answers AUTH).
 sleep 2
 keys '\n'
-expect_log /var/log/zsessiond.log 'AUTH ok user=root' 10
-expect_log /var/log/zsessiond.log 'HANDOFF session ready=1' 20
+expect_log /var/log/sessiond.log 'AUTH ok user=root' 10
+expect_log /var/log/sessiond.log 'HANDOFF session ready=1' 20
 sleep 4
 python3 plan/ws035/tests/zdesktop-check.py "$out/again.png" --runtime "$GUEST_RUNTIME" >/dev/null
 
-guest "cat /var/log/zsessiond.log" > "$out/zsessiond.log"
+guest "cat /var/log/sessiond.log" > "$out/sessiond.log"
 echo "zdesktop-p101: status=$status"
 exit $status

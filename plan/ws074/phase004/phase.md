@@ -23,12 +23,12 @@ CR LF の正規化、入力が足りない時の待ち）、parse error の種�
 
 cleared。
 
-- `userland/base/zdesktop-browser/html/{html.h,input.c,tokenizer.c,entities.h}`。状態は standard の順の enum、family ごとの関数
+- `userland/desktop/browser/html/{html.h,input.c,tokenizer.c,entities.h}`。状態は standard の順の enum、family ごとの関数
   （text、tag、RCDATA/RAWTEXT の end tag、script data、attribute、comment、DOCTYPE、DOCTYPE の識別子、CDATA、文字参照）。文字は
   1 つの run に集めて次の tag などの前に出す。入力が尽きて stream が閉じていなければ `HTML_TOKEN_NONE` を返し、続きから再開する
   （lookahead の `DOCTYPE`・`[CDATA[`・`PUBLIC`・`SYSTEM`・文字参照の名前、surrogate の半分も待つ）。
-- 文字参照の表: build のときに WHATWG の `entities.json`（SHA-256 `d741d877…`、`userland/base/zdesktop-browser/distfiles/`、
-  `.gitignore` に 1 行）を取得・検証し、`tools/gen-entities.py` が `$(BUILD)/zdesktop-browser-gen/html-entities.c` を作る
+- 文字参照の表: build のときに WHATWG の `entities.json`（SHA-256 `d741d877…`、`userland/desktop/browser/distfiles/`、
+  `.gitignore` に 1 行）を取得・検証し、`tools/gen-entities.py` が `$(BUILD)/browser-gen/html-entities.c` を作る
   （CC BY 4.0 の表示は生成物の先頭）。表は commit しない（main の D4 の指示）。
 - 試験の道具: `plan/ws074/tests/host-tokenizer.c`（batch の driver: 全部を入れてから閉じる mode と、1 unit ずつ入れて待ちを通る
   mode）、`run-html5lib-tokenizer.py`（`--guest` で guest の driver）、`list-sources.sh`、`fetch-distfiles.sh`、`boot-check.sh`。

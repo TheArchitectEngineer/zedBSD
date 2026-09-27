@@ -3,7 +3,7 @@
  * shader's gl_Position; spirv-val checks the result (run.sh).
  * Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
  */
-#include "../../../../userland/base/libglesv2/gles.h"
+#include "../../../../userland/desktop/libglesv2/gles.h"
 
 #include <stdio.h>
 #include <stdlib.h>

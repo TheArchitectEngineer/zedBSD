@@ -2,13 +2,13 @@
 # zedBSD
 # Copyright (C) 2026 Awe Morris
 # SPDX-License-Identifier: Zlib
-"""Runs test262 (parse only) against zdesktop-browser's JavaScript parser.
+"""Runs test262 (parse only) against browser's JavaScript parser.
 
   run-test262-parse.py [--driver PATH] [--limit N] [--filter TEXT] [--show N] [--record FILE] [--manifest-only OUT]
   run-test262-parse.py --results RESULTS    (count the output of a driver run elsewhere, e.g. the guest's)
 
 The tests are build/ws074-suites/test262/test/**/*.js (fetch-suites.sh test262) without intl402/,
-staging/, the harness's fixtures (*_FIXTURE.js) and the tests of the proposals zdesktop-browser does
+staging/, the harness's fixtures (*_FIXTURE.js) and the tests of the proposals browser does
 not plan yet (EXCLUDED_FEATURES: decorators, import defer, source phase imports, explicit resource
 management; design.md §15 leaves unplanned proposals out).  A test's frontmatter decides how it is parsed:
 a module (flags: [module]), strict only (onlyStrict), sloppy only (noStrict or raw), or both.  A test

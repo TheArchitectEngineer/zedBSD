@@ -10,7 +10,7 @@ Queue: なし（2026-09-28 main の割り当て「the X11 PRIMARY bridge」。p1
 
 ## 実装（2026-09-28）
 
-- **zdesktop-x11server**（`wayland.c`・`selection.c`・`internal.h`・`rootless.c`）: p087 の CLIPBOARD の橋と同じ形で
+- **xserver**（`wayland.c`・`selection.c`・`internal.h`・`rootless.c`）: p087 の CLIPBOARD の橋と同じ形で
   PRIMARY を橋渡しする。
   - desktop に `zwp_primary_selection_device_manager_v1` があれば bind し、seat の primary device を持つ。
   - desktop の primary selection に別の client の text があれば、server が X の PRIMARY を root window で持つ

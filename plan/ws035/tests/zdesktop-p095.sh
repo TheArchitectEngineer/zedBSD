@@ -1,14 +1,14 @@
 #!/bin/sh
 # ws035-p095: the graphical login from end to end on the Venus guest of the login image
-# (plan/ws035/tests/build-login-image.sh): zsessiond --graphical starts zdesktop --greeter as _greeter at the
+# (plan/ws035/tests/build-login-image.sh): sessiond --graphical starts zdesktop --greeter as _greeter at the
 # display's preferred size.  Users alice (uid 1001, "secret word") and bob (uid 1002) are made (zdesktop-p094.sh
 # makes alice; this makes both).
 #  1. greeter.png: the login screen: the time and date, the card with both users, alice selected.
-#  2. wrong.png: a wrong password: "Wrong password" (ZSESSIOND AUTH fail).
+#  2. wrong.png: a wrong password: "Wrong password" (SESSIOND AUTH fail).
 #  3. The right password (typed with Shift for nothing, a space in it): the greeter ends, the session runs as alice
 #     (zdesktop --session, pid owned by alice, its socket in /run/user/1001), session.png.
 #  4. home.png: App Home has Log Out as its last icon; a click on it ends the session (ZWL SESSION logout).
-#  5. again.png: the login screen again.  zsessiond is then stopped (SIGTERM).
+#  5. again.png: the login screen again.  sessiond is then stopped (SIGTERM).
 #
 #   plan/tools/files/files-guest.sh start     (the guest must be up; GUEST_RUNTIME as for the files tests)
 #   plan/ws035/tests/zdesktop-p095.sh [OUTDIR]
@@ -56,7 +56,7 @@ for u in alice:1001:Alice bob:1002:Bob; do n=\${u%%:*}; rest=\${u#*:}; id=\${res
  grep -q \"^\$n:\" /etc/group || echo \"\$n:x:\$id:\" >> /etc/group
  mkdir -p /home/\$n; chown \$id:\$id /home/\$n; done
 grep -v -e '^alice:' -e '^bob:' /etc/shadow > /tmp/shadow.new; echo 'alice:$hash:0:0:99999:7:::' >> /tmp/shadow.new; echo 'bob:$hash_bob:0:0:99999:7:::' >> /tmp/shadow.new; cat /tmp/shadow.new > /etc/shadow; rm -f /tmp/shadow.new
-rm -f /var/log/zsessiond.log /var/log/greeter.log" >/dev/null
+rm -f /var/log/sessiond.log /var/log/greeter.log" >/dev/null
 
 # 0. The GPU admits root and the device's owner (gpu_open): alice owns it 0600, bob is refused by the mode; with
 #    0666 bob is still refused by the GPU (logged); owned by root again, alice is refused as before.
@@ -77,7 +77,7 @@ expect_run 'chown 0:0 /dev/gpu0; /bin/greeter-probe --open-as=1001 /dev/gpu0' 'u
 expect_run 'chmod 0666 /dev/gpu0; ls -l /dev/gpu0' '^crw-rw-rw- .* root '
 
 # 1. The login screen.
-guest "/sbin/zsessiond --graphical </dev/null >/dev/null 2>&1 & sleep 1; echo started" >/dev/null
+guest "/sbin/sessiond --graphical </dev/null >/dev/null 2>&1 & sleep 1; echo started" >/dev/null
 expect_log /var/log/greeter.log 'ZWL GREETER open users=2 selected=alice' 20
 expect_log /var/log/greeter.log 'ZWL OUTPUT open' 20
 set -- $(guest "grep 'ZWL OUTPUT open' /var/log/greeter.log | tail -1" | sed -n 's/.*width=\([0-9]*\) height=\([0-9]*\).*/\1 \2/p')
@@ -89,7 +89,7 @@ check "$out/greeter.png" >/dev/null
 
 # 2. A wrong password.
 keys 'nope' '\n'
-expect_log /var/log/zsessiond.log 'AUTH fail user=alice wrong=1' 10
+expect_log /var/log/sessiond.log 'AUTH fail user=alice wrong=1' 10
 expect_log /var/log/greeter.log 'ZWL GREETER answer=FAIL' 10
 sleep 1
 check "$out/wrong.png" >/dev/null
@@ -100,11 +100,11 @@ keys '<esc>'
 
 # 3. The right password; the session.
 keys 'secret word' '\n'
-expect_log /var/log/zsessiond.log 'AUTH ok user=alice uid=1001' 10
-expect_log /var/log/zsessiond.log 'SESSION start user=alice' 15
+expect_log /var/log/sessiond.log 'AUTH ok user=alice uid=1001' 10
+expect_log /var/log/sessiond.log 'SESSION start user=alice' 15
 expect_log /run/user/1001/session.log 'ZWL READY socket=/run/user/1001/wayland-0' 20
-guest "ps -A -o user,pid,args" | grep -E 'zdesktop|zsessiond|greeter'
-owner=$(guest "ps -A -o user,args" | awk '$2 == "/bin/zdesktop" {print $1}' | tail -1)
+guest "ps -A -o user,pid,args" | grep -E 'zdesktop|sessiond|greeter'
+owner=$(guest "ps -A -o user,args" | awk '$2 == "/bin/wayland" {print $1}' | tail -1)
 echo "session zdesktop user: $owner"
 [ "$owner" = alice ] || [ "$owner" = 1001 ] || status=1
 sleep 3
@@ -121,15 +121,15 @@ else
 	status=1
 fi
 expect_log /run/user/1001/session.log 'ZWL SESSION logout' 10
-expect_log /var/log/zsessiond.log 'SESSION end user=alice' 20
+expect_log /var/log/sessiond.log 'SESSION end user=alice' 20
 
 # 5. The login screen again.
-expect_log /var/log/zsessiond.log 'GREETER start .*' 10
+expect_log /var/log/sessiond.log 'GREETER start .*' 10
 sleep 6
 pointer move $((width - 4)) $((height / 3)) sleep 400
 check "$out/again.png" >/dev/null
 guest "$stop_all" >/dev/null
-guest "cat /var/log/zsessiond.log; cat /var/log/greeter.log" > "$out/logs.txt"
+guest "cat /var/log/sessiond.log; cat /var/log/greeter.log" > "$out/logs.txt"
 
 echo "zdesktop-p095: status=$status"
 exit $status

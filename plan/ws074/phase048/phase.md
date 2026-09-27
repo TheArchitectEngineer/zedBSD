@@ -40,7 +40,7 @@ cleared。
   - golden 24/24（floats.html の 4 つを追加、前の 20 は変わらず）、DOM の試験 5/5、host-position 19/19（plain・ASan）。
   - guest（`plan/ws074/tests/browser-page.sh`、新: 1 つの page を窓で表示して撮る）: status 0。回帰の browser-p013・p045・p030 も
     status 0。画面: `/home/awe/zedBSD-rpi4/build/ws074-shots/p048-20260928-floats.png`、Chromium との並び
-    `p048-20260928-floats-vs-chrome.png`（左が zdesktop-browser、右が Chromium）。
+    `p048-20260928-floats-vs-chrome.png`（左が browser、右が Chromium）。
 - boot test: PASS（`/home/awe/zedBSD-rpi4/build/ws074-shots/p048-20260928-boot-login.png`）。
 - 実機: 未実施。
 - commit: `7e67b114`（code と試験）、この記録の commit。

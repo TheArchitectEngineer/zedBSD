@@ -20,6 +20,6 @@ extra=$(python3 plan/tools/guest/guest.py extra-files | sed -n "s/^ZEDBSD_TEST_E
 [ -f build/ws071-fonts/DroidSansFallbackFull.ttf ] && extra="$extra --file /usr/share/fonts/zdesktop-fallback.ttf=build/ws071-fonts/DroidSansFallbackFull.ttf"
 [ -f build/ws071-fonts/DroidSansFallback-LICENSE.txt ] && extra="$extra --file /usr/share/fonts/zdesktop-fallback-LICENSE.txt=build/ws071-fonts/DroidSansFallback-LICENSE.txt"
 [ -f build/ws035-wallpaper/wallpaper.ppm ] && extra="$extra --file /usr/share/zdesktop/wallpaper.ppm=build/ws035-wallpaper/wallpaper.ppm"
-extra="$extra --file /usr/share/zdesktop-files-tests/make-home.sh=plan/tools/files/make-home.sh"
+extra="$extra --file /usr/share/files-tests/make-home.sh=plan/tools/files/make-home.sh"
 exec make -j"$(nproc)" ZEDBSD_CONFIG=plan/tools/files/config-amd64-files.mk BUILD="$build" \
     "ZEDBSD_TEST_EXTRA_FILES=$extra" disk-image

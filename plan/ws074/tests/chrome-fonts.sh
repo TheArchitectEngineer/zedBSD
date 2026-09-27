@@ -1,6 +1,6 @@
 #!/bin/sh
 # ws074: writes the fontconfig file that makes the host's Chromium draw with the fonts
-# zdesktop-browser uses (build/ws035-fonts: Inter for serif and sans-serif, JetBrains Mono for
+# browser uses (build/ws035-fonts: Inter for serif and sans-serif, JetBrains Mono for
 # monospace, Droid Sans Fallback for the rest), into build/ws074-chrome/fonts.conf.
 # chrome-shot.sh and chrome-boxes.py pass it to Chromium through FONTCONFIG_FILE.
 #

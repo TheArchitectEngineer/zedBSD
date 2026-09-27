@@ -9,7 +9,7 @@
  * Instance, physical-device, device and queue commands of the native Vulkan executor (WS031 E-127).
  *
  * MINIMAL CONNECTION, HAPPY PATH ONLY.  The wire of every command here was read from the library
- * that sends it (userland/base/libvulkan: instance.c, device.c, objects.c) and the records travel
+ * that sends it (userland/desktop/libvulkan: instance.c, device.c, objects.c) and the records travel
  * through the generated codec, so the two ends cannot drift.  What is reported is one Gen12 device:
  * one memory type that is device-local and host-coherent (the GPU is UMA), one queue family of one
  * graphics queue on RCS0.

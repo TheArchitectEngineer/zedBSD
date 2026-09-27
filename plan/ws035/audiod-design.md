@@ -48,7 +48,7 @@ Status: 設計（2026-09-24）。実装は p049（`/dev/dsp` の mmap）と p009
 | `STREAM_FLUSH` | id | ring の未再生分を捨てる |
 | `STREAM_VOLUME` | id, left, right, muted | stream ごとの音量（0〜65536、65536 が等倍） |
 | `STREAM_DESTROY` | id | 閉じる。共有メモリは両者が unmap した時点で消える |
-| `DEVICE_VOLUME` | left, right, muted | 全体の音量（`/dev/mixer0`）。libzdesktop の音量表示・操作が使う |
+| `DEVICE_VOLUME` | left, right, muted | 全体の音量（`/dev/mixer0`）。libkeiland の音量表示・操作が使う |
 | `SUBSCRIBE` | mask | 音量・device の変化の通知を受ける |
 
 ### 3.2 応答と通知（audiod → client）

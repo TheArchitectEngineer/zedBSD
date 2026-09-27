@@ -1,6 +1,6 @@
 #!/bin/sh
-# ws071-p010: PNG thumbnails (libpng-compat, libz-compat) and dragging items within zdesktop-files, on the
-# Venus guest (the lean image, build-files-image.sh).  zdesktop --glass at 1280x800; zdesktop-files at
+# ws071-p010: PNG thumbnails (libpng-compat, libz-compat) and dragging items within files, on the
+# Venus guest (the lean image, build-files-image.sh).  zdesktop --glass at 1280x800; files at
 # 1000x640 on the sample home (/tmp/fhome).
 #  1. Opened on Desktop: the thumbnails of Logo.png (64x64, a palette with a transparent colour) and
 #     Screenshot.png (120x80 RGB) are made (THUMB error=0); thumbs.png.
@@ -58,12 +58,12 @@ expect_guest() {
 	fi
 }
 
-# Starts zdesktop and zdesktop-files on a folder, and finds the window.
+# Starts zdesktop and files on a folder, and finds the window.
 start() {
 	guest "$stop_all" >/dev/null
 	guest "export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
-/bin/zdesktop --timeout=900 --width=1280 --height=800 --glass --wallpaper=/usr/share/zdesktop/wallpaper.ppm > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
-HOME=/tmp/fhome /bin/zdesktop-files --token=f1 --timeout-s=800 --width=1000 --height=640 $1 > /tmp/f.log 2>&1 </dev/null & sleep 6; echo started" >/dev/null
+/bin/wayland --timeout=900 --width=1280 --height=800 --glass --wallpaper=/usr/share/zdesktop/wallpaper.ppm > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
+HOME=/tmp/fhome /bin/files --token=f1 --timeout-s=800 --width=1000 --height=640 $1 > /tmp/f.log 2>&1 </dev/null & sleep 6; echo started" >/dev/null
 	set -- $(guest "grep 'ZWL MAP client=1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
 	surface=${1:-0}; wx=${2:-0}; wy=${3:-0}
 	echo "files: surface $surface at $wx,$wy"
@@ -86,7 +86,7 @@ shot() {
 	check "$out/$1" >/dev/null
 }
 
-guest 'rm -f /tmp/zdesktop-files.clipboard; rm -rf /tmp/fhome; sh /usr/share/zdesktop-files-tests/make-home.sh /tmp/fhome >/dev/null'
+guest 'rm -f /tmp/files.clipboard; rm -rf /tmp/fhome; sh /usr/share/files-tests/make-home.sh /tmp/fhome >/dev/null'
 
 # 1. The PNG thumbnails on Desktop.
 start /tmp/fhome/Desktop
@@ -129,7 +129,7 @@ expect_log /tmp/f.log 'ZFILES DRAG target kind=place place=1$'
 check "$out/drag-place.png" >/dev/null
 release
 expect_log /tmp/f.log 'ZFILES DRAG drop operation=reorder place=4 to=1 error=0$'
-expect_guest 'head -1 /tmp/fhome/.config/zdesktop-files/sidebar | grep -qx /tmp/fhome/Pictures' 'Pictures first in the sidebar list'
+expect_guest 'head -1 /tmp/fhome/.config/files/sidebar | grep -qx /tmp/fhome/Pictures' 'Pictures first in the sidebar list'
 shot reordered.png
 
 errors=$(guest "grep -c ERROR /tmp/zdesktop.log" | tail -1)

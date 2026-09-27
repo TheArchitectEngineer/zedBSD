@@ -31,13 +31,13 @@ cursor を zdesktop が描く（ウィンドウモードだけ）。
 
 ## 実装（2026-09-26、q458-i01）
 
-- `userland/base/libwayland/`: client の `wl_shm` 1（`create_pool`、`format` の event）と `wl_shm_pool` 1（`create_buffer`・`destroy`・`resize`）、`WL_SHM_FORMAT_ARGB8888`・`XRGB8888`。今まで client の library に無かった。
+- `userland/desktop/libwayland/`: client の `wl_shm` 1（`create_pool`、`format` の event）と `wl_shm_pool` 1（`create_buffer`・`destroy`・`resize`）、`WL_SHM_FORMAT_ARGB8888`・`XRGB8888`。今まで client の library に無かった。
 - `userland/base/zwl/shm.c`（新）: `wl_shm` の global（bind で 2 つの format）、pool（client の fd を作成時と `resize` で 1 回だけ読み取りで mmap、pool の object と buffer が参照を持つ）、buffer（pool の中の位置、format・範囲を検査）。窓の画像は **linear・host-visible・coherent の Vulkan の画像**（surface ごと、大きさが変わるまで使い回す）で、commit の後、frame が進行中でないときに CPU で **damage の行だけ** copy し、すぐ `wl_buffer.release`。設計の「staging を省いて直接」の案を選んだ（staging と GPU の copy が要らない。copy は 0.1〜0.8 ms、下の測定）。ARGB8888 は alpha の pipeline、XRGB8888 は不透明。zdesktop の矢印（12×19、白と黒の縁）も同じ種類の画像。
 - `protocol.c`: `damage`・`damage_buffer` を外接矩形で保ち、commit で committed の damage へ（copy までの複数の commit は合わせる）。role の無い surface の commit を受ける（cursor の surface は `set_cursor` の前に commit される。前は protocol error で client を切っていた）。
 - `seat.c`: `wl_pointer.set_cursor`（pointer の上の client だけ、surface と hotspot、surface 無しで非表示）、focus が変わると矢印に戻す。`input.c`: pointer の移動で描き直す。
 - `compose.c`: 窓の画像は GPU の import か surface の `wl_shm` の画像。最後に cursor（client の surface を hotspot で、無ければ矢印、非表示なら無し）を alpha で描く。alpha の合成は Wayland の慣習の premultiplied（`srcColor = ONE`）に直した。cursor の buffer と frame callback も frame が持つ。
 - **frame の予定**（範囲に追加、設計 D4 の「表示 1 回につき最大 1 回」の補い）: frame が完了したら、その frame で callback を送った窓の commit を、全部そろうか前の frame の時間の半分（4〜50 ms）が経つまで待ってから次の frame を描く。無いと、速く commit する client が次の frame を始め、遅い client の commit がさらに次の frame に回り、その client の frame が半分になった（下の測定）。
-- 試験の client `userland/base/wlshm`（新）: `wl_shm` の窓（`--size`・`--color`・`--xrgb`・`--band`（動く帯、変わった行だけ damage）・`--cursor`（8×8 の自分の cursor）・`--hide-cursor`・`--hold`・`--delay-ms`）。`platform/amd64/vmunix.mk` に link の規則、zdesktop の試験の config に追加。
+- 試験の client `userland/desktop/wlshm`（新）: `wl_shm` の窓（`--size`・`--color`・`--xrgb`・`--band`（動く帯、変わった行だけ damage）・`--cursor`（8×8 の自分の cursor）・`--hide-cursor`・`--hold`・`--delay-ms`）。`platform/amd64/vmunix.mk` に link の規則、zdesktop の試験の config に追加。
 - 試験: `plan/ws035/tests/zdesktop-p053.sh`（画面の読み取り）、`zdesktop-p053-perf.sh`（測定）。
 
 ## 検証（2026-09-26、QEMU 8 GiB 4 vCPU NVMe、Venus（host は Lavapipe））

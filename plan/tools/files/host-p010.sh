@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws071-p010: dragging items within zdesktop-files on the host (files-render, host-render.c).
+# ws071-p010: dragging items within files on the host (files-render, host-render.c).
 # Builds nothing: run host-build.sh first.  Each case runs files-render on a fresh sample home, started in
 # Projects/zedBSD (docs, src, Makefile, README.md), and checks the lines it prints and the files:
 #  1. README.md dragged onto the folder docs: moved (move.png shows the drag over docs).
@@ -129,7 +129,7 @@ expect plain "DRAG target kind=none$"
 expect plain "DRAG drop operation=none$"
 
 # 10. The folder docs dragged onto the Favorites' title: added to the sidebar (its list file).
-sidebar=$home/.config/zdesktop-files/sidebar
+sidebar=$home/.config/files/sidebar
 run favorite press=$docs drag=360,132 drag=118,35 draw="$out/favorite.ppm" release=118,35
 expect favorite "DRAG target kind=favorites$"
 expect favorite "FAVORITE add path=$project/docs$"

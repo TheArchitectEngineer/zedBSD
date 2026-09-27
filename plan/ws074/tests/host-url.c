@@ -6,7 +6,7 @@
  */
 
 /*
- * ws074-p015: the batch driver of zdesktop-browser's URL parser for
+ * ws074-p015: the batch driver of browser's URL parser for
  * run-url-tests.py.  Reads commands from standard input, one a line, each
  * field in hexadecimal UTF-8 (so tabs and line feeds in URLs survive):
  *

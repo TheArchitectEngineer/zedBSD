@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws035-p100: the primary selection between two zdesktop-terminals on the Venus guest (the lean image, the files
+# ws035-p100: the primary selection between two terminals on the Venus guest (the lean image, the files
 # image, or the login image), zdesktop --glass at 1280x800:
 #  1. In the first terminal "alpha beta-gamma delta" is printed and "beta-gamma" double-clicked: it is the primary
 #     selection (ZTERM PRIMARY set bytes=10; ZWL PRIMARY selection types=2).
@@ -49,8 +49,8 @@ window_of() {
 
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/zdesktop/wallpaper.ppm ] && picture=--wallpaper=/usr/share/zdesktop/wallpaper.ppm
-/bin/zdesktop --timeout=600 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
-/bin/zdesktop-terminal --token=t1 --timeout-s=500 > /tmp/t1.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
+/bin/wayland --timeout=600 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
+/bin/terminal --token=t1 --timeout-s=500 > /tmp/t1.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 set -- $(window_of 1)
 wx=${1:-0}; wy=${2:-0}
 set -- $(guest "grep 'ZTERM START' /tmp/t1.log | tail -1" | sed -n 's/.* cell=\([0-9]*\)x\([0-9]*\) .*/\1 \2/p')
@@ -69,7 +69,7 @@ expect_log /tmp/t1.log 'ZTERM PRIMARY set bytes=10'
 expect_log /tmp/zdesktop.log 'ZWL PRIMARY selection client=[0-9]+ source=[0-9]+ types=2'
 
 # 2. The second terminal, and a middle click in it.
-guest 'export XDG_RUNTIME_DIR=/tmp; /bin/zdesktop-terminal --token=t2 --timeout-s=400 > /tmp/t2.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
+guest 'export XDG_RUNTIME_DIR=/tmp; /bin/terminal --token=t2 --timeout-s=400 > /tmp/t2.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 expect_log /tmp/t2.log 'ZTERM PRIMARY offer text=1'
 set -- $(window_of 2)
 x2=${1:-0}; y2=${2:-0}

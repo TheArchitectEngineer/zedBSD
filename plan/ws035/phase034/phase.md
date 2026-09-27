@@ -19,7 +19,7 @@ Queue: q318（q318-i01）
 
 - **kernelとlibcの関係（2026-09-23ユーザー明確化）**: このOSはkernelとlibcが完全にモノリシックである。driverがlibcを
   参照することは許される。Vulkanのヘッダはlibcの一部で、`include/libc/vulkan/` に置く。driverは `<libc/vulkan/vulkan.h>` を
-  includeしてよい。`userland/base/libvulkan` はoptionのpackageではなく、必須の構成要素がbuild単位に分かれているだけである。
+  includeしてよい。`userland/desktop/libvulkan` はoptionのpackageではなく、必須の構成要素がbuild単位に分かれているだけである。
   kernelで除くのは、接頭辞なしの標準Cヘッダ名（`<stdio.h>`・`<string.h>` 等）による暗黙の読込みと、libcのobjectのlinkである。
 - libcの公開ヘッダの最終的な置き場所は `include/libc/`（p023で移す）。sysrootとrootfsへは `/usr/include/` 直下にコピーする。
 - 承認済み: kernel・HAL共通のcompile flagの変更（`-nostdlibinc`、`-fno-builtin`）、`include/uapi/hosted.h` とfixtureへの

@@ -24,7 +24,7 @@ Queue: なし（サブエージェントが worktree の branch で実行）
 ## 受け入れ
 
 1. amd64 の build が通る（warning 0）。style-check（新しい file）0 件。shader は `paint/shaders/regenerate.py` で `glslc`・`spirv-val`
-   を通した生成物の header を commit する（zdesktop-files と同じ方式）。
+   を通した生成物の header を commit する（files と同じ方式）。
 2. host: `--render-gpu`（lavapipe）と `--render` の画像の差が channel ≤ 2、超える画素が 0.1% 以下（design.md §8.2）。golden と
    ASan は前の Phase と同じ。
 3. guest（Venus）: 同じ比較、zdesktop の窓に page が出る（画面を撮る）、wheel・key で scroll する。
@@ -39,11 +39,11 @@ cleared。
     色、atlas の位置と種類）。vertex shader が矩形の触る画素の範囲へ広げ、fragment shader が CPU と同じ被覆（矩形は画素の正方形との
     重なりの面積、glyph は atlas の texel）を掛けて straight alpha で重ねる。pass は canvas の画素（`paint_canvas_pixel`、CPU と共通）で
     clear。instance は list の順に 1 回の draw で描く（Vulkan は primitive の順に blend する）。glyph の atlas は 1024×1024 の linear
-    BGRA8（host が書く。zdesktop-files の canvas と同じ方式）、shelf で詰め、glyph の bitmap の pointer で引く表。満杯なら次の frame で
+    BGRA8（host が書く。files の canvas と同じ方式）、shelf で詰め、glyph の bitmap の pointer で引く表。満杯なら次の frame で
     やり直す。`gl_VertexIndex` は使わない（i915 の compiler のため、files と同じ）。
   - `paint/shaders/display.{vert,frag}`・`regenerate.py` → 生成物の `paint/shaders.h` を commit（`glslc`・`spirv-val` を通す）。
   - `--render-gpu --output=OUT.ppm`: 自分の instance と device を作り、offscreen の image に描いて buffer へ copy して読む。
-  - `shell/{internal.h,window.c,present.c,shell.c}`: xdg の toplevel（zdesktop-files の window.c と同じ作り、wheel・key の repeat）、
+  - `shell/{internal.h,window.c,present.c,shell.c}`: xdg の toplevel（files の window.c と同じ作り、wheel・key の repeat）、
     Wayland WSI の swapchain（B8G8R8A8/R8G8B8A8 の UNORM、FIFO、不透明）に GPU の描画で直接描く、大きさの変更で layout と swapchain を
     作り直す。scroll: wheel（1 単位 3 px）、↑↓（40 px）、PageUp/PageDown/Space（窓の高さ − 40 px）、Home・End。Ctrl+Q・Ctrl+W で
     閉じる。題名は `<title>`（`page_title`、空白を畳む）、無ければ file の名前。`file://` の URL を受ける。test 用の行

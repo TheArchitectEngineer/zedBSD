@@ -9,7 +9,7 @@ Related Milestones: MG001, MG005
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 からサブエージェントが worktree の branch で実行。main への統合は main の session）
-Resume point: 2026-09-28: グラフィカルログインと完全なグラフィカル起動（ユーザー承認 2026-09-28）: p094（zsessiond）・p095（`zdesktop --greeter`）・p096（loader の logo）・p097（`kmsg=quiet`）・p098（既定）・p099（BIOS の loader の logo）cleared。HAL の早期 console の差分（[proposed/hal-quiet-console.md](proposed/hal-quiet-console.md)）は承認待ち。残り: g4（継ぎ目の無い引き継ぎ）、g5（画面の lock）、kernel の revoke（別 WS）。p100（terminal の PRIMARY selection）cleared、残りは X11 の PRIMARY の橋。p101（g4 の表示の引き継ぎ: 文字 console を出さない、黒 約 1.1 秒）cleared、黒も無くすのは lease の fd の受け渡し（WS075・libvulkan と相談、revoke）。p102（g5 の画面の lock）cleared。p103（X11 の PRIMARY の橋）cleared。
+Resume point: 2026-09-28: グラフィカルログインと完全なグラフィカル起動（ユーザー承認 2026-09-28）: p094（sessiond）・p095（`zdesktop --greeter`）・p096（loader の logo）・p097（`kmsg=quiet`）・p098（既定）・p099（BIOS の loader の logo）cleared。HAL の早期 console の差分（[proposed/hal-quiet-console.md](proposed/hal-quiet-console.md)）は承認待ち。残り: g4（継ぎ目の無い引き継ぎ）、g5（画面の lock）、kernel の revoke（別 WS）。p100（terminal の PRIMARY selection）cleared、残りは X11 の PRIMARY の橋。p101（g4 の表示の引き継ぎ: 文字 console を出さない、黒 約 1.1 秒）cleared、黒も無くすのは lease の fd の受け渡し（WS075・libvulkan と相談、revoke）。p102（g5 の画面の lock）cleared。p103（X11 の PRIMARY の橋）cleared。
 <!-- awesome-plan-current:end -->
 
 ## 単一目標
@@ -55,7 +55,7 @@ Chromiumが起動してページを表示する。導入中に見つかったシ
    - FreeTypeのライセンスが特殊なため、Zlibライセンスで独自に実装する。
    - zdesktopと関連アプリから使う。
 6. **zdesktop**
-   - `zwl` を `/bin/zdesktop` へ改名する。
+   - `zwl` を `/bin/wayland` へ改名する。
    - 簡単なウィンドウ管理を実装する。
    - KWinのように、コンポジタ側でウィンドウタイトルとフレームを描く。
    - タイトルのフォントは、後でFreeType等を使う予定。当面は起動時に `/dev/graphics` から
@@ -209,11 +209,11 @@ p001で確かめる。
 | [ws035-p020](phase020/phase.md) | 設計: `/dev/graphics` の共通層とGPU scanoutへの引き継ぎ（kernel内部API、通知、戻し） | cleared（q323-i01） | p001 | 文書 |
 | ws035-p005 | `/dev/graphics` の共通層: ファームウェアFB・機種VRAMをbackend化（pcat、pc98を移行） | planning | p004, p020 | graphics、platform |
 | ws035-p024 | `/dev/graphics` のGPU scanoutへの切替えと戻し（i915、補助にvirtio-gpu） | planning | p005 | graphics、gpu core、i915 display |
-| [ws035-p011](phase011/phase.md) | zdesktop: `zwl` を `/bin/zdesktop` へ改名、基本のウィンドウ管理（focus、移動、リサイズ、z-order、最小化・最大化） | uncleared・canceled（2026-09-27: 改名は p073、窓の管理は p059・p062〜p072 で済んだ） | p004、p051（合成の設計）、**p052〜p054（承認後）** | `userland/base/zwl` |
+| [ws035-p011](phase011/phase.md) | zdesktop: `zwl` を `/bin/wayland` へ改名、基本のウィンドウ管理（focus、移動、リサイズ、z-order、最小化・最大化） | uncleared・canceled（2026-09-27: 改名は p073、窓の管理は p059・p062〜p072 で済んだ） | p004、p051（合成の設計）、**p052〜p054（承認後）** | `userland/base/zwl` |
 | ws035-p025 | zdesktop: コンポジタでのタイトル・フレーム描画（`/dev/graphics` のASCII glyph） | canceled（2026-09-27: p059・p062 で置き換え済み。glass の look の浮いたタイトルバー・ドッキングのシステムバー・角丸と影を zdesktop が描き、題名は libtruetype の glyph atlas。`/dev/graphics` の glyph の案は使わない。glass でない plain の mode は装飾を持たない試験用の mode のまま） | p011 | zdesktop |
 | [ws035-p018](phase018/phase.md) | networkdの状態push通知（購読）（WS005-p016から移管） | cleared（q325-i01。q323-i07 は uncleared） | p004 | networkd、net |
-| ws035-p012 | zdesktop: X11サーバ機能（Xzedから移植） | canceled（2026-09-27 ユーザーの判断: X11 server は単体の zdesktop-x11server、WS069-p008） | p011 | zdesktop、X11 |
-| [ws035-p013](phase013/phase.md) | zdesktop: システムバーの network の表示と操作（有線・Wi-Fi の SSID、menu で join・Wi-Fi の入り切り・disconnect）。**状態は libzdesktop 経由**（`zdesktop_network_*`、networkd の SUBSCRIBE に Wi-Fi の行を追加） | cleared（2026-09-28、zdesktop-p013（Wi-Fi は偽の networkd、QEMU だけ）・p062） | p059, p018, p042 | zdesktop、libzdesktop、networkd |
+| ws035-p012 | zdesktop: X11サーバ機能（Xzedから移植） | canceled（2026-09-27 ユーザーの判断: X11 server は単体の xserver、WS069-p008） | p011 | zdesktop、X11 |
+| [ws035-p013](phase013/phase.md) | zdesktop: システムバーの network の表示と操作（有線・Wi-Fi の SSID、menu で join・Wi-Fi の入り切り・disconnect）。**状態は libkeiland 経由**（`zdesktop_network_*`、networkd の SUBSCRIBE に Wi-Fi の行を追加） | cleared（2026-09-28、zdesktop-p013（Wi-Fi は偽の networkd、QEMU だけ）・p062） | p059, p018, p042 | zdesktop、libkeiland、networkd |
 | [ws035-p014](phase014/phase.md) | zdesktop: ウィンドウ一覧のタイル表示（Windows+Tab）。タイル表示は p063 の Wiseview、この Phase は Super+Tab と keyboard の操作（USB HID・PS/2 の Super key も足した） | cleared（2026-09-27、Venus） | p063 | zdesktop、input driver |
 | [ws035-p021](phase021/phase.md) | 設計: audioフレームワークと `/dev/dsp`（OSS互換寄りのAPI、driver ops、DMAリング、録音） | cleared（q323-i05） | p001 | 文書 |
 | [ws035-p022](phase022/phase.md) | 設計: hdaドライバ（codec列挙、stream DMA、再生・録音、QEMUとVFIO実機） | cleared（q341-i01） | p021 | 文書（[hda-design.md](hda-design.md)） |
@@ -221,12 +221,12 @@ p001で確かめる。
 | [ws035-p007](phase007/phase.md) | hdaドライバ（QEMU intel-hda、再生・録音） | cleared（q342-i01） | p006, p022 | `src/drivers/pci/pci-hda.c` |
 | [ws035-p009](phase009/phase.md) | `/sbin/audiod`（ミックス、録音の配布。interface は p050 の設計に従う） | cleared（q364-i01。QEMU で bit 一致・mix・音量・rate 変換・録音・SIGBUS 回復・device 無し） | p006, p049, p050 | audiod（新規） |
 | ws035-p019 | 互換libpulse（再生・録音、遅延・時刻情報、一時停止・flush、音量・ミュート） | planning | p009 | libpulse（新規） |
-| ws035-p026 | zdesktop: タスクバーの音量表示・操作。**音量も libzdesktop 経由**（p042） | planning | p013, p019, p042 | zdesktop、libzdesktop |
+| ws035-p026 | zdesktop: タスクバーの音量表示・操作。**音量も libkeiland 経由**（p042） | planning | p013, p019, p042 | zdesktop、libkeiland |
 | ws035-p008 | hdaドライバの実機確認（人間が行う。エージェントは確認用のimageと手順を用意する。HDA は passthrough できないので、ユーザーが後で USB boot のベアメタルで試す。2026-09-24） | planning | p007 | hda |
 | [ws035-p010](phase010/phase.md) | libtruetype（`cmap`・`glyf`・`hmtx`、anti-aliasの描画、`/lib/libtruetype.so`） | cleared（q323-i06） | p004 | libtruetype（新規） |
 | [ws035-p040](phase040/phase.md) | 互換libz（`userland/base/libz-compat`、`/lib/libz-compat.so`）: deflate/inflate を素直に実装する。zlib の全機能は要らない。最適化より読みやすさ。baseのプログラムはこれに依存する | planning | p004。**zdesktop が要るときに入れる** | `userland/base/libz-compat`、`include/libc/compat/zlib.h` |
 | [ws035-p041](phase041/phase.md) | 互換libpng（`userland/base/libpng-compat`、`/lib/libpng-compat.so`）: decode と encode。encode は filter にこだわらない。decode は試験用のRGBA32 PNGが読める正常系まで | planning | p040。**zdesktop が要るときに入れる** | `userland/base/libpng-compat`、`include/libc/compat/png.h` |
-| [ws035-p042](phase042/phase.md) | libzdesktop（`userland/base/libzdesktop`、`/lib/libzdesktop.so`）: **Vulkan 以外の OS 依存をここに閉じ込める**。zdesktop は networkd・audiod などと直接話さず、このライブラリを通す。**まずは空の枠だけ** | cleared（q325-i02） | p004 | `userland/base/libzdesktop`、`include/libc/zdesktop.h` |
+| [ws035-p042](phase042/phase.md) | libkeiland（`userland/desktop/libkeiland`、`/lib/libkeiland.so`）: **Vulkan 以外の OS 依存をここに閉じ込める**。zdesktop は networkd・audiod などと直接話さず、このライブラリを通す。**まずは空の枠だけ** | cleared（q325-i02） | p004 | `userland/desktop/libkeiland`、`include/libc/zdesktop.h` |
 | ws035-p027 | zdesktop: タイトル等の文字描画をlibtruetypeへ移す | canceled（2026-09-27: p059 で置き換え済み。zdesktop の文字（題名、システムバー、App Home、Wiseview、System Menu）は最初から libtruetype の glyph atlas（`glass.c`）で描く） | p010, p025 | zdesktop |
 | ws035-p028 | zdesktop: toolkit（GTK・Qt）が要るWaylandの対応範囲（xdg-shellの残り、keymap、clipboard、subsurface、wl_output、cursor、xdg-decoration）。**2026-09-27 に p075〜p080 へ分けた**（大きすぎるため）。この行は分けた Phase がすべて cleared になったら閉じる | cleared（2026-09-27、分けた p075〜p080 がすべて cleared） | p059（p025 は canceled） | zdesktop、libwayland |
 | ws035-p029 | Chromium: 依存とbuild環境（gn・ninja、NSS等の依存、クロスbuildの設定） | planning | p019, p028（p075〜p080）, WS034の依存ライブラリ | packages/network/chromium |
@@ -249,7 +249,7 @@ p001で確かめる。
 | [ws035-p053](phase053/phase.md) | （2026-09-25 承認）`wl_shm`（補助の経路、damage の範囲の CPU の copy）と cursor（zdesktop の cursor 画像、ウィンドウモードで合成、`set_cursor` の shm・GPU の surface） | cleared（q458-i01。`wl_shm`（damage の行の copy、即 release）、矢印と client の cursor、frame の予定。画面の読み取り 4 段と GPU の窓の frame の測定） | p052 | 同上 |
 | [ws035-p054](phase054/phase.md) | （2026-09-25 承認）acquire fence の request（`zed_gpu_buffer_v1` の拡張） | cleared（q459-i01、2026-09-26。受け入れ 3 はユーザーの判断で読み替え: present は元から完了を待たず、速くならないことを測って記録） | p052 | 同上、libwayland の WSI |
 | [ws035-p059](phase059/phase.md) | （2026-09-26 ユーザー指示）look and feel の疎通確認: 本体から離れて浮いたタイトルバー（実装）、すりガラスの shader、上部のバー（ハリボテ）、壁紙、角丸と影（`zwl --glass`） | cleared（q460-i01、2026-09-26。drag・最大化・閉じる・hover を QMP で確認。背後の窓のぼかしは p057、最小化とバーの操作は p011・p013） | p052〜p054 | 同上 |
-| [ws035-p060](phase060/phase.md) | （2026-09-26 ユーザー指示）Vulkan で描く client（mview）を glass の窓で: mview に `--windowed`・`--size` | cleared（q461-i01、2026-09-26。model が窓に描かれ、drag で回り、最大化で描き直す。Lavapipe で 8.8 fps） | p059 | `userland/base/mview` |
+| [ws035-p060](phase060/phase.md) | （2026-09-26 ユーザー指示）Vulkan で描く client（mview）を glass の窓で: mview に `--windowed`・`--size` | cleared（q461-i01、2026-09-26。model が窓に描かれ、drag で回り、最大化で描き直す。Lavapipe で 8.8 fps） | p059 | `userland/desktop/mview` |
 | [ws035-p061](phase061/phase.md) | （2026-09-26 ユーザー指示）壁紙の画像（`--wallpaper`、ユーザーの絵を抽象化、git 外）と、すりガラスで透ける窓（`--window-opacity`） | cleared（q462-i01、2026-09-26。絵の壁紙、透ける窓 10 %・60 % の画面。壁紙は git 外） | p059 | `userland/base/zwl` |
 | [ws035-p062](phase062/phase.md) | （2026-09-26 ユーザー指示）タイトルバーのドッキング: 最大化で題名が上部のバーへ吸着（ダブルクリック・上への drag）、バーから下への drag で解除、遷移、仮想デスクトップのハリボテ | cleared（q463-i01、2026-09-26。ダブルクリック・上への drag・button でドッキング、バーの題名のダブルクリック・⧉・下への pull で解除、220 ms の遷移） | p059 | `userland/base/zwl` |
 | [ws035-p063](phase063/phase.md) | （2026-09-26 ユーザー設計 [wiseman-design.md](wiseman-design.md)）Wiseview（ウィンドウ一覧）の疎通: 下端からの drag、グリッドのタイル、選択・閉じる | cleared（q464-i01、2026-09-26。下端からの drag で開き、グリッド・札・選択・閉じる。4 窓で確認） | p062 | `userland/base/zwl` |
@@ -257,44 +257,44 @@ p001で確かめる。
 | [ws035-p065](phase065/phase.md) | （同）仮想デスクトップの実体と左右の端のスワイプ（画面が追従して横へ） | cleared（q481-i01、2026-09-26。Venus でバー・キー・端の swipe、窓はデスクトップごと） | p063 | 同上 |
 | [ws035-p066](phase066/phase.md) | （2026-09-26 ユーザー指示）zdesktop（Wiseman Mode）を Intel GPU（5330 の i915 ネイティブ実行器、VFIO）で疎通 | cleared（q465-i01、2026-09-26。i915 実機の GPU で Wiseman Mode・ドッキング・Wiseview を capture で確認（wl_shm の窓）。GPU の client の窓は F-022、実行器の不足は F-023） | p063、WS031 | `userland/base/zwl`、`plan/ws031/tests` |
 | [ws035-p067](phase067/phase.md) | （2026-09-26 ユーザー指示）zdesktop で mview（Vulkan の client）の窓を i915 で合成（F-022） | cleared（q466-i01、2026-09-26。i915 実機の GPU で mview の窓を合成・ドッキング・Wiseview を capture で確認。実行器の object 表を session ごとに） | p066 | `src/drivers/gpu/i915/render`、`userland/base/zwl`、`plan/ws031/tests` |
-| [ws035-p068](phase068/phase.md) | （2026-09-26 ユーザー指示）zdesktop-terminal: zterm（X11）を Wayland と Vulkan へ | cleared（q468-i01、2026-09-26。Venus と i915 実機で shell が動く） | p067 | `userland/base/zdesktop-terminal` |
+| [ws035-p068](phase068/phase.md) | （2026-09-26 ユーザー指示）terminal: zterm（X11）を Wayland と Vulkan へ | cleared（q468-i01、2026-09-26。Venus と i915 実機で shell が動く） | p067 | `userland/desktop/terminal` |
 | [ws035-p069](phase069/phase.md) | （2026-09-26 ユーザー指示）App Home の PoC（[設計](app-home-design.md)）: デスクトップをめくってアプリを起動 | cleared（q469-i01、2026-09-26。Venus と i915 実機。demo image） | p068 | `userland/base/zwl` |
 | [ws035-p070](phase070/phase.md) | （2026-09-26 自律実行）App Home から X11 の app（zterm、zgears）: Xzed --rootless を必要なときに起動 | cleared（q479-i01、2026-09-26。Venus で App Home から zterm と zgears、Xzed は 1 つ） | p069、WS069 | `userland/base/zwl` |
 | [ws035-p071](phase071/phase.md) | （2026-09-26 自律実行）App Home の続き: ページング、起動の animation、閉じる swipe、Tab とホイール | cleared（q480-i01、2026-09-26。Venus で 2 ページ、drag・ホイール・キー、icon から育つ窓、閉じる drag） | p070 | `userland/base/zwl` |
 | [ws035-p072](phase072/phase.md) | （2026-09-26 自律実行）窓の最小化と、窓をデスクトップ間で移す（Wiseview の drag、キー） | cleared（q483-i01、2026-09-26。Venus で最小化と Wiseview からの復帰、タイルの drag とキーでデスクトップ間の移動） | p065 | `userland/base/zwl` |
-| [ws035-p073](phase073/phase.md) | （2026-09-27 ユーザー指示）`userland/base/zwl` を `userland/base/zdesktop`（`/bin/zdesktop`）へ改名。build・script・試験の起動と process の名・文書。C の識別子と log の接頭辞 `ZWL` は変えない | cleared（q486-i01、2026-09-27。Venus と i915 実機、boot test） | p072 | zdesktop |
-| [ws035-p074](phase074/phase.md) | （2026-09-27 ユーザー指示）libzdesktop が zdesktop の非標準の Wayland 拡張（`zed_gpu_buffer_v1`）を包む。`zed-gpu-buffer-v1-client-protocol.h`（使い手は libvulkan の WSI と libwayland だけ）と `X11/Xzed.h` を公開 header から外す。libzdesktop の GPU の buffer の API は最初の使い手（zdesktop-x11server）と一緒に | cleared（q487-i01、2026-09-27） | p073 | zdesktop、libzdesktop |
+| [ws035-p073](phase073/phase.md) | （2026-09-27 ユーザー指示）`userland/base/zwl` を `userland/desktop/wayland`（`/bin/wayland`）へ改名。build・script・試験の起動と process の名・文書。C の識別子と log の接頭辞 `ZWL` は変えない | cleared（q486-i01、2026-09-27。Venus と i915 実機、boot test） | p072 | zdesktop |
+| [ws035-p074](phase074/phase.md) | （2026-09-27 ユーザー指示）libkeiland が zdesktop の非標準の Wayland 拡張（`zed_gpu_buffer_v1`）を包む。`zed-gpu-buffer-v1-client-protocol.h`（使い手は libvulkan の WSI と libwayland だけ）と `X11/Xzed.h` を公開 header から外す。libkeiland の GPU の buffer の API は最初の使い手（xserver）と一緒に | cleared（q487-i01、2026-09-27） | p073 | zdesktop、libkeiland |
 | [ws035-p075](phase075/phase.md) | （p028 から分割）libwayland: 未知の interface（toolkit が wayland-scanner で作る protocol の code）の event を listener へ渡す汎用の dispatch と、event の new_id（server が作る object、`wl_data_offer` 等）。host の libwayland-server の試験 compositor と試験 protocol で確かめる | cleared（2026-09-27、host と Venus） | — | libwayland |
 | [ws035-p076](phase076/phase.md) | （p028 から分割）zdesktop: xdg-shell の残り（`xdg_positioner`・`xdg_popup` と grab・`popup_done`、`xdg_toplevel` の min/max size・maximized・minimized・move・resize・show_window_menu・set_parent、`set_window_geometry`、ping） | cleared（2026-09-27、Venus。salvage/ws035 から始めて直した。libwayland の xdg-shell を v3 に） | p075 | zdesktop、libwayland |
 | [ws035-p077](phase077/phase.md) | （p028 から分割）zdesktop: `wl_subcompositor`・`wl_subsurface`（位置、上下、sync・desync、親と一緒の合成と入力） | cleared（2026-09-27、Venus。seat の pointer を keyboard の focus から分けた。libwayland に wl_subcompositor） | p075 | zdesktop、libwayland |
 | [ws035-p078](phase078/phase.md) | （p028 から分割）zdesktop: `wl_keyboard` の XKB keymap（US の text keymap を fd で）、`wl_output` v4（name・description・scale・done）、seat・pointer の新しい版（frame 等） | cleared（2026-09-27、host の libxkbcommon と Venus。repeat 25/400、Caps・Num の lock。seat は v5 のまま。Num Lock の key は BUG-070） | p075 | zdesktop |
-| [ws035-p079](phase079/phase.md) | （p028 から分割）zdesktop: `wl_data_device_manager`（client 間の clipboard の selection。drag and drop は最小）と zdesktop-terminal の Copy・Paste をそれへ | cleared（2026-09-27、Venus。probe どうしと terminal の Copy・Paste。drag and drop は start_drag を cancelled に） | p075 | zdesktop、zdesktop-terminal |
+| [ws035-p079](phase079/phase.md) | （p028 から分割）zdesktop: `wl_data_device_manager`（client 間の clipboard の selection。drag and drop は最小）と terminal の Copy・Paste をそれへ | cleared（2026-09-27、Venus。probe どうしと terminal の Copy・Paste。drag and drop は start_drag を cancelled に） | p075 | zdesktop、terminal |
 | [ws035-p080](phase080/phase.md) | （p028 から分割）zdesktop: `zxdg_decoration_manager_v1`（既定は server-side）、`wp_cursor_shape_v1`、`wp_viewporter` | cleared（2026-09-27、Venus。decoration は常に server-side、cursor の shape を zdesktop が描く、viewporter は状態と sub-surface の描画。窓の body は p081） | p075、p076 | zdesktop |
 | [ws035-p081](phase081/phase.md) | （p080 から分割、2026-09-27 main の指示）zdesktop: 窓の body の wp_viewporter（source の切り出しと destination の大きさで描く: shell.c の body_rect・window_at・draw_body・配置、compose.c の plain の look の uv 付きの quad、popup の描画）。WS070 の titlebar と shell.c がぶつからないように後に | cleared（2026-09-27、zdesktop-p081・menu-regress・titlebar-p010・files-regress・boot test） | p080、ws070-p010 | zdesktop |
 | [ws035-p082](phase082/phase.md) | （2026-09-27 ユーザー指示「WS035に、グラフィカルログインマネージャの検討を追加してください。Waylandではなくて、Vulkanを直接叩くのかなあ。」）グラフィカルログインマネージャの検討（設計のみ、実装はしない）: Wayland の session の前に VK_KHR_display で直接描く案（zdesktop と同じ）と、最小の zdesktop・Wayland の greeter の案の比較、認証（PAM 無し、zedBSD の login・crypt）、session の開始（user として zdesktop を起動、権限の降格、VT・seat の引き継ぎ、i915 と Venus）、security、ユーザーの仮説（Vulkan 直接）の意味 | cleared（2026-09-27、設計のみ: [login-manager-design.md](login-manager-design.md)。判断が要る点 §8） | p080 | 文書（plan/ws035） |
 | [ws035-p055](phase055/phase.md) | （2026-09-25 承認）damage（buffer age と scissor）。保守的: 窓の本体の上の pointer の移動と、近くにガラスの無い窓の同じ大きさの新しい画像だけを部分に、他は全画面 | cleared（2026-09-27、zdesktop-p055・回帰・boot test） | p011 | 同上 |
-| [ws035-p083](phase083/phase.md) | （2026-09-27、p057 から分割、ws071-p015 のため）窓の中のすりガラスの card: `zed_glass_v1`（client が card の角丸の矩形を渡し、zdesktop がぼかした壁紙のガラス・縁・影を下に描く）と see-through の Vulkan swapchain（WSI の PRE_MULTIPLIED、`zed_gpu_buffer_v1` revision 3 の `set_alpha`）。設計 [glass-design.md](glass-design.md) | cleared（2026-09-27、files-p015・menu-regress・files-regress・boot test） | p080 | zdesktop・libvulkan・libwayland・libzdesktop |
+| [ws035-p083](phase083/phase.md) | （2026-09-27、p057 から分割、ws071-p015 のため）窓の中のすりガラスの card: `zed_glass_v1`（client が card の角丸の矩形を渡し、zdesktop がぼかした壁紙のガラス・縁・影を下に描く）と see-through の Vulkan swapchain（WSI の PRE_MULTIPLIED、`zed_gpu_buffer_v1` revision 3 の `set_alpha`）。設計 [glass-design.md](glass-design.md) | cleared（2026-09-27、files-p015・menu-regress・files-regress・boot test） | p080 | zdesktop・libvulkan・libwayland・libkeiland |
 | [ws035-p057](phase057/phase.md) | （2026-09-25 承認）効果: すりガラス（背後のぼかし）と影。2026-09-27: client の card のガラスと窓の alpha は p083 へ分けた。残りの**背後の窓のぼかし**: 下に窓がある窓の前に下の scene を 1/8 に描き直し、2 回の Gaussian をガラスの標本に（title bar・panel・see-through の body）、遅延で作り失敗なら壁紙。damage で広げるのは p055 | cleared（2026-09-27、zdesktop-p057・menu・titlebar・files の回帰・boot test） | p083 | 同上 |
-| [ws035-p084](phase084/phase.md) | （2026-09-27 main の割り当て）窓の間の drag and drop: zdesktop の `wl_data_device`（start_drag・enter・motion・leave・drop・action の選択・finish・Esc、icon か zdesktop の印）、`zed_titlebar_v1` version 2 の `drop_target`（パンくずの段）、zdesktop-files の窓の外への drag と drop（folder・sidebar・tab・パンくず・表示中の folder）。ws071-p010 の F-i | cleared（2026-09-27、zdesktop-p084・files-p010/p014/p018・p079・p076・titlebar-p008/p010・menu-p003） | p079、ws071-p010 | zdesktop・libwayland・libzdesktop・zdesktop-files |
-| [ws035-p085](phase085/phase.md) | （2026-09-27 main の割り当て）作業域が変わったら `configure_bounds` を送り直す（`zwl_window_bounds_refresh`）、zdesktop-files は望む大きさを bounds に収める | cleared（2026-09-27、files-p018。送り直しの経路は作業域が変わる場面が無く未実施） | ws071-p018 | zdesktop・zdesktop-files |
-| [ws035-p086](phase086/phase.md) | （2026-09-27 main の割り当て）zdesktop-terminal のタブ（titlebar の TABS mode: 1 タブは menu、2 つ以上でタブ、Ctrl+Shift+T・Ctrl+Shift+W・×・「+」・Ctrl+Tab）、xdg-shell 4 の configure_bounds。zdesktop のタブの key から Ctrl+W・T を外した | cleared（2026-09-27、zdesktop-p086・menu-p003・titlebar-p011/p013） | p084、ws070-p013 | zdesktop-terminal・zdesktop |
-| [ws035-p087](phase087/phase.md) | （2026-09-27 main の割り当て）X11 と Wayland の clipboard の橋: zdesktop-x11server の atom・property・selection（ICCCM）と wl_data_device の selection の間、libX11 の selection の API、zterm の Ctrl+Shift+C・V | cleared（2026-09-28、zdesktop-p087・x11-p003・p079・p086） | p079、WS069 | zdesktop-x11server・libX11・zterm |
-| [ws035-p088](phase088/phase.md) | （2026-09-27 main の割り当て）drag and drop の ask: Alt で ask、落とし先の zdesktop-files が drop の所に Move Here・Copy Here・Link Here・Cancel の menu（drop の serial で受け付け、落とし先を最前面に）、finish しない drop は source を cancel。file の drag は `text/plain;charset=utf-8` も出し、zdesktop-terminal は uri-list・text の drop を引用符付きの path として貼る | cleared（2026-09-28、zdesktop-p088・p084・p086・p087・files-p009） | p084 | zdesktop・zdesktop-files・zdesktop-terminal |
+| [ws035-p084](phase084/phase.md) | （2026-09-27 main の割り当て）窓の間の drag and drop: zdesktop の `wl_data_device`（start_drag・enter・motion・leave・drop・action の選択・finish・Esc、icon か zdesktop の印）、`zed_titlebar_v1` version 2 の `drop_target`（パンくずの段）、files の窓の外への drag と drop（folder・sidebar・tab・パンくず・表示中の folder）。ws071-p010 の F-i | cleared（2026-09-27、zdesktop-p084・files-p010/p014/p018・p079・p076・titlebar-p008/p010・menu-p003） | p079、ws071-p010 | zdesktop・libwayland・libkeiland・files |
+| [ws035-p085](phase085/phase.md) | （2026-09-27 main の割り当て）作業域が変わったら `configure_bounds` を送り直す（`zwl_window_bounds_refresh`）、files は望む大きさを bounds に収める | cleared（2026-09-27、files-p018。送り直しの経路は作業域が変わる場面が無く未実施） | ws071-p018 | zdesktop・files |
+| [ws035-p086](phase086/phase.md) | （2026-09-27 main の割り当て）terminal のタブ（titlebar の TABS mode: 1 タブは menu、2 つ以上でタブ、Ctrl+Shift+T・Ctrl+Shift+W・×・「+」・Ctrl+Tab）、xdg-shell 4 の configure_bounds。zdesktop のタブの key から Ctrl+W・T を外した | cleared（2026-09-27、zdesktop-p086・menu-p003・titlebar-p011/p013） | p084、ws070-p013 | terminal・zdesktop |
+| [ws035-p087](phase087/phase.md) | （2026-09-27 main の割り当て）X11 と Wayland の clipboard の橋: xserver の atom・property・selection（ICCCM）と wl_data_device の selection の間、libX11 の selection の API、zterm の Ctrl+Shift+C・V | cleared（2026-09-28、zdesktop-p087・x11-p003・p079・p086） | p079、WS069 | xserver・libX11・zterm |
+| [ws035-p088](phase088/phase.md) | （2026-09-27 main の割り当て）drag and drop の ask: Alt で ask、落とし先の files が drop の所に Move Here・Copy Here・Link Here・Cancel の menu（drop の serial で受け付け、落とし先を最前面に）、finish しない drop は source を cancel。file の drag は `text/plain;charset=utf-8` も出し、terminal は uri-list・text の drop を引用符付きの path として貼る | cleared（2026-09-28、zdesktop-p088・p084・p086・p087・files-p009） | p084 | zdesktop・files・terminal |
 | [ws035-p089](phase089/phase.md) | （2026-09-28 main の割り当て、fg010）libwayland（client）の zombie: client が壊した server 側の object の id を map に残し、その event を捨て（fd を閉じ）、server が id を再利用したら置き換える。zdesktop は ask の後に選ばれた action を offer へも送る。p075 の host 試験に zombie の段 | cleared（2026-09-28、p075-host・zdesktop-p084/p087/p088） | p088、p075 | libwayland・zdesktop |
 | [ws035-p090](phase090/phase.md) | （2026-09-28 main の割り当て、fg010）demo の仕上げ: App Home の全 app を glass の desktop で起動した画面の一覧。直した粗: zterm の `-geometry`（Home は 80x24）、Home に Browser、無い app を出さない、demo の apps.conf（試験の client 無し）、demo の session の HOME と usual folder、image に Browser・Files。残り: BUG-079、Browser の窓の高さ（WS074） | cleared（2026-09-28、zdesktop-p090・files-p011・p070・p071） | p089 | zdesktop・zterm・demo |
-| [ws035-p091](phase091/phase.md) | （2026-09-28 main の割り当て、fg010）zdesktop-terminal のタブの題を shell の OSC 0・2 から（UTF-8、長さの制限）、窓の題は active なタブの題。drag の source は範囲選択が無いため入れない（残り） | cleared（2026-09-28、zdesktop-p091・p086） | p086 | zdesktop-terminal |
-| [ws035-p092](phase092/phase.md) | （2026-09-28 main の割り当て、fg010）新しい窓を他の窓の題を隠さない場所へ（中央、top の窓から cascade、左上から cascade。作業域の中）、非 active なすりガラスのタイトルバーを暗い窓の上でも読めるように、mark の文字を app_id から（X は WM_CLASS、libX11 の XSetClassHint） | cleared（2026-09-28、zdesktop-p092・files-p018・p084・p088・p070・x11-p003） | p090、p091 | zdesktop・zdesktop-x11server・libX11・zterm・zgears |
-| [ws035-p093](phase093/phase.md) | （2026-09-28 main の割り当て、fg010）zdesktop-terminal の pointer による範囲選択（press と drag、double click で語、triple click で行、強調）、Copy は範囲を、範囲の text を drag の source に。PRIMARY は zdesktop に protocol が無く残り | cleared（2026-09-28、zdesktop-p093・p087・p088） | p091 | zdesktop-terminal |
-| [ws035-p094](phase094/phase.md) | （2026-09-28 ユーザー承認のグラフィカルログイン、設計 g1・g3）zsessiond（root の service `greeter`: `_greeter` で greeter を起こし、shadow と crypt の照合と失敗の遅れ、seat の device を seat の user の 0600 に、user の session を `/run/user/UID` と utmpx で起こし、終わりに greeter へ戻る、続く失敗で console へ）、login と共有の照合（verify.c）、試験用の greeter（greeter-probe） | cleared（2026-09-28、zdesktop-p094・serial の login） | p082 | zsessiond・login・etc |
-| [ws035-p095](phase095/phase.md) | （同、設計 g2）`zdesktop --greeter`（Wayland の socket を開かず、ぼかした wallpaper・時計・user の一覧・password の欄・電源、fd 3 で zsessiond に AUTH）、`--session`（期限無し、App Home の Log Out）、出力の大きさを display の preferred mode から。GPU の open を root か device の持ち主に（gpu.c） | cleared（2026-09-28、zdesktop-p095・p093） | p094 | zdesktop・gpu.c |
+| [ws035-p091](phase091/phase.md) | （2026-09-28 main の割り当て、fg010）terminal のタブの題を shell の OSC 0・2 から（UTF-8、長さの制限）、窓の題は active なタブの題。drag の source は範囲選択が無いため入れない（残り） | cleared（2026-09-28、zdesktop-p091・p086） | p086 | terminal |
+| [ws035-p092](phase092/phase.md) | （2026-09-28 main の割り当て、fg010）新しい窓を他の窓の題を隠さない場所へ（中央、top の窓から cascade、左上から cascade。作業域の中）、非 active なすりガラスのタイトルバーを暗い窓の上でも読めるように、mark の文字を app_id から（X は WM_CLASS、libX11 の XSetClassHint） | cleared（2026-09-28、zdesktop-p092・files-p018・p084・p088・p070・x11-p003） | p090、p091 | zdesktop・xserver・libX11・zterm・zgears |
+| [ws035-p093](phase093/phase.md) | （2026-09-28 main の割り当て、fg010）terminal の pointer による範囲選択（press と drag、double click で語、triple click で行、強調）、Copy は範囲を、範囲の text を drag の source に。PRIMARY は zdesktop に protocol が無く残り | cleared（2026-09-28、zdesktop-p093・p087・p088） | p091 | terminal |
+| [ws035-p094](phase094/phase.md) | （2026-09-28 ユーザー承認のグラフィカルログイン、設計 g1・g3）sessiond（root の service `greeter`: `_greeter` で greeter を起こし、shadow と crypt の照合と失敗の遅れ、seat の device を seat の user の 0600 に、user の session を `/run/user/UID` と utmpx で起こし、終わりに greeter へ戻る、続く失敗で console へ）、login と共有の照合（verify.c）、試験用の greeter（greeter-probe） | cleared（2026-09-28、zdesktop-p094・serial の login） | p082 | sessiond・login・etc |
+| [ws035-p095](phase095/phase.md) | （同、設計 g2）`zdesktop --greeter`（Wayland の socket を開かず、ぼかした wallpaper・時計・user の一覧・password の欄・電源、fd 3 で sessiond に AUTH）、`--session`（期限無し、App Home の Log Out）、出力の大きさを display の preferred mode から。GPU の open を root か device の持ち主に（gpu.c） | cleared（2026-09-28、zdesktop-p095・p093） | p094 | zdesktop・gpu.c |
 | [ws035-p096](phase096/phase.md) | （同、完全なグラフィカル起動）UEFI loader が ESP の PPM の logo（`logo=`）を中央に描き、描いたら loader の文字を出さない。`kmsg=quiet` で進捗の block を描かず transition の quiet の入口へ。logo は script で図形から作る | cleared（2026-09-28、boot-shots の kernel の入口の画面・boot test） | — | bootloader/uefi・tools |
 | [ws035-p097](phase097/phase.md) | （同）boot parameter `kmsg=quiet`: kernel の message を console に出さず log buffer（dmesg）だけへ、文字 console は console を読む process（getty）か panic まで描かない。GPU の表示の lease の間は console に key を渡さない。HAL の早期 console の差分は提案（[proposed/hal-quiet-console.md](proposed/hal-quiet-console.md)、承認待ち） | cleared（2026-09-28、boot-shots・zdesktop-p097・boot test・p095。HAL の部分は承認待ち） | — | src/kern・src/drivers（HAL は提案） |
 | [ws035-p098](phase098/phase.md) | （同）既定: rc.conf の `greeter`（init の `replaces=getty_console`）、boot parameter `login=graphical|console`（sysctl `kern.boot.login`）、`ZEDBSD_GRAPHICAL_BOOT`（既定 y: zedbsd.cfg に `logo=`・`kmsg=quiet`・`login=graphical`、kernel の開発は n）、試験の構成は n、文書 | cleared（2026-09-28、zdesktop-p098・boot test（GPU 無しで getty へ）・p094） | p094〜p097 | init・etc・platform/amd64・docs |
 | [ws035-p099](phase099/phase.md) | （2026-09-28 main の割り当て、p096 の残り）BIOS（pcat）の loader の logo: VBE の framebuffer に sector ごとに PPM を decode して描く（`bootloader/bios/logo.c`）、path の解析を UEFI と共有、BIOS の image の FAT に logo と graphical の cfg | cleared（2026-09-28、boot-shots `--bios` の kernel の入口の画面・logo 無し・構成 y） | p096 | bootloader・tools・platform/amd64 |
-| [ws035-p100](phase100/phase.md) | （2026-09-28 main の割り当て、p093 の残り）primary selection: zdesktop の `zwp_primary_selection_device_manager_v1`、libwayland の記述と公開 header、zdesktop-terminal の範囲選択が primary selection、中 button で paste | cleared（2026-09-28、zdesktop-p100・p093・p079・p087） | p093 | zdesktop・libwayland・zdesktop-terminal |
-| [ws035-p101](phase101/phase.md) | （2026-09-28 main の割り当て、g4）表示の引き継ぎ: 隠れた console の snapshot は黒、greeter と session の間の READY・GO・RELEASED（`handoff.c`、zsessiond の `--control-fd`）、login と Log Out の両方で文字 console を出さない | cleared（2026-09-28、zdesktop-p101: 文字 console の画 0、黒 約 1.1 秒。前は文字 約 3.3 秒）・p100 | p098 | zdesktop・zsessiond・platform/pcat |
-| [ws035-p102](phase102/phase.md) | （2026-09-28 main の割り当て、g5）画面の lock: Super+L・App Home の Lock Screen・入力の無い時間（`--lock-idle`、既定 10 分）で lock、login と同じ画面で session の user の password、zsessiond の `UNLOCK` で照合 | cleared（2026-09-28、zdesktop-p102・p101・p100） | p101 | zdesktop・zsessiond |
-| [ws035-p103](phase103/phase.md) | （2026-09-28 main の割り当て、p100 の残り）X11 の PRIMARY と desktop の primary selection の橋（zdesktop-x11server）、zterm の double click の語が PRIMARY・中 button で paste | cleared（2026-09-28、zdesktop-p103・p087） | p100・p087 | zdesktop-x11server・zterm |
+| [ws035-p100](phase100/phase.md) | （2026-09-28 main の割り当て、p093 の残り）primary selection: zdesktop の `zwp_primary_selection_device_manager_v1`、libwayland の記述と公開 header、terminal の範囲選択が primary selection、中 button で paste | cleared（2026-09-28、zdesktop-p100・p093・p079・p087） | p093 | zdesktop・libwayland・terminal |
+| [ws035-p101](phase101/phase.md) | （2026-09-28 main の割り当て、g4）表示の引き継ぎ: 隠れた console の snapshot は黒、greeter と session の間の READY・GO・RELEASED（`handoff.c`、sessiond の `--control-fd`）、login と Log Out の両方で文字 console を出さない | cleared（2026-09-28、zdesktop-p101: 文字 console の画 0、黒 約 1.1 秒。前は文字 約 3.3 秒）・p100 | p098 | zdesktop・sessiond・platform/pcat |
+| [ws035-p102](phase102/phase.md) | （2026-09-28 main の割り当て、g5）画面の lock: Super+L・App Home の Lock Screen・入力の無い時間（`--lock-idle`、既定 10 分）で lock、login と同じ画面で session の user の password、sessiond の `UNLOCK` で照合 | cleared（2026-09-28、zdesktop-p102・p101・p100） | p101 | zdesktop・sessiond |
+| [ws035-p103](phase103/phase.md) | （2026-09-28 main の割り当て、p100 の残り）X11 の PRIMARY と desktop の primary selection の橋（xserver）、zterm の double click の語が PRIMARY・中 button で paste | cleared（2026-09-28、zdesktop-p103・p087） | p100・p087 | xserver・zterm |
 | [ws035-p058](phase058/phase.md) | zdesktop（secondary queue で変えた全 source）の規約の全文との照合と回帰（sq001 の締め） | cleared（2026-09-27、style-check 0、zdesktop・menu・titlebar・files の回帰。boot test はユーザーの指示で無し） | sq001 の他の Phase | sq001 で変えた source |
 | [ws035-p038](phase038/phase.md) | SSHハーネス: ゲストへ SSH で入り、コマンド実行・ファイル転送・ゲスト内 lldb・QEMU gdbstub でのデバッグを行う道具を仕上げる（`plan/tools/guest/` は着手済みで未完成） | cleared（q347-i01。networkd が USB の interface を UP にしないため設定されなかった → RAISE を追加） | p037、USB CDC-ECM が上がること（p039） | `plan/tools/guest/` |
 | [ws035-p039](phase039/phase.md) | USB CDC-ECM の実機確認: 実績のないまま入っている ECM driver が QEMU で実際に link し address を得るかを、シリアルコンソールで観察しながら確かめる。**ECM は USB 2.0 の device なので EHCI と xHCI の両方で確かめる**（ws004-p019 の記録との食い違いの照合を含む）。USB storage と同居したときの挙動も切り分ける | cleared（q343-i01。xHCI の IMAN の競合を直した。UHCI は p044、TCP は ws034-p046 へ） | p037 | `src/drivers/usb/usb-cdc-ecm.c`、試験 |
@@ -462,7 +462,7 @@ WS005 p016の受け入れ条件（秘密情報を含まない、閲覧から制�
    driverは `<libc/vulkan/vulkan.h>` をincludeする（同日の `include/vulkan/` 案を置き換え）。
    **kernelとlibcの関係（2026-09-23ユーザー明確化）**: このOSはkernelとlibcが完全にモノリシックである。driverがlibcを
   参照することは許される。Vulkanのヘッダはlibcの一部で、`include/libc/vulkan/` に置く。driverは `<libc/vulkan/vulkan.h>` を
-  includeしてよい。`userland/base/libvulkan` はoptionのpackageではなく、必須の構成要素がbuild単位に分かれているだけである。
+  includeしてよい。`userland/desktop/libvulkan` はoptionのpackageではなく、必須の構成要素がbuild単位に分かれているだけである。
   kernelで除くのは、接頭辞なしの標準Cヘッダ名（`<stdio.h>`・`<string.h>` 等）による暗黙の読込みと、libcのobjectのlinkである。: i915のnative Vulkan実行器がVulkanの型をwire formatとして
    decodeするため、uapiとして扱う。`include/libc/vulkan/*.h` はwrapperとして残す。
 9. ~~（p033）host fixtureへの委任~~ → 承認（2026-09-23）。: `include/uapi/hosted.h` を作り、zedBSD以外のhost buildでは標準名の定義をhostのlibcに任せる。
@@ -629,9 +629,9 @@ GTK・Qt・freetype は本家を使い、compat を使うのは自分たちの b
 
 `include/libc/compat/` に置き、`/usr/include/compat/` へ入る（上記）。
 
-### D5. libzdesktop の役目 — 決定（2026-09-23 ユーザー）
+### D5. libkeiland の役目 — 決定（2026-09-23 ユーザー）
 
-**libzdesktop は、Vulkan 以外の OS 依存を閉じ込めるラッパーである。**
+**libkeiland は、Vulkan 以外の OS 依存を閉じ込めるラッパーである。**
 「zdesktop と話すためのライブラリ」ではない。
 
 理由は2つ。
@@ -643,11 +643,11 @@ GTK・Qt・freetype は本家を使い、compat を使うのは自分たちの b
 
 したがって:
 
-- **zdesktop は networkd・audiod などと直接話さない。** すべて libzdesktop を通す。
+- **zdesktop は networkd・audiod などと直接話さない。** すべて libkeiland を通す。
   WiFi の状態を networkd の購読（ws035-p018）から取るのも、このライブラリの中である。
 - **Vulkan は例外。** 描画は標準の Vulkan/WSI をそのまま使い、ラッパーを挟まない。
 - これは p013（タスクバーの WiFi）、p026（音量）、通知のすべてに効く。
-  それらの Phase は libzdesktop に関数を足す形になる。
+  それらの Phase は libkeiland に関数を足す形になる。
 
 **この Phase（p042）は空の枠を作るだけ**で、どの機能を先に入れるかはその機能の Phase で決まる。
 

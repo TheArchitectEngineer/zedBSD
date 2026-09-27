@@ -48,7 +48,7 @@ cleared。
 
 ### 実装
 
-- `userland/base/zdesktop/subsurface.c`・`subsurface.h`（新規）: global `wl_subcompositor` v1（`protocol.c` の globals の 8）、
+- `userland/desktop/wayland/subsurface.c`・`subsurface.h`（新規）: global `wl_subcompositor` v1（`protocol.c` の globals の 8）、
   `wl_subsurface`。子の list（下から上、親の下か上か）、位置は親の状態の適用で、sync の子の commit は cache（buffer・attach の有無・
   frame callback。damage は pending に残り一緒に行く）、親の適用で flush（入れ子は再帰）。set_desync は cache をすぐ適用。
   bad_surface・bad_parent の error（役割のある surface、自分・子孫を親に）。描画（`zwl_subsurface_draw`: glass の look は body と

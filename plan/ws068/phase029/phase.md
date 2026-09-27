@@ -50,10 +50,10 @@ Phase disposition: normal
 
 | file | 内容 |
 | --- | --- |
-| `userland/base/libglesv2/framebuffer.c` | `glBlitFramebuffer`（side の取得、resolve、軸ごとの clip、`vkCmdBlitImage`）、`glRenderbufferStorageMultisample`、`glGetInternalformativ`、`gles_samples_max`・`gles_framebuffer_samples`、sample 数の完全性、3D の slice の 2D の image と copy |
-| `userland/base/libglesv2/gles.h`・`gles.c`・`draw.c`・`exports.map` | renderbuffer・pass・target の samples、`gles_slice_image`、read の slice、GL_SAMPLES・GL_SAMPLE_BUFFERS・GL_MAX_SAMPLES、pipeline の rasterizationSamples、新しい entry point |
-| `userland/base/libegl/vulkan.c`・`zegl.h` | 窓と pbuffer の image の TRANSFER_DST（`writable`）、窓の depth の TRANSFER_SRC |
-| `userland/base/egltest/blits.c`・`.h`（新）・`main.c`・`Makefile` | `--scene=blits` |
+| `userland/desktop/libglesv2/framebuffer.c` | `glBlitFramebuffer`（side の取得、resolve、軸ごとの clip、`vkCmdBlitImage`）、`glRenderbufferStorageMultisample`、`glGetInternalformativ`、`gles_samples_max`・`gles_framebuffer_samples`、sample 数の完全性、3D の slice の 2D の image と copy |
+| `userland/desktop/libglesv2/gles.h`・`gles.c`・`draw.c`・`exports.map` | renderbuffer・pass・target の samples、`gles_slice_image`、read の slice、GL_SAMPLES・GL_SAMPLE_BUFFERS・GL_MAX_SAMPLES、pipeline の rasterizationSamples、新しい entry point |
+| `userland/desktop/libegl/vulkan.c`・`zegl.h` | 窓と pbuffer の image の TRANSFER_DST（`writable`）、窓の depth の TRANSFER_SRC |
+| `userland/desktop/egltest/blits.c`・`.h`（新）・`main.c`・`Makefile` | `--scene=blits` |
 | `plan/ws068/tests/egl-p029.sh`（新） | display と Wayland の画面の点、readback、API の検査 |
 
 ### 検証（QEMU の Venus。i915 実機は未実施）

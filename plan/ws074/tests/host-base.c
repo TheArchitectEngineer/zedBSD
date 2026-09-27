@@ -6,7 +6,7 @@
  */
 
 /*
- * ws074-p002: the host test of zdesktop-browser's base/ helpers (arena,
+ * ws074-p002: the host test of browser's base/ helpers (arena,
  * buffers, array, UTF-8 and UTF-16, hash, files).
  *
  *   build/ws074-host/<variant>/host-base [SCRATCH-DIRECTORY]
@@ -291,7 +291,7 @@ test_file(
 	    "file: read back");
 	wb_buffer_release(&buffer);
 	remove(path);
-	error = wb_file_read("/nonexistent/zdesktop-browser", &buffer);
+	error = wb_file_read("/nonexistent/browser", &buffer);
 	check(error != 0, "file: a missing file is an error");
 	wb_buffer_release(&buffer);
 }

@@ -10,14 +10,14 @@
 | --- | --- |
 | `libc/include/wayland/` | 最小Wayland clientの公開型、関数、core/xdg-shell interface descriptionと独自factory宣言 |
 | `libc/include/wayland-client*.h`、`wayland-util.h`、`xdg-shell-client-protocol.h` | 標準include spellingを維持する薄い入口header |
-| `userland/base/libwayland/` | 独立実装の接続、wire、fd、proxy、event queue、listener/dispatcher、utility |
+| `userland/desktop/libwayland/` | 独立実装の接続、wire、fd、proxy、event queue、listener/dispatcher、utility |
 | `libc/include/vulkan/vulkan_wayland.h` | `VK_KHR_wayland_surface` revision 6の2関数と作成情報型 |
-| `userland/base/libvulkan/wsi-wayland.c` | アプリ所有のdisplay/surfaceを借り、専用queue、buffer import、commit、frame/releaseを制御 |
-| `userland/base/libvulkan/wsi-image.c`、`wsi-swapchain.c` | GPU内共有画像、外部ownership barrier、acquire/present、失敗時の回収 |
+| `userland/desktop/libvulkan/wsi-wayland.c` | アプリ所有のdisplay/surfaceを借り、専用queue、buffer import、commit、frame/releaseを制御 |
+| `userland/desktop/libvulkan/wsi-image.c`、`wsi-swapchain.c` | GPU内共有画像、外部ownership barrier、acquire/present、失敗時の回収 |
 | K/GPU/Venusと`zwl` | immutable allocation capability、別contextへのimport、native表示と表示中の参照を保持 |
 | `wltest`等のアプリ | 標準Wayland/xdg-shellとVulkan APIを使う。独自factoryやGPU ioctlは呼ばない |
 
-base package名は`libwayland-client`、ソースディレクトリは`base/libwayland`、公開SONAME/配置は`/lib/libwayland-client.so`。現在のpackage対象はamd64。ホストDSOでは183個の公開`wl_*`/`xdg_*`/`zed_gpu_buffer_v1_*` symbolを確認し、内部`wlc_*`はexport mapで隠す。libvulkanは実libwayland-client DSOへ依存する。Vulkan公開関数は従来155個にWaylandの2個を加えた157個で、instance extension enablementにより探索を制限する。
+base package名は`libwayland-client`、ソースディレクトリは`desktop/libwayland`、公開SONAME/配置は`/lib/libwayland-client.so`。現在のpackage対象はamd64。ホストDSOでは183個の公開`wl_*`/`xdg_*`/`zed_gpu_buffer_v1_*` symbolを確認し、内部`wlc_*`はexport mapで隠す。libvulkanは実libwayland-client DSOへ依存する。Vulkan公開関数は従来155個にWaylandの2個を加えた157個で、instance extension enablementにより探索を制限する。
 
 `vulkan.h`は`VK_USE_PLATFORM_WAYLAND_KHR`が定義された場合にWayland型を公開し、`vulkan_wayland.h`の直接includeも可能。WaylandとVulkan Wayland公開型はC/C++、ILP32/LP64で検証した。C++検証で見つかった既存`stddef.h`の`wchar_t`再typedefは、C++では宣言しない最小guardで修正した。targetに不足していた`EPROTO`はlibcへ追加されており、別のerrnoへの読み替えはしていない。
 

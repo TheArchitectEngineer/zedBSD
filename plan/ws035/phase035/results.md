@@ -94,8 +94,8 @@ commit し、その中に本Phaseが `git mv` で stage していた Vulkan ヘ�
 - `toolchain/llvm/sysroot.mk`: 公開ヘッダの一覧に `include/libc` を足し、`include/libc/<R>` → `usr/include/<R>`。
   sysroot の manifest で `usr/include/vulkan/*` 7 ファイルは移動前と同一 hash（`sysroot-manifest.diff` に現れない）。
 - `Makefile` の sysroot 無し userland 用 `ZEDBSD_CPPFLAGS` に `-Iinclude/libc`（`<vulkan/vulkan.h>` のため）。
-- 参照の更新: `userland/base/libvulkan/tools/maintain-dispatch.noct`、`dispatch-table.inc` の banner、`userland/base/libvulkan/README.md`、
-  `userland/base/vkdemo/README.md`、`plan/ws014`・`plan/ws030` の試験 script・Noct 25 本の `libc/include/vulkan`。
+- 参照の更新: `userland/desktop/libvulkan/tools/maintain-dispatch.noct`、`dispatch-table.inc` の banner、`userland/desktop/libvulkan/README.md`、
+  `userland/desktop/vkdemo/README.md`、`plan/ws014`・`plan/ws030` の試験 script・Noct 25 本の `libc/include/vulkan`。
 - 生成物の一致: `noct maintain-dispatch.noct include/libc/vulkan/vulkan_core.h <protocol> <out>` で `dispatch-table.inc`・
   `api-commands.tsv`・`opcodes.h` を再生成し、3 つとも tree と `cmp` 一致。protocol 入力（virglrenderer の pinned file）は
   手元に無いため、tree の `opcodes.h` から同じ形式の定義を作って与えた（round trip。`opcodes.h` の一致はその確認で、

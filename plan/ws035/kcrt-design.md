@@ -63,7 +63,7 @@ Phase: `ws035-p033`（Queue q317 / q317-i02）。設計文書であり、ソー�
 | `kern_logf` を直接呼ぶ箇所の書式は `%u %d %s %x %X %c %p %i %%`、`0` flag と幅、`l`/`ll`。`z`・`#`・精度・`-` は 0 件。i915 display の `%zu`/`%#x`（`dp-sink.c:2127,2157,2242`、`vbt.c:2595`、`panel.c:2063`）は `I915_VBT_LOG`/`I915_DP_LOG` macro（`vbt.h:205-210`、`dp-internal.h:130-135`）に渡るが、この macro は `if (0)` の `drv_i915_vbt_fmtcheck` で compile 時に書式を検査するだけで、引数を書式化せず文字列を `drv_i915_vbt_note(level, fmt)` へ渡す（最終的に `kern_logf("i915: vbt: %s", text)`、`vbt.c:776`）。つまり kernel の書式 engine に `%zu`/`%#x` は届いていない | `grep` の集計、`src/drivers/gpu/i915/display/vbt.h:203-210`、`vbt.c:776` [R4] |
 | `src/kern/locale-record.c` は libc の `locale.c`（`libc/locale.c:117-174` が `zed_locale_record_load` を呼ぶ）を kernel に link するためだけに存在する。kernel 側に他の利用者は無い | `grep -rn zed_locale src/kern src/drivers include/kern` が `locale-record.c` 以外に一致しない |
 | kernel には `hal_memset` の呼出しが 4 箇所ある（`src/kern/io.c:192,308`、`src/kern/platform/x68k.c:69`、`src/kern/platform/sun4u.c:59`）。`hal_memcpy`/`hal_strlen` の kernel 側呼出しは無い | `grep` [R13] |
-| i915 の native Vulkan 実行器は kernel に組み込まれる 8 ファイル（`render/{memory,render-pass,command,pipeline,image,reply,descriptor,instance}.c`）と `render/codec.h`・`render/gfx.h`、kernel 組込みの test（`tests/render/*.c`）が `<vulkan/vulkan_core.h>` を読む。`render/vulkan-codec.inc` は `userland/base/libvulkan/codec.c` から `plan/ws031/handover/tools/gen_vk_server_codec.py` が生成した decoder/encoder の鏡で、`memcpy(` を 21 箇所含む（生成器の `:46,48,50` が emit する） | `platform/amd64/vmunix.mk:132`（`AMD64_I915_SOURCES`）、`src/drivers/gpu/i915/render/vulkan-codec.inc:2-5`、`gen_vk_server_codec.py:46-50` [R8] |
+| i915 の native Vulkan 実行器は kernel に組み込まれる 8 ファイル（`render/{memory,render-pass,command,pipeline,image,reply,descriptor,instance}.c`）と `render/codec.h`・`render/gfx.h`、kernel 組込みの test（`tests/render/*.c`）が `<vulkan/vulkan_core.h>` を読む。`render/vulkan-codec.inc` は `userland/desktop/libvulkan/codec.c` から `plan/ws031/handover/tools/gen_vk_server_codec.py` が生成した decoder/encoder の鏡で、`memcpy(` を 21 箇所含む（生成器の `:46,48,50` が emit する） | `platform/amd64/vmunix.mk:132`（`AMD64_I915_SOURCES`）、`src/drivers/gpu/i915/render/vulkan-codec.inc:2-5`、`gen_vk_server_codec.py:46-50` [R8] |
 | Vulkan ヘッダの出自は Khronos registry 由来（Apache-2.0、copyright The Khronos Group）で、zedBSD の Noct tool が選択・整形したもの | `include/libc/vulkan/API-PROVENANCE.md:1-12`、`include/libc/vulkan/vulkan_core.h:4-7` |
 | HAL が読む libc ヘッダ: `include/hal/types.h:9-11`（stdbool/stddef/stdint）、`src/hal/amd64/int.c:15`・`arm64/int.c:7`・`i386/int.c:14`・`m68k/trap.c:4`・`sparcv9/trap.c:11`（errno.h）、`src/hal/amd64/bsp-pcat/cons.c:22`・`i386/bsp-pc98/cons.c:27`・`i386/bsp-pcat/cons.c:22`・`m68k/bsp-x68k/console.c:7`・`keyboard.c:10`（string.h）、その他 stdint/stddef | `grep` の結果 |
 | HAL の C ランタイムは `hal_strlen`・`hal_memset`・`hal_memset16`・`hal_memset32`・`hal_memcpy`・`hal_printf`（「HAL と kernel の初期化段階だけで使う」と注記） | `include/hal/hal.h:40-75`、`src/hal/amd64/lib.c` |
@@ -395,9 +395,9 @@ errno.h を指す）。この挙動を保つ。
   `include/libc/vulkan/vulkan_core.h` と `vulkan_external.h` は `#include <uapi/vulkan/…>` だけの互換ファイルとして
   残す（`<vulkan/vulkan_core.h>` は Khronos の標準の綴りで、userland の program が使いうる）。
 - kernel 側: i915 の 8+2+5 ファイルの `#include <vulkan/vulkan_core.h>` を `<uapi/vulkan/vulkan_core.h>` に変える。
-- tool と文書: `userland/base/libvulkan/tools/maintain-dispatch.noct:20,22` の `include/libc/vulkan/vulkan_external.h` の
-  パスと banner、その生成物 `userland/base/libvulkan/dispatch-table.inc:9`、`userland/base/libvulkan/README.md:6,65`、
-  `userland/base/vkdemo/README.md:21`、`API-PROVENANCE.md` の生成先の記述を新パスに直す。生成物
+- tool と文書: `userland/desktop/libvulkan/tools/maintain-dispatch.noct:20,22` の `include/libc/vulkan/vulkan_external.h` の
+  パスと banner、その生成物 `userland/desktop/libvulkan/dispatch-table.inc:9`、`userland/desktop/libvulkan/README.md:6,65`、
+  `userland/desktop/vkdemo/README.md:21`、`API-PROVENANCE.md` の生成先の記述を新パスに直す。生成物
   （`dispatch-table.inc`）を再生成して一致を確かめる（ws030 の再生成試験の手順）[R16]。
 - sysroot: `toolchain/llvm/sysroot.mk:75` は `include/uapi` を丸ごと sysroot に入れるので、`usr/include/uapi/vulkan/`
   （`LICENSE-API`・`API-PROVENANCE.md` を含む。今の `usr/include/vulkan/` と同じ扱い）が加わる。manifest の変化は
@@ -405,7 +405,7 @@ errno.h を指す）。この挙動を保つ。
 
 理由:
 1. kernel の i915 render は Vulkan の構造体と enum を **wire format** として decode する（`render/vulkan-codec.inc` は
-   `userland/base/libvulkan/codec.c` の鏡）。同じ宣言を kernel と userland が読まなければ両者は drift する。
+   `userland/desktop/libvulkan/codec.c` の鏡）。同じ宣言を kernel と userland が読まなければ両者は drift する。
    これは uapi の定義そのものである。
 2. p035 の時点（p023 より前）では `include/libc/` が kernel の include path から消えるので、そこにある限り
    kernel は読めない。p023 後の `include/vulkan/` は libc ヘッダの領域で、kernel が読むと「0 件」の検査に恒久の
@@ -598,7 +598,7 @@ p035 は「ヘッダを外す」。p034 で出る link error は runtime の欠�
 前提: p034 完了。ファイル範囲: `include/uapi/*`（新規 12・拡張 3・連鎖修正 15）、`include/libc/*`（uapi を include
 する側への変更、Vulkan の wrapper）、kernel/driver の include 行、HAL の include 行（§8 の表、承認済み範囲）、
 `platform/amd64/vmunix.mk` の flags、`platform/amd64/tools/check-kernel-includes.noct`、`plan/ws035/tests/kernel-include-audit.py`、
-`userland/base/libvulkan/tools/maintain-dispatch.noct` と文書のパス、`-Iinclude/libc` の fixture script（`-DKERN_UAPI_NATIVE` の追加）。
+`userland/desktop/libvulkan/tools/maintain-dispatch.noct` と文書のパス、`-Iinclude/libc` の fixture script（`-DKERN_UAPI_NATIVE` の追加）。
 
 手順:
 1. `plan/ws035/tests/uapi-move-ledger.py` で移す要素を確定し、`uapi-value-ledger.py` で移動前の台帳を作る（§9 の 4）。

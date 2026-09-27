@@ -35,7 +35,7 @@ expect_log() {
 
 # zdesktop and the red window on desktop 1.
 guest "$stop_all" >/dev/null
-guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; /bin/zdesktop --timeout=600 --width=1280 --height=800 --glass --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
+guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; /bin/wayland --timeout=600 --width=1280 --height=800 --glass --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
 /bin/wlshm --size=520x340 --color=ffd04040 --frames=20000 --token=r > /tmp/r.log 2>&1 </dev/null & sleep 3; echo started' >/dev/null
 set -- $(guest "grep 'ZWL GLASS desktops' /tmp/zdesktop.log | head -1" | sed -n 's/.* x=\([0-9]*\) step=\([0-9]*\) width=\([0-9]*\).*/\1 \2 \3/p')
 dx=${1:-850}; dstep=${2:-46}; dwidth=${3:-40}

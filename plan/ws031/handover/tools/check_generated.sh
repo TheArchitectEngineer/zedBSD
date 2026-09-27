@@ -36,8 +36,8 @@ python3 $T/gen_fw_ranges.py "$W/forcewake-ranges.inc" > /dev/null
 compare intel/forcewake-ranges.inc "$W/forcewake-ranges.inc" $S/intel/forcewake-ranges.inc
 
 # gen_vk_server_codec.py reads and writes under the root it is given: hand it a scratch root holding codec.c.
-mkdir -p "$W/root/userland/base/libvulkan" "$W/root/$S/render"
-cp userland/base/libvulkan/codec.c "$W/root/userland/base/libvulkan/"
+mkdir -p "$W/root/userland/desktop/libvulkan" "$W/root/$S/render"
+cp userland/desktop/libvulkan/codec.c "$W/root/userland/desktop/libvulkan/"
 python3 $T/gen_vk_server_codec.py "$W/root" > /dev/null
 compare render/vulkan-codec.inc "$W/root/$S/render/vulkan-codec.inc" $S/render/vulkan-codec.inc
 

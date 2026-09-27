@@ -23,10 +23,10 @@ upstream の libwayland はその id を zombie として map に残し、event 
 
 ## 実装（2026-09-28）
 
-- `userland/base/libwayland/proxy.c`: `wlc_proxy_destroy` は server 側の id を map から外さない。`wlc_proxy_insert_server` は
+- `userland/desktop/libwayland/proxy.c`: `wlc_proxy_destroy` は server 側の id を map から外さない。`wlc_proxy_insert_server` は
   既存の proxy が zombie なら外して新しい object を入れる（生きている proxy と重なるのは従来どおり EEXIST）。connection の
   終わりに map の全部を解放するのは従来どおり（`client.c`）。
-- `userland/base/zdesktop/data.c`: `offer_set_actions` の ask の後の分岐で `OFFER_ACTION` も送る。
+- `userland/desktop/wayland/data.c`: `offer_set_actions` の ask の後の分岐で `OFFER_ACTION` も送る。
 - 試験 `plan/ws035/tests/p075/`（libwayland の host 試験）に zombie の段: 試験の protocol の child に fd の event `data`
   （pong の後に server が pipe を送る）。client は 3 回目の child に ping と destroy を続けて送り、roundtrip の後で接続が保たれ・
   pong と data が捨てられ・fd の数が増えないことを確かめ、4 回目の child（同じ id を再利用）の ping・pong・data が動くことを確かめる。
@@ -37,7 +37,7 @@ upstream の libwayland はその id を zombie として map に残し、event 
 - host: `plan/ws035/tests/p075/run-host.sh build/ws035-p089-host` PASS（`zombie events keep the connection`・`zombie events
   dropped`・`zombie fd closed`・`reused=1`・`child after zombie`、CLIENT DONE failures=0、SERVER DONE children_destroyed=4）。
   前の `proxy.c` で同じ試験（`LIBWAYLAND_ROOT`）は FAIL（接続を失い、fd が 1 つ残る）: 試験が不具合を捉えることを確かめた。
-- Venus の guest（amd64）: zdesktop-p088 PASS（`drag chosen client=2 action=1` の後も zdesktop-files が生きて 2 段目・3 段目が
+- Venus の guest（amd64）: zdesktop-p088 PASS（`drag chosen client=2 action=1` の後も files が生きて 2 段目・3 段目が
   通る。p088 の最初の実行で落ちた経路）、zdesktop-p084 PASS、zdesktop-p087 PASS（x11server の data offer）。
 - 規約: `proxy.c` の style-check は前と同数（37）、試験の `client.c`・`server.c` は 0、`data.c` 0。build warning 0。
 - 画面（`/home/awe/zedBSD-rpi4/build/ws035-shots/`）: `p089-20260928-venus-ask.png`（offer へ action を送る版の ask の menu）、

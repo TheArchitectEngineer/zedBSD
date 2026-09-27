@@ -6,9 +6,9 @@
  */
 
 /*
- * A greeter without a picture, for zsessiond's tests (ws035-p094).
+ * A greeter without a picture, for sessiond's tests (ws035-p094).
  *
- * zsessiond starts it in place of zdesktop --greeter, as _greeter, with the
+ * sessiond starts it in place of zdesktop --greeter, as _greeter, with the
  * socket on descriptor 3.  It reads its steps from /tmp/greeter-probe, one a
  * line, and logs each with the answer (the password is not logged):
  *
@@ -33,7 +33,7 @@
 /* The steps' file, which the test writes. */
 #define PROBE_SCRIPT	"/tmp/greeter-probe"
 
-/* The socket zsessiond answers on. */
+/* The socket sessiond answers on. */
 #define PROBE_FD	3
 
 static int probe_send(const char *line);
@@ -64,7 +64,7 @@ main(
 		return opened;
 	}
 
-	/* The options zsessiond passes (--greeter, --auth-fd, --wallpaper) are logged, not used. */
+	/* The options sessiond passes (--greeter, --auth-fd, --wallpaper) are logged, not used. */
 	for (index = 1; index < count; index++)
 		printf("PROBE argument=%s\n", arguments[index]);
 	printf("PROBE start uid=%u\n", (unsigned)getuid());
@@ -111,7 +111,7 @@ main(
 	return 0;
 }
 
-/* Sends one request to zsessiond and logs its answer. */
+/* Sends one request to sessiond and logs its answer. */
 static int
 probe_send(
 	const char *line)

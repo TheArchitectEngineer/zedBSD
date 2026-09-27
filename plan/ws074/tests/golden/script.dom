@@ -8,7 +8,7 @@
 |     "
 "
 |     <title>
-|       "zdesktop-browser: scripts ran"
+|       "browser: scripts ran"
 |     "
 "
 |     <style>
@@ -121,7 +121,7 @@ setInterval(function () {
     console.log("tick", ticks);
 }, 1000);
 window.addEventListener("load", function () {
-  document.title = "zdesktop-browser: scripts ran";
+  document.title = "browser: scripts ran";
   console.log("loaded", document.readyState);
 });
 "

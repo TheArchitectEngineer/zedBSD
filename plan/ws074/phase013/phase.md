@@ -53,7 +53,7 @@ cleared。
   - golden 20/20（position.html の 4 つを追加、前の 16 は変わらず）、DOM の試験 5/5、host-link 22/22（plain・ASan）。
   - guest（`plan/ws074/tests/browser-p013.sh`）: status 0。click が over・middle・corner top-left に届く。回帰の browser-p045・p030・
     p014 も status 0。画面: `/home/awe/zedBSD-rpi4/build/ws074-shots/p013-20260928-position.png`、Chromium との並び
-    `p013-20260928-position-vs-chrome.png`（左が zdesktop-browser の CPU の描画、右が Chromium）。
+    `p013-20260928-position-vs-chrome.png`（左が browser の CPU の描画、右が Chromium）。
 - boot test: PASS（`/home/awe/zedBSD-rpi4/build/ws074-shots/p013-20260928-boot-login.png`）。
 - 実機: 未実施。
 - commit: `9a34a12d`（code と試験）、この記録の commit。

@@ -4104,7 +4104,7 @@ Date: 2026-09-22. 試験を src/drivers/gpu/i915/tests/ と plan/ws031/tests/ �
 - 回帰: offscreen frame 1 `7523debe…05ff`、display `94615464…19b1` ended PASS、vk host PASS、lcd-modeset 123/0。
 
 ## E-134 (2026-09-22): p013 Wayland モデルビューア（Venus）PASS
-- FBX（ユーザー著作、commit 可）をビルドホストでテキストのポリゴンリスト＋非圧縮 PAM へ変換（`userland/base/mview/`）。
+- FBX（ユーザー著作、commit 可）をビルドホストでテキストのポリゴンリスト＋非圧縮 PAM へ変換（`userland/desktop/mview/`）。
 - zwl に `wl_seat`/`wl_pointer`/`wl_keyboard`、libwayland に同 API（upstream 名）。mview（Vulkan＋Wayland）で回転・移動・拡大縮小・キー操作。
 - Venus 実 QEMU `p013-mview-009` PASS（6 検査、`R` で初期画像と画素一致）。WS014 Wayland 受入と i915 の `vkloop-hw.sh wayland` も PASS。
 - 詳細・制限は `phase013/phase.md` §完了。次は p014（i915 で mview）。

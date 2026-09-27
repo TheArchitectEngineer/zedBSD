@@ -12,10 +12,10 @@ Status: 設計（2026-09-27、ws070-p001）。仕様案は [spec.md](spec.md)（
   `xdg_toplevel_menu_v1`）、item は数値の ID、型は normal・separator・checkbox・radio・submenu、属性は label・action・enabled・
   visible・checked・role・icon_name・shortcut、activation は `activated(item_id, seat, serial)`、更新は begin_update/commit の
   transaction、描くのは全部 zdesktop（浮いたタイトルバー／docked のシステムバー、popup、keyboard、外の click で閉じる）、
-  active menu は focus の toplevel に従う。zdesktop の非標準の拡張なので client は **libzdesktop の API** だけを使い、protocol の
+  active menu は focus の toplevel に従う。zdesktop の非標準の拡張なので client は **libkeiland の API** だけを使い、protocol の
   client header は非公開（`zed_gpu_buffer_v1` と同じ扱い）。
-- 最初の使い手は zdesktop-terminal（Shell・Edit・View・Session・Help）。後で GTK4（GMenuModel）・Qt6（QMenuBar）の native menubar の
-  backend が libzdesktop の API を使う。
+- 最初の使い手は terminal（Shell・Edit・View・Session・Help）。後で GTK4（GMenuModel）・Qt6（QMenuBar）の native menubar の
+  backend が libkeiland の API を使う。
 - 範囲外（v1）: icon の描画（zedBSD に icon theme が無い。role と icon_name は受けて保持し、log に出す）、touch mode（zdesktop は
   wl_touch を出していない）、HiDPI（出力の scale は 1）、accessibility の提示（screen reader が無い。model は compositor にあるので
   後で足せる）、popup の animation、mnemonic（下線の accelerator）、popup の scroll（出力に収まらない長さの menu）。Future Work 候補。
@@ -24,7 +24,7 @@ Status: 設計（2026-09-27、ws070-p001）。仕様案は [spec.md](spec.md)（
 
 ```
 application / toolkit backend
-   │  libzdesktop: zdesktop_menu_*（model の鏡と局所の検査、transaction）
+   │  libkeiland: zdesktop_menu_*（model の鏡と局所の検査、transaction）
    ▼
 libwayland-client: xdg_menu_manager_v1 / xdg_menu_v1 / xdg_toplevel_menu_v1（非公開 header）
    ▼  Wayland の socket
@@ -121,19 +121,19 @@ error（enum `error`）: `already_exists = 0`（その toplevel に生きた `xd
 ### 2.4 version の扱い
 
 version 1 だけ。以後の追加（mnemonic、icon の画素でない指定、touch の hint 等）は新しい request・event を末尾に足して version を
-上げる。libzdesktop は bind する version を上限 1 で決める。
+上げる。libkeiland は bind する version を上限 1 で決める。
 
 ## 3. libwayland（client 側）
 
-- `userland/base/libwayland/protocol.c` に 3 interface の表（`wl_message`・`wl_interface`）と typed の request の wrapper を足す。
+- `userland/desktop/libwayland/protocol.c` に 3 interface の表（`wl_message`・`wl_interface`）と typed の request の wrapper を足す。
   `event.c` に `xdg_toplevel_menu_v1_listener` の typed dispatch を足す（scanner の生成物を使う toolkit の形と同じ
   `*_add_listener`）。
-- header は **非公開**: `userland/base/libwayland/xdg-toplevel-menu-v1-client-protocol.h`（install しない。libzdesktop が
-  `#include "userland/base/libwayland/…"` で使う。`zed-gpu-buffer-v1-client-protocol.h` と同じ）。
-- export: `exports.map` の `xdg_*` が既に覆う（関数名は `xdg_menu_manager_v1_*` 等）。libzdesktop.so は libwayland-client.so に
-  動的に link する（platform/amd64/vmunix.mk の libzdesktop の規則に `-l:libwayland-client.so` を足す）。
+- header は **非公開**: `userland/desktop/libwayland/xdg-toplevel-menu-v1-client-protocol.h`（install しない。libkeiland が
+  `#include "userland/desktop/libwayland/…"` で使う。`zed-gpu-buffer-v1-client-protocol.h` と同じ）。
+- export: `exports.map` の `xdg_*` が既に覆う（関数名は `xdg_menu_manager_v1_*` 等）。libkeiland.so は libwayland-client.so に
+  動的に link する（platform/amd64/vmunix.mk の libkeiland の規則に `-l:libwayland-client.so` を足す）。
 
-## 4. libzdesktop の API（`include/libc/zdesktop.h`）
+## 4. libkeiland の API（`include/libc/zdesktop.h`）
 
 toolkit の model（GMenuModel の木と action 名、QMenuBar の QMenu・QAction）へ素直に写ることを優先した。
 
@@ -169,7 +169,7 @@ struct zdesktop_window_menu_listener {
 - `ZDESKTOP_VERSION` は 2（System Menu を足した版）。
 - 定数: `ZDESKTOP_MENU_ITEM_NORMAL`…`SUBMENU`、`ZDESKTOP_MENU_ROLE_*`、`ZDESKTOP_MENU_SHIFT`・`CTRL`・`ALT`・`SUPER`、
   `ZDESKTOP_MENU_ROOT`（0）。値は protocol の enum と同じ。
-- **戻り値**: 0 か errno の値。**局所の検査**: libzdesktop は ID・parent・型・transaction の鏡を持ち、protocol error になる呼び出し
+- **戻り値**: 0 か errno の値。**局所の検査**: libkeiland は ID・parent・型・transaction の鏡を持ち、protocol error になる呼び出し
   （重複 ID、無い parent、transaction の外の変更、checkbox 以外への checked…）を送らずに `EINVAL`・`EEXIST`・`ENOENT`・`EBUSY`・
   `E2BIG` で返す。protocol error は接続ごと client を殺すので、toolkit の backend の誤りを 1 つの呼び出しの失敗に留める。
 - **event の queue**: service は global の発見だけを自分の queue（`wl_display_create_queue`、display の wrapper）で roundtrip し、
@@ -258,7 +258,7 @@ struct zdesktop_window_menu_listener {
 実装で足した規則（p003）: 題名の bar の項目は、その点で一番上の窓がその窓のときだけ当たる（`zwl_glass_window_at`。上の窓の
 本体に隠れた題名の bar の項目は押せない）。submenu の開いた行の上の motion は開き直さない。
 
-## 7. zdesktop-terminal の menu（p004）
+## 7. terminal の menu（p004）
 
 | menu | 項目（shortcut） | 動作 |
 | --- | --- | --- |
@@ -273,7 +273,7 @@ activated は `ZTERM MENU item=I action=A` を log に出す。
 
 ## 8. 試験
 
-- **build**: zdesktop・libwayland・libzdesktop・zdesktop-terminal が warning 0。新しい file は `plan/tools/style-check.py` 0、既存の
+- **build**: zdesktop・libwayland・libkeiland・terminal が warning 0。新しい file は `plan/tools/style-check.py` 0、既存の
   file は悪化させない。
 - **Venus（QEMU）**: lean な image（`plan/tools/titlebar/config-amd64-menu.mk`、`build-menu-image.sh`）で
   `plan/tools/titlebar/menu-p003.sh`（仮称）: zdesktop --glass と terminal。(1) 浮いたタイトルバーの menu の画面、(2) Edit を開いた popup の
@@ -291,16 +291,16 @@ activated は `ZTERM MENU item=I action=A` を log に出す。
 | --- | --- |
 | p002 | libwayland の 3 interface（表、wrapper、listener、非公開 header）、zdesktop の menu.c（request、model、transaction、error、寿命）、`zwl_error_code` |
 | p003 | menu-shell.c（題名 bar・システムバーの項目、popup、pointer、keyboard、shortcut、activation、log）、shell.c・seat.c・glass.c の hook |
-| p004 | libzdesktop の API（鏡と検査、service の発見）、zdesktop-terminal の menu と動作（選択・clipboard・zoom・fullscreen・session・about） |
+| p004 | libkeiland の API（鏡と検査、service の発見）、terminal の menu と動作（選択・clipboard・zoom・fullscreen・session・about） |
 | p005 | i915 実機、規約の全文との照合、回帰 |
 
 ## 10. 共有される file と衝突の危険（統合のとき）
 
-- `userland/base/zdesktop/`（zwl.h、protocol.c、objects.c、wire.c、shell.c、seat.c、glass.c、Makefile）: WS069（X11 server）は
+- `userland/desktop/wayland/`（zwl.h、protocol.c、objects.c、wire.c、shell.c、seat.c、glass.c、Makefile）: WS069（X11 server）は
   zdesktop の外の program なので重なりは小さいが、zwl.h の object・server の field の追加は merge で並びがずれうる。
-- `userland/base/libwayland/`（protocol.c、event.c）: WS069 の zdesktop-x11server が新しい interface を足すなら同じ file。
-- `platform/amd64/vmunix.mk`（libzdesktop の link、zdesktop-terminal の link）: WS068・WS069 も規則を足す file。
-- `include/libc/zdesktop.h`、`userland/base/libzdesktop/`: WS069 の zdesktop-x11server が libzdesktop に何か足すなら重なる。
+- `userland/desktop/libwayland/`（protocol.c、event.c）: WS069 の xserver が新しい interface を足すなら同じ file。
+- `platform/amd64/vmunix.mk`（libkeiland の link、terminal の link）: WS068・WS069 も規則を足す file。
+- `include/libc/zdesktop.h`、`userland/desktop/libkeiland/`: WS069 の xserver が libkeiland に何か足すなら重なる。
 
 ## 11. 決定（2026-09-27 ユーザーが既定を確定。以前は未決として既定で進めていた）
 
@@ -329,7 +329,7 @@ context menu（Open、Open With、Cut、Copy、Paste、Rename、Duplicate、Move
   object<wl_surface> surface, int x, int y, object<wl_seat> seat, uint serial)`。zdesktop は serial が最近の press（右 button）の
   ものかを確かめ、surface の座標 (x, y) に根の子の popup を開く。`xdg_context_menu_v1` の event は `activated(item_id, action,
   serial)` と `done()`（選ばれても閉じられても最後に 1 回。client はその後 destroy する）、request は `destroy`（開いていれば閉じる）。
-  menubar と同じ `xdg_menu_v1` を渡してもよい（その場合は根の子＝top-level が行になる）。libzdesktop には
+  menubar と同じ `xdg_menu_v1` を渡してもよい（その場合は根の子＝top-level が行になる）。libkeiland には
   `zdesktop_menu_popup(service, menu, surface, x, y, seat, serial, listener, data)` のような 1 つの呼び出しで包む。
 - **2026-09-27 実装（ws071-p009）**: 上の version 2 の案のとおり（`bad_surface` の error は作らず、窓でない surface・古い serial は開かずに
   `done`）。記録は [ws071 phase009](../ws071/ws.md)。

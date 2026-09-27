@@ -2,7 +2,7 @@
 # ws068-p019: OpenGL ES 2 drawing with shaders compiled from GLSL source on the Venus guest (the image of
 # plan/ws068/tests/build-glsl-image.sh, run by plan/ws035/tests/zdesktop-guest.sh start IMAGE).
 # egltest --scene=glsl draws scene.c's shapes with GLSL ES 1.00 shaders that glCompileShader compiles
-# (zedBSD's GLSL compiler, userland/base/libglesv2/glsl): a strip from a buffer object with byte colours,
+# (zedBSD's GLSL compiler, userland/desktop/libglesv2/glsl): a strip from a buffer object with byte colours,
 # a textured fan from client arrays, a half-alpha blend, a depth test with glDrawElements, and
 # culling.  Each run is checked twice: egltest reads its first frame back (glReadPixels, the
 # EGLTEST CHECK line) and the screen is photographed and read.
@@ -62,7 +62,7 @@ expect_log /tmp/egl-d.log 'EGLTEST DONE run=d frames=200 glerror=0x0 failures=0'
 
 # 2. In a zdesktop window.
 guest "$stop_all" >/dev/null
-guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; /bin/zdesktop --timeout=600 --width=1280 --height=800 --glass --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
+guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; /bin/wayland --timeout=600 --width=1280 --height=800 --glass --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
 /bin/egltest --display=/tmp/wayland-0 --size=640x400 --scene=glsl --frames=4000 --delay-ms=30 --token=w > /tmp/egl-w.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 set -- $(guest "grep 'ZWL MAP client=1 ' /tmp/zdesktop.log" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 wx=${1:-0}; wy=${2:-0}

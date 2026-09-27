@@ -1,6 +1,6 @@
 <!-- awesome-plan project=zedbsd record=ws035p079 -->
 
-# ws035-p079: client 間の clipboard（wl_data_device_manager）と zdesktop-terminal の Copy・Paste
+# ws035-p079: client 間の clipboard（wl_data_device_manager）と terminal の Copy・Paste
 
 Phase ID: `ws035-p079`
 Parent: [WS035](../ws.md)（p028 から 2026-09-27 に分割）
@@ -11,7 +11,7 @@ Queue: なし（2026-09-27 ユーザーの指示でサブエージェントが w
 
 ## 背景
 
-zdesktop には client 間の clipboard が無く、zdesktop-terminal は自分だけの clipboard を持っていた。GTK・Qt・Chromium の Copy・Paste は
+zdesktop には client 間の clipboard が無く、terminal は自分だけの clipboard を持っていた。GTK・Qt・Chromium の Copy・Paste は
 core の `wl_data_device_manager` を使う。libwayland（zedBSD の client library）も data の interface を持っていなかった。
 
 ## 範囲
@@ -23,7 +23,7 @@ core の `wl_data_device_manager` を使う。libwayland（zedBSD の client lib
    drag and drop は「最小」: start_drag は source をすぐ cancelled にする。
 2. server が作る object の ID（0xff000000 から）と、その破棄で delete_id を送らないこと。
 3. libwayland: 4 つの interface（記述・wrapper・listener の型・header）。event は汎用の dispatch（p075）で listener へ。
-4. zdesktop-terminal: Edit > Copy は selection を出し（UTF-8 と plain text）、Edit > Paste は他の client の selection を pipe で受ける
+4. terminal: Edit > Copy は selection を出し（UTF-8 と plain text）、Edit > Paste は他の client の selection を pipe で受ける
    （自分の selection のときは手元の文字列をそのまま。自分に書かせて自分で読むと待ち合う）。menu の Paste の有効も selection から。
 5. 試験: `userland/base/tests/data-probe/`、`plan/ws035/tests/zdesktop-p079.sh`。
 
@@ -39,12 +39,12 @@ cleared。
 
 ### 実装
 
-- `userland/base/zdesktop/data.c`・`data.h`（新規）: 上の 1。`protocol.c` の globals の 9 と dispatch、`seat.c` の focus の変化で
+- `userland/desktop/wayland/data.c`・`data.h`（新規）: 上の 1。`protocol.c` の globals の 9 と dispatch、`seat.c` の focus の変化で
   keyboard の enter の前に `zwl_data_focus`、`objects.c` の source の破棄で `zwl_data_object_gone`、`zwl_create_server`
   （server の範囲の ID、使用中を避けて巡回）と server の ID の破棄で delete_id を送らない。`zwl.h` に kind・field。
-- `userland/base/libwayland/data-device-protocol.c`（新規）と `wayland-client-protocol.h`（upstream の名前・opcode・`_SINCE_VERSION`・
+- `userland/desktop/libwayland/data-device-protocol.c`（新規）と `wayland-client-protocol.h`（upstream の名前・opcode・`_SINCE_VERSION`・
   dnd_action）。`API-PROVENANCE.md` に追記。
-- `userland/base/zdesktop-terminal/clipboard.c`（新規）、`window.c`（manager の bind、device、key の serial、close）、`main.c`
+- `userland/desktop/terminal/clipboard.c`（新規）、`window.c`（manager の bind、device、key の serial、close）、`main.c`
   （Copy・Paste・menu の状態）、`terminal.h`。
 - `userland/base/tests/data-probe/`（新規）、lean image の config と vmunix.mk。
 

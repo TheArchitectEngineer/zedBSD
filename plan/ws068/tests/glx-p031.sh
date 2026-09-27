@@ -1,6 +1,6 @@
 #!/bin/sh
 # ws068-p031: desktop OpenGL 3.1 through GLX on the Venus guest (the lean image, plan/ws068/tests/build-glsl-image.sh
-# build/amd64; run by plan/ws035/tests/zdesktop-guest.sh start).  zdesktop-x11server runs under zdesktop; glxtest --gl31
+# build/amd64; run by plan/ws035/tests/zdesktop-guest.sh start).  xserver runs under zdesktop; glxtest --gl31
 # makes a 3.1 context with glXCreateContextAttribsARB (after the same context checks as --gl3), checks OpenGL 3.1's
 # calls and 3.2's without shader stages at its start (GLXTEST GL31 check lines: buffer and rectangle textures,
 # primitive restart, base vertex, provoking vertex, depth clamp, ...) and shows one square per outcome, green when it
@@ -45,10 +45,10 @@ gl31_expect() {
 	echo "--expect $((x + w / 2)),$((y + h / 2)),202020"
 }
 
-# 1. zdesktop, zdesktop-x11server, glxtest --gl31.
+# 1. zdesktop, xserver, glxtest --gl31.
 guest "$stop_all" >/dev/null
-guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0 /tmp/.X11-unix/X0; /bin/zdesktop --timeout=600 --width=1280 --height=800 --glass --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
-DISPLAY=:0 /bin/zdesktop-x11server > /tmp/x11server.log 2>&1 </dev/null & sleep 6
+guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0 /tmp/.X11-unix/X0; /bin/wayland --timeout=600 --width=1280 --height=800 --glass --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
+DISPLAY=:0 /bin/xserver > /tmp/x11server.log 2>&1 </dev/null & sleep 6
 DISPLAY=:0 /bin/glxtest --gl31 --frames=600 --delay-ms=30 --token=g31 > /tmp/glx3.log 2>&1 </dev/null & i=0; while ! grep -q "EGLTEST CHECK" /tmp/glx3.log && [ $i -lt 60 ]; do sleep 1; i=$((i+1)); done; sleep 2; echo started' >/dev/null
 set -- $(guest "grep 'ZWL MAP client=1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 wx=${1:-0}; wy=${2:-0}

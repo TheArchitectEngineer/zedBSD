@@ -41,13 +41,13 @@ Phase disposition: normal
 
 | file | 内容 |
 | --- | --- |
-| `userland/base/libglesv2/pixels.c`（新） | `gles_unpack`（unpack buffer と pixel store から texel を詰めた行に集める）、`gles_pack_target`（`glReadPixels` の書き先：pack buffer と pack store） |
-| `userland/base/libglesv2/texture.c` | 3D・配列の texture（level の slice、image と view の形、upload の copy、mipmap の鎖）、`glTexImage3D` ほかの新しい entry point、target を bit で受ける `texture_bound`、unit の 3D・配列、texel の変換を `gles_unpack` 経由に |
-| `userland/base/libglesv2/gles.h`・`gles.c` | `GLES_SHAPE_*`、level の `depth`、unit の `volume_units`・`array_units`、黒い texture を形ごと、pixel store の状態と `glPixelStorei`・`glGetIntegerv` |
-| `userland/base/libglesv2/format.c` | `gles_pixel_size`、`gles_texels_halve` に深さ（3D は 8 texel の平均、配列は layer ごと） |
-| `userland/base/libglesv2/draw.c` | sampler の形（`draw_sampler_shape`）で unit の texture を選ぶ、`glReadPixels` を pack buffer と pack store に |
-| `userland/base/libglesv2/exports.map`・`Makefile`、`userland/X11/libGL/exports.map`・`Makefile` | 新しい entry point と `pixels.c`（libGL も GL 1.2 の glTexImage3D・glTexSubImage3D・glCopyTexSubImage3D を出す） |
-| `userland/base/egltest/volumes.c`・`.h`（新）・`main.c`・`Makefile` | `--scene=volumes` |
+| `userland/desktop/libglesv2/pixels.c`（新） | `gles_unpack`（unpack buffer と pixel store から texel を詰めた行に集める）、`gles_pack_target`（`glReadPixels` の書き先：pack buffer と pack store） |
+| `userland/desktop/libglesv2/texture.c` | 3D・配列の texture（level の slice、image と view の形、upload の copy、mipmap の鎖）、`glTexImage3D` ほかの新しい entry point、target を bit で受ける `texture_bound`、unit の 3D・配列、texel の変換を `gles_unpack` 経由に |
+| `userland/desktop/libglesv2/gles.h`・`gles.c` | `GLES_SHAPE_*`、level の `depth`、unit の `volume_units`・`array_units`、黒い texture を形ごと、pixel store の状態と `glPixelStorei`・`glGetIntegerv` |
+| `userland/desktop/libglesv2/format.c` | `gles_pixel_size`、`gles_texels_halve` に深さ（3D は 8 texel の平均、配列は layer ごと） |
+| `userland/desktop/libglesv2/draw.c` | sampler の形（`draw_sampler_shape`）で unit の texture を選ぶ、`glReadPixels` を pack buffer と pack store に |
+| `userland/desktop/libglesv2/exports.map`・`Makefile`、`userland/X11/libGL/exports.map`・`Makefile` | 新しい entry point と `pixels.c`（libGL も GL 1.2 の glTexImage3D・glTexSubImage3D・glCopyTexSubImage3D を出す） |
+| `userland/desktop/egltest/volumes.c`・`.h`（新）・`main.c`・`Makefile` | `--scene=volumes` |
 | `plan/ws068/tests/egl-p028.sh`（新） | display と Wayland の画面の点、readback、API の検査 |
 
 ### 検証（QEMU の Venus。i915 実機は未実施）

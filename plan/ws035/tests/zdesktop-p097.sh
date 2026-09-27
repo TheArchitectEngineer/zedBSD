@@ -63,7 +63,7 @@ expect_run 'dmesg' 'vfs: runtime filesystems mounted'
 console_shot console.png
 
 # 2. zdesktop holds the display; what is typed is not the console's.
-guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; /bin/zdesktop --timeout=120 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
+guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; /bin/wayland --timeout=120 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
 keys 'hello'
 sleep 1
 console_shot hold.png

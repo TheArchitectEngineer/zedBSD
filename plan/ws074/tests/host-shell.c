@@ -25,7 +25,7 @@ shell_run(
 	UNUSED_PARAMETER(options);
 
 	/* Says why nothing opened. */
-	fprintf(stderr, "zdesktop-browser: the host build has no window mode\n");
+	fprintf(stderr, "browser: the host build has no window mode\n");
 
 	/* Reports the refusal. */
 	return 1;

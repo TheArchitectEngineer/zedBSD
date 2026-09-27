@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws071-p014: the titlebar's state and events of zdesktop-files on the host (files-render, host-render.c).
+# ws071-p014: the titlebar's state and events of files on the host (files-render, host-render.c).
 # Builds nothing: run host-build.sh first.  Each case runs files-render on a fresh sample home and
 # checks the lines it prints:
 #  1. The dashboard: one part (Home), nothing to go back to, no query, no progress, no focus asked.

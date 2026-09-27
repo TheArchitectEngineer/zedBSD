@@ -14,7 +14,7 @@ home=$root/build/ws071-host/home
 if [ "${1:-}" = --fresh ]; then
 	shift
 	rm -rf "$home"
-	rm -f "$root/build/ws071-host/zdesktop-files.clipboard"
+	rm -f "$root/build/ws071-host/files.clipboard"
 fi
 [ -d "$home" ] || sh plan/tools/files/make-home.sh "$home" >/dev/null
 fallback=

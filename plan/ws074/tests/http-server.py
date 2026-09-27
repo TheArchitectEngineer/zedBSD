@@ -2,7 +2,7 @@
 # zedBSD
 # Copyright (C) 2026 Awe Morris
 # SPDX-License-Identifier: Zlib
-"""The HTTP test server of zdesktop-browser (ws074-p016, p017): serves the test pages and the cases the HTTP client meets.
+"""The HTTP test server of browser (ws074-p016, p017): serves the test pages and the cases the HTTP client meets.
 
   http-server.py [--port N] [--bind ADDRESS] [--tls-dir DIR --tls-port N --tls-wrong-port N]
       (default 8074 on 0.0.0.0; the guest reaches the host as 10.0.2.2)

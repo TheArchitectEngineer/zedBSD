@@ -54,7 +54,7 @@ place() {
 
 status=0
 guest "$stop_all" >/dev/null
-guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; /bin/zdesktop --timeout=300 --width=1280 --height=800 --glass --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & sleep 3
+guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; /bin/wayland --timeout=300 --width=1280 --height=800 --glass --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & sleep 3
 /bin/wltest --windowed --size=420x300 --color=f4f7fc --frames=3600 --delay-ms=50 --token=a > /tmp/a.log 2>&1 </dev/null & sleep 2
 /bin/wlshm --size=360x240 --color=ffe8eef8 --frames=6000 --token=b > /tmp/b.log 2>&1 </dev/null & sleep 3; echo started' >/dev/null
 guest 'grep -E "GLASS|MAP" /tmp/zdesktop.log' | tee "$out/log-start.txt"

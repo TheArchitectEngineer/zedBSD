@@ -1,9 +1,9 @@
 #!/bin/sh
-# ws071-p011: zdesktop-files from App Home on the Venus guest (the lean image, build-files-image.sh).
+# ws071-p011: files from App Home on the Venus guest (the lean image, build-files-image.sh).
 # zdesktop --glass at 1280x800 with no /etc/zdesktop/apps.conf (the built-in list):
 #  1. home.png: the launcher opens Home with 7 applications, Files among them (8 with the Browser, shown when
-#     the image has zdesktop-browser and its start page).
-#  2. files.png: the Files icon starts zdesktop-files (HOME LAUNCH name=Files), which maps its window and gives
+#     the image has browser and its start page).
+#  2. files.png: the Files icon starts files (HOME LAUNCH name=Files), which maps its window and gives
 #     its titlebar the controls (ZWL TITLEBAR control ... where=floating id=1 ... shown=1).
 #
 #   plan/tools/files/files-guest.sh start     (the guest must be up)
@@ -47,7 +47,7 @@ icon() {
 guest "$stop_all; rm -f /etc/zdesktop/apps.conf" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
 picture=; [ -f /usr/share/zdesktop/wallpaper.ppm ] && picture=--wallpaper=/usr/share/zdesktop/wallpaper.ppm
-/bin/zdesktop --timeout=300 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
+/bin/wayland --timeout=300 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
 
 # 1. Home.
 pointer move 23 17 sleep 300 down sleep 60 up sleep 1500

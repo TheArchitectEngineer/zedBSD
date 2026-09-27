@@ -27,8 +27,8 @@ count() {
 
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
-/bin/zdesktop --timeout=300 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
-/bin/zdesktop-terminal --token=t3 --timeout-s=250 > /tmp/t3.log 2>&1 </dev/null & sleep 6
+/bin/wayland --timeout=300 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
+/bin/terminal --token=t3 --timeout-s=250 > /tmp/t3.log 2>&1 </dev/null & sleep 6
 /bin/wlshm --size=520x340 --color=ffd04040 --frames=20000 --token=a > /tmp/a.log 2>&1 </dev/null & sleep 3; echo started' >/dev/null
 set -- $(guest "grep 'ZWL MAP client=1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 tx=${1:-0}; ty=${2:-0}

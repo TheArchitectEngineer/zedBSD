@@ -33,7 +33,7 @@ cleared。
   h1 は 32px・bold・margin 21.44px、`.note` は背景・border・padding、`#footer` は 12px・gray・margin 24px/12px、li は list-item、
   `a:link` は #0000ee）。
   - host plain・ASan: golden 2/2 一致。tree construction の回帰 1648/1753（変わらず）。
-  - guest（zedBSD の build の image の `/usr/share/zdesktop-browser-tests/first.html`）: dump が golden と byte 単位で一致。
+  - guest（zedBSD の build の image の `/usr/share/browser-tests/first.html`）: dump が golden と byte 単位で一致。
 - boot test: PASS（`/home/awe/zedBSD-rpi4/build/ws074-shots/p007-20260927-boot-login.png`）。画面に出る変化はまだ無い。
 
 ## 後回し（follow-up）

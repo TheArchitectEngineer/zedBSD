@@ -1,13 +1,13 @@
 <!-- awesome-plan project=zedbsd record=ws035p068 -->
 
-# ws035-p068: zdesktop-terminal（zterm を Wayland と Vulkan へ）
+# ws035-p068: terminal（zterm を Wayland と Vulkan へ）
 
 Phase ID: `ws035-p068`
 Parent: [WS035](../ws.md)
 Status: cleared（q468-i01、2026-09-26）
 Phase disposition: normal
 Queue: q468-i01
-承認: 2026-09-26 ユーザー「userland/base/ztermに、X11のターミナルの実装があります。これをWayland+Vulkanに移植して、userland/base/zdesktop-terminalとして実装をお願いします。」
+承認: 2026-09-26 ユーザー「userland/base/ztermに、X11のターミナルの実装があります。これをWayland+Vulkanに移植して、userland/desktop/terminalとして実装をお願いします。」
 （zterm の実際の場所は `userland/X11/zterm`）
 
 ## 範囲
@@ -18,7 +18,7 @@ Queue: q468-i01
    `/dev/graphics` の font（zterm・Xzed が使うもの）はレガシー用なので使わない（2026-09-26 ユーザー「/dev/graphicsのフォントは使わないでください。それはレガシー用です。」
    「libtruetypeを使ってください。」）。
 2. 入力は wl_keyboard（keymap は zwl が送るもの）と wl_pointer（範囲外なら最小限）。
-3. `userland/base/zdesktop-terminal` として package にし、zdesktop の image に入れる。
+3. `userland/desktop/terminal` として package にし、zdesktop の image に入れる。
 
 ## 受け入れ
 
@@ -28,7 +28,7 @@ Queue: q468-i01
 
 ## 結果（q468-i01、2026-09-26）
 
-実装（`userland/base/zdesktop-terminal/`、新しい C は coding-style の全文、style-check 0）:
+実装（`userland/desktop/terminal/`、新しい C は coding-style の全文、style-check 0）:
 
 - `screen.c`: zterm の VT100 の解釈を移し、scroll 領域（DECSTBM）、行・文字の挿入と削除、ECH、CHA・VPA・CNL・CPL、
   DECTCEM、256 色と direct color、OSC の読み捨て、G0/G1 の指定の読み捨て、alternate screen（消去だけ）を足した。
@@ -41,7 +41,7 @@ Queue: q468-i01
 - `window.c`: xdg-shell の toplevel（題名 Terminal）、wl_keyboard、key repeat（zwl は repeat しないので client で、400 ms・40 ms）。
 - `main.c`: forkpty で `/bin/sh`（`--command=` で `sh -c`、`TERM=xterm`）、Wayland と pty を 1 つの poll で待つ、
   configure の大きさで swapchain と grid を作り直し TIOCSWINSZ、shell の終了か窓の close で終わる（`ZTERM DONE reason=`）。
-- package: `userland/base/zdesktop-terminal/Makefile`、`platform/amd64/vmunix.mk` の link、zdesktop の 2 つの config に追加。
+- package: `userland/desktop/terminal/Makefile`、`platform/amd64/vmunix.mk` の link、zdesktop の 2 つの config に追加。
 - 試験の道具: `plan/ws035/tests/build-zdesktop-image.sh`（Venus の image に git 外の font と壁紙を入れる。以前の build はこれらを
   入れ忘れていた）、`qmp-keys.py`（QMP で文字を打つ）、`zdesktop-p068.sh`、実機の scenario の `ZDESKTOP_APP=terminal`
   （`plan/ws031/tests/zdesktop/run-terminal.sh`、log を 2 秒ごとに sync）。

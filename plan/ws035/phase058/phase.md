@@ -10,12 +10,12 @@ Queue: なし（2026-09-27 ユーザーの指示でサブエージェントが w
 
 ## 範囲
 
-zdesktop（secondary queue とその後の Phase で変えた全 source、`userland/base/zdesktop/`）の規約（`plan/coding-style.md`）の照合と回帰。
+zdesktop（secondary queue とその後の Phase で変えた全 source、`userland/desktop/wayland/`）の規約（`plan/coding-style.md`）の照合と回帰。
 boot test は 2026-09-27 のユーザーの指示で行わない。
 
 ## 結果（2026-09-27）
 
-- 規約: `plan/tools/style-check.py userland/base/zdesktop/*.c *.h` が 0。締めで直したもの（ws071-p011 と同じ commit）: `main.c`（flush の
+- 規約: `plan/tools/style-check.py userland/desktop/wayland/*.c *.h` が 0。締めで直したもの（ws071-p011 と同じ commit）: `main.c`（flush の
   条件の中の呼び出しを変数に、`zwl_cycles`・`zwl_perf_report` の段落、条件演算子を if に）、`wire.c`（return の前の comment、`CMSG_LEN` を
   変数に）、`seat.c`・`protocol.c`（break の前の空行）、`input.c`（`strncmp` を変数に、段落の comment）。
 - 回帰（`build/closeout/`、ws071-p011・ws070-p012 と同じ image・guest）: zdesktop の試験 p053・p059・p062〜p065・p068〜p072・p014・

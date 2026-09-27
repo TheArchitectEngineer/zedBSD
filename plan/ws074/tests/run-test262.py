@@ -2,13 +2,13 @@
 # zedBSD
 # Copyright (C) 2026 Awe Morris
 # SPDX-License-Identifier: Zlib
-"""Runs test262 against zdesktop-browser's JavaScript engine.
+"""Runs test262 against browser's JavaScript engine.
 
   run-test262.py [--driver PATH] [--limit N] [--filter TEXT] [--show N] [--jobs N] [--record FILE]
                  [--manifest-only OUT] [--results RESULTS]
 
 The tests are those of run-test262-parse.py (build/ws074-suites/test262/test/**/*.js without intl402/,
-staging/, the fixtures and the proposals zdesktop-browser does not plan).  Each runs in the modes its
+staging/, the fixtures and the proposals browser does not plan).  Each runs in the modes its
 flags ask for (both sloppy and strict unless onlyStrict, noStrict or raw) after the harness (assert.js,
 sta.js, doneprintHandle.js for async tests, then its includes; nothing for raw tests), through the batch
 driver plan/ws074/tests/host-js.c (built by host-build.sh).  A test passes when every mode behaves as

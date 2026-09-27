@@ -52,7 +52,7 @@ ready先行でSYNC_ONLY試験が起動する余地もあるため、本文の順
 ## 3. libvulkanワークフロー照合
 
 この表の「既存証拠」はE-127〜130とソースの照合であり、このレビューで得た新しいruntime結果ではない。
-Uのパスは`userland/base/libvulkan/`相対、Kは`src/drivers/gpu/i915/`相対。
+Uのパスは`userland/desktop/libvulkan/`相対、Kは`src/drivers/gpu/i915/`相対。
 
 | ワークフロー | 実際のU側入口 / K側受け口 | 新構成で保存する処理 | 判定・限界 |
 | --- | --- | --- | --- |

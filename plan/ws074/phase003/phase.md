@@ -12,7 +12,7 @@ Queue: なし（サブエージェントが worktree の branch で実行）
 
 design.md §11.2・§11.3 の GC heap（非移動の mark-sweep、64 KiB の block の大きさの class、大きな cell の個別の allocation、保守的な
 C の stack の走査、正確な trace、root の slot と tracer、finalizer、上限）と、VM の string（Latin-1 か UTF-16、自動の narrow）と
-atom（intern の表）。`userland/base/zdesktop-browser/vm/{vm.h,internal.h,heap.c,string.c,atom.c}`。
+atom（intern の表）。`userland/desktop/browser/vm/{vm.h,internal.h,heap.c,string.c,atom.c}`。
 
 ## 受け入れ
 

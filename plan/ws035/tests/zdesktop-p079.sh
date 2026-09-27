@@ -1,6 +1,6 @@
 #!/bin/sh
 # ws035-p079: the clipboard between clients (wl_data_device_manager v3) on the Venus guest, with /bin/data-probe
-# (userland/base/tests/data-probe) and zdesktop-terminal.
+# (userland/base/tests/data-probe) and terminal.
 #  1. Probe a (blue) sets its text as the selection (key s); probe b (green) is started on top: it gets the keyboard,
 #     is told the selection (an offer with two text types) and receives a's text through a pipe.
 #  2. a destroys its source (key q, after a press on a gives it the keyboard): the clipboard is empty; b is told so when
@@ -55,7 +55,7 @@ click() {
 
 guest "$stop_all" >/dev/null
 guest 'rm -f /tmp/p079-pasted; export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/zdesktop/wallpaper.ppm ] && picture=--wallpaper=/usr/share/zdesktop/wallpaper.ppm
-/bin/zdesktop --timeout=400 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
+/bin/wayland --timeout=400 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
 /bin/data-probe --token=a --color=3060c0 --text="hello from a" --timeout-s=300 > /tmp/a.log 2>&1 </dev/null & sleep 3; echo started' >/dev/null
 expect_log /tmp/a.log 'DATAPROBE ready run=a'
 expect_log /tmp/a.log 'DATAPROBE focus'
@@ -93,7 +93,7 @@ keys 's'
 expect_log /tmp/b.log 'DATAPROBE cancelled'
 
 # 4. The terminal: Copy sets the selection, c receives the terminal's text; Paste types c's text into the shell.
-guest 'export XDG_RUNTIME_DIR=/tmp; HOME=/root /bin/zdesktop-terminal > /tmp/t.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
+guest 'export XDG_RUNTIME_DIR=/tmp; HOME=/root /bin/terminal > /tmp/t.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
 sleep 2
 keys 'echo p079-copy-me' '<ret>'
 sleep 1

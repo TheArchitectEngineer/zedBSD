@@ -5,7 +5,7 @@
 ## Module と所有ファイル
 - 結線・config: `platform/amd64/vmunix.mk`（vk source 群を `AMD64_I915_SOURCES` へ）、`Makefile`/`config/*`（vk ビルドスイッチ）、`plan/ws031/tests/config-vk-amd64.mk`
 - harness: `plan/ws031/tests/run-vk-remote.py`、`vk-native-boot` 手順、独立 oracle（vkdemo の既存 ray-texture oracle を流用）
-- 必要時のみ: `userland/base/libvulkan/`（capset 整合の最小差分。p002 の方針に従い、この Phase だけが触る）
+- 必要時のみ: `userland/desktop/libvulkan/`（capset 整合の最小差分。p002 の方針に従い、この Phase だけが触る）
 - 触れない: 各モジュールの内部（完成済み `.c` は変更しない。不足は該当 Phase を uncleared で差し戻す）。
 
 ## 実装する公開インタフェース（規約・正本）
@@ -48,7 +48,7 @@
 （各モジュール .c に decode を足すのは p011 の結線作業と見なす。内部アルゴリズム
 は変更しない）。
 
-### libvulkan wire 形式（実測: userland/base/libvulkan、Venus wire-format 1）
+### libvulkan wire 形式（実測: userland/desktop/libvulkan、Venus wire-format 1）
 - command: `command_begin` が u32 opcode, u32 flag(=1, reply要求) を書く。以後、各
   引数を LE で append。handle=u64 wire_id、pointer=u64 presence(0/1)、struct は
   sType(u32)+ext-present(u64)+[ext...]+fields の順。

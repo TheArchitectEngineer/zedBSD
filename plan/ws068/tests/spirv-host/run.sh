@@ -8,7 +8,7 @@ root=$here/../../../..
 out=${1:-$root/build/ws068-p008-host}
 mkdir -p "$out/shim"
 for h in EGL GLES2 KHR wayland-egl-core.h; do ln -sfn "$root/include/libc/$h" "$out/shim/$h"; done
-cc -std=c99 -Wall -Wextra -I"$out/shim" -o "$out/spirv-test" "$here/main.c" "$root/userland/base/libglesv2/spirv.c"
+cc -std=c99 -Wall -Wextra -I"$out/shim" -o "$out/spirv-test" "$here/main.c" "$root/userland/desktop/libglesv2/spirv.c"
 status=0
 for stage in vert frag; do
 	glslc --target-env=vulkan1.0 -o "$out/tri.$stage.spv" "$here/tri.$stage"

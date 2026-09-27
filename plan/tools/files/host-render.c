@@ -6,7 +6,7 @@
  */
 
 /*
- * ws071: drives zdesktop-files' interface on the host and draws its frames
+ * ws071: drives files' interface on the host and draws its frames
  * into PPM pictures, without Wayland or Vulkan.
  *
  *   files-render [OPTION]... ACTION...

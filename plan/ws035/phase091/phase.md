@@ -1,6 +1,6 @@
 <!-- awesome-plan project=zedbsd record=ws035p091 -->
 
-# ws035-p091: zdesktop-terminal のタブの題を shell から（OSC 0・2）
+# ws035-p091: terminal のタブの題を shell から（OSC 0・2）
 
 Phase ID: `ws035-p091`
 Parent: [WS035](../ws.md)
@@ -11,7 +11,7 @@ terminal as a drag source if simple」。fg010）
 
 ## 範囲
 
-zdesktop-terminal は OSC の文字列を読んで捨て、タブの題は「Shell N」、窓の題は「Terminal」で固定だった。
+terminal は OSC の文字列を読んで捨て、タブの題は「Shell N」、窓の題は「Terminal」で固定だった。
 
 1. OSC 0 と 2（BEL か ESC \ で終わる）の text をそのタブの題にする。OSC 1（icon の名）などは捨てる。
 2. タブの題は titlebar の TABS mode の strip に出る。窓の題（xdg_toplevel の title、1 タブの menu mode の titlebar に出る）は

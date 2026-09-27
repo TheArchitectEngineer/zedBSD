@@ -56,7 +56,7 @@
   ],
   "wsi_review": {
     "finding": "No new blocking defect identified in A5/A6 read-only review.",
-    "source": "userland/base/libvulkan/wsi-swapchain.c",
+    "source": "userland/desktop/libvulkan/wsi-swapchain.c",
     "scope": [
       "state observation and monotonic condition registration share swapchain_mutex",
       "native release busy publication precedes wake; progress runs outside state mutex",

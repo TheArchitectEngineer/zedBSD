@@ -1,6 +1,0 @@
-type=respawn
-command=/sbin/zsessiond
-after=syslogd,networking
-replaces=getty_console
-restart=on-failure
-required=NO

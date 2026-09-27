@@ -37,7 +37,7 @@ wait_for() {
 
 # A clean start: no compositor or client left from before.
 guest 'for p in $(ps -A -o pid,args | grep -E "[z]desktop( |$)|[w]ltest" | awk "{print \$1}"); do kill $p; done; sleep 1; rm -f /tmp/wayland-0' >/dev/null
-guest '/bin/zdesktop --timeout=400 --width=1280 --height=800 --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & sleep 3
+guest '/bin/wayland --timeout=400 --width=1280 --height=800 --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & sleep 3
 XDG_RUNTIME_DIR=/tmp /bin/wltest --windowed --size=400x300 --color=ff0000 --frames=3000 --token=a > /tmp/a.log 2>&1 </dev/null & sleep 3
 XDG_RUNTIME_DIR=/tmp /bin/wltest --windowed --size=300x200 --color=00ff00 --frames=3000 --fullscreen-at='"$full"' --unfullscreen-at='"$back"' --token=b > /tmp/b.log 2>&1 </dev/null & sleep 1; echo started' >/dev/null
 

@@ -1,6 +1,6 @@
 #!/bin/sh
 # ws035-p090: the demo's applications from App Home on the glass desktop, on the Venus guest (the browser image,
-# plan/ws074/tests/build-browser-image.sh: the lean image with zdesktop-files and zdesktop-browser, and the
+# plan/ws074/tests/build-browser-image.sh: the lean image with files and browser, and the
 # browser's start page).
 # zdesktop --glass at 1280x800 with the wallpaper; Home opens from the launcher (top left) and each application
 # starts from its icon, one after another; a screenshot after each (NN-NAME.png) makes the sheet:
@@ -49,7 +49,7 @@ if [ "$list" = demo ]; then
 	timeout 60 python3 plan/tools/guest/guest.py put plan/ws035/demo/apps.conf /etc/zdesktop/apps.conf >/dev/null 2>&1 </dev/null
 fi
 guest 'export XDG_RUNTIME_DIR=/tmp HOME=/root; rm -f /tmp/wayland-0 /tmp/x11server.pid; rmdir /tmp/x11server.lock 2>/dev/null
-/bin/zdesktop --timeout=900 --width=1280 --height=800 --glass --wallpaper=/usr/share/zdesktop/wallpaper.ppm > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
+/bin/wayland --timeout=900 --width=1280 --height=800 --glass --wallpaper=/usr/share/zdesktop/wallpaper.ppm > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
 
 # Home, and its icons.
 pointer move 23 17 sleep 300 down sleep 60 up sleep 1500

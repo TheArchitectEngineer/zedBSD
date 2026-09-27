@@ -38,7 +38,7 @@ cleared。
 - 試験:
   - `chrome-boxes.py`: overflow.html 15/15（100%）。回帰: blocks 25/25、first 12/12、second 5/5、position 14/14、script 15/15、
     floats 20/20、同梱の start 29/29・about 21/21・text 22/22。Chromium との並び（clip、float の横の文脈、absolute が clip を逃れる）が
-    一致: `/home/awe/zedBSD-rpi4/build/ws074-shots/p049-20260928-overflow-vs-chrome.png`（左が zdesktop-browser、右が Chromium）。
+    一致: `/home/awe/zedBSD-rpi4/build/ws074-shots/p049-20260928-overflow-vs-chrome.png`（左が browser、右が Chromium）。
   - `gpu-compare.py`（host の lavapipe）: overflow・floats・position・blocks がどれも最大の差 1 で一致。
   - golden 28/28（overflow.html の 4 つを追加、paint に clip 14 行）、DOM の試験 5/5（plain・ASan）。
   - guest: `browser-page.sh overflow.html` status 0（`p049-20260928-overflow.png`）。guest の `--render-gpu`（Venus）と `--render` が

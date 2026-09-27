@@ -25,8 +25,8 @@ bitmap の cache、行の分割の機会（空白の後、CJK の間、基本の
 cleared。
 
 - `text/{text.h,font.c,linebreak.c}`。browser は libtruetype を link する（`platform/amd64/vmunix.mk` の link、package の REQUIRE
-  `base/libtruetype`）。libtruetype の API は変えていない（足す関数は無し。小数の大きさと kerning は後回し）。
-- 太字は zdesktop-files と同じく regular の glyph を 1 pixel 太らせる（Inter は可変 font だが libtruetype は既定の instance を描く）。
+  `desktop/libtruetype`）。libtruetype の API は変えていない（足す関数は無し。小数の大きさと kerning は後回し）。
+- 太字は files と同じく regular の glyph を 1 pixel 太らせる（Inter は可変 font だが libtruetype は既定の instance を描く）。
 - 試験 `plan/ws074/tests/host-text.c`（20 検査: 選択、metrics、幅、太字、monospace、fallback の「あ」、bitmap、改行の規則）:
   host plain・ASan 20/20、guest（`/usr/share/fonts/zdesktop*.ttf`）20/20。16px の Inter: ascent 16・descent 4・行 20、"Hello" 40px
   （太字 45、mono 50、32px 79）。

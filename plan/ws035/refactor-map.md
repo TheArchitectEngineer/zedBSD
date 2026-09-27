@@ -67,7 +67,7 @@ ws035-p001 の成果物。p002 → p003 → p023 → p004 の順に行う4つの
      sysrootの `usr/include` の中身（manifestのSHA-256）が移動前と一致することを受け入れ条件にする。
   2. `userland/base/noct/patches/0001-*.patch`・`0002-*.patch` が `include/libc` を名指しする。patchを変えると
      Noctのpatch levelとsource抽出（`ZEDBSD_NOCT_PATCH_LEVEL`）に波及する。
-  3. `userland/base/libvulkan/tools/maintain-dispatch.noct` がheaderを読み、生成物 `dispatch-table.inc` の
+  3. `userland/desktop/libvulkan/tools/maintain-dispatch.noct` がheaderを読み、生成物 `dispatch-table.inc` の
      コメントにパスを書く。p023では再生成して一致を確かめる（ws030の再生成試験）。
 - HAL配下で変わる行: 0（HALのsourceが読む23行の `<stdint.h>` 等は綴りが変わらず、探索rootだけが
   sysroot／`include/libc` から `include/` に変わる）。HALのcompile flagsは `platform/*/vmunix.mk` にあり、

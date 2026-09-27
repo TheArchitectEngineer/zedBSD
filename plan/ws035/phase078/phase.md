@@ -13,14 +13,14 @@ Queue: なし（2026-09-27 ユーザーの指示でサブエージェントが w
 
 zdesktop は `wl_keyboard.keymap` で `no_keymap`（/dev/null）を送り、key は evdev の code、repeat_info は rate 0 だった。
 GTK・Qt・Chromium は libxkbcommon で keymap を compile して key を文字にするので、keymap が無いと文字を打てない。rate 0 は
-「client は repeat しない」の意味で、toolkit は長押しで repeat しない（zdesktop-terminal は 0 を無視して自分の 400 ms・40 ms で
+「client は repeat しない」の意味で、toolkit は長押しで repeat しない（terminal は 0 を無視して自分の 400 ms・40 ms で
 repeat していた）。wl_output は v2（name・description・release が無い）。
 
 ## 範囲
 
 1. US の XKB keymap（include の無い完結した text、key code は evdev + 8、real modifier は標準の順で zdesktop の mask と一致）を
    起動時に file に書き、keyboard ごとに read-only の descriptor を `xkb_v1` で送る。作れなければ従来どおり no_keymap。
-2. repeat_info: rate 25/s、delay 400 ms（zdesktop-terminal の既定と同じ）。
+2. repeat_info: rate 25/s、delay 400 ms（terminal の既定と同じ）。
 3. locked modifiers: Caps Lock（0x2）と Num Lock（0x10）を key の press で切り替え、`wl_keyboard.modifiers` の locked で送る。
 4. wl_output v4: name（`ZDESKTOP-1`）、description（`zdesktop output WxH`）、release（v3）。
 5. 試験: host で libxkbcommon による keymap の compile と keysym（`plan/ws035/tests/p078/run-host.sh`）、guest の probe
@@ -38,7 +38,7 @@ cleared。
 
 ### 実装
 
-- `userland/base/zdesktop/keymap.c`・`keymap.h`（新規）: keymap の text（keycodes・types ONE_LEVEL/TWO_LEVEL/ALPHABETIC/KEYPAD・
+- `userland/desktop/wayland/keymap.c`・`keymap.h`（新規）: keymap の text（keycodes・types ONE_LEVEL/TWO_LEVEL/ALPHABETIC/KEYPAD・
   compat・symbols・modifier_map）、`zwl_keymap_open`（`/tmp/zdesktop-keymap-<pid>` に書いて O_RDONLY で開き直し、名前を消す）、
   `zwl_keymap_descriptor`（keyboard ごとの複製と大きさ）。
 - `seat.c`: keymap を `xkb_v1` で（無ければ no_keymap）、repeat 25/400、modifiers の locked。`input.c`: Caps Lock・Num Lock の

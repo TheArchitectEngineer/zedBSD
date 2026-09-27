@@ -4,7 +4,7 @@ and which does the vkdemo application need?  Read-only, facts from the source tr
 import os, re, collections
 # the repository that holds this script (plan/ws031/handover/tools/)
 root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
-lv = os.path.join(root, "userland/base/libvulkan")
+lv = os.path.join(root, "userland/desktop/libvulkan")
 vk = os.path.join(root, "src/drivers/gpu/i915/render")
 
 ops = {}
@@ -80,7 +80,7 @@ def quality(fn):
 
 # vkdemo's API use
 demo = collections.Counter()
-dd = os.path.join(root, "userland/base/vkdemo")
+dd = os.path.join(root, "userland/desktop/vkdemo")
 for d, _, fs in os.walk(dd):
     for f in fs:
         if f.endswith((".c", ".h")):

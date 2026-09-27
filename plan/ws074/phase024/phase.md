@@ -19,7 +19,7 @@ Queue: なし（サブエージェントが worktree の branch で実行）
   optional chaining、`??`、論理代入、template、module（import・export・import attributes・import()・import.meta）、strict mode と
   directive、早期の誤りのうち scope 解析の要らないもの（strict の予約語・eval と arguments、重複の引数、yield・await の文脈、
   super・new.target の位置、label、break・continue の対象、`__proto__` の重複など）。
-- 出力: `zdesktop-browser --dump=ast [--module] [--strict] FILE.js`（1 行 1 node の text）。
+- 出力: `browser --dump=ast [--module] [--strict] FILE.js`（1 行 1 node の text）。
 - 試験: test262（parse だけ）の runner と、多数の file を 1 process で読む driver。
 
 ## 受け入れ
@@ -32,7 +32,7 @@ Queue: なし（サブエージェントが worktree の branch で実行）
 
 cleared。
 
-- 書いたもの（`userland/base/zdesktop-browser/js/`、約 6,400 行）:
+- 書いたもの（`userland/desktop/browser/js/`、約 6,400 行）:
   - `js.h`: node の種類（73）、flag、`struct js_node`（kind・op・flags・text・raw・number・4 つの子の list・next・位置・word）、
     `js_parse`・`js_program_release`・`js_dump`。
   - `internal.h`: lexer・parser・文脈の構造、単語の id（`enum js_word`、escape の無い keyword と decode した word を別に持つ）。

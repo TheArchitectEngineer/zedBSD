@@ -9,7 +9,7 @@
 |     "
 "
 |     <title>
-|       "zdesktop-browser: the first page"
+|       "browser: the first page"
 |     "
 "
 |     <style>
@@ -30,7 +30,7 @@ em { color: #8b1a1a; }
 |     "
 "
 |     <h1>
-|       "Hello from zdesktop-browser"
+|       "Hello from browser"
 |     "
 "
 |     <p>

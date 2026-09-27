@@ -1,6 +1,6 @@
 #!/bin/sh
-# ws035-p086: zdesktop-terminal's tabs in the titlebar's TABS mode, on the Venus guest (the lean image,
-# plan/tools/files/build-files-image.sh).  zdesktop --glass at 1280x800, zdesktop-terminal with its shell:
+# ws035-p086: terminal's tabs in the titlebar's TABS mode, on the Venus guest (the lean image,
+# plan/tools/files/build-files-image.sh).  zdesktop --glass at 1280x800, terminal with its shell:
 #  1. The terminal binds xdg-shell 4 (ZWL BOUNDS client=1) and shows its menus with one tab (ZTERM TABS count=1
 #     mode=0); "echo one" typed in it.
 #  2. Ctrl+Shift+T (Shell > New Tab): a second shell (TAB new id=2 count=2), the titlebar shows the tabs
@@ -70,8 +70,8 @@ shot() {
 
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/zdesktop/wallpaper.ppm ] && picture=--wallpaper=/usr/share/zdesktop/wallpaper.ppm
-/bin/zdesktop --timeout=600 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
-/bin/zdesktop-terminal --token=t1 --timeout-s=500 > /tmp/t.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
+/bin/wayland --timeout=600 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
+/bin/terminal --token=t1 --timeout-s=500 > /tmp/t.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 set -- $(guest "grep 'ZWL MAP client=1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
 wx=${2:-0}; wy=${3:-0}
 echo "terminal at $wx,$wy"

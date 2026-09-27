@@ -70,7 +70,7 @@ private host `awe@10.0.10.25`、QEMU 10.0.11/KVM、2vCPU/1GiB、i915/Intel ANV�
 | src/drivers/gpu/venus/transport.c | `6cbbbdac9d23b1a7f4cb2dd9a443e55648eb38cb31ab46f615e6aae83a6aa20a` |
 | src/drivers/gpu/venus/display.c | `0763cb4a8d1e2b6f86c0eb52c91a672f2015f3085f64cf6429e284afdac95ccd` |
 | src/drivers/gpu/venus/internal.h | `bc7629b729cb181f9ec14af1473dc3f5d7d8950752a4b1dd0761486821d35ba3` |
-| userland/base/libvulkan/sync.c | `39bad660785c8dea12f1afa48d2d79bd4e3f5143f6c5a61baea8bcb2067ef1d8` |
+| userland/desktop/libvulkan/sync.c | `39bad660785c8dea12f1afa48d2d79bd4e3f5143f6c5a61baea8bcb2067ef1d8` |
 | userland/base/tests/gpu-fence/main.c | `18dc6e0881c745bef88db36da58270cc860679f4f4a1e850b864e88c6b1ea38d` |
 | Makefile | `32f10869e05a146d02d4dc81b55f5aec7c75f7b9fc5d6f3f2301d617de455be6` |
 | config/kernel-options.list | `b2ebe2db38c7273ea47c68e58359691614a535a66c76584e139924b9182b624c` |

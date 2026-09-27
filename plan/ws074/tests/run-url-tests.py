@@ -2,7 +2,7 @@
 # zedBSD
 # Copyright (C) 2026 Awe Morris
 # SPDX-License-Identifier: Zlib
-"""Runs WPT's URL parsing tests and data: URL tests against zdesktop-browser's URL parser.
+"""Runs WPT's URL parsing tests and data: URL tests against browser's URL parser.
 
   run-url-tests.py [--driver PATH] [--show N]
   run-url-tests.py --commands FILE           write the driver's input (for the guest)

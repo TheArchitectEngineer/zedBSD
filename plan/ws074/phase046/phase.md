@@ -34,7 +34,7 @@ cleared。
   - `base/unicode.h`・`base/unicode.c`（新）: `wb_case_map`（SpecialCasing の完全な写像、無ければ UnicodeData の単純な写像）、
     `wb_case_is_cased`・`wb_case_is_ignorable`（final sigma の判定）。
   - `tools/gen-unicode-case.py`（新）: UnicodeData.txt・SpecialCasing.txt（16.0.0、Makefile に URL と SHA-256）から
-    `$(BUILD)/zdesktop-browser-gen/unicode-case.c` を build の時に生成（user の決定: 仕様由来の表は commit しない）。
+    `$(BUILD)/browser-gen/unicode-case.c` を build の時に生成（user の決定: 仕様由来の表は commit しない）。
     `plan/ws074/tests/fetch-distfiles.sh`・`host-build.sh`・`guest-build.sh` も対応。
 - 試験:
   - `plan/ws074/tests/js/collections.js`（46 行）を加えて自前の JS の試験は 7 件、全部 Chromium 153 と同じ出力（host plain・ASan）。

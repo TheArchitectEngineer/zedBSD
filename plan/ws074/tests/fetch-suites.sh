@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws074: fetches the conformance suites zdesktop-browser is measured with, at pinned commits,
+# ws074: fetches the conformance suites browser is measured with, at pinned commits,
 # into build/ws074-suites/NAME, and checks each one's commit and licence.
 #
 #   sh plan/ws074/tests/fetch-suites.sh NAME...     (html5lib, wpt, test262, wasm-spec)

@@ -2,7 +2,7 @@
 # zedBSD
 # Copyright (C) 2026 Awe Morris
 # SPDX-License-Identifier: Zlib
-"""Runs the html5lib tokenizer tests against zdesktop-browser's tokenizer.
+"""Runs the html5lib tokenizer tests against browser's tokenizer.
 
   run-html5lib-tokenizer.py [--driver PATH] [--mode whole|units|both] [--show N] [--record FILE]
 

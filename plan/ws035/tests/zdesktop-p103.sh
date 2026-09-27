@@ -1,7 +1,7 @@
 #!/bin/sh
-# ws035-p103: the primary selection between X and Wayland clients through zdesktop-x11server, on the Venus guest
+# ws035-p103: the primary selection between X and Wayland clients through xserver, on the Venus guest
 # (the lean image, the files image, or the login image with the greeter stopped).  zdesktop --glass at 1280x800
-# with zdesktop-terminal (a Wayland client) and zdesktop-x11server with zterm (an X client):
+# with terminal (a Wayland client) and xserver with zterm (an X client):
 #  1. Wayland to X: "beta-gamma" double-clicked in the terminal is the desktop's primary selection; zterm, clicked,
 #     gets the keyboard and the server owns PRIMARY for it; a middle click in zterm asks for it, the server reads it
 #     from the desktop and zterm pastes it (ZTERM-X PASTE bytes=10): x-paste.png.
@@ -57,8 +57,8 @@ shot() {
 
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0 /tmp/.X11-unix/X0; picture=; [ -f /usr/share/zdesktop/wallpaper.ppm ] && picture=--wallpaper=/usr/share/zdesktop/wallpaper.ppm
-/bin/zdesktop --timeout=600 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
-/bin/zdesktop-terminal --token=t1 --timeout-s=500 --columns=56 --rows=12 > /tmp/t.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
+/bin/wayland --timeout=600 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
+/bin/terminal --token=t1 --timeout-s=500 --columns=56 --rows=12 > /tmp/t.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
 
 # The terminal where zdesktop put it (no window is moved: the cells' places come from the maps).
 set -- $(window 1)
@@ -76,7 +76,7 @@ pointer move "$bx" "$by" sleep 300 down sleep 50 up sleep 120 down sleep 50 up s
 expect_log /tmp/t.log 'ZTERM PRIMARY set bytes=10'
 
 # zterm, started now, on top where zdesktop puts it.
-guest 'export XDG_RUNTIME_DIR=/tmp; DISPLAY=:0 /bin/zdesktop-x11server --size 640x420 > /tmp/x11server.log 2>&1 </dev/null & sleep 3; DISPLAY=:0 /bin/zterm -geometry 60x16 > /tmp/zterm.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
+guest 'export XDG_RUNTIME_DIR=/tmp; DISPLAY=:0 /bin/xserver --size 640x420 > /tmp/x11server.log 2>&1 </dev/null & sleep 3; DISPLAY=:0 /bin/zterm -geometry 60x16 > /tmp/zterm.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
 set -- $(window 2)
 xx=${1:-0}; xy=${2:-0}
 echo "zterm at $xx,$xy (480x256)"

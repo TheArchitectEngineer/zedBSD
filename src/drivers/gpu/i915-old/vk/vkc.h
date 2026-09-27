@@ -8,11 +8,11 @@
 /*
  * The executor's side of libvulkan's struct codec (WS031 E-127).
  *
- * codec-generated.inc is derived from userland/base/libvulkan/codec.c by
+ * codec-generated.inc is derived from userland/desktop/libvulkan/codec.c by
  * plan/ws031/handover/tools/gen_vk_server_codec.py: a decoder for every record the library encodes and
  * an encoder for every record it decodes.  This header carries what those generated functions stand
  * on: the per-command arena the decoded pointers live in, and the byte / string / float primitives of
- * the wire (userland/base/libvulkan/wire.c: byte runs are padded to four, a string is its length
+ * the wire (userland/desktop/libvulkan/wire.c: byte runs are padded to four, a string is its length
  * including the terminator followed by its bytes, a float travels as its 32 bits).
  *
  * A module that wants the codec includes this header and then codec-generated.inc; every generated

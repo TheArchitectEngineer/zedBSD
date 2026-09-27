@@ -1,6 +1,6 @@
 <!-- awesome-plan project=zedbsd record=ws035p013 -->
 
-# ws035-p013: システムバーの network の表示と操作（libzdesktop 経由）
+# ws035-p013: システムバーの network の表示と操作（libkeiland 経由）
 
 Phase ID: `ws035-p013`
 Parent: [WS035](../ws.md)
@@ -11,7 +11,7 @@ Queue: なし（2026-09-28 main の割り当て「ws035-p013: the system bar sho
 ## 範囲
 
 システムバーの右の status（前は 4 本の棒のハリボテ）を本物にする。接続の有無、有線か Wi-Fi（SSID）かを表示し、
-クリックで menu を開いて network を選ぶ・Wi-Fi を入り切りする。状態は **libzdesktop を通して**取る（p042。zdesktop は
+クリックで menu を開いて network を選ぶ・Wi-Fi を入り切りする。状態は **libkeiland を通して**取る（p042。zdesktop は
 networkd の protocol を話さない）。networkd に足りないものは最小限に足す。QEMU には Wi-Fi が無いので、有線の状態は本物の
 networkd、Wi-Fi の一覧と操作は偽の networkd（試験用）で確かめる。
 
@@ -21,14 +21,14 @@ networkd、Wi-Fi の一覧と操作は偽の networkd（試験用）で確かめ
   `wifi state=NAME interface=IF ssid=HEX radios=N` を足した（`watch_state`）。SSID は managed の接続が join 中・接続中・再接続中の
   ときだけ、byte 列なので 16 進（無いときは `-`）。`radios` は WLAN の interface の数（無線の無い機械と Wi-Fi が off の機械を分ける）。
   `net watch` の出力にもこの行が加わる（加えるだけ）。
-- **libzdesktop**（`userland/base/libzdesktop/network.c`、`include/libc/zdesktop.h`、`ZDESKTOP_VERSION` 8）:
+- **libkeiland**（`userland/desktop/libkeiland/network.c`、`include/libc/zdesktop.h`、`ZDESKTOP_VERSION` 8）:
   `zdesktop_network_open/close/update/get_state/get_scan/request/get_request`。SUBSCRIBE の接続を保って状態を読み、要求
   （scan = `WIFI_LIST`、join = `WIFI_CONNECT`、disconnect、Wi-Fi on/off）は 1 本ずつ別の接続で送る。**待たない**: `update` は
   poll 0 で届いたものだけを読む。daemon が居ない・切れたときは 1 秒ごとに watch を作り直す。状態は reachable・connected・
   kind（none・wired・wifi）・interface・wired（有線で address のある interface）・wifi（absent・off・searching・connecting・
   connected・disconnected）・ssid。scan は SSID ごとに一番強い AP、強い順（最大 24）。networkd の protocol を知るのはこの file だけ
   （`userland/base/net/protocol.c` を library に入れ、exports.map で `zdesktop_network_*` だけを出す）。
-- **zdesktop**（`userland/base/zdesktop/network.c`、`shell.c`・`seat.c`・`zwl.h`・`glass.h`、link に libzdesktop）:
+- **zdesktop**（`userland/desktop/wayland/network.c`、`shell.c`・`seat.c`・`zwl.h`・`glass.h`、link に libkeiland）:
   - icon: 有線は 3 つの箱の木、Wi-Fi の接続は強さの棒（scan にあればその強さ）、それ以外は薄い棒、Wi-Fi off は棒に横線。
   - icon のクリックで menu（System Menu の popup と同じすりガラス）: Wi-Fi の switch と状態の行（Connected to …・Joining …・
     Searching…・Not connected・Wi-Fi is off・No Wi-Fi hardware・Network service not available）、network の一覧（接続中に check、
@@ -50,7 +50,7 @@ networkd、Wi-Fi の一覧と操作は偽の networkd（試験用）で確かめ
      Disconnect の行）、「Neighbor 5G」は error で失敗の行、switch で `WIFI_DISABLE` と `wifi=off`。zdesktop の log に ERROR なし。
 - 画面: `build/ws035-shots/p013-20260928-wired.png`・`-wired-menu.png`・`-list.png`・`-joined.png`・`-failed.png`・`-off.png`。
 - 回帰 PASS: zdesktop-p062（システムバーへの docking、同じ shell.c の bar）。
-- 規約: style-check は新しい file（zdesktop/network.c、libzdesktop/network.c、network-probe/main.c）が 0、networkd の足した
+- 規約: style-check は新しい file（zdesktop/network.c、libkeiland/network.c、network-probe/main.c）が 0、networkd の足した
   関数（`watch_state`・`watch_ssid_known`）も 0。build warning 0（新しい code）。
 - 実機: 未実施（本物の Wi-Fi の radio での表示・join は未確認）。
 

@@ -39,14 +39,14 @@ cleared。
 
 ### 実装
 
-- `userland/base/libwayland/event.c`: `wlc_event_generic`。型付きの表の無い interface の listener を、各引数を 1 word
+- `userland/desktop/libwayland/event.c`: `wlc_event_generic`。型付きの表の無い interface の listener を、各引数を 1 word
   （`uintptr_t`。int・fixed・fd は符号を拡張）にして、20 word を渡す 1 つの関数型（`wlc_generic_callback`）で呼ぶ。
   zedBSD が build する ABI（amd64、i386、AArch64 の AAPCS64、SPARC V9）では整数と pointer の引数は宣言の型に関わらず 1 つの
   register か word の大きさの stack の slot を占めるので、自分の引数だけを宣言した callback は正しく読み、余りの word は無視される
   （file の comment に理由を書いた）。引数 20 を越える event は EPROTO。`wlc_event_destroy` は listener に渡らなかった new object を destroy する。
-- `userland/base/libwayland/wire.c`: event の `'n'` を decode し、protocol の型の interface で `wlc_proxy_insert_server` を呼ぶ
+- `userland/desktop/libwayland/wire.c`: event の `'n'` を decode し、protocol の型の interface で `wlc_proxy_insert_server` を呼ぶ
   （型が無い、server の範囲外、使用中の identity は malformed）。
-- `userland/base/libwayland/proxy.c`: `wlc_proxy_insert_server`（map・listener・event の 3 つの hold、生んだ object の queue と版）。
+- `userland/desktop/libwayland/proxy.c`: `wlc_proxy_insert_server`（map・listener・event の 3 つの hold、生んだ object の queue と版）。
   `wlc_proxy_destroy` は server の範囲の identity をすぐ map から外す。`internal.h` に宣言。
 
 ### 確認（host）
@@ -61,8 +61,8 @@ cleared。
 ### 確認（QEMU・Venus、lean image）
 
 libwayland は全 client が使うので広く回した（zedbsd7 の toolchain、merge `41cec40e` の後の tree）: `plan/tools/titlebar/menu-p002.sh` PASS、
-`menu-p003.sh` PASS、`menu-regress.sh` で WS035 の p059・p062〜p065・p068〜p072 すべて PASS（mview・wltest・wlshm・zdesktop-terminal・
-zdesktop-x11server の X の app を含む）。build warning 0（libwayland-client）。
+`menu-p003.sh` PASS、`menu-regress.sh` で WS035 の p059・p062〜p065・p068〜p072 すべて PASS（mview・wltest・wlshm・terminal・
+xserver の X の app を含む）。build warning 0（libwayland-client）。
 
 ### 規約
 

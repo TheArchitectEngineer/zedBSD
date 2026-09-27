@@ -10,7 +10,7 @@ Queue: なし（サブエージェントが worktree の branch で実行）
 
 ## 範囲
 
-`userland/base/zdesktop-browser/` の骨組み: package の Makefile（amd64、既定 n）、amd64 の link の規則、`main.c`（command line と
+`userland/desktop/browser/` の骨組み: package の Makefile（amd64、既定 n）、amd64 の link の規則、`main.c`（command line と
 mode の振り分け）、`base/`（arena、byte と UTF-16 の buffer、配列、UTF-8/UTF-16（WHATWG の decode の規則）、hash、file）、
 `shell/` の仮の窓の mode。host の build（plain と ASan・UBSan）と単体の試験、suite の取得の script、guest の image と guest の操作の
 script。
@@ -19,7 +19,7 @@ script。
 
 1. amd64 で build が通る（warning 0）。
 2. host の試験 `host-base` が plain と ASan で全部通る。
-3. guest で `zdesktop-browser --version` が動き、未知の option が status 2、窓の mode が明示の失敗。
+3. guest で `browser --version` が動き、未知の option が status 2、窓の mode が明示の失敗。
 4. boot test が通る。
 5. 新しい C の file が `style-check.py` で 0 件。
 
@@ -27,13 +27,13 @@ script。
 
 cleared。
 
-- 追加: `userland/base/zdesktop-browser/{Makefile,main.c,base/*.c,base/base.h,shell/shell.[ch]}`、
-  `platform/amd64/vmunix.mk` の link の規則（`-Iuserland/base/zdesktop-browser`、libc だけ）と基本の command の除外の list への追加。
+- 追加: `userland/desktop/browser/{Makefile,main.c,base/*.c,base/base.h,shell/shell.[ch]}`、
+  `platform/amd64/vmunix.mk` の link の規則（`-Iuserland/desktop/browser`、libc だけ）と基本の command の除外の list への追加。
   試験: `plan/ws074/tests/{host-build.sh,host-shell.c,host-base.c,fetch-suites.sh,config-amd64-browser.mk,build-browser-image.sh,browser-guest.sh}`。
-- build: `make ZEDBSD_CONFIG=plan/ws074/tests/config-amd64-browser.mk build/amd64/bin/zdesktop-browser`（-Werror、warning 0）。
+- build: `make ZEDBSD_CONFIG=plan/ws074/tests/config-amd64-browser.mk build/amd64/bin/browser`（-Werror、warning 0）。
 - host: `host-base` 2038 検査、plain・ASan とも 0 件の失敗（arena、buffer、配列、UTF-8 の不正な列 13 例、UTF-16 の surrogate、
   hash、file の読み書き）。
-- guest（QEMU、GPU 無しの guest、`browser-guest.sh plain`）: `zdesktop-browser --version` → `zdesktop-browser 0.1 (ws074)`、
+- guest（QEMU、GPU 無しの guest、`browser-guest.sh plain`）: `browser --version` → `browser 0.1 (ws074)`、
   `--bogus` → status 2、引数無し → 窓の mode が未実装の 1 行と status 1。
 - boot test: PASS（`build/ws074-boot-p002/login.png` → `/home/awe/zedBSD-rpi4/build/ws074-shots/p002-20260927-boot-login.png`）。
 - style-check: 新しい file 0 件。

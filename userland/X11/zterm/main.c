@@ -12,7 +12,7 @@
  *
  * Ctrl+Shift+C copies the screen's text to CLIPBOARD (zterm owns it and
  * answers the requests for it); Ctrl+Shift+V pastes CLIPBOARD's text into
- * the shell.  Through zdesktop-x11server's bridge the desktop's clipboard is
+ * the shell.  Through xserver's bridge the desktop's clipboard is
  * CLIPBOARD too (ws035-p087).
  *
  * A double click selects the word under the pointer as PRIMARY, and the

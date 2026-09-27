@@ -45,7 +45,7 @@ expect_log() {
 start() {
 	guest "$stop_all" >/dev/null
 	guest "export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/zdesktop/wallpaper.ppm ] && picture=--wallpaper=/usr/share/zdesktop/wallpaper.ppm
-/bin/zdesktop --timeout=200 --width=1280 --height=800 $1 > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
+/bin/wayland --timeout=200 --width=1280 --height=800 $1 > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
 /bin/extras-probe --timeout-s=150 --token=v --body-viewport > /tmp/v.log 2>&1 </dev/null & sleep 4; echo started" >/dev/null
 	expect_log /tmp/v.log 'EXTRAS ready run=v'
 	expect_log /tmp/v.log 'EXTRAS body-viewport source=200,0,200,300 destination=600,300'

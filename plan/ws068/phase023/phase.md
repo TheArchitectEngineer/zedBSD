@@ -34,7 +34,7 @@ Queue: q494-i01
   `GL_SAMPLER_CUBE` にした）。
 - FBO: `glFramebufferTexture2D` に cube の面、面の readback（`color_layer`）、`gpu_written` は面の bit で、読み戻しは描いた面すべてを
   1 回の flush で。
-- egltest `--scene=cube`（`userland/base/egltest/cube.c`）、試験 `plan/ws068/tests/egl-p023.sh`。
+- egltest `--scene=cube`（`userland/desktop/egltest/cube.c`）、試験 `plan/ws068/tests/egl-p023.sh`。
 
 ## 検証
 

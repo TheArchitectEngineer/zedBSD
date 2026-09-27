@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws074-p013: positioned boxes in zdesktop-browser's window on the Venus guest (build-browser-image.sh).
+# ws074-p013: positioned boxes in browser's window on the Venus guest (build-browser-image.sh).
 # zdesktop runs at 1280x800 with --glass and the wallpaper; the browser opens position.html at 800x450.
 # Checks, from the browser's ZBROWSER lines and zdesktop's log:
 #  1. position.png: the absolute boxes in the stage's corners, the label, the boxes stacked by z-index and
@@ -20,7 +20,7 @@ mkdir -p "$out"
 guest() { timeout 120 python3 plan/tools/guest/guest.py run "$1" 2>&1; }
 check() { python3 plan/ws035/tests/zdesktop-check.py "$@" --runtime "$GUEST_RUNTIME"; }
 pointer() { python3 plan/ws035/tests/qmp-pointer.py "$GUEST_RUNTIME/qmp.sock" "$@"; }
-pages=/usr/share/zdesktop-browser-tests
+pages=/usr/share/browser-tests
 stop_all='for p in $(ps -A -o pid,args | grep -E "[z]desktop( |$)|[z]desktop-browser" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[z]desktop( |$)|[z]desktop-browser" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
 status=0
 
@@ -43,8 +43,8 @@ click() {
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
 picture=; [ -f /usr/share/zdesktop/wallpaper.ppm ] && picture=--wallpaper=/usr/share/zdesktop/wallpaper.ppm
-/bin/zdesktop --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
-guest "export XDG_RUNTIME_DIR=/tmp; /bin/zdesktop-browser --width=800 --height=450 $pages/position.html > /tmp/b.log 2>&1 </dev/null & sleep 5; echo started" >/dev/null
+/bin/wayland --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
+guest "export XDG_RUNTIME_DIR=/tmp; /bin/browser --width=800 --height=450 $pages/position.html > /tmp/b.log 2>&1 </dev/null & sleep 5; echo started" >/dev/null
 set -- $(guest "grep 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 wx=${1:-0}; wy=${2:-0}
 echo "browser: window at $wx,$wy"

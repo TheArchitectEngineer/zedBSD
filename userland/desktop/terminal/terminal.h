@@ -1,0 +1,546 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The parts of terminal, a VT100 terminal drawn with Vulkan in a
+ * Wayland window.
+ *
+ * screen.c keeps the character grid and interprets what the shell writes;
+ * keys.c turns the compositor's key codes into the bytes a shell reads;
+ * font.c draws the glyphs of a monospaced TrueType font into an atlas;
+ * render.c draws the grid from that atlas; window.c holds the Wayland
+ * window and its keyboard; menu.c gives zdesktop the window's menus
+ * (Shell, Edit, View, Session, Help) through libkeiland; tabs.c gives it
+ * the window's tabs (the titlebar's TABS mode, ws035-p086); main.c runs a
+ * shell on a pseudo-terminal for each tab and ties them together.
+ */
+
+#ifndef ZDESKTOP_TERMINAL_H
+#define ZDESKTOP_TERMINAL_H
+
+#define VK_USE_PLATFORM_WAYLAND_KHR 1
+#include <vulkan/vulkan.h>
+#include <wayland-client.h>
+#include <xdg-shell-client-protocol.h>
+#include <zdesktop.h>
+
+#include <stddef.h>
+#include <stdint.h>
+
+/* The primary selection's objects (primary.c includes their protocol's header). */
+struct zwp_primary_selection_device_manager_v1;
+struct zwp_primary_selection_device_v1;
+struct zwp_primary_selection_source_v1;
+struct zwp_primary_selection_offer_v1;
+
+/* The largest grid the terminal keeps, whatever the window's size. */
+#define TERMINAL_MAX_COLUMNS	240U
+#define TERMINAL_MAX_ROWS	100U
+
+/* How many numeric parameters one control sequence keeps. */
+#define TERMINAL_PARAMETERS	16
+
+/* The longest OSC string kept (the rest is dropped), and the longest title one sets (UTF-8 bytes). */
+#define TERMINAL_OSC		256U
+#define TERMINAL_TITLE		128U
+
+/* The space between the window's edge and the grid, in pixels. */
+#define TERMINAL_PADDING	8U
+
+/* The default colours: light grey on a dark blue-grey, as 0xRRGGBB. */
+#define TERMINAL_FOREGROUND	0xdcdfe6U
+#define TERMINAL_BACKGROUND	0x1d2230U
+
+/* The background of selected cells, a muted blue. */
+#define TERMINAL_SELECTION	0x3a5a98U
+
+/* The font sizes zooming stays within, its step, and the sizes the View menu names. */
+#define TERMINAL_PIXELS_MIN	8U
+#define TERMINAL_PIXELS_MAX	32U
+#define TERMINAL_PIXELS_STEP	2U
+#define TERMINAL_PIXELS_SMALL	12U
+#define TERMINAL_PIXELS_MEDIUM	16U
+#define TERMINAL_PIXELS_LARGE	20U
+#define TERMINAL_PIXELS_HUGE	24U
+
+/* How many menu choices, and tab requests, wait for the main loop at most. */
+#define TERMINAL_ACTIONS	16U
+
+/* The most tabs (shells) one window has, and the longest tab title. */
+#define TERMINAL_TABS		8U
+#define TERMINAL_TAB_TITLE	64U
+
+/* How many pointer events wait for the main loop at most (ws035-p093). */
+#define TERMINAL_POINTER_EVENTS	32U
+
+/* The kinds of pointer events the main loop takes: the left button pressed or released, a motion. */
+#define TERMINAL_POINTER_PRESS		1U
+#define TERMINAL_POINTER_RELEASE	2U
+#define TERMINAL_POINTER_MOTION		3U
+#define TERMINAL_POINTER_MIDDLE		4U
+
+/* What the titlebar asks of the tabs (tabs.c): none, a new tab, one chosen, one to close. */
+#define TERMINAL_TAB_NONE	0U
+#define TERMINAL_TAB_NEW	1U
+#define TERMINAL_TAB_ACTIVATE	2U
+#define TERMINAL_TAB_CLOSE	3U
+
+/*
+ * The actions the menus' items report (menu.c); the main loop carries them
+ * out.  They are numbers of the terminal's own, apart from the items' IDs.
+ */
+enum terminal_action {
+	TERMINAL_ACTION_NONE,
+	TERMINAL_ACTION_NEW_WINDOW,
+	TERMINAL_ACTION_CLOSE,
+	TERMINAL_ACTION_COPY,
+	TERMINAL_ACTION_PASTE,
+	TERMINAL_ACTION_SELECT_ALL,
+	TERMINAL_ACTION_ZOOM_IN,
+	TERMINAL_ACTION_ZOOM_OUT,
+	TERMINAL_ACTION_ZOOM_NORMAL,
+	TERMINAL_ACTION_SIZE_SMALL,
+	TERMINAL_ACTION_SIZE_MEDIUM,
+	TERMINAL_ACTION_SIZE_LARGE,
+	TERMINAL_ACTION_SIZE_HUGE,
+	TERMINAL_ACTION_FULLSCREEN,
+	TERMINAL_ACTION_INTERRUPT,
+	TERMINAL_ACTION_END_OF_FILE,
+	TERMINAL_ACTION_CLEAR,
+	TERMINAL_ACTION_RESET,
+	TERMINAL_ACTION_ABOUT,
+	TERMINAL_ACTION_NEW_TAB,
+	TERMINAL_ACTION_CLOSE_TAB
+};
+
+/*
+ * One tab as the titlebar shows it: its ID (not 0) and its title.
+ */
+struct terminal_tab_view {
+	uint32_t id;
+	char title[TERMINAL_TAB_TITLE];
+};
+
+/* One thing the titlebar asked of the tabs: its kind (TERMINAL_TAB_*) and the tab (0 for a new one). */
+struct terminal_tab_request {
+	unsigned kind;
+	uint32_t id;
+};
+
+/*
+ * What the menus show of the terminal's state: whether something is
+ * selected (Copy), whether the clipboard holds text (Paste), the font's
+ * size (Zoom, Text Size) and whether the window is fullscreen.
+ */
+struct terminal_menu_state {
+	int selection;
+	int clipboard;
+	unsigned pixels;
+	int fullscreen;
+};
+
+/* The modifier bits of wl_keyboard.modifiers, as zdesktop reports them. */
+#define TERMINAL_MODIFIER_SHIFT		0x01U
+#define TERMINAL_MODIFIER_CONTROL	0x04U
+#define TERMINAL_MODIFIER_ALT		0x08U
+
+/*
+ * One character cell of the grid.
+ *
+ * A wide character takes two cells; the second is a continuation with no
+ * character of its own.
+ */
+struct terminal_cell {
+	/* The character shown, a Unicode code point. */
+	uint32_t codepoint;
+
+	/* Its colours, as 0xRRGGBB. */
+	uint32_t foreground;
+	uint32_t background;
+
+	/* Nonzero for the right half of a wide character. */
+	uint8_t continuation;
+};
+
+/*
+ * The character grid and the state of the byte stream that fills it.
+ *
+ * One lives for the terminal's whole run; a resize keeps the cells that
+ * still fit.
+ */
+struct terminal_screen {
+	/* The grid's size in cells and its cells, row after row. */
+	unsigned columns;
+	unsigned rows;
+	struct terminal_cell cells[TERMINAL_MAX_COLUMNS * TERMINAL_MAX_ROWS];
+
+	/* Where the next character goes, and where ESC 7 saved it. */
+	unsigned cursor_column;
+	unsigned cursor_row;
+	unsigned saved_column;
+	unsigned saved_row;
+
+	/* Whether the cursor is shown (DECTCEM, CSI ? 25 h / l). */
+	int cursor_visible;
+
+	/* The rows scrolled by a line feed at the bottom (DECSTBM), inclusive. */
+	unsigned scroll_top;
+	unsigned scroll_bottom;
+
+	/* The colours new characters get, and whether they are swapped (SGR 7). */
+	uint32_t foreground;
+	uint32_t background;
+	int inverse;
+	int bold;
+
+	/* The parser: 0 text, 1 after ESC, 2 in a CSI sequence, 3 in an OSC string, 4 after ESC of a string's end. */
+	int parser_state;
+	int parameters[TERMINAL_PARAMETERS];
+	int parameter_count;
+	int private_mode;
+
+	/*
+	 * The OSC string being read (its first TERMINAL_OSC - 1 bytes), and the
+	 * title OSC 0 or 2 last set (ws035-p091; empty until one is set).
+	 */
+	char osc[TERMINAL_OSC];
+	unsigned osc_length;
+	char title[TERMINAL_TITLE];
+
+	/* A UTF-8 sequence in progress: the value so far, its least legal value and how many bytes remain. */
+	uint32_t utf8_value;
+	uint32_t utf8_minimum;
+	unsigned utf8_remaining;
+
+	/* Nonzero once a change needs a new frame. */
+	int changed;
+
+	/* Nonzero while the whole screen is selected (Edit > Select All), until a key is typed. */
+	int selected;
+
+	/*
+	 * A range selected with the pointer (ws035-p093): whether there is one,
+	 * and its first and last cells (column, row) in reading order.
+	 */
+	int range;
+	unsigned range_from[2];
+	unsigned range_to[2];
+};
+
+/*
+ * One pointer event for the main loop (ws035-p093): its kind
+ * (TERMINAL_POINTER_*), where it was in the surface, in pixels, its time in
+ * milliseconds and its serial (a press's starts a drag).
+ */
+struct terminal_pointer_event {
+	unsigned kind;
+	int32_t x;
+	int32_t y;
+	uint32_t time;
+	uint32_t serial;
+};
+
+/*
+ * The glyph atlas: every character drawn so far, one cell-sized slot each.
+ *
+ * The pixels live in an image the renderer owns; the atlas only decides
+ * which slot holds which character and draws into the slot.  Slot 0 is a
+ * solid block the cursor is drawn with.
+ */
+struct terminal_font {
+	/* The font file, kept in memory for the face, and the face. */
+	void *data;
+	size_t size;
+	struct truetype_face *face;
+
+	/* The size glyphs are drawn at, in pixels. */
+	unsigned pixels_size;
+
+	/* The cell size in pixels and where the baseline is from the cell's top. */
+	unsigned cell_width;
+	unsigned cell_height;
+	int baseline;
+
+	/* The atlas image's size, its pixels (B8G8R8A8, borrowed from the renderer) and its row pitch. */
+	unsigned atlas_width;
+	unsigned atlas_height;
+	unsigned char *pixels;
+	size_t row_pitch;
+
+	/* How many slots there are and how many are used. */
+	unsigned slots;
+	unsigned used;
+
+	/* The characters in the slots: an open-addressing table from code point to slot. */
+	uint32_t *keys;
+	uint32_t *values;
+	unsigned table_size;
+};
+
+/*
+ * One swapchain image the renderer draws into; the image is the swapchain's.
+ */
+struct terminal_target {
+	VkImage image;
+	VkImageView view;
+	VkFramebuffer framebuffer;
+	VkSemaphore rendered;
+};
+
+/*
+ * The Vulkan objects of the terminal's window.
+ *
+ * They are made once the window is configured and remade in part when the
+ * window changes size.
+ */
+struct terminal_renderer {
+	/* The instance, the surface of the window, the device and its queue. */
+	VkInstance instance;
+	VkSurfaceKHR surface;
+	VkPhysicalDevice physical;
+	VkDevice device;
+	VkQueue queue;
+	uint32_t family;
+
+	/* The swapchain, its format and extent, and one target per image. */
+	VkSwapchainKHR swapchain;
+	VkFormat format;
+	VkExtent2D extent;
+	struct terminal_target *targets;
+	uint32_t count;
+
+	/* The pass and the pipeline that draw cells, and what the pipeline binds. */
+	VkRenderPass pass;
+	VkDescriptorSetLayout set_layout;
+	VkPipelineLayout layout;
+	VkPipeline pipeline;
+	VkDescriptorPool descriptor_pool;
+	VkDescriptorSet set;
+	VkSampler sampler;
+
+	/* The glyph atlas: a host-written linear image and its view. */
+	VkImage atlas;
+	VkDeviceMemory atlas_memory;
+	VkImageView atlas_view;
+
+	/* The vertices of one frame, in host-visible memory mapped for good. */
+	VkBuffer vertices;
+	VkDeviceMemory vertex_memory;
+	void *vertex_map;
+	size_t vertex_capacity;
+
+	/* One command buffer, the fence that says it finished and the acquire semaphore. */
+	VkCommandPool pool;
+	VkCommandBuffer command;
+	VkFence fence;
+	VkSemaphore acquired;
+
+	/* The Vulkan call that failed last, for the error line. */
+	const char *operation;
+};
+
+/*
+ * The Wayland window, its keyboard and the key being repeated.
+ */
+struct terminal_window {
+	/* The connection and the globals bound from it. */
+	struct wl_display *display;
+	struct wl_registry *registry;
+	struct wl_compositor *compositor;
+	struct xdg_wm_base *shell;
+	struct wl_seat *seat;
+	struct wl_keyboard *keyboard;
+	struct wl_pointer *pointer;
+
+	/* Where the pointer is over the surface (pixels), and its events not yet taken by the main loop (ws035-p093). */
+	int32_t pointer_x;
+	int32_t pointer_y;
+	struct terminal_pointer_event pointer_events[TERMINAL_POINTER_EVENTS];
+	unsigned pointer_event_count;
+
+	/* The window: its surface and roles. */
+	struct wl_surface *surface;
+	struct xdg_surface *role;
+	struct xdg_toplevel *toplevel;
+
+	/* The size the compositor asked for, and whether it changed since it was last taken. */
+	uint32_t width;
+	uint32_t height;
+	int resized;
+
+	/* Whether the first configure arrived, and whether the compositor asked the window to close. */
+	int configured;
+	int closed;
+
+	/* The modifiers held, as wl_keyboard.modifiers reports them. */
+	uint32_t modifiers;
+
+	/* The bytes the keys pressed since the last read produced, for the shell. */
+	unsigned char input[256];
+	size_t input_length;
+
+	/* The key held for repeating (0 when none) and when it repeats next, in milliseconds. */
+	uint32_t repeat_key;
+	uint64_t repeat_at;
+
+	/* The repeat's first delay and its interval, in milliseconds (wl_keyboard.repeat_info). */
+	uint32_t repeat_delay;
+	uint32_t repeat_interval;
+
+	/* Whether the compositor last configured the window fullscreen. */
+	int fullscreen;
+
+	/* The largest size the window may choose (xdg-shell's bounds; 0 when not known), and the size it would like. */
+	uint32_t bounds_width;
+	uint32_t bounds_height;
+	uint32_t preferred_width;
+	uint32_t preferred_height;
+
+	/*
+	 * The tabs in the titlebar (tabs.c): zdesktop's titlebar (NULL without
+	 * the Titlebar Presentation), the tabs and the active one as last shown
+	 * (and whether ever shown), and what the titlebar asked and the main
+	 * loop has not yet carried out, oldest first.
+	 */
+	struct zdesktop_titlebar *titlebar;
+	struct terminal_tab_view tabs_shown[TERMINAL_TABS];
+	unsigned tabs_shown_count;
+	uint32_t tabs_shown_active;
+	int tabs_sent;
+	struct terminal_tab_request tab_requests[TERMINAL_ACTIONS];
+	unsigned tab_request_count;
+
+	/*
+	 * The menus (menu.c): the connection's menu service (NULL when the
+	 * compositor has none), the menu and the window's place for it, the
+	 * state the menu last showed, and the actions chosen but not yet
+	 * carried out, oldest first.
+	 */
+	struct zdesktop_menu_service *menu_service;
+	struct zdesktop_menu *menu;
+	struct zdesktop_window_menu *window_menu;
+	struct terminal_menu_state menu_state;
+	uint32_t actions[TERMINAL_ACTIONS];
+	unsigned action_count;
+
+	/*
+	 * The clipboard (clipboard.c, WS035 p079): the data device manager and
+	 * the seat's data device (NULL without them), the terminal's source
+	 * while its text is the selection, the selection's offer and whether it
+	 * has text, whether the offer being described has text, the serial of
+	 * the last key (a selection is set with it), and the text the source
+	 * sends (the terminal's copy, owned by main.c).
+	 */
+	struct wl_data_device_manager *data_manager;
+	struct wl_data_device *data_device;
+	struct wl_data_source *data_source;
+	struct wl_data_offer *data_offer;
+	int offer_text;
+	int pending_text;
+	uint32_t serial;
+	const char *clipboard;
+	size_t clipboard_length;
+
+	/*
+	 * Drops (clipboard.c, ws035-p088): whether the offer being described
+	 * has file names, the drag over the window (NULL for none), the serial
+	 * of its enter, whether it has text and file names, and whether it was
+	 * dropped and waits for the main loop to paste it.
+	 */
+	int pending_uris;
+	struct wl_data_offer *drop_offer;
+	uint32_t drop_serial;
+	int drop_text;
+	int drop_uris;
+	int drop_pending;
+
+	/* A drag of selected text out of the window (clipboard.c, ws035-p093): its source (NULL for none) and its text. */
+	struct wl_data_source *drag_source;
+	char drag_text[4096];
+	size_t drag_length;
+
+	/*
+	 * The primary selection (primary.c, ws035-p100): the manager and the
+	 * seat's device (NULL without them), the terminal's source while its
+	 * selected text is the primary selection, the selection's offer and
+	 * whether it has text, whether the offer being described has text, and
+	 * the text the source sends (owned by main.c).
+	 */
+	struct zwp_primary_selection_device_manager_v1 *primary_manager;
+	struct zwp_primary_selection_device_v1 *primary_device;
+	struct zwp_primary_selection_source_v1 *primary_source;
+	struct zwp_primary_selection_offer_v1 *primary_offer;
+	int primary_offer_text;
+	int primary_pending_text;
+	const char *primary_text;
+	size_t primary_length;
+};
+
+/* The clipboard through zdesktop's (clipboard.c). */
+void terminal_clipboard_bind(struct terminal_window *window, struct wl_registry *registry, uint32_t name, uint32_t version);
+void terminal_clipboard_start(struct terminal_window *window);
+void terminal_clipboard_set(struct terminal_window *window, const char *text, size_t length);
+int terminal_clipboard_own(const struct terminal_window *window);
+int terminal_clipboard_has_text(const struct terminal_window *window);
+size_t terminal_clipboard_receive(struct terminal_window *window, char *text, size_t size);
+void terminal_clipboard_close(struct terminal_window *window);
+size_t terminal_clipboard_drop(struct terminal_window *window, char *text, size_t size);
+void terminal_clipboard_drag(struct terminal_window *window, const char *text, size_t length, uint32_t serial);
+
+/* The primary selection through zdesktop's (primary.c). */
+void terminal_primary_bind(struct terminal_window *window, struct wl_registry *registry, uint32_t name);
+void terminal_primary_start(struct terminal_window *window);
+void terminal_primary_set(struct terminal_window *window, const char *text, size_t length, uint32_t serial);
+size_t terminal_primary_receive(struct terminal_window *window, char *text, size_t size);
+void terminal_primary_close(struct terminal_window *window);
+
+/* The character grid (screen.c). */
+void terminal_screen_init(struct terminal_screen *screen, unsigned columns, unsigned rows);
+void terminal_screen_resize(struct terminal_screen *screen, unsigned columns, unsigned rows);
+void terminal_screen_write(struct terminal_screen *screen, const unsigned char *bytes, size_t length);
+struct terminal_cell *terminal_screen_cell(struct terminal_screen *screen, unsigned column, unsigned row);
+size_t terminal_screen_text(struct terminal_screen *screen, char *text, size_t size);
+int terminal_screen_in_range(const struct terminal_screen *screen, unsigned column, unsigned row);
+
+/* The key codes (keys.c). */
+size_t terminal_key_bytes(uint32_t key, uint32_t modifiers, unsigned char *bytes, size_t size);
+
+/* The glyph atlas (font.c). */
+int terminal_font_open(struct terminal_font *font, const char *path, unsigned pixels);
+int terminal_font_attach(struct terminal_font *font, unsigned char *pixels, size_t row_pitch, unsigned width, unsigned height);
+int terminal_font_resize(struct terminal_font *font, unsigned pixels);
+unsigned terminal_font_slot(struct terminal_font *font, uint32_t codepoint);
+void terminal_font_close(struct terminal_font *font);
+
+/* The drawing (render.c). */
+VkResult terminal_renderer_open(struct terminal_renderer *renderer, struct terminal_window *window, struct terminal_font *font);
+VkResult terminal_renderer_resize(struct terminal_renderer *renderer, uint32_t width, uint32_t height);
+VkResult terminal_renderer_draw(struct terminal_renderer *renderer, struct terminal_screen *screen, struct terminal_font *font);
+void terminal_renderer_close(struct terminal_renderer *renderer);
+
+/* The window (window.c). */
+int terminal_window_open(struct terminal_window *window, const char *display, uint32_t width, uint32_t height);
+int terminal_window_dispatch(struct terminal_window *window, const int *others, unsigned count, int timeout, int *ready);
+void terminal_window_repeat(struct terminal_window *window, uint64_t now);
+void terminal_window_close(struct terminal_window *window);
+void terminal_window_type(struct terminal_window *window, const char *bytes, size_t length);
+void terminal_window_set_fullscreen(struct terminal_window *window, int fullscreen);
+uint64_t terminal_clock(void);
+
+/* The tabs in the titlebar (tabs.c). */
+void terminal_tabs_open(struct terminal_window *window);
+void terminal_tabs_show(struct terminal_window *window, const struct terminal_tab_view *tabs, unsigned count, uint32_t active);
+int terminal_tabs_take(struct terminal_window *window, struct terminal_tab_request *request);
+void terminal_tabs_close(struct terminal_window *window);
+
+/* The menus (menu.c). */
+int terminal_menu_open(struct terminal_window *window, const struct terminal_menu_state *state);
+void terminal_menu_refresh(struct terminal_window *window, const struct terminal_menu_state *state);
+uint32_t terminal_menu_take(struct terminal_window *window);
+void terminal_menu_close(struct terminal_window *window);
+
+#endif

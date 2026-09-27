@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws071-p009: the context menus of zdesktop-files on the host (files-render, host-render.c).
+# ws071-p009: the context menus of files on the host (files-render, host-render.c).
 # Builds nothing: run host-build.sh first.  Each case runs files-render on a fresh sample home,
 # started in Documents (the Trash for 3), and checks the lines it prints:
 #  1. A right press on an item: the item is selected, the window asks for a context menu of items

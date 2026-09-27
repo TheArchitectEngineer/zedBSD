@@ -6,12 +6,12 @@
  */
 
 /*
- * Tests zdesktop's System Menu protocol (WS070) and libzdesktop's checks.
+ * Tests zdesktop's System Menu protocol (WS070) and libkeiland's checks.
  *
  * Each server case opens its own connection, sends a few requests of
  * xdg_menu_manager_v1 and xdg_menu_v1 through the private protocol header,
  * and checks the protocol error zdesktop answers with (its interface and
- * code), or that there is none.  The library case checks that libzdesktop
+ * code), or that there is none.  The library case checks that libkeiland
  * refuses the same mistakes itself and sends nothing that would end the
  * connection.  Every case prints MENUPROBE case=NAME ok or FAIL, and the
  * run ends with MENUPROBE DONE failures=N.
@@ -21,7 +21,7 @@
 #include <xdg-shell-client-protocol.h>
 #include <zdesktop.h>
 
-#include "userland/base/libwayland/xdg-toplevel-menu-v1-client-protocol.h"
+#include "userland/desktop/libwayland/xdg-toplevel-menu-v1-client-protocol.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -460,7 +460,7 @@ send_removed(
 }
 
 /*
- * Checks that libzdesktop refuses what the compositor would, and sends
+ * Checks that libkeiland refuses what the compositor would, and sends
  * nothing of it: the connection survives a round trip.  Returns 1 when a
  * check failed.
  */

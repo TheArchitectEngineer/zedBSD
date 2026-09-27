@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws068-p016..p018: host tests of zedBSD's GLSL compiler (userland/base/libglesv2/glsl).
+# ws068-p016..p018: host tests of zedBSD's GLSL compiler (userland/desktop/libglesv2/glsl).
 #  1. pass/: every shader compiles (GLSL ES 1.00, or the version its name or #version says).
 #  2. fail/: every shader fails with each "// expect:" text in its log.
 #  3. link: the pairs of pass/ link; both stages pass spirv-val (vulkan1.0), and so does the vertex stage
@@ -21,9 +21,9 @@ fail() { echo "FAIL: $*"; status=1; }
 # The tools: the compiler's driver (with the sanitizers), libGLESv2's reflection, the i915 compiler.
 for h in EGL GLES2 GLES3 KHR wayland-egl-core.h; do ln -sfn "$root/include/libc/$h" "$out/shim/$h"; done
 cc -std=c11 -g -O1 -Wall -Wextra -Werror -Wdeclaration-after-statement -fsanitize=address,undefined \
-	-o "$out/glsl-test" "$here/glsl-test.c" "$root"/userland/base/libglesv2/glsl/*.c -lm || exit 1
+	-o "$out/glsl-test" "$here/glsl-test.c" "$root"/userland/desktop/libglesv2/glsl/*.c -lm || exit 1
 cc -std=c99 -Wall -Wextra -I"$out/shim" -o "$out/spirv-test" "$root/plan/ws068/tests/spirv-host/main.c" \
-	"$root/userland/base/libglesv2/spirv.c" || exit 1
+	"$root/userland/desktop/libglesv2/spirv.c" || exit 1
 cc -std=gnu99 -O0 -g -w -I"$root" -I"$root/include" -DHAL_ARCH_AMD64 -o "$out/i915-check" \
 	"$root/plan/ws068/tests/i915-shader-check/main.c" -lm || exit 1
 
@@ -94,7 +94,7 @@ echo "i915: done"
 # 5. The execution tests on the host's Vulkan.
 if [ -d "$here/exec" ] && [ -f "$here/vk-run.c" ]; then
 	cc -std=c11 -g -O1 -Wall -Wextra -Werror -I"$out/shim" -fsanitize=address,undefined -o "$out/vk-run" "$here/vk-run.c" \
-		"$root"/userland/base/libglesv2/glsl/*.c "$root/userland/base/libglesv2/spirv.c" -lvulkan -lm || exit 1
+		"$root"/userland/desktop/libglesv2/glsl/*.c "$root/userland/desktop/libglesv2/spirv.c" -lvulkan -lm || exit 1
 	ASAN_OPTIONS=detect_leaks=0 VK_DRIVER_FILES=${VK_DRIVER_FILES:-/usr/share/vulkan/icd.d/lvp_icd.json} "$out/vk-run" "$here/exec" || fail "exec"
 	echo "run: done"
 fi

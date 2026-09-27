@@ -2,13 +2,13 @@
 # zedBSD
 # Copyright (C) 2026 Awe Morris
 # SPDX-License-Identifier: Zlib
-"""Compares zdesktop-browser's block boxes with Chromium's for the same page.
+"""Compares browser's block boxes with Chromium's for the same page.
 
   chrome-boxes.py PAGE.html [--width W] [--height H] [--program PATH] [--show N]
 
 Chromium (headless, the fonts of build/ws074-chrome/fonts.conf, made by chrome-fonts.sh) runs
 the page with a script appended that writes every element's border box (getBoundingClientRect)
-as JSON; zdesktop-browser's `--dump=layout` gives its block boxes.  Boxes are matched in document
+as JSON; browser's `--dump=layout` gives its block boxes.  Boxes are matched in document
 order by element name, and a box agrees when its four edges are within 1 px.  Prints the share
 that agrees and the ones that do not.
 """
@@ -81,7 +81,7 @@ def main():
     parser.add_argument("page")
     parser.add_argument("--width", type=int, default=800)
     parser.add_argument("--height", type=int, default=600)
-    parser.add_argument("--program", default=os.path.join(root, "build/ws074-host/plain/zdesktop-browser"))
+    parser.add_argument("--program", default=os.path.join(root, "build/ws074-host/plain/browser"))
     parser.add_argument("--show", type=int, default=20)
     args = parser.parse_args()
     theirs = chrome_boxes(root, args.page, args.width, args.height)

@@ -22,7 +22,7 @@
 
 ## R1: 容量待機と完了回収
 
-症状はコードから確認できる。[sync.c](../../userland/base/libvulkan/sync.c)の`vulkan_sync_job_reserve`は`EAGAIN`と`ENOMEM`を同じ`VK_ERROR_OUT_OF_DEVICE_MEMORY`へ変換する。native submit前の拒否なので、直ちにVulkanの失敗時契約に反するとは断定しないが、通常の短時間の混雑でアプリを失敗させる実装は改善する。VulkanはsubmitのOOM時に資源・同期状態を変更しないことを要求し、それを保証できない失敗にはDEVICE_LOSTを要求する。[vkQueueSubmit](https://docs.vulkan.org/refpages/latest/refpages/source/vkQueueSubmit.html)
+症状はコードから確認できる。[sync.c](../../userland/desktop/libvulkan/sync.c)の`vulkan_sync_job_reserve`は`EAGAIN`と`ENOMEM`を同じ`VK_ERROR_OUT_OF_DEVICE_MEMORY`へ変換する。native submit前の拒否なので、直ちにVulkanの失敗時契約に反するとは断定しないが、通常の短時間の混雑でアプリを失敗させる実装は改善する。VulkanはsubmitのOOM時に資源・同期状態を変更しないことを要求し、それを保証できない失敗にはDEVICE_LOSTを要求する。[vkQueueSubmit](https://docs.vulkan.org/refpages/latest/refpages/source/vkQueueSubmit.html)
 
 レビューの修正案には次の補足が必要である。
 
@@ -33,7 +33,7 @@
 | GPU fdのPOLLIN | そのopenの未CONSUME終端recordを示す | device全体の空き通知ではない。参照保持中のrecordでは、readinessが続いて再試行が空回りする場合もある。 |
 | 完了とslot解放の順序 | `drv_gpu_complete`の通知がtransport slotのFREEより先 | 完了通知で再試行してもまだ空いていない場合がある。実際の容量解放時にも通知が必要。 |
 
-根拠は[GPU共通層](../../src/drivers/gpu/gpu.c)の`gpu_poll`、`gpu_completion_reserve`、`gpu_completion_wait`とobserver退役、[transport](../../src/drivers/gpu/venus/transport.c)のjob予約・完了回収、[queue](../../userland/base/libvulkan/queue.c)と[sync](../../userland/base/libvulkan/sync.c)の排他である。
+根拠は[GPU共通層](../../src/drivers/gpu/gpu.c)の`gpu_poll`、`gpu_completion_reserve`、`gpu_completion_wait`とobserver退役、[transport](../../src/drivers/gpu/venus/transport.c)のjob予約・完了回収、[queue](../../userland/desktop/libvulkan/queue.c)と[sync](../../userland/desktop/libvulkan/sync.c)の排他である。
 
 対応は次の順とする。
 
@@ -77,7 +77,7 @@ Linuxのsyncobjとの比較も、UAPIの見え方と内部状態を分ける。`
 | sparse | 実BindSparseの完了を保証できる場合のみ広告する。empty markerだけでの保証を前提にしない。 |
 | OPAQUE memory共有 | p007由来のOPAQUE対応とp008のSTRICT_QUEUEを独立に扱う。strictを外してもstock proxyのoptimal OPAQUE対応不足は解消しない。 |
 
-変更箇所は`device_validate`と`job_reserve`だけではない。[venus.c](../../src/drivers/gpu/venus/venus.c)のGPU_CAP_JOB広告、capset/INIT、[external-fence](../../userland/base/libvulkan/external-fence.c)、共有・WSI・能力列挙まで含める。未対応拡張を非広告にする場合も、標準アプリに必要なcore機能やWSIが成立するかを再評価する。
+変更箇所は`device_validate`と`job_reserve`だけではない。[venus.c](../../src/drivers/gpu/venus/venus.c)のGPU_CAP_JOB広告、capset/INIT、[external-fence](../../userland/desktop/libvulkan/external-fence.c)、共有・WSI・能力列挙まで含める。未対応拡張を非広告にする場合も、標準アプリに必要なcore機能やWSIが成立するかを再評価する。
 
 strictをoptionalにすることは到達候補であり、この読解だけでstock互換の安全性や実装規模を確定しない。検証で契約が成立しなければstrictを維持し、不足するhost/guest機能と配布負担を示す。標準ホスト対応を優先して既存の外部同期契約を変更するかは、その具体案で判断できるようにする。
 
@@ -114,9 +114,9 @@ control/decoderの進捗は故障範囲を推定する材料になるが、GPU�
 
 ## R4: direct acquireを通知で起こす
 
-direct displayの[platform定義](../../userland/base/libvulkan/wsi-display.c)は実際に`progress == NULL`であり、Wayland dispatchのための10ms起床は不要である。ただし現在はKの非同期故障・topologyを観測する機会もその周期に頼っており、単純に残り時間全体の条件変数待機へ変更すると、故障を見逃す場合がある。
+direct displayの[platform定義](../../userland/desktop/libvulkan/wsi-display.c)は実際に`progress == NULL`であり、Wayland dispatchのための10ms起床は不要である。ただし現在はKの非同期故障・topologyを観測する機会もその周期に頼っており、単純に残り時間全体の条件変数待機へ変更すると、故障を見逃す場合がある。
 
-[Acquire](../../userland/base/libvulkan/wsi-swapchain.c)ではerror検査がswapchain mutexの外にもある。errorのstoreとbroadcastだけを追加しても、検査とsleepの間に通知が入る取りこぼしを防げない。
+[Acquire](../../userland/desktop/libvulkan/wsi-swapchain.c)ではerror検査がswapchain mutexの外にもある。errorのstoreとbroadcastだけを追加しても、検査とsleepの間に通知が入る取りこぼしを防げない。
 
 追加のfence監視threadを作らず、**Acquireするthread自身が、GPU/表示fdの故障・topology通知と、画像releaseの起床fdを待つ**案を第一候補とする。既存の画像状態はmutexで保護し、wait登録・状態再検査・世代確認の順序を明示する。複数waiterの起床を一人が消費してしまわない仕組み、close/reuse、別render/display nodeにも対応する。既存のnonblocking pipeを待機呼出しごとに登録する方式を候補とし、通知時のlock逆転も検査する。fdイベントを使うためにGPU固有の新しい汎用kern機能は追加しない。
 
@@ -128,7 +128,7 @@ GPU fdは原則として故障、表示fdは故障とPOLLPRIを観測し、画�
 
 ## R5: private fenceの一括resetと測定
 
-[queue_private_fence](../../userland/base/libvulkan/queue.c)は再利用のたびに1個の`vkResetFences`を呼ぶため、複数の完了slotをまとめてresetする余地がある。ただし今回比較した[vkdemo](../../userland/base/vkdemo/renderer.c)は`vkQueueSubmit(..., renderer.fence)`、WSIもjobの明示fenceを使う。従って[p008の0.36→0.48秒](phase008/results.md)を、NULL-fence経路のreset増加の結果と説明するのは適切ではない。
+[queue_private_fence](../../userland/desktop/libvulkan/queue.c)は再利用のたびに1個の`vkResetFences`を呼ぶため、複数の完了slotをまとめてresetする余地がある。ただし今回比較した[vkdemo](../../userland/desktop/vkdemo/renderer.c)は`vkQueueSubmit(..., renderer.fence)`、WSIもjobの明示fenceを使う。従って[p008の0.36→0.48秒](phase008/results.md)を、NULL-fence経路のreset増加の結果と説明するのは適切ではない。
 
 queue内をpending・terminal未reset・reset済みの状態に分け、既にterminalと確認できたprivate fence群を一回のnative resetへまとめる。次のsubmitはreset済みslotを使い、二重resetしない。batchを作るために未完了jobを待たない。pendingまたはerrorのslotは再利用しない。単一slotを順次再利用する負荷では往復削減がないことも受け入れる。
 

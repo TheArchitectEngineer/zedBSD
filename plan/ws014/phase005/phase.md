@@ -18,7 +18,7 @@ Primary Milestone: MG006
 
 ユーザーが指定するvkdemoは純粋な標準Vulkan APIアプリであり、直接Venus wire/GPU ioctlを符号化する有限clientではない。旧q307は実shader/texture/depth/回転/6画面一致/正常回収を検証したが、このAPI境界を満たしていなかったためp005の現在clearを失効してunclearedへ戻す。今回q308で標準API化する訂正をin-progressとして再開する。依存するlibrary出力が揃うまでq308-i04はpendingで、依存実装へ先行しない。
 
-単一到達点は、標準headerと `/lib/libvulkan.so` を使う `userland/base/vkdemo` が、テクスチャ付き非等辺直方体をvertex/fragment shader・depthで描画し、時刻とともに回転させdirect-display surface/swapchainへpresentできること。汎用library全体の実装責任は新しい [WS030](https://github.com/awemorris/zedBSD/issues/388) が持つ。WS014のGPU bring-up目標へ別の標準library目標を混ぜない。
+単一到達点は、標準headerと `/lib/libvulkan.so` を使う `userland/desktop/vkdemo` が、テクスチャ付き非等辺直方体をvertex/fragment shader・depthで描画し、時刻とともに回転させdirect-display surface/swapchainへpresentできること。汎用library全体の実装責任は新しい [WS030](https://github.com/awemorris/zedBSD/issues/388) が持つ。WS014のGPU bring-up目標へ別の標準library目標を混ぜない。
 
 ## 実装と受け入れ
 
@@ -37,7 +37,7 @@ Primary Milestone: MG006
 
 ## q307完了: p005 cleared（2026-09-13 JST）
 
-userland/base/vkdemoにテクスチャ付き回転直方体を実装。独自vertex/fragment shader、実texture、depth、Vulkan pipelineを使用する。q307-vkdemo-002で固定3時刻と実時間3枚のGPU readback/VNC hashが一致し、独立したray/texture期待値との照合も不一致0。正常終了後、同じVMで通常2秒・12frameの回転を再openしてDONE/shell復帰、QEMU exit0まで確認した。
+userland/desktop/vkdemoにテクスチャ付き回転直方体を実装。独自vertex/fragment shader、実texture、depth、Vulkan pipelineを使用する。q307-vkdemo-002で固定3時刻と実時間3枚のGPU readback/VNC hashが一致し、独立したray/texture期待値との照合も不一致0。正常終了後、同じVMで通常2秒・12frameの回転を再openしてDONE/shell復帰、QEMU exit0まで確認した。
 
 新規ioctlは不要。Uの共通Venus clientとgraphics操作を追加し、実測で発見したKのblob unmap待機の早期timeoutを修正した。clock進行中は10秒deadlineを維持し、clock停止中だけ連続poll上限を使う。HAL追加変更なし。有限host tests、shader/CLI/画像検証、専用amd64 build、p003回帰がPASS。
 
@@ -47,7 +47,7 @@ q307 finished、q307-i01/p005 cleared、active Queueなし。p003/q306の完了�
 
 # WS014 p005 / q307 実行結果
 
-2026-09-13 JST。`userland/base/vkdemo/` を実装し、QEMU/Venusでテクスチャ付き非等辺直方体の回転、vertex/fragment shader、depth、連続frameと終了・再openを確認した。q307-vkdemo-002が受け入れ成功。p005をcleared、q307/q307-i01をfinished/clearedとする。p004はplanningのまま次の候補、p001の未決定を保持し、WS014はincomplete。
+2026-09-13 JST。`userland/desktop/vkdemo/` を実装し、QEMU/Venusでテクスチャ付き非等辺直方体の回転、vertex/fragment shader、depth、連続frameと終了・再openを確認した。q307-vkdemo-002が受け入れ成功。p005をcleared、q307/q307-i01をfinished/clearedとする。p004はplanningのまま次の候補、p001の未決定を保持し、WS014はincomplete。
 
 ## 実装
 
@@ -105,7 +105,7 @@ runtime hostは引き続きawe@10.0.10.25、QEMU10.0.11、virglrenderer1.1.0、I
 python3 -B plan/ws014/tests/run-vkdemo-remote.py --attempt q307-vkdemo-NNN
 ```
 
-NNNには未使用名を指定する。既定で専用configとbuild directoryから `make -j16 disk-image` を実行し、転送・画像取得・hash再照合まで行う。[実行手順](../tests/README-vkdemo-remote.md) と `userland/base/vkdemo/README.md` を参照。
+NNNには未使用名を指定する。既定で専用configとbuild directoryから `make -j16 disk-image` を実行し、転送・画像取得・hash再照合まで行う。[実行手順](../tests/README-vkdemo-remote.md) と `userland/desktop/vkdemo/README.md` を参照。
 
 - kernel: `61c0b6c502f6c848f5b99ddc64530427dcc61cb7de3d5e00eb2884dab7b201cf`
 - application: `70af6dd5304e031a2f77c8c3a3d49e39f93d176495a1f2adb16bd17f12a0bf56`
@@ -138,7 +138,7 @@ GitHubには計画・結果・API表とhashを掲載する。source・資料・�
 
 WS030 p001/p002/p003/p004とWS014 p005の標準API訂正をclearedとし、WS030 completed、q308 finished、active Queueなしとする。WS014はincomplete、p001/p004 planning、p004未queue、native i915は別WS029のまま。q307の旧scopeの実測と履歴は保持する。
 
-`libc/include/vulkan/` にVulkan1.0の公開header、`userland/base/libvulkan/` に独立した全137 core＋選択direct-display WSI18の実装を提供し、`/lib/libvulkan.so` に配置した。vkdemoは標準Vulkan/WSIだけを使い、GPU ioctl/Venus codecをアプリへ持ち込まない。ABI、Noct再生成、155実exportとproc-address、全familyの限定意味論試験、U/Kの所有権・権限・失敗回収、適用C規約の独立レビューを実施した。正式CTS認証は主張しない。
+`libc/include/vulkan/` にVulkan1.0の公開header、`userland/desktop/libvulkan/` に独立した全137 core＋選択direct-display WSI18の実装を提供し、`/lib/libvulkan.so` に配置した。vkdemoは標準Vulkan/WSIだけを使い、GPU ioctl/Venus codecをアプリへ持ち込まない。ABI、Noct再生成、155実exportとproc-address、全familyの限定意味論試験、U/Kの所有権・権限・失敗回収、適用C規約の独立レビューを実施した。正式CTS認証は主張しない。
 
 最終 `q308-lifecycle-003` は実QEMU10.0.11/virglrenderer1.1.0/Intel ANVで6枚の回転直方体を描画し、実VNC/GPU readback/独立ray-texture oracleが一致（評価対象不一致0）。通常終了後6frame再起動、SIGINT後6frame再起動、640×480文字画面への復帰とechoによる画面更新、別processの表示競合拒否とowner35frame/DONEを確認した。42.671秒、QEMU exit0。最終書式変更後のkernel/appは実行済みbinaryと一致する。
 

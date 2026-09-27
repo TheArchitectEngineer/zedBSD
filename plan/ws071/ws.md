@@ -37,10 +37,10 @@ action が動き、context menu が system の UI で出る、3. 規約の全文
 
 | 項目 | 結果 |
 | --- | --- |
-| program | `userland/base/zdesktop-files`（`/bin/zdesktop-files`）。標準の Wayland と Vulkan、CPU の canvas（canvas・text・icons）を Vulkan で貼る。zdesktop の拡張は libzdesktop だけを使う。App Home の項目 |
+| program | `userland/desktop/files`（`/bin/files`）。標準の Wayland と Vulkan、CPU の canvas（canvas・text・icons）を Vulkan で貼る。zdesktop の拡張は libkeiland だけを使う。App Home の項目 |
 | 画面 | Home の dashboard（hero、folder cards、recent）、sidebar（Favorites・Locations・Tags）、content（icon・list、並べ替え、選択、scroll）、preview の pane。3 つの pane は窓の中に浮いたすりガラスの card（`zed_glass_v1`、窓の地は透明、ws035-p083・p057）で、外側は浮いたタイトルバーの幅に揃う |
 | titlebar | 戻る・進む・Home・パンくず・検索・表示の切替・preview・進みの輪は WS070 の CONTROLS（浮いたタイトルバー、最大化ではシステムバーの Application Zone）。Ctrl+F・Ctrl+L で titlebar の欄へ。拡張が無ければ起動で失敗 |
-| 操作 | copy・move・delete・duplicate・link の background の task と進み、clipboard、new folder、rename、ゴミ箱（freedesktop.org Trash、Put Back・Empty）、undo・redo、検索（名前・拡張子・kind・tag）、タグ（xattr `user.zdesktop.tags`）、recent（libzdesktop の API）、Get Info（owner・権限・checksum・xattr）、開く・別のアプリで開く（関連付け）、Quick Look（窓の中の overlay）、サムネイル（PPM・PGM・PNG: libz-compat の inflate・libpng-compat の decode）、窓の中の DnD（folder・sidebar・tag・Trash・tab、Ctrl で copy・Ctrl+Shift で link） |
+| 操作 | copy・move・delete・duplicate・link の background の task と進み、clipboard、new folder、rename、ゴミ箱（freedesktop.org Trash、Put Back・Empty）、undo・redo、検索（名前・拡張子・kind・tag）、タグ（xattr `user.zdesktop.tags`）、recent（libkeiland の API）、Get Info（owner・権限・checksum・xattr）、開く・別のアプリで開く（関連付け）、Quick Look（窓の中の overlay）、サムネイル（PPM・PGM・PNG: libz-compat の inflate・libpng-compat の decode）、窓の中の DnD（folder・sidebar・tag・Trash・tab、Ctrl で copy・Ctrl+Shift で link） |
 | menu | File・Edit・View・Go・Window・Help（System Menu、状態の反映、CONTROLS の窓では右端の「…」）、shortcut（spec §35）、context menu（WS070 protocol version 2、項目・空き地・Trash・sidebar） |
 | タブ・窓 | 2 つ以上のときだけ content の card の中のタブの行（等幅・中央・選択は青い文字と下線）、New Tab・Close Tab・Previous/Next、Open in New Tab、New Window |
 | 大きさ | 新しい窓は zdesktop の `xdg_toplevel.configure_bounds`（xdg-shell v4）に収まる（p018: 1280x800 で 1120x690） |
@@ -57,7 +57,7 @@ QEMU（Venus）だけ。i915 実機は未実施（下の移管）。
 | ws071-p002 | 骨格: window、present（Vulkan の canvas）、canvas・text・icons、静的な配置、host の render 試験、guest の image | cleared |
 | ws071-p003 | 一覧と移動: dir、履歴・パンくず、icon・list、並べ替え、選択、scroll、Ctrl+L | cleared |
 | ws071-p004 | file 操作: task、clipboard、new folder、rename、ゴミ箱、完全削除の確認、undo・redo | cleared |
-| ws071-p005 | 検索、タグ、recent（libzdesktop）、Favorites の編集、Locations | cleared |
+| ws071-p005 | 検索、タグ、recent（libkeiland）、Favorites の編集、Locations | cleared |
 | ws071-p006 | Home の dashboard | cleared |
 | ws071-p007 | preview pane、Quick Look、サムネイル（PPM・PGM）、MIME の中身の判定 | cleared |
 | ws071-p012 | Get Info、開く・別のアプリで開く | cleared |
@@ -76,7 +76,7 @@ Phase の記録は git の履歴にある（WS の完了で削除した）。
 
 ## 制限・移管
 
-- **i915 実機**: zdesktop-files の実機の capture の scenario は [WS075](../ws075/ws.md) の p002 で保留になっている（desktop の変更が
+- **i915 実機**: files の実機の capture の scenario は [WS075](../ws075/ws.md) の p002 で保留になっている（desktop の変更が
   落ち着いたら main の合図で足す）。この WS の受け入れの実機の部分はそこへ移す。
 - **窓の外への DnD と titlebar のパンくずへの drop**（design の F-i）: [ws035-p084](../ws035/ws.md) へ移し、2026-09-27 に cleared
   （窓の間の drag and drop、パンくずの段への drop）。

@@ -1902,7 +1902,7 @@ index 00000000..7e79a6df
 +and which does the vkdemo application need?  Read-only, facts from the source tree."""
 +import os, re, collections
 +root = os.path.expanduser("~/zedBSD")
-+lv = os.path.join(root, "userland/base/libvulkan")
++lv = os.path.join(root, "userland/desktop/libvulkan")
 +vk = os.path.join(root, "src/drivers/gpu/i915/vk")
 +
 +ops = {}
@@ -1948,7 +1948,7 @@ index 00000000..7e79a6df
 +
 +# vkdemo's API use
 +demo = collections.Counter()
-+dd = os.path.join(root, "userland/base/vkdemo")
++dd = os.path.join(root, "userland/desktop/vkdemo")
 +for d, _, fs in os.walk(dd):
 +    for f in fs:
 +        if f.endswith((".c", ".h")):
@@ -2685,7 +2685,7 @@ index 44c9ba4b..e634f94a 100644
 -	long size;
 -	uint32_t *code;
 -
--	snprintf(path, sizeof(path), "%s/userland/base/vkdemo/shaders/%s", VK_REPO, name);
+-	snprintf(path, sizeof(path), "%s/userland/desktop/vkdemo/shaders/%s", VK_REPO, name);
 -	file = fopen(path, "rb");
 -	assert(file != NULL);
 -	fseek(file, 0, SEEK_END);
@@ -3033,7 +3033,7 @@ index 44c9ba4b..e634f94a 100644
 +	long size;
 +	uint32_t *code;
 +
-+	snprintf(path, sizeof(path), "%s/userland/base/vkdemo/shaders/%s", VK_REPO, name);
++	snprintf(path, sizeof(path), "%s/userland/desktop/vkdemo/shaders/%s", VK_REPO, name);
 +	file = fopen(path, "rb");
 +	assert(file != NULL);
 +	fseek(file, 0, SEEK_END);

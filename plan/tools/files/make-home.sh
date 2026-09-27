@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws071: makes a sample home folder for zdesktop-files' tests (the host's and the guest's).
+# ws071: makes a sample home folder for files' tests (the host's and the guest's).
 #
 #   sh plan/tools/files/make-home.sh DIR
 #

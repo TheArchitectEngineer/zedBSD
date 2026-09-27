@@ -23,7 +23,7 @@ AMD RDNA世代のGPUのドライバを実装する。
 ## 前提（参考）
 
 - GPUの共通層は `src/drivers/gpu/`（drv_gpu）、既存のbackendはVenus（WS014）とi915（WS029・WS031）。
-- 標準Vulkan libraryはWS030（`userland/base/libvulkan/`）。
+- 標準Vulkan libraryはWS030（`userland/desktop/libvulkan/`）。
 - 規約とGuardrailは `plan/guardrail.md`、運用は `plan/master.md`「実行体制とQueue運用方針」。
   デバイスドライバには設計Phaseを入れる。HALの変更は差分ごとの事前承認が要る。
 

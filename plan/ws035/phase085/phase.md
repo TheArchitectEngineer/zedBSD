@@ -19,12 +19,12 @@ look の有無）が変わっても送り直さない。
   `server->bounds_width/height` に記録、`zwl_window_bounds_refresh`（新）: 今の作業域が記録と違えば `ZWL BOUNDS changed ...` を
   log し、configure 済みで fullscreen・docked でない version 4 の窓すべてに `zwl_window_send_configure`（bounds と configure）。
   `main.c` の event loop が毎回呼ぶ（比べるだけで軽い）。
-- zdesktop-files `window.c`・`window.h`: 望む大きさ（起動の大きさ）を覚え、大きさを任された configure（0x0）では「望む大きさを
+- files `window.c`・`window.h`: 望む大きさ（起動の大きさ）を覚え、大きさを任された configure（0x0）では「望む大きさを
   bounds に収めたもの」を取る。bounds が広がれば元の大きさへ戻る（前は縮めるだけ）。
 
 ## 検証（amd64、Venus、2026-09-27）
 
-- files-p018 PASS（1120x690、cascade、App Home）、zdesktop-p084 PASS（zdesktop-files を 600x560 で 2 つ）。
+- files-p018 PASS（1120x690、cascade、App Home）、zdesktop-p084 PASS（files を 600x560 で 2 つ）。
 - 作業域が変わる場面は今の zdesktop に無い: 出力の大きさは起動の引数で決まり、glass の look を諦めるのは compose を開くとき
   （最初の client より前）。したがって送り直しの経路は実行されていない（未実施）。出力の大きさを変える機能（mode の変更、
   hotplug）や実行中の look の切り替えを入れる Phase で試験する。

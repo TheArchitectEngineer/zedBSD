@@ -7,7 +7,7 @@
  *             src/intel/compiler/brw/refvk.c; zedBSD project code)
  * Inputs    : Mesa main @ ab691a1cc7bcd264bec8f735deb2127861ad15ef (MIT): spirv_to_nir, brw_compile_vs,
  *             brw_compile_fs, genxml gen120; device ADL-P 0x46a8.
- *             userland/base/vkdemo/shaders/cuboid.vert.spv, cuboid.frag.spv (unchanged).
+ *             userland/desktop/vkdemo/shaders/cuboid.vert.spv, cuboid.frag.spv (unchanged).
  */
 #define VKREF_VS_SPIRV_WORDS 769U
 #define VKREF_VS_SPIRV_FNV1A 0x58bf781dU

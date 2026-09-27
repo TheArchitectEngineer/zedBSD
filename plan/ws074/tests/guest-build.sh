@@ -1,17 +1,17 @@
 #!/bin/sh
-# ws074: builds zdesktop-browser's host tests for zedBSD (amd64), to run in the guest.
+# ws074: builds browser's host tests for zedBSD (amd64), to run in the guest.
 #
 #   sh plan/ws074/tests/guest-build.sh NAME...     (e.g. host-heap)
 #
 # Each plan/ws074/tests/NAME.c is compiled with the flags the base programs use and linked
 # with the engine's objects from the last build of the browser (build/amd64/dynamic/obj,
-# made by `make ZEDBSD_CONFIG=plan/ws074/tests/config-amd64-browser.mk build/amd64/bin/zdesktop-browser`),
+# made by `make ZEDBSD_CONFIG=plan/ws074/tests/config-amd64-browser.mk build/amd64/bin/browser`),
 # into build/ws074-guest/NAME.  browser-guest.sh put copies them into a running guest.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
 cd "$(dirname -- "$0")/../../.."
 root=$(pwd)
-src=userland/base/zdesktop-browser
+src=userland/desktop/browser
 sysroot=$root/build/amd64/sysroot
 objdir=build/amd64/dynamic/obj/$src
 out=build/ws074-guest

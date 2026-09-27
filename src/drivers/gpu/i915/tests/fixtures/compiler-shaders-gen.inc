@@ -623,7 +623,7 @@ static const uint32_t i915_vkc_shade_frag[160] = {
 	0x00000009U, 0x00000014U, 0x000100fdU, 0x00010038U,
 };
 
-/* userland/base/mview/shaders/mview.vert.spv as shipped (sha256 667ccae49f6af25555d3153b3013600f6462af2abf0e03e4f075400f0e560914), 723 words. */
+/* userland/desktop/mview/shaders/mview.vert.spv as shipped (sha256 667ccae49f6af25555d3153b3013600f6462af2abf0e03e4f075400f0e560914), 723 words. */
 static const uint32_t i915_vkc_mview_vert[723] = {
 	0x07230203U, 0x00010000U, 0x000d000bU, 0x00000065U, 0x00000000U, 0x00020011U,
 	0x00000001U, 0x0006000bU, 0x00000001U, 0x4c534c47U, 0x6474732eU, 0x3035342eU,

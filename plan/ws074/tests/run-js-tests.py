@@ -2,7 +2,7 @@
 # zedBSD
 # Copyright (C) 2026 Awe Morris
 # SPDX-License-Identifier: Zlib
-"""Runs zdesktop-browser's own JavaScript tests (plan/ws074/tests/js/*.js) and compares their output.
+"""Runs browser's own JavaScript tests (plan/ws074/tests/js/*.js) and compares their output.
 
   run-js-tests.py [--program PATH]            run each test with --js and compare with NAME.expected
   run-js-tests.py --reference                 make NAME.expected with the host's headless Chromium
@@ -10,7 +10,7 @@
 
 A test prints lines with print().  The expected output is what Chromium prints for the same script (a
 page defines print to collect the lines; an uncaught error is added as "Uncaught NAME"), so the reference
-is another engine, not this one.  A test uses only what zdesktop-browser has so far (no built-ins before
+is another engine, not this one.  A test uses only what browser has so far (no built-ins before
 ws074-p026) and numbers whose strings every engine writes alike.
 
 In the guest a few lines differ for known faults outside the browser (GUEST_KNOWN: the test, the line's first
@@ -107,7 +107,7 @@ def compare(name, output, known):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--program", default=os.path.join(ROOT, "build/ws074-host/plain/zdesktop-browser"))
+    parser.add_argument("--program", default=os.path.join(ROOT, "build/ws074-host/plain/browser"))
     parser.add_argument("--reference", action="store_true")
     parser.add_argument("--outputs")
     args = parser.parse_args()

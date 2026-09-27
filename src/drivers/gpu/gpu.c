@@ -1137,7 +1137,7 @@ gpu_open(
 
 	/*
 	 * Admits root, and the user the device node belongs to: the graphical
-	 * login gives the node to the seat's user (zsessiond, ws035-p094), and
+	 * login gives the node to the seat's user (sessiond, ws035-p094), and
 	 * devfs's own owner is root, so without a login only root opens it, as
 	 * in ABI version 1.  Authority is copied rather than borrowed from the
 	 * mutable process credentials.

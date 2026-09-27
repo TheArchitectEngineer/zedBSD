@@ -1,7 +1,7 @@
 #!/bin/sh
 # ws035-p098: the default graphical boot on the Venus guest of the graphical login image
 # (plan/ws035/tests/build-login-image.sh BUILD graphical; zedbsd.cfg has logo=logo.ppm kmsg=quiet login=graphical):
-#  1. The machine boots to the greeter by itself: init held getty_console back (replaced by greeter), zsessiond
+#  1. The machine boots to the greeter by itself: init held getty_console back (replaced by greeter), sessiond
 #     started the greeter (sysctl kern.boot.login is graphical); greeter.png (the Venus display), and console.png
 #     (the text console on the standard VGA: still the boot logo, nothing written on it).
 #  2. root (the only account; empty password) logs in with Enter: session.png, the session's zdesktop runs as root.
@@ -76,8 +76,8 @@ EOF
 
 # 1. The greeter at boot.
 expect_run 'sysctl kern.boot.login' 'kern.boot.login: graphical'
-expect_run 'service status 2>&1; ps -A -o user,args' 'zsessiond'
-expect_log /var/log/zsessiond.log 'GREETER start pid=[0-9]+ uid=78' 30
+expect_run 'service status 2>&1; ps -A -o user,args' 'sessiond'
+expect_log /var/log/sessiond.log 'GREETER start pid=[0-9]+ uid=78' 30
 expect_log /var/log/greeter.log 'ZWL GREETER open users=1 selected=root' 30
 getty=$(guest 'ps -A -o args' | grep -c '^/sbin/getty')
 if [ "${getty:-0}" -eq 0 ]; then
@@ -95,8 +95,8 @@ console_shot console.png
 
 # 2. root logs in (empty password).
 keys '\n'
-expect_log /var/log/zsessiond.log 'AUTH ok user=root uid=0' 15
-expect_log /var/log/zsessiond.log 'SESSION start user=root' 15
+expect_log /var/log/sessiond.log 'AUTH ok user=root uid=0' 15
+expect_log /var/log/sessiond.log 'SESSION start user=root' 15
 expect_log /run/user/0/session.log 'ZWL READY socket=/run/user/0/wayland-0' 20
 sleep 3
 check "$out/session.png" >/dev/null
@@ -110,11 +110,11 @@ else
 	echo "no Log Out icon"
 	status=1
 fi
-expect_log /var/log/zsessiond.log 'SESSION end user=root' 20
+expect_log /var/log/sessiond.log 'SESSION end user=root' 20
 sleep 7
 pointer move $((width - 4)) $((height / 3)) sleep 400
 check "$out/again.png" >/dev/null
-guest "cat /var/log/zsessiond.log" > "$out/zsessiond.log"
+guest "cat /var/log/sessiond.log" > "$out/sessiond.log"
 
 echo "zdesktop-p098: status=$status"
 exit $status

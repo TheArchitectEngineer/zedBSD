@@ -30,7 +30,7 @@
   "src/hal/m68k",
   "src/hal/sparcv9",
   "userland/base/libedit",
-  "userland/base/libvulkan"
+  "userland/desktop/libvulkan"
  ],
  "moved": {},
  "moves": {

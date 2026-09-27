@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ws075-p001: the Vulkan commands each client calls that the i915 executor does not take (static).  A client's calls are
-# the vk*( names in its C sources; libvulkan's opcode table (userland/base/libvulkan/opcodes.h) numbers them; the
+# the vk*( names in its C sources; libvulkan's opcode table (userland/desktop/libvulkan/opcodes.h) numbers them; the
 # executor's commands are the case labels of its opcode switches (src/drivers/gpu/i915/render/*.c: switch (opcode)),
 # less those whose body refuses (EOPNOTSUPP, ENOTSUP or "unported").  A call with no opcode stays in libvulkan (WSI,
 # queries of the loader) and is not counted.  Creation-time parameters (formats, samples, pipeline stages) are not seen.
@@ -17,15 +17,15 @@ import sys
 LOCAL = {'vkWaitForFences', 'vkMapMemory', 'vkUnmapMemory', 'vkFlushMappedMemoryRanges', 'vkInvalidateMappedMemoryRanges',
          'vkGetDeviceQueue', 'vkEnumerateDeviceExtensionProperties'}
 
-CLIENTS = ['userland/base/zdesktop', 'userland/base/zdesktop-files', 'userland/base/zdesktop-terminal', 'userland/base/mview',
-           'userland/base/vkdemo', 'userland/base/wltest', 'userland/base/zdesktop-x11server', 'userland/base/libegl',
-           'userland/base/libglesv2']
+CLIENTS = ['userland/desktop/wayland', 'userland/desktop/files', 'userland/desktop/terminal', 'userland/desktop/mview',
+           'userland/desktop/vkdemo', 'userland/desktop/wltest', 'userland/desktop/xserver', 'userland/desktop/libegl',
+           'userland/desktop/libglesv2']
 
 
 def opcodes(root):
 	"""Returns libvulkan's opcode of each command name."""
 	table = {}
-	text = open(os.path.join(root, 'userland/base/libvulkan/opcodes.h'), encoding='utf-8').read()
+	text = open(os.path.join(root, 'userland/desktop/libvulkan/opcodes.h'), encoding='utf-8').read()
 	for name, number in re.findall(r'VULKAN_OPCODE_(vk\w+)\s*=\s*(\d+)', text):
 		table[name] = int(number)
 	return table

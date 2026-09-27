@@ -7,13 +7,13 @@
 
 /*
  * Tests zdesktop's Titlebar Presentation protocol (WS070 p008) and
- * libzdesktop's checks.
+ * libkeiland's checks.
  *
  * Each server case opens its own connection, makes a toplevel and its
  * zed_titlebar_v1 through the private protocol header, sends a few
  * requests, and checks the protocol error zdesktop answers with (its
  * interface and code), or that there is none.  The library case checks
- * that libzdesktop refuses the same mistakes itself and sends nothing that
+ * that libkeiland refuses the same mistakes itself and sends nothing that
  * would end the connection.  Every case prints TITLEBARPROBE case=NAME ok
  * or FAIL, and the run ends with TITLEBARPROBE DONE failures=N.
  *
@@ -36,7 +36,7 @@
 #include <xdg-shell-client-protocol.h>
 #include <zdesktop.h>
 
-#include "userland/base/libwayland/zed-titlebar-v1-client-protocol.h"
+#include "userland/desktop/libwayland/zed-titlebar-v1-client-protocol.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -636,7 +636,7 @@ send_good(
 }
 
 /*
- * Checks that libzdesktop refuses what the compositor would, and sends
+ * Checks that libkeiland refuses what the compositor would, and sends
  * nothing of it: the connection survives a round trip.  Returns 1 when a
  * check failed.
  */

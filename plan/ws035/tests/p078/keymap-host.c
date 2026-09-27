@@ -15,7 +15,7 @@
  *   plan/ws035/tests/p078/run-host.sh
  */
 
-#include "userland/base/zdesktop/keymap.h"
+#include "userland/desktop/wayland/keymap.h"
 
 #include <xkbcommon/xkbcommon.h>
 

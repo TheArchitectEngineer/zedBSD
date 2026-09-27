@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws070-p008: the Titlebar Presentation's protocol errors, model and libzdesktop's own checks, on the
+# ws070-p008: the Titlebar Presentation's protocol errors, model and libkeiland's own checks, on the
 # Venus guest (the lean image).  zdesktop --glass runs, and /bin/titlebar-probe
 # (userland/base/tests/titlebar-probe) sends each case on its own connection; every case must print
 # ok; zdesktop must log each protocol error with its object and code, take the good case's model
@@ -21,9 +21,9 @@ status=0
 
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
-/bin/zdesktop --timeout=300 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
+/bin/wayland --timeout=300 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
 /bin/titlebar-probe > /tmp/probe.log 2>&1; echo probe-exit=$?
-/bin/zdesktop-terminal --token=t2 --timeout-s=20 > /tmp/t2.log 2>&1 </dev/null & sleep 6; echo started' | tee "$out/run.txt"
+/bin/terminal --token=t2 --timeout-s=20 > /tmp/t2.log 2>&1 </dev/null & sleep 6; echo started' | tee "$out/run.txt"
 guest 'cat /tmp/probe.log' | tee "$out/probe.log"
 guest 'grep -E "ZWL (ERROR|TITLEBAR)" /tmp/zdesktop.log' | tee "$out/zdesktop-titlebar.log"
 grep -q 'probe-exit=0' "$out/run.txt" || { echo "probe: exit"; status=1; }

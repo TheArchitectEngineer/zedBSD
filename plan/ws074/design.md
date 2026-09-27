@@ -1,6 +1,6 @@
 <!-- awesome-plan project=zedbsd record=ws074-design -->
 
-# WS074 設計: zedBSD の Web ブラウザ（`zdesktop-browser`）
+# WS074 設計: zedBSD の Web ブラウザ（`browser`）
 
 Parent: [WS074](ws.md) / Phase: [ws074-p001](phase001/phase.md)
 Status: 設計（2026-09-27、ws074-p001）。ユーザーの指示の原文は [ws.md](ws.md) の「目標」。人間の判断が要る点は §17「判断が要る点
@@ -14,8 +14,8 @@ Status: 設計（2026-09-27、ws074-p001）。ユーザーの指示の原文は 
   `python3 plan/tools/style-check.py` で新しい file は 0 件。**設定に環境変数を使わない**（§12）。設定は command line と file。
 - 外部の試験 suite（html5lib-tests、WPT、test262、WebAssembly の spec test）と参照用の font は **source tree に入れない**。取得して
   commit の SHA で検証し、`build/ws074-suites/` に置く（§14）。ライセンスは取得の script が確かめる。
-- zdesktop の非標準の拡張（titlebar・System Menu・glass）は **libzdesktop の API だけ**で使う（WS069 design.md §0 の規則）。
-  zdesktop・libzdesktop・libwayland は desktop のサブエージェントの持ち物で、この WS からは変えない（要るときは main に伝える）。
+- zdesktop の非標準の拡張（titlebar・System Menu・glass）は **libkeiland の API だけ**で使う（WS069 design.md §0 の規則）。
+  zdesktop・libkeiland・libwayland は desktop のサブエージェントの持ち物で、この WS からは変えない（要るときは main に伝える）。
 - PNG は `libpng-compat`（WS035 D2〜D4、作るのは ws071-p010）、zlib の inflate は `libz-compat`（ws035-p040）。この WS は
   第二の実装を書かない。JPEG の `libjpeg-compat` はこの WS が新しく作る（§10）。
 - 試験は amd64 だけ。Phase の途中は build が通れば進み、試験（host・guest・boot test）は Phase の最後に 1 回（2026-09-27 ユーザー）。
@@ -23,7 +23,7 @@ Status: 設計（2026-09-27、ws074-p001）。ユーザーの指示の原文は 
 ## 1. 全体の形
 
 ```
-                 ┌──────────────── zdesktop-browser（1 process、main thread）────────────────┐
+                 ┌──────────────── browser（1 process、main thread）────────────────┐
  Wayland ◀──────▶│ shell/   窓・入力・titlebar（CONTROLS→TABS）・toolbar・タブ・System Menu        │
  (zdesktop)      │   │                                                                        │
                  │ page/    タブごとの browsing context: event loop の task・microtask・描画の機会  │
@@ -44,7 +44,7 @@ Status: 設計（2026-09-27、ws074-p001）。ユーザーの指示の原文は 
 ```
 
 - **process**: 最初は 1 process（UI と engine と network が同じ process）。1 つの窓に複数のタブ。New Window は自分を新しい process で
-  起動する（zdesktop-files・zdesktop-terminal と同じ）。process の分離（タブ・site ごとの renderer process と sandbox）は後の WS
+  起動する（files・terminal と同じ）。process の分離（タブ・site ごとの renderer process と sandbox）は後の WS
   （§16 の Future）。理由: 最初に process の境界を作ると IPC・共有 memory・描画の受け渡しが engine より先に大きくなる。境界になる所
   （shell ↔ page、page ↔ net）は関数の interface として分けておき、後で IPC に置き換えられる形にする。
 - **thread**: main thread が Wayland・入力・engine・JS・network の非同期 I/O（`poll`）をすべて回す。別の thread は DNS の resolver
@@ -56,14 +56,14 @@ Status: 設計（2026-09-27、ws074-p001）。ユーザーの指示の原文は 
 - **タブ = 1 つの agent**: タブごとに VM の heap・realm・document を持つ（タブの間で GC の object を共有しない）。1 つのタブの GC は
   他のタブを止めない。`window.open` の opener の関係は後（同じ agent cluster が要る）。
 - **headless の mode**: 同じ program に command line の mode を持たせる（試験と guest での計測のため。別の command 名を増やさない）。
-  - `zdesktop-browser --render=PAGE --output=OUT.ppm [--width=W --height=H]`: 窓を開かずに描いて PPM（P6、alpha は無し）に書く。
-  - `zdesktop-browser --dump=layout|dom|style PAGE`: 試験用の text の dump（html5lib の形の DOM、box の位置）。
-  - `zdesktop-browser --js=FILE`（test262 の shell: `print`・`$262`）、`--wasm-spec=JSON`（spec test の runner）。
+  - `browser --render=PAGE --output=OUT.ppm [--width=W --height=H]`: 窓を開かずに描いて PPM（P6、alpha は無し）に書く。
+  - `browser --dump=layout|dom|style PAGE`: 試験用の text の dump（html5lib の形の DOM、box の位置）。
+  - `browser --js=FILE`（test262 の shell: `print`・`$262`）、`--wasm-spec=JSON`（spec test の runner）。
   - host の試験は同じ source を host の C compiler で build した同じ entry（Wayland と Vulkan を除く）を使う（§14）。
 
 ## 2. source の置き場所と module
 
-`userland/base/zdesktop-browser/`（program `/bin/zdesktop-browser`、窓の題名は page の title、app_id `zdesktop-browser`）。
+`userland/desktop/browser/`（program `/bin/browser`、窓の題名は page の title、app_id `browser`）。
 package の Makefile は directory の直下に 1 つだけ（build は `userland/*/*/Makefile` を拾うため、下の directory に Makefile を置かない）。
 
 | directory | 接頭辞 | 中身 |
@@ -200,7 +200,7 @@ inline の中の text は、white-space の処理 → 改行の機会（UAX #14 
 
 - **font の一覧**: `/usr/share/fonts/` の TTF を起動のときに走査し、`name`・`OS/2` の表から family・weight・italic を読む。CSS の
   generic family（`serif`・`sans-serif`・`monospace`・`system-ui`・`cursive`・`fantasy`）は設定の file
-  （`/etc/zdesktop-browser/fonts.conf`、無ければ組み込みの既定）で具体的な font の file へ対応させる。fallback は文字の cmap で選ぶ
+  （`/etc/browser/fonts.conf`、無ければ組み込みの既定）で具体的な font の file へ対応させる。fallback は文字の cmap で選ぶ
   （日本語は zdesktop-fallback.ttf）。`@font-face` の font も同じ一覧に入る。
 - **libtruetype**: 今の API は整数の pixel の大きさと整数の advance だけで、kerning・名前の表・`unitsPerEm` を返さない。browser には
   小数の大きさ（13.333px など）、1/64 px の advance、`kern`・`GPOS` の kerning、名前と `OS/2` の値、design unit の outline が要る。
@@ -228,7 +228,7 @@ gradient）、text の run、画像、clip（矩形と角丸）、opacity・tran
   出す。text は glyph を libtruetype で CPU で描いて R8 の atlas の texture に置き、画像は texture。clip は矩形なら scissor、角丸は
   SDF の mask、opacity・filter の group は offscreen の image（layer）に描いて合成。scroll する box と固定の要素は layer に分け、
   scroll は layer の移動（再描画なし）で行えるようにする。shader は GLSL で書き、host の `glslc` と `spirv-val` で SPIR-V にして
-  生成した header を commit する（zdesktop-files の `shaders/regenerate.py` と同じ方式。build に shader の compiler は要らない）。
+  生成した header を commit する（files の `shaders/regenerate.py` と同じ方式。build に shader の compiler は要らない）。
 - **CPU の参照の描画**（`paint/software.c`）: 同じ display list を CPU で描き、headless の `--render=PAGE --output=PPM` と host の
   試験（WPT の reftest、Chrome との比較）に使う。GPU の描画と同じ数式（pixel の中心での SDF の coverage、同じ glyph の bitmap、
   同じ画像の sampling）で書き、primitive の意味を 1 つの定義（`paint/paint.h` の display list の型）で共有する。
@@ -243,10 +243,10 @@ page の変更 → 次の frame callback（`wl_surface.frame`）で rAF → styl
 
 ### 8.4 窓（shell）
 
-- **提示は Wayland の上の Vulkan**（libvulkan の Wayland WSI の `VkSurfaceKHR` と swapchain）。zdesktop-files の `window.c`・
+- **提示は Wayland の上の Vulkan**（libvulkan の Wayland WSI の `VkSurfaceKHR` と swapchain）。files の `window.c`・
   `present.c` の方式（premultiplied alpha、glass を使うなら zed_glass_v1）に倣うが、canvas を 1 枚貼るのではなく display list を
   §8.2 の GPU の描画で直接 swapchain の image へ描く。
-- **titlebar**: WS070 の titlebar の拡張（libzdesktop の `zdesktop_titlebar_*`）。
+- **titlebar**: WS070 の titlebar の拡張（libkeiland の `zdesktop_titlebar_*`）。
   - ws070-p011（TABS の presentation）の前: **CONTROLS** mode（戻る・進む・再読み込み／中止・URL の text field・menu）。タブは
     無し（1 窓 1 タブ、Ctrl+T は新しい窓）。
   - ws070-p011 の後: **TABS** mode（タブの strip と `+`）と、窓の中の toolbar（戻る・進む・再読み込み・URL の欄）を browser が描く
@@ -274,7 +274,7 @@ page の変更 → 次の frame callback（`wl_surface.frame`）で rAF → styl
   TLS 1.2 以上、hostname の照合、失敗は error の page（例外の許可は無し）。将来の base の libssl・libcrypto の互換品は同じ API の部分
   集合を実装し、`net/tls.c` は読む library の名前の順（base の互換品 → package）を変えるだけにする。
 - **cookie**: RFC 6265bis の部分（Domain・Path・Expires・Max-Age・Secure・HttpOnly・SameSite（既定 Lax））。保存は
-  `~/.local/share/zdesktop-browser/cookies`。
+  `~/.local/share/browser/cookies`。
 - **cache**: 最初は memory の cache（`Cache-Control: max-age`、`no-store`）。disk の cache と再検証（ETag・Last-Modified）は後。
 - 試験: host の python の test server（HTTP と、自前の CA で署名した HTTPS）。guest は QEMU の user network で host（10.0.2.2）の
   test server と、外に出られれば実在の site（例 `https://example.com/`）。
@@ -403,7 +403,7 @@ DataView、BigInt、Iterator の helper（後）、Intl は後（§16）。
 ### 12.4 DOM の binding（`bind/`）
 
 - 自前で書いた WebIDL の file（仕様の IDL の断片を写さず、使う interface・attribute・operation を書く）を build のときに python3 の
-  生成器（`userland/base/zdesktop-browser/tools/gen-bindings.py`、build は既に python3 を使う）で C に変換する。生成物は
+  生成器（`userland/desktop/browser/tools/gen-bindings.py`、build は既に python3 を使う）で C に変換する。生成物は
   `build/` に出て commit しない。生成器の出力は coding-style の特別な範囲（generated）として扱い、生成器の側を規約に合わせる。
 - ws074-p030 の最初の版は、生成器が出すのと同じ形の interface の表（`bind/internal.h` の `struct bind_interface`: 名前、親、
   attribute の getter・setter、operation、定数）を手で書き、`bind/window.c` が表から interface object と prototype を作る。
@@ -497,7 +497,7 @@ libcrypto の互換品（別の WS）、GPU の合成、sync・password の管�
 | D1 | process の構成 | 1 process（UI・engine・network）、窓ごとに process、DNS だけ別の thread | 最初から renderer の process を分ける | 境界を関数の interface で分けておけば後で IPC にできる。**最初の版は敵意のある site に対して安全ではない**（sandbox は後） |
 | D2 | TLS の繋ぎ方 | OpenSSL の package の `libssl.so` を実行時に `dlopen`（base の build は OpenSSL に依存しない。package が無ければ https は error の page） | build のときに link する（base の build が package の OpenSSL の cross build に依存し、image に package が必須になる） | base と package の境界を保ち、将来の base の互換品へ読む名前を変えるだけで移れる |
 | D3 | titlebar の使い方 | ws070-p011 の前は CONTROLS（URL の欄を titlebar に、1 窓 1 タブ）。後は TABS（タブを titlebar に）+ 窓の中の toolbar | CONTROLS のまま窓の中にタブ | 仕様（titlebar-spec §4.3）が browser を TABS の主な用途としている |
-| D4 | 仕様や Unicode から作る表（文字参照 2231 件は WHATWG の HTML 標準の一覧（CC BY 4.0、source に取り込んだ部分は BSD 3-Clause）、日本語の encoding の表は WHATWG Encoding 標準の index、Unicode の性質は UCD（Unicode License v3）） | **決定（2026-09-28 ユーザー「文字の表は、生成した表をコミットしていいてす。」）**: 生成の script（`tools/`）と生成した `.c` を commit し、出典とライセンスの表示を file の先頭と `userland/base/licenses/zdesktop-browser/` の notice に置く。`tools/regenerate.sh` が固定の SHA-256 で一覧を取得して再生成する | build のたびに取得して生成（base の build が network に依存する） | どれも許容的なライセンスで表示を保てば再配布できる。base の build を offline に保つ |
+| D4 | 仕様や Unicode から作る表（文字参照 2231 件は WHATWG の HTML 標準の一覧（CC BY 4.0、source に取り込んだ部分は BSD 3-Clause）、日本語の encoding の表は WHATWG Encoding 標準の index、Unicode の性質は UCD（Unicode License v3）） | **決定（2026-09-28 ユーザー「文字の表は、生成した表をコミットしていいてす。」）**: 生成の script（`tools/`）と生成した `.c` を commit し、出典とライセンスの表示を file の先頭と `userland/base/licenses/browser/` の notice に置く。`tools/regenerate.sh` が固定の SHA-256 で一覧を取得して再生成する | build のたびに取得して生成（base の build が network に依存する） | どれも許容的なライセンスで表示を保てば再配布できる。base の build を offline に保つ |
 | D5 | GIF の decoder の置き場 | browser の中（`image/gif.c`） | `libgif-compat` を base の library に | 今 GIF を要る base の program は browser だけ |
 | D6 | 窓の提示と描画 | **決定（2026-09-27 ユーザー「ブラウザはWaylandとVulkanで実装してください。」）**: Wayland の上の Vulkan。display list を GPU で描く。CPU の参照の描画は headless と試験だけ（§8.2） | （既定だった wl_shm は取り消し） | — |
 | D7 | libpng-compat の範囲 | ws071-p010 の simplified API に `png_image_begin_read_from_memory` を含めてもらう（browser は memory から読む） | browser が一時 file に書いて `from_file` | 仕様の simplified API の一部で、実装はほぼ同じ |

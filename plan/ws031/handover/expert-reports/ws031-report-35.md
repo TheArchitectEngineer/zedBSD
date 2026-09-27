@@ -24,7 +24,7 @@ Date: 2026-09-21
 ## 2. ソースツリーの地図
 
 ```
-userland/base/libvulkan/          27.3k 行  Vulkan ICD 相当（標準 Vulkan API → ioctl のワイヤ形式）
+userland/desktop/libvulkan/          27.3k 行  Vulkan ICD 相当（標準 Vulkan API → ioctl のワイヤ形式）
 src/drivers/gpu/gpu.c, gpu-fence.c 7.3k 行  GPU core: /dev/gpuN、session、blob、fence、display/scanout/share の
                                             ops 表、recovery（stop/isolate/fault）契約
 src/drivers/gpu/venus/             7.3k 行  virtio-gpu (Venus) backend（i915 とは別の backend。WS031 は触っていない）

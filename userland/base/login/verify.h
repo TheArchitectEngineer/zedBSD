@@ -6,7 +6,7 @@
  */
 
 /*
- * The password check that login and zsessiond share.
+ * The password check that login and sessiond share.
  */
 
 #ifndef LOGIN_VERIFY_H

@@ -1,31 +1,31 @@
 <!-- awesome-plan project=zedbsd record=ws035p086 -->
 
-# ws035-p086: zdesktop-terminal のタブ（titlebar の TABS mode）と configure_bounds
+# ws035-p086: terminal のタブ（titlebar の TABS mode）と configure_bounds
 
 Phase ID: `ws035-p086`
 Parent: [WS035](../ws.md)
 Status: cleared（2026-09-27、サブエージェント）
 Phase disposition: normal
-Queue: なし（2026-09-27 main の割り当て「zdesktop-terminal tabs through the titlebar TABS mode ... bind xdg_wm_base v4 and honour configure_bounds」）
+Queue: なし（2026-09-27 main の割り当て「terminal tabs through the titlebar TABS mode ... bind xdg_wm_base v4 and honour configure_bounds」）
 
 ## 範囲
 
 1. 1 つの窓に複数の shell（タブ）。Ctrl+Shift+T（Shell > New Tab）で新しいタブ、Ctrl+Shift+W（Shell > Close Tab）・タブの ×
    で閉じる、titlebar のタブの click・zdesktop のタブの key（Ctrl+Tab・Ctrl+PageUp/Down）で切り替え、「+」。
-2. xdg_wm_base version 4 で bind し、configure_bounds を守る（zdesktop-files と同じ形: 望む大きさを bounds に収める）。
+2. xdg_wm_base version 4 で bind し、configure_bounds を守る（files と同じ形: 望む大きさを bounds に収める）。
 
 ## 設計の判断（戻せる既定）
 
 - タブが 1 つのときは MENU mode（menu bar がそのまま見える）、2 つ以上で TABS mode（menu は右端の「…」、titlebar-design §13-1）。
 - **zdesktop のタブの key から Ctrl+W と Ctrl+T を外した**（ws070-p013 で入れたもの）: terminal の shell が Ctrl+W（単語の削除）と
-  Ctrl+T を使うため。タブを閉じる・作る key は application の menu の shortcut で持つ（zdesktop-files は File > New Tab Ctrl+T・
+  Ctrl+T を使うため。タブを閉じる・作る key は application の menu の shortcut で持つ（files は File > New Tab Ctrl+T・
   Close Tab Ctrl+W、terminal は Ctrl+Shift+T・Ctrl+Shift+W）。Ctrl+Tab・Ctrl+Shift+Tab・Ctrl+PageUp/Down は zdesktop のまま。
   `zdesktop.h` の説明と `titlebar-p013.sh` を合わせた。
 - タブの題名は「Shell N」（OSC の題名は使わない）。背景のタブの shell も毎回読む（pty が詰まらない）。
 
 ## 実装（2026-09-27）
 
-- `userland/base/zdesktop-terminal/tabs.c`（新規）: libzdesktop の titlebar（tab の追加・削除・状態、「+」、mode）、変わったときだけ
+- `userland/desktop/terminal/tabs.c`（新規）: libkeiland の titlebar（tab の追加・削除・状態、「+」、mode）、変わったときだけ
   1 つの transaction で送る、tab の click・×・「+」を main loop へ。
 - `main.c`: タブの表（grid は malloc、shell と pty、ID、題名）、`main_tab_new`・`_switch`・`_close`・`_requests`・`main_tabs_show`、
   全タブの pty を poll して読む、resize・zoom は全タブの grid と shell へ、shell の終了はそのタブを閉じ、最後のタブで終わる

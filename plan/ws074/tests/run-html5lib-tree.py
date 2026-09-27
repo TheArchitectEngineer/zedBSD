@@ -2,7 +2,7 @@
 # zedBSD
 # Copyright (C) 2026 Awe Morris
 # SPDX-License-Identifier: Zlib
-"""Runs the html5lib tree-construction tests (now kept in WPT) against zdesktop-browser's parser.
+"""Runs the html5lib tree-construction tests (now kept in WPT) against browser's parser.
 
   run-html5lib-tree.py [--driver PATH] [--guest PATH] [--show N] [--record FILE] [--file NAME]
 

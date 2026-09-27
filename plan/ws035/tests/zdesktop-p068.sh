@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws035-p068: zdesktop-terminal in zdesktop --glass on the Venus guest.
+# ws035-p068: terminal in zdesktop --glass on the Venus guest.
 #
 # zdesktop runs at 1280x800 with the wallpaper; the terminal opens a window with
 # /bin/sh on a pseudo-terminal.  Keys typed through QMP (qmp-keys.py) run
@@ -39,8 +39,8 @@ expect_log() {
 
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/zdesktop/wallpaper.ppm ] && picture=--wallpaper=/usr/share/zdesktop/wallpaper.ppm
-/bin/zdesktop --timeout=600 --width=1280 --height=800 --glass $picture --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
-/bin/zdesktop-terminal --token=t1 --timeout-s=500 > /tmp/t.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
+/bin/wayland --timeout=600 --width=1280 --height=800 --glass $picture --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
+/bin/terminal --token=t1 --timeout-s=500 > /tmp/t.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 guest 'cat /tmp/t.log' | tee "$out/start.txt"
 set -- $(guest "grep 'ZWL MAP client=1 ' /tmp/zdesktop.log" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
 surface=${1:-0}; tx=${2:-0}; ty=${3:-0}

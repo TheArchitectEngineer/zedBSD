@@ -319,7 +319,7 @@ kmsg=quiet       messages go to the log buffer (dmesg, sysctl kern.msgbuf)
 `login=` chooses how a person logs in on the machine's screen (ws035-p098,
 2026-09-28 user decision: the graphical login is the default).  The kernel
 only validates it and reports it as `sysctl kern.boot.login`; the graphical
-login's `zsessiond` (the rc.conf service `greeter`) reads it.
+login's `sessiond` (the rc.conf service `greeter`) reads it.
 
 ```text
 login=graphical  the greeter (zdesktop --greeter) on the display
@@ -329,8 +329,8 @@ login=console    the console's getty (also what no login= means)
 - Any other value is an error, as for `kmsg=`.
 - With `login=graphical`, init holds `getty_console` back (the greeter
   service says `replaces=getty_console`).  When the machine has no display
-  (`/dev/gpu0`), no `/bin/zdesktop`, or the greeter fails three times in a
-  row, `zsessiond` ends and init starts `getty_console` (the console is then
+  (`/dev/gpu0`), no `/bin/wayland`, or the greeter fails three times in a
+  row, `sessiond` ends and init starts `getty_console` (the console is then
   revealed by its read, Section 7a).  Serial and SSH logins are unchanged.
 
 ### The default and kernel development

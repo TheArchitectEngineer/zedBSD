@@ -2,7 +2,7 @@
  *
  *   refvk <vertex.spv> <fragment.spv> > vkref-generated.inc
  *
- * The two SPIR-V modules are the application's own (userland/base/vkdemo/shaders/cuboid.{vert,frag}.spv);
+ * The two SPIR-V modules are the application's own (userland/desktop/vkdemo/shaders/cuboid.{vert,frag}.spv);
  * nothing about them is rewritten.  They go through spirv_to_nir and the same early passes as
  * vk_spirv_to_nir / anv_shader_preprocess_nir, then brw_compile_vs / brw_compile_fs for ADL-P.
  * Where anv applies its pipeline layout, this tool applies the executor's:
@@ -366,7 +366,7 @@ main(int argc, char **argv)
           " *             src/intel/compiler/brw/refvk.c; zedBSD project code)\n"
           " * Inputs    : Mesa main @ ab691a1cc7bcd264bec8f735deb2127861ad15ef (MIT): spirv_to_nir, brw_compile_vs,\n"
           " *             brw_compile_fs, genxml gen120; device ADL-P 0x46a8.\n"
-          " *             userland/base/vkdemo/shaders/cuboid.vert.spv, cuboid.frag.spv (unchanged).\n */\n");
+          " *             userland/desktop/vkdemo/shaders/cuboid.vert.spv, cuboid.frag.spv (unchanged).\n */\n");
    print_sha256("VKREF_VS_SPIRV", argv[1]);
    print_sha256("VKREF_FS_SPIRV", argv[2]);
    printf("#define VKREF_VS_KERNEL_OFFSET %uU\n#define VKREF_PS_KERNEL_OFFSET %uU\n", VS_KERNEL_OFFSET, PS_KERNEL_OFFSET);

@@ -642,7 +642,7 @@ transportと観測の詳細は [Venus transport資料](venus-transport.md)、実
 
 ## p005の3D描画経路と共有Uクライアント（q307）
 
-`userland/base/vkdemo/` は自作のvertex/fragment shader、テクスチャ付き非等辺直方体、depth、時刻のpush constantを使う有限のgraphics client。p003のwire/reply/bootstrapを `userland/gpu/venus/client.[ch]` に共通化し、caller所有のsession構造体へ通信状態を保持する。scene、pipeline、descriptor、画像・buffer・fenceの寿命とframeループは各アプリが所有する。`venus-frame` もこの共通clientを使う。
+`userland/desktop/vkdemo/` は自作のvertex/fragment shader、テクスチャ付き非等辺直方体、depth、時刻のpush constantを使う有限のgraphics client。p003のwire/reply/bootstrapを `userland/gpu/venus/client.[ch]` に共通化し、caller所有のsession構造体へ通信状態を保持する。scene、pipeline、descriptor、画像・buffer・fenceの寿命とframeループは各アプリが所有する。`venus-frame` もこの共通clientを使う。
 
 [追加APIの表](phase005/api-coverage.md) はformat照会、shader module、graphics pipeline、image view/sampler、descriptor、renderpass/framebuffer、vertex/descriptor binding、draw、push constant、texture upload、fence/pool再利用を記録する。これらのVulkan状態と符号化はUに属する。Kは既存のcapset/blob/read/write/command/presentを提供する。GPU ioctlやHALの追加はこのデモの実装前提にしていない。
 

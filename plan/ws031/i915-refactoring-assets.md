@@ -433,7 +433,7 @@ preprocess後の有効定義数でも、macro意味論の検証件数でもな�
 | [check_generated.sh](handover/tools/check_generated.sh) / [notice_map.py](handover/tools/notice_map.py) | 再生成比較対象とnotice対象の新pathへ追従。旧上書きscriptを盲目的に実行しない |
 | [gen_fw_ranges.py](handover/tools/gen_fw_ranges.py) / [gen_lrc_offsets.py](handover/tools/gen_lrc_offsets.py) | GT tablesの出力先・参照を追跡 |
 | [vk_opcode_survey.py](handover/tools/vk_opcode_survey.py) | 新dispatch分割を考慮して調査対象を追従 |
-| [libvulkan context.c](../../userland/base/libvulkan/context.c) / [memory.c](../../userland/base/libvulkan/memory.c) / [sync.c](../../userland/base/libvulkan/sync.c) / [wsi-display.c](../../userland/base/libvulkan/wsi-display.c) | 互換契約の照合元。driverの配置変更のためにプロトコルを変更しない |
+| [libvulkan context.c](../../userland/desktop/libvulkan/context.c) / [memory.c](../../userland/desktop/libvulkan/memory.c) / [sync.c](../../userland/desktop/libvulkan/sync.c) / [wsi-display.c](../../userland/desktop/libvulkan/wsi-display.c) | 互換契約の照合元。driverの配置変更のためにプロトコルを変更しない |
 | [plan/ws029/tests](../ws029/tests) | old .c/.incを直接includeするfixtureとanalyzer/source list。旧テストを捨てず、新本番入口へ接続 |
 | plan/ws031/handover/tools以下のlcd-e*/vk-e*等の実験patch | 旧pathを含んでも歴史的入力。現在の移行scriptと誤認せず保存。新構成へ自動再適用しない |
 

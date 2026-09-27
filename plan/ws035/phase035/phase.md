@@ -25,7 +25,7 @@ kernelのinclude検査は `include/libc/vulkan/` 以下を許可し、他のlibc
   Vulkanのヘッダはlibcの一部で、`include/libc/vulkan/` に置く。**kernelがincludeしてよい `libc/` のヘッダは `libc/vulkan/*` だけ**
   （必要なヘッダを直接includeしてよい）。それ以外のlibcヘッダはkernel・driver・HALからincludeしない。
   commandの中身がVenus由来のVulkan構造体であるのは意図した設計であり、i915 driverがVulkanヘッダを読むのは正しい。
-  `userland/base/libvulkan` はoptionのpackageではなく、必須の構成要素がbuild単位に分かれているだけである。
+  `userland/desktop/libvulkan` はoptionのpackageではなく、必須の構成要素がbuild単位に分かれているだけである。
   kernelで除くのは、接頭辞なしの標準Cヘッダ名（`<stdio.h>`・`<string.h>` 等）による暗黙の読込みと、libcのobjectのlinkである。
   `I915_STREAM_MAGIC` の経路は試験用としてUAPIに残す。
 - libcの公開ヘッダの最終的な置き場所は `include/libc/`（p023で移す）。sysrootとrootfsへは `/usr/include/` 直下にコピーする。

@@ -6,7 +6,7 @@
       "name": "gen-api",
       "command": [
         "/home/awe/zedBSD/build/NoctLang/build-static/noct",
-        "userland/base/libvulkan/tools/maintain-api.noct",
+        "userland/desktop/libvulkan/tools/maintain-api.noct",
         "/tmp/q308-virglrenderer-1.1.0/src/venus/venus-protocol/vulkan_core.h",
         "/home/awe/zedBSD/plan/ws014/phase008/api-verification/generated/vulkan_core.h"
       ],
@@ -19,7 +19,7 @@
       "name": "gen-external",
       "command": [
         "/home/awe/zedBSD/build/NoctLang/build-static/noct",
-        "userland/base/libvulkan/tools/maintain-external.noct",
+        "userland/desktop/libvulkan/tools/maintain-external.noct",
         "/tmp/q308-virglrenderer-1.1.0/src/venus/venus-protocol/vulkan_core.h",
         "/home/awe/zedBSD/plan/ws014/phase008/api-verification/generated/vulkan_external.h"
       ],
@@ -32,7 +32,7 @@
       "name": "gen-dispatch",
       "command": [
         "/home/awe/zedBSD/build/NoctLang/build-static/noct",
-        "userland/base/libvulkan/tools/maintain-dispatch.noct",
+        "userland/desktop/libvulkan/tools/maintain-dispatch.noct",
         "libc/include/vulkan/vulkan_core.h",
         "/tmp/q308-virglrenderer-1.1.0/src/venus/venus-protocol/vn_protocol_renderer_defines.h",
         "/home/awe/zedBSD/plan/ws014/phase008/api-verification/generated"
@@ -46,7 +46,7 @@
       "name": "gen-codec",
       "command": [
         "/home/awe/zedBSD/build/NoctLang/build-static/noct",
-        "userland/base/libvulkan/tools/maintain-codec.noct",
+        "userland/desktop/libvulkan/tools/maintain-codec.noct",
         "libc/include/vulkan/vulkan_core.h",
         "/home/awe/zedBSD/plan/ws014/phase008/api-verification/generated/codec.c",
         "/home/awe/zedBSD/plan/ws014/phase008/api-verification/generated/codec.h"
@@ -60,7 +60,7 @@
       "name": "gen-commands",
       "command": [
         "/home/awe/zedBSD/build/NoctLang/build-static/noct",
-        "userland/base/libvulkan/tools/maintain-commands.noct",
+        "userland/desktop/libvulkan/tools/maintain-commands.noct",
         "libc/include/vulkan/vulkan_core.h",
         "/home/awe/zedBSD/plan/ws014/phase008/api-verification/generated/commands-generated.inc"
       ],
@@ -104,32 +104,32 @@
       "sha256": "241ddecf632ebf9cfdb153c892eb015b21e007996bed2f5409189014f4f9390f"
     },
     {
-      "path": "userland/base/libvulkan/dispatch-table.inc",
+      "path": "userland/desktop/libvulkan/dispatch-table.inc",
       "match": true,
       "sha256": "4be1c677884a34a113a514561827fecd800f9410f79126206dd8c11b4f61f4e4"
     },
     {
-      "path": "userland/base/libvulkan/api-commands.tsv",
+      "path": "userland/desktop/libvulkan/api-commands.tsv",
       "match": true,
       "sha256": "673c9d55fe23b4e3b7cc601f815439d2a3684a58f3ccf218815bbdfc96796b8c"
     },
     {
-      "path": "userland/base/libvulkan/opcodes.h",
+      "path": "userland/desktop/libvulkan/opcodes.h",
       "match": true,
       "sha256": "d7ec242614923dfc7471315974572471ce2c4c1ed933824ca5c9635e50eee8c6"
     },
     {
-      "path": "userland/base/libvulkan/codec.c",
+      "path": "userland/desktop/libvulkan/codec.c",
       "match": true,
       "sha256": "5d9711caa71235d9b833a0ad36dc43c4c811ab0080e7f2b6ddaae72cdce2da5f"
     },
     {
-      "path": "userland/base/libvulkan/codec.h",
+      "path": "userland/desktop/libvulkan/codec.h",
       "match": true,
       "sha256": "c983b90448811245ee5bb48d76806ea30a21878717d9565721fe75b1eabcc03a"
     },
     {
-      "path": "userland/base/libvulkan/commands-generated.inc",
+      "path": "userland/desktop/libvulkan/commands-generated.inc",
       "match": true,
       "sha256": "f540c13834ea06d99a295048f194ae9d13efc38bd9b014ef4b268f6df5428fe4"
     }

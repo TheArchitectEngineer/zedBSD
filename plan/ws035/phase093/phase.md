@@ -1,18 +1,18 @@
 <!-- awesome-plan project=zedbsd record=ws035p093 -->
 
-# ws035-p093: zdesktop-terminal の pointer による範囲選択と、選択した text の drag
+# ws035-p093: terminal の pointer による範囲選択と、選択した text の drag
 
 Phase ID: `ws035-p093`
 Parent: [WS035](../ws.md)
 Status: cleared（2026-09-28、サブエージェント）
 Phase disposition: normal
-Queue: なし（2026-09-28 main の割り当て「mouse range selection in zdesktop-terminal (press-drag to select, double-click word,
+Queue: なし（2026-09-28 main の割り当て「mouse range selection in terminal (press-drag to select, double-click word,
 triple-click line; highlight; Ctrl+Shift+C copies the selection instead of the whole screen; PRIMARY selection if simple), then the
 terminal as a drag source for the selected text」。fg010）
 
 ## 範囲
 
-zdesktop-terminal は pointer を扱わず、選択は Edit > Select All（画面全体）だけだった（p091 で drag の source を見送った理由）。
+terminal は pointer を扱わず、選択は Edit > Select All（画面全体）だけだった（p091 で drag の source を見送った理由）。
 
 ## 実装（2026-09-28）
 

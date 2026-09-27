@@ -18,7 +18,7 @@
 
 ## 2. 構成（source）
 
-`userland/base/libglesv2/glsl/`（libGLESv2 と libGL の両方が link する。GL の header に依存しない）:
+`userland/desktop/libglesv2/glsl/`（libGLESv2 と libGL の両方が link する。GL の header に依存しない）:
 
 | file | 中身 |
 | --- | --- |

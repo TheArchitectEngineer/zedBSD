@@ -40,7 +40,7 @@ expect_log() {
 
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/zdesktop/wallpaper.ppm ] && picture=--wallpaper=/usr/share/zdesktop/wallpaper.ppm
-/bin/zdesktop --timeout=120 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
+/bin/wayland --timeout=120 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
 /bin/seat-probe --timeout-s=40 --token=k > /tmp/k.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
 expect_log /tmp/zdesktop.log 'ZWL KEYMAP format=xkb_v1 errno=0'
 expect_log /tmp/k.log 'SEATPROBE ready run=k'

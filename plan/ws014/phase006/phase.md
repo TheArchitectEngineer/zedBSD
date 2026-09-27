@@ -32,10 +32,10 @@ Decision source: current user, 2026-09-13 JST. 「p006を1つ作りましょう�
 | `include/drivers/`、`include/uapi/`、`src/drivers/gpu/` | GPU資源のexport/import、型・所有権・範囲検証、device/sessionから独立した必要寿命 |
 | `src/drivers/gpu/venus/` | 同一GPU・別contextへの共有allocation接続、renderer import、同期・回収・GPU内表示経路 |
 | `libc/include/wayland/` | 最小Wayland clientの公開header。標準の`<wayland-client.h>`等のinclude互換は薄い入口headerまたはsysroot配置で維持 |
-| `userland/base/libwayland/` | 独立実装の最小client library。公開ABI/SONAMEは`libwayland-client.so`、配置は`/lib/libwayland-client.so` |
-| `libc/include/vulkan/`、`userland/base/libvulkan/` | `VK_KHR_wayland_surface`の公開header、dispatch、surface/swapchain backend、GPU画像を扱うWSI内部境界 |
+| `userland/desktop/libwayland/` | 独立実装の最小client library。公開ABI/SONAMEは`libwayland-client.so`、配置は`/lib/libwayland-client.so` |
+| `libc/include/vulkan/`、`userland/desktop/libvulkan/` | `VK_KHR_wayland_surface`の公開header、dispatch、surface/swapchain backend、GPU画像を扱うWSI内部境界 |
 | `userland/base/zwl/` | 試験用の全画面Waylandコンポジタ。実際のprotocol/共有fd/表示を扱う。ウィンドウ装飾や一般DE機能は持たない |
-| `userland/base/wltest/` | 標準Wayland client APIとVulkan APIを使う試験アプリ。GPU ioctlやVenus wireをアプリへ直接持ち込まない |
+| `userland/desktop/wltest/` | 標準Wayland client APIとVulkan APIを使う試験アプリ。GPU ioctlやVenus wireをアプリへ直接持ち込まない |
 | 既存package/build/sysrootと`plan/ws014/tests/` | library/appのbuild・配置、限定試験と既存private QEMU capture loopへの統合 |
 
 計画作成時点では新規作成予定だった配置は、q309で実装・検証済み。ヘッダ・library・protocolの対応範囲を明示し、全Wayland SDK/全拡張対応とは扱わない。サーバ内部の通信部品は必要に応じて共用してよいが、汎用`libwayland-server.so`の公開は完了条件に加えない。

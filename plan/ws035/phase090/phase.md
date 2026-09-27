@@ -21,7 +21,7 @@ Gears、Browser、組み込みの一覧では試験の client の Vulkan test・
 1. **X terminal（zterm）が画面からはみ出す**: zterm は root の大きさ − 余白（1240x720）で窓を作るため、glass の desktop では
    窓の下端が画面の外に出た（`before-x-terminal.png`）。zterm に `-geometry COLUMNSxROWS` を足し（X の慣習の option。無い
    ときは従来どおり root に合わせる。Xzed の rootful も変わらない）、App Home の X terminal は `-geometry 80x24`（640x384）。
-2. **Browser が App Home に無い**: 組み込みの一覧に Browser（`/bin/zdesktop-browser /usr/share/zdesktop-browser/start.html`）。
+2. **Browser が App Home に無い**: 組み込みの一覧に Browser（`/bin/browser /usr/share/browser/start.html`）。
    start page は WS074 が main に入れた（61491025）。
 3. **無い app が App Home に出る**: command の絶対 path（program、script、開く file）のどれかが無い entry は出さない
    （`ZWL HOME skip name=... missing=...`）。redirect などの shell の演算子より後の語は見ない（出力先の file は要らない）。
@@ -32,8 +32,8 @@ Gears、Browser、組み込みの一覧では試験の client の Vulkan test・
 5. **Files の Home が空で、sidebar の usual folder が薄い**: demo の zdesktop は service として HOME 無しで始まり、/root には
    Desktop 等が無い（`before-files.png`）。demo の `run-zdesktop.sh` が HOME（無ければ /root）を決め、Desktop・Documents・
    Downloads・Pictures・Music・Movies を作る（xdg-user-dirs が session の始めに行うことと同じ）。
-6. **image**: `plan/ws031/tests/config-zdesktop-hw.mk`（demo・実機の image）に zdesktop-browser、
-   `plan/ws035/tests/config-amd64-zdesktop.mk`（glass の desktop の guest image）に zdesktop-files と zdesktop-browser（Files も
+6. **image**: `plan/ws031/tests/config-zdesktop-hw.mk`（demo・実機の image）に browser、
+   `plan/ws035/tests/config-amd64-zdesktop.mk`（glass の desktop の guest image）に files と browser（Files も
    無かった）。WS075 へは main を通じて事前に知らせた。
 
 ## 見つけたが直していないもの（残り）

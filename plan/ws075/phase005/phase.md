@@ -4,7 +4,7 @@
 
 Phase ID: `ws075-p005`
 Parent: [WS075](../ws.md)
-Status: cleared（2026-09-28。増分 1〜5。実機の egltest の 7 場面が全て failures 0、vke1 6/6・vke2 17/17・vkx 9/9・vkc 9/9、capture の zdesktop・zdesktop-files PASS）
+Status: cleared（2026-09-28。増分 1〜5。実機の egltest の 7 場面が全て failures 0、vke1 6/6・vke2 17/17・vkx 9/9・vkc 9/9、capture の zdesktop・files PASS）
 Phase disposition: normal
 承認: 2026-09-27 ユーザー「…i915の高度化に進んでください。」、WS075 の計画（main の登録）。
 
@@ -123,7 +123,7 @@ Phase disposition: normal
 | host の vk の fixture spirv・lower・resdispatch・eu・compile・pipe（増分 5 の後） | PASS（resdispatch は depth の TRANSFER・blend・RGBA16F・RGBA32F の feature に合わせた） |
 | 実機 capture zdesktop-egltest（`build/ws075-p005/fix-egltest1`〜`3`） | run 1（増分 5 の途中）: cube 0・formats 1・volumes 0・es3 4・fbo 6。run 2: es3・formats・volumes・cube 0、fbo 4（D16 の depth）。**run 3: glsl・glsl3・fbo・cube・es3・formats・volumes の全てが failures 0・glerror 0**。画面 `build/ws031-shots/ws075-p005-20260928-{fix-egltest1,egltest2,egltest3}-sheet.png`。capture の検査 `scenes_shown` は FAIL（desktop の shot に既に egltest の窓があり、差分が出ない: 場面の判定は log の CHECK 行で行う。harness の follow-up） |
 | 実機 vke1・vke2・vkx・vkc（`build/ws075-p005/fix-*`、増分 5 の後） | **PASS 6/6・17/17・9/9・9/9** |
-| 実機 capture zdesktop（`build/ws075-bug077/fix-zdesktop1`）・zdesktop-files（`fix-files1`〜`3`） | PASS（6/6、9/9）。BUG-077 の停止なし |
+| 実機 capture zdesktop（`build/ws075-bug077/fix-zdesktop1`）・files（`fix-files1`〜`3`） | PASS（6/6、9/9）。BUG-077 の停止なし |
 | QEMU | 未実施（i915 の実機の変更） |
 
 ## Follow-up

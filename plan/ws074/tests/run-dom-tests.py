@@ -2,7 +2,7 @@
 # zedBSD
 # Copyright (C) 2026 Awe Morris
 # SPDX-License-Identifier: Zlib
-"""Runs zdesktop-browser's own DOM and page-script tests (plan/ws074/tests/dom/*.html) and compares their consoles.
+"""Runs browser's own DOM and page-script tests (plan/ws074/tests/dom/*.html) and compares their consoles.
 
   run-dom-tests.py [--program PATH]            run each page with --run and compare with NAME.expected
   run-dom-tests.py --reference                 make NAME.expected with the host's headless Chromium
@@ -10,8 +10,8 @@
 
 A test page writes lines with console.log (and its uncaught errors become "Uncaught ..." lines).  The expected
 output is the console of Chromium for the same page, with timers run on a virtual clock of 5000 ms as
-zdesktop-browser's headless modes run them, so the reference is another engine, not this one.  A page uses only
-what zdesktop-browser has so far (ES5 and the DOM of ws074-p030) and messages whose text every engine writes
+browser's headless modes run them, so the reference is another engine, not this one.  A page uses only
+what browser has so far (ES5 and the DOM of ws074-p030) and messages whose text every engine writes
 alike (no engine-specific error messages).
 """
 
@@ -73,7 +73,7 @@ def compare(name, output):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--program", default=os.path.join(ROOT, "build/ws074-host/plain/zdesktop-browser"))
+    parser.add_argument("--program", default=os.path.join(ROOT, "build/ws074-host/plain/browser"))
     parser.add_argument("--reference", action="store_true")
     parser.add_argument("--outputs")
     args = parser.parse_args()
