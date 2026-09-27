@@ -65,6 +65,9 @@ Resume point: p002・p003・p006 は cleared（main）、p004 は logo と一部
 
 ## ユーザーの判断（2026-09-28）
 
+0. 「"Keiland's System Menu"はSystem Menuで十分です。Keilandは内部コードネームです。」→ Keiland（と libkeiland）は内部のコードネームであり、
+   画面に出る文字列には使わない（System Menu、File Manager のように機能の名前で呼ぶ）。
+
 1. make の `ZEDBSD_` 変数（`ZEDBSD_CONFIG`・rootfs の option 等）: **今は残す**。
 2. `__ZEDBSD__`（toolchain の target `zedbsd` が定義する OS の識別子）: **残す**（カーネルの内部名）。他の `__ZEDBSD_*`・`__zedbsd_*` の補助の識別子は改める。
 3. source の directory: **実行ファイルと一緒に改名する**。さらに 2026-09-28 ユーザー:「baseを分離して、userland/desktop/という階層を
