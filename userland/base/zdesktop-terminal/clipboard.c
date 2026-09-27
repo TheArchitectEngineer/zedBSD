@@ -155,6 +155,46 @@ terminal_clipboard_set(
 }
 
 /*
+ * Starts a drag of text out of the window (ws035-p093): a source with the
+ * two text types that copies, from the press with the serial.
+ */
+void
+terminal_clipboard_drag(
+	struct terminal_window *window,
+	const char *text,
+	size_t length,
+	uint32_t serial)
+{
+	uint32_t version;
+
+	/* Only with the compositor's drag and drop, and one drag at a time. */
+	if (window->data_device == NULL || window->drag_source != NULL)
+		return;
+
+	/* The text the source sends. */
+	if (length > sizeof(window->drag_text))
+		length = sizeof(window->drag_text);
+	memcpy(window->drag_text, text, length);
+	window->drag_length = length;
+
+	/* The source, which copies. */
+	window->drag_source = wl_data_device_manager_create_data_source(window->data_manager);
+	if (window->drag_source == NULL)
+		return;
+	(void)wl_data_source_add_listener(window->drag_source, &source_listener, window);
+	wl_data_source_offer(window->drag_source, CLIPBOARD_TYPE_UTF8);
+	wl_data_source_offer(window->drag_source, CLIPBOARD_TYPE_PLAIN);
+	version = wl_proxy_get_version((struct wl_proxy *)window->drag_source);
+	if (version >= 3U)
+		wl_data_source_set_actions(window->drag_source, WL_DATA_DEVICE_MANAGER_DND_ACTION_COPY);
+
+	/* Succeeded: the drag starts from the window. */
+	wl_data_device_start_drag(window->data_device, window->drag_source, window->surface, NULL, serial);
+	printf("ZTERM DRAG start bytes=%lu\n", (unsigned long)length);
+	fflush(stdout);
+}
+
+/*
  * Tells whether the terminal's own text is the selection (a paste then
  * takes it directly).
  */
@@ -494,17 +534,26 @@ clipboard_send(
 	int32_t fd)
 {
 	struct terminal_window *window;
+	const char *text;
+	size_t length;
 	size_t written;
 	ssize_t count;
 
-	/* All of the text (the reader reads as it comes). */
-	(void)source;
+	/* All of the text (the reader reads as it comes): the drag's, or the clipboard's. */
 	(void)mime_type;
 	window = data;
+	text = window->clipboard;
+	length = window->clipboard_length;
+	if (source == window->drag_source) {
+		text = window->drag_text;
+		length = window->drag_length;
+	}
+
+	/* Written as the reader takes it. */
 	written = 0;
-	while (written < window->clipboard_length) {
+	while (written < length) {
 		/* The next part. */
-		count = write(fd, window->clipboard + written, window->clipboard_length - written);
+		count = write(fd, text + written, length - written);
 		if (count < 0 && errno == EINTR)
 			continue;
 		if (count <= 0)
@@ -526,14 +575,19 @@ clipboard_cancelled(
 {
 	struct terminal_window *window;
 
-	/* The source is destroyed; a paste now takes the other client's selection. */
+	/* The source is destroyed; a paste now takes the other client's selection; a drag ends not dropped. */
 	window = data;
 	wl_data_source_destroy(source);
 	if (window->data_source == source)
 		window->data_source = NULL;
+	if (window->drag_source == source) {
+		window->drag_source = NULL;
+		printf("ZTERM DRAG done dropped=0\n");
+		fflush(stdout);
+	}
 }
 
-/* Drag and drop is not used. */
+/* A drop of the terminal's drag: its end comes with finished. */
 static void
 clipboard_dropped(
 	void *data,
@@ -544,18 +598,25 @@ clipboard_dropped(
 	(void)source;
 }
 
-/* Drag and drop is not used. */
+/* A drag of the terminal's text ends dropped: its source goes. */
 static void
 clipboard_finished(
 	void *data,
 	struct wl_data_source *source)
 {
-	/* Nothing to do. */
-	(void)data;
-	(void)source;
+	struct terminal_window *window;
+
+	/* Only the drag's source. */
+	window = data;
+	if (window->drag_source != source)
+		return;
+	wl_data_source_destroy(source);
+	window->drag_source = NULL;
+	printf("ZTERM DRAG done dropped=1\n");
+	fflush(stdout);
 }
 
-/* Drag and drop is not used. */
+/* The action of a drag: always a copy. */
 static void
 clipboard_source_action(
 	void *data,

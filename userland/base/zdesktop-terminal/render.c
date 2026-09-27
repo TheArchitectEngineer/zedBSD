@@ -1098,6 +1098,7 @@ render_build(
 	uint32_t background;
 	unsigned column;
 	unsigned row;
+	int inside;
 	unsigned slot;
 	unsigned blank;
 	float x;
@@ -1118,10 +1119,11 @@ render_build(
 			if (cell->continuation == 0 && cell->codepoint != ' ' && cell->codepoint != 0U)
 				slot = terminal_font_slot(font, cell->codepoint);
 
-			/* A selected screen has the selection's background (Edit > Select All). */
+			/* A selected screen (Edit > Select All) or cell (the pointer's range) has the selection's background. */
 			foreground = cell->foreground;
 			background = cell->background;
-			if (screen->selected)
+			inside = terminal_screen_in_range(screen, column, row);
+			if (screen->selected || inside)
 				background = TERMINAL_SELECTION;
 
 			/* The cursor's cell is drawn with its colours swapped: a block cursor. */

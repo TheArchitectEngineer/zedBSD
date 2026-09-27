@@ -68,6 +68,14 @@
 #define TERMINAL_TABS		8U
 #define TERMINAL_TAB_TITLE	64U
 
+/* How many pointer events wait for the main loop at most (ws035-p093). */
+#define TERMINAL_POINTER_EVENTS	32U
+
+/* The kinds of pointer events the main loop takes: the left button pressed or released, a motion. */
+#define TERMINAL_POINTER_PRESS		1U
+#define TERMINAL_POINTER_RELEASE	2U
+#define TERMINAL_POINTER_MOTION		3U
+
 /* What the titlebar asks of the tabs (tabs.c): none, a new tab, one chosen, one to close. */
 #define TERMINAL_TAB_NONE	0U
 #define TERMINAL_TAB_NEW	1U
@@ -206,6 +214,27 @@ struct terminal_screen {
 
 	/* Nonzero while the whole screen is selected (Edit > Select All), until a key is typed. */
 	int selected;
+
+	/*
+	 * A range selected with the pointer (ws035-p093): whether there is one,
+	 * and its first and last cells (column, row) in reading order.
+	 */
+	int range;
+	unsigned range_from[2];
+	unsigned range_to[2];
+};
+
+/*
+ * One pointer event for the main loop (ws035-p093): its kind
+ * (TERMINAL_POINTER_*), where it was in the surface, in pixels, its time in
+ * milliseconds and its serial (a press's starts a drag).
+ */
+struct terminal_pointer_event {
+	unsigned kind;
+	int32_t x;
+	int32_t y;
+	uint32_t time;
+	uint32_t serial;
 };
 
 /*
@@ -318,6 +347,13 @@ struct terminal_window {
 	struct xdg_wm_base *shell;
 	struct wl_seat *seat;
 	struct wl_keyboard *keyboard;
+	struct wl_pointer *pointer;
+
+	/* Where the pointer is over the surface (pixels), and its events not yet taken by the main loop (ws035-p093). */
+	int32_t pointer_x;
+	int32_t pointer_y;
+	struct terminal_pointer_event pointer_events[TERMINAL_POINTER_EVENTS];
+	unsigned pointer_event_count;
 
 	/* The window: its surface and roles. */
 	struct wl_surface *surface;
@@ -414,6 +450,11 @@ struct terminal_window {
 	int drop_text;
 	int drop_uris;
 	int drop_pending;
+
+	/* A drag of selected text out of the window (clipboard.c, ws035-p093): its source (NULL for none) and its text. */
+	struct wl_data_source *drag_source;
+	char drag_text[4096];
+	size_t drag_length;
 };
 
 /* The clipboard through zdesktop's (clipboard.c). */
@@ -425,6 +466,7 @@ int terminal_clipboard_has_text(const struct terminal_window *window);
 size_t terminal_clipboard_receive(struct terminal_window *window, char *text, size_t size);
 void terminal_clipboard_close(struct terminal_window *window);
 size_t terminal_clipboard_drop(struct terminal_window *window, char *text, size_t size);
+void terminal_clipboard_drag(struct terminal_window *window, const char *text, size_t length, uint32_t serial);
 
 /* The character grid (screen.c). */
 void terminal_screen_init(struct terminal_screen *screen, unsigned columns, unsigned rows);
@@ -432,6 +474,7 @@ void terminal_screen_resize(struct terminal_screen *screen, unsigned columns, un
 void terminal_screen_write(struct terminal_screen *screen, const unsigned char *bytes, size_t length);
 struct terminal_cell *terminal_screen_cell(struct terminal_screen *screen, unsigned column, unsigned row);
 size_t terminal_screen_text(struct terminal_screen *screen, char *text, size_t size);
+int terminal_screen_in_range(const struct terminal_screen *screen, unsigned column, unsigned row);
 
 /* The key codes (keys.c). */
 size_t terminal_key_bytes(uint32_t key, uint32_t modifiers, unsigned char *bytes, size_t size);

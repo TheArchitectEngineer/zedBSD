@@ -199,9 +199,39 @@ terminal_screen_cell(
 }
 
 /*
+ * Tells whether a cell is in the range selected with the pointer
+ * (ws035-p093).
+ */
+int
+terminal_screen_in_range(
+	const struct terminal_screen *screen,
+	unsigned column,
+	unsigned row)
+{
+	/* Without a range, none is. */
+	if (!screen->range)
+		return 0;
+
+	/* Rows before the first or after the last are not. */
+	if (row < screen->range_from[1] || row > screen->range_to[1])
+		return 0;
+
+	/* On the first row, from its first cell; on the last, up to its last. */
+	if (row == screen->range_from[1] && column < screen->range_from[0])
+		return 0;
+	if (row == screen->range_to[1] && column > screen->range_to[0])
+		return 0;
+
+	/* Succeeded: in it. */
+	return 1;
+}
+
+/*
  * Writes the grid's text as UTF-8, a line per row without its trailing
  * spaces and without the empty rows at the bottom, into a buffer (cut at
- * its size).  Returns the number of bytes written, without a terminator.
+ * its size): the range selected with the pointer when there is one and
+ * the whole screen is not selected, else the whole grid.  Returns the
+ * number of bytes written, without a terminator.
  */
 size_t
 terminal_screen_text(
@@ -218,17 +248,25 @@ terminal_screen_text(
 	size_t count;
 	unsigned column;
 	unsigned row;
+	int inside;
 
 	/* Each row, then a line break; kept is the length up to the end of the last row with text. */
 	length = 0;
 	kept = 0;
 	start = 0;
 	for (row = 0U; row < screen->rows; row++) {
+		/* Only the range's rows, when it is the range that is copied. */
+		if (screen->range && !screen->selected && (row < screen->range_from[1] || row > screen->range_to[1]))
+			continue;
+
 		/* Each cell of the row, as the character it shows. */
 		for (column = 0U; column < screen->columns; column++) {
-			/* A continuation is the right half of a wide character written already. */
+			/* A continuation is the right half of a wide character written already; a cell out of the range is left out. */
 			cell = terminal_screen_cell(screen, column, row);
 			if (cell->continuation)
+				continue;
+			inside = terminal_screen_in_range(screen, column, row);
+			if (screen->range && !screen->selected && !inside)
 				continue;
 
 			/* A cell never written shows a space. */
