@@ -161,6 +161,7 @@ static int i915_record_copy_buffer(struct i915_render_session *session, struct i
 static int i915_record_clear_attachments(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader);
 static int i915_record_command(struct i915_render_session *session, uint32_t opcode, struct i915_wire_reader *reader);
 static int i915_image_surface(const struct i915_gfx_image *image, uint32_t level, uint32_t slice, struct i915_gfx_surface *surface);
+static int i915_blit_order(int32_t *first, int32_t *second, int mirror);
 static int i915_attachment_surface(const struct i915_gfx_view *view, struct i915_gfx_surface *surface);
 static int i915_execute_clear(struct i915_render_session *session, const struct i915_gfx_op *op);
 static int i915_execute_buffer_image_copy(struct i915_render_session *session, const struct i915_gfx_op *op);
@@ -1888,7 +1889,7 @@ i915_execute_clear(
 			surface.format = VK_FORMAT_R32_SFLOAT;
 			surface.width = image->pitch / 4U;
 			surface.height = (uint32_t)(image->bytes / image->pitch);
-			words[0] = op->u.begin.clear_words[index][0];
+			words[0] = drv_i915_gfx_depth_clear_word(image->format, op->u.begin.clear_words[index][0]);
 		} else {
 			kern_memcpy(words, op->u.begin.clear_words[index], sizeof(words));
 		}
@@ -1928,6 +1929,7 @@ i915_execute_clear_attachment(
 	struct i915_gfx_surface surface;
 	struct i915_gfx_rect rect;
 	uint32_t attachment;
+	uint32_t words[4];
 	int64_t right;
 	int64_t bottom;
 	int error;
@@ -1949,10 +1951,12 @@ i915_execute_clear_attachment(
 	error = i915_attachment_surface(framebuffer->views[attachment], &surface);
 	if (error != 0)
 		return error;
+	kern_memcpy(words, op->u.clear_attachment.words, sizeof(words));
 	if (op->u.clear_attachment.is_depth != 0U) {
 		surface.format = VK_FORMAT_R32_SFLOAT;
 		surface.width = image->pitch / 4U;
 		surface.height = (uint32_t)(image->bytes / image->pitch);
+		words[0] = drv_i915_gfx_depth_clear_word(image->format, words[0]);
 	}
 
 	/* Clips the rectangle to the surface; an empty one clears nothing. */
@@ -1973,7 +1977,7 @@ i915_execute_clear_attachment(
 	rect.h = (uint32_t)(bottom - rect.y);
 
 	/* Fills the rectangle. */
-	error = drv_i915_gfx_rect(session, &surface, &rect, NULL, NULL, op->u.clear_attachment.words, 0);
+	error = drv_i915_gfx_rect(session, &surface, &rect, NULL, NULL, words, 0);
 	return error;
 }
 
@@ -2031,7 +2035,7 @@ i915_execute_buffer_image_copy(
 		return EINVAL;
 
 	/* Refuses a depth image. */
-	if (image->format == VK_FORMAT_D32_SFLOAT) {
+	if (image->format == VK_FORMAT_D32_SFLOAT || image->format == VK_FORMAT_D16_UNORM) {
 		kern_logf("i915: vk: XXX unimplemented path: a copy to or from a depth image\n");
 		return ENOTSUP;
 	}
@@ -2253,12 +2257,33 @@ i915_execute_image_copy(
 }
 
 /*
+ * Puts two corner coordinates of a blit in increasing order; returns
+ * `mirror` when they were given in decreasing order, 0 otherwise.
+ */
+static int
+i915_blit_order(
+	int32_t *first,
+	int32_t *second,
+	int mirror)
+{
+	int32_t swap;
+
+	/* An increasing pair stays as it is. */
+	if (*second >= *first)
+		return 0;
+
+	/* A decreasing pair is swapped and mirrors the copy. */
+	swap = *first;
+	*first = *second;
+	*second = swap;
+	return mirror;
+}
+
+/*
  * Runs a vkCmdBlitImage region as one scaled GPU copy between the two
  * levels it names, which may be two levels of the same image (the mip
- * chain a linear blit generates level by level).
- *
- * XXX: mirrored blits (an offset pair given in decreasing order) are
- * refused.
+ * chain a linear blit generates level by level).  An offset pair given in
+ * decreasing order on one side mirrors the copy along that direction.
  */
 static int
 i915_execute_image_blit(
@@ -2293,13 +2318,16 @@ i915_execute_image_blit(
 	if (error != 0)
 		return EINVAL;
 
-	/* Refuses a mirrored or empty source rectangle. */
+	/* Takes the source corners in increasing order, a decreasing pair mirroring; an empty rectangle copies nothing. */
+	linear = 0;
 	x0 = region->srcOffsets[0].x;
 	y0 = region->srcOffsets[0].y;
 	x1 = region->srcOffsets[1].x;
 	y1 = region->srcOffsets[1].y;
-	if (x1 <= x0 || y1 <= y0)
-		return ENOTSUP;
+	linear ^= i915_blit_order(&x0, &x1, I915_GFX_RECT_MIRROR_X);
+	linear ^= i915_blit_order(&y0, &y1, I915_GFX_RECT_MIRROR_Y);
+	if (x1 == x0 || y1 == y0)
+		return 0;
 
 	/* Takes the source rectangle between its two corners. */
 	src_rect.x = x0;
@@ -2307,13 +2335,15 @@ i915_execute_image_blit(
 	src_rect.w = (uint32_t)(x1 - x0);
 	src_rect.h = (uint32_t)(y1 - y0);
 
-	/* Refuses a mirrored or empty destination rectangle. */
+	/* Takes the destination corners the same way: mirroring on both sides cancels. */
 	x0 = region->dstOffsets[0].x;
 	y0 = region->dstOffsets[0].y;
 	x1 = region->dstOffsets[1].x;
 	y1 = region->dstOffsets[1].y;
-	if (x1 <= x0 || y1 <= y0)
-		return ENOTSUP;
+	linear ^= i915_blit_order(&x0, &x1, I915_GFX_RECT_MIRROR_X);
+	linear ^= i915_blit_order(&y0, &y1, I915_GFX_RECT_MIRROR_Y);
+	if (x1 == x0 || y1 == y0)
+		return 0;
 
 	/* Takes the destination rectangle between its two corners. */
 	dst_rect.x = x0;
@@ -2322,9 +2352,8 @@ i915_execute_image_blit(
 	dst_rect.h = (uint32_t)(y1 - y0);
 
 	/* A linear filter samples bilinearly; any other filter samples the nearest texel. */
-	linear = 0;
 	if (op->u.blit.filter == VK_FILTER_LINEAR)
-		linear = 1;
+		linear |= I915_GFX_RECT_LINEAR;
 
 	/* Copies the region, scaled, layer by layer (a 3D image's depth is not scaled: XXX, its first depth only). */
 	for (layer = 0U; layer < region->srcSubresource.layerCount; layer++) {

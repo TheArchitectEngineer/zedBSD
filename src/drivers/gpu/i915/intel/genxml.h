@@ -358,6 +358,7 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
  * format and makes the depth unit expect a stencil buffer that is not there.
  */
 #define GEN12_DEPTH_FORMAT_D32_FLOAT		1U
+#define GEN12_DEPTH_FORMAT_D16_UNORM		5U
 
 /* 3DSTATE_SBE attribute component format: all four channels active. */
 #define GEN12_ACF_XYZW				3U

@@ -37,6 +37,7 @@
 #define I915_GFX_SURFACE_B8G8R8A8_UNORM_SRGB	0x0c1U
 #define I915_GFX_SURFACE_R8G8B8A8_SINT		0x0caU
 #define I915_GFX_SURFACE_R8G8B8A8_UINT		0x0cbU
+#define I915_GFX_SURFACE_R16_UNORM		0x10aU
 #define I915_GFX_SURFACE_R32_FLOAT		0x0d8U
 #define I915_GFX_SURFACE_R32G32_FLOAT		0x085U
 #define I915_GFX_SURFACE_R32G32B32_FLOAT	0x040U
@@ -1219,7 +1220,7 @@ drv_i915_gfx_emit_raster(
  *
  * With no depth attachment the depth buffer is a null D32_FLOAT surface and
  * the test is off.  Returns EINVAL for a depth attachment with no storage or
- * in a format other than D32_SFLOAT.
+ * in a format other than D32_SFLOAT and D16_UNORM.
  */
 int
 drv_i915_gfx_emit_depth(
@@ -1233,6 +1234,7 @@ drv_i915_gfx_emit_depth(
 	uint32_t depth_state;
 	uint32_t write_enable;
 	uint32_t test_enable;
+	uint32_t format;
 	uint32_t index;
 	uint64_t va;
 
@@ -1260,15 +1262,22 @@ drv_i915_gfx_emit_depth(
 	if (depth != NULL) {
 		/* Refuses a depth image with no storage or in another format. */
 		va = drv_i915_gfx_memory_va(depth->memory, depth->offset);
-		if (va == 0U || depth->format != VK_FORMAT_D32_SFLOAT)
+		if (va == 0U)
 			return EINVAL;
+		if (depth->format == VK_FORMAT_D32_SFLOAT) {
+			format = GEN12_DEPTH_FORMAT_D32_FLOAT;
+		} else if (depth->format == VK_FORMAT_D16_UNORM) {
+			format = GEN12_DEPTH_FORMAT_D16_UNORM;
+		} else {
+			return EINVAL;
+		}
 
 		/*
 		 * Writes what isl_emit_depth_stencil_hiz_s() writes: 2D, D32_FLOAT,
 		 * write enable and the pitch (Y-tiled: Gen9+ depth always is); the
 		 * address; the extent; MOCS; the QPitch.
 		 */
-		drv_i915_batch_emit(batch, (GEN12_SURFTYPE_2D << 29) | (1U << 28) | (GEN12_DEPTH_FORMAT_D32_FLOAT << 24) | (depth->pitch - 1U));
+		drv_i915_batch_emit(batch, (GEN12_SURFTYPE_2D << 29) | (1U << 28) | (format << 24) | (depth->pitch - 1U));
 		drv_i915_batch_emit(batch, (uint32_t)va);
 		drv_i915_batch_emit(batch, (uint32_t)(va >> 32));
 		drv_i915_batch_emit(batch, ((depth->width - 1U) << 1) | ((depth->height - 1U) << 17));
@@ -1785,6 +1794,9 @@ i915_image_surface_write(
 	tile = GEN12_TILEMODE_LINEAR;
 	if (image->format == VK_FORMAT_D32_SFLOAT) {
 		format = I915_GFX_SURFACE_R32_FLOAT;
+		tile = GEN12_TILEMODE_YMAJOR;
+	} else if (image->format == VK_FORMAT_D16_UNORM) {
+		format = I915_GFX_SURFACE_R16_UNORM;
 		tile = GEN12_TILEMODE_YMAJOR;
 	} else {
 		error = i915_surface_format(image->format, &format);

@@ -672,6 +672,7 @@ int drv_i915_gfx_image_layout(struct i915_gfx_image *image);
 int drv_i915_gfx_image_level(const struct i915_gfx_image *image, uint32_t level, struct i915_gfx_surface *surface);
 int drv_i915_gfx_image_slice(const struct i915_gfx_image *image, uint32_t level, uint32_t slice, struct i915_gfx_surface *surface);
 uint32_t drv_i915_gfx_image_slices(const struct i915_gfx_image *image, uint32_t level);
+uint32_t drv_i915_gfx_depth_clear_word(uint32_t format, uint32_t depth);
 
 /* Releases what the session's draws kept: the state, batch and kernel objects (draw.c). */
 void drv_i915_gfx_session_close(struct i915_render_session *session);
@@ -699,13 +700,18 @@ int drv_i915_gfx_submit_end(struct i915_render_session *session);
 /*
  * One rectangle on the GPU (blit.c): a copy of src_rect of `src` into
  * dst_rect of `dst`, scaled when the sizes differ with `linear` selecting
- * the filter, or, with src NULL, a fill of dst_rect with the four float
- * words of `clear`.  drv_i915_gfx_rect records it into the submission's
+ * the filter (I915_GFX_RECT_LINEAR, nonzero for the linear one) and
+ * mirroring the source along x or y (I915_GFX_RECT_MIRROR_X, _Y), or, with
+ * src NULL, a fill of dst_rect with the four float words of `clear`.  drv_i915_gfx_rect records it into the submission's
  * batch, or runs it to its end outside a submission;
  * drv_i915_gfx_rect_build only writes the session's state and batch objects
  * and returns the batch address, for a caller that runs the batch itself
  * (the display, on the serving thread).
  */
+#define I915_GFX_RECT_LINEAR		1
+#define I915_GFX_RECT_MIRROR_X		2
+#define I915_GFX_RECT_MIRROR_Y		4
+
 int drv_i915_gfx_rect_prepare(struct i915_render_session *session);
 int drv_i915_gfx_rect(struct i915_render_session *session, const struct i915_gfx_surface *dst, const struct i915_gfx_rect *dst_rect, const struct i915_gfx_surface *src, const struct i915_gfx_rect *src_rect, const uint32_t clear[4], int linear);
 int drv_i915_gfx_rect_build(struct i915_render_session *session, const struct i915_gfx_surface *dst, const struct i915_gfx_rect *dst_rect, const struct i915_gfx_surface *src, const struct i915_gfx_rect *src_rect, const uint32_t clear[4], int linear, uint64_t *batch_va);

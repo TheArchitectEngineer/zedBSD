@@ -17,6 +17,7 @@
 #include "codec.h"
 #include "gfx.h"
 #include "internal.h"
+#include "math.h"
 #include "object.h"
 #include "reply.h"
 #include <kern/kcrt.h>
@@ -54,6 +55,7 @@
 #define I915_GFX_IMAGE_LEVEL_ALIGN	4U
 
 static uint32_t i915_gfx_format_bytes(uint32_t format);
+static int i915_gfx_is_depth(uint32_t format);
 static int i915_gfx_image_supported(const VkImageCreateInfo *info);
 static uint32_t i915_gfx_image_max_levels(uint32_t width, uint32_t height, uint32_t depth);
 static uint32_t i915_gfx_one(uint32_t count);
@@ -417,6 +419,7 @@ drv_i915_gfx_image_layout(
 	uint32_t layout_width;
 	uint32_t layout_height;
 	uint32_t slices;
+	int depth;
 
 	/* Refuses a format the executor does not lay out. */
 	texel_bytes = i915_gfx_format_bytes(image->format);
@@ -438,7 +441,8 @@ drv_i915_gfx_image_layout(
 	slices = drv_i915_gfx_image_slices(image, 0U);
 	if (slices > I915_GFX_IMAGE_MAX_SLICES)
 		return EINVAL;
-	if (image->format == VK_FORMAT_D32_SFLOAT && slices != 1U)
+	depth = i915_gfx_is_depth(image->format);
+	if (depth != 0 && slices != 1U)
 		return EINVAL;
 	image->slice_rows = 0U;
 
@@ -448,7 +452,7 @@ drv_i915_gfx_image_layout(
 		image->bytes = (uint64_t)image->pitch * image->height;
 
 		/* A depth image is rounded up to whole Y tiles. */
-		if (image->format == VK_FORMAT_D32_SFLOAT) {
+		if (depth != 0) {
 			image->pitch = (image->pitch + 127U) & ~127U;
 			image->bytes = (uint64_t)image->pitch * ((image->height + 31U) & ~31U);
 		}
@@ -458,7 +462,7 @@ drv_i915_gfx_image_layout(
 	}
 
 	/* Refuses a mipmapped depth image. */
-	if (image->format == VK_FORMAT_D32_SFLOAT)
+	if (depth != 0)
 		return EINVAL;
 
 	/* One level of several slices is the level itself. */
@@ -616,6 +620,9 @@ i915_gfx_format_bytes(
 	case VK_FORMAT_D32_SFLOAT:
 		/* A four-byte texel. */
 		return 4U;
+	case VK_FORMAT_D16_UNORM:
+		/* A two-byte depth texel. */
+		return 2U;
 	default:
 		/* Not a format the executor lays out. */
 		return 0U;
@@ -629,6 +636,7 @@ i915_gfx_image_supported(
 {
 	uint32_t texel_bytes;
 	uint32_t max_levels;
+	int depth;
 
 	/* Only a 1D, 2D or 3D image. */
 	if (info->imageType != VK_IMAGE_TYPE_1D && info->imageType != VK_IMAGE_TYPE_2D && info->imageType != VK_IMAGE_TYPE_3D)
@@ -674,7 +682,8 @@ i915_gfx_image_supported(
 		return 0;
 
 	/* Only one level and one layer of a 2D depth image. */
-	if (info->format == VK_FORMAT_D32_SFLOAT &&
+	depth = i915_gfx_is_depth(info->format);
+	if (depth != 0 &&
 	    (info->mipLevels != 1U || info->arrayLayers != 1U || info->imageType != VK_IMAGE_TYPE_2D))
 		return 0;
 
@@ -706,6 +715,41 @@ i915_gfx_image_max_levels(
 
 	/* Succeeded: the number of levels. */
 	return levels;
+}
+
+/* Decides whether a format is a depth format the executor lays out in Y tiles. */
+static int
+i915_gfx_is_depth(
+	uint32_t format)
+{
+	/* D32_SFLOAT and D16_UNORM. */
+	if (format == VK_FORMAT_D32_SFLOAT || format == VK_FORMAT_D16_UNORM)
+		return 1;
+
+	/* Succeeded: any other format is a colour one. */
+	return 0;
+}
+
+/*
+ * Reports the 32-bit word a clear writes over a depth image's bytes for a
+ * depth value (float bits): the float itself for D32_SFLOAT, the 16-bit
+ * unorm value in both halves for D16_UNORM (the value times 65536, clamped
+ * to 65535: 1.0 and 0.0 are exact).
+ */
+uint32_t
+drv_i915_gfx_depth_clear_word(
+	uint32_t format,
+	uint32_t depth)
+{
+	uint32_t unorm;
+
+	/* A D32 image holds the float. */
+	if (format != VK_FORMAT_D16_UNORM)
+		return depth;
+
+	/* A D16 image holds two unorm values to the word. */
+	unorm = (uint32_t)drv_i915_float_to_fixed(depth, 16U, 0, 65535);
+	return unorm | (unorm << 16);
 }
 
 /* Reports a count that may be left zero (an image or a view filled by hand) as at least one. */

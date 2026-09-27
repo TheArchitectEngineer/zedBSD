@@ -53,7 +53,20 @@ Phase disposition: normal
   draw の拒否を外した（draw の rectangle は level の大きさ）。
 - 試験: vke1 に TEXKINDS（`tests/render/features.c`、`feature-shaders/texkinds.frag`）。2D 配列・3D・cube・1D・整数の
   texelFetch・depth compare・textureGrad（fine の y 微分）・textureSize・textureQueryLevels・textureProj・level の texelFetch。
-  期待の画素は C の規則で作る（kernel の大きさの余裕のため）。
+  期待の画素は C の規則で作る（kernel の大きさの余裕のため）。LEVELDRAW: 2 level・3 layer の texture の level 1・layer 2 の
+  view の framebuffer へ描き、その level・layer だけが書かれ、level 0 の layer 2 と level 1 の layer 1 は元の値のまま。
+
+### 増分 3: depth の sampling、mirrored blit、egltest の場面（2026-09-28）
+
+- depth（D32、Y tile）の image の sampling: surface state を R32_FLOAT・TILEMODE_YMAJOR に（isl は D32 の surface を R32_FLOAT で
+  sample する）。実機は未検証（D32 を sample する試験が無い）。
+- mirrored blit（ws031-p034）: blit の offset の組が逆順なら、その向きに鏡映（`drv_i915_gfx_rect()` の `linear` を flag に:
+  `I915_GFX_RECT_LINEAR`・`_MIRROR_X`・`_MIRROR_Y`、source の角を逆に）。空の矩形は何もしない。実機は未検証。
+- egltest の場面（p004 の follow-up）: `ZDESKTOP_APP=egltest`（`plan/ws031/tests/zdesktop/run-egltest.sh`）が egltest の
+  glsl・glsl3・fbo・cube・es3・formats・volumes を zdesktop の窓で順に走らせ、各 scene の `EGLTEST CHECK run=<scene>` を
+  viewer の log へ。capture の場面 `zdesktop-egltest`（`i915-capture.py`）は desktop と 5 秒ごとの 12 枚。
+- 後へ: descriptor 配列と VS の sampled image（ws031-p035）は survey の 122 module に使うものが無い（VS の sampler は
+  pipeline の準備で拒むまま、`pipeline-prepare.c`）。depth の image の copy（Y tile との変換）。
 
 ## 検証
 
