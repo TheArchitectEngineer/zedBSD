@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p003 は cleared（main）。次は Venus での graphical な確認、BUG-080 の Desktop の分類、p006・p002・p004
+Resume point: p003・p006 は cleared（main）、p004 は logo まで。次は Venus での graphical な確認（login・`/bin/wayland`・App Home）、BUG-080 の Desktop の分類、p002、p004 の残り
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-28 ユーザーの決定、要旨）
@@ -56,8 +56,8 @@ Resume point: p003 は cleared（main）。次は Venus での graphical な確�
 | ws078-p001 | 棚卸しと対応表（識別子・path・見える文字列・protocol 名を分類し、新しい名前を決める。判断が要る点を列挙） | planning | なし |
 | ws078-p002 | kernel・driver・UAPI・libc・bootloader の識別子の改名（`KERN_` 等。機械的。build の warning 0 と boot test） | planning | p001 |
 | [ws078-p003](phase003/phase.md) | 実行ファイルと source の directory の改名（userland/desktop/、`/bin/wayland` 等）と参照 | cleared（2026-09-28、6d8ca152。Venus の graphical な確認は未実施） | — |
-| ws078-p006 | データの path（/etc/zdesktop、/usr/share/zdesktop、font、zdesktop-x11）、API・protocol（`zdesktop_`→、`zed_*`→`keiland_*`）の改名 | planning | p003 |
-| ws078-p004 | 見える文字列: boot の logo（Kei）・greeter・lock・banner・os-release 等 | planning | p001 |
+| ws078-p006 | データの path（/etc/keiland、/usr/share/keiland、font の keiland*.ttf、/usr/libexec/keiland-x11）、API・protocol（`keiland_`・`KEILAND_`・`keiland.h`、`zed_*_v1` → `keiland_*_v1`）の改名 | cleared（2026-09-28、main、35177e46。image の build と boot test PASS。Venus の graphical な確認は未実施） | p003 |
+| ws078-p004 | 見える文字列: boot の logo（Kei）・greeter・lock・banner・os-release 等 | incomplete（2026-09-28: boot の logo を Kei の印・語・「powered by zedBSD」に描き直した（b3f5c5f9、[kei-identity-design.md](../ws035/kei-identity-design.md) の段階 1）。graphical な起動での表示の確認は未実施。残り: 全画面の起動画面・文字列） | p001 |
 | ws078-p005 | 全文規約確認と回帰（必須の最終確認） | planning | 全 Phase |
 
 改名は作業中の agent と衝突しやすい。p002・p003 は他の agent が merge を終えた静かな時点で main か 1 つの agent が一度に行い、
