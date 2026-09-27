@@ -145,6 +145,7 @@ void drv_i915_gfx_sampler_write(uint32_t *state, const struct i915_gfx_sampler *
 void drv_i915_gfx_instruction_heap_clear(uint8_t *window);
 
 void drv_i915_gfx_emit_context_setup(struct i915_gfx_batch *batch, uint64_t state_va, uint64_t instruction_va, uint64_t general_va, uint32_t mocs);
+uint32_t drv_i915_gfx_topology(const struct i915_gfx_pipeline *pipeline);
 int drv_i915_gfx_emit_vertex_input(struct i915_gfx_batch *batch, const struct i915_gfx_draw_state *state, const struct i915_gfx_kernels *kernels, uint32_t mocs);
 int drv_i915_gfx_emit_index_buffer(struct i915_gfx_batch *batch, const struct i915_gfx_draw_state *state, uint32_t mocs);
 void drv_i915_gfx_emit_urb(struct i915_gfx_batch *batch, uint32_t entry_size);
