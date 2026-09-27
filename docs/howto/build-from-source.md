@@ -84,9 +84,10 @@ The build ownership boundary is:
 | i386 sysroot | Project LLVM inputs under `build/i386/sysroot/` | Shared PC/AT and PC-98 boundary for `i386-unknown-zedbsd` |
 | Target Noct | Project LLVM, LLD, and amd64 sysroot; installed as `/usr/bin/noct` when selected | Runs inside zedBSD; does not replace host Noct |
 
-The permanent x86_64 Linux cache is release `rev-0`, asset
-`zedbsd-llvm-23.1.0-x86_64-linux.tar.gz`, with tracked SHA-256
-`6f8e1154c73b9f2d32f16360ace107b7862f08e748c6f10c1bd75914aa6502c2`.
+The x86_64 Linux cache is an asset of release `rev-0` named after the LLVM
+version and the zedBSD patch level, currently
+`zedbsd-llvm-23.1.0-zedbsd8-x86_64-linux.tar.gz`; its SHA-256 is tracked in
+`toolchain/llvm/version.mk`.
 `make toolchain-cache` validates the archive, installed identity, tool set,
 versions, and license. `make -j16 toolchain` remains the authoritative
 source-build path and uses the official LLVM `23.1.0` source plus the tracked
