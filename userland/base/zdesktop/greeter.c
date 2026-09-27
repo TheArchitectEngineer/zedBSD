@@ -13,8 +13,13 @@
  * the display and the input devices given to that account, and answers on
  * the descriptor --auth-fd names:
  *
- *   AUTH name password      OK: the user is in, zdesktop ends; FAIL
+ *   READY                   GO: the display may be taken (handoff.c)
+ *   AUTH name password      OK: the user is in; FAIL
  *   POWER poweroff|reboot   OK
+ *
+ * After OK the screen says "Starting session..." and takes no input until
+ * zsessiond closes the descriptor, once the session is ready to take the
+ * display (ws035-p101); zdesktop then ends.
  *
  * The screen is the blurred wallpaper with the time and the date at the
  * top, a frosted card in the middle with the users (the accounts with a uid
@@ -127,6 +132,7 @@ static char greeter_password[GREETER_PASSWORD];
 static unsigned greeter_password_length;
 static char greeter_message[64];
 static unsigned greeter_waiting;
+static unsigned greeter_starting;
 static char greeter_answer[64];
 static size_t greeter_answer_used;
 
@@ -246,8 +252,8 @@ zwl_greeter_button(
 	enum greeter_hit hit;
 	unsigned user;
 
-	/* Only the left button's press does anything. */
-	if (button != GREETER_BUTTON_LEFT || state == 0U)
+	/* Only the left button's press does anything, and nothing once the session is starting. */
+	if (button != GREETER_BUTTON_LEFT || state == 0U || greeter_starting)
 		return 1;
 
 	/* What the press is on. */
@@ -287,8 +293,8 @@ zwl_greeter_key(
 	uint32_t key,
 	uint32_t state)
 {
-	/* Releases do nothing. */
-	if (state == 0U)
+	/* Releases do nothing, and nothing does once the session is starting. */
+	if (state == 0U || greeter_starting)
 		return 1;
 
 	/* Routes the key by its code. */
@@ -356,7 +362,8 @@ zwl_greeter_tick(
 
 	/* zsessiond gone: the screen ends. */
 	if (count == 0) {
-		printf("ZWL GREETER closed\n");
+		printf("ZWL GREETER closed at_ms=%llu\n", (unsigned long long)zwl_milliseconds());
+		zwl_handoff_release(server);
 		zwl_request_stop();
 		return;
 	}
@@ -666,7 +673,9 @@ greeter_draw_card(
 
 	/* The line under the field: a wrong password, or the wait for the answer. */
 	baseline = layout->field[1] + GREETER_FIELD + 28;
-	if (greeter_waiting) {
+	if (greeter_starting) {
+		greeter_draw_centered(server, command, SIZE_TITLE, middle, baseline, "Starting session...", GREETER_CARD_WIDTH - 32, faint);
+	} else if (greeter_waiting) {
 		greeter_draw_centered(server, command, SIZE_TITLE, middle, baseline, "Checking...", GREETER_CARD_WIDTH - 32, faint);
 	} else if (greeter_message[0] != '\0') {
 		greeter_draw_centered(server, command, SIZE_TITLE, middle, baseline, greeter_message, GREETER_CARD_WIDTH - 32, warning);
@@ -934,11 +943,12 @@ greeter_answered(
 	server->dirty = 1;
 	printf("ZWL GREETER answer=%s\n", answer);
 
-	/* Logged in: the screen ends and the session starts. */
+	/* Logged in: the screen stays until zsessiond closes the descriptor (the session is then ready). */
 	match = strcmp(answer, "OK");
 	if (match == 0 && greeter_waiting) {
 		greeter_waiting = 0;
-		zwl_request_stop();
+		greeter_starting = 1;
+		printf("ZWL GREETER starting\n");
 		return;
 	}
 

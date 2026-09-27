@@ -1261,6 +1261,9 @@ zwl_glass_tick(
 		return;
 	}
 
+	/* What zsessiond sent the session (handoff.c). */
+	zwl_handoff_tick(server);
+
 	/* App Home's animation, and the applications it started that have ended. */
 	zwl_home_tick(server);
 

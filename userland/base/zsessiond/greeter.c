@@ -9,13 +9,22 @@
  * The greeter: zsessiond starts it as _greeter with one end of a socket
  * pair as descriptor 3, and answers its requests, one line each:
  *
- *   AUTH name password     checks the password; OK (the greeter then ends
- *                          and the session starts) or FAIL, after a delay
+ *   READY                  the greeter is about to take the display; GO
+ *                          (ws035-p101: nothing else holds it then)
+ *   AUTH name password     checks the password; OK or FAIL, after a delay
  *                          that grows with the failures in a row
  *   POWER poweroff|reboot  ends the machine; OK
  *
  * Anything else is answered ERROR.  The password is erased as soon as it is
  * checked, and never written anywhere.
+ *
+ * After OK the greeter stays on the screen ("Starting session") while the
+ * session starts; once the session is ready to take the display zsessiond
+ * shuts its side of the socket down, the greeter gives the display back,
+ * says RELEASED and ends (ws035-p101), so the text console never shows
+ * between the two.  At a Log Out a greeter is started while the session
+ * still shows; its READY is answered only once the session has given the
+ * display back (session.c).
  */
 
 #include "zsessiond.h"
@@ -44,6 +53,10 @@
 /* How long a greeter may take to end after a login before it is killed. */
 #define GREETER_END_SECONDS	10
 
+/* How long a greeter may take to say READY, and to give the display back (milliseconds). */
+#define GREETER_READY_MS	30000
+#define GREETER_RELEASE_MS	5000
+
 /* The delay after a wrong password, and the longest it grows to. */
 #define GREETER_DELAY_SECONDS	2U
 #define GREETER_DELAY_MAX	16U
@@ -62,6 +75,7 @@ struct greeter {
 	int logged_in;
 };
 
+static int greeter_account_find(struct zsessiond_account *greeter_account);
 static int greeter_start(struct zsessiond *daemon, struct greeter *greeter, struct zsessiond_account *greeter_account);
 static void greeter_child(struct zsessiond *daemon, int socket, struct zsessiond_account *greeter_account);
 static int greeter_read(struct greeter *greeter, struct zsessiond_account *account);
@@ -90,10 +104,22 @@ zsessiond_greeter_run(
 	int error;
 	int closed;
 
-	/* The greeter's own account. */
+	/* The greeter a Log Out started, or a new one. */
 	memset(&greeter, 0, sizeof(greeter));
 	greeter.socket = -1;
-	error = greeter_start(daemon, &greeter, &greeter_account);
+	if (daemon->greeter_pid > 0) {
+		greeter.pid = daemon->greeter_pid;
+		greeter.socket = daemon->greeter_socket;
+		greeter.started = daemon->greeter_started;
+		daemon->greeter_pid = 0;
+		daemon->greeter_socket = -1;
+		error = greeter_account_find(&greeter_account);
+		zsessiond_log("ZSESSIOND GREETER adopt pid=%ld", (long)greeter.pid);
+	} else {
+		error = greeter_start(daemon, &greeter, &greeter_account);
+	}
+
+	/* Without its account the greeter cannot be looked after. */
 	if (error != 0)
 		return ZSESSIOND_GREETER_FAILED;
 
@@ -126,6 +152,16 @@ zsessiond_greeter_run(
 			break;
 	}
 
+	/* After a login the greeter stays on the screen until the session is ready for the display. */
+	if (greeter.logged_in && !zsessiond_stopping) {
+		daemon->greeter_pid = greeter.pid;
+		daemon->greeter_socket = greeter.socket;
+		daemon->greeter_started = greeter.started;
+		memset(&greeter_account, 0, sizeof(greeter_account));
+		zsessiond_log("ZSESSIOND GREETER stays pid=%ld", (long)greeter.pid);
+		return ZSESSIOND_GREETER_LOGIN;
+	}
+
 	/* The greeter ends: after a login it ends itself, otherwise it has already. */
 	end = greeter_wait(&greeter);
 	(void)close(greeter.socket);
@@ -135,6 +171,155 @@ zsessiond_greeter_run(
 	return end;
 }
 
+/*
+ * Ends the greeter left on the screen after a login: its socket is closed,
+ * which it takes as the sign to end; one that does not end in time is
+ * ended.  Nothing happens when no greeter was left.
+ */
+void
+zsessiond_greeter_finish(
+	struct zsessiond *daemon)
+{
+	struct greeter greeter;
+
+	/* Only a greeter left on the screen. */
+	if (daemon->greeter_pid <= 0)
+		return;
+
+	/* The socket closes, then the greeter goes. */
+	memset(&greeter, 0, sizeof(greeter));
+	greeter.pid = daemon->greeter_pid;
+	greeter.socket = daemon->greeter_socket;
+	greeter.logged_in = 1;
+	(void)close(greeter.socket);
+	(void)greeter_wait(&greeter);
+
+	/* Succeeded: no greeter is left. */
+	daemon->greeter_pid = 0;
+	daemon->greeter_socket = -1;
+}
+
+/*
+ * Has the greeter left on the screen give the display back ahead of its
+ * end: zsessiond's side of the socket is shut down, which the greeter takes
+ * as the sign to go, and its RELEASED (or its end) is waited for, at most
+ * GREETER_RELEASE_MS.  The process is reaped by zsessiond_greeter_finish.
+ */
+void
+zsessiond_greeter_release(
+	struct zsessiond *daemon)
+{
+	char line[ZSESSIOND_LINE_MAX];
+	int released;
+	int got;
+	int match;
+
+	/* Only a greeter left on the screen. */
+	if (daemon->greeter_pid <= 0)
+		return;
+
+	/* The sign to go, then RELEASED. */
+	(void)shutdown(daemon->greeter_socket, SHUT_WR);
+	released = 0;
+	while (!released) {
+		got = zsessiond_read_line(daemon->greeter_socket, line, sizeof(line), GREETER_RELEASE_MS);
+		if (got <= 0)
+			break;
+		match = strcmp(line, "RELEASED");
+		if (match == 0)
+			released = 1;
+	}
+
+	/* Succeeded: the display is free (or the greeter has gone, or was given its time). */
+	zsessiond_log("ZSESSIOND HANDOFF greeter released=%d at_ms=%lld", released, zsessiond_milliseconds());
+}
+
+/*
+ * Starts a greeter while the session still shows (a Log Out, ws035-p101),
+ * the seat given to it, and waits for its READY, which is not answered
+ * yet (zsessiond_greeter_go does).  The greeter is left for
+ * zsessiond_greeter_run to adopt.  Returns 0 once it said READY, or an
+ * errno value.
+ */
+int
+zsessiond_greeter_prepare(
+	struct zsessiond *daemon)
+{
+	struct zsessiond_account greeter_account;
+	struct greeter greeter;
+	char line[ZSESSIOND_LINE_MAX];
+	int error;
+	int got;
+	int match;
+
+	/* The greeter, as at any start. */
+	memset(&greeter, 0, sizeof(greeter));
+	greeter.socket = -1;
+	error = greeter_start(daemon, &greeter, &greeter_account);
+	memset(&greeter_account, 0, sizeof(greeter_account));
+	if (error != 0)
+		return error;
+
+	/* Left for zsessiond_greeter_run. */
+	daemon->greeter_pid = greeter.pid;
+	daemon->greeter_socket = greeter.socket;
+	daemon->greeter_started = greeter.started;
+
+	/* Its READY (it says nothing before it). */
+	for (;;) {
+		got = zsessiond_read_line(greeter.socket, line, sizeof(line), GREETER_READY_MS);
+		if (got <= 0) {
+			zsessiond_log("ZSESSIOND HANDOFF greeter not ready");
+			return ETIMEDOUT;
+		}
+
+		/* Only READY ends the wait. */
+		match = strcmp(line, "READY");
+		if (match == 0)
+			break;
+	}
+
+	/* Succeeded: the greeter waits for GO. */
+	zsessiond_log("ZSESSIOND HANDOFF greeter ready: waits at_ms=%lld", zsessiond_milliseconds());
+	return 0;
+}
+
+/* Tells the greeter a Log Out started that the display is free. */
+void
+zsessiond_greeter_go(
+	struct zsessiond *daemon)
+{
+	ssize_t written;
+
+	/* Only a greeter left for zsessiond_greeter_run. */
+	if (daemon->greeter_pid <= 0)
+		return;
+
+	/* GO. */
+	written = write(daemon->greeter_socket, "GO\n", 3U);
+	zsessiond_log("ZSESSIOND HANDOFF greeter go written=%ld at_ms=%lld", (long)written, zsessiond_milliseconds());
+}
+
+/* Looks up the greeter's account.  Returns 0, or ENOENT. */
+static int
+greeter_account_find(
+	struct zsessiond_account *greeter_account)
+{
+	struct passwd *found;
+	int error;
+
+	/* The account by its name. */
+	found = NULL;
+	error = getpwnam_r(ZSESSIOND_GREETER_USER, &greeter_account->passwd, greeter_account->buffer, sizeof(greeter_account->buffer), &found);
+	if (error != 0 || found == NULL) {
+		zsessiond_log("ZSESSIOND GREETER no account=%s", ZSESSIOND_GREETER_USER);
+		return ENOENT;
+	}
+
+	/* Succeeded. */
+	return 0;
+}
+
 /* Starts the greeter as _greeter with the display and the input devices given to it. */
 static int
 greeter_start(
@@ -142,17 +327,13 @@ greeter_start(
 	struct greeter *greeter,
 	struct zsessiond_account *greeter_account)
 {
-	struct passwd *found;
 	int pair[2];
 	int error;
 
 	/* The greeter's account. */
-	found = NULL;
-	error = getpwnam_r(ZSESSIOND_GREETER_USER, &greeter_account->passwd, greeter_account->buffer, sizeof(greeter_account->buffer), &found);
-	if (error != 0 || found == NULL) {
-		zsessiond_log("ZSESSIOND GREETER no account=%s", ZSESSIOND_GREETER_USER);
-		return ENOENT;
-	}
+	error = greeter_account_find(greeter_account);
+	if (error != 0)
+		return error;
 
 	/* The seat is the greeter's while it runs. */
 	zsessiond_seat_give(greeter_account->passwd.pw_uid, greeter_account->passwd.pw_gid);
@@ -312,6 +493,14 @@ greeter_request(
 	struct zsessiond_account *account)
 {
 	int match;
+
+	/* The greeter is about to take the display: nothing holds it while no session runs. */
+	match = strcmp(line, "READY");
+	if (match == 0) {
+		zsessiond_log("ZSESSIOND HANDOFF greeter ready: go");
+		greeter_reply(greeter, "GO");
+		return;
+	}
 
 	/* A login. */
 	match = strncmp(line, "AUTH ", 5);

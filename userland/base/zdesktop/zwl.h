@@ -512,11 +512,17 @@ struct zwl_server {
 	 * login screen (greeter.c), opens no socket and asks zsessiond on
 	 * auth_fd; with --session it is a login session, which has no deadline
 	 * and ends with App Home's Log Out.  size_given: --width or --height
-	 * was given, so the display's preferred size is not used.
+	 * was given, so the display's preferred size is not used.  control_fd:
+	 * the session's descriptor to zsessiond (--control-fd, -1 for none);
+	 * handed_over: the display's hand-over (handoff.c, ws035-p101) is done;
+	 * logout_ms: when Log Out asked zsessiond for a greeter (0: it did not).
 	 */
 	unsigned greeter;
 	unsigned session;
 	int auth_fd;
+	int control_fd;
+	unsigned handed_over;
+	uint64_t logout_ms;
 	unsigned size_given;
 	unsigned failed;
 	struct zwl_input_device inputs[ZWL_INPUT_MAX];
@@ -776,6 +782,10 @@ int zwl_greeter_open(struct zwl_server *server);
 int zwl_greeter_button(struct zwl_server *server, uint32_t button, uint32_t state);
 int zwl_greeter_key(struct zwl_server *server, uint32_t key, uint32_t state);
 void zwl_greeter_tick(struct zwl_server *server);
+void zwl_handoff_wait(struct zwl_server *server);
+void zwl_handoff_release(struct zwl_server *server);
+int zwl_handoff_logout(struct zwl_server *server);
+void zwl_handoff_tick(struct zwl_server *server);
 int zwl_emit(struct zwl_client *client, uint32_t object, uint32_t opcode, const void *payload, size_t size);
 int zwl_emit_fd(struct zwl_client *client, uint32_t object, uint32_t opcode, const void *payload, size_t size, int descriptor);
 void zwl_packet_free(struct zwl_packet *packet);
