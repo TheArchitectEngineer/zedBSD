@@ -1035,7 +1035,13 @@ fm_action_transfer(
 
 	/* A task like the paste's, recorded for undo when it ends. */
 	error = actions_start(app, kind, paths, count, destination, 0);
-	return error;
+
+	/* Reports a task that could not start. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the task runs in the main loop. */
+	return 0;
 }
 
 /*
