@@ -38,6 +38,6 @@ for name in "$@"; do
 	$cc -m64 -nostdlib -pie -Wl,--no-relax -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
 		-Wl,-z,stack-size=0x100000,--allow-shlib-undefined -Wl,--dynamic-linker=/lib/ld.so \
 		"$sysroot/usr/lib/crt1.o" "$out/$name.o" $engine "$out/host-shell.o" \
-		-Lbuild/amd64/dynamic -Wl,-rpath-link,build/amd64/dynamic -l:libtruetype.so -l:libc.so -o "$out/$name"
+		-Lbuild/amd64/dynamic -Wl,-rpath-link,build/amd64/dynamic -l:libvulkan.so -l:libtruetype.so -l:libc.so -o "$out/$name"
 	echo "built $out/$name"
 done
