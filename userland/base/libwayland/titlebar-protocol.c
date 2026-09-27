@@ -47,7 +47,7 @@ static const struct wl_message titlebar_manager_requests[] = {
 
 /* Describes the global that gives windows their titlebar's presentation. */
 const struct wl_interface zed_titlebar_manager_v1_interface = {
-	"zed_titlebar_manager_v1", 1, 2, titlebar_manager_requests,
+	"zed_titlebar_manager_v1", 2, 2, titlebar_manager_requests,
 	0, NULL
 };
 
@@ -88,12 +88,13 @@ static const struct wl_message titlebar_events[] = {
 	{ "tab_close_requested", "u", titlebar_plain_types },
 	{ "new_tab_requested", "u", titlebar_plain_types },
 	{ "overflow_menu_opened", "", NULL },
+	{ "drop_target", "2uu", titlebar_plain_types },
 };
 
 /* Describes one window's titlebar presentation. */
 const struct wl_interface zed_titlebar_v1_interface = {
-	"zed_titlebar_v1", 1, 16, titlebar_requests,
-	7, titlebar_events
+	"zed_titlebar_v1", 2, 16, titlebar_requests,
+	8, titlebar_events
 };
 
 /*
@@ -117,13 +118,17 @@ zed_titlebar_manager_v1_get_titlebar(
 {
 	union wl_argument arguments[2];
 	struct wl_proxy *created;
+	uint32_t version;
 
 	/* The new titlebar's identity, then the window it belongs to. */
 	arguments[0].n = 0;
 	arguments[1].o = (struct wl_object *)toplevel;
 
+	/* The titlebar has the manager's version (2 hears drop_target), as the compositor makes it. */
+	version = wl_proxy_get_version((struct wl_proxy *)object);
+
 	/* Queues the request together with the new proxy. */
-	created = wl_proxy_marshal_array_flags((struct wl_proxy *)object, ZED_TITLEBAR_MANAGER_V1_GET_TITLEBAR, &zed_titlebar_v1_interface, 1U, 0, arguments);
+	created = wl_proxy_marshal_array_flags((struct wl_proxy *)object, ZED_TITLEBAR_MANAGER_V1_GET_TITLEBAR, &zed_titlebar_v1_interface, version, 0, arguments);
 	if (created == NULL)
 		return NULL;
 
@@ -576,6 +581,15 @@ wlc_titlebar_dispatch(
 			return 0;
 		event->delivered = 1;
 		callbacks->overflow_menu_opened(data, object);
+		return 0;
+	case 7:
+		/* A drag and drop is over a control's part, or left it (version 2); a listener without the callback ignores it. */
+		if (callbacks->drop_target == NULL)
+			return 0;
+
+		/* The callback takes the event. */
+		event->delivered = 1;
+		callbacks->drop_target(data, object, arguments[0].u, arguments[1].u);
 		return 0;
 	default:
 		break;

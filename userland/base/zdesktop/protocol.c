@@ -50,7 +50,7 @@ static const struct zwl_global globals[] = {
 	{ 10, "zxdg_decoration_manager_v1", 1, ZWL_DECORATION_MANAGER },
 	{ 11, "wp_cursor_shape_manager_v1", 1, ZWL_CURSOR_SHAPE_MANAGER },
 	{ 12, "wp_viewporter", 1, ZWL_VIEWPORTER },
-	{ 16, "zed_titlebar_manager_v1", 1, ZWL_TITLEBAR_MANAGER },
+	{ 16, "zed_titlebar_manager_v1", 2, ZWL_TITLEBAR_MANAGER },
 	{ 17, "zed_glass_manager_v1", 1, ZWL_GLASS_MANAGER },
 };
 
@@ -71,6 +71,7 @@ static int factory_alpha(struct zwl_object *factory, const unsigned char *bytes,
 static void commit_fence(struct zwl_object *surface, unsigned attached);
 static void commit_damage(struct zwl_object *surface);
 static int send_bounds(struct zwl_object *surface);
+static void window_bounds(struct zwl_server *server, int32_t *width, int32_t *height);
 
 /*
  * Dispatches one validated frame through its client-local interface identity.
@@ -1163,6 +1164,59 @@ factory_request(
 }
 
 /*
+ * Tells the windows of xdg-shell version 4 new bounds when the space for
+ * their bodies changed since the bounds were last sent (the glass look
+ * given up when the output opened, another output size): each configured
+ * window that is not fullscreen or docked hears configure_bounds and a
+ * configure (in which it may choose its size again).
+ */
+void
+zwl_window_bounds_refresh(
+	struct zwl_server *server)
+{
+	struct zwl_client *client;
+	struct zwl_object *surface;
+	struct zwl_object *top;
+	int32_t width;
+	int32_t height;
+	int error;
+
+	/* Unchanged bounds, or none sent yet: nothing to tell. */
+	window_bounds(server, &width, &height);
+	if (server->bounds_width == 0 || (width == server->bounds_width && height == server->bounds_height))
+		return;
+	printf("ZWL BOUNDS changed width=%d height=%d was=%dx%d\n", width, height, server->bounds_width, server->bounds_height);
+	server->bounds_width = width;
+	server->bounds_height = height;
+
+	/* Each configured window of version 4 that chooses its own size. */
+	for (client = server->clients; client != NULL; client = client->next) {
+		/* A failed client hears nothing. */
+		if (client->fatal)
+			continue;
+
+		/* Each of its windows. */
+		for (surface = client->objects; surface != NULL; surface = surface->next) {
+			/* Only a configured toplevel's surface. */
+			if (surface->kind != ZWL_SURFACE || surface->dead || surface->role == NULL || !surface->configured)
+				continue;
+			top = surface->role->top;
+			if (top == NULL || top->kind != ZWL_TOPLEVEL || top->version < 4U)
+				continue;
+
+			/* Not a fullscreen or a docked one (their size is the compositor's). */
+			if (surface->fullscreen || surface->maximized)
+				continue;
+
+			/* The bounds and a configure; a client that cannot take them is failed at its next request. */
+			error = zwl_window_send_configure(surface);
+			if (error != 0)
+				printf("ZWL BOUNDS configure errno=%d\n", error);
+		}
+	}
+}
+
+/*
  * Sends a toplevel's configure: the output's size and the fullscreen and
  * activated states for a fullscreen window; otherwise its size before
  * fullscreen, or 0x0 (the client chooses), and activated.  The xdg_surface
@@ -1259,10 +1313,7 @@ send_bounds(
 
 	/* The space the look leaves for a body. */
 	server = surface->client->server;
-	width = (int32_t)server->width;
-	height = (int32_t)server->height;
-	if (server->glass)
-		zwl_glass_space(server, &width, &height);
+	window_bounds(server, &width, &height);
 
 	/* The width and the height, in that order. */
 	bounds[0] = width;
@@ -1271,9 +1322,29 @@ send_bounds(
 	if (error != 0)
 		return error;
 
+	/* The bounds the windows know now. */
+	server->bounds_width = width;
+	server->bounds_height = height;
+
 	/* Succeeded. */
 	printf("ZWL BOUNDS client=%llu surface=%u width=%d height=%d\n", (unsigned long long)surface->client->number, surface->id, width, height);
 	return 0;
+}
+
+/* Gives the space the look leaves for a window's body: under the system bar and a floating title bar in the glass look, the output otherwise. */
+static void
+window_bounds(
+	struct zwl_server *server,
+	int32_t *width,
+	int32_t *height)
+{
+	/* The output. */
+	*width = (int32_t)server->width;
+	*height = (int32_t)server->height;
+
+	/* Less the glass look's bars and margins (shell.c). */
+	if (server->glass)
+		zwl_glass_space(server, width, height);
 }
 
 /* Adds a rectangle to a surface's pending damage (their bounding box). */

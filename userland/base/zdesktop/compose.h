@@ -134,7 +134,7 @@ struct zwl_compose {
 	VkImageView views[ZWL_SWAPCHAIN_MAX];
 	VkFramebuffer framebuffers[ZWL_SWAPCHAIN_MAX];
 	VkSemaphore rendered[ZWL_SWAPCHAIN_MAX];
-	struct zwl_object *held[ZWL_FRAME_WINDOWS + 1U];
+	struct zwl_object *held[ZWL_FRAME_WINDOWS + 2U];
 	struct zwl_object *callbacks;
 	unsigned held_count;
 	unsigned in_flight;
@@ -180,6 +180,7 @@ void zwl_host_image_release(struct zwl_compose *compose, struct zwl_import *impo
 int zwl_glass_open(struct zwl_server *server);
 void zwl_glass_close(struct zwl_server *server);
 void zwl_glass_draw(struct zwl_server *server, VkCommandBuffer command, struct zwl_object **windows, unsigned count);
+void zwl_glass_draw_drag_badge(struct zwl_server *server, VkCommandBuffer command);
 
 /* Descriptor sets of the image layout, reused rather than freed (compose.c). */
 VkResult zwl_compose_set_get(struct zwl_compose *compose, VkDescriptorSet *result);

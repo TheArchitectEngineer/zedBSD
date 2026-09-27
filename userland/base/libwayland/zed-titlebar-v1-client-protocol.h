@@ -80,6 +80,9 @@ struct zed_titlebar_v1_listener {
 	void (*tab_close_requested)(void *data, struct zed_titlebar_v1 *object, uint32_t id);
 	void (*new_tab_requested)(void *data, struct zed_titlebar_v1 *object, uint32_t serial);
 	void (*overflow_menu_opened)(void *data, struct zed_titlebar_v1 *object);
+
+	/* Version 2: a drag and drop is over a part of a control (id 0: over none of them now). */
+	void (*drop_target)(void *data, struct zed_titlebar_v1 *object, uint32_t id, uint32_t detail);
 };
 int zed_titlebar_v1_add_listener(struct zed_titlebar_v1 *object, const struct zed_titlebar_v1_listener *listener, void *data);
 void zed_titlebar_v1_destroy(struct zed_titlebar_v1 *object);

@@ -59,6 +59,9 @@
 #define KEYBOARD_REPEAT_VERSION		4U
 #define RELEASE_VERSION			3U
 #define SEAT_RELEASE_VERSION		5U
+
+/* Esc (evdev), which gives up a drag and drop. */
+#define SEAT_KEY_ESC			1U
 #define SEAT_NAME_VERSION		2U
 
 /* Protocol enumeration values used on the wire. */
@@ -433,6 +436,12 @@ zwl_seat_motion(
 	uint32_t words[3];
 	int taken;
 
+	/* A drag and drop has the pointer (data.c). */
+	if (server->dnd_active) {
+		zwl_data_drag_motion(server, time);
+		return;
+	}
+
 	/* A window being resized follows the pointer (toplevel.c). */
 	taken = zwl_toplevel_motion(server);
 	if (taken)
@@ -492,6 +501,13 @@ zwl_seat_button(
 		server->buttons_down |= bit;
 	} else {
 		server->buttons_down &= ~bit;
+	}
+
+	/* A drag and drop takes the buttons; the release of the last one ends it (data.c). */
+	if (server->dnd_active) {
+		if (state == 0U && server->buttons_down == 0U)
+			zwl_data_drag_release(server);
+		return;
 	}
 
 	/* A window being resized takes the buttons until the release ends the resize (toplevel.c). */
@@ -559,6 +575,10 @@ zwl_seat_axis(
 	uint32_t words[3];
 	uint32_t word;
 	int taken;
+
+	/* The wheel does nothing during a drag and drop. */
+	if (server->dnd_active)
+		return;
 
 	/* App Home, while it shows, turns its pages with the wheel. */
 	taken = zwl_home_axis(server, vertical, horizontal);
@@ -676,8 +696,15 @@ zwl_seat_key(
 	 * open menu (menu-shell.c), then a titlebar's text field with the
 	 * keyboard (titlebar-shell.c); zdesktop's shortcuts come next
 	 * (shell.c), then the focused window's menu: F10 and its shortcuts,
-	 * then the keys of its tabs (titlebar-shell.c).
+	 * then the keys of its tabs (titlebar-shell.c).  Esc gives up a drag
+	 * and drop first (data.c).
 	 */
+	if (server->dnd_active && key == SEAT_KEY_ESC && state != 0U) {
+		zwl_data_drag_cancel(server);
+		return;
+	}
+
+	/* The glass look's own keys, in that order. */
 	if (server->glass) {
 		taken = zwl_home_key(server, key, state);
 		if (taken)

@@ -634,6 +634,58 @@ zwl_glass_window_at(
 }
 
 /*
+ * Finds the window whose body (its image, not its titlebar) is on top at a
+ * point in the glass look; NULL for none (a drag and drop's target,
+ * data.c).
+ */
+struct zwl_object *
+zwl_glass_body_at(
+	struct zwl_server *server,
+	int32_t x,
+	int32_t y)
+{
+	struct zwl_object *surface;
+	enum shell_hit hit;
+
+	/* The same search a press makes; only a body counts. */
+	surface = window_at(server, x, y, &hit);
+	if (hit != HIT_BODY)
+		return NULL;
+
+	/* Succeeded: the window. */
+	return surface;
+}
+
+/*
+ * Draws zdesktop's badge of a drag and drop without an icon of its own
+ * (data.c): a small white page below and right of the pointer, with an
+ * outline and two lines of text, so the user sees something being carried.
+ */
+void
+zwl_glass_draw_drag_badge(
+	struct zwl_server *server,
+	VkCommandBuffer command)
+{
+	static const float edge[4] = { 0.12f, 0.16f, 0.24f, 0.35f };
+	static const float page[4] = { 1.0f, 1.0f, 1.0f, 0.97f };
+	static const float line[4] = { 0.25f, 0.52f, 0.98f, 0.75f };
+	float x;
+	float y;
+
+	/* Below and right of the pointer, clear of the arrow. */
+	x = (float)server->pointer_x + 14.0f;
+	y = (float)server->pointer_y + 16.0f;
+
+	/* The page: its outline, then its face. */
+	glass_draw_solid(server, command, x - 1.0f, y - 1.0f, 24.0f, 30.0f, 5.0f, edge);
+	glass_draw_solid(server, command, x, y, 22.0f, 28.0f, 4.0f, page);
+
+	/* Two lines of text on it. */
+	glass_draw_solid(server, command, x + 5.0f, y + 8.0f, 12.0f, 2.0f, 1.0f, line);
+	glass_draw_solid(server, command, x + 5.0f, y + 14.0f, 9.0f, 2.0f, 1.0f, line);
+}
+
+/*
  * Tells whether the glass look is still (ws035-p055): nothing moves or
  * fades by itself -- no window animation, move, pull or drag, no Home or
  * Wiseview, no desktop sliding, no see-through bodies -- so that a change
@@ -647,8 +699,8 @@ zwl_glass_still(
 	float home;
 	unsigned open;
 
-	/* Something moves. */
-	if (server->anim != NULL || server->drag != NULL || server->pull != NULL)
+	/* Something moves (a drag and drop's icon or badge too). */
+	if (server->anim != NULL || server->drag != NULL || server->pull != NULL || server->dnd_active)
 		return 0;
 	if (server->desktop_moving || server->desktop_dragging)
 		return 0;

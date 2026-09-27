@@ -38,8 +38,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus). */
-#define ZDESKTOP_VERSION	6U
+/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar). */
+#define ZDESKTOP_VERSION	7U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -342,6 +342,13 @@ struct zdesktop_titlebar;
  * asks to close the active tab when it is closable (tab_close_requested),
  * and Ctrl+T asks for a new one when the strip has the new-tab button
  * (new_tab_requested).
+ *
+ * drop_target (ZDESKTOP_VERSION 7): while a drag and drop (wl_data_device)
+ * is over a part of a breadcrumb in the titlebar, zdesktop makes the
+ * window's surface the drag's target (its data device hears enter, motion
+ * and drop at the pointer's place, above the surface) and tells the part
+ * here first (id and detail as for control_activated); id 0 says the drag
+ * is over none of the controls now.  A drop then goes to that part's folder.
  */
 struct zdesktop_titlebar_listener {
 	void (*control_activated)(void *data, struct zdesktop_titlebar *titlebar, uint32_t id, uint32_t detail, struct wl_seat *seat, uint32_t serial);
@@ -351,6 +358,7 @@ struct zdesktop_titlebar_listener {
 	void (*tab_close_requested)(void *data, struct zdesktop_titlebar *titlebar, uint32_t id);
 	void (*new_tab_requested)(void *data, struct zdesktop_titlebar *titlebar, uint32_t serial);
 	void (*overflow_menu_opened)(void *data, struct zdesktop_titlebar *titlebar);
+	void (*drop_target)(void *data, struct zdesktop_titlebar *titlebar, uint32_t id, uint32_t detail);
 };
 
 /*
