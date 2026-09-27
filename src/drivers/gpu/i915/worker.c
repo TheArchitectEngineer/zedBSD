@@ -780,6 +780,8 @@ drv_i915_worker_engine_recover(
 		if (engine->slots[index].session == session && engine->slots[index].state < 6U)
 			states[engine->slots[index].state]++;
 	}
+
+	/* Fails them. */
 	drv_i915_request_fail(engine, session, error, &retired);
 
 	/* The rest is done without the lock. */
