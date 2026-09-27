@@ -234,6 +234,7 @@ gles_garbage_destroy(
 	const struct gles_garbage *objects)
 {
 	VkDevice device;
+	unsigned index;
 
 	/* Views before images, objects before their memory. */
 	device = state->device;
@@ -245,12 +246,12 @@ gles_garbage_destroy(
 		vkDestroyPipelineLayout(device, objects->layout, NULL);
 	if (objects->set_layout != VK_NULL_HANDLE)
 		vkDestroyDescriptorSetLayout(device, objects->set_layout, NULL);
-	if (objects->modules[0] != VK_NULL_HANDLE)
-		vkDestroyShaderModule(device, objects->modules[0], NULL);
-	if (objects->modules[1] != VK_NULL_HANDLE)
-		vkDestroyShaderModule(device, objects->modules[1], NULL);
-	if (objects->modules[2] != VK_NULL_HANDLE)
-		vkDestroyShaderModule(device, objects->modules[2], NULL);
+	for (index = 0U; index < sizeof(objects->modules) / sizeof(objects->modules[0]); index++) {
+		if (objects->modules[index] != VK_NULL_HANDLE)
+			vkDestroyShaderModule(device, objects->modules[index], NULL);
+	}
+
+	/* A framebuffer object's framebuffer and pass. */
 	if (objects->framebuffer != VK_NULL_HANDLE)
 		vkDestroyFramebuffer(device, objects->framebuffer, NULL);
 	if (objects->pass != VK_NULL_HANDLE)

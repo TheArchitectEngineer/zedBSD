@@ -79,6 +79,8 @@ static int texture_mipmaps_kept(struct gles_texture *texture, unsigned face, GLi
 static void texture_views_free(struct gles_state *state, struct gles_texture *texture);
 static int texture_buffer_format(GLenum internal, VkFormat *format, unsigned *bytes, unsigned *kind);
 static VkBufferView texture_black_buffer(struct gles_state *state, unsigned kind);
+static int texture_clear_samples(struct gles_state *state, VkImage image, VkImageAspectFlags aspects, const struct gles_format *format);
+static void texture_multisample(GLenum target, GLsizei samples, GLenum internalformat, GLsizei width, GLsizei height, GLboolean fixedsamplelocations, int immutable);
 static void texture_opaque(const struct gles_format *format, VkComponentMapping *components);
 static unsigned char *texture_convert(struct zegl_context *context, GLenum format, GLenum type, GLsizei width, GLsizei height, const void *pixels);
 static unsigned char *texture_texels(struct zegl_context *context, const struct gles_format *storage, GLenum format, GLenum type, GLsizei width, GLsizei height, GLsizei depth, const void *pixels);
@@ -194,7 +196,7 @@ gles_texture_sync(
 	/* Its levels and layers, sampled and copied. */
 	create.mipLevels = levels;
 	create.arrayLayers = layers;
-	create.samples = VK_SAMPLE_COUNT_1_BIT;
+	create.samples = (VkSampleCountFlagBits)texture->samples;
 	create.tiling = VK_IMAGE_TILING_OPTIMAL;
 	create.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 	create.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
@@ -256,6 +258,26 @@ gles_texture_sync(
 		vkDestroyImage(state->device, image, NULL);
 		vkFreeMemory(state->device, memory, NULL);
 		return -1;
+	}
+
+	/* A multisample texture has no texels on the CPU: its image is cleared to zero instead. */
+	if (texture->samples > 1U) {
+		status = texture_clear_samples(state, image, whole_aspect, format);
+		if (status != 0) {
+			gles_throw_away(state, VK_NULL_HANDLE, image, image_view, memory);
+			return -1;
+		}
+
+		/* The new image replaces the old one. */
+		gles_throw_away(state, VK_NULL_HANDLE, texture->image, texture->view, texture->memory);
+		texture_views_free(state, texture);
+		texture->image = image;
+		texture->memory = memory;
+		texture->view = image_view;
+		texture->level_count = 1U;
+		texture->image_format = format;
+		texture->dirty = 0;
+		return 0;
 	}
 
 	/* The staging buffer with the levels one after another. */
@@ -634,6 +656,44 @@ gles_texture_buffer_view(
 }
 
 /*
+ * Returns the multisample texture of a kind (0 float, 1 int, 2 unsigned)
+ * a multisample sampler reads where its unit has none: one zero texel of
+ * the device's smallest multisample count, made at the first use; NULL
+ * when it cannot be made.
+ */
+struct gles_texture *
+gles_texture_black_ms(
+	struct gles_state *state,
+	unsigned kind)
+{
+	static const GLenum internals[3] = { GL_RGBA8, GL_RGBA8I, GL_RGBA8UI };
+	const struct gles_format *format;
+	struct gles_texture *texture;
+
+	/* Made once per kind. */
+	if (kind > 2U)
+		kind = 0U;
+	if (state->black_ms[kind] != NULL)
+		return state->black_ms[kind];
+
+	/* The kind's format. */
+	format = gles_format_renderable(state, internals[kind]);
+	if (format == NULL)
+		return NULL;
+
+	/* The texture: one texel of the fewest samples, cleared when its image is made. */
+	texture = texture_new(0U, GL_TEXTURE_2D_MULTISAMPLE);
+	if (texture == NULL)
+		return NULL;
+	texture->samples = gles_samples_for(state, 2U);
+	texture_level_set(texture, 0U, 0, 1, 1, 1, NULL, format);
+
+	/* Succeeded: the texture, kept. */
+	state->black_ms[kind] = texture;
+	return texture;
+}
+
+/*
  * Frees a texture; its device image waits for the frame.
  */
 void
@@ -737,11 +797,13 @@ gles_texture_attach_view(
 	if (entry == NULL)
 		return VK_NULL_HANDLE;
 
-	/* A 2D view of the level and layer, every aspect the format draws. */
+	/* A 2D view of the level and layer (a 2D array view of every layer for GLES_LAYER_ALL), every aspect the format draws. */
 	memset(&create, 0, sizeof(create));
 	create.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 	create.image = texture->image;
 	create.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	if (layer == GLES_LAYER_ALL)
+		create.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
 	create.format = texture->image_format->vk;
 	create.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	if (texture->image_format->kind == GLES_TEXEL_DEPTH)
@@ -752,6 +814,12 @@ gles_texture_attach_view(
 	create.subresourceRange.levelCount = 1U;
 	create.subresourceRange.baseArrayLayer = layer;
 	create.subresourceRange.layerCount = 1U;
+	if (layer == GLES_LAYER_ALL) {
+		create.subresourceRange.baseArrayLayer = 0U;
+		create.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
+	}
+
+	/* The view. */
 	result = vkCreateImageView(state->device, &create, NULL, &entry->view);
 	if (result != VK_SUCCESS) {
 		free(entry);
@@ -876,6 +944,8 @@ glDeleteTextures(
 				state->rect_units[unit] = NULL;
 			if (state->buffer_units[unit] == texture)
 				state->buffer_units[unit] = NULL;
+			if (state->ms_units[unit] == texture)
+				state->ms_units[unit] = NULL;
 		}
 
 		/* Detached from the bound framebuffer object; the name and the texture go (its image waits for the frame). */
@@ -915,6 +985,7 @@ glBindTexture(
 		break;
 	case GL_TEXTURE_RECTANGLE:
 	case GL_TEXTURE_BUFFER:
+	case GL_TEXTURE_2D_MULTISAMPLE:
 		if (gles_fixed != NULL)
 			break;
 		gles_error(context, GL_INVALID_ENUM);
@@ -969,6 +1040,9 @@ glBindTexture(
 		break;
 	case GL_TEXTURE_BUFFER:
 		state->buffer_units[state->active_unit] = texture;
+		break;
+	case GL_TEXTURE_2D_MULTISAMPLE:
+		state->ms_units[state->active_unit] = texture;
 		break;
 	default:
 		state->units[state->active_unit] = texture;
@@ -1990,6 +2064,40 @@ glTexBuffer(
 }
 
 /*
+ * Gives the bound multisample texture storage of a format and samples a
+ * pixel (desktop GL 3.2, libGL); its samples start at zero.
+ */
+GL_APICALL void GL_APIENTRY
+glTexImage2DMultisample(
+	GLenum target,
+	GLsizei samples,
+	GLenum internalformat,
+	GLsizei width,
+	GLsizei height,
+	GLboolean fixedsamplelocations)
+{
+	/* Storage that may be given again. */
+	texture_multisample(target, samples, internalformat, width, height, fixedsamplelocations, 0);
+}
+
+/*
+ * Gives the bound multisample texture storage that cannot change (GL
+ * 4.3's, taken with the 3.2 call's rules).
+ */
+GL_APICALL void GL_APIENTRY
+glTexStorage2DMultisample(
+	GLenum target,
+	GLsizei samples,
+	GLenum internalformat,
+	GLsizei width,
+	GLsizei height,
+	GLboolean fixedsamplelocations)
+{
+	/* Immutable storage. */
+	texture_multisample(target, samples, internalformat, width, height, fixedsamplelocations, 1);
+}
+
+/*
  * Reports whether a name is a texture.
  */
 GL_APICALL GLboolean GL_APIENTRY
@@ -2481,6 +2589,15 @@ texture_new(
 	texture->swizzle[1] = GL_GREEN;
 	texture->swizzle[2] = GL_BLUE;
 	texture->swizzle[3] = GL_ALPHA;
+
+	/* One sample a pixel until a multisample texture is given more. */
+	texture->samples = 1U;
+
+	/* A multisample texture has one level, read without filters. */
+	if (target == GL_TEXTURE_2D_MULTISAMPLE) {
+		texture->sampling.min_filter = GL_NEAREST;
+		texture->sampling.mag_filter = GL_NEAREST;
+	}
 
 	/* A rectangle texture has one level, filtered linearly, clamped to its edges. */
 	if (target == GL_TEXTURE_RECTANGLE) {
@@ -3616,4 +3733,141 @@ texture_black_buffer(
 
 	/* Succeeded: the view. */
 	return state->black_buffer_views[kind];
+}
+
+/*
+ * Clears a new multisample image to zero (every aspect of a depth one) on
+ * the upload queue and leaves it ready to be sampled or drawn into.
+ * Returns 0, or -1 when the upload failed.
+ */
+static int
+texture_clear_samples(
+	struct gles_state *state,
+	VkImage image,
+	VkImageAspectFlags aspects,
+	const struct gles_format *format)
+{
+	VkImageMemoryBarrier barrier;
+	VkClearColorValue colour;
+	VkClearDepthStencilValue depth;
+	VkImageSubresourceRange range;
+	int status;
+
+	/* The upload's command buffer. */
+	status = gles_upload_begin(state);
+	if (status != 0)
+		return -1;
+
+	/* Ready to be written. */
+	memset(&range, 0, sizeof(range));
+	range.aspectMask = aspects;
+	range.levelCount = 1U;
+	range.layerCount = 1U;
+	memset(&barrier, 0, sizeof(barrier));
+	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+	barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.image = image;
+	barrier.subresourceRange = range;
+	vkCmdPipelineBarrier(state->upload, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0U, 0U, NULL, 0U, NULL, 1U, &barrier);
+
+	/* Zero, as a colour or a depth. */
+	memset(&colour, 0, sizeof(colour));
+	memset(&depth, 0, sizeof(depth));
+	if (format->kind == GLES_TEXEL_DEPTH) {
+		vkCmdClearDepthStencilImage(state->upload, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &depth, 1U, &range);
+	} else {
+		vkCmdClearColorImage(state->upload, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &colour, 1U, &range);
+	}
+
+	/* Ready to be sampled. */
+	barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+	barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+	barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+	barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	vkCmdPipelineBarrier(state->upload, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, 0U, 0U, NULL, 0U, NULL, 1U, &barrier);
+
+	/* Submitted and waited for. */
+	status = gles_upload_end(state);
+	if (status != 0)
+		return -1;
+
+	/* Succeeded: the image is zero. */
+	return 0;
+}
+
+/*
+ * Gives the bound multisample texture storage (glTexImage2DMultisample,
+ * glTexStorage2DMultisample): a colour format framebuffers draw into, or a
+ * depth one; the samples rounded up to a count the device has.
+ */
+static void
+texture_multisample(
+	GLenum target,
+	GLsizei samples,
+	GLenum internalformat,
+	GLsizei width,
+	GLsizei height,
+	GLboolean fixedsamplelocations,
+	int immutable)
+{
+	struct zegl_context *context;
+	struct gles_state *state;
+	struct gles_texture *texture;
+	const struct gles_format *format;
+	uint32_t count;
+	uint32_t most;
+
+	/* A context with its state, the multisample target, and a texture bound (desktop GL). */
+	context = gles_context();
+	state = gles_state(context);
+	if (state == NULL)
+		return;
+	if (target != GL_TEXTURE_2D_MULTISAMPLE || gles_fixed == NULL) {
+		gles_error(context, GL_INVALID_ENUM);
+		return;
+	}
+
+	/* The unit's multisample texture, not fixed already. */
+	texture = state->ms_units[state->active_unit];
+	if (texture == NULL || texture->immutable) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return;
+	}
+
+	/* Samples there can be. */
+	most = gles_samples_max(state);
+	if (samples < 1 || (uint32_t)samples > most) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return;
+	}
+
+	/* A size there can be. */
+	if (width < 1 ||
+	    height < 1 ||
+	    width > (GLsizei)state->limits.maxImageDimension2D ||
+	    height > (GLsizei)state->limits.maxImageDimension2D) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* A format a framebuffer draws into. */
+	format = gles_format_renderable(state, internalformat);
+	if (format == NULL) {
+		gles_error(context, GL_INVALID_ENUM);
+		return;
+	}
+
+	/* The device's count, at least the samples asked for. */
+	count = gles_samples_for(state, (uint32_t)samples);
+
+	/* Succeeded: level 0 without texels on the CPU, of the samples; the image is made (zero) at the next use. */
+	texture_level_set(texture, 0U, 0, width, height, 1, NULL, format);
+	texture->samples = count;
+	texture->fixed_locations = fixedsamplelocations;
+	texture->immutable = immutable;
+	texture->immutable_levels = 1;
 }

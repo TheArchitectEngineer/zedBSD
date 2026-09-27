@@ -55,7 +55,8 @@ static uint64_t program_serial = 1U;
 static struct gles_shader *program_shader(struct zegl_context *context, GLuint name);
 static struct gles_program *program_get(struct zegl_context *context, GLuint name);
 static int program_link(struct gles_state *state, struct gles_program *program, char *log);
-static int program_link_code(struct gles_state *state, struct gles_program *program, const uint32_t *vertex_input, size_t vertex_words, const uint32_t *fragment_input, size_t fragment_words, char *log);
+static int program_link_code(struct gles_state *state, struct gles_program *program, const uint32_t *vertex_input, size_t vertex_words, const uint32_t *fragment_input, size_t fragment_words, const uint32_t *geometry_input, size_t geometry_words, char *log);
+static int program_link_geometry(struct gles_state *state, struct gles_program *program, const uint32_t *code, size_t words, char *log);
 static int program_link_glsl(struct gles_program *program, struct glsl_program *linked, char *log);
 static void program_glsl_captures(struct gles_program *program, const struct glsl_program *linked);
 static void program_glsl_types(struct gles_program *program, const struct glsl_program *linked);
@@ -107,6 +108,15 @@ gles_program_release(
 		}
 	}
 
+	/* And the geometry shader. */
+	if (program->geometry != NULL) {
+		program->geometry->attached--;
+		if (program->geometry->delete_pending && program->geometry->attached == 0U) {
+			gles_names_remove(&state->objects, program->geometry->name);
+			gles_shader_release(program->geometry);
+		}
+	}
+
 	/* The program. */
 	free(program->log);
 	free(program);
@@ -144,7 +154,9 @@ glCreateShader(
 	state = gles_state(context);
 	if (state == NULL)
 		return 0U;
-	if (type != GL_VERTEX_SHADER && type != GL_FRAGMENT_SHADER) {
+	if (type != GL_VERTEX_SHADER &&
+	    type != GL_FRAGMENT_SHADER &&
+	    (type != GL_GEOMETRY_SHADER || gles_fixed == NULL)) {
 		gles_error(context, GL_INVALID_ENUM);
 		return 0U;
 	}
@@ -306,6 +318,8 @@ glCompileShader(
 	stage = GLSL_STAGE_VERTEX;
 	if (shader->type == GL_FRAGMENT_SHADER)
 		stage = GLSL_STAGE_FRAGMENT;
+	if (shader->type == GL_GEOMETRY_SHADER)
+		stage = GLSL_STAGE_GEOMETRY;
 	version = PROGRAM_ES_VERSION;
 	if (gles_fixed != NULL)
 		version = PROGRAM_DESKTOP_VERSION;
@@ -654,6 +668,8 @@ glAttachShader(
 	slot = &program->fragment;
 	if (shader->type == GL_VERTEX_SHADER)
 		slot = &program->vertex;
+	if (shader->type == GL_GEOMETRY_SHADER)
+		slot = &program->geometry;
 	if (*slot != NULL) {
 		gles_error(context, GL_INVALID_OPERATION);
 		return;
@@ -692,6 +708,8 @@ glDetachShader(
 		program->vertex = NULL;
 	} else if (program->fragment == shader) {
 		program->fragment = NULL;
+	} else if (program->geometry == shader) {
+		program->geometry = NULL;
 	} else {
 		gles_error(context, GL_INVALID_OPERATION);
 		return;
@@ -835,6 +853,30 @@ glGetProgramiv(
 			*params += 1;
 		if (program->fragment != NULL)
 			*params += 1;
+		if (program->geometry != NULL)
+			*params += 1;
+		return;
+	case GL_GEOMETRY_VERTICES_OUT:
+	case GL_GEOMETRY_INPUT_TYPE:
+	case GL_GEOMETRY_OUTPUT_TYPE:
+		/* A linked program's geometry shader's (desktop GL, libGL). */
+		if (gles_fixed == NULL) {
+			gles_error(context, GL_INVALID_ENUM);
+			return;
+		}
+
+		/* Linked with a geometry shader. */
+		if (!program->linked || program->geometry_module == VK_NULL_HANDLE) {
+			gles_error(context, GL_INVALID_OPERATION);
+			return;
+		}
+
+		/* The most vertices, or a primitive. */
+		*params = program->geometry_vertices;
+		if (pname == GL_GEOMETRY_INPUT_TYPE)
+			*params = (GLint)program->geometry_input;
+		if (pname == GL_GEOMETRY_OUTPUT_TYPE)
+			*params = (GLint)program->geometry_output;
 		return;
 	case GL_ACTIVE_ATTRIBUTES:
 		*params = (GLint)program->attribute_count;
@@ -967,6 +1009,8 @@ glGetAttachedShaders(
 		shaders[found++] = program->vertex->name;
 	if (program->fragment != NULL && found < maxCount)
 		shaders[found++] = program->fragment->name;
+	if (program->geometry != NULL && found < maxCount)
+		shaders[found++] = program->geometry->name;
 	if (count != NULL)
 		*count = found;
 }
@@ -2214,6 +2258,9 @@ program_link(
 	char *log)
 {
 	struct glsl_program linked;
+	unsigned input;
+	unsigned output;
+	unsigned vertices;
 	int status;
 
 	/* Two compiled shaders. */
@@ -2222,16 +2269,22 @@ program_link(
 		return -1;
 	}
 
-	/* Both compiled. */
+	/* Both compiled, and a geometry shader too (GLSL only). */
 	if (!program->vertex->compiled || !program->fragment->compiled) {
 		(void)snprintf(log, PROGRAM_LOG, "a shader of the program is not compiled\n");
 		return -1;
 	}
 
+	/* A geometry shader compiled from GLSL. */
+	if (program->geometry != NULL && (!program->geometry->compiled || program->geometry->glsl == NULL)) {
+		(void)snprintf(log, PROGRAM_LOG, "the geometry shader is not compiled GLSL\n");
+		return -1;
+	}
+
 	/* Two binaries are linked as they are. */
-	if (program->vertex->glsl == NULL && program->fragment->glsl == NULL) {
+	if (program->vertex->glsl == NULL && program->fragment->glsl == NULL && program->geometry == NULL) {
 		status = program_link_code(state, program, program->vertex->code, program->vertex->words, program->fragment->code,
-					   program->fragment->words, log);
+					   program->fragment->words, NULL, 0U, log);
 		return status;
 	}
 
@@ -2241,8 +2294,20 @@ program_link(
 		return -1;
 	program_glsl_captures(program, &linked);
 
+	/* A geometry shader's primitives and most vertices, as GL names them. */
+	program->geometry_input = GL_NONE;
+	program->geometry_output = GL_NONE;
+	program->geometry_vertices = 0;
+	if (program->geometry != NULL) {
+		glsl_geometry_layout(program->geometry->glsl, &input, &output, &vertices);
+		program->geometry_input = input;
+		program->geometry_output = output;
+		program->geometry_vertices = (GLint)vertices;
+	}
+
 	/* The SPIR-V linked, then the uniforms' GL types the SPIR-V does not tell, then the named blocks' members. */
-	status = program_link_code(state, program, linked.code[0], linked.words[0], linked.code[1], linked.words[1], log);
+	status = program_link_code(state, program, linked.code[0], linked.words[0], linked.code[1], linked.words[1],
+				   linked.code[GLSL_STAGE_GEOMETRY], linked.words[GLSL_STAGE_GEOMETRY], log);
 	if (status == 0)
 		program_glsl_types(program, &linked);
 	if (status == 0)
@@ -2269,6 +2334,7 @@ program_link_glsl(
 {
 	struct glsl_binding bindings[GLES_ATTRIBS];
 	const char *captures[GLES_CAPTURES];
+	const struct glsl_shader *geometry;
 	unsigned index;
 	char *glsl_log;
 	int status;
@@ -2289,9 +2355,12 @@ program_link_glsl(
 	for (index = 0U; index < program->feedback_count; index++)
 		captures[index] = program->feedback_names[index];
 
-	/* The compiler's link. */
-	status = glsl_link_captured(program->vertex->glsl, program->fragment->glsl, bindings, program->bound_count, captures,
-				    program->feedback_count, linked, &glsl_log);
+	/* The compiler's link (with the geometry shader between the two when there is one). */
+	geometry = NULL;
+	if (program->geometry != NULL)
+		geometry = program->geometry->glsl;
+	status = glsl_link_stages(program->vertex->glsl, geometry, program->fragment->glsl, bindings, program->bound_count,
+				  captures, program->feedback_count, linked, &glsl_log);
 	if (status != 0) {
 		if (glsl_log != NULL) {
 			(void)snprintf(log, PROGRAM_LOG, "%s", glsl_log);
@@ -2413,6 +2482,12 @@ program_sampler_type(
 		if (info->base == GLSL_INFO_UINT)
 			return GL_UNSIGNED_INT_SAMPLER_BUFFER;
 		return GL_SAMPLER_BUFFER;
+	case GLSL_SAMPLER_MS:
+		if (info->base == GLSL_INFO_INT)
+			return GL_INT_SAMPLER_2D_MULTISAMPLE;
+		if (info->base == GLSL_INFO_UINT)
+			return GL_UNSIGNED_INT_SAMPLER_2D_MULTISAMPLE;
+		return GL_SAMPLER_2D_MULTISAMPLE;
 	case GLSL_SAMPLER_CUBE:
 		if (info->base == GLSL_INFO_INT)
 			return GL_INT_SAMPLER_CUBE;
@@ -2573,9 +2648,11 @@ program_spirv_blocks(
 }
 
 /*
- * Links SPIR-V of the two stages: the interfaces, the attribute and
- * varying locations, gl_Position made Vulkan's, the uniforms, the shader
- * modules and the layouts.  Returns 0, or -1 with the log.
+ * Links SPIR-V of the two stages (and of a geometry stage between them,
+ * NULL for none): the interfaces, the attribute and varying locations,
+ * gl_Position made Vulkan's (in the last stage before the rasterizer),
+ * the uniforms, the shader modules and the layouts.  Returns 0, or -1
+ * with the log.
  */
 static int
 program_link_code(
@@ -2585,6 +2662,8 @@ program_link_code(
 	size_t vertex_words,
 	const uint32_t *fragment_input,
 	size_t fragment_words,
+	const uint32_t *geometry_input,
+	size_t geometry_words,
 	char *log)
 {
 	struct gles_spirv vertex;
@@ -2678,8 +2757,8 @@ program_link_code(
 		}
 	}
 
-	/* Each fragment input takes the location of the vertex output of its name. */
-	for (index = 0U; index < fragment.input_count; index++) {
+	/* Each fragment input takes the location of the vertex output of its name (the GLSL link located them past a geometry stage). */
+	for (index = 0U; index < fragment.input_count && geometry_input == NULL; index++) {
 		input = &fragment.inputs[index];
 		for (other = 0U; other < vertex.output_count; other++) {
 			differs = strcmp(input->name, vertex.outputs[other].name);
@@ -2703,8 +2782,14 @@ program_link_code(
 		program->attribute_count++;
 	}
 
-	/* The vertex shader's gl_Position made Vulkan's: for a window, y turned over. */
+	/* The vertex shader's gl_Position made Vulkan's: for a window, y turned over (unchanged before a geometry stage, which does it). */
 	patched = gles_spirv_position(vertex_code, vertex_words, 1, &patched_words);
+	if (geometry_input != NULL && patched != NULL) {
+		memcpy(patched, vertex_code, vertex_words * sizeof(uint32_t));
+		patched_words = vertex_words;
+	}
+
+	/* A copy that could not be made. */
 	if (patched == NULL) {
 		free(vertex_code);
 		free(fragment_code);
@@ -2716,6 +2801,12 @@ program_link_code(
 
 	/* And for a framebuffer object, whose image keeps GL's rows. */
 	patched_fbo = gles_spirv_position(vertex_code, vertex_words, 0, &patched_fbo_words);
+	if (geometry_input != NULL && patched_fbo != NULL) {
+		memcpy(patched_fbo, vertex_code, vertex_words * sizeof(uint32_t));
+		patched_fbo_words = vertex_words;
+	}
+
+	/* The code is in the copies now. */
 	free(vertex_code);
 	if (patched_fbo == NULL) {
 		free(patched);
@@ -2749,6 +2840,15 @@ program_link_code(
 		return -1;
 	}
 
+	/* The stages that read descriptors, and the geometry stage (its uniforms, blocks and modules). */
+	program->stages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+	if (geometry_input != NULL) {
+		status = program_link_geometry(state, program, geometry_input, geometry_words, log);
+		if (status != 0)
+			return -1;
+		program->stages |= VK_SHADER_STAGE_GEOMETRY_BIT;
+	}
+
 	/* The layouts. */
 	status = program_layout(state, program);
 	if (status != 0) {
@@ -2758,6 +2858,70 @@ program_link_code(
 
 	/* Succeeded: a serial of its own. */
 	program->serial = program_serial++;
+	return 0;
+}
+
+/*
+ * Links a program's geometry stage (after the vertex and the fragment
+ * stage): its named blocks and uniforms added to the program's, and its
+ * modules with gl_Position made Vulkan's at each vertex it emits (for a
+ * window and for a framebuffer object).  Returns 0, or -1 with the log.
+ */
+static int
+program_link_geometry(
+	struct gles_state *state,
+	struct gles_program *program,
+	const uint32_t *code,
+	size_t words,
+	char *log)
+{
+	struct gles_spirv geometry;
+	uint32_t *patched;
+	size_t patched_words;
+	int status;
+
+	/* Its interface, blocks and uniforms. */
+	status = gles_spirv_reflect(code, words, &geometry, log, PROGRAM_LOG);
+	if (status != 0)
+		return -1;
+	status = program_spirv_blocks(program, &geometry, GLSL_STAGE_GEOMETRY, log);
+	if (status == 0)
+		status = program_merge(program, &geometry, log);
+	gles_spirv_free(&geometry);
+	if (status != 0)
+		return -1;
+
+	/* The module for a window: y turned over. */
+	patched = gles_spirv_position(code, words, 1, &patched_words);
+	if (patched == NULL) {
+		(void)snprintf(log, PROGRAM_LOG, "the geometry shader's gl_Position could not be rewritten\n");
+		return -1;
+	}
+
+	/* Its module. */
+	status = program_module(state, patched, patched_words, &program->geometry_module);
+	free(patched);
+	if (status != 0) {
+		(void)snprintf(log, PROGRAM_LOG, "the device refused the geometry shader\n");
+		return -1;
+	}
+
+	/* And for a framebuffer object. */
+	patched = gles_spirv_position(code, words, 0, &patched_words);
+	if (patched == NULL) {
+		(void)snprintf(log, PROGRAM_LOG, "the geometry shader's gl_Position could not be rewritten\n");
+		return -1;
+	}
+
+	/* Its module. */
+	status = program_module(state, patched, patched_words, &program->geometry_module_fbo);
+	free(patched);
+	if (status != 0) {
+		(void)snprintf(log, PROGRAM_LOG, "the device refused the geometry shader\n");
+		return -1;
+	}
+
+	/* Succeeded: the geometry stage is linked. */
 	return 0;
 }
 
@@ -2875,7 +3039,7 @@ program_layout(
 		bindings[count].binding = program->uniform_binding;
 		bindings[count].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
 		bindings[count].descriptorCount = 1U;
-		bindings[count].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+		bindings[count].stageFlags = program->stages;
 		count++;
 	}
 
@@ -2891,7 +3055,7 @@ program_layout(
 		if (buffer)
 			bindings[count].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER;
 		bindings[count].descriptorCount = 1U;
-		bindings[count].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+		bindings[count].stageFlags = program->stages;
 		count++;
 	}
 
@@ -2911,7 +3075,7 @@ program_layout(
 		bindings[count].binding = program->blocks[index].binding;
 		bindings[count].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 		bindings[count].descriptorCount = 1U;
-		bindings[count].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+		bindings[count].stageFlags = program->stages;
 		count++;
 	}
 
@@ -2980,6 +3144,8 @@ program_unlink(
 	objects.modules[0] = program->vertex_module;
 	objects.modules[1] = program->fragment_module;
 	objects.modules[2] = program->vertex_module_fbo;
+	objects.modules[3] = program->geometry_module;
+	objects.modules[4] = program->geometry_module_fbo;
 	gles_garbage_keep(state, &objects);
 
 	/* The tables. */
@@ -2993,6 +3159,8 @@ program_unlink(
 	program->vertex_module = VK_NULL_HANDLE;
 	program->vertex_module_fbo = VK_NULL_HANDLE;
 	program->fragment_module = VK_NULL_HANDLE;
+	program->geometry_module = VK_NULL_HANDLE;
+	program->geometry_module_fbo = VK_NULL_HANDLE;
 	program->uniforms = NULL;
 	program->uniform_count = 0U;
 	program->locations = NULL;

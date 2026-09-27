@@ -26,46 +26,61 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* The longest list of the extensions' names, spaces between them. */
+/* The longest list of the extensions' names, spaces between them, and how many kinds of context have a list of their own. */
 #define FIXED_EXTENSIONS_LENGTH	1024U
+#define FIXED_EXTENSION_KINDS	8U
+
+/* GL's GL_CONTEXT_PROFILE_MASK bits. */
+#define FIXED_CORE_PROFILE	0x1
+#define FIXED_COMPATIBILITY_PROFILE 0x2
 
 /*
- * The extensions an OpenGL 3.x context names (WS068 p031): the ARB
- * extensions of what the translation does (GL_ARB_compatibility from
- * 3.1, the first entry).  An OpenGL 1.4 context names OpenGL ES's.
+ * One extension an OpenGL 3.x context names (WS068 p031, p033): the ARB
+ * extension of something the translation does, the first version whose
+ * contexts name it, and whether only a compatibility profile's does
+ * (GL_ARB_compatibility, from 3.1).  An OpenGL 1.4 context names OpenGL
+ * ES's.
  */
-static const char *const fixed_extensions[] = {
-	"GL_ARB_compatibility",
-	"GL_ARB_copy_buffer",
-	"GL_ARB_depth_buffer_float",
-	"GL_ARB_depth_clamp",
-	"GL_ARB_draw_elements_base_vertex",
-	"GL_ARB_draw_instanced",
-	"GL_ARB_framebuffer_object",
-	"GL_ARB_half_float_vertex",
-	"GL_ARB_instanced_arrays",
-	"GL_ARB_map_buffer_range",
-	"GL_ARB_occlusion_query2",
-	"GL_ARB_provoking_vertex",
-	"GL_ARB_sampler_objects",
-	"GL_ARB_seamless_cube_map",
-	"GL_ARB_sync",
-	"GL_ARB_texture_buffer_object",
-	"GL_ARB_texture_float",
-	"GL_ARB_texture_rectangle",
-	"GL_ARB_texture_rg",
-	"GL_ARB_texture_storage",
-	"GL_ARB_texture_swizzle",
-	"GL_ARB_uniform_buffer_object",
-	"GL_ARB_vertex_array_object"
+struct fixed_extension_entry {
+	const char *name;
+	unsigned since;
+	int compatibility;
+};
+
+/* The extensions, by name. */
+static const struct fixed_extension_entry fixed_extensions[] = {
+	{ "GL_ARB_compatibility", 31U, 1 },
+	{ "GL_ARB_copy_buffer", 30U, 0 },
+	{ "GL_ARB_depth_buffer_float", 30U, 0 },
+	{ "GL_ARB_depth_clamp", 30U, 0 },
+	{ "GL_ARB_draw_elements_base_vertex", 30U, 0 },
+	{ "GL_ARB_draw_instanced", 30U, 0 },
+	{ "GL_ARB_framebuffer_object", 30U, 0 },
+	{ "GL_ARB_half_float_vertex", 30U, 0 },
+	{ "GL_ARB_instanced_arrays", 30U, 0 },
+	{ "GL_ARB_map_buffer_range", 30U, 0 },
+	{ "GL_ARB_occlusion_query2", 30U, 0 },
+	{ "GL_ARB_provoking_vertex", 30U, 0 },
+	{ "GL_ARB_sampler_objects", 30U, 0 },
+	{ "GL_ARB_seamless_cube_map", 30U, 0 },
+	{ "GL_ARB_sync", 30U, 0 },
+	{ "GL_ARB_texture_buffer_object", 30U, 0 },
+	{ "GL_ARB_texture_float", 30U, 0 },
+	{ "GL_ARB_texture_multisample", 32U, 0 },
+	{ "GL_ARB_texture_rectangle", 30U, 0 },
+	{ "GL_ARB_texture_rg", 30U, 0 },
+	{ "GL_ARB_texture_storage", 30U, 0 },
+	{ "GL_ARB_texture_swizzle", 30U, 0 },
+	{ "GL_ARB_uniform_buffer_object", 30U, 0 },
+	{ "GL_ARB_vertex_array_object", 30U, 0 }
 };
 
 /*
- * The names of fixed_extensions joined with spaces, for an OpenGL 3.1
- * context and (without the first) a 3.0 one; made at the first
- * glGetString(GL_EXTENSIONS) and kept for the process.
+ * The names a kind of context has (fixed_extension_kind) joined with
+ * spaces, each made at its first glGetString(GL_EXTENSIONS) and kept for
+ * the process.
  */
-static char fixed_extensions_joined[FIXED_EXTENSIONS_LENGTH];
+static char fixed_extensions_joined[FIXED_EXTENSION_KINDS][FIXED_EXTENSIONS_LENGTH];
 
 static int fixed_capability(struct zegl_context *context, GLenum cap, int **flag);
 static struct gles_program *fixed_program(struct zegl_context *context, int *flat);
@@ -74,8 +89,11 @@ static const GLubyte *fixed_string(GLenum name);
 static void fixed_release(struct gles_state *state);
 static unsigned fixed_glsl_version(void);
 static int fixed_extension_count(void);
+static int fixed_core_profile(void);
 static const char *fixed_extension(GLuint index);
-static const GLubyte *fixed_extension_string(unsigned version);
+static const GLubyte *fixed_extension_string(void);
+static int fixed_extension_named(const struct fixed_extension_entry *entry, unsigned version, GLint profile);
+static unsigned fixed_extension_kind(unsigned version, GLint profile);
 static struct fixed_state *fixed_new(struct gles_state *state);
 static GLuint fixed_make_program(unsigned which, struct fixed_uniforms *uniforms);
 static GLuint fixed_shader(GLenum type, const uint32_t *code, size_t size);
@@ -96,7 +114,8 @@ static const struct gles_fixed_hooks fixed_hooks = {
 	fixed_release,
 	fixed_glsl_version,
 	fixed_extension_count,
-	fixed_extension
+	fixed_extension,
+	fixed_core_profile
 };
 
 /*
@@ -1347,6 +1366,9 @@ fixed_get(
 		(void)glx_version(&flags);
 		values[0] = (GLfloat)flags;
 		return 1U;
+	case GL_CONTEXT_PROFILE_MASK:
+		values[0] = (GLfloat)glx_profile();
+		return 1U;
 	case GL_MODELVIEW_MATRIX:
 		memcpy(values, fixed->modelview[fixed->modelview_top], 16U * sizeof(GLfloat));
 		return 16U;
@@ -1441,9 +1463,15 @@ fixed_string(
 	if (version == 30U && name == GL_SHADING_LANGUAGE_VERSION)
 		return (const GLubyte *)"1.30";
 
+	/* An OpenGL 3.2 context's, with GLSL 1.50. */
+	if (version == 32U && name == GL_VERSION)
+		return (const GLubyte *)"3.2 zedBSD (OpenGL ES 3.0 on Vulkan)";
+	if (version == 32U && name == GL_SHADING_LANGUAGE_VERSION)
+		return (const GLubyte *)"1.50";
+
 	/* Their extensions. */
 	if (version >= 30U && name == GL_EXTENSIONS) {
-		extensions = fixed_extension_string(version);
+		extensions = fixed_extension_string();
 		return extensions;
 	}
 
@@ -1468,28 +1496,52 @@ fixed_glsl_version(void)
 		return 130U;
 	if (version == 31U)
 		return 140U;
+	if (version == 32U)
+		return 150U;
 
 	/* An OpenGL 1.4 context takes any. */
 	return 0U;
 }
 
-/* Returns how many extensions the current context names: an OpenGL 3.x context its own (3.0 without GL_ARB_compatibility), -1 for OpenGL ES's list. */
+/* Reports whether the current context is a core profile's (OpenGL 3.2 on). */
+static int
+fixed_core_profile(void)
+{
+	GLint profile;
+
+	/* The context's profile. */
+	profile = glx_profile();
+	if (profile == FIXED_CORE_PROFILE)
+		return 1;
+
+	/* A compatibility profile, or before profiles. */
+	return 0;
+}
+
+/* Returns how many extensions the current context names: an OpenGL 3.x context those of its version and profile, -1 for OpenGL ES's list. */
 static int
 fixed_extension_count(void)
 {
 	unsigned version;
+	unsigned index;
 	GLint flags;
+	GLint profile;
 	int count;
+	int named;
 
 	/* An OpenGL 1.4 context names OpenGL ES's. */
 	version = glx_version(&flags);
 	if (version < 30U)
 		return -1;
 
-	/* All of them, but GL_ARB_compatibility before 3.1. */
-	count = (int)(sizeof(fixed_extensions) / sizeof(fixed_extensions[0]));
-	if (version < 31U)
-		count--;
+	/* Those of its version and profile. */
+	profile = glx_profile();
+	count = 0;
+	for (index = 0U; index < sizeof(fixed_extensions) / sizeof(fixed_extensions[0]); index++) {
+		named = fixed_extension_named(&fixed_extensions[index], version, profile);
+		if (named)
+			count++;
+	}
 
 	/* Succeeded: the count. */
 	return count;
@@ -1501,49 +1553,105 @@ fixed_extension(
 	GLuint index)
 {
 	unsigned version;
+	unsigned entry;
 	GLint flags;
+	GLint profile;
+	int named;
 
-	/* A 3.0 context's list starts after GL_ARB_compatibility. */
+	/* The index-th of those the context names. */
 	version = glx_version(&flags);
-	if (version < 31U)
-		index++;
+	profile = glx_profile();
+	for (entry = 0U; entry < sizeof(fixed_extensions) / sizeof(fixed_extensions[0]); entry++) {
+		named = fixed_extension_named(&fixed_extensions[entry], version, profile);
+		if (!named)
+			continue;
+		if (index == 0U)
+			return fixed_extensions[entry].name;
+		index--;
+	}
 
-	/* Succeeded: the name. */
-	return fixed_extensions[index];
+	/* Past the end (the caller checked the count). */
+	return NULL;
 }
 
-/* Returns the extensions of an OpenGL 3.x context of a version joined with spaces (the joined list is made once). */
+/* Returns the current OpenGL 3.x context's extensions joined with spaces (made once for each kind of context). */
 static const GLubyte *
-fixed_extension_string(
-	unsigned version)
+fixed_extension_string(void)
 {
+	char *joined;
 	size_t length;
 	size_t used;
+	unsigned version;
 	unsigned index;
+	GLint flags;
+	GLint profile;
+	int named;
 
-	/* The joined names, made at the first call. */
-	if (fixed_extensions_joined[0] == '\0') {
+	/* The kind's list. */
+	version = glx_version(&flags);
+	profile = glx_profile();
+	joined = fixed_extensions_joined[fixed_extension_kind(version, profile)];
+
+	/* Made at the first call. */
+	if (joined[0] == '\0') {
 		used = 0U;
 		for (index = 0U; index < sizeof(fixed_extensions) / sizeof(fixed_extensions[0]); index++) {
-			length = strlen(fixed_extensions[index]);
-			if (used + length + 2U > sizeof(fixed_extensions_joined))
+			named = fixed_extension_named(&fixed_extensions[index], version, profile);
+			if (!named)
+				continue;
+			length = strlen(fixed_extensions[index].name);
+			if (used + length + 2U > FIXED_EXTENSIONS_LENGTH)
 				break;
 			if (used != 0U)
-				fixed_extensions_joined[used++] = ' ';
-			memcpy(fixed_extensions_joined + used, fixed_extensions[index], length);
+				joined[used++] = ' ';
+			memcpy(joined + used, fixed_extensions[index].name, length);
 			used += length;
 		}
 
 		/* The end of the list. */
-		fixed_extensions_joined[used] = '\0';
+		joined[used] = '\0';
 	}
 
-	/* A 3.0 context's list starts after the first name and its space. */
-	if (version < 31U)
-		return (const GLubyte *)(fixed_extensions_joined + strlen(fixed_extensions[0]) + 1U);
+	/* Succeeded: the list. */
+	return (const GLubyte *)joined;
+}
 
-	/* Succeeded: the whole list. */
-	return (const GLubyte *)fixed_extensions_joined;
+/* Reports whether a context of a version and profile names an extension. */
+static int
+fixed_extension_named(
+	const struct fixed_extension_entry *entry,
+	unsigned version,
+	GLint profile)
+{
+	/* Not before its version, nor a compatibility extension in a core context. */
+	if (version < entry->since)
+		return 0;
+	if (entry->compatibility && profile == FIXED_CORE_PROFILE)
+		return 0;
+
+	/* Succeeded: named. */
+	return 1;
+}
+
+/* Returns which of the joined lists a context of a version and profile has: by version from 3.0, core profiles apart. */
+static unsigned
+fixed_extension_kind(
+	unsigned version,
+	GLint profile)
+{
+	unsigned kind;
+
+	/* Versions 3.0 to 3.3, then the profile. */
+	kind = 0U;
+	if (version > 30U)
+		kind = (version - 30U) * 2U;
+	if (profile == FIXED_CORE_PROFILE)
+		kind++;
+	if (kind >= FIXED_EXTENSION_KINDS)
+		kind = FIXED_EXTENSION_KINDS - 1U;
+
+	/* Succeeded: the kind. */
+	return kind;
 }
 
 /* Frees a context's fixed-function state (its programs go with the context's objects). */

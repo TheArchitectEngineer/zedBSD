@@ -1702,6 +1702,9 @@ gles_capability(
 	case GL_TEXTURE_CUBE_MAP_SEAMLESS:
 		*flag = &state->cube_seamless;
 		return 0;
+	case GL_SAMPLE_MASK:
+		*flag = &state->sample_mask;
+		return 0;
 	default:
 		break;
 	}
@@ -1734,9 +1737,12 @@ gles_integers(
 		return 1U;
 	}
 
-	/* Desktop GL's version and context flags are the fixed-function layer's (libGL). */
+	/* Desktop GL's version, context flags and profile are the fixed-function layer's (libGL). */
 	if (gles_fixed != NULL &&
-	    (pname == GL_MAJOR_VERSION || pname == GL_MINOR_VERSION || pname == GL_CONTEXT_FLAGS))
+	    (pname == GL_MAJOR_VERSION ||
+	     pname == GL_MINOR_VERSION ||
+	     pname == GL_CONTEXT_FLAGS ||
+	     pname == GL_CONTEXT_PROFILE_MASK))
 		return 0U;
 
 	/* Desktop GL's own integer states (libGL). */
@@ -2274,6 +2280,35 @@ gles_desktop_integers(
 	case GL_MAX_TEXTURE_BUFFER_SIZE:
 		values[0] = (GLint)state->limits.maxTexelBufferElements;
 		return 1U;
+	case GL_TEXTURE_BINDING_2D_MULTISAMPLE:
+		texture = state->ms_units[state->active_unit];
+		values[0] = 0;
+		if (texture != NULL)
+			values[0] = (GLint)texture->name;
+		return 1U;
+	case GL_MAX_SAMPLE_MASK_WORDS:
+		values[0] = 1;
+		return 1U;
+	case GL_MAX_COLOR_TEXTURE_SAMPLES:
+	case GL_MAX_DEPTH_TEXTURE_SAMPLES:
+	case GL_MAX_INTEGER_SAMPLES:
+		values[0] = (GLint)gles_samples_max(state);
+		return 1U;
+	case GL_MAX_GEOMETRY_OUTPUT_VERTICES:
+		values[0] = (GLint)state->limits.maxGeometryOutputVertices;
+		return 1U;
+	case GL_MAX_GEOMETRY_UNIFORM_COMPONENTS:
+		values[0] = 1024;
+		return 1U;
+	case GL_MAX_GEOMETRY_TEXTURE_IMAGE_UNITS:
+		values[0] = (GLint)GLES_UNITS;
+		return 1U;
+	case GL_MAX_GEOMETRY_INPUT_COMPONENTS:
+		values[0] = (GLint)state->limits.maxGeometryInputComponents;
+		return 1U;
+	case GL_MAX_GEOMETRY_OUTPUT_COMPONENTS:
+		values[0] = (GLint)state->limits.maxGeometryOutputComponents;
+		return 1U;
 	default:
 		break;
 	}
@@ -2301,6 +2336,86 @@ glPrimitiveRestartIndex(
 
 	/* Succeeded: the index draws compare with. */
 	state->restart_index = index;
+}
+
+/*
+ * Sets the word of the sample mask (desktop GL 3.2, libGL): which samples
+ * a fragment may cover while GL_SAMPLE_MASK is on; there is one word.
+ */
+GL_APICALL void GL_APIENTRY
+glSampleMaski(
+	GLuint maskNumber,
+	GLbitfield mask)
+{
+	struct zegl_context *context;
+	struct gles_state *state;
+
+	/* A context with its state, and word 0. */
+	context = gles_context();
+	state = gles_state(context);
+	if (state == NULL)
+		return;
+	if (maskNumber != 0U) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* Succeeded: the word draws use. */
+	state->sample_mask_value = mask;
+}
+
+/*
+ * Reports a sample's position in its pixel (desktop GL 3.2, libGL): the
+ * draw framebuffer's samples are at Vulkan's standard positions.
+ */
+GL_APICALL void GL_APIENTRY
+glGetMultisamplefv(
+	GLenum pname,
+	GLuint index,
+	GLfloat *val)
+{
+	static const GLfloat two[2][2] = { { 0.75f, 0.75f }, { 0.25f, 0.25f } };
+	static const GLfloat four[4][2] = { { 0.375f, 0.125f }, { 0.875f, 0.375f }, { 0.125f, 0.625f }, { 0.625f, 0.875f } };
+	static const GLfloat eight[8][2] = {
+		{ 0.5625f, 0.3125f }, { 0.4375f, 0.6875f }, { 0.8125f, 0.5625f }, { 0.3125f, 0.1875f },
+		{ 0.1875f, 0.8125f }, { 0.0625f, 0.4375f }, { 0.6875f, 0.9375f }, { 0.9375f, 0.0625f }
+	};
+	struct zegl_context *context;
+	struct gles_state *state;
+	uint32_t samples;
+
+	/* A context with its state, and the one name. */
+	context = gles_context();
+	state = gles_state(context);
+	if (state == NULL)
+		return;
+	if (pname != GL_SAMPLE_POSITION) {
+		gles_error(context, GL_INVALID_ENUM);
+		return;
+	}
+
+	/* A sample the draw framebuffer has (the window's one is at the centre). */
+	samples = gles_framebuffer_samples(state, state->framebuffer);
+	if (samples == 0U)
+		samples = 1U;
+	if (index >= samples) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* Succeeded: the standard position of the count. */
+	val[0] = 0.5f;
+	val[1] = 0.5f;
+	if (samples == 2U) {
+		val[0] = two[index][0];
+		val[1] = two[index][1];
+	} else if (samples == 4U) {
+		val[0] = four[index][0];
+		val[1] = four[index][1];
+	} else if (samples == 8U) {
+		val[0] = eight[index][0];
+		val[1] = eight[index][1];
+	}
 }
 
 /*

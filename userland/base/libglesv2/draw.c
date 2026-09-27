@@ -37,6 +37,7 @@ static void draw_primitives(GLenum mode, GLint first, GLsizei count, GLenum type
 static int draw_indices(struct zegl_context *context, GLsizei count, GLenum type, const void *indices, uint32_t **out, uint32_t *largest, int *restarted);
 static uint32_t *draw_restart(GLenum mode, const uint32_t *indices, GLsizei count, uint32_t restart, int rotate, uint32_t *expanded);
 static uint32_t draw_restart_index(const struct gles_state *state, GLenum type);
+static int draw_geometry_mode(const struct gles_program *program, GLenum mode);
 static void draw_base_vertex(GLenum mode, GLsizei count, GLenum type, const void *indices, GLsizei instances, GLint basevertex);
 static void draw_program(GLenum mode, GLint first, GLsizei count, GLenum type, const void *indices, GLsizei instances, int flat);
 static int draw_topology(GLenum mode, uint32_t *topology, int *strip);
@@ -568,7 +569,7 @@ glClear(
 	/* The clear over the scissor box or the whole target. */
 	memset(&rect, 0, sizeof(rect));
 	rect.rect = draw_scissor_rect(state, &target);
-	rect.layerCount = 1U;
+	rect.layerCount = target.layers;
 	if (rect.rect.extent.width == 0U || rect.rect.extent.height == 0U)
 		return;
 	vkCmdClearAttachments(target.command, count, attachments, 1U, &rect);
@@ -1326,6 +1327,7 @@ draw_primitives(
 	struct gles_state *state;
 	struct gles_program *program;
 	int flat;
+	int core;
 
 	/* A context with its state, not in a conditional rendering whose query saw nothing. */
 	context = gles_context();
@@ -1345,9 +1347,17 @@ draw_primitives(
 		if (state->program != NULL &&
 		    state->program->flat_inputs &&
 		    state->program->capture_count == 0U &&
+		    state->program->geometry_module == VK_NULL_HANDLE &&
 		    state->provoking_vertex != GL_FIRST_VERTEX_CONVENTION)
 			flat = 1;
 		draw_program(mode, first, count, type, indices, instances, flat);
+		return;
+	}
+
+	/* A core profile has no fixed function (desktop GL 3.2). */
+	core = gles_fixed->core_profile();
+	if (core) {
+		gles_error(context, GL_INVALID_OPERATION);
 		return;
 	}
 
@@ -1432,6 +1442,22 @@ draw_program(
 
 	/* A linked program. */
 	if (state->program == NULL || !state->program->linked) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return;
+	}
+
+	/* A core profile draws from a vertex array object of the application's (desktop GL 3.2). */
+	if (gles_fixed != NULL && state->vertex_array == 0U) {
+		status = gles_fixed->core_profile();
+		if (status) {
+			gles_error(context, GL_INVALID_OPERATION);
+			return;
+		}
+	}
+
+	/* A mode the geometry shader takes as its input primitive. */
+	status = draw_geometry_mode(state->program, mode);
+	if (status != 0) {
 		gles_error(context, GL_INVALID_OPERATION);
 		return;
 	}
@@ -1933,6 +1959,26 @@ draw_topology(
 		*topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 		*strip = 1;
 		return 0;
+	}
+
+	/* Desktop GL's primitives with adjacency (for geometry shaders), drawn as they are. */
+	if (gles_fixed != NULL) {
+		switch (mode) {
+		case GL_LINES_ADJACENCY:
+			*topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST_WITH_ADJACENCY;
+			return 0;
+		case GL_LINE_STRIP_ADJACENCY:
+			*topology = VK_PRIMITIVE_TOPOLOGY_LINE_STRIP_WITH_ADJACENCY;
+			return 0;
+		case GL_TRIANGLES_ADJACENCY:
+			*topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST_WITH_ADJACENCY;
+			return 0;
+		case GL_TRIANGLE_STRIP_ADJACENCY:
+			*topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP_WITH_ADJACENCY;
+			return 0;
+		default:
+			break;
+		}
 	}
 
 	/* Not a mode. */
@@ -2538,6 +2584,10 @@ draw_sampler_shape(
 	case GL_INT_SAMPLER_BUFFER:
 	case GL_UNSIGNED_INT_SAMPLER_BUFFER:
 		return GLES_SHAPE_BUFFER;
+	case GL_SAMPLER_2D_MULTISAMPLE:
+	case GL_INT_SAMPLER_2D_MULTISAMPLE:
+	case GL_UNSIGNED_INT_SAMPLER_2D_MULTISAMPLE:
+		return GLES_SHAPE_MS;
 	default:
 		break;
 	}
@@ -2559,6 +2609,7 @@ draw_sampler_kind(
 	case GL_INT_SAMPLER_2D_ARRAY:
 	case GL_INT_SAMPLER_2D_RECT:
 	case GL_INT_SAMPLER_BUFFER:
+	case GL_INT_SAMPLER_2D_MULTISAMPLE:
 		return 1U;
 	case GL_UNSIGNED_INT_SAMPLER_2D:
 	case GL_UNSIGNED_INT_SAMPLER_CUBE:
@@ -2566,6 +2617,7 @@ draw_sampler_kind(
 	case GL_UNSIGNED_INT_SAMPLER_2D_ARRAY:
 	case GL_UNSIGNED_INT_SAMPLER_2D_RECT:
 	case GL_UNSIGNED_INT_SAMPLER_BUFFER:
+	case GL_UNSIGNED_INT_SAMPLER_2D_MULTISAMPLE:
 		return 2U;
 	case GL_SAMPLER_2D_SHADOW:
 	case GL_SAMPLER_CUBE_SHADOW:
@@ -2689,6 +2741,11 @@ draw_raster(
 	if (state->depth_clamp && state->display->features.depthClamp)
 		raster->depth_clamp = 1U;
 
+	/* Every sample, or those the sample mask keeps. */
+	raster->sample_mask = 0xffffffffU;
+	if (state->sample_mask)
+		raster->sample_mask = (uint32_t)state->sample_mask_value;
+
 	/* A device that blends every colour attachment alike blends none when they differ. */
 	if (!state->display->features.independentBlend &&
 	    raster->blend != 0U &&
@@ -2742,7 +2799,8 @@ draw_pipeline(
 	};
 	struct gles_pipeline_key key;
 	struct gles_pipeline *entry;
-	VkPipelineShaderStageCreateInfo stages[2];
+	VkPipelineShaderStageCreateInfo stages[3];
+	uint32_t stage_count;
 	VkVertexInputBindingDescription bindings[GLES_ATTRIBS];
 	VkVertexInputAttributeDescription attributes[GLES_ATTRIBS];
 	VkPipelineVertexInputStateCreateInfo vertex;
@@ -2787,6 +2845,17 @@ draw_pipeline(
 	stages[1] = stages[0];
 	stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
 	stages[1].module = state->program->fragment_module;
+	stage_count = 2U;
+
+	/* A geometry stage (desktop GL), which writes the gl_Position the rasterizer takes. */
+	if (state->program->geometry_module != VK_NULL_HANDLE) {
+		stages[2] = stages[0];
+		stages[2].stage = VK_SHADER_STAGE_GEOMETRY_BIT;
+		stages[2].module = state->program->geometry_module;
+		if (!target->flip)
+			stages[2].module = state->program->geometry_module_fbo;
+		stage_count = 3U;
+	}
 
 	/* One binding per attribute at its rate (per vertex or per instance), the attribute at offset 0 of it. */
 	memset(bindings, 0, sizeof(bindings));
@@ -2851,6 +2920,7 @@ draw_pipeline(
 	if (target->samples > 1U)
 		multisample.rasterizationSamples = (VkSampleCountFlagBits)target->samples;
 	multisample.alphaToCoverageEnable = (VkBool32)state->sample_alpha_to_coverage;
+	multisample.pSampleMask = &raster->sample_mask;
 
 	/* Depth and stencil (GL's compare functions are Vulkan's in the same order). */
 	memset(&depth, 0, sizeof(depth));
@@ -2904,7 +2974,7 @@ draw_pipeline(
 		return VK_NULL_HANDLE;
 	memset(&create, 0, sizeof(create));
 	create.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-	create.stageCount = 2U;
+	create.stageCount = stage_count;
 	create.pStages = stages;
 	create.pVertexInputState = &vertex;
 	create.pInputAssemblyState = &assembly;
@@ -3103,6 +3173,8 @@ draw_descriptors(
 				texture = state->array_units[unit];
 			if (shape == GLES_SHAPE_RECT)
 				texture = state->rect_units[unit];
+			if (shape == GLES_SHAPE_MS)
+				texture = state->ms_units[unit];
 			if (state->unit_samplers[unit] != NULL)
 				sampling = &state->unit_samplers[unit]->sampling;
 		}
@@ -3113,10 +3185,17 @@ draw_descriptors(
 			status = draw_texture_matches(texture, kind);
 		if (!status && shape == GLES_SHAPE_RECT)
 			shape = GLES_SHAPE_2D;
-		if (!status) {
+		if (!status && shape == GLES_SHAPE_MS) {
+			texture = gles_texture_black_ms(state, kind);
+			sampling = NULL;
+		} else if (!status) {
 			texture = gles_texture_black(state, shape, kind);
 			sampling = NULL;
 		}
+
+		/* A multisample sampler reads a multisample texture only. */
+		if (shape == GLES_SHAPE_MS && texture != NULL && texture->samples <= 1U)
+			texture = gles_texture_black_ms(state, kind);
 
 		/* The texture's image, up to date. */
 		if (texture == NULL)
@@ -3426,7 +3505,7 @@ draw_clear_buffer(
 	/* The clear over the scissor box or the whole target. */
 	memset(&rect, 0, sizeof(rect));
 	rect.rect = draw_scissor_rect(state, &target);
-	rect.layerCount = 1U;
+	rect.layerCount = target.layers;
 	if (rect.rect.extent.width == 0U || rect.rect.extent.height == 0U)
 		return;
 	vkCmdClearAttachments(target.command, 1U, &attachment, 1U, &rect);
@@ -3627,4 +3706,44 @@ draw_base_vertex(
 	state->base_vertex = basevertex;
 	draw_primitives(mode, 0, count, type, indices, instances);
 	state->base_vertex = 0;
+}
+
+/* Reports whether a draw's mode gives a program's geometry shader its input primitive: 0 when it does (or there is none), -1 when not. */
+static int
+draw_geometry_mode(
+	const struct gles_program *program,
+	GLenum mode)
+{
+	/* No geometry shader takes any mode. */
+	if (program->geometry_module == VK_NULL_HANDLE)
+		return 0;
+
+	/* The modes of each input primitive. */
+	switch (program->geometry_input) {
+	case GL_POINTS:
+		if (mode == GL_POINTS)
+			return 0;
+		break;
+	case GL_LINES:
+		if (mode == GL_LINES || mode == GL_LINE_STRIP || mode == GL_LINE_LOOP)
+			return 0;
+		break;
+	case GL_LINES_ADJACENCY:
+		if (mode == GL_LINES_ADJACENCY || mode == GL_LINE_STRIP_ADJACENCY)
+			return 0;
+		break;
+	case GL_TRIANGLES:
+		if (mode == GL_TRIANGLES || mode == GL_TRIANGLE_STRIP || mode == GL_TRIANGLE_FAN)
+			return 0;
+		break;
+	case GL_TRIANGLES_ADJACENCY:
+		if (mode == GL_TRIANGLES_ADJACENCY || mode == GL_TRIANGLE_STRIP_ADJACENCY)
+			return 0;
+		break;
+	default:
+		break;
+	}
+
+	/* Another primitive than the shader takes. */
+	return -1;
 }

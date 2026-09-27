@@ -49,6 +49,9 @@
 #define GLSL_SAMPLER_RECT	5U
 #define GLSL_SAMPLER_BUFFER	6U
 
+/* Desktop GLSL 1.50's multisample samplers (a 2D image of several samples a pixel, read by texelFetch). */
+#define GLSL_SAMPLER_MS		7U
+
 /*
  * One active uniform of a linked program as the API reports it: a leaf of
  * the default uniform block (named the way libGLESv2's SPIR-V reflection
