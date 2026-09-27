@@ -44,10 +44,9 @@
 /* The first version of GLSL ES that needs an OpenGL ES 3 context. */
 #define PROGRAM_ES3_VERSION	300U
 
-/* GL's names of the sampler types reflection does not tell apart (OpenGL ES 3.0 and desktop GL values). */
-#define PROGRAM_SAMPLER_3D	0x8B5FU
-#define PROGRAM_SAMPLER_1D	0x8B5DU
-#define PROGRAM_SAMPLER_2D_SHADOW 0x8B62U
+/* Desktop GL's names of its 1D sampler types, which OpenGL ES has none of. */
+#define PROGRAM_SAMPLER_1D		0x8B5DU
+#define PROGRAM_SAMPLER_1D_SHADOW	0x8B61U
 
 /* The serial of the next link (0 is never one). */
 static uint64_t program_serial = 1U;
@@ -58,6 +57,7 @@ static int program_link(struct gles_state *state, struct gles_program *program, 
 static int program_link_code(struct gles_state *state, struct gles_program *program, const uint32_t *vertex_input, size_t vertex_words, const uint32_t *fragment_input, size_t fragment_words, char *log);
 static int program_link_glsl(struct gles_program *program, struct glsl_program *linked, char *log);
 static void program_glsl_types(struct gles_program *program, const struct glsl_program *linked);
+static GLenum program_sampler_type(const struct glsl_uniform_info *info);
 static int program_glsl_blocks(struct gles_program *program, const struct glsl_program *linked, char *log);
 static int program_spirv_blocks(struct gles_program *program, const struct gles_spirv *spirv, unsigned stage, char *log);
 static int program_merge(struct gles_program *program, struct gles_spirv *spirv, char *log);
@@ -2040,17 +2040,63 @@ program_glsl_types(
 			continue;
 		}
 
-		/* A sampler: its dimension. */
-		if (info->sampler == GLSL_SAMPLER_CUBE) {
-			uniform->type = GL_SAMPLER_CUBE;
-		} else if (info->sampler == GLSL_SAMPLER_3D) {
-			uniform->type = PROGRAM_SAMPLER_3D;
-		} else if (info->sampler == GLSL_SAMPLER_1D) {
-			uniform->type = PROGRAM_SAMPLER_1D;
-		} else if (info->sampler == GLSL_SAMPLER_2D && info->shadow) {
-			uniform->type = PROGRAM_SAMPLER_2D_SHADOW;
-		}
+		/* A sampler: its dimension, layers, comparison and texel kind. */
+		if (info->sampler != GLSL_SAMPLER_NONE)
+			uniform->type = program_sampler_type(info);
 	}
+}
+
+/* Returns GL's type of a sampler the compiler describes (its dimension, layers, comparison and texel kind). */
+static GLenum
+program_sampler_type(
+	const struct glsl_uniform_info *info)
+{
+	/* A shadow sampler compares depth. */
+	if (info->shadow) {
+		if (info->sampler == GLSL_SAMPLER_CUBE)
+			return GL_SAMPLER_CUBE_SHADOW;
+		if (info->sampler == GLSL_SAMPLER_1D)
+			return PROGRAM_SAMPLER_1D_SHADOW;
+		if (info->arrayed)
+			return GL_SAMPLER_2D_ARRAY_SHADOW;
+		return GL_SAMPLER_2D_SHADOW;
+	}
+
+	/* The dimension, for each kind of texel. */
+	switch (info->sampler) {
+	case GLSL_SAMPLER_CUBE:
+		if (info->base == GLSL_INFO_INT)
+			return GL_INT_SAMPLER_CUBE;
+		if (info->base == GLSL_INFO_UINT)
+			return GL_UNSIGNED_INT_SAMPLER_CUBE;
+		return GL_SAMPLER_CUBE;
+	case GLSL_SAMPLER_3D:
+		if (info->base == GLSL_INFO_INT)
+			return GL_INT_SAMPLER_3D;
+		if (info->base == GLSL_INFO_UINT)
+			return GL_UNSIGNED_INT_SAMPLER_3D;
+		return GL_SAMPLER_3D;
+	case GLSL_SAMPLER_1D:
+		return PROGRAM_SAMPLER_1D;
+	default:
+		break;
+	}
+
+	/* A 2D sampler, or one of an array of 2D layers. */
+	if (info->arrayed) {
+		if (info->base == GLSL_INFO_INT)
+			return GL_INT_SAMPLER_2D_ARRAY;
+		if (info->base == GLSL_INFO_UINT)
+			return GL_UNSIGNED_INT_SAMPLER_2D_ARRAY;
+		return GL_SAMPLER_2D_ARRAY;
+	}
+
+	/* A plain 2D one. */
+	if (info->base == GLSL_INFO_INT)
+		return GL_INT_SAMPLER_2D;
+	if (info->base == GLSL_INFO_UINT)
+		return GL_UNSIGNED_INT_SAMPLER_2D;
+	return GL_SAMPLER_2D;
 }
 
 /*
