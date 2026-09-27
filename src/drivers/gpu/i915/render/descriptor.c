@@ -362,9 +362,11 @@ i915_gfx_update_write(
 		    binding >= I915_GFX_MAX_BINDINGS)
 			continue;
 
-		/* XXX: a buffer descriptor of another type than a uniform buffer is not bound to anything. */
+		/* XXX: a buffer descriptor of another type than a uniform or storage buffer is not bound to anything. */
 		if (type != VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER &&
-		    type != VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC) {
+		    type != VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC &&
+		    type != VK_DESCRIPTOR_TYPE_STORAGE_BUFFER &&
+		    type != VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC) {
 			kern_logf("i915: vk: XXX vkUpdateDescriptorSets: buffer descriptors (type %u) are not bound to anything\n", type);
 			continue;
 		}
@@ -375,9 +377,9 @@ i915_gfx_update_write(
 		dset->slots[binding].offset = buffer_info.offset;
 		dset->slots[binding].range = buffer_info.range;
 
-		/* A dynamic uniform buffer's range moves by the dynamic offset of each bind. */
+		/* A dynamic buffer's range moves by the dynamic offset of each bind. */
 		dset->slots[binding].dynamic = 0;
-		if (type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC)
+		if (type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC || type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC)
 			dset->slots[binding].dynamic = 1;
 	}
 

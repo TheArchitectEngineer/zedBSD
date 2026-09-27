@@ -8,7 +8,7 @@
 /*
  * zdesktop-browser: the Web browser of the zedBSD desktop.
  *
- *   zdesktop-browser [--display=NAME] [--width=N] [--height=N] [URL]
+ *   zdesktop-browser [--display=NAME] [--width=N] [--height=N] [--ca-file=PEM] [URL]
  *   zdesktop-browser --dump=dom|style|layout|paint [--width=N] [--height=N] [--font=PATH] FILE
  *   zdesktop-browser --run [--width=N] [--height=N] FILE
  *   zdesktop-browser --dump=ast [--module] [--strict] FILE.js
@@ -26,10 +26,14 @@
  * shown; --run writes the page's console to standard output (the other
  * modes write it to standard error).  Every mode reports failure with a
  * non-zero exit status and one line on standard error.
+ *
+ * --ca-file (in any mode that loads a page) trusts the CA certificates of
+ * a PEM file besides the system's roots for https (the tests' own CA).
  */
 
 #include "base/base.h"
 #include "js/js.h"
+#include "net/net.h"
 #include "vm/bytecode.h"
 #include "page/page.h"
 #include "paint/gpu.h"
@@ -598,6 +602,7 @@ main_prepare(
 {
 	struct page *loaded;
 	int layout;
+	const char *reason;
 	int error;
 
 	/* Every headless mode needs a page. */
@@ -622,7 +627,11 @@ main_prepare(
 	/* Loads the file, running its scripts. */
 	error = page_load_location(loaded, options->shell.start);
 	if (error != 0) {
-		fprintf(stderr, "zdesktop-browser: cannot load %s: %s\n", options->shell.start, strerror(error));
+		reason = net_tls_error();
+		fprintf(stderr, "zdesktop-browser: cannot load %s: %s", options->shell.start, strerror(error));
+		if (reason[0] != '\0')
+			fprintf(stderr, " (TLS: %s)", reason);
+		fputc('\n', stderr);
 		page_destroy(loaded);
 		return 1;
 	}
@@ -796,6 +805,16 @@ main_parse(
 			continue;
 		}
 
+		/* A CA file for https besides the system's roots. */
+		value = main_value(argv[index], "--ca-file=");
+		if (value != NULL) {
+			error = net_tls_add_ca_file(value);
+			if (error != 0)
+				return error;
+
+			continue;
+		}
+
 		/* The Wayland display to connect to. */
 		value = main_value(argv[index], "--display=");
 		if (value != NULL) {
@@ -899,7 +918,7 @@ main_usage(
 {
 	/* Lists the forms of the command line. */
 	fprintf(stream,
-		"usage: zdesktop-browser [--display=NAME] [--width=N] [--height=N] [URL]\n"
+		"usage: zdesktop-browser [--display=NAME] [--width=N] [--height=N] [--ca-file=PEM] [URL]\n"
 		"       zdesktop-browser --dump=dom|style|layout|paint [--width=N] [--height=N] [--font=PATH]\n"
 		"                        [--mono-font=PATH] [--fallback-font=PATH] FILE\n"
 		"       zdesktop-browser --run [--width=N] [--height=N] FILE\n"
