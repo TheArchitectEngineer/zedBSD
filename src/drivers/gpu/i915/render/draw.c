@@ -894,11 +894,12 @@ i915_draw_build_batch(
 		return error;
 
 	/*
-	 * Describes the triangle list: an indexed draw reads its vertices at
-	 * random from the first index on, each index moved by the vertex offset.
+	 * Describes the primitives of the pipeline's topology (the vertex input
+	 * refused any other): an indexed draw reads its vertices at random from
+	 * the first index on, each index moved by the vertex offset.
 	 */
 	kern_memset(&primitive, 0, sizeof(primitive));
-	primitive.topology = GEN12_3DPRIM_TRILIST;
+	primitive.topology = drv_i915_gfx_topology(state->pipeline);
 	primitive.random_access = args->indexed;
 	primitive.vertex_count = args->count;
 	primitive.start_vertex = args->first;

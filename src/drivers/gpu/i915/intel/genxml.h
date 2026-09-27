@@ -53,6 +53,14 @@
  * and bias fields come from that same gen120.xml; the LOD clamps are the
  * ones anv programs (src/intel/vulkan/genX_init_state.c
  *     716543ab781499a3079174681a90943e9a28b2c1658c2f12dbe4f15df2bead4b).
+ * The point, line, strip and fan values of 3D_Prim_Topo_Type and the
+ * provoking vertex fields of 3DSTATE_SF and 3DSTATE_CLIP come from the same
+ * Mesa 25.0.7 (Debian source package 25.0.7-2+deb13u1):
+ *   src/intel/genxml/gen70.xml (3D_Prim_Topo_Type)
+ *     dd7c942fc12afd2defdc435997ccdb5b48841d344f40625dbb2b4e746eca09ef
+ *   src/intel/genxml/gen120.xml (3DSTATE_SF, the file above)
+ *   src/intel/genxml/gen80.xml (3DSTATE_CLIP, which gen120.xml imports through gen110.xml and gen90.xml)
+ *     2962677cf69dc947345fd88bd7010427900160eb7a7b076463e6e8d28772439d
  * The genxml files carry no notice of their own; the notice above is the one
  * Mesa's generator (src/intel/genxml/gen_pack_header.py) puts on the headers
  * it produces from them, followed by the copyright line of intel_l3_config.h.
@@ -199,9 +207,24 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 #define GEN12_BLEND_STATE_ENTRY_DWORDS		2U
 #define GEN12_CC_VIEWPORT_DWORDS		2U
 
-/* 3D_Prim_Topo_Type: a screen-space rectangle needs no vertex shader. */
+/* 3D_Prim_Topo_Type: a screen-space rectangle needs no vertex shader; the rest are Vulkan's list, strip and fan topologies. */
 #define GEN12_3DPRIM_RECTLIST			15U
 #define GEN12_3DPRIM_TRILIST			4U
+#define GEN12_3DPRIM_POINTLIST			1U
+#define GEN12_3DPRIM_LINELIST			2U
+#define GEN12_3DPRIM_LINESTRIP			3U
+#define GEN12_3DPRIM_TRISTRIP			5U
+#define GEN12_3DPRIM_TRIFAN			6U
+
+/*
+ * The triangle fan's provoking vertex select of 3DSTATE_SF (dword 3, bits
+ * 26:25) and 3DSTATE_CLIP (dword 2, bits 1:0): 1 is the second vertex of
+ * each triangle, Vulkan's first-vertex convention for a fan (the list and
+ * strip selects stay 0, their first vertex).
+ */
+#define GEN12_SF_FAN_PROVOKING_SHIFT		25U
+#define GEN12_CLIP_FAN_PROVOKING_SHIFT		0U
+#define GEN12_FAN_PROVOKING_SECOND		1U
 
 /* 3D_Vertex_Component_Control. */
 #define GEN12_VFCOMP_NOSTORE			0U

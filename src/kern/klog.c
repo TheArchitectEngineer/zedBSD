@@ -15,12 +15,21 @@
  */
 
 #include "kern/klog.h"
+#include "kern/atomic.h"
 #include "kern/lock.h"
 #include "kern/platform.h"
 #include <stdarg.h>
 #include <kern/kcrt.h>
+#include <hal/hal.h>
 
 #define KLOG_CAPACITY (32U * 1024U)
+
+/*
+ * How long a record waits for another CPU's record to reach the consoles
+ * before it is written anyway: a CPU that stopped in the middle of one (a
+ * panic) must not stop every other CPU's output.
+ */
+#define KLOG_MIRROR_SPIN_MAX 50000000U
 
 static struct spinlock klog_lock;
 static char klog_buffer[KLOG_CAPACITY];
@@ -28,7 +37,20 @@ static size_t klog_oldest;
 static size_t klog_used;
 static uint64_t klog_dropped;
 
+/*
+ * The CPU (its number plus one) writing a record to the consoles, or 0.
+ *
+ * The consoles take one character at a time, so two CPUs logging at once
+ * mixed their records character by character (BUG-031).  A record is
+ * written whole while its CPU holds this.  It is not a lock of the rank
+ * order: a record may be logged under any lock, and the console takes its
+ * own locks per character, as before.
+ */
+static volatile unsigned klog_mirror_owner;
+
 static void append_locked(const char *bytes, size_t length);
+static int mirror_enter(void);
+static void mirror_leave(int owned);
 
 /*
  * Initializes an empty kernel log.
@@ -57,6 +79,7 @@ kern_log_write(
 	void (*console_output)(int c);
 	size_t at;
 	size_t n;
+	int owned;
 
 	/* Ignores an empty record. */
 	if (bytes == NULL || length == 0)
@@ -68,6 +91,9 @@ kern_log_write(
 	append_locked(bytes, length);
 
 	spin_unlock_irqrestore(&klog_lock, irq);
+
+	/* Writes the record to the consoles whole, apart from other CPUs' records. */
+	owned = mirror_enter();
 
 	/*
 	 * Mirrors the record to the console the kernel has published, so a
@@ -90,6 +116,9 @@ kern_log_write(
 		kern_platform_debug_write(chunk);
 		at += n;
 	}
+
+	/* Lets another CPU's record reach the consoles. */
+	mirror_leave(owned);
 }
 
 /*
@@ -210,4 +239,52 @@ append_locked(
 	for (i = 0; i < length; i++)
 		klog_buffer[(klog_oldest + klog_used + i) % KLOG_CAPACITY] = bytes[i];
 	klog_used += length;
+}
+
+/*
+ * Takes the consoles for one record of this CPU.
+ *
+ * Reports whether it took them: a record logged while this CPU already
+ * writes one (an interrupt, a nested diagnostic) goes out at once, and so
+ * does a record that waited too long for another CPU.
+ */
+static int
+mirror_enter(
+	void)
+{
+	unsigned me;
+	unsigned expected;
+	unsigned spins;
+	int taken;
+
+	/* Names this CPU, zero meaning nobody. */
+	me = (unsigned)hal_cpu_current() + 1U;
+
+	/* Waits for the consoles to be free, within a bound. */
+	for (spins = 0; spins < KLOG_MIRROR_SPIN_MAX; spins++) {
+		expected = 0;
+		taken = atomic_raw_compare_exchange(&klog_mirror_owner,
+		    &expected, me);
+		if (taken)
+			return 1;
+
+		/* This CPU is already writing a record; nesting goes out at once. */
+		if (expected == me)
+			return 0;
+		hal_compiler_barrier();
+	}
+
+	/* Another CPU held them too long; the record goes out anyway. */
+	return 0;
+}
+
+/* Gives the consoles back after a record that took them. */
+static void
+mirror_leave(
+	int owned)
+{
+	/* A record that did not take them has nothing to give back. */
+	if (!owned)
+		return;
+	atomic_raw_store_release(&klog_mirror_owner, 0);
 }
