@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 ユーザーの指示でサブエージェントが worktree の branch で実行。main の Queue への反映は main の session）
-Resume point: p014（toolbar → CONTROLS）・p013（窓の中のタブ、メインのセッション）cleared 2026-09-27。合わせた順序（2026-09-27 承認）: ws035-p081（窓の body の viewporter、コードは書いた・未 build・未試験、plan/ws035/phase081/wip.patch）→ ~~ws071-p013~~（済み）→ ws071-p009（context menu）→ ws035-p057（ぼかしと影）→ ws035-p055（damage）→ ws071-p010（PNG・DnD、libz/libpng-compat は ws035-p040/p041）→ ws070-p011（TABS）→ ws035-p082（ログインマネージャの検討）→ ws070-p006（style）→ 締め（ws071-p011、ws070-p012、ws035-p058、ws035-p028）
+Resume point: p014（toolbar → CONTROLS）・p013（窓の中のタブ、メインのセッション）・p016（タブを content のペインへ、タブらしい見た目）cleared 2026-09-27。次は p015（すりガラスの付箋、ws035-p083 と一緒）。合わせた順序（2026-09-27 承認）: ws035-p081（窓の body の viewporter、コードは書いた・未 build・未試験、plan/ws035/phase081/wip.patch）→ ~~ws071-p013~~（済み）→ ws071-p009（context menu）→ ws035-p057（ぼかしと影）→ ws035-p055（damage）→ ws071-p010（PNG・DnD、libz/libpng-compat は ws035-p040/p041）→ ws070-p011（TABS）→ ws035-p082（ログインマネージャの検討）→ ws070-p006（style）→ 締め（ws071-p011、ws070-p012、ws035-p058、ws035-p028）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -83,6 +83,7 @@ libpng-compat の decode（WS035 p040・p041 の decode の半分を p010 で先
 | [ws071-p008](phase008/phase.md) | menubar（System Menu: File・Edit・View・Go・Window・Help、状態の反映）、New Window・Close Window・Minimize・Zoom、keyboard の shortcut の全体（spec §35）、Help の card | cleared | p012、WS070-p004 |
 | [ws071-p013](phase013/phase.md) | タブ（2 つ以上のときだけの tab bar、New Tab・Close Tab・Previous/Next Tab、Open in New Tab、menu の Window のタブの項目） | cleared（2026-09-27、メインのセッション。host-p013・files-p013、回帰 PASS） | p008 |
 | [ws071-p014](phase014/phase.md) | zdesktop-files の窓の中の toolbar → WS070 の CONTROLS の titlebar（toolbar を消す、control の model と event、Ctrl+F・Ctrl+L の focus、拡張が無ければ起動で失敗、host の試験は model の text、guest の試験は control の位置を zdesktop の log から）。[ws070 titlebar-design.md §11](../ws070/titlebar-design.md) | cleared | WS070-p010 |
+| [ws071-p016](phase016/phase.md) | （2026-09-27 ユーザー指示）タブを content（メイン）のペインが持つ（ペインの上端に付く tab bar、sidebar と preview は動かない）、タブらしい見た目（表示中のタブはペインと同じ面で縁なしに繋がる、他は静かな label と細い区切り、× 付き）。2 つ以上のときだけ | cleared（2026-09-27、host-p013・files-p013・files-regress・boot test PASS） | p013 |
 | ws071-p009 | context menu: WS070 protocol version 2（libwayland、zdesktop、libzdesktop `zdesktop_menu_popup`）と file manager の context menu | planned | p013 |
 | ws071-p015 | （2026-09-27 ユーザー指示）左・中央・右の pane を窓の本体の中で浮いた付箋（card）の見た目に: 各 pane が角丸・影で浮き、すりガラスで背後のデスクトップが透ける。ユーザー:「ファイルマネージャですが、左ペイン、メインペイン、右ペインを分けてくれていますよね。これらはウィンドウボディの中でフローティングの見た目にして、それぞれが付箋のように浮いて見えようにしてほしいです。添付がイメージですが、これはウィンドウ内の要素が付箋のように浮いていて、すりガラスのエフェクトでデスクトップが透けている、と言いたいだけで、こういうレイアウトにしてほしいという意味ではないです。」（参考画像は著作権のためどこにも保存しない。言葉だけで表す: 窓の中の要素が付箋のように浮き、すりガラスでデスクトップが透けて見える）。client の透過（alpha）の窓と、zdesktop の背後のぼかし（ws035-p057）と、client が「どこをすりガラスにするか」を渡す方法（例: blur の region の protocol）の設計が要る。layout は今のまま | planning | ws035-p057、ws070-p010 |
 | ws071-p010 | サムネイル（libz-compat の inflate、libpng-compat の decode）と窓の中の DnD | planned | p007 |

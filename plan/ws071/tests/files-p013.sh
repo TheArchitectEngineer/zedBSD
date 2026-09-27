@@ -62,15 +62,15 @@ keys '<ctrl-t>'
 expect_log /tmp/f.log 'ZFILES TABS new index=1 count=2'
 shot two.png
 
-# 2. Downloads in the second tab (the sidebar is under the tab bar now), then a third tab.
-click 100 199
+# 2. Downloads in the second tab (the sidebar keeps its place; the tabs are over the content), then a third tab.
+click 100 155
 expect_log /tmp/f.log 'ZFILES LOCATION kind=folder path=/tmp/fhome/Downloads '
 keys '<ctrl-t>'
 expect_log /tmp/f.log 'ZFILES TABS new index=2 count=3'
 shot three.png
 
 # 3. The first tab clicked, then Ctrl+Tab and Ctrl+PageDown.
-click 100 28
+click 300 30
 expect_log /tmp/f.log 'ZFILES TABS select index=0 count=3'
 keys '<ctrl-tab>'
 expect_log /tmp/f.log 'ZFILES TABS select index=1 count=3'
@@ -80,7 +80,7 @@ expect_log /tmp/f.log 'ZFILES TABS select index=2 count=3'
 # 4. Ctrl+W, then the first tab's close button.
 keys '<ctrl-w>'
 expect_log /tmp/f.log 'ZFILES TABS close index=2 count=2 shown=1'
-click 214 28
+click 457 30
 expect_log /tmp/f.log 'ZFILES TABS close index=0 count=1 shown=0'
 shot closed.png
 
