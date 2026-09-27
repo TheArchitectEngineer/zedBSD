@@ -10,6 +10,7 @@
  *
  *   zdesktop-browser [--display=NAME] [--width=N] [--height=N] [URL]
  *   zdesktop-browser --dump=dom|style|layout|paint [--width=N] [--height=N] [--font=PATH] FILE
+ *   zdesktop-browser --dump=ast [--module] [--strict] FILE.js
  *   zdesktop-browser --render|--render-gpu --output=OUT.ppm [--width=N] [--height=N] [--font=PATH] FILE
  *   zdesktop-browser --version | --help
  *
@@ -21,6 +22,7 @@
  */
 
 #include "base/base.h"
+#include "js/js.h"
 #include "page/page.h"
 #include "paint/gpu.h"
 #include "shell/shell.h"
@@ -52,6 +54,7 @@ enum main_mode {
 	MAIN_MODE_DUMP_STYLE,
 	MAIN_MODE_DUMP_LAYOUT,
 	MAIN_MODE_DUMP_PAINT,
+	MAIN_MODE_DUMP_AST,
 	MAIN_MODE_RENDER,
 	MAIN_MODE_RENDER_GPU
 };
@@ -64,6 +67,7 @@ struct main_options {
 	struct shell_options shell;
 	struct text_font_paths fonts;
 	const char *output;
+	unsigned parse;
 };
 
 /*
@@ -83,12 +87,14 @@ static const struct main_dump_name main_dumps[] = {
 	{ "style", MAIN_MODE_DUMP_STYLE },
 	{ "layout", MAIN_MODE_DUMP_LAYOUT },
 	{ "paint", MAIN_MODE_DUMP_PAINT },
+	{ "ast", MAIN_MODE_DUMP_AST },
 	{ NULL, MAIN_MODE_WINDOW }
 };
 
 static int main_parse(int argc, char **argv, struct main_options *options);
 static int main_dump(const struct main_options *options);
 static int main_render(const struct main_options *options);
+static int main_dump_ast(const struct main_options *options);
 static int main_prepare(const struct main_options *options, const void *stack_base, struct page **page, int paint);
 static int main_parse_size(const char *text, unsigned *size);
 static const char *main_value(const char *argument, const char *name);
@@ -130,6 +136,9 @@ main(
 	case MAIN_MODE_RENDER:
 	case MAIN_MODE_RENDER_GPU:
 		status = main_render(&options);
+		return status;
+	case MAIN_MODE_DUMP_AST:
+		status = main_dump_ast(&options);
 		return status;
 	case MAIN_MODE_WINDOW:
 		break;
@@ -250,6 +259,65 @@ main_render(
 	}
 
 	/* Succeeded: the picture is written. */
+	return 0;
+}
+
+/* Parses the script the command line names and writes its syntax tree, or its syntax error (exit status 1). */
+static int
+main_dump_ast(
+	const struct main_options *options)
+{
+	struct wb_buffer bytes;
+	struct wb_buffer out;
+	struct wb_units units;
+	struct js_program program;
+	struct js_syntax_error error;
+	int status;
+
+	/* A dump needs a file. */
+	if (options->shell.start == NULL) {
+		fprintf(stderr, "zdesktop-browser: a file to parse is needed\n");
+		return 2;
+	}
+
+	/* The file, as UTF-16. */
+	wb_buffer_init(&bytes);
+	wb_units_init(&units);
+	status = wb_file_read(options->shell.start, &bytes);
+	if (status == 0)
+		status = wb_utf8_to_units((const unsigned char *)bytes.data, bytes.length, &units);
+	wb_buffer_release(&bytes);
+	if (status != 0) {
+		fprintf(stderr, "zdesktop-browser: cannot read %s: %s\n", options->shell.start, strerror(status));
+		wb_units_release(&units);
+		return 1;
+	}
+
+	/* The parse. */
+	status = js_parse(units.data, units.length, options->parse, &program, &error);
+	if (status == EINVAL) {
+		printf("SyntaxError: %s:%u:%u: %s\n", options->shell.start, error.line, error.column, error.message);
+		wb_units_release(&units);
+		return 1;
+	}
+	if (status != 0) {
+		fprintf(stderr, "zdesktop-browser: cannot parse %s: %s\n", options->shell.start, strerror(status));
+		wb_units_release(&units);
+		return 1;
+	}
+
+	/* The tree. */
+	wb_buffer_init(&out);
+	status = js_dump(program.root, &out);
+	if (status == 0)
+		fwrite(wb_buffer_string(&out), 1, out.length, stdout);
+	wb_buffer_release(&out);
+	js_program_release(&program);
+	wb_units_release(&units);
+	if (status != 0)
+		return 1;
+
+	/* Succeeded: the tree is written. */
 	return 0;
 }
 
@@ -399,6 +467,18 @@ main_parse(
 			continue;
 		}
 
+		/* How a script is parsed: as a module, or as strict code. */
+		differs = strcmp(argv[index], "--module");
+		if (differs == 0) {
+			options->parse |= JS_PARSE_MODULE;
+			continue;
+		}
+		differs = strcmp(argv[index], "--strict");
+		if (differs == 0) {
+			options->parse |= JS_PARSE_STRICT;
+			continue;
+		}
+
 		/* The file a drawing goes to. */
 		value = main_value(argv[index], "--output=");
 		if (value != NULL) {
@@ -535,5 +615,6 @@ main_usage(
 		"                        [--mono-font=PATH] [--fallback-font=PATH] FILE\n"
 		"       zdesktop-browser --render|--render-gpu --output=OUT.ppm [--width=N] [--height=N] [--font=PATH]\n"
 		"                        [--mono-font=PATH] [--fallback-font=PATH] FILE\n"
+		"       zdesktop-browser --dump=ast [--module] [--strict] FILE.js\n"
 		"       zdesktop-browser --version | --help\n");
 }
