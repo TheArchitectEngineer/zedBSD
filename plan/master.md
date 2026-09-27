@@ -97,7 +97,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS032](ws032/ws.md) | MG002 | 外部 package のクロスビルド（clang・OpenSSL・OpenSSH） | completed | — |
 | [WS033](ws033/ws.md) | MG005 | networking サービスと有線インタフェースの管理 | incomplete | 抜き差しの実機確認 |
 | [WS034](ws034/ws.md) | MG002 | アプリケーション拡充と kernel・libc の是正 | incomplete | package の導入 |
-| [WS035](ws035/ws.md) | MG006 | デスクトップ環境とアプリケーション | incomplete | **fg010**: zdesktop の合成・タスクバー |
+| [WS035](ws035/ws.md) | MG006 | デスクトップ環境とアプリケーション | incomplete | **fg010**: zdesktop の合成・タスクバー。2026-09-27: p076〜p080 cleared（xdg-shell の残り、sub-surface、XKB keymap と wl_output v4、clipboard、xdg-decoration・cursor-shape・viewporter）、main へ merge。14 時半から WS071・WS070 と 1 つのサブエージェントに。次は p081（viewport の窓の描画、ws070-p010 の後）→ p082（グラフィカルなログインマネージャの検討）→ p055 → p057 → p058 |
 | [WS036](ws036/ws.md) | MG008 | amd64 の成果を他 platform へ（aarch64 を含む） | completed | 2026-09-27 完了（p021 全 platform の回帰と規約、p026〜p029、p027 は案 A: boot の parameter の parser を緩めた）。実機は未実施。toolchain の cache（zedbsd8）は 2026-09-27 に rev-0 へ upload 済み |
 | [WS037](ws037/ws.md) | MG006 | NVIDIA GPU（予約） | planning | 番号のみ |
 | [WS038](ws038/ws.md) | MG006 | Intel Arc dGPU（予約） | planning | 番号のみ |
