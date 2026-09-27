@@ -67,6 +67,7 @@ rootpart=
 overlay-root= overlay-data=
 swap0= swap1= swap2= swap3=
 init=
+kmsg= login=          (ws035-p097, Sections 7a and 7b)
 ```
 
 ## 3. Block-device selectors
@@ -312,6 +313,34 @@ kmsg=quiet       messages go to the log buffer (dmesg, sysctl kern.msgbuf)
 - The UEFI loader also reads `kmsg=quiet`: it draws no progress blocks.
 - For kernel development leave `kmsg=` out or write `kmsg=console`, and use
   `login=console` (Section 7b).
+
+## 7b. The login: login=
+
+`login=` chooses how a person logs in on the machine's screen (ws035-p098,
+2026-09-28 user decision: the graphical login is the default).  The kernel
+only validates it and reports it as `sysctl kern.boot.login`; the graphical
+login's `zsessiond` (the rc.conf service `greeter`) reads it.
+
+```text
+login=graphical  the greeter (zdesktop --greeter) on the display
+login=console    the console's getty (also what no login= means)
+```
+
+- Any other value is an error, as for `kmsg=`.
+- With `login=graphical`, init holds `getty_console` back (the greeter
+  service says `replaces=getty_console`).  When the machine has no display
+  (`/dev/gpu0`), no `/bin/zdesktop`, or the greeter fails three times in a
+  row, `zsessiond` ends and init starts `getty_console` (the console is then
+  revealed by its read, Section 7a).  Serial and SSH logins are unchanged.
+
+### The default and kernel development
+
+The amd64 native images' `zedbsd.cfg` gets `logo=logo.ppm kmsg=quiet
+login=graphical` when the build option `ZEDBSD_GRAPHICAL_BOOT` is `y` (the
+default; the build menu's "Graphical boot").  For kernel development set it to
+`n` (the messages on the console and the console login), or edit the lines on
+a machine's ESP (`/zedbsd.cfg`): remove the three tokens or write
+`kmsg=console login=console`.  The test configurations under `plan/` set `n`.
 
 ## 8. Valid and invalid examples
 

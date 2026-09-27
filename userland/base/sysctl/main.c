@@ -88,6 +88,7 @@ show_all(
 	    "kern.boot.config_partition",
 	    "kern.boot.config_matches",
 	    "kern.boot.root_image",
+	    "kern.boot.login",
 	    "vfs.bufcache.max_bytes",
 	    "vfs.bufcache.current_bytes",
 	    "vfs.bufcache.dirty_bytes",
@@ -156,7 +157,8 @@ show_name(
 	/* Boot selectors are strings; the match count retains numeric
 	 * rendering. */
 	if (strcmp(name, "kern.boot.firmware_partition") == 0 ||
-	    strcmp(name, "kern.boot.config_partition") == 0) {
+	    strcmp(name, "kern.boot.config_partition") == 0 ||
+	    strcmp(name, "kern.boot.login") == 0) {
 		char selector[64];
 		size_t size = sizeof(selector);
 

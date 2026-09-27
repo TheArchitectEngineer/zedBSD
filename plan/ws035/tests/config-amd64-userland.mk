@@ -4,6 +4,10 @@ ZEDBSD_PLATFORM := amd64
 ZEDBSD_ARCHITECTURE := amd64
 ZEDBSD_BOARD := pcat
 ZEDBSD_VARIANT := native
+# ws035-p098: the test images (this one and every config built on it: the lean Venus images, the guest images,
+# the i915 hardware images) keep the console: the kernel's messages on it and the console login, so a test that
+# starts zdesktop itself finds the display free.  The graphical boot is tested with config-amd64-graphical.mk.
+ZEDBSD_GRAPHICAL_BOOT := n
 
 CONFIG_KERNEL_TEST_CHECKPOINTS := n
 CONFIG_BUF_CACHE_KIB := 0
