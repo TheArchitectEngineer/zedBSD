@@ -36,18 +36,18 @@ Resume point: p001（名前の棚卸しと対応表）から。ユーザーの�
 - userland: 1,118 file に 3,456（zdesktop 等の名前、Wayland の protocol の `zed_titlebar_v1`・`zed_glass_v1`・`zed_gpu_buffer_v1` 等）。
   `zwp_`・`zxdg_` は upstream の Wayland の接頭辞であり、改めない。
 
-## 対応表の案（p001 で確定。★ は未決）
+## 対応表（2026-09-28 ユーザーの回答で決定。p001 で参照の全体を確かめる）
 
 | 今 | 新しい source | 実行ファイル・library |
 | --- | --- | --- |
 | userland/base/zdesktop | userland/desktop/wayland | /bin/wayland |
 | userland/base/zdesktop-x11server | userland/desktop/xserver | /bin/xserver |
 | userland/base/zdesktop-browser | userland/desktop/browser | /bin/browser |
-| userland/base/zdesktop-terminal | userland/desktop/terminal ★ | /bin/terminal ★ |
-| userland/base/zdesktop-files | userland/desktop/files ★ | /bin/files ★ |
-| userland/base/zsessiond | userland/desktop/sessiond ★ | /bin/sessiond ★ |
+| userland/base/zdesktop-terminal | userland/desktop/terminal | /bin/terminal |
+| userland/base/zdesktop-files | userland/desktop/files | /bin/files |
+| userland/base/zsessiond | userland/desktop/sessiond | /bin/sessiond |
 | userland/base/libzdesktop | userland/desktop/libkeiland | libkeiland.so |
-| libvulkan・libegl・libglesv2・libwayland・libwayland-egl・libtruetype・mview・egltest・wltest・wlshm・vkdemo | ★ base に残すか desktop へ | 名前は今のまま |
+| libvulkan・libegl・libglesv2・libwayland・libwayland-egl・libtruetype・mview・egltest・wltest・wlshm・vkdemo | userland/desktop/<同じ名前>（2026-09-28 ユーザー「desktop へ移す」） | 名前は今のまま |
 
 ## Phase（案）
 
