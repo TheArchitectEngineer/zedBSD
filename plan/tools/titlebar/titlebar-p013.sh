@@ -2,8 +2,9 @@
 # ws070-p013: the TABS hardening on the Venus guest (the lean image).  zdesktop --glass shows
 # /bin/titlebar-probe --show --mode=tabs (README.md, main.c active, 日本語.txt, "+"; the probe makes a chosen tab
 # active, drops a closed one, adds "Untitled N" for "+"; it has no menu, so the tab keys are zdesktop's):
-#  1. keys.png: Ctrl+Tab, Ctrl+Tab (around the end), Ctrl+Shift+Tab, Ctrl+PageUp, Ctrl+PageDown, Ctrl+W, Ctrl+T
-#     give the probe, in order: tab 3, tab 1, tab 3, tab 2, tab 3, close 3, new.
+#  1. keys.png: Ctrl+Tab, Ctrl+Tab (around the end), Ctrl+Shift+Tab, Ctrl+PageUp, Ctrl+PageDown give the probe,
+#     in order: tab 3, tab 1, tab 3, tab 2, tab 3.  Ctrl+W and Ctrl+T stay the application's since ws035-p086
+#     (a terminal's shell needs them): the probe (without a menu) hears no close and no new tab from them.
 #  2. dock-1.png, dock-2.png: pictures taken while the window docks (the strip on its way), docked.png after;
 #     restored.
 #  3. title.png: a second probe with a long title and 5 tabs, 860 pixels wide: the title gives way (the first
@@ -86,9 +87,8 @@ expect_log /tmp/probe.log 'TITLEBARPROBE show ready mode=tabs'
 # 1. The keys (the new window has the keyboard; the probe answers no ping, so its body is not clicked).
 input hold ctrl key tab sleep 700 key tab sleep 700 hold shift key tab free shift sleep 700 key pgup sleep 700 key pgdn sleep 700 key w sleep 700 key t sleep 700 free ctrl sleep 500
 got=$(guest "grep -E 'TITLEBARPROBE event=(tab|close|new)' /tmp/probe.log" | sed -n 's/.*event=\(tab\|close\|new\)\( id=\([0-9]*\)\)\{0,1\}.*/\1\3/p' | tr '\n' ' ')
-want='tab3 tab1 tab3 tab2 tab3 close3 new '
+want='tab3 tab1 tab3 tab2 tab3 '
 [ "$got" = "$want" ] && echo "keys: $got ok" || { echo "keys: got '$got' want '$want' MISSING"; status=1; }
-expect_log /tmp/zdesktop.log 'ZWL TITLEBAR tab client=1 id=3 event=close'
 shot keys.png
 
 # 2. Docking, pictured on its way (the double click's second release starts it), and back.

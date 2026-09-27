@@ -47,6 +47,15 @@
 #define I915_SHADER_LOCATION_FRONT_FACING	66U
 
 /*
+ * The input locations a fragment kernel reads gl_FragCoord and gl_PointCoord
+ * at: gl_FragCoord is the thread payload's pixel position (and the source
+ * depth and w), not an input of its own; gl_PointCoord is an input the setup
+ * makes from the point sprite, not from a varying.
+ */
+#define I915_SHADER_LOCATION_FRAG_COORD		67U
+#define I915_SHADER_LOCATION_POINT_COORD	68U
+
+/*
  * Why a SPIR-V module was refused.
  *
  * `reason` is a static string; `opcode` and `word_offset` name the refused
@@ -133,6 +142,23 @@ struct i915_shader_binary {
 	 * declares in 3DSTATE_PS_EXTRA (Pixel Shader Kills Pixel).
 	 */
 	uint32_t uses_kill;
+
+	/*
+	 * Vertex: nonzero when the kernel writes the point size into its VUE
+	 * header, which the draw has the setup read (3DSTATE_SF Point Width
+	 * Source).
+	 */
+	uint32_t writes_point_size;
+
+	/*
+	 * Fragment: nonzero when the kernel reads an input without perspective,
+	 * gl_FragCoord.z or gl_FragCoord.w, which the draw has the payload carry:
+	 * the linear barycentrics (3DSTATE_WM Barycentric Interpolation Mode),
+	 * the source depth and the source w (3DSTATE_PS_EXTRA).
+	 */
+	uint32_t uses_linear_barycentrics;
+	uint32_t uses_source_depth;
+	uint32_t uses_source_w;
 
 	/*
 	 * The scratch memory each thread of the kernel needs for the values it

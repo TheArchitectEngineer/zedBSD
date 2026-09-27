@@ -91,6 +91,12 @@
 #define I915_EU_SCOPE_ALL		1
 #define I915_EU_SCOPE_SCALAR		2
 
+/*
+ * Sixteen channels regardless of the mask (a SIMD16 NoMask instruction in a
+ * SIMD8 kernel), for an operation on sixteen 16-bit words.
+ */
+#define I915_EU_SCOPE_SIXTEEN		3
+
 /* The hardware conditional modifier of each enum i915_eu_cond, in its order. */
 static const uint32_t i915_eu_cond_bits[I915_EU_COND_COUNT] = {
 	EU_COND_Z,
@@ -254,6 +260,41 @@ drv_i915_eu_grf_uw_half(
 }
 
 /*
+ * Names a general register operand with an explicit region: the element of
+ * `type` at byte `subnr`, read with <vstride;width,hstride> (each in its
+ * EU_VSTRIDE_ / EU_WIDTH_ / EU_HSTRIDE_ encoding).
+ *
+ * The derivatives read a value's pixels in quads this way, and the pixel
+ * position reads the subspan coordinates of the thread payload.
+ */
+struct i915_eu_reg
+drv_i915_eu_grf_region(
+	uint32_t nr,
+	uint32_t subnr,
+	uint32_t type,
+	uint32_t vstride,
+	uint32_t width,
+	uint32_t hstride)
+{
+	struct i915_eu_reg reg;
+
+	/* Names the register, the element and the type it is read as. */
+	kern_memset(&reg, 0, sizeof(reg));
+	reg.file = EU_FILE_GRF;
+	reg.nr = nr;
+	reg.subnr = subnr;
+	reg.type = type;
+
+	/* Reads it with the region given. */
+	reg.vstride = vstride;
+	reg.width = width;
+	reg.hstride = hstride;
+
+	/* Succeeded: the operand reads the region. */
+	return reg;
+}
+
+/*
  * Names one float of a general register, replicated to every channel.
  *
  * The float sits at byte `subnr` and is read with region <0;1,0>: how a value
@@ -372,6 +413,29 @@ drv_i915_eu_imm_ud(
 }
 
 /*
+ * Names an immediate of eight signed 4-bit integers (V): element n in bits
+ * 4 n + 3 .. 4 n.
+ *
+ * Mesa adds 0x11001010 to the replicated subspan coordinates of a pixel
+ * thread this way to make each pixel's x and y (brw_compile_fs.cpp).
+ */
+struct i915_eu_reg
+drv_i915_eu_imm_v(
+	uint32_t value)
+{
+	struct i915_eu_reg reg;
+
+	/* Carries the eight nibbles unchanged. */
+	kern_memset(&reg, 0, sizeof(reg));
+	reg.file = EU_FILE_IMM;
+	reg.type = EU_TYPE_V;
+	reg.immediate = value;
+
+	/* Succeeded: the operand is a vector immediate. */
+	return reg;
+}
+
+/*
  * Names the null register.
  *
  * As a float operand it carries the ordinary SIMD8 region.
@@ -479,6 +543,27 @@ drv_i915_eu_alu2_scalar(
 {
 	/* Encodes the instruction for the first channel, outside the mask. */
 	i915_eu_alu2_common(buffer, 0, I915_EU_FLAG_F0_0, I915_EU_SCOPE_SCALAR, op, dst, src0, src1);
+}
+
+/*
+ * Encodes a two-source instruction on sixteen channels regardless of the
+ * execution mask: a SIMD16 NoMask instruction in a SIMD8 kernel.
+ *
+ * The operands are those of drv_i915_eu_alu2(), read and written as sixteen
+ * 16-bit words.  Mesa computes the pixel positions of a SIMD8 pixel thread
+ * this way: one add of sixteen words, the x and y of both subspans
+ * (brw_compile_fs.cpp).
+ */
+void
+drv_i915_eu_alu2_sixteen(
+	struct i915_eu_buf *buffer,
+	enum i915_eu_alu op,
+	struct i915_eu_reg dst,
+	struct i915_eu_reg src0,
+	struct i915_eu_reg src1)
+{
+	/* Encodes the instruction for sixteen channels, outside the mask. */
+	i915_eu_alu2_common(buffer, 0, I915_EU_FLAG_F0_0, I915_EU_SCOPE_SIXTEEN, op, dst, src0, src1);
 }
 
 /*
@@ -1375,9 +1460,11 @@ i915_eu_scope(
 	if (scope == I915_EU_SCOPE_MASKED)
 		return;
 
-	/* A scalar instruction runs one channel. */
+	/* A scalar instruction runs one channel, a sixteen-word one sixteen. */
 	if (scope == I915_EU_SCOPE_SCALAR)
 		i915_eu_set(inst, EU_EXEC_SIZE_HI, EU_EXEC_SIZE_LO, EU_EXEC_SIZE_1);
+	if (scope == I915_EU_SCOPE_SIXTEEN)
+		i915_eu_set(inst, EU_EXEC_SIZE_HI, EU_EXEC_SIZE_LO, EU_EXEC_SIZE_16);
 
 	/* Both other forms ignore the execution mask. */
 	i915_eu_bit(inst, EU_NO_MASK_BIT, 1U);
@@ -1420,10 +1507,21 @@ i915_eu_dst(
 	uint32_t *inst,
 	struct i915_eu_reg reg)
 {
-	/* A destination is always written with horizontal stride one. */
+	uint32_t stride;
+
+	/*
+	 * A destination is written with horizontal stride one, or two when it
+	 * asks for it: the 16-bit halves of 32-bit channels (Mesa writes a
+	 * packed half float that way, brw_lower_pack.cpp).
+	 */
+	stride = EU_HSTRIDE_1;
+	if (reg.hstride == EU_HSTRIDE_2)
+		stride = EU_HSTRIDE_2;
+
+	/* Encodes the file, the type, the stride and the register. */
 	i915_eu_bit(inst, EU_DST_REG_FILE_BIT, i915_eu_file_bit(reg));
 	i915_eu_set(inst, EU_DST_REG_TYPE_HI, EU_DST_REG_TYPE_LO, reg.type);
-	i915_eu_set(inst, EU_DST_HSTRIDE_HI, EU_DST_HSTRIDE_LO, EU_HSTRIDE_1);
+	i915_eu_set(inst, EU_DST_HSTRIDE_HI, EU_DST_HSTRIDE_LO, stride);
 	i915_eu_set(inst, EU_DST_SUBREG_HI, EU_DST_SUBREG_LO, reg.subnr);
 	i915_eu_set(inst, EU_DST_REG_NR_HI, EU_DST_REG_NR_LO, reg.nr);
 }

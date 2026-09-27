@@ -75,6 +75,9 @@ struct i915_gfx_kernels {
 	/* The VUE slots after the position the vertex kernel writes. */
 	uint32_t varyings;
 
+	/* Nonzero when the vertex kernel writes the point size into its VUE header (0 for a rectangle). */
+	uint32_t vs_point_size;
+
 	/*
 	 * The fragment inputs: when ps_inputs_mapped is nonzero, the pixel
 	 * kernel reads ps_input_count inputs and input n (in its payload order)
@@ -87,6 +90,17 @@ struct i915_gfx_kernels {
 
 	/* Bit n: fragment input n is Flat, set up as the provoking vertex's value (0 for a rectangle). */
 	uint32_t ps_flat_mask;
+
+	/* Bit n: fragment input n is gl_PointCoord, the point sprite's texture coordinate (0 for a rectangle). */
+	uint32_t ps_point_sprite_mask;
+
+	/*
+	 * Nonzero when the pixel kernel's payload carries the linear
+	 * barycentrics, the source depth and the source w (0 for a rectangle).
+	 */
+	uint32_t ps_linear_barycentrics;
+	uint32_t ps_source_depth;
+	uint32_t ps_source_w;
 
 	/* The pixel kernel's first payload register and sampled images. */
 	uint32_t ps_grf_start;
@@ -153,7 +167,7 @@ int drv_i915_gfx_emit_vertex_input(struct i915_gfx_batch *batch, const struct i9
 int drv_i915_gfx_emit_index_buffer(struct i915_gfx_batch *batch, const struct i915_gfx_draw_state *state, uint32_t mocs);
 void drv_i915_gfx_emit_urb(struct i915_gfx_batch *batch, uint32_t entry_size);
 void drv_i915_gfx_emit_constants(struct i915_gfx_batch *batch, uint64_t vs_push_va, uint32_t vs_push_regs, uint64_t ps_push_va, uint32_t ps_push_regs, uint32_t mocs);
-void drv_i915_gfx_emit_raster(struct i915_gfx_batch *batch, const struct i915_gfx_pipeline *pipeline);
+void drv_i915_gfx_emit_raster(struct i915_gfx_batch *batch, const struct i915_gfx_pipeline *pipeline, const struct i915_gfx_kernels *kernels);
 int drv_i915_gfx_emit_depth(struct i915_gfx_batch *batch, const struct i915_gfx_draw_state *state, const struct i915_gfx_image *depth, uint64_t scratch_va, uint32_t mocs);
 void drv_i915_gfx_emit_vertex_shader(struct i915_gfx_batch *batch, const struct i915_gfx_kernels *kernels);
 void drv_i915_gfx_emit_pixel_shader(struct i915_gfx_batch *batch, const struct i915_gfx_kernels *kernels);
