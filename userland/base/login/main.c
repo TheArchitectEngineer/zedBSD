@@ -11,11 +11,11 @@
  * Implements the zedBSD login userland command.
  */
 
-#include <crypt.h>
 #include <grp.h>
 #include <pwd.h>
-#include <shadow.h>
 #include <utmpx.h>
+
+#include "verify.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -41,13 +41,11 @@ main(
 	char **argv)
 {
 	int function_result;
-	int empty;
+	int verified;
 	const char *shell;
 	char name[64], password[256], tty[64];
-	struct passwd account, *found;
-	struct spwd shadow, *shadow_found;
-	char pwbuf[2048], spbuf[2048];
-	char *hash;
+	struct passwd account;
+	char pwbuf[LOGIN_VERIFY_BUFFER];
 	pid_t child, waited;
 	int status;
 	struct utmpx record;
@@ -82,63 +80,23 @@ main(
 			return 1;
 	}
 
-	/* Handles a failed getpwnam r operation. */
-	if (getpwnam_r(name, &account, pwbuf, sizeof(pwbuf), &found) != 0 ||
-	    found == NULL ||
-	    getspnam_r(name, &shadow, spbuf, sizeof(spbuf), &shadow_found) != 0 ||
-	    shadow_found == NULL) {
-		printf("Password: ");
-		fflush(stdout);
-		(void)read_line(password, sizeof(password), 0);
-		puts("Login incorrect");
-
-		/* Reports operation failure. */
-		return 1;
-	}
-
 	printf("Password: ");
 	fflush(stdout);
 
 	/* Handles a failed read line operation. */
-	if (read_line(password, sizeof(password), 0) != 0)
-		return 1;
-
-	/* If the login is invalidated. */
-	if (shadow.sp_pwdp[0] == '!' || shadow.sp_pwdp[0] == '*') {
+	if (read_line(password, sizeof(password), 0) != 0) {
 		memset(password, 0, sizeof(password));
+		return 1;
+	}
+
+	/* Checks the password against shadow, which erases it (verify.c). */
+	verified = login_verify(name, password, &account, pwbuf, sizeof(pwbuf));
+	memset(password, 0, sizeof(password));
+	if (verified != 0) {
 		puts("Login incorrect");
 
 		/* Reports operation failure. */
 		return 1;
-	}
-
-	/* If the password is empty. */
-	if (shadow.sp_pwdp[0] == '\0') {
-		empty = password[0] == '\0';
-
-		/* Shred. */
-		memset(password, 0, sizeof(password));
-
-		/* If the entered password is not empty. */
-		if (!empty) {
-			puts("Login incorrect");
-
-			/* Reports operation failure. */
-			return 1;
-		}
-	} else {
-		hash = crypt(password, shadow.sp_pwdp);
-
-		/* Shred. */
-		memset(password, 0, sizeof(password));
-
-		/* Handles the hash availability. */
-		if (hash == NULL || strcmp(hash, shadow.sp_pwdp)) {
-			puts("Login incorrect");
-
-			/* Reports operation failure. */
-			return 1;
-		}
 	}
 
 	/* Launch a child process. */

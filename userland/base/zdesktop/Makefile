@@ -16,4 +16,4 @@ ZDESKTOP_SOURCES := userland/base/zdesktop/main.c userland/base/zdesktop/wire.c 
 # App Home starts X11 applications through zdesktop-x11, which starts zdesktop-x11server when it is needed.
 ZEDBSD_PACKAGE_INPUTS += userland/base/zdesktop/zdesktop-x11
 ZEDBSD_PACKAGE_FILES += $(if $(filter zdesktop,$(ZEDBSD_USER_PROGRAMS)),--file /usr/libexec/zdesktop-x11=userland/base/zdesktop/zdesktop-x11)
-$(eval $(call ZEDBSD_USERLAND_PACKAGE,zdesktop,Wayland compositor (zdesktop),amd64,y,basic,$(ZDESKTOP_SOURCES),y,base,base/zdesktop,base/libvulkan base/libtruetype,0755,program,,,bin))
+$(eval $(call ZEDBSD_USERLAND_PACKAGE,zdesktop,Wayland compositor (zdesktop),amd64,y,basic,$(ZDESKTOP_SOURCES),y,base,base/zdesktop,base/libvulkan base/libtruetype base/zsessiond,0755,program,,,bin))
