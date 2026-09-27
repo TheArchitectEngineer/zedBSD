@@ -54,15 +54,16 @@ static const struct titlebar_control titlebar_controls[] = {
 static void titlebar_activated(void *data, struct zdesktop_titlebar *object, uint32_t id, uint32_t detail, struct wl_seat *seat, uint32_t serial);
 static void titlebar_changed(void *data, struct zdesktop_titlebar *object, uint32_t id, const char *text);
 static void titlebar_done(void *data, struct zdesktop_titlebar *object, uint32_t id, const char *text, unsigned how);
+static void titlebar_drop_target(void *data, struct zdesktop_titlebar *object, uint32_t id, uint32_t detail);
 static void titlebar_queue(struct fm_titlebar *titlebar, unsigned kind, uint32_t id, uint32_t detail, const char *text);
 static int titlebar_build(struct fm_titlebar *titlebar);
 static int titlebar_state(struct fm_titlebar *titlebar, const struct fm_titlebar_state *state);
 static int titlebar_state_controls(struct zdesktop_titlebar *object, const struct fm_titlebar_state *state);
 static int titlebar_state_progress(struct fm_titlebar *titlebar, const struct fm_titlebar_state *state);
 
-/* What the titlebar tells the window: the controls chosen and the text fields' typing. */
+/* What the titlebar tells the window: the controls chosen, the text fields' typing, and the part of the path a drag is over. */
 static const struct zdesktop_titlebar_listener titlebar_listener = {
-	titlebar_activated, titlebar_changed, titlebar_done, NULL, NULL, NULL, NULL
+	titlebar_activated, titlebar_changed, titlebar_done, NULL, NULL, NULL, NULL, titlebar_drop_target
 };
 
 /*
@@ -79,8 +80,9 @@ fm_titlebar_open(
 {
 	int error;
 
-	/* Nothing yet. */
+	/* Nothing yet but the window. */
 	memset(titlebar, 0, sizeof(*titlebar));
+	titlebar->window = window;
 
 	/* The window's titlebar object. */
 	titlebar->titlebar = zdesktop_titlebar_create(window->display, window->toplevel, &titlebar_listener, titlebar);
@@ -182,6 +184,31 @@ titlebar_activated(
 	(void)seat;
 	(void)serial;
 	titlebar_queue(data, FM_TITLEBAR_ACTIVATED, id, detail, "");
+}
+
+/*
+ * Queues the part of the path a drag and drop is over (id 0: none) with the
+ * window's input, where the drag's own events are (dnd.c), so that the
+ * interface knows the part before the drag's next enter or motion.
+ */
+static void
+titlebar_drop_target(
+	void *data,
+	struct zdesktop_titlebar *object,
+	uint32_t id,
+	uint32_t detail)
+{
+	struct fm_titlebar *titlebar;
+	struct fm_event *event;
+
+	/* The event, with the window's input. */
+	(void)object;
+	titlebar = data;
+	event = fm_window_push(titlebar->window, FM_EVENT_DROP_PART);
+	if (event == NULL)
+		return;
+	event->action = id;
+	event->button = detail;
 }
 
 /* Queues a text field's text as typed. */

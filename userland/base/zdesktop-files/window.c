@@ -77,7 +77,6 @@ static void window_keyboard_leave(void *data, struct wl_keyboard *keyboard, uint
 static void window_keyboard_key(void *data, struct wl_keyboard *keyboard, uint32_t serial, uint32_t time, uint32_t key, uint32_t state);
 static void window_keyboard_modifiers(void *data, struct wl_keyboard *keyboard, uint32_t serial, uint32_t depressed, uint32_t latched, uint32_t locked, uint32_t group);
 static void window_keyboard_repeat(void *data, struct wl_keyboard *keyboard, int32_t rate, int32_t delay);
-static struct fm_event *window_push(struct fm_window *window, unsigned type);
 static int window_modifier_key(uint32_t key);
 static int window_has_state(struct wl_array *states, uint32_t wanted);
 
@@ -140,6 +139,8 @@ fm_window_open(
 	memset(window, 0, sizeof(*window));
 	window->width = width;
 	window->height = height;
+	window->preferred_width = width;
+	window->preferred_height = height;
 	window->repeat_delay = WINDOW_REPEAT_DELAY;
 	window->repeat_interval = WINDOW_REPEAT_INTERVAL;
 	window->activated = 1;
@@ -210,6 +211,9 @@ fm_window_open(
 		errno = EPROTO;
 		return -1;
 	}
+
+	/* Drag and drop, when the compositor has it (dnd.c). */
+	fm_dnd_open(window);
 
 	/* Succeeded: the window can be drawn into. */
 	window->resized = 0;
@@ -328,7 +332,7 @@ fm_window_repeat(
 		return (int)(window->repeat_at - now);
 
 	/* The key once more, and the next repeat one interval later. */
-	event = window_push(window, FM_EVENT_KEY);
+	event = fm_window_push(window, FM_EVENT_KEY);
 	if (event != NULL) {
 		event->key = window->repeat_key;
 		event->pressed = 1;
@@ -355,7 +359,7 @@ fm_window_action(
 	struct fm_event *event;
 
 	/* The input; a full queue drops it. */
-	event = window_push(window, FM_EVENT_ACTION);
+	event = fm_window_push(window, FM_EVENT_ACTION);
 	if (event == NULL)
 		return;
 	event->action = action;
@@ -399,6 +403,9 @@ void
 fm_window_close(
 	struct fm_window *window)
 {
+	/* Drag and drop's objects (dnd.c). */
+	fm_dnd_close(window);
+
 	/* The devices and the seat. */
 	if (window->pointer != NULL)
 		wl_pointer_destroy(window->pointer);
@@ -445,6 +452,36 @@ fm_clock(void)
 	return (uint64_t)now.tv_sec * 1000U + (uint64_t)now.tv_nsec / 1000000U;
 }
 
+/* Queues a new input of a kind at the pointer's place with the modifiers held; NULL when the queue is full. */
+struct fm_event *
+fm_window_push(
+	struct fm_window *window,
+	unsigned type)
+{
+	struct fm_event *event;
+	unsigned slot;
+
+	/* A full queue drops the input (the user is far ahead of the program). */
+	if (window->event_count == FM_WINDOW_EVENTS)
+		return NULL;
+
+	/* The slot after the last one queued. */
+	slot = (window->event_first + window->event_count) % FM_WINDOW_EVENTS;
+	window->event_count++;
+
+	/* The input, with what every input carries. */
+	event = &window->events[slot];
+	memset(event, 0, sizeof(*event));
+	event->type = type;
+	event->x = window->pointer_x;
+	event->y = window->pointer_y;
+	event->modifiers = window->modifiers;
+	event->time = fm_clock();
+
+	/* Reports the queued input for its details. */
+	return event;
+}
+
 /* Binds the compositor, the shell and the first seat. */
 static void
 window_global(
@@ -475,6 +512,15 @@ window_global(
 		window->shell = wl_registry_bind(registry, name, &xdg_wm_base_interface, version);
 		if (window->shell != NULL)
 			(void)xdg_wm_base_add_listener(window->shell, &shell_listener, window);
+		return;
+	}
+
+	/* The data device manager carries drag and drop (dnd.c); version 3 has its actions. */
+	match = strcmp(interface, "wl_data_device_manager");
+	if (match == 0 && window->data_manager == NULL) {
+		if (version > 3U)
+			version = 3U;
+		window->data_manager = wl_registry_bind(registry, name, &wl_data_device_manager_interface, version);
 		return;
 	}
 
@@ -545,13 +591,19 @@ window_toplevel_configure(
 	window = data;
 	window->maximized = window_has_state(states, WINDOW_STATE_MAXIMIZED);
 
-	/* A width left to the window is its own, kept within the compositor's bounds. */
-	if (width <= 0 && window->bounds_width > 0U && window->width > window->bounds_width)
-		width = (int32_t)window->bounds_width;
+	/* A width left to the window is the one it would like, kept within the compositor's bounds (which may have grown or shrunk). */
+	if (width <= 0) {
+		width = (int32_t)window->preferred_width;
+		if (window->bounds_width > 0U && window->preferred_width > window->bounds_width)
+			width = (int32_t)window->bounds_width;
+	}
 
 	/* And so is a height. */
-	if (height <= 0 && window->bounds_height > 0U && window->height > window->bounds_height)
-		height = (int32_t)window->bounds_height;
+	if (height <= 0) {
+		height = (int32_t)window->preferred_height;
+		if (window->bounds_height > 0U && window->preferred_height > window->bounds_height)
+			height = (int32_t)window->bounds_height;
+	}
 
 	/* A new width marks the window resized. */
 	if (width > 0 && (uint32_t)width != window->width) {
@@ -665,7 +717,7 @@ window_pointer_enter(
 	window = data;
 	window->pointer_x = wl_fixed_to_int(x);
 	window->pointer_y = wl_fixed_to_int(y);
-	event = window_push(window, FM_EVENT_MOTION);
+	event = fm_window_push(window, FM_EVENT_MOTION);
 	if (event != NULL)
 		event->time = fm_clock();
 }
@@ -686,7 +738,7 @@ window_pointer_leave(
 	(void)serial;
 	(void)surface;
 	window = data;
-	event = window_push(window, FM_EVENT_LEAVE);
+	event = fm_window_push(window, FM_EVENT_LEAVE);
 	if (event != NULL)
 		event->time = fm_clock();
 }
@@ -709,7 +761,7 @@ window_pointer_motion(
 	window = data;
 	window->pointer_x = wl_fixed_to_int(x);
 	window->pointer_y = wl_fixed_to_int(y);
-	event = window_push(window, FM_EVENT_MOTION);
+	event = fm_window_push(window, FM_EVENT_MOTION);
 	if (event != NULL)
 		event->time = fm_clock();
 }
@@ -733,7 +785,7 @@ window_pointer_button(
 	window = data;
 	if (state == WL_POINTER_BUTTON_STATE_PRESSED)
 		window->button_serial = serial;
-	event = window_push(window, FM_EVENT_BUTTON);
+	event = fm_window_push(window, FM_EVENT_BUTTON);
 	if (event == NULL)
 		return;
 
@@ -766,7 +818,7 @@ window_pointer_axis(
 		return;
 
 	/* The distance, scaled to the window's pixels. */
-	event = window_push(window, FM_EVENT_AXIS);
+	event = fm_window_push(window, FM_EVENT_AXIS);
 	if (event == NULL)
 		return;
 	event->scroll = wl_fixed_to_int(value) * WINDOW_SCROLL_SCALE;
@@ -867,7 +919,7 @@ window_keyboard_enter(
 
 	/* The window has the focus: its selection is drawn in the accent. */
 	window->activated = 1;
-	event = window_push(window, FM_EVENT_FOCUS);
+	event = fm_window_push(window, FM_EVENT_FOCUS);
 	if (event != NULL)
 		event->focused = 1;
 }
@@ -893,7 +945,7 @@ window_keyboard_leave(
 
 	/* The window lost the focus: its selection is drawn grey. */
 	window->activated = 0;
-	event = window_push(window, FM_EVENT_FOCUS);
+	event = fm_window_push(window, FM_EVENT_FOCUS);
 	if (event != NULL)
 		event->focused = 0;
 }
@@ -917,7 +969,7 @@ window_keyboard_key(
 	(void)serial;
 	(void)time;
 	window = data;
-	event = window_push(window, FM_EVENT_KEY);
+	event = fm_window_push(window, FM_EVENT_KEY);
 	if (event != NULL) {
 		event->key = key;
 		event->pressed = 0;
@@ -989,36 +1041,6 @@ window_keyboard_repeat(
 		window->repeat_interval = 1000U / (uint32_t)rate;
 	if (delay > 0)
 		window->repeat_delay = (uint32_t)delay;
-}
-
-/* Queues a new input of a kind at the pointer's place with the modifiers held; NULL when the queue is full. */
-static struct fm_event *
-window_push(
-	struct fm_window *window,
-	unsigned type)
-{
-	struct fm_event *event;
-	unsigned slot;
-
-	/* A full queue drops the input (the user is far ahead of the program). */
-	if (window->event_count == FM_WINDOW_EVENTS)
-		return NULL;
-
-	/* The slot after the last one queued. */
-	slot = (window->event_first + window->event_count) % FM_WINDOW_EVENTS;
-	window->event_count++;
-
-	/* The input, with what every input carries. */
-	event = &window->events[slot];
-	memset(event, 0, sizeof(*event));
-	event->type = type;
-	event->x = window->pointer_x;
-	event->y = window->pointer_y;
-	event->modifiers = window->modifiers;
-	event->time = fm_clock();
-
-	/* Reports the queued input for its details. */
-	return event;
 }
 
 /* Tells whether a key is a modifier (which does not repeat). */

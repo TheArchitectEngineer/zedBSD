@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 のユーザーの指示でサブエージェントが worktree の branch で実行。main の Queue への反映は統合する main）
-Resume point: p001〜p005・p007・p010〜p012・p014・p045 cleared。次は p022（VM の核 2: 値・object・shape・配列・関数）
+Resume point: p001〜p005・p007・p010〜p012・p014・p022・p023・p045 cleared。次は p024（JS の lexer と parser）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -92,8 +92,8 @@ p009 → p018 → p027 → p028 → p029 → p031 → p032 → p033 → p034 →
 | ws074-p019 | `libjpeg-compat` 1: baseline（huffman、任意の subsampling、restart、grayscale・YCbCr）、library の登録、host の試験（Pillow と比較） | planned | p002 |
 | ws074-p020 | `libjpeg-compat` 2: progressive、CMYK/YCCK、`jpeg_save_markers`（EXIF の向き）、`JCS_EXT_BGRA` | planned | p019 |
 | ws074-p021 | browser の画像: `<img>`、CSS の背景画像、JPEG・PNG（libpng-compat）・GIF、画像の cache、固有の大きさ | planned | p016、p020、ws071-p010 |
-| ws074-p022 | VM の核 2: 値（NaN-boxing）、object と shape、配列の elements、関数、realm の骨組み | planned | p003 |
-| ws074-p023 | 共通の bytecode と interpreter、呼び出し規約、例外の unwind、native 関数（手で組んだ JS 型と Wasm 型の命令の試験） | planned | p022 |
+| [ws074-p022](phase022/phase.md) | VM の核 2: 値（NaN-boxing）、object と shape、配列の elements、関数、realm の骨組み | cleared | p003 |
+| [ws074-p023](phase023/phase.md) | 共通の bytecode と interpreter、呼び出し規約、例外の unwind、native 関数（手で組んだ JS 型と Wasm 型の命令の試験） | cleared | p022 |
 | ws074-p024 | JS の lexer と parser（ES2024 の構文 → AST）、test262 の構文の試験（parse だけ） | planned | p023 |
 | ws074-p025 | JS の compiler（ES5 の核）、`--js` の shell、test262 の runner。最初の数 | planned | p024 |
 | ws074-p026 | 組み込み 1: Object・Function・Array・String・Number（最短の十進表記）・Boolean・Math・Error・JSON | planned | p025 |

@@ -41,6 +41,25 @@ struct fm_window {
 	struct wl_pointer *pointer;
 	struct wl_keyboard *keyboard;
 
+	/*
+	 * Drag and drop (dnd.c, ws035-p084): the data device manager and the
+	 * seat's device (NULL without them); this window's own drag (its
+	 * source, NULL for none, and the file names it offers, "text/uri-list");
+	 * the offer the compositor introduced last and whether it has file
+	 * names; the offer of the drag over the window (NULL for none), the
+	 * serial of its enter, whether it has file names and its version.
+	 */
+	struct wl_data_device_manager *data_manager;
+	struct wl_data_device *data_device;
+	struct wl_data_source *drag_source;
+	char *drag_uris;
+	size_t drag_uris_length;
+	struct wl_data_offer *offer_new;
+	int offer_new_files;
+	struct wl_data_offer *drop_offer;
+	uint32_t drop_serial;
+	int drop_files;
+
 	/* The window: its surface and roles. */
 	struct wl_surface *surface;
 	struct xdg_surface *role;
@@ -51,9 +70,11 @@ struct fm_window {
 	uint32_t height;
 	int resized;
 
-	/* The largest size the window may choose for itself (xdg-shell's bounds; 0 when not known). */
+	/* The largest size the window may choose for itself (xdg-shell's bounds; 0 when not known), and the size it would like. */
 	uint32_t bounds_width;
 	uint32_t bounds_height;
+	uint32_t preferred_width;
+	uint32_t preferred_height;
 
 	/* Whether the first configure arrived, the compositor asked to close, the window has the focus, is maximized. */
 	int configured;
@@ -113,6 +134,7 @@ struct fm_menu {
  * carried out, oldest first.
  */
 struct fm_titlebar {
+	struct fm_window *window;
 	struct zdesktop_titlebar *titlebar;
 	struct fm_titlebar_state shown;
 	int sent;
@@ -198,6 +220,13 @@ void fm_window_close(struct fm_window *window);
 void fm_window_action(struct fm_window *window, uint32_t action);
 void fm_window_minimize(struct fm_window *window);
 void fm_window_zoom(struct fm_window *window);
+struct fm_event *fm_window_push(struct fm_window *window, unsigned type);
+void fm_dnd_open(struct fm_window *window);
+void fm_dnd_close(struct fm_window *window);
+int fm_dnd_start(struct fm_window *window, char *const *paths, size_t count);
+void fm_dnd_answer(struct fm_window *window, int accept, uint32_t preferred);
+int fm_dnd_receive(struct fm_window *window, char ***paths, size_t *count);
+void fm_dnd_finish(struct fm_window *window);
 uint64_t fm_clock(void);
 
 /* The menus (menu.c). */

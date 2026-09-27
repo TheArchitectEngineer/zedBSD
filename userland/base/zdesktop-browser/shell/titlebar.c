@@ -55,7 +55,7 @@ static int titlebar_state(struct shell_titlebar *titlebar, int can_back, int can
 
 /* What the titlebar tells the window: the controls chosen and the end of the location's editing. */
 static const struct zdesktop_titlebar_listener titlebar_listener = {
-	titlebar_activated, NULL, titlebar_done, NULL, NULL, NULL, NULL
+	titlebar_activated, NULL, titlebar_done, NULL, NULL, NULL, NULL, NULL
 };
 
 /*

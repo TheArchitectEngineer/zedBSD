@@ -25,6 +25,13 @@ ZDESKTOP_BROWSER_SOURCES := $(ZDESKTOP_BROWSER_DIR)/main.c \
 	$(ZDESKTOP_BROWSER_DIR)/vm/heap.c \
 	$(ZDESKTOP_BROWSER_DIR)/vm/string.c \
 	$(ZDESKTOP_BROWSER_DIR)/vm/atom.c \
+	$(ZDESKTOP_BROWSER_DIR)/vm/shape.c \
+	$(ZDESKTOP_BROWSER_DIR)/vm/object.c \
+	$(ZDESKTOP_BROWSER_DIR)/vm/function.c \
+	$(ZDESKTOP_BROWSER_DIR)/vm/realm.c \
+	$(ZDESKTOP_BROWSER_DIR)/vm/code.c \
+	$(ZDESKTOP_BROWSER_DIR)/vm/operation.c \
+	$(ZDESKTOP_BROWSER_DIR)/vm/interpreter.c \
 	$(ZDESKTOP_BROWSER_DIR)/html/input.c \
 	$(ZDESKTOP_BROWSER_DIR)/html/tokenizer.c \
 	$(ZDESKTOP_BROWSER_DIR)/html/parser.c \

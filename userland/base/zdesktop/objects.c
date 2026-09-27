@@ -309,8 +309,12 @@ zwl_object_destroy(
 	if (object->kind == ZWL_SURFACE || object->kind == ZWL_GLASS)
 		zwl_panels_object_gone(object);
 
-	/* A data source leaves the clipboard and its offers (data.c). */
-	if (object->kind == ZWL_DATA_SOURCE)
+	/* A data source leaves the clipboard and its offers, and a drag loses what goes (data.c). */
+	if (object->kind == ZWL_DATA_SOURCE ||
+	    object->kind == ZWL_DATA_OFFER ||
+	    object->kind == ZWL_DATA_DEVICE ||
+	    object->kind == ZWL_SURFACE ||
+	    object->kind == ZWL_TITLEBAR)
 		zwl_data_object_gone(object);
 
 	/* A sub-surface leaves its parent, a parent's sub-surfaces lose it (subsurface.c). */

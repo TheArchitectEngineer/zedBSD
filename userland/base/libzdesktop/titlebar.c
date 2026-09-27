@@ -27,8 +27,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* The version of the protocol this library speaks. */
+/* The oldest version of the protocol this library speaks, and the newest (2: drop_target). */
 #define TITLEBAR_VERSION	1U
+#define TITLEBAR_VERSION_DROP	2U
 
 /* The compositor's bounds of one titlebar (plan/ws070/titlebar-design.md section 2.2). */
 #define TITLEBAR_CONTROLS_MAX	64U
@@ -68,9 +69,10 @@ struct zdesktop_titlebar {
 	uint32_t serial;
 };
 
-/* What the registry search found: the manager's global name, 0 for none. */
+/* What the registry search found: the manager's global name (0 for none) and its version. */
 struct titlebar_search {
 	uint32_t name;
+	uint32_t version;
 };
 
 static struct zed_titlebar_manager_v1 *titlebar_bind(struct wl_display *display);
@@ -83,6 +85,7 @@ static void titlebar_tab_activated(void *data, struct zed_titlebar_v1 *proxy, ui
 static void titlebar_tab_close(void *data, struct zed_titlebar_v1 *proxy, uint32_t id);
 static void titlebar_new_tab(void *data, struct zed_titlebar_v1 *proxy, uint32_t serial);
 static void titlebar_overflow(void *data, struct zed_titlebar_v1 *proxy);
+static void titlebar_drop_target(void *data, struct zed_titlebar_v1 *proxy, uint32_t id, uint32_t detail);
 static struct titlebar_entry *titlebar_control(struct zdesktop_titlebar *titlebar, uint32_t id);
 static int titlebar_tab(const struct zdesktop_titlebar *titlebar, uint32_t id);
 static int titlebar_text_ok(const char *text);
@@ -100,7 +103,8 @@ static const struct zed_titlebar_v1_listener titlebar_listener = {
 	titlebar_tab_activated,
 	titlebar_tab_close,
 	titlebar_new_tab,
-	titlebar_overflow
+	titlebar_overflow,
+	titlebar_drop_target
 };
 
 /*
@@ -657,6 +661,7 @@ titlebar_bind(
 	struct wl_event_queue *queue;
 	struct wl_display *wrapper;
 	struct wl_registry *registry;
+	uint32_t version;
 	int status;
 
 	/* The search's own queue, and the display as seen from it. */
@@ -679,6 +684,7 @@ titlebar_bind(
 
 	/* The globals, announced to this search alone. */
 	search.name = 0;
+	search.version = 0;
 	registry = wl_display_get_registry(wrapper);
 	if (registry != NULL) {
 		status = wl_registry_add_listener(registry, &titlebar_registry_listener, &search);
@@ -686,10 +692,15 @@ titlebar_bind(
 			(void)wl_display_roundtrip_queue(display, queue);
 	}
 
+	/* The newest version both sides speak. */
+	version = TITLEBAR_VERSION;
+	if (search.version >= TITLEBAR_VERSION_DROP)
+		version = TITLEBAR_VERSION_DROP;
+
 	/* The manager, bound when announced, is moved to the application's default queue. */
 	manager = NULL;
 	if (registry != NULL && search.name != 0U) {
-		manager = wl_registry_bind(registry, search.name, &zed_titlebar_manager_v1_interface, TITLEBAR_VERSION);
+		manager = wl_registry_bind(registry, search.name, &zed_titlebar_manager_v1_interface, version);
 		if (manager != NULL)
 			wl_proxy_set_queue((struct wl_proxy *)manager, NULL);
 	}
@@ -735,9 +746,11 @@ titlebar_global(
 	if (same != 0 || version < TITLEBAR_VERSION)
 		return;
 
-	/* The first one found is used. */
-	if (search->name == 0U)
+	/* The first one found is used, at the version it has. */
+	if (search->name == 0U) {
 		search->name = name;
+		search->version = version;
+	}
 }
 
 /* A global going away during the search changes nothing. */
@@ -890,6 +903,26 @@ titlebar_overflow(
 
 	/* The notice. */
 	titlebar->listener->overflow_menu_opened(titlebar->data, titlebar);
+}
+
+/* Hands a drag and drop's place over a control's part (or over none) on to the application's listener. */
+static void
+titlebar_drop_target(
+	void *data,
+	struct zed_titlebar_v1 *proxy,
+	uint32_t id,
+	uint32_t detail)
+{
+	struct zdesktop_titlebar *titlebar;
+
+	/* The application's callback, if it has one. */
+	(void)proxy;
+	titlebar = data;
+	if (titlebar->listener == NULL || titlebar->listener->drop_target == NULL)
+		return;
+
+	/* The place. */
+	titlebar->listener->drop_target(titlebar->data, titlebar, id, detail);
 }
 
 /* Finds a control in the mirror; NULL when there is none. */

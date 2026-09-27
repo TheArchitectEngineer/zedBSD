@@ -98,7 +98,13 @@
 #define FM_BUTTON_MIDDLE	0x112U
 
 /*
- * The kinds of input the window gives the interface.
+ * The kinds of input the window gives the interface.  The drop events are
+ * a drag and drop from zdesktop (ws035-p084): one comes over the window
+ * (pressed: it is this window's own drag; focused: it carries file names),
+ * moves, leaves, or is dropped; the part of the titlebar's path it is over
+ * (action: the control, button: the part; action 0 for none); the action
+ * zdesktop chose (action); and the end of this window's own drag that left
+ * it (pressed: dropped somewhere).
  */
 enum fm_event_type {
 	FM_EVENT_MOTION,
@@ -107,8 +113,19 @@ enum fm_event_type {
 	FM_EVENT_LEAVE,
 	FM_EVENT_KEY,
 	FM_EVENT_FOCUS,
-	FM_EVENT_ACTION
+	FM_EVENT_ACTION,
+	FM_EVENT_DROP_ENTER,
+	FM_EVENT_DROP_MOTION,
+	FM_EVENT_DROP_LEAVE,
+	FM_EVENT_DROP,
+	FM_EVENT_DROP_PART,
+	FM_EVENT_DROP_ACTION,
+	FM_EVENT_DRAG_DONE
 };
+
+/* The drag and drop actions zdesktop chooses between (wl_data_device_manager's dnd_action). */
+#define FM_DND_COPY		1U
+#define FM_DND_MOVE		2U
 
 /*
  * One input: where the pointer is, which button or key, and the modifiers
@@ -728,7 +745,9 @@ enum fm_request {
 	FM_REQUEST_MINIMIZE,
 	FM_REQUEST_ZOOM,
 	FM_REQUEST_CLOSE,
-	FM_REQUEST_CONTEXT
+	FM_REQUEST_CONTEXT,
+	FM_REQUEST_DRAG_OUT,
+	FM_REQUEST_DROP
 };
 
 /* How many rows a context menu has at most, and the longest label. */
@@ -999,6 +1018,28 @@ struct fm_app {
 	int drag_hit_index;
 	int drag_tag;
 	char drag_folder[FM_PATH_MAX];
+
+	/*
+	 * Drag and drop with other windows (ws035-p084): whether the dragged
+	 * items left the window (zdesktop carries them from then on).  A drop
+	 * coming in: whether one is over the window, whether it is this
+	 * window's own drag, whether it carries file names, where it is, the
+	 * part of the titlebar's path it is over (-1 for none), the action
+	 * zdesktop chose (FM_DND_*), whether the Wayland side must answer a
+	 * changed target, and the folder and operation (FM_TASK_*) of a drop
+	 * made (FM_REQUEST_DROP).  Its target is drag_target and drag_folder.
+	 */
+	int drag_outside;
+	int drop_active;
+	int drop_self;
+	int drop_files;
+	int drop_x;
+	int drop_y;
+	int drop_part;
+	uint32_t drop_action;
+	int drop_answer;
+	char drop_folder[FM_PATH_MAX];
+	unsigned drop_operation;
 
 	/* What was typed to find an item by its name, and when it was typed last. */
 	char typed[64];
@@ -1300,6 +1341,9 @@ int fm_drag_motion(struct fm_app *app, int x, int y);
 int fm_drag_release(struct fm_app *app);
 void fm_drag_cancel(struct fm_app *app);
 void fm_drag_draw(struct fm_app *app, struct fm_canvas *canvas);
+void fm_drop_event(struct fm_app *app, const struct fm_event *event);
+int fm_drop_accepts(const struct fm_app *app);
+void fm_drop_perform(struct fm_app *app, char *const *paths, size_t count);
 
 /* The tabs (ui-tabs.c). */
 void fm_tabs_new(struct fm_app *app, const struct fm_location *location);
