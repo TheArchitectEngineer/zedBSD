@@ -38,6 +38,19 @@
 #define I915_GFX_SURFACE_R32G32B32_FLOAT	0x040U
 #define I915_GFX_SURFACE_R32G32B32A32_FLOAT	0x000U
 
+/*
+ * The 32-bit integer ones, for integer vertex attributes (Mesa 25.0.7
+ * src/intel/isl/isl.h, enum isl_format, which is genxml's SURFACE_FORMAT).
+ */
+#define I915_GFX_SURFACE_R32_SINT		0x0d6U
+#define I915_GFX_SURFACE_R32_UINT		0x0d7U
+#define I915_GFX_SURFACE_R32G32_SINT		0x086U
+#define I915_GFX_SURFACE_R32G32_UINT		0x087U
+#define I915_GFX_SURFACE_R32G32B32_SINT		0x041U
+#define I915_GFX_SURFACE_R32G32B32_UINT		0x042U
+#define I915_GFX_SURFACE_R32G32B32A32_SINT	0x001U
+#define I915_GFX_SURFACE_R32G32B32A32_UINT	0x002U
+
 /* SAMPLER_STATE texture coordinate mode for an address mode past the table: CLAMP. */
 #define I915_GFX_SAMPLER_CLAMP			2U
 
@@ -154,6 +167,7 @@ static const uint32_t i915_gfx_blend_functions[5] = {
 };
 
 static int i915_surface_format(uint32_t format, uint32_t *surface_format);
+static int i915_format_integer(uint32_t format);
 static uint32_t i915_format_components(uint32_t format);
 static int i915_image_surface_write(uint32_t *rss, const struct i915_gfx_image *image, uint32_t base_level, uint32_t level_count, uint32_t mocs);
 static uint32_t i915_sampler_mip_filter(uint32_t mipmap_mode);
@@ -564,6 +578,7 @@ drv_i915_gfx_emit_vertex_input(
 	uint32_t component_z;
 	uint32_t component_w;
 	uint32_t topology;
+	int integer;
 	uint64_t va;
 	int error;
 
@@ -636,7 +651,7 @@ drv_i915_gfx_emit_vertex_input(
 
 		/*
 		 * Stores the components the format has; a missing y or z is 0 and
-		 * a missing w is 1.0.
+		 * a missing w is 1.0 (the integer 1 for an integer format).
 		 */
 		components = i915_format_components(pipeline->attributes[attribute].format);
 		component_y = GEN12_VFCOMP_STORE_0;
@@ -646,6 +661,9 @@ drv_i915_gfx_emit_vertex_input(
 		if (components > 2U)
 			component_z = GEN12_VFCOMP_STORE_SRC;
 		component_w = GEN12_VFCOMP_STORE_1_FP;
+		integer = i915_format_integer(pipeline->attributes[attribute].format);
+		if (integer)
+			component_w = GEN12_VFCOMP_STORE_1_INT;
 		if (components > 3U)
 			component_w = GEN12_VFCOMP_STORE_SRC;
 
@@ -1355,8 +1373,65 @@ i915_surface_format(
 		*surface_format = I915_GFX_SURFACE_R32G32B32A32_FLOAT;
 		return 0;
 	default:
-		return ENOTSUP;
+		break;
 	}
+
+	/* The 32-bit integers, delivered to the vertex kernel bit for bit. */
+	switch (format) {
+	case VK_FORMAT_R32_SINT:
+		*surface_format = I915_GFX_SURFACE_R32_SINT;
+		return 0;
+	case VK_FORMAT_R32_UINT:
+		*surface_format = I915_GFX_SURFACE_R32_UINT;
+		return 0;
+	case VK_FORMAT_R32G32_SINT:
+		*surface_format = I915_GFX_SURFACE_R32G32_SINT;
+		return 0;
+	case VK_FORMAT_R32G32_UINT:
+		*surface_format = I915_GFX_SURFACE_R32G32_UINT;
+		return 0;
+	case VK_FORMAT_R32G32B32_SINT:
+		*surface_format = I915_GFX_SURFACE_R32G32B32_SINT;
+		return 0;
+	case VK_FORMAT_R32G32B32_UINT:
+		*surface_format = I915_GFX_SURFACE_R32G32B32_UINT;
+		return 0;
+	case VK_FORMAT_R32G32B32A32_SINT:
+		*surface_format = I915_GFX_SURFACE_R32G32B32A32_SINT;
+		return 0;
+	case VK_FORMAT_R32G32B32A32_UINT:
+		*surface_format = I915_GFX_SURFACE_R32G32B32A32_UINT;
+		return 0;
+	default:
+		break;
+	}
+
+	/* Any other format. */
+	return ENOTSUP;
+}
+
+/* Reports whether a vertex format holds 32-bit integers. */
+static int
+i915_format_integer(
+	uint32_t format)
+{
+	/* The signed and unsigned 32-bit formats. */
+	switch (format) {
+	case VK_FORMAT_R32_SINT:
+	case VK_FORMAT_R32_UINT:
+	case VK_FORMAT_R32G32_SINT:
+	case VK_FORMAT_R32G32_UINT:
+	case VK_FORMAT_R32G32B32_SINT:
+	case VK_FORMAT_R32G32B32_UINT:
+	case VK_FORMAT_R32G32B32A32_SINT:
+	case VK_FORMAT_R32G32B32A32_UINT:
+		return 1;
+	default:
+		break;
+	}
+
+	/* Floats, or normalized integers read as floats. */
+	return 0;
 }
 
 /* Reports how many components a vertex format has; any other format counts as four. */
@@ -1364,13 +1439,19 @@ static uint32_t
 i915_format_components(
 	uint32_t format)
 {
-	/* Picks the component count of the float vertex formats. */
+	/* Picks the component count of the 32-bit vertex formats, float or integer. */
 	switch (format) {
 	case VK_FORMAT_R32_SFLOAT:
+	case VK_FORMAT_R32_SINT:
+	case VK_FORMAT_R32_UINT:
 		return 1U;
 	case VK_FORMAT_R32G32_SFLOAT:
+	case VK_FORMAT_R32G32_SINT:
+	case VK_FORMAT_R32G32_UINT:
 		return 2U;
 	case VK_FORMAT_R32G32B32_SFLOAT:
+	case VK_FORMAT_R32G32B32_SINT:
+	case VK_FORMAT_R32G32B32_UINT:
 		return 3U;
 	default:
 		return 4U;

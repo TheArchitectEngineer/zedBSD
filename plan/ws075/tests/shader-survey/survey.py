@@ -83,6 +83,7 @@ def survey(path):
 	chains = {}
 	constants = {}
 	locations = {}
+	flats = set()
 	loads = {}
 	stage = None
 	functions = 0
@@ -116,6 +117,8 @@ def survey(path):
 				builtins[operands[0]] = operands[2]
 			if operands[1] == 'Location':
 				locations[operands[0]] = int(operands[2])
+			if operands[1] == 'Flat':
+				flats.add(operands[0])
 		if opcode == 'OpMemberDecorate':
 			if operands[2] not in MEMBER_DECORATIONS:
 				gap('member decoration %s' % operands[2])
@@ -154,11 +157,11 @@ def survey(path):
 				elif storage == 'Input' and result in builtins:
 					gap('input builtin %s' % builtins[result])
 				elif storage == 'Input':
-					# i915_spirv_lower_load: an input is a float scalar or vector.
+					# i915_spirv_lower_load: an input is floats, or integers in a vertex shader or a Flat fragment input.
 					pointee = types.get(types.get(operands[0], ['', '', ''])[2], ['?', ''])
 					if pointee[0] == 'OpTypeVector':
 						pointee = types.get(pointee[1], ['?'])
-					if pointee[0] == 'OpTypeInt':
+					if pointee[0] == 'OpTypeInt' and stage != 'Vertex' and result not in flats:
 						gap('integer inputs')
 				# i915_compile_store_output: a fragment shader writes one colour, at location 0.
 				if storage == 'Output' and stage == 'Fragment' and locations.get(result, 0) != 0:

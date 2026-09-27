@@ -2143,6 +2143,7 @@ i915_spirv_lower_load(
 	uint32_t floats;
 	uint32_t first;
 	uint32_t index;
+	int raw;
 	int error;
 
 	/* Resolves the pointer loaded through. */
@@ -2203,9 +2204,16 @@ i915_spirv_lower_load(
 			record->comp[index] = variable->comp[first + index];
 		}
 	} else if (base->ptr_kind == PTR_INPUT) {
-		/* An input is floats: a vertex attribute or an interpolated input. */
+		/*
+		 * An input is floats (a vertex attribute or an interpolated input), or
+		 * integers moved bit for bit: a vertex attribute, or a Flat fragment
+		 * input (the setup's constant, not interpolated).
+		 */
 		floats = i915_spirv_float_components(parser, word[1]);
-		if (floats != components)
+		raw = 0;
+		if (parser->ir->stage == I915_STAGE_VERTEX || variable->flat != 0U)
+			raw = 1;
+		if (floats != components && raw == 0)
 			return i915_spirv_refuse(parser, opcode, offset, "load of an input that is not a float scalar or vector");
 
 		/* Each component is a fresh value read from the input location. */

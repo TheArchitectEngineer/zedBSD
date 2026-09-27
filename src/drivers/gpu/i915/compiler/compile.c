@@ -367,6 +367,7 @@ static void i915_compile_loop_begin(struct i915_compile_state *state);
 static void i915_compile_loop_end(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
 static int i915_compile_rank(const uint32_t *list, uint32_t count, uint32_t location, uint32_t *rank);
 static uint32_t i915_compile_flat_mask(const struct i915_compile_state *state);
+static int i915_compile_input_flat(const struct i915_compile_state *state, uint32_t location);
 static void i915_compile_note(struct i915_compile_state *state, uint32_t *list, uint32_t *count, uint32_t limit, uint32_t location);
 static void i915_compile_interface(struct i915_compile_state *state);
 static void i915_compile_blocks(struct i915_compile_state *state);
@@ -1567,6 +1568,7 @@ i915_compile_load_input(
 	uint32_t first;
 	uint32_t dst;
 	int found;
+	int flat;
 
 	/* Emits into the shader's encoder buffer. */
 	code = &state->code;
@@ -1596,6 +1598,13 @@ i915_compile_load_input(
 	/* Locates the component's plane (see the conventions). */
 	plane = COMPILE_FS_SETUP_GRF + state->push_regs + 2U * rank + inst->component / 2U;
 	first = (inst->component & 1U) * 16U;
+
+	/* A Flat input is the plane's origin, the provoking vertex's value, moved bit for bit (an integer stays one). */
+	flat = i915_compile_input_flat(state, inst->location);
+	if (flat) {
+		drv_i915_eu_mov(code, drv_i915_eu_grf(dst), drv_i915_eu_grf_scalar(plane, first + 12U));
+		return;
+	}
 
 	/* origin + d1 * bary1 + d2 * bary2, written out: Gen11+ has no PLN. */
 	drv_i915_eu_alu2(code, I915_EU_MUL, drv_i915_eu_grf(dst),
@@ -2469,6 +2478,24 @@ i915_compile_loop_end(
 	drv_i915_eu_while(&state->code, I915_EU_FLAG_F0_0, state->loop_tops[state->loop_depth]);
 }
 
+
+/* Reports whether the IR input of a location is Flat. */
+static int
+i915_compile_input_flat(
+	const struct i915_compile_state *state,
+	uint32_t location)
+{
+	uint32_t index;
+
+	/* The input of the location. */
+	for (index = 0U; index < state->ir->input_count; index++) {
+		if (state->ir->inputs[index].location == location && state->ir->inputs[index].flat != 0U)
+			return 1;
+	}
+
+	/* Interpolated. */
+	return 0;
+}
 
 /* Returns the Flat inputs of a kernel: bit n for its n-th input in payload order whose IR input is Flat. */
 static uint32_t
