@@ -51,6 +51,7 @@ static const struct sysctl_leaf leaves[] = {
 	{{ CTL_KERN, KERN_BOOT_CONFIGURATION, 0 }, 2, "kern.boot.config_partition"},
 	{{ CTL_KERN, KERN_BOOT_CONFIG_MATCHES, 0 }, 2, "kern.boot.config_matches"},
 	{{ CTL_KERN, KERN_BOOT_ROOT_IMAGE, 0 }, 2, "kern.boot.root_image"},
+	{{ CTL_KERN, KERN_BOOT_LOGIN, 0 }, 2, "kern.boot.login"},
 	{{ CTL_VFS, VFS_BUFCACHE, VFS_BUFCACHE_MAX_BYTES }, 3,
 	 "vfs.bufcache.max_bytes"},
 	{{ CTL_VFS, VFS_BUFCACHE, VFS_BUFCACHE_CURRENT_BYTES }, 3,
@@ -111,6 +112,7 @@ kern_sysctl(
 	struct root_image_info root_image;
 	struct hal_memstat hal_memory;
 	const char *new_name;
+	const char *login;
 	uint64_t value;
 	uint32_t cpus;
 	unsigned long irq;
@@ -177,6 +179,16 @@ kern_sysctl(
 		if (error != 0)
 			return error;
 		return sysctl_output(oldp, oldlenp, &root_image, sizeof(root_image));
+	}
+
+	/* The login= boot parameter, for the graphical login's zsessiond (ws035-p098). */
+	if (namelen == 2 && name[0] == CTL_KERN && name[1] == KERN_BOOT_LOGIN) {
+		if (newp != NULL || newlen != 0)
+			return EPERM;
+		login = kern_boot_parameters_value(kern_boot_parameters_current(), KERN_BOOT_PARAMETER_LOGIN);
+		if (login == NULL)
+			login = "";
+		return sysctl_output(oldp, oldlenp, login, kern_strlen(login) + 1);
 	}
 
 	/* Reports retained loader identities independently from boot parameters. */

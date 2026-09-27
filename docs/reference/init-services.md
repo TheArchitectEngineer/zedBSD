@@ -93,6 +93,7 @@ underscore, or hyphen characters, and `command` must be an absolute path.
 | `notify-fd3` | `on` enables the readiness protocol for non-oneshot services |
 | `notify-timeout` | Readiness deadline in seconds, from 1 through 300; default 10 |
 | `required` | Parsed as current metadata; it does not yet make all boot failures fatal |
+| `replaces` | Another service this one stands in for (ws035-p098): while this one is enabled the other is not started (it shows as skipped); when this one ends and is not started again, the other starts.  Not while the system is stopping.  The graphical login's `greeter` replaces `getty_console` |
 
 Daemons must remain in the foreground. Init tracks their child PID directly;
 pidfiles and double-forking are not the authority. `service reload` reloads the

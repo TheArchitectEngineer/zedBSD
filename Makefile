@@ -874,6 +874,14 @@ ZEDBSD_PACKAGE_LINKS ?=
 # SONAME as a regular file, so removing the .so links leaves the loader's
 # names intact.
 ZEDBSD_ROOTFS_DEVELOPMENT ?= y
+# ws035-p098 (2026-09-28 user decision): the images boot fully graphically by
+# default -- the loader's logo (logo=), no kernel message on the screen
+# (kmsg=quiet, dmesg keeps them) and the graphical login (login=graphical).
+# n (the build menu's "Graphical boot") is for kernel development: the
+# messages on the console and the console login.  It chooses the lines the
+# amd64 native zedbsd.cfg gets; the same lines can be edited on a machine's
+# ESP afterwards (docs/reference/kernel-boot-parameters.md).
+ZEDBSD_GRAPHICAL_BOOT ?= y
 # A target without a sysroot has no development files.
 ifeq ($(strip $(ZEDBSD_TARGET_SYSROOT)),)
 override ZEDBSD_ROOTFS_DEVELOPMENT := n
