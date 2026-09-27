@@ -8,3 +8,5 @@ CONFIG_GPU_JOB_STOP_MS := 10000
 CONFIG_GPU_CONTROL_MS := 10000
 CONFIG_DRIVER_PCI_I915 := y
 ZEDBSD_USER_PROGRAMS += libvulkan libwayland-client libwayland-egl libegl libglesv2 libtruetype wltest wlshm mview zdesktop-terminal egltest libgl glxtest zgears zdesktop zdesktop-x11server i915-firmware
+# ws075: App Home's Files (WS071), for the i915 capture scenario zdesktop-files.
+ZEDBSD_USER_PROGRAMS += libz-compat libpng-compat zdesktop-files
