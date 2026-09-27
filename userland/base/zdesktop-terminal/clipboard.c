@@ -13,6 +13,10 @@
  * takes it directly (asking itself to write into a pipe it reads would
  * wait on itself).
  *
+ * A drag of text or of file names dropped on the window (ws035-p088) is
+ * pasted into the shell like a paste: file names (from "text/uri-list")
+ * each quoted and followed by a space, text as it is.
+ *
  * Without a data device manager (another compositor) the clipboard is the
  * terminal's own, as before.
  */
@@ -22,12 +26,17 @@
 #include <errno.h>
 #include <poll.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
 /* The text types the terminal offers and takes. */
 #define CLIPBOARD_TYPE_UTF8	"text/plain;charset=utf-8"
 #define CLIPBOARD_TYPE_PLAIN	"text/plain"
+#define CLIPBOARD_TYPE_URIS	"text/uri-list"
+
+/* The drag and drop action the terminal takes: copy (the text is typed; nothing moves). */
+#define CLIPBOARD_ACTION_COPY	1U
 
 /* The data device manager version the terminal uses, and how long a paste waits for the text. */
 #define CLIPBOARD_VERSION	3U
@@ -48,6 +57,9 @@ static void clipboard_cancelled(void *data, struct wl_data_source *source);
 static void clipboard_dropped(void *data, struct wl_data_source *source);
 static void clipboard_finished(void *data, struct wl_data_source *source);
 static void clipboard_source_action(void *data, struct wl_data_source *source, uint32_t action);
+static size_t clipboard_read(struct wl_display *display, struct wl_data_offer *offer, const char *type, char *text, size_t size);
+static size_t clipboard_paths(char *text, size_t length, size_t size);
+static int clipboard_hex(int character);
 
 /* The data device's events. */
 static const struct wl_data_device_listener device_listener = {
@@ -194,56 +206,57 @@ terminal_clipboard_receive(
 	char *text,
 	size_t size)
 {
-	struct pollfd descriptor;
-	uint64_t deadline;
-	uint64_t now;
 	size_t length;
-	ssize_t got;
-	int pipes[2];
-	int error;
-	int ready;
 
 	/* No text to receive. */
 	if (window->data_offer == NULL || !window->offer_text)
 		return 0;
 
-	/* The pipe; its writing end goes to the selection's client. */
-	error = pipe(pipes);
-	if (error != 0)
-		return 0;
-	wl_data_offer_receive(window->data_offer, CLIPBOARD_TYPE_UTF8, pipes[1]);
-	close(pipes[1]);
-	(void)wl_display_flush(window->display);
-
-	/* The text, until the writer closes (or the time is up). */
-	length = 0;
-	deadline = terminal_clock() + CLIPBOARD_RECEIVE_MS;
-	while (length < size) {
-		/* The time is up. */
-		now = terminal_clock();
-		if (now >= deadline)
-			break;
-
-		/* The pipe becomes readable. */
-		descriptor.fd = pipes[0];
-		descriptor.events = POLLIN;
-		descriptor.revents = 0;
-		ready = poll(&descriptor, 1, 100);
-		if (ready <= 0)
-			continue;
-
-		/* What came; nothing more is the end. */
-		got = read(pipes[0], text + length, size - length);
-		if (got <= 0)
-			break;
-		length += (size_t)got;
-	}
-
-	/* The reading end goes. */
-	close(pipes[0]);
+	/* The text, through a pipe. */
+	length = clipboard_read(window->display, window->data_offer, CLIPBOARD_TYPE_UTF8, text, size);
 
 	/* Succeeded: the text received. */
 	printf("ZTERM CLIPBOARD received bytes=%lu\n", (unsigned long)length);
+	fflush(stdout);
+	return length;
+}
+
+/*
+ * Receives what was dropped on the window into a buffer: file names as
+ * quoted words (from "text/uri-list"), or text.  The drop is then
+ * finished.  Returns the bytes to paste (0 for none).
+ */
+size_t
+terminal_clipboard_drop(
+	struct terminal_window *window,
+	char *text,
+	size_t size)
+{
+	size_t length;
+
+	/* Only a drop waiting. */
+	window->drop_pending = 0;
+	if (window->drop_offer == NULL)
+		return 0;
+
+	/* File names, or text. */
+	length = 0;
+	if (window->drop_uris) {
+		length = clipboard_read(window->display, window->drop_offer, CLIPBOARD_TYPE_URIS, text, size);
+		length = clipboard_paths(text, length, size);
+	} else if (window->drop_text) {
+		length = clipboard_read(window->display, window->drop_offer, CLIPBOARD_TYPE_UTF8, text, size);
+	}
+
+	/* The drop is finished (as a copy), and its offer goes. */
+	wl_data_offer_set_actions(window->drop_offer, CLIPBOARD_ACTION_COPY, CLIPBOARD_ACTION_COPY);
+	wl_data_offer_finish(window->drop_offer);
+	wl_data_offer_destroy(window->drop_offer);
+	window->drop_offer = NULL;
+	(void)wl_display_flush(window->display);
+
+	/* Succeeded: what to paste. */
+	printf("ZTERM DROP bytes=%lu uris=%d\n", (unsigned long)length, window->drop_uris);
 	fflush(stdout);
 	return length;
 }
@@ -255,7 +268,10 @@ void
 terminal_clipboard_close(
 	struct terminal_window *window)
 {
-	/* The offer, the source, the device and the manager. */
+	/* The offers, the source, the device and the manager. */
+	if (window->drop_offer != NULL)
+		wl_data_offer_destroy(window->drop_offer);
+	window->drop_offer = NULL;
 	if (window->data_offer != NULL)
 		wl_data_offer_destroy(window->data_offer);
 	if (window->data_source != NULL)
@@ -283,10 +299,14 @@ clipboard_offer(
 	(void)device;
 	window = data;
 	window->pending_text = 0;
+	window->pending_uris = 0;
 	(void)wl_data_offer_add_listener(offer, &offer_listener, window);
 }
 
-/* Drag and drop is not used. */
+/*
+ * A drag comes over the window: file names (typed as quoted words) are
+ * taken first, then text; as a copy (the drag's source keeps its data).
+ */
 static void
 clipboard_enter(
 	void *data,
@@ -297,25 +317,55 @@ clipboard_enter(
 	wl_fixed_t y,
 	struct wl_data_offer *offer)
 {
-	/* Nothing to do. */
-	(void)data;
+	struct terminal_window *window;
+
+	/* An offer left from an earlier drag goes. */
 	(void)device;
-	(void)serial;
 	(void)surface;
 	(void)x;
 	(void)y;
-	(void)offer;
+	window = data;
+	if (window->drop_offer != NULL && window->drop_offer != offer)
+		wl_data_offer_destroy(window->drop_offer);
+
+	/* The drag's offer and what it has (the types were described just before). */
+	window->drop_offer = offer;
+	window->drop_serial = serial;
+	window->drop_uris = window->pending_uris;
+	window->drop_text = window->pending_text;
+	window->drop_pending = 0;
+	if (offer == NULL)
+		return;
+
+	/* The type taken, or none. */
+	if (window->drop_uris) {
+		wl_data_offer_accept(offer, serial, CLIPBOARD_TYPE_URIS);
+	} else if (window->drop_text) {
+		wl_data_offer_accept(offer, serial, CLIPBOARD_TYPE_UTF8);
+	} else {
+		wl_data_offer_accept(offer, serial, NULL);
+	}
+
+	/* Succeeded: taken as a copy. */
+	wl_data_offer_set_actions(offer, CLIPBOARD_ACTION_COPY, CLIPBOARD_ACTION_COPY);
+	printf("ZTERM DROP enter uris=%d text=%d\n", window->drop_uris, window->drop_text);
+	fflush(stdout);
 }
 
-/* Drag and drop is not used. */
+/* The drag left the window: its offer goes. */
 static void
 clipboard_leave(
 	void *data,
 	struct wl_data_device *device)
 {
-	/* Nothing to do. */
-	(void)data;
+	struct terminal_window *window;
+
+	/* The offer. */
 	(void)device;
+	window = data;
+	if (window->drop_offer != NULL)
+		wl_data_offer_destroy(window->drop_offer);
+	window->drop_offer = NULL;
 }
 
 /* Drag and drop is not used. */
@@ -335,15 +385,18 @@ clipboard_motion(
 	(void)y;
 }
 
-/* Drag and drop is not used. */
+/* The drag was dropped on the window: the main loop pastes it (terminal_clipboard_drop). */
 static void
 clipboard_drop(
 	void *data,
 	struct wl_data_device *device)
 {
-	/* Nothing to do. */
-	(void)data;
+	struct terminal_window *window;
+
+	/* Waiting for the main loop. */
 	(void)device;
+	window = data;
+	window->drop_pending = 1;
 }
 
 /* Takes the selection: the offer a paste receives from (the last one goes). */
@@ -386,6 +439,11 @@ clipboard_type(
 	same = strcmp(mime_type, CLIPBOARD_TYPE_UTF8);
 	if (same == 0)
 		window->pending_text = 1;
+
+	/* File names. */
+	same = strcmp(mime_type, CLIPBOARD_TYPE_URIS);
+	if (same == 0)
+		window->pending_uris = 1;
 }
 
 /* Drag and drop is not used. */
@@ -508,4 +566,173 @@ clipboard_source_action(
 	(void)data;
 	(void)source;
 	(void)action;
+}
+
+/*
+ * Reads a type of an offer through a pipe until its end or
+ * CLIPBOARD_RECEIVE_MS.  Returns the bytes read (0 for none).
+ */
+static size_t
+clipboard_read(
+	struct wl_display *display,
+	struct wl_data_offer *offer,
+	const char *type,
+	char *text,
+	size_t size)
+{
+	struct pollfd descriptor;
+	uint64_t deadline;
+	uint64_t now;
+	size_t length;
+	ssize_t got;
+	int pipes[2];
+	int error;
+	int ready;
+
+	/* The pipe; its writing end goes to the offer's client. */
+	error = pipe(pipes);
+	if (error != 0)
+		return 0;
+	wl_data_offer_receive(offer, type, pipes[1]);
+	close(pipes[1]);
+	(void)wl_display_flush(display);
+
+	/* The data, until the writer closes (or the time is up). */
+	length = 0;
+	deadline = terminal_clock() + CLIPBOARD_RECEIVE_MS;
+	while (length < size) {
+		/* The time is up. */
+		now = terminal_clock();
+		if (now >= deadline)
+			break;
+
+		/* The pipe becomes readable. */
+		descriptor.fd = pipes[0];
+		descriptor.events = POLLIN;
+		descriptor.revents = 0;
+		ready = poll(&descriptor, 1, 100);
+		if (ready <= 0)
+			continue;
+
+		/* What came; nothing more is the end. */
+		got = read(pipes[0], text + length, size - length);
+		if (got <= 0)
+			break;
+		length += (size_t)got;
+	}
+
+	/* The reading end goes. */
+	close(pipes[0]);
+
+	/* Succeeded: the bytes read. */
+	return length;
+}
+
+/*
+ * Turns a "text/uri-list" in a buffer into the words a shell takes: each
+ * file:// line's path, %XX decoded, in single quotes and followed by a
+ * space.  Returns the new length (the buffer is written over).
+ */
+static size_t
+clipboard_paths(
+	char *text,
+	size_t length,
+	size_t size)
+{
+	char *copy;
+	const char *line;
+	const char *end;
+	const char *from;
+	size_t used;
+	int high;
+	int low;
+	int file;
+
+	/* A copy to read from while the buffer is written. */
+	copy = malloc(length + 1U);
+	if (copy == NULL)
+		return 0;
+	memcpy(copy, text, length);
+	copy[length] = '\0';
+
+	/* Each line. */
+	used = 0;
+	line = copy;
+	while (line < copy + length) {
+		/* The line's end. */
+		end = line;
+		while (end < copy + length && *end != '\n' && *end != '\r')
+			end++;
+
+		/* A file URI's path (after "file://" and an optional host). */
+		from = NULL;
+		file = (size_t)(end - line) > 7U;
+		if (file)
+			file = memcmp(line, "file://", 7U) == 0;
+		if (file) {
+			from = line + 7;
+			while (from < end && *from != '/')
+				from++;
+		}
+
+		/* The path in single quotes (a quote in it closes, escapes and reopens), and a space. */
+		if (from != NULL && from < end && used + 3U < size) {
+			text[used++] = '\'';
+			while (from < end && used + 6U < size) {
+				/* A %XX byte, or the character itself. */
+				high = -1;
+				low = -1;
+				if (*from == '%' && from + 2 < end) {
+					high = clipboard_hex(from[1]);
+					low = clipboard_hex(from[2]);
+				}
+
+				/* The byte a quote is written as, or itself. */
+				if (high >= 0 && low >= 0) {
+					text[used] = (char)(high * 16 + low);
+					from += 3;
+				} else {
+					text[used] = *from;
+					from++;
+				}
+
+				/* A quote closes, escapes and reopens. */
+				if (text[used] == '\'') {
+					memcpy(text + used, "'\\''", 4U);
+					used += 3U;
+				}
+
+				/* The next byte. */
+				used++;
+			}
+
+			/* The closing quote and a space. */
+			text[used++] = '\'';
+			text[used++] = ' ';
+		}
+
+		/* The next line. */
+		line = end + 1;
+	}
+
+	/* Succeeded: the words. */
+	free(copy);
+	return used;
+}
+
+/* Returns a hexadecimal digit's value, or -1. */
+static int
+clipboard_hex(
+	int character)
+{
+	/* The three ranges. */
+	if (character >= '0' && character <= '9')
+		return character - '0';
+	if (character >= 'a' && character <= 'f')
+		return character - 'a' + 10;
+	if (character >= 'A' && character <= 'F')
+		return character - 'A' + 10;
+
+	/* Not a digit. */
+	return -1;
 }

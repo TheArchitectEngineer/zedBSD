@@ -21,6 +21,12 @@
 #define ControlMask (1U<<2)
 #define Mod1Mask (1U<<3)
 #define PropModeReplace 0
+#define PropModePrepend 1
+#define PropModeAppend 2
+#define AnyPropertyType 0L
+#define NoEventMask 0L
+#define XA_PRIMARY ((Atom)1)
+#define XA_ATOM ((Atom)4)
 #define XA_STRING ((Atom)31)
 #define XA_WM_NAME ((Atom)39)
 #define KeyPress 2
@@ -36,6 +42,9 @@
 #define ReparentNotify 21
 #define ConfigureNotify 22
 #define ConfigureRequest 23
+#define SelectionClear 29
+#define SelectionRequest 30
+#define SelectionNotify 31
 #define CWStackMode (1U<<6)
 #define KeyPressMask (1L<<0)
 #define KeyReleaseMask (1L<<1)

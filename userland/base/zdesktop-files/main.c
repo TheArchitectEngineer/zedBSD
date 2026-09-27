@@ -441,6 +441,13 @@ main_loop(
 		/* What the window was asked to do: a new window, minimizing, zooming, closing, a context menu, a drag and drop. */
 		main_request(options);
 
+		/* An "ask" whose context menu closed without a choice gives the drop up. */
+		if (main_app.drop_asking != 0 && main_menu.context_done != 0) {
+			main_app.drop_asking = 0;
+			fm_log("DROP ask dismissed");
+			fm_dnd_abort(&main_window);
+		}
+
 		/* A drag over the window whose target changed is answered: its file names taken (move preferred) or not (dnd.c). */
 		if (main_app.drop_answer != 0) {
 			main_app.drop_answer = 0;
@@ -635,7 +642,17 @@ main_request(
 	case FM_REQUEST_CONTEXT:
 		/* The context menu of the right press, at its place (ui-context.c, menu.c). */
 		fm_ui_context(&main_app, &main_context);
-		fm_menu_context(&main_menu, &main_context, main_app.context_x, main_app.context_y);
+		fm_menu_context(&main_menu, &main_context, main_app.context_x, main_app.context_y, 0U);
+		break;
+	case FM_REQUEST_DROP_ASK:
+		/* A drop dropped with "ask": the choice at the drop's place, answering its enter (ui-context.c). */
+		fm_ui_context(&main_app, &main_context);
+		fm_menu_context(&main_menu, &main_context, main_app.context_x, main_app.context_y, main_window.drop_serial);
+		break;
+	case FM_REQUEST_DROP_CANCEL:
+		/* The choice was none: the drop is given up (its source is cancelled). */
+		fm_log("DROP ask cancel");
+		fm_dnd_abort(&main_window);
 		break;
 	case FM_REQUEST_DRAG_OUT:
 		/* The dragged items left the window: zdesktop carries them (dnd.c). */
@@ -692,6 +709,7 @@ main_drag_out(void)
 static void
 main_drop(void)
 {
+	uint32_t action;
 	char **paths;
 	size_t count;
 	int error;
@@ -715,8 +733,11 @@ main_drop(void)
 	/* The paths go. */
 	fm_paths_free(paths, count);
 
-	/* Succeeded or not, the drop is done. */
-	fm_dnd_finish(&main_window);
+	/* Succeeded or not, the drop is done, with the operation chosen (an "ask" says it now). */
+	action = FM_DND_MOVE;
+	if (main_app.drop_operation != FM_TASK_MOVE)
+		action = FM_DND_COPY;
+	fm_dnd_finish(&main_window, action);
 }
 
 /*

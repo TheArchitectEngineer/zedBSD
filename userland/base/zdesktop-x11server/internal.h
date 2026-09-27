@@ -46,6 +46,19 @@
 /* The owner of the root window: no client. */
 #define X11_NO_CLIENT		X11_MAX_CLIENTS
 
+/*
+ * Atoms, properties and selections (selection.c, ws035-p087): how many
+ * names are given numbers and the longest, the first number given, how
+ * many properties are kept, how many selections, and how many desktop
+ * requests for an X client's text may wait.
+ */
+#define X11_MAX_ATOMS		64U
+#define X11_ATOM_NAME		64U
+#define X11_ATOM_FIRST_DYNAMIC	69U
+#define X11_MAX_PROPERTIES	32U
+#define X11_MAX_SELECTIONS	8U
+#define X11_PENDING_SENDS	4U
+
 /* The atoms of the properties kept: WM_NAME, STRING, and zedBSD's icon path. */
 #define X11_ATOM_WM_NAME	39U
 #define X11_ATOM_STRING		31U
@@ -201,6 +214,31 @@ struct x11_window {
 };
 
 /*
+ * One property kept with a window (selection.c): the window, its name,
+ * type and format, and its data (NULL for a free slot).
+ */
+struct x11_property {
+	uint32_t window;
+	uint32_t atom;
+	uint32_t type;
+	uint8_t format;
+	uint8_t *data;
+	size_t length;
+};
+
+/*
+ * One selection (selection.c): its atom, the owner window (0 for none; the
+ * root window while the desktop's text is CLIPBOARD's), the owner's client
+ * slot (X11_NO_CLIENT for the desktop) and when it was taken.
+ */
+struct x11_selection {
+	uint32_t atom;
+	uint32_t window;
+	unsigned owner;
+	uint32_t time;
+};
+
+/*
  * One graphics context: the colour and font drawing uses.
  */
 struct x11_gc {
@@ -274,7 +312,10 @@ struct x11_pointer_frame {
 
 /*
  * What wayland.c tells the server: a key, the pointer, a window entered,
- * a window given a size, and a window asked to close.
+ * a window given a size, a window asked to close, the desktop's selection
+ * changed (whether it has text), and a client asking for the text of the
+ * X client that owns CLIPBOARD (a descriptor to write it into, which the
+ * callee owns).
  */
 struct x11_wayland_callbacks {
 	void (*key)(void *context, uint8_t keycode, int pressed, uint32_t time, uint16_t state);
@@ -282,6 +323,8 @@ struct x11_wayland_callbacks {
 	void (*enter)(void *context, uint32_t window, int keyboard);
 	void (*configure)(void *context, uint32_t window, int width, int height);
 	void (*close)(void *context, uint32_t window);
+	void (*selection)(void *context, int text);
+	void (*selection_send)(void *context, int fd);
 };
 
 /*
@@ -342,6 +385,26 @@ struct x11server {
 	/* The window with the keyboard's focus. */
 	uint32_t focus;
 
+	/*
+	 * Atoms, properties and selections (selection.c): the names given
+	 * numbers (X11_ATOM_FIRST_DYNAMIC on), the properties kept, the
+	 * selections, the desktop's requests for CLIPBOARD's X text waiting for
+	 * the owner's answer (their descriptors, oldest first), and the atoms
+	 * the server uses itself.
+	 */
+	char atom_names[X11_MAX_ATOMS][X11_ATOM_NAME];
+	unsigned atom_count;
+	struct x11_property properties[X11_MAX_PROPERTIES];
+	struct x11_selection selections[X11_MAX_SELECTIONS];
+	unsigned selection_count;
+	int pending_sends[X11_PENDING_SENDS];
+	unsigned pending_count;
+	uint32_t atom_clipboard;
+	uint32_t atom_utf8;
+	uint32_t atom_targets;
+	uint32_t atom_text;
+	uint32_t atom_bridge;
+
 	/* The implicit grab of a button press: its owner's slot (-1 without one) and window. */
 	int grab_owner;
 	uint32_t grab_window;
@@ -392,6 +455,22 @@ void x11_draw_text(struct x11server *server, struct x11_window *window, const st
 void x11_mark_dirty(struct x11server *server, int x, int y, int width, int height);
 void x11_resources_release(struct x11server *server, unsigned owner);
 
+/* selection.c: atoms, properties, selections and the clipboard's bridge. */
+void x11_selection_init(struct x11server *server);
+uint32_t x11_atom_intern(struct x11server *server, const char *name, int only_if_exists);
+unsigned x11_request_intern_atom(struct x11server *server, unsigned index, const uint8_t *request, size_t length);
+unsigned x11_request_get_atom_name(struct x11server *server, unsigned index, const uint8_t *request, size_t length);
+unsigned x11_request_change_property(struct x11server *server, unsigned index, const uint8_t *request, size_t length);
+unsigned x11_request_get_property(struct x11server *server, unsigned index, const uint8_t *request, size_t length);
+unsigned x11_request_delete_property(struct x11server *server, unsigned index, const uint8_t *request, size_t length);
+unsigned x11_request_set_selection_owner(struct x11server *server, unsigned index, const uint8_t *request, size_t length);
+unsigned x11_request_get_selection_owner(struct x11server *server, unsigned index, const uint8_t *request, size_t length);
+unsigned x11_request_convert_selection(struct x11server *server, unsigned index, const uint8_t *request, size_t length);
+unsigned x11_request_send_event(struct x11server *server, unsigned index, const uint8_t *request, size_t length);
+void x11_selection_forget_window(struct x11server *server, uint32_t window);
+void x11_selection_wayland(void *context, int text);
+void x11_selection_send(void *context, int fd);
+
 /* rootless.c: the top-level windows as desktop windows, and the desktop's input. */
 void x11_rootless_present(struct x11server *server);
 void x11_rootless_closing(struct x11server *server);
@@ -412,6 +491,10 @@ int x11_wayland_window_resize(struct x11_wayland_window *window, unsigned width,
 void x11_wayland_window_move(struct x11_wayland_window *window, int x, int y);
 void x11_wayland_window_title(struct x11_wayland_window *window, const char *title);
 void x11_wayland_window_close(struct x11_wayland_window *window);
+int x11_wayland_selection_own(struct x11_wayland *wayland);
+void x11_wayland_selection_drop(struct x11_wayland *wayland);
+int x11_wayland_selection_has_text(const struct x11_wayland *wayland);
+int x11_wayland_selection_read(struct x11_wayland *wayland, char **text, size_t *length);
 
 /* vulkan.c: a desktop window shown through a Vulkan swapchain. */
 struct x11_vulkan *x11_vulkan_open(void);

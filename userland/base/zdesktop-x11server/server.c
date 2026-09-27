@@ -98,6 +98,9 @@ x11server_create(
 	if (error != 0)
 		fprintf(stderr, "zdesktop-x11server: %s: %s (no text)\n", font, strerror(error));
 
+	/* The atoms the server uses itself (selection.c). */
+	x11_selection_init(server);
+
 	/* The connection to the desktop, which shows the windows and gives the input. */
 	error = x11_wayland_open(&server->wayland, options->wayland_display, options->shm, &x11_rootless_callbacks, server);
 	if (error != 0) {

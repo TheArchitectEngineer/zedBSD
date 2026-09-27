@@ -9,6 +9,11 @@
 
 /*
  * zterm - compact Unicode VT100 terminal for Xzed
+ *
+ * Ctrl+Shift+C copies the screen's text to CLIPBOARD (zterm owns it and
+ * answers the requests for it); Ctrl+Shift+V pastes CLIPBOARD's text into
+ * the shell.  Through zdesktop-x11server's bridge the desktop's clipboard is
+ * CLIPBOARD too (ws035-p087).
  */
 
 #include <X11/Xlib.h>
@@ -71,6 +76,14 @@ struct terminal {
 	uint32_t utf8_minimum;
 	unsigned utf8_remaining;
 	int request_budget;
+
+	/* The clipboard: its atoms, the text zterm owns CLIPBOARD with (NULL when it does not), and its length. */
+	Atom atom_clipboard;
+	Atom atom_utf8;
+	Atom atom_targets;
+	Atom atom_paste;
+	char *clip;
+	size_t clip_length;
 };
 
 static const uint32_t ansi_colors[16] = {
@@ -100,6 +113,11 @@ static void x_request(struct terminal *terminal);
 static void x_finish(struct terminal *terminal);
 static int resize_terminal(struct terminal *terminal, unsigned width, unsigned height);
 static int send_key(struct terminal *terminal, XKeyEvent *event);
+static void clip_copy(struct terminal *terminal);
+static void clip_paste(struct terminal *terminal);
+static void clip_request(struct terminal *terminal, const XSelectionRequestEvent *request);
+static void clip_notify(struct terminal *terminal, const XSelectionEvent *notify);
+static size_t clip_utf8(uint32_t codepoint, char *out);
 
 /*
  * Runs the zterm command.
@@ -179,8 +197,17 @@ main(
 					(unsigned)event.xconfigure.width,
 					(unsigned)event.xconfigure.height) == 0)
 					redraw(&terminal);
-			} else if (event.type == KeyPress)
+			} else if (event.type == KeyPress) {
 				(void)send_key(&terminal, &event.xkey);
+			} else if (event.type == SelectionRequest) {
+				clip_request(&terminal, &event.xselectionrequest);
+			} else if (event.type == SelectionNotify) {
+				clip_notify(&terminal, &event.xselection);
+			} else if (event.type == SelectionClear) {
+				free(terminal.clip);
+				terminal.clip = NULL;
+				terminal.clip_length = 0;
+			}
 		}
 
 		/* Handles a failed waitpid operation. */
@@ -281,6 +308,10 @@ initialize(
 	if (terminal->font == NULL)
 		return -1;
 	XSetFont(terminal->display, terminal->gc, terminal->font->fid);
+	terminal->atom_clipboard = XInternAtom(terminal->display, "CLIPBOARD", False);
+	terminal->atom_utf8 = XInternAtom(terminal->display, "UTF8_STRING", False);
+	terminal->atom_targets = XInternAtom(terminal->display, "TARGETS", False);
+	terminal->atom_paste = XInternAtom(terminal->display, "ZTERM_PASTE", False);
 	XSelectInput(terminal->display, terminal->window,
 		     ExposureMask | KeyPressMask | ButtonPressMask |
 			 StructureNotifyMask);
@@ -1088,6 +1119,20 @@ send_key(
 	sequence = NULL;
 	length = 1;
 
+	/* Ctrl+Shift+C copies the screen, Ctrl+Shift+V pastes CLIPBOARD. */
+	if ((event->state & ControlMask) != 0 && (event->state & ShiftMask) != 0) {
+		if (symbol == 'C' || symbol == 'c') {
+			clip_copy(terminal);
+			return 1;
+		}
+
+		/* The paste. */
+		if (symbol == 'V' || symbol == 'v') {
+			clip_paste(terminal);
+			return 1;
+		}
+	}
+
 	/* Dispatch the selected operation case. */
 	switch (symbol) {
 	case XK_Up:
@@ -1157,4 +1202,211 @@ send_key(
 
 	/* Returns the computed result. */
 	return function_result;
+}
+
+/*
+ * Copies the screen's text (each row without its trailing blanks, a line
+ * break after each but the last text) and owns CLIPBOARD with it.
+ */
+static void
+clip_copy(
+	struct terminal *terminal)
+{
+	struct cell *cell;
+	char *text;
+	size_t used;
+	size_t row_end;
+	unsigned row;
+	unsigned column;
+
+	/* Room for every cell as four bytes and a line break a row. */
+	text = malloc((size_t)terminal->columns * terminal->rows * 4U + terminal->rows + 1U);
+	if (text == NULL)
+		return;
+
+	/* Each row. */
+	used = 0;
+	for (row = 0; row < terminal->rows; row++) {
+		/* Its characters, and where its last non-blank one ends. */
+		row_end = used;
+		for (column = 0; column < terminal->columns; column++) {
+			/* A wide character's second cell adds nothing. */
+			cell = cell_at(terminal, column, row);
+			if (cell->continuation)
+				continue;
+
+			/* The character as UTF-8 (a blank as a space). */
+			if (cell->codepoint == 0U || cell->codepoint == ' ') {
+				text[used++] = ' ';
+			} else {
+				used += clip_utf8(cell->codepoint, text + used);
+				row_end = used;
+			}
+		}
+
+		/* The row's blanks go, and a line break follows it. */
+		used = row_end;
+		text[used++] = '\n';
+	}
+
+	/* The last rows' line breaks go. */
+	while (used > 0U && text[used - 1U] == '\n')
+		used--;
+	text[used] = '\0';
+
+	/* zterm owns CLIPBOARD with it. */
+	free(terminal->clip);
+	terminal->clip = text;
+	terminal->clip_length = used;
+	(void)XSetSelectionOwner(terminal->display, terminal->atom_clipboard, terminal->window, CurrentTime);
+	printf("ZTERM-X COPY bytes=%lu\n", (unsigned long)used);
+	fflush(stdout);
+}
+
+/* Asks for CLIPBOARD's text as UTF8_STRING in a property of the window; its SelectionNotify pastes it. */
+static void
+clip_paste(
+	struct terminal *terminal)
+{
+	/* The request. */
+	(void)XConvertSelection(terminal->display, terminal->atom_clipboard, terminal->atom_utf8, terminal->atom_paste, terminal->window, CurrentTime);
+	printf("ZTERM-X PASTE asked\n");
+	fflush(stdout);
+}
+
+/*
+ * Answers a request for the text zterm owns: TARGETS lists the types, a
+ * text type puts the text in the requestor's property, anything else is
+ * refused (property None); the requestor is told with SelectionNotify.
+ */
+static void
+clip_request(
+	struct terminal *terminal,
+	const XSelectionRequestEvent *request)
+{
+	XEvent answer;
+	Atom targets[3];
+	Atom property;
+	unsigned long given;
+
+	/* No text, or another selection: refused. */
+	property = request->property;
+	if (terminal->clip == NULL || request->selection != terminal->atom_clipboard)
+		property = None;
+
+	/* TARGETS: the types given. */
+	if (property != None && request->target == terminal->atom_targets) {
+		targets[0] = terminal->atom_targets;
+		targets[1] = terminal->atom_utf8;
+		targets[2] = XA_STRING;
+		(void)XChangeProperty(terminal->display, request->requestor, property, XA_ATOM, 32, PropModeReplace, (const unsigned char *)targets, 3);
+	} else if (property != None && (request->target == terminal->atom_utf8 || request->target == XA_STRING)) {
+		/* The text, as the type asked. */
+		(void)XChangeProperty(terminal->display, request->requestor, property, request->target, 8, PropModeReplace, (const unsigned char *)terminal->clip, (int)terminal->clip_length);
+	} else {
+		/* Another type is refused. */
+		property = None;
+	}
+
+	/* The requestor is told. */
+	memset(&answer, 0, sizeof(answer));
+	answer.xselection.type = SelectionNotify;
+	answer.xselection.requestor = request->requestor;
+	answer.xselection.selection = request->selection;
+	answer.xselection.target = request->target;
+	answer.xselection.property = property;
+	answer.xselection.time = request->time;
+	(void)XSendEvent(terminal->display, request->requestor, False, NoEventMask, &answer);
+
+	/* The log line the tests read (the bytes given, 0 when refused). */
+	given = 0;
+	if (property != None)
+		given = (unsigned long)terminal->clip_length;
+	printf("ZTERM-X SELECTION answered requestor=0x%x bytes=%lu\n", (unsigned)request->requestor, given);
+	fflush(stdout);
+}
+
+/*
+ * Pastes the text a conversion put in the window's property: to the shell,
+ * line breaks as carriage returns (what Enter sends); the property goes.
+ */
+static void
+clip_notify(
+	struct terminal *terminal,
+	const XSelectionEvent *notify)
+{
+	unsigned long count;
+	unsigned long after;
+	unsigned long index;
+	unsigned char *data;
+	ssize_t written;
+	Atom type;
+	int format;
+	int failed;
+
+	/* Nothing to paste. */
+	if (notify->property == None || terminal->master < 0) {
+		printf("ZTERM-X PASTE none\n");
+		fflush(stdout);
+		return;
+	}
+
+	/* The property's text (deleted as it is read). */
+	failed = XGetWindowProperty(terminal->display, terminal->window, notify->property, 0L, 262144L, True, AnyPropertyType, &type, &format, &count, &after, &data);
+	if (failed || data == NULL || format != 8)
+		return;
+
+	/* Line breaks as carriage returns, to the shell. */
+	for (index = 0; index < count; index++) {
+		/* A line break is what Enter sends. */
+		if (data[index] == '\n')
+			data[index] = '\r';
+	}
+
+	/* The text to the shell. */
+	written = 0;
+	if (count > 0UL)
+		written = write(terminal->master, data, (size_t)count);
+	if (written < 0)
+		count = 0;
+
+	/* The log line the tests read, and the data goes. */
+	printf("ZTERM-X PASTE bytes=%lu\n", count);
+	fflush(stdout);
+	XFree(data);
+}
+
+/* Writes a code point as UTF-8; returns how many bytes (at most four). */
+static size_t
+clip_utf8(
+	uint32_t codepoint,
+	char *out)
+{
+	/* One byte. */
+	if (codepoint < 0x80U) {
+		out[0] = (char)codepoint;
+		return 1;
+	}
+
+	/* Two. */
+	if (codepoint < 0x800U) {
+		out[0] = (char)(0xc0U | (codepoint >> 6));
+		out[1] = (char)(0x80U | (codepoint & 0x3fU));
+		return 2;
+	}
+
+	/* Three. */
+	if (codepoint < 0x10000U) {
+		out[0] = (char)(0xe0U | (codepoint >> 12));
+		out[1] = (char)(0x80U | ((codepoint >> 6) & 0x3fU));
+		out[2] = (char)(0x80U | (codepoint & 0x3fU));
+		return 3;
+	}
+
+	/* Four. */
+	out[0] = (char)(0xf0U | (codepoint >> 18));
+	out[1] = (char)(0x80U | ((codepoint >> 12) & 0x3fU));
+	out[2] = (char)(0x80U | ((codepoint >> 6) & 0x3fU));
+	out[3] = (char)(0x80U | (codepoint & 0x3fU));
+	return 4;
 }
