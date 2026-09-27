@@ -328,7 +328,11 @@ http_send_all(
 	/* TLS sends it all itself. */
 	if (connection->tls != NULL) {
 		error = net_tls_write(connection->tls, bytes, length);
-		return error;
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the request is sent over TLS. */
+		return 0;
 	}
 
 	/* Until everything is sent. */
@@ -412,7 +416,11 @@ http_receive(
 	/* TLS decrypts. */
 	if (connection->tls != NULL) {
 		error = net_tls_read(connection->tls, bytes, length, received);
-		return error;
+		if (error != 0)
+			return error;
+
+		/* Succeeded: *received bytes (0 at the end). */
+		return 0;
 	}
 
 	/* The socket's bytes. */
@@ -420,6 +428,8 @@ http_receive(
 	count = recv(connection->descriptor, bytes, length, 0);
 	if (count < 0)
 		return errno;
+
+	/* Succeeded: *received bytes (0 at the end). */
 	*received = (size_t)count;
 	return 0;
 }
@@ -436,7 +446,11 @@ http_is_web(
 	if (differs == 0)
 		return 1;
 	differs = strcmp(scheme, "https");
-	return differs == 0;
+	if (differs == 0)
+		return 1;
+
+	/* Any other scheme. */
+	return 0;
 }
 
 /* Parses a response: the status line, the headers (cookies kept, a redirect's Location), and the body. */
