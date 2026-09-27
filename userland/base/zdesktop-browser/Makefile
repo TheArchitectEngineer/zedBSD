@@ -27,6 +27,12 @@ ZDESKTOP_BROWSER_SOURCES := $(ZDESKTOP_BROWSER_DIR)/main.c \
 	$(ZDESKTOP_BROWSER_DIR)/vm/atom.c \
 	$(ZDESKTOP_BROWSER_DIR)/html/input.c \
 	$(ZDESKTOP_BROWSER_DIR)/html/tokenizer.c \
+	$(ZDESKTOP_BROWSER_DIR)/html/parser.c \
+	$(ZDESKTOP_BROWSER_DIR)/html/modes.c \
+	$(ZDESKTOP_BROWSER_DIR)/html/body.c \
+	$(ZDESKTOP_BROWSER_DIR)/html/foreign.c \
+	$(ZDESKTOP_BROWSER_DIR)/dom/node.c \
+	$(ZDESKTOP_BROWSER_DIR)/dom/names.c \
 	$(ZDESKTOP_BROWSER_DIR)/shell/shell.c
 
 ifdef ZEDBSD_TOPLEVEL_BUILD

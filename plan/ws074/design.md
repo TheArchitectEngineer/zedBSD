@@ -82,7 +82,7 @@ package の Makefile は directory の直下に 1 つだけ（build は `userlan
 | `net/` | `net_` | URL、fetch の簡略版、HTTP/1.1、TLS、resolver、cookie、cache、MIME（§9） |
 | `bind/` | `bind_` | 自前の WebIDL の file と、build のときにそこから生成する binding（§12.4） |
 | `page/` | `page_` | browsing context、event loop、script の読み込み、navigation、history |
-| `shell/` | `shell_` | Wayland の窓、wl_shm の presenter、titlebar、toolbar、タブ、menu（§8.4） |
+| `shell/` | `shell_` | Wayland の窓、Vulkan の swapchain、titlebar、toolbar、タブ、menu（§8.4） |
 
 - 各 directory は公開の header を 1 つ（`vm/vm.h`、`html/html.h` …）と内部の header を持つ。依存は下向きだけ:
   `base` ← `vm` ← `js`・`wasm` / `base`・`vm` ← `dom` ← `html`・`css` ← `layout` ← `paint` ← `page` ← `shell`。`net`・`image`・
@@ -219,11 +219,22 @@ layout の fragment を CSS 2 の付録 E の順（stacking context、z-index、
 矩形の塗り、border（solid・dashed・dotted・double・groove・ridge・inset・outset、角丸）、背景（色、画像の repeat・position・size、
 gradient）、text の run、画像、clip（矩形と角丸）、opacity・transform・filter の group の始まりと終わり、box-shadow。
 
-### 8.2 rasterizer
+### 8.2 GPU（Vulkan）の描画と CPU の参照の描画
 
-CPU の rasterizer（premultiplied BGRA、zdesktop-files の canvas と同じ pixel の形）: coverage を積む scanline の AA、角丸と path、
-glyph の mask の合成、画像の拡縮（bilinear、縮小は box filter）、clip の stack、offscreen の layer（opacity・filter・blend）、2D の
-affine transform。3D transform は後。GPU（Vulkan）での合成は後（§16）。
+**2026-09-27 ユーザーの決定「ブラウザはWaylandとVulkanで実装してください。」**（D6 の既定の wl_shm を取り消し）。
+
+- **窓の描画は Vulkan**: display list を Vulkan で描く（`paint/vulkan.c`）。primitive は 1 本の pipeline の instance の四角
+  （四角の位置、色、4 隅の半径、border の幅、texture の座標、種類）で、fragment shader が角丸の距離関数（SDF）で AA の coverage を
+  出す。text は glyph を libtruetype で CPU で描いて R8 の atlas の texture に置き、画像は texture。clip は矩形なら scissor、角丸は
+  SDF の mask、opacity・filter の group は offscreen の image（layer）に描いて合成。scroll する box と固定の要素は layer に分け、
+  scroll は layer の移動（再描画なし）で行えるようにする。shader は GLSL で書き、host の `glslc` と `spirv-val` で SPIR-V にして
+  生成した header を commit する（zdesktop-files の `shaders/regenerate.py` と同じ方式。build に shader の compiler は要らない）。
+- **CPU の参照の描画**（`paint/software.c`）: 同じ display list を CPU で描き、headless の `--render=PAGE --output=PPM` と host の
+  試験（WPT の reftest、Chrome との比較）に使う。GPU の描画と同じ数式（pixel の中心での SDF の coverage、同じ glyph の bitmap、
+  同じ画像の sampling）で書き、primitive の意味を 1 つの定義（`paint/paint.h` の display list の型）で共有する。
+- **2 つの一致の確かめ方**: guest の Venus（と i915 の実機）で同じ page を Vulkan の offscreen の image に描いて読み戻し、CPU の参照の
+  描画と画素ごとに比べる試験（`--render-gpu=PAGE --output=PPM` と比較の script）。許容は channel の差 ≤ 2（GPU の補間の差）で、
+  それを超える画素が 0.1% を超えれば失敗。primitive を足す Phase はこの試験に page を 1 つ足す。
 
 ### 8.3 描画の機会
 
@@ -232,9 +243,9 @@ page の変更 → 次の frame callback（`wl_surface.frame`）で rAF → styl
 
 ### 8.4 窓（shell）
 
-- **提示は wl_shm**（zdesktop の global に `wl_shm` がある）。CPU で描いた frame を共有 memory の buffer で渡し、damage を付ける。
-  理由: engine の出力が CPU の画像なので、最初は Vulkan の swapchain を持たずに済む（zdesktop-files の present.c を複製しない）。
-  速さが要るようになったら Vulkan の presenter（zdesktop-files の方式）か共有の library（§17 の D6）へ移す。
+- **提示は Wayland の上の Vulkan**（libvulkan の Wayland WSI の `VkSurfaceKHR` と swapchain）。zdesktop-files の `window.c`・
+  `present.c` の方式（premultiplied alpha、glass を使うなら zed_glass_v1）に倣うが、canvas を 1 枚貼るのではなく display list を
+  §8.2 の GPU の描画で直接 swapchain の image へ描く。
 - **titlebar**: WS070 の titlebar の拡張（libzdesktop の `zdesktop_titlebar_*`）。
   - ws070-p011（TABS の presentation）の前: **CONTROLS** mode（戻る・進む・再読み込み／中止・URL の text field・menu）。タブは
     無し（1 窓 1 タブ、Ctrl+T は新しい窓）。
@@ -484,7 +495,7 @@ libcrypto の互換品（別の WS）、GPU の合成、sync・password の管�
 | D3 | titlebar の使い方 | ws070-p011 の前は CONTROLS（URL の欄を titlebar に、1 窓 1 タブ）。後は TABS（タブを titlebar に）+ 窓の中の toolbar | CONTROLS のまま窓の中にタブ | 仕様（titlebar-spec §4.3）が browser を TABS の主な用途としている |
 | D4 | 仕様や Unicode から作る表（文字参照 2231 件は WHATWG の HTML 標準の一覧（CC BY 4.0）、日本語の encoding の表は WHATWG Encoding 標準の index、Unicode の性質は UCD（Unicode License v3）） | 生成の script（`tools/`）と生成した `.c` を commit し、出典とライセンスの表示を file の先頭と `userland/base/licenses/` の notice に置く | build のたびに取得して生成（base の build が network に依存する） | どれも許容的なライセンスで表示を保てば再配布できる。base の build を offline に保つ |
 | D5 | GIF の decoder の置き場 | browser の中（`image/gif.c`） | `libgif-compat` を base の library に | 今 GIF を要る base の program は browser だけ |
-| D6 | 窓の提示 | wl_shm（CPU の frame をそのまま） | zdesktop-files の Vulkan の presenter を複製、または desktop と共有の library へ切り出す | engine の出力が CPU の画像。複製を避ける。速さが要る時に共有の library を desktop のサブエージェントと決める |
+| D6 | 窓の提示と描画 | **決定（2026-09-27 ユーザー「ブラウザはWaylandとVulkanで実装してください。」）**: Wayland の上の Vulkan。display list を GPU で描く。CPU の参照の描画は headless と試験だけ（§8.2） | （既定だった wl_shm は取り消し） | — |
 | D7 | libpng-compat の範囲 | ws071-p010 の simplified API に `png_image_begin_read_from_memory` を含めてもらう（browser は memory から読む） | browser が一時 file に書いて `from_file` | 仕様の simplified API の一部で、実装はほぼ同じ |
 | D8 | libtruetype の拡張 | 既存の関数を変えずに関数を足す（小数の大きさ、1/64 px の advance、kerning、`name`・`OS/2`、`unitsPerEm`）。足す前に main に伝える | browser の中に別の TrueType の読み手を持つ | TrueType の parser を base に 2 つ持たない |
 | D9 | libjpeg-compat の API | IJG の古典的な API の decompress の部分集合、`JPEG_LIB_VERSION` 62、header は自前、encode は後 | TurboJPEG の API（`tj3*`）、version 80 | 「libjpeg-compat」の名前から古典的な API が自然。62 は libjpeg-turbo と Debian の既定 |
@@ -492,6 +503,10 @@ libcrypto の互換品（別の WS）、GPU の合成、sync・password の管�
 | D11 | 段階の目標値 | §15 の数 | — | 最初の数はユーザーの見直しを受ける |
 
 ## 18. Phase の分割
+
+**2026-09-27 ユーザー「ブラウザのサブエージェントにも、正常系でワンパス通すのを優先するように伝えてください。」**: まず正常系を端から端まで
+（HTML → DOM → style → layout → 描画 → 窓に実際の page が出る → JS の接続）通し、準拠の率と端のケースは後の Phase に回す。各 Phase は
+最小の範囲で通し、残りを phase.md の「後回し」に書く。段階の目標値（§15）はワンパスの後に上げる。実行の順は ws.md の「実行の順」。
 
 [ws.md](ws.md) の Phase の表が正本。各 Phase は 1〜3 時間で終わる大きさを目標にし、着手の時に大きすぎれば分ける。依存の順:
 基盤（p002〜p003）→ HTML（p004〜p006）→ CSS（p007〜p009）→ text・layout・描画・窓（p010〜p014、M1）→ network（p015〜p017）→

@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 のユーザーの指示でサブエージェントが worktree の branch で実行。main の Queue への反映は統合する main）
-Resume point: p001〜p004 cleared（2026-09-27）。次は p005（DOM の核と tree builder 1）
+Resume point: p001〜p005 cleared（2026-09-27）。次は p007（CSS の最小）、実行の順は下の表の上
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -65,22 +65,26 @@ libpng-compat の `from_memory`、libtruetype の拡張、libjpeg-compat の API
 p001 で分け直した（2026-09-27。p002〜p013 の案は実行前の案だったので、同じ番号を新しい分割に使う）。各 Phase は 1〜3 時間を目標にし、
 着手の時に大きすぎれば分ける。
 
+**実行の順**（2026-09-27 ユーザー「正常系でワンパス通すのを優先する」、design.md §18）: p005 → p007 → p010 → p011 → p012 → p014（窓に
+実際の page）→ p022 → p023 → p024 → p025 → p026 → p030（JS の接続）→ p013 → p015 → p016 → p017 → p019 → p020 → p021 → p006 → p008 →
+p009 → p018 → p027 → p028 → p029 → p031 → p032 → p033 → p034 → p035 以降。各 Phase は最小の範囲で通し、残りは phase.md の「後回し」へ。
+
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
 | [ws074-p001](phase001/phase.md) | 全体の設計（[design.md](design.md)）、Chromium の導入、Phase の分割 | cleared | — |
 | [ws074-p002](phase002/phase.md) | 骨組み: directory、build の登録（amd64）、`base/`（arena・配列・文字列 buffer・UTF-8/16・hash）、headless の mode の入口、host の build（ASan の組）、suite の取得の script（固定 SHA とライセンスの確認） | cleared | p001 |
 | [ws074-p003](phase003/phase.md) | GC heap の核（非移動の mark-sweep、大きさの class の block、保守的な stack の走査、trace）、VM の string と atom | cleared | p002 |
 | [ws074-p004](phase004/phase.md) | HTML tokenizer（全状態、文字参照の表の生成）、html5lib の tokenizer の runner。目標 ≥ 98% | cleared | p003 |
-| ws074-p005 | DOM の核（GC の cell の Node・Element・Text・Comment・Document・DocumentType、属性）と tree builder 1（initial〜in body、adoption agency）、html5lib の tree の runner | planned | p004 |
+| [ws074-p005](phase005/phase.md) | DOM の核（GC の cell の Node・Element・Text・Comment・Document・DocumentType、属性）と tree builder 1（initial〜in body、adoption agency）、html5lib の tree の runner | cleared | p004 |
 | ws074-p006 | tree builder 2（table・select・template・frameset・foreign content）、fragment parsing、serializer。目標 script-off ≥ 90% | planned | p005 |
-| ws074-p007 | CSS の tokenizer と parser（stylesheet・rule・宣言・at-rule） | planned | p003 |
-| ws074-p008 | selector の parse と照合、specificity、rule の索引 | planned | p006、p007 |
-| ws074-p009 | cascade、property の表（最初の約 60）、computed value、UA stylesheet、継承、`var()`・`calc()`、`<style>`・`style`・file の `<link>` | planned | p008 |
-| ws074-p010 | font と text: font の一覧と選択、libtruetype への関数の追加（D8、main に先に伝える）、kerning、fallback、改行、Unicode の表の生成 | planned | p002 |
-| ws074-p011 | layout 1: box tree（anonymous box）、block（margin の相殺・幅）、inline（line box・text run・baseline）、`--dump=layout` | planned | p009、p010 |
-| ws074-p012 | 描画: display list、stacking の順、rasterizer、背景・border・text、`--render`、WPT の reftest の runner（CSS2 の JS 無し）と Chrome の比較の最初の版。最初の数 | planned | p011 |
+| ws074-p007 | CSS の最小（ワンパス）: tokenizer・parser、selector（type・class・id・子孫・子・属性の基本）、cascade（origin・specificity・継承）、約 30 の property、UA stylesheet、`<style>`・`style` 属性 | planned | p003 |
+| ws074-p008 | CSS 2（後回し）: selector の残り（構造・状態・`:is`/`:not`/`:has`、pseudo-element）、rule の索引 | planned | p006、p007 |
+| ws074-p009 | CSS 3（後回し）: property の表の拡張、`var()`・`calc()`、`@media`、file の `<link>`、shorthand の全部 | planned | p008 |
+| ws074-p010 | font と text の最小: font の一覧（Inter、日本語は Droid の fallback）、libtruetype（関数を足すなら main に先に伝える）、advance、空白と CJK での改行 | planned | p002 |
+| ws074-p011 | layout の最小: box tree（anonymous box）、block（幅・高さ・margin の基本）、inline（line box・text run・baseline）、`--dump=layout` | planned | p009、p010 |
+| ws074-p012 | 描画の最小: display list（背景・border の solid・text）、CPU の参照の描画、`--render`（PPM → PNG）、画面の撮影 | planned | p011 |
 | ws074-p013 | layout 2: float・clear、position（relative・absolute・fixed）、overflow と clip、list と marker、replaced の大きさ、単位（em・rem・vw・%） | planned | p012 |
-| ws074-p014 | 窓 1: wl_shm の presenter、CONTROLS の titlebar（戻る・進む・再読み込み・URL）、scroll、link（file:）、keyboard、guest の image と画面。**M1 の計測** | planned | p013 |
+| ws074-p014 | 窓: Wayland と Vulkan（swapchain、display list の GPU の描画: instance の四角と SDF、glyph の atlas）、CONTROLS の titlebar（URL）、scroll、link（file:）、guest で実際の page を表示。GPU と CPU の描画の比較の試験 | planned | p013 |
 | ws074-p015 | URL（WHATWG）、`data:`、WPT の urltestdata の runner | planned | p002 |
 | ws074-p016 | HTTP/1.1（非同期、持続接続、chunked、redirect）、resolver の thread、loader、cookie、memory の cache、host の test server、guest の http | planned | p014、p015 |
 | ws074-p017 | TLS（OpenSSL の `dlopen`、D2）、https、自前の CA の host の server、guest で実在の site | planned | p016 |
