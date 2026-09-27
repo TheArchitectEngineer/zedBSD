@@ -373,6 +373,7 @@ vm_value_as_cell(
 
 struct vm_shape;
 struct vm_realm;
+struct vm_code;
 
 /*
  * A symbol: a unique property key with a description (a string or
@@ -435,21 +436,25 @@ typedef int (*vm_native)(struct vm_realm *realm, vm_value this_value, const vm_v
 
 /*
  * A function: an object that can be called, with its realm and what runs
- * when it is called (a native function now; bytecode in ws074-p023).
+ * when it is called: a code unit of bytecode, or a native function.
  */
 struct vm_function {
 	struct vm_object object;
 	struct vm_realm *realm;
 	vm_native native;
-	void *code;
+	struct vm_code *code;
 };
 
 /*
  * A realm: the global object and the intrinsic objects a script's objects
- * are made from, and the exception being thrown.
+ * are made from, the exception being thrown, and the VM stack its code
+ * runs on.
  *
- * A realm is not a cell; it registers a tracer that keeps its objects, and
- * lives until vm_realm_destroy.
+ * A realm is not a cell; it registers a tracer that keeps its objects and
+ * marks every word of the used stack conservatively (Wasm's raw values sit
+ * beside JavaScript's boxed ones there), and lives until vm_realm_destroy.
+ * depth counts how many times the interpreter is entered from C, which a
+ * native function calling a script function does.
  */
 struct vm_realm {
 	struct vm_heap *heap;
@@ -458,6 +463,10 @@ struct vm_realm {
 	struct vm_object *function_prototype;
 	struct vm_object *array_prototype;
 	vm_value exception;
+	vm_value *stack;
+	uint32_t stack_capacity;
+	uint32_t stack_top;
+	unsigned depth;
 };
 
 /* Values and keys (object.c). */
@@ -504,5 +513,21 @@ int vm_throw(struct vm_realm *realm, vm_value exception);
 /* Realms (realm.c). */
 int vm_realm_create(struct vm_heap *heap, struct vm_realm **realm);
 void vm_realm_destroy(struct vm_realm *realm);
+
+/* JavaScript's operations on values (operation.c). */
+int vm_to_boolean(vm_value value);
+int vm_to_number(struct vm_realm *realm, vm_value value, double *number);
+int vm_to_string(struct vm_realm *realm, vm_value value, struct vm_string **string);
+int vm_to_key(struct vm_realm *realm, vm_value value, vm_value *key);
+int vm_strict_equals(vm_value left, vm_value right);
+int vm_add(struct vm_realm *realm, vm_value left, vm_value right, vm_value *result);
+int vm_less(struct vm_realm *realm, vm_value left, vm_value right, vm_value *result);
+int vm_get(struct vm_realm *realm, vm_value base, vm_value key, vm_value *result);
+int vm_put(struct vm_realm *realm, vm_value base, vm_value key, vm_value value);
+int vm_throw_type_error(struct vm_realm *realm, const char *message);
+int vm_throw_range_error(struct vm_realm *realm, const char *message);
+
+/* The interpreter (interpreter.c). */
+int vm_interpret(struct vm_realm *realm, struct vm_function *function, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 
 #endif

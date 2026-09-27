@@ -21,6 +21,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* How many 64-bit slots the VM stack of a realm has (2 MiB). */
+#define REALM_STACK_SLOTS	(256U * 1024U)
+
 static int realm_fill(struct vm_realm *realm);
 static void realm_trace(struct vm_heap *heap, void *context);
 static int realm_empty_function(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
@@ -43,8 +46,21 @@ vm_realm_create(
 		return ENOMEM;
 	made->heap = heap;
 	made->exception = VM_VALUE_UNDEFINED;
+
+	/* The VM stack its code runs on. */
+	made->stack = calloc(REALM_STACK_SLOTS, sizeof(vm_value));
+	if (made->stack == NULL) {
+		free(made);
+		return ENOMEM;
+	}
+
+	/* The stack's size, empty. */
+	made->stack_capacity = REALM_STACK_SLOTS;
+
+	/* The tracer. */
 	error = vm_heap_add_tracer(heap, realm_trace, made);
 	if (error != 0) {
+		free(made->stack);
 		free(made);
 		return error;
 	}
@@ -73,8 +89,9 @@ vm_realm_destroy(
 	if (realm == NULL)
 		return;
 
-	/* The tracer, then the realm. */
+	/* The tracer, then the stack and the realm. */
 	vm_heap_remove_tracer(realm->heap, realm_trace, realm);
+	free(realm->stack);
 	free(realm);
 }
 
@@ -131,6 +148,7 @@ realm_trace(
 	void *context)
 {
 	struct vm_realm *realm;
+	uint32_t slot;
 
 	/* The intrinsic objects, where made. */
 	realm = context;
@@ -145,6 +163,10 @@ realm_trace(
 	if (realm->global != NULL)
 		vm_heap_mark(heap, &realm->global->cell);
 	vm_heap_mark_value(heap, realm->exception);
+
+	/* Every word of the used stack that could point at a cell (boxed and raw values share it). */
+	for (slot = 0; slot < realm->stack_top; slot++)
+		vm_heap_mark_word(heap, (uintptr_t)realm->stack[slot]);
 }
 
 /* Function.prototype's own behaviour: it takes anything and returns undefined. */
