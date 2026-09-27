@@ -993,6 +993,74 @@ backing_claim_check_teardown(
 	return 0;
 }
 
+/*
+ * Finds a claim, other than the one named, whose published extent touches
+ * a range of a disk.
+ *
+ * The buffer cache asks this before it writes a line back: a line wider
+ * than a FAT cluster can hold a claimed file's blocks beside blocks that
+ * the filesystem changed, and only the latter are its to write.  The
+ * claim found is only compared, never used, so no reference is taken;
+ * *owner is NULL when no other claim touches the range.
+ */
+int
+backing_claim_find_extent_owner(
+	struct disk *disk,
+	uint64_t block,
+	uint64_t count,
+	const struct backing_claim *except,
+	const struct backing_claim **owner)
+{
+	struct backing_claim *claim;
+	struct backing_range range;
+	unsigned i;
+	unsigned j;
+	unsigned long irq;
+	int overlap;
+	int error;
+
+	/* Rejects a missing result. */
+	if (owner == NULL)
+		return EINVAL;
+	*owner = NULL;
+
+	/* Canonicalizes the range. */
+	error = canonical_range(disk, block, count, &range);
+	if (error != 0)
+		return error;
+
+	/* Looks for another claim's extent that touches the range. */
+	irq = spin_lock_irqsave(&claim_lock);
+
+	/* Walks the claims other than the one named. */
+	for (i = 0; i < BACKING_CLAIM_MAX; i++) {
+		claim = claims[i];
+		if (claim == NULL)
+			continue;
+		if (claim == except)
+			continue;
+
+		/* The first touching extent names its claim. */
+		for (j = 0; j < claim->range_count; j++) {
+			overlap = range_overlap(&range, &claim->ranges[j]);
+			if (overlap) {
+				*owner = claim;
+				break;
+			}
+		}
+
+		/* One claim is enough. */
+		if (*owner != NULL)
+			break;
+	}
+
+	/* Lets the claims change again. */
+	spin_unlock_irqrestore(&claim_lock, irq);
+
+	/* Succeeded: *owner names the claim, or is NULL. */
+	return 0;
+}
+
 /* Identifies the executing context that owns nested mutations. */
 static const void *
 current_execution(

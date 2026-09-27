@@ -2397,8 +2397,9 @@ mount_adopt_private(
  *
  * A mount stands for itself.  A bind of a public mount stands for nothing,
  * because its source is an entry of its own.  A bind of a private mount
- * (the kernel's boot filesystems shown at /boot and /boot/esp) stands for
- * that private mount, which no other entry reaches.
+ * (the kernel's boot slots shown at /boot/bootN, or an fstab /boot/esp
+ * that adopted one) stands for that private mount, synced once however
+ * many entries show it.
  */
 static struct mount *
 mount_sync_target(
@@ -2425,8 +2426,8 @@ mount_sync_target(
  * Names the source of a bind of a private mount in a mount listing.
  *
  * The kernel's own boot filesystems are private mounts shown through a
- * bind (/boot, /boot/esp); their disk is what a reader wants to see.  A
- * private mount without a disk stays "(private)".
+ * bind (/boot/bootN, an fstab /boot/esp); their disk is what a reader
+ * wants to see.  A private mount without a disk stays "(private)".
  */
 static void
 mount_info_private_source(

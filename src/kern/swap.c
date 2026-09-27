@@ -1343,6 +1343,14 @@ kern_swap_control_add(
 	if (error == 0)
 		error = kern_swap_source_set_runtime_add(control.sources, &source,
 		    NULL);
+
+	/* Tells the resolver that the selector now names an active source. */
+	if (error == 0) {
+		if (control.resolver->source_added != NULL) {
+			control.resolver->source_added(control.resolver_context,
+			    selector);
+		}
+	}
 out_destroy:
 	kern_swap_source_destroy(&source);
 out_release:

@@ -81,6 +81,10 @@ struct vfs_swap_control_context {
 static struct vfs_swap_control_context swap_control_context
 	__attribute__((section(".vfs_bss")));
 
+/* The boot slots shown at /boot/bootN; each is shown at most once. */
+static unsigned vfs_boot_slot_published[KERN_BOOT_SOURCE_SLOT_COUNT]
+	__attribute__((section(".vfs_bss")));
+
 struct vfs_disk_range {
 	struct disk *leaf;
 	uint64_t first;
@@ -127,7 +131,10 @@ static int vfs_disk_range_resolve(struct disk *disk, struct vfs_disk_range *rang
 static int vfs_swap_validate_raw(void *opaque, struct disk *candidate);
 static int vfs_fail(const char *stage, int error);
 static int vfs_ensure_root_directory(const struct path *root, const char *name, mode_t mode);
-static void vfs_publish_boot_filesystems(const struct path *root);
+static void vfs_publish_boot_filesystems(const struct kern_boot_parameters *parameters);
+static void vfs_boot_reference_mark(const char *value, unsigned *referenced);
+static void vfs_publish_boot_slot(unsigned index, struct mount *mountp, struct disk *disk);
+static void vfs_swap_source_added(void *opaque, const char *selector);
 static int vfs_bind_boot_mount(struct mount *mountp, const struct path *directory, const char *name);
 static void vfs_log_boot_handoff(const struct kern_boot_handoff *handoff, unsigned device_count);
 static void vfs_scan_physical_disks(const struct kern_boot_handoff *handoff, struct disk *boot_physical, struct disk **loader_boot_partition);
@@ -151,6 +158,7 @@ static const struct kern_swap_control_resolver_ops vfs_swap_resolver = {
 	.resolve_path = vfs_swap_resolve_path,
 	.resolve_disk = vfs_swap_resolve_disk,
 	.validate_raw = vfs_swap_validate_raw,
+	.source_added = vfs_swap_source_added,
 };
 
 /* Observes the live root image, independent of retained configuration strings. */
@@ -646,8 +654,8 @@ root_ready:
 		goto out_root;
 	VFS_LOG("vfs: runtime filesystems mounted\n");
 
-	/* Shows the boot filesystems the kernel holds at /boot and /boot/esp. */
-	vfs_publish_boot_filesystems(&root_path);
+	/* Shows the boot slots that boot files use at /boot/boot0 to /boot/boot3. */
+	vfs_publish_boot_filesystems(parameters);
 
 	/* Discovery publishes devices. Auxiliary filesystems require explicit mounts. */
 
@@ -884,37 +892,49 @@ vfs_ensure_root_directory(
 }
 
 /*
- * Shows the boot filesystems the kernel holds in the namespace.
+ * Shows the boot slots that boot files use at /boot/boot0 to /boot/boot3.
  *
  * The kernel keeps each configured boot partition's FAT mounted privately
  * for the system's lifetime, and a second mount of the same partition is
- * refused (BUG-065).  A running system reaches them here instead: the
- * first boot partition that is not an EFI system partition is shown at
- * /boot, and the first EFI system partition at /boot/esp (user decision,
- * 2026-09-27).  On an image with no BOOT partition /boot is a directory of
- * the root.  Each is a bind of the private mount's root, so the kernel and
- * the namespace share one FAT state, and unmounting it hides it again.  A
- * publication that fails is logged and leaves the mount private; the
- * system boots either way.
+ * refused (BUG-065).  A slot that a bootN: file names -- the overlay root,
+ * the overlay data, or only a swap file -- is shown read-write at
+ * /boot/bootN on every platform (user decision, 2026-09-27).  A slot used
+ * only through a direct selector is not shown, /boot itself is a
+ * directory of the root, and the ESP is left to an fstab line for
+ * /boot/esp, which adopts the kernel's mount; an ESP that a bootN: file
+ * names is shown at /boot/bootN as well.  Each is a bind of the private
+ * mount's root, so the kernel and the namespace share one FAT state, and
+ * the files in use stay readable but cannot be changed (the backing
+ * claims).  A publication that fails is logged and leaves the mount
+ * private; the system boots either way.
  */
 static void
 vfs_publish_boot_filesystems(
-	const struct path *root)
+	const struct kern_boot_parameters *parameters)
 {
 	struct kern_boot_source_slot *slot;
-	struct mount *boot_mount;
-	struct mount *esp_mount;
-	struct path boot_path;
+	unsigned referenced[KERN_BOOT_SOURCE_SLOT_COUNT];
+	const char *value;
 	unsigned index;
 	int private;
-	int esp;
-	int error;
 
-	/* Nothing is picked yet. */
-	boot_mount = NULL;
-	esp_mount = NULL;
+	/* Nothing is referenced yet. */
+	for (index = 0; index < KERN_BOOT_SOURCE_SLOT_COUNT; index++)
+		referenced[index] = 0;
 
-	/* Picks the first BOOT and the first ESP among the held boot slots. */
+	/* Marks the slots of the overlay root and data images. */
+	value = kern_boot_parameters_overlay_root(parameters);
+	vfs_boot_reference_mark(value, referenced);
+	value = kern_boot_parameters_overlay_data(parameters);
+	vfs_boot_reference_mark(value, referenced);
+
+	/* Marks the slots of the swap files. */
+	for (index = 0; index < KERN_SWAP_SOURCE_COUNT; index++) {
+		value = kern_boot_parameters_swap(parameters, index);
+		vfs_boot_reference_mark(value, referenced);
+	}
+
+	/* Shows each held slot that a boot file names. */
 	for (index = 0; index < KERN_BOOT_SOURCE_SLOT_COUNT; index++) {
 		slot = &boot_sources.slot[index];
 
@@ -927,80 +947,162 @@ vfs_publish_boot_filesystems(
 		if (!private)
 			continue;
 
-		/* The partition table tells an ESP from a BOOT partition. */
-		esp = partition_disk_is_efi_system(slot->disk);
-		if (esp && esp_mount == NULL)
-			esp_mount = slot->mount;
-		else if (!esp && boot_mount == NULL)
-			boot_mount = slot->mount;
+		/* Lets an fstab mount of the partition show the kernel's mount. */
+		(void)mount_private_allow_adoption(slot->mount);
+
+		/* A slot used only through a direct selector stays hidden. */
+		if (!referenced[index])
+			continue;
+		vfs_publish_boot_slot(index, slot->mount, slot->disk);
 	}
 
 #if defined(VFS_LEGACY_NULL_AUTOROOT) && defined(HAL_ARCH_ARM64)
-	/* The legacy ARM overlay root holds its boot partition outside the slots. */
-	if (boot_mount == NULL && vfs_legacy_boot_mount != NULL)
-		boot_mount = vfs_legacy_boot_mount;
-#endif
-
-	/* Nothing to show when the kernel holds no boot filesystem. */
-	if (boot_mount == NULL && esp_mount == NULL)
-		return;
-
-	/* Lets an fstab mount of either partition show the kernel's mount. */
-	if (boot_mount != NULL)
-		(void)mount_private_allow_adoption(boot_mount);
-	if (esp_mount != NULL)
-		(void)mount_private_allow_adoption(esp_mount);
-
-#if defined(HAL_ARCH_AMD64)
 	/*
-	 * amd64 images leave /boot and /boot/esp to fstab (user decision,
-	 * 2026-09-27): a distribution image mounts neither, and an installer
-	 * that wants them writes the fstab lines, which adopt the kernel's
-	 * mounts above.
+	 * The legacy ARM overlay root reads its images from the loader's boot
+	 * partition outside the slots; that partition is its boot0.
 	 */
-	return;
+	if (vfs_legacy_boot_mount != NULL) {
+		(void)mount_private_allow_adoption(vfs_legacy_boot_mount);
+		vfs_publish_boot_slot(0, vfs_legacy_boot_mount,
+		    vfs_legacy_boot_mount->m_disk);
+	}
 #endif
+}
 
-	/* Makes sure /boot exists to cover or to hold esp. */
-	error = vfs_ensure_root_directory(root, "boot", 0755U);
-	if (error != 0) {
-		VFS_LOG("vfs: /boot unavailable (error %d); boot filesystems stay private\n",
-		    error);
-		return;
-	}
+/* Marks the slot of a bootN: reference; any other value marks nothing. */
+static void
+vfs_boot_reference_mark(
+	const char *value,
+	unsigned *referenced)
+{
+	struct kern_boot_source_reference reference;
+	int error;
 
-	/* Shows the BOOT partition at /boot. */
-	if (boot_mount != NULL) {
-		error = vfs_bind_boot_mount(boot_mount, root, "boot");
-		if (error != 0)
-			VFS_LOG("vfs: publish BOOT at /boot failed (error %d)\n", error);
-		else
-			VFS_LOG("vfs: boot filesystem published at /boot\n");
-	}
-
-	/* Without an ESP there is nothing more to show. */
-	if (esp_mount == NULL)
+	/* An absent value names no slot. */
+	if (value == NULL)
 		return;
 
-	/* Resolves /boot, which may now be the BOOT partition, and makes esp in it. */
+	/* A direct selector names no slot. */
+	error = kern_boot_source_reference_parse(value, &reference);
+	if (error != 0)
+		return;
+
+	/* Marks the slot the reference names. */
+	referenced[reference.slot] = 1;
+}
+
+/*
+ * Shows one boot slot's private mount at /boot/bootN.
+ *
+ * Each slot is shown once: a slot already shown, even one unmounted
+ * since, is left alone.  The callers serialize publications: the VFS
+ * bring-up before init, and the single swap control operation after it.
+ */
+static void
+vfs_publish_boot_slot(
+	unsigned index,
+	struct mount *mountp,
+	struct disk *disk)
+{
+	static const char *const names[KERN_BOOT_SOURCE_SLOT_COUNT] = {
+		"boot0",
+		"boot1",
+		"boot2",
+		"boot3",
+	};
+	struct path root_path;
+	struct path boot_path;
+	const char *kind;
+	int esp;
+	int error;
+
+	/* A slot is shown once. */
+	if (vfs_boot_slot_published[index])
+		return;
+
+	/* Makes sure /boot exists as a directory of the root. */
+	path_init(&root_path);
 	path_init(&boot_path);
-	error = namei_path_at(&kern_cwdinfo, "/boot", &boot_path);
+	error = namei_path_at(&kern_cwdinfo, "/", &root_path);
 	if (error == 0)
-		error = vfs_ensure_root_directory(&boot_path, "esp", 0755U);
+		error = vfs_ensure_root_directory(&root_path, "boot", 0755U);
+	path_release(&root_path);
+
+	/* Makes sure /boot/bootN exists in it. */
+	if (error == 0)
+		error = namei_path_at(&kern_cwdinfo, "/boot", &boot_path);
+	if (error == 0)
+		error = vfs_ensure_root_directory(&boot_path, names[index], 0755U);
 	if (error != 0) {
 		path_release(&boot_path);
-		VFS_LOG("vfs: /boot/esp unavailable (error %d); the ESP stays private\n",
-		    error);
+		VFS_LOG("vfs: /boot/%s unavailable (error %d); boot%u stays private\n",
+		    names[index], error, index);
 		return;
 	}
 
-	/* Shows the ESP at /boot/esp. */
-	error = vfs_bind_boot_mount(esp_mount, &boot_path, "esp");
+	/* Shows the slot's root there. */
+	error = vfs_bind_boot_mount(mountp, &boot_path, names[index]);
 	path_release(&boot_path);
-	if (error != 0)
-		VFS_LOG("vfs: publish ESP at /boot/esp failed (error %d)\n", error);
+	if (error != 0) {
+		VFS_LOG("vfs: publish boot%u at /boot/%s failed (error %d)\n",
+		    index, names[index], error);
+		return;
+	}
+
+	/* Records the slot as shown. */
+	vfs_boot_slot_published[index] = 1;
+
+	/* Names the kind of partition in the log. */
+	esp = 0;
+	if (disk != NULL)
+		esp = partition_disk_is_efi_system(disk);
+	if (esp)
+		kind = "ESP";
 	else
-		VFS_LOG("vfs: ESP published at /boot/esp\n");
+		kind = "BOOT";
+	VFS_LOG("vfs: boot%u (%s) published at /boot/%s\n", index, kind,
+	    names[index]);
+}
+
+/*
+ * Shows the boot slot of a swap file added while the system runs.
+ *
+ * A swap file named as bootN:PATH makes its slot one that a boot file
+ * uses, so it is shown at /boot/bootN like the slots the boot parameters
+ * name.  The swap control calls this within its single operation.
+ */
+static void
+vfs_swap_source_added(
+	void *opaque,
+	const char *selector)
+{
+	struct kern_boot_source_reference reference;
+	struct kern_boot_source_slot *slot;
+	int private;
+	int error;
+
+	/* The slots live in this file; the context is not needed. */
+	(void)opaque;
+
+	/* Only a bootN: reference names a slot. */
+	if (selector == NULL)
+		return;
+	error = kern_boot_source_reference_parse(selector, &reference);
+	if (error != 0)
+		return;
+
+	/* The slot must hold a private mount of its own. */
+	slot = &boot_sources.slot[reference.slot];
+	if (!slot->configured)
+		return;
+	if (slot->mount == NULL)
+		return;
+	private = mount_is_private(slot->mount);
+	if (!private)
+		return;
+
+	/* Shows it at /boot/bootN. */
+	vfs_publish_boot_slot(reference.slot, slot->mount, slot->disk);
 }
 
 /* Binds the root of a private boot mount under a name in a directory. */
