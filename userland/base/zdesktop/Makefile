@@ -8,7 +8,7 @@ ZDESKTOP_SOURCES := userland/base/zdesktop/main.c userland/base/zdesktop/wire.c 
 	userland/base/zdesktop/compose.c userland/base/zdesktop/import.c userland/base/zdesktop/shm.c \
 	userland/base/zdesktop/glass.c userland/base/zdesktop/shell.c userland/base/zdesktop/home.c \
 	userland/base/zdesktop/menu.c userland/base/zdesktop/menu-shell.c userland/base/zdesktop/titlebar.c \
-	userland/base/zdesktop/popup.c userland/base/zdesktop/toplevel.c userland/base/zdesktop/subsurface.c userland/base/zdesktop/keymap.c \
+	userland/base/zdesktop/popup.c userland/base/zdesktop/toplevel.c userland/base/zdesktop/subsurface.c userland/base/zdesktop/keymap.c userland/base/zdesktop/data.c \
 	userland/base/vkdemo/display.c
 # App Home starts X11 applications through zdesktop-x11, which starts zdesktop-x11server when it is needed.
 ZEDBSD_PACKAGE_INPUTS += userland/base/zdesktop/zdesktop-x11

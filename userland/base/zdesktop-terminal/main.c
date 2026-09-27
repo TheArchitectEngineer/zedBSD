@@ -15,8 +15,8 @@
  *
  * Its menus (menu.c) are drawn by zdesktop; what they choose is carried out
  * here: a new window (another terminal), closing, the selection and the
- * terminal's own clipboard (zdesktop has no clipboard between clients
- * yet), the font's size, fullscreen, keys for the shell, clearing and
+ * clipboard (zdesktop's, shared with other clients, clipboard.c), the
+ * font's size, fullscreen, keys for the shell, clearing and
  * resetting the screen, and a line about the terminal.
  *
  * Every outcome is one line on standard output: ZTERM DONE on a normal end
@@ -106,10 +106,11 @@ static struct terminal_window main_window;
 static struct terminal_renderer main_renderer;
 
 /*
- * The terminal's clipboard (Edit > Copy) and its length, and the text being
+ * The clipboard's text and its length: the terminal's copy (Edit > Copy),
+ * which its data source sends to other clients while it is the selection,
+ * or another client's selection received for a paste; and the text being
  * pasted into the shell (Edit > Paste) with how much of it was written.
- * zdesktop has no clipboard between clients yet, so the clipboard is the
- * terminal's own and lives as long as it.
+ * They live as long as the terminal.
  */
 static char main_clipboard[MAIN_CLIPBOARD_MAX];
 static size_t main_clipboard_length;
@@ -823,9 +824,7 @@ main_menu_state(
 	/* The selection, the clipboard, the font's size, and fullscreen. */
 	memset(state, 0, sizeof(*state));
 	state->selection = main_screen.selected;
-	state->clipboard = 0;
-	if (main_clipboard_length != 0U)
-		state->clipboard = 1;
+	state->clipboard = terminal_clipboard_has_text(&main_window);
 	state->pixels = run->pixels;
 	state->fullscreen = main_window.fullscreen;
 }
@@ -945,6 +944,9 @@ main_copy(void)
 	main_clipboard_length = terminal_screen_text(&main_screen, main_clipboard, sizeof(main_clipboard));
 	printf("ZTERM COPY bytes=%lu\n", (unsigned long)main_clipboard_length);
 	fflush(stdout);
+
+	/* It is the selection other clients paste (clipboard.c). */
+	terminal_clipboard_set(&main_window, main_clipboard, main_clipboard_length);
 }
 
 /*
@@ -955,6 +957,12 @@ static void
 main_start_paste(void)
 {
 	size_t index;
+	int own;
+
+	/* Another client's selection is received first (the terminal's own copy is already here). */
+	own = terminal_clipboard_own(&main_window);
+	if (!own)
+		main_clipboard_length = terminal_clipboard_receive(&main_window, main_clipboard, sizeof(main_clipboard));
 
 	/* The clipboard's text, line breaks turned into what Enter sends. */
 	for (index = 0; index < main_clipboard_length; index++) {

@@ -170,6 +170,93 @@ void wl_subsurface_set_user_data(struct wl_subsurface *object, void *data);
 void *wl_subsurface_get_user_data(struct wl_subsurface *object);
 uint32_t wl_subsurface_get_version(struct wl_subsurface *object);
 
+/* The data-sharing interfaces (WS035 p079): the clipboard and drag and drop between clients. */
+struct wl_data_offer;
+struct wl_data_source;
+struct wl_data_device;
+struct wl_data_device_manager;
+extern const struct wl_interface wl_data_offer_interface;
+extern const struct wl_interface wl_data_source_interface;
+extern const struct wl_interface wl_data_device_interface;
+extern const struct wl_interface wl_data_device_manager_interface;
+
+/* The drag and drop actions (wl_data_device_manager.dnd_action). */
+enum wl_data_device_manager_dnd_action {
+	WL_DATA_DEVICE_MANAGER_DND_ACTION_NONE = 0,
+	WL_DATA_DEVICE_MANAGER_DND_ACTION_COPY = 1,
+	WL_DATA_DEVICE_MANAGER_DND_ACTION_MOVE = 2,
+	WL_DATA_DEVICE_MANAGER_DND_ACTION_ASK = 4
+};
+
+/* Receives events for one wl_data_offer object; retained by its proxy. */
+struct wl_data_offer_listener {
+	void (*offer)(void *data, struct wl_data_offer *wl_data_offer, const char *mime_type);
+	void (*source_actions)(void *data, struct wl_data_offer *wl_data_offer, uint32_t source_actions);
+	void (*action)(void *data, struct wl_data_offer *wl_data_offer, uint32_t dnd_action);
+};
+
+/* Installs the listener, and the wl_data_offer requests. */
+int wl_data_offer_add_listener(struct wl_data_offer *wl_data_offer, const struct wl_data_offer_listener *listener, void *data);
+#define WL_DATA_OFFER_ACCEPT 0U
+void wl_data_offer_accept(struct wl_data_offer *wl_data_offer, uint32_t serial, const char *mime_type);
+#define WL_DATA_OFFER_RECEIVE 1U
+void wl_data_offer_receive(struct wl_data_offer *wl_data_offer, const char *mime_type, int32_t fd);
+#define WL_DATA_OFFER_DESTROY 2U
+void wl_data_offer_destroy(struct wl_data_offer *wl_data_offer);
+#define WL_DATA_OFFER_FINISH 3U
+#define WL_DATA_OFFER_FINISH_SINCE_VERSION 3U
+void wl_data_offer_finish(struct wl_data_offer *wl_data_offer);
+#define WL_DATA_OFFER_SET_ACTIONS 4U
+#define WL_DATA_OFFER_SET_ACTIONS_SINCE_VERSION 3U
+void wl_data_offer_set_actions(struct wl_data_offer *wl_data_offer, uint32_t dnd_actions, uint32_t preferred_action);
+
+/* Receives events for one wl_data_source object; retained by its proxy. */
+struct wl_data_source_listener {
+	void (*target)(void *data, struct wl_data_source *wl_data_source, const char *mime_type);
+	void (*send)(void *data, struct wl_data_source *wl_data_source, const char *mime_type, int32_t fd);
+	void (*cancelled)(void *data, struct wl_data_source *wl_data_source);
+	void (*dnd_drop_performed)(void *data, struct wl_data_source *wl_data_source);
+	void (*dnd_finished)(void *data, struct wl_data_source *wl_data_source);
+	void (*action)(void *data, struct wl_data_source *wl_data_source, uint32_t dnd_action);
+};
+
+/* Installs the listener, and the wl_data_source requests. */
+int wl_data_source_add_listener(struct wl_data_source *wl_data_source, const struct wl_data_source_listener *listener, void *data);
+#define WL_DATA_SOURCE_OFFER 0U
+void wl_data_source_offer(struct wl_data_source *wl_data_source, const char *mime_type);
+#define WL_DATA_SOURCE_DESTROY 1U
+void wl_data_source_destroy(struct wl_data_source *wl_data_source);
+#define WL_DATA_SOURCE_SET_ACTIONS 2U
+#define WL_DATA_SOURCE_SET_ACTIONS_SINCE_VERSION 3U
+void wl_data_source_set_actions(struct wl_data_source *wl_data_source, uint32_t dnd_actions);
+
+/* Receives events for one wl_data_device object; retained by its proxy. */
+struct wl_data_device_listener {
+	void (*data_offer)(void *data, struct wl_data_device *wl_data_device, struct wl_data_offer *id);
+	void (*enter)(void *data, struct wl_data_device *wl_data_device, uint32_t serial, struct wl_surface *surface, wl_fixed_t x, wl_fixed_t y, struct wl_data_offer *id);
+	void (*leave)(void *data, struct wl_data_device *wl_data_device);
+	void (*motion)(void *data, struct wl_data_device *wl_data_device, uint32_t time, wl_fixed_t x, wl_fixed_t y);
+	void (*drop)(void *data, struct wl_data_device *wl_data_device);
+	void (*selection)(void *data, struct wl_data_device *wl_data_device, struct wl_data_offer *id);
+};
+
+/* Installs the listener, and the wl_data_device requests. */
+int wl_data_device_add_listener(struct wl_data_device *wl_data_device, const struct wl_data_device_listener *listener, void *data);
+#define WL_DATA_DEVICE_START_DRAG 0U
+void wl_data_device_start_drag(struct wl_data_device *wl_data_device, struct wl_data_source *source, struct wl_surface *origin, struct wl_surface *icon, uint32_t serial);
+#define WL_DATA_DEVICE_SET_SELECTION 1U
+void wl_data_device_set_selection(struct wl_data_device *wl_data_device, struct wl_data_source *source, uint32_t serial);
+#define WL_DATA_DEVICE_RELEASE 2U
+#define WL_DATA_DEVICE_RELEASE_SINCE_VERSION 2U
+void wl_data_device_release(struct wl_data_device *wl_data_device);
+void wl_data_device_destroy(struct wl_data_device *wl_data_device);
+
+#define WL_DATA_DEVICE_MANAGER_CREATE_DATA_SOURCE 0U
+struct wl_data_source *wl_data_device_manager_create_data_source(struct wl_data_device_manager *wl_data_device_manager);
+#define WL_DATA_DEVICE_MANAGER_GET_DATA_DEVICE 1U
+struct wl_data_device *wl_data_device_manager_get_data_device(struct wl_data_device_manager *wl_data_device_manager, struct wl_seat *seat);
+void wl_data_device_manager_destroy(struct wl_data_device_manager *wl_data_device_manager);
+
 struct wl_buffer;
 extern const struct wl_interface wl_buffer_interface;
 
