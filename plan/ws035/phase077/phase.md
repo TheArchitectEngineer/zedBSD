@@ -74,7 +74,8 @@ cleared。
   変わらず（sync）、c の後に a が動いて magenta（c も一緒）、d で b が親の commit なしに青、o で b が窓の上、pointer は a（50,20）・
   c（20,20）・窓（300,200）で enter、x で a と c が消える。
 - 回帰（seat の作り直しがあるので広く）: p076 PASS、menu-regress の p059・p062〜p065・p068〜p072・p014 PASS、menu-p002・p003 PASS、
-  x11-p003・x11-p005 PASS、x11-p004 は lean image に glxtest が無く未実施、p075 の host 試験 PASS。boot test は下。
+  x11-p003・x11-p005 PASS、x11-p004 は lean image に glxtest が無く未実施、p075 の host 試験 PASS。boot test PASS
+  （`build/ws035-p077-boot/login.png`、commit 99a1a65f の lean image）。
 - i915 実機: 未実施。
 
 ### 規約
