@@ -53,7 +53,7 @@ struct zwl_object *zwl_popup_chain_at(struct zwl_server *server);
 int zwl_popup_button(struct zwl_server *server, uint32_t button, uint32_t state);
 
 /* What popup.c needs from the compositor and the shell. */
-void zwl_compose_quad_image(struct zwl_server *server, VkCommandBuffer command, const struct zwl_import *import, int32_t x, int32_t y);
+void zwl_compose_surface_quad(struct zwl_server *server, VkCommandBuffer command, const struct zwl_object *surface, const struct zwl_import *import, int32_t x, int32_t y);
 int zwl_glass_body_origin(struct zwl_server *server, struct zwl_object *surface, int32_t *x, int32_t *y);
 void zwl_seat_pointer_move(struct zwl_server *server, struct zwl_object *from, struct zwl_object *to);
 void zwl_seat_pointer_update(struct zwl_server *server);

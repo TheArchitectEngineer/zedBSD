@@ -44,7 +44,7 @@ static const struct zwl_global globals[] = {
 	{ 4, "wl_output", 4, ZWL_OUTPUT },
 	{ 5, "wl_seat", 5, ZWL_SEAT },
 	{ 6, "wl_shm", 1, ZWL_SHM },
-	{ 7, "xdg_menu_manager_v1", 1, ZWL_MENU_MANAGER },
+	{ 7, "xdg_menu_manager_v1", 2, ZWL_MENU_MANAGER },
 	{ 8, "wl_subcompositor", 1, ZWL_SUBCOMPOSITOR },
 	{ 9, "wl_data_device_manager", 3, ZWL_DATA_MANAGER },
 	{ 10, "zxdg_decoration_manager_v1", 1, ZWL_DECORATION_MANAGER },
@@ -183,7 +183,8 @@ zwl_dispatch(
 	case ZWL_MENU_MANAGER:
 	case ZWL_MENU:
 	case ZWL_TOPLEVEL_MENU:
-		/* The System Menu (menu.c). */
+	case ZWL_CONTEXT_MENU:
+		/* The System Menu and its context menus (menu.c). */
 		error = zwl_menu_request(object, opcode, bytes, size);
 		break;
 	case ZWL_TITLEBAR_MANAGER:
@@ -1035,7 +1036,7 @@ shell_request(
 			surface->window_width = 0;
 			surface->window_height = 0;
 			if (surface->current != NULL)
-				zwl_buffer_size(surface->current, &surface->window_width, &surface->window_height);
+				zwl_surface_size(surface, &surface->window_width, &surface->window_height);
 
 			/* It covers the output from the origin. */
 			surface->x = 0;

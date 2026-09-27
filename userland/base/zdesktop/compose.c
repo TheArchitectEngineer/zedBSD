@@ -38,6 +38,7 @@ static VkResult compose_targets(struct zwl_compose *compose);
 static void compose_targets_destroy(struct zwl_compose *compose);
 static unsigned compose_windows(struct zwl_server *server, struct zwl_object **windows, unsigned capacity);
 static void compose_quad(struct zwl_server *server, VkCommandBuffer command, const struct zwl_import *import, int32_t x, int32_t y);
+static void compose_quad_part(struct zwl_server *server, VkCommandBuffer command, const struct zwl_import *import, int32_t x, int32_t y, uint32_t quad_width, uint32_t quad_height, const float *uv);
 static const struct zwl_import *surface_image(const struct zwl_object *surface);
 static void compose_cursor(struct zwl_server *server, VkCommandBuffer command);
 static VkResult compose_record(struct zwl_server *server, uint32_t image, struct zwl_object **windows, unsigned count);
@@ -1207,22 +1208,38 @@ zwl_compose_surface_image(
 }
 
 /*
- * Draws an image as a quad at a place on the output, its own size (for the
- * popups, popup.c).
+ * Draws a surface's image as a quad at a place on the output, at the
+ * surface's size and showing its viewport's source (viewport.c): a window
+ * or a sub-surface in the plain look, a popup (popup.c, subsurface.c).
  */
 void
-zwl_compose_quad_image(
+zwl_compose_surface_quad(
 	struct zwl_server *server,
 	VkCommandBuffer command,
+	const struct zwl_object *surface,
 	const struct zwl_import *import,
 	int32_t x,
 	int32_t y)
 {
-	/* The same quad as a window's. */
-	compose_quad(server, command, import, x, y);
+	uint32_t width;
+	uint32_t height;
+	float uv[4];
+
+	/* The surface's size (the image's own without one). */
+	zwl_surface_size(surface, &width, &height);
+	if (width == 0U || height == 0U) {
+		width = import->width;
+		height = import->height;
+	}
+
+	/* The part of its buffer shown. */
+	zwl_viewport_source(surface, uv);
+
+	/* The quad. */
+	compose_quad_part(server, command, import, x, y, width, height, uv);
 }
 
-/* Draws an image as a quad at a place on the output, its own size. */
+/* Draws an image as a quad at a place on the output, its own size, all of it. */
 static void
 compose_quad(
 	struct zwl_server *server,
@@ -1231,21 +1248,36 @@ compose_quad(
 	int32_t x,
 	int32_t y)
 {
+	static const float whole[4] = { 0.0f, 0.0f, 1.0f, 1.0f };
+
+	/* The image's size, all of it. */
+	compose_quad_part(server, command, import, x, y, import->width, import->height, whole);
+}
+
+/* Draws a part of an image (uv: left, top, right, bottom as fractions) as a quad at a place and size on the output. */
+static void
+compose_quad_part(
+	struct zwl_server *server,
+	VkCommandBuffer command,
+	const struct zwl_import *import,
+	int32_t x,
+	int32_t y,
+	uint32_t quad_width,
+	uint32_t quad_height,
+	const float *uv)
+{
 	float constants[8];
 	float width;
 	float height;
 
-	/* The rectangle in normalized device coordinates, and the whole image. */
+	/* The rectangle in normalized device coordinates, and the part of the image. */
 	width = (float)server->width;
 	height = (float)server->height;
 	constants[0] = 2.0f * (float)x / width - 1.0f;
 	constants[1] = 2.0f * (float)y / height - 1.0f;
-	constants[2] = 2.0f * (float)(x + (int32_t)import->width) / width - 1.0f;
-	constants[3] = 2.0f * (float)(y + (int32_t)import->height) / height - 1.0f;
-	constants[4] = 0.0f;
-	constants[5] = 0.0f;
-	constants[6] = 1.0f;
-	constants[7] = 1.0f;
+	constants[2] = 2.0f * (float)(x + (int32_t)quad_width) / width - 1.0f;
+	constants[3] = 2.0f * (float)(y + (int32_t)quad_height) / height - 1.0f;
+	memcpy(&constants[4], uv, 4U * sizeof(float));
 
 	/* The pipeline for the window's way of drawing, its image, and the strip. */
 	vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, server->compose->pipelines[import->draw]);
@@ -1326,7 +1358,7 @@ compose_record(
 		for (index = 0; index < count; index++) {
 			/* A window between its sub-surfaces below and above it (subsurface.c). */
 			zwl_subsurface_draw(server, compose->command, windows[index], (float)windows[index]->x, (float)windows[index]->y, 1.0f, 1.0f, 0U);
-			compose_quad(server, compose->command, surface_image(windows[index]), windows[index]->x, windows[index]->y);
+			zwl_compose_surface_quad(server, compose->command, windows[index], surface_image(windows[index]), windows[index]->x, windows[index]->y);
 			zwl_subsurface_draw(server, compose->command, windows[index], (float)windows[index]->x, (float)windows[index]->y, 1.0f, 1.0f, 1U);
 		}
 

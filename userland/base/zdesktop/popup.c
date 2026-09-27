@@ -25,6 +25,7 @@
  */
 
 #include "popup.h"
+#include "extras.h"
 #include "glass.h"
 #include "subsurface.h"
 
@@ -551,6 +552,8 @@ zwl_popup_draw(
 	struct zwl_object *popups[POPUP_MAX];
 	const struct zwl_import *image;
 	struct glass_shape shape;
+	uint32_t width;
+	uint32_t height;
 	unsigned count;
 	unsigned index;
 	int32_t x;
@@ -565,14 +568,15 @@ zwl_popup_draw(
 		if (shown != 0)
 			continue;
 
-		/* The place, and the image the frame samples. */
+		/* The place, the image the frame samples and the popup's size (a viewport's, viewport.c). */
 		popups[index]->x = x;
 		popups[index]->y = y;
 		image = zwl_compose_surface_image(popups[index]);
+		zwl_surface_size(popups[index], &width, &height);
 
 		/* The glass look gives it a soft shadow. */
 		if (server->glass) {
-			glass_shape_init(&shape, (float)x, (float)y + 4.0f, (float)image->width, (float)image->height);
+			glass_shape_init(&shape, (float)x, (float)y + 4.0f, (float)width, (float)height);
 			shape.quad[0] -= 2.0f * POPUP_SHADOW;
 			shape.quad[1] -= 2.0f * POPUP_SHADOW;
 			shape.quad[2] += 4.0f * POPUP_SHADOW;
@@ -589,7 +593,7 @@ zwl_popup_draw(
 
 		/* The image itself, between its sub-surfaces below and above it (subsurface.c). */
 		zwl_subsurface_draw(server, command, popups[index], (float)x, (float)y, 1.0f, 1.0f, 0U);
-		zwl_compose_quad_image(server, command, image, x, y);
+		zwl_compose_surface_quad(server, command, popups[index], image, x, y);
 		zwl_subsurface_draw(server, command, popups[index], (float)x, (float)y, 1.0f, 1.0f, 1U);
 	}
 }
@@ -1286,6 +1290,8 @@ chain_surface_at(
 	struct zwl_object *popups[POPUP_MAX];
 	struct zwl_object *toplevel;
 	const struct zwl_import *image;
+	uint32_t width;
+	uint32_t height;
 	unsigned count;
 	unsigned index;
 	int32_t left;
@@ -1307,11 +1313,12 @@ chain_surface_at(
 		if (image == NULL)
 			continue;
 
-		/* The point inside it. */
+		/* The point inside it (its size, a viewport's, viewport.c). */
+		zwl_surface_size(popups[index - 1U], &width, &height);
 		if (x >= left &&
-		    x < left + (int32_t)image->width &&
+		    x < left + (int32_t)width &&
 		    y >= top &&
-		    y < top + (int32_t)image->height) {
+		    y < top + (int32_t)height) {
 			popups[index - 1U]->x = left;
 			popups[index - 1U]->y = top;
 			return popups[index - 1U];
@@ -1333,11 +1340,12 @@ chain_surface_at(
 	if (image == NULL)
 		return NULL;
 
-	/* The point inside the body (not its title bar, which is zdesktop's). */
+	/* The point inside the body at its size (not its title bar, which is zdesktop's). */
+	zwl_surface_size(toplevel, &width, &height);
 	if (x >= left &&
-	    x < left + (int32_t)image->width &&
+	    x < left + (int32_t)width &&
 	    y >= top &&
-	    y < top + (int32_t)image->height)
+	    y < top + (int32_t)height)
 		return toplevel;
 
 	/* Outside the chain. */

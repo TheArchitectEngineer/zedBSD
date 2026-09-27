@@ -11,6 +11,7 @@
 		zdesktop_version;
 		zdesktop_menu_*;
 		zdesktop_window_menu_*;
+		zdesktop_context_menu_*;
 		zdesktop_recent_*;
 		zdesktop_titlebar_*;
 		zdesktop_glass_*;

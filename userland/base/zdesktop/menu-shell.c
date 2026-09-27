@@ -27,8 +27,10 @@
  */
 
 #include "menu.h"
+#include "popup.h"
 #include "titlebar.h"
 
+#include <errno.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -137,9 +139,14 @@ struct shell_logged {
  * controls with its hit, in extras (rebuilt every frame too); the popup it
  * opens keeps its own copy in open_extras, whose rows come before the
  * window's menu.  A row's label is kept with it.
+ *
+ * context is the xdg_context_menu_v1 whose menu is open at a point of the
+ * window (ws071-p009), NULL for the window's own menu: its model is the
+ * context menu's, its choice and its end go to it, and it has no bar.
  */
 struct shell_menu {
 	struct zwl_object *surface;
+	struct zwl_object *context;
 	unsigned docked;
 	unsigned depth;
 	struct shell_popup popups[SHELL_DEPTH];
@@ -229,6 +236,7 @@ static void shell_draw_popup(struct zwl_server *server, VkCommandBuffer command,
 static void shell_draw_row(struct zwl_server *server, VkCommandBuffer command, const struct shell_popup *popup, const struct zwl_menu_item *row, int32_t row_y);
 static const struct zwl_menu_model *shell_model(struct zwl_object *surface, struct zwl_object **place);
 static const struct zwl_menu_item *shell_item(const struct zwl_menu_model *model, uint32_t id);
+static struct zwl_object *shell_place(struct zwl_object *surface);
 
 /*
  * Starts a frame: the top-level items are hit-tested where this frame draws them.
@@ -744,8 +752,10 @@ zwl_menu_tick(
 
 	/* Each popup's submenu must still be a row of the popup above it (the top-level one, a visible submenu). */
 	for (level = 0; level < shell_menu.depth; level++) {
-		/* The overflow's rows are the top level's. */
+		/* The overflow's rows are the top level's, and so are a context menu's first popup's. */
 		if (shell_menu.popups[level].parent == SHELL_OVERFLOW)
+			continue;
+		if (shell_menu.popups[level].parent == ZWL_MENU_ROOT && shell_menu.context != NULL)
 			continue;
 		item = zwl_menu_item(model, shell_menu.popups[level].parent);
 		found = 0;
@@ -824,6 +834,19 @@ zwl_menu_forget(
 	if (surface == NULL)
 		return;
 
+	/* A context menu that goes closes without being told; one whose menu goes is told done. */
+	if (shell_menu.context != NULL && object == shell_menu.context) {
+		shell_menu.context = NULL;
+		shell_close_from(server, 0U, 0U);
+		return;
+	}
+
+	/* A context menu whose menu goes is told done. */
+	if (shell_menu.context != NULL && object == shell_menu.context->shown_menu) {
+		shell_close_from(server, 0U, 1U);
+		return;
+	}
+
 	/* The open menu's window, toplevel, place and menu. */
 	(void)zwl_menu_of_surface(surface, &place);
 	toplevel = NULL;
@@ -835,9 +858,77 @@ zwl_menu_forget(
 	if (place != NULL && (object == place || object == place->shown_menu))
 		mine = 1;
 
-	/* The menu closes without telling anyone. */
+	/* The menu closes without telling the window; a context menu of it is told done. */
+	if (mine && shell_menu.context != NULL) {
+		shell_close_from(server, 0U, 1U);
+		return;
+	}
+
+	/* The window's own menu closes silently. */
 	if (mine)
 		shell_close_from(server, 0U, 0U);
+}
+
+/*
+ * Opens a context menu (menu.c): its menu's top-level items as a popup at
+ * a point of a window (surface coordinates), in place of any menu open.
+ * Returns 0, or ENOENT when there is nothing to show (the caller tells the
+ * context menu it is done).
+ */
+int
+zwl_menu_open_context(
+	struct zwl_server *server,
+	struct zwl_object *context,
+	struct zwl_object *surface,
+	int32_t x,
+	int32_t y)
+{
+	const struct zwl_menu_item *rows[SHELL_ROWS];
+	const struct zwl_menu_model *model;
+	struct shell_popup *popup;
+	int32_t left;
+	int32_t top;
+	unsigned count;
+
+	/* The menu's committed model, and its rows. */
+	if (context->shown_menu == NULL || context->shown_menu->menu_model == NULL)
+		return ENOENT;
+	model = context->shown_menu->menu_model;
+	count = zwl_menu_children(model, ZWL_MENU_ROOT, rows, SHELL_ROWS);
+	if (count == 0U)
+		return ENOENT;
+
+	/* Whatever was open closes. */
+	shell_close_from(server, 0U, 1U);
+	shell_menu.open_extra_count = 0;
+
+	/* Where the window's body is on the output. */
+	left = surface->x;
+	top = surface->y;
+	if (server->glass)
+		(void)zwl_glass_body_origin(server, surface, &left, &top);
+
+	/* The popup at the point, with the context menu's rows. */
+	shell_menu.surface = surface;
+	shell_menu.context = context;
+	shell_menu.docked = surface->maximized;
+	shell_menu.depth = 1;
+	shell_menu.pressing = 0;
+	popup = &shell_menu.popups[0];
+	memset(popup, 0, sizeof(*popup));
+	popup->parent = ZWL_MENU_ROOT;
+	popup->anchor_x = left + x;
+	popup->anchor_y = top + y;
+	popup->flip_x = left + x;
+	shell_layout(server, model, 0U);
+
+	/* The log gives the place and the rows. */
+	printf("ZWL MENU context client=%llu context=%u surface=%u x=%d y=%d rows=%u\n", (unsigned long long)context->client->number, context->id, surface->id, popup->x, popup->y, count);
+	shell_log_popup(server, model, 0U);
+	server->dirty = 1;
+
+	/* Succeeded: the context menu is open. */
+	return 0;
 }
 
 /*
@@ -1007,7 +1098,7 @@ shell_close_from(
 		return;
 
 	/* The deepest first, as they were opened in reverse. */
-	(void)zwl_menu_of_surface(shell_menu.surface, &place);
+	place = shell_place(shell_menu.surface);
 	while (shell_menu.depth > level) {
 		shell_menu.depth--;
 		parent = shell_menu.popups[shell_menu.depth].parent;
@@ -1016,8 +1107,11 @@ shell_close_from(
 		printf("ZWL MENU close client=%llu surface=%u item=%u depth=%u\n", (unsigned long long)shell_menu.surface->client->number, shell_menu.surface->id, parent, shell_menu.depth);
 	}
 
-	/* The whole menu closed: menu mode ends. */
+	/* The whole menu closed: menu mode ends, and a context menu is told it is done. */
 	if (shell_menu.depth == 0U) {
+		if (shell_menu.context != NULL && notify)
+			zwl_menu_send_context_done(shell_menu.context);
+		shell_menu.context = NULL;
 		shell_menu.surface = NULL;
 		shell_menu.pressing = 0;
 	}
@@ -1033,9 +1127,18 @@ shell_activate(
 	const struct zwl_menu_item *item,
 	const char *via)
 {
+	struct zwl_object *context;
 	struct zwl_object *surface;
 	struct zwl_object *place;
 	uint32_t id;
+
+	/* A context menu's choice goes to it; it closes (told done) after the choice. */
+	context = shell_menu.context;
+	if (context != NULL) {
+		zwl_menu_send_context_activated(context, item, via);
+		shell_close_from(server, 0U, 1U);
+		return;
+	}
 
 	/* The place the choice goes to, found before the menu closes. */
 	surface = shell_menu.surface;
@@ -1375,7 +1478,7 @@ shell_open_child(
 	shell_layout(server, model, level + 1U);
 
 	/* The client hears it, the log gives the rows, and the keyboard selects the first. */
-	(void)zwl_menu_of_surface(shell_menu.surface, &place);
+	place = shell_place(shell_menu.surface);
 	if (place != NULL)
 		zwl_menu_send_popup(place, item->id, 1U);
 	shell_log_popup(server, model, level + 1U);
@@ -1421,6 +1524,10 @@ shell_step_top(
 	unsigned count;
 	unsigned index;
 	int at;
+
+	/* A context menu has no bar to step along. */
+	if (shell_menu.context != NULL)
+		return;
 
 	/* The open bar's top-level items, in order. */
 	count = 0;
@@ -2103,6 +2210,16 @@ shell_model(
 	struct zwl_object **place)
 {
 	const struct zwl_menu_model *model;
+	const struct zwl_object *menu;
+
+	/* An open context menu's model, with no place (its choice goes to the context menu). */
+	if (surface != NULL && surface == shell_menu.surface && shell_menu.context != NULL) {
+		*place = NULL;
+		menu = shell_menu.context->shown_menu;
+		if (menu == NULL || menu->dead)
+			return NULL;
+		return menu->menu_model;
+	}
 
 	/* The window's menu. */
 	model = zwl_menu_of_surface(surface, place);
@@ -2135,4 +2252,20 @@ shell_item(
 	/* The model's items. */
 	item = zwl_menu_item(model, id);
 	return item;
+}
+
+/* Finds where a window's menu events go: its menu's place, or none while a context menu is open. */
+static struct zwl_object *
+shell_place(
+	struct zwl_object *surface)
+{
+	struct zwl_object *place;
+
+	/* A context menu has no place. */
+	if (shell_menu.context != NULL)
+		return NULL;
+
+	/* The window's menu's place. */
+	(void)zwl_menu_of_surface(surface, &place);
+	return place;
 }
