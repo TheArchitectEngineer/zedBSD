@@ -87,6 +87,16 @@ struct fm_menu {
 	struct zdesktop_window_menu *window_menu;
 	struct fm_menu_state shown;
 	struct fm_window *window;
+
+	/*
+	 * The context menu (ws071-p009): its model, made again for each right
+	 * press, and the open context menu (NULL when none); done says zdesktop
+	 * closed it, so that it goes at the next refresh (not inside its own
+	 * event).
+	 */
+	struct zdesktop_menu *context_model;
+	struct zdesktop_context_menu *context;
+	int context_done;
 };
 
 /* How many things done with the titlebar wait for the main loop at most. */
@@ -190,6 +200,7 @@ uint64_t fm_clock(void);
 int fm_menu_open(struct fm_menu *menu, struct fm_window *window, const struct fm_menu_state *state);
 void fm_menu_refresh(struct fm_menu *menu, const struct fm_menu_state *state);
 void fm_menu_close(struct fm_menu *menu);
+void fm_menu_context(struct fm_menu *menu, const struct fm_context *context, int x, int y);
 
 /* The window's titlebar in zdesktop (titlebar.c). */
 int fm_titlebar_open(struct fm_titlebar *titlebar, struct fm_window *window, const struct fm_titlebar_state *state);

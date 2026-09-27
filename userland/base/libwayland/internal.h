@@ -129,6 +129,7 @@ void wlc_packet_destroy(struct wlc_packet *packet);
 void wlc_event_destroy(struct wlc_event *event);
 int wlc_event_dispatch(struct wlc_event *event);
 int wlc_menu_dispatch(struct wlc_event *event, const void *listener, void *data);
+int wlc_context_menu_dispatch(struct wlc_event *event, const void *listener, void *data);
 int wlc_titlebar_dispatch(struct wlc_event *event, const void *listener, void *data);
 
 #endif

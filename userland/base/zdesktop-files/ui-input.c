@@ -110,6 +110,7 @@ static int input_reported_cursor = -1;
 static int input_contains(const struct fm_rect *rect, int x, int y);
 static void input_press(struct fm_app *app, const struct fm_event *event);
 static void input_middle(struct fm_app *app, const struct fm_event *event);
+static void input_context(struct fm_app *app, struct fm_tab *tab, const struct fm_event *event, unsigned kind, int index);
 static void input_click(struct fm_app *app, unsigned kind, int index, int double_click, uint32_t modifiers);
 static void input_press_item(struct fm_app *app, int index, int double_click, uint32_t modifiers);
 static void input_band_start(struct fm_app *app, int x, int y, uint32_t modifiers);
@@ -160,7 +161,7 @@ fm_input_motion(
 
 /*
  * Handles a pointer button: the left one presses and clicks, the right
- * one selects what it is on (its menu comes with the context menus).
+ * one selects what it is on and asks for its context menu.
  */
 void
 fm_input_button(
@@ -171,16 +172,13 @@ fm_input_button(
 	unsigned kind;
 	int index;
 
-	/* The right button selects the item under it, unless it is already selected. */
+	/* The right button selects the item under it (unless it is already selected) and asks for its context menu. */
 	tab = fm_ui_tab(app);
 	if (event->button == FM_BUTTON_RIGHT) {
 		if (event->pressed == 0)
 			return;
 		(void)fm_input_hit_at(app, event->x, event->y, &kind, &index);
-		if (kind == FM_HIT_ITEM && index >= 0 && tab->listing.entries[index].selected == 0)
-			fm_select_only(tab, index);
-		fm_log("CONTEXT kind=%u index=%d", kind, index);
-		app->dirty = 1;
+		input_context(app, tab, event, kind, index);
 		return;
 	}
 
@@ -602,6 +600,60 @@ input_middle(
 	location.kind = FM_LOCATION_FOLDER;
 	snprintf(location.path, sizeof(location.path), "%s", entry->path);
 	fm_tabs_new(app, &location);
+}
+
+/*
+ * Handles a press of the right button: an item under it is selected (the
+ * selection stays when it is part of it), and the window asks for the
+ * context menu of what it is on -- the items, the empty part of the
+ * content, or a place of the sidebar.  Elsewhere nothing opens.
+ */
+static void
+input_context(
+	struct fm_app *app,
+	struct fm_tab *tab,
+	const struct fm_event *event,
+	unsigned kind,
+	int index)
+{
+	const struct fm_rect *content;
+	int inside;
+
+	/* The press's place, which the menu opens at. */
+	app->context_x = event->x;
+	app->context_y = event->y;
+	app->context_place = -1;
+	app->dirty = 1;
+	fm_log("CONTEXT kind=%u index=%d", kind, index);
+
+	/* A place of the sidebar. */
+	if (kind == FM_HIT_PLACE && index >= 0 && index < app->places.count) {
+		app->context_where = FM_CONTEXT_PLACE;
+		app->context_place = index;
+		app->request = FM_REQUEST_CONTEXT;
+		return;
+	}
+
+	/* An item: selected unless it already is. */
+	if (kind == FM_HIT_ITEM && index >= 0 && (size_t)index < tab->listing.count) {
+		if (tab->listing.entries[index].selected == 0)
+			fm_select_only(tab, index);
+		app->context_where = FM_CONTEXT_ITEMS;
+		app->request = FM_REQUEST_CONTEXT;
+		return;
+	}
+
+	/* The empty part of the content: nothing stays selected. */
+	content = &app->layout.content;
+	inside = 0;
+	if (event->x >= content->x && event->x < content->x + content->width &&
+	    event->y >= content->y && event->y < content->y + content->height)
+		inside = 1;
+	if (inside != 0) {
+		fm_select_none(tab);
+		app->context_where = FM_CONTEXT_EMPTY;
+		app->request = FM_REQUEST_CONTEXT;
+	}
 }
 
 /* Carries out a click on a region. */

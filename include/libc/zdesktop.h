@@ -38,8 +38,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels). */
-#define ZDESKTOP_VERSION	5U
+/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus). */
+#define ZDESKTOP_VERSION	6U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -239,6 +239,34 @@ int zdesktop_window_menu_set(struct zdesktop_window_menu *window_menu, struct zd
  * Destroys a window's place for a menu; the window shows none.
  */
 void zdesktop_window_menu_destroy(struct zdesktop_window_menu *window_menu);
+
+/*
+ * Context menus (ws071-p009): a menu's top-level items shown once as a
+ * popup at a point of a surface, in answer to a press (its seat and
+ * serial; zdesktop opens only for the latest press).  zdesktop owns the
+ * looks and the input as for the menubar.  activated: the user chose an
+ * item (its ID and action); done: the context menu closed, after a choice
+ * or without one -- told once, last; the application destroys it then.
+ */
+struct wl_surface;
+struct zdesktop_context_menu;
+struct zdesktop_context_menu_listener {
+	void (*activated)(void *data, struct zdesktop_context_menu *context_menu, uint32_t item, uint32_t action, uint32_t serial);
+	void (*done)(void *data, struct zdesktop_context_menu *context_menu);
+};
+
+/*
+ * Opens a menu as a context menu at (x, y) of a surface; NULL with errno
+ * set: ENOTSUP for a compositor without context menus.
+ */
+struct zdesktop_context_menu *zdesktop_menu_popup(struct zdesktop_menu_service *service, struct zdesktop_menu *menu, struct wl_surface *surface,
+						  int32_t x, int32_t y, struct wl_seat *seat, uint32_t serial,
+						  const struct zdesktop_context_menu_listener *listener, void *data);
+
+/*
+ * Destroys a context menu; one still open closes without telling.
+ */
+void zdesktop_context_menu_destroy(struct zdesktop_context_menu *context_menu);
 
 /*
  * The Titlebar Presentation (WS070 p008, plan/ws070/titlebar-design.md).

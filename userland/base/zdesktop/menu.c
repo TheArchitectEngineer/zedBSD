@@ -37,7 +37,14 @@
 #define MANAGER_DESTROY			0U
 #define MANAGER_CREATE_MENU		1U
 #define MANAGER_GET_TOPLEVEL_MENU	2U
+#define MANAGER_GET_CONTEXT_MENU	3U
 #define MANAGER_ERROR_ALREADY_EXISTS	0U
+#define MANAGER_ERROR_BAD_SERIAL	1U
+
+/* The requests and events of xdg_context_menu_v1 (version 2). */
+#define CONTEXT_DESTROY		0U
+#define CONTEXT_ACTIVATED	0U
+#define CONTEXT_DONE		1U
 
 /* xdg_menu_v1's requests. */
 #define MENU_DESTROY		0U
@@ -78,6 +85,7 @@ static int manager_request(struct zwl_object *manager, uint32_t opcode, const un
 static int model_request(struct zwl_object *menu, uint32_t opcode, const unsigned char *bytes, size_t size);
 static int model_edit(struct zwl_object *menu, uint32_t opcode, const unsigned char *bytes, size_t size);
 static int place_request(struct zwl_object *place, uint32_t opcode, const unsigned char *bytes, size_t size);
+static int context_create(struct zwl_object *manager, const unsigned char *bytes, size_t size);
 static int model_begin(struct zwl_object *menu, uint32_t serial);
 static int model_commit(struct zwl_object *menu, uint32_t serial);
 static int model_add(struct zwl_object *menu, uint32_t id, uint32_t parent, uint32_t before, uint32_t type, const char *label, uint32_t action);
@@ -121,6 +129,16 @@ zwl_menu_request(
 	case ZWL_TOPLEVEL_MENU:
 		error = place_request(object, opcode, bytes, size);
 		break;
+	case ZWL_CONTEXT_MENU:
+		/* A context menu has only destroy; an open one closes without an event (zwl_menu_forget). */
+		error = EPROTO;
+		if (opcode == CONTEXT_DESTROY && size == 0U) {
+			zwl_object_destroy(object);
+			error = 0;
+		}
+
+		/* Nothing else is asked of it. */
+		break;
 	default:
 		error = EPROTO;
 		break;
@@ -157,6 +175,12 @@ zwl_menu_object_gone(
 		return;
 	}
 
+	/* A context menu stops naming its menu. */
+	if (object->kind == ZWL_CONTEXT_MENU) {
+		object->shown_menu = NULL;
+		return;
+	}
+
 	/* A place leaves its window, and shows nothing. */
 	if (object->kind == ZWL_TOPLEVEL_MENU) {
 		if (object->top != NULL)
@@ -170,10 +194,10 @@ zwl_menu_object_gone(
 	if (object->kind != ZWL_MENU)
 		return;
 
-	/* The places that showed this menu show nothing. */
+	/* The places and context menus that showed this menu show nothing. */
 	for (other = object->client->objects; other != NULL; other = other->next) {
-		/* Only a place can show a menu. */
-		if (other->kind != ZWL_TOPLEVEL_MENU)
+		/* Only a place or a context menu can show a menu. */
+		if (other->kind != ZWL_TOPLEVEL_MENU && other->kind != ZWL_CONTEXT_MENU)
 			continue;
 
 		/* It stops naming the menu. */
@@ -334,6 +358,68 @@ zwl_menu_send_activated(
 }
 
 /*
+ * Tells a context menu's client that the user chose an item: its ID, its
+ * action and a new serial for the input that chose it.
+ */
+void
+zwl_menu_send_context_activated(
+	struct zwl_object *context,
+	const struct zwl_menu_item *item,
+	const char *via)
+{
+	struct zwl_server *server;
+	uint32_t words[3];
+	int error;
+
+	/* A context menu whose client has failed hears nothing. */
+	server = context->client->server;
+	if (context->dead || context->client->fatal)
+		return;
+
+	/* The item, its action and the serial. */
+	words[0] = item->id;
+	words[1] = item->action;
+	words[2] = zwl_next_serial(server);
+
+	/* The event; a client that cannot take it is failed. */
+	error = zwl_emit(context->client, context->id, CONTEXT_ACTIVATED, words, sizeof(words));
+	if (error != 0) {
+		context->client->fatal = 1;
+		context->client->fatal_time = zwl_milliseconds();
+	}
+
+	/* The log line the tests read. */
+	printf("ZWL MENU context-activate client=%llu context=%u item=%u action=%u serial=%u via=%s\n",
+	       (unsigned long long)context->client->number, context->id, item->id, item->action, words[2], via);
+}
+
+/*
+ * Tells a context menu's client that it closed (after a choice or without
+ * one); it is told once, and shows nothing afterwards.
+ */
+void
+zwl_menu_send_context_done(
+	struct zwl_object *context)
+{
+	int error;
+
+	/* A context menu whose client has failed hears nothing. */
+	if (context->dead || context->client->fatal)
+		return;
+
+	/* The event has no arguments. */
+	error = zwl_emit(context->client, context->id, CONTEXT_DONE, NULL, 0U);
+	if (error != 0) {
+		context->client->fatal = 1;
+		context->client->fatal_time = zwl_milliseconds();
+	}
+
+	/* It shows nothing more. */
+	context->shown_menu = NULL;
+	printf("ZWL MENU context-done client=%llu context=%u\n", (unsigned long long)context->client->number, context->id);
+}
+
+/*
  * Tells a window's client that the popup of a submenu opened or closed.
  */
 void
@@ -428,6 +514,7 @@ manager_request(
 	struct zwl_object *created;
 	struct zwl_object *toplevel;
 	uint32_t id;
+	int error;
 
 	/* The binding goes; its menus and places stay. */
 	if (opcode == MANAGER_DESTROY) {
@@ -454,6 +541,14 @@ manager_request(
 		}
 
 		/* Succeeded: the client owns the menu. */
+		return 0;
+	}
+
+	/* Version 2: a context menu at a point of a surface. */
+	if (opcode == MANAGER_GET_CONTEXT_MENU) {
+		error = context_create(manager, bytes, size);
+		if (error != 0)
+			return error;
 		return 0;
 	}
 
@@ -642,6 +737,77 @@ place_request(
 	printf("ZWL MENU set client=%llu place=%u menu=%u\n", (unsigned long long)place->client->number, place->id, id);
 
 	/* Succeeded: the window shows the menu. */
+	return 0;
+}
+
+/*
+ * Makes a context menu (xdg_menu_manager_v1.get_context_menu, version 2)
+ * and opens it: the menu's top-level items as a popup at a point of one of
+ * the client's windows, answering the press whose serial it gives.  A
+ * request that does not answer the latest press still makes the object,
+ * which is told done at once.
+ */
+static int
+context_create(
+	struct zwl_object *manager,
+	const unsigned char *bytes,
+	size_t size)
+{
+	struct zwl_object *created;
+	struct zwl_object *menu;
+	struct zwl_object *surface;
+	struct zwl_server *server;
+	uint32_t serial;
+	int32_t x;
+	int32_t y;
+	int error;
+
+	/* New ID, menu, surface, x, y, seat and serial: seven words, from version 2. */
+	server = manager->client->server;
+	if (manager->version < 2U || size != 28U)
+		return EPROTO;
+
+	/* The menu must be one of the client's. */
+	menu = zwl_find(manager->client, menu_word(bytes, 4U));
+	if (menu == NULL || menu->kind != ZWL_MENU)
+		return EPROTO;
+
+	/* The surface must be one of the client's. */
+	surface = zwl_find(manager->client, menu_word(bytes, 8U));
+	if (surface == NULL || surface->kind != ZWL_SURFACE)
+		return EPROTO;
+
+	/* The point on the surface and the press's serial. */
+	x = (int32_t)menu_word(bytes, 12U);
+	y = (int32_t)menu_word(bytes, 16U);
+	serial = menu_word(bytes, 24U);
+
+	/* The context menu, showing the menu on the surface. */
+	created = zwl_create(manager->client, menu_word(bytes, 0U), ZWL_CONTEXT_MENU, manager->version);
+	if (created == NULL)
+		return EPROTO;
+	created->shown_menu = menu;
+
+	/* Only a window (a toplevel's surface) shows one. */
+	if (surface->role == NULL || surface->role->top == NULL) {
+		printf("ZWL MENU context-refused client=%llu context=%u surface=%u reason=window\n", (unsigned long long)manager->client->number, created->id, surface->id);
+		zwl_menu_send_context_done(created);
+		return 0;
+	}
+
+	/* Only the latest press opens a menu; any other is told done at once. */
+	if (serial == 0U || serial != server->press_serial) {
+		printf("ZWL MENU context-refused client=%llu context=%u serial=%u press=%u\n", (unsigned long long)manager->client->number, created->id, serial, server->press_serial);
+		zwl_menu_send_context_done(created);
+		return 0;
+	}
+
+	/* The popup at the point (menu-shell.c); one with nothing to show is done at once. */
+	error = zwl_menu_open_context(server, created, surface, x, y);
+	if (error != 0)
+		zwl_menu_send_context_done(created);
+
+	/* Succeeded: the client owns the context menu. */
 	return 0;
 }
 

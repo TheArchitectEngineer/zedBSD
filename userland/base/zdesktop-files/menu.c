@@ -181,6 +181,10 @@ static const char *const menu_column_labels[MENU_COLUMN_COUNT] = {
 };
 
 static void menu_activated(void *data, struct zdesktop_window_menu *window_menu, uint32_t item, uint32_t action, struct wl_seat *seat, uint32_t serial);
+static void menu_context_activated(void *data, struct zdesktop_context_menu *context_menu, uint32_t item, uint32_t action, uint32_t serial);
+static void menu_context_done(void *data, struct zdesktop_context_menu *context_menu);
+static int menu_context_build(struct fm_menu *menu, const struct fm_context *context);
+static void menu_context_drop(struct fm_menu *menu);
 static int menu_build(struct fm_menu *menu);
 static int menu_add(struct fm_menu *menu, const struct menu_item *item);
 static int menu_add_slots(struct fm_menu *menu);
@@ -191,6 +195,11 @@ static int menu_state_slots(struct zdesktop_menu *model, const struct fm_menu_st
 /* What the window menu tells the window: only the choices. */
 static const struct zdesktop_window_menu_listener menu_listener = {
 	menu_activated, NULL, NULL
+};
+
+/* A context menu's choice and its end. */
+static const struct zdesktop_context_menu_listener menu_context_listener = {
+	menu_context_activated, menu_context_done
 };
 
 /*
@@ -249,6 +258,43 @@ fm_menu_open(
 }
 
 /*
+ * Opens a context menu at a point of the window (a right press's), for the
+ * press whose serial the window kept.  A compositor without context menus
+ * shows none, which the log says.
+ */
+void
+fm_menu_context(
+	struct fm_menu *menu,
+	const struct fm_context *context,
+	int x,
+	int y)
+{
+	int error;
+
+	/* Without menus, or with nothing to show, nothing opens. */
+	if (menu->service == NULL || context->count == 0U)
+		return;
+
+	/* The last one goes, and the rows' model is made. */
+	menu_context_drop(menu);
+	error = menu_context_build(menu, context);
+	if (error != 0) {
+		fm_log("CONTEXT-MENU failed errno=%d", error);
+		return;
+	}
+
+	/* zdesktop shows it at the press. */
+	menu->context = zdesktop_menu_popup(menu->service, menu->context_model, menu->window->surface, x, y, menu->window->seat, menu->window->button_serial, &menu_context_listener, menu);
+	if (menu->context == NULL) {
+		fm_log("CONTEXT-MENU none errno=%d", errno);
+		return;
+	}
+
+	/* The log line the tests read. */
+	fm_log("CONTEXT-MENU open rows=%u x=%d y=%d serial=%u", context->count, x, y, menu->window->button_serial);
+}
+
+/*
  * Tells the menus the window's state when it differs from what they show.
  */
 void
@@ -258,6 +304,10 @@ fm_menu_refresh(
 {
 	int same;
 	int error;
+
+	/* A context menu zdesktop closed goes now. */
+	if (menu->context_done != 0)
+		menu_context_drop(menu);
 
 	/* Without menus nothing is sent. */
 	if (menu->menu == NULL)
@@ -281,7 +331,8 @@ void
 fm_menu_close(
 	struct fm_menu *menu)
 {
-	/* The window's place, the menu, then the service. */
+	/* A context menu, the window's place, the menu, then the service. */
+	menu_context_drop(menu);
 	if (menu->window_menu != NULL)
 		zdesktop_window_menu_destroy(menu->window_menu);
 	if (menu->menu != NULL)
@@ -315,6 +366,111 @@ menu_activated(
 
 	/* After the inputs that came before it. */
 	fm_window_action(menu->window, action);
+}
+
+/* Queues a context menu's chosen action among the window's inputs. */
+static void
+menu_context_activated(
+	void *data,
+	struct zdesktop_context_menu *context_menu,
+	uint32_t item,
+	uint32_t action,
+	uint32_t serial)
+{
+	struct fm_menu *menu;
+
+	/* The window's menus. */
+	(void)context_menu;
+	menu = data;
+
+	/* The log line the tests read, then the action after the inputs before it. */
+	fm_log("CONTEXT-MENU item=%u action=%u serial=%u", item, action, serial);
+	fm_window_action(menu->window, action);
+}
+
+/* Notes that zdesktop closed the context menu; it goes at the next refresh. */
+static void
+menu_context_done(
+	void *data,
+	struct zdesktop_context_menu *context_menu)
+{
+	struct fm_menu *menu;
+
+	/* The window's menus, told the context menu is over. */
+	(void)context_menu;
+	menu = data;
+	menu->context_done = 1;
+	fm_log("CONTEXT-MENU done");
+}
+
+/* Makes the context menu's model from its rows, in one transaction. */
+static int
+menu_context_build(
+	struct fm_menu *menu,
+	const struct fm_context *context)
+{
+	static const unsigned types[] = {
+		ZDESKTOP_MENU_ITEM_NORMAL,
+		ZDESKTOP_MENU_ITEM_SEPARATOR,
+		ZDESKTOP_MENU_ITEM_CHECKBOX,
+		ZDESKTOP_MENU_ITEM_NORMAL,
+		ZDESKTOP_MENU_ITEM_SUBMENU
+	};
+	const struct fm_context_row *row;
+	unsigned index;
+	int error;
+
+	/* A new model. */
+	menu->context_model = zdesktop_menu_create(menu->service);
+	if (menu->context_model == NULL)
+		return errno;
+
+	/* The transaction. */
+	error = zdesktop_menu_begin(menu->context_model);
+	if (error != 0)
+		return error;
+
+	/* Each row: its kind, label and action, whether it can be chosen, whether it is checked. */
+	for (index = 0; index < context->count; index++) {
+		row = &context->rows[index];
+		error = zdesktop_menu_append(menu->context_model, row->id, row->parent, types[row->kind], row->label, row->action);
+		if (error != 0)
+			return error;
+		if (row->enabled == 0) {
+			error = zdesktop_menu_set_enabled(menu->context_model, row->id, 0);
+			if (error != 0)
+				return error;
+		}
+
+		/* A checked row's mark. */
+		if (row->checked != 0) {
+			error = zdesktop_menu_set_checked(menu->context_model, row->id, 1);
+			if (error != 0)
+				return error;
+		}
+	}
+
+	/* The rows are shown together. */
+	error = zdesktop_menu_commit(menu->context_model);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the model is ready to be shown. */
+	return 0;
+}
+
+/* Takes the last context menu and its model away. */
+static void
+menu_context_drop(
+	struct fm_menu *menu)
+{
+	/* The context menu (closing it if it is still open), then its model. */
+	zdesktop_context_menu_destroy(menu->context);
+	menu->context = NULL;
+	menu->context_done = 0;
+	if (menu->context_model != NULL)
+		zdesktop_menu_destroy(menu->context_model);
+	menu->context_model = NULL;
 }
 
 /* Gives zdesktop every item, with its role and shortcut, and the variable items' slots, in one transaction. */
