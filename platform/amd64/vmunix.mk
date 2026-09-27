@@ -824,6 +824,30 @@ $(DYNAMIC_DIR)/libtruetype.so: $(DYNAMIC_TRUETYPE_OBJS) $(DYNAMIC_DIR)/libc.so \
 	$(PYTHON) tools/build/check-dynamic-elf.py --machine amd64 --role shared-library \
  --needed libc.so --soname libtruetype.so $@
 
+# libz-compat (ws071-p010): the zlib interface of the base programs; it needs nothing but the C library.
+DYNAMIC_Z_COMPAT_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libz-compat)
+
+$(DYNAMIC_DIR)/libz-compat.so: $(DYNAMIC_Z_COMPAT_OBJS) $(DYNAMIC_DIR)/libc.so \
+	userland/base/libz-compat/exports.map tools/build/check-dynamic-elf.py
+	$(LD) -m elf_x86_64 -shared -soname libz-compat.so --hash-style=both \
+ -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
+ --version-script=userland/base/libz-compat/exports.map \
+ $(DYNAMIC_Z_COMPAT_OBJS) -L$(DYNAMIC_DIR) -l:libc.so -o $@
+	$(PYTHON) tools/build/check-dynamic-elf.py --machine amd64 --role shared-library \
+ --needed libc.so --soname libz-compat.so $@
+
+# libpng-compat (ws071-p010): libpng's simplified API of the base programs, over libz-compat.
+DYNAMIC_PNG_COMPAT_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libpng-compat)
+
+$(DYNAMIC_DIR)/libpng-compat.so: $(DYNAMIC_PNG_COMPAT_OBJS) $(DYNAMIC_DIR)/libz-compat.so $(DYNAMIC_DIR)/libc.so \
+	userland/base/libpng-compat/exports.map tools/build/check-dynamic-elf.py
+	$(LD) -m elf_x86_64 -shared -soname libpng-compat.so --hash-style=both \
+ -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
+ --version-script=userland/base/libpng-compat/exports.map \
+ $(DYNAMIC_PNG_COMPAT_OBJS) -L$(DYNAMIC_DIR) -l:libz-compat.so -l:libc.so -o $@
+	$(PYTHON) tools/build/check-dynamic-elf.py --machine amd64 --role shared-library \
+ --needed libz-compat.so --needed libc.so --soname libpng-compat.so $@
+
 # The Wayland EGL window (WS068 p002); it needs nothing but the C library.
 DYNAMIC_WAYLAND_EGL_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libwayland-egl)
 
@@ -1131,7 +1155,8 @@ DYNAMIC_ZDESKTOP_FILES_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj
 
 $(BUILD)/bin/zdesktop-files: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_ZDESKTOP_FILES_OBJS) $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libwayland-client.so \
-	$(DYNAMIC_DIR)/libzdesktop.so $(DYNAMIC_DIR)/libtruetype.so $(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
+	$(DYNAMIC_DIR)/libzdesktop.so $(DYNAMIC_DIR)/libtruetype.so $(DYNAMIC_DIR)/libpng-compat.so $(DYNAMIC_DIR)/libz-compat.so \
+	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
  -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
@@ -1139,9 +1164,10 @@ $(BUILD)/bin/zdesktop-files: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_ZDESKTOP_FILES_OBJS) \
  -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
- -l:libvulkan.so -l:libwayland-client.so -l:libzdesktop.so -l:libtruetype.so -l:libc.so -o $@
+ -l:libvulkan.so -l:libwayland-client.so -l:libzdesktop.so -l:libtruetype.so -l:libpng-compat.so -l:libz-compat.so -l:libc.so -o $@
 	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
- --needed libvulkan.so --needed libwayland-client.so --needed libzdesktop.so --needed libtruetype.so --needed libc.so $@
+ --needed libvulkan.so --needed libwayland-client.so --needed libzdesktop.so --needed libtruetype.so \
+ --needed libpng-compat.so --needed libz-compat.so --needed libc.so $@
 
 # OpenGL with GLX for Xzed (WS069 p004): libGLESv2's translation with GLX and a private libX11 inside.
 DYNAMIC_GL_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libgl)

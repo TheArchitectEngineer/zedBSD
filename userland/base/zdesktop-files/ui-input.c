@@ -113,6 +113,8 @@ static void input_middle(struct fm_app *app, const struct fm_event *event);
 static void input_context(struct fm_app *app, struct fm_tab *tab, const struct fm_event *event, unsigned kind, int index);
 static void input_click(struct fm_app *app, unsigned kind, int index, int double_click, uint32_t modifiers);
 static void input_press_item(struct fm_app *app, int index, int double_click, uint32_t modifiers);
+static void input_select_item(struct fm_tab *tab, int index, uint32_t modifiers);
+static void input_release(struct fm_app *app);
 static void input_band_start(struct fm_app *app, int x, int y, uint32_t modifiers);
 static void input_band_update(struct fm_app *app, int x, int y);
 static void input_sort(struct fm_app *app, int column);
@@ -140,11 +142,19 @@ fm_input_motion(
 {
 	unsigned kind;
 	int index;
+	int dragging;
 
 	/* The pointer's place. */
 	app->pointer_x = event->x;
 	app->pointer_y = event->y;
 	app->pointer_inside = 1;
+
+	/* A press on an item drags the selection once the pointer moves away from it. */
+	if (app->pressing != 0 && app->press_kind == FM_HIT_ITEM) {
+		dragging = fm_drag_motion(app, event->x, event->y);
+		if (dragging != 0)
+			return;
+	}
 
 	/* A rubber band stretches to the pointer. */
 	if (app->band != 0 && app->pressing != 0)
@@ -200,12 +210,8 @@ fm_input_button(
 		return;
 	}
 
-	/* The release ends the press and the rubber band (whose selection is reported). */
-	if (app->band != 0)
-		input_report(app);
-	app->pressing = 0;
-	app->band = 0;
-	app->dirty = 1;
+	/* The release ends the press. */
+	input_release(app);
 }
 
 /*
@@ -272,6 +278,13 @@ fm_input_key(
 	if (event->pressed == 0)
 		return;
 	app->dirty = 1;
+
+	/* Esc gives up a drag, and the other keys wait for its end. */
+	if (app->drag != 0) {
+		if (event->key == INPUT_KEY_ESC)
+			fm_drag_cancel(app);
+		return;
+	}
 
 	/* A question takes Enter (yes) and Esc (no), and nothing else. */
 	if (app->dialog != FM_DIALOG_NONE) {
@@ -540,6 +553,9 @@ input_press(
 	app->pressing = 1;
 	app->press_kind = kind;
 	app->press_index = index;
+	app->press_x = event->x;
+	app->press_y = event->y;
+	app->press_deferred = 0;
 	app->dirty = 1;
 
 	/* A second press soon on the same region is a double click (a third starts again). */
@@ -732,7 +748,25 @@ input_press_item(
 		return;
 	}
 
-	/* Ctrl adds it or takes it out, Shift selects the range from the anchor, a plain press selects it alone. */
+	/* A selected item keeps the selection, which may be dragged; the release without a drag changes it. */
+	if (tab->listing.entries[index].selected != 0) {
+		app->press_deferred = 1;
+		app->press_deferred_modifiers = modifiers;
+		return;
+	}
+
+	/* Otherwise the selection changes now. */
+	input_select_item(tab, index, modifiers);
+}
+
+/* Selects an item as a press does: Ctrl adds it or takes it out, Shift selects the range from the anchor, a plain press selects it alone. */
+static void
+input_select_item(
+	struct fm_tab *tab,
+	int index,
+	uint32_t modifiers)
+{
+	/* Each kind of press. */
 	if ((modifiers & FM_MOD_CTRL) != 0U) {
 		fm_select_toggle(tab, index);
 	} else if ((modifiers & FM_MOD_SHIFT) != 0U) {
@@ -740,6 +774,41 @@ input_press_item(
 	} else {
 		fm_select_only(tab, index);
 	}
+}
+
+/*
+ * Ends a press of the left button: a drag drops its items; otherwise a
+ * press on a selected item changes the selection now, and a rubber band
+ * reports its selection.
+ */
+static void
+input_release(
+	struct fm_app *app)
+{
+	struct fm_tab *tab;
+	int dropped;
+
+	/* A drag ends with its drop. */
+	dropped = fm_drag_release(app);
+
+	/* Without a drag, the selection change the press left. */
+	tab = fm_ui_tab(app);
+	if (dropped == 0 && app->press_deferred != 0 && app->pressing != 0) {
+		if (app->press_index >= 0 && (size_t)app->press_index < tab->listing.count) {
+			input_select_item(tab, app->press_index, app->press_deferred_modifiers);
+			input_report(app);
+		}
+	}
+
+	/* A rubber band's selection is reported. */
+	if (app->band != 0)
+		input_report(app);
+
+	/* The press is over. */
+	app->press_deferred = 0;
+	app->pressing = 0;
+	app->band = 0;
+	app->dirty = 1;
 }
 
 /* Starts a rubber band at a point of the panel's empty ground; without Ctrl the selection is cleared first. */

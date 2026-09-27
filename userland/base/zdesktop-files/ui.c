@@ -94,6 +94,8 @@ fm_app_init(
 	app->dirty = 1;
 	app->hover_index = -1;
 	app->press_index = -1;
+	app->drag_hit_index = -1;
+	app->drag_tag = -1;
 	snprintf(app->wallpaper, sizeof(app->wallpaper), "%s", FM_WALLPAPER);
 	app->click_index = -1;
 
@@ -316,6 +318,9 @@ fm_ui_draw(
 	fm_info_draw(app, canvas);
 	fm_help_draw(app, canvas);
 	fm_overlay_draw(app, canvas);
+
+	/* Items being dragged, over everything. */
+	fm_drag_draw(app, canvas);
 
 	/* The frame is up to date. */
 	app->dirty = 0;
