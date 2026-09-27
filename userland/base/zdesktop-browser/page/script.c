@@ -409,7 +409,7 @@ script_run_file(
 	if (error == 0 && page->base == NULL)
 		error = EINVAL;
 	if (error == 0)
-		error = page_fetch(page->base, wb_buffer_string(&href), &bytes);
+		error = page_fetch(page->base, wb_buffer_string(&href), &bytes, NULL);
 	name_length = href.length;
 	if (name_length > SCRIPT_NAME_MAX)
 		name_length = SCRIPT_NAME_MAX;

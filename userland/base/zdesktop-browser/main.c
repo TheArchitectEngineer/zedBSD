@@ -620,7 +620,7 @@ main_prepare(
 		loaded->console = main_console_out;
 
 	/* Loads the file, running its scripts. */
-	error = page_load_file(loaded, options->shell.start);
+	error = page_load_location(loaded, options->shell.start);
 	if (error != 0) {
 		fprintf(stderr, "zdesktop-browser: cannot load %s: %s\n", options->shell.start, strerror(error));
 		page_destroy(loaded);

@@ -75,6 +75,8 @@ ZDESKTOP_BROWSER_SOURCES := $(ZDESKTOP_BROWSER_DIR)/main.c \
 	$(ZDESKTOP_BROWSER_DIR)/net/url.c \
 	$(ZDESKTOP_BROWSER_DIR)/net/host.c \
 	$(ZDESKTOP_BROWSER_DIR)/net/data.c \
+	$(ZDESKTOP_BROWSER_DIR)/net/http.c \
+	$(ZDESKTOP_BROWSER_DIR)/net/cookie.c \
 	$(ZDESKTOP_BROWSER_DIR)/page/page.c \
 	$(ZDESKTOP_BROWSER_DIR)/page/link.c \
 	$(ZDESKTOP_BROWSER_DIR)/page/script.c \
