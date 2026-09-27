@@ -155,7 +155,9 @@ def survey(path):
 				if storage not in STORAGE:
 					gap('module variable in %s' % storage)
 				elif storage == 'Input' and result in builtins:
-					gap('input builtin %s' % builtins[result])
+					# i915_spirv_declare_variable: a vertex shader's VertexIndex and InstanceIndex are generated inputs.
+					if not (stage == 'Vertex' and builtins[result] in ('VertexIndex', 'InstanceIndex')):
+						gap('input builtin %s' % builtins[result])
 				elif storage == 'Input':
 					# i915_spirv_lower_load: an input is floats, or integers in a vertex shader or a Flat fragment input.
 					pointee = types.get(types.get(operands[0], ['', '', ''])[2], ['?', ''])

@@ -226,6 +226,8 @@
 
 /* BuiltIn values (SPIR-V spec, section 3.21). */
 #define BUILTIN_POSITION 0U
+#define BUILTIN_VERTEX_INDEX 42U
+#define BUILTIN_INSTANCE_INDEX 43U
 
 /* Execution models (SPIR-V spec, section 3.3). */
 #define EM_VERTEX 0U
@@ -1485,6 +1487,17 @@ i915_spirv_declare_variable(
 	 */
 	for (index = 0U; index < MAX_COMPONENTS; index++)
 		record->comp[index] = NO_VALUE;
+
+	/* A vertex shader's gl_VertexIndex and gl_InstanceIndex are inputs at the locations the draw fills them at. */
+	if (storage == SC_INPUT && record->has_builtin != 0U && parser->ir->stage == I915_STAGE_VERTEX) {
+		if (record->builtin == BUILTIN_VERTEX_INDEX) {
+			record->has_location = 1U;
+			record->location = I915_SHADER_LOCATION_VERTEX_INDEX;
+		} else if (record->builtin == BUILTIN_INSTANCE_INDEX) {
+			record->has_location = 1U;
+			record->location = I915_SHADER_LOCATION_INSTANCE_INDEX;
+		}
+	}
 
 	/* The storage class, and a location, decide what the variable is to the shader. */
 	if (storage == SC_INPUT && record->has_location != 0U) {

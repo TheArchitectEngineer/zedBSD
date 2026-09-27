@@ -32,6 +32,15 @@
 #define I915_SHADER_MAX_INPUTS		16U
 
 /*
+ * The input locations a vertex kernel reads gl_VertexIndex and
+ * gl_InstanceIndex at: past every attribute location, so they come last in
+ * the payload order; the draw fills them from the vertex fetcher's
+ * generated values (3DSTATE_VF_SGVS) instead of a vertex buffer.
+ */
+#define I915_SHADER_LOCATION_VERTEX_INDEX	64U
+#define I915_SHADER_LOCATION_INSTANCE_INDEX	65U
+
+/*
  * Why a SPIR-V module was refused.
  *
  * `reason` is a static string; `opcode` and `word_offset` name the refused

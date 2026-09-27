@@ -51,6 +51,9 @@
 #define I915_GFX_SURFACE_R32G32B32A32_SINT	0x001U
 #define I915_GFX_SURFACE_R32G32B32A32_UINT	0x002U
 
+/* The attribute of a vertex kernel's input that the fetcher generates instead of reading (gl_VertexIndex, gl_InstanceIndex). */
+#define I915_GFX_NO_ATTRIBUTE			0xffffffffU
+
 /* SAMPLER_STATE texture coordinate mode for an address mode past the table: CLAMP. */
 #define I915_GFX_SAMPLER_CLAMP			2U
 
@@ -578,18 +581,34 @@ drv_i915_gfx_emit_vertex_input(
 	uint32_t component_z;
 	uint32_t component_w;
 	uint32_t topology;
+	uint32_t sgvs;
 	int integer;
 	uint64_t va;
 	int error;
 
-	/* A draw needs at least one attribute and one vertex buffer binding. */
+	/* A draw needs at least one input: an attribute, or a generated index. */
 	pipeline = state->pipeline;
 	count = kernels->vs_input_count;
-	if (count == 0U || pipeline->binding_count == 0U)
+	if (count == 0U)
 		return EINVAL;
 
-	/* Finds the pipeline attribute of every location the kernel reads. */
+	/* Finds the pipeline attribute of every location the kernel reads; a generated index has none. */
+	sgvs = 0U;
 	for (index = 0U; index < count; index++) {
+		/* gl_VertexIndex and gl_InstanceIndex: the fetcher writes component x of the element (3DSTATE_VF_SGVS). */
+		if (kernels->vs_inputs[index] == I915_SHADER_LOCATION_VERTEX_INDEX) {
+			sgvs |= index | GEN12_SGVS_VERTEX_ID_ENABLE;
+			order[index] = I915_GFX_NO_ATTRIBUTE;
+			continue;
+		}
+
+		/* gl_InstanceIndex likewise, its element named in the instance half of the dword. */
+		if (kernels->vs_inputs[index] == I915_SHADER_LOCATION_INSTANCE_INDEX) {
+			sgvs |= (index << GEN12_SGVS_INSTANCE_ID_SHIFT) | GEN12_SGVS_INSTANCE_ID_ENABLE;
+			order[index] = I915_GFX_NO_ATTRIBUTE;
+			continue;
+		}
+
 		/* Looks the location up among the pipeline's attributes. */
 		for (other = 0U; other < pipeline->attribute_count; other++) {
 			if (pipeline->attributes[other].location == kernels->vs_inputs[index])
@@ -606,8 +625,9 @@ drv_i915_gfx_emit_vertex_input(
 		order[index] = other;
 	}
 
-	/* Emits one VERTEX_BUFFER_STATE for each binding of the pipeline. */
-	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_VERTEX_BUFFERS, 1U + pipeline->binding_count * GEN12_VERTEX_BUFFER_STATE_DWORDS));
+	/* Emits one VERTEX_BUFFER_STATE for each binding of the pipeline (none for a pipeline without). */
+	if (pipeline->binding_count != 0U)
+		drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_VERTEX_BUFFERS, 1U + pipeline->binding_count * GEN12_VERTEX_BUFFER_STATE_DWORDS));
 	for (index = 0U; index < pipeline->binding_count; index++) {
 		/* Refuses a binding number past the bindings a command buffer tracks. */
 		binding = pipeline->bindings[index].binding;
@@ -643,8 +663,19 @@ drv_i915_gfx_emit_vertex_input(
 	/* Emits one VERTEX_ELEMENT_STATE for each attribute, in payload order. */
 	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_VERTEX_ELEMENTS, 1U + count * GEN12_VERTEX_ELEMENT_STATE_DWORDS));
 	for (index = 0U; index < count; index++) {
-		/* Refuses a vertex format the surface formats do not cover. */
+		/* A generated index: an element of zeros the fetcher writes the index into. */
 		attribute = order[index];
+		if (attribute == I915_GFX_NO_ATTRIBUTE) {
+			drv_i915_batch_emit(batch, (1U << 25) | (I915_GFX_SURFACE_R32G32B32A32_FLOAT << 16));
+			drv_i915_batch_emit(batch,
+					    (GEN12_VFCOMP_STORE_0 << 28) |
+					    (GEN12_VFCOMP_STORE_0 << 24) |
+					    (GEN12_VFCOMP_STORE_0 << 20) |
+					    (GEN12_VFCOMP_STORE_0 << 16));
+			continue;
+		}
+
+		/* Refuses a vertex format the surface formats do not cover. */
 		error = i915_surface_format(pipeline->attributes[attribute].format, &format);
 		if (error != 0)
 			return ENOTSUP;
@@ -683,7 +714,8 @@ drv_i915_gfx_emit_vertex_input(
 	/* Enables the vertex fetch statistics and clears the fetcher's other state. */
 	drv_i915_batch_emit(batch, (GEN12_CMD_3DSTATE_VF_STATISTICS << 16) | 1U);
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_VF, GEN12_3DSTATE_VF_DWORDS);
-	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_VF_SGVS, GEN12_3DSTATE_VF_SGVS_DWORDS);
+	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_VF_SGVS, GEN12_3DSTATE_VF_SGVS_DWORDS));
+	drv_i915_batch_emit(batch, sgvs);
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_VF_SGVS_2, GEN12_3DSTATE_VF_SGVS_2_DWORDS);
 
 	/* Turns instancing off for every vertex element. */
