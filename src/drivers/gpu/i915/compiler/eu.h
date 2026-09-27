@@ -172,6 +172,7 @@ void drv_i915_eu_alu2(struct i915_eu_buf *buffer, enum i915_eu_alu op, struct i9
 void drv_i915_eu_alu2_masked(struct i915_eu_buf *buffer, enum i915_eu_flag flag, enum i915_eu_alu op, struct i915_eu_reg dst, struct i915_eu_reg src0, struct i915_eu_reg src1);
 void drv_i915_eu_alu2_scalar(struct i915_eu_buf *buffer, enum i915_eu_alu op, struct i915_eu_reg dst, struct i915_eu_reg src0, struct i915_eu_reg src1);
 void drv_i915_eu_alu2_sixteen(struct i915_eu_buf *buffer, enum i915_eu_alu op, struct i915_eu_reg dst, struct i915_eu_reg src0, struct i915_eu_reg src1);
+void drv_i915_eu_alu2_four(struct i915_eu_buf *buffer, enum i915_eu_alu op, struct i915_eu_reg dst, struct i915_eu_reg src0, struct i915_eu_reg src1);
 void drv_i915_eu_mov_all(struct i915_eu_buf *buffer, struct i915_eu_reg dst, struct i915_eu_reg src);
 void drv_i915_eu_mov_scalar(struct i915_eu_buf *buffer, struct i915_eu_reg dst, struct i915_eu_reg src);
 void drv_i915_eu_alu1(struct i915_eu_buf *buffer, enum i915_eu_unary op, struct i915_eu_reg dst, struct i915_eu_reg src);

@@ -565,6 +565,7 @@ i915_blit_write_state(
 	sampler.min_filter = filter;
 	sampler.address_u = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
 	sampler.address_v = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	sampler.address_w = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
 	sampler.mipmap_mode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
 	sampler.lod_bias = 0U;
 	sampler.min_lod = 0U;

@@ -127,6 +127,17 @@
 #define OP_TRANSPOSE 84U
 #define OP_IMAGE_SAMPLE_IMPLICIT_LOD 87U
 #define OP_IMAGE_SAMPLE_EXPLICIT_LOD 88U
+#define OP_IMAGE_SAMPLE_DREF_IMPLICIT_LOD 89U
+#define OP_IMAGE_SAMPLE_DREF_EXPLICIT_LOD 90U
+#define OP_IMAGE_SAMPLE_PROJ_IMPLICIT_LOD 91U
+#define OP_IMAGE_SAMPLE_PROJ_EXPLICIT_LOD 92U
+#define OP_IMAGE_SAMPLE_PROJ_DREF_IMPLICIT_LOD 93U
+#define OP_IMAGE_SAMPLE_PROJ_DREF_EXPLICIT_LOD 94U
+#define OP_IMAGE_FETCH 95U
+#define OP_IMAGE 100U
+#define OP_IMAGE_QUERY_SIZE_LOD 103U
+#define OP_IMAGE_QUERY_SIZE 104U
+#define OP_IMAGE_QUERY_LEVELS 106U
 #define OP_CONVERT_F_TO_U 109U
 #define OP_CONVERT_F_TO_S 110U
 #define OP_CONVERT_S_TO_F 111U
@@ -365,7 +376,14 @@
 /* The image operands of a sample (Khronos SPIR-V spec, Image Operands) that are lowered. */
 #define IMAGE_OPERAND_BIAS 0x1U
 #define IMAGE_OPERAND_LOD 0x2U
+#define IMAGE_OPERAND_GRAD 0x4U
 #define IMAGE_OPERAND_CONST_OFFSET 0x8U
+
+/* The Dim of OpTypeImage. */
+#define DIM_1D 0U
+#define DIM_2D 1U
+#define DIM_3D 2U
+#define DIM_CUBE 3U
 
 /* Pointer target kinds. */
 #define PTR_NONE 0U
@@ -457,6 +475,10 @@ struct i915_spirv_id {
 
 	/* A variable decorated NoPerspective: a fragment input interpolated linearly in screen space. */
 	uint8_t noperspective;
+
+	/* An image type: its Dim and whether it is Arrayed. */
+	uint8_t image_dim;
+	uint8_t image_arrayed;
 
 	/* Pointer type or variable storage class. */
 	uint16_t storage;
@@ -778,6 +800,13 @@ static int i915_spirv_lower_select(struct i915_spirv_parser *parser, const uint3
 static int i915_spirv_lower_sample(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int i915_spirv_lower_derivative(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int i915_spirv_texel_offset(struct i915_spirv_parser *parser, uint32_t id, uint32_t *bits, uint32_t opcode, uint32_t offset);
+static struct i915_spirv_id *i915_spirv_image_type(struct i915_spirv_parser *parser, struct i915_spirv_id *image);
+static void i915_spirv_texture_param(uint32_t *params, uint32_t *count, uint32_t value);
+static int i915_spirv_emit_texture(struct i915_spirv_parser *parser, const struct i915_spirv_id *image, const uint32_t *params, uint32_t param_count, uint32_t message, uint32_t texel_offset, uint32_t *first);
+static int i915_spirv_lower_image(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
+static int i915_spirv_lower_texture(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
+static int i915_spirv_lower_fetch(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
+static int i915_spirv_lower_query(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int i915_spirv_lower_label(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int i915_spirv_find_loop_merge(struct i915_spirv_parser *parser, uint32_t offset, uint32_t *merge, uint32_t *continue_target);
 static int i915_spirv_loop_open(struct i915_spirv_parser *parser, uint32_t header, uint32_t merge, uint32_t continue_target, uint32_t *predicate, uint32_t opcode, uint32_t offset);
@@ -1331,7 +1360,13 @@ i915_spirv_declare_type(
 		break;
 
 	case OP_TYPE_IMAGE:
+		/* An image: the type of its texels, its Dim and whether it is Arrayed. */
+		if (count < 9U)
+			return EINVAL;
 		record->kind = ID_TYPE_IMAGE;
+		record->type = word[2];
+		record->image_dim = (uint8_t)word[3];
+		record->image_arrayed = (uint8_t)word[5];
 		break;
 
 	case OP_TYPE_FUNCTION:
@@ -2084,6 +2119,25 @@ i915_spirv_lower(
 	case OP_IMAGE_SAMPLE_EXPLICIT_LOD:
 		return i915_spirv_lower_sample(parser, word, count, opcode, offset);
 
+	case OP_IMAGE_SAMPLE_DREF_IMPLICIT_LOD:
+	case OP_IMAGE_SAMPLE_DREF_EXPLICIT_LOD:
+	case OP_IMAGE_SAMPLE_PROJ_IMPLICIT_LOD:
+	case OP_IMAGE_SAMPLE_PROJ_EXPLICIT_LOD:
+	case OP_IMAGE_SAMPLE_PROJ_DREF_IMPLICIT_LOD:
+	case OP_IMAGE_SAMPLE_PROJ_DREF_EXPLICIT_LOD:
+		return i915_spirv_lower_texture(parser, word, count, opcode, offset);
+
+	case OP_IMAGE_FETCH:
+		return i915_spirv_lower_fetch(parser, word, count, opcode, offset);
+
+	case OP_IMAGE:
+		return i915_spirv_lower_image(parser, word, count, opcode, offset);
+
+	case OP_IMAGE_QUERY_SIZE_LOD:
+	case OP_IMAGE_QUERY_SIZE:
+	case OP_IMAGE_QUERY_LEVELS:
+		return i915_spirv_lower_query(parser, word, count, opcode, offset);
+
 	case OP_DPDX:
 	case OP_DPDY:
 	case OP_FWIDTH:
@@ -2542,6 +2596,7 @@ i915_spirv_lower_load(
 		record->kind = ID_SAMPLED_IMAGE;
 		record->binding = variable->binding;
 		record->set = variable->set;
+		record->type = base->pointee;
 		return 0;
 	}
 
@@ -5473,8 +5528,9 @@ i915_spirv_lower_select(
 }
 
 /*
- * Lowers a sample of a 2D combined image sampler at a two-float coordinate,
- * four float results dst .. dst + 3: OpImageSampleImplicitLod (texture(),
+ * Lowers a sample of a 2D combined image sampler of floats at a two-float
+ * coordinate, four float results dst .. dst + 3 (any other sample is
+ * i915_spirv_lower_texture()'s): OpImageSampleImplicitLod (texture(),
  * with a Bias or not) and OpImageSampleExplicitLod with a Lod
  * (textureLod()), either with a ConstOffset (textureOffset()) of -8 .. 7
  * texels.  Any other image operand is refused.
@@ -5488,6 +5544,7 @@ i915_spirv_lower_sample(
 	uint32_t offset)
 {
 	struct i915_spirv_id *sampler;
+	struct i915_spirv_id *type;
 	struct i915_spirv_id *record;
 	struct i915_shader_ir_inst *inst;
 	enum i915_shader_ir_op op;
@@ -5506,8 +5563,17 @@ i915_spirv_lower_sample(
 	if (count < 5U)
 		return EINVAL;
 
-	/* Resolves the sampler and the coordinate; the coordinate may emit a constant. */
+	/* Any image but a 2D one of floats, and gradients, take the general message. */
 	sampler = i915_spirv_id(parser, word[3]);
+	type = i915_spirv_image_type(parser, sampler);
+	components = i915_spirv_float_components(parser, word[1]);
+	if (type == NULL || type->image_dim != DIM_2D || type->image_arrayed != 0U || components != 4U ||
+	    (count > 5U && (word[5] & IMAGE_OPERAND_GRAD) != 0U)) {
+		error = i915_spirv_lower_texture(parser, word, count, opcode, offset);
+		return error;
+	}
+
+	/* Resolves the coordinate; it may emit a constant. */
 	coordinate_count = i915_spirv_operand(parser, word[4], coordinate);
 
 	/* Only a loaded combined sampler at a two-float coordinate, giving a four-float result, is lowered. */
@@ -5596,9 +5662,10 @@ i915_spirv_lower_sample(
 }
 
 /*
- * Packs a constant texel offset (an integer vector of two components, each
- * -8 .. 7) the way the sampler message header takes it (Mesa's
- * brw_texture_offset(), brw_fs_nir.cpp): u in bits 11:8, v in bits 7:4.
+ * Packs a constant texel offset (an integer scalar or a vector of two or
+ * three components, each -8 .. 7) the way the sampler message header takes
+ * it (Mesa's brw_texture_offset(), brw_fs_nir.cpp): u in bits 11:8, v in
+ * bits 7:4, r in bits 3:0.
  */
 static int
 i915_spirv_texel_offset(
@@ -5610,20 +5677,32 @@ i915_spirv_texel_offset(
 {
 	struct i915_spirv_id *record;
 	struct i915_spirv_id *component;
+	uint32_t members[3];
+	uint32_t member_count;
 	int32_t value;
 	uint32_t index;
 
-	/* The offset must be a constant integer vector of two components. */
+	/* The offset must be a constant integer scalar, or a vector of two or three. */
 	record = i915_spirv_id(parser, id);
-	if (record == NULL || record->kind != ID_CONSTANT_COMPOSITE || record->count != 2U)
-		return i915_spirv_refuse(parser, opcode, offset, "texel offset that is not a constant ivec2");
+	if (record == NULL)
+		return i915_spirv_refuse(parser, opcode, offset, "texel offset that is not a constant");
+	if (record->kind == ID_CONSTANT) {
+		members[0] = id;
+		member_count = 1U;
+	} else if (record->kind == ID_CONSTANT_COMPOSITE && record->count >= 2U && record->count <= 3U) {
+		member_count = record->count;
+		for (index = 0U; index < member_count; index++)
+			members[index] = record->member_type[index];
+	} else {
+		return i915_spirv_refuse(parser, opcode, offset, "texel offset that is not a constant");
+	}
 
 	/* Packs each component, u first. */
 	*bits = 0U;
-	for (index = 0U; index < 2U; index++) {
-		component = i915_spirv_id(parser, record->member_type[index]);
+	for (index = 0U; index < member_count; index++) {
+		component = i915_spirv_id(parser, members[index]);
 		if (component == NULL || component->kind != ID_CONSTANT)
-			return i915_spirv_refuse(parser, opcode, offset, "texel offset that is not a constant ivec2");
+			return i915_spirv_refuse(parser, opcode, offset, "texel offset that is not a constant");
 
 		/* The hardware takes -8 .. 7. */
 		value = (int32_t)component->constant;
@@ -5637,12 +5716,627 @@ i915_spirv_texel_offset(
 }
 
 /*
+ * Finds the image type of a loaded combined image sampler or of the image
+ * OpImage takes from it; NULL for anything else.
+ */
+static struct i915_spirv_id *
+i915_spirv_image_type(
+	struct i915_spirv_parser *parser,
+	struct i915_spirv_id *image)
+{
+	struct i915_spirv_id *type;
+
+	/* Only a loaded sampler or its image has an image type. */
+	if (image == NULL || image->kind != ID_SAMPLED_IMAGE)
+		return NULL;
+
+	/* A sampled image type names its image type. */
+	type = i915_spirv_id(parser, image->type);
+	if (type != NULL && type->kind == ID_TYPE_SAMPLED_IMAGE)
+		type = i915_spirv_id(parser, type->type);
+
+	/* Succeeded: the image type, or none. */
+	if (type == NULL || type->kind != ID_TYPE_IMAGE)
+		return NULL;
+	return type;
+}
+
+/*
+ * Appends one parameter to a sampler message's list; a list longer than a
+ * message takes still counts, so the emit refuses it.
+ */
+static void
+i915_spirv_texture_param(
+	uint32_t *params,
+	uint32_t *count,
+	uint32_t value)
+{
+	/* Drops what would overflow; the count still grows. */
+	if (*count < I915_IR_TEXTURE_MAX_PARAMS)
+		params[*count] = value;
+	(*count)++;
+}
+
+/*
+ * Emits a TEXTURE instruction: copies the parameters into a run of fresh
+ * consecutive values and defines four fresh consecutive results, the
+ * first returned in *first.
+ */
+static int
+i915_spirv_emit_texture(
+	struct i915_spirv_parser *parser,
+	const struct i915_spirv_id *image,
+	const uint32_t *params,
+	uint32_t param_count,
+	uint32_t message,
+	uint32_t texel_offset,
+	uint32_t *first)
+{
+	struct i915_shader_ir_inst *inst;
+	uint32_t run;
+	uint32_t value;
+	uint32_t index;
+
+	/* Refuses more parameters than a message takes. */
+	if (param_count == 0U || param_count > I915_IR_TEXTURE_MAX_PARAMS)
+		return EINVAL;
+
+	/* Copies the parameters into consecutive values. */
+	run = parser->ir->value_count;
+	for (index = 0U; index < param_count; index++) {
+		value = i915_spirv_new_value(parser);
+		(void)i915_spirv_emit(parser, I915_IR_MOVE, value, params[index], 0U);
+	}
+
+	/* Four consecutive results. */
+	*first = parser->ir->value_count;
+	for (index = 0U; index < 4U; index++)
+		(void)i915_spirv_new_value(parser);
+
+	/* Emits the message: set in `location`, binding in `immediate`, the type and the offset in `component`. */
+	inst = i915_spirv_emit(parser, I915_IR_TEXTURE, *first, run, param_count);
+	if (inst != NULL) {
+		inst->immediate = image->binding;
+		inst->location = image->set;
+		inst->component = message | (texel_offset << 8);
+	}
+
+	/* Succeeded unless the emit failed, which the parser latched. */
+	return parser->error;
+}
+
+/* Lowers OpImage: the image of a loaded combined image sampler names the same binding. */
+static int
+i915_spirv_lower_image(
+	struct i915_spirv_parser *parser,
+	const uint32_t *word,
+	uint32_t count,
+	uint32_t opcode,
+	uint32_t offset)
+{
+	struct i915_spirv_id *sampled;
+	struct i915_spirv_id *record;
+
+	/* The instruction must carry the sampled image. */
+	if (count != 4U)
+		return EINVAL;
+
+	/* Only the image of a loaded combined sampler is lowered. */
+	sampled = i915_spirv_id(parser, word[3]);
+	if (sampled == NULL || sampled->kind != ID_SAMPLED_IMAGE)
+		return i915_spirv_refuse(parser, opcode, offset, "image of something that is not a loaded sampler");
+
+	/* The result names the same binding with the image's type; it emits nothing. */
+	record = i915_spirv_id(parser, word[2]);
+	if (record == NULL || record->kind != ID_NONE)
+		return EINVAL;
+	record->kind = ID_SAMPLED_IMAGE;
+	record->binding = sampled->binding;
+	record->set = sampled->set;
+	record->type = word[1];
+
+	/* Succeeded: the image is named. */
+	return 0;
+}
+
+/*
+ * Lowers the samples i915_spirv_lower_sample() does not: of a 1D, 3D or
+ * cube image or an array (the coordinate's component after the image's
+ * dimensions is the layer), with a depth reference (OpImageSampleDref*),
+ * projective (OpImageSampleProj*: the coordinate and the reference divided
+ * by the component after the image's dimensions), with gradients (Grad),
+ * or of an integer image; as Mesa builds the message on Gen12.0
+ * (lower_sampler_logical_send(), brw_lower_logical_sends.cpp): the
+ * reference, then the bias or the level, then the coordinate, each
+ * component followed by its two gradients for sample_d, the layer last.
+ * A 1D image is a 2D surface one texel high to the executor, so its
+ * coordinate gets v = 0 and its layer moves to r.  An implicit level
+ * outside a fragment shader is level 0.
+ */
+static int
+i915_spirv_lower_texture(
+	struct i915_spirv_parser *parser,
+	const uint32_t *word,
+	uint32_t count,
+	uint32_t opcode,
+	uint32_t offset)
+{
+	struct i915_spirv_id *image;
+	struct i915_spirv_id *type;
+	struct i915_spirv_id *record;
+	uint32_t coordinate[4];
+	uint32_t position[4];
+	uint32_t dx[4];
+	uint32_t dy[4];
+	uint32_t scalars[4];
+	uint32_t params[I915_IR_TEXTURE_MAX_PARAMS];
+	uint32_t param_count;
+	uint32_t coordinate_count;
+	uint32_t scalar_count;
+	uint32_t gradient_count;
+	uint32_t dimensions;
+	uint32_t position_count;
+	uint32_t components;
+	uint32_t operands;
+	uint32_t next;
+	uint32_t reference;
+	uint32_t level;
+	uint32_t divisor;
+	uint32_t zero;
+	uint32_t message;
+	uint32_t texel_offset;
+	uint32_t first;
+	uint32_t index;
+	int compare;
+	int projective;
+	int explicit_level;
+	int has_bias;
+	int has_level;
+	int has_gradient;
+	int error;
+
+	/* The instruction must carry the image and the coordinate. */
+	if (count < 5U)
+		return EINVAL;
+
+	/* Resolves the image and its type; a 1D, 2D, 3D or cube image is lowered. */
+	image = i915_spirv_id(parser, word[3]);
+	type = i915_spirv_image_type(parser, image);
+	if (type == NULL)
+		return i915_spirv_refuse(parser, opcode, offset, "sample of something that is not a loaded sampler");
+	if (type->image_dim > DIM_CUBE)
+		return i915_spirv_refuse(parser, opcode, offset, "sample of an image that is not 1D, 2D, 3D or cube");
+	dimensions = type->image_dim + 1U;
+	if (type->image_dim == DIM_CUBE)
+		dimensions = 3U;
+
+	/* The kind of sample: a compare, a projective one, one at an explicit level. */
+	compare = 0;
+	if (opcode == OP_IMAGE_SAMPLE_DREF_IMPLICIT_LOD || opcode == OP_IMAGE_SAMPLE_DREF_EXPLICIT_LOD ||
+	    opcode == OP_IMAGE_SAMPLE_PROJ_DREF_IMPLICIT_LOD || opcode == OP_IMAGE_SAMPLE_PROJ_DREF_EXPLICIT_LOD)
+		compare = 1;
+	projective = 0;
+	if (opcode >= OP_IMAGE_SAMPLE_PROJ_IMPLICIT_LOD && opcode <= OP_IMAGE_SAMPLE_PROJ_DREF_EXPLICIT_LOD)
+		projective = 1;
+	explicit_level = 0;
+	if (opcode == OP_IMAGE_SAMPLE_EXPLICIT_LOD || opcode == OP_IMAGE_SAMPLE_DREF_EXPLICIT_LOD ||
+	    opcode == OP_IMAGE_SAMPLE_PROJ_EXPLICIT_LOD || opcode == OP_IMAGE_SAMPLE_PROJ_DREF_EXPLICIT_LOD)
+		explicit_level = 1;
+
+	/* The coordinate: the image's dimensions, the layer of an array, the divisor of a projective sample. */
+	coordinate_count = i915_spirv_operand(parser, word[4], coordinate);
+	position_count = dimensions + type->image_arrayed;
+	if (projective != 0 && type->image_arrayed != 0U)
+		return i915_spirv_refuse(parser, opcode, offset, "projective sample of an array");
+	if (coordinate_count < position_count + (uint32_t)projective)
+		return i915_spirv_refuse(parser, opcode, offset, "sample at a coordinate shorter than the image's");
+
+	/* The depth reference of a compare. */
+	next = 5U;
+	reference = NO_VALUE;
+	if (compare != 0) {
+		scalar_count = 0U;
+		if (next < count)
+			scalar_count = i915_spirv_operand(parser, word[next], scalars);
+		if (scalar_count != 1U)
+			return EINVAL;
+		reference = scalars[0];
+		next++;
+	}
+
+	/* The image operands. */
+	operands = 0U;
+	if (next < count) {
+		operands = word[next];
+		next++;
+	}
+
+	/* Refuses an operand that is not lowered. */
+	if ((operands & ~(IMAGE_OPERAND_BIAS | IMAGE_OPERAND_LOD | IMAGE_OPERAND_GRAD | IMAGE_OPERAND_CONST_OFFSET)) != 0U)
+		return i915_spirv_refuse(parser, opcode, offset, "sample with image operands other than Bias, Lod, Grad and ConstOffset");
+
+	/* Their values in the order of their bits: a bias of an implicit level. */
+	has_bias = 0;
+	has_level = 0;
+	has_gradient = 0;
+	level = NO_VALUE;
+	if ((operands & IMAGE_OPERAND_BIAS) != 0U) {
+		scalar_count = 0U;
+		if (explicit_level == 0 && next < count)
+			scalar_count = i915_spirv_operand(parser, word[next], scalars);
+		if (scalar_count != 1U)
+			return EINVAL;
+		has_bias = 1;
+		level = scalars[0];
+		next++;
+	}
+
+	/* An explicit level. */
+	if ((operands & IMAGE_OPERAND_LOD) != 0U) {
+		scalar_count = 0U;
+		if (explicit_level != 0 && next < count)
+			scalar_count = i915_spirv_operand(parser, word[next], scalars);
+		if (scalar_count != 1U)
+			return EINVAL;
+		has_level = 1;
+		level = scalars[0];
+		next++;
+	}
+
+	/* Gradients, one per dimension of the image. */
+	if ((operands & IMAGE_OPERAND_GRAD) != 0U) {
+		if (explicit_level == 0 || next + 1U >= count)
+			return EINVAL;
+		scalar_count = i915_spirv_operand(parser, word[next], dx);
+		gradient_count = i915_spirv_operand(parser, word[next + 1U], dy);
+		if (scalar_count != dimensions || gradient_count != dimensions)
+			return i915_spirv_refuse(parser, opcode, offset, "sample with gradients that are not the image's dimensions");
+		has_gradient = 1;
+		next += 2U;
+	}
+
+	/* A constant offset moves the texel grid. */
+	texel_offset = 0U;
+	if ((operands & IMAGE_OPERAND_CONST_OFFSET) != 0U) {
+		if (next >= count)
+			return EINVAL;
+		error = i915_spirv_texel_offset(parser, word[next], &texel_offset, opcode, offset);
+		if (error != 0)
+			return error;
+		next++;
+	}
+
+	/* Every operand must have been read, and an explicit sample has a level or gradients. */
+	if (next != count)
+		return EINVAL;
+	if (explicit_level != 0 && has_level == 0 && has_gradient == 0)
+		return EINVAL;
+
+	/* The result: four floats or integers, or one float for a compare. */
+	components = i915_spirv_value_components(parser, word[1]);
+	if ((compare == 0 && components != 4U) || (compare != 0 && components != 1U))
+		return i915_spirv_refuse(parser, opcode, offset, "sample whose result is not a vec4 (or a float of a compare)");
+
+	/* A projective sample divides the coordinate and the reference by the component after the image's. */
+	for (index = 0U; index < position_count; index++)
+		position[index] = coordinate[index];
+	if (projective != 0) {
+		divisor = i915_spirv_emit_value(parser, I915_IR_RCP, coordinate[dimensions], 0U);
+		for (index = 0U; index < dimensions; index++)
+			position[index] = i915_spirv_emit_value(parser, I915_IR_FMUL, coordinate[index], divisor);
+		if (reference != NO_VALUE)
+			reference = i915_spirv_emit_value(parser, I915_IR_FMUL, reference, divisor);
+	}
+
+	/* An implicit level outside a fragment shader is level 0. */
+	if (explicit_level == 0 && parser->ir->stage != I915_STAGE_FRAGMENT) {
+		has_bias = 0;
+		has_level = 1;
+		level = i915_spirv_float_constant(parser, FLOAT_ZERO_BITS);
+	}
+
+	/* The message the kind of sample takes. */
+	if (has_gradient != 0) {
+		message = I915_IR_TEXTURE_SAMPLE_DERIVS;
+		if (compare != 0)
+			message = I915_IR_TEXTURE_SAMPLE_DERIV_COMPARE;
+	} else if (has_level != 0) {
+		message = I915_IR_TEXTURE_SAMPLE_LOD;
+		if (compare != 0)
+			message = I915_IR_TEXTURE_SAMPLE_LOD_COMPARE;
+	} else if (has_bias != 0) {
+		message = I915_IR_TEXTURE_SAMPLE_BIAS;
+		if (compare != 0)
+			message = I915_IR_TEXTURE_SAMPLE_BIAS_COMPARE;
+	} else {
+		message = I915_IR_TEXTURE_SAMPLE;
+		if (compare != 0)
+			message = I915_IR_TEXTURE_SAMPLE_COMPARE;
+	}
+
+	/* The reference, then the bias or the level. */
+	param_count = 0U;
+	if (reference != NO_VALUE)
+		i915_spirv_texture_param(params, &param_count, reference);
+	if (has_bias != 0 || has_level != 0)
+		i915_spirv_texture_param(params, &param_count, level);
+
+	/* The coordinate, each component with its gradients; a 1D image's v is 0 (and so are its gradients). */
+	zero = NO_VALUE;
+	if (type->image_dim == DIM_1D)
+		zero = i915_spirv_float_constant(parser, FLOAT_ZERO_BITS);
+	for (index = 0U; index < dimensions; index++) {
+		i915_spirv_texture_param(params, &param_count, position[index]);
+		if (has_gradient != 0) {
+			i915_spirv_texture_param(params, &param_count, dx[index]);
+			i915_spirv_texture_param(params, &param_count, dy[index]);
+		}
+	}
+
+	/* A 1D image's v, and its gradients, after u. */
+	if (type->image_dim == DIM_1D) {
+		i915_spirv_texture_param(params, &param_count, zero);
+		if (has_gradient != 0) {
+			i915_spirv_texture_param(params, &param_count, zero);
+			i915_spirv_texture_param(params, &param_count, zero);
+		}
+	}
+
+	/* The layer of an array: r after a 1D or 2D coordinate, ai after a cube one. */
+	if (type->image_arrayed != 0U)
+		i915_spirv_texture_param(params, &param_count, position[dimensions]);
+
+	/* Emits the message. */
+	error = i915_spirv_emit_texture(parser, image, params, param_count, message, texel_offset, &first);
+	if (error != 0)
+		return error;
+
+	/* The result names the reply's first components. */
+	record = i915_spirv_result(parser, word[2], word[1], components, 0);
+	if (record == NULL)
+		return EINVAL;
+	for (index = 0U; index < components; index++)
+		record->comp[index] = first + index;
+
+	/* Succeeded: the sample is lowered. */
+	return 0;
+}
+
+/*
+ * Lowers OpImageFetch (texelFetch()): the ld message at an integer
+ * coordinate and level, u v lod r on Gen9+ (Mesa's
+ * lower_sampler_logical_send()); a constant offset is added to the
+ * coordinate, as Mesa lowers it for ld (nir_lower_tex's lower_txf_offset).
+ * A 1D image gets v = 0, its layer r.
+ */
+static int
+i915_spirv_lower_fetch(
+	struct i915_spirv_parser *parser,
+	const uint32_t *word,
+	uint32_t count,
+	uint32_t opcode,
+	uint32_t offset)
+{
+	struct i915_spirv_id *image;
+	struct i915_spirv_id *type;
+	struct i915_spirv_id *record;
+	uint32_t coordinate[4];
+	uint32_t scalars[4];
+	uint32_t params[I915_IR_TEXTURE_MAX_PARAMS];
+	uint32_t param_count;
+	uint32_t coordinate_count;
+	uint32_t position_count;
+	uint32_t scalar_count;
+	uint32_t operands;
+	uint32_t next;
+	uint32_t level;
+	uint32_t texel_offset;
+	uint32_t shift;
+	uint32_t first;
+	uint32_t index;
+	int32_t moved;
+	int error;
+
+	/* The instruction must carry the image and the coordinate. */
+	if (count < 5U)
+		return EINVAL;
+
+	/* Resolves the image; a 1D, 2D or 3D image is fetched from. */
+	image = i915_spirv_id(parser, word[3]);
+	type = i915_spirv_image_type(parser, image);
+	if (type == NULL || type->image_dim > DIM_3D)
+		return i915_spirv_refuse(parser, opcode, offset, "fetch from something that is not a 1D, 2D or 3D image");
+
+	/* The integer coordinate: the image's dimensions and the layer of an array. */
+	coordinate_count = i915_spirv_operand(parser, word[4], coordinate);
+	position_count = type->image_dim + 1U + type->image_arrayed;
+	if (coordinate_count != position_count)
+		return i915_spirv_refuse(parser, opcode, offset, "fetch at a coordinate that is not the image's");
+
+	/* The image operands. */
+	operands = 0U;
+	next = 5U;
+	if (next < count) {
+		operands = word[next];
+		next++;
+	}
+
+	/* Refuses an operand that is not lowered. */
+	if ((operands & ~(IMAGE_OPERAND_LOD | IMAGE_OPERAND_CONST_OFFSET)) != 0U)
+		return i915_spirv_refuse(parser, opcode, offset, "fetch with image operands other than Lod and ConstOffset");
+
+	/* The level. */
+	level = NO_VALUE;
+	if ((operands & IMAGE_OPERAND_LOD) != 0U) {
+		scalar_count = 0U;
+		if (next < count)
+			scalar_count = i915_spirv_operand(parser, word[next], scalars);
+		if (scalar_count != 1U)
+			return EINVAL;
+		level = scalars[0];
+		next++;
+	}
+
+	/* The offset. */
+	texel_offset = 0U;
+	if ((operands & IMAGE_OPERAND_CONST_OFFSET) != 0U) {
+		if (next >= count)
+			return EINVAL;
+		error = i915_spirv_texel_offset(parser, word[next], &texel_offset, opcode, offset);
+		if (error != 0)
+			return error;
+		next++;
+	}
+
+	/* Every operand must have been read. */
+	if (next != count)
+		return EINVAL;
+
+	/* The result is four floats or integers. */
+	scalar_count = i915_spirv_value_components(parser, word[1]);
+	if (scalar_count != 4U)
+		return i915_spirv_refuse(parser, opcode, offset, "fetch whose result is not a vec4");
+
+	/* Adds the offset to each dimension of the coordinate. */
+	for (index = 0U; index <= type->image_dim && texel_offset != 0U; index++) {
+		moved = (int32_t)(((texel_offset >> (8U - 4U * index)) & 0xFU) << 28) >> 28;
+		if (moved == 0)
+			continue;
+		shift = i915_spirv_integer_constant(parser, (uint32_t)moved);
+		coordinate[index] = i915_spirv_emit_value(parser, I915_IR_IADD, coordinate[index], shift);
+	}
+
+	/* u, then v (0 for a 1D image), the level (0 when absent) and r (a layer, or a 3D image's depth). */
+	if (level == NO_VALUE)
+		level = i915_spirv_integer_constant(parser, 0U);
+	param_count = 0U;
+	i915_spirv_texture_param(params, &param_count, coordinate[0]);
+	if (type->image_dim == DIM_1D) {
+		i915_spirv_texture_param(params, &param_count, i915_spirv_integer_constant(parser, 0U));
+		i915_spirv_texture_param(params, &param_count, level);
+		if (type->image_arrayed != 0U)
+			i915_spirv_texture_param(params, &param_count, coordinate[1]);
+	} else {
+		i915_spirv_texture_param(params, &param_count, coordinate[1]);
+		i915_spirv_texture_param(params, &param_count, level);
+		if (position_count > 2U)
+			i915_spirv_texture_param(params, &param_count, coordinate[2]);
+	}
+
+	/* Emits the message. */
+	error = i915_spirv_emit_texture(parser, image, params, param_count, I915_IR_TEXTURE_LD, 0U, &first);
+	if (error != 0)
+		return error;
+
+	/* The result names the reply. */
+	record = i915_spirv_result(parser, word[2], word[1], 4U, 0);
+	if (record == NULL)
+		return EINVAL;
+	for (index = 0U; index < 4U; index++)
+		record->comp[index] = first + index;
+
+	/* Succeeded: the fetch is lowered. */
+	return 0;
+}
+
+/*
+ * Lowers OpImageQuerySizeLod, OpImageQuerySize (textureSize()) and
+ * OpImageQueryLevels (textureQueryLevels()) to the resinfo message, whose
+ * reply is the width, the height, the depth (a 3D image's, an array's
+ * layers) and the level count at the level asked for (Mesa's TXS); a 1D
+ * array's layers are its depth, as the executor makes it a 2D surface.
+ */
+static int
+i915_spirv_lower_query(
+	struct i915_spirv_parser *parser,
+	const uint32_t *word,
+	uint32_t count,
+	uint32_t opcode,
+	uint32_t offset)
+{
+	struct i915_spirv_id *image;
+	struct i915_spirv_id *type;
+	struct i915_spirv_id *record;
+	uint32_t scalars[4];
+	uint32_t params[I915_IR_TEXTURE_MAX_PARAMS];
+	uint32_t param_count;
+	uint32_t scalar_count;
+	uint32_t components;
+	uint32_t expected;
+	uint32_t level;
+	uint32_t first;
+	uint32_t index;
+	int error;
+
+	/* The instruction must carry the image, and the level for OpImageQuerySizeLod. */
+	if (opcode == OP_IMAGE_QUERY_SIZE_LOD && count != 5U)
+		return EINVAL;
+	if (opcode != OP_IMAGE_QUERY_SIZE_LOD && count != 4U)
+		return EINVAL;
+
+	/* Resolves the image. */
+	image = i915_spirv_id(parser, word[3]);
+	type = i915_spirv_image_type(parser, image);
+	if (type == NULL || type->image_dim > DIM_CUBE)
+		return i915_spirv_refuse(parser, opcode, offset, "query of something that is not a 1D, 2D, 3D or cube image");
+
+	/* The level asked for; level 0 without one. */
+	if (opcode == OP_IMAGE_QUERY_SIZE_LOD) {
+		scalar_count = i915_spirv_operand(parser, word[4], scalars);
+		if (scalar_count != 1U)
+			return EINVAL;
+		level = scalars[0];
+	} else {
+		level = i915_spirv_integer_constant(parser, 0U);
+	}
+
+	/* The result: the level count, or the image's dimensions and its layers. */
+	components = i915_spirv_int_components(parser, word[1]);
+	expected = 1U;
+	if (opcode != OP_IMAGE_QUERY_LEVELS) {
+		expected = type->image_dim + 1U;
+		if (type->image_dim == DIM_CUBE)
+			expected = 2U;
+		expected += type->image_arrayed;
+	}
+
+	/* Refuses a result of another size. */
+	if (components != expected)
+		return i915_spirv_refuse(parser, opcode, offset, "query whose result is not the image's size");
+
+	/* Emits the message. */
+	param_count = 0U;
+	i915_spirv_texture_param(params, &param_count, level);
+	error = i915_spirv_emit_texture(parser, image, params, param_count, I915_IR_TEXTURE_RESINFO, 0U, &first);
+	if (error != 0)
+		return error;
+
+	/* The result names the reply. */
+	record = i915_spirv_result(parser, word[2], word[1], components, 0);
+	if (record == NULL)
+		return EINVAL;
+
+	/* The level count, or the size with a 1D array's layers from the depth. */
+	if (opcode == OP_IMAGE_QUERY_LEVELS) {
+		record->comp[0] = first + 3U;
+	} else {
+		for (index = 0U; index < components; index++)
+			record->comp[index] = first + index;
+		if (type->image_dim == DIM_1D && type->image_arrayed != 0U)
+			record->comp[1] = first + 2U;
+	}
+
+	/* Succeeded: the query is lowered. */
+	return 0;
+}
+
+/*
  * Lowers the derivatives per component: OpDPdx, OpDPdy and their Coarse
- * forms to the coarse differences, OpDPdxFine to the fine one, and
- * OpFwidth (and its Coarse form) to |dx| + |dy|, as Mesa lowers it
- * (vtn_alu.c: fabs(ddx) + fabs(ddy)); an unqualified derivative may be
- * coarse (the Vulkan specification), and anv asks for coarse ones.  The
- * fine y derivative, and so OpDPdyFine and OpFwidthFine, is refused.
+ * forms to the coarse differences, OpDPdxFine and OpDPdyFine to the fine
+ * ones, and OpFwidth (and its Coarse and Fine forms) to |dx| + |dy| of the
+ * same kind, as Mesa lowers it (vtn_alu.c: fabs(ddx) + fabs(ddy)); an
+ * unqualified derivative may be coarse (the Vulkan specification), and anv
+ * asks for coarse ones.
  */
 static int
 i915_spirv_lower_derivative(
@@ -5667,10 +6361,6 @@ i915_spirv_lower_derivative(
 	/* Only a fragment shader has neighbouring pixels. */
 	if (parser->ir->stage != I915_STAGE_FRAGMENT)
 		return i915_spirv_refuse(parser, opcode, offset, "derivative outside a fragment shader");
-
-	/* The fine y derivative needs the quads' rows apart, which is not lowered. */
-	if (opcode == OP_DPDY_FINE || opcode == OP_FWIDTH_FINE)
-		return i915_spirv_refuse(parser, opcode, offset, "fine y derivative is not lowered");
 
 	/* The operand and the result are float scalars or vectors of one size. */
 	operand_count = i915_spirv_operand(parser, word[3], operand);
@@ -5697,16 +6387,29 @@ i915_spirv_lower_derivative(
 			continue;
 		}
 
-		/* The y derivative is the coarse one. */
+		/* The coarse y derivative takes the left column's difference. */
 		if (opcode == OP_DPDY || opcode == OP_DPDY_COARSE) {
 			record->comp[index] = i915_spirv_emit_value(parser, I915_IR_DDY, operand[index], 0U);
 			continue;
 		}
 
-		/* The width is the sum of the two differences' magnitudes. */
-		across = i915_spirv_emit_value(parser, I915_IR_DDX, operand[index], 0U);
+		/* The fine y derivative takes each column's own difference. */
+		if (opcode == OP_DPDY_FINE) {
+			record->comp[index] = i915_spirv_emit_value(parser, I915_IR_DDY_FINE, operand[index], 0U);
+			continue;
+		}
+
+		/* The width is the sum of the two differences' magnitudes, fine ones for OpFwidthFine. */
+		if (opcode == OP_FWIDTH_FINE) {
+			across = i915_spirv_emit_value(parser, I915_IR_DDX_FINE, operand[index], 0U);
+			down = i915_spirv_emit_value(parser, I915_IR_DDY_FINE, operand[index], 0U);
+		} else {
+			across = i915_spirv_emit_value(parser, I915_IR_DDX, operand[index], 0U);
+			down = i915_spirv_emit_value(parser, I915_IR_DDY, operand[index], 0U);
+		}
+
+		/* The magnitudes' sum. */
 		across = i915_spirv_emit_value(parser, I915_IR_FABS, across, 0U);
-		down = i915_spirv_emit_value(parser, I915_IR_DDY, operand[index], 0U);
 		down = i915_spirv_emit_value(parser, I915_IR_FABS, down, 0U);
 		record->comp[index] = i915_spirv_emit_value(parser, I915_IR_FADD, across, down);
 	}

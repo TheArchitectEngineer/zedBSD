@@ -160,7 +160,7 @@ static int i915_record_set_scissor(struct i915_render_session *session, struct i
 static int i915_record_copy_buffer(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader);
 static int i915_record_clear_attachments(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader);
 static int i915_record_command(struct i915_render_session *session, uint32_t opcode, struct i915_wire_reader *reader);
-static int i915_image_surface(const struct i915_gfx_image *image, uint32_t level, struct i915_gfx_surface *surface);
+static int i915_image_surface(const struct i915_gfx_image *image, uint32_t level, uint32_t slice, struct i915_gfx_surface *surface);
 static int i915_attachment_surface(const struct i915_gfx_view *view, struct i915_gfx_surface *surface);
 static int i915_execute_clear(struct i915_render_session *session, const struct i915_gfx_op *op);
 static int i915_execute_buffer_image_copy(struct i915_render_session *session, const struct i915_gfx_op *op);
@@ -902,6 +902,8 @@ i915_record_clear_image(
 		kern_memcpy(op->u.clear_image.words, colour, sizeof(colour));
 		op->u.clear_image.base_level = range.baseMipLevel;
 		op->u.clear_image.level_count = range.levelCount;
+		op->u.clear_image.base_layer = range.baseArrayLayer;
+		op->u.clear_image.layer_count = range.layerCount;
 	}
 
 	/* Refuses a stream that ended inside the ranges. */
@@ -1777,26 +1779,30 @@ i915_record_command(
 }
 
 /*
- * Describes one mip level of an image as the linear surface it is, in its
- * own format; EINVAL for a level the image does not have or an image with
- * no storage, with the level named in the log.
+ * Describes one mip level of one slice of an image (an array layer, or a
+ * depth of a 3D image) as the linear surface it is, in its own format;
+ * EINVAL for a level or a slice the image does not have or an image with
+ * no storage, with the level and the slice named in the log.
  */
 static int
 i915_image_surface(
 	const struct i915_gfx_image *image,
 	uint32_t level,
+	uint32_t slice,
 	struct i915_gfx_surface *surface)
 {
 	int error;
 
-	/* Takes the level's address, extent, pitch and format. */
-	error = drv_i915_gfx_image_level(image, level, surface);
+	/* Takes the level's address in the slice, its extent, the pitch and the format. */
+	error = drv_i915_gfx_image_slice(image, level, slice, surface);
 	if (error != 0) {
-		kern_logf("i915: vk: level %u of a %ux%u image of %u levels cannot be used: %d\n",
+		kern_logf("i915: vk: level %u slice %u of a %ux%u image of %u levels and %u slices cannot be used: %d\n",
 			  level,
+			  slice,
 			  image->width,
 			  image->height,
 			  image->levels,
+			  drv_i915_gfx_image_slices(image, 0U),
 			  error);
 		return error;
 	}
@@ -1806,9 +1812,9 @@ i915_image_surface(
 }
 
 /*
- * Describes the image of a render pass attachment: level 0 of its view's
- * image.  XXX: an attachment view of another level is refused (ENOTSUP):
- * the draw and the clears write level 0.
+ * Describes the image of a render pass attachment: the level and the layer
+ * its view starts at.  XXX: a view of several layers is written at its
+ * first layer only (no layered rendering).
  */
 static int
 i915_attachment_surface(
@@ -1817,14 +1823,8 @@ i915_attachment_surface(
 {
 	int error;
 
-	/* Refuses a view that starts at another level. */
-	if (view->base_level != 0U) {
-		kern_logf("i915: vk: XXX unimplemented path: an attachment view of mip level %u\n", view->base_level);
-		return ENOTSUP;
-	}
-
-	/* Describes level 0 of the image. */
-	error = i915_image_surface(view->image, 0U, surface);
+	/* Describes the view's first level of its first layer. */
+	error = i915_image_surface(view->image, view->base_level, view->base_layer, surface);
 	if (error != 0)
 		return error;
 
@@ -1998,7 +1998,12 @@ i915_execute_buffer_image_copy(
 	struct i915_gfx_rect image_rect;
 	struct i915_gfx_rect buffer_rect;
 	uint64_t row_pixels;
+	uint64_t image_rows;
 	uint64_t needed;
+	uint64_t slice_bytes;
+	uint32_t first_slice;
+	uint32_t slice_count;
+	uint32_t slice;
 	int error;
 
 	/* Refuses a copy whose buffer or image does not exist. */
@@ -2008,8 +2013,20 @@ i915_execute_buffer_image_copy(
 	if (buffer == NULL || image == NULL)
 		return EINVAL;
 
-	/* Describes the level of the image the region names. */
-	error = i915_image_surface(image, region->imageSubresource.mipLevel, &image_surface);
+	/* The slices the region names: the layers, or a 3D image's depths. */
+	first_slice = region->imageSubresource.baseArrayLayer;
+	slice_count = region->imageSubresource.layerCount;
+	if (image->type == VK_IMAGE_TYPE_3D) {
+		first_slice = (uint32_t)region->imageOffset.z;
+		slice_count = region->imageExtent.depth;
+	}
+
+	/* Refuses a region of no slice. */
+	if (slice_count == 0U)
+		return EINVAL;
+
+	/* Describes the level of the image the region names, in its first slice. */
+	error = i915_image_surface(image, region->imageSubresource.mipLevel, first_slice, &image_surface);
 	if (error != 0)
 		return EINVAL;
 
@@ -2024,18 +2041,24 @@ i915_execute_buffer_image_copy(
 	if (region->bufferRowLength != 0U)
 		row_pixels = region->bufferRowLength;
 
-	/* Refuses a region that is not one non-empty 2D rectangle. */
-	if (region->imageExtent.depth != 1U)
+	/* Refuses a region that is not non-empty rectangles, one a slice. */
+	if (image->type != VK_IMAGE_TYPE_3D && region->imageExtent.depth != 1U)
 		return EINVAL;
 	if (region->imageExtent.width == 0U || region->imageExtent.height == 0U)
 		return EINVAL;
 
-	/* Refuses rows shorter than the region. */
+	/* Refuses rows shorter than the region, and slices shorter than its rows. */
 	if (row_pixels < region->imageExtent.width)
+		return EINVAL;
+	image_rows = region->imageExtent.height;
+	if (region->bufferImageHeight != 0U)
+		image_rows = region->bufferImageHeight;
+	if (image_rows < region->imageExtent.height)
 		return EINVAL;
 
 	/* Refuses a region that runs past the end of the buffer. */
-	needed = region->bufferOffset +
+	slice_bytes = image_rows * row_pixels * 4U;
+	needed = region->bufferOffset + (uint64_t)(slice_count - 1U) * slice_bytes +
 	    ((uint64_t)(region->imageExtent.height - 1U) * row_pixels + region->imageExtent.width) * 4U;
 	if (needed > buffer->size)
 		return EINVAL;
@@ -2061,24 +2084,37 @@ i915_execute_buffer_image_copy(
 	image_rect.w = region->imageExtent.width;
 	image_rect.h = region->imageExtent.height;
 
-	/* Copies in the direction the operation names. */
-	if (op->kind == I915_GFX_OP_COPY_BUFFER_TO_IMAGE) {
-		error = drv_i915_gfx_rect(session, &image_surface, &image_rect, &buffer_surface, &buffer_rect, NULL, 0);
-	} else {
-		error = drv_i915_gfx_rect(session, &buffer_surface, &buffer_rect, &image_surface, &image_rect, NULL, 0);
-	}
+	/* Copies each slice in the direction the operation names, the buffer a slice further each time. */
+	for (slice = 0U; slice < slice_count; slice++) {
+		/* Describes the slice, and moves the buffer to its rows. */
+		if (slice != 0U) {
+			error = i915_image_surface(image, region->imageSubresource.mipLevel, first_slice + slice, &image_surface);
+			if (error != 0)
+				return EINVAL;
+			buffer_surface.va += slice_bytes;
+		}
 
-	/* Reports why the copy failed. */
-	if (error != 0)
-		return error;
+		/* Copies the slice. */
+		if (op->kind == I915_GFX_OP_COPY_BUFFER_TO_IMAGE) {
+			error = drv_i915_gfx_rect(session, &image_surface, &image_rect, &buffer_surface, &buffer_rect, NULL, 0);
+		} else {
+			error = drv_i915_gfx_rect(session, &buffer_surface, &buffer_rect, &image_surface, &image_rect, NULL, 0);
+		}
+
+		/* Reports why the copy failed. */
+		if (error != 0)
+			return error;
+	}
 
 	/* Succeeded: the region is copied. */
 	return 0;
 }
 
 /*
- * Runs one range of a vkCmdClearColorImage as one GPU fill of each level it
- * names; VK_REMAINING_MIP_LEVELS runs to the last level.
+ * Runs one range of a vkCmdClearColorImage as one GPU fill of each level
+ * and layer (every depth of a 3D image's level) it names;
+ * VK_REMAINING_MIP_LEVELS and VK_REMAINING_ARRAY_LAYERS run to the last
+ * one.
  */
 static int
 i915_execute_clear_image(
@@ -2090,6 +2126,10 @@ i915_execute_clear_image(
 	struct i915_gfx_rect rect;
 	uint32_t level;
 	uint32_t level_count;
+	uint32_t first_slice;
+	uint32_t slice_count;
+	uint32_t slices;
+	uint32_t slice;
 	int error;
 
 	/* Refuses a clear whose image does not exist. */
@@ -2110,19 +2150,35 @@ i915_execute_clear_image(
 
 	/* Fills every level of the range with the clear words. */
 	for (level = op->u.clear_image.base_level; level < op->u.clear_image.base_level + level_count; level++) {
-		/* Describes the level. */
-		error = i915_image_surface(image, level, &surface);
-		if (error != 0)
-			return EINVAL;
+		/* The layers of the range, or every depth of a 3D image's level. */
+		slices = drv_i915_gfx_image_slices(image, level);
+		first_slice = op->u.clear_image.base_layer;
+		slice_count = op->u.clear_image.layer_count;
+		if (image->type == VK_IMAGE_TYPE_3D) {
+			first_slice = 0U;
+			slice_count = slices;
+		}
 
-		/* Fills the whole level. */
-		rect.x = 0;
-		rect.y = 0;
-		rect.w = surface.width;
-		rect.h = surface.height;
-		error = drv_i915_gfx_rect(session, &surface, &rect, NULL, NULL, op->u.clear_image.words, 0);
-		if (error != 0)
-			return error;
+		/* The remaining layers run to the last one. */
+		if (slice_count == VK_REMAINING_ARRAY_LAYERS && first_slice < slices)
+			slice_count = slices - first_slice;
+
+		/* Fills each slice of the level. */
+		for (slice = first_slice; slice < first_slice + slice_count; slice++) {
+			/* Describes the level of the slice. */
+			error = i915_image_surface(image, level, slice, &surface);
+			if (error != 0)
+				return EINVAL;
+
+			/* Fills the whole level. */
+			rect.x = 0;
+			rect.y = 0;
+			rect.w = surface.width;
+			rect.h = surface.height;
+			error = drv_i915_gfx_rect(session, &surface, &rect, NULL, NULL, op->u.clear_image.words, 0);
+			if (error != 0)
+				return error;
+		}
 	}
 
 	/* Succeeded: every level of the range is cleared. */
@@ -2140,6 +2196,10 @@ i915_execute_image_copy(
 	struct i915_gfx_surface dst_surface;
 	struct i915_gfx_rect src_rect;
 	struct i915_gfx_rect dst_rect;
+	uint32_t src_slice;
+	uint32_t dst_slice;
+	uint32_t slice_count;
+	uint32_t slice;
 	int error;
 
 	/* Refuses a copy whose images do not exist. */
@@ -2147,15 +2207,16 @@ i915_execute_image_copy(
 	if (op->u.image_copy.src == NULL || op->u.image_copy.dst == NULL)
 		return EINVAL;
 
-	/* Describes the source level. */
-	error = i915_image_surface(op->u.image_copy.src, region->srcSubresource.mipLevel, &src_surface);
-	if (error != 0)
-		return EINVAL;
-
-	/* Describes the destination level. */
-	error = i915_image_surface(op->u.image_copy.dst, region->dstSubresource.mipLevel, &dst_surface);
-	if (error != 0)
-		return EINVAL;
+	/* The slices on each side: the layers, or a 3D image's depths from its z offset. */
+	src_slice = region->srcSubresource.baseArrayLayer;
+	if (op->u.image_copy.src->type == VK_IMAGE_TYPE_3D)
+		src_slice = (uint32_t)region->srcOffset.z;
+	dst_slice = region->dstSubresource.baseArrayLayer;
+	if (op->u.image_copy.dst->type == VK_IMAGE_TYPE_3D)
+		dst_slice = (uint32_t)region->dstOffset.z;
+	slice_count = region->srcSubresource.layerCount;
+	if (op->u.image_copy.src->type == VK_IMAGE_TYPE_3D || op->u.image_copy.dst->type == VK_IMAGE_TYPE_3D)
+		slice_count = region->extent.depth;
 
 	/* The source rectangle is the extent at the source offset. */
 	src_rect.x = region->srcOffset.x;
@@ -2169,10 +2230,23 @@ i915_execute_image_copy(
 	dst_rect.w = region->extent.width;
 	dst_rect.h = region->extent.height;
 
-	/* Copies the region. */
-	error = drv_i915_gfx_rect(session, &dst_surface, &dst_rect, &src_surface, &src_rect, NULL, 0);
-	if (error != 0)
-		return error;
+	/* Copies the region slice by slice. */
+	for (slice = 0U; slice < slice_count; slice++) {
+		/* Describes the source level of the slice. */
+		error = i915_image_surface(op->u.image_copy.src, region->srcSubresource.mipLevel, src_slice + slice, &src_surface);
+		if (error != 0)
+			return EINVAL;
+
+		/* Describes the destination level of the slice. */
+		error = i915_image_surface(op->u.image_copy.dst, region->dstSubresource.mipLevel, dst_slice + slice, &dst_surface);
+		if (error != 0)
+			return EINVAL;
+
+		/* Copies the slice. */
+		error = drv_i915_gfx_rect(session, &dst_surface, &dst_rect, &src_surface, &src_rect, NULL, 0);
+		if (error != 0)
+			return error;
+	}
 
 	/* Succeeded: the region is copied. */
 	return 0;
@@ -2200,6 +2274,7 @@ i915_execute_image_blit(
 	int32_t y0;
 	int32_t x1;
 	int32_t y1;
+	uint32_t layer;
 	int linear;
 	int error;
 
@@ -2208,13 +2283,13 @@ i915_execute_image_blit(
 	if (op->u.blit.src == NULL || op->u.blit.dst == NULL)
 		return EINVAL;
 
-	/* Describes the source level. */
-	error = i915_image_surface(op->u.blit.src, region->srcSubresource.mipLevel, &src_surface);
+	/* Describes the source level of the first layer. */
+	error = i915_image_surface(op->u.blit.src, region->srcSubresource.mipLevel, region->srcSubresource.baseArrayLayer, &src_surface);
 	if (error != 0)
 		return EINVAL;
 
-	/* Describes the destination level. */
-	error = i915_image_surface(op->u.blit.dst, region->dstSubresource.mipLevel, &dst_surface);
+	/* Describes the destination level of the first layer. */
+	error = i915_image_surface(op->u.blit.dst, region->dstSubresource.mipLevel, region->dstSubresource.baseArrayLayer, &dst_surface);
 	if (error != 0)
 		return EINVAL;
 
@@ -2251,10 +2326,25 @@ i915_execute_image_blit(
 	if (op->u.blit.filter == VK_FILTER_LINEAR)
 		linear = 1;
 
-	/* Copies the region, scaled. */
-	error = drv_i915_gfx_rect(session, &dst_surface, &dst_rect, &src_surface, &src_rect, NULL, linear);
-	if (error != 0)
-		return error;
+	/* Copies the region, scaled, layer by layer (a 3D image's depth is not scaled: XXX, its first depth only). */
+	for (layer = 0U; layer < region->srcSubresource.layerCount; layer++) {
+		/* Describes the layer on both sides after the first. */
+		if (layer != 0U) {
+			error = i915_image_surface(op->u.blit.src, region->srcSubresource.mipLevel,
+						   region->srcSubresource.baseArrayLayer + layer, &src_surface);
+			if (error != 0)
+				return EINVAL;
+			error = i915_image_surface(op->u.blit.dst, region->dstSubresource.mipLevel,
+						   region->dstSubresource.baseArrayLayer + layer, &dst_surface);
+			if (error != 0)
+				return EINVAL;
+		}
+
+		/* Copies the layer. */
+		error = drv_i915_gfx_rect(session, &dst_surface, &dst_rect, &src_surface, &src_rect, NULL, linear);
+		if (error != 0)
+			return error;
+	}
 
 	/* Succeeded: the region is blitted. */
 	return 0;

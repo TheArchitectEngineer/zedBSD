@@ -29,6 +29,7 @@ SHADERS = (
     ('ubo.frag', 'fragment', 'i915_vke1_ubo_frag'),
     ('tex3.frag', 'fragment', 'i915_vke1_tex3_frag'),
     ('texops.frag', 'fragment', 'i915_vke1_texops_frag'),
+    ('texkinds.frag', 'fragment', 'i915_vke1_texkinds_frag'),
 )
 
 SIZE = 64

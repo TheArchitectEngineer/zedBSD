@@ -33,6 +33,10 @@
 /* The genxml SURFACE_FORMAT values of the VkFormats the render paths read and write. */
 #define I915_GFX_SURFACE_R8G8B8A8_UNORM		0x0c7U
 #define I915_GFX_SURFACE_B8G8R8A8_UNORM		0x0c0U
+#define I915_GFX_SURFACE_R8G8B8A8_UNORM_SRGB	0x0c8U
+#define I915_GFX_SURFACE_B8G8R8A8_UNORM_SRGB	0x0c1U
+#define I915_GFX_SURFACE_R8G8B8A8_SINT		0x0caU
+#define I915_GFX_SURFACE_R8G8B8A8_UINT		0x0cbU
 #define I915_GFX_SURFACE_R32_FLOAT		0x0d8U
 #define I915_GFX_SURFACE_R32G32_FLOAT		0x085U
 #define I915_GFX_SURFACE_R32G32B32_FLOAT	0x040U
@@ -115,6 +119,22 @@ static const uint32_t i915_gfx_address_modes[5] = {
 	2U,
 	4U,
 	5U,
+};
+
+/*
+ * The Shadow Function of each VkCompareOp, as anv takes it
+ * (genX_init_state.c, vk_to_intel_shadow_compare_op): the hardware's
+ * prefilter operation is the opposite of the comparison.
+ */
+static const uint32_t i915_gfx_shadow_functions[8] = {
+	GEN12_PREFILTEROP_ALWAYS,
+	GEN12_PREFILTEROP_LEQUAL,
+	GEN12_PREFILTEROP_NOTEQUAL,
+	GEN12_PREFILTEROP_LESS,
+	GEN12_PREFILTEROP_GEQUAL,
+	GEN12_PREFILTEROP_EQUAL,
+	GEN12_PREFILTEROP_GREATER,
+	GEN12_PREFILTEROP_NEVER,
 };
 
 /*
@@ -265,7 +285,22 @@ static const struct i915_gfx_vertex_format i915_gfx_vertex_formats[] = {
 
 static int i915_surface_format(uint32_t format, uint32_t *surface_format);
 static int i915_vertex_format(uint32_t format, const struct i915_gfx_vertex_format **entry);
-static int i915_image_surface_write(uint32_t *rss, const struct i915_gfx_image *image, uint32_t base_level, uint32_t level_count, uint32_t mocs);
+/*
+ * What of an image a surface state shows: the view's type, its levels and
+ * its layers (a 3D image's slices for a render target), and whether it is
+ * the render target, which writes its first level and layer.
+ */
+struct i915_image_range {
+	uint32_t view_type;
+	uint32_t base_level;
+	uint32_t level_count;
+	uint32_t base_layer;
+	uint32_t layer_count;
+	int render_target;
+};
+
+static int i915_image_surface_write(uint32_t *rss, const struct i915_gfx_image *image, const struct i915_image_range *range, uint32_t mocs);
+static void i915_state_target_range(const struct i915_gfx_draw_state *state, struct i915_image_range *range);
 static uint32_t i915_sampler_mip_filter(uint32_t mipmap_mode);
 static int i915_state_write_surfaces(uint32_t *surface, uint32_t *dynamic, const struct i915_gfx_draw_state *state, const struct i915_gfx_kernels *kernels, const struct i915_gfx_image *target, uint32_t mocs);
 static int i915_state_viewport_source(const struct i915_gfx_draw_state *state, const uint32_t **viewport, const VkRect2D **scissor);
@@ -410,13 +445,16 @@ drv_i915_gfx_surface_write(
 /*
  * Writes the SAMPLER_STATE of a sampler.
  *
- * The fields are the ones anv fills for a sampler without anisotropy,
- * comparison or border colour (genX_init_state.c): the OpenGL LOD
- * pre-clamp, the mip filter of the mipmap mode, the two filters and the LOD
- * bias; the LOD range; address rounding for a linear filter and the u and v
- * address modes.  The bias is clamped to [-16, 15.996] and both LOD limits
- * to [0, 14], as anv clamps them; the surface state then limits the levels
- * to the ones the view has.  An address mode past the table clamps.
+ * The fields are the ones anv fills (genX_init_state.c): the OpenGL LOD
+ * pre-clamp, the mip filter of the mipmap mode, the two filters (both
+ * anisotropic with anisotropy, the EWA algorithm) and the LOD bias; the LOD
+ * range, the cube override (seamless cube maps) and the shadow function of
+ * a depth comparison; address rounding for a linear filter, the maximum
+ * anisotropy, unnormalized coordinates and the three address modes.  The
+ * bias is clamped to [-16, 15.996] and both LOD limits to [0, 14], as anv
+ * clamps them; the surface state then limits the levels to the ones the
+ * view has.  An address mode past the table clamps.  The border colour
+ * pointer is drv_i915_gfx_sampler_border_write()'s.
  */
 void
 drv_i915_gfx_sampler_write(
@@ -425,10 +463,15 @@ drv_i915_gfx_sampler_write(
 {
 	uint32_t address_u;
 	uint32_t address_v;
+	uint32_t address_w;
 	uint32_t mag_linear;
 	uint32_t min_linear;
 	uint32_t mip_filter;
 	uint32_t rounding;
+	uint32_t shadow;
+	uint32_t anisotropy;
+	uint32_t ratio;
+	uint32_t extra;
 	int32_t lod_bias;
 	int32_t min_lod;
 	int32_t max_lod;
@@ -443,6 +486,23 @@ drv_i915_gfx_sampler_write(
 	if (sampler->address_v < 5U)
 		address_v = i915_gfx_address_modes[sampler->address_v];
 
+	/* And the w address mode. */
+	address_w = I915_GFX_SAMPLER_CLAMP;
+	if (sampler->address_w < 5U)
+		address_w = i915_gfx_address_modes[sampler->address_w];
+
+	/* The shadow function of a comparison; without one, NEVER's (the hardware's ALWAYS). */
+	shadow = GEN12_PREFILTEROP_ALWAYS;
+	if (sampler->compare_enable != 0U && sampler->compare_op < 8U)
+		shadow = i915_gfx_shadow_functions[sampler->compare_op];
+
+	/* The maximum anisotropy as anv rounds it: (ratio - 2) / 2, 0 .. 7, from a ratio of 2 .. 16. */
+	anisotropy = 0U;
+	if (sampler->anisotropy_enable != 0U) {
+		ratio = (uint32_t)drv_i915_float_to_fixed(sampler->max_anisotropy, 0U, 2, 16);
+		anisotropy = (ratio - 2U) / 2U;
+	}
+
 	/* Notes which of the two filters is linear. */
 	mag_linear = 0U;
 	if (sampler->mag_filter == VK_FILTER_LINEAR)
@@ -455,6 +515,13 @@ drv_i915_gfx_sampler_write(
 	rounding = 0U;
 	if (mag_linear != 0U || min_linear != 0U)
 		rounding = 0x0007e000U;
+
+	/* Anisotropy filters both ways anisotropically. */
+	if (sampler->anisotropy_enable != 0U) {
+		mag_linear = GEN12_MAPFILTER_ANISOTROPIC;
+		min_linear = GEN12_MAPFILTER_ANISOTROPIC;
+		rounding = 0x0007e000U;
+	}
 
 	/* Chooses how levels are picked and blended. */
 	mip_filter = i915_sampler_mip_filter(sampler->mipmap_mode);
@@ -483,10 +550,66 @@ drv_i915_gfx_sampler_write(
 	    (mag_linear << GEN12_SAMPLER_MAG_FILTER_SHIFT) |
 	    (min_linear << GEN12_SAMPLER_MIN_FILTER_SHIFT) |
 	    (((uint32_t)lod_bias & GEN12_SAMPLER_LOD_BIAS_MASK) << GEN12_SAMPLER_LOD_BIAS_SHIFT);
+	if (sampler->anisotropy_enable != 0U)
+		state[0] |= GEN12_SAMPLER_ANISOTROPIC_EWA;
 	state[1] = ((uint32_t)max_lod << GEN12_SAMPLER_MAX_LOD_SHIFT) |
-	    ((uint32_t)min_lod << GEN12_SAMPLER_MIN_LOD_SHIFT);
+	    ((uint32_t)min_lod << GEN12_SAMPLER_MIN_LOD_SHIFT) |
+	    (shadow << GEN12_SAMPLER_SHADOW_SHIFT) |
+	    GEN12_SAMPLER_CUBE_OVERRIDE;
 	state[2] = 0U;
-	state[3] = rounding | (address_u << 6) | (address_v << 3) | 2U;
+	extra = anisotropy << GEN12_SAMPLER_MAX_ANISOTROPY_SHIFT;
+	if (sampler->unnormalized != 0U)
+		extra |= GEN12_SAMPLER_NON_NORMALIZED;
+	state[3] = rounding | extra |
+	    (address_u << GEN12_SAMPLER_TCX_SHIFT) |
+	    (address_v << GEN12_SAMPLER_TCY_SHIFT) |
+	    (address_w << GEN12_SAMPLER_TCZ_SHIFT);
+}
+
+/*
+ * Writes a sampler's SAMPLER_BORDER_COLOR_STATE at `border`, `offset`
+ * bytes into the dynamic state heap (64-byte aligned), and points the
+ * SAMPLER_STATE at it: the four channels of the VkBorderColor, floats for
+ * a FLOAT colour and integers for an INT one, as anv fills its border
+ * colours (anv_device.c, the border colour pool).
+ */
+void
+drv_i915_gfx_sampler_border_write(
+	uint32_t *state,
+	uint32_t *border,
+	uint32_t offset,
+	const struct i915_gfx_sampler *sampler)
+{
+	uint32_t one;
+	uint32_t alpha;
+	uint32_t colour;
+
+	/* One is 1.0 for a float colour and 1 for an integer one. */
+	one = 0x3f800000U;
+	if (sampler->border_color == VK_BORDER_COLOR_INT_TRANSPARENT_BLACK ||
+	    sampler->border_color == VK_BORDER_COLOR_INT_OPAQUE_BLACK ||
+	    sampler->border_color == VK_BORDER_COLOR_INT_OPAQUE_WHITE)
+		one = 1U;
+
+	/* Transparent black is all zero; opaque black has alpha one; opaque white is all one. */
+	alpha = 0U;
+	colour = 0U;
+	if (sampler->border_color == VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK ||
+	    sampler->border_color == VK_BORDER_COLOR_INT_OPAQUE_BLACK) {
+		alpha = one;
+	} else if (sampler->border_color == VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE ||
+		   sampler->border_color == VK_BORDER_COLOR_INT_OPAQUE_WHITE) {
+		alpha = one;
+		colour = one;
+	}
+
+	/* Writes the four channels and points the sampler at them. */
+	kern_memset(border, 0, 64U);
+	border[0] = colour;
+	border[1] = colour;
+	border[2] = colour;
+	border[3] = alpha;
+	state[2] = offset & GEN12_SAMPLER_BORDER_POINTER_MASK;
 }
 
 /*
@@ -1515,6 +1638,18 @@ i915_surface_format(
 	case VK_FORMAT_B8G8R8A8_UNORM:
 		*surface_format = I915_GFX_SURFACE_B8G8R8A8_UNORM;
 		return 0;
+	case VK_FORMAT_R8G8B8A8_SRGB:
+		*surface_format = I915_GFX_SURFACE_R8G8B8A8_UNORM_SRGB;
+		return 0;
+	case VK_FORMAT_B8G8R8A8_SRGB:
+		*surface_format = I915_GFX_SURFACE_B8G8R8A8_UNORM_SRGB;
+		return 0;
+	case VK_FORMAT_R8G8B8A8_SINT:
+		*surface_format = I915_GFX_SURFACE_R8G8B8A8_SINT;
+		return 0;
+	case VK_FORMAT_R8G8B8A8_UINT:
+		*surface_format = I915_GFX_SURFACE_R8G8B8A8_UINT;
+		return 0;
 	case VK_FORMAT_R32_SFLOAT:
 		*surface_format = I915_GFX_SURFACE_R32_FLOAT;
 		return 0;
@@ -1600,29 +1735,41 @@ i915_sampler_mip_filter(
 }
 
 /*
- * Writes the RENDER_SURFACE_STATE of a linear 2D image, as isl fills it
- * (isl_surface_state.c): the levels [base_level, base_level + level_count)
- * of a sampled image, or level 0 (base 0, count 1) of a render target.
+ * Writes the RENDER_SURFACE_STATE of a linear image, as isl fills it
+ * (isl_surface_state.c) for the view a range names: the levels
+ * [base_level, base_level + level_count) and the layers [base_layer,
+ * base_layer + layer_count) of a sampled image, or the one level and layer
+ * (a 3D image's depth) a render target writes.
  *
- * The surface starts at level 0 with the level-0 extent; the hardware finds
- * every other level itself in the 2D mip layout (image.c), from the
- * alignment and the pitch.  Surface Min LOD is the first level and MIP
- * Count the levels after it; Mip Tail Start is the image's level count (no
- * mip tail, isl_choose_miptail_start_level() for a linear surface).
- * Returns EINVAL for an image with no storage, a format the surface state
- * cannot name, or a range of levels the image does not have.
+ * The surface starts at level 0 of slice 0 with the level-0 extent; the
+ * hardware finds every other level itself in the 2D mip layout (image.c),
+ * from the alignment and the pitch, and every other slice from the QPitch.
+ * A sampled surface is 2D (a 1D image is one texel high, and arrays set
+ * Surface Array), 3D, or a cube for a cube view (all six faces enabled,
+ * Depth the cubes less one); a render target is 2D, or 3D for a 3D image,
+ * and writes level MIP Count at Minimum Array Element.  Mip Tail Start is
+ * the image's level count (no mip tail, isl_choose_miptail_start_level()
+ * for a linear surface).  Returns EINVAL for an image with no storage, a
+ * format the surface state cannot name, or levels or layers the image does
+ * not have.
  */
 static int
 i915_image_surface_write(
 	uint32_t *rss,
 	const struct i915_gfx_image *image,
-	uint32_t base_level,
-	uint32_t level_count,
+	const struct i915_image_range *range,
 	uint32_t mocs)
 {
 	uint64_t va;
 	uint32_t format;
 	uint32_t rows;
+	uint32_t type;
+	uint32_t depth;
+	uint32_t array;
+	uint32_t faces;
+	uint32_t slices;
+	uint32_t lod;
+	uint32_t tile;
 	int error;
 
 	/* Refuses an image with no storage. */
@@ -1630,39 +1777,95 @@ i915_image_surface_write(
 	if (va == 0U)
 		return EINVAL;
 
-	/* Refuses a format the surface state cannot name. */
-	error = i915_surface_format(image->format, &format);
-	if (error != 0)
-		return EINVAL;
+	/*
+	 * Refuses a format the surface state cannot name.  A depth image is
+	 * sampled as the R32 float it holds, in the Y tiles it is laid out in
+	 * (isl samples a D32 surface as R32_FLOAT).
+	 */
+	tile = GEN12_TILEMODE_LINEAR;
+	if (image->format == VK_FORMAT_D32_SFLOAT) {
+		format = I915_GFX_SURFACE_R32_FLOAT;
+		tile = GEN12_TILEMODE_YMAJOR;
+	} else {
+		error = i915_surface_format(image->format, &format);
+		if (error != 0)
+			return EINVAL;
+	}
 
 	/* Refuses an empty range of levels, and one past the image's last level. */
-	if (level_count == 0U || base_level >= image->levels)
+	if (range->level_count == 0U || range->base_level >= image->levels)
 		return EINVAL;
-	if (level_count > image->levels - base_level)
+	if (range->level_count > image->levels - range->base_level)
 		return EINVAL;
 
-	/* The QPitch counts the rows of the whole layout, in units of four. */
-	rows = (uint32_t)(image->bytes / image->pitch);
+	/* Refuses an empty range of slices, and one past the image's last one. */
+	slices = drv_i915_gfx_image_slices(image, 0U);
+	if (range->layer_count == 0U || range->base_layer >= slices)
+		return EINVAL;
+	if (range->layer_count > slices - range->base_layer)
+		return EINVAL;
+
+	/* The QPitch is the rows from slice to slice, in units of four; a single slice counts its whole layout. */
+	rows = image->slice_rows;
+	if (rows == 0U)
+		rows = (uint32_t)(image->bytes / image->pitch);
 	rows = (rows + 3U) & ~3U;
 
+	/* A 3D image is a 3D surface: its depth, and for a render target the one slice written. */
+	type = GEN12_SURFTYPE_2D;
+	depth = range->layer_count - 1U;
+	array = 0U;
+	faces = 0U;
+	if (image->type == VK_IMAGE_TYPE_3D) {
+		type = GEN12_SURFTYPE_3D;
+		depth = slices - 1U;
+	} else if (range->render_target == 0 &&
+		   (range->view_type == VK_IMAGE_VIEW_TYPE_CUBE || range->view_type == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY)) {
+		/* A cube view samples a cube: six faces a cube, all enabled. */
+		type = GEN12_SURFTYPE_CUBE;
+		depth = range->layer_count / 6U - 1U;
+		array = GEN12_RSS_SURFACE_ARRAY;
+		faces = GEN12_RSS_CUBE_FACES_ALL;
+	} else if (range->layer_count > 1U || range->view_type == VK_IMAGE_VIEW_TYPE_1D_ARRAY ||
+		   range->view_type == VK_IMAGE_VIEW_TYPE_2D_ARRAY) {
+		/* An array view is a surface array. */
+		array = GEN12_RSS_SURFACE_ARRAY;
+	}
+
+	/* A render target writes level MIP Count; a sampled surface reads from Surface Min LOD. */
+	lod = (((range->level_count - 1U) & GEN12_RSS_LOD_MASK) << GEN12_RSS_MIP_COUNT_SHIFT) |
+	    ((range->base_level & GEN12_RSS_LOD_MASK) << GEN12_RSS_SURFACE_MIN_LOD_SHIFT);
+	if (range->render_target != 0)
+		lod = (range->base_level & GEN12_RSS_LOD_MASK) << GEN12_RSS_MIP_COUNT_SHIFT;
+
 	/*
-	 * Fills the surface state: 2D, horizontal and vertical alignment 4,
-	 * linear; the unorm path bit, MOCS and QPitch; width and height; pitch;
-	 * the mip count, the first level and the mip tail start; identity
-	 * channel select; the address.
+	 * Fills the surface state: the type, the array bit, the format, the
+	 * horizontal and vertical alignment 4, linear, the cube faces; the unorm
+	 * path bit, MOCS and QPitch; width and height; the depth and the pitch;
+	 * the first array element and a render target's extent; the mip count,
+	 * the first level and the mip tail start; identity channel select; the
+	 * address.
 	 */
 	kern_memset(rss, 0, GEN12_RENDER_SURFACE_STATE_DWORDS * 4U);
-	rss[0] = (GEN12_SURFTYPE_2D << 29) |
+	rss[0] = (type << 29) |
+	    array |
 	    (format << 18) |
 	    (GEN12_SURFACE_ALIGN_4 << 16) |
 	    (GEN12_SURFACE_ALIGN_4 << 14) |
-	    (GEN12_TILEMODE_LINEAR << 12);
+	    (tile << 12) |
+	    faces;
 	rss[1] = (1U << 31) | (mocs << 24) | ((rows / 4U) & GEN12_RSS_QPITCH_MASK);
 	rss[2] = (image->width - 1U) | ((image->height - 1U) << 16);
-	rss[3] = image->pitch - 1U;
-	rss[5] = (((level_count - 1U) & GEN12_RSS_LOD_MASK) << GEN12_RSS_MIP_COUNT_SHIFT) |
-	    ((base_level & GEN12_RSS_LOD_MASK) << GEN12_RSS_SURFACE_MIN_LOD_SHIFT) |
-	    ((image->levels & GEN12_RSS_LOD_MASK) << GEN12_RSS_MIP_TAIL_START_SHIFT);
+	rss[3] = ((depth & GEN12_RSS_DEPTH_MASK) << GEN12_RSS_DEPTH_SHIFT) | (image->pitch - 1U);
+	rss[4] = (range->base_layer & GEN12_RSS_DEPTH_MASK) << GEN12_RSS_MIN_ARRAY_ELEMENT_SHIFT;
+	if (range->render_target != 0) {
+		if (type == GEN12_SURFTYPE_3D)
+			depth = 0U;
+		rss[4] |= (depth & GEN12_RSS_DEPTH_MASK) << GEN12_RSS_VIEW_EXTENT_SHIFT;
+	}
+
+	/* The levels, the mip tail start, identity channel select and the address. */
+	rss[5] = lod | ((image->levels & GEN12_RSS_LOD_MASK) << GEN12_RSS_MIP_TAIL_START_SHIFT);
 	rss[7] = (4U << 25) | (5U << 22) | (6U << 19) | (7U << 16);
 	rss[8] = (uint32_t)va;
 	rss[9] = (uint32_t)(va >> 32);
@@ -1692,15 +1895,18 @@ i915_state_write_surfaces(
 	const struct i915_gfx_dset *set;
 	const struct i915_gfx_view *view;
 	const struct i915_gfx_sampler *sampler;
+	struct i915_image_range range;
 	uint32_t texture;
 	uint32_t set_index;
 	uint32_t binding;
 	uint32_t rss;
+	uint32_t border;
 	int error;
 
-	/* Points binding table entry 0 at the render target and describes its level 0. */
+	/* Points binding table entry 0 at the render target and describes the level and layer its view writes. */
 	surface[I915_GFX_BINDING_TABLE / 4U] = I915_GFX_RSS_TARGET;
-	error = i915_image_surface_write(&surface[I915_GFX_RSS_TARGET / 4U], target, 0U, 1U, mocs);
+	i915_state_target_range(state, &range);
+	error = i915_image_surface_write(&surface[I915_GFX_RSS_TARGET / 4U], target, &range, mocs);
 	if (error != 0)
 		return error;
 
@@ -1736,16 +1942,60 @@ i915_state_write_surfaces(
 		sampler = set->slots[binding].sampler;
 		rss = I915_GFX_RSS_TEXTURE + texture * I915_GFX_RSS_BYTES;
 		surface[I915_GFX_BINDING_TABLE / 4U + 1U + texture] = rss;
-		error = i915_image_surface_write(&surface[rss / 4U], view->image, view->base_level, view->level_count, mocs);
+		range.view_type = view->view_type;
+		range.base_level = view->base_level;
+		range.level_count = view->level_count;
+		range.base_layer = view->base_layer;
+		range.layer_count = view->layer_count;
+		if (range.layer_count == 0U)
+			range.layer_count = 1U;
+		range.render_target = 0;
+		error = i915_image_surface_write(&surface[rss / 4U], view->image, &range, mocs);
 		if (error != 0)
 			return error;
 
-		/* Writes the texture's sampler. */
+		/* Writes the texture's sampler and its border colour. */
 		drv_i915_gfx_sampler_write(&dynamic[(I915_GFX_DYN_SAMPLER + texture * I915_GFX_SAMPLER_BYTES) / 4U], sampler);
+		border = I915_GFX_DYN_BORDER + texture * I915_GFX_BORDER_BYTES;
+		drv_i915_gfx_sampler_border_write(&dynamic[(I915_GFX_DYN_SAMPLER + texture * I915_GFX_SAMPLER_BYTES) / 4U],
+						  &dynamic[border / 4U],
+						  border,
+						  sampler);
 	}
 
 	/* Succeeded: the target, the textures and the samplers are described. */
 	return 0;
+}
+
+/*
+ * Finds what the draw's render target writes: the level and the layer (a
+ * 3D image's slice) its colour attachment view starts at; level 0 of layer
+ * 0 when the draw has no framebuffer (a test's state).
+ */
+static void
+i915_state_target_range(
+	const struct i915_gfx_draw_state *state,
+	struct i915_image_range *range)
+{
+	const struct i915_gfx_view *view;
+
+	/* One level and one layer, of a render target. */
+	kern_memset(range, 0, sizeof(*range));
+	range->view_type = VK_IMAGE_VIEW_TYPE_2D;
+	range->level_count = 1U;
+	range->layer_count = 1U;
+	range->render_target = 1;
+
+	/* The colour attachment view names the level and the layer. */
+	if (state->framebuffer == NULL || state->pass == NULL)
+		return;
+	if (state->pass->color_attachment >= state->framebuffer->view_count)
+		return;
+	view = state->framebuffer->views[state->pass->color_attachment];
+	if (view == NULL)
+		return;
+	range->base_level = view->base_level;
+	range->base_layer = view->base_layer;
 }
 
 /*

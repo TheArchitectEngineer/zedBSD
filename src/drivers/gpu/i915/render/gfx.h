@@ -136,13 +136,15 @@ struct i915_gfx_buffer {
 };
 
 /*
- * One VkImage: a linear 2D image of one layer in an allocation, with one
- * or more mip levels.
+ * One VkImage: a linear image in an allocation, with one or more mip
+ * levels and one or more slices (array layers, or a 3D image's depth).
  *
  * A depth image is laid out in whole Y tiles, so its pitch and height are
- * rounded up; a colour image of one level is linear rows of width * 4
- * bytes.  The levels of a mipmapped colour image share one pitch and lie in
- * the hardware's 2D mip layout (image.c, drv_i915_gfx_image_layout()).
+ * rounded up; a colour image of one level and one slice is linear rows of
+ * width * 4 bytes.  The levels of a mipmapped colour image share one pitch
+ * and lie in the hardware's 2D mip layout, and every slice is a whole mip
+ * layout `slice_rows` rows after the one before (image.c,
+ * drv_i915_gfx_image_layout()).  A 1D image is a 2D image one texel high.
  */
 struct i915_gfx_image {
 	/* The VkFormat, the extent and the usage the image was created with. */
@@ -157,6 +159,18 @@ struct i915_gfx_image {
 
 	/* The mip levels, at least one. */
 	uint32_t levels;
+
+	/*
+	 * The VkImageType, a 3D image's depth and the array layers (0 reads as
+	 * one), and whether the image was created cube compatible.
+	 */
+	uint32_t type;
+	uint32_t depth;
+	uint32_t layers;
+	uint32_t cube;
+
+	/* The rows from one slice to the next (the QPitch). */
+	uint32_t slice_rows;
 
 	/* The allocation and the offset the image is bound at; NULL until bound. */
 	struct i915_gfx_memory *memory;
@@ -175,6 +189,11 @@ struct i915_gfx_view {
 	/* The first mip level the view shows and how many, at least one. */
 	uint32_t base_level;
 	uint32_t level_count;
+
+	/* The VkImageViewType, the first array layer the view shows and how many (0 reads as one). */
+	uint32_t view_type;
+	uint32_t base_layer;
+	uint32_t layer_count;
 };
 
 /*
@@ -197,6 +216,19 @@ struct i915_gfx_sampler {
 	uint32_t lod_bias;
 	uint32_t min_lod;
 	uint32_t max_lod;
+
+	/* The address mode along w (VkSamplerAddressMode). */
+	uint32_t address_w;
+
+	/* A depth comparison when compare_enable is nonzero (VkCompareOp). */
+	uint32_t compare_enable;
+	uint32_t compare_op;
+
+	/* The border colour (VkBorderColor), unnormalized coordinates, and anisotropy with its limit (float bits). */
+	uint32_t border_color;
+	uint32_t unnormalized;
+	uint32_t anisotropy_enable;
+	uint32_t max_anisotropy;
 };
 
 /*
@@ -448,6 +480,8 @@ struct i915_gfx_op {
 			uint32_t words[4];
 			uint32_t base_level;
 			uint32_t level_count;
+			uint32_t base_layer;
+			uint32_t layer_count;
 		} clear_image;
 
 		/* The start of a render pass and the clears its attachments load with. */
@@ -636,6 +670,8 @@ uint64_t drv_i915_gfx_memory_va(struct i915_gfx_memory *memory, uint64_t offset)
  */
 int drv_i915_gfx_image_layout(struct i915_gfx_image *image);
 int drv_i915_gfx_image_level(const struct i915_gfx_image *image, uint32_t level, struct i915_gfx_surface *surface);
+int drv_i915_gfx_image_slice(const struct i915_gfx_image *image, uint32_t level, uint32_t slice, struct i915_gfx_surface *surface);
+uint32_t drv_i915_gfx_image_slices(const struct i915_gfx_image *image, uint32_t level);
 
 /* Releases what the session's draws kept: the state, batch and kernel objects (draw.c). */
 void drv_i915_gfx_session_close(struct i915_render_session *session);
