@@ -169,6 +169,8 @@ js_builtin_install_string(
 		if (error != 0)
 			return error;
 	}
+
+	/* trimStart and trimLeft, trimEnd and trimRight. */
 	error = js_builtin_function(realm, "trimStart", 0, string_trim_start, NULL, &trim);
 	if (error == 0)
 		error = js_builtin_value(realm, prototype, "trimStart", vm_value_cell(trim), JS_BUILTIN_METHOD);
@@ -275,6 +277,8 @@ string_from_char_code(
 		if (status == 0)
 			status = wb_units_append(&units, &unit, 1);
 	}
+
+	/* The string. */
 	if (status == 0)
 		status = string_units_value(realm, &units, result);
 	wb_units_release(&units);
@@ -292,6 +296,7 @@ string_from_code_point(
 {
 	struct wb_units units;
 	double number;
+	double whole;
 	unsigned index;
 	int status;
 
@@ -304,12 +309,17 @@ string_from_code_point(
 		status = vm_to_number(realm, args[index], &number);
 		if (status != 0)
 			break;
-		if (number != trunc(number) || number < 0.0 || number > 1114111.0) {
+		whole = trunc(number);
+		if (number != whole || number < 0.0 || number > 1114111.0) {
 			status = vm_throw_range_error(realm, "Invalid code point");
 			break;
 		}
+
+		/* The code point's units. */
 		status = wb_units_append_code_point(&units, (uint32_t)number);
 	}
+
+	/* The string. */
 	if (status == 0)
 		status = string_units_value(realm, &units, result);
 	wb_units_release(&units);
@@ -366,6 +376,8 @@ string_raw(
 				status = vm_string_append_units(part, &units);
 		}
 	}
+
+	/* The string. */
 	if (status == 0)
 		status = string_units_value(realm, &units, result);
 	wb_units_release(&units);
@@ -429,6 +441,8 @@ string_char_at(
 		status = js_builtin_string(realm, "", result);
 		return status;
 	}
+
+	/* The one unit. */
 	status = string_substring_value(realm, string, (uint32_t)position, (uint32_t)position + 1U, result);
 	return status;
 }
@@ -516,6 +530,8 @@ string_concat(
 		if (status == 0)
 			status = vm_string_append_units(part, &units);
 	}
+
+	/* The string. */
 	if (status == 0)
 		status = string_units_value(realm, &units, result);
 	wb_units_release(&units);
@@ -535,16 +551,20 @@ string_ends_with(
 	struct vm_string *search;
 	uint32_t end;
 	int matches;
+	int regexp;
 	int status;
 
 	/* The string, the search (never a RegExp) and the end. */
 	status = string_this(realm, this_value, "endsWith", &string);
 	if (status != 0)
 		return status;
-	if (string_is_regexp(js_argument(args, count, 0))) {
+	regexp = string_is_regexp(js_argument(args, count, 0));
+	if (regexp) {
 		status = vm_throw_type_error(realm, "First argument to String.prototype.endsWith must not be a regular expression");
 		return status;
 	}
+
+	/* The search as a string, and the end. */
 	status = string_argument(realm, args, count, 0, &search);
 	if (status == 0)
 		status = string_position(realm, js_argument(args, count, 1), string->length, string->length, &end);
@@ -574,16 +594,20 @@ string_includes(
 	uint32_t position;
 	uint32_t found;
 	int present;
+	int regexp;
 	int status;
 
 	/* The string, the search (never a RegExp) and the start. */
 	status = string_this(realm, this_value, "includes", &string);
 	if (status != 0)
 		return status;
-	if (string_is_regexp(js_argument(args, count, 0))) {
+	regexp = string_is_regexp(js_argument(args, count, 0));
+	if (regexp) {
 		status = vm_throw_type_error(realm, "First argument to String.prototype.includes must not be a regular expression");
 		return status;
 	}
+
+	/* The search as a string, and the start. */
 	status = string_argument(realm, args, count, 0, &search);
 	if (status == 0)
 		status = string_position(realm, js_argument(args, count, 1), string->length, 0, &position);
@@ -661,6 +685,8 @@ string_is_well_formed(
 			return 0;
 		}
 	}
+
+	/* Every code point is whole. */
 	return 0;
 }
 
@@ -748,6 +774,7 @@ string_normalize(
 {
 	struct vm_string *string;
 	struct vm_string *form;
+	vm_value form_value;
 	int known;
 	int status;
 
@@ -756,17 +783,27 @@ string_normalize(
 	if (status != 0)
 		return status;
 	*result = vm_value_cell(string);
-	if (js_argument(args, count, 0) == VM_VALUE_UNDEFINED)
+	form_value = js_argument(args, count, 0);
+	if (form_value == VM_VALUE_UNDEFINED)
 		return 0;
-	status = vm_to_string(realm, args[0], &form);
+	status = vm_to_string(realm, form_value, &form);
 	if (status != 0)
 		return status;
-	known = vm_string_equal_ascii(form, "NFC") || vm_string_equal_ascii(form, "NFD") ||
-	    vm_string_equal_ascii(form, "NFKC") || vm_string_equal_ascii(form, "NFKD");
+	known = vm_string_equal_ascii(form, "NFC");
+	if (!known)
+		known = vm_string_equal_ascii(form, "NFD");
+	if (!known)
+		known = vm_string_equal_ascii(form, "NFKC");
+	if (!known)
+		known = vm_string_equal_ascii(form, "NFKD");
+
+	/* Any other form is refused. */
 	if (!known) {
 		status = vm_throw_range_error(realm, "The normalization form should be one of NFC, NFD, NFKC, NFKD");
 		return status;
 	}
+
+	/* A known form. */
 	return 0;
 }
 
@@ -827,10 +864,14 @@ string_repeat(
 		status = vm_throw_range_error(realm, "Invalid count value");
 		return status;
 	}
+
+	/* Nothing to repeat. */
 	if (string->length == 0 || times == 0.0) {
 		status = js_builtin_string(realm, "", result);
 		return status;
 	}
+
+	/* Too long a result. */
 	if (times * (double)string->length > 268435456.0) {
 		status = vm_throw_range_error(realm, "Invalid string length");
 		return status;
@@ -857,6 +898,7 @@ string_slice(
 	vm_value *result)
 {
 	struct vm_string *string;
+	vm_value end_value;
 	double start;
 	double end;
 	int status;
@@ -868,11 +910,14 @@ string_slice(
 	if (status != 0)
 		return status;
 	end = (double)string->length;
-	if (js_argument(args, count, 1) != VM_VALUE_UNDEFINED) {
-		status = js_builtin_integer(realm, args[1], &end);
+	end_value = js_argument(args, count, 1);
+	if (end_value != VM_VALUE_UNDEFINED) {
+		status = js_builtin_integer(realm, end_value, &end);
 		if (status != 0)
 			return status;
 	}
+
+	/* The range, clamped and ordered. */
 	if (start < 0.0)
 		start = fmax(0.0, (double)string->length + start);
 	if (end < 0.0)
@@ -900,16 +945,20 @@ string_starts_with(
 	struct vm_string *search;
 	uint32_t position;
 	int matches;
+	int regexp;
 	int status;
 
 	/* The string, the search (never a RegExp) and the start. */
 	status = string_this(realm, this_value, "startsWith", &string);
 	if (status != 0)
 		return status;
-	if (string_is_regexp(js_argument(args, count, 0))) {
+	regexp = string_is_regexp(js_argument(args, count, 0));
+	if (regexp) {
 		status = vm_throw_type_error(realm, "First argument to String.prototype.startsWith must not be a regular expression");
 		return status;
 	}
+
+	/* The search as a string, and the start. */
 	status = string_argument(realm, args, count, 0, &search);
 	if (status == 0)
 		status = string_position(realm, js_argument(args, count, 1), string->length, 0, &position);
@@ -969,6 +1018,7 @@ string_substr(
 	vm_value *result)
 {
 	struct vm_string *string;
+	vm_value length_value;
 	double start;
 	double length;
 	double end;
@@ -984,11 +1034,14 @@ string_substr(
 		start = fmax(0.0, (double)string->length + start);
 	start = fmin(start, (double)string->length);
 	length = (double)string->length;
-	if (js_argument(args, count, 1) != VM_VALUE_UNDEFINED) {
-		status = js_builtin_integer(realm, args[1], &length);
+	length_value = js_argument(args, count, 1);
+	if (length_value != VM_VALUE_UNDEFINED) {
+		status = js_builtin_integer(realm, length_value, &length);
 		if (status != 0)
 			return status;
 	}
+
+	/* The end. */
 	end = fmin(start + fmax(length, 0.0), (double)string->length);
 
 	/* The part. */
@@ -1085,6 +1138,8 @@ string_to_well_formed(
 			point = 0xFFFDU;
 		status = wb_units_append_code_point(&units, point);
 	}
+
+	/* The string. */
 	if (status == 0)
 		status = string_units_value(realm, &units, result);
 	wb_units_release(&units);
@@ -1248,6 +1303,8 @@ string_find(
 				*found = position;
 				return 1;
 			}
+
+			/* The start reached. */
 			if (position == 0)
 				return 0;
 			position--;
@@ -1275,10 +1332,14 @@ string_matches_at(
 	uint32_t position)
 {
 	uint32_t index;
+	uint16_t unit;
+	uint16_t other;
 
 	/* Each unit. */
 	for (index = 0; index < needle->length; index++) {
-		if (vm_string_at(haystack, position + index) != vm_string_at(needle, index))
+		unit = vm_string_at(haystack, position + index);
+		other = vm_string_at(needle, index);
+		if (unit != other)
 			return 0;
 	}
 
@@ -1307,6 +1368,8 @@ string_substring_value(
 		unit = vm_string_at(string, index);
 		status = wb_units_append(&units, &unit, 1);
 	}
+
+	/* The string. */
 	if (status == 0)
 		status = string_units_value(realm, &units, result);
 	wb_units_release(&units);
@@ -1341,6 +1404,7 @@ string_case(
 	struct wb_units units;
 	struct vm_string *string;
 	uint32_t mapped[WB_CASE_MAX];
+	const char *method;
 	uint32_t index;
 	uint32_t size;
 	uint32_t point;
@@ -1350,7 +1414,10 @@ string_case(
 	int status;
 
 	/* The string. */
-	status = string_this(realm, this_value, upper ? "toUpperCase" : "toLowerCase", &string);
+	method = "toLowerCase";
+	if (upper)
+		method = "toUpperCase";
+	status = string_this(realm, this_value, method, &string);
 	if (status != 0)
 		return status;
 
@@ -1360,14 +1427,20 @@ string_case(
 		point = string_code_point(string, index, &size);
 		if (!upper && point == STRING_SIGMA) {
 			final = string_final_sigma(string, index);
-			point = final ? STRING_FINAL_SIGMA : STRING_SMALL_SIGMA;
+			point = STRING_SMALL_SIGMA;
+			if (final)
+				point = STRING_FINAL_SIGMA;
 			status = wb_units_append_code_point(&units, point);
 			continue;
 		}
+
+		/* Any other code point by its mapping. */
 		mapped_count = wb_case_map(point, upper, mapped);
 		for (item = 0; status == 0 && item < mapped_count; item++)
 			status = wb_units_append_code_point(&units, mapped[item]);
 	}
+
+	/* The string. */
 	if (status == 0)
 		status = string_units_value(realm, &units, result);
 	wb_units_release(&units);
@@ -1385,6 +1458,7 @@ string_final_sigma(
 	uint32_t point;
 	int before;
 	int after;
+	int ignorable;
 
 	/* Before: skipping the case-ignorable, a cased letter. */
 	before = 0;
@@ -1392,11 +1466,14 @@ string_final_sigma(
 	while (position > 0) {
 		point = string_code_point_before(string, position, &size);
 		position -= size;
-		if (wb_case_is_ignorable(point))
+		ignorable = wb_case_is_ignorable(point);
+		if (ignorable)
 			continue;
 		before = wb_case_is_cased(point);
 		break;
 	}
+
+	/* Only after a cased letter. */
 	if (!before)
 		return 0;
 
@@ -1404,7 +1481,8 @@ string_final_sigma(
 	after = 0;
 	for (position = index + 1U; position < string->length; position += size) {
 		point = string_code_point(string, position, &size);
-		if (wb_case_is_ignorable(point))
+		ignorable = wb_case_is_ignorable(point);
+		if (ignorable)
 			continue;
 		after = wb_case_is_cased(point);
 		break;
@@ -1475,6 +1553,8 @@ string_pad(
 	struct wb_units units;
 	struct vm_string *string;
 	struct vm_string *filler;
+	const char *method;
+	vm_value filler_value;
 	double length;
 	uint32_t fill_length;
 	uint32_t index;
@@ -1482,7 +1562,10 @@ string_pad(
 	int status;
 
 	/* The string, the length and the filler. */
-	status = string_this(realm, this_value, at_start ? "padStart" : "padEnd", &string);
+	method = "padEnd";
+	if (at_start)
+		method = "padStart";
+	status = string_this(realm, this_value, method, &string);
 	if (status == 0)
 		status = js_builtin_integer(realm, js_argument(args, count, 0), &length);
 	if (status != 0)
@@ -1490,7 +1573,8 @@ string_pad(
 	*result = vm_value_cell(string);
 	if (length <= (double)string->length)
 		return 0;
-	if (js_argument(args, count, 1) == VM_VALUE_UNDEFINED) {
+	filler_value = js_argument(args, count, 1);
+	if (filler_value == VM_VALUE_UNDEFINED) {
 		filler = vm_string_from_utf8(realm->heap, " ", 1);
 		if (filler == NULL)
 			return ENOMEM;
@@ -1499,6 +1583,8 @@ string_pad(
 		if (status != 0)
 			return status;
 	}
+
+	/* An empty filler adds nothing. */
 	if (filler->length == 0)
 		return 0;
 	if (length > 268435456.0) {
@@ -1515,6 +1601,8 @@ string_pad(
 		unit = vm_string_at(filler, index % filler->length);
 		status = wb_units_append(&units, &unit, 1);
 	}
+
+	/* The string after the fill at the start. */
 	if (status == 0 && at_start)
 		status = vm_string_append_units(string, &units);
 	if (status == 0)
@@ -1534,6 +1622,7 @@ string_trim_with(
 	struct vm_string *string;
 	uint32_t start;
 	uint32_t end;
+	int blank;
 	int status;
 
 	/* The string. */
@@ -1544,10 +1633,18 @@ string_trim_with(
 	/* The blanks at each end asked. */
 	start = 0;
 	end = string->length;
-	while ((ends & STRING_TRIM_START) != 0 && start < end && vm_is_space(vm_string_at(string, start)))
+	while ((ends & STRING_TRIM_START) != 0 && start < end) {
+		blank = vm_is_space(vm_string_at(string, start));
+		if (!blank)
+			break;
 		start++;
-	while ((ends & STRING_TRIM_END) != 0 && end > start && vm_is_space(vm_string_at(string, end - 1U)))
+	}
+	while ((ends & STRING_TRIM_END) != 0 && end > start) {
+		blank = vm_is_space(vm_string_at(string, end - 1U));
+		if (!blank)
+			break;
 		end--;
+	}
 
 	/* The part. */
 	status = string_substring_value(realm, string, start, end, result);
