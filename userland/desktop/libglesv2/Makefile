@@ -14,4 +14,4 @@ LIBGLESV2_SOURCES := userland/desktop/libglesv2/gles.c userland/desktop/libglesv
 
 # The public SONAME follows the standard spelling.
 LIBGLESV2_IMAGE_DATA := $(if $(ZEDBSD_TOPLEVEL_BUILD),/lib/libGLESv2.so=$(BUILD)/dynamic/libGLESv2.so)
-$(eval $(call ZEDBSD_USERLAND_PACKAGE,libglesv2,OpenGL ES,amd64,y,library,$(LIBGLESV2_SOURCES),y,base,desktop/libglesv2,desktop/libegl,,shared-library,$(LIBGLESV2_IMAGE_DATA),,lib))
+$(eval $(call ZEDBSD_USERLAND_PACKAGE,libglesv2,OpenGL ES,amd64,y,library,$(LIBGLESV2_SOURCES),y,desktop,desktop/libglesv2,desktop/libegl,,shared-library,$(LIBGLESV2_IMAGE_DATA),,lib))

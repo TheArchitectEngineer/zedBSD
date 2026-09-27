@@ -106,4 +106,4 @@ KEILAND_BROWSER_DATA := /usr/share/browser/start.html=$(KEILAND_BROWSER_DIR)/dat
 	/usr/share/licenses/browser/WHATWG-entities=userland/base/licenses/browser/WHATWG-entities \
 	/usr/share/licenses/browser/Unicode-License-V3=userland/base/licenses/browser/Unicode-License-V3
 
-$(eval $(call ZEDBSD_USERLAND_PACKAGE,browser,Web browser,amd64,n,basic,$(KEILAND_BROWSER_SOURCES),y,base,desktop/browser,desktop/libtruetype desktop/libvulkan desktop/libwayland desktop/libkeiland,0755,program,$(KEILAND_BROWSER_DATA),,bin))
+$(eval $(call ZEDBSD_USERLAND_PACKAGE,browser,Web browser,amd64,n,basic,$(KEILAND_BROWSER_SOURCES),y,desktop,desktop/browser,desktop/libtruetype desktop/libvulkan desktop/libwayland desktop/libkeiland,0755,program,$(KEILAND_BROWSER_DATA),,bin))

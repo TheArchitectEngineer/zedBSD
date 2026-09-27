@@ -10,4 +10,4 @@ SESSIOND_SOURCES := userland/desktop/sessiond/main.c userland/desktop/sessiond/g
 	userland/desktop/sessiond/session.c userland/desktop/sessiond/seat.c userland/base/login/verify.c
 SESSIOND_DATA := /etc/service.d/greeter=userland/desktop/sessiond/greeter.service \
 	/etc/keiland/session=userland/desktop/sessiond/session.sh
-$(eval $(call ZEDBSD_USERLAND_PACKAGE,sessiond,graphical login session manager,amd64,y,basic,$(SESSIOND_SOURCES),y,base,desktop/sessiond,,0755,program,$(SESSIOND_DATA),,sbin))
+$(eval $(call ZEDBSD_USERLAND_PACKAGE,sessiond,graphical login session manager,amd64,y,basic,$(SESSIOND_SOURCES),y,desktop,desktop/sessiond,,0755,program,$(SESSIOND_DATA),,sbin))
