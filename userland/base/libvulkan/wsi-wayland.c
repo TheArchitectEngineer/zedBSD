@@ -71,6 +71,8 @@ struct wayland_lease {
 	struct wayland_frame *frames;
 	uint64_t submitted;
 	uint64_t completed;
+	/* Whether the swapchain's images carry premultiplied alpha the compositor blends by. */
+	VkBool32 premultiplied;
 };
 
 /* Callback names must be declared before the immutable listener and operation initializers below. */
@@ -87,6 +89,7 @@ static VkResult wayland_present(void *private_lease, void *private_image, VkPres
 static VkResult wayland_present_sync(void *private_lease, void *private_image, VkPresentModeKHR mode, uint64_t *sequence, int wait_fd, uint64_t wait_generation);
 static VkResult wayland_commit(void *private_lease, void *private_image, VkPresentModeKHR mode, uint64_t *sequence, int wait_fd, uint64_t wait_generation);
 static VkBool32 wayland_commit_early(void *private_lease);
+static VkResult wayland_composite_alpha(void *private_lease, VkCompositeAlphaFlagBitsKHR alpha);
 static VkResult wayland_progress(void *private_lease);
 static VkBool32 wayland_available(void *private_image);
 static void wayland_destroy_image(void *private_image);
@@ -102,7 +105,7 @@ static const struct vulkan_wsi_platform_ops wayland_platform = {
 	wayland_capabilities, wayland_formats, wayland_modes,
 	wayland_claim, wayland_release, NULL, wayland_wait, wayland_destroy,
 	wayland_import, wayland_present, wayland_progress, wayland_available, wayland_destroy_image, NULL, wayland_present_sync, NULL, NULL,
-	wayland_commit_early
+	wayland_commit_early, wayland_composite_alpha
 };
 
 /* Registry discovery and buffer ownership are delivered only on the WSI queue. */
@@ -302,6 +305,10 @@ wayland_capabilities(
 	capabilities->supportedUsageFlags = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
 	    VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
 	    VK_IMAGE_USAGE_SAMPLED_BIT;
+
+	/* A compositor that reads a buffer's alpha (zed_gpu_buffer_v1 revision three) also takes see-through images. */
+	if (native->factory_version >= 3U)
+		capabilities->supportedCompositeAlpha |= VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR;
 
 	/* Succeeded: the caller can choose an extent inside the supported intersection. */
 	return VK_SUCCESS;
@@ -639,6 +646,10 @@ wayland_import(
 		return VK_ERROR_OUT_OF_HOST_MEMORY;
 	}
 
+	/* A see-through swapchain's buffer is blended by its premultiplied alpha. */
+	if (lease->premultiplied != VK_FALSE)
+		zed_gpu_buffer_v1_set_alpha(surface->factory, image->buffer, ZED_GPU_BUFFER_V1_ALPHA_PREMULTIPLIED);
+
 	/* Partial-chain and ordinary teardown now find this buffer through its lease. */
 	image->next = lease->images;
 	lease->images = image;
@@ -702,6 +713,31 @@ wayland_commit_early(
 	if (lease->surface->factory_version >= 2U)
 		return VK_TRUE;
 	return VK_FALSE;
+}
+
+/*
+ * Records a see-through alpha mode for the lease's images: the compositor
+ * is told, buffer by buffer, to blend them by their premultiplied alpha.
+ */
+static VkResult
+wayland_composite_alpha(
+	void *private_lease,
+	VkCompositeAlphaFlagBitsKHR alpha)
+{
+	struct wayland_lease *lease;
+
+	/* Only premultiplied alpha is advertised besides opaque, and only with revision three. */
+	lease = private_lease;
+	if (alpha != VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR)
+		return VK_ERROR_INITIALIZATION_FAILED;
+	if (lease->surface->factory_version < 3U)
+		return VK_ERROR_INITIALIZATION_FAILED;
+
+	/* The images imported from now on are marked. */
+	lease->premultiplied = VK_TRUE;
+
+	/* Succeeded: the lease's buffers will carry their alpha. */
+	return VK_SUCCESS;
 }
 
 /*
@@ -1049,9 +1085,9 @@ wayland_global(
 	if (version < 1U || surface->factory != NULL)
 		return;
 
-	/* Revision two adds acquire fences; revision one commits completed images only. */
-	if (version > 2U)
-		version = 2U;
+	/* Revision three adds the buffer's alpha, two acquire fences; revision one commits completed images only. */
+	if (version > 3U)
+		version = 3U;
 
 	/* Binds the selected interface through the registry's inherited private queue. */
 	surface->factory = wl_registry_bind(registry, name, &zed_gpu_buffer_v1_interface, version);

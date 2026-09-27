@@ -81,6 +81,13 @@ static struct fm_menu main_menu;
  */
 static struct fm_titlebar main_titlebar;
 
+/*
+ * The window's glass in zdesktop (its panels on the frosted glass), opened
+ * with the presenter and closed before the window; without it the window
+ * keeps its opaque ground.
+ */
+static struct fm_glass main_glass;
+
 /* The titlebar's event being carried out, and its state being made (both too large for the stack's taste). */
 static struct fm_titlebar_event main_titlebar_event;
 static struct fm_titlebar_state main_titlebar_state;
@@ -160,6 +167,9 @@ main(
 		return 1;
 	}
 
+	/* Glass when zdesktop can show the window see-through (the frame's ground is then left clear). */
+	main_app.glass = fm_glass_open(&main_glass, &main_window, &main_present);
+
 	/* The dashboard's picture, when another was asked for. */
 	if (options.wallpaper != NULL)
 		snprintf(main_app.wallpaper, sizeof(main_app.wallpaper), "%s", options.wallpaper);
@@ -179,6 +189,7 @@ main(
 		fprintf(stderr, "ZFILES FAILED operation=titlebar errno=%d\n", error);
 		fm_titlebar_close(&main_titlebar);
 		fm_menu_close(&main_menu);
+		fm_glass_close(&main_glass);
 		fm_app_release(&main_app);
 		fm_present_close(&main_present);
 		fm_window_close(&main_window);
@@ -189,9 +200,10 @@ main(
 	/* The loop, until the window closes. */
 	status = main_loop(&options);
 
-	/* Everything goes, the titlebar, the menus and the app before the window they belong to. */
+	/* Everything goes, the titlebar, the menus, the glass and the app before the window they belong to. */
 	fm_titlebar_close(&main_titlebar);
 	fm_menu_close(&main_menu);
+	fm_glass_close(&main_glass);
 	fm_app_release(&main_app);
 	fm_canvas_release(&main_canvas);
 	free(main_pixels);
@@ -487,6 +499,9 @@ main_frame(void)
 		started = fm_clock();
 		fm_ui_draw(&main_app, &main_canvas);
 		drawn = fm_clock();
+
+		/* The frame's glass panels, sent to take effect with it. */
+		fm_glass_refresh(&main_glass, &main_app);
 
 		/* Shown in the window. */
 		result = fm_present_frame(&main_present, main_pixels, (size_t)main_present.extent.width);

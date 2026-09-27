@@ -171,6 +171,7 @@ int fm_canvas_init(struct fm_canvas *canvas, uint32_t *pixels, size_t stride, in
 void fm_canvas_release(struct fm_canvas *canvas);
 void fm_canvas_clip_push(struct fm_canvas *canvas, const struct fm_rect *rect);
 void fm_canvas_clip_pop(struct fm_canvas *canvas);
+void fm_canvas_clear(struct fm_canvas *canvas);
 void fm_canvas_fill(struct fm_canvas *canvas, const struct fm_rect *rect, fm_color color);
 void fm_canvas_gradient(struct fm_canvas *canvas, const struct fm_rect *rect, fm_color top, fm_color bottom);
 void fm_canvas_round(struct fm_canvas *canvas, float x, float y, float width, float height, float radius, fm_color color);

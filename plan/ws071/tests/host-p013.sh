@@ -60,8 +60,8 @@ expect close "^request 4\$"
 run middle middle=100,150 tabs
 expect middle "^tabs count=2 shown=1 0=$docs 1=$home/Downloads\$"
 
-# 5. The tab bar on the content panel: a click on the first tab, then on its close button.
-run bar key=20:2 click=300,30 tabs click=457,30 tabs draw="$out/closed.ppm"
+# 5. The row of tabs at the top of the content panel: a click on the first tab, then on its close button.
+run bar key=20:2 click=350,27 tabs click=655,27 tabs draw="$out/closed.ppm"
 expect bar "^tabs count=2 shown=0 "
 expect bar "TABS close index=0 count=1 shown=0"
 

@@ -57,6 +57,11 @@ zdesktop-files
   client の中で壁紙のすりガラスは見えないので、本体は明るく静かな不透明の面（淡い青灰の gradient）と、白に近い角丸の panel で
   「すりガラス風」を表す。**窓ごとの本当のすりガラス**（alpha の Vulkan surface の後ろに zdesktop が blur を敷く）は zdesktop の機能で、
   Future Work 候補 F-h（WS035 の blur の後）。
+  **改め（2026-09-27、ws071-p015・ws035-p083）**: 窓は see-through（swapchain の PRE_MULTIPLIED、canvas の alpha をそのまま）で、sidebar・
+  content の card（タブの行を含む）・preview を `zed_glass_v1` の card として zdesktop に渡す（`glass.c`、frame ごとに変わったときだけ）。
+  zdesktop が card の下にすりガラス（ぼかした壁紙、白、縁）と影を描き、card の間はデスクトップがそのまま見える。窓の地は透明、card は薄い白の
+  tint だけ（sidebar 40、content・preview 60）。glass の無い compositor・host の既定は今までの不透明な見た目。設計は
+  [ws035 glass-design.md](../ws035/glass-design.md)。背後の他の窓のぼかしは ws035-p057 の残り。
 
 ### 2.1 event と frame の流れ
 
@@ -108,6 +113,7 @@ zdesktop が描く浮いたタイトルバーに題名「Files」と menubar（F
 - **status の pill**（spec §32）: content の下端の中央に、選択が 2 つ以上か task のあるときだけ薄い pill（「3 items selected — 42.8 MB」、
   「Copying 120 of 450 files」）。常設の status bar は持たない。
 - **tab bar**（spec §30）: タブが 2 つ以上のときだけ toolbar の下に pill のタブを並べる（題名は場所の名前、× で閉じる）。
+  **改め（2026-09-27、ws071-p016・p015）**: タブは content の card が持ち、card の上端の中の行（高さ 30、文字の約 2.2 倍）に等幅で並ぶ。名前は中央揃え、選ばれたタブは青い文字・短い青の下線・少し明るい地、他は地なしの灰の文字、行の下に細い線。× は選ばれたタブと pointer の下のタブだけに見える。sidebar と preview は動かない。
 
 ### 3.1 Home の dashboard（spec §5、§19、§28）
 

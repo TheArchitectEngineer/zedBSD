@@ -44,6 +44,7 @@
 #include "titlebar.h"
 #include "toplevel.h"
 #include "subsurface.h"
+#include "panels.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -974,7 +975,9 @@ draw_window(
 /*
  * Draws a window's body in a rectangle: its shadow, the frosted glass under
  * a see-through body, and its image with rounded corners (a docked body's
- * lower corners are below the output).
+ * lower corners are below the output).  A window with glass panels
+ * (panels.c) is not one slab: its panels cast the shadows and stand on the
+ * glass, and its image is blended over them by its alpha.
  */
 static void
 draw_body(
@@ -987,9 +990,26 @@ draw_body(
 {
 	const struct zwl_import *image;
 	struct glass_shape shape;
+	float place[4];
+	unsigned panels;
 	float soft;
 	float scale_x;
 	float scale_y;
+
+	/* The image and its scale to the rectangle (it is stretched while the window changes size). */
+	image = zwl_compose_surface_image(surface);
+	scale_x = (float)body->width / (float)image->width;
+	scale_y = (float)body->height / (float)image->height;
+
+	/* A window with glass panels: their shadows and glass instead of the body's (panels.c). */
+	panels = zwl_panels_count(surface);
+	if (panels > 0U) {
+		place[0] = (float)body->x;
+		place[1] = (float)body->y;
+		place[2] = scale_x;
+		place[3] = scale_y;
+		zwl_panels_draw(server, command, surface, place, server->window_opacity, 1U);
+	}
 
 	/* The shadow, deeper for the focused window. */
 	soft = 22.0f;
@@ -1007,10 +1027,11 @@ draw_body(
 	shape.color[1] = 0.18f;
 	shape.color[2] = 0.35f;
 	shape.color[3] = 0.20f;
-	glass_shape_draw(server, command, &shape);
+	if (panels == 0U)
+		glass_shape_draw(server, command, &shape);
 
-	/* A see-through body lies on frosted glass. */
-	if (server->window_opacity < 1.0f) {
+	/* A see-through body lies on frosted glass (a window with panels has its own). */
+	if (server->window_opacity < 1.0f && panels == 0U) {
 		glass_shape_init(&shape, (float)body->x, (float)body->y, (float)body->width, (float)body->height);
 		if (docked)
 			shape.box[3] += 2.0f * GLASS_RADIUS;
@@ -1025,9 +1046,6 @@ draw_body(
 	}
 
 	/* The sub-surfaces below the image, scaled with it (subsurface.c). */
-	image = zwl_compose_surface_image(surface);
-	scale_x = (float)body->width / (float)image->width;
-	scale_y = (float)body->height / (float)image->height;
 	zwl_subsurface_draw(server, command, surface, (float)body->x, (float)body->y, scale_x, scale_y, 0U);
 
 	/* The image, stretched to the rectangle while it changes, as opaque as asked. */
@@ -2567,6 +2585,8 @@ draw_tile(
 	const struct zwl_import *image;
 	struct glass_shape shape;
 	struct shell_rect panel;
+	float place[4];
+	unsigned panels;
 	int32_t label_width;
 	int32_t label_x;
 	int32_t label_y;
@@ -2595,11 +2615,20 @@ draw_tile(
 			shape.color[3] = 0.70f;
 	}
 
-	/* Drawn under the tile. */
-	glass_shape_draw(server, command, &shape);
+	/* Drawn under the tile, unless the window is glass panels, whose own glass shows under the image. */
+	image = zwl_compose_surface_image(surface);
+	panels = zwl_panels_count(surface);
+	if (panels == 0U || current || over)
+		glass_shape_draw(server, command, &shape);
+
+	/* A window's glass panels, small with the tile. */
+	place[0] = (float)tile->x;
+	place[1] = (float)tile->y;
+	place[2] = (float)tile->width / (float)image->width;
+	place[3] = (float)tile->height / (float)image->height;
+	zwl_panels_draw(server, command, surface, place, 1.0f, 0U);
 
 	/* The image, sampled linearly. */
-	image = zwl_compose_surface_image(surface);
 	glass_shape_init(&shape, (float)tile->x, (float)tile->y, (float)tile->width, (float)tile->height);
 	shape.mode = MODE_IMAGE;
 	shape.radius = WISEVIEW_RADIUS;

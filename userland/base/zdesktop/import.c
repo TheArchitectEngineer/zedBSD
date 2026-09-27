@@ -73,6 +73,26 @@ zwl_import_create(
 }
 
 /*
+ * Sets how window mode draws a GPU buffer's image: covering what is under
+ * it (alpha 0) or blended by its premultiplied alpha (alpha 1).  A buffer
+ * with no image (fullscreen mode) has nothing to change.
+ */
+void
+zwl_import_set_alpha(
+	struct zwl_object *buffer,
+	uint32_t alpha)
+{
+	/* No image, nothing to draw differently. */
+	if (buffer->import == NULL)
+		return;
+
+	/* The drawing's blending. */
+	buffer->import->draw = ZWL_DRAW_OPAQUE;
+	if (alpha == 1U)
+		buffer->import->draw = ZWL_DRAW_ALPHA;
+}
+
+/*
  * Releases a buffer's Vulkan image; the caller guarantees that no frame in
  * flight still samples it (the frame holds the buffer until it completes).
  */

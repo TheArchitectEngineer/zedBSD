@@ -134,6 +134,8 @@ struct fm_present {
 	/* The swapchain, its format and extent, and one target per image. */
 	VkSwapchainKHR swapchain;
 	VkFormat format;
+	/* Whether the swapchain is see-through: zdesktop blends the frame by its premultiplied alpha. */
+	int premultiplied;
 	VkExtent2D extent;
 	struct fm_present_target *targets;
 	uint32_t count;
@@ -194,6 +196,22 @@ int fm_titlebar_open(struct fm_titlebar *titlebar, struct fm_window *window, con
 void fm_titlebar_refresh(struct fm_titlebar *titlebar, const struct fm_titlebar_state *state);
 int fm_titlebar_take(struct fm_titlebar *titlebar, struct fm_titlebar_event *event);
 void fm_titlebar_close(struct fm_titlebar *titlebar);
+
+/*
+ * The window's glass in zdesktop (glass.c): zdesktop's glass object (NULL
+ * when the window is not glass) and the panels it last sent.
+ */
+struct fm_glass {
+	struct zdesktop_glass *glass;
+	struct fm_panel shown[FM_PANELS];
+	size_t shown_count;
+	int sent;
+};
+
+/* The window's glass (glass.c). */
+int fm_glass_open(struct fm_glass *glass, struct fm_window *window, const struct fm_present *present);
+void fm_glass_refresh(struct fm_glass *glass, struct fm_app *app);
+void fm_glass_close(struct fm_glass *glass);
 
 /* The presenter (present.c). */
 VkResult fm_present_open(struct fm_present *present, struct fm_window *window);

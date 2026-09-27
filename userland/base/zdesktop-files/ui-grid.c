@@ -192,15 +192,23 @@ fm_grid_entry_icon(
 	fm_icon_file(canvas, app->text, x, y, size, fm_mime_color(entry->mime->category), label);
 }
 
-/* Draws the white panel with its shadow and edge. */
+/* Draws the content's card: the white panel with its shadow and edge, or its tint on zdesktop's glass. */
 static void
 grid_panel(
 	struct fm_app *app,
 	struct fm_canvas *canvas,
 	const struct fm_rect *area)
 {
+	/* The whole card, the row of tabs included (the content is under the row). */
+	area = &app->layout.card;
+
+	/* On glass, zdesktop draws the card, its rim and its shadow: only a light white tint for reading. */
+	if (app->glass != 0) {
+		fm_canvas_round(canvas, (float)area->x, (float)area->y, (float)area->width, (float)area->height, GRID_RADIUS, FM_COLOR_GLASS_CONTENT);
+		return;
+	}
+
 	/* The shadow, the white panel and its thin edge. */
-	(void)app;
 	fm_canvas_shadow(canvas, (float)area->x, (float)area->y + 4.0f, (float)area->width, (float)area->height, GRID_RADIUS, 14.0f, FM_COLOR_SHADOW);
 	fm_canvas_round(canvas, (float)area->x, (float)area->y, (float)area->width, (float)area->height, GRID_RADIUS, FM_COLOR_PANEL);
 	fm_canvas_round_border(canvas, (float)area->x, (float)area->y, (float)area->width, (float)area->height, GRID_RADIUS, 1.0f, FM_COLOR_PANEL_EDGE);

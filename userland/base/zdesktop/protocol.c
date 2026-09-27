@@ -17,6 +17,7 @@
 #include "subsurface.h"
 #include "data.h"
 #include "extras.h"
+#include "panels.h"
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <errno.h>
@@ -39,7 +40,7 @@ struct zwl_global {
 static const struct zwl_global globals[] = {
 	{ 1, "wl_compositor", 4, ZWL_COMPOSITOR },
 	{ 2, "xdg_wm_base", 3, ZWL_WM },
-	{ 3, "zed_gpu_buffer_v1", 2, ZWL_FACTORY },
+	{ 3, "zed_gpu_buffer_v1", 3, ZWL_FACTORY },
 	{ 4, "wl_output", 4, ZWL_OUTPUT },
 	{ 5, "wl_seat", 5, ZWL_SEAT },
 	{ 6, "wl_shm", 1, ZWL_SHM },
@@ -50,6 +51,7 @@ static const struct zwl_global globals[] = {
 	{ 11, "wp_cursor_shape_manager_v1", 1, ZWL_CURSOR_SHAPE_MANAGER },
 	{ 12, "wp_viewporter", 1, ZWL_VIEWPORTER },
 	{ 16, "zed_titlebar_manager_v1", 1, ZWL_TITLEBAR_MANAGER },
+	{ 17, "zed_glass_manager_v1", 1, ZWL_GLASS_MANAGER },
 };
 
 static uint32_t word_at(const unsigned char *bytes, size_t offset);
@@ -65,6 +67,7 @@ static int factory_request(struct zwl_object *factory, uint32_t opcode, const un
 static void append_callbacks(struct zwl_object **list, struct zwl_object *callbacks);
 static void add_damage(struct zwl_object *surface, int32_t x, int32_t y, int32_t width, int32_t height);
 static int factory_fence(struct zwl_object *factory, const unsigned char *bytes, size_t size);
+static int factory_alpha(struct zwl_object *factory, const unsigned char *bytes, size_t size);
 static void commit_fence(struct zwl_object *surface, unsigned attached);
 static void commit_damage(struct zwl_object *surface);
 
@@ -223,6 +226,11 @@ zwl_dispatch(
 	case ZWL_VIEWPORT:
 		/* viewporter (viewport.c). */
 		error = zwl_viewport_request(object, opcode, bytes, size);
+		break;
+	case ZWL_GLASS_MANAGER:
+	case ZWL_GLASS:
+		/* A surface's glass panels (panels.c). */
+		error = zwl_panels_request(object, opcode, bytes, size);
 		break;
 	case ZWL_SUBCOMPOSITOR:
 		/* wl_subcompositor (subsurface.c). */
@@ -671,6 +679,9 @@ surface_commit(
 	/* The viewport's pending source and destination apply with the commit (viewport.c). */
 	zwl_viewport_commit(surface);
 
+	/* So do the glass panels (panels.c). */
+	zwl_panels_commit(surface);
+
 	/* A sub-surface's commit waits for its parent's when it is synchronized (subsurface.c). */
 	if (surface->sub_role != NULL) {
 		error = zwl_subsurface_commit(surface);
@@ -1098,6 +1109,12 @@ factory_request(
 		return error;
 	}
 
+	/* Revision three: how a buffer's alpha is read. */
+	if (opcode == 3U) {
+		error = factory_alpha(factory, bytes, size);
+		return error;
+	}
+
 	/* The nha signature has new_id and array bytes; h contributes no wire word. */
 	if (opcode != 1U || size != 8U + sizeof(image))
 		return EPROTO;
@@ -1352,6 +1369,41 @@ factory_fence(
 	surface->acquire[surface->acquire_count].fd = descriptor;
 	surface->acquire[surface->acquire_count].generation = generation;
 	surface->acquire_count++;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Sets how a GPU buffer's alpha is read (set_alpha of zed_gpu_buffer_v1
+ * revision three): ignored, the buffer being opaque (0, as a buffer starts),
+ * or as premultiplied alpha the window is blended by (1), for a Vulkan
+ * swapchain made with VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR.
+ */
+static int
+factory_alpha(
+	struct zwl_object *factory,
+	const unsigned char *bytes,
+	size_t size)
+{
+	struct zwl_object *buffer;
+	uint32_t alpha;
+
+	/* The buffer and the alpha in two words. */
+	if (factory->version < 3U || size != 8U)
+		return EPROTO;
+	alpha = word_at(bytes, 4);
+	if (alpha > 1U)
+		return EPROTO;
+
+	/* The buffer must be one of the client's GPU buffers. */
+	buffer = zwl_find(factory->client, word_at(bytes, 0));
+	if (buffer == NULL || buffer->kind != ZWL_BUFFER || buffer->shm != NULL)
+		return EPROTO;
+
+	/* The window's drawing blends the buffer by its alpha, or covers what is under it (import.c). */
+	zwl_import_set_alpha(buffer, alpha);
+	factory->client->server->dirty = 1;
 
 	/* Succeeded. */
 	return 0;

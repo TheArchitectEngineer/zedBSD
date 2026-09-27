@@ -163,6 +163,23 @@ fm_canvas_clip_pop(
 }
 
 /*
+ * Makes the whole canvas clear: every pixel transparent, whatever the clip.
+ */
+void
+fm_canvas_clear(
+	struct fm_canvas *canvas)
+{
+	uint32_t *row;
+	int y;
+
+	/* Each row, all its pixels zero (transparent black, premultiplied). */
+	for (y = 0; y < canvas->height; y++) {
+		row = canvas->pixels + (size_t)y * canvas->stride;
+		memset(row, 0, sizeof(row[0]) * (size_t)canvas->width);
+	}
+}
+
+/*
  * Fills a rectangle with a color.
  */
 void
