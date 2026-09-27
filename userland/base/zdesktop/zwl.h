@@ -54,6 +54,9 @@
 #define ZWL_OBJECT_MAX		4096U
 #define ZWL_OUTPUT_MAX		1048576U
 
+/* The first ID of the range the compositor gives the objects it makes for a client. */
+#define ZWL_SERVER_ID_FIRST	0xff000000U
+
 /* Bound the evdev nodes the seat reads and the events one report may carry. */
 #define ZWL_INPUT_MAX		16U
 #define ZWL_INPUT_FRAME_MAX	64U
@@ -112,6 +115,10 @@ enum zwl_kind {
 	ZWL_SUBSURFACE,
 	ZWL_TITLEBAR_MANAGER,
 	ZWL_TITLEBAR,
+	ZWL_DATA_MANAGER,
+	ZWL_DATA_SOURCE,
+	ZWL_DATA_DEVICE,
+	ZWL_DATA_OFFER,
 };
 
 /* The wl_shm formats (ARGB8888 has alpha; XRGB8888's top byte is unused). */
@@ -349,6 +356,14 @@ struct zwl_object {
 	struct zwl_object *sub_cached_buffer;
 	unsigned sub_cached_attached;
 	struct zwl_object *sub_cached_callbacks;
+	/*
+	 * The clipboard (data.c, ws035-p079): a wl_data_source's MIME types
+	 * (allocated strings, freed with it); a wl_data_offer's source (NULL
+	 * once the source has gone).
+	 */
+	char **mime_types;
+	unsigned mime_count;
+	struct zwl_object *data_source;
 };
 
 /* One stream has independent byte and fd FIFOs, plus its own protocol namespace. */
@@ -376,6 +391,11 @@ struct zwl_client {
 	uint32_t ping_serial;
 	uint64_t ping_ms;
 	unsigned unresponsive;
+	/*
+	 * The next ID from the server's range (0xff000000 and up) for an object
+	 * the compositor makes for this client (a wl_data_offer, data.c).
+	 */
+	uint32_t server_id_next;
 };
 
 /* The compositor alone owns the GPU context and the currently scanned-out image. */
@@ -610,6 +630,14 @@ struct zwl_server {
 	 */
 	uint32_t buttons_down;
 	uint32_t press_serial;
+	/*
+	 * The clipboard (data.c): the wl_data_source set as the selection (NULL
+	 * for an empty clipboard), and the number of the client last told it
+	 * (the keyboard's client; 0 for none), so a focus change tells the new
+	 * one.
+	 */
+	struct zwl_object *selection;
+	uint64_t selection_client;
 	struct zwl_object *resize;
 	int32_t resize_pointer_x;
 	int32_t resize_pointer_y;
@@ -631,6 +659,7 @@ void zwl_delete_id(struct zwl_client *client, uint32_t id);
 void zwl_client_destroy(struct zwl_client *client);
 struct zwl_object *zwl_find(struct zwl_client *client, uint32_t id);
 struct zwl_object *zwl_create(struct zwl_client *client, uint32_t id, enum zwl_kind kind, uint32_t version);
+struct zwl_object *zwl_create_server(struct zwl_client *client, enum zwl_kind kind, uint32_t version);
 void zwl_object_destroy(struct zwl_object *object);
 void zwl_buffer_get(struct zwl_object *buffer);
 void zwl_buffer_put(struct zwl_object *buffer);

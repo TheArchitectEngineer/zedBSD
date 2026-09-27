@@ -30,6 +30,10 @@
 #include <stdint.h>
 #include <uapi/statvfs.h>
 
+/*
+ * The smallest node quota a mount gets.  The quota itself is the share of
+ * the inode cache that all tmpfs mounts may hold together (below).
+ */
 #define TMPFS_DEFAULT_NODES 1024U
 #define TMPFS_DEFAULT_BYTES (32U * 1024U * 1024U)
 #ifdef KERN_USER_ABI_LP64
@@ -84,6 +88,25 @@ struct tmpfs_state {
 	uint64_t used_bytes;
 };
 
+/*
+ * The nodes all tmpfs mounts hold together, roots included.
+ *
+ * Every tmpfs node keeps an inode in the inode cache for as long as it
+ * exists, so together they must leave the cache room for every other
+ * filesystem (BUG-029: a full /tmp made even /dev/null fail to open).
+ * tmpfs_nodes_lock protects it; charge_node() and the mount raise it,
+ * uncharge_node() lowers it.
+ */
+static size_t tmpfs_nodes_in_use;
+
+/*
+ * Serializes changes of tmpfs_nodes_in_use for the kernel's lifetime.  It
+ * is taken inside a mount's quota lock, so it ranks above it.
+ */
+static struct spinlock tmpfs_nodes_lock = {
+	{ 0 }, LOCK_RANK_SWAP, "tmpfs nodes", 0, 0
+};
+
 static struct tmpfs_node * tmpfs_node(struct inode *inode);
 static struct tmpfs_xattr ** tmpfs_find_xattr(struct tmpfs_node *node, const char *name);
 static ssize_t tmpfs_getxattr(struct inode *inode, const char *name, void *value, size_t size);
@@ -94,6 +117,9 @@ static int tmpfs_removexattr(struct inode *inode, const char *name);
 static int component_valid(const struct componentname *component);
 static int component_equal(const struct componentname *component, const struct tmpfs_dirent *entry);
 static struct tmpfs_dirent ** find_entry_link(struct tmpfs_node *directory, const struct componentname *component);
+static size_t tmpfs_nodes_limit(void);
+static int charge_shared_node(void);
+static void uncharge_shared_node(void);
 static int charge_node(struct tmpfs_state *state);
 static void uncharge_node(struct tmpfs_state *state);
 static int charge_page(struct tmpfs_state *state);
@@ -460,13 +486,15 @@ charge_node(
 {
 	int error;
 
-	/* Takes one node from the mount's quota. */
+	/* Takes one node from the mount's quota and from the shared one. */
 	error = 0;
 	mutex_lock(&state->quota_lock);
 
 	if (state->used_nodes >= state->max_nodes)
 		error = ENOSPC;
 	else
+		error = charge_shared_node();
+	if (error == 0)
 		state->used_nodes++;
 
 	mutex_unlock(&state->quota_lock);
@@ -477,6 +505,71 @@ charge_node(
 
 	/* Succeeded. */
 	return 0;
+}
+
+/*
+ * Reports how many nodes all tmpfs mounts may hold together.
+ *
+ * It is the inode cache less an eighth, which stays for the inodes of every
+ * other filesystem, of devices, pipes and sockets.
+ */
+static size_t
+tmpfs_nodes_limit(void)
+{
+	size_t capacity;
+
+	/* The cache's slots, less the part kept for everything else. */
+	capacity = inode_cache_capacity();
+
+	/* Succeeded: the tmpfs share of the cache. */
+	return capacity - capacity / 8U;
+}
+
+/* Takes one node from the share of the inode cache all tmpfs mounts hold. */
+static int
+charge_shared_node(void)
+{
+	unsigned long irq;
+	size_t limit;
+	int error;
+
+	/* Refuses a node once the share is used up. */
+	limit = tmpfs_nodes_limit();
+	irq = spin_lock_irqsave(&tmpfs_nodes_lock);
+
+	/* Counts the node unless the share is full. */
+	error = 0;
+	if (tmpfs_nodes_in_use >= limit)
+		error = ENOSPC;
+	else
+		tmpfs_nodes_in_use++;
+
+	/* Lets other mounts count their nodes again. */
+	spin_unlock_irqrestore(&tmpfs_nodes_lock, irq);
+
+	/* Reports a share that was used up. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the node is counted in the share. */
+	return 0;
+}
+
+/* Gives one node back to the share of the inode cache. */
+static void
+uncharge_shared_node(void)
+{
+	unsigned long irq;
+
+	/* Lowers the count under the lock. */
+	irq = spin_lock_irqsave(&tmpfs_nodes_lock);
+
+	/* The count never goes below zero. */
+	if (tmpfs_nodes_in_use != 0)
+		tmpfs_nodes_in_use--;
+
+	/* Lets other mounts count their nodes again. */
+	spin_unlock_irqrestore(&tmpfs_nodes_lock, irq);
 }
 
 /* Returns one node to the mount's node quota. */
@@ -490,6 +583,9 @@ uncharge_node(
 		state->used_nodes--;
 
 	mutex_unlock(&state->quota_lock);
+
+	/* Gives the node back to the share of the inode cache. */
+	uncharge_shared_node();
 }
 
 /* Charges one page against the byte quota and the system commit limit. */
@@ -1678,6 +1774,7 @@ tmpfs_mount_impl(
 	struct tmpfs_state *state;
 	struct tmpfs_node *node;
 	struct inode *root;
+	int error;
 
 	/* Allocates the mount state and the root node together. */
 	state = kern_calloc(1, sizeof(*state));
@@ -1694,11 +1791,23 @@ tmpfs_mount_impl(
 	(void)mutex_init(&state->quota_lock, LOCK_RANK_VM_OBJECT, "tmpfs quota");
 	state->next_ino = 2;
 	state->next_cookie = 3;
-	state->max_nodes = TMPFS_DEFAULT_NODES;
+	state->max_nodes = tmpfs_nodes_limit();
+	if (state->max_nodes < TMPFS_DEFAULT_NODES)
+		state->max_nodes = TMPFS_DEFAULT_NODES;
 	state->max_bytes = TMPFS_DEFAULT_BYTES;
+
+	/* The root is the mount's first node, counted in the shared share too. */
+	error = charge_shared_node();
+	if (error != 0) {
+		kern_free(node);
+		kern_free(state);
+		return error;
+	}
+
 	state->used_nodes = 1;
 	root = inode_alloc(mountp);
 	if (root == NULL) {
+		uncharge_shared_node();
 		kern_free(node);
 		kern_free(state);
 		return ENOSPC;

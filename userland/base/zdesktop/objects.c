@@ -15,6 +15,7 @@
 #include "popup.h"
 #include "toplevel.h"
 #include "subsurface.h"
+#include "data.h"
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <errno.h>
@@ -81,6 +82,62 @@ zwl_create(
 	client->object_count++;
 
 	/* Succeeded: this client owns the new protocol identity. */
+	return object;
+}
+
+/*
+ * Makes an object the compositor creates for a client (a new_id in an
+ * event), with the next free ID of the server's range.  NULL when the
+ * client has too many objects or no memory is left.
+ */
+struct zwl_object *
+zwl_create_server(
+	struct zwl_client *client,
+	enum zwl_kind kind,
+	uint32_t version)
+{
+	struct zwl_object *object;
+	struct zwl_object *used;
+	uint32_t id;
+	unsigned tries;
+
+	/* A client at its bound gets no more. */
+	if (client->object_count >= ZWL_OBJECT_MAX)
+		return NULL;
+
+	/* The next ID of the server's range that is not in use (the range wraps within itself). */
+	id = 0;
+	for (tries = 0; tries <= ZWL_OBJECT_MAX; tries++) {
+		/* The candidate, from the start of the range again after its end. */
+		if (client->server_id_next < ZWL_SERVER_ID_FIRST || client->server_id_next == UINT32_MAX)
+			client->server_id_next = ZWL_SERVER_ID_FIRST;
+		id = client->server_id_next;
+		client->server_id_next++;
+
+		/* A free one ends the search. */
+		used = zwl_find(client, id);
+		if (used == NULL)
+			break;
+		id = 0;
+	}
+
+	/* No free ID. */
+	if (id == 0)
+		return NULL;
+
+	/* The object's storage. */
+	object = calloc(1, sizeof(*object));
+	if (object == NULL)
+		return NULL;
+
+	/* Succeeded: the client's list owns it, like one the client made. */
+	object->client = client;
+	object->id = id;
+	object->kind = kind;
+	object->version = version;
+	object->next = client->objects;
+	client->objects = object;
+	client->object_count++;
 	return object;
 }
 
@@ -238,6 +295,10 @@ zwl_object_destroy(
 	    object->kind == ZWL_POPUP)
 		zwl_popup_object_gone(object);
 
+	/* A data source leaves the clipboard and its offers (data.c). */
+	if (object->kind == ZWL_DATA_SOURCE)
+		zwl_data_object_gone(object);
+
 	/* A sub-surface leaves its parent, a parent's sub-surfaces lose it (subsurface.c). */
 	if (object->kind == ZWL_SURFACE || object->kind == ZWL_SUBSURFACE)
 		zwl_subsurface_object_gone(object);
@@ -253,10 +314,15 @@ zwl_object_destroy(
 	if (object->kind == ZWL_TOPLEVEL || object->kind == ZWL_TITLEBAR)
 		zwl_titlebar_object_gone(object);
 
-	/* Destroyed IDs become reusable only through ordered delete_id notification. */
+	/*
+	 * Destroyed IDs become reusable only through ordered delete_id
+	 * notification; an ID of the server's range is not told (the client
+	 * frees it when it destroys the object).
+	 */
 	server = object->client->server;
 	object->dead = 1;
-	zwl_delete_id(object->client, object->id);
+	if (object->id < ZWL_SERVER_ID_FIRST)
+		zwl_delete_id(object->client, object->id);
 
 	/* A surface's scanout must be disabled before its imported buffers can retire. */
 	if (object->kind == ZWL_SURFACE) {
