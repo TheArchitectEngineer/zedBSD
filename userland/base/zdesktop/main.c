@@ -10,6 +10,7 @@
  */
 
 #include "zwl.h"
+#include "toplevel.h"
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/stat.h>
@@ -496,6 +497,9 @@ event_loop(
 		/* Evdev nodes that appeared since the last scan join the seat. */
 		if (now - server->input_scan_time >= ZWL_INPUT_SCAN_MS)
 			zwl_input_scan(server);
+
+		/* A client that has left a ping unanswered too long is not responding (toplevel.c). */
+		zwl_ping_check(server, now);
 
 		/* Allocate exactly enough poll storage for the presently live client and device set. */
 		count = 1;

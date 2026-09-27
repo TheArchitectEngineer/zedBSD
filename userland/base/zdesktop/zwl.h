@@ -106,6 +106,8 @@ enum zwl_kind {
 	ZWL_MENU_MANAGER,
 	ZWL_MENU,
 	ZWL_TOPLEVEL_MENU,
+	ZWL_POSITIONER,
+	ZWL_POPUP,
 };
 
 /* The wl_shm formats (ARGB8888 has alpha; XRGB8888's top byte is unused). */
@@ -269,6 +271,46 @@ struct zwl_object {
 	struct zwl_menu_model *menu_model;
 	struct zwl_object *toplevel_menu;
 	struct zwl_object *shown_menu;
+	/*
+	 * xdg_popup (popup.c, ws035-p076): an xdg_positioner's rules; a popup's
+	 * parent surface (NULL once the parent has gone), its place relative to
+	 * the parent's window geometry and its size, the order it was made in
+	 * (popups are drawn in that order), whether it asked for the seat's
+	 * grab, and whether it was closed (popup_done: it is not drawn or hit
+	 * any more, and waits for its client to destroy it).  A surface's window
+	 * geometry (xdg_surface.set_window_geometry: x, y, width, height),
+	 * pending and committed, and whether one was set.
+	 */
+	struct zwl_positioner *positioner;
+	struct zwl_object *popup_parent;
+	int32_t popup_x;
+	int32_t popup_y;
+	int32_t popup_width;
+	int32_t popup_height;
+	uint64_t popup_order;
+	unsigned popup_grab;
+	unsigned popup_closed;
+	int32_t pending_geometry[4];
+	unsigned pending_geometry_set;
+	int32_t geometry[4];
+	unsigned geometry_set;
+	/*
+	 * A toplevel's requests (toplevel.c, ws035-p076): the smallest and
+	 * largest size the client can draw (0 for no limit); the edges a resize
+	 * drags and the right and bottom edges on the output that stay while
+	 * the left or top edge is dragged (the anchor; no edges when there is
+	 * none); the serial of the configure sent when the resize ended, and
+	 * the last serial the client acknowledged (xdg_surface.ack_configure).
+	 */
+	int32_t min_width;
+	int32_t min_height;
+	int32_t max_width;
+	int32_t max_height;
+	uint32_t resize_edges;
+	int32_t resize_right;
+	int32_t resize_bottom;
+	uint32_t resize_final_serial;
+	uint32_t acked_serial;
 };
 
 /* One stream has independent byte and fd FIFOs, plus its own protocol namespace. */
@@ -288,6 +330,14 @@ struct zwl_client {
 	struct zwl_packet *output_head;
 	struct zwl_packet *output_tail;
 	size_t output_bytes;
+	/*
+	 * The ping (toplevel.c): the serial of the ping waiting for its answer
+	 * (0 for none) and when it was sent, and whether the client has left a
+	 * ping unanswered too long (its title bars say it is not responding).
+	 */
+	uint32_t ping_serial;
+	uint64_t ping_ms;
+	unsigned unresponsive;
 };
 
 /* The compositor alone owns the GPU context and the currently scanned-out image. */
@@ -493,6 +543,33 @@ struct zwl_server {
 	int32_t cursor_hotspot_y;
 	unsigned cursor_hidden;
 	struct zwl_import *arrow;
+	/*
+	 * Popups (popup.c): the topmost popup holding the seat's grab (NULL for
+	 * none); whether the grab has the pointer (from its first popup shown
+	 * until the grab ends: the seat's focus changes then move only the
+	 * keyboard) and the surface of the grab's chain the pointer is over (it
+	 * hears the pointer events; NULL outside the chain); a button whose
+	 * press dismissed the popups (its release is eaten too); the order the
+	 * next popup is made in.
+	 */
+	struct zwl_object *popup_grab;
+	unsigned pointer_grabbed;
+	struct zwl_object *pointer_focus;
+	uint32_t popup_eaten_button;
+	uint64_t popup_order;
+	/*
+	 * The pointer's buttons held now (bit n for BTN_LEFT + n), and the serial
+	 * of the last press sent to a client, which a move or a resize must name
+	 * (toplevel.c).  The window being resized (NULL for none), where the
+	 * pointer was and the window's size when the resize started.
+	 */
+	uint32_t buttons_down;
+	uint32_t press_serial;
+	struct zwl_object *resize;
+	int32_t resize_pointer_x;
+	int32_t resize_pointer_y;
+	int32_t resize_width;
+	int32_t resize_height;
 };
 
 uint64_t zwl_milliseconds(void);
@@ -556,6 +633,13 @@ int zwl_home_axis(struct zwl_server *server, int32_t vertical, int32_t horizonta
 int zwl_home_launched(struct zwl_server *server, int32_t *rect);
 void zwl_glass_mapped(struct zwl_server *server, struct zwl_object *surface);
 int zwl_glass_key(struct zwl_server *server, uint32_t key, uint32_t state);
+
+/* What a toplevel asks the glass look's shell to do (xdg_toplevel requests, ws035-p076). */
+#define ZWL_TOPLEVEL_MOVE		1
+#define ZWL_TOPLEVEL_MAXIMIZE		2
+#define ZWL_TOPLEVEL_UNMAXIMIZE		3
+#define ZWL_TOPLEVEL_MINIMIZE		4
+void zwl_glass_toplevel_request(struct zwl_server *server, struct zwl_object *surface, int request);
 uint32_t zwl_next_serial(struct zwl_server *server);
 int zwl_seat_bind(struct zwl_object *seat);
 int zwl_seat_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);

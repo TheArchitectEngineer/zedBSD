@@ -18,6 +18,7 @@
 
 #include "compose.h"
 #include "shaders.h"
+#include "popup.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -190,6 +191,7 @@ zwl_compose_draw(
 	uint64_t mark;
 	uint32_t image;
 	unsigned count;
+	unsigned popups;
 	VkResult result;
 
 	/* One frame at a time, and only with an output. */
@@ -201,6 +203,9 @@ zwl_compose_draw(
 	compose->frame_start_cycles = zwl_cycles();
 	compose->frame_start_ms = zwl_milliseconds();
 	count = compose_windows(server, windows, ZWL_FRAME_WINDOWS);
+
+	/* The popups follow the windows in the list the frame holds (popup.c draws them). */
+	popups = zwl_popup_collect(server, windows + count, ZWL_FRAME_WINDOWS - count);
 
 	/* The next swapchain image (the wait for it is measured apart). */
 	mark = zwl_cycles();
@@ -230,8 +235,8 @@ zwl_compose_draw(
 	/* The CPU time of recording and submitting the frame. */
 	server->perf.compose_draw_cycles += zwl_cycles() - compose->frame_start_cycles;
 
-	/* The frame holds what it sampled until its fence signals. */
-	compose_hold(server, windows, count);
+	/* The frame holds what it sampled until its fence signals, the popups too. */
+	compose_hold(server, windows, count + popups);
 	server->dirty = 0;
 	server->frame++;
 	if (server->log_frames)
@@ -1195,6 +1200,22 @@ zwl_compose_surface_image(
 	return image;
 }
 
+/*
+ * Draws an image as a quad at a place on the output, its own size (for the
+ * popups, popup.c).
+ */
+void
+zwl_compose_quad_image(
+	struct zwl_server *server,
+	VkCommandBuffer command,
+	const struct zwl_import *import,
+	int32_t x,
+	int32_t y)
+{
+	/* The same quad as a window's. */
+	compose_quad(server, command, import, x, y);
+}
+
 /* Draws an image as a quad at a place on the output, its own size. */
 static void
 compose_quad(
@@ -1298,6 +1319,7 @@ compose_record(
 	} else {
 		for (index = 0; index < count; index++)
 			compose_quad(server, compose->command, surface_image(windows[index]), windows[index]->x, windows[index]->y);
+		zwl_popup_draw(server, compose->command);
 	}
 
 	/* The cursor over everything. */
