@@ -22,6 +22,8 @@
 #define PARTITION_BOOTABLE	0x0001U
 #define PARTITION_HAS_LABEL	0x0002U
 #define PARTITION_HAS_UUID	0x0004U
+/* The partition table marks the partition as an EFI system partition. */
+#define PARTITION_EFI_SYSTEM	0x0008U
 
 int partition_retire_media(struct disk *parent);
 
@@ -71,5 +73,9 @@ partition_count(void);
 const struct partition *
 partition_at(
 	unsigned index);
+
+int
+partition_disk_is_efi_system(
+	const struct disk *disk);
 
 #endif

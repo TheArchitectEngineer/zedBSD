@@ -12,7 +12,7 @@ Bug: [BUG-068](../../bugs/BUG-068.md)（main の依頼。ws056-p001 を塞いで
 他の thread が生きている process の `execve` が、兄弟の thread を全て終わらせて新しい image に移る。console の `POSIX-R2.ELF` が最後の自分自身への
 `execve` の後に `R2:01-06:PASS` を出して status 0 で終わる。
 
-## 再現と切り分け（QEMU。main の kernel、serial mirror 付き `plan/ws056/tests/config-amd64-serial.mk`）
+## 再現と切り分け（QEMU。main の kernel、serial mirror 付き `plan/tools/posix/config-amd64-serial.mk`）
 
 - console の `POSIX-R2.ELF`（`/bin/sh` にも置き、root の login shell は `/bin/sh.orig` に替えて SSH を使えるようにした）: `R2:TIMER:PASS` の後で止まる（ticket と同じ）。
 - gdbstub（`vmunix` の `all_processes` を、`-g` で compile した `process.c` の型で読む）: 止まった process の thread は 2 つ。main の thread は
@@ -37,7 +37,7 @@ exec が `thread_wait` で reap し、joiner が先に取ったなら `thread_wa
 
 ## 検証（QEMU、KVM、4 GiB、4 vCPU、NVMe。実機は未実施）
 
-- build: `make -j48 ZEDBSD_CONFIG=plan/ws056/tests/config-amd64-serial.mk BUILD=build/ws073-serial vmunix` warning 0。
+- build: `make -j48 ZEDBSD_CONFIG=plan/tools/posix/config-amd64-serial.mk BUILD=build/ws073-serial vmunix` warning 0。
 - `tests/exec-threads.c`（SSH）: 7 つの mode 全て `EXEC:PASS`、status 0。`reaper` を 10 回続けて 10/10（修正前は 1 回目で止まる）。
 - console の `POSIX-R2.ELF`（この tree の libc で static link、`/bin/sh` にも置く）を 5 回: 4 回 `R2:TIMER:PASS`・`R2:01-06:PASS`・status 0。
   5 回目は `R2:TIMER:PASS` の前（pty の back-pressure の試験）で止まった。gdbstub で調べると別の不具合で、pty の master の read と slave の write が

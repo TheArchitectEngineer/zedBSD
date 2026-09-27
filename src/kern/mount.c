@@ -95,6 +95,7 @@ static void link_child(struct mount *parent, struct mount *child);
 static void link_global(struct mount *mountp);
 static int set_mount_path(struct mount *mountp, const struct path *directory, const char *name);
 static MOUNT_HIGH int valid_private_path(const char *path);
+static void mount_info_private_source(struct kern_mount_info *info, const struct mount *source);
 static void unlink_child(struct mount *mountp);
 static int prepare_filesystem_destroy(struct mount *mountp, unsigned expected_refs);
 static void finalize_filesystem_destroy(struct mount *mountp);
@@ -1652,7 +1653,7 @@ mount_info_snapshot(
 		if (source != NULL) {
 			info->kind = KERN_MOUNT_INFO_BIND;
 			if (mount_is_private(source))
-				kern_strcpy(info->source, "(private)");
+				mount_info_private_source(info, source);
 			else
 				path_set(&sources[count - 1], source, mountp->m_root);
 		} else {
@@ -2219,6 +2220,34 @@ set_mount_path(
 
 	/* Reports the recorded path. */
 	return 0;
+}
+
+/*
+ * Names the source of a bind of a private mount in a mount listing.
+ *
+ * The kernel's own boot filesystems are private mounts shown through a
+ * bind (/boot, /boot/esp); their disk is what a reader wants to see.  A
+ * private mount without a disk stays "(private)".
+ */
+static void
+mount_info_private_source(
+	struct kern_mount_info *info,
+	const struct mount *source)
+{
+	size_t length;
+
+	/* A private mount without a disk has no name to show. */
+	if (source->m_disk == NULL) {
+		kern_strcpy(info->source, "(private)");
+		return;
+	}
+
+	/* Names the disk as its /dev path, cut to the field. */
+	kern_strcpy(info->source, "/dev/");
+	length = kern_strlen(info->source);
+	kern_strncpy(info->source + length, source->m_disk->d_name,
+	    sizeof(info->source) - length - 1U);
+	info->source[sizeof(info->source) - 1U] = '\0';
 }
 
 /* Tests that a private-mount path is relative with no empty, dot, or dot-dot components. */

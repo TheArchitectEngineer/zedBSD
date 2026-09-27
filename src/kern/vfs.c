@@ -110,6 +110,15 @@ struct vfs_legacy_overlay_setup {
 	struct mount *lower_mount;
 	struct mount *upper_mount;
 };
+
+/*
+ * The boot partition the legacy ARM overlay root reads its images from.
+ *
+ * It is mounted privately and stays mounted for the system's lifetime,
+ * because the loop devices under the root read from it.  It is set once,
+ * when that root is mounted, and stays NULL for every other root.
+ */
+static struct mount *vfs_legacy_boot_mount __attribute__((section(".vfs_bss")));
 #endif
 
 static int vfs_swap_resolve_path(void *opaque, const char *selector, struct path *result);
@@ -118,6 +127,8 @@ static int vfs_disk_range_resolve(struct disk *disk, struct vfs_disk_range *rang
 static int vfs_swap_validate_raw(void *opaque, struct disk *candidate);
 static int vfs_fail(const char *stage, int error);
 static int vfs_ensure_root_directory(const struct path *root, const char *name, mode_t mode);
+static void vfs_publish_boot_filesystems(const struct path *root);
+static int vfs_bind_boot_mount(struct mount *mountp, const struct path *directory, const char *name);
 static void vfs_log_boot_handoff(const struct kern_boot_handoff *handoff, unsigned device_count);
 static void vfs_scan_physical_disks(const struct kern_boot_handoff *handoff, struct disk *boot_physical, struct disk **loader_boot_partition);
 #if defined(VFS_LEGACY_NULL_AUTOROOT)
@@ -635,6 +646,9 @@ root_ready:
 		goto out_root;
 	VFS_LOG("vfs: runtime filesystems mounted\n");
 
+	/* Shows the boot filesystems the kernel holds at /boot and /boot/esp. */
+	vfs_publish_boot_filesystems(&root_path);
+
 	/* Discovery publishes devices. Auxiliary filesystems require explicit mounts. */
 
 	/* Publishes the runtime boot selectors and the swap control interface. */
@@ -866,6 +880,134 @@ vfs_ensure_root_directory(
 		return error;
 
 	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Shows the boot filesystems the kernel holds in the namespace.
+ *
+ * The kernel keeps each configured boot partition's FAT mounted privately
+ * for the system's lifetime, and a second mount of the same partition is
+ * refused (BUG-065).  A running system reaches them here instead: the
+ * first boot partition that is not an EFI system partition is shown at
+ * /boot, and the first EFI system partition at /boot/esp (user decision,
+ * 2026-09-27).  On an image with no BOOT partition /boot is a directory of
+ * the root.  Each is a bind of the private mount's root, so the kernel and
+ * the namespace share one FAT state, and unmounting it hides it again.  A
+ * publication that fails is logged and leaves the mount private; the
+ * system boots either way.
+ */
+static void
+vfs_publish_boot_filesystems(
+	const struct path *root)
+{
+	struct kern_boot_source_slot *slot;
+	struct mount *boot_mount;
+	struct mount *esp_mount;
+	struct path boot_path;
+	unsigned index;
+	int private;
+	int esp;
+	int error;
+
+	/* Nothing is picked yet. */
+	boot_mount = NULL;
+	esp_mount = NULL;
+
+	/* Picks the first BOOT and the first ESP among the held boot slots. */
+	for (index = 0; index < KERN_BOOT_SOURCE_SLOT_COUNT; index++) {
+		slot = &boot_sources.slot[index];
+
+		/* Skips a slot that holds no private mount of its own. */
+		if (!slot->configured)
+			continue;
+		if (slot->mount == NULL)
+			continue;
+		private = mount_is_private(slot->mount);
+		if (!private)
+			continue;
+
+		/* The partition table tells an ESP from a BOOT partition. */
+		esp = partition_disk_is_efi_system(slot->disk);
+		if (esp && esp_mount == NULL)
+			esp_mount = slot->mount;
+		else if (!esp && boot_mount == NULL)
+			boot_mount = slot->mount;
+	}
+
+#if defined(VFS_LEGACY_NULL_AUTOROOT) && defined(HAL_ARCH_ARM64)
+	/* The legacy ARM overlay root holds its boot partition outside the slots. */
+	if (boot_mount == NULL && vfs_legacy_boot_mount != NULL)
+		boot_mount = vfs_legacy_boot_mount;
+#endif
+
+	/* Nothing to show when the kernel holds no boot filesystem. */
+	if (boot_mount == NULL && esp_mount == NULL)
+		return;
+
+	/* Makes sure /boot exists to cover or to hold esp. */
+	error = vfs_ensure_root_directory(root, "boot", 0755U);
+	if (error != 0) {
+		VFS_LOG("vfs: /boot unavailable (error %d); boot filesystems stay private\n",
+		    error);
+		return;
+	}
+
+	/* Shows the BOOT partition at /boot. */
+	if (boot_mount != NULL) {
+		error = vfs_bind_boot_mount(boot_mount, root, "boot");
+		if (error != 0)
+			VFS_LOG("vfs: publish BOOT at /boot failed (error %d)\n", error);
+		else
+			VFS_LOG("vfs: boot filesystem published at /boot\n");
+	}
+
+	/* Without an ESP there is nothing more to show. */
+	if (esp_mount == NULL)
+		return;
+
+	/* Resolves /boot, which may now be the BOOT partition, and makes esp in it. */
+	path_init(&boot_path);
+	error = namei_path_at(&kern_cwdinfo, "/boot", &boot_path);
+	if (error == 0)
+		error = vfs_ensure_root_directory(&boot_path, "esp", 0755U);
+	if (error != 0) {
+		path_release(&boot_path);
+		VFS_LOG("vfs: /boot/esp unavailable (error %d); the ESP stays private\n",
+		    error);
+		return;
+	}
+
+	/* Shows the ESP at /boot/esp. */
+	error = vfs_bind_boot_mount(esp_mount, &boot_path, "esp");
+	path_release(&boot_path);
+	if (error != 0)
+		VFS_LOG("vfs: publish ESP at /boot/esp failed (error %d)\n", error);
+	else
+		VFS_LOG("vfs: ESP published at /boot/esp\n");
+}
+
+/* Binds the root of a private boot mount under a name in a directory. */
+static int
+vfs_bind_boot_mount(
+	struct mount *mountp,
+	const struct path *directory,
+	const char *name)
+{
+	struct path source;
+	int error;
+
+	/* Names the private mount's root as the bind's source. */
+	path_init(&source);
+	path_set(&source, mountp, mountp->m_root);
+
+	/* Binds it; the bind holds its own reference on the private mount. */
+	error = mount_bind_at(&source, directory, name, NULL);
+	path_release(&source);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the boot filesystem is visible under the name. */
 	return 0;
 }
 
@@ -1249,6 +1391,9 @@ vfs_mount_legacy_arm_overlay(
 		goto fail;
 	VFS_LOG("vfs: root=legacy-overlay lower=%s upper=%s\n",
 	    setup.lower_loop->d_name, setup.upper_loop->d_name);
+
+	/* Keeps the boot partition's mount so that it can be shown at /boot. */
+	vfs_legacy_boot_mount = setup.boot_mount;
 	path_release(&setup.upper_root);
 	path_release(&setup.lower_root);
 	return 0;
