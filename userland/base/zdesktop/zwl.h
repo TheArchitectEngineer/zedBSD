@@ -441,6 +441,8 @@ struct zwl_server {
 	int32_t pointer_y;
 	unsigned modifier_keys;
 	uint32_t modifiers;
+	/* The locked modifiers (Caps Lock 0x2, Num Lock 0x10), each toggled by a press of its key (ws035-p078). */
+	uint32_t locked_modifiers;
 	/* Window mode: the Vulkan output, whether a frame is due, and the fence fd of the frame in flight. */
 	struct zwl_compose *compose;
 	unsigned windowed;

@@ -22,6 +22,7 @@
 #include "popup.h"
 #include "toplevel.h"
 #include "subsurface.h"
+#include "keymap.h"
 #include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
@@ -62,12 +63,17 @@
 #define AXIS_HORIZONTAL			1U
 #define AXIS_SOURCE_WHEEL		0U
 #define KEYMAP_NO_KEYMAP		0U
+#define KEYMAP_XKB_V1			1U
 
 /* One wheel notch scrolls this many surface units, as common compositors do. */
 #define WHEEL_STEP			15
 
-/* The repeat delay reported with a zero rate, which tells clients not to repeat. */
-#define REPEAT_DELAY_MS			600
+/*
+ * The key repeat clients do themselves (ws035-p078): 25 keys a second after
+ * 400 ms, the repeat zdesktop-terminal uses when it is told none.
+ */
+#define REPEAT_RATE			25
+#define REPEAT_DELAY_MS			400
 
 static int create_device(struct zwl_object *seat, enum zwl_kind kind, const unsigned char *bytes, size_t size);
 static void deliver(struct zwl_client *client, uint32_t id, uint32_t opcode, const void *payload, size_t size);
@@ -752,9 +758,9 @@ create_device(
 		if (error != 0)
 			return error;
 
-		/* Version 4 keyboards are told not to repeat keys themselves. */
+		/* Version 4 keyboards are told how to repeat a held key themselves (zdesktop does not). */
 		if (device->version >= KEYBOARD_REPEAT_VERSION) {
-			repeat[0] = 0;
+			repeat[0] = REPEAT_RATE;
 			repeat[1] = REPEAT_DELAY_MS;
 			deliver(device->client, device->id, KEYBOARD_REPEAT_INFO, repeat, sizeof(repeat));
 		}
@@ -873,11 +879,11 @@ keyboard_modifiers(
 {
 	uint32_t words[5];
 
-	/* Only depressed modifiers are tracked; nothing is latched or locked and the group is 0. */
+	/* The held modifiers and the locks (Caps Lock, Num Lock); nothing is latched and the group is 0. */
 	words[0] = serial;
 	words[1] = keyboard->client->server->modifiers;
 	words[2] = 0;
-	words[3] = 0;
+	words[3] = keyboard->client->server->locked_modifiers;
 	words[4] = 0;
 	deliver(keyboard->client, keyboard->id, KEYBOARD_MODIFIERS, words, sizeof(words));
 
@@ -963,17 +969,25 @@ keyboard_keymap(
 	struct zwl_object *keyboard)
 {
 	uint32_t words[2];
+	uint32_t size;
 	int descriptor;
 	int error;
 
-	/* The protocol requires a descriptor; /dev/null read-only is an empty keymap file. */
-	descriptor = open("/dev/null", O_RDONLY | O_CLOEXEC);
-	if (descriptor < 0)
-		return errno;
+	/* The US XKB keymap (keymap.c, ws035-p078): a read-only descriptor of its file and its size. */
+	words[0] = KEYMAP_XKB_V1;
+	descriptor = zwl_keymap_descriptor(&size);
+	words[1] = size;
+
+	/* Without it the protocol still requires a descriptor: /dev/null is an empty file, and no keymap applies. */
+	if (descriptor < 0) {
+		descriptor = open("/dev/null", O_RDONLY | O_CLOEXEC);
+		if (descriptor < 0)
+			return errno;
+		words[0] = KEYMAP_NO_KEYMAP;
+		words[1] = 0;
+	}
 
 	/* The payload words are the format and the size; the descriptor travels beside them. */
-	words[0] = KEYMAP_NO_KEYMAP;
-	words[1] = 0;
 	error = zwl_emit_fd(keyboard->client, keyboard->id, KEYBOARD_KEYMAP, words, sizeof(words), descriptor);
 	if (error != 0)
 		return error;

@@ -50,6 +50,7 @@
 		glCompressedTexSubImage2D;
 		glCopyTexImage2D;
 		glCopyTexSubImage2D;
+		glCopyTexSubImage3D;
 		glCreateProgram;
 		glCreateShader;
 		glCullFace;
@@ -189,11 +190,13 @@
 		glTexEnvi;
 		glTexEnviv;
 		glTexImage2D;
+		glTexImage3D;
 		glTexParameterf;
 		glTexParameterfv;
 		glTexParameteri;
 		glTexParameteriv;
 		glTexSubImage2D;
+		glTexSubImage3D;
 		glTranslated;
 		glTranslatef;
 		glUniform1f;

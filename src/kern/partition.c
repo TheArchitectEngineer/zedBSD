@@ -274,6 +274,36 @@ partition_at(
 }
 
 /*
+ * Tells whether a disk is a partition that its table marks as an EFI system
+ * partition.
+ *
+ * The record is the one the partition disk pins, so a table another disk
+ * reloads meanwhile is not read.
+ */
+int
+partition_disk_is_efi_system(
+	const struct disk *disk)
+{
+	const struct partition *part;
+
+	/* A whole disk or a missing one is no partition. */
+	if (disk == NULL)
+		return 0;
+	if ((disk->d_flags & DISK_PARTITION) == 0U)
+		return 0;
+
+	/* Reads the flag of the pinned record. */
+	part = disk->d_data;
+	if (part == NULL)
+		return 0;
+	if ((part->p_flags & PARTITION_EFI_SYSTEM) == 0U)
+		return 0;
+
+	/* Succeeded: the table names it an EFI system partition. */
+	return 1;
+}
+
+/*
  * Reloads an idle physical disk's validated partition table atomically.
  */
 int

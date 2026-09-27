@@ -45,6 +45,16 @@ struct gpt_record {
 	uint64_t last;
 };
 
+/*
+ * The partition type of an EFI system partition,
+ * C12A7328-F81F-11D2-BA4B-00A0C93EC93B, as the table stores it (the first
+ * three fields little-endian).  Never changed.
+ */
+static const uint8_t gpt_efi_system_type[16U] = {
+	0x28U, 0x73U, 0x2aU, 0xc1U, 0x1fU, 0xf8U, 0xd2U, 0x11U,
+	0xbaU, 0x4bU, 0x00U, 0xa0U, 0xc9U, 0x3eU, 0xc9U, 0x3bU
+};
+
 static uint32_t get32(const uint8_t *p);
 static uint64_t get64(const uint8_t *p);
 static int all_zero(const uint8_t *p, size_t size);
@@ -591,6 +601,7 @@ validate_entries(
 	uint8_t *raw;
 	unsigned active = 0U, index;
 	int error = 0;
+	int differs;
 
 	records = kern_calloc(copy->entry_count, sizeof(*records));
 
@@ -675,6 +686,12 @@ validate_entries(
 			entry->p_block_count = last - first + 1U;
 			guid_text(entry->p_uuid, raw + 16U);
 			entry->p_flags = PARTITION_HAS_UUID;
+
+			/* Marks an EFI system partition by its type. */
+			differs = kern_memcmp(raw, gpt_efi_system_type,
+			    sizeof(gpt_efi_system_type));
+			if (differs == 0)
+				entry->p_flags |= PARTITION_EFI_SYSTEM;
 
 			/* Handles the label condition. */
 			if (label[0] != '\0') {
