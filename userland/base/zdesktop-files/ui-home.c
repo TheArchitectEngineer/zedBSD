@@ -631,6 +631,7 @@ home_recents(
 			name++;
 		memset(&entry, 0, sizeof(entry));
 		entry.name = (char *)name;
+		entry.path = (char *)recent->path;
 		entry.mime = fm_mime_guess(name, S_IFREG);
 		fm_grid_entry_icon(app, canvas, &entry, (float)rect.x + 8.0f, (float)rect.y + 6.0f, 32.0f);
 

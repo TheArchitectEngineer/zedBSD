@@ -57,6 +57,8 @@
 #define INPUT_KEY_N		49U
 #define INPUT_KEY_F		33U
 #define INPUT_KEY_T		20U
+#define INPUT_KEY_P		25U
+#define INPUT_KEY_SPACE		57U
 
 /*
  * The selection the log reported last: how many items and which had the
@@ -85,6 +87,7 @@ static void input_show(struct fm_app *app, int index);
 static void input_report(struct fm_app *app);
 static int input_operation_key(struct fm_app *app, const struct fm_event *event);
 static void input_button(struct fm_app *app, int index);
+static void input_look_key(struct fm_app *app, const struct fm_event *event);
 
 /*
  * Follows the pointer: the region under it is lit, and a rubber band being
@@ -232,6 +235,12 @@ fm_input_key(
 			fm_action_confirm(app, 1);
 		else if (event->key == INPUT_KEY_ESC)
 			fm_action_confirm(app, 0);
+		return;
+	}
+
+	/* Quick Look takes the keys while it is open. */
+	if (app->quicklook != 0) {
+		input_look_key(app, event);
 		return;
 	}
 
@@ -457,6 +466,10 @@ input_click(
 	case FM_HIT_RECENT:
 	case FM_HIT_SHOW_ALL:
 		fm_home_click(app, kind, index, double_click);
+		break;
+	case FM_HIT_OVERLAY:
+		if (index == FM_OVERLAY_LOOK_GROUND)
+			fm_look_close(app);
 		break;
 	default:
 		break;
@@ -689,6 +702,8 @@ input_command_key(
 		input_enclosing(app);
 	} else if (event->key == INPUT_KEY_DOWN && event->modifiers == FM_MOD_CTRL) {
 		input_open_selection(app);
+	} else if (event->key == INPUT_KEY_SPACE && event->modifiers == 0U) {
+		fm_look_toggle(app);
 	} else {
 		handled = 0;
 	}
@@ -1013,6 +1028,8 @@ input_operation_key(
 		fm_action_undo(app, 1);
 	} else if (event->key == INPUT_KEY_T && event->modifiers == (FM_MOD_CTRL | FM_MOD_ALT)) {
 		fm_action_add_favorite(app);
+	} else if (event->key == INPUT_KEY_P && event->modifiers == (FM_MOD_CTRL | FM_MOD_ALT)) {
+		app->show_preview = !app->show_preview;
 	} else if (event->key == INPUT_KEY_F && event->modifiers == FM_MOD_CTRL) {
 		fm_search_focus(app);
 	} else if (event->key >= INPUT_KEY_1 && event->key <= INPUT_KEY_1 + 8U && event->modifiers == FM_MOD_ALT) {
@@ -1069,9 +1086,48 @@ input_button(
 		fm_action_put_back(app);
 	} else if (index == FM_BUTTON_EMPTY_TRASH) {
 		fm_action_empty_trash(app);
+	} else if (index == FM_BUTTON_LOOK_CLOSE) {
+		fm_look_close(app);
 	} else if (index >= FM_BUTTON_REMOVE_PLACE) {
 		fm_action_remove_favorite(app, index - FM_BUTTON_REMOVE_PLACE);
 	} else if (index >= FM_BUTTON_TASK_CANCEL) {
 		fm_action_cancel_task(app, index - FM_BUTTON_TASK_CANCEL);
 	}
+}
+
+/* Handles a key while Quick Look is open: Space and Esc close it, the arrows go to the item before or after. */
+static void
+input_look_key(
+	struct fm_app *app,
+	const struct fm_event *event)
+{
+	struct fm_tab *tab;
+
+	/* Keys with modifiers do nothing here. */
+	if (event->modifiers != 0U)
+		return;
+
+	/* Each key Quick Look knows. */
+	tab = fm_ui_tab(app);
+	switch (event->key) {
+	case INPUT_KEY_SPACE:
+	case INPUT_KEY_ESC:
+		fm_look_close(app);
+		break;
+	case INPUT_KEY_LEFT:
+	case INPUT_KEY_UP:
+		fm_look_step(app, -1);
+		input_show(app, tab->cursor);
+		break;
+	case INPUT_KEY_RIGHT:
+	case INPUT_KEY_DOWN:
+		fm_look_step(app, 1);
+		input_show(app, tab->cursor);
+		break;
+	default:
+		break;
+	}
+
+	/* The selection the key left. */
+	input_report(app);
 }

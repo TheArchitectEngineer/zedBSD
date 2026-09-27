@@ -28,10 +28,26 @@ Queue: なし（2026-09-27 の rate limit で止まったサブエージェン�
 | 実機 | 未実施 |
 
 guest の case は失敗するので commit していない（salvage の `plan/ws001/tests/pinned/guest.sh` の追加分）。再開するときは salvage の branch から戻す:
-`git show salvage/ws001:plan/ws001/tests/pinned/guest.sh`（末尾の「#### mesg on the console」）。
+`git show salvage/ws001:plan/ws001/tests/pinned/guest.sh`（末尾の「#### mesg on the console」）。salvage の branch は後で消すので、case をここに写す（`pinned/guest.sh` の末尾に空行を挟んで足す）:
+
+```sh
+#### mesg on the console
+# Guest only: the state of /dev/console is put back at the end.
+m=$(mesg < /dev/console); mesg n < /dev/console; echo "st=$?"; mesg < /dev/console; echo "st=$?"; ls -l /dev/console | cut -c6,9; mesg y < /dev/console; echo "st=$?"; mesg < /dev/console; ls -l /dev/console | cut -c6; mesg < /dev/null; echo "st=$?"; case $m in "is y") mesg y < /dev/console;; *) mesg n < /dev/console;; esac
+## status 0
+## expect
+st=1
+is n
+st=1
+--
+st=0
+is y
+w
+st=2
+```
 
 ## 残り・再開の条件
 
-- devfs の端末の node が chmod（少なくとも group・other の write bit）を受けること。kernel の変更で、WS001 の範囲の外（bug として追跡する。ID の割り当ては main）。
+- devfs の端末の node が chmod（少なくとも group・other の write bit）を受けること。kernel の変更で、WS001 の範囲の外（[BUG-067](../../bugs/BUG-067.md) で追跡）。
 - それが出来たら、上の guest の case を `pinned/guest.sh` に戻して `guest-run.sh ... pinned` で PASS を確かめ、この Phase を clear する。
 - WS001 はユーザーの指示があるときだけ進める（2026-09-27）。

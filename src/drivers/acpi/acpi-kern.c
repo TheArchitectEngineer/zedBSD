@@ -933,7 +933,12 @@ pci_handler(
 
 	UNUSED_PARAMETER(argument);
 
-	/* Finds the function the region belongs to among the enumerated ones. */
+	/*
+	 * Finds the function the region belongs to among the enumerated ones.
+	 * The PCI driver compares whole addresses, padding included, so the
+	 * address starts zeroed.
+	 */
+	kern_memset(&address, 0, sizeof(address));
 	address.segment = access->pci_segment;
 	address.bus = access->pci_bus;
 	address.device = access->pci_device;

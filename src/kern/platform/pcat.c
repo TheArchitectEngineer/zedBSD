@@ -65,6 +65,9 @@
 #include <drivers/usb/usb-rtl8822bu.h>
 #endif
 #include <drivers/pci/pci.h>
+#if CONFIG_DRIVER_ACPI
+#include <drivers/acpi/acpi.h>
+#endif
 #include <drivers/usb/usb.h>
 #if CONFIG_DRIVER_NE2000
 #include "drivers/isa/pcat-ne2000.h"
@@ -223,6 +226,11 @@ kern_platform_init(
 #ifdef KERN_TEST_CHECKPOINTS
 	else
 		drv_pci_dump();
+#endif
+#if CONFIG_DRIVER_ACPI
+
+	/* Loads the firmware's ACPI tables once the PCI functions are known. */
+	(void)drv_acpi_attach();
 #endif
 
 	/* Lists every BIOS IDE unit as a boot device. */

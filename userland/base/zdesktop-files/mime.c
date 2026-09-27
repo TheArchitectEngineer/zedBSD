@@ -334,6 +334,26 @@ fm_mime_label(
 	label[index] = '\0';
 }
 
+/*
+ * Tells whether bytes read from the start of a file are text: no NUL, and
+ * well-formed UTF-8 but for a character cut at the end of the read.
+ */
+int
+fm_mime_text(
+	const unsigned char *bytes,
+	size_t length)
+{
+	int text;
+
+	/* The same test the type's sniffing makes. */
+	text = mime_text_like(bytes, length);
+	if (text == 0)
+		return 0;
+
+	/* Succeeded: the bytes are text. */
+	return 1;
+}
+
 /* Copies a name's extension in lower case; zero when it has none (or one too long). */
 static int
 mime_extension_of(
