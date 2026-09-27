@@ -26,6 +26,10 @@ fetch_git() {
 	dir=$root/$name
 	if [ -d "$dir/.git" ] && [ "$(git -C "$dir" rev-parse HEAD 2>/dev/null)" = "$commit" ]; then
 		echo "$name: present at $commit"
+		# The sparse paths may have grown since the suite was fetched (the whole commit is there already).
+		if [ $# -gt 0 ]; then
+			git -C "$dir" sparse-checkout set --no-cone "/$license" "$@"
+		fi
 	else
 		rm -rf "$dir"
 		mkdir -p "$dir"
@@ -81,7 +85,7 @@ for suite in "$@"; do
 		# The 3-Clause BSD licence (LICENSE.md).
 		fetch_git wpt https://github.com/web-platform-tests/wpt \
 			2d66b9b7998bb58c336138c178323ddee857b586 LICENSE.md "BSD" \
-			/css/ /url/ /dom/ /html/syntax/ /encoding/ /resources/ /fonts/ /common/
+			/css/ /url/ /dom/ /html/syntax/ /encoding/ /resources/ /fonts/ /common/ /fetch/data-urls/
 		;;
 	test262)
 		# The 3-Clause BSD licence (Ecma International).

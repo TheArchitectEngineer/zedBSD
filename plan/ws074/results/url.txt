@@ -1,0 +1,1 @@
+2026-09-28 urltestdata 896/896 (100.0%) data-urls 72/72 (100.0%) suite=wpt-2d66b9b7
