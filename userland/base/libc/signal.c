@@ -108,6 +108,38 @@ sigaction(
 }
 
 /*
+ * Makes the whole mask a thread is to have from a program's whole mask:
+ * the program's public signals as given, and the library's reserved
+ * signals (above SIGRTMAX, such as the SIGEV_THREAD wake) as the thread
+ * has them now.
+ *
+ * A program replaces its mask with one that cannot name the reserved
+ * signals (sigprocmask SIG_SETMASK, sigsuspend, ppoll, pselect).  Taking
+ * them from the program would unblock the wake in a program thread, which
+ * the kernel may then pick for a timer's wake, so that the thread's
+ * blocking call returns EINTR (BUG-046).  Returns 0, or -1 with errno.
+ */
+int
+__libc_signal_mask_keep_reserved(
+	const sigset_t *set,
+	sigset_t *result)
+{
+	sigset_t current;
+	intptr_t status;
+
+	/* Reads the thread's mask as it is now. */
+	status = call(KERN_SYS_sigprocmask, SIG_BLOCK, 0, (uintptr_t)&current);
+	if (status < 0)
+		return -1;
+
+	/* Takes the public signals from the program and the reserved ones from the thread. */
+	*result = (*set & PUBLIC_SIGNAL_MASK) | (current & ~PUBLIC_SIGNAL_MASK);
+
+	/* Succeeded: the mask is stored. */
+	return 0;
+}
+
+/*
  * Implements the sigprocmask operation.
  */
 int
@@ -117,9 +149,19 @@ sigprocmask(
 	sigset_t *old_set)
 {
 	sigset_t copy;
+	int kept;
 
-	/* Handles the set availability. */
-	if (set != NULL) {
+	/*
+	 * A program changes only the public signals.  A whole new mask keeps
+	 * the thread's reserved signals as they are; a block or an unblock
+	 * leaves them out.
+	 */
+	if (set != NULL && how == SIG_SETMASK) {
+		kept = __libc_signal_mask_keep_reserved(set, &copy);
+		if (kept != 0)
+			return -1;
+		set = &copy;
+	} else if (set != NULL) {
 		copy = *set;
 		copy &= PUBLIC_SIGNAL_MASK;
 		set = &copy;
@@ -164,21 +206,23 @@ int
 sigsuspend(
 	const sigset_t *set)
 {
-	int function_result;
 	sigset_t copy;
+	int status;
+	int kept;
 
-	/* Handles the set availability. */
+	/* The mask to wait with keeps the thread's reserved signals. */
 	if (set != NULL) {
-		copy = *set;
-		copy &= PUBLIC_SIGNAL_MASK;
+		kept = __libc_signal_mask_keep_reserved(set, &copy);
+		if (kept != 0)
+			return -1;
 		set = &copy;
 	}
 
-	/* Computes the function result. */
-	function_result = (int)call(KERN_SYS_sigsuspend, (uintptr_t)set, 0, 0);
+	/* Waits for a signal with the mask; the kernel reports EINTR. */
+	status = (int)call(KERN_SYS_sigsuspend, (uintptr_t)set, 0, 0);
 
-	/* Returns the computed result. */
-	return function_result;
+	/* Reports what the wait ended with (-1 and EINTR after a signal). */
+	return status;
 }
 
 /*

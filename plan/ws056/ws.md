@@ -9,7 +9,7 @@ Related Milestones: —
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: q423
-Resume point: p001 uncleared（残りは BUG-046 だけ）。ユーザーの判断で p001 の clear（BUG-046 を non-blocking）か p002
+Resume point: p002 cleared（2026-09-27、BUG-046 の EINTR を libc で修正）。p001 は uncleared のまま: console の `POSIX-R2.ELF` は timer を通るが最後の execve の後に止まる（別の bug）。p001 の clear はユーザーの判断
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -26,4 +26,4 @@ Resume point: p001 uncleared（残りは BUG-046 だけ）。ユーザーの判�
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
 | [ws056-p001](phase001/phase.md) | 3 件の修正と試験、規約の確認 | uncleared（q423-i01。BUG-034・035・037・043・044 を直し、BUG-042 の真因（thread の mask の継承）を kernel と libc で直した。pax は pax・gnu の archive を guest で展開して host と一致、`POSIX-R2-REMAINING.ELF` は 01-12 PASS。残りは `POSIX-R2.ELF` が console で timer の試験の EINTR（BUG-046）で status 0 にならないこと） | — |
-| ws056-p002（案） | console での `POSIX-R2.ELF` の EINTR の経路の特定（BUG-046） | planning（ユーザーの判断待ち: BUG-046 を non-blocking として p001 を clear するか、p002 を立てるか） | p001 |
+| [ws056-p002](phase002/phase.md) | console での `POSIX-R2.ELF` の EINTR の経路の特定と修正（BUG-046） | cleared（2026-09-27。置き換えの mask が予約の wake signal を unblock していた。libc で保つ。EINTR 29〜155/300 → 0/300、console で timer PASS。console の status 0 は execve の後の停止が残る） | p001 |
