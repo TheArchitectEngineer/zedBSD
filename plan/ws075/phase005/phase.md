@@ -68,6 +68,18 @@ Phase disposition: normal
 - 後へ: descriptor 配列と VS の sampled image（ws031-p035）は survey の 122 module に使うものが無い（VS の sampler は
   pipeline の準備で拒むまま、`pipeline-prepare.c`）。depth の image の copy（Y tile との変換）。
 
+### 増分 4: libGLESv2 の要る実行器の不足（2026-09-28）
+
+- binding の番号を 0〜63 に（`I915_GFX_MAX_BINDINGS` 8 → 64。libGLESv2 は uniform block を 32 から、capture を 48 に置く）。
+  layout の binding は 32 個まで（`I915_GFX_MAX_LAYOUT_BINDINGS`）、dynamic uniform buffer は set ごとに 8 個まで
+  （bind の op は binding と offset の組で持つ）。egl-d2 の es3 の `draw refused: set 0 binding 32 has no uniform buffer` の対処。
+- 2D の depth の image の複数の layer（shadow の配列の texture）: layer ごとに Y tile の行（32 行）に揃えて置き、QPitch は
+  その行数。3DSTATE_DEPTH_BUFFER は view の layer（Minimum Array Element）と Depth と QPitch を持つ。egl-d2 の
+  `vkCreateImage refused: type 1 format 126 2x1x1 levels 1 layers 2` の対処。
+- 未着手（次の再開点）: depth の image の copy（buffer ↔ Y tile。案: `i915_gfx_surface` の format が D16・D32 なら Y tile の
+  R16_UNORM・R32_FLOAT の surface として rect で読み書き、texel の byte 数を format から）、egltest cube の
+  COPY_BUFFER_TO_IMAGE の EINVAL、fbo の D16 の縞、GL_OUT_OF_MEMORY の元。
+
 ## 検証
 
 | 確認 | 結果 |
