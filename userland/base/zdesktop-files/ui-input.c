@@ -55,6 +55,8 @@
 #define INPUT_KEY_D		32U
 #define INPUT_KEY_Z		44U
 #define INPUT_KEY_N		49U
+#define INPUT_KEY_F		33U
+#define INPUT_KEY_T		20U
 
 /*
  * The selection the log reported last: how many items and which had the
@@ -160,8 +162,8 @@ fm_input_button(
 }
 
 /*
- * Scrolls the content by an amount of pixels (positive is down), kept
- * within what there is.
+ * Scrolls the content (or the sidebar, when the pointer is over it) by an
+ * amount of pixels (positive is down), kept within what there is.
  */
 void
 fm_input_scroll(
@@ -170,6 +172,22 @@ fm_input_scroll(
 {
 	struct fm_tab *tab;
 	int limit;
+	int over;
+
+	/* Over the sidebar: the sidebar scrolls. */
+	over = input_contains(&app->layout.sidebar, app->pointer_x, app->pointer_y);
+	if (over != 0) {
+		limit = app->layout.sidebar_height - app->layout.sidebar.height;
+		if (limit < 0)
+			limit = 0;
+		app->sidebar_scroll += amount;
+		if (app->sidebar_scroll > limit)
+			app->sidebar_scroll = limit;
+		if (app->sidebar_scroll < 0)
+			app->sidebar_scroll = 0;
+		app->dirty = 1;
+		return;
+	}
 
 	/* The furthest the content scrolls. */
 	tab = fm_ui_tab(app);
@@ -220,6 +238,12 @@ fm_input_key(
 	/* The location field edits while it has the focus. */
 	if (app->focus == FM_FOCUS_LOCATION) {
 		input_location_key(app, event);
+		return;
+	}
+
+	/* So does the search field. */
+	if (app->focus == FM_FOCUS_SEARCH) {
+		fm_search_key(app, event);
 		return;
 	}
 
@@ -340,8 +364,10 @@ input_press(
 	if (double_click != 0)
 		app->click_time = 0;
 
-	/* A press outside the location field ends its editing. */
+	/* A press outside the location field ends its editing, and one outside the search field its typing. */
 	if (app->focus == FM_FOCUS_LOCATION && kind != FM_HIT_CRUMB)
+		app->focus = FM_FOCUS_CONTENT;
+	if (app->focus == FM_FOCUS_SEARCH && kind != FM_HIT_SEARCH)
 		app->focus = FM_FOCUS_CONTENT;
 
 	/* A press anywhere but on the name being changed ends the change, keeping what was typed. */
@@ -419,6 +445,13 @@ input_click(
 		break;
 	case FM_HIT_PROGRESS:
 		app->show_tasks = !app->show_tasks;
+		break;
+	case FM_HIT_SEARCH:
+		if (app->focus != FM_FOCUS_SEARCH)
+			fm_search_focus(app);
+		break;
+	case FM_HIT_SCOPE:
+		fm_search_scope(app, (unsigned)index);
 		break;
 	default:
 		break;
@@ -973,6 +1006,12 @@ input_operation_key(
 		fm_action_new_folder(app);
 	} else if (event->key == INPUT_KEY_Z && event->modifiers == (FM_MOD_CTRL | FM_MOD_SHIFT)) {
 		fm_action_undo(app, 1);
+	} else if (event->key == INPUT_KEY_T && event->modifiers == (FM_MOD_CTRL | FM_MOD_ALT)) {
+		fm_action_add_favorite(app);
+	} else if (event->key == INPUT_KEY_F && event->modifiers == FM_MOD_CTRL) {
+		fm_search_focus(app);
+	} else if (event->key >= INPUT_KEY_1 && event->key <= INPUT_KEY_1 + 8U && event->modifiers == FM_MOD_ALT) {
+		fm_action_toggle_tag(app, (int)(event->key - INPUT_KEY_1));
 	} else {
 		handled = 0;
 	}
@@ -1025,6 +1064,8 @@ input_button(
 		fm_action_put_back(app);
 	} else if (index == FM_BUTTON_EMPTY_TRASH) {
 		fm_action_empty_trash(app);
+	} else if (index >= FM_BUTTON_REMOVE_PLACE) {
+		fm_action_remove_favorite(app, index - FM_BUTTON_REMOVE_PLACE);
 	} else if (index >= FM_BUTTON_TASK_CANCEL) {
 		fm_action_cancel_task(app, index - FM_BUTTON_TASK_CANCEL);
 	}

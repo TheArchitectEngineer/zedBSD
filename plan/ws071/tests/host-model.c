@@ -18,6 +18,8 @@
 
 #include "files.h"
 
+#include <zdesktop.h>
+
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -236,6 +238,41 @@ main(
 	error = fm_unique_name(path, "Report.pdf", NULL, other, sizeof(other));
 	snprintf(path, sizeof(path), "%s/src/Report 3.pdf", root);
 	check(error == 0 && strcmp(other, path) == 0, "free name: Report 3.pdf after Report.pdf and Report 2.pdf");
+
+	/* 14. The recent list (libzdesktop): newest first, a path once, removal. */
+	{
+		static struct zdesktop_recent_item items[8];
+		struct fm_tags tags;
+		char **tagged;
+		size_t tagged_count;
+		unsigned mask;
+
+		snprintf(path, sizeof(path), "%s/src/Report.pdf", root);
+		check(zdesktop_recent_add(path, "test") == 0, "recent: add");
+		snprintf(other, sizeof(other), "%s/src/Report copy.pdf", root);
+		check(zdesktop_recent_add(other, "test") == 0, "recent: add another");
+		check(zdesktop_recent_add(path, "test") == 0, "recent: add the first again");
+		check(zdesktop_recent_list(items, 8, &count) == 0 && count == 2 && strcmp(items[0].path, path) == 0 && strcmp(items[1].path, other) == 0, "recent: newest first, once each");
+		check(zdesktop_recent_remove(path) == 0, "recent: remove");
+		check(zdesktop_recent_list(items, 8, &count) == 0 && count == 1 && strcmp(items[0].path, other) == 0, "recent: the other is left");
+
+		/* 15. Tags: the xattr, unknown names kept, and the index. */
+		fm_tags_load(&tags);
+		check(tags.count == 5 && strcmp(tags.items[0].name, "Work") == 0, "tags: the five defaults");
+		snprintf(path, sizeof(path), "%s/src/Report.pdf", root);
+		setxattr(path, "user.zdesktop.tags", "Work\nMine\n", 10, 0);
+		mask = fm_tags_of(&tags, path);
+		check(mask == 1U, "tags: Work read (Mine unknown)");
+		check(fm_tags_write(&tags, path, (1U << 2) | 1U) == 0, "tags: write Work and Ideas");
+		length = getxattr(path, "user.zdesktop.tags", value, sizeof(value));
+		value[length > 0 ? length : 0] = '\0';
+		check(strstr(value, "Mine") != NULL && strstr(value, "Ideas") != NULL, "tags: the unknown name kept");
+		check(fm_tags_paths(&tags, 2, &tagged, &tagged_count) == 0 && tagged_count == 1 && strcmp(tagged[0], path) == 0, "tags: the index lists the file under Ideas");
+		fm_paths_free(tagged, tagged_count);
+		check(fm_tags_write(&tags, path, 0) == 0, "tags: clear the known ones");
+		check(fm_tags_paths(&tags, 2, &tagged, &tagged_count) == 0 && tagged_count == 0, "tags: the index forgets it");
+		fm_paths_free(tagged, tagged_count);
+	}
 
 	printf("files-model: %s\n", failures == 0 ? "PASS" : "FAIL");
 	return failures != 0;

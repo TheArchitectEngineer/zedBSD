@@ -46,6 +46,8 @@ static void grid_message(struct fm_app *app, struct fm_canvas *canvas, const str
 static void grid_band(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *inner);
 static void grid_status(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *area);
 static void grid_trash_buttons(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *area);
+static void grid_scope_chips(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *area);
+static void grid_tag_badges(struct fm_app *app, struct fm_canvas *canvas, unsigned tags, float right, float y);
 static void grid_button(struct fm_app *app, struct fm_canvas *canvas, int right, int y, const char *label, int index, int enabled);
 
 /*
@@ -189,25 +191,50 @@ grid_title(
 	struct fm_tab *tab;
 	const struct fm_location *location;
 	const char *name;
+	char title[FM_PATH_MAX + 8];
 	char count[64];
 	int baseline;
 	int width;
+	int left;
+	int tag;
 
-	/* The place's name, large. */
+	/* The place's name, large (a search says what it looks for, a tag shows its dot). */
 	tab = fm_ui_tab(app);
 	location = &tab->history[tab->history_index].location;
 	name = fm_location_name(location, app->home);
+	if (location->kind == FM_LOCATION_SEARCH) {
+		snprintf(title, sizeof(title), "\u201c%s\u201d", location->path);
+		name = title;
+	}
+
+	/* Its baseline and left end (after a tag dot). */
 	baseline = area->y + 38;
-	width = fm_text_draw_fit(app->text, canvas, area->x + 24, baseline, name, GRID_TEXT_TITLE, 1, area->width / 2, FM_COLOR_TEXT);
+	left = area->x + 24;
+	if (location->kind == FM_LOCATION_TAG) {
+		tag = fm_tags_find(&app->tags, location->path);
+		if (tag >= 0)
+			fm_icon_tag(canvas, (float)left + 6.0f, (float)baseline - 7.0f, 6.0f, app->tags.items[tag].color);
+		left += 20;
+	}
+
+	/* The name itself. */
+	width = fm_text_draw_fit(app->text, canvas, left, baseline, name, GRID_TEXT_TITLE, 1, area->width / 2, FM_COLOR_TEXT);
+	width += left - (area->x + 24);
 
 	/* In the trash: Put Back (for a selection) and Empty Trash at the right. */
 	if (location->kind == FM_LOCATION_TRASH)
 		grid_trash_buttons(app, canvas, area);
 
-	/* How many items, after it, quietly. */
+	/* A search: where it looks, as three chips at the right. */
+	if (location->kind == FM_LOCATION_SEARCH)
+		grid_scope_chips(app, canvas, area);
+
+	/* How many items, after it, quietly (a search still walking says so). */
 	if (tab->listing.error != 0)
 		return;
 	fm_dir_items_text((long)tab->listing.count, count, sizeof(count));
+	if (location->kind == FM_LOCATION_SEARCH && app->search.active != 0)
+		snprintf(count + strlen(count), sizeof(count) - strlen(count), ", searching\u2026");
 	(void)fm_text_draw(app->text, canvas, area->x + 24 + width + 12, baseline, count, strlen(count), GRID_TEXT_COUNT, 0, FM_COLOR_TEXT_SECONDARY);
 }
 
@@ -294,6 +321,10 @@ grid_cell(
 	fm_grid_entry_icon(app, canvas, entry, (float)x + (GRID_CELL_WIDTH - GRID_ICON) * 0.5f, (float)y + 10.0f, (float)GRID_ICON);
 	if (entry->cut != 0)
 		fm_canvas_round(canvas, (float)x + (GRID_CELL_WIDTH - GRID_ICON) * 0.5f, (float)y + 10.0f, (float)GRID_ICON, (float)GRID_ICON, 8.0f, FM_RGBA(0xffffff, 150));
+
+	/* The tags' dots at the icon's lower right. */
+	if (entry->tags != 0U)
+		grid_tag_badges(app, canvas, entry->tags, (float)x + (GRID_CELL_WIDTH + GRID_ICON) * 0.5f, (float)y + GRID_ICON + 4.0f);
 
 	/* The name being changed is a field; otherwise the name, on the accent when selected. */
 	renaming = 0;
@@ -560,4 +591,71 @@ grid_button(
 	/* An enabled button can be clicked. */
 	if (enabled != 0)
 		fm_ui_hit(app, &rect, FM_HIT_BUTTON, index);
+}
+
+/* Draws the search's scope as three chips at the right of the title: This Folder, Home, Computer. */
+static void
+grid_scope_chips(
+	struct fm_app *app,
+	struct fm_canvas *canvas,
+	const struct fm_rect *area)
+{
+	static const char *const labels[] = { "This Folder", "Home", "Computer" };
+	struct fm_rect chip;
+	fm_color ground;
+	fm_color ink;
+	int widths[3];
+	int right;
+	int index;
+
+	/* The chips' widths, laid out from the right edge. */
+	right = area->x + area->width - 20;
+	for (index = 2; index >= 0; index--) {
+		widths[index] = fm_text_width(app->text, labels[index], strlen(labels[index]), 12U, 1) + 24;
+		right -= widths[index] + 6;
+	}
+
+	/* Each chip, the scope in force in the accent. */
+	chip.x = right + 6;
+	chip.y = area->y + 20;
+	chip.height = 26;
+	for (index = 0; index < 3; index++) {
+		chip.width = widths[index];
+		ground = FM_RGB(0xeef1f6);
+		ink = FM_COLOR_TEXT_SECONDARY;
+		if ((unsigned)index == app->search_scope) {
+			ground = FM_COLOR_SELECTION;
+			ink = FM_COLOR_ACCENT;
+		} else if (app->hover_kind == FM_HIT_SCOPE && app->hover_index == index) {
+			ground = FM_RGB(0xe2e7ef);
+		}
+
+		/* The chip and its label. */
+		fm_canvas_round(canvas, (float)chip.x, (float)chip.y, (float)chip.width, (float)chip.height, 13.0f, ground);
+		(void)fm_text_draw(app->text, canvas, chip.x + 12, fm_text_center(12U, chip.y, chip.height), labels[index], strlen(labels[index]), 12U, 1, ink);
+		fm_ui_hit(app, &chip, FM_HIT_SCOPE, index);
+		chip.x += chip.width + 6;
+	}
+}
+
+/* Draws the dots of an item's tags, overlapping to the left from a right edge. */
+static void
+grid_tag_badges(
+	struct fm_app *app,
+	struct fm_canvas *canvas,
+	unsigned tags,
+	float right,
+	float y)
+{
+	float x;
+	int index;
+
+	/* Each tag's dot, the last known tag rightmost. */
+	x = right - 6.0f;
+	for (index = app->tags.count - 1; index >= 0; index--) {
+		if ((tags & (1U << index)) == 0U)
+			continue;
+		fm_icon_tag(canvas, x, y, 5.0f, app->tags.items[index].color);
+		x -= 8.0f;
+	}
 }

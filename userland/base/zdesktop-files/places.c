@@ -16,7 +16,10 @@
 
 #include "files.h"
 
+#include <errno.h>
+#include <mntent.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 
@@ -29,14 +32,6 @@ struct places_folder {
 	unsigned icon;
 };
 
-/*
- * One of the tags shown before the user makes their own.
- */
-struct places_tag {
-	const char *label;
-	fm_color color;
-};
-
 /* The usual folders, in the sidebar's order. */
 static const struct places_folder places_folders[] = {
 	{ "Desktop", "Desktop", FM_ICON_DESKTOP },
@@ -47,62 +42,139 @@ static const struct places_folder places_folders[] = {
 	{ "Movies", "Movies", FM_ICON_MOVIES }
 };
 
-/* The default tags (the mock-up's work, private, ideas, reference and archive). */
-static const struct places_tag places_tags[] = {
-	{ "Work", FM_RGB(0x3b82f6) },
-	{ "Personal", FM_RGB(0x8b5cf6) },
-	{ "Ideas", FM_RGB(0xec4899) },
-	{ "Reference", FM_RGB(0xf59e0b) },
-	{ "Archive", FM_RGB(0x9ca3af) }
+/* The file systems whose mounts are not shown as places (virtual ones). */
+static const char *const places_hidden_types[] = {
+	"tmpfs", "devfs", "proc", "procfs", "sysfs", "devpts", "kernfs", "fdesc", "swap", "bind",
+	"cgroup", "cgroup2", "efivarfs", "securityfs", "pstore", "bpf", "tracefs", "debugfs", "mqueue",
+	"hugetlbfs", "fusectl", "configfs", "autofs", "binfmt_misc", "nsfs", "rpc_pipefs", "overlay", "squashfs"
+};
+
+/* The folders whose mounts belong to the system rather than to the user. */
+static const char *const places_system_folders[] = {
+	"/sys", "/proc", "/dev", "/run", "/boot", "/snap", "/var/lib"
 };
 
 static struct fm_place *places_add(struct fm_places *places, unsigned section, unsigned icon, const char *label, unsigned kind, const char *path);
+static void places_favorites(struct fm_places *places, const char *home);
+static void places_add_folder(struct fm_places *places, const char *path, const char *home);
+static void places_mounts(struct fm_places *places);
+static void places_file(char *path, size_t size);
 
 /*
- * Fills the sidebar with its default places for a home folder.
+ * Fills the sidebar: Favorites (the home dashboard and the user's folders,
+ * or the usual ones), Locations (recent files, the trash, the computer and
+ * mounted volumes) and the tags.
  */
 void
 fm_places_init(
 	struct fm_places *places,
-	const char *home)
+	const char *home,
+	const struct fm_tags *tags)
 {
 	struct fm_place *place;
-	struct stat status;
-	char path[FM_PATH_MAX];
-	size_t index;
-	int error;
+	int index;
 
 	/* The sidebar starts empty. */
 	memset(places, 0, sizeof(*places));
 
-	/* Favorites: the home dashboard first. */
+	/* Favorites: the home dashboard first, then the folders. */
 	(void)places_add(places, FM_SECTION_FAVORITES, FM_ICON_HOME, "Home", FM_LOCATION_HOME, home);
+	places_favorites(places, home);
 
-	/* Then the usual folders, pale when they do not exist. */
-	for (index = 0; index < sizeof(places_folders) / sizeof(places_folders[0]); index++) {
-		snprintf(path, sizeof(path), "%s/%s", home, places_folders[index].name);
-		place = places_add(places, FM_SECTION_FAVORITES, places_folders[index].icon, places_folders[index].label, FM_LOCATION_FOLDER, path);
-		if (place == NULL)
-			break;
-
-		/* A missing folder is shown pale. */
-		error = stat(path, &status);
-		if (error != 0)
-			place->missing = 1;
-	}
-
-	/* Locations: the recent files, the trash and the computer's root. */
+	/* Locations: the recent files, the trash, the computer's root and the volumes. */
 	(void)places_add(places, FM_SECTION_LOCATIONS, FM_ICON_RECENTS, "Recents", FM_LOCATION_RECENTS, "");
 	(void)places_add(places, FM_SECTION_LOCATIONS, FM_ICON_TRASH, "Trash", FM_LOCATION_TRASH, "");
 	(void)places_add(places, FM_SECTION_LOCATIONS, FM_ICON_COMPUTER, "Computer", FM_LOCATION_FOLDER, "/");
+	places_mounts(places);
 
-	/* Tags: the default ones, each with its color. */
-	for (index = 0; index < sizeof(places_tags) / sizeof(places_tags[0]); index++) {
-		place = places_add(places, FM_SECTION_TAGS, 0, places_tags[index].label, FM_LOCATION_TAG, places_tags[index].label);
+	/* Tags, each with its color. */
+	for (index = 0; index < tags->count; index++) {
+		place = places_add(places, FM_SECTION_TAGS, 0, tags->items[index].name, FM_LOCATION_TAG, tags->items[index].name);
 		if (place == NULL)
 			break;
-		place->color = places_tags[index].color;
+		place->color = tags->items[index].color;
 	}
+}
+
+/*
+ * Adds a folder to the Favorites (after the others) and keeps the list;
+ * a folder already there is not added again.  Returns 0, EEXIST or an
+ * errno value.
+ */
+int
+fm_places_add_favorite(
+	struct fm_places *places,
+	const char *path)
+{
+	char file[FM_PATH_MAX];
+	FILE *out;
+	int index;
+	int match;
+
+	/* Already a favorite. */
+	for (index = 0; index < places->count; index++) {
+		if (places->items[index].section != FM_SECTION_FAVORITES || places->items[index].location.kind != FM_LOCATION_FOLDER)
+			continue;
+		match = strcmp(places->items[index].location.path, path);
+		if (match == 0)
+			return EEXIST;
+	}
+
+	/* The list written again with the folder at its end. */
+	places_file(file, sizeof(file));
+	out = fopen(file, "w");
+	if (out == NULL)
+		return errno;
+	for (index = 0; index < places->count; index++) {
+		if (places->items[index].section == FM_SECTION_FAVORITES && places->items[index].location.kind == FM_LOCATION_FOLDER)
+			fprintf(out, "%s\n", places->items[index].location.path);
+	}
+
+	/* The new folder last. */
+	fprintf(out, "%s\n", path);
+	fclose(out);
+
+	/* Succeeded: the caller fills the sidebar again. */
+	return 0;
+}
+
+/*
+ * Takes a folder off the Favorites (by its place's index) and keeps the
+ * list.  Returns 0, EINVAL for a place that is not a favorite folder, or an
+ * errno value.
+ */
+int
+fm_places_remove_favorite(
+	struct fm_places *places,
+	int removed)
+{
+	char file[FM_PATH_MAX];
+	FILE *out;
+	int index;
+
+	/* Only a favorite folder (not Home) goes. */
+	if (removed < 0 || removed >= places->count)
+		return EINVAL;
+	if (places->items[removed].section != FM_SECTION_FAVORITES || places->items[removed].location.kind != FM_LOCATION_FOLDER)
+		return EINVAL;
+
+	/* The list written again without it. */
+	places_file(file, sizeof(file));
+	out = fopen(file, "w");
+	if (out == NULL)
+		return errno;
+	for (index = 0; index < places->count; index++) {
+		if (index == removed)
+			continue;
+		if (places->items[index].section == FM_SECTION_FAVORITES && places->items[index].location.kind == FM_LOCATION_FOLDER)
+			fprintf(out, "%s\n", places->items[index].location.path);
+	}
+
+	/* The list is written. */
+	fclose(out);
+
+	/* Succeeded: the caller fills the sidebar again. */
+	return 0;
 }
 
 /*
@@ -216,4 +288,164 @@ places_add(
 
 	/* Reports the new place. */
 	return place;
+}
+
+/* Adds the favorite folders: the user's list, or the usual folders under the home folder. */
+static void
+places_favorites(
+	struct fm_places *places,
+	const char *home)
+{
+	char file[FM_PATH_MAX];
+	char line[FM_PATH_MAX];
+	char path[FM_PATH_MAX];
+	char *newline;
+	char *read;
+	FILE *in;
+	size_t index;
+
+	/* The user's list, a path a line. */
+	places_file(file, sizeof(file));
+	in = fopen(file, "r");
+	if (in != NULL) {
+		for (;;) {
+			read = fgets(line, sizeof(line), in);
+			if (read == NULL)
+				break;
+			newline = strchr(line, '\n');
+			if (newline != NULL)
+				*newline = '\0';
+			if (line[0] == '/')
+				places_add_folder(places, line, home);
+		}
+
+		/* The list is read. */
+		fclose(in);
+		return;
+	}
+
+	/* Without one, the usual folders. */
+	for (index = 0; index < sizeof(places_folders) / sizeof(places_folders[0]); index++) {
+		snprintf(path, sizeof(path), "%s/%s", home, places_folders[index].name);
+		places_add_folder(places, path, home);
+	}
+}
+
+/* Adds a favorite folder: the usual ones keep their icons, others get a folder's; a missing one is pale. */
+static void
+places_add_folder(
+	struct fm_places *places,
+	const char *path,
+	const char *home)
+{
+	struct fm_location location;
+	struct fm_place *place;
+	struct stat status;
+	char usual[FM_PATH_MAX];
+	unsigned icon;
+	size_t index;
+	int error;
+	int match;
+
+	/* The icon of a usual folder, else a folder's. */
+	icon = FM_ICON_FOLDER_LINE;
+	for (index = 0; index < sizeof(places_folders) / sizeof(places_folders[0]); index++) {
+		snprintf(usual, sizeof(usual), "%s/%s", home, places_folders[index].name);
+		match = strcmp(usual, path);
+		if (match == 0)
+			icon = places_folders[index].icon;
+	}
+
+	/* The place, named as the folder is. */
+	location.kind = FM_LOCATION_FOLDER;
+	snprintf(location.path, sizeof(location.path), "%s", path);
+	place = places_add(places, FM_SECTION_FAVORITES, icon, fm_location_name(&location, home), FM_LOCATION_FOLDER, path);
+	if (place == NULL)
+		return;
+
+	/* A missing folder is shown pale. */
+	error = stat(path, &status);
+	if (error != 0)
+		place->missing = 1;
+}
+
+/* Adds the mounted volumes other than the root and the virtual file systems. */
+static void
+places_mounts(
+	struct fm_places *places)
+{
+	struct mntent *mount;
+	struct fm_location location;
+	FILE *table;
+	size_t index;
+	int hidden;
+	int match;
+
+	/* The kernel's mount table. */
+	table = setmntent(MOUNTED, "r");
+	if (table == NULL)
+		return;
+
+	/* Each mount but the root and the virtual ones. */
+	for (;;) {
+		mount = getmntent(table);
+		if (mount == NULL)
+			break;
+		match = strcmp(mount->mnt_dir, "/");
+		if (match == 0)
+			continue;
+		hidden = 0;
+		for (index = 0; index < sizeof(places_hidden_types) / sizeof(places_hidden_types[0]); index++) {
+			match = strcmp(mount->mnt_type, places_hidden_types[index]);
+			if (match == 0)
+				hidden = 1;
+		}
+
+		/* A virtual file system is not a place. */
+		for (index = 0; index < sizeof(places_system_folders) / sizeof(places_system_folders[0]); index++) {
+			match = strncmp(mount->mnt_dir, places_system_folders[index], strlen(places_system_folders[index]));
+			if (match == 0)
+				hidden = 1;
+		}
+
+		/* A system folder is not a place either. */
+		if (hidden != 0)
+			continue;
+
+		/* The volume, named by its mount point's last part. */
+		location.kind = FM_LOCATION_FOLDER;
+		snprintf(location.path, sizeof(location.path), "%s", mount->mnt_dir);
+		(void)places_add(places, FM_SECTION_LOCATIONS, FM_ICON_VOLUME, fm_location_name(&location, ""), FM_LOCATION_FOLDER, mount->mnt_dir);
+	}
+
+	/* The table is closed. */
+	endmntent(table);
+}
+
+/* Writes the path of the Favorites' list ($XDG_CONFIG_HOME/zdesktop-files/sidebar), making its folder. */
+static void
+places_file(
+	char *path,
+	size_t size)
+{
+	char folder[FM_PATH_MAX - 16];
+	const char *config;
+	const char *home;
+
+	/* $XDG_CONFIG_HOME, or ~/.config. */
+	config = getenv("XDG_CONFIG_HOME");
+	home = getenv("HOME");
+	if (home == NULL)
+		home = "";
+	if (config != NULL && config[0] == '/') {
+		snprintf(folder, sizeof(folder), "%s/zdesktop-files", config);
+	} else {
+		snprintf(folder, sizeof(folder), "%s/.config", home);
+		(void)mkdir(folder, 0700);
+		snprintf(folder, sizeof(folder), "%s/.config/zdesktop-files", home);
+	}
+
+	/* The folder, and the list in it. */
+	(void)mkdir(folder, 0700);
+	snprintf(path, size, "%s/sidebar", folder);
 }

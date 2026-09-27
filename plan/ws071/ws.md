@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 ユーザーの指示でサブエージェントが worktree の branch で実行。main の Queue への反映は main の session）
-Resume point: p005（検索・タグ・recent・Favorites の編集・Locations）
+Resume point: p006（Home の dashboard）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -72,7 +72,7 @@ libpng-compat の decode（WS035 p040・p041 の decode の半分を p010 で先
 | [ws071-p002](phase002/phase.md) | 骨格: window（pointer・keyboard）、present（Vulkan の canvas）、canvas・text・icons、toolbar・sidebar・content の静的な配置、host の render 試験、guest の image と起動 | cleared | p001 |
 | [ws071-p003](phase003/phase.md) | 一覧と移動: dir、nav（履歴・パンくず・Back/Forward/Home）、icon・list 表示、並べ替え、選択、scroll、folder を開く、Ctrl+L | cleared | p002 |
 | [ws071-p004](phase004/phase.md) | file 操作: task（copy・move・delete・duplicate・link）、clipboard、new folder、rename、ゴミ箱（Put Back・Empty）、完全削除の確認、undo・redo、進みと status | cleared | p003 |
-| ws071-p005 | 検索、タグ（xattr・定義・索引・sidebar）、recent（libzdesktop の API）、Favorites の編集、Locations（mount） | planned | p004 |
+| [ws071-p005](phase005/phase.md) | 検索、タグ（xattr・定義・索引・sidebar）、recent（libzdesktop の API）、Favorites の編集、Locations（mount） | cleared | p004 |
 | ws071-p006 | Home の dashboard（hero、folder cards、recent files・folders） | planned | p005 |
 | ws071-p007 | preview pane、Quick Look、Get Info（checksum・xattr）、MIME、開く・別のアプリで開く | planned | p005 |
 | ws071-p008 | menubar（System Menu）、タブ、New Window、keyboard の shortcut の全体、Help | planned | p007、WS070-p004 |
