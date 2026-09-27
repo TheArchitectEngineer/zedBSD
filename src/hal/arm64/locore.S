@@ -107,8 +107,12 @@ arm64_el1_low:
 	add x1, x1, :lo12:arm64_l1_high
 	str x3, [x1, x4]
 
-	/* Attr0=normal WB, Attr1=device-nGnRE. */
+	/*
+	 * Attr0=normal WB, Attr1=device-nGnRE, Attr2=device-nGnRnE,
+	 * Attr3=normal non-cacheable (uncached views of RAM for DMA).
+	 */
 	mov x1, #0x04ff
+	movk x1, #0x4400, lsl #16
 	msr mair_el1, x1
 	ldr x1, =0x00000002b5103510
 	msr tcr_el1, x1

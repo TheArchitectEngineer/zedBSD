@@ -4,9 +4,9 @@
 
 Phase ID: `ws048-p004`
 Parent: [WS048](../ws.md)
-Status: uncleared（2026-09-27。HAL 以外の部分は済み。**hal.h の差分の承認待ち**）
+Status: cleared（2026-09-27。承認済みの hal.h の差分を当て、rpi4・amd64 の build と boot test、host 試験が通った）
 Queue: 2026-09-27 ユーザー指示のサブエージェントの実行（worktree の branch）
-HAL の承認: **要る**。hal.h に `hal_pmem_map_uncached`・`hal_pmem_unmap_uncached` を足す（design.md §6、差分 [proposed/hal-pmem-uncached.diff](../proposed/hal-pmem-uncached.diff)）
+HAL の承認: **済み**（2026-09-27 ユーザー「HAL approvalsは3つとも承認します。」、[Guardrail](../../guardrail.md) の表）。hal.h に `hal_pmem_map_uncached`・`hal_pmem_unmap_uncached` を足す（design.md §6、差分 [proposed/hal-pmem-uncached.diff](../proposed/hal-pmem-uncached.diff)）
 依存: p001
 
 ## 範囲（承認の後）
@@ -64,3 +64,20 @@ amd64・i386・sparcv9・m68k の HAL は変えない（非 coherent な bus が
 ## 再開の条件
 
 ユーザーが差分 `proposed/hal-pmem-uncached.diff` を承認したら: 差分を当て、rpi4 の build・boot test をし、Guardrail の承認済みの表に載せ（main session）、この Phase を clear する。承認されない場合は design.md §6 の案 B（xHCI に cache の操作を入れる）を計画し直す。
+
+## 2026-09-27 の適用と確認（承認の後）
+
+rate limit で止まったサブエージェントの作業（`salvage/ws048` 4b7577d1、親 0de39ac0）を、片付けのサブエージェントが検証して commit した。
+
+| 確認 | 結果 |
+| --- | --- |
+| 承認済みの差分との一致 | 親 0de39ac0 の `include/hal/hal.h`・`src/hal/arm64/locore.S`・`src/hal/arm64/space.c`・`platform/arm64/vmunix.mk` に [proposed/hal-pmem-uncached.diff](../proposed/hal-pmem-uncached.diff)（SHA256 `42901901…`）を `patch -p1` で当てた結果と、salvage の 4 file と新しい `src/kern/uncached.c` が byte 単位で同じ |
+| host 試験 `make -f plan/ws048/tests/host-test.mk run DTB=<main の vendor の bcm2711-rpi-4-b.dtb>` | dma（uncached 無し）46、dma（uncached あり）81、fdt 74、brcmstb 1280、firmware 200140 checks、全て通過 |
+| rpi4 の image `make -j48 ZEDBSD_CONFIG=config/ci/config-rpi4.mk BUILD=build/ws048/rpi4 disk-image` | status 0、warning 0（firmware の file は main の checkout の `vendor/raspberrypi-firmware/boot` を読むだけ） |
+| QEMU raspi4b の boot test `BOOT_MODE=raspi4b OUTPUT=build/ws048/boot-rpi4 plan/tools/boot-test.sh build/ws048/rpi4/hdd-image.img` | **PASS**（login prompt） |
+| amd64 の lean の image（`plan/ws045/tests/config-amd64-base.mk`）と boot test（uefi-usb） | status 0、warning 0、`amd64 vmunix check: PASS`、boot test **PASS** |
+| QEMU の uncached の窓の確認（受け入れ 3） | 上の「差分の検証」の scratch の probe（同じ差分）の結果による。この適用の後には再実行していない（probe は差分に含まれない一時的な code で、既定の rpi4 の config には非 coherent な DMA の利用者が無く、窓の経路は通らない。xHCI を有効にする p005 で通る） |
+| style | `uncached.c` 0、`space.c` 29・`hal.h` 4（差分の前と同じ） |
+| 実機 | 未実施（cache の効果そのものは実機だけで確かめられる） |
+
+次は p005（rpi4 の config で xHCI・HID・hub を有効に）。

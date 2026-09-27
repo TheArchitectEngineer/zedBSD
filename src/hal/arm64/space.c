@@ -43,7 +43,29 @@ static struct arm64_space *space_registry;
 /* The physical span the direct map's level-1 table can reach. */
 #define ARM64_DIRECT_LIMIT (512ULL * ARM64_DIRECT_L1_SPAN)
 
+/* The system half's level-0 entry that holds the uncached window. */
+#define ARM64_UNCACHED_L0_INDEX 1U
+
+/* Where the uncached window starts and how large it is (one level-0 entry). */
+#define ARM64_UNCACHED_BASE (ARM64_DIRECT_BASE + ((uint64_t)ARM64_UNCACHED_L0_INDEX << 39))
+#define ARM64_UNCACHED_SIZE (1ULL << 39)
+
+/* The MAIR index locore.S gives Normal non-cacheable memory. */
+#define ARM64_ATTR_NORMAL_NC 3U
+
+/*
+ * The first unused address of the uncached window.
+ *
+ * Views are handed out upward and their addresses are not reused: DMA
+ * buffers are taken at attach and returned at detach, which never comes near
+ * the window's 512 GiB.  Zero means the window is not yet in use.  Changed
+ * only with interrupts disabled; this HAL runs on one CPU.
+ */
+static uint64_t uncached_next;
+
 static bool range_touches_ram(uint64_t physical, uint64_t size);
+static int uncached_leaf(uint64_t address, bool create, uint64_t **leaf);
+static int uncached_table(uint64_t *table, unsigned index, bool create, uint64_t **next);
 static bool range_is_ram(uint64_t physical, uint64_t size);
 static int device_block_table(unsigned l1_index, uint64_t **table);
 static void map_one_device_block(uint64_t *table, unsigned l2_index, uint64_t physical);
@@ -413,6 +435,148 @@ hal_space_map_device(
 }
 
 /*
+ * Maps managed RAM a second time, uncached, for a device that does not snoop.
+ *
+ * The view lives in its own level-0 entry of the system half, so making it
+ * never touches a live translation.  The direct map's cached lines of the
+ * range are written back and discarded first.
+ */
+int
+hal_pmem_map_uncached(
+	hal_physaddr_t paddr,
+	size_t size,
+	void **vaddr)
+{
+	uint64_t *leaf;
+	uint64_t start;
+	uint64_t offset;
+	uint64_t undo;
+	bool ram;
+	bool enabled;
+	int error;
+
+	/* Requires a destination and a page-aligned, non-empty range. */
+	if (vaddr == NULL || size == 0)
+		return HAL_ERR_INVALID;
+	if (((uint64_t)paddr & (ARM64_PAGE_SIZE - 1U)) != 0)
+		return HAL_ERR_INVALID;
+	if (((uint64_t)size & (ARM64_PAGE_SIZE - 1U)) != 0)
+		return HAL_ERR_INVALID;
+
+	/* Refuses anything but RAM. */
+	ram = range_is_ram((uint64_t)paddr, (uint64_t)size);
+	if (!ram)
+		return HAL_ERR_INVALID;
+
+	/* Writes back and drops the direct map's lines before they could shadow the view. */
+	hal_dcache_invalidate_range((uintptr_t)arm64_phys_to_direct((uintptr_t)paddr), size);
+
+	/* Takes addresses for the view from the window. */
+	enabled = hal_irq_disable();
+	if (uncached_next == 0)
+		uncached_next = ARM64_UNCACHED_BASE;
+	if ((uint64_t)size > ARM64_UNCACHED_BASE + ARM64_UNCACHED_SIZE - uncached_next) {
+		if (enabled)
+			hal_irq_enable();
+
+		/* Reports a window that is used up. */
+		return HAL_ERR_NOMEM;
+	}
+
+	/* Maps each page as Normal non-cacheable, never executable. */
+	start = uncached_next;
+	for (offset = 0; offset < (uint64_t)size; offset += ARM64_PAGE_SIZE) {
+		/* Finds or makes the page's entry; a failure unmaps what was mapped. */
+		error = uncached_leaf(start + offset, true, &leaf);
+		if (error != HAL_OK) {
+			for (undo = 0; undo < offset; undo += ARM64_PAGE_SIZE) {
+				(void)uncached_leaf(start + undo, false, &leaf);
+				*leaf = 0;
+			}
+
+			/* Drops the translations of the pages already mapped. */
+			arm64_flush_tlb();
+			if (enabled)
+				hal_irq_enable();
+
+			/* Reports why the view could not be made. */
+			return error;
+		}
+
+		/* Points the page at the RAM. */
+		*leaf = ((uint64_t)paddr + offset) | PAGE_FLAGS | PTE_ATTR(ARM64_ATTR_NORMAL_NC) | PTE_PXN | PTE_UXN;
+	}
+
+	/* Publishes the entries to the walker and takes the addresses. */
+	arm64_flush_tlb();
+	uncached_next = start + (uint64_t)size;
+	if (enabled)
+		hal_irq_enable();
+
+	/* Succeeded: the RAM is reachable uncached at the view. */
+	*vaddr = (void *)(uintptr_t)start;
+	return HAL_OK;
+}
+
+/*
+ * Removes an uncached view made by hal_pmem_map_uncached().
+ *
+ * The direct map's lines of the range are discarded afterwards, so a line a
+ * speculative read brought in while the view existed is not read later.
+ */
+int
+hal_pmem_unmap_uncached(
+	void *vaddr,
+	size_t size)
+{
+	uint64_t *leaf;
+	uint64_t start;
+	uint64_t offset;
+	uint64_t physical;
+	bool enabled;
+	int error;
+
+	/* Requires a page-aligned range inside the used part of the window. */
+	start = (uint64_t)(uintptr_t)vaddr;
+	if (size == 0)
+		return HAL_ERR_INVALID;
+	if ((start & (ARM64_PAGE_SIZE - 1U)) != 0 || ((uint64_t)size & (ARM64_PAGE_SIZE - 1U)) != 0)
+		return HAL_ERR_INVALID;
+	if (start < ARM64_UNCACHED_BASE || uncached_next == 0)
+		return HAL_ERR_INVALID;
+	if (start >= uncached_next || (uint64_t)size > uncached_next - start)
+		return HAL_ERR_INVALID;
+
+	/* Removes every page's entry and drops the translations. */
+	enabled = hal_irq_disable();
+	for (offset = 0; offset < (uint64_t)size; offset += ARM64_PAGE_SIZE) {
+		/* Refuses a page that is not mapped. */
+		error = uncached_leaf(start + offset, false, &leaf);
+		if (error != HAL_OK || (*leaf & PTE_VALID) == 0) {
+			arm64_flush_tlb();
+			if (enabled)
+				hal_irq_enable();
+
+			/* Reports the hole in the view. */
+			return HAL_ERR_INVALID;
+		}
+
+		/* Unmaps the page and drops the direct map's lines of it. */
+		physical = *leaf & PTE_ADDR;
+		*leaf = 0;
+		arm64_flush_tlb();
+		hal_dcache_invalidate_range((uintptr_t)arm64_phys_to_direct((uintptr_t)physical), ARM64_PAGE_SIZE);
+	}
+
+	/* Lets interrupts in again. */
+	if (enabled)
+		hal_irq_enable();
+
+	/* Succeeded: the RAM is reachable through the direct map only. */
+	return HAL_OK;
+}
+
+/*
  * Removes one device mapping.
  */
 int
@@ -563,4 +727,85 @@ map_one_device_block(
 
 	/* Makes the block a device mapping. */
 	table[l2_index] = wanted;
+}
+
+/*
+ * Finds the level-3 entry of one page of the uncached window.
+ *
+ * With create, missing tables are allocated on the way down.
+ */
+static int
+uncached_leaf(
+	uint64_t address,
+	bool create,
+	uint64_t **leaf)
+{
+	uint64_t *level1;
+	uint64_t *level2;
+	uint64_t *level3;
+	int error;
+
+	/* Walks from the window's level-0 entry down to the page's table. */
+	error = uncached_table(system_kernel_l0, ARM64_UNCACHED_L0_INDEX, create, &level1);
+	if (error != HAL_OK)
+		return error;
+
+	/* Descends to the gigabyte's table. */
+	error = uncached_table(level1, (unsigned)((address >> 30) & 511U), create, &level2);
+	if (error != HAL_OK)
+		return error;
+
+	/* Descends to the 2 MiB block's table. */
+	error = uncached_table(level2, (unsigned)((address >> 21) & 511U), create, &level3);
+	if (error != HAL_OK)
+		return error;
+
+	/* Succeeded: the page's entry in its level-3 table. */
+	*leaf = &level3[(address >> 12) & 511U];
+	return HAL_OK;
+}
+
+/*
+ * Finds the table one entry points at, creating it when asked.
+ *
+ * A new table is cleared before it is linked, so no stale entry is ever
+ * visible to the walker.
+ */
+static int
+uncached_table(
+	uint64_t *table,
+	unsigned index,
+	bool create,
+	uint64_t **next)
+{
+	hal_physaddr_t memory;
+	uint64_t *fresh;
+	int error;
+
+	/* Uses the table the entry already points at. */
+	if ((table[index] & (PTE_VALID | PTE_TABLE)) == (PTE_VALID | PTE_TABLE)) {
+		*next = arm64_phys_to_direct((uintptr_t)(table[index] & PTE_ADDR));
+		return HAL_OK;
+	}
+
+	/* Refuses an entry that is a block, or a missing one without create. */
+	if ((table[index] & PTE_VALID) != 0 || !create)
+		return HAL_ERR_INVALID;
+
+	/* Allocates and clears the table. */
+	error = alloc_page(&memory);
+	if (error != HAL_OK)
+		return HAL_ERR_NOMEM;
+
+	/* Clears it so every entry starts invalid. */
+	fresh = arm64_phys_to_direct((uintptr_t)memory);
+	hal_memset(fresh, 0, ARM64_PAGE_SIZE);
+	page_table_count++;
+
+	/* Links it; the entry was invalid, so nothing stale can be cached. */
+	table[index] = (uint64_t)memory | PTE_VALID | PTE_TABLE;
+
+	/* Succeeded: the caller continues into the new table. */
+	*next = fresh;
+	return HAL_OK;
 }
