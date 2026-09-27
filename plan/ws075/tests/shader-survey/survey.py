@@ -53,7 +53,7 @@ SAMPLE_OPERANDS = {'Bias', 'Lod', 'ConstOffset'}
 EXTENDED = {'Round', 'RoundEven', 'Trunc', 'FAbs', 'SAbs', 'FSign', 'SSign', 'Floor', 'Ceil', 'Fract', 'Radians', 'Degrees',
             'Sin', 'Cos', 'Tan', 'Pow', 'Exp', 'Log', 'Exp2', 'Log2', 'Sqrt', 'InverseSqrt', 'FMin', 'UMin', 'SMin', 'FMax',
             'UMax', 'SMax', 'FClamp', 'UClamp', 'SClamp', 'FMix', 'Step', 'SmoothStep', 'Length', 'Distance', 'Cross',
-            'Normalize', 'Reflect'}
+            'Normalize', 'Reflect', 'Determinant', 'MatrixInverse', 'PackHalf2x16', 'UnpackHalf2x16'}
 
 # i915_spirv_lower_store_output: the output builtins that are written.
 OUTPUT_BUILTINS = {'Position', 'PointSize'}
