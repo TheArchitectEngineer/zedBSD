@@ -128,17 +128,24 @@ block_content(
 	return 0;
 }
 
-/* Tells whether a box starts a block formatting context of its own (the root, floats, boxes out of the flow, inline blocks, cells, flex). */
+/* Tells whether a box starts a block formatting context of its own (the root, floats, boxes out of the flow, clipping boxes, inline blocks, cells, flex). */
 static int
 block_owns_context(
 	const struct layout_box *box)
 {
+	int clips;
+
 	/* The root, a float, a box out of the flow. */
 	if (box->parent == NULL)
 		return 1;
 	if (box->floating != CSS_FLOAT_NONE)
 		return 1;
 	if (box->out_of_flow)
+		return 1;
+
+	/* A box that clips its overflow. */
+	clips = layout_clips(box);
+	if (clips)
 		return 1;
 
 	/* The displays that make a formatting context (laid out as blocks in this pass). */
@@ -265,6 +272,10 @@ block_children(
 	layout_unit origin_y;
 	layout_unit estimate;
 	layout_unit clearance;
+	layout_unit room_left;
+	layout_unit room_right;
+	layout_unit room_width;
+	int own_context;
 	int collapse_top;
 	int collapse_bottom;
 	int first;
@@ -322,15 +333,26 @@ block_children(
 		if (estimate < clearance)
 			estimate = clearance;
 
-		/* Lays the child out in this box's content width, where the floats beside it are. */
-		tree->origin_x = origin_x;
+		/* A child with its own formatting context keeps out of the floats beside its top: it gets the room between them. */
+		room_left = 0;
+		room_width = box->width;
+		own_context = block_owns_context(child);
+		if (own_context) {
+			layout_line_room(tree, estimate, estimate + 1, box->width, &room_left, &room_right);
+			room_width = room_right - room_left;
+			if (room_width < 0)
+				room_width = 0;
+		}
+
+		/* Lays the child out in that width, where the floats beside it are. */
+		tree->origin_x = origin_x + room_left;
 		tree->origin_y = origin_y + estimate;
-		error = layout_block(tree, child, box->width);
+		error = layout_block(tree, child, room_width);
 		tree->origin_x = origin_x;
 		tree->origin_y = origin_y;
 		if (error != 0)
 			return error;
-		child->x = child->margin[CSS_LEFT];
+		child->x = room_left + child->margin[CSS_LEFT];
 		child_top = child->collapsed_top;
 		child_bottom = child->collapsed_bottom;
 

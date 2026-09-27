@@ -213,6 +213,43 @@ layout_is_positioned(
 }
 
 /*
+ * Tells whether a box clips its content to its padding box: its overflow
+ * is not visible, and is not the viewport's (the root's overflow, or the
+ * body's when the root's is visible, goes to the viewport).
+ */
+int
+layout_clips(
+	const struct layout_box *box)
+{
+	const struct dom_element *element;
+	int is_body;
+
+	/* Visible on both axes clips nothing. */
+	if (box->style.overflow_x == CSS_OVERFLOW_VISIBLE && box->style.overflow_y == CSS_OVERFLOW_VISIBLE)
+		return 0;
+
+	/* The root's overflow is the viewport's. */
+	if (box->parent == NULL)
+		return 0;
+
+	/* So is the body's, when the root leaves its own visible. */
+	is_body = 0;
+	if (box->node != NULL && box->node->type == DOM_ELEMENT && box->parent->parent == NULL) {
+		element = (const struct dom_element *)box->node;
+		is_body = dom_element_is(&element->node, DOM_NS_HTML, DOM_TAG_BODY);
+	}
+
+	/* The body gives its overflow to the viewport when the root keeps visible. */
+	if (is_body &&
+	    box->parent->style.overflow_x == CSS_OVERFLOW_VISIBLE &&
+	    box->parent->style.overflow_y == CSS_OVERFLOW_VISIBLE)
+		return 0;
+
+	/* Any other box clips. */
+	return 1;
+}
+
+/*
  * Picks the font a style draws text with.
  */
 void

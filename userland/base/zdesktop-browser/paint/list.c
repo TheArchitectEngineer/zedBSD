@@ -14,12 +14,17 @@
  * in document order, and a block's lines after its own background.  The
  * positioned boxes are painted apart, each with its descendants that are
  * not positioned, in the order layout_stacking_order gives: those with a
- * negative z-index before the normal flow, the others after it.
+ * negative z-index before the normal flow, the others after it.  A box
+ * that clips its overflow puts its content between a clip to its padding
+ * box and the clip's end; a positioned box is clipped by the clipping
+ * boxes around it that it does not escape (an absolute box escapes those
+ * outside its containing block, a fixed one all of them).
  */
 
 #include "paint/paint.h"
 
 #include <errno.h>
+#include <math.h>
 #include <string.h>
 
 /* The canvas color when neither the root nor the body has a background: white. */
@@ -50,6 +55,9 @@ static void list_inline_floats(struct list_walk *walk, const struct layout_box *
 static void list_lines(struct list_walk *walk, const struct layout_box *box);
 static void list_fragment(struct list_walk *walk, const struct layout_fragment *fragment, layout_unit x, layout_unit baseline);
 static void list_rect(struct list_walk *walk, layout_unit x, layout_unit y, layout_unit width, layout_unit height, uint32_t color);
+static void list_clip(struct list_walk *walk, const struct layout_box *box);
+static void list_unclip(struct list_walk *walk);
+static int list_layer_clips(struct list_walk *walk, const struct layout_box *layer, int push);
 static void list_color(struct wb_buffer *out, uint32_t color);
 
 /*
@@ -65,6 +73,7 @@ paint_build(
 	const struct layout_box *layer;
 	size_t flow_index;
 	size_t index;
+	int clips;
 	int error;
 
 	/* Starts an empty list the size of the document, at least the viewport. */
@@ -100,7 +109,12 @@ paint_build(
 		if (index == flow_index)
 			list_box(&walk, tree->root, NULL, 0);
 		layer = *(const struct layout_box **)wb_vector_at(&order, index);
+		clips = list_layer_clips(&walk, layer, 1);
 		list_box(&walk, layer, layer, 0);
+		while (clips > 0) {
+			list_unclip(&walk);
+			clips--;
+		}
 	}
 
 	/* The flow is last when no box is above it. */
@@ -151,6 +165,19 @@ paint_dump(
 	for (index = 0; index < list->items.count; index++) {
 		item = wb_vector_at(&list->items, index);
 
+		/* A clip: the rectangle the items until its end are drawn inside. */
+		if (item->kind == PAINT_CLIP) {
+			wb_buffer_printf(out, "clip %.2f %.2f %.2f %.2f\n", (double)layout_to_px(item->x), (double)layout_to_px(item->y),
+			    (double)layout_to_px(item->width), (double)layout_to_px(item->height));
+			continue;
+		}
+
+		/* The end of the last clip. */
+		if (item->kind == PAINT_UNCLIP) {
+			wb_buffer_append_string(out, "unclip\n");
+			continue;
+		}
+
 		/* A rectangle: its position, size and color. */
 		if (item->kind == PAINT_RECT) {
 			wb_buffer_printf(out, "rect %.2f %.2f %.2f %.2f ", (double)layout_to_px(item->x), (double)layout_to_px(item->y),
@@ -177,6 +204,103 @@ paint_dump(
 
 	/* Succeeded: the dump is written. */
 	return 0;
+}
+
+/*
+ * Starts a clip stack for a target of a size: only the whole target.
+ */
+void
+paint_clips_init(
+	struct paint_clips *clips,
+	int width,
+	int height)
+{
+	struct paint_clip *whole;
+
+	/* The target's rectangle is the first clip. */
+	memset(clips, 0, sizeof(*clips));
+	whole = &clips->stack[0];
+	whole->right = (float)width;
+	whole->bottom = (float)height;
+	whole->pixel_right = width;
+	whole->pixel_bottom = height;
+}
+
+/*
+ * Starts a clip (a PAINT_CLIP item, the document scrolled up by
+ * scroll_y): the top of the stack becomes its intersection with the clip
+ * around it.
+ */
+void
+paint_clips_push(
+	struct paint_clips *clips,
+	const struct paint_item *item,
+	layout_unit scroll_y)
+{
+	const struct paint_clip *outer;
+	struct paint_clip *inner;
+	float value;
+
+	/* A clip past the stack's depth is only counted. */
+	if (clips->depth >= PAINT_CLIP_DEPTH) {
+		clips->ignored++;
+		return;
+	}
+
+	/* The new clip starts as the one around it. */
+	outer = &clips->stack[clips->depth];
+	clips->depth++;
+	inner = &clips->stack[clips->depth];
+	*inner = *outer;
+
+	/* Each edge moves in to the item's edge when that is further in. */
+	value = layout_to_px(item->x);
+	if (value > inner->left)
+		inner->left = value;
+	value = layout_to_px(item->y - scroll_y);
+	if (value > inner->top)
+		inner->top = value;
+	value = layout_to_px(item->x + item->width);
+	if (value < inner->right)
+		inner->right = value;
+	value = layout_to_px(item->y - scroll_y + item->height);
+	if (value < inner->bottom)
+		inner->bottom = value;
+
+	/* The same edges on whole pixels (rounded to the nearest), for glyphs. */
+	inner->pixel_left = (int)floorf(inner->left + 0.5f);
+	inner->pixel_top = (int)floorf(inner->top + 0.5f);
+	inner->pixel_right = (int)floorf(inner->right + 0.5f);
+	inner->pixel_bottom = (int)floorf(inner->bottom + 0.5f);
+}
+
+/*
+ * Ends the last clip started (a PAINT_UNCLIP item).
+ */
+void
+paint_clips_pop(
+	struct paint_clips *clips)
+{
+	/* A clip past the depth was only counted. */
+	if (clips->ignored > 0) {
+		clips->ignored--;
+		return;
+	}
+
+	/* The clip around it is the top again. */
+	if (clips->depth > 0)
+		clips->depth--;
+}
+
+/*
+ * Reports the clip the items are drawn inside now.
+ */
+const struct paint_clip *
+paint_clips_top(
+	const struct paint_clips *clips)
+{
+	/* The top of the stack. */
+	return &clips->stack[clips->depth];
 }
 
 /*
@@ -239,6 +363,7 @@ list_box(
 	layout_unit height;
 	int positioned;
 	int visible;
+	int clips;
 
 	/* Stops at the depth the layout stops at, or after an error. */
 	if (depth > LAYOUT_DEPTH_MAX || walk->error != 0)
@@ -268,24 +393,32 @@ list_box(
 	if (visible)
 		list_borders(walk, box);
 
+	/* A box that clips its overflow clips its content to its padding box. */
+	clips = layout_clips(box);
+	if (clips)
+		list_clip(walk, box);
+
 	/* A block of lines paints the floats among its content, then its text. */
 	if (box->children_inline) {
 		list_inline_floats(walk, box, layer, depth + 1);
 		list_lines(walk, box);
-		return;
+	} else {
+		/* A block of blocks paints its children in order, the floats after the others. */
+		for (child = box->first_child; child != NULL; child = child->next) {
+			if (child->floating == CSS_FLOAT_NONE)
+				list_box(walk, child, layer, depth + 1);
+		}
+
+		/* Then the floats, over the backgrounds of the blocks beside them. */
+		for (child = box->first_child; child != NULL; child = child->next) {
+			if (child->floating != CSS_FLOAT_NONE)
+				list_box(walk, child, layer, depth + 1);
+		}
 	}
 
-	/* A block of blocks paints its children in order, the floats after the others. */
-	for (child = box->first_child; child != NULL; child = child->next) {
-		if (child->floating == CSS_FLOAT_NONE)
-			list_box(walk, child, layer, depth + 1);
-	}
-
-	/* Then the floats, over the backgrounds of the blocks beside them. */
-	for (child = box->first_child; child != NULL; child = child->next) {
-		if (child->floating != CSS_FLOAT_NONE)
-			list_box(walk, child, layer, depth + 1);
-	}
+	/* The clip ends with the content. */
+	if (clips)
+		list_unclip(walk);
 }
 
 /* Paints the floats among a block's inline content (inline boxes are searched through). */
@@ -533,4 +666,96 @@ list_color(
 {
 	/* Eight hexadecimal digits, alpha first. */
 	wb_buffer_printf(out, "#%08x", (unsigned)color);
+}
+
+/* Adds the start of a clip to a box's padding box. */
+static void
+list_clip(
+	struct list_walk *walk,
+	const struct layout_box *box)
+{
+	struct paint_item item;
+	int error;
+
+	/* Nothing to add after an error. */
+	if (walk->error != 0)
+		return;
+
+	/* The padding box: inside the borders. */
+	memset(&item, 0, sizeof(item));
+	item.kind = PAINT_CLIP;
+	item.x = box->x + box->border[CSS_LEFT];
+	item.y = box->y + box->border[CSS_TOP];
+	item.width = box->padding[CSS_LEFT] + box->width + box->padding[CSS_RIGHT];
+	item.height = box->padding[CSS_TOP] + box->height + box->padding[CSS_BOTTOM];
+	error = wb_vector_push(&walk->list->items, &item);
+	if (error != 0)
+		walk->error = error;
+}
+
+/* Adds the end of the last clip. */
+static void
+list_unclip(
+	struct list_walk *walk)
+{
+	struct paint_item item;
+	int error;
+
+	/* Nothing to add after an error. */
+	if (walk->error != 0)
+		return;
+
+	/* The item. */
+	memset(&item, 0, sizeof(item));
+	item.kind = PAINT_UNCLIP;
+	error = wb_vector_push(&walk->list->items, &item);
+	if (error != 0)
+		walk->error = error;
+}
+
+/*
+ * Adds the clips of the clipping boxes around a positioned box that it
+ * does not escape (an absolute box escapes those inside its containing
+ * block), the outermost first, and reports how many were added (push zero
+ * only counts them).
+ */
+static int
+list_layer_clips(
+	struct list_walk *walk,
+	const struct layout_box *layer,
+	int push)
+{
+	const struct layout_box *around[PAINT_CLIP_DEPTH];
+	const struct layout_box *walk_up;
+	int count;
+	int reached;
+	int clips;
+	int positioned;
+
+	/* A fixed box escapes every clip; an absolute one those between it and its containing block. */
+	count = 0;
+	if (layer->style.position == CSS_POSITION_FIXED)
+		return 0;
+	reached = 1;
+	if (layer->style.position == CSS_POSITION_ABSOLUTE)
+		reached = 0;
+
+	/* The clipping ancestors, nearest first, from the containing block up for an absolute box. */
+	for (walk_up = layer->parent; walk_up != NULL && count < PAINT_CLIP_DEPTH; walk_up = walk_up->parent) {
+		clips = layout_clips(walk_up);
+		positioned = layout_is_positioned(walk_up);
+
+		/* The containing block (the nearest positioned ancestor) and the boxes around it clip an absolute box. */
+		if (positioned)
+			reached = 1;
+		if (clips && reached)
+			around[count++] = walk_up;
+	}
+
+	/* The clips, the outermost first. */
+	for (clips = count; push && clips > 0; clips--)
+		list_clip(walk, around[clips - 1]);
+
+	/* Reports how many there are. */
+	return count;
 }
