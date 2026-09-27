@@ -187,6 +187,7 @@ static struct glsl_node *parse_invariant(struct glsl_shader *shader);
 static struct glsl_node *parse_fully_specified_type(struct glsl_shader *shader);
 static void parse_qualifiers(struct glsl_shader *shader, struct glsl_node *type);
 static void parse_layout(struct glsl_shader *shader, struct glsl_node *type);
+static unsigned parse_primitive(const struct glsl_token *token);
 static int parse_starts_block(struct glsl_shader *shader);
 static struct glsl_node *parse_interface(struct glsl_shader *shader);
 static void parse_type_specifier(struct glsl_shader *shader, struct glsl_node *type);
@@ -917,7 +918,8 @@ parse_qualifiers(
 
 /*
  * Parses "layout ( qualifier [= value], ... )" into a type node: the
- * block layouts, the matrix orders, and a location.
+ * block layouts, the matrix orders, a location, and a geometry shader's
+ * primitives and most vertices.
  */
 static void
 parse_layout(
@@ -932,7 +934,9 @@ parse_layout(
 	int is_row;
 	int is_column;
 	int is_location;
+	int is_max;
 	int closes;
+	unsigned primitive;
 
 	/* The keyword and "(". */
 	(void)parse_take(shader);
@@ -951,7 +955,21 @@ parse_layout(
 		is_row = glsl_token_is(token, "row_major");
 		is_column = glsl_token_is(token, "column_major");
 		is_location = glsl_token_is(token, "location");
-		if (is_std140) {
+		is_max = glsl_token_is(token, "max_vertices");
+		primitive = parse_primitive(token);
+		if (primitive != GLSL_PRIMITIVE_NONE) {
+			/* A geometry shader's input or output primitive. */
+			type->layout |= GLSL_LAYOUT_PRIMITIVE;
+			type->primitive = primitive;
+		} else if (is_max) {
+			/* max_vertices = an integer. */
+			parse_expect(shader, GLSL_P_ASSIGN, "'='");
+			value = parse_take(shader);
+			if (value->kind != GLSL_TOKEN_INT && value->kind != GLSL_TOKEN_UINT)
+				glsl_fatal(shader, value->line, "max_vertices must be an integer");
+			type->layout |= GLSL_LAYOUT_MAX_VERTICES;
+			type->max_vertices = value->integer;
+		} else if (is_std140) {
 			type->layout |= GLSL_LAYOUT_STD140;
 		} else if (is_shared) {
 			type->layout |= GLSL_LAYOUT_SHARED;
@@ -982,6 +1000,40 @@ parse_layout(
 
 	/* The ")". */
 	(void)parse_take(shader);
+}
+
+/* Returns the geometry primitive (GLSL_PRIMITIVE_*) a layout qualifier names, GLSL_PRIMITIVE_NONE for another qualifier. */
+static unsigned
+parse_primitive(
+	const struct glsl_token *token)
+{
+	/*
+	 * One primitive's layout name and number.
+	 */
+	static const struct {
+		const char *name;
+		unsigned primitive;
+	} primitives[] = {
+		{ "points", GLSL_PRIMITIVE_POINTS },
+		{ "lines", GLSL_PRIMITIVE_LINES },
+		{ "lines_adjacency", GLSL_PRIMITIVE_LINES_ADJACENCY },
+		{ "triangles", GLSL_PRIMITIVE_TRIANGLES },
+		{ "triangles_adjacency", GLSL_PRIMITIVE_TRIANGLES_ADJACENCY },
+		{ "line_strip", GLSL_PRIMITIVE_LINE_STRIP },
+		{ "triangle_strip", GLSL_PRIMITIVE_TRIANGLE_STRIP }
+	};
+	unsigned index;
+	int same;
+
+	/* The name among them. */
+	for (index = 0U; index < sizeof(primitives) / sizeof(primitives[0]); index++) {
+		same = glsl_token_is(token, primitives[index].name);
+		if (same)
+			return primitives[index].primitive;
+	}
+
+	/* Not a primitive. */
+	return GLSL_PRIMITIVE_NONE;
 }
 
 /*

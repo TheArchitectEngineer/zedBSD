@@ -52,6 +52,8 @@ static void check_external(struct glsl_shader *shader, struct glsl_node *node, s
 static void check_precision(struct glsl_shader *shader, struct glsl_node *node);
 static void check_invariant(struct glsl_shader *shader, struct glsl_node *node);
 static void check_interface(struct glsl_shader *shader, struct glsl_node *node);
+static void check_default_layout(struct glsl_shader *shader, struct glsl_node *node);
+static const struct glsl_type *check_geometry_input(struct glsl_shader *shader, const struct glsl_type *type, unsigned line);
 static void check_uniform_block(struct glsl_shader *shader, struct glsl_node *node);
 static const struct glsl_type *check_block_type(struct glsl_shader *shader, struct glsl_node *node, unsigned storage);
 static void check_block_variable(struct glsl_shader *shader, const char *name, const struct glsl_type *type, unsigned where, unsigned interpolation, unsigned line);
@@ -147,6 +149,14 @@ glsl_check(
 
 	/* Succeeded: main. */
 	shader->main = function;
+
+	/* A geometry shader says its primitives and how many vertices it emits. */
+	if (shader->stage == GLSL_STAGE_GEOMETRY) {
+		if (shader->geometry_input == GLSL_PRIMITIVE_NONE)
+			glsl_error(shader, 0U, "a geometry shader needs an input primitive layout ('layout(triangles) in;')");
+		if (shader->geometry_output == GLSL_PRIMITIVE_NONE || shader->max_vertices == 0U)
+			glsl_error(shader, 0U, "a geometry shader needs an output layout with max_vertices");
+	}
 
 	/* The code main reaches: the globals it uses, and the functions it calls. */
 	if (shader->errors == 0U)
@@ -346,7 +356,7 @@ check_external(
 		check_interface(shader, node);
 		break;
 	case GLSL_N_EMPTY:
-		/* A default layout ("layout(std140) uniform;"): std140 is the only layout. */
+		check_default_layout(shader, node);
 		break;
 	default:
 		glsl_error(shader, node->line, "unexpected declaration");
@@ -421,6 +431,7 @@ check_interface(
 	struct glsl_node *type_node;
 	struct glsl_node *instance;
 	const struct glsl_type *type;
+	const struct glsl_type *array;
 	unsigned storage;
 	unsigned where;
 	unsigned index;
@@ -441,7 +452,7 @@ check_interface(
 		return;
 	}
 
-	/* Out of the vertex shader, into the fragment shader. */
+	/* Out of the vertex shader, into the fragment shader, into and out of the geometry shader. */
 	where = GLSL_VAR_OUTPUT;
 	if (storage == GLSL_STORAGE_IN)
 		where = GLSL_VAR_INPUT;
@@ -456,8 +467,22 @@ check_interface(
 	if (type->kind == GLSL_KIND_ERROR)
 		return;
 
-	/* With an instance name: one variable of the struct. */
+	/* A geometry shader's input block is an array of the vertices, with an instance name. */
 	instance = node->child[2];
+	if (shader->stage == GLSL_STAGE_GEOMETRY && storage == GLSL_STORAGE_IN) {
+		if (instance == NULL || (instance->flags & GLSL_NODE_ARRAY) == 0U) {
+			glsl_error(shader, node->line, "a geometry shader's input block needs an instance name and \"[]\"");
+			return;
+		}
+
+		/* The array of the vertices' blocks. */
+		array = check_array(shader, type, instance, instance->child[0], node->line);
+		array = check_geometry_input(shader, array, node->line);
+		check_block_variable(shader, instance->name, array, where, type_node->interpolation, node->line);
+		return;
+	}
+
+	/* With an instance name: one variable of the struct. */
 	if (instance != NULL) {
 		if ((instance->flags & GLSL_NODE_ARRAY) != 0U)
 			glsl_error(shader, node->line, "arrays of in and out blocks are not supported");
@@ -468,6 +493,128 @@ check_interface(
 	/* Without one: each member a variable of its own. */
 	for (index = 0U; index < type->field_count; index++)
 		check_block_variable(shader, type->fields[index].name, type->fields[index].type, where, type->fields[index].interpolation, node->line);
+}
+
+/*
+ * Checks qualifiers alone: a geometry shader's input primitive ("layout(
+ * triangles) in;", which sizes gl_in and the unsized inputs after it),
+ * or its output primitive and most vertices ("layout(triangle_strip,
+ * max_vertices = 3) out;").  Any other (a uniform block's default layout)
+ * changes nothing: std140 is the only layout.
+ */
+static void
+check_default_layout(
+	struct glsl_shader *shader,
+	struct glsl_node *node)
+{
+	static const unsigned vertices[6] = { 0U, 1U, 2U, 4U, 3U, 6U };
+	struct glsl_node *type_node;
+	struct glsl_symbol *in;
+	unsigned primitive;
+
+	/* A layout of primitives or vertices, in a geometry shader. */
+	type_node = node->child[0];
+	if ((type_node->layout & (GLSL_LAYOUT_PRIMITIVE | GLSL_LAYOUT_MAX_VERTICES)) == 0U)
+		return;
+	if (shader->stage != GLSL_STAGE_GEOMETRY) {
+		glsl_error(shader, node->line, "primitive layouts are for geometry shaders");
+		return;
+	}
+
+	/* The input primitive: one of the five, once. */
+	primitive = type_node->primitive;
+	if (type_node->storage == GLSL_STORAGE_IN) {
+		if (primitive == GLSL_PRIMITIVE_NONE ||
+		    primitive > GLSL_PRIMITIVE_TRIANGLES_ADJACENCY ||
+		    (type_node->layout & GLSL_LAYOUT_MAX_VERTICES) != 0U) {
+			glsl_error(shader, node->line, "an input layout names points, lines, lines_adjacency, triangles or triangles_adjacency");
+			return;
+		}
+
+		/* Declared once, or again the same. */
+		if (shader->geometry_input != GLSL_PRIMITIVE_NONE && shader->geometry_input != primitive) {
+			glsl_error(shader, node->line, "the input primitive is declared twice, differently");
+			return;
+		}
+
+		/* It, its vertices, and gl_in sized by them. */
+		shader->geometry_input = primitive;
+		shader->geometry_vertices = vertices[primitive];
+		in = check_lookup(shader, "gl_in");
+		if (in != NULL && in->type->kind == GLSL_KIND_ARRAY)
+			in->type = glsl_type_array(&shader->arena, in->type->element, shader->geometry_vertices);
+		return;
+	}
+
+	/* Otherwise an output: points, line_strip or triangle_strip, and the most vertices. */
+	if (type_node->storage != GLSL_STORAGE_OUT) {
+		glsl_error(shader, node->line, "primitive layouts qualify in or out");
+		return;
+	}
+
+	/* The output primitive, when given. */
+	if ((type_node->layout & GLSL_LAYOUT_PRIMITIVE) != 0U) {
+		if (primitive != GLSL_PRIMITIVE_POINTS &&
+		    primitive != GLSL_PRIMITIVE_LINE_STRIP &&
+		    primitive != GLSL_PRIMITIVE_TRIANGLE_STRIP) {
+			glsl_error(shader, node->line, "an output layout names points, line_strip or triangle_strip");
+			return;
+		}
+
+		/* Kept. */
+		shader->geometry_output = primitive;
+	}
+
+	/* Succeeded: the most vertices, when given. */
+	if ((type_node->layout & GLSL_LAYOUT_MAX_VERTICES) != 0U) {
+		if (type_node->max_vertices == 0U)
+			glsl_error(shader, node->line, "max_vertices must be greater than 0");
+		shader->max_vertices = type_node->max_vertices;
+	}
+}
+
+/*
+ * Returns the type of a geometry shader's input: an array of the input
+ * primitive's vertices (an unsized one takes their number, a sized one
+ * must have it); an error type when it is not an array or the input
+ * layout is not declared yet.
+ */
+static const struct glsl_type *
+check_geometry_input(
+	struct glsl_shader *shader,
+	const struct glsl_type *type,
+	unsigned line)
+{
+	/* An error stays one. */
+	if (type->kind == GLSL_KIND_ERROR)
+		return type;
+
+	/* An array, after the input layout. */
+	if (type->kind != GLSL_KIND_ARRAY) {
+		glsl_error(shader, line, "a geometry shader's inputs are arrays of the vertices ('in vec4 v[];')");
+		return glsl_type_error();
+	}
+
+	/* The vertices' number is known once the input layout came. */
+	if (shader->geometry_vertices == 0U) {
+		glsl_error(shader, line, "declare the input primitive ('layout(triangles) in;') before the inputs");
+		return glsl_type_error();
+	}
+
+	/* An unsized array takes the vertices' number. */
+	if (type->length == 0U) {
+		type = glsl_type_array(&shader->arena, type->element, shader->geometry_vertices);
+		return type;
+	}
+
+	/* A sized one must have it. */
+	if (type->length != shader->geometry_vertices) {
+		glsl_error(shader, line, "the input array's size is not the input primitive's %u vertices", shader->geometry_vertices);
+		return glsl_type_error();
+	}
+
+	/* Succeeded: the array. */
+	return type;
 }
 
 /*
@@ -590,7 +737,10 @@ check_block_type(
 				glsl_error(shader, variable->line, "samplers cannot be block members");
 			if (storage != GLSL_STORAGE_UNIFORM && field_type->kind != GLSL_KIND_ARRAY && field_type->base == GLSL_BASE_BOOL)
 				glsl_error(shader, variable->line, "inputs and outputs cannot be bools");
-			if (storage == GLSL_STORAGE_IN && field_type->kind != GLSL_KIND_ARRAY && field_type->base != GLSL_BASE_FLOAT &&
+			if (storage == GLSL_STORAGE_IN &&
+			    shader->stage == GLSL_STAGE_FRAGMENT &&
+			    field_type->kind != GLSL_KIND_ARRAY &&
+			    field_type->base != GLSL_BASE_FLOAT &&
 			    interpolation != GLSL_INTERP_FLAT)
 				glsl_error(shader, variable->line, "integer inputs of a fragment shader must be flat");
 
@@ -912,6 +1062,10 @@ check_variable(
 		type = glsl_type_error();
 	}
 
+	/* A geometry shader's input: an array of the input primitive's vertices. */
+	if (global && shader->stage == GLSL_STAGE_GEOMETRY && type_node->storage == GLSL_STORAGE_IN)
+		type = check_geometry_input(shader, type, variable->line);
+
 	/* The name. */
 	check_reserved_name(shader, variable->name, variable->line);
 
@@ -962,12 +1116,14 @@ check_where(
 {
 	unsigned storage;
 	unsigned vertex;
+	unsigned fragment;
 	int has_sampler;
 	int allowed;
 
 	/* Samplers are uniforms (or parameters). */
 	storage = type_node->storage;
 	vertex = (shader->stage == GLSL_STAGE_VERTEX);
+	fragment = (shader->stage == GLSL_STAGE_FRAGMENT);
 	has_sampler = glsl_type_contains_sampler(type);
 	if (has_sampler && storage != GLSL_STORAGE_UNIFORM)
 		glsl_error(shader, line, "samplers must be uniforms");
@@ -1008,6 +1164,8 @@ check_where(
 	case GLSL_STORAGE_VARYING:
 		if (type->kind == GLSL_KIND_STRUCT || (type->kind != GLSL_KIND_ARRAY && type->base != GLSL_BASE_FLOAT))
 			glsl_error(shader, line, "varyings must be float scalars, vectors, matrices or arrays of them");
+		if (!vertex && !fragment)
+			glsl_error(shader, line, "a geometry shader's inputs and outputs are declared with in and out");
 		if (vertex)
 			return GLSL_VAR_OUTPUT;
 		return GLSL_VAR_INPUT;
@@ -1029,13 +1187,13 @@ check_where(
 	/* OpenGL ES 3.00: no arrays into a vertex shader, no matrices out of a fragment shader. */
 	if (shader->es && vertex && storage == GLSL_STORAGE_IN && type->kind == GLSL_KIND_ARRAY)
 		glsl_error(shader, line, "vertex shader inputs cannot be arrays");
-	if (!vertex && storage == GLSL_STORAGE_OUT && (type->kind == GLSL_KIND_MATRIX || type->base == GLSL_BASE_BOOL))
+	if (fragment && storage == GLSL_STORAGE_OUT && (type->kind == GLSL_KIND_MATRIX || type->base == GLSL_BASE_BOOL))
 		glsl_error(shader, line, "fragment shader outputs must be float, int or uint scalars, vectors or arrays of them");
 
 	/* Structs and bools do not cross stages; integers do, flat, into the fragment shader. */
 	if (type->kind == GLSL_KIND_STRUCT || (type->kind != GLSL_KIND_ARRAY && type->base == GLSL_BASE_BOOL))
 		glsl_error(shader, line, "inputs and outputs cannot be structs or bools");
-	if (!vertex && storage == GLSL_STORAGE_IN && type->kind != GLSL_KIND_ARRAY) {
+	if (fragment && storage == GLSL_STORAGE_IN && type->kind != GLSL_KIND_ARRAY) {
 		if (type->base != GLSL_BASE_FLOAT && type_node->interpolation != GLSL_INTERP_FLAT)
 			glsl_error(shader, line, "integer inputs of a fragment shader must be flat");
 	}

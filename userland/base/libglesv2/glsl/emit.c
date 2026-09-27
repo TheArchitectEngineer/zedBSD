@@ -45,6 +45,8 @@ static void emit_sampler(struct emit_state *state, struct glsl_symbol *symbol);
 static void emit_interface(struct emit_state *state, struct glsl_symbol *symbol);
 static void emit_interface_decorations(struct emit_state *state, struct glsl_symbol *symbol, uint32_t variable);
 static void emit_block_members(struct emit_state *state, const struct glsl_type *type);
+static void emit_per_vertex(struct emit_state *state, const struct glsl_type *type);
+static void emit_geometry_modes(struct emit_state *state, uint32_t main_id);
 static void emit_label(struct emit_state *state, uint32_t label);
 static void emit_branch(struct emit_state *state, uint32_t target);
 static void emit_conditional(struct emit_state *state, uint32_t condition, uint32_t if_true, uint32_t if_false);
@@ -165,11 +167,17 @@ glsl_emit(
 	operands[0] = SPV_MODEL_VERTEX;
 	if (shader->stage == GLSL_STAGE_FRAGMENT)
 		operands[0] = SPV_MODEL_FRAGMENT;
+	if (shader->stage == GLSL_STAGE_GEOMETRY)
+		operands[0] = SPV_MODEL_GEOMETRY;
 	operands[1] = main_id;
 	operands[2] = 0x6e69616dU;
 	operands[3] = 0U;
 	memcpy(operands + 4, state->interface, state->interface_count * sizeof(uint32_t));
 	glsl_words_add(module, &module->entry_points, SPV_OP_ENTRY_POINT, operands, 4U + state->interface_count);
+
+	/* A geometry shader's capability, primitives, most vertices and one invocation. */
+	if (shader->stage == GLSL_STAGE_GEOMETRY)
+		emit_geometry_modes(state, main_id);
 
 	/* A fragment shader's origin, and depth replacing when it writes gl_FragDepth. */
 	if (shader->stage == GLSL_STAGE_FRAGMENT) {
@@ -1175,9 +1183,26 @@ emit_interface_decorations(
 		value = SPV_BUILT_IN_FRAG_DEPTH;
 		state->depth_written = 1U;
 		break;
+	case GLSL_BUILTIN_PRIMITIVE_ID_IN:
+	case GLSL_BUILTIN_PRIMITIVE_ID:
+		value = SPV_BUILT_IN_PRIMITIVE_ID;
+		emit_capability(state, SPV_CAPABILITY_GEOMETRY, &state->module->geometry);
+		break;
+	case GLSL_BUILTIN_LAYER:
+		value = SPV_BUILT_IN_LAYER;
+		emit_capability(state, SPV_CAPABILITY_GEOMETRY, &state->module->geometry);
+		break;
+	case GLSL_BUILTIN_PER_VERTEX:
+		/* gl_in: its block's members are the built-ins; the array has no location. */
+		emit_per_vertex(state, symbol->type->element);
+		return;
 	default:
 		break;
 	}
+
+	/* A fragment shader's gl_PrimitiveID is an integer input, so flat. */
+	if (symbol->builtin == GLSL_BUILTIN_PRIMITIVE_ID && state->shader->stage == GLSL_STAGE_FRAGMENT)
+		glsl_module_decorate(state->module, variable, SPV_DECORATION_FLAT, NULL, 0U);
 
 	/* A built-in has no location, only its built-in and invariance. */
 	if (value != 0xffffffffU) {
@@ -1199,9 +1224,11 @@ emit_interface_decorations(
 		glsl_module_decorate(state->module, variable, SPV_DECORATION_NO_PERSPECTIVE, NULL, 0U);
 	}
 
-	/* A block's members: flat when the member is (or holds an integer: a fragment shader's integer input must be). */
+	/* A block's members (a geometry shader's input block is an array of it): flat when the member is (or holds an integer: a fragment shader's integer input must be). */
 	if (symbol->type->kind == GLSL_KIND_STRUCT)
 		emit_block_members(state, symbol->type);
+	if (symbol->type->kind == GLSL_KIND_ARRAY && symbol->type->element->kind == GLSL_KIND_STRUCT)
+		emit_block_members(state, symbol->type->element);
 
 	/* Centroid and invariance. */
 	if (symbol->centroid)
@@ -1241,6 +1268,67 @@ emit_block_members(
 			glsl_module_member_decorate(state->module, structure, index, SPV_DECORATION_NO_PERSPECTIVE, 0xffffffffU);
 		}
 	}
+}
+
+/* Decorates the gl_PerVertex block of gl_in: a Block whose members are the built-ins of their names. */
+static void
+emit_per_vertex(
+	struct emit_state *state,
+	const struct glsl_type *type)
+{
+	uint32_t structure;
+	unsigned index;
+	int differs;
+
+	/* The Block. */
+	structure = glsl_emit_type(state, type);
+	glsl_module_decorate(state->module, structure, SPV_DECORATION_BLOCK, NULL, 0U);
+
+	/* Each member: gl_Position is the one there is. */
+	for (index = 0U; index < type->field_count; index++) {
+		differs = strcmp(type->fields[index].name, "gl_Position");
+		if (differs == 0)
+			glsl_module_member_decorate(state->module, structure, index, SPV_DECORATION_BUILT_IN, SPV_BUILT_IN_POSITION);
+	}
+}
+
+/*
+ * Declares a geometry shader's capability and execution modes: its input
+ * primitive, its output primitive, the most vertices it emits, and one
+ * invocation.
+ */
+static void
+emit_geometry_modes(
+	struct emit_state *state,
+	uint32_t main_id)
+{
+	struct glsl_shader *shader;
+	uint32_t operands[3];
+
+	/* The capability. */
+	shader = state->shader;
+	emit_capability(state, SPV_CAPABILITY_GEOMETRY, &state->module->geometry);
+
+	/* The input primitive: InputPoints, InputLines, InputLinesAdjacency, Triangles, InputTrianglesAdjacency in order. */
+	operands[0] = main_id;
+	operands[1] = SPV_MODE_INPUT_POINTS + shader->geometry_input - GLSL_PRIMITIVE_POINTS;
+	glsl_words_add(state->module, &state->module->modes, SPV_OP_EXECUTION_MODE, operands, 2U);
+
+	/* The output primitive. */
+	operands[1] = SPV_MODE_OUTPUT_TRIANGLE_STRIP;
+	if (shader->geometry_output == GLSL_PRIMITIVE_POINTS)
+		operands[1] = SPV_MODE_OUTPUT_POINTS;
+	if (shader->geometry_output == GLSL_PRIMITIVE_LINE_STRIP)
+		operands[1] = SPV_MODE_OUTPUT_LINE_STRIP;
+	glsl_words_add(state->module, &state->module->modes, SPV_OP_EXECUTION_MODE, operands, 2U);
+
+	/* The most vertices, and one invocation. */
+	operands[1] = SPV_MODE_OUTPUT_VERTICES;
+	operands[2] = shader->max_vertices;
+	glsl_words_add(state->module, &state->module->modes, SPV_OP_EXECUTION_MODE, operands, 3U);
+	operands[1] = SPV_MODE_INVOCATIONS;
+	operands[2] = 1U;
+	glsl_words_add(state->module, &state->module->modes, SPV_OP_EXECUTION_MODE, operands, 3U);
 }
 
 /* Starts a block. */

@@ -30,6 +30,7 @@
 /* The stages a shader may be of. */
 #define GLSL_STAGE_VERTEX	0U
 #define GLSL_STAGE_FRAGMENT	1U
+#define GLSL_STAGE_GEOMETRY	2U
 
 /* The scalar kinds of an interface variable (the same numbers as libGLESv2's gles_uniform.base). */
 #define GLSL_INFO_FLOAT		0U
@@ -92,7 +93,7 @@ struct glsl_block_info {
 	unsigned binding;
 	unsigned size;
 
-	/* The stages that read it: bit 0 the vertex stage, bit 1 the fragment stage. */
+	/* The stages that read it: bit 0 the vertex stage, bit 1 the fragment stage, bit 2 the geometry stage. */
 	unsigned stages;
 
 	/* How many of the program's uniforms are its members. */
@@ -131,13 +132,13 @@ struct glsl_capture_info {
 };
 
 /*
- * A linked program: the SPIR-V of both stages and what the API says of
+ * A linked program: the SPIR-V of its stages and what the API says of
  * the uniforms.  glsl_program_free releases it.
  */
 struct glsl_program {
-	/* The SPIR-V words of the vertex and the fragment stage. */
-	uint32_t *code[2];
-	size_t words[2];
+	/* The SPIR-V words of the vertex, the fragment and (NULL without one) the geometry stage (GLSL_STAGE_*). */
+	uint32_t *code[3];
+	size_t words[3];
 
 	/* The active uniforms: the default block's leaves and the samplers, then the named blocks' members. */
 	struct glsl_uniform_info *uniforms;
@@ -195,6 +196,22 @@ int glsl_link(const struct glsl_shader *vertex, const struct glsl_shader *fragme
  * log saying why.
  */
 int glsl_link_captured(const struct glsl_shader *vertex, const struct glsl_shader *fragment, const struct glsl_binding *bindings, unsigned binding_count, const char *const *captures, unsigned capture_count, struct glsl_program *program, char **log);
+
+/*
+ * Links a vertex shader, a geometry shader (NULL for none) and a fragment
+ * shader as glsl_link_captured does (the vertex shader captures only
+ * without a geometry shader).  Returns 0 and fills *program, or -1 with
+ * *log a malloc'ed info log saying why.
+ */
+int glsl_link_stages(const struct glsl_shader *vertex, const struct glsl_shader *geometry, const struct glsl_shader *fragment, const struct glsl_binding *bindings, unsigned binding_count, const char *const *captures, unsigned capture_count, struct glsl_program *program, char **log);
+
+/*
+ * Reports a compiled geometry shader's primitives as GL names them: the
+ * input (GL_POINTS .. GL_TRIANGLES_ADJACENCY), the output (GL_POINTS,
+ * GL_LINE_STRIP, GL_TRIANGLE_STRIP) and the most vertices it emits; all 0
+ * for another stage.
+ */
+void glsl_geometry_layout(const struct glsl_shader *shader, unsigned *input, unsigned *output, unsigned *max_vertices);
 
 /* Frees what a successful link gave. */
 void glsl_program_free(struct glsl_program *program);

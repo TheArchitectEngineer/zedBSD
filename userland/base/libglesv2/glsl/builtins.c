@@ -22,6 +22,7 @@
  *   p sampler2DArrayShadow  q samplerCubeShadow
  *   F a rectangle sampler of any texel type  r sampler2DRectShadow
  *   Q a buffer sampler of any texel type
+ *   v void (a result only)
  *
  * Every generic code of one signature takes the same size, so a
  * signature is tried once for each size.
@@ -31,10 +32,11 @@
 
 #include <string.h>
 
-/* The stages a built-in exists in. */
+/* The stages a built-in exists in (BI_BOTH: every stage). */
 #define BI_VERTEX		1U
 #define BI_FRAGMENT		2U
-#define BI_BOTH			3U
+#define BI_GEOMETRY		4U
+#define BI_BOTH			7U
 
 /* The SPIR-V opcodes of the built-ins that are one instruction. */
 #define BI_OP_ANY		154U
@@ -291,7 +293,11 @@ static const struct glsl_builtin builtins_table[] = {
 	{ "noise1", "fG", GLSL_BI_SPECIAL, GLSL_SPECIAL_NOISE, BI_BOTH, GLSL_IN_DESKTOP },
 	{ "noise2", "2G", GLSL_BI_SPECIAL, GLSL_SPECIAL_NOISE, BI_BOTH, GLSL_IN_DESKTOP },
 	{ "noise3", "3G", GLSL_BI_SPECIAL, GLSL_SPECIAL_NOISE, BI_BOTH, GLSL_IN_DESKTOP },
-	{ "noise4", "4G", GLSL_BI_SPECIAL, GLSL_SPECIAL_NOISE, BI_BOTH, GLSL_IN_DESKTOP }
+	{ "noise4", "4G", GLSL_BI_SPECIAL, GLSL_SPECIAL_NOISE, BI_BOTH, GLSL_IN_DESKTOP },
+
+	/* A geometry shader's vertices and primitives (desktop GLSL 1.50). */
+	{ "EmitVertex", "v", GLSL_BI_SPECIAL, GLSL_SPECIAL_EMIT_VERTEX, BI_GEOMETRY, GLSL_IN_150_UP },
+	{ "EndPrimitive", "v", GLSL_BI_SPECIAL, GLSL_SPECIAL_END_PRIMITIVE, BI_GEOMETRY, GLSL_IN_150_UP }
 };
 
 /*
@@ -332,6 +338,7 @@ static const struct glsl_type *builtins_code_type(char code, unsigned size, cons
 static int builtins_accepts(const struct glsl_type *parameter, const struct glsl_type *argument, int convert);
 static int builtins_sampler_code(char code, const struct glsl_type *argument);
 static void builtins_variable(struct glsl_shader *shader, const char *name, const struct glsl_type *type, unsigned where, unsigned builtin);
+static void builtins_geometry(struct glsl_shader *shader);
 
 /*
  * Returns the first built-in function of a name, or NULL.
@@ -407,6 +414,8 @@ glsl_builtin_match(
 	stage = BI_VERTEX;
 	if (shader->stage == GLSL_STAGE_FRAGMENT)
 		stage = BI_FRAGMENT;
+	if (shader->stage == GLSL_STAGE_GEOMETRY)
+		stage = BI_GEOMETRY;
 	if ((builtin->stages & stage) == 0U)
 		return 0;
 
@@ -471,8 +480,16 @@ glsl_builtin_variables(
 		return;
 	}
 
-	/* The fragment stage: its window position, facing and point coordinate. */
+	/* The geometry stage: its input vertices and primitive's number, and what it emits. */
+	if (shader->stage == GLSL_STAGE_GEOMETRY) {
+		builtins_geometry(shader);
+		return;
+	}
+
+	/* The fragment stage: its window position, facing and point coordinate (and the primitive's number, desktop 1.50). */
 	builtins_variable(shader, "gl_FragCoord", glsl_type_vector(GLSL_BASE_FLOAT, 4U), GLSL_VAR_INPUT, GLSL_BUILTIN_FRAG_COORD);
+	if ((mask & GLSL_IN_150_UP) != 0U)
+		builtins_variable(shader, "gl_PrimitiveID", glsl_type_scalar(GLSL_BASE_INT), GLSL_VAR_INPUT, GLSL_BUILTIN_PRIMITIVE_ID);
 	builtins_variable(shader, "gl_FrontFacing", glsl_type_scalar(GLSL_BASE_BOOL), GLSL_VAR_INPUT, GLSL_BUILTIN_FRONT_FACING);
 	if ((mask & (GLSL_IN_ES100 | GLSL_IN_120_UP)) != 0U)
 		builtins_variable(shader, "gl_PointCoord", glsl_type_vector(GLSL_BASE_FLOAT, 2U), GLSL_VAR_INPUT, GLSL_BUILTIN_POINT_COORD);
@@ -557,6 +574,8 @@ builtins_code_type(
 
 	/* The codes that stand for fixed types. */
 	switch (code) {
+	case 'v':
+		return glsl_type_void();
 	case 'f':
 		return glsl_type_scalar(GLSL_BASE_FLOAT);
 	case 'i':
@@ -785,4 +804,44 @@ builtins_variable(
 
 	/* Among the globals, so the emitter finds it when it is used. */
 	glsl_add_global(shader, symbol);
+}
+
+/*
+ * Declares a geometry shader's built-ins: gl_in, an array of the input
+ * vertices' gl_PerVertex block (gl_Position; unsized until the input
+ * layout says how many; gl_PointSize is left out, as Vulkan reads it only
+ * with a feature of its own), gl_PrimitiveIDIn, and the outputs
+ * gl_Position, gl_PointSize, gl_PrimitiveID and gl_Layer.
+ */
+static void
+builtins_geometry(
+	struct glsl_shader *shader)
+{
+	struct glsl_type *per_vertex;
+	const struct glsl_type *vec4_type;
+	const struct glsl_type *float_type;
+	const struct glsl_type *int_type;
+
+	/* The block's struct: gl_Position. */
+	vec4_type = glsl_type_vector(GLSL_BASE_FLOAT, 4U);
+	float_type = glsl_type_scalar(GLSL_BASE_FLOAT);
+	int_type = glsl_type_scalar(GLSL_BASE_INT);
+	per_vertex = glsl_alloc(&shader->arena, sizeof(*per_vertex));
+	per_vertex->kind = GLSL_KIND_STRUCT;
+	per_vertex->name = "gl_PerVertex";
+	per_vertex->block = GLSL_STORAGE_IN;
+	per_vertex->fields = glsl_alloc(&shader->arena, sizeof(*per_vertex->fields));
+	per_vertex->fields[0].name = "gl_Position";
+	per_vertex->fields[0].type = vec4_type;
+	per_vertex->field_count = 1U;
+
+	/* The inputs. */
+	builtins_variable(shader, "gl_in", glsl_type_array(&shader->arena, per_vertex, 0U), GLSL_VAR_INPUT, GLSL_BUILTIN_PER_VERTEX);
+	builtins_variable(shader, "gl_PrimitiveIDIn", int_type, GLSL_VAR_INPUT, GLSL_BUILTIN_PRIMITIVE_ID_IN);
+
+	/* The outputs of each vertex emitted. */
+	builtins_variable(shader, "gl_Position", vec4_type, GLSL_VAR_OUTPUT, GLSL_BUILTIN_POSITION);
+	builtins_variable(shader, "gl_PointSize", float_type, GLSL_VAR_OUTPUT, GLSL_BUILTIN_POINT_SIZE);
+	builtins_variable(shader, "gl_PrimitiveID", int_type, GLSL_VAR_OUTPUT, GLSL_BUILTIN_PRIMITIVE_ID);
+	builtins_variable(shader, "gl_Layer", int_type, GLSL_VAR_OUTPUT, GLSL_BUILTIN_LAYER);
 }

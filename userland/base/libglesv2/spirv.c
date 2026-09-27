@@ -63,6 +63,7 @@
 #define OP_FADD			129U
 #define OP_FMUL			133U
 #define OP_RETURN		253U
+#define OP_EMIT_VERTEX		218U
 
 /* The decorations read. */
 #define DECORATION_BLOCK	2U
@@ -255,9 +256,10 @@ gles_spirv_free(
  * point, turns gl_Position from GL's clip coordinates into Vulkan's: z
  * moved from [-w, w] to [0, w], and y turned over when flip is nonzero
  * (a window's rows go down from its top; a framebuffer object's image
- * keeps GL's rows from the bottom up, as textures do).  Returns NULL when
- * the module cannot be rewritten; a module that never names gl_Position
- * comes back unchanged.
+ * keeps GL's rows from the bottom up, as textures do).  A geometry shader
+ * (a module that emits vertices) is rewritten before each OpEmitVertex
+ * instead.  Returns NULL when the module cannot be rewritten; a module
+ * that never names gl_Position comes back unchanged.
  */
 uint32_t *
 gles_spirv_position(
@@ -272,7 +274,9 @@ gles_spirv_position(
 	size_t count;
 	size_t at;
 	size_t returns;
+	size_t emits;
 	size_t types_end;
+	uint32_t trigger;
 	uint32_t opcode;
 	uint32_t length;
 	uint32_t position;
@@ -341,16 +345,24 @@ gles_spirv_position(
 		pointer_type = spirv_find_type(&module, OP_TYPE_POINTER, STORAGE_OUTPUT, vector_type, 2U);
 	int_type = spirv_find_type(&module, OP_TYPE_INT, 32U, 1U, 2U);
 
-	/* The copy: as long as the module, a few declarations, and eleven instructions at each return. */
+	/* The copy: as long as the module, a few declarations, and eleven instructions at each return or emitted vertex. */
 	returns = 0U;
+	emits = 0U;
 	for (at = SPIRV_HEADER; at < words; at += length) {
 		length = code[at] >> 16;
 		if ((code[at] & 0xffffU) == OP_RETURN)
 			returns++;
+		if ((code[at] & 0xffffU) == OP_EMIT_VERTEX)
+			emits++;
 	}
 
+	/* A module that emits vertices is rewritten at each vertex emitted, any other at each return. */
+	trigger = OP_RETURN;
+	if (emits != 0U)
+		trigger = OP_EMIT_VERTEX;
+
 	/* Without memory there is no copy. */
-	out = malloc((words + 32U + returns * 64U) * sizeof(uint32_t));
+	out = malloc((words + 32U + (returns + emits) * 64U) * sizeof(uint32_t));
 	if (out == NULL) {
 		spirv_close(&module);
 		return NULL;
@@ -428,8 +440,8 @@ gles_spirv_position(
 		else if (opcode == OP_FUNCTION)
 			in_entry = 0U;
 
-		/* A return of the entry point: gl_Position is read, changed and written back first. */
-		if (opcode == OP_RETURN && in_entry) {
+		/* A return (a vertex emitted) of the entry point: gl_Position is read, changed and written back first. */
+		if (opcode == trigger && in_entry) {
 			/* Fresh ids: pointer, value, x, y, z, w, -y, z+w, (z+w)/2, the new vector. */
 			for (member = 0U; member < 10U; member++)
 				ids[member] = next++;

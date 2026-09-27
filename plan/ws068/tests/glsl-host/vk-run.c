@@ -13,7 +13,9 @@
  *
  * Each DIRECTORY/NAME.frag is a test: its fragment shader is linked with
  * DIRECTORY/NAME.vert when there is one, or else with a vertex shader
- * that covers the target, then linked the way libGLESv2 links (the
+ * that covers the target, and with DIRECTORY/NAME.geom between them when
+ * there is one (WS068 p032: its gl_Position is rewritten at each vertex
+ * emitted instead of the vertex shader's), then linked the way libGLESv2 links (the
  * reflection in spirv.c finds the uniforms, the vertex shader's
  * gl_Position is rewritten), and drawn into a 4x4 RGBA8 target.  The
  * source says what to expect in comment lines:
@@ -213,6 +215,7 @@ run_setup(
 	VkApplicationInfo application;
 	VkInstanceCreateInfo instance;
 	VkDeviceQueueCreateInfo queue;
+	VkPhysicalDeviceFeatures features;
 	VkDeviceCreateInfo device;
 	VkCommandPoolCreateInfo pool;
 	VkCommandBufferAllocateInfo allocate;
@@ -271,9 +274,12 @@ run_setup(
 	queue.queueCount = 1U;
 	queue.pQueuePriorities = &priority;
 	memset(&device, 0, sizeof(device));
+	memset(&features, 0, sizeof(features));
+	features.geometryShader = VK_TRUE;
 	device.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 	device.queueCreateInfoCount = 1U;
 	device.pQueueCreateInfos = &queue;
+	device.pEnabledFeatures = &features;
 	result = vkCreateDevice(context->physical, &device, NULL, &context->device);
 	if (result != VK_SUCCESS)
 		return -1;
@@ -744,11 +750,13 @@ run_one(
 	struct glsl_binding binding;
 	struct glsl_program program;
 	struct glsl_shader *vertex;
+	struct glsl_shader *geometry;
 	struct glsl_shader *fragment;
 	struct run_test test;
 	char path[1024];
 	char *fragment_source;
 	char *vertex_source;
+	char *geometry_source;
 	char *log;
 	int status;
 
@@ -787,11 +795,30 @@ run_one(
 		return -1;
 	}
 
+	/* The geometry shader, when the test has one. */
+	geometry = NULL;
+	(void)snprintf(path, sizeof(path), "%s/%s.geom", directory, name);
+	geometry_source = run_read(path);
+	if (geometry_source != NULL) {
+		geometry = glsl_compile(GLSL_STAGE_GEOMETRY, geometry_source, test.version, &log);
+		free(geometry_source);
+		if (log != NULL)
+			printf("%s.geom: %s", name, log);
+		free(log);
+		if (geometry == NULL) {
+			printf("%s: FAIL (compile)\n", name);
+			glsl_shader_free(vertex);
+			glsl_shader_free(fragment);
+			return -1;
+		}
+	}
+
 	/* The link, with the position at location 0. */
 	binding.name = "a_position";
 	binding.location = 0U;
-	status = glsl_link(vertex, fragment, &binding, 1U, &program, &log);
+	status = glsl_link_stages(vertex, geometry, fragment, &binding, 1U, NULL, 0U, &program, &log);
 	glsl_shader_free(vertex);
+	glsl_shader_free(geometry);
 	glsl_shader_free(fragment);
 	if (status != 0) {
 		printf("%s: FAIL (link) %s", name, log);
@@ -816,7 +843,10 @@ run_program(
 	static const float quad[8] = { -1.0f, -1.0f, 1.0f, -1.0f, -1.0f, 1.0f, 1.0f, 1.0f };
 	struct gles_spirv spirv[2];
 	VkShaderModuleCreateInfo module_create;
-	VkShaderModule modules[2];
+	VkShaderModule modules[3];
+	VkShaderStageFlags stage_flags;
+	unsigned stage_count;
+	unsigned rewritten;
 	VkDescriptorSetLayoutBinding bindings[17];
 	VkDescriptorSetLayoutCreateInfo set_create;
 	VkDescriptorSetLayout set_layout;
@@ -831,7 +861,7 @@ run_program(
 	VkDescriptorBufferInfo buffer_info;
 	VkDescriptorBufferInfo pattern_info;
 	VkDescriptorImageInfo image_info;
-	VkPipelineShaderStageCreateInfo stages[2];
+	VkPipelineShaderStageCreateInfo stages[3];
 	VkVertexInputBindingDescription vertex_binding;
 	VkVertexInputAttributeDescription vertex_attribute;
 	VkPipelineVertexInputStateCreateInfo vertex_input;
@@ -871,27 +901,44 @@ run_program(
 		}
 	}
 
-	/* The vertex stage's gl_Position rewritten. */
-	patched = gles_spirv_position(program->code[0], program->words[0], 1, &patched_words);
+	/* The last stage before the rasterizer (the geometry stage when there is one) has its gl_Position rewritten. */
+	stage_count = 2U;
+	stage_flags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+	rewritten = GLSL_STAGE_VERTEX;
+	if (program->code[GLSL_STAGE_GEOMETRY] != NULL) {
+		stage_count = 3U;
+		stage_flags |= VK_SHADER_STAGE_GEOMETRY_BIT;
+		rewritten = GLSL_STAGE_GEOMETRY;
+	}
+
+	/* Its copy with gl_Position rewritten. */
+	patched = gles_spirv_position(program->code[rewritten], program->words[rewritten], 1, &patched_words);
 	if (patched == NULL) {
 		printf("%s: FAIL (position)\n", name);
 		return -1;
 	}
 
-	/* The shader modules. */
+	/* The shader modules, the rewritten one from its copy. */
 	memset(&module_create, 0, sizeof(module_create));
 	module_create.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-	module_create.codeSize = patched_words * 4U;
-	module_create.pCode = patched;
-	result = vkCreateShaderModule(context->device, &module_create, NULL, &modules[0]);
+	for (stage = 0U; stage < stage_count; stage++) {
+		module_create.codeSize = program->words[stage] * 4U;
+		module_create.pCode = program->code[stage];
+		if (stage == rewritten) {
+			module_create.codeSize = patched_words * 4U;
+			module_create.pCode = patched;
+		}
+
+		/* The module. */
+		result = vkCreateShaderModule(context->device, &module_create, NULL, &modules[stage]);
+		if (result != VK_SUCCESS) {
+			free(patched);
+			return -1;
+		}
+	}
+
+	/* The copy is in its module now. */
 	free(patched);
-	if (result != VK_SUCCESS)
-		return -1;
-	module_create.codeSize = program->words[1] * 4U;
-	module_create.pCode = program->code[1];
-	result = vkCreateShaderModule(context->device, &module_create, NULL, &modules[1]);
-	if (result != VK_SUCCESS)
-		return -1;
 
 	/* The uniforms' values, and the layout: the block at 0, the samplers where they are. */
 	memset(context->uniforms_mapped, 0, RUN_UNIFORM_BYTES);
@@ -904,7 +951,7 @@ run_program(
 		bindings[0].binding = 0U;
 		bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 		bindings[0].descriptorCount = 1U;
-		bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+		bindings[0].stageFlags = stage_flags;
 		count = 1U;
 	}
 
@@ -914,7 +961,7 @@ run_program(
 			bindings[count].binding = spirv[stage].named_bindings[index];
 			bindings[count].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 			bindings[count].descriptorCount = 1U;
-			bindings[count].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+			bindings[count].stageFlags = stage_flags;
 			count++;
 		}
 	}
@@ -927,7 +974,7 @@ run_program(
 			bindings[count].binding = spirv[stage].uniforms[index].binding;
 			bindings[count].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 			bindings[count].descriptorCount = 1U;
-			bindings[count].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+			bindings[count].stageFlags = stage_flags;
 			count++;
 		}
 	}
@@ -1022,11 +1069,13 @@ run_program(
 
 	/* The stages. */
 	memset(stages, 0, sizeof(stages));
-	for (stage = 0U; stage < 2U; stage++) {
+	for (stage = 0U; stage < stage_count; stage++) {
 		stages[stage].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		stages[stage].stage = VK_SHADER_STAGE_VERTEX_BIT;
-		if (stage == 1U)
+		if (stage == GLSL_STAGE_FRAGMENT)
 			stages[stage].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+		if (stage == GLSL_STAGE_GEOMETRY)
+			stages[stage].stage = VK_SHADER_STAGE_GEOMETRY_BIT;
 		stages[stage].module = modules[stage];
 		stages[stage].pName = "main";
 	}
@@ -1083,7 +1132,7 @@ run_program(
 	blend.pAttachments = &blend_attachment;
 	memset(&pipeline_create, 0, sizeof(pipeline_create));
 	pipeline_create.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-	pipeline_create.stageCount = 2U;
+	pipeline_create.stageCount = stage_count;
 	pipeline_create.pStages = stages;
 	pipeline_create.pVertexInputState = &vertex_input;
 	pipeline_create.pInputAssemblyState = &assembly;
@@ -1135,8 +1184,8 @@ run_program(
 	vkDestroyDescriptorPool(context->device, pool, NULL);
 	vkDestroyPipelineLayout(context->device, layout, NULL);
 	vkDestroyDescriptorSetLayout(context->device, set_layout, NULL);
-	vkDestroyShaderModule(context->device, modules[0], NULL);
-	vkDestroyShaderModule(context->device, modules[1], NULL);
+	for (stage = 0U; stage < stage_count; stage++)
+		vkDestroyShaderModule(context->device, modules[stage], NULL);
 	gles_spirv_free(&spirv[0]);
 	gles_spirv_free(&spirv[1]);
 	if (status != 0)
