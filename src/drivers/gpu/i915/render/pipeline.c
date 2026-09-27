@@ -484,12 +484,13 @@ i915_gfx_decode_vertex_input(
 			return ENOTSUP;
 	}
 
-	/* Keeps each binding's number and stride; a failed decode keeps none. */
+	/* Keeps each binding's number, stride and input rate; a failed decode keeps none. */
 	pipeline->binding_count = vertex_input.vertexBindingDescriptionCount;
 	if (reader->error == 0) {
 		for (index = 0U; index < pipeline->binding_count; index++) {
 			pipeline->bindings[index].binding = vertex_input.pVertexBindingDescriptions[index].binding;
 			pipeline->bindings[index].stride = vertex_input.pVertexBindingDescriptions[index].stride;
+			pipeline->bindings[index].input_rate = vertex_input.pVertexBindingDescriptions[index].inputRate;
 		}
 	}
 

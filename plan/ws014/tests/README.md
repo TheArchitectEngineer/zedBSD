@@ -5,10 +5,6 @@ p003/q306はGPU core、Venus PCI transport/backend、独立したVulkanテスト
 ```sh
 sh plan/ws014/tests/run-gpu-framework-test.sh
 sh plan/ws014/tests/run-pci-service-lifecycle-host.sh
-sh plan/ws014/tests/run-venus-backend-test.sh
-sh plan/ws014/tests/run-venus-transport-test.sh
-python3 -B plan/ws014/tests/test-venus-rfb.py
-sh plan/ws014/tests/run-venus-client-test.sh
 python3 -B plan/ws014/tests/test-vkdemo-oracle.py
 python3 -B plan/ws014/tests/test-vkdemo-shaders.py
 sh plan/ws014/tests/run-vkdemo-cli-test.sh
@@ -53,3 +49,22 @@ WS014/p001 architecture discussion resumed by user; first target is QEMU virtio-
 build できない、または今の source と合わなくなった試験を、書き直さずに削除した（ユーザー指示）。
 削除した file の一覧は [`plan/ws034/phase049/deleted-tests.txt`](../../ws034/phase049/deleted-tests.txt)。
 上の説明のうち、そこに載っている file の記述は履歴である。
+
+## 2026-09-28: 初期のグラフィックの試験の削除（WS075）
+
+ユーザーの判断（2026-09-28、`plan/master.md` の「古いグラフィックの試験の driver」）により、初期の Venus・WSI の試験を
+削除した。デスクトップの起動が回帰の代わりで、特定の機能は要るときに試験を書く。上の説明のうち次の file の記述は履歴である。
+
+- build できないもの（消えた `plan/ws030/tests/` を include する）: `venus-backend.c`・`venus-backend-linked.c`・
+  `run-venus-backend-test.sh`、`venus-edid.c`・`run-venus-edid-test.sh`、`venus-sharing.c`・`run-venus-sharing-test.sh`、
+  `gpu-topology.c`・`run-gpu-topology-test.sh`、`wayland-wsi-swapchain.c`・`run-wayland-swapchain-test.sh`、
+  `wayland-wsi.c`・`run-wayland-wsi-test.sh`、`wsi-acquire-fd.c`・`run-wsi-acquire-fd-test.sh`。
+- Venus だけの初期の試験: `venus-client.c`・`run-venus-client-test.sh`、`venus-transport.c`・`venus-transport-peer.inc`・
+  `run-venus-transport-test.sh`、`test-venus-rfb.py`。
+- 参照の無い試験: `test-renderer-pause.py`、`test-vulkan-elf.py`。
+- 使う試験が無くなった道具: `plan/tools/venus-console.c`。
+
+残したもの: GPU core の host 試験（`gpu-*.c`、`handle-fd*`、`pci-service-lifecycle-host.c`: i915 の作業で `src/drivers/gpu/gpu.c`
+を変えるときに使う）、libvulkan・vkdemo の host 試験、QEMU の遠隔の harness（`run-venus-remote.py`・`venus-qemu.py`・
+`venus_rfb.py`・`vkdemo-qemu.py`・`wayland-qemu.py`: `plan/ws031/tests/` と `plan/ws035/tests/` が import する）、
+`vkdemo_oracle.py`（`plan/ws031/tests/vkloop-hw.sh` の oracle）。

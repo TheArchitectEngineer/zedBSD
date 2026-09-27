@@ -254,6 +254,12 @@ zwl_glass_draw(
 	float home;
 	float position;
 
+	/* The login screen is all there is to draw (greeter.c). */
+	if (server->greeter) {
+		zwl_greeter_draw(server, command);
+		return;
+	}
+
 	/* The menus' and the controls' places are those this frame draws them at (menu-shell.c, titlebar-shell.c). */
 	zwl_menu_frame(server);
 	zwl_titlebar_frame(server);
@@ -368,6 +374,12 @@ zwl_glass_button(
 	enum shell_hit hit;
 	unsigned second;
 	int pressed;
+
+	/* The login screen takes every button (greeter.c). */
+	if (server->greeter) {
+		pressed = zwl_greeter_button(server, button, state);
+		return pressed;
+	}
 
 	/* Wiseview, open or being opened, takes every button. */
 	if (server->wiseview_gesture || server->wiseview > 0.0f || server->wiseview_moving) {
@@ -521,6 +533,12 @@ zwl_glass_motion(
 	calm = zwl_glass_pointer_calm(server, server->pointer_x, server->pointer_y);
 	if (!calm)
 		server->dirty = 1;
+
+	/* The login screen lights its buttons under the pointer, and takes the motion. */
+	if (server->greeter) {
+		server->dirty = 1;
+		return 1;
+	}
 
 	/* Wiseview follows the gesture, and hears the pointer while it is open; a pressed tile that moves is dragged. */
 	if (server->wiseview_gesture || server->wiseview > 0.0f || server->wiseview_moving) {
@@ -1236,6 +1254,12 @@ zwl_glass_tick(
 	uint64_t elapsed;
 	float progress;
 	time_t now;
+
+	/* The login screen has only its clock and zsessiond's answers (greeter.c). */
+	if (server->greeter) {
+		zwl_greeter_tick(server);
+		return;
+	}
 
 	/* App Home's animation, and the applications it started that have ended. */
 	zwl_home_tick(server);

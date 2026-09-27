@@ -54,7 +54,8 @@
  */
 #define I915_GFX_IMAGE_LEVEL_ALIGN	4U
 
-static uint32_t i915_gfx_format_bytes(uint32_t format);
+static uint32_t i915_gfx_row_pitch(uint32_t width, uint32_t texel_bytes);
+static uint32_t i915_gfx_channel(uint32_t swizzle, uint32_t identity);
 static int i915_gfx_is_depth(uint32_t format);
 static int i915_gfx_image_supported(const VkImageCreateInfo *info);
 static uint32_t i915_gfx_image_max_levels(uint32_t width, uint32_t height, uint32_t depth);
@@ -144,8 +145,9 @@ drv_i915_gfx_create_image(
  * The view keeps its type and its ranges of mip levels and of array
  * layers (VK_REMAINING_MIP_LEVELS and VK_REMAINING_ARRAY_LAYERS run to the
  * last one).  A view of an unknown image, or of levels or layers the image
- * does not have, fails.  XXX: swizzles are not applied; the texels are read
- * in the image's own format.
+ * does not have, fails.  The component swizzle becomes the surface state's
+ * shader channel select.  XXX: a swizzle of ZERO for all four components
+ * reads as the identity.
  */
 int
 drv_i915_gfx_create_image_view(
@@ -237,6 +239,10 @@ drv_i915_gfx_create_image_view(
 		view->view_type = info.viewType;
 		view->base_layer = base_layer;
 		view->layer_count = layer_count;
+		view->channel_select = (i915_gfx_channel(info.components.r, 4U) << 25) |
+		    (i915_gfx_channel(info.components.g, 5U) << 22) |
+		    (i915_gfx_channel(info.components.b, 6U) << 19) |
+		    (i915_gfx_channel(info.components.a, 7U) << 16);
 	}
 
 	/* Publishes the view and answers; a failed view is reported there. */
@@ -324,6 +330,7 @@ drv_i915_gfx_subresource_layout(
 	uint32_t level_y;
 	uint32_t level_width;
 	uint32_t level_height;
+	uint32_t texel_bytes;
 	uint32_t layers;
 
 	/* Reads the image behind the device and resolves it. */
@@ -356,8 +363,10 @@ drv_i915_gfx_subresource_layout(
 		i915_gfx_level_origin(image, subresource.mipLevel, &level_x, &level_y);
 		level_width = i915_gfx_minify(image->width, subresource.mipLevel);
 		level_height = i915_gfx_minify(image->height, subresource.mipLevel);
-		layout.offset = ((uint64_t)subresource.arrayLayer * image->slice_rows + level_y) * image->pitch + (uint64_t)level_x * 4U;
-		layout.size = (uint64_t)(level_height - 1U) * image->pitch + (uint64_t)level_width * 4U;
+		texel_bytes = drv_i915_gfx_format_bytes(image->format);
+		layout.offset = ((uint64_t)subresource.arrayLayer * image->slice_rows + level_y) * image->pitch +
+		    (uint64_t)level_x * texel_bytes;
+		layout.size = (uint64_t)(level_height - 1U) * image->pitch + (uint64_t)level_width * texel_bytes;
 		if (image->levels == 1U && image->slice_rows == 0U)
 			layout.size = image->bytes;
 		layout.rowPitch = image->pitch;
@@ -422,7 +431,7 @@ drv_i915_gfx_image_layout(
 	int depth;
 
 	/* Refuses a format the executor does not lay out. */
-	texel_bytes = i915_gfx_format_bytes(image->format);
+	texel_bytes = drv_i915_gfx_format_bytes(image->format);
 	if (texel_bytes == 0U)
 		return EINVAL;
 
@@ -458,7 +467,7 @@ drv_i915_gfx_image_layout(
 
 	/* One level of one slice is linear rows of whole texels. */
 	if (image->levels == 1U && slices == 1U) {
-		image->pitch = image->width * texel_bytes;
+		image->pitch = i915_gfx_row_pitch(image->width, texel_bytes);
 		image->bytes = (uint64_t)image->pitch * image->height;
 
 		/* A depth image is rounded up to whole Y tiles. */
@@ -477,7 +486,7 @@ drv_i915_gfx_image_layout(
 
 	/* One level of several slices is the level itself. */
 	if (image->levels == 1U) {
-		image->pitch = image->width * texel_bytes;
+		image->pitch = i915_gfx_row_pitch(image->width, texel_bytes);
 		image->slice_rows = i915_gfx_level_align(image->height);
 		image->bytes = (uint64_t)image->pitch * image->slice_rows * slices;
 		return 0;
@@ -523,7 +532,7 @@ drv_i915_gfx_image_layout(
 		layout_height = right_height;
 
 	/* Every level shares the layout's pitch; several slices each take a whole layout. */
-	image->pitch = layout_width * texel_bytes;
+	image->pitch = i915_gfx_row_pitch(layout_width, texel_bytes);
 	image->bytes = (uint64_t)image->pitch * layout_height;
 	if (slices > 1U) {
 		image->slice_rows = i915_gfx_level_align(layout_height);
@@ -594,7 +603,8 @@ drv_i915_gfx_image_slice(
 
 	/* Finds the level's first texel in the slice's mip layout. */
 	i915_gfx_level_origin(image, level, &level_x, &level_y);
-	offset = ((uint64_t)slice * image->slice_rows + level_y) * image->pitch + (uint64_t)level_x * 4U;
+	offset = ((uint64_t)slice * image->slice_rows + level_y) * image->pitch +
+	    (uint64_t)level_x * drv_i915_gfx_format_bytes(image->format);
 
 	/* Takes the level's address, its extent, the shared pitch and the format. */
 	surface->va = drv_i915_gfx_memory_va(image->memory, image->offset + offset);
@@ -611,13 +621,66 @@ drv_i915_gfx_image_slice(
 	return 0;
 }
 
-/* Reports the bytes to a texel of a format the executor lays out; 0 for any other. */
+/*
+ * Reports the shader channel select of one VkComponentSwizzle: SCS_ZERO 0,
+ * SCS_ONE 1, SCS_RED to SCS_ALPHA 4 to 7; IDENTITY (and an unknown value)
+ * is the component's own channel, `identity`.
+ */
 static uint32_t
-i915_gfx_format_bytes(
+i915_gfx_channel(
+	uint32_t swizzle,
+	uint32_t identity)
+{
+	/* Picks the channel the swizzle names. */
+	switch (swizzle) {
+	case VK_COMPONENT_SWIZZLE_ZERO:
+		return 0U;
+	case VK_COMPONENT_SWIZZLE_ONE:
+		return 1U;
+	case VK_COMPONENT_SWIZZLE_R:
+		return 4U;
+	case VK_COMPONENT_SWIZZLE_G:
+		return 5U;
+	case VK_COMPONENT_SWIZZLE_B:
+		return 6U;
+	case VK_COMPONENT_SWIZZLE_A:
+		return 7U;
+	default:
+		/* The component's own channel. */
+		return identity;
+	}
+}
+
+/* Reports the bytes to a row of `width` texels, rounded up to whole 32-bit words. */
+static uint32_t
+i915_gfx_row_pitch(
+	uint32_t width,
+	uint32_t texel_bytes)
+{
+	/* A 1- or 2-byte format's rows start on a word, as a 4-byte one's do. */
+	return (width * texel_bytes + 3U) & ~3U;
+}
+
+/* Reports the bytes to a texel of a format the executor lays out; 0 for any other. */
+uint32_t
+drv_i915_gfx_format_bytes(
 	uint32_t format)
 {
 	/* Only these formats are laid out. */
 	switch (format) {
+	case VK_FORMAT_R8_UNORM:
+		/* A one-byte texel. */
+		return 1U;
+	case VK_FORMAT_R8G8_UNORM:
+		/* A two-byte colour texel. */
+		return 2U;
+	case VK_FORMAT_R16G16B16A16_SFLOAT:
+		/* Four half floats. */
+		return 8U;
+	case VK_FORMAT_R32G32B32A32_SFLOAT:
+		/* Four floats. */
+		return 16U;
+	case VK_FORMAT_B10G11R11_UFLOAT_PACK32:
 	case VK_FORMAT_R8G8B8A8_UNORM:
 	case VK_FORMAT_B8G8R8A8_UNORM:
 	case VK_FORMAT_R8G8B8A8_SRGB:
@@ -682,7 +745,7 @@ i915_gfx_image_supported(
 		return 0;
 
 	/* Only a format the executor lays out. */
-	texel_bytes = i915_gfx_format_bytes(info->format);
+	texel_bytes = drv_i915_gfx_format_bytes(info->format);
 	if (texel_bytes == 0U)
 		return 0;
 

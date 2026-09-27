@@ -5,6 +5,17 @@ ZEDBSD_LIBC_CC ?= $(CC)
 ZEDBSD_LIBC_NM ?= $(if $(NM),$(NM),nm)
 ZEDBSD_LIBC_OBJDUMP ?= $(if $(OBJDUMP),$(OBJDUMP),objdump)
 
+# The mathematical library (WS076).  It is compiled into the soft-float
+# objects of the kernel side, into every platform's libc.so and into the
+# compiler runtime of the sysroots, so the one list is kept here.
+ZEDBSD_LIBM_SOURCES := src/libc/math/support.c src/libc/math/classify.c \
+	src/libc/math/rounding.c src/libc/math/remainder.c src/libc/math/fma.c \
+	src/libc/math/sqrt.c src/libc/math/float.c src/libc/math/long-double.c \
+	src/libc/math/tables.c src/libc/math/exp.c src/libc/math/log.c \
+	src/libc/math/pow.c \
+	src/libc/math/legacy.c
+ZEDBSD_LIBM_HEADERS := src/libc/math/math-internal.h src/libc/math/math-constants.h
+
 ZEDBSD_REGEX_SOURCES := src/libc/regex/regcomp.c src/libc/regex/regexec.c \
 	src/libc/regex/regerror.c src/libc/regex/tre-mem.c
 
