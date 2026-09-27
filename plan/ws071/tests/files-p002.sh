@@ -44,6 +44,13 @@ double() {
 	pointer move $((wx + $1)) $((wy + $2)) sleep 300 down sleep 50 up sleep 80 down sleep 50 up sleep "${3:-900}"
 }
 
+# Clicks a control of the window's titlebar (drawn by zdesktop; its place from zdesktop's log, ws071-p014).
+control() {
+	set -- $(guest "grep 'ZWL TITLEBAR control client=1 .* where=floating id=$1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p')
+	set -- $((${1:-0} + ${3:-0} / 2)) $((${2:-0} + ${4:-0} / 2))
+	pointer move $(($1 - 2)) "$2" sleep 150 move "$1" "$2" sleep 300 down sleep 60 up sleep 900
+}
+
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; rm -rf /tmp/fhome; sh /usr/share/zdesktop-files-tests/make-home.sh /tmp/fhome >/dev/null
 picture=; [ -f /usr/share/zdesktop/wallpaper.ppm ] && picture=--wallpaper=/usr/share/zdesktop/wallpaper.ppm
@@ -60,23 +67,23 @@ pointer move 1270 790 sleep 400
 check "$out/home.png" >/dev/null
 
 # 2. Documents from the sidebar.
-click 100 177
+click 100 125
 expect_log /tmp/f.log 'ZFILES LOCATION kind=folder path=/tmp/fhome/Documents items=6 error=0'
 pointer move 1270 790 sleep 400
 check "$out/documents.png" >/dev/null
 
 # 3. Back home, then Documents by its card (the first of the dashboard).
-click 35 32
+control 1
 expect_log /tmp/f.log 'ZFILES LOCATION kind=home path=/tmp/fhome items=0'
-click 340 362
+click 340 310
 pointer move 1270 790 sleep 400
 check "$out/folder.png" >/dev/null
 found=$(guest "grep -c 'LOCATION kind=folder path=/tmp/fhome/Documents ' /tmp/f.log" | tail -1)
 [ "${found:-0}" -ge 2 ] && echo "card: ok" || { echo "card: MISSING"; status=1; }
 
 # 4. Back and Forward.
-click 35 32
-click 69 32
+control 1
+control 2
 found=$(guest "grep -c 'LOCATION kind=folder path=/tmp/fhome/Documents ' /tmp/f.log" | tail -1)
 [ "${found:-0}" -ge 3 ] && echo "forward: ok" || { echo "forward: MISSING"; status=1; }
 

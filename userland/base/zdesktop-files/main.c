@@ -76,6 +76,16 @@ static struct fm_text main_text;
 static struct fm_menu main_menu;
 
 /*
+ * The window's titlebar in zdesktop (its controls), opened with the window
+ * and closed before it; the file manager does not run without it.
+ */
+static struct fm_titlebar main_titlebar;
+
+/* The titlebar's event being carried out, and its state being made (both too large for the stack's taste). */
+static struct fm_titlebar_event main_titlebar_event;
+static struct fm_titlebar_state main_titlebar_state;
+
+/*
  * The frame being drawn: ordinary memory the size of the swapchain, and
  * the canvas over it.  They are remade when the window changes size.
  */
@@ -162,10 +172,25 @@ main(
 		fm_menu_close(&main_menu);
 	}
 
+	/* The titlebar's controls; without zdesktop's titlebar the file manager does not start. */
+	fm_ui_titlebar_state(&main_app, &main_titlebar_state);
+	error = fm_titlebar_open(&main_titlebar, &main_window, &main_titlebar_state);
+	if (error != 0) {
+		fprintf(stderr, "ZFILES FAILED operation=titlebar errno=%d\n", error);
+		fm_titlebar_close(&main_titlebar);
+		fm_menu_close(&main_menu);
+		fm_app_release(&main_app);
+		fm_present_close(&main_present);
+		fm_window_close(&main_window);
+		fm_text_close(&main_text);
+		return 1;
+	}
+
 	/* The loop, until the window closes. */
 	status = main_loop(&options);
 
-	/* Everything goes, the menus and the app before the window they belong to. */
+	/* Everything goes, the titlebar, the menus and the app before the window they belong to. */
+	fm_titlebar_close(&main_titlebar);
 	fm_menu_close(&main_menu);
 	fm_app_release(&main_app);
 	fm_canvas_release(&main_canvas);
@@ -338,7 +363,6 @@ main_loop(
 	uint64_t started;
 	uint64_t now;
 	uint64_t menu_checked_at;
-	unsigned action;
 	int inputs;
 	int taken;
 	int status;
@@ -375,7 +399,7 @@ main_loop(
 			return 0;
 		}
 
-		/* The held key's repeat, and every input queued. */
+		/* The held key's repeat, and every input queued (the menus' choices among them). */
 		now = fm_clock();
 		(void)fm_window_repeat(&main_window, now);
 		inputs = 0;
@@ -387,12 +411,13 @@ main_loop(
 			inputs++;
 		}
 
-		/* The menus' choices, oldest first. */
+		/* What was done with the titlebar, oldest first, at the time now. */
+		main_app.now = now;
 		for (;;) {
-			action = fm_menu_take(&main_menu);
-			if (action == FM_ACTION_NONE)
+			taken = fm_titlebar_take(&main_titlebar, &main_titlebar_event);
+			if (taken == 0)
 				break;
-			fm_ui_action(&main_app, action);
+			fm_ui_titlebar(&main_app, &main_titlebar_event);
 			inputs++;
 		}
 
@@ -663,17 +688,21 @@ main_new_window(
 		fm_ui_message(&main_app, "A new window can't be opened.");
 }
 
-/* Tells the menus the window's state when it changed. */
+/* Tells the titlebar and the menus the window's state when it changed. */
 static void
 main_menu_update(void)
 {
 	struct fm_menu_state state;
 
-	/* Without menus there is nothing to tell. */
+	/* The titlebar's state now, sent when it differs from what it shows. */
+	fm_ui_titlebar_state(&main_app, &main_titlebar_state);
+	fm_titlebar_refresh(&main_titlebar, &main_titlebar_state);
+
+	/* Without menus there is nothing more to tell. */
 	if (main_menu.menu == NULL)
 		return;
 
-	/* The state now, sent when it differs from what the menus show. */
+	/* The menus' state now, sent when it differs from what they show. */
 	fm_ui_menu_state(&main_app, &state);
 	fm_menu_refresh(&main_menu, &state);
 }

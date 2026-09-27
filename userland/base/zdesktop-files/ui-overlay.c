@@ -8,7 +8,7 @@
 /*
  * What zdesktop-files draws over its window: the question asked before
  * an action that cannot be undone (spec §23: delete for good, empty the
- * trash), and the list of running operations opened from the toolbar's
+ * trash), and the list of running operations opened from the titlebar's
  * progress ring (spec §33).
  */
 
@@ -99,9 +99,9 @@ fm_overlay_draw(
 }
 
 /*
- * Draws the list of running operations under the toolbar's progress
- * ring, its top right corner at (x, y): each with what it does, how far it
- * is, a bar and a cancel button.
+ * Draws the list of running operations (opened by the titlebar's progress
+ * ring) with its top right corner at (x, y): each with what it does, how
+ * far it is, a bar and a cancel button.
  */
 void
 fm_tasks_draw(

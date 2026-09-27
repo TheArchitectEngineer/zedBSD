@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 ユーザーの指示でサブエージェントが worktree の branch で実行。main の Queue への反映は main の session）
-Resume point: WS070 の titlebar（ws070-p008〜p010）の後に p014（toolbar → CONTROLS）、次に p013（窓の中のタブ）。順序は [ws070 titlebar-design.md §14](../ws070/titlebar-design.md)。2026-09-27 に大きさで分けた: p007 から Get Info と開く（p012）、p008 からタブ（p013）
+Resume point: p014（toolbar → CONTROLS）cleared 2026-09-27。次は p013（窓の中のタブ）。合わせた順序（2026-09-27 承認）: ws035-p081（窓の body の viewporter、コードは書いた・未 build・未試験、plan/ws035/phase081/wip.patch）→ ws071-p013（窓の中のタブ）→ ws071-p009（context menu）→ ws035-p057（ぼかしと影）→ ws035-p055（damage）→ ws071-p010（PNG・DnD、libz/libpng-compat は ws035-p040/p041）→ ws070-p011（TABS）→ ws035-p082（ログインマネージャの検討）→ ws070-p006（style）→ 締め（ws071-p011、ws070-p012、ws035-p058、ws035-p028）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -82,7 +82,7 @@ libpng-compat の decode（WS035 p040・p041 の decode の半分を p010 で先
 | [ws071-p012](phase012/phase.md) | Get Info（owner・権限・checksum・xattr）、開く・別のアプリで開く（apps.c の関連付けと起動） | cleared | p007 |
 | [ws071-p008](phase008/phase.md) | menubar（System Menu: File・Edit・View・Go・Window・Help、状態の反映）、New Window・Close Window・Minimize・Zoom、keyboard の shortcut の全体（spec §35）、Help の card | cleared | p012、WS070-p004 |
 | ws071-p013 | タブ（2 つ以上のときだけの tab bar、New Tab・Close Tab・Previous/Next Tab、Open in New Tab、menu の Window のタブの項目） | planned | p008 |
-| ws071-p014 | zdesktop-files の窓の中の toolbar → WS070 の CONTROLS の titlebar（toolbar を消す、control の model と event、Ctrl+F・Ctrl+L の focus、拡張が無ければ起動で失敗、host の試験は model の text、guest の試験は control の位置を zdesktop の log から）。[ws070 titlebar-design.md §11](../ws070/titlebar-design.md) | planned | WS070-p010 |
+| [ws071-p014](phase014/phase.md) | zdesktop-files の窓の中の toolbar → WS070 の CONTROLS の titlebar（toolbar を消す、control の model と event、Ctrl+F・Ctrl+L の focus、拡張が無ければ起動で失敗、host の試験は model の text、guest の試験は control の位置を zdesktop の log から）。[ws070 titlebar-design.md §11](../ws070/titlebar-design.md) | cleared | WS070-p010 |
 | ws071-p009 | context menu: WS070 protocol version 2（libwayland、zdesktop、libzdesktop `zdesktop_menu_popup`）と file manager の context menu | planned | p013 |
 | ws071-p010 | サムネイル（libz-compat の inflate、libpng-compat の decode）と窓の中の DnD | planned | p007 |
 | ws071-p011 | App Home の項目、規約の全文との照合、回帰、boot test、i915 実機（任意） | planned | p002〜p010、p012〜p014 |

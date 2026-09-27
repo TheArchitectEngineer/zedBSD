@@ -98,7 +98,8 @@ enum fm_event_type {
 	FM_EVENT_AXIS,
 	FM_EVENT_LEAVE,
 	FM_EVENT_KEY,
-	FM_EVENT_FOCUS
+	FM_EVENT_FOCUS,
+	FM_EVENT_ACTION
 };
 
 /*
@@ -118,6 +119,7 @@ struct fm_event {
 	uint32_t serial;
 	uint64_t time;
 	int focused;
+	uint32_t action;
 };
 
 /*
@@ -354,15 +356,6 @@ struct fm_field {
  */
 enum fm_hit_kind {
 	FM_HIT_NONE,
-	FM_HIT_BACK,
-	FM_HIT_FORWARD,
-	FM_HIT_HOME,
-	FM_HIT_CRUMB,
-	FM_HIT_SEARCH,
-	FM_HIT_VIEW_ICONS,
-	FM_HIT_VIEW_LIST,
-	FM_HIT_PREVIEW,
-	FM_HIT_PROGRESS,
 	FM_HIT_PLACE,
 	FM_HIT_ITEM,
 	FM_HIT_CONTENT,
@@ -391,7 +384,6 @@ struct fm_hit {
  * The panels of the last frame, where the drawing put them.
  */
 struct fm_layout {
-	struct fm_rect toolbar;
 	struct fm_rect tabbar;
 	struct fm_rect sidebar;
 	struct fm_rect content;
@@ -729,6 +721,76 @@ struct fm_menu_state {
 };
 
 /*
+ * The controls of the window's titlebar (WS070's CONTROLS presentation,
+ * drawn by zdesktop): their IDs in the model titlebar.c gives zdesktop.
+ */
+enum fm_control {
+	FM_CONTROL_NONE,
+	FM_CONTROL_BACK,
+	FM_CONTROL_FORWARD,
+	FM_CONTROL_HOME,
+	FM_CONTROL_PATH,
+	FM_CONTROL_SEARCH,
+	FM_CONTROL_ICONS,
+	FM_CONTROL_LIST,
+	FM_CONTROL_PREVIEW,
+	FM_CONTROL_PROGRESS
+};
+
+/* The bytes of a titlebar's text with its NUL (zdesktop takes 1023), and of a path's part. */
+#define FM_TITLEBAR_TEXT	1024
+#define FM_TITLEBAR_PART	65
+
+/* The progress control's value while nothing runs (it is then not in the titlebar). */
+#define FM_TITLEBAR_NO_PROGRESS	(-1)
+
+/*
+ * What the titlebar shows of the window's state: whether the history can
+ * go back and forward, the parts of the path shown (each cut to
+ * FM_TITLEBAR_PART bytes on a character's boundary), the folder the path's
+ * field starts from (Ctrl+L), the query of the search shown, the view,
+ * the preview, the share done of the running operations in thousandths
+ * (FM_TITLEBAR_NO_PROGRESS when none run), and the text control the
+ * window last asked to give the keyboard to (FM_CONTROL_SEARCH or
+ * FM_CONTROL_PATH) with the count of such requests.  titlebar.c sends it
+ * to zdesktop when it differs from what the titlebar shows.
+ */
+struct fm_titlebar_state {
+	int can_back;
+	int can_forward;
+	int part_count;
+	char parts[FM_CRUMBS][FM_TITLEBAR_PART];
+	char path[FM_TITLEBAR_TEXT];
+	char query[FM_TITLEBAR_TEXT];
+	unsigned view;
+	int preview;
+	int progress;
+	unsigned focus;
+	unsigned focus_serial;
+};
+
+/*
+ * What the titlebar tells the window.
+ */
+enum fm_titlebar_kind {
+	FM_TITLEBAR_ACTIVATED,
+	FM_TITLEBAR_CHANGED,
+	FM_TITLEBAR_DONE
+};
+
+/*
+ * One thing done with the titlebar: a control chosen (with the path's part
+ * for the path), a text control's text as typed, or its editing ended
+ * (how: ZDESKTOP_TEXT_SUBMITTED, _CANCELLED or _LEFT), with its text.
+ */
+struct fm_titlebar_event {
+	unsigned kind;
+	uint32_t id;
+	uint32_t detail;
+	char text[FM_TITLEBAR_TEXT];
+};
+
+/*
  * The cards of text the Help menu shows over the window.
  */
 enum fm_help {
@@ -797,9 +859,15 @@ struct fm_app {
 	/* The modifiers held. */
 	uint32_t modifiers;
 
-	/* Where typing goes, and the location field (Ctrl+L). */
+	/*
+	 * Where typing goes, and the location field (Ctrl+L); the titlebar's
+	 * text control the window last asked for the keyboard for, and how many
+	 * times it asked (fm_titlebar_state).
+	 */
 	unsigned focus;
 	struct fm_field location;
+	unsigned control_focus;
+	unsigned control_focus_serial;
 
 	/* A rubber band being dragged over the items: its corners in the items' coordinates (scroll included). */
 	int band;
@@ -940,6 +1008,7 @@ void fm_input_sort_by(struct fm_app *app, unsigned sort, int reverse);
 void fm_input_open_selection(struct fm_app *app);
 void fm_input_enclosing(struct fm_app *app);
 void fm_input_location(struct fm_app *app);
+void fm_input_location_go(struct fm_app *app);
 
 /* The content panel and the icon view (ui-grid.c). */
 void fm_grid_draw(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *area);
@@ -980,6 +1049,7 @@ void fm_home_click(struct fm_app *app, unsigned kind, int index, int double_clic
 /* The places that are not one folder and the search field (ui-search.c). */
 void fm_search_focus(struct fm_app *app);
 void fm_search_key(struct fm_app *app, const struct fm_event *event);
+void fm_search_cancel(struct fm_app *app);
 void fm_search_tick(struct fm_app *app);
 void fm_search_scope(struct fm_app *app, unsigned scope);
 void fm_search_load(struct fm_app *app, struct fm_tab *tab);
@@ -1086,6 +1156,10 @@ void fm_open_with(struct fm_app *app, const struct fm_opener *opener, const char
 /* The menus' actions and state (ui-menu.c). */
 void fm_ui_action(struct fm_app *app, unsigned action);
 void fm_ui_menu_state(struct fm_app *app, struct fm_menu_state *state);
+
+/* The titlebar's state and what is done with it (ui-titlebar.c). */
+void fm_ui_titlebar_state(struct fm_app *app, struct fm_titlebar_state *state);
+void fm_ui_titlebar(struct fm_app *app, const struct fm_titlebar_event *event);
 
 /* The Help cards (ui-help.c). */
 void fm_help_open(struct fm_app *app, unsigned help);

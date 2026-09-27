@@ -6,8 +6,11 @@
  */
 
 /*
- * The interface of zdesktop-files: the frame of the window (the floating
- * toolbar, the sidebar, the content panel) and what the pointer does on it.
+ * The interface of zdesktop-files: the frame of the window (the sidebar,
+ * the content panel, the preview) and what the pointer does on it.  The
+ * navigation (back, forward, home, the path, the search field, the view
+ * and the preview buttons) is in the window's titlebar, which zdesktop
+ * draws (ui-titlebar.c, titlebar.c).
  *
  * Each frame is drawn from the app's state, and while it is drawn every
  * clickable part records where it is (fm_ui_hit).  The pointer's input is
@@ -29,19 +32,14 @@
 
 /* The frame's measurements, in pixels. */
 #define UI_MARGIN		12
-#define UI_TOOLBAR_TOP		10
-#define UI_TOOLBAR_HEIGHT	44
 #define UI_GAP			10
 #define UI_SIDEBAR_WIDTH	212
 #define UI_PREVIEW_WIDTH	264
 #define UI_PANEL_RADIUS		16.0f
-#define UI_BUTTON_SIZE		30
-#define UI_SEARCH_WIDTH		232
 #define UI_SIDEBAR_ROW		30
 #define UI_SIDEBAR_HEADER	30
 
 /* The text sizes of the frame. */
-#define UI_TEXT_TOOLBAR		14U
 #define UI_TEXT_SIDEBAR		14U
 #define UI_TEXT_HEADER		11U
 
@@ -51,13 +49,7 @@
 
 
 static void ui_layout(struct fm_app *app);
-static void ui_draw_toolbar(struct fm_app *app, struct fm_canvas *canvas);
-static void ui_draw_button(struct fm_app *app, struct fm_canvas *canvas, int x, int y, enum fm_icon icon, int enabled, unsigned kind);
-static void ui_draw_crumbs(struct fm_app *app, struct fm_canvas *canvas, int x, int width);
-static void ui_draw_search(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *field);
-static void ui_draw_views(struct fm_app *app, struct fm_canvas *canvas, int x, int y);
 static void ui_draw_sidebar(struct fm_app *app, struct fm_canvas *canvas);
-static void ui_draw_progress(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *rect);
 static int ui_place_current(struct fm_app *app, const struct fm_place *place);
 static const char *ui_location_kind_name(unsigned kind);
 static void ui_leave(struct fm_tab *tab);
@@ -204,6 +196,9 @@ fm_ui_event(
 		app->focused = event->focused;
 		app->dirty = 1;
 		break;
+	case FM_EVENT_ACTION:
+		fm_ui_action(app, event->action);
+		break;
 	default:
 		break;
 	}
@@ -299,10 +294,9 @@ fm_ui_draw(
 	if (app->show_preview != 0)
 		fm_preview_draw(app, canvas, &app->layout.preview);
 
-	/* The toolbar over everything, the tasks' list under it when open. */
-	ui_draw_toolbar(app, canvas);
+	/* The tasks' list at the top right when open (the titlebar's progress control opens it). */
 	if (app->show_tasks != 0 && app->task_count > 0)
-		fm_tasks_draw(app, canvas, app->layout.toolbar.x + app->layout.toolbar.width - 8, app->layout.toolbar.y + app->layout.toolbar.height + 6);
+		fm_tasks_draw(app, canvas, app->width - UI_MARGIN - 8, UI_MARGIN + 6);
 
 	/* Quick Look, the information or Help over all of it, and a question over that. */
 	fm_look_draw(app, canvas);
@@ -461,7 +455,7 @@ fm_log(
 }
 
 /*
- * Fills the parts of the path shown in the toolbar and returns how many there are.
+ * Fills the parts of the path shown in the titlebar and returns how many there are.
  */
 int
 fm_ui_crumbs(
@@ -736,7 +730,7 @@ fm_ui_open(
 	fm_open_entry(app, index, 0);
 }
 
-/* Places the toolbar, the sidebar, the content and the preview for the window's size. */
+/* Places the sidebar, the content and the preview for the window's size. */
 static void
 ui_layout(
 	struct fm_app *app)
@@ -746,15 +740,9 @@ ui_layout(
 	int left;
 	int right;
 
-	/* The toolbar floats across the top. */
+	/* The panels start at the top margin (the titlebar is zdesktop's, above the window). */
 	layout = &app->layout;
-	layout->toolbar.x = UI_MARGIN;
-	layout->toolbar.y = UI_TOOLBAR_TOP;
-	layout->toolbar.width = app->width - 2 * UI_MARGIN;
-	layout->toolbar.height = UI_TOOLBAR_HEIGHT;
-
-	/* The panels start under it. */
-	top = UI_TOOLBAR_TOP + UI_TOOLBAR_HEIGHT + UI_GAP;
+	top = UI_MARGIN;
 	left = UI_MARGIN;
 	right = app->width - UI_MARGIN;
 
@@ -783,318 +771,6 @@ ui_layout(
 	layout->content.y = top;
 	layout->content.width = right - left;
 	layout->content.height = app->height - top - UI_MARGIN;
-}
-
-/* Draws the floating toolbar: back, forward, home, the path, the search field and the view buttons. */
-static void
-ui_draw_toolbar(
-	struct fm_app *app,
-	struct fm_canvas *canvas)
-{
-	const struct fm_rect *bar;
-	struct fm_rect field;
-	struct fm_rect ring;
-	struct fm_tab *tab;
-	int crumbs_x;
-	int views_x;
-	int right;
-	int y;
-
-	/* The bar: a white pill with a soft shadow. */
-	bar = &app->layout.toolbar;
-	fm_canvas_shadow(canvas, (float)bar->x, (float)bar->y + 3.0f, (float)bar->width, (float)bar->height, (float)bar->height * 0.5f, 12.0f, FM_COLOR_SHADOW);
-	fm_canvas_round(canvas, (float)bar->x, (float)bar->y, (float)bar->width, (float)bar->height, (float)bar->height * 0.5f, FM_COLOR_PANEL);
-
-	/* Back and forward, pale when the history has nowhere to go. */
-	tab = fm_ui_tab(app);
-	y = bar->y + (bar->height - UI_BUTTON_SIZE) / 2;
-	ui_draw_button(app, canvas, bar->x + 8, y, FM_ICON_BACK, tab->history_index > 0, FM_HIT_BACK);
-	ui_draw_button(app, canvas, bar->x + 8 + UI_BUTTON_SIZE + 4, y, FM_ICON_FORWARD, tab->history_index + 1 < tab->history_count, FM_HIT_FORWARD);
-
-	/* Home. */
-	ui_draw_button(app, canvas, bar->x + 8 + 2 * (UI_BUTTON_SIZE + 4) + 6, y, FM_ICON_HOME, 1, FM_HIT_HOME);
-
-	/* The preview and view buttons at the right end. */
-	ui_draw_button(app, canvas, bar->x + bar->width - 8 - UI_BUTTON_SIZE, y, FM_ICON_PREVIEW, 1, FM_HIT_PREVIEW);
-	views_x = bar->x + bar->width - 8 - UI_BUTTON_SIZE - 10 - 2 * UI_BUTTON_SIZE - 4;
-	ui_draw_views(app, canvas, views_x, y);
-
-	/* The search field left of them. */
-	field.width = UI_SEARCH_WIDTH;
-	field.height = UI_BUTTON_SIZE;
-	field.x = views_x - 12 - UI_SEARCH_WIDTH;
-	field.y = y;
-	ui_draw_search(app, canvas, &field);
-
-	/* The progress ring left of the search field while operations run. */
-	right = field.x - 16;
-	if (app->task_count > 0) {
-		ring.x = field.x - 12 - UI_BUTTON_SIZE;
-		ring.y = y;
-		ring.width = UI_BUTTON_SIZE;
-		ring.height = UI_BUTTON_SIZE;
-		ui_draw_progress(app, canvas, &ring);
-		right = ring.x - 8;
-	}
-
-	/* The path between home and the search field. */
-	crumbs_x = bar->x + 8 + 3 * (UI_BUTTON_SIZE + 4) + 16;
-	ui_draw_crumbs(app, canvas, crumbs_x, right - crumbs_x);
-}
-
-/* Draws a round toolbar button with its icon, lit under the pointer, and records it. */
-static void
-ui_draw_button(
-	struct fm_app *app,
-	struct fm_canvas *canvas,
-	int x,
-	int y,
-	enum fm_icon icon,
-	int enabled,
-	unsigned kind)
-{
-	struct fm_rect rect;
-	fm_color color;
-
-	/* The button's square. */
-	rect.x = x;
-	rect.y = y;
-	rect.width = UI_BUTTON_SIZE;
-	rect.height = UI_BUTTON_SIZE;
-
-	/* A soft circle under the pointer, a stronger one while pressed. */
-	if (enabled != 0 && app->hover_kind == kind) {
-		fm_canvas_circle(canvas, (float)x + UI_BUTTON_SIZE * 0.5f, (float)y + UI_BUTTON_SIZE * 0.5f, UI_BUTTON_SIZE * 0.5f, FM_COLOR_HOVER);
-		if (app->pressing != 0 && app->press_kind == kind)
-			fm_canvas_circle(canvas, (float)x + UI_BUTTON_SIZE * 0.5f, (float)y + UI_BUTTON_SIZE * 0.5f, UI_BUTTON_SIZE * 0.5f, FM_COLOR_HOVER);
-	}
-
-	/* The preview button shows whether the preview is on. */
-	if (kind == FM_HIT_PREVIEW && app->show_preview != 0)
-		fm_canvas_circle(canvas, (float)x + UI_BUTTON_SIZE * 0.5f, (float)y + UI_BUTTON_SIZE * 0.5f, UI_BUTTON_SIZE * 0.5f, FM_COLOR_SELECTION);
-
-	/* The icon, pale when the button does nothing now. */
-	color = FM_COLOR_ICON;
-	if (enabled == 0)
-		color = FM_COLOR_TEXT_FAINT;
-	fm_icon_draw(canvas, icon, (float)x + 6.0f, (float)y + 6.0f, (float)UI_BUTTON_SIZE - 12.0f, color);
-
-	/* A button that does something can be clicked. */
-	if (enabled != 0)
-		fm_ui_hit(app, &rect, kind, 0);
-}
-
-/* Draws the path of the place shown, each part clickable; the leading parts give way to an ellipsis when it is too long. */
-static void
-ui_draw_crumbs(
-	struct fm_app *app,
-	struct fm_canvas *canvas,
-	int x,
-	int width)
-{
-	static struct fm_crumb crumbs[FM_CRUMBS];
-	struct fm_rect field;
-	struct fm_rect rect;
-	fm_color color;
-	int widths[FM_CRUMBS];
-	int count;
-	int first;
-	int total;
-	int index;
-	int baseline;
-	int bold;
-	int pen;
-
-	/* While a path is typed (Ctrl+L), the field takes the parts' place. */
-	if (app->focus == FM_FOCUS_LOCATION) {
-		field.x = x;
-		field.y = app->layout.toolbar.y + 7;
-		field.width = width;
-		field.height = app->layout.toolbar.height - 14;
-		fm_canvas_round(canvas, (float)field.x, (float)field.y, (float)field.width, (float)field.height, 8.0f, FM_RGB(0xf1f4f8));
-		fm_canvas_round_border(canvas, (float)field.x, (float)field.y, (float)field.width, (float)field.height, 8.0f, 1.5f, FM_RGBA(0x2f7cf6, 150));
-		field.x += 10;
-		field.width -= 20;
-		fm_field_draw(app, canvas, &app->location, &field, UI_TEXT_TOOLBAR, "Go to folder");
-		return;
-	}
-
-	/* The parts and their widths (the last part bold). */
-	count = fm_ui_crumbs(app, crumbs, FM_CRUMBS);
-	if (count == 0 || width <= 0)
-		return;
-	for (index = 0; index < count; index++) {
-		bold = 0;
-		if (index == count - 1)
-			bold = 1;
-		widths[index] = fm_text_width(app->text, crumbs[index].label, strlen(crumbs[index].label), UI_TEXT_TOOLBAR, bold) + 16;
-	}
-
-	/* As many parts from the end as fit, with room for the separators and an ellipsis. */
-	total = widths[count - 1];
-	first = count - 1;
-	while (first > 0 && total + widths[first - 1] + 18 + 30 <= width) {
-		first--;
-		total += widths[first] + 18;
-	}
-
-	/* The parts' baseline, centred in the toolbar. */
-	baseline = fm_text_center(UI_TEXT_TOOLBAR, app->layout.toolbar.y, app->layout.toolbar.height);
-	pen = x;
-
-	/* An ellipsis stands for the parts left out. */
-	if (first > 0) {
-		pen += fm_text_draw(app->text, canvas, pen, baseline, "\xe2\x80\xa6", 3, UI_TEXT_TOOLBAR, 0, FM_COLOR_TEXT_SECONDARY);
-		fm_icon_draw(canvas, FM_ICON_CHEVRON, (float)pen + 2.0f, (float)(baseline - 12), 14.0f, FM_COLOR_TEXT_FAINT);
-		pen += 18;
-	}
-
-	/* Each part: its label (lit under the pointer) and a separator after all but the last. */
-	for (index = first; index < count; index++) {
-		rect.x = pen;
-		rect.y = app->layout.toolbar.y + 7;
-		rect.width = widths[index];
-		rect.height = app->layout.toolbar.height - 14;
-		if (app->hover_kind == FM_HIT_CRUMB && app->hover_index == index)
-			fm_canvas_round(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, 8.0f, FM_COLOR_HOVER);
-
-		/* The label, the last one bold and dark. */
-		bold = 0;
-		color = FM_COLOR_TEXT_SECONDARY;
-		if (index == count - 1) {
-			bold = 1;
-			color = FM_COLOR_TEXT;
-		}
-
-		/* Draws it and records the part. */
-		(void)fm_text_draw_fit(app->text, canvas, pen + 8, baseline, crumbs[index].label, UI_TEXT_TOOLBAR, bold, x + width - pen - 16, color);
-		fm_ui_hit(app, &rect, FM_HIT_CRUMB, index);
-		pen += widths[index];
-
-		/* A separator before the next part. */
-		if (index + 1 < count) {
-			fm_icon_draw(canvas, FM_ICON_CHEVRON, (float)pen + 1.0f, (float)(baseline - 12), 14.0f, FM_COLOR_TEXT_FAINT);
-			pen += 18;
-		}
-	}
-}
-
-/* Draws the search field: a rounded field with a magnifier and its placeholder. */
-static void
-ui_draw_search(
-	struct fm_app *app,
-	struct fm_canvas *canvas,
-	const struct fm_rect *field)
-{
-	const struct fm_location *location;
-	struct fm_tab *tab;
-	struct fm_rect text;
-	int baseline;
-
-	/* The field's ground, a little darker under the pointer. */
-	fm_canvas_round(canvas, (float)field->x, (float)field->y, (float)field->width, (float)field->height, (float)field->height * 0.5f, FM_RGB(0xf1f4f8));
-	if (app->hover_kind == FM_HIT_SEARCH)
-		fm_canvas_round(canvas, (float)field->x, (float)field->y, (float)field->width, (float)field->height, (float)field->height * 0.5f, FM_COLOR_HOVER);
-
-	/* The magnifier. */
-	fm_icon_draw(canvas, FM_ICON_SEARCH, (float)field->x + 9.0f, (float)field->y + 7.0f, 16.0f, FM_COLOR_TEXT_SECONDARY);
-	tab = fm_ui_tab(app);
-	location = &tab->history[tab->history_index].location;
-
-	/* Being typed in: an accent edge and the text with its cursor. */
-	if (app->focus == FM_FOCUS_SEARCH) {
-		fm_canvas_round_border(canvas, (float)field->x, (float)field->y, (float)field->width, (float)field->height, (float)field->height * 0.5f, 1.5f, FM_RGBA(0x2f7cf6, 150));
-		text.x = field->x + 32;
-		text.y = field->y;
-		text.width = field->width - 44;
-		text.height = field->height;
-		fm_field_draw(app, canvas, &app->search_field, &text, 13U, "Search");
-	} else if (location->kind == FM_LOCATION_SEARCH) {
-		baseline = fm_text_center(13U, field->y, field->height);
-		(void)fm_text_draw_fit(app->text, canvas, field->x + 32, baseline, location->path, 13U, 0, field->width - 44, FM_COLOR_TEXT);
-	} else {
-		baseline = fm_text_center(13U, field->y, field->height);
-		(void)fm_text_draw(app->text, canvas, field->x + 32, baseline, "Search", 6, 13U, 0, FM_COLOR_TEXT_FAINT);
-	}
-
-	/* The field can be clicked. */
-	fm_ui_hit(app, field, FM_HIT_SEARCH, 0);
-}
-
-/* Draws the icon and list buttons as one segmented pill, the view shown lit. */
-static void
-ui_draw_views(
-	struct fm_app *app,
-	struct fm_canvas *canvas,
-	int x,
-	int y)
-{
-	struct fm_rect rect;
-	fm_color color;
-	int selected_x;
-
-	/* The pill behind both. */
-	fm_canvas_round(canvas, (float)x - 2.0f, (float)y, 2.0f * UI_BUTTON_SIZE + 8.0f, (float)UI_BUTTON_SIZE, UI_BUTTON_SIZE * 0.5f, FM_RGB(0xf1f4f8));
-
-	/* The view shown, on a white knob. */
-	selected_x = x;
-	if (app->view == FM_VIEW_LIST)
-		selected_x = x + UI_BUTTON_SIZE + 4;
-	fm_canvas_shadow(canvas, (float)selected_x + 1.0f, (float)y + 2.0f, UI_BUTTON_SIZE - 2.0f, UI_BUTTON_SIZE - 4.0f, (UI_BUTTON_SIZE - 4) * 0.5f, 4.0f, FM_COLOR_SHADOW);
-	fm_canvas_round(canvas, (float)selected_x + 1.0f, (float)y + 2.0f, UI_BUTTON_SIZE - 2.0f, UI_BUTTON_SIZE - 4.0f, (UI_BUTTON_SIZE - 4) * 0.5f, FM_COLOR_PANEL);
-
-	/* The icon button. */
-	color = FM_COLOR_TEXT_SECONDARY;
-	if (app->view == FM_VIEW_ICONS)
-		color = FM_COLOR_ACCENT;
-	fm_icon_draw(canvas, FM_ICON_GRID, (float)x + 7.0f, (float)y + 7.0f, 16.0f, color);
-	rect.x = x;
-	rect.y = y;
-	rect.width = UI_BUTTON_SIZE;
-	rect.height = UI_BUTTON_SIZE;
-	fm_ui_hit(app, &rect, FM_HIT_VIEW_ICONS, 0);
-
-	/* The list button. */
-	color = FM_COLOR_TEXT_SECONDARY;
-	if (app->view == FM_VIEW_LIST)
-		color = FM_COLOR_ACCENT;
-	fm_icon_draw(canvas, FM_ICON_LIST, (float)x + UI_BUTTON_SIZE + 11.0f, (float)y + 7.0f, 16.0f, color);
-	rect.x = x + UI_BUTTON_SIZE + 4;
-	fm_ui_hit(app, &rect, FM_HIT_VIEW_LIST, 0);
-}
-
-/* Draws the progress ring of the running operations: the first one's share done, lit under the pointer. */
-static void
-ui_draw_progress(
-	struct fm_app *app,
-	struct fm_canvas *canvas,
-	const struct fm_rect *rect)
-{
-	const struct fm_task *task;
-	float fraction;
-	float cx;
-	float cy;
-
-	/* The first task's share of its bytes and items. */
-	task = app->tasks[0];
-	fraction = 0.0f;
-	if (task->bytes_total + task->files_total != 0U)
-		fraction = (float)(task->bytes_done + task->files_done * 4096U) / (float)(task->bytes_total + task->files_total * 4096U);
-	if (fraction < 0.03f)
-		fraction = 0.03f;
-	if (fraction > 1.0f)
-		fraction = 1.0f;
-
-	/* A faint whole ring and the part done in the accent. */
-	cx = (float)rect->x + (float)rect->width * 0.5f;
-	cy = (float)rect->y + (float)rect->height * 0.5f;
-	if (app->hover_kind == FM_HIT_PROGRESS || app->show_tasks != 0)
-		fm_canvas_circle(canvas, cx, cy, (float)rect->width * 0.5f, FM_COLOR_HOVER);
-	fm_canvas_ring(canvas, cx, cy, 9.0f, 2.5f, 1.0f, FM_RGB(0xdfe5ee));
-	fm_canvas_ring(canvas, cx, cy, 9.0f, 2.5f, fraction, FM_COLOR_ACCENT);
-
-	/* It opens the list of operations. */
-	fm_ui_hit(app, rect, FM_HIT_PROGRESS, 0);
 }
 
 /* Draws the sidebar: Favorites, Locations and Tags, the place shown lit. */

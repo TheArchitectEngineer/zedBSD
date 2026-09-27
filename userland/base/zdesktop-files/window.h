@@ -75,22 +75,35 @@ struct fm_window {
 	unsigned event_count;
 };
 
-/* How many menu choices wait for the main loop at most. */
-#define FM_MENU_ACTIONS		16U
-
 /*
  * The window's menus as given to zdesktop (menu.c): the connection's menu
  * service (NULL when the compositor has none, and the window then has no
  * menus), the menu and the window's place for it, the state the menus last
- * showed, and the actions chosen and not yet carried out, oldest first.
+ * showed, and the window whose inputs the choices join (FM_EVENT_ACTION).
  */
 struct fm_menu {
 	struct zdesktop_menu_service *service;
 	struct zdesktop_menu *menu;
 	struct zdesktop_window_menu *window_menu;
 	struct fm_menu_state shown;
-	uint32_t actions[FM_MENU_ACTIONS];
-	unsigned action_count;
+	struct fm_window *window;
+};
+
+/* How many things done with the titlebar wait for the main loop at most. */
+#define FM_TITLEBAR_EVENTS	16U
+
+/*
+ * The window's titlebar as given to zdesktop (titlebar.c): zdesktop's
+ * titlebar object, the state it last showed (and whether it was ever
+ * sent), and what the user did with it and the main loop has not yet
+ * carried out, oldest first.
+ */
+struct fm_titlebar {
+	struct zdesktop_titlebar *titlebar;
+	struct fm_titlebar_state shown;
+	int sent;
+	struct fm_titlebar_event events[FM_TITLEBAR_EVENTS];
+	unsigned event_count;
 };
 
 /*
@@ -166,6 +179,7 @@ int fm_window_dispatch(struct fm_window *window, int timeout);
 int fm_window_take(struct fm_window *window, struct fm_event *event);
 int fm_window_repeat(struct fm_window *window, uint64_t now);
 void fm_window_close(struct fm_window *window);
+void fm_window_action(struct fm_window *window, uint32_t action);
 void fm_window_minimize(struct fm_window *window);
 void fm_window_zoom(struct fm_window *window);
 uint64_t fm_clock(void);
@@ -173,8 +187,13 @@ uint64_t fm_clock(void);
 /* The menus (menu.c). */
 int fm_menu_open(struct fm_menu *menu, struct fm_window *window, const struct fm_menu_state *state);
 void fm_menu_refresh(struct fm_menu *menu, const struct fm_menu_state *state);
-unsigned fm_menu_take(struct fm_menu *menu);
 void fm_menu_close(struct fm_menu *menu);
+
+/* The window's titlebar in zdesktop (titlebar.c). */
+int fm_titlebar_open(struct fm_titlebar *titlebar, struct fm_window *window, const struct fm_titlebar_state *state);
+void fm_titlebar_refresh(struct fm_titlebar *titlebar, const struct fm_titlebar_state *state);
+int fm_titlebar_take(struct fm_titlebar *titlebar, struct fm_titlebar_event *event);
+void fm_titlebar_close(struct fm_titlebar *titlebar);
 
 /* The presenter (present.c). */
 VkResult fm_present_open(struct fm_present *present, struct fm_window *window);

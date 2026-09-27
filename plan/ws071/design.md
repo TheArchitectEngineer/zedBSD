@@ -71,6 +71,12 @@ zdesktop-files
 
 zdesktop が描く浮いたタイトルバーに題名「Files」と menubar（File Edit View Go Window Help）と — □ ×（spec §36）。client の本体:
 
+**2026-09-27 の変更（ws071-p014、ユーザーの指示）**: 下の toolbar は窓の中から無くなり、WS070 の titlebar の CONTROLS
+（[ws070 titlebar-design.md §11](../ws070/titlebar-design.md)）として zdesktop の浮いたタイトルバー（最大化ではシステムバー）に
+移った。‹ › ⌂・パンくず・検索・▦ ≡・◨・進みの輪は zdesktop が描き、幅が足りなければ「…」の popup に入る。menubar もその
+「…」に入る（WS070 の決定 A）。panel は本体の上端の余白 12 px から始まる。zdesktop の titlebar の拡張が無ければ起動で失敗する
+（fallback なし）。下の図と toolbar の項は p002〜p013 の時点の記録。
+
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
 │ ( ‹ )( › )( ⌂ )  Home › Projects › zedBSD     [ 🔍 Search       ] ▦ ≡ ◨ ◔ │  toolbar（浮いた pill、本体の上端から 10 px）

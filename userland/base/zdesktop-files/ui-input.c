@@ -108,7 +108,6 @@ static void input_band_start(struct fm_app *app, int x, int y, uint32_t modifier
 static void input_band_update(struct fm_app *app, int x, int y);
 static void input_sort(struct fm_app *app, int column);
 static void input_location_key(struct fm_app *app, const struct fm_event *event);
-static void input_location_go(struct fm_app *app);
 static int input_command_key(struct fm_app *app, const struct fm_event *event);
 static int input_move_key(struct fm_app *app, const struct fm_event *event);
 static void input_move(struct fm_app *app, int target, int extend);
@@ -469,8 +468,9 @@ fm_input_enclosing(
 }
 
 /*
- * Turns the path in the toolbar into a field to type a folder in (Ctrl+L),
- * starting from the folder shown (the home folder for another place).
+ * Turns the path in the titlebar into a field to type a folder in (Ctrl+L),
+ * starting from the folder shown (the home folder for another place):
+ * zdesktop is asked to give its path the keyboard (fm_titlebar_state).
  */
 void
 fm_input_location(
@@ -486,8 +486,10 @@ fm_input_location(
 	if (location->kind != FM_LOCATION_FOLDER)
 		fm_field_set(&app->location, app->home);
 
-	/* Typing goes to the field. */
+	/* Typing goes to the field, which zdesktop is asked for. */
 	app->focus = FM_FOCUS_LOCATION;
+	app->control_focus = FM_CONTROL_PATH;
+	app->control_focus_serial++;
 	app->dirty = 1;
 }
 
@@ -537,18 +539,16 @@ input_press(
 	if (double_click != 0)
 		app->click_time = 0;
 
-	/* A press outside the location field ends its editing, and one outside the search field its typing. */
-	if (app->focus == FM_FOCUS_LOCATION && kind != FM_HIT_CRUMB)
-		app->focus = FM_FOCUS_CONTENT;
-	if (app->focus == FM_FOCUS_SEARCH && kind != FM_HIT_SEARCH)
+	/* A press in the window ends the typing in the titlebar's location or search field. */
+	if (app->focus == FM_FOCUS_LOCATION || app->focus == FM_FOCUS_SEARCH)
 		app->focus = FM_FOCUS_CONTENT;
 
 	/* A press anywhere but on the name being changed ends the change, keeping what was typed. */
 	if (app->focus == FM_FOCUS_RENAME && kind != FM_HIT_OVERLAY)
 		fm_action_rename_end(app, 1);
 
-	/* A press anywhere but on the operations' list or its ring closes the list. */
-	if (app->show_tasks != 0 && kind != FM_HIT_BUTTON && kind != FM_HIT_PROGRESS)
+	/* A press anywhere but on the operations' list closes the list. */
+	if (app->show_tasks != 0 && kind != FM_HIT_BUTTON)
 		app->show_tasks = 0;
 
 	/* What the press does. */
@@ -564,45 +564,11 @@ input_click(
 	int double_click,
 	uint32_t modifiers)
 {
-	static struct fm_crumb crumbs[FM_CRUMBS];
-	struct fm_location location;
-	int count;
-
 	/* What each region does. */
 	switch (kind) {
-	case FM_HIT_BACK:
-		fm_ui_back(app);
-		break;
-	case FM_HIT_FORWARD:
-		fm_ui_forward(app);
-		break;
-	case FM_HIT_HOME:
-		memset(&location, 0, sizeof(location));
-		location.kind = FM_LOCATION_HOME;
-		snprintf(location.path, sizeof(location.path), "%s", app->home);
-		fm_ui_go(app, &location);
-		break;
-	case FM_HIT_CRUMB:
-		if (app->focus == FM_FOCUS_LOCATION)
-			break;
-		count = fm_ui_crumbs(app, crumbs, FM_CRUMBS);
-		if (index >= 0 && index < count - 1)
-			fm_ui_go(app, &crumbs[index].location);
-		break;
 	case FM_HIT_PLACE:
 		if (index >= 0 && index < app->places.count)
 			fm_ui_go(app, &app->places.items[index].location);
-		break;
-	case FM_HIT_VIEW_ICONS:
-		app->view = FM_VIEW_ICONS;
-		fm_ui_tab(app)->scroll = 0;
-		break;
-	case FM_HIT_VIEW_LIST:
-		app->view = FM_VIEW_LIST;
-		fm_ui_tab(app)->scroll = 0;
-		break;
-	case FM_HIT_PREVIEW:
-		app->show_preview = !app->show_preview;
 		break;
 	case FM_HIT_HEADER:
 		input_sort(app, index);
@@ -615,13 +581,6 @@ input_click(
 		break;
 	case FM_HIT_BUTTON:
 		input_button(app, index);
-		break;
-	case FM_HIT_PROGRESS:
-		app->show_tasks = !app->show_tasks;
-		break;
-	case FM_HIT_SEARCH:
-		if (app->focus != FM_FOCUS_SEARCH)
-			fm_search_focus(app);
 		break;
 	case FM_HIT_SCOPE:
 		fm_search_scope(app, (unsigned)index);
@@ -787,15 +746,18 @@ input_location_key(
 	/* The field's answer to the key. */
 	result = fm_field_key(&app->location, event->key, event->modifiers);
 	if (result == FM_FIELD_ENTER) {
-		input_location_go(app);
+		fm_input_location_go(app);
 	} else if (result == FM_FIELD_CANCEL) {
 		app->focus = FM_FOCUS_CONTENT;
 	}
 }
 
-/* Goes to the folder typed in the location field (~ is the home folder); a path that is no folder is said so. */
-static void
-input_location_go(
+/*
+ * Goes to the folder typed in the location field (~ is the home folder); a
+ * path that is no folder is said so.
+ */
+void
+fm_input_location_go(
 	struct fm_app *app)
 {
 	struct fm_location location;

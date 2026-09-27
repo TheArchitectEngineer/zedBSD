@@ -62,13 +62,13 @@ expect_log /tmp/f.log 'ZFILES LOCATION kind=folder path=/tmp/fhome/Documents ite
 keys '<ctrl-2>'
 
 # 1. Report.pdf (the fifth row) through the user's list.
-double 400 278 1500
+double 400 226 1500
 expect_log /tmp/f.log 'ZFILES OPEN path=/tmp/fhome/Documents/Report.pdf app=Record error=0'
 opened=$(guest 'cat /tmp/fhome/.opened' | tail -1)
 [ "$opened" = /tmp/fhome/Documents/Report.pdf ] && echo "record: ok" || { echo "record: MISSING ($opened)"; status=1; }
 
 # 2. The information of Meeting notes.txt (the third row), its checksum, closed.
-click 400 222
+click 400 170
 keys '<ctrl-i>'
 expect_log /tmp/f.log 'ZFILES INFO path=/tmp/fhome/Documents/Meeting notes.txt mode=0644 '
 shot info.png
@@ -79,16 +79,16 @@ keys '<esc>'
 expect_log /tmp/f.log 'ZFILES INFO close'
 
 # 3. Sunset.ppm (the third row of Pictures) opens in Quick Look.
-click 100 237
+click 100 185
 expect_log /tmp/f.log 'ZFILES LOCATION kind=folder path=/tmp/fhome/Pictures items=4 error=0'
-double 400 222
+double 400 170
 expect_log /tmp/f.log 'ZFILES OPEN path=/tmp/fhome/Pictures/Sunset.ppm app=Quick Look'
 expect_log /tmp/f.log 'ZFILES LOOK open path=/tmp/fhome/Pictures/Sunset.ppm'
 keys '<esc>'
 
 # 4. Budget.csv (the second row of Documents) in a terminal.
-click 100 177
-double 400 194 4000
+click 100 125
+double 400 142 4000
 expect_log /tmp/f.log 'ZFILES LAUNCH name=Terminal \(less\) command=@terminal less ./tmp/fhome/Documents/Budget.csv.$'
 expect_log /tmp/zdesktop.log 'ZWL MAP client=2 '
 running=$(guest "ps -A -o args | grep -c '[z]desktop-terminal'" | tail -1)

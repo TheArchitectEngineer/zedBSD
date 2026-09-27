@@ -27,6 +27,9 @@
  *   focus=0|1
  *   action=N         (a menu's action, fm_ui_action; a request for the window is printed)
  *   state            (prints what the menus show, fm_ui_menu_state)
+ *   titlebar         (prints what the titlebar shows, fm_ui_titlebar_state)
+ *   tb=activated:ID:DETAIL  tb=changed:ID:TEXT  tb=done:ID:HOW:TEXT
+ *                    (what zdesktop's titlebar tells the window, fm_ui_titlebar)
  */
 
 #include "files.h"
@@ -153,6 +156,39 @@ main(
 			printf("state selection=%d folder=%d trash=%d field=%d paste=%d undo=%d redo=%d back=%d forward=%d enclose=%d view=%u sort=%u columns=%u sidebar=%d preview=%d hidden=%d openers=%d first=%s tags=%d checked=%u\n",
 			    state.selection, state.folder, state.trash, state.field, state.can_paste, state.can_undo, state.can_redo, state.can_back, state.can_forward, state.can_enclose,
 			    state.view, state.sort, state.columns, state.sidebar, state.preview, state.hidden, state.opener_count, state.opener_count > 0 ? state.openers[0] : "-", state.tag_count, state.tags_checked);
+		} else if (strcmp(argv[index], "titlebar") == 0) {
+			static struct fm_titlebar_state bar;
+			fm_ui_titlebar_state(&app, &bar);
+			printf("titlebar back=%d forward=%d parts=%d", bar.can_back, bar.can_forward, bar.part_count);
+			for (x = 0; x < bar.part_count; x++)
+				printf("%s%s", x == 0 ? " path=" : "|", bar.parts[x]);
+			printf(" field=%s query=%s view=%u preview=%d progress=%d focus=%u serial=%u\n", bar.path, bar.query, bar.view, bar.preview, bar.progress, bar.focus, bar.focus_serial);
+		} else if (strncmp(argv[index], "tb=", 3) == 0) {
+			static struct fm_titlebar_event told;
+			const char *rest;
+			unsigned id;
+			unsigned detail;
+			int used;
+			memset(&told, 0, sizeof(told));
+			used = 0;
+			detail = 0;
+			rest = argv[index] + 3;
+			if (sscanf(rest, "activated:%u:%u", &id, &detail) == 2) {
+				told.kind = FM_TITLEBAR_ACTIVATED;
+			} else if (sscanf(rest, "changed:%u:%n", &id, &used) == 1 && used > 0) {
+				told.kind = FM_TITLEBAR_CHANGED;
+				snprintf(told.text, sizeof(told.text), "%s", rest + used);
+			} else if (sscanf(rest, "done:%u:%u:%n", &id, &detail, &used) == 2 && used > 0) {
+				told.kind = FM_TITLEBAR_DONE;
+				snprintf(told.text, sizeof(told.text), "%s", rest + used);
+			} else {
+				fprintf(stderr, "files-render: bad %s\n", argv[index]);
+				return 2;
+			}
+			told.id = id;
+			told.detail = detail;
+			app.now = now;
+			fm_ui_titlebar(&app, &told);
 		} else if (strcmp(argv[index], "hits") == 0) {
 			for (x = 0; x < app.hit_count; x++)
 				printf("hit kind=%u index=%d x=%d y=%d width=%d height=%d\n", app.hits[x].kind, app.hits[x].index, app.hits[x].rect.x, app.hits[x].rect.y, app.hits[x].rect.width, app.hits[x].rect.height);

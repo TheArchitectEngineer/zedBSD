@@ -47,6 +47,13 @@ shot() {
 	check "$out/$1" >/dev/null
 }
 
+# Clicks a control of the window's titlebar (drawn by zdesktop; its place from zdesktop's log, ws071-p014).
+control() {
+	set -- $(guest "grep 'ZWL TITLEBAR control client=1 .* where=floating id=$1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p')
+	set -- $((${1:-0} + ${3:-0} / 2)) $((${2:-0} + ${4:-0} / 2))
+	pointer move $(($1 - 2)) "$2" sleep 150 move "$1" "$2" sleep 300 down sleep 60 up sleep 900
+}
+
 guest "$stop_all" >/dev/null
 # With FILES_ON_UFS=1 the sample home lives on the root file system (UFS) and /tmp/fhome links to it,
 # so that the tags (extended attributes) are kept by UFS rather than tmpfs.
@@ -63,7 +70,7 @@ echo "files: surface $surface at $wx,$wy"
 expect_log /tmp/f.log 'ZFILES LOCATION kind=folder path=/tmp/fhome/Documents items=6 error=0'
 
 # 1. Tags.
-click 779 172
+click 779 120
 keys '<alt-1>'
 sleep 0.8
 keys '<alt-3>'
@@ -73,17 +80,17 @@ expect_log /tmp/f.log 'ZFILES TAG tag=Ideas on=1 items=1'
 shot tagged.png
 
 # 2. The tag's place.
-click 100 493
+click 100 441
 expect_log /tmp/f.log 'ZFILES LOCATION kind=tag path=Work items=1 error=0'
 shot tag.png
 
 # 3. Search, then the whole computer.
-click 748 32
+control 5
 keys 'note'
 sleep 2
 expect_log /tmp/f.log 'ZFILES SEARCH done query=note results=1 '
 shot search.png
-click 922 97 1500
+click 922 45 1500
 expect_log /tmp/f.log 'ZFILES SEARCH start query=note base=/$'
 sleep 3
 
@@ -91,7 +98,7 @@ sleep 3
 keys '<ret>' '<down>' '<ret>'
 sleep 1
 expect_log /tmp/f.log 'ZFILES OPEN path=.*/Documents/Meeting notes.txt'
-click 100 365
+click 100 313
 expect_log /tmp/f.log 'ZFILES LOCATION kind=recents path= items=1 error=0'
 
 # 5. A favorite added and taken off.
@@ -102,9 +109,9 @@ sleep 1
 keys '<ctrl-alt-t>'
 sleep 1
 expect_log /tmp/f.log 'ZFILES FAVORITE add path=/tmp/fhome/Projects'
-pointer move $((wx + 100)) $((wy + 327)) sleep 500
+pointer move $((wx + 100)) $((wy + 275)) sleep 500
 check "$out/favorite.png" >/dev/null
-click 200 327
+click 200 275
 expect_log /tmp/f.log 'ZFILES FAVORITE remove path=/tmp/fhome/Projects'
 
 errors=$(guest "grep -c ERROR /tmp/zdesktop.log" | tail -1)

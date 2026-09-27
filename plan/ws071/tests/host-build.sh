@@ -2,7 +2,7 @@
 # ws071: builds zdesktop-files' host tests with the host's C compiler into build/ws071-host/.
 #
 # The drawing (canvas, text, icons), the interface and the model of zdesktop-files are built
-# without Wayland and Vulkan (window.c, present.c and menu.c stay out); libtruetype is built
+# without Wayland and Vulkan (window.c, present.c, menu.c and titlebar.c stay out); libtruetype is built
 # from its sources.  The test programs:
 #   files-render   draws scenes of the interface into PPM pictures (host-render.c)
 #   files-model    checks the model in temporary directories (host-model.c)
@@ -37,10 +37,10 @@ if [ -f userland/base/libzdesktop/recent.c ]; then
 	objects="$objects $out/obj/zdesktop-recent.o"
 fi
 
-# zdesktop-files without the window, the presenter and the menus.
+# zdesktop-files without the window, the presenter, the menus and the titlebar.
 for file in $src/*.c; do
 	case $(basename "$file") in
-	main.c|window.c|present.c|menu.c) continue ;;
+	main.c|window.c|present.c|menu.c|titlebar.c) continue ;;
 	esac
 	object="$out/obj/files-$(basename "$file" .c).o"
 	"$cc" $flags -c "$file" -o "$object"

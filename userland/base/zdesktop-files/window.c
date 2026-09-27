@@ -342,6 +342,25 @@ fm_window_repeat(
 }
 
 /*
+ * Queues a menu's choice among the window's inputs, so that it is carried
+ * out in the order it came with the keys around it (a shortcut and the
+ * text typed after it).
+ */
+void
+fm_window_action(
+	struct fm_window *window,
+	uint32_t action)
+{
+	struct fm_event *event;
+
+	/* The input; a full queue drops it. */
+	event = window_push(window, FM_EVENT_ACTION);
+	if (event == NULL)
+		return;
+	event->action = action;
+}
+
+/*
  * Asks the compositor to minimize the window.
  */
 void

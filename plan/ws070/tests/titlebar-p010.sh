@@ -5,7 +5,7 @@
 #  1. floating.png: the controls in the floating titlebar (ZWL TITLEBAR control ... where=floating).
 #  2. Back clicked (event activated id=1); the breadcrumb's "..." (the nearest part left out) and its last
 #     part (detail=2); the search field
-#     clicked, "abc" typed (text events), Enter (done how=0 text=abc): search.png while typing; List
+#     clicked, "aBc" typed (text events, a capital with Shift), Enter (done how=0 text=aBc): search.png while typing; List
 #     clicked (id=7).
 #  3. docked.png: docked by a double click on the title, the controls in the system bar
 #     (where=docked); List clicked there too; restored by a double click on the docked title.
@@ -97,11 +97,11 @@ click $(( $1 + 60 )) $(( $2 + 15 ))
 expect_log /tmp/probe.log 'TITLEBARPROBE event=activated id=4 detail=2 '
 set -- $(control 1 floating 5); click "$1" "$2"
 expect_log /tmp/zdesktop.log 'ZWL TITLEBAR focus client=1 surface=[0-9]+ id=5 edit=0'
-keys 'abc'
+keys 'aBc'
 shot search.png
-expect_log /tmp/probe.log 'TITLEBARPROBE event=text id=5 text=abc'
+expect_log /tmp/probe.log 'TITLEBARPROBE event=text id=5 text=aBc'
 keys '<ret>'
-expect_log /tmp/probe.log 'TITLEBARPROBE event=done id=5 how=0 text=abc'
+expect_log /tmp/probe.log 'TITLEBARPROBE event=done id=5 how=0 text=aBc'
 set -- $(control 1 floating 5); click "$1" "$2"
 keys 'x'
 keys '<esc>'

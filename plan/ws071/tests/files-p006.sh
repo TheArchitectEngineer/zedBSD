@@ -48,6 +48,13 @@ shot() {
 	check "$out/$1" >/dev/null
 }
 
+# Clicks a control of the window's titlebar (drawn by zdesktop; its place from zdesktop's log, ws071-p014).
+control() {
+	set -- $(guest "grep 'ZWL TITLEBAR control client=1 .* where=floating id=$1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p')
+	set -- $((${1:-0} + ${3:-0} / 2)) $((${2:-0} + ${4:-0} / 2))
+	pointer move $(($1 - 2)) "$2" sleep 150 move "$1" "$2" sleep 300 down sleep 60 up sleep 900
+}
+
 guest "$stop_all" >/dev/null
 guest 'rm -f /tmp/wayland-0 /tmp/zdesktop-files.clipboard; rm -rf /tmp/fhome; sh /usr/share/zdesktop-files-tests/make-home.sh /tmp/fhome >/dev/null'
 guest 'export XDG_RUNTIME_DIR=/tmp
@@ -63,25 +70,25 @@ expect_log /tmp/f.log 'ZFILES LOCATION kind=home path=/tmp/fhome items=0 error=0
 shot dashboard.png
 
 # 2. The Pictures card (the second).
-click 520 362
+click 520 310
 expect_log /tmp/f.log 'ZFILES LOCATION kind=folder path=/tmp/fhome/Pictures items=4 error=0'
 
 # 3. A file opened, then Home.
-click 100 177
-double 779 172
+click 100 125
+double 779 120
 expect_log /tmp/f.log 'ZFILES OPEN path=/tmp/fhome/Documents/Report.pdf'
-click 109 32
+control 3
 shot dashboard-recent.png
 
 # 4. The recent file (the first row under Recent Files).
-click 500 590
+click 500 538
 found=$(guest "grep -c 'LOCATION kind=folder path=/tmp/fhome/Documents ' /tmp/f.log" | tail -1)
 [ "${found:-0}" -ge 2 ] && echo "recent: ok" || { echo "recent: MISSING"; status=1; }
 expect_log /tmp/f.log 'ZFILES SELECT count=1 '
 
 # 5. Show all.
-click 109 32
-click 920 299
+control 3
+click 920 247
 expect_log /tmp/f.log 'ZFILES LOCATION kind=folder path=/tmp/fhome items=7 error=0'
 
 errors=$(guest "grep -c ERROR /tmp/zdesktop.log" | tail -1)
