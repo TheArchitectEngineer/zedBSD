@@ -88,44 +88,44 @@ struct menu_item {
 
 /* The menus, in the order they are shown. */
 static const struct menu_item menu_items[] = {
-	{ MENU_SHELL, ZDESKTOP_MENU_ROOT, ZDESKTOP_MENU_ITEM_SUBMENU, "Shell", 0U, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_NEW_WINDOW, MENU_SHELL, ZDESKTOP_MENU_ITEM_NORMAL, "New Window", TERMINAL_ACTION_NEW_WINDOW, ZDESKTOP_MENU_ROLE_NEW, ZDESKTOP_MENU_CTRL | ZDESKTOP_MENU_SHIFT, 'n' },
-	{ MENU_NEW_TAB, MENU_SHELL, ZDESKTOP_MENU_ITEM_NORMAL, "New Tab", TERMINAL_ACTION_NEW_TAB, ZDESKTOP_MENU_ROLE_NONE, ZDESKTOP_MENU_CTRL | ZDESKTOP_MENU_SHIFT, 't' },
-	{ MENU_SHELL_LINE, MENU_SHELL, ZDESKTOP_MENU_ITEM_SEPARATOR, "", 0U, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_CLOSE_TAB, MENU_SHELL, ZDESKTOP_MENU_ITEM_NORMAL, "Close Tab", TERMINAL_ACTION_CLOSE_TAB, ZDESKTOP_MENU_ROLE_NONE, ZDESKTOP_MENU_CTRL | ZDESKTOP_MENU_SHIFT, 'w' },
-	{ MENU_CLOSE, MENU_SHELL, ZDESKTOP_MENU_ITEM_NORMAL, "Close Window", TERMINAL_ACTION_CLOSE, ZDESKTOP_MENU_ROLE_CLOSE, ZDESKTOP_MENU_CTRL | ZDESKTOP_MENU_SHIFT, 'q' },
-	{ MENU_EDIT, ZDESKTOP_MENU_ROOT, ZDESKTOP_MENU_ITEM_SUBMENU, "Edit", 0U, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_COPY, MENU_EDIT, ZDESKTOP_MENU_ITEM_NORMAL, "Copy", TERMINAL_ACTION_COPY, ZDESKTOP_MENU_ROLE_COPY, ZDESKTOP_MENU_CTRL | ZDESKTOP_MENU_SHIFT, 'c' },
-	{ MENU_PASTE, MENU_EDIT, ZDESKTOP_MENU_ITEM_NORMAL, "Paste", TERMINAL_ACTION_PASTE, ZDESKTOP_MENU_ROLE_PASTE, ZDESKTOP_MENU_CTRL | ZDESKTOP_MENU_SHIFT, 'v' },
-	{ MENU_EDIT_LINE, MENU_EDIT, ZDESKTOP_MENU_ITEM_SEPARATOR, "", 0U, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_SELECT_ALL, MENU_EDIT, ZDESKTOP_MENU_ITEM_NORMAL, "Select All", TERMINAL_ACTION_SELECT_ALL, ZDESKTOP_MENU_ROLE_SELECT_ALL, ZDESKTOP_MENU_CTRL | ZDESKTOP_MENU_SHIFT, 'a' },
-	{ MENU_VIEW, ZDESKTOP_MENU_ROOT, ZDESKTOP_MENU_ITEM_SUBMENU, "View", 0U, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_ZOOM_IN, MENU_VIEW, ZDESKTOP_MENU_ITEM_NORMAL, "Zoom In", TERMINAL_ACTION_ZOOM_IN, ZDESKTOP_MENU_ROLE_ZOOM_IN, ZDESKTOP_MENU_CTRL, MENU_KEY_PLUS },
-	{ MENU_ZOOM_OUT, MENU_VIEW, ZDESKTOP_MENU_ITEM_NORMAL, "Zoom Out", TERMINAL_ACTION_ZOOM_OUT, ZDESKTOP_MENU_ROLE_ZOOM_OUT, ZDESKTOP_MENU_CTRL, MENU_KEY_MINUS },
-	{ MENU_ZOOM_NORMAL, MENU_VIEW, ZDESKTOP_MENU_ITEM_NORMAL, "Normal Size", TERMINAL_ACTION_ZOOM_NORMAL, ZDESKTOP_MENU_ROLE_NONE, ZDESKTOP_MENU_CTRL, MENU_KEY_ZERO },
-	{ MENU_TEXT_SIZE, MENU_VIEW, ZDESKTOP_MENU_ITEM_SUBMENU, "Text Size", 0U, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_SIZE_SMALL, MENU_TEXT_SIZE, ZDESKTOP_MENU_ITEM_RADIO, "Small", TERMINAL_ACTION_SIZE_SMALL, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_SIZE_MEDIUM, MENU_TEXT_SIZE, ZDESKTOP_MENU_ITEM_RADIO, "Medium", TERMINAL_ACTION_SIZE_MEDIUM, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_SIZE_LARGE, MENU_TEXT_SIZE, ZDESKTOP_MENU_ITEM_RADIO, "Large", TERMINAL_ACTION_SIZE_LARGE, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_SIZE_HUGE, MENU_TEXT_SIZE, ZDESKTOP_MENU_ITEM_RADIO, "Huge", TERMINAL_ACTION_SIZE_HUGE, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_VIEW_LINE, MENU_VIEW, ZDESKTOP_MENU_ITEM_SEPARATOR, "", 0U, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_FULLSCREEN, MENU_VIEW, ZDESKTOP_MENU_ITEM_CHECKBOX, "Fullscreen", TERMINAL_ACTION_FULLSCREEN, ZDESKTOP_MENU_ROLE_FULLSCREEN, 0U, MENU_KEY_F11 },
-	{ MENU_SESSION, ZDESKTOP_MENU_ROOT, ZDESKTOP_MENU_ITEM_SUBMENU, "Session", 0U, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_INTERRUPT, MENU_SESSION, ZDESKTOP_MENU_ITEM_NORMAL, "Send Interrupt", TERMINAL_ACTION_INTERRUPT, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_END_OF_FILE, MENU_SESSION, ZDESKTOP_MENU_ITEM_NORMAL, "Send End of File", TERMINAL_ACTION_END_OF_FILE, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_SESSION_LINE, MENU_SESSION, ZDESKTOP_MENU_ITEM_SEPARATOR, "", 0U, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_CLEAR, MENU_SESSION, ZDESKTOP_MENU_ITEM_NORMAL, "Clear Screen", TERMINAL_ACTION_CLEAR, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_RESET, MENU_SESSION, ZDESKTOP_MENU_ITEM_NORMAL, "Reset Terminal", TERMINAL_ACTION_RESET, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_HELP, ZDESKTOP_MENU_ROOT, ZDESKTOP_MENU_ITEM_SUBMENU, "Help", 0U, ZDESKTOP_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_ABOUT, MENU_HELP, ZDESKTOP_MENU_ITEM_NORMAL, "About Terminal", TERMINAL_ACTION_ABOUT, ZDESKTOP_MENU_ROLE_ABOUT, 0U, 0U }
+	{ MENU_SHELL, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_SUBMENU, "Shell", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_NEW_WINDOW, MENU_SHELL, KEILAND_MENU_ITEM_NORMAL, "New Window", TERMINAL_ACTION_NEW_WINDOW, KEILAND_MENU_ROLE_NEW, KEILAND_MENU_CTRL | KEILAND_MENU_SHIFT, 'n' },
+	{ MENU_NEW_TAB, MENU_SHELL, KEILAND_MENU_ITEM_NORMAL, "New Tab", TERMINAL_ACTION_NEW_TAB, KEILAND_MENU_ROLE_NONE, KEILAND_MENU_CTRL | KEILAND_MENU_SHIFT, 't' },
+	{ MENU_SHELL_LINE, MENU_SHELL, KEILAND_MENU_ITEM_SEPARATOR, "", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_CLOSE_TAB, MENU_SHELL, KEILAND_MENU_ITEM_NORMAL, "Close Tab", TERMINAL_ACTION_CLOSE_TAB, KEILAND_MENU_ROLE_NONE, KEILAND_MENU_CTRL | KEILAND_MENU_SHIFT, 'w' },
+	{ MENU_CLOSE, MENU_SHELL, KEILAND_MENU_ITEM_NORMAL, "Close Window", TERMINAL_ACTION_CLOSE, KEILAND_MENU_ROLE_CLOSE, KEILAND_MENU_CTRL | KEILAND_MENU_SHIFT, 'q' },
+	{ MENU_EDIT, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_SUBMENU, "Edit", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_COPY, MENU_EDIT, KEILAND_MENU_ITEM_NORMAL, "Copy", TERMINAL_ACTION_COPY, KEILAND_MENU_ROLE_COPY, KEILAND_MENU_CTRL | KEILAND_MENU_SHIFT, 'c' },
+	{ MENU_PASTE, MENU_EDIT, KEILAND_MENU_ITEM_NORMAL, "Paste", TERMINAL_ACTION_PASTE, KEILAND_MENU_ROLE_PASTE, KEILAND_MENU_CTRL | KEILAND_MENU_SHIFT, 'v' },
+	{ MENU_EDIT_LINE, MENU_EDIT, KEILAND_MENU_ITEM_SEPARATOR, "", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_SELECT_ALL, MENU_EDIT, KEILAND_MENU_ITEM_NORMAL, "Select All", TERMINAL_ACTION_SELECT_ALL, KEILAND_MENU_ROLE_SELECT_ALL, KEILAND_MENU_CTRL | KEILAND_MENU_SHIFT, 'a' },
+	{ MENU_VIEW, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_SUBMENU, "View", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_ZOOM_IN, MENU_VIEW, KEILAND_MENU_ITEM_NORMAL, "Zoom In", TERMINAL_ACTION_ZOOM_IN, KEILAND_MENU_ROLE_ZOOM_IN, KEILAND_MENU_CTRL, MENU_KEY_PLUS },
+	{ MENU_ZOOM_OUT, MENU_VIEW, KEILAND_MENU_ITEM_NORMAL, "Zoom Out", TERMINAL_ACTION_ZOOM_OUT, KEILAND_MENU_ROLE_ZOOM_OUT, KEILAND_MENU_CTRL, MENU_KEY_MINUS },
+	{ MENU_ZOOM_NORMAL, MENU_VIEW, KEILAND_MENU_ITEM_NORMAL, "Normal Size", TERMINAL_ACTION_ZOOM_NORMAL, KEILAND_MENU_ROLE_NONE, KEILAND_MENU_CTRL, MENU_KEY_ZERO },
+	{ MENU_TEXT_SIZE, MENU_VIEW, KEILAND_MENU_ITEM_SUBMENU, "Text Size", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_SIZE_SMALL, MENU_TEXT_SIZE, KEILAND_MENU_ITEM_RADIO, "Small", TERMINAL_ACTION_SIZE_SMALL, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_SIZE_MEDIUM, MENU_TEXT_SIZE, KEILAND_MENU_ITEM_RADIO, "Medium", TERMINAL_ACTION_SIZE_MEDIUM, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_SIZE_LARGE, MENU_TEXT_SIZE, KEILAND_MENU_ITEM_RADIO, "Large", TERMINAL_ACTION_SIZE_LARGE, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_SIZE_HUGE, MENU_TEXT_SIZE, KEILAND_MENU_ITEM_RADIO, "Huge", TERMINAL_ACTION_SIZE_HUGE, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_VIEW_LINE, MENU_VIEW, KEILAND_MENU_ITEM_SEPARATOR, "", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_FULLSCREEN, MENU_VIEW, KEILAND_MENU_ITEM_CHECKBOX, "Fullscreen", TERMINAL_ACTION_FULLSCREEN, KEILAND_MENU_ROLE_FULLSCREEN, 0U, MENU_KEY_F11 },
+	{ MENU_SESSION, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_SUBMENU, "Session", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_INTERRUPT, MENU_SESSION, KEILAND_MENU_ITEM_NORMAL, "Send Interrupt", TERMINAL_ACTION_INTERRUPT, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_END_OF_FILE, MENU_SESSION, KEILAND_MENU_ITEM_NORMAL, "Send End of File", TERMINAL_ACTION_END_OF_FILE, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_SESSION_LINE, MENU_SESSION, KEILAND_MENU_ITEM_SEPARATOR, "", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_CLEAR, MENU_SESSION, KEILAND_MENU_ITEM_NORMAL, "Clear Screen", TERMINAL_ACTION_CLEAR, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_RESET, MENU_SESSION, KEILAND_MENU_ITEM_NORMAL, "Reset Terminal", TERMINAL_ACTION_RESET, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_HELP, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_SUBMENU, "Help", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_ABOUT, MENU_HELP, KEILAND_MENU_ITEM_NORMAL, "About Terminal", TERMINAL_ACTION_ABOUT, KEILAND_MENU_ROLE_ABOUT, 0U, 0U }
 };
 
-static void menu_activated(void *data, struct zdesktop_window_menu *window_menu, uint32_t item, uint32_t action, struct wl_seat *seat, uint32_t serial);
+static void menu_activated(void *data, struct keiland_window_menu *window_menu, uint32_t item, uint32_t action, struct wl_seat *seat, uint32_t serial);
 static int menu_build(struct terminal_window *window);
 static int menu_state(struct terminal_window *window, const struct terminal_menu_state *state);
 
 /* What the window menu tells the terminal: only the choices. */
-static const struct zdesktop_window_menu_listener menu_listener = {
+static const struct keiland_window_menu_listener menu_listener = {
 	menu_activated, NULL, NULL
 };
 
@@ -143,19 +143,19 @@ terminal_menu_open(
 	int error;
 
 	/* The connection's menu service; a compositor without one leaves the terminal without menus. */
-	window->menu_service = zdesktop_menu_service_open(window->display);
+	window->menu_service = keiland_menu_service_open(window->display);
 	if (window->menu_service == NULL) {
 		printf("ZTERM MENU none errno=%d\n", errno);
 		return 0;
 	}
 
 	/* The menu, empty until it is built. */
-	window->menu = zdesktop_menu_create(window->menu_service);
+	window->menu = keiland_menu_create(window->menu_service);
 	if (window->menu == NULL)
 		return -1;
 
 	/* The window's place for a menu, which tells the terminal what is chosen. */
-	window->window_menu = zdesktop_window_menu_create(window->menu_service, window->toplevel, &menu_listener, window);
+	window->window_menu = keiland_window_menu_create(window->menu_service, window->toplevel, &menu_listener, window);
 	if (window->window_menu == NULL)
 		return -1;
 
@@ -167,7 +167,7 @@ terminal_menu_open(
 	}
 
 	/* The window shows the menu from now on. */
-	error = zdesktop_window_menu_set(window->window_menu, window->menu);
+	error = keiland_window_menu_set(window->window_menu, window->menu);
 	if (error != 0) {
 		errno = error;
 		return -1;
@@ -242,9 +242,9 @@ terminal_menu_close(
 	struct terminal_window *window)
 {
 	/* The window's place, the menu, then the service. */
-	zdesktop_window_menu_destroy(window->window_menu);
-	zdesktop_menu_destroy(window->menu);
-	zdesktop_menu_service_close(window->menu_service);
+	keiland_window_menu_destroy(window->window_menu);
+	keiland_menu_destroy(window->menu);
+	keiland_menu_service_close(window->menu_service);
 	window->window_menu = NULL;
 	window->menu = NULL;
 	window->menu_service = NULL;
@@ -254,7 +254,7 @@ terminal_menu_close(
 static void
 menu_activated(
 	void *data,
-	struct zdesktop_window_menu *window_menu,
+	struct keiland_window_menu *window_menu,
 	uint32_t item,
 	uint32_t action,
 	struct wl_seat *seat,
@@ -290,34 +290,34 @@ menu_build(
 	int error;
 
 	/* The transaction. */
-	error = zdesktop_menu_begin(window->menu);
+	error = keiland_menu_begin(window->menu);
 	if (error != 0)
 		return error;
 
 	/* Each item in its order under its parent. */
 	for (index = 0; index < sizeof(menu_items) / sizeof(menu_items[0]); index++) {
 		item = &menu_items[index];
-		error = zdesktop_menu_append(window->menu, item->id, item->parent, item->type, item->label, item->action);
+		error = keiland_menu_append(window->menu, item->id, item->parent, item->type, item->label, item->action);
 		if (error != 0)
 			return error;
 
 		/* Its role, when it has one. */
-		if (item->role != ZDESKTOP_MENU_ROLE_NONE) {
-			error = zdesktop_menu_set_role(window->menu, item->id, item->role);
+		if (item->role != KEILAND_MENU_ROLE_NONE) {
+			error = keiland_menu_set_role(window->menu, item->id, item->role);
 			if (error != 0)
 				return error;
 		}
 
 		/* Its shortcut, when it has one. */
 		if (item->keysym != 0U) {
-			error = zdesktop_menu_set_shortcut(window->menu, item->id, item->modifiers, item->keysym);
+			error = keiland_menu_set_shortcut(window->menu, item->id, item->modifiers, item->keysym);
 			if (error != 0)
 				return error;
 		}
 	}
 
 	/* The items are shown together. */
-	error = zdesktop_menu_commit(window->menu);
+	error = keiland_menu_commit(window->menu);
 	if (error != 0)
 		return error;
 
@@ -335,7 +335,7 @@ menu_state(
 	struct terminal_window *window,
 	const struct terminal_menu_state *state)
 {
-	struct zdesktop_menu *menu;
+	struct keiland_menu *menu;
 	uint32_t checked_size;
 	int larger;
 	int smaller;
@@ -362,46 +362,46 @@ menu_state(
 
 	/* The transaction. */
 	menu = window->menu;
-	error = zdesktop_menu_begin(menu);
+	error = keiland_menu_begin(menu);
 	if (error != 0)
 		return error;
 
 	/* Copy needs a selection, Paste the clipboard's text. */
-	error = zdesktop_menu_set_enabled(menu, MENU_COPY, state->selection);
+	error = keiland_menu_set_enabled(menu, MENU_COPY, state->selection);
 	if (error == 0)
-		error = zdesktop_menu_set_enabled(menu, MENU_PASTE, state->clipboard);
+		error = keiland_menu_set_enabled(menu, MENU_PASTE, state->clipboard);
 
 	/* Zoom In and Zoom Out while there is room. */
 	if (error == 0)
-		error = zdesktop_menu_set_enabled(menu, MENU_ZOOM_IN, larger);
+		error = keiland_menu_set_enabled(menu, MENU_ZOOM_IN, larger);
 	if (error == 0)
-		error = zdesktop_menu_set_enabled(menu, MENU_ZOOM_OUT, smaller);
+		error = keiland_menu_set_enabled(menu, MENU_ZOOM_OUT, smaller);
 
 	/* One radio item of the four is checked, or none for a size between them. */
 	if (error == 0)
-		error = zdesktop_menu_set_checked(menu, MENU_SIZE_SMALL, checked_size == MENU_SIZE_SMALL);
+		error = keiland_menu_set_checked(menu, MENU_SIZE_SMALL, checked_size == MENU_SIZE_SMALL);
 	if (error == 0)
-		error = zdesktop_menu_set_checked(menu, MENU_SIZE_MEDIUM, checked_size == MENU_SIZE_MEDIUM);
+		error = keiland_menu_set_checked(menu, MENU_SIZE_MEDIUM, checked_size == MENU_SIZE_MEDIUM);
 	if (error == 0)
-		error = zdesktop_menu_set_checked(menu, MENU_SIZE_LARGE, checked_size == MENU_SIZE_LARGE);
+		error = keiland_menu_set_checked(menu, MENU_SIZE_LARGE, checked_size == MENU_SIZE_LARGE);
 	if (error == 0)
-		error = zdesktop_menu_set_checked(menu, MENU_SIZE_HUGE, checked_size == MENU_SIZE_HUGE);
+		error = keiland_menu_set_checked(menu, MENU_SIZE_HUGE, checked_size == MENU_SIZE_HUGE);
 
 	/* Fullscreen is checked while the window is. */
 	if (error == 0)
-		error = zdesktop_menu_set_checked(menu, MENU_FULLSCREEN, state->fullscreen);
+		error = keiland_menu_set_checked(menu, MENU_FULLSCREEN, state->fullscreen);
 
 	/*
 	 * A refused change still ends the transaction, so that the menu is not
 	 * left open for changes; the refusal is reported.
 	 */
 	if (error != 0) {
-		(void)zdesktop_menu_commit(menu);
+		(void)keiland_menu_commit(menu);
 		return error;
 	}
 
 	/* The state is shown together. */
-	error = zdesktop_menu_commit(menu);
+	error = keiland_menu_commit(menu);
 	if (error != 0)
 		return error;
 

@@ -22,7 +22,7 @@ Queue: q460-i01
 - すりガラス: 壁紙を縮小してぼかした画像を一度だけ作り、面はその画面の位置を sampling して白で色を足し、縁に明るい線を引く（Windows の Mica と同じく壁紙だけを透かす。窓の上に重なった面の背後の窓は透かさない。背後の実際のぼかしは p057）。角丸・影は shader の距離関数。
 - 窓のタイトルバー（実装）: 本体の上に隙間を空けて浮く、角丸のすりガラスの面。題名（`xdg_toplevel.set_title`）、左にアプリの印、右に最小化・最大化・閉じるの button（hover で背景）。本体は角丸と影。題名の帯を掴んで移動、窓を押すと最前面、閉じるは `xdg_toplevel.close`、最大化は作業領域の大きさで configure（戻すと元の位置と大きさ）。最小化は見た目だけ。
 - 上部のバー（ハリボテ）: 全幅のすりガラスの帯。左に起動の印と「zedBSD」、右に通知領域（電波・電池の印、日付と時刻）。操作は無い。
-- 文字: Google Fonts の Inter（OFL 1.1）の ASCII を libtruetype で glyph の atlas にする。font は `build/ws035-fonts/`（git に入れない。後で置き換える）、image へは試験の追加 file として `/usr/share/fonts/zdesktop.ttf` に置く。
+- 文字: Google Fonts の Inter（OFL 1.1）の ASCII を libtruetype で glyph の atlas にする。font は `build/ws035-fonts/`（git に入れない。後で置き換える）、image へは試験の追加 file として `/usr/share/fonts/keiland.ttf` に置く。
 
 範囲外: 背後の窓のぼかし（p057）、damage（p055）、最小化の実体・タスクバー・起動の menu（p011・p013）、日本語の文字（font は後で置き換える）、実機。
 
@@ -47,7 +47,7 @@ Queue: q460-i01
 制限（後の Phase へ）:
 - すりガラスが透かすのは壁紙だけ（Mica と同じ）。題名の帯の後ろの別の窓はぼかさない → p057。
 - 最小化は見た目だけ（taskbar が無い）→ p011・p013。上部のバーは操作の無いハリボテ → p013。
-- font は Google Fonts の Inter（OFL 1.1）を `build/ws035-fonts/` に置き、image へ試験の追加 file（`/usr/share/fonts/zdesktop.ttf`、`zdesktop-OFL.txt`）で入れた。git には入れていない（ユーザー指示、後で置き換える）。font が無ければ文字無しで描く。日本語は無い。
+- font は Google Fonts の Inter（OFL 1.1）を `build/ws035-fonts/` に置き、image へ試験の追加 file（`/usr/share/fonts/keiland.ttf`、`keiland-OFL.txt`）で入れた。git には入れていない（ユーザー指示、後で置き換える）。font が無ければ文字無しで描く。日本語は無い。
 - 窓の body の左上の角の外（隙間）を押しても下の窓には届かず、desktop の扱い（何もしない）。focus を得た client への `pointer.enter` の座標は title bar 上なら負になる（wlshm の log で y=-30）。
 - 時計は guest の時間帯（UTC）。
 - Lavapipe の上なので速さは測っていない。

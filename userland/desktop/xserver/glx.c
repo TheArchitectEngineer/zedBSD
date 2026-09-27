@@ -32,7 +32,7 @@
 /* The version and strings of the extension. */
 #define GLX_SERVER_MAJOR		1U
 #define GLX_SERVER_MINOR		4U
-#define GLX_VENDOR_STRING		"zedBSD"
+#define GLX_VENDOR_STRING		"Kei"
 #define GLX_VERSION_STRING		"1.4"
 #define GLX_EXTENSIONS_STRING		"GLX_ARB_get_proc_address"
 

@@ -11,8 +11,8 @@
  * (tools/gen-unicode-case.py; the tables are not kept in the source tree).
  */
 
-#ifndef ZDESKTOP_BROWSER_BASE_UNICODE_H
-#define ZDESKTOP_BROWSER_BASE_UNICODE_H
+#ifndef KEILAND_BROWSER_BASE_UNICODE_H
+#define KEILAND_BROWSER_BASE_UNICODE_H
 
 #include <stddef.h>
 #include <stdint.h>

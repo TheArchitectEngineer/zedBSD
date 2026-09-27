@@ -57,14 +57,14 @@ int __signbitf(float);
 int __signbitl(long double);
 
 static __inline unsigned int
-__zedbsd_float_bits(float value)
+__kern_float_bits(float value)
 {
 	union { float value; unsigned int bits; } shape = { value };
 	return shape.bits;
 }
 
 static __inline unsigned long long
-__zedbsd_double_bits(double value)
+__kern_double_bits(double value)
 {
 	union { double value; unsigned long long bits; } shape = { value };
 	return shape.bits;
@@ -73,24 +73,24 @@ __zedbsd_double_bits(double value)
 #define fpclassify(x) (sizeof(x) == sizeof(float) ? __fpclassifyf(x) : \
 	(sizeof(x) == sizeof(double) ? __fpclassify(x) : __fpclassifyl(x)))
 #define isinf(x) (sizeof(x) == sizeof(float) ? \
-	((__zedbsd_float_bits(x) & 0x7fffffffU) == 0x7f800000U) : \
+	((__kern_float_bits(x) & 0x7fffffffU) == 0x7f800000U) : \
 	(sizeof(x) == sizeof(double) ? \
-	((__zedbsd_double_bits(x) & 0x7fffffffffffffffULL) == \
+	((__kern_double_bits(x) & 0x7fffffffffffffffULL) == \
 	0x7ff0000000000000ULL) : __fpclassifyl(x) == FP_INFINITE))
 #define isnan(x) (sizeof(x) == sizeof(float) ? \
-	((__zedbsd_float_bits(x) & 0x7fffffffU) > 0x7f800000U) : \
+	((__kern_float_bits(x) & 0x7fffffffU) > 0x7f800000U) : \
 	(sizeof(x) == sizeof(double) ? \
-	((__zedbsd_double_bits(x) & 0x7fffffffffffffffULL) > \
+	((__kern_double_bits(x) & 0x7fffffffffffffffULL) > \
 	0x7ff0000000000000ULL) : __fpclassifyl(x) == FP_NAN))
 #define isfinite(x) (sizeof(x) == sizeof(float) ? \
-	((__zedbsd_float_bits(x) & 0x7fffffffU) < 0x7f800000U) : \
+	((__kern_float_bits(x) & 0x7fffffffU) < 0x7f800000U) : \
 	(sizeof(x) == sizeof(double) ? \
-	((__zedbsd_double_bits(x) & 0x7fffffffffffffffULL) < \
+	((__kern_double_bits(x) & 0x7fffffffffffffffULL) < \
 	0x7ff0000000000000ULL) : __fpclassifyl(x) > FP_INFINITE))
 #define isnormal(x) (fpclassify(x) == FP_NORMAL)
 #define signbit(x) (sizeof(x) == sizeof(float) ? \
-	(int)(__zedbsd_float_bits(x) >> 31) : (sizeof(x) == sizeof(double) ? \
-	(int)(__zedbsd_double_bits(x) >> 63) : __signbitl(x)))
+	(int)(__kern_float_bits(x) >> 31) : (sizeof(x) == sizeof(double) ? \
+	(int)(__kern_double_bits(x) >> 63) : __signbitl(x)))
 #define isunordered(x, y) (isnan(x) || isnan(y))
 #define isgreater(x, y) (!isunordered((x), (y)) && (x) > (y))
 #define isgreaterequal(x, y) (!isunordered((x), (y)) && (x) >= (y))

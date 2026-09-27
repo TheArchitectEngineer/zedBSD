@@ -17,8 +17,8 @@
  * can keep them without being traced.
  */
 
-#ifndef ZDESKTOP_BROWSER_CSS_H
-#define ZDESKTOP_BROWSER_CSS_H
+#ifndef KEILAND_BROWSER_CSS_H
+#define KEILAND_BROWSER_CSS_H
 
 #include "dom/dom.h"
 

@@ -43,7 +43,7 @@
 #include <unistd.h>
 
 /* The font the terminal uses unless told otherwise, and its size in pixels. */
-#define MAIN_FONT		"/usr/share/fonts/zdesktop-mono.ttf"
+#define MAIN_FONT		"/usr/share/fonts/keiland-mono.ttf"
 #define MAIN_FONT_PIXELS	16U
 
 /* The grid the window opens with. */
@@ -63,8 +63,8 @@
 #define MAIN_CLIPBOARD_MAX	(TERMINAL_MAX_COLUMNS * TERMINAL_MAX_ROWS * 4U + TERMINAL_MAX_ROWS)
 
 /* What Help > About Terminal writes on the screen. */
-#define MAIN_ABOUT		"\r\n\033[1mTerminal\033[0m: a VT100 terminal for zdesktop (zedBSD), drawn with Vulkan.\r\n" \
-				"Its menus are drawn by zdesktop's System Menu (xdg_toplevel_menu_v1, through libkeiland).\r\n"
+#define MAIN_ABOUT		"\r\n\033[1mTerminal\033[0m: a VT100 terminal for Kei, drawn with Vulkan.\r\n" \
+				"Its menus are drawn by the System Menu (xdg_toplevel_menu_v1).\r\n"
 
 /*
  * What the command line asked for.

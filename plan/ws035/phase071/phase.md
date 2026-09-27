@@ -20,7 +20,7 @@ Queue: q480-i01
    から自分の位置へ 220 ms で育つ（題名の bar は fade in）。
 3. 閉じる: Home の上の右下から左上への drag（左上へ 120 px 以上、対角の成分）で閉じる。
 4. キーボード: Tab で次の icon（Shift は無し）。
-5. 試験: 30 の app の `/etc/zdesktop/apps.conf` でページング（drag、ドット、ホイール、キー）、起動の animation の log、閉じる drag。
+5. 試験: 30 の app の `/etc/keiland/apps.conf` でページング（drag、ドット、ホイール、キー）、起動の animation の log、閉じる drag。
 
 ## 受け入れ
 

@@ -317,7 +317,7 @@ read_letter(
 		request->report_path = value;
 		break;
 	case CP_OPTION_VERSION:
-		printf("cp (zedBSD) 1.0\n");
+		printf("cp (Kei) 1.0\n");
 		exit(0);
 		break;
 	default:

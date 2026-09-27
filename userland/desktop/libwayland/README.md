@@ -36,7 +36,7 @@ backpressure and a canceled read remain ordinary event-loop conditions.
 typed request wrappers. `event.c` calls selected listeners using their exact
 public callback types; custom event bindings use `wl_proxy_add_dispatcher`.
 There is no libffi or imported upstream implementation. Utility arrays/lists
-remain caller-owned. The private zed_gpu_buffer_v1 factory only carries an fd and
+remain caller-owned. The private keiland_gpu_buffer_v1 factory only carries an fd and
 an opaque metadata array; GPU identity, bounds, immutable metadata and import
 permissions are checked by the compositor/GPU layers. Revision two adds
 `set_acquire_fence(surface, fd, generation_hi, generation_lo)`: a kernel fence

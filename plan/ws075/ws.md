@@ -67,7 +67,7 @@ QEMU（Venus）の証拠と実機（i915）の証拠は分けて書く。実機�
 
 ## files の実機の場面（main の依頼、2026-09-28）
 
-`plan/ws031/tests/i915-capture.py` の `files`（`ZDESKTOP_APP=home plan/ws075/tests/capture-hw.sh files zdesktop OUTDIR`）:
+`plan/ws031/tests/i915-capture.py` の `files`（`KEILAND_APP=home plan/ws075/tests/capture-hw.sh files zdesktop OUTDIR`）:
 Home から Files を起動し、Ctrl+T・Ctrl+Tab・Ctrl+W でタブを開閉・切り替え、title bar の double click で dock、下端からの drag で
 Wiseview を開閉、dock した窓の閉じる button で終える（9 検査）。Files の窓の位置は先に map された窓の数で変わるので、desktop との
 差分から窓を見つける（`changed_box()`）。`config-zdesktop-hw.mk` に files とその library を足した。

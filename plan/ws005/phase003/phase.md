@@ -82,7 +82,7 @@ larger internal `struct ucred`:
 ```c
 #include <stdint.h>
 
-struct zedbsd_peercred {
+struct kern_peercred {
         int32_t  pid;
         uint32_t euid;
         uint32_t egid;
@@ -120,14 +120,14 @@ The semantic contract is:
 - unconnected and listening sockets return `ENOTCONN`; non-AF_UNIX and initial
   datagram support return `ENOPROTOOPT`; and
 - a short result buffer fails without a partial credential.  On success the
-  returned length is exactly `sizeof(struct zedbsd_peercred)`; a larger caller
+  returned length is exactly `sizeof(struct kern_peercred)`; a larger caller
   buffer is accepted and only the defined structure is written.
 
 The option does not return real or saved IDs.  `euid` and `egid` are selected
 because they are the identities used for pathname access and privilege at the
 connection boundary.
 
-`SO_PEERCRED` and `struct zedbsd_peercred` are explicit zedBSD extensions, not
+`SO_PEERCRED` and `struct kern_peercred` are explicit zedBSD extensions, not
 POSIX or SUS interfaces. The implementation records that classification in the
 UAPI documentation and the [WS001 compliance ledger](../../ws001/ws.md);
 adding the option is not
@@ -265,7 +265,7 @@ authorization, and non-network device ioctls are outside this Phase.
 
 1. Allocate one unused implementation-local `SOL_SOCKET` option number,
    publish it as `SO_PEERCRED`, and add compile/runtime assertions for the
-   frozen 12-byte `zedbsd_peercred` LP64/ILP32 layout before changing socket
+   frozen 12-byte `kern_peercred` LP64/ILP32 layout before changing socket
    storage.  Numeric allocation is an engineering check, not a human gate.
 2. Add immutable local/peer scalar records to AF_UNIX stream connection
    construction, including pathname connect, pending accept, socketpair,
@@ -355,7 +355,7 @@ existing AF_UNIX/SCM_RIGHTS/POSIX tests, WS002 network-service regressions,
 ## q040 result (2026-08-31)
 
 The Phase is complete.  `SO_PEERCRED` is allocated as the previously unused
-local value `0x0011`.  Its public `zedbsd_peercred` payload has compile-time
+local value `0x0011`.  Its public `kern_peercred` payload has compile-time
 size, offset, native-width, and signedness guards for the frozen 12-byte ABI.
 AF_UNIX pathname streams and socketpairs now retain scalar listen/connect-time
 identity; delayed accept, later credential changes, peer exit, repeated

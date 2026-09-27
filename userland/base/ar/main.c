@@ -113,7 +113,7 @@ main(
 			verbose = 1;
 			break;
 		case 'V':
-			puts("zedBSD ar 1");
+			puts("Kei ar 1");
 
 			/* Reports successful completion. */
 			return 0;

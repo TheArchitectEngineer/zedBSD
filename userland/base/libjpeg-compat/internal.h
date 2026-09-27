@@ -16,8 +16,8 @@
  * converts the colour, one row at a time.
  */
 
-#ifndef ZEDBSD_LIBJPEG_COMPAT_INTERNAL_H
-#define ZEDBSD_LIBJPEG_COMPAT_INTERNAL_H
+#ifndef KERN_LIBJPEG_COMPAT_INTERNAL_H
+#define KERN_LIBJPEG_COMPAT_INTERNAL_H
 
 #include <compat/jpeglib.h>
 

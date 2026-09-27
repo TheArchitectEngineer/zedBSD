@@ -19,8 +19,8 @@
  * (ws035-p041).
  */
 
-#ifndef ZEDBSD_COMPAT_PNG_H
-#define ZEDBSD_COMPAT_PNG_H
+#ifndef KERN_COMPAT_PNG_H
+#define KERN_COMPAT_PNG_H
 
 #include <stddef.h>
 #include <stdint.h>

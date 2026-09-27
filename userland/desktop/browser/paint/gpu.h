@@ -16,8 +16,8 @@
  * into an atlas image the first time they are drawn.
  */
 
-#ifndef ZDESKTOP_BROWSER_PAINT_GPU_H
-#define ZDESKTOP_BROWSER_PAINT_GPU_H
+#ifndef KEILAND_BROWSER_PAINT_GPU_H
+#define KEILAND_BROWSER_PAINT_GPU_H
 
 #include "paint/paint.h"
 

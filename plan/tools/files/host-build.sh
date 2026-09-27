@@ -15,7 +15,7 @@ out=build/ws071-host
 src=userland/desktop/files
 mkdir -p "$out/include" "$out/obj"
 ln -sf "$(pwd)/include/libc/truetype.h" "$out/include/truetype.h"
-ln -sf "$(pwd)/include/libc/zdesktop.h" "$out/include/zdesktop.h"
+ln -sf "$(pwd)/include/libc/keiland.h" "$out/include/keiland.h"
 ln -sf "$(pwd)/include/libc/sha2.h" "$out/include/sha2.h"
 ln -sfn "$(pwd)/include/libc/compat" "$out/include/compat"
 cc=${CC:-cc}

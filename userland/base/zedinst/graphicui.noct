@@ -229,7 +229,7 @@ func instGraphicStage(ui, title) {
     // This flag changes presentation only; the shared backend still revalidates.
     var heading = "Preparing installation";
     var step = 2;
-    if (ui.reviewAccepted) { heading = "Installing zedBSD"; step = 4; }
+    if (ui.reviewAccepted) { heading = "Installing Kei"; step = 4; }
     instGraphicDraw(ui, {kind:"progress", step:step, title:heading,
         description:title, options:[], selected:0, left:"Working", right:"Please wait"});
 }

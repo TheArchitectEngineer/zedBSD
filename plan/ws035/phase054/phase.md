@@ -1,6 +1,6 @@
 <!-- awesome-plan project=zedbsd record=ws035p054 -->
 
-# ws035-p054: acquire fence（`zed_gpu_buffer_v1` の拡張）
+# ws035-p054: acquire fence（`keiland_gpu_buffer_v1` の拡張）
 
 Phase ID: `ws035-p054`
 Parent: [WS035](../ws.md)
@@ -11,7 +11,7 @@ Queue: q459-i01
 
 ## 目的
 
-GPU の画像の client が、描画が終わる前に commit できるようにする。`zed_gpu_buffer_v1` に、commit と一緒に acquire fence（`KERNEL_HANDLE_FENCE` の fd）を渡す request を足す（Linux の `linux-explicit-synchronization` 相当を最小限で）。zdesktop はその fd を poll に入れ、signal されてからその commit を使う（CPU で待たない）。fence を渡さない client は今まで通り（commit の時点で描画が終わっている前提）。
+GPU の画像の client が、描画が終わる前に commit できるようにする。`keiland_gpu_buffer_v1` に、commit と一緒に acquire fence（`KERNEL_HANDLE_FENCE` の fd）を渡す request を足す（Linux の `linux-explicit-synchronization` 相当を最小限で）。zdesktop はその fd を poll に入れ、signal されてからその commit を使う（CPU で待たない）。fence を渡さない client は今まで通り（commit の時点で描画が終わっている前提）。
 
 ## 受け入れ
 
@@ -22,16 +22,16 @@ GPU の画像の client が、描画が終わる前に commit できるように
 
 ## 設計（実装の前に決める点）
 
-- protocol: `zed_gpu_buffer_v1` の version 2 に `set_acquire_fence(surface, fd)`（次の commit に付く）を足すか、surface ごとの object にするか。今の protocol の定義（libwayland の `zed-gpu-buffer-v1`）と WSI の present の順序を読んで決める。
+- protocol: `keiland_gpu_buffer_v1` の version 2 に `set_acquire_fence(surface, fd)`（次の commit に付く）を足すか、surface ごとの object にするか。今の protocol の定義（libwayland の `zed-gpu-buffer-v1`）と WSI の present の順序を読んで決める。
 - zwl: commit の queued に fence の fd を付け、fd を poll に入れる。signal で `ready`。surface に待っている commit があるうちに次の commit が来たら、前の commit は捨てて（release）新しい方を待つ。
 - WSI: present の信号の semaphore を fence に変え（または fence を別に作り）、`vkGetFenceFdKHR` の fd を渡す。
 
 ## 決めた設計
 
-- protocol: `zed_gpu_buffer_v1` の version 2 に `set_acquire_fence(surface: object, fd, generation_hi: uint, generation_lo: uint)`（opcode 2、署名 `2ohuu`）を足した。surface ごとの object にはしない（WSI の present の順序は fence → attach → damage → commit で、factory の request 1 つで足りる）。fence は次の commit に付く。**1 つの commit に 4 つまで**付けられ、zdesktop は全部を待つ（WSI の fence と、別の producer の fence を両方付ける場合。試験の client もこれを使う）。fd は `KERNEL_HANDLE_FENCE`、generation はその fence の payload の世代（`GPU_FENCE_QUERY` の generation 0 で読める）。
+- protocol: `keiland_gpu_buffer_v1` の version 2 に `set_acquire_fence(surface: object, fd, generation_hi: uint, generation_lo: uint)`（opcode 2、署名 `2ohuu`）を足した。surface ごとの object にはしない（WSI の present の順序は fence → attach → damage → commit で、factory の request 1 つで足りる）。fence は次の commit に付く。**1 つの commit に 4 つまで**付けられ、zdesktop は全部を待つ（WSI の fence と、別の producer の fence を両方付ける場合。試験の client もこれを使う）。fd は `KERNEL_HANDLE_FENCE`、generation はその fence の payload の世代（`GPU_FENCE_QUERY` の generation 0 で読める）。
 - zwl（`userland/base/zwl`）: request で fd を zdesktop の GPU の open に `GPU_FENCE_QUERY` で確かめ（違う GPU・fence でない・generation 0 は protocol error）、surface の次の commit の fence に積む。commit で queued の画像の fence になる（buffer を attach した commit は前の fence を閉じて置き換え、attach しない commit は再利用する画像の fence を保つ）。`zwl_schedule`（と Vulkan の無い直接表示）は、fence が終わった（世代が進んだか、同じ世代が signal／error）commit だけを採る。待っている fence の fd は main の poll に入れ、CPU では待たない。surface の破棄で閉じる。`--log-frames` で待った commit は `ZWL ACQUIRED surface= waited_ms=` を出す。
 - WSI（`userland/desktop/libvulkan`）: factory を min(広告, 2) で bind。present の worker は、全 target が GPU の画像で compositor が version 2 なら、job の fence（`KERNEL_HANDLE_FENCE` の fd と generation）を付けて**先に commit し**、その後で fence を待って job を片付ける（`present_early`、platform の op `commit_early`、`wayland_present_sync`）。version 1 の compositor には今まで通り完了を待ってから commit する。
-- libwayland: `zed_gpu_buffer_v1_interface` を version 2 に、`zed_gpu_buffer_v1_set_acquire_fence`。
+- libwayland: `keiland_gpu_buffer_v1_interface` を version 2 に、`keiland_gpu_buffer_v1_set_acquire_fence`。
 
 ## 結果（q459-i01、2026-09-26、QEMU の Venus guest。実機は未実施）
 

@@ -11,8 +11,8 @@
  *  - If it is not used, just remove.
  */
 
-#ifndef LIBC_ZEDBSD_LOCALE_FORMAT_H
-#define LIBC_ZEDBSD_LOCALE_FORMAT_H
+#ifndef LIBC_KERN_LOCALE_FORMAT_H
+#define LIBC_KERN_LOCALE_FORMAT_H
 
 #ifdef __cplusplus
 extern "C" {

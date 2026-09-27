@@ -209,7 +209,7 @@ maintained as two independent parsers.
 ## Consumed AF_UNIX peer credential contract
 
 p003 provides `SO_PEERCRED` with the fixed-layout public
-`struct zedbsd_peercred` containing connector `pid`, `euid`, and `egid`. The
+`struct kern_peercred` containing connector `pid`, `euid`, and `egid`. The
 dependency semantics consumed here are:
 
 - credentials are snapshotted when the stream connection is established;
@@ -389,7 +389,7 @@ product or human decisions:
   numbers, inner byte order, malformed-header correlation, and stable errors;
   lock it with golden vectors. The header/request/response/list maxima remain
   32/4096/32768 bytes and 64 records.
-- Record the exact p003 `struct zedbsd_peercred` dependency and require its
+- Record the exact p003 `struct kern_peercred` dependency and require its
   automatic evidence before the p006 Queue runs; p006 does not reimplement it.
 - Assign the unsupported-version error in that table and include a source/test
   inventory proving the simultaneous caller migration deletes every V1/ZNV1

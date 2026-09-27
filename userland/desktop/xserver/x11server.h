@@ -15,8 +15,8 @@
  * later, with no global state to share.
  */
 
-#ifndef ZDESKTOP_X11SERVER_H
-#define ZDESKTOP_X11SERVER_H
+#ifndef KEILAND_X11SERVER_H
+#define KEILAND_X11SERVER_H
 
 #include <poll.h>
 

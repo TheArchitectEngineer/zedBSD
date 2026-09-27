@@ -19,7 +19,7 @@
 
 #include <wayland-client.h>
 #include <xdg-shell-client-protocol.h>
-#include <zdesktop.h>
+#include <keiland.h>
 
 #include "userland/desktop/libwayland/xdg-toplevel-menu-v1-client-protocol.h"
 
@@ -467,8 +467,8 @@ send_removed(
 static int
 probe_library(void)
 {
-	struct zdesktop_menu_service *service;
-	struct zdesktop_menu *menu;
+	struct keiland_menu_service *service;
+	struct keiland_menu *menu;
 	struct wl_display *display;
 	int results[12];
 	int wanted[12];
@@ -485,7 +485,7 @@ probe_library(void)
 	}
 
 	/* The service, found on its own queue. */
-	service = zdesktop_menu_service_open(display);
+	service = keiland_menu_service_open(display);
 	if (service == NULL) {
 		printf("MENUPROBE case=library FAIL service errno=%d\n", errno);
 		wl_display_disconnect(display);
@@ -493,38 +493,38 @@ probe_library(void)
 	}
 
 	/* An empty menu. */
-	menu = zdesktop_menu_create(service);
+	menu = keiland_menu_create(service);
 	if (menu == NULL) {
 		printf("MENUPROBE case=library FAIL menu errno=%d\n", errno);
-		zdesktop_menu_service_close(service);
+		keiland_menu_service_close(service);
 		wl_display_disconnect(display);
 		return 1;
 	}
 
 	/* Each call and what it must answer. */
-	results[0] = zdesktop_menu_append(menu, 1U, ZDESKTOP_MENU_ROOT, ZDESKTOP_MENU_ITEM_NORMAL, "Outside", 1U);
+	results[0] = keiland_menu_append(menu, 1U, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_NORMAL, "Outside", 1U);
 	wanted[0] = EINVAL;
-	results[1] = zdesktop_menu_begin(menu);
+	results[1] = keiland_menu_begin(menu);
 	wanted[1] = 0;
-	results[2] = zdesktop_menu_begin(menu);
+	results[2] = keiland_menu_begin(menu);
 	wanted[2] = EBUSY;
-	results[3] = zdesktop_menu_append(menu, 0U, ZDESKTOP_MENU_ROOT, ZDESKTOP_MENU_ITEM_NORMAL, "Zero", 1U);
+	results[3] = keiland_menu_append(menu, 0U, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_NORMAL, "Zero", 1U);
 	wanted[3] = EINVAL;
-	results[4] = zdesktop_menu_append(menu, 1U, ZDESKTOP_MENU_ROOT, ZDESKTOP_MENU_ITEM_NORMAL, "One", 1U);
+	results[4] = keiland_menu_append(menu, 1U, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_NORMAL, "One", 1U);
 	wanted[4] = 0;
-	results[5] = zdesktop_menu_append(menu, 1U, ZDESKTOP_MENU_ROOT, ZDESKTOP_MENU_ITEM_NORMAL, "One again", 1U);
+	results[5] = keiland_menu_append(menu, 1U, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_NORMAL, "One again", 1U);
 	wanted[5] = EEXIST;
-	results[6] = zdesktop_menu_append(menu, 2U, 1U, ZDESKTOP_MENU_ITEM_NORMAL, "Under a normal item", 2U);
+	results[6] = keiland_menu_append(menu, 2U, 1U, KEILAND_MENU_ITEM_NORMAL, "Under a normal item", 2U);
 	wanted[6] = EINVAL;
-	results[7] = zdesktop_menu_append(menu, 3U, 99U, ZDESKTOP_MENU_ITEM_NORMAL, "Under nothing", 3U);
+	results[7] = keiland_menu_append(menu, 3U, 99U, KEILAND_MENU_ITEM_NORMAL, "Under nothing", 3U);
 	wanted[7] = ENOENT;
-	results[8] = zdesktop_menu_set_checked(menu, 1U, 1);
+	results[8] = keiland_menu_set_checked(menu, 1U, 1);
 	wanted[8] = EINVAL;
-	results[9] = zdesktop_menu_set_role(menu, 1U, 99U);
+	results[9] = keiland_menu_set_role(menu, 1U, 99U);
 	wanted[9] = EINVAL;
-	results[10] = zdesktop_menu_commit(menu);
+	results[10] = keiland_menu_commit(menu);
 	wanted[10] = 0;
-	results[11] = zdesktop_menu_commit(menu);
+	results[11] = keiland_menu_commit(menu);
 	wanted[11] = EINVAL;
 
 	/* The answers. */
@@ -546,8 +546,8 @@ probe_library(void)
 	}
 
 	/* The objects and the connection go. */
-	zdesktop_menu_destroy(menu);
-	zdesktop_menu_service_close(service);
+	keiland_menu_destroy(menu);
+	keiland_menu_service_close(service);
 	wl_display_disconnect(display);
 
 	/* Reports a check that failed. */

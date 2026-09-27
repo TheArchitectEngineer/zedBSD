@@ -211,7 +211,7 @@ read_options(
 			options->longest = 1;
 			break;
 		case OPTION_VERSION:
-			printf("wc (zedBSD) 1.0\n");
+			printf("wc (Kei) 1.0\n");
 			exit(0);
 		default:
 			fprintf(stderr, "usage: wc [-c|-m] [-lwL] [file...]\n");

@@ -10,4 +10,4 @@ LIBZDESKTOP_SOURCES := userland/desktop/libkeiland/version.c userland/desktop/li
 	userland/base/net/protocol.c
 
 LIBZDESKTOP_IMAGE_DATA := $(if $(ZEDBSD_TOPLEVEL_BUILD),/lib/libkeiland.so=$(BUILD)/dynamic/libkeiland.so)
-$(eval $(call ZEDBSD_USERLAND_PACKAGE,libkeiland,Desktop system library,amd64,y,library,$(LIBZDESKTOP_SOURCES),y,base,desktop/libkeiland,desktop/libwayland,,shared-library,$(LIBZDESKTOP_IMAGE_DATA),,lib))
+$(eval $(call ZEDBSD_USERLAND_PACKAGE,libkeiland,Desktop system library,amd64,y,library,$(LIBZDESKTOP_SOURCES),y,desktop,desktop/libkeiland,desktop/libwayland,,shared-library,$(LIBZDESKTOP_IMAGE_DATA),,lib))

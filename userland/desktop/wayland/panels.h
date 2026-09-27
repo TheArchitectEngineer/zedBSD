@@ -6,7 +6,7 @@
  */
 
 /*
- * A window's glass panels (zed_glass_v1, panels.c): the parts of a
+ * A window's glass panels (keiland_glass_v1, panels.c): the parts of a
  * surface that stand on the system's frosted glass, shared with the
  * drawing of windows (shell.c).
  */
@@ -41,7 +41,7 @@ struct zwl_panel {
 /*
  * A surface's glass panels: those set for its next commit and those its
  * last commit applied.  The surface owns the record from its first
- * zed_glass_v1 to its own end.
+ * keiland_glass_v1 to its own end.
  */
 struct zwl_panels {
 	struct zwl_panel pending[ZWL_PANELS_MAX];

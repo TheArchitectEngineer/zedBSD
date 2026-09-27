@@ -10,7 +10,7 @@
  * of the home folder but a place to start work from.
  *
  * At the top a hero card shows the desktop's wallpaper (the picture the
- * system carries at /usr/share/zdesktop/wallpaper.ppm, or --wallpaper=;
+ * system carries at /usr/share/keiland/wallpaper.ppm, or --wallpaper=;
  * without it a quiet landscape is drawn) with a greeting and a line about the files.  Below
  * it the usual folders as cards with their item counts, the recent files
  * (the desktop's recent list, newest first) and the folders opened lately
@@ -29,7 +29,7 @@
 #include <sys/statvfs.h>
 #include <time.h>
 #include <unistd.h>
-#include <zdesktop.h>
+#include <keiland.h>
 
 
 /* The dashboard's measurements. */
@@ -71,7 +71,7 @@ static const struct home_folder home_folders[] = {
  * so it lives here rather than on the stack; it is filled when the
  * dashboard is gathered and read only then.
  */
-static struct zdesktop_recent_item home_recent_items[FM_HOME_RECENTS * 4];
+static struct keiland_recent_item home_recent_items[FM_HOME_RECENTS * 4];
 
 static int home_ppm_load(const char *path, struct fm_image *image);
 static int home_ppm_number(const unsigned char *data, size_t size, size_t *at);
@@ -142,7 +142,7 @@ fm_home_gather(
 		today = *converted;
 	opened_today = 0;
 	count = 0;
-	error = zdesktop_recent_list(home_recent_items, sizeof(home_recent_items) / sizeof(home_recent_items[0]), &count);
+	error = keiland_recent_list(home_recent_items, sizeof(home_recent_items) / sizeof(home_recent_items[0]), &count);
 	for (index = 0; error == 0 && index < count && board->recent_count < FM_HOME_RECENTS; index++) {
 		folder = 1;
 		error = stat(home_recent_items[index].path, &status);

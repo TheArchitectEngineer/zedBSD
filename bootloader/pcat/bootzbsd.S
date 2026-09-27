@@ -178,7 +178,7 @@ mbr_status_ok:
 	call16 puts
 
 	call16 fat16_mount
-	call16 load_zedbsd_configuration
+	call16 load_kern_configuration
 	mov byte ptr [path_role], 1
 	mov si, offset bios_configuration
 	call16 fat_find_path
@@ -888,7 +888,7 @@ fat_scan_found:
 	mov dword ptr [found_size], eax
 	ret16
 
-load_zedbsd_configuration:
+load_kern_configuration:
 	cmp byte ptr [boot_uuid_valid], 0
 	je fatal_config
 	call16 format_boot_uuid
@@ -896,7 +896,7 @@ load_zedbsd_configuration:
 	mov si, offset kern_config_path
 	call16 fat_find_path
 	mov eax, dword ptr [file_size]
-	cmp eax, ZBL_ZEDBSD_CONFIG_FILE_MAX
+	cmp eax, ZBL_KERN_CONFIG_FILE_MAX
 	ja fatal_config
 	mov dword ptr [config_size], eax
 	mov dword ptr [config_read_sector], 0
@@ -930,7 +930,7 @@ load_zedbsd_configuration:
 	push eax
 	mov eax, offset bios_configuration
 	push eax
-	call zbl_uefi_zedbsd_config_parse
+	call zbl_uefi_kern_config_parse
 	add esp, 20
 	.code16
 	test eax, eax
@@ -939,7 +939,7 @@ load_zedbsd_configuration:
 	mov ax, ds
 	mov es, ax
 	mov si, offset bios_configuration + \
-		ZBL_ZEDBSD_CONFIG_PARAMETER_RECORD_OFFSET
+		ZBL_KERN_CONFIG_PARAMETER_RECORD_OFFSET
 	mov di, offset long_handoff + ZBL6_HANDOFF_V5_BIOS_PARAMETERS_OFFSET
 	mov cx, KERN_BOOT_PARAMETER_RECORD_SIZE / 4
 	rep movsd
@@ -955,7 +955,7 @@ load_zedbsd_configuration:
 	mov si, offset msg_config_parameters
 	call16 puts
 	mov si, offset bios_configuration + \
-		ZBL_ZEDBSD_CONFIG_PARAMETER_RECORD_OFFSET + \
+		ZBL_KERN_CONFIG_PARAMETER_RECORD_OFFSET + \
 	    KERN_BOOT_PARAMETER_RECORD_TEXT_OFFSET
 	call16 puts
 	mov al, '\n'
@@ -1365,9 +1365,9 @@ bios_draw_logo:
 	.long ZBL_LOGO_PATH_MAX + 1
 	mov eax, offset bios_logo_path
 	push eax
-	movzx eax, word ptr [bios_configuration + ZBL_ZEDBSD_CONFIG_PARAMETER_RECORD_OFFSET + KERN_BOOT_PARAMETER_RECORD_LENGTH_OFFSET]
+	movzx eax, word ptr [bios_configuration + ZBL_KERN_CONFIG_PARAMETER_RECORD_OFFSET + KERN_BOOT_PARAMETER_RECORD_LENGTH_OFFSET]
 	push eax
-	mov eax, offset bios_configuration + ZBL_ZEDBSD_CONFIG_PARAMETER_RECORD_OFFSET + KERN_BOOT_PARAMETER_RECORD_TEXT_OFFSET
+	mov eax, offset bios_configuration + ZBL_KERN_CONFIG_PARAMETER_RECORD_OFFSET + KERN_BOOT_PARAMETER_RECORD_TEXT_OFFSET
 	push eax
 	call zbl_logo_path
 	add esp, 16
@@ -1969,5 +1969,5 @@ bios_logo_result: .long 0
 bios_logo_sp: .word 0
 .balign 4
 bios_configuration:
-	.space ZBL_ZEDBSD_CONFIG_RESULT_SIZE
-config_source: .space ZBL_ZEDBSD_CONFIG_FILE_MAX
+	.space ZBL_KERN_CONFIG_RESULT_SIZE
+config_source: .space ZBL_KERN_CONFIG_FILE_MAX

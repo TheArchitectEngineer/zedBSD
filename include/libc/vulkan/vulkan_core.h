@@ -15,8 +15,8 @@
  * The library advertises only the features and extensions it implements.
  */
 
-#ifndef ZEDBSD_VULKAN_CORE_H
-#define ZEDBSD_VULKAN_CORE_H
+#ifndef KERN_VULKAN_CORE_H
+#define KERN_VULKAN_CORE_H
 
 #include "vk_platform.h"
 

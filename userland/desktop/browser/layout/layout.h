@@ -19,8 +19,8 @@
  * then their boxes are laid out as blocks.
  */
 
-#ifndef ZDESKTOP_BROWSER_LAYOUT_H
-#define ZDESKTOP_BROWSER_LAYOUT_H
+#ifndef KEILAND_BROWSER_LAYOUT_H
+#define KEILAND_BROWSER_LAYOUT_H
 
 #include "css/css.h"
 #include "text/text.h"

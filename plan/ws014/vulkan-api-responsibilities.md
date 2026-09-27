@@ -685,7 +685,7 @@ API表の275関数、44callback候補を、今回の有限clientがすべて実�
 
 `libwayland-client.so`は実AF_UNIX wire、proxy世代、registry/version、SCM_RIGHTS、partial I/O、prepare/read/cancelと独立event queueを実装する。wrapperの子は専用queueを継承する。fdはmarshalで複製し、元fdは直後にcloseできる。受信byteとfd FIFOは独立で、必要rightsが後着なら完全frameを保留する。
 
-独自`zed_gpu_buffer_v1` version 1はdestroy opcode 0、create_buffer opcode 1、署名`nha`。通常のwl_buffer、新fd、64byte gpu_image_descriptorを含むarrayを使い、fdにin-band placeholderはない。WSIとzwlだけが使い、標準アプリはfactoryを直接呼ばない。descriptorはK保存内容と照合し、linux-dmabuf-v1は広告しない。
+独自`keiland_gpu_buffer_v1` version 1はdestroy opcode 0、create_buffer opcode 1、署名`nha`。通常のwl_buffer、新fd、64byte gpu_image_descriptorを含むarrayを使い、fdにin-band placeholderはない。WSIとzwlだけが使い、標準アプリはfactoryを直接呼ばない。descriptorはK保存内容と照合し、linux-dmabuf-v1は広告しない。
 
 FIFOのframe完了はpacing、wl_buffer.releaseはallocation再使用可能性であり別物。MAILBOXでもrelease条件は共通。swapchain leaseの破棄はcallback/buffer protocol ownerを退役させるだけで、surface mapping/configureはアプリに残す。表示中のfront allocationはcompositorがreplacement/surface destructionまで保持する。CPU allocation失敗がGPU submitによるwait消費の後に起きた場合はDEVICE_LOSTへ正規化する。
 

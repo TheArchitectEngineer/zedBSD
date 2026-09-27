@@ -69,7 +69,7 @@ sleep 1
 console_shot hold.png
 
 # 3. zdesktop ends; what is typed is the console's again.
-guest 'for p in $(ps -A -o pid,args | grep -E "[z]desktop( |$)" | awk "{print \$1}"); do kill $p; done; sleep 3' >/dev/null
+guest 'for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)" | awk "{print \$1}"); do kill $p; done; sleep 3' >/dev/null
 keys 'world'
 sleep 1
 console_shot release.png

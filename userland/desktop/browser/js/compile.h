@@ -21,8 +21,8 @@
  * or is reachable from the compiler for cleanup.
  */
 
-#ifndef ZDESKTOP_BROWSER_JS_COMPILE_H
-#define ZDESKTOP_BROWSER_JS_COMPILE_H
+#ifndef KEILAND_BROWSER_JS_COMPILE_H
+#define KEILAND_BROWSER_JS_COMPILE_H
 
 #include "js/internal.h"
 #include "vm/bytecode.h"

@@ -36,7 +36,7 @@ fdの本数だけではGPU使用中・mapping・scanoutの寿命を判定しな�
 | [`display.c`](../../../userland/base/zwl/display.c) | authoritative metadata付き独立GPU import、mode選択、lease、完了したscanout置換。 |
 | [`Makefile`](../../../userland/base/zwl/Makefile) | amd64 packageと `/bin/zwl` の登録。 |
 
-公開するのは `wl_compositor` v4、`wl_output` v2、fullscreen用 `xdg_wm_base` v1、`zed_gpu_buffer_v1` v1。private factoryのopcode 1 / signature `nha` は、new_id、SCM_RIGHTS fd、64-byte metadata arrayから通常の `wl_buffer` を作る。fdはwire payloadに数値wordを持たない。完全なframeのbytesよりfdが遅れて到着しても、frameを消費せず保留する。未読fdは切断時にcloseする。
+公開するのは `wl_compositor` v4、`wl_output` v2、fullscreen用 `xdg_wm_base` v1、`keiland_gpu_buffer_v1` v1。private factoryのopcode 1 / signature `nha` は、new_id、SCM_RIGHTS fd、64-byte metadata arrayから通常の `wl_buffer` を作る。fdはwire payloadに数値wordを持たない。完全なframeのbytesよりfdが遅れて到着しても、frameを消費せず保留する。未読fdは切断時にcloseする。
 
 compositor自身のGPU fdへ `GPU_RESOURCE_IMPORT` し、Kが返す全metadataをwireの主張と比較する。importは受信fdを消費しないため、request側がcloseする。選択extentを `GPU_DISPLAY_MODE_VALIDATE(refresh=0)` に渡し、返却refreshをoutput eventとPRESENTに使う。描画完了をproducer側が保証した画像を `GPU_DISPLAY_PRESENT_FIFO | GPU_DISPLAY_PRESENT_BLOB` で表示する。通常の共有・表示経路にCPU readbackはない。
 

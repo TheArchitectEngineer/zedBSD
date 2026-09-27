@@ -7,8 +7,8 @@
 
 /* Provides the standard include spelling for the Wayland public header. */
 
-#ifndef ZEDBSD_ENTRY_WAYLAND_CLIENT_PROTOCOL_H
-#define ZEDBSD_ENTRY_WAYLAND_CLIENT_PROTOCOL_H
+#ifndef KERN_ENTRY_WAYLAND_CLIENT_PROTOCOL_H
+#define KERN_ENTRY_WAYLAND_CLIENT_PROTOCOL_H
 
 #include <wayland/wayland-client-protocol.h>
 

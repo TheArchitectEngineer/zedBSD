@@ -12,8 +12,8 @@
  * checked against the pinned description (API-PROVENANCE.md).
  */
 
-#ifndef ZEDBSD_PRIMARY_SELECTION_UNSTABLE_V1_CLIENT_PROTOCOL_H
-#define ZEDBSD_PRIMARY_SELECTION_UNSTABLE_V1_CLIENT_PROTOCOL_H
+#ifndef KERN_PRIMARY_SELECTION_UNSTABLE_V1_CLIENT_PROTOCOL_H
+#define KERN_PRIMARY_SELECTION_UNSTABLE_V1_CLIENT_PROTOCOL_H
 
 #include <wayland/wayland-client-core.h>
 #include <wayland/wayland-client-protocol.h>

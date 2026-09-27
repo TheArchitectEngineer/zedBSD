@@ -35,11 +35,11 @@ launch() {
 	pointer move "${1:-0}" "${2:-0}" sleep 400 down sleep 60 up sleep 6000
 }
 
-guest "$stop_all; rm -f /tmp/home-env.txt; mkdir -p /etc/zdesktop /tmp/dhome" >/dev/null
-guest "printf '%s\n' 'Env|/bin/sh -c \"env > /tmp/home-env.txt\"|env|3a8fd8' 'Terminal|/bin/terminal|term|323a4e' > /etc/zdesktop/apps.conf" >/dev/null
+guest "$stop_all; rm -f /tmp/home-env.txt; mkdir -p /etc/keiland /tmp/dhome" >/dev/null
+guest "printf '%s\n' 'Env|/bin/sh -c \"env > /tmp/home-env.txt\"|env|3a8fd8' 'Terminal|/bin/terminal|term|323a4e' > /etc/keiland/apps.conf" >/dev/null
 library=
 [ -n "$libdir" ] && library="LD_LIBRARY_PATH=$libdir"
-guest "rm -f /tmp/wayland-0; env -i XDG_RUNTIME_DIR=/tmp PATH=/bin:/usr/bin HOME=/tmp/dhome FOO=bar $library /bin/wayland --timeout=600 --width=1280 --height=800 --glass --wallpaper=/usr/share/zdesktop/wallpaper.ppm > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started" >/dev/null
+guest "rm -f /tmp/wayland-0; env -i XDG_RUNTIME_DIR=/tmp PATH=/bin:/usr/bin HOME=/tmp/dhome FOO=bar $library /bin/wayland --timeout=600 --width=1280 --height=800 --glass --wallpaper=/usr/share/keiland/wallpaper.ppm > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started" >/dev/null
 
 # Env from its icon.
 launch Env
@@ -60,6 +60,6 @@ keys 'env | sort' '<ret>'
 sleep 2
 pointer move 1270 790 sleep 400
 check "$out/terminal.png" >/dev/null
-guest "$stop_all; rm -f /etc/zdesktop/apps.conf" >/dev/null
+guest "$stop_all; rm -f /etc/keiland/apps.conf" >/dev/null
 [ $status = 0 ] && echo "home-env: PASS" || echo "home-env: FAIL"
 exit $status

@@ -183,7 +183,7 @@ read_options(
 			/* Asking once, and the root's protection, change nothing here. */
 			break;
 		case OPTION_VERSION:
-			printf("rm (zedBSD) 1.0\n");
+			printf("rm (Kei) 1.0\n");
 			exit(0);
 		default:
 			usage();

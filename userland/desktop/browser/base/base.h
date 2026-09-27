@@ -16,8 +16,8 @@
  * Fallible functions return 0 on success or an errno value.
  */
 
-#ifndef ZDESKTOP_BROWSER_BASE_H
-#define ZDESKTOP_BROWSER_BASE_H
+#ifndef KEILAND_BROWSER_BASE_H
+#define KEILAND_BROWSER_BASE_H
 
 #include <stddef.h>
 #include <stdint.h>

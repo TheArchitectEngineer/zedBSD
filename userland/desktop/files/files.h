@@ -18,8 +18,8 @@
  * operations.
  */
 
-#ifndef ZDESKTOP_FILES_H
-#define ZDESKTOP_FILES_H
+#ifndef KEILAND_FILES_H
+#define KEILAND_FILES_H
 
 #include "canvas.h"
 #include "ops.h"
@@ -51,7 +51,7 @@
 #define FM_LIST_ROW		28
 
 /* The desktop's wallpaper, which the dashboard's hero card shows (a binary PPM). */
-#define FM_WALLPAPER		"/usr/share/zdesktop/wallpaper.ppm"
+#define FM_WALLPAPER		"/usr/share/keiland/wallpaper.ppm"
 
 /* The window's size when the compositor leaves it to the program. */
 #define FM_WIDTH		1120
@@ -899,7 +899,7 @@ enum fm_titlebar_kind {
 /*
  * One thing done with the titlebar: a control chosen (with the path's part
  * for the path), a text control's text as typed, or its editing ended
- * (how: ZDESKTOP_TEXT_SUBMITTED, _CANCELLED or _LEFT), with its text.
+ * (how: KEILAND_TEXT_SUBMITTED, _CANCELLED or _LEFT), with its text.
  */
 struct fm_titlebar_event {
 	unsigned kind;

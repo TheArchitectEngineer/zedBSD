@@ -40,7 +40,7 @@ struct zwl_global {
 static const struct zwl_global globals[] = {
 	{ 1, "wl_compositor", 4, ZWL_COMPOSITOR },
 	{ 2, "xdg_wm_base", 4, ZWL_WM },
-	{ 3, "zed_gpu_buffer_v1", 3, ZWL_FACTORY },
+	{ 3, "keiland_gpu_buffer_v1", 3, ZWL_FACTORY },
 	{ 4, "wl_output", 4, ZWL_OUTPUT },
 	{ 5, "wl_seat", 5, ZWL_SEAT },
 	{ 6, "wl_shm", 1, ZWL_SHM },
@@ -50,8 +50,8 @@ static const struct zwl_global globals[] = {
 	{ 10, "zxdg_decoration_manager_v1", 1, ZWL_DECORATION_MANAGER },
 	{ 11, "wp_cursor_shape_manager_v1", 1, ZWL_CURSOR_SHAPE_MANAGER },
 	{ 12, "wp_viewporter", 1, ZWL_VIEWPORTER },
-	{ 16, "zed_titlebar_manager_v1", 2, ZWL_TITLEBAR_MANAGER },
-	{ 17, "zed_glass_manager_v1", 1, ZWL_GLASS_MANAGER },
+	{ 16, "keiland_titlebar_manager_v1", 2, ZWL_TITLEBAR_MANAGER },
+	{ 17, "keiland_glass_manager_v1", 1, ZWL_GLASS_MANAGER },
 	{ 18, "zwp_primary_selection_device_manager_v1", 1, ZWL_PRIMARY_MANAGER },
 };
 
@@ -1455,7 +1455,7 @@ commit_damage(
 
 /*
  * Takes an acquire fence of a surface's next commit (set_acquire_fence of
- * zed_gpu_buffer_v1 revision two): the fence fd and its payload generation.
+ * keiland_gpu_buffer_v1 revision two): the fence fd and its payload generation.
  * A commit waits for all its fences, at most ZWL_FENCE_MAX of them.
  */
 static int
@@ -1508,7 +1508,7 @@ factory_fence(
 }
 
 /*
- * Sets how a GPU buffer's alpha is read (set_alpha of zed_gpu_buffer_v1
+ * Sets how a GPU buffer's alpha is read (set_alpha of keiland_gpu_buffer_v1
  * revision three): ignored, the buffer being opaque (0, as a buffer starts),
  * or as premultiplied alpha the window is blended by (1), for a Vulkan
  * swapchain made with VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR.

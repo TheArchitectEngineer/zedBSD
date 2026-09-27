@@ -1364,13 +1364,13 @@ glGetString(
 	three = gles_version_three(context);
 	switch (name) {
 	case GL_VENDOR:
-		return (const GLubyte *)"zedBSD";
+		return (const GLubyte *)"Kei";
 	case GL_RENDERER:
-		return (const GLubyte *)"zedBSD OpenGL ES on Vulkan";
+		return (const GLubyte *)"Kei OpenGL ES on Vulkan";
 	case GL_VERSION:
 		if (three)
-			return (const GLubyte *)"OpenGL ES 3.0 zedBSD";
-		return (const GLubyte *)"OpenGL ES 2.0 zedBSD";
+			return (const GLubyte *)"OpenGL ES 3.0 Kei";
+		return (const GLubyte *)"OpenGL ES 2.0 Kei";
 	case GL_SHADING_LANGUAGE_VERSION:
 		if (three)
 			return (const GLubyte *)"OpenGL ES GLSL ES 3.00";

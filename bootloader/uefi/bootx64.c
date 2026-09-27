@@ -18,10 +18,10 @@
 #define MAX_MEMORY_RANGES 256U
 #define MAX_KERNEL_FILE 0x04000000ULL
 #define BOOT_SECTOR_BUFFER 4096U
-#define CONFIG_READ_BUFFER (ZBL_ZEDBSD_CONFIG_FILE_MAX + 1U)
+#define CONFIG_READ_BUFFER (ZBL_KERN_CONFIG_FILE_MAX + 1U)
 #define FILE_INFO_BUFFER 1024U
 #define KERNEL_PATH_CHAR16_STORAGE \
-	(ZBL_ZEDBSD_CONFIG_KERNEL_PATH_STORAGE_SIZE + 1U)
+	(ZBL_KERN_CONFIG_KERNEL_PATH_STORAGE_SIZE + 1U)
 
 #define LOW_TRAMPOLINE_OFFSET 0x0000U
 #define LOW_PML4_OFFSET 0x1000U
@@ -458,7 +458,7 @@ read_bounded_file(EFI_FILE_PROTOCOL *file, void *buffer, UINTN capacity,
 	return EFI_SUCCESS;
 }
 
-static int show_logo(struct loader_context *context, struct discovered_volume *discovered, const struct zbl_uefi_zedbsd_config *configuration, const struct zbl6_framebuffer *framebuffer);
+static int show_logo(struct loader_context *context, struct discovered_volume *discovered, const struct zbl_uefi_kern_config *configuration, const struct zbl6_framebuffer *framebuffer);
 
 static int
 kernel_path_utf16(const char *source,
@@ -470,7 +470,7 @@ kernel_path_utf16(const char *source,
 		return 0;
 	output[0] = '\\';
 	while (source[length] != 0) {
-		if (length >= ZBL_ZEDBSD_CONFIG_KERNEL_PATH_MAX)
+		if (length >= ZBL_KERN_CONFIG_KERNEL_PATH_MAX)
 			return 0;
 		output[length + 1U] = source[length] == '/' ? '\\' :
 		    (uint8_t)source[length];
@@ -772,12 +772,12 @@ fail_discovered(struct loader_context *context,
 static EFI_STATUS
 load_selected_configuration(struct loader_context *context,
 	struct discovered_volume *discovered,
-	struct zbl_uefi_zedbsd_config *configuration)
+	struct zbl_uefi_kern_config *configuration)
 {
 	EFI_STATUS read_status;
 	EFI_STATUS close_status;
 	UINTN config_size;
-	enum zbl_uefi_zedbsd_config_result config_result;
+	enum zbl_uefi_kern_config_result config_result;
 
 	if (discovered == 0 || discovered->config == 0 || configuration == 0)
 		return EFI_INVALID_PARAMETER;
@@ -792,13 +792,13 @@ load_selected_configuration(struct loader_context *context,
 	}
 	if (EFI_ERROR(close_status))
 		return close_status;
-	config_result = zbl_uefi_zedbsd_config_parse(configuration,
+	config_result = zbl_uefi_kern_config_parse(configuration,
 	    config_buffer, config_size, discovered->uuid,
 	    sizeof(discovered->uuid));
-	if (config_result != ZBL_UEFI_ZEDBSD_CONFIG_OK) {
+	if (config_result != ZBL_UEFI_KERN_CONFIG_OK) {
 		console_ascii(context, "zedbsd.cfg rejected: ");
 		console_ascii(context,
-		    zbl_uefi_zedbsd_config_result_name(config_result));
+		    zbl_uefi_kern_config_result_name(config_result));
 		console_ascii(context, "\n");
 		return EFI_LOAD_ERROR;
 	}
@@ -1005,7 +1005,7 @@ static int
 show_logo(
 	struct loader_context *context,
 	struct discovered_volume *discovered,
-	const struct zbl_uefi_zedbsd_config *configuration,
+	const struct zbl_uefi_kern_config *configuration,
 	const struct zbl6_framebuffer *framebuffer)
 {
 	static CHAR16 wide[KERNEL_PATH_CHAR16_STORAGE];
@@ -1382,7 +1382,7 @@ efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system)
 	EFI_STATUS status;
 	static uint8_t first_sector[ZBL_ELF_HEADER_BYTES];
 	static struct discovered_volume discovered;
-	static struct zbl_uefi_zedbsd_config configuration;
+	static struct zbl_uefi_kern_config configuration;
 	static CHAR16 kernel_file_path[KERNEL_PATH_CHAR16_STORAGE];
 	struct zbl_elf64_plan plan;
 	struct kernel_placement_policy placement;

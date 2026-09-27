@@ -60,7 +60,7 @@ extern "C" {
  * SIGRTMIN..SIGRTMAX interval.  libc uses it to turn SIGEV_THREAD timer
  * expiry into work for its notification thread.
  */
-#define __ZEDBSD_SIGEV_THREAD_SIGNAL	63
+#define __KERN_SIGEV_THREAD_SIGNAL	63
 #define SIG_BLOCK	0
 #define SIG_UNBLOCK	1
 #define SIG_SETMASK	2

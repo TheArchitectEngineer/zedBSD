@@ -25,7 +25,7 @@
  * made here and nowhere else.
  */
 
-#include <zdesktop.h>
+#include <keiland.h>
 
 #include "userland/base/net/protocol.h"
 
@@ -60,10 +60,10 @@
  * watch is -1 while there is no watch; retry_ms is when one is tried
  * again.  request_fd is -1 while no request is outstanding.
  */
-struct zdesktop_network {
+struct keiland_network {
 	int watch;
 	uint64_t retry_ms;
-	struct zdesktop_network_state state;
+	struct keiland_network_state state;
 	int request_fd;
 	unsigned request;
 	uint32_t request_opcode;
@@ -71,24 +71,24 @@ struct zdesktop_network {
 	uint32_t next_id;
 	unsigned finished;
 	int finished_error;
-	struct zdesktop_network_ap scan[ZDESKTOP_NETWORK_SCAN_MAX];
+	struct keiland_network_ap scan[KEILAND_NETWORK_SCAN_MAX];
 	size_t scan_count;
 };
 
 static int network_connect(int *descriptor);
-static int network_watch(struct zdesktop_network *network);
-static void network_unwatch(struct zdesktop_network *network, unsigned *changed);
+static int network_watch(struct keiland_network *network);
+static void network_unwatch(struct keiland_network *network, unsigned *changed);
 static int network_readable(int descriptor);
-static int network_read_watch(struct zdesktop_network *network, unsigned *changed);
-static int network_read_answer(struct zdesktop_network *network, unsigned *changed);
+static int network_read_watch(struct keiland_network *network, unsigned *changed);
+static int network_read_answer(struct keiland_network *network, unsigned *changed);
 static int network_fields(const unsigned char *payload, size_t length, uint32_t *status, uint32_t *error, const char **output, size_t *output_length);
-static void network_parse_state(struct zdesktop_network_state *state, const char *output, size_t length);
-static void network_parse_interface(struct zdesktop_network_state *state, const char *line, char *wired, size_t wired_size, unsigned *wifi_online);
-static void network_parse_wifi(struct zdesktop_network_state *state, const char *line);
+static void network_parse_state(struct keiland_network_state *state, const char *output, size_t length);
+static void network_parse_interface(struct keiland_network_state *state, const char *line, char *wired, size_t wired_size, unsigned *wifi_online);
+static void network_parse_wifi(struct keiland_network_state *state, const char *line);
 static unsigned network_wifi_state(const char *name);
 static int network_line(const char *output, size_t length, size_t *start, char *line, size_t size);
-static void network_parse_scan(struct zdesktop_network *network, const char *output, size_t length);
-static void network_parse_ap(struct zdesktop_network *network, const char *line);
+static void network_parse_scan(struct keiland_network *network, const char *output, size_t length);
+static void network_parse_ap(struct keiland_network *network, const char *line);
 static const char *network_word(const char *line, const char *key, char *value, size_t size);
 static void network_ssid_text(const char *hex, char *text, size_t size);
 static uint64_t network_milliseconds(void);
@@ -99,11 +99,11 @@ static uint64_t network_milliseconds(void);
  * A daemon that is not running yet is not a failure: the watch is made by
  * a later update.
  */
-struct zdesktop_network *
-zdesktop_network_open(
+struct keiland_network *
+keiland_network_open(
 	void)
 {
-	struct zdesktop_network *network;
+	struct keiland_network *network;
 
 	/* The watch's record, with no connection. */
 	network = calloc(1, sizeof(*network));
@@ -124,8 +124,8 @@ zdesktop_network_open(
  * Stops watching and drops an outstanding request.
  */
 void
-zdesktop_network_close(
-	struct zdesktop_network *network)
+keiland_network_close(
+	struct keiland_network *network)
 {
 	/* Nothing to close. */
 	if (network == NULL)
@@ -144,8 +144,8 @@ zdesktop_network_close(
  * and makes the watch again when it went (at most once a second).
  */
 int
-zdesktop_network_update(
-	struct zdesktop_network *network,
+keiland_network_update(
+	struct keiland_network *network,
 	unsigned *changed)
 {
 	uint64_t now;
@@ -162,7 +162,7 @@ zdesktop_network_update(
 		if (now >= network->retry_ms) {
 			error = network_watch(network);
 			if (error == 0)
-				*changed |= ZDESKTOP_NETWORK_CHANGED_STATE;
+				*changed |= KEILAND_NETWORK_CHANGED_STATE;
 		}
 	}
 
@@ -182,9 +182,9 @@ zdesktop_network_update(
  * Copies the network's state as last reported.
  */
 void
-zdesktop_network_get_state(
-	const struct zdesktop_network *network,
-	struct zdesktop_network_state *state)
+keiland_network_get_state(
+	const struct keiland_network *network,
+	struct keiland_network_state *state)
 {
 	/* A missing watch knows nothing. */
 	memset(state, 0, sizeof(*state));
@@ -200,9 +200,9 @@ zdesktop_network_get_state(
  * and returns how many there are.
  */
 size_t
-zdesktop_network_get_scan(
-	const struct zdesktop_network *network,
-	struct zdesktop_network_ap *aps,
+keiland_network_get_scan(
+	const struct keiland_network *network,
+	struct keiland_network_ap *aps,
 	size_t capacity)
 {
 	size_t count;
@@ -226,8 +226,8 @@ zdesktop_network_get_scan(
  * Sends a request to the daemon; its answer arrives through the updates.
  */
 int
-zdesktop_network_request(
-	struct zdesktop_network *network,
+keiland_network_request(
+	struct keiland_network *network,
 	unsigned request,
 	const char *ssid)
 {
@@ -247,19 +247,19 @@ zdesktop_network_request(
 
 	/* The daemon's operation for the request. */
 	switch (request) {
-	case ZDESKTOP_NETWORK_REQUEST_SCAN:
+	case KEILAND_NETWORK_REQUEST_SCAN:
 		opcode = NETWORKD_OP_WIFI_LIST;
 		break;
-	case ZDESKTOP_NETWORK_REQUEST_JOIN:
+	case KEILAND_NETWORK_REQUEST_JOIN:
 		opcode = NETWORKD_OP_WIFI_CONNECT;
 		break;
-	case ZDESKTOP_NETWORK_REQUEST_DISCONNECT:
+	case KEILAND_NETWORK_REQUEST_DISCONNECT:
 		opcode = NETWORKD_OP_WIFI_DISCONNECT;
 		break;
-	case ZDESKTOP_NETWORK_REQUEST_WIFI_ON:
+	case KEILAND_NETWORK_REQUEST_WIFI_ON:
 		opcode = NETWORKD_OP_WIFI_ENABLE;
 		break;
-	case ZDESKTOP_NETWORK_REQUEST_WIFI_OFF:
+	case KEILAND_NETWORK_REQUEST_WIFI_OFF:
 		opcode = NETWORKD_OP_WIFI_DISABLE;
 		break;
 	default:
@@ -268,12 +268,12 @@ zdesktop_network_request(
 
 	/* A join names its network, and nothing else does. */
 	networkd_field_writer_init(&writer, payload, sizeof(payload));
-	if (request == ZDESKTOP_NETWORK_REQUEST_JOIN) {
+	if (request == KEILAND_NETWORK_REQUEST_JOIN) {
 		/* An SSID of one to 32 bytes. */
 		if (ssid == NULL)
 			return EINVAL;
 		length = strlen(ssid);
-		if (length == 0 || length > ZDESKTOP_NETWORK_SSID_MAX - 1U)
+		if (length == 0 || length > KEILAND_NETWORK_SSID_MAX - 1U)
 			return EINVAL;
 
 		/* The SSID field. */
@@ -321,14 +321,14 @@ zdesktop_network_request(
  * errno value.
  */
 unsigned
-zdesktop_network_get_request(
-	const struct zdesktop_network *network,
+keiland_network_get_request(
+	const struct keiland_network *network,
 	int *error)
 {
 	/* No watch, no request. */
 	*error = 0;
 	if (network == NULL)
-		return ZDESKTOP_NETWORK_REQUEST_NONE;
+		return KEILAND_NETWORK_REQUEST_NONE;
 
 	/* The outstanding one. */
 	if (network->request_fd >= 0)
@@ -374,7 +374,7 @@ network_connect(
 /* Makes the watch: a connection that asked SUBSCRIBE. */
 static int
 network_watch(
-	struct zdesktop_network *network)
+	struct keiland_network *network)
 {
 	struct networkd_protocol_header header;
 	int descriptor;
@@ -407,7 +407,7 @@ network_watch(
 /* Drops the watch, which leaves the state unknown until it is made again. */
 static void
 network_unwatch(
-	struct zdesktop_network *network,
+	struct keiland_network *network,
 	unsigned *changed)
 {
 	/* The connection. */
@@ -417,7 +417,7 @@ network_unwatch(
 
 	/* The daemon can no longer be reached, which the caller shows. */
 	memset(&network->state, 0, sizeof(network->state));
-	*changed |= ZDESKTOP_NETWORK_CHANGED_STATE;
+	*changed |= KEILAND_NETWORK_CHANGED_STATE;
 }
 
 /* Tells whether a connection has something to read (or has ended) now. */
@@ -443,7 +443,7 @@ network_readable(
 /* Reads the states the watch has reported, the last one standing. */
 static int
 network_read_watch(
-	struct zdesktop_network *network,
+	struct keiland_network *network,
 	unsigned *changed)
 {
 	struct networkd_protocol_header header;
@@ -484,14 +484,14 @@ network_read_watch(
 
 		/* The state. */
 		network_parse_state(&network->state, output, output_length);
-		*changed |= ZDESKTOP_NETWORK_CHANGED_STATE;
+		*changed |= KEILAND_NETWORK_CHANGED_STATE;
 	}
 }
 
 /* Reads the answer to the request outstanding, when it has arrived. */
 static int
 network_read_answer(
-	struct zdesktop_network *network,
+	struct keiland_network *network,
 	unsigned *changed)
 {
 	struct networkd_protocol_header header;
@@ -513,8 +513,8 @@ network_read_answer(
 	(void)close(network->request_fd);
 	network->request_fd = -1;
 	network->finished = network->request;
-	network->request = ZDESKTOP_NETWORK_REQUEST_NONE;
-	*changed |= ZDESKTOP_NETWORK_CHANGED_DONE;
+	network->request = KEILAND_NETWORK_REQUEST_NONE;
+	*changed |= KEILAND_NETWORK_CHANGED_DONE;
 	if (failed != 0) {
 		network->finished_error = EIO;
 		return EIO;
@@ -530,14 +530,14 @@ network_read_answer(
 	}
 
 	/* A scan's networks, even from a scan that was only partly done. */
-	if (network->finished == ZDESKTOP_NETWORK_REQUEST_SCAN) {
+	if (network->finished == KEILAND_NETWORK_REQUEST_SCAN) {
 		network_parse_scan(network, output, output_length);
-		*changed |= ZDESKTOP_NETWORK_CHANGED_SCAN;
+		*changed |= KEILAND_NETWORK_CHANGED_SCAN;
 	}
 
 	/* A request done in part is done for a scan; otherwise only OK is success. */
 	network->finished_error = 0;
-	if (status == NETWORKD_RESULT_DEGRADED && network->finished == ZDESKTOP_NETWORK_REQUEST_SCAN)
+	if (status == NETWORKD_RESULT_DEGRADED && network->finished == KEILAND_NETWORK_REQUEST_SCAN)
 		return 0;
 	if (status != NETWORKD_RESULT_OK) {
 		network->finished_error = EIO;
@@ -617,12 +617,12 @@ network_fields(
  */
 static void
 network_parse_state(
-	struct zdesktop_network_state *state,
+	struct keiland_network_state *state,
 	const char *output,
 	size_t length)
 {
 	char line[NETWORK_LINE_MAX];
-	char wired[ZDESKTOP_NETWORK_NAME_MAX];
+	char wired[KEILAND_NETWORK_NAME_MAX];
 	unsigned wifi_online;
 	size_t start;
 	int more;
@@ -667,9 +667,9 @@ network_parse_state(
 	(void)snprintf(state->wired, sizeof(state->wired), "%s", wired);
 
 	/* A connected Wi-Fi carries the connection. */
-	if (state->wifi == ZDESKTOP_WIFI_CONNECTED && wifi_online) {
+	if (state->wifi == KEILAND_WIFI_CONNECTED && wifi_online) {
 		state->connected = 1;
-		state->kind = ZDESKTOP_NETWORK_WIFI;
+		state->kind = KEILAND_NETWORK_WIFI;
 		(void)snprintf(state->interface, sizeof(state->interface), "%s", state->wifi_interface);
 		return;
 	}
@@ -677,7 +677,7 @@ network_parse_state(
 	/* Otherwise a wired interface that is up with an address. */
 	if (wired[0] != '\0') {
 		state->connected = 1;
-		state->kind = ZDESKTOP_NETWORK_WIRED;
+		state->kind = KEILAND_NETWORK_WIRED;
 		(void)snprintf(state->interface, sizeof(state->interface), "%s", wired);
 	}
 }
@@ -725,13 +725,13 @@ network_line(
  */
 static void
 network_parse_interface(
-	struct zdesktop_network_state *state,
+	struct keiland_network_state *state,
 	const char *line,
 	char *wired,
 	size_t wired_size,
 	unsigned *wifi_online)
 {
-	char name[ZDESKTOP_NETWORK_NAME_MAX];
+	char name[KEILAND_NETWORK_NAME_MAX];
 	char address[32];
 	char link[32];
 	int count;
@@ -768,7 +768,7 @@ network_parse_interface(
 /* Reads the Wi-Fi's line, "wifi state=NAME interface=IF ssid=HEX radios=N". */
 static void
 network_parse_wifi(
-	struct zdesktop_network_state *state,
+	struct keiland_network_state *state,
 	const char *line)
 {
 	char value[80];
@@ -779,7 +779,7 @@ network_parse_wifi(
 	found = network_word(line, "radios", value, sizeof(value));
 	differs = strcmp(value, "0");
 	if (found != NULL && differs == 0) {
-		state->wifi = ZDESKTOP_WIFI_ABSENT;
+		state->wifi = KEILAND_WIFI_ABSENT;
 		return;
 	}
 
@@ -812,28 +812,28 @@ network_wifi_state(
 	/* Off. */
 	differs = strcmp(name, "disabled");
 	if (differs == 0)
-		return ZDESKTOP_WIFI_OFF;
+		return KEILAND_WIFI_OFF;
 
 	/* Looking for a network with a profile. */
 	differs = strcmp(name, "auto-searching");
 	if (differs == 0)
-		return ZDESKTOP_WIFI_SEARCHING;
+		return KEILAND_WIFI_SEARCHING;
 
 	/* Joining, for the first time or again. */
 	differs = strcmp(name, "connecting");
 	if (differs == 0)
-		return ZDESKTOP_WIFI_CONNECTING;
+		return KEILAND_WIFI_CONNECTING;
 	differs = strcmp(name, "reconnecting");
 	if (differs == 0)
-		return ZDESKTOP_WIFI_CONNECTING;
+		return KEILAND_WIFI_CONNECTING;
 
 	/* On a network. */
 	differs = strcmp(name, "connected");
 	if (differs == 0)
-		return ZDESKTOP_WIFI_CONNECTED;
+		return KEILAND_WIFI_CONNECTED;
 
 	/* Left by the user, leaving, or a name not known here. */
-	return ZDESKTOP_WIFI_DISCONNECTED;
+	return KEILAND_WIFI_DISCONNECTED;
 }
 
 /*
@@ -843,11 +843,11 @@ network_wifi_state(
  */
 static void
 network_parse_scan(
-	struct zdesktop_network *network,
+	struct keiland_network *network,
 	const char *output,
 	size_t length)
 {
-	struct zdesktop_network_ap moved;
+	struct keiland_network_ap moved;
 	char line[NETWORK_LINE_MAX];
 	const char *found;
 	size_t start;
@@ -888,10 +888,10 @@ network_parse_scan(
 /* Reads one access point's line into the scan (the stronger of two of one SSID stays). */
 static void
 network_parse_ap(
-	struct zdesktop_network *network,
+	struct keiland_network *network,
 	const char *line)
 {
-	struct zdesktop_network_ap ap;
+	struct keiland_network_ap ap;
 	char value[80];
 	const char *found;
 	unsigned long security;
@@ -934,7 +934,7 @@ network_parse_ap(
 	}
 
 	/* A new one, while there is room. */
-	if (network->scan_count < ZDESKTOP_NETWORK_SCAN_MAX) {
+	if (network->scan_count < KEILAND_NETWORK_SCAN_MAX) {
 		network->scan[network->scan_count] = ap;
 		network->scan_count++;
 	}

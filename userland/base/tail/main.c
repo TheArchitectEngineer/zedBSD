@@ -294,7 +294,7 @@ read_options(
 			/* How -f watches is tail's own. */
 			break;
 		case OPTION_VERSION:
-			printf("tail (zedBSD) 1.0\n");
+			printf("tail (Kei) 1.0\n");
 			exit(0);
 		default:
 			usage();

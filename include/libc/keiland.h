@@ -28,8 +28,8 @@
  * the window is docked, and tells the application what the user chose.
  */
 
-#ifndef ZDESKTOP_H
-#define ZDESKTOP_H
+#ifndef KEILAND_H
+#define KEILAND_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -39,15 +39,15 @@ extern "C" {
 #endif
 
 /* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network). */
-#define ZDESKTOP_VERSION	8U
+#define KEILAND_VERSION	8U
 
 /*
  * Reports the interface version of the library that was loaded.
  *
  * A program built against this header may compare the result with
- * ZDESKTOP_VERSION to learn whether the library it runs with is older.
+ * KEILAND_VERSION to learn whether the library it runs with is older.
  */
-unsigned zdesktop_version(void);
+unsigned keiland_version(void);
 
 /*
  * The System Menu.
@@ -58,10 +58,10 @@ unsigned zdesktop_version(void);
  * choice comes back through the window menu it was made on.
  *
  * Items are named by numbers the application chooses (not 0; unique in
- * their menu).  ZDESKTOP_MENU_ROOT is the parent of the top-level items (in
+ * their menu).  KEILAND_MENU_ROOT is the parent of the top-level items (in
  * a terminal: Shell, Edit, View, Session, Help); a submenu item is the
  * parent of the items under it.  Every change is made between
- * zdesktop_menu_begin and zdesktop_menu_commit, and zdesktop shows the
+ * keiland_menu_begin and keiland_menu_commit, and zdesktop shows the
  * changes of one commit together.
  *
  * zdesktop owns the looks and the input.  A checkbox or radio item is not
@@ -80,47 +80,47 @@ unsigned zdesktop_version(void);
 struct wl_display;
 struct wl_seat;
 struct xdg_toplevel;
-struct zdesktop_menu_service;
-struct zdesktop_menu;
-struct zdesktop_window_menu;
+struct keiland_menu_service;
+struct keiland_menu;
+struct keiland_window_menu;
 
 /* The parent of the top-level items. */
-#define ZDESKTOP_MENU_ROOT		0U
+#define KEILAND_MENU_ROOT		0U
 
 /* The kinds of item. */
-#define ZDESKTOP_MENU_ITEM_NORMAL	0U
-#define ZDESKTOP_MENU_ITEM_SEPARATOR	1U
-#define ZDESKTOP_MENU_ITEM_CHECKBOX	2U
-#define ZDESKTOP_MENU_ITEM_RADIO	3U
-#define ZDESKTOP_MENU_ITEM_SUBMENU	4U
+#define KEILAND_MENU_ITEM_NORMAL	0U
+#define KEILAND_MENU_ITEM_SEPARATOR	1U
+#define KEILAND_MENU_ITEM_CHECKBOX	2U
+#define KEILAND_MENU_ITEM_RADIO	3U
+#define KEILAND_MENU_ITEM_SUBMENU	4U
 
 /* What an item means to the system (zdesktop may give it an icon or a place of its own). */
-#define ZDESKTOP_MENU_ROLE_NONE		0U
-#define ZDESKTOP_MENU_ROLE_ABOUT	1U
-#define ZDESKTOP_MENU_ROLE_PREFERENCES	2U
-#define ZDESKTOP_MENU_ROLE_QUIT		3U
-#define ZDESKTOP_MENU_ROLE_UNDO		4U
-#define ZDESKTOP_MENU_ROLE_REDO		5U
-#define ZDESKTOP_MENU_ROLE_CUT		6U
-#define ZDESKTOP_MENU_ROLE_COPY		7U
-#define ZDESKTOP_MENU_ROLE_PASTE	8U
-#define ZDESKTOP_MENU_ROLE_DELETE	9U
-#define ZDESKTOP_MENU_ROLE_SELECT_ALL	10U
-#define ZDESKTOP_MENU_ROLE_NEW		11U
-#define ZDESKTOP_MENU_ROLE_OPEN		12U
-#define ZDESKTOP_MENU_ROLE_SAVE		13U
-#define ZDESKTOP_MENU_ROLE_CLOSE	14U
-#define ZDESKTOP_MENU_ROLE_FIND		15U
-#define ZDESKTOP_MENU_ROLE_HELP		16U
-#define ZDESKTOP_MENU_ROLE_FULLSCREEN	17U
-#define ZDESKTOP_MENU_ROLE_ZOOM_IN	18U
-#define ZDESKTOP_MENU_ROLE_ZOOM_OUT	19U
+#define KEILAND_MENU_ROLE_NONE		0U
+#define KEILAND_MENU_ROLE_ABOUT	1U
+#define KEILAND_MENU_ROLE_PREFERENCES	2U
+#define KEILAND_MENU_ROLE_QUIT		3U
+#define KEILAND_MENU_ROLE_UNDO		4U
+#define KEILAND_MENU_ROLE_REDO		5U
+#define KEILAND_MENU_ROLE_CUT		6U
+#define KEILAND_MENU_ROLE_COPY		7U
+#define KEILAND_MENU_ROLE_PASTE	8U
+#define KEILAND_MENU_ROLE_DELETE	9U
+#define KEILAND_MENU_ROLE_SELECT_ALL	10U
+#define KEILAND_MENU_ROLE_NEW		11U
+#define KEILAND_MENU_ROLE_OPEN		12U
+#define KEILAND_MENU_ROLE_SAVE		13U
+#define KEILAND_MENU_ROLE_CLOSE	14U
+#define KEILAND_MENU_ROLE_FIND		15U
+#define KEILAND_MENU_ROLE_HELP		16U
+#define KEILAND_MENU_ROLE_FULLSCREEN	17U
+#define KEILAND_MENU_ROLE_ZOOM_IN	18U
+#define KEILAND_MENU_ROLE_ZOOM_OUT	19U
 
 /* The modifiers of a shortcut, whose key is an XKB keysym ('c', '+', 0xffc8 for F11). */
-#define ZDESKTOP_MENU_SHIFT		1U
-#define ZDESKTOP_MENU_CTRL		2U
-#define ZDESKTOP_MENU_ALT		4U
-#define ZDESKTOP_MENU_SUPER		8U
+#define KEILAND_MENU_SHIFT		1U
+#define KEILAND_MENU_CTRL		2U
+#define KEILAND_MENU_ALT		4U
+#define KEILAND_MENU_SUPER		8U
 
 /*
  * What a window menu tells the application.  Any member may be NULL.
@@ -130,10 +130,10 @@ struct zdesktop_window_menu;
  * item included) opened or closed; an application may update the menu in
  * answer, and zdesktop redraws the open popup.
  */
-struct zdesktop_window_menu_listener {
-	void (*activated)(void *data, struct zdesktop_window_menu *window_menu, uint32_t item, uint32_t action, struct wl_seat *seat, uint32_t serial);
-	void (*opened)(void *data, struct zdesktop_window_menu *window_menu, uint32_t item);
-	void (*closed)(void *data, struct zdesktop_window_menu *window_menu, uint32_t item);
+struct keiland_window_menu_listener {
+	void (*activated)(void *data, struct keiland_window_menu *window_menu, uint32_t item, uint32_t action, struct wl_seat *seat, uint32_t serial);
+	void (*opened)(void *data, struct keiland_window_menu *window_menu, uint32_t item);
+	void (*closed)(void *data, struct keiland_window_menu *window_menu, uint32_t item);
 };
 
 /*
@@ -142,103 +142,103 @@ struct zdesktop_window_menu_listener {
  * Returns NULL with errno ENOTSUP when the compositor has no System Menu;
  * the application then draws its own menus.
  */
-struct zdesktop_menu_service *zdesktop_menu_service_open(struct wl_display *display);
+struct keiland_menu_service *keiland_menu_service_open(struct wl_display *display);
 
 /*
  * Closes a menu service; the menus and window menus made from it stay.
  */
-void zdesktop_menu_service_close(struct zdesktop_menu_service *service);
+void keiland_menu_service_close(struct keiland_menu_service *service);
 
 /*
  * Makes an empty menu; NULL with errno set when it cannot.
  */
-struct zdesktop_menu *zdesktop_menu_create(struct zdesktop_menu_service *service);
+struct keiland_menu *keiland_menu_create(struct keiland_menu_service *service);
 
 /*
  * Destroys a menu; windows showing it show no menu.
  */
-void zdesktop_menu_destroy(struct zdesktop_menu *menu);
+void keiland_menu_destroy(struct keiland_menu *menu);
 
 /*
  * Starts a transaction: the changes that follow are shown together at the commit.
  */
-int zdesktop_menu_begin(struct zdesktop_menu *menu);
+int keiland_menu_begin(struct keiland_menu *menu);
 
 /*
  * Ends a transaction, and zdesktop shows its changes at once.
  */
-int zdesktop_menu_commit(struct zdesktop_menu *menu);
+int keiland_menu_commit(struct keiland_menu *menu);
 
 /*
  * Adds an item as the last child of a parent.
  */
-int zdesktop_menu_append(struct zdesktop_menu *menu, uint32_t id, uint32_t parent, unsigned type, const char *label, uint32_t action);
+int keiland_menu_append(struct keiland_menu *menu, uint32_t id, uint32_t parent, unsigned type, const char *label, uint32_t action);
 
 /*
  * Adds an item before one of a parent's children (0 appends).
  */
-int zdesktop_menu_insert(struct zdesktop_menu *menu, uint32_t id, uint32_t parent, uint32_t before, unsigned type, const char *label, uint32_t action);
+int keiland_menu_insert(struct keiland_menu *menu, uint32_t id, uint32_t parent, uint32_t before, unsigned type, const char *label, uint32_t action);
 
 /*
  * Removes an item and everything under it.
  */
-int zdesktop_menu_remove(struct zdesktop_menu *menu, uint32_t id);
+int keiland_menu_remove(struct keiland_menu *menu, uint32_t id);
 
 /*
  * Sets an item's label (UTF-8, at most 255 bytes).
  */
-int zdesktop_menu_set_label(struct zdesktop_menu *menu, uint32_t id, const char *label);
+int keiland_menu_set_label(struct keiland_menu *menu, uint32_t id, const char *label);
 
 /*
  * Sets the action an item's choice reports.
  */
-int zdesktop_menu_set_action(struct zdesktop_menu *menu, uint32_t id, uint32_t action);
+int keiland_menu_set_action(struct keiland_menu *menu, uint32_t id, uint32_t action);
 
 /*
  * Sets whether an item can be chosen (it is shown pale when it cannot).
  */
-int zdesktop_menu_set_enabled(struct zdesktop_menu *menu, uint32_t id, int enabled);
+int keiland_menu_set_enabled(struct keiland_menu *menu, uint32_t id, int enabled);
 
 /*
  * Sets whether an item is shown at all.
  */
-int zdesktop_menu_set_visible(struct zdesktop_menu *menu, uint32_t id, int visible);
+int keiland_menu_set_visible(struct keiland_menu *menu, uint32_t id, int visible);
 
 /*
  * Sets whether a checkbox or radio item is checked.
  */
-int zdesktop_menu_set_checked(struct zdesktop_menu *menu, uint32_t id, int checked);
+int keiland_menu_set_checked(struct keiland_menu *menu, uint32_t id, int checked);
 
 /*
- * Sets an item's role (ZDESKTOP_MENU_ROLE_*).
+ * Sets an item's role (KEILAND_MENU_ROLE_*).
  */
-int zdesktop_menu_set_role(struct zdesktop_menu *menu, uint32_t id, unsigned role);
+int keiland_menu_set_role(struct keiland_menu *menu, uint32_t id, unsigned role);
 
 /*
  * Sets an item's icon by its icon-theme name ("" for none).
  */
-int zdesktop_menu_set_icon_name(struct zdesktop_menu *menu, uint32_t id, const char *icon_name);
+int keiland_menu_set_icon_name(struct keiland_menu *menu, uint32_t id, const char *icon_name);
 
 /*
- * Sets an item's shortcut: ZDESKTOP_MENU_* modifiers and an XKB keysym (0 removes it).
+ * Sets an item's shortcut: KEILAND_MENU_* modifiers and an XKB keysym (0 removes it).
  */
-int zdesktop_menu_set_shortcut(struct zdesktop_menu *menu, uint32_t id, unsigned modifiers, uint32_t keysym);
+int keiland_menu_set_shortcut(struct keiland_menu *menu, uint32_t id, unsigned modifiers, uint32_t keysym);
 
 /*
  * Makes the place on a window that shows a menu; NULL with errno set when it cannot.
  */
-struct zdesktop_window_menu *zdesktop_window_menu_create(struct zdesktop_menu_service *service, struct xdg_toplevel *toplevel,
-							  const struct zdesktop_window_menu_listener *listener, void *data);
+struct keiland_window_menu *keiland_window_menu_create(struct keiland_menu_service *service, struct xdg_toplevel *toplevel,
+							  const struct keiland_window_menu_listener *listener, void *data);
 
 /*
  * Shows a menu on the window (NULL shows none).
  */
-int zdesktop_window_menu_set(struct zdesktop_window_menu *window_menu, struct zdesktop_menu *menu);
+int keiland_window_menu_set(struct keiland_window_menu *window_menu, struct keiland_menu *menu);
 
 /*
  * Destroys a window's place for a menu; the window shows none.
  */
-void zdesktop_window_menu_destroy(struct zdesktop_window_menu *window_menu);
+void keiland_window_menu_destroy(struct keiland_window_menu *window_menu);
 
 /*
  * Context menus (ws071-p009): a menu's top-level items shown once as a
@@ -250,10 +250,10 @@ void zdesktop_window_menu_destroy(struct zdesktop_window_menu *window_menu);
  * Either member may be NULL.
  */
 struct wl_surface;
-struct zdesktop_context_menu;
-struct zdesktop_context_menu_listener {
-	void (*activated)(void *data, struct zdesktop_context_menu *context_menu, uint32_t item, uint32_t action, uint32_t serial);
-	void (*done)(void *data, struct zdesktop_context_menu *context_menu);
+struct keiland_context_menu;
+struct keiland_context_menu_listener {
+	void (*activated)(void *data, struct keiland_context_menu *context_menu, uint32_t item, uint32_t action, uint32_t serial);
+	void (*done)(void *data, struct keiland_context_menu *context_menu);
 };
 
 /*
@@ -261,14 +261,14 @@ struct zdesktop_context_menu_listener {
  * set: ENOTSUP for a compositor without context menus, ENOMEM, or EINVAL
  * when the listener cannot be installed.
  */
-struct zdesktop_context_menu *zdesktop_menu_popup(struct zdesktop_menu_service *service, struct zdesktop_menu *menu, struct wl_surface *surface,
+struct keiland_context_menu *keiland_menu_popup(struct keiland_menu_service *service, struct keiland_menu *menu, struct wl_surface *surface,
 						  int32_t x, int32_t y, struct wl_seat *seat, uint32_t serial,
-						  const struct zdesktop_context_menu_listener *listener, void *data);
+						  const struct keiland_context_menu_listener *listener, void *data);
 
 /*
  * Destroys a context menu; one still open closes without telling.
  */
-void zdesktop_context_menu_destroy(struct zdesktop_context_menu *context_menu);
+void keiland_context_menu_destroy(struct keiland_context_menu *context_menu);
 
 /*
  * The Titlebar Presentation (WS070 p008, plan/ws070/titlebar-design.md).
@@ -284,51 +284,51 @@ void zdesktop_context_menu_destroy(struct zdesktop_context_menu *context_menu);
  * transactions, like a menu's.  Every call that returns an int returns 0
  * or an errno value.
  */
-struct zdesktop_titlebar;
+struct keiland_titlebar;
 
 /* The presentation modes. */
-#define ZDESKTOP_TITLEBAR_MENU		0U
-#define ZDESKTOP_TITLEBAR_CONTROLS	1U
-#define ZDESKTOP_TITLEBAR_TABS		2U
+#define KEILAND_TITLEBAR_MENU		0U
+#define KEILAND_TITLEBAR_CONTROLS	1U
+#define KEILAND_TITLEBAR_TABS		2U
 
 /* The controls' roles, which decide how zdesktop draws them. */
-#define ZDESKTOP_CONTROL_BACK		1U
-#define ZDESKTOP_CONTROL_FORWARD	2U
-#define ZDESKTOP_CONTROL_HOME		3U
-#define ZDESKTOP_CONTROL_UP		4U
-#define ZDESKTOP_CONTROL_BREADCRUMB	5U
-#define ZDESKTOP_CONTROL_SEARCH		6U
-#define ZDESKTOP_CONTROL_VIEW_GRID	7U
-#define ZDESKTOP_CONTROL_VIEW_LIST	8U
-#define ZDESKTOP_CONTROL_VIEW_COLUMNS	9U
-#define ZDESKTOP_CONTROL_SORT		10U
-#define ZDESKTOP_CONTROL_FILTER		11U
-#define ZDESKTOP_CONTROL_SIDEBAR	12U
-#define ZDESKTOP_CONTROL_PREVIEW	13U
-#define ZDESKTOP_CONTROL_PROGRESS	14U
-#define ZDESKTOP_CONTROL_PRIMARY_ACTION	15U
-#define ZDESKTOP_CONTROL_GENERIC	16U
+#define KEILAND_CONTROL_BACK		1U
+#define KEILAND_CONTROL_FORWARD	2U
+#define KEILAND_CONTROL_HOME		3U
+#define KEILAND_CONTROL_UP		4U
+#define KEILAND_CONTROL_BREADCRUMB	5U
+#define KEILAND_CONTROL_SEARCH		6U
+#define KEILAND_CONTROL_VIEW_GRID	7U
+#define KEILAND_CONTROL_VIEW_LIST	8U
+#define KEILAND_CONTROL_VIEW_COLUMNS	9U
+#define KEILAND_CONTROL_SORT		10U
+#define KEILAND_CONTROL_FILTER		11U
+#define KEILAND_CONTROL_SIDEBAR	12U
+#define KEILAND_CONTROL_PREVIEW	13U
+#define KEILAND_CONTROL_PROGRESS	14U
+#define KEILAND_CONTROL_PRIMARY_ACTION	15U
+#define KEILAND_CONTROL_GENERIC	16U
 
 /* The controls' priorities: the order they give way in when the room runs short. */
-#define ZDESKTOP_PRIORITY_PRIMARY	0U
-#define ZDESKTOP_PRIORITY_NORMAL	1U
-#define ZDESKTOP_PRIORITY_SECONDARY	2U
+#define KEILAND_PRIORITY_PRIMARY	0U
+#define KEILAND_PRIORITY_NORMAL	1U
+#define KEILAND_PRIORITY_SECONDARY	2U
 
 /* A progress control's value that says the share done is not known. */
-#define ZDESKTOP_PROGRESS_UNKNOWN	1001U
+#define KEILAND_PROGRESS_UNKNOWN	1001U
 
 /* The tabs' flags, and the tab strip's options. */
-#define ZDESKTOP_TAB_ACTIVE		1U
-#define ZDESKTOP_TAB_ATTENTION		2U
-#define ZDESKTOP_TAB_CLOSABLE		4U
-#define ZDESKTOP_TABS_NEW_BUTTON	1U
+#define KEILAND_TAB_ACTIVE		1U
+#define KEILAND_TAB_ATTENTION		2U
+#define KEILAND_TAB_CLOSABLE		4U
+#define KEILAND_TABS_NEW_BUTTON	1U
 
 /* How a text control takes the keyboard, and how its editing ended. */
-#define ZDESKTOP_FOCUS_FIELD		0U
-#define ZDESKTOP_FOCUS_EDIT		1U
-#define ZDESKTOP_TEXT_SUBMITTED		0U
-#define ZDESKTOP_TEXT_CANCELLED		1U
-#define ZDESKTOP_TEXT_LEFT		2U
+#define KEILAND_FOCUS_FIELD		0U
+#define KEILAND_FOCUS_EDIT		1U
+#define KEILAND_TEXT_SUBMITTED		0U
+#define KEILAND_TEXT_CANCELLED		1U
+#define KEILAND_TEXT_LEFT		2U
 
 /*
  * What zdesktop tells the application about its titlebar: a control chosen
@@ -342,110 +342,110 @@ struct zdesktop_titlebar;
  * a tab and a new tab are the application's keys (its menu's shortcuts),
  * since a terminal's shell needs Ctrl+W and Ctrl+T.
  *
- * drop_target (ZDESKTOP_VERSION 7): while a drag and drop (wl_data_device)
+ * drop_target (KEILAND_VERSION 7): while a drag and drop (wl_data_device)
  * is over a part of a breadcrumb in the titlebar, zdesktop makes the
  * window's surface the drag's target (its data device hears enter, motion
  * and drop at the pointer's place, above the surface) and tells the part
  * here first (id and detail as for control_activated); id 0 says the drag
  * is over none of the controls now.  A drop then goes to that part's folder.
  */
-struct zdesktop_titlebar_listener {
-	void (*control_activated)(void *data, struct zdesktop_titlebar *titlebar, uint32_t id, uint32_t detail, struct wl_seat *seat, uint32_t serial);
-	void (*text_changed)(void *data, struct zdesktop_titlebar *titlebar, uint32_t id, const char *text);
-	void (*text_done)(void *data, struct zdesktop_titlebar *titlebar, uint32_t id, const char *text, unsigned how);
-	void (*tab_activated)(void *data, struct zdesktop_titlebar *titlebar, uint32_t id, uint32_t serial);
-	void (*tab_close_requested)(void *data, struct zdesktop_titlebar *titlebar, uint32_t id);
-	void (*new_tab_requested)(void *data, struct zdesktop_titlebar *titlebar, uint32_t serial);
-	void (*overflow_menu_opened)(void *data, struct zdesktop_titlebar *titlebar);
-	void (*drop_target)(void *data, struct zdesktop_titlebar *titlebar, uint32_t id, uint32_t detail);
+struct keiland_titlebar_listener {
+	void (*control_activated)(void *data, struct keiland_titlebar *titlebar, uint32_t id, uint32_t detail, struct wl_seat *seat, uint32_t serial);
+	void (*text_changed)(void *data, struct keiland_titlebar *titlebar, uint32_t id, const char *text);
+	void (*text_done)(void *data, struct keiland_titlebar *titlebar, uint32_t id, const char *text, unsigned how);
+	void (*tab_activated)(void *data, struct keiland_titlebar *titlebar, uint32_t id, uint32_t serial);
+	void (*tab_close_requested)(void *data, struct keiland_titlebar *titlebar, uint32_t id);
+	void (*new_tab_requested)(void *data, struct keiland_titlebar *titlebar, uint32_t serial);
+	void (*overflow_menu_opened)(void *data, struct keiland_titlebar *titlebar);
+	void (*drop_target)(void *data, struct keiland_titlebar *titlebar, uint32_t id, uint32_t detail);
 };
 
 /*
  * Gives a window its titlebar presentation, in menu mode until changed;
  * NULL with errno set (ENOTSUP for a compositor without it).
  */
-struct zdesktop_titlebar *zdesktop_titlebar_create(struct wl_display *display, struct xdg_toplevel *toplevel,
-						   const struct zdesktop_titlebar_listener *listener, void *data);
+struct keiland_titlebar *keiland_titlebar_create(struct wl_display *display, struct xdg_toplevel *toplevel,
+						   const struct keiland_titlebar_listener *listener, void *data);
 
 /*
  * Takes the titlebar presentation away; the window shows its menu again.
  */
-void zdesktop_titlebar_destroy(struct zdesktop_titlebar *titlebar);
+void keiland_titlebar_destroy(struct keiland_titlebar *titlebar);
 
 /*
- * Starts a transaction; the changes until zdesktop_titlebar_commit are shown together.
+ * Starts a transaction; the changes until keiland_titlebar_commit are shown together.
  */
-int zdesktop_titlebar_begin(struct zdesktop_titlebar *titlebar);
+int keiland_titlebar_begin(struct keiland_titlebar *titlebar);
 
 /*
  * Ends a transaction; zdesktop shows its changes at once.
  */
-int zdesktop_titlebar_commit(struct zdesktop_titlebar *titlebar);
+int keiland_titlebar_commit(struct keiland_titlebar *titlebar);
 
 /*
- * Chooses the presentation (ZDESKTOP_TITLEBAR_*).
+ * Chooses the presentation (KEILAND_TITLEBAR_*).
  */
-int zdesktop_titlebar_set_mode(struct zdesktop_titlebar *titlebar, unsigned mode);
+int keiland_titlebar_set_mode(struct keiland_titlebar *titlebar, unsigned mode);
 
 /*
  * Adds a control at the end: its ID (not 0), role, priority, the segmented group it joins (0 for none) and label.
  */
-int zdesktop_titlebar_add_control(struct zdesktop_titlebar *titlebar, uint32_t id, unsigned role, unsigned priority, unsigned group, const char *label);
+int keiland_titlebar_add_control(struct keiland_titlebar *titlebar, uint32_t id, unsigned role, unsigned priority, unsigned group, const char *label);
 
 /*
  * Removes a control.
  */
-int zdesktop_titlebar_remove_control(struct zdesktop_titlebar *titlebar, uint32_t id);
+int keiland_titlebar_remove_control(struct keiland_titlebar *titlebar, uint32_t id);
 
 /*
  * Sets a control's label.
  */
-int zdesktop_titlebar_set_control_label(struct zdesktop_titlebar *titlebar, uint32_t id, const char *label);
+int keiland_titlebar_set_control_label(struct keiland_titlebar *titlebar, uint32_t id, const char *label);
 
 /*
  * Sets whether a control works now and whether it is checked.
  */
-int zdesktop_titlebar_set_control_state(struct zdesktop_titlebar *titlebar, uint32_t id, int enabled, int checked);
+int keiland_titlebar_set_control_state(struct keiland_titlebar *titlebar, uint32_t id, int enabled, int checked);
 
 /*
- * Sets a progress control's share done, in thousandths (ZDESKTOP_PROGRESS_UNKNOWN when not known).
+ * Sets a progress control's share done, in thousandths (KEILAND_PROGRESS_UNKNOWN when not known).
  */
-int zdesktop_titlebar_set_control_value(struct zdesktop_titlebar *titlebar, uint32_t id, unsigned value);
+int keiland_titlebar_set_control_value(struct keiland_titlebar *titlebar, uint32_t id, unsigned value);
 
 /*
  * Sets a search's or a breadcrumb's text and what it shows when empty.
  */
-int zdesktop_titlebar_set_control_text(struct zdesktop_titlebar *titlebar, uint32_t id, const char *text, const char *placeholder);
+int keiland_titlebar_set_control_text(struct keiland_titlebar *titlebar, uint32_t id, const char *text, const char *placeholder);
 
 /*
  * Sets a breadcrumb's parts, from the first (the outermost) to the last.
  */
-int zdesktop_titlebar_set_breadcrumb(struct zdesktop_titlebar *titlebar, uint32_t id, const char *const *segments, size_t count);
+int keiland_titlebar_set_breadcrumb(struct keiland_titlebar *titlebar, uint32_t id, const char *const *segments, size_t count);
 
 /*
  * Adds a tab at the end, closable and not active.
  */
-int zdesktop_titlebar_add_tab(struct zdesktop_titlebar *titlebar, uint32_t id, const char *title);
+int keiland_titlebar_add_tab(struct keiland_titlebar *titlebar, uint32_t id, const char *title);
 
 /*
  * Removes a tab.
  */
-int zdesktop_titlebar_remove_tab(struct zdesktop_titlebar *titlebar, uint32_t id);
+int keiland_titlebar_remove_tab(struct keiland_titlebar *titlebar, uint32_t id);
 
 /*
- * Sets a tab's title and flags (ZDESKTOP_TAB_*).
+ * Sets a tab's title and flags (KEILAND_TAB_*).
  */
-int zdesktop_titlebar_set_tab(struct zdesktop_titlebar *titlebar, uint32_t id, const char *title, unsigned flags);
+int keiland_titlebar_set_tab(struct keiland_titlebar *titlebar, uint32_t id, const char *title, unsigned flags);
 
 /*
- * Sets the tab strip's options (ZDESKTOP_TABS_NEW_BUTTON).
+ * Sets the tab strip's options (KEILAND_TABS_NEW_BUTTON).
  */
-int zdesktop_titlebar_set_tabs_options(struct zdesktop_titlebar *titlebar, unsigned options);
+int keiland_titlebar_set_tabs_options(struct keiland_titlebar *titlebar, unsigned options);
 
 /*
- * Gives the keyboard to a committed search or breadcrumb control (ZDESKTOP_FOCUS_*), outside a transaction.
+ * Gives the keyboard to a committed search or breadcrumb control (KEILAND_FOCUS_*), outside a transaction.
  */
-int zdesktop_titlebar_focus_control(struct zdesktop_titlebar *titlebar, uint32_t id, unsigned mode);
+int keiland_titlebar_focus_control(struct keiland_titlebar *titlebar, uint32_t id, unsigned mode);
 
 /*
  * The recent files (WS071).
@@ -457,19 +457,19 @@ int zdesktop_titlebar_focus_control(struct zdesktop_titlebar *titlebar, uint32_t
  */
 
 /* The longest path and application name an entry holds, with the terminating NUL. */
-#define ZDESKTOP_RECENT_PATH_MAX	4096U
-#define ZDESKTOP_RECENT_NAME_MAX	64U
+#define KEILAND_RECENT_PATH_MAX	4096U
+#define KEILAND_RECENT_NAME_MAX	64U
 
 /* How many entries the list keeps (the oldest go first). */
-#define ZDESKTOP_RECENT_KEPT		256U
+#define KEILAND_RECENT_KEPT		256U
 
 /*
  * One entry of the recent list: the file's absolute path, the application
  * that used it (its app_id) and when, in seconds since the epoch.
  */
-struct zdesktop_recent_item {
-	char path[ZDESKTOP_RECENT_PATH_MAX];
-	char application[ZDESKTOP_RECENT_NAME_MAX];
+struct keiland_recent_item {
+	char path[KEILAND_RECENT_PATH_MAX];
+	char application[KEILAND_RECENT_NAME_MAX];
 	int64_t time;
 };
 
@@ -477,17 +477,17 @@ struct zdesktop_recent_item {
  * Adds a file (an absolute path) to the recent list, or makes it the
  * newest when it is listed.
  */
-int zdesktop_recent_add(const char *path, const char *application);
+int keiland_recent_add(const char *path, const char *application);
 
 /*
  * Reads the recent list, newest first, into up to capacity items.
  */
-int zdesktop_recent_list(struct zdesktop_recent_item *items, size_t capacity, size_t *count);
+int keiland_recent_list(struct keiland_recent_item *items, size_t capacity, size_t *count);
 
 /*
  * Takes a file off the recent list.
  */
-int zdesktop_recent_remove(const char *path);
+int keiland_recent_remove(const char *path);
 
 /*
  * The glass panels (ws035-p083).
@@ -507,20 +507,20 @@ int zdesktop_recent_remove(const char *path);
  * nothing: EINVAL (an empty panel, a radius past the largest, an unknown
  * kind), E2BIG (too many panels).
  */
-struct zdesktop_glass;
+struct keiland_glass;
 
 /* The kind of panel (the only one so far): a card floating in the window. */
-#define ZDESKTOP_GLASS_CARD		0U
+#define KEILAND_GLASS_CARD		0U
 
 /* The most panels a surface has, and the largest corner radius. */
-#define ZDESKTOP_GLASS_PANELS_MAX	32U
-#define ZDESKTOP_GLASS_RADIUS_MAX	64
+#define KEILAND_GLASS_PANELS_MAX	32U
+#define KEILAND_GLASS_RADIUS_MAX	64
 
 /*
  * One panel: its rectangle in the surface's coordinates, the radius of
  * its corners and its kind.
  */
-struct zdesktop_glass_panel {
+struct keiland_glass_panel {
 	int32_t x;
 	int32_t y;
 	int32_t width;
@@ -533,17 +533,17 @@ struct zdesktop_glass_panel {
  * Gives a surface its glass, with no panels yet.  Returns NULL with errno
  * set: ENOTSUP for a compositor without glass, ENOMEM.
  */
-struct zdesktop_glass *zdesktop_glass_create(struct wl_display *display, struct wl_surface *surface);
+struct keiland_glass *keiland_glass_create(struct wl_display *display, struct wl_surface *surface);
 
 /*
  * Sets the surface's panels for its next commit (count 0: none).
  */
-int zdesktop_glass_set_panels(struct zdesktop_glass *glass, const struct zdesktop_glass_panel *panels, size_t count);
+int keiland_glass_set_panels(struct keiland_glass *glass, const struct keiland_glass_panel *panels, size_t count);
 
 /*
  * Takes the glass away: the surface's next commit shows it without panels.
  */
-void zdesktop_glass_destroy(struct zdesktop_glass *glass);
+void keiland_glass_destroy(struct keiland_glass *glass);
 
 /*
  * The network (ws035-p013).
@@ -556,7 +556,7 @@ void zdesktop_glass_destroy(struct zdesktop_glass *glass);
  * desktop never speaks the daemon's protocol itself.
  *
  * Nothing here waits.  The state arrives when the daemon reports a change;
- * zdesktop_network_update reads what has arrived and says what changed.  A
+ * keiland_network_update reads what has arrived and says what changed.  A
  * request is sent at once and its answer arrives through the same update,
  * so a scan or a join that takes seconds does not stop the caller.  One
  * request is outstanding at a time (EBUSY otherwise).
@@ -565,42 +565,42 @@ void zdesktop_glass_destroy(struct zdesktop_glass *glass);
  * is not running), EACCES or EPERM (the user may not look or act),
  * EBUSY, EINVAL, ENOMEM.
  */
-struct zdesktop_network;
+struct keiland_network;
 
 /* The longest SSID shown, as printable text with the terminating NUL. */
-#define ZDESKTOP_NETWORK_SSID_MAX	33U
+#define KEILAND_NETWORK_SSID_MAX	33U
 
 /* The longest interface name, with the terminating NUL. */
-#define ZDESKTOP_NETWORK_NAME_MAX	16U
+#define KEILAND_NETWORK_NAME_MAX	16U
 
 /* The most networks a scan keeps. */
-#define ZDESKTOP_NETWORK_SCAN_MAX	24U
+#define KEILAND_NETWORK_SCAN_MAX	24U
 
 /* What carries the connection. */
-#define ZDESKTOP_NETWORK_NONE		0U
-#define ZDESKTOP_NETWORK_WIRED		1U
-#define ZDESKTOP_NETWORK_WIFI		2U
+#define KEILAND_NETWORK_NONE		0U
+#define KEILAND_NETWORK_WIRED		1U
+#define KEILAND_NETWORK_WIFI		2U
 
 /* The Wi-Fi's state. */
-#define ZDESKTOP_WIFI_ABSENT		0U	/* no radio */
-#define ZDESKTOP_WIFI_OFF		1U
-#define ZDESKTOP_WIFI_SEARCHING		2U
-#define ZDESKTOP_WIFI_CONNECTING	3U
-#define ZDESKTOP_WIFI_CONNECTED		4U
-#define ZDESKTOP_WIFI_DISCONNECTED	5U	/* on, and left unconnected by the user */
+#define KEILAND_WIFI_ABSENT		0U	/* no radio */
+#define KEILAND_WIFI_OFF		1U
+#define KEILAND_WIFI_SEARCHING		2U
+#define KEILAND_WIFI_CONNECTING	3U
+#define KEILAND_WIFI_CONNECTED		4U
+#define KEILAND_WIFI_DISCONNECTED	5U	/* on, and left unconnected by the user */
 
-/* What zdesktop_network_update found (bits). */
-#define ZDESKTOP_NETWORK_CHANGED_STATE	1U
-#define ZDESKTOP_NETWORK_CHANGED_SCAN	2U
-#define ZDESKTOP_NETWORK_CHANGED_DONE	4U
+/* What keiland_network_update found (bits). */
+#define KEILAND_NETWORK_CHANGED_STATE	1U
+#define KEILAND_NETWORK_CHANGED_SCAN	2U
+#define KEILAND_NETWORK_CHANGED_DONE	4U
 
 /* The requests. */
-#define ZDESKTOP_NETWORK_REQUEST_NONE		0U
-#define ZDESKTOP_NETWORK_REQUEST_SCAN		1U
-#define ZDESKTOP_NETWORK_REQUEST_JOIN		2U
-#define ZDESKTOP_NETWORK_REQUEST_DISCONNECT	3U
-#define ZDESKTOP_NETWORK_REQUEST_WIFI_ON	4U
-#define ZDESKTOP_NETWORK_REQUEST_WIFI_OFF	5U
+#define KEILAND_NETWORK_REQUEST_NONE		0U
+#define KEILAND_NETWORK_REQUEST_SCAN		1U
+#define KEILAND_NETWORK_REQUEST_JOIN		2U
+#define KEILAND_NETWORK_REQUEST_DISCONNECT	3U
+#define KEILAND_NETWORK_REQUEST_WIFI_ON	4U
+#define KEILAND_NETWORK_REQUEST_WIFI_OFF	5U
 
 /*
  * The network as last reported: connected (an interface is up with an
@@ -610,15 +610,15 @@ struct zdesktop_network;
  * or joining (empty otherwise).  reachable is 0 while the daemon cannot be
  * reached.
  */
-struct zdesktop_network_state {
+struct keiland_network_state {
 	unsigned reachable;
 	unsigned connected;
 	unsigned kind;
-	char interface[ZDESKTOP_NETWORK_NAME_MAX];
-	char wired[ZDESKTOP_NETWORK_NAME_MAX];
+	char interface[KEILAND_NETWORK_NAME_MAX];
+	char wired[KEILAND_NETWORK_NAME_MAX];
 	unsigned wifi;
-	char wifi_interface[ZDESKTOP_NETWORK_NAME_MAX];
-	char ssid[ZDESKTOP_NETWORK_SSID_MAX];
+	char wifi_interface[KEILAND_NETWORK_NAME_MAX];
+	char ssid[KEILAND_NETWORK_SSID_MAX];
 };
 
 /*
@@ -626,8 +626,8 @@ struct zdesktop_network_state {
  * asks for a key.  The strongest of the access points of one SSID stands
  * for it.
  */
-struct zdesktop_network_ap {
-	char ssid[ZDESKTOP_NETWORK_SSID_MAX];
+struct keiland_network_ap {
+	char ssid[KEILAND_NETWORK_SSID_MAX];
 	int rssi;
 	unsigned secured;
 };
@@ -636,43 +636,43 @@ struct zdesktop_network_ap {
  * Starts watching the network.  Returns NULL with errno set on ENOMEM; a
  * daemon that is not running yet is tried again by the updates.
  */
-struct zdesktop_network *zdesktop_network_open(void);
+struct keiland_network *keiland_network_open(void);
 
 /*
  * Stops watching and drops an outstanding request.
  */
-void zdesktop_network_close(struct zdesktop_network *network);
+void keiland_network_close(struct keiland_network *network);
 
 /*
  * Reads what has arrived without waiting, and reconnects to a daemon that
  * went away (at most once a second).  *changed gets the
- * ZDESKTOP_NETWORK_CHANGED_* bits of what changed.
+ * KEILAND_NETWORK_CHANGED_* bits of what changed.
  */
-int zdesktop_network_update(struct zdesktop_network *network, unsigned *changed);
+int keiland_network_update(struct keiland_network *network, unsigned *changed);
 
 /*
  * Copies the network's state as last reported.
  */
-void zdesktop_network_get_state(const struct zdesktop_network *network, struct zdesktop_network_state *state);
+void keiland_network_get_state(const struct keiland_network *network, struct keiland_network_state *state);
 
 /*
  * Copies up to capacity networks of the last scan, the strongest first,
  * and returns how many there are.
  */
-size_t zdesktop_network_get_scan(const struct zdesktop_network *network, struct zdesktop_network_ap *aps, size_t capacity);
+size_t keiland_network_get_scan(const struct keiland_network *network, struct keiland_network_ap *aps, size_t capacity);
 
 /*
- * Sends a request (ZDESKTOP_NETWORK_REQUEST_*; a join names the SSID, the
+ * Sends a request (KEILAND_NETWORK_REQUEST_*; a join names the SSID, the
  * others take NULL).  A join uses the network's saved profile.
  */
-int zdesktop_network_request(struct zdesktop_network *network, unsigned request, const char *ssid);
+int keiland_network_request(struct keiland_network *network, unsigned request, const char *ssid);
 
 /*
- * Tells the request outstanding (ZDESKTOP_NETWORK_REQUEST_NONE when none),
- * or, after ZDESKTOP_NETWORK_CHANGED_DONE, the one that finished and its
+ * Tells the request outstanding (KEILAND_NETWORK_REQUEST_NONE when none),
+ * or, after KEILAND_NETWORK_CHANGED_DONE, the one that finished and its
  * errno value (0 when it succeeded) through *error.
  */
-unsigned zdesktop_network_get_request(const struct zdesktop_network *network, int *error);
+unsigned keiland_network_get_request(const struct keiland_network *network, int *error);
 
 #ifdef __cplusplus
 }

@@ -52,7 +52,7 @@ func instSourceChoice(key) {
 }
 
 func instSourceScreenRead(context, unused) {
-    Term.write("Install zedBSD\r\nInstallation source\r\n\r\n" +
+    Term.write("Install Kei\r\nInstallation source\r\n\r\n" +
         "  > Installation disk\r\n    HTTP (not available yet)\r\n\r\n" +
         "Enter: Continue    Esc: Cancel\r\n");
     Term.flush();

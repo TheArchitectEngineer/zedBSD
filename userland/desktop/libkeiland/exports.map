@@ -5,17 +5,17 @@
  * SPDX-License-Identifier: Zlib
  */
 
-/* Only the calls <zdesktop.h> declares leave the library. */
+/* Only the calls <keiland.h> declares leave the library. */
 {
 	global:
-		zdesktop_version;
-		zdesktop_menu_*;
-		zdesktop_window_menu_*;
-		zdesktop_context_menu_*;
-		zdesktop_recent_*;
-		zdesktop_titlebar_*;
-		zdesktop_glass_*;
-		zdesktop_network_*;
+		keiland_version;
+		keiland_menu_*;
+		keiland_window_menu_*;
+		keiland_context_menu_*;
+		keiland_recent_*;
+		keiland_titlebar_*;
+		keiland_glass_*;
+		keiland_network_*;
 	local:
 		*;
 };

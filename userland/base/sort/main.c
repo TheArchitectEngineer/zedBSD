@@ -333,7 +333,7 @@ apply_option(
 		/* -m is a plain sort; memory, temporary files and threads are sort's own. */
 		break;
 	case OPTION_VERSION:
-		printf("sort (zedBSD) 1.0\n");
+		printf("sort (Kei) 1.0\n");
 		exit(0);
 	case OPTION_HELP:
 		usage();
