@@ -189,7 +189,7 @@ cbrtf(
 {
 	double value;
 
-	/* Computes in double and rounds once more. */
+	/* Computes in double. */
 	value = cbrt((double)x);
 
 	/* Succeeded: a cube root of a float is inside the float range. */
@@ -205,10 +205,14 @@ hypotf(
 	float y)
 {
 	double value;
+	float narrowed;
 
-	/* Computes in double and rounds once more. */
+	/* Computes in double. */
 	value = hypot((double)x, (double)y);
 
-	/* Succeeded: the narrowing reports the float range. */
-	return __libm_narrow(value);
+	/* Rounds to float, which also reports the float range. */
+	narrowed = __libm_narrow(value);
+
+	/* Succeeded: the float result. */
+	return narrowed;
 }

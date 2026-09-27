@@ -38,4 +38,4 @@ Resume point: p007（規約の全文の照合、math_errhandling、全表、ブ�
 | [ws076-p004](phase004/phase.md) | pow（整数の冪の正確な経路と一般の場合） | cleared |
 | [ws076-p005](phase005/phase.md) | 三角関数と逆三角関数（大きな引数の縮約）、双曲線関数 | cleared |
 | [ws076-p006](phase006/phase.md) | その他（cbrt・hypot・erf・erfc・lgamma・tgamma ほか）と float・long double の版 | cleared |
-| ws076-p007 | 規約の全文の照合と回帰 | planned |
+| [ws076-p007](phase007/phase.md) | 規約の全文の照合と回帰 | cleared |

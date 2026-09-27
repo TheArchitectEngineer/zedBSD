@@ -145,6 +145,7 @@ libm_nearest_remainder(
 	int magnitude;
 	uint64_t x_magnitude;
 	uint64_t y_magnitude;
+	double remainder_value;
 
 	/* A NaN in either argument, unequal to itself, is passed on. */
 	*quotient = 0;
@@ -210,8 +211,11 @@ libm_nearest_remainder(
 	if (division.rest == 0U)
 		return libm_make(dividend.sign, 0U, 0);
 
-	/* Succeeded: the remainder is exact. */
-	return libm_make(sign, division.rest, division.exponent);
+	/* Packs the remainder, which is exact. */
+	remainder_value = libm_make(sign, division.rest, division.exponent);
+
+	/* Succeeded: the remainder. */
+	return remainder_value;
 }
 
 /*

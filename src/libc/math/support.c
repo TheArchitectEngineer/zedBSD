@@ -358,6 +358,9 @@ __libm_scale(
 	if (sum.low == 0.0)
 		return result;
 
-	/* Succeeded: an inexact tiny result is an underflow. */
-	return __libm_check_underflow(result);
+	/* An inexact tiny result is an underflow. */
+	result = __libm_check_underflow(result);
+
+	/* Succeeded: the subnormal or zero result. */
+	return result;
 }

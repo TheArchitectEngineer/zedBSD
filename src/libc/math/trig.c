@@ -115,7 +115,7 @@ sinf(
 {
 	double value;
 
-	/* Computes in double and rounds once more. */
+	/* Computes in double. */
 	value = sin((double)x);
 
 	/* Succeeded: a sine is inside the float range. */
@@ -131,7 +131,7 @@ cosf(
 {
 	double value;
 
-	/* Computes in double and rounds once more. */
+	/* Computes in double. */
 	value = cos((double)x);
 
 	/* Succeeded: a cosine is inside the float range. */
@@ -146,12 +146,16 @@ tanf(
 	float x)
 {
 	double value;
+	float narrowed;
 
-	/* Computes in double and rounds once more. */
+	/* Computes in double. */
 	value = tan((double)x);
 
-	/* Succeeded: the narrowing reports the float range. */
-	return __libm_narrow(value);
+	/* Rounds to float, which also reports the float range. */
+	narrowed = __libm_narrow(value);
+
+	/* Succeeded: the float result. */
+	return narrowed;
 }
 
 /*

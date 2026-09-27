@@ -66,7 +66,7 @@ host（MPFR の参照、`GENERATORS=special plan/tools/libm/host-test.sh --count
 - 規約: `src/libc/math/` の全 file と試験の runner で `style-check.py` 0。amd64 の build warning 0、i386・arm64 の compile も通る。
 - boot test（`build/ws076-boot-p006/login.png`）PASS。
 
-## 移管（Future Work の候補、ID は main が付ける）
+## 移管（Future Work）
 
-- binary128 の long double（arm64・sparcv9）の関数は double の精度（`long-double.c` は double を呼ぶ）。binary128 の精度の libm。
-- Bessel 関数の零点の近くの相対精度（零点の近くの展開か、区間ごとの近似）。
+- [F-046](../../future-work.md): binary128 の long double（arm64・sparcv9）の関数は double の精度（`long-double.c` は double を呼ぶ）。binary128 の精度の libm。
+- [F-047](../../future-work.md): Bessel 関数の零点の近くの相対精度（零点の近くの展開か、区間ごとの近似）。
