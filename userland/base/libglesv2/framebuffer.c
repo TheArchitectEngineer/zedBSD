@@ -25,6 +25,11 @@
  * reads come from the read framebuffer's read buffer.  Pipelines are made
  * with one render pass per set of attachment formats (compatible with
  * every framebuffer object's pass of those formats).
+ *
+ * Fragment output i goes to colour slot i of the pass, which holds the
+ * attachment draw buffer i names.  OpenGL ES names attachment i or none
+ * there (an attachment no draw buffer names keeps its own slot, unwritten);
+ * desktop GL (libGL) may name any attachment in any draw buffer.
  */
 
 #include "gles.h"
@@ -114,6 +119,7 @@ static struct gles_framebuffer *framebuffer_new(GLuint name);
 static GLenum framebuffer_image_of(struct gles_state *state, const struct gles_attachment *point, int depth, struct framebuffer_image *image);
 static GLenum framebuffer_status(struct gles_state *state, struct gles_framebuffer *fbo, struct framebuffer_images *images);
 static GLenum framebuffer_build(struct gles_state *state, struct gles_framebuffer *fbo, struct framebuffer_images *images);
+static unsigned framebuffer_slot_attachment(const struct gles_framebuffer *fbo, unsigned slot);
 static void framebuffer_mark(struct gles_state *state, struct framebuffer_images *images);
 static void framebuffer_forget_views(struct gles_state *state, struct gles_framebuffer *fbo);
 static void framebuffer_leave(struct gles_state *state, struct zegl_surface *surface);
@@ -251,8 +257,8 @@ gles_target_open(
 		if (format == NULL)
 			continue;
 
-		/* Written when the draw buffer of its number names it. */
-		if (index < GLES_DRAW_BUFFERS && fbo->draw_buffers[index] == GL_COLOR_ATTACHMENT0 + index)
+		/* Written when the draw buffer of its slot names an attachment. */
+		if (index < GLES_DRAW_BUFFERS && fbo->draw_buffers[index] != GL_NONE)
 			target->draw_mask |= 1U << index;
 
 		/* Integers are neither blended nor cleared with floats. */
@@ -1221,6 +1227,8 @@ glDrawBuffers(
 	struct gles_framebuffer *fbo;
 	GLenum buffers[GLES_DRAW_BUFFERS];
 	GLsizei index;
+	unsigned named;
+	unsigned bit;
 
 	/* A context with its state, and no more buffers than there are. */
 	context = gles_context();
@@ -1244,19 +1252,41 @@ glDrawBuffers(
 		return;
 	}
 
-	/* Each buffer of a framebuffer object: its own attachment or none. */
+	/*
+	 * Each buffer of a framebuffer object: its own attachment or none
+	 * (desktop GL, libGL: any attachment, each named once).
+	 */
+	named = 0U;
 	for (index = 0; index < (GLsizei)GLES_DRAW_BUFFERS; index++) {
 		buffers[index] = GL_NONE;
 		if (index >= n)
 			continue;
 
-		/* GL_BACK and the other attachments are not this buffer's. */
-		if (bufs[index] != GL_NONE && bufs[index] != GL_COLOR_ATTACHMENT0 + (GLenum)index) {
+		/* None. */
+		if (bufs[index] == GL_NONE)
+			continue;
+
+		/* GL_BACK and the other attachments are not this buffer's in OpenGL ES. */
+		if (gles_fixed == NULL && bufs[index] != GL_COLOR_ATTACHMENT0 + (GLenum)index) {
+			gles_error(context, GL_INVALID_OPERATION);
+			return;
+		}
+
+		/* An attachment there is. */
+		if (bufs[index] < GL_COLOR_ATTACHMENT0 || bufs[index] >= GL_COLOR_ATTACHMENT0 + GLES_COLOR_ATTACHMENTS) {
+			gles_error(context, GL_INVALID_OPERATION);
+			return;
+		}
+
+		/* Not named by an earlier buffer. */
+		bit = 1U << (bufs[index] - GL_COLOR_ATTACHMENT0);
+		if ((named & bit) != 0U) {
 			gles_error(context, GL_INVALID_OPERATION);
 			return;
 		}
 
 		/* The buffer. */
+		named |= bit;
 		buffers[index] = bufs[index];
 	}
 
@@ -2292,6 +2322,7 @@ framebuffer_build(
 	VkRenderPass compatible;
 	uint32_t count;
 	unsigned index;
+	unsigned attachment;
 	GLenum status;
 	VkResult result;
 	int synced;
@@ -2310,12 +2341,20 @@ framebuffer_build(
 	depth_layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 	extent.width = UINT32_MAX;
 	extent.height = UINT32_MAX;
-	format.color_count = images->color_count;
+	format.color_count = 0U;
 	format.samples = images->samples;
 	for (index = 0U; index <= GLES_COLOR_ATTACHMENTS; index++) {
+		/* The depth attachment, or the attachment in colour slot index (none: the slot is empty). */
 		image = &images->depth;
-		if (index < GLES_COLOR_ATTACHMENTS)
-			image = &images->colors[index];
+		attachment = GLES_COLOR_ATTACHMENTS;
+		if (index < GLES_COLOR_ATTACHMENTS) {
+			attachment = framebuffer_slot_attachment(fbo, index);
+			if (attachment == GLES_COLOR_ATTACHMENTS)
+				continue;
+			image = &images->colors[attachment];
+		}
+
+		/* Nothing attached there. */
 		if (image->format == NULL)
 			continue;
 
@@ -2328,7 +2367,7 @@ framebuffer_build(
 
 		/* The view of the level and layer, the image a 3D slice is drawn through, or the renderbuffer's. */
 		if (image->volume && index < GLES_COLOR_ATTACHMENTS) {
-			views[0] = framebuffer_slice(state, &fbo->slices[index], image);
+			views[0] = framebuffer_slice(state, &fbo->slices[attachment], image);
 		} else if (image->texture != NULL) {
 			views[0] = gles_texture_attach_view(state, image->texture, image->level, image->layer);
 		} else {
@@ -2344,6 +2383,7 @@ framebuffer_build(
 			color_views[index] = views[0];
 			color_layouts[index] = image->layout;
 			format.colors[index] = (uint32_t)image->vk;
+			format.color_count = index + 1U;
 		} else {
 			depth_view = views[0];
 			depth_layout = image->layout;
@@ -2412,8 +2452,12 @@ framebuffer_build(
 	fbo->extent = extent;
 	fbo->format = format;
 	fbo->compatible = compatible;
-	for (index = 0U; index < GLES_COLOR_ATTACHMENTS; index++)
-		fbo->color_formats[index] = images->colors[index].format;
+	for (index = 0U; index < GLES_COLOR_ATTACHMENTS; index++) {
+		fbo->color_formats[index] = NULL;
+		attachment = framebuffer_slot_attachment(fbo, index);
+		if (attachment < GLES_COLOR_ATTACHMENTS)
+			fbo->color_formats[index] = images->colors[attachment].format;
+	}
 
 	/* The depth image's aspects: depth, and stencil when its format has it. */
 	fbo->depth_aspects = 0U;
@@ -2427,6 +2471,33 @@ framebuffer_build(
 
 	/* Succeeded: the pass and framebuffer are made. */
 	return GL_FRAMEBUFFER_COMPLETE;
+}
+
+/*
+ * Returns the colour attachment in a slot of a framebuffer object's pass:
+ * the one the slot's draw buffer names, or with none named, the slot's
+ * own attachment unless another draw buffer names it (an attachment is
+ * in one slot only); GLES_COLOR_ATTACHMENTS for an empty slot.
+ */
+static unsigned
+framebuffer_slot_attachment(
+	const struct gles_framebuffer *fbo,
+	unsigned slot)
+{
+	unsigned other;
+
+	/* The attachment the draw buffer names. */
+	if (fbo->draw_buffers[slot] != GL_NONE)
+		return fbo->draw_buffers[slot] - GL_COLOR_ATTACHMENT0;
+
+	/* The slot's own, unless a draw buffer puts it in another slot. */
+	for (other = 0U; other < GLES_DRAW_BUFFERS; other++) {
+		if (fbo->draw_buffers[other] == GL_COLOR_ATTACHMENT0 + slot)
+			return GLES_COLOR_ATTACHMENTS;
+	}
+
+	/* Succeeded: its own attachment, unwritten. */
+	return slot;
 }
 
 /* Marks what a framebuffer object's pass draws into as used by this frame, and the textures' levels as newer on the device. */
@@ -2801,6 +2872,7 @@ framebuffer_sides(
 	struct gles_framebuffer *draw_fbo;
 	struct zegl_surface *surface;
 	unsigned index;
+	unsigned attachment;
 	GLenum status;
 	EGLint error;
 
@@ -2883,9 +2955,12 @@ framebuffer_sides(
 
 	/* Or the object's attachments its draw buffers name, and its depth attachment. */
 	for (index = 0U; index < GLES_DRAW_BUFFERS; index++) {
-		if (draw_fbo->draw_buffers[index] != GL_COLOR_ATTACHMENT0 + index || draw_images.colors[index].format == NULL)
+		if (draw_fbo->draw_buffers[index] == GL_NONE)
 			continue;
-		framebuffer_side_image(&draw_images.colors[index], draw_fbo->extent, surface, &draw_colors[*count]);
+		attachment = draw_fbo->draw_buffers[index] - GL_COLOR_ATTACHMENT0;
+		if (draw_images.colors[attachment].format == NULL)
+			continue;
+		framebuffer_side_image(&draw_images.colors[attachment], draw_fbo->extent, surface, &draw_colors[*count]);
 		(*count)++;
 	}
 

@@ -20,6 +20,12 @@
  * Xzed's visuals for GL are two TrueColor 24-bit, double-buffered RGBA
  * ones: 0x21 without and 0x22 with a 24-bit depth and 8-bit stencil
  * buffer; the GLX 1.3 configs are the same two.
+ *
+ * Every EGL context is an OpenGL ES 3 one.  glXCreateContext and
+ * glXCreateNewContext make OpenGL 1.4 contexts (the fixed function, and
+ * the rest of the calls as they are); glXCreateContextAttribsARB
+ * (WS068 p013) makes OpenGL 3.0 ones, whose version and flags GL reports
+ * (fixed.c asks glx_version).
  */
 
 #include "fixed.h"
@@ -43,6 +49,14 @@
 #define GLX_CLIENT_MAJOR		1
 #define GLX_CLIENT_MINOR		4
 
+/* The desktop GL versions of a context, major * 10 + minor: glXCreateContext's and glXCreateContextAttribsARB's. */
+#define GLX_GL_LEGACY			14U
+#define GLX_GL_THREE			30U
+
+/* GL's GL_CONTEXT_FLAGS bits. */
+#define GLX_GL_FORWARD_COMPATIBLE	0x1
+#define GLX_GL_DEBUG			0x2
+
 /* The two visuals' ids. */
 #define GLX_VISUAL_PLAIN		0x21U
 #define GLX_VISUAL_DEPTH		0x22U
@@ -55,6 +69,10 @@ struct __GLXcontextRec {
 	/* The display and whether the visual has a depth buffer. */
 	Display *display;
 	int depth;
+
+	/* The desktop GL version (GLX_GL_*) and GL_CONTEXT_FLAGS. */
+	unsigned version;
+	GLint flags;
 
 	/* The EGL context and config. */
 	EGLContext context;
@@ -113,7 +131,8 @@ static pthread_once_t glx_current_once = PTHREAD_ONCE_INIT;
 
 static int glx_setup(Display *dpy);
 static XVisualInfo *glx_visual_info(int depth);
-static GLXContext glx_context(Display *dpy, int depth);
+static GLXContext glx_context(Display *dpy, int depth, unsigned version, GLint flags);
+static int glx_attributes(const int *attribList, GLint *flags);
 static int glx_pbuffer(GLXContext ctx, GLXDrawable drawable);
 static GLXContext glx_current(void);
 static void glx_set_current(GLXContext ctx);
@@ -212,7 +231,7 @@ glXGetClientString(
 	case GLX_VERSION:
 		return "1.4";
 	case GLX_EXTENSIONS:
-		return "GLX_ARB_get_proc_address";
+		return "GLX_ARB_create_context GLX_ARB_create_context_profile GLX_ARB_get_proc_address";
 	default:
 		break;
 	}
@@ -412,8 +431,8 @@ glXCreateContext(
 	if (vis->visualid == GLX_VISUAL_DEPTH)
 		depth = 1;
 
-	/* The context. */
-	ctx = glx_context(dpy, depth);
+	/* An OpenGL 1.4 context. */
+	ctx = glx_context(dpy, depth, GLX_GL_LEGACY, 0);
 	return ctx;
 }
 
@@ -792,8 +811,64 @@ glXCreateNewContext(
 	(void)direct;
 	if (renderType != GLX_RGBA_TYPE || config == NULL)
 		return NULL;
-	ctx = glx_context(dpy, config->depth);
+
+	/* An OpenGL 1.4 context. */
+	ctx = glx_context(dpy, config->depth, GLX_GL_LEGACY, 0);
 	return ctx;
+}
+
+/*
+ * Makes a context for a config with attributes (GLX_ARB_create_context):
+ * an OpenGL 3.0 context for any version up to 3.0 of either profile (3.0
+ * is compatible with the earlier versions, and a profile is only chosen
+ * from 3.2 on); NULL for a later version or an attribute not understood.
+ * Sharing is not there yet.
+ */
+GLXContext
+glXCreateContextAttribsARB(
+	Display *dpy,
+	GLXFBConfig config,
+	GLXContext shareContext,
+	Bool direct,
+	const int *attribList)
+{
+	GLXContext ctx;
+	GLint flags;
+	int status;
+
+	/* A config, and attributes asking for what there is. */
+	(void)shareContext;
+	(void)direct;
+	if (config == NULL)
+		return NULL;
+	status = glx_attributes(attribList, &flags);
+	if (status != 0)
+		return NULL;
+
+	/* An OpenGL 3.0 context. */
+	ctx = glx_context(dpy, config->depth, GLX_GL_THREE, flags);
+	return ctx;
+}
+
+/*
+ * Returns the desktop GL version of the calling thread's current context
+ * (major * 10 + minor; 1.4 without one) and its GL_CONTEXT_FLAGS.
+ */
+unsigned
+glx_version(
+	GLint *flags)
+{
+	GLXContext ctx;
+
+	/* The thread's context. */
+	ctx = glx_current();
+	*flags = 0;
+	if (ctx == NULL)
+		return GLX_GL_LEGACY;
+
+	/* Its own. */
+	*flags = ctx->flags;
+	return ctx->version;
 }
 
 /*
@@ -896,19 +971,99 @@ glx_visual_info(
 	return info;
 }
 
-/* Makes a context: the EGL display at the first one, a config with or without a depth buffer, an OpenGL ES 2 context. */
+/*
+ * Reads glXCreateContextAttribsARB's attributes: a version up to 3.0,
+ * either profile, the debug and forward-compatible flags (the latter from
+ * 3.0), RGBA.  Returns 0 with the context's GL_CONTEXT_FLAGS, or -1 for
+ * anything else.
+ */
+static int
+glx_attributes(
+	const int *attribList,
+	GLint *flags)
+{
+	unsigned index;
+	int major;
+	int minor;
+	int bits;
+	int profile;
+	int value;
+
+	/* Each attribute and its value; the defaults are version 1.0, no flags, the core profile. */
+	major = 1;
+	minor = 0;
+	bits = 0;
+	profile = GLX_CONTEXT_CORE_PROFILE_BIT_ARB;
+	for (index = 0U; attribList != NULL && attribList[index] != None; index += 2U) {
+		value = attribList[index + 1U];
+		switch (attribList[index]) {
+		case GLX_CONTEXT_MAJOR_VERSION_ARB:
+			major = value;
+			break;
+		case GLX_CONTEXT_MINOR_VERSION_ARB:
+			minor = value;
+			break;
+		case GLX_CONTEXT_FLAGS_ARB:
+			bits = value;
+			break;
+		case GLX_CONTEXT_PROFILE_MASK_ARB:
+			profile = value;
+			break;
+		case GLX_RENDER_TYPE:
+			if (value != GLX_RGBA_TYPE)
+				return -1;
+			break;
+		default:
+			return -1;
+		}
+	}
+
+	/* A version there is: 1.0 to 1.5, 2.0, 2.1 or 3.0. */
+	if (major < 1 ||
+	    major > 3 ||
+	    minor < 0)
+		return -1;
+	if ((major == 1 && minor > 5) ||
+	    (major == 2 && minor > 1) ||
+	    (major == 3 && minor > 0))
+		return -1;
+
+	/* Known flags, forward compatibility from 3.0 only, and one known profile. */
+	if ((bits & ~(GLX_CONTEXT_DEBUG_BIT_ARB | GLX_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB)) != 0)
+		return -1;
+	if ((bits & GLX_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB) != 0 && major < 3)
+		return -1;
+	if (profile != GLX_CONTEXT_CORE_PROFILE_BIT_ARB && profile != GLX_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB)
+		return -1;
+
+	/* Succeeded: GL's spelling of the flags. */
+	*flags = 0;
+	if ((bits & GLX_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB) != 0)
+		*flags |= GLX_GL_FORWARD_COMPATIBLE;
+	if ((bits & GLX_CONTEXT_DEBUG_BIT_ARB) != 0)
+		*flags |= GLX_GL_DEBUG;
+	return 0;
+}
+
+/*
+ * Makes a context of a desktop GL version with its flags: the EGL display
+ * at the first one, a config with or without a depth buffer, an OpenGL
+ * ES 3 context.
+ */
 static GLXContext
 glx_context(
 	Display *dpy,
-	int depth)
+	int depth,
+	unsigned version,
+	GLint flags)
 {
 	static const EGLint context_attributes[] = {
-		EGL_CONTEXT_CLIENT_VERSION, 2,
+		EGL_CONTEXT_CLIENT_VERSION, 3,
 		EGL_NONE
 	};
 	EGLint config_attributes[] = {
 		EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
-		EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
+		EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT,
 		EGL_RED_SIZE, 8,
 		EGL_GREEN_SIZE, 8,
 		EGL_BLUE_SIZE, 8,
@@ -941,6 +1096,8 @@ glx_context(
 		return NULL;
 	ctx->display = dpy;
 	ctx->depth = depth;
+	ctx->version = version;
+	ctx->flags = flags;
 	ctx->pbuffer = EGL_NO_SURFACE;
 
 	/* The config, with a depth buffer when the visual has one. */

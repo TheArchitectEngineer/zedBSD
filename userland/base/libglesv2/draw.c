@@ -51,6 +51,7 @@ static unsigned draw_sampler_shape(GLenum type);
 static unsigned draw_sampler_kind(GLenum type);
 static int draw_texture_matches(const struct gles_texture *texture, unsigned kind);
 static void draw_raster(struct gles_state *state, const struct gles_target *target, uint32_t topology, struct gles_raster *raster);
+static uint32_t draw_channels(const struct gles_state *state, unsigned index);
 static VkPipeline draw_pipeline(struct gles_state *state, const struct gles_target *target, const struct gles_raster *raster, const struct gles_vertex_layout *layout);
 static int draw_blocks(struct zegl_context *context, struct gles_state *state, VkDescriptorBufferInfo *blocks);
 static VkDescriptorSet draw_descriptors(struct gles_state *state, const VkDescriptorBufferInfo *blocks, const VkDescriptorBufferInfo *capture, uint32_t *offset);
@@ -401,6 +402,7 @@ glClear(
 	VkClearRect rect;
 	const VkClearValue *clear;
 	uint32_t count;
+	uint32_t channels;
 	unsigned index;
 	unsigned channel;
 	EGLint error;
@@ -416,8 +418,8 @@ glClear(
 		return;
 	}
 
-	/* Discarded rasterization clears nothing. */
-	if (state->rasterizer_discard)
+	/* Discarded rasterization clears nothing, nor does a conditional rendering whose query saw nothing. */
+	if (state->rasterizer_discard || state->conditional_skip)
 		return;
 
 	/* A draw surface, whose frame records the clear. */
@@ -446,6 +448,7 @@ glClear(
 	    state->default_draw_buffer == GL_BACK &&
 	    surface->passes == 0U &&
 	    !state->scissor_test &&
+	    !state->indexed_masked &&
 	    state->color_mask[0] &&
 	    state->color_mask[1] &&
 	    state->color_mask[2] &&
@@ -464,6 +467,11 @@ glClear(
 	memset(attachments, 0, sizeof(attachments));
 	for (index = 0U; (mask & GL_COLOR_BUFFER_BIT) != 0U && index < target.color_count; index++) {
 		if ((target.draw_mask & (1U << index)) == 0U)
+			continue;
+
+		/* Not an attachment whose draw buffer's colour mask writes no channel. */
+		channels = draw_channels(state, index);
+		if (channels == 0U)
 			continue;
 
 		/* The attachment and its value. */
@@ -1256,10 +1264,10 @@ draw_primitives(
 	struct gles_program *program;
 	int flat;
 
-	/* A context with its state. */
+	/* A context with its state, not in a conditional rendering whose query saw nothing. */
 	context = gles_context();
 	state = gles_state(context);
-	if (state == NULL)
+	if (state == NULL || state->conditional_skip)
 		return;
 
 	/* A program the application made draws as it is (OpenGL ES has nothing else). */
@@ -2531,15 +2539,21 @@ draw_raster(
 	unsigned face;
 	unsigned index;
 	uint32_t channels;
+	uint32_t buffers;
 
 	/* Everything not set is 0, so equal states compare equal. */
 	memset(raster, 0, sizeof(*raster));
 	raster->topology = topology;
 
-	/* Blending, on each attachment that blends (not integers, not formats the device does not blend). */
+	/* Blending, on each attachment whose draw buffer blends (not integers, not formats the device does not blend). */
 	raster->color_count = target->color_count;
-	if (state->blend) {
-		raster->blend = ((1U << target->color_count) - 1U) & ~(target->integer_mask | target->opaque_mask);
+	buffers = 0U;
+	if (state->blend)
+		buffers = (1U << GLES_DRAW_BUFFERS) - 1U;
+	if (state->blend_indexed)
+		buffers = state->blend_buffers;
+	if (buffers != 0U) {
+		raster->blend = buffers & ((1U << target->color_count) - 1U) & ~(target->integer_mask | target->opaque_mask);
 		raster->blend_src_rgb = state->blend_src_rgb;
 		raster->blend_dst_rgb = state->blend_dst_rgb;
 		raster->blend_src_alpha = state->blend_src_alpha;
@@ -2548,17 +2562,12 @@ draw_raster(
 		raster->blend_equation_alpha = state->blend_equation_alpha;
 	}
 
-	/* The colour mask as four bits, on each attachment a draw buffer writes. */
-	channels = 0U;
-	for (face = 0U; face < 4U; face++) {
-		if (state->color_mask[face])
-			channels |= 1U << face;
-	}
-
-	/* The mask on each attachment written. */
+	/* The colour mask as four bits on each attachment a draw buffer writes (its own mask once one was set). */
 	for (index = 0U; index < target->color_count; index++) {
-		if ((target->draw_mask & (1U << index)) != 0U)
-			raster->color_mask |= channels << (index * 4U);
+		if ((target->draw_mask & (1U << index)) == 0U)
+			continue;
+		channels = draw_channels(state, index);
+		raster->color_mask |= channels << (index * 4U);
 	}
 
 	/* Depth. */
@@ -2593,6 +2602,32 @@ draw_raster(
 	    raster->blend != 0U &&
 	    raster->blend != (1U << target->color_count) - 1U)
 		raster->blend = 0U;
+}
+
+/* Returns the channels draws write into the attachment of a draw buffer, as four bits (red first): its own mask (glColorMaski) or the shared one. */
+static uint32_t
+draw_channels(
+	const struct gles_state *state,
+	unsigned index)
+{
+	const GLboolean *mask;
+	uint32_t channels;
+	unsigned channel;
+
+	/* The buffer's own mask once one was set. */
+	mask = state->color_mask;
+	if (state->indexed_masked && index < GLES_DRAW_BUFFERS)
+		mask = state->indexed_masks[index];
+
+	/* Its channels as bits. */
+	channels = 0U;
+	for (channel = 0U; channel < 4U; channel++) {
+		if (mask[channel])
+			channels |= 1U << channel;
+	}
+
+	/* Succeeded: the four bits. */
+	return channels;
 }
 
 /* Returns the pipeline for the program, the target's pass, the state and the vertex layout, making it the first time. */
@@ -3210,6 +3245,7 @@ draw_clear_buffer(
 	struct gles_target target;
 	VkClearAttachment attachment;
 	VkClearRect rect;
+	uint32_t channels;
 	int status;
 
 	/* A context with its state, and a buffer of the call's kind. */
@@ -3230,6 +3266,10 @@ draw_clear_buffer(
 		return;
 	}
 
+	/* A conditional rendering whose query saw nothing clears nothing. */
+	if (state->conditional_skip)
+		return;
+
 	/* The target's pass. */
 	status = gles_target_open(context, state, NULL, &target);
 	if (status != 0)
@@ -3240,6 +3280,9 @@ draw_clear_buffer(
 	attachment.clearValue = *value;
 	if (buffer == GL_COLOR) {
 		if ((target.draw_mask & (1U << (unsigned)drawbuffer)) == 0U)
+			return;
+		channels = draw_channels(state, (unsigned)drawbuffer);
+		if (channels == 0U)
 			return;
 		attachment.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		attachment.colorAttachment = (uint32_t)drawbuffer;

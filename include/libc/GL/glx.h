@@ -8,7 +8,8 @@
 /*
  * zedBSD's GLX 1.4 (WS069 p004): OpenGL contexts for Xzed's windows.
  * Rendering is direct (libGL draws with EGL and OpenGL ES on Vulkan and
- * puts each frame into the window).
+ * puts each frame into the window).  glXCreateContextAttribsARB makes an
+ * OpenGL 3.0 context (WS068 p013).
  */
 
 #ifndef LIBC_GL_GLX_H
@@ -27,6 +28,8 @@ extern "C" {
 #define GLX_VERSION_1_3 1
 #define GLX_VERSION_1_4 1
 #define GLX_ARB_get_proc_address 1
+#define GLX_ARB_create_context 1
+#define GLX_ARB_create_context_profile 1
 
 /* glXChooseVisual's and glXGetConfig's attributes. */
 #define GLX_USE_GL		1
@@ -84,6 +87,16 @@ extern "C" {
 #define GLX_WIDTH		0x801D
 #define GLX_HEIGHT		0x801E
 
+/* GLX_ARB_create_context and GLX_ARB_create_context_profile. */
+#define GLX_CONTEXT_MAJOR_VERSION_ARB		0x2091
+#define GLX_CONTEXT_MINOR_VERSION_ARB		0x2092
+#define GLX_CONTEXT_FLAGS_ARB			0x2094
+#define GLX_CONTEXT_PROFILE_MASK_ARB		0x9126
+#define GLX_CONTEXT_DEBUG_BIT_ARB		0x00000001
+#define GLX_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB	0x00000002
+#define GLX_CONTEXT_CORE_PROFILE_BIT_ARB	0x00000001
+#define GLX_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB 0x00000002
+
 typedef struct __GLXcontextRec *GLXContext;
 typedef struct __GLXFBConfigRec *GLXFBConfig;
 typedef XID GLXDrawable;
@@ -119,6 +132,8 @@ GLXContext glXCreateNewContext(Display *dpy, GLXFBConfig config, int renderType,
 Bool glXMakeContextCurrent(Display *dpy, GLXDrawable draw, GLXDrawable read, GLXContext ctx);
 GLXWindow glXCreateWindow(Display *dpy, GLXFBConfig config, Window win, const int *attribList);
 void glXDestroyWindow(Display *dpy, GLXWindow window);
+GLXContext glXCreateContextAttribsARB(Display *dpy, GLXFBConfig config, GLXContext shareContext, Bool direct, const int *attribList);
+typedef GLXContext (*PFNGLXCREATECONTEXTATTRIBSARBPROC)(Display *dpy, GLXFBConfig config, GLXContext shareContext, Bool direct, const int *attribList);
 
 #ifdef __cplusplus
 }

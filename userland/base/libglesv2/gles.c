@@ -59,6 +59,7 @@ static GLint gles_buffer_name(const struct gles_buffer *buffer);
 static GLenum gles_draw_buffer(struct gles_state *state, GLenum index);
 static GLenum gles_read_buffer(struct gles_state *state);
 static GLenum gles_read_pair(struct gles_state *state, GLenum pname);
+static void gles_blend_buffer(GLenum target, GLuint index, int on);
 static int gles_version_three(struct zegl_context *context);
 static unsigned gles_floats(struct zegl_context *context, struct gles_state *state, GLenum pname, GLfloat *values);
 
@@ -444,8 +445,10 @@ glEnable(
 		return;
 	}
 
-	/* On. */
+	/* On (blending: on every draw buffer again). */
 	*flag = 1;
+	if (cap == GL_BLEND)
+		state->blend_indexed = 0;
 }
 
 /*
@@ -471,8 +474,10 @@ glDisable(
 		return;
 	}
 
-	/* Off. */
+	/* Off (blending: on every draw buffer again). */
 	*flag = 0;
+	if (cap == GL_BLEND)
+		state->blend_indexed = 0;
 }
 
 /*
@@ -609,6 +614,162 @@ glColorMask(
 	state->color_mask[1] = green;
 	state->color_mask[2] = blue;
 	state->color_mask[3] = alpha;
+
+	/* Every draw buffer alike again. */
+	state->indexed_masked = 0;
+}
+
+/*
+ * Sets which colour channels draws write into one draw buffer.
+ */
+GL_APICALL void GL_APIENTRY
+glColorMaski(
+	GLuint buf,
+	GLboolean red,
+	GLboolean green,
+	GLboolean blue,
+	GLboolean alpha)
+{
+	struct zegl_context *context;
+	struct gles_state *state;
+	unsigned index;
+
+	/* A context with its state, and a draw buffer. */
+	context = gles_context();
+	state = gles_state(context);
+	if (state == NULL)
+		return;
+	if (buf >= GLES_DRAW_BUFFERS) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* Each buffer starts from the shared mask the first time. */
+	if (!state->indexed_masked) {
+		for (index = 0U; index < GLES_DRAW_BUFFERS; index++)
+			memcpy(state->indexed_masks[index], state->color_mask, sizeof(state->color_mask));
+		state->indexed_masked = 1;
+	}
+
+	/* The buffer's channels (buffer 0's are the shared mask glGet reports). */
+	state->indexed_masks[buf][0] = red;
+	state->indexed_masks[buf][1] = green;
+	state->indexed_masks[buf][2] = blue;
+	state->indexed_masks[buf][3] = alpha;
+	if (buf == 0U)
+		memcpy(state->color_mask, state->indexed_masks[0], sizeof(state->color_mask));
+}
+
+/*
+ * Turns blending on for one draw buffer.
+ */
+GL_APICALL void GL_APIENTRY
+glEnablei(
+	GLenum target,
+	GLuint index)
+{
+	/* Blending on. */
+	gles_blend_buffer(target, index, 1);
+}
+
+/*
+ * Turns blending off for one draw buffer.
+ */
+GL_APICALL void GL_APIENTRY
+glDisablei(
+	GLenum target,
+	GLuint index)
+{
+	/* Blending off. */
+	gles_blend_buffer(target, index, 0);
+}
+
+/*
+ * Reports whether blending is on for one draw buffer.
+ */
+GL_APICALL GLboolean GL_APIENTRY
+glIsEnabledi(
+	GLenum target,
+	GLuint index)
+{
+	struct zegl_context *context;
+	struct gles_state *state;
+
+	/* A context with its state, and blending. */
+	context = gles_context();
+	state = gles_state(context);
+	if (state == NULL)
+		return GL_FALSE;
+	if (target != GL_BLEND) {
+		gles_error(context, GL_INVALID_ENUM);
+		return GL_FALSE;
+	}
+
+	/* A draw buffer there is. */
+	if (index >= GLES_DRAW_BUFFERS) {
+		gles_error(context, GL_INVALID_VALUE);
+		return GL_FALSE;
+	}
+
+	/* The buffer's own, once one was set. */
+	if (state->blend_indexed) {
+		if ((state->blend_buffers & (1U << index)) != 0U)
+			return GL_TRUE;
+		return GL_FALSE;
+	}
+
+	/* The shared one. */
+	if (state->blend)
+		return GL_TRUE;
+
+	/* Off. */
+	return GL_FALSE;
+}
+
+/*
+ * Reports an indexed boolean state: a draw buffer's colour mask, or an
+ * indexed integer state (a buffer binding) as a boolean.
+ */
+GL_APICALL void GL_APIENTRY
+glGetBooleani_v(
+	GLenum target,
+	GLuint index,
+	GLboolean *data)
+{
+	struct zegl_context *context;
+	struct gles_state *state;
+	GLint value;
+
+	/* A context with its state. */
+	context = gles_context();
+	state = gles_state(context);
+	if (state == NULL)
+		return;
+
+	/* An indexed integer state (glGetIntegeri_v reports a name that is not one). */
+	if (target != GL_COLOR_WRITEMASK) {
+		value = 0;
+		glGetIntegeri_v(target, index, &value);
+		data[0] = GL_FALSE;
+		if (value != 0)
+			data[0] = GL_TRUE;
+		return;
+	}
+
+	/* A draw buffer. */
+	if (index >= GLES_DRAW_BUFFERS) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* The buffer's own, or the shared one. */
+	if (state->indexed_masked) {
+		memcpy(data, state->indexed_masks[index], 4U);
+		return;
+	}
+
+	/* Succeeded: the shared mask. */
+	memcpy(data, state->color_mask, 4U);
 }
 
 /*
@@ -1517,6 +1678,7 @@ gles_integers(
 	int *flag;
 	unsigned count;
 	int status;
+	int three;
 
 	/* A capability is an integer 0 or 1. */
 	status = gles_capability(state, pname, &flag);
@@ -1525,9 +1687,23 @@ gles_integers(
 		return 1U;
 	}
 
+	/* Desktop GL's version and context flags are the fixed-function layer's (libGL). */
+	if (gles_fixed != NULL &&
+	    (pname == GL_MAJOR_VERSION || pname == GL_MINOR_VERSION || pname == GL_CONTEXT_FLAGS))
+		return 0U;
+
 	/* The rest, one by one. */
 	config = context->config;
 	switch (pname) {
+	case GL_MAJOR_VERSION:
+		three = gles_version_three(context);
+		values[0] = 2;
+		if (three)
+			values[0] = 3;
+		return 1U;
+	case GL_MINOR_VERSION:
+		values[0] = 0;
+		return 1U;
 	case GL_VIEWPORT:
 		memcpy(values, context->gles.viewport, 4U * sizeof(GLint));
 		return 4U;
@@ -1992,6 +2168,53 @@ gles_version_three(
 
 	/* Succeeded: OpenGL ES 3.0. */
 	return 1;
+}
+
+/* Turns blending on or off for one draw buffer (glEnablei, glDisablei). */
+static void
+gles_blend_buffer(
+	GLenum target,
+	GLuint index,
+	int on)
+{
+	struct zegl_context *context;
+	struct gles_state *state;
+
+	/* A context with its state, and blending. */
+	context = gles_context();
+	state = gles_state(context);
+	if (state == NULL)
+		return;
+	if (target != GL_BLEND) {
+		gles_error(context, GL_INVALID_ENUM);
+		return;
+	}
+
+	/* A draw buffer there is. */
+	if (index >= GLES_DRAW_BUFFERS) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* Each buffer starts from the shared state the first time. */
+	if (!state->blend_indexed) {
+		state->blend_buffers = 0U;
+		if (state->blend)
+			state->blend_buffers = (1U << GLES_DRAW_BUFFERS) - 1U;
+		state->blend_indexed = 1;
+	}
+
+	/* The buffer's bit. */
+	if (on) {
+		state->blend_buffers |= 1U << index;
+	} else {
+		state->blend_buffers &= ~(1U << index);
+	}
+
+	/* The shared flag (glIsEnabled) says whether any buffer blends. */
+	state->blend = 0;
+	if (state->blend_buffers != 0U)
+		state->blend = 1;
 }
 
 /* Returns a buffer's name, 0 for none. */
