@@ -164,8 +164,9 @@ drv_i915_gfx_pipeline_kernels(
 	for (index = 0U; index < kernels->vs_input_count && index < I915_GFX_MAX_VERTEX_ATTRIBUTES; index++)
 		kernels->vs_inputs[index] = vertex->input_locations[index];
 
-	/* Takes the varyings and the pixel kernel's payload start and sampled images. */
+	/* Takes the varyings, and whether the vertex kernel writes the point size. */
 	kernels->varyings = vertex->varying_count;
+	kernels->vs_point_size = vertex->writes_point_size;
 
 	/*
 	 * Finds the VUE slot of each fragment input; the fit check made sure the
@@ -175,12 +176,25 @@ drv_i915_gfx_pipeline_kernels(
 	kernels->ps_input_count = fragment->input_count;
 	kernels->ps_flat_mask = fragment->input_flat_mask;
 	for (index = 0U; index < fragment->input_count && index < I915_GFX_MAX_VARYINGS; index++) {
+		/* gl_PointCoord is the point sprite's coordinate, which the setup makes in place of a slot. */
+		if (fragment->input_locations[index] == I915_SHADER_LOCATION_POINT_COORD) {
+			kernels->ps_point_sprite_mask |= 1U << index;
+			kernels->ps_input_slots[index] = 0U;
+			continue;
+		}
+
+		/* Any other input comes from the slot the vertex kernel writes its location to. */
 		slot = 0U;
 		found = i915_pipeline_input_slot(vertex, fragment->input_locations[index], &slot);
 		if (found != 0)
 			slot = 0U;
 		kernels->ps_input_slots[index] = slot;
 	}
+
+	/* Takes what the pixel kernel's payload carries beyond the perspective barycentrics. */
+	kernels->ps_linear_barycentrics = fragment->uses_linear_barycentrics;
+	kernels->ps_source_depth = fragment->uses_source_depth;
+	kernels->ps_source_w = fragment->uses_source_w;
 
 	kernels->ps_grf_start = fragment->dispatch_grf_start;
 	kernels->ps_samplers = fragment->sampler_count;
@@ -281,9 +295,11 @@ i915_pipeline_kernels_fit(
 	/*
 	 * The stages' interfaces must agree: every location the fragment kernel
 	 * reads is one the vertex kernel writes (it may read only some of them,
-	 * in any order).
+	 * in any order), but for gl_PointCoord, which the setup makes.
 	 */
 	for (index = 0U; index < pipeline->fs_binary->input_count; index++) {
+		if (pipeline->fs_binary->input_locations[index] == I915_SHADER_LOCATION_POINT_COORD)
+			continue;
 		found = i915_pipeline_input_slot(pipeline->vs_binary, pipeline->fs_binary->input_locations[index], &slot);
 		if (found != 0) {
 			kern_logf("i915: vk: the fragment shader reads location %u, which the vertex shader does not write\n",

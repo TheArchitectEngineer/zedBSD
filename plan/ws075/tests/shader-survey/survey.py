@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ws075-p001: lists everything in SPIR-V modules that the i915 executor's shader compiler does not take, without stopping
 # at the first thing (the compiler itself refuses the whole module at its first refusal).  The rules copy what
-# src/drivers/gpu/i915/compiler/spirv.c accepts as of 2026-09-27; each rule names the function it copies.  Shape rules
+# src/drivers/gpu/i915/compiler/spirv.c (and compile.c) accept as of 2026-09-28; each rule names the function it copies.  Shape rules
 # (operand sizes, nesting depths, dynamic indices, phis) are not copied: the compiler's first refusal is compared by
 # run.sh to catch a module whose only gaps are of that kind.
 #
@@ -13,10 +13,9 @@ import sys
 
 # i915_spirv_declare_decoration, i915_spirv_declare_member_decoration.
 DECORATIONS = {'Location', 'Binding', 'DescriptorSet', 'BuiltIn', 'ArrayStride', 'Block', 'RelaxedPrecision', 'Flat',
-               'Centroid'}
-# i915_spirv_decoration_ignored: NoPerspective only on a vertex shader's output.
-VERTEX_DECORATIONS = {'NoPerspective'}
-MEMBER_DECORATIONS = {'Offset', 'BuiltIn', 'MatrixStride', 'RowMajor', 'ColMajor', 'RelaxedPrecision'}
+               'Centroid', 'NoPerspective'}
+MEMBER_DECORATIONS = {'Offset', 'BuiltIn', 'MatrixStride', 'RowMajor', 'ColMajor', 'RelaxedPrecision', 'Flat', 'Centroid',
+                      'NoPerspective'}
 
 # i915_spirv_declare_variable: module variables of these storage classes (Input and Output with a Location; an Output
 # without one is a block written only through its Position builtin).
@@ -42,17 +41,22 @@ BODY = {'OpReturn', 'OpUnreachable', 'OpBranch', 'OpBranchConditional', 'OpSelec
         'OpShiftRightArithmetic', 'OpShiftLeftLogical', 'OpBitwiseOr', 'OpBitwiseXor', 'OpBitwiseAnd', 'OpSNegate', 'OpNot',
         'OpConvertFToU', 'OpConvertFToS', 'OpConvertSToF', 'OpConvertUToF', 'OpBitcast', 'OpVectorTimesScalar',
         'OpMatrixTimesScalar', 'OpVectorTimesMatrix', 'OpMatrixTimesVector', 'OpMatrixTimesMatrix', 'OpTranspose',
-        'OpOuterProduct', 'OpFNegate', 'OpDot', 'OpCompositeConstruct', 'OpCompositeExtract', 'OpVectorShuffle', 'OpExtInst',
-        'OpImageSampleImplicitLod', 'OpLabel', 'OpFunction', 'OpFunctionEnd', 'OpNop', 'OpLine', 'OpNoLine'}
+        'OpOuterProduct', 'OpFNegate', 'OpDot', 'OpCompositeConstruct', 'OpCompositeExtract', 'OpCompositeInsert',
+        'OpCopyObject', 'OpVectorShuffle', 'OpExtInst',
+        'OpImageSampleImplicitLod', 'OpImageSampleExplicitLod', 'OpLabel', 'OpFunction', 'OpFunctionEnd', 'OpNop', 'OpLine',
+        'OpNoLine', 'OpDPdx', 'OpDPdy', 'OpFwidth', 'OpDPdxFine', 'OpDPdxCoarse', 'OpDPdyCoarse', 'OpFwidthCoarse'}
+
+# i915_spirv_lower_sample: the image operands of a sample that are lowered.
+SAMPLE_OPERANDS = {'Bias', 'Lod', 'ConstOffset'}
 
 # i915_spirv_lower_extended: GLSL.std.450.
 EXTENDED = {'Round', 'RoundEven', 'Trunc', 'FAbs', 'SAbs', 'FSign', 'SSign', 'Floor', 'Ceil', 'Fract', 'Radians', 'Degrees',
             'Sin', 'Cos', 'Tan', 'Pow', 'Exp', 'Log', 'Exp2', 'Log2', 'Sqrt', 'InverseSqrt', 'FMin', 'UMin', 'SMin', 'FMax',
             'UMax', 'SMax', 'FClamp', 'UClamp', 'SClamp', 'FMix', 'Step', 'SmoothStep', 'Length', 'Distance', 'Cross',
-            'Normalize', 'Reflect'}
+            'Normalize', 'Reflect', 'Determinant', 'MatrixInverse', 'PackHalf2x16', 'UnpackHalf2x16'}
 
-# i915_spirv_lower_store: the one output builtin that is written.
-OUTPUT_BUILTINS = {'Position'}
+# i915_spirv_lower_store_output: the output builtins that are written.
+OUTPUT_BUILTINS = {'Position', 'PointSize'}
 
 
 def disassemble(path):
@@ -111,7 +115,7 @@ def survey(path):
 
 		# Decorations; the builtins kept for the variables.
 		if opcode == 'OpDecorate':
-			if operands[1] not in DECORATIONS and not (stage == 'Vertex' and operands[1] in VERTEX_DECORATIONS):
+			if operands[1] not in DECORATIONS:
 				gap('decoration %s' % operands[1])
 			if operands[1] == 'BuiltIn':
 				builtins[operands[0]] = operands[2]
@@ -144,8 +148,9 @@ def survey(path):
 			if opcode == 'OpConstant' and types.get(operands[0], ['?'])[0] == 'OpTypeInt':
 				constants[result] = int(operands[1])
 			if opcode == 'OpConstantComposite':
+				# i915_spirv_declare_constant_composite: vectors, matrices, arrays and structures of constants.
 				kind = types.get(operands[0], ['?'])[0]
-				if kind not in ('OpTypeVector', 'OpTypeMatrix'):
+				if kind not in ('OpTypeVector', 'OpTypeMatrix', 'OpTypeArray', 'OpTypeStruct'):
 					gap('constant composite of %s' % kind[6:].lower())
 			if opcode == 'OpVariable':
 				storage = operands[1]
@@ -156,9 +161,10 @@ def survey(path):
 					gap('module variable in %s' % storage)
 				elif storage == 'Input' and result in builtins:
 					# i915_spirv_declare_variable: a vertex shader's VertexIndex and InstanceIndex are generated inputs.
-					# A fragment shader's FrontFacing is the payload's facing bit.
+					# A fragment shader's FrontFacing, FragCoord and PointCoord are the payload's facing bit, pixel
+					# position, depth and w, and the point sprite's coordinate.
 					generated = stage == 'Vertex' and builtins[result] in ('VertexIndex', 'InstanceIndex')
-					if stage == 'Fragment' and builtins[result] == 'FrontFacing':
+					if stage == 'Fragment' and builtins[result] in ('FrontFacing', 'FragCoord', 'PointCoord'):
 						generated = True
 					if not generated:
 						gap('input builtin %s' % builtins[result])
@@ -186,9 +192,9 @@ def survey(path):
 			gap('GLSL.std.450 %s' % operands[2])
 		if opcode == 'OpLoad':
 			loads[result] = operands[0]
-		if opcode == 'OpImageSampleImplicitLod':
-			# i915_spirv_lower_sample: texture(sampler2D, vec2) of four floats, without operands.
-			if len(operands) > 3:
+		if opcode in ('OpImageSampleImplicitLod', 'OpImageSampleExplicitLod'):
+			# i915_spirv_lower_sample: texture(sampler2D, vec2) of four floats, with a Bias, a Lod and a ConstOffset.
+			if len(operands) > 3 and not set(operands[3].split('|')) <= SAMPLE_OPERANDS:
 				gap('texture() with operands (%s)' % operands[3])
 			sampled = types.get(loads.get(operands[1], ''), ['?', ''])
 			image = types.get(sampled[1], ['?', '', '?', '0', '0', '0'])
@@ -199,10 +205,7 @@ def survey(path):
 			if vector[0] != 'OpTypeVector' or types.get(vector[1], ['?'])[0] != 'OpTypeFloat':
 				gap('texture() of an integer sampler')
 		if opcode == 'OpVariable':
-			pointer = types.get(operands[0])
-			pointee = types.get(pointer[2]) if pointer is not None else None
-			if pointee is not None and pointee[0] in ('OpTypeArray', 'OpTypeStruct'):
-				gap('local %s' % pointee[0][6:].lower())
+			# i915_spirv_lower_variable: scalars, vectors, matrices, and arrays and structures of them.
 			if len(operands) > 2:
 				gap('local variable initializer')
 		if opcode == 'OpAccessChain':

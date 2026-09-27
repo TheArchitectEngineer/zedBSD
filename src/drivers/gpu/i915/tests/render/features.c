@@ -26,7 +26,9 @@
  *    dynamic uniform buffer and the dynamic offset of its bind;
  *  - TEX3: a fragment shader sampling three textures, bound at two
  *    bindings of set 0 and one of set 1 with a linear and two nearest
- *    samplers, the two sets bound by one vkCmdBindDescriptorSets.
+ *    samplers, the two sets bound by one vkCmdBindDescriptorSets;
+ *  - TEXOPS (ws075-p004): texture() with and without a bias, textureLod(),
+ *    textureOffset() and textureLodOffset() of a texture of two levels.
  *
  * Each step logs "VKE1-<name> PASS" or "FAIL", then the thread logs the
  * verdict and closes the session.
@@ -81,6 +83,12 @@
 #define I915_VKE1_BLEND_CASES		16U
 #define I915_VKE1_UBO_VERTEX		64U
 #define I915_VKE1_TEX_VERTEX		68U
+#define I915_VKE1_TEXOPS_VERTEX		72U
+
+/* The texture operand step's texture: 8x8 RGBA8 and a 4x4 second level, where it is in the storage. */
+#define I915_VKE1_MIP_SIDE		8U
+#define I915_VKE1_MIP_LEVELS		2U
+#define I915_VKE1_MIP_OFFSET		0x34000U
 
 /* The floats of one transform block and of one material block (feature-shaders/ubo.vert, ubo.frag). */
 #define I915_VKE1_TRANSFORM_FLOATS	20U
@@ -110,6 +118,8 @@
 #define I915_VKE1_ID_TEX_PIPELINE	(I915_VKE1_IDENTITY + 12U)
 #define I915_VKE1_ID_TEX_SET0		(I915_VKE1_IDENTITY + 13U)
 #define I915_VKE1_ID_TEX_SET1		(I915_VKE1_IDENTITY + 14U)
+#define I915_VKE1_ID_TEXOPS_PIPELINE	(I915_VKE1_IDENTITY + 15U)
+#define I915_VKE1_ID_MIP_SET		(I915_VKE1_IDENTITY + 16U)
 #define I915_VKE1_ID_BLEND_PIPELINE	(I915_VKE1_IDENTITY + 0x100U)
 
 /* The wire opcodes the scenario sends, as libvulkan numbers them. */
@@ -140,6 +150,9 @@
 #define I915_VKE1_F_0			0x00000000U
 #define I915_VKE1_F_1			0x3f800000U
 #define I915_VKE1_F_64			0x42800000U
+
+/* The texture operand step's sampler reaches level 1: its largest LOD, as float bits. */
+#define I915_VKE1_F_MAX_LOD		0x3f800000U
 
 /* The pixels the scenario writes: RGBA8 in memory, red in the low byte. */
 #define I915_VKE1_BLACK			0xff000000U
@@ -228,11 +241,13 @@ struct i915_vke1 {
 	struct i915_gfx_shader ubo_vert;
 	struct i915_gfx_shader ubo_frag;
 	struct i915_gfx_shader tex3_frag;
+	struct i915_gfx_shader texops_frag;
 
 	/* The pipelines: one per blend case, the uniform one and the texturing one. */
 	struct i915_gfx_pipeline blend_pipelines[I915_VKE1_BLEND_CASES];
 	struct i915_gfx_pipeline ubo_pipeline;
 	struct i915_gfx_pipeline tex_pipeline;
+	struct i915_gfx_pipeline texops_pipeline;
 
 	/*
 	 * The uniform step's layouts and sets: both have a uniform buffer at
@@ -250,6 +265,12 @@ struct i915_vke1 {
 	struct i915_gfx_sampler samplers[I915_VKE1_TEXTURES];
 	struct i915_gfx_dset tex_set0;
 	struct i915_gfx_dset tex_set1;
+
+	/* The texture operand step's texture of two levels, its view, its sampler and its set. */
+	struct i915_gfx_image mip_texture;
+	struct i915_gfx_view mip_view;
+	struct i915_gfx_sampler mip_sampler;
+	struct i915_gfx_dset mip_set;
 
 	/* Nonzero once the objects are published, and once the command pool exists. */
 	int published;
@@ -322,6 +343,9 @@ static void i915_vke1_verdict(struct i915_vke1 *x, const char *what, int error);
 static void i915_vke1_step_blend(struct i915_vke1 *x);
 static void i915_vke1_step_ubo(struct i915_vke1 *x);
 static void i915_vke1_step_tex3(struct i915_vke1 *x);
+static void i915_vke1_mip_init(struct i915_vke1 *x);
+static void i915_vke1_mip_write(struct i915_vke1 *x);
+static void i915_vke1_step_texops(struct i915_vke1 *x);
 
 /*
  * Starts the feature scenario.
@@ -381,6 +405,7 @@ i915_vke1_thread(
 	i915_vke1_step_blend(x);
 	i915_vke1_step_ubo(x);
 	i915_vke1_step_tex3(x);
+	i915_vke1_step_texops(x);
 
 	/* Gives everything back and says how the steps went. */
 	i915_vke1_teardown(x);
@@ -597,6 +622,7 @@ i915_vke1_objects_init(
 	i915_vke1_shader_init(&x->ubo_vert, i915_vke1_ubo_vert, sizeof(i915_vke1_ubo_vert));
 	i915_vke1_shader_init(&x->ubo_frag, i915_vke1_ubo_frag, sizeof(i915_vke1_ubo_frag));
 	i915_vke1_shader_init(&x->tex3_frag, i915_vke1_tex3_frag, sizeof(i915_vke1_tex3_frag));
+	i915_vke1_shader_init(&x->texops_frag, i915_vke1_texops_frag, sizeof(i915_vke1_texops_frag));
 
 	/* One pipeline per blend case, with the case's blend. */
 	for (index = 0U; index < I915_VKE1_BLEND_CASES; index++) {
@@ -607,6 +633,7 @@ i915_vke1_objects_init(
 	/* The uniform pipeline and the texturing pipeline write without blending. */
 	i915_vke1_pipeline_init(&x->ubo_pipeline, &x->ubo_vert, &x->ubo_frag);
 	i915_vke1_pipeline_init(&x->tex_pipeline, &x->pass_vert, &x->tex3_frag);
+	i915_vke1_pipeline_init(&x->texops_pipeline, &x->pass_vert, &x->texops_frag);
 
 	/* The uniform layouts: binding 0 a uniform buffer; binding 1 a plain one, or a dynamic one. */
 	x->ubo_layout.count = 2U;
@@ -634,6 +661,11 @@ i915_vke1_objects_init(
 	x->tex_set0.slots[2].sampler = &x->samplers[1];
 	x->tex_set1.slots[1].view = &x->texture_views[2];
 	x->tex_set1.slots[1].sampler = &x->samplers[2];
+
+	/* The texture operand step's texture, its view and sampler, at binding 0 of its set. */
+	i915_vke1_mip_init(x);
+	x->mip_set.slots[0].view = &x->mip_view;
+	x->mip_set.slots[0].sampler = &x->mip_sampler;
 }
 
 /* Describes one buffer bound at an offset of the storage. */
@@ -813,6 +845,10 @@ i915_vke1_objects_publish(
 		error = drv_i915_object_insert(session, I915_VK_OBJ_DESCRIPTOR_SET, I915_VKE1_ID_TEX_SET0, &x->tex_set0);
 	if (error == 0)
 		error = drv_i915_object_insert(session, I915_VK_OBJ_DESCRIPTOR_SET, I915_VKE1_ID_TEX_SET1, &x->tex_set1);
+	if (error == 0)
+		error = drv_i915_object_insert(session, I915_VK_OBJ_PIPELINE, I915_VKE1_ID_TEXOPS_PIPELINE, &x->texops_pipeline);
+	if (error == 0)
+		error = drv_i915_object_insert(session, I915_VK_OBJ_DESCRIPTOR_SET, I915_VKE1_ID_MIP_SET, &x->mip_set);
 
 	/* Publishes the blend pipelines, one identity each. */
 	for (index = 0U; error == 0 && index < I915_VKE1_BLEND_CASES; index++)
@@ -851,6 +887,8 @@ i915_vke1_objects_withdraw(
 	drv_i915_object_remove(session, I915_VK_OBJ_DESCRIPTOR_SET, I915_VKE1_ID_DYNAMIC_SET);
 	drv_i915_object_remove(session, I915_VK_OBJ_DESCRIPTOR_SET, I915_VKE1_ID_TEX_SET0);
 	drv_i915_object_remove(session, I915_VK_OBJ_DESCRIPTOR_SET, I915_VKE1_ID_TEX_SET1);
+	drv_i915_object_remove(session, I915_VK_OBJ_PIPELINE, I915_VKE1_ID_TEXOPS_PIPELINE);
+	drv_i915_object_remove(session, I915_VK_OBJ_DESCRIPTOR_SET, I915_VKE1_ID_MIP_SET);
 	for (index = 0U; index < I915_VKE1_BLEND_CASES; index++)
 		drv_i915_object_remove(session, I915_VK_OBJ_PIPELINE, I915_VKE1_ID_BLEND_PIPELINE + index);
 	x->published = 0;
@@ -878,6 +916,11 @@ i915_vke1_pipelines_prepare(
 
 	/* The texturing pipeline. */
 	error = drv_i915_gfx_pipeline_prepare(x->render, &x->tex_pipeline);
+	if (error != 0)
+		return error;
+
+	/* The texture operand pipeline. */
+	error = drv_i915_gfx_pipeline_prepare(x->render, &x->texops_pipeline);
 	if (error != 0)
 		return error;
 
@@ -938,9 +981,10 @@ i915_vke1_data_write(
 				     i915_vke1_blend_cases[index].color);
 	}
 
-	/* The uniform quad over the whole target, and the textured quad over pixels 16 .. 48. */
+	/* The uniform quad over the whole target, the textured quad over pixels 16 .. 48 and the texture operand quad over all. */
 	i915_vke1_quad_write(words + I915_VKE1_UBO_VERTEX * 8U, 0U, 0U, 8U, 8U, white);
 	i915_vke1_texquad_write(words + I915_VKE1_TEX_VERTEX * 8U, 2U, 2U, 6U, 6U);
+	i915_vke1_texquad_write(words + I915_VKE1_TEXOPS_VERTEX * 8U, 0U, 0U, 8U, 8U);
 	drv_i915_gt_clflush(words, I915_VKE1_VERTEX_BYTES);
 
 	/* The indices of one quad. */
@@ -969,6 +1013,9 @@ i915_vke1_data_write(
 		texels[1] = i915_vke1_texels[index * 2U + 1U];
 		drv_i915_gt_clflush(texels, (size_t)x->textures[index].bytes);
 	}
+
+	/* The texture operand step's two levels. */
+	i915_vke1_mip_write(x);
 }
 
 /* Writes the four vertices of an axis-aligned quad between NDC steps (left, top) and (right, bottom) in one colour. */
@@ -1760,4 +1807,122 @@ i915_vke1_step_tex3(
 	}
 
 	i915_vke1_verdict(x, "TEX3", error);
+}
+
+/*
+ * Describes the texture operand step's texture: 8x8 RGBA8 with a 4x4
+ * second level, laid out by the executor's own mip layout at its place in
+ * the storage; a view of both levels and a nearest sampler clamped to the
+ * edge that reaches level 1.
+ */
+static void
+i915_vke1_mip_init(
+	struct i915_vke1 *x)
+{
+	struct i915_gfx_image *image;
+
+	/* The texture, laid out as a created image of two levels. */
+	image = &x->mip_texture;
+	image->format = VK_FORMAT_R8G8B8A8_UNORM;
+	image->width = I915_VKE1_MIP_SIDE;
+	image->height = I915_VKE1_MIP_SIDE;
+	image->usage = VK_IMAGE_USAGE_SAMPLED_BIT;
+	image->levels = I915_VKE1_MIP_LEVELS;
+	(void)drv_i915_gfx_image_layout(image);
+	image->memory = &x->memory;
+	image->offset = I915_VKE1_MIP_OFFSET;
+
+	/* A view of both levels. */
+	x->mip_view.image = image;
+	x->mip_view.format = VK_FORMAT_R8G8B8A8_UNORM;
+	x->mip_view.base_level = 0U;
+	x->mip_view.level_count = I915_VKE1_MIP_LEVELS;
+
+	/* Nearest texels of the nearest level, clamped to the edge, levels 0 .. 1. */
+	x->mip_sampler.mag_filter = VK_FILTER_NEAREST;
+	x->mip_sampler.min_filter = VK_FILTER_NEAREST;
+	x->mip_sampler.address_u = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	x->mip_sampler.address_v = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	x->mip_sampler.mipmap_mode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+	x->mip_sampler.lod_bias = I915_VKE1_F_0;
+	x->mip_sampler.min_lod = I915_VKE1_F_0;
+	x->mip_sampler.max_lod = I915_VKE1_F_MAX_LOD;
+}
+
+/*
+ * Writes the texture operand step's texels: each level row after row at
+ * the place the executor's mip layout gives it (drv_i915_gfx_image_level()),
+ * found through the storage's GPU address.
+ */
+static void
+i915_vke1_mip_write(
+	struct i915_vke1 *x)
+{
+	struct i915_gfx_surface surface;
+	const uint32_t *source;
+	uint64_t base;
+	uint8_t *level;
+	uint32_t index;
+	uint32_t row;
+	int error;
+
+	/* Clears the whole texture first. */
+	kern_memset(x->cpu + I915_VKE1_MIP_OFFSET, 0, (size_t)x->mip_texture.bytes);
+
+	/* Each level at its place: its rows of texels, the image's pitch apart. */
+	base = drv_i915_gfx_memory_va(&x->memory, 0U);
+	for (index = 0U; index < I915_VKE1_MIP_LEVELS; index++) {
+		error = drv_i915_gfx_image_level(&x->mip_texture, index, &surface);
+		if (error != 0)
+			return;
+		level = x->cpu + (surface.va - base);
+		source = i915_vke1_mip_level0;
+		if (index == 1U)
+			source = i915_vke1_mip_level1;
+		for (row = 0U; row < surface.height; row++)
+			kern_memcpy(level + (size_t)row * surface.pitch, source + row * surface.width, surface.width * 4U);
+	}
+
+	/* Makes the texels visible to the sampler. */
+	drv_i915_gt_clflush(x->cpu + I915_VKE1_MIP_OFFSET, (size_t)x->mip_texture.bytes);
+}
+
+/*
+ * TEXOPS: the texture operand pipeline over the whole target, its set as
+ * set 0; every pixel the texel its band's operation picks, exact (nearest
+ * filtering).
+ */
+static void
+i915_vke1_step_texops(
+	struct i915_vke1 *x)
+{
+	static const uint32_t black[4] = { I915_VKE1_F_0, I915_VKE1_F_0, I915_VKE1_F_0, I915_VKE1_F_1 };
+	uint64_t sets[1];
+	uint32_t index;
+	int error;
+
+	/* Records the pass on black, the pipeline, its set and the quad. */
+	sets[0] = I915_VKE1_ID_MIP_SET;
+	i915_vke1_begin(x);
+	i915_vke1_begin_pass(x, black);
+	i915_vke1_bind_pipeline(x, I915_VKE1_ID_TEXOPS_PIPELINE);
+	i915_vke1_bind_buffers(x);
+	i915_vke1_bind_sets(x, 0U, sets, 1U, NULL, 0U);
+	i915_vke1_draw_quad(x, I915_VKE1_TEXOPS_VERTEX);
+	i915_vke1_record(x, I915_VKE1_OP_END_RENDER_PASS);
+
+	/* Runs it and compares every pixel with the generated image. */
+	error = i915_vke1_finish(x, "TEXOPS");
+	if (error == 0) {
+		for (index = 0U; index < I915_VKE1_SIZE * I915_VKE1_SIZE; index++) {
+			x->expected[index] = i915_vke1_texops_expected[index];
+			x->tolerance[index] = 0U;
+		}
+
+		/* Compares with the generated image. */
+		error = i915_vke1_compare(x, "TEXOPS");
+	}
+
+	/* Logs the verdict. */
+	i915_vke1_verdict(x, "TEXOPS", error);
 }

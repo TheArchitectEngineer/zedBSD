@@ -36,7 +36,24 @@
  *    registers, a loop with per-pixel trip counts among them; the compiler
  *    spills to scratch memory and the draw gives the kernel its scratch;
  *  - VIO16: a vertex shader reading sixteen attributes and writing sixteen
- *    varyings (it gathers its VUE and spills), read by vary16.frag.
+ *    varyings (it gathers its VUE and spills), read by vary16.frag;
+ *
+ * and the steps of the GLES 2 core of the compiler (ws075-p004):
+ *
+ *  - AGG: local arrays and structures through dynamic indices, a constant
+ *    array, structures copied whole;
+ *  - MATFN: determinant and inverse of a mat2, a mat3 and a mat4, the
+ *    half-float packing;
+ *  - COORD: gl_FragCoord (the pixel centre, depth, w);
+ *  - DERIV: dFdx, dFdy, fwidth, and the coarse and fine x derivatives;
+ *  - NOPERSP, PERSP: an output block whose members are interpolated
+ *    without perspective, with it and flat, over a quad whose corners have
+ *    w of their own (the perspective one compared within
+ *    I915_VKE2_LOOSE_ULPS);
+ *  - POINT: a point list of several sizes written by gl_PointSize, each
+ *    pixel its gl_PointCoord;
+ *  - VFORMAT: vertex attributes of 8-, 16- and 10-bit formats, and a flat
+ *    output array copied into a local one and indexed.
  *
  * Each step logs "VKE2-<name> PASS" or "FAIL", then the thread logs the
  * verdict and closes the session.
@@ -80,6 +97,7 @@
 #define I915_VKE2_VERTEX_BYTES		0x01000U
 #define I915_VKE2_INDEX_OFFSET		0x13000U
 #define I915_VKE2_INDEX_BYTES		0x00100U
+#define I915_VKE2_FORMATS_OFFSET	0x14000U
 #define I915_VKE2_MATRICES_OFFSET	0x20000U
 #define I915_VKE2_PLACEMENT_OFFSET	0x21000U
 #define I915_VKE2_UNIFORM_BYTES		0x00100U
@@ -94,15 +112,35 @@
 #define I915_VKE2_WIDE_STRIDE		256U
 #define I915_VKE2_WIDE_ATTRIBUTES	16U
 
-/* The quad buffer holds the matrix step's quad first, then the plain full-target quad. */
+/*
+ * The quad buffer holds the matrix step's quad first, then the plain
+ * full-target quad, the interpolation step's quad (its corners with w of
+ * their own) and the point step's points.
+ */
 #define I915_VKE2_MATRIX_VERTEX		0U
 #define I915_VKE2_PLAIN_VERTEX		4U
+#define I915_VKE2_PERSP_VERTEX		8U
+#define I915_VKE2_POINT_VERTEX		12U
+
+/* The index buffer holds a quad's six indices, then the point step's indices 0, 1, ... from index 8. */
+#define I915_VKE2_POINT_INDEX		8U
+
+/* The format step's vertices: a vec4 position, then the attributes of regenerate.py's layout. */
+#define I915_VKE2_FORMAT_STRIDE		64U
+#define I915_VKE2_FORMAT_ATTRIBUTES	10U
 
 /* The bytes of push constants the matrix step pushes (matrix.frag's block). */
 #define I915_VKE2_PUSH_BYTES		128U
 
 /* How many units in the last place a float step's word may be off (the reciprocal of smoothstep's span). */
 #define I915_VKE2_FLOAT_ULPS		4U
+
+/*
+ * How many units in the last place the interpolation with perspective may
+ * be off: the barycentrics the hardware corrects for perspective are not
+ * exact (256 units of a value in [2, 4) are about 1e-4).
+ */
+#define I915_VKE2_LOOSE_ULPS		256U
 
 /* The wire identities the scenario publishes its objects under, apart from any client's and the other scenarios'. */
 #define I915_VKE2_IDENTITY		0x7e5e200000000000ULL
@@ -117,6 +155,7 @@
 #define I915_VKE2_ID_MATRICES		(I915_VKE2_IDENTITY + 9U)
 #define I915_VKE2_ID_PLACEMENT		(I915_VKE2_IDENTITY + 10U)
 #define I915_VKE2_ID_MATRIX_SET		(I915_VKE2_IDENTITY + 11U)
+#define I915_VKE2_ID_FORMATS		(I915_VKE2_IDENTITY + 12U)
 #define I915_VKE2_ID_PIPELINE		(I915_VKE2_IDENTITY + 0x100U)
 
 /* The wire opcodes the scenario sends, as libvulkan numbers them. */
@@ -149,9 +188,13 @@
 #define I915_VKE2_F_MINUS_1		0xbf800000U
 #define I915_VKE2_F_64			0x42800000U
 
-/* How the words of a step are compared: bit for bit, or as floats within some units in the last place. */
+/*
+ * How the words of a step are compared: bit for bit, or as floats within
+ * I915_VKE2_FLOAT_ULPS or I915_VKE2_LOOSE_ULPS units in the last place.
+ */
 #define I915_VKE2_COMPARE_EXACT		0U
 #define I915_VKE2_COMPARE_FLOAT		1U
+#define I915_VKE2_COMPARE_LOOSE		2U
 
 /* The pipelines, in the order of their identities. */
 #define I915_VKE2_PIPE_MATRIX		0U
@@ -163,7 +206,15 @@
 #define I915_VKE2_PIPE_VIN16		6U
 #define I915_VKE2_PIPE_SPILL		7U
 #define I915_VKE2_PIPE_VIO16		8U
-#define I915_VKE2_PIPELINES		9U
+#define I915_VKE2_PIPE_AGG		9U
+#define I915_VKE2_PIPE_MATFN		10U
+#define I915_VKE2_PIPE_COORD		11U
+#define I915_VKE2_PIPE_DERIV		12U
+#define I915_VKE2_PIPE_NOPERSP		13U
+#define I915_VKE2_PIPE_PERSP		14U
+#define I915_VKE2_PIPE_POINT		15U
+#define I915_VKE2_PIPE_VFORMAT		16U
+#define I915_VKE2_PIPELINES		17U
 
 /* The shader modules. */
 #define I915_VKE2_SHADER_QUAD_VERT	0U
@@ -179,7 +230,18 @@
 #define I915_VKE2_SHADER_VIN16_FRAG	10U
 #define I915_VKE2_SHADER_SPILL_FRAG	11U
 #define I915_VKE2_SHADER_VIO16_VERT	12U
-#define I915_VKE2_SHADERS		13U
+#define I915_VKE2_SHADER_AGG_FRAG	13U
+#define I915_VKE2_SHADER_MATFN_FRAG	14U
+#define I915_VKE2_SHADER_COORD_FRAG	15U
+#define I915_VKE2_SHADER_DERIV_FRAG	16U
+#define I915_VKE2_SHADER_NOPERSP_VERT	17U
+#define I915_VKE2_SHADER_NOPERSP_FRAG	18U
+#define I915_VKE2_SHADER_PERSP_FRAG	19U
+#define I915_VKE2_SHADER_POINT_VERT	20U
+#define I915_VKE2_SHADER_POINT_FRAG	21U
+#define I915_VKE2_SHADER_VFORMAT_VERT	22U
+#define I915_VKE2_SHADER_VFORMAT_FRAG	23U
+#define I915_VKE2_SHADERS		24U
 
 #include "../fixtures/generality-shaders-gen.inc"
 
@@ -206,10 +268,11 @@ struct i915_vke2 {
 	struct i915_gfx_pass pass;
 	struct i915_gfx_framebuffer framebuffer;
 
-	/* The three vertex buffers, the index buffer and the matrix step's two uniform buffers. */
+	/* The four vertex buffers, the index buffer and the matrix step's two uniform buffers. */
 	struct i915_gfx_buffer quads;
 	struct i915_gfx_buffer seeded;
 	struct i915_gfx_buffer wide;
+	struct i915_gfx_buffer formats;
 	struct i915_gfx_buffer indices;
 	struct i915_gfx_buffer matrices;
 	struct i915_gfx_buffer placement;
@@ -288,6 +351,10 @@ static int i915_vke2_compare(struct i915_vke2 *x, const char *what, uint32_t mod
 static void i915_vke2_verdict(struct i915_vke2 *x, const char *what, int error);
 static void i915_vke2_step_draw(struct i915_vke2 *x, const char *what, uint32_t pipeline, uint64_t vertices, uint32_t first_vertex, uint32_t mode);
 static void i915_vke2_step_matrix(struct i915_vke2 *x);
+static void i915_vke2_step_points(struct i915_vke2 *x);
+static void i915_vke2_vformat_layout(struct i915_gfx_pipeline *pipeline);
+static void i915_vke2_expect_p004(struct i915_vke2 *x, uint32_t pipeline);
+static uint32_t i915_vke2_point_word(uint32_t column, uint32_t row);
 
 /*
  * Starts the generality scenario.
@@ -353,6 +420,14 @@ i915_vke2_thread(
 	i915_vke2_step_draw(x, "VIN16", I915_VKE2_PIPE_VIN16, I915_VKE2_ID_WIDE, 0U, I915_VKE2_COMPARE_EXACT);
 	i915_vke2_step_draw(x, "SPILL", I915_VKE2_PIPE_SPILL, I915_VKE2_ID_QUADS, I915_VKE2_PLAIN_VERTEX, I915_VKE2_COMPARE_EXACT);
 	i915_vke2_step_draw(x, "VIO16", I915_VKE2_PIPE_VIO16, I915_VKE2_ID_WIDE, 0U, I915_VKE2_COMPARE_EXACT);
+	i915_vke2_step_draw(x, "AGG", I915_VKE2_PIPE_AGG, I915_VKE2_ID_QUADS, I915_VKE2_PLAIN_VERTEX, I915_VKE2_COMPARE_EXACT);
+	i915_vke2_step_draw(x, "MATFN", I915_VKE2_PIPE_MATFN, I915_VKE2_ID_QUADS, I915_VKE2_PLAIN_VERTEX, I915_VKE2_COMPARE_FLOAT);
+	i915_vke2_step_draw(x, "COORD", I915_VKE2_PIPE_COORD, I915_VKE2_ID_QUADS, I915_VKE2_PLAIN_VERTEX, I915_VKE2_COMPARE_EXACT);
+	i915_vke2_step_draw(x, "DERIV", I915_VKE2_PIPE_DERIV, I915_VKE2_ID_QUADS, I915_VKE2_PLAIN_VERTEX, I915_VKE2_COMPARE_EXACT);
+	i915_vke2_step_draw(x, "NOPERSP", I915_VKE2_PIPE_NOPERSP, I915_VKE2_ID_QUADS, I915_VKE2_PERSP_VERTEX, I915_VKE2_COMPARE_EXACT);
+	i915_vke2_step_draw(x, "PERSP", I915_VKE2_PIPE_PERSP, I915_VKE2_ID_QUADS, I915_VKE2_PERSP_VERTEX, I915_VKE2_COMPARE_LOOSE);
+	i915_vke2_step_points(x);
+	i915_vke2_step_draw(x, "VFORMAT", I915_VKE2_PIPE_VFORMAT, I915_VKE2_ID_FORMATS, 0U, I915_VKE2_COMPARE_EXACT);
 
 	/* Gives everything back and says how the steps went. */
 	i915_vke2_teardown(x);
@@ -541,6 +616,30 @@ i915_vke2_objects_init(
 		{ i915_vke2_vin16_frag, sizeof(i915_vke2_vin16_frag) },
 		{ i915_vke2_spill_frag, sizeof(i915_vke2_spill_frag) },
 		{ i915_vke2_vio16_vert, sizeof(i915_vke2_vio16_vert) },
+		{ i915_vke2_agg_frag, sizeof(i915_vke2_agg_frag) },
+		{ i915_vke2_matfn_frag, sizeof(i915_vke2_matfn_frag) },
+		{ i915_vke2_coord_frag, sizeof(i915_vke2_coord_frag) },
+		{ i915_vke2_deriv_frag, sizeof(i915_vke2_deriv_frag) },
+		{ i915_vke2_nopersp_vert, sizeof(i915_vke2_nopersp_vert) },
+		{ i915_vke2_nopersp_frag, sizeof(i915_vke2_nopersp_frag) },
+		{ i915_vke2_persp_frag, sizeof(i915_vke2_persp_frag) },
+		{ i915_vke2_point_vert, sizeof(i915_vke2_point_vert) },
+		{ i915_vke2_point_frag, sizeof(i915_vke2_point_frag) },
+		{ i915_vke2_vformat_vert, sizeof(i915_vke2_vformat_vert) },
+		{ i915_vke2_vformat_frag, sizeof(i915_vke2_vformat_frag) },
+	};
+	static const struct {
+		uint32_t pipeline;
+		uint32_t vertex;
+		uint32_t fragment;
+	} p004[] = {
+		{ I915_VKE2_PIPE_AGG, I915_VKE2_SHADER_QUAD_VERT, I915_VKE2_SHADER_AGG_FRAG },
+		{ I915_VKE2_PIPE_MATFN, I915_VKE2_SHADER_QUAD_VERT, I915_VKE2_SHADER_MATFN_FRAG },
+		{ I915_VKE2_PIPE_COORD, I915_VKE2_SHADER_QUAD_VERT, I915_VKE2_SHADER_COORD_FRAG },
+		{ I915_VKE2_PIPE_DERIV, I915_VKE2_SHADER_QUAD_VERT, I915_VKE2_SHADER_DERIV_FRAG },
+		{ I915_VKE2_PIPE_NOPERSP, I915_VKE2_SHADER_NOPERSP_VERT, I915_VKE2_SHADER_NOPERSP_FRAG },
+		{ I915_VKE2_PIPE_PERSP, I915_VKE2_SHADER_NOPERSP_VERT, I915_VKE2_SHADER_PERSP_FRAG },
+		{ I915_VKE2_PIPE_POINT, I915_VKE2_SHADER_POINT_VERT, I915_VKE2_SHADER_POINT_FRAG },
 	};
 	struct i915_gfx_shader *shaders;
 	uint32_t index;
@@ -580,6 +679,7 @@ i915_vke2_objects_init(
 	i915_vke2_buffer_init(x, &x->quads, I915_VKE2_VERTEX_BYTES, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, I915_VKE2_QUADS_OFFSET);
 	i915_vke2_buffer_init(x, &x->seeded, I915_VKE2_VERTEX_BYTES, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, I915_VKE2_SEEDED_OFFSET);
 	i915_vke2_buffer_init(x, &x->wide, I915_VKE2_VERTEX_BYTES, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, I915_VKE2_WIDE_OFFSET);
+	i915_vke2_buffer_init(x, &x->formats, I915_VKE2_VERTEX_BYTES, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, I915_VKE2_FORMATS_OFFSET);
 	i915_vke2_buffer_init(x, &x->indices, I915_VKE2_INDEX_BYTES, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, I915_VKE2_INDEX_OFFSET);
 	i915_vke2_buffer_init(x, &x->matrices, I915_VKE2_UNIFORM_BYTES, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, I915_VKE2_MATRICES_OFFSET);
 	i915_vke2_buffer_init(x, &x->placement, I915_VKE2_UNIFORM_BYTES, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, I915_VKE2_PLACEMENT_OFFSET);
@@ -635,6 +735,26 @@ i915_vke2_objects_init(
 				&shaders[I915_VKE2_SHADER_VARY16_FRAG],
 				I915_VKE2_WIDE_STRIDE,
 				I915_VKE2_WIDE_ATTRIBUTES);
+
+	/* The ws075-p004 steps over the quad layout; the point step draws a point list. */
+	for (index = 0U; index < sizeof(p004) / sizeof(p004[0]); index++) {
+		i915_vke2_pipeline_init(&x->pipelines[p004[index].pipeline],
+					&shaders[p004[index].vertex],
+					&shaders[p004[index].fragment],
+					I915_VKE2_QUAD_STRIDE,
+					2U);
+	}
+
+	/* The point step draws a point list. */
+	x->pipelines[I915_VKE2_PIPE_POINT].topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
+
+	/* The format step: the position, then attributes of their own formats. */
+	i915_vke2_pipeline_init(&x->pipelines[I915_VKE2_PIPE_VFORMAT],
+				&shaders[I915_VKE2_SHADER_VFORMAT_VERT],
+				&shaders[I915_VKE2_SHADER_VFORMAT_FRAG],
+				I915_VKE2_FORMAT_STRIDE,
+				1U);
+	i915_vke2_vformat_layout(&x->pipelines[I915_VKE2_PIPE_VFORMAT]);
 
 	/* The matrix step's layout: binding 0 for the fragment stage, binding 1 for the vertex stage. */
 	x->matrix_layout.count = 2U;
@@ -742,6 +862,8 @@ i915_vke2_objects_publish(
 	if (error == 0)
 		error = drv_i915_object_insert(session, I915_VK_OBJ_BUFFER, I915_VKE2_ID_WIDE, &x->wide);
 	if (error == 0)
+		error = drv_i915_object_insert(session, I915_VK_OBJ_BUFFER, I915_VKE2_ID_FORMATS, &x->formats);
+	if (error == 0)
 		error = drv_i915_object_insert(session, I915_VK_OBJ_BUFFER, I915_VKE2_ID_INDICES, &x->indices);
 	if (error == 0)
 		error = drv_i915_object_insert(session, I915_VK_OBJ_BUFFER, I915_VKE2_ID_MATRICES, &x->matrices);
@@ -782,6 +904,7 @@ i915_vke2_objects_withdraw(
 	drv_i915_object_remove(session, I915_VK_OBJ_BUFFER, I915_VKE2_ID_QUADS);
 	drv_i915_object_remove(session, I915_VK_OBJ_BUFFER, I915_VKE2_ID_SEEDED);
 	drv_i915_object_remove(session, I915_VK_OBJ_BUFFER, I915_VKE2_ID_WIDE);
+	drv_i915_object_remove(session, I915_VK_OBJ_BUFFER, I915_VKE2_ID_FORMATS);
 	drv_i915_object_remove(session, I915_VK_OBJ_BUFFER, I915_VKE2_ID_INDICES);
 	drv_i915_object_remove(session, I915_VK_OBJ_BUFFER, I915_VKE2_ID_MATRICES);
 	drv_i915_object_remove(session, I915_VK_OBJ_BUFFER, I915_VKE2_ID_PLACEMENT);
@@ -857,7 +980,11 @@ i915_vke2_data_write(
 	unsigned corner;
 	unsigned k;
 
-	/* The quads: the matrix step's corners before its chain, then the plain corners. */
+	/*
+	 * The quads: the matrix step's corners before its chain, then the plain
+	 * corners, the interpolation step's corners and the point step's
+	 * points, the last two as regenerate.py wrote them.
+	 */
 	words = (uint32_t *)(void *)(x->cpu + I915_VKE2_QUADS_OFFSET);
 	kern_memset(words, 0, I915_VKE2_VERTEX_BYTES);
 	for (corner = 0U; corner < 4U; corner++) {
@@ -867,6 +994,23 @@ i915_vke2_data_write(
 				       i915_vke2_matrix_corners[2U * corner + 1U]);
 		i915_vke2_corner_write(words + (I915_VKE2_PLAIN_VERTEX + corner) * 8U, corner, corner_x[corner], corner_y[corner]);
 	}
+
+	/* The interpolation and point steps' vertices as generated. */
+	kern_memcpy(words + I915_VKE2_PERSP_VERTEX * 8U, i915_vke2_persp_vertices, sizeof(i915_vke2_persp_vertices));
+	kern_memcpy(words + I915_VKE2_POINT_VERTEX * 8U, i915_vke2_point_vertices, sizeof(i915_vke2_point_vertices));
+	drv_i915_gt_clflush(words, I915_VKE2_VERTEX_BYTES);
+
+	/* The format quad: the plain corners' positions, then the same attribute bytes at every corner. */
+	words = (uint32_t *)(void *)(x->cpu + I915_VKE2_FORMATS_OFFSET);
+	kern_memset(words, 0, I915_VKE2_VERTEX_BYTES);
+	for (corner = 0U; corner < 4U; corner++) {
+		words[corner * 16U] = corner_x[corner];
+		words[corner * 16U + 1U] = corner_y[corner];
+		words[corner * 16U + 3U] = I915_VKE2_F_1;
+		kern_memcpy(&words[corner * 16U + 4U], i915_vke2_vformat_attributes, sizeof(i915_vke2_vformat_attributes));
+	}
+
+	/* Makes them visible to the fetcher. */
 	drv_i915_gt_clflush(words, I915_VKE2_VERTEX_BYTES);
 
 	/* The seeded quad: the plain corners, then the seed. */
@@ -888,8 +1032,11 @@ i915_vke2_data_write(
 	}
 	drv_i915_gt_clflush(words, I915_VKE2_VERTEX_BYTES);
 
-	/* The indices of one quad. */
+	/* The indices of one quad, then the points' 0, 1, ... from index 8. */
 	kern_memcpy(x->cpu + I915_VKE2_INDEX_OFFSET, quad_indices, sizeof(quad_indices));
+	words = (uint32_t *)(void *)(x->cpu + I915_VKE2_INDEX_OFFSET);
+	for (k = 0U; k < I915_VKE2_POINT_COUNT; k++)
+		words[I915_VKE2_POINT_INDEX + k] = k;
 	drv_i915_gt_clflush(x->cpu + I915_VKE2_INDEX_OFFSET, I915_VKE2_INDEX_BYTES);
 
 	/* The matrix step's two uniform blocks. */
@@ -1372,6 +1519,7 @@ i915_vke2_near(
 {
 	uint32_t magnitude;
 	uint32_t wanted;
+	uint32_t ulps;
 
 	/* An exact step, or an equal word. */
 	if (word == expected)
@@ -1389,10 +1537,15 @@ i915_vke2_near(
 	if ((word ^ expected) >> 31 != 0U)
 		return 0;
 
+	/* The units the step allows. */
+	ulps = I915_VKE2_FLOAT_ULPS;
+	if (mode == I915_VKE2_COMPARE_LOOSE)
+		ulps = I915_VKE2_LOOSE_ULPS;
+
 	/* Neighbouring floats of one sign are neighbouring words. */
-	if (magnitude > wanted + I915_VKE2_FLOAT_ULPS)
+	if (magnitude > wanted + ulps)
 		return 0;
-	if (wanted > magnitude + I915_VKE2_FLOAT_ULPS)
+	if (wanted > magnitude + ulps)
 		return 0;
 
 	/* Succeeded: within the units allowed. */
@@ -1495,7 +1648,7 @@ i915_vke2_step_draw(
 		return;
 	}
 
-	/* Picks the step's words: generated for the arithmetic steps, sums for the interface steps. */
+	/* Picks the step's words: generated for the arithmetic steps, sums for the interface steps, a rule for some ws075-p004 ones. */
 	generated = NULL;
 	twice = 0U;
 	switch (pipeline) {
@@ -1510,6 +1663,21 @@ i915_vke2_step_draw(
 		break;
 	case I915_VKE2_PIPE_SPILL:
 		generated = i915_vke2_spill_expected;
+		break;
+	case I915_VKE2_PIPE_AGG:
+		generated = i915_vke2_agg_expected;
+		break;
+	case I915_VKE2_PIPE_MATFN:
+		generated = i915_vke2_matfn_expected;
+		break;
+	case I915_VKE2_PIPE_PERSP:
+		generated = i915_vke2_persp_expected;
+		break;
+	case I915_VKE2_PIPE_COORD:
+	case I915_VKE2_PIPE_DERIV:
+	case I915_VKE2_PIPE_NOPERSP:
+	case I915_VKE2_PIPE_VFORMAT:
+		/* Made by rule below. */
 		break;
 	case I915_VKE2_PIPE_VIO16:
 		twice = I915_VKE2_VIO16_TWICE;
@@ -1528,6 +1696,8 @@ i915_vke2_step_draw(
 	/* Fills the expected words and compares. */
 	if (generated != NULL) {
 		kern_memcpy(x->expected, generated, sizeof(x->expected));
+	} else if (pipeline >= I915_VKE2_PIPE_AGG) {
+		i915_vke2_expect_p004(x, pipeline);
 	} else {
 		i915_vke2_expect_sums(x, twice);
 	}
@@ -1579,5 +1749,173 @@ i915_vke2_step_matrix(
 	}
 
 	i915_vke2_verdict(x, "MATRIX", error);
+}
+
+/*
+ * POINT: regenerate.py's points as a point list, each of the size its
+ * vertex writes to gl_PointSize; every pixel a point covers holds its
+ * gl_PointCoord and the point's number, every other one the clear colour.
+ */
+static void
+i915_vke2_step_points(
+	struct i915_vke2 *x)
+{
+	int error;
+
+	/* Records the pass, the point pipeline and the buffers. */
+	i915_vke2_begin(x);
+	i915_vke2_begin_pass(x);
+	i915_vke2_bind_pipeline(x, I915_VKE2_PIPE_POINT);
+	i915_vke2_bind_buffers(x, I915_VKE2_ID_QUADS);
+
+	/* vkCmdDrawIndexed of the points: [count][1][first index][first vertex][0]. */
+	i915_vke2_record(x, I915_VKE2_OP_DRAW_INDEXED);
+	i915_vke2_put32(x, I915_VKE2_POINT_COUNT);
+	i915_vke2_put32(x, 1U);
+	i915_vke2_put32(x, I915_VKE2_POINT_INDEX);
+	i915_vke2_put32(x, I915_VKE2_POINT_VERTEX);
+	i915_vke2_put32(x, 0U);
+	i915_vke2_record(x, I915_VKE2_OP_END_RENDER_PASS);
+
+	/* Runs it and compares every word with the generated ones. */
+	error = i915_vke2_finish(x, "POINT");
+	if (error == 0) {
+		i915_vke2_expect_p004(x, I915_VKE2_PIPE_POINT);
+		error = i915_vke2_compare(x, "POINT", I915_VKE2_COMPARE_EXACT);
+	}
+
+	/* Logs the verdict. */
+	i915_vke2_verdict(x, "POINT", error);
+}
+
+/*
+ * Gives the format step's pipeline its attributes after the position:
+ * locations 1 .. 9 of the formats and at the offsets regenerate.py packed
+ * the bytes with (vformat_attributes(), 16 bytes into the vertex).
+ */
+static void
+i915_vke2_vformat_layout(
+	struct i915_gfx_pipeline *pipeline)
+{
+	static const struct {
+		uint32_t format;
+		uint32_t offset;
+	} layout[I915_VKE2_FORMAT_ATTRIBUTES - 1U] = {
+		{ VK_FORMAT_R8G8B8A8_UNORM, 16U },
+		{ VK_FORMAT_R16G16_SSCALED, 20U },
+		{ VK_FORMAT_R16G16_SINT, 24U },
+		{ VK_FORMAT_R8G8B8_UINT, 28U },
+		{ VK_FORMAT_R16G16B16A16_SFLOAT, 32U },
+		{ VK_FORMAT_A2B10G10R10_UNORM_PACK32, 40U },
+		{ VK_FORMAT_R16_SNORM, 44U },
+		{ VK_FORMAT_R8G8_SSCALED, 46U },
+		{ VK_FORMAT_R16G16B16_UINT, 48U },
+	};
+	uint32_t index;
+
+	/* Attribute k + 1 at location k + 1, of its own format and place in the vertex. */
+	for (index = 0U; index < I915_VKE2_FORMAT_ATTRIBUTES - 1U; index++) {
+		pipeline->attributes[index + 1U].location = index + 1U;
+		pipeline->attributes[index + 1U].binding = 0U;
+		pipeline->attributes[index + 1U].format = layout[index].format;
+		pipeline->attributes[index + 1U].offset = layout[index].offset;
+	}
+
+	/* The position and the nine. */
+	pipeline->attribute_count = I915_VKE2_FORMAT_ATTRIBUTES;
+}
+
+/*
+ * Makes the words of the ws075-p004 steps that follow a rule simple enough
+ * to state here rather than generate (regenerate.py states the same and
+ * checks it): COORD the pixel's x and y and five check bits; DERIV 3, 5
+ * and 8, then twice the coarse x, fine x and coarse y derivatives of x y
+ * (the quad's first row's y, the row's own y, the quad's first column's x,
+ * each doubled plus one); NOPERSP 16 x + 8 and the first corner's number 2;
+ * VFORMAT word x % 12 of the twelve; POINT the point coordinate in
+ * sixteenths and the number where a point covers the pixel's centre.
+ */
+static void
+i915_vke2_expect_p004(
+	struct i915_vke2 *x,
+	uint32_t pipeline)
+{
+	uint32_t column;
+	uint32_t row;
+	uint32_t word;
+
+	/* Every pixel by the step's rule. */
+	for (row = 0U; row < I915_VKE2_SIZE; row++) {
+		for (column = 0U; column < I915_VKE2_SIZE; column++) {
+			/* The step decides the word. */
+			switch (pipeline) {
+			case I915_VKE2_PIPE_COORD:
+				word = column | (row << 8) | (0x1fU << 16);
+				break;
+
+			case I915_VKE2_PIPE_DERIV:
+				word = 3U | (5U << 2) | (8U << 5);
+				word |= (2U * (row & ~1U) + 1U) << 9;
+				word |= (2U * row + 1U) << 16;
+				word |= (2U * (column & ~1U) + 1U) << 23;
+				break;
+
+			case I915_VKE2_PIPE_NOPERSP:
+				word = (16U * column + 8U) | (2U << 30);
+				break;
+
+			case I915_VKE2_PIPE_VFORMAT:
+				word = i915_vke2_vformat_words[column % 12U];
+				break;
+
+			default:
+				word = i915_vke2_point_word(column, row);
+				break;
+			}
+
+			/* The pixel holds its word. */
+			x->expected[row * I915_VKE2_SIZE + column] = word;
+		}
+	}
+}
+
+/*
+ * Returns the POINT step's word of a pixel: for the point that covers its
+ * centre, 16 s = 8 + 8 (2 x + 1 - 2 cx) / size (and t alike) rounded, the
+ * number and the marker byte 1; 0 where no point covers it.
+ */
+static uint32_t
+i915_vke2_point_word(
+	uint32_t column,
+	uint32_t row)
+{
+	const uint32_t *point;
+	int32_t u;
+	int32_t v;
+	int32_t size;
+	uint32_t index;
+
+	/* Tries each point. */
+	for (index = 0U; index < I915_VKE2_POINT_COUNT; index++) {
+		point = &i915_vke2_points[index * 4U];
+		size = (int32_t)point[2];
+		u = 8 * size + 8 * (2 * (int32_t)column + 1 - 2 * (int32_t)point[0]);
+		v = 8 * size + 8 * (2 * (int32_t)row + 1 - 2 * (int32_t)point[1]);
+
+		/* A centre outside the point's square is not covered by it. */
+		if (u < 0 || u >= 16 * size)
+			continue;
+		if (v < 0 || v >= 16 * size)
+			continue;
+
+		/* Succeeded: the coordinate, the number and the marker. */
+		return (uint32_t)((2 * u + size) / (2 * size)) |
+		       ((uint32_t)((2 * v + size) / (2 * size)) << 8) |
+		       (point[3] << 16) |
+		       (1U << 24);
+	}
+
+	/* No point covers the centre: the clear colour. */
+	return 0U;
 }
 
