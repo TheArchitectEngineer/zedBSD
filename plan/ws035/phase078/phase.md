@@ -57,7 +57,7 @@ cleared。
   終わる（MAP_PRIVATE で読めた）、repeat 25/400、output v4 の geometry・mode（1280x800）・scale 1・name・description・done、Shift で
   depressed 1、Caps Lock で locked 2 と 0、release の後も error 無し。画面 `seat.png`。
 - Num Lock は guest の USB keyboard の driver が key を出さない（HID usage 0x53 の表が無い）ので guest では未実施。
-  [BUG-069](../../bugs/BUG-069.md) に登録（keypad・Print Screen・Scroll Lock・Pause・102nd・Menu も同じ）。host 試験で Num Lock の keymap は確認済み。
+  [BUG-070](../../bugs/BUG-070.md) に登録（keypad・Print Screen・Scroll Lock・Pause・102nd・Menu も同じ）。host 試験で Num Lock の keymap は確認済み。
 - 回帰（keyboard の repeat・modifiers は全 client に効くので広く）: p076 PASS、menu-regress の p059・p062〜p065・p068〜p072・p014
   PASS、menu-p002・p003 PASS、x11-p003・x11-p005 PASS（x11-p004 は lean image に glxtest が無く未実施）。boot test PASS
   （`build/ws035-p078-boot/login.png`、commit bd2495f5 の lean image）。

@@ -59,7 +59,7 @@ expect_log /tmp/k.log 'SEATPROBE focus'
 check "$out/seat.png" >/dev/null
 
 # Shift held: depressed 0x1 around the key; Caps Lock: locked 0x2, then off again.  (Num Lock does not reach the
-# guest's USB keyboard driver, BUG-069, so its lock 0x10 is not tried.)
+# guest's USB keyboard driver, BUG-070, so its lock 0x10 is not tried.)
 keys 'A'
 expect_log /tmp/k.log 'SEATPROBE modifiers depressed=1 latched=0 locked=0 group=0'
 expect_log /tmp/k.log 'SEATPROBE key 30 state=1'

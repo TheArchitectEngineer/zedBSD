@@ -553,6 +553,191 @@ struct fm_peek {
 	int picture_tried;
 };
 
+/* The longest name and command of a way to open files, and how many ways a file is offered. */
+#define FM_OPENER_NAME		64
+#define FM_OPENER_COMMAND	512
+#define FM_OPENERS		8
+
+/*
+ * One way to open a file: the name the window shows ("Terminal (less)")
+ * and the command, where %f stands for the file's path.  A command that
+ * starts with "@terminal " runs the rest in a new terminal window, and
+ * "@quicklook" shows the file in Quick Look (apps.c).
+ */
+struct fm_opener {
+	char name[FM_OPENER_NAME];
+	char command[FM_OPENER_COMMAND];
+};
+
+/* How many extended attributes the information lists, and the longest name it keeps of one. */
+#define FM_INFO_ATTRIBUTES	12
+#define FM_INFO_ATTRIBUTE_NAME	96
+
+/*
+ * One extended attribute of a file: its name and the size of its value
+ * (-1 when it could not be read).
+ */
+struct fm_attribute {
+	char name[FM_INFO_ATTRIBUTE_NAME];
+	long size;
+};
+
+/*
+ * Where the checksum of the information's file is: not asked for, being
+ * computed, done, or failed.
+ */
+enum fm_checksum_state {
+	FM_CHECKSUM_NONE,
+	FM_CHECKSUM_RUNNING,
+	FM_CHECKSUM_DONE,
+	FM_CHECKSUM_FAILED
+};
+
+/*
+ * What the information card (Get Info) shows of one file or folder,
+ * gathered when the card opens: its status as lstat sees it (and the
+ * target of a link), its type, tags, extended attributes, and the ways it
+ * can be opened; its SHA-256 checksum is computed only when asked for, a
+ * piece each round of the main loop.
+ *
+ * checksum_descriptor is the open file while the checksum runs (-1
+ * otherwise), and checksum_context its hash state, allocated with it; both
+ * go when the checksum ends or the card closes (fm_info_release).
+ */
+struct fm_info {
+	char path[FM_PATH_MAX];
+	int error;
+	mode_t mode;
+	uid_t uid;
+	gid_t gid;
+	uint64_t size;
+	long links;
+	time_t modified;
+	time_t changed;
+	time_t accessed;
+	int folder;
+	int child_count;
+	char target[FM_PATH_MAX];
+	const struct fm_mime *mime;
+	unsigned tags;
+	struct fm_attribute attributes[FM_INFO_ATTRIBUTES];
+	int attribute_count;
+	int attributes_more;
+	struct fm_opener openers[FM_OPENERS];
+	int opener_count;
+	unsigned checksum_state;
+	char checksum[72];
+	int checksum_error;
+	int checksum_descriptor;
+	void *checksum_context;
+	uint64_t checksum_done;
+};
+
+/*
+ * What the menus ask the window to do (ui-menu.c).  Each menu item
+ * reports one; the ranges at the end carry an index (a list column, a way
+ * to open the selection, a tag).
+ */
+enum fm_action {
+	FM_ACTION_NONE,
+	FM_ACTION_NEW_WINDOW,
+	FM_ACTION_NEW_FOLDER,
+	FM_ACTION_OPEN,
+	FM_ACTION_GET_INFO,
+	FM_ACTION_TRASH,
+	FM_ACTION_CLOSE_WINDOW,
+	FM_ACTION_UNDO,
+	FM_ACTION_REDO,
+	FM_ACTION_CUT,
+	FM_ACTION_COPY,
+	FM_ACTION_PASTE,
+	FM_ACTION_DUPLICATE,
+	FM_ACTION_SELECT_ALL,
+	FM_ACTION_RENAME,
+	FM_ACTION_VIEW_ICONS,
+	FM_ACTION_VIEW_LIST,
+	FM_ACTION_SORT_NAME,
+	FM_ACTION_SORT_KIND,
+	FM_ACTION_SORT_SIZE,
+	FM_ACTION_SORT_MODIFIED,
+	FM_ACTION_SHOW_SIDEBAR,
+	FM_ACTION_SHOW_PREVIEW,
+	FM_ACTION_SHOW_HIDDEN,
+	FM_ACTION_BACK,
+	FM_ACTION_FORWARD,
+	FM_ACTION_ENCLOSING,
+	FM_ACTION_GO_HOME,
+	FM_ACTION_GO_DESKTOP,
+	FM_ACTION_GO_DOCUMENTS,
+	FM_ACTION_GO_DOWNLOADS,
+	FM_ACTION_GO_RECENTS,
+	FM_ACTION_GO_COMPUTER,
+	FM_ACTION_GO_TRASH,
+	FM_ACTION_GO_LOCATION,
+	FM_ACTION_FIND,
+	FM_ACTION_MINIMIZE,
+	FM_ACTION_ZOOM,
+	FM_ACTION_HELP,
+	FM_ACTION_SHORTCUTS,
+	FM_ACTION_ABOUT,
+	FM_ACTION_COLUMN_FIRST = 100,
+	FM_ACTION_OPEN_WITH_FIRST = 200,
+	FM_ACTION_TAG_FIRST = 300
+};
+
+/*
+ * What the window asks of its Wayland side after an action (main.c):
+ * nothing, a new window, minimizing, zooming (maximizing or back), or
+ * closing.
+ */
+enum fm_request {
+	FM_REQUEST_NONE,
+	FM_REQUEST_NEW_WINDOW,
+	FM_REQUEST_MINIMIZE,
+	FM_REQUEST_ZOOM,
+	FM_REQUEST_CLOSE
+};
+
+/*
+ * What the menus show of the window's state: which items do something now,
+ * which are checked, and the names of the variable items (the ways to open
+ * the selection, the tags).  menu.c sends it to zdesktop when it differs
+ * from what the menus show.
+ */
+struct fm_menu_state {
+	int selection;
+	int folder;
+	int trash;
+	int field;
+	int can_paste;
+	int can_undo;
+	int can_redo;
+	int can_back;
+	int can_forward;
+	int can_enclose;
+	unsigned view;
+	unsigned sort;
+	unsigned columns;
+	int sidebar;
+	int preview;
+	int hidden;
+	int opener_count;
+	char openers[FM_OPENERS][FM_OPENER_NAME];
+	int tag_count;
+	char tags[FM_TAGS][48];
+	unsigned tags_checked;
+};
+
+/*
+ * The cards of text the Help menu shows over the window.
+ */
+enum fm_help {
+	FM_HELP_NONE,
+	FM_HELP_GUIDE,
+	FM_HELP_SHORTCUTS,
+	FM_HELP_ABOUT
+};
+
 /*
  * The file manager of one window: its settings, its tabs, what the last
  * frame drew and what the pointer and the keyboard are doing.
@@ -683,6 +868,20 @@ struct fm_app {
 	/* What was read of the file the preview and Quick Look show, and whether Quick Look is open. */
 	struct fm_peek peek;
 	int quicklook;
+
+	/* The information card (Get Info): whether it is open, and what it shows. */
+	int info_open;
+	struct fm_info info;
+
+	/* The Help card shown (FM_HELP_NONE when none), and what the Wayland side is asked to do next. */
+	unsigned help;
+	unsigned request;
+
+	/* The ways to open the selection the menus last showed, kept for the file they were read for (its path and time). */
+	struct fm_opener menu_openers[FM_OPENERS];
+	int menu_opener_count;
+	char menu_openers_path[FM_PATH_MAX];
+	time_t menu_openers_modified;
 };
 
 /*
@@ -700,11 +899,17 @@ enum fm_dialog {
 #define FM_BUTTON_PUT_BACK	10
 #define FM_BUTTON_EMPTY_TRASH	11
 #define FM_BUTTON_LOOK_CLOSE	12
+#define FM_BUTTON_INFO_CLOSE	13
+#define FM_BUTTON_INFO_CHECKSUM	14
+#define FM_BUTTON_HELP_CLOSE	15
 #define FM_BUTTON_TASK_CANCEL	100
+#define FM_BUTTON_OPENER	180
 
-/* The indexes of the regions over the window (FM_HIT_OVERLAY): a card that takes clicks, and Quick Look's dimmed ground. */
+/* The indexes of the regions over the window (FM_HIT_OVERLAY): a card that takes clicks, and the dimmed grounds of Quick Look, the information and Help. */
 #define FM_OVERLAY_CARD		0
 #define FM_OVERLAY_LOOK_GROUND	1
+#define FM_OVERLAY_INFO_GROUND	2
+#define FM_OVERLAY_HELP_GROUND	3
 #define FM_BUTTON_REMOVE_PLACE	200
 
 /* The interface (ui.c). */
@@ -731,6 +936,10 @@ void fm_input_button(struct fm_app *app, const struct fm_event *event);
 void fm_input_scroll(struct fm_app *app, int amount);
 void fm_input_key(struct fm_app *app, const struct fm_event *event);
 int fm_input_hit_at(struct fm_app *app, int x, int y, unsigned *kind, int *index);
+void fm_input_sort_by(struct fm_app *app, unsigned sort, int reverse);
+void fm_input_open_selection(struct fm_app *app);
+void fm_input_enclosing(struct fm_app *app);
+void fm_input_location(struct fm_app *app);
 
 /* The content panel and the icon view (ui-grid.c). */
 void fm_grid_draw(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *area);
@@ -851,6 +1060,37 @@ void fm_look_toggle(struct fm_app *app);
 void fm_look_close(struct fm_app *app);
 void fm_look_step(struct fm_app *app, int step);
 int fm_preview_item(struct fm_app *app);
+
+/* The applications that open files (apps.c). */
+int fm_apps_for(const char *path, const struct fm_mime *mime, mode_t mode, struct fm_opener *openers, int capacity);
+int fm_apps_is_quicklook(const struct fm_opener *opener);
+int fm_apps_launch(const struct fm_opener *opener, const char *path);
+int fm_apps_spawn(char *const arguments[]);
+
+/* What the information card shows of a file (info.c). */
+int fm_info_gather(struct fm_info *info, const char *path, const struct fm_tags *tags);
+int fm_info_checksum_start(struct fm_info *info);
+int fm_info_checksum_step(struct fm_info *info, uint64_t budget_ms);
+void fm_info_release(struct fm_info *info);
+void fm_mode_text(mode_t mode, char *text, size_t size);
+
+/* The information card (ui-info.c). */
+void fm_info_open(struct fm_app *app);
+void fm_info_close(struct fm_app *app);
+void fm_info_draw(struct fm_app *app, struct fm_canvas *canvas);
+void fm_info_tick(struct fm_app *app);
+void fm_info_button(struct fm_app *app, int index);
+void fm_open_entry(struct fm_app *app, int index, int opener);
+void fm_open_with(struct fm_app *app, const struct fm_opener *opener, const char *path);
+
+/* The menus' actions and state (ui-menu.c). */
+void fm_ui_action(struct fm_app *app, unsigned action);
+void fm_ui_menu_state(struct fm_app *app, struct fm_menu_state *state);
+
+/* The Help cards (ui-help.c). */
+void fm_help_open(struct fm_app *app, unsigned help);
+void fm_help_close(struct fm_app *app);
+void fm_help_draw(struct fm_app *app, struct fm_canvas *canvas);
 
 /* The sidebar's places (places.c). */
 void fm_places_init(struct fm_places *places, const char *home, const struct fm_tags *tags);

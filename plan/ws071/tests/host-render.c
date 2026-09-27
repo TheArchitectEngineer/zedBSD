@@ -25,6 +25,8 @@
  *   hits             (prints the clickable regions of the last frame)
  *   draw=PATH        (draws the frame into a PPM picture)
  *   focus=0|1
+ *   action=N         (a menu's action, fm_ui_action; a request for the window is printed)
+ *   state            (prints what the menus show, fm_ui_menu_state)
  */
 
 #include "files.h"
@@ -140,6 +142,17 @@ main(
 				modifiers = 0;
 			host_event(&app, FM_EVENT_KEY, 0, 0, 0, 1, code, modifiers, &now);
 			host_event(&app, FM_EVENT_KEY, 0, 0, 0, 0, code, modifiers, &now);
+		} else if (sscanf(argv[index], "action=%u", &code) == 1) {
+			fm_ui_action(&app, code);
+			if (app.request != FM_REQUEST_NONE)
+				printf("request %u\n", app.request);
+			app.request = FM_REQUEST_NONE;
+		} else if (strcmp(argv[index], "state") == 0) {
+			struct fm_menu_state state;
+			fm_ui_menu_state(&app, &state);
+			printf("state selection=%d folder=%d trash=%d field=%d paste=%d undo=%d redo=%d back=%d forward=%d enclose=%d view=%u sort=%u columns=%u sidebar=%d preview=%d hidden=%d openers=%d first=%s tags=%d checked=%u\n",
+			    state.selection, state.folder, state.trash, state.field, state.can_paste, state.can_undo, state.can_redo, state.can_back, state.can_forward, state.can_enclose,
+			    state.view, state.sort, state.columns, state.sidebar, state.preview, state.hidden, state.opener_count, state.opener_count > 0 ? state.openers[0] : "-", state.tag_count, state.tags_checked);
 		} else if (strcmp(argv[index], "hits") == 0) {
 			for (x = 0; x < app.hit_count; x++)
 				printf("hit kind=%u index=%d x=%d y=%d width=%d height=%d\n", app.hits[x].kind, app.hits[x].index, app.hits[x].rect.x, app.hits[x].rect.y, app.hits[x].rect.width, app.hits[x].rect.height);

@@ -2,7 +2,7 @@
 # ws056-p002: boots IMAGE, installs ELF as /bin/posix-r2 (and, with AS_SH=1,
 # as /bin/sh), logs in on the console and runs each further argument there
 # as a command, printing its output and status.
-#   [AS_SH=1] sh plan/ws056/tests/console-probe.sh IMAGE ELF COMMAND...
+#   [AS_SH=1] sh plan/tools/posix/console-probe.sh IMAGE ELF COMMAND...
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 image=$1

@@ -58,6 +58,38 @@
 #define INPUT_KEY_F		33U
 #define INPUT_KEY_T		20U
 #define INPUT_KEY_P		25U
+#define INPUT_KEY_I		23U
+#define INPUT_KEY_O		24U
+#define INPUT_KEY_W		17U
+#define INPUT_KEY_S		31U
+#define INPUT_KEY_R		19U
+#define INPUT_KEY_M		50U
+
+/*
+ * A key of the menus that the other key handlers do not know, and the
+ * action it asks for.  zdesktop takes these keys for the menus while their
+ * items are enabled; without the System Menu they arrive here.
+ */
+struct input_shortcut {
+	uint32_t key;
+	uint32_t modifiers;
+	unsigned action;
+};
+
+/* Those keys. */
+static const struct input_shortcut input_shortcuts[] = {
+	{ INPUT_KEY_N, FM_MOD_CTRL, FM_ACTION_NEW_WINDOW },
+	{ INPUT_KEY_O, FM_MOD_CTRL, FM_ACTION_OPEN },
+	{ INPUT_KEY_W, FM_MOD_CTRL | FM_MOD_SHIFT, FM_ACTION_CLOSE_WINDOW },
+	{ INPUT_KEY_S, FM_MOD_CTRL | FM_MOD_ALT, FM_ACTION_SHOW_SIDEBAR },
+	{ INPUT_KEY_H, FM_MOD_CTRL | FM_MOD_SHIFT, FM_ACTION_GO_HOME },
+	{ INPUT_KEY_D, FM_MOD_CTRL | FM_MOD_SHIFT, FM_ACTION_GO_DESKTOP },
+	{ INPUT_KEY_O, FM_MOD_CTRL | FM_MOD_SHIFT, FM_ACTION_GO_DOCUMENTS },
+	{ INPUT_KEY_L, FM_MOD_CTRL | FM_MOD_SHIFT, FM_ACTION_GO_DOWNLOADS },
+	{ INPUT_KEY_R, FM_MOD_CTRL | FM_MOD_SHIFT, FM_ACTION_GO_RECENTS },
+	{ INPUT_KEY_C, FM_MOD_CTRL | FM_MOD_SHIFT, FM_ACTION_GO_COMPUTER },
+	{ INPUT_KEY_M, FM_MOD_CTRL, FM_ACTION_MINIMIZE }
+};
 #define INPUT_KEY_SPACE		57U
 
 /*
@@ -81,13 +113,13 @@ static int input_command_key(struct fm_app *app, const struct fm_event *event);
 static int input_move_key(struct fm_app *app, const struct fm_event *event);
 static void input_move(struct fm_app *app, int target, int extend);
 static void input_type_ahead(struct fm_app *app, char character);
-static void input_open_selection(struct fm_app *app);
-static void input_enclosing(struct fm_app *app);
 static void input_show(struct fm_app *app, int index);
 static void input_report(struct fm_app *app);
 static int input_operation_key(struct fm_app *app, const struct fm_event *event);
 static void input_button(struct fm_app *app, int index);
 static void input_look_key(struct fm_app *app, const struct fm_event *event);
+static void input_info_key(struct fm_app *app, const struct fm_event *event);
+static int input_shortcut_key(struct fm_app *app, const struct fm_event *event);
 
 /*
  * Follows the pointer: the region under it is lit, and a rubber band being
@@ -238,6 +270,19 @@ fm_input_key(
 		return;
 	}
 
+	/* A Help card closes with Esc, and takes the other keys too. */
+	if (app->help != FM_HELP_NONE) {
+		if (event->key == INPUT_KEY_ESC)
+			fm_help_close(app);
+		return;
+	}
+
+	/* The information card takes the keys while it is open. */
+	if (app->info_open != 0) {
+		input_info_key(app, event);
+		return;
+	}
+
 	/* Quick Look takes the keys while it is open. */
 	if (app->quicklook != 0) {
 		input_look_key(app, event);
@@ -263,6 +308,13 @@ fm_input_key(
 			fm_action_rename_end(app, 1);
 		else if (result == FM_FIELD_CANCEL)
 			fm_action_rename_end(app, 0);
+		return;
+	}
+
+	/* The menus' keys that nothing else handles. */
+	handled = input_shortcut_key(app, event);
+	if (handled != 0) {
+		input_report(app);
 		return;
 	}
 
@@ -325,6 +377,118 @@ fm_input_hit_at(
 	*kind = FM_HIT_NONE;
 	*index = -1;
 	return 0;
+}
+
+/*
+ * Sorts the items by a key, in either direction, keeping the cursor on its
+ * item.
+ */
+void
+fm_input_sort_by(
+	struct fm_app *app,
+	unsigned sort,
+	int reverse)
+{
+	struct fm_tab *tab;
+	char cursor[FM_NAME_MAX];
+
+	/* The window's sort from now on. */
+	app->sort = sort;
+	app->sort_reverse = reverse;
+
+	/* The items in the new order, the cursor kept on its item. */
+	tab = fm_ui_tab(app);
+	cursor[0] = '\0';
+	if (tab->cursor >= 0 && (size_t)tab->cursor < tab->listing.count)
+		snprintf(cursor, sizeof(cursor), "%s", tab->listing.entries[tab->cursor].name);
+	fm_dir_sort(&tab->listing, app->sort, app->sort_reverse);
+	if (cursor[0] != '\0')
+		tab->cursor = fm_select_find(tab, cursor);
+	tab->anchor = tab->cursor;
+	app->dirty = 1;
+	fm_log("SORT key=%u reverse=%d", app->sort, app->sort_reverse);
+}
+
+/*
+ * Opens the selected items: the first selected folder in the tab, or else
+ * each selected file (at most eight).
+ */
+void
+fm_input_open_selection(
+	struct fm_app *app)
+{
+	struct fm_tab *tab;
+	size_t index;
+	int opened;
+
+	/* A selected folder opens in the tab. */
+	tab = fm_ui_tab(app);
+	for (index = 0; index < tab->listing.count; index++) {
+		if (tab->listing.entries[index].selected != 0 && tab->listing.entries[index].folder != 0) {
+			fm_ui_open(app, (int)index);
+			return;
+		}
+	}
+
+	/* Otherwise each selected file, up to eight. */
+	opened = 0;
+	for (index = 0; index < tab->listing.count && opened < 8; index++) {
+		if (tab->listing.entries[index].selected == 0)
+			continue;
+		fm_ui_open(app, (int)index);
+		opened++;
+	}
+}
+
+/*
+ * Goes to the folder that holds the one shown (Ctrl+Up).
+ */
+void
+fm_input_enclosing(
+	struct fm_app *app)
+{
+	struct fm_location location;
+	struct fm_tab *tab;
+	char *slash;
+
+	/* Only a folder below the root has one. */
+	tab = fm_ui_tab(app);
+	location = tab->history[tab->history_index].location;
+	if (location.kind != FM_LOCATION_FOLDER)
+		return;
+	slash = strrchr(location.path, '/');
+	if (slash == NULL || location.path[1] == '\0')
+		return;
+
+	/* The path up to the last slash (the root keeps its slash). */
+	if (slash == location.path)
+		slash[1] = '\0';
+	else
+		*slash = '\0';
+	fm_ui_go(app, &location);
+}
+
+/*
+ * Turns the path in the toolbar into a field to type a folder in (Ctrl+L),
+ * starting from the folder shown (the home folder for another place).
+ */
+void
+fm_input_location(
+	struct fm_app *app)
+{
+	const struct fm_location *location;
+	struct fm_tab *tab;
+
+	/* The folder shown, or the home folder. */
+	tab = fm_ui_tab(app);
+	location = &tab->history[tab->history_index].location;
+	fm_field_set(&app->location, location->path);
+	if (location->kind != FM_LOCATION_FOLDER)
+		fm_field_set(&app->location, app->home);
+
+	/* Typing goes to the field. */
+	app->focus = FM_FOCUS_LOCATION;
+	app->dirty = 1;
 }
 
 /* Tells whether a rectangle holds a point. */
@@ -470,6 +634,10 @@ input_click(
 	case FM_HIT_OVERLAY:
 		if (index == FM_OVERLAY_LOOK_GROUND)
 			fm_look_close(app);
+		if (index == FM_OVERLAY_INFO_GROUND)
+			fm_info_close(app);
+		if (index == FM_OVERLAY_HELP_GROUND)
+			fm_help_close(app);
 		break;
 	default:
 		break;
@@ -591,8 +759,7 @@ input_sort(
 	struct fm_app *app,
 	int column)
 {
-	struct fm_tab *tab;
-	char cursor[FM_NAME_MAX];
+	int reverse;
 	int sort;
 
 	/* The column's sort. */
@@ -601,23 +768,12 @@ input_sort(
 		return;
 
 	/* The same sort again reverses it; another starts forward. */
-	if ((unsigned)sort == app->sort) {
-		app->sort_reverse = !app->sort_reverse;
-	} else {
-		app->sort = (unsigned)sort;
-		app->sort_reverse = 0;
-	}
+	reverse = 0;
+	if ((unsigned)sort == app->sort)
+		reverse = !app->sort_reverse;
 
-	/* The items in the new order, the cursor kept on its item. */
-	tab = fm_ui_tab(app);
-	cursor[0] = '\0';
-	if (tab->cursor >= 0 && (size_t)tab->cursor < tab->listing.count)
-		snprintf(cursor, sizeof(cursor), "%s", tab->listing.entries[tab->cursor].name);
-	fm_dir_sort(&tab->listing, app->sort, app->sort_reverse);
-	if (cursor[0] != '\0')
-		tab->cursor = fm_select_find(tab, cursor);
-	tab->anchor = tab->cursor;
-	fm_log("SORT key=%u reverse=%d", app->sort, app->sort_reverse);
+	/* The items in the new order. */
+	fm_input_sort_by(app, (unsigned)sort, reverse);
 }
 
 /* Edits the location field: Enter goes to the path typed, Esc gives up. */
@@ -678,7 +834,6 @@ input_command_key(
 	struct fm_app *app,
 	const struct fm_event *event)
 {
-	const struct fm_location *location;
 	struct fm_tab *tab;
 	int handled;
 
@@ -689,9 +844,9 @@ input_command_key(
 		fm_select_none(tab);
 		app->band = 0;
 	} else if (event->key == INPUT_KEY_ENTER && event->modifiers == 0U) {
-		input_open_selection(app);
+		fm_input_open_selection(app);
 	} else if (event->key == INPUT_KEY_KPENTER && event->modifiers == 0U) {
-		input_open_selection(app);
+		fm_input_open_selection(app);
 	} else if (event->key == INPUT_KEY_BACKSPACE && event->modifiers == 0U) {
 		fm_ui_back(app);
 	} else if (event->key == INPUT_KEY_LEFT && event->modifiers == FM_MOD_ALT) {
@@ -699,9 +854,9 @@ input_command_key(
 	} else if (event->key == INPUT_KEY_RIGHT && event->modifiers == FM_MOD_ALT) {
 		fm_ui_forward(app);
 	} else if (event->key == INPUT_KEY_UP && event->modifiers == FM_MOD_CTRL) {
-		input_enclosing(app);
+		fm_input_enclosing(app);
 	} else if (event->key == INPUT_KEY_DOWN && event->modifiers == FM_MOD_CTRL) {
-		input_open_selection(app);
+		fm_input_open_selection(app);
 	} else if (event->key == INPUT_KEY_SPACE && event->modifiers == 0U) {
 		fm_look_toggle(app);
 	} else {
@@ -722,11 +877,7 @@ input_command_key(
 		fm_select_all(tab);
 		return 1;
 	case INPUT_KEY_L:
-		location = &tab->history[tab->history_index].location;
-		fm_field_set(&app->location, location->path);
-		if (location->kind != FM_LOCATION_FOLDER)
-			fm_field_set(&app->location, app->home);
-		app->focus = FM_FOCUS_LOCATION;
+		fm_input_location(app);
 		return 1;
 	case INPUT_KEY_H:
 		app->show_hidden = !app->show_hidden;
@@ -899,60 +1050,6 @@ input_type_ahead(
 	}
 }
 
-/* Opens the selected items: the first folder in the tab, or else each file (at most a few). */
-static void
-input_open_selection(
-	struct fm_app *app)
-{
-	struct fm_tab *tab;
-	size_t index;
-	int opened;
-
-	/* A selected folder opens in the tab. */
-	tab = fm_ui_tab(app);
-	for (index = 0; index < tab->listing.count; index++) {
-		if (tab->listing.entries[index].selected != 0 && tab->listing.entries[index].folder != 0) {
-			fm_ui_open(app, (int)index);
-			return;
-		}
-	}
-
-	/* Otherwise each selected file, up to eight. */
-	opened = 0;
-	for (index = 0; index < tab->listing.count && opened < 8; index++) {
-		if (tab->listing.entries[index].selected == 0)
-			continue;
-		fm_ui_open(app, (int)index);
-		opened++;
-	}
-}
-
-/* Goes to the folder that holds the one shown (Ctrl+Up). */
-static void
-input_enclosing(
-	struct fm_app *app)
-{
-	struct fm_location location;
-	struct fm_tab *tab;
-	char *slash;
-
-	/* Only a folder below the root has one. */
-	tab = fm_ui_tab(app);
-	location = tab->history[tab->history_index].location;
-	if (location.kind != FM_LOCATION_FOLDER)
-		return;
-	slash = strrchr(location.path, '/');
-	if (slash == NULL || location.path[1] == '\0')
-		return;
-
-	/* The path up to the last slash (the root keeps its slash). */
-	if (slash == location.path)
-		slash[1] = '\0';
-	else
-		*slash = '\0';
-	fm_ui_go(app, &location);
-}
-
 /* Scrolls so that an item is wholly in sight. */
 static void
 input_show(
@@ -1030,6 +1127,8 @@ input_operation_key(
 		fm_action_add_favorite(app);
 	} else if (event->key == INPUT_KEY_P && event->modifiers == (FM_MOD_CTRL | FM_MOD_ALT)) {
 		app->show_preview = !app->show_preview;
+	} else if (event->key == INPUT_KEY_I && event->modifiers == FM_MOD_CTRL) {
+		fm_info_open(app);
 	} else if (event->key == INPUT_KEY_F && event->modifiers == FM_MOD_CTRL) {
 		fm_search_focus(app);
 	} else if (event->key >= INPUT_KEY_1 && event->key <= INPUT_KEY_1 + 8U && event->modifiers == FM_MOD_ALT) {
@@ -1088,6 +1187,12 @@ input_button(
 		fm_action_empty_trash(app);
 	} else if (index == FM_BUTTON_LOOK_CLOSE) {
 		fm_look_close(app);
+	} else if (index == FM_BUTTON_HELP_CLOSE) {
+		fm_help_close(app);
+	} else if (index == FM_BUTTON_INFO_CLOSE || index == FM_BUTTON_INFO_CHECKSUM) {
+		fm_info_button(app, index);
+	} else if (index >= FM_BUTTON_OPENER && index < FM_BUTTON_OPENER + FM_OPENERS) {
+		fm_info_button(app, index);
 	} else if (index >= FM_BUTTON_REMOVE_PLACE) {
 		fm_action_remove_favorite(app, index - FM_BUTTON_REMOVE_PLACE);
 	} else if (index >= FM_BUTTON_TASK_CANCEL) {
@@ -1130,4 +1235,41 @@ input_look_key(
 
 	/* The selection the key left. */
 	input_report(app);
+}
+
+/* Handles a key while the information card is open: Esc and Ctrl+I close it. */
+static void
+input_info_key(
+	struct fm_app *app,
+	const struct fm_event *event)
+{
+	/* Esc alone, or Ctrl+I again. */
+	if (event->key == INPUT_KEY_ESC && event->modifiers == 0U)
+		fm_info_close(app);
+	else if (event->key == INPUT_KEY_I && event->modifiers == FM_MOD_CTRL)
+		fm_info_close(app);
+}
+
+/* Carries out a key of the menus' table; zero when the key is not one. */
+static int
+input_shortcut_key(
+	struct fm_app *app,
+	const struct fm_event *event)
+{
+	size_t index;
+
+	/* The key with exactly its modifiers. */
+	for (index = 0; index < sizeof(input_shortcuts) / sizeof(input_shortcuts[0]); index++) {
+		if (input_shortcuts[index].key != event->key)
+			continue;
+		if (input_shortcuts[index].modifiers != event->modifiers)
+			continue;
+
+		/* Its action. */
+		fm_ui_action(app, input_shortcuts[index].action);
+		return 1;
+	}
+
+	/* Not one of them. */
+	return 0;
 }

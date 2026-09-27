@@ -6,17 +6,20 @@
  */
 
 /*
- * 2D textures and cube maps of zedBSD's OpenGL ES (WS068 p008, p023,
- * p025), and sampler objects.
+ * The textures of zedBSD's OpenGL ES (WS068 p008, p023, p025, p028): 2D
+ * textures, cube maps, 3D textures and 2D array textures, and sampler
+ * objects.
  *
  * Each level keeps its texels on the CPU in the kept form of its format
  * (format.c; OpenGL ES 2's unsized formats as RGBA8, which
- * texture_convert makes); the first draw that samples a changed texture
- * makes a new device image of the levels from the base level (a chain
- * for a mipmapping minification filter, else one level) and uploads
- * them.  Samplers are made once per set of sampling state and level
- * count; a sampler object bound to a unit replaces its textures' own
- * sampling state.
+ * texture_convert makes), a 3D texture's slices and a 2D array's layers
+ * one after another; the first draw that samples a changed texture makes
+ * a new device image of the levels from the base level (a chain for a
+ * mipmapping minification filter, else one level) and uploads them.  The
+ * application's texels are found by the pixel store and the pixel unpack
+ * buffer (pixels.c).  Samplers are made once per set of sampling state
+ * and level count; a sampler object bound to a unit replaces its
+ * textures' own sampling state.
  */
 
 #include "gles.h"
@@ -28,17 +31,38 @@
 #define TEXTURE_LOD_MAX		1000.0f
 #define TEXTURE_LEVEL_MAX	1000
 
-static struct gles_texture *texture_bound(struct zegl_context *context, GLenum target, int images, unsigned *face);
-static struct gles_texture *texture_changing(struct zegl_context *context, GLenum target, int images, unsigned *face);
+/*
+ * The targets a call takes, as bits: GL_TEXTURE_2D, a cube map's faces
+ * (the calls that give a face's level texels), GL_TEXTURE_CUBE_MAP as a
+ * whole, GL_TEXTURE_3D and GL_TEXTURE_2D_ARRAY.
+ */
+#define TEXTURE_TAKES_2D	1U
+#define TEXTURE_TAKES_FACES	2U
+#define TEXTURE_TAKES_CUBE	4U
+#define TEXTURE_TAKES_3D	8U
+#define TEXTURE_TAKES_ARRAY	16U
+
+/* The targets of the calls that give a 2D image, a 3D image, fixed 2D levels, and of the calls on a texture as a whole. */
+#define TEXTURE_IMAGE_2D	(TEXTURE_TAKES_2D | TEXTURE_TAKES_FACES)
+#define TEXTURE_IMAGE_3D	(TEXTURE_TAKES_3D | TEXTURE_TAKES_ARRAY)
+#define TEXTURE_STORAGE_2D	(TEXTURE_TAKES_2D | TEXTURE_TAKES_CUBE)
+#define TEXTURE_WHOLE		(TEXTURE_TAKES_2D | TEXTURE_TAKES_CUBE | TEXTURE_TAKES_3D | TEXTURE_TAKES_ARRAY)
+
+static struct gles_texture *texture_bound(struct zegl_context *context, GLenum target, unsigned takes, unsigned *face);
+static struct gles_texture *texture_changing(struct zegl_context *context, GLenum target, unsigned takes, unsigned *face);
 static struct gles_texture *texture_new(GLuint name, GLenum target);
+static void texture_level_set(struct gles_texture *texture, unsigned face, GLint level, int width, int height, int depth, unsigned char *pixels, const struct gles_format *format);
 static void texture_sampling_initial(struct gles_sampling *sampling);
-static uint32_t texture_layers(const struct gles_texture *texture);
+static unsigned texture_shape(const struct gles_texture *texture);
+static uint32_t texture_faces(const struct gles_texture *texture);
 static int texture_mipmaps(struct gles_texture *texture, unsigned face, GLint last);
 static int texture_mipmaps_kept(struct gles_texture *texture, unsigned face, GLint last);
 static void texture_views_free(struct gles_state *state, VkImageView *views);
 static unsigned char *texture_convert(struct zegl_context *context, GLenum format, GLenum type, GLsizei width, GLsizei height, const void *pixels);
-static unsigned char *texture_texels(struct zegl_context *context, const struct gles_format *storage, GLenum format, GLenum type, GLsizei width, GLsizei height, const void *pixels);
+static unsigned char *texture_texels(struct zegl_context *context, const struct gles_format *storage, GLenum format, GLenum type, GLsizei width, GLsizei height, GLsizei depth, const void *pixels);
 static unsigned char *texture_from_framebuffer(struct zegl_context *context, const struct gles_format *storage, GLint x, GLint y, GLsizei width, GLsizei height);
+static void texture_rows_place(struct gles_level *destination, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, const unsigned char *rows);
+static int texture_volume_size(struct gles_state *state, const struct gles_texture *texture, GLsizei width, GLsizei height, GLsizei depth);
 static int texture_parameter(struct zegl_context *context, struct gles_texture *texture, GLenum pname, GLint value, GLfloat number);
 static int texture_sampling_parameter(struct zegl_context *context, struct gles_sampling *sampling, GLenum pname, GLint value, GLfloat number);
 static int texture_get(struct gles_texture *texture, GLenum pname, GLfloat *value);
@@ -53,9 +77,9 @@ static VkComponentSwizzle texture_swizzle(GLenum source, VkComponentSwizzle iden
 
 /*
  * Brings a texture's device image up to date with its levels from the
- * base level (a cube map's image has a layer per face), in the Vulkan
- * format the levels are kept in.  Returns 0, or -1 when the device has no
- * memory for it.
+ * base level, in the Vulkan format the levels are kept in: a 2D image (a
+ * cube map's with a layer per face, a 2D array's with a layer per layer)
+ * or a 3D image.  Returns 0, or -1 when the device has no memory for it.
  */
 int
 gles_texture_sync(
@@ -84,12 +108,14 @@ gles_texture_sync(
 	size_t bytes;
 	uint32_t features;
 	uint32_t levels;
+	uint32_t faces;
 	uint32_t layers;
 	uint32_t level;
-	uint32_t layer;
+	uint32_t face;
 	uint32_t count;
 	uint32_t type;
 	uint32_t base;
+	unsigned shape;
 	VkResult result;
 	int status;
 
@@ -97,20 +123,26 @@ gles_texture_sync(
 	if (!texture->dirty && texture->image != VK_NULL_HANDLE)
 		return 0;
 
-	/* The levels and layers the image has, their format, and the bytes they take. */
+	/* The levels and faces the image has, their format, and the bytes they take (every slice of every level). */
 	base = (uint32_t)texture->base_level;
 	levels = texture_levels(texture);
-	layers = texture_layers(texture);
+	faces = texture_faces(texture);
+	shape = texture_shape(texture);
 	format = texture->levels[base].format;
 	if (format == NULL)
 		return -1;
 	total = 0U;
-	for (layer = 0U; layer < layers; layer++) {
+	for (face = 0U; face < faces; face++) {
 		for (level = 0U; level < levels; level++) {
-			source = &texture->levels[layer * GLES_LEVELS + base + level];
-			total += (size_t)source->width * (size_t)source->height * format->bytes;
+			source = &texture->levels[face * GLES_LEVELS + base + level];
+			total += (size_t)source->width * (size_t)source->height * (size_t)source->depth * format->bytes;
 		}
 	}
+
+	/* The image's layers: a cube map's faces, a 2D array's layers, one otherwise. */
+	layers = faces;
+	if (shape == GLES_SHAPE_ARRAY)
+		layers = (uint32_t)texture->levels[base].depth;
 
 	/* A depth format is copied into its depth aspect; a barrier names every aspect it has. */
 	copy_aspect = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -122,28 +154,40 @@ gles_texture_sync(
 			whole_aspect |= VK_IMAGE_ASPECT_STENCIL_BIT;
 	}
 
-	/* The image (a cube map's can be viewed as one), drawn into when the format can be. */
+	/* The image (a cube map's can be viewed as one, a 3D texture's is 3D). */
 	features = gles_image_features(state, format->vk);
 	memset(&create, 0, sizeof(create));
 	create.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-	if (layers == GLES_FACES)
+	if (shape == GLES_SHAPE_CUBE)
 		create.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
 	create.imageType = VK_IMAGE_TYPE_2D;
 	create.format = format->vk;
 	create.extent.width = (uint32_t)texture->levels[base].width;
 	create.extent.height = (uint32_t)texture->levels[base].height;
 	create.extent.depth = 1U;
+	if (shape == GLES_SHAPE_3D) {
+		create.imageType = VK_IMAGE_TYPE_3D;
+		create.extent.depth = (uint32_t)texture->levels[base].depth;
+	}
+
+	/* Its levels and layers, sampled and copied. */
 	create.mipLevels = levels;
 	create.arrayLayers = layers;
 	create.samples = VK_SAMPLE_COUNT_1_BIT;
 	create.tiling = VK_IMAGE_TILING_OPTIMAL;
 	create.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-	if (format->kind != GLES_TEXEL_DEPTH && (features & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT) != 0U)
-		create.usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-	if (format->kind == GLES_TEXEL_DEPTH && (features & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) != 0U)
-		create.usage |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
 	create.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	create.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+	/* A 2D texture or a cube map is drawn into when its format can be. */
+	if (shape == GLES_SHAPE_2D || shape == GLES_SHAPE_CUBE) {
+		if (format->kind != GLES_TEXEL_DEPTH && (features & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT) != 0U)
+			create.usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+		if (format->kind == GLES_TEXEL_DEPTH && (features & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) != 0U)
+			create.usage |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+	}
+
+	/* Made. */
 	result = vkCreateImage(state->device, &create, NULL, &image);
 	if (result != VK_SUCCESS)
 		return -1;
@@ -163,14 +207,18 @@ gles_texture_sync(
 		return -1;
 	}
 
-	/* Bound, with a view of every level (a cube view of a cube map) whose channels follow the swizzle. */
+	/* Bound, with a view of every level in the texture's shape whose channels follow the swizzle. */
 	result = vkBindImageMemory(state->device, image, memory, 0U);
 	memset(&view, 0, sizeof(view));
 	view.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 	view.image = image;
 	view.viewType = VK_IMAGE_VIEW_TYPE_2D;
-	if (layers == GLES_FACES)
+	if (shape == GLES_SHAPE_CUBE)
 		view.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
+	if (shape == GLES_SHAPE_3D)
+		view.viewType = VK_IMAGE_VIEW_TYPE_3D;
+	if (shape == GLES_SHAPE_ARRAY)
+		view.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
 	view.format = format->vk;
 	view.components.r = texture_swizzle(texture->swizzle[0], VK_COMPONENT_SWIZZLE_R);
 	view.components.g = texture_swizzle(texture->swizzle[1], VK_COMPONENT_SWIZZLE_G);
@@ -194,11 +242,11 @@ gles_texture_sync(
 	view.viewType = VK_IMAGE_VIEW_TYPE_2D;
 	view.subresourceRange.levelCount = 1U;
 	view.subresourceRange.layerCount = 1U;
-	for (layer = 0U; layer < layers && (create.usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) != 0U; layer++) {
-		view.subresourceRange.baseArrayLayer = layer;
-		result = vkCreateImageView(state->device, &view, NULL, &attach_views[layer]);
+	for (face = 0U; face < faces && (create.usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) != 0U; face++) {
+		view.subresourceRange.baseArrayLayer = face;
+		result = vkCreateImageView(state->device, &view, NULL, &attach_views[face]);
 		if (result != VK_SUCCESS) {
-			attach_views[layer] = VK_NULL_HANDLE;
+			attach_views[face] = VK_NULL_HANDLE;
 			texture_views_free(state, attach_views);
 			gles_throw_away(state, VK_NULL_HANDLE, image, image_view, memory);
 			return -1;
@@ -213,24 +261,32 @@ gles_texture_sync(
 		return -1;
 	}
 
-	/* Each face's levels one after another (the image's level 0 is the base level). */
+	/*
+	 * Each face's levels one after another (the image's level 0 is the
+	 * base level): a level's slices are a 3D image's depth, a 2D array's
+	 * its layers.
+	 */
 	mapped = pointer;
 	total = 0U;
 	count = 0U;
 	memset(copies, 0, sizeof(copies));
-	for (layer = 0U; layer < layers; layer++) {
+	for (face = 0U; face < faces; face++) {
 		for (level = 0U; level < levels; level++) {
-			source = &texture->levels[layer * GLES_LEVELS + base + level];
-			bytes = (size_t)source->width * (size_t)source->height * format->bytes;
+			source = &texture->levels[face * GLES_LEVELS + base + level];
+			bytes = (size_t)source->width * (size_t)source->height * (size_t)source->depth * format->bytes;
 			memcpy(mapped + total, source->pixels, bytes);
 			copies[count].bufferOffset = total;
 			copies[count].imageSubresource.aspectMask = copy_aspect;
 			copies[count].imageSubresource.mipLevel = level;
-			copies[count].imageSubresource.baseArrayLayer = layer;
+			copies[count].imageSubresource.baseArrayLayer = face;
 			copies[count].imageSubresource.layerCount = 1U;
 			copies[count].imageExtent.width = (uint32_t)source->width;
 			copies[count].imageExtent.height = (uint32_t)source->height;
 			copies[count].imageExtent.depth = 1U;
+			if (shape == GLES_SHAPE_3D)
+				copies[count].imageExtent.depth = (uint32_t)source->depth;
+			if (shape == GLES_SHAPE_ARRAY)
+				copies[count].imageSubresource.layerCount = (uint32_t)source->depth;
 			total += bytes;
 			count++;
 		}
@@ -314,7 +370,7 @@ gles_texture_complete(
 		sampling = &texture->sampling;
 
 	/* The base level of each face, as large as the first face's and of its format. */
-	faces = texture_layers(texture);
+	faces = texture_faces(texture);
 	first = &texture->levels[texture->base_level];
 	for (face = 0U; face < faces; face++) {
 		level = &texture->levels[face * GLES_LEVELS + (unsigned)texture->base_level];
@@ -429,19 +485,20 @@ gles_sampler_get(
 }
 
 /*
- * Returns the black texture (a 2D one, or a cube map when cube is
- * nonzero) of a kind (0 float, 1 int, 2 unsigned, 3 depth) sampled where
- * a unit has no complete texture of the kind its sampler reads, making it
- * at its first use; NULL when there is no memory or no format.
+ * Returns the black texture of a shape (GLES_SHAPE_*) and a kind (0
+ * float, 1 int, 2 unsigned, 3 depth) sampled where a unit has no complete
+ * texture of the kind its sampler reads, making it at its first use; NULL
+ * when there is no memory or no format.
  */
 struct gles_texture *
 gles_texture_black(
 	struct gles_state *state,
-	int cube,
+	unsigned shape,
 	unsigned kind)
 {
 	static const GLenum internals[GLES_BLACK_KINDS] = { GL_RGBA, GL_RGBA8I, GL_RGBA8UI, GL_DEPTH_COMPONENT16 };
 	static const GLenum types[GLES_BLACK_KINDS] = { GL_UNSIGNED_BYTE, GL_BYTE, GL_UNSIGNED_BYTE, GL_UNSIGNED_SHORT };
+	static const GLenum targets[GLES_SHAPES] = { GL_TEXTURE_2D, GL_TEXTURE_CUBE_MAP, GL_TEXTURE_3D, GL_TEXTURE_2D_ARRAY };
 	const struct gles_format *format;
 	struct gles_texture *texture;
 	struct gles_texture **kept;
@@ -449,15 +506,14 @@ gles_texture_black(
 	unsigned faces;
 	unsigned face;
 
-	/* Made once per target and kind. */
+	/* Made once per shape and kind (a 3D texture has no depth one: no sampler compares it). */
 	if (kind >= GLES_BLACK_KINDS)
 		kind = 0U;
-	kept = &state->blacks[0][kind];
-	faces = 1U;
-	if (cube) {
-		kept = &state->blacks[1][kind];
-		faces = GLES_FACES;
-	}
+	if (shape >= GLES_SHAPES)
+		shape = GLES_SHAPE_2D;
+	if (shape == GLES_SHAPE_3D && kind == 3U)
+		kind = 0U;
+	kept = &state->blacks[shape][kind];
 
 	/* Already made. */
 	if (*kept != NULL)
@@ -469,15 +525,14 @@ gles_texture_black(
 		return NULL;
 
 	/* The texture, read with nearest filters (integers and depth cannot be filtered). */
-	texture = texture_new(0U, GL_TEXTURE_2D);
+	texture = texture_new(0U, targets[shape]);
 	if (texture == NULL)
 		return NULL;
-	if (cube)
-		texture->target = GL_TEXTURE_CUBE_MAP;
 	texture->sampling.min_filter = GL_NEAREST;
 	texture->sampling.mag_filter = GL_NEAREST;
 
-	/* One black texel on each face (opaque: alpha 255, or 1 for the integers). */
+	/* One black texel on each face, or in the one slice or layer (opaque: alpha 255, or 1 for the integers). */
+	faces = texture_faces(texture);
 	for (face = 0U; face < faces; face++) {
 		pixels = calloc(format->bytes, 1U);
 		if (pixels == NULL) {
@@ -490,7 +545,7 @@ gles_texture_black(
 			pixels[3] = 255U;
 		if (kind == 1U || kind == 2U)
 			pixels[3] = 1U;
-		gles_texture_define(texture, face, 0, 1, 1, pixels, format);
+		texture_level_set(texture, face, 0, 1, 1, 1, pixels, format);
 	}
 
 	/* Succeeded: the texture, kept. */
@@ -519,8 +574,8 @@ gles_texture_free(
 }
 
 /*
- * Gives a level of a texture's face (0 for a 2D texture) new texels kept
- * in a format, which the texture takes over.
+ * Gives a level of a texture's face (0 for a 2D texture) new texels of one
+ * image kept in a format, which the texture takes over.
  */
 void
 gles_texture_define(
@@ -532,16 +587,33 @@ gles_texture_define(
 	unsigned char *pixels,
 	const struct gles_format *format)
 {
-	struct gles_level *defined;
+	/* One slice (none when the level is let go). */
+	if (width == 0 || height == 0) {
+		texture_level_set(texture, face, level, width, height, 0, pixels, format);
+		return;
+	}
 
-	/* The old pixels go; the image is stale. */
-	defined = &texture->levels[face * GLES_LEVELS + (unsigned)level];
-	free(defined->pixels);
-	defined->pixels = pixels;
-	defined->width = width;
-	defined->height = height;
-	defined->format = format;
-	texture->dirty = 1;
+	/* The level's one image. */
+	texture_level_set(texture, face, level, width, height, 1, pixels, format);
+}
+
+/*
+ * Gives a level of a 3D or 2D array texture new texels of its slices or
+ * layers, one after another, kept in a format, which the texture takes
+ * over.
+ */
+void
+gles_texture_define_volume(
+	struct gles_texture *texture,
+	GLint level,
+	int width,
+	int height,
+	int depth,
+	unsigned char *pixels,
+	const struct gles_format *format)
+{
+	/* The level of the only face. */
+	texture_level_set(texture, 0U, level, width, height, depth, pixels, format);
 }
 
 /*
@@ -646,6 +718,10 @@ glDeleteTextures(
 				state->units[unit] = NULL;
 			if (state->cube_units[unit] == texture)
 				state->cube_units[unit] = NULL;
+			if (state->volume_units[unit] == texture)
+				state->volume_units[unit] = NULL;
+			if (state->array_units[unit] == texture)
+				state->array_units[unit] = NULL;
 		}
 
 		/* Detached from the bound framebuffer object; the name and the texture go (its image waits for the frame). */
@@ -656,9 +732,9 @@ glDeleteTextures(
 }
 
 /*
- * Binds a texture to the active unit's GL_TEXTURE_2D or
- * GL_TEXTURE_CUBE_MAP, making it when the name is new; a texture keeps
- * the target it was first bound to.
+ * Binds a texture to the active unit's GL_TEXTURE_2D,
+ * GL_TEXTURE_CUBE_MAP, GL_TEXTURE_3D or GL_TEXTURE_2D_ARRAY, making it
+ * when the name is new; a texture keeps the target it was first bound to.
  */
 GL_APICALL void GL_APIENTRY
 glBindTexture(
@@ -670,12 +746,20 @@ glBindTexture(
 	struct gles_texture *texture;
 	int status;
 
-	/* A context with its state, and the 2D or cube map target. */
+	/* A context with its state. */
 	context = gles_context();
 	state = gles_state(context);
 	if (state == NULL)
 		return;
-	if (target != GL_TEXTURE_2D && target != GL_TEXTURE_CUBE_MAP) {
+
+	/* One of the four targets. */
+	switch (target) {
+	case GL_TEXTURE_2D:
+	case GL_TEXTURE_CUBE_MAP:
+	case GL_TEXTURE_3D:
+	case GL_TEXTURE_2D_ARRAY:
+		break;
+	default:
 		gles_error(context, GL_INVALID_ENUM);
 		return;
 	}
@@ -710,10 +794,19 @@ glBindTexture(
 	}
 
 	/* Bound to the active unit's target. */
-	if (target == GL_TEXTURE_CUBE_MAP) {
+	switch (target) {
+	case GL_TEXTURE_CUBE_MAP:
 		state->cube_units[state->active_unit] = texture;
-	} else {
+		break;
+	case GL_TEXTURE_3D:
+		state->volume_units[state->active_unit] = texture;
+		break;
+	case GL_TEXTURE_2D_ARRAY:
+		state->array_units[state->active_unit] = texture;
+		break;
+	default:
 		state->units[state->active_unit] = texture;
+		break;
 	}
 }
 
@@ -764,7 +857,7 @@ glTexImage2D(
 
 	/* The bound texture (a cube map's face), a level and a size it can have. */
 	context = gles_context();
-	texture = texture_changing(context, target, 1, &face);
+	texture = texture_changing(context, target, TEXTURE_IMAGE_2D, &face);
 	if (texture == NULL)
 		return;
 	if (level < 0 ||
@@ -798,7 +891,7 @@ glTexImage2D(
 	}
 
 	/* The pixels in the kept form (NULL pixels: zeros). */
-	converted = texture_texels(context, storage, format, type, width, height, pixels);
+	converted = texture_texels(context, storage, format, type, width, height, 0, pixels);
 	if (converted == NULL)
 		return;
 
@@ -831,7 +924,7 @@ glTexSubImage2D(
 
 	/* The bound texture (a cube map's face) and a rectangle inside a specified level. */
 	context = gles_context();
-	texture = texture_changing(context, target, 1, &face);
+	texture = texture_changing(context, target, TEXTURE_IMAGE_2D, &face);
 	if (texture == NULL)
 		return;
 	if (level < 0 || level >= (GLint)GLES_LEVELS) {
@@ -854,7 +947,7 @@ glTexSubImage2D(
 	}
 
 	/* The pixels in the level's kept form. */
-	converted = texture_texels(context, destination->format, format, type, width, height, pixels);
+	converted = texture_texels(context, destination->format, format, type, width, height, 0, pixels);
 	if (converted == NULL)
 		return;
 
@@ -892,7 +985,7 @@ glCopyTexImage2D(
 
 	/* The bound texture (a cube map's face), a level and a size. */
 	context = gles_context();
-	texture = texture_changing(context, target, 1, &face);
+	texture = texture_changing(context, target, TEXTURE_IMAGE_2D, &face);
 	if (texture == NULL)
 		return;
 	if (level < 0 || level >= (GLint)GLES_LEVELS || width <= 0 || height <= 0 || border != 0) {
@@ -953,7 +1046,7 @@ glCopyTexSubImage2D(
 
 	/* The bound texture (a cube map's face) and a rectangle inside a specified level. */
 	context = gles_context();
-	texture = texture_changing(context, target, 1, &face);
+	texture = texture_changing(context, target, TEXTURE_IMAGE_2D, &face);
 	if (texture == NULL)
 		return;
 	if (level < 0 || level >= (GLint)GLES_LEVELS) {
@@ -1018,7 +1111,7 @@ glTexStorage2D(
 
 	/* The bound texture as a whole. */
 	context = gles_context();
-	texture = texture_changing(context, target, 0, &face);
+	texture = texture_changing(context, target, TEXTURE_STORAGE_2D, &face);
 	if (texture == NULL)
 		return;
 
@@ -1053,7 +1146,7 @@ glTexStorage2D(
 	}
 
 	/* Each face's levels: the ones asked for with zero texels, none beyond them. */
-	faces = texture_layers(texture);
+	faces = texture_faces(texture);
 	for (face = 0U; face < faces; face++) {
 		level_width = width;
 		level_height = height;
@@ -1152,6 +1245,384 @@ glCompressedTexSubImage2D(
 }
 
 /*
+ * Specifies a level of the bound 3D or 2D array texture in an internal
+ * format: its slices or layers, one image after another.
+ */
+GL_APICALL void GL_APIENTRY
+glTexImage3D(
+	GLenum target,
+	GLint level,
+	GLint internalformat,
+	GLsizei width,
+	GLsizei height,
+	GLsizei depth,
+	GLint border,
+	GLenum format,
+	GLenum type,
+	const void *pixels)
+{
+	struct zegl_context *context;
+	struct gles_state *state;
+	struct gles_texture *texture;
+	const struct gles_format *storage;
+	unsigned char *converted;
+	unsigned face;
+	int fits;
+
+	/* The bound 3D or 2D array texture, a level and a border of 0. */
+	context = gles_context();
+	state = gles_state(context);
+	texture = texture_changing(context, target, TEXTURE_IMAGE_3D, &face);
+	if (texture == NULL)
+		return;
+	if (level < 0 || level >= (GLint)GLES_LEVELS || border != 0) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* A size the shape allows. */
+	fits = texture_volume_size(state, texture, width, height, depth);
+	if (!fits) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* glTexStorage3D fixed the levels. */
+	if (texture->immutable) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return;
+	}
+
+	/* The format the level is kept in. */
+	storage = gles_format_find(state, (GLenum)internalformat, type);
+	if (storage == NULL) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* A 3D texture holds no depth. */
+	if (texture->target == GL_TEXTURE_3D && storage->kind == GLES_TEXEL_DEPTH) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return;
+	}
+
+	/* The texels of every slice in the kept form (none: zeros). */
+	converted = texture_texels(context, storage, format, type, width, height, depth, pixels);
+	if (converted == NULL)
+		return;
+
+	/* Succeeded: the level. */
+	gles_texture_define_volume(texture, level, width, height, depth, converted, storage);
+}
+
+/*
+ * Replaces a box of a level of the bound 3D or 2D array texture.
+ */
+GL_APICALL void GL_APIENTRY
+glTexSubImage3D(
+	GLenum target,
+	GLint level,
+	GLint xoffset,
+	GLint yoffset,
+	GLint zoffset,
+	GLsizei width,
+	GLsizei height,
+	GLsizei depth,
+	GLenum format,
+	GLenum type,
+	const void *pixels)
+{
+	struct zegl_context *context;
+	struct gles_texture *texture;
+	struct gles_level *destination;
+	unsigned char *converted;
+	unsigned face;
+
+	/* The bound 3D or 2D array texture and a level. */
+	context = gles_context();
+	texture = texture_changing(context, target, TEXTURE_IMAGE_3D, &face);
+	if (texture == NULL)
+		return;
+	if (level < 0 || level >= (GLint)GLES_LEVELS) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* A box inside the level. */
+	destination = &texture->levels[level];
+	if (xoffset < 0 ||
+	    yoffset < 0 ||
+	    zoffset < 0 ||
+	    width < 0 ||
+	    height < 0 ||
+	    depth < 0 ||
+	    xoffset + width > destination->width ||
+	    yoffset + height > destination->height ||
+	    zoffset + depth > destination->depth) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* A level that has texels. */
+	if (destination->format == NULL) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return;
+	}
+
+	/* The texels in the level's kept form. */
+	converted = texture_texels(context, destination->format, format, type, width, height, depth, pixels);
+	if (converted == NULL)
+		return;
+
+	/* Each row of each slice into place. */
+	texture_rows_place(destination, xoffset, yoffset, zoffset, width, height, depth, converted);
+
+	/* Succeeded: the image is stale. */
+	free(converted);
+	texture->dirty = 1;
+}
+
+/*
+ * Replaces a rectangle of one slice or layer of a level of the bound 3D
+ * or 2D array texture with one of the framebuffer.
+ */
+GL_APICALL void GL_APIENTRY
+glCopyTexSubImage3D(
+	GLenum target,
+	GLint level,
+	GLint xoffset,
+	GLint yoffset,
+	GLint zoffset,
+	GLint x,
+	GLint y,
+	GLsizei width,
+	GLsizei height)
+{
+	struct zegl_context *context;
+	struct gles_texture *texture;
+	struct gles_level *destination;
+	unsigned char *pixels;
+	unsigned face;
+
+	/* The bound 3D or 2D array texture and a level. */
+	context = gles_context();
+	texture = texture_changing(context, target, TEXTURE_IMAGE_3D, &face);
+	if (texture == NULL)
+		return;
+	if (level < 0 || level >= (GLint)GLES_LEVELS) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* A rectangle inside one slice of the level. */
+	destination = &texture->levels[level];
+	if (xoffset < 0 ||
+	    yoffset < 0 ||
+	    zoffset < 0 ||
+	    width <= 0 ||
+	    height <= 0 ||
+	    xoffset + width > destination->width ||
+	    yoffset + height > destination->height ||
+	    zoffset >= destination->depth) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* A level that has texels. */
+	if (destination->format == NULL) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return;
+	}
+
+	/* The framebuffer's pixels in the level's kept form. */
+	pixels = texture_from_framebuffer(context, destination->format, x, y, width, height);
+	if (pixels == NULL)
+		return;
+
+	/* Each row into place in the slice. */
+	texture_rows_place(destination, xoffset, yoffset, zoffset, width, height, 1, pixels);
+
+	/* Succeeded: the image is stale. */
+	free(pixels);
+	texture->dirty = 1;
+}
+
+/*
+ * Gives the bound 3D or 2D array texture a fixed set of levels of a sized
+ * internal format (halving from the size given; a 2D array keeps its
+ * layers), whose texels are zeros until glTexSubImage3D gives them.
+ */
+GL_APICALL void GL_APIENTRY
+glTexStorage3D(
+	GLenum target,
+	GLsizei levels,
+	GLenum internalformat,
+	GLsizei width,
+	GLsizei height,
+	GLsizei depth)
+{
+	struct zegl_context *context;
+	struct gles_state *state;
+	struct gles_texture *texture;
+	const struct gles_format *storage;
+	unsigned char *pixels;
+	unsigned face;
+	GLsizei level;
+	GLsizei largest;
+	int level_width;
+	int level_height;
+	int level_depth;
+	int fits;
+
+	/* The bound 3D or 2D array texture. */
+	context = gles_context();
+	state = gles_state(context);
+	texture = texture_changing(context, target, TEXTURE_IMAGE_3D, &face);
+	if (texture == NULL)
+		return;
+
+	/* At least one level, and a size the shape allows. */
+	fits = texture_volume_size(state, texture, width, height, depth);
+	if (levels < 1 || width < 1 || height < 1 || depth < 1 || !fits) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* A sized internal format (an unsized one is not an enum this call takes). */
+	storage = gles_format_find(state, internalformat, GL_NONE);
+	if (storage == NULL || storage->legacy) {
+		gles_error(context, GL_INVALID_ENUM);
+		return;
+	}
+
+	/* A 3D texture holds no depth. */
+	if (texture->target == GL_TEXTURE_3D && storage->kind == GLES_TEXEL_DEPTH) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return;
+	}
+
+	/* No more levels than halving the largest side gives (a 2D array's layers are not halved), and fixed only once. */
+	largest = width;
+	if (height > largest)
+		largest = height;
+	if (texture->target == GL_TEXTURE_3D && depth > largest)
+		largest = depth;
+	for (level = 1; (largest >> level) > 0; level++)
+		continue;
+	if (levels > level || levels > (GLsizei)GLES_LEVELS || texture->immutable) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return;
+	}
+
+	/* The levels asked for with zero texels, none beyond them. */
+	level_width = width;
+	level_height = height;
+	level_depth = depth;
+	for (level = 0; level < (GLsizei)GLES_LEVELS; level++) {
+		pixels = NULL;
+		if (level < levels) {
+			pixels = calloc((size_t)level_width * (size_t)level_height * (size_t)level_depth * storage->bytes + 1U, 1U);
+			if (pixels == NULL) {
+				gles_error(context, GL_OUT_OF_MEMORY);
+				return;
+			}
+		}
+
+		/* The level (a level beyond them is not specified). */
+		if (level < levels) {
+			gles_texture_define_volume(texture, level, level_width, level_height, level_depth, pixels, storage);
+		} else {
+			gles_texture_define_volume(texture, level, 0, 0, 0, NULL, NULL);
+		}
+
+		/* The next level's size: a 3D texture's depth halves too. */
+		level_width /= 2;
+		if (level_width < 1)
+			level_width = 1;
+		level_height /= 2;
+		if (level_height < 1)
+			level_height = 1;
+		if (texture->target == GL_TEXTURE_3D) {
+			level_depth /= 2;
+			if (level_depth < 1)
+				level_depth = 1;
+		}
+	}
+
+	/* Succeeded: the levels are fixed. */
+	texture->immutable = 1;
+	texture->immutable_levels = levels;
+}
+
+/*
+ * Refuses compressed 3D textures: no compressed format is offered.
+ */
+GL_APICALL void GL_APIENTRY
+glCompressedTexImage3D(
+	GLenum target,
+	GLint level,
+	GLenum internalformat,
+	GLsizei width,
+	GLsizei height,
+	GLsizei depth,
+	GLint border,
+	GLsizei imageSize,
+	const void *data)
+{
+	struct zegl_context *context;
+
+	/* GL_NUM_COMPRESSED_TEXTURE_FORMATS is 0. */
+	(void)target;
+	(void)level;
+	(void)internalformat;
+	(void)width;
+	(void)height;
+	(void)depth;
+	(void)border;
+	(void)imageSize;
+	(void)data;
+	context = gles_context();
+	if (context != NULL)
+		gles_error(context, GL_INVALID_ENUM);
+}
+
+/*
+ * Refuses compressed 3D textures: no compressed format is offered.
+ */
+GL_APICALL void GL_APIENTRY
+glCompressedTexSubImage3D(
+	GLenum target,
+	GLint level,
+	GLint xoffset,
+	GLint yoffset,
+	GLint zoffset,
+	GLsizei width,
+	GLsizei height,
+	GLsizei depth,
+	GLenum format,
+	GLsizei imageSize,
+	const void *data)
+{
+	struct zegl_context *context;
+
+	/* GL_NUM_COMPRESSED_TEXTURE_FORMATS is 0. */
+	(void)target;
+	(void)level;
+	(void)xoffset;
+	(void)yoffset;
+	(void)zoffset;
+	(void)width;
+	(void)height;
+	(void)depth;
+	(void)format;
+	(void)imageSize;
+	(void)data;
+	context = gles_context();
+	if (context != NULL)
+		gles_error(context, GL_INVALID_ENUM);
+}
+
+/*
  * Sets an integer parameter of the bound texture.
  */
 GL_APICALL void GL_APIENTRY
@@ -1166,7 +1637,7 @@ glTexParameteri(
 
 	/* The bound texture takes it. */
 	context = gles_context();
-	texture = texture_bound(context, target, 0, &face);
+	texture = texture_bound(context, target, TEXTURE_WHOLE, &face);
 	if (texture == NULL)
 		return;
 	(void)texture_parameter(context, texture, pname, param, (GLfloat)param);
@@ -1187,7 +1658,7 @@ glTexParameterf(
 
 	/* The bound texture takes it (an enum or a level as the integer, a level of detail as the float). */
 	context = gles_context();
-	texture = texture_bound(context, target, 0, &face);
+	texture = texture_bound(context, target, TEXTURE_WHOLE, &face);
 	if (texture == NULL)
 		return;
 	(void)texture_parameter(context, texture, pname, (GLint)param, param);
@@ -1236,7 +1707,7 @@ glGetTexParameteriv(
 
 	/* The bound texture's parameter. */
 	context = gles_context();
-	texture = texture_bound(context, target, 0, &face);
+	texture = texture_bound(context, target, TEXTURE_WHOLE, &face);
 	if (texture == NULL)
 		return;
 	status = texture_get(texture, pname, &value);
@@ -1270,7 +1741,7 @@ glGetTexParameterfv(
 
 	/* The bound texture's parameter. */
 	context = gles_context();
-	texture = texture_bound(context, target, 0, &face);
+	texture = texture_bound(context, target, TEXTURE_WHOLE, &face);
 	if (texture == NULL)
 		return;
 	status = texture_get(texture, pname, &value);
@@ -1321,13 +1792,14 @@ glGenerateMipmap(
 	struct gles_sampling nearest;
 	unsigned faces;
 	unsigned face;
+	unsigned shape;
 	GLint last;
 	int complete;
 	int status;
 
 	/* The bound texture (a cube map as a whole) with a base level. */
 	context = gles_context();
-	texture = texture_changing(context, target, 0, &face);
+	texture = texture_changing(context, target, TEXTURE_WHOLE, &face);
 	if (texture == NULL)
 		return;
 	format = texture->levels[texture->base_level].format;
@@ -1362,10 +1834,15 @@ glGenerateMipmap(
 	if (texture->immutable && texture->immutable_levels - 1 < last)
 		last = texture->immutable_levels - 1;
 
-	/* Each face's chain (a 2D texture has one face): RGBA8 averaged byte by byte, other formats through floats. */
-	faces = texture_layers(texture);
+	/*
+	 * Each face's chain (the other shapes have one face): RGBA8 images
+	 * averaged byte by byte, other formats and every 3D or 2D array
+	 * texture through floats.
+	 */
+	faces = texture_faces(texture);
+	shape = texture_shape(texture);
 	for (face = 0U; face < faces; face++) {
-		if (format->vk == VK_FORMAT_R8G8B8A8_UNORM) {
+		if (format->vk == VK_FORMAT_R8G8B8A8_UNORM && shape != GLES_SHAPE_3D && shape != GLES_SHAPE_ARRAY) {
 			status = texture_mipmaps(texture, face, last);
 		} else {
 			status = texture_mipmaps_kept(texture, face, last);
@@ -1653,20 +2130,22 @@ glGetSamplerParameterfv(
 
 /*
  * Returns the texture a target names on the active unit, and the face it
- * means: GL_TEXTURE_2D (face 0), and either a cube map face (images
- * nonzero: the calls that give a level pixels) or GL_TEXTURE_CUBE_MAP as
- * a whole (images zero: parameters and mipmaps).  NULL with the error
- * recorded when the target is wrong or nothing is bound.
+ * means, when the call takes the target (TEXTURE_TAKES_* bits):
+ * GL_TEXTURE_2D, a cube map's face (the calls that give a level texels),
+ * GL_TEXTURE_CUBE_MAP as a whole (parameters, storage and mipmaps),
+ * GL_TEXTURE_3D and GL_TEXTURE_2D_ARRAY.  NULL with the error recorded
+ * when the target is wrong or nothing is bound.
  */
 static struct gles_texture *
 texture_bound(
 	struct zegl_context *context,
 	GLenum target,
-	int images,
+	unsigned takes,
 	unsigned *face)
 {
 	struct gles_state *state;
 	struct gles_texture *texture;
+	unsigned taken;
 
 	/* A context with its state. */
 	*face = 0U;
@@ -1674,15 +2153,30 @@ texture_bound(
 	if (state == NULL)
 		return NULL;
 
-	/* The unit's 2D texture, its cube map as a whole, or one face of it. */
+	/* The unit's texture of the target, and which of the targets it is. */
+	texture = NULL;
+	taken = 0U;
 	if (target == GL_TEXTURE_2D) {
 		texture = state->units[state->active_unit];
-	} else if (target == GL_TEXTURE_CUBE_MAP && !images) {
+		taken = TEXTURE_TAKES_2D;
+	} else if (target == GL_TEXTURE_CUBE_MAP) {
 		texture = state->cube_units[state->active_unit];
-	} else if (target >= GL_TEXTURE_CUBE_MAP_POSITIVE_X && target <= GL_TEXTURE_CUBE_MAP_NEGATIVE_Z && images) {
+		taken = TEXTURE_TAKES_CUBE;
+	} else if (target >= GL_TEXTURE_CUBE_MAP_POSITIVE_X && target <= GL_TEXTURE_CUBE_MAP_NEGATIVE_Z) {
 		texture = state->cube_units[state->active_unit];
 		*face = target - GL_TEXTURE_CUBE_MAP_POSITIVE_X;
-	} else {
+		taken = TEXTURE_TAKES_FACES;
+	} else if (target == GL_TEXTURE_3D) {
+		texture = state->volume_units[state->active_unit];
+		taken = TEXTURE_TAKES_3D;
+	} else if (target == GL_TEXTURE_2D_ARRAY) {
+		texture = state->array_units[state->active_unit];
+		taken = TEXTURE_TAKES_ARRAY;
+	}
+
+	/* A target the call does not take. */
+	if ((taken & takes) == 0U) {
+		*face = 0U;
 		gles_error(context, GL_INVALID_ENUM);
 		return NULL;
 	}
@@ -1706,14 +2200,14 @@ static struct gles_texture *
 texture_changing(
 	struct zegl_context *context,
 	GLenum target,
-	int images,
+	unsigned takes,
 	unsigned *face)
 {
 	struct gles_texture *texture;
 	int status;
 
 	/* The bound texture. */
-	texture = texture_bound(context, target, images, face);
+	texture = texture_bound(context, target, takes, face);
 	if (texture == NULL)
 		return NULL;
 
@@ -1752,6 +2246,31 @@ texture_new(
 
 	/* Succeeded: the texture. */
 	return texture;
+}
+
+/* Gives a level of a face new texels (the texture takes them over) of a size and slices, kept in a format; the image is stale. */
+static void
+texture_level_set(
+	struct gles_texture *texture,
+	unsigned face,
+	GLint level,
+	int width,
+	int height,
+	int depth,
+	unsigned char *pixels,
+	const struct gles_format *format)
+{
+	struct gles_level *defined;
+
+	/* The old pixels go; the image is stale. */
+	defined = &texture->levels[face * GLES_LEVELS + (unsigned)level];
+	free(defined->pixels);
+	defined->pixels = pixels;
+	defined->width = width;
+	defined->height = height;
+	defined->depth = depth;
+	defined->format = format;
+	texture->dirty = 1;
 }
 
 /* Gives a sampling state GL's initial values. */
@@ -1912,7 +2431,9 @@ texture_convert(
 /*
  * Converts the application's pixels of a format and type into a level's
  * kept form (OpenGL ES 2's unsized formats by texture_convert, the rest
- * by format.c).  Returns the texels, or NULL with the error recorded.
+ * by format.c): one image, or depth slices or layers (depth 0 for a 2D
+ * call), found by the pixel store and the pixel unpack buffer.  Returns
+ * the texels, or NULL with the error recorded.
  */
 static unsigned char *
 texture_texels(
@@ -1922,20 +2443,40 @@ texture_texels(
 	GLenum type,
 	GLsizei width,
 	GLsizei height,
+	GLsizei depth,
 	const void *pixels)
 {
+	struct gles_state *state;
+	const void *packed;
+	unsigned char *owned;
 	unsigned char *converted;
+	GLsizei rows;
 	GLenum error;
+
+	/* The texels as tight rows, wherever the pixel store and the unpack buffer put them. */
+	state = gles_state(context);
+	error = gles_unpack(state, format, type, width, height, depth, pixels, &packed, &owned);
+	if (error != GL_NO_ERROR) {
+		gles_error(context, error);
+		return NULL;
+	}
+
+	/* Every slice's rows, one after another. */
+	rows = height;
+	if (depth > 1)
+		rows = height * depth;
 
 	/* OpenGL ES 2's formats and types into RGBA8. */
 	if (storage->legacy) {
-		converted = texture_convert(context, format, type, width, height, pixels);
+		converted = texture_convert(context, format, type, width, rows, packed);
+		free(owned);
 		return converted;
 	}
 
 	/* Any other format through four channels. */
 	converted = NULL;
-	error = gles_texels_convert(storage, format, type, width, height, gles_state(context)->unpack_alignment, pixels, &converted);
+	error = gles_texels_convert(storage, format, type, width, rows, state->unpack_alignment, packed, &converted);
+	free(owned);
 	if (error != GL_NO_ERROR) {
 		gles_error(context, error);
 		return NULL;
@@ -1993,6 +2534,75 @@ texture_from_framebuffer(
 
 	/* Succeeded: the kept texels. */
 	return converted;
+}
+
+/* Copies tight rows of kept texels, slice by slice, into a box of a level at an offset (the caller checked the box fits). */
+static void
+texture_rows_place(
+	struct gles_level *destination,
+	GLint xoffset,
+	GLint yoffset,
+	GLint zoffset,
+	GLsizei width,
+	GLsizei height,
+	GLsizei depth,
+	const unsigned char *rows)
+{
+	size_t bytes;
+	size_t target;
+	size_t source;
+	GLsizei slice;
+	GLsizei row;
+
+	/* Each row of each slice into place. */
+	bytes = destination->format->bytes;
+	for (slice = 0; slice < depth; slice++) {
+		for (row = 0; row < height; row++) {
+			target = (((size_t)(zoffset + slice) * (size_t)destination->height + (size_t)(yoffset + row)) * (size_t)destination->width + (size_t)xoffset) * bytes;
+			source = ((size_t)slice * (size_t)height + (size_t)row) * (size_t)width * bytes;
+			memcpy(destination->pixels + target, rows + source, (size_t)width * bytes);
+		}
+	}
+}
+
+/* Reports whether a 3D texture (every side up to the most) or a 2D array (its sides and layers up to theirs) may have a level of a size. */
+static int
+texture_volume_size(
+	struct gles_state *state,
+	const struct gles_texture *texture,
+	GLsizei width,
+	GLsizei height,
+	GLsizei depth)
+{
+	GLsizei side;
+	GLsizei layers;
+
+	/* No side is negative. */
+	if (width < 0 || height < 0 || depth < 0)
+		return 0;
+
+	/* A 3D texture's sides: GL's most, and the device's. */
+	if (texture->target == GL_TEXTURE_3D) {
+		side = GLES_MAX_3D_SIZE;
+		if ((GLsizei)state->limits.maxImageDimension3D < side)
+			side = (GLsizei)state->limits.maxImageDimension3D;
+		if (width > side || height > side || depth > side)
+			return 0;
+		return 1;
+	}
+
+	/* A 2D array's sides are a 2D texture's, its layers up to the most. */
+	side = 16384;
+	if ((GLsizei)state->limits.maxImageDimension2D < side)
+		side = (GLsizei)state->limits.maxImageDimension2D;
+	layers = GLES_MAX_LAYERS;
+	if ((GLsizei)state->limits.maxImageArrayLayers < layers)
+		layers = (GLsizei)state->limits.maxImageArrayLayers;
+	if (width > side || height > side || depth > layers)
+		return 0;
+
+	/* Succeeded: the size fits. */
+	return 1;
 }
 
 /*
@@ -2311,7 +2921,8 @@ texture_nearest(
 /*
  * Returns how many levels a texture's image has: from the base level, the
  * chain of halving sizes (on every face, of the base level's format, up
- * to the most level) when it mipmaps, else 1.
+ * to the most level; a 3D texture's depth halves too, a 2D array's layers
+ * stay as many) when it mipmaps, else 1.
  */
 static uint32_t
 texture_levels(
@@ -2325,6 +2936,8 @@ texture_levels(
 	uint32_t face;
 	int width;
 	int height;
+	int depth;
+	int halve_depth;
 	int mipmapped;
 	int whole;
 
@@ -2339,12 +2952,16 @@ texture_levels(
 		limit = (uint32_t)(texture->max_level - texture->base_level) + 1U;
 
 	/* Each next level whose size is the halved one on every face, and whose format is the base level's. */
-	faces = texture_layers(texture);
+	faces = texture_faces(texture);
 	base = &texture->levels[texture->base_level];
 	width = base->width;
 	height = base->height;
+	depth = base->depth;
+	halve_depth = 0;
+	if (texture->target == GL_TEXTURE_3D)
+		halve_depth = 1;
 	for (levels = 1U; levels < limit; levels++) {
-		if (width == 1 && height == 1)
+		if (width == 1 && height == 1 && (!halve_depth || depth == 1))
 			break;
 		width = width / 2;
 		if (width < 1)
@@ -2352,6 +2969,11 @@ texture_levels(
 		height = height / 2;
 		if (height < 1)
 			height = 1;
+		if (halve_depth) {
+			depth = depth / 2;
+			if (depth < 1)
+				depth = 1;
+		}
 
 		/* The level of every face, of that size and format. */
 		whole = 1;
@@ -2359,6 +2981,7 @@ texture_levels(
 			level = &texture->levels[face * GLES_LEVELS + (uint32_t)texture->base_level + levels];
 			if (level->width != width ||
 			    level->height != height ||
+			    level->depth != depth ||
 			    level->pixels == NULL ||
 			    level->format != base->format)
 				whole = 0;
@@ -2373,17 +2996,38 @@ texture_levels(
 	return levels;
 }
 
-/* Returns how many layers a texture's image has: six faces for a cube map, one for a 2D texture. */
+/* Returns how many faces a texture has: six for a cube map, one for the other shapes. */
 static uint32_t
-texture_layers(
+texture_faces(
 	const struct gles_texture *texture)
 {
 	/* A cube map. */
 	if (texture->target == GL_TEXTURE_CUBE_MAP)
 		return GLES_FACES;
 
-	/* Succeeded: a 2D texture. */
+	/* Succeeded: one face. */
 	return 1U;
+}
+
+/* Returns a texture's shape (GLES_SHAPE_*) by its target (a texture not bound yet is 2D). */
+static unsigned
+texture_shape(
+	const struct gles_texture *texture)
+{
+	/* The target it was bound to. */
+	switch (texture->target) {
+	case GL_TEXTURE_CUBE_MAP:
+		return GLES_SHAPE_CUBE;
+	case GL_TEXTURE_3D:
+		return GLES_SHAPE_3D;
+	case GL_TEXTURE_2D_ARRAY:
+		return GLES_SHAPE_ARRAY;
+	default:
+		break;
+	}
+
+	/* Succeeded: a 2D texture. */
+	return GLES_SHAPE_2D;
 }
 
 /* Makes every level of an RGBA8 face below its base level by halving it with a box filter, until 1x1 or the last level; nonzero when there is no memory. */
@@ -2457,7 +3101,11 @@ texture_mipmaps(
 	return 0;
 }
 
-/* Makes every level of a face of any other normalized or float format below its base level, through floats (format.c); nonzero when there is no memory. */
+/*
+ * Makes every level of a face of any normalized or float format below its
+ * base level, through floats (format.c): a 3D texture's slices halve too,
+ * a 2D array's layers each on their own.  Nonzero when there is no memory.
+ */
 static int
 texture_mipmaps_kept(
 	struct gles_texture *texture,
@@ -2468,22 +3116,30 @@ texture_mipmaps_kept(
 	unsigned char *pixels;
 	int width;
 	int height;
+	int depth;
+	int halve_depth;
 	int status;
 	GLint level;
 
-	/* Each level from the one above it, until 1x1. */
+	/* A 3D texture's depth halves with its sides. */
+	halve_depth = 0;
+	if (texture->target == GL_TEXTURE_3D)
+		halve_depth = 1;
+
+	/* Each level from the one above it, until 1x1 (and one slice in 3D). */
 	for (level = texture->base_level + 1; level <= last; level++) {
 		source = &texture->levels[face * GLES_LEVELS + (unsigned)level - 1U];
-		if (source->width == 1 && source->height == 1)
+		if (source->width == 1 && source->height == 1 && (!halve_depth || source->depth == 1))
 			break;
 
 		/* The halved level. */
-		status = gles_texels_halve(source->format, source->pixels, source->width, source->height, &pixels, &width, &height);
+		status = gles_texels_halve(source->format, source->pixels, source->width, source->height, source->depth, halve_depth,
+					   &pixels, &width, &height, &depth);
 		if (status != 0)
 			return -1;
 
 		/* The level. */
-		gles_texture_define(texture, face, level, width, height, pixels, source->format);
+		texture_level_set(texture, face, level, width, height, depth, pixels, source->format);
 	}
 
 	/* Succeeded: the chain. */

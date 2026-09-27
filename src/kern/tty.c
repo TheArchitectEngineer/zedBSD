@@ -2148,10 +2148,15 @@ tty_read_canonical(
 			return -EAGAIN;
 		}
 
+		/*
+		 * Sleeps until a record arrives.  EAGAIN means a wakeup came
+		 * while the sleep had the lock dropped to look for signals,
+		 * and the loop looks again.
+		 */
 		sequence = waitq_sequence(&tty->read_waitq);
 		error = waitq_sleep(&tty->read_waitq, &tty->lock, sequence, 0,
 		    WAITQ_INTERRUPTIBLE);
-		if (error != 0) {
+		if (error != 0 && error != EAGAIN) {
 			spin_unlock_irqrestore(&tty->lock, irq);
 			return -error;
 		}
@@ -2269,7 +2274,7 @@ tty_read_noncanonical(
 		    deadline, WAITQ_INTERRUPTIBLE);
 		if (error == ETIMEDOUT)
 			break;
-		if (error != 0) {
+		if (error != 0 && error != EAGAIN) {
 			spin_unlock_irqrestore(&tty->lock, irq);
 			return -error;
 		}
@@ -2648,10 +2653,15 @@ pty_output_bytes(
 			return -EAGAIN;
 		}
 
+		/*
+		 * Sleeps until the master makes room.  EAGAIN means a wakeup came
+		 * while the sleep had the lock dropped to look for signals,
+		 * and the loop looks again.
+		 */
 		sequence = waitq_sequence(&pair->output_waitq);
 		error = waitq_sleep(&pair->output_waitq, &pair->lock,
 		    sequence, 0, WAITQ_INTERRUPTIBLE);
-		if (error != 0) {
+		if (error != 0 && error != EAGAIN) {
 			spin_unlock_irqrestore(&pair->lock, irq);
 			if (done != 0)
 				return (ssize_t)done;
@@ -3043,10 +3053,15 @@ pty_master_read(
 			return -EAGAIN;
 		}
 
+		/*
+		 * Sleeps until the slave writes.  EAGAIN means a wakeup came
+		 * while the sleep had the lock dropped to look for signals,
+		 * and the loop looks again.
+		 */
 		sequence = waitq_sequence(&pair->output_waitq);
 		error = waitq_sleep(&pair->output_waitq, &pair->lock, sequence, 0,
 		    WAITQ_INTERRUPTIBLE);
-		if (error != 0) {
+		if (error != 0 && error != EAGAIN) {
 			spin_unlock_irqrestore(&pair->lock, irq);
 			return -error;
 		}

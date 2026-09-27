@@ -9,7 +9,8 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: none（p001〜p004 は 2026-09-27 ユーザーの指示でサブエージェントが worktree の branch で実行。main への統合は main の session）
-Resume point: p006（WS071 と共有する menu の file への規約の直し。WS071 の merge の後）。p001〜p005 cleared（p005: i915 実機と回帰、共有しない file の規約）
+Resume point: p008（titlebar の protocol と model）。p007（Titlebar Presentation の設計）cleared 2026-09-27。順序は titlebar-design.md §14（WS071 と合わせた計画）。p006 は titlebar の Phase の後
+Executor: WS071 の作業用のサブエージェント（2026-09-27 ユーザー「WS071のサブエージェントでスケジューリングするのがいいと思います。」）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -41,6 +42,25 @@ Wayland のクライアントがメニューの意味（階層・ラベル・状
 
 設計は [design.md](design.md)（§11 の 5 点は 2026-09-27 ユーザーが既定のまま確定: F10、shortcut は zdesktop が実行、外の click は閉じるだけ、icon なし、ASCII の label。§12 の context menu の余地）。
 
+## 追加の目標: Titlebar Presentation（2026-09-27）
+
+ユーザー:「WS070に仕様追加します。WS071のサブエージェントでスケジューリングするのがいいと思います。」と
+「zedBSD Titlebar Presentation Specification」のたたき台（原文は [titlebar-spec.md](titlebar-spec.md)）。
+
+タイトルバーを system-owned な presentation surface とし、client は意味（identity・menu・controls・tabs の model）だけを渡し、
+zdesktop が浮いたタイトルバー（通常）とシステムバーの Application Zone（最大化）に描く。主の内容は `MENU`・`CONTROLS`・`TABS` の
+どれか 1 つ（排他）。幅の不足の段階的な縮退、docking と restore の animation（200〜300 ms）、docked からの下への drag・swipe で restore、
+double click の対称、transaction の atomic な mode の切り替え、client は pixel・font・色を指定しない、pointer と touch の適応、
+未対応の compositor では client 側の装飾へ fallback。
+
+既存の System Menu（p001〜p005 の `xdg_toplevel_menu_v1`）はこの仕様の `MENU` mode の model になる。`CONTROLS` の最初の使い手は
+zdesktop-files（WS071、仕様の §14 の File Manager の例）、`TABS` の使い手は後で（zdesktop-files は CONTROLS なのでタブ（WS071 p013）は窓の中、titlebar-design.md §11）。
+同日のユーザーの補足:「つまり、今のファイラーのはウィンドウ内部の上部にナビゲーションバーを持っていますが、これをウィンドウのフローティングタイトルバーにマージします。」
+→ 具体的な受け入れの一つ: zdesktop-files の窓の中の上部のナビゲーションバー（戻る・進む・ホーム・path・検索・表示の切り替え等）を
+`CONTROLS` の model として浮いたタイトルバー（最大化ではシステムバーの Application Zone）へ移し、窓の中の bar は消す。
+さらにユーザー:「ファイラーはこのcompositorでしか使えなくてOKです。」→ zdesktop-files には fallback（§27）を持たせない（拡張が無ければ起動時にはっきり失敗してよい）。
+Phase の分け方・順序・受け入れは p007（設計）で決める。WS071 の Phase と組み合わせて WS071 のサブエージェントが計画する。
+
 ## Future Work の候補（main の session が future-work.md へ）
 
 - menu の item の icon（`icon_name`・role の icon を描く）。2026-09-27 ユーザー「アイコンはあとで追加を考えましょう」。icon theme が要る。
@@ -55,6 +75,12 @@ Wayland のクライアントがメニューの意味（階層・ラベル・状
 | [ws070-p003](phase003/phase.md) | zdesktop の描画と操作: 浮いたタイトルバーとシステムバーの項目、popup、keyboard、shortcut、activation | cleared | p002 |
 | [ws070-p004](phase004/phase.md) | libzdesktop の API と zdesktop-terminal のメニュー（Shell・Edit・View・Session・Help） | cleared | p002、p003 |
 | [ws070-p005](phase005/phase.md) | i915 実機、規約の全文との照合（WS071 と共有しない file）と回帰。libwayland の flush の EPIPE で protocol error を読み落とす不具合を直した | cleared | p001〜p004 |
+| [ws070-p007](phase007/phase.md) | Titlebar Presentation の設計（[titlebar-design.md](titlebar-design.md)）: protocol `zed_titlebar_v1`、libzdesktop、zdesktop の配置・縮退・描画・入力・animation、overflow、glyph cache、試験、Phase の分割 | cleared | p005、[titlebar-spec.md](titlebar-spec.md) |
+| ws070-p008 | titlebar の protocol と model: libwayland の `zed_titlebar_*`、zdesktop の titlebar.c（request・model・transaction・error・寿命・log）、libzdesktop の `zdesktop_titlebar_*`、titlebar-probe。描画は変えない | planned | p007 |
+| ws070-p009 | glass の UTF-8 と動的 glyph cache（fallback font）、role の icon の rasterize。題名・menu の label の日本語（zdesktop の glass.c: WS035 と調整） | planned | p007 |
+| ws070-p010 | CONTROLS の presentation: 配置と縮退、button・segment・検索とパンくずの欄・輪、pointer・keyboard、overflow の popup（隠れた control と窓の menu）、docked の Application Zone、animation の補間（shell.c・menu-shell.c・seat.c: WS035 と調整） | planned | p008、p009 |
+| ws070-p011 | TABS の presentation: strip、active・attention・×・＋、縮退、mode の atomic な切替（titlebar-probe で） | planned | p010 |
+| ws070-p012 | titlebar の規約の全文との照合、回帰（menu・files・zdesktop）、boot test、i915 実機（任意） | planned | p006、p011、WS071-p014 |
 | ws070-p006 | 規約の全文との照合の残り: WS071 と共有する file（`zdesktop/menu.c`・`menu-shell.c`・`menu.h`、`libzdesktop/menu.c`、`zdesktop.h`、`libwayland/menu-protocol.c`）への p005 の指摘の直しと回帰（最後） | planned | p005、WS071 の menu の変更の merge（衝突を避ける分割、2026-09-27） |
 
 ## 試験の道具（plan/ws070/tests/）

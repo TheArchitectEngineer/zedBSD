@@ -270,6 +270,13 @@ int zdesktop_recent_remove(const char *path);
 
 - 起動は `fork` と `setsid` と `execl("/bin/sh", "sh", "-c", command)`（zdesktop の App Home と同じ）、Terminal は
   `/bin/zdesktop-terminal --command=...`。開いた file は recent に足す（§6.2）。
+- **変更（p012、2026-09-27）**: 一覧の優先は利用者 → system → 内蔵（同じ名前は先のもの）。PATTERNS は `,` で区切った MIME の glob
+  （`fnmatch`）。command の先頭の `@terminal ` は残りを新しい zdesktop-terminal の `--command=` で（shell の quote が 2 重にならない）、
+  `@quicklook` は Quick Look。`%f` が無い command は末尾に path を足す。一覧は開くたびに読む（編集がすぐ効く）。起動は fork を 2 段に
+  して孫が走らせる（file manager が待つ子を残さない、stdin・stdout・stderr は `/dev/null`）。内蔵の表は Quick Look（`image/*`）、
+  Terminal (less)（text と source）、Remacs・Terminal (ed)（`/bin`・`/usr/bin`・`/usr/local/bin` に実行 file があるとき）、
+  最後に全部に Terminal (less)。`mview` は変換済みの model の directory しか読まない（`--model=DIR`）ので内蔵の表に入れない
+  （model の file は Terminal (less) で開く）。`/bin/vi` は base に無いので出さない。
 
 ## 8. 検索（spec §7）
 
@@ -314,6 +321,13 @@ Delete 等が効かなくなるのを避ける）。Ctrl+C・X・V・A・Z は m
 
 選択・clipboard・undo・タブの数に合わせて enabled・checked を 1 transaction で更新する（WS070 の terminal と同じ）。
 Help の 3 つは Quick Look と同じ overlay の card に text を出す。
+
+**実装（p008、2026-09-27）**: タブの項目（New Tab、Close Tab、Previous/Next Tab）は p013 で足す。menu の action は
+`enum fm_action` の値で、実行は `fm_ui_action`・状態は `fm_ui_menu_state`（`ui-menu.c`、Wayland を知らないので host で試せる）、
+zdesktop とのやり取りは `menu.c`。Open With（8）・Tags（16）・List Columns（6）は枠を先に作り、状態で名前・visible・checked を
+変える。text の欄に focus があれば Cut・Copy・Paste・Undo・Redo は無効（zdesktop は無効な item の shortcut を取らないので key が
+欄に届く）、Select All は欄の全選択。menu の無い compositor では `ui-input.c` の表が同じ key を同じ action にする。Move to Trash と
+Rename は shortcut を登録しない（Delete・F2 は client が扱う）。
 
 ### 10.2 context menu（WS070 protocol の version 2、p009）
 

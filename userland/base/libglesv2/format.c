@@ -312,8 +312,10 @@ gles_texels_from_rgba8(
 
 /*
  * Makes the level below one of a normalized or float format by halving it
- * with a box filter (the level is at least 1x1).  Returns 0 with the new
- * texels and size, or -1 when there is no memory.
+ * with a box filter (the level is at least 1x1).  The level has slices
+ * one after another: a 3D texture's are halved too (halve_depth nonzero),
+ * a 2D array's layers each on their own.  Returns 0 with the new texels
+ * and size, or -1 when there is no memory.
  */
 int
 gles_texels_halve(
@@ -321,58 +323,85 @@ gles_texels_halve(
 	const unsigned char *source,
 	int source_width,
 	int source_height,
+	int source_depth,
+	int halve_depth,
 	unsigned char **out,
 	int *width,
-	int *height)
+	int *height,
+	int *depth)
 {
 	struct format_texel texel;
+	const unsigned char *read;
 	unsigned char *halved;
 	float values[4];
 	float sum[4];
 	unsigned channel;
 	int x;
 	int y;
+	int z;
 	int dx;
 	int dy;
+	int dz;
 	int sx;
 	int sy;
+	int sz;
+	int slices;
 
-	/* The halved size, at least 1. */
+	/* The halved size, at least 1; layers of an array stay as many. */
 	*width = source_width / 2;
 	if (*width < 1)
 		*width = 1;
 	*height = source_height / 2;
 	if (*height < 1)
 		*height = 1;
+	*depth = source_depth;
+	slices = 1;
+	if (halve_depth) {
+		*depth = source_depth / 2;
+		if (*depth < 1)
+			*depth = 1;
+		slices = 2;
+	}
 
 	/* Its texels. */
-	halved = malloc((size_t)*width * (size_t)*height * format->bytes + 1U);
+	halved = malloc((size_t)*width * (size_t)*height * (size_t)*depth * format->bytes + 1U);
 	if (halved == NULL)
 		return -1;
 
-	/* Each texel: the mean of the (up to) four above it, read from and written in the kept form. */
+	/* Each texel: the mean of the (up to) four, or eight in 3D, above it, read from and written in the kept form. */
 	memset(&texel, 0, sizeof(texel));
-	for (y = 0; y < *height; y++) {
-		for (x = 0; x < *width; x++) {
-			memset(sum, 0, sizeof(sum));
-			for (dy = 0; dy < 2; dy++) {
-				for (dx = 0; dx < 2; dx++) {
-					sx = x * 2 + dx;
-					sy = y * 2 + dy;
-					if (sx >= source_width)
-						sx = source_width - 1;
-					if (sy >= source_height)
-						sy = source_height - 1;
-					format_read_kept(format, source + ((size_t)sy * (size_t)source_width + (size_t)sx) * format->bytes, values);
-					for (channel = 0U; channel < 4U; channel++)
-						sum[channel] += values[channel];
-				}
-			}
+	for (z = 0; z < *depth; z++) {
+		for (y = 0; y < *height; y++) {
+			for (x = 0; x < *width; x++) {
+				memset(sum, 0, sizeof(sum));
+				for (dz = 0; dz < slices; dz++) {
+					for (dy = 0; dy < 2; dy++) {
+						for (dx = 0; dx < 2; dx++) {
+							/* The texel above, clamped to the level's edges. */
+							sx = x * 2 + dx;
+							sy = y * 2 + dy;
+							sz = z * slices + dz;
+							if (sx >= source_width)
+								sx = source_width - 1;
+							if (sy >= source_height)
+								sy = source_height - 1;
+							if (sz >= source_depth)
+								sz = source_depth - 1;
 
-			/* The mean. */
-			for (channel = 0U; channel < 4U; channel++)
-				texel.f[channel] = sum[channel] / 4.0f;
-			format_encode(format, &texel, halved + ((size_t)y * (size_t)*width + (size_t)x) * format->bytes);
+							/* Its channels into the sum. */
+							read = source + (((size_t)sz * (size_t)source_height + (size_t)sy) * (size_t)source_width + (size_t)sx) * format->bytes;
+							format_read_kept(format, read, values);
+							for (channel = 0U; channel < 4U; channel++)
+								sum[channel] += values[channel];
+						}
+					}
+				}
+
+				/* The mean. */
+				for (channel = 0U; channel < 4U; channel++)
+					texel.f[channel] = sum[channel] / (float)(4 * slices);
+				format_encode(format, &texel, halved + (((size_t)z * (size_t)*height + (size_t)y) * (size_t)*width + (size_t)x) * format->bytes);
+			}
 		}
 	}
 
@@ -417,6 +446,42 @@ gles_half_float(
 	/* The float of those bits. */
 	memcpy(&value, &bits, 4U);
 	return value;
+}
+
+/*
+ * Returns the bytes one of the application's pixels of a format and type
+ * takes (a packed type's whole word, else the components' bytes); 0 when
+ * the format or the type is not one.
+ */
+size_t
+gles_pixel_size(
+	GLenum format,
+	GLenum type)
+{
+	unsigned components;
+
+	/* A packed type holds a whole pixel. */
+	switch (type) {
+	case GL_UNSIGNED_SHORT_5_6_5:
+	case GL_UNSIGNED_SHORT_4_4_4_4:
+	case GL_UNSIGNED_SHORT_5_5_5_1:
+		return 2U;
+	case GL_UNSIGNED_INT_2_10_10_10_REV:
+	case GL_UNSIGNED_INT_10F_11F_11F_REV:
+	case GL_UNSIGNED_INT_5_9_9_9_REV:
+	case GL_UNSIGNED_INT_24_8:
+		return 4U;
+	case GL_FLOAT_32_UNSIGNED_INT_24_8_REV:
+		return 8U;
+	default:
+		break;
+	}
+
+	/* A component type: one per component of the format. */
+	components = format_components(format);
+
+	/* Succeeded: the components' bytes (0 when either is not one). */
+	return format_type_size(type) * components;
 }
 
 /*

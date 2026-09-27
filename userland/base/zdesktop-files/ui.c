@@ -154,6 +154,7 @@ fm_app_release(
 	fm_image_release(&app->hero);
 	fm_thumb_release(app);
 	fm_peek_release(&app->peek);
+	fm_info_release(&app->info);
 
 	/* Each tab's listing, then the tab. */
 	for (index = 0; index < app->tab_count; index++) {
@@ -236,6 +237,9 @@ fm_ui_tick(
 	if (made != 0)
 		app->dirty = 1;
 
+	/* The information's checksum moves on. */
+	fm_info_tick(app);
+
 	/* A message that has run its time goes. */
 	if (app->message[0] != '\0' && now >= app->message_until) {
 		app->message[0] = '\0';
@@ -300,8 +304,10 @@ fm_ui_draw(
 	if (app->show_tasks != 0 && app->task_count > 0)
 		fm_tasks_draw(app, canvas, app->layout.toolbar.x + app->layout.toolbar.width - 8, app->layout.toolbar.y + app->layout.toolbar.height + 6);
 
-	/* Quick Look over all of it, and a question over that. */
+	/* Quick Look, the information or Help over all of it, and a question over that. */
 	fm_look_draw(app, canvas);
+	fm_info_draw(app, canvas);
+	fm_help_draw(app, canvas);
 	fm_overlay_draw(app, canvas);
 
 	/* The frame is up to date. */
@@ -416,12 +422,14 @@ int
 fm_ui_wait(
 	struct fm_app *app)
 {
-	/* A thumbnail asked for, an operation or a search walking: no sleep. */
+	/* A thumbnail asked for, an operation, a search walking or a checksum: no sleep. */
 	if (app->thumb_wanted[0] != '\0')
 		return 0;
 	if (app->task_count > 0)
 		return 0;
 	if (app->search.active != 0)
+		return 0;
+	if (app->info_open != 0 && app->info.checksum_state == FM_CHECKSUM_RUNNING)
 		return 0;
 
 	/* A search typed a moment ago starts soon. */
@@ -697,7 +705,8 @@ fm_ui_forward(
 }
 
 /*
- * Opens an item of the listing: a folder in the tab (a file opens in a later phase).
+ * Opens an item of the listing: a folder in the tab, a file with its
+ * default application.
  */
 void
 fm_ui_open(
@@ -723,9 +732,8 @@ fm_ui_open(
 		return;
 	}
 
-	/* A file is logged and kept among the recent files (it is opened by an application in a later phase). */
-	fm_log("OPEN path=%s", entry->path);
-	fm_recent_add(entry->path);
+	/* A file opens with its default way. */
+	fm_open_entry(app, index, 0);
 }
 
 /* Places the toolbar, the sidebar, the content and the preview for the window's size. */
