@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 のユーザーの指示でサブエージェントが worktree の branch で実行。main の Queue への反映は統合する main）
-Resume point: p001〜p005・p007・p010〜p012・p014・p022〜p026・p045 cleared。次は p046（組み込み 1b: Array・String・JSON）
+Resume point: p001〜p005・p007・p010〜p012・p014・p022〜p026・p045・p046 cleared。次は p030（JS の接続、実行の順）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -115,7 +115,7 @@ p009 → p018 → p027 → p028 → p029 → p031 → p032 → p033 → p034 →
 | ws074-p042 | CSS の段階 M4: 失敗の塊から機能を選んで直す | planned | p040 |
 | ws074-p043 | JS・Chrome の段階 M4: test262 と比較の失敗の塊を直す。**M4 の計測** | planned | p042 |
 | ws074-p044 | 変更した source の規約の全文との照合、fuzz（時間を区切って）、回帰、boot test（最後） | planned | 全て |
-| ws074-p046 | 組み込み 1b（p026 から分けた）: Array・String（正規表現の要らない method）・JSON | planned | p026 |
+| [ws074-p046](phase046/phase.md) | 組み込み 1b（p026 から分けた）: Array・String（正規表現の要らない method、UCD 16.0.0 から生成する大文字・小文字の表）・JSON（14255/47792、ES5 6786/8087） | cleared | p026 |
 | [ws074-p045](phase045/phase.md) | 窓 2（p014 から分けた）: CONTROLS の titlebar の URL の欄、link の click（`file:`）、戻る・進む・再読み込み | cleared | p014 |
 
 ## 後の WS・Future Work の候補
