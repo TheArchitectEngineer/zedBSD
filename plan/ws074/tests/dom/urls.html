@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<html>
+<head><title>URLs</title></head>
+<body>
+<script src="data:text/javascript,console.log('from a data URL', 1 + 1)"></script>
+<script src="data:text/javascript;base64,Y29uc29sZS5sb2coImZyb20gYmFzZTY0Iik="></script>
+<script src="data:,console.log(%22percent-encoded%22%2C%20%22text%22)"></script>
+<script src="urls-external.js?version=2#part"></script>
+<script src="./sub/../urls-external.js"></script>
+<script>console.log("after the external scripts");</script>
+</body>
+</html>
