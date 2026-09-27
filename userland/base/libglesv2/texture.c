@@ -300,6 +300,10 @@ gles_texture_sync(
 		for (level = 0U; level < levels; level++) {
 			source = &texture->levels[face * GLES_LEVELS + base + level];
 			bytes = (size_t)source->width * (size_t)source->height * (size_t)source->depth * format->bytes;
+
+			/* A level not specified yet (a cube map's later face) has no texels to copy: a region of no extent is invalid. */
+			if (bytes == 0U || source->pixels == NULL)
+				continue;
 			memcpy(mapped + total, source->pixels, bytes);
 			copies[count].bufferOffset = total;
 			copies[count].imageSubresource.aspectMask = copy_aspect;

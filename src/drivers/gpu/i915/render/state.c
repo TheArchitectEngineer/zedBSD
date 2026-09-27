@@ -38,6 +38,10 @@
 #define I915_GFX_SURFACE_R8G8B8A8_SINT		0x0caU
 #define I915_GFX_SURFACE_R8G8B8A8_UINT		0x0cbU
 #define I915_GFX_SURFACE_R16_UNORM		0x10aU
+#define I915_GFX_SURFACE_R8_UNORM		0x140U
+#define I915_GFX_SURFACE_R8G8_UNORM		0x106U
+#define I915_GFX_SURFACE_R16G16B16A16_FLOAT	0x084U
+#define I915_GFX_SURFACE_R11G11B10_FLOAT	0x0d3U
 #define I915_GFX_SURFACE_R32_FLOAT		0x0d8U
 #define I915_GFX_SURFACE_R32G32_FLOAT		0x085U
 #define I915_GFX_SURFACE_R32G32B32_FLOAT	0x040U
@@ -297,6 +301,7 @@ struct i915_image_range {
 	uint32_t level_count;
 	uint32_t base_layer;
 	uint32_t layer_count;
+	uint32_t channel_select;
 	int render_target;
 };
 
@@ -315,6 +320,7 @@ static uint32_t i915_blend_function(uint32_t op);
 static int i915_blend_uses_second_source(uint32_t factor);
 static uint32_t i915_state_input_slot(const struct i915_gfx_kernels *kernels, uint32_t inputs, uint32_t input);
 static uint64_t i915_state_scratch(uint32_t per_thread_bytes, uint64_t offset);
+static uint32_t i915_state_binding_instanced(const struct i915_gfx_pipeline *pipeline, uint32_t binding);
 
 /*
  * Writes everything a draw's batch points at into its slot of the state
@@ -377,12 +383,14 @@ drv_i915_gfx_write_state(
 }
 
 /*
- * Writes the RENDER_SURFACE_STATE of a linear 2D surface.
+ * Writes the RENDER_SURFACE_STATE of a 2D one-level surface.
  *
  * The surface is checked first: a GPU address, an extent of at most 16384
- * in each direction and a pitch that holds a row of four-byte texels.  An
+ * in each direction and a pitch that holds a row of its texels.  An
  * R32_FLOAT surface is written without the unorm path bit, since it carries
- * a depth value's bits rather than a colour.
+ * a depth value's bits rather than a colour.  A depth surface (D32_SFLOAT,
+ * D16_UNORM) is the Y-tiled R32_FLOAT or R16_UNORM it is laid out as (see
+ * i915_image_surface_write()); every other surface is linear.
  */
 int
 drv_i915_gfx_surface_write(
@@ -390,8 +398,10 @@ drv_i915_gfx_surface_write(
 	const struct i915_gfx_surface *surface,
 	uint32_t mocs)
 {
+	uint32_t texel_bytes;
 	uint32_t format;
 	uint32_t unorm;
+	uint32_t tile;
 	int error;
 
 	/* Refuses a surface with no storage. */
@@ -406,24 +416,47 @@ drv_i915_gfx_surface_write(
 	if (surface->width > 16384U || surface->height > 16384U)
 		return EINVAL;
 
-	/* Refuses a pitch too short for a row of four-byte texels. */
-	if (surface->pitch < surface->width * 4U)
-		return EINVAL;
-
-	/* Refuses a format the surface state cannot name. */
-	error = i915_surface_format(surface->format, &format);
-	if (error != 0)
-		return EINVAL;
-
-	/* A colour surface takes the unorm path bit; the depth-bits view does not. */
+	/* Names the format and the tiling: a depth surface is Y-tiled, a 16-bit one two bytes a texel. */
+	texel_bytes = 4U;
+	tile = GEN12_TILEMODE_LINEAR;
 	unorm = 1U << 31;
-	if (surface->format == VK_FORMAT_R32_SFLOAT)
+	if (surface->format == VK_FORMAT_D32_SFLOAT) {
+		format = I915_GFX_SURFACE_R32_FLOAT;
+		tile = GEN12_TILEMODE_YMAJOR;
 		unorm = 0U;
+	} else if (surface->format == VK_FORMAT_D16_UNORM) {
+		format = I915_GFX_SURFACE_R16_UNORM;
+		tile = GEN12_TILEMODE_YMAJOR;
+		texel_bytes = 2U;
+	} else if (surface->format == VK_FORMAT_R16_UNORM) {
+		format = I915_GFX_SURFACE_R16_UNORM;
+		texel_bytes = 2U;
+	} else {
+		/* Refuses a format the surface state cannot name. */
+		error = i915_surface_format(surface->format, &format);
+		if (error != 0)
+			return EINVAL;
+
+		/* An image format's own texel; a vertex-only format counts as four bytes. */
+		texel_bytes = drv_i915_gfx_format_bytes(surface->format);
+		if (texel_bytes == 0U)
+			texel_bytes = 4U;
+
+		/* The depth-bits view carries no colour, so no unorm path. */
+		if (surface->format == VK_FORMAT_R32_SFLOAT)
+			unorm = 0U;
+	}
+
+	/* Refuses a pitch too short for a row of texels, and a Y-tiled surface of partial tiles. */
+	if (surface->pitch < surface->width * texel_bytes)
+		return EINVAL;
+	if (tile == GEN12_TILEMODE_YMAJOR && ((surface->pitch & 127U) != 0U || (surface->va & 4095U) != 0U))
+		return EINVAL;
 
 	/*
-	 * Fills the surface state as isl fills it for a linear 2D one-level
-	 * surface: 2D, horizontal and vertical alignment 4, linear; the unorm
-	 * path bit, MOCS and QPitch; width and height; pitch; mip tail start 1;
+	 * Fills the surface state as isl fills it for a 2D one-level surface:
+	 * 2D, horizontal and vertical alignment 4, the tiling; the unorm path
+	 * bit, MOCS and QPitch; width and height; pitch; mip tail start 1;
 	 * identity channel select; the address.
 	 */
 	kern_memset(rss, 0, GEN12_RENDER_SURFACE_STATE_DWORDS * 4U);
@@ -431,7 +464,7 @@ drv_i915_gfx_surface_write(
 	    (format << 18) |
 	    (GEN12_SURFACE_ALIGN_4 << 16) |
 	    (GEN12_SURFACE_ALIGN_4 << 14) |
-	    (GEN12_TILEMODE_LINEAR << 12);
+	    (tile << 12);
 	rss[1] = unorm | (mocs << 24) | (((surface->height + 3U) & ~3U) / 4U);
 	rss[2] = (surface->width - 1U) | ((surface->height - 1U) << 16);
 	rss[3] = surface->pitch - 1U;
@@ -798,6 +831,7 @@ drv_i915_gfx_emit_vertex_input(
 	uint32_t component_z;
 	uint32_t component_w;
 	uint32_t topology;
+	uint32_t instanced;
 	uint32_t sgvs;
 	uint64_t va;
 	int error;
@@ -932,11 +966,19 @@ drv_i915_gfx_emit_vertex_input(
 	drv_i915_batch_emit(batch, sgvs);
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_VF_SGVS_2, GEN12_3DSTATE_VF_SGVS_2_DWORDS);
 
-	/* Turns instancing off for every vertex element. */
+	/*
+	 * Steps an element once an instance when its binding's input rate is
+	 * VK_VERTEX_INPUT_RATE_INSTANCE (instancing enable, step rate 1, as anv
+	 * programs it); every other element steps per vertex.
+	 */
 	for (index = 0U; index < count; index++) {
+		instanced = 0U;
+		attribute = order[index];
+		if (attribute != I915_GFX_NO_ATTRIBUTE)
+			instanced = i915_state_binding_instanced(pipeline, pipeline->attributes[attribute].binding);
 		drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_VF_INSTANCING, GEN12_3DSTATE_VF_INSTANCING_DWORDS));
-		drv_i915_batch_emit(batch, index);
-		drv_i915_batch_emit(batch, 0U);
+		drv_i915_batch_emit(batch, index | (instanced << GEN12_VF_INSTANCING_ENABLE_SHIFT));
+		drv_i915_batch_emit(batch, instanced);
 	}
 
 	/* Refuses a topology the draw path does not take (adjacency and patches). */
@@ -1677,6 +1719,18 @@ i915_surface_format(
 	case VK_FORMAT_R32_SFLOAT:
 		*surface_format = I915_GFX_SURFACE_R32_FLOAT;
 		return 0;
+	case VK_FORMAT_R8_UNORM:
+		*surface_format = I915_GFX_SURFACE_R8_UNORM;
+		return 0;
+	case VK_FORMAT_R8G8_UNORM:
+		*surface_format = I915_GFX_SURFACE_R8G8_UNORM;
+		return 0;
+	case VK_FORMAT_R16G16B16A16_SFLOAT:
+		*surface_format = I915_GFX_SURFACE_R16G16B16A16_FLOAT;
+		return 0;
+	case VK_FORMAT_B10G11R11_UFLOAT_PACK32:
+		*surface_format = I915_GFX_SURFACE_R11G11B10_FLOAT;
+		return 0;
 	case VK_FORMAT_R32G32_SFLOAT:
 		*surface_format = I915_GFX_SURFACE_R32G32_FLOAT;
 		return 0;
@@ -1891,9 +1945,11 @@ i915_image_surface_write(
 		rss[4] |= (depth & GEN12_RSS_DEPTH_MASK) << GEN12_RSS_VIEW_EXTENT_SHIFT;
 	}
 
-	/* The levels, the mip tail start, identity channel select and the address. */
+	/* The levels, the mip tail start, the view's channel select (identity for a target) and the address. */
 	rss[5] = lod | ((image->levels & GEN12_RSS_LOD_MASK) << GEN12_RSS_MIP_TAIL_START_SHIFT);
 	rss[7] = (4U << 25) | (5U << 22) | (6U << 19) | (7U << 16);
+	if (range->render_target == 0 && range->channel_select != 0U)
+		rss[7] = range->channel_select;
 	rss[8] = (uint32_t)va;
 	rss[9] = (uint32_t)(va >> 32);
 
@@ -1976,6 +2032,7 @@ i915_state_write_surfaces(
 		range.layer_count = view->layer_count;
 		if (range.layer_count == 0U)
 			range.layer_count = 1U;
+		range.channel_select = view->channel_select;
 		range.render_target = 0;
 		error = i915_image_surface_write(&surface[rss / 4U], view->image, &range, mocs);
 		if (error != 0)
@@ -2452,4 +2509,27 @@ i915_state_input_slot(
 
 	/* Succeeded: the slot the pipeline routed the input from. */
 	return kernels->ps_input_slots[input];
+}
+
+/* Reports 1 when the pipeline's vertex binding `binding` advances per instance, 0 otherwise. */
+static uint32_t
+i915_state_binding_instanced(
+	const struct i915_gfx_pipeline *pipeline,
+	uint32_t binding)
+{
+	uint32_t index;
+
+	/* Finds the binding among the pipeline's. */
+	for (index = 0U; index < pipeline->binding_count; index++) {
+		if (pipeline->bindings[index].binding != binding)
+			continue;
+
+		/* An instance-rate binding steps per instance. */
+		if (pipeline->bindings[index].input_rate == VK_VERTEX_INPUT_RATE_INSTANCE)
+			return 1U;
+		return 0U;
+	}
+
+	/* Succeeded: a binding the pipeline does not describe steps per vertex. */
+	return 0U;
 }
