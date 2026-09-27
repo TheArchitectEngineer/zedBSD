@@ -9,7 +9,7 @@ Related Milestones: MG001, MG005
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 からサブエージェントが worktree の branch で実行。main への統合は main の session）
-Resume point: 2026-09-27: p014 cleared（Super+Tab の Wiseview）、p025・p027 canceled（p059 で置き換え済み）。p075 cleared（libwayland の汎用 dispatch と event の new_id）。p076 cleared（popup・positioner・toplevel の要求・ping）。p077 cleared（sub-surface）。次は p078〜p080（toolkit の Wayland の対応範囲、p028 を分けた）→ p055（damage）→ p057（背後のぼかし）→ p058
+Resume point: 2026-09-27: p014 cleared（Super+Tab の Wiseview）、p025・p027 canceled（p059 で置き換え済み）。p075 cleared（libwayland の汎用 dispatch と event の new_id）。p076 cleared（popup・positioner・toplevel の要求・ping）。p077 cleared（sub-surface）。p078 cleared（XKB keymap・wl_output v4）。次は p079・p080（toolkit の Wayland の対応範囲、p028 を分けた）→ p055（damage）→ p057（背後のぼかし）→ p058
 <!-- awesome-plan-current:end -->
 
 ## 単一目標
@@ -267,7 +267,7 @@ p001で確かめる。
 | [ws035-p075](phase075/phase.md) | （p028 から分割）libwayland: 未知の interface（toolkit が wayland-scanner で作る protocol の code）の event を listener へ渡す汎用の dispatch と、event の new_id（server が作る object、`wl_data_offer` 等）。host の libwayland-server の試験 compositor と試験 protocol で確かめる | cleared（2026-09-27、host と Venus） | — | libwayland |
 | [ws035-p076](phase076/phase.md) | （p028 から分割）zdesktop: xdg-shell の残り（`xdg_positioner`・`xdg_popup` と grab・`popup_done`、`xdg_toplevel` の min/max size・maximized・minimized・move・resize・show_window_menu・set_parent、`set_window_geometry`、ping） | cleared（2026-09-27、Venus。salvage/ws035 から始めて直した。libwayland の xdg-shell を v3 に） | p075 | zdesktop、libwayland |
 | [ws035-p077](phase077/phase.md) | （p028 から分割）zdesktop: `wl_subcompositor`・`wl_subsurface`（位置、上下、sync・desync、親と一緒の合成と入力） | cleared（2026-09-27、Venus。seat の pointer を keyboard の focus から分けた。libwayland に wl_subcompositor） | p075 | zdesktop、libwayland |
-| ws035-p078 | （p028 から分割）zdesktop: `wl_keyboard` の XKB keymap（US の text keymap を fd で）、`wl_output` v4（name・description・scale・done）、seat・pointer の新しい版（frame 等） | planned | p075 | zdesktop |
+| [ws035-p078](phase078/phase.md) | （p028 から分割）zdesktop: `wl_keyboard` の XKB keymap（US の text keymap を fd で）、`wl_output` v4（name・description・scale・done）、seat・pointer の新しい版（frame 等） | cleared（2026-09-27、host の libxkbcommon と Venus。repeat 25/400、Caps・Num の lock。seat は v5 のまま。Num Lock の key は BUG-069） | p075 | zdesktop |
 | ws035-p079 | （p028 から分割）zdesktop: `wl_data_device_manager`（client 間の clipboard の selection。drag and drop は最小）と zdesktop-terminal の Copy・Paste をそれへ | planned | p075 | zdesktop、zdesktop-terminal |
 | ws035-p080 | （p028 から分割）zdesktop: `zxdg_decoration_manager_v1`（既定は server-side）、`wp_cursor_shape_v1`、`wp_viewporter` | planned | p075、p076 | zdesktop |
 | ws035-p055 | （2026-09-25 承認）damage（buffer age と scissor） | planned（sq001） | p011 | 同上 |

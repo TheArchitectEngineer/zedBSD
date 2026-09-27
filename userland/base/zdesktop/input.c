@@ -48,6 +48,12 @@
 #define MODIFIER_ALT		0x08U
 #define MODIFIER_META		0x40U
 
+/* The locked modifier bits, and the evdev codes of the keys that toggle them (ws035-p078). */
+#define MODIFIER_CAPS_LOCK	0x02U
+#define MODIFIER_NUM_LOCK	0x10U
+#define INPUT_KEY_CAPSLOCK	58U
+#define INPUT_KEY_NUMLOCK	69U
+
 /* Bits of server->modifier_keys, one per held modifier key. */
 #define HELD_LEFTSHIFT		0x01U
 #define HELD_RIGHTSHIFT		0x02U
@@ -716,6 +722,7 @@ apply_key(
 {
 	unsigned held;
 	uint32_t modifiers;
+	uint32_t locked;
 
 	/* Each modifier key has its own held bit, so left and right are independent. */
 	held = 0;
@@ -769,12 +776,20 @@ apply_key(
 	if ((server->modifier_keys & (HELD_LEFTMETA | HELD_RIGHTMETA)) != 0)
 		modifiers |= MODIFIER_META;
 
+	/* A press of Caps Lock or Num Lock toggles its lock (a kernel repeat, value 2, does not). */
+	locked = server->locked_modifiers;
+	if (value == 1 && key == INPUT_KEY_CAPSLOCK)
+		locked ^= MODIFIER_CAPS_LOCK;
+	if (value == 1 && key == INPUT_KEY_NUMLOCK)
+		locked ^= MODIFIER_NUM_LOCK;
+
 	/* The key itself is reported first. */
 	zwl_seat_key(server, time, key, (uint32_t)value);
 
 	/* A changed mask follows the key that changed it. */
-	if (modifiers != server->modifiers) {
+	if (modifiers != server->modifiers || locked != server->locked_modifiers) {
 		server->modifiers = modifiers;
+		server->locked_modifiers = locked;
 		zwl_seat_modifiers(server);
 	}
 
