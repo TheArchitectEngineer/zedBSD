@@ -208,6 +208,7 @@ struct js_function_compiler {
 	uint32_t local_count;
 	uint32_t temp_top;
 	uint32_t env_register;
+	uint32_t completion_register;
 	uint32_t parameter_count;
 	uint32_t arguments_register;
 	struct js_target *targets;

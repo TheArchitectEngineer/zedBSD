@@ -2180,6 +2180,7 @@ js_check_parameters(
 	size_t other;
 	int simple;
 	int same;
+	int reserved;
 
 	/* "use strict" in the body needs plain parameters. */
 	simple = expr_is_simple_parameters(function->first);
@@ -2190,10 +2191,21 @@ js_check_parameters(
 	if ((function->flags & (JS_FLAG_ARROW | JS_FLAG_METHOD)) == 0U && simple && !parser->context.strict)
 		return;
 
-	/* The bound names, compared pairwise. */
+	/* The bound names; strict code (a "use strict" in the body too) takes neither eval, arguments nor a strict reserved word. */
 	wb_vector_init(&names, sizeof(const struct js_node *));
 	expr_collect_names(parser, function->first, &names);
 	list = names.items;
+	for (index = 0; parser->context.strict && index < names.count; index++) {
+		reserved = js_word_is_reserved(list[index]->text, list[index]->text_length, 1);
+		if (list[index]->word != JS_W_EVAL && list[index]->word != JS_W_ARGUMENTS && !reserved)
+			continue;
+		line = list[index]->line;
+		column = list[index]->column;
+		wb_vector_release(&names);
+		js_fail_at(parser, line, column, "invalid parameter name in strict mode");
+	}
+
+	/* Compared pairwise. */
 	for (index = 0; index < names.count; index++) {
 		for (other = index + 1U; other < names.count; other++) {
 			same = js_text_equal(list[index]->text, list[index]->text_length, list[other]->text, list[other]->text_length);

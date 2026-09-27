@@ -48,6 +48,8 @@ vm_realm_create(
 		return ENOMEM;
 	made->heap = heap;
 	made->exception = VM_VALUE_UNDEFINED;
+	made->callee = VM_VALUE_UNDEFINED;
+	made->new_target = VM_VALUE_UNDEFINED;
 
 	/* The VM stack its code runs on. */
 	made->stack = calloc(REALM_STACK_SLOTS, sizeof(vm_value));
@@ -162,6 +164,7 @@ realm_trace(
 {
 	struct vm_realm *realm;
 	uint32_t slot;
+	uint32_t index;
 
 	/* The intrinsic objects, where made. */
 	realm = context;
@@ -172,10 +175,18 @@ realm_trace(
 	if (realm->array_prototype != NULL)
 		vm_heap_mark(heap, &realm->array_prototype->cell);
 
-	/* The global object and the exception being thrown. */
+	/* The other intrinsic objects the built-ins made. */
+	for (index = 0; index < VM_INTRINSICS; index++) {
+		if (realm->intrinsics[index] != NULL)
+			vm_heap_mark(heap, &realm->intrinsics[index]->cell);
+	}
+
+	/* The global object, the exception being thrown, and the native call's callee and new.target. */
 	if (realm->global != NULL)
 		vm_heap_mark(heap, &realm->global->cell);
 	vm_heap_mark_value(heap, realm->exception);
+	vm_heap_mark_value(heap, realm->callee);
+	vm_heap_mark_value(heap, realm->new_target);
 
 	/* Every word of the used stack that could point at a cell (boxed and raw values share it). */
 	for (slot = 0; slot < realm->stack_top; slot++)

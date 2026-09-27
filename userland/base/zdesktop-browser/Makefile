@@ -30,6 +30,7 @@ ZDESKTOP_BROWSER_SOURCES := $(ZDESKTOP_BROWSER_DIR)/main.c \
 	$(ZDESKTOP_BROWSER_DIR)/vm/function.c \
 	$(ZDESKTOP_BROWSER_DIR)/vm/realm.c \
 	$(ZDESKTOP_BROWSER_DIR)/vm/code.c \
+	$(ZDESKTOP_BROWSER_DIR)/vm/number.c \
 	$(ZDESKTOP_BROWSER_DIR)/vm/operation.c \
 	$(ZDESKTOP_BROWSER_DIR)/vm/access.c \
 	$(ZDESKTOP_BROWSER_DIR)/vm/interpreter.c \
@@ -43,6 +44,13 @@ ZDESKTOP_BROWSER_SOURCES := $(ZDESKTOP_BROWSER_DIR)/main.c \
 	$(ZDESKTOP_BROWSER_DIR)/js/compile.c \
 	$(ZDESKTOP_BROWSER_DIR)/js/compile_expr.c \
 	$(ZDESKTOP_BROWSER_DIR)/js/script.c \
+	$(ZDESKTOP_BROWSER_DIR)/js/builtin.c \
+	$(ZDESKTOP_BROWSER_DIR)/js/builtin_error.c \
+	$(ZDESKTOP_BROWSER_DIR)/js/builtin_object.c \
+	$(ZDESKTOP_BROWSER_DIR)/js/builtin_function.c \
+	$(ZDESKTOP_BROWSER_DIR)/js/builtin_number.c \
+	$(ZDESKTOP_BROWSER_DIR)/js/builtin_math.c \
+	$(ZDESKTOP_BROWSER_DIR)/js/builtin_global.c \
 	$(ZDESKTOP_BROWSER_DIR)/html/input.c \
 	$(ZDESKTOP_BROWSER_DIR)/html/tokenizer.c \
 	$(ZDESKTOP_BROWSER_DIR)/html/parser.c \

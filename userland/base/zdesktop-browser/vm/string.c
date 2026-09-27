@@ -406,6 +406,40 @@ vm_string_to_utf8(
 }
 
 /*
+ * Appends the string's characters to a list of UTF-16 units.
+ */
+int
+vm_string_append_units(
+	const struct vm_string *string,
+	struct wb_units *units)
+{
+	const unsigned char *narrow;
+	uint16_t unit;
+	size_t index;
+	int error;
+
+	/* A wide string's units as they are. */
+	if ((string->flags & VM_STRING_WIDE) != 0) {
+		error = wb_units_append(units, vm_string_units(string), string->length);
+		if (error != 0)
+			return error;
+		return 0;
+	}
+
+	/* A narrow string's bytes, each a unit. */
+	narrow = vm_string_latin1(string);
+	for (index = 0; index < string->length; index++) {
+		unit = narrow[index];
+		error = wb_units_append(units, &unit, 1);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the characters are at the end of the list. */
+	return 0;
+}
+
+/*
  * Allocates a string of length units in the narrow or the wide form; the
  * characters are left zero for the caller to fill.
  */
