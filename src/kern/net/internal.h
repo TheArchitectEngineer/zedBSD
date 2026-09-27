@@ -26,6 +26,13 @@ struct socket;
 
 void net_worker_wakeup(void);
 
+struct net_device *
+net_loopback_ref(void);
+
+int
+inet_address_is_local(
+	uint32_t address);
+
 typedef int (*ipv4_input_fn)(struct packet_buf *, uint32_t source, uint32_t destination);
 
 uint16_t
@@ -89,6 +96,14 @@ ipv4_output_wait(
 
 int
 ipv4_output_source(
+	struct net_device *,
+	uint32_t destination,
+	uint8_t protocol,
+	uint32_t source,
+	struct packet_buf *);
+
+int
+ipv4_output_from(
 	struct net_device *,
 	uint32_t destination,
 	uint8_t protocol,
