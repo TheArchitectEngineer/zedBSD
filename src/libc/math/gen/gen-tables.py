@@ -20,7 +20,10 @@ otherwise.
 from __future__ import annotations
 
 import os
+import re
 import struct
+import subprocess
+import tempfile
 from fractions import Fraction
 
 import mpmath
@@ -264,11 +267,141 @@ def trig_section(out: Output) -> None:
 		"(-1)^n/(2n+1) for n = 1 .. 6: the Taylor coefficients of atan(t) after t.")
 
 
+def gamma_section(out: Output) -> None:
+	"""The gamma functions: Stirling's series and the series near 1 and 2."""
+	stirling = []
+	for k in range(1, 13):
+		stirling.append(nearest(mpmath.bernoulli(2 * k) / (2 * k * (2 * k - 1))))
+	out.double_table("__libm_stirling_coefficients", stirling,
+		"B(2k) / (2k (2k - 1)) for k = 1 .. 12: the terms of Stirling's series for log gamma, over x^(2k-1).")
+	near_one = [nearest(mpf((-1) ** k) * mpmath.zeta(k) / k) for k in range(2, 10)]
+	out.double_table("__libm_lgamma_one_coefficients", near_one,
+		"(-1)^k zeta(k)/k for k = 2 .. 9: log gamma(1 + e) = -gamma e + the sum of these times e^k.")
+	near_two = [nearest(mpf((-1) ** k) * (mpmath.zeta(k) - 1) / k) for k in range(2, 10)]
+	out.double_table("__libm_lgamma_two_coefficients", near_two,
+		"(-1)^k (zeta(k) - 1)/k for k = 2 .. 9: log gamma(2 + e) = (1 - gamma) e + the sum of these times e^k.")
+	high, low = dd(mpf(1) / 12)
+	out.constant("LIBM_ONE_TWELFTH_HIGH", high, "1/12, the first coefficient of Stirling's series, as a double-double: the high part.")
+	out.constant("LIBM_ONE_TWELFTH_LOW", low, "1/12 as a double-double: the low part.")
+	high, low = dd(mpmath.log(2 * mpmath.pi) / 2)
+	out.constant("LIBM_HALF_LOG_TWO_PI_HIGH", high, "log(2 pi) / 2 as a double-double: the high part.")
+	out.constant("LIBM_HALF_LOG_TWO_PI_LOW", low, "log(2 pi) / 2 as a double-double: the low part.")
+	high, low = dd(mpmath.log(mpmath.pi))
+	out.constant("LIBM_LOG_PI_HIGH", high, "log pi as a double-double: the high part.")
+	out.constant("LIBM_LOG_PI_LOW", low, "log pi as a double-double: the low part.")
+	high, low = dd(mpmath.euler)
+	out.constant("LIBM_EULER_HIGH", high, "Euler's constant gamma as a double-double: the high part.")
+	out.constant("LIBM_EULER_LOW", low, "Euler's constant gamma as a double-double: the low part.")
+	high, low = dd(1 - mpmath.euler)
+	out.constant("LIBM_ONE_MINUS_EULER_HIGH", high, "1 - gamma as a double-double: the high part.")
+	out.constant("LIBM_ONE_MINUS_EULER_LOW", low, "1 - gamma as a double-double: the low part.")
+
+
+# The intervals of x on which erfc(x) exp(x^2) is approximated: the centre,
+# the half-width (a power of two, so t = (x - centre) / half-width is exact)
+# and the degree, the smallest for which sollya's fpminimax reached a
+# relative error below 2^-60 (searched once, 2026-09-28).
+ERFC_INTERVALS = [
+	(0.75, 0.25, 14), (1.25, 0.25, 13), (1.75, 0.25, 13), (2.25, 0.25, 12),
+	(2.75, 0.25, 12), (3.5, 0.5, 14), (4.5, 0.5, 13), (5.5, 0.5, 13),
+	(7.0, 1.0, 15), (9.0, 1.0, 14), (12.0, 2.0, 16), (16.0, 2.0, 15),
+	(20.0, 2.0, 14), (24.0, 2.0, 13), (27.0, 1.0, 10),
+]
+
+# The degree in z = x^2 of erf(x)/x on [0, 1] (relative error 2^-68).
+ERF_DEGREE = 13
+
+
+def parse_sollya_number(text: str) -> Fraction:
+	"""An exact value from sollya's hexadecimal display (0x1.8p-3)."""
+	match = re.fullmatch(r"(-?)0x([0-9a-f]+)(?:\.([0-9a-f]*))?p([-+]?[0-9]+)", text.strip())
+	if match is None:
+		if text.strip() in ("0", "-0"):
+			return Fraction(0)
+		raise ValueError(text)
+	sign, whole, fraction, exponent = match.groups()
+	fraction = fraction or ""
+	mantissa = int(whole + fraction, 16)
+	value = Fraction(mantissa) * Fraction(2) ** (int(exponent) - 4 * len(fraction))
+	return -value if sign else value
+
+
+def run_sollya(script: str) -> dict[str, list[Fraction]]:
+	"""Runs a sollya script whose lines "COEF tag index value" are collected."""
+	with tempfile.NamedTemporaryFile("w", suffix=".sollya", delete=False) as handle:
+		handle.write(script)
+		path = handle.name
+	try:
+		output = subprocess.run(["sollya", path], check=True, capture_output=True, text=True).stdout
+	finally:
+		os.unlink(path)
+	result: dict[str, list[Fraction]] = {}
+	for line in output.splitlines():
+		fields = line.split()
+		if len(fields) == 4 and fields[0] == "COEF":
+			result.setdefault(fields[1], []).append(parse_sollya_number(fields[3]))
+	return result
+
+
+def erf_section(out: Output) -> None:
+	"""erf and erfc: minimax polynomials from sollya's fpminimax.
+
+	erf(x)/x is a polynomial in z = x^2 on [0, 1].  erfc(x) exp(x^2) is a
+	polynomial in t = (x - c)/h on each interval of ERFC_INTERVALS.  The
+	first two coefficients are double-doubles (fpminimax's DD format), the
+	others doubles.  The method is that of Brisebarre and Chevillard,
+	"Efficient polynomial L-infinity approximations" (2007), as sollya
+	implements it; the functions approximated are erf and erfc themselves.
+	"""
+	lines = ["prec = 400;", "display = hexadecimal;", "verbosity = 0;"]
+	lines.append("procedure emit(tag, p, n) { var i; for i from 0 to n do print(\"COEF\", tag, i, coeff(p, i)); };")
+	lines.append(f"p = fpminimax(erf(sqrt(x))/sqrt(x), {ERF_DEGREE}, [|DD, DD, D...|], [2^-100;1], relative, floating);")
+	lines.append(f"emit(\"erf\", p, {ERF_DEGREE});")
+	for index, (centre, half, degree) in enumerate(ERFC_INTERVALS):
+		lines.append(f"f = erfc({centre!r} + {half!r}*x)*exp(({centre!r} + {half!r}*x)^2);")
+		lines.append(f"p = fpminimax(f, {degree}, [|DD, DD, D...|], [-1;1], relative, floating);")
+		lines.append(f"emit(\"erfc{index}\", p, {degree});")
+	lines.append("quit;")
+	coefficients = run_sollya("\n".join(lines) + "\n")
+
+	def flatten(values: list[Fraction]) -> list[float]:
+		flat = []
+		for position, value in enumerate(values):
+			high = float(value)
+			if position < 2:
+				low = float(value - Fraction(high))
+				flat += [high, low]
+			else:
+				assert Fraction(high) == value, "a D coefficient is not a double"
+				flat.append(high)
+		return flat
+
+	out.double_table("__libm_erf_coefficients", flatten(coefficients["erf"]),
+		f"erf(x)/x as a polynomial of degree {ERF_DEGREE} in x^2 on [0, 1] (fpminimax): c0 and c1 as high and low parts, then c2 ..")
+	flat = []
+	rows = []
+	for index, (centre, half, degree) in enumerate(ERFC_INTERVALS):
+		rows.append((centre + half, centre, 1.0 / half, len(flat), degree))
+		flat += flatten(coefficients[f"erfc{index}"])
+	out.double_table("__libm_erfc_coefficients", flat,
+		"erfc(x) exp(x^2) as polynomials in t = (x - centre)/h, one per interval of __libm_erfc_intervals (fpminimax): c0 and c1 as high and low parts, then c2 ..")
+	text = [f"/*\n * The intervals of the erfc polynomials: upper end, centre, 1/h, first coefficient, degree.\n */\nconst struct libm_polynomial_interval __libm_erfc_intervals[{len(rows)}] = {{"]
+	for upper, centre, inverse, first, degree in rows:
+		text.append(f"\t{{ {literal(upper)}, {literal(centre)}, {literal(inverse)}, {first}, {degree} }},")
+	text.append("};\n")
+	out.tables.append("\n".join(text))
+	high, low = dd(2 / mpmath.sqrt(mpmath.pi))
+	out.constant("LIBM_TWO_OVER_SQRT_PI_HIGH", high, "2/sqrt(pi) as a double-double: the high part.")
+	out.constant("LIBM_TWO_OVER_SQRT_PI_LOW", low, "2/sqrt(pi) as a double-double: the low part.")
+
+
 def main() -> None:
 	out = Output()
 	exp_section(out)
 	log_section(out)
 	trig_section(out)
+	gamma_section(out)
+	erf_section(out)
 	tables = HEADER + """/*
  * The tables of the mathematical library.
  *

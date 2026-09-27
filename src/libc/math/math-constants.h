@@ -92,4 +92,40 @@
 /* 3pi/4 rounded to the nearest double. */
 #define LIBM_THREE_QUARTER_PI 2.356194490192345
 
+/* 1/12, the first coefficient of Stirling's series, as a double-double: the high part. */
+#define LIBM_ONE_TWELFTH_HIGH 0.08333333333333333
+
+/* 1/12 as a double-double: the low part. */
+#define LIBM_ONE_TWELFTH_LOW 4.625929269271485e-18
+
+/* log(2 pi) / 2 as a double-double: the high part. */
+#define LIBM_HALF_LOG_TWO_PI_HIGH 0.9189385332046728
+
+/* log(2 pi) / 2 as a double-double: the low part. */
+#define LIBM_HALF_LOG_TWO_PI_LOW -3.8782941580672414e-17
+
+/* log pi as a double-double: the high part. */
+#define LIBM_LOG_PI_HIGH 1.1447298858494002
+
+/* log pi as a double-double: the low part. */
+#define LIBM_LOG_PI_LOW 1.0265951162707826e-17
+
+/* Euler's constant gamma as a double-double: the high part. */
+#define LIBM_EULER_HIGH 0.5772156649015329
+
+/* Euler's constant gamma as a double-double: the low part. */
+#define LIBM_EULER_LOW -4.942915152430645e-18
+
+/* 1 - gamma as a double-double: the high part. */
+#define LIBM_ONE_MINUS_EULER_HIGH 0.42278433509846713
+
+/* 1 - gamma as a double-double: the low part. */
+#define LIBM_ONE_MINUS_EULER_LOW 4.942915152430645e-18
+
+/* 2/sqrt(pi) as a double-double: the high part. */
+#define LIBM_TWO_OVER_SQRT_PI_HIGH 1.1283791670955126
+
+/* 2/sqrt(pi) as a double-double: the low part. */
+#define LIBM_TWO_OVER_SQRT_PI_LOW 1.533545961316588e-17
+
 #endif
