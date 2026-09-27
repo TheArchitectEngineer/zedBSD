@@ -27,11 +27,19 @@ esac
 mkdir -p "$out/obj"
 
 # The engine's sources, from the package's list (the window's directory stays out).
-sources=$(sed -n 's/^[^#]*\(userland\/base\/zdesktop-browser\/[^ \\]*\.c\).*/\1/p' "$src/Makefile" | grep -v '/shell/')
+sources=$(sh plan/ws074/tests/list-sources.sh | grep -v '/shell/')
 objects=""
 engine=""
+
+# The tables generated from downloaded lists, made the way the package's Makefile makes them.
+mkdir -p "$out/gen"
+sh plan/ws074/tests/fetch-distfiles.sh
+if [ ! -f "$out/gen/html-entities.c" ] || [ "$src/tools/gen-entities.py" -nt "$out/gen/html-entities.c" ]; then
+	python3 "$src/tools/gen-entities.py" "$src/distfiles/entities.json" "$out/gen/html-entities.c"
+fi
+sources="$sources $out/gen/html-entities.c"
 for file in $sources; do
-	object=$out/obj/$(printf '%s' "${file#$src/}" | tr '/' '_' | sed 's/\.c$/.o/')
+	object=$out/obj/$(printf '%s' "${file#$src/}" | sed "s|^$out/||" | tr '/' '_' | sed 's/\.c$/.o/')
 	if [ ! -f "$object" ] || [ "$file" -nt "$object" ] || [ -n "$(find "$src" -name '*.h' -newer "$object" | head -1)" ]; then
 		"$cc" $flags -c "$file" -o "$object"
 	fi

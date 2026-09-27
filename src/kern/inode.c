@@ -65,6 +65,8 @@ extern int vm_object_discard_mount_refs(struct mount *, struct inode *, unsigned
 #define VFS_BSS __attribute__((section(".vfs_bss")))
 #define INODE_HIGH __attribute__((section(".hightext")))
 #define INODE_CACHE_RESERVED ((struct inode *)(uintptr_t)1U)
+/* How many cached inodes a filesystem with its own storage may evict for one inode. */
+#define INODE_STORAGE_EVICT_MAX 4U
 
 static struct inode common_pool[INODE_COMMON_MAX] VFS_BSS;
 static uint8_t common_used[INODE_COMMON_MAX] VFS_BSS;
@@ -92,6 +94,7 @@ static int inode_link_locked(struct inode *directory, const struct componentname
 static int inode_symlink_locked(struct inode *directory, const struct componentname *name, const char *target, const struct inode_creation_request *request, struct inode **result);
 static int common_index(const struct inode *inode);
 static struct inode *inode_storage_take(struct mount *mountp);
+static int evict_filesystem_inode(const struct filesystem_type *type);
 static void inode_cache_clear_slot(unsigned slot);
 static int cache_index(const struct inode *inode);
 static void destroy_inode(struct inode *inode);
@@ -2365,14 +2368,33 @@ inode_storage_take(
 	struct inode *inode;
 	unsigned long irq;
 	unsigned i;
+	int evicted;
 
-	/* A filesystem with its own inodes provides the storage. */
+	/*
+	 * A filesystem with its own inodes provides the storage.  Its pool
+	 * is fixed (FAT's holds 256 for every FAT mount), and the cache keeps
+	 * inodes nothing uses any more, so a full pool first gives back one of
+	 * those of the same filesystem type (BUG-076).
+	 */
 	if (mountp != NULL && mountp->m_type != NULL &&
 	    mountp->m_type->alloc_inode != NULL) {
-		inode = mountp->m_type->alloc_inode(mountp);
-		if (inode != NULL)
-			inode->i_storage = INODE_STORAGE_FILESYSTEM;
-		return inode;
+		for (i = 0; i <= INODE_STORAGE_EVICT_MAX; i++) {
+			inode = mountp->m_type->alloc_inode(mountp);
+			if (inode != NULL) {
+				inode->i_storage = INODE_STORAGE_FILESYSTEM;
+				return inode;
+			}
+
+			/* Stops when nothing of the type can be given back. */
+			if (i == INODE_STORAGE_EVICT_MAX)
+				break;
+			evicted = evict_filesystem_inode(mountp->m_type);
+			if (!evicted)
+				break;
+		}
+
+		/* Reports that the filesystem has no inode to give. */
+		return NULL;
 	}
 
 	/* Takes a free slot of the pool. */
@@ -2405,6 +2427,64 @@ inode_storage_take(
 	/* Succeeded: the heap inode is freed to the heap again. */
 	inode->i_storage = INODE_STORAGE_HEAP;
 	return inode;
+}
+
+/*
+ * Gives back the storage of one cached inode of a filesystem type that
+ * nothing uses any more.
+ *
+ * Only an inode that the cache alone holds is taken: not one that is open
+ * or referenced (a swap file or loop image is), not a dirty one, not a
+ * mount root, and not a dead one (an unlinked file whose storage its
+ * filesystem still has to release).  Reports whether one was given back.
+ */
+static int
+evict_filesystem_inode(
+	const struct filesystem_type *type)
+{
+	struct inode *inode;
+	struct inode *victim;
+	unsigned long irq;
+	unsigned refs;
+	unsigned i;
+
+	/* Nothing is taken yet. */
+	victim = NULL;
+	irq = spin_lock_irqsave(&inode_cache_lock);
+
+	/* Looks for a clean inode of the type that only the cache holds. */
+	for (i = 0; i < INODE_CACHE_MAX; i++) {
+		inode = inode_cache[i];
+		if (inode == NULL || inode == INODE_CACHE_RESERVED)
+			continue;
+		if (inode_cache_mount[i] == NULL)
+			continue;
+		if (inode_cache_mount[i]->m_type != type)
+			continue;
+		refs = refcount_load(&inode->i_refs);
+		if (refs != 1)
+			continue;
+		if ((inode->i_flags & (INODE_DIRTY | INODE_ROOT | INODE_DEAD |
+		    INODE_SWAPFILE | INODE_LOOPFILE)) != 0)
+			continue;
+
+		/* Takes it and the cache's reference out of the cache. */
+		inode_cache_clear_slot(i);
+		(void)refcount_put(&inode->i_refs);
+		victim = inode;
+		break;
+	}
+
+	/* Lets the cache change again. */
+	spin_unlock_irqrestore(&inode_cache_lock, irq);
+
+	/* Nothing of the type could be given back. */
+	if (victim == NULL)
+		return 0;
+
+	/* Succeeded: its storage returns to the filesystem. */
+	destroy_inode(victim);
+	return 1;
 }
 
 /* Empties one cache slot and its mount; the caller holds the cache lock. */

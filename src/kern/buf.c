@@ -277,6 +277,8 @@ static struct buf *oldest_aged(uint64_t cutoff);
 static int flush_aged(uint64_t cutoff);
 static int writes_delayed(const struct disk *disk, const struct io_context *context);
 static int writeback_line(struct buf *buffer, const struct io_context *context, int delayed);
+static int writeback_line_whole(struct buf *buffer, const struct io_context *drain, int delayed);
+static int writeback_line_runs(struct buf *buffer, const struct io_context *drain, const struct backing_claim *writer);
 static int write_lines(struct disk *disk, uint64_t block, uint32_t count, const void *data, int pin);
 static void flusher_hooks_init(void);
 static int reserve_bytes(size_t size, int metadata);
@@ -2814,7 +2816,8 @@ writeback_line(
 {
 	uint64_t generation;
 	struct io_context drain;
-	struct backing_mutation_guard guard;
+	const struct backing_claim *writer;
+	const struct backing_claim *foreign;
 	int error;
 	unsigned long irq;
 
@@ -2855,12 +2858,85 @@ writeback_line(
 
 	spin_unlock_irqrestore(&buffer->b_lock, irq);
 
+	/* The writer's own claim, if it has one, may write its own blocks. */
+	writer = NULL;
+	if (context != NULL)
+		writer = context->claim;
+
 	/*
-	 * Writes the line; a delayed write-back writes it as the filesystem,
-	 * because a raw write would be refused on a volume where a file is
-	 * leased.
+	 * A line wider than a FAT cluster can hold another owner's claimed
+	 * blocks (a swap file's, a loop image's) beside the ones that were
+	 * changed (BUG-073).  Those blocks are written only by their owner,
+	 * straight to the device, so the line's copy of them is not the one
+	 * to write: such a line is written in runs that leave them out.
 	 */
+	foreign = NULL;
+	error = backing_claim_find_extent_owner(buffer->b_disk, buffer->b_block,
+						buffer->b_block_count, writer,
+						&foreign);
+	if (error != 0)
+		foreign = NULL;
+
+	/* Writes the whole line, or the runs outside the other claims. */
 	stat_add(&stat_write_bios, 1);
+	if (foreign == NULL)
+		error = writeback_line_whole(buffer, &drain, delayed);
+	else
+		error = writeback_line_runs(buffer, &drain, writer);
+
+	/* Records the outcome; only an unmodified buffer becomes clean. */
+	irq = spin_lock_irqsave(&buffer->b_lock);
+
+	/* Clears the dirty record on a write nothing raced, and keeps it on a failure. */
+	buffer->b_io_state = BUF_IO_IDLE;
+	buffer->b_io_inflight = 0;
+	buffer->b_error = error;
+	if (error == 0 && generation == buffer->b_dirty_generation) {
+		buffer->b_flags &= ~(BUF_DIRTY | BUF_ERROR);
+		dirty_clear(buffer);
+		stat_add(&cache_dirty_bytes,
+		    (uint64_t)-(int64_t)buffer->b_size);
+
+		/*
+		 * The skipped blocks may have changed on the device under
+		 * their owner, so the next reader reads the line again.
+		 */
+		if (foreign != NULL)
+			buffer->b_flags &= ~BUF_VALID;
+	} else if (error != 0) {
+		buffer->b_flags |= BUF_ERROR | BUF_DIRTY | BUF_VALID;
+		stat_add(&stat_writeback_errors, 1);
+	}
+
+	waitq_wake_all(&buffer->b_waitq);
+
+	spin_unlock_irqrestore(&buffer->b_lock, irq);
+
+	/* Reports why the write failed. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Writes a whole line to its disk.
+ *
+ * A delayed write-back writes it as the filesystem, because a raw write
+ * would be refused on a volume where a file is leased; an immediate one
+ * inherits its writer's guard.
+ */
+static int
+writeback_line_whole(
+	struct buf *buffer,
+	const struct io_context *drain,
+	int delayed)
+{
+	struct backing_mutation_guard guard;
+	int error;
+
+	/* A delayed write-back takes the filesystem's guard itself. */
 	kern_memset(&guard, 0, sizeof(guard));
 	error = 0;
 	if (delayed) {
@@ -2876,38 +2952,90 @@ writeback_line(
 						  buffer->b_block,
 						  buffer->b_block_count,
 						  buffer->b_data,
-						  &drain);
+						  drain);
 	}
 
 	/* Ends the filesystem's write a delayed write-back took. */
 	if (delayed)
 		backing_mutation_end(&guard);
 
-	/* Records the outcome; only an unmodified buffer becomes clean. */
-	irq = spin_lock_irqsave(&buffer->b_lock);
-
-	/* Clears the dirty record on a write nothing raced, and keeps it on a failure. */
-	buffer->b_io_state = BUF_IO_IDLE;
-	buffer->b_io_inflight = 0;
-	buffer->b_error = error;
-	if (error == 0 && generation == buffer->b_dirty_generation) {
-		buffer->b_flags &= ~(BUF_DIRTY | BUF_ERROR);
-		dirty_clear(buffer);
-		stat_add(&cache_dirty_bytes,
-		    (uint64_t)-(int64_t)buffer->b_size);
-	} else if (error != 0) {
-		buffer->b_flags |= BUF_ERROR | BUF_DIRTY | BUF_VALID;
-		stat_add(&stat_writeback_errors, 1);
-	}
-
-	waitq_wake_all(&buffer->b_waitq);
-
-	spin_unlock_irqrestore(&buffer->b_lock, irq);
-
 	/* Reports why the write failed. */
 	if (error != 0)
 		return error;
 
 	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Writes a line in runs of blocks, leaving out the blocks of claims other
+ * than the writer's.
+ *
+ * Each run is written as the filesystem under a guard of its own, so the
+ * claim registry still judges every block that is written: a run that
+ * came to touch another claim meanwhile is refused as before.
+ */
+static int
+writeback_line_runs(
+	struct buf *buffer,
+	const struct io_context *drain,
+	const struct backing_claim *writer)
+{
+	struct backing_mutation_guard guard;
+	const struct backing_claim *owner;
+	const struct backing_claim *next_owner;
+	const uint8_t *data;
+	uint64_t start;
+	uint64_t end;
+	uint32_t block_size;
+	int error;
+
+	/* The line's data and its block size place each run in it. */
+	data = buffer->b_data;
+	block_size = buffer->b_disk->d_block_size;
+
+	/* Walks the line one run of blocks with the same kind of owner at a time. */
+	for (start = 0; start < buffer->b_block_count; start = end) {
+		/* Finds whether another claim owns the run's first block. */
+		error = backing_claim_find_extent_owner(buffer->b_disk,
+							buffer->b_block + start,
+							1, writer, &owner);
+		if (error != 0)
+			return error;
+
+		/* Extends the run while the blocks are owned the same way. */
+		for (end = start + 1; end < buffer->b_block_count; end++) {
+			error = backing_claim_find_extent_owner(buffer->b_disk,
+								buffer->b_block + end,
+								1, writer,
+								&next_owner);
+			if (error != 0)
+				return error;
+			if ((next_owner == NULL) != (owner == NULL))
+				break;
+		}
+
+		/* Another claim's blocks are its owner's to write. */
+		if (owner != NULL)
+			continue;
+
+		/* Writes the run as the filesystem. */
+		error = backing_mutation_begin_disk_filesystem(buffer->b_disk,
+							       buffer->b_block + start,
+							       end - start,
+							       &guard);
+		if (error != 0)
+			return error;
+		error = disk_write_direct_context(buffer->b_disk,
+						  buffer->b_block + start,
+						  (uint32_t)(end - start),
+						  data + start * block_size,
+						  drain);
+		backing_mutation_end(&guard);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: every block outside the other claims was written. */
 	return 0;
 }

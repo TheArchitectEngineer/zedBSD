@@ -19,6 +19,12 @@ struct kern_swap_control_resolver_ops {
 	int (*resolve_disk)(void *context, const char *selector,
 	    struct disk **result);
 	int (*validate_raw)(void *context, struct disk *disk);
+
+	/*
+	 * Optional: told, within the control operation, that a selector
+	 * now names an active source (the VFS shows its boot slot).
+	 */
+	void (*source_added)(void *context, const char *selector);
 };
 
 struct kern_swap_control_registration {

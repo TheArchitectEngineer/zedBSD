@@ -49,7 +49,8 @@ BUG-027・BUG-033（性能。単独の計測を後で）。
 | [ws073-p013](phase013/phase.md) | BUG-029（BUG-052 の node） | 多くの tmpfs の file が system 全体の inode を尽くさない（heap の inode、cache 16384、tmpfs の共有の上限） | cleared |
 | [ws073-p011](phase011/phase.md) | BUG-070 | USB HID の keyboard が keypad・Num Lock・Print Screen・日本語の key などを出す | cleared |
 | [ws073-p014](phase014/phase.md) | — | amd64 は /boot・/boot/esp を自動で見せず fstab に任せる。fstab の ESP の mount は kernel の hold を adopt する | cleared |
-| [ws073-p015](phase015/phase.md) | — | 最終の layout: `bootN:` の file を持つ boot の slot を /boot/boot0〜3 に自動で mount（amd64 UEFI も）、ESP は fstab、使用中の file は読めるが書けない | planned |
+| [ws073-p015](phase015/phase.md) | BUG-073 | 最終の layout: `bootN:` の file を持つ boot の slot を /boot/boot0〜3 に自動で mount（amd64 UEFI も、起動後の `swapon bootN:` も）、ESP は fstab、使用中の file は読めるが書けない。claim のある FAT の line の書き戻し（BUG-073）を修正 | cleared |
+| [ws073-p016](phase016/phase.md) | BUG-074・BUG-076 | FAT の readdir の位置を record の番号にし走査中の unlink で entry を飛ばさない（`rm -r`）。FAT の inode の pool が満ちたら cache だけの inode を追い出す | cleared |
 
 ## 判断が要る点
 
@@ -60,6 +61,9 @@ BUG-027・BUG-033（性能。単独の計測を後で）。
 - （解決 2026-09-27）amd64 の /boot・/boot/esp: ユーザーの判断（原文）「amd64 のUEFIおよびハイブリッドのイメージでは、カーネルが特殊な処理で/bootや/boot/espを
   マウントせず、fstabに任せてください。つまり、デフォルトの配布イメージではマウントしなくていいです。インストーラがfstabに書けば済むことです。」→ ws073-p014。
 - （解決 2026-09-27、最終の layout、p009・p014 の公開を置き換える）ユーザーの判断（原文）「amd64 UEFIでも、/boot/boot0みたいなマウントは自動でやりましょう。
-  ESPはfstabです。スワップだけでもマウントします。rootfs.imgは読み込み専用なので、書き込みできなくても、読み込めていいと思います。」→ ws073-p015（planned）。
+  ESPはfstabです。スワップだけでもマウントします。rootfs.imgは読み込み専用なので、書き込みできなくても、読み込めていいと思います。」→ ws073-p015（cleared）。
+- ws073-p015（既定を選んだ、可逆）: ESP 自身が `bootN:` で参照される slot なら `/boot/bootN` にも出す（fstab の `/boot/esp` は同じ状態の別の view）。
+  root に promote された slot は出さない。rpi4 の legacy ARM overlay の boot の FAT は `/boot/boot0` に。起動後の `swapon bootN:PATH` は成功時にその slot を出す
+  （[phase](phase015/phase.md)）。
 - ws073-p010（既定を選んだ、可逆）: FAT での file の作成は要求の mode を捨て、mount が見せる mode（0755 root:wheel）で見せる（msdosfs と同じ）。
   以前の「一致しなければ EOPNOTSUPP」に戻すなら fat.c の 2 つの関数を戻す（[phase](phase010/phase.md)）。
