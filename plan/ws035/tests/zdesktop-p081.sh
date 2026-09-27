@@ -44,7 +44,7 @@ expect_log() {
 # Starts zdesktop (its options) and the probe; sets wx, wy to the window's place.
 start() {
 	guest "$stop_all" >/dev/null
-	guest "export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/zdesktop/wallpaper.ppm ] && picture=--wallpaper=/usr/share/zdesktop/wallpaper.ppm
+	guest "export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
 /bin/wayland --timeout=200 --width=1280 --height=800 $1 > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
 /bin/extras-probe --timeout-s=150 --token=v --body-viewport > /tmp/v.log 2>&1 </dev/null & sleep 4; echo started" >/dev/null
 	expect_log /tmp/v.log 'EXTRAS ready run=v'

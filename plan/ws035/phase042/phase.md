@@ -12,7 +12,7 @@ Queue: q325（q325-i02）
 ## 役目（2026-09-23 ユーザー決定）
 
 `userland/desktop/libkeiland` に、**Vulkan 以外の OS 依存を閉じ込める**ライブラリを作り、
-`/lib/libkeiland.so` として出す。公開ヘッダは `include/libc/zdesktop.h`。
+`/lib/libkeiland.so` として出す。公開ヘッダは `include/libc/keiland.h`。
 
 「zdesktop と話すためのライブラリ」ではない。**zdesktop が OS を触るときの唯一の入口**である。
 
@@ -37,7 +37,7 @@ Queue: q325（q325-i02）
 2026-09-23 ユーザー指示「**まずは空でいい**」。**枠だけ**を作る。
 
 - `userland/desktop/libkeiland/`（Makefile、`exports.map`、最小の source）。
-- `include/libc/zdesktop.h`: 版を問い合わせる1つだけ（例 `zdesktop_version()`）。
+- `include/libc/keiland.h`: 版を問い合わせる1つだけ（例 `keiland_version()`）。
   中身が無いうちから ABI を主張しないため、公開するものは最小にする。
 - `/lib/libkeiland.so` が出来て、SONAME と依存が正しいこと。
 - amd64 build warning 0。
@@ -60,15 +60,15 @@ Queue: q325（q325-i02）
 
 | 作ったもの | 内容 |
 | --- | --- |
-| `include/libc/zdesktop.h` | `ZDESKTOP_VERSION`（1）と `zdesktop_version()` だけ。役目（OS に触る唯一の入口、Vulkan と Wayland は例外）を冒頭の注記に書いた |
-| `userland/desktop/libkeiland/` | `version.c`、`exports.map`（`zdesktop_version` だけを出す）、`Makefile`（package の既定は有効） |
+| `include/libc/keiland.h` | `KEILAND_VERSION`（1）と `keiland_version()` だけ。役目（OS に触る唯一の入口、Vulkan と Wayland は例外）を冒頭の注記に書いた |
+| `userland/desktop/libkeiland/` | `version.c`、`exports.map`（`keiland_version` だけを出す）、`Makefile`（package の既定は有効） |
 | `platform/amd64/vmunix.mk` | `libkeiland.so` の link と `check-dynamic-elf.py` による確認（libtruetype と同じ形） |
 | `config/ci/config-amd64.mk`、`plan/ws035/tests/config-amd64-userland.mk` | `ZEDBSD_USER_PROGRAMS` に `libkeiland` |
 
 | 検証 | 結果 |
 | --- | --- |
 | amd64 `disk-image`（`build/p042`） | PASS。新しい warning なし（出たのは以前からある `-no-pie` と noct の `-Wreturn-type`） |
-| `libkeiland.so` | SONAME `libkeiland.so`、NEEDED `libc.so` だけ、公開 symbol は `zdesktop_version` だけ。`/lib/libkeiland.so` として image に入る。header は sysroot の `/usr/include/zdesktop.h` |
+| `libkeiland.so` | SONAME `libkeiland.so`、NEEDED `libc.so` だけ、公開 symbol は `keiland_version` だけ。`/lib/libkeiland.so` として image に入る。header は sysroot の `/usr/include/keiland.h` |
 | `plan/tools/boot-test.sh` | PASS（login prompt） |
 
 amd64 以外の platform には入れていない（zdesktop は amd64 から始めるため）。

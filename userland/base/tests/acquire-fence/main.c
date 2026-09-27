@@ -6,7 +6,7 @@
  */
 
 /*
- * Tests acquire fences of zed_gpu_buffer_v1 revision two in the compositor.
+ * Tests acquire fences of keiland_gpu_buffer_v1 revision two in the compositor.
  *
  * A window (wltest's window and renderer, through the Vulkan WSI) draws a
  * few frames in one color.  Then the test gives the next commit one more
@@ -45,7 +45,7 @@ struct test_run {
 	struct test_options options;
 	struct wltest_window window;
 	struct wltest_renderer renderer;
-	struct zed_gpu_buffer_v1 *factory;
+	struct keiland_gpu_buffer_v1 *factory;
 	uint64_t generation;
 	int gpu;
 	int fence;
@@ -61,7 +61,7 @@ static int option_size(const char *text, uint32_t *width, uint32_t *height);
 static void set_color(struct wltest_renderer *renderer, uint32_t color);
 static int fence_open(struct test_run *run);
 static int fence_signal(struct test_run *run);
-static struct zed_gpu_buffer_v1 *factory_bind(struct wl_display *display);
+static struct keiland_gpu_buffer_v1 *factory_bind(struct wl_display *display);
 static void registry_global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version);
 static void registry_remove(void *data, struct wl_registry *registry, uint32_t name);
 static void pause_ms(uint32_t milliseconds);
@@ -167,7 +167,7 @@ run_test(
 		return -1;
 
 	/* The fence goes with the next commit, which the WSI makes with its own fence as well. */
-	zed_gpu_buffer_v1_set_acquire_fence(run->factory, run->window.surface, run->fence, run->generation);
+	keiland_gpu_buffer_v1_set_acquire_fence(run->factory, run->window.surface, run->fence, run->generation);
 
 	/* The held frame, in the second color. */
 	run->step = "held";
@@ -209,7 +209,7 @@ run_close(
 {
 	/* The factory binding. */
 	if (run->factory != NULL)
-		zed_gpu_buffer_v1_destroy(run->factory);
+		keiland_gpu_buffer_v1_destroy(run->factory);
 
 	/* The fence and the GPU open. */
 	if (run->fence >= 0)
@@ -481,13 +481,13 @@ fence_signal(
 }
 
 /*
- * Binds the compositor's zed_gpu_buffer_v1 at revision two, or returns NULL.
+ * Binds the compositor's keiland_gpu_buffer_v1 at revision two, or returns NULL.
  */
-static struct zed_gpu_buffer_v1 *
+static struct keiland_gpu_buffer_v1 *
 factory_bind(
 	struct wl_display *display)
 {
-	struct zed_gpu_buffer_v1 *factory;
+	struct keiland_gpu_buffer_v1 *factory;
 	struct wl_registry *registry;
 	int status;
 
@@ -505,7 +505,7 @@ factory_bind(
 
 	/* A failed round trip leaves no factory. */
 	if (status < 0 && factory != NULL) {
-		zed_gpu_buffer_v1_destroy(factory);
+		keiland_gpu_buffer_v1_destroy(factory);
 		factory = NULL;
 	}
 
@@ -514,7 +514,7 @@ factory_bind(
 }
 
 /*
- * Binds zed_gpu_buffer_v1 when it is offered at revision two or later.
+ * Binds keiland_gpu_buffer_v1 when it is offered at revision two or later.
  */
 static void
 registry_global(
@@ -524,17 +524,17 @@ registry_global(
 	const char *interface,
 	uint32_t version)
 {
-	struct zed_gpu_buffer_v1 **factory;
+	struct keiland_gpu_buffer_v1 **factory;
 	int match;
 
 	/* Only the factory, at revision two, and only once. */
 	factory = data;
-	match = strcmp(interface, "zed_gpu_buffer_v1");
+	match = strcmp(interface, "keiland_gpu_buffer_v1");
 	if (match != 0 || version < 2U || *factory != NULL)
 		return;
 
 	/* Succeeded. */
-	*factory = wl_registry_bind(registry, name, &zed_gpu_buffer_v1_interface, 2U);
+	*factory = wl_registry_bind(registry, name, &keiland_gpu_buffer_v1_interface, 2U);
 }
 
 /*

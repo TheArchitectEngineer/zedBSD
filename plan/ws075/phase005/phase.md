@@ -62,7 +62,7 @@ Phase disposition: normal
   sample する）。実機は未検証（D32 を sample する試験が無い）。
 - mirrored blit（ws031-p034）: blit の offset の組が逆順なら、その向きに鏡映（`drv_i915_gfx_rect()` の `linear` を flag に:
   `I915_GFX_RECT_LINEAR`・`_MIRROR_X`・`_MIRROR_Y`、source の角を逆に）。空の矩形は何もしない。実機は未検証。
-- egltest の場面（p004 の follow-up）: `ZDESKTOP_APP=egltest`（`plan/ws031/tests/zdesktop/run-egltest.sh`）が egltest の
+- egltest の場面（p004 の follow-up）: `KEILAND_APP=egltest`（`plan/ws031/tests/zdesktop/run-egltest.sh`）が egltest の
   glsl・glsl3・fbo・cube・es3・formats・volumes を zdesktop の窓で順に走らせ、各 scene の `EGLTEST CHECK run=<scene>` を
   viewer の log へ。capture の場面 `zdesktop-egltest`（`i915-capture.py`）は desktop と 5 秒ごとの 12 枚。
 - 後へ: descriptor 配列と VS の sampled image（ws031-p035）は survey の 122 module に使うものが無い（VS の sampler は

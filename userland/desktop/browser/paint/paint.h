@@ -21,8 +21,8 @@
  * shadows and the stacking order of positioned boxes come later.
  */
 
-#ifndef ZDESKTOP_BROWSER_PAINT_H
-#define ZDESKTOP_BROWSER_PAINT_H
+#ifndef KEILAND_BROWSER_PAINT_H
+#define KEILAND_BROWSER_PAINT_H
 
 #include "layout/layout.h"
 

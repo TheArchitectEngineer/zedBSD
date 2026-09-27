@@ -45,7 +45,7 @@ expect_log() {
 }
 
 guest "$stop_all" >/dev/null
-guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/zdesktop/wallpaper.ppm ] && picture=--wallpaper=/usr/share/zdesktop/wallpaper.ppm
+guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
 /bin/wayland --timeout=400 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 5
 /bin/wltest --windowed --size=420x300 --color=f4f7fc --frames=3000 --delay-ms=100 --token=a > /tmp/a.log 2>&1 </dev/null & sleep 2
 /bin/wlshm --size=360x260 --color=ff2b3444 --frames=9000 --token=s > /tmp/s.log 2>&1 </dev/null & sleep 2

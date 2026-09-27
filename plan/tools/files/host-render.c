@@ -15,7 +15,7 @@
  *   --font=PATH --fallback=PATH   the fonts (default build/ws035-fonts/Inter.ttf)
  *   --size=WxH                    the window's size (default 1120x720)
  *   --start=PATH                  the folder shown first (default: the home dashboard)
- *   --wallpaper=PATH              the dashboard's picture (default /usr/share/zdesktop/wallpaper.ppm)
+ *   --wallpaper=PATH              the dashboard's picture (default /usr/share/keiland/wallpaper.ppm)
  *   --glass=PATH                  a glass window (ws071-p015): the pictures show it on this
  *                                 wallpaper with zdesktop's glass under its panels (host-glass.c)
  *

@@ -1,6 +1,6 @@
 #!/bin/sh
 # ws071-p011: files from App Home on the Venus guest (the lean image, build-files-image.sh).
-# zdesktop --glass at 1280x800 with no /etc/zdesktop/apps.conf (the built-in list):
+# zdesktop --glass at 1280x800 with no /etc/keiland/apps.conf (the built-in list):
 #  1. home.png: the launcher opens Home with 7 applications, Files among them (8 with the Browser, shown when
 #     the image has browser and its start page).
 #  2. files.png: the Files icon starts files (HOME LAUNCH name=Files), which maps its window and gives
@@ -44,9 +44,9 @@ icon() {
 	guest "grep 'ZWL HOME icon name=\"$1\"' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p'
 }
 
-guest "$stop_all; rm -f /etc/zdesktop/apps.conf" >/dev/null
+guest "$stop_all; rm -f /etc/keiland/apps.conf" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
-picture=; [ -f /usr/share/zdesktop/wallpaper.ppm ] && picture=--wallpaper=/usr/share/zdesktop/wallpaper.ppm
+picture=; [ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
 /bin/wayland --timeout=300 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
 
 # 1. Home.

@@ -22,7 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <zdesktop.h>
+#include <keiland.h>
 
 /* How long after the last key a search starts, and how long it may run a round, in milliseconds. */
 #define SEARCH_DELAY_MS		150U
@@ -39,7 +39,7 @@
  * lives here rather than on the stack; it is filled each time Recents is
  * read and used only then.
  */
-static struct zdesktop_recent_item search_recents[SEARCH_RECENTS];
+static struct keiland_recent_item search_recents[SEARCH_RECENTS];
 
 static void search_finish(struct fm_app *app, struct fm_tab *tab);
 static void search_home_text(struct fm_app *app, const char *folder, char *text, size_t size);
@@ -209,7 +209,7 @@ fm_search_load(
 	struct fm_entry *entry;
 	struct stat status;
 	const char *base;
-	char folder[ZDESKTOP_RECENT_PATH_MAX];
+	char folder[KEILAND_RECENT_PATH_MAX];
 	char **paths;
 	char *slash;
 	size_t count;
@@ -237,7 +237,7 @@ fm_search_load(
 
 	/* The recent files, newest first (folders and files that are gone are left out). */
 	if (location->kind == FM_LOCATION_RECENTS) {
-		error = zdesktop_recent_list(search_recents, SEARCH_RECENTS, &count);
+		error = keiland_recent_list(search_recents, SEARCH_RECENTS, &count);
 		for (index = 0; error == 0 && index < count; index++) {
 			error = stat(search_recents[index].path, &status);
 			folder_entry = 0;
@@ -300,7 +300,7 @@ fm_recent_add(
 	int error;
 
 	/* The list keeps it; a failure only costs the entry. */
-	error = zdesktop_recent_add(path, SEARCH_APPLICATION);
+	error = keiland_recent_add(path, SEARCH_APPLICATION);
 	if (error != 0)
 		fm_log("RECENT add failed path=%s error=%d", path, error);
 }

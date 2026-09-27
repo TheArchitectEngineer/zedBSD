@@ -1,6 +1,6 @@
 #!/bin/sh
 # ws070 (p005): the System Menu on the i915 passthrough of the 5330 (plan/ws031/tests/vkloop-hw.sh zdesktop
-# with ZDESKTOP_APP=home and the capture scenario zdesktop-menu of plan/ws031/tests/i915-capture.py).
+# with KEILAND_APP=home and the capture scenario zdesktop-menu of plan/ws031/tests/i915-capture.py).
 # Takes the machine's lock for the whole run and copies what the run leaves in /tmp (shared by every
 # user of the machine) into OUTDIR before the lock is released: capture/ (result.json, the PPM images,
 # sheet.png), guest-logs.txt (the guest's own logs from its disk) and run.log (vkloop-hw.sh's output).
@@ -17,7 +17,7 @@ export I915_HOST
 exec 9>/tmp/i915-hw.lock
 flock 9
 rm -rf /tmp/capture-last /tmp/zdesktop-guest-logs.txt
-CAPTURE=zdesktop-menu ZDESKTOP_APP=home plan/ws031/tests/vkloop-hw.sh zdesktop > "$out/run.log" 2>&1
+CAPTURE=zdesktop-menu KEILAND_APP=home plan/ws031/tests/vkloop-hw.sh zdesktop > "$out/run.log" 2>&1
 status=$?
 [ -d /tmp/capture-last ] && cp -r /tmp/capture-last "$out/capture"
 [ -f /tmp/zdesktop-guest-logs.txt ] && cp /tmp/zdesktop-guest-logs.txt "$out/guest-logs.txt"

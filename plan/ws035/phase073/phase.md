@@ -25,12 +25,12 @@ Queue: q486-i01
 1. build（`plan/ws035/tests/build-zdesktop-image.sh`）が warning 0 で `/bin/wayland` を入れ、`/bin/zwl` が無い。現行の source・試験・
    道具に `zwl` の path・process の名の参照が残らない（`git grep` で確認。C の識別子と log の接頭辞は除く）。
 2. Venus の回帰: zdesktop-p070（App Home と X11）、x11-p005、egl-p008、zdesktop-p059 か p064 の 1 つ。
-3. i915 実機の run（`CAPTURE=zdesktop-x11 ZDESKTOP_APP=home`）で zdesktop が起動し desktop が描かれる。boot test。
+3. i915 実機の run（`CAPTURE=zdesktop-x11 KEILAND_APP=home`）で zdesktop が起動し desktop が描かれる。boot test。
 
 ## 結果（2026-09-27、q486-i01）
 
 - `userland/base/zwl` → `userland/desktop/wayland`（git mv）。package と program は `zdesktop`（`/bin/wayland`）。usage の名と
-  Vulkan の application の名も `zdesktop`。内部の header `zwl.h` は名を変えない（libkeiland の公開 header `<zdesktop.h>` と混ざるため）。
+  Vulkan の application の名も `zdesktop`。内部の header `zwl.h` は名を変えない（libkeiland の公開 header `<keiland.h>` と混ざるため）。
 - build: `platform/amd64/vmunix.mk`（`$(BUILD)/bin/wayland`、`DYNAMIC_ZDESKTOP_OBJS`）、`ZEDBSD_USER_PROGRAMS` の `zwl` を
   `zdesktop` に（`config/ci/config-amd64.mk`、現行の試験の config 5 つ）。
 - 試験・道具: `/bin/zwl` → `/bin/wayland`、実機の rc の service `zwl` → `zdesktop`（file の名も）、`run-zwl.sh` → `run-zdesktop.sh`、

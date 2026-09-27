@@ -63,8 +63,8 @@ main(
 	server.auth_fd = -1;
 	server.control_fd = -1;
 	server.gpu_path = "/dev/gpu0";
-	server.font_path = "/usr/share/fonts/zdesktop.ttf";
-	server.fallback_font_path = "/usr/share/fonts/zdesktop-fallback.ttf";
+	server.font_path = "/usr/share/fonts/keiland.ttf";
+	server.fallback_font_path = "/usr/share/fonts/keiland-fallback.ttf";
 	server.window_opacity = 1.0f;
 	server.width = 320;
 	server.height = 240;

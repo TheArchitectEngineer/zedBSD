@@ -21,13 +21,13 @@ networkd、Wi-Fi の一覧と操作は偽の networkd（試験用）で確かめ
   `wifi state=NAME interface=IF ssid=HEX radios=N` を足した（`watch_state`）。SSID は managed の接続が join 中・接続中・再接続中の
   ときだけ、byte 列なので 16 進（無いときは `-`）。`radios` は WLAN の interface の数（無線の無い機械と Wi-Fi が off の機械を分ける）。
   `net watch` の出力にもこの行が加わる（加えるだけ）。
-- **libkeiland**（`userland/desktop/libkeiland/network.c`、`include/libc/zdesktop.h`、`ZDESKTOP_VERSION` 8）:
-  `zdesktop_network_open/close/update/get_state/get_scan/request/get_request`。SUBSCRIBE の接続を保って状態を読み、要求
+- **libkeiland**（`userland/desktop/libkeiland/network.c`、`include/libc/keiland.h`、`KEILAND_VERSION` 8）:
+  `keiland_network_open/close/update/get_state/get_scan/request/get_request`。SUBSCRIBE の接続を保って状態を読み、要求
   （scan = `WIFI_LIST`、join = `WIFI_CONNECT`、disconnect、Wi-Fi on/off）は 1 本ずつ別の接続で送る。**待たない**: `update` は
   poll 0 で届いたものだけを読む。daemon が居ない・切れたときは 1 秒ごとに watch を作り直す。状態は reachable・connected・
   kind（none・wired・wifi）・interface・wired（有線で address のある interface）・wifi（absent・off・searching・connecting・
   connected・disconnected）・ssid。scan は SSID ごとに一番強い AP、強い順（最大 24）。networkd の protocol を知るのはこの file だけ
-  （`userland/base/net/protocol.c` を library に入れ、exports.map で `zdesktop_network_*` だけを出す）。
+  （`userland/base/net/protocol.c` を library に入れ、exports.map で `keiland_network_*` だけを出す）。
 - **zdesktop**（`userland/desktop/wayland/network.c`、`shell.c`・`seat.c`・`zwl.h`・`glass.h`、link に libkeiland）:
   - icon: 有線は 3 つの箱の木、Wi-Fi の接続は強さの棒（scan にあればその強さ）、それ以外は薄い棒、Wi-Fi off は棒に横線。
   - icon のクリックで menu（System Menu の popup と同じすりガラス）: Wi-Fi の switch と状態の行（Connected to …・Joining …・

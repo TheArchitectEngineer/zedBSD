@@ -6,7 +6,7 @@
  */
 
 /*
- * zed_glass_v1 (ws035-p083, plan/ws035/glass-design.md): a surface names
+ * keiland_glass_v1 (ws035-p083, plan/ws035/glass-design.md): a surface names
  * the parts of itself that stand on the system's frosted glass -- cards
  * floating in the window -- and zdesktop draws the glass under them: the
  * desktop behind, blurred and lightened, with a bright rim, and the card's
@@ -27,7 +27,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* The requests of zed_glass_manager_v1 and of a surface's zed_glass_v1. */
+/* The requests of keiland_glass_manager_v1 and of a surface's keiland_glass_v1. */
 #define GLASS_MANAGER_DESTROY		0U
 #define GLASS_MANAGER_GET_GLASS		1U
 #define GLASS_DESTROY			0U
@@ -57,8 +57,8 @@ static void panels_glass(struct zwl_server *server, VkCommandBuffer command, con
 static uint32_t panels_word(const unsigned char *bytes, size_t offset);
 
 /*
- * Carries out a request of zed_glass_manager_v1 or of a surface's
- * zed_glass_v1.
+ * Carries out a request of keiland_glass_manager_v1 or of a surface's
+ * keiland_glass_v1.
  */
 int
 zwl_panels_request(
@@ -146,7 +146,7 @@ zwl_panels_commit(
 }
 
 /*
- * Unties an object that is going from the glass: a zed_glass_v1's surface
+ * Unties an object that is going from the glass: a keiland_glass_v1's surface
  * loses its panels with its next commit; a surface's glass names nothing,
  * and its panels' record goes with it.
  */
@@ -235,7 +235,7 @@ zwl_panels_draw(
 		panels_glass(server, command, &panels->current[index], place, opacity);
 }
 
-/* Gives a surface its zed_glass_v1 (one per surface) and the record of its panels. */
+/* Gives a surface its keiland_glass_v1 (one per surface) and the record of its panels. */
 static int
 panels_create(
 	struct zwl_object *manager,

@@ -23,14 +23,14 @@
  * on or off.  A click elsewhere, or Esc, closes the menu.  Opening the menu
  * asks for a scan.
  *
- * All of it comes through libkeiland (zdesktop_network_*): zdesktop never
+ * All of it comes through libkeiland (keiland_network_*): zdesktop never
  * speaks networkd's protocol.  Nothing here waits for the daemon; each tick
  * reads what has arrived.
  */
 
 #include "glass.h"
 
-#include <zdesktop.h>
+#include <keiland.h>
 
 #include <errno.h>
 #include <stdio.h>
@@ -48,7 +48,7 @@
 #define NETWORK_MENU_RADIUS	12.0f
 
 /* The most rows the menu has: the switch, the state, the networks, the wired line, disconnect, a message. */
-#define NETWORK_ROWS_MAX	(ZDESKTOP_NETWORK_SCAN_MAX + 8)
+#define NETWORK_ROWS_MAX	(KEILAND_NETWORK_SCAN_MAX + 8)
 
 /* The kinds of row. */
 enum network_row_kind {
@@ -83,10 +83,10 @@ struct network_row {
  * time the menu is drawn, so they always show the state last read.
  */
 struct network_view {
-	struct zdesktop_network *watch;
+	struct keiland_network *watch;
 	unsigned opened;
-	struct zdesktop_network_state state;
-	struct zdesktop_network_ap scan[ZDESKTOP_NETWORK_SCAN_MAX];
+	struct keiland_network_state state;
+	struct keiland_network_ap scan[KEILAND_NETWORK_SCAN_MAX];
 	size_t scan_count;
 	unsigned open;
 	int32_t menu_x;
@@ -101,7 +101,7 @@ struct network_view {
 	int32_t icon_height;
 	unsigned icon_logged;
 	char failure[96];
-	char joining[ZDESKTOP_NETWORK_SSID_MAX];
+	char joining[KEILAND_NETWORK_SSID_MAX];
 };
 
 /*
@@ -114,7 +114,7 @@ static void network_open_menu(struct zwl_server *server);
 static void network_close_menu(struct zwl_server *server, const char *via);
 static void network_layout(struct zwl_server *server);
 static void network_add_row(enum network_row_kind kind, const char *text, int32_t height, unsigned ap);
-static void network_state_text(const struct zdesktop_network_state *state, char *text, size_t size);
+static void network_state_text(const struct keiland_network_state *state, char *text, size_t size);
 static void network_act(struct zwl_server *server, const struct network_row *row);
 static void network_request(struct zwl_server *server, unsigned request, const char *ssid);
 static const struct network_row *network_row_at(int32_t x, int32_t y, int32_t *top);
@@ -145,7 +145,7 @@ zwl_network_tick(
 	/* The watch, once (libkeiland connects to the daemon when it can). */
 	if (!network_view.opened) {
 		network_view.opened = 1;
-		network_view.watch = zdesktop_network_open();
+		network_view.watch = keiland_network_open();
 		network_view.icon_x = -1;
 	}
 
@@ -154,34 +154,34 @@ zwl_network_tick(
 		return;
 
 	/* What arrived. */
-	(void)zdesktop_network_update(network_view.watch, &changed);
+	(void)keiland_network_update(network_view.watch, &changed);
 	if (changed == 0)
 		return;
 
 	/* A new state redraws the icon (and the menu). */
-	if ((changed & ZDESKTOP_NETWORK_CHANGED_STATE) != 0) {
-		zdesktop_network_get_state(network_view.watch, &network_view.state);
+	if ((changed & KEILAND_NETWORK_CHANGED_STATE) != 0) {
+		keiland_network_get_state(network_view.watch, &network_view.state);
 		network_log_state();
 	}
 
 	/* A new scan redraws the menu's networks. */
-	if ((changed & ZDESKTOP_NETWORK_CHANGED_SCAN) != 0) {
-		network_view.scan_count = zdesktop_network_get_scan(network_view.watch, network_view.scan, ZDESKTOP_NETWORK_SCAN_MAX);
-		if (network_view.scan_count > ZDESKTOP_NETWORK_SCAN_MAX)
-			network_view.scan_count = ZDESKTOP_NETWORK_SCAN_MAX;
+	if ((changed & KEILAND_NETWORK_CHANGED_SCAN) != 0) {
+		network_view.scan_count = keiland_network_get_scan(network_view.watch, network_view.scan, KEILAND_NETWORK_SCAN_MAX);
+		if (network_view.scan_count > KEILAND_NETWORK_SCAN_MAX)
+			network_view.scan_count = KEILAND_NETWORK_SCAN_MAX;
 		printf("ZWL NETWORK scan count=%u\n", (unsigned)network_view.scan_count);
 	}
 
 	/* A request that finished; a failure is said in the menu. */
-	if ((changed & ZDESKTOP_NETWORK_CHANGED_DONE) != 0) {
-		request = zdesktop_network_get_request(network_view.watch, &error);
+	if ((changed & KEILAND_NETWORK_CHANGED_DONE) != 0) {
+		request = keiland_network_get_request(network_view.watch, &error);
 		printf("ZWL NETWORK done request=%s error=%d\n", network_request_name(request), error);
 		network_view.failure[0] = '\0';
 
 		/* A join the daemon has no profile for says so; other failures say the errno's text. */
-		if (error == ENOENT && request == ZDESKTOP_NETWORK_REQUEST_JOIN) {
+		if (error == ENOENT && request == KEILAND_NETWORK_REQUEST_JOIN) {
 			(void)snprintf(network_view.failure, sizeof(network_view.failure), "Could not join %s: no saved profile", network_view.joining);
-		} else if (error != 0 && request != ZDESKTOP_NETWORK_REQUEST_SCAN) {
+		} else if (error != 0 && request != KEILAND_NETWORK_REQUEST_SCAN) {
 			(void)snprintf(network_view.failure, sizeof(network_view.failure), "Could not %s (%s)", network_request_name(request), strerror(error));
 		}
 	}
@@ -202,7 +202,7 @@ zwl_network_draw_icon(
 	const float *ink)
 {
 	static const float blue[4] = { 0.25f, 0.52f, 0.98f, 0.28f };
-	const struct zdesktop_network_state *state;
+	const struct keiland_network_state *state;
 	unsigned lit;
 	unsigned index;
 	int differs;
@@ -223,13 +223,13 @@ zwl_network_draw_icon(
 
 	/* A wired connection is the tree. */
 	state = &network_view.state;
-	if (state->connected && state->kind == ZDESKTOP_NETWORK_WIRED) {
+	if (state->connected && state->kind == KEILAND_NETWORK_WIRED) {
 		network_draw_wired(server, command, x, ink);
 		return;
 	}
 
 	/* A connected Wi-Fi is as many dark bars as its signal is strong (all without a scan of it). */
-	if (state->connected && state->kind == ZDESKTOP_NETWORK_WIFI) {
+	if (state->connected && state->kind == KEILAND_NETWORK_WIFI) {
 		lit = 4;
 		for (index = 0; index < network_view.scan_count; index++) {
 			differs = strcmp(network_view.scan[index].ssid, state->ssid);
@@ -244,7 +244,7 @@ zwl_network_draw_icon(
 
 	/* Anything else is pale bars; Wi-Fi that is off is struck through. */
 	network_draw_bars(server, command, x, 23, 0, ink, 0.30f);
-	if (state->reachable && state->wifi == ZDESKTOP_WIFI_OFF)
+	if (state->reachable && state->wifi == KEILAND_WIFI_OFF)
 		glass_draw_solid(server, command, (float)(x - 2), 15.0f, 22.0f, 2.0f, 1.0f, ink);
 }
 
@@ -432,11 +432,11 @@ network_open_menu(
 	printf("ZWL NETWORK open\n");
 
 	/* A radio that is on is asked what it sees. */
-	if (network_view.state.wifi == ZDESKTOP_WIFI_ABSENT)
+	if (network_view.state.wifi == KEILAND_WIFI_ABSENT)
 		return;
-	if (network_view.state.wifi == ZDESKTOP_WIFI_OFF)
+	if (network_view.state.wifi == KEILAND_WIFI_OFF)
 		return;
-	network_request(server, ZDESKTOP_NETWORK_REQUEST_SCAN, NULL);
+	network_request(server, KEILAND_NETWORK_REQUEST_SCAN, NULL);
 }
 
 /* Closes the menu. */
@@ -459,7 +459,7 @@ static void
 network_layout(
 	struct zwl_server *server)
 {
-	const struct zdesktop_network_state *state;
+	const struct keiland_network_state *state;
 	char text[96];
 	unsigned request;
 	unsigned index;
@@ -471,7 +471,7 @@ network_layout(
 	network_view.row_count = 0;
 
 	/* The Wi-Fi's switch, with its state under it. */
-	if (state->wifi != ZDESKTOP_WIFI_ABSENT && state->reachable) {
+	if (state->wifi != KEILAND_WIFI_ABSENT && state->reachable) {
 		network_add_row(NETWORK_ROW_SWITCH, "Wi-Fi", NETWORK_ROW_HEIGHT, 0);
 		network_state_text(state, text, sizeof(text));
 		network_add_row(NETWORK_ROW_NOTE, text, NETWORK_NOTE_HEIGHT, 0);
@@ -481,12 +481,12 @@ network_layout(
 	}
 
 	/* The networks, while the Wi-Fi is on. */
-	if (state->reachable && state->wifi != ZDESKTOP_WIFI_ABSENT && state->wifi != ZDESKTOP_WIFI_OFF) {
+	if (state->reachable && state->wifi != KEILAND_WIFI_ABSENT && state->wifi != KEILAND_WIFI_OFF) {
 		network_add_row(NETWORK_ROW_SEPARATOR, "", NETWORK_SEPARATOR, 0);
 
 		/* A scan on its way, or one that found nothing, says so. */
-		request = zdesktop_network_get_request(network_view.watch, &error);
-		if (request == ZDESKTOP_NETWORK_REQUEST_SCAN && network_view.scan_count == 0) {
+		request = keiland_network_get_request(network_view.watch, &error);
+		if (request == KEILAND_NETWORK_REQUEST_SCAN && network_view.scan_count == 0) {
 			network_add_row(NETWORK_ROW_NOTE, "Looking for networks...", NETWORK_NOTE_HEIGHT, 0);
 		} else if (network_view.scan_count == 0) {
 			network_add_row(NETWORK_ROW_NOTE, "No networks found", NETWORK_NOTE_HEIGHT, 0);
@@ -509,7 +509,7 @@ network_layout(
 	network_add_row(NETWORK_ROW_WIRED, text, NETWORK_ROW_HEIGHT, 0);
 
 	/* Leaving the Wi-Fi network it is on. */
-	if (state->wifi == ZDESKTOP_WIFI_CONNECTED || state->wifi == ZDESKTOP_WIFI_CONNECTING) {
+	if (state->wifi == KEILAND_WIFI_CONNECTED || state->wifi == KEILAND_WIFI_CONNECTING) {
 		(void)snprintf(text, sizeof(text), "Disconnect from %s", state->ssid);
 		network_add_row(NETWORK_ROW_DISCONNECT, text, NETWORK_ROW_HEIGHT, 0);
 	}
@@ -567,7 +567,7 @@ network_add_row(
 /* Writes the line under the switch: what the Wi-Fi is doing, or why there is none. */
 static void
 network_state_text(
-	const struct zdesktop_network_state *state,
+	const struct keiland_network_state *state,
 	char *text,
 	size_t size)
 {
@@ -579,19 +579,19 @@ network_state_text(
 
 	/* The Wi-Fi's own state. */
 	switch (state->wifi) {
-	case ZDESKTOP_WIFI_ABSENT:
+	case KEILAND_WIFI_ABSENT:
 		(void)snprintf(text, size, "No Wi-Fi hardware");
 		break;
-	case ZDESKTOP_WIFI_OFF:
+	case KEILAND_WIFI_OFF:
 		(void)snprintf(text, size, "Wi-Fi is off");
 		break;
-	case ZDESKTOP_WIFI_SEARCHING:
+	case KEILAND_WIFI_SEARCHING:
 		(void)snprintf(text, size, "Searching for a known network");
 		break;
-	case ZDESKTOP_WIFI_CONNECTING:
+	case KEILAND_WIFI_CONNECTING:
 		(void)snprintf(text, size, "Joining %s...", state->ssid);
 		break;
-	case ZDESKTOP_WIFI_CONNECTED:
+	case KEILAND_WIFI_CONNECTED:
 		(void)snprintf(text, size, "Connected to %s", state->ssid);
 		break;
 	default:
@@ -612,16 +612,16 @@ network_act(
 	switch (row->kind) {
 	case NETWORK_ROW_SWITCH:
 		/* Off turns on, anything else turns off. */
-		wanted = ZDESKTOP_NETWORK_REQUEST_WIFI_OFF;
-		if (network_view.state.wifi == ZDESKTOP_WIFI_OFF)
-			wanted = ZDESKTOP_NETWORK_REQUEST_WIFI_ON;
+		wanted = KEILAND_NETWORK_REQUEST_WIFI_OFF;
+		if (network_view.state.wifi == KEILAND_WIFI_OFF)
+			wanted = KEILAND_NETWORK_REQUEST_WIFI_ON;
 		network_request(server, wanted, NULL);
 		break;
 	case NETWORK_ROW_AP:
-		network_request(server, ZDESKTOP_NETWORK_REQUEST_JOIN, network_view.scan[row->ap].ssid);
+		network_request(server, KEILAND_NETWORK_REQUEST_JOIN, network_view.scan[row->ap].ssid);
 		break;
 	case NETWORK_ROW_DISCONNECT:
-		network_request(server, ZDESKTOP_NETWORK_REQUEST_DISCONNECT, NULL);
+		network_request(server, KEILAND_NETWORK_REQUEST_DISCONNECT, NULL);
 		break;
 	default:
 		/* The notes, the separators and the wired line only show. */
@@ -648,12 +648,12 @@ network_request(
 		(void)snprintf(network_view.joining, sizeof(network_view.joining), "%s", ssid);
 
 	/* The request; the answer comes through the ticks. */
-	error = zdesktop_network_request(network_view.watch, request, ssid);
+	error = keiland_network_request(network_view.watch, request, ssid);
 	printf("ZWL NETWORK request %s ssid=%s error=%d\n", network_request_name(request), network_view.joining, error);
 	server->dirty = 1;
 
 	/* A request that could not even be sent is said in the menu. */
-	if (error != 0 && request != ZDESKTOP_NETWORK_REQUEST_SCAN)
+	if (error != 0 && request != KEILAND_NETWORK_REQUEST_SCAN)
 		(void)snprintf(network_view.failure, sizeof(network_view.failure), "Could not %s (%s)", network_request_name(request), strerror(error));
 }
 
@@ -715,15 +715,15 @@ static void
 network_log_state(
 	void)
 {
-	const struct zdesktop_network_state *state;
+	const struct keiland_network_state *state;
 	const char *kind;
 
 	/* What carries the connection. */
 	state = &network_view.state;
 	kind = "none";
-	if (state->kind == ZDESKTOP_NETWORK_WIRED)
+	if (state->kind == KEILAND_NETWORK_WIRED)
 		kind = "wired";
-	if (state->kind == ZDESKTOP_NETWORK_WIFI)
+	if (state->kind == KEILAND_NETWORK_WIFI)
 		kind = "wifi";
 
 	/* One line. */
@@ -829,7 +829,7 @@ network_draw_row(
 	static const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 	static const float blue[4] = { 0.25f, 0.52f, 0.98f, 1.0f };
 	static const float line[4] = { 0.12f, 0.16f, 0.24f, 0.16f };
-	const struct zdesktop_network_ap *ap;
+	const struct keiland_network_ap *ap;
 	float ink[4];
 	int32_t left;
 	int32_t right;
@@ -866,7 +866,7 @@ network_draw_row(
 	/* The switch's row: its label and the switch at the right. */
 	if (row->kind == NETWORK_ROW_SWITCH) {
 		glass_draw_text(server, command, SIZE_TITLE, left + 14, baseline + 1, row->text, 160, ink);
-		network_draw_switch(server, command, right, middle, network_view.state.wifi != ZDESKTOP_WIFI_OFF);
+		network_draw_switch(server, command, right, middle, network_view.state.wifi != KEILAND_WIFI_OFF);
 		return;
 	}
 
@@ -874,7 +874,7 @@ network_draw_row(
 	if (row->kind == NETWORK_ROW_AP) {
 		ap = &network_view.scan[row->ap];
 		differs = strcmp(ap->ssid, network_view.state.ssid);
-		if (network_view.state.wifi == ZDESKTOP_WIFI_CONNECTED && differs == 0) {
+		if (network_view.state.wifi == KEILAND_WIFI_CONNECTED && differs == 0) {
 			/* The check mark, or a small square without the glyph. */
 			present = glass_glyph_advance(server, SIZE_BAR, GLASS_CHECK_GLYPH);
 			if (present > 0) {
@@ -977,15 +977,15 @@ network_request_name(
 {
 	/* Each request's verb. */
 	switch (request) {
-	case ZDESKTOP_NETWORK_REQUEST_SCAN:
+	case KEILAND_NETWORK_REQUEST_SCAN:
 		return "scan";
-	case ZDESKTOP_NETWORK_REQUEST_JOIN:
+	case KEILAND_NETWORK_REQUEST_JOIN:
 		return "join";
-	case ZDESKTOP_NETWORK_REQUEST_DISCONNECT:
+	case KEILAND_NETWORK_REQUEST_DISCONNECT:
 		return "disconnect";
-	case ZDESKTOP_NETWORK_REQUEST_WIFI_ON:
+	case KEILAND_NETWORK_REQUEST_WIFI_ON:
 		return "turn Wi-Fi on";
-	case ZDESKTOP_NETWORK_REQUEST_WIFI_OFF:
+	case KEILAND_NETWORK_REQUEST_WIFI_OFF:
 		return "turn Wi-Fi off";
 	default:
 		break;
@@ -1002,15 +1002,15 @@ network_wifi_name(
 {
 	/* Each state's name. */
 	switch (wifi) {
-	case ZDESKTOP_WIFI_OFF:
+	case KEILAND_WIFI_OFF:
 		return "off";
-	case ZDESKTOP_WIFI_SEARCHING:
+	case KEILAND_WIFI_SEARCHING:
 		return "searching";
-	case ZDESKTOP_WIFI_CONNECTING:
+	case KEILAND_WIFI_CONNECTING:
 		return "connecting";
-	case ZDESKTOP_WIFI_CONNECTED:
+	case KEILAND_WIFI_CONNECTED:
 		return "connected";
-	case ZDESKTOP_WIFI_DISCONNECTED:
+	case KEILAND_WIFI_DISCONNECTED:
 		return "disconnected";
 	default:
 		break;

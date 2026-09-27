@@ -9,8 +9,8 @@
  * The inside of the JavaScript parser, shared by the files of js/.
  */
 
-#ifndef ZDESKTOP_BROWSER_JS_INTERNAL_H
-#define ZDESKTOP_BROWSER_JS_INTERNAL_H
+#ifndef KEILAND_BROWSER_JS_INTERNAL_H
+#define KEILAND_BROWSER_JS_INTERNAL_H
 
 #include "js/js.h"
 

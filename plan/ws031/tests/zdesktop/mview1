@@ -1,6 +1,6 @@
 type=oneshot
 command=/bin/sh
-arguments=/etc/zdesktop/run-mview.sh
+arguments=/etc/keiland/run-mview.sh
 after=wlkill
 restart=no
 required=NO

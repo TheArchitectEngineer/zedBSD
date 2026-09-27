@@ -7,7 +7,7 @@
 
 /*
  * The Titlebar Presentation (WS070 p008, plan/ws070/titlebar-design.md
- * section 4): the wrapper of zdesktop's zed_titlebar_v1 protocol.
+ * section 4): the wrapper of zdesktop's keiland_titlebar_v1 protocol.
  *
  * A titlebar keeps a mirror of its controls' IDs and roles and of its tabs'
  * IDs as the requests sent so far leave them, so that a call the
@@ -17,7 +17,7 @@
  * dispatches its window's.
  */
 
-#include <zdesktop.h>
+#include <keiland.h>
 
 #include <wayland-client.h>
 #include <xdg-shell-client-protocol.h>
@@ -53,13 +53,13 @@ struct titlebar_entry {
 };
 
 /*
- * One window's titlebar: its zed_titlebar_v1, the application's listener,
+ * One window's titlebar: its keiland_titlebar_v1, the application's listener,
  * the mirror of its controls and tabs, whether a transaction is open, and
  * the serial of the last one.
  */
-struct zdesktop_titlebar {
-	struct zed_titlebar_v1 *proxy;
-	const struct zdesktop_titlebar_listener *listener;
+struct keiland_titlebar {
+	struct keiland_titlebar_v1 *proxy;
+	const struct keiland_titlebar_listener *listener;
 	void *data;
 	struct titlebar_entry controls[TITLEBAR_CONTROLS_MAX];
 	unsigned control_count;
@@ -75,19 +75,19 @@ struct titlebar_search {
 	uint32_t version;
 };
 
-static struct zed_titlebar_manager_v1 *titlebar_bind(struct wl_display *display);
+static struct keiland_titlebar_manager_v1 *titlebar_bind(struct wl_display *display);
 static void titlebar_global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version);
 static void titlebar_global_remove(void *data, struct wl_registry *registry, uint32_t name);
-static void titlebar_activated(void *data, struct zed_titlebar_v1 *proxy, uint32_t id, uint32_t detail, struct wl_seat *seat, uint32_t serial);
-static void titlebar_text_changed(void *data, struct zed_titlebar_v1 *proxy, uint32_t id, const char *text);
-static void titlebar_text_done(void *data, struct zed_titlebar_v1 *proxy, uint32_t id, const char *text, uint32_t how);
-static void titlebar_tab_activated(void *data, struct zed_titlebar_v1 *proxy, uint32_t id, uint32_t serial);
-static void titlebar_tab_close(void *data, struct zed_titlebar_v1 *proxy, uint32_t id);
-static void titlebar_new_tab(void *data, struct zed_titlebar_v1 *proxy, uint32_t serial);
-static void titlebar_overflow(void *data, struct zed_titlebar_v1 *proxy);
-static void titlebar_drop_target(void *data, struct zed_titlebar_v1 *proxy, uint32_t id, uint32_t detail);
-static struct titlebar_entry *titlebar_control(struct zdesktop_titlebar *titlebar, uint32_t id);
-static int titlebar_tab(const struct zdesktop_titlebar *titlebar, uint32_t id);
+static void titlebar_activated(void *data, struct keiland_titlebar_v1 *proxy, uint32_t id, uint32_t detail, struct wl_seat *seat, uint32_t serial);
+static void titlebar_text_changed(void *data, struct keiland_titlebar_v1 *proxy, uint32_t id, const char *text);
+static void titlebar_text_done(void *data, struct keiland_titlebar_v1 *proxy, uint32_t id, const char *text, uint32_t how);
+static void titlebar_tab_activated(void *data, struct keiland_titlebar_v1 *proxy, uint32_t id, uint32_t serial);
+static void titlebar_tab_close(void *data, struct keiland_titlebar_v1 *proxy, uint32_t id);
+static void titlebar_new_tab(void *data, struct keiland_titlebar_v1 *proxy, uint32_t serial);
+static void titlebar_overflow(void *data, struct keiland_titlebar_v1 *proxy);
+static void titlebar_drop_target(void *data, struct keiland_titlebar_v1 *proxy, uint32_t id, uint32_t detail);
+static struct titlebar_entry *titlebar_control(struct keiland_titlebar *titlebar, uint32_t id);
+static int titlebar_tab(const struct keiland_titlebar *titlebar, uint32_t id);
 static int titlebar_text_ok(const char *text);
 
 /* The registry's callbacks while the manager is looked for. */
@@ -96,7 +96,7 @@ static const struct wl_registry_listener titlebar_registry_listener = {
 };
 
 /* The titlebar's events, handed on to the application's listener. */
-static const struct zed_titlebar_v1_listener titlebar_listener = {
+static const struct keiland_titlebar_v1_listener titlebar_listener = {
 	titlebar_activated,
 	titlebar_text_changed,
 	titlebar_text_done,
@@ -112,15 +112,15 @@ static const struct zed_titlebar_v1_listener titlebar_listener = {
  * Returns NULL with errno set: ENOTSUP for a compositor without the
  * protocol, ENOMEM or EINVAL when the objects cannot be made.
  */
-struct zdesktop_titlebar *
-zdesktop_titlebar_create(
+struct keiland_titlebar *
+keiland_titlebar_create(
 	struct wl_display *display,
 	struct xdg_toplevel *toplevel,
-	const struct zdesktop_titlebar_listener *listener,
+	const struct keiland_titlebar_listener *listener,
 	void *data)
 {
-	struct zed_titlebar_manager_v1 *manager;
-	struct zdesktop_titlebar *titlebar;
+	struct keiland_titlebar_manager_v1 *manager;
+	struct keiland_titlebar *titlebar;
 	struct wl_event_queue *queue;
 	int status;
 
@@ -132,7 +132,7 @@ zdesktop_titlebar_create(
 	/* The record with the application's listener and an empty mirror. */
 	titlebar = calloc(1, sizeof(*titlebar));
 	if (titlebar == NULL) {
-		zed_titlebar_manager_v1_destroy(manager);
+		keiland_titlebar_manager_v1_destroy(manager);
 		errno = ENOMEM;
 		return NULL;
 	}
@@ -142,8 +142,8 @@ zdesktop_titlebar_create(
 	titlebar->data = data;
 
 	/* The protocol object; the binding is not needed after it (the titlebar stays). */
-	titlebar->proxy = zed_titlebar_manager_v1_get_titlebar(manager, toplevel);
-	zed_titlebar_manager_v1_destroy(manager);
+	titlebar->proxy = keiland_titlebar_manager_v1_get_titlebar(manager, toplevel);
+	keiland_titlebar_manager_v1_destroy(manager);
 	if (titlebar->proxy == NULL) {
 		free(titlebar);
 		errno = ENOMEM;
@@ -155,9 +155,9 @@ zdesktop_titlebar_create(
 	wl_proxy_set_queue((struct wl_proxy *)titlebar->proxy, queue);
 
 	/* The library's listener hands them on. */
-	status = zed_titlebar_v1_add_listener(titlebar->proxy, &titlebar_listener, titlebar);
+	status = keiland_titlebar_v1_add_listener(titlebar->proxy, &titlebar_listener, titlebar);
 	if (status != 0) {
-		zed_titlebar_v1_destroy(titlebar->proxy);
+		keiland_titlebar_v1_destroy(titlebar->proxy);
 		free(titlebar);
 		errno = EINVAL;
 		return NULL;
@@ -171,15 +171,15 @@ zdesktop_titlebar_create(
  * Takes the titlebar presentation away; the window shows its menu again.
  */
 void
-zdesktop_titlebar_destroy(
-	struct zdesktop_titlebar *titlebar)
+keiland_titlebar_destroy(
+	struct keiland_titlebar *titlebar)
 {
 	/* No titlebar, nothing to destroy. */
 	if (titlebar == NULL)
 		return;
 
 	/* The protocol object, then the record. */
-	zed_titlebar_v1_destroy(titlebar->proxy);
+	keiland_titlebar_v1_destroy(titlebar->proxy);
 	free(titlebar);
 }
 
@@ -187,8 +187,8 @@ zdesktop_titlebar_destroy(
  * Starts a transaction.
  */
 int
-zdesktop_titlebar_begin(
-	struct zdesktop_titlebar *titlebar)
+keiland_titlebar_begin(
+	struct keiland_titlebar *titlebar)
 {
 	/* One at a time. */
 	if (titlebar->updating != 0U)
@@ -197,7 +197,7 @@ zdesktop_titlebar_begin(
 	/* A new serial names the transaction. */
 	titlebar->serial++;
 	titlebar->updating = 1;
-	zed_titlebar_v1_begin_update(titlebar->proxy, titlebar->serial);
+	keiland_titlebar_v1_begin_update(titlebar->proxy, titlebar->serial);
 
 	/* Succeeded: changes may follow. */
 	return 0;
@@ -207,8 +207,8 @@ zdesktop_titlebar_begin(
  * Ends a transaction; zdesktop shows its changes at once.
  */
 int
-zdesktop_titlebar_commit(
-	struct zdesktop_titlebar *titlebar)
+keiland_titlebar_commit(
+	struct keiland_titlebar *titlebar)
 {
 	unsigned index;
 
@@ -222,7 +222,7 @@ zdesktop_titlebar_commit(
 
 	/* The commit names the transaction's serial. */
 	titlebar->updating = 0;
-	zed_titlebar_v1_commit(titlebar->proxy, titlebar->serial);
+	keiland_titlebar_v1_commit(titlebar->proxy, titlebar->serial);
 
 	/* Succeeded: the changes are shown together. */
 	return 0;
@@ -232,8 +232,8 @@ zdesktop_titlebar_commit(
  * Chooses the presentation.
  */
 int
-zdesktop_titlebar_set_mode(
-	struct zdesktop_titlebar *titlebar,
+keiland_titlebar_set_mode(
+	struct keiland_titlebar *titlebar,
 	unsigned mode)
 {
 	/* Inside a transaction, one of the three modes. */
@@ -241,7 +241,7 @@ zdesktop_titlebar_set_mode(
 		return EINVAL;
 
 	/* Succeeded: the request is sent. */
-	zed_titlebar_v1_set_mode(titlebar->proxy, mode);
+	keiland_titlebar_v1_set_mode(titlebar->proxy, mode);
 	return 0;
 }
 
@@ -249,8 +249,8 @@ zdesktop_titlebar_set_mode(
  * Adds a control at the end.
  */
 int
-zdesktop_titlebar_add_control(
-	struct zdesktop_titlebar *titlebar,
+keiland_titlebar_add_control(
+	struct keiland_titlebar *titlebar,
 	uint32_t id,
 	unsigned role,
 	unsigned priority,
@@ -284,7 +284,7 @@ zdesktop_titlebar_add_control(
 	titlebar->control_count++;
 
 	/* Succeeded: the request is sent. */
-	zed_titlebar_v1_add_control(titlebar->proxy, id, role, priority, group, label);
+	keiland_titlebar_v1_add_control(titlebar->proxy, id, role, priority, group, label);
 	return 0;
 }
 
@@ -292,8 +292,8 @@ zdesktop_titlebar_add_control(
  * Removes a control.
  */
 int
-zdesktop_titlebar_remove_control(
-	struct zdesktop_titlebar *titlebar,
+keiland_titlebar_remove_control(
+	struct keiland_titlebar *titlebar,
 	uint32_t id)
 {
 	struct titlebar_entry *entry;
@@ -312,7 +312,7 @@ zdesktop_titlebar_remove_control(
 	titlebar->control_count--;
 
 	/* Succeeded: the request is sent. */
-	zed_titlebar_v1_remove_control(titlebar->proxy, id);
+	keiland_titlebar_v1_remove_control(titlebar->proxy, id);
 	return 0;
 }
 
@@ -320,8 +320,8 @@ zdesktop_titlebar_remove_control(
  * Sets a control's label.
  */
 int
-zdesktop_titlebar_set_control_label(
-	struct zdesktop_titlebar *titlebar,
+keiland_titlebar_set_control_label(
+	struct keiland_titlebar *titlebar,
 	uint32_t id,
 	const char *label)
 {
@@ -341,7 +341,7 @@ zdesktop_titlebar_set_control_label(
 		return E2BIG;
 
 	/* Succeeded: the request is sent. */
-	zed_titlebar_v1_set_control_label(titlebar->proxy, id, label);
+	keiland_titlebar_v1_set_control_label(titlebar->proxy, id, label);
 	return 0;
 }
 
@@ -349,8 +349,8 @@ zdesktop_titlebar_set_control_label(
  * Sets whether a control works now and whether it is checked (any nonzero is yes).
  */
 int
-zdesktop_titlebar_set_control_state(
-	struct zdesktop_titlebar *titlebar,
+keiland_titlebar_set_control_state(
+	struct keiland_titlebar *titlebar,
 	uint32_t id,
 	int enabled,
 	int checked)
@@ -375,7 +375,7 @@ zdesktop_titlebar_set_control_state(
 		checked_word = 1;
 
 	/* Succeeded: the request is sent. */
-	zed_titlebar_v1_set_control_state(titlebar->proxy, id, enabled_word, checked_word);
+	keiland_titlebar_v1_set_control_state(titlebar->proxy, id, enabled_word, checked_word);
 	return 0;
 }
 
@@ -383,24 +383,24 @@ zdesktop_titlebar_set_control_state(
  * Sets a progress control's share done.
  */
 int
-zdesktop_titlebar_set_control_value(
-	struct zdesktop_titlebar *titlebar,
+keiland_titlebar_set_control_value(
+	struct keiland_titlebar *titlebar,
 	uint32_t id,
 	unsigned value)
 {
 	struct titlebar_entry *entry;
 
 	/* Inside a transaction, a progress control that is there, a value it takes. */
-	if (titlebar->updating == 0U || value > ZDESKTOP_PROGRESS_UNKNOWN)
+	if (titlebar->updating == 0U || value > KEILAND_PROGRESS_UNKNOWN)
 		return EINVAL;
 	entry = titlebar_control(titlebar, id);
 	if (entry == NULL)
 		return ENOENT;
-	if (entry->role != ZDESKTOP_CONTROL_PROGRESS)
+	if (entry->role != KEILAND_CONTROL_PROGRESS)
 		return EINVAL;
 
 	/* Succeeded: the request is sent. */
-	zed_titlebar_v1_set_control_value(titlebar->proxy, id, value);
+	keiland_titlebar_v1_set_control_value(titlebar->proxy, id, value);
 	return 0;
 }
 
@@ -408,8 +408,8 @@ zdesktop_titlebar_set_control_value(
  * Sets a search's or a breadcrumb's text and placeholder (NULL is empty).
  */
 int
-zdesktop_titlebar_set_control_text(
-	struct zdesktop_titlebar *titlebar,
+keiland_titlebar_set_control_text(
+	struct keiland_titlebar *titlebar,
 	uint32_t id,
 	const char *text,
 	const char *placeholder)
@@ -424,7 +424,7 @@ zdesktop_titlebar_set_control_text(
 	entry = titlebar_control(titlebar, id);
 	if (entry == NULL)
 		return ENOENT;
-	if (entry->role != ZDESKTOP_CONTROL_SEARCH && entry->role != ZDESKTOP_CONTROL_BREADCRUMB)
+	if (entry->role != KEILAND_CONTROL_SEARCH && entry->role != KEILAND_CONTROL_BREADCRUMB)
 		return EINVAL;
 
 	/* No text is an empty one. */
@@ -440,7 +440,7 @@ zdesktop_titlebar_set_control_text(
 		return E2BIG;
 
 	/* Succeeded: the request is sent. */
-	zed_titlebar_v1_set_control_text(titlebar->proxy, id, text, placeholder);
+	keiland_titlebar_v1_set_control_text(titlebar->proxy, id, text, placeholder);
 	return 0;
 }
 
@@ -448,8 +448,8 @@ zdesktop_titlebar_set_control_text(
  * Sets a breadcrumb's parts.
  */
 int
-zdesktop_titlebar_set_breadcrumb(
-	struct zdesktop_titlebar *titlebar,
+keiland_titlebar_set_breadcrumb(
+	struct keiland_titlebar *titlebar,
 	uint32_t id,
 	const char *const *segments,
 	size_t count)
@@ -467,7 +467,7 @@ zdesktop_titlebar_set_breadcrumb(
 	entry = titlebar_control(titlebar, id);
 	if (entry == NULL)
 		return ENOENT;
-	if (entry->role != ZDESKTOP_CONTROL_BREADCRUMB)
+	if (entry->role != KEILAND_CONTROL_BREADCRUMB)
 		return EINVAL;
 	if (count > TITLEBAR_SEGMENTS_MAX)
 		return E2BIG;
@@ -496,7 +496,7 @@ zdesktop_titlebar_set_breadcrumb(
 	}
 
 	/* The request, then the array goes. */
-	zed_titlebar_v1_set_breadcrumb(titlebar->proxy, id, &parts);
+	keiland_titlebar_v1_set_breadcrumb(titlebar->proxy, id, &parts);
 	wl_array_release(&parts);
 
 	/* Succeeded: the request is sent. */
@@ -507,8 +507,8 @@ zdesktop_titlebar_set_breadcrumb(
  * Adds a tab at the end.
  */
 int
-zdesktop_titlebar_add_tab(
-	struct zdesktop_titlebar *titlebar,
+keiland_titlebar_add_tab(
+	struct keiland_titlebar *titlebar,
 	uint32_t id,
 	const char *title)
 {
@@ -534,7 +534,7 @@ zdesktop_titlebar_add_tab(
 	titlebar->tab_count++;
 
 	/* Succeeded: the request is sent. */
-	zed_titlebar_v1_add_tab(titlebar->proxy, id, title);
+	keiland_titlebar_v1_add_tab(titlebar->proxy, id, title);
 	return 0;
 }
 
@@ -542,8 +542,8 @@ zdesktop_titlebar_add_tab(
  * Removes a tab.
  */
 int
-zdesktop_titlebar_remove_tab(
-	struct zdesktop_titlebar *titlebar,
+keiland_titlebar_remove_tab(
+	struct keiland_titlebar *titlebar,
 	uint32_t id)
 {
 	int index;
@@ -560,7 +560,7 @@ zdesktop_titlebar_remove_tab(
 	titlebar->tab_count--;
 
 	/* Succeeded: the request is sent. */
-	zed_titlebar_v1_remove_tab(titlebar->proxy, id);
+	keiland_titlebar_v1_remove_tab(titlebar->proxy, id);
 	return 0;
 }
 
@@ -568,8 +568,8 @@ zdesktop_titlebar_remove_tab(
  * Sets a tab's title and flags.
  */
 int
-zdesktop_titlebar_set_tab(
-	struct zdesktop_titlebar *titlebar,
+keiland_titlebar_set_tab(
+	struct keiland_titlebar *titlebar,
 	uint32_t id,
 	const char *title,
 	unsigned flags)
@@ -594,7 +594,7 @@ zdesktop_titlebar_set_tab(
 		return E2BIG;
 
 	/* Succeeded: the request is sent. */
-	zed_titlebar_v1_set_tab(titlebar->proxy, id, title, flags);
+	keiland_titlebar_v1_set_tab(titlebar->proxy, id, title, flags);
 	return 0;
 }
 
@@ -602,8 +602,8 @@ zdesktop_titlebar_set_tab(
  * Sets the tab strip's options.
  */
 int
-zdesktop_titlebar_set_tabs_options(
-	struct zdesktop_titlebar *titlebar,
+keiland_titlebar_set_tabs_options(
+	struct keiland_titlebar *titlebar,
 	unsigned options)
 {
 	/* Inside a transaction, the options known. */
@@ -613,7 +613,7 @@ zdesktop_titlebar_set_tabs_options(
 		return EINVAL;
 
 	/* Succeeded: the request is sent. */
-	zed_titlebar_v1_set_tabs_options(titlebar->proxy, options);
+	keiland_titlebar_v1_set_tabs_options(titlebar->proxy, options);
 	return 0;
 }
 
@@ -621,8 +621,8 @@ zdesktop_titlebar_set_tabs_options(
  * Gives the keyboard to a committed search or breadcrumb control.
  */
 int
-zdesktop_titlebar_focus_control(
-	struct zdesktop_titlebar *titlebar,
+keiland_titlebar_focus_control(
+	struct keiland_titlebar *titlebar,
 	uint32_t id,
 	unsigned mode)
 {
@@ -636,27 +636,27 @@ zdesktop_titlebar_focus_control(
 		return EINVAL;
 
 	/* A search takes it as a field, a breadcrumb as a field or as a path to edit. */
-	if (entry->role != ZDESKTOP_CONTROL_SEARCH && entry->role != ZDESKTOP_CONTROL_BREADCRUMB)
+	if (entry->role != KEILAND_CONTROL_SEARCH && entry->role != KEILAND_CONTROL_BREADCRUMB)
 		return EINVAL;
-	if (mode > ZDESKTOP_FOCUS_EDIT)
+	if (mode > KEILAND_FOCUS_EDIT)
 		return EINVAL;
 
 	/* Succeeded: the request is sent. */
-	zed_titlebar_v1_focus_control(titlebar->proxy, id, mode);
+	keiland_titlebar_v1_focus_control(titlebar->proxy, id, mode);
 	return 0;
 }
 
 /*
- * Finds and binds zdesktop's zed_titlebar_manager_v1 on a queue of its own,
+ * Finds and binds zdesktop's keiland_titlebar_manager_v1 on a queue of its own,
  * so that no event of the application's is dispatched by the search; the
  * binding is moved to the display's default queue.  Returns NULL with errno
  * set.
  */
-static struct zed_titlebar_manager_v1 *
+static struct keiland_titlebar_manager_v1 *
 titlebar_bind(
 	struct wl_display *display)
 {
-	struct zed_titlebar_manager_v1 *manager;
+	struct keiland_titlebar_manager_v1 *manager;
 	struct titlebar_search search;
 	struct wl_event_queue *queue;
 	struct wl_display *wrapper;
@@ -700,7 +700,7 @@ titlebar_bind(
 	/* The manager, bound when announced, is moved to the application's default queue. */
 	manager = NULL;
 	if (registry != NULL && search.name != 0U) {
-		manager = wl_registry_bind(registry, search.name, &zed_titlebar_manager_v1_interface, version);
+		manager = wl_registry_bind(registry, search.name, &keiland_titlebar_manager_v1_interface, version);
 		if (manager != NULL)
 			wl_proxy_set_queue((struct wl_proxy *)manager, NULL);
 	}
@@ -742,7 +742,7 @@ titlebar_global(
 	/* Only the manager, at a version this library speaks. */
 	(void)registry;
 	search = data;
-	same = strcmp(interface, "zed_titlebar_manager_v1");
+	same = strcmp(interface, "keiland_titlebar_manager_v1");
 	if (same != 0 || version < TITLEBAR_VERSION)
 		return;
 
@@ -770,13 +770,13 @@ titlebar_global_remove(
 static void
 titlebar_activated(
 	void *data,
-	struct zed_titlebar_v1 *proxy,
+	struct keiland_titlebar_v1 *proxy,
 	uint32_t id,
 	uint32_t detail,
 	struct wl_seat *seat,
 	uint32_t serial)
 {
-	struct zdesktop_titlebar *titlebar;
+	struct keiland_titlebar *titlebar;
 
 	/* The application's callback, if it has one. */
 	(void)proxy;
@@ -792,11 +792,11 @@ titlebar_activated(
 static void
 titlebar_text_changed(
 	void *data,
-	struct zed_titlebar_v1 *proxy,
+	struct keiland_titlebar_v1 *proxy,
 	uint32_t id,
 	const char *text)
 {
-	struct zdesktop_titlebar *titlebar;
+	struct keiland_titlebar *titlebar;
 
 	/* The application's callback, if it has one. */
 	(void)proxy;
@@ -812,12 +812,12 @@ titlebar_text_changed(
 static void
 titlebar_text_done(
 	void *data,
-	struct zed_titlebar_v1 *proxy,
+	struct keiland_titlebar_v1 *proxy,
 	uint32_t id,
 	const char *text,
 	uint32_t how)
 {
-	struct zdesktop_titlebar *titlebar;
+	struct keiland_titlebar *titlebar;
 
 	/* The application's callback, if it has one. */
 	(void)proxy;
@@ -833,11 +833,11 @@ titlebar_text_done(
 static void
 titlebar_tab_activated(
 	void *data,
-	struct zed_titlebar_v1 *proxy,
+	struct keiland_titlebar_v1 *proxy,
 	uint32_t id,
 	uint32_t serial)
 {
-	struct zdesktop_titlebar *titlebar;
+	struct keiland_titlebar *titlebar;
 
 	/* The application's callback, if it has one. */
 	(void)proxy;
@@ -853,10 +853,10 @@ titlebar_tab_activated(
 static void
 titlebar_tab_close(
 	void *data,
-	struct zed_titlebar_v1 *proxy,
+	struct keiland_titlebar_v1 *proxy,
 	uint32_t id)
 {
-	struct zdesktop_titlebar *titlebar;
+	struct keiland_titlebar *titlebar;
 
 	/* The application's callback, if it has one. */
 	(void)proxy;
@@ -872,10 +872,10 @@ titlebar_tab_close(
 static void
 titlebar_new_tab(
 	void *data,
-	struct zed_titlebar_v1 *proxy,
+	struct keiland_titlebar_v1 *proxy,
 	uint32_t serial)
 {
-	struct zdesktop_titlebar *titlebar;
+	struct keiland_titlebar *titlebar;
 
 	/* The application's callback, if it has one. */
 	(void)proxy;
@@ -891,9 +891,9 @@ titlebar_new_tab(
 static void
 titlebar_overflow(
 	void *data,
-	struct zed_titlebar_v1 *proxy)
+	struct keiland_titlebar_v1 *proxy)
 {
-	struct zdesktop_titlebar *titlebar;
+	struct keiland_titlebar *titlebar;
 
 	/* The application's callback, if it has one. */
 	(void)proxy;
@@ -909,11 +909,11 @@ titlebar_overflow(
 static void
 titlebar_drop_target(
 	void *data,
-	struct zed_titlebar_v1 *proxy,
+	struct keiland_titlebar_v1 *proxy,
 	uint32_t id,
 	uint32_t detail)
 {
-	struct zdesktop_titlebar *titlebar;
+	struct keiland_titlebar *titlebar;
 
 	/* The application's callback, if it has one. */
 	(void)proxy;
@@ -928,7 +928,7 @@ titlebar_drop_target(
 /* Finds a control in the mirror; NULL when there is none. */
 static struct titlebar_entry *
 titlebar_control(
-	struct zdesktop_titlebar *titlebar,
+	struct keiland_titlebar *titlebar,
 	uint32_t id)
 {
 	unsigned index;
@@ -946,7 +946,7 @@ titlebar_control(
 /* Finds a tab in the mirror; its index, or -1 when there is none. */
 static int
 titlebar_tab(
-	const struct zdesktop_titlebar *titlebar,
+	const struct keiland_titlebar *titlebar,
 	uint32_t id)
 {
 	unsigned index;

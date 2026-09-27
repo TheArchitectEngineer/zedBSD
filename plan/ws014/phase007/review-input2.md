@@ -60,7 +60,7 @@
 
 - `present_submit` → `vkWaitForFences(job->fence)` (wsi-swapchain.c:1751) を `present_native` の前に行う。アプリの `vkQueueSubmit` 直後の present で CPU が GPU 完了までブロックし、swapchain 2〜3 枚の意味が無い。
 - wltest/vkdemo はさらにその後 `vkWaitForFences` するので実質シングルバッファ、フレームレートは「GPU 時間 + P2 の記録時間 + P4 のコピー時間 + vblank」の直列和。
-- Wayland 経路も同じ: fence 完了後に `wl_surface_commit` (wsi-wayland.c:700)。本来は semaphore 待ちを GPU/compositor 側に任せ、commit は即時で良い (zed_gpu_buffer_v1 に fence/sync fd を付けるか、zwl 側 present が fenced なので「GPU 順序が守られる」前提で attach して問題ない)。
+- Wayland 経路も同じ: fence 完了後に `wl_surface_commit` (wsi-wayland.c:700)。本来は semaphore 待ちを GPU/compositor 側に任せ、commit は即時で良い (keiland_gpu_buffer_v1 に fence/sync fd を付けるか、zwl 側 present が fenced なので「GPU 順序が守られる」前提で attach して問題ない)。
 
 **推奨**: P1 の通知があれば、present は「submit 後に fence を登録して即 return、完了時にワーカーまたは次の `vkAcquireNextImageKHR` で native present」にできる。
 
@@ -92,7 +92,7 @@
 
 ### P10. libwayland の互換性上限
 
-- 型付きリスナの dispatch (event.c) はライブラリが知っている固定インターフェース群 (wl_display/registry/callback/compositor/surface/region/buffer/output, xdg_wm_base/positioner/surface/toplevel/popup, zed_gpu_buffer_v1) の signature に対する分岐。**未知のプロトコル (wp_presentation, xdg_decoration, wp_linux_dmabuf など) は `wl_proxy_add_dispatcher` 経由でしか使えない**。libffi 相当の汎用呼び出しが無いのが将来の互換性ボトルネック。
+- 型付きリスナの dispatch (event.c) はライブラリが知っている固定インターフェース群 (wl_display/registry/callback/compositor/surface/region/buffer/output, xdg_wm_base/positioner/surface/toplevel/popup, keiland_gpu_buffer_v1) の signature に対する分岐。**未知のプロトコル (wp_presentation, xdg_decoration, wp_linux_dmabuf など) は `wl_proxy_add_dispatcher` 経由でしか使えない**。libffi 相当の汎用呼び出しが無いのが将来の互換性ボトルネック。
 - wl_shm / wl_seat / wl_data_device 系の interface 定義が無いので、既存 Wayland アプリのビルドがまず通らない (ヘッダ `wayland-client-protocol.h` の網羅範囲次第)。
 - `wlc_proxy_lookup` がリスト線形走査 → オブジェクト数が増えると O(n²)。今は無害。
 - 良い点: prepare_read/read_events/cancel_read のリーダ調停、SCM_RIGHTS のフレーム境界跨ぎ処理、private queue、wrapper は本家と同じ意味論で実装されており、libvulkan の private queue と wltest の default queue が正しく分離できている。
@@ -169,7 +169,7 @@ poll で POLLIN が signaled を意味する fd は POSIX の範囲であり、L
 
 - `vkQueuePresentKHR` が CPU で待たなくなる。`GPU_DISPLAY_PRESENT` と `GPU_COMMAND` に
   「待つ fence」「signal する fence」を渡し、カーネル側で順序付けする。
-- `zed_gpu_buffer_v1` に fence fd を SCM_RIGHTS で添付でき、コンポジタは fence を
+- `keiland_gpu_buffer_v1` に fence fd を SCM_RIGHTS で添付でき、コンポジタは fence を
   present の依存として渡すだけで済む。クライアントとコンポジタ間の CPU 同期待ちが消える。
 - `VK_KHR_external_fence_fd` / `VK_KHR_external_semaphore_fd` をそのまま実装できる。
 
@@ -178,7 +178,7 @@ poll で POLLIN が signaled を意味する fd は POSIX の範囲であり、L
 現在は `VkImportMemoryResourceInfoMESA` 系の Venus 由来構造で import しているが、
 handle fd を `VK_KHR_external_memory_fd` の OPAQUE_FD として扱えば、コンポジタも
 クライアントも Vulkan 拡張だけで完結する。zed 固有で残るのは Wayland プロトコルの
-`zed_gpu_buffer_v1` だけになる。これは linux-dmabuf-v1 に相当する役割で避けられないため、
+`keiland_gpu_buffer_v1` だけになる。これは linux-dmabuf-v1 に相当する役割で避けられないため、
 将来ツールキットを移植しやすいよう create_params に近い形 (format、stride、offset、
 modifier 相当) にしておく。
 
@@ -292,7 +292,7 @@ import で失敗してから対処するより、割り当て時に合わせる�
 - **直接スキャンアウト** (フルスクリーンのクライアントバッファを合成せずに出す最適化) を
   やるなら、クライアントのバッファを表示ノードへ import してみて、失敗したら合成に戻す。
   Linux のコンポジタが `drmModeAddFB2` の失敗で合成にフォールバックするのと同じ形。
-- クライアントに最初から制約を満たす確保をさせたい場合は、`zed_gpu_buffer_v1` に
+- クライアントに最初から制約を満たす確保をさせたい場合は、`keiland_gpu_buffer_v1` に
   「推奨デバイスと配置制約」を伝えるイベントを足す。linux-dmabuf-v1 の feedback
   (main_device と tranche) に相当し、クライアント側の libvulkan が Wayland surface 用
   swapchain を確保するときに使う。任意の最適化で、無くても動作は変わらない。

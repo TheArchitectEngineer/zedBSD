@@ -43,7 +43,7 @@
 #include <unistd.h>
 
 /* The font the terminal uses unless told otherwise, and its size in pixels. */
-#define MAIN_FONT		"/usr/share/fonts/zdesktop-mono.ttf"
+#define MAIN_FONT		"/usr/share/fonts/keiland-mono.ttf"
 #define MAIN_FONT_PIXELS	16U
 
 /* The grid the window opens with. */

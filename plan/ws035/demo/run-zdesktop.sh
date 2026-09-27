@@ -15,7 +15,7 @@ sleep 3
 while :; do
 	rm -f /tmp/wayland-0
 	picture=
-	[ -f /usr/share/zdesktop/wallpaper.ppm ] && picture=--wallpaper=/usr/share/zdesktop/wallpaper.ppm
+	[ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
 	/bin/wayland --socket=/tmp/wayland-0 --timeout=86400 --glass $picture >> /var/log/zdesktop.log 2>&1
 	sleep 2
 done

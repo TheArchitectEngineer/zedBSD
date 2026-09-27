@@ -9,7 +9,7 @@
  * The user's session: after a login sessiond gives the seat to the user,
  * makes the user's runtime directory (/run/user/UID, 0700, the user's: the
  * Wayland socket goes there, where no other user can reach it), and runs
- * the session script (/etc/zdesktop/session) with /bin/sh as the user, the
+ * the session script (/etc/keiland/session) with /bin/sh as the user, the
  * way login starts a shell: initgroups, setgid, setuid, HOME, USER,
  * LOGNAME, PATH, SHELL and XDG_RUNTIME_DIR.  The login is recorded in
  * utmpx.

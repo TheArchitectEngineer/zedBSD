@@ -28,13 +28,13 @@ greeter の画面（g2）は p095、既定の有効化と init の `replaces=`�
     要求は 1 行: `AUTH name password`（OK / FAIL）、`POWER poweroff|reboot`（OK）、他は ERROR。誤りは 2 秒の後に FAIL、
     3 回続くごとに 2 倍（最大 16 秒）。password は照合の直後に消し、読んだ buffer も消す。log に password を書かない。
   - `session.c`: user に seat を渡し、`/run/user/UID`（0700、user の、lstat で directory であること）を作り、
-    `/bin/sh /etc/zdesktop/session` を user として（setsid・initgroups・setgid・setuid、HOME・USER・LOGNAME・PATH・SHELL・
+    `/bin/sh /etc/keiland/session` を user として（setsid・initgroups・setgid・setuid、HOME・USER・LOGNAME・PATH・SHELL・
     `XDG_RUNTIME_DIR`、出力は `$XDG_RUNTIME_DIR/session.log`）。utmpx に USER_PROCESS・DEAD_PROCESS（line `seat0`）。
     終わったら process group と、root 以外なら user の全 process（user になった子の `kill(-1)`）を TERM・KILL、
     socket を消し、greeter へ戻る。
   - `seat.c`: `/dev/gpu0`〜`gpu3` と `/dev/input/event*` を seat の user の 0600 に（owner を先に）、止めるとき root の
     0666・0640（wheel）に戻す。greeter と session の間、毎秒もう一度（hotplug の新しい node）。
-  - `session.sh`（`/etc/zdesktop/session`）: 通常の folder を作り `zdesktop --session --glass --socket=$XDG_RUNTIME_DIR/wayland-0`
+  - `session.sh`（`/etc/keiland/session`）: 通常の folder を作り `zdesktop --session --glass --socket=$XDG_RUNTIME_DIR/wayland-0`
     （`--session` は p095）。`greeter.service`（`/etc/service.d/greeter`、`replaces=getty_console` は p098 で init が読む）。
 - `userland/base/login/verify.c`・`verify.h`（新）: login の照合（passwd と shadow、`!`・`*` の無効、空の password、crypt）を
   切り出し、login と sessiond が共有。`login/main.c` はそれを使う（見た目の振る舞いは同じ）。

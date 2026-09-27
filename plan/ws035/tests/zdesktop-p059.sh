@@ -2,7 +2,7 @@
 # ws035-p059: the glass look (floating title bars, frosted glass, system bar),
 # checked on the Venus guest.
 #
-# zdesktop --glass runs at 1280x800 with the font at /usr/share/fonts/zdesktop.ttf
+# zdesktop --glass runs at 1280x800 with the font at /usr/share/fonts/keiland.ttf
 # (build/ws035-fonts/Inter.ttf, not in git: see phase059).  Window a is a
 # pale 420x300 wltest window, window b a pale 360x240 wl_shm window over it.
 # The pointer is driven with QMP (usb-tablet, absolute).

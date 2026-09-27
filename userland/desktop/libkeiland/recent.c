@@ -16,14 +16,14 @@
  *     TIME<TAB>APPLICATION<TAB>PATH
  *
  * TIME is in seconds since the epoch.  A path is listed once (using it
- * again moves it to the end), and only the newest ZDESKTOP_RECENT_KEPT
+ * again moves it to the end), and only the newest KEILAND_RECENT_KEPT
  * entries are kept.  A change is made under an flock of a lock file beside
  * the list and written to a new file renamed over the old one, so readers
  * never see half a list and two applications do not lose each other's
  * entries.
  */
 
-#include <zdesktop.h>
+#include <keiland.h>
 
 #include <errno.h>
 #include <fcntl.h>
@@ -36,7 +36,7 @@
 #include <unistd.h>
 
 /* The longest line read (a path, an application and a time). */
-#define RECENT_LINE_MAX		(ZDESKTOP_RECENT_PATH_MAX + ZDESKTOP_RECENT_NAME_MAX + 32)
+#define RECENT_LINE_MAX		(KEILAND_RECENT_PATH_MAX + KEILAND_RECENT_NAME_MAX + 32)
 
 /*
  * One entry of the list as it is read and written: an allocated path, the
@@ -44,7 +44,7 @@
  */
 struct recent_entry {
 	char *path;
-	char application[ZDESKTOP_RECENT_NAME_MAX];
+	char application[KEILAND_RECENT_NAME_MAX];
 	int64_t time;
 };
 
@@ -62,13 +62,13 @@ static void recent_mkdir(const char *path);
  * Returns 0, or an errno value.
  */
 int
-zdesktop_recent_add(
+keiland_recent_add(
 	const char *path,
 	const char *application)
 {
 	struct recent_entry *entries;
 	struct recent_entry *grown;
-	char list[ZDESKTOP_RECENT_PATH_MAX];
+	char list[KEILAND_RECENT_PATH_MAX];
 	size_t length;
 	size_t count;
 	size_t index;
@@ -81,7 +81,7 @@ zdesktop_recent_add(
 	if (path == NULL || path[0] != '/')
 		return EINVAL;
 	length = strlen(path);
-	if (length >= ZDESKTOP_RECENT_PATH_MAX)
+	if (length >= KEILAND_RECENT_PATH_MAX)
 		return EINVAL;
 	if (application == NULL)
 		application = "";
@@ -142,8 +142,8 @@ zdesktop_recent_add(
 
 	/* The newest are written back (the oldest beyond the limit are left out). */
 	index = 0;
-	if (count > ZDESKTOP_RECENT_KEPT)
-		index = count - ZDESKTOP_RECENT_KEPT;
+	if (count > KEILAND_RECENT_KEPT)
+		index = count - KEILAND_RECENT_KEPT;
 	error = recent_write(list, entries + index, count - index);
 	recent_free(entries, count);
 	close(lock);
@@ -162,13 +162,13 @@ zdesktop_recent_add(
  * Returns 0 (an absent list is empty), or an errno value.
  */
 int
-zdesktop_recent_list(
-	struct zdesktop_recent_item *items,
+keiland_recent_list(
+	struct keiland_recent_item *items,
 	size_t capacity,
 	size_t *count)
 {
 	struct recent_entry *entries;
-	char list[ZDESKTOP_RECENT_PATH_MAX];
+	char list[KEILAND_RECENT_PATH_MAX];
 	size_t total;
 	size_t index;
 	int error;
@@ -206,11 +206,11 @@ zdesktop_recent_list(
  * Returns 0 (also when it was not listed), or an errno value.
  */
 int
-zdesktop_recent_remove(
+keiland_recent_remove(
 	const char *path)
 {
 	struct recent_entry *entries;
-	char list[ZDESKTOP_RECENT_PATH_MAX];
+	char list[KEILAND_RECENT_PATH_MAX];
 	size_t count;
 	size_t index;
 	size_t kept;
@@ -264,7 +264,7 @@ recent_file(
 	char *path,
 	size_t size)
 {
-	char folder[ZDESKTOP_RECENT_PATH_MAX];
+	char folder[KEILAND_RECENT_PATH_MAX];
 	const char *data;
 	const char *home;
 	int written;
@@ -299,7 +299,7 @@ static int
 recent_lock(
 	const char *list)
 {
-	char path[ZDESKTOP_RECENT_PATH_MAX + 8];
+	char path[KEILAND_RECENT_PATH_MAX + 8];
 	int descriptor;
 	int status;
 
@@ -395,7 +395,7 @@ recent_write(
 	const struct recent_entry *entries,
 	size_t count)
 {
-	char temporary[ZDESKTOP_RECENT_PATH_MAX + 8];
+	char temporary[KEILAND_RECENT_PATH_MAX + 8];
 	FILE *file;
 	size_t index;
 	int status;
@@ -445,7 +445,7 @@ static void
 recent_mkdir(
 	const char *path)
 {
-	char partial[ZDESKTOP_RECENT_PATH_MAX];
+	char partial[KEILAND_RECENT_PATH_MAX];
 	size_t index;
 
 	/* Each prefix that ends at a slash, then the whole path. */

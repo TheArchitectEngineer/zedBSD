@@ -54,7 +54,7 @@ click() {
 }
 
 guest "$stop_all" >/dev/null
-guest 'rm -f /tmp/p079-pasted; export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/zdesktop/wallpaper.ppm ] && picture=--wallpaper=/usr/share/zdesktop/wallpaper.ppm
+guest 'rm -f /tmp/p079-pasted; export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
 /bin/wayland --timeout=400 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
 /bin/data-probe --token=a --color=3060c0 --text="hello from a" --timeout-s=300 > /tmp/a.log 2>&1 </dev/null & sleep 3; echo started' >/dev/null
 expect_log /tmp/a.log 'DATAPROBE ready run=a'

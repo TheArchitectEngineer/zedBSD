@@ -1,7 +1,7 @@
 #!/bin/sh
 # ws071-p009: the context menus of files on the Venus guest (the lean image, build-files-image.sh):
 # WS070's System Menu protocol version 2 (xdg_menu_manager_v1.get_context_menu, xdg_context_menu_v1) and
-# libkeiland's zdesktop_menu_popup.  zdesktop --glass at 1280x800; files at 1000x640 on the
+# libkeiland's keiland_menu_popup.  zdesktop --glass at 1280x800; files at 1000x640 on the
 # sample home (/tmp/fhome), opened on Documents.
 #  1. A right click on Budget.csv: zdesktop opens the context menu at the click (ZWL MENU context), items.png;
 #     Get Info chosen: the action comes back (CONTEXT-MENU item=1004 action=4), the information opens,
@@ -68,7 +68,7 @@ shot() {
 guest "$stop_all" >/dev/null
 guest 'rm -f /tmp/wayland-0 /tmp/files.clipboard; rm -rf /tmp/fhome; sh /usr/share/files-tests/make-home.sh /tmp/fhome >/dev/null'
 guest 'export XDG_RUNTIME_DIR=/tmp
-picture=; [ -f /usr/share/zdesktop/wallpaper.ppm ] && picture=--wallpaper=/usr/share/zdesktop/wallpaper.ppm
+picture=; [ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
 /bin/wayland --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
 HOME=/tmp/fhome /bin/files --token=f1 --timeout-s=800 --width=1000 --height=640 /tmp/fhome/Documents > /tmp/f.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 set -- $(guest "grep 'ZWL MAP client=1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')

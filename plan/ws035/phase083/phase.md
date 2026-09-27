@@ -1,6 +1,6 @@
 <!-- awesome-plan project=zedbsd record=ws035p083 -->
 
-# ws035-p083: 窓の中のすりガラスの card（`zed_glass_v1`）と see-through の Vulkan swapchain
+# ws035-p083: 窓の中のすりガラスの card（`keiland_glass_v1`）と see-through の Vulkan swapchain
 
 Phase ID: `ws035-p083`
 Parent: [WS035](../ws.md)（ws035-p057 から 2026-09-27 に分割）
@@ -12,9 +12,9 @@ Queue: なし（2026-09-27 ユーザーの指示でサブエージェントが w
 
 ws071-p015（ファイラーの付箋のようなすりガラスの pane）に要る compositor の部分。設計は [glass-design.md](../glass-design.md)。
 
-1. client の窓の alpha: libvulkan の Wayland WSI が `VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR` を広告し、`zed_gpu_buffer_v1` revision 3 の
+1. client の窓の alpha: libvulkan の Wayland WSI が `VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR` を広告し、`keiland_gpu_buffer_v1` revision 3 の
    `set_alpha` で buffer ごとに zdesktop へ伝える。zdesktop は premultiplied の alpha で blend する。
-2. `zed_glass_v1`（zdesktop・libwayland・libkeiland の `zdesktop_glass_*`）: surface の card（角丸の矩形）を double-buffered で受け、窓の body の
+2. `keiland_glass_v1`（zdesktop・libwayland・libkeiland の `keiland_glass_*`）: surface の card（角丸の矩形）を double-buffered で受け、窓の body の
    下に card の影とすりガラス（ぼかした壁紙、白、縁、flat）を描く。Wiseview の tile でも。
 3. p057 に残すもの: 背後の窓のぼかし（毎 frame の backdrop）、damage。
 
@@ -26,12 +26,12 @@ ws071-p015（ファイラーの付箋のようなすりガラスの pane）に�
 
 ## 実装（2026-09-27）
 
-- libwayland: `protocol.c`（`zed_gpu_buffer_v1` version 3、`set_alpha`）、新 `glass-protocol.c`・`zed-glass-v1-client-protocol.h`、`internal.h`、
+- libwayland: `protocol.c`（`keiland_gpu_buffer_v1` version 3、`set_alpha`）、新 `glass-protocol.c`・`zed-glass-v1-client-protocol.h`、`internal.h`、
   `exports.map`、`Makefile`。
 - libvulkan: `wsi-internal.h`（任意の op `composite_alpha`）、`wsi-swapchain.c`（advertise された 1 bit の alpha を受け、OPAQUE 以外は op へ）、
   `wsi-wayland.c`（factory ≥ 3 で PRE_MULTIPLIED を広告、lease の `premultiplied`、buffer ごとの `set_alpha`、binding を version 3 まで）、
   `wsi-display.c`（op は NULL）。
-- libkeiland: 新 `glass.c`、`include/libc/zdesktop.h`（`ZDESKTOP_VERSION` 5、`zdesktop_glass_*`）、`exports.map`、`Makefile`。
+- libkeiland: 新 `glass.c`、`include/libc/keiland.h`（`KEILAND_VERSION` 5、`keiland_glass_*`）、`exports.map`、`Makefile`。
 - zdesktop: 新 `panels.c`・`panels.h`、`zwl.h`（kind 2 つ、surface の `glass`・`panels`）、`protocol.c`（global 17、`factory_alpha`、dispatch、
   commit で `zwl_panels_commit`）、`import.c`（`zwl_import_set_alpha`）、`objects.c`（退場の hook）、`shell.c`（`draw_body`・`draw_tile`）、
   `shaders/panel.frag`（glass の sheen を `shape.z` で消せる）と `shaders.h`、`Makefile`。
@@ -47,5 +47,5 @@ ws071-p015（ファイラーの付箋のようなすりガラスの pane）に�
 
 ## 判断が要る点（既定で進めた、戻せる）
 
-- 標準の ext-background-effect（staging）ではなく zdesktop 独自の `zed_glass_v1`（角丸と card の意味を 1 request で言えるため）。標準は Future Work G-b。
+- 標準の ext-background-effect（staging）ではなく zdesktop 独自の `keiland_glass_v1`（角丸と card の意味を 1 request で言えるため）。標準は Future Work G-b。
 - ガラスの中身は今はぼかした壁紙（背後の他の窓はぼけない）。本当の backdrop blur は p057 の残り。

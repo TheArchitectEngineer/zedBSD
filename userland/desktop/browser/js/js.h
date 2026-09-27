@@ -16,8 +16,8 @@
  * string literals and identifiers with escapes), copied into the arena.
  */
 
-#ifndef ZDESKTOP_BROWSER_JS_H
-#define ZDESKTOP_BROWSER_JS_H
+#ifndef KEILAND_BROWSER_JS_H
+#define KEILAND_BROWSER_JS_H
 
 #include "base/base.h"
 #include "vm/vm.h"

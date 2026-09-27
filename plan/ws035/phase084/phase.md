@@ -19,9 +19,9 @@ onto the titlebar breadcrumb (the F-item from ws071-p010). One pass first.」
    `accept`・`set_actions` から action を選ぶ（Ctrl で copy、次に target の好み、次に copy・move・ask の順）、source に `target`・
    `action`、release で `drop`（accept と action があるとき）・source に `dnd_drop_performed`、`finish` で `dnd_finished`、
    それ以外は target に leave・source に `cancelled`。Esc で取り消し。icon の面を pointer に、無ければ zdesktop の小さな紙の印。
-2. titlebar: `zed_titlebar_v1` version 2 の event `drop_target(id, detail)`（パンくずの段の上にある間、enter・motion の前に。
+2. titlebar: `keiland_titlebar_v1` version 2 の event `drop_target(id, detail)`（パンくずの段の上にある間、enter・motion の前に。
    id 0 で「どの段でもない」）。zdesktop は窓の本体の上の座標（負の y）で enter を送り、その段を青く光らせる。
-3. libwayland・libkeiland: `drop_target` の記述と dispatch、`zdesktop_titlebar_listener.drop_target`（`ZDESKTOP_VERSION` 7）、
+3. libwayland・libkeiland: `drop_target` の記述と dispatch、`keiland_titlebar_listener.drop_target`（`KEILAND_VERSION` 7）、
    version 2 の bind。data device の client 側は p079 で揃っていた。
 4. files: 窓の中の drag が窓の外へ出たら zdesktop の drag and drop に渡す（`text/uri-list`、copy・move）。drop を受ける
    側: folder の項目・sidebar の folder・他の tab・titlebar のパンくずの段・表示中の folder（他の窓からのとき）が target。
@@ -29,7 +29,7 @@ onto the titlebar breadcrumb (the F-item from ws071-p010). One pass first.」
 
 ## 設計の判断（戻せる既定）
 
-- パンくずの段への drop は `zed_titlebar_v1` の event で段を教え、drag の target はその窓の surface にする（data device の
+- パンくずの段への drop は `keiland_titlebar_v1` の event で段を教え、drag の target はその窓の surface にする（data device の
   semantics はそのまま、座標は本体の上の負の y）。titlebar の control ごとの別の data の口は作らない。
 - 窓の中の drag（ws071-p010）は今までどおり窓の中で処理し、pointer が窓の外へ出た時点で Wayland の drag にする（zdesktop は
   押している間も pointer を focus の窓へ送るので、外の座標で分かる）。戻ってきた drop は自分の drag（`self=1`）として選択を使う。
@@ -43,7 +43,7 @@ onto the titlebar breadcrumb (the F-item from ws071-p010). One pass first.」
   印、icon の buffer の保持）、`shell.c`（`zwl_glass_body_at`、`zwl_glass_draw_drag_badge`、drag の間は `still` でない）、`damage.c`、
   `titlebar.c`（`zwl_titlebar_send_drop_target`、manager の version 2）、`titlebar-shell.c`（`zwl_titlebar_drop_at`、段の光）、`zwl.h`。
 - libwayland: `titlebar-protocol.c`（event と dispatch、titlebar の proxy を manager の version で作る。前は 1 固定で、version 2 の
-  event で client が切れた）、`zed-titlebar-v1-client-protocol.h`。libkeiland `titlebar.c`、`include/libc/zdesktop.h`、
+  event で client が切れた）、`zed-titlebar-v1-client-protocol.h`。libkeiland `titlebar.c`、`include/libc/keiland.h`、
   `titlebar-probe`（listener に NULL）。
 - files: `dnd.c`（新規）、`window.c`・`window.h`（manager の bind、`fm_window_push` を公開）、`titlebar.c`（drop_target を
   窓の入力の列へ）、`ui-drag.c`（`fm_drop_event`・`fm_drop_accepts`・`fm_drop_perform`、窓の外へ出たら `FM_REQUEST_DRAG_OUT`、

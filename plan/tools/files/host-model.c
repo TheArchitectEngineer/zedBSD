@@ -18,7 +18,7 @@
 
 #include "files.h"
 
-#include <zdesktop.h>
+#include <keiland.h>
 
 #include <errno.h>
 #include <fcntl.h>
@@ -241,20 +241,20 @@ main(
 
 	/* 14. The recent list (libkeiland): newest first, a path once, removal. */
 	{
-		static struct zdesktop_recent_item items[8];
+		static struct keiland_recent_item items[8];
 		struct fm_tags tags;
 		char **tagged;
 		size_t tagged_count;
 		unsigned mask;
 
 		snprintf(path, sizeof(path), "%s/src/Report.pdf", root);
-		check(zdesktop_recent_add(path, "test") == 0, "recent: add");
+		check(keiland_recent_add(path, "test") == 0, "recent: add");
 		snprintf(other, sizeof(other), "%s/src/Report copy.pdf", root);
-		check(zdesktop_recent_add(other, "test") == 0, "recent: add another");
-		check(zdesktop_recent_add(path, "test") == 0, "recent: add the first again");
-		check(zdesktop_recent_list(items, 8, &count) == 0 && count == 2 && strcmp(items[0].path, path) == 0 && strcmp(items[1].path, other) == 0, "recent: newest first, once each");
-		check(zdesktop_recent_remove(path) == 0, "recent: remove");
-		check(zdesktop_recent_list(items, 8, &count) == 0 && count == 1 && strcmp(items[0].path, other) == 0, "recent: the other is left");
+		check(keiland_recent_add(other, "test") == 0, "recent: add another");
+		check(keiland_recent_add(path, "test") == 0, "recent: add the first again");
+		check(keiland_recent_list(items, 8, &count) == 0 && count == 2 && strcmp(items[0].path, path) == 0 && strcmp(items[1].path, other) == 0, "recent: newest first, once each");
+		check(keiland_recent_remove(path) == 0, "recent: remove");
+		check(keiland_recent_list(items, 8, &count) == 0 && count == 1 && strcmp(items[0].path, other) == 0, "recent: the other is left");
 
 		/* 15. Tags: the xattr, unknown names kept, and the index. */
 		fm_tags_load(&tags);

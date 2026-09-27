@@ -17,8 +17,8 @@
  * net_url_release.
  */
 
-#ifndef ZDESKTOP_BROWSER_NET_H
-#define ZDESKTOP_BROWSER_NET_H
+#ifndef KEILAND_BROWSER_NET_H
+#define KEILAND_BROWSER_NET_H
 
 #include "base/base.h"
 

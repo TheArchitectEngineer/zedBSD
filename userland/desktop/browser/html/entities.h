@@ -13,8 +13,8 @@
  * file.
  */
 
-#ifndef ZDESKTOP_BROWSER_HTML_ENTITIES_H
-#define ZDESKTOP_BROWSER_HTML_ENTITIES_H
+#ifndef KEILAND_BROWSER_HTML_ENTITIES_H
+#define KEILAND_BROWSER_HTML_ENTITIES_H
 
 #include <stddef.h>
 #include <stdint.h>
