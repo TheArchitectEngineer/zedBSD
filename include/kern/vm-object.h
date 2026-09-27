@@ -236,6 +236,8 @@ int vm_object_writeback_prepare(struct file *file, struct vm_object **result);
 void vm_object_writeback_release(struct vm_object *object);
 int vm_object_content_prepare_delayed(struct vm_object_content *content, struct vm_object *object, struct writeback_ticket *ticket);
 unsigned vm_object_cache_drain(struct mount *mount);
+/* Drops an inode's idle cache-only object, as a removal leaves the inode without names. */
+int vm_object_cache_discard_inode(struct inode *inode);
 /* Non-destructive preflight; caller excludes new mount users through later commit. */
 int vm_object_discard_mount_check(struct mount *mount);
 /* Closed admission required. NULL inode counts mount paths; otherwise inode paths. */
