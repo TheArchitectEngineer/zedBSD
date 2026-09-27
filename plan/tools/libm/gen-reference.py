@@ -654,6 +654,110 @@ def gen_hyperbolic(w: Writer, rng: random.Random, count: int) -> None:
 			w.ulp("atanhf", (x,), high(gmpy2.atanh, x), host, True)
 
 
+def lgamma_value(x):
+	"""log |gamma(x)| from MPFR's lgamma, which also returns the sign."""
+	return gmpy2.lgamma(x)[0]
+
+
+def gen_special(w: Writer, rng: random.Random, count: int) -> None:
+	"""cbrt, hypot, erf, erfc, tgamma, lgamma, and the Bessel functions."""
+	host = host_function("cbrt")
+	for _ in range(count):
+		x = random_double(rng, -1074, 1023)
+		w.ulp("cbrt", (x,), high(gmpy2.cbrt, x), host)
+	for n in range(-2000, 2001, 7):
+		cube = float(n) ** 3
+		if abs(cube) < 2 ** 53:
+			w.add("cbrt", EXACT, (cube,), float(n))
+	host = host_function("cbrtf", 1, True)
+	for _ in range(count // 2):
+		x = random_float(rng, -149, 127)
+		w.ulp("cbrtf", (x,), high(gmpy2.cbrt, x), host, True)
+	host = host_function("hypot", 2)
+	for _ in range(count):
+		x = random_double(rng, -1074, 1023)
+		exponent = min(max(math.frexp(x)[1] + rng.randint(-60, 60), -1074), 1023)
+		y = random_double(rng, exponent, exponent)
+		w.ulp("hypot", (x, y), high(gmpy2.hypot, x, y), host)
+	for a, b, c in ((3, 4, 5), (5, 12, 13), (8, 15, 17), (20, 21, 29), (119, 120, 169)):
+		w.add("hypot", EXACT, (float(a), float(b)), float(c))
+		w.add("hypot", EXACT, (math.ldexp(a, 1000), math.ldexp(b, 1000)), math.ldexp(c, 1000))
+		w.add("hypot", EXACT, (math.ldexp(a, -1070), math.ldexp(b, -1070)), math.ldexp(c, -1070))
+	host = host_function("hypotf", 2, True)
+	for _ in range(count // 2):
+		x = random_float(rng, -149, 127)
+		y = random_float(rng, -149, 127)
+		w.ulp("hypotf", (x, y), high(gmpy2.hypot, x, y), host, True)
+	host = host_function("erf")
+	values = [rng.uniform(-6.5, 6.5) for _ in range(count // 2)]
+	values += [random_double(rng, -1074, 2) for _ in range(count // 2)]
+	for x in values:
+		w.ulp("erf", (x,), high(gmpy2.erf, x), host)
+	host = host_function("erfc")
+	values = [rng.uniform(-7.0, 28.0) for _ in range(count // 2)]
+	values += [random_double(rng, -60, 4) for _ in range(count // 2)]
+	values += [27.2, 27.25, 26.6, 0.5, -0.5, 1.0]
+	for x in values:
+		w.ulp("erfc", (x,), high(gmpy2.erfc, x), host)
+	for name, function, low_, high_ in (("erff", gmpy2.erf, -5.0, 5.0), ("erfcf", gmpy2.erfc, -5.0, 11.0)):
+		host = host_function(name, 1, True)
+		for _ in range(count // 2):
+			x = to_float32(rng.uniform(low_, high_)) if rng.random() < 0.7 else random_float(rng, -149, 1)
+			w.ulp(name, (x,), high(function, x), host, True)
+	host = host_function("tgamma")
+	values = [rng.uniform(0.0, 171.6) for _ in range(count // 4)]
+	values += [abs(random_double(rng, -1074, 7)) for _ in range(count // 4)]
+	values += [rng.uniform(-185.0, 0.0) for _ in range(count // 4)]
+	values += [rng.uniform(-20.0, 0.0) for _ in range(count // 4)]
+	for x in values:
+		if x == 0.0 or (x < 0 and x == math.floor(x)):
+			continue
+		w.ulp("tgamma", (x,), high(gmpy2.gamma, x), host)
+	for n in range(1, 30):
+		value = math.factorial(n - 1)
+		if float(value) == value:
+			w.add("tgamma", EXACT, (float(n),), float(value))
+	host = host_function("lgamma")
+	values = [abs(random_double(rng, -1074, 1023)) for _ in range(count // 4)]
+	values += [rng.uniform(0.0, 20.0) for _ in range(count // 4)]
+	values += [1.0 + random_double(rng, -60, -2) for _ in range(count // 8)]
+	values += [2.0 + random_double(rng, -60, -2) for _ in range(count // 8)]
+	values += [rng.uniform(-200.0, 0.0) for _ in range(count // 4)]
+	for x in values:
+		if x == 0.0 or (x < 0 and x == math.floor(x)):
+			continue
+		value = high(lgamma_value, x)
+		name = "lgamma"
+		if x < 0 and abs(value) < 0.01:
+			name = "lgamma~zero"
+		w.ulp(name, (x,), value, host)
+	for name, function, low_, high_ in (("tgammaf", gmpy2.gamma, -40.0, 35.0), ("lgammaf", lgamma_value, -40.0, 1e30)):
+		host = host_function(name, 1, True)
+		for _ in range(count // 2):
+			x = to_float32(rng.uniform(low_, min(high_, 100.0))) if rng.random() < 0.7 else abs(random_float(rng, -149, 20))
+			if x == 0.0 or (x < 0 and x == math.floor(x)):
+				continue
+			value = high(function, x)
+			if name == "lgammaf" and x < 0 and abs(value) < 0.01:
+				continue
+			w.ulp(name, (x,), value, host, True)
+	for name, function in (("j0", gmpy2.j0), ("j1", gmpy2.j1), ("y0", gmpy2.y0), ("y1", gmpy2.y1)):
+		host = host_function(name)
+		values = [rng.uniform(0.0, 50.0) for _ in range(count // 4)]
+		values += [abs(random_double(rng, -30, 60)) for _ in range(count // 4)]
+		for x in values:
+			if x == 0.0:
+				continue
+			w.ulp(name, (x,), high(function, x), host)
+	for name, function in (("jn", gmpy2.jn), ("yn", gmpy2.yn)):
+		for _ in range(count // 4):
+			n = rng.randint(2, 40)
+			x = rng.uniform(0.01, 60.0)
+			with gmpy2.context(HIGH):
+				value = function(n, mpfr(x))
+			w.ulp(name, (float(n), x), value, None)
+
+
 GENERATORS = {
 	"remainders": gen_remainders,
 	"fma": gen_fma,
@@ -666,6 +770,7 @@ GENERATORS = {
 	"trig": gen_trig,
 	"atrig": gen_atrig,
 	"hyperbolic": gen_hyperbolic,
+	"special": gen_special,
 }
 
 

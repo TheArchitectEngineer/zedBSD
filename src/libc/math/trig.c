@@ -55,7 +55,6 @@ static int libm_reduce(double x, struct libm_dd *reduced);
 static int libm_reduce_large(double magnitude, struct libm_dd *reduced);
 static uint32_t libm_two_over_pi_word(int first_bit);
 static uint64_t libm_product_bits(const uint32_t *limbs, int top);
-static void libm_sin_cos(struct libm_dd reduced, struct libm_dd *sine, struct libm_dd *cosine);
 static double libm_trig(double x, enum libm_trig_function function);
 static double libm_power_of_two(int exponent);
 
@@ -156,6 +155,89 @@ tanf(
 }
 
 /*
+ * Computes sin r and cos r as double-doubles for |r| <= about pi/4.
+ *
+ * r = i/64 + d with |d| <= 1/128, and
+ *   sin r = sin(i/64) + (sin(i/64) (cos d - 1) + cos(i/64) sin d),
+ *   cos r = cos(i/64) + (cos(i/64) (cos d - 1) - sin(i/64) sin d).
+ * sin d is d + d^3 (-1/6 + ... + d^6/9!) and cos d - 1 is
+ * -d^2/2 + d^4 (1/24 - ... + d^4/8!); the first terms left out are below
+ * 2^-100 of the result.
+ */
+void
+__libm_sin_cos_dd(
+	struct libm_dd reduced,
+	struct libm_dd *sine,
+	struct libm_dd *cosine)
+{
+	struct libm_dd magnitude;
+	struct libm_dd offset;
+	struct libm_dd square;
+	struct libm_dd sin_offset;
+	struct libm_dd cos_offset;
+	struct libm_dd table_sine;
+	struct libm_dd table_cosine;
+	struct libm_dd first;
+	struct libm_dd second;
+	const double *coefficients;
+	double square_high;
+	double tail;
+	int negative;
+	int index;
+
+	/* Works on |r|; sin is odd and cos even. */
+	magnitude = reduced;
+	negative = reduced.high < 0.0;
+	if (negative) {
+		magnitude.high = -reduced.high;
+		magnitude.low = -reduced.low;
+	}
+
+	/* The nearest table point, and the exact offset from it. */
+	index = (int)(magnitude.high * 64.0 + 0.5);
+	offset = libm_two_sum(magnitude.high - (double)index * 0.015625, magnitude.low);
+
+	/* Squares the offset. */
+	square = libm_two_product(offset.high, offset.high);
+	square.low += 2.0 * offset.high * offset.low;
+	square_high = square.high;
+
+	/* sin d = d + d^3 (-1/6 + d^2/5! - d^4/7! + d^6/9!). */
+	coefficients = __libm_sin_coefficients;
+	tail = coefficients[3];
+	tail = coefficients[2] + square_high * tail;
+	tail = coefficients[1] + square_high * tail;
+	tail = coefficients[0] + square_high * tail;
+	sin_offset = libm_dd_add_double(offset, offset.high * square_high * tail);
+
+	/* cos d - 1 = -d^2/2 + d^4 (1/4! - d^2/6! + d^4/8!). */
+	coefficients = __libm_cos_coefficients;
+	tail = coefficients[3];
+	tail = coefficients[2] + square_high * tail;
+	tail = coefficients[1] + square_high * tail;
+	cos_offset = libm_fast_two_sum(-0.5 * square.high,
+	    -0.5 * square.low + square_high * square_high * tail);
+
+	/* Combines with the table by the addition formulas. */
+	table_sine = __libm_sin_cos_table[2 * index];
+	table_cosine = __libm_sin_cos_table[2 * index + 1];
+	first = libm_dd_multiply(table_sine, cos_offset);
+	second = libm_dd_multiply(table_cosine, sin_offset);
+	*sine = libm_dd_add(table_sine, libm_dd_add(first, second));
+	first = libm_dd_multiply(table_cosine, cos_offset);
+	second = libm_dd_multiply(table_sine, sin_offset);
+	second.high = -second.high;
+	second.low = -second.low;
+	*cosine = libm_dd_add(table_cosine, libm_dd_add(first, second));
+
+	/* A negative r gives the sine its sign back. */
+	if (negative) {
+		sine->high = -sine->high;
+		sine->low = -sine->low;
+	}
+}
+
+/*
  * Evaluates one of the three functions at x.
  */
 static double
@@ -191,7 +273,7 @@ libm_trig(
 
 	/* Reduces x to the quadrant and r, and evaluates both kernels. */
 	quadrant = libm_reduce(x, &reduced);
-	libm_sin_cos(reduced, &sine, &cosine);
+	__libm_sin_cos_dd(reduced, &sine, &cosine);
 
 	/* tan is sin/cos in an even quadrant and -cos/sin in an odd one. */
 	if (function == LIBM_TANGENT) {
@@ -455,89 +537,6 @@ libm_product_bits(
 
 	/* Succeeded: the bits from the top position down. */
 	return bits;
-}
-
-/*
- * Computes sin r and cos r as double-doubles for |r| <= about pi/4.
- *
- * r = i/64 + d with |d| <= 1/128, and
- *   sin r = sin(i/64) + (sin(i/64) (cos d - 1) + cos(i/64) sin d),
- *   cos r = cos(i/64) + (cos(i/64) (cos d - 1) - sin(i/64) sin d).
- * sin d is d + d^3 (-1/6 + ... + d^6/9!) and cos d - 1 is
- * -d^2/2 + d^4 (1/24 - ... + d^4/8!); the first terms left out are below
- * 2^-100 of the result.
- */
-static void
-libm_sin_cos(
-	struct libm_dd reduced,
-	struct libm_dd *sine,
-	struct libm_dd *cosine)
-{
-	struct libm_dd magnitude;
-	struct libm_dd offset;
-	struct libm_dd square;
-	struct libm_dd sin_offset;
-	struct libm_dd cos_offset;
-	struct libm_dd table_sine;
-	struct libm_dd table_cosine;
-	struct libm_dd first;
-	struct libm_dd second;
-	const double *coefficients;
-	double square_high;
-	double tail;
-	int negative;
-	int index;
-
-	/* Works on |r|; sin is odd and cos even. */
-	magnitude = reduced;
-	negative = reduced.high < 0.0;
-	if (negative) {
-		magnitude.high = -reduced.high;
-		magnitude.low = -reduced.low;
-	}
-
-	/* The nearest table point, and the exact offset from it. */
-	index = (int)(magnitude.high * 64.0 + 0.5);
-	offset = libm_two_sum(magnitude.high - (double)index * 0.015625, magnitude.low);
-
-	/* Squares the offset. */
-	square = libm_two_product(offset.high, offset.high);
-	square.low += 2.0 * offset.high * offset.low;
-	square_high = square.high;
-
-	/* sin d = d + d^3 (-1/6 + d^2/5! - d^4/7! + d^6/9!). */
-	coefficients = __libm_sin_coefficients;
-	tail = coefficients[3];
-	tail = coefficients[2] + square_high * tail;
-	tail = coefficients[1] + square_high * tail;
-	tail = coefficients[0] + square_high * tail;
-	sin_offset = libm_dd_add_double(offset, offset.high * square_high * tail);
-
-	/* cos d - 1 = -d^2/2 + d^4 (1/4! - d^2/6! + d^4/8!). */
-	coefficients = __libm_cos_coefficients;
-	tail = coefficients[3];
-	tail = coefficients[2] + square_high * tail;
-	tail = coefficients[1] + square_high * tail;
-	cos_offset = libm_fast_two_sum(-0.5 * square.high,
-	    -0.5 * square.low + square_high * square_high * tail);
-
-	/* Combines with the table by the addition formulas. */
-	table_sine = __libm_sin_cos_table[2 * index];
-	table_cosine = __libm_sin_cos_table[2 * index + 1];
-	first = libm_dd_multiply(table_sine, cos_offset);
-	second = libm_dd_multiply(table_cosine, sin_offset);
-	*sine = libm_dd_add(table_sine, libm_dd_add(first, second));
-	first = libm_dd_multiply(table_cosine, cos_offset);
-	second = libm_dd_multiply(table_sine, sin_offset);
-	second.high = -second.high;
-	second.low = -second.low;
-	*cosine = libm_dd_add(table_cosine, libm_dd_add(first, second));
-
-	/* A negative r gives the sine its sign back. */
-	if (negative) {
-		sine->high = -sine->high;
-		sine->low = -sine->low;
-	}
 }
 
 /*

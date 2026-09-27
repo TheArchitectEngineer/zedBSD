@@ -346,8 +346,13 @@ __libm_scale(
 	sum.low += lifted.low;
 	rounded = sum.high + sum.low;
 
-	/* Takes the one away again, exactly, and lowers the result back. */
+	/*
+	 * Takes the one away again, exactly, and lowers the result back.  A
+	 * result that rounded to zero keeps the sign of the value.
+	 */
 	result = (rounded - anchor) * 2.2250738585072014e-308;
+	if (result == 0.0)
+		result = libm_from_bits((uint64_t)sign << 63);
 
 	/* A sum that needed no rounding is an exact subnormal. */
 	if (sum.low == 0.0)

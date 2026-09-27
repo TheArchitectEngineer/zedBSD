@@ -113,6 +113,25 @@ copysignl(
 }
 
 /*
+ * Splits a long double value into integral and fractional parts.
+ */
+long double
+modfl(
+	long double x,
+	long double *integral)
+{
+	double whole;
+	double fraction;
+
+	/* Splits the value in double. */
+	fraction = modf((double)x, &whole);
+	*integral = (long double)whole;
+
+	/* Succeeded: the fraction keeps the sign of x. */
+	return (long double)fraction;
+}
+
+/*
  * Returns a quiet long double NaN.
  */
 long double
@@ -892,6 +911,103 @@ atanhl(
 
 	/* Computes the operation in double. */
 	result = atanh((double)x);
+
+	/* Succeeded: the double result stands for the long double one. */
+	return (long double)result;
+}
+
+/*
+ * Returns the real cube root of x.
+ */
+long double
+cbrtl(
+	long double x)
+{
+	double result;
+
+	/* Computes the operation in double. */
+	result = cbrt((double)x);
+
+	/* Succeeded: the double result stands for the long double one. */
+	return (long double)result;
+}
+
+/*
+ * Returns sqrt(x^2 + y^2) without undue overflow or underflow.
+ */
+long double
+hypotl(
+	long double x,
+	long double y)
+{
+	double result;
+
+	/* Computes the operation in double. */
+	result = hypot((double)x, (double)y);
+
+	/* Succeeded: the double result stands for the long double one. */
+	return (long double)result;
+}
+
+/*
+ * Returns the error function of x.
+ */
+long double
+erfl(
+	long double x)
+{
+	double result;
+
+	/* Computes the operation in double. */
+	result = erf((double)x);
+
+	/* Succeeded: the double result stands for the long double one. */
+	return (long double)result;
+}
+
+/*
+ * Returns the complementary error function of x.
+ */
+long double
+erfcl(
+	long double x)
+{
+	double result;
+
+	/* Computes the operation in double. */
+	result = erfc((double)x);
+
+	/* Succeeded: the double result stands for the long double one. */
+	return (long double)result;
+}
+
+/*
+ * Returns the gamma function of x.
+ */
+long double
+tgammal(
+	long double x)
+{
+	double result;
+
+	/* Computes the operation in double. */
+	result = tgamma((double)x);
+
+	/* Succeeded: the double result stands for the long double one. */
+	return (long double)result;
+}
+
+/*
+ * Returns the logarithm of the absolute value of the gamma function.
+ */
+long double
+lgammal(
+	long double x)
+{
+	double result;
+
+	/* Computes the operation in double. */
+	result = lgamma((double)x);
 
 	/* Succeeded: the double result stands for the long double one. */
 	return (long double)result;
