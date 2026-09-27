@@ -119,6 +119,7 @@ static const struct values_name values_names[] = {
 	{ "bottom", CSS_PROP_BOTTOM },
 	{ "left", CSS_PROP_LEFT },
 	{ "z-index", CSS_PROP_Z_INDEX },
+	{ "clear", CSS_PROP_CLEAR },
 	{ "margin", SHORT_MARGIN },
 	{ "padding", SHORT_PADDING },
 	{ "border", SHORT_BORDER },
@@ -172,9 +173,22 @@ static const struct values_keyword values_position[] = {
 
 /* The keywords of float. */
 static const struct values_keyword values_float[] = {
-	{ "none", 0 },
-	{ "left", 1 },
-	{ "right", 2 },
+	{ "none", CSS_FLOAT_NONE },
+	{ "left", CSS_FLOAT_LEFT },
+	{ "right", CSS_FLOAT_RIGHT },
+	{ "inline-start", CSS_FLOAT_LEFT },
+	{ "inline-end", CSS_FLOAT_RIGHT },
+	{ NULL, 0 }
+};
+
+/* The keywords of clear. */
+static const struct values_keyword values_clear[] = {
+	{ "none", CSS_FLOAT_NONE },
+	{ "left", CSS_FLOAT_LEFT },
+	{ "right", CSS_FLOAT_RIGHT },
+	{ "both", CSS_CLEAR_BOTH },
+	{ "inline-start", CSS_FLOAT_LEFT },
+	{ "inline-end", CSS_FLOAT_RIGHT },
 	{ NULL, 0 }
 };
 
@@ -972,6 +986,9 @@ values_single(
 		break;
 	case CSS_PROP_FLOAT:
 		table = values_float;
+		break;
+	case CSS_PROP_CLEAR:
+		table = values_clear;
 		break;
 	case CSS_PROP_VISIBILITY:
 		table = values_visibility;

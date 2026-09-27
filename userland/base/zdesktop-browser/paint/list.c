@@ -46,6 +46,7 @@ struct list_walk {
 static const struct layout_box *list_canvas(const struct layout_tree *tree, uint32_t *color);
 static void list_box(struct list_walk *walk, const struct layout_box *box, const struct layout_box *layer, int depth);
 static void list_borders(struct list_walk *walk, const struct layout_box *box);
+static void list_inline_floats(struct list_walk *walk, const struct layout_box *box, const struct layout_box *layer, int depth);
 static void list_lines(struct list_walk *walk, const struct layout_box *box);
 static void list_fragment(struct list_walk *walk, const struct layout_fragment *fragment, layout_unit x, layout_unit baseline);
 static void list_rect(struct list_walk *walk, layout_unit x, layout_unit y, layout_unit width, layout_unit height, uint32_t color);
@@ -267,15 +268,52 @@ list_box(
 	if (visible)
 		list_borders(walk, box);
 
-	/* A block of lines paints its text. */
+	/* A block of lines paints the floats among its content, then its text. */
 	if (box->children_inline) {
+		list_inline_floats(walk, box, layer, depth + 1);
 		list_lines(walk, box);
 		return;
 	}
 
-	/* A block of blocks paints its children in order. */
-	for (child = box->first_child; child != NULL; child = child->next)
-		list_box(walk, child, layer, depth + 1);
+	/* A block of blocks paints its children in order, the floats after the others. */
+	for (child = box->first_child; child != NULL; child = child->next) {
+		if (child->floating == CSS_FLOAT_NONE)
+			list_box(walk, child, layer, depth + 1);
+	}
+
+	/* Then the floats, over the backgrounds of the blocks beside them. */
+	for (child = box->first_child; child != NULL; child = child->next) {
+		if (child->floating != CSS_FLOAT_NONE)
+			list_box(walk, child, layer, depth + 1);
+	}
+}
+
+/* Paints the floats among a block's inline content (inline boxes are searched through). */
+static void
+list_inline_floats(
+	struct list_walk *walk,
+	const struct layout_box *box,
+	const struct layout_box *layer,
+	int depth)
+{
+	const struct layout_box *child;
+
+	/* Stops at the depth the layout stops at. */
+	if (depth > LAYOUT_DEPTH_MAX)
+		return;
+
+	/* A float paints itself; an inline box is searched; a box out of the flow is painted in its own turn. */
+	for (child = box->first_child; child != NULL; child = child->next) {
+		if (child->out_of_flow)
+			continue;
+		if (child->floating != CSS_FLOAT_NONE) {
+			list_box(walk, child, layer, depth + 1);
+			continue;
+		}
+
+		/* An inline box's content. */
+		list_inline_floats(walk, child, layer, depth + 1);
+	}
 }
 
 /*

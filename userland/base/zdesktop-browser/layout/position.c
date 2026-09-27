@@ -56,10 +56,10 @@ static int position_walk(struct layout_tree *tree, struct layout_box *box, const
 static int position_place(struct layout_tree *tree, struct layout_box *box, const struct position_block *containing);
 static void position_padding_box(const struct layout_box *box, struct position_block *block);
 static int position_offset(const struct css_length *length, layout_unit size, layout_unit *value);
-static layout_unit position_content_width(const struct layout_box *box, int depth);
 static layout_unit position_frame(const struct layout_box *box);
 static layout_unit position_outer_height(const struct layout_box *box);
 static int position_collect(const struct layout_box *box, struct wb_vector *entries, int depth);
+static layout_unit position_inline_floats(const struct layout_box *box, int depth);
 
 /*
  * Places every box out of the flow of a laid out tree (whose normal flow
@@ -151,6 +151,111 @@ layout_stacking_order(
 	return 0;
 }
 
+/*
+ * Lays out a box whose width is auto so it shrinks to its content: laid
+ * out very wide to measure the content, then at the narrower of that and
+ * the room (minus its margins, borders and paddings).  A box with a width
+ * is laid out in the room as it is.
+ */
+int
+layout_shrink_to_fit(
+	struct layout_tree *tree,
+	struct layout_box *box,
+	layout_unit room)
+{
+	layout_unit content;
+	layout_unit outside;
+	int error;
+
+	/* A width of its own needs no measuring. */
+	if (box->style.width.unit != CSS_UNIT_AUTO) {
+		error = layout_block(tree, box, room);
+		return error;
+	}
+
+	/* The content, measured very wide. */
+	error = layout_block(tree, box, POSITION_MEASURE_WIDTH);
+	if (error != 0)
+		return error;
+	content = layout_content_width(box, 0);
+
+	/* No wider than the room leaves, and not negative. */
+	outside = position_frame(box) + box->margin[CSS_LEFT] + box->margin[CSS_RIGHT];
+	if (content > room - outside)
+		content = room - outside;
+	if (content < 0)
+		content = 0;
+
+	/* The width is now set, and the box is laid out at it. */
+	box->style.width.unit = CSS_UNIT_PX;
+	box->style.width.value = layout_to_px(content);
+	error = layout_block(tree, box, room);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the box has shrunk to fit. */
+	return 0;
+}
+
+/*
+ * Measures the width a laid out box's content needs: its longest line (or
+ * its widest float among its inline content), or its widest child's margin
+ * box.
+ */
+layout_unit
+layout_content_width(
+	const struct layout_box *box,
+	int depth)
+{
+	const struct layout_line *line;
+	const struct layout_fragment *last;
+	const struct layout_box *child;
+	layout_unit widest;
+	layout_unit width;
+	size_t index;
+
+	/* Stops at the depth the layout stops at. */
+	widest = 0;
+	if (depth > LAYOUT_DEPTH_MAX)
+		return 0;
+
+	/* Lines: the end of each line's last piece. */
+	if (box->children_inline) {
+		for (index = 0; index < box->line_count; index++) {
+			line = &box->lines[index];
+			if (line->fragment_count == 0)
+				continue;
+			last = &line->fragments[line->fragment_count - 1U];
+			width = last->x + last->width;
+			if (width > widest)
+				widest = width;
+		}
+
+		/* A float among the content needs its margin box at least. */
+		width = position_inline_floats(box, depth);
+		if (width > widest)
+			widest = width;
+
+		/* The longest line. */
+		return widest;
+	}
+
+	/* Blocks: each child's margin box, its content measured when its width is auto. */
+	for (child = box->first_child; child != NULL; child = child->next) {
+		if (child->out_of_flow)
+			continue;
+		width = child->width;
+		if (child->style.width.unit == CSS_UNIT_AUTO)
+			width = layout_content_width(child, depth + 1);
+		width += child->margin[CSS_LEFT] + position_frame(child) + child->margin[CSS_RIGHT];
+		if (width > widest)
+			widest = width;
+	}
+
+	/* The widest one. */
+	return widest;
+}
+
 /* Places the boxes out of the flow under a box, in tree order, with the containing block its descendants have. */
 static int
 position_walk(
@@ -215,7 +320,6 @@ position_place(
 	layout_unit top;
 	layout_unit bottom;
 	layout_unit room;
-	layout_unit content;
 	layout_unit frame;
 	layout_unit height;
 	layout_unit x;
@@ -257,28 +361,16 @@ position_place(
 		}
 	}
 
-	/* A width set, or both sides set, lays the box out in that room. */
+	/* A width set, or both sides set, lays the box out in that room; otherwise it shrinks to fit. */
 	if (box->style.width.unit != CSS_UNIT_AUTO || (has_left && has_right)) {
 		error = layout_block(tree, box, room);
-		if (error != 0)
-			return error;
 	} else {
-		/* Otherwise the box shrinks to its content: measured very wide, then laid out at the narrower width. */
-		error = layout_block(tree, box, POSITION_MEASURE_WIDTH);
-		if (error != 0)
-			return error;
-		content = position_content_width(box, 0);
-		frame = position_frame(box);
-		if (content > room - frame - box->margin[CSS_LEFT] - box->margin[CSS_RIGHT])
-			content = room - frame - box->margin[CSS_LEFT] - box->margin[CSS_RIGHT];
-		if (content < 0)
-			content = 0;
-		box->style.width.unit = CSS_UNIT_PX;
-		box->style.width.value = layout_to_px(content);
-		error = layout_block(tree, box, room);
-		if (error != 0)
-			return error;
+		error = layout_shrink_to_fit(tree, box, room);
 	}
+
+	/* A box that could not be laid out stops the placing. */
+	if (error != 0)
+		return error;
 
 	/* A height left auto between a top and a bottom fills the room between them. */
 	if (box->style.height.unit == CSS_UNIT_AUTO && has_top && has_bottom) {
@@ -359,55 +451,6 @@ position_offset(
 	return 0;
 }
 
-/* Measures the width a laid out box's content needs: its longest line, or its widest child. */
-static layout_unit
-position_content_width(
-	const struct layout_box *box,
-	int depth)
-{
-	const struct layout_line *line;
-	const struct layout_fragment *last;
-	const struct layout_box *child;
-	layout_unit widest;
-	layout_unit width;
-	size_t index;
-
-	/* Stops at the depth the layout stops at. */
-	widest = 0;
-	if (depth > LAYOUT_DEPTH_MAX)
-		return 0;
-
-	/* Lines: the end of each line's last piece. */
-	if (box->children_inline) {
-		for (index = 0; index < box->line_count; index++) {
-			line = &box->lines[index];
-			if (line->fragment_count == 0)
-				continue;
-			last = &line->fragments[line->fragment_count - 1U];
-			width = last->x + last->width;
-			if (width > widest)
-				widest = width;
-		}
-
-		/* The longest line. */
-		return widest;
-	}
-
-	/* Blocks: each child's margin box, its content measured when its width is auto. */
-	for (child = box->first_child; child != NULL; child = child->next) {
-		if (child->out_of_flow)
-			continue;
-		width = child->width;
-		if (child->style.width.unit == CSS_UNIT_AUTO)
-			width = position_content_width(child, depth + 1);
-		width += child->margin[CSS_LEFT] + position_frame(child) + child->margin[CSS_RIGHT];
-		if (width > widest)
-			widest = width;
-	}
-
-	/* The widest one. */
-	return widest;
-}
 
 /* Reports the horizontal borders and paddings of a box. */
 static layout_unit
@@ -464,4 +507,38 @@ position_collect(
 
 	/* Succeeded: the boxes are listed. */
 	return 0;
+}
+
+/* Reports the widest margin box of the floats among a block's inline content. */
+static layout_unit
+position_inline_floats(
+	const struct layout_box *box,
+	int depth)
+{
+	const struct layout_box *child;
+	layout_unit widest;
+	layout_unit width;
+
+	/* Stops at the depth the layout stops at. */
+	widest = 0;
+	if (depth > LAYOUT_DEPTH_MAX)
+		return 0;
+
+	/* A float is measured; an inline box is searched; a box out of the flow is not. */
+	for (child = box->first_child; child != NULL; child = child->next) {
+		if (child->out_of_flow)
+			continue;
+		if (child->floating) {
+			width = child->margin[CSS_LEFT] + position_frame(child) + child->width + child->margin[CSS_RIGHT];
+		} else {
+			width = position_inline_floats(child, depth + 1);
+		}
+
+		/* The widest so far. */
+		if (width > widest)
+			widest = width;
+	}
+
+	/* Reports it. */
+	return widest;
 }
