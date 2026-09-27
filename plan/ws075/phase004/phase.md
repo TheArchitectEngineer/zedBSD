@@ -34,6 +34,20 @@ p001 の survey（`plan/ws075/tests/shader-survey/run.sh`）で libGLESv2 の生
 - 試験: `plan/ws031/tests/i915-vk-lower-test.c` の拒否の例を Flat から Component に替え、Flat・Centroid が受けられることを足した。
   survey の規則も同じに（Flat の不足が消え、その後ろに隠れていた「整数の入力」が 8 module に出た。compiler との最初の拒否の一致は保つ）。
 
+### 増分 2: 整数の入力（2026-09-27、c2c87fa6）
+
+- compiler: 整数の入力の load を受ける: vertex の属性（bit のまま）と、Flat の fragment の input。`compile.c` は Flat の fragment の
+  input を補間せず、setup の平面の origin（provoking vertex の値、4 float の 4 番目）を MOV する（整数も float も bit のまま。
+  Mesa の brw と同じ読み方）。
+- 実行器: vertex の属性の 32 bit 整数の format（R32〜R32G32B32A32 の SINT・UINT、値は Mesa 25.0.7 の isl.h の enum isl_format）、
+  整数の format の欠けた w は整数の 1（VFCOMP_STORE_1_INT、gen80.xml）。
+- survey: 整数の入力の規則を compiler に合わせた（不足のある module 38、compiler と全一致）。
+
+残り（この Phase）: input builtin（VertexIndex・InstanceIndex・FragCoord・FrontFacing・PointCoord）、PointSize、NoPerspective の
+fragment の input、texture() の bias・offset と textureLod、local の配列・struct と配列の定数、OpFwidth、Determinant 等。
+8 bit・16 bit の属性（normalized を含む）の format も GL の app が使う（p001 の静的な検査は作成時の parameter を数えないので
+ここで足した）。
+
 ## 判断が要る点（既定を選んで進める）
 
 （なし）
@@ -48,3 +62,4 @@ p001 の survey（`plan/ws075/tests/shader-survey/run.sh`）で libGLESv2 の生
 | survey | 122 module、不足 41（43 から）、compiler の最初の拒否と全一致 |
 | style-check | 変えた file の数は前と同じ |
 | 実機 | 未実施（Flat の画素の確認は GL の client の run で） |
+| 増分 2: build・host（lower・spirv・compile）・survey | PASS、PASS、38 module（compiler と一致） |
