@@ -284,6 +284,35 @@ parameter source without `init=` obtains the `/sbin/init` default. The
 compile-time init paths retained by the non-x86 NULL-source compatibility path
 are documented in Section 9.1.
 
+## 7a. Kernel messages: kmsg=
+
+`kmsg=` says where the kernel's messages go (ws035-p097, 2026-09-28 user
+direction: a fully graphical boot keeps them off the screen and only stores
+them, like dmesg).
+
+```text
+kmsg=console     the default: every message is also written on the console
+kmsg=quiet       messages go to the log buffer (dmesg, sysctl kern.msgbuf)
+                 and the platform debug port only
+```
+
+- Any other value is an error (the boot stops with a visible parse error).
+- `kmsg=quiet` is read from the raw parameter string as soon as the log is
+  initialized, before the first driver logs, so no kernel message reaches
+  the screen.  The HAL's own lines printed after the kernel console exists
+  also go to the log.  (The HAL's early console, before the kernel console,
+  is outside the kernel; a quiet early console is a proposed HAL change,
+  `plan/ws035/proposed/hal-quiet-console.diff`.)
+- The text console keeps what is written to it but does not draw it, so the
+  loader's logo (`logo=`, see `bootloader/uefi/README.md`) stays on the
+  screen.  The console is shown ("revealed") when a process reads from it
+  (a login prompt: the console getty, or the graphical login falling back to
+  it) and on a kernel panic; from then on the kernel's messages are written
+  on it again.
+- The UEFI loader also reads `kmsg=quiet`: it draws no progress blocks.
+- For kernel development leave `kmsg=` out or write `kmsg=console`, and use
+  `login=console` (Section 7b).
+
 ## 8. Valid and invalid examples
 
 Current-layout overlay root using loader-origin FAT:

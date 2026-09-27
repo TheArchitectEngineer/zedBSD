@@ -10,6 +10,7 @@
  */
 
 #include "hal/hal.h"
+#include "kern/text-display.h"
 #include <stddef.h>
 
 /*
@@ -49,6 +50,9 @@ __attribute__((noreturn)) void
 __libc_panic(
 	const char *message)
 {
+	/* A quiet console (kmsg=quiet) is shown for the panic. */
+	kern_text_reveal();
+
 	/* Prints the panic message, substituting a marker for a missing one. */
 	panic_puts("kernel panic: ");
 	panic_puts(message != NULL ? message : "unknown");
@@ -69,6 +73,9 @@ kern_fatal(
 	int line,
 	const char *message)
 {
+	/* A quiet console (kmsg=quiet) is shown for the stop. */
+	kern_text_reveal();
+
 	/* The HAL owns the stop; it records the site and never returns. */
 	hal_fatal(file, line, message);
 }

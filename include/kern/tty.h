@@ -24,6 +24,19 @@ tty_console_input_event(
 	uint32_t event);
 
 /*
+ * Holds the keyboard away from the console while a graphical display owns
+ * the screen (ws035-p097): a GPU display lease holds it from its claim to its
+ * release, so what is typed into the display (a password at the graphical
+ * login) is not also read, or echoed, by the text console.  Holds nest.
+ * The serial console's input is not held.
+ */
+void
+tty_console_input_hold(void);
+
+void
+tty_console_input_unhold(void);
+
+/*
  * Feeds one character to the active console.
  *
  * A keyboard reports which key moved and the console works out what that

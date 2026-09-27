@@ -122,6 +122,8 @@ enum kern_boot_parameter_key {
 	KERN_BOOT_PARAMETER_SWAP2,
 	KERN_BOOT_PARAMETER_SWAP3,
 	KERN_BOOT_PARAMETER_INIT,
+	KERN_BOOT_PARAMETER_KMSG,
+	KERN_BOOT_PARAMETER_LOGIN,
 	KERN_BOOT_PARAMETER_COUNT
 };
 
@@ -357,6 +359,15 @@ const char *
 kern_boot_parameters_unknown_name(
 	const struct kern_boot_parameters *parameters,
 	int *truncated);
+
+/*
+ * Reports whether a whole token (for example kmsg=quiet) is in a boot
+ * parameter string, before the string is parsed (ws035-p097).
+ */
+int
+kern_boot_parameters_token_present(
+	const char *text,
+	const char *token);
 
 /* Kernel-global parse-once instance consumed by init and later VFS phases. */
 int

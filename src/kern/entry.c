@@ -290,6 +290,7 @@ kernel_entry(
 	static struct kern_boot_device devices[KERN_PLATFORM_MAX_DEVICES];
 	const struct kern_boot_handoff *h;
 	size_t device_count;
+	int quiet;
 
 	/* Refuses a handoff that is missing, foreign, or truncated. */
 	h = handoff;
@@ -304,6 +305,11 @@ kernel_entry(
 
 	/* Brings up the log, the heap, and the core subsystems. */
 	kern_log_init();
+
+	/* kmsg=quiet keeps the kernel's messages off the console, for dmesg only (ws035-p097). */
+	quiet = kern_boot_parameters_token_present(hal_get_arch_handoff("boot.command-line"), "kmsg=quiet");
+	if (quiet)
+		kern_log_set_quiet(1);
 	kern_logf("boot: kernel heap, process, and scheduler initialization\n");
 	kern_heap_init(&kernel_heap, kernel_heap_storage, KERNEL_HEAP_SIZE);
 #ifdef KERN_KERNEL_HEAP_TRACE
