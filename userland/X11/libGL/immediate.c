@@ -37,12 +37,22 @@ glBegin(
 {
 	struct zegl_context *context;
 	struct fixed_state *fixed;
+	GLint profile;
 	int recorded;
 
 	/* The state, and the list being compiled. */
 	fixed = fixed_current(&context);
 	if (fixed == NULL)
 		return;
+
+	/* A core profile has no immediate mode (desktop GL 3.2). */
+	profile = glx_profile();
+	if (profile == 0x1) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return;
+	}
+
+	/* Recorded, when a list is being compiled. */
 	recorded = fixed_record(fixed, FIXED_OP_BEGIN, mode, 0U, NULL, 0U);
 	if (recorded == FIXED_COMPILE_ONLY)
 		return;

@@ -119,6 +119,7 @@
 		glFlush;
 		glFlushMappedBufferRange;
 		glFramebufferRenderbuffer;
+		glFramebufferTexture;
 		glFramebufferTexture1D;
 		glFramebufferTexture2D;
 		glFramebufferTexture3D;
@@ -159,6 +160,7 @@
 		glGetIntegeri_v;
 		glGetIntegerv;
 		glGetInternalformativ;
+		glGetMultisamplefv;
 		glGetProgramBinary;
 		glGetProgramInfoLog;
 		glGetProgramiv;
@@ -176,6 +178,8 @@
 		glGetStringi;
 		glGetSynciv;
 		glGetTexImage;
+		glGetTexLevelParameterfv;
+		glGetTexLevelParameteriv;
 		glGetTexParameterIiv;
 		glGetTexParameterIuiv;
 		glGetTexParameterfv;
@@ -260,6 +264,7 @@
 		glRotated;
 		glRotatef;
 		glSampleCoverage;
+		glSampleMaski;
 		glSamplerParameterf;
 		glSamplerParameterfv;
 		glSamplerParameteri;
@@ -288,6 +293,7 @@
 		glTexEnvi;
 		glTexEnviv;
 		glTexImage2D;
+		glTexImage2DMultisample;
 		glTexImage3D;
 		glTexParameterIiv;
 		glTexParameterIuiv;
@@ -296,6 +302,7 @@
 		glTexParameteri;
 		glTexParameteriv;
 		glTexStorage2D;
+		glTexStorage2DMultisample;
 		glTexStorage3D;
 		glTexSubImage2D;
 		glTexSubImage3D;
